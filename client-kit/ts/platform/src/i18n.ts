@@ -95,6 +95,7 @@ export const platformMessages = {
   "components.title": { en: "Component releases", "zh-CN": "组件发行版本" },
   "bindings.title": { en: "External service connections", "zh-CN": "外部服务连接" },
   "bindings.openNative": { en: "Open service page", "zh-CN": "打开服务页面" },
+  "bindings.openIndependent": { en: "Open service in a new tab", "zh-CN": "在新标签页打开独立服务" },
   "bindings.nativeTitle": { en: "Independent service", "zh-CN": "独立服务页面" },
   "bindings.nativeBoundary": { en: "This is the service's own page and sign-in. If embedding is refused, its independent service remains available; Kailo does not bypass its policy.", "zh-CN": "这里使用服务自己的页面和登录。若服务不允许嵌入，其独立服务仍可使用；Kailo 不会绕过它的限制。" },
   "bindings.boundary": { en: "Manage connections to Kailo. Each external service keeps its own administration, data and runtime.", "zh-CN": "管理服务与 Kailo 的连接；各服务的管理后台、数据和运行仍保持独立。" },

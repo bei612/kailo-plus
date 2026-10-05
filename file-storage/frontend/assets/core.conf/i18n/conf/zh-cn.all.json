@@ -1,0 +1,233 @@
+{
+  "Address used for notifications": {
+    "other": "用于接收通知的地址"
+  },
+  "All roles": {
+    "other": "所有角色"
+  },
+  "Allow Group Listing": {
+    "other": "允许组列表"
+  },
+  "Allow Role Listing": {
+    "other": "允许角色列表"
+  },
+  "Allow the users to create a new user when sharing a folder": {
+    "other": "允许用户在共享文件夹时创建新用户"
+  },
+  "Allow the users to pick an existing user when sharing a folder": {
+    "other": "允许用户在共享文件夹时选择已有用户"
+  },
+  "Allow to search users from other groups through auto completer (can be handy if previous option is set to false) and share workspaces with them": {
+    "other": "允许通过自动完成从其他组中搜索用户 (如果先前的选项设置为 false) 并与他们共享工作区"
+  },
+  "Always Override": {
+    "other": "总是覆盖"
+  },
+  "Always override other roles, included group roles.": {
+    "other": "总是覆盖其他角色，包括组角色。"
+  },
+  "Avatar": {
+    "other": "头像"
+  },
+  "Choose the configuration plugin": {
+    "other": "选择配置插件"
+  },
+  "Configuration Store Instance": {
+    "other": "配置存储实例"
+  },
+  "Configurations Management": {
+    "other": "配置管理"
+  },
+  "Core SQL Connexion": {
+    "other": "核心SQL连接"
+  },
+  "Country": {
+    "other": "国家"
+  },
+  "User Country": {
+    "other": "用户国家"
+  },
+  "Create external users": {
+    "other": "创建外部用户"
+  },
+  "Default Workspace": {
+    "other": "默认工作区"
+  },
+  "Default start repository": {
+    "other": "登录后显示的默认工作区。“主页”是带有活动和搜索引擎的欢迎页面。"
+  },
+  "Display roles and/or groups": {
+    "other": "显示角色和/或组"
+  },
+  "Do not display real login in parenthesis": {
+    "other": "不要在括号中显示真实的登录信息"
+  },
+  "Do not load groups and users list if no regexp is entered. Avoid sending large search on LDAP.": {
+    "other": "如果没有输入正则表达式，请不要加载组和用户列表。避免在 LDAP 上发送大规模搜索。"
+  },
+  "Email": {
+    "other": "电子邮件"
+  },
+  "Excluded Roles": {
+    "other": "排除的角色"
+  },
+  "External Users Creation": {
+    "other": "外部用户创建"
+  },
+  "External users parameters": {
+    "other": "外部用户参数"
+  },
+  "Full name displayed to others": {
+    "other": "显示给他人看的全名"
+  },
+  "Generic Conf Features": {
+    "other": "通用配置功能"
+  },
+  "Hide real login": {
+    "other": "隐藏真实登录名"
+  },
+  "If previous option is set to True, directly display a full list of users from all groups": {
+    "other": "如果之前的选项设置为 True，直接显示来自所有组的完整用户列表"
+  },
+  "If set, this action will be triggered automatically at users login. Can be logout (to lock out the users), pass_change (to force password change), or anything else": {
+    "other": "如果设置，此操作将在用户登录时自动触发。 可以登出(锁定用户)、pass_change(强制密码更改) 或其他任何内容"
+  },
+  "If the 'guest' user is enabled, remember her preferences accross sessions.": {
+    "other": "如果启用了“访客”用户，请记住她在各个会话中的偏好。"
+  },
+  "Image displayed next to the user name": {
+    "other": "显示在用户名旁边的图像"
+  },
+  "Included Roles": {
+    "other": "包含的角色"
+  },
+  "Instance": {
+    "other": "实例"
+  },
+  "Internal / External Users": {
+    "other": "内部/外部用户"
+  },
+  "Language": {
+    "other": "语言"
+  },
+  "Let user create repositories": {
+    "other": "允许用户创建工作区"
+  },
+  "Let user create repositories from templates": {
+    "other": "允许用户从模板创建资源库"
+  },
+  "List Roles By": {
+    "other": "列出角色依据"
+  },
+  "List existing from all groups": {
+    "other": "列出所有组中现有的"
+  },
+  "List of parameters to be edited when creating a new shared user.": {
+    "other": "创建新共享用户时要编辑的参数列表。"
+  },
+  "Make regexp mandatory": {
+    "other": "强制使用正则表达式"
+  },
+  "Maximum number of shared users per user": {
+    "other": "每个用户的最大共享用户数"
+  },
+  "Maximum number of users displayed in the users autocompleter": {
+    "other": "用户自动完成程序中显示的最大用户数"
+  },
+  "Minimum number of characters to trigger the auto completion feature": {
+    "other": "触发自动完成功能的最小字符数"
+  },
+  "Name": {
+    "other": "名称"
+  },
+  "Preferences Saving": {
+    "other": "首选项保存"
+  },
+  "Remember guest preferences": {
+    "other": "记住访客首选项"
+  },
+  "Role Label": {
+    "other": "角色标签"
+  },
+  "Role/Group Listing": {
+    "other": "角色/组列表"
+  },
+  "Roles / Groups Directory Listing": {
+    "other": "角色/组目录列表"
+  },
+  "SQL Connexion": {
+    "other": "SQL连接"
+  },
+  "See existing users": {
+    "other": "查看现有用户"
+  },
+  "Sets how the application core data (users,roles,etc) is stored.": {
+    "other": "设置应用程序核心数据 (用户，角色等) 的存储方式。"
+  },
+  "Share with existing users from all groups": {
+    "other": "与来自所有组的现有用户分享"
+  },
+  "Shared users limit": {
+    "other": "共享用户限制"
+  },
+  "Simple SQL Connexion definition that can be used by other sql-based plugins": {
+    "other": "其他基于sql的插件可以使用的简单SQL连接定义"
+  },
+  "Skip user history": {
+    "other": "跳过界面偏好设置"
+  },
+  "Some roles should be disappered in the list.  list separated by ',' or start with 'preg:' for regex.": {
+    "other": "有些角色应该从列表中消失。 列表以“,”分隔，或者以“preg:”开头（对于正则表达式）。"
+  },
+  "Some roles should be shown in the list.  list separated by ',' or start with 'preg:' for regex.": {
+    "other": "一些角色应该显示在列表中。 列表以“,”分隔，或者以“preg:”开头（对于正则表达式）。"
+  },
+  "Use this option to avoid automatic reloading of the interface state (last folder, opened tabs, etc)": {
+    "other": "使用此选项以避免自动重新加载界面状态(如最后一个文件夹，打开标签等)"
+  },
+  "User Language": {
+    "other": "用户语言"
+  },
+  "User roles only": {
+    "other": "仅用户角色"
+  },
+  "Users Directory Listing": {
+    "other": "用户目录列表"
+  },
+  "Users Lock Action": {
+    "other": "用户锁定操作"
+  },
+  "Users completer limit": {
+    "other": "用户自动完成显示限制"
+  },
+  "Users completer min chars": {
+    "other": "用户自动完成最少字符"
+  },
+  "Users only (do not list groups nor roles)": {
+    "other": "仅用户 (不列出组或角色)"
+  },
+  "Whether users can create their own repositories, based on predefined templates.": {
+    "other": "用户是否可以根据预定义的模板创建自己的资源库。"
+  },
+  "Workspace creation delegation": {
+    "other": "创建工作区授权"
+  },
+  "role prefix": {
+    "other": "角色前缀"
+  },
+  "System Default": {
+    "other": "系统默认"
+  },
+  "Material 3 (detect)": {
+    "other": "材料 3(检测)"
+  },
+  "Material 3 (light)": {
+    "other": "材料 3(轻)"
+  },
+  "Material 3 (dark)": {
+    "other": "材料3(深色)"
+  },
+  "Material Legacy": {
+    "other": "材料遗产"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "cancelRequested": true,
+  "runId": "3e261901-e2b9-4977-86b8-2203523f7507",
+  "target": {
+    "actionExecutionId": "ae0f9024-bf19-4c6a-b7f4-af61a76d3cbe",
+    "resourceId": "51acb7a1-d540-4bcd-9a45-0f8dc1afbd70",
+    "resourceVersion": 1,
+    "bindingId": "24ca335d-571e-4b69-ab43-73d7ed5862de",
+    "bindingVersion": 2,
+    "componentReleaseId": "a23c1b36-ad7f-4e82-9d9b-c931d12f3c83",
+    "projectionGeneration": 1,
+    "nativeInstanceRef": "sample-instance",
+    "nativeScopeRef": "sample-scope",
+    "reference": {
+      "typeKey": "sample.resource",
+      "nativeType": "sample-object",
+      "nativeRef": "existing-object",
+      "evidenceRef": "controlled-delivery",
+      "evidenceDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "workflowId": "platform:RESOURCE_PROVISION:00000000-0000-0000-0000-000000000001:ae0f9024-bf19-4c6a-b7f4-af61a76d3cbe:1"
+  }
+}

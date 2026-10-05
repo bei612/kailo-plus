@@ -1,0 +1,113 @@
+{
+  "Core component for sending emails": {
+    "other": "Componente do núcleo para envio de e-mails"
+  },
+  "Activate Queue": {
+    "other": "Ativar Fila"
+  },
+  "Active notifications by email": {
+    "other": "Ativar notificações por e-mails"
+  },
+  "Adress of the sender": {
+    "other": "Endereço do remetente"
+  },
+  "Body Layout": {
+    "other": "Leiaute do corpo"
+  },
+  "Choose your mail frequency (like 9:00 or 9:00,14:00 or Wednesday)": {
+    "other": "Escolha a frequência do seu e-mail (como 9:00 ou 9:00, 14:00 ou quarta-feira)"
+  },
+  "Content": {
+    "other": "Conteúdo"
+  },
+  "Core configs for sending emails": {
+    "other": "Configurações do núcleo para envio de e-mails"
+  },
+  "Detail your frequency here": {
+    "other": "Detalhar sua frequência aqui"
+  },
+  "Emails frequency": {
+    "other": "Frequência de e-mails"
+  },
+  "Every X hour": {
+    "other": "A cada X horas"
+  },
+  "Every X min": {
+    "other": "A cada X min"
+  },
+  "Every day at ": {
+    "other": "Todos os dias às "
+  },
+  "Extract the main layout from a localized file. Will prevail on the previous parameter, make sure to have an PYDIO_MAIL_BODY in the layout file.": {
+    "other": "Extrair o leiaute principal de um arquivo localizado. Ele prevalecerá no parâmetro anterior, assim, certifique-se de ter um PYDIO_MAIL_BODY no arquivo de leiaute."
+  },
+  "Force all mails to be sent by this Sender email, instead of users adresses": {
+    "other": "Forçar todos os e-mails a serem enviados por este remetente de e-mail em vez de endereços de usuários"
+  },
+  "Get the email in HTML": {
+    "other": "Obter o e-mail em HTML"
+  },
+  "Layout Folder": {
+    "other": "Pasta de Leiaute"
+  },
+  "Mailer Plugin": {
+    "other": "Plugin Mailer"
+  },
+  "Mailers": {
+    "other": "Correios"
+  },
+  "Main Layout for the email body, use HTML for send nice emails, and use the PYDIO_MAIL_BODY keyword for the real content.": {
+    "other": "Leiaute principal para o corpo do e-mail, use HTML para enviar e-mails legais e use a palavra-chave PYDIO_MAIL_BODY para o conteúdo real."
+  },
+  "Name of the sender": {
+    "other": "Nome do remetente"
+  },
+  "Once a Week": {
+    "other": "Uma vez por semana"
+  },
+  "Receive Notifcations by email": {
+    "other": "Receber notificações por e-mail"
+  },
+  "Select the plugin to activate for concretely sending emails": {
+    "other": "Selecionar o plugin para ativar o envio e-mails concretamente"
+  },
+  "Send as HTML": {
+    "other": "Enviar como HTML"
+  },
+  "Send email to...": {
+    "other": "Enviar e-mail para..."
+  },
+  "Sender": {
+    "other": "Remetente"
+  },
+  "Sender email": {
+    "other": "E-mail do remetente"
+  },
+  "Sender name": {
+    "other": "Nome do remetente"
+  },
+  "Store emails in a queue and batch-process them. Users can choose the sending frequency. Make sure to set up a CRON on consume_mail_queue action if you use this option.": {
+    "other": "Armazene os e-mails em uma fila e processe-os em lote. Os usuários podem escolher a frequência de envio. Certifique-se de configurar um CRON na ação consume_mail_queue se usar esta opção."
+  },
+  "String automatically added at the beginning of the mail subject": {
+    "other": "String adicionada automaticamente no início do assunto do e-mail"
+  },
+  "String automatically added at the end of the mail subject": {
+    "other": "String adicionada automaticamente no final do assunto de e-mail"
+  },
+  "Subject Append": {
+    "other": "Adicionar ao Assunto"
+  },
+  "Subject Prepend": {
+    "other": "Prefixo do Assunto"
+  },
+  "Twice a day (every day at and)": {
+    "other": "Duas vezes por dia (todos os dias às e)"
+  },
+  "Unique Sender": {
+    "other": "Remetente Único"
+  },
+  "You can add many email separated by commas": {
+    "other": "Você pode adicionar muitos e-mails separados por vírgulas"
+  }
+}

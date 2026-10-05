@@ -1,0 +1,86 @@
+{
+  "1": {
+    "other": "Trông nom..."
+  },
+  "1-off": {
+    "other": "Đang theo dõi..."
+  },
+  "10": {
+    "other": "Bất cứ ai cũng đang mở tập tin"
+  },
+  "10b": {
+    "other": "Bất cứ ai đang khám phá thư mục"
+  },
+  "11": {
+    "other": "Thông báo"
+  },
+  "12": {
+    "other": "Bất cứ ai cũng đang sửa đổi tập tin"
+  },
+  "12b": {
+    "other": "Bất cứ ai cũng đang sửa đổi một tập tin trong thư mục này"
+  },
+  "13": {
+    "other": "Cả hai"
+  },
+  "14": {
+    "other": "Bất cứ ai mở hoặc viết vào tập tin"
+  },
+  "14b": {
+    "other": "Bất cứ ai khám phá hoặc sửa đổi nội dung thư mục"
+  },
+  "2": {
+    "other": "Được thông báo khi thư mục này được truy cập"
+  },
+  "3": {
+    "other": "Ngừng Theo dõi"
+  },
+  "4": {
+    "other": "Dừng xem thư mục này để truy cập"
+  },
+  "5": {
+    "other": "Trông nom..."
+  },
+  "6": {
+    "other": "Xem tập tin này để thay đổi"
+  },
+  "7": {
+    "other": "Ngừng Theo dõi"
+  },
+  "8": {
+    "other": "Dừng xem tập tin này để thay đổi"
+  },
+  "9": {
+    "other": "Tư vấn"
+  },
+  "selector.legend": {
+    "other": "Nhận thông báo khi..."
+  },
+  "selector.legend.mui": {
+    "other": "Receive notifications when content is..."
+  },
+  "selector.ignore": {
+    "other": "Không (không nhận thông báo)"
+  },
+  "selector.read": {
+    "other": "Nội dung được truy cập"
+  },
+  "selector.read.mui": {
+    "other": "Accessed"
+  },
+  "selector.change": {
+    "other": "Nội dung được sửa đổi"
+  },
+  "selector.change.mui": {
+    "other": "Modified"
+  },
+  "selector.both": {
+    "other": "Nội dung được truy cập hoặc được sửa đổi"
+  },
+  "selector.mixed": {
+    "other": "Giá trị hỗn hợp"
+  },
+  "selector.saving": {
+    "other": "Đang lưu các trạng thái"
+  }
+}

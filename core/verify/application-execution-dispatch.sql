@@ -120,7 +120,7 @@ BEGIN
   RAISE NOTICE 'shared version trigger preserves unused ApprovalPolicy delete with its original record type';
 END $$;
 DO $$
-DECLARE provider text; release uuid; binding uuid; create_ae uuid; business_ae uuid; disable_ae uuid;
+DECLARE provider text; release uuid; binding uuid; create_ae uuid; business_ae uuid; disable_ae uuid; resource_ae uuid; reference jsonb; frozen jsonb;
  service uuid; resource uuid; ee uuid; event_id uuid; declaration uuid; usage jsonb; dims jsonb; event jsonb;
  workflow text; metered boolean; happened timestamptz:=clock_timestamp();
  tenant constant uuid:='00000000-0000-0000-0000-000000000001';
@@ -155,9 +155,23 @@ BEGIN
    INSERT INTO projection.application_category(tenant_id,category_key,contract_version,binding_id,generation)
    VALUES(tenant,'retire_plain',1,binding,1);
    UPDATE catalog.application_binding SET state='ACTIVE',version=2,active_projection_generation=1,native_scope_ref='isolated-scope' WHERE id=binding;
+   resource_ae:=gen_random_uuid();
+   reference:=jsonb_build_object('typeKey','retire_plain.collection','nativeType','collection','nativeRef','original-object',
+     'evidenceRef','isolated-reference-delivery','evidenceDigest',repeat('a',64));
+   frozen:=jsonb_build_object('bindingId',binding,'bindingVersion',2,'releaseId',release,'generation',1,
+     'adapterServiceRef','isolated-adapter','nativeInstanceRef','isolated-instance','nativeScopeRef','isolated-scope',
+     'configDigest',repeat('6',64),'reference',reference);
+   INSERT INTO admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
+     initiator_principal_id,actor_principal_id,target_id,parameter_hash,parameters,gate_state,dispatch_state,correlation_id)
+   VALUES(resource_ae,resource_ae,tenant,'resource.create',1,human,human,resource,repeat('a',64),
+     jsonb_build_object('targetVersion',0,'params',jsonb_build_object('resourceCreate',reference)),
+     'ALLOWED','DISPATCHED',resource_ae);
    INSERT INTO catalog.resource(id,tenant_id,type_key,owner_principal_id,component_type_key,application_binding_id,
-     native_type,native_id,state,version,projection_action_execution_id)
-   VALUES(resource,tenant,'retire_plain.collection',human,provider,binding,'collection','original-object','ACTIVE',1,create_ae);
+     state,version,projection_action_execution_id,reference_provision,native_identity_digest)
+   VALUES(resource,tenant,'retire_plain.collection',human,provider,binding,'PROVISIONING',1,resource_ae,
+     jsonb_build_object('actionExecutionId',resource_ae,'frozen',frozen,'cleanupRequired',false),repeat('f',64));
+   UPDATE catalog.resource SET state='ACTIVE',native_type='collection',native_id='original-object',
+     projection_action_execution_id=NULL,version=2 WHERE projection_action_execution_id=resource_ae;
    INSERT INTO admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
      initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id,
      component_binding_kind,component_binding_id,component_release_id,component_projection_generation,idempotency_key)

@@ -98,6 +98,10 @@ pub fn router(state: ServiceState) -> Router {
             post(crate::application_binding::advance),
         )
         .route(
+            "/service/v1/resources/advance",
+            post(crate::resource_provision::advance),
+        )
+        .route(
             "/service/v1/membership-projections/buzz",
             post(crate::membership_projection::project_buzz_roster),
         )

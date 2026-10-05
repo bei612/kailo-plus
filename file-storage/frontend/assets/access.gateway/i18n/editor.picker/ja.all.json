@@ -1,0 +1,47 @@
+{
+  "1": {
+    "other": "その他..."
+  },
+  "2": {
+    "other": "別のエディタを選ぶ"
+  },
+  "3": {
+    "other": "ファイルを開くために別のエディタを選ぶ"
+  },
+  "4": {
+    "other": "これらのエディタはこのファイル形式をサポートしてないため、予測不可能な動作が起きる場合があります。"
+  },
+  "5": {
+    "other": "関連付けを解除"
+  },
+  "drop.cell.picker": {
+    "other": "%sに対しての動作を選ぶ"
+  },
+  "drop.cell.share.legend": {
+    "other": "このセルに新たなアイテムを追加"
+  },
+  "drop.cell.copymove.legend": {
+    "other": "%s内"
+  },
+  "drop.cell.file.share": {
+    "other": "ファイルを共有"
+  },
+  "drop.cell.folder.share": {
+    "other": "フォルダを共有"
+  },
+  "drop.cell.file.move": {
+    "other": "ファイルの移動"
+  },
+  "drop.cell.folder.move": {
+    "other": "フォルダの移動"
+  },
+  "drop.cell.file.copy": {
+    "other": "ファイルのコピー"
+  },
+  "drop.cell.folder.copy": {
+    "other": "フォルダのコピー"
+  },
+  "download.as.pdf": {
+    "other": "PDFとしてダウンロード"
+  }
+}

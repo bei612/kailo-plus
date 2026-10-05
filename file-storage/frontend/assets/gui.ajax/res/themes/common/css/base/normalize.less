@@ -1,0 +1,82 @@
+.react-mui-context {
+
+  /* 1) Text scaling (iOS / Safari) */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+
+  /* 2) Root defaults */
+  min-height: 100vh;
+  line-height: 1.5;
+
+  /* 3) Universal box sizing */
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  /* 4) Remove default margins */
+  h1, h2, h3, h4, h5, h6,
+  p,
+  figure,
+  blockquote,
+  dl, dd {
+    margin: 0;
+  }
+
+  /* 5) Media elements */
+  img,
+  picture,
+  video,
+  canvas,
+  svg {
+    display: block;
+    max-width: 100%;
+  }
+
+  /* 6) Forms: inherit typography */
+  input,
+  button,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  /* 7) Buttons */
+  button,
+  input[type="button"],
+  input[type="reset"],
+  input[type="submit"] {
+    cursor: pointer;
+  }
+
+  &:disabled,
+  *:disabled {
+    cursor: default;
+  }
+
+  /* 8) Textareas */
+  /*
+  textarea {
+    resize: vertical;
+  }
+   */
+
+  /* 9) Tables */
+  table {
+    border-collapse: collapse;
+    border-spacing: 0;
+  }
+
+  /* 10) Links */
+  a {
+    color: inherit;
+    text-decoration: inherit;
+  }
+
+  /* 11) Long text safety */
+  p,
+  h1, h2, h3, h4, h5, h6 {
+    overflow-wrap: break-word;
+  }
+}

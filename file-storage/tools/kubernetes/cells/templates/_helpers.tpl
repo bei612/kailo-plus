@@ -1,0 +1,422 @@
+{{/*
+Expand the name of the chart.
+*/}}
+
+{{- define "cells.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{- define "cells.serviceDomain" }}
+{{- printf "%s.svc.%s" .Release.Namespace .Values.clusterDomain }}
+{{- end }}
+
+{{/*
+Create a default fully qualified app name.
+We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
+If release name contains chart name it will be used as a full name.
+*/}}
+{{- define "cells.fullname" -}}
+{{- if .Values.fullnameOverride }}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- $name := default .Chart.Name .Values.nameOverride }}
+{{- if contains $name .Release.Name }}
+{{- .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Create chart name and version as used by the chart label.
+*/}}
+{{- define "cells.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Create the Cells image reference.
+*/}}
+{{- define "cells.image" -}}
+{{- if .Values.image.local -}}
+{{- .Values.image.repository -}}
+{{- else -}}
+{{- printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Create the marker used to decide whether Helm-driven configuration must run.
+*/}}
+{{- define "cells.configureMarker" -}}
+{{- printf "%s:%s" (include "cells.chart" .) (include "cells.image" .) | sha256sum -}}
+{{- end }}
+
+{{/*
+Common labels
+*/}}
+{{- define "cells.labels" -}}
+helm.sh/chart: {{ include "cells.chart" . }}
+{{ include "cells.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
+Selector labels
+*/}}
+{{- define "cells.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "cells.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Create the name of the service account to use
+*/}}
+{{- define "cells.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create }}
+{{- default (include "cells.fullname" .) .Values.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
+Return the PVC name (only in standalone mode)
+*/}}
+{{- define "cells.claimName" -}}
+{{- if and .Values.persistence.existingClaim }}
+    {{- printf "%s" (tpl .Values.persistence.existingClaim $) -}}
+{{- else -}}
+    {{- printf "%s" (include "common.names.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "cells.auth.envvar" -}}
+{{- $username := (printf "%s_USERNAME" (upper .prefix)) -}}
+{{- $password := (printf "%s_PASSWORD" (upper .prefix)) -}}
+{{- if empty .auth.existingSecretUsernameKey -}}
+{{ include "cells.tplvalues.renderSecretPassword" (dict "name" $username "value" (.auth.user | default "root")) }}
+{{- else -}}
+{{ include "cells.tplvalues.renderSecretPassword" (dict "name" $username "value" (dict
+  "secretName"        (default .auth.existingSecret .defaultAuthExistingSecret)
+  "secretPasswordKey" .auth.existingSecretUsernameKey)) }}
+{{- end }}
+{{ if empty .auth.existingSecretPasswordKey }}
+{{ include "cells.tplvalues.renderSecretPassword" (dict "name" $password "value" .auth.password) }}
+{{- else -}}
+{{ include "cells.tplvalues.renderSecretPassword" (dict "name" $password "value" (dict
+  "secretName"        (default .auth.existingSecret .defaultAuthExistingSecret)
+  "secretPasswordKey" .auth.existingSecretPasswordKey)) }}
+{{- end -}}
+{{- end -}}
+
+{{- define "cells.auth.username" -}}
+{{- $ = . -}}{{- if not (empty .Values) -}}{{- $ = .Values -}}{{- end -}}
+{{- if $.auth.enabled -}}
+    {{- include "common.secrets.passwords.manage" (dict "secret" $.auth.existingSecret "key" (include "cells.auth.secretUsernameKey" .) "providedValues" (list "auth.username") "length" 10 "skipB64enc" true "skipQuote" true "honorProvidedValues" true "context" .) -}}
+{{- end }}
+{{- end }}
+
+{{- define "cells.auth.password" -}}
+{{- $ = . -}}{{- if not (empty .Values) -}}{{- $ = .Values -}}{{- end -}}
+{{- if $.auth.enabled -}}
+    {{- include "common.secrets.passwords.manage" (dict "secret" $.auth.existingSecret "key" (include "cells.auth.secretPasswordKey" .) "providedValues" (list "auth.password") "length" 10 "skipB64enc" true "skipQuote" true "honorProvidedValues" true "context" .) -}}
+{{- end }}
+{{- end }}
+
+{{/*
+Get the password secret.
+*/}}
+{{- define "cells.auth.secretName" -}}
+{{- $ = . -}}{{- if not (empty .Values) -}}{{- $ = .Values -}}{{- end -}}
+{{- if $.auth.existingSecret -}}
+{{- printf "%s" (tpl $.auth.existingSecret $) -}}
+{{- end -}}
+{{- end -}}
+
+
+{{/*
+Get the username key to be retrieved from Cells&reg; secret.
+*/}}
+{{- define "cells.auth.secretUsernameKey" -}}
+{{- $ = . -}}{{- if not (empty .Values) -}}{{- $ = .Values -}}{{- end -}}
+{{- if and $.auth.existingSecret $.auth.existingSecretUsernameKey -}}
+{{- printf "%s" (tpl $.auth.existingSecretUsernameKey .) -}}
+{{- else -}}
+{{- printf "username" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Get the password key to be retrieved from Cells&reg; secret.
+*/}}
+{{- define "cells.auth.secretPasswordKey" -}}
+{{- $ = . -}}{{- if not (empty .Values) -}}{{- $ = .Values -}}{{- end -}}
+{{- if and $.auth.existingSecret $.auth.existingSecretPasswordKey -}}
+{{- printf "%s" (tpl $.auth.existingSecretPasswordKey .) -}}
+{{- else -}}
+{{- printf "password" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Names
+*/}}
+
+{{- define "cells.urlUser" -}}
+{{- if .enabled }}
+{{- printf "%s:%s@" .user .password }}
+{{- end }}
+{{- end }}
+
+{{- define "cells.urlTLSScheme" -}}
+{{- if .enabled -}}
+{{- printf "%s+tls" .scheme -}}
+{{- else -}}
+{{- print .scheme -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "cells.urlQuery" -}}
+{{- $out := dict -}}
+{{- range . -}}
+  {{- range $k, $v := . -}}
+    {{- $_ := set $out $k $v -}}
+  {{- end -}}
+{{- end -}}
+{{- $i := 0 -}}
+{{- $parts := list -}}
+{{- range $k, $v := $out -}}
+  {{- $encoded := printf "%s=%s" $k $v -}}
+  {{- $parts = append $parts $encoded -}}
+{{- end }}
+{{- if gt (len $parts) 0 -}}
+  ?{{ join "&" $parts -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "cells.urlTLSParamsDict" -}}
+{{- if (.enabled | default false) -}}
+{{- if (.insecure | default false) -}}
+{{- (dict "tlsCertInsecureHost" "true") | toJson }}
+{{- else -}}
+{{- (dict
+    "tlsCertUUID" (printf "%s-client-%s" .prefix .certFilename)
+    "tlsCertKeyUUID" (printf "%s-client-%s" .prefix .certKeyFilename)
+    "tlsCertCAUUID" (printf "%s-ca-%s" .prefix .caFilename)
+ ) | toJson }}
+{{- end -}}
+{{- else }}
+{{ "{}" }}
+{{- end -}}
+{{- end -}}
+
+{{- define "cells.urlTLSParams" -}}
+{{- if (.enabled | default false) -}}
+{{- if (.insecure | default false) -}}
+{{- printf "tlsCertInsecureHost=true"}}
+{{- else -}}
+{{- printf "tlsCertUUID=%s-client-%s&tlsCertKeyUUID=%s-client-%s&tlsCertCAUUID=%s-ca-%s" .prefix .certFilename .prefix .certKeyFilename .prefix .caFilename -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "cells.enabled" -}}
+{{- true -}}
+{{- end -}}
+
+{{- define "cells.tls.enabled" -}}
+{{- if .Values.tls.enabled -}}
+{{- true -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "cells.tls.autoGenerated" -}}
+{{- if .Values.tls.autoGenerated.enabled -}}
+{{- true -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "cells.tls.selfSigned" -}}
+{{- if .Values.tls.selfSigned -}}
+{{- true -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "cells.tls.ca.existingSecret" -}}
+{{- .Values.tls.ca.existingSecret -}}
+{{- end -}}
+
+{{- define "cells.tls.server.existingSecret" -}}
+{{- .Values.tls.server.existingSecret -}}
+{{- end -}}
+
+{{- define "cells.tls.client.existingSecret" -}}
+{{- .Values.tls.client.existingSecret -}}
+{{- end -}}
+
+{{- define "cells.tls.ca.cert" -}}
+{{- .Values.tls.ca.cert -}}
+{{- end -}}
+
+{{- define "cells.tls.server.cert" -}}
+{{- .Values.tls.server.cert -}}
+{{- end -}}
+
+{{- define "cells.tls.client.cert" -}}
+{{- .Values.tls.client.cert -}}
+{{- end -}}
+
+{{- define "cells.tls.server.key" -}}
+{{- .Values.tls.server.key -}}
+{{- end -}}
+
+{{- define "cells.tls.client.key" -}}
+{{- .Values.tls.client.key -}}
+{{- end -}}
+
+{{/*
+Return the name of the secret containing the CA TLS certificate
+*/}}
+{{- define "cells.tls.ca.secretName" -}}
+{{- $autogenerated := printf "cells.%s.tls.autoGenerated" .dependency -}}
+{{- $cert := printf "cells.%s.tls.ca.cert" .dependency -}}
+{{- if or (include $autogenerated .) (and (not (empty (include $cert .)))) -}}
+    {{- printf "%s-%s-crt" (include "common.names.fullname" .) .dependency -}}
+{{- else -}}
+    {{- /* required "An existing secret name must be provided with a CA cert  if cert is not provided!" (tpl $values.tls.existingCASecret .) */ -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Return the name of the secret containing the TLS certificates for NATS servers
+*/}}
+{{- define "cells.tls.server.secretName" -}}
+{{- $autogenerated := printf "cells.%s.tls.autoGenerated" .dependency -}}
+{{- $cert := printf "cells.%s.tls.server.cert" .dependency -}}
+{{- $key := printf "cells.%s.tls.server.key" .dependency -}}
+{{- if or (include $autogenerated .) (and (not (empty (include $cert .))) (not (empty (include $key .)))) -}}
+    {{- printf "%s-%s-crt" (include "common.names.fullname" .) .dependency -}}
+{{- else -}}
+    {{- /*required "An existing secret name must be provided with TLS certs for NATS servers if cert and key are not provided!" (tpl $values.tls.server.existingSecret .) */ -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Return the name of the secret containing the TLS certificates for NATS clients
+*/}}
+{{- define "cells.tls.client.secretName" -}}
+{{- $autogenerated := printf "cells.%s.tls.autoGenerated" .dependency -}}
+{{- $cert := printf "cells.%s.tls.client.cert" .dependency -}}
+{{- $key := printf "cells.%s.tls.client.key" .dependency -}}
+{{- if or (include $autogenerated .) (and (not (empty (include $cert .))) (not (empty (include $key .)))) -}}
+    {{- printf "%s-%s-crt" (include "common.names.fullname" .) .name -}}
+{{- else -}}
+    {{- /* required "An existing secret name must be provided with TLS certs for NATS clients if cert and key are not provided!" (tpl $values.tls.client.existingSecret .) */ -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "cells.tls.generateCertificates" -}}
+{{- $prefixName := (include "common.names.fullname" .context) }}
+{{- $name := .name -}}
+{{- $prefix := ternary (printf "%s-%s" $prefixName .name) (printf "%s" $prefixName) (not (eq .name $prefixName)) -}}
+{{- $fnPrefix := ternary (printf "%s.%s" $prefixName .name) (printf "%s" $prefixName) (not (eq .name $prefixName)) -}}
+{{- $enabled := include (printf "%s.enabled" $fnPrefix) .context -}}
+{{- $tlsEnabled := include (printf "%s.tls.enabled" $fnPrefix) .context -}}
+{{- if and $enabled $tlsEnabled }}
+{{- $autoGeneratedEnabled := include (printf "%s.tls.autoGenerated" $fnPrefix) .context -}}
+{{- $caSecretName := include (printf "%s.tls.ca.existingSecret" $fnPrefix) .context -}}
+{{- $serverSecretName := include (printf "%s.tls.server.existingSecret" $fnPrefix) .context -}}
+{{- $clientSecretName := include (printf "%s.tls.client.existingSecret" $fnPrefix) .context -}}
+{{- $caCert := include (printf "%s.tls.ca.cert" $fnPrefix) .context -}}
+{{- $serverCert := include (printf "%s.tls.server.cert" $fnPrefix) .context -}}
+{{- $serverKey := include (printf "%s.tls.server.key" $fnPrefix) .context -}}
+{{- $clientCert := include (printf "%s.tls.client.cert" $fnPrefix) .context -}}
+{{- $clientKey := include (printf "%s.tls.client.key" $fnPrefix) .context -}}
+{{- /* Verify required parameters */}}
+{{- if and (not $autoGeneratedEnabled) (or (empty $caCert) (empty $serverCert) (empty $clientCert)) -}}
+{{- required "The tls certificate need to either be autogenerated or the certificates names defined" -}}
+{{- end -}}
+{{- if $autoGeneratedEnabled -}}
+{{- /* First we generate the CA */}}
+{{- $ca := genCA (printf "%s-ca" $prefix) 365 -}}
+{{- /* Generate the certificate */}}
+{{- $releaseNamespace := include "common.names.namespace" .context -}}
+{{- $clusterDomain := .context.Values.clusterDomain -}}
+{{- $primaryServiceName := $prefix | trunc 63 | trimSuffix "-" }}
+{{- $headlessServiceName := printf "%s-headless" $prefix | trunc 63 | trimSuffix "-" }}
+{{- $altNames := list (printf "*.%s.%s.svc.%s" $primaryServiceName $releaseNamespace $clusterDomain) (printf "*.%s.%s.svc.%s" $headlessServiceName $releaseNamespace $clusterDomain) (printf "%s.%s.svc.%s" $primaryServiceName $releaseNamespace $clusterDomain) (printf "%s.%s.svc.%s" $headlessServiceName $releaseNamespace $clusterDomain) $prefixName "localhost" "127.0.0.1" }}
+{{- $server := genSignedCert $primaryServiceName nil $altNames 365 $ca }}
+{{- $client := genSignedCert $primaryServiceName nil $altNames 365 $ca }}
+{{- if and (not (eq $caSecretName $serverSecretName)) (not (eq $caSecretName $clientSecretName)) -}}
+apiVersion: v1
+kind: Secret
+metadata:
+  # chart={{ $caSecretName }}
+  name: {{ $caSecretName }}
+  namespace: {{ include "common.names.namespace" .context | quote }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .commonLabels "context" .context ) | nindent 4 }}
+    app.kubernetes.io/part-of: cells
+    app.kubernetes.io/component: cells
+  {{- if .commonAnnotations }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" .commonAnnotations "context" .context ) | nindent 4 }}
+  {{- end }}
+type: kubernetes.io/tls
+data:
+  {{ $caCert }}: {{ include "common.secrets.lookup" (dict "secret" $caSecretName "key" $caCert "defaultValue" $ca.Cert "context" .context) }}
+---
+{{- end -}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $serverSecretName }}
+  namespace: {{ include "common.names.namespace" .context | quote }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .commonLabels "context" .context ) | nindent 4 }}
+    app.kubernetes.io/part-of: cells
+    app.kubernetes.io/component: cells
+  {{- if .commonAnnotations }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" .commonAnnotations "context" .context ) | nindent 4 }}
+  {{- end }}
+type: kubernetes.io/tls
+data:
+{{- if eq $caSecretName $serverSecretName }}
+  {{ $caCert }}: {{ include "common.secrets.lookup" (dict "secret" $caSecretName "key" $caCert "defaultValue" $ca.Cert "context" .context) }}
+{{- end }}
+  {{ $serverCert }}: {{ include "common.secrets.lookup" (dict "secret" $serverSecretName "key" $serverCert "defaultValue" $server.Cert "context" .context) }}
+  {{ $serverKey }}: {{ include "common.secrets.lookup" (dict "secret" $serverSecretName "key" $serverKey "defaultValue" $server.Key "context" .context) }}
+{{- if eq $serverSecretName $clientSecretName }}
+  {{ $clientCert }}: {{ include "common.secrets.lookup" (dict "secret" $clientSecretName "key" $clientCert "defaultValue" $client.Cert "context" .context) }}
+  {{ $clientKey }}: {{ include "common.secrets.lookup" (dict "secret" $clientSecretName "key" $clientKey "defaultValue" $client.Key "context" .context) }}
+{{- end }}
+---
+{{- if and (not (eq $serverSecretName $clientSecretName)) (not (empty $clientSecretName)) }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $clientSecretName }}
+  namespace: {{ include "common.names.namespace" .context | quote }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .commonLabels "context" .context ) | nindent 4 }}
+    app.kubernetes.io/part-of: cells
+    app.kubernetes.io/component: cells
+  {{- if .commonAnnotations }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" .commonAnnotations "context" .context ) | nindent 4 }}
+  {{- end }}
+type: kubernetes.io/tls
+data:
+{{- if eq $caSecretName $clientSecretName }}
+  {{ $caCert }}: {{ include "common.secrets.lookup" (dict "secret" $serverSecretName "key" "ca.crt" "defaultValue" $ca.Cert "context" .context) }}
+{{- end }}
+{{- if eq $serverSecretName $clientSecretName }}
+  {{ $clientCert }}: {{ include "common.secrets.lookup" (dict "secret" $clientSecretName "key" $clientCert "defaultValue" $client.Cert "context" .context) }}
+  {{ $clientKey }}: {{ include "common.secrets.lookup" (dict "secret" $clientSecretName "key" $clientKey "defaultValue" $client.Key "context" .context) }}
+{{- end }}
+  tls.crt: {{ include "common.secrets.lookup" (dict "secret" $serverSecretName "key" "tls.crt" "defaultValue" $server.Cert "context" .context) }}
+  tls.key: {{ include "common.secrets.lookup" (dict "secret" $serverSecretName "key" "tls.key" "defaultValue" $server.Key "context" .context) }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

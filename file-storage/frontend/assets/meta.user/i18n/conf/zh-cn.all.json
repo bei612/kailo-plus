@@ -1,0 +1,80 @@
+{
+  "Files Metadata": {
+    "other": "文件元数据"
+  },
+  "User Metadata implementation": {
+    "other": "用户元数据的实现"
+  },
+  "Additional info": {
+    "other": "附加信息"
+  },
+  "Color labels": {
+    "other": "颜色标签"
+  },
+  "Column visibility": {
+    "other": "列可见性"
+  },
+  "Created by...": {
+    "other": "由...创建..."
+  },
+  "Depending on the field type. Currently used for selection only": {
+    "other": "取决于字段类型。目前仅用于选择"
+  },
+  "Field ID": {
+    "other": "字段 ID"
+  },
+  "Field Type": {
+    "other": "字段类型"
+  },
+  "Hidden": {
+    "other": "隐藏"
+  },
+  "Hidden file used inside folders to save meta data": {
+    "other": "文件夹内使用隐藏文件来保存元数据"
+  },
+  "Id of fiels, use standard characters here.": {
+    "other": "字段ID，使用标准字符。"
+  },
+  "Label": {
+    "other": "标签"
+  },
+  "Label of the field, human friendly": {
+    "other": "领域标签，人性化"
+  },
+  "Last updated by...": {
+    "other": "最后更新者..."
+  },
+  "Long text": {
+    "other": "长文本"
+  },
+  "Meta File": {
+    "other": "元文件"
+  },
+  "Selection (set choices in Additional Info)": {
+    "other": "选择(在附加信息中设置选项)"
+  },
+  "Set default visibility.": {
+    "other": "设置默认可见性。"
+  },
+  "Short text": {
+    "other": "短文本"
+  },
+  "Simple metadata implementation stored in a hidden file.": {
+    "other": "实现简单的元数据存储在隐藏文件中。"
+  },
+  "Stars Rating": {
+    "other": "星级评定"
+  },
+  "Tags (extensible sets of values)": {
+    "other": "标签(可扩展的值集)"
+  },
+  "Text Metadata": {
+    "other": "文本元数据"
+  },
+  "Type of field": {
+    "other": "字段类型"
+  },
+  "Visible": {
+    "other": "可见"
+  }
+}

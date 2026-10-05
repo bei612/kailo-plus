@@ -1,0 +1,20 @@
+{
+  "User Account Panel": {
+    "other": "Painel da Conta do Usuário"
+  },
+  "User account panel for managing settings and opening address book": {
+    "other": "Painel da conta de usuário para gerenciar configurações e abrir catálogo de endereços"
+  },
+  "Disable Address Book": {
+    "other": "Desabilitar catálogo de endereços"
+  },
+  "Do not display address book in user account panel.": {
+    "other": "Não exibir catálogo de endereços no painel da conta do usuário."
+  },
+  "User Dashboard": {
+    "other": "Dashboard do Usuário"
+  },
+  "User home dashboard, can be displayed before accessing to workspaces": {
+    "other": "Dashboard do usuário, pode ser exibido antes de acessar a área de trabalho"
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "1": {
+    "other": "Thông báo"
+  },
+  "10": {
+    "other": "Lịch sử hoạt động của thư mục"
+  },
+  "11": {
+    "other": "Lịch sử hoạt động trên tập tin"
+  },
+  "11b": {
+    "other": "Activity"
+  },
+  "12": {
+    "other": "Tùy thuộc vào trình duyệt của bạn, điều này sẽ yêu cầu một sự cho phép cụ thể. Để vô hiệu hóa, hãy xem qua các tùy chọn và ngoại lệ trình duyệt của bạn. Nếu bạn đã kích hoạt tính năng này, có lẽ sẽ không có gì xảy ra."
+  },
+  "13": {
+    "other": "Trình duyệt của bạn dường như chưa hỗ trợ Thông báo trên màn hình."
+  },
+  "14": {
+    "other": "Không có thông báo"
+  },
+  "15": {
+    "other": "Thông báo về các tập tin mà bạn theo dõi sẽ xuất hiện ở đây"
+  },
+  "16": {
+    "other": "Bên trong"
+  },
+  "17": {
+    "other": "Đang tải hoạt động..."
+  },
+  "18": {
+    "other": "Không có hoạt động nào gần đây"
+  },
+  "19": {
+    "other": "Thêm"
+  },
+  "2": {
+    "other": "Thông báo feed"
+  },
+  "20": {
+    "other": "Đang tải feed..."
+  },
+  "3": {
+    "other": "Nhắc nhở"
+  },
+  "4": {
+    "other": "Thông báo"
+  },
+  "5": {
+    "other": "Tất cả các sự kiện"
+  },
+  "6": {
+    "other": "Đi tới..."
+  },
+  "7": {
+    "other": "Bỏ qua"
+  },
+  "8": {
+    "other": "Không có thông báo"
+  },
+  "9": {
+    "other": "Hoạt động Workspace"
+  },
+  "tasks.subheader": {
+    "other": "Running Tasks"
+  }
+}

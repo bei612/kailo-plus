@@ -1,0 +1,179 @@
+{
+  "start": {
+    "other": "開始"
+  },
+  "pause": {
+    "other": "一時停止"
+  },
+  "clear": {
+    "other": "クリア"
+  },
+  "clear-header": {
+    "other": "リストをクリア"
+  },
+  "clear-finished": {
+    "other": "完了したアップロード"
+  },
+  "clear-failed": {
+    "other": "失敗したアップロード"
+  },
+  "clear-all": {
+    "other": "全ての転送"
+  },
+  "list.show-more": {
+    "other": "%d 件以上 - 全て表示"
+  },
+  "options.existing": {
+    "other": "同じファイル名が存在する場合："
+  },
+  "options.existing.alert": {
+    "other": "アップロードを停止して知らせる"
+  },
+  "options.existing.folders": {
+    "other": "フォルダー名とファイル名を変更"
+  },
+  "options.existing.merge": {
+    "other": "ファイル名のみ変更(フォルダを統合)"
+  },
+  "options.existing.overwrite": {
+    "other": "既存のファイルを上書きしますか"
+  },
+  "confirm.rename.all": {
+    "other": "フォルダの名前を変更し、競合するファイルを変更"
+  },
+  "confirm.rename.merge": {
+    "other": "ファイル名のみ変更(フォルダを統合)"
+  },
+  "confirm.overwrite": {
+    "other": "フォルダを統合し、ファイルを上書きする"
+  },
+  "confirm.save.choice": {
+    "other": "次のアップロードのための選択を保存"
+  },
+  "options": {
+    "other": "アップロードオプション"
+  },
+  "upload.forbidden": {
+    "other": "この場所にファイルをアップロードすることは許可されていません。"
+  },
+  "task.label": {
+    "other": "サーバーにファイルをアップロードしています..."
+  },
+  "task.status.folders": {
+    "other": "フォルダーを作成しています"
+  },
+  "task.message.folder-one": {
+    "other": "1個フォルダーを作成しています"
+  },
+  "task.message.folder-many": {
+    "other": "%s 個フォルダーを作成しています"
+  },
+  "task.status.analyse": {
+    "other": "アップロードをするファイルの準備中"
+  },
+  "task.message.analyse-many": {
+    "other": "%s 個のアイテムを分析中..."
+  },
+  "task.message.analyse-one": {
+    "other": "1 個のアイテムを分析中"
+  },
+  "task.message.analyse-wait": {
+    "other": "お待ち下さい..."
+  },
+  "task.status.ready": {
+    "other": "アップロード準備完了"
+  },
+  "task.status.paused": {
+    "other": "アップロードを一時停止しました"
+  },
+  "task.status.upload": {
+    "other": "ファイルをアップロードしています"
+  },
+  "task.message.upload-progress": {
+    "other": "%s% をアップロードしています"
+  },
+  "no-folders-support": {
+    "other": "お使いのブラウザはフォルダのドロップに対応していないようです"
+  },
+  "analyze.step": {
+    "other": "ファイル・フォルダのアップロードを準備しています..."
+  },
+  "drophere": {
+    "other": "ここにファイルをドロップ"
+  },
+  "drop-or": {
+    "other": "または"
+  },
+  "drop-pick-file": {
+    "other": "ファイルを参照"
+  },
+  "drop-pick-folder": {
+    "other": "フォルダを参照"
+  },
+  "dialog.title": {
+    "other": "転送"
+  },
+  "attempt": {
+    "other": "試行"
+  },
+  "status.new": {
+    "other": "保留中"
+  },
+  "status.error": {
+    "other": "エラーが発生しました"
+  },
+  "status.pause": {
+    "other": "一時停止中"
+  },
+  "status.analyse": {
+    "other": "分析中..."
+  },
+  "status.dir.new": {
+    "other": "アップロード中のフォルダ..."
+  },
+  "status.file.new": {
+    "other": "アップロード中のファイル..."
+  },
+  "status.dir.analyse": {
+    "other": "フォルダを分析しています..."
+  },
+  "status.file.analyse": {
+    "other": "ファイルを分析しています..."
+  },
+  "status.dir.loading": {
+    "other": "フォルダを作成しています"
+  },
+  "status.file.loading": {
+    "other": "ファイルをアップロードしています"
+  },
+  "status.dir.loaded": {
+    "other": "フォルダを作成しました"
+  },
+  "status.file.loaded": {
+    "other": "ファイルをアップロードしました"
+  },
+  "status.part.loaded": {
+    "other": "チャンクをアップロードしました"
+  },
+  "status.part.loading": {
+    "other": "チャンクをアップロードしています"
+  },
+  "status.multi-pause": {
+    "other": "一時停止する前に現在のチャンクを終了しています"
+  },
+  "status.file.cannot-pause": {
+    "other": "転送を一時停止できません"
+  },
+  "status.part.cannot-pause": {
+    "other": "チャンクの転送を一時停止できません"
+  },
+  "status.error.aborted": {
+    "other": "ユーザーにより中断されました"
+  },
+  "status.error.403": {
+    "other": "ここにファイルをアップロードすることは許可されていません"
+  },
+  "status.error.422": {
+    "other": "上限に到達しました。これ以上アップロードできません。"
+  }
+}

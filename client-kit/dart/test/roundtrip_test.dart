@@ -9,6 +9,32 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('resource reference preserves evidence and original workflow', () {
+    final original =
+        jsonDecode(
+              File(
+                '../../contracts/samples/resource-create.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    expect(
+      jsonDecode(jsonEncode(ActionCommand.fromJson(original).toJson())),
+      equals(original),
+    );
+    final advance =
+        jsonDecode(
+              File(
+                '../../contracts/samples/resource-provision.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    expect(
+      jsonDecode(
+        jsonEncode(ResourceProvisionAdvanceRequest.fromJson(advance).toJson()),
+      ),
+      equals(advance),
+    );
+  });
   test('binding observation preserves mappings and optional scope', () {
     final original =
         jsonDecode(

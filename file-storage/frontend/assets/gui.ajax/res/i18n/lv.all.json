@@ -1,0 +1,407 @@
+{
+  "tour.create-menu": {
+    "other": "Sākt pievienot failus vai direktorijas esošajai darbvirsmai."
+  },
+  "tour.create-menu.title": {
+    "other": "Pievienot failus"
+  },
+  "tour.display-bar": {
+    "other": "Rīkjosla ļauj mainīt izskatu: pārslēgites uz priekšskatu vai detalizētas informācijas skatu atkarībā no pielietojuma un ļauj šķirot failus pēc nosaukuma, datuma, u.t.t. ..."
+  },
+  "tour.display-bar.title": {
+    "other": "Attēlošanas iestatījumi"
+  },
+  "tour.globsearch.1": {
+    "other": "Lietojiet šo meklēšanas formu lai atrastu failus vai direktorijas visās darbvirsmās un šūnās. Attēloti tiek tikai pirmie 5 rezultāti. Lai iegūtu vairāk rezultātus un meklēšanas opciju ieejiet darbvirsmā."
+  },
+  "tour.globsearch.2": {
+    "other": "Ja nav uzsākta meklēšana, tiks attēloti pēdējās direktorijas un faili kuri tika atvērti."
+  },
+  "tour.globsearch.title": {
+    "other": "Globāla meklēšana"
+  },
+  "tour.infopanel.1": {
+    "other": "Šeit tiek attēlota informācija par esošo statusu: failu informācija, koplietošanas statuss, lietotāju veidotie meta dati, u.t.t. ..."
+  },
+  "tour.infopanel.2": {
+    "other": "Paneli var aizvērt lietojot info pogu rīkjoslā"
+  },
+  "tour.infopanel.file": {
+    "other": "Fails"
+  },
+  "tour.infopanel.folder": {
+    "other": "Direktorija"
+  },
+  "tour.infopanel.search": {
+    "other": "Meklēt"
+  },
+  "tour.infopanel.title": {
+    "other": "Info Panelis"
+  },
+  "tour.locale.back": {
+    "other": "Atpakaļ"
+  },
+  "tour.locale.close": {
+    "other": "Aizvērt"
+  },
+  "tour.locale.last": {
+    "other": "Pabeigt"
+  },
+  "tour.locale.next": {
+    "other": "Tālāk"
+  },
+  "tour.locale.skip": {
+    "other": "Izlaist"
+  },
+  "tour.openworkspace": {
+    "other": "Pirmo reizi pieslēdzoties darbību vēsture netiks parādīta. Ejiet uz darbvirsmu vai šūnu lai pievienotu failus."
+  },
+  "tour.openworkspace.title": {
+    "other": "Atvērt darbvirsmā"
+  },
+  "tour.uwidget.addressbook": {
+    "other": "Visu lietotāju direktorija kuri piekļūst platformai. Izveidojiet savus lietotājus un veidojiet komandas kuras var lietot resursu koplietošanai"
+  },
+  "tour.uwidget.alerts": {
+    "other": "Brīdinājumu panelis informē lietotāju ja kāds ir piekļuvis Jūsu koplietotajiem resursiem. Tos var sūtīt pa tiešo uz e-pastu."
+  },
+  "tour.uwidget.home": {
+    "other": "Iet atpakaļ uz sākuma paneli ar šīs pogas palīdzību"
+  },
+  "tour.uwidget.menu": {
+    "other": "Piekļūt citām opcijām : pārvaldīt profilu un drošības iestatījumus, pārskatīt koplietotos resursus, atslēgties no sistēmas."
+  },
+  "tour.uwidget.title": {
+    "other": "Lietotāja Rotājums"
+  },
+  "tour.welcomemodal.skip": {
+    "other": "Izlaist"
+  },
+  "tour.welcomemodal.start": {
+    "other": "Sākt apskati"
+  },
+  "tour.welcomemodal.subtitle": {
+    "other": "Ievietojiet savu labāko bildi priekš profila! Šī īsā instrukcija Jūs iepazīstinās ar aplikācijas interfeisu."
+  },
+  "tour.welcomemodal.title": {
+    "other": "Laipni lūgti APPLICATION_TITLE"
+  },
+  "tour.widget-cards": {
+    "other": "Šeit Jūs varat pievienot vai noņemt Logrīkus. Tos var pārkārto vienkārši pārvelkot."
+  },
+  "tour.widget-cards.title": {
+    "other": "Logrīki"
+  },
+  "tour.workspaces.1": {
+    "other": "Darbvirsmas ir augstākā līmeņa direktorijas kuras palīdz organizēt Jūsu datus. Tām varat piekļūt tikai Jūs, vai arī koplietot ar citiem cilvēkiem."
+  },
+  "tour.workspaces.2": {
+    "other": "Šūnas ir sadarbības vietnes kuras varat koplietot ar citiem lietotājiem. Izveidojiet savas šūnas par pamatu ņemot direktorijas, komandu, lietotājus vai atbilstošu tematu."
+  },
+  "tour.workspaces.title": {
+    "other": "Darbvirsmas un Šūnas"
+  },
+  "tour.theme.title": {
+    "other": "Light/Dark Theme Support"
+  },
+  "tour.theme.legend": {
+    "other": "Choose a light or dark theme to best suit your vision."
+  },
+  "tour.left-resize.title": {
+    "other": "Workspaces and Cells"
+  },
+  "tour.left-resize.legend": {
+    "other": "Left column can be resized or closed to fit your screen."
+  },
+  "tour.right-resize.legend": {
+    "other": "Right column can be also be resized or closed to fit your screen."
+  },
+  "tour.directory.title": {
+    "other": "Users Directory"
+  },
+  "tour.directory.legend": {
+    "other": "Manage users (internal and external) and teams in a central location."
+  },
+  "background.jobs.title": {
+    "other": "Background Jobs"
+  },
+  "background.jobs.running": {
+    "other": "Jobs running"
+  },
+  "websocket.disconnected.title": {
+    "other": "Connection issue"
+  },
+  "websocket.disconnected.legend": {
+    "other": "Websocket seems to be disconnected, please make sure that the server is up and websocket connection is working."
+  },
+  "oauth.authentication.success": {
+    "other": "Authentication Success"
+  },
+  "oauth.authentication.failed": {
+    "other": "Authentication Failed"
+  },
+  "oauth.authentication.code": {
+    "other": "You were successfully authenticated. Please copy and paste the code to your command line terminal"
+  },
+  "oauth.authentication.copy-code": {
+    "other": "Copy code to your clipboard"
+  },
+  "oauth.authentication.code-copied": {
+    "other": "Code is copied to your clipboard, you can paste it in the command line."
+  },
+  "oauth.authentication.code-copy-failed": {
+    "other": "Could not copy to clipboard."
+  },
+  "layouts.preferences": {
+    "other": "Manage Layouts"
+  },
+  "layouts.preferences.legend": {
+    "other": "Save and Recall Layouts as Presets"
+  },
+  "layouts.action.rename": {
+    "other": "Rename Layout"
+  },
+  "layouts.action.remove": {
+    "other": "Remove Layout"
+  },
+  "layouts.action.remove.confirm": {
+    "other": "Do you want to remove this layout?"
+  },
+  "layouts.action.reset": {
+    "other": "Reset Layout"
+  },
+  "layouts.action.reset.confirm": {
+    "other": "Do you want to reset the current layout?"
+  },
+  "layouts.action.create": {
+    "other": "Save Layout..."
+  },
+  "layouts.action.fork": {
+    "other": "New From Current..."
+  },
+  "layouts.action.create.default": {
+    "other": "My Layout"
+  },
+  "layouts.prompt.save": {
+    "other": "Save Layout As..."
+  },
+  "layouts.prompt.save.field": {
+    "other": "Choose a name to save/recall the current layout"
+  },
+  "list.display-mode.list": {
+    "other": "Saraksts"
+  },
+  "list.display-mode.details": {
+    "other": "Papildu informācija"
+  },
+  "list.display-mode.thumbs": {
+    "other": "Sīktēli"
+  },
+  "list.display-mode.thumbs-large": {
+    "other": "Larger"
+  },
+  "list.display-mode.thumbs-medium": {
+    "other": "Medium"
+  },
+  "list.display-mode.thumbs-small": {
+    "other": "Smaller"
+  },
+  "list.display-mode.masonry": {
+    "other": "Image Gallery"
+  },
+  "list.extensions.action": {
+    "other": "Files extensions"
+  },
+  "list.extensions.show": {
+    "other": "Show extensions"
+  },
+  "list.pin.bookmarks": {
+    "other": "Pin bookmarks to top"
+  },
+  "list.writeonly.emptystate.title": {
+    "other": "Drop Files Here"
+  },
+  "list.writeonly.emptystate.legend": {
+    "other": "This folder is write-only: you cannot see its contents and are only authorized to upload files or folders. Your own content will not be visible after upload!"
+  },
+  "infopanel.empty.select.file": {
+    "other": "Select a file to display informations"
+  },
+  "infopanel.card.pin": {
+    "other": "Attach card (full height)"
+  },
+  "infopanel.card.unpin": {
+    "other": "Detach card"
+  },
+  "infopanel.card.detach": {
+    "other": "Detach in a separate panel"
+  },
+  "infopanel.detached.minimize": {
+    "other": "Minimize Panel"
+  },
+  "infopanel.detached.maximize": {
+    "other": "Open Panel"
+  },
+  "infopanel.detached.dock": {
+    "other": "Dock in the right-hand column"
+  },
+  "infopanel.detailcard.preview": {
+    "other": "Preview"
+  },
+  "infopanel.detailcard.cell-info": {
+    "other": "Cell Info"
+  },
+  "infopanel.detailcard.cell-chat": {
+    "other": "Cell Chat"
+  },
+  "pinned-bookmarks.other": {
+    "other": "All files"
+  },
+  "file.temporary-etag.flag": {
+    "other": "Incomplete"
+  },
+  "file.temporary-etag.tooltip": {
+    "other": "This file is being uploaded (or the upload has failed)."
+  },
+  "mimegroup.byextension": {
+    "other": "By File Extension..."
+  },
+  "mimegroup.word": {
+    "other": "Word documents"
+  },
+  "mimegroup.spreadsheet": {
+    "other": "Spreadsheets"
+  },
+  "mimegroup.presentation": {
+    "other": "Presentations"
+  },
+  "mimegroup.pdf": {
+    "other": "PDFs"
+  },
+  "mimegroup.image": {
+    "other": "Images"
+  },
+  "mimegroup.video": {
+    "other": "Videos"
+  },
+  "mimegroup.audio": {
+    "other": "Audios"
+  },
+  "fastsearch.quick-jump.title": {
+    "other": "Quick Jump"
+  },
+  "fastsearch.quick-jump.legend": {
+    "other": "Hit [Enter] to jump, add a trailing [/] to search inside children, [Esc] to Close"
+  },
+  "fastsearch.quick-move.title": {
+    "other": "Quick Move"
+  },
+  "fastsearch.quick-move.target-error": {
+    "other": "Cannot move to this target!"
+  },
+  "fastsearch.quick-move.legend": {
+    "other": "Hit [Enter] to move %s selected items to target, [Esc] to Close"
+  },
+  "fastsearch.quick-copy.title": {
+    "other": "Quick Copy"
+  },
+  "fastsearch.quick-copy.target-error": {
+    "other": "Cannot copy to this target!"
+  },
+  "fastsearch.quick-copy.legend": {
+    "other": "Hit [Enter] to copy %s selected items to target, [Esc] to Close"
+  },
+  "modalsearch.opentip.cmd": {
+    "other": "Tip: Use <kbd>⌘+k</kbd> to open this search dialog, <kbd>Esc</kbd> to close."
+  },
+  "modalsearch.opentip.ctrl": {
+    "other": "Tip: Use <kbd>Ctrl+k</kbd> to open this search dialog, <kbd>Esc</kbd> to close."
+  },
+  "search.chip.scope.folder": {
+    "other": "Folder"
+  },
+  "search.chip.scope.ws": {
+    "other": "Inside"
+  },
+  "search.chip.scope.all": {
+    "other": "All Workspaces"
+  },
+  "wslist-options.title": {
+    "other": "Display Options"
+  },
+  "wslist-options.show-masked": {
+    "other": "Show masked items"
+  },
+  "wslist.action.mask": {
+    "other": "Mask"
+  },
+  "wslist.action.unmask": {
+    "other": "Unmask"
+  },
+  "wslist-options.merge-workspaces": {
+    "other": "Merge workspaces and cells"
+  },
+  "wslist-options.own-cells-first": {
+    "other": "Cells created by me first"
+  },
+  "leftrail.buttons.home": {
+    "other": "Home"
+  },
+  "leftrail.buttons.directory": {
+    "other": "Directory"
+  },
+  "leftrail.buttons.all-files": {
+    "other": "All Files"
+  },
+  "leftrail.buttons.theme.light": {
+    "other": "Light Mode"
+  },
+  "leftrail.buttons.theme.dark": {
+    "other": "Dark Mode"
+  },
+  "task.status.Starting": {
+    "other": "Started {startTime}"
+  },
+  "task.status.Pending": {
+    "other": "Will start soon..."
+  },
+  "task.status.Complete": {
+    "other": "Task completed in {duration}"
+  },
+  "task.status.Finished": {
+    "other": "Task completed in {duration}"
+  },
+  "task.status.Error": {
+    "other": "An error happened!"
+  },
+  "bigppanel.filter.default-hint": {
+    "other": "Quick Find..."
+  },
+  "sorter.metas.more": {
+    "other": "More..."
+  },
+  "drag-layer.move.file": {
+    "other": "Move File"
+  },
+  "drag-layer.move.folder": {
+    "other": "Move Folder"
+  },
+  "drag-layer.move.plural": {
+    "other": "Move %s Items"
+  },
+  "drag-layer.copy.file": {
+    "other": "Copy File"
+  },
+  "drag-layer.copy.folder": {
+    "other": "Copy Folder"
+  },
+  "drag-layer.copy.plural": {
+    "other": "Copy %s Items"
+  },
+  "drag-layer.more": {
+    "other": "...and %s more."
+  },
+  "drag-layer.hint": {
+    "other": "Use [alt/option] key to copy"
+  }
+}

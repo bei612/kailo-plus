@@ -1,0 +1,682 @@
+syntax = "proto3";
+
+package tree;
+
+option go_package="github.com/pydio/cells/v5/common/proto/tree";
+
+import "cells-setter.proto";
+import "orm.proto";
+import "buf/validate/validate.proto";
+
+
+// ==========================================================
+// * Node Provider
+// ==========================================================
+service NodeProvider{
+    rpc ReadNode(ReadNodeRequest) returns (ReadNodeResponse) {};
+    rpc ListNodes(ListNodesRequest) returns (stream ListNodesResponse) {};
+}
+
+service NodeProviderStreamer{
+    rpc ReadNodeStream(stream ReadNodeRequest) returns (stream ReadNodeResponse) {};
+}
+
+service NodeChangesStreamer{
+    rpc StreamChanges(StreamChangesRequest) returns(stream NodeChangeEvent) {};
+}
+
+service NodeChangesReceiverStreamer {
+    rpc PostNodeChanges(stream NodeChangeEvent) returns (stream NodeChangeEvent) {};
+}
+
+// Request / Responses Messages
+message ReadNodeRequest {
+    // Input node
+    Node Node = 1 [(buf.validate.field).required = true];
+    // Used internally for the router ReadNode request, stat the datasource instead of index
+    bool ObjectStats = 4;
+    // Generic Details Flags
+    repeated uint32 StatFlags = 5;
+
+    // Get extended stats - For folders, computes ChildrenCount - Depreacted, use StatFlags instead
+    bool WithExtendedStats = 3;
+    // Gather commit information - This is Deprecated
+    bool WithCommits = 2;
+
+
+}
+
+message ReadNodeResponse {
+    bool Success = 1;
+    Node Node = 2;
+}
+
+message ListNodesRequest {
+    // Main node used as a parent
+    Node Node = 1 [(buf.validate.field).required = true];
+    // Send back all children of the node
+    bool Recursive = 2;
+    // Send back a list of parent nodes, until the root, including the original node
+    bool Ancestors = 3;
+    // Sends the list of versions for a given node
+    bool WithVersions = 7;
+    // Limit the number of results
+    int64 Limit = 4;
+    // Start listing at a given position
+    int64 Offset = 5;
+    // Filter by node type (LEAF / COLLECTION)
+    NodeType FilterType = 6;
+    // Generic Details Flags
+    repeated uint32 StatFlags = 9;
+
+    // Remote Sort on specific field
+    string SortField = 10;
+    // Sort descending (otherwise ascending)
+    bool SortDirDesc = 11;
+
+    // Sends the list of commits for a given node (Deprecated)
+    bool WithCommits = 8;
+}
+
+message ListNodesResponse {
+    Node Node = 1;
+}
+
+message WrappingStreamerResponse {
+    oneof Data {
+        ListNodesResponse ListNodesResponse = 1;
+        NodeChangeEvent NodeChangeEvent = 2;
+    }
+    string Error = 3;
+}
+
+// ==========================================================
+// * Node Receiver
+// ==========================================================
+service NodeReceiver{
+    rpc CreateNode(CreateNodeRequest) returns (CreateNodeResponse) {};
+    rpc UpdateNode(UpdateNodeRequest) returns (UpdateNodeResponse) {};
+    rpc DeleteNode(DeleteNodeRequest) returns (DeleteNodeResponse) {};
+}
+
+service NodeReceiverStream {
+    rpc CreateNodeStream (stream CreateNodeRequest) returns (stream CreateNodeResponse) {};
+    rpc UpdateNodeStream (stream UpdateNodeRequest) returns (stream UpdateNodeResponse) {};
+    rpc DeleteNodeStream (stream DeleteNodeRequest) returns (stream DeleteNodeResponse) {};
+}
+
+// Request / Responses Messages
+message CreateNodeRequest {
+    Node Node = 1 [(buf.validate.field).required = true];;
+    bool UpdateIfExists = 2;
+    string IndexationSession = 3;
+    bool Silent = 4;
+}
+
+message CreateNodeResponse {
+    bool Success = 1;
+    Node Node = 2;
+}
+
+message UpdateNodeRequest {
+    Node From = 1;
+    Node To = 2 [(buf.validate.field).required = true];
+    string IndexationSession = 3;
+    bool Silent = 4;
+}
+
+message UpdateNodeResponse {
+    bool Success = 1;
+    Node Node = 2;
+}
+
+message DeleteNodeRequest {
+    Node Node = 1 [(buf.validate.field).required = true];;
+    string IndexationSession = 2;
+    bool Silent = 3;
+}
+
+message DeleteNodeResponse {
+    bool Success = 1;
+}
+
+// ==========================================================
+// * Session Indexer
+// ==========================================================
+service SessionIndexer {
+    rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse) {};
+    rpc FlushSession(FlushSessionRequest) returns (FlushSessionResponse) {};
+    rpc CloseSession(CloseSessionRequest) returns (CloseSessionResponse) {};
+}
+
+message IndexationSession {
+    string Uuid = 1;
+    string Description = 2;
+    Node RootNode = 3;
+    int64 ExpectedOperationsCount = 4;
+    int64 CurrentOperationCount = 5;
+    bool Silent = 6;
+}
+
+message IndexationOperation{
+    string SessionUuid = 1;
+    string Description = 2;
+    int64 Cursor = 3;
+}
+
+message OpenSessionRequest{
+    IndexationSession Session = 1;
+}
+
+message OpenSessionResponse{
+    IndexationSession Session = 1;
+}
+
+message FlushSessionRequest{
+    IndexationSession Session = 1;
+}
+
+message FlushSessionResponse{
+    IndexationSession Session = 1;
+}
+
+message CloseSessionRequest{
+    IndexationSession Session = 1;
+}
+
+message CloseSessionResponse{
+    IndexationSession Session = 1;
+}
+
+// ==========================================================
+// * Node Events Provider
+// ==========================================================
+service NodeEventsProvider {
+    rpc WatchNode(WatchNodeRequest) returns (stream WatchNodeResponse){};
+}
+
+// Request / Responses Messages
+message WatchNodeRequest {
+    Node Node = 1;
+}
+
+message WatchNodeResponse {
+    Node Node = 1;
+}
+
+// ==========================================================
+// * Node Searcher
+// ==========================================================
+service Searcher{
+    rpc Search(SearchRequest) returns (stream SearchResponse){};
+}
+
+message SearchRequest{
+    // The query object
+    Query Query = 1;
+    // Limit the number of results
+    int32 Size = 2;
+    // Start at given position
+    int32 From = 3;
+    // Load node details
+    bool Details = 4;
+    // Generic Details Flags
+    repeated uint32 StatFlags = 5;
+    // Sort result using a specific field
+    string SortField = 6;
+    // Sort direction (asc by default)
+    bool SortDirDesc = 7;
+}
+
+message SearchFacet {
+    // Facet field name
+    string FieldName = 1;
+    // Segment Label
+    string Label = 2;
+    // Segment results count
+    int32 Count = 3;
+    // For string facets, term value
+    string Term = 4;
+    // For NumericRange facets, min/max values
+    int64 Min = 5;
+    int64 Max = 6;
+    // For DateRange facets, start/end values
+    int32 Start = 7;
+    int32 End = 8;
+}
+
+message SearchPagination {
+    // Total number of results
+    int64 TotalHits = 1;
+}
+
+message SearchResponse{
+     oneof Data {
+        Node Node = 1;
+        SearchFacet Facet = 2;
+        SearchPagination Pagination = 3;
+    }
+}
+
+// ==========================================================
+// * Node Content Reader
+// ==========================================================
+service NodeContentReader{
+    // Content Read / write will not go through gRPC
+}
+
+// ==========================================================
+// * Node Content Writer
+// ==========================================================
+service NodeContentWriter{
+    // Content Read / write will not go through gRPC
+}
+
+// ==========================================================
+// * Node Versions Provider
+// ==========================================================
+service NodeVersioner{
+    rpc CreateVersion(CreateVersionRequest) returns (CreateVersionResponse) {};
+    rpc StoreVersion(StoreVersionRequest) returns (StoreVersionResponse) {};
+    rpc ListVersions(ListVersionsRequest) returns (stream ListVersionsResponse) {};
+    rpc HeadVersion(HeadVersionRequest) returns (HeadVersionResponse) {};
+    rpc DeleteVersion(HeadVersionRequest) returns (DeleteVersionResponse) {};
+    rpc PruneVersions(PruneVersionsRequest) returns (PruneVersionsResponse) {};
+    rpc ListVersioningPolicies(ListVersioningPoliciesRequest) returns (stream VersioningPolicy) {};
+}
+
+message ListVersioningPoliciesRequest {
+    // Limit list to one specific policy
+    string PolicyID = 1;
+    // Limit the number of results
+    int64 Limit = 4;
+    // Start listing at a given position
+    int64 Offset = 5;
+}
+
+message CreateVersionRequest{
+    Node Node = 1;
+    string VersionUuid = 2;
+    string OwnerName = 3;
+    string OwnerUuid = 4;
+    bool Draft = 5;
+    NodeChangeEvent TriggerEvent = 6;
+}
+
+message CreateVersionResponse{
+    ContentRevision Version = 1;
+    bool Ignored = 2;
+}
+
+message ListVersionsRequest{
+    Node Node = 1 [(buf.validate.field).required = true];
+    // Limit the number of results
+    int64 Limit = 2;
+    // Start listing at a given position
+    int64 Offset = 3;
+    // Sort by specific fields
+    string SortField = 4;
+    // Sort descending
+    bool SortDesc = 5;
+    // Filters by key => jsonEncoded value
+    map<string,string>Filters = 6;
+}
+
+message ListVersionsResponse{
+    ContentRevision Version = 1;
+}
+
+message HeadVersionRequest{
+    string NodeUuid = 1;
+    string VersionId = 2;
+}
+
+message HeadVersionResponse{
+    ContentRevision Version = 1;
+}
+
+message DeleteVersionResponse{
+    ContentRevision DeletedVersion = 1;
+    bool Success = 2;
+    string NewHead = 3;
+}
+
+message StoreVersionRequest{
+    Node Node = 1;
+    ContentRevision Version = 2;
+}
+
+message StoreVersionResponse{
+    bool Success = 1;
+    ContentRevision Version = 3;
+    repeated ContentRevision PruneVersions = 2;
+}
+
+message PruneVersionsRequest{
+    Node UniqueNode = 1;
+    bool AllDeletedNodes = 2;
+}
+
+message PruneVersionsResponse{
+    repeated ContentRevision DeletedVersions = 1;
+}
+
+enum VersioningNodeDeletedStrategy {
+    KeepAll = 0;
+    KeepLast = 1;
+    KeepNone = 2;
+}
+
+message VersioningPolicy {
+    string Uuid = 1;
+    string Name = 2;
+    string Description = 3;
+    string VersionsDataSourceName = 4;
+    string VersionsDataSourceBucket = 5;
+
+    int64 MaxTotalSize = 6;
+    int64 MaxSizePerFile = 7;
+    int64 IgnoreFilesGreaterThan = 8;
+
+    repeated VersioningKeepPeriod KeepPeriods = 9;
+    VersioningNodeDeletedStrategy NodeDeletedStrategy = 10;
+}
+
+message VersioningKeepPeriod {
+    string IntervalStart = 1;
+    int32 MaxNumber = 3;
+}
+
+// ==========================================================
+// * Standard Messages
+// ==========================================================
+enum NodeType {
+    UNKNOWN = 0;
+    LEAF = 1;
+    COLLECTION = 2;
+}
+
+message TreeNode {
+    option (setter.all_fields) = true;
+    option (orm.ormPolicy).enabled = true;
+
+    Node Node    = 1 [(orm.orm).gorm = {embedded: true}];
+    string Name  = 2 [(orm.orm).gorm = {column:"name"; index: ",composite:name,length:128"; type: "VARCHAR(255)"; notNull: true;}];
+    int64 Level  = 3 [(orm.orm).gorm = {column:"level"; index: ",composite:level"; type: "SMALLINT"; notNull: true}];
+    MPath MPath  = 4 [(orm.orm).gorm = {embedded: true}];
+    string Hash  = 5 [(orm.orm).gorm = {column:"hash"; unique: true; type: "VARCHAR(40)"; notNull: true}];
+    string Hash2 = 6 [(orm.orm).gorm = {column:"hash2"; unique: true; type: "VARCHAR(50)"; notNull: true}];
+}
+
+message MPath {
+    option (setter.all_fields) = true;
+    option (orm.ormPolicy).enabled = true;
+
+    string MPath1 = 1 [(orm.orm).gorm = {column:"mpath1"; index: ",composite:mp1"; type:"varchar(255)"; notNull: true}];
+    string MPath2 = 2 [(orm.orm).gorm = {column:"mpath2"; index: ",composite:mp2"; type:"varchar(255)"; notNull: true}];
+    string MPath3 = 3 [(orm.orm).gorm = {column:"mpath3"; index: ",composite:mp3"; type:"varchar(255)"; notNull: true}];
+    string MPath4 = 4 [(orm.orm).gorm = {column:"mpath4"; index: ",composite:mp4"; type:"varchar(255)"; notNull: true}];
+}
+
+message Node{
+    option (setter.all_fields) = true;
+    option (orm.ormPolicy).enabled = true;
+
+    // ------------------------------------
+    // Core identification of the node
+    // ------------------------------------
+    string Uuid = 1     [(orm.orm).gorm = {column: "uuid"; primaryKey: true; type: "VARCHAR(128)"}];
+    string Path = 2;
+    NodeType Type = 3   [(orm.orm).gorm = {column: "leaf"; type: "TINYINT(1)"; notNull: true; default: "0"}];
+
+    // Size of the file, or cumulated size of folder
+    int64 Size = 4      [(orm.orm).gorm = {column: "size"; type:"BIGINT"; notNull: true; default: "0"}];
+
+    // Last modification Timestamp
+    int64 MTime = 5     [(orm.orm).gorm = {column: "mtime"; type: "INT"}];
+
+    // Permission mode, like 0777. Stored as string using custom ModeString field.
+    int32 Mode = 6;
+    // String representation of Mode
+    string ModeString = 11      [(orm.orm).gorm = {column: "mode"; type: "VARCHAR(10)"; notNull: true;}];
+    // Hash of the content if node is a LEAF, Uuid or
+    string Etag = 7     [(orm.orm).gorm = {column: "etag"; type: "VARCHAR(255)"; notNull: true;}];
+    // Deprecated - List of successive commits
+    repeated ChangeLog Commits = 9 [deprecated=true];
+
+    // ------------------------------------
+    // Then a free K => V representation of any kind of metadata
+    // ------------------------------------
+    map <string, string> MetaStore = 8;
+
+    // Can be used for output when node is appearing in multiple workspaces
+    repeated WorkspaceRelativePath AppearsIn = 10;
+}
+
+// Used in AppearsIn to signal a node is
+// appearing in multiple workspaces in the current context
+message WorkspaceRelativePath {
+    // Workspace Id
+    string WsUuid = 1;
+    // Workspace Label
+    string WsLabel = 2;
+    // Relative Path inside workspace
+    string Path = 3;
+    // Workspace slug
+    string WsSlug = 4;
+    // Workspace Scope
+    string WsScope = 5;
+}
+
+// Deprecated - Use ContentRevision instead
+message ChangeLog{
+    // Unique commit ID
+    string Uuid = 1;
+    // Human-readable description of what happened
+    string Description = 2;
+    // Unix Timestamp
+    int64 MTime = 3;
+    // Content Size at that moment
+    int64 Size = 4;
+    // Arbitrary additional data
+    bytes Data = 5;
+    // Who performed this action
+    string OwnerUuid = 6;
+    // Event that triggered this change
+    NodeChangeEvent Event = 7;
+    // Actual location of the stored version
+    Node Location = 8;
+}
+
+// ContentRevision is a unique version for the content of a node
+message ContentRevision {
+    // Unique commit ID
+    string VersionId = 1;
+    // Human-readable description of what happened
+    string Description = 2;
+    // This revision is not published
+    bool Draft = 3;
+    // This revision is actually the current HEAD
+    bool IsHead = 4;
+    // Unix Timestamp
+    int64 MTime = 5;
+    // Content Size at that moment
+    int64 Size = 6;
+    // Storage ETag
+    string ETag = 7;
+    // Internal Contents Hash
+    string ContentHash = 8;
+    // Who performed this action - name
+    string OwnerName = 9;
+    // Who performed this action - uuid
+    string OwnerUuid = 10;
+    // Event that triggered this change
+    NodeChangeEvent Event = 11;
+    // Actual location of the stored version
+    Node Location = 12;
+}
+
+// Search Queries
+message Query {
+    // List of nodes paths, exactly matching
+    repeated string Paths = 13;
+    // Recursive listing of nodes below a given path. Combine with the PathDepth parameter to limit request results
+    repeated string PathPrefix = 1;
+    // Nodes below these paths will be excluded from results
+    repeated string ExcludedPathPrefix = 19;
+    // Range for file size - size bigger than
+    int64 MinSize = 2;
+    // Range for file size - size is smaller than
+    int64 MaxSize = 3;
+    // Range for modification date - node was modified after this date
+    int64 MinDate = 4;
+    // Range for modification date - node was modified before this date
+    int64 MaxDate = 5;
+    // Compute MinDate/MaxDate with a Golang duration with a leading comparator (> or <)
+    // Duration may contain "s" second, "m" minute, "d" day.
+    // Example: ">10m" for files modified before 10minutes ago
+    string DurationDate = 16;
+    // Limit to a given node type (file or folder)
+    NodeType Type = 6;
+    // Lookup by file basename
+    string FileName = 7;
+    // Search in textual content (if search engine has this feature enabled)
+    string Content = 8;
+    // Search in either filename or content (if search engine has this feature enabled)
+    string FileNameOrContent = 17;
+    // Bleve-like search query to search for a specific metadata value.
+    // When querying nodes, this will redirect this query to the Search Engine. When filtering an input, this will load an in-memory bleve engine to evaluate the node.
+    //
+    // Bleve query string format is a space separated list of `[+-]key:value`, where node meta keys must be prepended with "Meta."
+    // For Example, for tags: `+Meta.usermeta-tags:myvalue`
+    string FreeString = 9;
+    // Look for a specific ETag value, may only be useful to lookup for files with __temporary__ ETag
+    string ETag = 18;
+    // Search files by their extension, use pipe symbol | if you wish to allow many extensions.
+    // Example png|pdf|jpg
+    string Extension = 10;
+    // Search geographically
+    GeoQuery GeoQuery = 11;
+    // Restrict recursive listing to a given level of the tree starting from root.
+    // Special value "-1" should list only one level in the folder defined by PathPrefix
+    int32 PathDepth = 12;
+    // Preset list of specific node defined by their UUIDs
+    repeated string UUIDs = 15;
+    // Negate this query
+    bool Not = 14;
+}
+
+message GeoQuery {
+    // Either use a center point and a distance
+    GeoPoint Center = 1;
+    // Example formats supported:
+    // "5in" "5inch" "7yd" "7yards" "9ft" "9feet" "11km" "11kilometers"
+    // "3nm" "3nauticalmiles" "13mm" "13millimeters" "15cm" "15centimeters"
+    // "17mi" "17miles" "19m" "19meters"
+    // If the unit cannot be determined, the entire string is parsed and the
+    // unit of meters is assumed.
+    string Distance = 2;
+
+    // Or use a bounding box with TopLeft and BottomRight points
+    GeoPoint TopLeft = 3;
+    GeoPoint BottomRight = 4;
+}
+
+message GeoPoint {
+    double Lat = 1;
+    double Lon = 2;
+}
+
+message StreamChangesRequest{
+    string RootPath = 1;
+}
+
+message NodeChangeEvent{
+    enum EventType {
+        CREATE = 0;
+        READ = 1;
+        UPDATE_PATH = 2;
+        UPDATE_CONTENT = 3;
+        UPDATE_META = 4;
+        UPDATE_USER_META = 6;
+        DELETE = 5;
+    }
+    EventType Type = 1;
+    Node Source = 2;
+    Node Target = 3;
+    map<string,string> Metadata = 6;
+    bool Silent = 4;
+    bool Optimistic = 5;
+}
+
+message IndexEvent {
+    bool ErrorDetected = 1;
+    string DataSourceName = 2;
+    string ErrorPath = 3;
+
+    string SessionForceClose = 4;
+}
+
+
+// ==========================================================
+// * Node FileKeyManager
+// ==========================================================
+service FileKeyManager{
+    rpc GetEncryptionKey(GetEncryptionKeyRequest) returns (GetEncryptionKeyResponse) {};
+}
+
+message GetEncryptionKeyRequest{
+    string User     = 1;
+    string Password = 2;
+    tree.Node Node  = 3;
+    bool Create     = 5;
+}
+
+message GetEncryptionKeyResponse{
+    bytes Key     = 1;
+}
+
+// ==========================================================
+// * Changes Service
+// ==========================================================
+
+service SyncChanges {
+    rpc Put(stream SyncChange) returns (PutSyncChangeResponse) {}
+    rpc Search(SearchSyncChangeRequest) returns (stream SyncChange) {}
+}
+
+message SyncChange {
+    uint64 seq = 1;
+    string nodeId = 2 [json_name="node_id"];
+    enum Type {
+        unknown = 0;
+        create = 1;
+        delete = 2;
+        path = 3;
+        content = 4;
+    }
+    Type type = 3;
+    string source = 4;
+    string target = 5;
+    SyncChangeNode node = 6;
+}
+
+message SyncChangeNode {
+    int64 bytesize = 1;
+    string md5 = 2;
+    int64 mtime = 3;
+    string nodePath = 4 [json_name="node_path"];
+    string repositoryIdentifier = 5 [json_name="repository_identifier"];
+}
+
+message PutSyncChangeResponse {
+    bool success = 1;
+    string msg = 2;
+}
+
+message SearchSyncChangeRequest {
+    uint64 seq = 1;
+    bool flatten = 2;
+    string prefix = 3;
+    bool lastSeqOnly = 4;
+}

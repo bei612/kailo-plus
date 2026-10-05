@@ -1,0 +1,68 @@
+{
+  "1": {
+    "other": "Remote DL"
+  },
+  "10": {
+    "other": "Download lên APPLICATION_TITLE"
+  },
+  "10a": {
+    "other": "Tải xuống %s"
+  },
+  "10b": {
+    "other": "DL to %s"
+  },
+  "10c": {
+    "other": "DL to %s"
+  },
+  "10d": {
+    "other": "AjXp Download (%s)"
+  },
+  "11": {
+    "other": "Kéo một trong các liên kết sau vào thanh dấu trang của bạn: "
+  },
+  "12": {
+    "other": "Kích hoạt tải tập tin từ đường link"
+  },
+  "13": {
+    "other": "Từ máy tính"
+  },
+  "14": {
+    "other": "Từ máy chủ từ khác"
+  },
+  "15": {
+    "other": "Hoặc tạo dấu trang theo cách thủ công và sử dụng mã bên dưới làm url liên kết: "
+  },
+  "16": {
+    "other": "Kéo tôi đến thanh dấu trang của bạn!"
+  },
+  "17": {
+    "other": "Tải tệp xuống"
+  },
+  "18": {
+    "other": "Một phần tập tin"
+  },
+  "2": {
+    "other": "Tải files từ máy chủ khác"
+  },
+  "3": {
+    "other": "m"
+  },
+  "4": {
+    "other": "Nhập ít nhất 1 đường link để download về thư mục hiện tại. Nó sẽ tự động kích hoạt và bạn có thể làm công việc khác trên APPLICATION_TITLE."
+  },
+  "5": {
+    "other": "URL"
+  },
+  "6": {
+    "other": "Đang tải xuống"
+  },
+  "7": {
+    "other": "đến máy chủ"
+  },
+  "8": {
+    "other": "Tập tin đã download xong, refresh trình duyệt!"
+  },
+  "9": {
+    "other": "Tạo Bookmarklet"
+  }
+}

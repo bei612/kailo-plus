@@ -1,0 +1,73 @@
+name: ${CELLS_COMPOSE_PROJECT:?explicit independent project required}
+
+services:
+  cells-db:
+    # Same fixed PostgreSQL artifact as deploy/local; separate instance and credentials.
+    image: postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    restart: unless-stopped
+    cpus: ${CELLS_DB_CPUS:?required}
+    mem_limit: ${CELLS_DB_MEMORY:?required}
+    memswap_limit: ${CELLS_DB_MEMORY:?required}
+    networks: [cells-data]
+    command: [postgres, -p, "${CELLS_DB_PORT:?required}"]
+    environment:
+      POSTGRES_DB: ${CELLS_DB_NAME:?required}
+      POSTGRES_USER: ${CELLS_DB_USER:?required}
+      POSTGRES_PASSWORD_FILE: /run/secrets/cells_db_password
+    secrets: [cells_db_password]
+    volumes:
+      - type: bind
+        source: ${CELLS_DB_DATA_DIR:?required}
+        target: /var/lib/postgresql/data
+        bind: {create_host_path: false}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -p ${CELLS_DB_PORT:?required} -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: ${CELLS_HEALTH_INTERVAL:?required}
+      timeout: ${CELLS_HEALTH_TIMEOUT:?required}
+      retries: ${CELLS_HEALTH_RETRIES:?required}
+
+  cells:
+    # Only the recorded native fork artifact, not an unadapted upstream image.
+    image: ${CELLS_IMAGE:?recorded native fork image digest required}
+    restart: unless-stopped
+    cpus: ${CELLS_CPUS:?required}
+    mem_limit: ${CELLS_MEMORY:?required}
+    memswap_limit: ${CELLS_MEMORY:?required}
+    networks: [cells-data, cells-ui]
+    depends_on:
+      cells-db: {condition: service_healthy}
+    environment:
+      CELLS_WORKING_DIR: /var/cells
+      CELLS_INSTALL_JSON: /run/secrets/cells_install
+      CELLS_BIND: ${CELLS_BIND:?required}
+      CELLS_EXTERNAL: ${CELLS_EXTERNAL:?required}
+      CELLS_NO_TLS: ${CELLS_NO_TLS:?explicit native TLS choice required}
+      CELLS_HEALTH_URL: ${CELLS_HEALTH_URL:?required}
+    secrets: [cells_install]
+    volumes:
+      - type: bind
+        source: ${CELLS_DATA_DIR:?required}
+        target: /var/cells
+        bind: {create_host_path: false}
+    ports:
+      - target: ${CELLS_CONTAINER_PORT:?required}
+        published: "${CELLS_PUBLIC_PORT:?required}"
+        host_ip: ${CELLS_PUBLIC_ADDRESS:?required}
+        protocol: tcp
+    # No --no-check-certificate: HTTPS readiness uses the native trusted chain.
+    healthcheck:
+      test: [CMD-SHELL, 'wget -qO- "$${CELLS_HEALTH_URL}" >/dev/null']
+      interval: ${CELLS_HEALTH_INTERVAL:?required}
+      timeout: ${CELLS_HEALTH_TIMEOUT:?required}
+      retries: ${CELLS_HEALTH_RETRIES:?required}
+      start_period: ${CELLS_HEALTH_START_PERIOD:?required}
+
+secrets:
+  cells_install:
+    file: ${CELLS_INSTALL_FILE:?existing controlled native install JSON required}
+  cells_db_password:
+    file: ${CELLS_DB_PASSWORD_FILE:?existing controlled password file required}
+
+networks:
+  cells-data: {internal: true}
+  cells-ui: {}

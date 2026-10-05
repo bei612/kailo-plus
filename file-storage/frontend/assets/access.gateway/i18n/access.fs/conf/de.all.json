@@ -1,0 +1,35 @@
+{
+  "Path": {
+    "other": "Pfad"
+  },
+  "Default download format": {
+    "other": "Standard-Download-Format"
+  },
+  "When downloading a folder or a multiple selection, automatically create an archive using this format": {
+    "other": "Erstellen Sie beim Herunterladen eines Ordners oder einer Mehrfachauswahl automatisch ein Archiv in diesem Format"
+  },
+  "Path to the folder on the server": {
+    "other": "Pfad zum Ordner auf dem Server"
+  },
+  "Gateway": {
+    "other": "Gateway"
+  },
+  "Pydio S3 Gateway": {
+    "other": "Pydio S3 Gateway"
+  },
+  "Absolute path to one or more root nodes": {
+    "other": "Absoluter Pfad zu einem oder mehreren Wurzelknoten"
+  },
+  "#Items per page": {
+    "other": "Einträge pro Seite"
+  },
+  "Once in pagination mode, number of items to display per page.": {
+    "other": "Wenn der Ordner mehrseitig angezeigt wird kann hier angegeben werden, wie viele Elemente sich auf einer Seite befinden."
+  },
+  "Delete Permanently": {
+    "other": "Endgültig löschen"
+  },
+  "Enable option to skip recycle bin on deletion": {
+    "other": "Option aktivieren, um den Papierkorb beim Löschen zu überspringen"
+  }
+}

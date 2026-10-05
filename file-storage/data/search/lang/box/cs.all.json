@@ -1,0 +1,32 @@
+{
+  "Search.Config.IndexContent.Label": {
+    "other": "Vytvářet rejstřík obsahu"
+  },
+  "Search.Config.IndexContent.Description": {
+    "other": "Pokud je nastaveno na hodnotu true, nástroj pro vytváření rejstříků bude hledat metadata ContentRef a číst obsah z tohoto odkazu a vytvářet z něj rejstřík pro vyhledávání."
+  },
+  "Search.Config.ContentRef.Label": {
+    "other": "Content Reference Metadata"
+  },
+  "Search.Config.ContentRef.Description": {
+    "other": "Name of the metadata pointing to the internal file that contains textual representation of the original document. Such internal contents may be plain-text or gzip-encoded, depending on the text extraction tool used (e.g. Tika). The search engine typically indexes this content to enable full-text search. Make sure to prefix the metadata name with 'pydio:' to prevent data leakage."
+  },
+  "Search.Config.PlainTextExtensions.Label": {
+    "other": "Plain Text Extensions"
+  },
+  "Search.Config.PlainTextExtensions.Description": {
+    "other": "List of extensions for files containing directly indexable plain-text contents (comma-separated-list)."
+  },
+  "Search.Config.BasenameAnalyze.Label": {
+    "other": "Analyzátor názvů souborů"
+  },
+  "Search.Config.BasenameAnalyze.Description": {
+    "other": "Analyzátor použitý na názvech souborů"
+  },
+  "Search.Config.ContentAnalyzer.Label": {
+    "other": "Analyzátor obsahu"
+  },
+  "Search.Config.ContentAnalyzer.Description": {
+    "other": "Analyzátor použitý na obsah"
+  }
+}

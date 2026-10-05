@@ -1,0 +1,32 @@
+{
+  "Search.Config.IndexContent.Label": {
+    "other": "Indicizza Contenuto"
+  },
+  "Search.Config.IndexContent.Description": {
+    "other": "Se impostato su VERO, l'indicizzatore cercherà i metadati ContentRef, leggerà i contenuti da questo riferimento e indicizzerà la ricerca."
+  },
+  "Search.Config.ContentRef.Label": {
+    "other": "Metadati Di Riferimento Contenuto"
+  },
+  "Search.Config.ContentRef.Description": {
+    "other": "Nome dei metadati che puntano al file interno che contiene la rappresentazione testuale del documento originale. Tali contenuti interni possono essere in chiaro testo o gzip-encoded, a seconda dello strumento di estrazione del testo utilizzato (es. Tika). Il motore di ricerca indicizza tipicamente questo contenuto per abilitare la ricerca full-text. Assicurati di prefissare il nome dei metadati con 'pydio:' per evitare perdite di dati."
+  },
+  "Search.Config.PlainTextExtensions.Label": {
+    "other": "Estensioni Testo Semplice"
+  },
+  "Search.Config.PlainTextExtensions.Description": {
+    "other": "Elenco delle estensioni per i file contenenti contenuti di testo semplice direttamente indicizzabili (lista separata da virgola)."
+  },
+  "Search.Config.BasenameAnalyze.Label": {
+    "other": "Analizzatore Nome del File"
+  },
+  "Search.Config.BasenameAnalyze.Description": {
+    "other": "Analizzatore utilizzato sui nomi dei file"
+  },
+  "Search.Config.ContentAnalyzer.Label": {
+    "other": "Analizzatore dei Contenuti"
+  },
+  "Search.Config.ContentAnalyzer.Description": {
+    "other": "Analizzatore usato sui contenuti"
+  }
+}

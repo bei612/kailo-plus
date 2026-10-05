@@ -1,0 +1,89 @@
+{
+  "AccessedBy": {
+    "other": "تم الوصول إليها بواسطة {{.Actor}}"
+  },
+  "AccessedObject": {
+    "other": "تم الوصول إليها بواسطة {{.Object}}"
+  },
+  "AccessedObjectBy": {
+    "other": "تم الوصول إلى {{.Object}} بواسطة {{.Actor}}"
+  },
+  "Cell": {
+    "other": "خلية"
+  },
+  "CreatedBy": {
+    "other": "تم إنشاؤها بواسطة {{.Actor}}"
+  },
+  "CreatedObject": {
+    "other": "تم إنشاء {{.Object}}"
+  },
+  "CreatedObjectBy": {
+    "other": "{{.Object}} تم إنشاؤه بواسطة {{.Actor}}"
+  },
+  "DeletedBy": {
+    "other": "تم الحذف بواسطة {{.Actor}}"
+  },
+  "DeletedObject": {
+    "other": "حذف {{.Object}}"
+  },
+  "DeletedObjectBy": {
+    "other": "{{.Object}} تم حذفه بواسطة {{.Actor}}"
+  },
+  "SharedWs": {
+    "other": "مشاركة في {{.Object}}"
+  },
+  "SharedWsWithYou": {
+    "other": "{{.Actor}} شارك {{.Object}} معك"
+  },
+  "DigestTitle": {
+    "other": "هذه هي خلاصة Pydio اليومية"
+  },
+  "Document": {
+    "other": "المستند"
+  },
+  "Folder": {
+    "other": "المجلد"
+  },
+  "ModifiedBy": {
+    "other": "تم تعديله بواسطة {{.Actor}}"
+  },
+  "ModifiedObject": {
+    "other": "تم تعديل {{.Object}}"
+  },
+  "ModifiedObjectBy": {
+    "other": "{{.Object}} تم تعديله بواسطة {{.Actor}}"
+  },
+  "MetaModifiedBy": {
+    "other": "تم تعديل البيانات الوصفية بواسطة {{.Actor}}"
+  },
+  "MetaModifiedObject": {
+    "other": "البيانات الوصفية المعدلة في {{.Object}}"
+  },
+  "MetaModifiedObjectBy": {
+    "other": "{{.Actor}} تم تعديل بيانات التعريف على {{.Object}}"
+  },
+  "CommentedBy": {
+    "other": "تم التعليق من قبل {{.Actor}}"
+  },
+  "CommentedObject": {
+    "other": "تم التعليق على {{.Object}}"
+  },
+  "CommentedObjectBy": {
+    "other": "نشر {{.Actor}} تعليق جديد على {{.Object}}"
+  },
+  "MovedBy": {
+    "other": "تم نقلها بواسطة {{.Actor}}"
+  },
+  "MovedObject": {
+    "other": "تم نقل {{.Object}}"
+  },
+  "MovedObjectBy": {
+    "other": "تم نقل {{.Object}} بواسطة {{.Actor}}"
+  },
+  "Workspace": {
+    "other": "مساحة عمل"
+  },
+  "DateFormat": {
+    "other": "2006-01-02 15:04"
+  }
+}

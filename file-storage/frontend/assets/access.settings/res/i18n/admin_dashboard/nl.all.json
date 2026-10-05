@@ -1,0 +1,134 @@
+{
+  "cont.btn.fb": {
+    "other": "Volg ons"
+  },
+  "cont.btn.github": {
+    "other": "GitHub Stars"
+  },
+  "cont.btn.tw": {
+    "other": "Twitter"
+  },
+  "cont.intro": {
+    "other": "Code is openbaar beschikbaar op Github. Wilt u een bug repareren, anderen helpen in het forum of de volgende  functie pushen? Werk mee!\n                            Of laat je liefde zien op sociale netwerken!"
+  },
+  "cont.subtitle": {
+    "other": "Pydio Cells is gratis open source software. Help mee te ontwikkelen!"
+  },
+  "cont.title": {
+    "other": "Pay it forward!"
+  },
+  "cont.topic.pr": {
+    "other": "Ik heb een nieuwe functie geïmplementeerd: github Pull Requests"
+  },
+  "cont.topic.report": {
+    "other": "Ik denk dat ik een bug heb gevonden! Post op het forum."
+  },
+  "cont.topic.report.2": {
+    "other": "Mijn bug is gekwalificeerd: open een github probleem."
+  },
+  "cont.topic.translate": {
+    "other": "Hoe maak of voltooi je een vertaling?"
+  },
+  "ent.advanced": {
+    "other": "Dashboard Beheerder"
+  },
+  "ent.advanced.legend": {
+    "other": "Unieke admin dashboard voor real-time monitoring van het platformgebruik."
+  },
+  "ent.btn.contact": {
+    "other": "Contact met Verkoop"
+  },
+  "ent.btn.more": {
+    "other": "Meer informatie"
+  },
+  "ent.features": {
+    "other": "Enterprise-georiënteerde functies"
+  },
+  "ent.features.legend": {
+    "other": "Enterprise-ready features : AD/LDAP Connectors, Auditable Logs for compliance, EasyTransfer..."
+  },
+  "ent.subtitle": {
+    "other": "MORE FEATURES - GDPR COMPLIANCE - EXTENDED BRANDING"
+  },
+  "ent.support": {
+    "other": "Support and Maintenance"
+  },
+  "ent.support.legend": {
+    "other": "Get help with your installation directly from the core team"
+  },
+  "ent.title": {
+    "other": "Discover Pydio Cells Enterprise"
+  },
+  "ent.upgrade": {
+    "other": "Upgrade now!"
+  },
+  "ent.upgrade.legend": {
+    "other": "In-app upgrade Cells Enterprise (license required)"
+  },
+  "welc.btn.advanced": {
+    "other": "Advanced"
+  },
+  "welc.btn.parameters": {
+    "other": "About Parameters"
+  },
+  "welc.btn.start": {
+    "other": "Aan de slag"
+  },
+  "welc.btn.users": {
+    "other": "Gebruiker"
+  },
+  "welc.btn.ws": {
+    "other": "Werkruimte"
+  },
+  "welc.guide": {
+    "other": "Als u niet weet waar u moet beginnen, is de Administrator-gids zeker een goed begin!"
+  },
+  "welc.intro": {
+    "other": "Dit is je dashboard voor het beheer van Pydio. Met behulp van het linkermenu kunt u <a class=\"doc-link\" data-path=\"/data/workspaces\">werkruimtes</a> en <a class=\"doc-link\" data-path=\"/idm/users\">gebruikers</a>maken,,\n                            controleer alle <a class=\"doc-link\" data-path=\"/admin/logs\">gebeurtenissen</a> wat gebeurd is op het platform, en beheer <a class=\"doc-link\" data-path=\"/parameters/core\">configuraties</a> en <a class=\"doc-link\" data-path=\"/plugins/manager\">plugins</a>."
+  },
+  "welc.import": {
+    "other": "If you are currently running a Pydio 8 installation, please be aware that <u>Pydio 8 will be considered End-Of-Life at the end of 2019</u>. You can use the <a class=\"doc-link\" data-path=\"/data/migration\">Import Tool</a> to migrate all data to Pydio Cells."
+  },
+  "welc.subtitle": {
+    "other": "De plaats om de activiteit op uw platform te beheren en te volgen"
+  },
+  "welc.title": {
+    "other": "Welcome to Pydio Cells v4"
+  },
+  "welc.title.5": {
+    "other": "Welcome to Pydio Cells v5"
+  },
+  "card.quick-access": {
+    "other": "Quick Access"
+  },
+  "card.quick-access.add": {
+    "other": "Add a shortcut ..."
+  },
+  "card.update.current": {
+    "other": "Software Version"
+  },
+  "card.update.no-updates": {
+    "other": "Software is up-to-date"
+  },
+  "card.update.new-version": {
+    "other": "A new version is available"
+  },
+  "recentLogs.title": {
+    "other": "Last Events"
+  },
+  "recentLogs.errors": {
+    "other": "Errors"
+  },
+  "recentLogs.emptyState": {
+    "other": "No activity found"
+  },
+  "recentLogs.more": {
+    "other": "All Activities"
+  },
+  "graph.files": {
+    "other": "Files Activity"
+  },
+  "graph.connections": {
+    "other": "Web Connections"
+  }
+}

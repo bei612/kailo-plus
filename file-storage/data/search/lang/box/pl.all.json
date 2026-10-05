@@ -1,0 +1,32 @@
+{
+  "Search.Config.IndexContent.Label": {
+    "other": "Indeksuj Zawartość"
+  },
+  "Search.Config.IndexContent.Description": {
+    "other": "Jeśli ustawione na \"true\", indeksator będzie szukał metadanych ContentRef, odczytywał zawartość z tego odwołania i indeksował ją do wyszukiwania."
+  },
+  "Search.Config.ContentRef.Label": {
+    "other": "Metadane Odwołania do Zawartości"
+  },
+  "Search.Config.ContentRef.Description": {
+    "other": "Nazwa metadanych wskazujących na wewnętrzny plik zawierający tekstową reprezentację oryginalnego dokumentu. Taka wewnętrzna zawartość może być w formacie zwykłego tekstu lub zakodowana przy użyciu gzip, w zależności od użytego narzędzia do ekstrakcji tekstu (np. Tika). Wyszukiwarka zazwyczaj indeksuje tę zawartość, aby umożliwić pełnotekstowe wyszukiwanie. Upewnij się, że poprzedzasz nazwę metadanych prefiksem 'pydio:', aby zapobiec wyciekowi danych."
+  },
+  "Search.Config.PlainTextExtensions.Label": {
+    "other": "Rozszerzenia Pliku Zwykłego Tekstu"
+  },
+  "Search.Config.PlainTextExtensions.Description": {
+    "other": "Lista rozszerzeń dla plików zawierających bezpośrednio indeksowalną zawartość w formacie zwykłego tekstu (oddzielone przecinkami)."
+  },
+  "Search.Config.BasenameAnalyze.Label": {
+    "other": "Analizator Nazwy Pliku"
+  },
+  "Search.Config.BasenameAnalyze.Description": {
+    "other": "Analizator używany do nazw plików"
+  },
+  "Search.Config.ContentAnalyzer.Label": {
+    "other": "Analizator Zawartości"
+  },
+  "Search.Config.ContentAnalyzer.Description": {
+    "other": "Analizator używany do zawartości"
+  }
+}

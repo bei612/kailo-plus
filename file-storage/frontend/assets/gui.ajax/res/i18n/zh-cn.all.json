@@ -1,0 +1,407 @@
+{
+  "tour.create-menu": {
+    "other": "开始添加新文件或文件夹到当前工作区。"
+  },
+  "tour.create-menu.title": {
+    "other": "添加文件"
+  },
+  "tour.display-bar": {
+    "other": "此工具栏允许您更改显示方式：根据您的用法，切换到缩略图或详细模式，并按名称、日期……等方式分类文件。"
+  },
+  "tour.display-bar.title": {
+    "other": "显示选项"
+  },
+  "tour.globsearch.1": {
+    "other": "使用此搜索表单可以查找任何工作区和单元格中的文件或文件夹。 仅显示前 5 个结果，输入工作区即可获取更多结果和更多搜索选项。"
+  },
+  "tour.globsearch.2": {
+    "other": "当没有输入搜索内容时，将会使用您最近访问过的文件和文件夹的历史来显示。"
+  },
+  "tour.globsearch.title": {
+    "other": "全局搜索"
+  },
+  "tour.infopanel.1": {
+    "other": "在这里，您可以找到许多关于当前所选的信息：文件信息，共享状态，用户定义的元数据等。"
+  },
+  "tour.infopanel.2": {
+    "other": "您可以使用显示工具栏中的信息按钮关闭此面板"
+  },
+  "tour.infopanel.file": {
+    "other": "文件"
+  },
+  "tour.infopanel.folder": {
+    "other": "文件夹"
+  },
+  "tour.infopanel.search": {
+    "other": "搜索​​​​"
+  },
+  "tour.infopanel.title": {
+    "other": "信息面板"
+  },
+  "tour.locale.back": {
+    "other": "后退"
+  },
+  "tour.locale.close": {
+    "other": "关闭"
+  },
+  "tour.locale.last": {
+    "other": "完成"
+  },
+  "tour.locale.next": {
+    "other": "下一步"
+  },
+  "tour.locale.skip": {
+    "other": "跳过"
+  },
+  "tour.openworkspace": {
+    "other": "首次连接时，您的历史可能是空的。输入一个工作区或资料库来开始添加文件。"
+  },
+  "tour.openworkspace.title": {
+    "other": "打开工作区"
+  },
+  "tour.uwidget.addressbook": {
+    "other": "所有访问平台的用户目录。 创建自己的用户，并组建可用于共享资源的团队"
+  },
+  "tour.uwidget.alerts": {
+    "other": "当与您共享某些资源的用户访问该资源时，警报面板会通知您。 它们可以通过电子邮件直接发送给您。"
+  },
+  "tour.uwidget.home": {
+    "other": "使用此按钮返回欢迎面板"
+  },
+  "tour.uwidget.menu": {
+    "other": "访问其他选项：管理您的个人资料和安全功能，浏览您共享的所有资源，退出平台。"
+  },
+  "tour.uwidget.title": {
+    "other": "用户标识"
+  },
+  "tour.welcomemodal.skip": {
+    "other": "跳过"
+  },
+  "tour.welcomemodal.start": {
+    "other": "开始游览"
+  },
+  "tour.welcomemodal.subtitle": {
+    "other": "拖放您的个人资料中最好的照片！此快速教程将引导您通过网络界面。"
+  },
+  "tour.welcomemodal.title": {
+    "other": "欢迎使用 APPLICATION_TITLE"
+  },
+  "tour.widget-cards": {
+    "other": "您可以在这里添加或删除小部件。您也可以通过简单地拖动小部件来重新排序它们。"
+  },
+  "tour.widget-cards.title": {
+    "other": "小部件"
+  },
+  "tour.workspaces.1": {
+    "other": "工作区是帮助您组织数据的顶级文件夹。它们只能由您访问或共享给其他用户。"
+  },
+  "tour.workspaces.2": {
+    "other": "单元格是您可以与其他用户共享的协作空间。 根据文件夹、用户团队或任何相关主题创建您自己的单元。"
+  },
+  "tour.workspaces.title": {
+    "other": "工作区和单元"
+  },
+  "tour.theme.title": {
+    "other": "明亮/暗黑主题支持"
+  },
+  "tour.theme.legend": {
+    "other": "选择最适合您视觉的浅色或深色主题。"
+  },
+  "tour.left-resize.title": {
+    "other": "工作区和单元"
+  },
+  "tour.left-resize.legend": {
+    "other": "左侧列可以调整大小或关闭以适应您的屏幕。"
+  },
+  "tour.right-resize.legend": {
+    "other": "左侧列也可以调整大小或关闭以适应您的屏幕。"
+  },
+  "tour.directory.title": {
+    "other": "用户目录"
+  },
+  "tour.directory.legend": {
+    "other": "在中央位置管理用户(内部和外部) 和团队。"
+  },
+  "background.jobs.title": {
+    "other": "后台任务"
+  },
+  "background.jobs.running": {
+    "other": "进行中的任务"
+  },
+  "websocket.disconnected.title": {
+    "other": "连接问题"
+  },
+  "websocket.disconnected.legend": {
+    "other": "Websocket似乎已断开连接，请确保服务器已经启动，Websocket连接正常。"
+  },
+  "oauth.authentication.success": {
+    "other": "身份验证成功"
+  },
+  "oauth.authentication.failed": {
+    "other": "身份验证失败"
+  },
+  "oauth.authentication.code": {
+    "other": "您已成功验证。请复制并粘贴代码到您的命令行终端"
+  },
+  "oauth.authentication.copy-code": {
+    "other": "复制代码到剪贴板"
+  },
+  "oauth.authentication.code-copied": {
+    "other": "代码已复制到剪贴板，您可以将其粘贴到命令行。"
+  },
+  "oauth.authentication.code-copy-failed": {
+    "other": "无法复制到剪贴板。"
+  },
+  "layouts.preferences": {
+    "other": "管理布局"
+  },
+  "layouts.preferences.legend": {
+    "other": "将布局保存和调用为预设"
+  },
+  "layouts.action.rename": {
+    "other": "重命名布局"
+  },
+  "layouts.action.remove": {
+    "other": "移除布局"
+  },
+  "layouts.action.remove.confirm": {
+    "other": "您想删除此布局吗？"
+  },
+  "layouts.action.reset": {
+    "other": "重置布局"
+  },
+  "layouts.action.reset.confirm": {
+    "other": "您想重置当前布局吗？"
+  },
+  "layouts.action.create": {
+    "other": "保存布局..."
+  },
+  "layouts.action.fork": {
+    "other": "从当前新建。。。"
+  },
+  "layouts.action.create.default": {
+    "other": "我的布局"
+  },
+  "layouts.prompt.save": {
+    "other": "保存布局为..."
+  },
+  "layouts.prompt.save.field": {
+    "other": "选择一个名称来保存/调用当前布局"
+  },
+  "list.display-mode.list": {
+    "other": "列表"
+  },
+  "list.display-mode.details": {
+    "other": "详细信息"
+  },
+  "list.display-mode.thumbs": {
+    "other": "缩略图"
+  },
+  "list.display-mode.thumbs-large": {
+    "other": "较大"
+  },
+  "list.display-mode.thumbs-medium": {
+    "other": "中等的"
+  },
+  "list.display-mode.thumbs-small": {
+    "other": "较小"
+  },
+  "list.display-mode.masonry": {
+    "other": "图库"
+  },
+  "list.extensions.action": {
+    "other": "文件扩展名"
+  },
+  "list.extensions.show": {
+    "other": "显示扩展名"
+  },
+  "list.pin.bookmarks": {
+    "other": "将书签固定到顶部"
+  },
+  "list.writeonly.emptystate.title": {
+    "other": "将文件放于此"
+  },
+  "list.writeonly.emptystate.legend": {
+    "other": "该文件夹是只写的：您无法看到其内容，并且仅被授权上传文件或文件夹。 您自己的内容上传后将不可见！"
+  },
+  "infopanel.empty.select.file": {
+    "other": "选择要显示信息的文件"
+  },
+  "infopanel.card.pin": {
+    "other": "附加卡片(完整高度)"
+  },
+  "infopanel.card.unpin": {
+    "other": "分离卡片"
+  },
+  "infopanel.card.detach": {
+    "other": "在单独的面板中分离"
+  },
+  "infopanel.detached.minimize": {
+    "other": "最小化面板"
+  },
+  "infopanel.detached.maximize": {
+    "other": "打开面板"
+  },
+  "infopanel.detached.dock": {
+    "other": "停靠在右侧列中"
+  },
+  "infopanel.detailcard.preview": {
+    "other": "预览"
+  },
+  "infopanel.detailcard.cell-info": {
+    "other": "单元格信息"
+  },
+  "infopanel.detailcard.cell-chat": {
+    "other": "单元格聊天"
+  },
+  "pinned-bookmarks.other": {
+    "other": "全部文件"
+  },
+  "file.temporary-etag.flag": {
+    "other": "未完成"
+  },
+  "file.temporary-etag.tooltip": {
+    "other": "此文件正在上传(或上传失败)。"
+  },
+  "mimegroup.byextension": {
+    "other": "按文件扩展名..."
+  },
+  "mimegroup.word": {
+    "other": "Word 文件"
+  },
+  "mimegroup.spreadsheet": {
+    "other": "电子表格"
+  },
+  "mimegroup.presentation": {
+    "other": "演示文稿"
+  },
+  "mimegroup.pdf": {
+    "other": "PDF"
+  },
+  "mimegroup.image": {
+    "other": "图片"
+  },
+  "mimegroup.video": {
+    "other": "视频"
+  },
+  "mimegroup.audio": {
+    "other": "音频"
+  },
+  "fastsearch.quick-jump.title": {
+    "other": "快速跳跃"
+  },
+  "fastsearch.quick-jump.legend": {
+    "other": "按 [Enter] 跳转，添加尾随 [/] 在子项中搜索，[Esc] 关闭"
+  },
+  "fastsearch.quick-move.title": {
+    "other": "快速移动"
+  },
+  "fastsearch.quick-move.target-error": {
+    "other": "无法移动到这个目标！"
+  },
+  "fastsearch.quick-move.legend": {
+    "other": "按 [Enter] 将 %s 个选定项目移动到目标，按 [Esc] 关闭"
+  },
+  "fastsearch.quick-copy.title": {
+    "other": "快速拷贝"
+  },
+  "fastsearch.quick-copy.target-error": {
+    "other": "无法复制到此目标！"
+  },
+  "fastsearch.quick-copy.legend": {
+    "other": "按 [Enter] 将 %s 个选定项目复制到目标，按 [Esc] 关闭"
+  },
+  "modalsearch.opentip.cmd": {
+    "other": "提示：使用<kbd>⌘+k</kbd>打开此搜索对话框，使用<kbd>Esc</kbd>关闭。"
+  },
+  "modalsearch.opentip.ctrl": {
+    "other": "提示：使用<kbd>Ctrl+k</kbd>打开这个搜索对话框，使用<kbd>Esc</kbd>关闭。"
+  },
+  "search.chip.scope.folder": {
+    "other": "文件夹"
+  },
+  "search.chip.scope.ws": {
+    "other": "内部"
+  },
+  "search.chip.scope.all": {
+    "other": "所有工作区"
+  },
+  "wslist-options.title": {
+    "other": "显示选项"
+  },
+  "wslist-options.show-masked": {
+    "other": "显示遮罩项"
+  },
+  "wslist.action.mask": {
+    "other": "掩盖"
+  },
+  "wslist.action.unmask": {
+    "other": "取消隐藏"
+  },
+  "wslist-options.merge-workspaces": {
+    "other": "合并工作区和单元格"
+  },
+  "wslist-options.own-cells-first": {
+    "other": "我先创建的单元格"
+  },
+  "leftrail.buttons.home": {
+    "other": "主页"
+  },
+  "leftrail.buttons.directory": {
+    "other": "目录"
+  },
+  "leftrail.buttons.all-files": {
+    "other": "所有文件"
+  },
+  "leftrail.buttons.theme.light": {
+    "other": "明亮模式"
+  },
+  "leftrail.buttons.theme.dark": {
+    "other": "暗黑模式"
+  },
+  "task.status.Starting": {
+    "other": "已开始｛startTime｝"
+  },
+  "task.status.Pending": {
+    "other": "即将开始..."
+  },
+  "task.status.Complete": {
+    "other": "任务在 {duration} 内完成"
+  },
+  "task.status.Finished": {
+    "other": "任务在 {duration} 内完成"
+  },
+  "task.status.Error": {
+    "other": "出现了错误！"
+  },
+  "bigppanel.filter.default-hint": {
+    "other": "快速查找..."
+  },
+  "sorter.metas.more": {
+    "other": "更多..."
+  },
+  "drag-layer.move.file": {
+    "other": "移动文件"
+  },
+  "drag-layer.move.folder": {
+    "other": "移动文件夹"
+  },
+  "drag-layer.move.plural": {
+    "other": "移动 %s 个项目"
+  },
+  "drag-layer.copy.file": {
+    "other": "复制文件"
+  },
+  "drag-layer.copy.folder": {
+    "other": "复制文件夹"
+  },
+  "drag-layer.copy.plural": {
+    "other": "复制 %s 个项目"
+  },
+  "drag-layer.more": {
+    "other": "...以及其他 %s 个。"
+  },
+  "drag-layer.hint": {
+    "other": "使用 [Alt/option] 键复制"
+  }
+}

@@ -1,0 +1,935 @@
+syntax = "proto3";
+
+package rest;
+
+import "cellsapi-common.proto";
+import "cellsapi-data.proto";
+import "cellsapi-idm.proto";
+import "cellsapi-broker.proto";
+import "cellsapi-config.proto";
+import "cellsapi-scheduler.proto";
+import "cellsapi-graph.proto";
+import "cellsapi-share.proto";
+import "cellsapi-frontend.proto";
+import "cellsapi-templates.proto";
+
+import "cells-tree.proto";
+import "cells-idm.proto";
+import "cells-mailer.proto";
+import "cells-activitystream.proto";
+import "cells-jobs.proto";
+import "cells-encryption.proto";
+import "cells-log.proto";
+import "cells-object.proto";
+import "cells-install.proto";
+import "cells-ctl.proto";
+import "cells-update.proto";
+import "cells-registry.proto";
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+option go_package ="github.com/pydio/cells/v5/common/proto/rest";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  info: {
+    title: "Pydio Cells Rest API";
+    version: "v2";
+    contact: {
+      name: "Pydio";
+      url: "https://pydio.com";
+    };
+  };
+  external_docs: {
+    url: "https://pydio.com";
+    description: "More about Pydio Cells Apis";
+  }
+  schemes: HTTP;
+  schemes: HTTPS;
+  schemes: WSS;
+  consumes: "application/json";
+  produces: "application/json";
+  security_definitions:     {
+    security:{
+      key:'Bearer'
+      value:{
+        name:"Authorization"
+        description: "Expected value is 'Bearer {TOKEN}'"
+        type: TYPE_API_KEY
+        in: IN_HEADER
+      }
+    }
+  }
+  security: {
+    security_requirement: {
+      key: 'Bearer'
+      value: {}
+    }
+  }
+};
+
+// Special permission modes for Nodes
+enum Mode {
+  Default = 0;
+  NodeReadOnly = 1;
+  NodeWriteOnly = 2;
+  LevelReadOnly = 3;
+}
+
+// Info about content locking
+message LockInfo{
+  bool IsLocked = 1;
+  string Owner = 2;
+}
+
+// ContextWorkspace
+//
+// Current workspace information, maybe published on the root node of a workspace
+message ContextWorkspace{
+  bool IsRoot = 1;
+  string Uuid = 2 [(google.api.field_behavior) = REQUIRED];
+  string Slug = 3 [(google.api.field_behavior) = REQUIRED];
+  idm.WorkspaceScope Scope = 4;
+  string Permissions = 5;
+  string Label = 6;
+  string Description = 7;
+  bool Syncable = 8;
+  bool IsVirtualRoot = 9;
+  bool SkipRecycle = 10;
+  int64 Quota = 11;
+  int64 QuotaUsage = 12;
+}
+
+// Current datasource features
+message DataSourceFeatures{
+  bool Encrypted = 1;
+  bool Versioned = 2;
+}
+
+// Authenticated access to a content, with an expiration time
+message PreSignedURL {
+  string Url = 1;
+  int64 ExpiresAt = 2;
+}
+
+// If file is an image, extracted information about this image
+message ImageMeta {
+  int32 Width = 1;
+  int32 Height = 2;
+  int32 Orientation = 3;
+  string JsonEXIF = 4;
+}
+
+// Description of an available preview
+message FilePreview{
+  bool Processing = 1;
+  bool Error = 2;
+  string ContentType = 3;
+  string Bucket = 4;
+  string Key = 5;
+  PreSignedURL PreSignedGET = 6;
+  int32 Dimension = 7;
+}
+
+// Open definition for a key/value metadata, value stored in json
+message JsonMeta {
+  string Namespace = 1 [(google.api.field_behavior) = REQUIRED];
+  string Value = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Open definition for a key/value metadata, value is a number
+// Using int32 to avoid json strings (for int64)
+message CountMeta {
+  string Namespace = 1 [(google.api.field_behavior) = REQUIRED];
+  int32 Value = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Userspace metadata (namespaces are defined by admin)
+message UserMeta {
+  string NodeUuid = 1;
+  string Namespace = 2 [(google.api.field_behavior) = REQUIRED];
+  string JsonValue = 3 [(google.api.field_behavior) = REQUIRED];
+  bool Editable = 4;
+}
+
+//message Lifecycle {
+//  bool Enabled = 1;
+//  bool IsDraft = 2;
+//  string OwnerUuid = 3;
+//  string StatusNamespace = 4;
+//}
+
+// VersionMeta
+message VersionMeta {
+  string VersionId = 1 [(google.api.field_behavior) = REQUIRED];
+  string OwnerUuid = 2;
+  string Description = 3;
+  bool IsDraft = 4;
+  bool IsHead = 5;
+}
+
+// List of UserMeta
+message UserMetaList {
+  repeated UserMeta UserMeta = 1;
+}
+
+// Node
+//
+// Representation of a file or folder
+message Node {
+  // Unique Identifier
+  string Uuid = 1 [(google.api.field_behavior) = REQUIRED];
+  // Node Path - Always starting with a workspace slug
+  string Path = 2 [(google.api.field_behavior) = REQUIRED];
+  // Whether it's a folder ('COLLECTION') or a file ('LEAF')
+  tree.NodeType Type = 3;
+  // Default is read/write, Mode can provide additional restrictions
+  Mode Mode = 4;
+  // Known contents size
+  int64 Size = 5;
+  // Last modification date
+  int64 Modified = 6; // Date instead of TS ?
+
+  // ContentType in the form of application/mime
+  string ContentType = 7;
+  // ContentHash is a server-computed file signature
+  string ContentHash = 8;
+  // HashingMethod refers to the method used for computing ContentHash
+  string HashingMethod = 23;
+  // StorageEtag refers to the storage underlying hash
+  string StorageETag = 9;
+
+  // PreSignedURL to retrieve the current content of this file
+  PreSignedURL PreSignedGET = 29;
+  // CoolURL - if applicable, ready to use collabora src w/ expiration
+  map <string,PreSignedURL> EditorURLs = 30;
+  // List of available editor keys (for now always empty)
+  repeated string EditorURLsKeys = 31;
+
+  // If this node is a RecycleBin folder
+  bool IsRecycleBin = 10;
+  // If this node is *inside* a RecycleBin folder
+  bool IsRecycled = 11;
+  // This node is bookmarked by the user
+  bool IsBookmarked = 12;
+  // Additional information about the current workspace. Only published on the root node of a workspace/cell
+  ContextWorkspace ContextWorkspace = 13;
+  // Additional features set at the datasource level
+  DataSourceFeatures DataSourceFeatures = 24;
+  // Flag set if a file is manually locked by a user
+  LockInfo ContentLock = 14;
+
+  // List of available previews generated server-side
+  repeated FilePreview Previews = 16;
+  // List of public links created on this file. Should be one but server supports multiple links
+  repeated ShareLink Shares = 17;
+  // All file activities
+  repeated activity.Object Activities = 18;
+  // File subscriptions (watches)
+  repeated activity.Subscription Subscriptions = 19;
+
+  // Additional metadata extracted by the server if file is an image
+  ImageMeta ImageMeta = 25;
+  // Open map of metadata, values are JSON-encoded
+  repeated JsonMeta Metadata = 21;
+  // Open map of integers metadata published on folders
+  repeated CountMeta FolderMeta = 15;
+  // User-defined metadata
+  repeated UserMeta UserMetadata = 22;
+
+  // Additional metadata for lifecycle
+  bool IsDraft = 27;
+  // Known versions - attached when flags WithVersionsXXX are passed
+  repeated Version Versions = 28;
+  // Additional metadata attached to a Version Node
+  VersionMeta VersionMeta = 26;
+
+}
+
+// Simple Uuid/Path discriminator to locate a node
+message NodeLocator{
+  string Uuid = 1;
+  string Path = 2;
+}
+
+// Simple NodeLocator for GetByUuid request
+message NodeByUuidRequest {
+  string Uuid = 1;
+  repeated Flag Flags = 2;
+}
+
+// List of nodes, as returned by list/search operations. Facets and Pagination may be empty
+message NodeCollection {
+  repeated Node Nodes = 1;
+  repeated tree.SearchFacet Facets = 3;
+  Pagination Pagination = 2;
+}
+
+message Version {
+  // Unique commit ID
+  string VersionId = 1 [(google.api.field_behavior) = REQUIRED];
+  // Human-readable description of what happened
+  string Description = 2;
+  // This revision is not published
+  bool Draft = 3;
+  // This revision is actually the current HEAD
+  bool IsHead = 4;
+  // Unix Timestamp
+  int64 MTime = 5;
+  // Content Size at that moment
+  int64 Size = 6;
+  // Storage ETag
+  string ETag = 7;
+  // ContentHash
+  string ContentHash = 8;
+  // Who performed this action - name
+  string OwnerName = 9;
+  // Who performed this action - uuid
+  string OwnerUuid = 10;
+
+  PreSignedURL PreSignedGET = 11;
+  // CoolURL - if applicable, ready to use collabora src w/ expiration
+  map <string,PreSignedURL> EditorURLs = 12;
+  // List of available editor keys (for now always empty)
+  repeated string EditorURLsKeys = 14;
+  // If applicable, previews kept for this version
+  repeated FilePreview FilePreviews = 13;
+
+}
+
+message VersionCollection {
+  repeated Version Versions = 1;
+}
+
+// Lightweight node representation for creation, exposing a NodeLocator and additional data
+message IncomingNode {
+  NodeLocator Locator = 1 [(google.api.field_behavior) = REQUIRED];
+  tree.NodeType Type = 2 [(google.api.field_behavior) = REQUIRED];
+  string ContentType = 3;
+  string TemplateUuid = 4;
+  int64 KnownSize = 5;
+  repeated UserMeta Metadata = 6;
+
+  // Whether this resource should be created as draft
+  bool DraftMode = 7;
+  // Pass a generated UUID to be used as the created node UUID
+  string ResourceUuid = 8;
+  // Pass a generated UUID to be used as the versionId
+  string VersionId = 9;
+}
+
+// Request for creating nodes
+message CreateRequest {
+  repeated IncomingNode Inputs = 1 [(google.api.field_behavior) = REQUIRED];
+  bool Recursive = 2;
+}
+
+// Request for pre-checking nodes before uploading or creating them.
+message CreateCheckRequest {
+  repeated IncomingNode Inputs = 1 [(google.api.field_behavior) = REQUIRED];
+  bool FindAvailablePath = 2;
+}
+
+// Check result for one given Location
+message CheckResult {
+  NodeLocator InputLocator = 1;
+  bool Exists = 2;
+  Node Node = 3;
+  string NextPath = 4;
+}
+
+// Returns as many CheckResult as IncomingNodes passed in request
+message CreateCheckResponse {
+  repeated CheckResult Results = 1;
+}
+
+// Collection of NodeLocator
+message NodeLocators {
+  repeated NodeLocator Many = 1;
+}
+
+enum Flag {
+  WithMetaDefaults = 0;
+  WithMetaCoreOnly = 1;
+  WithMetaNone = 2;
+  WithVersionsAll = 3;
+  WithVersionsDraft = 4;
+  WithVersionsPublished = 5;
+  WithPreSignedURLs = 6;
+  WithEditorURLs = 7;
+}
+
+message LookupScope {
+  // These locators will restrict the query to their children
+  // Root can be empty (or /) to target top folder for listing
+  NodeLocator Root = 1;
+  // Whether to list/search first level of children
+  // or all children recursively. This does not apply if no Root or empty Root is provided
+  bool Recursive = 2;
+  // These locators will restrict the query to these nodes, along any additional filtering
+  repeated NodeLocator Nodes = 3;
+}
+
+message LookupFilter {
+  message SizeRange {
+    int64 Min = 1;
+    int64 Max = 2;
+  }
+  message DateRange {
+    int64 Min = 1;
+    int64 Max = 2;
+    string RelativeDuration = 3;
+  }
+  message PathPrefix {
+    string Prefix = 1;
+    bool Exclude = 2;
+  }
+  message TextSearch {
+    enum In {
+      BaseName = 0;
+      Contents = 1;
+      BaseOrContents = 2;
+    };
+    string Term = 1;
+    In SearchIn = 2;
+  }
+  message MetaFilter {
+    enum Op {
+      Must = 0;
+      Should = 1;
+      Not = 2;
+    }
+    string Namespace = 1;
+    string Term = 2;
+    Op Operation = 3;
+  }
+  message StatusFilter {
+    enum DeletedStatus {
+      Not = 0;
+      Only = 1;
+      Any = 2;
+    }
+    DeletedStatus Deleted = 1;
+    bool IsDraft = 2; // IsDraft - to be deprecated in favor of DraftOnly status
+    enum DraftStatus {
+      DraftNot = 0;
+      DraftOnly = 1;
+      DraftAny = 2;
+    }
+    DraftStatus Draft = 5;
+    bool IsBookmarked = 3;
+    bool HasPublicLink = 4;
+  }
+
+
+  // Search by text
+  TextSearch Text = 1;
+  // Filter by Type (LEAF|COLLECTION)
+  tree.NodeType Type = 2;
+  // Filter on size
+  SizeRange Size = 3;
+  // Filter on date
+  DateRange Date = 4;
+  // Restricted list of extensions, combined as OR
+  repeated string Extensions = 5;
+  // Metadata search, combined as AND
+  repeated MetaFilter Metadata = 6;
+  // Status Filter
+  StatusFilter Status = 7;
+  // Additional restriction/exclusion of certain prefixes, starting from the root
+  repeated PathPrefix Prefixes = 8;
+  // Bleve-like search query for advanced usage
+  string FreeExpression = 9;
+
+}
+
+// Request for list/search. Accepts either
+// - a list of Locators (using path/* will list a folder's first level children) to retrieve stats about nodes
+// - a Query to search nodes in a more flexible way
+message LookupRequest {
+  LookupScope Scope = 1;
+  LookupFilter Filters = 2;
+
+  int64 Offset = 3;
+  int64 Limit = 4;
+  string SortField = 5;
+  bool SortDirDesc = 6;
+  repeated Flag Flags = 7;
+
+  // Will be deprecated
+  oneof Input {
+    NodeLocators Locators = 8;
+    tree.Query Query = 9;
+  }
+}
+
+enum VersionsTypes {
+  VersionsAll = 0;
+  VersionsDraft = 1;
+  VersionsPublished = 2;
+}
+
+// Filter used for listVersions calls
+message NodeVersionsFilter {
+  VersionsTypes FilterBy = 1;
+  int64 Offset = 2;
+  int64 Limit = 3;
+  string SortField = 5;
+  bool SortDirDesc = 6;
+  repeated Flag Flags = 7;
+}
+
+// Request payload for listVersions
+message NodeVersionsRequest {
+  // The node Uuid
+  string Uuid = 1 [(google.api.field_behavior) = REQUIRED];
+  // Additional parameters for filtering/sorting
+  NodeVersionsFilter Query = 2;
+}
+
+// Retrieve a specific version of a node content
+message DeleteVersionRequest {
+  string Uuid = 1;
+  string VersionId = 2;
+}
+
+message DeleteVersionResponse {
+  bool Success = 1;
+  bool EmptyNodeDeleted = 2;
+}
+
+message PromoteParameters {
+  // Whether to publish node at the same time after promoting this version
+  bool Publish = 1;
+  // Ignore if another version has been created since the one we want to promote
+  bool IgnoreConflicts = 2;
+}
+
+message PromoteVersionRequest {
+  string Uuid = 1;
+  string VersionId = 2;
+  PromoteParameters Parameters = 3;
+}
+
+message PromoteVersionResponse {
+  Node Node = 1;
+  bool Success = 2;
+  bool Published = 3;
+}
+
+message PublishNodeParameters {
+  bool Cascade = 1;
+  bool PromoteLatest = 2;
+}
+
+message PublishCascadeResult {
+  Node Node = 1;
+  bool Success = 2;
+  string Error = 3;
+  bool Promoted = 4;
+}
+
+message PublishNodeResponse {
+  Node Node = 1;
+  repeated PublishCascadeResult CascadeResults = 2;
+}
+
+message PublishNodeRequest {
+  string Uuid = 1 [(google.api.field_behavior) = REQUIRED];
+  PublishNodeParameters Parameters = 2;
+}
+
+// Authorized actions that user can trigger
+enum UserActionType {
+  delete = 0;
+  restore = 1;
+  copy = 2;
+  move = 3;
+  extract = 4;
+  compress = 5;
+}
+
+// Delete specific options
+message ActionOptionsDelete {
+  bool PermanentDelete = 1;
+}
+
+// Copy/Move specific options
+message ActionOptionsCopyMove {
+  string TargetPath = 1 [(google.api.field_behavior) = REQUIRED];
+  bool TargetIsParent = 2;
+}
+
+// Extract/Compress specific options
+message ActionOptionsExtractCompress {
+  string TargetPath = 1 [(google.api.field_behavior) = REQUIRED];
+  string ArchiveFormat = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Parameters used by actions. Some may use Nodes/TargetNode, but not necessarily
+message ActionParameters {
+  repeated NodeLocator Nodes = 2;
+  string SelectionUuid = 4;
+  // Should be deprecated in favor of ActionOptions
+  string JsonParameters = 5;
+  oneof ActionOptions {
+    ActionOptionsDelete DeleteOptions = 3;
+    ActionOptionsCopyMove CopyMoveOptions = 8;
+    ActionOptionsExtractCompress ExtractCompressOptions = 9;
+  }
+
+  // Optionally wait for the task to exist with a specific status
+  jobs.TaskStatus AwaitStatus = 6;
+  // Define a golang duration to wait for
+  string AwaitTimeout = 7;
+}
+
+// Request used for Actions-related endpoints
+message ActionRequest {
+  UserActionType Name = 1 [(google.api.field_behavior) = REQUIRED];
+  string JobUuid = 2;
+}
+
+message PerformActionRequest {
+  UserActionType Name = 1 [(google.api.field_behavior) = REQUIRED];
+  string JobUuid = 2;
+  ActionParameters Parameters = 3;
+}
+
+// Send a start/pause/resume on background jobs that support it
+message ControlActionRequest {
+  UserActionType Name = 1 [(google.api.field_behavior) = REQUIRED];
+  string JobUuid = 2 [(google.api.field_behavior) = REQUIRED];
+  jobs.CtrlCommand Command = 3;
+}
+
+// Used in an PerformActionResponse - currently always Background
+enum ActionStatus {
+  Performed = 0;
+  Background = 1;
+}
+
+// Response to an action triggered
+message PerformActionResponse {
+  ActionStatus Status = 1;
+  repeated Node AffectedNodes = 2;
+  repeated BackgroundAction BackgroundActions = 3;
+}
+
+// Publishes a status about a background action
+message BackgroundAction {
+  string Name = 1 [(google.api.field_behavior) = REQUIRED];
+  string JobUuid = 2 [(google.api.field_behavior) = REQUIRED];
+  string Label = 3;
+
+  jobs.TaskStatus Status = 4;
+  string StatusMessage = 5;
+
+  int32 StartTime = 6;
+  int32 EndTime = 7;
+
+  // Can be interrupted
+  bool CanStop = 8;
+  // Can be paused/resumed
+  bool CanPause = 9;
+
+  // Task publishes a progress
+  bool HasProgress = 10;
+  // Float value of the progress between 0 and 1
+  float Progress = 11;
+}
+
+// Request to create a selection from a list of nodes.
+message Selection {
+  string Uuid = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  repeated Node Nodes = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Create or update a public link on a node
+message PublicLinkRequest {
+  // Public link definition
+  ShareLink Link = 2 [(google.api.field_behavior) = REQUIRED];
+  // Whether it has Password enabled
+  bool PasswordEnabled = 3;
+  // Set if switching from no password to password
+  string CreatePassword = 4;
+  // Set if updating an existing password
+  string UpdatePassword = 5;
+  // Change the ShareLink Hash with a custom value
+  string UpdateCustomHash = 6;
+}
+
+message NodePublicLinkRequest {
+  string Uuid = 1 [(google.api.field_behavior) = REQUIRED];
+  PublicLinkRequest PublicLinkRequest = 2;
+}
+
+message UpdatePublicLinkRequest {
+  string LinkUuid = 1 [(google.api.field_behavior) = REQUIRED];
+  PublicLinkRequest PublicLinkRequest = 2;
+}
+
+// Locate a public link by UUID
+message PublicLinkUuidRequest {
+  string LinkUuid = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response to public link deletion
+message PublicLinkDeleteSuccess {
+  string Uuid = 1;
+  string Message = 2;
+}
+
+// Update operation on Metadata
+message MetaUpdate {
+  enum Op {
+    PUT = 0;
+    DELETE = 1;
+  }
+  Op Operation = 1 [(google.api.field_behavior) = REQUIRED];
+  UserMeta UserMeta = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Boolean value used for special metadata (bookmark,content_lock)
+message MetaToggle {
+  bool Value = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Set of updates to apply to metadata
+message NodeUpdates {
+  // Updates to metadata
+  repeated MetaUpdate MetaUpdates = 1;
+  // Shortcut to special "bookmark" usermeta
+  MetaToggle Bookmark = 2;
+  // Shortcut to special "content_lock" usermeta
+  MetaToggle ContentLock = 3;
+}
+
+// Update a specific node's metadata
+message PatchNodeRequest {
+  string Uuid = 1 [(google.api.field_behavior) = REQUIRED];
+  NodeUpdates NodeUpdates = 2;
+}
+
+// Update directly metadata in batch
+message BatchUpdateMetaList {
+  repeated MetaUpdate Updates = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Operation on namespaces
+enum NsOp {
+  PUT = 0;
+  DELETE = 1;
+}
+
+// Operations on namespaces that can persist values (typically, tags known values)
+message NamespaceValuesOperation {
+  NsOp Operation = 1 [(google.api.field_behavior) = REQUIRED];
+  repeated string Values = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Request on namespaces values
+message NamespaceValuesRequest{
+  // List persisted values for this namespace
+  string Namespace = 1 [(google.api.field_behavior) = REQUIRED];
+  NamespaceValuesOperation Operation = 2;
+}
+
+// List known values for a given namespace
+message ListNamespaceValuesRequest{
+  // List persisted values for this namespace
+  string Namespace = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Response for Namespaces values
+message NamespaceValuesResponse{
+  // List of existing values
+  repeated string Values = 1;
+}
+
+
+// This RestAPI gather various aspects in one /node API
+service NodeService {
+
+  // Generic request to either list (using Locators) or search (using Query) for nodes
+  rpc Lookup(LookupRequest) returns (NodeCollection) {
+    option (google.api.http) = {
+      post: "/n/nodes"
+      body: "*"
+    };
+    option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+      security: {
+        security_requirement: {
+          key: "Bearer"
+          value: {}
+        }
+      }
+    };
+  }
+  // Create one or many files (empty or hydrated from a TemplateUuid) or folders
+  rpc Create(CreateRequest) returns (NodeCollection) {
+    option (google.api.http) = {
+      post: "/n/nodes/create"
+      body: "*"
+    };
+  }
+  // Apply some pre-validation checks on node name before sending an upload
+  rpc CreateCheck(CreateCheckRequest) returns (CreateCheckResponse) {
+    option (google.api.http) = {
+      post: "/n/nodes/create/precheck"
+      body: "*"
+    };
+  }
+  // Special API for Bookmarks, will load userMeta and the associated nodes, and return
+  // as a node list
+  rpc UserBookmarks(UserBookmarksRequest) returns (NodeCollection) {
+    option (google.api.http) = {
+      get: "/n/nodes/bookmarks"
+    };
+  }
+
+  // Load a node by its Uuid
+  rpc GetByUuid(NodeByUuidRequest) returns (Node){
+    option (google.api.http) = {
+      get: "/n/node/{Uuid}"
+    };
+  };
+  // Update a node specific meta. It is used for reserved meta as well (bookmarks, contentLock)
+  rpc PatchNode(PatchNodeRequest) returns (Node){
+    option (google.api.http) = {
+      patch: "/n/node/{Uuid}"
+      body: "NodeUpdates"
+    };
+  };
+
+  // Unset draft status of a resource, typically to publish a folder in draft mode
+  rpc PublishNode(PublishNodeRequest) returns (PublishNodeResponse){
+    option (google.api.http) = {
+      post: "/n/node/{Uuid}/publish"
+      body: "Parameters"
+    };
+  }
+
+  // Promotes a version by ID to be the publicly available content of the node - files only
+  rpc PromoteVersion(PromoteVersionRequest) returns (PromoteVersionResponse){
+    option (google.api.http) = {
+      post: "/n/node/{Uuid}/versions/{VersionId}/promote"
+      body: "Parameters"
+    };
+  }
+
+  // Delete a version by its ID
+  rpc DeleteVersion(DeleteVersionRequest) returns (DeleteVersionResponse){
+    option (google.api.http) = {
+      delete: "/n/node/{Uuid}/versions/{VersionId}"
+    };
+  }
+
+  // List all known versions of a node
+  rpc NodeVersions(NodeVersionsRequest) returns (VersionCollection){
+    option (google.api.http) = {
+      post: "/n/node/{Uuid}/versions"
+      body: "Query"
+    };
+  };
+
+  // Create a public link on a given node
+  rpc CreatePublicLink(NodePublicLinkRequest) returns (ShareLink) {
+    option (google.api.http) = {
+      post: "/n/node/{Uuid}/link"
+      body: "PublicLinkRequest"
+    };
+  }
+
+
+  // Search a list of meta by node Id or by User id and by namespace
+  rpc SearchMeta(idm.SearchUserMetaRequest) returns (UserMetaList) {
+    option (google.api.http) = {
+      post: "/n/meta/find"
+      body: "*"
+    };
+  }
+  // Update/delete user meta in batch. Passed UserMetas must contain a NodeUuid
+  rpc BatchUpdateMeta(BatchUpdateMetaList) returns (BatchUpdateMetaList) {
+    option (google.api.http) = {
+      patch: "/n/meta/batch"
+      body: "*"
+    };
+  }
+  // List defined meta namespaces
+  rpc ListNamespaces(idm.ListUserMetaNamespaceRequest) returns (UserMetaNamespaceCollection){
+    option (google.api.http) = {
+      get: "/n/meta/namespace"
+    };
+  }
+  // List values for a given namespace
+  rpc ListNamespaceValues(ListNamespaceValuesRequest) returns (NamespaceValuesResponse){
+    option (google.api.http) = {
+      get: "/n/meta/namespace/{Namespace}"
+    };
+  }
+  // Add/delete a values for a given namespace
+  rpc UpdateNamespaceValues(NamespaceValuesRequest) returns (NamespaceValuesResponse){
+    option (google.api.http) = {
+      patch: "/n/meta/namespace/{Namespace}"
+      body: "Operation"
+    };
+  }
+
+
+  // Load public link information by Uuid
+  rpc GetPublicLink(PublicLinkUuidRequest) returns (ShareLink) {
+    option (google.api.http) = {
+      get: "/n/link/{LinkUuid}"
+    };
+  }
+  // Update public link settings
+  rpc UpdatePublicLink(UpdatePublicLinkRequest) returns (ShareLink) {
+    option (google.api.http) = {
+      patch: "/n/link/{LinkUuid}"
+      body: "PublicLinkRequest"
+    };
+  }
+  // Remove a public link
+  rpc DeletePublicLink(PublicLinkUuidRequest) returns (PublicLinkDeleteSuccess) {
+    option (google.api.http) = {
+      delete: "/n/link/{LinkUuid}"
+    };
+  }
+
+  // Trigger an action on the tree. Returns a JobInfo describing a background task.
+  rpc PerformAction(PerformActionRequest) returns (PerformActionResponse) {
+    option (google.api.http) = {
+      post: "/n/action/{Name}"
+      body: "Parameters"
+    };
+  }
+  // Retrieve information about an action running in background
+  rpc BackgroundActionInfo(ActionRequest) returns (BackgroundAction) {
+    option (google.api.http) = {
+      get: "/n/action/{Name}/{JobUuid}"
+    };
+  }
+  // Send control commands to a background job
+  rpc ControlBackgroundAction(ControlActionRequest) returns (BackgroundAction) {
+    option (google.api.http) = {
+      patch: "/n/action/{Name}/{JobUuid}"
+      body:"Command"
+    };
+  }
+  // Create and persist a temporary selection of nodes, that can be used by other actions
+  rpc CreateSelection(Selection) returns (Selection) {
+    option (google.api.http) = {
+      post: "/n/selection"
+      body: "*"
+    };
+  }
+  // List available templates for hydrating empty files
+  rpc Templates(ListTemplatesRequest) returns (ListTemplatesResponse) {
+    option (google.api.http) = {
+      get: "/n/templates"
+    };
+  }
+
+}

@@ -1,0 +1,233 @@
+{
+  "1": {
+    "other": "Metadaten"
+  },
+  "10": {
+    "other": "Neuer oder vorhandener Tag"
+  },
+  "11": {
+    "other": "Kein Tag gesetzt. Zum Hinzufügen klicken."
+  },
+  "16": {
+    "other": "Keine Metadaten"
+  },
+  "12": {
+    "other": "Mehrfachauswahl:"
+  },
+  "13": {
+    "other": "Wählen Sie Felder zum Aktualisieren aus. Die Werte werden auf alle ausgewählten Dateien gesetzt."
+  },
+  "14": {
+    "other": "Metadaten bearbeiten"
+  },
+  "15": {
+    "other": "Metadaten speichern"
+  },
+  "2": {
+    "other": "Keine Beschreibung"
+  },
+  "3": {
+    "other": "Bewertung entfernen"
+  },
+  "4": {
+    "other": "Niedrig"
+  },
+  "5": {
+    "other": "To-do"
+  },
+  "6": {
+    "other": "Persönlich"
+  },
+  "7": {
+    "other": "Arbeit"
+  },
+  "8": {
+    "other": "Wichtig"
+  },
+  "9": {
+    "other": "Nicht gesetzt"
+  },
+  "group.lists": {
+    "other": "Listen"
+  },
+  "group.internal": {
+    "other": "Intern"
+  },
+  "type.boolean": {
+    "other": "Boolesch"
+  },
+  "type.choice": {
+    "other": "Auswahl"
+  },
+  "type.css_label": {
+    "other": "Farbetiketten"
+  },
+  "type.date": {
+    "other": "Datum"
+  },
+  "type.integer": {
+    "other": "Nummer"
+  },
+  "type.json": {
+    "other": "JSON"
+  },
+  "type.stars_rate": {
+    "other": "Sternebewertung"
+  },
+  "type.string": {
+    "other": "Text"
+  },
+  "type.tag_cloud": {
+    "other": "Tag Cloud"
+  },
+  "type.tags": {
+    "other": "Erweiterbare Tags"
+  },
+  "type.textarea": {
+    "other": "Langer Text"
+  },
+  "type.url": {
+    "other": "Externe URL"
+  },
+  "boolean.yes": {
+    "other": "Ja"
+  },
+  "boolean.no": {
+    "other": "Nein"
+  },
+  "errors.save": {
+    "other": "Fehler beim Speichern. Bitte versuchen Sie es erneut."
+  },
+  "search.modifier.equals": {
+    "other": "Gleich"
+  },
+  "search.modifier.gte": {
+    "other": "Größer als"
+  },
+  "search.modifier.lte": {
+    "other": "Weniger als"
+  },
+  "search.modifier.gt": {
+    "other": "Größer als (streng)"
+  },
+  "search.modifier.lt": {
+    "other": "Weniger als (streng)"
+  },
+  "search.modifier.exact-date": {
+    "other": "Genaues Datum"
+  },
+  "search.modifier.start-date": {
+    "other": "Startdatum"
+  },
+  "search.modifier.end-date": {
+    "other": "Enddatum"
+  },
+  "search.modifier.exact-match": {
+    "other": "Genau passend"
+  },
+  "search.modifier.starts-with": {
+    "other": "Beginnt mit"
+  },
+  "search.modifier.contains": {
+    "other": "Enthält"
+  },
+  "metadata.validation.max-length.gte-min-length": {
+    "other": "Maximale Länge muss größer oder gleich der minimalen Länge sein"
+  },
+  "metadata.validation.max-value.gte-min-value": {
+    "other": "Maximaler Wert muss größer oder gleich dem Minimalwert sein"
+  },
+  "metadata.validation.default-length.min": {
+    "other": "Standardwertlänge (%s) muss mindestens %s Zeichen lang sein"
+  },
+  "metadata.validation.default-length.max": {
+    "other": "Standardwert-Länge (%s) darf nicht %s Zeichen überschreiten"
+  },
+  "metadata.validation.default-value.min": {
+    "other": "Standardwert (%s) muss mindestens %s sein"
+  },
+  "metadata.validation.default-value.max": {
+    "other": "Standardwert (%s) darf nicht %s überschreiten"
+  },
+  "label": {
+    "other": "Titel"
+  },
+  "namespace": {
+    "other": "Namespace"
+  },
+  "type": {
+    "other": "Typ"
+  },
+  "field.mandatory": {
+    "other": "Pflichtfeld"
+  },
+  "type.date.format": {
+    "other": "Datumsformat"
+  },
+  "type.date.format.date": {
+    "other": "Datum"
+  },
+  "type.date.format.date-time": {
+    "other": "Datum und Zeit"
+  },
+  "type.date.format.time": {
+    "other": "Zeit"
+  },
+  "type.date.display": {
+    "other": "Anzeigeformat"
+  },
+  "type.date.display.normal": {
+    "other": "Normal"
+  },
+  "type.date.display.relative": {
+    "other": "Relativ"
+  },
+  "type.integer.format": {
+    "other": "Zahlenformat"
+  },
+  "type.integer.format.general": {
+    "other": "Allgemein"
+  },
+  "type.integer.format.bytesize": {
+    "other": "Bytegröße"
+  },
+  "type.integer.format.percentage": {
+    "other": "Prozentsatz"
+  },
+  "type.integer.format.progress": {
+    "other": "Fortschritt"
+  },
+  "validation.required": {
+    "other": "Dieses Feld ist erforderlich."
+  },
+  "validation.type": {
+    "other": "Ungültiger Typ, erwartet: {type}."
+  },
+  "validation.minLength": {
+    "other": "Muss mindestens {limit} Zeichen enthalten."
+  },
+  "validation.maxLength": {
+    "other": "Darf nicht mehr als {limit} Zeichen enthalten."
+  },
+  "validation.minimum": {
+    "other": "Muss {comparison} {limit} sein."
+  },
+  "validation.maximum": {
+    "other": "Muss {comparison} {limit} sein."
+  },
+  "validation.pattern": {
+    "other": "Wert stimmt nicht mit dem erwarteten Muster überein."
+  },
+  "validation.enum": {
+    "other": "Muss einer von: {allowedValues} sein."
+  },
+  "validation.additionalProperties": {
+    "other": "Eigenschaft {additionalProperty} ist nicht erlaubt."
+  },
+  "validation.format.email": {
+    "other": "Ungültiges E-Mail-Format."
+  },
+  "validation.format.default": {
+    "other": "Ungültiges Format: {format}."
+  }
+}

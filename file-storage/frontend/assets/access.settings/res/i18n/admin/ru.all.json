@@ -1,0 +1,2411 @@
+{
+  "dashboard.tab.dashboard": {
+    "other": "Рабочая панель"
+  },
+  "dashboard.tab.activity": {
+    "other": "Активность"
+  },
+  "loading": {
+    "other": "Загрузка..."
+  },
+  "ds.board.ds.legend": {
+    "other": "Источники данных являются определенными хранилищами, объединенными в глобальное дерево. Они могут распределяться через множество узлов хранения при необходимости."
+  },
+  "ds.board.ds.internal.legend": {
+    "other": "Internal DataSources are used to store binaries like files versions"
+  },
+  "ds.board.ds.title": {
+    "other": "Источник данных"
+  },
+  "ds.board.enc.legend": {
+    "other": "Мастер-ключи автоматически генерируются службой Pydio и сохраняются в защищенном хранилище ключей на сервере. Используйте инструменты ниже для экспорта/импорта этих ключей в случае необходимости переустановки или развертывания на другом сервере"
+  },
+  "ds.board.enc.title": {
+    "other": "Мастер-ключи шифрования"
+  },
+  "ds.board.versioning.legend": {
+    "other": "Вы можете определить, как файлы будут обновляться для каждого источника данных, и сколько версий приложения будет хранится в промежуток времени."
+  },
+  "ds.board.versioning.title": {
+    "other": "Политика версии"
+  },
+  "ds.board.wsfromds.title": {
+    "other": "Создать рабочую область"
+  },
+  "ds.board.wsfromds.legend": {
+    "other": "Создайте новую рабочую область в корне источника данных %s"
+  },
+  "ds.board.wsfromds.field": {
+    "other": "Метка"
+  },
+  "ds.board.wsfromds.defaultPrefix": {
+    "other": "Источник данных %s"
+  },
+  "ds.format-picker.title": {
+    "other": "Создать источник данных"
+  },
+  "ds.format-picker.legend": {
+    "other": "Источники данных - это точки монтирования, которые позволяют прикрепить фактическое хранилище к приложению. Сначала выберите способ организации данных внутри хранилища."
+  },
+  "ds.format-picker.submit": {
+    "other": "Запуск"
+  },
+  "ds.format-picker.flat.title": {
+    "other": "Фиксированное хранилище"
+  },
+  "ds.format-picker.flat.legend": {
+    "other": "The files are stored as binaries along regular snapshots of the tree structure to ensure an efficient disaster recovery. This is the recommended option for best performances and scalability."
+  },
+  "ds.format-picker.structured.title": {
+    "other": "Импорт существующих данных"
+  },
+  "ds.format-picker.structured.legend": {
+    "other": "The tree structure is reflected in the storage and maintained in real-time synchronization. This legacy option is NOT recommended and should only be used for importing existing data. It is event-based and must not be used in high load or clustered installation."
+  },
+  "ds.format-picker.internal.title": {
+    "other": "Содержимое ячейки"
+  },
+  "ds.format-picker.internal.legend": {
+    "other": "Используется для хранения внутренних двоичных файлов (например, версии файлов, эскизы). Ограниченные функции не индексируются в поисковых системах."
+  },
+  "ds.editor.delete.warning": {
+    "other": "Вы уверены, что хотите удалить этот источник данных? Это не необратимо, и вы можете потерять все данные, связанные с этими узлами!"
+  },
+  "ds.editor.enc": {
+    "other": "Включено шифрование"
+  },
+  "ds.editor.enc.dialog.disable": {
+    "other": "Если вы ранее включали шифрование для данного источника данных, все зашифрованные данные будут нечитаемы! Вы уверены, что хотите это сделать?"
+  },
+  "ds.editor.enc.dialog.enable.1": {
+    "other": "Включение шифрования для источника данных начнет шифрование данных в хранилище с использованием предоставленного вами ключа шифрования."
+  },
+  "ds.editor.enc.dialog.enable.2": {
+    "other": "Имейте в виду, что если вы не экспортируете и не создаете резервные копии своего мастер-ключа и если по какой-либо причине вам необходимо переустановить сервер,"
+  },
+  "ds.editor.enc.dialog.enable.2bold": {
+    "other": "все данные будут потеряны!"
+  },
+  "ds.editor.enc.dialog.enable.3": {
+    "other": "Вы также должны знать, что для плавного шифрования / дешифрования данных на лету может потребоваться больше мощности ЦП."
+  },
+  "ds.editor.enc.dialog.enable.create": {
+    "other": "Задать идентификатор для нового ключа"
+  },
+  "ds.editor.enc.key": {
+    "other": "Ключ шифрования"
+  },
+  "ds.editor.enc.key.clear": {
+    "other": "Без шифрования"
+  },
+  "ds.editor.enc.key.create": {
+    "other": "Настроить шифрование с помощью нового ключа..."
+  },
+  "ds.editor.enc.validate": {
+    "other": "Я понимаю"
+  },
+  "ds.editor.enc.warning": {
+    "other": "Внимание!"
+  },
+  "ds.editor.legend.delete.1": {
+    "other": "Удаление источника данных является деструктивной операцией: хотя оно НЕ удалит данные из основного хранилища, оно уничтожит существующий индекс и отменит все ACL, связанные с индексированными узлами."
+  },
+  "ds.editor.legend.delete.2": {
+    "other": "Перед удалением обязательно удалите все рабочие пространства, указывающие на этот источник данных."
+  },
+  "ds.editor.legend.delete.button": {
+    "other": "Удалить источник данных"
+  },
+  "ds.editor.legend.local": {
+    "other": "Источники данных файловой системы подают файлы через сервер хранения объектов, который запускается в родительской папке и служит целью в качестве корзины s3. По этой причине выбранная папка должна соответствовать следующим требованиям:"
+  },
+  "ds.editor.legend.local.li.1": {
+    "other": "По крайней мере два уровня глубины."
+  },
+  "ds.editor.legend.local.li.2": {
+    "other": "Родительская папка должна быть доступна для записи пользователем службы приложений"
+  },
+  "ds.editor.legend.local.li.3": {
+    "other": "Целевая папка должна соответствовать DNS именам (строчные буквы, без пробелов и специальных символов)."
+  },
+  "ds.editor.legend.resync": {
+    "other": "Пересинхронизация будет сканировать базовый накопитель и находить изменения, которые в настоящее время не индексированы."
+  },
+  "ds.editor.legend.resync.button": {
+    "other": "Повторить синхронизацию"
+  },
+  "ds.editor.legend.s3.1": {
+    "other": "Источники данных Удаленного хранилища будут обслуживать файлы из удаленного s3-совместимого хранилища, передавая все запросы."
+  },
+  "ds.editor.legend.s3.2": {
+    "other": "Используйте стандартный ключ API / Api Secret для аутентификации, оставьте конечный URL пустым для AmazonS3 или используйте ваш URL хранилища для других решений."
+  },
+  "ds.editor.storage.legend.fs": {
+    "other": "Просмотр данных из локальной или сетевой файловой системы."
+  },
+  "ds.editor.storage.legend.fs.peer": {
+    "other": "Ограничение источника данных на адрес пира запустит сервис только на определенном узле. При использовании значения «Любой» сервис будет запущен на всех узлах, где запущены выше; что может быть полезно, если общая файловая система смонтирована на всех узлах в одном месте, или если ваш узел может изменить свой IP при перезапуске. Во избежание конфликтов лучше либо использовать \"Любой\" для всех источников данных, либо выбрать конкретные узлы для всех источников данных."
+  },
+  "ds.editor.storage.legend.fs.path": {
+    "other": "Убедитесь в том, что последняя папка в нижнем регистре и что её родитель доступен для записи. Если существующая папка является заглавной, вы можете использовать символьные ссылки для обозначения этого ограничения."
+  },
+  "ds.editor.storage.legend.s3": {
+    "other": "Просмотр данных с Amazon S3 или с S3-совместимого хранилища."
+  },
+  "ds.editor.storage.legend.azure": {
+    "other": "Просмотр данных из хранилища Azure."
+  },
+  "ds.editor.storage.legend.gcs": {
+    "other": "Просмотр данных из облачного хранилища Google."
+  },
+  "ds.editor.storage.legend.versioning": {
+    "other": "Настройте политику управления версиями для хранения истории изменений файлов. Будьте внимательны, будет использовано дополнительное место для хранения файлов."
+  },
+  "ds.editor.storage.legend.encryption": {
+    "other": "Шифрование в состоянии покоя можно использовать, чтобы убедиться, что файлы никогда не хранятся в чистом формате внутри хранилища. Это может быть полезно, если вы не доверяете провайдеру хранилища."
+  },
+  "ds.editor.storage.readOnly": {
+    "other": "Режим только для чтения"
+  },
+  "ds.editor.storage.legend.readOnly": {
+    "other": "Используйте режим только для чтения, если вам требуется, чтобы ячейки никогда не записывали никаких файлов и использовали собственные теги eTag в качестве контрольных сумм (это может быть необходимо для блоков с огромным количеством существующих данных). Обратите внимание, что любые рабочие пространства, созданные на таком источнике данных, должны быть установлены как Только для чтения, так как функция перемещения не сможет функционировать."
+  },
+  "ds.editor.storage.flatStorage": {
+    "other": "Сохранять структуру данных при хранении"
+  },
+  "ds.editor.storage.legend.flatStorage": {
+    "other": "Плоское (неструктурированное) хранилище наиболее производительно. Использовать структурированное хранилище только в том случае, если вы хотите убедиться в том, что файлы и папки, воспроизведенные внутри фактического хранилища (или сопоставление к папке с уже существующими данными). Это НЕ МОЖЕТ быть изменено после создания источника данных."
+  },
+  "ds.editor.storage.skipResync": {
+    "other": "Пропустить полную синхронизацию при перезапуске"
+  },
+  "ds.editor.storage.legend.skipResync": {
+    "other": "Для больших источников данных вы можете избежать полной повторной синхронизации при перезапуске."
+  },
+  "ds.editor.storage.checksumMapper": {
+    "other": "Хранить контрольные суммы локально (не изменять объекты)"
+  },
+  "ds.editor.storage.nativeEtags": {
+    "other": "Использовать Etags (отключит синхронизацию с компьютером)"
+  },
+  "ds.editor.storage.legend.checksumMapper": {
+    "other": "Для правильного обнаружения изменений контрольные суммы файлов (md5) вычисляются ячейки (или хранилищем с копией на месте, когда это возможно) и присоединяются в качестве метаданных к объектам. Для достижения наилучших результатов используйте флаг ETags, чтобы сохранить исходные значения хранилища, но помните, что это отключит синхронизацию рабочего стола в этом источнике данных. Вы также можете просто предотвратить модификацию объектов, все еще вычисляя контрольные суммы, сохраняя метаданные локально."
+  },
+  "ds.editor.new": {
+    "other": "Новый источник данных"
+  },
+  "ds.editor.name.inuse": {
+    "other": "Такое имя пользователя уже занято. Пожалуйста, попробуйте другое!"
+  },
+  "ds.editor.options": {
+    "other": "Основные параметры"
+  },
+  "ds.editor.datamanagement": {
+    "other": "Управление данными"
+  },
+  "ds.editor.options.enabled": {
+    "other": "Включить"
+  },
+  "ds.editor.options.id": {
+    "other": "Идентификатор источника данных"
+  },
+  "ds.editor.options.port": {
+    "other": "Внутренний порт"
+  },
+  "ds.editor.selector.completer": {
+    "other": "Выбрать папку"
+  },
+  "ds.editor.selector.completer.hint": {
+    "other": "Выберите из списка или введите путь и нажмите Enter"
+  },
+  "ds.editor.selector.completer.create": {
+    "other": "папка будет создана"
+  },
+  "ds.editor.selector.error.depth": {
+    "other": "Убедитесь, что вы выбрали папку не менее второго уровня. Хранение объектов будет осуществляться в папке выше."
+  },
+  "ds.editor.selector.error.dnsname": {
+    "other": "Папка отображается как сегмент S3 и должна соответствовать DNS именам (строчные буквы, без пробелов или специальных символов)."
+  },
+  "ds.editor.selector.folder": {
+    "other": "Локальная папка"
+  },
+  "ds.editor.selector.folder.hint": {
+    "other": "Выберите пир для загрузки папок"
+  },
+  "ds.editor.selector.peer": {
+    "other": "Адрес пира"
+  },
+  "ds.editor.selector.peer.any": {
+    "other": "Любой пир (уникальный узел или распределенный FS)"
+  },
+  "ds.editor.selector.peer.word": {
+    "other": "Равноправный участник"
+  },
+  "ds.editor.selector.peer.invalid": {
+    "other": "неверный"
+  },
+  "ds.editor.selector.mkdir": {
+    "other": "Создать папку"
+  },
+  "ds.editor.selector.mkdir.legend": {
+    "other": "Создать папку внутри %s"
+  },
+  "ds.editor.selector.mkdir.field": {
+    "other": "Имя папки"
+  },
+  "ds.editor.storage.fs.macos": {
+    "other": "Операционная система MacOSX"
+  },
+  "ds.editor.storage.azure.api": {
+    "other": "Имя аккаунта Azure"
+  },
+  "ds.editor.storage.azure.secret": {
+    "other": "Секретный ключ Azure"
+  },
+  "ds.editor.storage.azure.bucket": {
+    "other": "Имя сегмента"
+  },
+  "ds.editor.storage.gcs.credentials": {
+    "other": "Вставить содержимое файла учётных данных GCS JSON"
+  },
+  "ds.editor.storage.gcs.bucket": {
+    "other": "Имя сегмента"
+  },
+  "ds.editor.storage.s3.api": {
+    "other": "S3 Api ключ"
+  },
+  "ds.editor.storage.s3.bucket": {
+    "other": "Имя сегмента"
+  },
+  "ds.editor.storage.s3.endpoint.type": {
+    "other": "Тип конечной точки"
+  },
+  "ds.editor.storage.s3.signatureVersion": {
+    "other": "Версия подписи"
+  },
+  "ds.editor.storage.s3.endpoint.amazon": {
+    "other": "Amazon S3"
+  },
+  "ds.editor.storage.s3.endpoint.custom": {
+    "other": "Другие S3-совместимые хранилища"
+  },
+  "ds.editor.storage.s3.endpoint.minio": {
+    "other": "Сервер Minio"
+  },
+  "ds.editor.storage.s3.endpoint": {
+    "other": "Пользовательский URL конечной точки"
+  },
+  "ds.editor.storage.s3.endpoint.hint": {
+    "other": "включая http(s)://"
+  },
+  "ds.editor.storage.s3.region": {
+    "other": "S3 Api регион"
+  },
+  "ds.editor.storage.s3.path": {
+    "other": "Внутренний путь"
+  },
+  "ds.editor.storage.s3.secret": {
+    "other": "S3 Api секрет"
+  },
+  "ds.editor.storage.buckets.legend": {
+    "other": "Выберите один или несколько сегментов"
+  },
+  "ds.editor.storage.buckets.reload": {
+    "other": "Перезагрузить сегмент"
+  },
+  "ds.editor.storage.buckets.create": {
+    "other": "Создать бакет"
+  },
+  "ds.editor.storage.buckets.create.hint": {
+    "other": "Имя бакета"
+  },
+  "ds.editor.storage.buckets.regexp": {
+    "other": "Использовать регулярное выражение"
+  },
+  "ds.editor.storage.buckets.regexp.hint": {
+    "other": "Регулярное выражение"
+  },
+  "ds.editor.storage.buckets.cont.nokeys": {
+    "other": "Настроить хранилище для загрузки сегментов"
+  },
+  "ds.editor.storage.buckets.cont.loading": {
+    "other": "Загрузка доступных сегментов"
+  },
+  "ds.editor.storage.buckets.cont.empty": {
+    "other": "Не найдено сегментов"
+  },
+  "ds.editor.storage.s3.legend.tags": {
+    "other": "Синхронизировать теги S3 из сегментов или объектов (используйте список шаблонов через запятую). Пожалуйста, обратите внимание, что это создаст дополнительные запросы к хранилищу и может замедлить процесс синхронизации. Оригинальные теги будут сопоставлены с pydio:s3-bucket-tag-NAME и pydio:s3-object-tag-NAME внутреннее."
+  },
+  "ds.editor.storage.s3.bucketsTags": {
+    "other": "Метки сегментов (включено несколько сегментов)"
+  },
+  "ds.editor.storage.s3.objectsTags": {
+    "other": "Теги объектов"
+  },
+  "ds.editor.storage.s3.legend.bucketPathPrefix": {
+    "other": "Используйте префикс пути внутри бакета (создаст виртуальную папку для хранения объектов)"
+  },
+  "ds.editor.storage.s3.bucketPathPrefix": {
+    "other": "Префикс пути"
+  },
+  "ds.editor.storage.s3.legend.storageClass": {
+    "other": "Пользовательский класс хранилища (оставьте пустым для использования STANDARD). Amazon S3 поддерживает следующие значения: REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR. Обратите внимание, что использование GLACIER или аналогичного класса сделает источник данных доступным только для записи, так как объекты должны быть вручную восстановлены перед тем, как их можно будет загрузить."
+  },
+  "ds.editor.storage.s3.storageClass": {
+    "other": "Класс хранилища"
+  },
+  "ds.editor.title": {
+    "other": "Источник данных %s"
+  },
+  "ds.editor.versioning": {
+    "other": "Политика контроля версиями"
+  },
+  "ds.editor.versioning.disabled": {
+    "other": "Не включать управление версиями"
+  },
+  "ds.editor.tab.button-back": {
+    "other": "Назад"
+  },
+  "ds.editor.tab.button-next": {
+    "other": "Следующий"
+  },
+  "ds.editor.tab.button-create": {
+    "other": "Создать"
+  },
+  "ds.editor.tab.identifier": {
+    "other": "Идентификатор"
+  },
+  "ds.editor.tab.main": {
+    "other": "Основные параметры"
+  },
+  "ds.editor.tab.storage": {
+    "other": "Тип хранилища"
+  },
+  "ds.editor.tab.lifecycle": {
+    "other": "Жизненный цикл данных"
+  },
+  "ds.editor.tab.advanced": {
+    "other": "Расширенные настройки"
+  },
+  "ds.editor.initFlatFromSnapshot": {
+    "other": "Если это хранилище ранее использовалось как плоский источник данных, инициализируйте его из существующего файла снимка (должен находиться внутри хранилища)"
+  },
+  "ds.editor.foldersShardingPattern": {
+    "other": "По умолчанию, все файлы хранятся в уникальной папке. Используйте шаблон 'N:P:Q' для автоматического создания подпапок id[:N]/id[:P]/id[:Q]/..."
+  },
+  "ds.editor.initFlatFromSnapshot.hint": {
+    "other": "Path to snapshot inside storage (e.g. $snapshot.db)"
+  },
+  "ds.editor.foldersShardingPattern.hint": {
+    "other": "Sharding pattern (e.g. N:P:Q)"
+  },
+  "ds.encryption": {
+    "other": "Шифрование"
+  },
+  "ds.encryption.key.emptyState": {
+    "other": "Мастер-ключ не создан"
+  },
+  "ds.encryption.key.create": {
+    "other": "Создать ключ"
+  },
+  "ds.encryption.key.created": {
+    "other": "Создано"
+  },
+  "ds.encryption.key.delete": {
+    "other": "Удалить ключ"
+  },
+  "ds.encryption.key.delete.warning": {
+    "other": "Если ключ в настоящее время используется для зашифрованных данных, это очень опасная операция! Вы уверены, что хотите это сделать?"
+  },
+  "ds.encryption.key.export": {
+    "other": "Экспортировать ключ"
+  },
+  "ds.encryption.key.export.confirm": {
+    "other": "Подтвердить пароль"
+  },
+  "ds.encryption.key.export.fail": {
+    "other": "Что-то пошло не так во время экспорта"
+  },
+  "ds.encryption.key.export.password": {
+    "other": "Создайте надежный пароль"
+  },
+  "ds.encryption.key.export.result.copy": {
+    "other": "Скопируйте результат в файл для сохранения ключа"
+  },
+  "ds.encryption.key.id": {
+    "other": "Идентификатор"
+  },
+  "ds.encryption.key.import": {
+    "other": "Импорт ключа"
+  },
+  "ds.encryption.key.import.content": {
+    "other": "Вставьте ключ здесь из файла резервной копии"
+  },
+  "ds.encryption.key.import.fail": {
+    "other": "Что-то пошло не так во время импорта"
+  },
+  "ds.encryption.key.import.id": {
+    "other": "Уникальный идентификатор для этого ключа"
+  },
+  "ds.encryption.key.import.label": {
+    "other": "Описание для пользователя ключа"
+  },
+  "ds.encryption.key.import.password": {
+    "other": "Пароль используется во время экспорта"
+  },
+  "ds.encryption.key.import.success": {
+    "other": "Ключ успешно импортирован"
+  },
+  "ds.encryption.key.label": {
+    "other": "Метка"
+  },
+  "ds.encryption.key.owner": {
+    "other": "Владелец"
+  },
+  "ds.name": {
+    "other": "Имя"
+  },
+  "ds.status": {
+    "other": "Статус"
+  },
+  "ds.status.disabled": {
+    "other": "Выключено"
+  },
+  "ds.status.index": {
+    "other": "Индекс вниз"
+  },
+  "ds.status.ko": {
+    "other": "Сервис остановлен"
+  },
+  "ds.status.ko-peers": {
+    "other": "Узел %s не найден"
+  },
+  "ds.status.na": {
+    "other": "Н/Д"
+  },
+  "ds.status.object": {
+    "other": "Объекты вниз"
+  },
+  "ds.status.ok": {
+    "other": "Все сервисы запущены"
+  },
+  "ds.status.starting": {
+    "other": "Запуск источника данных..."
+  },
+  "ds.status.sync": {
+    "other": "Синхронизация вниз"
+  },
+  "ds.storage": {
+    "other": "Тип хранилища"
+  },
+  "ds.storage.fs": {
+    "other": "Локальная файловая система"
+  },
+  "ds.storage.s3": {
+    "other": "S3-совместимое хранилище"
+  },
+  "ds.storage.azure": {
+    "other": "Хранилище Azure"
+  },
+  "ds.storage.gcs": {
+    "other": "Облачное хранилище Google"
+  },
+  "ds.storage.title": {
+    "other": "Хранилище"
+  },
+  "ds.versioning": {
+    "other": "Версии"
+  },
+  "ds.syncStatus": {
+    "other": "Последняя синхронизация"
+  },
+  "ds.emptyState": {
+    "other": "Источники данных еще не созданы"
+  },
+  "ds.versioning.description": {
+    "other": "Описание"
+  },
+  "ds.versioning.name": {
+    "other": "Имя"
+  },
+  "ds.versioning.periods": {
+    "other": "Стратегия удержания"
+  },
+  "ds.versioning.storage": {
+    "other": "DataSources"
+  },
+  "logs.1": {
+    "other": "Журналы сервера"
+  },
+  "logs.10": {
+    "other": "Экспорт и загрузка"
+  },
+  "logs.11": {
+    "other": "Экспортировать как..."
+  },
+  "logs.2": {
+    "other": "Выберите день"
+  },
+  "logs.filter.legend": {
+    "other": "Фильтр по..."
+  },
+  "logs.export.disabled": {
+    "other": "Выберите дату или результат фильтра"
+  },
+  "logs.export.clicklink": {
+    "other": "Нажмите на ссылку для загрузки"
+  },
+  "logs.filter.period": {
+    "other": "Период времени"
+  },
+  "logs.filter.period.from": {
+    "other": "От"
+  },
+  "logs.filter.period.to": {
+    "other": "К"
+  },
+  "logs.filter.period.time": {
+    "other": "На..."
+  },
+  "logs.filter.login": {
+    "other": "Логин"
+  },
+  "logs.filter.ip": {
+    "other": "IP"
+  },
+  "logs.filter.fulltext": {
+    "other": "Поиск полного текста"
+  },
+  "logs.tz.tooltip": {
+    "other": "Показать часовой пояс локального/сервера"
+  },
+  "logs.tz.local": {
+    "other": "Местный часовой пояс"
+  },
+  "logs.tz.server": {
+    "other": "Часовой пояс сервера"
+  },
+  "logs.toggleTheme": {
+    "other": "Светлая/тёмная тема"
+  },
+  "logs.sys.note": {
+    "other": "Обратите внимание:"
+  },
+  "logs.sys.note.content": {
+    "other": "Пустые записи в журналах могут означать, что сервер не работает в производственном режиме. Обязательно установите этот уровень журнала, передав аргумент --log = production или установив переменную среды PYDIO_LOGS_LEVEL = production."
+  },
+  "logs.3": {
+    "other": "Фильтр логов"
+  },
+  "logs.4": {
+    "other": "Нажмите на строку для подробностей"
+  },
+  "logs.5": {
+    "other": "Детали события"
+  },
+  "logs.6": {
+    "other": "Экспорт логов"
+  },
+  "logs.7": {
+    "other": "Экспорт из"
+  },
+  "logs.8": {
+    "other": "В"
+  },
+  "logs.9": {
+    "other": "Файл будет экспортирован в формате CSV с разделителями ; и полями, заключенными в двойные кавычки (\")."
+  },
+  "logs.level": {
+    "other": "Уровень"
+  },
+  "logs.level.exact": {
+    "other": "(только)"
+  },
+  "logs.level.greaterthan": {
+    "other": "(и выше)"
+  },
+  "logs.service": {
+    "other": "Службы"
+  },
+  "logs.message": {
+    "other": "Сообщение"
+  },
+  "logs.noentries": {
+    "other": "Нет записей"
+  },
+  "logs.noresults": {
+    "other": "Нет результатов"
+  },
+  "logs.details.copy": {
+    "other": "Скопировать записи в буфер обмена"
+  },
+  "logs.details.show-focus": {
+    "other": "Показать +/- 5 минут"
+  },
+  "logs.details.close": {
+    "other": "Закрыть детали записи"
+  },
+  "logs.details.user": {
+    "other": "Пользователь"
+  },
+  "logs.details.user-attributes": {
+    "other": "Пользовательские аттрибуты"
+  },
+  "logs.details.date": {
+    "other": "Дата события"
+  },
+  "logs.details.msg": {
+    "other": "Сообщение о событии"
+  },
+  "logs.details.service": {
+    "other": "Эмитирующий сервис"
+  },
+  "logs.details.connection": {
+    "other": "IP-адрес подключения"
+  },
+  "logs.details.agent": {
+    "other": "Пользовательский агент"
+  },
+  "logs.details.protocol": {
+    "other": "Протокол"
+  },
+  "logs.details.node": {
+    "other": "Файл/Папка"
+  },
+  "logs.details.transfer-size": {
+    "other": "Объем передачи"
+  },
+  "logs.details.workspace": {
+    "other": "В рабочем пространстве"
+  },
+  "menu.0": {
+    "other": "Рабочая панель"
+  },
+  "menu.1": {
+    "other": "Активность"
+  },
+  "menu.10": {
+    "other": "Расширения для отправки файлов через Web UI"
+  },
+  "menu.11": {
+    "other": "Авторизация"
+  },
+  "menu.11b": {
+    "other": "Авторизация"
+  },
+  "menu.12": {
+    "other": "Конфигурации бэкэндов"
+  },
+  "menu.13": {
+    "other": "Журнал запросов"
+  },
+  "menu.14": {
+    "other": "Уведомления"
+  },
+  "menu.15": {
+    "other": "Как пользователи получают уведомления от различных частей приложения."
+  },
+  "menu.16": {
+    "other": "Помощник Pydio"
+  },
+  "menu.17": {
+    "other": "Инструмент мгновенного обмена сообщениями и ускорения"
+  },
+  "menu.18": {
+    "other": "Все плагины"
+  },
+  "menu.19": {
+    "other": "Доступные расширения"
+  },
+  "menu.2": {
+    "other": "Журналы сервера"
+  },
+  "menu.20": {
+    "other": "Функции пользователя"
+  },
+  "menu.21": {
+    "other": "Параметры пользователя"
+  },
+  "menu.22": {
+    "other": "Страница приветствия"
+  },
+  "menu.23": {
+    "other": "Начальная страница пользователя после входа. Настройка отображаемых элементов и ссылок."
+  },
+  "menu.3": {
+    "other": "Оформление"
+  },
+  "menu.4": {
+    "other": "Тема, логотипы, параметры внешнего вида"
+  },
+  "menu.5": {
+    "other": "Поделиться функциями"
+  },
+  "menu.6": {
+    "other": "Настройки для всех файлов и папок"
+  },
+  "menu.7": {
+    "other": "Редакторы"
+  },
+  "menu.8": {
+    "other": "Включить/отключить редакторы и управлять их параметрами"
+  },
+  "menu.9": {
+    "other": "Загрузчик"
+  },
+  "menu.metadata": {
+    "other": "Метаданные"
+  },
+  "menu.metadata.description": {
+    "other": "Пользовательские поля, прикрепленные к данным"
+  },
+  "metadata.definition": {
+    "other": "Описание"
+  },
+  "metadata.delete.confirm": {
+    "other": "Вы уверены, что вы хотите удалить метаданные?"
+  },
+  "metadata.editor.label.error": {
+    "other": "Метка метаданных не может быть пустой"
+  },
+  "metadata.editor.ns.error": {
+    "other": "Выберите пространство имен для этих метаданных"
+  },
+  "metadata.editor.ns.exists": {
+    "other": "Имя уже существует, пожалуйста, выберите другое"
+  },
+  "metadata.editor.selection": {
+    "other": "Значения выбора"
+  },
+  "metadata.editor.selection.key": {
+    "other": "Ключ"
+  },
+  "metadata.editor.selection.value": {
+    "other": "Значение"
+  },
+  "metadata.editor.selection.steps": {
+    "other": "Показать как шаги"
+  },
+  "metadata.editor.tags.cleared": {
+    "other": "Убраны теги для пространства имён %s"
+  },
+  "metadata.editor.tags.reset": {
+    "other": "Сбросить теги"
+  },
+  "metadata.editor.title.create": {
+    "other": "Создать пространство имён"
+  },
+  "metadata.empty": {
+    "other": "Метаданные не определены"
+  },
+  "metadata.indexable": {
+    "other": "Индексируемый"
+  },
+  "metadata.label": {
+    "other": "Метка"
+  },
+  "metadata.namespace": {
+    "other": "Имя"
+  },
+  "metadata.namespace.add": {
+    "other": "+ Пространство имен"
+  },
+  "metadata.namespaces": {
+    "other": "Пространства имён"
+  },
+  "metadata.namespaces.legend": {
+    "other": "Метаданные могут быть прикреплены к любым файлам или папкам пользователями. Здесь вы можете определить тип метаданных, которые вы хотите отобразить, и можно ли смотреть и изменять метаданные пользователям, а не администраторами."
+  },
+  "metadata.order": {
+    "other": "Порядок"
+  },
+  "metadata.group": {
+    "other": "Группа"
+  },
+  "metadata.group-field": {
+    "other": "Имя группы (создает развертываемый раздел). Используйте '/' для подгрупп."
+  },
+  "metadata.default-group": {
+    "other": "Нет группы"
+  },
+  "metadata.toggle.index": {
+    "other": "Индекс в поисковой системе"
+  },
+  "metadata.toggle.read": {
+    "other": "Ограничить видимость администраторами"
+  },
+  "metadata.toggle.write": {
+    "other": "Ограничить редактирование администраторами"
+  },
+  "metadata.type": {
+    "other": "Тип"
+  },
+  "metadata.type.string": {
+    "other": "Краткий текст"
+  },
+  "metadata.type.textarea": {
+    "other": "Параграф"
+  },
+  "metadata.type.integer": {
+    "other": "Номер"
+  },
+  "metadata.group.lists": {
+    "other": "List"
+  },
+  "metadata.group.internal": {
+    "other": "Internal"
+  },
+  "metadata.type.boolean": {
+    "other": "Значение Истина/Ложь"
+  },
+  "metadata.type.date": {
+    "other": "Дата или Время"
+  },
+  "metadata.type.stars_rate": {
+    "other": "Рейтинг"
+  },
+  "metadata.type.css_label": {
+    "other": "Цветные метки"
+  },
+  "metadata.type.auto_complete": {
+    "other": "Auto Complete"
+  },
+  "metadata.type.tags": {
+    "other": "Extensible Tags (legacy)"
+  },
+  "metadata.type.choice": {
+    "other": "Выбрать из значений"
+  },
+  "metadata.type.multi_value": {
+    "other": "Multi Value select"
+  },
+  "metadata.type.tag_cloud": {
+    "other": "Tag Cloud"
+  },
+  "metadata.type.tag_cloud.values": {
+    "other": "Tag Cloud values"
+  },
+  "metadata.tag_cloud.entity.hint": {
+    "other": "Comma-separated list of possible tags"
+  },
+  "metadata.tag_cloud.entity": {
+    "other": "Values"
+  },
+  "metadata.type.json": {
+    "other": "JSON (внутренний формат)"
+  },
+  "metadata.type.url": {
+    "other": "URL"
+  },
+  "metadata.type.date.format": {
+    "other": "Формат"
+  },
+  "metadata.type.date.format.date": {
+    "other": "Дата"
+  },
+  "metadata.type.date.format.date-time": {
+    "other": "Дата и Время"
+  },
+  "metadata.type.date.format.time": {
+    "other": "Время"
+  },
+  "metadata.type.date.display": {
+    "other": "Отображение"
+  },
+  "metadata.type.date.display.normal": {
+    "other": "Обычный"
+  },
+  "metadata.type.date.display.relative": {
+    "other": "Относительное (xx дней назад...)"
+  },
+  "metadata.type.reaction": {
+    "other": "Реакция"
+  },
+  "metadata.type.integer.format": {
+    "other": "Формат"
+  },
+  "metadata.type.integer.format.general": {
+    "other": "Основное"
+  },
+  "metadata.type.integer.format.bytesize": {
+    "other": "Размер в байтах"
+  },
+  "metadata.type.integer.format.percentage": {
+    "other": "Процент"
+  },
+  "metadata.type.integer.format.progress": {
+    "other": "Прогресс"
+  },
+  "metadata.toggle.list-visibility": {
+    "other": "Показать значение в списке файлов"
+  },
+  "metadata.toggle.prompt": {
+    "other": "Prompt Metadata tagging on Upload"
+  },
+  "metadata.field.validation": {
+    "other": "Field Validation"
+  },
+  "metadata.validation.max-length.gte-min-length": {
+    "other": "Maximum length must be greater than or equal to minimum length"
+  },
+  "metadata.validation.max-value.gte-min-value": {
+    "other": "Maximum value must be greater than or equal to minimum value"
+  },
+  "metadata.validation.default-length.min": {
+    "other": "Default value length (%s) must be at least %s characters"
+  },
+  "metadata.validation.default-length.max": {
+    "other": "Default value length (%s) must not exceed %s characters"
+  },
+  "metadata.validation.default-value.min": {
+    "other": "Default value (%s) must be at least %s"
+  },
+  "metadata.validation.default-value.max": {
+    "other": "Default value (%s) must not exceed %s"
+  },
+  "metadata.editor.selection.key_exists": {
+    "other": "This key already exists"
+  },
+  "metadata.toggle.required": {
+    "other": "Required"
+  },
+  "metadata.boolean.yes": {
+    "other": "Yes"
+  },
+  "metadata.boolean.no": {
+    "other": "No"
+  },
+  "metadata.toggle.defaults": {
+    "other": "Enforce Defaults"
+  },
+  "metadata.field.mandatory": {
+    "other": "Обязательный"
+  },
+  "perfs.booster.description": {
+    "other": "Проверьте, что помощник Pydio запущен и активирует WebSocket"
+  },
+  "perfs.booster.error": {
+    "other": "Ошибка помощника Pydio, см. выделенную панель"
+  },
+  "perfs.booster.help": {
+    "other": "Помощник Pydio предоставляет простой в установке дополнительный инструмент для добавления поддержки WebSocket и ускорение загрузки/выгрузки в Pydio."
+  },
+  "perfs.booster.title": {
+    "other": "Помощник Pydio"
+  },
+  "perfs.cache.description": {
+    "other": "Проверяет, что Pydio настроен на использование кэша"
+  },
+  "perfs.cache.error": {
+    "other": "Похоже, что вы не активировали сервис кэширования."
+  },
+  "perfs.cache.help": {
+    "other": "Pydio может подключаться к внешнему серверу кэша, такому как Redis или Memcache, или использовать кэш внутри памяти для существенного улучшения производительности просмотра файлов."
+  },
+  "perfs.cache.title": {
+    "other": "Кэш Pydio"
+  },
+  "perfs.cli.description": {
+    "other": "Отложите трудоемкие задачи для командной строки."
+  },
+  "perfs.cli.error": {
+    "other": "Предупреждение, командная строка не включена!"
+  },
+  "perfs.cli.help": {
+    "other": "Включить командную строку в параметрах ядра. Это значительно улучшит производительность конечных пользователей, так как выполнение трудоемких задач делегируется другим процессам."
+  },
+  "perfs.cli.title": {
+    "other": "Командная строка PHP"
+  },
+  "perfs.debug.description": {
+    "other": "Проверяет, отключены ли режимы отладки на сервере"
+  },
+  "perfs.debug.error": {
+    "other": "Предупреждение, один из PYDIO_SERVER_DEBUG, PYDIO_CLIENT_DEBUG или PYDIO_SKIP_CACHE установлен в Включено!"
+  },
+  "perfs.debug.help": {
+    "other": "Убедитесь, что режимы отладки отключены на сервере. Это делается вручную путем редактирования файла conf/booststrap_context.php (или /etc/pydio/bootstrap_context.php)."
+  },
+  "perfs.debug.title": {
+    "other": "Режим отладки"
+  },
+  "perfs.desc": {
+    "other": "Проверка системных конфигураций для возможных улучшений."
+  },
+  "perfs.load.description": {
+    "other": "Определять высокую загрузку сервера (только для серверов Linux)"
+  },
+  "perfs.load.error": {
+    "other": "Возможно, добавление дополнительного процессора или оперативной памяти к вашему серверу может быть необходимым."
+  },
+  "perfs.load.help": {
+    "other": "Высокая загрузка сервера может указывать на то, что вашему серверу не хватает процессора или оперативной памяти, если вы используете Pydio."
+  },
+  "perfs.load.title": {
+    "other": "Нагрузка сервера"
+  },
+  "perfs.mailer.description": {
+    "other": "Проверяет, что при отправке писем используется функция очереди"
+  },
+  "perfs.mailer.error": {
+    "other": "Почта не настроена для отсрочки отправки писем."
+  },
+  "perfs.mailer.help": {
+    "other": "Использование почтовой очереди предотвращает прямую отправку электронных писем для каждого действия и запроса. Вместо этого они сохраняются в отдельной базе данных и обрабатываются независимо."
+  },
+  "perfs.mailer.title": {
+    "other": "Очередь рассылки"
+  },
+  "perfs.more": {
+    "other": "Подробнее"
+  },
+  "perfs.opcache.description": {
+    "other": "Проверяет, активен ли кэш PHP Opcode"
+  },
+  "perfs.opcache.error": {
+    "other": "Не удалось обнаружить расширение php из APC, APCu, Opcache или XCache."
+  },
+  "perfs.opcache.help": {
+    "other": "Ydio - это ресурсоемкий PHP-фреймворк, который требует загрузки большого количества файлов в память. Обязательно включите PHP Opcache, такие как APC/u, Opcache или XCache."
+  },
+  "perfs.opcache.title": {
+    "other": "Расширение кэша Opcode"
+  },
+  "perfs.score": {
+    "other": "Оценка производительности"
+  },
+  "perfs.tests": {
+    "other": "Тесты производительности"
+  },
+  "perfs.title": {
+    "other": "Производительность системы"
+  },
+  "perfs.widget": {
+    "other": "Добавить виджет на панель управления"
+  },
+  "plugins.1": {
+    "other": "Основные параметры"
+  },
+  "plugins.2": {
+    "other": "Главный сервер"
+  },
+  "plugins.3": {
+    "other": "Дополнительный сервер"
+  },
+  "plugins.4": {
+    "other": "Плагины редактора - это превью/редакторы, связанные с любыми типами файлов в приложении.\n                    Эти плагины обрабатываются в графическом интерфейсе (расширениях) и могут обрабатывать поддерживаемые файлы.\n                    Параметр порядка также позволяет определить приоритет для  действия 'открыть с..' действия."
+  },
+  "plugins.5": {
+    "other": "Сохранить изменения"
+  },
+  "plugins.6": {
+    "other": "Сброс"
+  },
+  "plugins.list.column.enabled": {
+    "other": "Включено"
+  },
+  "plugins.list.column.label": {
+    "other": "Метка"
+  },
+  "plugins.list.column.id": {
+    "other": "Идентификатор"
+  },
+  "plugins.list.column.description": {
+    "other": "Описание"
+  },
+  "plugins.list.action.edit": {
+    "other": "Изменить параметры плагина"
+  },
+  "plugins.documentation": {
+    "other": "Документация"
+  },
+  "policies.policy.create": {
+    "other": "Создать"
+  },
+  "policies.policy.description": {
+    "other": "Описание политики"
+  },
+  "policies.policy.name": {
+    "other": "Название политики"
+  },
+  "policies.policy.rules": {
+    "other": "#Правила"
+  },
+  "policies.policy.display": {
+    "other": "Показать правила политики"
+  },
+  "policies.policy.edit": {
+    "other": "Редактировать правила политики"
+  },
+  "policies.policy.editLabels": {
+    "other": "Изменить метки"
+  },
+  "policies.policy.saveLabels": {
+    "other": "Сохранить изменения"
+  },
+  "policies.policy.delete": {
+    "other": "Удалить политику"
+  },
+  "policies.policy.delete.confirm": {
+    "other": "Вы уверены, что хотите удалить эту политику? Убедитесь, что она не нарушает безопасность приложения!"
+  },
+  "policies.policy.new": {
+    "other": "+ Новая политика"
+  },
+  "policies.policy.type": {
+    "other": "Тип политики"
+  },
+  "policies.rule.create": {
+    "other": "Добавить новое правило"
+  },
+  "policies.rule.delete": {
+    "other": "Удалить правило"
+  },
+  "policies.acl.empty-string": {
+    "other": "Политики не определены, создайте их как разрешение на динамическое пространство."
+  },
+  "policies.rule.delete.confirm": {
+    "other": "Вы уверены, что хотите удалить это правило безопасности? Это может нарушить модель безопасности приложения!"
+  },
+  "policies.type.acl.legend": {
+    "other": "Эти политики используются для динамического предоставления доступа на чтение/запись проектам или узлам на основе контекста запроса и/или метаданных узла. Они определены здесь и используются в Панели управления доступа пользователей и ролей."
+  },
+  "policies.type.acl.title": {
+    "other": "ACL на основе контекста"
+  },
+  "policies.type.oidc.legend": {
+    "other": "Служба OpenId Connect используется для аутентификации пользователя, перед любым доступом к API. Поэтому вы можете полностью отключить операцию входа для ряда пользователей на основе контекста запросов., отключив регистрацию из заданного набора IP или в заданное время."
+  },
+  "policies.type.oidc.title": {
+    "other": "OpenId ресурсы подключения"
+  },
+  "policies.type.rest.legend": {
+    "other": "Эти политики защищают API REST для каждого URI / метода. Они предоставляют базовый доступ к некоторым API-интерфейсам для общего доступа и ограниченный доступ ко всем API-интерфейсам, чтобы обеспечить доступ к ним только через веб-приложение. Как правило, вы не должны касаться их, если вы точно не знаете, что делаете."
+  },
+  "policies.type.rest.title": {
+    "other": "Ресурсы REST"
+  },
+  "react.1": {
+    "other": "родительская папка"
+  },
+  "react.10": {
+    "other": "Наследовать права доступа"
+  },
+  "react.11": {
+    "other": "Отсутствуют права доступа"
+  },
+  "react.12": {
+    "other": "Очистить права доступа"
+  },
+  "react.13": {
+    "other": "Показать все права доступа"
+  },
+  "react.14": {
+    "other": "Показать конечное дерево"
+  },
+  "react.2": {
+    "other": "групповые действия"
+  },
+  "react.3": {
+    "other": "Результаты поиска для '%s'"
+  },
+  "react.4": {
+    "other": "Закрыть вкладку результатов"
+  },
+  "react.5": {
+    "other": "запретить"
+  },
+  "react.5a": {
+    "other": "чтение"
+  },
+  "react.5b": {
+    "other": "запись"
+  },
+  "react.5c": {
+    "other": "доступ"
+  },
+  "react.6": {
+    "other": "дети"
+  },
+  "react.7": {
+    "other": "Создать правило"
+  },
+  "react.8": {
+    "other": "Вы собираетесь управлять разрешениями на более низком уровне. Эта папка будет читаться только\n                        по умолчанию, и вы будете избирательно управлять разрешениями для всех последующих. Выберите\n                        для копирования текущих разрешений всем последовательным вложениям, или очистите права доступа, что сделает\n                        их недоступными по умолчанию."
+  },
+  "react.9": {
+    "other": "Вы собираетесь отключить управление разрешениями на суб-уровне: все\n                        дочерние лица будут автоматически наследовать права доступа к этой папке, и все текущие настройки\n                        для этих дочерних элементов будут потеряны. Вы уверены, что хотите?"
+  },
+  "scheduler.1": {
+    "other": "Планировщик используется для автоматического запуска задач на постоянной основе. Это требует регулярного запуска основной команды: если вы используете помощник Pydio, он должен вызвать это для вас. В противном случае используйте CRON для запуска главной команды каждую минуту."
+  },
+  "scheduler.2": {
+    "other": "Командная строка не включена в %1, планировщик не сможет запускать задания."
+  },
+  "scheduler.3": {
+    "other": "глобальные настройки"
+  },
+  "user.1": {
+    "other": "+ Пользователь"
+  },
+  "user.10": {
+    "other": "Доступ к рабочим пространствам %i"
+  },
+  "user.11": {
+    "other": "%i ролей"
+  },
+  "user.12": {
+    "other": "Путь группы"
+  },
+  "user.13": {
+    "other": "общий доступ"
+  },
+  "user.14": {
+    "other": "Создать новую роль"
+  },
+  "user.15": {
+    "other": "Создать новую группу"
+  },
+  "user.16": {
+    "other": "Идентификатор группы"
+  },
+  "user.16.empty": {
+    "other": "Пожалуйста, укажите уникальный идентификатор"
+  },
+  "user.16.format": {
+    "other": "Пожалуйста, используйте только буквенно-цифровые символы"
+  },
+  "user.17": {
+    "other": "Метка группы"
+  },
+  "user.17.empty": {
+    "other": "Пожалуйста, укажите метку для этой группы"
+  },
+  "user.18": {
+    "other": "Идентификатор роли"
+  },
+  "user.18.empty": {
+    "other": "Пожалуйста, укажите метку для этой роли"
+  },
+  "user.19": {
+    "other": "Создать нового пользователя"
+  },
+  "user.2": {
+    "other": "+ Группа"
+  },
+  "user.20": {
+    "other": "Пользователь будет создан в группе %s"
+  },
+  "user.21": {
+    "other": "Логин пользователя"
+  },
+  "user.22": {
+    "other": "Пароль пользователя"
+  },
+  "user.23": {
+    "other": "Подтвердите пароль"
+  },
+  "user.24": {
+    "other": "Корневая группа"
+  },
+  "user.25": {
+    "other": "Роли корневой группы"
+  },
+  "user.26": {
+    "other": "Роль группы %s"
+  },
+  "user.27": {
+    "other": "Персональная роль пользователя"
+  },
+  "user.3": {
+    "other": "Группы"
+  },
+  "user.4": {
+    "other": "Роли"
+  },
+  "user.5": {
+    "other": "Группы и пользователи"
+  },
+  "user.6": {
+    "other": "+ Роль"
+  },
+  "user.7": {
+    "other": "Искать пользователей или группы"
+  },
+  "user.8": {
+    "other": "Задайте параметры для этой группы для применения их ко всем группам и пользователям."
+  },
+  "user.9": {
+    "other": "Последнее подключение"
+  },
+  "user.moveto.hint": {
+    "other": "Выберите группу назначения, оставьте '/' для корневой группы."
+  },
+  "user.filter.tooltip": {
+    "other": "Фильтровать список пользователей..."
+  },
+  "user.filter.locks": {
+    "other": "Заблокированные пользователи"
+  },
+  "user.filter.hidden": {
+    "other": "Общедоступные ссылки (скрытые)"
+  },
+  "user.filter.status": {
+    "other": "Статус"
+  },
+  "user.type.hidden": {
+    "other": "Общедоступный пользователь"
+  },
+  "user.type.hidden.legend": {
+    "other": "Публичные пользователи создаются для публичных ссылок (по одному на ссылку) и по умолчанию скрыты. Это может быть полезно перечислять их для обнаружения заблокированных ссылок."
+  },
+  "user.rootgroup.legend": {
+    "other": "Разрешения применены ко всей иерархии пользователей"
+  },
+  "user.filter.internal": {
+    "other": "Внутренние пользователи"
+  },
+  "user.filter.shared": {
+    "other": "Пользователи общего доступа"
+  },
+  "user.filter.admins": {
+    "other": "Только администраторы"
+  },
+  "user.filter.all": {
+    "other": "Все пользователи"
+  },
+  "user.filter.anon": {
+    "other": "Показать анонимных"
+  },
+  "versions.editor.delete": {
+    "other": "Удалить политику"
+  },
+  "versions.editor.delete.confirm": {
+    "other": "Вы уверены, что хотите удалить эту политику? Это действие необратимо!"
+  },
+  "versions.editor.error.lastdelete": {
+    "other": "Последний период настроен на удаление всех версий, вы не можете добавить новую!"
+  },
+  "versions.editor.title": {
+    "other": "Политика %s"
+  },
+  "versions.period.keep-all": {
+    "other": "Оставить все"
+  },
+  "versions.period.keep-all.always": {
+    "other": "Всегда хранить все версии"
+  },
+  "versions.period.keep-n": {
+    "other": "Оставить %s версии"
+  },
+  "versions.period.keep-n-after": {
+    "other": "Оставить %1 версии после %2"
+  },
+  "versions.period.max-n": {
+    "other": "Максимум %s версии"
+  },
+  "versions.period.remove-all": {
+    "other": "Удалить все"
+  },
+  "versions.period.remove-all-after": {
+    "other": "Удалить все после %s"
+  },
+  "versions.period.retentions-n": {
+    "other": "%s периодов хранения"
+  },
+  "virtual.create": {
+    "other": "+ Пути шаблонов"
+  },
+  "virtual.create.button": {
+    "other": "Создать"
+  },
+  "virtual.label": {
+    "other": "Метка"
+  },
+  "virtual.col.id": {
+    "other": "ID шаблона"
+  },
+  "virtual.col.code": {
+    "other": "Код шаблона"
+  },
+  "virtual.label.new": {
+    "other": "Метка шаблона"
+  },
+  "virtual.legend.1": {
+    "other": "Пути к шаблонам рассчитываются динамически в зависимости от контекста. Их можно использовать в качестве корней для рабочих пространств вместо фиксированного пути к источнику данных. По умолчанию они используются для создания рабочей пространств «Личные файлы», которая указывает на разные папки для каждого пользователя, и для вычисления местоположения пользовательских папок Cells."
+  },
+  "virtual.legend.2": {
+    "other": "Используйте Ctrl+Пробел внутри редактора, чтобы получить подсказку о возможных значениях. Текущие значения: Имя.Пользователя (динамически разрешен для текущего входа пользователей) и Источник данных (для динамического выбора источника данных)."
+  },
+  "virtual.title": {
+    "other": "Пути шаблонов"
+  },
+  "virtual.save": {
+    "other": "Сохранить шаблон"
+  },
+  "virtual.delete": {
+    "other": "Удалить шаблон"
+  },
+  "virtual.delete.confirm": {
+    "other": "Вы уверены, что хотите удалить этот путь шаблона? Действие необратимо!"
+  },
+  "virtual.code": {
+    "other": "Код шаблона"
+  },
+  "virtual.code.display": {
+    "other": "Показать код"
+  },
+  "virtual.code.edit": {
+    "other": "Изменить код"
+  },
+  "virtual.card.title": {
+    "other": "Динамически вычисленный путь"
+  },
+  "virtual.card.cleanOnDelete": {
+    "other": "При удалении пользователя переименуйте данные в {deleted-NAME-UUID}."
+  },
+  "virtual.card.cleanOnDelete-legend-off": {
+    "other": "Эта опция не должна использоваться, если путь к шаблону не создает папку для каждого пользователя (используя User.Name)."
+  },
+  "virtual.card.cleanOnDelete-legend-on": {
+    "other": "Этот вариант может быть рекомендован, так как путь к шаблону, кажется, создает папку для каждого пользователя (с использованием User.Name)."
+  },
+  "ws.1": {
+    "other": "Управление источниками данных"
+  },
+  "ws.10": {
+    "other": "Выберите источник данных"
+  },
+  "ws.11": {
+    "other": "Рабочее пространство на основе..."
+  },
+  "ws.12": {
+    "other": "Шаблон %s"
+  },
+  "ws.13": {
+    "other": "Параметры шаблона"
+  },
+  "ws.14": {
+    "other": "Задать общие параметры"
+  },
+  "ws.15": {
+    "other": "Параметры рабочего пространства"
+  },
+  "ws.16": {
+    "other": "Выберите накопитель"
+  },
+  "ws.17": {
+    "other": "Выберите тип хранилища"
+  },
+  "ws.18": {
+    "other": "Загрузка драйвера"
+  },
+  "ws.19": {
+    "other": "Сохранить для добавления функций"
+  },
+  "ws.2": {
+    "other": "Закрыть источники данных"
+  },
+  "ws.20": {
+    "other": "Создать"
+  },
+  "ws.21": {
+    "other": "Основные параметры шаблона"
+  },
+  "ws.22": {
+    "other": "Основные параметры рабочего пространства"
+  },
+  "ws.23": {
+    "other": "Удалить рабочее пространство"
+  },
+  "ws.24": {
+    "other": "Детские рабочие пространства"
+  },
+  "ws.25": {
+    "other": "Общий доступ"
+  },
+  "ws.26": {
+    "other": "Права доступа к папке"
+  },
+  "ws.27": {
+    "other": "Дополнительные функции"
+  },
+  "ws.28": {
+    "other": "Сводка"
+  },
+  "ws.29": {
+    "other": "Параметры"
+  },
+  "ws.3": {
+    "other": "+ рабочее пространство"
+  },
+  "ws.filter.workspaces": {
+    "other": "Фильтр рабочих пространств..."
+  },
+  "ws.30": {
+    "other": "Общие настройки"
+  },
+  "ws.31": {
+    "other": "Удалить функцию"
+  },
+  "ws.32": {
+    "other": "Добавить функцию..."
+  },
+  "ws.33": {
+    "other": "Последние действия"
+  },
+  "ws.34": {
+    "other": "Последние события в этом рабочем пространстве"
+  },
+  "ws.35": {
+    "other": "Доступно %i пользователям"
+  },
+  "ws.36": {
+    "other": "+ %i файлов или папок общедоступно"
+  },
+  "ws.37": {
+    "other": "Рабочие пространства с использованием этого шаблона"
+  },
+  "ws.38": {
+    "other": "Общие элементы в этом рабочем пространстве"
+  },
+  "ws.39": {
+    "other": "Владелец"
+  },
+  "ws.4": {
+    "other": "+ источник данных"
+  },
+  "ws.40": {
+    "other": "Тип общего доступа"
+  },
+  "ws.41": {
+    "other": "Путь"
+  },
+  "ws.42": {
+    "other": "Права доступа к папке"
+  },
+  "ws.43": {
+    "other": "Укажите права доступа по умолчанию к этим папкам рабочей области.\n                                Чтобы включить управление разрешениями на подуровне, выберите 'Нижестоящие' в указанной папке.\n                                По умолчанию текущая папка будет доступна только для чтения, и вы сможете избирательно открывать доступ\n                                к дочерним папкам."
+  },
+  "ws.44": {
+    "other": "Пожалуйста, имейте в виду, что это всего лишь маска: если вы изменяете реальные папки напрямую, вам, возможно, придется соответственно изменять эту маску. Кроме того, эти права могут быть общими и ограничены параметром 'Default Rights', установленным для этого рабочего пространства (см. вкладку Общее)."
+  },
+  "ws.45": {
+    "other": "\nПоскольку его параметры используют ключевые слова 'PYDIO_USER' или 'PYDIO_GROUP_*', содержимое этого рабочего пространства будет изменяться в зависимости от текущего аутентифицированного пользователя. По этой причине нельзя просматривать папки напрямую и назначать им разрешения, но вы можете свободно определить некоторые общие пути, которые будут использоваться в качестве масок."
+  },
+  "ws.46": {
+    "other": "Добавить функцию"
+  },
+  "ws.47": {
+    "other": "Выберите функцию"
+  },
+  "ws.48": {
+    "other": "Будьте осторожны, эта рабочее пространство/шаблон не редактируется, так как он определяется непосредственно в файле conf/bootstrap_repositories.php."
+  },
+  "ws.49": {
+    "other": ""
+  },
+  "ws.4b": {
+    "other": "+ политика версии"
+  },
+  "ws.5": {
+    "other": "Метка"
+  },
+  "ws.50": {
+    "other": "Индексация"
+  },
+  "ws.51": {
+    "other": "В этом проекте есть индексатор (%s). Обычно индексирование производится \"на лету\", когда файлы добавляют/удаляются\n                    через интерфейсы приложения. Однако если вы делаете некоторые изменения непосредственно на уровне хранения, у вас может быть\n                    для ручного повторного запуска индексации время от времени. Используйте кнопки ниже для индексации сейчас, или запрограммируйте задание в планировщике\n                    для регулярного запуска индексации."
+  },
+  "ws.52": {
+    "other": "Пожалуйста, обратите внимание: так как это рабочее пространство имеет специфичное для пользователя содержимое, индексация будет запущена для каждого пользователя."
+  },
+  "ws.53": {
+    "other": "Запустить индексацию сейчас"
+  },
+  "ws.54": {
+    "other": "Запуск каждый день в 03:00"
+  },
+  "ws.55": {
+    "other": "Автоматическая очистка"
+  },
+  "ws.56": {
+    "other": "В данном рабочем пространстве настроена \"очистка\", которая автоматически удаляет документы, оставленные без изменений в течение %s дней. Убедитесь, что добавили задачу в планировщик для регулярной обработки этого рабочего пространства и поиска устаревших документов. Вы можете использовать кнопки ниже для автоматического создания этой задачи или выполнения очистки напрямую."
+  },
+  "ws.57": {
+    "other": "Пожалуйста, обратите внимание: так как это рабочее пространство имеет специфичное для пользователя содержимое, индексация будет запущена для каждого пользователя."
+  },
+  "ws.58": {
+    "other": "Очистить сейчас"
+  },
+  "ws.59": {
+    "other": "Запуск каждый день в 04:00"
+  },
+  "ws.6": {
+    "other": "Новое рабочее пространство"
+  },
+  "ws.60": {
+    "other": "Активность рабочего пространства"
+  },
+  "ws.61": {
+    "other": "Активность в рабочем пространстве отображается пользователям в правой панели. Вы можете очистить всю активность для этого рабочего пространства, что может быть удобным, например, если вы переходите в \"реальный\" режим в производстве после периода тестирования на стадии разработки в этом рабочем пространстве."
+  },
+  "ws.62": {
+    "other": "Очистить журнал активности"
+  },
+  "ws.63": {
+    "other": "Предупреждение, это очистит все действия этого рабочего пространства. Вы уверены, что хотите это сделать?"
+  },
+  "ws.64": {
+    "other": "Очищено %s событий"
+  },
+  "ws.65": {
+    "other": "Обслуживание рабочего пространства"
+  },
+  "ws.66": {
+    "other": "Запущенные задачи"
+  },
+  "ws.67": {
+    "other": "Нет запущенных задач"
+  },
+  "ws.68": {
+    "other": "Без параметров"
+  },
+  "ws.69": {
+    "other": "Рабочее пространство на основе шаблонов"
+  },
+  "ws.7": {
+    "other": "Новый источник данных"
+  },
+  "ws.70": {
+    "other": "Рабочее пространство на основе драйвера"
+  },
+  "ws.71": {
+    "other": "Выполните следующие шаги"
+  },
+  "ws.72": {
+    "other": "Заполните форму справа"
+  },
+  "ws.73": {
+    "other": "Выберите значение перед продолжением"
+  },
+  "ws.74": {
+    "other": "Используйте форму справа для создания нового источника данных. "
+  },
+  "ws.75": {
+    "other": "Источник данных определяет, где хранятся ваши данные."
+  },
+  "ws.76": {
+    "other": "Pydio объединит все ваши ресурсы в одно дерево, на котором вы можете назначить права с помощью рабочих областей."
+  },
+  "ws.8": {
+    "other": "Существующий источник данных"
+  },
+  "ws.9": {
+    "other": "Тип источника данных"
+  },
+  "ws.board.empty": {
+    "other": "Рабочие пространства не определены"
+  },
+  "ws.board.summary": {
+    "other": "Главное рабочее пространство"
+  },
+  "ws.board.syncable": {
+    "other": "Синхронизация"
+  },
+  "ws.complete.datasources": {
+    "other": "Источники данных"
+  },
+  "ws.complete.folders": {
+    "other": "Внутренние папки"
+  },
+  "ws.complete.label": {
+    "other": "Выберите источник данных или путь к шаблону"
+  },
+  "ws.complete.additional": {
+    "other": "Дополнительный корень"
+  },
+  "ws.complete.resolves": {
+    "other": "Решает для"
+  },
+  "ws.complete.templates": {
+    "other": "Текущие пути шаблонов"
+  },
+  "ws.dashboard": {
+    "other": "Рабочее пространство определяет основную точку доступа к вашим данным для пользователей. Обязательно определите хотя бы один источник данных, чтобы иметь возможность создать рабочее пространство, которое укажет путь к этому источнику данных."
+  },
+  "ws.editor.data.legend": {
+    "other": "Рабочее пространство открывается одим или нескольким 'главным' пользователям: выберите один или несколько путей из любого источника данных или пути к шаблону, которые будут разрешены автоматически при запуске."
+  },
+  "ws.editor.data.title": {
+    "other": "Доступ к данным"
+  },
+  "ws.editor.default_rights": {
+    "other": "Установить права по умолчанию для этого проекта (применяются ко всем внутренним пользователям приложения). Вы можете переопределить эти разрешения для каждого пользователя / для каждой роли / для каждой группы в разделе Люди."
+  },
+  "ws.editor.default_rights.hint": {
+    "other": "Права по умолчанию"
+  },
+  "ws.editor.default_rights.none": {
+    "other": "Нет"
+  },
+  "ws.editor.default_rights.read": {
+    "other": "Только чтение"
+  },
+  "ws.editor.default_rights.readwrite": {
+    "other": "Чтение и запись"
+  },
+  "ws.editor.default_rights.write": {
+    "other": "Только запись"
+  },
+  "ws.editor.description": {
+    "other": "Дополнительное описание (необязательно)"
+  },
+  "ws.editor.help.1": {
+    "other": "Рабочее пространство предоставляет доступ к вашим данным пользователям. Они открывают одну или несколько папок, выбранных внутри ваших источников данных."
+  },
+  "ws.editor.help.2": {
+    "other": "Важно правильно организовать, как будут предоставляться данные вашим пользователям. Вы можете создавать рабочие пространства для различных подразделений вашей организации (финансов, маркетинга, технических данных и т. д.) Вы можете назначать доступ к рабочим пространствам для каждого пользователя / отдельной роли / для каждой группы."
+  },
+  "ws.editor.help.delete": {
+    "other": "Предупреждение, опасная операция! Это необратимо."
+  },
+  "ws.editor.label.legend": {
+    "other": "Пользовательская метка для этого рабочего пространства"
+  },
+  "ws.editor.options.legend": {
+    "other": "Метка и описание отображаются для пользователей. Выберите имя с описанием, чтобы помочь пользователям лучше организовать данные."
+  },
+  "ws.editor.other": {
+    "other": "Другие свойства"
+  },
+  "ws.editor.other.layout": {
+    "other": "Название рабочего пространства"
+  },
+  "ws.editor.other.layout.default": {
+    "other": "По умолчанию"
+  },
+  "ws.editor.other.layout.easy": {
+    "other": "Простой формат перевода (только для Enterprise)"
+  },
+  "ws.editor.other.skiprecycle": {
+    "other": "Очистить корзину"
+  },
+  "ws.editor.other.skiprecycle.legend": {
+    "other": "Отключить корзину для этого рабочего пространства: все файлы будут окончательно удалены. Это не применяется к ячейкам, созданным внутри этого рабочего пространства; файлы всегда будут перемещаться в корзину рабочего пространства, чтобы избежать человеческих ошибок."
+  },
+  "ws.editor.other.sync": {
+    "other": "Разрешить синхронизацию рабочего стола"
+  },
+  "ws.editor.other.sync.legend": {
+    "other": "Синхронизация рабочего стола позволяет пользователям синхронизировать свои файлы в автономном режиме на своем компьютере. Предупреждение, эта функция в настоящее время поддерживается только для личных файлов, так как общие рабочие пространства могут создавать конфликты, если много пользователей синхронизируют документы в одной папке. Для персональных файлов вы также можете включить/отключить эту функцию на основе отдельных ролей, используя Политики безопасности."
+  },
+  "ws.editor.other.sync-personal": {
+    "other": "(только для личного рабочего пространства)"
+  },
+  "ws.editor.sync.warning": {
+    "other": "Внимание!"
+  },
+  "ws.editor.sync.warning.validate": {
+    "other": "Я понимаю"
+  },
+  "ws.editor.sync.warning.enable": {
+    "other": "Включение синхронизации на разделяемом рабочем пространстве может иметь неожиданные результаты, если пользователи синхронизируют и редактируют файлы вместе. Пожалуйста, обратите внимание, что ЭТО БУДУТ НЕ ПОДДЕРЖИВАЕТСЯ нашими профессиональными услугами. Пожалуйста, используйте эту функцию на свой страх и риск!"
+  },
+  "ws.editor.sync.warning.disable": {
+    "other": "Если люди подключены к этому проекту, их задача синхронизации больше не будет работать! Вы уверены, что хотите изменить это?"
+  },
+  "ws.editor.other.quota": {
+    "other": "Disk Usage Quota (оставьте 0 без ограничения). Эта квота вычисляется на всех файлах этого проекта (или на конкретном пользовательском контенте для рабочих областей, таких как личные файлы)."
+  },
+  "ws.editor.other.quota.noquota": {
+    "other": "Квота не установлена"
+  },
+  "ws.editor.path.folder": {
+    "other": "Путь к папке"
+  },
+  "ws.editor.path.template": {
+    "other": "Путь к шаблону"
+  },
+  "ws.editor.slug.legend": {
+    "other": "Техническое имя, используемое, например, в URL, автоматически генерируется, но вы можете настроить его."
+  },
+  "services.text-filter.hint": {
+    "other": "Фильтр..."
+  },
+  "services.filter.nofilter": {
+    "other": "Все сервисы"
+  },
+  "services.filter.started": {
+    "other": "Только запущенные"
+  },
+  "services.filter.stopped": {
+    "other": "Только остановленные"
+  },
+  "services.peerfilter.title": {
+    "other": "Выбрать узел"
+  },
+  "services.toggle.details": {
+    "other": "Показать детали"
+  },
+  "services.empty.loading": {
+    "other": "Статус загрузки сервисов"
+  },
+  "services.empty.noservice": {
+    "other": "Нет сервиса"
+  },
+  "services.column.name": {
+    "other": "Имя сервиса"
+  },
+  "services.column.description": {
+    "other": "Описание"
+  },
+  "services.column.version": {
+    "other": "Версия"
+  },
+  "services.column.tag": {
+    "other": "Метка"
+  },
+  "services.column.peers": {
+    "other": "Пиры"
+  },
+  "services.tag.gateway.title": {
+    "other": "Шлюзы"
+  },
+  "services.tag.gateway.description": {
+    "other": "Онлайн-сервисы для доступа к платформе"
+  },
+  "services.tag.datasource.title": {
+    "other": "Источники данных"
+  },
+  "services.tag.datasource.description": {
+    "other": "Конечные точки хранения используются для доступа к конкретным хранилищам файлов. Основные службы отвечают за запуск вспомогательных услуг (за источник данных)."
+  },
+  "services.tag.data.title": {
+    "other": "Данные"
+  },
+  "services.tag.data.description": {
+    "other": "Обработка данных и метаданных."
+  },
+  "services.tag.idm.title": {
+    "other": "Управление идентификацией"
+  },
+  "services.tag.idm.description": {
+    "other": "Все сервисы, связанные с аутентификацией и разрешениями, ролями, политикой безопасности и т. д."
+  },
+  "services.tag.scheduler.title": {
+    "other": "Планировщик"
+  },
+  "services.tag.scheduler.description": {
+    "other": "Сервисы для управления фоновыми заданиями. Сервер задач может быть отправлен по различным узлам."
+  },
+  "services.tag.broker.title": {
+    "other": "Брокер"
+  },
+  "services.tag.broker.description": {
+    "other": "Сервис диспетчеризации и обработки событий (как правило, по отношению к пользователям) по всему приложению."
+  },
+  "services.tag.frontend.title": {
+    "other": "Интерфейс"
+  },
+  "services.tag.frontend.description": {
+    "other": "Веб-сервисы для пользовательских интерфейсов в браузере"
+  },
+  "services.tag.discovery.title": {
+    "other": "Поиск"
+  },
+  "services.tag.discovery.description": {
+    "other": "Основные конфигурации и службы реестров, вызываемых всеми другими сервисами."
+  },
+  "services.service.ip": {
+    "other": "Выполняется на %s"
+  },
+  "services.service.datasource.sync": {
+    "other": "Синхронизация"
+  },
+  "services.service.datasource.objects": {
+    "other": "Объекты"
+  },
+  "services.service.datasource.objects.legend": {
+    "other": "S3 слой для обработки данных в качестве хранилища объектов"
+  },
+  "services.service.datasource.legend": {
+    "other": "Источник данных синхронизирует данные с уровня объектов до индекса БД."
+  },
+  "services.service.datasource.index": {
+    "other": "Индексация"
+  },
+  "scheduler.title": {
+    "other": "Планировщик"
+  },
+  "scheduler.legend": {
+    "other": "Потоки, работающие в фоновом режиме на периодической основе или вызываемые событиями"
+  },
+  "scheduler.system.title": {
+    "other": "Системные Потоки"
+  },
+  "scheduler.system.legend": {
+    "other": "Эти Потоки по умолчанию зарегистрированы внутри приложения. Они обычно отвечают за извлечение информации из узла в фоновом режиме или выполнение некоторых операций очистки."
+  },
+  "scheduler.inactives.title": {
+    "other": "Неактивные потоки"
+  },
+  "scheduler.inactives.legend": {
+    "other": "Эти потоки неактивны, нажмите на поток, чтобы включить его."
+  },
+  "scheduler.system.empty": {
+    "other": "Потоки не запланированы."
+  },
+  "scheduler.users.title": {
+    "other": "Потоки пользователей"
+  },
+  "scheduler.users.legend": {
+    "other": "Эти потоки динамически создаются и вызываются действиями пользователей."
+  },
+  "scheduler.users.empty": {
+    "other": "Нет динамиков, запущенных пользователями"
+  },
+  "scheduler.cellsflows.cta.button": {
+    "other": "+ Пользовательский поток"
+  },
+  "scheduler.cellsflows.cta.text": {
+    "other": "Хотите создать свой собственный Flow? Узнайте, как Cells Flows упрощает автоматизацию повторяющихся ручных задач в Cells."
+  },
+  "scheduler.cellsflows.dialog.button": {
+    "other": "Узнать больше"
+  },
+  "scheduler.cellsflows.dialog.text": {
+    "other": "От создания собственных рабочих процессов до планирования задач и интеграции с инструментами сторонних поставщиков, наши настраиваемые компоненты помогут вам реагировать на события и автоматически предпринимать действия."
+  },
+  "scheduler.job.label": {
+    "other": "Метка"
+  },
+  "scheduler.job.endTime": {
+    "other": "Последнее выполнение"
+  },
+  "scheduler.job.status": {
+    "other": "Статус"
+  },
+  "scheduler.job.owner": {
+    "other": "Владелец"
+  },
+  "scheduler.job.trigger": {
+    "other": "Триггер"
+  },
+  "scheduler.job.delete": {
+    "other": "Удалить"
+  },
+  "scheduler.job.delete.confirm": {
+    "other": "Вы уверены, что хотите удалить этот Flow? Эту операцию нельзя отменить!"
+  },
+  "scheduler.tasks.delete.confirm": {
+    "other": "Вы уверены, что хотите очистить все задачи для этого Flow?"
+  },
+  "scheduler.trigger.picker.title": {
+    "other": "Запуск задания на..."
+  },
+  "scheduler.trigger.type.nodes": {
+    "other": "События файлов и папок (узлов): обнаруживайте изменения в файлах для их автоматического перемещения или обновления метаданных."
+  },
+  "scheduler.trigger.type.workspaces": {
+    "other": "События рабочих пространств: срабатывают при создании/удалении рабочего пространства. Используйте флаг Scope для фильтрации рабочих пространств в Cells"
+  },
+  "scheduler.trigger.type.acls": {
+    "other": "События списков управления доступом (ACL): списки управления доступом связывают рабочие пространства, узлы и роли для предоставления доступа к данным."
+  },
+  "scheduler.trigger.type.users": {
+    "other": "События пользователей: срабатывают при добавлении/удалении пользователя, а также при входе и выходе пользователя. Могут использоваться для запуска потоков валидации или назначения доступов."
+  },
+  "scheduler.trigger.type.roles": {
+    "other": "События ролей: могут использоваться для автоматизации доступов на основе имен ролей. Используйте флаги IsTeam, IsGroup, IsUser для фильтрации ролей."
+  },
+  "scheduler.trigger.type.chat": {
+    "other": "События чата: реагируют на новые сообщения в чате или модификации комнаты чата"
+  },
+  "scheduler.trigger.type.chat-messages": {
+    "other": "События сообщений чата"
+  },
+  "scheduler.trigger.type.chat-rooms": {
+    "other": "События комнат чата"
+  },
+  "scheduler.trigger.create.node": {
+    "other": "Создать узел"
+  },
+  "scheduler.trigger.create.node.description": {
+    "other": "Загружен новый файл или создана новая папка."
+  },
+  "scheduler.trigger.read.node": {
+    "other": "Чтение узла"
+  },
+  "scheduler.trigger.read.node.description": {
+    "other": "Файл был загружен или было выполнено перечисление содержимого папки."
+  },
+  "scheduler.trigger.update.path": {
+    "other": "Обновить путь"
+  },
+  "scheduler.trigger.update.path.description": {
+    "other": "Файл или папка были перемещены или переименованы."
+  },
+  "scheduler.trigger.update.content": {
+    "other": "Обновить контент"
+  },
+  "scheduler.trigger.update.content.description": {
+    "other": "Содержимое файла было обновлено путем редактирования или загрузки с замещением."
+  },
+  "scheduler.trigger.update.metadata": {
+    "other": "Обновить метаданные"
+  },
+  "scheduler.trigger.update.metadata.description": {
+    "other": "Внутренние метаданные были изменены для файла или папки."
+  },
+  "scheduler.trigger.update.user-metadata": {
+    "other": "Обновить метаданные пользователя"
+  },
+  "scheduler.trigger.update.user-metadata.description": {
+    "other": "Пользовательские метаданные были изменены (событие содержит обновленные метаданные)."
+  },
+  "scheduler.trigger.delete.node": {
+    "other": "Удалить узел"
+  },
+  "scheduler.trigger.delete.node.description": {
+    "other": "Файл или папка были окончательно удалены."
+  },
+  "scheduler.trigger.create.user": {
+    "other": "Создать пользователя"
+  },
+  "scheduler.trigger.create.user.description": {
+    "other": "Пользователь или группа были созданы."
+  },
+  "scheduler.trigger.read.user": {
+    "other": "Просмотр пользователя"
+  },
+  "scheduler.trigger.read.user.description": {
+    "other": "Пользователь или группа были доступны или перечислены."
+  },
+  "scheduler.trigger.update.user": {
+    "other": "Обновить пользователя"
+  },
+  "scheduler.trigger.update.user.description": {
+    "other": "Данные пользователя или группы были обновлены. Обычно происходит, если пользователь изменяет предпочтения или администратор назначает роль."
+  },
+  "scheduler.trigger.delete.user": {
+    "other": "Удалить пользователя"
+  },
+  "scheduler.trigger.delete.user.description": {
+    "other": "Пользователь или группа были удалены."
+  },
+  "scheduler.trigger.bind.user": {
+    "other": "Привязать пользователя"
+  },
+  "scheduler.trigger.bind.user.description": {
+    "other": "Пользователь вошел в систему."
+  },
+  "scheduler.trigger.logout.user": {
+    "other": "Выход пользователя"
+  },
+  "scheduler.trigger.logout.user.description": {
+    "other": "Пользователь вышел из системы."
+  },
+  "scheduler.trigger.role.create": {
+    "other": "Создать роль"
+  },
+  "scheduler.trigger.role.create.description": {
+    "other": "Создана новая роль, администратором или пользователями."
+  },
+  "scheduler.trigger.role.update": {
+    "other": "Обновить роль"
+  },
+  "scheduler.trigger.role.update.description": {
+    "other": "\"Роль была обновлена."
+  },
+  "scheduler.trigger.role.delete": {
+    "other": "Удалить роль"
+  },
+  "scheduler.trigger.role.delete.description": {
+    "other": "Роль была удалена."
+  },
+  "scheduler.trigger.workspace.create": {
+    "other": "Создать рабочее пространство"
+  },
+  "scheduler.trigger.workspace.create.description": {
+    "other": "Создано новое рабочее пространство или ячейка."
+  },
+  "scheduler.trigger.workspace.update": {
+    "other": "Обновить рабочее пространство"
+  },
+  "scheduler.trigger.workspace.update.description": {
+    "other": "Рабочее пространство или ячейка были обновлены."
+  },
+  "scheduler.trigger.workspace.delete": {
+    "other": "Удалить рабочее пространство"
+  },
+  "scheduler.trigger.workspace.delete.description": {
+    "other": "Рабочее пространство или ячейка были удалены."
+  },
+  "scheduler.trigger.acl.create": {
+    "other": "Создать/Обновить списки управления доступом (ACL)"
+  },
+  "scheduler.trigger.acl.create.description": {
+    "other": "Открыт контроль доступа."
+  },
+  "scheduler.trigger.acl.delete": {
+    "other": "Удалить ACL"
+  },
+  "scheduler.trigger.acl.delete.description": {
+    "other": "Контроль доступа был удален."
+  },
+  "scheduler.trigger.chat-message.put": {
+    "other": "Новое сообщение в чате"
+  },
+  "scheduler.trigger.chat-message.put.description": {
+    "other": "Сообщение было отправлено в комнате чата."
+  },
+  "scheduler.trigger.chat-message.delete": {
+    "other": "Сообщение в чате удалено"
+  },
+  "scheduler.trigger.chat-message.delete.description": {
+    "other": "Сообщение было удалено из комнаты чата."
+  },
+  "scheduler.trigger.chat-room.put": {
+    "other": "Новая комната чата"
+  },
+  "scheduler.trigger.chat-room.put.description": {
+    "other": "Создана новая комната чата."
+  },
+  "scheduler.trigger.chat-room.delete": {
+    "other": "Удалить комнату чата"
+  },
+  "scheduler.trigger.chat-room.delete.description": {
+    "other": "Чат-комната была удалена."
+  },
+  "scheduler.trigger.events": {
+    "other": "События"
+  },
+  "scheduler.trigger.manual": {
+    "other": "Ручной триггер"
+  },
+  "scheduler.trigger.periodic": {
+    "other": "Периодическое расписание"
+  },
+  "scheduler.job.disabled": {
+    "other": "выключено"
+  },
+  "scheduler.tasks.running.count": {
+    "other": "%s задач запущено"
+  },
+  "scheduler.task.action.pause": {
+    "other": "Приостановить задачу"
+  },
+  "scheduler.task.action.resume": {
+    "other": "Возобновить задачу"
+  },
+  "scheduler.task.action.stop": {
+    "other": "Остановить"
+  },
+  "scheduler.task.action.delete": {
+    "other": "Удалить"
+  },
+  "scheduler.task.action.enable": {
+    "other": "Включить поток"
+  },
+  "scheduler.task.action.run": {
+    "other": "Запустить"
+  },
+  "scheduler.task.action.disable": {
+    "other": "Отключить поток"
+  },
+  "scheduler.task.id": {
+    "other": "ID"
+  },
+  "scheduler.task.start": {
+    "other": "Запуск"
+  },
+  "scheduler.task.end": {
+    "other": "Завершить"
+  },
+  "scheduler.task.duration": {
+    "other": "Продолжительность"
+  },
+  "scheduler.task.status": {
+    "other": "Статус"
+  },
+  "scheduler.task.message": {
+    "other": "Сообщение"
+  },
+  "scheduler.tasks.running": {
+    "other": "Выполняющиеся задачи"
+  },
+  "scheduler.tasks.history": {
+    "other": "История задач"
+  },
+  "scheduler.tasks.history.empty": {
+    "other": "Нет запущенных задач"
+  },
+  "scheduler.tasks.history.more": {
+    "other": "%s другие задачи не показаны..."
+  },
+  "scheduler.tasks.running.empty": {
+    "other": "Нет запущенных задач"
+  },
+  "scheduler.tasks.bulk.delete": {
+    "other": "Удалить Задачи"
+  },
+  "scheduler.tasks.bulk.enable": {
+    "other": "Включить несколько"
+  },
+  "scheduler.tasks.bulk.disable": {
+    "other": "Отключить несколько"
+  },
+  "scheduler.tasks.bulk.clear": {
+    "other": "Очистить все"
+  },
+  "scheduler.tasks.activity.title": {
+    "other": "Активность задач"
+  },
+  "scheduler.tasks.activity.loading": {
+    "other": "Загрузка активности..."
+  },
+  "scheduler.tasks.activity.empty": {
+    "other": "Записи не найдены"
+  },
+  "scheduler.schedule.monthly": {
+    "other": "Каждые %1 месяца в %2"
+  },
+  "scheduler.schedule.monthly.short": {
+    "other": "Каждые %1 в месяц"
+  },
+  "scheduler.schedule.weekly": {
+    "other": "Каждые %1 в %2"
+  },
+  "scheduler.schedule.weekly.short": {
+    "other": "Каждый %1"
+  },
+  "scheduler.schedule.daily": {
+    "other": "Каждый день в %1"
+  },
+  "scheduler.schedule.daily.short": {
+    "other": "В %1"
+  },
+  "scheduler.schedule.timely": {
+    "other": "Каждый %1"
+  },
+  "scheduler.schedule.title": {
+    "other": "Расписание потока"
+  },
+  "scheduler.schedule.type": {
+    "other": "Тип расписания"
+  },
+  "scheduler.schedule.type.manual": {
+    "other": "Вручную"
+  },
+  "scheduler.schedule.type.monthly": {
+    "other": "Ежемесячно"
+  },
+  "scheduler.schedule.type.weekly": {
+    "other": "Еженедельно"
+  },
+  "scheduler.schedule.type.daily": {
+    "other": "Ежедневно"
+  },
+  "scheduler.schedule.type.timely": {
+    "other": "Каждые..."
+  },
+  "scheduler.schedule.type.once": {
+    "other": "Запустить один раз"
+  },
+  "scheduler.schedule.detail.monthday": {
+    "other": "День месяца"
+  },
+  "scheduler.schedule.detail.weekday": {
+    "other": "День недели"
+  },
+  "scheduler.schedule.detail.daytime": {
+    "other": "Время"
+  },
+  "scheduler.schedule.detail.daydate": {
+    "other": "Уникальная дата"
+  },
+  "scheduler.schedule.detail.minutes": {
+    "other": "Период в минутах"
+  },
+  "scheduler.job-parameters.dialog": {
+    "other": "Параметры потока"
+  },
+  "scheduler.job-parameters.button": {
+    "other": "Установите метку и короткое описание"
+  },
+  "developer.rest.apis": {
+    "other": "Документация API"
+  },
+  "developer.rest.apis.legend": {
+    "other": "Ниже приведены все API доступные в Pydio Cell. Чтобы использовать эти API, вы должны сначала авторизоваться в OpenIDConnect, чтобы получить действительный JWT. Смотрите руководство администратора для получения дополнительной информации."
+  },
+  "mailer.test.title": {
+    "other": "Отправить тестовое сообщение"
+  },
+  "mailer.test.legend": {
+    "other": "Перед отправкой тестового письма убедитесь, что вы сохранили изменения в конфигурации."
+  },
+  "mailer.test.loading": {
+    "other": "Загрузка библиотеки почты..."
+  },
+  "sites.title": {
+    "other": "Сайты"
+  },
+  "sites.externals": {
+    "other": "Внешние URL-адреса"
+  },
+  "sites.details": {
+    "other": "<div>\nSites define how Cells is binding to network interfaces and how it is exposed to the outside world.\nUse ‘<i>./cells configure sites</i>’ to manage your sites from the command line.\n<br/><br/>\nEach site has the following parameters:\n\n<ol>\n<li>1. <u>Bind(s)</u>: one or more [ip/hostname:port] to hook the internal webserver to.</li>\n<li>2. <u>TLS Settings</u>: TLS configuration for HTTPS support.</li>\n<li>3. <u>External URL</u>: the URL you communicate to your end-users. It can differ from your bind address, typically if the app is behind a reverse-proxy or inside a container with ports mapping.</li>\n<li>4. <u>Maintenance Mode</u> [On|Off]: display a maintenance page on this endpoint, although Cells is running.</li>\n</ol></div>"
+  },
+  "sites.details.note": {
+    "other": "<div><i>Additional notes</i>\n<ol>\n<li>1. When there are no sites defined, Cells use a default configuration (https://0.0.0.0:8080 with self-signed).</li>\n<li>2. Sites can be overridden at runtime by using ‘--bind’ flag or ‘CELLS_BIND’ environment variable.\n</li>\n</ol></div>"
+  },
+  "sites.externals.details": {
+    "other": "<div>\nCells uses its detected public URL in some features. It will try to use the most appropriate value based on your configuration. <br/><br/>For example:\n<ul>\n<li>&bull; If a unique site is defined and it has an external URL, that one is probably correct.</li>\n<li>&bull; When multiple sites are defined, you may want to force a unique URL that will be used for all external communication.</li>\n<li>&bull; If no external URL is detected, it will fallback to the internal bind address. In that case, you probably do not want to send a private IP (or 0.0.0.0:port…) to the outside world.</li>\n</ul>\n\n<br/>\nThe fields below show the detected values. Select to edit or type in a custom value and hit enter to save.\n</div>"
+  },
+  "sites.mailer.url": {
+    "other": "URL used to build links in emails"
+  },
+  "sites.links.url": {
+    "other": "URL used to build public links"
+  },
+  "sites.no-defaults": {
+    "other": "No defaults set"
+  },
+  "sites.enter-to-save": {
+    "other": "(hit enter to save)"
+  },
+  "sites.detected.sites": {
+    "other": "Sites currently detected"
+  },
+  "sites.configs.command": {
+    "other": "Use './cells config sites' command to edit sites."
+  },
+  "sites.column.bind": {
+    "other": "Bind"
+  },
+  "sites.column.tls": {
+    "other": "TLS"
+  },
+  "sites.column.external": {
+    "other": "Reverse Proxy"
+  },
+  "sites.configs.tls.letsencrypt": {
+    "other": "Let's Encrypt"
+  },
+  "sites.configs.tls.self": {
+    "other": "Self Signed"
+  },
+  "sites.configs.tls.certificate": {
+    "other": "Certificate"
+  },
+  "sites.configs.tls.notls": {
+    "other": "No TLS"
+  },
+  "sites.configs.tls.notls-reverse": {
+    "other": "No TLS behind proxy"
+  }
+}

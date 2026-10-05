@@ -1,0 +1,20 @@
+{
+  "User Account Panel": {
+    "other": "User Account Panel"
+  },
+  "User account panel for managing settings and opening address book": {
+    "other": "User account panel for managing settings and opening address book"
+  },
+  "Disable Address Book": {
+    "other": "Izslēgt Adresu grāmatu"
+  },
+  "Do not display address book in user account panel.": {
+    "other": "Nerādīt Adresu grāmatu lietotāja kontā."
+  },
+  "User Dashboard": {
+    "other": "Lietotāja Panelis"
+  },
+  "User home dashboard, can be displayed before accessing to workspaces": {
+    "other": "Lietotāja mājas panelis, var attēlot pirms piekļuves darbvirsmām"
+  }
+}

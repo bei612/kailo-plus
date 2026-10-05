@@ -1,0 +1,38 @@
+{
+  "Always Override": {
+    "other": "Всегда переопределять"
+  },
+  "Auto Close": {
+    "other": "Закрыть автоматически"
+  },
+  "Auto Rename File": {
+    "other": "Автоматическое переименование файла"
+  },
+  "Auto Start": {
+    "other": "Автозапуск"
+  },
+  "Auto-switching HTML5 or IFrame uploader.": {
+    "other": "Автоматически переключить на HTML5 или IFrame загрузчик."
+  },
+  "Default Behaviour": {
+    "other": "Поведение по умолчанию"
+  },
+  "Default value for automatically closing the dialog after upload or not": {
+    "other": "Значение по умолчанию для автоматического закрытия диалога после загрузки или нет"
+  },
+  "Default value for automatically starting upload or not": {
+    "other": "Значение по умолчанию для автоматического запуска загрузки или нет"
+  },
+  "Existing Files": {
+    "other": "Существующие файлы"
+  },
+  "HTML Uploader": {
+    "other": "Стандартный"
+  },
+  "Inform the user or not if the file already exists (default behaviour, the user will be able to change this preference)": {
+    "other": "Уведомлять пользователя или нет, если файл уже существует (поведение по умолчанию, пользователь сможет изменить этот параметр)"
+  },
+  "Prompt user": {
+    "other": "Спросить пользователя"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/resource_provision_advance_request.schema.json",
+  "title": "ResourceProvisionAdvanceRequest", "type": "object", "additionalProperties": false,
+  "required": ["target", "runId", "cancelRequested"],
+  "properties": {
+    "target": {"$ref": "resource_provision_target.schema.json"},
+    "runId": {"type": "string", "format": "uuid"},
+    "cancelRequested": {"type": "boolean"}
+  }
+}

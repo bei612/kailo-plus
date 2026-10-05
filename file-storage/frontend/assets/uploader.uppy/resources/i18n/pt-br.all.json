@@ -1,0 +1,14 @@
+{
+  "importFiles": {
+    "other": "Capturar áudio ou vídeo de:"
+  },
+  "title.camera": {
+    "other": "Câmera"
+  },
+  "title.screencast": {
+    "other": "Gravador de tela"
+  },
+  "title.audio": {
+    "other": "Microfone"
+  }
+}

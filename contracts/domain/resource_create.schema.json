@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/resource_create.schema.json",
+  "title": "ResourceCreate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["typeKey", "nativeType", "nativeRef", "evidenceRef", "evidenceDigest"],
+  "properties": {
+    "typeKey": {"type": "string"},
+    "nativeType": {"type": "string"},
+    "nativeRef": {"type": "string"},
+    "evidenceRef": {"type": "string"},
+    "evidenceDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

@@ -1,0 +1,992 @@
+{
+  "1": {
+    "other": "%s Public Download"
+  },
+  "10": {
+    "other": "Thư mục này đã được chia sẻ"
+  },
+  "100": {
+    "other": "Tập tin được chia sẻ"
+  },
+  "101": {
+    "other": "Các files đã được chia sẻ dưới dạng liên kết public"
+  },
+  "102": {
+    "other": "Thư mục được chia sẻ"
+  },
+  "103": {
+    "other": "Các thư mục đã được chia sẻ dưới dạng workspace hay minisites."
+  },
+  "104": {
+    "other": "Đây là liên kết đầu tiên, trong tổng số %s liên kết"
+  },
+  "105": {
+    "other": "Đây là liên kết đầu tiên, ngoài ra còn một liên kết khác nữa"
+  },
+  "106": {
+    "other": "Bạn có chắc xóa bộ đếm lượt download?"
+  },
+  "107": {
+    "other": "Giới hạn download phải là con số từ 1 tới %s"
+  },
+  "108": {
+    "other": "Sử dụng phần mềm đọc QRCode "
+  },
+  "109": {
+    "other": "User cho Minisite"
+  },
+  "11": {
+    "other": "Thời hạn"
+  },
+  "110": {
+    "other": "Chia sẻ cái này"
+  },
+  "110b": {
+    "other": "Chia sẻ"
+  },
+  "111": {
+    "other": "Chia sẻ trang này với những người khác"
+  },
+  "112": {
+    "other": "Chia sẻ trang này"
+  },
+  "113": {
+    "other": "Workspace mới"
+  },
+  "114": {
+    "other": "Chia sẻ thư mục này với users nội bộ"
+  },
+  "115": {
+    "other": "Liên kết web"
+  },
+  "116": {
+    "other": "Xuất bản nội dung thư mục dưới dạng một minisite"
+  },
+  "117": {
+    "other": "Minisite riêng tư"
+  },
+  "118": {
+    "other": "Minisite bảo vệ bởi password"
+  },
+  "119": {
+    "other": "Download link"
+  },
+  "12": {
+    "other": "Mật khẩu"
+  },
+  "120": {
+    "other": "Trang download đơn giản"
+  },
+  "121": {
+    "other": "Public link"
+  },
+  "122": {
+    "other": "Tạo một public URL"
+  },
+  "123": {
+    "other": "Lựa chọn là minisite"
+  },
+  "124": {
+    "other": "Xuất bản lựa chọn hiện tại"
+  },
+  "125": {
+    "other": "Chỉnh sửa chia sẻ"
+  },
+  "126": {
+    "other": "Chỉnh sửa/dừng chia sẻ"
+  },
+  "127": {
+    "other": "Cập nhật từ những phiên bản cũ"
+  },
+  "128": {
+    "other": "Cập nhật những chia sẻ được tạo ra ở phiên bản cũ"
+  },
+  "129": {
+    "other": "Sao chép URL"
+  },
+  "13": {
+    "other": "Đồng ý"
+  },
+  "130": {
+    "other": "Chép URL"
+  },
+  "131": {
+    "other": "Không có tập tin hoặc thư mục chia sẻ nào."
+  },
+  "132": {
+    "other": "Workspace"
+  },
+  "133": {
+    "other": "Là một public link"
+  },
+  "134": {
+    "other": "Workspace mới"
+  },
+  "135": {
+    "other": "Thư mục sẽ xuất hiện dưới dạng một minisite trong trình duyệt user"
+  },
+  "136": {
+    "other": "Nội dung thư mục sẽ xuất hiện dưới dạng workspace mới cho users ứng dụng"
+  },
+  "137": {
+    "other": "Chia sẻ tệp đã chọn qua public link"
+  },
+  "138": {
+    "other": "Bạn đã chia sẻ thư mục này dưới dạng public link (minisite)"
+  },
+  "138b": {
+    "other": "Bạn đã chia sẻ thư mục này dưới dạng public link, nhưng hiện tại nó đã hết hạn."
+  },
+  "139": {
+    "other": "Bạn đã chia sẻ thư mục này dưới dạng workspace với users"
+  },
+  "139b": {
+    "other": "Bạn đã chia sẻ thư mục này dưới dạng workspace với users, nhưng hiện tại nó đã hết hạn."
+  },
+  "14": {
+    "other": "Không"
+  },
+  "140": {
+    "other": "Bạn đã chia sẻ tệp này qua public link"
+  },
+  "140b": {
+    "other": "Bạn đã chia sẻ tệp này qua một public link, nhưng nó hiện đã hết hạn."
+  },
+  "141": {
+    "other": "Thay đổi tham số"
+  },
+  "142": {
+    "other": "Ẩn tham số"
+  },
+  "143": {
+    "other": "Sử dụng <kbd> Ctrl </ kbd> + <kbd> C </ kbd> để sao chép link"
+  },
+  "144": {
+    "other": "Sử dụng <kbd> </ kbd> + <kbd> C </ kbd> để sao chép link"
+  },
+  "145": {
+    "other": "Mô tả"
+  },
+  "146": {
+    "other": "Các shared user sẽ nhìn thấy"
+  },
+  "147": {
+    "other": "Bảo mật"
+  },
+  "148": {
+    "other": "(Tùy chọn)"
+  },
+  "149": {
+    "other": "0 có nghĩa là không giới hạn"
+  },
+  "15": {
+    "other": "Tệp đã được tải %s lần"
+  },
+  "150": {
+    "other": "Quyền truy cập"
+  },
+  "151": {
+    "other": "Bố cục"
+  },
+  "152": {
+    "other": "Cập Nhật"
+  },
+  "153": {
+    "other": "Standard (danh sách file được liệt kê với dòng tiêu đề)"
+  },
+  "154": {
+    "other": "Thư viện ảnh (phù hợp với việc chứa các ảnh)"
+  },
+  "155": {
+    "other": "Embedded (smaller header, for widgets)"
+  },
+  "156": {
+    "other": "Đã tạo mới liên kết %s"
+  },
+  "157": {
+    "other": "Thư mục này đang được chia sẻ. Nếu bạn xóa nó thì liên kết trên đó cũng sẽ mất tác dụng."
+  },
+  "158": {
+    "other": "File này đang được chia sẻ. Nếu bạn xóa nó thì liên kết chia sẻ cũng sẽ mất tác dụng. "
+  },
+  "159": {
+    "other": "Owner"
+  },
+  "16": {
+    "other": "thiết lập lại"
+  },
+  "160": {
+    "other": "Bạn không có quyền xóa chia sẻ này"
+  },
+  "161": {
+    "other": "Các liên kết lỗi thời, không nên sử dụng"
+  },
+  "162": {
+    "other": "Bạn đang có chia sẻ trên file này. Các liên kết vẫn được duy trì nhưng không phù hợp cho phiên bản hiện tại. Bạn cần phải xóa chúng đi và tạo mới lại. Chỉ cần sao chép \"hash\" (chuỗi ký tự cuối của liên kết, ví dụ:http://yourpydio.com/data/public/<em style='color:red;'>206a51</em>.php) và dùng nó khi tạo một link mới."
+  },
+  "163": {
+    "other": "Kéo và thả file ở đây (để upload lên minisite)"
+  },
+  "164": {
+    "other": "Không thể tiến hành: script đã bị thay đổi!"
+  },
+  "165": {
+    "other": "Rất tiếc, liên kết này đã hết hạn!"
+  },
+  "166": {
+    "other": "Không thể tìm thấy đường liên kết này!"
+  },
+  "167": {
+    "other": "Liên kết đã hết hạn!"
+  },
+  "168": {
+    "other": "Số lượt download đã không còn. Ấn và khởi tạo lại bộ đếm lượt để đưa liên kết này vào hoạt động."
+  },
+  "169": {
+    "other": "Liên kết đã hết hạn. Nếu bạn muốn khôi phục liên kết này thì xin thay đổi thời hạn của nó."
+  },
+  "17": {
+    "other": "Bấm để thiết lập lại số lượt tải xuống"
+  },
+  "170": {
+    "other": "Liên kết này được bảo vệ bởi mật khẩu."
+  },
+  "171": {
+    "other": "Link Handle"
+  },
+  "172": {
+    "other": "Rất tiếc liên kết này đã được sử dụng, xin vui lòng chọn một tên khác."
+  },
+  "173": {
+    "other": "Nếu bạn muốn một liên kết dễ đọc, dễ nhớ hơn (như kiểu https://.../my-share-link), bạn có thể điền vào ô này. Tên liên kết sẽ được sinh ra tự động nếu bạn để trống."
+  },
+  "174": {
+    "other": "Thiết lập lại"
+  },
+  "175": {
+    "other": "Xin vui lòng đặt mật khẩu với độ dài đủ tốt!"
+  },
+  "176": {
+    "other": "(Bắt buộc)"
+  },
+  "177": {
+    "other": "Các tham số"
+  },
+  "178": {
+    "other": "bật"
+  },
+  "179": {
+    "other": "Phục hồi"
+  },
+  "18": {
+    "other": "Thư mục được chia sẻ như một workspace"
+  },
+  "180": {
+    "other": "Xoá danh sách"
+  },
+  "181": {
+    "other": "Sửa đổi"
+  },
+  "182": {
+    "other": "Sử dụng ô trên đây để chọn user từ danh bạ. Nếu bạn muốn tạo mới một user, chỉ cần gõ tên của họ và ấn Enter."
+  },
+  "183": {
+    "other": "Gửi thông báo khi có thay đổi"
+  },
+  "184": {
+    "other": "Gửi tôi thông báo khi có truy cập hoặc thay đổi nội dung"
+  },
+  "185": {
+    "other": "Gửi tôi thông báo khi có truy cập"
+  },
+  "186": {
+    "other": "Gửi tôi thông báo khi có thay đổi ở nội dung"
+  },
+  "187": {
+    "other": "Không gửi thông báo"
+  },
+  "188": {
+    "other": "Nhận thông báo khi người dùng truy cập hoặc sửa đổi nội dung của liên kết này."
+  },
+  "189": {
+    "other": "Cho phép tạo liên kết Public"
+  },
+  "19": {
+    "other": "Các thiết lập cho workspace chia sẻ được lưu thành công"
+  },
+  "190": {
+    "other": "File này hiện không thể truy cập từ bên ngoài được. Tạo mới liên kết public trên nó sẽ cho phép người khác truy cập. Nếu bạn muốn chia sẻ chỉ với những người nội bộ, hãy sử dụng thẻ \"Users\"."
+  },
+  "191": {
+    "other": "Sao chép liên kết"
+  },
+  "192": {
+    "other": "Link đã được sao chép"
+  },
+  "193": {
+    "other": "Chỉnh sửa liên kết"
+  },
+  "194": {
+    "other": "Để có liên kết dễ nhớ hơn, bạn có thể thay đổi phần cuối cùng của nó"
+  },
+  "195": {
+    "other": "Chú ý, hiện không có modun để đọc file này, nếu người dùng mở liên kết này thì sẽ kích hoạt quá trình download tự động."
+  },
+  "196": {
+    "other": "Kiểm soát truy cập"
+  },
+  "197": {
+    "other": "Sử dụng ô này để gửi các chú thích"
+  },
+  "198": {
+    "other": "Lựa chọn cách thức hiển thị của liên kết trên trình duyệt."
+  },
+  "199": {
+    "other": "Trao quyền quản lý"
+  },
+  "2": {
+    "other": "Ấn vào ảnh để tải <b>%s</b> về"
+  },
+  "20": {
+    "other": "Ooops, tệp dữ liệu này không tồn taị. Có thể nó đã bị xóa hoặc không còn được chia sẻ với bạn nữa."
+  },
+  "200": {
+    "other": "Những người khác xem được"
+  },
+  "201": {
+    "other": "Những người có quyền truy cập vào workspace này có thể thay đổi tham số của link ngoại từ việc xóa nó. Chỉ có bạn mới có thể dừng việc chia sẻ hoặc cấp quyền cho người khác"
+  },
+  "202": {
+    "other": "Những người có quyền truy cập vào workspace này có thể thay đổi tham số của link ngoại từ việc xóa nó. Chỉ có bạn mới có thể dừng việc chia sẻ hoặc cấp quyền cho người khác"
+  },
+  "203": {
+    "other": "Chuyển quyền quản lý"
+  },
+  "203b": {
+    "other": "Chuyển giao"
+  },
+  "204": {
+    "other": "Nếu bạn muốn người khác cũng có thể thay đổi chia sẻ này, bạn có thể chuyển quyền sở hữu."
+  },
+  "205": {
+    "other": "Quyền sở hữu chuyển cho ...(tên người nhận)"
+  },
+  "206": {
+    "other": "Chia sẻ ở chế độ riêng tư: chỉ có bạn mới xem được. Nếu bạn muốn người khác cũng truy cập được thì hãy bật ở phần visibility."
+  },
+  "207": {
+    "other": "Remote Users"
+  },
+  "208": {
+    "other": "Chia sẻ với người khác đến từ nền tảng khác (theo chuẩn Federated Sharing API)."
+  },
+  "209": {
+    "other": "Remote Address"
+  },
+  "21": {
+    "other": "Sẽ hết hạn vào"
+  },
+  "210": {
+    "other": "Định danh"
+  },
+  "211": {
+    "other": "đang chờ"
+  },
+  "212": {
+    "other": "Đã chấp nhận"
+  },
+  "213": {
+    "other": "bị từ chối"
+  },
+  "214": {
+    "other": "Chưa gửi được"
+  },
+  "215": {
+    "other": "Hãy đặt mật khẩu cho một liên kết công khai"
+  },
+  "216": {
+    "other": "Link chia sẻ vừa được tắt"
+  },
+  "217": {
+    "other": "Local Users"
+  },
+  "218": {
+    "other": "Thông báo"
+  },
+  "219": {
+    "other": "Có lỗi khỉ nạp thông tin một chia sẻ. Cụ thể là (%s)."
+  },
+  "21b": {
+    "other": "Hết hạn vào"
+  },
+  "22": {
+    "other": "Số lần cho phép tải"
+  },
+  "220": {
+    "other": "Bạn không có quyền tạo mới user"
+  },
+  "221": {
+    "other": "Bạn không thể chia sẻ với người khác ngoại trừ danh sách riêng của bạn"
+  },
+  "222": {
+    "other": "User %s đã tồn tại, xin chọn một tên khác"
+  },
+  "223": {
+    "other": "Link vừa chọn không đủ dài, xin chọn tên ít nhất %s ký tự"
+  },
+  "224": {
+    "other": "Bạn không thể thay đổi chia sẻ này, xin liên hệ người tạo ra nó để thay đổi hoặc yêu cầu họ chuyển quyền sở hữu chia sẻ này cho bạn."
+  },
+  "225": {
+    "other": "Bạn không được phép tạo liên kết công khai trên tệp"
+  },
+  "226": {
+    "other": "Bạn không được phép tạo liên kết công khai trên các thư mục"
+  },
+  "227": {
+    "other": "Bạn không được phép chia sẻ các tệp trong nội bộ"
+  },
+  "228": {
+    "other": "Bạn không được phép chia sẻ các thư mục trong nội bộ"
+  },
+  "229": {
+    "other": "Chèn bản xem trước của tệp bằng cách dán mã này bên trong trang HTML."
+  },
+  "22b": {
+    "other": "Không tải xuống nữa"
+  },
+  "23": {
+    "other": "Mật khẩu"
+  },
+  "230": {
+    "other": "Vui lòng lưu trước khi gửi lời mời"
+  },
+  "231": {
+    "other": "Nhấp để bắt đầu tải xuống"
+  },
+  "232": {
+    "other": "Không tìm thấy user để chia sẻ, bạn đã xóa user này?"
+  },
+  "233": {
+    "other": "Đặt lại chia sẻ này"
+  },
+  "234": {
+    "other": "Nó đã được thêm vào %s workspace của bạn."
+  },
+  "235": {
+    "other": "Tạo các liên kết duy nhất để xác định người dùng"
+  },
+  "236": {
+    "other": "Chỉ hạn chế quyền truy cập đối với những người dùng đã xác định"
+  },
+  "237": {
+    "other": "Sử dụng một khóa ngẫu nhiên thay vì email trong liên kết"
+  },
+  "238": {
+    "other": "Loại chia sẻ"
+  },
+  "24": {
+    "other": "Đặt giới hạn hết hạn hoặc xác định mật khẩu để truy cập chia sẻ này."
+  },
+  "240": {
+    "other": "Nhóm theo..."
+  },
+  "241": {
+    "other": "Shares List"
+  },
+  "242": {
+    "other": "Tải thêm"
+  },
+  "243": {
+    "other": "Public Links"
+  },
+  "244": {
+    "other": "Thư mục được chia sẻ"
+  },
+  "245": {
+    "other": "Vừa gửi %s thư mời"
+  },
+  "246": {
+    "other": "Mở Cells"
+  },
+  "247": {
+    "other": "Thay đổi cell"
+  },
+  "248": {
+    "other": "Xóa cell"
+  },
+  "249": {
+    "other": "Nội Dung"
+  },
+  "25": {
+    "other": "Không giới hạn"
+  },
+  "250": {
+    "other": "Cells"
+  },
+  "251": {
+    "other": "Link"
+  },
+  "252": {
+    "other": "Truy cập"
+  },
+  "253": {
+    "other": "Chia quyền"
+  },
+  "254": {
+    "other": "Các dữ liệu chia sẻ trong cells"
+  },
+  "254b": {
+    "other": "Với một người hoặc một nhóm"
+  },
+  "254c": {
+    "other": "Đã chia sẻ trong %d cells"
+  },
+  "254d": {
+    "other": "Được chia sẻ trong '%s'"
+  },
+  "255": {
+    "other": "Bạn có chắc muốn xóa cells và các liên kết được tạo ra trong nó?"
+  },
+  "256": {
+    "other": "Chia sẻ cho %s"
+  },
+  "257": {
+    "other": "Đã tạo: %s"
+  },
+  "258": {
+    "other": "Thêm bớt users cho cell"
+  },
+  "259": {
+    "other": "Xóa khỏi cell này"
+  },
+  "26": {
+    "other": "Lựa chọn các users và groups rồi phân quyền cho họ. Nếu chỉ có quyền đọc thì workspace chỉ dùng để upload lên."
+  },
+  "260": {
+    "other": "Thư mục được chia sẻ trong các cells sau. Bạn có thể thêm users hoặc tạo mới một cell khác."
+  },
+  "261": {
+    "other": "Chọn users hoặc groups rồi phân quyền truy cập vào cell này"
+  },
+  "262": {
+    "other": "Tạo mới một cell trên thư mục này rồi chia sẻ với người khác"
+  },
+  "263": {
+    "other": "Thêm vào Cell..."
+  },
+  "264": {
+    "other": "+ Tạo mới Cell"
+  },
+  "265": {
+    "other": "Tên liên kết"
+  },
+  "266": {
+    "other": "Mô tả cho liên kết"
+  },
+  "267": {
+    "other": "Tên Cell"
+  },
+  "268": {
+    "other": "Mô tả cho Cell"
+  },
+  "269": {
+    "other": "Bạn đang tạo mới một cells và chia sẻ với %USERS. Vui lòng chỉ cho cells này một thư mục có sẵn hoặc để Pydio tự tạo một thư mục rỗng cho cells này!"
+  },
+  "27": {
+    "other": "Chia sẻ tệp"
+  },
+  "270": {
+    "other": "tài khoản người dùng"
+  },
+  "271": {
+    "other": "nhóm"
+  },
+  "272": {
+    "other": "teams"
+  },
+  "273": {
+    "other": "nobody"
+  },
+  "274": {
+    "other": " và "
+  },
+  "275": {
+    "other": "Tạo mới cells cho nhóm làm việc. Bắt đầu bằng việc xác định dữ liệu cho cell."
+  },
+  "276": {
+    "other": "Tên của cell"
+  },
+  "277": {
+    "other": "Thêm vào mô tả"
+  },
+  "278": {
+    "other": "Lựa chọn ai sẽ được chia sẻ"
+  },
+  "279": {
+    "other": "Tạo mới cell ngay bây giờ!"
+  },
+  "28": {
+    "other": "Chia sẻ thư mục"
+  },
+  "280": {
+    "other": "Cell có sẵn thư mục riêng"
+  },
+  "281": {
+    "other": "Cell sẽ được tạo trên một thư mục mới"
+  },
+  "282": {
+    "other": "Thêm thư mục có sãn vào cell..."
+  },
+  "283": {
+    "other": "Chọn một file hay thư mục trên cây thư mục..."
+  },
+  "284": {
+    "other": "Xuất hiện trên cells %s"
+  },
+  "29": {
+    "other": "WebLink"
+  },
+  "3": {
+    "other": "Sai mật khẩu"
+  },
+  "30": {
+    "other": "Chia sẻ với..."
+  },
+  "31": {
+    "other": "Đọc"
+  },
+  "32": {
+    "other": "Ghi"
+  },
+  "33": {
+    "other": "Theo dõi"
+  },
+  "34": {
+    "other": "Select or Create Users"
+  },
+  "34b": {
+    "other": "Select Users"
+  },
+  "35": {
+    "other": "Nhãn"
+  },
+  "36": {
+    "other": "Đặt nhãn và mô tả ngắn"
+  },
+  "37": {
+    "other": "Xác nhận"
+  },
+  "38": {
+    "other": "Xem nội dung thư mục này"
+  },
+  "39": {
+    "other": "Xem hoạt động của tệp này"
+  },
+  "4": {
+    "other": "Nhập mật khẩu được yêu cầu và nhấn vào hình ảnh để tại xuống <b>%s</b> vào ổ cứng của bạn"
+  },
+  "40": {
+    "other": "Thư mời"
+  },
+  "41": {
+    "other": "Gửi lời mời qua email cho những người dùng mà bạn đã chia sẻ mục này."
+  },
+  "42": {
+    "other": "Người dùng %s đang chia sẻ tệp với bạn"
+  },
+  "43": {
+    "other": "Người dùng %s đang chia sẻ thư mục với bạn"
+  },
+  "44": {
+    "other": "%s Chia sẻ"
+  },
+  "45": {
+    "other": "Gửi thư mời"
+  },
+  "46": {
+    "other": "Mở workspace %s1 ngay trong %s2"
+  },
+  "46_file": {
+    "other": "Mở tệp %s1"
+  },
+  "46_mini": {
+    "other": "Open mini %s1"
+  },
+  "47": {
+    "other": "Đã cập nhật thành công trạng thái theo dõi"
+  },
+  "48": {
+    "other": "Bạn không được phép truy cập vào dữ liệu này"
+  },
+  "49": {
+    "other": "tạo người dùng"
+  },
+  "5": {
+    "other": "mật khẩu"
+  },
+  "50": {
+    "other": "Đã chia sẻ"
+  },
+  "51": {
+    "other": "Đã tải xuống"
+  },
+  "52": {
+    "other": "Cấu hình"
+  },
+  "53": {
+    "other": "trống"
+  },
+  "54": {
+    "other": "Đã chia sẻ với"
+  },
+  "55": {
+    "other": "Đã chia sẻ..."
+  },
+  "56": {
+    "other": "Cấu hình chia sẻ..."
+  },
+  "57": {
+    "other": "lần"
+  },
+  "58": {
+    "other": "Vui lòng chọn ít nhất một phân quyền!"
+  },
+  "59": {
+    "other": "Trang Tải xuống"
+  },
+  "6": {
+    "other": "Ngừng chia sẻ"
+  },
+  "60": {
+    "other": "Liên kết tải xuống trực tiếp"
+  },
+  "61": {
+    "other": "Mã nhúng HTML"
+  },
+  "62": {
+    "other": "Địa chỉ Minisite"
+  },
+  "63": {
+    "other": "Không gian làm việc mới"
+  },
+  "64": {
+    "other": "Đối với cả người dùng bên trong và bên ngoài, thư mục sẽ xuất hiện dưới dạng không gian làm việc mới trong danh sách không gian làm việc của mục tiêu người dùng."
+  },
+  "65": {
+    "other": "Minisite công khai(không yêu cầu xác thực)"
+  },
+  "66": {
+    "other": "Đối với người dùng bên ngoài, thư mục sẽ xuất hiện tại một địa chỉ công khai mới dưới dạng danh sách tệp đơn giản."
+  },
+  "67": {
+    "other": "Minisite riêng tư(yêu cầu người dùng xác thực)"
+  },
+  "68": {
+    "other": "Đối với người dùng bên trong hoặc bên ngoài, thư mục sẽ xuất hiện tại một địa chỉ mới dưới dạng danh sách tệp đơn giản, nhưng yêu cầu xác thực người dùng"
+  },
+  "69": {
+    "other": "Cấu hình Minisite"
+  },
+  "69r": {
+    "other": "Tham số liên kết"
+  },
+  "7": {
+    "other": "Việc dừng chia sẻ sẽ không xóa tệp. Nếu bạn muốn thay đổi các thông số, hãy chia sẻ lại tệp."
+  },
+  "70": {
+    "other": "Sử dụng các hộp kiểm để cấp quyền cho thư mục này cho công khai. Nếu bạn chỉ chọn 'Tải lên', thư mục này sẽ là một hộp thư đến trống trong đó mọi người có thể thả tệp."
+  },
+  "70r": {
+    "other": "Quyền được cấp cho người dùng truy cập liên kết này"
+  },
+  "71": {
+    "other": "Quyền truy cập"
+  },
+  "72": {
+    "other": "Xem trước"
+  },
+  "73": {
+    "other": "Tải về"
+  },
+  "74": {
+    "other": "Đăng tải tập tin"
+  },
+  "74b": {
+    "other": "Chỉnh sửa"
+  },
+  "75": {
+    "other": "Vui lòng sử dụng một số dương cho việc giới hạn tải xuống và hết hạn."
+  },
+  "76": {
+    "other": "Vui lòng kích hoạt Cookies để truy cập ứng dụng này"
+  },
+  "77": {
+    "other": "Vui lòng kích hoạt JavaScript để truy cập ứng dụng này"
+  },
+  "78": {
+    "other": "Cảnh báo, bạn chỉ nên sử dụng ký tự chữ và số tiêu chuẩn cho tên người dùng. Giá trị nhận dạng '%CURRENT%' sẽ được thay thế bằng '%NEW%'"
+  },
+  "79": {
+    "other": "lời mời"
+  },
+  "8": {
+    "other": "Tệp được chia sẻ"
+  },
+  "80": {
+    "other": "Gửi liên kết qua email đến một số người dùng hoặc địa chỉ được lựa chọn"
+  },
+  "80b": {
+    "other": "Mời qua email những người dùng đã chọn ghé thăm không gian làm việc này"
+  },
+  "81": {
+    "other": "ngừng theo dõi"
+  },
+  "82": {
+    "other": "theo dõi"
+  },
+  "83": {
+    "other": "Chuyển đổi trạng thái xem để nhận thông báo hoặc không nhận thông báo khi tệp được tại xuống"
+  },
+  "83b": {
+    "other": "Chuyển đổi trạng thái xem để nhận thông báo hoặc không nhận thông báo khi không gian làm việc được hỏi ý kiến"
+  },
+  "84": {
+    "other": "mật khẩu"
+  },
+  "85": {
+    "other": "Mật khẩu bảo vệ được đặt trên liên kết này"
+  },
+  "86": {
+    "other": "hết hạn"
+  },
+  "87": {
+    "other": "Liên kết này sẽ tự động hết hạn vào..."
+  },
+  "88": {
+    "other": "tải xuống"
+  },
+  "89": {
+    "other": "Số lượt tại xuống / tải xuống được phép. Nhấn để đặt lại bộ đếm tải xuống."
+  },
+  "9": {
+    "other": "Sử dụng nút này để ngừng chia sẻ thư mục này"
+  },
+  "90": {
+    "other": "Liên kết URL"
+  },
+  "91": {
+    "other": "Thẻ (Nhập để lưu)"
+  },
+  "92": {
+    "other": "Tạo liên kết"
+  },
+  "93": {
+    "other": "Liên kết hiện có"
+  },
+  "94": {
+    "other": "Mã QR"
+  },
+  "95": {
+    "other": "Mã QR"
+  },
+  "96": {
+    "other": "ngừng chia sẻ"
+  },
+  "97": {
+    "other": "Tạm dừng chia sẻ thư mục này với những người dùng khác"
+  },
+  "98": {
+    "other": "Các chia sẻ của tôi"
+  },
+  "99": {
+    "other": "Tất các các yếu tố được chia sẻ"
+  },
+  "cells.create.advanced": {
+    "other": "Thêm người dùng/dữ liệu"
+  },
+  "cells.create.buttons.separator": {
+    "other": "hoặc"
+  },
+  "cells.create.title.fill.folders": {
+    "other": "Chia sẻ (các) thư mục hiện tại"
+  },
+  "cells.remove.node": {
+    "other": "Xóa khỏi cells này"
+  },
+  "cell.visibility.advanced": {
+    "other": "Tính năng nâng cao này cho phép bạn quyết định ai có thể chỉnh sửa thuộc tính của Cell (quyền thêm/xóa người dùng và thêm/xóa thư mục gốc của Cell). Để đơn gian quản lý các truy cập vào dữ liệu, vui lòng sử dụng tab 'Chia sẻ với'."
+  },
+  "cell.add.existing-or-new": {
+    "other": "Thêm vào hoặc tạo mới một Cell"
+  },
+  "cell.add.existing": {
+    "other": "Thêm vào Cell đã có"
+  },
+  "cell.add.new": {
+    "other": "Tạo mới một Cell"
+  },
+  "cell.participant.single": {
+    "other": "One participant"
+  },
+  "cell.participant.multiple": {
+    "other": "%d participants"
+  },
+  "cell.participant.other.single": {
+    "other": "One other participant"
+  },
+  "cell.participant.other.multiple": {
+    "other": "%d other participants"
+  },
+  "cell.folder-root.single": {
+    "other": "One folder"
+  },
+  "cell.folder-root.multiple": {
+    "other": "%d folders"
+  },
+  "link.visibility.title": {
+    "other": "[Nâng cao] Đồng sở hữu Cell này"
+  },
+  "link.visibility.advanced": {
+    "other": "Tính năng nâng cao này cho phép bạn quyết định xem liên kết này có hiển thị với những người dùng khác khi họ xem tệp này hay không và liệu họ có thể chỉnh sửa các thuộc tính của nó hay không. Theo mặc định, các liên kết mà bạn tạo chỉ hiện thị với bạn. Bạn có thể chuyển quyền sở hữu liên kết bằng cách cho phép người dùng khác chỉnh sửa nó."
+  },
+  "dialog.close.confirm.unsaved": {
+    "other": "Có những thay đổi chưa được lưu, bạn có chắc chắn muốn đóng không?"
+  },
+  "dialog.link.confirm.remove": {
+    "other": "Bạn có chắc chắn là muốn xóa liên kết này?"
+  },
+  "sharelist.quick-filter": {
+    "other": "Bộ lọc nhanh..."
+  },
+  "composite.deleteAll": {
+    "other": "Tắt toàn bộ các chia sẻ"
+  },
+  "link.active": {
+    "other": "kích hoạt"
+  },
+  "link.disable": {
+    "other": "Tắt chia sẻ"
+  },
+  "link.floatingLabel": {
+    "other": "Copy và gửi chia sẻ này"
+  },
+  "link.secure.title": {
+    "other": "Hạn chế truy cập"
+  },
+  "link.secure.expires": {
+    "other": "hết hạn"
+  },
+  "link.secure.expired": {
+    "other": "đã hết hạn"
+  },
+  "link.secure.hasPassword": {
+    "other": "cần mật khẩu để mở khoá"
+  },
+  "link.secure.maxdownloads": {
+    "other": "Đã tải xuống %d lần"
+  },
+  "minisite.toggle.theme": {
+    "other": "Toggle Dark/Light Theme"
+  }
+}

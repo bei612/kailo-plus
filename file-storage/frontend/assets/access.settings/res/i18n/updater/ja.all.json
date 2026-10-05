@@ -1,0 +1,125 @@
+{
+  "title": {
+    "other": "ソフトウェアの更新"
+  },
+  "legend": {
+    "other": "アプリ内のバイナリアップデート"
+  },
+  "current.version": {
+    "other": "現在のバージョン"
+  },
+  "confirm.update": {
+    "other": "アップデートを実行してもよろしいですか？"
+  },
+  "packages.available": {
+    "other": "以下のパッケージが更新可能です"
+  },
+  "checking": {
+    "other": "利用可能なアップデートを確認しています..."
+  },
+  "noupdates": {
+    "other": "必要なアップデートは検出されません: 今すぐチェックをクリックすると再検出します。"
+  },
+  "alert.noselect": {
+    "other": "少なくとも1つのパッケージを選択してください。"
+  },
+  "package.released": {
+    "other": "公開済み"
+  },
+  "package.revision": {
+    "other": "リビジョン"
+  },
+  "check.legend": {
+    "other": "クリックして新しいアップデートを確認"
+  },
+  "check.button": {
+    "other": "今すぐチェック"
+  },
+  "package.version": {
+    "other": "バージョン"
+  },
+  "package.label": {
+    "other": "ラベル"
+  },
+  "package.details": {
+    "other": "詳細"
+  },
+  "package.changelog": {
+    "other": "更新履歴を表示"
+  },
+  "start.update": {
+    "other": "アップグレードを開始"
+  },
+  "configs.save": {
+    "other": "設定を保存"
+  },
+  "upgrade.ed.title": {
+    "other": "Cells Enterprise版にアップグレード"
+  },
+  "upgrade.ed.button.next": {
+    "other": "次へ"
+  },
+  "upgrade.ed.button.start": {
+    "other": "開始"
+  },
+  "upgrade.ed.button.cancel": {
+    "other": "キャンセル"
+  },
+  "upgrade.ed.button.install": {
+    "other": "今すぐインストール"
+  },
+  "upgrade.ed.button.close": {
+    "other": "閉じる"
+  },
+  "upgrade.ed.eula.title": {
+    "other": "エンドユーザーライセンス契約に同意してください"
+  },
+  "upgrade.ed.eula.check": {
+    "other": "このEULAに同意します"
+  },
+  "upgrade.ed.key.title": {
+    "other": "有効なライセンスキーを入力してください（Pydio販売代理店から提供されています）"
+  },
+  "upgrade.ed.key.legend": {
+    "other": "お持ちでない場合は、下のボタンを使用して直接販売に連絡するか、トライアルキーを受け取ることができます "
+  },
+  "upgrade.ed.key.hint": {
+    "other": "指定されたキーをここに貼り付けてください"
+  },
+  "upgrade.ed.version.loading": {
+    "other": "最も近いCellsエンタープライズ版を探しています"
+  },
+  "upgrade.ed.version.error": {
+    "other": "Cells Enterpriseの利用可能なバージョンを読み込めません！"
+  },
+  "upgrade.ed.version.error.string": {
+    "other": "エラー:"
+  },
+  "upgrade.ed.version.available": {
+    "other": "%s をインストールする準備ができました"
+  },
+  "upgrade.ed.version.released": {
+    "other": "公開済み"
+  },
+  "upgrade.ed.version.arch": {
+    "other": "アーキテクチャー"
+  },
+  "upgrade.ed.version.description": {
+    "other": "備考"
+  },
+  "upgrade.ed.version.legend": {
+    "other": "Hitting Next で、この新しいバージョンをダウンロードし、現在のセルバイナリを置き換えます。 元の実行ファイルのバックアップは、復元する必要がある場合は、セル設定フォルダ( %s以下) 内に作成されます。"
+  },
+  "upgrade.ed.version.nomatch": {
+    "other": "Cells Enterpriseで同様のバージョンが見つかりませんでした"
+  },
+  "upgrade.ed.version.nomatch.legend1": {
+    "other": "アップグレードとアップデートのミキシングを避けるために、同じバージョンの Cells Home to Enterprise をアップグレードすることをお勧めします。"
+  },
+  "upgrade.ed.version.nomatch.legend2": {
+    "other": "まず、現在のバージョンを以下のいずれかに更新してから、Cells Enterpriseにアップグレードしてみてください。"
+  },
+  "upgrade.ed.installing": {
+    "other": "アップグレードをインストールしています。お待ちください..."
+  }
+}

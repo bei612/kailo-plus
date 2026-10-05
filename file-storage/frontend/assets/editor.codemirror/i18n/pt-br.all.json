@@ -1,0 +1,35 @@
+{
+  "1": {
+    "other": "Visualizar código"
+  },
+  "10": {
+    "other": "Tamanho da indentação"
+  },
+  "2": {
+    "other": "Destaque de Sintaxe CodeMirror"
+  },
+  "3": {
+    "other": "Wrapping"
+  },
+  "3b": {
+    "other": "Ativar/desativar quebra de linhas"
+  },
+  "4": {
+    "other": "Números"
+  },
+  "5": {
+    "other": "Alternar número de linhas"
+  },
+  "6": {
+    "other": "Pular para a linha"
+  },
+  "7": {
+    "other": "Desfazer"
+  },
+  "8": {
+    "other": "Refazer"
+  },
+  "9": {
+    "other": "Pesquisa de Texto"
+  }
+}

@@ -103,7 +103,7 @@ func uniqueConformanceKeys(body []byte) error {
 	return nil
 }
 
-func validAdapterOperation(operation generated.AdapterProtocolOperation) bool {
+func validAdapterOperation(operation generated.ComponentConformanceOperation) bool {
 	switch string(operation) {
 	case "handshake", "validate_binding", "resolve_native_scope", "execute", "observe", "cancel", "reconcile", "query_revision", "extract_usage", "map_native_status_error":
 		return true
@@ -477,6 +477,41 @@ func (c *CoreAPI) RunComponentConformanceStep(ctx context.Context, input generat
 		return generated.ComponentConformanceStepObservation{}, temporal.NewNonRetryableApplicationError("套件步骤不在冻结范围", ErrTypeRejected, nil)
 	}
 	step := plan.Steps[input.StepIndex]
+	if plan.ConnectorKind != nil && string(*plan.ConnectorKind) == "PROTOCOL_PEER" {
+		info := activity.GetInfo(ctx)
+		if info.Attempt != 1 || (input.Reconcile != nil && *input.Reconcile) ||
+			info.WorkflowExecution.ID != plan.WorkflowID || info.WorkflowExecution.RunID != plan.RunID {
+			return generated.ComponentConformanceStepObservation{}, temporal.NewNonRetryableApplicationError("原生 MCP 尝试结果不明，禁止重放", ErrTypeUnknownExternalResult, nil)
+		}
+		// Core consumes the real SDK response in memory. No raw body, native
+		// bearer or invented adapter/native task is put into Activity history.
+		var observed generated.ComponentConformanceStepObservation
+		if err := c.post(ctx, "/service/v1/component-releases/authorize-probe", input, &observed); err != nil {
+			return observed, temporal.NewNonRetryableApplicationError("原生 MCP 尝试未取得确定回执", ErrTypeUnknownExternalResult, nil)
+		}
+		if observed.CaseKey != step.CaseKey || observed.StepKey != step.StepKey || observed.Operation != step.Operation ||
+			observed.HTTPStatus != 0 || observed.MCPResultKind == nil || string(*observed.MCPResultKind) != "RESULT" ||
+			observed.ErrorClass != nil || observed.NativeObservation != nil || observed.NativeScopeObservation != nil ||
+			observed.ContentReference != nil || !validConformanceDigest(observed.ResponseDigest) {
+			return observed, temporal.NewNonRetryableApplicationError("原生 MCP 回执不匹配冻结探针", ErrTypeRejected, nil)
+		}
+		requestDigest, err := conformanceJSONDigest([]byte(step.RequestJSON))
+		if err != nil || requestDigest != observed.RequestDigest {
+			return observed, temporal.NewNonRetryableApplicationError("原生 MCP 请求摘要不匹配", ErrTypeRejected, nil)
+		}
+		expected, err := conformanceJSONDigest([]byte(step.ExpectedResponseJSON))
+		actual := observed.ResponseDigest
+		if string(step.Operation) == "mcp_call" {
+			if observed.ResultDigest == nil {
+				return observed, temporal.NewNonRetryableApplicationError("原生 MCP 结果缺失", ErrTypeRejected, nil)
+			}
+			actual = *observed.ResultDigest
+		}
+		if err != nil || expected != actual {
+			return observed, temporal.NewNonRetryableApplicationError("原生 MCP 结果不符冻结向量", ErrTypeRejected, nil)
+		}
+		return observed, nil
+	}
 	if step.ReferenceFromStepKey != nil {
 		if input.ContentReference == nil || step.ReferenceResourceID == nil ||
 			!validContentReference(generated.ContentReference(*input.ContentReference), *step.ReferenceResourceID, step.ReferenceAssetID) {
@@ -509,7 +544,7 @@ func (c *CoreAPI) RunComponentConformanceStep(ctx context.Context, input generat
 			scope["mode"] = "LOOKUP"
 			request, err = json.Marshal(scope)
 		case "execute", "cancel", "observe", "reconcile":
-			step.Operation = generated.AdapterProtocolOperation("reconcile")
+			step.Operation = "reconcile"
 			request, err = json.Marshal(map[string]string{"idempotencyKey": step.IdempotencyKey})
 		default:
 			// The remaining protocol probes only inspect configuration or
@@ -533,8 +568,7 @@ func (c *CoreAPI) RunComponentConformanceStep(ctx context.Context, input generat
 	if info.WorkflowExecution.ID != plan.WorkflowID || info.WorkflowExecution.RunID != plan.RunID {
 		return unknown()
 	}
-	if info.Attempt != 1 && step.Operation != generated.AdapterProtocolOperation("observe") &&
-		step.Operation != generated.AdapterProtocolOperation("reconcile") {
+	if info.Attempt != 1 && step.Operation != "observe" && step.Operation != "reconcile" {
 		return unknown()
 	}
 	path := os.Getenv("COMPONENT_CONFORMANCE_ENVIRONMENT_FILE")

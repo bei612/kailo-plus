@@ -1,0 +1,11 @@
+{
+  "actionKey": "resource.create",
+  "idempotencyKey": "8adc553f-6d6e-4a85-8fea-25d07746ea9f",
+  "resourceCreate": {
+    "typeKey": "fixture.collection",
+    "nativeType": "model",
+    "nativeRef": "published/model-version",
+    "evidenceRef": "controlled-runtime-delivery",
+    "evidenceDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  }
+}

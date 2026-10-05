@@ -1,0 +1,35 @@
+{
+  "Path": {
+    "other": "路径"
+  },
+  "Default download format": {
+    "other": "默认下载格式"
+  },
+  "When downloading a folder or a multiple selection, automatically create an archive using this format": {
+    "other": "下载文件夹或多项选择时，自动使用此格式创建存档"
+  },
+  "Path to the folder on the server": {
+    "other": "服务器上的文件夹路径"
+  },
+  "Gateway": {
+    "other": "网关"
+  },
+  "Pydio S3 Gateway": {
+    "other": "Pydio S3 网关"
+  },
+  "Absolute path to one or more root nodes": {
+    "other": "到一个或多个根节点的绝对路径"
+  },
+  "#Items per page": {
+    "other": "＃每页项目"
+  },
+  "Once in pagination mode, number of items to display per page.": {
+    "other": "进入分页模式后，每页显示的项目数。"
+  },
+  "Delete Permanently": {
+    "other": "永久删除"
+  },
+  "Enable option to skip recycle bin on deletion": {
+    "other": "启用删除时跳过回收站"
+  }
+}

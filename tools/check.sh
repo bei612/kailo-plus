@@ -505,17 +505,19 @@ step_supply()   { hdr "7/10 secret、依赖、许可证与供应链"
     # 私钥、假 nsec）不是本仓库交付的内容；那里只扫本仓库新增或改写的行——与上游原样的
     # 差异由 upstream_manifest.py 按基准 commit 只读求出，基准取不到即失败。
     local secret='BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|nsec1[a-z0-9]{20,}|xox[baprs]-'
-    local added mf tree excludes=()
+    local added mf tree fork_hit=0 excludes=()
     added=$(mktemp)
     for mf in */fork/upstream.yaml; do
       tree=${mf%%/*}
       grep -q '^module:' "$mf" && continue
       excludes+=(":(exclude)$tree/")
+      # fork/ 是 Kailo 自有维护输入，不属于 added-lines 比对的上游源码树。
+      git grep -qIE "$secret" -- "$tree/fork/" && fork_hit=1
       python3 tools/upstream_manifest.py added-lines "$tree" >>"$added" \
         || { fail "取不到 $tree 的上游基准，本仓库改动无法扫描"; }
     done
     if git grep -nIE "$secret" -- . "${excludes[@]}" >/dev/null 2>&1 \
-       || grep -qE "$secret" "$added"; then
+       || grep -qE "$secret" "$added" || [ "$fork_hit" -eq 1 ]; then
       fail "发现疑似凭据"; else pass "内置扫描无命中（未安装 gitleaks）"; fi
     rm -f "$added"
   fi

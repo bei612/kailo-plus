@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/resource_provision_target.schema.json",
+  "title": "ResourceProvisionTarget", "type": "object", "additionalProperties": false,
+  "required": ["actionExecutionId", "resourceId", "resourceVersion", "workflowId", "bindingId", "bindingVersion", "componentReleaseId", "projectionGeneration", "nativeInstanceRef", "nativeScopeRef", "reference"],
+  "properties": {
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "resourceId": {"type": "string", "format": "uuid"},
+    "resourceVersion": {"type": "integer"},
+    "bindingId": {"type": "string", "format": "uuid"},
+    "bindingVersion": {"type": "integer"},
+    "componentReleaseId": {"type": "string", "format": "uuid"},
+    "projectionGeneration": {"type": "integer"},
+    "nativeInstanceRef": {"type": "string"},
+    "nativeScopeRef": {"type": "string"},
+    "reference": {"$ref": "../domain/resource_create.schema.json"},
+    "workflowId": {"type": "string"}
+  }
+}

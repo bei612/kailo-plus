@@ -1,0 +1,89 @@
+{
+  "AccessedBy": {
+    "other": "Přístupoval(a) {{.Actor}}"
+  },
+  "AccessedObject": {
+    "other": "Přístup k {{.Object}}"
+  },
+  "AccessedObjectBy": {
+    "other": "k {{.Object}} bylo přistupováno uživatelem {{.Actor}}"
+  },
+  "Cell": {
+    "other": "Cell"
+  },
+  "CreatedBy": {
+    "other": "Vytvořil {{.Actor}}"
+  },
+  "CreatedObject": {
+    "other": "Vytvořil(a) {{.Object}}"
+  },
+  "CreatedObjectBy": {
+    "other": "uživatelem {{.Actor}} byl vytvořen {{.Object}}"
+  },
+  "DeletedBy": {
+    "other": "Smazáno uživatelem {{.Actor}}"
+  },
+  "DeletedObject": {
+    "other": "Smazán {{.Object}}"
+  },
+  "DeletedObjectBy": {
+    "other": "{{.Object}} byl smazán uživatelem {{.Actor}}"
+  },
+  "SharedWs": {
+    "other": "Sdíleno v {{.Object}}"
+  },
+  "SharedWsWithYou": {
+    "other": "{{.Actor}} vám nasdílel {{.Object}}"
+  },
+  "DigestTitle": {
+    "other": "This is your Pydio Daily Digest"
+  },
+  "Document": {
+    "other": "Dokument"
+  },
+  "Folder": {
+    "other": "Složka"
+  },
+  "ModifiedBy": {
+    "other": "Změnil(a) {{.Actor}}"
+  },
+  "ModifiedObject": {
+    "other": "Modified {{.Object}}"
+  },
+  "ModifiedObjectBy": {
+    "other": "{{.Object}} was modified by {{.Actor}}"
+  },
+  "MetaModifiedBy": {
+    "other": "Metadata modified by {{.Actor}}"
+  },
+  "MetaModifiedObject": {
+    "other": "Modified metadata on {{.Object}}"
+  },
+  "MetaModifiedObjectBy": {
+    "other": "{{.Actor}} modified metadata on {{.Object}}"
+  },
+  "CommentedBy": {
+    "other": "Commented by {{.Actor}}"
+  },
+  "CommentedObject": {
+    "other": "Commented {{.Object}}"
+  },
+  "CommentedObjectBy": {
+    "other": "{{.Actor}} published new comment on {{.Object}}"
+  },
+  "MovedBy": {
+    "other": "Moved by {{.Actor}}"
+  },
+  "MovedObject": {
+    "other": "Moved {{.Object}}"
+  },
+  "MovedObjectBy": {
+    "other": "{{.Object}} was moved by {{.Actor}}"
+  },
+  "Workspace": {
+    "other": "Workspace"
+  },
+  "DateFormat": {
+    "other": "2006-01-02 15:04"
+  }
+}

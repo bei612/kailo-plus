@@ -1,0 +1,407 @@
+{
+  "tour.create-menu": {
+    "other": "현재 작업공간에 새 파일 또는 폴더 추가를 시작합니다."
+  },
+  "tour.create-menu.title": {
+    "other": "파일 추가"
+  },
+  "tour.display-bar": {
+    "other": "이 도구 모음을 사용하면 표시를 변경할 수 있습니다: 사용법에 따라 축소판 그림 또는 세부 모드로 전환하고 이름, 날짜 등으로 파일을 정렬하십시오."
+  },
+  "tour.display-bar.title": {
+    "other": "표시 옵션"
+  },
+  "tour.globsearch.1": {
+    "other": "이 검색 양식을 사용하여 작업영역 및 셀에서 파일 또는 폴더를 찾습니다. 처음 5 개의 결과만 표시되고 작업 영역을 입력하여 더 많은 결과와 더 많은 검색 옵션을 얻습니다."
+  },
+  "tour.globsearch.2": {
+    "other": "검색을 입력하지 않으면 최근에 액세스한 파일 및 폴더의 기록이 대신 표시됩니다."
+  },
+  "tour.globsearch.title": {
+    "other": "전체 검색"
+  },
+  "tour.infopanel.1": {
+    "other": "여기서 파일 정보, 공유 상태, 사용자 정의 메타데이터 등 현재 선택 항목에 대한 많은 정보를 찾을 수 있습니다."
+  },
+  "tour.infopanel.2": {
+    "other": "표시 도구 모음의 정보 단추를 사용하여 이 패널을 닫을 수 있습니다."
+  },
+  "tour.infopanel.file": {
+    "other": "파일"
+  },
+  "tour.infopanel.folder": {
+    "other": "폴더"
+  },
+  "tour.infopanel.search": {
+    "other": "검색"
+  },
+  "tour.infopanel.title": {
+    "other": "정보 패널"
+  },
+  "tour.locale.back": {
+    "other": "뒤로가기"
+  },
+  "tour.locale.close": {
+    "other": "닫기"
+  },
+  "tour.locale.last": {
+    "other": "완료"
+  },
+  "tour.locale.next": {
+    "other": "다음"
+  },
+  "tour.locale.skip": {
+    "other": "건너뛰기"
+  },
+  "tour.openworkspace": {
+    "other": "첫 번째 연결에서 기록이 비어 있을 수 있습니다. 파일 추가를 시작할 작업공간 또는 셀을 입력하십시오."
+  },
+  "tour.openworkspace.title": {
+    "other": "작업공간 열기"
+  },
+  "tour.uwidget.addressbook": {
+    "other": "플랫폼에 액세스하는 모든 사용자의 디렉토리입니다. 자체 사용자 생성하고 리소스 공유에 사용할 수 있는 팀을 구성하세요."
+  },
+  "tour.uwidget.alerts": {
+    "other": "경고 패널은 일부 리소스를 공유한 사용자가 접근한 시기를 알려줍니다. 그것들은 이메일로 당신에게 직접 보내질 수 있습니다."
+  },
+  "tour.uwidget.home": {
+    "other": "이 버튼으로 웰컴 패널로 되돌아가세요."
+  },
+  "tour.uwidget.menu": {
+    "other": "프로필 및 보안 기능 관리, 공유한 모든 리소스 찾아보기, 플랫폼 로그아웃 등 다른 옵션에 액세스할 수 있습니다."
+  },
+  "tour.uwidget.title": {
+    "other": "사용자 카터치"
+  },
+  "tour.welcomemodal.skip": {
+    "other": "건너뛰기"
+  },
+  "tour.welcomemodal.start": {
+    "other": "투어 시작"
+  },
+  "tour.welcomemodal.subtitle": {
+    "other": "프로필에 가장 적합한 사진을 끌어다 놓으세요! 이 빠른 둘러보기를 통해 웹 인터페이스를 안내할 수 있습니다."
+  },
+  "tour.welcomemodal.title": {
+    "other": "APPLICATION_TITLE에 오신 것을 환영합니다."
+  },
+  "tour.widget-cards": {
+    "other": "여기서 위젯을 추가하거나 제거할 수 있습니다. 끌어서 놓기만 하면 다시 정렬할 수도 있습니다."
+  },
+  "tour.widget-cards.title": {
+    "other": "위젯"
+  },
+  "tour.workspaces.1": {
+    "other": "워크스페이스는 데이터를 구성하는 데 도움이 되는 최상위 폴더입니다. 사용자만 액세스하거나 여러 사람과 공유할 수 있습니다."
+  },
+  "tour.workspaces.2": {
+    "other": "Cells는 다른 사용자와 공유할 수 있는 공동 작업 공간입니다. 폴더, 사용자 팀 또는 관련 항목을 기반으로 자신의 Cells를 만듭니다."
+  },
+  "tour.workspaces.title": {
+    "other": "작업공간과 Cells"
+  },
+  "tour.theme.title": {
+    "other": "Light/Dark Theme Support"
+  },
+  "tour.theme.legend": {
+    "other": "Choose a light or dark theme to best suit your vision."
+  },
+  "tour.left-resize.title": {
+    "other": "Workspaces and Cells"
+  },
+  "tour.left-resize.legend": {
+    "other": "Left column can be resized or closed to fit your screen."
+  },
+  "tour.right-resize.legend": {
+    "other": "Right column can be also be resized or closed to fit your screen."
+  },
+  "tour.directory.title": {
+    "other": "Users Directory"
+  },
+  "tour.directory.legend": {
+    "other": "Manage users (internal and external) and teams in a central location."
+  },
+  "background.jobs.title": {
+    "other": "백그라운드 작업"
+  },
+  "background.jobs.running": {
+    "other": "잡 실행"
+  },
+  "websocket.disconnected.title": {
+    "other": "연결 문제"
+  },
+  "websocket.disconnected.legend": {
+    "other": "웹소켓 연결이 끊긴 것 같습니다. 서버가 작동 중이고 웹소켓 연결이 작동하는지 확인하십시오."
+  },
+  "oauth.authentication.success": {
+    "other": "인증 성공"
+  },
+  "oauth.authentication.failed": {
+    "other": "인증 실패"
+  },
+  "oauth.authentication.code": {
+    "other": "인증에 성공했습니다. 코드를 복사하여 명령줄 터미널에 붙여넣으십시오."
+  },
+  "oauth.authentication.copy-code": {
+    "other": "클립보드에 코드 복사"
+  },
+  "oauth.authentication.code-copied": {
+    "other": "코드가 클립보드에 복사되어 명령줄에 붙여넣을 수 있습니다."
+  },
+  "oauth.authentication.code-copy-failed": {
+    "other": "클립보드에 복사할 수 없습니다."
+  },
+  "layouts.preferences": {
+    "other": "Manage Layouts"
+  },
+  "layouts.preferences.legend": {
+    "other": "Save and Recall Layouts as Presets"
+  },
+  "layouts.action.rename": {
+    "other": "Rename Layout"
+  },
+  "layouts.action.remove": {
+    "other": "Remove Layout"
+  },
+  "layouts.action.remove.confirm": {
+    "other": "Do you want to remove this layout?"
+  },
+  "layouts.action.reset": {
+    "other": "Reset Layout"
+  },
+  "layouts.action.reset.confirm": {
+    "other": "Do you want to reset the current layout?"
+  },
+  "layouts.action.create": {
+    "other": "Save Layout..."
+  },
+  "layouts.action.fork": {
+    "other": "New From Current..."
+  },
+  "layouts.action.create.default": {
+    "other": "My Layout"
+  },
+  "layouts.prompt.save": {
+    "other": "Save Layout As..."
+  },
+  "layouts.prompt.save.field": {
+    "other": "Choose a name to save/recall the current layout"
+  },
+  "list.display-mode.list": {
+    "other": "목록"
+  },
+  "list.display-mode.details": {
+    "other": "세부사항"
+  },
+  "list.display-mode.thumbs": {
+    "other": "썸네일"
+  },
+  "list.display-mode.thumbs-large": {
+    "other": "Larger"
+  },
+  "list.display-mode.thumbs-medium": {
+    "other": "Medium"
+  },
+  "list.display-mode.thumbs-small": {
+    "other": "Smaller"
+  },
+  "list.display-mode.masonry": {
+    "other": "이미지 갤러리"
+  },
+  "list.extensions.action": {
+    "other": "파일 확장자"
+  },
+  "list.extensions.show": {
+    "other": "파일 확장자 표시"
+  },
+  "list.pin.bookmarks": {
+    "other": "상단에 즐겨찾기 고정"
+  },
+  "list.writeonly.emptystate.title": {
+    "other": "Drop Files Here"
+  },
+  "list.writeonly.emptystate.legend": {
+    "other": "This folder is write-only: you cannot see its contents and are only authorized to upload files or folders. Your own content will not be visible after upload!"
+  },
+  "infopanel.empty.select.file": {
+    "other": "정보를 표시하기 위한 파일을 선택하세요."
+  },
+  "infopanel.card.pin": {
+    "other": "Attach card (full height)"
+  },
+  "infopanel.card.unpin": {
+    "other": "Detach card"
+  },
+  "infopanel.card.detach": {
+    "other": "Detach in a separate panel"
+  },
+  "infopanel.detached.minimize": {
+    "other": "Minimize Panel"
+  },
+  "infopanel.detached.maximize": {
+    "other": "Open Panel"
+  },
+  "infopanel.detached.dock": {
+    "other": "Dock in the right-hand column"
+  },
+  "infopanel.detailcard.preview": {
+    "other": "Preview"
+  },
+  "infopanel.detailcard.cell-info": {
+    "other": "Cell Info"
+  },
+  "infopanel.detailcard.cell-chat": {
+    "other": "Cell Chat"
+  },
+  "pinned-bookmarks.other": {
+    "other": "모든 파일"
+  },
+  "file.temporary-etag.flag": {
+    "other": "미완료"
+  },
+  "file.temporary-etag.tooltip": {
+    "other": "이 파일은 업로드중입니다.(또는 업로드에 실패했습니다.)"
+  },
+  "mimegroup.byextension": {
+    "other": "파일 확장자..."
+  },
+  "mimegroup.word": {
+    "other": "Word 문서"
+  },
+  "mimegroup.spreadsheet": {
+    "other": "스프레드시트"
+  },
+  "mimegroup.presentation": {
+    "other": "프레젠테이션"
+  },
+  "mimegroup.pdf": {
+    "other": "PDF 파일"
+  },
+  "mimegroup.image": {
+    "other": "이미지"
+  },
+  "mimegroup.video": {
+    "other": "동영상"
+  },
+  "mimegroup.audio": {
+    "other": "오디오"
+  },
+  "fastsearch.quick-jump.title": {
+    "other": "Quick Jump"
+  },
+  "fastsearch.quick-jump.legend": {
+    "other": "Hit [Enter] to jump, add a trailing [/] to search inside children, [Esc] to Close"
+  },
+  "fastsearch.quick-move.title": {
+    "other": "Quick Move"
+  },
+  "fastsearch.quick-move.target-error": {
+    "other": "Cannot move to this target!"
+  },
+  "fastsearch.quick-move.legend": {
+    "other": "Hit [Enter] to move %s selected items to target, [Esc] to Close"
+  },
+  "fastsearch.quick-copy.title": {
+    "other": "Quick Copy"
+  },
+  "fastsearch.quick-copy.target-error": {
+    "other": "Cannot copy to this target!"
+  },
+  "fastsearch.quick-copy.legend": {
+    "other": "Hit [Enter] to copy %s selected items to target, [Esc] to Close"
+  },
+  "modalsearch.opentip.cmd": {
+    "other": "Tip: Use <kbd>⌘+k</kbd> to open this search dialog, <kbd>Esc</kbd> to close."
+  },
+  "modalsearch.opentip.ctrl": {
+    "other": "Tip: Use <kbd>Ctrl+k</kbd> to open this search dialog, <kbd>Esc</kbd> to close."
+  },
+  "search.chip.scope.folder": {
+    "other": "Folder"
+  },
+  "search.chip.scope.ws": {
+    "other": "Inside"
+  },
+  "search.chip.scope.all": {
+    "other": "All Workspaces"
+  },
+  "wslist-options.title": {
+    "other": "Display Options"
+  },
+  "wslist-options.show-masked": {
+    "other": "Show masked items"
+  },
+  "wslist.action.mask": {
+    "other": "Mask"
+  },
+  "wslist.action.unmask": {
+    "other": "Unmask"
+  },
+  "wslist-options.merge-workspaces": {
+    "other": "Merge workspaces and cells"
+  },
+  "wslist-options.own-cells-first": {
+    "other": "Cells created by me first"
+  },
+  "leftrail.buttons.home": {
+    "other": "Home"
+  },
+  "leftrail.buttons.directory": {
+    "other": "Directory"
+  },
+  "leftrail.buttons.all-files": {
+    "other": "All Files"
+  },
+  "leftrail.buttons.theme.light": {
+    "other": "Light Mode"
+  },
+  "leftrail.buttons.theme.dark": {
+    "other": "Dark Mode"
+  },
+  "task.status.Starting": {
+    "other": "Started {startTime}"
+  },
+  "task.status.Pending": {
+    "other": "Will start soon..."
+  },
+  "task.status.Complete": {
+    "other": "Task completed in {duration}"
+  },
+  "task.status.Finished": {
+    "other": "Task completed in {duration}"
+  },
+  "task.status.Error": {
+    "other": "An error happened!"
+  },
+  "bigppanel.filter.default-hint": {
+    "other": "Quick Find..."
+  },
+  "sorter.metas.more": {
+    "other": "More..."
+  },
+  "drag-layer.move.file": {
+    "other": "Move File"
+  },
+  "drag-layer.move.folder": {
+    "other": "Move Folder"
+  },
+  "drag-layer.move.plural": {
+    "other": "Move %s Items"
+  },
+  "drag-layer.copy.file": {
+    "other": "Copy File"
+  },
+  "drag-layer.copy.folder": {
+    "other": "Copy Folder"
+  },
+  "drag-layer.copy.plural": {
+    "other": "Copy %s Items"
+  },
+  "drag-layer.more": {
+    "other": "...and %s more."
+  },
+  "drag-layer.hint": {
+    "other": "Use [alt/option] key to copy"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "1": {
+    "other": "Source Editor"
+  },
+  "10": {
+    "other": "Šířka odsazení"
+  },
+  "2": {
+    "other": "CodeMirror Syntax Highlighter"
+  },
+  "3": {
+    "other": "Wrapping"
+  },
+  "3b": {
+    "other": "Toggle lines wrapping"
+  },
+  "4": {
+    "other": "Čísla"
+  },
+  "5": {
+    "other": "Toggle lines numbers"
+  },
+  "6": {
+    "other": "Jump to line"
+  },
+  "7": {
+    "other": "Zpět"
+  },
+  "8": {
+    "other": "Znovu"
+  },
+  "9": {
+    "other": "Hledání textu"
+  }
+}

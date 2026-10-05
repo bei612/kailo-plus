@@ -1,0 +1,80 @@
+{
+  "Jobs.Default.Thumbs": {
+    "other": "Hent ut miniatyrbilder og Exif data"
+  },
+  "Jobs.Default.ThumbsCache": {
+    "other": "Fjern buffer for miniatyrbilder for slettede filer"
+  },
+  "Jobs.Default.Directories": {
+    "other": "Synkronisere eksterne mapper"
+  },
+  "Jobs.Default.PruneJobs": {
+    "other": "Rengjør jobber og oppgaver i planleggeren"
+  },
+  "Jobs.Default.FakeLongJob": {
+    "other": "Kjør en falsk lang jobb (for testing)"
+  },
+  "Jobs.Default.FakeUsersJob": {
+    "other": "Opprettelse av tilfeldige brukere (for testing)"
+  },
+  "Jobs.Default.FakeGrpcJob": {
+    "other": "Eksempel RPC jobb (for testing)"
+  },
+  "Jobs.Default.ArchiveJobs": {
+    "other": "Automatisk arkivering av endringstjeneste"
+  },
+  "Jobs.Default.CleanUserData": {
+    "other": "Rydd eller overfør brukerdata ved sletting"
+  },
+  "Jobs.Default.CleanOrphanFiles": {
+    "other": "Slett foreldreløse filer etter 24t"
+  },
+  "Jobs.Default.CleanExpiredACLs": {
+    "other": "Rydd utgåtte ACLer etter 10 dager"
+  },
+  "Jobs.User.Compress": {
+    "other": "Compressing Selection..."
+  },
+  "Jobs.User.Extract": {
+    "other": "Extracting archive..."
+  },
+  "Jobs.User.Delete": {
+    "other": "Deleting selection in background..."
+  },
+  "Jobs.User.DirCopy": {
+    "other": "Copying folder in background..."
+  },
+  "Jobs.User.DirMove": {
+    "other": "Moving folder in background..."
+  },
+  "Jobs.User.FileCopy": {
+    "other": "Copying file in background..."
+  },
+  "Jobs.User.FileMove": {
+    "other": "Moving file in background..."
+  },
+  "Jobs.User.MultipleCopy": {
+    "other": "Copying selection in background..."
+  },
+  "Jobs.User.MultipleMove": {
+    "other": "Moving selection in background..."
+  },
+  "Jobs.User.MoveRecycle": {
+    "other": "Moving to recycle bin in background..."
+  },
+  "Jobs.User.ResyncDS": {
+    "other": "Sync datasource {{.DsName}} then rehash new files"
+  },
+  "Jobs.User.Wget": {
+    "other": "Downloading file in background..."
+  },
+  "Jobs.User.DeletingItem": {
+    "other": "Deleting %s"
+  },
+  "Jobs.User.CopyingItem": {
+    "other": "Copying %s"
+  },
+  "Jobs.User.MovingItem": {
+    "other": "Moving %s"
+  }
+}

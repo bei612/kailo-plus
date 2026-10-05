@@ -5,6 +5,14 @@
 //! 第二道防线，新增的标签键必须同时在那里登记，否则会被丢弃。
 
 use opentelemetry_otlp::{MetricExporter, WithExportConfig};
+
+/// The fixed MCP SDK logs unexpected native messages and HTTP error bodies.
+/// They are not platform audit metadata. This hard boundary is independent of
+/// RUST_LOG; Core's own bounded refusal classes and original audits remain.
+pub(crate) fn safe_log_target(target: &str) -> bool {
+    target != "rmcp" && !target.starts_with("rmcp::")
+}
+
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::Resource;
 
@@ -29,4 +37,27 @@ pub fn init() -> Result<SdkMeterProvider, String> {
         .build();
     opentelemetry::global::set_meter_provider(provider.clone());
     Ok(provider)
+}
+
+#[cfg(test)]
+mod log_privacy_tests {
+    use super::*;
+
+    #[test]
+    fn native_payload_targets_cannot_escape_through_transport_or_service_logs() {
+        for target in [
+            "rmcp",
+            "rmcp::transport::common::reqwest",
+            "rmcp::service::client",
+        ] {
+            assert!(!safe_log_target(target));
+        }
+        for target in [
+            "platform_core::application_binding::peer",
+            "rmcp_metrics",
+            "other::rmcp",
+        ] {
+            assert!(safe_log_target(target));
+        }
+    }
 }

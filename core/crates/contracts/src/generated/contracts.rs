@@ -508,6 +508,9 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub principal_id: Option<String>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_create: Option<ReferenceClass>,
+
     /// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_id: Option<String>,
@@ -1072,6 +1075,20 @@ pub enum ExpectedHeadState {
 
     #[serde(rename = "FOUND")]
     Found,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceClass {
+    pub evidence_digest: String,
+
+    pub evidence_ref: String,
+
+    pub native_ref: String,
+
+    pub native_type: String,
+
+    pub type_key: String,
 }
 
 /// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -2764,6 +2781,12 @@ pub enum WorkflowKind {
     #[serde(rename = "BUZZ_IDENTITY_PROJECTION")]
     BuzzIdentityProjection,
 
+    #[serde(rename = "COMPONENT_BINDING")]
+    ComponentBinding,
+
+    #[serde(rename = "COMPONENT_DISABLE")]
+    ComponentDisable,
+
     #[serde(rename = "COMPONENT_RELEASE")]
     ComponentRelease,
 
@@ -2772,6 +2795,9 @@ pub enum WorkflowKind {
 
     #[serde(rename = "MEMBERSHIP_REVOCATION")]
     MembershipRevocation,
+
+    #[serde(rename = "RESOURCE_PROVISION")]
+    ResourceProvision,
 
     #[serde(rename = "SECRET_REF_REHOME")]
     SecretRefRehome,
@@ -2963,7 +2989,7 @@ pub struct ClientKeyStatus {
 pub struct ComponentConformanceAuthorization {
     pub expected_response_digest: String,
 
-    pub operation: AdapterProtocolOperation,
+    pub operation: ComponentConformanceOperation,
 
     pub request_digest: String,
 
@@ -2972,10 +2998,10 @@ pub struct ComponentConformanceAuthorization {
     pub token: String,
 }
 
-/// ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
+/// 原登记套件的真实操作种类；MCP 方法不属于 AdapterProtocolOperation，也不要求原生 peer 实现 Adapter API。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum AdapterProtocolOperation {
+pub enum ComponentConformanceOperation {
     Cancel,
 
     Execute,
@@ -2987,6 +3013,15 @@ pub enum AdapterProtocolOperation {
 
     #[serde(rename = "map_native_status_error")]
     MapNativeStatusError,
+
+    #[serde(rename = "mcp_call")]
+    McpCall,
+
+    #[serde(rename = "mcp_initialize")]
+    McpInitialize,
+
+    #[serde(rename = "mcp_list")]
+    McpList,
 
     Observe,
 
@@ -3052,6 +3087,9 @@ pub struct PlanClass {
 
     pub component_release_id: String,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connector_kind: Option<ConnectorKind>,
+
     pub contract_digests: Vec<String>,
 
     /// 独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
@@ -3073,6 +3111,16 @@ pub struct PlanClass {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ConnectorKind {
+    #[serde(rename = "PROTOCOL_PEER")]
+    ProtocolPeer,
+
+    #[serde(rename = "REMOTE_ADAPTER")]
+    RemoteAdapter,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanStep {
     pub case_key: String,
@@ -3082,13 +3130,17 @@ pub struct PlanStep {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contract_key: Option<String>,
 
+    /// Adapter 为实际 HTTP 状态；MCP 原生结果固定 0，不以伪造 HTTP 状态证明协议成功。
     pub expected_http_status: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_mcp_result_kind: Option<McpResultKind>,
 
     pub expected_response_json: String,
 
     pub idempotency_key: String,
 
-    pub operation: AdapterProtocolOperation,
+    pub operation: ComponentConformanceOperation,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference_asset_id: Option<String>,
@@ -3102,6 +3154,15 @@ pub struct PlanStep {
     pub request_json: String,
 
     pub step_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum McpResultKind {
+    #[serde(rename = "ERROR")]
+    Error,
+
+    #[serde(rename = "RESULT")]
+    Result,
 }
 
 /// 原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
@@ -3134,9 +3195,15 @@ pub struct WorkerBuildClass {
 
     pub build_id: String,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connector_kinds: Option<Vec<String>>,
+
     pub driver_registry_keys: Vec<String>,
 
     pub host_api_version: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_protocol_versions: Option<Vec<String>>,
 
     pub platform_port_keys: Vec<PlatformPortKey>,
 
@@ -4080,8 +4147,13 @@ pub struct AgentVersionContentTurnLimits {
 
 /// DD-94部署投递面：adapter服务引用解析到固定部署产物/原生实例与受限传输。不是Catalog或业务授权。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ApplicationAdapterDirectory {
     pub adapters: Vec<ApplicationAdapterDelivery>,
+
+    /// 受控部署事实，不是 Tool 注册表或业务授权；原生 MCP peer 不接收 ActionToken。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol_peers: Option<Vec<ApplicationProtocolPeerDelivery>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4115,6 +4187,61 @@ pub struct ApplicationSecretReader {
     pub role_name: String,
 
     pub service_principal_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationProtocolPeerDelivery {
+    pub adapter_service_ref: String,
+
+    pub artifact_digest: String,
+
+    pub bindings: Vec<ApplicationProtocolPeerBindingDelivery>,
+
+    pub max_response_bytes: i64,
+
+    pub mcp_url: String,
+
+    pub native_instance_ref: String,
+
+    pub timeout_seconds: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationProtocolPeerBindingDelivery {
+    pub binding_id: String,
+
+    pub config_digest: String,
+
+    pub isolation_mode: String,
+
+    /// 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_resources: Option<Vec<ApplicationNativeResourceDelivery>>,
+
+    pub native_scope_ref: String,
+
+    pub service_principal_id: String,
+
+    pub tenant_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationNativeResourceDelivery {
+    pub evidence_digest: String,
+
+    pub evidence_ref: String,
+
+    pub native_ref: String,
+
+    pub native_type: String,
+
+    pub type_key: String,
 }
 
 /// DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
@@ -4418,6 +4545,58 @@ pub struct ComponentConformanceIdentityContext {
     pub workspace_id: Option<String>,
 }
 
+/// ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdapterProtocolOperation {
+    Cancel,
+
+    Execute,
+
+    #[serde(rename = "extract_usage")]
+    ExtractUsage,
+
+    Handshake,
+
+    #[serde(rename = "map_native_status_error")]
+    MapNativeStatusError,
+
+    Observe,
+
+    #[serde(rename = "query_revision")]
+    QueryRevision,
+
+    Reconcile,
+
+    #[serde(rename = "resolve_native_scope")]
+    ResolveNativeScope,
+
+    #[serde(rename = "validate_binding")]
+    ValidateBinding,
+}
+
+/// 原 COMPONENT_CONFORMANCE_ENVIRONMENT_FILE 的 PROTOCOL_PEER 分支，仅隔离套件运行事实；readOnlyTools
+/// 固定隔离实例实际上可安全执行的只读探针，不授予生产业务权限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentProtocolPeerEnvironment {
+    pub artifact_digest: String,
+
+    pub initialize_result_json: String,
+
+    pub list_result_json: String,
+
+    pub max_response_bytes: i64,
+
+    pub max_steps: i64,
+
+    pub mcp_url: String,
+
+    pub read_only_tools: Vec<String>,
+
+    pub timeout_seconds: i64,
+}
+
 /// 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -4560,15 +4739,35 @@ pub struct PlatformBuildInfo {
 
     pub build_id: String,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connector_kinds: Option<Vec<String>>,
+
     pub driver_registry_keys: Vec<String>,
 
     pub host_api_version: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_protocol_versions: Option<Vec<String>>,
 
     pub platform_port_keys: Vec<PlatformPortKey>,
 
     pub reported_at: String,
 
     pub subject: Subject,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceCreate {
+    pub evidence_digest: String,
+
+    pub evidence_ref: String,
+
+    pub native_ref: String,
+
+    pub native_type: String,
+
+    pub type_key: String,
 }
 
 /// 03 §7 的平台发布 Catalog 投递，不是用户 Resource 或 Agent 注册表。部署没有提供实际合同、凭据链与 runtime 对账证据时不得填 ACTIVE。
@@ -5268,12 +5467,15 @@ pub struct ObservationElement {
     pub http_status: i64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_result_kind: Option<McpResultKind>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub native_observation: Option<ExecutionClass>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_scope_observation: Option<NativeScopeObservationClass>,
 
-    pub operation: AdapterProtocolOperation,
+    pub operation: ComponentConformanceOperation,
 
     pub request_digest: String,
 
@@ -5311,6 +5513,9 @@ pub struct ComponentConformancePlan {
 
     pub component_release_id: String,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connector_kind: Option<ConnectorKind>,
+
     pub contract_digests: Vec<String>,
 
     /// 独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
@@ -5341,13 +5546,17 @@ pub struct ComponentConformancePlanStep {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contract_key: Option<String>,
 
+    /// Adapter 为实际 HTTP 状态；MCP 原生结果固定 0，不以伪造 HTTP 状态证明协议成功。
     pub expected_http_status: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_mcp_result_kind: Option<McpResultKind>,
 
     pub expected_response_json: String,
 
     pub idempotency_key: String,
 
-    pub operation: AdapterProtocolOperation,
+    pub operation: ComponentConformanceOperation,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference_asset_id: Option<String>,
@@ -5394,12 +5603,15 @@ pub struct ComponentConformanceStepObservation {
     pub http_status: i64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_result_kind: Option<McpResultKind>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub native_observation: Option<ExecutionClass>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_scope_observation: Option<NativeScopeObservationClass>,
 
-    pub operation: AdapterProtocolOperation,
+    pub operation: ComponentConformanceOperation,
 
     pub request_digest: String,
 
@@ -5435,6 +5647,78 @@ pub struct FreshApprovalAdmissionResult {
     pub reason: Option<ReasonCode>,
 
     pub satisfied_selectors: Vec<ApprovalSelector>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceProvisionAdvanceRequest {
+    pub cancel_requested: bool,
+
+    pub run_id: String,
+
+    pub target: ResourceProvisionAdvanceRequestTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceProvisionAdvanceRequestTarget {
+    pub action_execution_id: String,
+
+    pub binding_id: String,
+
+    pub binding_version: i64,
+
+    pub component_release_id: String,
+
+    pub native_instance_ref: String,
+
+    pub native_scope_ref: String,
+
+    pub projection_generation: i64,
+
+    pub reference: ReferenceClass,
+
+    pub resource_id: String,
+
+    pub resource_version: i64,
+
+    pub workflow_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceProvisionAdvanceResult {
+    pub resource_id: String,
+
+    pub status: TaskStatus,
+
+    pub waiting_reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceProvisionTarget {
+    pub action_execution_id: String,
+
+    pub binding_id: String,
+
+    pub binding_version: i64,
+
+    pub component_release_id: String,
+
+    pub native_instance_ref: String,
+
+    pub native_scope_ref: String,
+
+    pub projection_generation: i64,
+
+    pub reference: ReferenceClass,
+
+    pub resource_id: String,
+
+    pub resource_version: i64,
+
+    pub workflow_id: String,
 }
 
 /// TENANT_LIFECYCLE DELETE Activity 只推进已准入且已冻结的 Tenant 删除，不重新解析绑定或建立新快照。

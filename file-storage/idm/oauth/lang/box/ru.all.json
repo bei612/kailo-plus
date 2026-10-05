@@ -1,0 +1,37 @@
+{
+  "Auth.PruneJob.Title": {
+    "other": "Удалите отозванные токены и просроченные ключи пароля сброса"
+  },
+  "Auth.PruneJob.Revoked": {
+    "one": "Удален {{.Count}} токен с истекшим сроком",
+    "other": "Удалены {{.Count}} токены с истекшим сроком"
+  },
+  "Auth.PruneJob.ResetToken": {
+    "one": "Удален токен пароля сброса {{.DeletionCount}}, срок действия которого истек",
+    "other": "Удалены токены пароля сброса {{.DeletionCount}}, срок действия которых истек"
+  },
+  "ResetPassword.Err.EmailNotFound": {
+    "other": "Не удается найти адрес электронной почты"
+  },
+  "ResetPassword.Success.EmailSent": {
+    "other": "Вам отправлено электронное письмо с дальнейшими инструкциями"
+  },
+  "ResetPassword.Err.Unknown": {
+    "other": "Произошла ошибка. Пожалуйста, перезапустите процесс сброса пароля"
+  },
+  "ResetPassword.Err.TokenExpired": {
+    "other": "Срок действия токена истек, пожалуйста, повторите процедуру сброса пароля!"
+  },
+  "ResetPassword.Err.TokenNotCorresponding": {
+    "other": "Токен не соответствует этому идентификатору пользователя!"
+  },
+  "ResetPassword.Err.UserNotFound": {
+    "other": "Учётная запись не найдена!"
+  },
+  "ResetPassword.Err.ResetFailed": {
+    "other": "Произошла ошибка при попытке установить новый пароль!"
+  },
+  "ResetPassword.Success.ResetFinished": {
+    "other": "Ваш пароль был успешно изменен, теперь вы можете вернуться на страницу входа!"
+  }
+}

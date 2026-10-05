@@ -1,0 +1,32 @@
+{
+  "Search.Config.IndexContent.Label": {
+    "other": "Індексувати вміст"
+  },
+  "Search.Config.IndexContent.Description": {
+    "other": "При активації індексатор знайде метадані ContentRef, зчитає вміст за вказаним посиланням і додасть його до пошукового індексу."
+  },
+  "Search.Config.ContentRef.Label": {
+    "other": "Метадані посилання на вміст"
+  },
+  "Search.Config.ContentRef.Description": {
+    "other": "Назва метаданих, що вказують на внутрішній файл, який містить текстове представлення оригінального документа. Такий вміст може бути у форматі звичайного тексту або стиснутий за допомогою gzip, залежно від інструмента вилучення тексту (наприклад, Tika). Пошукова система зазвичай індексує цей вміст для забезпечення повнотекстового пошуку. Обов’язково додавайте префікс \"pydio:\" до назви метаданих, щоб запобігти витоку даних."
+  },
+  "Search.Config.PlainTextExtensions.Label": {
+    "other": "Розширення для звичайного тексту"
+  },
+  "Search.Config.PlainTextExtensions.Description": {
+    "other": "Розширення файлів із текстовим вмістом для прямої індексації (через кому)."
+  },
+  "Search.Config.BasenameAnalyze.Label": {
+    "other": "Інструмент аналізу назв файлів"
+  },
+  "Search.Config.BasenameAnalyze.Description": {
+    "other": "Тип аналізатора для обробки назв файлів"
+  },
+  "Search.Config.ContentAnalyzer.Label": {
+    "other": "Аналізатор вмісту файлів"
+  },
+  "Search.Config.ContentAnalyzer.Description": {
+    "other": "Тип аналізатора для обробки тексту всередині документів"
+  }
+}

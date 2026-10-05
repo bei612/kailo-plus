@@ -1,0 +1,314 @@
+{
+  "welcome.stepLabel": {
+    "other": "Termos do uso"
+  },
+  "welcome.title": {
+    "other": "Bem-vindo ao Assistente de Instalação do Pydio Cells"
+  },
+  "welcome.legend": {
+    "other": "Isto irá instalar todos os serviços no servidor atual. Por favor, concorde com os termos da licença abaixo antes de iniciar"
+  },
+  "welcome.agreed": {
+    "other": "Concordo com estes termos"
+  },
+  "database.stepLabel": {
+    "other": "Conexão do Banco de Dados"
+  },
+  "database.title": {
+    "other": "Configuração do banco de dados"
+  },
+  "database.legend": {
+    "other": "Pydio requer pelo menos um armazenamento SQL para configuração e indexação de dados. Configure aqui a conexão com o seu servidor MySQL/MariaDB."
+  },
+  "database.legend.bold": {
+    "other": "Por favor, certifique-se de que seu banco de dados está executando MySQL versão 5.6 ou superior"
+  },
+  "database.legend1": {
+    "other": "Pydio requires at least one SQL storage for configuration and data indexation."
+  },
+  "database.legend2": {
+    "other": "Supported databases are MySQL/MariaDB or PostgreSQL or SQLite."
+  },
+  "database.installDetected": {
+    "other": "Parece que há uma instalação de Cells neste banco de dados. Por favor confirme para continuar ou "
+  },
+  "database.installDetected.retry": {
+    "other": "tentar novamente com um novo valor"
+  },
+  "database.useDefaultsSet": {
+    "other": "Um banco de dados padrão já está configurado, basta clicar próximo para validar a conexão."
+  },
+  "database.forceConfigure": {
+    "other": "Configurar outra base de dados."
+  },
+  "admin.stepLabel": {
+    "other": "Usuário Admin"
+  },
+  "admin.title": {
+    "other": "Usuário Admin e padrões de frontend"
+  },
+  "admin.legend": {
+    "other": "Fornece credenciais para o usuário administrativo. Deixe os campos vazios se você estiver implantando sobre uma instalação existente."
+  },
+  "admin.adminFound": {
+    "other": "Um usuário administrativo já foi encontrado no banco de dados. Verifique se você deseja criar um novo."
+  },
+  "advanced.stepLabel": {
+    "other": "Configurações Avançadas"
+  },
+  "advanced.title": {
+    "other": "Configurações Avançadas (opcional)"
+  },
+  "advanced.legend": {
+    "other": "Os serviços do Pydio Cells serão implantados nesta máquina. Você pode rever algumas configurações avançadas abaixo para ajustar sua configuração."
+  },
+  "advanced.toggle": {
+    "other": "Mostrar configurações avançadas"
+  },
+  "advanced.default.datasource": {
+    "other": "Uma fonte de dados padrão para armazenar dados pessoais de usuários e de células é criada na inicialização. Você pode criar outras fontes de dados mais tarde."
+  },
+  "advanced.mongo.title": {
+    "other": "Configurar uma conexão com MongoDB"
+  },
+  "advanced.mongo.legend": {
+    "other": "Isto é melhor para escalabilidade e necessário para a implantação de cluster. Se você não tiver um Mongo DB pronto, isso pode ser feito mais tarde."
+  },
+  "advanced.mongo.host": {
+    "other": "Host do servidor"
+  },
+  "advanced.mongo.port": {
+    "other": "Porta do servidor"
+  },
+  "advanced.mongo.db": {
+    "other": "Nome do banco de dados"
+  },
+  "advanced.mongo.username": {
+    "other": "Usuário"
+  },
+  "advanced.mongo.password": {
+    "other": "Senha"
+  },
+  "advanced.mongo.authSource": {
+    "other": "BD de autenticação"
+  },
+  "advanced.mongo.validate": {
+    "other": "Teste de conexão"
+  },
+  "license.stepLabel": {
+    "other": "Licença Enterprise"
+  },
+  "license.title": {
+    "other": "Licença do Pydio Cells Enterprise"
+  },
+  "license.success": {
+    "other": "Arquivo de licença detectado com sucesso."
+  },
+  "license.details": {
+    "other": "Esta instalação é válida para %count usuários até %expiration."
+  },
+  "license.failed": {
+    "other": "Erro ao tentar verificar esta chave de licença. Entre em contato com o suporte."
+  },
+  "license.required": {
+    "other": "Uma chave de licença válida é necessária para executar a Distribuição Empresarial. Para obter uma licença de teste de 30 dias ou uma cotação de vendas, entre em contato"
+  },
+  "license.fieldLabel": {
+    "other": "String da Licença"
+  },
+  "license.fieldLegend": {
+    "other": "Por favor, copie/cole a chave da licença fornecida."
+  },
+  "apply.stepLabel": {
+    "other": "Aplicar instalação"
+  },
+  "apply.title": {
+    "other": "Por favor, seja paciente enquanto as células do Pydio estão sendo instaladas..."
+  },
+  "apply.success": {
+    "other": "A instalação foi bem sucedida e os serviços estão iniciando, este instalador recarregará a página quando os serviços forem iniciados."
+  },
+  "apply.success.restarted": {
+    "other": "A instalação foi bem sucedida e os serviços foram iniciados, por favor recarregue a página agora (ela será recarregada automaticamente em %1s)"
+  },
+  "apply.error": {
+    "other": "Ocorreu um erro durante a execução da instalação! Por favor, verifique sua configuração."
+  },
+  "apply.error.detail": {
+    "other": "O erro foi: "
+  },
+  "form.dbConnectionType.label": {
+    "other": "Tipo de Conexão"
+  },
+  "form.dbConnectionType.mysql_tcp": {
+    "other": "MySQL/MariaDB - TCP"
+  },
+  "form.dbConnectionType.mysql_socket": {
+    "other": "MySQL/MariaDB - Socket"
+  },
+  "form.dbConnectionType.pg_tcp": {
+    "other": "PostGreSQL - TCP"
+  },
+  "form.dbConnectionType.pg_socket": {
+    "other": "PostGreSQL - Socket"
+  },
+  "form.dbConnectionType.sqlite": {
+    "other": "SQLite (dev purpose only)"
+  },
+  "form.dbConnectionType.manual": {
+    "other": "Manual"
+  },
+  "form.dbTCPHostname.label": {
+    "other": "Nome do Host"
+  },
+  "form.dbTCPHostname.legend": {
+    "other": "Servidor onde o mysql está sendo executado"
+  },
+  "form.dbName.label": {
+    "other": "Nome da Base de Dados"
+  },
+  "form.dbName.legend": {
+    "other": "Banco de dados a usar (será criado se não existir)"
+  },
+  "form.dbTCPPort.label": {
+    "other": "Porta"
+  },
+  "form.dbTCPPort.legend": {
+    "other": "Porta para conexão ao mysql"
+  },
+  "form.dbUser.label": {
+    "other": "Usuário do Banco"
+  },
+  "form.dbUser.legend": {
+    "other": "Deixe em branco se não necessário"
+  },
+  "form.dbPassword.label": {
+    "other": "Senha do Banco"
+  },
+  "form.dbPassword.legend": {
+    "other": "Deixe em branco se não necessário"
+  },
+  "form.dbSocketFile.label": {
+    "other": "Socket"
+  },
+  "form.dbSocketFile.legend": {
+    "other": "Introduzir a localização do arquivo de socket a ser usado para conectar"
+  },
+  "form.dbSocketFileSQLite.label": {
+    "other": "Database Path"
+  },
+  "form.dbSocketFileSQLite.legend": {
+    "other": "Enter the location of the SQLite database"
+  },
+  "form.dbSqliteFile.label": {
+    "other": "File Path"
+  },
+  "form.dbSqliteFile.legend": {
+    "other": "Enter the location of the file to use as database"
+  },
+  "form.dbManualDSN.label": {
+    "other": "DSN"
+  },
+  "form.dbManualDSN.legend": {
+    "other": "Utilize o estilo Golang DSN para descrever a conexão com o banco de dados"
+  },
+  "form.frontendApplicationTitle.label": {
+    "other": "Título da Aplicação"
+  },
+  "form.frontendApplicationTitle.legend": {
+    "other": "Título principal da sua instalação"
+  },
+  "form.frontendDefaultLanguage.label": {
+    "other": "Idioma padrão"
+  },
+  "form.frontendLogin.label": {
+    "other": "Login do administrador *"
+  },
+  "form.frontendLogin.legend": {
+    "other": "Identificador utilizado para login"
+  },
+  "form.frontendPassword.label": {
+    "other": "Senha do administrador *"
+  },
+  "form.frontendPassword.legend": {
+    "other": "Senha usada para o login"
+  },
+  "form.frontendRepeatPassword.label": {
+    "other": "Confirmar senha"
+  },
+  "form.frontendRepeatPassword.legend": {
+    "other": "Confirme a senha duas vezes"
+  },
+  "form.dsFolder.label": {
+    "other": "Caminho da fonte de dados padrão"
+  },
+  "form.dsFolder.legend": {
+    "other": "Use um caminho absoluto no servidor"
+  },
+  "form.dsType.Label": {
+    "other": "Tipo de armazenamento"
+  },
+  "form.dsType.FS": {
+    "other": "FS local (armazenar todos os dados neste servidor)"
+  },
+  "form.dsType.S3": {
+    "other": "Amazon S3 / compatível com S3 (loja dentro de buckets S3)"
+  },
+  "form.dsS3Custom.label": {
+    "other": "URL, append ?minio=true if Minio."
+  },
+  "form.dsS3Custom.legend": {
+    "other": "Deixe em branco para Amazon"
+  },
+  "form.dsS3CustomRegion.label": {
+    "other": "Região personalizada S3"
+  },
+  "form.dsS3CustomRegion.legend": {
+    "other": "Deixe em branco para padrão (us-east-1)"
+  },
+  "form.dsS3ApiKey.label": {
+    "other": "Chave Api S3"
+  },
+  "form.dsS3ApiKey.legend": {
+    "other": "Tecla para se conectar ao S3"
+  },
+  "form.dsS3ApiSecret.label": {
+    "other": "Segredo da Api S3"
+  },
+  "form.dsS3ApiSecret.legend": {
+    "other": "Chave Secreta"
+  },
+  "form.dsS3ValidateKeys": {
+    "other": "Conectar ao S3 para definir os buckets"
+  },
+  "form.s3BucketsPrefix.label": {
+    "other": "Prefixo do Buckets"
+  },
+  "form.s3BucketsPrefix.legend": {
+    "other": "Um prefixo único para a criação dos buckets 6 padrão"
+  },
+  "form.bucketList.found": {
+    "other": "Os seguintes bucket(s) já existem"
+  },
+  "form.bucketList.toCreate": {
+    "other": "Os seguintes bucket(s) serão criados"
+  },
+  "form.bucketList.notFound": {
+    "other": "Os seguintes buckets não foram encontrados"
+  },
+  "form.bucketList.warnCreate": {
+    "other": "Você não tem permissão para criar buckets, certifique-se de criá-los manualmente!"
+  },
+  "stepper.button.next": {
+    "other": "Próximo"
+  },
+  "stepper.button.back": {
+    "other": "Voltar"
+  },
+  "stepper.button.last": {
+    "other": "Instalar Agora"
+  },
+  "stepper.button.reload": {
+    "other": "Recarregar"
+  }
+}

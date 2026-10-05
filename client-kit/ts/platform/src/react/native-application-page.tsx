@@ -36,8 +36,13 @@ export function NativeApplicationPage({ bindingId, onBack }: { bindingId: string
   }, [reload]);
   const page = state.status === "ok" && validNativePage(state.data, bindingId) ? state.data : null;
   return <section className="flex min-h-0 flex-1 flex-col gap-3">
-    <div className="flex gap-2"><Button onClick={onBack}>{t("platform.back")}</Button>
-      <Button onClick={reload}>{t("platform.refresh")}</Button></div>
+    <div className="flex flex-wrap items-center gap-2"><Button onClick={onBack}>{t("platform.back")}</Button>
+      <Button onClick={reload}>{t("platform.refresh")}</Button>
+      {page && !nativeHost ? <a href={page.url} target="_blank" rel="noopener noreferrer"
+        referrerPolicy="no-referrer"
+        className="text-sm text-foreground underline underline-offset-4 hover:text-muted-foreground">
+        {t("bindings.openIndependent")}
+      </a> : null}</div>
     <p className="text-sm text-muted-foreground">{t("bindings.nativeBoundary")}</p>
     {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
       : !page ? <ReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />

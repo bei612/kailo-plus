@@ -6,7 +6,7 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-04]
-  decisions: [DD-88, DD-94]
+  decisions: [DD-58, DD-88, DD-94, DD-98]
   facts: []
   seams: []
   blockers: []
@@ -24,13 +24,19 @@ implementation:
   owners: [team-platform]
   paths:
     - core/crates/platform-core/src/application_binding.rs
+    - core/crates/platform-core/src/application_binding_peer.rs
+    - core/crates/platform-core/src/application_binding_native.rs
+    - core/crates/platform-core/src/application_binding_gateway.rs
     - core/crates/platform-core/src/application_binding_read.rs
     - core/crates/platform-core/src/application_binding_pep.rs
     - core/crates/platform-core/src/application_tool.rs
+    - core/crates/platform-core/src/agent_tool_pep.rs
     - core/crates/platform-core/src/application_execution.rs
     - core/crates/platform-core/src/application_page.rs
+    - core/crates/platform-core/src/resource_provision.rs
     - core/crates/platform-core/src/bff.rs
     - worker/workflows/application_binding.go
+    - worker/workflows/resource_provision.go
     - client-kit/ts/platform/src/react/application-bindings.tsx
   surfaces: [web, desktop]
   schemas:
@@ -41,6 +47,10 @@ implementation:
     - contracts/domain/action_token_signing_delivery.schema.json
     - contracts/workflow/application_binding_advance_request.schema.json
     - contracts/workflow/application_binding_advance_result.schema.json
+    - contracts/domain/resource_create.schema.json
+    - contracts/workflow/resource_provision_target.schema.json
+    - contracts/workflow/resource_provision_advance_request.schema.json
+    - contracts/workflow/resource_provision_advance_result.schema.json
   migrations:
     - core/migrations/20261005010000_application_binding.up.sql
     - core/migrations/20261005010000_application_binding.down.sql
@@ -52,16 +62,20 @@ implementation:
     - core/migrations/20261005014000_application_catalog.down.sql
     - core/migrations/20261005015000_application_execution_usage.up.sql
     - core/migrations/20261005015000_application_execution_usage.down.sql
+    - core/migrations/20261005016000_protocol_peer_terminal_guard.up.sql
+    - core/migrations/20261005016000_protocol_peer_terminal_guard.down.sql
+    - core/migrations/20261005017000_resource_reference.up.sql
+    - core/migrations/20261005017000_resource_reference.down.sql
 
 runtime:
   routes: ["/api/v1/application-bindings", "/api/v1/application-bindings/{id}/native-page"]
-  actions: [application_binding.create, application_binding.disable]
+  actions: [application_binding.create, application_binding.disable, resource.create]
   tools: []
-  workflow_kinds: [COMPONENT_BINDING, COMPONENT_DISABLE]
+  workflow_kinds: [COMPONENT_BINDING, COMPONENT_DISABLE, RESOURCE_PROVISION]
 
 release:
   artifacts:
     - name: web-client
-      digest: sha256:d60e187b0429a7879600ab36c09d2b83de2290169d54b0e3d8bf81f659ce1668
-  # 仅共享客户端实际构建；不是 Core/Worker 部署或独立组件业务验收。
+      digest: sha256:3336de5375dccfbcb72865e4ad44bf1e2799136779cf00830c8b64861fd4d173
+  # 该 digest 仅指 Web 产物；不证明本批新增服务端逻辑或独立组件已验收。
   gate: blocked_until_seams_closed

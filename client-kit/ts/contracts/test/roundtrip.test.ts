@@ -13,6 +13,27 @@ import type { ComponentConformanceStepObservation } from "../src/generated/contr
 import type { ComponentReleaseApprovalReport } from "../src/generated/contracts.js";
 import type { ApplicationNativePage } from "../src/generated/contracts.js";
 import type { AdapterBindingObservation, AdapterExecutionReference } from "../src/generated/contracts.js";
+import type { ActionCommand, ResourceProvisionAdvanceRequest } from "../src/generated/contracts.js";
+
+test("resource reference keeps evidence and original workflow without inventing scope",()=>{
+  const raw=readFileSync(new URL("../../../../contracts/samples/resource-create.sample.json",import.meta.url),"utf8");
+  const typed:ActionCommand=JSON.parse(raw);
+  ok(typed.resourceCreate);
+  const command:ActionCommand={actionKey:typed.actionKey,idempotencyKey:typed.idempotencyKey,workspaceId:typed.workspaceId,
+    resourceCreate:{typeKey:typed.resourceCreate.typeKey,nativeType:typed.resourceCreate.nativeType,nativeRef:typed.resourceCreate.nativeRef,
+      evidenceRef:typed.resourceCreate.evidenceRef,evidenceDigest:typed.resourceCreate.evidenceDigest}};
+  deepStrictEqual(JSON.parse(JSON.stringify(command)),JSON.parse(raw));
+  const advanceRaw=readFileSync(new URL("../../../../contracts/samples/resource-provision.sample.json",import.meta.url),"utf8");
+  const advance:ResourceProvisionAdvanceRequest=JSON.parse(advanceRaw);
+  const reconstructed:ResourceProvisionAdvanceRequest={cancelRequested:advance.cancelRequested,runId:advance.runId,
+    target:{actionExecutionId:advance.target.actionExecutionId,resourceId:advance.target.resourceId,workflowId:advance.target.workflowId,
+      resourceVersion:advance.target.resourceVersion,bindingId:advance.target.bindingId,bindingVersion:advance.target.bindingVersion,
+      componentReleaseId:advance.target.componentReleaseId,projectionGeneration:advance.target.projectionGeneration,
+      nativeInstanceRef:advance.target.nativeInstanceRef,nativeScopeRef:advance.target.nativeScopeRef,
+      reference:{typeKey:advance.target.reference.typeKey,nativeType:advance.target.reference.nativeType,nativeRef:advance.target.reference.nativeRef,
+        evidenceRef:advance.target.reference.evidenceRef,evidenceDigest:advance.target.reference.evidenceDigest}}};
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)),JSON.parse(advanceRaw));
+});
 
 test("binding observation preserves execution mappings, credential references and optional scope", () => {
   const raw = readFileSync(new URL("../../../../contracts/samples/application-binding-observations.sample.json", import.meta.url), "utf8");

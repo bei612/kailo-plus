@@ -1,0 +1,35 @@
+{
+  "Path": {
+    "other": "Caminho"
+  },
+  "Default download format": {
+    "other": "Formato de descarregamento de ficheiros por omissão"
+  },
+  "When downloading a folder or a multiple selection, automatically create an archive using this format": {
+    "other": "Quando estiver a descarregar uma pasta ou uma selecção múltipla de ficheiros, o sistema irá criar automaticamente um ficheiro usando este formato"
+  },
+  "Path to the folder on the server": {
+    "other": "Caminho para a pasta no servidor"
+  },
+  "Gateway": {
+    "other": "Gateway"
+  },
+  "Pydio S3 Gateway": {
+    "other": "Gateway Pydio S3"
+  },
+  "Absolute path to one or more root nodes": {
+    "other": "Caminho absoluto para um ou mais nós raiz"
+  },
+  "#Items per page": {
+    "other": "#Items per page"
+  },
+  "Once in pagination mode, number of items to display per page.": {
+    "other": "Once in pagination mode, number of items to display per page."
+  },
+  "Delete Permanently": {
+    "other": "Apagar permanentemente"
+  },
+  "Enable option to skip recycle bin on deletion": {
+    "other": "Activar esta opção para ignorar o caixote do lixo ao apagar"
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "Job.Version.Title": {
+    "other": "Реплікація для версіонування (за подією)"
+  },
+  "Job.Version.StatusFile": {
+    "other": "Створено версію {{.Uuid}} всередині сховища версій "
+  },
+  "Job.Version.StatusMeta": {
+    "other": "Створено запис метаданих версії для ідентифікатора {{.Uuid}}"
+  },
+  "Job.Version.StatusPrune": {
+    "one": "Видалено версій: {{.Count}}",
+    "other": "Очищено версій: {{.Count}}"
+  },
+  "Job.Pruning.Title": {
+    "other": "Очищення файлів версій для видалених об'єктів"
+  },
+  "Job.Pruning.StatusDone": {
+    "one": "Успішно видалено {{.Count}} версію",
+    "other": "Успішно видалено {{.Count}} версії."
+  },
+  "Config.GroupPolicy.Title": {
+    "other": "Політика"
+  },
+  "Config.GroupPolicy.Name.Label": {
+    "other": "Назва"
+  },
+  "Config.GroupPolicy.Name.Description": {
+    "other": "Назва політики"
+  },
+  "Config.GroupPolicy.Description.Label": {
+    "other": "Опис"
+  },
+  "Config.GroupPolicy.Description.Description": {
+    "other": "Опис політики"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Label": {
+    "other": "Сховище"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Description": {
+    "other": "Джерело даних для зберігання версій"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Label": {
+    "other": "Контейнер"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Description": {
+    "other": "Контейнер, що використовується всередині цього джерела даних"
+  },
+  "Config.GroupSizes.Title": {
+    "other": "Обмеження розміру"
+  },
+  "Config.GroupSizes.MaxTotalSize.Label": {
+    "other": "Загальний розмір усіх версій, що зберігаються в цьому контейнері"
+  },
+  "Config.GroupSizes.MaxTotalSize.Description": {
+    "other": "Обмежити загальний розмір. У разі досягнення ліміту найстаріші версії будуть видалені. Використовуйте -1, щоб зняти обмеження"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Label": {
+    "other": "Сумарний розмір усіх версій окремого файлу"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Description": {
+    "other": "Обмежити розмір, що займають усі версії одного файлу. У разі досягнення ліміту найстаріші версії будуть видалені. Використовуйте -1, щоб зняти обмеження"
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Label": {
+    "other": "Ігнорувати файли, розмір яких перевищує..."
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Description": {
+    "other": "Не оновлювати файли з розміром більше цього обмеження. Використовуйте -1 для необмеженого ліміту"
+  },
+  "Config.GroupRetention.Title": {
+    "other": "Період Ретенції"
+  },
+  "Config.GroupRetention.Description": {
+    "other": "Кількість версій для збереження за період"
+  },
+  "Config.GroupRetention.IntervalStart.Name": {
+    "other": "Період початку"
+  },
+  "Config.GroupRetention.IntervalStart.Description": {
+    "other": "Початкова точка, яка використовується для обчислення періоду. 0 - це час останньої версії, використовуйте інший період для встановлення ліміту"
+  },
+  "Config.GroupRetention.MaxNumber.Name": {
+    "other": "Максимальна кількість версій"
+  },
+  "Config.GroupRetention.MaxNumber.Description": {
+    "other": "Максимальна кількість версій для збереження протягом цього періоду. Щоб зберегти всі версії, 0 для видалення."
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Name": {
+    "other": "Після видалення вихідного файлу"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Description": {
+    "other": "Кількість версій для автоматичного видалення файлу."
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepAll": {
+    "other": "Зробити резервну копію всіх існуючих версій"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepLast": {
+    "other": "Резервне копіювання тільки з останніми версіями"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepNone": {
+    "other": "Видалити всі існуючі версії"
+  }
+}

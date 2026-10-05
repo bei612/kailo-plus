@@ -1,0 +1,134 @@
+{
+  "cont.btn.fb": {
+    "other": "Sekot mums"
+  },
+  "cont.btn.github": {
+    "other": "Github Star"
+  },
+  "cont.btn.tw": {
+    "other": "Twitter"
+  },
+  "cont.intro": {
+    "other": "Kods ir publiski pieejams Github. Vēlaties labot kļūdu, palīdzēt citiem forumā vai pievienot jaunu funkciju? Iesaisties!\n                            Vai arī atbalsti mūs sociālajos tīklos!"
+  },
+  "cont.subtitle": {
+    "other": "Pydio Cells ir atvērtā koda programmatūra. Palīdzi ar ieguldījumu!"
+  },
+  "cont.title": {
+    "other": "Palīdzi ar ieguldījumu!"
+  },
+  "cont.topic.pr": {
+    "other": "Es implementēju jaunu iespēju: github Pull Requests"
+  },
+  "cont.topic.report": {
+    "other": "Es atradu kļūdu! Paziņot forumā."
+  },
+  "cont.topic.report.2": {
+    "other": "Kļūda ir atzīta: atvērt github notikumu."
+  },
+  "cont.topic.translate": {
+    "other": "Kā izveidot vai iztulkot papildu valodu?"
+  },
+  "ent.advanced": {
+    "other": "Paplašināts administrācijas panelis"
+  },
+  "ent.advanced.legend": {
+    "other": "Unikāls administrācija spenelis ar iespēju monitorēt platformu reālā laikā."
+  },
+  "ent.btn.contact": {
+    "other": "Sazināties ar pārdošanas daļu"
+  },
+  "ent.btn.more": {
+    "other": "Uzziniet vairāk"
+  },
+  "ent.features": {
+    "other": "Iespējas lieliem uzņēmumiem"
+  },
+  "ent.features.legend": {
+    "other": "Iespējas lieliem uzņēmumiem: AD/LDAP pieslēgumi, Auditējami log faili atbilstībām, Easy Transfer..."
+  },
+  "ent.subtitle": {
+    "other": "VAIRĀK IESPĒJAS - GDPR ATBILSTĪBA - PAPLAŠINĀTA ZĪMOLOŠANA"
+  },
+  "ent.support": {
+    "other": "Atbalsts un Uzturēšana"
+  },
+  "ent.support.legend": {
+    "other": "Saņemiet palīdzību no izstrādātāju komandas"
+  },
+  "ent.title": {
+    "other": "Uzziniet par Pydio Cells Enterprise"
+  },
+  "ent.upgrade": {
+    "other": "Upgrade now!"
+  },
+  "ent.upgrade.legend": {
+    "other": "In-app upgrade Cells Enterprise (license required)"
+  },
+  "welc.btn.advanced": {
+    "other": "Papildu"
+  },
+  "welc.btn.parameters": {
+    "other": "Par parametriem"
+  },
+  "welc.btn.start": {
+    "other": "Sākt"
+  },
+  "welc.btn.users": {
+    "other": "Lietotāji"
+  },
+  "welc.btn.ws": {
+    "other": "Darbvirsmas"
+  },
+  "welc.guide": {
+    "other": "If you don't know where to start, the Administrator Guide is definitely a good read!"
+  },
+  "welc.intro": {
+    "other": "Šis ir Pydio pārvaldības panelis. Kreisās puses izvēlnē var izveidot <a class=\"doc-link\" data-path=\"/data/workspaces\">darbvirsmas</a> un <a class=\"doc-link\" data-path=\"/idm/users\">lietotājus</a>,\n                            pārbaudīt <a class=\"doc-link\" data-path=\"/admin/logs\">notikumus</a> uz servera, unpārvaldīt <a class=\"doc-link\" data-path=\"/parameters/core\">konfigurācijas</a> un <a class=\"doc-link\" data-path=\"/plugins/manager\">spraudņus</a>."
+  },
+  "welc.import": {
+    "other": "If you are currently running a Pydio 8 installation, please be aware that <u>Pydio 8 will be considered End-Of-Life at the end of 2019</u>. You can use the <a class=\"doc-link\" data-path=\"/data/migration\">Import Tool</a> to migrate all data to Pydio Cells."
+  },
+  "welc.subtitle": {
+    "other": "Vieta kurā administrēt un monitorēt platformu"
+  },
+  "welc.title": {
+    "other": "Welcome to Pydio Cells v4"
+  },
+  "welc.title.5": {
+    "other": "Welcome to Pydio Cells v5"
+  },
+  "card.quick-access": {
+    "other": "Quick Access"
+  },
+  "card.quick-access.add": {
+    "other": "Add a shortcut ..."
+  },
+  "card.update.current": {
+    "other": "Software Version"
+  },
+  "card.update.no-updates": {
+    "other": "Software is up-to-date"
+  },
+  "card.update.new-version": {
+    "other": "A new version is available"
+  },
+  "recentLogs.title": {
+    "other": "Last Events"
+  },
+  "recentLogs.errors": {
+    "other": "Errors"
+  },
+  "recentLogs.emptyState": {
+    "other": "No activity found"
+  },
+  "recentLogs.more": {
+    "other": "All Activities"
+  },
+  "graph.files": {
+    "other": "Files Activity"
+  },
+  "graph.connections": {
+    "other": "Web Connections"
+  }
+}

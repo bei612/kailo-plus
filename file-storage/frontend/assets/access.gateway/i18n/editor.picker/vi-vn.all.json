@@ -1,0 +1,47 @@
+{
+  "1": {
+    "other": "Chọn..."
+  },
+  "2": {
+    "other": "Chọn một trình soạn thảo khác"
+  },
+  "3": {
+    "other": "Chọn một trình soạn thảo khác để mở tệp này"
+  },
+  "4": {
+    "other": "Cảnh báo, các trình soạn thảo này không khai báo sẽ hỗ trợ loại tệp này, hành vi của họ có thể không dự đoán được!"
+  },
+  "5": {
+    "other": "Xóa các liên kết"
+  },
+  "drop.cell.picker": {
+    "other": "Chọn hành động cho %s..."
+  },
+  "drop.cell.share.legend": {
+    "other": "Thêm mục mới vào ô này"
+  },
+  "drop.cell.copymove.legend": {
+    "other": "Bên trong %s"
+  },
+  "drop.cell.file.share": {
+    "other": "Chia sẻ tệp"
+  },
+  "drop.cell.folder.share": {
+    "other": "Chia sẻ thư mục"
+  },
+  "drop.cell.file.move": {
+    "other": "Di chuyển tập tin"
+  },
+  "drop.cell.folder.move": {
+    "other": "Di chuyển thư mục"
+  },
+  "drop.cell.file.copy": {
+    "other": "Sao chép tập tin"
+  },
+  "drop.cell.folder.copy": {
+    "other": "Sao Chép Thư Mục"
+  },
+  "download.as.pdf": {
+    "other": "Tải về dạng tập tin pdf"
+  }
+}

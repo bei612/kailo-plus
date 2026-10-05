@@ -1,0 +1,103 @@
+{
+  "Job.Version.Title": {
+    "other": "用于复制版本数据的基于事件的作业"
+  },
+  "Job.Version.StatusFile": {
+    "other": "在版本bucket中创建的版本 {{.Uuid}} "
+  },
+  "Job.Version.StatusMeta": {
+    "other": "已为 {{.Uuid}} 创建版本元数据"
+  },
+  "Job.Version.StatusPrune": {
+    "one": "修剪后的 {{.Count}} 版本",
+    "other": "修剪后的 {{.Count}} 版本"
+  },
+  "Job.Pruning.Title": {
+    "other": "清理已删除节点的版本文件"
+  },
+  "Job.Pruning.StatusDone": {
+    "one": "成功删除了 {{.Count}} 版本",
+    "other": "成功删除了 {{.Count}} 版本."
+  },
+  "Config.GroupPolicy.Title": {
+    "other": "策略"
+  },
+  "Config.GroupPolicy.Name.Label": {
+    "other": "名称"
+  },
+  "Config.GroupPolicy.Name.Description": {
+    "other": "政策名称"
+  },
+  "Config.GroupPolicy.Description.Label": {
+    "other": "说明"
+  },
+  "Config.GroupPolicy.Description.Description": {
+    "other": "策略说明"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Label": {
+    "other": "存储"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Description": {
+    "other": "用于存储版本的数据源"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Label": {
+    "other": "桶"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Description": {
+    "other": "在此数据源中使用的存储桶"
+  },
+  "Config.GroupSizes.Title": {
+    "other": "大小限制"
+  },
+  "Config.GroupSizes.MaxTotalSize.Label": {
+    "other": "所有版本保存在此桶中的全局大小"
+  },
+  "Config.GroupSizes.MaxTotalSize.Description": {
+    "other": "限制所采取的总体尺寸。 如果达到限制，最旧的版本将被删除。 使用 -1 表示无限制"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Label": {
+    "other": "一个给定文件的版本的累积大小"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Description": {
+    "other": "限制一个文件的所有版本的大小。如果达到限制，最老的版本将被删除。使用 -1 表示无限制"
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Label": {
+    "other": "忽略大于... 的文件"
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Description": {
+    "other": "不要对大小大于此限制的文件进行版本控制。 使用 -1 表示无限制"
+  },
+  "Config.GroupRetention.Title": {
+    "other": "保留期"
+  },
+  "Config.GroupRetention.Description": {
+    "other": "每个周期保留的版本数"
+  },
+  "Config.GroupRetention.IntervalStart.Name": {
+    "other": "周期开始"
+  },
+  "Config.GroupRetention.IntervalStart.Description": {
+    "other": "计算周期使用的起点。0 是最后一个版本设置的时间，使用另一个周期来设置限制"
+  },
+  "Config.GroupRetention.MaxNumber.Name": {
+    "other": "最大版本数"
+  },
+  "Config.GroupRetention.MaxNumber.Description": {
+    "other": "在此周期中保留的最大版本数。使用 -1 保留所有版本，0 删除所有版本。"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Name": {
+    "other": "原始文件删除后"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Description": {
+    "other": "原始文件删除后保留的版本数。"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepAll": {
+    "other": "备份所有现有版本"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepLast": {
+    "other": "仅备份最新版本"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepNone": {
+    "other": "删除所有现有版本"
+  }
+}

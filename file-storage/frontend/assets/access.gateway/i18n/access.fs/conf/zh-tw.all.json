@@ -1,0 +1,35 @@
+{
+  "Path": {
+    "other": "路徑"
+  },
+  "Default download format": {
+    "other": "預設下載路徑"
+  },
+  "When downloading a folder or a multiple selection, automatically create an archive using this format": {
+    "other": "When downloading a folder or a multiple selection, automatically create an archive using this format"
+  },
+  "Path to the folder on the server": {
+    "other": "Path to the folder on the server"
+  },
+  "Gateway": {
+    "other": "通道"
+  },
+  "Pydio S3 Gateway": {
+    "other": "Pydio S3 Gateway"
+  },
+  "Absolute path to one or more root nodes": {
+    "other": "Absolute path to one or more root nodes"
+  },
+  "#Items per page": {
+    "other": "#Items per page"
+  },
+  "Once in pagination mode, number of items to display per page.": {
+    "other": "Once in pagination mode, number of items to display per page."
+  },
+  "Delete Permanently": {
+    "other": "永久刪除"
+  },
+  "Enable option to skip recycle bin on deletion": {
+    "other": "Enable option to skip recycle bin on deletion"
+  }
+}

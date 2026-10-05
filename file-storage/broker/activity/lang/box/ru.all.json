@@ -1,0 +1,89 @@
+{
+  "AccessedBy": {
+    "other": "Доступ предоставлен пользователю {{.Actor}}"
+  },
+  "AccessedObject": {
+    "other": "Доступ к {{.Object}}"
+  },
+  "AccessedObjectBy": {
+    "other": "{{.Object}} был доступен {{.Actor}}"
+  },
+  "Cell": {
+    "other": "Сотовый"
+  },
+  "CreatedBy": {
+    "other": "Создано пользователем {{.Actor}}"
+  },
+  "CreatedObject": {
+    "other": "Создано {{.Object}}"
+  },
+  "CreatedObjectBy": {
+    "other": "{{.Object}} был создан {{.Actor}}"
+  },
+  "DeletedBy": {
+    "other": "Удалено пользователем {{.Actor}}"
+  },
+  "DeletedObject": {
+    "other": "Удалено {{.Object}}"
+  },
+  "DeletedObjectBy": {
+    "other": "{{.Object}} Был удален {{.Actor}}"
+  },
+  "SharedWs": {
+    "other": "Поделиться в {{.Object}}"
+  },
+  "SharedWsWithYou": {
+    "other": "{{.Actor}} поделился {{.Object}} с вами"
+  },
+  "DigestTitle": {
+    "other": "Это ваш ежедневный дайджест Pydio"
+  },
+  "Document": {
+    "other": "Документ"
+  },
+  "Folder": {
+    "other": "Папка"
+  },
+  "ModifiedBy": {
+    "other": "Изменено пользователем {{.Actor}}"
+  },
+  "ModifiedObject": {
+    "other": "Изменено {{.Object}}"
+  },
+  "ModifiedObjectBy": {
+    "other": "{{.Object}} Был изменен {{.Actor}} \n"
+  },
+  "MetaModifiedBy": {
+    "other": "Метаданные изменены пользователем {{.Actor}}"
+  },
+  "MetaModifiedObject": {
+    "other": "Изменены метаданные на {{.Object}}"
+  },
+  "MetaModifiedObjectBy": {
+    "other": "{{.Actor}} изменил метаданные на {{.Object}}"
+  },
+  "CommentedBy": {
+    "other": "{{.Actor}} прокомментировал"
+  },
+  "CommentedObject": {
+    "other": "Прокомментировано {{.Object}}"
+  },
+  "CommentedObjectBy": {
+    "other": "{{.Actor}} опубликовал новый комментарий к {{.Object}}"
+  },
+  "MovedBy": {
+    "other": "Перемещено пользователем {{.Actor}}"
+  },
+  "MovedObject": {
+    "other": "Перемещено {{.Object}}"
+  },
+  "MovedObjectBy": {
+    "other": "{{.Object}} был перемещен пользователем {{.Actor}}"
+  },
+  "Workspace": {
+    "other": "Рабочее пространство"
+  },
+  "DateFormat": {
+    "other": "2006-01-02 15:04"
+  }
+}

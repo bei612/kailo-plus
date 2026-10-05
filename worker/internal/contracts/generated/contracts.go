@@ -265,6 +265,9 @@
 //    componentConformanceIdentity, err := UnmarshalComponentConformanceIdentity(bytes)
 //    bytes, err = componentConformanceIdentity.Marshal()
 //
+//    componentProtocolPeerEnvironment, err := UnmarshalComponentProtocolPeerEnvironment(bytes)
+//    bytes, err = componentProtocolPeerEnvironment.Marshal()
+//
 //    componentReleaseApprovalTarget, err := UnmarshalComponentReleaseApprovalTarget(bytes)
 //    bytes, err = componentReleaseApprovalTarget.Marshal()
 //
@@ -291,6 +294,9 @@
 //
 //    platformBuildInfo, err := UnmarshalPlatformBuildInfo(bytes)
 //    bytes, err = platformBuildInfo.Marshal()
+//
+//    resourceCreate, err := UnmarshalResourceCreate(bytes)
+//    bytes, err = resourceCreate.Marshal()
 //
 //    runtimeProfileDirectory, err := UnmarshalRuntimeProfileDirectory(bytes)
 //    bytes, err = runtimeProfileDirectory.Marshal()
@@ -387,6 +393,15 @@
 //
 //    freshApprovalAdmissionResult, err := UnmarshalFreshApprovalAdmissionResult(bytes)
 //    bytes, err = freshApprovalAdmissionResult.Marshal()
+//
+//    resourceProvisionAdvanceRequest, err := UnmarshalResourceProvisionAdvanceRequest(bytes)
+//    bytes, err = resourceProvisionAdvanceRequest.Marshal()
+//
+//    resourceProvisionAdvanceResult, err := UnmarshalResourceProvisionAdvanceResult(bytes)
+//    bytes, err = resourceProvisionAdvanceResult.Marshal()
+//
+//    resourceProvisionTarget, err := UnmarshalResourceProvisionTarget(bytes)
+//    bytes, err = resourceProvisionTarget.Marshal()
 //
 //    tenantDeleteAdvanceRequest, err := UnmarshalTenantDeleteAdvanceRequest(bytes)
 //    bytes, err = tenantDeleteAdvanceRequest.Marshal()
@@ -1280,6 +1295,16 @@ func (r *ComponentConformanceIdentity) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentProtocolPeerEnvironment(data []byte) (ComponentProtocolPeerEnvironment, error) {
+	var r ComponentProtocolPeerEnvironment
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentProtocolPeerEnvironment) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalComponentReleaseApprovalTarget(data []byte) (ComponentReleaseApprovalTarget, error) {
 	var r ComponentReleaseApprovalTarget
 	err := json.Unmarshal(data, &r)
@@ -1367,6 +1392,16 @@ func UnmarshalPlatformBuildInfo(data []byte) (PlatformBuildInfo, error) {
 }
 
 func (r *PlatformBuildInfo) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalResourceCreate(data []byte) (ResourceCreate, error) {
+	var r ResourceCreate
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ResourceCreate) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -1690,6 +1725,36 @@ func (r *FreshApprovalAdmissionResult) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalResourceProvisionAdvanceRequest(data []byte) (ResourceProvisionAdvanceRequest, error) {
+	var r ResourceProvisionAdvanceRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ResourceProvisionAdvanceRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalResourceProvisionAdvanceResult(data []byte) (ResourceProvisionAdvanceResult, error) {
+	var r ResourceProvisionAdvanceResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ResourceProvisionAdvanceResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalResourceProvisionTarget(data []byte) (ResourceProvisionTarget, error) {
+	var r ResourceProvisionTarget
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ResourceProvisionTarget) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalTenantDeleteAdvanceRequest(data []byte) (TenantDeleteAdvanceRequest, error) {
 	var r TenantDeleteAdvanceRequest
 	err := json.Unmarshal(data, &r)
@@ -1920,7 +1985,8 @@ type ActionCommand struct {
 	// 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
 	OriginalActionExecutionID *string `json:"originalActionExecutionId,omitempty"`
 	// 成员动作的目标 Principal；resource.transfer_owner 的新 owner
-	PrincipalID *string `json:"principalId,omitempty"`
+	PrincipalID    *string              `json:"principalId,omitempty"`
+	ResourceCreate *ResourceCreateClass `json:"resourceCreate,omitempty"`
 	// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
 	ResourceID *string `json:"resourceId,omitempty"`
 	// 调用方实际读取的 Resource 版本；与当前事实不同即 CONFLICT
@@ -2151,6 +2217,14 @@ type MemoryWriteClass struct {
 	Slug  string  `json:"slug"`
 	// core.replace 的 profile 或 entry.set 的 value；完整序列化 JSON body 必须满足原生 NIP-44 上界。
 	Value *string `json:"value,omitempty"`
+}
+
+type ResourceCreateClass struct {
+	EvidenceDigest string `json:"evidenceDigest"`
+	EvidenceRef    string `json:"evidenceRef"`
+	NativeRef      string `json:"nativeRef"`
+	NativeType     string `json:"nativeType"`
+	TypeKey        string `json:"typeKey"`
 }
 
 // POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -2842,11 +2916,11 @@ type ClientKeyStatus struct {
 
 // Core私网仅向受信Worker返回的逐次隔离探测凭据。token仅在Activity内存中使用，禁止进入Temporal输入、输出或报告。其声明绑定固定模拟上下文与完整实际参数，不授予生产binding授权。
 type ComponentConformanceAuthorization struct {
-	ExpectedResponseDigest string                   `json:"expectedResponseDigest"`
-	Operation              AdapterProtocolOperation `json:"operation"`
-	RequestDigest          string                   `json:"requestDigest"`
-	RequestJSON            string                   `json:"requestJson"`
-	Token                  string                   `json:"token"`
+	ExpectedResponseDigest string                        `json:"expectedResponseDigest"`
+	Operation              ComponentConformanceOperation `json:"operation"`
+	RequestDigest          string                        `json:"requestDigest"`
+	RequestJSON            string                        `json:"requestJson"`
+	Token                  string                        `json:"token"`
 }
 
 // Core原canonical_digest对同一已授权步骤实际响应的摘要；仅规范化事实，不声明套件通过或登记成功。
@@ -2875,10 +2949,11 @@ type ProbeClass struct {
 
 // 受信 Worker 从 Core 取得的隔离执行输入。不是用户上传的通过声明；只含冻结引用与平台解释的数据，不含候选地址或凭据。顺序与全部内容进入 planDigest。
 type PlanClass struct {
-	ActionExecutionID  string   `json:"actionExecutionId"`
-	ArtifactDigest     string   `json:"artifactDigest"`
-	ComponentReleaseID string   `json:"componentReleaseId"`
-	ContractDigests    []string `json:"contractDigests"`
+	ActionExecutionID  string         `json:"actionExecutionId"`
+	ArtifactDigest     string         `json:"artifactDigest"`
+	ComponentReleaseID string         `json:"componentReleaseId"`
+	ConnectorKind      *ConnectorKind `json:"connectorKind,omitempty"`
+	ContractDigests    []string       `json:"contractDigests"`
 	// 独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
 	IdentityDigest string `json:"identityDigest"`
 	OperationID    string `json:"operationId"`
@@ -2895,16 +2970,18 @@ type PlanStep struct {
 	CaseKey string `json:"caseKey"`
 	// 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
 	// native 任务元数据。
-	ContractKey          *string                  `json:"contractKey,omitempty"`
-	ExpectedHTTPStatus   int64                    `json:"expectedHttpStatus"`
-	ExpectedResponseJSON string                   `json:"expectedResponseJson"`
-	IdempotencyKey       string                   `json:"idempotencyKey"`
-	Operation            AdapterProtocolOperation `json:"operation"`
-	ReferenceAssetID     *string                  `json:"referenceAssetId,omitempty"`
-	ReferenceFromStepKey *string                  `json:"referenceFromStepKey,omitempty"`
-	ReferenceResourceID  *string                  `json:"referenceResourceId,omitempty"`
-	RequestJSON          string                   `json:"requestJson"`
-	StepKey              string                   `json:"stepKey"`
+	ContractKey *string `json:"contractKey,omitempty"`
+	// Adapter 为实际 HTTP 状态；MCP 原生结果固定 0，不以伪造 HTTP 状态证明协议成功。
+	ExpectedHTTPStatus    int64                         `json:"expectedHttpStatus"`
+	ExpectedMCPResultKind *MCPResultKind                `json:"expectedMcpResultKind,omitempty"`
+	ExpectedResponseJSON  string                        `json:"expectedResponseJson"`
+	IdempotencyKey        string                        `json:"idempotencyKey"`
+	Operation             ComponentConformanceOperation `json:"operation"`
+	ReferenceAssetID      *string                       `json:"referenceAssetId,omitempty"`
+	ReferenceFromStepKey  *string                       `json:"referenceFromStepKey,omitempty"`
+	ReferenceResourceID   *string                       `json:"referenceResourceId,omitempty"`
+	RequestJSON           string                        `json:"requestJson"`
+	StepKey               string                        `json:"stepKey"`
 }
 
 // 原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
@@ -2925,8 +3002,10 @@ type TargetClass struct {
 type WorkerBuildClass struct {
 	AdapterProtocolVersions []string          `json:"adapterProtocolVersions"`
 	BuildID                 string            `json:"buildId"`
+	ConnectorKinds          []string          `json:"connectorKinds,omitempty"`
 	DriverRegistryKeys      []string          `json:"driverRegistryKeys"`
 	HostAPIVersion          string            `json:"hostApiVersion"`
+	MCPProtocolVersions     []string          `json:"mcpProtocolVersions,omitempty"`
 	PlatformPortKeys        []PlatformPortKey `json:"platformPortKeys"`
 	ReportedAt              time.Time         `json:"reportedAt"`
 	Subject                 Subject           `json:"subject"`
@@ -3339,6 +3418,8 @@ type AgentVersionContentTurnLimitsClass struct {
 // DD-94部署投递面：adapter服务引用解析到固定部署产物/原生实例与受限传输。不是Catalog或业务授权。
 type ApplicationAdapterDirectory struct {
 	Adapters []ApplicationAdapterDelivery `json:"adapters"`
+	// 受控部署事实，不是 Tool 注册表或业务授权；原生 MCP peer 不接收 ActionToken。
+	ProtocolPeers []ApplicationProtocolPeerDelivery `json:"protocolPeers,omitempty"`
 }
 
 type ApplicationAdapterDelivery struct {
@@ -3357,6 +3438,36 @@ type ApplicationSecretReader struct {
 	Audience           string `json:"audience"`
 	RoleName           string `json:"roleName"`
 	ServicePrincipalID string `json:"servicePrincipalId"`
+}
+
+type ApplicationProtocolPeerDelivery struct {
+	AdapterServiceRef string                                   `json:"adapterServiceRef"`
+	ArtifactDigest    string                                   `json:"artifactDigest"`
+	Bindings          []ApplicationProtocolPeerBindingDelivery `json:"bindings"`
+	MaxResponseBytes  int64                                    `json:"maxResponseBytes"`
+	MCPURL            string                                   `json:"mcpUrl"`
+	NativeInstanceRef string                                   `json:"nativeInstanceRef"`
+	TimeoutSeconds    int64                                    `json:"timeoutSeconds"`
+}
+
+type ApplicationProtocolPeerBindingDelivery struct {
+	BindingID     string `json:"bindingId"`
+	ConfigDigest  string `json:"configDigest"`
+	IsolationMode string `json:"isolationMode"`
+	// 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
+	NativeResources    []ApplicationNativeResourceDelivery `json:"nativeResources,omitempty"`
+	NativeScopeRef     string                              `json:"nativeScopeRef"`
+	ServicePrincipalID string                              `json:"servicePrincipalId"`
+	TenantID           string                              `json:"tenantId"`
+	WorkspaceID        *string                             `json:"workspaceId,omitempty"`
+}
+
+type ApplicationNativeResourceDelivery struct {
+	EvidenceDigest string `json:"evidenceDigest"`
+	EvidenceRef    string `json:"evidenceRef"`
+	NativeRef      string `json:"nativeRef"`
+	NativeType     string `json:"nativeType"`
+	TypeKey        string `json:"typeKey"`
 }
 
 // DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
@@ -3533,6 +3644,19 @@ type ComponentConformanceIdentityContext struct {
 	WorkspaceID                 *string                  `json:"workspaceId,omitempty"`
 }
 
+// 原 COMPONENT_CONFORMANCE_ENVIRONMENT_FILE 的 PROTOCOL_PEER 分支，仅隔离套件运行事实；readOnlyTools
+// 固定隔离实例实际上可安全执行的只读探针，不授予生产业务权限。
+type ComponentProtocolPeerEnvironment struct {
+	ArtifactDigest       string   `json:"artifactDigest"`
+	InitializeResultJSON string   `json:"initializeResultJson"`
+	ListResultJSON       string   `json:"listResultJson"`
+	MaxResponseBytes     int64    `json:"maxResponseBytes"`
+	MaxSteps             int64    `json:"maxSteps"`
+	MCPURL               string   `json:"mcpUrl"`
+	ReadOnlyTools        []string `json:"readOnlyTools"`
+	TimeoutSeconds       int64    `json:"timeoutSeconds"`
+}
+
 // 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
 type ComponentReleaseApprovalTarget struct {
 	ActionExecutionID  string `json:"actionExecutionId"`
@@ -3615,11 +3739,21 @@ type LlmRouteCreateInputProviderSecretRef struct {
 type PlatformBuildInfo struct {
 	AdapterProtocolVersions []string          `json:"adapterProtocolVersions"`
 	BuildID                 string            `json:"buildId"`
+	ConnectorKinds          []string          `json:"connectorKinds,omitempty"`
 	DriverRegistryKeys      []string          `json:"driverRegistryKeys"`
 	HostAPIVersion          string            `json:"hostApiVersion"`
+	MCPProtocolVersions     []string          `json:"mcpProtocolVersions,omitempty"`
 	PlatformPortKeys        []PlatformPortKey `json:"platformPortKeys"`
 	ReportedAt              time.Time         `json:"reportedAt"`
 	Subject                 Subject           `json:"subject"`
+}
+
+type ResourceCreate struct {
+	EvidenceDigest string `json:"evidenceDigest"`
+	EvidenceRef    string `json:"evidenceRef"`
+	NativeRef      string `json:"nativeRef"`
+	NativeType     string `json:"nativeType"`
+	TypeKey        string `json:"typeKey"`
 }
 
 // 03 §7 的平台发布 Catalog 投递，不是用户 Resource 或 Agent 注册表。部署没有提供实际合同、凭据链与 runtime 对账证据时不得填 ACTIVE。
@@ -4014,15 +4148,16 @@ type ComponentConformanceObservation struct {
 }
 
 type ObservationElement struct {
-	CaseKey                string                       `json:"caseKey"`
-	ContentReference       *ContentReferenceClass       `json:"contentReference,omitempty"`
-	ErrorClass             *ErrorClass                  `json:"errorClass,omitempty"`
-	HTTPStatus             int64                        `json:"httpStatus"`
-	NativeObservation      *ExecutionClass              `json:"nativeObservation,omitempty"`
-	NativeScopeObservation *NativeScopeObservationClass `json:"nativeScopeObservation,omitempty"`
-	Operation              AdapterProtocolOperation     `json:"operation"`
-	RequestDigest          string                       `json:"requestDigest"`
-	ResponseDigest         string                       `json:"responseDigest"`
+	CaseKey                string                        `json:"caseKey"`
+	ContentReference       *ContentReferenceClass        `json:"contentReference,omitempty"`
+	ErrorClass             *ErrorClass                   `json:"errorClass,omitempty"`
+	HTTPStatus             int64                         `json:"httpStatus"`
+	MCPResultKind          *MCPResultKind                `json:"mcpResultKind,omitempty"`
+	NativeObservation      *ExecutionClass               `json:"nativeObservation,omitempty"`
+	NativeScopeObservation *NativeScopeObservationClass  `json:"nativeScopeObservation,omitempty"`
+	Operation              ComponentConformanceOperation `json:"operation"`
+	RequestDigest          string                        `json:"requestDigest"`
+	ResponseDigest         string                        `json:"responseDigest"`
 	// 实际返回的能力结果摘要；原结果正文不进入报告或 Core。
 	ResultDigest *string `json:"resultDigest,omitempty"`
 	StepKey      string  `json:"stepKey"`
@@ -4038,10 +4173,11 @@ type NativeScopeObservationClass struct {
 
 // 受信 Worker 从 Core 取得的隔离执行输入。不是用户上传的通过声明；只含冻结引用与平台解释的数据，不含候选地址或凭据。顺序与全部内容进入 planDigest。
 type ComponentConformancePlan struct {
-	ActionExecutionID  string   `json:"actionExecutionId"`
-	ArtifactDigest     string   `json:"artifactDigest"`
-	ComponentReleaseID string   `json:"componentReleaseId"`
-	ContractDigests    []string `json:"contractDigests"`
+	ActionExecutionID  string         `json:"actionExecutionId"`
+	ArtifactDigest     string         `json:"artifactDigest"`
+	ComponentReleaseID string         `json:"componentReleaseId"`
+	ConnectorKind      *ConnectorKind `json:"connectorKind,omitempty"`
+	ContractDigests    []string       `json:"contractDigests"`
 	// 独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
 	IdentityDigest string `json:"identityDigest"`
 	OperationID    string `json:"operationId"`
@@ -4058,16 +4194,18 @@ type ComponentConformancePlanStep struct {
 	CaseKey string `json:"caseKey"`
 	// 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
 	// native 任务元数据。
-	ContractKey          *string                  `json:"contractKey,omitempty"`
-	ExpectedHTTPStatus   int64                    `json:"expectedHttpStatus"`
-	ExpectedResponseJSON string                   `json:"expectedResponseJson"`
-	IdempotencyKey       string                   `json:"idempotencyKey"`
-	Operation            AdapterProtocolOperation `json:"operation"`
-	ReferenceAssetID     *string                  `json:"referenceAssetId,omitempty"`
-	ReferenceFromStepKey *string                  `json:"referenceFromStepKey,omitempty"`
-	ReferenceResourceID  *string                  `json:"referenceResourceId,omitempty"`
-	RequestJSON          string                   `json:"requestJson"`
-	StepKey              string                   `json:"stepKey"`
+	ContractKey *string `json:"contractKey,omitempty"`
+	// Adapter 为实际 HTTP 状态；MCP 原生结果固定 0，不以伪造 HTTP 状态证明协议成功。
+	ExpectedHTTPStatus    int64                         `json:"expectedHttpStatus"`
+	ExpectedMCPResultKind *MCPResultKind                `json:"expectedMcpResultKind,omitempty"`
+	ExpectedResponseJSON  string                        `json:"expectedResponseJson"`
+	IdempotencyKey        string                        `json:"idempotencyKey"`
+	Operation             ComponentConformanceOperation `json:"operation"`
+	ReferenceAssetID      *string                       `json:"referenceAssetId,omitempty"`
+	ReferenceFromStepKey  *string                       `json:"referenceFromStepKey,omitempty"`
+	ReferenceResourceID   *string                       `json:"referenceResourceId,omitempty"`
+	RequestJSON           string                        `json:"requestJson"`
+	StepKey               string                        `json:"stepKey"`
 }
 
 // 原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
@@ -4081,15 +4219,16 @@ type ComponentConformanceProbe struct {
 }
 
 type ComponentConformanceStepObservation struct {
-	CaseKey                string                       `json:"caseKey"`
-	ContentReference       *ContentReferenceClass       `json:"contentReference,omitempty"`
-	ErrorClass             *ErrorClass                  `json:"errorClass,omitempty"`
-	HTTPStatus             int64                        `json:"httpStatus"`
-	NativeObservation      *ExecutionClass              `json:"nativeObservation,omitempty"`
-	NativeScopeObservation *NativeScopeObservationClass `json:"nativeScopeObservation,omitempty"`
-	Operation              AdapterProtocolOperation     `json:"operation"`
-	RequestDigest          string                       `json:"requestDigest"`
-	ResponseDigest         string                       `json:"responseDigest"`
+	CaseKey                string                        `json:"caseKey"`
+	ContentReference       *ContentReferenceClass        `json:"contentReference,omitempty"`
+	ErrorClass             *ErrorClass                   `json:"errorClass,omitempty"`
+	HTTPStatus             int64                         `json:"httpStatus"`
+	MCPResultKind          *MCPResultKind                `json:"mcpResultKind,omitempty"`
+	NativeObservation      *ExecutionClass               `json:"nativeObservation,omitempty"`
+	NativeScopeObservation *NativeScopeObservationClass  `json:"nativeScopeObservation,omitempty"`
+	Operation              ComponentConformanceOperation `json:"operation"`
+	RequestDigest          string                        `json:"requestDigest"`
+	ResponseDigest         string                        `json:"responseDigest"`
 	// 实际返回的能力结果摘要；原结果正文不进入报告或 Core。
 	ResultDigest *string `json:"resultDigest,omitempty"`
 	StepKey      string  `json:"stepKey"`
@@ -4109,6 +4248,46 @@ type FreshApprovalAdmissionResult struct {
 	Admitted           bool               `json:"admitted"`
 	Reason             *ReasonCode        `json:"reason,omitempty"`
 	SatisfiedSelectors []ApprovalSelector `json:"satisfiedSelectors"`
+}
+
+type ResourceProvisionAdvanceRequest struct {
+	CancelRequested bool                                  `json:"cancelRequested"`
+	RunID           string                                `json:"runId"`
+	Target          ResourceProvisionAdvanceRequestTarget `json:"target"`
+}
+
+type ResourceProvisionAdvanceRequestTarget struct {
+	ActionExecutionID    string              `json:"actionExecutionId"`
+	BindingID            string              `json:"bindingId"`
+	BindingVersion       int64               `json:"bindingVersion"`
+	ComponentReleaseID   string              `json:"componentReleaseId"`
+	NativeInstanceRef    string              `json:"nativeInstanceRef"`
+	NativeScopeRef       string              `json:"nativeScopeRef"`
+	ProjectionGeneration int64               `json:"projectionGeneration"`
+	Reference            ResourceCreateClass `json:"reference"`
+	ResourceID           string              `json:"resourceId"`
+	ResourceVersion      int64               `json:"resourceVersion"`
+	WorkflowID           string              `json:"workflowId"`
+}
+
+type ResourceProvisionAdvanceResult struct {
+	ResourceID    string     `json:"resourceId"`
+	Status        TaskStatus `json:"status"`
+	WaitingReason string     `json:"waitingReason"`
+}
+
+type ResourceProvisionTarget struct {
+	ActionExecutionID    string              `json:"actionExecutionId"`
+	BindingID            string              `json:"bindingId"`
+	BindingVersion       int64               `json:"bindingVersion"`
+	ComponentReleaseID   string              `json:"componentReleaseId"`
+	NativeInstanceRef    string              `json:"nativeInstanceRef"`
+	NativeScopeRef       string              `json:"nativeScopeRef"`
+	ProjectionGeneration int64               `json:"projectionGeneration"`
+	Reference            ResourceCreateClass `json:"reference"`
+	ResourceID           string              `json:"resourceId"`
+	ResourceVersion      int64               `json:"resourceVersion"`
+	WorkflowID           string              `json:"workflowId"`
 }
 
 // TENANT_LIFECYCLE DELETE Activity 只推进已准入且已冻结的 Tenant 删除，不重新解析绑定或建立新快照。
@@ -4649,9 +4828,12 @@ type WorkflowKind string
 const (
 	AgentInstallation      WorkflowKind = "AGENT_INSTALLATION"
 	BuzzIdentityProjection WorkflowKind = "BUZZ_IDENTITY_PROJECTION"
+	ComponentBinding       WorkflowKind = "COMPONENT_BINDING"
+	ComponentDisable       WorkflowKind = "COMPONENT_DISABLE"
 	ComponentRelease       WorkflowKind = "COMPONENT_RELEASE"
 	MembershipProjection   WorkflowKind = "MEMBERSHIP_PROJECTION"
 	MembershipRevocation   WorkflowKind = "MEMBERSHIP_REVOCATION"
+	ResourceProvision      WorkflowKind = "RESOURCE_PROVISION"
 	SecretRefRehome        WorkflowKind = "SECRET_REF_REHOME"
 	TenantLifecycle        WorkflowKind = "TENANT_LIFECYCLE"
 	WorkspaceLifecycle     WorkflowKind = "WORKSPACE_LIFECYCLE"
@@ -4677,20 +4859,37 @@ const (
 	Reconciling               BuzzIdentityState = "RECONCILING"
 )
 
-// ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
-type AdapterProtocolOperation string
+// 原登记套件的真实操作种类；MCP 方法不属于 AdapterProtocolOperation，也不要求原生 peer 实现 Adapter API。
+type ComponentConformanceOperation string
 
 const (
-	AdapterProtocolOperationCancel  AdapterProtocolOperation = "cancel"
-	AdapterProtocolOperationExecute AdapterProtocolOperation = "execute"
-	AdapterProtocolOperationObserve AdapterProtocolOperation = "observe"
-	ExtractUsage                    AdapterProtocolOperation = "extract_usage"
-	Handshake                       AdapterProtocolOperation = "handshake"
-	MapNativeStatusError            AdapterProtocolOperation = "map_native_status_error"
-	QueryRevision                   AdapterProtocolOperation = "query_revision"
-	Reconcile                       AdapterProtocolOperation = "reconcile"
-	ResolveNativeScope              AdapterProtocolOperation = "resolve_native_scope"
-	ValidateBinding                 AdapterProtocolOperation = "validate_binding"
+	ComponentConformanceOperationCancel               ComponentConformanceOperation = "cancel"
+	ComponentConformanceOperationExecute              ComponentConformanceOperation = "execute"
+	ComponentConformanceOperationExtractUsage         ComponentConformanceOperation = "extract_usage"
+	ComponentConformanceOperationHandshake            ComponentConformanceOperation = "handshake"
+	ComponentConformanceOperationMapNativeStatusError ComponentConformanceOperation = "map_native_status_error"
+	ComponentConformanceOperationObserve              ComponentConformanceOperation = "observe"
+	ComponentConformanceOperationQueryRevision        ComponentConformanceOperation = "query_revision"
+	ComponentConformanceOperationReconcile            ComponentConformanceOperation = "reconcile"
+	ComponentConformanceOperationResolveNativeScope   ComponentConformanceOperation = "resolve_native_scope"
+	ComponentConformanceOperationValidateBinding      ComponentConformanceOperation = "validate_binding"
+	MCPCall                                           ComponentConformanceOperation = "mcp_call"
+	MCPInitialize                                     ComponentConformanceOperation = "mcp_initialize"
+	MCPList                                           ComponentConformanceOperation = "mcp_list"
+)
+
+type ConnectorKind string
+
+const (
+	ProtocolPeer  ConnectorKind = "PROTOCOL_PEER"
+	RemoteAdapter ConnectorKind = "REMOTE_ADAPTER"
+)
+
+type MCPResultKind string
+
+const (
+	MCPResultKindERROR MCPResultKind = "ERROR"
+	Result             MCPResultKind = "RESULT"
 )
 
 type PlatformPortKey string
@@ -4863,6 +5062,22 @@ type CapabilityVectorFormat string
 
 const (
 	V1 CapabilityVectorFormat = "V1"
+)
+
+// ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
+type AdapterProtocolOperation string
+
+const (
+	AdapterProtocolOperationCancel               AdapterProtocolOperation = "cancel"
+	AdapterProtocolOperationExecute              AdapterProtocolOperation = "execute"
+	AdapterProtocolOperationExtractUsage         AdapterProtocolOperation = "extract_usage"
+	AdapterProtocolOperationHandshake            AdapterProtocolOperation = "handshake"
+	AdapterProtocolOperationMapNativeStatusError AdapterProtocolOperation = "map_native_status_error"
+	AdapterProtocolOperationObserve              AdapterProtocolOperation = "observe"
+	AdapterProtocolOperationQueryRevision        AdapterProtocolOperation = "query_revision"
+	AdapterProtocolOperationReconcile            AdapterProtocolOperation = "reconcile"
+	AdapterProtocolOperationResolveNativeScope   AdapterProtocolOperation = "resolve_native_scope"
+	AdapterProtocolOperationValidateBinding      AdapterProtocolOperation = "validate_binding"
 )
 
 // ApprovalPolicy.owner_requirement（.design/03 §4）。

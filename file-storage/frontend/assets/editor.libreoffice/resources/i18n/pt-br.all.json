@@ -1,0 +1,59 @@
+{
+  "1": {
+    "other": "Documentos do Libre Office"
+  },
+  "10": {
+    "other": "Criar um documento vazio"
+  },
+  "11": {
+    "other": "Formato do documento"
+  },
+  "12": {
+    "other": "Você também pode <a>criar um documento vazio</a>"
+  },
+  "13": {
+    "other": "Documento sem título"
+  },
+  "14": {
+    "other": "O documento foi criado, você pode editá-lo agora"
+  },
+  "15": {
+    "other": "Formato de documento desconhecido"
+  },
+  "2": {
+    "other": "Janela de navegador externo do Libre Office"
+  },
+  "ext.doc": {
+    "other": "Microsoft Word 97/2000/XP/2003"
+  },
+  "ext.docx": {
+    "other": "Microsoft Word 2007/2010/2013 XML"
+  },
+  "ext.odg": {
+    "other": "Desenho ODF"
+  },
+  "ext.odp": {
+    "other": "Apresentação ODF"
+  },
+  "ext.ods": {
+    "other": "Planilha ODF"
+  },
+  "ext.odt": {
+    "other": "Documento de texto ODF"
+  },
+  "ext.ppt": {
+    "other": "Microsoft PowerPoint 97/2000/XP/2003"
+  },
+  "ext.pptx": {
+    "other": "Microsoft PowerPoint 2007/2010/2013 XML"
+  },
+  "ext.rtf": {
+    "other": "Rich Text"
+  },
+  "ext.xls": {
+    "other": "Microsoft Excel 97/2000/XP/2003"
+  },
+  "ext.xlsx": {
+    "other": "Microsoft Excel 2007/2010/2013 XML"
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "Jobs.Default.Thumbs": {
+    "other": "Tạo các thumbnails và dữ liệu exif từ file ảnh"
+  },
+  "Jobs.Default.ThumbsCache": {
+    "other": "Xóa thumbnails của những files đã bị xóa"
+  },
+  "Jobs.Default.Directories": {
+    "other": "Đồng bộ với các Ldap Directory"
+  },
+  "Jobs.Default.PruneJobs": {
+    "other": "Dọn dẹp các jobs và tasks trong scheduler"
+  },
+  "Jobs.Default.FakeLongJob": {
+    "other": "Giả một job lâu (dùng cho việc test)"
+  },
+  "Jobs.Default.FakeUsersJob": {
+    "other": "Tạo danh sách users ngẫu nhiên (dùng cho test)"
+  },
+  "Jobs.Default.FakeGrpcJob": {
+    "other": "Mẫu RPC job (dành cho test)"
+  },
+  "Jobs.Default.ArchiveJobs": {
+    "other": "Automatic archiving of changes service"
+  },
+  "Jobs.Default.CleanUserData": {
+    "other": "Clean or transfer user data on deletion"
+  },
+  "Jobs.Default.CleanOrphanFiles": {
+    "other": "Clean orphan files after 24h"
+  },
+  "Jobs.Default.CleanExpiredACLs": {
+    "other": "Clean expired ACLs after 10 days"
+  },
+  "Jobs.User.Compress": {
+    "other": "Đang nén các dữ liệu vừa chọn..."
+  },
+  "Jobs.User.Extract": {
+    "other": "Đang giải nén..."
+  },
+  "Jobs.User.Delete": {
+    "other": "Quá trình xóa đang được thực hiện ngầm..."
+  },
+  "Jobs.User.DirCopy": {
+    "other": "Quá trình sao chép thư mục đang chạy ngầm..."
+  },
+  "Jobs.User.DirMove": {
+    "other": "Quá trình di chuyển thư mục đang chạy ngầm..."
+  },
+  "Jobs.User.FileCopy": {
+    "other": "Quá trình sao chép file đang chạy ngầm..."
+  },
+  "Jobs.User.FileMove": {
+    "other": "Quá trình di chuyển file đang chạy ngầm..."
+  },
+  "Jobs.User.MultipleCopy": {
+    "other": "Quá trình sao chép đang chạy ngầm..."
+  },
+  "Jobs.User.MultipleMove": {
+    "other": "Quá trình di chuyển dữ liệu đang chạy ngầm..."
+  },
+  "Jobs.User.MoveRecycle": {
+    "other": "Quá trình xóa và lưu vào thùng rác đang chạy ngầm..."
+  },
+  "Jobs.User.ResyncDS": {
+    "other": "Sync datasource {{.DsName}} then rehash new files"
+  },
+  "Jobs.User.Wget": {
+    "other": "Tải file đang chạy ngầm..."
+  },
+  "Jobs.User.DeletingItem": {
+    "other": "Đang xóa được %s"
+  },
+  "Jobs.User.CopyingItem": {
+    "other": "Đang chép được %s"
+  },
+  "Jobs.User.MovingItem": {
+    "other": "Đang di chuyển được %s"
+  }
+}

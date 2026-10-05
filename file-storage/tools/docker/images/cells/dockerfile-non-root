@@ -1,0 +1,13 @@
+# Non-root variant of the Pydio Cells image.
+# Override defaults with: --build-arg LOGIN=<login> --build-arg UID=<uid>
+
+FROM pydio/cells:latest
+ARG LOGIN=pydio
+ARG UID=1001
+
+RUN adduser -H -D -u $UID $LOGIN \
+ && chown -R $UID:$UID /var/cells /opt/pydio
+USER $LOGIN
+
+ENTRYPOINT ["/sbin/tini", "--", "docker-entrypoint.sh"]
+CMD ["cells", "start"]

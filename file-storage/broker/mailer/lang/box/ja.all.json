@@ -1,0 +1,269 @@
+{
+  "Mail.Main.Copyright": {
+    "other": "Pydio の技術が存分に活かされたファイル共有プラットフォーム"
+  },
+  "Mail.Main.Troubleshoot": {
+    "other": "{ACTION}-ボタンが動作しなければ、以下の URL をブラウザにコピー&ペーストしてください。"
+  },
+  "Mail.Main.Greeting": {
+    "other": "やあ"
+  },
+  "Mail.Main.Signature": {
+    "other": "敬具"
+  },
+  "Mail.ResetPassword.Subject": {
+    "other": "{{.Configs.Title}} のパスワードをリセット"
+  },
+  "Mail.ResetPassword.Intros": {
+    "other": "{{.Configs.Title}} のアカウントに対するパスワードリセット要求を受け付けました。"
+  },
+  "Mail.ResetPassword.Outros": {
+    "other": "もしあなたがこの要求をしたのでなければ、無視して頂いて構いません。こういったメールが度重なるようでしたら、セキュリティに問題が生じている可能性がありますので、管理者に警告してください。"
+  },
+  "Mail.ResetPassword.LinkLabel": {
+    "other": "パスワードをリセット"
+  },
+  "Mail.ResetPassword.LinkInstructions": {
+    "other": "クリックしてパスワードをリセットする"
+  },
+  "Mail.ResetPasswordDone.Subject": {
+    "other": "{{.Configs.Title}} のパスワードはリセットされました"
+  },
+  "Mail.ResetPasswordDone.Intros": {
+    "other": "パスワード再設定リクエストに応じて、{{.Configs.Title}}のパスワード再設定に成功しました。"
+  },
+  "Mail.ResetPasswordDone.Outros": {
+    "other": "もしあなたがこの操作を行ったのでなければ、セキュリティに問題が生じている可能性があるため、直ちに管理者へ警告してください。"
+  },
+  "Mail.Digest.Subject": {
+    "other": "{{.Configs.Title}} 通知"
+  },
+  "Mail.Digest.Intros": {
+    "other": "以下は、あなたが {{.Configs.Title}} で受信したすべての通知の概要です"
+  },
+  "Mail.DM.Subject": {
+    "other": "{{.TplData.From}}がメッセージを送信しました！"
+  },
+  "Mail.DM.Intros": {
+    "other": "{{.TplData.From}}がアプリケーション{{.Configs.Title}}からメッセージを送信しました: {{.TplData.Message}}"
+  },
+  "Mail.Welcome.Subject": {
+    "other": "{{.Configs.Title}} へようこそ"
+  },
+  "Mail.Welcome.Intros": {
+    "other": "{{.Configs.Title}} にあなたのアカウントが作成されました。\nあなたのログインは、 {{.TplData.Login}}{{if .TplData.Password}} で、パスワードは、{{.TplData.Password}} です。最初にログインする際に、これを変更できます{{end}}。"
+  },
+  "Mail.Welcome.LinkInstructions": {
+    "other": "クリックしてログイン"
+  },
+  "Mail.Welcome.LinkLabel": {
+    "other": "{{.Configs.Title}} へログイン"
+  },
+  "Mail.Welcome.Outros": {
+    "other": "{{.Configs.Title}} ファイル共有プラットフォームは、文書における共同作業を効率的に進めるため、あなたのチームによって使用されています。ご一緒できてうれしいです!"
+  },
+  "Mail.Invite.Subject": {
+    "other": "{{.TplData.Inviter}} が {{.Configs.Title}} にあなたを招待しました"
+  },
+  "Mail.Invite.Intros": {
+    "other": "{{.Configs.Title}} に {{.TplData.Inviter}} があなたのアカウントを作成しました。ログインは、{{.TplData.Login}}{{if .TplData.Password}} で、パスワードは、{{.TplData.Password}} です。最初のログイン時に変更することができます{{end}}。"
+  },
+  "Mail.Invite.LinkInstructions": {
+    "other": "クリックしてログイン"
+  },
+  "Mail.Invite.LinkLabel": {
+    "other": "{{.Configs.Title}} へログイン"
+  },
+  "Mail.Invite.Outros": {
+    "other": "{{.Configs.Title}} ファイル共有プラットフォームは、文書における共同作業を効率的に進めるため、{{.TplData.Inviter}} チームによって使用されています。ご一緒できてうれしいです!"
+  },
+  "Mail.Cell.Subject": {
+    "other": "{{.TplData.Inviter}} はあなたをセル {{.TplData.Cell}} に追加しました"
+  },
+  "Mail.Cell.Intros": {
+    "other": "{{.TplData.Inviter}} は、あなたを {{.Configs.Title}} のセル {{.TplData.Cell}} に入れました! ファイルやフォルダの共有を始めることができ、効率的に共同作業ができます。"
+  },
+  "Mail.Cell.LinkInstructions": {
+    "other": "クリックしてセルを開く"
+  },
+  "Mail.Cell.LinkLabel": {
+    "other": "{{.TplData.Cell}} を開く"
+  },
+  "Mail.PublicFile.Subject": {
+    "other": "{{.TplData.Inviter}} はファイルをあなたと共有しています"
+  },
+  "Mail.PublicFile.Intros": {
+    "other": "{{.TplData.Inviter}} はあなたとファイルを共有しています。\n\n '{{.TplData.Message}}' \n\n {{if .TplData.Expire}}リンクは、{{.TplData.Expire}} に期限が切れます{{end}}\n\n{{if .TplData.MaxDownloads}}最大ダウンロード数 :{{.TplData.MaxDownloads}}{{end}}"
+  },
+  "Mail.PublicFile.LinkLabel": {
+    "other": "{{.TplData.FileName}} を開く"
+  },
+  "Mail.PublicFile.LinkInstructions": {
+    "other": "クリックしてファイルをブラウザでプレビュー"
+  },
+  "Mail.PublicFile.Outros": {
+    "other": "{{.Configs.Title}} ファイル共有プラットフォームは、文書における共同作業を効率的に進めるため、{{.TplData.Inviter}} チームによって使用されています。"
+  },
+  "Mail.PublicFolder.Subject": {
+    "other": "{{.TplData.Inviter}} はあなたとフォルダを共有しています"
+  },
+  "Mail.PublicFolder.Intros": {
+    "other": "{{.TplData.Inviter}} はあなたとフォルダを共有しています。\n\n '{{.TplData.Message}}' \n\n {{if .TplData.Expire}}リンクは、{{.TplData.Expire}} に期限が切れます{{end}}\n\n{{if .TplData.MaxDownloads}}最大ダウンロード数 :{{.TplData.MaxDownloads}}{{end}}"
+  },
+  "Mail.PublicFolder.LinkLabel": {
+    "other": "{{.TplData.FolderName}} を開く"
+  },
+  "Mail.PublicFolder.LinkInstructions": {
+    "other": "クリックして文書をブラウザでプレビュー"
+  },
+  "Mail.PublicFolder.Outros": {
+    "other": "{{.Configs.Title}} ファイル共有プラットフォームは、文書における共同作業を効率的に進めるため、{{.TplData.Inviter}} チームによって使用されています。"
+  },
+  "Mail.AdminTestMail.Subject": {
+    "other": "{{.Configs.Title}} はテストメールをあなたに送信しています"
+  },
+  "Mail.AdminTestMail.Intros": {
+    "other": "{{.TplData.Message}}"
+  },
+  "Mail.AdminTestMail.LinkLabel": {
+    "other": "セルを開く"
+  },
+  "Mail.AdminTestMail.LinkInstructions": {
+    "other": "クリックしてフロントエンドを開く"
+  },
+  "Mail.AdminTestMail.Outros": {
+    "other": "{{.Configs.Title}} ファイル共有プラットフォームは、文書における共同作業を効率的に進めるため、チームによって使用されています。"
+  },
+  "Mail.Config.Title": {
+    "other": "メーラー"
+  },
+  "Mail.Config.From.Label": {
+    "other": "デフォルトの FROM メールアドレス"
+  },
+  "Mail.Config.From.Description": {
+    "other": "メールの送信時にデフォルトとして使われるアドレス。no-reply メールではなく、適切なサポートメールを使用しなくてはなりません。"
+  },
+  "Mail.Config.FixOutlookDisplay": {
+    "other": "Outlookクライアントの修正(CSSインライン表示を無効にする)"
+  },
+  "Mail.Config.Queue.Label": {
+    "other": "キュータイプ"
+  },
+  "Mail.Config.Queue.Description": {
+    "other": "保留中のメールを保存しておく永続レイヤー"
+  },
+  "Mail.Config.Queue.ValueBolt": {
+    "other": "オンファイルデータベース (Bolt)"
+  },
+  "Mail.Config.Queue.ValueMemory": {
+    "other": "インメモリ"
+  },
+  "Mail.Config.Mailer.Label": {
+    "other": "メイラーエンジン"
+  },
+  "Mail.Config.Mailer.Description": {
+    "other": "実際にメールを送信するのに使用するエンジン"
+  },
+  "Mail.Config.Disabled.Label": {
+    "other": "無効(メールを有効にしない)"
+  },
+  "Mail.Config.NoOp.Label": {
+    "other": "No-Op (メールを有効にしますが、何も送信しません)"
+  },
+  "Mail.Config.NoOp.Dump": {
+    "other": "デバッグ用にメールをファイルに書き出す"
+  },
+  "Mail.Config.NoOp.DumpTarget": {
+    "other": "メールの書き込み先のフォルダ"
+  },
+  "Mail.Config.Smtp.Label": {
+    "other": "SMTP サーバー"
+  },
+  "Mail.Config.Smtp.Host.Label": {
+    "other": "サーバーホスト名"
+  },
+  "Mail.Config.Smtp.Host.Description": {
+    "other": "SMTP サーバーのホスト、例: smtp.gmail.com"
+  },
+  "Mail.Config.Smtp.Port.Label": {
+    "other": "サーバーポート"
+  },
+  "Mail.Config.Smtp.Port.Description": {
+    "other": "SMTP サーバーのポート、例: 587 (ノンセキュア) あるいは 465 (TLS)"
+  },
+  "Mail.Config.Smtp.User.Label": {
+    "other": "接続ユーザー"
+  },
+  "Mail.Config.Smtp.User.Description": {
+    "other": "SMTP サーバーに接続するのに必要なユーザー名"
+  },
+  "Mail.Config.Smtp.Password.Label": {
+    "other": "接続パスワード"
+  },
+  "Mail.Config.Smtp.Password.Description": {
+    "other": "SMTP サーバーに接続するのに必要なパスワード"
+  },
+  "Mail.Config.Smtp.Security.Label": {
+    "other": "接続のセキュリティ"
+  },
+  "Mail.Config.Smtp.Security.Description": {
+    "other": "接続を保護するために使用されるプロトコル。 平文はサポートされていません。必要な場合は、代わりにカスタム Sendmail を使用してください。"
+  },
+  "Mail.Config.Smtp.SkipVerify.Label": {
+    "other": "自己署名証明書"
+  },
+  "Mail.Config.Smtp.SkipVerify.Description": {
+    "other": "SMTP サーバーの証明書が自己署名の場合に証明書を検証しない"
+  },
+  "Mail.Config.Smtp.LocalName.Label": {
+    "other": "ダイヤラーのローカル名"
+  },
+  "Mail.Config.Smtp.LocalName.Description": {
+    "other": "SMTPダイヤラーはデフォルトでEHLOコマンドに'localhost'を送信しますが、このフィールドを使用してカスタムのローカル名を設定します。"
+  },
+  "Mail.Config.SendGrid.Label": {
+    "other": "SendGrid サービス"
+  },
+  "Mail.Config.SendGrid.ApiKey.Label": {
+    "other": "API キー"
+  },
+  "Mail.Config.SendGrid.ApiKey.Description": {
+    "other": "サービスに接続するために SendGrid から提供される API キー"
+  },
+  "Mail.Config.Sendmail.Label": {
+    "other": "Sendmail"
+  },
+  "Mail.Config.Sendmail.Legend": {
+    "other": "警告: デフォルトの実行パスは /usr/bin/sendmail です。 変更する場合は、pydio.jsonに 'default> sendmail' キーを設定してください。"
+  },
+  "Mail.Config.Sendmail.Executable.Label": {
+    "other": "実行パス"
+  },
+  "Mail.Config.Sendmail.Executable.Description": {
+    "other": "サーバー上の sendmail 実行ファイルのフルパス"
+  },
+  "Mail.Config.Sendmail.Executable.Other": {
+    "other": "その他のパス (pydio.json 設定ファイルに手動で設定)"
+  },
+  "Mail.Config.FromName.Label": {
+    "other": "デフォルトのメール送信者の表示名"
+  },
+  "Mail.Config.FromName.Description": {
+    "other": "メール送信時に、デフォルトの表示名を画面に表示します。"
+  },
+  "Mail.Config.FromCtl.Label": {
+    "other": "送信元アドレスと送信者名を使用する"
+  },
+  "Mail.Config.FromCtl.Description": {
+    "other": "送信者のアドレスと名前を使用するかどうかを設定します。ユーザーのメールアドレスが設定されていない場合、デフォルトのメールアドレスと名前が使用されます。"
+  },
+  "Mail.Config.FromCtlUser.Label": {
+    "other": "ユーザーからメールを送信"
+  },
+  "Mail.Config.FromCtlSender.Label": {
+    "other": "ユーザーの代わりにメールを送信"
+  },
+  "Mail.Config.FromCtlDefault.Label": {
+    "other": "常にデフォルトの送信元アドレスと名前を使用する"
+  }
+}

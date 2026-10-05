@@ -1,0 +1,269 @@
+{
+  "Mail.Main.Copyright": {
+    "other": "Dit platform voor bestandsdelen is mogelijk gemaakt met Pydio Cells"
+  },
+  "Mail.Main.Troubleshoot": {
+    "other": "Als de {ACTION} knop niet voor je werkt, kopieer en plak dan de onderstaande URL in je webbrowser."
+  },
+  "Mail.Main.Greeting": {
+    "other": "Hallo"
+  },
+  "Mail.Main.Signature": {
+    "other": "Met vriendelijke groet"
+  },
+  "Mail.ResetPassword.Subject": {
+    "other": "Wachtwoord reset aangevraagd voor {{.Configs.Title}}"
+  },
+  "Mail.ResetPassword.Intros": {
+    "other": "Er is een verzoek tot het opnieuw instellen van het wachtwoord ontvangen voor je account op {{.Configs.Title}}."
+  },
+  "Mail.ResetPassword.Outros": {
+    "other": "Als je dit verzoek niet hebt geïnitieerd, kun je dit negeren. Als u e-mails zoals deze blijft ontvangen, gelieve uw beheerder hiervan op de hoogte te stellen, aangezien het mogelijk een veiligheidsprobleem kan zijn."
+  },
+  "Mail.ResetPassword.LinkLabel": {
+    "other": "Mijn wachtwoord opnieuw instellen"
+  },
+  "Mail.ResetPassword.LinkInstructions": {
+    "other": "Klik hier om je wachtwoord opnieuw in te stellen"
+  },
+  "Mail.ResetPasswordDone.Subject": {
+    "other": "Je wachtwoord op {{.Configs.Title}} is opnieuw ingesteld"
+  },
+  "Mail.ResetPasswordDone.Intros": {
+    "other": "N.a.v. je verzoek om het wachtwoord opnieuw in te stellen, is jewachtwoord met succes opnieuw ingesteld voor {{.Configs.Title}}."
+  },
+  "Mail.ResetPasswordDone.Outros": {
+    "other": "Als je deze handeling niet hebt geïnitieerd, moet je jouw beheerder onmiddellijk waarschuwen, aangezien dit een beveiligingsprobleem kan zijn."
+  },
+  "Mail.Digest.Subject": {
+    "other": "Je meldingen van {{.Configs.Title}}"
+  },
+  "Mail.Digest.Intros": {
+    "other": "Hieronder staat een overzicht van alle meldingen die je hebt ontvangen op {{.Configs.Title}}"
+  },
+  "Mail.DM.Subject": {
+    "other": "{{.TplData.From}} heeft je een bericht gestuurd!"
+  },
+  "Mail.DM.Intros": {
+    "other": "{{.TplData.From}} heeft je een bericht gestuurd met behulp van de {{.Configs.Title}} applicatie: {{.TplData.Message}}"
+  },
+  "Mail.Welcome.Subject": {
+    "other": "Welkom op {{.Configs.Title}}"
+  },
+  "Mail.Welcome.Intros": {
+    "other": "Er is een account voor je aangemaakt op {{.Configs.Title}}. \nJe login is {{.TplData.Login}}{{if .TplData.Password}} en je wachtwoord is {{.TplData.Password}}. Je kunt het wijzigen bij de eerste login{{end}}."
+  },
+  "Mail.Welcome.LinkInstructions": {
+    "other": "Klik hier om in te loggen"
+  },
+  "Mail.Welcome.LinkLabel": {
+    "other": "Inloggen op {{.Configs.Title}}"
+  },
+  "Mail.Welcome.Outros": {
+    "other": "{{.Configs.Title}} File Sharing platform wordt door je team gebruikt om efficiënt aan documenten samen te werken. We zijn blij dat je aan boord bent!"
+  },
+  "Mail.Invite.Subject": {
+    "other": "{{.TplData.Inviter}} heeft je uitgenodigd op {{.Configs.Title}}"
+  },
+  "Mail.Invite.Intros": {
+    "other": "Er is een account voor je aangemaakt door {{.TplData.Inviter}} op {{.Configs.Title}}. \nJe login is {{.TplData.Login}}{{if .TplData.Password}} en je wachtwoord is {{.TplData.Password}}. Je kunt het de eerste keer dat je inlogt wijzigen{{end}}."
+  },
+  "Mail.Invite.LinkInstructions": {
+    "other": "Klik hier om in te loggen"
+  },
+  "Mail.Invite.LinkLabel": {
+    "other": "Inloggen op {{.Configs.Title}}"
+  },
+  "Mail.Invite.Outros": {
+    "other": "{{.Configs.Title}} File Sharing platform wordt gebruikt door {{.TplData.Inviter}} team om efficiënt aan documenten samen te werken. We zijn blij dat je aan boord bent!"
+  },
+  "Mail.Cell.Subject": {
+    "other": "{{.TplData.Inviter}} heeft je toegevoegd aan de cel {{.TplData.Cell}}"
+  },
+  "Mail.Cell.Intros": {
+    "other": "{{.TplData.Inviter}} heeft je opgenomen in de cel {{.TplData.Cell}} op {{.Configs.Title}}! Je kunt beginnen met het delen van bestanden en mappen en efficiënt samenwerken."
+  },
+  "Mail.Cell.LinkInstructions": {
+    "other": "Klik hier om de cell te openen"
+  },
+  "Mail.Cell.LinkLabel": {
+    "other": "{{.TplData.Cell}} openen"
+  },
+  "Mail.PublicFile.Subject": {
+    "other": "{{.TplData.Inviter}} deelt een bestand met jou"
+  },
+  "Mail.PublicFile.Intros": {
+    "other": "{{.TplData.Inviter}} deelt een bestand met jou.\n\n '{{.TplData.Message}}' \n\n {{if .TplData.Expire}}Link vervalt op {{.TplData.Expire}}{{end}}\n\n{{if .TplData.MaxDownloads}}maximale downloads:{{.TplData.MaxDownloads}}{{end}}"
+  },
+  "Mail.PublicFile.LinkLabel": {
+    "other": "{{.TplData.FileName}} openen"
+  },
+  "Mail.PublicFile.LinkInstructions": {
+    "other": "Klik om het bestand in uw browser te bekijken"
+  },
+  "Mail.PublicFile.Outros": {
+    "other": "{{.Configs.Title}} File Sharing platform wordt door het {{.TplData.Inviter}} team gebruikt om efficiënt samen te werken aan documenten."
+  },
+  "Mail.PublicFolder.Subject": {
+    "other": "{{.TplData.Inviter}} deelt een map met jou"
+  },
+  "Mail.PublicFolder.Intros": {
+    "other": "{{.TplData.Inviter}} deelt een map met jou.\n\n '{{.TplData.Message}}' \n\n {{if .TplData.Expire}}Link vervalt op {{.TplData.Expire}}{{end}}\n\n{{if .TplData.MaxDownloads}}maximale downloads:{{.TplData.MaxDownloads}}{{end}}"
+  },
+  "Mail.PublicFolder.LinkLabel": {
+    "other": "{{.TplData.FolderName}} openen"
+  },
+  "Mail.PublicFolder.LinkInstructions": {
+    "other": "Klik om de documenten in uw browser te bekijken"
+  },
+  "Mail.PublicFolder.Outros": {
+    "other": "{{.Configs.Title}} File Sharing platform wordt door het {{.TplData.Inviter}} team gebruikt om efficiënt samen te werken aan documenten."
+  },
+  "Mail.AdminTestMail.Subject": {
+    "other": "{{.Configs.Title}} stuurt u een test e-mail"
+  },
+  "Mail.AdminTestMail.Intros": {
+    "other": "{{.TplData.Message}}"
+  },
+  "Mail.AdminTestMail.LinkLabel": {
+    "other": "Open Pydio Cells"
+  },
+  "Mail.AdminTestMail.LinkInstructions": {
+    "other": "Klik om de frontend te openen"
+  },
+  "Mail.AdminTestMail.Outros": {
+    "other": "{{.Configs.Title}} File Sharing platform wordt door teams gebruikt om samen te werken aan documenten."
+  },
+  "Mail.Config.Title": {
+    "other": "Mailprogramma"
+  },
+  "Mail.Config.From.Label": {
+    "other": "Standaard VAN e-mailadres"
+  },
+  "Mail.Config.From.Description": {
+    "other": "Adres dat als standaard gebruikt wordt bij het verzenden van e-mails. U moet een support e-mailadres gebruiken in plaats van een no-reply e-mailadres."
+  },
+  "Mail.Config.FixOutlookDisplay": {
+    "other": "Outlook Clients Fix (disable CSS inlining)"
+  },
+  "Mail.Config.Queue.Label": {
+    "other": "Wachtrij type"
+  },
+  "Mail.Config.Queue.Description": {
+    "other": "Persistente laag voor het opslaan van in behandeling zijnde e-mails"
+  },
+  "Mail.Config.Queue.ValueBolt": {
+    "other": "On-file Database (Bolt)"
+  },
+  "Mail.Config.Queue.ValueMemory": {
+    "other": "Geheugen"
+  },
+  "Mail.Config.Mailer.Label": {
+    "other": "Mailer Engine"
+  },
+  "Mail.Config.Mailer.Description": {
+    "other": "Engine gebruikt voor het daadwerkelijk verzenden van e-mails"
+  },
+  "Mail.Config.Disabled.Label": {
+    "other": "Disabled (do not enable emails)"
+  },
+  "Mail.Config.NoOp.Label": {
+    "other": "No-Op (enable emails but do not send anything)"
+  },
+  "Mail.Config.NoOp.Dump": {
+    "other": "Write emails to file for debugging purpose"
+  },
+  "Mail.Config.NoOp.DumpTarget": {
+    "other": "Target folder for writing emails"
+  },
+  "Mail.Config.Smtp.Label": {
+    "other": "SMTP Server"
+  },
+  "Mail.Config.Smtp.Host.Label": {
+    "other": "Server Hostname"
+  },
+  "Mail.Config.Smtp.Host.Description": {
+    "other": "Host van de SMTP-server, b.v. smtp.gmail.com"
+  },
+  "Mail.Config.Smtp.Port.Label": {
+    "other": "Server Poort"
+  },
+  "Mail.Config.Smtp.Port.Description": {
+    "other": "Poort van de SMTP Server, bijv. 587 (onveilig) of 465 (TLS)"
+  },
+  "Mail.Config.Smtp.User.Label": {
+    "other": "Verbinding gebruiker"
+  },
+  "Mail.Config.Smtp.User.Description": {
+    "other": "Gebruikersnaam is vereist om verbinding te maken met de SMTP-server"
+  },
+  "Mail.Config.Smtp.Password.Label": {
+    "other": "Connectie wachtwoord"
+  },
+  "Mail.Config.Smtp.Password.Description": {
+    "other": "Wachtwoord vereist om verbinding te maken met de SMTP-server"
+  },
+  "Mail.Config.Smtp.Security.Label": {
+    "other": "Connection Security"
+  },
+  "Mail.Config.Smtp.Security.Description": {
+    "other": "Protocol used for securing connection. Clear is not supported, if required use a custom Sendmail instead."
+  },
+  "Mail.Config.Smtp.SkipVerify.Label": {
+    "other": "Zelf-ondertekend certificaat"
+  },
+  "Mail.Config.Smtp.SkipVerify.Description": {
+    "other": "Certificaatverificatie uitschakelen als uw SMTP-server certificaat zelf is ondertekend"
+  },
+  "Mail.Config.Smtp.LocalName.Label": {
+    "other": "Mail zender lokale naam"
+  },
+  "Mail.Config.Smtp.LocalName.Description": {
+    "other": "SMTP dialer sends 'localhost' in EHLO command by default, use this field to set a custom local name"
+  },
+  "Mail.Config.SendGrid.Label": {
+    "other": "SendGrid Service"
+  },
+  "Mail.Config.SendGrid.ApiKey.Label": {
+    "other": "API sleutel"
+  },
+  "Mail.Config.SendGrid.ApiKey.Description": {
+    "other": "API Key verstrekt door SendGrid om verbinding te maken met de service"
+  },
+  "Mail.Config.Sendmail.Label": {
+    "other": "Sendmail"
+  },
+  "Mail.Config.Sendmail.Legend": {
+    "other": "WAARSCHUWING: Het standaard uitvoerbaar pad is /usr/bin/sendmail. Als u het wilt wijzigen, zorg er dan voor dat u de 'defaults > sendmail' sleutel in uw pydio.json configuratiebestand instelt."
+  },
+  "Mail.Config.Sendmail.Executable.Label": {
+    "other": "Executable Path"
+  },
+  "Mail.Config.Sendmail.Executable.Description": {
+    "other": "Volledig path van de sendmail executable op de server"
+  },
+  "Mail.Config.Sendmail.Executable.Other": {
+    "other": "Ander path (handmatig instellen in pydio.json config bestand)"
+  },
+  "Mail.Config.FromName.Label": {
+    "other": "Standaard afzender weergavenaam"
+  },
+  "Mail.Config.FromName.Description": {
+    "other": "Naam die standaard gebruikt wordt bij het verzenden van e-mails."
+  },
+  "Mail.Config.FromCtl.Label": {
+    "other": "Van/Afzender adres en naam om te gebruiken"
+  },
+  "Mail.Config.FromCtl.Description": {
+    "other": "Definieer welk afzender adres/naam te gebruiken. Als er geen gebruiker-e-mailadres is ingesteld zal het standaard VAN adres worden gebruikt in alle gevallen."
+  },
+  "Mail.Config.FromCtlUser.Label": {
+    "other": "Stuur mail VAN de gebruiker"
+  },
+  "Mail.Config.FromCtlSender.Label": {
+    "other": "Stuur mail NAMENS de gebruiker"
+  },
+  "Mail.Config.FromCtlDefault.Label": {
+    "other": "Altijd verzenden vanaf het standaard VAN adres/naam"
+  }
+}

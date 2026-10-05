@@ -1,0 +1,65 @@
+{
+  "PolicyGroup.PublicAccess.Title": {
+    "other": "パブリック・アクセス"
+  },
+  "PolicyGroup.PublicAccess.Description": {
+    "other": "ディスカバリーエンドポイントへのパブリックアクセス"
+  },
+  "PolicyGroup.PublicAccess.Rule1": {
+    "other": "ディスカバリーへの匿名のアクセス (GET)"
+  },
+  "PolicyGroup.PublicAccess.Rule2": {
+    "other": "パスワードリセットエンドポイントへの匿名アクセス(PUT, POST)"
+  },
+  "PolicyGroup.PublicAccess.Rule3": {
+    "other": "フロントエンドステート接続への匿名アクセス (GET)"
+  },
+  "PolicyGroup.PublicAccess.Rule4": {
+    "other": "フロントエンドセッション初期化への匿名アクセス (POST)"
+  },
+  "PolicyGroup.PublicInstall.Title": {
+    "other": "エンドポイントのインストール (初回実行)"
+  },
+  "PolicyGroup.PublicInstall.Description": {
+    "other": "初回実行時のエンドポイントのインストールには、パブリックアクセスが必要です"
+  },
+  "PolicyGroup.PublicInstall.Rule1": {
+    "other": "匿名アクセスにエンドポイントをインストール（GET、POST）"
+  },
+  "PolicyGroup.LoggedUsers.Title": {
+    "other": "ログインユーザーと管理者ユーザーのアクセス"
+  },
+  "PolicyGroup.LoggedUsers.Description": {
+    "other": "一般ユーザー/共有ユーザー/管理者ユーザーが REST API にアクセスする方法を決定する"
+  },
+  "PolicyGroup.LoggedUsers.Rule1": {
+    "other": "管理者プロファイルへのRESTアクセス"
+  },
+  "PolicyGroup.LoggedUsers.Rule2": {
+    "other": "ログインしたユーザーのデフォルトの REST アクセス"
+  },
+  "PolicyGroup.LoggedUsers.Rule3": {
+    "other": "ユーザー定義メタデータの一覧と検索"
+  },
+  "PolicyGroup.LoggedUsers.Rule4": {
+    "other": "ユーザー定義のメタデータを更新"
+  },
+  "PolicyGroup.LoggedUsers.Rule5": {
+    "other": "すべてのFrontendServiceへの読み取りアクセス"
+  },
+  "PolicyGroup.LoggedUsers.Rule6": {
+    "other": "公開領域へのバイナリアップロードを除くFrontendService への書き込みアクセス"
+  },
+  "PolicyGroup.LoggedUsers.Rule7": {
+    "other": "Default REST accesses API V2 for a logged user"
+  },
+  "PolicyGroup.OIDC.Title": {
+    "other": "OpenIdConnect の操作"
+  },
+  "PolicyGroup.OIDC.Description": {
+    "other": "OpenID Connectサーバーでの認証の有効化/無効化"
+  },
+  "PolicyGroup.OIDC.Rule1": {
+    "other": "すべてのユーザーのログインアクションへのデフォルトのアクセス"
+  }
+}

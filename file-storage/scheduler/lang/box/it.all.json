@@ -1,0 +1,80 @@
+{
+  "Jobs.Default.Thumbs": {
+    "other": "Estrarre le miniature delle immagini e i dati Exif"
+  },
+  "Jobs.Default.ThumbsCache": {
+    "other": "Elimina le miniature dalla cache per i file cancellati"
+  },
+  "Jobs.Default.Directories": {
+    "other": "Sincronizza le directory esterne"
+  },
+  "Jobs.Default.PruneJobs": {
+    "other": "Pulisci processi e task nello schedulatore"
+  },
+  "Jobs.Default.FakeLongJob": {
+    "other": "Simula l'esecuzione di un processo lungo (a scopo di prova)"
+  },
+  "Jobs.Default.FakeUsersJob": {
+    "other": "Crea utenti casuali (a scopo di prova)"
+  },
+  "Jobs.Default.FakeGrpcJob": {
+    "other": "Processo RPC di esempio (a scopo di prova)"
+  },
+  "Jobs.Default.ArchiveJobs": {
+    "other": "Archiviazione automatica dei servizi modificati"
+  },
+  "Jobs.Default.CleanUserData": {
+    "other": "Pulisci o trasferisci i dati utente durante la cancellazione"
+  },
+  "Jobs.Default.CleanOrphanFiles": {
+    "other": "Pulire i file orfani dopo 24h"
+  },
+  "Jobs.Default.CleanExpiredACLs": {
+    "other": "Pulire ACL scaduti dopo 10 giorni"
+  },
+  "Jobs.User.Compress": {
+    "other": "Compressione della selezione..."
+  },
+  "Jobs.User.Extract": {
+    "other": "Estrazione dell'archivio..."
+  },
+  "Jobs.User.Delete": {
+    "other": "Eliminazione della selezione in background..."
+  },
+  "Jobs.User.DirCopy": {
+    "other": "Copia della cartella in background..."
+  },
+  "Jobs.User.DirMove": {
+    "other": "Spostamento della cartella in background..."
+  },
+  "Jobs.User.FileCopy": {
+    "other": "Copia dei file in background..."
+  },
+  "Jobs.User.FileMove": {
+    "other": "Spostamento dei file in background..."
+  },
+  "Jobs.User.MultipleCopy": {
+    "other": "Copia della selezione in background..."
+  },
+  "Jobs.User.MultipleMove": {
+    "other": "Spostamento della selezione in background..."
+  },
+  "Jobs.User.MoveRecycle": {
+    "other": "Spostamento nel cestino in background..."
+  },
+  "Jobs.User.ResyncDS": {
+    "other": "Sincronizzando datasource {{.DsName}}, quindi eseguendo rehash dei nuovi file"
+  },
+  "Jobs.User.Wget": {
+    "other": "Download del file in background..."
+  },
+  "Jobs.User.DeletingItem": {
+    "other": "Eliminazione di %s"
+  },
+  "Jobs.User.CopyingItem": {
+    "other": "Copia di %s"
+  },
+  "Jobs.User.MovingItem": {
+    "other": "Spostamento di %s"
+  }
+}

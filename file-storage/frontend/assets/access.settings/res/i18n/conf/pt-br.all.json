@@ -1,0 +1,14 @@
+{
+  "Access Pydio configuration data.": {
+    "other": "Acesso aos dados de configuração do Pydio."
+  },
+  "Admin Driver": {
+    "other": "Controlador Admin"
+  },
+  "Display structured storage format during data source creation.": {
+    "other": "Display structured storage format during data source creation."
+  },
+  "Allow structured format storage (to be deprecated)": {
+    "other": "Allow structured format storage (to be deprecated)"
+  }
+}

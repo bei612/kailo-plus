@@ -1,0 +1,269 @@
+{
+  "Mail.Main.Copyright": {
+    "other": "由 Pydio 提供支持的文件共享平台"
+  },
+  "Mail.Main.Troubleshoot": {
+    "other": "如果您无法使用 {ACTION} -按钮，只需复制并粘贴下面的 URL 到您的浏览器。"
+  },
+  "Mail.Main.Greeting": {
+    "other": "您好"
+  },
+  "Mail.Main.Signature": {
+    "other": "诚挚的"
+  },
+  "Mail.ResetPassword.Subject": {
+    "other": "请求重置 {{.Configs.Title}} 的密码"
+  },
+  "Mail.ResetPassword.Intros": {
+    "other": "已收到您在 {{.Configs.Title}} 上的帐户的重置密码请求。"
+  },
+  "Mail.ResetPassword.Outros": {
+    "other": "如果你没有触发此请求，你可以安全地忽略它。 如果您继续收到类似的电子邮件，请提醒您的管理员它可能是一个安全问题。"
+  },
+  "Mail.ResetPassword.LinkLabel": {
+    "other": "重置我的密码"
+  },
+  "Mail.ResetPassword.LinkInstructions": {
+    "other": "点击重置您的密码"
+  },
+  "Mail.ResetPasswordDone.Subject": {
+    "other": "您在 {{.Configs.Title}} 上的密码已被重置"
+  },
+  "Mail.ResetPasswordDone.Intros": {
+    "other": "根据您的重置密码请求，您在 {{.Configs.Title}} 的密码已成功重置。"
+  },
+  "Mail.ResetPasswordDone.Outros": {
+    "other": "如果您没有触发此操作，请立即提醒您的管理员，因为这可能是一个安全问题。"
+  },
+  "Mail.Digest.Subject": {
+    "other": "您的 {{.Configs.Title}} 通知"
+  },
+  "Mail.Digest.Intros": {
+    "other": "下面是您收到的 {{.Configs.Title}} 所有通知的摘要"
+  },
+  "Mail.DM.Subject": {
+    "other": "{{.TplData.From}} 向您发送了一条消息！"
+  },
+  "Mail.DM.Intros": {
+    "other": "{{.TplData.From}} 使用 {{.Configs.Title}} 应用程序向您发送了消息： {{.TplData.Message}}"
+  },
+  "Mail.Welcome.Subject": {
+    "other": "欢迎使用 {{.Configs.Title}}"
+  },
+  "Mail.Welcome.Intros": {
+    "other": "已在 {{.Configs.Title}}上为您创建了一个帐户。 \n 您的登录名是 {{.TplData.Login}}{{if .TplData.Password}} ，您的密码是 {{.TplData.Password}}。 您可以在第一次登录{{end}} 时更改它。"
+  },
+  "Mail.Welcome.LinkInstructions": {
+    "other": "点击登录"
+  },
+  "Mail.Welcome.LinkLabel": {
+    "other": "登录到 {{.Configs.Title}}"
+  },
+  "Mail.Welcome.Outros": {
+    "other": "{{.Configs.Title}} 文件共享平台被您的团队用来有效地协作文档。我们很高兴看到您的加入！"
+  },
+  "Mail.Invite.Subject": {
+    "other": "{{.TplData.Inviter}} 在 {{.Configs.Title}} 邀请了您"
+  },
+  "Mail.Invite.Intros": {
+    "other": "{{.TplData.Inviter}} 在 {{.Configs.Title}}上为您创建了一个帐户。 \n 您的登录名是 {{.TplData.Login}}{{if .TplData.Password}} ，您的密码是 {{.TplData.Password}}。 您可以在首次登录时更改它{{end}} 。"
+  },
+  "Mail.Invite.LinkInstructions": {
+    "other": "点击登录"
+  },
+  "Mail.Invite.LinkLabel": {
+    "other": "登录到 {{.Configs.Title}}"
+  },
+  "Mail.Invite.Outros": {
+    "other": "{{.Configs.Title}} 文件共享平台被 {{.TplData.Inviter}} 团队用来高效率地协作文档。我们很高兴看到您的加入！"
+  },
+  "Mail.Cell.Subject": {
+    "other": "{{.TplData.Inviter}} 将您添加到 {{.TplData.Cell}}"
+  },
+  "Mail.Cell.Intros": {
+    "other": "{{.TplData.Inviter}} 已将您纳入 {{.Configs.Title}} 的单元格 {{.TplData.Cell}} 中！ 您可以开始一起共享文件和文件夹并高效协作。"
+  },
+  "Mail.Cell.LinkInstructions": {
+    "other": "单击打开单元格"
+  },
+  "Mail.Cell.LinkLabel": {
+    "other": "打开 {{.TplData.Cell}}"
+  },
+  "Mail.PublicFile.Subject": {
+    "other": "{{.TplData.Inviter}} 正在与您分享一个文件"
+  },
+  "Mail.PublicFile.Intros": {
+    "other": "{{.TplData.Inviter}} 正在与您分享一个文件。\n\n '{{.TplData.Message}}' \n\n {{if .TplData.Expire}}链接将于 {{.TplData.Expire}} 过期{{end}}\n\n{{if .TplData.MaxDownloads}}最大下载量:{{.TplData.MaxDownloads}}{{end}}"
+  },
+  "Mail.PublicFile.LinkLabel": {
+    "other": "打开 {{.TplData.FileName}}"
+  },
+  "Mail.PublicFile.LinkInstructions": {
+    "other": "单击以在您的浏览器中预览文件"
+  },
+  "Mail.PublicFile.Outros": {
+    "other": "{{.Configs.Title}} 文件共享平台被 {{.TplData.Inviter}} 团队用于高效率地协作文档。"
+  },
+  "Mail.PublicFolder.Subject": {
+    "other": "{{.TplData.Inviter}} 正在与您分享一个文件夹"
+  },
+  "Mail.PublicFolder.Intros": {
+    "other": "{{.TplData.Inviter}} 正在与您分享一个文件。\n\n '{{.TplData.Message}}' \n\n {{if .TplData.Expire}}链接将于 {{.TplData.Expire}} 过期{{end}}\n\n{{if .TplData.MaxDownloads}}最大下载量:{{.TplData.MaxDownloads}}{{end}}"
+  },
+  "Mail.PublicFolder.LinkLabel": {
+    "other": "打开 {{.TplData.FolderName}}"
+  },
+  "Mail.PublicFolder.LinkInstructions": {
+    "other": "点击以在您的浏览器中预览文档"
+  },
+  "Mail.PublicFolder.Outros": {
+    "other": "{{.Configs.Title}} 文件共享平台被 {{.TplData.Inviter}} 团队用于高效率地协作文档。"
+  },
+  "Mail.AdminTestMail.Subject": {
+    "other": "{{.Configs.Title}} 正在向您发送测试电子邮件"
+  },
+  "Mail.AdminTestMail.Intros": {
+    "other": "{{.TplData.Message}}"
+  },
+  "Mail.AdminTestMail.LinkLabel": {
+    "other": "打开单元格"
+  },
+  "Mail.AdminTestMail.LinkInstructions": {
+    "other": "点击打开前端"
+  },
+  "Mail.AdminTestMail.Outros": {
+    "other": "团队使用 {{.Configs.Title}} 文件共享平台来高效地协作文档。"
+  },
+  "Mail.Config.Title": {
+    "other": "邮寄者"
+  },
+  "Mail.Config.From.Label": {
+    "other": "默认发件人电子邮件地址"
+  },
+  "Mail.Config.From.Description": {
+    "other": "发送电子邮件时默认使用的地址。您应该使用适当的支持电子邮件，而不是不回复电子邮件。"
+  },
+  "Mail.Config.FixOutlookDisplay": {
+    "other": "Outlook客户端修复(禁用CSS内联)"
+  },
+  "Mail.Config.Queue.Label": {
+    "other": "队列类型"
+  },
+  "Mail.Config.Queue.Description": {
+    "other": "存储待处理电子邮件的持久层"
+  },
+  "Mail.Config.Queue.ValueBolt": {
+    "other": "文件型数据库（Bolt）"
+  },
+  "Mail.Config.Queue.ValueMemory": {
+    "other": "内存中"
+  },
+  "Mail.Config.Mailer.Label": {
+    "other": "邮件引擎"
+  },
+  "Mail.Config.Mailer.Description": {
+    "other": "用于实际发送电子邮件的引擎"
+  },
+  "Mail.Config.Disabled.Label": {
+    "other": "已禁用 (不启用电子邮件)"
+  },
+  "Mail.Config.NoOp.Label": {
+    "other": "No-Op(启用电子邮件但不发送任何内容)"
+  },
+  "Mail.Config.NoOp.Dump": {
+    "other": "将电子邮件写入文件以进行调试"
+  },
+  "Mail.Config.NoOp.DumpTarget": {
+    "other": "用来写入邮件的目标文件夹"
+  },
+  "Mail.Config.Smtp.Label": {
+    "other": "SMTP 服务器"
+  },
+  "Mail.Config.Smtp.Host.Label": {
+    "other": "服务器主机名"
+  },
+  "Mail.Config.Smtp.Host.Description": {
+    "other": "SMTP服务器主机，例如 smtp.gmail.com"
+  },
+  "Mail.Config.Smtp.Port.Label": {
+    "other": "服务器端口"
+  },
+  "Mail.Config.Smtp.Port.Description": {
+    "other": "SMTP服务器端口，例如 587(不安全)或 465(TLS)"
+  },
+  "Mail.Config.Smtp.User.Label": {
+    "other": "连接的用户"
+  },
+  "Mail.Config.Smtp.User.Description": {
+    "other": "连接到 SMTP 服务器所需的用户名"
+  },
+  "Mail.Config.Smtp.Password.Label": {
+    "other": "连接的密码"
+  },
+  "Mail.Config.Smtp.Password.Description": {
+    "other": "连接到 SMTP 服务器所需的密码"
+  },
+  "Mail.Config.Smtp.Security.Label": {
+    "other": "连接安全"
+  },
+  "Mail.Config.Smtp.Security.Description": {
+    "other": "用于安全连接的协议。不支持清除，必要的话使用自定义Sendmail来替代。"
+  },
+  "Mail.Config.Smtp.SkipVerify.Label": {
+    "other": "自签名证书"
+  },
+  "Mail.Config.Smtp.SkipVerify.Description": {
+    "other": "如果您的 SMTP 服务器证书是自签名，请禁用证书验证"
+  },
+  "Mail.Config.Smtp.LocalName.Label": {
+    "other": "拨号器本地名称"
+  },
+  "Mail.Config.Smtp.LocalName.Description": {
+    "other": "默认情况下，SMTP拨号程序在EHLO命令中发送 “localhost”，使用此字段设置自定义本地名称"
+  },
+  "Mail.Config.SendGrid.Label": {
+    "other": "SendGrid 服务"
+  },
+  "Mail.Config.SendGrid.ApiKey.Label": {
+    "other": "Api 密钥"
+  },
+  "Mail.Config.SendGrid.ApiKey.Description": {
+    "other": "SendGrid 提供的 Api Key 用于连接服务"
+  },
+  "Mail.Config.Sendmail.Label": {
+    "other": "邮件程序"
+  },
+  "Mail.Config.Sendmail.Legend": {
+    "other": "警告：默认可执行文件路径是 /usr/bin/sendmail。 如果您需要更改它，请确保在您的 pydio.json 配置文件中设置 'default > sendmail' 键。"
+  },
+  "Mail.Config.Sendmail.Executable.Label": {
+    "other": "可执行文件路径"
+  },
+  "Mail.Config.Sendmail.Executable.Description": {
+    "other": "服务器上发送邮件可执行文件的完整路径"
+  },
+  "Mail.Config.Sendmail.Executable.Other": {
+    "other": "其它路径 (在 pydio.json 配置文件中手动设置)"
+  },
+  "Mail.Config.FromName.Label": {
+    "other": "默认发件人显示名称"
+  },
+  "Mail.Config.FromName.Description": {
+    "other": "发送电子邮件时显示的默认名称。"
+  },
+  "Mail.Config.FromCtl.Label": {
+    "other": "要使用的发件人地址和名称"
+  },
+  "Mail.Config.FromCtl.Description": {
+    "other": "定义要使用哪个发件人地址/名称。如果未配置用户电子邮件地址，则在所有情况下都将使用默认的发件人地址和名称。"
+  },
+  "Mail.Config.FromCtlUser.Label": {
+    "other": "从用户发送邮件"
+  },
+  "Mail.Config.FromCtlSender.Label": {
+    "other": "代表用户发送邮件"
+  },
+  "Mail.Config.FromCtlDefault.Label": {
+    "other": "始终从默认发件人地址/名称发送"
+  }
+}

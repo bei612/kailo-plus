@@ -1,0 +1,14 @@
+{
+  "importFiles": {
+    "other": "Записувати аудіо чи відео з:"
+  },
+  "title.camera": {
+    "other": "Камера"
+  },
+  "title.screencast": {
+    "other": "Запис з екрану"
+  },
+  "title.audio": {
+    "other": "Мікрофон"
+  }
+}

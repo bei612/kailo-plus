@@ -1,0 +1,109 @@
+files:
+  - source: '*/lang/box/en-us.all.json'
+    translation: /%original_path%/%locale%.all.json
+    languages_mapping:
+      locale:
+        ar: ar
+        cs: cs
+        de: de
+        es-ES: es-es
+        fr: fr
+        fr-CA: fr-ca
+        hu: hu
+        it: it
+        ja: ja
+        ko: ko
+        lv: lv
+        nl: nl
+        no: no
+        pl: pl
+        pt-BR: pt-br
+        pt-PT: pt-pt
+        ru: ru
+        sk: sk
+        sv-SE: sv-se
+        uk: uk
+        vi: vi-vn
+        zh-CN: zh-cn
+        zh-TW: zh-tw
+  - source: '*/i18n/en-us.all.json'
+    translation: /%original_path%/%locale%.all.json
+    languages_mapping:
+      locale:
+        ar: ar
+        cs: cs
+        de: de
+        es-ES: es-es
+        fr: fr
+        fr-CA: fr-ca
+        hu: hu
+        it: it
+        ja: ja
+        ko: ko
+        lv: lv
+        nl: nl
+        no: no
+        pl: pl
+        pt-BR: pt-br
+        pt-PT: pt-pt
+        ru: ru
+        sk: sk
+        sv-SE: sv-se
+        uk: uk
+        vi: vi-vn
+        zh-CN: zh-cn
+        zh-TW: zh-tw
+  - source: '*/i18n/*/en-us.all.json'
+    translation: /%original_path%/%locale%.all.json
+    languages_mapping:
+      locale:
+        ar: ar
+        cs: cs
+        de: de
+        es-ES: es-es
+        fr: fr
+        fr-CA: fr-ca
+        hu: hu
+        it: it
+        ja: ja
+        ko: ko
+        lv: lv
+        nl: nl
+        no: no
+        pl: pl
+        pt-BR: pt-br
+        pt-PT: pt-pt
+        ru: ru
+        sk: sk
+        sv-SE: sv-se
+        uk: uk
+        vi: vi-vn
+        zh-CN: zh-cn
+        zh-TW: zh-tw
+  - source: '*/i18n/*/conf/en-us.all.json'
+    translation: /%original_path%/%locale%.all.json
+    languages_mapping:
+      locale:
+        ar: ar
+        cs: cs
+        de: de
+        es-ES: es-es
+        fr: fr
+        fr-CA: fr-ca
+        hu: hu
+        it: it
+        ja: ja
+        ko: ko
+        lv: lv
+        nl: nl
+        no: no
+        pl: pl
+        pt-BR: pt-br
+        pt-PT: pt-pt
+        ru: ru
+        sk: sk
+        sv-SE: sv-se
+        uk: uk
+        vi: vi-vn
+        zh-CN: zh-cn
+        zh-TW: zh-tw

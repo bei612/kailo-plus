@@ -1,0 +1,194 @@
+/*
+ * Copyright 2023 Charles du Jeu - Abstrium SAS <team (at) pyd.io>
+ * This file is part of Pydio.
+ *
+ * Pydio is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Pydio is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with Pydio.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * The latest code can be found at <https://pydio.com>.
+ */
+
+import Pydio from 'pydio'
+import React from 'react'
+import {FlatButton, Paper} from "material-ui";
+import Textfit from "react-textfit";
+import Breadcrumb from "./Breadcrumb";
+import UnifiedSearchForm from "../search/components/UnifiedSearchForm";
+import {RefreshAction} from "./RefreshAction";
+import AppBarRight from "./AppBarRight";
+import {SearchStatusButton} from "../search/components/SearchStatusButton";
+const {ButtonMenu, Toolbar, ListPaginator} = Pydio.requireLib('components');
+const {ThemedContainers:{IconButton}} = Pydio.requireLib('hoc');
+
+
+const AppBar = ({pydio, muiTheme, styles, searchIconButton, searchIconCallback, searchView, searchTools, searchViewTransition, showInfoPanel, infoPanelOpen, showChatTab, chatOpen, onOpenDrawer, onUpdateSearchView, onToggleRightPanel, sortingInfo={}, displayMode}) => {
+
+
+    const mobile = pydio.UI.MOBILE_EXTENSIONS;
+    const {breakpoint = 'md'} = muiTheme;
+    const smallScreen = (breakpoint==='s'|| breakpoint==='xs'), xtraSmallScreen = (breakpoint === 'xs')
+
+    const mainToolbars = [
+        "change_main",
+        "info_panel",
+        "info_panel_share",
+        "info_panel_edit_share",
+    ];
+    const mainToolbarsOthers = [
+        "change",
+        "other"
+    ];
+
+    const {values, humanizeValues, limit, setLimit, searchLoading, empty, resultsCount} = searchTools;
+
+    const newButtonProps = {
+        buttonStyle:{...styles.flatButtonStyle, ...styles.raisedButtonStyle},
+        buttonLabelStyle:{...styles.flatButtonLabelStyle, ...styles.raisedButtonLabelStyle}
+    };
+
+    let searchToolbar
+    if(searchView) {
+        searchToolbar = <SearchStatusButton
+            pydio={pydio}
+            searchTools={searchTools}
+            style={{
+                fontSize: 13,
+                fontWeight: 500,
+                height:24,
+                lineHeight:'25px',
+                display: 'flex',
+                alignItems: 'center',
+                color:muiTheme.userTheme === 'mui3' ? 'var(--md-sys-color-secondary)': 'white'
+            }}
+            buttonStyle={{...styles.flatButtonStyle}}
+            buttonLabelStyle={{...styles.flatButtonLabelStyle}}
+        />
+    }
+
+    let sortingTag
+    if(!searchView && sortingInfo && sortingInfo.label) {
+        sortingTag = (
+            <div style={{
+                height: 24,
+                borderRadius: 20,
+                background: 'var(--md-sys-color-surface-3)',
+                color: 'var(--md-sys-color-secondary)',
+                fontWeight: 500,
+                marginRight: 5,
+                display:'flex',
+                alignItems:'center',
+                padding:'0 12px'
+            }}>
+                <span
+                    className={'mdi mdi-sort-' + (sortingInfo.direction === 'asc'? 'ascending':'descending')}
+                    style={{marginRight: 6, cursor: sortingInfo.toggle ? 'pointer' : 'default'}}
+                    onClick={() => sortingInfo.toggle && sortingInfo.toggle()}
+                />
+                {sortingInfo.label}
+                {sortingInfo.toggle &&
+                    <span
+                        className={'mdi mdi-close'}
+                        style={{marginLeft: 6, opacity:0.5, cursor:'pointer'}}
+                        onClick={() => sortingInfo.toggle(true)}
+                    />
+                }
+            </div>
+        );
+    }
+
+    const masterStyle = {...styles.appBarStyle}
+    if(displayMode === 'pages') {
+        masterStyle.opacity = 0;
+        masterStyle.height = 0;
+        masterStyle.margin = 0;
+        masterStyle.overflow = 'hidden';
+    }
+    const appBarRightProps = {pydio, muiTheme, styles, searchIconButton, searchIconCallback, searchView, searchTools, searchViewTransition, showInfoPanel, infoPanelOpen, showChatTab, chatOpen, onOpenDrawer, onUpdateSearchView, onToggleRightPanel, sortingInfo, displayMode}
+
+    return (
+        <Paper zDepth={styles.appBarZDepth} style={masterStyle} rounded={false}>
+            {searchView &&
+                <div>
+                    <IconButton
+                        style={{width:56,height:56,padding:14, margin:'6px -6px 6px 6px'}}
+                        iconClassName={"mdi mdi-arrow-left"}
+                        iconStyle={{...styles.buttonsIconStyle, fontSize: 30}}
+                        onClick={()=>onUpdateSearchView(false)}
+                    />
+                </div>
+            }
+            <div id="workspace_toolbar" style={{flex:1, width:'calc(100% - 430px)', display:'flex'}}>
+                {muiTheme.userTheme !== 'mui3' &&
+                    <span className="drawer-button" style={{marginLeft: 12, marginRight: -6}}>
+                        <IconButton iconStyle={{...styles.buttonsIconStyle, fontSize: 30}} iconClassName="mdi mdi-menu" onClick={onOpenDrawer}/>
+                    </span>
+                }
+                <div style={{flex: 1, overflow:'hidden'}}>
+                    {searchView &&
+                        <Textfit
+                            mode="single" min={12} max={22}
+                            style={{...styles.breadcrumbStyle, padding: '0 20px', fontSize: 22, lineHeight:'44px', height:36}}>
+                            {pydio.MessageHash['searchengine.topbar.title']}{humanizeValues(values)}
+                            <RefreshAction pydio={pydio} muiTheme={muiTheme}/>
+                        </Textfit>
+                    }
+                    {!searchView && <Breadcrumb pydio={pydio} startWithSeparator={false} rootStyle={styles.breadcrumbStyle}/>}
+                    <div style={{height:32, paddingLeft: 20, alignItems:'center', display:'flex', overflow:'hidden'}}>
+                        {searchToolbar}
+                        {!searchView &&
+                            <ButtonMenu
+                                //{...props}
+                                pydio={pydio}
+                                {...newButtonProps}
+                                {...styles.raisedButtonLevel}
+                                id="create-button-menu"
+                                toolbars={["upload", "create"]}
+                                buttonTitle={pydio.MessageHash['198']}
+                                raised={true}
+                                controller={pydio.Controller}
+                                openOnEvent={'tutorial-open-create-menu'}
+                            />
+                        }
+                        {!mobile &&
+                            <Toolbar
+                                pydio={pydio}
+                               // {...props}
+                                id="main-toolbar"
+                                toolbars={mainToolbars}
+                                groupOtherList={mainToolbarsOthers}
+                                renderingType="button"
+                                toolbarStyle={{overflow:'hidden'}}
+                                flatButtonStyle={styles.flatButtonStyle}
+                                buttonStyle={styles.flatButtonLabelStyle}
+                            />
+                        }
+                        {mobile && <span style={{flex:1}}/>}
+                        <ListPaginator
+                            id="paginator-toolbar"
+                            style={{height: 24, borderRadius: 20, background: 'var(--md-sys-color-surface-3)', color: 'var(--md-sys-color-secondary)', marginRight: 5}}
+                            toolbarColor={'var(--md-sys-color-secondary)'}
+                            dataModel={pydio.getContextHolder()}
+                            smallDisplay={true}
+                            toolbarDisplay={true}
+                        />
+                        {sortingTag}
+                    </div>
+                </div>
+            </div>
+            <AppBarRight {...appBarRightProps} containerStyle={{display:'flex', alignItems:'center'}}/>
+        </Paper>
+    )
+
+}
+
+export default AppBar

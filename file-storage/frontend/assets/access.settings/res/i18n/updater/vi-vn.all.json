@@ -1,0 +1,125 @@
+{
+  "title": {
+    "other": "Cập nhật phần mềm"
+  },
+  "legend": {
+    "other": "Cập nhật nhị phân trong ứng dụng"
+  },
+  "current.version": {
+    "other": "Phiên bản hiện tại"
+  },
+  "confirm.update": {
+    "other": "Bạn có chắc chắn muốn thực hiện tác vụ này không?"
+  },
+  "packages.available": {
+    "other": "Các gói sau có sẵn để cập nhật"
+  },
+  "checking": {
+    "other": "Kiểm tra cập nhật có sẵn..."
+  },
+  "noupdates": {
+    "other": "Không có cập nhật cần thiết được phát hiện: nhấp để thực hiện kiểm tra mới."
+  },
+  "alert.noselect": {
+    "other": "Xin vui lòng chọn ít nhất một sản phẩm!"
+  },
+  "package.released": {
+    "other": "Đã niêm yết"
+  },
+  "package.revision": {
+    "other": "Phiên bản"
+  },
+  "check.legend": {
+    "other": "Nhấn vào đây để kiểm tra cập nhật mới"
+  },
+  "check.button": {
+    "other": "Kiểm tra ngay"
+  },
+  "package.version": {
+    "other": "Phiên bản"
+  },
+  "package.label": {
+    "other": "Nhãn"
+  },
+  "package.details": {
+    "other": "Thông tin chi tiết"
+  },
+  "package.changelog": {
+    "other": "Hiển thị Changelog"
+  },
+  "start.update": {
+    "other": "Bắt đầu nâng cấp"
+  },
+  "configs.save": {
+    "other": "Lưu Tuỳ Chỉnh"
+  },
+  "upgrade.ed.title": {
+    "other": "Nâng cấp lêm Cells Enterprise"
+  },
+  "upgrade.ed.button.next": {
+    "other": "Kế tiếp"
+  },
+  "upgrade.ed.button.start": {
+    "other": "Bắt đầu"
+  },
+  "upgrade.ed.button.cancel": {
+    "other": "Huỷ"
+  },
+  "upgrade.ed.button.install": {
+    "other": "Cài đặt ngay"
+  },
+  "upgrade.ed.button.close": {
+    "other": "Đóng"
+  },
+  "upgrade.ed.eula.title": {
+    "other": "Vui lòng chấp nhận thỏa thuận cấp phép End-User"
+  },
+  "upgrade.ed.eula.check": {
+    "other": "Tôi chấp nhận EULA này bằng cách đó"
+  },
+  "upgrade.ed.key.title": {
+    "other": "Nhập mã cấp phép hợp lệ (được cung cấp bởi đại diện bán hàng của Pydio)"
+  },
+  "upgrade.ed.key.legend": {
+    "other": "Nếu bạn không sở hữu, bạn có thể nhận khóa dùng thử bằng cách liên hệ với bộ phận bán hàng bằng nút bên dưới hoặc trực tiếp qua "
+  },
+  "upgrade.ed.key.hint": {
+    "other": "Dán khóa được cung cấp ở đây..."
+  },
+  "upgrade.ed.version.loading": {
+    "other": "Tìm kiếm phiên bản Cells Enterprise gần nhất"
+  },
+  "upgrade.ed.version.error": {
+    "other": "Không thể tải các phiên bản có sẵn cho Cells Enterprise!"
+  },
+  "upgrade.ed.version.error.string": {
+    "other": "Lỗi là"
+  },
+  "upgrade.ed.version.available": {
+    "other": "Sẵn sàng để cài đặt"
+  },
+  "upgrade.ed.version.released": {
+    "other": "Đã niêm yết"
+  },
+  "upgrade.ed.version.arch": {
+    "other": "Kiến trúc"
+  },
+  "upgrade.ed.version.description": {
+    "other": "Mô tả"
+  },
+  "upgrade.ed.version.legend": {
+    "other": "Giờ đây, Next Next sẽ tải xuống phiên bản mới này và thay thế tệp nhị phân Cells hiện tại của bạn. Một bản sao lưu của tệp thực thi gốc sẽ được tạo trong thư mục cấu hình ô của bạn (dưới% s), nếu bạn cần khôi phục nó."
+  },
+  "upgrade.ed.version.nomatch": {
+    "other": "Không thể tìm thấy phiên bản tương tự cho Cells Enterprise"
+  },
+  "upgrade.ed.version.nomatch.legend1": {
+    "other": "Để tránh trộn lẫn nâng cấp và cập nhật, chúng tôi khuyên bạn nên nâng cấp Cells Home thành Enterprise trên cùng một phiên bản."
+  },
+  "upgrade.ed.version.nomatch.legend2": {
+    "other": "Trước tiên, hãy cập nhật phiên bản hiện tại của bạn lên một trong những điều sau đây, sau đó thử nâng cấp lên Cells Enterprise."
+  },
+  "upgrade.ed.installing": {
+    "other": "Cài đặt nâng cấp, vui lòng chờ..."
+  }
+}

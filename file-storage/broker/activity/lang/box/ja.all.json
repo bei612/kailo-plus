@@ -1,0 +1,89 @@
+{
+  "AccessedBy": {
+    "other": "{{.Actor}} がアクセス"
+  },
+  "AccessedObject": {
+    "other": "{{.Object}} へアクセス"
+  },
+  "AccessedObjectBy": {
+    "other": "{{.Object}} に {{.Actor}} がアクセスしました"
+  },
+  "Cell": {
+    "other": "セル"
+  },
+  "CreatedBy": {
+    "other": "{{.Actor}} が作成"
+  },
+  "CreatedObject": {
+    "other": "{{.Object}} を作成"
+  },
+  "CreatedObjectBy": {
+    "other": "{{.Object}} を {{.Actor}} が作成しました"
+  },
+  "DeletedBy": {
+    "other": "{{.Actor}} が削除"
+  },
+  "DeletedObject": {
+    "other": "{{.Object}} を削除"
+  },
+  "DeletedObjectBy": {
+    "other": "{{.Object}} を {{.Actor}} が削除しました"
+  },
+  "SharedWs": {
+    "other": "{{.Object}}での共有"
+  },
+  "SharedWsWithYou": {
+    "other": "{{.Actor}}が{{.Object}}をあなたと共有しました"
+  },
+  "DigestTitle": {
+    "other": "これは、Pydio の日報です"
+  },
+  "Document": {
+    "other": "ドキュメント"
+  },
+  "Folder": {
+    "other": "フォルダ"
+  },
+  "ModifiedBy": {
+    "other": "{{.Actor}} が変更"
+  },
+  "ModifiedObject": {
+    "other": "{{.Object}} を変更"
+  },
+  "ModifiedObjectBy": {
+    "other": "{{.Object}} を {{.Actor}} が変更しました"
+  },
+  "MetaModifiedBy": {
+    "other": "{{.Actor}} が変更したメタデータです"
+  },
+  "MetaModifiedObject": {
+    "other": "{{.Object}} のメタデータが更新されました"
+  },
+  "MetaModifiedObjectBy": {
+    "other": "{{.Object}}のメタデータが{{.Actor}}に更新されました"
+  },
+  "CommentedBy": {
+    "other": "{{.Actor}}によるコメントです"
+  },
+  "CommentedObject": {
+    "other": "{{.Object}}のコメント"
+  },
+  "CommentedObjectBy": {
+    "other": "{{.Actor}}が{{.Object}}にコメントしました"
+  },
+  "MovedBy": {
+    "other": "{{.Actor}} が移動"
+  },
+  "MovedObject": {
+    "other": "{{.Object}} を移動"
+  },
+  "MovedObjectBy": {
+    "other": "{{.Object}} を {{.Actor}} が移動"
+  },
+  "Workspace": {
+    "other": "ワークスペース"
+  },
+  "DateFormat": {
+    "other": "2006-01-02 15:04"
+  }
+}

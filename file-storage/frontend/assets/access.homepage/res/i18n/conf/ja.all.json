@@ -1,0 +1,56 @@
+{
+  "Android App URL": {
+    "other": "Android版アプリのURL"
+  },
+  "Display Server QRCode": {
+    "other": "サーバーのQRコードの表示"
+  },
+  "Enable Getting Started": {
+    "other": "入門チュートリアルを有効化"
+  },
+  "Enable Global Search": {
+    "other": "グローバル検索を有効化"
+  },
+  "Enable addition tabulation to access getting started videos": {
+    "other": "入門用ビデオへのアクセス用の追加タブを有効化"
+  },
+  "Enable cross-workspaces search form on home page": {
+    "other": "ホームページでのワークスペース横断検索を有効化"
+  },
+  "Let users connect easily to the latest mobile applications by displaying a QRCode": {
+    "other": "QRコードを表示してユーザーが最新のモバイルアプリを簡単に利用できるようにする"
+  },
+  "Mac PydioSync URL": {
+    "other": "Mac版 PydioSyncのURL"
+  },
+  "Open workspace by simple click": {
+    "other": "クリックのみでワークスペースを開く"
+  },
+  "Open workspace by simple click instead of double click.": {
+    "other": "ダブルクリックの代わりにシングルクリックでワークスペースを開く"
+  },
+  "URL of the Android application": {
+    "other": "Android版アプリのURL (この項目を非表示にする場合は空にしてください)"
+  },
+  "URL of the iOS application": {
+    "other": "iOS版アプリのURL (この項目を非表示にする場合は空にしてください)"
+  },
+  "URL of the mac sync application": {
+    "other": "Mac版同期アプリのURL (この項目を非表示にする場合は空にしてください)"
+  },
+  "URL of the windows sync application": {
+    "other": "Windows版同期アプリのURL (この項目を非表示にする場合は空にしてください)"
+  },
+  "Welcome Page": {
+    "other": "ウェルカムページ"
+  },
+  "Welcome Page displaying a list of workspaces": {
+    "other": "ワークスペースの一覧を表示しているウェルカムページ"
+  },
+  "Windows PydioSync URL": {
+    "other": "Windows版 PydioSyncのURL"
+  },
+  "iOS App URL": {
+    "other": "iOS版アプリのURL"
+  }
+}

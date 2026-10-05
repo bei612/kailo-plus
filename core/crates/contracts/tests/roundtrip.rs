@@ -6,6 +6,20 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn resource_reference_roundtrip_preserves_evidence_and_original_workflow() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("resource-create.sample.json")).unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: contracts::ActionCommand = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("resource-provision.sample.json")).unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: contracts::ResourceProvisionAdvanceRequest = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
+
+#[test]
 fn application_binding_observation_roundtrip_preserves_mapping_and_optional_scope() {
     let raw = fs::read_to_string(
         sample_path().with_file_name("application-binding-observations.sample.json"),

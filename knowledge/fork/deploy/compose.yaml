@@ -1,0 +1,175 @@
+# Independent native service, not a Kailo runtime/Tool registry.
+# Exact image digests must be proved against the pinned source before deployment.
+# No build directive, platform network, Docker socket, or platform database mount.
+name: kailo-knowledge
+
+services:
+  frontend:
+    image: ${KNOWLEDGE_UI_REPOSITORY:?source-built native UI repository required}@sha256:${KNOWLEDGE_UI_DIGEST:?verified immutable native UI digest required}
+    restart: unless-stopped
+    cpus: "1"
+    mem_limit: 512m
+    memswap_limit: 512m
+    entrypoint: [sh, /opt/kailo-knowledge/frontend_entrypoint.sh]
+    command: []
+    environment:
+      APP_HOST: app
+      APP_PORT: "8080"
+      APP_SCHEME: http
+      KNOWLEDGE_NATIVE_ORIGIN: ${KNOWLEDGE_NATIVE_ORIGIN:?native frontend origin required}
+    volumes:
+      - ./frontend_entrypoint.sh:/opt/kailo-knowledge/frontend_entrypoint.sh:ro
+      - ./render_proxy.awk:/opt/kailo-knowledge/render_proxy.awk:ro
+      - ../../frontend/nginx-api-proxy.conf:/opt/kailo-knowledge/native-api-proxy.conf:ro
+    ports:
+      - "127.0.0.1:${KNOWLEDGE_UI_PORT:?independent native UI port required}:80"
+    networks: [native_ui]
+    depends_on:
+      app:
+        condition: service_healthy
+
+  app:
+    image: ${KNOWLEDGE_APP_REPOSITORY:?source-built native app repository required}@sha256:${KNOWLEDGE_APP_DIGEST:?verified immutable native app digest required}
+    restart: unless-stopped
+    cpus: "4"
+    mem_limit: 4g
+    memswap_limit: 4g
+    entrypoint: [python3, /opt/kailo-knowledge/native_entrypoint.py]
+    command: []
+    environment:
+      GIN_MODE: release
+      LOG_LEVEL: info
+      LOG_PATH: ""
+      LLM_DEBUG_LOG: "false"
+      WEKNORA_LLM_STREAM_RAW_DUMP: ""
+      DB_DRIVER: postgres
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${KNOWLEDGE_DB_USER:?independent native DB user required}
+      DB_NAME: ${KNOWLEDGE_DB_NAME:?independent native DB name required}
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      DOCREADER_ADDR: docreader:50051
+      DOCREADER_TRANSPORT: grpc
+      SYSTEM_AES_KEY_FILE: /run/secrets/system_aes_key
+      SYSTEM_SIGNING_KEY_FILE: /run/secrets/system_signing_key
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      OIDC_AUTH_ENABLE: "true"
+      OIDC_AUTH_ISSUER_URL: ${KNOWLEDGE_OIDC_ISSUER_URL:?native OIDC issuer required}
+      OIDC_AUTH_DISCOVERY_URL: ${KNOWLEDGE_OIDC_DISCOVERY_URL:?native OIDC discovery URL required}
+      OIDC_AUTH_CLIENT_ID: ${KNOWLEDGE_OIDC_CLIENT_ID:?independent native OIDC client required}
+      OIDC_AUTH_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
+      OIDC_AUTH_SCOPES: openid profile email
+      FRONTEND_BASE_URL: ${KNOWLEDGE_NATIVE_ORIGIN:?native frontend origin required}
+    volumes:
+      - ./native_entrypoint.py:/opt/kailo-knowledge/native_entrypoint.py:ro
+      - native_files:/data/files
+      - docreader_tmp:/tmp/docreader:ro
+    secrets:
+      - db_password
+      - redis_password
+      - system_aes_key
+      - system_signing_key
+      - jwt_secret
+      - oidc_client_secret
+    networks: [native_ui, native_data]
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:8080/health]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      docreader:
+        condition: service_healthy
+
+  postgres:
+    image: paradedb/paradedb@sha256:58bf87d2a6f1e72f56590b0f0ae1467e82c3f99ca203dde646672c8ac13148b2
+    restart: unless-stopped
+    cpus: "2"
+    mem_limit: 2g
+    memswap_limit: 2g
+    environment:
+      POSTGRES_USER: ${KNOWLEDGE_DB_USER:?independent native DB user required}
+      POSTGRES_DB: ${KNOWLEDGE_DB_NAME:?independent native DB name required}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes:
+      - native_postgres:/var/lib/postgresql/data
+    networks: [native_data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 1m
+
+  redis:
+    image: redis@sha256:c9d92d840fd011c908f040592857c724ae6d877f2aba5c40ad963276507386b2
+    restart: unless-stopped
+    cpus: "1"
+    mem_limit: 512m
+    memswap_limit: 512m
+    # The same OpenBao authority renders redis.conf and redis_password.
+    # Never put requirepass in argv or a Compose environment value.
+    entrypoint: [sh, /opt/kailo-knowledge/redis_entrypoint.sh]
+    command: []
+    secrets: [redis_config]
+    volumes:
+      - ./redis_entrypoint.sh:/opt/kailo-knowledge/redis_entrypoint.sh:ro
+      - native_redis:/data
+    tmpfs:
+      - /run/kailo-redis:size=1m,mode=0700
+    networks: [native_data]
+
+  docreader:
+    image: ${KNOWLEDGE_DOCREADER_REPOSITORY:?source-built native docreader repository required}@sha256:${KNOWLEDGE_DOCREADER_DIGEST:?verified immutable native docreader digest required}
+    restart: unless-stopped
+    cpus: "2"
+    mem_limit: 2g
+    memswap_limit: 2g
+    environment:
+      DOCREADER_IMAGE_OUTPUT_DIR: /tmp/docreader
+      LOG_LEVEL: info
+    volumes:
+      - docreader_tmp:/tmp/docreader
+    networks: [native_data]
+    healthcheck:
+      test: [CMD, grpc_health_probe, -addr=localhost:50051]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+secrets:
+  db_password:
+    file: ${KNOWLEDGE_DB_PASSWORD_FILE:?OpenBao-rendered file required}
+  redis_password:
+    file: ${KNOWLEDGE_REDIS_PASSWORD_FILE:?OpenBao-rendered file required}
+  redis_config:
+    file: ${KNOWLEDGE_REDIS_CONFIG_FILE:?OpenBao-rendered native Redis config required}
+  system_aes_key:
+    file: ${KNOWLEDGE_SYSTEM_AES_KEY_FILE:?OpenBao DATA_KEY file required}
+  system_signing_key:
+    file: ${KNOWLEDGE_SYSTEM_SIGNING_KEY_FILE:?OpenBao-rendered file required}
+  jwt_secret:
+    file: ${KNOWLEDGE_JWT_SECRET_FILE:?OpenBao-rendered file required}
+  oidc_client_secret:
+    file: ${KNOWLEDGE_OIDC_CLIENT_SECRET_FILE:?OpenBao-rendered independent client secret file required}
+
+networks:
+  native_ui:
+  native_data:
+    internal: true
+
+volumes:
+  native_files:
+  native_postgres:
+  native_redis:
+  docreader_tmp:

@@ -1,0 +1,74 @@
+{
+  "Update.Config.Title": {
+    "other": "Lưu các thiết lập"
+  },
+  "Update.Config.Url.Label": {
+    "other": "Máy chủ dùng để cập nhật"
+  },
+  "Update.Config.Url.Description": {
+    "other": "Liên kết http của máy chủ phục vụ việc cập nhật"
+  },
+  "Update.Config.PublicKey.Label": {
+    "other": "Public Key"
+  },
+  "Update.Config.PublicKey.Description": {
+    "other": "Khóa công khai của Pydio dùng để kiểm tra tính toàn vẹn đồng thời xác thực file chạy."
+  },
+  "Update.Config.Channel.Label": {
+    "other": "Update Channel"
+  },
+  "Update.Config.Channel.Description": {
+    "other": "Kênh sử dụng để yêu cầu thông tin cập nhật. Xin để mặc định là \"Stable\"."
+  },
+  "Update.Config.Channel.ValueStable": {
+    "other": "Stable"
+  },
+  "Update.Config.Channel.ValueDev": {
+    "other": "Dev (sản phẩm chưa ổn định)"
+  },
+  "Update.Config.ProxyHost.Label": {
+    "other": "Proxy"
+  },
+  "Update.Config.ProxyHost.Description": {
+    "other": "Địa chỉ máy chủ proxy cho kết nối ra ngoài"
+  },
+  "Update.Config.ProxyUser.Label": {
+    "other": "Tên tài khoản"
+  },
+  "Update.Config.ProxyUser.Description": {
+    "other": "User proxy"
+  },
+  "Update.Config.ProxyPassword.Label": {
+    "other": "Proxy Password"
+  },
+  "Update.Config.ProxyPassword.Description": {
+    "other": "Proxy Password"
+  },
+  "Update.Config.Disable.Label": {
+    "other": "Tắt cập nhật"
+  },
+  "Update.Config.Disable.Description": {
+    "other": "Nếu máy chủ không có truy cập internet thì sẽ không cần bật chức năng kiểm tra cập nhật."
+  },
+  "Update.Process.Start": {
+    "other": "Upgrading Binary"
+  },
+  "Update.Process.Progress": {
+    "other": "Downloading Binary {progress}%..."
+  },
+  "Update.Process.Verify": {
+    "other": "Download Finished, now verifying package..."
+  },
+  "Update.Process.Finished": {
+    "other": "Binary package has been successfully verified, you can now restart the service."
+  },
+  "Update.SetCapDetected.Warning": {
+    "other": "WARNING: you are using a reserved port on one of your binding URL. This requires a root capability to start web service."
+  },
+  "Update.SetCapDetected.Hint": {
+    "other": "If you are not using systemd with the 'AmbientCapabilities=CAP_NET_BIND_SERVICE' parameter, you must execute the following command to authorize the new binary to use this port *before* restarting your instance:"
+  },
+  "Update.SetCapDetected.Command": {
+    "other": "$ sudo setcap 'cap_net_bind_service=+ep' <path to your binary>"
+  }
+}

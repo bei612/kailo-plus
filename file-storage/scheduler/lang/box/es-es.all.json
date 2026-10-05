@@ -1,0 +1,80 @@
+{
+  "Jobs.Default.Thumbs": {
+    "other": "Extraer thumbnails de imagen y datos Exif"
+  },
+  "Jobs.Default.ThumbsCache": {
+    "other": "Borrar caché de thumbnails de archivos eliminados"
+  },
+  "Jobs.Default.Directories": {
+    "other": "Sincronizar directorios externos"
+  },
+  "Jobs.Default.PruneJobs": {
+    "other": "Limpiar trabajos y tareas en el programador"
+  },
+  "Jobs.Default.FakeLongJob": {
+    "other": "Simular un trabajo de ejecución prolongada (con propósito de prueba)"
+  },
+  "Jobs.Default.FakeUsersJob": {
+    "other": "Creación de usuarios aleatorios (con propósito de prueba)"
+  },
+  "Jobs.Default.FakeGrpcJob": {
+    "other": "Ejemplo de trabajo RPC (con propósito de prueba)"
+  },
+  "Jobs.Default.ArchiveJobs": {
+    "other": "Servicio de archivado de cambios automático"
+  },
+  "Jobs.Default.CleanUserData": {
+    "other": "Limpiar o transferir los datos del usuario al ser borrados"
+  },
+  "Jobs.Default.CleanOrphanFiles": {
+    "other": "Limpiar archivos huérfanos después de 24h"
+  },
+  "Jobs.Default.CleanExpiredACLs": {
+    "other": "Limpiar ACLs expirados después de 10 días"
+  },
+  "Jobs.User.Compress": {
+    "other": "Comprimiendo selección..."
+  },
+  "Jobs.User.Extract": {
+    "other": "Extrayendo archivo..."
+  },
+  "Jobs.User.Delete": {
+    "other": "Eliminando selección en segundo plano..."
+  },
+  "Jobs.User.DirCopy": {
+    "other": "Copiando carpeta en segundo plano..."
+  },
+  "Jobs.User.DirMove": {
+    "other": "Moviendo carpeta en segundo plano..."
+  },
+  "Jobs.User.FileCopy": {
+    "other": "Copiando archivo en segundo plano..."
+  },
+  "Jobs.User.FileMove": {
+    "other": "Moviendo archivo en segundo plano..."
+  },
+  "Jobs.User.MultipleCopy": {
+    "other": "Copiando selección en segundo plano..."
+  },
+  "Jobs.User.MultipleMove": {
+    "other": "Moviendo selección en segundo plano..."
+  },
+  "Jobs.User.MoveRecycle": {
+    "other": "Moviendo a la papelera de reciclaje en segundo plano..."
+  },
+  "Jobs.User.ResyncDS": {
+    "other": "Sync datasource {{.DsName}} then rehash new files"
+  },
+  "Jobs.User.Wget": {
+    "other": "Descargando archivo en segundo plano..."
+  },
+  "Jobs.User.DeletingItem": {
+    "other": "Borrando %s"
+  },
+  "Jobs.User.CopyingItem": {
+    "other": "Copiando %s"
+  },
+  "Jobs.User.MovingItem": {
+    "other": "Moviendo %s"
+  }
+}

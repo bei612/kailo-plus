@@ -1,0 +1,47 @@
+{
+  "1": {
+    "other": "Choose other..."
+  },
+  "2": {
+    "other": "Choose another editor"
+  },
+  "3": {
+    "other": "Select another editor to open this file"
+  },
+  "4": {
+    "other": "Warning, these editors do not declare to be supporting this file type, their behaviour maybe unpredictable!"
+  },
+  "5": {
+    "other": "Clear associations"
+  },
+  "drop.cell.picker": {
+    "other": "Pick action for %s..."
+  },
+  "drop.cell.share.legend": {
+    "other": "Add new item to this cell"
+  },
+  "drop.cell.copymove.legend": {
+    "other": "Uvnitř %s"
+  },
+  "drop.cell.file.share": {
+    "other": "Nasdílet soubor"
+  },
+  "drop.cell.folder.share": {
+    "other": "Nasdílet složku"
+  },
+  "drop.cell.file.move": {
+    "other": "Přesunout soubor"
+  },
+  "drop.cell.folder.move": {
+    "other": "Přesunout složku"
+  },
+  "drop.cell.file.copy": {
+    "other": "Zkopírovat soubor"
+  },
+  "drop.cell.folder.copy": {
+    "other": "Zkopírovat složku"
+  },
+  "download.as.pdf": {
+    "other": "Stáhnout jako PDF"
+  }
+}

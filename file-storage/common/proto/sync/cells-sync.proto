@@ -1,0 +1,39 @@
+syntax="proto3";
+
+package sync;
+
+option go_package="github.com/pydio/cells/v5/common/proto/sync";
+
+import "cells-jobs.proto";
+import "cells-tree.proto";
+import "cells-idm.proto";
+
+
+service SyncEndpoint{
+    rpc TriggerResync(ResyncRequest) returns (ResyncResponse){};
+}
+
+message ResyncRequest{
+    string Path = 1;
+    bool DryRun = 2;
+    jobs.Task Task = 3;
+}
+
+message ResyncResponse{
+    bool Success = 1;
+    string JsonDiff = 2;
+    jobs.Task Task = 3;
+}
+
+message CheckpointEvent {
+
+}
+
+message SyncEvent {
+    uint64 SequenceId = 1;
+    oneof Message {
+        tree.NodeChangeEvent NodeChangeEvent = 2;
+        idm.UpdateUserMetaEvent UserMetaEvent = 3;
+        CheckpointEvent CheckpointEvent = 4;
+    };
+}

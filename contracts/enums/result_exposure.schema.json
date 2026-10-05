@@ -2,10 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "enums/result_exposure.schema.json",
   "title": "ResultExposure",
-  "description": "ActionDefinition 的结果暴露。NONE只回稳定状态与ID；READ用于已准入、计量查证与fresh授权闭合的HUMAN Memory读取（.design/19 §5/6），正文只在BFF响应中瞬态存在。Agent工具的ResultExposurePolicy仍由同一平台事实承接。",
+  "description": "ActionDefinition 的结果暴露。NONE只回稳定状态与ID；平台动作保持NONE/READ边界。APPLICATION声明精确消费已批准release的ResultExposurePolicy mode：CONSUME_ONLY只允许answer/citation/aggregate/derived Asset，READ/EXPORT还需目标read/export权限，与output schema及redaction求交（.design/03 §6）；声明不授予内容权限。",
   "type": "string",
   "enum": [
     "NONE",
-    "READ"
+    "READ",
+    "CONSUME_ONLY",
+    "EXPORT"
   ]
 }

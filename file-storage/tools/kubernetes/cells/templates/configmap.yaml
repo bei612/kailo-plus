@@ -1,0 +1,462 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cells.fullname" . }}
+data:
+  source: |
+    {{- if (include "cells.vault.enabled" .) }}
+    export VAULT_TOKEN=$(cat /vault/secrets/token)
+    {{- end }}
+  install-conf.yaml: |
+    proxyconfigs:
+      - binds:
+      {{- if .Values.service.binds }}
+        {{- range .Values.service.binds }}
+        - {{ . | quote }}
+        {{- end }}
+      {{- else }}
+        - 0.0.0.0:{{ .Values.service.port }}
+      {{- end }}
+      {{- if .Values.service.reverseproxyurl }}
+        reverseproxyurl: {{ .Values.service.reverseproxyurl }}
+      {{- else if .Values.ingress.enabled }}
+        reverseproxyurl: {{ if (include "cells.ingress.tls.enabled" .) }}https://{{ else }}http://{{ end }}{{ .Values.ingress.hostname }}
+      {{- end }}
+      {{- if (include "cells.tls.enabled" . ) }}
+        tlsconfig:
+          {{- if (include "cells.tls.selfSigned" .) }}
+          selfsigned:
+          {{- else }}
+          certificate:
+            certfile: /var/cells/certs/cells-server-tls.crt
+            keyfile: /var/cells/certs/cells-server-tls.key
+            cellsrootca: /var/cells/certs/cells-tls-ca.crt
+          {{- end }}
+      {{- end }}
+
+    {{ if (include "cells.database.enabled" .) }}
+    dbconnectiontype: manual
+    dbmanualdsn: {{ include "cells.database.dsn" (dict "context" . "path" (include "cells.database.name" .) "authParams" (include "cells.urlUser" (dict "enabled" (include "cells.database.auth.enabled" .) "user" "$DB_USERNAME" "password" "$DB_PASSWORD")) ) }}
+    {{ else }}
+    dbconnectiontype: manual
+    dbmanualdsn: sqlite:///var/cells/pydio.db
+    {{ end }}
+
+    {{- if (include "cells.nosql.enabled" .) }}
+    documentsdsn: {{ include "cells.nosql.url" (dict "context" . "path" "cells" "authParams" (include "cells.urlUser" (dict "enabled" (include "cells.nosql.auth.enabled" .) "user" "$NOSQL_USERNAME" "password" "$NOSQL_PASSWORD")) ) }}
+    usedocumentsdsn: true
+    {{- else }}
+    usedocumentsdsn: false
+    {{- end }}
+
+    # Defined in .env file
+    frontendlogin: $CELLS_USERNAME
+    frontendpassword: $CELLS_PASSWORD
+
+    {{- if (include "cells.s3.enabled" .) }}
+    dstype: S3
+    {{- if or .Values.minio.enabled (and .Values.externalS3.enabled .Values.externalS3.useCustomURL) }}
+    dss3custom: {{ include "cells.s3.url" (dict "context" . "path" "" "scheme" .Values.externalS3.scheme) }}
+    {{- end }}
+    dss3customregion: {{ .Values.externalS3.customRegion | default "us-east-1" }}
+    dss3apikey: $S3_USERNAME
+    dss3apisecret: $S3_PASSWORD
+    dss3bucketdefault: {{ .Values.externalS3.ds.pydiods1 | default "pydiods1" }}
+    dss3bucketpersonal: {{ .Values.externalS3.ds.personal | default "personal" }}
+    dss3bucketcells: {{ .Values.externalS3.ds.cellsdata | default "cellsdata" }}
+    dss3bucketbinaries: {{ .Values.externalS3.ds.binaries | default "binaries" }}
+    dss3bucketthumbs: {{ .Values.externalS3.ds.thumbnails | default "thumbnails" }}
+    dss3bucketversions: {{ .Values.externalS3.ds.versions | default "versions" }}
+    {{- end }}
+
+    customconfigs:
+      {{- $baseConfigs := .Values.service.customconfigs | default dict }}
+      {{- $collaboraConfigsStr := (include "cells.collabora.customconfigs" .) }}
+      {{- $collaboraConfigs := dict }}
+      {{- if $collaboraConfigsStr }}
+      {{- $collaboraConfigs = $collaboraConfigsStr | fromYaml | default dict }}
+      {{- end }}
+      {{- $mergedConfigs := merge $baseConfigs $collaboraConfigs }}
+      {{- $_ := set $mergedConfigs "helm/configureMarker" (include "cells.configureMarker" .) }}
+      {{- $_ := set $mergedConfigs "helm/chart" (include "cells.chart" .) }}
+      {{- $_ := set $mergedConfigs "helm/image" (include "cells.image" .) }}
+      {{- toYaml $mergedConfigs | nindent 6 }}
+
+  {{- if .Values.bootstrap }}
+  bootstrap.yaml: |
+    {{ .Values.bootstrap | nindent 4 }}
+  {{- else }}
+  bootstrap.yaml: |
+    #------------------------------------------
+    # Actual Bootstrap Keys
+    #
+    # Defaults variable values are injected at load time
+    #------------------------------------------
+    runtime: main
+    connections:
+      grpcconn:
+        uri: cells-grpc:8030
+        services:
+          - filter: "{{"{{"}} .Name {{"}}"}} ~= pydio.grpc..*"
+    listeners:
+      grpcall:
+        type: tcp
+        bind: 0.0.0.0
+        port: 8030
+      http:
+        type: tcp
+        bind: 0.0.0.0
+        {{ if .Values.useCaddyProxy }}
+        port: 8032
+        {{ else }}
+        port: {{ .Values.service.port }}
+        {{ end }}
+      {{ if and (not .Values.useCaddyProxy) .Values.service.admin.enabled }}
+      httpadmin:
+        type: tcp
+        bind: 0.0.0.0
+        port: 8081
+      {{ end }}
+    servers:
+      {{ if .Values.useCaddyProxy }}
+      proxy:
+        type: caddy+proxy
+      {{ end }}
+      http:
+        type: http
+        listener: http
+        services:
+          - filter: "{{"{{"}} .Name {{"}}"}} ~= pydio\\.web\\.* or {{"{{"}} .Name {{"}}"}} ~= pydio\\.rest\\.* or {{"{{"}} .Name {{"}}"}} ~= pydio\\.gateway\\.*"
+      grpcall:
+        type: grpc
+        listener: grpcall
+        services:
+          - filter: "{{"{{"}} .Name {{"}}"}} ~= pydio\\.grpc\\..*"
+          - filter: "{{"{{"}} .Name {{"}}"}} !~= pydio\\.grpc\\.wireauth"
+      generic:
+        type: generic
+        services:
+          - filter: "{{"{{"}} .Name {{"}}"}} ~= pydio\\.generic\\..*"
+          - filter: "{{"{{"}} .Name {{"}}"}} !~= pydio\\.generic\\.timer"
+
+    queues:
+      debouncer:
+        uri: "mem://?debounce={{"{{"}} .debounce {{"}}"}}&idle={{"{{"}} .idle {{"}}"}}&max={{"{{"}} .max {{"}}"}}&openerID={{"{{"}} .openerID {{"}}"}}"
+      persistent:
+        {{- $authParamsBroker := (include "cells.urlUser" (dict "enabled" false)) }}
+        {{- $brokerParams := (include "cells.broker.params" . | default "{}" | fromJson) }}
+        {{- $queueParams := merge (dict "name" "{{ .name }}" "serviceName" "{{ .Service }}" "prefix" "{{ .prefix }}" "serverConfEnv" "BROKER_SERVER_CONF") $brokerParams }}
+        uri: "{{ include "cells.broker.url" (dict "path" "queue" "context" . "authParams" $authParamsBroker "params" $queueParams)}}"
+    caches:
+      local:
+        uri: "pm://?evictionTime={{"{{"}} .evictionTime {{"}}"}}&cleanWindow={{"{{"}} .cleanWindow {{"}}"}}&prefix={{"{{"}} .prefix {{"}}"}}"
+      shared:
+        {{- $authParamsCache := (include "cells.urlUser" (dict "enabled" (include "cells.cache.auth.enabled" .) "user" "$CACHE_USERNAME" "password" "$CACHE_PASSWORD")) }}
+        uri: "{{ include "cells.cache.url" (dict "path" "cells" "context" . "authParams" $authParamsCache "params" (dict "evictionTime" "{{ .evictionTime }}" "cleanWindow" "{{ .cleanWindow }}" "prefix" "{{ .prefix }}" ))}}"
+
+    #------------------------------------
+    # All services
+    #------------------------------------
+    services: &services
+      pydio.grpc.oauth:
+        storages:
+          main:
+            - type: sql
+              prefix: oauth2_
+              singular: "true"
+      pydio.web.oauth:
+        storages:
+          main:
+            - type: sql
+              prefix: oauth2_
+              singular: "true"
+      pydio.rest.frontend:
+        after:
+          - pydio.grpc.user-meta
+          - pydio.grpc.user-key
+        storages:
+          main:
+            - type: sql
+              prefix: idm_
+      pydio.grpc.search:
+        storages:
+          main:
+            - type: bleve
+              file: searchengine.bleve?mapping=node&rotationSize=-1
+            - type: mongo
+              prefix: searchengine_
+      pydio.grpc.chat:
+        storages:
+          main:
+            - type: bolt
+              file: chat.db
+            - type: mongo
+              prefix: chat_
+      pydio.grpc.data-key:
+        storages:
+          main:
+            - type: sql
+              prefix: enc_
+      pydio.grpc.activity:
+        storages:
+          main:
+            - type: bolt
+              file: activities.db
+            - type: mongo
+              prefix: activity_
+      pydio.grpc.versions:
+        storages:
+          main:
+            - type: bolt
+              file: versions.db
+            - type: mongo
+              prefix: versions_
+      pydio.grpc.mailer:
+        storages:
+          main:
+            - type: bolt
+              file: queue.db
+            - type: mongo
+              prefix: mailer_
+      pydio.grpc.docstore:
+        storages:
+          main:
+            - type: bolt
+              file: docstore.db
+            - type: bleve
+              file: docstore.bleve?rotationSize=-1
+            - type: mongo
+              prefix: docstore_
+      pydio.grpc.log:
+        storages:
+          main:
+            - type: bleve
+              file: syslog.bleve?mapping=log&rotationSize=-1
+            - type: mongo
+              prefix: syslog_
+      pydio.grpc.jobs:
+        storages:
+          main:
+            - type: bolt
+              file: jobs.db
+            - type: mongo
+              prefix: jobs_
+          logs:
+            - type: bleve
+              file: tasklogs.bleve?mapping=log&rotationSize=-1
+            - type: mongo
+              prefix: tasklogs_
+      pydio.grpc.role:
+        after:
+          - pydio.grpc.acl
+        storages:
+          main:
+            - type: sql
+              prefix: idm_
+              policies: idm_role_policies
+      pydio.grpc.acl:
+        storages:
+          main:
+            - type: sql
+              prefix: idm_
+      pydio.grpc.user:
+        after:
+          - pydio.grpc.role
+        storages:
+          main:
+            - type: sql
+              prefix: idm_
+              policies: idm_user_policies
+      pydio.grpc.token:
+        storages:
+          main:
+            - type: sql
+              prefix: idm_
+      pydio.grpc.key:
+        storages:
+          main:
+            - type: sql
+              prefix: data_key_
+      pydio.grpc.user-key:
+        storages:
+          main:
+            - type: sql
+              prefix: idm_
+      pydio.grpc.workspace:
+        storages:
+          main:
+            - type: sql
+              prefix: idm_
+              policies: idm_workspace_policies
+      pydio.grpc.meta:
+        storages:
+          main:
+            - type: sql
+              prefix: data_
+      pydio.grpc.policy:
+        storages:
+          main:
+            - type: sql
+              prefix: idm_ladon_
+              singular: "true"
+      pydio.grpc.user-meta:
+        storages:
+          main:
+            - type: sql
+              prefix: idm_usr_
+              policies: idm_usr_meta_policies
+      pydio.grpc.data.index:
+        storages:
+          main:
+            - type: sql
+              prefix: data_index_{{"{{"}} .DataSource {{"}}"}}_
+      pydio.grpc.data.sync:
+        storages:
+          main:
+            - type: sql
+              prefix: data_index_{{"{{"}} .DataSource {{"}}"}}_
+      pydio.rest.workspace:
+        after:
+          - pydio.grpc.workspace
+  {{- end }}
+
+  {{ if not (empty .Values.extraConfig) }}
+  {{ toYaml .Values.extraConfig | nindent 2 }}
+  {{ end }}
+---
+{{- if .Values.vault.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cells-vault
+  labels:
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  bootstrap.sh: |
+    #!/bin/sh
+
+    OUTPUT=/tmp/output.txt
+
+    export VAULT_TOKEN=$(cat /root/.vault-token)
+    export VAULT_ADDR=http://127.0.0.1:8200
+
+    COUNT=1
+    LIMIT=30
+    while [ 1 ]; do
+
+      VAULT_STATUS=$(vault status -format json)
+      EXIT_STATUS=$?
+
+      if echo \"$VAULT_STATUS\" | grep '"initialized": false'; then
+        if echo \"$VAULT_STATUS\" | grep '"type": "shamir"'; then
+          vault operator init -n 1 -t 1 >> ${OUTPUT?}
+
+          unseal=$(cat ${OUTPUT?} | grep "Unseal Key 1:" | sed -e "s/Unseal Key 1: //g")
+          vault operator unseal ${unseal?}
+        else
+          vault operator init >> ${OUTPUT?}
+        fi
+
+        vault operator init -n 1 -t 1 >> ${OUTPUT?}
+
+        unseal=$(cat ${OUTPUT?} | grep "Unseal Key 1:" | sed -e "s/Unseal Key 1: //g")
+        root=$(cat ${OUTPUT?} | grep "Initial Root Token:" | sed -e "s/Initial Root Token: //g")
+
+        vault operator unseal ${unseal?}
+
+        vault login -no-print ${root?}
+
+        vault secrets enable -version=2 -path=secret kv
+        vault secrets enable -version=2 -path=caddycerts kv
+        vault secrets enable pki
+
+        vault write pki/root/generate/internal \
+          common_name={{ include "cells.serviceDomain" . }} \
+          ttl=8760h
+
+        vault write pki/config/urls \
+          issuing_certificates="{{ include "cells.vault.url" (list . "/v1/pki/ca") }}" \
+          crl_distribution_points="{{ include "cells.vault.url" (list . "/v1/pki/crl") }}"
+
+        vault secrets tune -max-lease-ttl=8760h pki
+
+        vault write pki/roles/application \
+          allowed_domains=*.{{ include "cells.serviceDomain" . }} \
+          allow_any_name=true \
+          allow_subdomains=true \
+          max_ttl=72h
+
+        vault policy write pki /vault/userconfig/cells-vault/pki-policy.hcl
+
+        vault auth enable kubernetes
+
+        vault write auth/kubernetes/config \
+            kubernetes_host=https://kubernetes.default.svc \
+            kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+
+        vault policy write app /vault/userconfig/cells-vault/app-policy.hcl
+
+        vault write auth/kubernetes/role/{{ include "cells.serviceAccountName" . }} \
+           bound_service_account_names="{{ include "cells.serviceAccountName" . }}" \
+           bound_service_account_namespaces="{{ include "common.names.namespace" . }}" \
+           policies=app,pki,default \
+           ttl=24h
+
+        vault token create -policy=app
+      elif [ $EXIT_STATUS -eq 2 ]; then
+        echo "$VAULT_STATUS"
+        exit 0
+
+      elif [ $COUNT -ge $LIMIT ]; then
+        # Dont know what happened... Exiting
+        echo "$VAULT_STAUS"
+        exit 1
+      else
+        # For debugging\n
+        echo "$VAULT_STATUS"
+        exit 0
+      fi
+
+      COUNT=$((COUNT+1))
+
+      sleep 1
+    done
+
+  app-policy.hcl: |
+    path "secret/*"     { capabilities = ["create", "update", "read", "delete"] }
+    path "caddycerts/*" { capabilities = ["create", "update", "read", "delete"] }
+
+  pki-policy.hcl: |
+    path "pki*"                    { capabilities = ["read", "list"] } 
+    path "pki/sign/application"    { capabilities = ["create", "update"] }
+    path "pki/issue/application"   { capabilities = ["create"] }
+---
+{{- end }}
+{{- if .Values.controller.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cells.fullname" . }}-controller
+data:
+  bootstrap.yaml: |
+    #------------------------------------------
+    # Actual Bootstrap Keys
+    #
+    # Defaults variable values are injected at load time
+    #------------------------------------------
+    runtime: {{ .Values.controller.runtime | default "main" }}
+    connections:
+      grpc:
+        uri: cells-grpc:8030
+        services:
+          - filter: "{{"{{"}} .Name {{"}}"}} ~= pydio.grpc..*"
+    servers:
+      generic:
+        type: generic
+        services:
+          {{- $services := .Values.controller.services }}
+          - filter: "{{ range $k, $v := $services }}{{ printf "{{ .Name }} ~= %s" $v }}{{ if lt $k (sub (len $services) 1)}} or {{ end }}{{ end }}"
+---
+{{- end }}

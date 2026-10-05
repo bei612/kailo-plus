@@ -1,0 +1,17 @@
+{
+  "1": {
+    "other": "Kommentarer"
+  },
+  "2": {
+    "other": "Enter your comment here"
+  },
+  "3": {
+    "other": "Post"
+  },
+  "4": {
+    "other": "Gå till %s"
+  },
+  "empty-state": {
+    "other": "Inga kommentarer"
+  }
+}

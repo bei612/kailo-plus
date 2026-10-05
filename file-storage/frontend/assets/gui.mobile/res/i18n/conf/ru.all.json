@@ -1,0 +1,56 @@
+{
+  "1.android": {
+    "other": "Для доступа к %s имеется встроенный клиент APPLICATION_TITLE для Android OS."
+  },
+  "1.ios": {
+    "other": "Для доступа к %s имеется встроенное приложение iPhone/iPad!"
+  },
+  "2.android": {
+    "other": "Он у меня уже есть, открыть и добавить этот сервер в мои преднастроенные удаленные сервера"
+  },
+  "2.ios": {
+    "other": "Он у меня уже есть, открыть и добавить этот сервер в мои удаленные сервера"
+  },
+  "3.android": {
+    "other": "У меня его нет, отправьте меня сейчас в Play Store!"
+  },
+  "3.ios": {
+    "other": "У меня его нет, отправьте меня сейчас в App Store!"
+  },
+  "4.android": {
+    "other": "Мне не важно, позвольте мне использовать web-версию %s."
+  },
+  "4.ios": {
+    "other": "Мне не важно, позвольте мне использовать web-версию %s."
+  },
+  "Mobile": {
+    "other": "Мобильный"
+  },
+  "Template extending gui.ajax for small screen terminals.": {
+    "other": "Шаблон расширяющий gui.ajax для телефонов с маленьким экраном."
+  },
+  "Disable this feature": {
+    "other": "Отключить эту функцию"
+  },
+  "Do not display a smart banner when opening web interface on a mobile terminal.": {
+    "other": "Не показывать умный заголовок при открытии веб-интерфейса на мобильном телефоне."
+  },
+  "iOS Application Icon": {
+    "other": "Значок iOS приложения"
+  },
+  "iOS Application ID": {
+    "other": "Идентификатор приложения iOS"
+  },
+  "iOS Application ID on the store": {
+    "other": "Идентификатор приложения iOS в магазине"
+  },
+  "Android Application ID": {
+    "other": "ID приложения Android"
+  },
+  "Android App ID": {
+    "other": "Android App ID"
+  },
+  "Android App Icon": {
+    "other": "Значок приложения Android"
+  }
+}

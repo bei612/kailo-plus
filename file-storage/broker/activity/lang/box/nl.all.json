@@ -1,0 +1,89 @@
+{
+  "AccessedBy": {
+    "other": "Geopend door {{.Actor}}"
+  },
+  "AccessedObject": {
+    "other": "Geopend {{.Object}}"
+  },
+  "AccessedObjectBy": {
+    "other": "{{.Object}} werd geopend door {{.Actor}}"
+  },
+  "Cell": {
+    "other": "Cell"
+  },
+  "CreatedBy": {
+    "other": "Aangemaakt door {{.Actor}}"
+  },
+  "CreatedObject": {
+    "other": "Aangemaakt {{.Object}}"
+  },
+  "CreatedObjectBy": {
+    "other": "{{.Object}} werd gemaakt door {{.Actor}}"
+  },
+  "DeletedBy": {
+    "other": "Verwijderd door {{.Actor}}"
+  },
+  "DeletedObject": {
+    "other": "Verwijderd {{.Object}}"
+  },
+  "DeletedObjectBy": {
+    "other": "{{.Object}} werd verwijderd door {{.Actor}}"
+  },
+  "SharedWs": {
+    "other": "Gedeeld in {{.Object}}"
+  },
+  "SharedWsWithYou": {
+    "other": "{{.Actor}} heeft {{.Object}} met jou gedeeld"
+  },
+  "DigestTitle": {
+    "other": "Dit is jouw dagelijkse Pydio samenvatting"
+  },
+  "Document": {
+    "other": "Document"
+  },
+  "Folder": {
+    "other": "Folder"
+  },
+  "ModifiedBy": {
+    "other": "Gewijzigd door {{.Actor}}"
+  },
+  "ModifiedObject": {
+    "other": "Gewijzigd {{.Object}}"
+  },
+  "ModifiedObjectBy": {
+    "other": "{{.Object}} werd gewijzigd door {{.Actor}}"
+  },
+  "MetaModifiedBy": {
+    "other": "Metadata gewijzigd door {{.Actor}}"
+  },
+  "MetaModifiedObject": {
+    "other": "Gewijzigde metadata op {{.Object}}"
+  },
+  "MetaModifiedObjectBy": {
+    "other": "{{.Actor}} heeft metadata gewijzigd op {{.Object}}"
+  },
+  "CommentedBy": {
+    "other": "Reactie door {{.Actor}}"
+  },
+  "CommentedObject": {
+    "other": "Reactie op {{.Object}}"
+  },
+  "CommentedObjectBy": {
+    "other": "{{.Actor}} heeft een nieuwe reactie gepubliceerd op {{.Object}}"
+  },
+  "MovedBy": {
+    "other": "Verplaatst door {{.Actor}}"
+  },
+  "MovedObject": {
+    "other": "Verplaatst {{.Object}}"
+  },
+  "MovedObjectBy": {
+    "other": "{{.Object}} werd verplaatst door {{.Actor}}"
+  },
+  "Workspace": {
+    "other": "Werkruimte"
+  },
+  "DateFormat": {
+    "other": "2006-01-02 15:04"
+  }
+}

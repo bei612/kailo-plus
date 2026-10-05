@@ -1,0 +1,59 @@
+{
+  "Allowed Extensions": {
+    "other": "Extensiones Permitidas"
+  },
+  "Ext. Label": {
+    "other": "Etiqueta de Ext"
+  },
+  "Extensions List": {
+    "other": "Lista de Extensiones"
+  },
+  "File Size": {
+    "other": "Tamaño de Archivo"
+  },
+  "Filter the files that are allowed to be uploaded, by extensions. Use a comma-separated list.": {
+    "other": "Filtrar los archivos que pueden ser subidos, por su extension. Usar lista separada con comas."
+  },
+  "Limitations": {
+    "other": "Limitaciones"
+  },
+  "Maximum size per file allowed to upload. Warning, this limit can vary depending on your underlying storage and the Multipart Chunk Size. For example, Amazon S3 restricts uploads to maximum 10000 distinct parts.": {
+    "other": "Maximum size per file allowed to upload. Warning, this limit can vary depending on your underlying storage and the Multipart Chunk Size. For example, Amazon S3 restricts uploads to maximum 10000 distinct parts."
+  },
+  "Options shared by all uploaders plugins": {
+    "other": "Opciones compartidas por todos los plugins de subida"
+  },
+  "Uploaders Options": {
+    "other": "Opciones de los Uploaders"
+  },
+  "User readable label for the list of allowed extensions (images, all files, etc).": {
+    "other": "Etiqueta legible para el usuario de la lista de extensiones permitidas (imágenes, todos los archivos, etc)."
+  },
+  "Multipart Uploads": {
+    "other": "Carga múltiple"
+  },
+  "Multipart Parts Size": {
+    "other": "Tamaño de piezas múltiples"
+  },
+  "Multipart Threshold": {
+    "other": "Límite de carga múltiple"
+  },
+  "Switch to Multipart Upload for files bigger than this value (in bytes)": {
+    "other": "Cambie a Carga múltiple para archivos mayores de este valor (en bytes)"
+  },
+  "Chunk Size used for multipart uploads, it must be a multiple of 10MB for hashing consistency. If you plan to upload very large files (bigger 500GB), raise this value to lower the total number of parts sent.": {
+    "other": "Chunk Size used for multipart uploads, it must be a multiple of 10MB for hashing consistency. If you plan to upload very large files (bigger 500GB), raise this value to lower the total number of parts sent."
+  },
+  "Queue Size": {
+    "other": "Tamaño de cola"
+  },
+  "Number of concurrent uploads (maximum 6, due to browsers limitations)": {
+    "other": "Número de cargas simultáneas (máximo 6, debido a limitaciones de los navegadores)"
+  },
+  "Timeout": {
+    "other": "Tiempo de espera"
+  },
+  "Request Timeout (in minutes) for each concurrent part upload": {
+    "other": "La petición ha excedido el tiempo de espera(en minutos) para cada parte de la carga concurrente"
+  }
+}

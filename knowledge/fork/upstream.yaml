@@ -1,0 +1,41 @@
+# Full native source fork; identity/correlation changes retain the native UI.
+# The native UI image is built; app/document-reader images and deployment remain unverified.
+project: knowledge
+reference_tree: WeKnora
+upstream_url: https://github.com/Tencent/WeKnora
+evidence_commit: 2be7bd40631dda1dd485306038f07a62e9ee287e
+implementation_base_commit: 2be7bd40631dda1dd485306038f07a62e9ee287e
+base_divergence: none
+
+artifacts:
+  - name: knowledge-service
+    kind: image
+    build_context: knowledge
+    build_dockerfile: knowledge/docker/Dockerfile.app
+    inputs: [knowledge/]
+    build_args: [GOPROXY_ARG, VERSION_ARG, COMMIT_ID_ARG, BUILD_TIME_ARG, GO_VERSION_ARG]
+    source_digest: none
+    artifact_digest: none
+    blocked: Native identity/correlation source verified separately; this fork image, service credentials, deployment and Gateway/Core MCP consumption remain unverified.
+  - name: knowledge-native-ui
+    kind: image
+    build_context: knowledge/frontend
+    build_dockerfile: knowledge/frontend/Dockerfile
+    inputs: [knowledge/]
+    source_digest: sha256:70fa2b6f9b429fcff426e630e80306c4fd65d267b9d7943669fe6760565b823a
+    artifact_digest: sha256:fe86075f63f92527715144b079141447b87005e8697ea5b353d736d4915bc0f4
+    blocked: Native UI image built; deployment, authenticated browser acceptance and npm vulnerability remediation remain unverified.
+  - name: knowledge-document-reader
+    kind: image
+    build_context: knowledge
+    build_dockerfile: knowledge/docker/Dockerfile.docreader
+    inputs: [knowledge/]
+    source_digest: none
+    artifact_digest: none
+    blocked: Source-built document reader image and native document processing acceptance are not yet verified.
+
+source_facts: [SF-WEK-01, SF-WEK-02, SF-WEK-03, SF-WEK-06, SF-WEK-12]
+source_seams: [SS-WEK-ASYNC-TRACE, SS-WEK-LLM-CTX]
+compatibility_evidence: [knowledge/fork/verify/identity-and-mcp.md]
+owner: team-capabilities
+last_reverified: 2026-10-05

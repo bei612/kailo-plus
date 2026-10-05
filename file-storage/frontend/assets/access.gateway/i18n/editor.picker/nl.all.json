@@ -1,0 +1,47 @@
+{
+  "1": {
+    "other": "Kies andere..."
+  },
+  "2": {
+    "other": "Kies een andere editor"
+  },
+  "3": {
+    "other": "Selecteer een andere editor om dit bestand te openen"
+  },
+  "4": {
+    "other": "Let op, deze editors ondersteunen dit bestandstype niet, hun gedrag kan onvoorspelbaar zijn!"
+  },
+  "5": {
+    "other": "Verwijder associaties"
+  },
+  "drop.cell.picker": {
+    "other": "Kies actie voor %s..."
+  },
+  "drop.cell.share.legend": {
+    "other": "Nieuw item toevoegen aan deze cel"
+  },
+  "drop.cell.copymove.legend": {
+    "other": "Binnenin %s"
+  },
+  "drop.cell.file.share": {
+    "other": "Bestand delen"
+  },
+  "drop.cell.folder.share": {
+    "other": "Map delen"
+  },
+  "drop.cell.file.move": {
+    "other": "Bestand verplaatsen"
+  },
+  "drop.cell.folder.move": {
+    "other": "Map verplaatsen"
+  },
+  "drop.cell.file.copy": {
+    "other": "Bestand kopiëren"
+  },
+  "drop.cell.folder.copy": {
+    "other": "Map kopiëren"
+  },
+  "download.as.pdf": {
+    "other": "Download as PDF"
+  }
+}

@@ -1,6 +1,7 @@
 //! APPLICATION tools use the existing Version requirements, ToolBinding and
 //! Delegation authorities. Gateway remains the only protocol discovery/router.
 
+use crate::application_binding::native::Connector;
 use crate::{
     agent_tool::{permission, InvocationContext},
     agent_tool_session::SessionScope,
@@ -17,9 +18,80 @@ fn invalid() -> Refusal {
     Refusal::Precondition(ReasonCode::InvalidParameters)
 }
 
+fn output_value(
+    raw: &Value,
+    output: &Value,
+    documents: &BTreeMap<String, Value>,
+) -> Result<Value, Refusal> {
+    let value: Value = serde_json::from_str(raw["resultJson"].as_str().ok_or_else(invalid)?)
+        .map_err(|_| invalid())?;
+    if !crate::capability_contract::schema_validator(output, documents)?.is_valid(&value) {
+        return Err(invalid());
+    }
+    // An envelope reference is not proof of native ownership or revision.
+    if raw.get("contentReference").is_some() {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod application_tool_tests {
     use super::*;
+
+    #[test]
+    fn peer_terminal_requires_schema_valid_result_or_explicit_native_error() {
+        use rmcp::model::{CallToolResult, ContentBlock};
+        let schema = json!({"type":"string"});
+        let documents = BTreeMap::new();
+        assert_eq!(
+            peer_terminal_result(
+                &CallToolResult::success(vec![ContentBlock::text("value")]),
+                &schema,
+                &documents
+            )
+            .unwrap(),
+            "SUCCEEDED"
+        );
+        assert_eq!(
+            peer_terminal_result(
+                &CallToolResult::error(vec![ContentBlock::text("native failure")]),
+                &schema,
+                &documents
+            )
+            .unwrap(),
+            "FAILED"
+        );
+        for invalid in [
+            CallToolResult::success(vec![]),
+            CallToolResult::structured(json!({"unexpected":true})),
+            CallToolResult::success(vec![ContentBlock::text("a"), ContentBlock::text("b")]),
+        ] {
+            assert!(peer_terminal_result(&invalid, &schema, &documents).is_err());
+        }
+    }
+
+    #[test]
+    fn disclosed_output_is_the_checked_business_value_not_adapter_envelope() {
+        let schema = json!({"type":"object","additionalProperties":false,
+            "required":["answer"],"properties":{"answer":{"type":"string"}}});
+        let envelope = json!({"execution":{"nativeId":"private-execution"},
+            "resultJson":"{\n  \"answer\": \"allowed\"\n}"});
+        let value = output_value(&envelope, &schema, &BTreeMap::new()).unwrap();
+        assert_eq!(value, json!({"answer":"allowed"}));
+        let wire = serde_json::to_value(rmcp::model::CallToolResult::structured(value)).unwrap();
+        assert_eq!(wire["structuredContent"], json!({"answer":"allowed"}));
+        assert!(!wire.to_string().contains("private-execution"));
+        assert!(!wire.to_string().contains("resultJson"));
+        let mut wrong = envelope.clone();
+        wrong["resultJson"] = json!("{\"answer\":42}");
+        assert!(output_value(&wrong, &schema, &BTreeMap::new()).is_err());
+        wrong["resultJson"] = json!("{\"answer\":\"allowed\",\"extra\":\"denied\"}");
+        assert!(output_value(&wrong, &schema, &BTreeMap::new()).is_err());
+        wrong = envelope;
+        wrong["contentReference"] = json!({"resourceId":Uuid::new_v4()});
+        assert!(output_value(&wrong, &schema, &BTreeMap::new()).is_err());
+    }
 
     #[test]
     fn model_target_envelope_is_exact_and_canonical() {
@@ -82,13 +154,17 @@ pub(crate) fn target(arguments: &Value) -> Result<(&str, Uuid), Refusal> {
     Ok((kind, id))
 }
 
-async fn schemas(conn: &mut PgConnection, tool: &Tool) -> Result<BTreeMap<String, Value>, Refusal> {
+async fn schemas(
+    conn: &mut PgConnection,
+    binding: Uuid,
+    action: &str,
+) -> Result<BTreeMap<String, Value>, Refusal> {
     let contents:Vec<Value>=sqlx::query_scalar("select c.schema_documents
         from catalog.application_binding b join lateral jsonb_array_elements(b.capability_categories) category on true
         join catalog.capability_contract c on c.category_key=category->>'category' and c.contract_version::text=category->>'version'
         where b.id=$1 and exists(select 1 from jsonb_array_elements(c.content->'operationContracts') op
           where op->>'contractKey'=$2)")
-        .bind(tool.binding_id).bind(&tool.action_key).fetch_all(conn).await?;
+        .bind(binding).bind(action).fetch_all(conn).await?;
     if contents.len() != 1 {
         return Err(unavailable());
     }
@@ -319,7 +395,7 @@ pub(crate) async fn prepare(
     )
     .await?;
     let definition = &application.definition;
-    let docs = schemas(&mut tx, &tool).await?;
+    let docs = schemas(&mut tx, tool.binding_id, &tool.action_key).await?;
     let input = docs
         .get(
             tool.declaration["inputSchemaDigest"]
@@ -481,16 +557,42 @@ pub(crate) async fn request_tools(
     Ok(allowed)
 }
 
+pub(crate) enum Dispatch {
+    Adapter {
+        external: Uuid,
+        key: Uuid,
+        token: String,
+    },
+    Peer,
+}
+
+async fn connector(pool: &sqlx::PgPool, child: Uuid) -> Result<Connector, Refusal> {
+    let manifest: Value = sqlx::query_scalar(
+        "select r.manifest from admission.action_execution a
+         join catalog.action_definition d on d.id=a.action_definition_id
+           and d.component_release_id=a.component_release_id and d.action_key=a.action_key and d.version=a.action_version
+         join catalog.component_release r on r.id=a.component_release_id
+         where a.id=$1 and a.component_binding_kind='APPLICATION'")
+        .bind(child).fetch_optional(pool).await?.ok_or_else(denied)?;
+    Connector::from_manifest(&manifest)
+}
+
 pub(crate) async fn dispatch(
     state: &ServiceState,
     invocation: Uuid,
     child: &Execution,
     arguments: &Value,
-) -> Result<(Uuid, Uuid, String), Refusal> {
+) -> Result<Dispatch, Refusal> {
     // Sign only in memory, before taking the parent lock used by fresh_execution.
     // The token is not returned until all preflight work and the dispatch fence
     // commit together. Adapter PEP still rejects a NOT_DISPATCHED child.
-    let (token, audience) = crate::action_token::issue_application(state, child, arguments).await?;
+    let connector = connector(&state.pool, child.id).await?;
+    let signed = match connector {
+        Connector::RemoteAdapter => {
+            Some(crate::action_token::issue_application(state, child, arguments).await?)
+        }
+        Connector::ProtocolPeer => None,
+    };
     let mut tx = state.pool.begin().await?;
     let (context, parent) =
         crate::agent_tool::invocation_context(state, &mut tx, invocation, true).await?;
@@ -553,6 +655,34 @@ pub(crate) async fn dispatch(
             evaluation.reason.unwrap_or(ReasonCode::QuotaExhausted),
         ));
     }
+    connector.validate_action(&application.declaration)?;
+    if connector == Connector::ProtocolPeer {
+        // No native job exists for this connector. Persist the original child
+        // dispatch before Gateway Pass; a missing callback remains UNKNOWN.
+        // The admission lookup never dispatches a DISPATCHED child again.
+        sqlx::query(
+            "update admission.action_execution set dispatch_state='DISPATCHED',updated_at=now()
+            where id=$1 and gate_state='ALLOWED' and dispatch_state='NOT_DISPATCHED'",
+        )
+        .bind(ae.id)
+        .execute(&mut *tx)
+        .await?;
+        crate::governance::audit(
+            &mut tx,
+            &ae,
+            &application.definition,
+            "dispatch",
+            "DISPATCH",
+            "ALLOW",
+            "DISPATCH_RESULT_UNKNOWN",
+            None,
+            Vec::new(),
+        )
+        .await?;
+        tx.commit().await?;
+        return Ok(Dispatch::Peer);
+    }
+    let (token, audience) = signed.ok_or_else(unavailable)?;
     let (binding_version,mappings):(i32,Value)=sqlx::query_as("select b.version,p.observation->'executionMappings'
         from catalog.application_binding b join projection.application_runtime p on p.binding_id=b.id
           and p.generation=b.active_projection_generation and p.component_release_id=b.component_release_id and p.state='ACTIVE'
@@ -625,7 +755,11 @@ pub(crate) async fn dispatch(
         return Err(unavailable());
     }
     tx.commit().await?;
-    Ok((external, key, token))
+    Ok(Dispatch::Adapter {
+        external,
+        key,
+        token,
+    })
 }
 
 /// Native discovery is checked against the approved capability schema before
@@ -655,7 +789,7 @@ pub(crate) async fn list(
         }) else {
             continue;
         };
-        let documents = schemas(&mut conn, tool).await?;
+        let documents = schemas(&mut conn, tool.binding_id, &tool.action_key).await?;
         let input = documents
             .get(
                 tool.declaration["inputSchemaDigest"]
@@ -686,44 +820,68 @@ pub(crate) async fn disclose(
     state: &ServiceState,
     invocation: Uuid,
     child: Uuid,
-    external: Uuid,
+    external: Option<Uuid>,
     operation: Uuid,
     name: &str,
-    raw: &Value,
+    result: &rmcp::model::CallToolResult,
 ) -> Result<Value, Refusal> {
-    let parsed: contracts::AdapterExecutionResponse =
-        serde_json::from_value(raw.clone()).map_err(|_| invalid())?;
-    if serde_json::to_value(parsed).map_err(|_| invalid())? != *raw {
-        return Err(invalid());
-    }
+    let connector = connector(&state.pool, child).await?;
     let ae = crate::governance::load_execution(&state.pool, child)
         .await?
         .ok_or_else(denied)?;
-    let exact: bool = sqlx::query_scalar(
-        "select exists(select 1 from admission.external_execution e
-        join admission.action_execution a on a.id=e.action_execution_id
-        where e.id=$1 and a.id=$2 and a.operation_id=$3 and a.parameters->>'invocationId'=$4)",
-    )
-    .bind(external)
-    .bind(child)
-    .bind(operation)
-    .bind(invocation.to_string())
-    .fetch_one(&state.pool)
-    .await?;
-    if !exact {
+    let parameters = ae.parameters.as_ref().ok_or_else(denied)?;
+    if ae.operation_id != operation
+        || parameters["invocationId"] != json!(invocation)
+        || ae.gate_state != "ALLOWED"
+        || ae.dispatch_state != "DISPATCHED"
+    {
         return Err(denied());
     }
-    // Native evidence is reconciled even if disclosure permissions were revoked
-    // while the call ran. Neither these observations nor usage contain its body.
-    let status =
-        crate::application_execution::record_observation(state, external, &raw["execution"])
-            .await?;
-    if !matches!(status.as_str(), "SUCCEEDED" | "FAILED" | "CANCELLED") {
-        return Err(Refusal::Unavailable("UNKNOWN_EXTERNAL_RESULT".into()));
-    }
-    let _committed = crate::application_execution::observe(state, &ae, external).await?;
-    if status != "SUCCEEDED" {
-        return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+    let raw = result.structured_content.as_ref();
+    if connector == Connector::RemoteAdapter {
+        if result.is_error == Some(true) {
+            return Err(invalid());
+        }
+        let raw = raw.ok_or_else(invalid)?;
+        let parsed: contracts::AdapterExecutionResponse =
+            serde_json::from_value(raw.clone()).map_err(|_| invalid())?;
+        if serde_json::to_value(parsed).map_err(|_| invalid())? != *raw {
+            return Err(invalid());
+        }
+        let external = external.ok_or_else(invalid)?;
+        let exact: bool = sqlx::query_scalar(
+            "select exists(select 1 from admission.external_execution e
+        join admission.action_execution a on a.id=e.action_execution_id
+        where e.id=$1 and a.id=$2 and a.operation_id=$3 and a.parameters->>'invocationId'=$4)",
+        )
+        .bind(external)
+        .bind(child)
+        .bind(operation)
+        .bind(invocation.to_string())
+        .fetch_one(&state.pool)
+        .await?;
+        if !exact {
+            return Err(denied());
+        }
+        // Native evidence is reconciled even if disclosure permissions were revoked
+        // while the call ran. Neither these observations nor usage contain its body.
+        let status =
+            crate::application_execution::record_observation(state, external, &raw["execution"])
+                .await?;
+        if !matches!(status.as_str(), "SUCCEEDED" | "FAILED" | "CANCELLED") {
+            return Err(Refusal::Unavailable("UNKNOWN_EXTERNAL_RESULT".into()));
+        }
+        let _committed = crate::application_execution::observe(state, &ae, external).await?;
+        if status != "SUCCEEDED" {
+            return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+        }
+    } else {
+        if external.is_some() {
+            return Err(invalid());
+        }
+        if result.is_error == Some(true) {
+            return Err(Refusal::Precondition(ReasonCode::TargetStateConflict));
+        }
     }
     let decision = fresh_execution(&state.governance, &ae).await?;
     if !decision.allowed {
@@ -763,19 +921,21 @@ pub(crate) async fn disclose(
     {
         return Err(denied());
     }
-    let documents = schemas(&mut tx, &tool).await?;
+    let documents = schemas(&mut tx, tool.binding_id, &tool.action_key).await?;
     let output = documents.get(&digest).ok_or_else(unavailable)?;
-    let value: Value = serde_json::from_str(raw["resultJson"].as_str().ok_or_else(invalid)?)
-        .map_err(|_| invalid())?;
-    if !crate::capability_contract::schema_validator(output, &documents)?.is_valid(&value) {
-        return Err(invalid());
-    }
     // Typed transport and matching platform IDs do not prove native ownership
     // or the referenced revision. Until the original Adapter resolution path
     // verifies those facts, retain execution/usage evidence but disclose none.
-    if raw.get("contentReference").is_some() {
-        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
-    }
+    let value = match connector {
+        Connector::RemoteAdapter => output_value(raw.ok_or_else(invalid)?, output, &documents)?,
+        Connector::ProtocolPeer => {
+            let value = crate::application_binding::peer::result_value(result)?;
+            if !crate::capability_contract::schema_validator(output, &documents)?.is_valid(&value) {
+                return Err(invalid());
+            }
+            value
+        }
+    };
     let definition = crate::governance::exact_definition_for_execution(&state.pool, &ae).await?;
     crate::governance::audit(
         &mut tx,
@@ -790,7 +950,110 @@ pub(crate) async fn disclose(
     )
     .await?;
     tx.commit().await?;
-    Ok(raw.clone())
+    // The transport envelope is not the declared capability result. Only the
+    // business value checked against the frozen output schema may be exposed.
+    Ok(value)
+}
+
+/// Called only after authenticating the original AgentGateway CheckResponse.
+/// Native completion is recorded before fresh user disclosure: revoked access
+/// must suppress content, not erase an already dispatched operation's outcome.
+/// The route, original child/parent/turn and frozen declaration are all exact;
+/// no callback field supplies scope and no native task is manufactured.
+pub(crate) async fn record_peer_result(
+    state: &ServiceState,
+    invocation: Uuid,
+    child: Uuid,
+    operation: Uuid,
+    name: &str,
+    services: &[String],
+    result: &rmcp::model::CallToolResult,
+) -> Result<(), Refusal> {
+    if connector(&state.pool, child).await? != Connector::ProtocolPeer {
+        return Ok(());
+    }
+    let mut tx = state.pool.begin().await?;
+    let ae = crate::governance::lock_execution(&mut tx, child).await?;
+    let source: Option<(Uuid, i64, Value)> = sqlx::query_as(
+        "select a.component_binding_id,a.component_projection_generation,d.implementation_declaration
+         from admission.action_execution a join admission.action_execution parent on parent.id=a.parent_action_execution_id
+         join catalog.agent_invocation i on i.action_execution_id=parent.id
+         join catalog.action_definition d on d.id=a.action_definition_id and d.component_release_id=a.component_release_id
+         join catalog.tool_definition t on t.resource_id=(a.parameters->>'toolResourceId')::uuid
+           and t.application_projection_generation=a.component_projection_generation and t.name=$4
+         join catalog.resource tool_resource on tool_resource.id=t.resource_id
+           and tool_resource.application_binding_id=a.component_binding_id and tool_resource.tenant_id=a.tenant_id
+         where a.id=$1 and i.id=$2 and a.operation_id=$3 and parent.operation_id=$3
+           and a.tenant_id=parent.tenant_id and a.workspace_id is not distinct from parent.workspace_id
+           and a.initiator_principal_id=parent.initiator_principal_id and a.actor_principal_id=parent.actor_principal_id
+           and a.parameters->>'invocationId'=i.id::text and a.parameters->>'runtimeTurnId'=i.runtime_turn_id
+           and a.gate_state='ALLOWED' and a.dispatch_state='DISPATCHED'
+           and not exists(select 1 from admission.external_execution e where e.action_execution_id=a.id)")
+        .bind(child).bind(invocation).bind(operation).bind(name).fetch_optional(&mut *tx).await?;
+    let (binding, generation, declaration) = source.ok_or_else(denied)?;
+    if services
+        != [crate::application_binding::gateway::target(
+            binding, generation,
+        )]
+    {
+        return Err(denied());
+    }
+    Connector::ProtocolPeer.validate_action(&declaration)?;
+    let definition = crate::governance::exact_definition_for_execution(&state.pool, &ae).await?;
+    // A native protocol response proves the synchronous attempt ended, not
+    // that its declared business result succeeded. Validate using the frozen
+    // contract even when the caller's disclosure permission has been revoked.
+    let documents = schemas(&mut tx, binding, &ae.action_key).await?;
+    let digest = declaration["outputSchemaDigest"]
+        .as_str()
+        .ok_or_else(unavailable)?;
+    let output = documents.get(digest).ok_or_else(unavailable)?;
+    let status = peer_terminal_result(result, output, &documents)?;
+    let key = format!("{}:child:{}:protocol-result", ae.operation_id, ae.id);
+    let previous: Option<String> =
+        sqlx::query_scalar("select result_code from audit.audit_event where event_key=$1")
+            .bind(&key)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if previous
+        .as_deref()
+        .is_some_and(|previous| previous != status)
+    {
+        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
+    crate::governance::audit(
+        &mut tx,
+        &ae,
+        &definition,
+        "protocol-result",
+        "RESULT",
+        "ALLOW",
+        status,
+        None,
+        Vec::new(),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+fn peer_terminal_result(
+    result: &rmcp::model::CallToolResult,
+    output: &Value,
+    documents: &BTreeMap<String, Value>,
+) -> Result<&'static str, Refusal> {
+    let validator = crate::capability_contract::schema_validator(output, documents)?;
+    if result.is_error == Some(true) {
+        return Ok("FAILED");
+    }
+    let value = crate::application_binding::peer::result_value(result)?;
+    if !validator.is_valid(&value) {
+        // Invalid output is not evidence that the remote effect failed.
+        // No terminal audit is written; the original dispatched child stays
+        // uncertain and cannot be replayed or omitted from the drain set.
+        return Err(invalid());
+    }
+    Ok("SUCCEEDED")
 }
 
 #[derive(sqlx::FromRow)]

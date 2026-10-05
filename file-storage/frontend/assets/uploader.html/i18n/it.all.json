@@ -1,0 +1,179 @@
+{
+  "start": {
+    "other": "Avvia"
+  },
+  "pause": {
+    "other": "Pausa"
+  },
+  "clear": {
+    "other": "Elimina tutto"
+  },
+  "clear-header": {
+    "other": "Cancella lista..."
+  },
+  "clear-finished": {
+    "other": "Uploads Completati"
+  },
+  "clear-failed": {
+    "other": "Upload Non Riusciti"
+  },
+  "clear-all": {
+    "other": "Tutti I Trasferimenti"
+  },
+  "list.show-more": {
+    "other": "%d di più - mostra tutto"
+  },
+  "options.existing": {
+    "other": "Se esiste un file con lo stesso nome:"
+  },
+  "options.existing.alert": {
+    "other": "Interrompi il caricamento e informami"
+  },
+  "options.existing.folders": {
+    "other": "Rinominare le cartelle e poi i file"
+  },
+  "options.existing.merge": {
+    "other": "Rinominare solo i file (unisci le cartelle)"
+  },
+  "options.existing.overwrite": {
+    "other": "Sovrascrivere il file esistente senza avvertire"
+  },
+  "confirm.rename.all": {
+    "other": "Rinomina le cartelle, e poi i file in conflitto"
+  },
+  "confirm.rename.merge": {
+    "other": "Rinomina solo i file (unisci cartelle)"
+  },
+  "confirm.overwrite": {
+    "other": "Unisci cartelle e sovrascrivi i file"
+  },
+  "confirm.save.choice": {
+    "other": "Salva la scelta per i successivi upload"
+  },
+  "options": {
+    "other": "Opzioni di upload"
+  },
+  "upload.forbidden": {
+    "other": "Non sei autorizzato a caricare questo file qui"
+  },
+  "task.label": {
+    "other": "Caricamento dei file sul server..."
+  },
+  "task.status.folders": {
+    "other": "Creazione Cartelle"
+  },
+  "task.message.folder-one": {
+    "other": "Creazione di una cartella"
+  },
+  "task.message.folder-many": {
+    "other": "Creazione di %s cartelle"
+  },
+  "task.status.analyse": {
+    "other": "Preparazione dei file da caricare"
+  },
+  "task.message.analyse-many": {
+    "other": "Analisi di %s elementi..."
+  },
+  "task.message.analyse-one": {
+    "other": "Analisi di un elemento"
+  },
+  "task.message.analyse-wait": {
+    "other": "Attendere prego..."
+  },
+  "task.status.ready": {
+    "other": "Pronto per l'upload"
+  },
+  "task.status.paused": {
+    "other": "Upload in pausa"
+  },
+  "task.status.upload": {
+    "other": "Upload dei file"
+  },
+  "task.message.upload-progress": {
+    "other": "Upload %s"
+  },
+  "no-folders-support": {
+    "other": "Sembra che il tuo browser non supporti il rilascio delle cartelle"
+  },
+  "analyze.step": {
+    "other": "Preparazione di file e cartelle per il caricamento..."
+  },
+  "drophere": {
+    "other": "Trascina i file qui"
+  },
+  "drop-or": {
+    "other": "o"
+  },
+  "drop-pick-file": {
+    "other": "sfoglia i file"
+  },
+  "drop-pick-folder": {
+    "other": "sfoglia le cartelle"
+  },
+  "dialog.title": {
+    "other": "Trasferimenti"
+  },
+  "attempt": {
+    "other": "attempt"
+  },
+  "status.new": {
+    "other": "In sospeso"
+  },
+  "status.error": {
+    "other": "Si è verificato un errore"
+  },
+  "status.pause": {
+    "other": "In pausa"
+  },
+  "status.analyse": {
+    "other": "Analisi in corso"
+  },
+  "status.dir.new": {
+    "other": "Folder awaiting upload..."
+  },
+  "status.file.new": {
+    "other": "File awaiting upload..."
+  },
+  "status.dir.analyse": {
+    "other": "Analyzing folder..."
+  },
+  "status.file.analyse": {
+    "other": "Analyzing file..."
+  },
+  "status.dir.loading": {
+    "other": "Creazione della cartella"
+  },
+  "status.file.loading": {
+    "other": "Upload del file"
+  },
+  "status.dir.loaded": {
+    "other": "Cartella creata"
+  },
+  "status.file.loaded": {
+    "other": "File caricato"
+  },
+  "status.part.loaded": {
+    "other": "Segmento caricato"
+  },
+  "status.part.loading": {
+    "other": "Caricamento segmento"
+  },
+  "status.multi-pause": {
+    "other": "Completamento del segmento corrente prima della pausa"
+  },
+  "status.file.cannot-pause": {
+    "other": "Impossibile mettere in pausa questo trasferimento"
+  },
+  "status.part.cannot-pause": {
+    "other": "Impossibile mettere in pausa il trasferimento del segmento"
+  },
+  "status.error.aborted": {
+    "other": "interrotto dall'utente"
+  },
+  "status.error.403": {
+    "other": "non sei autorizzato a caricare file"
+  },
+  "status.error.422": {
+    "other": "quota raggiunta, impossibile caricare altro"
+  }
+}

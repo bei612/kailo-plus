@@ -1,0 +1,38 @@
+{
+  "Always Override": {
+    "other": "总是覆盖"
+  },
+  "Auto Close": {
+    "other": "自动关闭"
+  },
+  "Auto Rename File": {
+    "other": "自动重命名文件"
+  },
+  "Auto Start": {
+    "other": "自动开始"
+  },
+  "Auto-switching HTML5 or IFrame uploader.": {
+    "other": "自动切换 HTML5 或 IFrame 上传器。"
+  },
+  "Default Behaviour": {
+    "other": "默认行为"
+  },
+  "Default value for automatically closing the dialog after upload or not": {
+    "other": "上传后是否自动关闭对话框的默认值"
+  },
+  "Default value for automatically starting upload or not": {
+    "other": "是否自动开始上传的默认值"
+  },
+  "Existing Files": {
+    "other": "现有文件"
+  },
+  "HTML Uploader": {
+    "other": "常规"
+  },
+  "Inform the user or not if the file already exists (default behaviour, the user will be able to change this preference)": {
+    "other": "如果文件已经存在，是否通知用户(默认行为，用户可更改此选项)"
+  },
+  "Prompt user": {
+    "other": "提示用户"
+  }
+}

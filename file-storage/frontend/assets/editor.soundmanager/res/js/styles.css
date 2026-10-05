@@ -1,0 +1,13 @@
+@import "../../sm/360-player/360player.css";
+@import "../../sm/360-player/360player-visualization.css";
+
+.ui360-vis {
+    padding-left: 0;
+}
+
+#sm2-container {
+    position: absolute;
+    bottom: -1px;
+    width: 0;
+    height: 0;
+}

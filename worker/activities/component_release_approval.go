@@ -24,6 +24,7 @@ func (c *CoreAPI) ApproveComponentRelease(ctx context.Context, in generated.Comp
 	in.WorkerBuild = generated.WorkerBuildClass{
 		Subject: generated.Subject("WORKER"), BuildID: platformBuildID, HostAPIVersion: "NONE",
 		AdapterProtocolVersions: []string{"1"}, DriverRegistryKeys: []string{},
+		ConnectorKinds:   []string{"REMOTE_ADAPTER", "PROTOCOL_PEER"},
 		PlatformPortKeys: []generated.PlatformPortKey{}, ReportedAt: time.Now().UTC(),
 	}
 	err = c.post(ctx, "/service/v1/component-releases/approve", in, &out)

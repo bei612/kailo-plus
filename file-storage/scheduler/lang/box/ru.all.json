@@ -1,0 +1,80 @@
+{
+  "Jobs.Default.Thumbs": {
+    "other": "Извлечь эскизы изображений и данные Exif"
+  },
+  "Jobs.Default.ThumbsCache": {
+    "other": "Очистить кэш эскизов для удаленных файлов"
+  },
+  "Jobs.Default.Directories": {
+    "other": "Синхронизировать внешние каталоги"
+  },
+  "Jobs.Default.PruneJobs": {
+    "other": "Очистить задания и задачи в планировщике"
+  },
+  "Jobs.Default.FakeLongJob": {
+    "other": "Сымитировать долгую работу (для тестирования)"
+  },
+  "Jobs.Default.FakeUsersJob": {
+    "other": "Создание случайных пользователей (для целей тестирования)"
+  },
+  "Jobs.Default.FakeGrpcJob": {
+    "other": "Пример работы RPC (для тестирования)"
+  },
+  "Jobs.Default.ArchiveJobs": {
+    "other": "Автоматическое архивирование службы изменений"
+  },
+  "Jobs.Default.CleanUserData": {
+    "other": "Очистить или передать данные пользователя при удалении"
+  },
+  "Jobs.Default.CleanOrphanFiles": {
+    "other": "Очистите осиротевшие файлы через 24 часа"
+  },
+  "Jobs.Default.CleanExpiredACLs": {
+    "other": "Очистить просроченные ACL после 10 дней"
+  },
+  "Jobs.User.Compress": {
+    "other": "Сжатие выделенного..."
+  },
+  "Jobs.User.Extract": {
+    "other": "Извлечение архива..."
+  },
+  "Jobs.User.Delete": {
+    "other": "Удаление выделения в фоновом режиме..."
+  },
+  "Jobs.User.DirCopy": {
+    "other": "Копирование папки в фоновом режиме..."
+  },
+  "Jobs.User.DirMove": {
+    "other": "Копирование папки в фоновом режиме..."
+  },
+  "Jobs.User.FileCopy": {
+    "other": "Копирование файла в фоновом режиме..."
+  },
+  "Jobs.User.FileMove": {
+    "other": "Перемещение файла в фоновом режиме..."
+  },
+  "Jobs.User.MultipleCopy": {
+    "other": "Копирование выделенного в фоновом режиме..."
+  },
+  "Jobs.User.MultipleMove": {
+    "other": "Перемещение выделения в фоновом режиме..."
+  },
+  "Jobs.User.MoveRecycle": {
+    "other": "Перемещение в корзину в фоновом режиме..."
+  },
+  "Jobs.User.ResyncDS": {
+    "other": "Синхронизировать источник данных {{.DsName}} и перехешировать новые файлы"
+  },
+  "Jobs.User.Wget": {
+    "other": "Загрузка файла в фоновом режиме..."
+  },
+  "Jobs.User.DeletingItem": {
+    "other": "Удаление %s"
+  },
+  "Jobs.User.CopyingItem": {
+    "other": "Копирование %s"
+  },
+  "Jobs.User.MovingItem": {
+    "other": "Перемещение %s"
+  }
+}

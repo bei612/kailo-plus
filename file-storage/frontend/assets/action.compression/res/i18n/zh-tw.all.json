@@ -1,0 +1,53 @@
+{
+  "1": {
+    "other": "Compress"
+  },
+  "10": {
+    "other": "Extract selected archives"
+  },
+  "11": {
+    "other": "Path of the extracted files "
+  },
+  "12": {
+    "other": "Starting extraction..."
+  },
+  "13": {
+    "other": "Extracting files ... %s "
+  },
+  "14": {
+    "other": "Extraction finished successfullly in the folder '%s'."
+  },
+  "15": {
+    "other": "The selected file is neither a TAR  or a TAR.GZ or a TAR.BZ2 archive."
+  },
+  "16": {
+    "other": "You can only compress in TAR, TAR.GZ or TAR.BZ2."
+  },
+  "17": {
+    "other": "無法壓縮空資料夾。"
+  },
+  "2": {
+    "other": "Compress Selection"
+  },
+  "3": {
+    "other": "格式"
+  },
+  "4": {
+    "other": "壓縮檔名稱"
+  },
+  "5": {
+    "other": "壓縮中..."
+  },
+  "6": {
+    "other": "Adding files in the archive... %s "
+  },
+  "7": {
+    "other": "During compression in %s ..."
+  },
+  "8": {
+    "other": "壓縮成功！！"
+  },
+  "9": {
+    "other": "解壓縮"
+  }
+}

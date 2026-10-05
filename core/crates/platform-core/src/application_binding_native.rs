@@ -5,8 +5,57 @@
 use super::*;
 use crate::service_api::ServiceState;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Connector {
+    RemoteAdapter,
+    ProtocolPeer,
+}
+
+impl Connector {
+    pub(crate) fn from_manifest(manifest: &Value) -> Result<Self, Refusal> {
+        let connector = &manifest["executionConnector"];
+        match connector["mode"].as_str() {
+            Some("REMOTE_ADAPTER")
+                if connector["adapterProtocolRange"] == "1"
+                    && connector["actionTokenAudience"]
+                        .as_str()
+                        .is_some_and(|v| !v.is_empty() && v != "NONE") =>
+            {
+                Ok(Self::RemoteAdapter)
+            }
+            Some("PROTOCOL_PEER")
+                if connector["adapterProtocolRange"] == "NONE"
+                    && connector["actionTokenAudience"] == "NONE" =>
+            {
+                Ok(Self::ProtocolPeer)
+            }
+            _ => Err(blocked()),
+        }
+    }
+
+    /// A native MCP return is not evidence of a separately queryable job or
+    /// measured usage. Only the approved synchronous contract can use it.
+    pub(crate) fn validate_action(self, declaration: &Value) -> Result<(), Refusal> {
+        if self == Self::ProtocolPeer {
+            let policy = &declaration["businessObservabilityPolicy"];
+            if declaration["executionMode"] != "SYNC"
+                || declaration["workflowType"] != "NONE"
+                || declaration["quotaPolicy"] != "NONE"
+                || declaration["meters"] != json!([])
+                || policy["terminalSource"] != "SYNC_RESULT"
+                || policy["progressSource"] != "NONE"
+                || policy["usageSource"] != "NONE"
+                || policy["costSource"] != "NONE"
+            {
+                return Err(blocked());
+            }
+        }
+        Ok(())
+    }
+}
+
 pub(crate) struct Adapter {
-    value: Value,
+    pub(super) value: Value,
     http: reqwest::Client,
 }
 
@@ -39,12 +88,30 @@ impl Adapter {
         if serde_json::from_slice::<Value>(&bytes).map_err(|_| invalid())? != directory {
             return Err(invalid());
         }
-        let entries = directory["adapters"].as_array().ok_or_else(invalid)?;
+        let connector = Connector::from_manifest(manifest)?;
+        let entries = directory[match connector {
+            Connector::RemoteAdapter => "adapters",
+            Connector::ProtocolPeer => "protocolPeers",
+        }]
+        .as_array()
+        .ok_or_else(blocked)?;
         let mut refs = BTreeSet::new();
-        if entries.iter().any(|entry| {
-            text(entry, "adapterServiceRef").is_err()
-                || !refs.insert(entry["adapterServiceRef"].clone().to_string())
-        }) {
+        if directory["adapters"]
+            .as_array()
+            .ok_or_else(invalid)?
+            .iter()
+            .chain(
+                directory
+                    .get("protocolPeers")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten(),
+            )
+            .any(|entry| {
+                text(entry, "adapterServiceRef").is_err()
+                    || !refs.insert(entry["adapterServiceRef"].clone().to_string())
+            })
+        {
             return Err(invalid());
         }
         let value = entries
@@ -54,18 +121,28 @@ impl Adapter {
             .ok_or_else(blocked)?;
         if value["nativeInstanceRef"] != native_instance
             || value["artifactDigest"] != manifest["adapterBuildRef"]
-            || value["actionTokenAudience"] != manifest["executionConnector"]["actionTokenAudience"]
+            || (connector == Connector::RemoteAdapter
+                && value["actionTokenAudience"]
+                    != manifest["executionConnector"]["actionTokenAudience"])
         {
             return Err(blocked());
         }
-        let url = reqwest::Url::parse(text(&value, "baseUrl")?).map_err(|_| invalid())?;
+        let url = reqwest::Url::parse(text(
+            &value,
+            if connector == Connector::RemoteAdapter {
+                "baseUrl"
+            } else {
+                "mcpUrl"
+            },
+        )?)
+        .map_err(|_| invalid())?;
         if !matches!(url.scheme(), "https" | "http")
             || url.host_str().is_none()
             || !url.username().is_empty()
             || url.password().is_some()
             || url.query().is_some()
             || url.fragment().is_some()
-            || url.path() != "/"
+            || (connector == Connector::RemoteAdapter && url.path() != "/")
             || value["maxResponseBytes"]
                 .as_u64()
                 .is_none_or(|v| v == 0 || v > usize::MAX as u64)
@@ -174,6 +251,9 @@ pub(super) async fn validate(
     manifest: &Value,
     keys: &Value,
 ) -> Result<Value, Refusal> {
+    if Connector::from_manifest(manifest)? == Connector::ProtocolPeer {
+        return peer::validate(state, ae, binding, manifest).await;
+    }
     let adapter = Adapter::resolve(
         text(binding, "adapterServiceRef")?,
         text(binding, "nativeInstanceRef")?,

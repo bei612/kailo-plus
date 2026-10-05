@@ -1,0 +1,314 @@
+{
+  "welcome.stepLabel": {
+    "other": "Gebruiksvoorwaarden"
+  },
+  "welcome.title": {
+    "other": "Welkom bij Pydio Cells Installatie Wizard"
+  },
+  "welcome.legend": {
+    "other": "Dit zal alle services op de huidige server installeren. Ga akkoord met de voorwaarden van onderstaande licentie voordat u begint"
+  },
+  "welcome.agreed": {
+    "other": "Ik ga akkoord met de voorwaarden"
+  },
+  "database.stepLabel": {
+    "other": "Database verbinding"
+  },
+  "database.title": {
+    "other": "Database configuratie"
+  },
+  "database.legend": {
+    "other": "Pydio vereist ten minste één SQL databank voor configuratie en gegevensindexatie. Configureer hier de verbinding met uw MySQL/MariaDB server."
+  },
+  "database.legend.bold": {
+    "other": "Zorg ervoor dat uw database MySQL versie 5.6 of hoger gebruikt"
+  },
+  "database.legend1": {
+    "other": "Pydio requires at least one SQL storage for configuration and data indexation."
+  },
+  "database.legend2": {
+    "other": "Supported databases are MySQL/MariaDB or PostgreSQL or SQLite."
+  },
+  "database.installDetected": {
+    "other": "Er lijkt al een Cells-installatie in deze database te zijn ingesteld. Bevestig om door te gaan of "
+  },
+  "database.installDetected.retry": {
+    "other": "probeer opnieuw met nieuwe waarde"
+  },
+  "database.useDefaultsSet": {
+    "other": "A default database is already configured, just click next to validate connection."
+  },
+  "database.forceConfigure": {
+    "other": "Configure another database."
+  },
+  "admin.stepLabel": {
+    "other": "Admin gebruiker"
+  },
+  "admin.title": {
+    "other": "Admin gebruiker en frontend standaardinstellingen"
+  },
+  "admin.legend": {
+    "other": "Geef referenties op voor de beheerder. Laat de velden leeg als u installeert bovenop een bestaande installatie."
+  },
+  "admin.adminFound": {
+    "other": "Er is al een beheerder gevonden in de database. Controleer of u een nieuwe wilt maken."
+  },
+  "advanced.stepLabel": {
+    "other": "Geavanceerde instellingen"
+  },
+  "advanced.title": {
+    "other": "Geavanceerde instellingen (optioneel)"
+  },
+  "advanced.legend": {
+    "other": "Pydio Cells-services worden geïnstalleerd op deze machine. Je kunt hieronder enkele geavanceerde instellingen bekijken om je configuratie aan te passen."
+  },
+  "advanced.toggle": {
+    "other": "Geavanceerde Instellingen weergeven"
+  },
+  "advanced.default.datasource": {
+    "other": "Een standaard gegevensbron voor het opslaan van persoonlijke gegevens van gebruikers en cellen is gemaakt bij het opstarten. U kunt later andere datasources maken."
+  },
+  "advanced.mongo.title": {
+    "other": "Configure a MongoDB Connection"
+  },
+  "advanced.mongo.legend": {
+    "other": "This is better for scalability, and required for clustering deployment. If you do not have a Mongo DB ready, this can be done later."
+  },
+  "advanced.mongo.host": {
+    "other": "Server host"
+  },
+  "advanced.mongo.port": {
+    "other": "Server port"
+  },
+  "advanced.mongo.db": {
+    "other": "Database Name"
+  },
+  "advanced.mongo.username": {
+    "other": "Username"
+  },
+  "advanced.mongo.password": {
+    "other": "Password"
+  },
+  "advanced.mongo.authSource": {
+    "other": "Auth DB"
+  },
+  "advanced.mongo.validate": {
+    "other": "Test connection"
+  },
+  "license.stepLabel": {
+    "other": "Enterprise Licentie"
+  },
+  "license.title": {
+    "other": "Pydio Cells Enterprise Licentie"
+  },
+  "license.success": {
+    "other": "Licentiebestand is met succes gedetecteerd."
+  },
+  "license.details": {
+    "other": "Deze installatie is geldig voor %count gebruikers tot %expiration."
+  },
+  "license.failed": {
+    "other": "Fout tijdens het verifiëren van deze licentiesleutel. Neem contact op met support."
+  },
+  "license.required": {
+    "other": "Een geldige licentiesleutel is vereist voor het uitvoeren van de Enterprise Distributie. Voor een proeflicentie van 30 dagen of een offerte, neem contact op met"
+  },
+  "license.fieldLabel": {
+    "other": "Licentie String"
+  },
+  "license.fieldLegend": {
+    "other": "Kopieer en plak de licentiesleutel die aan u is verstrekt."
+  },
+  "apply.stepLabel": {
+    "other": "Installatie toepassen"
+  },
+  "apply.title": {
+    "other": "Please be patient while Pydio Cells is being installed..."
+  },
+  "apply.success": {
+    "other": "De installatie was succesvol en de services zijn nu gestart, deze installer herlaadt de pagina wanneer de services worden gestart."
+  },
+  "apply.success.restarted": {
+    "other": "De installatie was succesvol en de services zijn nu gestart, gelieve de pagina nu te herladen (het wordt automatisch herladen in %1s)"
+  },
+  "apply.error": {
+    "other": "Er is een fout opgetreden tijdens het uitvoeren van de installatie! Controleer uw configuratie."
+  },
+  "apply.error.detail": {
+    "other": "Fout was: "
+  },
+  "form.dbConnectionType.label": {
+    "other": "Verbindingstype"
+  },
+  "form.dbConnectionType.mysql_tcp": {
+    "other": "MySQL/MariaDB - TCP"
+  },
+  "form.dbConnectionType.mysql_socket": {
+    "other": "MySQL/MariaDB - Socket"
+  },
+  "form.dbConnectionType.pg_tcp": {
+    "other": "PostGreSQL - TCP"
+  },
+  "form.dbConnectionType.pg_socket": {
+    "other": "PostGreSQL - Socket"
+  },
+  "form.dbConnectionType.sqlite": {
+    "other": "SQLite (dev purpose only)"
+  },
+  "form.dbConnectionType.manual": {
+    "other": "Manueel"
+  },
+  "form.dbTCPHostname.label": {
+    "other": "Host Naam"
+  },
+  "form.dbTCPHostname.legend": {
+    "other": "Server waar mysql actief is"
+  },
+  "form.dbName.label": {
+    "other": "Database naam"
+  },
+  "form.dbName.legend": {
+    "other": "Te gebruiken database (zal worden aangemaakt als deze niet bestaat)"
+  },
+  "form.dbTCPPort.label": {
+    "other": "Poort"
+  },
+  "form.dbTCPPort.legend": {
+    "other": "Poort om te verbinden met mysql"
+  },
+  "form.dbUser.label": {
+    "other": "Database Gebruiker"
+  },
+  "form.dbUser.legend": {
+    "other": "Leeg laten indien niet vereist"
+  },
+  "form.dbPassword.label": {
+    "other": "Database wachtwoord"
+  },
+  "form.dbPassword.legend": {
+    "other": "Leeg laten indien niet vereist"
+  },
+  "form.dbSocketFile.label": {
+    "other": "Socket"
+  },
+  "form.dbSocketFile.legend": {
+    "other": "Voer de locatie in van het socket-bestand dat gebruikt wordt om te verbinden"
+  },
+  "form.dbSocketFileSQLite.label": {
+    "other": "Database Path"
+  },
+  "form.dbSocketFileSQLite.legend": {
+    "other": "Enter the location of the SQLite database"
+  },
+  "form.dbSqliteFile.label": {
+    "other": "File Path"
+  },
+  "form.dbSqliteFile.legend": {
+    "other": "Enter the location of the file to use as database"
+  },
+  "form.dbManualDSN.label": {
+    "other": "DSN"
+  },
+  "form.dbManualDSN.legend": {
+    "other": "Gebruik Golang-stijl DSN om de databaseverbinding te beschrijven"
+  },
+  "form.frontendApplicationTitle.label": {
+    "other": "Toepassingsnaam"
+  },
+  "form.frontendApplicationTitle.legend": {
+    "other": "Hoofdtitel van uw installatie"
+  },
+  "form.frontendDefaultLanguage.label": {
+    "other": "Standaard taal"
+  },
+  "form.frontendLogin.label": {
+    "other": "Beheerder login *"
+  },
+  "form.frontendLogin.legend": {
+    "other": "Identifier gebruikt om in te loggen"
+  },
+  "form.frontendPassword.label": {
+    "other": "Admin wachtwoord *"
+  },
+  "form.frontendPassword.legend": {
+    "other": "Wachtwoord gebruikt om in te loggen"
+  },
+  "form.frontendRepeatPassword.label": {
+    "other": "Bevestig wachtwoord"
+  },
+  "form.frontendRepeatPassword.legend": {
+    "other": "Bevestig wachtwoord tweemaal"
+  },
+  "form.dsFolder.label": {
+    "other": "Pad van de standaard databron"
+  },
+  "form.dsFolder.legend": {
+    "other": "Gebruik een absoluut pad op de server"
+  },
+  "form.dsType.Label": {
+    "other": "Storage Type"
+  },
+  "form.dsType.FS": {
+    "other": "Lokale Bestandsbron (sla alle gegevens op deze server)"
+  },
+  "form.dsType.S3": {
+    "other": "Amazon S3 / S3-compatible (store inside S3 buckets)"
+  },
+  "form.dsS3Custom.label": {
+    "other": "URL, append ?minio=true if Minio."
+  },
+  "form.dsS3Custom.legend": {
+    "other": "Leave empty for Amazon"
+  },
+  "form.dsS3CustomRegion.label": {
+    "other": "S3 Custom region"
+  },
+  "form.dsS3CustomRegion.legend": {
+    "other": "Leave empty for default (us-east-1)"
+  },
+  "form.dsS3ApiKey.label": {
+    "other": "S3 Api sleutel"
+  },
+  "form.dsS3ApiKey.legend": {
+    "other": "Sleutel om te verbinden met S3"
+  },
+  "form.dsS3ApiSecret.label": {
+    "other": "S3 Api geheim"
+  },
+  "form.dsS3ApiSecret.legend": {
+    "other": "Geheime sleutel"
+  },
+  "form.dsS3ValidateKeys": {
+    "other": "Verbind met S3 om S3-buckets te definiëren"
+  },
+  "form.s3BucketsPrefix.label": {
+    "other": "Buckets prefix"
+  },
+  "form.s3BucketsPrefix.legend": {
+    "other": "Een unieke prefix voor het maken van de 6 standaard S3-buckets"
+  },
+  "form.bucketList.found": {
+    "other": "De volgende S3-bucket(s) bestaan al"
+  },
+  "form.bucketList.toCreate": {
+    "other": "Volgende S3-bucket(s) zullen worden gemaakt"
+  },
+  "form.bucketList.notFound": {
+    "other": "De volgende S3-bucket(s) zijn niet gevonden"
+  },
+  "form.bucketList.warnCreate": {
+    "other": "U hebt geen rechten om S3-buckets te maken, zorg ervoor dat je ze handmatig maakt!"
+  },
+  "stepper.button.next": {
+    "other": "Volgende"
+  },
+  "stepper.button.back": {
+    "other": "Vorige"
+  },
+  "stepper.button.last": {
+    "other": "Nu installeren"
+  },
+  "stepper.button.reload": {
+    "other": "Opnieuw laden"
+  }
+}

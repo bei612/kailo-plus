@@ -1,0 +1,32 @@
+{
+  "Search.Config.IndexContent.Label": {
+    "other": "索引內容"
+  },
+  "Search.Config.IndexContent.Description": {
+    "other": "如果設定為 true，索引器將尋找 ContentRef 元數據，從此引用中讀取內容並對其進行索引以進行搜尋。"
+  },
+  "Search.Config.ContentRef.Label": {
+    "other": "內容參考屬性"
+  },
+  "Search.Config.ContentRef.Description": {
+    "other": "指向包含原始文件文字表示形式的內部文件的屬性的名稱。此類內部內容可能是純文字或 gzip 編碼，具體取決於所使用的文字擷取工具（例如 Tika）。搜尋引擎通常會索引該內容以啟用全文搜尋。確保在屬性名稱前面加上“pydio:”前綴，以防止資料外洩。"
+  },
+  "Search.Config.PlainTextExtensions.Label": {
+    "other": "純文字擴展套件"
+  },
+  "Search.Config.PlainTextExtensions.Description": {
+    "other": "包含可直接索引的純文字內容的檔案的副檔名清單（逗號分隔清單）。"
+  },
+  "Search.Config.BasenameAnalyze.Label": {
+    "other": "檔名分析器"
+  },
+  "Search.Config.BasenameAnalyze.Description": {
+    "other": "用於分析檔案名稱的分析器"
+  },
+  "Search.Config.ContentAnalyzer.Label": {
+    "other": "內容分析器"
+  },
+  "Search.Config.ContentAnalyzer.Description": {
+    "other": "用於分析內容的分析器"
+  }
+}

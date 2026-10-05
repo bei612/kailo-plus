@@ -1,0 +1,407 @@
+{
+  "tour.create-menu": {
+    "other": "現在のワークスペースに新しいファイルまたはフォルダを追加します。"
+  },
+  "tour.create-menu.title": {
+    "other": "ファイルを追加"
+  },
+  "tour.display-bar": {
+    "other": "このツールバーでは、表示を変更することができます: 使用状況に応じてサムネイルまたは詳細モードに切り替え、名前、日付などでファイルを並べ替えます。"
+  },
+  "tour.display-bar.title": {
+    "other": "表示オプション"
+  },
+  "tour.globsearch.1": {
+    "other": "この検索フォームを使用して、任意のワークスペースとセル内のファイルまたはフォルダを検索します。 最初の5つの結果のみが表示され、より多くの結果とより多くの検索オプションを得るためにワークスペースを入力します。"
+  },
+  "tour.globsearch.2": {
+    "other": "検索が行われない場合、最近アクセスしたファイルとフォルダの履歴が代わりに表示されます。"
+  },
+  "tour.globsearch.title": {
+    "other": "グローバルサーチ"
+  },
+  "tour.infopanel.1": {
+    "other": "ここでは、現在の選択に関する多くの情報を見つけることができます: ファイル情報、共有状態、ユーザー定義メタデータなど。"
+  },
+  "tour.infopanel.2": {
+    "other": "ツールバーの情報ボタンを使用してこのパネルを閉じることができます"
+  },
+  "tour.infopanel.file": {
+    "other": "ファイル"
+  },
+  "tour.infopanel.folder": {
+    "other": "フォルダ"
+  },
+  "tour.infopanel.search": {
+    "other": "検索"
+  },
+  "tour.infopanel.title": {
+    "other": "情報パネル"
+  },
+  "tour.locale.back": {
+    "other": "戻る"
+  },
+  "tour.locale.close": {
+    "other": "閉じる"
+  },
+  "tour.locale.last": {
+    "other": "完了"
+  },
+  "tour.locale.next": {
+    "other": "次へ"
+  },
+  "tour.locale.skip": {
+    "other": "スキップ"
+  },
+  "tour.openworkspace": {
+    "other": "最初の接続で、履歴はおそらく空です。ファイルの追加を開始するには、ワークスペースまたはセルを入力してください。"
+  },
+  "tour.openworkspace.title": {
+    "other": "ワークスペースを開く"
+  },
+  "tour.uwidget.addressbook": {
+    "other": "プラットフォームにアクセスするすべてのユーザーのディレクトリ。自分のユーザーを作成し、リソースを共有するために使用できるチームを構成します。"
+  },
+  "tour.uwidget.alerts": {
+    "other": "通知パネルは、リソースを共有したユーザがアクセスした際に通知します。 彼らは電子メールで直接あなたに送ることができます。"
+  },
+  "tour.uwidget.home": {
+    "other": "このボタンでウェルカムパネルに戻る"
+  },
+  "tour.uwidget.menu": {
+    "other": "他のオプションへのアクセス: プロフィールとセキュリティ機能の管理、共有したすべてのリソースの閲覧、プラットフォームからサインアウトします。"
+  },
+  "tour.uwidget.title": {
+    "other": "User Cartouche"
+  },
+  "tour.welcomemodal.skip": {
+    "other": "スキップ"
+  },
+  "tour.welcomemodal.start": {
+    "other": "ツアーを開始"
+  },
+  "tour.welcomemodal.subtitle": {
+    "other": "プロフィールに最適な写真をドラッグ&ドロップしましょう! このクイックツアーでは、Webインターフェースをご案内します。"
+  },
+  "tour.welcomemodal.title": {
+    "other": "APPLICATION_TITLE へようこそ"
+  },
+  "tour.widget-cards": {
+    "other": "ここにウィジェットを追加または削除できます。ウィジェットをドラッグするだけで順序を変更することもできます。"
+  },
+  "tour.widget-cards.title": {
+    "other": "ウィジェット"
+  },
+  "tour.workspaces.1": {
+    "other": "ワークスペースは、データを整理するのに役立つトップレベルのフォルダです。それらはあなただけがアクセスしたり、多くの人々が共有したりすることができます。"
+  },
+  "tour.workspaces.2": {
+    "other": "セルは他のユーザーと共有できる共同作業スペースです。 フォルダ、ユーザーのチーム、または関連するトピックに基づいて独自のセルを作成します。"
+  },
+  "tour.workspaces.title": {
+    "other": "ワークスペース & セル"
+  },
+  "tour.theme.title": {
+    "other": "Light/Dark Theme Support"
+  },
+  "tour.theme.legend": {
+    "other": "あなたのビジョンに最適なライトまたはダークテーマを選択してください。"
+  },
+  "tour.left-resize.title": {
+    "other": "ワークスペースとセル"
+  },
+  "tour.left-resize.legend": {
+    "other": "左の列は画面に合わせてサイズ変更または閉じることができます。"
+  },
+  "tour.right-resize.legend": {
+    "other": "右の列は、画面に合わせてサイズ変更または閉じることもできます。"
+  },
+  "tour.directory.title": {
+    "other": "ユーザディレクトリ"
+  },
+  "tour.directory.legend": {
+    "other": "ユーザー(社内外) とチームを一元的に管理します。"
+  },
+  "background.jobs.title": {
+    "other": "バックグラウンドジョブ"
+  },
+  "background.jobs.running": {
+    "other": "実行中のジョブ"
+  },
+  "websocket.disconnected.title": {
+    "other": "接続の問題"
+  },
+  "websocket.disconnected.legend": {
+    "other": "Websocket が切断されたようです。サーバーが起動していることと、Websocket 接続が正常に動作していることを確認してください。"
+  },
+  "oauth.authentication.success": {
+    "other": "認証成功"
+  },
+  "oauth.authentication.failed": {
+    "other": "認証に失敗しました"
+  },
+  "oauth.authentication.code": {
+    "other": "認証に成功しました。コードをコピーしてコマンドライン端末に貼り付けてください。"
+  },
+  "oauth.authentication.copy-code": {
+    "other": "クリップボードにコードをコピー"
+  },
+  "oauth.authentication.code-copied": {
+    "other": "コードがクリップボードにコピーされ、コマンドラインに貼り付けることができます。"
+  },
+  "oauth.authentication.code-copy-failed": {
+    "other": "クリップボードにコピーできませんでした。"
+  },
+  "layouts.preferences": {
+    "other": "レイアウトを管理"
+  },
+  "layouts.preferences.legend": {
+    "other": "レイアウトをプリセットとして保存"
+  },
+  "layouts.action.rename": {
+    "other": "レイアウトの名前を変更"
+  },
+  "layouts.action.remove": {
+    "other": "レイアウトの削除"
+  },
+  "layouts.action.remove.confirm": {
+    "other": "このレイアウトを削除しますか？"
+  },
+  "layouts.action.reset": {
+    "other": "レイアウトをリセット"
+  },
+  "layouts.action.reset.confirm": {
+    "other": "現在のレイアウトをリセットしますか？"
+  },
+  "layouts.action.create": {
+    "other": "レイアウトを保存..."
+  },
+  "layouts.action.fork": {
+    "other": "現在のレイアウトから新規..."
+  },
+  "layouts.action.create.default": {
+    "other": "マイレイアウト"
+  },
+  "layouts.prompt.save": {
+    "other": "名前を付けてレイアウトを保存..."
+  },
+  "layouts.prompt.save.field": {
+    "other": "現在のレイアウトを保存/呼び出す名前を選択してください"
+  },
+  "list.display-mode.list": {
+    "other": "リスト"
+  },
+  "list.display-mode.details": {
+    "other": "詳細"
+  },
+  "list.display-mode.thumbs": {
+    "other": "サムネイル"
+  },
+  "list.display-mode.thumbs-large": {
+    "other": "大きく"
+  },
+  "list.display-mode.thumbs-medium": {
+    "other": "標準"
+  },
+  "list.display-mode.thumbs-small": {
+    "other": "小さく"
+  },
+  "list.display-mode.masonry": {
+    "other": "画像ギャラリー"
+  },
+  "list.extensions.action": {
+    "other": "ファイル拡張子"
+  },
+  "list.extensions.show": {
+    "other": "拡張子を表示"
+  },
+  "list.pin.bookmarks": {
+    "other": "ブックマークを上部にピン留め"
+  },
+  "list.writeonly.emptystate.title": {
+    "other": "ここにファイルをドロップ"
+  },
+  "list.writeonly.emptystate.legend": {
+    "other": "このフォルダは書き込み専用です：あなたはその内容を見ることができず、ファイルやフォルダをアップロードすることだけが許可されています。アップロード後は、あなた自身のコンテンツは表示されません！"
+  },
+  "infopanel.empty.select.file": {
+    "other": "情報を表示するファイルを選択します"
+  },
+  "infopanel.card.pin": {
+    "other": "カードを貼る(フルハイト)"
+  },
+  "infopanel.card.unpin": {
+    "other": "カードを取り外す"
+  },
+  "infopanel.card.detach": {
+    "other": "セパレートパネルから切り離す"
+  },
+  "infopanel.detached.minimize": {
+    "other": "パネルを最小化"
+  },
+  "infopanel.detached.maximize": {
+    "other": "パネルを開く"
+  },
+  "infopanel.detached.dock": {
+    "other": "右側の列のドック"
+  },
+  "infopanel.detailcard.preview": {
+    "other": "プレビュー"
+  },
+  "infopanel.detailcard.cell-info": {
+    "other": "セル情報"
+  },
+  "infopanel.detailcard.cell-chat": {
+    "other": "セルチャット"
+  },
+  "pinned-bookmarks.other": {
+    "other": "すべてのファイル"
+  },
+  "file.temporary-etag.flag": {
+    "other": "不完全"
+  },
+  "file.temporary-etag.tooltip": {
+    "other": "このファイルはアップロード中です（またはアップロードに失敗しました）。"
+  },
+  "mimegroup.byextension": {
+    "other": "ファイル拡張子で..."
+  },
+  "mimegroup.word": {
+    "other": "Word ドキュメント"
+  },
+  "mimegroup.spreadsheet": {
+    "other": "スプレッドシート"
+  },
+  "mimegroup.presentation": {
+    "other": "プレゼンテーション"
+  },
+  "mimegroup.pdf": {
+    "other": "PDF"
+  },
+  "mimegroup.image": {
+    "other": "画像"
+  },
+  "mimegroup.video": {
+    "other": "動画"
+  },
+  "mimegroup.audio": {
+    "other": "オーディオ"
+  },
+  "fastsearch.quick-jump.title": {
+    "other": "クイックジャンプ"
+  },
+  "fastsearch.quick-jump.legend": {
+    "other": "[Enter] を押してジャンプし、最後に [/] を追加して子要素内を検索します。 [Esc] 閉じるには"
+  },
+  "fastsearch.quick-move.title": {
+    "other": "クイック移動"
+  },
+  "fastsearch.quick-move.target-error": {
+    "other": "このターゲットに移動できません！"
+  },
+  "fastsearch.quick-move.legend": {
+    "other": "[Enter] を押すと、選択した %s 項目をターゲットに移動します。 [Esc] を押すと閉じる"
+  },
+  "fastsearch.quick-copy.title": {
+    "other": "クイックコピー"
+  },
+  "fastsearch.quick-copy.target-error": {
+    "other": "このターゲットにはコピーできません！"
+  },
+  "fastsearch.quick-copy.legend": {
+    "other": "[Enter] を押すと、選択した %s 項目をターゲットに移動します。 [Esc] を押すと閉じる"
+  },
+  "modalsearch.opentip.cmd": {
+    "other": "Tip: Use <kbd>⌘+k</kbd> to open this search dialog, <kbd>Esc</kbd> to close."
+  },
+  "modalsearch.opentip.ctrl": {
+    "other": "Tip: Use <kbd>Ctrl+k</kbd> to open this search dialog, <kbd>Esc</kbd> to close."
+  },
+  "search.chip.scope.folder": {
+    "other": "Folder"
+  },
+  "search.chip.scope.ws": {
+    "other": "Inside"
+  },
+  "search.chip.scope.all": {
+    "other": "All Workspaces"
+  },
+  "wslist-options.title": {
+    "other": "表示オプション"
+  },
+  "wslist-options.show-masked": {
+    "other": "マスクされたアイテムを表示"
+  },
+  "wslist.action.mask": {
+    "other": "マスク"
+  },
+  "wslist.action.unmask": {
+    "other": "Unmask"
+  },
+  "wslist-options.merge-workspaces": {
+    "other": "ワークスペースとセルを結合"
+  },
+  "wslist-options.own-cells-first": {
+    "other": "自分が最初に作成したセル"
+  },
+  "leftrail.buttons.home": {
+    "other": "ホーム"
+  },
+  "leftrail.buttons.directory": {
+    "other": "ディレクトリ"
+  },
+  "leftrail.buttons.all-files": {
+    "other": "すべてのファイル"
+  },
+  "leftrail.buttons.theme.light": {
+    "other": "ライトモード"
+  },
+  "leftrail.buttons.theme.dark": {
+    "other": "ダークモード"
+  },
+  "task.status.Starting": {
+    "other": "{startTime}に開始しました"
+  },
+  "task.status.Pending": {
+    "other": "まもなく開始します..."
+  },
+  "task.status.Complete": {
+    "other": "{duration} でタスクが完了しました"
+  },
+  "task.status.Finished": {
+    "other": "{duration} でタスクが完了しました"
+  },
+  "task.status.Error": {
+    "other": "エラーが発生しました！"
+  },
+  "bigppanel.filter.default-hint": {
+    "other": "クイック検索..."
+  },
+  "sorter.metas.more": {
+    "other": "もっと見る..."
+  },
+  "drag-layer.move.file": {
+    "other": "Move File"
+  },
+  "drag-layer.move.folder": {
+    "other": "Move Folder"
+  },
+  "drag-layer.move.plural": {
+    "other": "Move %s Items"
+  },
+  "drag-layer.copy.file": {
+    "other": "Copy File"
+  },
+  "drag-layer.copy.folder": {
+    "other": "Copy Folder"
+  },
+  "drag-layer.copy.plural": {
+    "other": "Copy %s Items"
+  },
+  "drag-layer.more": {
+    "other": "...and %s more."
+  },
+  "drag-layer.hint": {
+    "other": "Use [alt/option] key to copy"
+  }
+}

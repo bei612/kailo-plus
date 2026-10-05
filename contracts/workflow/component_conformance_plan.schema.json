@@ -7,6 +7,7 @@
   "additionalProperties": false,
   "required": ["actionExecutionId", "operationId", "workflowId", "runId", "componentReleaseId", "artifactDigest", "contractDigests", "suiteDigest", "planDigest", "identityDigest", "steps"],
   "properties": {
+    "connectorKind": {"type":"string", "enum":["REMOTE_ADAPTER","PROTOCOL_PEER"]},
     "actionExecutionId": {"type": "string", "format": "uuid"},
     "operationId": {"type": "string", "format": "uuid"},
     "workflowId": {"type": "string"},
@@ -27,12 +28,13 @@
         "properties": {
           "caseKey": {"type": "string"},
           "stepKey": {"type": "string"},
-          "operation": {"$ref": "../enums/adapter_protocol_operation.schema.json"},
+          "operation": {"$ref": "../enums/component_conformance_operation.schema.json"},
           "contractKey": {"type": "string", "description": "只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是 native 任务元数据。"},
           "idempotencyKey": {"type": "string"},
           "requestJson": {"type": "string"},
           "expectedResponseJson": {"type": "string"},
-          "expectedHttpStatus": {"type": "integer"}
+          "expectedHttpStatus": {"type": "integer", "description":"Adapter 为实际 HTTP 状态；MCP 原生结果固定 0，不以伪造 HTTP 状态证明协议成功。"}
+          ,"expectedMcpResultKind": {"type":"string","enum":["RESULT","ERROR"]}
           ,"referenceResourceId": {"type": "string", "format": "uuid"}
           ,"referenceAssetId": {"type": "string", "format": "uuid"}
           ,"referenceFromStepKey": {"type": "string"}

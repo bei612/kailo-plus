@@ -1,0 +1,89 @@
+{
+  "AccessedBy": {
+    "other": "由 {{.Actor}} 访问"
+  },
+  "AccessedObject": {
+    "other": "访问 {{.Object}}"
+  },
+  "AccessedObjectBy": {
+    "other": "{{.Object}} 被 {{.Actor}} 访问"
+  },
+  "Cell": {
+    "other": "单元"
+  },
+  "CreatedBy": {
+    "other": "由 {{.Actor}} 创建"
+  },
+  "CreatedObject": {
+    "other": "创建 {{.Object}}"
+  },
+  "CreatedObjectBy": {
+    "other": "{{.Object}} 由 {{.Actor}} 创建"
+  },
+  "DeletedBy": {
+    "other": "被 {{.Actor}} 删除"
+  },
+  "DeletedObject": {
+    "other": "删除 {{.Object}}"
+  },
+  "DeletedObjectBy": {
+    "other": "{{.Object}} 被 {{.Actor}} 删除"
+  },
+  "SharedWs": {
+    "other": "在 {{.Object}} 中共享"
+  },
+  "SharedWsWithYou": {
+    "other": "{{.Actor}} 已分享 {{.Object}} 给您"
+  },
+  "DigestTitle": {
+    "other": "这是您的 Pydio 每日摘要"
+  },
+  "Document": {
+    "other": "文档"
+  },
+  "Folder": {
+    "other": "文件夹"
+  },
+  "ModifiedBy": {
+    "other": "由 {{.Actor}} 修改"
+  },
+  "ModifiedObject": {
+    "other": "修改 {{.Object}}"
+  },
+  "ModifiedObjectBy": {
+    "other": "{{.Object}} 被 {{.Actor}} 修改"
+  },
+  "MetaModifiedBy": {
+    "other": "由 {{.Actor}} 修改的元数据"
+  },
+  "MetaModifiedObject": {
+    "other": "修改 {{.Object}} 的元数据"
+  },
+  "MetaModifiedObjectBy": {
+    "other": "{{.Actor}} 修改了 {{.Object}} 的元数据"
+  },
+  "CommentedBy": {
+    "other": "{{.Actor}} 的评论"
+  },
+  "CommentedObject": {
+    "other": "评论了 {{.Object}}"
+  },
+  "CommentedObjectBy": {
+    "other": "{{.Actor}} 发布了 {{.Object}} 的新评论"
+  },
+  "MovedBy": {
+    "other": "由 {{.Actor}} 移动"
+  },
+  "MovedObject": {
+    "other": "移动 {{.Object}}"
+  },
+  "MovedObjectBy": {
+    "other": "{{.Object}} 被 {{.Actor}} 移动"
+  },
+  "Workspace": {
+    "other": "工作区"
+  },
+  "DateFormat": {
+    "other": "2006-01-02 15:04"
+  }
+}

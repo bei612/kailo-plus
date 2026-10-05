@@ -1,0 +1,14 @@
+{
+  "Comment limit": {
+    "other": "Limite do comentário"
+  },
+  "Comments Feed": {
+    "other": "Feed de Comentários"
+  },
+  "Display a chat-like feed on every nodes": {
+    "other": "Exibir um feed semelhante ao chat em todos os nós"
+  },
+  "Maximum number of characters for each comment": {
+    "other": "Número máximo de caracteres para cada comentário"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "Async downloader to load a file from another source": {
+    "other": "Baixador assíncrono para carregar um arquivo de outra fonte"
+  },
+  "Remote Download": {
+    "other": "Servidor Remoto"
+  },
+  "Legend": {
+    "other": "Lenda"
+  },
+  "Please beware that using this plugin can be dangerous, as it allows users to remotely download files from a third-party server directly to the Cells storage.": {
+    "other": "Por favor, tenha cuidado que o uso deste plugin pode ser perigoso, pois permite que usuários baixem arquivos remotamente de um servidor de terceiros diretamente para o armazenamento das Células."
+  },
+  "White List": {
+    "other": "Lista Branca"
+  },
+  "Black List": {
+    "other": "Lista Negra"
+  },
+  "Comma-separated list of http Hosts that are allowed to be used for remote download. If not empty, this list will be always used in favor of the black list.": {
+    "other": "Lista de Hosts http separados por vírgula que podem ser usados para baixar remotamente. Se não estiver vazia, esta lista será sempre usada a favor da lista negra."
+  },
+  "Comma-separated list of http Hosts that are forbidden to be used for remote download. You should typically register your private network IPs here.": {
+    "other": "Lista de endereços http separados por vírgula que são proibidos de serem usados para baixar remotamente. Normalmente você deve registrar seus IPs da rede privada aqui."
+  }
+}

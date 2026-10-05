@@ -1,0 +1,68 @@
+{
+  "1": {
+    "other": "DL Remoto"
+  },
+  "10": {
+    "other": "Baixar para APPLICATION_TITLE"
+  },
+  "10a": {
+    "other": "Baixar para %s"
+  },
+  "10b": {
+    "other": "DL para %s"
+  },
+  "10c": {
+    "other": "DL para %s"
+  },
+  "10d": {
+    "other": "AjXp Download (%s)"
+  },
+  "11": {
+    "other": "Arraste um dos seguintes links para sua barra de favoritos: "
+  },
+  "12": {
+    "other": "Ativar baixar arquivo remoto"
+  },
+  "13": {
+    "other": "Do computador"
+  },
+  "14": {
+    "other": "Do servidor remoto"
+  },
+  "15": {
+    "other": "Ou crie um marcador manualmente e use o código abaixo como o link URL: "
+  },
+  "16": {
+    "other": "Arraste-me para sua barra de marcadores!"
+  },
+  "17": {
+    "other": "Baixar arquivo"
+  },
+  "18": {
+    "other": "Arquivo parcial"
+  },
+  "2": {
+    "other": "Baixar arquivo(s) do servidor remoto"
+  },
+  "3": {
+    "other": "m"
+  },
+  "4": {
+    "other": "Insira pelo menos uma URL apontando para um arquivo que você deseja baixar diretamente de um servidor HTTP externo para a pasta atual. Esta ação será enviada para segundo plano e você poderá continuar usando o APPLICATION_TITLE durante a descarga."
+  },
+  "5": {
+    "other": "URL"
+  },
+  "6": {
+    "other": "Baixando"
+  },
+  "7": {
+    "other": "para o servidor"
+  },
+  "8": {
+    "other": "Arquivo baixado, recarregando o cliente!"
+  },
+  "9": {
+    "other": "Gerar marcador"
+  }
+}

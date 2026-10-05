@@ -1,0 +1,59 @@
+{
+  "Allowed Extensions": {
+    "other": "Các phần mở rộng được cho phép"
+  },
+  "Ext. Label": {
+    "other": "Nhãn Ext."
+  },
+  "Extensions List": {
+    "other": "Danh sách tiện ích mở rộng"
+  },
+  "File Size": {
+    "other": "Kích thước tệp tin"
+  },
+  "Filter the files that are allowed to be uploaded, by extensions. Use a comma-separated list.": {
+    "other": "Lọc các tệp có thể được tải lên theo phần mở rộng của chúng. Sử dụng danh sách được phân tách bằng dấu phẩy."
+  },
+  "Limitations": {
+    "other": "Hạn chế"
+  },
+  "Maximum size per file allowed to upload. Warning, this limit can vary depending on your underlying storage and the Multipart Chunk Size. For example, Amazon S3 restricts uploads to maximum 10000 distinct parts.": {
+    "other": "Maximum size per file allowed to upload. Warning, this limit can vary depending on your underlying storage and the Multipart Chunk Size. For example, Amazon S3 restricts uploads to maximum 10000 distinct parts."
+  },
+  "Options shared by all uploaders plugins": {
+    "other": "Các tùy chọn được chia sẻ bởi tất cả các plugin của người tải lên"
+  },
+  "Uploaders Options": {
+    "other": "Tùy chọn trình tải lên"
+  },
+  "User readable label for the list of allowed extensions (images, all files, etc).": {
+    "other": "Người dùng có thể đọc nhãn cho danh sách các tiện ích mở rộng được cho phép (hình ảnh, tất cả các tệp, v. v.)."
+  },
+  "Multipart Uploads": {
+    "other": "Tải lên nhiều phần"
+  },
+  "Multipart Parts Size": {
+    "other": "Kích thước nhiều mảnh"
+  },
+  "Multipart Threshold": {
+    "other": "Multipart Threshold"
+  },
+  "Switch to Multipart Upload for files bigger than this value (in bytes)": {
+    "other": "Thay đổi thành tải lên nhiều cho các tệp lớn hơn giá trị này (tính bằng byte)"
+  },
+  "Chunk Size used for multipart uploads, it must be a multiple of 10MB for hashing consistency. If you plan to upload very large files (bigger 500GB), raise this value to lower the total number of parts sent.": {
+    "other": "Chunk Size used for multipart uploads, it must be a multiple of 10MB for hashing consistency. If you plan to upload very large files (bigger 500GB), raise this value to lower the total number of parts sent."
+  },
+  "Queue Size": {
+    "other": "Kích thước hàng đợi"
+  },
+  "Number of concurrent uploads (maximum 6, due to browsers limitations)": {
+    "other": "Số lượt tải lên đồng thời (tối đa 6, do giới hạn của trình duyệt)"
+  },
+  "Timeout": {
+    "other": "Thời gian chờ"
+  },
+  "Request Timeout (in minutes) for each concurrent part upload": {
+    "other": "Yêu cầu đã hết thời gian chờ (tính bằng phút) cho từng phần của tải đồng thời"
+  }
+}

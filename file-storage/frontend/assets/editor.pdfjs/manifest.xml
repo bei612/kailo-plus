@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<editor id="editor.pdfjs" openable="true" iconClass="mdi mdi-file-pdf-box" order="9" text="pdf_viewer.1" title="pdf_viewer.2" previewProvider="true"
+        className="PydioPDFJS" mimes="pdf" label="CONF_MESSAGE[PDF Viewer]"
+        description="CONF_MESSAGE[JavaScript PDF viewer]">
+	<client_settings>
+		<resources>
+			<js file="plug/editor.pdfjs/res/dist/PydioPDFJS.min.js" className="PydioPDFJS"/>
+			<i18n remote="plug/editor.pdfjs/i18n" namespace="pdf_viewer"/>
+		</resources>
+	</client_settings>
+    <server_settings>
+        <global_param name="PDF_JS_DISABLE_SCRIPTING" type="boolean" label="CONF_MESSAGE[Disable Scripting]" description="CONF_MESSAGE[Embedded viewer Pdf.js ships with a JavaScript engine. There's little security risk because it is executing JavaScript in a sandbox. Still, to harden security, you may disable scripting support.]" default="false" expose="true"/>
+    </server_settings>
+	<clientForm id="pdf_box"><![CDATA[
+		<div id="pdf_box"  box_width="90%" box_height="90%" box_resize="true" box_padding="5" class="editor_container pdfjs_viewer"><iframe></iframe></div>
+	]]></clientForm>
+	<dependencies>
+		<!-- Stream Wrapper Access -->
+		<activePlugin pluginName="access.gateway"/>
+	</dependencies>
+</editor>

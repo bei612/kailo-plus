@@ -1,0 +1,134 @@
+{
+  "cont.btn.fb": {
+    "other": "팔로우 하세요"
+  },
+  "cont.btn.github": {
+    "other": "Github Star"
+  },
+  "cont.btn.tw": {
+    "other": "트위터"
+  },
+  "cont.intro": {
+    "other": "코드는 깃허브에서 공개적으로 사용할 수 있다. 버그를 수정하고 싶습니까, 포럼에서 다른 사람들을 돕기를 원합니까, 아니면 다음 킬러 기능을 밀고 싶습니까? 참여하세요!\n                             아니면 소셜네트워크에서 여러분의 사랑을 보여주세요!"
+  },
+  "cont.subtitle": {
+    "other": "Pydio Cells은 무료 오픈소스 소프트웨어입니다. 기부하세요!"
+  },
+  "cont.title": {
+    "other": "선불로 지불하세요!"
+  },
+  "cont.topic.pr": {
+    "other": "Github Pull Requests라는 새로운 기능을 구현했습니다."
+  },
+  "cont.topic.report": {
+    "other": "버그를 찾은 것 같습니다! 포럼에 게시하세요."
+  },
+  "cont.topic.report.2": {
+    "other": "내 버그는 자격이 있습니다: 깃허브 이슈를 열어주세요."
+  },
+  "cont.topic.translate": {
+    "other": "언어 번역을 작성하거나 완료하는 방법 ?"
+  },
+  "ent.advanced": {
+    "other": "고급 관리자 대시보드"
+  },
+  "ent.advanced.legend": {
+    "other": "플랫폼 사용 현황을 실시간으로 모니터링하는 고유한 관리 대시보드"
+  },
+  "ent.btn.contact": {
+    "other": "영업팀에 문의"
+  },
+  "ent.btn.more": {
+    "other": "자세히 알아보기"
+  },
+  "ent.features": {
+    "other": "엔터프라이즈 지향 기능"
+  },
+  "ent.features.legend": {
+    "other": "엔터프라이즈 지원 기능: AD/LDAP 커넥터, 규정 준수를 위한 감사 가능한 로그, 간편 전송..."
+  },
+  "ent.subtitle": {
+    "other": "추가 기능 - GDPR 규정 준수 - 확장된 브랜딩"
+  },
+  "ent.support": {
+    "other": "지원과 유지보수"
+  },
+  "ent.support.legend": {
+    "other": "핵심 팀으로부터 직접 설치 지원 받기"
+  },
+  "ent.title": {
+    "other": "Pydio Cells 엔터프라이즈 발견"
+  },
+  "ent.upgrade": {
+    "other": "업그레이드 하세요!"
+  },
+  "ent.upgrade.legend": {
+    "other": "인앱 업그레이드 Cells 엔터프라이즈 (라이센스 필수)"
+  },
+  "welc.btn.advanced": {
+    "other": "고급"
+  },
+  "welc.btn.parameters": {
+    "other": "매개 변수 정보"
+  },
+  "welc.btn.start": {
+    "other": "시작하기"
+  },
+  "welc.btn.users": {
+    "other": "사용자"
+  },
+  "welc.btn.ws": {
+    "other": "작업공간"
+  },
+  "welc.guide": {
+    "other": "어디서부터 시작해야 할지 모르겠다면 관리자 안내서를 읽어보는 것이 좋습니다!"
+  },
+  "welc.intro": {
+    "other": "Pydio 관리를 위한 대시보드입니다. 왼쪽 메뉴를 사용하여 <a class=\"doc-link\" data-path=\"/data/workspaces\">작업공간</a> 및 <a class=\"doc-link\" data-path=\"/idm/users\"> 사용자 </a>를 생성할 수 있습니다.\n플랫폼에서 발생한 모든 <a class=\"doc-link\" data-path=\"/admin/logs\">이벤트</a>를 체크하고  <a class=\"doc-link\" data-path=\"/parameters/core\"> 구성 </a> 및 <a class=\"doc-link\" data-path=\"/plugins/manager\">플러그인</a>을 관리합니다."
+  },
+  "welc.import": {
+    "other": "현재 Pydio 8 설치를 실행 중인 경우 <u> Pydio 8은 2019년 말에 End-Of-Life로 간주됩니다.</u> <a class=\"doc-link\" data-path=\"/data/migration\">가져오기 도구</a>를 사용하여 모든 데이터를 Pydio Cells로 마이그레이션합니다."
+  },
+  "welc.subtitle": {
+    "other": "플랫폼의 활동을 관리하고 모니터링하는 장소"
+  },
+  "welc.title": {
+    "other": "Pydio Cells v4에 오신 것을 환영합니다."
+  },
+  "welc.title.5": {
+    "other": "Welcome to Pydio Cells v5"
+  },
+  "card.quick-access": {
+    "other": "퀵 액세스"
+  },
+  "card.quick-access.add": {
+    "other": "바로가기 추가"
+  },
+  "card.update.current": {
+    "other": "소프트웨어 버전"
+  },
+  "card.update.no-updates": {
+    "other": "소프트웨어가 최신 상태임"
+  },
+  "card.update.new-version": {
+    "other": "새로운 버전을 사용할 수 있습니다."
+  },
+  "recentLogs.title": {
+    "other": "최신 이벤트"
+  },
+  "recentLogs.errors": {
+    "other": "오류"
+  },
+  "recentLogs.emptyState": {
+    "other": "활동을 찾을 수 없습니다."
+  },
+  "recentLogs.more": {
+    "other": "모든 활동"
+  },
+  "graph.files": {
+    "other": "파일 활동"
+  },
+  "graph.connections": {
+    "other": "웹 연결"
+  }
+}

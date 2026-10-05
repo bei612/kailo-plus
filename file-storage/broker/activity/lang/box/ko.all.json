@@ -1,0 +1,89 @@
+{
+  "AccessedBy": {
+    "other": "{{.Actor}}님이 접근하였습니다."
+  },
+  "AccessedObject": {
+    "other": "{{.Object}}에 접근하였습니다."
+  },
+  "AccessedObjectBy": {
+    "other": "{{.Actor}}님이 {{.Object}}에 접근했습니다."
+  },
+  "Cell": {
+    "other": "공유 폴더"
+  },
+  "CreatedBy": {
+    "other": "{{.Actor}}가 제작하였습니다."
+  },
+  "CreatedObject": {
+    "other": "{{.Object}}을(를) 생성하였습니다."
+  },
+  "CreatedObjectBy": {
+    "other": "{{.Actor}}님이 {{.Object}}을(를) 삭제 하였습니다."
+  },
+  "DeletedBy": {
+    "other": "{{.Actor}}님에 의해 삭제되었습니다."
+  },
+  "DeletedObject": {
+    "other": "{{.Object}}가 삭제되었습니다."
+  },
+  "DeletedObjectBy": {
+    "other": "{{.Actor}}님이 {{.Object}}을(를) 삭제 하였습니다."
+  },
+  "SharedWs": {
+    "other": "{{.Object}}을(를) 공유 합니다."
+  },
+  "SharedWsWithYou": {
+    "other": "{{.Actor}}님이 {{.Object}}을(를) 공유합니다."
+  },
+  "DigestTitle": {
+    "other": "일일 요약 보고서"
+  },
+  "Document": {
+    "other": "문서"
+  },
+  "Folder": {
+    "other": "폴더"
+  },
+  "ModifiedBy": {
+    "other": "{{.Actor}}님이 수정하였습니다."
+  },
+  "ModifiedObject": {
+    "other": "{{.Object}}가 수정되었습니다."
+  },
+  "ModifiedObjectBy": {
+    "other": "{{.Actor}}님이 {{.Object}}을(를) 수정하였습니다."
+  },
+  "MetaModifiedBy": {
+    "other": "{{.Actor}}님이 속성을 수정하였습니다."
+  },
+  "MetaModifiedObject": {
+    "other": "{{.Object}}의 속성이 수정되었습니다."
+  },
+  "MetaModifiedObjectBy": {
+    "other": "{{.Actor}}님이 {{.Object}}의 속성을 수정하였습니다."
+  },
+  "CommentedBy": {
+    "other": "{{.Actor}}님이 댓글을 남겼습니다."
+  },
+  "CommentedObject": {
+    "other": "{{.Object}}에 댓글을 남겼습니다."
+  },
+  "CommentedObjectBy": {
+    "other": "{{.Actor}}님이 {{.Object}}에 새로운 댓글을 남겼습니다."
+  },
+  "MovedBy": {
+    "other": "{{.Actor}}가 이동시켰습니다."
+  },
+  "MovedObject": {
+    "other": "{{.Object}}가 이동되었습니다."
+  },
+  "MovedObjectBy": {
+    "other": "{{.Actor}}가 {{.Object}}을(를) 이동하였습니다."
+  },
+  "Workspace": {
+    "other": "작업 공간"
+  },
+  "DateFormat": {
+    "other": "2006년 1월 2일 15시 4분"
+  }
+}

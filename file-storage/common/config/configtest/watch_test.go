@@ -1,0 +1,104 @@
+/*
+ * Copyright (c) 2019-2021. Abstrium SAS <team (at) pydio.com>
+ * This file is part of Pydio Cells.
+ *
+ * Pydio Cells is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Pydio Cells is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with Pydio Cells.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * The latest code can be found at <https://pydio.com>.
+ */
+
+package configtest
+
+import (
+	"fmt"
+	"sync"
+	"testing"
+
+	"golang.org/x/exp/maps"
+
+	"github.com/pydio/cells/v5/common/config"
+	"github.com/pydio/cells/v5/common/utils/kv"
+
+	_ "github.com/pydio/cells/v5/common/config/memory"
+
+	. "github.com/smartystreets/goconvey/convey"
+)
+
+func testWatch(t *testing.T, store config.Store) {
+	Convey("Given a default config initialised in a temp directory", t, func() {
+		Convey("Simple GetSet Works", func() {
+
+			wg := &sync.WaitGroup{}
+
+			w, _ := store.Watch()
+
+			go func() {
+				for {
+					res, err := w.Next()
+					if err != nil {
+						return
+					}
+
+					fmt.Println(string(res.(kv.Values).Bytes()))
+					wg.Done()
+				}
+			}()
+
+			wg.Add(1)
+			store.Val("first/second").Set("whatever")
+			wg.Wait()
+
+			wg.Add(1)
+			store.Val("first/third").Set("whatever2")
+			wg.Wait()
+
+			meta := make(map[string]string)
+			meta["test"] = "test"
+
+			val := Teststruct{Name: "test", Meta: meta}
+
+			fmt.Println("Setting val")
+			wg.Add(1)
+			store.Val("val").Set(val)
+			wg.Wait()
+
+			val.Name = "test2"
+			meta["test"] = "test2"
+
+			fmt.Println("Setting second val")
+			wg.Add(1)
+			store.Val("val").Set(val)
+			wg.Wait()
+
+			fmt.Println("Finished")
+
+			fmt.Println(store.Val("val").Get())
+
+			w.Stop()
+		})
+	})
+}
+
+type Teststruct struct {
+	Name string            `diff:"Name"`
+	Meta map[string]string `diff:"Meta"`
+}
+
+func (s Teststruct) Clone() interface{} {
+	clone := Teststruct{}
+	clone = s
+	clone.Meta = maps.Clone(s.Meta)
+
+	return clone
+}

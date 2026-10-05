@@ -1,0 +1,125 @@
+{
+  "title": {
+    "other": "Обновление ПО"
+  },
+  "legend": {
+    "other": "Внутренние обновления приложения"
+  },
+  "current.version": {
+    "other": "Текущая версия"
+  },
+  "confirm.update": {
+    "other": "Вы уверены, что хотите выполнить обновление?"
+  },
+  "packages.available": {
+    "other": "Следующие пакеты доступны для обновления"
+  },
+  "checking": {
+    "other": "Поиск доступных обновлений..."
+  },
+  "noupdates": {
+    "other": "Обновления не обнаружены: нажмите для выполнения новой проверки."
+  },
+  "alert.noselect": {
+    "other": "Выберите по крайней мере один пакет!"
+  },
+  "package.released": {
+    "other": "Создано"
+  },
+  "package.revision": {
+    "other": "Ревизия"
+  },
+  "check.legend": {
+    "other": "Нажмите, чтобы проверить наличие обновлений"
+  },
+  "check.button": {
+    "other": "Проверить"
+  },
+  "package.version": {
+    "other": "Версия"
+  },
+  "package.label": {
+    "other": "Метка"
+  },
+  "package.details": {
+    "other": "Подробности"
+  },
+  "package.changelog": {
+    "other": "Показать изменения"
+  },
+  "start.update": {
+    "other": "Начать обновление"
+  },
+  "configs.save": {
+    "other": "Сохранить настройки"
+  },
+  "upgrade.ed.title": {
+    "other": "Обновление до Cells Enterprise"
+  },
+  "upgrade.ed.button.next": {
+    "other": "Далее"
+  },
+  "upgrade.ed.button.start": {
+    "other": "Запуск"
+  },
+  "upgrade.ed.button.cancel": {
+    "other": "Отмена"
+  },
+  "upgrade.ed.button.install": {
+    "other": "Установить сейчас"
+  },
+  "upgrade.ed.button.close": {
+    "other": "Закрыть"
+  },
+  "upgrade.ed.eula.title": {
+    "other": "Пожалуйста, согласитесь с лицензионным соглашением"
+  },
+  "upgrade.ed.eula.check": {
+    "other": "Я принимаю это соглашение"
+  },
+  "upgrade.ed.key.title": {
+    "other": "Введите действительный лицензионный ключ (предоставленный торговым представителем Pydio)"
+  },
+  "upgrade.ed.key.legend": {
+    "other": "Если у вас его нет, вы можете получить пробный ключ, связавшись с отделом продаж с помощью кнопки ниже или напрямую "
+  },
+  "upgrade.ed.key.hint": {
+    "other": "Вставьте ключ здесь..."
+  },
+  "upgrade.ed.version.loading": {
+    "other": "Поиск последней версии Cells Enterprise"
+  },
+  "upgrade.ed.version.error": {
+    "other": "Не удается загрузить Cells Enterprise!"
+  },
+  "upgrade.ed.version.error.string": {
+    "other": "Ошибка"
+  },
+  "upgrade.ed.version.available": {
+    "other": "Готов к установке %s"
+  },
+  "upgrade.ed.version.released": {
+    "other": "Выпущен"
+  },
+  "upgrade.ed.version.arch": {
+    "other": "Архитектура"
+  },
+  "upgrade.ed.version.description": {
+    "other": "Описание"
+  },
+  "upgrade.ed.version.legend": {
+    "other": "Нажатие Далее для загрузки новой версии и замены исполняемого файла Cells. Резервная копия исходного исполняемого файла будет сделана в папке конфигурации вашей ячейки (под %s), если вам нужно ее восстановить."
+  },
+  "upgrade.ed.version.nomatch": {
+    "other": "Не удалось найти аналогичную версию для Cells Enterprise"
+  },
+  "upgrade.ed.version.nomatch.legend1": {
+    "other": "Чтобы избежать обновлений, мы рекомендуем обновить Cells Home до Enterprise той же версии."
+  },
+  "upgrade.ed.version.nomatch.legend2": {
+    "other": "Пожалуйста, сначала обновите вашу текущую версию до одной из следующих версий, а затем повторите обновление до Cells Enterprise."
+  },
+  "upgrade.ed.installing": {
+    "other": "Установка обновления, пожалуйста подождите..."
+  }
+}

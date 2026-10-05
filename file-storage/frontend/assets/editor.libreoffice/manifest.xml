@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<editor
+        id="editor.libreoffice" enabled="false" actions="PydioLibreOffice.Actions" openable="true" order="3" text="libreoffice.1" title="libreoffice.1"
+        canWrite="true" iconClass="mdi mdi-file-word" className="PydioLibreOffice" mimes="docx,pptx,xlsx,dotx,xltx,ppsx,doc,ppt,xls,dot,xlt,pps,odt,odp,ods,ots,ott,otp,rtf,csv"
+        formId="libreoffice_box" label="CONF_MESSAGE[Collabora Online]" description="CONF_MESSAGE[Collabora Online Editor for office documents]">
+
+    <server_settings>
+        <global_param name="LIBREOFFICE_CODE_VERSION" type="select" label="CONF_MESSAGE[Code Version]" description="CONF_MESSAGE[Some URLs differ between old versions (Version lower than 6) and more recent versions (Version greater than 21+)]" default="v6" mandatory="true" expose="true" choices="v6|6 and lower,v21|21 and upper"/>
+        <global_param name="LIBREOFFICE_SSL" type="boolean" label="CONF_MESSAGE[Libre Office SSL]" description="CONF_MESSAGE[Libre Office uses ssl]" default="true" mandatory="true" expose="true"/>
+        <global_param name="LIBREOFFICE_SSL_SKIP_VERIFY" type="boolean" label="CONF_MESSAGE[Skip Certificate Verification]" description="CONF_MESSAGE[Use TLS without validating the certificate]" default="true" mandatory="true" expose="true"/>
+        <global_param name="LIBREOFFICE_HOST" type="string" label="CONF_MESSAGE[Libre Office Host]" description="CONF_MESSAGE[Host for Libre Office]" default="localhost" mandatory="true" expose="true"/>
+        <global_param name="LIBREOFFICE_PORT" type="string" label="CONF_MESSAGE[Libre Office Port]" description="CONF_MESSAGE[Port for Libre Office]" default="9980" mandatory="true" expose="true"/>
+        <global_param name="LIBREOFFICE_INTERNAL_CELLS_BASE_URL" type="string" label="CONF_MESSAGE[Base URL for the Cells backend from the LibreOffice backend]" description="CONF_MESSAGE[Base URL for the Cells backend from the LibreOffice backend]" default="" mandatory="true" expose="true"/>
+        <global_param name="COLLABORA_DISABLE_PRINT" type="boolean" label="CONF_MESSAGE[Disable Print]" description="CONF_MESSAGE[Hide the print button and disable printing for all users in Collabora Online]" default="false" mandatory="false" expose="true"/>
+        <global_param name="COLLABORA_DISABLE_EXPORT" type="boolean" label="CONF_MESSAGE[Disable Export / Download As]" description="CONF_MESSAGE[Hide the export menu and disable downloading for all users in Collabora Online]" default="false" mandatory="false" expose="true"/>
+        <global_param name="COLLABORA_DISABLE_SAVE" type="boolean" label="CONF_MESSAGE[Disable Save / Save As]" description="CONF_MESSAGE[Hide the save button and block Save As for all users in Collabora Online]" default="false" mandatory="false" expose="true"/>
+        <global_param name="COLLABORA_DISABLE_COPY" type="boolean" label="CONF_MESSAGE[Disable Copy]" description="CONF_MESSAGE[Block copying document content to external apps (internal copy/paste still works)]" default="false" mandatory="false" expose="true"/>
+        <global_param name="COLLABORA_DISABLE_MODE" type="select" label="CONF_MESSAGE[Default Access Mode]" description="CONF_MESSAGE[Downgrade the opening mode for all users: edit, comment-only, or read-only]" default="edit" mandatory="false" expose="true" choices="edit|Edit,comment|Comment only,readonly|Read only"/>
+        <global_param name="COLLABORA_DISABLE_REPAIR" type="boolean" label="CONF_MESSAGE[Hide Repair Button]" description="CONF_MESSAGE[Hide the Repair document button in Collabora]" default="false" mandatory="false" expose="true"/>
+    </server_settings>
+    <client_settings>
+        <resources>
+            <js file="plug/editor.libreoffice/res/dist/PydioLibreOffice.min.js" className="PydioLibreOffice"/>
+            <i18n namespace="libreoffice" remote="plug/editor.libreoffice/resources/i18n" />
+        </resources>
+    </client_settings>
+
+    <clientForm id="libreoffice_box"><![CDATA[
+		<div id="libreoffice_box"  box_width="90%" box_height="90%" box_resize="true" box_padding="5" class="editor_container pdf_viewer"><div id="libreOfficeContainer"></div></div>
+	]]></clientForm>
+
+</editor>

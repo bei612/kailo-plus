@@ -1,0 +1,86 @@
+{
+  "1": {
+    "other": "Osserva per..."
+  },
+  "1-off": {
+    "other": "Sto osservando..."
+  },
+  "10": {
+    "other": "Chiunque apra il file"
+  },
+  "10b": {
+    "other": "Chiunque navighi nella cartella"
+  },
+  "11": {
+    "other": "Modifica"
+  },
+  "12": {
+    "other": "Chiunque modifichi il file"
+  },
+  "12b": {
+    "other": "Chiunque modifichi un file nella cartella"
+  },
+  "13": {
+    "other": "Entrambe"
+  },
+  "14": {
+    "other": "Chiunque apra o scriva il file"
+  },
+  "14b": {
+    "other": "Chiunque navighi o modifichi il contenuto della cartella"
+  },
+  "2": {
+    "other": "Avvisami quando questa cartella viene acceduta"
+  },
+  "3": {
+    "other": "Ferma Osservazione"
+  },
+  "4": {
+    "other": "Interrompi l'osservazione degli accessi di questa cartella"
+  },
+  "5": {
+    "other": "Osserva per..."
+  },
+  "6": {
+    "other": "Osserva cambiamenti di questo file"
+  },
+  "7": {
+    "other": "Ferma Osservazione"
+  },
+  "8": {
+    "other": "Interrompi l'osservazione sui cambiamenti di questo file"
+  },
+  "9": {
+    "other": "Consultazione"
+  },
+  "selector.legend": {
+    "other": "Ricevi notifiche quando..."
+  },
+  "selector.legend.mui": {
+    "other": "Receive notifications when content is..."
+  },
+  "selector.ignore": {
+    "other": "Mai (nessuna notifica)"
+  },
+  "selector.read": {
+    "other": "Il contenuto è accessibile"
+  },
+  "selector.read.mui": {
+    "other": "Accessed"
+  },
+  "selector.change": {
+    "other": "Contenuto modificato"
+  },
+  "selector.change.mui": {
+    "other": "Modified"
+  },
+  "selector.both": {
+    "other": "Il contenuto è accessibile o modificato"
+  },
+  "selector.mixed": {
+    "other": "Valori misti"
+  },
+  "selector.saving": {
+    "other": "Salvataggio dello stato"
+  }
+}

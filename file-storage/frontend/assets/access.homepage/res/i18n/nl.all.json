@@ -1,0 +1,266 @@
+{
+  "39": {
+    "other": "Hieronder staat een lijst van de werkruimtes waar je toegang tot hebt. Deze kunnen persoonlijk zijn of gedeeld met andere gebruikers."
+  },
+  "40": {
+    "other": "Welkom, %s! "
+  },
+  "41": {
+    "other": "Deze werkruimte als standaard gebruiken"
+  },
+  "42": {
+    "other": "Invoeren"
+  },
+  "43": {
+    "other": "Mijn profiel"
+  },
+  "43t": {
+    "other": "Al mijn persoonlijke gegevens"
+  },
+  "44": {
+    "other": "Mijn account"
+  },
+  "45": {
+    "other": "Persoonlijke gegevens"
+  },
+  "46": {
+    "other": "Adres boek"
+  },
+  "47": {
+    "other": "Gebruikers en teams die je hebt aangemaakt"
+  },
+  "48": {
+    "other": "Mijn gebruikers"
+  },
+  "49": {
+    "other": "Externe gebruikers die je hebt aangemaakt"
+  },
+  "50": {
+    "other": "Mijn teams"
+  },
+  "51": {
+    "other": "Teams van gebruikers, gebruikt als snelkoppeling bij het delen"
+  },
+  "52": {
+    "other": "Weet je zeker dat je dit team wilt verwijderen? Dit zal geen gebruikers verwijderen."
+  },
+  "53": {
+    "other": "Aan de slag"
+  },
+  "54": {
+    "other": "Ga aan de slag met APPLICATION_TITLE door How-to video's te volgen"
+  },
+  "55": {
+    "other": "Nieuw bij APPLICATION_TITLE? <a>Bekijk onze tutorials</a>!"
+  },
+  "56": {
+    "other": "Aan de slag met APPLICATION_TITLE? Hier zijn enkele video's voor jou!"
+  },
+  "57": {
+    "other": "Download APPLICATION_TITLE voor..."
+  },
+  "58": {
+    "other": "Android"
+  },
+  "59": {
+    "other": "iPhone/iPad"
+  },
+  "60": {
+    "other": "Mac OS"
+  },
+  "61": {
+    "other": "Windows"
+  },
+  "62": {
+    "other": "<h2>[How-to] Wat is een werkruimte?</h2>\n            Deze video legt uit welke werkruimtes in de APPLICATION_TITLE\n            <ul>\n                <li>Waarom staan werkruimtes centraal in APPLICATION_TITLE?</li>\n                <li>Wat zijn werkruimtes vanuit technisch perspectief?</li>\n                <li>Hoe staan zij je toe om je gegevens te organiseren?</li>\n            </ul>\n            "
+  },
+  "63": {
+    "other": "<h2>[How-to] Het uploaden van files naar APPLICATION_TITLE</h2>\n            Begin met APPLICATION_TITLE en leer hoe files geupload moeten worden\n            <ul>\n                <li>Drag and drop files in APPLICATION_TITLE</li>\n                <li>Creëer een nieuwe folder</li>\n                <li>Hernoem files en folders</li>\n                <li>Download files naar je computer</li>\n            </ul>\n            "
+  },
+  "64": {
+    "other": "<h2>[How-to] Het zoeken, browse en beheren van je files</h2>\n            Deze video laat tips zien om efficiënt je files te beheren in APPLICATION_TITLE\n            <ul>\n                <li>Over alle werkruimtes heen zoeken</li>\n                <li>Content display modes, keyboard shortcuts</li>\n                <li>Sorteer files</li>\n                <li>Meta Data, Bookmarks</li>\n            </ul>\n            "
+  },
+  "65": {
+    "other": "Ontdek meer op het APPLICATION_TITLE kanaal!"
+  },
+  "66": {
+    "other": "<h2>[How-to] Het gebruiken van APPLICATION_TITLE op een iOS apparaat</h2>\n                            Deze video legt uit hoe de APPLICATION_TITLE applicatie te gebruiken (beschikbaar in de App Store). Het proces is vergelijkbaar op Android.\n<ul><li>Stel de serververbinding in</li>\n<li>Navigeer door de bestanden</li>\n<li>Bestanden offline houden en interactie met externe applicaties</li>\n<li>Bescherm de app met een PIN-code</li>\n<li>Bladwijzers en zoekmachine</li></ul>"
+  },
+  "67": {
+    "other": "Als je niet %sbent, %logout."
+  },
+  "68": {
+    "other": "Download Sync Client voor Windows"
+  },
+  "69": {
+    "other": "Download Sync Client voor Mac OSX"
+  },
+  "70": {
+    "other": "Native applicatie voor iOS apparaten"
+  },
+  "71": {
+    "other": "Native applicatie voor Android apparaten"
+  },
+  "72": {
+    "other": "Server QRCode"
+  },
+  "73": {
+    "other": "Verbind eenvoudig uw mobiele applicaties"
+  },
+  "74": {
+    "other": "Scan deze QRCode om uw mobiele applicatie eenvoudig te configureren"
+  },
+  "75": {
+    "other": "Zoek in alle bestanden..."
+  },
+  "76": {
+    "other": "Toegang tot %1 via het menu rechtsboven"
+  },
+  "77": {
+    "other": "admin dashboard"
+  },
+  "78": {
+    "other": "Kies een doel werkruimte"
+  },
+  "79": {
+    "other": "<h2>[How-to] Het delen van files en folders</h2>\n            Deze tutorial laat zien hoe je files and folders kan delen, zowel intern als extern\n            <ul>\n                <li>Aanmaken van deel links voor externe personen</li>\n                <li>Het delen van  files en folders met interne gebruikers</li>\n                <li>Het delen van een folder als een werkruimte</li>\n                <li>Layout mogelijkheden van gedeelde folders</li>\n                <li>Aanmaken van een blind drop folder</li>\n                <li>Beheer van gebruikers en deel rechten</li>\n            </ul>\n            "
+  },
+  "80": {
+    "other": "<h2>[How-to] Delen: Beveiligings mogelijkheden</h2>\n            Deze video geeft een overzicht van de deel opties die helpen om veilig te kunnen delen\n            <ul>\n                <li>Wachtwoord bescherming</li>\n                <li>Expiratie datum's</li>\n                <li>Limiteer de hoeveelheid downloads</li>\n            </ul>\n            "
+  },
+  "81": {
+    "other": "<h2>[How-to] Pas je deel links aan</h2>\n            Bekijk hoe je de URL van jou deel links kunt aanpassen om ze er gebruiksvriendelijker uit te laten zien.\n            "
+  },
+  "82": {
+    "other": "<h2>[How-to] Gedeelde links aangepaste rechten</h2>\n            Deze video laat je zien hoe jij de rechten die aan jou deel links zijn gekoppeld kunt beheren\n            <ul>\n                <li>Preview</li>\n                <li>Download</li>\n                <li> Upload / bewerk</li>\n            </ul>\n            "
+  },
+  "83": {
+    "other": "<h2>[How-to] Taal</h2>\n            APPLICATION_TITLE is beschikbaar in 28 talen. Deze video laat je zien hoe je de taal in APPLICATION_TITLE.\n            kunt wijzigen.            "
+  },
+  "84": {
+    "other": "<h2>[How-to] Waarschuwingen</h2>\n            Leer hoe u waarschuwingen instelt op een bestand, om te zien wanneer het is gewijzigd of geraadpleegd.\n            "
+  },
+  "85": {
+    "other": "<h2>[How-to] Samenwerken</h2>\n            Deze video laat zien hoe je kunt samenwerken aan office docs, dankzij Collabora online office suite\n            <ul>\n                <li>Werk aan text docs, presentaties, spreadsheets</li>\n                <li>Bewerk docs gezamelijk in real time</li>\n                <li>Creëer nieuwe documenten rechtstreek vanuit je browser</li>\n            </ul>\n            "
+  },
+  "86": {
+    "other": "Video afspelen"
+  },
+  "87": {
+    "other": "Mijn recente activiteit"
+  },
+  "88": {
+    "other": "Sleep een bestand vanaf uw bureaublad hier naartoe"
+  },
+  "89": {
+    "other": "Geselecteerd bestand voor uploaden"
+  },
+  "90": {
+    "other": "Selecteer doel werkruimte"
+  },
+  "91": {
+    "other": "Houd uw bestanden offline met onze desktop-Sync Client"
+  },
+  "92": {
+    "other": "Applicaties downloaden"
+  },
+  "93": {
+    "other": "Snel uploaden"
+  },
+  "94": {
+    "other": "Video handleiding"
+  },
+  "desc": {
+    "other": "Welkom pagina"
+  },
+  "title": {
+    "other": "Startpagina"
+  },
+  "search.result.location": {
+    "other": "Folder"
+  },
+  "search.facets.title": {
+    "other": "Filter Results..."
+  },
+  "search.facet.type": {
+    "other": "Type"
+  },
+  "search.facet.extension": {
+    "other": "Extension"
+  },
+  "search.facet.size": {
+    "other": "Size"
+  },
+  "search.facet.modified": {
+    "other": "Modified"
+  },
+  "search.facet.found": {
+    "other": "Found in"
+  },
+  "search.facet.metadata": {
+    "other": "Metadata"
+  },
+  "search.sorter.relevant.desc": {
+    "other": "Most Relevant First"
+  },
+  "search.sorter.modified.desc": {
+    "other": "Recently Added First"
+  },
+  "search.sorter.modified.asc": {
+    "other": "Oldest First"
+  },
+  "search.sorter.size.desc": {
+    "other": "Biggest First"
+  },
+  "search.sorter.size.asc": {
+    "other": "Smallest First"
+  },
+  "facet.label.file": {
+    "other": "File"
+  },
+  "facet.label.folder": {
+    "other": "Folder"
+  },
+  "facet.label.size.lt.1MB": {
+    "other": "< 1MB"
+  },
+  "facet.label.size.1MB.to.10MB": {
+    "other": "1MB to 10MB"
+  },
+  "facet.label.size.10MB.to.100MB": {
+    "other": "10MB to 100MB"
+  },
+  "facet.label.size.gt.100MB": {
+    "other": "> 100MB"
+  },
+  "facet.label.date.moments": {
+    "other": "Moments ago"
+  },
+  "facet.label.date.today": {
+    "other": "Today"
+  },
+  "facet.label.date.last.7": {
+    "other": "Last 7 days"
+  },
+  "facet.label.date.last.30": {
+    "other": "Last 30 days"
+  },
+  "facet.label.date.older.30": {
+    "other": "Older than 30 days"
+  },
+  "facet.label.found.contents": {
+    "other": "Contents"
+  },
+  "facet.label.found.basename": {
+    "other": "File name"
+  },
+  "reco.bookmark": {
+    "other": "Bookmark"
+  },
+  "reco.workspace": {
+    "other": "Workspace"
+  },
+  "reco.cell": {
+    "other": "Cell"
+  }
+}

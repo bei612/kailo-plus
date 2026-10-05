@@ -1,0 +1,134 @@
+{
+  "cont.btn.fb": {
+    "other": "Seguici"
+  },
+  "cont.btn.github": {
+    "other": "GitHub Star"
+  },
+  "cont.btn.tw": {
+    "other": "Twitter"
+  },
+  "cont.intro": {
+    "other": "Il codice è disponibile pubblicamente su Github. Vuoi correggere un bug, aiutare gli altri nel forum o proporre una nuova funzione innovativa? Partecipa al progetto!\n                            Oppure dimostra il tuo entusiasmo sui social network!"
+  },
+  "cont.subtitle": {
+    "other": "Pydio Cells è software libero e open source. Partecipa al progetto!"
+  },
+  "cont.title": {
+    "other": "Pagalo con il tuo contributo!"
+  },
+  "cont.topic.pr": {
+    "other": "Ho implementato una nuova funzionalità: github Pull Request"
+  },
+  "cont.topic.report": {
+    "other": "Penso di aver trovato un bug! Scrivi nel forum."
+  },
+  "cont.topic.report.2": {
+    "other": "Il mio bug è qualificato: apri una issue su github."
+  },
+  "cont.topic.translate": {
+    "other": "Come creare o completare la traduzione in una lingua?"
+  },
+  "ent.advanced": {
+    "other": "Dashboard avanzata di amministrazione"
+  },
+  "ent.advanced.legend": {
+    "other": "Dashboard di amministrazione per il monitoraggio in tempo reale dell'utilizzo della piattaforma."
+  },
+  "ent.btn.contact": {
+    "other": "Contatta l'ufficio vendite"
+  },
+  "ent.btn.more": {
+    "other": "Per saperne di più"
+  },
+  "ent.features": {
+    "other": "Funzionalità di classe Enterprise"
+  },
+  "ent.features.legend": {
+    "other": "Funzionalità di classe Enterprise: connettori AD/LDAP, log verificabili per conformità, EasyTransfer..."
+  },
+  "ent.subtitle": {
+    "other": "ALTRE CARATTERISTICHE - CONFORMITÀ GDPR - FUNZIONI DI BRANDING"
+  },
+  "ent.support": {
+    "other": "Supporto e manutenzione"
+  },
+  "ent.support.legend": {
+    "other": "Ottenere aiuto per l'installazione direttamente dal core team"
+  },
+  "ent.title": {
+    "other": "Scopri Pydio Cells Enterprise"
+  },
+  "ent.upgrade": {
+    "other": "Aggiorna"
+  },
+  "ent.upgrade.legend": {
+    "other": "Aggiornamento in-app di Cells Enterprise (è richiesta la licenza)"
+  },
+  "welc.btn.advanced": {
+    "other": "Avanzate"
+  },
+  "welc.btn.parameters": {
+    "other": "Informazioni sui parametri"
+  },
+  "welc.btn.start": {
+    "other": "Guida introduttiva"
+  },
+  "welc.btn.users": {
+    "other": "Utenti"
+  },
+  "welc.btn.ws": {
+    "other": "Workspace"
+  },
+  "welc.guide": {
+    "other": "Se non sai dove iniziare, la Guida Amministratore è sicuramente una buona lettura!"
+  },
+  "welc.intro": {
+    "other": "Questo è il pannello di controllo per la gestione di Pydio Cells. Usando il menù sulla sinistra, è possibile creare i <a class=\"doc-link\" data-path=\"/data/workspaces\">workspace</a> e gli <a class=\"doc-link\" data-path=\"/idm/users\">utenti</a>,\n                            controllate tutti gli <a class=\"doc-link\" data-path=\"/admin/logs\">eventi</a> che si sono verificati sulla piattaforma, e gestire le <a class=\"doc-link\" data-path=\"/parameters/core\">configurazioni</a> e i <a class=\"doc-link\" data-path=\"/plugins/manager\">plugin</a>."
+  },
+  "welc.import": {
+    "other": "Se stai eseguendo un'installazione di Pydio 8, ti ricordiamo che <u>Pydio 8 arriverà a fine vita alla fine del 2019</u>. Puoi utilizzare lo <a class=\"doc-link\" data-path=\"/data/migration\">Strumento di Importazione</a> per migrare tutti i dati a Pydio Cells."
+  },
+  "welc.subtitle": {
+    "other": "Il luogo dove amministrare e monitorare l'attività sulla piattaforma"
+  },
+  "welc.title": {
+    "other": "Benvenuto a Pydio Cells v4"
+  },
+  "welc.title.5": {
+    "other": "Welcome to Pydio Cells v5"
+  },
+  "card.quick-access": {
+    "other": "Quick Access"
+  },
+  "card.quick-access.add": {
+    "other": "Add a shortcut ..."
+  },
+  "card.update.current": {
+    "other": "Software Version"
+  },
+  "card.update.no-updates": {
+    "other": "Software is up-to-date"
+  },
+  "card.update.new-version": {
+    "other": "A new version is available"
+  },
+  "recentLogs.title": {
+    "other": "Last Events"
+  },
+  "recentLogs.errors": {
+    "other": "Errors"
+  },
+  "recentLogs.emptyState": {
+    "other": "No activity found"
+  },
+  "recentLogs.more": {
+    "other": "All Activities"
+  },
+  "graph.files": {
+    "other": "Files Activity"
+  },
+  "graph.connections": {
+    "other": "Web Connections"
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "cont.btn.fb": {
+    "other": "Theo chúng tôi"
+  },
+  "cont.btn.github": {
+    "other": "Github Star"
+  },
+  "cont.btn.tw": {
+    "other": "Twitter"
+  },
+  "cont.intro": {
+    "other": "Mã nguồn luôn có sẵn trên Github. Bạn có muốn sửa một lỗi, giúp đỡ người khác trong diễn đàn hoặc đẩy tính năng tiếp theo không? Tham gia ngay bây giờ!\n                             Hoặc thể hiện cảm tình của bạn trên mạng xã hội!"
+  },
+  "cont.subtitle": {
+    "other": "Pydio Cells là phần mềm mã nguồn mở miễn phí. Đóng góp trở lại!"
+  },
+  "cont.title": {
+    "other": "Thanh toán!"
+  },
+  "cont.topic.pr": {
+    "other": "Tôi đã triển khai một tính năng mới: github Pull Requests"
+  },
+  "cont.topic.report": {
+    "other": "Tôi nghĩ rằng tôi đã tìm thấy một lỗi! Đăng trong diễn đàn."
+  },
+  "cont.topic.report.2": {
+    "other": "Lỗi của tôi là đủ điều kiện: mở một vấn đề github."
+  },
+  "cont.topic.translate": {
+    "other": "Làm thế nào để tạo hoặc hoàn thành một bản dịch ngôn ngữ?"
+  },
+  "ent.advanced": {
+    "other": "Administrator Dashboard nâng cao"
+  },
+  "ent.advanced.legend": {
+    "other": "Admin dashboard duy nhứt để theo dõi thời gian thực sử dụng nền tảng."
+  },
+  "ent.btn.contact": {
+    "other": "Liên hệ bán hàng"
+  },
+  "ent.btn.more": {
+    "other": "Tìm Hiểu Thêm"
+  },
+  "ent.features": {
+    "other": "Tính năng định hướng doanh nghiệp"
+  },
+  "ent.features.legend": {
+    "other": "Các tính năng sẵn sàng cho doanh nghiệp: Trình kết nối AD/LDAP, Nhật ký kiểm toán để tuân thủ, EasyTransfer..."
+  },
+  "ent.subtitle": {
+    "other": "THÊM CÁC TÍNH NĂNG - GDPR HOÀN TOÀN - THƯƠNG HIỆU XUẤT HIỆN"
+  },
+  "ent.support": {
+    "other": "Hỗ trợ và bảo trì"
+  },
+  "ent.support.legend": {
+    "other": "Nhận trợ giúp với cài đặt của bạn trực tiếp từ core team"
+  },
+  "ent.title": {
+    "other": "Khám phá Pydio Cells Enterprise"
+  },
+  "ent.upgrade": {
+    "other": "Nâng cấp ngay!"
+  },
+  "ent.upgrade.legend": {
+    "other": "Nâng cấp trong ứng dụng Cells Enterprise (yêu cầu license)"
+  },
+  "welc.btn.advanced": {
+    "other": "Nâng cao"
+  },
+  "welc.btn.parameters": {
+    "other": "Về thông số"
+  },
+  "welc.btn.start": {
+    "other": "Bắt đầu làm quen"
+  },
+  "welc.btn.users": {
+    "other": "Người dùng"
+  },
+  "welc.btn.ws": {
+    "other": "Workspaces"
+  },
+  "welc.guide": {
+    "other": "Nếu bạn không biết bắt đầu từ đâu, Hướng dẫn quản trị viên chắc chắn là một cuốn sách đáng đọc!"
+  },
+  "welc.intro": {
+    "other": "Đây là bảng điều khiển(dashboard) của bạn để quản lý Pydio. Sử dụng menu bên trái, bạn có thể tạo<a class=\"doc-link\" data-path=\"/data/workspaces\"> workspaces</a> và<a class=\"doc-link\" data-path=\"/idm/users\"> users</a>,\n                             kiểm tra tất cả <a class=\"doc-link\" data-path=\"/admin/logs\">events </a> đã xảy ra trên nền tảng và quản lý <a class=\"doc-link\" data-path=\"/parameters/core\">cấu hình </a> và <a class=\"doc-link\" data-path=\"/plugins/manager\"> plugins</a>."
+  },
+  "welc.import": {
+    "other": "Nếu bạn hiện đang chạy Pydio 8, xin lưu ý rằng <u>Pydio 8 sẽ ngưng hỗ trợ vào cuối năm 2019</u>. Bạn có thể sử dụng<a class=\"doc-link\" data-path=\"/data/migration\"> Import Tool</a> để di chuyển tất cả dữ liệu sang Pydio Cells."
+  },
+  "welc.subtitle": {
+    "other": "Nơi quản trị và giám sát hoạt động của nền tảng của bạn"
+  },
+  "welc.title": {
+    "other": "Chào mừng bạn đến với Pydio Cells v4"
+  },
+  "welc.title.5": {
+    "other": "Welcome to Pydio Cells v5"
+  },
+  "card.quick-access": {
+    "other": "Quick Access"
+  },
+  "card.quick-access.add": {
+    "other": "Add a shortcut ..."
+  },
+  "card.update.current": {
+    "other": "Software Version"
+  },
+  "card.update.no-updates": {
+    "other": "Software is up-to-date"
+  },
+  "card.update.new-version": {
+    "other": "A new version is available"
+  },
+  "recentLogs.title": {
+    "other": "Last Events"
+  },
+  "recentLogs.errors": {
+    "other": "Errors"
+  },
+  "recentLogs.emptyState": {
+    "other": "No activity found"
+  },
+  "recentLogs.more": {
+    "other": "All Activities"
+  },
+  "graph.files": {
+    "other": "Files Activity"
+  },
+  "graph.connections": {
+    "other": "Web Connections"
+  }
+}

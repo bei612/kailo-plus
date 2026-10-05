@@ -1,0 +1,32 @@
+{
+  "Search.Config.IndexContent.Label": {
+    "other": "Indexar Contenidos"
+  },
+  "Search.Config.IndexContent.Description": {
+    "other": "Si se establece en \"Verdadero\", el indexador buscará los metadatos de ContentRef, leerá el contenido de esta referencia y lo indexará para búsquedas."
+  },
+  "Search.Config.ContentRef.Label": {
+    "other": "Content Reference Metadata"
+  },
+  "Search.Config.ContentRef.Description": {
+    "other": "Name of the metadata pointing to the internal file that contains textual representation of the original document. Such internal contents may be plain-text or gzip-encoded, depending on the text extraction tool used (e.g. Tika). The search engine typically indexes this content to enable full-text search. Make sure to prefix the metadata name with 'pydio:' to prevent data leakage."
+  },
+  "Search.Config.PlainTextExtensions.Label": {
+    "other": "Extensiones de texto simple"
+  },
+  "Search.Config.PlainTextExtensions.Description": {
+    "other": "List of extensions for files containing directly indexable plain-text contents (comma-separated-list)."
+  },
+  "Search.Config.BasenameAnalyze.Label": {
+    "other": "Analizador de Nombre de Archivo"
+  },
+  "Search.Config.BasenameAnalyze.Description": {
+    "other": "Analizador usado en nombres de archivo"
+  },
+  "Search.Config.ContentAnalyzer.Label": {
+    "other": "Analizador de Contenidos"
+  },
+  "Search.Config.ContentAnalyzer.Description": {
+    "other": "Analizador usado en el contenidos"
+  }
+}

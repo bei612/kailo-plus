@@ -1,0 +1,103 @@
+{
+  "Job.Version.Title": {
+    "other": "Úloha založená na událostech pro replikování dat pro správu verzí"
+  },
+  "Job.Version.StatusFile": {
+    "other": "Vytvořená verze {{.Uuid}} uvnitř buketu verze "
+  },
+  "Job.Version.StatusMeta": {
+    "other": "Vytvořena metadata verze pro {{.Uuid}}"
+  },
+  "Job.Version.StatusPrune": {
+    "one": "Prořezána {{.Count}} verze",
+    "other": "Prořezáno {{.Count}} verzí"
+  },
+  "Job.Pruning.Title": {
+    "other": "Čištění verzí souborů pro smazané uzly"
+  },
+  "Job.Pruning.StatusDone": {
+    "one": "{{.Count}} verze úspěšně odebrána",
+    "other": "{{.Count}} verzí úspěšně odebráno."
+  },
+  "Config.GroupPolicy.Title": {
+    "other": "Zásada"
+  },
+  "Config.GroupPolicy.Name.Label": {
+    "other": "Název"
+  },
+  "Config.GroupPolicy.Name.Description": {
+    "other": "Název zásady"
+  },
+  "Config.GroupPolicy.Description.Label": {
+    "other": "Popis"
+  },
+  "Config.GroupPolicy.Description.Description": {
+    "other": "Popis zásady"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Label": {
+    "other": "Store"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Description": {
+    "other": "DataSource used to store versions"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Label": {
+    "other": "Bucket"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Description": {
+    "other": "Bucket used inside this datasource"
+  },
+  "Config.GroupSizes.Title": {
+    "other": "Limity velikosti"
+  },
+  "Config.GroupSizes.MaxTotalSize.Label": {
+    "other": "Global size of all versions kept in this bucket"
+  },
+  "Config.GroupSizes.MaxTotalSize.Description": {
+    "other": "Omezit celkovou zabranou velikost. Při dosažení limitu budou odstraněny nejstarší verze. Pokud nechcete omezovat, zadejte -1"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Label": {
+    "other": "Nasčítané velikosti verzí daného jednoho souboru"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Description": {
+    "other": "Omezit velikost, zabranou všemi verzemi jednotlivého souboru. Při dosažení limitu budou odstraněny nejstarší verze. Pokud nechcete omezovat, zadejte -1"
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Label": {
+    "other": "Ignorovat soubory větší než…"
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Description": {
+    "other": "NEuchovávat starší verze souborů, které jsou větší než tento limit. Pokud nechcete domezovat, zadejte -1"
+  },
+  "Config.GroupRetention.Title": {
+    "other": "Doba uchovávání"
+  },
+  "Config.GroupRetention.Description": {
+    "other": "Kolik verzí za dané období uchovávat"
+  },
+  "Config.GroupRetention.IntervalStart.Name": {
+    "other": "Začátek období"
+  },
+  "Config.GroupRetention.IntervalStart.Description": {
+    "other": "Start point used for computing period. 0 is the time of the last version set, use another Period to set an limit"
+  },
+  "Config.GroupRetention.MaxNumber.Name": {
+    "other": "Nejvyšší umožněný počet verzí"
+  },
+  "Config.GroupRetention.MaxNumber.Description": {
+    "other": "Max number of versions to keep over this period. Use -1 to keep all versions, 0 to delete all."
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Name": {
+    "other": "Po smazání původního souboru"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Description": {
+    "other": "Number of versions to keep after original file deletion."
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepAll": {
+    "other": "Backup all existing versions"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepLast": {
+    "other": "Backup most recent version only"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepNone": {
+    "other": "Delete all existing versions"
+  }
+}

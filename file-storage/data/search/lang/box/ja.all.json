@@ -1,0 +1,32 @@
+{
+  "Search.Config.IndexContent.Label": {
+    "other": "インデックスコンテンツ"
+  },
+  "Search.Config.IndexContent.Description": {
+    "other": "true が設定されている場合、インデクサーはContentRef メタデータを探し、この参照からコンテンツを読み込んで検索用にインデックスを作成します。"
+  },
+  "Search.Config.ContentRef.Label": {
+    "other": "コンテンツ参照メタデータ"
+  },
+  "Search.Config.ContentRef.Description": {
+    "other": "元の文書のテキスト表現を含む内部ファイルを指し示すメタデータの名前。このような内部コンテンツは、使用するテキスト抽出ツール(Tikaなど)によって、プレーンテキストであったり、gzipエンコードされていたりします。検索エンジンは通常、このコンテンツをインデックス化して全文検索を可能にします。データの漏洩を防ぐため、メタデータ名の前に'pydio:'を付けるようにしてください。"
+  },
+  "Search.Config.PlainTextExtensions.Label": {
+    "other": "プレーンテキストの拡張子"
+  },
+  "Search.Config.PlainTextExtensions.Description": {
+    "other": "直接インデックス可能なプレーンテキストコンテンツを含むファイルの拡張子の一覧 (カンマ区切りリスト)。"
+  },
+  "Search.Config.BasenameAnalyze.Label": {
+    "other": "ファイル名アナライザー"
+  },
+  "Search.Config.BasenameAnalyze.Description": {
+    "other": "ファイル名に使用されるアナライザー"
+  },
+  "Search.Config.ContentAnalyzer.Label": {
+    "other": "コンテンツアナライザー"
+  },
+  "Search.Config.ContentAnalyzer.Description": {
+    "other": "コンテンツに使用されるアナライザー"
+  }
+}

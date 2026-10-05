@@ -1,0 +1,2510 @@
+{
+  "0": {
+    "other": "Siste versjon"
+  },
+  "1": {
+    "other": "Filnavn"
+  },
+  "10": {
+    "other": "Tekstfil"
+  },
+  "100": {
+    "other": "Finner ikke filen "
+  },
+  "101": {
+    "other": "Opprinnelsen og målmappene er de samme!"
+  },
+  "102": {
+    "other": "Feil ved oppretting av fil :"
+  },
+  "103": {
+    "other": "Finner ikke mappen "
+  },
+  "104": {
+    "other": "Gå til angitt lokasjon"
+  },
+  "105": {
+    "other": "Send en e-post med direkte link til denne lokasjonen."
+  },
+  "106": {
+    "other": "Send e-post"
+  },
+  "107": {
+    "other": "Ditt navn og/eller e-post"
+  },
+  "108": {
+    "other": "Mottakers e-post"
+  },
+  "109": {
+    "other": "Klikkbar URL"
+  },
+  "11": {
+    "other": "Javascript"
+  },
+  "110": {
+    "other": "Legg til en kommentar"
+  },
+  "111": {
+    "other": "Følgende e-post har blitt sendt :"
+  },
+  "112": {
+    "other": "Sending av e-post mislyktes : "
+  },
+  "113": {
+    "other": "Utvalget er tomt!"
+  },
+  "114": {
+    "other": "Ukjent feil under kopiering!"
+  },
+  "115": {
+    "other": "Filen har blitt lagret"
+  },
+  "116": {
+    "other": "filer"
+  },
+  "117": {
+    "other": "Mappen"
+  },
+  "118": {
+    "other": "Last ned flere filer"
+  },
+  "119": {
+    "other": "Klikk på hver fil for å laste den ned."
+  },
+  "12": {
+    "other": "GIF bilde"
+  },
+  "120": {
+    "other": "Du har ikke lov til å slette hele grensen!"
+  },
+  "121": {
+    "other": "Bildefil "
+  },
+  "122": {
+    "other": "Papirkurv"
+  },
+  "123": {
+    "other": "har blitt flyttet til "
+  },
+  "124": {
+    "other": "Overskriv eksisterende filer?"
+  },
+  "125": {
+    "other": "En fil/mappe med det navnet eksisterer allerede (navn skiller mellom små og store bokstaver), velg et annet!"
+  },
+  "126": {
+    "other": "Miniatyrbilder"
+  },
+  "127": {
+    "other": "Størrelse"
+  },
+  "128": {
+    "other": "filer valgt."
+  },
+  "129": {
+    "other": "Visning"
+  },
+  "13": {
+    "other": "JPG bilde"
+  },
+  "130": {
+    "other": "Mapper"
+  },
+  "131": {
+    "other": "Detaljer"
+  },
+  "132": {
+    "other": "Ingen fil eller mappe"
+  },
+  "133": {
+    "other": "Navn"
+  },
+  "134": {
+    "other": "Type"
+  },
+  "135": {
+    "other": "Dimensjoner"
+  },
+  "136": {
+    "other": "Vis større bilde"
+  },
+  "138": {
+    "other": "Sist endret"
+  },
+  "139": {
+    "other": "Rediger online"
+  },
+  "14": {
+    "other": "HTML side"
+  },
+  "140": {
+    "other": "Spill av hele mappen"
+  },
+  "141": {
+    "other": "Leser mappe"
+  },
+  "142": {
+    "other": "Logget inn som "
+  },
+  "143": {
+    "other": "Gjestetilgang, logg inn."
+  },
+  "144": {
+    "other": "Ikke innlogget."
+  },
+  "145": {
+    "other": "Mine Bokmerker"
+  },
+  "146": {
+    "other": "Slett Bokmerke"
+  },
+  "147": {
+    "other": "Bokmerker"
+  },
+  "148": {
+    "other": "Forelder"
+  },
+  "149": {
+    "other": "Last på nytt"
+  },
+  "15": {
+    "other": "HTML side"
+  },
+  "150": {
+    "other": "Vis"
+  },
+  "151": {
+    "other": "Bytt visningsmodus..."
+  },
+  "152": {
+    "other": "Veksle bokmerke"
+  },
+  "153": {
+    "other": "Legg til/fjern element i MyBookmarks"
+  },
+  "152-on": {
+    "other": "Bokmerke"
+  },
+  "153-on": {
+    "other": "Legg til element i MyBookmarks"
+  },
+  "152-off": {
+    "other": "Fjern Bokmerke"
+  },
+  "153-off": {
+    "other": "Gjern element fra MyBookmarks"
+  },
+  "154": {
+    "other": "Ny Mappe"
+  },
+  "155": {
+    "other": "Opprett ny mappe"
+  },
+  "156": {
+    "other": "Ny tom fil"
+  },
+  "157": {
+    "other": "Opprett ny tom fil"
+  },
+  "158": {
+    "other": "Endre navn på valgt fil eller mappe"
+  },
+  "159": {
+    "other": "Kopier utvalg til..."
+  },
+  "16": {
+    "other": "REAL fil"
+  },
+  "160": {
+    "other": "Flytt valgte filer til ..."
+  },
+  "161": {
+    "other": "Slett valgte filer."
+  },
+  "162": {
+    "other": "Endre tekstfil online."
+  },
+  "163": {
+    "other": "Logg inn"
+  },
+  "164": {
+    "other": "Logg ut"
+  },
+  "165": {
+    "other": "Innstillinger"
+  },
+  "166": {
+    "other": "Om"
+  },
+  "167": {
+    "other": "Om Pydio"
+  },
+  "168": {
+    "other": "Koble til APPLICATION_TITLE"
+  },
+  "169": {
+    "other": "Koble fra APPLICATION_TITLE"
+  },
+  "17": {
+    "other": "REAL fil"
+  },
+  "170": {
+    "other": "Gjeldende mappe"
+  },
+  "171": {
+    "other": "Utforsk"
+  },
+  "172": {
+    "other": "Ditt utvalg"
+  },
+  "173": {
+    "other": "Nytt mappenavn"
+  },
+  "174": {
+    "other": "Nytt filnavn"
+  },
+  "175": {
+    "other": "Velg destinasjonsmappe"
+  },
+  "176": {
+    "other": "De valgte filene vil bli flyttet til papirkurven."
+  },
+  "177": {
+    "other": "Er du sikker på at du vil slette de valgte filene permanent?"
+  },
+  "178": {
+    "other": "Forrige"
+  },
+  "179": {
+    "other": "Neste"
+  },
+  "18": {
+    "other": "PERL script"
+  },
+  "180": {
+    "other": "Angi brukernavn/passord"
+  },
+  "181": {
+    "other": "Logg inn"
+  },
+  "182": {
+    "other": "Passord"
+  },
+  "183": {
+    "other": "Velg en målmappe forskjellig fra opprinnelig plassering!"
+  },
+  "184": {
+    "other": "Søk i gjeldende mappe og undermapper"
+  },
+  "185": {
+    "other": "Slutt å søke"
+  },
+  "186": {
+    "other": "Forhåndsvisning av bilde"
+  },
+  "187": {
+    "other": "Online Edition - "
+  },
+  "189": {
+    "other": "Endre Mine Innstillinger"
+  },
+  "19": {
+    "other": "ZIP fil"
+  },
+  "190": {
+    "other": "Språk"
+  },
+  "191": {
+    "other": "Standardskjerm"
+  },
+  "192": {
+    "other": "Liste"
+  },
+  "193": {
+    "other": "Miniatyrbilder"
+  },
+  "194": {
+    "other": "Endre passord"
+  },
+  "195": {
+    "other": "Brukerinnstillinger"
+  },
+  "196": {
+    "other": "Språket ditt skiller seg fra gjeldende språk!\\n Vil du laste siden på nytt for å bytte språk?"
+  },
+  "197": {
+    "other": "Passordendring vil tre i kraft etter at du har logget ut."
+  },
+  "198": {
+    "other": "Ny"
+  },
+  "199": {
+    "other": "Bekreft"
+  },
+  "2": {
+    "other": "Størrelse"
+  },
+  "20": {
+    "other": "WAV fil"
+  },
+  "200": {
+    "other": "Bytt Repository til..."
+  },
+  "201": {
+    "other": "Advarsel, noen av endringene dine er ikke lagret!\\n Er du sikker på at du vil avslutte?"
+  },
+  "202": {
+    "other": "Advarsel, rekursiv kopi!"
+  },
+  "203": {
+    "other": "Destintationsmappe er den samme som originalmappen!"
+  },
+  "204": {
+    "other": "Filen \""
+  },
+  "205": {
+    "other": "\" overskrider størrelsebegrensningen ("
+  },
+  "206": {
+    "other": "Mb).\\nDen vil ikke bli lastet opp."
+  },
+  "207": {
+    "other": "Du har ikke skrivetilgang til denne mappen"
+  },
+  "208": {
+    "other": "Du har ikke lesetilgang til denne mappen"
+  },
+  "209": {
+    "other": "Intern serverfeil, vennligst kontakt Administrator!"
+  },
+  "21": {
+    "other": "PHP script"
+  },
+  "210": {
+    "other": "Opplasting feilet"
+  },
+  "211": {
+    "other": "Filen er for stor! Vennligst kontakt din administrator eller bruk desktop synkroniseringsklienten."
+  },
+  "212": {
+    "other": "Ingen fil funnet på server!"
+  },
+  "213": {
+    "other": "Feil ved kopiering av fil til gjendende mappe"
+  },
+  "214": {
+    "other": "Utforsk"
+  },
+  "215": {
+    "other": "Start opplasting"
+  },
+  "216": {
+    "other": "Tøm"
+  },
+  "217": {
+    "other": "Fjern fullførte"
+  },
+  "218": {
+    "other": "Fjern fra køen"
+  },
+  "219": {
+    "other": "Fullført"
+  },
+  "22": {
+    "other": "PHP script"
+  },
+  "220": {
+    "other": "Tom"
+  },
+  "221": {
+    "other": "Tøm papirkurven"
+  },
+  "222": {
+    "other": "Gjenopprett"
+  },
+  "223": {
+    "other": "Gjenopprett filen til sin opprinnelige plassering"
+  },
+  "224": {
+    "other": "Gå til"
+  },
+  "225": {
+    "other": "Endre navn på bokmerke"
+  },
+  "226": {
+    "other": "Detaljer"
+  },
+  "227": {
+    "other": "Bytt til detaljert tabellvisning"
+  },
+  "228": {
+    "other": "Miniatyrer"
+  },
+  "229": {
+    "other": "Bytt til miniatyrbildevisning"
+  },
+  "23": {
+    "other": "Fil"
+  },
+  "230": {
+    "other": "Spill av"
+  },
+  "231": {
+    "other": "Start lysbildefremvisning"
+  },
+  "232": {
+    "other": "Stopp"
+  },
+  "233": {
+    "other": "Stopp lysbildefremvisning"
+  },
+  "234": {
+    "other": "Vis valgte bilder"
+  },
+  "235": {
+    "other": "Fullskjerm"
+  },
+  "236": {
+    "other": "Gjenopprett"
+  },
+  "237": {
+    "other": "Gammelt passord"
+  },
+  "238": {
+    "other": "Passordene er forskjellige!"
+  },
+  "239": {
+    "other": "Vennligst fyll inn gjeldende passord"
+  },
+  "24": {
+    "other": "Overordnet mappe"
+  },
+  "240": {
+    "other": "Feil passord!"
+  },
+  "241": {
+    "other": "Innstillingene dine er lagret!"
+  },
+  "242": {
+    "other": "Svn Log"
+  },
+  "243": {
+    "other": "Revisjon"
+  },
+  "244": {
+    "other": "Forfatter"
+  },
+  "245": {
+    "other": "Dato"
+  },
+  "246": {
+    "other": "Melding"
+  },
+  "247": {
+    "other": "Pakk ut"
+  },
+  "248": {
+    "other": "Pakk ut utvalg fra zip til..."
+  },
+  "249": {
+    "other": "Brukere"
+  },
+  "25": {
+    "other": "Last opp en eller flere filer (maks %s i mappen : "
+  },
+  "250": {
+    "other": "Workspaces"
+  },
+  "251": {
+    "other": "Logger"
+  },
+  "252": {
+    "other": "Grensen for total filstørrelse er nådd."
+  },
+  "253": {
+    "other": "Det har skjedd en HTTP feil:"
+  },
+  "254": {
+    "other": "Det har skjedd en IO feil:"
+  },
+  "255": {
+    "other": "Det har skjedd en sikkerhetsfeil:"
+  },
+  "256": {
+    "other": "Opplastet"
+  },
+  "257": {
+    "other": "Fjern"
+  },
+  "258": {
+    "other": "Antall filer :"
+  },
+  "259": {
+    "other": "Total størrelse :"
+  },
+  "26": {
+    "other": "Lag ny mappe i : "
+  },
+  "260": {
+    "other": "bytes"
+  },
+  "261": {
+    "other": "Husk meg"
+  },
+  "262": {
+    "other": "Det ser ut til at en eller flere filer allerede eksisterer \\ni målmappen.\\nHva vil du gjøre?"
+  },
+  "263": {
+    "other": "Overskriv"
+  },
+  "264": {
+    "other": "Hopp over"
+  },
+  "265": {
+    "other": "Filer"
+  },
+  "266": {
+    "other": "B"
+  },
+  "267": {
+    "other": "Opprett"
+  },
+  "268": {
+    "other": "Opprett ny tabell"
+  },
+  "269": {
+    "other": "Struktur"
+  },
+  "27": {
+    "other": "Last opp"
+  },
+  "270": {
+    "other": "Endre tabellstruktur"
+  },
+  "271": {
+    "other": "Slipp"
+  },
+  "272": {
+    "other": "Slipp åpen tabell"
+  },
+  "273": {
+    "other": "Sette inn"
+  },
+  "274": {
+    "other": "Sette inn ny post"
+  },
+  "275": {
+    "other": "Er du sikker på at du vil fjerne de(n) valgte tabellen(e)?"
+  },
+  "276": {
+    "other": "Endre valgt oppføring"
+  },
+  "277": {
+    "other": "Slett valgte oppføringer"
+  },
+  "278": {
+    "other": "Er du sikker på at du vil slette de(n) markerte oppføringen(e)?"
+  },
+  "279": {
+    "other": "Tabeller"
+  },
+  "28": {
+    "other": "Opprett ny fil i : "
+  },
+  "280": {
+    "other": "Poster"
+  },
+  "281": {
+    "other": "Opplastingsgrense"
+  },
+  "282": {
+    "other": "Størrelse per fil"
+  },
+  "283": {
+    "other": "Total størrelse"
+  },
+  "284": {
+    "other": "Filnummer"
+  },
+  "285": {
+    "other": "Finner ikke bruker, vennligst prøv igjen.\\n Vær sikker på at caps lock ikke er på!"
+  },
+  "286": {
+    "other": "Brukeren din er utdatert med gjeldende versjon, vennligst bruk oppgraderingsprosedyren."
+  },
+  "287": {
+    "other": "Filrettigheter"
+  },
+  "288": {
+    "other": "Bruker"
+  },
+  "289": {
+    "other": "Gruppe"
+  },
+  "29": {
+    "other": "Opprett"
+  },
+  "290": {
+    "other": "Alle"
+  },
+  "291": {
+    "other": "Bruk rekursivt?"
+  },
+  "292": {
+    "other": "Del"
+  },
+  "293": {
+    "other": "Del en offentlig link til denne filen"
+  },
+  "294": {
+    "other": "Link-utløp (i dager) og passord (la stå tom hvis ingen passord)."
+  },
+  "295": {
+    "other": "Utløp"
+  },
+  "296": {
+    "other": "Kopier URLen under:"
+  },
+  "297": {
+    "other": "Ny Bruker"
+  },
+  "298": {
+    "other": "Lag ny bruker"
+  },
+  "299": {
+    "other": "Arbeidsområde"
+  },
+  "3": {
+    "other": "Type"
+  },
+  "30": {
+    "other": "Skriv et navn på mappen og klikk &quot;Opprett&quot;"
+  },
+  "300": {
+    "other": "Lag et nytt arbeidsområde"
+  },
+  "301": {
+    "other": "Endre konfigurasjon"
+  },
+  "302": {
+    "other": "Kopier som tekst"
+  },
+  "303": {
+    "other": "Kopier utvalg som tab-separert tekst."
+  },
+  "304": {
+    "other": "Tilbake"
+  },
+  "305": {
+    "other": "Tilbake til startsiden"
+  },
+  "305b": {
+    "other": "Mine Arbeidsområder"
+  },
+  "306": {
+    "other": "For mange elementer"
+  },
+  "307": {
+    "other": "Fyll ut valgfrie felter"
+  },
+  "308": {
+    "other": "Generer link"
+  },
+  "309": {
+    "other": "Generer"
+  },
+  "31": {
+    "other": "Du må velge en fil"
+  },
+  "310": {
+    "other": "Alternativer"
+  },
+  "311": {
+    "other": "Last opp automatisk når en fil blir lagt til"
+  },
+  "312": {
+    "other": "Opplastingsalternativer"
+  },
+  "313": {
+    "other": "Komprimer..."
+  },
+  "314": {
+    "other": "Komprimer utvalget til zip..."
+  },
+  "315": {
+    "other": "Komprimer utvalget til"
+  },
+  "316": {
+    "other": "Vis/Rediger"
+  },
+  "317": {
+    "other": "Kildekoderedigeringsprogram"
+  },
+  "318": {
+    "other": "CodePress kildekodevisning"
+  },
+  "319": {
+    "other": "HTML Editor"
+  },
+  "32": {
+    "other": "Utforsk"
+  },
+  "320": {
+    "other": "WYSIWYG editor for HTML"
+  },
+  "321": {
+    "other": "Velg"
+  },
+  "322": {
+    "other": "Velg gjeldende fil"
+  },
+  "323": {
+    "other": "Send e-post med denne URLen"
+  },
+  "324": {
+    "other": "Ingen editor tilgjengelig"
+  },
+  "325": {
+    "other": "Tilpass beste"
+  },
+  "326": {
+    "other": "Ingen Tilpass"
+  },
+  "327": {
+    "other": "100%"
+  },
+  "328": {
+    "other": "Dokumentleser"
+  },
+  "329": {
+    "other": "Vis pdf,svg, tif og mer online"
+  },
+  "33": {
+    "other": "Feil ved opplasing av fil !"
+  },
+  "330": {
+    "other": "Vennligst vent mens sidene lastes..."
+  },
+  "331": {
+    "other": "Side"
+  },
+  "332": {
+    "other": "av"
+  },
+  "333": {
+    "other": "Pixlr bildeeditor"
+  },
+  "334": {
+    "other": "mer"
+  },
+  "335": {
+    "other": "Vennligst anngi et sidenummer mellom 1 og "
+  },
+  "336": {
+    "other": "Beklager, du kan ikke slippe mapper - kun filer!"
+  },
+  "337": {
+    "other": "Start opplasting automatisk"
+  },
+  "338": {
+    "other": "Lukk panel etter opplasting er ferdig"
+  },
+  "339": {
+    "other": "Eksisterende filer"
+  },
+  "34": {
+    "other": "Filen"
+  },
+  "340": {
+    "other": "Varsel"
+  },
+  "341": {
+    "other": "Filinfo"
+  },
+  "342": {
+    "other": "Mappeinfo"
+  },
+  "343": {
+    "other": "Bildeinfo"
+  },
+  "344": {
+    "other": "Søk på"
+  },
+  "345": {
+    "other": "Ingne versjonsinformasjon kunne hentes"
+  },
+  "346": {
+    "other": "Din versjon er oppdatert"
+  },
+  "347": {
+    "other": "En ny versjon (%s) er tilgjengelig! Besøk %s"
+  },
+  "348": {
+    "other": "Et nytt workspace har blitt delt."
+  },
+  "349": {
+    "other": "Advarsel, manglende argumenter"
+  },
+  "35": {
+    "other": "har blitt opprettet i mappen"
+  },
+  "350": {
+    "other": "En bruker som ikke tilhører deg ekeisterer allerede med dette navnet, vennligst velg et annet navn."
+  },
+  "351": {
+    "other": "Du har ikke rettigheter til å dele elementer offentlig."
+  },
+  "352": {
+    "other": "Et workspace med samme navn eksisterer allerede, vennligst velg et annet navn."
+  },
+  "353": {
+    "other": "Målbruker"
+  },
+  "354": {
+    "other": "Lag en ny bruker eller velg en av dine eksisterende fra listen."
+  },
+  "355": {
+    "other": "Brukernavn"
+  },
+  "356": {
+    "other": "Brukerpassord"
+  },
+  "357": {
+    "other": "Mål Repository"
+  },
+  "358": {
+    "other": "Velg et navn for det delte workspace."
+  },
+  "359": {
+    "other": "Etikett"
+  },
+  "36": {
+    "other": "Størrelsen er"
+  },
+  "360": {
+    "other": "Rettigheter"
+  },
+  "361": {
+    "other": "Les"
+  },
+  "362": {
+    "other": "Skriv"
+  },
+  "363": {
+    "other": "Delt"
+  },
+  "364": {
+    "other": "Du har ikke rettigheter til å utføre denne operasjonen"
+  },
+  "365": {
+    "other": "Du har ikke tillatelse til å laste opp flere enn %s filer samtidig."
+  },
+  "366": {
+    "other": "Denne brukeren har ikke et aktivt arbeidsområde."
+  },
+  "367": {
+    "other": "Du har ikke tilgang til å laste opp denne filtypen. Vennligst velg en av de følgende filtypene : "
+  },
+  "368": {
+    "other": "Utvalg vellykket pakket ut fra arkivet %s til mappen %s"
+  },
+  "369": {
+    "other": "Snarvei"
+  },
+  "37": {
+    "other": "Du må skrive et gyldig navn"
+  },
+  "370": {
+    "other": "APPLICATION_TITLE Offentlig nedlastning"
+  },
+  "371": {
+    "other": "Et passord er nødvendig for denne nedlastingen"
+  },
+  "372": {
+    "other": "Nåværende arbeidsområde"
+  },
+  "373": {
+    "other": "Destinasjon"
+  },
+  "374": {
+    "other": "Du kan ikke kopiere mapper på tvers av arbeidsområder"
+  },
+  "375": {
+    "other": "Vi har oppdaget at du var inaktiv siden mer enn __IDLE__. For sikkerheten til dataene du vil bli utlogget om __LOGOUT__"
+  },
+  "375t": {
+    "other": "Er du der fremdeles?"
+  },
+  "376": {
+    "other": "Klikk hvor som helst for å gjenoppta økten"
+  },
+  "378": {
+    "other": "Advarsel, passordet er tomt eller for kort!"
+  },
+  "379": {
+    "other": "Usikkert ord!"
+  },
+  "38": {
+    "other": "Mappen"
+  },
+  "380": {
+    "other": "For kort"
+  },
+  "381": {
+    "other": "Veldig svakt"
+  },
+  "382": {
+    "other": "Svak"
+  },
+  "383": {
+    "other": "Medium"
+  },
+  "384": {
+    "other": "Sterk"
+  },
+  "385": {
+    "other": "Veldig sterkt"
+  },
+  "validation.login.lowercase": {
+    "other": "Bruk bare små bokstaver for innlogginger"
+  },
+  "validation.login.format": {
+    "other": "Vennligst bruk alfanumeriske tegn eller gyldig e-post for innlogginger"
+  },
+  "386": {
+    "other": "Du har feilet innlogging 3 ganger.\\nFor din sikkerhet, fyll inn koden som vises i bildet."
+  },
+  "389": {
+    "other": "Vennligst les koden nedenfor :"
+  },
+  "39": {
+    "other": "har blitt opprettet i"
+  },
+  "390": {
+    "other": "Kode"
+  },
+  "391": {
+    "other": "Ingen datakatalog"
+  },
+  "392": {
+    "other": "Advarsel, APPLICATION_TITLE versjonen er endret (nå %s), vennligst rydd nettleserens cache og oppdater siden for å være sikker på at alt fungerer!"
+  },
+  "393": {
+    "other": "Advarsel, navnets lengde må være under %s, dette filnavnet vil bli forkortet!"
+  },
+  "394": {
+    "other": "Beklager, deling av mapper er for tiden utilgjengelig ved bruk av den aktive autentiseringsdriveren (brukere kan ikke redigeres). Fildeling er likevel mulig."
+  },
+  "395": {
+    "other": "Elementet du dro ser ut til å være en mappe, og en mappe kan ikke lastes opp til serveren! Er du sikker på at du vil laste opp?"
+  },
+  "396": {
+    "other": "Autentiseringsmetode"
+  },
+  "397": {
+    "other": "Last ned biter"
+  },
+  "398": {
+    "other": "Last ned valgt fil i biter"
+  },
+  "399": {
+    "other": "Oppgi antall biter du vil laste ned, klikk på knappen, og klikk så på hver fil for å laste de ned."
+  },
+  "4": {
+    "other": "Endret"
+  },
+  "40": {
+    "other": "Denne mappen finnes allerede (navn skiller mellom små og store bokstaver)"
+  },
+  "400": {
+    "other": "Antall biter :"
+  },
+  "401": {
+    "other": "Du kan laste ned og installere følgende programvare for å sette sammen bitene på din PC : "
+  },
+  "402": {
+    "other": "http://www.hjsplit.org/"
+  },
+  "41": {
+    "other": "har byttet navn til"
+  },
+  "411": {
+    "other": "Åpne"
+  },
+  "412": {
+    "other": "Kun opplasting"
+  },
+  "413": {
+    "other": "Delt av"
+  },
+  "414": {
+    "other": "Bruk piltastene for å navigere og +/- for å endre zoom"
+  },
+  "415": {
+    "other": "Slå av/på venstre panels synlighet"
+  },
+  "416": {
+    "other": "Venstrepanel"
+  },
+  "417": {
+    "other": "Lag en cell..."
+  },
+  "418": {
+    "other": "Lag en cell"
+  },
+  "419": {
+    "other": "Laster inn maler..."
+  },
+  "42": {
+    "other": "til"
+  },
+  "420": {
+    "other": "Vennligst velg en mal fra listen"
+  },
+  "421": {
+    "other": "Ny %s"
+  },
+  "422": {
+    "other": "Vennligst fyll de nødvendige parametrene. Pek på felttitler med musen for å få mer informasjon."
+  },
+  "423": {
+    "other": "Slett workspace"
+  },
+  "424": {
+    "other": "Er du sikker på at du vil slette dette workspace? Operasjonen er irreversibel."
+  },
+  "425": {
+    "other": "Workspace er nå opprettet, det er lagt til i workspacelisten din, hvis du vil fjerne det, sørg for å bytte til et annet workspace, klikk så på det røde krysset ved siden av workspace navnet."
+  },
+  "426": {
+    "other": "Det oppstod en feil ved opprettelse av workspace"
+  },
+  "427": {
+    "other": "Det oppstå en feil ved sletting av workspace"
+  },
+  "428": {
+    "other": "Workspace ble slettet"
+  },
+  "429": {
+    "other": "Dette er hvordan workspacet vil vises i din liste."
+  },
+  "43": {
+    "other": "eksisterer allerede (navn skiller mellom små og store bokstaver)"
+  },
+  "430": {
+    "other": "Vanlige Filer"
+  },
+  "431": {
+    "other": "Eksempelmal"
+  },
+  "432": {
+    "other": "Mine filer"
+  },
+  "433": {
+    "other": "klar"
+  },
+  "434": {
+    "other": "sender"
+  },
+  "435": {
+    "other": "ferdig"
+  },
+  "436": {
+    "other": "feil"
+  },
+  "437": {
+    "other": "Ooops, det ser ut til at sikkerhetstoken er utløpt! Vennligst %s ved å trykke oppdater eller F5 i nettleseren din!"
+  },
+  "438": {
+    "other": "Last inn siden på nytt"
+  },
+  "439": {
+    "other": "Hovedalternativer"
+  },
+  "44": {
+    "other": "har blitt slettet"
+  },
+  "440": {
+    "other": "Ja"
+  },
+  "441": {
+    "other": "Nei"
+  },
+  "442": {
+    "other": "Min konto"
+  },
+  "443": {
+    "other": "Oppdater til personlige informasjon"
+  },
+  "444": {
+    "other": "Vennligst oppdater passordet ditt, du vil ikke kunne logge inn uten å gjøre dette."
+  },
+  "445": {
+    "other": "Du blir nå logget ut, vennligst logg inn igjen med ditt nye passord, takk!"
+  },
+  "446": {
+    "other": "Presentasjon"
+  },
+  "447": {
+    "other": "Min gruppe"
+  },
+  "448": {
+    "other": "lag bruker"
+  },
+  "449": {
+    "other": "Lager %s, velg et passord"
+  },
+  "45": {
+    "other": "mappe"
+  },
+  "450": {
+    "other": "Sorter etter ..."
+  },
+  "451": {
+    "other": "Sorter miniatyrbilder etter ..."
+  },
+  "452": {
+    "other": "Miniatyrstørrelser"
+  },
+  "453": {
+    "other": "Angi størrelse på miniatyrbilder"
+  },
+  "454": {
+    "other": "Velg filer på din datamaskin"
+  },
+  "455": {
+    "other": "Workspaces"
+  },
+  "456": {
+    "other": "Mer"
+  },
+  "457": {
+    "other": "oppdater"
+  },
+  "458": {
+    "other": "fjern"
+  },
+  "459": {
+    "other": "Toppnivå"
+  },
+  "46": {
+    "other": "fil"
+  },
+  "460": {
+    "other": "Liste"
+  },
+  "461": {
+    "other": "Bytt til listevisning"
+  },
+  "462": {
+    "other": "Forhåndsvisning"
+  },
+  "463": {
+    "other": "Last ned alle"
+  },
+  "464": {
+    "other": "Last ned alt innholdet i arbeidsområdet samtidig (zippet)"
+  },
+  "465": {
+    "other": "Vis alternative URLer (monter arbeidsområder separat)"
+  },
+  "466": {
+    "other": "Laster..."
+  },
+  "467": {
+    "other": "Alle delte elementer"
+  },
+  "468": {
+    "other": "Arbeidsområder"
+  },
+  "469": {
+    "other": "Cells"
+  },
+  "47": {
+    "other": "Vil du virkelig slette"
+  },
+  "470": {
+    "other": "Opprettet %date"
+  },
+  "471": {
+    "other": "Opprettet av %user %date"
+  },
+  "472": {
+    "other": "Delt av %user"
+  },
+  "473": {
+    "other": "Delt av %user %date"
+  },
+  "474": {
+    "other": "Ingen beskrivelse tilgjengelig"
+  },
+  "475": {
+    "other": "Filer delt blant alle brukere"
+  },
+  "476": {
+    "other": "Ditt personlige arbeidsområde"
+  },
+  "477": {
+    "other": "Velg en fil eller mappe å se detaljene her"
+  },
+  "478": {
+    "other": "Ingen resultater funnet"
+  },
+  "479": {
+    "other": "Har du glemt passordet ditt?"
+  },
+  "48": {
+    "other": "Ok"
+  },
+  "480": {
+    "other": "Bla gjennom alle mapper i det gjeldende arbeidsområdet."
+  },
+  "481": {
+    "other": "Alle dine delte filer og mapper"
+  },
+  "482": {
+    "other": "Hurtigtilgang til dine bokmerkede elementer"
+  },
+  "483": {
+    "other": "Du har ikke tilgang til å lage flere brukere!"
+  },
+  "484": {
+    "other": "Opprett bruker"
+  },
+  "485": {
+    "other": "Opprett en delt bruker"
+  },
+  "486": {
+    "other": "Avansert"
+  },
+  "487": {
+    "other": "Grunnleggende"
+  },
+  "488": {
+    "other": "Avansert Filter"
+  },
+  "489": {
+    "other": "Metadata"
+  },
+  "49": {
+    "other": "Avbryt"
+  },
+  "490": {
+    "other": "Datointervall"
+  },
+  "491": {
+    "other": "Etter"
+  },
+  "492": {
+    "other": "til"
+  },
+  "493": {
+    "other": "I dag"
+  },
+  "494": {
+    "other": "I går"
+  },
+  "494t": {
+    "other": "I morgen"
+  },
+  "495": {
+    "other": "Forrige uke"
+  },
+  "496": {
+    "other": "Forrige måned"
+  },
+  "497": {
+    "other": "I fjor"
+  },
+  "498": {
+    "other": "Dokument egenskap"
+  },
+  "499": {
+    "other": "Fil"
+  },
+  "5": {
+    "other": "Handlinger"
+  },
+  "50": {
+    "other": "Exe-fil"
+  },
+  "500": {
+    "other": "Utvidelse"
+  },
+  "501": {
+    "other": "eller"
+  },
+  "502": {
+    "other": "Kun mapper"
+  },
+  "503": {
+    "other": "Størrelse"
+  },
+  "504": {
+    "other": "1k,1M,1G"
+  },
+  "505": {
+    "other": "til"
+  },
+  "506": {
+    "other": "Applikasjonsparametre (brukere, arbeidsområder, konfigurasjoner)"
+  },
+  "507": {
+    "other": "Velkommen til %s"
+  },
+  "508": {
+    "other": "Jeg opprettet en konto til deg på %s. For å koble til, trykk på følgende link %link og bruk disse detaljene: <br><br> Brukernavn: %user<br><br> Passord: %pass"
+  },
+  "509": {
+    "other": "Lagre som et team"
+  },
+  "51": {
+    "other": "Tekstbehandler"
+  },
+  "510": {
+    "other": "Vennligst skriv inn et team-label"
+  },
+  "511": {
+    "other": "Min %s"
+  },
+  "512": {
+    "other": "Skrivebord fullskjerm"
+  },
+  "513": {
+    "other": "vis"
+  },
+  "514": {
+    "other": "skjul"
+  },
+  "515": {
+    "other": "Ingen bokmerker - Slipp filer eller mapper her for rask tilgang."
+  },
+  "516": {
+    "other": "utvid"
+  },
+  "517": {
+    "other": "skjul"
+  },
+  "518": {
+    "other": "Alternativt kan du <a class='create_file_alt_link'>lage en ny tom fil</a>."
+  },
+  "519": {
+    "other": "Oppdater bruker"
+  },
+  "52": {
+    "other": "Redigerer fil"
+  },
+  "520": {
+    "other": "Oppdater brukerdata og passord"
+  },
+  "521": {
+    "other": "Oppdatering av bruker vellykket"
+  },
+  "522": {
+    "other": "Bruker ID"
+  },
+  "523": {
+    "other": "Passord"
+  },
+  "524": {
+    "other": "Oppdater passord"
+  },
+  "525": {
+    "other": "Vis orginalbilde"
+  },
+  "526": {
+    "other": "Lav-oppløslig versjon"
+  },
+  "527": {
+    "other": "Delt med"
+  },
+  "528": {
+    "other": "Interne brukere"
+  },
+  "53": {
+    "other": "Lagre"
+  },
+  "530": {
+    "other": "Eksterne brukere"
+  },
+  "531": {
+    "other": "Brukere"
+  },
+  "532": {
+    "other": "Grupper"
+  },
+  "533": {
+    "other": "Identifikator brukt for login, vennligst bruk alfanumeriske tegn eller e-post i små bokstaver."
+  },
+  "534": {
+    "other": "Passord brukt til innlogging"
+  },
+  "535": {
+    "other": "Send passord på e-post"
+  },
+  "536": {
+    "other": "Send en velkomstmail inkludert passordet til den nye brukeren"
+  },
+  "537": {
+    "other": "Filen er for stor! Maksimal godkjent størrelse er %i"
+  },
+  "538": {
+    "other": "Opplastingsfeil: ingen fil funnet på server!"
+  },
+  "539": {
+    "other": "Opplastingsfeil: filen er delvis"
+  },
+  "54": {
+    "other": "Avbryt"
+  },
+  "540": {
+    "other": "Opplastingsfeil: finner ikke midlertidig mappe"
+  },
+  "541": {
+    "other": "Opplastingsfeil: kan ikke skrive til den midlertidige mappen"
+  },
+  "542": {
+    "other": "Opplastingsfeil: En PHP-utvidelse stoppet opplastingen."
+  },
+  "543": {
+    "other": "Resultat begrenset til %s."
+  },
+  "544": {
+    "other": "Vis mer"
+  },
+  "545": {
+    "other": "Ekstern deling"
+  },
+  "546": {
+    "other": "Dette elementet har blitt delt med deg av %%OWNER%% fra en ekstern lokasjon. Vil du fortsette?"
+  },
+  "547": {
+    "other": "Godta"
+  },
+  "548": {
+    "other": "Avslå"
+  },
+  "549": {
+    "other": "Du har tidligere godtatt dette elementet som ble delt med deg av %%OWNER%% fra en ekstern lokasjon. Vil du avslå det nå?"
+  },
+  "55": {
+    "other": "har blitt endret"
+  },
+  "550": {
+    "other": "Avvis denne delingen"
+  },
+  "551": {
+    "other": "Avvis"
+  },
+  "552": {
+    "other": "Vennligst oppgi et passord."
+  },
+  "553": {
+    "other": "Ugyldig passord, vennligst prøv igjen. \\n Kontroller at Caps Lock ikke er slått på!"
+  },
+  "554": {
+    "other": "%s resultat(er) i papirkurven"
+  },
+  "556": {
+    "other": "Starter oppgave %s i bakgrunnen"
+  },
+  "557": {
+    "other": "Legitimasjon kreves"
+  },
+  "558": {
+    "other": "Vennligst oppgi et passord for å få tilgang til dette workspacet."
+  },
+  "559": {
+    "other": "Autentisering feilet for dette workspacet."
+  },
+  "56": {
+    "other": "BMP bilde"
+  },
+  "560": {
+    "other": "Autentisering påkrevd"
+  },
+  "561": {
+    "other": "Vi vil omdirigere deg til autentiseringssiden til leverandøren. Hvis du ikke omdirigeres automatisk, trykk OK for å prøve på nytt..."
+  },
+  "562": {
+    "other": "Denne mappen er tom!"
+  },
+  "563": {
+    "other": "Dette workspacet er tomt!"
+  },
+  "564": {
+    "other": "Papirkurven er tom."
+  },
+  "565": {
+    "other": "Begynn å legge til filer eller mapper ved å velge de eller dra de direkte fra skrivebordet"
+  },
+  "566": {
+    "other": "Du har ikke tillatelse til å legge filer her"
+  },
+  "567": {
+    "other": "Bla gjennom papirkurven"
+  },
+  "568": {
+    "other": "Teams"
+  },
+  "569": {
+    "other": "Nytt Team"
+  },
+  "57": {
+    "other": "PNG bilde"
+  },
+  "570": {
+    "other": "Slett Team"
+  },
+  "571": {
+    "other": "Ingen team opprettet enda"
+  },
+  "572": {
+    "other": "Lag dine egne teams for å lett kunne dele data mellom flere brukere"
+  },
+  "571.readonly": {
+    "other": "Ingen teams tilgjengelig"
+  },
+  "572.readonly": {
+    "other": "Du har ikke rettigheter til å opprette teams, men noen autoriserte brukere kan dele teams med deg"
+  },
+  "571.create_team_action": {
+    "other": "Opprett og endre Teams"
+  },
+  "571.create_team_legend": {
+    "other": "La brukere opprette og endre deres egne teams"
+  },
+  "573": {
+    "other": "Legg bruker til i team"
+  },
+  "574": {
+    "other": "Fjern fra team"
+  },
+  "575": {
+    "other": "Team-medlemmer"
+  },
+  "576": {
+    "other": "%s medlemmer"
+  },
+  "577": {
+    "other": "Ingen medlemmer"
+  },
+  "578": {
+    "other": "Team-etikett"
+  },
+  "579": {
+    "other": "Opprett Team"
+  },
+  "58": {
+    "other": "CSS Fil"
+  },
+  "580": {
+    "other": "Endre team-etikett"
+  },
+  "581": {
+    "other": "Brukeren tilhører %s team(s)"
+  },
+  "582": {
+    "other": "Slett bruker"
+  },
+  "583": {
+    "other": "Søk i mappe"
+  },
+  "584": {
+    "other": "Mappe"
+  },
+  "585": {
+    "other": "Ingen eksterne brukere"
+  },
+  "586": {
+    "other": "Opprett dine egen brukere og del filer og mapper fra dine workspaces med de."
+  },
+  "587": {
+    "other": "Ingen resultater"
+  },
+  "588": {
+    "other": "Begynn å skrive i søkefeltet for å finne brukere i mappen"
+  },
+  "589": {
+    "other": "Ekstern bruker"
+  },
+  "59": {
+    "other": "MP3 fil"
+  },
+  "590": {
+    "other": "Intern bruker"
+  },
+  "591": {
+    "other": "Velg et navn for teamet, og du vil kunne legge til brukere etter oppretting."
+  },
+  "592": {
+    "other": "Adressebok"
+  },
+  "593": {
+    "other": "Delte bruker"
+  },
+  "594": {
+    "other": "Betrodde Servere"
+  },
+  "595": {
+    "other": "Søk etter bruker..."
+  },
+  "596": {
+    "other": "Server '%s'"
+  },
+  "597": {
+    "other": "alle"
+  },
+  "598": {
+    "other": "Send en melding"
+  },
+  "599": {
+    "other": "Legg til en bruker"
+  },
+  "599-a": {
+    "other": "Alle Resultater"
+  },
+  "6": {
+    "other": "Endre navn"
+  },
+  "60": {
+    "other": "RAR fil"
+  },
+  "600": {
+    "other": "Rediger bruker"
+  },
+  "601": {
+    "other": "En delt celle"
+  },
+  "602": {
+    "other": "%1 delte celler"
+  },
+  "603": {
+    "other": "Team"
+  },
+  "604": {
+    "other": "Ekstern bruker"
+  },
+  "605": {
+    "other": "Flere søkealternativer"
+  },
+  "606": {
+    "other": "Mindre søkealternativer"
+  },
+  "607": {
+    "other": "Din nylige aktivitet - Skriv inn for å søke etter filer i alle workspaces"
+  },
+  "608": {
+    "other": "Gjeldende mappe"
+  },
+  "609": {
+    "other": "Hele workspacet"
+  },
+  "61": {
+    "other": "GZ fil"
+  },
+  "610": {
+    "other": "Alle workspaces"
+  },
+  "611": {
+    "other": "Skriv for å søke"
+  },
+  "612": {
+    "other": "Egendefinert utvalg"
+  },
+  "613": {
+    "other": "Større enn..."
+  },
+  "614": {
+    "other": "Mindre enn..."
+  },
+  "615": {
+    "other": "Utfør"
+  },
+  "616": {
+    "other": "Maske"
+  },
+  "617": {
+    "other": "Angi"
+  },
+  "618": {
+    "other": "Bytt språk..."
+  },
+  "619": {
+    "other": "Søk begrenset til gjeldende mappe og undermapper"
+  },
+  "62": {
+    "other": "Rotkatalog"
+  },
+  "620": {
+    "other": "Søk begrenset til gjeldende workspace"
+  },
+  "621": {
+    "other": "Dette feltet kan ikke være tomt"
+  },
+  "622": {
+    "other": "Feilmelding"
+  },
+  "623": {
+    "other": "Kopier"
+  },
+  "624": {
+    "other": "Kopiert!"
+  },
+  "625": {
+    "other": "Brev"
+  },
+  "626": {
+    "other": "Filer delt med meg"
+  },
+  "627": {
+    "other": "Delt fra eksterne servere"
+  },
+  "628": {
+    "other": "Tilbakestill"
+  },
+  "629": {
+    "other": "Ingen poster enda"
+  },
+  "63": {
+    "other": "Logg ut"
+  },
+  "630": {
+    "other": "Mapper delt med meg"
+  },
+  "631": {
+    "other": "Denne cellen er tom!"
+  },
+  "632": {
+    "other": "Ingen celler enda"
+  },
+  "633": {
+    "other": "Celler er områder delt med andre for å samarbeide på dokumenter"
+  },
+  "634": {
+    "other": "Du"
+  },
+  "634b": {
+    "other": "Din gruppe"
+  },
+  "634c": {
+    "other": "Alle brukere"
+  },
+  "635": {
+    "other": "Chatterom"
+  },
+  "636": {
+    "other": "Begynn å skrive og trykk Enter"
+  },
+  "637": {
+    "other": "Ingen meldinger enda, start å skrive for å chatte med brukerne av denne cellen!"
+  },
+  "638": {
+    "other": "Celle inneholder flere rot mapper eller filer, du kan ikke laste opp data direkte her."
+  },
+  "639": {
+    "other": "I denne cellen"
+  },
+  "64": {
+    "other": "XLS Fil"
+  },
+  "640": {
+    "other": "Lag en celle med %s"
+  },
+  "641": {
+    "other": "Fjern fra gjeldende celle"
+  },
+  "642": {
+    "other": "Legg til gjeldende celle"
+  },
+  "643": {
+    "other": "Du deler nå celle med %s"
+  },
+  "644": {
+    "other": "Kunne ikke lage celle: %s"
+  },
+  "65": {
+    "other": "Word Fil"
+  },
+  "66": {
+    "other": "Kopier"
+  },
+  "67": {
+    "other": "Valgt fil"
+  },
+  "68": {
+    "other": "Lim inn"
+  },
+  "69": {
+    "other": "Eller velg en annen mappe"
+  },
+  "7": {
+    "other": "Slett"
+  },
+  "70": {
+    "other": "Flytt"
+  },
+  "71": {
+    "other": "Denne filen eksisterer allerede (navn skiller mellom små og store bokstaver)"
+  },
+  "72": {
+    "other": "Rotbanen er ikke riktig. Sjekk den i conf/conf.php-filen"
+  },
+  "73": {
+    "other": "har blitt kopiert til mappen"
+  },
+  "74": {
+    "other": "har blitt flyttet til mappen"
+  },
+  "75": {
+    "other": "Filen users.txt er ikke i mappen prive"
+  },
+  "76": {
+    "other": "Denne filen har blitt fjernet"
+  },
+  "77": {
+    "other": "Sende"
+  },
+  "78": {
+    "other": "Bestått"
+  },
+  "79": {
+    "other": "PDF Fil"
+  },
+  "8": {
+    "other": "Mappe"
+  },
+  "80": {
+    "other": "MOV Fil"
+  },
+  "81": {
+    "other": "AVI Fil"
+  },
+  "82": {
+    "other": "MPG Fil"
+  },
+  "83": {
+    "other": "MPEG Fil"
+  },
+  "84": {
+    "other": "Hjelp"
+  },
+  "85": {
+    "other": "Oppdater"
+  },
+  "86": {
+    "other": "Lukk"
+  },
+  "87": {
+    "other": "Søk"
+  },
+  "88": {
+    "other": "Nedlasting"
+  },
+  "89": {
+    "other": "Kan ikke åpne fil"
+  },
+  "9": {
+    "other": "Midi Fil"
+  },
+  "90": {
+    "other": "Utskrift"
+  },
+  "91": {
+    "other": "FLASH Fil"
+  },
+  "92": {
+    "other": "Språk"
+  },
+  "93": {
+    "other": "For å velge språk, må nettleseren din akseptere informasjonskapsler."
+  },
+  "94": {
+    "other": "Innlogging"
+  },
+  "95": {
+    "other": "Velg språk:"
+  },
+  "96": {
+    "other": "Vennligst velg målmappen i treet: "
+  },
+  "97": {
+    "other": "Last opp Fil"
+  },
+  "98": {
+    "other": "Klikk hvor som helst på denne boksen for å lukke den."
+  },
+  "99": {
+    "other": "er ikke skrivbar. Det kan være et tilgangsproblem, vennligst sjekk med systemansvarlig."
+  },
+  "about_access_key": {
+    "other": "A"
+  },
+  "bookmarks_access_key": {
+    "other": "B"
+  },
+  "byte_unit_symbol": {
+    "other": "B"
+  },
+  "copy_access_key": {
+    "other": "C"
+  },
+  "create_repo_accesskey": {
+    "other": "R"
+  },
+  "create_user_accesskey": {
+    "other": "U"
+  },
+  "date_format": {
+    "other": "Y/m/d H:i"
+  },
+  "date_intl_locale": {
+    "other": "en_US"
+  },
+  "date_relative_date": {
+    "other": "på DATO"
+  },
+  "date_relative_date_format": {
+    "other": "F, jS Y"
+  },
+  "date_relative_days_ago": {
+    "other": "%s dager siden"
+  },
+  "date_relative_days_ahead": {
+    "other": "om %s dager"
+  },
+  "date_relative_time": {
+    "other": "TID"
+  },
+  "date_relative_time_format": {
+    "other": "H:i"
+  },
+  "date_relative_today": {
+    "other": "[I dag på] LT"
+  },
+  "date_relative_tomorrow": {
+    "other": "[I morgen på] LT"
+  },
+  "date_relative_yesterday": {
+    "other": "[I går på] LT"
+  },
+  "date_relative_lastweek": {
+    "other": "[Last] dddd [at] LT"
+  },
+  "date_relative_nextweek": {
+    "other": "dddd [at] LT"
+  },
+  "delete_access_key": {
+    "other": "D"
+  },
+  "detail_access_key": {
+    "other": "L"
+  },
+  "download_access_key": {
+    "other": "w"
+  },
+  "edit_access_key": {
+    "other": "E"
+  },
+  "empty_recycle_access_key": {
+    "other": "y"
+  },
+  "file_access_key": {
+    "other": "F"
+  },
+  "folder_access_key": {
+    "other": "N"
+  },
+  "languageLabel": {
+    "other": "Engelsk"
+  },
+  "leftpane_accesskey": {
+    "other": "L"
+  },
+  "list_access_key": {
+    "other": "i"
+  },
+  "move_access_key": {
+    "other": "M"
+  },
+  "open_with_access": {
+    "other": "e"
+  },
+  "parent_access_key": {
+    "other": "P"
+  },
+  "plugtype.desc.access": {
+    "other": "Plugins definerer hvordan et workspace kontrollerer tilgang til sin backed (et filområde eller annet) og større endringer i utseende og handlinger."
+  },
+  "plugtype.desc.action": {
+    "other": "Funksjonsorienterte plugins for ulike aspekter"
+  },
+  "plugtype.desc.auth": {
+    "other": "Hvordan brukerdata lagres i backend"
+  },
+  "plugtype.desc.authfront": {
+    "other": "Metoder for innsamling av identifikasjonslegitimasjon (web form, api nøkkel, osv.)"
+  },
+  "plugtype.desc.boot": {
+    "other": "Unik plugin for lasting av rammeverket"
+  },
+  "plugtype.desc.cache": {
+    "other": "Unik plugin for å sette opp hurtigbufferserveren som brukes av programmet"
+  },
+  "plugtype.desc.conf": {
+    "other": "Hvordan konfigurasjonsdata lagres i backend"
+  },
+  "plugtype.desc.cypher": {
+    "other": "Data krypteringsplugins"
+  },
+  "plugtype.desc.editor": {
+    "other": "Seere eller editorer for en lang rekke mimetyper"
+  },
+  "plugtype.desc.feed": {
+    "other": "Implementeringer for å lagre datahendelser (bare SQL enda)"
+  },
+  "plugtype.desc.gui": {
+    "other": "Hoved webgrensesnitt, temaer og utvidelser"
+  },
+  "plugtype.desc.helper": {
+    "other": "Hjelperverktøy for administrative oppgaver"
+  },
+  "plugtype.desc.index": {
+    "other": "Verktøy for indeksering av data og gi hurtigsøkalternativ"
+  },
+  "plugtype.desc.log": {
+    "other": "Send programlogger til ulike kanaler"
+  },
+  "plugtype.desc.mailer": {
+    "other": "Verktøy for å la programmet sende e-post"
+  },
+  "plugtype.desc.search-engine": {
+    "other": "Søkemotor alternativer"
+  },
+  "plugtype.desc.meta": {
+    "other": "Flere funksjoner som skal legges til i workspaces"
+  },
+  "plugtype.desc.metastore": {
+    "other": "Ulike implementasjoner for lagring av metadata sammen med filer og mapper"
+  },
+  "plugtype.desc.mq": {
+    "other": "Implementeringer av en enkel PUB/SUB server"
+  },
+  "plugtype.desc.sec": {
+    "other": "Avanserte sikkerhetsfunksjoner"
+  },
+  "plugtype.desc.shorten": {
+    "other": "Nettjenestebroer for å forkorte offentlige lenker"
+  },
+  "plugtype.desc.uploader": {
+    "other": "Opplastere basert på ulike teknologier som HTML, Javascript, Java og andre"
+  },
+  "plugtype.title.access": {
+    "other": "Workspaces Drivere"
+  },
+  "plugtype.title.action": {
+    "other": "Plugins for handlinger"
+  },
+  "plugtype.title.auth": {
+    "other": "Autentiseringsbackends"
+  },
+  "plugtype.title.authfront": {
+    "other": "Autentiseringsfrontends"
+  },
+  "plugtype.title.boot": {
+    "other": "Laster"
+  },
+  "plugtype.title.cache": {
+    "other": "Cache server"
+  },
+  "plugtype.title.conf": {
+    "other": "Konfigurasjonslagring"
+  },
+  "plugtype.title.cypher": {
+    "other": "Krypteringsverktøy"
+  },
+  "plugtype.title.editor": {
+    "other": "Redaktører"
+  },
+  "plugtype.title.feed": {
+    "other": "Hendelseslogg lagring"
+  },
+  "plugtype.title.gui": {
+    "other": "Grafisk brukergrensesnitt"
+  },
+  "plugtype.title.helper": {
+    "other": "Hjelper"
+  },
+  "plugtype.title.index": {
+    "other": "Indekserer"
+  },
+  "plugtype.title.log": {
+    "other": "Logger"
+  },
+  "plugtype.title.mailer": {
+    "other": "Utsendere"
+  },
+  "plugtype.title.search-engine": {
+    "other": "Søkemotor"
+  },
+  "plugtype.title.meta": {
+    "other": "Workspace meta aspekter"
+  },
+  "plugtype.title.metastore": {
+    "other": "Metadatalagring"
+  },
+  "plugtype.title.mq": {
+    "other": "Direktemelding"
+  },
+  "plugtype.title.sec": {
+    "other": "Sikkerhet"
+  },
+  "plugtype.title.shorten": {
+    "other": "URL forkortelse"
+  },
+  "plugtype.title.uploader": {
+    "other": "Opplaster"
+  },
+  "preview_access_key": {
+    "other": "e"
+  },
+  "react.1": {
+    "other": "overordnet mappe"
+  },
+  "react.2": {
+    "other": "massehandlinger"
+  },
+  "refresh_access_key": {
+    "other": "h"
+  },
+  "rename_access_key": {
+    "other": "R"
+  },
+  "restore_access_key": {
+    "other": "o"
+  },
+  "settings_access_key": {
+    "other": "g"
+  },
+  "svn_log_access_key": {
+    "other": "L"
+  },
+  "thumbs_access_key": {
+    "other": "T"
+  },
+  "upload_access_key": {
+    "other": "U"
+  },
+  "view_access_key": {
+    "other": "V"
+  },
+  "public_link_user": {
+    "other": "Offentlig tilgang"
+  },
+  "background.move.file": {
+    "other": "Flytter fil i bakgrunnen..."
+  },
+  "background.move.folder": {
+    "other": "Flytter mappe i bakgrunnen..."
+  },
+  "background.copy.selection": {
+    "other": "Kopierer valgte elementer i bakgrunnen..."
+  },
+  "overlay.lock.file": {
+    "other": "Filen er låst"
+  },
+  "overlay.lock.folder": {
+    "other": "Mappen er låst"
+  },
+  "overlay.watch.file": {
+    "other": "Ser på denne filen"
+  },
+  "overlay.watch.folder": {
+    "other": "Ser på denne mappen"
+  },
+  "overlay.shared.file": {
+    "other": "Delt fil, klikk for å redigere"
+  },
+  "overlay.shared.folder": {
+    "other": "Delt mappe, klikk for å redigere"
+  },
+  "overlay.bookmark.file": {
+    "other": "Filen er bokmerket"
+  },
+  "overlay.bookmark.folder": {
+    "other": "Mappen er bokmerket"
+  },
+  "bookmark.button.tip.add": {
+    "other": "Bokmerk dette elementet"
+  },
+  "bookmark.button.tip.remove": {
+    "other": "Fjern dette bokmerket"
+  },
+  "bookmark.button.tip.mixed": {
+    "other": "Blandede verdier, klikk for å bokmerke alle"
+  },
+  "bookmark.button.tip.saving": {
+    "other": "Lagrer bokmerkestatus"
+  },
+  "bookmark.secondary.inside": {
+    "other": "Innenfor"
+  },
+  "mkfile.empty.template.label": {
+    "other": "Tom fil"
+  },
+  "mkfile.untitled.document": {
+    "other": "Dokument uten tittel"
+  },
+  "filename.forbidden.slash": {
+    "other": "Ikke bruk / i filnavn!"
+  },
+  "filename.forbidden.empty": {
+    "other": "Du må oppgi et navn!"
+  },
+  "filename.trailing-leading.spaces": {
+    "other": "Advarsel, det virker som om navnet begynner eller slutter med et mellomrom (kanskje en skrivefeil?)"
+  },
+  "rename.newvalue.error.similar": {
+    "other": "Vennligst bruk en annen verdi for nytt navn!"
+  },
+  "rename.processing": {
+    "other": "Endrer navn %1 til %2"
+  },
+  "cells.quick-filter": {
+    "other": "Filtrer Cells"
+  },
+  "ws.quick-filter": {
+    "other": "Filtrer Workspaces"
+  },
+  "visibility.panel.title": {
+    "other": "Synlighet"
+  },
+  "visibility.panel.right-read": {
+    "other": "Vis"
+  },
+  "visibility.panel.right-edit": {
+    "other": "Rediger"
+  },
+  "visibility.panel.list.users": {
+    "other": "Brukere"
+  },
+  "visibility.panel.list.teams": {
+    "other": "Dine Teams"
+  },
+  "visibility.panel.edit": {
+    "other": "Endre synlighet"
+  },
+  "visibility.panel.save": {
+    "other": "Lagre endringer"
+  },
+  "visibility.panel.revert": {
+    "other": "Tilbakestill endringer"
+  },
+  "visibility.panel.error": {
+    "other": "En feil har oppstått"
+  },
+  "visibility.panel.pickuser": {
+    "other": "Velg en bruker..."
+  },
+  "visibility.panel.setvisible": {
+    "other": "Angi synlighet til..."
+  },
+  "visibility.users.advanced": {
+    "other": "Denne avanserte funksjonen lar deg avgjøre om brukerne du oppretter i adresseboken kan bli sett og/eller redigert av andre brukere. Som standard er brukerne dine bare synlige for deg."
+  },
+  "user.unknown": {
+    "other": "Ukjent"
+  },
+  "addressbook.pick.group": {
+    "other": "Velg gruppe"
+  },
+  "addressbook.pick.multiple": {
+    "other": "Flere valg"
+  },
+  "confirm.dialog.title": {
+    "other": "Bekreft"
+  },
+  "confirm.dialog.destructive": {
+    "other": "Du er i ferd med å slette"
+  },
+  "confirm.dialog.skipNext": {
+    "other": "Ikke advar meg neste gang"
+  },
+  "material.paginator.rows": {
+    "other": "Rader per side"
+  },
+  "material.paginator.of": {
+    "other": "av"
+  },
+  "form.input-image.fileTypes": {
+    "other": "Vennligst bruk bare bilder (jpeg,png,bmp,webp)"
+  },
+  "form.input-image.clearButton": {
+    "other": "Tilbakestill"
+  },
+  "form.input-image.clearConfirm": {
+    "other": "Vil du fjerne gjeldende bilde?"
+  },
+  "form.input-image.avatarMax": {
+    "other": "Vennligst bruk bilder mindre enn 5MB"
+  },
+  "searchengine.start": {
+    "other": "Skriv for å søke etter filer og mapper"
+  },
+  "searchengine.searching": {
+    "other": "Søker..."
+  },
+  "searchengine.main.placeholder": {
+    "other": "Søk..."
+  },
+  "searchengine.topbar.title": {
+    "other": "Søk: "
+  },
+  "searchengine.scope.title": {
+    "other": "Søker i..."
+  },
+  "searchengine.share.title": {
+    "other": "Delt"
+  },
+  "searchengine.share.hint": {
+    "other": "Ingen status"
+  },
+  "searchengine.share.option.link": {
+    "other": "Offentlig link"
+  },
+  "searchengine.share.option.cell": {
+    "other": "Delt i Cell"
+  },
+  "searchengine.share.option.any": {
+    "other": "Offentlig link eller Cell"
+  },
+  "searchengine.format.title": {
+    "other": "Format"
+  },
+  "searchengine.format.file-only": {
+    "other": "Kun Filer"
+  },
+  "searchengine.advanced-filter.tooltip": {
+    "other": "Avanserte Filtere"
+  },
+  "searchengine.results.foundN": {
+    "other": "%1 resultater funnet"
+  },
+  "searchengine.results.withMore": {
+    "other": "Viser %1, last flere..."
+  },
+  "searchengine.query.action.save": {
+    "other": "Lagre"
+  },
+  "searchengine.query.action.save-new": {
+    "other": "Lagre spørring"
+  },
+  "searchengine.query.action.save-legend": {
+    "other": "Save this search query for later re-use"
+  },
+  "searchengine.query.action.clear": {
+    "other": "Tøm"
+  },
+  "searchengine.query.action.clear-all": {
+    "other": "Tøm alt"
+  },
+  "searchengine.query.action.delete": {
+    "other": "Slett"
+  },
+  "searchengine.query.action.delete-confirm": {
+    "other": "Slette denne lagrede spørringen?"
+  },
+  "searchengine.query.save-label": {
+    "other": "Skriv inn en etikett"
+  },
+  "searchengine.field.basenameOrContent": {
+    "other": "Navn/Innhold"
+  },
+  "searchengine.complete.group.saved": {
+    "other": "Lagrede søk"
+  },
+  "searchengine.complete.group.history": {
+    "other": "Siste søk"
+  },
+  "searchengine.complete.group.suggestion": {
+    "other": "Avansert forslag"
+  },
+  "searchengine.complete.suggestion.intro": {
+    "other": "Mente du"
+  },
+  "searchengine.complete.suggestion.remain": {
+    "other": "inneholder '%s'"
+  },
+  "searchengine.complete.activefilters": {
+    "other": "Filter:"
+  },
+  "searchengine.complete.activefilters-edit": {
+    "other": "Klikk for å endre"
+  },
+  "chat.dropzone.remove": {
+    "other": "Fjern"
+  },
+  "chat.dropzone.preview": {
+    "other": "Inkluder forhåndsvisning?"
+  },
+  "chat.dropzone.inline": {
+    "other": "Legg til inline"
+  },
+  "chat.load-older": {
+    "other": "Eldre oppføringer"
+  },
+  "chat.msg.edit": {
+    "other": "Rediger Melding"
+  },
+  "chat.msg.save": {
+    "other": "Lagre Endringer"
+  },
+  "chat.msg.revert": {
+    "other": "Tilbakestill Endringer"
+  },
+  "chat.msg.delete": {
+    "other": "Slett Melding"
+  },
+  "chat.msg.delete.confirm.title": {
+    "other": "Slette Melding?"
+  },
+  "chat.msg.delete.confirm": {
+    "other": "Denne handlingen kan ikke angres"
+  },
+  "chat.link.doc.loading": {
+    "other": "Laster dokument..."
+  },
+  "chat.link.doc.opening": {
+    "other": "Åpner dokument..."
+  },
+  "chat.link.doc.goto": {
+    "other": "Gå til dokument"
+  },
+  "chat.link.doc.not-found": {
+    "other": "Dokument ikke funnet, det kan ha blitt slettet."
+  },
+  "chat.link.doc.click-indicator": {
+    "other": "Klikk for å åpne %s"
+  },
+  "chat.link.doc.open-in": {
+    "other": "Åpne dokument i..."
+  },
+  "workspace.quota-usage": {
+    "other": "Kvotebruk"
+  },
+  "action.delete.permanently": {
+    "other": "Slett permanent"
+  },
+  "action.delete.permanently.warning": {
+    "other": "advarsel, du kan ikke angre denne operasjonen!"
+  },
+  "action.goto.label": {
+    "other": "Gå Til Mappe"
+  },
+  "action.copymove.recent": {
+    "other": "Siste Steder"
+  },
+  "action.copymove.root": {
+    "other": "Toppnivå"
+  }
+}

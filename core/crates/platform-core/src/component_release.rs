@@ -13,6 +13,8 @@ use crate::governance::{Definition, Execution, Params, Refusal, Target};
 
 #[path = "component_release_approval.rs"]
 pub(crate) mod approval;
+#[path = "component_release_peer.rs"]
+pub(crate) mod peer;
 
 pub(crate) const REGISTER: &str = "component_release.register";
 pub(crate) const KIND: &str = "COMPONENT_RELEASE";
@@ -179,10 +181,8 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
         &["mode", "adapterProtocolRange", "actionTokenAudience"],
         &[],
     )?;
-    if connector["mode"] != "REMOTE_ADAPTER"
-        || connector["adapterProtocolRange"] != "1"
-        || manifest["adapterProtocolRange"] != "1"
-    {
+    let connector_kind = crate::application_binding::native::Connector::from_manifest(&manifest)?;
+    if manifest["adapterProtocolRange"] != connector["adapterProtocolRange"] {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     text(connector, "actionTokenAudience")?;
@@ -306,6 +306,16 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
         {
             return Err(bad());
         }
+        if connector_kind == crate::application_binding::native::Connector::ProtocolPeer
+            && (declaration["cancel"] != "UNSUPPORTED"
+                || declaration["observe"] != "UNSUPPORTED"
+                || declaration["meter"] != "UNSUPPORTED"
+                || declaration["revisionQuery"] != "UNSUPPORTED"
+                || declaration["onlineEditing"] != "UNSUPPORTED"
+                || declaration["readEdge"] != "NONE")
+        {
+            return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+        }
     }
     if declared != seen {
         return Err(bad());
@@ -348,7 +358,14 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
         .as_array()
         .ok_or_else(bad)?;
     if !correlation.contains(&json!("OPERATION_ID"))
-        || !states.contains(&json!("NATIVE_STATUS"))
+        || !(match connector_kind {
+            crate::application_binding::native::Connector::RemoteAdapter => {
+                states.contains(&json!("NATIVE_STATUS"))
+            }
+            crate::application_binding::native::Connector::ProtocolPeer => {
+                states.contains(&json!("CORE_ACTION")) && states.contains(&json!("AGENTGATEWAY"))
+            }
+        })
         || correlation.iter().any(|value| {
             !matches!(
                 value.as_str(),
@@ -456,6 +473,19 @@ pub(crate) async fn active_contracts(
     }
     validate_declarations(registration, &contracts)?;
     for contract in &contracts {
+        if crate::application_binding::native::Connector::from_manifest(&registration.manifest)?
+            == crate::application_binding::native::Connector::ProtocolPeer
+        {
+            if contract["content"]["operationContracts"]
+                .as_array()
+                .ok_or_else(bad)?
+                .iter()
+                .any(|operation| operation["surface"] != "TOOL")
+            {
+                return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+            }
+            continue;
+        }
         let has_roundtrip = contract["vectors"]["cases"]
             .as_array()
             .ok_or_else(bad)?
@@ -569,6 +599,8 @@ fn validate_declarations(release: &Registration, contracts: &[Value]) -> Result<
         return Err(bad());
     }
     for action in actions {
+        crate::application_binding::native::Connector::from_manifest(manifest)?
+            .validate_action(action)?;
         exact_fields(
             action,
             &[
@@ -1047,6 +1079,16 @@ pub(crate) async fn target(
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
     active_contracts(conn, tenant, &registration).await?;
+    if crate::application_binding::native::Connector::from_manifest(&registration.manifest)?
+        == crate::application_binding::native::Connector::ProtocolPeer
+    {
+        peer::environment(&registration)?;
+        return Ok(Target {
+            id: registration.id,
+            version: 1,
+            workspace_id: None,
+        });
+    }
     protocol_fixture(&registration)?;
     crate::component_conformance_identity::load(
         &registration.adapter_digest,
@@ -1079,6 +1121,11 @@ pub(crate) async fn prewrite(
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
     let contracts = active_contracts(tx, ae.tenant_id, &registration).await?;
+    if crate::application_binding::native::Connector::from_manifest(&registration.manifest)?
+        == crate::application_binding::native::Connector::ProtocolPeer
+    {
+        return peer::prewrite(tx, ae, &registration, &contracts).await;
+    }
     let fixture = protocol_fixture(&registration)?;
     let mut steps = fixture["steps"].as_array().ok_or_else(bad)?.clone();
     let mut contract_digests = Vec::new();
@@ -1281,6 +1328,24 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
         }
         let expected: Value =
             serde_json::from_str(text(step, "expectedResponseJson")?).map_err(|_| bad())?;
+        if plan["connectorKind"] == "PROTOCOL_PEER" {
+            if observation["httpStatus"] != 0
+                || observation["mcpResultKind"] != "RESULT"
+                || step["expectedMcpResultKind"] != "RESULT"
+                || observation.get("nativeObservation").is_some()
+                || observation.get("nativeScopeObservation").is_some()
+                || observation.get("contentReference").is_some()
+                || source_reference.is_some()
+                || (if step["operation"] == "mcp_call" {
+                    &observation["resultDigest"]
+                } else {
+                    &observation["responseDigest"]
+                }) != &json!(collab_bridge::limits::canonical_digest(&expected))
+            {
+                return Err(bad());
+            }
+            continue;
+        }
         match step.get("referenceResourceId") {
             Some(_) if step["expectedHttpStatus"] == 403 => {
                 if observation.get("contentReference").is_some()
@@ -1630,6 +1695,12 @@ pub(crate) async fn authorize_probe(
     let Ok(axum::Json(probe)) = body else {
         return axum::http::StatusCode::BAD_REQUEST.into_response();
     };
+    if serde_json::to_value(&probe)
+        .ok()
+        .is_some_and(|value| value["plan"]["connectorKind"] == "PROTOCOL_PEER")
+    {
+        return peer::run_probe(&state, probe).await;
+    }
     let result=async {
         let input=serde_json::to_value(probe).map_err(|_|bad())?;
         let action=Uuid::parse_str(text(&input["plan"],"actionExecutionId")?).map_err(|_|bad())?;
@@ -1952,6 +2023,33 @@ async fn persist_registration(
     report: &Value,
 ) -> Result<(), Refusal> {
     verify_report(plan, report)?;
+    if plan["connectorKind"] == "PROTOCOL_PEER" {
+        // Worker observations alone cannot invent a completed native probe.
+        // Each result must have reached the original authenticated Core SDK
+        // consumer and its same-operation audit before Catalog is written.
+        for index in 0..plan["steps"].as_array().ok_or_else(bad)?.len() {
+            let recorded: bool = sqlx::query_scalar(
+                "select exists(select 1 from audit.audit_event
+                where event_key=$1 and tenant_id=$2 and operation_id=$3 and action_key=$4
+                  and action_version=$5 and target_id=$6 and parameter_hash=$7
+                  and event_type='RESULT' and decision='ALLOW' and result_code='SUCCEEDED')",
+            )
+            .bind(format!("{}:mcp-probe:{index}:result", ae.operation_id))
+            .bind(ae.tenant_id)
+            .bind(ae.operation_id)
+            .bind(&ae.action_key)
+            .bind(ae.action_version)
+            .bind(ae.target_id)
+            .bind(&ae.parameter_hash)
+            .fetch_one(&mut *conn)
+            .await?;
+            if !recorded {
+                return Err(Refusal::Unavailable(
+                    "native MCP probe result unresolved".into(),
+                ));
+            }
+        }
+    }
     sqlx::query(
         "update admission.action_execution set component_conformance_observation=$2 where id=$1",
     )
@@ -2094,6 +2192,34 @@ async fn read_releases(
 #[cfg(test)]
 mod report_tests {
     use super::*;
+
+    #[test]
+    fn native_mcp_report_requires_real_protocol_result_not_adapter_status() {
+        let expected = json!({"rows":[1]});
+        let request = json!({"name":"declared-read","arguments":{"query":"fixture"}});
+        let plan = json!({"connectorKind":"PROTOCOL_PEER","steps":[{
+            "caseKey":"read","stepKey":"query","operation":"mcp_call",
+            "requestJson":collab_bridge::limits::canonical_json(&request),
+            "expectedResponseJson":collab_bridge::limits::canonical_json(&expected),
+            "expectedHttpStatus":0,"expectedMcpResultKind":"RESULT"}]});
+        let observation = json!({"caseKey":"read","stepKey":"query","operation":"mcp_call",
+            "requestDigest":collab_bridge::limits::canonical_digest(&request),
+            "responseDigest":collab_bridge::limits::canonical_digest(&json!({"structuredContent":expected})),
+            "resultDigest":collab_bridge::limits::canonical_digest(&expected),"httpStatus":0,"mcpResultKind":"RESULT"});
+        let report = json!({"observations":[observation]});
+        verify_report(&plan, &report).unwrap();
+        for (field, value) in [
+            ("httpStatus", json!(200)),
+            ("mcpResultKind", json!("ERROR")),
+            ("nativeObservation", json!({"platformStatus":"SUCCEEDED"})),
+            ("resultDigest", json!("0".repeat(64))),
+            ("operation", json!("reconcile")),
+        ] {
+            let mut changed = report.clone();
+            changed["observations"][0][field] = value;
+            assert!(verify_report(&plan, &changed).is_err(), "{field}");
+        }
+    }
 
     #[test]
     fn receipt_recovery_requires_exact_evidence_and_original_open_chain() {

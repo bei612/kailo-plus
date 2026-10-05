@@ -1,0 +1,180 @@
+# Common variables
+x-cells: &cells-common
+  image: pydio/cells:4
+  restart: unless-stopped
+  environment:
+    - CELLS_WORKING_DIR=/var/cells
+    - CELLS_CONFIG=etcd://etcd:2379
+    - CELLS_REGISTRY=etcd://etcd:2379
+    - CELLS_BROKER=nats://nats:4222
+    - CELLS_KEYRING=vault://vault:8200/secret?key=master
+    - CELLS_CERTS_STORE=vault://vault:8200/caddycerts
+    - CELLS_CACHE=redis://redis:6379
+    - CELLS_ENABLE_PPROF=true
+    - CELLS_BIND_ADDRESS=0.0.0.0
+    - VAULT_TOKEN=${VAULT_ROOT_TOKEN}
+
+volumes:
+    cells_data: {}
+    mysql_data: {}
+    etcd_data: {}
+    caddy_data: {}
+    caddy_logs: {}
+    caddy_config: {}
+
+services:
+
+  # MySQL DB
+  mysql:
+    image: mysql:8
+    restart: unless-stopped
+    volumes:
+      - mysql_data:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=cells
+      - MYSQL_DATABASE=cells
+      - MYSQL_USER=${MYSQL_DB_USER}
+      - MYSQL_PASSWORD=${MYSQL_DB_PASSWORD}
+    command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci]
+
+  # Mongo DB
+  mongo:
+    image:  mongo:5.0.12
+    restart: unless-stopped
+    expose: [27017]
+
+  # ETCD Single-Node for registry and configs
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.2
+    entrypoint: /usr/local/bin/etcd
+    ports:
+      - "4001:4001"
+      - "2380:2380"
+      - "2379:2379"
+    volumes:
+      - etcd_data:/etcd_data
+      - /usr/share/ca-certificates/:/etc/ssl/certs 
+    command: 
+      - '--name=etcd-0' 
+      - '--advertise-client-urls=http://etcd:2379,http://etcd:4001'
+      - '--listen-client-urls=http://0.0.0.0:2379,http://0.0.0.0:4001'
+      - '--initial-advertise-peer-urls=http://etcd:2380'
+      - '--listen-peer-urls=http://0.0.0.0:2380'
+      - '--initial-cluster-token=etcd-cluster-1'
+      - '--initial-cluster=etcd-0=http://etcd:2380'
+      - '--initial-cluster-state=new'
+
+  # Nats events broker
+  nats:
+    image: nats
+    expose:
+      - 4222
+      - 8222
+    #for verbose, use "--http_port 8222 -V"
+    command: "--http_port 8222"
+
+  # Hashicorp vault for keyring and certificates
+  vault:
+    image: vault
+    expose: [8200]
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_ROOT_TOKEN}
+    cap_add:
+      - IPC_LOCK
+
+  redis:
+    image: redis
+    hostname: redis
+    expose: [6379]
+
+  minio:
+    image: quay.io/minio/minio
+    command: server --console-address ":9001" /data
+    hostname: minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    expose:
+      - 9000
+    ports:
+      - "9001:9001"
+    volumes:
+      - cells_data:/data
+
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc config host add myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      /usr/bin/mc rm -r --force myminio/pydiods1;
+      /usr/bin/mc rm -r --force myminio/personal;
+      /usr/bin/mc rm -r --force myminio/cellsdata;
+      /usr/bin/mc rm -r --force myminio/thumbs;
+      /usr/bin/mc rm -r --force myminio/versions;
+      /usr/bin/mc rm -r --force myminio/binaries;
+      /usr/bin/mc mb myminio/pydiods1;
+      /usr/bin/mc mb myminio/personal;
+      /usr/bin/mc mb myminio/cellsdata;
+      /usr/bin/mc mb myminio/thumbs;
+      /usr/bin/mc mb myminio/versions;
+      /usr/bin/mc mb myminio/binaries;
+      exit 0;
+      "
+  #
+  # CELLS MULTIPLE NODES
+  # cells1 overrides env and volumes to access the install YAML
+  #
+  cells1:
+    <<: *cells-common
+    hostname: cells1
+    expose: [8080]
+    environment:
+      - CELLS_WORKING_DIR=/var/cells
+      - CELLS_CONFIG=etcd://etcd:2379
+      - CELLS_REGISTRY=etcd://etcd:2379
+      - CELLS_BROKER=nats://nats:4222
+      - CELLS_KEYRING=vault://vault:8200/secret?key=master
+      - CELLS_CERTS_STORE=vault://vault:8200/caddycerts
+      - CELLS_CACHE=redis://redis:6379
+      - CELLS_ENABLE_PPROF=true
+      - CELLS_BIND_ADDRESS=0.0.0.0
+      - VAULT_TOKEN=${VAULT_ROOT_TOKEN}
+      - CELLS_INSTALL_YAML=/pydio/config/install.yml
+      - INSTALL_MYSQL_DB_USER=${MYSQL_DB_USER}
+      - INSTALL_MYSQL_DB_PASSWORD=${MYSQL_DB_PASSWORD}
+      - INSTALL_MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - INSTALL_MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    volumes:
+      - ./conf/install-conf.yml:/pydio/config/install.yml:ro
+#    ports:
+#      - "8080:8080" # We expose that port externally for first configuration step (access to https://localhost:8080)
+#      - "8002:8002" # uncomment if you want to browse the internal registry of this node using cells-ctl
+
+  cells2:
+    <<: *cells-common
+    hostname: cells2
+    expose: [8080]
+# uncomment if you want to open this instance directly on localhost:8082
+#    ports:
+#      - 8082:8080
+
+  cells3:
+    <<: *cells-common
+    hostname: cells3
+    expose: [8080]
+# uncomment if you want to open this instance directly on localhost:8083
+#    ports:
+#      - 8083:8080
+
+  # Caddy reverse proxy, exposed as self-signed on port 445
+  caddy:
+    image:  caddy:2-alpine
+    ports: ["8585:8585"]
+    restart: unless-stopped
+    volumes:
+      - ./conf/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_logs:/var/caddy/logs
+      - caddy_data:/data
+      - caddy_config:/config

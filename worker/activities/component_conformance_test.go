@@ -15,8 +15,86 @@ import (
 	"time"
 
 	"apps/worker/internal/contracts/generated"
+	"apps/worker/internal/oidc"
 	"github.com/google/uuid"
+	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/testsuite"
 )
+
+func TestProtocolPeerConformanceUsesOriginalCoreConsumerWithoutReplaying(t *testing.T) {
+	for _, scenario := range []string{"success", "lost-reply", "invented-job", "missing-protocol-result", "reconcile", "wrong-workflow"} {
+		t.Run(scenario, func(t *testing.T) {
+			calls := 0
+			request, expected := `{"arguments":{},"name":"declared-read"}`, `"native text"`
+			requestDigest, _ := conformanceJSONDigest([]byte(request))
+			resultDigest, _ := conformanceJSONDigest([]byte(expected))
+			kind := generated.MCPResultKind("RESULT")
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/token" {
+					_, _ = io.WriteString(w, `{"access_token":"isolated-worker","expires_in":300}`)
+					return
+				}
+				calls++
+				if r.URL.Path != "/service/v1/component-releases/authorize-probe" || r.Header.Get("Authorization") != "Bearer isolated-worker" {
+					t.Error("MCP probe bypassed original Core service consumer")
+				}
+				if scenario == "lost-reply" {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				observed := generated.ComponentConformanceStepObservation{CaseKey: "native", StepKey: "read", Operation: generated.MCPCall,
+					HTTPStatus: 0, MCPResultKind: &kind, RequestDigest: requestDigest, ResponseDigest: resultDigest, ResultDigest: &resultDigest}
+				if scenario == "invented-job" {
+					observed.NativeObservation = &generated.ExecutionClass{NativeType: "invented"}
+				}
+				if scenario == "missing-protocol-result" {
+					observed.MCPResultKind = nil
+				}
+				_ = json.NewEncoder(w).Encode(observed)
+			}))
+			defer server.Close()
+			t.Setenv("OIDC_TOKEN_URL", server.URL+"/token")
+			t.Setenv("OIDC_WORKER_CLIENT_ID", "isolated-worker")
+			t.Setenv("OIDC_WORKER_CLIENT_SECRET", "isolated-fixture")
+			tokens, err := oidc.FromEnv()
+			if err != nil {
+				t.Fatal(err)
+			}
+			api := &CoreAPI{base: server.URL, tokens: tokens, http: server.Client()}
+			connector := generated.ConnectorKind("PROTOCOL_PEER")
+			input := generated.ComponentConformanceProbe{Plan: generated.PlanClass{ConnectorKind: &connector,
+				Steps: []generated.PlanStep{{CaseKey: "native", StepKey: "read", Operation: generated.MCPCall,
+					RequestJSON: request, ExpectedResponseJSON: expected, ExpectedMCPResultKind: &kind}}}}
+			if scenario == "reconcile" {
+				reconcile := true
+				input.Reconcile = &reconcile
+			}
+			var suite testsuite.WorkflowTestSuite
+			env := suite.NewTestActivityEnvironment()
+			actual := func(ctx context.Context, probe generated.ComponentConformanceProbe) (generated.ComponentConformanceStepObservation, error) {
+				info := activity.GetInfo(ctx)
+				probe.Plan.WorkflowID = info.WorkflowExecution.ID
+				probe.Plan.RunID = info.WorkflowExecution.RunID
+				if scenario == "wrong-workflow" {
+					probe.Plan.WorkflowID = "another-workflow"
+				}
+				return api.RunComponentConformanceStep(ctx, probe)
+			}
+			env.RegisterActivity(actual)
+			_, err = env.ExecuteActivity(actual, input)
+			if (err == nil) != (scenario == "success") {
+				t.Fatalf("scenario=%s err=%v", scenario, err)
+			}
+			want := 1
+			if scenario == "reconcile" || scenario == "wrong-workflow" {
+				want = 0
+			}
+			if calls != want {
+				t.Fatalf("original call count=%d want=%d", calls, want)
+			}
+		})
+	}
+}
 
 func conformanceCandidateForTest(t *testing.T, handler http.HandlerFunc) (*componentCandidate, string) {
 	t.Helper()
@@ -95,7 +173,7 @@ func TestComponentConformanceCoreCanonicalBytes(t *testing.T) {
 		return sample.Digests, nil
 	}
 	contract := "fixture.read"
-	step := generated.PlanStep{CaseKey: "core_canonical", StepKey: "wire", Operation: generated.AdapterProtocolOperation("execute"),
+	step := generated.PlanStep{CaseKey: "core_canonical", StepKey: "wire", Operation: generated.ComponentConformanceOperation("execute"),
 		IdempotencyKey: sample.IdempotencyKey, RequestJSON: sample.RequestJSON, ExpectedResponseJSON: sample.ExpectedResponseJSON, ExpectedHTTPStatus: http.StatusOK, ContractKey: &contract}
 	observation := candidate.call(context.Background(), step, token)
 	if sample.Digests.ResultDigest == nil {
@@ -112,7 +190,7 @@ func TestComponentConformanceCoreCanonicalBytes(t *testing.T) {
 func conformanceStepForTest() generated.PlanStep {
 	key := uuid.NewString()
 	return generated.PlanStep{
-		CaseKey: "creation", StepKey: "create", Operation: generated.AdapterProtocolOperation("execute"),
+		CaseKey: "creation", StepKey: "create", Operation: generated.ComponentConformanceOperation("execute"),
 		IdempotencyKey: key, RequestJSON: `{"idempotencyKey":"` + key + `","value":"fixture"}`,
 		ExpectedResponseJSON: `{"created":1}`, ExpectedHTTPStatus: http.StatusOK,
 	}
@@ -218,7 +296,7 @@ func TestComponentConformanceWirePersistenceEvidence(t *testing.T) {
 		request, _ := json.Marshal(map[string]string{"idempotencyKey": key})
 		expected, _ := json.Marshal(map[string]string{"idempotencyKey": key, "nativeType": "fixture_task", "platformStatus": "SUCCEEDED", "cancelCapability": "SUPPORTED"})
 		step := generated.PlanStep{CaseKey: "protocol_execution_idempotency", StepKey: []string{"first", "duplicate", "observe"}[index],
-			Operation: generated.AdapterProtocolOperation(operation), IdempotencyKey: key, RequestJSON: string(request), ExpectedResponseJSON: string(expected), ExpectedHTTPStatus: http.StatusOK}
+			Operation: generated.ComponentConformanceOperation(operation), IdempotencyKey: key, RequestJSON: string(request), ExpectedResponseJSON: string(expected), ExpectedHTTPStatus: http.StatusOK}
 		observation := candidate.call(context.Background(), step, token)
 		if err := verifyConformanceStep(step, observation, fixtureExpectedDigest(t, step)); err != nil {
 			t.Fatal(err)

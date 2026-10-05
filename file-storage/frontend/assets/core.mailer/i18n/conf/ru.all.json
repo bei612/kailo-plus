@@ -1,0 +1,113 @@
+{
+  "Core component for sending emails": {
+    "other": "Основной компонент для отправки писем"
+  },
+  "Activate Queue": {
+    "other": "Активировать очередь"
+  },
+  "Active notifications by email": {
+    "other": "Активные уведомления по электронной почте"
+  },
+  "Adress of the sender": {
+    "other": "Адрес отправителя"
+  },
+  "Body Layout": {
+    "other": "Тело макета"
+  },
+  "Choose your mail frequency (like 9:00 or 9:00,14:00 or Wednesday)": {
+    "other": "Выберите частоту рассылки (например, 9:00 или 9:00, 14:00 или среда)"
+  },
+  "Content": {
+    "other": "Содержимое"
+  },
+  "Core configs for sending emails": {
+    "other": "Основные настройки для отправки писем"
+  },
+  "Detail your frequency here": {
+    "other": "Подробнее о частоте рассылки здесь"
+  },
+  "Emails frequency": {
+    "other": "Частота писем"
+  },
+  "Every X hour": {
+    "other": "Каждый X час"
+  },
+  "Every X min": {
+    "other": "Каждые X минут"
+  },
+  "Every day at ": {
+    "other": "Каждый день в "
+  },
+  "Extract the main layout from a localized file. Will prevail on the previous parameter, make sure to have an PYDIO_MAIL_BODY in the layout file.": {
+    "other": "Извлечь основной макет из локализованного файла. Преобладает по предыдущему параметру, убедитесь, что в файле макета есть PYDIO_MAIL_BODY."
+  },
+  "Force all mails to be sent by this Sender email, instead of users adresses": {
+    "other": "Принудительно отправлять все письма этим отправителям, а не по адресам пользователей"
+  },
+  "Get the email in HTML": {
+    "other": "Получить письмо в HTML"
+  },
+  "Layout Folder": {
+    "other": "Папка шаблонов"
+  },
+  "Mailer Plugin": {
+    "other": "Плагин почтового клиента"
+  },
+  "Mailers": {
+    "other": "Почтовые службы"
+  },
+  "Main Layout for the email body, use HTML for send nice emails, and use the PYDIO_MAIL_BODY keyword for the real content.": {
+    "other": "Главный макет для тела электронной почты, используйте HTML для отправки приятных писем и используйте ключевое слово PYDIO_MAIL_BODY для реального содержимого."
+  },
+  "Name of the sender": {
+    "other": "Имя отправителя"
+  },
+  "Once a Week": {
+    "other": "Еженедельно"
+  },
+  "Receive Notifcations by email": {
+    "other": "Получать уведомления по электронной почте"
+  },
+  "Select the plugin to activate for concretely sending emails": {
+    "other": "Выберите плагин для самостоятельной отправки писем"
+  },
+  "Send as HTML": {
+    "other": "Отправить как HTML"
+  },
+  "Send email to...": {
+    "other": "Отправить письмо..."
+  },
+  "Sender": {
+    "other": "Отправитель"
+  },
+  "Sender email": {
+    "other": "Email Отправителя"
+  },
+  "Sender name": {
+    "other": "Имя отправителя"
+  },
+  "Store emails in a queue and batch-process them. Users can choose the sending frequency. Make sure to set up a CRON on consume_mail_queue action if you use this option.": {
+    "other": "Хранить письма в очереди и пакетно их обрабатывать. Пользователи могут выбирать частоту отправки. Если вы используете эту опцию, убедитесь, что CRON настроен на действие consume_mail_queue."
+  },
+  "String automatically added at the beginning of the mail subject": {
+    "other": "Строка автоматически добавляется в начале письма"
+  },
+  "String automatically added at the end of the mail subject": {
+    "other": "Строка автоматически добавляется в конце письма"
+  },
+  "Subject Append": {
+    "other": "Добавить тему"
+  },
+  "Subject Prepend": {
+    "other": "Подготовка к теме"
+  },
+  "Twice a day (every day at and)": {
+    "other": "Дважды в день (каждый день в их)"
+  },
+  "Unique Sender": {
+    "other": "Уникальный отправитель"
+  },
+  "You can add many email separated by commas": {
+    "other": "Вы можете добавить много адресов, разделенных запятыми"
+  }
+}

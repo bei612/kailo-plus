@@ -468,6 +468,7 @@ pub enum Semantic {
     AutomationPause,
     AutomationDisable,
     ResourceTransferOwner,
+    ResourceCreate,
 }
 
 impl Semantic {
@@ -519,6 +520,7 @@ impl Semantic {
             "automation.pause" => Self::AutomationPause,
             "automation.disable" => Self::AutomationDisable,
             "resource.transfer_owner" => Self::ResourceTransferOwner,
+            "resource.create" => Self::ResourceCreate,
             _ => return None,
         })
     }
@@ -617,6 +619,7 @@ impl Semantic {
                     | Self::AgentDelegationGrant
                     | Self::AgentDelegationRevoke
                     | Self::ResourceTransferOwner
+                    | Self::ResourceCreate
             )
     }
 
@@ -714,11 +717,15 @@ pub struct Params {
     pub application_binding_create: Option<Value>,
     pub application_binding_id: Option<Uuid>,
     pub application_binding_version: Option<i32>,
+    pub resource_create: Option<Value>,
 }
 
 impl Params {
     pub(crate) fn to_json(&self) -> Value {
         let mut m = serde_json::Map::new();
+        if let Some(input) = &self.resource_create {
+            m.insert("resourceCreate".into(), input.clone());
+        }
         if let Some(input) = &self.application_binding_create {
             m.insert("applicationBindingCreate".into(), input.clone());
         }
@@ -852,6 +859,7 @@ impl Params {
             component_release_registration: v.get("componentReleaseRegistration").cloned(),
             component_release_id: uuid("componentReleaseId"),
             application_binding_create: v.get("applicationBindingCreate").cloned(),
+            resource_create: v.get("resourceCreate").cloned(),
             application_binding_id: uuid("applicationBindingId"),
             application_binding_version: v
                 .get("applicationBindingVersion")
@@ -884,6 +892,12 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .map_err(|_| bad())
     };
     let p = Params {
+        resource_create: cmd
+            .resource_create
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|_| bad())?,
         application_binding_create: cmd
             .application_binding_create
             .as_ref()
@@ -961,6 +975,13 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .transpose()
             .map_err(|_| bad())?,
     };
+    if sem == Semantic::ResourceCreate {
+        crate::resource_provision::validate_params(&p)?;
+        return Ok(p);
+    }
+    if p.resource_create.is_some() {
+        return Err(bad());
+    }
     if sem.is_application_binding() {
         crate::application_binding::validate_params(&p, sem == Semantic::ApplicationBindingCreate)?;
         return Ok(p);
@@ -1281,7 +1302,8 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         | Semantic::ComponentReleaseRegister
         | Semantic::ComponentReleaseApprove
         | Semantic::ApplicationBindingCreate
-        | Semantic::ApplicationBindingDisable => false,
+        | Semantic::ApplicationBindingDisable
+        | Semantic::ResourceCreate => false,
     };
     if ok {
         Ok(p)
@@ -1376,6 +1398,9 @@ async fn resolve_target(
 ) -> Result<Target, Refusal> {
     let for_update = if lock { " for update" } else { "" };
     match sem {
+        Semantic::ResourceCreate => {
+            crate::resource_provision::target(conn, tenant, initiator, def, p, frozen, lock).await
+        }
         Semantic::ApplicationBindingCreate | Semantic::ApplicationBindingDisable => {
             crate::application_binding::target(conn, tenant, def, p, frozen, lock).await
         }
@@ -2931,6 +2956,7 @@ impl Governance {
             application_binding_create: None,
             application_binding_id: None,
             application_binding_version: None,
+            resource_create: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -3029,6 +3055,7 @@ impl Governance {
             application_binding_create: None,
             application_binding_id: None,
             application_binding_version: None,
+            resource_create: None,
         };
         let mut conn = self.pool.acquire().await?;
         let target = match resolve_target(
@@ -4235,7 +4262,8 @@ impl Governance {
         {
             return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
         }
-        if sem.is_application_binding()
+        if sem == Semantic::ResourceCreate
+            || sem.is_application_binding()
             || sem.is_installation_permission()
             || sem.is_automation()
             || matches!(
@@ -4259,7 +4287,8 @@ impl Governance {
         if (matches!(
             sem,
             Semantic::ComponentReleaseRegister | Semantic::ComponentReleaseApprove
-        ) || sem.is_application_binding()
+        ) || sem == Semantic::ResourceCreate
+            || sem.is_application_binding()
             || sem.is_installation_permission()
             || sem.is_capability_contract()
             || sem.is_automation()
@@ -4285,7 +4314,8 @@ impl Governance {
         let locked_evaluation = if matches!(
             sem,
             Semantic::ComponentReleaseRegister | Semantic::ComponentReleaseApprove
-        ) || sem.is_application_binding()
+        ) || sem == Semantic::ResourceCreate
+            || sem.is_application_binding()
             || sem.is_installation_permission()
             || sem.is_capability_contract()
             || sem.is_automation()
@@ -4577,6 +4607,7 @@ impl Governance {
                 .await;
         }
         let version: i32 = match sem {
+            Semantic::ResourceCreate => crate::resource_provision::prewrite(tx,ae,params).await?,
             Semantic::TenantDelete => {
                 let snapshot: Option<(Uuid, i32, serde_json::Value)> = sqlx::query_as(
                     "select id, tenant_version, frozen_inventory from admission.tenant_lifecycle_snapshot
@@ -4759,7 +4790,9 @@ impl Governance {
         // workflow ID，否则一次确定失败后的新治理动作会撞上旧 ID。
         let workflow_entity = if matches!(
             sem,
-            Semantic::SecretRefRehome | Semantic::ComponentReleaseApprove
+            Semantic::SecretRefRehome
+                | Semantic::ComponentReleaseApprove
+                | Semantic::ResourceCreate
         ) {
             ae.id
         } else {
@@ -6255,6 +6288,7 @@ impl Governance {
             Ok(())
         } else {
             let started = match sem {
+                Semantic::ResourceCreate => crate::resource_provision::start(&self.pool,&self.temporal,ae.id,ae.tenant_id,&workflow_id).await,
                 Semantic::ApplicationBindingCreate | Semantic::ApplicationBindingDisable => {
                     crate::application_binding::start(&self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id).await
                 }

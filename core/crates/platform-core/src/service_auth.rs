@@ -339,6 +339,28 @@ pub struct ServiceAuth {
 }
 
 impl ServiceAuth {
+    /// Existing Core OIDC client, restricted by the MCP lifecycle consumer to
+    /// one already admitted binding ActionExecution. This is not a Worker or
+    /// user permission and cannot authorize business tools/call.
+    pub(crate) fn core_mcp_authentication(&self) -> Result<serde_json::Value, ServiceAuthError> {
+        let client =
+            std::env::var("OIDC_SERVICE_CLIENT_ID").map_err(|_| ServiceAuthError::TokenInvalid)?;
+        if client.is_empty() || client == self.caller_client_id {
+            return Err(ServiceAuthError::TokenInvalid);
+        }
+        Ok(
+            serde_json::json!({"mode":"strict","issuer":self.issuer,"audiences":[self.audience],
+            "preserveToken":true,"jwks":{"url":self.jwks_uri},
+            "jwtValidationOptions":{"requiredClaims":["exp","iss","aud","sub"]}}),
+        )
+    }
+
+    pub(crate) async fn verify_core_mcp(&self, value: &str) -> Result<(), ServiceAuthError> {
+        let client =
+            std::env::var("OIDC_SERVICE_CLIENT_ID").map_err(|_| ServiceAuthError::TokenInvalid)?;
+        self.verify_binding_client(Some(value), &client).await
+    }
+
     pub(crate) fn shares_identity(&self, issuer: &str, audience: &str) -> bool {
         self.issuer == issuer || self.audience == audience
     }

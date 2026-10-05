@@ -1,0 +1,179 @@
+{
+  "start": {
+    "other": "Iniciar"
+  },
+  "pause": {
+    "other": "Pausar"
+  },
+  "clear": {
+    "other": "Limpar"
+  },
+  "clear-header": {
+    "other": "Limpar lista..."
+  },
+  "clear-finished": {
+    "other": "Envios Concluídos"
+  },
+  "clear-failed": {
+    "other": "Envios com falhas"
+  },
+  "clear-all": {
+    "other": "Todas as transferências"
+  },
+  "list.show-more": {
+    "other": "%d mais - mostrar todos"
+  },
+  "options.existing": {
+    "other": "Se existir um arquivo com o mesmo nome:"
+  },
+  "options.existing.alert": {
+    "other": "Parar o envio e me alertar"
+  },
+  "options.existing.folders": {
+    "other": "Renomear pastas e em seguida arquivos"
+  },
+  "options.existing.merge": {
+    "other": "Renomear arquivos apenas (mesclar pastas)"
+  },
+  "options.existing.overwrite": {
+    "other": "Sobrescrever arquivo existente silenciosamente"
+  },
+  "confirm.rename.all": {
+    "other": "Renomear pastas, depois arquivos conflitantes"
+  },
+  "confirm.rename.merge": {
+    "other": "Renomear arquivos somente (mesclar pastas)"
+  },
+  "confirm.overwrite": {
+    "other": "Mesclar pastas e substituir arquivos"
+  },
+  "confirm.save.choice": {
+    "other": "Salvar escolha para os próximos envios"
+  },
+  "options": {
+    "other": "Opções de Envio"
+  },
+  "upload.forbidden": {
+    "other": "Você não está autorizado para enviar este arquivo aqui"
+  },
+  "task.label": {
+    "other": "Enviando arquivos para o servidor..."
+  },
+  "task.status.folders": {
+    "other": "Criando Pastas"
+  },
+  "task.message.folder-one": {
+    "other": "Criando uma pasta"
+  },
+  "task.message.folder-many": {
+    "other": "Criando %s pastas"
+  },
+  "task.status.analyse": {
+    "other": "Preparando arquivos para envio"
+  },
+  "task.message.analyse-many": {
+    "other": "Analisando %s itens..."
+  },
+  "task.message.analyse-one": {
+    "other": "Analisando um item"
+  },
+  "task.message.analyse-wait": {
+    "other": "Aguarde..."
+  },
+  "task.status.ready": {
+    "other": "Pronto para enviar"
+  },
+  "task.status.paused": {
+    "other": "Envio pausado"
+  },
+  "task.status.upload": {
+    "other": "Enviando arquivos"
+  },
+  "task.message.upload-progress": {
+    "other": "Enviando %s%"
+  },
+  "no-folders-support": {
+    "other": "Parece que seu navegador não oferece suporte a descarte de pastas"
+  },
+  "analyze.step": {
+    "other": "Preparando arquivos e pastas para envio..."
+  },
+  "drophere": {
+    "other": "Solte os arquivos aqui"
+  },
+  "drop-or": {
+    "other": "ou"
+  },
+  "drop-pick-file": {
+    "other": "procurar arquivos"
+  },
+  "drop-pick-folder": {
+    "other": "procurar pastas"
+  },
+  "dialog.title": {
+    "other": "Transferências"
+  },
+  "attempt": {
+    "other": "tentar"
+  },
+  "status.new": {
+    "other": "Pendente"
+  },
+  "status.error": {
+    "other": "Ocorreu um erro"
+  },
+  "status.pause": {
+    "other": "Pausado"
+  },
+  "status.analyse": {
+    "other": "Analisando..."
+  },
+  "status.dir.new": {
+    "other": "Pasta aguardando envio..."
+  },
+  "status.file.new": {
+    "other": "Arquivo aguardando envio..."
+  },
+  "status.dir.analyse": {
+    "other": "Analisando pasta..."
+  },
+  "status.file.analyse": {
+    "other": "Analisando arquivo..."
+  },
+  "status.dir.loading": {
+    "other": "Criando pasta"
+  },
+  "status.file.loading": {
+    "other": "Enviando arquivo"
+  },
+  "status.dir.loaded": {
+    "other": "Pasta criada"
+  },
+  "status.file.loaded": {
+    "other": "Arquivo enviado"
+  },
+  "status.part.loaded": {
+    "other": "Chunk enviado"
+  },
+  "status.part.loading": {
+    "other": "Enviando chunk"
+  },
+  "status.multi-pause": {
+    "other": "Concluindo o chunk atual antes de pausar"
+  },
+  "status.file.cannot-pause": {
+    "other": "Não é possível pausar esta transferência"
+  },
+  "status.part.cannot-pause": {
+    "other": "Não é possível pausar transferência de chunk"
+  },
+  "status.error.aborted": {
+    "other": "interrompido pelo usuário"
+  },
+  "status.error.403": {
+    "other": "você não está autorizado de enviar aqui"
+  },
+  "status.error.422": {
+    "other": "cota alcançada, não pode carregar mais"
+  }
+}

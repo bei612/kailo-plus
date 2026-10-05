@@ -1,0 +1,19 @@
+project: data-query
+reference_tree: WrenAI-ui-0.32.2
+upstream_url: https://github.com/Canner/WrenAI
+evidence_commit: c5f02a0391c87420dba78632dcd86073710deb72
+implementation_base_commit: c5f02a0391c87420dba78632dcd86073710deb72
+base_divergence: none
+artifacts:
+  - name: data-query-ui
+    kind: image
+    build_context: data-query/wren-ui
+    build_dockerfile: data-query/wren-ui/Dockerfile
+    inputs: [data-query/wren-ui/]
+    source_digest: none
+    artifact_digest: none
+source_facts: [SF-WRN-07, SF-WRN-08, SF-WRN-09]
+source_seams: [SS-WRN-IDENTITY, SS-WRN-GOVERNANCE]
+compatibility_evidence: [data-query/fork/verify/native-integration.md]
+owner: team-platform
+last_reverified: 2026-10-05

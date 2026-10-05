@@ -6,7 +6,7 @@ exposure: tenant_admin
 
 design:
   requirements: [V-REQ-04]
-  decisions: [DD-88, DD-102]
+  decisions: [DD-58, DD-88, DD-94, DD-102]
   # DD-100 的首个归属为 S3；本能力消费其动作策略，证据正文保留该依据。
   facts: []
   seams: []
@@ -22,12 +22,14 @@ validation:
       ref: core/verify/component-release-registration.md
     - dimension: 安全边界
       ref: core/verify/component-release-approval.md
+    - dimension: 合同一致
+      ref: core/verify/application-binding.md
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/component_release.rs, core/crates/platform-core/src/component_release_approval.rs, core/crates/platform-core/src/platform_build_info.rs, core/crates/platform-core/src/component_conformance_identity.rs, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/component_task.rs, core/crates/platform-core/src/service_api.rs, core/crates/platform-core/src/bff.rs, worker/activities/component_conformance.go, worker/activities/component_release_approval.go, worker/workflows/component_release.go, worker/workflows/component_release_approval.go, client-kit/ts/platform/src/client.ts, client-kit/ts/platform/src/react/component-releases.tsx, client-kit/ts/platform/src/react/pages.tsx, client-kit/ts/platform/src/i18n.ts]
+  paths: [core/crates/platform-core/src/component_release.rs, core/crates/platform-core/src/component_release_peer.rs, core/crates/platform-core/src/component_release_approval.rs, core/crates/platform-core/src/platform_build_info.rs, core/crates/platform-core/src/component_conformance_identity.rs, core/crates/platform-core/src/governance.rs, core/crates/platform-core/src/component_task.rs, core/crates/platform-core/src/service_api.rs, core/crates/platform-core/src/bff.rs, worker/activities/component_conformance.go, worker/activities/component_release_approval.go, worker/workflows/component_release.go, worker/workflows/component_release_approval.go, client-kit/ts/platform/src/client.ts, client-kit/ts/platform/src/react/component-releases.tsx, client-kit/ts/platform/src/react/pages.tsx, client-kit/ts/platform/src/i18n.ts]
   surfaces: [web, desktop]
-  schemas: [contracts/api/action_command.schema.json, contracts/api/component_release_page.schema.json, contracts/api/component_release_approval_report.schema.json, contracts/domain/component_release_approval_target.schema.json, contracts/domain/platform_build_info.schema.json, contracts/domain/component_release_registration.schema.json, contracts/workflow/component_conformance_plan.schema.json, contracts/workflow/component_conformance_observation.schema.json]
+  schemas: [contracts/api/action_command.schema.json, contracts/api/component_release_page.schema.json, contracts/api/component_release_approval_report.schema.json, contracts/domain/component_release_approval_target.schema.json, contracts/domain/platform_build_info.schema.json, contracts/domain/component_release_registration.schema.json, contracts/domain/component_protocol_peer_environment.schema.json, contracts/enums/component_conformance_operation.schema.json, contracts/api/component_conformance_authorization.schema.json, contracts/workflow/component_conformance_plan.schema.json, contracts/workflow/component_conformance_step_observation.schema.json, contracts/workflow/component_conformance_observation.schema.json]
   migrations: [core/migrations/20261004015000_component_release.up.sql, core/migrations/20261004015000_component_release.down.sql, core/migrations/20261004018000_component_release_approval.up.sql, core/migrations/20261004018000_component_release_approval.down.sql]
 
 runtime:
@@ -39,6 +41,6 @@ runtime:
 release:
   artifacts:
     - name: web-client
-      digest: sha256:d60e187b0429a7879600ab36c09d2b83de2290169d54b0e3d8bf81f659ce1668
+      digest: sha256:3336de5375dccfbcb72865e4ad44bf1e2799136779cf00830c8b64861fd4d173
   # 仅记录同批共享管理页实际构建，不代替部署、Core/Worker 或业务验收。
   gate: blocked_until_seams_closed

@@ -1,0 +1,407 @@
+{
+  "tour.create-menu": {
+    "other": "Bắt đầu thêm tệp hoặc thư mục mới vào workspace hiện tại."
+  },
+  "tour.create-menu.title": {
+    "other": "Thêm tập tin"
+  },
+  "tour.display-bar": {
+    "other": "Thanh công cụ này cho phép bạn thay đổi cách hiển thị: chuyển sang chế độ hình thu nhỏ hoặc chế độ chi tiết tùy thuộc vào cách sử dụng của bạn và sắp xếp các tệp theo tên, ngày, v. v..."
+  },
+  "tour.display-bar.title": {
+    "other": "Tùy chọn hiển thị"
+  },
+  "tour.globsearch.1": {
+    "other": "Sử dụng biểu mẫu tìm kiếm này để tìm tệp hoặc thư mục trong bất kỳ workspace và cells nào. Chỉ 5 kết quả đầu tiên được hiển thị, hãy nhập một workspace để nhận được nhiều kết quả hơn và nhiều tùy chọn tìm kiếm hơn."
+  },
+  "tour.globsearch.2": {
+    "other": "Khi không có tìm kiếm nào được nhập, lịch sử của các tệp và thư mục đã truy cập gần đây của bạn sẽ được hiển thị."
+  },
+  "tour.globsearch.title": {
+    "other": "Global Search"
+  },
+  "tour.infopanel.1": {
+    "other": "Tại đây, bạn sẽ tìm thấy nhiều thông tin về lựa chọn hiện tại: thông tin tệp, trạng thái chia sẻ, metadata do người dùng xác định, v. v."
+  },
+  "tour.infopanel.2": {
+    "other": "Bạn có thể đóng bảng điều khiển này bằng cách sử dụng nút thông tin trên thanh công cụ hiển thị"
+  },
+  "tour.infopanel.file": {
+    "other": "Tệp tin"
+  },
+  "tour.infopanel.folder": {
+    "other": "Thư mục"
+  },
+  "tour.infopanel.search": {
+    "other": "Tìm kiếm"
+  },
+  "tour.infopanel.title": {
+    "other": "Bảng thông tin"
+  },
+  "tour.locale.back": {
+    "other": "Quay lại"
+  },
+  "tour.locale.close": {
+    "other": "Đóng"
+  },
+  "tour.locale.last": {
+    "other": "Kết thúc"
+  },
+  "tour.locale.next": {
+    "other": "Tiếp theo"
+  },
+  "tour.locale.skip": {
+    "other": "Bỏ qua"
+  },
+  "tour.openworkspace": {
+    "other": "Ở lần kết nối đầu tiên, lịch sử của bạn có thể trống. Nhập một workspace hoặc cell để bắt đầu thêm tệp."
+  },
+  "tour.openworkspace.title": {
+    "other": "Mở một workspace"
+  },
+  "tour.uwidget.addressbook": {
+    "other": "Thư mục của tất cả người dùng có quyền truy cập vào nền tảng. Tạo người dùng và nhóm của riêng bạn để chia sẻ tài nguyên"
+  },
+  "tour.uwidget.alerts": {
+    "other": "Bảng cảnh báo sẽ thông báo cho bạn khi người dùng mà bạn đã chia sẻ tài nguyên truy cập vào nó. Bạn có thể gửi email trực tiếp cho họ."
+  },
+  "tour.uwidget.home": {
+    "other": "Quay lại bảng chào mừng bằng nút này"
+  },
+  "tour.uwidget.menu": {
+    "other": "Truy cập vào các tùy chọn khác: quản lý hồ sơ và các tùy chọn bảo mật, khám phá tài nguyên được chia sẻ, thoát khỏi nền tảng."
+  },
+  "tour.uwidget.title": {
+    "other": "User Cartouche"
+  },
+  "tour.welcomemodal.skip": {
+    "other": "Bỏ qua"
+  },
+  "tour.welcomemodal.start": {
+    "other": "Bắt đầu chuyến thăm quan"
+  },
+  "tour.welcomemodal.subtitle": {
+    "other": "Kéo và thả ảnh cho hồ sơ của bạn! Chúng tôi sẽ thực hiện một chuyến tham quan có hướng dẫn nhanh để bạn làm quen với giao diện web."
+  },
+  "tour.welcomemodal.title": {
+    "other": "Chào mừng bạn đến với APPLICATION_TITLE"
+  },
+  "tour.widget-cards": {
+    "other": "Bạn có thể thêm hoặc bớt các widget tại đây. Bạn cũng có thể sắp xếp lại chúng chỉ bằng cách kéo chúng."
+  },
+  "tour.widget-cards.title": {
+    "other": "Tiện ích"
+  },
+  "tour.workspaces.1": {
+    "other": "Workspaces là những thư mục hàng đầu giúp bạn sắp xếp dữ liệu của mình. Bạn có thể có quyền truy cập độc quyền hoặc chia sẻ chúng với những người khác."
+  },
+  "tour.workspaces.2": {
+    "other": "Cells là không gian cộng tác mà bạn có thể chia sẻ với những người dùng khác. Tạo các cell của riêng bạn dựa trên một thư mục, một nhóm người dùng hoặc bất kỳ chủ đề nào có liên quan."
+  },
+  "tour.workspaces.title": {
+    "other": "Workspaces & Cells"
+  },
+  "tour.theme.title": {
+    "other": "Light/Dark Theme Support"
+  },
+  "tour.theme.legend": {
+    "other": "Choose a light or dark theme to best suit your vision."
+  },
+  "tour.left-resize.title": {
+    "other": "Workspaces and Cells"
+  },
+  "tour.left-resize.legend": {
+    "other": "Left column can be resized or closed to fit your screen."
+  },
+  "tour.right-resize.legend": {
+    "other": "Right column can be also be resized or closed to fit your screen."
+  },
+  "tour.directory.title": {
+    "other": "Users Directory"
+  },
+  "tour.directory.legend": {
+    "other": "Manage users (internal and external) and teams in a central location."
+  },
+  "background.jobs.title": {
+    "other": "Các công việc chạy tự động"
+  },
+  "background.jobs.running": {
+    "other": "Công việc đang thực hiện"
+  },
+  "websocket.disconnected.title": {
+    "other": "Lỗi kết nối?"
+  },
+  "websocket.disconnected.legend": {
+    "other": "Kết nối websocket đang bị lỗi. Xin vui lòng kiểm tra máy chủ và kết nối mạng"
+  },
+  "oauth.authentication.success": {
+    "other": "Xác thực thành công"
+  },
+  "oauth.authentication.failed": {
+    "other": "Xác thực thất bại"
+  },
+  "oauth.authentication.code": {
+    "other": "Bạn vừa thực hiện xong việc xác thực. Xin vui lòng chép code này và dùng nó trên dòng lệnh bạn đang chạy"
+  },
+  "oauth.authentication.copy-code": {
+    "other": "Sao chép mã vào clipboard"
+  },
+  "oauth.authentication.code-copied": {
+    "other": "Mã truy cập đã được sao chép, bạn có thể dán nó vào dòng lệnh đang chờ."
+  },
+  "oauth.authentication.code-copy-failed": {
+    "other": "Không thể đưa code vào trong clipboard."
+  },
+  "layouts.preferences": {
+    "other": "Manage Layouts"
+  },
+  "layouts.preferences.legend": {
+    "other": "Save and Recall Layouts as Presets"
+  },
+  "layouts.action.rename": {
+    "other": "Rename Layout"
+  },
+  "layouts.action.remove": {
+    "other": "Remove Layout"
+  },
+  "layouts.action.remove.confirm": {
+    "other": "Do you want to remove this layout?"
+  },
+  "layouts.action.reset": {
+    "other": "Reset Layout"
+  },
+  "layouts.action.reset.confirm": {
+    "other": "Do you want to reset the current layout?"
+  },
+  "layouts.action.create": {
+    "other": "Save Layout..."
+  },
+  "layouts.action.fork": {
+    "other": "New From Current..."
+  },
+  "layouts.action.create.default": {
+    "other": "My Layout"
+  },
+  "layouts.prompt.save": {
+    "other": "Save Layout As..."
+  },
+  "layouts.prompt.save.field": {
+    "other": "Choose a name to save/recall the current layout"
+  },
+  "list.display-mode.list": {
+    "other": "Danh sách"
+  },
+  "list.display-mode.details": {
+    "other": "Thông tin chi tiết"
+  },
+  "list.display-mode.thumbs": {
+    "other": "Hình thu nhỏ"
+  },
+  "list.display-mode.thumbs-large": {
+    "other": "Larger"
+  },
+  "list.display-mode.thumbs-medium": {
+    "other": "Medium"
+  },
+  "list.display-mode.thumbs-small": {
+    "other": "Smaller"
+  },
+  "list.display-mode.masonry": {
+    "other": "Thư viện hình ảnh"
+  },
+  "list.extensions.action": {
+    "other": "Đuôi tập tin"
+  },
+  "list.extensions.show": {
+    "other": "Hiển thị phần mở rộng tệp"
+  },
+  "list.pin.bookmarks": {
+    "other": "Đưa các đánh dấu lên đầu"
+  },
+  "list.writeonly.emptystate.title": {
+    "other": "Drop Files Here"
+  },
+  "list.writeonly.emptystate.legend": {
+    "other": "This folder is write-only: you cannot see its contents and are only authorized to upload files or folders. Your own content will not be visible after upload!"
+  },
+  "infopanel.empty.select.file": {
+    "other": "Ấn vào tệp để có thêm thông tin"
+  },
+  "infopanel.card.pin": {
+    "other": "Attach card (full height)"
+  },
+  "infopanel.card.unpin": {
+    "other": "Detach card"
+  },
+  "infopanel.card.detach": {
+    "other": "Detach in a separate panel"
+  },
+  "infopanel.detached.minimize": {
+    "other": "Minimize Panel"
+  },
+  "infopanel.detached.maximize": {
+    "other": "Open Panel"
+  },
+  "infopanel.detached.dock": {
+    "other": "Dock in the right-hand column"
+  },
+  "infopanel.detailcard.preview": {
+    "other": "Preview"
+  },
+  "infopanel.detailcard.cell-info": {
+    "other": "Cell Info"
+  },
+  "infopanel.detailcard.cell-chat": {
+    "other": "Cell Chat"
+  },
+  "pinned-bookmarks.other": {
+    "other": "Tất cả tập tin"
+  },
+  "file.temporary-etag.flag": {
+    "other": "Ko hoàn thành"
+  },
+  "file.temporary-etag.tooltip": {
+    "other": "Tệp này đang được tải lên (hoặc việc tải lên gặp lỗi)."
+  },
+  "mimegroup.byextension": {
+    "other": "By File Extension..."
+  },
+  "mimegroup.word": {
+    "other": "Word documents"
+  },
+  "mimegroup.spreadsheet": {
+    "other": "Spreadsheets"
+  },
+  "mimegroup.presentation": {
+    "other": "Presentations"
+  },
+  "mimegroup.pdf": {
+    "other": "PDFs"
+  },
+  "mimegroup.image": {
+    "other": "Images"
+  },
+  "mimegroup.video": {
+    "other": "Videos"
+  },
+  "mimegroup.audio": {
+    "other": "Audios"
+  },
+  "fastsearch.quick-jump.title": {
+    "other": "Quick Jump"
+  },
+  "fastsearch.quick-jump.legend": {
+    "other": "Hit [Enter] to jump, add a trailing [/] to search inside children, [Esc] to Close"
+  },
+  "fastsearch.quick-move.title": {
+    "other": "Quick Move"
+  },
+  "fastsearch.quick-move.target-error": {
+    "other": "Cannot move to this target!"
+  },
+  "fastsearch.quick-move.legend": {
+    "other": "Hit [Enter] to move %s selected items to target, [Esc] to Close"
+  },
+  "fastsearch.quick-copy.title": {
+    "other": "Quick Copy"
+  },
+  "fastsearch.quick-copy.target-error": {
+    "other": "Cannot copy to this target!"
+  },
+  "fastsearch.quick-copy.legend": {
+    "other": "Hit [Enter] to copy %s selected items to target, [Esc] to Close"
+  },
+  "modalsearch.opentip.cmd": {
+    "other": "Tip: Use <kbd>⌘+k</kbd> to open this search dialog, <kbd>Esc</kbd> to close."
+  },
+  "modalsearch.opentip.ctrl": {
+    "other": "Tip: Use <kbd>Ctrl+k</kbd> to open this search dialog, <kbd>Esc</kbd> to close."
+  },
+  "search.chip.scope.folder": {
+    "other": "Folder"
+  },
+  "search.chip.scope.ws": {
+    "other": "Inside"
+  },
+  "search.chip.scope.all": {
+    "other": "All Workspaces"
+  },
+  "wslist-options.title": {
+    "other": "Display Options"
+  },
+  "wslist-options.show-masked": {
+    "other": "Show masked items"
+  },
+  "wslist.action.mask": {
+    "other": "Mask"
+  },
+  "wslist.action.unmask": {
+    "other": "Unmask"
+  },
+  "wslist-options.merge-workspaces": {
+    "other": "Merge workspaces and cells"
+  },
+  "wslist-options.own-cells-first": {
+    "other": "Cells created by me first"
+  },
+  "leftrail.buttons.home": {
+    "other": "Home"
+  },
+  "leftrail.buttons.directory": {
+    "other": "Directory"
+  },
+  "leftrail.buttons.all-files": {
+    "other": "All Files"
+  },
+  "leftrail.buttons.theme.light": {
+    "other": "Light Mode"
+  },
+  "leftrail.buttons.theme.dark": {
+    "other": "Dark Mode"
+  },
+  "task.status.Starting": {
+    "other": "Started {startTime}"
+  },
+  "task.status.Pending": {
+    "other": "Will start soon..."
+  },
+  "task.status.Complete": {
+    "other": "Task completed in {duration}"
+  },
+  "task.status.Finished": {
+    "other": "Task completed in {duration}"
+  },
+  "task.status.Error": {
+    "other": "An error happened!"
+  },
+  "bigppanel.filter.default-hint": {
+    "other": "Quick Find..."
+  },
+  "sorter.metas.more": {
+    "other": "More..."
+  },
+  "drag-layer.move.file": {
+    "other": "Move File"
+  },
+  "drag-layer.move.folder": {
+    "other": "Move Folder"
+  },
+  "drag-layer.move.plural": {
+    "other": "Move %s Items"
+  },
+  "drag-layer.copy.file": {
+    "other": "Copy File"
+  },
+  "drag-layer.copy.folder": {
+    "other": "Copy Folder"
+  },
+  "drag-layer.copy.plural": {
+    "other": "Copy %s Items"
+  },
+  "drag-layer.more": {
+    "other": "...and %s more."
+  },
+  "drag-layer.hint": {
+    "other": "Use [alt/option] key to copy"
+  }
+}

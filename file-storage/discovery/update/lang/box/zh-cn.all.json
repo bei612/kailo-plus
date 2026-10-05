@@ -1,0 +1,74 @@
+{
+  "Update.Config.Title": {
+    "other": "更新配置"
+  },
+  "Update.Config.Url.Label": {
+    "other": "更新服务器"
+  },
+  "Update.Config.Url.Description": {
+    "other": "更新服务器的 Http URL"
+  },
+  "Update.Config.PublicKey.Label": {
+    "other": "公钥"
+  },
+  "Update.Config.PublicKey.Description": {
+    "other": "用于验证二进制签名的官方密钥。"
+  },
+  "Update.Config.Channel.Label": {
+    "other": "更新频道"
+  },
+  "Update.Config.Channel.Description": {
+    "other": "用于请求更新的频道。如果您不确定，请选择稳定版。"
+  },
+  "Update.Config.Channel.ValueStable": {
+    "other": "稳定"
+  },
+  "Update.Config.Channel.ValueDev": {
+    "other": "开发(风险自负)"
+  },
+  "Update.Config.ProxyHost.Label": {
+    "other": "代理"
+  },
+  "Update.Config.ProxyHost.Description": {
+    "other": "出站连接需要的代理服务器主机"
+  },
+  "Update.Config.ProxyUser.Label": {
+    "other": "代理用户"
+  },
+  "Update.Config.ProxyUser.Description": {
+    "other": "代理服务器标识的用户"
+  },
+  "Update.Config.ProxyPassword.Label": {
+    "other": "代理密码"
+  },
+  "Update.Config.ProxyPassword.Description": {
+    "other": "代理服务器标识密码"
+  },
+  "Update.Config.Disable.Label": {
+    "other": "禁用更新检查"
+  },
+  "Update.Config.Disable.Description": {
+    "other": "如果您的服务器无法访问外部网络，请不要尝试联系更新站点。"
+  },
+  "Update.Process.Start": {
+    "other": "升级二进制文件"
+  },
+  "Update.Process.Progress": {
+    "other": "升级二进制文件进度 {progress}%……"
+  },
+  "Update.Process.Verify": {
+    "other": "下载完成，正在验证……"
+  },
+  "Update.Process.Finished": {
+    "other": "二进制软件包验证成功，你现在可以重启服务。"
+  },
+  "Update.SetCapDetected.Warning": {
+    "other": "警告：您正在绑定的 URL 上使用一个保留端口。这需要有启动网络服务的 ROOT 权限。"
+  },
+  "Update.SetCapDetected.Hint": {
+    "other": "如果您在 systemd 服务中没有使用 'AmbientCapabilities=CAP_NET_BIND_SERVICE' 参数 ，那么在重新启动实例*之前*，您必须执行以下命令才能为新的二进制文件授权使用该端口："
+  },
+  "Update.SetCapDetected.Command": {
+    "other": "$ sudo setcap 'cap_net_bind_service=+ep' <path to your binary>"
+  }
+}

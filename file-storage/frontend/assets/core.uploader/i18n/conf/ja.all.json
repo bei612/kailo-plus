@@ -1,0 +1,59 @@
+{
+  "Allowed Extensions": {
+    "other": "許可された拡張子"
+  },
+  "Ext. Label": {
+    "other": "Ext. Label"
+  },
+  "Extensions List": {
+    "other": "拡張機能リスト"
+  },
+  "File Size": {
+    "other": "ファイルサイズ"
+  },
+  "Filter the files that are allowed to be uploaded, by extensions. Use a comma-separated list.": {
+    "other": "拡張子でアップロードできるファイルをフィルタリングします。カンマ区切りのリストを使用します。"
+  },
+  "Limitations": {
+    "other": "制限事項"
+  },
+  "Maximum size per file allowed to upload. Warning, this limit can vary depending on your underlying storage and the Multipart Chunk Size. For example, Amazon S3 restricts uploads to maximum 10000 distinct parts.": {
+    "other": "アップロードできるファイルの最大サイズです。警告：この制限は、元のストレージとマルチパートチャンクサイズによって異なります。 たとえば、Amazon S3 では最大 10000個までに部分アップロードが制限されています。"
+  },
+  "Options shared by all uploaders plugins": {
+    "other": "すべてのアップローダーのプラグインで共有されるオプション"
+  },
+  "Uploaders Options": {
+    "other": "アップローダーのオプション"
+  },
+  "User readable label for the list of allowed extensions (images, all files, etc).": {
+    "other": "許可された拡張子（画像、すべてのファイルなど）のリストのユーザーが読みやすいラベル。"
+  },
+  "Multipart Uploads": {
+    "other": "マルチパートアップロード"
+  },
+  "Multipart Parts Size": {
+    "other": "マルチパートのパーツサイズ"
+  },
+  "Multipart Threshold": {
+    "other": "マルチパートしきい値"
+  },
+  "Switch to Multipart Upload for files bigger than this value (in bytes)": {
+    "other": "マルチパートに切り替えて、この値より大きいファイルをアップロードします(バイト単位)"
+  },
+  "Chunk Size used for multipart uploads, it must be a multiple of 10MB for hashing consistency. If you plan to upload very large files (bigger 500GB), raise this value to lower the total number of parts sent.": {
+    "other": "マルチパートアップロードに使用されるチャンクサイズは、一貫性をハッシュするために10MBの倍数でなければなりません。 非常に大きなファイル(500GB以上)をアップロードする場合は、送信される部品の総数を下げるためにこの値を上げてください。"
+  },
+  "Queue Size": {
+    "other": "キューサイズ"
+  },
+  "Number of concurrent uploads (maximum 6, due to browsers limitations)": {
+    "other": "同時アップロード数（ブラウザの制限により最大6件）"
+  },
+  "Timeout": {
+    "other": "タイムアウト"
+  },
+  "Request Timeout (in minutes) for each concurrent part upload": {
+    "other": "同時パートアップロードごとにタイムアウトを（分単位で）リクエストする"
+  }
+}

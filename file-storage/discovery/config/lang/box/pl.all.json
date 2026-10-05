@@ -1,0 +1,473 @@
+{
+  "30 days max": {
+    "other": "Maksymalnie 30 dni"
+  },
+  "Remove versions after 30 days": {
+    "other": "Usuń wersje po 30 dniach"
+  },
+  "Keep All": {
+    "other": "Zachowaj wszystkie"
+  },
+  "Keep all versions forever": {
+    "other": "Zachowaj wszystkie wersje na zawsze"
+  },
+  "Regular Pruning": {
+    "other": "Regularne Przycinanie"
+  },
+  "Prune versions regularly at various intervals": {
+    "other": "Regularnie przycinaj wersje w różnych odstępach czasu"
+  },
+  "aclAction.Name": {
+    "other": "Nazwa"
+  },
+  "aclAction.Value": {
+    "other": "Wartość"
+  },
+  "aclSingleQuery.Actions": {
+    "other": "Akcje"
+  },
+  "aclSingleQuery.NodeIDs": {
+    "other": "Identyfikatory węzłów"
+  },
+  "aclSingleQuery.Not": {
+    "other": "Nie"
+  },
+  "aclSingleQuery.RoleIDs": {
+    "other": "Identyfikatory Ról"
+  },
+  "aclSingleQuery.WorkspaceIDs": {
+    "other": "Identyfikatory Obszarów Roboczych"
+  },
+  "aclSingleQuery.not": {
+    "other": "nie"
+  },
+  "actionOutputSingleQuery.ErrorStringRegexp": {
+    "other": "Wyszukaj według ciągu błędu (wyrażenie regularne)"
+  },
+  "actionOutputSingleQuery.IsSuccess": {
+    "other": "Czy Sukces"
+  },
+  "actionOutputSingleQuery.JsonBodyHasKey": {
+    "other": "Treść Json zawiera klucz..."
+  },
+  "actionOutputSingleQuery.JsonBodyRegexp": {
+    "other": "Wyszukaj w treści Json (wyrażenie regularne)"
+  },
+  "actionOutputSingleQuery.JsonBodySizeGreaterThan": {
+    "other": "Rozmiar treści Json jest większy niż"
+  },
+  "actionOutputSingleQuery.JsonBodySizeSmallerThan": {
+    "other": "Rozmiar treści Json jest mniejszy niż"
+  },
+  "actionOutputSingleQuery.Not": {
+    "other": "Nie"
+  },
+  "actionOutputSingleQuery.StringBodyRegexp": {
+    "other": "Wyszukaj w treści ciągu znaków (wyrażenie regularne)"
+  },
+  "actionOutputSingleQuery.StringBodySizeGreaterThan": {
+    "other": "Rozmiar treści ciągu znaków jest większy niż"
+  },
+  "actionOutputSingleQuery.StringBodySizeSmallerThan": {
+    "other": "Rozmiar treści ciągu znaków jest mniejszy niż"
+  },
+  "actionOutputSingleQuery.TaskTimeGt": {
+    "other": "Czas zadania większy niż"
+  },
+  "actionOutputSingleQuery.TaskTimeLt": {
+    "other": "Czas zadania mniejszy niż"
+  },
+  "actionOutputSingleQuery.FreeCondition": {
+    "other": "Warunek Dowolny"
+  },
+  "dataSelectorSingleQuery.JsonPath": {
+    "other": "Ścieżka JSON"
+  },
+  "conditionCIDRCondition.CIDR": {
+    "other": "CIDR"
+  },
+  "conditionCIDRCondition.cidr": {
+    "other": "cidr"
+  },
+  "conditionStringEqualCondition.Equals": {
+    "other": "Równa się"
+  },
+  "conditionStringEqualCondition.equals": {
+    "other": "równa się"
+  },
+  "conditionStringMatchCondition.Matches": {
+    "other": "Pasuje"
+  },
+  "conditionStringMatchCondition.matches": {
+    "other": "pasuje"
+  },
+  "conditionPathGlobCondition.glob": {
+    "other": "wzorzec"
+  },
+  "conditionBooleanCondition.value": {
+    "other": "Prawda"
+  },
+  "contextMetaCondition.CIDRCondition": {
+    "other": "WarunekCIDR"
+  },
+  "contextMetaCondition.EqualsSubjectCondition": {
+    "other": "Podmiot równa się"
+  },
+  "contextMetaCondition.ResourceContainsCondition": {
+    "other": "Zasób zawiera"
+  },
+  "contextMetaCondition.StringEqualCondition": {
+    "other": "Ciąg znaków równa się"
+  },
+  "contextMetaCondition.StringMatchCondition": {
+    "other": "Ciąg znaków pasuje"
+  },
+  "contextMetaCondition.StringPairsEqualCondition": {
+    "other": "Pary ciągów znaków równe"
+  },
+  "contextMetaCondition.StringNotMatchCondition": {
+    "other": "Ciąg znaków nie pasuje"
+  },
+  "contextMetaCondition.WithinPeriodCondition": {
+    "other": "Okres dat"
+  },
+  "contextMetaCondition.OfficeHoursCondition": {
+    "other": "Godziny pracy"
+  },
+  "contextMetaCondition.DateAfterCondition": {
+    "other": "Data po"
+  },
+  "contextMetaCondition.PathGlobCondition": {
+    "other": "Dopasowywanie wzorca Glob"
+  },
+  "contextMetaCondition.BooleanCondition": {
+    "other": "Boolean Value"
+  },
+  "contextMetaField.ContentType": {
+    "other": "Content Type"
+  },
+  "contextMetaField.CookiesString": {
+    "other": "Cookies String"
+  },
+  "contextMetaField.HttpProtocol": {
+    "other": "HTTP Protocol"
+  },
+  "contextMetaField.RemoteAddress": {
+    "other": "Remote Address"
+  },
+  "contextMetaField.RequestHostname": {
+    "other": "Request Hostname"
+  },
+  "contextMetaField.RequestHost": {
+    "other": "Request Host"
+  },
+  "contextMetaField.RequestPort": {
+    "other": "Request Port"
+  },
+  "contextMetaField.RequestMethod": {
+    "other": "Request Method"
+  },
+  "contextMetaField.RequestURI": {
+    "other": "Request URI"
+  },
+  "contextMetaField.ServerTime": {
+    "other": "Server Time"
+  },
+  "contextMetaField.UserAgent": {
+    "other": "User Agent"
+  },
+  "contextMetaSingleQuery.Condition": {
+    "other": "Condition"
+  },
+  "contextMetaSingleQuery.FieldName": {
+    "other": "Field Name"
+  },
+  "roleSingleQuery.HasAutoApply": {
+    "other": "Has AutoApply"
+  },
+  "roleSingleQuery.IsGroupRole": {
+    "other": "Is Group Role"
+  },
+  "roleSingleQuery.IsTeam": {
+    "other": "Is Team"
+  },
+  "roleSingleQuery.IsUserRole": {
+    "other": "Is User Role"
+  },
+  "roleSingleQuery.Label": {
+    "other": "Label"
+  },
+  "roleSingleQuery.Not": {
+    "other": "Not"
+  },
+  "roleSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "roleSingleQuery.not": {
+    "other": "not"
+  },
+  "treeQuery.Content": {
+    "other": "Content"
+  },
+  "treeQuery.DurationDate": {
+    "other": "Modification date (use comparison)"
+  },
+  "treeQuery.Extension": {
+    "other": "File Extension"
+  },
+  "treeQuery.FileName": {
+    "other": "File name"
+  },
+  "treeQuery.FileNameOrContent": {
+    "other": "File name or Content"
+  },
+  "treeQuery.FreeString": {
+    "other": "Bleve-like search string"
+  },
+  "treeQuery.GeoQuery": {
+    "other": "Geolocation Query"
+  },
+  "treeQuery.MaxDate": {
+    "other": "Modified before"
+  },
+  "treeQuery.MaxSize": {
+    "other": "MaxSize"
+  },
+  "treeQuery.MinDate": {
+    "other": "Modified since"
+  },
+  "treeQuery.MinSize": {
+    "other": "Size greater than"
+  },
+  "treeQuery.Not": {
+    "other": "Not"
+  },
+  "treeQuery.PathDepth": {
+    "other": "Path Depth"
+  },
+  "treeQuery.PathPrefix": {
+    "other": "Path Prefix"
+  },
+  "treeQuery.Paths": {
+    "other": "Absolute Paths"
+  },
+  "treeQuery.Type": {
+    "other": "Type"
+  },
+  "treeQuery.Type.COLLECTION": {
+    "other": "Folder"
+  },
+  "treeQuery.Type.LEAF": {
+    "other": "File"
+  },
+  "treeQuery.Type.UNKNOWN": {
+    "other": "Any"
+  },
+  "treeQuery.UUIDs": {
+    "other": "Node UUIDs"
+  },
+  "treeQuery.ETag": {
+    "other": "ETag"
+  },
+  "userSingleQuery.AttributeAnyValue": {
+    "other": "Has any value"
+  },
+  "userSingleQuery.AttributeName": {
+    "other": "Attribute Name"
+  },
+  "userSingleQuery.AttributeValue": {
+    "other": "Attribute Value"
+  },
+  "userSingleQuery.ConnectedSince": {
+    "other": "Connected Since"
+  },
+  "userSingleQuery.FullPath": {
+    "other": "Full Path"
+  },
+  "userSingleQuery.GroupPath": {
+    "other": "Group Path"
+  },
+  "userSingleQuery.HasProfile": {
+    "other": "Has Profile"
+  },
+  "userSingleQuery.HasRole": {
+    "other": "Has Role"
+  },
+  "userSingleQuery.Login": {
+    "other": "Login"
+  },
+  "userSingleQuery.NodeType": {
+    "other": "Object Type"
+  },
+  "userSingleQuery.NodeType.GROUP": {
+    "other": "Group"
+  },
+  "userSingleQuery.NodeType.UNKNOWN": {
+    "other": "Any"
+  },
+  "userSingleQuery.NodeType.USER": {
+    "other": "User"
+  },
+  "userSingleQuery.Not": {
+    "other": "Not"
+  },
+  "userSingleQuery.Password": {
+    "other": "Password"
+  },
+  "userSingleQuery.Recursive": {
+    "other": "Recursive"
+  },
+  "userSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "userSingleQuery.not": {
+    "other": "not"
+  },
+  "workspaceSingleQuery.AttributeName": {
+    "other": "Attribute Name"
+  },
+  "workspaceSingleQuery.AttributeValue": {
+    "other": "Attribute Value"
+  },
+  "workspaceSingleQuery.Description": {
+    "other": "Description"
+  },
+  "workspaceSingleQuery.HasAttribute": {
+    "other": "Has Attribute"
+  },
+  "workspaceSingleQuery.Label": {
+    "other": "Label"
+  },
+  "workspaceSingleQuery.LastUpdated": {
+    "other": "Last updated"
+  },
+  "workspaceSingleQuery.Not": {
+    "other": "Not"
+  },
+  "workspaceSingleQuery.Scope": {
+    "other": "Scope"
+  },
+  "workspaceSingleQuery.Slug": {
+    "other": "Slug"
+  },
+  "workspaceSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "workspaceSingleQuery.description": {
+    "other": "Description"
+  },
+  "workspaceSingleQuery.label": {
+    "other": "Label"
+  },
+  "workspaceSingleQuery.not": {
+    "other": "not"
+  },
+  "workspaceSingleQuery.scope": {
+    "other": "Workspace Type"
+  },
+  "workspaceSingleQuery.scope.ADMIN": {
+    "other": "Workspace"
+  },
+  "workspaceSingleQuery.scope.ANY": {
+    "other": "Any"
+  },
+  "workspaceSingleQuery.scope.LINK": {
+    "other": "Public Link"
+  },
+  "workspaceSingleQuery.scope.ROOM": {
+    "other": "Cell"
+  },
+  "workspaceSingleQuery.slug": {
+    "other": "Slug"
+  },
+  "workspaceSingleQuery.uuid": {
+    "other": "Uuid"
+  },
+  "dataSourceSingleQuery.Name": {
+    "other": "Name"
+  },
+  "dataSourceSingleQuery.IsDisabled": {
+    "other": "Is Disabled"
+  },
+  "dataSourceSingleQuery.StorageType": {
+    "other": "Storage Type"
+  },
+  "dataSourceSingleQuery.StorageType.REMOTE": {
+    "other": "Remote"
+  },
+  "dataSourceSingleQuery.StorageType.ANY": {
+    "other": "Any"
+  },
+  "dataSourceSingleQuery.StorageType.LOCALFS": {
+    "other": "Local"
+  },
+  "dataSourceSingleQuery.PeerAddress": {
+    "other": "Peer Address"
+  },
+  "dataSourceSingleQuery.FlatStorage": {
+    "other": "Flat Storage"
+  },
+  "dataSourceSingleQuery.SkipSyncOnRestart": {
+    "other": "Skip sync on restart"
+  },
+  "dataSourceSingleQuery.IsVersioned": {
+    "other": "Is Versioned"
+  },
+  "dataSourceSingleQuery.IsEncrypted": {
+    "other": "Is Encrypted"
+  },
+  "dataSourceSingleQuery.EncryptionMode": {
+    "other": "Encryption Mode"
+  },
+  "dataSourceSingleQuery.EncryptionMode.USER": {
+    "other": "User-key"
+  },
+  "dataSourceSingleQuery.EncryptionMode.USER_PWD": {
+    "other": "User-pwd"
+  },
+  "dataSourceSingleQuery.EncryptionMode.CLEAR": {
+    "other": "Clear"
+  },
+  "dataSourceSingleQuery.EncryptionMode.MASTER": {
+    "other": "Master-key"
+  },
+  "dataSourceSingleQuery.EncryptionKey": {
+    "other": "Encryption Key"
+  },
+  "dataSourceSingleQuery.VersioningPolicyName": {
+    "other": "Versioning Policy"
+  },
+  "dataSourceSingleQuery.StorageConfigurationName": {
+    "other": "Configuration Key"
+  },
+  "dataSourceSingleQuery.StorageConfigurationValue": {
+    "other": "Configuration Value"
+  },
+  "dataSourceSingleQuery.ObjectServiceName": {
+    "other": "Object Service"
+  },
+  "dataSourceSingleQuery.Not": {
+    "other": "Not"
+  },
+  "triggerFilterQuery.IsSchedule": {
+    "other": "Scheduled Trigger"
+  },
+  "triggerFilterQuery.IsApiHook": {
+    "other": "Triggered by Webhook"
+  },
+  "triggerFilterQuery.ApiHookSlug": {
+    "other": "Webhook Api Slug"
+  },
+  "triggerFilterQuery.RunParameterName": {
+    "other": "Run Parameter Name"
+  },
+  "triggerFilterQuery.RunParameterValue": {
+    "other": "Run Parameter Value"
+  },
+  "triggerFilterQuery.IsManual": {
+    "other": "Manual Trigger"
+  },
+  "triggerFilterQuery.EventNames": {
+    "other": "Events"
+  }
+}

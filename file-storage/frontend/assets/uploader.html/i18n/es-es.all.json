@@ -1,0 +1,179 @@
+{
+  "start": {
+    "other": "Comenzar"
+  },
+  "pause": {
+    "other": "Pausar"
+  },
+  "clear": {
+    "other": "Limpiar"
+  },
+  "clear-header": {
+    "other": "Limpiar lista..."
+  },
+  "clear-finished": {
+    "other": "Subidas Completadas"
+  },
+  "clear-failed": {
+    "other": "Subidas Fallidas"
+  },
+  "clear-all": {
+    "other": "Todas las transferencias"
+  },
+  "list.show-more": {
+    "other": "%d más - mostrar todo"
+  },
+  "options.existing": {
+    "other": "Si existe un archivo con el mismo nombre:"
+  },
+  "options.existing.alert": {
+    "other": "Detener la subida y notificarme"
+  },
+  "options.existing.folders": {
+    "other": "Renombrar carpetas y archivos"
+  },
+  "options.existing.merge": {
+    "other": "Renombrar sólo archivos (fusionar carpetas)"
+  },
+  "options.existing.overwrite": {
+    "other": "Sobrescribir el archivo existente sin notificarlo"
+  },
+  "confirm.rename.all": {
+    "other": "Renombrar carpetas, luego archivos en conflicto"
+  },
+  "confirm.rename.merge": {
+    "other": "Renombrar sólo archivos (combinar carpetas)"
+  },
+  "confirm.overwrite": {
+    "other": "Combinar carpetas y sobrescribir archivos"
+  },
+  "confirm.save.choice": {
+    "other": "Guardar opción para próximas subidas"
+  },
+  "options": {
+    "other": "Opciones de subida"
+  },
+  "upload.forbidden": {
+    "other": "No tiene permisos para subir este archivo aquí"
+  },
+  "task.label": {
+    "other": "Subiendo archivos al servidor..."
+  },
+  "task.status.folders": {
+    "other": "Creando Carpetas"
+  },
+  "task.message.folder-one": {
+    "other": "Creando una carpeta"
+  },
+  "task.message.folder-many": {
+    "other": "Creando %s carpetas"
+  },
+  "task.status.analyse": {
+    "other": "Preparando archivos para subirlos"
+  },
+  "task.message.analyse-many": {
+    "other": "Analizando %s elementos..."
+  },
+  "task.message.analyse-one": {
+    "other": "Analizando un elemento"
+  },
+  "task.message.analyse-wait": {
+    "other": "Por favor, espere..."
+  },
+  "task.status.ready": {
+    "other": "Listo para subir"
+  },
+  "task.status.paused": {
+    "other": "Subida en pausa"
+  },
+  "task.status.upload": {
+    "other": "Subiendo archivo"
+  },
+  "task.message.upload-progress": {
+    "other": "Subiendo %s%"
+  },
+  "no-folders-support": {
+    "other": "Parece que su navegador no soporta la función \"soltar carpetas\""
+  },
+  "analyze.step": {
+    "other": "Preparando archivos y carpetas para subir..."
+  },
+  "drophere": {
+    "other": "Soltar archivos aquí"
+  },
+  "drop-or": {
+    "other": "o"
+  },
+  "drop-pick-file": {
+    "other": "examinar archivos"
+  },
+  "drop-pick-folder": {
+    "other": "examinar carpetas"
+  },
+  "dialog.title": {
+    "other": "Transferencias"
+  },
+  "attempt": {
+    "other": "attempt"
+  },
+  "status.new": {
+    "other": "Pendiente"
+  },
+  "status.error": {
+    "other": "Se ha producido un error"
+  },
+  "status.pause": {
+    "other": "Pausado"
+  },
+  "status.analyse": {
+    "other": "Analizando..."
+  },
+  "status.dir.new": {
+    "other": "Carpeta en espera de carga..."
+  },
+  "status.file.new": {
+    "other": "Archivo pendiente de carga..."
+  },
+  "status.dir.analyse": {
+    "other": "Analizando carpeta..."
+  },
+  "status.file.analyse": {
+    "other": "Analizando archivo..."
+  },
+  "status.dir.loading": {
+    "other": "Creando carpeta"
+  },
+  "status.file.loading": {
+    "other": "Subiendo archivo"
+  },
+  "status.dir.loaded": {
+    "other": "Carpeta creada"
+  },
+  "status.file.loaded": {
+    "other": "Archivo subido"
+  },
+  "status.part.loaded": {
+    "other": "Fragmento de archivo subido"
+  },
+  "status.part.loading": {
+    "other": "Subiendo fragmento de archivo"
+  },
+  "status.multi-pause": {
+    "other": "Terminando el fragmento de archivo actual antes de pausar"
+  },
+  "status.file.cannot-pause": {
+    "other": "No se puede pausar esta transferencia"
+  },
+  "status.part.cannot-pause": {
+    "other": "No se puede pausar la transferencia de este fragmento"
+  },
+  "status.error.aborted": {
+    "other": "interrumpido por el usuario"
+  },
+  "status.error.403": {
+    "other": "no tiene permisos para subir este archivo aquí"
+  },
+  "status.error.422": {
+    "other": "cuota alcanzada, no se puede subir más"
+  }
+}

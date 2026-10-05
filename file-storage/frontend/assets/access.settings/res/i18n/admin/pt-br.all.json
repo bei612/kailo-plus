@@ -1,0 +1,2411 @@
+{
+  "dashboard.tab.dashboard": {
+    "other": "Painel"
+  },
+  "dashboard.tab.activity": {
+    "other": "Atividade"
+  },
+  "loading": {
+    "other": "Carregando..."
+  },
+  "ds.board.ds.legend": {
+    "other": "Fontes de dados são locais de armazenamento concretos que são agregados pelo Pydio em uma árvore global. Eles podem ser distribuídos entre muitos nós de armazenamento conforme necessário."
+  },
+  "ds.board.ds.internal.legend": {
+    "other": "Internal DataSources are used to store binaries like files versions"
+  },
+  "ds.board.ds.title": {
+    "other": "Fontes de dados"
+  },
+  "ds.board.enc.legend": {
+    "other": "Chaves mestres são geradas automaticamente pelo serviço Pydio e armazenadas no servidor protegido. Use as ferramentas abaixo para exportar/importar essas chaves caso precise reinstalar ou implantar em outro servidor"
+  },
+  "ds.board.enc.title": {
+    "other": "Chaves mestres de criptografia"
+  },
+  "ds.board.versioning.legend": {
+    "other": "Você pode definir como os arquivos serão versionados para cada fonte de dados e quantas versões a aplicação manterá ao longo do tempo."
+  },
+  "ds.board.versioning.title": {
+    "other": "Politica de versão"
+  },
+  "ds.board.wsfromds.title": {
+    "other": "Criar espaço de trabalho"
+  },
+  "ds.board.wsfromds.legend": {
+    "other": "Criar um novo espaço de trabalho na raiz do código de dados %s"
+  },
+  "ds.board.wsfromds.field": {
+    "other": "Nome"
+  },
+  "ds.board.wsfromds.defaultPrefix": {
+    "other": "Fontes de dados %s"
+  },
+  "ds.format-picker.title": {
+    "other": "Criar Fonte de Dados"
+  },
+  "ds.format-picker.legend": {
+    "other": "Fontes de Dados são pontos de montagem permitindo que você anexe o armazenamento real ao aplicativo. Primeiro selecione a maneira como os dados são organizados dentro do armazenamento."
+  },
+  "ds.format-picker.submit": {
+    "other": "Inicio"
+  },
+  "ds.format-picker.flat.title": {
+    "other": "Armazenamento plano"
+  },
+  "ds.format-picker.flat.legend": {
+    "other": "The files are stored as binaries along regular snapshots of the tree structure to ensure an efficient disaster recovery. This is the recommended option for best performances and scalability."
+  },
+  "ds.format-picker.structured.title": {
+    "other": "Importar dados existentes"
+  },
+  "ds.format-picker.structured.legend": {
+    "other": "The tree structure is reflected in the storage and maintained in real-time synchronization. This legacy option is NOT recommended and should only be used for importing existing data. It is event-based and must not be used in high load or clustered installation."
+  },
+  "ds.format-picker.internal.title": {
+    "other": "Células Internas"
+  },
+  "ds.format-picker.internal.legend": {
+    "other": "Usado para armazenar binários internos (por exemplo, versões de arquivos, miniaturas). Recursos limitados, dados não são indexados nos mecanismos de busca."
+  },
+  "ds.editor.delete.warning": {
+    "other": "Tem certeza que deseja excluir esta informação? Isso não pode ser desfeito, e você pode perder todos os dados vinculados a estes nós!"
+  },
+  "ds.editor.enc": {
+    "other": "Criptografia ativada para rest"
+  },
+  "ds.editor.enc.dialog.disable": {
+    "other": "Se você habilitou a criptografia anteriormente nesta fonte de dados, todos os dados criptografados ficarão Ilegíveis! Você tem certeza que deseja fazer isso?"
+  },
+  "ds.editor.enc.dialog.enable.1": {
+    "other": "Habilitar a criptografia em fonte de dados começará a cifrar os dados no armazenamento usando a chave de criptografia que você fornecer."
+  },
+  "ds.editor.enc.dialog.enable.2": {
+    "other": "Por favor, esteja ciente de que se você não exportar e fazer backup da sua chave mestra e se você tiver que reinstalar o servidor por qualquer motivo,"
+  },
+  "ds.editor.enc.dialog.enable.2bold": {
+    "other": "Todos os dados serão perdidos!"
+  },
+  "ds.editor.enc.dialog.enable.3": {
+    "other": "Você também deve estar ciente de que pode exigir mais CPU para uma criptografia / descriptografia rápida e sem problemas dos dados."
+  },
+  "ds.editor.enc.dialog.enable.create": {
+    "other": "Definir um identificador para a nova chave"
+  },
+  "ds.editor.enc.key": {
+    "other": "Chave Criptográfica"
+  },
+  "ds.editor.enc.key.clear": {
+    "other": "Sem criptografia"
+  },
+  "ds.editor.enc.key.create": {
+    "other": "Configurar criptografia com uma nova chave..."
+  },
+  "ds.editor.enc.validate": {
+    "other": "Eu entendo"
+  },
+  "ds.editor.enc.warning": {
+    "other": "Atenção!"
+  },
+  "ds.editor.legend.delete.1": {
+    "other": "A exclusão da fonte de dados é uma operação destrutiva: embora ela NÃO remova os dados dentro do armazenamento subjacente, ele irá destruir o índice existente e desvincular todos os ACLs ligados aos nós indexados."
+  },
+  "ds.editor.legend.delete.2": {
+    "other": "Certifique-se de primeiro remover todos os espaços de trabalho que estão apontando para esta fonte de dados antes de excluí-lo."
+  },
+  "ds.editor.legend.delete.button": {
+    "other": "Excluir fonte de dados"
+  },
+  "ds.editor.legend.local": {
+    "other": "Os arquivos do sistema de dados servem arquivos através de um servidor de armazenamento de objeto, que está iniciando na pasta pai e servindo o alvo como um bucket s3. Por esta razão, a pasta selecionada deve atender aos seguintes requisitos:"
+  },
+  "ds.editor.legend.local.li.1": {
+    "other": "Pelo menos dois níveis de profundidade."
+  },
+  "ds.editor.legend.local.li.2": {
+    "other": "A pasta pai deve ter permissão de escrita pelo usuário do serviço da aplicação"
+  },
+  "ds.editor.legend.local.li.3": {
+    "other": "A pasta de destino deve obedecer aos nomes de DNS (letras minúsculas, sem espaços ou caracteres especiais)."
+  },
+  "ds.editor.legend.resync": {
+    "other": "A sincronização irá verificar o armazenamento subjacente e detectar alterações que não estão indexadas no momento."
+  },
+  "ds.editor.legend.resync.button": {
+    "other": "Re-sincronizar"
+  },
+  "ds.editor.legend.s3.1": {
+    "other": "Os recursos de dados de armazenamento remoto servirão arquivos de um armazenamento remoto compatível com s3-ao proxying de todas as requisições."
+  },
+  "ds.editor.legend.s3.2": {
+    "other": "Use a chave de API padrão / Api Secret para autenticar, deixe a URL do endpoint em branco para AmazonS3 ou use a URL de armazenamento para outras soluções locais."
+  },
+  "ds.editor.storage.legend.fs": {
+    "other": "Procurar dados de um sistema de arquivos local ou arquivos na sua rede."
+  },
+  "ds.editor.storage.legend.fs.peer": {
+    "other": "Restringir a fonte de dados para um endereço de par irá iniciar o serviço apenas um nó específico. Usar o valor \"qualquer\" iniciará o serviço em todos os nós onde as Cells são executadas, que pode ser útil se um sistema de arquivos compartilhado é montado em todos os nós no mesmo local, ou se o nó pode alterar seu IP ao reiniciar. Para evitar conflitos, é melhor ou usar QUALQUER uma fonte de dados ou selecionar nós específicos para todos os dados."
+  },
+  "ds.editor.storage.legend.fs.path": {
+    "other": "Certifique-se de que a última pasta esteja em letras minúsculas e de que o pai esteja editável. Se sua pasta existente for caso positivo, você pode usar links simbólicos para contornar essa limitação."
+  },
+  "ds.editor.storage.legend.s3": {
+    "other": "Procurar dados de um repositório Amazon S3 ou de um armazenamento compatível com S3."
+  },
+  "ds.editor.storage.legend.azure": {
+    "other": "Procurar dados de um grupo de armazenamento do Azure Blob."
+  },
+  "ds.editor.storage.legend.gcs": {
+    "other": "Procurar dados de um grupo de armazenamento da Google Cloud."
+  },
+  "ds.editor.storage.legend.versioning": {
+    "other": "Configurar política de versionamento para manter o histórico de modificações de conteúdo dos arquivos. Cuidado com o fato de que usará espaço de armazenamento adicional."
+  },
+  "ds.editor.storage.legend.encryption": {
+    "other": "Criptografia em rest pode ser usada para garantir que os arquivos nunca sejam armazenados em formato limpo dentro do armazenamento. Isso pode ser útil se você não confiar no provedor do armazenamento."
+  },
+  "ds.editor.storage.readOnly": {
+    "other": "Modo somente de leitura"
+  },
+  "ds.editor.storage.legend.readOnly": {
+    "other": "Use o modo somente leitura se desejar que o Cells nunca grave nenhum arquivo oculto e use eTags nativos como somas de verificação (isso pode ser necessário para depósitos com grande quantidade de dados existentes). No entanto, observe que qualquer espaço de trabalho criado nesta fonte de dados deve ser definido como Somente leitura, pois o recurso de mover pode não funcionar corretamente."
+  },
+  "ds.editor.storage.flatStorage": {
+    "other": "Manter estrutura de dados no armazenamento"
+  },
+  "ds.editor.storage.legend.flatStorage": {
+    "other": "O armazenamento plano (não estruturado) é o melhor para desempenhos. Use armazenamento estruturado somente se você deseja ter certeza de que os arquivos e pastas reproduzidos dentro do armazenamento real (ou mapear para uma pasta com dados pré-existentes). Esta opção NÃO pode ser alterada após a criação de código de dados."
+  },
+  "ds.editor.storage.skipResync": {
+    "other": "Ignorar ressincronização completa ao reiniciar"
+  },
+  "ds.editor.storage.legend.skipResync": {
+    "other": "Para enormes fontes de dados, você pode querer evitar a ressincronização total no momento da reinicialização."
+  },
+  "ds.editor.storage.checksumMapper": {
+    "other": "Armazenar checksums localmente (não modificar objetos)"
+  },
+  "ds.editor.storage.nativeEtags": {
+    "other": "Usar Etags Nativas (desativará a Sincronização do Desktop)"
+  },
+  "ds.editor.storage.legend.checksumMapper": {
+    "other": "Para a detecção adequada de alterações, as somas de verificação de arquivos (md5) são calculadas por Cells (ou pelo armazenamento com uma cópia local, quando possível) e anexadas como metadados aos objetos. Para obter melhores desempenhos, use o sinalizador Native ETags para manter os valores originais do armazenamento, mas tome cuidado, pois isso desativará a sincronização da área de trabalho nesta fonte de dados. Você também pode simplesmente impedir a modificação de objetos, enquanto ainda calcula somas de verificação, armazenando metadados localmente."
+  },
+  "ds.editor.new": {
+    "other": "Nova fonte de dados"
+  },
+  "ds.editor.name.inuse": {
+    "other": "Esse nome já está em uso, por favor escolha outro."
+  },
+  "ds.editor.options": {
+    "other": "Opções Principais"
+  },
+  "ds.editor.datamanagement": {
+    "other": "Gestão de dados"
+  },
+  "ds.editor.options.enabled": {
+    "other": "Habilitado"
+  },
+  "ds.editor.options.id": {
+    "other": "Identificador de DataSource"
+  },
+  "ds.editor.options.port": {
+    "other": "Porta Interna"
+  },
+  "ds.editor.selector.completer": {
+    "other": "Escolha uma pasta"
+  },
+  "ds.editor.selector.completer.hint": {
+    "other": "Escolha da lista ou digite um caminho e pressione Enter"
+  },
+  "ds.editor.selector.completer.create": {
+    "other": "A pasta será criada"
+  },
+  "ds.editor.selector.error.depth": {
+    "other": "Certifique-se de selecionar uma pasta profunda com dois níveis. O armazenamento de objeto será iniciado na pasta pai."
+  },
+  "ds.editor.selector.error.dnsname": {
+    "other": "A pasta é exposta como um repositório S3 e deve obedecer aos nomes DNS (minúsculas, sem espaço ou caracteres especiais)."
+  },
+  "ds.editor.selector.folder": {
+    "other": "Pasta local"
+  },
+  "ds.editor.selector.folder.hint": {
+    "other": "Selecione um par para carregar pastas"
+  },
+  "ds.editor.selector.peer": {
+    "other": "Endereço do parceiro"
+  },
+  "ds.editor.selector.peer.any": {
+    "other": "Qualquer parceiro (nó único ou distribuído FS)"
+  },
+  "ds.editor.selector.peer.word": {
+    "other": "Parceiros"
+  },
+  "ds.editor.selector.peer.invalid": {
+    "other": "inválido"
+  },
+  "ds.editor.selector.mkdir": {
+    "other": "Criar Pasta"
+  },
+  "ds.editor.selector.mkdir.legend": {
+    "other": "Criar uma nova pasta sob %s"
+  },
+  "ds.editor.selector.mkdir.field": {
+    "other": "Nome da pasta"
+  },
+  "ds.editor.storage.fs.macos": {
+    "other": "Sistema operacional é MacOSX"
+  },
+  "ds.editor.storage.azure.api": {
+    "other": "Nome da Conta Azure"
+  },
+  "ds.editor.storage.azure.secret": {
+    "other": "Chave Secreta Azure"
+  },
+  "ds.editor.storage.azure.bucket": {
+    "other": "Nome do repositório"
+  },
+  "ds.editor.storage.gcs.credentials": {
+    "other": "Colar conteúdo do arquivo de credenciais do GCS JSON"
+  },
+  "ds.editor.storage.gcs.bucket": {
+    "other": "Nome do repositório"
+  },
+  "ds.editor.storage.s3.api": {
+    "other": "Chave Api S3"
+  },
+  "ds.editor.storage.s3.bucket": {
+    "other": "Nome do repositório"
+  },
+  "ds.editor.storage.s3.endpoint.type": {
+    "other": "Tipo de Endpoint"
+  },
+  "ds.editor.storage.s3.signatureVersion": {
+    "other": "Versão da Assinatura"
+  },
+  "ds.editor.storage.s3.endpoint.amazon": {
+    "other": "Amazon S3"
+  },
+  "ds.editor.storage.s3.endpoint.custom": {
+    "other": "Outro armazenamento S3-Compatível"
+  },
+  "ds.editor.storage.s3.endpoint.minio": {
+    "other": "Servidor Minio"
+  },
+  "ds.editor.storage.s3.endpoint": {
+    "other": "URL do Endpoint Personalizado"
+  },
+  "ds.editor.storage.s3.endpoint.hint": {
+    "other": "incluir http(s)://"
+  },
+  "ds.editor.storage.s3.region": {
+    "other": "S3 Região Api"
+  },
+  "ds.editor.storage.s3.path": {
+    "other": "Caminho interno"
+  },
+  "ds.editor.storage.s3.secret": {
+    "other": "S3 Segredo de Api"
+  },
+  "ds.editor.storage.buckets.legend": {
+    "other": "Selecione um ou mais repositórios"
+  },
+  "ds.editor.storage.buckets.reload": {
+    "other": "Recarregar repositorios"
+  },
+  "ds.editor.storage.buckets.create": {
+    "other": "Criar Bucket"
+  },
+  "ds.editor.storage.buckets.create.hint": {
+    "other": "Nome do Bucket"
+  },
+  "ds.editor.storage.buckets.regexp": {
+    "other": "Use expressão regular"
+  },
+  "ds.editor.storage.buckets.regexp.hint": {
+    "other": "Expressão regular"
+  },
+  "ds.editor.storage.buckets.cont.nokeys": {
+    "other": "Configurar o armazenamento para carregar repositórios"
+  },
+  "ds.editor.storage.buckets.cont.loading": {
+    "other": "Carregando repositórios acessíveis"
+  },
+  "ds.editor.storage.buckets.cont.empty": {
+    "other": "Nenhum repositório encontrado"
+  },
+  "ds.editor.storage.s3.legend.tags": {
+    "other": "Sincronize etiquetas S3 de repositórios ou objetos (use uma lista de padrões separados por vírgulas para corresponder). Por favor, note que isto irá executar solicitações adicionais para armazenamento e pode diminuir o processo de sincronização. As tags originais serão mapeadas para pydio:s3-bucket-tag-NAME e pydio:s3-object-tag-NAME internamente."
+  },
+  "ds.editor.storage.s3.bucketsTags": {
+    "other": "Tags de repositórios (múltiplos repositórios ativados)"
+  },
+  "ds.editor.storage.s3.objectsTags": {
+    "other": "Tags de objetos"
+  },
+  "ds.editor.storage.s3.legend.bucketPathPrefix": {
+    "other": "Use um prefixo de caminho dentro do bucket (criará uma pasta virtual para armazenar objetos)"
+  },
+  "ds.editor.storage.s3.bucketPathPrefix": {
+    "other": "Prefixo do caminho"
+  },
+  "ds.editor.storage.s3.legend.storageClass": {
+    "other": "Classe de armazenamento personalizado (deixe em branco para usar o STANDARD). O Amazon S3 suporta os seguintes valores: REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIER, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR. Cuidado com o fato de que usar GLACIER ou equivalente fará somente a escrita do código-fonte, já que os objetos têm de ser restaurados manualmente antes de estarem disponíveis para download."
+  },
+  "ds.editor.storage.s3.storageClass": {
+    "other": "Classe de Armazenamento"
+  },
+  "ds.editor.title": {
+    "other": "Fontes de dados %s"
+  },
+  "ds.editor.versioning": {
+    "other": "Política de versionamento"
+  },
+  "ds.editor.versioning.disabled": {
+    "other": "Não habilitar o versionamento"
+  },
+  "ds.editor.tab.button-back": {
+    "other": "Voltar"
+  },
+  "ds.editor.tab.button-next": {
+    "other": "Próximo"
+  },
+  "ds.editor.tab.button-create": {
+    "other": "Criar"
+  },
+  "ds.editor.tab.identifier": {
+    "other": "Login"
+  },
+  "ds.editor.tab.main": {
+    "other": "Opções Principais"
+  },
+  "ds.editor.tab.storage": {
+    "other": "Tipo de armazenamento"
+  },
+  "ds.editor.tab.lifecycle": {
+    "other": "Ciclo de vida de dados"
+  },
+  "ds.editor.tab.advanced": {
+    "other": "Opções Avançadas"
+  },
+  "ds.editor.initFlatFromSnapshot": {
+    "other": "Se este armazenamento foi usado anteriormente como uma fonte de dados plana, inicialize-o a partir de um arquivo snapshot existente (deve ser encontrado dentro do armazenamento)"
+  },
+  "ds.editor.foldersShardingPattern": {
+    "other": "Por padrão, todos os arquivos são armazenados dentro de uma pasta única. Use um padrão 'N:P:Q' para auto-criar subpastas id[:N]/id[:P]/id[:Q]/..."
+  },
+  "ds.editor.initFlatFromSnapshot.hint": {
+    "other": "Path to snapshot inside storage (e.g. $snapshot.db)"
+  },
+  "ds.editor.foldersShardingPattern.hint": {
+    "other": "Sharding pattern (e.g. N:P:Q)"
+  },
+  "ds.encryption": {
+    "other": "Criptografado"
+  },
+  "ds.encryption.key.emptyState": {
+    "other": "Nenhuma chave mestra criada"
+  },
+  "ds.encryption.key.create": {
+    "other": "Criar chave"
+  },
+  "ds.encryption.key.created": {
+    "other": "Criado"
+  },
+  "ds.encryption.key.delete": {
+    "other": "Apagar chave"
+  },
+  "ds.encryption.key.delete.warning": {
+    "other": "Se a chave for usada atualmente para dados criptografados, esta é uma operação muito destrutiva! Você tem certeza que quer fazer isso?"
+  },
+  "ds.encryption.key.export": {
+    "other": "Exportar Chave"
+  },
+  "ds.encryption.key.export.confirm": {
+    "other": "Confirmar senha"
+  },
+  "ds.encryption.key.export.fail": {
+    "other": "Algo deu errado durante a exportação"
+  },
+  "ds.encryption.key.export.password": {
+    "other": "Por favor, forneça uma senha mais forte."
+  },
+  "ds.encryption.key.export.result.copy": {
+    "other": "Copiar resultado para um arquivo para salvar a chave"
+  },
+  "ds.encryption.key.id": {
+    "other": "Login"
+  },
+  "ds.encryption.key.import": {
+    "other": "Importar chave"
+  },
+  "ds.encryption.key.import.content": {
+    "other": "Cole a chave aqui do seu arquivo de backup"
+  },
+  "ds.encryption.key.import.fail": {
+    "other": "Algo deu errado durante a importação"
+  },
+  "ds.encryption.key.import.id": {
+    "other": "Identificador exclusivo para essa chave"
+  },
+  "ds.encryption.key.import.label": {
+    "other": "Etiqueta legível para esta chave"
+  },
+  "ds.encryption.key.import.password": {
+    "other": "Use senha no momento da exportação"
+  },
+  "ds.encryption.key.import.success": {
+    "other": "A chave foi importada com sucesso"
+  },
+  "ds.encryption.key.label": {
+    "other": "Nome"
+  },
+  "ds.encryption.key.owner": {
+    "other": "Dono"
+  },
+  "ds.name": {
+    "other": "Nome"
+  },
+  "ds.status": {
+    "other": "Status"
+  },
+  "ds.status.disabled": {
+    "other": "Desabilitado"
+  },
+  "ds.status.index": {
+    "other": "Nível abaixo"
+  },
+  "ds.status.ko": {
+    "other": "Serviços interrompidos"
+  },
+  "ds.status.ko-peers": {
+    "other": "Nó %s não encontrado"
+  },
+  "ds.status.na": {
+    "other": "N/A"
+  },
+  "ds.status.object": {
+    "other": "Objetos para baixo"
+  },
+  "ds.status.ok": {
+    "other": "Todos os serviços em execução"
+  },
+  "ds.status.starting": {
+    "other": "Carregando fontes de dados...."
+  },
+  "ds.status.sync": {
+    "other": "Sincronização para baixo"
+  },
+  "ds.storage": {
+    "other": "Tipo de armazenamento"
+  },
+  "ds.storage.fs": {
+    "other": "Sistema de arquivos local"
+  },
+  "ds.storage.s3": {
+    "other": "Armazenamento compatível com S3-"
+  },
+  "ds.storage.azure": {
+    "other": "Armazenamento do Azure Blob"
+  },
+  "ds.storage.gcs": {
+    "other": "Armazenamento do Google Cloud"
+  },
+  "ds.storage.title": {
+    "other": "DataSources"
+  },
+  "ds.versioning": {
+    "other": "Controle de Versão"
+  },
+  "ds.syncStatus": {
+    "other": "Última Sincronização"
+  },
+  "ds.emptyState": {
+    "other": "Nenhuma fonte de dados criada ainda"
+  },
+  "ds.versioning.description": {
+    "other": "Descrição"
+  },
+  "ds.versioning.name": {
+    "other": "Nome"
+  },
+  "ds.versioning.periods": {
+    "other": "Estratégia de Retenção"
+  },
+  "ds.versioning.storage": {
+    "other": "DataSources"
+  },
+  "logs.1": {
+    "other": "Logs do Servidor"
+  },
+  "logs.10": {
+    "other": "Exportar e baixar"
+  },
+  "logs.11": {
+    "other": "Exportar como..."
+  },
+  "logs.2": {
+    "other": "Escolha um dia"
+  },
+  "logs.filter.legend": {
+    "other": "Filtrar por..."
+  },
+  "logs.export.disabled": {
+    "other": "Escolha uma data ou filtro de resultado"
+  },
+  "logs.export.clicklink": {
+    "other": "Clique no link para baixar"
+  },
+  "logs.filter.period": {
+    "other": "Período de tempo"
+  },
+  "logs.filter.period.from": {
+    "other": "De"
+  },
+  "logs.filter.period.to": {
+    "other": "Para"
+  },
+  "logs.filter.period.time": {
+    "other": "Em..."
+  },
+  "logs.filter.login": {
+    "other": "Usuário"
+  },
+  "logs.filter.ip": {
+    "other": "IP"
+  },
+  "logs.filter.fulltext": {
+    "other": "Pesquisa em texto"
+  },
+  "logs.tz.tooltip": {
+    "other": "Mostrar fuso horário local/servidor"
+  },
+  "logs.tz.local": {
+    "other": "Fuso horário local"
+  },
+  "logs.tz.server": {
+    "other": "Fuso horário do servidor"
+  },
+  "logs.toggleTheme": {
+    "other": "Tema claro/escuro"
+  },
+  "logs.sys.note": {
+    "other": "Nota por favor:"
+  },
+  "logs.sys.note.content": {
+    "other": "Entradas de logs vazias podem significar que o servidor não está sendo executado em modo de produção. Certifique-se de definir esse nível de log passando o argumento de produção --log=ou definindo a variável de ambiente PYDIO_LOGS_LEVEL=production."
+  },
+  "logs.3": {
+    "other": "Filtrar Logs"
+  },
+  "logs.4": {
+    "other": "Clique em uma linha para detalhes"
+  },
+  "logs.5": {
+    "other": "Detalhe do Evento"
+  },
+  "logs.6": {
+    "other": "Exportar logs"
+  },
+  "logs.7": {
+    "other": "Exportar fromulário"
+  },
+  "logs.8": {
+    "other": "Para"
+  },
+  "logs.9": {
+    "other": "O arquivo será exportado como formato CSV com separadores semi-colmuns (;) e campos colocados em aspas duplas (\")."
+  },
+  "logs.level": {
+    "other": "Nível"
+  },
+  "logs.level.exact": {
+    "other": "(somente)"
+  },
+  "logs.level.greaterthan": {
+    "other": "(e para cima)"
+  },
+  "logs.service": {
+    "other": "Serviço"
+  },
+  "logs.message": {
+    "other": "Mensagem"
+  },
+  "logs.noentries": {
+    "other": "Sem registros"
+  },
+  "logs.noresults": {
+    "other": "Sem resultados"
+  },
+  "logs.details.copy": {
+    "other": "Copy log to clipboard"
+  },
+  "logs.details.show-focus": {
+    "other": "Show +/- 5 minutes"
+  },
+  "logs.details.close": {
+    "other": "Close log detail"
+  },
+  "logs.details.user": {
+    "other": "User"
+  },
+  "logs.details.user-attributes": {
+    "other": "User Attributes"
+  },
+  "logs.details.date": {
+    "other": "Event Date"
+  },
+  "logs.details.msg": {
+    "other": "Event Message"
+  },
+  "logs.details.service": {
+    "other": "Emitting Service"
+  },
+  "logs.details.connection": {
+    "other": "Connection IP"
+  },
+  "logs.details.agent": {
+    "other": "User-Agent"
+  },
+  "logs.details.protocol": {
+    "other": "Protocol"
+  },
+  "logs.details.node": {
+    "other": "File/Folder"
+  },
+  "logs.details.transfer-size": {
+    "other": "Transfer Size"
+  },
+  "logs.details.workspace": {
+    "other": "In Workspace"
+  },
+  "menu.0": {
+    "other": "Painel"
+  },
+  "menu.1": {
+    "other": "Atividade"
+  },
+  "menu.10": {
+    "other": "Extensões para o envio de arquivos através da interface da Web"
+  },
+  "menu.11": {
+    "other": "Autenticação"
+  },
+  "menu.11b": {
+    "other": "Autenticação"
+  },
+  "menu.12": {
+    "other": "Administração de configurações"
+  },
+  "menu.13": {
+    "other": "Registradores"
+  },
+  "menu.14": {
+    "other": "Notificações"
+  },
+  "menu.15": {
+    "other": "Como os usuários recebem notificações de várias partes da aplicação."
+  },
+  "menu.16": {
+    "other": "Booster do Pydio"
+  },
+  "menu.17": {
+    "other": "Mensagens instantâneas e uma ferramenta externa de aceleração"
+  },
+  "menu.18": {
+    "other": "Todos os Plugins"
+  },
+  "menu.19": {
+    "other": "Plugins disponíveis"
+  },
+  "menu.2": {
+    "other": "Logs do Servidor"
+  },
+  "menu.20": {
+    "other": "Recursos do Usuário"
+  },
+  "menu.21": {
+    "other": "Parâmetros de usuário"
+  },
+  "menu.22": {
+    "other": "Página de Boas-vindas"
+  },
+  "menu.23": {
+    "other": "Página inicial para o usuário após o login. Configure elementos exibidos e links."
+  },
+  "menu.3": {
+    "other": "Aparência"
+  },
+  "menu.4": {
+    "other": "Tema, logotipos, opções de aparência"
+  },
+  "menu.5": {
+    "other": "Compartilhar Recursos"
+  },
+  "menu.6": {
+    "other": "Opções para todos os arquivos e compartilhamento de pastas"
+  },
+  "menu.7": {
+    "other": "Editores"
+  },
+  "menu.8": {
+    "other": "Ativar/desativar editores e gerenciar seus parâmetros"
+  },
+  "menu.9": {
+    "other": "Enviado por"
+  },
+  "menu.metadata": {
+    "other": "Metadados"
+  },
+  "menu.metadata.description": {
+    "other": "Campos editáveis anexados aos dados"
+  },
+  "metadata.definition": {
+    "other": "Definição"
+  },
+  "metadata.delete.confirm": {
+    "other": "Você deseja realmente excluir este metadado?"
+  },
+  "metadata.editor.label.error": {
+    "other": "Campo de metadados não pode estar vazia"
+  },
+  "metadata.editor.ns.error": {
+    "other": "Escolha um namespace para este metadados"
+  },
+  "metadata.editor.ns.exists": {
+    "other": "Este nome já existe, por favor, escolha outro"
+  },
+  "metadata.editor.selection": {
+    "other": "Valores de seleção"
+  },
+  "metadata.editor.selection.key": {
+    "other": "Chave"
+  },
+  "metadata.editor.selection.value": {
+    "other": "Valor"
+  },
+  "metadata.editor.selection.steps": {
+    "other": "Mostrar como passos"
+  },
+  "metadata.editor.tags.cleared": {
+    "other": "Limpar tags para namespaces %s"
+  },
+  "metadata.editor.tags.reset": {
+    "other": "Redefinir Tags"
+  },
+  "metadata.editor.title.create": {
+    "other": "Criar conjunto de itens (Namespace)"
+  },
+  "metadata.empty": {
+    "other": "Nenhum metadados definido"
+  },
+  "metadata.indexable": {
+    "other": "Indexável"
+  },
+  "metadata.label": {
+    "other": "Nome"
+  },
+  "metadata.namespace": {
+    "other": "Nome"
+  },
+  "metadata.namespace.add": {
+    "other": "Namespace"
+  },
+  "metadata.namespaces": {
+    "other": "Namespaces"
+  },
+  "metadata.namespaces.legend": {
+    "other": "Os metadados podem ser anexados a qualquer arquivo ou pasta dos usuários. Você pode definir aqui o tipo de metadados que deseja exibir, e se cada meta é legível/gravável pelos usuários padrão, em oposição aos usuários administradores."
+  },
+  "metadata.order": {
+    "other": "Ordenar"
+  },
+  "metadata.group": {
+    "other": "Grupo"
+  },
+  "metadata.group-field": {
+    "other": "Group Name (creates an expandable section). Use '/' for sub-groups."
+  },
+  "metadata.default-group": {
+    "other": "Sem Grupo"
+  },
+  "metadata.toggle.index": {
+    "other": "Indexar ao motor de busca"
+  },
+  "metadata.toggle.read": {
+    "other": "Restringir visibilidade aos administradores"
+  },
+  "metadata.toggle.write": {
+    "other": "Restringir edição a administradores"
+  },
+  "metadata.type": {
+    "other": "Tipo"
+  },
+  "metadata.type.string": {
+    "other": "Texto Curto"
+  },
+  "metadata.type.textarea": {
+    "other": "Parágrafo"
+  },
+  "metadata.type.integer": {
+    "other": "Número"
+  },
+  "metadata.group.lists": {
+    "other": "List"
+  },
+  "metadata.group.internal": {
+    "other": "Internal"
+  },
+  "metadata.type.boolean": {
+    "other": "Valor verdadeiro/falso"
+  },
+  "metadata.type.date": {
+    "other": "Data ou Hora"
+  },
+  "metadata.type.stars_rate": {
+    "other": "Classificação por estrelas"
+  },
+  "metadata.type.css_label": {
+    "other": "Rótulos de cor"
+  },
+  "metadata.type.auto_complete": {
+    "other": "Auto Complete"
+  },
+  "metadata.type.tags": {
+    "other": "Extensible Tags (legacy)"
+  },
+  "metadata.type.choice": {
+    "other": "Selecionar dos valores"
+  },
+  "metadata.type.multi_value": {
+    "other": "Multi Value select"
+  },
+  "metadata.type.tag_cloud": {
+    "other": "Tag Cloud"
+  },
+  "metadata.type.tag_cloud.values": {
+    "other": "Tag Cloud values"
+  },
+  "metadata.tag_cloud.entity.hint": {
+    "other": "Comma-separated list of possible tags"
+  },
+  "metadata.tag_cloud.entity": {
+    "other": "Values"
+  },
+  "metadata.type.json": {
+    "other": "JSON (formato interno)"
+  },
+  "metadata.type.url": {
+    "other": "URL"
+  },
+  "metadata.type.date.format": {
+    "other": "Formato"
+  },
+  "metadata.type.date.format.date": {
+    "other": "Data"
+  },
+  "metadata.type.date.format.date-time": {
+    "other": "Data & Hora"
+  },
+  "metadata.type.date.format.time": {
+    "other": "Horário"
+  },
+  "metadata.type.date.display": {
+    "other": "Exibir"
+  },
+  "metadata.type.date.display.normal": {
+    "other": "Normal"
+  },
+  "metadata.type.date.display.relative": {
+    "other": "Relativo (xx dias atrás...)"
+  },
+  "metadata.type.reaction": {
+    "other": "Reação"
+  },
+  "metadata.type.integer.format": {
+    "other": "Formato"
+  },
+  "metadata.type.integer.format.general": {
+    "other": "Geral"
+  },
+  "metadata.type.integer.format.bytesize": {
+    "other": "Tamanho em Byte"
+  },
+  "metadata.type.integer.format.percentage": {
+    "other": "Porcentagem"
+  },
+  "metadata.type.integer.format.progress": {
+    "other": "Progresso"
+  },
+  "metadata.toggle.list-visibility": {
+    "other": "Mostrar valor na lista de arquivos"
+  },
+  "metadata.toggle.prompt": {
+    "other": "Prompt Metadata tagging on Upload"
+  },
+  "metadata.field.validation": {
+    "other": "Field Validation"
+  },
+  "metadata.validation.max-length.gte-min-length": {
+    "other": "Maximum length must be greater than or equal to minimum length"
+  },
+  "metadata.validation.max-value.gte-min-value": {
+    "other": "Maximum value must be greater than or equal to minimum value"
+  },
+  "metadata.validation.default-length.min": {
+    "other": "Default value length (%s) must be at least %s characters"
+  },
+  "metadata.validation.default-length.max": {
+    "other": "Default value length (%s) must not exceed %s characters"
+  },
+  "metadata.validation.default-value.min": {
+    "other": "Default value (%s) must be at least %s"
+  },
+  "metadata.validation.default-value.max": {
+    "other": "Default value (%s) must not exceed %s"
+  },
+  "metadata.editor.selection.key_exists": {
+    "other": "This key already exists"
+  },
+  "metadata.toggle.required": {
+    "other": "Required"
+  },
+  "metadata.boolean.yes": {
+    "other": "Yes"
+  },
+  "metadata.boolean.no": {
+    "other": "No"
+  },
+  "metadata.toggle.defaults": {
+    "other": "Enforce Defaults"
+  },
+  "metadata.field.mandatory": {
+    "other": "Obrigatório"
+  },
+  "perfs.booster.description": {
+    "other": "Verifica se Pydio Booster é iniciado e permite a comunicação de WebSocket"
+  },
+  "perfs.booster.error": {
+    "other": "Erro de Pydio Booster, veja o painel dedicado"
+  },
+  "perfs.booster.help": {
+    "other": "Pydio Booster fornece uma ferramenta adicional fácil de implantar para adicionar suporte a WebSocket e fazer Upload/Download no Pydio."
+  },
+  "perfs.booster.title": {
+    "other": "Booster do Pydio"
+  },
+  "perfs.cache.description": {
+    "other": "Verifica se um Pydio está configurado para usar uma camada de cache"
+  },
+  "perfs.cache.error": {
+    "other": "Parece que você não ativou o serviço de cache."
+  },
+  "perfs.cache.help": {
+    "other": "Pydio pode se conectar a um servidor de cache externo, como Redis ou Memcache, ou usar o cache na memória para melhorar muito o desempenho de navegação de arquivos."
+  },
+  "perfs.cache.title": {
+    "other": "Cache do Pydio"
+  },
+  "perfs.cli.description": {
+    "other": "Adiar tarefas demoradas para a linha de comando."
+  },
+  "perfs.cli.error": {
+    "other": "Aviso, a linha de comando não está habilitada!"
+  },
+  "perfs.cli.help": {
+    "other": "Ativar a linha de comando nos parâmetros centrais. Isso melhorará muito o desempenho do usuário final, já que tarefas demoradas são delegadas a outros processos."
+  },
+  "perfs.cli.title": {
+    "other": "Linha de comando PHP"
+  },
+  "perfs.debug.description": {
+    "other": "Verifica se os modos de depuração estão desativados no servidor"
+  },
+  "perfs.debug.error": {
+    "other": "Aviso, um dos PYDIO_SERVER_DEBUG, PYDIO_CLIENT_DEBUG ou PYDIO_SKIP_CACHE está definido como Verdadeiro!"
+  },
+  "perfs.debug.help": {
+    "other": "Certifique-se de desativar os modos de depuração no servidor. Isso é feito manualmente editando o arquivo conf/booststrap_context.php (ou /etc/pydio/bootstrap_context.php)."
+  },
+  "perfs.debug.title": {
+    "other": "Modos de Depuração"
+  },
+  "perfs.desc": {
+    "other": "Verificando as configurações do sistema para possíveis melhorias."
+  },
+  "perfs.load.description": {
+    "other": "Detectar alta carga do servidor (servidor Linux somente)"
+  },
+  "perfs.load.error": {
+    "other": "Maybe adding some CPU or RAM to your server could be necessary."
+  },
+  "perfs.load.help": {
+    "other": "Uma alta carga do servidor pode indicar que seu servidor está sem CPU ou RAM devido ao uso do Pydio."
+  },
+  "perfs.load.title": {
+    "other": "Carga do Servidor"
+  },
+  "perfs.mailer.description": {
+    "other": "Verifica se o mailer está usando o recurso de fila"
+  },
+  "perfs.mailer.error": {
+    "other": "O mailer não está configurado para adiar o envio de emails."
+  },
+  "perfs.mailer.help": {
+    "other": "Using a mail queue prevents the direct sending of emails for each action and request. Instead, it stores them in a separate database and processes the queue independently."
+  },
+  "perfs.mailer.title": {
+    "other": "Fila de Mailer"
+  },
+  "perfs.more": {
+    "other": "Mais informações"
+  },
+  "perfs.opcache.description": {
+    "other": "Verifica se um cache de Opcode PHP está ativo"
+  },
+  "perfs.opcache.error": {
+    "other": "Não foi possível detectar qualquer extensão php de APC, APCu, Opcache ou XCache."
+  },
+  "perfs.opcache.help": {
+    "other": "Pydio é um framework PHP rico que requer carregar um monte de arquivos na memória. Certifique-se de habilitar um PHP Opcache como APC/u, Opcache ou XCache."
+  },
+  "perfs.opcache.title": {
+    "other": "Opcode Extensão de Cache"
+  },
+  "perfs.score": {
+    "other": "Pontuação de Desempenho"
+  },
+  "perfs.tests": {
+    "other": "Testes de desempenho"
+  },
+  "perfs.title": {
+    "other": "Desempenho do sistema"
+  },
+  "perfs.widget": {
+    "other": "Adicionar widget ao painel"
+  },
+  "plugins.1": {
+    "other": "Opções Gerais"
+  },
+  "plugins.2": {
+    "other": "Driver Mestre"
+  },
+  "plugins.3": {
+    "other": "Driver Secundário"
+  },
+  "plugins.4": {
+    "other": "Plugins de editor são os pré-visualizadores/editores associados a qualquer tipo de arquivo no aplicativo.\n                    Esses plugins são tratados especificamente na GUI (extensões) e podem declarar os mimetypes suportados por eles.\n                    O parâmetro de ordem também permite definir uma prioridade para a ação 'Abrir com...'."
+  },
+  "plugins.5": {
+    "other": "Salvar Alterações"
+  },
+  "plugins.6": {
+    "other": "Reverter"
+  },
+  "plugins.list.column.enabled": {
+    "other": "Habilitado"
+  },
+  "plugins.list.column.label": {
+    "other": "Nome"
+  },
+  "plugins.list.column.id": {
+    "other": "Id"
+  },
+  "plugins.list.column.description": {
+    "other": "Descrição"
+  },
+  "plugins.list.action.edit": {
+    "other": "Editar parâmetros do plugin"
+  },
+  "plugins.documentation": {
+    "other": "Documentação"
+  },
+  "policies.policy.create": {
+    "other": "Criar"
+  },
+  "policies.policy.description": {
+    "other": "Descrição da Política"
+  },
+  "policies.policy.name": {
+    "other": "Nome da Política"
+  },
+  "policies.policy.rules": {
+    "other": "# Regras"
+  },
+  "policies.policy.display": {
+    "other": "Mostrar regras de políticas"
+  },
+  "policies.policy.edit": {
+    "other": "Editar regras de política"
+  },
+  "policies.policy.editLabels": {
+    "other": "Editar rótulos"
+  },
+  "policies.policy.saveLabels": {
+    "other": "Salvar Alterações"
+  },
+  "policies.policy.delete": {
+    "other": "Excluir política"
+  },
+  "policies.policy.delete.confirm": {
+    "other": "Tem certeza que deseja excluir esta política? Certifique-se de que ela não quebra a segurança do aplicativo!"
+  },
+  "policies.policy.new": {
+    "other": "+ Nova Política"
+  },
+  "policies.policy.type": {
+    "other": "Tipo de Política"
+  },
+  "policies.rule.create": {
+    "other": "Adicionar nova regra"
+  },
+  "policies.rule.delete": {
+    "other": "Excluir regra"
+  },
+  "policies.acl.empty-string": {
+    "other": "No policies defined, create one use to it as a dynamic workspace permission."
+  },
+  "policies.rule.delete.confirm": {
+    "other": "Tem certeza que deseja remover esta regra de segurança? Isto pode quebrar o modelo de segurança do aplicativo!"
+  },
+  "policies.type.acl.legend": {
+    "other": "Essas políticas são usadas para fornecer dinamicamente acesso de leitura/escrita aos espaços de trabalho ou nós com base no contexto de solicitação e/ou nos metadados do nó. Eles são definidos aqui e usados no Painel de Controle de Acesso dos usuários e funções."
+  },
+  "policies.type.acl.title": {
+    "other": "ACLs baseadas em contexto"
+  },
+  "policies.type.oidc.legend": {
+    "other": "O Servidor OpenId Connect é usado para autenticação do usuário, antes de qualquer acesso às APIs. Como tal, você pode desativar totalmente a operação de login para um conjunto de usuários com base no contexto de solicitações, isto é, desativar o registro de log de um determinado conjunto de IP ou em um dado momento."
+  },
+  "policies.type.oidc.title": {
+    "other": "Recursos de OpenId Connect"
+  },
+  "policies.type.rest.legend": {
+    "other": "Essas políticas estão protegendo as APIs REST em uma base por uri / por método. Eles concedem acesso básico a algumas APIs específicas para descoberta pública, e um acesso de restrição a muitas APIs para se certificar de que elas são acessadas apenas pelo aplicativo frontend. Geralmente, você não deve tocar nelas a menos que saiba exatamente o que faz."
+  },
+  "policies.type.rest.title": {
+    "other": "Recursos do REST"
+  },
+  "react.1": {
+    "other": "pasta pai"
+  },
+  "react.10": {
+    "other": "Herdar permissões"
+  },
+  "react.11": {
+    "other": "Permissões Vazias"
+  },
+  "react.12": {
+    "other": "Limpar Permissões"
+  },
+  "react.13": {
+    "other": "Mostrar permissões totais"
+  },
+  "react.14": {
+    "other": "Mostrar árvore resultante"
+  },
+  "react.2": {
+    "other": "ações em massa"
+  },
+  "react.3": {
+    "other": "Resultado da busca por %s"
+  },
+  "react.4": {
+    "other": "Fechar Resultados"
+  },
+  "react.5": {
+    "other": "negar"
+  },
+  "react.5a": {
+    "other": "ler"
+  },
+  "react.5b": {
+    "other": "escrever"
+  },
+  "react.5c": {
+    "other": "access"
+  },
+  "react.6": {
+    "other": "filho"
+  },
+  "react.7": {
+    "other": "Criar uma regra"
+  },
+  "react.8": {
+    "other": "Você está prestes a gerenciar as permissões no nível inferior. Esta pasta será lida\n                        apenas por padrão, e você gerenciará as permissões seletivamente em seus filhos. Escolha\n                        se deseja copiar as permissões atuais para seus filhos, ou para limpar suas permissões, o que os tornaria\n                        inacessíveis por padrão."
+  },
+  "react.9": {
+    "other": "Você está prestes a desativar o gerenciamento de permissões no subnível: todos os\n                        filhos herdarão automaticamente as permissões desta pasta, e suas configurações atuais\n                        para estas crianças serão perdidas. Tem certeza que deseja confirmar?"
+  },
+  "scheduler.1": {
+    "other": "O agendador é usado para acionar tarefas automaticamente em uma base regular. Isso requer o lançamento de um comando mestre regularmente: se você estiver usando o Pydio Booster, deve ativar isso para você. Caso contrário, use um CRON para iniciar o comando mestre a cada minuto."
+  },
+  "scheduler.2": {
+    "other": "A linha de comando não está habilitada na %1, o agendador não poderá executar as tarefas."
+  },
+  "scheduler.3": {
+    "other": "configurações globais"
+  },
+  "user.1": {
+    "other": "+ Usuário"
+  },
+  "user.10": {
+    "other": "Acesso aos %i espaços de trabalho"
+  },
+  "user.11": {
+    "other": "%i funções"
+  },
+  "user.12": {
+    "other": "Caminho do grupo"
+  },
+  "user.13": {
+    "other": "compartilhamentos"
+  },
+  "user.14": {
+    "other": "Criar uma nova função"
+  },
+  "user.15": {
+    "other": "Criar um novo grupo"
+  },
+  "user.16": {
+    "other": "Identificador do Grupo"
+  },
+  "user.16.empty": {
+    "other": "Por favor, forneça um identificador exclusivo"
+  },
+  "user.16.format": {
+    "other": "Por favor, use apenas caracteres alfanuméricos"
+  },
+  "user.17": {
+    "other": "Rótulo do Grupo"
+  },
+  "user.17.empty": {
+    "other": "Por favor, forneça um rótulo para este grupo"
+  },
+  "user.18": {
+    "other": "Identificador do Papel"
+  },
+  "user.18.empty": {
+    "other": "Por favor, forneça um rótulo para esta função"
+  },
+  "user.19": {
+    "other": "Criar novo usuario"
+  },
+  "user.2": {
+    "other": "+ Grupo"
+  },
+  "user.20": {
+    "other": "O usuário será criado no grupo %s"
+  },
+  "user.21": {
+    "other": "Login do usuário"
+  },
+  "user.22": {
+    "other": "Senha do usuário"
+  },
+  "user.23": {
+    "other": "Confirmar senha"
+  },
+  "user.24": {
+    "other": "Grupo Raiz"
+  },
+  "user.25": {
+    "other": "Papel Grupo Raiz"
+  },
+  "user.26": {
+    "other": "Função do grupo %s"
+  },
+  "user.27": {
+    "other": "Função Pessoal do Usuário"
+  },
+  "user.3": {
+    "other": "Grupos"
+  },
+  "user.4": {
+    "other": "Papéis"
+  },
+  "user.5": {
+    "other": "Grupos e Usuários"
+  },
+  "user.6": {
+    "other": "+ Papel"
+  },
+  "user.7": {
+    "other": "Buscar usuários e grupos"
+  },
+  "user.8": {
+    "other": "Defina parâmetros neste grupo para aplicá-los a todos os grupos e usuários."
+  },
+  "user.9": {
+    "other": "Última conexão"
+  },
+  "user.moveto.hint": {
+    "other": "Selecione o grupo de destino, deixe '/' para o grupo raiz."
+  },
+  "user.filter.tooltip": {
+    "other": "Filtrar lista de usuários..."
+  },
+  "user.filter.locks": {
+    "other": "Locked Users"
+  },
+  "user.filter.hidden": {
+    "other": "Public Links (hidden)"
+  },
+  "user.filter.status": {
+    "other": "Status"
+  },
+  "user.type.hidden": {
+    "other": "Public User"
+  },
+  "user.type.hidden.legend": {
+    "other": "Public users are created for public links (one per link) and are hidden by default. It can be useful to list them to detect locked public links."
+  },
+  "user.rootgroup.legend": {
+    "other": "Permissions applied to the entire user hierarchy"
+  },
+  "user.filter.internal": {
+    "other": "Usuários internos"
+  },
+  "user.filter.shared": {
+    "other": "Usuários compartilhados"
+  },
+  "user.filter.admins": {
+    "other": "Somente administradores"
+  },
+  "user.filter.all": {
+    "other": "Todos os usuários"
+  },
+  "user.filter.anon": {
+    "other": "Mostrar anônimo"
+  },
+  "versions.editor.delete": {
+    "other": "Excluir Política"
+  },
+  "versions.editor.delete.confirm": {
+    "other": "Tem certeza de que deseja excluir essa política? Isto pode ser desfeito!"
+  },
+  "versions.editor.error.lastdelete": {
+    "other": "O último período está configurado para excluir todas as versões, você não pode adicionar uma!"
+  },
+  "versions.editor.title": {
+    "other": "Política %s"
+  },
+  "versions.period.keep-all": {
+    "other": "Manter todos"
+  },
+  "versions.period.keep-all.always": {
+    "other": "Sempre manter todas as versões"
+  },
+  "versions.period.keep-n": {
+    "other": "Manter %s versões"
+  },
+  "versions.period.keep-n-after": {
+    "other": "Manter %1 versões após %2"
+  },
+  "versions.period.max-n": {
+    "other": "Máx. %s versões"
+  },
+  "versions.period.remove-all": {
+    "other": "Revomer tudo"
+  },
+  "versions.period.remove-all-after": {
+    "other": "Remover tudo após %s"
+  },
+  "versions.period.retentions-n": {
+    "other": "%s períodos de retenção"
+  },
+  "virtual.create": {
+    "other": "+ Caminho do Modelo"
+  },
+  "virtual.create.button": {
+    "other": "Criar"
+  },
+  "virtual.label": {
+    "other": "Nome"
+  },
+  "virtual.col.id": {
+    "other": "ID do modelo"
+  },
+  "virtual.col.code": {
+    "other": "Código do Modelo"
+  },
+  "virtual.label.new": {
+    "other": "Rótulo para o modelo"
+  },
+  "virtual.legend.1": {
+    "other": "Caminhos dos Modelos são dinamicamente calculados dependendo do contexto. Eles podem ser usados como raízes para espaços de trabalho na substituição de um caminho de fonte de dados fixa. Eles são usados por padrão para criar os Arquivos Pessoais no espaço de trabalho que aponta para uma pasta diferente para cada usuário, e para calcular a localização das pastas de células de usuários."
+  },
+  "virtual.legend.2": {
+    "other": "Use Ctrl+Space dentro do editor para obter a dica sobre os valores possíveis. Os valores atuais suportados são: User.Name (dinamicamente resolvido para o usuário atual conectado) e DataSources (para escolher uma fonte de dados dinamicamente)."
+  },
+  "virtual.title": {
+    "other": "Caminhos do Modelo"
+  },
+  "virtual.save": {
+    "other": "Salvar modelo"
+  },
+  "virtual.delete": {
+    "other": "Excluir modelo"
+  },
+  "virtual.delete.confirm": {
+    "other": "Tem certeza que deseja excluir este caminho do modelo? A operação é irreversível!"
+  },
+  "virtual.code": {
+    "other": "Código modelo"
+  },
+  "virtual.code.display": {
+    "other": "Mostrar código"
+  },
+  "virtual.code.edit": {
+    "other": "Editar código"
+  },
+  "virtual.card.title": {
+    "other": "Caminho calculado dinamicamente"
+  },
+  "virtual.card.cleanOnDelete": {
+    "other": "Após a exclusão do usuário, renomeie dados para {deleted-NAME-UUID}."
+  },
+  "virtual.card.cleanOnDelete-legend-off": {
+    "other": "This option should not be used if the template path is not creating a folder for each user (using User.Name)."
+  },
+  "virtual.card.cleanOnDelete-legend-on": {
+    "other": "This option may be recommended as the template path seems to create a folder for each user (using User.Name)."
+  },
+  "ws.1": {
+    "other": "Gerenciar Fonte de Dados"
+  },
+  "ws.10": {
+    "other": "Selecionar uma Fonte de dados"
+  },
+  "ws.11": {
+    "other": "Espaço de trabalho baseado em..."
+  },
+  "ws.12": {
+    "other": "Modelo %s"
+  },
+  "ws.13": {
+    "other": "Opções de Modelo"
+  },
+  "ws.14": {
+    "other": "Configurar Opções Genéricas"
+  },
+  "ws.15": {
+    "other": "Opções do Espaço de trabalho"
+  },
+  "ws.16": {
+    "other": "Escolher Driver de Armazenamento"
+  },
+  "ws.17": {
+    "other": "Selecionar Tipo de Armazenamento"
+  },
+  "ws.18": {
+    "other": "Carregando drivers"
+  },
+  "ws.19": {
+    "other": "Salve para adicionar recursos"
+  },
+  "ws.2": {
+    "other": "Fechar Fonte de dados"
+  },
+  "ws.20": {
+    "other": "Criar"
+  },
+  "ws.21": {
+    "other": "Opções Gerais do Modelo"
+  },
+  "ws.22": {
+    "other": "Opções Gerais do Espaço de trabalho"
+  },
+  "ws.23": {
+    "other": "Apagar área de trabalho"
+  },
+  "ws.24": {
+    "other": "Espaços de trabalho filho"
+  },
+  "ws.25": {
+    "other": "Compartilhamentos"
+  },
+  "ws.26": {
+    "other": "Permissões de pastas"
+  },
+  "ws.27": {
+    "other": "Recursos Adicionais"
+  },
+  "ws.28": {
+    "other": "Resumo"
+  },
+  "ws.29": {
+    "other": "Parametros"
+  },
+  "ws.3": {
+    "other": "+ espaço de trabalho"
+  },
+  "ws.filter.workspaces": {
+    "other": "Filtrar Espaços de Trabalho..."
+  },
+  "ws.30": {
+    "other": "Opções Gerais"
+  },
+  "ws.31": {
+    "other": "Remover Recurso"
+  },
+  "ws.32": {
+    "other": "Adicionar uma funcionalidade..."
+  },
+  "ws.33": {
+    "other": "Atividade Recente"
+  },
+  "ws.34": {
+    "other": "Últimos eventos neste espaço de trabalho"
+  },
+  "ws.35": {
+    "other": "Acessível a %i usuários"
+  },
+  "ws.36": {
+    "other": "+ %i arquivos ou pastas compartilhadas"
+  },
+  "ws.37": {
+    "other": "Espaços de trabalho usando este modelo"
+  },
+  "ws.38": {
+    "other": "Itens compartilhados neste espaço de trabalho"
+  },
+  "ws.39": {
+    "other": "Dono"
+  },
+  "ws.4": {
+    "other": "+ fontes de dados"
+  },
+  "ws.40": {
+    "other": "Tipo de Compartilhamento"
+  },
+  "ws.41": {
+    "other": "Caminho"
+  },
+  "ws.42": {
+    "other": "Permissões de nível de pasta"
+  },
+  "ws.43": {
+    "other": "Especifique aqui as permissões de acesso padrão para esta pasta do espaço de trabalho.\n                                Para ativar o gerenciamento de permissões em um subnível selecione 'CHILDREN' em uma determinada pasta.\n                                Isso irá definir a pasta atual como somente leitura por padrão e você poderá abrir acessos\n                                de forma seletiva para qualquer uma das pastas filhas."
+  },
+  "ws.44": {
+    "other": "Por favor, esteja ciente de que isto é apenas uma máscara: se você modificar as pastas reais diretamente, você pode ter\n                                que editar esta máscara de acordo. Além disso, essas permissões podem estar globalmente limitadas pelo conjunto de parâmetros 'Direitos Padrões'\n                                para este espaço de trabalho (veja a guia Geral)."
+  },
+  "ws.45": {
+    "other": "Como seus parâmetros estão usando as palavras-chave 'PYDIO_USER' ou 'PYDIO_GROUP_*', o conteúdo\n                                deste espaço de trabalho vai variar dependendo do usuário autenticado atualmente. Por esta razão, você não pode navegar pelas\n                                pastas diretamente e atribuir permissões à elas, mas você pode definir livremente alguns caminhos genéricos que serão usados como máscaras."
+  },
+  "ws.46": {
+    "other": "Adicionar um recurso"
+  },
+  "ws.47": {
+    "other": "Selecionar um recurso"
+  },
+  "ws.48": {
+    "other": "Cuidado, este espaço de trabalho/modelo não é editável, pois é definido diretamente no arquivo conf/bootstrap_repositories.php."
+  },
+  "ws.49": {
+    "other": ""
+  },
+  "ws.4b": {
+    "other": "+ política de versão"
+  },
+  "ws.5": {
+    "other": "Curto"
+  },
+  "ws.50": {
+    "other": "Indexação"
+  },
+  "ws.51": {
+    "other": "Este espaço de trabalho tem um indexador (%s). Normalmente, indexação é feita \"on-the-fly\" quando arquivos são adicionados/removidos\n                    através das interfaces de aplicativo. No entanto, se você estiver fazendo algumas modificações diretamente no nível de armazenamento, você pode ter\n                    para reacionar manualmente uma indexação de vez em quando. Use os botões abaixo para indexar agora, ou programe uma tarefa no agendador\n                    para executar a indexação regularmente."
+  },
+  "ws.52": {
+    "other": "Observação: como este espaço de trabalho possui conteúdo específico do usuário, a indexação será iniciada para cada usuário."
+  },
+  "ws.53": {
+    "other": "Iniciar indexação agora"
+  },
+  "ws.54": {
+    "other": "Agendar todos os dias às 3 h da manhã"
+  },
+  "ws.55": {
+    "other": "Limpeza Automática"
+  },
+  "ws.56": {
+    "other": "Este espaço de trabalho tem uma configuração de \"limpeza\", para remover automaticamente documentos que ficaram intocados desde %s dias. Certifique-se de adicionar uma tarefa ao agendador\n                    para processar este espaço de trabalho regularmente e procurar o documento expirado. Você pode usar os botões abaixo para criar esta tarefa automaticamente,\n                    ok executar a limpeza diretamente."
+  },
+  "ws.57": {
+    "other": "Observação: como este espaço de trabalho possui conteúdo específico do usuário, a limpeza será executada para cada usuário."
+  },
+  "ws.58": {
+    "other": "Limpar agora"
+  },
+  "ws.59": {
+    "other": "Agendar todos os dias às 4 h da manhã"
+  },
+  "ws.6": {
+    "other": "Nova Área de Trabalho"
+  },
+  "ws.60": {
+    "other": "Atividade da Área de Trabalho"
+  },
+  "ws.61": {
+    "other": "A atividade do espaço de trabalho é exibida para os usuários no painel à direita. Você pode limpar todas as atividades\n                            para este espaço de trabalho, que pode ser útil, isto é, se você vai \"a quente\" em produção após um período de teste onde você\n                            fez alguns testes neste espaço de trabalho."
+  },
+  "ws.62": {
+    "other": "Limpar Atividade"
+  },
+  "ws.63": {
+    "other": "Aviso, isto irá limpar toda a atividade deste espaço de trabalho exibido aos usuários. Tem certeza que deseja fazer isso?"
+  },
+  "ws.64": {
+    "other": "%s eventos foram limpos"
+  },
+  "ws.65": {
+    "other": "Manutenção do Espaço de trabalho"
+  },
+  "ws.66": {
+    "other": "Executando tarefas"
+  },
+  "ws.67": {
+    "other": "Não há tarefas em execução"
+  },
+  "ws.68": {
+    "other": "Sem Parâmetros"
+  },
+  "ws.69": {
+    "other": "Espaço de trabalho baseado em modelo"
+  },
+  "ws.7": {
+    "other": "Nova fonte de dados"
+  },
+  "ws.70": {
+    "other": "Espaço de trabalho baseado no driver"
+  },
+  "ws.71": {
+    "other": "Complete as etapas abaixo"
+  },
+  "ws.72": {
+    "other": "Preencha o formulário à direita"
+  },
+  "ws.73": {
+    "other": "Escolha o valor antes de continuar"
+  },
+  "ws.74": {
+    "other": "Use o formulário à direita para criar uma nova Fonte de Dados. "
+  },
+  "ws.75": {
+    "other": "Uma fonte de dados define onde seus dados são armazenados."
+  },
+  "ws.76": {
+    "other": "Pydio irá agregar todos os seus dados em uma árvore mestra, na qual você pode atribuir direitos usando espaços de trabalho."
+  },
+  "ws.8": {
+    "other": "Fonte de Dados Existente"
+  },
+  "ws.9": {
+    "other": "Opções do Controlador"
+  },
+  "ws.board.empty": {
+    "other": "Não há espaços de trabalho definidos"
+  },
+  "ws.board.summary": {
+    "other": "Raízes do Espaço de trabalho"
+  },
+  "ws.board.syncable": {
+    "other": "Sincronizar"
+  },
+  "ws.complete.datasources": {
+    "other": "DataSources"
+  },
+  "ws.complete.folders": {
+    "other": "Internal Folders"
+  },
+  "ws.complete.label": {
+    "other": "Select a DataSource or a Template Path"
+  },
+  "ws.complete.additional": {
+    "other": "Additional Root"
+  },
+  "ws.complete.resolves": {
+    "other": "Resolver para"
+  },
+  "ws.complete.templates": {
+    "other": "Caminhos Pré-definidos de Modelo"
+  },
+  "ws.dashboard": {
+    "other": "Os espaços de trabalho definem o ponto de acesso principal aos seus dados para os usuários. Certifique-se de definir pelo menos uma fonte de dados para ser capaz de criar um espaço de trabalho que aponte para um caminho desta fonte de dados."
+  },
+  "ws.editor.data.legend": {
+    "other": "Espaço de trabalho expõe um ou muitas 'raízes' aos usuários: escolha um ou mais caminhos de qualquer Fonte de dados ou um caminho de modelo que será resolvido automaticamente em tempo de execução."
+  },
+  "ws.editor.data.title": {
+    "other": "Acesso aos dados"
+  },
+  "ws.editor.default_rights": {
+    "other": "Configurar as permissões padrão para este espaço de trabalho (aplicado a todos os usuários internos do aplicativo). Você pode substituir essas permissões em uma base por usuário / por função / por grupo na seção Pessoas."
+  },
+  "ws.editor.default_rights.hint": {
+    "other": "Default Rights"
+  },
+  "ws.editor.default_rights.none": {
+    "other": "Nenhum"
+  },
+  "ws.editor.default_rights.read": {
+    "other": "Somente Leitura"
+  },
+  "ws.editor.default_rights.readwrite": {
+    "other": "Leitura e Escrita"
+  },
+  "ws.editor.default_rights.write": {
+    "other": "Somente escrita"
+  },
+  "ws.editor.description": {
+    "other": "Descrição adicional (opcional)"
+  },
+  "ws.editor.help.1": {
+    "other": "Espaços de trabalho concedem acessos aos seus dados aos usuários. Eles expõem uma ou várias pastas escolhidas dentro de seus recursos de dados."
+  },
+  "ws.editor.help.2": {
+    "other": "É importante organizar adequadamente como os dados serão apresentados aos seus usuários. Você pode criar espaços de trabalho para várias partes da sua organização (finanças, marketing, dados técnicos, etc., numa base por projeto, etc.). Você pode atribuir acessos a espaços de trabalho por usuário / por função / por grupo."
+  },
+  "ws.editor.help.delete": {
+    "other": "Atenção, operação perigosa! Isto é irreversível."
+  },
+  "ws.editor.label.legend": {
+    "other": "Rótulo amigável aos humanos para este espaço de trabalho"
+  },
+  "ws.editor.options.legend": {
+    "other": "Rótulo e descrição são exibidos para os usuários. Escolha um nome auto-explicativo para ajudar os usuários a organizar melhor os dados."
+  },
+  "ws.editor.other": {
+    "other": "Outras Propriedades"
+  },
+  "ws.editor.other.layout": {
+    "other": "Leiaute do espaço de trabalho"
+  },
+  "ws.editor.other.layout.default": {
+    "other": "Padrão"
+  },
+  "ws.editor.other.layout.easy": {
+    "other": "Leiaute de Transferência Fácil (apenas empresarial)"
+  },
+  "ws.editor.other.skiprecycle": {
+    "other": "Ignorar Lixeira"
+  },
+  "ws.editor.other.skiprecycle.legend": {
+    "other": "Desativar a lixeira neste espaço de trabalho: todos os arquivos serão excluídos permanentemente. Isto não se aplica às células criadas dentro deste espaço de trabalho, os arquivos serão sempre movidos para a lixeira de espaços de trabalho para evitar erros humanos."
+  },
+  "ws.editor.other.sync": {
+    "other": "Allow desktop synchronisation (still experimental)"
+  },
+  "ws.editor.other.sync.legend": {
+    "other": "Sincronização do desktop permite que os usuários sincronizem seus arquivos offline em seu computador. Atenção, este recurso é atualmente suportado apenas para arquivos pessoais, já que espaços de trabalho compartilhados podem criar conflitos se muitos usuários sincronizarem documentos na mesma pasta. Para arquivos pessoais, você também pode ativar/desativar este recurso por função usando as Políticas de Segurança."
+  },
+  "ws.editor.other.sync-personal": {
+    "other": "(somente espaços de trabalho pessoal)"
+  },
+  "ws.editor.sync.warning": {
+    "other": "Atenção!"
+  },
+  "ws.editor.sync.warning.validate": {
+    "other": "Eu entendo"
+  },
+  "ws.editor.sync.warning.enable": {
+    "other": "Habilitando a sincronização em espaços de trabalho compartilhados pode ter resultados inesperados se muitos usuários estiverem sincronizando e editando arquivos juntos. Por favor, note que ESTE RECURSO ATUALMENTE NÃO É SUPORTADO pelos nossos serviços profissionais. Por favor, use esse recurso a seu próprio risco!"
+  },
+  "ws.editor.sync.warning.disable": {
+    "other": "Se as pessoas estiverem conectadas a este espaço de trabalho, sua tarefa de sincronização não funcionará mais! Tem certeza que deseja alterar isso?"
+  },
+  "ws.editor.other.quota": {
+    "other": "Disk Usage Quota (leave 0 for no limit). This quota is computed on all files of this workspace (or user-specific contents for workspaces like Personal Files)."
+  },
+  "ws.editor.other.quota.noquota": {
+    "other": "Sem conjunto de cotas"
+  },
+  "ws.editor.path.folder": {
+    "other": "Caminho da Pasta"
+  },
+  "ws.editor.path.template": {
+    "other": "Caminho dos Modelos"
+  },
+  "ws.editor.slug.legend": {
+    "other": "Nome técnico usado por exemplo nas URLs, calculado automaticamente, mas você pode personalizá-lo."
+  },
+  "services.text-filter.hint": {
+    "other": "Filtrar..."
+  },
+  "services.filter.nofilter": {
+    "other": "Todos os serviços"
+  },
+  "services.filter.started": {
+    "other": "Somente em execução"
+  },
+  "services.filter.stopped": {
+    "other": "Parado Apenas"
+  },
+  "services.peerfilter.title": {
+    "other": "Selecionar Nó"
+  },
+  "services.toggle.details": {
+    "other": "Mostrar Detalhes"
+  },
+  "services.empty.loading": {
+    "other": "Carregando status dos serviços"
+  },
+  "services.empty.noservice": {
+    "other": "Sem serviço"
+  },
+  "services.column.name": {
+    "other": "Nome do Serviço"
+  },
+  "services.column.description": {
+    "other": "Descrição"
+  },
+  "services.column.version": {
+    "other": "Versão"
+  },
+  "services.column.tag": {
+    "other": "Tag"
+  },
+  "services.column.peers": {
+    "other": "Peers"
+  },
+  "services.tag.gateway.title": {
+    "other": "Gateways"
+  },
+  "services.tag.gateway.description": {
+    "other": "Serviços voltados ao mundo para acessar a plataforma"
+  },
+  "services.tag.datasource.title": {
+    "other": "Fontes de Dados"
+  },
+  "services.tag.datasource.description": {
+    "other": "Endpoints de armazenamento usados para acessar armazenamentos de arquivos concretos. Os serviços principais estão encarregados de iniciar subserviços (por fonte de dado)."
+  },
+  "services.tag.data.title": {
+    "other": "Dado"
+  },
+  "services.tag.data.description": {
+    "other": "Serviços manipulando dados e metadados."
+  },
+  "services.tag.idm.title": {
+    "other": "Gerenciamento de Identidade"
+  },
+  "services.tag.idm.description": {
+    "other": "Todos os serviços relacionados à autenticação e autorizações, funções, políticas de segurança, etc."
+  },
+  "services.tag.scheduler.title": {
+    "other": "Agendador"
+  },
+  "services.tag.scheduler.description": {
+    "other": "Serviços para gerenciar tarefas de segundo plano. O servidor de tarefas pode ser despachado por vários colegas."
+  },
+  "services.tag.broker.title": {
+    "other": "Broker"
+  },
+  "services.tag.broker.description": {
+    "other": "Serviços de despacho e processamento de eventos (geralmente para usuários) por toda a aplicação."
+  },
+  "services.tag.frontend.title": {
+    "other": "Frontend"
+  },
+  "services.tag.frontend.description": {
+    "other": "Serviços da Web para interfaces de usuário no navegador"
+  },
+  "services.tag.discovery.title": {
+    "other": "Discovery"
+  },
+  "services.tag.discovery.description": {
+    "other": "Configurações e registos de serviços básicos solicitados por todos os outros serviços."
+  },
+  "services.service.ip": {
+    "other": "Executando em %s"
+  },
+  "services.service.datasource.sync": {
+    "other": "Sincronizar"
+  },
+  "services.service.datasource.objects": {
+    "other": "Objetos"
+  },
+  "services.service.datasource.objects.legend": {
+    "other": "Camada S3 para servir como armazenamento de objeto"
+  },
+  "services.service.datasource.legend": {
+    "other": "A fonte de dados está sincronizando dados da camada de objetos com o índice de BD."
+  },
+  "services.service.datasource.index": {
+    "other": "Indexação"
+  },
+  "scheduler.title": {
+    "other": "Agendador"
+  },
+  "scheduler.legend": {
+    "other": "Flows em execução em segundo plano periodicamente ou desencadeados por eventos"
+  },
+  "scheduler.system.title": {
+    "other": "Fluxos do sistema"
+  },
+  "scheduler.system.legend": {
+    "other": "Estes fluxos são registrados por padrão dentro da aplicação. Eles geralmente são encarregados de extrair informações do nó em segundo plano, ou fazer algumas operações de limpeza."
+  },
+  "scheduler.inactives.title": {
+    "other": "Fluxos Inativos"
+  },
+  "scheduler.inactives.legend": {
+    "other": "Estes fluxos estão inativos, clique em um fluxo para habilitá-lo."
+  },
+  "scheduler.system.empty": {
+    "other": "Nenhum fluxo programado."
+  },
+  "scheduler.users.title": {
+    "other": "Fluxo de Usuários"
+  },
+  "scheduler.users.legend": {
+    "other": "Esses fluxos são criados dinamicamente e ativados por ações dos usuários."
+  },
+  "scheduler.users.empty": {
+    "other": "Nenhum fluxo lançado por usuários"
+  },
+  "scheduler.cellsflows.cta.button": {
+    "other": "+ Fluxo personalizado"
+  },
+  "scheduler.cellsflows.cta.text": {
+    "other": "Você precisa criar seu próprio fluxo? Descubra como os fluxos de células tornam fácil automatizar suas tarefas manuais repetitivas em células."
+  },
+  "scheduler.cellsflows.dialog.button": {
+    "other": "Saiba mais"
+  },
+  "scheduler.cellsflows.dialog.text": {
+    "other": "Desde criar seus próprios fluxos de trabalho até agendar tarefas ou integrar com ferramentas de terceiros, nossos componentes personalizáveis ajudam você a responder a eventos e tomar ações automaticamente."
+  },
+  "scheduler.job.label": {
+    "other": "Nome"
+  },
+  "scheduler.job.endTime": {
+    "other": "Última Execução"
+  },
+  "scheduler.job.status": {
+    "other": "Status"
+  },
+  "scheduler.job.owner": {
+    "other": "Dono"
+  },
+  "scheduler.job.trigger": {
+    "other": "Gatilho"
+  },
+  "scheduler.job.delete": {
+    "other": "Apagar"
+  },
+  "scheduler.job.delete.confirm": {
+    "other": "Tem certeza que deseja excluir este fluxo? Esta operação não pode ser revertida!"
+  },
+  "scheduler.tasks.delete.confirm": {
+    "other": "Tem certeza que deseja limpar todas as tarefas para este fluxo?"
+  },
+  "scheduler.trigger.picker.title": {
+    "other": "Trigger job on..."
+  },
+  "scheduler.trigger.type.nodes": {
+    "other": "Files and folders (nodes) events : detect files modifications to move them or update their metadata automatically."
+  },
+  "scheduler.trigger.type.workspaces": {
+    "other": "Workspace events : triggered on workspace creation / deletion. Use the Scope flag to filter Workspaces from Cells"
+  },
+  "scheduler.trigger.type.acls": {
+    "other": "ACL events : access control lists link workspaces, nodes and roles together to provide accesses to data."
+  },
+  "scheduler.trigger.type.users": {
+    "other": "User events : triggered when adding/removing user and when users log in and log out. Can be used for triggering validation flows or assigning accesses."
+  },
+  "scheduler.trigger.type.roles": {
+    "other": "Role events : can be used to automate accesses based on role names. Use IsTeam, IsGroup, IsUser flags to filter roles."
+  },
+  "scheduler.trigger.type.chat": {
+    "other": "Chat Events: react to new chat message or chat room modification"
+  },
+  "scheduler.trigger.type.chat-messages": {
+    "other": "Chat Messages Events"
+  },
+  "scheduler.trigger.type.chat-rooms": {
+    "other": "Chat Rooms Events"
+  },
+  "scheduler.trigger.create.node": {
+    "other": "Criar Nó"
+  },
+  "scheduler.trigger.create.node.description": {
+    "other": "A new file was uploaded or a new folder was created."
+  },
+  "scheduler.trigger.read.node": {
+    "other": "Ler Nó"
+  },
+  "scheduler.trigger.read.node.description": {
+    "other": "A file was downloaded or a folder content was listed."
+  },
+  "scheduler.trigger.update.path": {
+    "other": "Atualizar Caminho"
+  },
+  "scheduler.trigger.update.path.description": {
+    "other": "A file or folder was moved or renamed."
+  },
+  "scheduler.trigger.update.content": {
+    "other": "Atualizar Conteúdo"
+  },
+  "scheduler.trigger.update.content.description": {
+    "other": "A file content was updated by edition or upload overwriting."
+  },
+  "scheduler.trigger.update.metadata": {
+    "other": "Atualizar Metadado"
+  },
+  "scheduler.trigger.update.metadata.description": {
+    "other": "Internal metadata were modified on file or folder."
+  },
+  "scheduler.trigger.update.user-metadata": {
+    "other": "Atualizar Metadado de Usuário"
+  },
+  "scheduler.trigger.update.user-metadata.description": {
+    "other": "User-defined metadata were modified (event contains updated metadata)."
+  },
+  "scheduler.trigger.delete.node": {
+    "other": "Excluir Nó"
+  },
+  "scheduler.trigger.delete.node.description": {
+    "other": "A file or a folder was definitively deleted."
+  },
+  "scheduler.trigger.create.user": {
+    "other": "Criar Usuário"
+  },
+  "scheduler.trigger.create.user.description": {
+    "other": "A user or a group was created."
+  },
+  "scheduler.trigger.read.user": {
+    "other": "Ler Usuário"
+  },
+  "scheduler.trigger.read.user.description": {
+    "other": "A user or a group was accessed or listed."
+  },
+  "scheduler.trigger.update.user": {
+    "other": "Atualizar Usuário"
+  },
+  "scheduler.trigger.update.user.description": {
+    "other": "A user or a group data was updated. Typically happens if user changes a preference or admin assigns a role."
+  },
+  "scheduler.trigger.delete.user": {
+    "other": "Excluir Usuário"
+  },
+  "scheduler.trigger.delete.user.description": {
+    "other": "A user or a group was deleted."
+  },
+  "scheduler.trigger.bind.user": {
+    "other": "Usuário Bind"
+  },
+  "scheduler.trigger.bind.user.description": {
+    "other": "A user has logged in."
+  },
+  "scheduler.trigger.logout.user": {
+    "other": "Logout do Usuário"
+  },
+  "scheduler.trigger.logout.user.description": {
+    "other": "A user has logged out."
+  },
+  "scheduler.trigger.role.create": {
+    "other": "Create Role"
+  },
+  "scheduler.trigger.role.create.description": {
+    "other": "A new role was created, by admin or by users."
+  },
+  "scheduler.trigger.role.update": {
+    "other": "Update Role"
+  },
+  "scheduler.trigger.role.update.description": {
+    "other": "A role has been updated."
+  },
+  "scheduler.trigger.role.delete": {
+    "other": "Delete Role"
+  },
+  "scheduler.trigger.role.delete.description": {
+    "other": "A role has been deleted."
+  },
+  "scheduler.trigger.workspace.create": {
+    "other": "Create Workspace"
+  },
+  "scheduler.trigger.workspace.create.description": {
+    "other": "A new Workspace or Cell was created."
+  },
+  "scheduler.trigger.workspace.update": {
+    "other": "Update Workspace"
+  },
+  "scheduler.trigger.workspace.update.description": {
+    "other": "A Workspace or a Cell has been updated."
+  },
+  "scheduler.trigger.workspace.delete": {
+    "other": "Delete Workspace"
+  },
+  "scheduler.trigger.workspace.delete.description": {
+    "other": "A Workspace or a Cell has been deleted."
+  },
+  "scheduler.trigger.acl.create": {
+    "other": "Create/Update ACL"
+  },
+  "scheduler.trigger.acl.create.description": {
+    "other": "An Access Control was opened."
+  },
+  "scheduler.trigger.acl.delete": {
+    "other": "Delete ACL"
+  },
+  "scheduler.trigger.acl.delete.description": {
+    "other": "An Access Control was removed."
+  },
+  "scheduler.trigger.chat-message.put": {
+    "other": "New Chat Message"
+  },
+  "scheduler.trigger.chat-message.put.description": {
+    "other": "A Message was posted in a ChatRoom."
+  },
+  "scheduler.trigger.chat-message.delete": {
+    "other": "Chat Message Deleted"
+  },
+  "scheduler.trigger.chat-message.delete.description": {
+    "other": "A Message was deleted from a ChatRoom."
+  },
+  "scheduler.trigger.chat-room.put": {
+    "other": "New Chat Room"
+  },
+  "scheduler.trigger.chat-room.put.description": {
+    "other": "A new ChatRoom was created."
+  },
+  "scheduler.trigger.chat-room.delete": {
+    "other": "Delete Chat Room"
+  },
+  "scheduler.trigger.chat-room.delete.description": {
+    "other": "A Chatroom has been deleted."
+  },
+  "scheduler.trigger.events": {
+    "other": "Eventos"
+  },
+  "scheduler.trigger.manual": {
+    "other": "Gatilho Manual"
+  },
+  "scheduler.trigger.periodic": {
+    "other": "Programação periódica"
+  },
+  "scheduler.job.disabled": {
+    "other": "desabilitado"
+  },
+  "scheduler.tasks.running.count": {
+    "other": "%s tarefas em execução"
+  },
+  "scheduler.task.action.pause": {
+    "other": "Pausar Tarefa"
+  },
+  "scheduler.task.action.resume": {
+    "other": "Resumir Tarefa"
+  },
+  "scheduler.task.action.stop": {
+    "other": "Parar Agora"
+  },
+  "scheduler.task.action.delete": {
+    "other": "Apagar"
+  },
+  "scheduler.task.action.enable": {
+    "other": "Habilitar Fluxo"
+  },
+  "scheduler.task.action.run": {
+    "other": "Executar Agora"
+  },
+  "scheduler.task.action.disable": {
+    "other": "Desabilitar Fluxo"
+  },
+  "scheduler.task.id": {
+    "other": "ID"
+  },
+  "scheduler.task.start": {
+    "other": "Inicio"
+  },
+  "scheduler.task.end": {
+    "other": "Final"
+  },
+  "scheduler.task.duration": {
+    "other": "Duração"
+  },
+  "scheduler.task.status": {
+    "other": "Status"
+  },
+  "scheduler.task.message": {
+    "other": "Mensagem"
+  },
+  "scheduler.tasks.running": {
+    "other": "Executando tarefas"
+  },
+  "scheduler.tasks.history": {
+    "other": "Histórico de tarefas"
+  },
+  "scheduler.tasks.history.empty": {
+    "other": "Nenhuma tarefa foi executada ainda"
+  },
+  "scheduler.tasks.history.more": {
+    "other": "%s outras tarefas não mostradas..."
+  },
+  "scheduler.tasks.running.empty": {
+    "other": "Não há tarefas em execução"
+  },
+  "scheduler.tasks.bulk.delete": {
+    "other": "Excluir Tarefas"
+  },
+  "scheduler.tasks.bulk.enable": {
+    "other": "Habilitar Múltiplos"
+  },
+  "scheduler.tasks.bulk.disable": {
+    "other": "Desabilitar Múltiplos"
+  },
+  "scheduler.tasks.bulk.clear": {
+    "other": "Limpar Tudo"
+  },
+  "scheduler.tasks.activity.title": {
+    "other": "Atividade da Tarefa"
+  },
+  "scheduler.tasks.activity.loading": {
+    "other": "Carregando atividades..."
+  },
+  "scheduler.tasks.activity.empty": {
+    "other": "Nenhum log encontrado"
+  },
+  "scheduler.schedule.monthly": {
+    "other": "A cada %1 de cada mês às %2"
+  },
+  "scheduler.schedule.monthly.short": {
+    "other": "A cada %1 de cada mês"
+  },
+  "scheduler.schedule.weekly": {
+    "other": "A cada %1 às %2"
+  },
+  "scheduler.schedule.weekly.short": {
+    "other": "A cada %1"
+  },
+  "scheduler.schedule.daily": {
+    "other": "Todos os dias às %1"
+  },
+  "scheduler.schedule.daily.short": {
+    "other": "Às %1"
+  },
+  "scheduler.schedule.timely": {
+    "other": "A cada %1"
+  },
+  "scheduler.schedule.title": {
+    "other": "Cronograma do Fluxo"
+  },
+  "scheduler.schedule.type": {
+    "other": "Tipo de Agendamento"
+  },
+  "scheduler.schedule.type.manual": {
+    "other": "Manual"
+  },
+  "scheduler.schedule.type.monthly": {
+    "other": "Mensalmente"
+  },
+  "scheduler.schedule.type.weekly": {
+    "other": "Semanalmente"
+  },
+  "scheduler.schedule.type.daily": {
+    "other": "Diariamente"
+  },
+  "scheduler.schedule.type.timely": {
+    "other": "A cada..."
+  },
+  "scheduler.schedule.type.once": {
+    "other": "Run Once"
+  },
+  "scheduler.schedule.detail.monthday": {
+    "other": "Dia do mês"
+  },
+  "scheduler.schedule.detail.weekday": {
+    "other": "Dia da semana"
+  },
+  "scheduler.schedule.detail.daytime": {
+    "other": "Hora do dia"
+  },
+  "scheduler.schedule.detail.daydate": {
+    "other": "Unique Date"
+  },
+  "scheduler.schedule.detail.minutes": {
+    "other": "Período em minutos"
+  },
+  "scheduler.job-parameters.dialog": {
+    "other": "Parâmetos do Fluxo"
+  },
+  "scheduler.job-parameters.button": {
+    "other": "Parametros"
+  },
+  "developer.rest.apis": {
+    "other": "Documentação de APIs Rest"
+  },
+  "developer.rest.apis.legend": {
+    "other": "Abaixo estão todas as APIs disponíveis no Pydio Cells. Para consumir essas APIs, primeiro você precisa se autenticar no serviço OpenIDConnect para obter um JWT válido. Veja o guia do administrador online para saber mais."
+  },
+  "mailer.test.title": {
+    "other": "Enviar um e-mail de teste"
+  },
+  "mailer.test.legend": {
+    "other": "Certifique-se de salvar suas alterações de configuração antes de enviar um e-mail de teste."
+  },
+  "mailer.test.loading": {
+    "other": "Carregando Biblioteca de Mailer..."
+  },
+  "sites.title": {
+    "other": "Sites"
+  },
+  "sites.externals": {
+    "other": "URLs externas"
+  },
+  "sites.details": {
+    "other": "<div>\nOs sites definem como as Cells são ligadas às interfaces de rede e como elas são expostas ao mundo exterior.\nUse ‘<i>./cells configure sites</i>para gerenciar seus sites na linha de comando.\n<br/><br/>\nCada site tem os seguintes parâmetros:\n\n<ol>\n<li>1. <u>Bind(s)</u>: um ou mais [ip/hostname:porta] para ligar o servidor interno para.</li>\n<li>2. <u>Configurações TLS</u>: Configuração TLS para suporte de HTTPS.</li>\n<li>3. <u>URL externa</u>: a URL que você se comunica com os seus usuários finais. Pode ser diferente de seu endereço vinculado, normalmente se o aplicativo está atrás de um proxy reverso ou dentro de um contêiner com mapeamento de portas.</li>\n<li>4. <u>Modo de Manutenção</u> [On|Off]: exiba uma página de manutenção neste endpoint, embora o Cells esteja em execução.</li>\n</ol></div>"
+  },
+  "sites.details.note": {
+    "other": "<div><i>Notas adicionais</i>\n<ol>\n<li>1. Quando não há sites definidos, o Cells usa uma configuração padrão (https://0.0.0.0:8080 auto-assinado).</li>\n<li>2. Sites podem ser substituídos pela variável de ambiente '--bind' ou 'CELLS_BIND'.\n</li>\n</ol></div>"
+  },
+  "sites.externals.details": {
+    "other": "<div>\nCells usa sua URL pública detectada em alguns recursos. Ele tentará usar o valor mais apropriado com base na sua configuração. <br/><br/>Por exemplo:\n<ul>\n<li>&bull; Se um site exclusivo for definido e tiver uma URL externa, ele provavelmente está correto.</li>\n<li>&bull; Quando vários sites são definidos, talvez você queira forçar uma URL única que será usada para todas as comunicações externas.</li>\n<li>&bull; Se nenhuma URL externa for detectada, ela voltará ao endereço do link interno. Nesse caso, provavelmente você não quer enviar um IP privado (ou 0.0.0.0:porta…) para o mundo exterior.</li>\n</ul>\n\n<br/>\nOs campos abaixo mostram os valores detectados. Selecione para editar ou digitar um valor personalizado e pressione enter para salvar.\n</div>"
+  },
+  "sites.mailer.url": {
+    "other": "URL usada para construir links em e-mails"
+  },
+  "sites.links.url": {
+    "other": "URL usada para construir links públicos"
+  },
+  "sites.no-defaults": {
+    "other": "Sem padrões definidos"
+  },
+  "sites.enter-to-save": {
+    "other": "(aperte enter para salvar)"
+  },
+  "sites.detected.sites": {
+    "other": "Sites atualmente detectados"
+  },
+  "sites.configs.command": {
+    "other": "Use o comando './cells config sites' para editar sites."
+  },
+  "sites.column.bind": {
+    "other": "Bind"
+  },
+  "sites.column.tls": {
+    "other": "TLS"
+  },
+  "sites.column.external": {
+    "other": "Proxy reverso"
+  },
+  "sites.configs.tls.letsencrypt": {
+    "other": "Let's Encrypt"
+  },
+  "sites.configs.tls.self": {
+    "other": "Auto Assinado"
+  },
+  "sites.configs.tls.certificate": {
+    "other": "Certificado"
+  },
+  "sites.configs.tls.notls": {
+    "other": "Sem TLS"
+  },
+  "sites.configs.tls.notls-reverse": {
+    "other": "Sem TLS atrás de proxy"
+  }
+}

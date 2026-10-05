@@ -1,0 +1,17 @@
+{
+  "1": {
+    "other": "Zamknout"
+  },
+  "2": {
+    "other": "Lock selected item"
+  },
+  "3": {
+    "other": "Odemknout"
+  },
+  "4": {
+    "other": "Odstranit zámek"
+  },
+  "5": {
+    "other": "This file is locked by another user, it is probably currently being edited, you are not allowed to modify it."
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "Path": {
+    "other": "パス"
+  },
+  "Default download format": {
+    "other": "デフォルトのダウンロードフォーマット"
+  },
+  "When downloading a folder or a multiple selection, automatically create an archive using this format": {
+    "other": "フォルダまたは複数のファイルをダウンロードするとき、このフォーマットを使用してアーカイブを作成します"
+  },
+  "Path to the folder on the server": {
+    "other": "サーバ上のフォルダパス"
+  },
+  "Gateway": {
+    "other": "Gateway"
+  },
+  "Pydio S3 Gateway": {
+    "other": "Pydio S3 Gateway"
+  },
+  "Absolute path to one or more root nodes": {
+    "other": "1つ以上のルートノードへの絶対パス"
+  },
+  "#Items per page": {
+    "other": "#ページあたりのアイテム数"
+  },
+  "Once in pagination mode, number of items to display per page.": {
+    "other": "ページネーションモードにすると、ページごとに表示されます。"
+  },
+  "Delete Permanently": {
+    "other": "完全に削除"
+  },
+  "Enable option to skip recycle bin on deletion": {
+    "other": "削除時にごみ箱をスキップするオプションを有効にする"
+  }
+}

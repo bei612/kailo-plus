@@ -1,0 +1,98 @@
+CHART NAME: {{ .Chart.Name }}
+                  _ _                  _ _
+                 | (_)                | | |
+  _ __  _   _  __| |_  ___     ___ ___| | |___
+ | '_ \| | | |/ _` | |/ _ \   / __/ _ \ | / __|
+ | |_) | |_| | (_| | | (_) | | (_|  __/ | \__ \
+ | .__/ \__, |\__,_|_|\___/   \___\___|_|_|___/
+ | |     __/ |
+ |_|    |___/
+
+{{- if .Release.IsUpgrade }}
+Please ensure that the table hydra_jwk in the sql database is empty for an upgrade :
+    delete from hydra_jwk;
+{{- end }}
+{{- if and .Release.IsInstall .Values.externalVault.enabled }}
+
+For an externally managed vault, you need to make sure your Vault is correctly initialized and unsealed upon each pod restart :
+
+    https://developer.hashicorp.com/vault/docs/platform/k8s/helm/run#initialize-and-unseal-vault
+
+And you need to make sure that the following auth, roles, secrets and policies are set :
+
+    # Enable kubernetes authentication
+    vault auth enable kubernetes
+
+    vault write auth/kubernetes/config \
+        kubernetes_host=https://kubernetes.default.svc \
+        kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+
+    # Enable kubernetes roles
+    vault write auth/kubernetes/role/{{ include "cells.serviceAccountName" . }} \
+        bound_service_account_names="{{ include "cells.serviceAccountName" . }}" \
+        bound_service_account_namespaces="{{ include "common.names.namespace" . }}" \
+        policies=app,pki,default \
+        ttl=24h
+
+    # Enable secrets stores
+    vault secrets enable -version=2 -path=secret kv
+    vault secrets enable -version=2 -path=caddycerts kv
+    vault secrets enable pki
+
+    # Enable policies
+    vault policy write app - <<EOF
+        path "secret/*"     { capabilities = ["create", "update", "read", "delete"] }
+        path "caddycerts/*" { capabilities = ["create", "update", "read", "delete"] }
+EOF
+
+    vault policy write pki - <<EOF
+        path "pki*"                    { capabilities = ["read", "list"] }
+        path "pki/sign/application"    { capabilities = ["create", "update"] }
+        path "pki/issue/application"   { capabilities = ["create"] }
+EOF
+
+{{- end }}
+{{- if (include "cells.ingress.enabled" $) }}
+
+Your application URL is :
+  http{{ if (include "cells.ingress.tls.enabled" $) }}s{{ end }}://{{ (include "cells.ingress.hostname" $) }}{{ .Values.ingress.path }}
+
+NOTE: It may take a few minutes for the pods to be ready and accessible by the load balancer
+
+{{- else if contains "NodePort" .Values.service.type }}
+
+Get the application URL by running these commands:
+
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "cells.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+
+If you're not on the same network as your kubernetes cluster, run a port-forward from your local machine with your cluster configuration:
+
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "cells.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
+
+And access your URL there:
+
+  echo "http://127.0.0.1:8080"
+
+{{- else if contains "LoadBalancer" .Values.service.type }}
+
+Get the application URL by running these commands:
+
+NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+     You can watch the status of by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "cells.fullname" . }}'
+
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "cells.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.service.port }}
+{{- else if contains "ClusterIP" .Values.service.type }}
+
+Get the application URL by running these commands:
+
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "cells.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
+  
+{{- end }}

@@ -1,0 +1,103 @@
+{
+  "Job.Version.Title": {
+    "other": "Tarea Basada en Eventos para replicar datos al realizar diferentes versiones"
+  },
+  "Job.Version.StatusFile": {
+    "other": "Versión {{.Uuid}} creada dentro del bucket de versión"
+  },
+  "Job.Version.StatusMeta": {
+    "other": "Metadatos de versión creados para {{.Uuid}}"
+  },
+  "Job.Version.StatusPrune": {
+    "one": "Versión {{.Count}} depurada",
+    "other": "Versiones {{.Count}} depuradas"
+  },
+  "Job.Pruning.Title": {
+    "other": "Limpiando archivos de versiones para nodos eliminados"
+  },
+  "Job.Pruning.StatusDone": {
+    "one": "Se ha eliminado correctamente la versión",
+    "other": "Se han eliminado exitosamente las {{.Count}} versiones."
+  },
+  "Config.GroupPolicy.Title": {
+    "other": "Directivas"
+  },
+  "Config.GroupPolicy.Name.Label": {
+    "other": "Nombre"
+  },
+  "Config.GroupPolicy.Name.Description": {
+    "other": "Nombre de la Directiva"
+  },
+  "Config.GroupPolicy.Description.Label": {
+    "other": "Descripción"
+  },
+  "Config.GroupPolicy.Description.Description": {
+    "other": "Descripción de la directiva"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Label": {
+    "other": "Almacenar"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Description": {
+    "other": "Fuente de datos utilizada para almacenar versiones"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Label": {
+    "other": "Bucket"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Description": {
+    "other": "Bucket utilizado dentro de esta fuente de datos"
+  },
+  "Config.GroupSizes.Title": {
+    "other": "Límites de tamaño"
+  },
+  "Config.GroupSizes.MaxTotalSize.Label": {
+    "other": "Tamaño global de todas las versiones guardadas en este bucket"
+  },
+  "Config.GroupSizes.MaxTotalSize.Description": {
+    "other": "Limitar el tamaño total. Si se alcanza el límite, se eliminarán las versiones más antiguas. Usa -1 para la opción \"sin limite\""
+  },
+  "Config.GroupSizes.MaxSizePerFile.Label": {
+    "other": "Tamaños acumulados de versiones de un archivo dado"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Description": {
+    "other": "Limitar el tamaño para todas las versiones de un archivo. Si se alcanza el límite, se eliminarán las versiones más antiguas. Usa -1 para la opción \"sin limite\""
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Label": {
+    "other": "Ignorar archivos mayores que..."
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Description": {
+    "other": "NO se admiten archivos de versión cuyo tamaño sobrepase este límite. Usar -1 para \"sin límite\""
+  },
+  "Config.GroupRetention.Title": {
+    "other": "Periodos de Retención"
+  },
+  "Config.GroupRetention.Description": {
+    "other": "Número de versiones a conservar por período"
+  },
+  "Config.GroupRetention.IntervalStart.Name": {
+    "other": "Inicio del Periodo"
+  },
+  "Config.GroupRetention.IntervalStart.Description": {
+    "other": "Punto de inicio utilizado al computar el periodo. 0 es el momento del último conjunto de versiones, use otro período para establecer un límite"
+  },
+  "Config.GroupRetention.MaxNumber.Name": {
+    "other": "Número máximo de versiones"
+  },
+  "Config.GroupRetention.MaxNumber.Description": {
+    "other": "Número máximo de versiones a conservar durante este período. Use -1 para mantener todas las versiones, 0 para eliminarlas todas."
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Name": {
+    "other": "Después de borrar el archivo original"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Description": {
+    "other": "Número de versiones que se mantienen una vez eliminado el archivo original."
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepAll": {
+    "other": "Hacer copia de seguridad de todas las versiones existentes"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepLast": {
+    "other": "Hacer copia de seguridad sólo de la versión más reciente"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepNone": {
+    "other": "Eliminar todas las versiones existentes"
+  }
+}

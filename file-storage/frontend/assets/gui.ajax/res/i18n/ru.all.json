@@ -1,0 +1,407 @@
+{
+  "tour.create-menu": {
+    "other": "Начните добавлять новые файлы или папки в текущую рабочую область."
+  },
+  "tour.create-menu.title": {
+    "other": "Добавить файлы"
+  },
+  "tour.display-bar": {
+    "other": "Эта панель инструментов позволяет изменить отображение: переключиться в режим эскизов или деталей в зависимости от использования и сортировки файлов по имени, дате и т.д..."
+  },
+  "tour.display-bar.title": {
+    "other": "Параметры отображения"
+  },
+  "tour.globsearch.1": {
+    "other": "Используйте эту форму поиска для поиска файлов или папок в любой рабочей области и ячейках. Показаны только первые 5 результатов, введите рабочую область, чтобы получить больше результатов и больше вариантов поиска."
+  },
+  "tour.globsearch.2": {
+    "other": "Если поиск не введен, то вместо него будет показана история ваших недавно просмотренных файлов и папок."
+  },
+  "tour.globsearch.title": {
+    "other": "Глобальный поиск"
+  },
+  "tour.infopanel.1": {
+    "other": "Здесь вы найдете много информации о текущем выборе: информация о файлах, статус обмена метаданными, определённые пользователем и т.д."
+  },
+  "tour.infopanel.2": {
+    "other": "Вы можете закрыть эту панель, используя кнопку информации на панели инструментов"
+  },
+  "tour.infopanel.file": {
+    "other": "Файл"
+  },
+  "tour.infopanel.folder": {
+    "other": "Папка"
+  },
+  "tour.infopanel.search": {
+    "other": "Поиск"
+  },
+  "tour.infopanel.title": {
+    "other": "Инфо-панель"
+  },
+  "tour.locale.back": {
+    "other": "Назад"
+  },
+  "tour.locale.close": {
+    "other": "Закрыть"
+  },
+  "tour.locale.last": {
+    "other": "Готово"
+  },
+  "tour.locale.next": {
+    "other": "Следующий"
+  },
+  "tour.locale.skip": {
+    "other": "Пропустить"
+  },
+  "tour.openworkspace": {
+    "other": "При первом соединении ваша история, вероятно, пуста. Введите рабочую область или ячейку, чтобы начать добавлять файлы."
+  },
+  "tour.openworkspace.title": {
+    "other": "Открыть рабочее пространство"
+  },
+  "tour.uwidget.addressbook": {
+    "other": "Каталог всех пользователей, имеющих доступ к платформе. Создайте собственных пользователей и создайте команды, которые могут быть использованы для совместного использования ресурсов"
+  },
+  "tour.uwidget.alerts": {
+    "other": "Панель оповещений сообщит вам, когда пользователь, с которым вы поделились некоторыми ресурсами, получил к нему. Они могут быть отправлены вам напрямую по электронной почте."
+  },
+  "tour.uwidget.home": {
+    "other": "Вернуться к панели приветствия с помощью этой кнопки"
+  },
+  "tour.uwidget.menu": {
+    "other": "Доступ к другим опциям: управление вашим профилем и функциями безопасности, просмотр всех ресурсов, которые вы поделились, выход из платформы."
+  },
+  "tour.uwidget.title": {
+    "other": "Картуш пользователя"
+  },
+  "tour.welcomemodal.skip": {
+    "other": "Пропустить"
+  },
+  "tour.welcomemodal.start": {
+    "other": "Начать тур"
+  },
+  "tour.welcomemodal.subtitle": {
+    "other": "Перетащите самую лучшую фотографию для вашего профиля! Этот быстрый тур поможет вам через веб-интерфейс."
+  },
+  "tour.welcomemodal.title": {
+    "other": "Добро пожаловать в KMG Engineering"
+  },
+  "tour.widget-cards": {
+    "other": "Здесь вы можете добавить или удалить виджеты. Вы также можете изменить их порядок, просто перетаскивая их вокруг."
+  },
+  "tour.widget-cards.title": {
+    "other": "Виджеты"
+  },
+  "tour.workspaces.1": {
+    "other": "Рабочие пространства - это папки верхнего уровня, которые помогают вам упорядочить ваши данные. Они могут получить доступ только от вас или общего доступа к многим людям."
+  },
+  "tour.workspaces.2": {
+    "other": "Ячейки - это совместные пространства, которые вы можете делить с другими пользователями. Создайте свои собственные ячейки на основе папки, команды пользователей или любой актуальной темы."
+  },
+  "tour.workspaces.title": {
+    "other": "Рабочие пространства и Ячейки"
+  },
+  "tour.theme.title": {
+    "other": "Поддержка светлых/темных тем"
+  },
+  "tour.theme.legend": {
+    "other": "Выберите светлую или темную тему, чтобы наилучшим образом соответствовать вашему видению."
+  },
+  "tour.left-resize.title": {
+    "other": "Рабочие пространства и Ячейки"
+  },
+  "tour.left-resize.legend": {
+    "other": "Размер левой колонки может быть изменен или закрыт для соответствия экрану."
+  },
+  "tour.right-resize.legend": {
+    "other": "Правый столбец также может быть изменен или закрыт для размещения экрана."
+  },
+  "tour.directory.title": {
+    "other": "Каталог пользователя"
+  },
+  "tour.directory.legend": {
+    "other": "Управление пользователями (внутренними и внешними) и командами в центральном месте."
+  },
+  "background.jobs.title": {
+    "other": "Фоновые процессы"
+  },
+  "background.jobs.running": {
+    "other": "Задания выполняются"
+  },
+  "websocket.disconnected.title": {
+    "other": "Ошибка соединения"
+  },
+  "websocket.disconnected.legend": {
+    "other": "Веб-сокет отключён, пожалуйста, убедитесь, что сервер запущен и веб-сокет работает."
+  },
+  "oauth.authentication.success": {
+    "other": "Успешная аутентификация"
+  },
+  "oauth.authentication.failed": {
+    "other": "Аутентификация не удалась"
+  },
+  "oauth.authentication.code": {
+    "other": "Вы успешно аутентифицированы. Скопируйте и вставьте код в терминал командной строки"
+  },
+  "oauth.authentication.copy-code": {
+    "other": "Скопировать коды в буфер обмена"
+  },
+  "oauth.authentication.code-copied": {
+    "other": "Код скопирован в буфер обмена, вы можете вставить его в командную строку."
+  },
+  "oauth.authentication.code-copy-failed": {
+    "other": "Не могу скопировать в буфер обмена"
+  },
+  "layouts.preferences": {
+    "other": "Manage Layouts"
+  },
+  "layouts.preferences.legend": {
+    "other": "Save and Recall Layouts as Presets"
+  },
+  "layouts.action.rename": {
+    "other": "Rename Layout"
+  },
+  "layouts.action.remove": {
+    "other": "Remove Layout"
+  },
+  "layouts.action.remove.confirm": {
+    "other": "Do you want to remove this layout?"
+  },
+  "layouts.action.reset": {
+    "other": "Reset Layout"
+  },
+  "layouts.action.reset.confirm": {
+    "other": "Do you want to reset the current layout?"
+  },
+  "layouts.action.create": {
+    "other": "Save Layout..."
+  },
+  "layouts.action.fork": {
+    "other": "New From Current..."
+  },
+  "layouts.action.create.default": {
+    "other": "My Layout"
+  },
+  "layouts.prompt.save": {
+    "other": "Save Layout As..."
+  },
+  "layouts.prompt.save.field": {
+    "other": "Choose a name to save/recall the current layout"
+  },
+  "list.display-mode.list": {
+    "other": "Список"
+  },
+  "list.display-mode.details": {
+    "other": "Подробности"
+  },
+  "list.display-mode.thumbs": {
+    "other": "Превью"
+  },
+  "list.display-mode.thumbs-large": {
+    "other": "Большой"
+  },
+  "list.display-mode.thumbs-medium": {
+    "other": "Средний"
+  },
+  "list.display-mode.thumbs-small": {
+    "other": "Маленький"
+  },
+  "list.display-mode.masonry": {
+    "other": "Галерея изображений"
+  },
+  "list.extensions.action": {
+    "other": "Расширения файлов"
+  },
+  "list.extensions.show": {
+    "other": "Показывать расширения"
+  },
+  "list.pin.bookmarks": {
+    "other": "Прикрепить закладки к началу"
+  },
+  "list.writeonly.emptystate.title": {
+    "other": "Drop Files Here"
+  },
+  "list.writeonly.emptystate.legend": {
+    "other": "This folder is write-only: you cannot see its contents and are only authorized to upload files or folders. Your own content will not be visible after upload!"
+  },
+  "infopanel.empty.select.file": {
+    "other": "Выберите файл для отображения информации"
+  },
+  "infopanel.card.pin": {
+    "other": "Прикрепить карту (полная высота)"
+  },
+  "infopanel.card.unpin": {
+    "other": "Отсоединить карту"
+  },
+  "infopanel.card.detach": {
+    "other": "Отсоединиться на отдельной панели"
+  },
+  "infopanel.detached.minimize": {
+    "other": "Свернуть панель"
+  },
+  "infopanel.detached.maximize": {
+    "other": "Открыть панель"
+  },
+  "infopanel.detached.dock": {
+    "other": "Закрепить в правой колонке"
+  },
+  "infopanel.detailcard.preview": {
+    "other": "Preview"
+  },
+  "infopanel.detailcard.cell-info": {
+    "other": "Cell Info"
+  },
+  "infopanel.detailcard.cell-chat": {
+    "other": "Cell Chat"
+  },
+  "pinned-bookmarks.other": {
+    "other": "Все файлы"
+  },
+  "file.temporary-etag.flag": {
+    "other": "Не завершено"
+  },
+  "file.temporary-etag.tooltip": {
+    "other": "Этот файл загружается (или загрузка не удалась)."
+  },
+  "mimegroup.byextension": {
+    "other": "По расширению файла..."
+  },
+  "mimegroup.word": {
+    "other": "Документы Word"
+  },
+  "mimegroup.spreadsheet": {
+    "other": "Электронные таблицы"
+  },
+  "mimegroup.presentation": {
+    "other": "Презентации"
+  },
+  "mimegroup.pdf": {
+    "other": "PDF-файлы"
+  },
+  "mimegroup.image": {
+    "other": "Изображения"
+  },
+  "mimegroup.video": {
+    "other": "Видео"
+  },
+  "mimegroup.audio": {
+    "other": "Аудио"
+  },
+  "fastsearch.quick-jump.title": {
+    "other": "Быстрый переход"
+  },
+  "fastsearch.quick-jump.legend": {
+    "other": "Нажмите [Enter] чтобы прыгнуть, добавьте конечник [/] для поиска внутри детей, [Esc] для закрытия"
+  },
+  "fastsearch.quick-move.title": {
+    "other": "Быстрое перемещение"
+  },
+  "fastsearch.quick-move.target-error": {
+    "other": "Нельзя переместить в эту цель!"
+  },
+  "fastsearch.quick-move.legend": {
+    "other": "Нажмите [Enter] для перемещения %s выбранных элементов для цели, [Esc] для закрытия"
+  },
+  "fastsearch.quick-copy.title": {
+    "other": "Быстрое копирование"
+  },
+  "fastsearch.quick-copy.target-error": {
+    "other": "Нельзя скопировать в эту цель!"
+  },
+  "fastsearch.quick-copy.legend": {
+    "other": "Hit [Enter] to copy %s selected items to target, [Esc] to Close"
+  },
+  "modalsearch.opentip.cmd": {
+    "other": "Tip: Use <kbd>⌘+k</kbd> to open this search dialog, <kbd>Esc</kbd> to close."
+  },
+  "modalsearch.opentip.ctrl": {
+    "other": "Tip: Use <kbd>Ctrl+k</kbd> to open this search dialog, <kbd>Esc</kbd> to close."
+  },
+  "search.chip.scope.folder": {
+    "other": "Folder"
+  },
+  "search.chip.scope.ws": {
+    "other": "Inside"
+  },
+  "search.chip.scope.all": {
+    "other": "All Workspaces"
+  },
+  "wslist-options.title": {
+    "other": "Отображать параметры"
+  },
+  "wslist-options.show-masked": {
+    "other": "Показать замаскированные элементы"
+  },
+  "wslist.action.mask": {
+    "other": "Маскировать"
+  },
+  "wslist.action.unmask": {
+    "other": "Снять маску"
+  },
+  "wslist-options.merge-workspaces": {
+    "other": "Объединить рабочие области и ячейки"
+  },
+  "wslist-options.own-cells-first": {
+    "other": "Ячейки, созданные мной впервые"
+  },
+  "leftrail.buttons.home": {
+    "other": "Главная"
+  },
+  "leftrail.buttons.directory": {
+    "other": "Каталог"
+  },
+  "leftrail.buttons.all-files": {
+    "other": "Все файлы"
+  },
+  "leftrail.buttons.theme.light": {
+    "other": "Светлый режим"
+  },
+  "leftrail.buttons.theme.dark": {
+    "other": "Темный режим"
+  },
+  "task.status.Starting": {
+    "other": "Запущено {startTime}"
+  },
+  "task.status.Pending": {
+    "other": "Скоро начнется..."
+  },
+  "task.status.Complete": {
+    "other": "Задача выполнена в {duration}"
+  },
+  "task.status.Finished": {
+    "other": "Задача выполнена в {duration}"
+  },
+  "task.status.Error": {
+    "other": "Произошла ошибка!"
+  },
+  "bigppanel.filter.default-hint": {
+    "other": "Быстрый поиск..."
+  },
+  "sorter.metas.more": {
+    "other": "More..."
+  },
+  "drag-layer.move.file": {
+    "other": "Move File"
+  },
+  "drag-layer.move.folder": {
+    "other": "Move Folder"
+  },
+  "drag-layer.move.plural": {
+    "other": "Move %s Items"
+  },
+  "drag-layer.copy.file": {
+    "other": "Copy File"
+  },
+  "drag-layer.copy.folder": {
+    "other": "Copy Folder"
+  },
+  "drag-layer.copy.plural": {
+    "other": "Copy %s Items"
+  },
+  "drag-layer.more": {
+    "other": "...and %s more."
+  },
+  "drag-layer.hint": {
+    "other": "Use [alt/option] key to copy"
+  }
+}

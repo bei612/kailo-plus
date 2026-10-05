@@ -160,3 +160,90 @@ nativeId、projectionGeneration 三处实际字段，原 round-trip 命令得到
 - `application-wire-check.log`：`088e8181261b23e17fdeebd147cc8128e233a88e9592a58c16613aaa7cd006c7`。
 - `application-wire-mutation.log`：`ae698f3555a7d988e900fe337c12cc931c257ffd7e69c7dd7cd0f6db1da8f19c`。
 - `application-wire-restored.log`：`e62688fa536caad0da85ecd99247034c3f86af3fee5c5e4f802dd4e98a1870b9`。
+
+## 独立页面弹窗与 Wren UI 来源核对（2026-10-05）
+
+本节对应 DD-87、`07` §4.6 的原生页面，不改变在线编辑的独立合同。
+以 `d343a33ed491f12f60efbddfd973a1053461c8ef` 为实现基准，Desktop 原先
+对所有 `on_new_window` 请求返回 Deny，因而不能把原生页面已经能打开等同于
+该服务所有页面交互已保留。现有 `native_page.rs` 候选复用同一个窗口构造函数，
+将批准来源的弹窗交给锁定 Tauri 原生 `window_features` / NewWindowResponse::Create。
+
+四步影响说明：权威是独立页面保持原生功能与宿主隔离；影响面仅原生页面窗口、
+导航和既有 NativeSession generation，Web 仍使用共用入口的 frame，Mobile 无入口；
+不增加管理 API、Action、Workflow、数据副本、IPC capability 或配置项；初始和后续
+URL 均校验精确批准来源、HTTP(S) 与无 URL 凭据，创建前后校验同一会话 generation，
+子窗口保留原前缀而被现有注销关闭逻辑覆盖。来源外目标、未知会话和创建失败不放行。
+此处窗口打开不是业务动作成功回执，也不注销第三方自身账号。
+
+受限原 SDK（4 CPU / 8 GiB）内该 Rust 文件格式检查通过，`git diff --check` 通过。
+当前 SDK 的 GTK/WebKit 依赖探测退出 1，未启动注定缺依赖的 Desktop 编译，未安装
+宿主工具链。本增量尚未经过完整 Desktop 编译、Win11 设备交互或生产变异验证；
+未发布、未部署，不借此前包和 frame 检查覆盖它。原生 `about:blank` 脚本弹窗、
+第三方登录跳转、上传下载以及弹窗会话继承的实际行为均不据格式检查宣称通过。
+
+用户另提供了完整 GenBI App 源码。已只读核验
+`WrenAI-ui-0.32.2` 的 tag `release/ui/0.32.2` 精确指向
+`c5f02a0391c87420dba78632dcd86073710deb72`：
+`wren-ui/package.json` 的 version 为 0.32.2，
+`wren-ui/src/pages/api/graphql.ts::bootstrapServer` 初始化原 Apollo 服务，
+`wren-ui/next.config.js::nextConfig` 使用 standalone 输出，
+`docker/docker-compose.yaml::services` 包含 UI、AI Service、Engine、Ibis 与 Qdrant。
+Engine gitlink 精确为 `47ca29ebba291100ba5d70ce1790f9887eaed7a0`；
+其 `mcp-server/app/wren.py::{query,deploy,get_full_manifest}` 及 stdio 入口
+不是当前 `871118e94f1525c401d867074c05e7e8eefca1cc` 的 Python v2 工具合同。
+
+整套源和子模块已从用户提供目录复制至只读证据位置
+`/volumes/kailo/.references/WrenAI-ui-0.32.2`，原目录与现有 WrenAI 均保留。
+两套工作树干净，排除 Git 元数据后的逐文件比对退出 0；包含 Git 元数据的首次
+比对退出 1，差异仅为 status 刷新的两份 index，不是源码差异。
+该 tag 的 `docker/.env.example` 仍填 `WREN_UI_VERSION=0.32.0`，不能把样例标签
+当成 0.32.2 的配套产物证明。当前未运行该目录内容、未混接 v2 引擎、未部署 GenBI；
+源码存在不证明 UI 身份隔离、iframe 兼容或完整原生功能验收。
+
+### 共享 Web 独立打开入口
+
+同一 `NativeApplicationPage` 在取得当前 binding 的有效 BFF descriptor 后，
+为 Web 提供新标签打开原生服务的入口；Desktop 仍只把 binding ID 交给原生 host，
+不在主窗口导航到第三方。入口和 frame 使用同一份校验结果，重新读取失败或撤权
+时同时移除。链接不带 opener 或 Referer，不转发平台 token，不放宽 frame sandbox，
+也不把第三方无法嵌入误报为业务服务故障。文案沿既有 TypeScript→Dart 生成链。
+
+实际验证在 `kailo-native-page-sdk-4rbmbz` 中运行，固定 SDK 镜像为
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+4 CPU / 4 GiB、无额外 swap，缓存与候选均位于 Data 卷。执行前检查了实际容器限额、
+并发进程及主机可用内存。首次生成因未设置 SDK HOME 导致 Dart 缓存写入根路径而
+退出 255；按原缓存位置设置 HOME 后，`tools/gen-platform-i18n.py` 退出 0。
+
+首次 `pnpm --filter @client-kit/platform test -- application-bindings` 完成类型检查，
+但该参数实际启动了其他测试文件，结果为 `42 passed / 6 errors`、退出 1；
+错误为 `[vitest-pool-runner]: Timeout waiting for worker to respond`，不记通过。
+原件保存在 Data 候选父目录 `native-page-shared.log`。
+之后从原 package 运行 `pnpm exec vitest run test/application-bindings.test.tsx`：
+`Test Files 1 passed; Tests 8 passed`，退出 0。
+
+实现后的反例将实际链接 `target` 从 `_blank` 改为 `_self`，同命令得到
+`AssertionError: expected '_self' to be '_blank'`、`1 failed / 7 passed`，退出 1。
+还原源码后同命令 `8 passed`、退出 0（09:33:46 UTC），没有变异残留。
+这些结果只覆盖共享入口、拒绝与撤权渲染，不证明第三方原生认证、完整页面、
+Desktop 弹窗或设备行为；本增量尚未提交、构建或部署。
+
+### 2026-10-05 联合批共享客户端实际产物
+
+上述共享入口随后随冻结联合批执行原 `tools/build-upstream.sh web-client`，
+再串行执行 `tools/build-upstream.sh desktop-client`；执行句柄 95729 实际退出 0。
+使用原受限 BuildKit（8 CPU、16 GiB memory 与 memory+swap）及 Data 缓存，
+两客户端各执行一次构建，不在每个源码修改后重新打包。
+
+Web source 为 `sha256:32fb6887b1f0b529d5b103c7913a1f2052609e3658598b076c3e9fdaf43415f8`，
+实际 registry artifact 为 `sha256:3336de5375dccfbcb72865e4ad44bf1e2799136779cf00830c8b64861fd4d173`。
+Windows source 为 `sha256:7b89dba2d4a4fdb66a4be4504c1e8b085b0db20321bcbd519a8273c2a9b7ac50`，
+NSIS 文件 `dist/desktop-client/Kailo_0.5.23_x64-setup.exe` 的实际 SHA256 为
+`620e6d3b6b976ca70022de22b9d5e93eacb1edd91f24f743665bda1a474c784a`。
+原 helper 已写回来源登记，未手改源码摘要冒充新构建。
+
+原件目录为 `/volumes/data/kailo/tmp/codex-application-core-worker-release-20261005.2Co1Ge/`。
+`assembly-web-build.log` SHA256 为 `c63064a2328c687b19e080ce9678c802fd6173656da49c9c8d5cd05f74767d2d`；
+`assembly-windows-build.log` SHA256 为 `6d5a7191c85934b5df3a0594a701fbdc5a6d42b3f83532b2f6f72aa626ec507d`。
+chunk 大小、两个 Rust 未使用项、跨平台编译及跳过签名警告均保留。
+本记录不宣称新产物部署、原生组件登录、Win11 实机、Mobile 或完整业务验收通过。

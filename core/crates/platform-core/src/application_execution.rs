@@ -556,6 +556,40 @@ pub(crate) async fn committed_children(
     invocation: Uuid,
     turn: &str,
 ) -> Result<Vec<Uuid>, &'static str> {
+    // A synchronous protocol peer has no native job and therefore no EE row.
+    // Do not let the Remote Adapter inner join silently erase an unresolved
+    // dispatched child from the original Invocation's settlement set.
+    let peers: Vec<(Value, bool)> = sqlx::query_as(
+        "select d.implementation_declaration,coalesce(
+            c.operation_id=parent.operation_id and c.tenant_id=parent.tenant_id
+            and c.workspace_id is not distinct from parent.workspace_id
+            and c.initiator_principal_id=parent.initiator_principal_id and c.actor_principal_id=parent.actor_principal_id
+            and c.gate_state='ALLOWED' and c.parameters->>'invocationId'=i.id::text
+            and c.parameters->>'runtimeTurnId'=$2
+            and not exists(select 1 from admission.external_execution e where e.action_execution_id=c.id)
+            and exists(select 1 from audit.audit_event result
+                where result.event_key=c.operation_id::text||':child:'||c.id::text||':protocol-result'
+                  and result.operation_id=c.operation_id and result.tenant_id=c.tenant_id
+                  and result.workspace_id is not distinct from c.workspace_id
+                  and result.action_key=c.action_key and result.action_version=c.action_version
+                  and result.target_id=c.target_id and result.parameter_hash=c.parameter_hash
+                  and result.event_type='RESULT' and result.result_code in ('SUCCEEDED','FAILED')),false)
+         from catalog.agent_invocation i join admission.action_execution parent on parent.id=i.action_execution_id
+         join admission.action_execution c on c.parent_action_execution_id=parent.id
+         join catalog.action_definition d on d.id=c.action_definition_id and d.component_release_id=c.component_release_id
+         join catalog.component_release r on r.id=c.component_release_id
+         where i.id=$1 and i.runtime_turn_id=$2 and c.dispatch_state='DISPATCHED'
+           and c.component_binding_kind='APPLICATION' and r.manifest->'executionConnector'->>'mode'='PROTOCOL_PEER'")
+        .bind(invocation).bind(turn).fetch_all(pool).await.map_err(|_| "Protocol child set unavailable")?;
+    for (declaration, terminal) in peers {
+        if !terminal
+            || crate::application_binding::native::Connector::ProtocolPeer
+                .validate_action(&declaration)
+                .is_err()
+        {
+            return Err("Protocol child synchronous result unresolved");
+        }
+    }
     let rows:Vec<(Uuid,Option<Value>,Option<String>,bool)>=sqlx::query_as(
         "select e.id,e.usage_projection,e.usage_digest,coalesce(
             e.platform_status in ('SUCCEEDED','FAILED','CANCELLED') and e.terminal_at is not null

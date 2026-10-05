@@ -1,0 +1,103 @@
+{
+  "Job.Version.Title": {
+    "other": "バージョン管理のためのデータレプリケーションに関するイベントベースジョブ"
+  },
+  "Job.Version.StatusFile": {
+    "other": "バージョンバケット内にバージョン {{.Uuid}} を作成"
+  },
+  "Job.Version.StatusMeta": {
+    "other": "{{.Uuid}} のバージョンメタデータを作成"
+  },
+  "Job.Version.StatusPrune": {
+    "one": "{{.Count}} バージョンを削除",
+    "other": "{{.Count}} バージョンを削除"
+  },
+  "Job.Pruning.Title": {
+    "other": "削除したノードのバージョンファイルを消去中"
+  },
+  "Job.Pruning.StatusDone": {
+    "one": "{{.Count}} バージョンを正常に削除しました",
+    "other": "{{.Count}} バージョンを正常に削除しました."
+  },
+  "Config.GroupPolicy.Title": {
+    "other": "ポリシー"
+  },
+  "Config.GroupPolicy.Name.Label": {
+    "other": "名前"
+  },
+  "Config.GroupPolicy.Name.Description": {
+    "other": "ポリシー名"
+  },
+  "Config.GroupPolicy.Description.Label": {
+    "other": "備考"
+  },
+  "Config.GroupPolicy.Description.Description": {
+    "other": "ポリシー詳細"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Label": {
+    "other": "ストア"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Description": {
+    "other": "バージョンの保存に使用されているデーターソース"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Label": {
+    "other": "バケット"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Description": {
+    "other": "このデータソース内部で使用するバケット"
+  },
+  "Config.GroupSizes.Title": {
+    "other": "サイズ上限"
+  },
+  "Config.GroupSizes.MaxTotalSize.Label": {
+    "other": "このバケットに保存されるすべてのバージョンのグローバルサイズ"
+  },
+  "Config.GroupSizes.MaxTotalSize.Description": {
+    "other": "全体のサイズの上限を指定します。もし上限に達したら、最も古いバージョンから削除されます。-1 を指定すると、無制限を意味します"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Label": {
+    "other": "ファイルあたりのバージョンの累積サイズ"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Description": {
+    "other": "ひとつのファイルのバージョンすべてにかかるサイズの上限を指定します。上限に達した場合、最も古いバージョンから削除していきます。-1 を指定すると、無制限になります"
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Label": {
+    "other": "これより大きいファイルは無視…"
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Description": {
+    "other": "この上限より大きなファイルのバージョン管理はしない。-1 を指定すると、上限なし"
+  },
+  "Config.GroupRetention.Title": {
+    "other": "保持期間"
+  },
+  "Config.GroupRetention.Description": {
+    "other": "期間ごとに保持するバージョン数"
+  },
+  "Config.GroupRetention.IntervalStart.Name": {
+    "other": "保持開始"
+  },
+  "Config.GroupRetention.IntervalStart.Description": {
+    "other": "期間を算定する起点。0 を指定すると最後のバージョンの時刻。制限を設定するには別の期間を使用します"
+  },
+  "Config.GroupRetention.MaxNumber.Name": {
+    "other": "バージョンの最大数"
+  },
+  "Config.GroupRetention.MaxNumber.Description": {
+    "other": "この期間を通して保持するバージョンの最大数。-1 を指定すると、すべてのバージョンを、0 を指定するとすべて削除を意味します。"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Name": {
+    "other": "元のファイルを削除"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Description": {
+    "other": "元のファイルを削除した後保持するバージョンの数"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepAll": {
+    "other": "全てのバージョンをバックアップ"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepLast": {
+    "other": "最新のバージョンのみバックアップ"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepNone": {
+    "other": "全てのバージョンを削除"
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "Allowed Extensions": {
+    "other": "Extensions autorisées"
+  },
+  "Ext. Label": {
+    "other": "Libellé de la liste"
+  },
+  "Extensions List": {
+    "other": "Liste d'extensions"
+  },
+  "File Size": {
+    "other": "Taille de fichier"
+  },
+  "Filter the files that are allowed to be uploaded, by extensions. Use a comma-separated list.": {
+    "other": "Filtrer les fichiers autorisés à être uploader, par extension. Utiliser une liste séparée par des virgules."
+  },
+  "Limitations": {
+    "other": "Limitations"
+  },
+  "Maximum size per file allowed to upload. Warning, this limit can vary depending on your underlying storage and the Multipart Chunk Size. For example, Amazon S3 restricts uploads to maximum 10000 distinct parts.": {
+    "other": "Taille maximale autorisée par fichier. Attention, cette limite peut varier en fonction du stockage sous-jacent et de la taille des parties dans le cas d'uploads \"multipart\". Par exemple, Amazon S3 limite les envois à un maximum de 10000 parties distinctes."
+  },
+  "Options shared by all uploaders plugins": {
+    "other": "Options partagées par tous les plugins d'outils d'envoi"
+  },
+  "Uploaders Options": {
+    "other": "Options des outils d'envoi"
+  },
+  "User readable label for the list of allowed extensions (images, all files, etc).": {
+    "other": "Libellé des extensions autorisées (images, tous les fichiers, etc)."
+  },
+  "Multipart Uploads": {
+    "other": "Envoi en plusieurs parties"
+  },
+  "Multipart Parts Size": {
+    "other": "Taille des parties"
+  },
+  "Multipart Threshold": {
+    "other": "Seuil de l'envoi en plusieurs parties"
+  },
+  "Switch to Multipart Upload for files bigger than this value (in bytes)": {
+    "other": "Basculer vers l'envoi en plusieurs parties pour les fichiers plus gros que cette taille (en octets)"
+  },
+  "Chunk Size used for multipart uploads, it must be a multiple of 10MB for hashing consistency. If you plan to upload very large files (bigger 500GB), raise this value to lower the total number of parts sent.": {
+    "other": "Taille des parties utilisée pour les envois en Multipart. Cette taille doit être un multiple de 10Mo pour assurer la stabilité des signature des fichiers. Si vous prévoyez d'uploader des fichiers de très grande taille (plus de 500 Go), augmentez cette valeur pour réduire le nombre total de parties envoyées."
+  },
+  "Queue Size": {
+    "other": "Taille de la queue"
+  },
+  "Number of concurrent uploads (maximum 6, due to browsers limitations)": {
+    "other": "Nombre d'envois en simultané (maximum 6, en raison des limitations du navigateur)"
+  },
+  "Timeout": {
+    "other": "Expiration"
+  },
+  "Request Timeout (in minutes) for each concurrent part upload": {
+    "other": "Expiration de la requête (en minutes) pour l'envoi de chaque partie en simultané"
+  }
+}

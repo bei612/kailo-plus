@@ -1,0 +1,473 @@
+{
+  "30 days max": {
+    "other": "30 giorni max"
+  },
+  "Remove versions after 30 days": {
+    "other": "Rimuovere le versioni dopo 30 giorni"
+  },
+  "Keep All": {
+    "other": "Tenere tutte"
+  },
+  "Keep all versions forever": {
+    "other": "Tenere tutte le versioni per sempre"
+  },
+  "Regular Pruning": {
+    "other": "Sfoltimento regolare"
+  },
+  "Prune versions regularly at various intervals": {
+    "other": "Sfoltire regolarmente le versioni a diversi intervalli"
+  },
+  "aclAction.Name": {
+    "other": "Nome"
+  },
+  "aclAction.Value": {
+    "other": "Valore"
+  },
+  "aclSingleQuery.Actions": {
+    "other": "Azioni"
+  },
+  "aclSingleQuery.NodeIDs": {
+    "other": "Identificatori del Nodo"
+  },
+  "aclSingleQuery.Not": {
+    "other": "No"
+  },
+  "aclSingleQuery.RoleIDs": {
+    "other": "Identificatori del Ruolo"
+  },
+  "aclSingleQuery.WorkspaceIDs": {
+    "other": "Identificatori del Workspace"
+  },
+  "aclSingleQuery.not": {
+    "other": "no"
+  },
+  "actionOutputSingleQuery.ErrorStringRegexp": {
+    "other": "Cerca sulle stringhe di errore (regexp)"
+  },
+  "actionOutputSingleQuery.IsSuccess": {
+    "other": "Operazione riuscita"
+  },
+  "actionOutputSingleQuery.JsonBodyHasKey": {
+    "other": "Il body Json ha la chiave..."
+  },
+  "actionOutputSingleQuery.JsonBodyRegexp": {
+    "other": "Cerca nel body Json (regexp)"
+  },
+  "actionOutputSingleQuery.JsonBodySizeGreaterThan": {
+    "other": "Le dimensioni del body Json sono maggiori di"
+  },
+  "actionOutputSingleQuery.JsonBodySizeSmallerThan": {
+    "other": "Le dimensioni del body Json sono minori di"
+  },
+  "actionOutputSingleQuery.Not": {
+    "other": "No"
+  },
+  "actionOutputSingleQuery.StringBodyRegexp": {
+    "other": "Cerca nel body della Stringa (regexp)"
+  },
+  "actionOutputSingleQuery.StringBodySizeGreaterThan": {
+    "other": "Le dimensioni del body della Stringa sono maggiori di"
+  },
+  "actionOutputSingleQuery.StringBodySizeSmallerThan": {
+    "other": "Le dimensioni del body della Stringa sono minori di"
+  },
+  "actionOutputSingleQuery.TaskTimeGt": {
+    "other": "Tempo del task maggiore di"
+  },
+  "actionOutputSingleQuery.TaskTimeLt": {
+    "other": "Tempo del task minore di"
+  },
+  "actionOutputSingleQuery.FreeCondition": {
+    "other": "Condizioni Libere"
+  },
+  "dataSelectorSingleQuery.JsonPath": {
+    "other": "Percorso JSON"
+  },
+  "conditionCIDRCondition.CIDR": {
+    "other": "CIDR"
+  },
+  "conditionCIDRCondition.cidr": {
+    "other": "cidr"
+  },
+  "conditionStringEqualCondition.Equals": {
+    "other": "Uguale a"
+  },
+  "conditionStringEqualCondition.equals": {
+    "other": "uguale a"
+  },
+  "conditionStringMatchCondition.Matches": {
+    "other": "Corrisponde"
+  },
+  "conditionStringMatchCondition.matches": {
+    "other": "corrisponde"
+  },
+  "conditionPathGlobCondition.glob": {
+    "other": "pattern"
+  },
+  "conditionBooleanCondition.value": {
+    "other": "Vero"
+  },
+  "contextMetaCondition.CIDRCondition": {
+    "other": "Condizione CIDR"
+  },
+  "contextMetaCondition.EqualsSubjectCondition": {
+    "other": "Oggetto uguale a"
+  },
+  "contextMetaCondition.ResourceContainsCondition": {
+    "other": "La risorsa contiene"
+  },
+  "contextMetaCondition.StringEqualCondition": {
+    "other": "Stringa uguale a"
+  },
+  "contextMetaCondition.StringMatchCondition": {
+    "other": "La stringa corrisponde"
+  },
+  "contextMetaCondition.StringPairsEqualCondition": {
+    "other": "StringPairs uguale a"
+  },
+  "contextMetaCondition.StringNotMatchCondition": {
+    "other": "La stringa non corrisponde"
+  },
+  "contextMetaCondition.WithinPeriodCondition": {
+    "other": "Periodo della data"
+  },
+  "contextMetaCondition.OfficeHoursCondition": {
+    "other": "Orario d'ufficio"
+  },
+  "contextMetaCondition.DateAfterCondition": {
+    "other": "Data dopo"
+  },
+  "contextMetaCondition.PathGlobCondition": {
+    "other": "Glob Matcher"
+  },
+  "contextMetaCondition.BooleanCondition": {
+    "other": "Valore Booleano"
+  },
+  "contextMetaField.ContentType": {
+    "other": "Tipo di contenuto"
+  },
+  "contextMetaField.CookiesString": {
+    "other": "Stringa dei Cookie"
+  },
+  "contextMetaField.HttpProtocol": {
+    "other": "Protocollo HTTP"
+  },
+  "contextMetaField.RemoteAddress": {
+    "other": "Indirizzo Remoto"
+  },
+  "contextMetaField.RequestHostname": {
+    "other": "Richiedi Hostname"
+  },
+  "contextMetaField.RequestHost": {
+    "other": "Richiedi Host"
+  },
+  "contextMetaField.RequestPort": {
+    "other": "Richiedi Porta"
+  },
+  "contextMetaField.RequestMethod": {
+    "other": "Richiedi Metodo"
+  },
+  "contextMetaField.RequestURI": {
+    "other": "Richiedi URI"
+  },
+  "contextMetaField.ServerTime": {
+    "other": "Ora del server"
+  },
+  "contextMetaField.UserAgent": {
+    "other": "User Agent"
+  },
+  "contextMetaSingleQuery.Condition": {
+    "other": "Condizione"
+  },
+  "contextMetaSingleQuery.FieldName": {
+    "other": "Nome del campo"
+  },
+  "roleSingleQuery.HasAutoApply": {
+    "other": "Contiene AutoApply"
+  },
+  "roleSingleQuery.IsGroupRole": {
+    "other": "È Ruolo di Gruppo"
+  },
+  "roleSingleQuery.IsTeam": {
+    "other": "È Squadra"
+  },
+  "roleSingleQuery.IsUserRole": {
+    "other": "È Ruolo Utente"
+  },
+  "roleSingleQuery.Label": {
+    "other": "Etichetta Workspace"
+  },
+  "roleSingleQuery.Not": {
+    "other": "No"
+  },
+  "roleSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "roleSingleQuery.not": {
+    "other": "no"
+  },
+  "treeQuery.Content": {
+    "other": "Contenuti"
+  },
+  "treeQuery.DurationDate": {
+    "other": "Data della modifica (usare il confronto)"
+  },
+  "treeQuery.Extension": {
+    "other": "Estensione File"
+  },
+  "treeQuery.FileName": {
+    "other": "Nome file"
+  },
+  "treeQuery.FileNameOrContent": {
+    "other": "Nome del file o contenuto"
+  },
+  "treeQuery.FreeString": {
+    "other": "Stringa di ricerca simile a Bleve"
+  },
+  "treeQuery.GeoQuery": {
+    "other": "Query di Geolocalizzazione"
+  },
+  "treeQuery.MaxDate": {
+    "other": "Modificato prima"
+  },
+  "treeQuery.MaxSize": {
+    "other": "MaxSize"
+  },
+  "treeQuery.MinDate": {
+    "other": "Modificato da"
+  },
+  "treeQuery.MinSize": {
+    "other": "Dimensioni maggiori di"
+  },
+  "treeQuery.Not": {
+    "other": "No"
+  },
+  "treeQuery.PathDepth": {
+    "other": "Profondità del Percorso"
+  },
+  "treeQuery.PathPrefix": {
+    "other": "Prefisso del Percorso"
+  },
+  "treeQuery.Paths": {
+    "other": "Percorso Assoluto"
+  },
+  "treeQuery.Type": {
+    "other": "Tipo"
+  },
+  "treeQuery.Type.COLLECTION": {
+    "other": "Cartella"
+  },
+  "treeQuery.Type.LEAF": {
+    "other": "File"
+  },
+  "treeQuery.Type.UNKNOWN": {
+    "other": "Qualsiasi"
+  },
+  "treeQuery.UUIDs": {
+    "other": "UUID del Nodo"
+  },
+  "treeQuery.ETag": {
+    "other": "ETag"
+  },
+  "userSingleQuery.AttributeAnyValue": {
+    "other": "Ha qualsiasi valore"
+  },
+  "userSingleQuery.AttributeName": {
+    "other": "Nome Attributo"
+  },
+  "userSingleQuery.AttributeValue": {
+    "other": "Valore Attributo"
+  },
+  "userSingleQuery.ConnectedSince": {
+    "other": "Connesso Da"
+  },
+  "userSingleQuery.FullPath": {
+    "other": "Percorso Completo"
+  },
+  "userSingleQuery.GroupPath": {
+    "other": "Percorso del Gruppo"
+  },
+  "userSingleQuery.HasProfile": {
+    "other": "Contiene il Profilo"
+  },
+  "userSingleQuery.HasRole": {
+    "other": "Contiene il Ruolo"
+  },
+  "userSingleQuery.Login": {
+    "other": "Nome Utente"
+  },
+  "userSingleQuery.NodeType": {
+    "other": "Tipo di Oggetto"
+  },
+  "userSingleQuery.NodeType.GROUP": {
+    "other": "Gruppo"
+  },
+  "userSingleQuery.NodeType.UNKNOWN": {
+    "other": "Qualsiasi"
+  },
+  "userSingleQuery.NodeType.USER": {
+    "other": "Utente"
+  },
+  "userSingleQuery.Not": {
+    "other": "No"
+  },
+  "userSingleQuery.Password": {
+    "other": "Password"
+  },
+  "userSingleQuery.Recursive": {
+    "other": "Ricorsivo"
+  },
+  "userSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "userSingleQuery.not": {
+    "other": "no"
+  },
+  "workspaceSingleQuery.AttributeName": {
+    "other": "Nome Attributo"
+  },
+  "workspaceSingleQuery.AttributeValue": {
+    "other": "Valore Attributo"
+  },
+  "workspaceSingleQuery.Description": {
+    "other": "Descrizione"
+  },
+  "workspaceSingleQuery.HasAttribute": {
+    "other": "Contiene un Attributo"
+  },
+  "workspaceSingleQuery.Label": {
+    "other": "Etichetta Workspace"
+  },
+  "workspaceSingleQuery.LastUpdated": {
+    "other": "Ultimo aggiornamento"
+  },
+  "workspaceSingleQuery.Not": {
+    "other": "No"
+  },
+  "workspaceSingleQuery.Scope": {
+    "other": "Scopo"
+  },
+  "workspaceSingleQuery.Slug": {
+    "other": "Slug"
+  },
+  "workspaceSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "workspaceSingleQuery.description": {
+    "other": "Descrizione"
+  },
+  "workspaceSingleQuery.label": {
+    "other": "Etichetta Workspace"
+  },
+  "workspaceSingleQuery.not": {
+    "other": "no"
+  },
+  "workspaceSingleQuery.scope": {
+    "other": "Tipo di Workspace"
+  },
+  "workspaceSingleQuery.scope.ADMIN": {
+    "other": "Spazio di lavoro"
+  },
+  "workspaceSingleQuery.scope.ANY": {
+    "other": "Qualsiasi"
+  },
+  "workspaceSingleQuery.scope.LINK": {
+    "other": "Link Pubblico"
+  },
+  "workspaceSingleQuery.scope.ROOM": {
+    "other": "Cell"
+  },
+  "workspaceSingleQuery.slug": {
+    "other": "Slug"
+  },
+  "workspaceSingleQuery.uuid": {
+    "other": "Uuid"
+  },
+  "dataSourceSingleQuery.Name": {
+    "other": "Nome"
+  },
+  "dataSourceSingleQuery.IsDisabled": {
+    "other": "È disabilitato"
+  },
+  "dataSourceSingleQuery.StorageType": {
+    "other": "Tipo di archiviazione"
+  },
+  "dataSourceSingleQuery.StorageType.REMOTE": {
+    "other": "Remoto"
+  },
+  "dataSourceSingleQuery.StorageType.ANY": {
+    "other": "Qualsiasi"
+  },
+  "dataSourceSingleQuery.StorageType.LOCALFS": {
+    "other": "Locale"
+  },
+  "dataSourceSingleQuery.PeerAddress": {
+    "other": "Indirizzo Peer"
+  },
+  "dataSourceSingleQuery.FlatStorage": {
+    "other": "Flat Storage"
+  },
+  "dataSourceSingleQuery.SkipSyncOnRestart": {
+    "other": "Salta la sincronizzazione al riavvio"
+  },
+  "dataSourceSingleQuery.IsVersioned": {
+    "other": "È Versionato"
+  },
+  "dataSourceSingleQuery.IsEncrypted": {
+    "other": "È Criptato"
+  },
+  "dataSourceSingleQuery.EncryptionMode": {
+    "other": "Modalità di Cifratura"
+  },
+  "dataSourceSingleQuery.EncryptionMode.USER": {
+    "other": "Chiave Utente"
+  },
+  "dataSourceSingleQuery.EncryptionMode.USER_PWD": {
+    "other": "Password Utente"
+  },
+  "dataSourceSingleQuery.EncryptionMode.CLEAR": {
+    "other": "Svuota la coda"
+  },
+  "dataSourceSingleQuery.EncryptionMode.MASTER": {
+    "other": "Chiave Principale"
+  },
+  "dataSourceSingleQuery.EncryptionKey": {
+    "other": "Chiave di crittografia"
+  },
+  "dataSourceSingleQuery.VersioningPolicyName": {
+    "other": "Politiche di Versioning"
+  },
+  "dataSourceSingleQuery.StorageConfigurationName": {
+    "other": "Chiave di Configurazione"
+  },
+  "dataSourceSingleQuery.StorageConfigurationValue": {
+    "other": "Valore di Configurazione"
+  },
+  "dataSourceSingleQuery.ObjectServiceName": {
+    "other": "Object Service"
+  },
+  "dataSourceSingleQuery.Not": {
+    "other": "No"
+  },
+  "triggerFilterQuery.IsSchedule": {
+    "other": "Trigger Pianificato"
+  },
+  "triggerFilterQuery.IsApiHook": {
+    "other": "Attivato da Webhook"
+  },
+  "triggerFilterQuery.ApiHookSlug": {
+    "other": "Webhook Api Slug"
+  },
+  "triggerFilterQuery.RunParameterName": {
+    "other": "Esegui Nome Parametro"
+  },
+  "triggerFilterQuery.RunParameterValue": {
+    "other": "Esegui Valore Parametro"
+  },
+  "triggerFilterQuery.IsManual": {
+    "other": "Attivazione Manuale"
+  },
+  "triggerFilterQuery.EventNames": {
+    "other": "Eventi"
+  }
+}

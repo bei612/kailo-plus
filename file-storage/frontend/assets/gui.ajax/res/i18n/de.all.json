@@ -1,0 +1,407 @@
+{
+  "tour.create-menu": {
+    "other": "Fügen Sie Dateien oder Ordner zu den aktuellen Workspace hinzu."
+  },
+  "tour.create-menu.title": {
+    "other": "Dateien hinzufügen"
+  },
+  "tour.display-bar": {
+    "other": "Diese Symbolleiste ermöglicht es Ihnen, die Anzeige zu ändern: Wechseln Sie je nach Bedarf zwischen Miniaturansicht oder Detailansicht und sortieren Sie Dateien nach Name, Datum usw..."
+  },
+  "tour.display-bar.title": {
+    "other": "Anzeigeeinstellungen"
+  },
+  "tour.globsearch.1": {
+    "other": "Verwenden Sie dieses Suchformular, um Dateien oder Ordner in jedem Workspace und Cells zu finden. Nur die ersten 5 Ergebnisse werden angezeigt, betreten Sie einen Workspace, um mehr Ergebnisse und weitere Suchoptionen zu erhalten."
+  },
+  "tour.globsearch.2": {
+    "other": "Wenn kein Suchbegriff eingegeben ist werden die zuletzt geöffneten Dateien und Ordner angezeigt."
+  },
+  "tour.globsearch.title": {
+    "other": "Globale Suche"
+  },
+  "tour.infopanel.1": {
+    "other": "Hier finden Sie zahlreiche Informationen über die aktuelle Auswahl: Datei-Infos, Freigabestatus, Benutzerdefinierte Metadaten, etc."
+  },
+  "tour.infopanel.2": {
+    "other": "Dieser Bereich kann durch einen Klick auf das Info-Symbol in der Symbolleiste ausgeblendet werden"
+  },
+  "tour.infopanel.file": {
+    "other": "Datei"
+  },
+  "tour.infopanel.folder": {
+    "other": "Ordner"
+  },
+  "tour.infopanel.search": {
+    "other": "Suche"
+  },
+  "tour.infopanel.title": {
+    "other": "Info-Bereich"
+  },
+  "tour.locale.back": {
+    "other": "Zurück"
+  },
+  "tour.locale.close": {
+    "other": "Schließen"
+  },
+  "tour.locale.last": {
+    "other": "Beenden"
+  },
+  "tour.locale.next": {
+    "other": "Weiter"
+  },
+  "tour.locale.skip": {
+    "other": "Überspringen"
+  },
+  "tour.openworkspace": {
+    "other": "Bei der ersten Verbindung ist Ihre Historie leer. Öffnen Sie einen Workspace oder ein Cell um Dateien hinzuzufügen."
+  },
+  "tour.openworkspace.title": {
+    "other": "Einen Workspace öffnen"
+  },
+  "tour.uwidget.addressbook": {
+    "other": "Verzeichnis aller Benutzer mit Zugriff auf diese Plattform. Erstellen Sie eigene Benutzer und Teams, um Elemente zuteilen"
+  },
+  "tour.uwidget.alerts": {
+    "other": "Der Benachrichtigungs-Bereich informiert Sie, wenn ein Benutzer auf eine geteilte Datei zugreift. Benachrichtigungen können auch per E-Mail an Sie versendet werden."
+  },
+  "tour.uwidget.home": {
+    "other": "Wechseln Sie mit diesem Button auf die Willkommen-Seite."
+  },
+  "tour.uwidget.menu": {
+    "other": "Zugriff auf weitere Funktionen: Ihr Profil, Sicherheits-Funktionen, Ihre Freigaben, Abmeldung aus der Plattform."
+  },
+  "tour.uwidget.title": {
+    "other": "Benutzer"
+  },
+  "tour.welcomemodal.skip": {
+    "other": "Überspringen"
+  },
+  "tour.welcomemodal.start": {
+    "other": "Tour starten"
+  },
+  "tour.welcomemodal.subtitle": {
+    "other": "Wählen Sie ein Profilbild aus! Diese schnelle Tour wird Sie durch die Web-Oberfläche leiten."
+  },
+  "tour.welcomemodal.title": {
+    "other": "Willkommen bei APPLICATION_TITLE"
+  },
+  "tour.widget-cards": {
+    "other": "Hier können Sie Widgets hinzufügen oder entfernen. Es ist möglich, diese durch ziehen zu sortieren."
+  },
+  "tour.widget-cards.title": {
+    "other": "Widgets"
+  },
+  "tour.workspaces.1": {
+    "other": "Workspaces sind die obersten Ordner, mit denen Sie Ihre Daten organisieren können. Sie können nur durch Sie zugegriffen oder geteilt werden."
+  },
+  "tour.workspaces.2": {
+    "other": "Cells sind gemeinsame Räume, die Sie mit anderen Benutzern teilen können. Erstellen Sie Ihre eigenen Cells basierend auf einem Ordner, einem Benutzerteam oder einem relevanten Thema."
+  },
+  "tour.workspaces.title": {
+    "other": "Workspaces & Cells"
+  },
+  "tour.theme.title": {
+    "other": "Unterstützung von hellen/dunklen Themen"
+  },
+  "tour.theme.legend": {
+    "other": "Wählen Sie ein helles oder dunkles Thema, das am besten zu Ihrer Vision passt."
+  },
+  "tour.left-resize.title": {
+    "other": "Workspaces und Cells"
+  },
+  "tour.left-resize.legend": {
+    "other": "Die linke Spalte kann in der Größe verändert oder geschlossen werden, um sie an Ihren Bildschirm anzupassen."
+  },
+  "tour.right-resize.legend": {
+    "other": "Die rechte Spalte kann auch in der Größe verändert oder geschlossen werden, um sie an Ihren Bildschirm anzupassen."
+  },
+  "tour.directory.title": {
+    "other": "Benutzerverzeichnis"
+  },
+  "tour.directory.legend": {
+    "other": "Verwalten Sie Benutzer (intern und extern) und Teams an einem zentralen Ort."
+  },
+  "background.jobs.title": {
+    "other": "Hintergrundjobs"
+  },
+  "background.jobs.running": {
+    "other": "Jobs laufen"
+  },
+  "websocket.disconnected.title": {
+    "other": "Verbindungsfehler"
+  },
+  "websocket.disconnected.legend": {
+    "other": "Websocket scheint nicht verbunden zu sein. Stellen Sie sicher, dass der Server aktiv ist und die Websocket-Verbindung funktioniert."
+  },
+  "oauth.authentication.success": {
+    "other": "Authentifizierung erfolgreich"
+  },
+  "oauth.authentication.failed": {
+    "other": "Authentifizierung fehlgeschlagen"
+  },
+  "oauth.authentication.code": {
+    "other": "Sie wurden erfolgreich authentifiziert. Bitte kopieren Sie den Code und fügen Sie ihn in Ihr Kommandozeilenterminal ein"
+  },
+  "oauth.authentication.copy-code": {
+    "other": "In die Zwischenablage kopieren"
+  },
+  "oauth.authentication.code-copied": {
+    "other": "Code wird in die Zwischenablage kopiert, Sie können ihn in die Kommandozeile einfügen."
+  },
+  "oauth.authentication.code-copy-failed": {
+    "other": "Konnte nicht in die Zwischenablage kopieren."
+  },
+  "layouts.preferences": {
+    "other": "Layouts verwalten"
+  },
+  "layouts.preferences.legend": {
+    "other": "Layouts speichern und als Vorlagen zurückrufen"
+  },
+  "layouts.action.rename": {
+    "other": "Layout umbenennen"
+  },
+  "layouts.action.remove": {
+    "other": "Layout entfernen"
+  },
+  "layouts.action.remove.confirm": {
+    "other": "Wollen Sie dieses Layout wirklich löschen?"
+  },
+  "layouts.action.reset": {
+    "other": "Layout zurücksetzen"
+  },
+  "layouts.action.reset.confirm": {
+    "other": "Möchten Sie das aktuelle Layout zurücksetzen?"
+  },
+  "layouts.action.create": {
+    "other": "Layout speichern..."
+  },
+  "layouts.action.fork": {
+    "other": "Neu von Aktuell..."
+  },
+  "layouts.action.create.default": {
+    "other": "Meine Layouts"
+  },
+  "layouts.prompt.save": {
+    "other": "Layout speichern als..."
+  },
+  "layouts.prompt.save.field": {
+    "other": "Wählen Sie einen Namen zum Speichern/Zurückrufen des aktuellen Layouts"
+  },
+  "list.display-mode.list": {
+    "other": "Liste"
+  },
+  "list.display-mode.details": {
+    "other": "Details"
+  },
+  "list.display-mode.thumbs": {
+    "other": "Symbole"
+  },
+  "list.display-mode.thumbs-large": {
+    "other": "Größer"
+  },
+  "list.display-mode.thumbs-medium": {
+    "other": "Mittel"
+  },
+  "list.display-mode.thumbs-small": {
+    "other": "Kleiner"
+  },
+  "list.display-mode.masonry": {
+    "other": "Bildergalerie"
+  },
+  "list.extensions.action": {
+    "other": "Dateierweiterungen"
+  },
+  "list.extensions.show": {
+    "other": "Erweiterungen anzeigen"
+  },
+  "list.pin.bookmarks": {
+    "other": "Lesezeichen oben anheften"
+  },
+  "list.writeonly.emptystate.title": {
+    "other": "Dateien hier ablegen"
+  },
+  "list.writeonly.emptystate.legend": {
+    "other": "Dieser Ordner ist schreibgeschützt: Sie können seinen Inhalt nicht sehen und sind nur berechtigt, Dateien oder Ordner hochzuladen. Ihr eigener Inhalt wird nach dem Hochladen nicht sichtbar sein!"
+  },
+  "infopanel.empty.select.file": {
+    "other": "Wählen Sie eine Datei aus, um Informationen anzuzeigen"
+  },
+  "infopanel.card.pin": {
+    "other": "Karte anhängen (volle Höhe)"
+  },
+  "infopanel.card.unpin": {
+    "other": "Karte trennen"
+  },
+  "infopanel.card.detach": {
+    "other": "In einem separaten Panel trennen"
+  },
+  "infopanel.detached.minimize": {
+    "other": "Panel minimieren"
+  },
+  "infopanel.detached.maximize": {
+    "other": "Panel öffnen"
+  },
+  "infopanel.detached.dock": {
+    "other": "In der rechten Spalte anheften"
+  },
+  "infopanel.detailcard.preview": {
+    "other": "Vorschau"
+  },
+  "infopanel.detailcard.cell-info": {
+    "other": "Zelleninfo"
+  },
+  "infopanel.detailcard.cell-chat": {
+    "other": "Zellenchat"
+  },
+  "pinned-bookmarks.other": {
+    "other": "Alle Dateien"
+  },
+  "file.temporary-etag.flag": {
+    "other": "Unvollständig"
+  },
+  "file.temporary-etag.tooltip": {
+    "other": "Diese Datei wird gerade hochgeladen (oder der Upload ist fehlgeschlagen)."
+  },
+  "mimegroup.byextension": {
+    "other": "Nach Dateierweiterung..."
+  },
+  "mimegroup.word": {
+    "other": "Word Dokumente"
+  },
+  "mimegroup.spreadsheet": {
+    "other": "Tabellendokumente"
+  },
+  "mimegroup.presentation": {
+    "other": "Präsentationen"
+  },
+  "mimegroup.pdf": {
+    "other": "PDFs"
+  },
+  "mimegroup.image": {
+    "other": "Bilder"
+  },
+  "mimegroup.video": {
+    "other": "Videos"
+  },
+  "mimegroup.audio": {
+    "other": "Audios"
+  },
+  "fastsearch.quick-jump.title": {
+    "other": "Schnellzugriff"
+  },
+  "fastsearch.quick-jump.legend": {
+    "other": "Drücken Sie [Enter] zum Springen, fügen Sie ein nachgestelltes [/] hinzu, um innerhalb der Kinder zu suchen, und [Esc] zum Schließen"
+  },
+  "fastsearch.quick-move.title": {
+    "other": "Schnell bewegen"
+  },
+  "fastsearch.quick-move.target-error": {
+    "other": "Dieses Ziel kann nicht angefahren werden!"
+  },
+  "fastsearch.quick-move.legend": {
+    "other": "Drücken Sie [Enter], um %s ausgewählte Elemente ins Ziel zu verschieben, [Esc] zum schließen"
+  },
+  "fastsearch.quick-copy.title": {
+    "other": "Schnellkopie"
+  },
+  "fastsearch.quick-copy.target-error": {
+    "other": "Kann nicht auf dieses Ziel kopieren!"
+  },
+  "fastsearch.quick-copy.legend": {
+    "other": "Drücken Sie [Enter], um %s ausgewählte Elemente in das Ziel zu kopieren, [Esc] zum Schließen"
+  },
+  "modalsearch.opentip.cmd": {
+    "other": "Tipp: Verwenden Sie <kbd>⌘+K</kbd>, um diesen Suchdialog zu öffnen, und <kbd>Esc</kbd>, um ihn zu schließen."
+  },
+  "modalsearch.opentip.ctrl": {
+    "other": "Tipp: Verwenden Sie <kbd>Strg+K</kbd>, um diesen Suchdialog zu öffnen, und <kbd>Esc</kbd>, um ihn zu schließen."
+  },
+  "search.chip.scope.folder": {
+    "other": "Ordner"
+  },
+  "search.chip.scope.ws": {
+    "other": "Innerhalb"
+  },
+  "search.chip.scope.all": {
+    "other": "Alle Workspaces"
+  },
+  "wslist-options.title": {
+    "other": "Anzeigeoptionen"
+  },
+  "wslist-options.show-masked": {
+    "other": "Maskierte Elemente anzeigen"
+  },
+  "wslist.action.mask": {
+    "other": "Masken"
+  },
+  "wslist.action.unmask": {
+    "other": "Demaskieren"
+  },
+  "wslist-options.merge-workspaces": {
+    "other": "Workspaces und Cells zusammenlegen"
+  },
+  "wslist-options.own-cells-first": {
+    "other": "Von mir erstellte Cells zuerst"
+  },
+  "leftrail.buttons.home": {
+    "other": "Hauptseite"
+  },
+  "leftrail.buttons.directory": {
+    "other": "Verzeichnis"
+  },
+  "leftrail.buttons.all-files": {
+    "other": "Alle Dateien"
+  },
+  "leftrail.buttons.theme.light": {
+    "other": "Hellmodus"
+  },
+  "leftrail.buttons.theme.dark": {
+    "other": "Dunkelmodus"
+  },
+  "task.status.Starting": {
+    "other": "{startTime} gestartet"
+  },
+  "task.status.Pending": {
+    "other": "Startet bald..."
+  },
+  "task.status.Complete": {
+    "other": "Aufgabe erledigt in {duration}"
+  },
+  "task.status.Finished": {
+    "other": "Aufgabe erledigt in {duration}"
+  },
+  "task.status.Error": {
+    "other": "Ein Fehler ist aufgetreten!"
+  },
+  "bigppanel.filter.default-hint": {
+    "other": "Schnellsuche..."
+  },
+  "sorter.metas.more": {
+    "other": "Mehr..."
+  },
+  "drag-layer.move.file": {
+    "other": "Datei verschieben"
+  },
+  "drag-layer.move.folder": {
+    "other": "Ordner verschieben"
+  },
+  "drag-layer.move.plural": {
+    "other": "Bewege %s Elemente"
+  },
+  "drag-layer.copy.file": {
+    "other": "Datei kopieren"
+  },
+  "drag-layer.copy.folder": {
+    "other": "Ordner kopieren"
+  },
+  "drag-layer.copy.plural": {
+    "other": "%s Elemente kopieren"
+  },
+  "drag-layer.more": {
+    "other": "...und %s mehr."
+  },
+  "drag-layer.hint": {
+    "other": "[alt/option] Schlüssel zum Kopieren verwenden"
+  }
+}

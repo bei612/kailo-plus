@@ -1,0 +1,473 @@
+{
+  "30 days max": {
+    "other": "tối đa 30 ngày"
+  },
+  "Remove versions after 30 days": {
+    "other": "Xóa phiên bản cũ sau 30 ngày"
+  },
+  "Keep All": {
+    "other": "Giữ lại tất cả"
+  },
+  "Keep all versions forever": {
+    "other": "Luôn giữ lại tất cả các phiên bản"
+  },
+  "Regular Pruning": {
+    "other": "Định kỳ dọn dẹp"
+  },
+  "Prune versions regularly at various intervals": {
+    "other": "Dọn dẹp các phiên bản theo định kỳ hoặc theo các khung thời gian khác nhau"
+  },
+  "aclAction.Name": {
+    "other": "Tên"
+  },
+  "aclAction.Value": {
+    "other": "Giá trị"
+  },
+  "aclSingleQuery.Actions": {
+    "other": "Các hành động"
+  },
+  "aclSingleQuery.NodeIDs": {
+    "other": "Node Id"
+  },
+  "aclSingleQuery.Not": {
+    "other": "Không"
+  },
+  "aclSingleQuery.RoleIDs": {
+    "other": "Role Id"
+  },
+  "aclSingleQuery.WorkspaceIDs": {
+    "other": "Workspace Id"
+  },
+  "aclSingleQuery.not": {
+    "other": "phủ định"
+  },
+  "actionOutputSingleQuery.ErrorStringRegexp": {
+    "other": "Tìm kiếm trên mã lỗi (regexp dùng biểu thức chính quy)"
+  },
+  "actionOutputSingleQuery.IsSuccess": {
+    "other": "Thành công"
+  },
+  "actionOutputSingleQuery.JsonBodyHasKey": {
+    "other": "Dữ liệu json có chứa key..."
+  },
+  "actionOutputSingleQuery.JsonBodyRegexp": {
+    "other": "Tìm kiếm trên dữ liệu json (regexp)"
+  },
+  "actionOutputSingleQuery.JsonBodySizeGreaterThan": {
+    "other": "Kích thước dữ liệu json lớn hơn"
+  },
+  "actionOutputSingleQuery.JsonBodySizeSmallerThan": {
+    "other": "Kích thước dữ liệu json nhỏ hơn"
+  },
+  "actionOutputSingleQuery.Not": {
+    "other": "Phủ định"
+  },
+  "actionOutputSingleQuery.StringBodyRegexp": {
+    "other": "Tìm kiếm trên dữ liệu json (regexp)"
+  },
+  "actionOutputSingleQuery.StringBodySizeGreaterThan": {
+    "other": "Kích thước dữ liệu json lớn hơn"
+  },
+  "actionOutputSingleQuery.StringBodySizeSmallerThan": {
+    "other": "Kích thước dữ liệu json nhỏ hơn"
+  },
+  "actionOutputSingleQuery.TaskTimeGt": {
+    "other": "Thời gian thực hiện công việc lớn hơn"
+  },
+  "actionOutputSingleQuery.TaskTimeLt": {
+    "other": "Thời gian thực hiện công việc nhỏ hơn"
+  },
+  "actionOutputSingleQuery.FreeCondition": {
+    "other": "Không cần ràng buộc"
+  },
+  "dataSelectorSingleQuery.JsonPath": {
+    "other": "JSON Path"
+  },
+  "conditionCIDRCondition.CIDR": {
+    "other": "CIDR"
+  },
+  "conditionCIDRCondition.cidr": {
+    "other": "cidr"
+  },
+  "conditionStringEqualCondition.Equals": {
+    "other": "Bằng"
+  },
+  "conditionStringEqualCondition.equals": {
+    "other": "bằng"
+  },
+  "conditionStringMatchCondition.Matches": {
+    "other": "Khớp với"
+  },
+  "conditionStringMatchCondition.matches": {
+    "other": "khớp với"
+  },
+  "conditionPathGlobCondition.glob": {
+    "other": "mẫu"
+  },
+  "conditionBooleanCondition.value": {
+    "other": "Đúng"
+  },
+  "contextMetaCondition.CIDRCondition": {
+    "other": "Điều kiện CIDR"
+  },
+  "contextMetaCondition.EqualsSubjectCondition": {
+    "other": "Subject so sánh bằng"
+  },
+  "contextMetaCondition.ResourceContainsCondition": {
+    "other": "Resource chứa"
+  },
+  "contextMetaCondition.StringEqualCondition": {
+    "other": "String so sánh bằng"
+  },
+  "contextMetaCondition.StringMatchCondition": {
+    "other": "String khớp"
+  },
+  "contextMetaCondition.StringPairsEqualCondition": {
+    "other": "StringPairs equals"
+  },
+  "contextMetaCondition.StringNotMatchCondition": {
+    "other": "String does not match"
+  },
+  "contextMetaCondition.WithinPeriodCondition": {
+    "other": "Khung thời gian"
+  },
+  "contextMetaCondition.OfficeHoursCondition": {
+    "other": "Giờ làm việc"
+  },
+  "contextMetaCondition.DateAfterCondition": {
+    "other": "Sau ngày"
+  },
+  "contextMetaCondition.PathGlobCondition": {
+    "other": "Glob matcher"
+  },
+  "contextMetaCondition.BooleanCondition": {
+    "other": "Giá trị boolean"
+  },
+  "contextMetaField.ContentType": {
+    "other": "Loại Nội Dung"
+  },
+  "contextMetaField.CookiesString": {
+    "other": "Giá trị Cookies"
+  },
+  "contextMetaField.HttpProtocol": {
+    "other": "Giao thức HTTP"
+  },
+  "contextMetaField.RemoteAddress": {
+    "other": "Địa chỉ Ip của máy truy cập"
+  },
+  "contextMetaField.RequestHostname": {
+    "other": "Tên máy truy cập"
+  },
+  "contextMetaField.RequestHost": {
+    "other": "Request Host"
+  },
+  "contextMetaField.RequestPort": {
+    "other": "Request Port"
+  },
+  "contextMetaField.RequestMethod": {
+    "other": "Phương thức truy cập"
+  },
+  "contextMetaField.RequestURI": {
+    "other": "Request URI"
+  },
+  "contextMetaField.ServerTime": {
+    "other": "Server Time"
+  },
+  "contextMetaField.UserAgent": {
+    "other": "Tên thiết bị kết nối"
+  },
+  "contextMetaSingleQuery.Condition": {
+    "other": "Điều kiện"
+  },
+  "contextMetaSingleQuery.FieldName": {
+    "other": "Tên Trường"
+  },
+  "roleSingleQuery.HasAutoApply": {
+    "other": "Có tính năng AutoApply"
+  },
+  "roleSingleQuery.IsGroupRole": {
+    "other": "Là Group Role"
+  },
+  "roleSingleQuery.IsTeam": {
+    "other": "Là nhóm"
+  },
+  "roleSingleQuery.IsUserRole": {
+    "other": "Là User Role"
+  },
+  "roleSingleQuery.Label": {
+    "other": "Nhãn"
+  },
+  "roleSingleQuery.Not": {
+    "other": "Phủ định"
+  },
+  "roleSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "roleSingleQuery.not": {
+    "other": "phủ định"
+  },
+  "treeQuery.Content": {
+    "other": "Nội Dung"
+  },
+  "treeQuery.DurationDate": {
+    "other": "Ngày sửa (dùng để so sánh)"
+  },
+  "treeQuery.Extension": {
+    "other": "Phần mở rộng"
+  },
+  "treeQuery.FileName": {
+    "other": "Tên tệp"
+  },
+  "treeQuery.FileNameOrContent": {
+    "other": "Tên tệp hoặc nội dung tệp"
+  },
+  "treeQuery.FreeString": {
+    "other": "Tìm kiếm chuỗi theo cách của Bleve"
+  },
+  "treeQuery.GeoQuery": {
+    "other": "Truy vấn vị trí địa lý"
+  },
+  "treeQuery.MaxDate": {
+    "other": "Đã được sửa trước ngày"
+  },
+  "treeQuery.MaxSize": {
+    "other": "Kích thước lớn nhất là"
+  },
+  "treeQuery.MinDate": {
+    "other": "Đã được sửa kể từ"
+  },
+  "treeQuery.MinSize": {
+    "other": "Kích thước lớn hơn"
+  },
+  "treeQuery.Not": {
+    "other": "Phủ định"
+  },
+  "treeQuery.PathDepth": {
+    "other": "Cấp thư mục"
+  },
+  "treeQuery.PathPrefix": {
+    "other": "Đường dẫn chứa tiền tố"
+  },
+  "treeQuery.Paths": {
+    "other": "Đường dẫn"
+  },
+  "treeQuery.Type": {
+    "other": "Kiểu"
+  },
+  "treeQuery.Type.COLLECTION": {
+    "other": "Thư mục"
+  },
+  "treeQuery.Type.LEAF": {
+    "other": "Tệp tin"
+  },
+  "treeQuery.Type.UNKNOWN": {
+    "other": "Bất kỳ"
+  },
+  "treeQuery.UUIDs": {
+    "other": "UUID của nodes"
+  },
+  "treeQuery.ETag": {
+    "other": "ETag"
+  },
+  "userSingleQuery.AttributeAnyValue": {
+    "other": "Có giá trị bất kỳ"
+  },
+  "userSingleQuery.AttributeName": {
+    "other": "Tên Thuộc Tính"
+  },
+  "userSingleQuery.AttributeValue": {
+    "other": "Giá trị thuộc tính"
+  },
+  "userSingleQuery.ConnectedSince": {
+    "other": "Truy cập vào lúc"
+  },
+  "userSingleQuery.FullPath": {
+    "other": "Đường dẫn đầy đủ"
+  },
+  "userSingleQuery.GroupPath": {
+    "other": "Đường dẫn nhóm"
+  },
+  "userSingleQuery.HasProfile": {
+    "other": "Có kiểu hồ sơ"
+  },
+  "userSingleQuery.HasRole": {
+    "other": "Có role"
+  },
+  "userSingleQuery.Login": {
+    "other": "Đăng nhập"
+  },
+  "userSingleQuery.NodeType": {
+    "other": "Kiểu đối tượng"
+  },
+  "userSingleQuery.NodeType.GROUP": {
+    "other": "Nhóm"
+  },
+  "userSingleQuery.NodeType.UNKNOWN": {
+    "other": "Bất kỳ"
+  },
+  "userSingleQuery.NodeType.USER": {
+    "other": "User"
+  },
+  "userSingleQuery.Not": {
+    "other": "Không"
+  },
+  "userSingleQuery.Password": {
+    "other": "Mật khẩu"
+  },
+  "userSingleQuery.Recursive": {
+    "other": "Đệ quy"
+  },
+  "userSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "userSingleQuery.not": {
+    "other": "phủ định"
+  },
+  "workspaceSingleQuery.AttributeName": {
+    "other": "Tên thuộc tính"
+  },
+  "workspaceSingleQuery.AttributeValue": {
+    "other": "Giá trị thuộc tính"
+  },
+  "workspaceSingleQuery.Description": {
+    "other": "Mô tả"
+  },
+  "workspaceSingleQuery.HasAttribute": {
+    "other": "Chứa thuộc tính"
+  },
+  "workspaceSingleQuery.Label": {
+    "other": "Nhãn"
+  },
+  "workspaceSingleQuery.LastUpdated": {
+    "other": "Lần cập nhật trước"
+  },
+  "workspaceSingleQuery.Not": {
+    "other": "Không"
+  },
+  "workspaceSingleQuery.Scope": {
+    "other": "Phạm vi"
+  },
+  "workspaceSingleQuery.Slug": {
+    "other": "Slug"
+  },
+  "workspaceSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "workspaceSingleQuery.description": {
+    "other": "Mô tả"
+  },
+  "workspaceSingleQuery.label": {
+    "other": "Nhãn"
+  },
+  "workspaceSingleQuery.not": {
+    "other": "phủ định"
+  },
+  "workspaceSingleQuery.scope": {
+    "other": "Workspace loại"
+  },
+  "workspaceSingleQuery.scope.ADMIN": {
+    "other": "Workspace"
+  },
+  "workspaceSingleQuery.scope.ANY": {
+    "other": "Bất kỳ"
+  },
+  "workspaceSingleQuery.scope.LINK": {
+    "other": "Public Links"
+  },
+  "workspaceSingleQuery.scope.ROOM": {
+    "other": "Cells"
+  },
+  "workspaceSingleQuery.slug": {
+    "other": "Slug"
+  },
+  "workspaceSingleQuery.uuid": {
+    "other": "Uuid"
+  },
+  "dataSourceSingleQuery.Name": {
+    "other": "Tên"
+  },
+  "dataSourceSingleQuery.IsDisabled": {
+    "other": "Bị tắt"
+  },
+  "dataSourceSingleQuery.StorageType": {
+    "other": "Kiểu storage"
+  },
+  "dataSourceSingleQuery.StorageType.REMOTE": {
+    "other": "Từ xa"
+  },
+  "dataSourceSingleQuery.StorageType.ANY": {
+    "other": "Bất kỳ"
+  },
+  "dataSourceSingleQuery.StorageType.LOCALFS": {
+    "other": "Cục bộ"
+  },
+  "dataSourceSingleQuery.PeerAddress": {
+    "other": "Peer Address"
+  },
+  "dataSourceSingleQuery.FlatStorage": {
+    "other": "Bộ lưu trữ theo định dạng phẳng"
+  },
+  "dataSourceSingleQuery.SkipSyncOnRestart": {
+    "other": "Không thực hiện việc đồng bộ lúc khởi động"
+  },
+  "dataSourceSingleQuery.IsVersioned": {
+    "other": "Đã có phiên bản trước"
+  },
+  "dataSourceSingleQuery.IsEncrypted": {
+    "other": "Được mã hoá"
+  },
+  "dataSourceSingleQuery.EncryptionMode": {
+    "other": "Phương thức mã hóa"
+  },
+  "dataSourceSingleQuery.EncryptionMode.USER": {
+    "other": "User-key"
+  },
+  "dataSourceSingleQuery.EncryptionMode.USER_PWD": {
+    "other": "User-pwd"
+  },
+  "dataSourceSingleQuery.EncryptionMode.CLEAR": {
+    "other": "Xóa"
+  },
+  "dataSourceSingleQuery.EncryptionMode.MASTER": {
+    "other": "Khóa chính"
+  },
+  "dataSourceSingleQuery.EncryptionKey": {
+    "other": "Khóa dùng để mã hóa"
+  },
+  "dataSourceSingleQuery.VersioningPolicyName": {
+    "other": "Chính sách quản lý phiên bản"
+  },
+  "dataSourceSingleQuery.StorageConfigurationName": {
+    "other": "Khóa để mã hóa cấu hình"
+  },
+  "dataSourceSingleQuery.StorageConfigurationValue": {
+    "other": "Cấu hình kho lưu trữ"
+  },
+  "dataSourceSingleQuery.ObjectServiceName": {
+    "other": "Object Service"
+  },
+  "dataSourceSingleQuery.Not": {
+    "other": "Phủ định"
+  },
+  "triggerFilterQuery.IsSchedule": {
+    "other": "Bộ kích hoạt"
+  },
+  "triggerFilterQuery.IsApiHook": {
+    "other": "Triggered by Webhook"
+  },
+  "triggerFilterQuery.ApiHookSlug": {
+    "other": "Webhook Api Slug"
+  },
+  "triggerFilterQuery.RunParameterName": {
+    "other": "Run Parameter Name"
+  },
+  "triggerFilterQuery.RunParameterValue": {
+    "other": "Run Parameter Value"
+  },
+  "triggerFilterQuery.IsManual": {
+    "other": "Hướng dẫn kích hoạt"
+  },
+  "triggerFilterQuery.EventNames": {
+    "other": "Events"
+  }
+}

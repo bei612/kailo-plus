@@ -94,12 +94,102 @@ impl Policy {
 
     async fn request(&self, request: &wire::McpRequest) -> Result<wire::McpRequestResult, Refusal> {
         let authorization = session_header(&request.headers)?;
+        let validation: Vec<_> = request
+            .headers
+            .iter()
+            .filter(|header| {
+                header
+                    .key
+                    .eq_ignore_ascii_case(crate::application_binding::peer::HEADER)
+            })
+            .collect();
+        if !validation.is_empty() {
+            let [header] = validation.as_slice() else {
+                return Err(denied());
+            };
+            let action =
+                Uuid::parse_str(std::str::from_utf8(&header.value).map_err(|_| invalid())?)
+                    .map_err(|_| invalid())?;
+            let probe = optional_header(
+                &request.headers,
+                crate::application_binding::peer::PROBE_HEADER,
+            )?;
+            let run = optional_header(
+                &request.headers,
+                crate::application_binding::peer::RUN_HEADER,
+            )?;
+            if let Some(index) = probe {
+                crate::component_release::peer::authorize(
+                    &self.state,
+                    authorization,
+                    crate::component_release::peer::Probe {
+                        action,
+                        index: index.parse().map_err(|_| invalid())?,
+                        run: run.ok_or_else(invalid)?,
+                    },
+                    &request.service_names,
+                    &request.method,
+                    request.mcp_request.as_deref(),
+                    false,
+                )
+                .await?;
+            } else {
+                if run.is_some() {
+                    return Err(invalid());
+                }
+                crate::application_binding::peer::authorize(
+                    &self.state,
+                    authorization,
+                    action,
+                    &request.service_names,
+                    &request.method,
+                )
+                .await?;
+            }
+            if request.method == "tools/list"
+                && request
+                    .mcp_request
+                    .as_deref()
+                    .map(|bytes| {
+                        serde_json::from_slice::<Value>(bytes).map(|value| value != json!({}))
+                    })
+                    .transpose()
+                    .map_err(|_| invalid())?
+                    .unwrap_or(false)
+            {
+                return Err(invalid());
+            }
+            return Ok(wire::McpRequestResult {
+                result: Some(wire::mcp_request_result::Result::Pass(wire::Pass {})),
+                header_mutation: Some(wire::HeaderMutation {
+                    set: Vec::new(),
+                    remove: vec![
+                        "authorization".into(),
+                        "idempotency-key".into(),
+                        crate::application_binding::peer::HEADER.into(),
+                        crate::application_binding::peer::PROBE_HEADER.into(),
+                        crate::application_binding::peer::RUN_HEADER.into(),
+                        agent_tool_mcp::ACTION_HEADER.into(),
+                        agent_tool_mcp::OPERATION_HEADER.into(),
+                        agent_tool_mcp::INVOCATION_HEADER.into(),
+                    ],
+                }),
+                metadata: Some(
+                    serde_json::from_value(
+                        json!({"managementAction":action,"managementBearer":authorization,
+                    "probeIndex":probe.unwrap_or(""),"probeRun":run.unwrap_or("")}),
+                    )
+                    .map_err(|_| invalid())?,
+                ),
+            });
+        }
         let calling = request.method == "tools/call";
         let (invocation, application) = self
             .invocation(authorization, &request.service_names, calling)
             .await?;
         let mut metadata = json!({"invocationId":invocation,"session":authorization});
         let mut normalized_request = None;
+        let mut peer_call = false;
         let mut set = vec![wire::McpHeader {
             key: agent_tool_mcp::INVOCATION_HEADER.into(),
             value: invocation.to_string().into_bytes(),
@@ -141,30 +231,41 @@ impl Policy {
                         &arguments,
                     )
                     .await?;
-                    let (external, key, token) = crate::application_tool::dispatch(
+                    let dispatch = crate::application_tool::dispatch(
                         &self.state,
                         invocation,
                         &child,
                         &arguments,
                     )
                     .await?;
-                    metadata["externalExecutionId"] = json!(external);
                     normalized_request = Some(
                         serde_json::to_vec(
                             &json!({"name":call.name,"arguments":arguments["input"]}),
                         )
                         .map_err(|_| invalid())?,
                     );
-                    set.extend([
-                        wire::McpHeader {
-                            key: "authorization".into(),
-                            value: format!("Bearer {token}").into_bytes(),
-                        },
-                        wire::McpHeader {
-                            key: "idempotency-key".into(),
-                            value: key.to_string().into_bytes(),
-                        },
-                    ]);
+                    match dispatch {
+                        crate::application_tool::Dispatch::Adapter {
+                            external,
+                            key,
+                            token,
+                        } => {
+                            metadata["externalExecutionId"] = json!(external);
+                            set.extend([
+                                wire::McpHeader {
+                                    key: "authorization".into(),
+                                    value: format!("Bearer {token}").into_bytes(),
+                                },
+                                wire::McpHeader {
+                                    key: "idempotency-key".into(),
+                                    value: key.to_string().into_bytes(),
+                                },
+                            ]);
+                        }
+                        crate::application_tool::Dispatch::Peer => {
+                            peer_call = true;
+                        }
+                    }
                     child
                 } else {
                     crate::agent_memory::tool_arguments(&call.name, &arguments)?;
@@ -193,10 +294,18 @@ impl Policy {
             _ => return Err(invalid()),
         }
         let mut headers = reference_headers(set, calling);
-        if application.is_some() && !calling {
+        if application.is_some() && (!calling || peer_call) {
             headers
                 .remove
                 .extend(["authorization".into(), "idempotency-key".into()]);
+        }
+        if peer_call {
+            headers.set.clear();
+            headers.remove.extend([
+                agent_tool_mcp::ACTION_HEADER.into(),
+                agent_tool_mcp::OPERATION_HEADER.into(),
+                agent_tool_mcp::INVOCATION_HEADER.into(),
+            ]);
         }
         Ok(wire::McpRequestResult {
             result: Some(match normalized_request {
@@ -221,6 +330,69 @@ impl Policy {
             .transpose()
             .map_err(|_| invalid())?
             .ok_or_else(invalid)?;
+        if metadata["managementAction"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty())
+        {
+            let bearer = metadata["managementBearer"].as_str().ok_or_else(denied)?;
+            if let Some(index) = metadata["probeIndex"]
+                .as_str()
+                .filter(|index| !index.is_empty())
+            {
+                crate::component_release::peer::authorize(
+                    &self.state,
+                    bearer,
+                    crate::component_release::peer::Probe {
+                        action: uuid(&metadata, "managementAction")?,
+                        index: index.parse().map_err(|_| invalid())?,
+                        run: metadata["probeRun"].as_str().ok_or_else(invalid)?,
+                    },
+                    &response.service_names,
+                    &response.method,
+                    None,
+                    true,
+                )
+                .await?;
+            } else {
+                crate::application_binding::peer::authorize(
+                    &self.state,
+                    bearer,
+                    uuid(&metadata, "managementAction")?,
+                    &response.service_names,
+                    &response.method,
+                )
+                .await?;
+            }
+            if response.method == "tools/list" {
+                let _: ListToolsResult =
+                    serde_json::from_slice(&response.mcp_response).map_err(|_| invalid())?;
+            }
+            return Ok(wire::McpResponseResult {
+                result: Some(wire::mcp_response_result::Result::Pass(wire::Pass {})),
+            });
+        }
+        if response.method == "tools/call" {
+            let result: CallToolResult =
+                serde_json::from_slice(&response.mcp_response).map_err(|_| invalid())?;
+            // Only APPLICATION callbacks carry a route-specific native target.
+            // Original Core Memory has no APPLICATION child and keeps its path.
+            if response
+                .service_names
+                .iter()
+                .any(|name| name.starts_with("application-"))
+            {
+                crate::application_tool::record_peer_result(
+                    &self.state,
+                    uuid(&metadata, "invocationId")?,
+                    uuid(&metadata, "childAE")?,
+                    uuid(&metadata, "operationId")?,
+                    metadata["toolName"].as_str().ok_or_else(invalid)?,
+                    &response.service_names,
+                    &result,
+                )
+                .await?;
+            }
+        }
         let authorization = metadata["session"].as_str().ok_or_else(denied)?;
         let (invocation, application) = self
             .invocation(
@@ -289,32 +461,26 @@ impl Policy {
                     serde_json::from_slice(&response.mcp_response).map_err(|_| invalid())?;
                 let result: CallToolResult =
                     serde_json::from_value(raw.clone()).map_err(|_| invalid())?;
-                if result.is_error == Some(true) {
-                    return Err(invalid());
-                }
-                let value = result.structured_content.as_ref().ok_or_else(invalid)?;
-                let normalized = CallToolResult::structured(value.clone());
-                // Strip no unverified text/images/links: the only content is
-                // the SDK's exact JSON representation of the same typed value.
-                if raw.get("content")
-                    != serde_json::to_value(&normalized)
-                        .map_err(|_| invalid())?
-                        .get("content")
-                {
-                    return Err(invalid());
-                }
-                if application.is_some() {
+                let disclosed = if application.is_some() {
                     crate::application_tool::disclose(
                         &self.state,
                         invocation,
                         child,
-                        uuid(&metadata, "externalExecutionId")?,
+                        metadata
+                            .get("externalExecutionId")
+                            .map(|_| uuid(&metadata, "externalExecutionId"))
+                            .transpose()?,
                         operation,
                         name,
-                        value,
+                        &result,
                     )
-                    .await?;
+                    .await?
                 } else {
+                    if result.is_error == Some(true) {
+                        return Err(invalid());
+                    }
+                    let value = result.structured_content.as_ref().ok_or_else(invalid)?;
+                    normalize_disclosed_result(&raw, value.clone(), false)?;
                     crate::agent_memory::disclose_tool_result(
                         &self.state,
                         invocation,
@@ -324,12 +490,18 @@ impl Policy {
                         value,
                     )
                     .await?;
-                }
+                    value.clone()
+                };
                 self.sessions
                     .verify(authorization.strip_prefix("Bearer ").ok_or_else(denied)?)
                     .map_err(|_| denied())?;
                 Ok(mutated(
-                    serde_json::to_vec(&normalized).map_err(|_| invalid())?,
+                    serde_json::to_vec(&normalize_disclosed_result(
+                        &raw,
+                        disclosed,
+                        application.is_some(),
+                    )?)
+                    .map_err(|_| invalid())?,
                 ))
             }
             "initialize" | "ping" => Ok(wire::McpResponseResult {
@@ -338,6 +510,38 @@ impl Policy {
             _ => Err(invalid()),
         }
     }
+}
+
+fn normalize_disclosed_result(
+    raw: &Value,
+    disclosed: Value,
+    application: bool,
+) -> Result<CallToolResult, Refusal> {
+    let normalized = if application {
+        match disclosed {
+            // Legacy native tools return a string as a TextContent block, not
+            // structuredContent (whose protocol shape is an object). Preserve
+            // only that already schema-checked text; never forward raw blocks.
+            Value::String(text) => {
+                CallToolResult::success(vec![rmcp::model::ContentBlock::text(text)])
+            }
+            value => CallToolResult::structured(value),
+        }
+    } else {
+        CallToolResult::structured(disclosed)
+    };
+    // Core's own Memory endpoint keeps its exact SDK encoding invariant.
+    // APPLICATION content is reconstructed solely from the validated business
+    // value: upstream text/images/links and execution metadata are not exposed.
+    if !application
+        && raw.get("content")
+            != serde_json::to_value(&normalized)
+                .map_err(|_| invalid())?
+                .get("content")
+    {
+        return Err(invalid());
+    }
+    Ok(normalized)
 }
 
 pub(crate) fn target_name(installation: Uuid, generation: i64) -> String {
@@ -367,6 +571,23 @@ fn session_header(headers: &[wire::McpHeader]) -> Result<&str, Refusal> {
         return Err(denied());
     }
     std::str::from_utf8(&value.value).map_err(|_| denied())
+}
+
+fn optional_header<'a>(
+    headers: &'a [wire::McpHeader],
+    name: &str,
+) -> Result<Option<&'a str>, Refusal> {
+    let mut values = headers
+        .iter()
+        .filter(|header| header.key.eq_ignore_ascii_case(name));
+    let value = values
+        .next()
+        .map(|header| std::str::from_utf8(&header.value).map_err(|_| invalid()))
+        .transpose()?;
+    if values.next().is_some() {
+        return Err(invalid());
+    }
+    Ok(value)
 }
 
 /// The pinned Codex client emits trace metadata separately from model arguments.
@@ -516,6 +737,28 @@ impl wire::ext_mcp_server::ExtMcp for Policy {
 #[cfg(test)]
 mod tool_pep_tests {
     use super::*;
+
+    #[test]
+    fn response_reconstruction_uses_disclosed_value_not_upstream_envelope() {
+        let business = json!({"answer":"allowed"});
+        let raw = json!({"structuredContent":{
+            "execution":{"nativeId":"private-native-id"},
+            "resultJson":"{\"answer\":\"allowed\"}"},
+            "content":[{"type":"text","text":"unvalidated text"}],
+            "_meta":{"private":"not-for-disclosure"}});
+        let result = normalize_disclosed_result(&raw, business.clone(), true).unwrap();
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            serde_json::to_value(CallToolResult::structured(business.clone())).unwrap()
+        );
+        let memory = serde_json::to_value(CallToolResult::structured(business.clone())).unwrap();
+        assert!(normalize_disclosed_result(&memory, business.clone(), false).is_ok());
+        assert!(normalize_disclosed_result(&raw, business, false).is_err());
+        let native = normalize_disclosed_result(&raw, json!("native result"), true).unwrap();
+        assert!(native.structured_content.is_none());
+        assert_eq!(native.content.len(), 1);
+        assert_eq!(native.content[0].as_text().unwrap().text, "native result");
+    }
 
     #[test]
     fn pinned_codex_metadata_is_validated_then_removed_not_used_as_authority() {

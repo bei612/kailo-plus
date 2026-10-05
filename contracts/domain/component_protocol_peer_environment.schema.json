@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"domain/component_protocol_peer_environment.schema.json",
+  "title":"ComponentProtocolPeerEnvironment",
+  "description":"原 COMPONENT_CONFORMANCE_ENVIRONMENT_FILE 的 PROTOCOL_PEER 分支，仅隔离套件运行事实；readOnlyTools 固定隔离实例实际上可安全执行的只读探针，不授予生产业务权限。",
+  "type":"object","additionalProperties":false,
+  "required":["artifactDigest","mcpUrl","timeoutSeconds","maxResponseBytes","maxSteps","readOnlyTools","initializeResultJson","listResultJson"],
+  "properties":{
+    "artifactDigest":{"type":"string"},"mcpUrl":{"type":"string"},
+    "initializeResultJson":{"type":"string"},"listResultJson":{"type":"string"},
+    "timeoutSeconds":{"type":"integer","minimum":1},"maxResponseBytes":{"type":"integer","minimum":1},
+    "maxSteps":{"type":"integer","minimum":1},
+    "readOnlyTools":{"type":"array","items":{"type":"string"},"uniqueItems":true}
+  }
+}

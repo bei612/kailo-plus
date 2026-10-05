@@ -1,0 +1,8 @@
+{
+  "Authentication FrontEnd": {
+    "other": "Authentication FrontEnd"
+  },
+  "Actual way to authenticate users (via credentials, certificates, http, etc)": {
+    "other": "Cách để xác thực người dùng (thông qua thông tin đăng nhập, chứng chỉ, http, v. v.)"
+  }
+}

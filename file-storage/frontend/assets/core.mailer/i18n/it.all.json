@@ -1,0 +1,35 @@
+{
+  "1": {
+    "other": "Email inviata correttamente a %s utenti"
+  },
+  "2": {
+    "other": "Nessun indirizzo trovato per l'invio dell'email!"
+  },
+  "3": {
+    "other": "Nessun mailer configurato per l'invio degli email. Contatta l'Amministratore"
+  },
+  "4": {
+    "other": "Da"
+  },
+  "5": {
+    "other": "A"
+  },
+  "6": {
+    "other": "Oggetto"
+  },
+  "7": {
+    "other": "Messaggio"
+  },
+  "8": {
+    "other": "Selezionare un utente o digitare un indirizzo"
+  },
+  "9": {
+    "other": "Riassunto delle Notifiche"
+  },
+  "sender.error": {
+    "other": "Impossibile inviare l'email correttamente!"
+  },
+  "entries.ignored": {
+    "other": "Attenzione, alcune voci sono state ignorate, solo gli utenti che hanno impostato correttamente il loro indirizzo email riceveranno gli inviti. Neanche i team e i gruppi vengono elaborati."
+  }
+}

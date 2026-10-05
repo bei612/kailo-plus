@@ -1,0 +1,473 @@
+{
+  "30 days max": {
+    "other": "최대 30일"
+  },
+  "Remove versions after 30 days": {
+    "other": "30일 후 버전 제거"
+  },
+  "Keep All": {
+    "other": "모두 유지"
+  },
+  "Keep all versions forever": {
+    "other": "모든 버전 영구 보존"
+  },
+  "Regular Pruning": {
+    "other": "규칙적인 잘라내기"
+  },
+  "Prune versions regularly at various intervals": {
+    "other": "지정한 주기마다 주기적으로 버전 제거"
+  },
+  "aclAction.Name": {
+    "other": "이름"
+  },
+  "aclAction.Value": {
+    "other": "Value"
+  },
+  "aclSingleQuery.Actions": {
+    "other": "Actions"
+  },
+  "aclSingleQuery.NodeIDs": {
+    "other": "노드 식별자"
+  },
+  "aclSingleQuery.Not": {
+    "other": "Not"
+  },
+  "aclSingleQuery.RoleIDs": {
+    "other": "역할 식별자"
+  },
+  "aclSingleQuery.WorkspaceIDs": {
+    "other": "작업 영역 식별자"
+  },
+  "aclSingleQuery.not": {
+    "other": "not"
+  },
+  "actionOutputSingleQuery.ErrorStringRegexp": {
+    "other": "오류 문자열 검색(regexp)"
+  },
+  "actionOutputSingleQuery.IsSuccess": {
+    "other": "성공"
+  },
+  "actionOutputSingleQuery.JsonBodyHasKey": {
+    "other": "Json body has key..."
+  },
+  "actionOutputSingleQuery.JsonBodyRegexp": {
+    "other": "Json 본문 검색(regexp)"
+  },
+  "actionOutputSingleQuery.JsonBodySizeGreaterThan": {
+    "other": "Json body의 크기가 다음 크기보다 큽니다."
+  },
+  "actionOutputSingleQuery.JsonBodySizeSmallerThan": {
+    "other": "Json body의 크기가 다음 크기보다 작습니다."
+  },
+  "actionOutputSingleQuery.Not": {
+    "other": "Not"
+  },
+  "actionOutputSingleQuery.StringBodyRegexp": {
+    "other": "문자열 본문 검색(regexp)"
+  },
+  "actionOutputSingleQuery.StringBodySizeGreaterThan": {
+    "other": "문자열 본문의 크기가 다음 값보다 큽니다."
+  },
+  "actionOutputSingleQuery.StringBodySizeSmallerThan": {
+    "other": "문자열 본문의 크기가 다음 크기보다 작습니다."
+  },
+  "actionOutputSingleQuery.TaskTimeGt": {
+    "other": "작업 시간이 다음 시간보다 큼"
+  },
+  "actionOutputSingleQuery.TaskTimeLt": {
+    "other": "작업 시간이 다음보다 작음"
+  },
+  "actionOutputSingleQuery.FreeCondition": {
+    "other": "제약없는 상태"
+  },
+  "dataSelectorSingleQuery.JsonPath": {
+    "other": "JSON 경로"
+  },
+  "conditionCIDRCondition.CIDR": {
+    "other": "CIDR"
+  },
+  "conditionCIDRCondition.cidr": {
+    "other": "cidr"
+  },
+  "conditionStringEqualCondition.Equals": {
+    "other": "다음과 일치"
+  },
+  "conditionStringEqualCondition.equals": {
+    "other": "은(는) 다음과 일치"
+  },
+  "conditionStringMatchCondition.Matches": {
+    "other": "포함"
+  },
+  "conditionStringMatchCondition.matches": {
+    "other": "포함"
+  },
+  "conditionPathGlobCondition.glob": {
+    "other": "패턴"
+  },
+  "conditionBooleanCondition.value": {
+    "other": "참"
+  },
+  "contextMetaCondition.CIDRCondition": {
+    "other": "CIDR상태"
+  },
+  "contextMetaCondition.EqualsSubjectCondition": {
+    "other": "주제가 일치함"
+  },
+  "contextMetaCondition.ResourceContainsCondition": {
+    "other": "포함하는 자원"
+  },
+  "contextMetaCondition.StringEqualCondition": {
+    "other": "일치하는 문자열"
+  },
+  "contextMetaCondition.StringMatchCondition": {
+    "other": "포함하는 문자열"
+  },
+  "contextMetaCondition.StringPairsEqualCondition": {
+    "other": "일치하는 문자열 쌍"
+  },
+  "contextMetaCondition.StringNotMatchCondition": {
+    "other": "포함하지 않는 문자열"
+  },
+  "contextMetaCondition.WithinPeriodCondition": {
+    "other": "날짜 범위"
+  },
+  "contextMetaCondition.OfficeHoursCondition": {
+    "other": "업무 시간"
+  },
+  "contextMetaCondition.DateAfterCondition": {
+    "other": "이후"
+  },
+  "contextMetaCondition.PathGlobCondition": {
+    "other": "Glob 일치자"
+  },
+  "contextMetaCondition.BooleanCondition": {
+    "other": "참거짓 값"
+  },
+  "contextMetaField.ContentType": {
+    "other": "컨텐츠 유형"
+  },
+  "contextMetaField.CookiesString": {
+    "other": "쿠키 문자열"
+  },
+  "contextMetaField.HttpProtocol": {
+    "other": "HTTP 프로토콜"
+  },
+  "contextMetaField.RemoteAddress": {
+    "other": "원격 주소"
+  },
+  "contextMetaField.RequestHostname": {
+    "other": "호스트이름 요청"
+  },
+  "contextMetaField.RequestHost": {
+    "other": "요청 호스트"
+  },
+  "contextMetaField.RequestPort": {
+    "other": "요청 포트"
+  },
+  "contextMetaField.RequestMethod": {
+    "other": "요청 방법"
+  },
+  "contextMetaField.RequestURI": {
+    "other": "요청 URI"
+  },
+  "contextMetaField.ServerTime": {
+    "other": "서버 시간"
+  },
+  "contextMetaField.UserAgent": {
+    "other": "User Agent"
+  },
+  "contextMetaSingleQuery.Condition": {
+    "other": "상태"
+  },
+  "contextMetaSingleQuery.FieldName": {
+    "other": "항목 이름"
+  },
+  "roleSingleQuery.HasAutoApply": {
+    "other": "자동 적용 여부"
+  },
+  "roleSingleQuery.IsGroupRole": {
+    "other": "그룹 역할 여부"
+  },
+  "roleSingleQuery.IsTeam": {
+    "other": "팀 여부"
+  },
+  "roleSingleQuery.IsUserRole": {
+    "other": "사용자 역할 여부"
+  },
+  "roleSingleQuery.Label": {
+    "other": "라벨"
+  },
+  "roleSingleQuery.Not": {
+    "other": "아님"
+  },
+  "roleSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "roleSingleQuery.not": {
+    "other": "가 아님"
+  },
+  "treeQuery.Content": {
+    "other": "컨텐츠"
+  },
+  "treeQuery.DurationDate": {
+    "other": "수정 일 (비교 사용)"
+  },
+  "treeQuery.Extension": {
+    "other": "파일 확장자"
+  },
+  "treeQuery.FileName": {
+    "other": "파일 이름"
+  },
+  "treeQuery.FileNameOrContent": {
+    "other": "파일 이름이나 내용"
+  },
+  "treeQuery.FreeString": {
+    "other": "Bleve 방식 문자 검색"
+  },
+  "treeQuery.GeoQuery": {
+    "other": "위치 확인"
+  },
+  "treeQuery.MaxDate": {
+    "other": "이전에 수정됨"
+  },
+  "treeQuery.MaxSize": {
+    "other": "최대 크기"
+  },
+  "treeQuery.MinDate": {
+    "other": "이후 수정됨"
+  },
+  "treeQuery.MinSize": {
+    "other": "보다 큼"
+  },
+  "treeQuery.Not": {
+    "other": "아님"
+  },
+  "treeQuery.PathDepth": {
+    "other": "경로 단계"
+  },
+  "treeQuery.PathPrefix": {
+    "other": "경로 접두사"
+  },
+  "treeQuery.Paths": {
+    "other": "절대 경로"
+  },
+  "treeQuery.Type": {
+    "other": "형식"
+  },
+  "treeQuery.Type.COLLECTION": {
+    "other": "폴더"
+  },
+  "treeQuery.Type.LEAF": {
+    "other": "파일"
+  },
+  "treeQuery.Type.UNKNOWN": {
+    "other": "모두"
+  },
+  "treeQuery.UUIDs": {
+    "other": "노드 UUID"
+  },
+  "treeQuery.ETag": {
+    "other": "ETag"
+  },
+  "userSingleQuery.AttributeAnyValue": {
+    "other": "어떤 값이든 가지고 있습니다."
+  },
+  "userSingleQuery.AttributeName": {
+    "other": "속성명"
+  },
+  "userSingleQuery.AttributeValue": {
+    "other": "속성값"
+  },
+  "userSingleQuery.ConnectedSince": {
+    "other": "이후 연결됨"
+  },
+  "userSingleQuery.FullPath": {
+    "other": "전체 경로"
+  },
+  "userSingleQuery.GroupPath": {
+    "other": "그룹 경로"
+  },
+  "userSingleQuery.HasProfile": {
+    "other": "프로파일이 있는"
+  },
+  "userSingleQuery.HasRole": {
+    "other": "역할이 있는"
+  },
+  "userSingleQuery.Login": {
+    "other": "로그인"
+  },
+  "userSingleQuery.NodeType": {
+    "other": "객체 유형"
+  },
+  "userSingleQuery.NodeType.GROUP": {
+    "other": "그룹"
+  },
+  "userSingleQuery.NodeType.UNKNOWN": {
+    "other": "모든"
+  },
+  "userSingleQuery.NodeType.USER": {
+    "other": "사용자"
+  },
+  "userSingleQuery.Not": {
+    "other": "아님"
+  },
+  "userSingleQuery.Password": {
+    "other": "비밀번호"
+  },
+  "userSingleQuery.Recursive": {
+    "other": "재귀"
+  },
+  "userSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "userSingleQuery.not": {
+    "other": "아님"
+  },
+  "workspaceSingleQuery.AttributeName": {
+    "other": "속성명"
+  },
+  "workspaceSingleQuery.AttributeValue": {
+    "other": "속성값"
+  },
+  "workspaceSingleQuery.Description": {
+    "other": "설명"
+  },
+  "workspaceSingleQuery.HasAttribute": {
+    "other": "속성이 있는"
+  },
+  "workspaceSingleQuery.Label": {
+    "other": "라벨"
+  },
+  "workspaceSingleQuery.LastUpdated": {
+    "other": "마지막 업데이트"
+  },
+  "workspaceSingleQuery.Not": {
+    "other": "아님"
+  },
+  "workspaceSingleQuery.Scope": {
+    "other": "범위"
+  },
+  "workspaceSingleQuery.Slug": {
+    "other": "슬러그"
+  },
+  "workspaceSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "workspaceSingleQuery.description": {
+    "other": "설명"
+  },
+  "workspaceSingleQuery.label": {
+    "other": "라벨"
+  },
+  "workspaceSingleQuery.not": {
+    "other": "아님"
+  },
+  "workspaceSingleQuery.scope": {
+    "other": "작업 공간 유형:"
+  },
+  "workspaceSingleQuery.scope.ADMIN": {
+    "other": "작업 공간"
+  },
+  "workspaceSingleQuery.scope.ANY": {
+    "other": "모든"
+  },
+  "workspaceSingleQuery.scope.LINK": {
+    "other": "공개 링크"
+  },
+  "workspaceSingleQuery.scope.ROOM": {
+    "other": "공유 폴더"
+  },
+  "workspaceSingleQuery.slug": {
+    "other": "슬러그"
+  },
+  "workspaceSingleQuery.uuid": {
+    "other": "Uuid"
+  },
+  "dataSourceSingleQuery.Name": {
+    "other": "이름"
+  },
+  "dataSourceSingleQuery.IsDisabled": {
+    "other": "비활성화됨"
+  },
+  "dataSourceSingleQuery.StorageType": {
+    "other": "저장공간 유형"
+  },
+  "dataSourceSingleQuery.StorageType.REMOTE": {
+    "other": "원격"
+  },
+  "dataSourceSingleQuery.StorageType.ANY": {
+    "other": "모든"
+  },
+  "dataSourceSingleQuery.StorageType.LOCALFS": {
+    "other": "로컬"
+  },
+  "dataSourceSingleQuery.PeerAddress": {
+    "other": "피어 주소"
+  },
+  "dataSourceSingleQuery.FlatStorage": {
+    "other": "평면형 스토리지"
+  },
+  "dataSourceSingleQuery.SkipSyncOnRestart": {
+    "other": "재시작 시 동기화 건너뜀"
+  },
+  "dataSourceSingleQuery.IsVersioned": {
+    "other": "버전 존재 여부"
+  },
+  "dataSourceSingleQuery.IsEncrypted": {
+    "other": "암호화 여부"
+  },
+  "dataSourceSingleQuery.EncryptionMode": {
+    "other": "암호화 방식"
+  },
+  "dataSourceSingleQuery.EncryptionMode.USER": {
+    "other": "사용자 키"
+  },
+  "dataSourceSingleQuery.EncryptionMode.USER_PWD": {
+    "other": "사용자 비밀번호"
+  },
+  "dataSourceSingleQuery.EncryptionMode.CLEAR": {
+    "other": "초기화"
+  },
+  "dataSourceSingleQuery.EncryptionMode.MASTER": {
+    "other": "마스터 키"
+  },
+  "dataSourceSingleQuery.EncryptionKey": {
+    "other": "암호화 키"
+  },
+  "dataSourceSingleQuery.VersioningPolicyName": {
+    "other": "버전 생성 규칙"
+  },
+  "dataSourceSingleQuery.StorageConfigurationName": {
+    "other": "설정 키"
+  },
+  "dataSourceSingleQuery.StorageConfigurationValue": {
+    "other": "설정 값"
+  },
+  "dataSourceSingleQuery.ObjectServiceName": {
+    "other": "객체(Object) 서비스"
+  },
+  "dataSourceSingleQuery.Not": {
+    "other": "다음이 아님"
+  },
+  "triggerFilterQuery.IsSchedule": {
+    "other": "예약 작업"
+  },
+  "triggerFilterQuery.IsApiHook": {
+    "other": "Triggered by Webhook"
+  },
+  "triggerFilterQuery.ApiHookSlug": {
+    "other": "Webhook Api Slug"
+  },
+  "triggerFilterQuery.RunParameterName": {
+    "other": "Run Parameter Name"
+  },
+  "triggerFilterQuery.RunParameterValue": {
+    "other": "Run Parameter Value"
+  },
+  "triggerFilterQuery.IsManual": {
+    "other": "수동 작업"
+  },
+  "triggerFilterQuery.EventNames": {
+    "other": "이벤트"
+  }
+}

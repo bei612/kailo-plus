@@ -1,0 +1,37 @@
+{
+  "Auth.PruneJob.Title": {
+    "other": "Prune widerrufen Token und abgelaufen Reset Passwort Schlüssel"
+  },
+  "Auth.PruneJob.Revoked": {
+    "one": "{{.Count}} abgelaufene gesperrte Token gelöscht",
+    "other": "{{.Count}} abgelaufen widerrufene Token gelöscht"
+  },
+  "Auth.PruneJob.ResetToken": {
+    "one": "{{.DeletionCount}} abgelaufene Passwort-Reset-Token gelöscht",
+    "other": "{{.DeletionCount}} abgelaufenen Passwort-Reset-Token gelöscht"
+  },
+  "ResetPassword.Err.EmailNotFound": {
+    "other": "Die entsprechende E-Mail-Adresse konnte nicht gefunden werden"
+  },
+  "ResetPassword.Success.EmailSent": {
+    "other": "Sie haben eine E-Mail mit weiteren Anweisungen erhalten"
+  },
+  "ResetPassword.Err.Unknown": {
+    "other": "Hoppla, etwas ist falsch passiert - Bitte starten Sie den Prozess zum Zurücksetzen des Passworts erneut"
+  },
+  "ResetPassword.Err.TokenExpired": {
+    "other": "Token ist abgelaufen, bitte folgen Sie erneut dem Vorgang zum Zurücksetzen des Passworts!"
+  },
+  "ResetPassword.Err.TokenNotCorresponding": {
+    "other": "Token entspricht nicht dieser Benutzerkennung!"
+  },
+  "ResetPassword.Err.UserNotFound": {
+    "other": "Kann entsprechenden Benutzer nicht finden!"
+  },
+  "ResetPassword.Err.ResetFailed": {
+    "other": "Beim Versuch, ein neues Passwort festzulegen, ist ein Fehler aufgetreten!"
+  },
+  "ResetPassword.Success.ResetFinished": {
+    "other": "Ihr Passwort wurde erfolgreich zurückgesetzt, Sie können jetzt zur Anmeldeseite zurückkehren!"
+  }
+}

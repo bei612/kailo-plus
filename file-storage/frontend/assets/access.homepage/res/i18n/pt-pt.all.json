@@ -1,0 +1,266 @@
+{
+  "39": {
+    "other": "Abaixo está uma lista dos espaços de trabalho a que tem acesso. Estes podem ser pessoais ou compartilhados com/por outros utilizadores."
+  },
+  "40": {
+    "other": "Bem-vindo, %s! "
+  },
+  "41": {
+    "other": "Usar este espaço de trabalho por omissão"
+  },
+  "42": {
+    "other": "Entrar"
+  },
+  "43": {
+    "other": "O meu perfil"
+  },
+  "43t": {
+    "other": "Todos os meus dados pessoais"
+  },
+  "44": {
+    "other": "A minha conta"
+  },
+  "45": {
+    "other": "Dados pessoais"
+  },
+  "46": {
+    "other": "Livro de endereços"
+  },
+  "47": {
+    "other": "Utilizadores e equipas criados por si"
+  },
+  "48": {
+    "other": "Os meus utilizadores"
+  },
+  "49": {
+    "other": "Utilizadores externos criados por si"
+  },
+  "50": {
+    "other": "As minhas equipas"
+  },
+  "51": {
+    "other": "Equipas de utilizadores, usados como atalhos na partilha"
+  },
+  "52": {
+    "other": "Tem certeza de que deseja apagar esta equipa? Não será removido nenhum utilizador."
+  },
+  "53": {
+    "other": "Primeiros passos"
+  },
+  "54": {
+    "other": "Dê os primeiros passos na utilização do APPLICATION_TITLE seguindo vídeos de auto-aprendizagem"
+  },
+  "55": {
+    "other": "Não conhece ainda o APPLICATION_TITLE? <a>Assista aos nossos tutoriais</a>!"
+  },
+  "56": {
+    "other": "Está a começar com o APPLICATION_TITLE? Assista a estes vídeos!"
+  },
+  "57": {
+    "other": "Descarregue o APPLICATION_TITLE para..."
+  },
+  "58": {
+    "other": "Android"
+  },
+  "59": {
+    "other": "iPhone/iPad"
+  },
+  "60": {
+    "other": "macOS"
+  },
+  "61": {
+    "other": "Windows"
+  },
+  "62": {
+    "other": "<h2>[How-to] O que é um espaço de trabalho?</h2>\n            Este vídeo explica o que são os espaços de trabalho do APPLICATION_TITLE\n            <ul>\n                <li>Porque são os espaços de trabalho fundamentais ao APPLICATION_TITLE?</li>\n                <li>O que são espaços de trabalho de uma perspectiva técnica?</li>\n                <li>Como podem ajudar a organizar os seus dados?</li>\n            </ul>\n            "
+  },
+  "63": {
+    "other": "<h2> [How-to] Carregar ficheiros para o APPLICATION_TITLE </h2>\n             Comece com APPLICATION_TITLE e aprenda a carregar ficheiros\n             <ul>\n                 <li> Arraste e solte ficheiros no APPLICATION_TITLE </li>\n                 <li> Crie uma nova pasta</li>\n                 <li> Renomeie ficheiros e pastas</li>\n                 <li> Descarregue ficheiros para o seu computador</li>\n             </ul>            "
+  },
+  "64": {
+    "other": "<h2>[How-to] Pesquisar, navegar e gerir os seus ficheiros</h2>\n             Este vídeo mostra várias dicas para gerir com eficiência os seus ficheiros no APPLICATION_TITLE\n             <ul>\n                 <li>Barra da pesquisa entre espaços de trabalho</li>\n                 <li>Modos de exibição de conteúdo, atalhos de teclado</li>\n                 <li>Ordenar ficheiros</li>\n                 <li>Metadados, favoritos</li>\n             </ul>            "
+  },
+  "65": {
+    "other": "Descubra mais no canal do APPLICATION_TITLE!"
+  },
+  "66": {
+    "other": "<h2> [How-to] Como usar APPLICATION_TITLE num dispositivo iOS </h2>\n                             Este vídeo explica como usar a aplicação APPLICATION_TITLE (disponível na App Store). O processo também é bastante semelhante no Android.\n<ul> <li> Configure a conexão ao servidor</li>\n<li> Navegando pelos ficheiros </li>\n<li> Manter ficheiros offline e interagir com aplicações externas</li>\n<li> Protegendo a aplicação com um código PIN</li>\n<li> Usando favoritos e o motor de pesquisa</li> </ul>"
+  },
+  "67": {
+    "other": "Se não é %s, %logout."
+  },
+  "68": {
+    "other": "Descarregar o cliente de sincronização para Windows"
+  },
+  "69": {
+    "other": "Descarregar o cliente de sincronização para macOS"
+  },
+  "70": {
+    "other": "Aplicação nativa para dispositivos iOS"
+  },
+  "71": {
+    "other": "Aplicação nativa para dispositivos Android"
+  },
+  "72": {
+    "other": "QRCode do servidor"
+  },
+  "73": {
+    "other": "Conecte facilmente as suas aplicações móveis"
+  },
+  "74": {
+    "other": "Capture este QRCode para configurar facilmente o seu aplicativo móvel"
+  },
+  "75": {
+    "other": "Pesquisar todos os ficheiros..."
+  },
+  "76": {
+    "other": "Aceder %1 através do menu superior direito"
+  },
+  "77": {
+    "other": "painel de administração"
+  },
+  "78": {
+    "other": "Seleccione o espaço de trabalho de destino"
+  },
+  "79": {
+    "other": "<h2>[How-to] Como partilhar ficheiros e pastas </h2>\n             Este tutorial mostra como partilhar ficheiros e pastas, interna ou externamente\n             <ul>\n                 <li>Criação de links de partilha com pessoas externas</li>\n                 <li>Partilha de ficheiros e pastas com colaboradores internos</li>\n                 <li>Partilhar uma pasta como sendo uma área de trabalho</li>\n                 <li>Opções de layout de pastas compartilhadas</li>\n                 <li>Criação de uma pasta para largar documentos no interior</li>\n                 <li>Gestão de utilizadores e permissões de partilha</li>\n             </ul>            "
+  },
+  "80": {
+    "other": "<h2> [How-to] Partilha : características de segurança</h2>\n             Este vídeo apresenta várias configurações de partilha que ajudam a proteger as suas partilhas\n             <ul>\n                 <li>Protecção por senha</li>\n                 <li>Data de expiração</li>\n                 <li>Limite o número de descarregamentos autorizados</li>\n             </ul>            "
+  },
+  "81": {
+    "other": "<h2>[How-to] Personalize os seus links de partilha</h2>\n             Veja como pode personalizar o URL dos seus links de partilha para torná-los mais amigáveis.            "
+  },
+  "82": {
+    "other": "<h2> [Como fazer] Direitos personalizados de links compartilhados </h2>\n             Este vídeo mostra como gerenciar as permissões associadas aos seus compartilhamentos\n             <ul>\n                 <li> Visualização </li>\n                 <li> Download </li>\n                 <li> Carregar / editar </li>\n             </ul>"
+  },
+  "83": {
+    "other": "<h2> [Como fazer] Idioma </h2>\n             APPLICATION_TITLE está disponível em outros idiomas. Este vídeo mostra como alterar o idioma em APPLICATION_TITLE."
+  },
+  "84": {
+    "other": "<h2> [Como fazer] Alertas </h2>\n             Aprenda a definir alertas em um arquivo, para ver quando ele foi modificado ou consultado."
+  },
+  "85": {
+    "other": "<h2> [Instruções] Edição colaborativa </h2>\n             Este vídeo mostra como editar documentos compartilhados de escritório, graças ao pacote de escritório online Collabora\n             <ul>\n                 <li> Trabalhe em documentos de texto, apresentações e planilhas </li>\n                 <li> Edite documentos de forma colaborativa em tempo real </li>\n                 <li> Crie novos documentos diretamente de seu navegador </li>\n             </ul>"
+  },
+  "86": {
+    "other": "Reproduzir vídeo"
+  },
+  "87": {
+    "other": "Minha atividade recente"
+  },
+  "88": {
+    "other": "Largue aqui um arquivo do seu desktop"
+  },
+  "89": {
+    "other": "Arquivo selecionado para upload"
+  },
+  "90": {
+    "other": "Selecione o espaço de trabalho de destino"
+  },
+  "91": {
+    "other": "Mantenha seus arquivos offline com nosso Cliente de Sincronização Desktop"
+  },
+  "92": {
+    "other": "Download de aplicações"
+  },
+  "93": {
+    "other": "Upload rápido"
+  },
+  "94": {
+    "other": "Tutorial em Vídeo"
+  },
+  "desc": {
+    "other": "Página de boas vindas"
+  },
+  "title": {
+    "other": "Início"
+  },
+  "search.result.location": {
+    "other": "Pasta"
+  },
+  "search.facets.title": {
+    "other": "Filtrar resultados..."
+  },
+  "search.facet.type": {
+    "other": "Tipo"
+  },
+  "search.facet.extension": {
+    "other": "Extensão"
+  },
+  "search.facet.size": {
+    "other": "Tamanho"
+  },
+  "search.facet.modified": {
+    "other": "Modificado"
+  },
+  "search.facet.found": {
+    "other": "Encontrado em"
+  },
+  "search.facet.metadata": {
+    "other": "Metadados"
+  },
+  "search.sorter.relevant.desc": {
+    "other": "Mais relevante primeiro"
+  },
+  "search.sorter.modified.desc": {
+    "other": "Recentemente adicionados primeiro"
+  },
+  "search.sorter.modified.asc": {
+    "other": "Mais antigos primeiro"
+  },
+  "search.sorter.size.desc": {
+    "other": "Maiores primeiro"
+  },
+  "search.sorter.size.asc": {
+    "other": "Menores primeiro"
+  },
+  "facet.label.file": {
+    "other": "Arquivo"
+  },
+  "facet.label.folder": {
+    "other": "Pasta"
+  },
+  "facet.label.size.lt.1MB": {
+    "other": "< 1MB"
+  },
+  "facet.label.size.1MB.to.10MB": {
+    "other": "1MB a 10MB"
+  },
+  "facet.label.size.10MB.to.100MB": {
+    "other": "1MB a 10MB"
+  },
+  "facet.label.size.gt.100MB": {
+    "other": "100MB"
+  },
+  "facet.label.date.moments": {
+    "other": "Momentos atrás"
+  },
+  "facet.label.date.today": {
+    "other": "Hoje"
+  },
+  "facet.label.date.last.7": {
+    "other": "Últimos 7 dias"
+  },
+  "facet.label.date.last.30": {
+    "other": "Últimos 30 dias"
+  },
+  "facet.label.date.older.30": {
+    "other": "Com mais de 30 dias"
+  },
+  "facet.label.found.contents": {
+    "other": "Conteúdo"
+  },
+  "facet.label.found.basename": {
+    "other": "Nome do Arquivo"
+  },
+  "reco.bookmark": {
+    "other": "Favorito"
+  },
+  "reco.workspace": {
+    "other": "Área de trabalho"
+  },
+  "reco.cell": {
+    "other": "Célula"
+  }
+}

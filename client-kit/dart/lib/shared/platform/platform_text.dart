@@ -25,6 +25,7 @@ enum PlatformMessageKey {
   componentsTitle,
   bindingsTitle,
   bindingsOpenNative,
+  bindingsOpenIndependent,
   bindingsNativeTitle,
   bindingsNativeBoundary,
   bindingsBoundary,
@@ -786,6 +787,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.componentsTitle: ('Component releases', '组件发行版本'),
   PlatformMessageKey.bindingsTitle: ('External service connections', '外部服务连接'),
   PlatformMessageKey.bindingsOpenNative: ('Open service page', '打开服务页面'),
+  PlatformMessageKey.bindingsOpenIndependent: (
+    'Open service in a new tab',
+    '在新标签页打开独立服务',
+  ),
   PlatformMessageKey.bindingsNativeTitle: ('Independent service', '独立服务页面'),
   PlatformMessageKey.bindingsNativeBoundary: (
     'This is the service\'s own page and sign-in. If embedding is refused, its independent service remains available; Kailo does not bypass its policy.',

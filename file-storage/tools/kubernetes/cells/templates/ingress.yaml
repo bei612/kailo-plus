@@ -1,0 +1,64 @@
+{{- if include "cells.ingress.enabled" . }}
+apiVersion: {{ include "common.capabilities.ingress.apiVersion" . }}
+kind: Ingress
+metadata:
+  name: {{ include "common.names.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels: {{- include "common.labels.standard" . | nindent 4 }}
+    {{- if .Values.commonLabels }}
+    {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- if (include "cells.ingress.annotations" .) }}
+    {{- include "common.tplvalues.render" (dict "value" ((include "cells.ingress.annotations" .) | fromJson | default "") "context" $) | nindent 4 }}
+    {{- end }}
+    {{- if .Values.commonAnnotations }}
+    {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
+    {{- end }}
+    {{- if include "cells.tls.enabled" . }}
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    {{- end }}
+spec:
+  {{- if not (empty (include "cells.ingress.ingressClassName" .)) }}
+  ingressClassName: {{ (include "cells.ingress.ingressClassName" .) | quote }}
+  {{- end }}
+  rules:
+    {{- if include "cells.ingress.hostname" . }}
+    - host: {{ include "cells.ingress.hostname" . }}
+      http:
+        paths:
+          {{- $extraPaths := ((include "cells.ingress.extraPaths" .) | fromJsonArray) }}
+          {{- if $extraPaths }}
+          {{- toYaml $extraPaths | nindent 10 }}
+          {{- end }}
+            - path: {{ (include "cells.ingress.path" .) | quote }}
+              {{- if not (empty (include "cells.ingress.pathType" .)) }}
+              pathType: {{ (include "cells.ingress.pathType" .) | quote }}
+              {{- end }}
+              backend: {{- include "common.ingress.backend" (dict "serviceName" (include "common.names.fullname" .) "servicePort" "http" "context" $)  | nindent 16 }}
+    {{- end }}
+    {{- range ((include "cells.ingress.extraHosts" .) | fromJsonArray) }}
+    - host: {{ .name | quote }}
+      http:
+        paths:
+          - path: {{ default "/" .path }}
+            pathType: {{ default "ImplementationSpecific" .pathType }}
+            backend: {{- include "common.ingress.backend" (dict "serviceName" (include "common.names.fullname" $) "servicePort" "http" "context" $) | nindent 14 }}
+    {{- end }}
+    {{- $extraRules := ((include "cells.ingress.extraRules" .) | fromJsonArray) }}
+    {{- if $extraRules }}
+    {{- include "common.tplvalues.render" (dict "value" $extraRules "context" $) | nindent 4 }}
+    {{- end }}
+  {{- $extraTls := ((include "cells.ingress.extraTls" .) | fromJsonArray) }}
+  {{- if or (and (include "cells.ingress.tls.enabled" .) (or (include "common.ingress.certManagerRequest" ( dict "annotations" ((include "cells.ingress.annotations" .) | fromJson) )) (include "cells.ingress.tls.selfSigned" .))) $extraTls }}
+  tls:
+    {{- if and (include "cells.ingress.tls.enabled" .) (or (include "common.ingress.certManagerRequest" ( dict "annotations" ((include "cells.ingress.annotations" .) | fromJson) )) (include "cells.ingress.tls.selfSigned" .)) }}
+    - hosts:
+        - {{ include "cells.ingress.hostname" . }}
+      secretName: {{ printf "%s-tls" (include "cells.ingress.hostname" .) }}
+    {{- end }}
+    {{- if $extraTls }}
+    {{- include "common.tplvalues.render" ( dict "value" $extraTls "context" $ ) | nindent 4 }}
+    {{- end }}
+  {{- end }}
+{{- end }}

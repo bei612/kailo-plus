@@ -1,0 +1,37 @@
+{
+  "Auth.PruneJob.Title": {
+    "other": "Elimina i token revocati e le chiavi di reimpostazione delle password scadute"
+  },
+  "Auth.PruneJob.Revoked": {
+    "one": "Eliminato {{.Count}} token revocati scaduto",
+    "other": "Eliminati {{.Count}} token revocati scaduti"
+  },
+  "Auth.PruneJob.ResetToken": {
+    "one": "Eliminata {{.DeletionCount}} chiave di reimpostazione delle password scaduta",
+    "other": "Eliminate {{.DeletionCount}} chiavi di reimpostazione delle password scadute"
+  },
+  "ResetPassword.Err.EmailNotFound": {
+    "other": "Impossibile trovare l'indirizzo email corrispondente"
+  },
+  "ResetPassword.Success.EmailSent": {
+    "other": "Ti è stata inviata un'email con ulteriori istruzioni"
+  },
+  "ResetPassword.Err.Unknown": {
+    "other": "Ops, si è verificato un errore. Si prega di rilanciare il processo di ripristino della password"
+  },
+  "ResetPassword.Err.TokenExpired": {
+    "other": "Il token è scaduto, si prega di seguire nuovamente il processo di ripristino della password!"
+  },
+  "ResetPassword.Err.TokenNotCorresponding": {
+    "other": "Il token non corrisponde a questo identificativo utente!"
+  },
+  "ResetPassword.Err.UserNotFound": {
+    "other": "Impossibile trovare l'utente corrispondente!"
+  },
+  "ResetPassword.Err.ResetFailed": {
+    "other": "Si è verificato un errore durante il tentativo di impostare la nuova password!"
+  },
+  "ResetPassword.Success.ResetFinished": {
+    "other": "La password è stata reimpostata con successo, ora puoi tornare alla pagina di login!"
+  }
+}

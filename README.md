@@ -6,9 +6,28 @@
 
 ## 最新复核与投递事实（2026-10-05）
 
-### 独立组件接入源码批（未部署）
+### 当前源码收口：原生服务完整源码与资源引用（未部署）
 
-设计版本 `a689650732d05621b63cd20ac589c555b6617ac9` 明确独立服务边界：
+本次私有联合候选在已部署 `d343a33ed491f12f60efbddfd973a1053461c8ef` 上补入
+PROTOCOL_PEER 真实协议消费、`resource.create / RESOURCE_PROVISION` 外部引用
+生产路径、共享 NativePage 承载纠正，以及完整 WeKnora/Wren 原生源码。
+HUMAN BFF 可沿原治理动作登记受控投递面已核验的原生引用，再形成原 Resource
+授权根供现有 Agent Tool 消费；未增加 Agent 代发创建入口，不在 Core 新建原生对象。
+WeKnora 固定 `2be7bd40631dda1dd485306038f07a62e9ee287e`，Wren 原完整 GenBI
+固定 `c5f02a0391c87420dba78632dcd86073710deb72`，共 5824 个源文件入选，
+不含安装依赖或运行凭据。两服务仍独立管理；源码导入不是镜像、部署或接入验收。
+
+联合定向验证已通过：Core 189 项、单独真实 Resource 数据库目标、81 条隔离迁移、
+四侧往返、Clippy 及生产反例恢复。原完整检查实际抓到结果暴露枚举漂移、追溯归属
+和私有验证输入缺失，已按原权威纠正，失败原件保留；客户端源码与旧产物不符须由
+真实 Web/Windows 构建补齐，尚未取得本批最终 full 退出 0。当前线上仍是下节的
+09:07 投递：79 条迁移及该批 Core/Worker/Web，不能把本次 81 条隔离迁移写成线上。
+真实组件发行、接入与原生页面业务验收仍未完成，Cells/WeKnora/Wren 不记为可用。
+本批命令和明确跳过项见 [组件验证记录](core/verify/application-binding.md)。
+
+### 独立组件接入基础已投递，参考服务未验收（09:07 UTC）
+
+设计版本 `8d0c75ec177d7c7dd1a9183fe571f8c6cb6fa158` 明确独立服务边界：
 Cells、WeKnora、Wren 自持管理后台、数据库与生命周期；Kailo 管理的是接入、
 公共服务授权和投影，不接管其内部业务。工具仍通过 AgentGateway 注册、发现和调用。
 Web/Desktop 共用接入管理页及原生页面引用，Mobile 不承载组件页面。
@@ -23,12 +42,21 @@ Web/Desktop 共用接入管理页及原生页面引用，Mobile 不承载组件�
 回滚及同请求重新准备 1 通过；这些不等于完整工具派发或组件业务验收。
 四侧生成同步、历史契约兼容和 21 条追溯检查已通过。共享 Web 与未签名 Windows
 包已构建；整批原完整检查及追加隔离数据库目标最终均退出 0，首次失败原件保留。
-本批服务部署与真实原生页面验收尚未完成；候选检查不覆盖正式树其他未提交改动。
-现场未发现三个参考服务实例，组件 Release 目录为空，新 binding 表尚未部署；
+源码 `d343a33ed491f12f60efbddfd973a1053461c8ef` 的 Core、Worker、Web 已于
+09:07 UTC 投递；六条原迁移实际执行成功，迁移数由 73 增至 79。Core health
+为 200、Web healthy，Worker 已轮询原组件任务队列；其余 25 个容器不变。
+这次没有新模型调用、权限或额度写入；不覆盖正式树其他未提交改动。
+真实原生页面与三个参考服务业务尚未验收，不能以基础部署替代组件接入。
 因此不能将本批页面与适配代码记为 Cells、WeKnora、Wren 已集成可用。
 实际命令、失败保留与证据边界见
 [接入记录](core/verify/application-binding.md)及
 [共享客户端记录](core/verify/application-binding-client.md)。
+
+本次实际镜像：Core `sha256:77a9d175a9d78b52856d18416f5e7a23fe54c5c9a1298cfb7d5ce2d9b25478dc`；
+Worker `sha256:f6ba77ea30ea7fa2beafd4669bf380122cb78bc478936ef1f35a74b0ebb3cd04`；
+Web `sha256:d60e187b0429a7879600ab36c09d2b83de2290169d54b0e3d8bf81f659ce1668`。
+Data 原件 `codex-application-core-worker-release-20261005.2Co1Ge/deployment-receipt.md`，
+SHA256 `4ad4f4e2601575808e987bdaf36e6b1dd6f37096506dcd39bdd2aef3f75e042f`。
 
 ### 三人、两 Agent 同频道真实回复已验收（05:01 UTC）
 
@@ -43,9 +71,13 @@ Invocation/Task 与原 Temporal Workflow 全部 COMPLETED；每条消息的两�
 已有该组织/工作区业务 admin 和各自 exact-installation 委托；共享执行池为两槽。
 未关闭身份、scope、fresh authorization、审批、用量关联和终态证据检查。
 
-仍有明确体验缺口：本次三轮回复各约 164–166 秒，其中每轮均有两段 60 秒等待。
-等待逻辑及 Web 撤权安装候选过滤修复已通过定向检查，尚未发布；线上选择 Agent
-时明确选上述两个可用安装。真实命令、失败保留、终态及耗时见
+本节 05:01 的三轮回复各约 164–166 秒，其中每轮均有两段 60 秒等待；这是当时
+的实测。随后 06:05 在 `640bd4` 历史构建上已完成修复后真实验收：一人发送新消息
+提及两 Agent，三人独立 DOM 在 47.100–47.140 秒读回两回复；两 Invocation 均
+COMPLETED，9025 和 8939 tokens 均 COMMITTED，两项 Capacity 均 RELEASED。
+原件为 Data 目录 `codex-three-human-two-agent-20261005.poEa9c/` 下的
+`postdeploy-latency.log`（退出 0）与 `postdeploy-observe-final.log`。这不是 09:07
+`d343` 或当前联合候选的新验收，不据旧构建证据推算新版本延迟。真实命令、失败保留、终态及耗时见
 [Agent 验证](core/verify/agent-definition.md)末两节。
 Cells、WeKnora、Wren 仍未形成可用接入；Workflows 全功能、原 Buzz 完整设置、
 Desktop/Mobile 设备、签名及长期稳定性仍不据本次六调用宣称验收或生产就绪。

@@ -1,0 +1,266 @@
+{
+  "39": {
+    "other": "下のリストはあなたがアクセスできるワークスペースの一覧です。そのワークスペースは個人用か他のユーザーと共有されてるかもしれません。"
+  },
+  "40": {
+    "other": "ようこそ、%sさん! "
+  },
+  "41": {
+    "other": "このワークスペースをデフォルトとして使用"
+  },
+  "42": {
+    "other": "続行"
+  },
+  "43": {
+    "other": "プロフィール"
+  },
+  "43t": {
+    "other": "全てのパーソナルデータ"
+  },
+  "44": {
+    "other": "マイアカウント"
+  },
+  "45": {
+    "other": "パーソナルデータ"
+  },
+  "46": {
+    "other": "アドレス帳"
+  },
+  "47": {
+    "other": "あなたが作成したユーザーとチーム"
+  },
+  "48": {
+    "other": "マイユーザー"
+  },
+  "49": {
+    "other": "あなたの作成した外部のユーザー"
+  },
+  "50": {
+    "other": "マイチーム"
+  },
+  "51": {
+    "other": "共有時ショートカット利用時のユーザー規約"
+  },
+  "52": {
+    "other": "本当にこのチームを削除しますか？この操作ではユーザーは削除しません。"
+  },
+  "53": {
+    "other": "はじめに"
+  },
+  "54": {
+    "other": "次のHow to ビデオで APPLICATION_TITLE を始めましょう"
+  },
+  "55": {
+    "other": "APPLICATION_TITLE は初めてですか？ <a>チュートリアルを見る</a>"
+  },
+  "56": {
+    "other": "APPLICATION_TITLE を始めますか？ そんなあなたのために、ここにはいくつかのビデオがあります。"
+  },
+  "57": {
+    "other": "... 用の APPLICATION_TITLE をダウンロードする"
+  },
+  "58": {
+    "other": "Android"
+  },
+  "59": {
+    "other": "iPhone/iPad"
+  },
+  "60": {
+    "other": "Mac OS"
+  },
+  "61": {
+    "other": "Windows"
+  },
+  "62": {
+    "other": "<h2>[How-to] ワークスペースとは何ですか?</h2>\n            このビデオでは、 APPLICATION_TITLE におけるワークスペースの説明をしています。\n            <ul>\n                <li>APPLICATION_TITLE において、ワークスペースはなぜ重要なのですか?</li>\n                <li>技術的な観点においてワークスペースとは何ですか?</li>\n                <li>ワークスペースではどのようにデータを整理できますか?</li>\n            </ul>\n            "
+  },
+  "63": {
+    "other": "<h2>[How-to] APPLICATION_TITLE にファイルをアップロードする</h2>\n            APPLICATION_TITLE を始めて、どのようにファイルをアップロードするかを知りましょう。\n            <ul>\n                <li>APPLICATION_TITLE にファイルをドラック＆ドロップする</li>\n                <li>新しいフォルダを作成する</li>\n                <li>ファイル名やフォルダ名を変更する</li>\n                <li>コンピュータにファイルをダンロードする</li>\n            </ul>\n            "
+  },
+  "64": {
+    "other": "<h2>[How-to] ファイルの検索やブラウス、管理の仕方</h2>\n            このビデオでは APPLICATION_TITLE における効果的なファイルの管理の仕方についていくつかの秘訣を紹介しています。\n            <ul>\n                <li>ワークスペース横断検索</li>\n                <li>コンテンツ表示モードやキーボードショートカット</li>\n                <li>ファイルの並び替え</li>\n                <li>メタデータやブックマーク</li>\n            </ul>\n            "
+  },
+  "65": {
+    "other": "APPLICATION_TITLE についてもっと知りましょう!"
+  },
+  "66": {
+    "other": "<h2>[How-to] iOSデバイスでの APPLICATION_TITLE の使い方</h2>\n                            このビデオでは APPLICATION_TITLE アプリ (App Storeで利用できます) の使い方について説明しています。 Androidでも同様です。\n<ul><li>サーバーの接続を設定する</li>\n<li>ファイルを移動する</li>\n<li>ファイルをオフラインで保存して他のアプリで利用する</li>\n<li>PINコードでアプリを保護する</li>\n<li>ブックマークや検索を利用する</li></ul>"
+  },
+  "67": {
+    "other": "%sさんでない場合は、%logout"
+  },
+  "68": {
+    "other": "Windows用の同期アプリをダウンロード"
+  },
+  "69": {
+    "other": "Mac OSX用の同期アプリをダウンロード"
+  },
+  "70": {
+    "other": "iOS用のネイティブアプリ"
+  },
+  "71": {
+    "other": "Android用のネイティブアプリ"
+  },
+  "72": {
+    "other": "サーバーのQRコード"
+  },
+  "73": {
+    "other": "モバイルアプリを簡単に接続する"
+  },
+  "74": {
+    "other": "このQRコードをスキャンすることで簡単にモバイルアプリを設定できます"
+  },
+  "75": {
+    "other": "全ファイルの検索..."
+  },
+  "76": {
+    "other": "右上メニューから %1 にアクセス"
+  },
+  "77": {
+    "other": "管理者用ダッシュボード"
+  },
+  "78": {
+    "other": "対象のワークスペースを選択してください"
+  },
+  "79": {
+    "other": "<h2>ファイルとフォルダーの共有の仕方</h2>\n            このチュートリアルでは内外的にファイルとフォルダーの共有の方法を紹介します。\n            <ul>\n                <li>外部の人のための共有リンクを作成</li>\n                <li>内部の仲間とのファイルとフォルダーの共有</li>\n                <li>フォルダーをワークスペースとして共有</li>\n                <li>フォルダー共有のレイアウトオプション</li>\n                <li>ブラインドドロップフォルダーの作成</li>\n                <li>ユーザと共有権限の管理</li>\n            </ul>\n            "
+  },
+  "80": {
+    "other": "<h2>[How-to] 公開: セキュリティ設定</h2>\n           このビデオは安全に公開するための、様々な設定を説明します\n            <ul>\n                <li>パスワード保護</li>\n                <li>期限</li>\n                <li>ダウンロード数の制限</li>\n            </ul>\n            "
+  },
+  "81": {
+    "other": "<h2>[How-to] 公開リンクをカスタマイズする</h2>\n            公開リンクをよりわかりやすくするためのカスタマイズ方法を説明します。\n            "
+  },
+  "82": {
+    "other": "<h2>[How-to] 公開リンクの権限をカスタマイズする</h2>\n            このビデオは公開されたファイルの権限を管理する方法を説明します\n            <ul>\n                <li>プレビュー</li>\n                <li>ダウンロード</li>\n                <li>アップロード / 編集</li>\n            </ul>\n            "
+  },
+  "83": {
+    "other": "<h2>[How-to] 言語</h2>\n            APPLICATION_TITLEは28の言語を使用可能です。このビデオはAPPLICATION_TITLEの言語設定の変更方法を説明します。\n            "
+  },
+  "84": {
+    "other": "<h2>[How-to] アラート</h2>\n            ファイルの通知設定の方法を学び、変更を確認することができます。\n            "
+  },
+  "85": {
+    "other": "<h2>[How-to] 共同編集</h2>\n            このビデオはオフィスドキュメントをCollabora online office suiteによって、共同編集する方法を説明します\n            <ul>\n                <li>テキスト、プレゼンテーション、スプレッドシートを実行する</li>\n                <li>リアルタイムで共同編集する</li>\n                <li>ブラウザから新規ドキュメントを作成する</li>\n            </ul>\n            "
+  },
+  "86": {
+    "other": "ビデオを再生"
+  },
+  "87": {
+    "other": "最近のアクティビティ"
+  },
+  "88": {
+    "other": "デスクトップからファイルをここにドロップ"
+  },
+  "89": {
+    "other": "アップロード用に選択したファイル"
+  },
+  "90": {
+    "other": "対象のワークスペースを選択してください"
+  },
+  "91": {
+    "other": "デスクトップ同期クライアントを使ってオフラインで保存"
+  },
+  "92": {
+    "other": "アプリのダウンロード"
+  },
+  "93": {
+    "other": "クイックアップロード"
+  },
+  "94": {
+    "other": "ビデオチュートリアル"
+  },
+  "desc": {
+    "other": "ウェルカムページ"
+  },
+  "title": {
+    "other": "ホーム"
+  },
+  "search.result.location": {
+    "other": "フォルダ"
+  },
+  "search.facets.title": {
+    "other": "フィルタの結果..."
+  },
+  "search.facet.type": {
+    "other": "種別"
+  },
+  "search.facet.extension": {
+    "other": "拡張機能"
+  },
+  "search.facet.size": {
+    "other": "サイズ"
+  },
+  "search.facet.modified": {
+    "other": "更新日時"
+  },
+  "search.facet.found": {
+    "other": "見つかりました:"
+  },
+  "search.facet.metadata": {
+    "other": "メタデータ"
+  },
+  "search.sorter.relevant.desc": {
+    "other": "関連順"
+  },
+  "search.sorter.modified.desc": {
+    "other": "更新日が新しい順"
+  },
+  "search.sorter.modified.asc": {
+    "other": "古い順"
+  },
+  "search.sorter.size.desc": {
+    "other": "サイズの大きい順"
+  },
+  "search.sorter.size.asc": {
+    "other": "サイズの小さい順"
+  },
+  "facet.label.file": {
+    "other": "ファイル"
+  },
+  "facet.label.folder": {
+    "other": "フォルダ"
+  },
+  "facet.label.size.lt.1MB": {
+    "other": "< 1MB"
+  },
+  "facet.label.size.1MB.to.10MB": {
+    "other": "1MB から 10MB"
+  },
+  "facet.label.size.10MB.to.100MB": {
+    "other": "10MB から 100MB"
+  },
+  "facet.label.size.gt.100MB": {
+    "other": "> 100MB"
+  },
+  "facet.label.date.moments": {
+    "other": "少し前"
+  },
+  "facet.label.date.today": {
+    "other": "今日"
+  },
+  "facet.label.date.last.7": {
+    "other": "過去7日間"
+  },
+  "facet.label.date.last.30": {
+    "other": "過去30日間"
+  },
+  "facet.label.date.older.30": {
+    "other": "30日以上前"
+  },
+  "facet.label.found.contents": {
+    "other": "コンテンツ"
+  },
+  "facet.label.found.basename": {
+    "other": "ファイル名"
+  },
+  "reco.bookmark": {
+    "other": "ブックマーク"
+  },
+  "reco.workspace": {
+    "other": "ワークスペース"
+  },
+  "reco.cell": {
+    "other": "Cell"
+  }
+}

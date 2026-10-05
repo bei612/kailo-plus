@@ -22,6 +22,8 @@ fn core_build() -> Result<Value, Refusal> {
     Ok(
         json!({"subject":"CORE", "buildId":build, "hostApiVersion":"NONE",
         "adapterProtocolVersions":["1"], "driverRegistryKeys":[], "platformPortKeys":[],
+        "connectorKinds":["REMOTE_ADAPTER","PROTOCOL_PEER"],
+        "mcpProtocolVersions":rmcp::model::ProtocolVersion::KNOWN_VERSIONS.iter().map(ToString::to_string).collect::<Vec<_>>(),
         "reportedAt":chrono::Utc::now().to_rfc3339()}),
     )
 }
@@ -102,12 +104,14 @@ pub(crate) fn compatible(manifest: &Value, builds: &Value) -> Result<(), Refusal
     // Approval currently consumes the same explicit subset as registration.
     // Do not advertise compatibility for a registry or frontend not implemented.
     if manifest["class"] != "APPLICATION"
-        || manifest["frontendDelivery"]["mode"] != "NONE"
-        || manifest["executionConnector"]["mode"] != "REMOTE_ADAPTER"
-        || manifest["executionConnector"]["adapterProtocolRange"] != "1"
+        || !matches!(
+            manifest["frontendDelivery"]["mode"].as_str(),
+            Some("NONE" | "NATIVE_PAGE")
+        )
     {
         return Err(Refusal::Blocked(contracts::ReasonCode::CapabilityBlocked));
     }
+    let connector = crate::application_binding::native::Connector::from_manifest(manifest)?;
     for subject in ["BUZZ_WEB", "CORE", "WORKER"] {
         let mut matching = builds.iter().filter(|build| build["subject"] == subject);
         let build = matching.next().ok_or_else(unavailable)?;
@@ -115,9 +119,28 @@ pub(crate) fn compatible(manifest: &Value, builds: &Value) -> Result<(), Refusal
             return Err(unavailable());
         }
         if subject != "BUZZ_WEB"
+            && connector == crate::application_binding::native::Connector::RemoteAdapter
             && !build["adapterProtocolVersions"]
                 .as_array()
                 .is_some_and(|versions| versions.iter().any(|version| version == "1"))
+        {
+            return Err(Refusal::Blocked(contracts::ReasonCode::CapabilityBlocked));
+        }
+        if subject != "BUZZ_WEB"
+            && connector == crate::application_binding::native::Connector::ProtocolPeer
+            && (!build["connectorKinds"]
+                .as_array()
+                .is_some_and(|kinds| kinds.contains(&json!("PROTOCOL_PEER")))
+                || (subject == "CORE"
+                    && !build["mcpProtocolVersions"]
+                        .as_array()
+                        .is_some_and(|versions| {
+                            versions.iter().any(|version| {
+                                rmcp::model::ProtocolVersion::KNOWN_VERSIONS
+                                    .iter()
+                                    .any(|known| version == known.as_str())
+                            })
+                        })))
         {
             return Err(Refusal::Blocked(contracts::ReasonCode::CapabilityBlocked));
         }
@@ -130,9 +153,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn peer_approval_requires_actual_mcp_consumer_not_adapter_version() {
+        let manifest = json!({"class":"APPLICATION","frontendDelivery":{"mode":"NONE"},
+            "executionConnector":{"mode":"PROTOCOL_PEER","adapterProtocolRange":"NONE","actionTokenAudience":"NONE"}});
+        let builds = json!([
+            {"subject":"BUZZ_WEB","buildId":"observed-web","adapterProtocolVersions":[]},
+            {"subject":"CORE","buildId":"observed-core","adapterProtocolVersions":[],"connectorKinds":["PROTOCOL_PEER"],
+                "mcpProtocolVersions":[rmcp::model::ProtocolVersion::KNOWN_VERSIONS[0].as_str()]},
+            {"subject":"WORKER","buildId":"observed-worker","adapterProtocolVersions":[],"connectorKinds":["PROTOCOL_PEER"]}
+        ]);
+        compatible(&manifest, &builds).unwrap();
+        for index in [1, 2] {
+            let mut old = builds.clone();
+            old[index].as_object_mut().unwrap().remove("connectorKinds");
+            old[index]["adapterProtocolVersions"] = json!(["1"]);
+            assert!(compatible(&manifest, &old).is_err());
+        }
+        let mut unknown = builds;
+        unknown[1]["mcpProtocolVersions"] = json!(["unknown"]);
+        assert!(compatible(&manifest, &unknown).is_err());
+    }
+
+    #[test]
     fn approval_requires_each_actual_subject_and_implemented_protocol() {
         let manifest = json!({"class":"APPLICATION","frontendDelivery":{"mode":"NONE"},
-            "executionConnector":{"mode":"REMOTE_ADAPTER","adapterProtocolRange":"1"}});
+            "executionConnector":{"mode":"REMOTE_ADAPTER","adapterProtocolRange":"1","actionTokenAudience":"isolated-adapter"}});
         let builds = json!([
             {"subject":"BUZZ_WEB","buildId":"observed-web","adapterProtocolVersions":[]},
             {"subject":"CORE","buildId":"observed-core","adapterProtocolVersions":["1"]},

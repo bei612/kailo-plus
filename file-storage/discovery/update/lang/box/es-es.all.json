@@ -1,0 +1,74 @@
+{
+  "Update.Config.Title": {
+    "other": "Actualizar Configuración"
+  },
+  "Update.Config.Url.Label": {
+    "other": "Actualizar Servidor"
+  },
+  "Update.Config.Url.Description": {
+    "other": "URL Http del servidor de actualización"
+  },
+  "Update.Config.PublicKey.Label": {
+    "other": "Clave Pública"
+  },
+  "Update.Config.PublicKey.Description": {
+    "other": "Clave oficial utilizada para verificar la firma de archivos binarios."
+  },
+  "Update.Config.Channel.Label": {
+    "other": "Actualizar Canal"
+  },
+  "Update.Config.Channel.Description": {
+    "other": "Canal utilizado para solicitar actualizaciones. Mantener en \"Estable\" si no se está seguro."
+  },
+  "Update.Config.Channel.ValueStable": {
+    "other": "Estable"
+  },
+  "Update.Config.Channel.ValueDev": {
+    "other": "Dev (bajo tu responsabilidad)"
+  },
+  "Update.Config.ProxyHost.Label": {
+    "other": "Proxy"
+  },
+  "Update.Config.ProxyHost.Description": {
+    "other": "Host de un servidor proxy si es necesario para conexiones salientes"
+  },
+  "Update.Config.ProxyUser.Label": {
+    "other": "Usuario de Proxy"
+  },
+  "Update.Config.ProxyUser.Description": {
+    "other": "Usuario para identificación del servidor proxy"
+  },
+  "Update.Config.ProxyPassword.Label": {
+    "other": "Contraseña del Proxy"
+  },
+  "Update.Config.ProxyPassword.Description": {
+    "other": "Contraseña para la identificación del servidor proxy"
+  },
+  "Update.Config.Disable.Label": {
+    "other": "Deshabilitar comprobaciones de actualización"
+  },
+  "Update.Config.Disable.Description": {
+    "other": "Si su servidor no tiene acceso al exterior, no intente conectar con el servidor de actualización."
+  },
+  "Update.Process.Start": {
+    "other": "Actualizando binario"
+  },
+  "Update.Process.Progress": {
+    "other": "Downloading Binary {progress}%..."
+  },
+  "Update.Process.Verify": {
+    "other": "Download Finished, now verifying package..."
+  },
+  "Update.Process.Finished": {
+    "other": "Binary package has been successfully verified, you can now restart the service."
+  },
+  "Update.SetCapDetected.Warning": {
+    "other": "WARNING: you are using a reserved port on one of your binding URL. This requires a root capability to start web service."
+  },
+  "Update.SetCapDetected.Hint": {
+    "other": "If you are not using systemd with the 'AmbientCapabilities=CAP_NET_BIND_SERVICE' parameter, you must execute the following command to authorize the new binary to use this port *before* restarting your instance:"
+  },
+  "Update.SetCapDetected.Command": {
+    "other": "$ sudo setcap 'cap_net_bind_service=+ep' <path to your binary>"
+  }
+}

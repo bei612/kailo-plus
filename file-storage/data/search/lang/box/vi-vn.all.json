@@ -1,0 +1,32 @@
+{
+  "Search.Config.IndexContent.Label": {
+    "other": "Thiết lập tìm kiếm trên nội dung"
+  },
+  "Search.Config.IndexContent.Description": {
+    "other": "Nếu tùy chọn này được thiết lập, bộ công cụ tìm kiếm sẽ lấy nội dung của ContentRef metadata."
+  },
+  "Search.Config.ContentRef.Label": {
+    "other": "Content Reference Metadata"
+  },
+  "Search.Config.ContentRef.Description": {
+    "other": "Name of the metadata pointing to the internal file that contains textual representation of the original document. Such internal contents may be plain-text or gzip-encoded, depending on the text extraction tool used (e.g. Tika). The search engine typically indexes this content to enable full-text search. Make sure to prefix the metadata name with 'pydio:' to prevent data leakage."
+  },
+  "Search.Config.PlainTextExtensions.Label": {
+    "other": "Plain Text Extensions"
+  },
+  "Search.Config.PlainTextExtensions.Description": {
+    "other": "List of extensions for files containing directly indexable plain-text contents (comma-separated-list)."
+  },
+  "Search.Config.BasenameAnalyze.Label": {
+    "other": "Bộ phân tích tên tệp"
+  },
+  "Search.Config.BasenameAnalyze.Description": {
+    "other": "Bộ phân tích được sử dụng để phân tích tên tệp"
+  },
+  "Search.Config.ContentAnalyzer.Label": {
+    "other": "Bộ phân tích nội dung"
+  },
+  "Search.Config.ContentAnalyzer.Description": {
+    "other": "Bộ phân tích sẽ phân tích nội dung của tệp"
+  }
+}

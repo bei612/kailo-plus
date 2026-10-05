@@ -1,0 +1,35 @@
+{
+  "1": {
+    "other": "Email đã được gửi thành công đến %s người dùng"
+  },
+  "2": {
+    "other": "Không tìm thấy địa chỉ để gửi email!"
+  },
+  "3": {
+    "other": "Không có thư nào được cấu hình để gửi đi, hãy liên lạc với quản trị viên"
+  },
+  "4": {
+    "other": "Từ"
+  },
+  "5": {
+    "other": "Đến"
+  },
+  "6": {
+    "other": "Tiêu đề"
+  },
+  "7": {
+    "other": "Tin nhắn"
+  },
+  "8": {
+    "other": "Chọn người dùng hoặc nhập địa chỉ"
+  },
+  "9": {
+    "other": "Phân loại thông báo"
+  },
+  "sender.error": {
+    "other": "Không thể gửi email một cách chính xác!"
+  },
+  "entries.ignored": {
+    "other": "Cảnh báo, một số mục nhập đã bị bỏ qua, chỉ những người dùng đã đặt đúng địa chỉ email của họ mới nhận được lời mời. Đội ngũ và nhóm cũng không được xử lý."
+  }
+}

@@ -1,5 +1,7 @@
 //! Independent service page, without a capability granting platform IPC.
 use reqwest::Method;
+use std::sync::Arc;
+use tauri::webview::{NewWindowFeatures, NewWindowResponse};
 use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use uuid::Uuid;
 
@@ -7,6 +9,80 @@ use super::{api::NativeSession, commands::require_config};
 use crate::app_state::AppState;
 
 const PREFIX: &str = "platform-native-page-";
+
+fn allowed_navigation(url: &url::Url, origins: &[String]) -> bool {
+    matches!(url.scheme(), "http" | "https")
+        && url.username().is_empty()
+        && url.password().is_none()
+        && origins.contains(&url.origin().ascii_serialization())
+}
+
+fn open_window(
+    app: &AppHandle,
+    label: String,
+    url: url::Url,
+    origins: Arc<Vec<String>>,
+    generation: u64,
+    features: Option<NewWindowFeatures>,
+) -> Result<WebviewWindow, String> {
+    if !allowed_navigation(&url, &origins)
+        || !app
+            .state::<NativeSession>()
+            .page_generation_matches(generation)
+    {
+        return Err("PLATFORM_NATIVE_PAGE_INVALID".into());
+    }
+    let title = url.origin().ascii_serialization();
+    // For a native popup the webview engine performs the requested navigation.
+    // Start blank to avoid loading the same native request twice. Tauri's
+    // window_features retains the opener's native webview environment.
+    let initial = if features.is_some() {
+        url::Url::parse("about:blank").map_err(|_| "PLATFORM_NATIVE_PAGE_INVALID")?
+    } else {
+        url
+    };
+    let mut builder =
+        WebviewWindowBuilder::new(app, label, WebviewUrl::External(initial)).title(title);
+    if let Some(features) = features {
+        builder = builder.window_features(features);
+    }
+    let navigation_app = app.clone();
+    let navigation_origins = Arc::clone(&origins);
+    let popup_app = app.clone();
+    let opened = builder
+        .on_navigation(move |next| {
+            allowed_navigation(next, &navigation_origins)
+                && navigation_app
+                    .state::<NativeSession>()
+                    .page_generation_matches(generation)
+        })
+        .on_new_window(move |next, features| {
+            match open_window(
+                &popup_app,
+                format!("{PREFIX}{}", Uuid::new_v4()),
+                next,
+                Arc::clone(&origins),
+                generation,
+                Some(features),
+            ) {
+                Ok(window) => NewWindowResponse::Create { window },
+                Err(_) => NewWindowResponse::Deny,
+            }
+        })
+        .build()
+        .map_err(|_| "PLATFORM_NATIVE_PAGE_OPEN_FAILED")?;
+    // Apply the same sign-out race check to both the entry and every child.
+    if !app
+        .state::<NativeSession>()
+        .page_generation_matches(generation)
+    {
+        opened
+            .destroy()
+            .map_err(|_| "PLATFORM_NATIVE_PAGE_CLOSE_FAILED")?;
+        return Err("PLATFORM_NATIVE_PAGE_SESSION_CHANGED".into());
+    }
+    Ok(opened)
+}
 
 pub(crate) fn close_all(app: &AppHandle) {
     for (label, window) in app.webview_windows() {
@@ -80,12 +156,8 @@ pub(crate) async fn platform_open_native_page(
             Ok(text.to_owned())
         })
         .collect::<Result<Vec<_>, &str>>()?;
-    if !matches!(url.scheme(), "http" | "https")
-        || !url.username().is_empty()
-        || url.password().is_some()
+    if !allowed_navigation(&url, &allowed)
         || url.origin().ascii_serialization() != origin
-        || !allowed.contains(&origin)
-        || cfg.api_url("/api/v1/session")?.origin() == url.origin()
         || !session.page_generation_matches(generation)
     {
         return Err("PLATFORM_NATIVE_PAGE_INVALID".into());
@@ -97,27 +169,6 @@ pub(crate) async fn platform_open_native_page(
             .destroy()
             .map_err(|_| "PLATFORM_NATIVE_PAGE_CLOSE_FAILED")?;
     }
-    let navigation_app = app.clone();
-    let opened = WebviewWindowBuilder::new(&app, label, WebviewUrl::External(url))
-        .title(&origin)
-        .on_navigation(move |next| {
-            matches!(next.scheme(), "http" | "https")
-                && next.username().is_empty()
-                && next.password().is_none()
-                && allowed.contains(&next.origin().ascii_serialization())
-                && navigation_app
-                    .state::<NativeSession>()
-                    .page_generation_matches(generation)
-        })
-        .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
-        .build()
-        .map_err(|_| "PLATFORM_NATIVE_PAGE_OPEN_FAILED")?;
-    // Sign-out can race the asynchronous BFF read and window construction.
-    if !session.page_generation_matches(generation) {
-        opened
-            .destroy()
-            .map_err(|_| "PLATFORM_NATIVE_PAGE_CLOSE_FAILED")?;
-        return Err("PLATFORM_NATIVE_PAGE_SESSION_CHANGED".into());
-    }
+    open_window(&app, label, url, Arc::new(allowed), generation, None)?;
     Ok(())
 }

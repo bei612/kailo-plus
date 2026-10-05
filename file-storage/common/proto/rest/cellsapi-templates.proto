@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package rest;
+
+option go_package ="github.com/pydio/cells/v5/common/proto/rest";
+
+import "cells-service.proto";
+import "cells-tree.proto";
+
+// A template node is representing a file or a folder
+message TemplateNode {
+    // Whether it's a file or a folder
+    tree.Node Node = 1;
+    // One or more children
+    map<string, tree.Node> Children = 2;
+}
+
+// A template can be used to create files or tree from scratch
+message Template {
+    // Unique identifier for this template
+    string UUID = 1;
+    // Human friendly label
+    string Label = 2;
+    // Template node, can be a file or a tree of folders
+    TemplateNode Node = 3;
+    // Whether this template can be edited or not
+    bool Editable = 5;
+    // Associated policies
+    repeated service.ResourcePolicy Policies = 4;
+}
+
+message ListTemplatesRequest {
+    string TemplateType = 1;
+}
+
+message ListTemplatesResponse {
+    repeated Template Templates = 1;
+}

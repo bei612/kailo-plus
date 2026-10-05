@@ -1,0 +1,269 @@
+{
+  "Mail.Main.Copyright": {
+    "other": "File Sharing platform proudly powered by Pydio"
+  },
+  "Mail.Main.Troubleshoot": {
+    "other": "If the {ACTION}-button is not working for you, just copy and paste the URL below into your web browser."
+  },
+  "Mail.Main.Greeting": {
+    "other": "Hello"
+  },
+  "Mail.Main.Signature": {
+    "other": "S pozdravem"
+  },
+  "Mail.ResetPassword.Subject": {
+    "other": "Reset password requested for {{.Configs.Title}}"
+  },
+  "Mail.ResetPassword.Intros": {
+    "other": "A reset password request has been received for your account on {{.Configs.Title}}."
+  },
+  "Mail.ResetPassword.Outros": {
+    "other": "If you did not trigger this request, you can safely ignore that. If you keep receiving emails like this, please alert your administrator as it may be a security issue."
+  },
+  "Mail.ResetPassword.LinkLabel": {
+    "other": "Reset My Password"
+  },
+  "Mail.ResetPassword.LinkInstructions": {
+    "other": "Click to reset your password"
+  },
+  "Mail.ResetPasswordDone.Subject": {
+    "other": "Your password on {{.Configs.Title}} has been reset"
+  },
+  "Mail.ResetPasswordDone.Intros": {
+    "other": "Following your reset password request, your password has been successfully reset for {{.Configs.Title}}."
+  },
+  "Mail.ResetPasswordDone.Outros": {
+    "other": "If you did not trigger this operation, please alert your administrator immediately as this may be a security issue."
+  },
+  "Mail.Digest.Subject": {
+    "other": "Your {{.Configs.Title}} notifications"
+  },
+  "Mail.Digest.Intros": {
+    "other": "Níže je shrnutí všech oznámení, která jste obdrželi dne {{.Configs.Title}}"
+  },
+  "Mail.DM.Subject": {
+    "other": "{{.TplData.From}} vám poslal(a) zprávu!"
+  },
+  "Mail.DM.Intros": {
+    "other": "{{.TplData.From}} sent you a message using {{.Configs.Title}} application: {{.TplData.Message}}"
+  },
+  "Mail.Welcome.Subject": {
+    "other": "Vítejte v {{.Configs.Title}}"
+  },
+  "Mail.Welcome.Intros": {
+    "other": "Byl pro Vás vytvořen účet na {{.Configs.Title}}. \n Uživatelské jméno je {{.TplData.Login}}{{if .TplData.Password}} a heslo {{.TplData.Password}}. To si můžete (už) při prvním přihlášení{{end}}."
+  },
+  "Mail.Welcome.LinkInstructions": {
+    "other": "Click to login"
+  },
+  "Mail.Welcome.LinkLabel": {
+    "other": "Přihlásit se k {{.Configs.Title}}"
+  },
+  "Mail.Welcome.Outros": {
+    "other": "{{.Configs.Title}} File Sharing platform is used by your team to efficiently collaborate on documents. We're glad to have you on board!"
+  },
+  "Mail.Invite.Subject": {
+    "other": "{{.TplData.Inviter}} has invited you on {{.Configs.Title}}"
+  },
+  "Mail.Invite.Intros": {
+    "other": "An account has been created for you by {{.TplData.Inviter}} on {{.Configs.Title}}. \n Your login is {{.TplData.Login}}{{if .TplData.Password}} and your password is {{.TplData.Password}}. You may change it the first time you log in{{end}}."
+  },
+  "Mail.Invite.LinkInstructions": {
+    "other": "Click to login"
+  },
+  "Mail.Invite.LinkLabel": {
+    "other": "Přihlásit se k {{.Configs.Title}}"
+  },
+  "Mail.Invite.Outros": {
+    "other": "{{.Configs.Title}} – platforma pro sdílení souborů používaná kolektivem {{.TplData.Inviter}} k účinné spolupráci na dokumentech. Jsme rádi, že jste se přidali!"
+  },
+  "Mail.Cell.Subject": {
+    "other": "{{.TplData.Inviter}} vás přidal(a) do buňky {{.TplData.Cell}}"
+  },
+  "Mail.Cell.Intros": {
+    "other": "{{.TplData.Inviter}} has included you in the cell {{.TplData.Cell}} on {{.Configs.Title}}! You can start sharing files and folders together and collaborate efficiently."
+  },
+  "Mail.Cell.LinkInstructions": {
+    "other": "Click to open cell"
+  },
+  "Mail.Cell.LinkLabel": {
+    "other": "Open {{.TplData.Cell}}"
+  },
+  "Mail.PublicFile.Subject": {
+    "other": "{{.TplData.Inviter}} vám nasdílel(a) soubor"
+  },
+  "Mail.PublicFile.Intros": {
+    "other": "{{.TplData.Inviter}} is sharing a file with you.\n\n '{{.TplData.Message}}' \n\n {{if .TplData.Expire}}Link will expire on {{.TplData.Expire}}{{end}}\n\n{{if .TplData.MaxDownloads}}Maximum downloads :{{.TplData.MaxDownloads}}{{end}}"
+  },
+  "Mail.PublicFile.LinkLabel": {
+    "other": "Otevřít {{.TplData.FileName}}"
+  },
+  "Mail.PublicFile.LinkInstructions": {
+    "other": "Kliknutím zobrazíte náhled souboru ve vámi používaném prohlížeči"
+  },
+  "Mail.PublicFile.Outros": {
+    "other": "{{.Configs.Title}} File Sharing platform is used by {{.TplData.Inviter}} team to efficiently collaborate on documents."
+  },
+  "Mail.PublicFolder.Subject": {
+    "other": "{{.TplData.Inviter}} vám nasdílel(a) složku"
+  },
+  "Mail.PublicFolder.Intros": {
+    "other": "{{.TplData.Inviter}} vám nasdílel(a) složku.\n\n '{{.TplData.Message}}' \n\n {{if .TplData.Expire}}Platnost odkazu skončí {{.TplData.Expire}}{{end}}\n\n{{if .TplData.MaxDownloads}}Stáhnout si je možné nejvýše tolikrát:{{.TplData.MaxDownloads}}{{end}}"
+  },
+  "Mail.PublicFolder.LinkLabel": {
+    "other": "Otevřít {{.TplData.FolderName}}"
+  },
+  "Mail.PublicFolder.LinkInstructions": {
+    "other": "Kliknutím zobrazíte náhledy dokumentů ve svém prohlížeči"
+  },
+  "Mail.PublicFolder.Outros": {
+    "other": "{{.Configs.Title}} – platforma pro sdílení souborů používaná kolektivem {{.TplData.Inviter}} k účinné spolupráci na dokumentech."
+  },
+  "Mail.AdminTestMail.Subject": {
+    "other": "{{.Configs.Title}} is sending you a test email"
+  },
+  "Mail.AdminTestMail.Intros": {
+    "other": "{{.TplData.Message}}"
+  },
+  "Mail.AdminTestMail.LinkLabel": {
+    "other": "Open Cells"
+  },
+  "Mail.AdminTestMail.LinkInstructions": {
+    "other": "Kliknutím otevřete nadstavbu"
+  },
+  "Mail.AdminTestMail.Outros": {
+    "other": "{{.Configs.Title}} File Sharing platform is used by teams to efficiently collaborate on documents."
+  },
+  "Mail.Config.Title": {
+    "other": "Mailer"
+  },
+  "Mail.Config.From.Label": {
+    "other": "Výchozí e-mailová adresa OD"
+  },
+  "Mail.Config.From.Description": {
+    "other": "Address to use as default when sending emails. You should use a proper support email instead of no-reply email."
+  },
+  "Mail.Config.FixOutlookDisplay": {
+    "other": "Outlook Clients Fix (disable CSS inlining)"
+  },
+  "Mail.Config.Queue.Label": {
+    "other": "Typ fronty"
+  },
+  "Mail.Config.Queue.Description": {
+    "other": "Persistence layer for storing pending emails"
+  },
+  "Mail.Config.Queue.ValueBolt": {
+    "other": "On-file Database (Bolt)"
+  },
+  "Mail.Config.Queue.ValueMemory": {
+    "other": "V paměti"
+  },
+  "Mail.Config.Mailer.Label": {
+    "other": "Mailer Engine"
+  },
+  "Mail.Config.Mailer.Description": {
+    "other": "Engine používaný pro odesílání e-mailů jako takového"
+  },
+  "Mail.Config.Disabled.Label": {
+    "other": "Vypnuto (nezapínat e-maily)"
+  },
+  "Mail.Config.NoOp.Label": {
+    "other": "No-Op (enable emails but do not send anything)"
+  },
+  "Mail.Config.NoOp.Dump": {
+    "other": "Write emails to file for debugging purpose"
+  },
+  "Mail.Config.NoOp.DumpTarget": {
+    "other": "Target folder for writing emails"
+  },
+  "Mail.Config.Smtp.Label": {
+    "other": "SMTP server"
+  },
+  "Mail.Config.Smtp.Host.Label": {
+    "other": "Název stroje, na kterém je server provozován"
+  },
+  "Mail.Config.Smtp.Host.Description": {
+    "other": "Host of the SMTP server, e.g. smtp.gmail.com"
+  },
+  "Mail.Config.Smtp.Port.Label": {
+    "other": "Port serveru"
+  },
+  "Mail.Config.Smtp.Port.Description": {
+    "other": "Port of the SMTP Server, e.g. 587 (non-secure) or 465 (TLS)"
+  },
+  "Mail.Config.Smtp.User.Label": {
+    "other": "Uživatel pro toto připojení"
+  },
+  "Mail.Config.Smtp.User.Description": {
+    "other": "Pro připojení k SMTP serveru je vyžadováno uživatelské jméno"
+  },
+  "Mail.Config.Smtp.Password.Label": {
+    "other": "Heslo pro toto připojení"
+  },
+  "Mail.Config.Smtp.Password.Description": {
+    "other": "Pro připojení k SMTP serveru je vyžadováno heslo"
+  },
+  "Mail.Config.Smtp.Security.Label": {
+    "other": "Connection Security"
+  },
+  "Mail.Config.Smtp.Security.Description": {
+    "other": "Protocol used for securing connection. Clear is not supported, if required use a custom Sendmail instead."
+  },
+  "Mail.Config.Smtp.SkipVerify.Label": {
+    "other": "Certifikát podepsaný sám sebou"
+  },
+  "Mail.Config.Smtp.SkipVerify.Description": {
+    "other": "Pokud je certifikát SMTP serveru typu sám sebou podepsaný, pak ho neověřovat"
+  },
+  "Mail.Config.Smtp.LocalName.Label": {
+    "other": "Dialer Local Name"
+  },
+  "Mail.Config.Smtp.LocalName.Description": {
+    "other": "SMTP dialer sends 'localhost' in EHLO command by default, use this field to set a custom local name"
+  },
+  "Mail.Config.SendGrid.Label": {
+    "other": "Služba SendGrid"
+  },
+  "Mail.Config.SendGrid.ApiKey.Label": {
+    "other": "Klíč k API"
+  },
+  "Mail.Config.SendGrid.ApiKey.Description": {
+    "other": "Api Key provided by SendGrid to connect to the service"
+  },
+  "Mail.Config.Sendmail.Label": {
+    "other": "Sendmail"
+  },
+  "Mail.Config.Sendmail.Legend": {
+    "other": "WARNING: Default executable path is /usr/bin/sendmail. If you need to change it, please make sure to set the 'defaults > sendmail' key in your pydio.json configuration file."
+  },
+  "Mail.Config.Sendmail.Executable.Label": {
+    "other": "Popis umístění spustitelného souboru"
+  },
+  "Mail.Config.Sendmail.Executable.Description": {
+    "other": "Úplný popis umístění spustitelného souboru se sendmail na serveru"
+  },
+  "Mail.Config.Sendmail.Executable.Other": {
+    "other": "Jiné umístění (ručně nastavte v souboru s nastaveními pydio.json)"
+  },
+  "Mail.Config.FromName.Label": {
+    "other": "Výchozí zobrazované jméno odesílatele"
+  },
+  "Mail.Config.FromName.Description": {
+    "other": "Zobrazované jméno, které při odesílání e-mailů bude použito jako výchozí."
+  },
+  "Mail.Config.FromCtl.Label": {
+    "other": "Adresa a jméno od/odesilatel, které použít"
+  },
+  "Mail.Config.FromCtl.Description": {
+    "other": "Define which sender address/name to use. If no user email address is configured the default FROM address and name will be used in all cases."
+  },
+  "Mail.Config.FromCtlUser.Label": {
+    "other": "Poslat e-mail OD uživatele"
+  },
+  "Mail.Config.FromCtlSender.Label": {
+    "other": "Poslat e-mail V ZASTOUPENÍ uživatele"
+  },
+  "Mail.Config.FromCtlDefault.Label": {
+    "other": "Vždy odesÍlat z výchozí adresy/jména OD"
+  }
+}

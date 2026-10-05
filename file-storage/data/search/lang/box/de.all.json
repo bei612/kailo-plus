@@ -1,0 +1,32 @@
+{
+  "Search.Config.IndexContent.Label": {
+    "other": "Inhalt indexieren"
+  },
+  "Search.Config.IndexContent.Description": {
+    "other": "Wenn auf \"true\" gesetzt, sucht der Indexer nach den ContentRef-Metadaten, liest den Inhalt dieser Referenz und indiziert ihn für die Suche."
+  },
+  "Search.Config.ContentRef.Label": {
+    "other": "Metadaten für Inhaltsreferenz"
+  },
+  "Search.Config.ContentRef.Description": {
+    "other": "Name des Metadatenfeldes, das auf die interne Datei verweist, die die textuelle Repräsentation des Originaldokuments enthält. Diese internen Inhalte können im Klartext oder gzip-kodiert sein, abhängig vom verwendeten Textextraktionswerkzeug (z. B. Tika). Die Suchmaschine indexiert dann diesen Inhalt, um eine Volltextsuche zu ermöglichen. Stellen Sie sicher, dass der Metadatenname mit 'pydio:' präfixiert ist, um Datenlecks zu verhindern."
+  },
+  "Search.Config.PlainTextExtensions.Label": {
+    "other": "Dateierweiterungen für Klartext"
+  },
+  "Search.Config.PlainTextExtensions.Description": {
+    "other": "Liste der Dateierweiterungen für Dateien mit direkt indexierbaren reinen Textinhalten (durch Kommas getrennte Liste)."
+  },
+  "Search.Config.BasenameAnalyze.Label": {
+    "other": "Dateinamenanalysator"
+  },
+  "Search.Config.BasenameAnalyze.Description": {
+    "other": "Analysator für Dateinamen"
+  },
+  "Search.Config.ContentAnalyzer.Label": {
+    "other": "Inhaltsanalysator"
+  },
+  "Search.Config.ContentAnalyzer.Description": {
+    "other": "Analysator für Inhalte verwendet"
+  }
+}

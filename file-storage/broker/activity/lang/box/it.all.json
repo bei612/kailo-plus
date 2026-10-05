@@ -1,0 +1,89 @@
+{
+  "AccessedBy": {
+    "other": "Letta da {{.Actor}}"
+  },
+  "AccessedObject": {
+    "other": "Letta {{.Object}}"
+  },
+  "AccessedObjectBy": {
+    "other": "{{.Object}} è stato letto da {{.Actor}}"
+  },
+  "Cell": {
+    "other": "Cell"
+  },
+  "CreatedBy": {
+    "other": "Creato da {{.Actor}}"
+  },
+  "CreatedObject": {
+    "other": "Creato {{.Object}}"
+  },
+  "CreatedObjectBy": {
+    "other": "{{.Object}} è stato creato da {{.Actor}}"
+  },
+  "DeletedBy": {
+    "other": "Eliminato da {{.Actor}}"
+  },
+  "DeletedObject": {
+    "other": "Eliminato {{.Object}}"
+  },
+  "DeletedObjectBy": {
+    "other": "{{.Object}} è stato eliminato da {{.Actor}}"
+  },
+  "SharedWs": {
+    "other": "Condiviso in {{.Object}}"
+  },
+  "SharedWsWithYou": {
+    "other": "{{.Actor}} ha condiviso {{.Object}} con te"
+  },
+  "DigestTitle": {
+    "other": "Questo è il tuo Pydio Daily Digest"
+  },
+  "Document": {
+    "other": "Documento"
+  },
+  "Folder": {
+    "other": "Cartella"
+  },
+  "ModifiedBy": {
+    "other": "Modificato da {{.Actor}}"
+  },
+  "ModifiedObject": {
+    "other": "Modificato {{.Object}}"
+  },
+  "ModifiedObjectBy": {
+    "other": "{{.Object}} è stato modificato da {{.Actor}}"
+  },
+  "MetaModifiedBy": {
+    "other": "Metadati modificati da {{.Actor}}"
+  },
+  "MetaModifiedObject": {
+    "other": "Metadati modificati su {{.Object}}"
+  },
+  "MetaModifiedObjectBy": {
+    "other": "{{.Actor}} ha modificato i metadati su {{.Object}}"
+  },
+  "CommentedBy": {
+    "other": "Commentato da {{.Actor}}"
+  },
+  "CommentedObject": {
+    "other": "Commentato {{.Object}}"
+  },
+  "CommentedObjectBy": {
+    "other": "{{.Actor}} ha pubblicato un nuovo commento su {{.Object}}"
+  },
+  "MovedBy": {
+    "other": "Spostato da {{.Actor}}"
+  },
+  "MovedObject": {
+    "other": "Spostato {{.Object}}"
+  },
+  "MovedObjectBy": {
+    "other": "{{.Object}} è stato spostato da {{.Actor}}"
+  },
+  "Workspace": {
+    "other": "Workspace"
+  },
+  "DateFormat": {
+    "other": "2006-01-02 15:04"
+  }
+}

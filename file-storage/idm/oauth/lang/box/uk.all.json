@@ -1,0 +1,37 @@
+{
+  "Auth.PruneJob.Title": {
+    "other": "Очищати видалені токени, і прострочені ключі скидання паролю"
+  },
+  "Auth.PruneJob.Revoked": {
+    "one": "Видалено {{.Count}} прострочений токен",
+    "other": "Видалено {{.Count}} прострочено відкликані токени"
+  },
+  "Auth.PruneJob.ResetToken": {
+    "one": "Видалено {{.DeletionCount}} прострочений токен скидання пароля",
+    "other": "Видалені {{.DeletionCount}} прострочені токени скидання пароля"
+  },
+  "ResetPassword.Err.EmailNotFound": {
+    "other": "Не вдалося знайти відповідну адресу електронної пошти"
+  },
+  "ResetPassword.Success.EmailSent": {
+    "other": "Вам відправлено лист з подальшими інструкціями"
+  },
+  "ResetPassword.Err.Unknown": {
+    "other": "Упс, щось пішло не так - Будь ласка, перезапустіть процес відновлення паролю"
+  },
+  "ResetPassword.Err.TokenExpired": {
+    "other": "Термін дії токену сплив. Будь ласка, пройдіть процедуру скидання пароля!"
+  },
+  "ResetPassword.Err.TokenNotCorresponding": {
+    "other": "Токен не відповідає даному ідентифікатору!"
+  },
+  "ResetPassword.Err.UserNotFound": {
+    "other": "Не вдалося знайти відповідного користувача!"
+  },
+  "ResetPassword.Err.ResetFailed": {
+    "other": "Сталася помилка під час спроби встановити новий пароль!"
+  },
+  "ResetPassword.Success.ResetFinished": {
+    "other": "Ваш пароль успішно скинуто, ви можете повернутися на сторінку авторизації!"
+  }
+}

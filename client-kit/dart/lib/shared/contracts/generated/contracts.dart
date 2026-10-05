@@ -88,6 +88,7 @@
 //     final componentConformanceEnvironment = componentConformanceEnvironmentFromJson(jsonString);
 //     final componentConformanceFixture = componentConformanceFixtureFromJson(jsonString);
 //     final componentConformanceIdentity = componentConformanceIdentityFromJson(jsonString);
+//     final componentProtocolPeerEnvironment = componentProtocolPeerEnvironmentFromJson(jsonString);
 //     final componentReleaseApprovalTarget = componentReleaseApprovalTargetFromJson(jsonString);
 //     final componentReleaseRegistration = componentReleaseRegistrationFromJson(jsonString);
 //     final contentReference = contentReferenceFromJson(jsonString);
@@ -97,6 +98,7 @@
 //     final resolvedIdentity = resolvedIdentityFromJson(jsonString);
 //     final llmRouteCreateInput = llmRouteCreateInputFromJson(jsonString);
 //     final platformBuildInfo = platformBuildInfoFromJson(jsonString);
+//     final resourceCreate = resourceCreateFromJson(jsonString);
 //     final runtimeProfileDirectory = runtimeProfileDirectoryFromJson(jsonString);
 //     final taskStateReport = taskStateReportFromJson(jsonString);
 //     final workflowRef = workflowRefFromJson(jsonString);
@@ -129,6 +131,9 @@
 //     final componentConformanceStepObservation = componentConformanceStepObservationFromJson(jsonString);
 //     final freshApprovalAdmissionRequest = freshApprovalAdmissionRequestFromJson(jsonString);
 //     final freshApprovalAdmissionResult = freshApprovalAdmissionResultFromJson(jsonString);
+//     final resourceProvisionAdvanceRequest = resourceProvisionAdvanceRequestFromJson(jsonString);
+//     final resourceProvisionAdvanceResult = resourceProvisionAdvanceResultFromJson(jsonString);
+//     final resourceProvisionTarget = resourceProvisionTargetFromJson(jsonString);
 //     final tenantDeleteAdvanceRequest = tenantDeleteAdvanceRequestFromJson(jsonString);
 //     final tenantDeleteAdvanceResult = tenantDeleteAdvanceResultFromJson(jsonString);
 
@@ -665,6 +670,14 @@ ComponentConformanceIdentity componentConformanceIdentityFromJson(String str) =>
 String componentConformanceIdentityToJson(ComponentConformanceIdentity data) =>
     json.encode(data.toJson());
 
+ComponentProtocolPeerEnvironment componentProtocolPeerEnvironmentFromJson(
+  String str,
+) => ComponentProtocolPeerEnvironment.fromJson(json.decode(str));
+
+String componentProtocolPeerEnvironmentToJson(
+  ComponentProtocolPeerEnvironment data,
+) => json.encode(data.toJson());
+
 ComponentReleaseApprovalTarget componentReleaseApprovalTargetFromJson(
   String str,
 ) => ComponentReleaseApprovalTarget.fromJson(json.decode(str));
@@ -718,6 +731,11 @@ PlatformBuildInfo platformBuildInfoFromJson(String str) =>
 
 String platformBuildInfoToJson(PlatformBuildInfo data) =>
     json.encode(data.toJson());
+
+ResourceCreate resourceCreateFromJson(String str) =>
+    ResourceCreate.fromJson(json.decode(str));
+
+String resourceCreateToJson(ResourceCreate data) => json.encode(data.toJson());
 
 RuntimeProfileDirectory runtimeProfileDirectoryFromJson(String str) =>
     RuntimeProfileDirectory.fromJson(json.decode(str));
@@ -927,6 +945,28 @@ FreshApprovalAdmissionResult freshApprovalAdmissionResultFromJson(String str) =>
     FreshApprovalAdmissionResult.fromJson(json.decode(str));
 
 String freshApprovalAdmissionResultToJson(FreshApprovalAdmissionResult data) =>
+    json.encode(data.toJson());
+
+ResourceProvisionAdvanceRequest resourceProvisionAdvanceRequestFromJson(
+  String str,
+) => ResourceProvisionAdvanceRequest.fromJson(json.decode(str));
+
+String resourceProvisionAdvanceRequestToJson(
+  ResourceProvisionAdvanceRequest data,
+) => json.encode(data.toJson());
+
+ResourceProvisionAdvanceResult resourceProvisionAdvanceResultFromJson(
+  String str,
+) => ResourceProvisionAdvanceResult.fromJson(json.decode(str));
+
+String resourceProvisionAdvanceResultToJson(
+  ResourceProvisionAdvanceResult data,
+) => json.encode(data.toJson());
+
+ResourceProvisionTarget resourceProvisionTargetFromJson(String str) =>
+    ResourceProvisionTarget.fromJson(json.decode(str));
+
+String resourceProvisionTargetToJson(ResourceProvisionTarget data) =>
     json.encode(data.toJson());
 
 TenantDeleteAdvanceRequest tenantDeleteAdvanceRequestFromJson(String str) =>
@@ -1707,6 +1747,7 @@ class ActionCommand {
 
   ///成员动作的目标 Principal；resource.transfer_owner 的新 owner
   final String? principalId;
+  final ReferenceClass? resourceCreate;
 
   ///Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
   final String? resourceId;
@@ -1751,6 +1792,7 @@ class ActionCommand {
     this.name,
     this.originalActionExecutionId,
     this.principalId,
+    this.resourceCreate,
     this.resourceId,
     this.resourceVersion,
     this.slug,
@@ -1811,6 +1853,9 @@ class ActionCommand {
     name: json["name"],
     originalActionExecutionId: json["originalActionExecutionId"],
     principalId: json["principalId"],
+    resourceCreate: json["resourceCreate"] == null
+        ? null
+        : ReferenceClass.fromJson(json["resourceCreate"]),
     resourceId: json["resourceId"],
     resourceVersion: json["resourceVersion"],
     slug: json["slug"],
@@ -1844,6 +1889,7 @@ class ActionCommand {
     "name": name,
     "originalActionExecutionId": originalActionExecutionId,
     "principalId": principalId,
+    "resourceCreate": resourceCreate?.toJson(),
     "resourceId": resourceId,
     "resourceVersion": resourceVersion,
     "slug": slug,
@@ -2834,6 +2880,38 @@ final expectedHeadStateValues = EnumValues({
   "ABSENT": ExpectedHeadState.ABSENT,
   "FOUND": ExpectedHeadState.FOUND,
 });
+
+class ReferenceClass {
+  final String evidenceDigest;
+  final String evidenceRef;
+  final String nativeRef;
+  final String nativeType;
+  final String typeKey;
+
+  ReferenceClass({
+    required this.evidenceDigest,
+    required this.evidenceRef,
+    required this.nativeRef,
+    required this.nativeType,
+    required this.typeKey,
+  });
+
+  factory ReferenceClass.fromJson(Map<String, dynamic> json) => ReferenceClass(
+    evidenceDigest: json["evidenceDigest"],
+    evidenceRef: json["evidenceRef"],
+    nativeRef: json["nativeRef"],
+    nativeType: json["nativeType"],
+    typeKey: json["typeKey"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "evidenceDigest": evidenceDigest,
+    "evidenceRef": evidenceRef,
+    "nativeRef": nativeRef,
+    "nativeType": nativeType,
+    "typeKey": typeKey,
+  });
+}
 
 ///POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
 ///必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
@@ -5620,9 +5698,12 @@ final taskStatusValues = EnumValues({
 enum WorkflowKind {
   AGENT_INSTALLATION,
   BUZZ_IDENTITY_PROJECTION,
+  COMPONENT_BINDING,
+  COMPONENT_DISABLE,
   COMPONENT_RELEASE,
   MEMBERSHIP_PROJECTION,
   MEMBERSHIP_REVOCATION,
+  RESOURCE_PROVISION,
   SECRET_REF_REHOME,
   TENANT_LIFECYCLE,
   WORKSPACE_LIFECYCLE,
@@ -5631,9 +5712,12 @@ enum WorkflowKind {
 final workflowKindValues = EnumValues({
   "AGENT_INSTALLATION": WorkflowKind.AGENT_INSTALLATION,
   "BUZZ_IDENTITY_PROJECTION": WorkflowKind.BUZZ_IDENTITY_PROJECTION,
+  "COMPONENT_BINDING": WorkflowKind.COMPONENT_BINDING,
+  "COMPONENT_DISABLE": WorkflowKind.COMPONENT_DISABLE,
   "COMPONENT_RELEASE": WorkflowKind.COMPONENT_RELEASE,
   "MEMBERSHIP_PROJECTION": WorkflowKind.MEMBERSHIP_PROJECTION,
   "MEMBERSHIP_REVOCATION": WorkflowKind.MEMBERSHIP_REVOCATION,
+  "RESOURCE_PROVISION": WorkflowKind.RESOURCE_PROVISION,
   "SECRET_REF_REHOME": WorkflowKind.SECRET_REF_REHOME,
   "TENANT_LIFECYCLE": WorkflowKind.TENANT_LIFECYCLE,
   "WORKSPACE_LIFECYCLE": WorkflowKind.WORKSPACE_LIFECYCLE,
@@ -5972,7 +6056,7 @@ class ClientKeyStatus {
 ///Core私网仅向受信Worker返回的逐次隔离探测凭据。token仅在Activity内存中使用，禁止进入Temporal输入、输出或报告。其声明绑定固定模拟上下文与完整实际参数，不授予生产binding授权。
 class ComponentConformanceAuthorization {
   final String expectedResponseDigest;
-  final AdapterProtocolOperation operation;
+  final ComponentConformanceOperation operation;
   final String requestDigest;
   final String requestJson;
   final String token;
@@ -5989,7 +6073,7 @@ class ComponentConformanceAuthorization {
     Map<String, dynamic> json,
   ) => ComponentConformanceAuthorization(
     expectedResponseDigest: json["expectedResponseDigest"],
-    operation: adapterProtocolOperationValues.map[json["operation"]]!,
+    operation: componentConformanceOperationValues.map[json["operation"]]!,
     requestDigest: json["requestDigest"],
     requestJson: json["requestJson"],
     token: json["token"],
@@ -5997,20 +6081,23 @@ class ComponentConformanceAuthorization {
 
   Map<String, dynamic> toJson() => _stripNulls({
     "expectedResponseDigest": expectedResponseDigest,
-    "operation": adapterProtocolOperationValues.reverse[operation],
+    "operation": componentConformanceOperationValues.reverse[operation],
     "requestDigest": requestDigest,
     "requestJson": requestJson,
     "token": token,
   });
 }
 
-///ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
-enum AdapterProtocolOperation {
+///原登记套件的真实操作种类；MCP 方法不属于 AdapterProtocolOperation，也不要求原生 peer 实现 Adapter API。
+enum ComponentConformanceOperation {
   CANCEL,
   EXECUTE,
   EXTRACT_USAGE,
   HANDSHAKE,
   MAP_NATIVE_STATUS_ERROR,
+  MCP_CALL,
+  MCP_INITIALIZE,
+  MCP_LIST,
   OBSERVE,
   QUERY_REVISION,
   RECONCILE,
@@ -6018,17 +6105,21 @@ enum AdapterProtocolOperation {
   VALIDATE_BINDING,
 }
 
-final adapterProtocolOperationValues = EnumValues({
-  "cancel": AdapterProtocolOperation.CANCEL,
-  "execute": AdapterProtocolOperation.EXECUTE,
-  "extract_usage": AdapterProtocolOperation.EXTRACT_USAGE,
-  "handshake": AdapterProtocolOperation.HANDSHAKE,
-  "map_native_status_error": AdapterProtocolOperation.MAP_NATIVE_STATUS_ERROR,
-  "observe": AdapterProtocolOperation.OBSERVE,
-  "query_revision": AdapterProtocolOperation.QUERY_REVISION,
-  "reconcile": AdapterProtocolOperation.RECONCILE,
-  "resolve_native_scope": AdapterProtocolOperation.RESOLVE_NATIVE_SCOPE,
-  "validate_binding": AdapterProtocolOperation.VALIDATE_BINDING,
+final componentConformanceOperationValues = EnumValues({
+  "cancel": ComponentConformanceOperation.CANCEL,
+  "execute": ComponentConformanceOperation.EXECUTE,
+  "extract_usage": ComponentConformanceOperation.EXTRACT_USAGE,
+  "handshake": ComponentConformanceOperation.HANDSHAKE,
+  "map_native_status_error":
+      ComponentConformanceOperation.MAP_NATIVE_STATUS_ERROR,
+  "mcp_call": ComponentConformanceOperation.MCP_CALL,
+  "mcp_initialize": ComponentConformanceOperation.MCP_INITIALIZE,
+  "mcp_list": ComponentConformanceOperation.MCP_LIST,
+  "observe": ComponentConformanceOperation.OBSERVE,
+  "query_revision": ComponentConformanceOperation.QUERY_REVISION,
+  "reconcile": ComponentConformanceOperation.RECONCILE,
+  "resolve_native_scope": ComponentConformanceOperation.RESOLVE_NATIVE_SCOPE,
+  "validate_binding": ComponentConformanceOperation.VALIDATE_BINDING,
 });
 
 ///Core原canonical_digest对同一已授权步骤实际响应的摘要；仅规范化事实，不声明套件通过或登记成功。
@@ -6123,6 +6214,7 @@ class PlanClass {
   final String actionExecutionId;
   final String artifactDigest;
   final String componentReleaseId;
+  final ConnectorKind? connectorKind;
   final List<String> contractDigests;
 
   ///独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
@@ -6141,6 +6233,7 @@ class PlanClass {
     required this.actionExecutionId,
     required this.artifactDigest,
     required this.componentReleaseId,
+    this.connectorKind,
     required this.contractDigests,
     required this.identityDigest,
     required this.operationId,
@@ -6155,6 +6248,9 @@ class PlanClass {
     actionExecutionId: json["actionExecutionId"],
     artifactDigest: json["artifactDigest"],
     componentReleaseId: json["componentReleaseId"],
+    connectorKind: json["connectorKind"] == null
+        ? null
+        : connectorKindValues.map[json["connectorKind"]]!,
     contractDigests: List<String>.from(json["contractDigests"].map((x) => x)),
     identityDigest: json["identityDigest"],
     operationId: json["operationId"],
@@ -6169,6 +6265,7 @@ class PlanClass {
     "actionExecutionId": actionExecutionId,
     "artifactDigest": artifactDigest,
     "componentReleaseId": componentReleaseId,
+    "connectorKind": connectorKindValues.reverse[connectorKind],
     "contractDigests": List<dynamic>.from(contractDigests.map((x) => x)),
     "identityDigest": identityDigest,
     "operationId": operationId,
@@ -6180,16 +6277,26 @@ class PlanClass {
   });
 }
 
+enum ConnectorKind { PROTOCOL_PEER, REMOTE_ADAPTER }
+
+final connectorKindValues = EnumValues({
+  "PROTOCOL_PEER": ConnectorKind.PROTOCOL_PEER,
+  "REMOTE_ADAPTER": ConnectorKind.REMOTE_ADAPTER,
+});
+
 class PlanStep {
   final String caseKey;
 
   ///只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
   ///native 任务元数据。
   final String? contractKey;
+
+  ///Adapter 为实际 HTTP 状态；MCP 原生结果固定 0，不以伪造 HTTP 状态证明协议成功。
   final int expectedHttpStatus;
+  final McpResultKind? expectedMcpResultKind;
   final String expectedResponseJson;
   final String idempotencyKey;
-  final AdapterProtocolOperation operation;
+  final ComponentConformanceOperation operation;
   final String? referenceAssetId;
   final String? referenceFromStepKey;
   final String? referenceResourceId;
@@ -6200,6 +6307,7 @@ class PlanStep {
     required this.caseKey,
     this.contractKey,
     required this.expectedHttpStatus,
+    this.expectedMcpResultKind,
     required this.expectedResponseJson,
     required this.idempotencyKey,
     required this.operation,
@@ -6214,9 +6322,12 @@ class PlanStep {
     caseKey: json["caseKey"],
     contractKey: json["contractKey"],
     expectedHttpStatus: json["expectedHttpStatus"],
+    expectedMcpResultKind: json["expectedMcpResultKind"] == null
+        ? null
+        : mcpResultKindValues.map[json["expectedMcpResultKind"]]!,
     expectedResponseJson: json["expectedResponseJson"],
     idempotencyKey: json["idempotencyKey"],
-    operation: adapterProtocolOperationValues.map[json["operation"]]!,
+    operation: componentConformanceOperationValues.map[json["operation"]]!,
     referenceAssetId: json["referenceAssetId"],
     referenceFromStepKey: json["referenceFromStepKey"],
     referenceResourceId: json["referenceResourceId"],
@@ -6228,9 +6339,10 @@ class PlanStep {
     "caseKey": caseKey,
     "contractKey": contractKey,
     "expectedHttpStatus": expectedHttpStatus,
+    "expectedMcpResultKind": mcpResultKindValues.reverse[expectedMcpResultKind],
     "expectedResponseJson": expectedResponseJson,
     "idempotencyKey": idempotencyKey,
-    "operation": adapterProtocolOperationValues.reverse[operation],
+    "operation": componentConformanceOperationValues.reverse[operation],
     "referenceAssetId": referenceAssetId,
     "referenceFromStepKey": referenceFromStepKey,
     "referenceResourceId": referenceResourceId,
@@ -6238,6 +6350,13 @@ class PlanStep {
     "stepKey": stepKey,
   });
 }
+
+enum McpResultKind { ERROR, RESULT }
+
+final mcpResultKindValues = EnumValues({
+  "ERROR": McpResultKind.ERROR,
+  "RESULT": McpResultKind.RESULT,
+});
 
 ///原受信Worker在原审批后的COMPONENT_RELEASE Activity报告实际自身能力。Core自行读取自身与当前Web事实，并重新核验原release套件和审批。
 class ComponentReleaseApprovalReport {
@@ -6294,8 +6413,10 @@ class TargetClass {
 class WorkerBuildClass {
   final List<String> adapterProtocolVersions;
   final String buildId;
+  final List<String>? connectorKinds;
   final List<String> driverRegistryKeys;
   final String hostApiVersion;
+  final List<String>? mcpProtocolVersions;
   final List<PlatformPortKey> platformPortKeys;
   final DateTime reportedAt;
   final Subject subject;
@@ -6303,8 +6424,10 @@ class WorkerBuildClass {
   WorkerBuildClass({
     required this.adapterProtocolVersions,
     required this.buildId,
+    this.connectorKinds,
     required this.driverRegistryKeys,
     required this.hostApiVersion,
+    this.mcpProtocolVersions,
     required this.platformPortKeys,
     required this.reportedAt,
     required this.subject,
@@ -6316,10 +6439,16 @@ class WorkerBuildClass {
           json["adapterProtocolVersions"].map((x) => x),
         ),
         buildId: json["buildId"],
+        connectorKinds: json["connectorKinds"] == null
+            ? null
+            : List<String>.from(json["connectorKinds"]!.map((x) => x)),
         driverRegistryKeys: List<String>.from(
           json["driverRegistryKeys"].map((x) => x),
         ),
         hostApiVersion: json["hostApiVersion"],
+        mcpProtocolVersions: json["mcpProtocolVersions"] == null
+            ? null
+            : List<String>.from(json["mcpProtocolVersions"]!.map((x) => x)),
         platformPortKeys: List<PlatformPortKey>.from(
           json["platformPortKeys"].map((x) => platformPortKeyValues.map[x]!),
         ),
@@ -6332,8 +6461,14 @@ class WorkerBuildClass {
       adapterProtocolVersions.map((x) => x),
     ),
     "buildId": buildId,
+    "connectorKinds": connectorKinds == null
+        ? null
+        : List<dynamic>.from(connectorKinds!.map((x) => x)),
     "driverRegistryKeys": List<dynamic>.from(driverRegistryKeys.map((x) => x)),
     "hostApiVersion": hostApiVersion,
+    "mcpProtocolVersions": mcpProtocolVersions == null
+        ? null
+        : List<dynamic>.from(mcpProtocolVersions!.map((x) => x)),
     "platformPortKeys": List<dynamic>.from(
       platformPortKeys.map((x) => platformPortKeyValues.reverse[x]),
     ),
@@ -7972,17 +8107,30 @@ class AgentVersionContentTurnLimits {
 class ApplicationAdapterDirectory {
   final List<ApplicationAdapterDelivery> adapters;
 
-  ApplicationAdapterDirectory({required this.adapters});
+  ///受控部署事实，不是 Tool 注册表或业务授权；原生 MCP peer 不接收 ActionToken。
+  final List<ApplicationProtocolPeerDelivery>? protocolPeers;
+
+  ApplicationAdapterDirectory({required this.adapters, this.protocolPeers});
 
   factory ApplicationAdapterDirectory.fromJson(Map<String, dynamic> json) =>
       ApplicationAdapterDirectory(
         adapters: List<ApplicationAdapterDelivery>.from(
           json["adapters"].map((x) => ApplicationAdapterDelivery.fromJson(x)),
         ),
+        protocolPeers: json["protocolPeers"] == null
+            ? null
+            : List<ApplicationProtocolPeerDelivery>.from(
+                json["protocolPeers"]!.map(
+                  (x) => ApplicationProtocolPeerDelivery.fromJson(x),
+                ),
+              ),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "adapters": List<dynamic>.from(adapters.map((x) => x.toJson())),
+    "protocolPeers": protocolPeers == null
+        ? null
+        : List<dynamic>.from(protocolPeers!.map((x) => x.toJson())),
   });
 }
 
@@ -8059,6 +8207,141 @@ class ApplicationSecretReader {
     "audience": audience,
     "roleName": roleName,
     "servicePrincipalId": servicePrincipalId,
+  });
+}
+
+class ApplicationProtocolPeerDelivery {
+  final String adapterServiceRef;
+  final String artifactDigest;
+  final List<ApplicationProtocolPeerBindingDelivery> bindings;
+  final int maxResponseBytes;
+  final String mcpUrl;
+  final String nativeInstanceRef;
+  final int timeoutSeconds;
+
+  ApplicationProtocolPeerDelivery({
+    required this.adapterServiceRef,
+    required this.artifactDigest,
+    required this.bindings,
+    required this.maxResponseBytes,
+    required this.mcpUrl,
+    required this.nativeInstanceRef,
+    required this.timeoutSeconds,
+  });
+
+  factory ApplicationProtocolPeerDelivery.fromJson(Map<String, dynamic> json) =>
+      ApplicationProtocolPeerDelivery(
+        adapterServiceRef: json["adapterServiceRef"],
+        artifactDigest: json["artifactDigest"],
+        bindings: List<ApplicationProtocolPeerBindingDelivery>.from(
+          json["bindings"].map(
+            (x) => ApplicationProtocolPeerBindingDelivery.fromJson(x),
+          ),
+        ),
+        maxResponseBytes: json["maxResponseBytes"],
+        mcpUrl: json["mcpUrl"],
+        nativeInstanceRef: json["nativeInstanceRef"],
+        timeoutSeconds: json["timeoutSeconds"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "adapterServiceRef": adapterServiceRef,
+    "artifactDigest": artifactDigest,
+    "bindings": List<dynamic>.from(bindings.map((x) => x.toJson())),
+    "maxResponseBytes": maxResponseBytes,
+    "mcpUrl": mcpUrl,
+    "nativeInstanceRef": nativeInstanceRef,
+    "timeoutSeconds": timeoutSeconds,
+  });
+}
+
+class ApplicationProtocolPeerBindingDelivery {
+  final String bindingId;
+  final String configDigest;
+  final String isolationMode;
+
+  ///绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
+  final List<ApplicationNativeResourceDelivery>? nativeResources;
+  final String nativeScopeRef;
+  final String servicePrincipalId;
+  final String tenantId;
+  final String? workspaceId;
+
+  ApplicationProtocolPeerBindingDelivery({
+    required this.bindingId,
+    required this.configDigest,
+    required this.isolationMode,
+    this.nativeResources,
+    required this.nativeScopeRef,
+    required this.servicePrincipalId,
+    required this.tenantId,
+    this.workspaceId,
+  });
+
+  factory ApplicationProtocolPeerBindingDelivery.fromJson(
+    Map<String, dynamic> json,
+  ) => ApplicationProtocolPeerBindingDelivery(
+    bindingId: json["bindingId"],
+    configDigest: json["configDigest"],
+    isolationMode: json["isolationMode"],
+    nativeResources: json["nativeResources"] == null
+        ? null
+        : List<ApplicationNativeResourceDelivery>.from(
+            json["nativeResources"]!.map(
+              (x) => ApplicationNativeResourceDelivery.fromJson(x),
+            ),
+          ),
+    nativeScopeRef: json["nativeScopeRef"],
+    servicePrincipalId: json["servicePrincipalId"],
+    tenantId: json["tenantId"],
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "configDigest": configDigest,
+    "isolationMode": isolationMode,
+    "nativeResources": nativeResources == null
+        ? null
+        : List<dynamic>.from(nativeResources!.map((x) => x.toJson())),
+    "nativeScopeRef": nativeScopeRef,
+    "servicePrincipalId": servicePrincipalId,
+    "tenantId": tenantId,
+    "workspaceId": workspaceId,
+  });
+}
+
+class ApplicationNativeResourceDelivery {
+  final String evidenceDigest;
+  final String evidenceRef;
+  final String nativeRef;
+  final String nativeType;
+  final String typeKey;
+
+  ApplicationNativeResourceDelivery({
+    required this.evidenceDigest,
+    required this.evidenceRef,
+    required this.nativeRef,
+    required this.nativeType,
+    required this.typeKey,
+  });
+
+  factory ApplicationNativeResourceDelivery.fromJson(
+    Map<String, dynamic> json,
+  ) => ApplicationNativeResourceDelivery(
+    evidenceDigest: json["evidenceDigest"],
+    evidenceRef: json["evidenceRef"],
+    nativeRef: json["nativeRef"],
+    nativeType: json["nativeType"],
+    typeKey: json["typeKey"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "evidenceDigest": evidenceDigest,
+    "evidenceRef": evidenceRef,
+    "nativeRef": nativeRef,
+    "nativeType": nativeType,
+    "typeKey": typeKey,
   });
 }
 
@@ -8778,6 +9061,81 @@ class ComponentConformanceIdentityContext {
   });
 }
 
+///ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
+enum AdapterProtocolOperation {
+  CANCEL,
+  EXECUTE,
+  EXTRACT_USAGE,
+  HANDSHAKE,
+  MAP_NATIVE_STATUS_ERROR,
+  OBSERVE,
+  QUERY_REVISION,
+  RECONCILE,
+  RESOLVE_NATIVE_SCOPE,
+  VALIDATE_BINDING,
+}
+
+final adapterProtocolOperationValues = EnumValues({
+  "cancel": AdapterProtocolOperation.CANCEL,
+  "execute": AdapterProtocolOperation.EXECUTE,
+  "extract_usage": AdapterProtocolOperation.EXTRACT_USAGE,
+  "handshake": AdapterProtocolOperation.HANDSHAKE,
+  "map_native_status_error": AdapterProtocolOperation.MAP_NATIVE_STATUS_ERROR,
+  "observe": AdapterProtocolOperation.OBSERVE,
+  "query_revision": AdapterProtocolOperation.QUERY_REVISION,
+  "reconcile": AdapterProtocolOperation.RECONCILE,
+  "resolve_native_scope": AdapterProtocolOperation.RESOLVE_NATIVE_SCOPE,
+  "validate_binding": AdapterProtocolOperation.VALIDATE_BINDING,
+});
+
+///原 COMPONENT_CONFORMANCE_ENVIRONMENT_FILE 的 PROTOCOL_PEER 分支，仅隔离套件运行事实；readOnlyTools
+///固定隔离实例实际上可安全执行的只读探针，不授予生产业务权限。
+class ComponentProtocolPeerEnvironment {
+  final String artifactDigest;
+  final String initializeResultJson;
+  final String listResultJson;
+  final int maxResponseBytes;
+  final int maxSteps;
+  final String mcpUrl;
+  final List<String> readOnlyTools;
+  final int timeoutSeconds;
+
+  ComponentProtocolPeerEnvironment({
+    required this.artifactDigest,
+    required this.initializeResultJson,
+    required this.listResultJson,
+    required this.maxResponseBytes,
+    required this.maxSteps,
+    required this.mcpUrl,
+    required this.readOnlyTools,
+    required this.timeoutSeconds,
+  });
+
+  factory ComponentProtocolPeerEnvironment.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentProtocolPeerEnvironment(
+    artifactDigest: json["artifactDigest"],
+    initializeResultJson: json["initializeResultJson"],
+    listResultJson: json["listResultJson"],
+    maxResponseBytes: json["maxResponseBytes"],
+    maxSteps: json["maxSteps"],
+    mcpUrl: json["mcpUrl"],
+    readOnlyTools: List<String>.from(json["readOnlyTools"].map((x) => x)),
+    timeoutSeconds: json["timeoutSeconds"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "artifactDigest": artifactDigest,
+    "initializeResultJson": initializeResultJson,
+    "listResultJson": listResultJson,
+    "maxResponseBytes": maxResponseBytes,
+    "maxSteps": maxSteps,
+    "mcpUrl": mcpUrl,
+    "readOnlyTools": List<dynamic>.from(readOnlyTools.map((x) => x)),
+    "timeoutSeconds": timeoutSeconds,
+  });
+}
+
 ///原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
 class ComponentReleaseApprovalTarget {
   final String actionExecutionId;
@@ -9080,8 +9438,10 @@ class LlmRouteCreateInputProviderSecretRef {
 class PlatformBuildInfo {
   final List<String> adapterProtocolVersions;
   final String buildId;
+  final List<String>? connectorKinds;
   final List<String> driverRegistryKeys;
   final String hostApiVersion;
+  final List<String>? mcpProtocolVersions;
   final List<PlatformPortKey> platformPortKeys;
   final DateTime reportedAt;
   final Subject subject;
@@ -9089,8 +9449,10 @@ class PlatformBuildInfo {
   PlatformBuildInfo({
     required this.adapterProtocolVersions,
     required this.buildId,
+    this.connectorKinds,
     required this.driverRegistryKeys,
     required this.hostApiVersion,
+    this.mcpProtocolVersions,
     required this.platformPortKeys,
     required this.reportedAt,
     required this.subject,
@@ -9102,10 +9464,16 @@ class PlatformBuildInfo {
           json["adapterProtocolVersions"].map((x) => x),
         ),
         buildId: json["buildId"],
+        connectorKinds: json["connectorKinds"] == null
+            ? null
+            : List<String>.from(json["connectorKinds"]!.map((x) => x)),
         driverRegistryKeys: List<String>.from(
           json["driverRegistryKeys"].map((x) => x),
         ),
         hostApiVersion: json["hostApiVersion"],
+        mcpProtocolVersions: json["mcpProtocolVersions"] == null
+            ? null
+            : List<String>.from(json["mcpProtocolVersions"]!.map((x) => x)),
         platformPortKeys: List<PlatformPortKey>.from(
           json["platformPortKeys"].map((x) => platformPortKeyValues.map[x]!),
         ),
@@ -9118,13 +9486,51 @@ class PlatformBuildInfo {
       adapterProtocolVersions.map((x) => x),
     ),
     "buildId": buildId,
+    "connectorKinds": connectorKinds == null
+        ? null
+        : List<dynamic>.from(connectorKinds!.map((x) => x)),
     "driverRegistryKeys": List<dynamic>.from(driverRegistryKeys.map((x) => x)),
     "hostApiVersion": hostApiVersion,
+    "mcpProtocolVersions": mcpProtocolVersions == null
+        ? null
+        : List<dynamic>.from(mcpProtocolVersions!.map((x) => x)),
     "platformPortKeys": List<dynamic>.from(
       platformPortKeys.map((x) => platformPortKeyValues.reverse[x]),
     ),
     "reportedAt": reportedAt.toIso8601String(),
     "subject": subjectValues.reverse[subject],
+  });
+}
+
+class ResourceCreate {
+  final String evidenceDigest;
+  final String evidenceRef;
+  final String nativeRef;
+  final String nativeType;
+  final String typeKey;
+
+  ResourceCreate({
+    required this.evidenceDigest,
+    required this.evidenceRef,
+    required this.nativeRef,
+    required this.nativeType,
+    required this.typeKey,
+  });
+
+  factory ResourceCreate.fromJson(Map<String, dynamic> json) => ResourceCreate(
+    evidenceDigest: json["evidenceDigest"],
+    evidenceRef: json["evidenceRef"],
+    nativeRef: json["nativeRef"],
+    nativeType: json["nativeType"],
+    typeKey: json["typeKey"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "evidenceDigest": evidenceDigest,
+    "evidenceRef": evidenceRef,
+    "nativeRef": nativeRef,
+    "nativeType": nativeType,
+    "typeKey": typeKey,
   });
 }
 
@@ -10605,9 +11011,10 @@ class ObservationElement {
   final ContentReferenceClass? contentReference;
   final ErrorClass? errorClass;
   final int httpStatus;
+  final McpResultKind? mcpResultKind;
   final ExecutionClass? nativeObservation;
   final NativeScopeObservationClass? nativeScopeObservation;
-  final AdapterProtocolOperation operation;
+  final ComponentConformanceOperation operation;
   final String requestDigest;
   final String responseDigest;
 
@@ -10620,6 +11027,7 @@ class ObservationElement {
     this.contentReference,
     this.errorClass,
     required this.httpStatus,
+    this.mcpResultKind,
     this.nativeObservation,
     this.nativeScopeObservation,
     required this.operation,
@@ -10639,6 +11047,9 @@ class ObservationElement {
             ? null
             : errorClassValues.map[json["errorClass"]]!,
         httpStatus: json["httpStatus"],
+        mcpResultKind: json["mcpResultKind"] == null
+            ? null
+            : mcpResultKindValues.map[json["mcpResultKind"]]!,
         nativeObservation: json["nativeObservation"] == null
             ? null
             : ExecutionClass.fromJson(json["nativeObservation"]),
@@ -10647,7 +11058,7 @@ class ObservationElement {
             : NativeScopeObservationClass.fromJson(
                 json["nativeScopeObservation"],
               ),
-        operation: adapterProtocolOperationValues.map[json["operation"]]!,
+        operation: componentConformanceOperationValues.map[json["operation"]]!,
         requestDigest: json["requestDigest"],
         responseDigest: json["responseDigest"],
         resultDigest: json["resultDigest"],
@@ -10659,9 +11070,10 @@ class ObservationElement {
     "contentReference": contentReference?.toJson(),
     "errorClass": errorClassValues.reverse[errorClass],
     "httpStatus": httpStatus,
+    "mcpResultKind": mcpResultKindValues.reverse[mcpResultKind],
     "nativeObservation": nativeObservation?.toJson(),
     "nativeScopeObservation": nativeScopeObservation?.toJson(),
-    "operation": adapterProtocolOperationValues.reverse[operation],
+    "operation": componentConformanceOperationValues.reverse[operation],
     "requestDigest": requestDigest,
     "responseDigest": responseDigest,
     "resultDigest": resultDigest,
@@ -10704,6 +11116,7 @@ class ComponentConformancePlan {
   final String actionExecutionId;
   final String artifactDigest;
   final String componentReleaseId;
+  final ConnectorKind? connectorKind;
   final List<String> contractDigests;
 
   ///独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
@@ -10722,6 +11135,7 @@ class ComponentConformancePlan {
     required this.actionExecutionId,
     required this.artifactDigest,
     required this.componentReleaseId,
+    this.connectorKind,
     required this.contractDigests,
     required this.identityDigest,
     required this.operationId,
@@ -10737,6 +11151,9 @@ class ComponentConformancePlan {
         actionExecutionId: json["actionExecutionId"],
         artifactDigest: json["artifactDigest"],
         componentReleaseId: json["componentReleaseId"],
+        connectorKind: json["connectorKind"] == null
+            ? null
+            : connectorKindValues.map[json["connectorKind"]]!,
         contractDigests: List<String>.from(
           json["contractDigests"].map((x) => x),
         ),
@@ -10755,6 +11172,7 @@ class ComponentConformancePlan {
     "actionExecutionId": actionExecutionId,
     "artifactDigest": artifactDigest,
     "componentReleaseId": componentReleaseId,
+    "connectorKind": connectorKindValues.reverse[connectorKind],
     "contractDigests": List<dynamic>.from(contractDigests.map((x) => x)),
     "identityDigest": identityDigest,
     "operationId": operationId,
@@ -10772,10 +11190,13 @@ class ComponentConformancePlanStep {
   ///只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
   ///native 任务元数据。
   final String? contractKey;
+
+  ///Adapter 为实际 HTTP 状态；MCP 原生结果固定 0，不以伪造 HTTP 状态证明协议成功。
   final int expectedHttpStatus;
+  final McpResultKind? expectedMcpResultKind;
   final String expectedResponseJson;
   final String idempotencyKey;
-  final AdapterProtocolOperation operation;
+  final ComponentConformanceOperation operation;
   final String? referenceAssetId;
   final String? referenceFromStepKey;
   final String? referenceResourceId;
@@ -10786,6 +11207,7 @@ class ComponentConformancePlanStep {
     required this.caseKey,
     this.contractKey,
     required this.expectedHttpStatus,
+    this.expectedMcpResultKind,
     required this.expectedResponseJson,
     required this.idempotencyKey,
     required this.operation,
@@ -10801,9 +11223,12 @@ class ComponentConformancePlanStep {
         caseKey: json["caseKey"],
         contractKey: json["contractKey"],
         expectedHttpStatus: json["expectedHttpStatus"],
+        expectedMcpResultKind: json["expectedMcpResultKind"] == null
+            ? null
+            : mcpResultKindValues.map[json["expectedMcpResultKind"]]!,
         expectedResponseJson: json["expectedResponseJson"],
         idempotencyKey: json["idempotencyKey"],
-        operation: adapterProtocolOperationValues.map[json["operation"]]!,
+        operation: componentConformanceOperationValues.map[json["operation"]]!,
         referenceAssetId: json["referenceAssetId"],
         referenceFromStepKey: json["referenceFromStepKey"],
         referenceResourceId: json["referenceResourceId"],
@@ -10815,9 +11240,10 @@ class ComponentConformancePlanStep {
     "caseKey": caseKey,
     "contractKey": contractKey,
     "expectedHttpStatus": expectedHttpStatus,
+    "expectedMcpResultKind": mcpResultKindValues.reverse[expectedMcpResultKind],
     "expectedResponseJson": expectedResponseJson,
     "idempotencyKey": idempotencyKey,
-    "operation": adapterProtocolOperationValues.reverse[operation],
+    "operation": componentConformanceOperationValues.reverse[operation],
     "referenceAssetId": referenceAssetId,
     "referenceFromStepKey": referenceFromStepKey,
     "referenceResourceId": referenceResourceId,
@@ -10866,9 +11292,10 @@ class ComponentConformanceStepObservation {
   final ContentReferenceClass? contentReference;
   final ErrorClass? errorClass;
   final int httpStatus;
+  final McpResultKind? mcpResultKind;
   final ExecutionClass? nativeObservation;
   final NativeScopeObservationClass? nativeScopeObservation;
-  final AdapterProtocolOperation operation;
+  final ComponentConformanceOperation operation;
   final String requestDigest;
   final String responseDigest;
 
@@ -10881,6 +11308,7 @@ class ComponentConformanceStepObservation {
     this.contentReference,
     this.errorClass,
     required this.httpStatus,
+    this.mcpResultKind,
     this.nativeObservation,
     this.nativeScopeObservation,
     required this.operation,
@@ -10901,13 +11329,16 @@ class ComponentConformanceStepObservation {
         ? null
         : errorClassValues.map[json["errorClass"]]!,
     httpStatus: json["httpStatus"],
+    mcpResultKind: json["mcpResultKind"] == null
+        ? null
+        : mcpResultKindValues.map[json["mcpResultKind"]]!,
     nativeObservation: json["nativeObservation"] == null
         ? null
         : ExecutionClass.fromJson(json["nativeObservation"]),
     nativeScopeObservation: json["nativeScopeObservation"] == null
         ? null
         : NativeScopeObservationClass.fromJson(json["nativeScopeObservation"]),
-    operation: adapterProtocolOperationValues.map[json["operation"]]!,
+    operation: componentConformanceOperationValues.map[json["operation"]]!,
     requestDigest: json["requestDigest"],
     responseDigest: json["responseDigest"],
     resultDigest: json["resultDigest"],
@@ -10919,9 +11350,10 @@ class ComponentConformanceStepObservation {
     "contentReference": contentReference?.toJson(),
     "errorClass": errorClassValues.reverse[errorClass],
     "httpStatus": httpStatus,
+    "mcpResultKind": mcpResultKindValues.reverse[mcpResultKind],
     "nativeObservation": nativeObservation?.toJson(),
     "nativeScopeObservation": nativeScopeObservation?.toJson(),
-    "operation": adapterProtocolOperationValues.reverse[operation],
+    "operation": componentConformanceOperationValues.reverse[operation],
     "requestDigest": requestDigest,
     "responseDigest": responseDigest,
     "resultDigest": resultDigest,
@@ -10986,6 +11418,171 @@ class FreshApprovalAdmissionResult {
     "satisfiedSelectors": List<dynamic>.from(
       satisfiedSelectors.map((x) => approvalSelectorValues.reverse[x]),
     ),
+  });
+}
+
+class ResourceProvisionAdvanceRequest {
+  final bool cancelRequested;
+  final String runId;
+  final ResourceProvisionAdvanceRequestTarget target;
+
+  ResourceProvisionAdvanceRequest({
+    required this.cancelRequested,
+    required this.runId,
+    required this.target,
+  });
+
+  factory ResourceProvisionAdvanceRequest.fromJson(Map<String, dynamic> json) =>
+      ResourceProvisionAdvanceRequest(
+        cancelRequested: json["cancelRequested"],
+        runId: json["runId"],
+        target: ResourceProvisionAdvanceRequestTarget.fromJson(json["target"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "cancelRequested": cancelRequested,
+    "runId": runId,
+    "target": target.toJson(),
+  });
+}
+
+class ResourceProvisionAdvanceRequestTarget {
+  final String actionExecutionId;
+  final String bindingId;
+  final int bindingVersion;
+  final String componentReleaseId;
+  final String nativeInstanceRef;
+  final String nativeScopeRef;
+  final int projectionGeneration;
+  final ReferenceClass reference;
+  final String resourceId;
+  final int resourceVersion;
+  final String workflowId;
+
+  ResourceProvisionAdvanceRequestTarget({
+    required this.actionExecutionId,
+    required this.bindingId,
+    required this.bindingVersion,
+    required this.componentReleaseId,
+    required this.nativeInstanceRef,
+    required this.nativeScopeRef,
+    required this.projectionGeneration,
+    required this.reference,
+    required this.resourceId,
+    required this.resourceVersion,
+    required this.workflowId,
+  });
+
+  factory ResourceProvisionAdvanceRequestTarget.fromJson(
+    Map<String, dynamic> json,
+  ) => ResourceProvisionAdvanceRequestTarget(
+    actionExecutionId: json["actionExecutionId"],
+    bindingId: json["bindingId"],
+    bindingVersion: json["bindingVersion"],
+    componentReleaseId: json["componentReleaseId"],
+    nativeInstanceRef: json["nativeInstanceRef"],
+    nativeScopeRef: json["nativeScopeRef"],
+    projectionGeneration: json["projectionGeneration"],
+    reference: ReferenceClass.fromJson(json["reference"]),
+    resourceId: json["resourceId"],
+    resourceVersion: json["resourceVersion"],
+    workflowId: json["workflowId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "bindingId": bindingId,
+    "bindingVersion": bindingVersion,
+    "componentReleaseId": componentReleaseId,
+    "nativeInstanceRef": nativeInstanceRef,
+    "nativeScopeRef": nativeScopeRef,
+    "projectionGeneration": projectionGeneration,
+    "reference": reference.toJson(),
+    "resourceId": resourceId,
+    "resourceVersion": resourceVersion,
+    "workflowId": workflowId,
+  });
+}
+
+class ResourceProvisionAdvanceResult {
+  final String resourceId;
+  final TaskStatus status;
+  final String waitingReason;
+
+  ResourceProvisionAdvanceResult({
+    required this.resourceId,
+    required this.status,
+    required this.waitingReason,
+  });
+
+  factory ResourceProvisionAdvanceResult.fromJson(Map<String, dynamic> json) =>
+      ResourceProvisionAdvanceResult(
+        resourceId: json["resourceId"],
+        status: taskStatusValues.map[json["status"]]!,
+        waitingReason: json["waitingReason"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "resourceId": resourceId,
+    "status": taskStatusValues.reverse[status],
+    "waitingReason": waitingReason,
+  });
+}
+
+class ResourceProvisionTarget {
+  final String actionExecutionId;
+  final String bindingId;
+  final int bindingVersion;
+  final String componentReleaseId;
+  final String nativeInstanceRef;
+  final String nativeScopeRef;
+  final int projectionGeneration;
+  final ReferenceClass reference;
+  final String resourceId;
+  final int resourceVersion;
+  final String workflowId;
+
+  ResourceProvisionTarget({
+    required this.actionExecutionId,
+    required this.bindingId,
+    required this.bindingVersion,
+    required this.componentReleaseId,
+    required this.nativeInstanceRef,
+    required this.nativeScopeRef,
+    required this.projectionGeneration,
+    required this.reference,
+    required this.resourceId,
+    required this.resourceVersion,
+    required this.workflowId,
+  });
+
+  factory ResourceProvisionTarget.fromJson(Map<String, dynamic> json) =>
+      ResourceProvisionTarget(
+        actionExecutionId: json["actionExecutionId"],
+        bindingId: json["bindingId"],
+        bindingVersion: json["bindingVersion"],
+        componentReleaseId: json["componentReleaseId"],
+        nativeInstanceRef: json["nativeInstanceRef"],
+        nativeScopeRef: json["nativeScopeRef"],
+        projectionGeneration: json["projectionGeneration"],
+        reference: ReferenceClass.fromJson(json["reference"]),
+        resourceId: json["resourceId"],
+        resourceVersion: json["resourceVersion"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "bindingId": bindingId,
+    "bindingVersion": bindingVersion,
+    "componentReleaseId": componentReleaseId,
+    "nativeInstanceRef": nativeInstanceRef,
+    "nativeScopeRef": nativeScopeRef,
+    "projectionGeneration": projectionGeneration,
+    "reference": reference.toJson(),
+    "resourceId": resourceId,
+    "resourceVersion": resourceVersion,
+    "workflowId": workflowId,
   });
 }
 

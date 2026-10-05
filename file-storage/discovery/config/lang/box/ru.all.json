@@ -1,0 +1,473 @@
+{
+  "30 days max": {
+    "other": "максимум 30 дней"
+  },
+  "Remove versions after 30 days": {
+    "other": "Удалить версии через 30 дней"
+  },
+  "Keep All": {
+    "other": "Сохранить все"
+  },
+  "Keep all versions forever": {
+    "other": "Сохранять все версии всегда"
+  },
+  "Regular Pruning": {
+    "other": "Регулярная очистка"
+  },
+  "Prune versions regularly at various intervals": {
+    "other": "Очистка версий через различные интервалы времени"
+  },
+  "aclAction.Name": {
+    "other": "Наименование"
+  },
+  "aclAction.Value": {
+    "other": "Значение"
+  },
+  "aclSingleQuery.Actions": {
+    "other": "Действия"
+  },
+  "aclSingleQuery.NodeIDs": {
+    "other": "Идентификаторы узла"
+  },
+  "aclSingleQuery.Not": {
+    "other": "Не"
+  },
+  "aclSingleQuery.RoleIDs": {
+    "other": "Идентификаторы роли"
+  },
+  "aclSingleQuery.WorkspaceIDs": {
+    "other": "Идентификаторы рабочей области"
+  },
+  "aclSingleQuery.not": {
+    "other": "не"
+  },
+  "actionOutputSingleQuery.ErrorStringRegexp": {
+    "other": "Поиск по строке ошибки (regexp)"
+  },
+  "actionOutputSingleQuery.IsSuccess": {
+    "other": "Успешно"
+  },
+  "actionOutputSingleQuery.JsonBodyHasKey": {
+    "other": "В теле Json есть ключ..."
+  },
+  "actionOutputSingleQuery.JsonBodyRegexp": {
+    "other": "Поиск по телу Json (regexp)"
+  },
+  "actionOutputSingleQuery.JsonBodySizeGreaterThan": {
+    "other": "Размер тела Json больше, чем"
+  },
+  "actionOutputSingleQuery.JsonBodySizeSmallerThan": {
+    "other": "Размер тела Json меньше, чем"
+  },
+  "actionOutputSingleQuery.Not": {
+    "other": "Не"
+  },
+  "actionOutputSingleQuery.StringBodyRegexp": {
+    "other": "Поиск по телу строки (regexp)"
+  },
+  "actionOutputSingleQuery.StringBodySizeGreaterThan": {
+    "other": "Размер тела строки больше, чем"
+  },
+  "actionOutputSingleQuery.StringBodySizeSmallerThan": {
+    "other": "Размер тела строки меньше, чем"
+  },
+  "actionOutputSingleQuery.TaskTimeGt": {
+    "other": "Время задачи больше, чем"
+  },
+  "actionOutputSingleQuery.TaskTimeLt": {
+    "other": "Время задачи меньше, чем"
+  },
+  "actionOutputSingleQuery.FreeCondition": {
+    "other": "Бесплатные условия"
+  },
+  "dataSelectorSingleQuery.JsonPath": {
+    "other": "JSON- путь"
+  },
+  "conditionCIDRCondition.CIDR": {
+    "other": "CIDR"
+  },
+  "conditionCIDRCondition.cidr": {
+    "other": "cidr"
+  },
+  "conditionStringEqualCondition.Equals": {
+    "other": "Равно"
+  },
+  "conditionStringEqualCondition.equals": {
+    "other": "равно"
+  },
+  "conditionStringMatchCondition.Matches": {
+    "other": "Совпадает"
+  },
+  "conditionStringMatchCondition.matches": {
+    "other": "совпадает"
+  },
+  "conditionPathGlobCondition.glob": {
+    "other": "паттерн"
+  },
+  "conditionBooleanCondition.value": {
+    "other": "Истина"
+  },
+  "contextMetaCondition.CIDRCondition": {
+    "other": "CIDRCondition"
+  },
+  "contextMetaCondition.EqualsSubjectCondition": {
+    "other": "Субъект равен"
+  },
+  "contextMetaCondition.ResourceContainsCondition": {
+    "other": "Ресурс содержит"
+  },
+  "contextMetaCondition.StringEqualCondition": {
+    "other": "Строка равна"
+  },
+  "contextMetaCondition.StringMatchCondition": {
+    "other": "Совпадение строк"
+  },
+  "contextMetaCondition.StringPairsEqualCondition": {
+    "other": "Пары строк равны"
+  },
+  "contextMetaCondition.StringNotMatchCondition": {
+    "other": "Строка не совпадает"
+  },
+  "contextMetaCondition.WithinPeriodCondition": {
+    "other": "Дата период"
+  },
+  "contextMetaCondition.OfficeHoursCondition": {
+    "other": "Часы работы офиса"
+  },
+  "contextMetaCondition.DateAfterCondition": {
+    "other": "Дата после"
+  },
+  "contextMetaCondition.PathGlobCondition": {
+    "other": "Глобальный сопоставитель "
+  },
+  "contextMetaCondition.BooleanCondition": {
+    "other": "Логическое Значение"
+  },
+  "contextMetaField.ContentType": {
+    "other": "Тип контента"
+  },
+  "contextMetaField.CookiesString": {
+    "other": "Строка файлов cookie"
+  },
+  "contextMetaField.HttpProtocol": {
+    "other": "HTTP Протокол"
+  },
+  "contextMetaField.RemoteAddress": {
+    "other": "Удаленный адрес"
+  },
+  "contextMetaField.RequestHostname": {
+    "other": "Запросить имя хоста"
+  },
+  "contextMetaField.RequestHost": {
+    "other": "Запросить Хост"
+  },
+  "contextMetaField.RequestPort": {
+    "other": "Порт запроса"
+  },
+  "contextMetaField.RequestMethod": {
+    "other": "Способ запроса"
+  },
+  "contextMetaField.RequestURI": {
+    "other": "Запросить URI"
+  },
+  "contextMetaField.ServerTime": {
+    "other": "Серверное время"
+  },
+  "contextMetaField.UserAgent": {
+    "other": "Пользовательский агент"
+  },
+  "contextMetaSingleQuery.Condition": {
+    "other": "Состояние"
+  },
+  "contextMetaSingleQuery.FieldName": {
+    "other": "Имя поля"
+  },
+  "roleSingleQuery.HasAutoApply": {
+    "other": "Имеет автоматическое применение"
+  },
+  "roleSingleQuery.IsGroupRole": {
+    "other": "Групповая роль"
+  },
+  "roleSingleQuery.IsTeam": {
+    "other": "Команда"
+  },
+  "roleSingleQuery.IsUserRole": {
+    "other": "Роль пользователя"
+  },
+  "roleSingleQuery.Label": {
+    "other": "Метка"
+  },
+  "roleSingleQuery.Not": {
+    "other": "Нет"
+  },
+  "roleSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "roleSingleQuery.not": {
+    "other": "нет"
+  },
+  "treeQuery.Content": {
+    "other": "Содержимое"
+  },
+  "treeQuery.DurationDate": {
+    "other": "Дата модификации (используйте сравнение)"
+  },
+  "treeQuery.Extension": {
+    "other": "Расширение Файла"
+  },
+  "treeQuery.FileName": {
+    "other": "Имя файла"
+  },
+  "treeQuery.FileNameOrContent": {
+    "other": "Имя файла или содержимое"
+  },
+  "treeQuery.FreeString": {
+    "other": "Строка поиска в стиле взрыв схемы"
+  },
+  "treeQuery.GeoQuery": {
+    "other": "Запрос геолокации"
+  },
+  "treeQuery.MaxDate": {
+    "other": "Изменено до"
+  },
+  "treeQuery.MaxSize": {
+    "other": "Максимальный размер"
+  },
+  "treeQuery.MinDate": {
+    "other": "Изменено с"
+  },
+  "treeQuery.MinSize": {
+    "other": "Размер больше чем"
+  },
+  "treeQuery.Not": {
+    "other": "Нет"
+  },
+  "treeQuery.PathDepth": {
+    "other": "Глубина пути"
+  },
+  "treeQuery.PathPrefix": {
+    "other": "Префикс пути"
+  },
+  "treeQuery.Paths": {
+    "other": "Абсолютный путь"
+  },
+  "treeQuery.Type": {
+    "other": "Тип"
+  },
+  "treeQuery.Type.COLLECTION": {
+    "other": "Папка"
+  },
+  "treeQuery.Type.LEAF": {
+    "other": "Файл"
+  },
+  "treeQuery.Type.UNKNOWN": {
+    "other": "Любой"
+  },
+  "treeQuery.UUIDs": {
+    "other": "UUID`ы узлов"
+  },
+  "treeQuery.ETag": {
+    "other": "ETag"
+  },
+  "userSingleQuery.AttributeAnyValue": {
+    "other": "Имеет любое значение"
+  },
+  "userSingleQuery.AttributeName": {
+    "other": "Название атрибута"
+  },
+  "userSingleQuery.AttributeValue": {
+    "other": "Значение атрибута"
+  },
+  "userSingleQuery.ConnectedSince": {
+    "other": "Подключен с момента"
+  },
+  "userSingleQuery.FullPath": {
+    "other": "Полный путь"
+  },
+  "userSingleQuery.GroupPath": {
+    "other": "Путь группы"
+  },
+  "userSingleQuery.HasProfile": {
+    "other": "Имеет профиль"
+  },
+  "userSingleQuery.HasRole": {
+    "other": "Имеет роль"
+  },
+  "userSingleQuery.Login": {
+    "other": "Логин"
+  },
+  "userSingleQuery.NodeType": {
+    "other": "Тип объекта"
+  },
+  "userSingleQuery.NodeType.GROUP": {
+    "other": "Группа"
+  },
+  "userSingleQuery.NodeType.UNKNOWN": {
+    "other": "Любой"
+  },
+  "userSingleQuery.NodeType.USER": {
+    "other": "Пользователь"
+  },
+  "userSingleQuery.Not": {
+    "other": "Не"
+  },
+  "userSingleQuery.Password": {
+    "other": "Пароль"
+  },
+  "userSingleQuery.Recursive": {
+    "other": "Рекурсивный"
+  },
+  "userSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "userSingleQuery.not": {
+    "other": "не"
+  },
+  "workspaceSingleQuery.AttributeName": {
+    "other": "Название атрибута"
+  },
+  "workspaceSingleQuery.AttributeValue": {
+    "other": "Значение атрибута"
+  },
+  "workspaceSingleQuery.Description": {
+    "other": "Описание"
+  },
+  "workspaceSingleQuery.HasAttribute": {
+    "other": "Имеет атрибут"
+  },
+  "workspaceSingleQuery.Label": {
+    "other": "Метка"
+  },
+  "workspaceSingleQuery.LastUpdated": {
+    "other": "Последнее обновление"
+  },
+  "workspaceSingleQuery.Not": {
+    "other": "Не"
+  },
+  "workspaceSingleQuery.Scope": {
+    "other": "Область видимости"
+  },
+  "workspaceSingleQuery.Slug": {
+    "other": "Метка"
+  },
+  "workspaceSingleQuery.Uuid": {
+    "other": "Uuid"
+  },
+  "workspaceSingleQuery.description": {
+    "other": "Описание"
+  },
+  "workspaceSingleQuery.label": {
+    "other": "Метка"
+  },
+  "workspaceSingleQuery.not": {
+    "other": "не"
+  },
+  "workspaceSingleQuery.scope": {
+    "other": "Тип рабочего пространства"
+  },
+  "workspaceSingleQuery.scope.ADMIN": {
+    "other": "Рабочее пространство"
+  },
+  "workspaceSingleQuery.scope.ANY": {
+    "other": "Любой"
+  },
+  "workspaceSingleQuery.scope.LINK": {
+    "other": "Публичная ссылка"
+  },
+  "workspaceSingleQuery.scope.ROOM": {
+    "other": "Сотовый"
+  },
+  "workspaceSingleQuery.slug": {
+    "other": "Метка"
+  },
+  "workspaceSingleQuery.uuid": {
+    "other": "Uuid"
+  },
+  "dataSourceSingleQuery.Name": {
+    "other": "Наименование"
+  },
+  "dataSourceSingleQuery.IsDisabled": {
+    "other": "Отключено"
+  },
+  "dataSourceSingleQuery.StorageType": {
+    "other": "Тип хранилища"
+  },
+  "dataSourceSingleQuery.StorageType.REMOTE": {
+    "other": "Удаленный"
+  },
+  "dataSourceSingleQuery.StorageType.ANY": {
+    "other": "Любой"
+  },
+  "dataSourceSingleQuery.StorageType.LOCALFS": {
+    "other": "Локальный"
+  },
+  "dataSourceSingleQuery.PeerAddress": {
+    "other": "Адрес пира"
+  },
+  "dataSourceSingleQuery.FlatStorage": {
+    "other": "Фиксированное хранилище"
+  },
+  "dataSourceSingleQuery.SkipSyncOnRestart": {
+    "other": "Пропустить синхронизацию при перезапуске"
+  },
+  "dataSourceSingleQuery.IsVersioned": {
+    "other": "Подвержено контролю версий"
+  },
+  "dataSourceSingleQuery.IsEncrypted": {
+    "other": "Зашифровано"
+  },
+  "dataSourceSingleQuery.EncryptionMode": {
+    "other": "Режим шифрования"
+  },
+  "dataSourceSingleQuery.EncryptionMode.USER": {
+    "other": "Пользовательский ключ"
+  },
+  "dataSourceSingleQuery.EncryptionMode.USER_PWD": {
+    "other": "Пользовательский пароль"
+  },
+  "dataSourceSingleQuery.EncryptionMode.CLEAR": {
+    "other": "Очистить"
+  },
+  "dataSourceSingleQuery.EncryptionMode.MASTER": {
+    "other": "Мастер-ключ"
+  },
+  "dataSourceSingleQuery.EncryptionKey": {
+    "other": "Ключ шифрования"
+  },
+  "dataSourceSingleQuery.VersioningPolicyName": {
+    "other": "Политика контроля версиями"
+  },
+  "dataSourceSingleQuery.StorageConfigurationName": {
+    "other": "Ключ конфигурации"
+  },
+  "dataSourceSingleQuery.StorageConfigurationValue": {
+    "other": "Значение конфигурации"
+  },
+  "dataSourceSingleQuery.ObjectServiceName": {
+    "other": "Служба объектов"
+  },
+  "dataSourceSingleQuery.Not": {
+    "other": "Не"
+  },
+  "triggerFilterQuery.IsSchedule": {
+    "other": "Запланированный триггер"
+  },
+  "triggerFilterQuery.IsApiHook": {
+    "other": "Запускается вебхуком"
+  },
+  "triggerFilterQuery.ApiHookSlug": {
+    "other": "Идентификатор вебхука  API"
+  },
+  "triggerFilterQuery.RunParameterName": {
+    "other": "Имя параметра запуска"
+  },
+  "triggerFilterQuery.RunParameterValue": {
+    "other": "Значение параметра запуска"
+  },
+  "triggerFilterQuery.IsManual": {
+    "other": "Ручной триггер"
+  },
+  "triggerFilterQuery.EventNames": {
+    "other": "События"
+  }
+}

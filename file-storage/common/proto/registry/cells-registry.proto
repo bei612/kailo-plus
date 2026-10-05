@@ -1,0 +1,197 @@
+syntax = "proto3";
+
+package registry;
+
+option go_package = "github.com/pydio/cells/v5/common/proto/registry";
+
+service Registry {
+  rpc Session(stream SessionRequest) returns (stream EmptyResponse) {};
+  rpc Start(Item) returns (EmptyResponse) {};
+  rpc Stop(Item) returns (EmptyResponse) {};
+  rpc Get(GetRequest) returns (GetResponse) {};
+  rpc Register(Item) returns (EmptyResponse) {};
+  rpc Deregister(Item) returns (EmptyResponse) {};
+  rpc List(ListRequest) returns (ListResponse) {};
+  rpc Watch(WatchRequest) returns (stream Result) {};
+  rpc NewLocker(stream NewLockerRequest) returns (stream NewLockerResponse) {};
+}
+
+
+message SessionRequest {
+  SessionRequestType type = 1;
+  Item item = 2;
+}
+
+enum ItemType {
+  ALL = 0;
+  EDGE = 1;
+
+  NODE = 3;
+  SERVICE = 4;
+  SERVER = 5;
+  DAO = 7;
+
+  GENERIC = 2;
+  ADDRESS = 6;
+  TAG = 8;
+  PROCESS = 9;
+  ENDPOINT = 10;
+  STATS = 11;
+  STORAGE = 12;
+}
+
+enum ActionType {
+  ANY = 0;
+  FULL_DIFF = 1;
+  FULL_LIST = 2;
+  CREATE = 3;
+  UPDATE = 4;
+  DELETE = 5;
+}
+
+enum SessionRequestType {
+  INIT = 0;
+  REGISTER = 1;
+  DEREGISTER = 2;
+}
+
+message Item {
+  string id = 1;
+  string name = 2;
+  map<string,string> metadata = 4;
+  oneof item {
+    Generic generic = 5;
+    Edge edge = 6;
+    Server server = 7;
+    Node node = 8;
+    Service service = 9;
+    Dao dao = 10;
+  }
+  repeated Item adjacents = 11;
+}
+
+message ItemMap {
+  map<string, Item> items = 1;
+}
+
+message Node {
+  string hostname = 1;
+  string machine = 2;
+  repeated string ips = 3;
+  string advertiseIp = 4;
+}
+
+// Service represents a go-micro service
+message Service {
+  string version = 1;
+  Options options = 2;
+  repeated string tags = 3;
+}
+
+// Server represents the node the service is on
+message Server {
+  string protocol = 1;
+}
+
+message Dao {
+  string driver = 1;
+  string dsn = 2;
+}
+
+message Edge {
+  repeated string vertices = 1;
+}
+
+message Generic {
+  ItemType type = 1;
+}
+
+// Options are registry options
+message Options {
+  int64 ttl = 1;
+  repeated ItemType types = 2;
+  repeated ActionType actions = 3;
+  repeated string ids = 7;
+  repeated string names = 4;
+  string metaName = 5;
+  string metaValue = 6;
+
+}
+
+// Result is returns by the watcher
+message Result {
+  ActionType action = 1; // create, update, delete
+  repeated Item items = 2;
+  int64 timestamp = 3; // unix timestamp
+}
+
+message EmptyResponse {}
+
+message StartRequest {
+  Item item = 1;
+}
+
+message StopRequest {
+  Item item = 1;
+}
+
+message RegisterRequest {
+
+}
+
+message GetRequest {
+  string id = 1;
+  Options options = 2;
+}
+
+message GetResponse {
+  Item item = 1;
+}
+
+message ListRequest {
+  Options options = 1;
+  Options adjacentsOptions = 2;
+}
+
+message ListResponse {
+  repeated Item items = 1;
+}
+
+message WatchRequest {
+  string name = 1;
+  Options options = 2;
+}
+
+message NewLockerRequest {
+  string prefix = 1;
+  LockType type = 2;
+}
+
+message NewLockerResponse {
+  string prefix = 1;
+  LockType type = 2;
+}
+
+enum LockType {
+  Lock = 0;
+  Unlock = 1;
+}
+
+// EventType defines the type of event
+enum EventType {
+  Create = 0;
+  Delete = 1;
+  Update = 2;
+}
+
+// Event is registry event
+message Event {
+  // Event Id
+  string id = 1;
+  // type of event
+  EventType type = 2;
+  // unix timestamp of event
+  int64 timestamp = 3;
+  // item entry
+  Item item = 4;
+}

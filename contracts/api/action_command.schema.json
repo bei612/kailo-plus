@@ -10,6 +10,7 @@
     "idempotencyKey"
   ],
   "properties": {
+    "resourceCreate": {"$ref": "../domain/resource_create.schema.json"},
     "actionKey": {
       "type": "string"
     },

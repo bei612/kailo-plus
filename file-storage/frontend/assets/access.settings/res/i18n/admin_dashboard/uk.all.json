@@ -1,0 +1,134 @@
+{
+  "cont.btn.fb": {
+    "other": "Підпишіться"
+  },
+  "cont.btn.github": {
+    "other": "Зірка на GitHub"
+  },
+  "cont.btn.tw": {
+    "other": "Twitter"
+  },
+  "cont.intro": {
+    "other": "Код доступний публічно на GitHub. Хочете виправити баг, допомогти іншим на форумі чи впровадити наступну суперфункцію? Приєднуйтесь!\n                            Або просто висловіть свою підтримку в соціальних мережах!"
+  },
+  "cont.subtitle": {
+    "other": "Pydio Cells — це вільне програмне забезпечення з відкритим вихідним кодом. Підтримайте проєкт своїм внеском!"
+  },
+  "cont.title": {
+    "other": "Віддячте внеском у майбутнє!"
+  },
+  "cont.topic.pr": {
+    "other": "Я впровадив нову функцію: GitHub Pull Requests"
+  },
+  "cont.topic.report": {
+    "other": "Знайшли баг? Повідомте на форумі."
+  },
+  "cont.topic.report.2": {
+    "other": "Помилка кваліфікована: відкрийте GitHub Issue."
+  },
+  "cont.topic.translate": {
+    "other": "Яким чином створити або завершити мовний переклад?"
+  },
+  "ent.advanced": {
+    "other": "Розширена панель адміністратора"
+  },
+  "ent.advanced.legend": {
+    "other": "Унікальна панель адміністратора для моніторингу використання платформи в реальному часі."
+  },
+  "ent.btn.contact": {
+    "other": "Зв’язатися з відділом продажів"
+  },
+  "ent.btn.more": {
+    "other": "Дізнатись більше"
+  },
+  "ent.features": {
+    "other": "Корпоративні можливості"
+  },
+  "ent.features.legend": {
+    "other": "Функції корпоративного рівня: конектори AD/LDAP, журнали з можливістю аудиту для дотримання нормативних вимог, EasyTransfer..."
+  },
+  "ent.subtitle": {
+    "other": "БІЛЬШЕ МОЖЛИВОСТЕЙ — ВІДПОВІДНІСТЬ НОРМАМ GDPR — РОЗШИРЕНЕ БРЕНДУВАННЯ"
+  },
+  "ent.support": {
+    "other": "Підтримка та обслуговування"
+  },
+  "ent.support.legend": {
+    "other": "Отримуйте допомогу з вашою інсталяцією безпосередньо від команди розробників"
+  },
+  "ent.title": {
+    "other": "Відкрийте для себе Pydio Cells Enterprise"
+  },
+  "ent.upgrade": {
+    "other": "Оновити зараз!"
+  },
+  "ent.upgrade.legend": {
+    "other": "Оновлення до Cells Enterprise всередині застосунку (потрібна ліцензія)"
+  },
+  "welc.btn.advanced": {
+    "other": "Додаткові параметри"
+  },
+  "welc.btn.parameters": {
+    "other": "Про параметри"
+  },
+  "welc.btn.start": {
+    "other": "Почати роботу"
+  },
+  "welc.btn.users": {
+    "other": "Користувачі"
+  },
+  "welc.btn.ws": {
+    "other": "Робочі простори"
+  },
+  "welc.guide": {
+    "other": "Якщо ви не знаєте з чого почати, Посібник адміністратора точно варто прочитати!"
+  },
+  "welc.intro": {
+    "other": "Це ваша панель керування Pydio. Використовуючи ліве меню, ви можете створювати <a class=\"doc-link\" data-path=\"/data/workspaces\">робочі області</a> та <a class=\"doc-link\" data-path=\"/idm/users\">користувачів</a>,\n                            перевіряти всі <a class=\"doc-link\" data-path=\"/admin/logs\">події</a>, що відбулися на платформі через журнали, а також керувати <a class=\"doc-link\" data-path=\"/parameters/core\">конфігураціями</a> та <a class=\"doc-link\" data-path=\"/plugins/manager\">плагінами</a>."
+  },
+  "welc.import": {
+    "other": "Якщо ви наразі використовуєте Pydio 8, будь ласка, зверніть увагу, що <u>термін підтримки Pydio 8 завершився наприкінці 2019 року</u>. Ви можете скористатися <a class=\"doc-link\" data-path=\"/data/migration\">Інструментом імпорту</a>, щоб перенести всі дані до Pydio Cells."
+  },
+  "welc.subtitle": {
+    "other": "The place to administrate and monitor the activity of your platform"
+  },
+  "welc.title": {
+    "other": "Welcome to Pydio Cells v4"
+  },
+  "welc.title.5": {
+    "other": "Welcome to Pydio Cells v5"
+  },
+  "card.quick-access": {
+    "other": "Quick Access"
+  },
+  "card.quick-access.add": {
+    "other": "Add a shortcut ..."
+  },
+  "card.update.current": {
+    "other": "Software Version"
+  },
+  "card.update.no-updates": {
+    "other": "Software is up-to-date"
+  },
+  "card.update.new-version": {
+    "other": "A new version is available"
+  },
+  "recentLogs.title": {
+    "other": "Останні події"
+  },
+  "recentLogs.errors": {
+    "other": "Помилки"
+  },
+  "recentLogs.emptyState": {
+    "other": "Активності не знайдено"
+  },
+  "recentLogs.more": {
+    "other": "Всі активності"
+  },
+  "graph.files": {
+    "other": "Files Activity"
+  },
+  "graph.connections": {
+    "other": "Web Connections"
+  }
+}

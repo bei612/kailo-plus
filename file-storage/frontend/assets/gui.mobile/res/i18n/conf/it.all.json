@@ -1,0 +1,56 @@
+{
+  "1.android": {
+    "other": "Esiste un client nativo, APPLICATION_TITLE, per accedere a %s con sistemi Android."
+  },
+  "1.ios": {
+    "other": "Esiste un'applicazione nativa per accedere a %s attraverso iPhone/iPad!"
+  },
+  "2.android": {
+    "other": "Ce l'ho già, aprila ed aggiungi questo server a quelli remoti"
+  },
+  "2.ios": {
+    "other": "Ce l'ho già, aprila ed aggiungi questo server a quelli remoti"
+  },
+  "3.android": {
+    "other": "Non ce l'ho, mandami al Play Store adesso!"
+  },
+  "3.ios": {
+    "other": "Non ce l'ho, mandami all'App Store subito!"
+  },
+  "4.android": {
+    "other": "Non mi interessa, lasciami usare la versione web di %s."
+  },
+  "4.ios": {
+    "other": "Non mi interessa, lasciami usare la versione web di %s."
+  },
+  "Mobile": {
+    "other": "Mobile"
+  },
+  "Template extending gui.ajax for small screen terminals.": {
+    "other": "Template che estende 'gui.ajax' ai terminali con piccoli schermi."
+  },
+  "Disable this feature": {
+    "other": "Disabilita questa funzione"
+  },
+  "Do not display a smart banner when opening web interface on a mobile terminal.": {
+    "other": "Non visualizzare uno smart banner quando si apre l'interfaccia web su un terminale mobile."
+  },
+  "iOS Application Icon": {
+    "other": "Icona Applicazione iOS"
+  },
+  "iOS Application ID": {
+    "other": "ID Applicazione iOS"
+  },
+  "iOS Application ID on the store": {
+    "other": "ID dell'applicazione iOS nello store"
+  },
+  "Android Application ID": {
+    "other": "ID Applicazione Android"
+  },
+  "Android App ID": {
+    "other": "ID App Android"
+  },
+  "Android App Icon": {
+    "other": "Icona Applicazione Android"
+  }
+}

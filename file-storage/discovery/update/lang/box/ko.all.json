@@ -1,0 +1,74 @@
+{
+  "Update.Config.Title": {
+    "other": "업데이트 설정"
+  },
+  "Update.Config.Url.Label": {
+    "other": "업데이트 서버"
+  },
+  "Update.Config.Url.Description": {
+    "other": "업데이트 서버의 Http URL"
+  },
+  "Update.Config.PublicKey.Label": {
+    "other": "공개 키"
+  },
+  "Update.Config.PublicKey.Description": {
+    "other": "바이너리 서명을 확인하기 위해 공식 키가 사용되었습니다."
+  },
+  "Update.Config.Channel.Label": {
+    "other": "업데이트 채널"
+  },
+  "Update.Config.Channel.Description": {
+    "other": "업데이트를 요청할 때 사용되는 채널입니다. 무엇을 선택할지 모를 때에는 안정(Stable)에 남아있으세요."
+  },
+  "Update.Config.Channel.ValueStable": {
+    "other": "안정"
+  },
+  "Update.Config.Channel.ValueDev": {
+    "other": "개발 (위험을 감수합니다)"
+  },
+  "Update.Config.ProxyHost.Label": {
+    "other": "프록시"
+  },
+  "Update.Config.ProxyHost.Description": {
+    "other": "프록시 서버 호스트 (만약 외부 연결을 위해 필요한 경우)"
+  },
+  "Update.Config.ProxyUser.Label": {
+    "other": "프록시 사용자"
+  },
+  "Update.Config.ProxyUser.Description": {
+    "other": "프록시 서버 식별을 위한 사용자"
+  },
+  "Update.Config.ProxyPassword.Label": {
+    "other": "프록시 비밀번호"
+  },
+  "Update.Config.ProxyPassword.Description": {
+    "other": "프록시 서버 식별을 위한 비밀번호"
+  },
+  "Update.Config.Disable.Label": {
+    "other": "업데이트 확인 비활성화"
+  },
+  "Update.Config.Disable.Description": {
+    "other": "만약 서버가 외부망에 접근 권한이 없는 경우 업데이트 웹 사이트에 문의하지 마세요."
+  },
+  "Update.Process.Start": {
+    "other": "실행파일(바이너리) 업그레이드 중"
+  },
+  "Update.Process.Progress": {
+    "other": "실행파일 다운로드 중 ({progress}%)"
+  },
+  "Update.Process.Verify": {
+    "other": "파일 다운로드 완료, 패키지 검증 중"
+  },
+  "Update.Process.Finished": {
+    "other": "실행파일 패키지 검증 완료, 서비스 재기동이 필요합니다."
+  },
+  "Update.SetCapDetected.Warning": {
+    "other": "주의: 바인딩 URL 중 이미 사용 중인 포트를 사용하려고 합니다. 웹 서비스를 시작하려면 루트 기능이 필요합니다."
+  },
+  "Update.SetCapDetected.Hint": {
+    "other": "인스턴스를 다시 시작하기 전 'AmbientCapabilities=CAP_NET_BIND_SERVICE' 매개변수와 함께 systemd를 사용하지 않는 경우엔 다음 명령을 실행하여 새 실행파일이 이 포트를 사용하도록 권한을 부여해야 합니다."
+  },
+  "Update.SetCapDetected.Command": {
+    "other": "$ sudo setcap 'cap_net_bind_service=+ep' <실행 파일 경로>"
+  }
+}

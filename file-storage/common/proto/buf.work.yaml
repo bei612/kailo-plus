@@ -1,0 +1,26 @@
+version: v1
+directories:
+  - activity
+  - auth
+  - chat
+  - broker
+  - ctl
+  - config
+  - docstore
+  - encryption
+  - idm
+  - install
+  - jobs
+  - log
+  - mailer
+  - object
+  - rest
+  - service
+  - server
+  - tree
+  - update
+  - registry
+  - sync
+  - share
+  - options/orm
+  - options/setter

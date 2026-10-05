@@ -1,0 +1,714 @@
+package sql
+
+import (
+	"context"
+	"crypto/tls"
+	"database/sql"
+	stderrors "errors"
+	"fmt"
+	net2 "net"
+	"net/url"
+	"os"
+	"path"
+	"strconv"
+	"strings"
+	"text/template"
+	"time"
+
+	"github.com/go-sql-driver/mysql"
+	pgx "github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/spf13/viper"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+
+	"github.com/pydio/cells/v5/common/crypto"
+	"github.com/pydio/cells/v5/common/errors"
+	pb "github.com/pydio/cells/v5/common/proto/registry"
+	"github.com/pydio/cells/v5/common/registry"
+	"github.com/pydio/cells/v5/common/runtime"
+	"github.com/pydio/cells/v5/common/runtime/manager"
+	"github.com/pydio/cells/v5/common/storage"
+	"github.com/pydio/cells/v5/common/telemetry/log"
+	"github.com/pydio/cells/v5/common/utils/std"
+	"github.com/pydio/cells/v5/common/utils/uuid"
+)
+
+var (
+	reservedVariables = map[string]string{
+		"replicasAddr":             "",
+		"prefix":                   "",
+		"policies":                 "",
+		"singular":                 "",
+		"hookNames":                "",
+		"ssl":                      "",
+		"maxConnections":           "50",
+		"maxIdleConnections":       "15",
+		"connMaxLifetime":          "1h",
+		crypto.KeyCertUUID:         "",
+		crypto.KeyCertCAUUID:       "",
+		crypto.KeyCertKeyUUID:      "",
+		crypto.KeyCertStoreName:    "",
+		crypto.KeyCertInsecureHost: "",
+	}
+)
+
+type ServerInfos struct {
+	DbVersion   string
+	DbCharset   string
+	TablesFound bool
+	AdminFound  bool
+}
+
+type StorageDSN interface {
+	// Parse parses standard DSN and extract reserved variables
+	Parse() error
+	// Driver returns driver type
+	Driver() string
+	// DBName returns the name of the target DB as extracted from the dsn string
+	DBName() string
+	// DSN returns clean DSN for opening DB
+	DSN() string
+	// OpenDB Opens a DB connection
+	OpenDB(ctx context.Context) ([]*sql.DB, error)
+	// Set updates a field from the DSN, like DB, User, Password, etc. it returns an error if the key is not supported
+	Set(key, value string) error
+	// GetReservedVar returns a parsed variable if it is set
+	GetReservedVar(string) string
+	// Check tests the connection and eventually creates the DB if it does not exists
+	Check(ctx context.Context, create bool) (*ServerInfos, error)
+}
+
+func NewStorageDSN(dsn string) (StorageDSN, error) {
+	dsn = os.ExpandEnv(dsn)
+	parts := strings.SplitN(dsn, "://", 2)
+	if len(parts) < 2 {
+		return nil, errors.WithMessage(errors.SqlDAO, "wrong format")
+	}
+	scheme := parts[0]
+	vv := make(map[string]string, len(reservedVariables))
+	for k, v := range reservedVariables {
+		vv[k] = v
+	}
+	cd := &cellDsn{
+		original: dsn,
+		scheme:   scheme,
+		vars:     vv,
+	}
+	if err := cd.Parse(); err != nil {
+		return nil, err
+	}
+	return cd, nil
+}
+
+type cellDsn struct {
+	original string
+	clean    string
+	scheme   string
+	hosts    []string
+	vars     map[string]string
+}
+
+func (d *cellDsn) Parse() (er error) {
+	switch d.scheme {
+	case "gorm":
+		gU, _ := url.Parse(d.original)
+		d.scheme = gU.Query().Get("driver")
+		d.clean, er = d.cleanDSN(d.original, "gorm")
+	case MySQLDriver:
+		d.clean, er = d.cleanDSN(d.original, "mysql")
+	case SqliteDriver:
+		d.clean, er = d.cleanDSN(d.original, "sqlite")
+	case PostgreDriver:
+		d.clean, er = d.cleanDSN(d.original, "url")
+	default:
+		return errors.WithMessage(errors.SqlDAO, "unsupported scheme")
+	}
+	if er != nil {
+		return er
+	}
+	// Remove scheme for everything else than postgre
+	if d.scheme != PostgreDriver {
+		d.clean = strings.TrimPrefix(d.clean, d.scheme+"://")
+	}
+	return nil
+}
+
+func (d *cellDsn) Driver() string {
+	return d.scheme
+}
+
+func (d *cellDsn) DSN() string {
+	return d.clean
+}
+
+func (d *cellDsn) OpenDB(ctx context.Context) ([]*sql.DB, error) {
+	var conn []*sql.DB
+	var tlsConfig *tls.Config
+
+	if ssl, ok := d.vars["ssl"]; ok && ssl == "true" {
+		var err error
+		tlsConfig, err = varsToTLSConfig(d.vars)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Open sql connection pool - special case to force PG to use PGX driver, not PQ
+	switch d.scheme {
+	case PostgreDriver:
+		for _, host := range d.hosts {
+			pgxConfig, err := pgx.ParseConfig(host)
+			if err != nil {
+				return nil, err
+			}
+			if tlsConfig != nil {
+				pgxConfig.TLSConfig = tlsConfig
+			}
+
+			db := stdlib.OpenDB(*pgxConfig)
+			if err := db.Ping(); err != nil {
+				// stdlib.OpenDB creates a database/sql handle even when the
+				// PostgreSQL startup handshake fails (for example when the
+				// target database does not exist). Do not leave that failed
+				// handle around: the temporary install pool may otherwise
+				// report the misleading "database is closed" error later.
+				_ = db.Close()
+				return nil, err
+			}
+			conn = append(conn, db)
+		}
+	case MySQLDriver:
+		for _, host := range d.hosts {
+			tlsHost := host // copy for possible TLS modification
+			if tlsConfig != nil {
+				configID := uuid.New()
+				if err := mysql.RegisterTLSConfig(configID, &tls.Config{}); err != nil {
+					return nil, err
+				}
+				if !strings.Contains(host, "?") {
+					host += "?tls=" + configID
+				} else {
+					host += "&tls=" + configID
+				}
+			}
+
+			c, err := sql.Open(d.scheme, tlsHost)
+			if err != nil {
+				return nil, err
+			}
+
+			maxIdleConnections, err := strconv.Atoi(d.vars["maxIdleConnections"])
+			if err != nil {
+				return nil, err
+			}
+
+			maxOpenConnections, err := strconv.Atoi(d.vars["maxConnections"])
+			if err != nil {
+				return nil, err
+			}
+
+			connMaxLifetime, err := time.ParseDuration(d.vars["connMaxLifetime"])
+			if err != nil {
+				return nil, err
+			}
+
+			log.Logger(ctx).Info("MySQL Config", zap.Any("maxOpenConns", maxOpenConnections), zap.Any("maxIdleConns", maxIdleConnections), zap.Any("connMaxLifetime", connMaxLifetime))
+			c.SetMaxIdleConns(maxIdleConnections)
+			c.SetMaxOpenConns(maxOpenConnections)
+			c.SetConnMaxLifetime(connMaxLifetime)
+
+			conn = append(conn, c)
+		}
+	default:
+		c, err := sql.Open(d.scheme, d.clean)
+		if err != nil {
+			return nil, err
+		}
+
+		conn = append(conn, c)
+	}
+	return conn, nil
+
+}
+
+func (d *cellDsn) DBName() string {
+	switch d.scheme {
+	case MySQLDriver:
+		md, _ := mysql.ParseDSN(d.clean)
+		return md.DBName
+	default:
+		u, _ := url.Parse(d.original)
+		return u.Path
+	}
+}
+
+func (d *cellDsn) Set(key, value string) error {
+	var md *mysql.Config
+	var u *url.URL
+	var er error
+
+	switch d.scheme {
+	case MySQLDriver:
+		md, er = mysql.ParseDSN(d.clean)
+	default:
+		u, er = url.Parse(d.original)
+	}
+	if er != nil {
+		return er
+	}
+
+	switch key {
+	case "DB":
+		if md != nil {
+			md.DBName = value
+		} else if u != nil {
+			u.Path = value
+		}
+	case "ADDR":
+		if md != nil {
+			md.Addr = value
+		} else if u != nil {
+			u.Host = value
+		}
+	case "USER":
+		if md != nil {
+			md.User = value
+		} else if u != nil {
+			pwd := ""
+			if u.User != nil {
+				pwd, _ = u.User.Password()
+			}
+			u.User = url.UserPassword(value, pwd)
+		}
+	case "PASSWORD":
+		if md != nil {
+			md.User = value
+		} else if u != nil {
+			user := ""
+			if u.User != nil {
+				user = u.User.Username()
+			}
+			u.User = url.UserPassword(user, value)
+		}
+	default:
+		return errors.WithMessage(errors.SqlDAO, "unsupported key")
+	}
+
+	// Now recompute clean DSN
+	if md != nil {
+		d.clean = md.FormatDSN()
+		// OpenDB uses the expanded host list, not d.clean directly. Keep it
+		// in sync when changing the database name (the installer changes the
+		// target DSN to a server-level DSN in this way).
+		_, er = d.cleanDSN(MySQLDriver+"://"+d.clean, "mysql")
+		if er != nil {
+			return er
+		}
+	} else if u != nil {
+		d.original = u.String()
+		return d.Parse()
+	}
+	return nil
+}
+
+func (d *cellDsn) GetReservedVar(s string) string {
+	return d.vars[s]
+}
+
+func (d *cellDsn) Check(ctx context.Context, create bool) (*ServerInfos, error) {
+	// return nil
+	tmpl, err := template.New("storages").Parse(`
+storages:
+  {{ with .Root }}
+  root:
+    uri: {{ . }}
+  {{ end }}
+  main:
+    uri: {{ .Main }}
+`)
+	if err != nil {
+		return nil, err
+	}
+
+	var yamlTpl strings.Builder
+
+	switch d.scheme {
+	case MySQLDriver, PostgreDriver:
+		rootDSN, _ := NewStorageDSN(d.original)
+		var root string
+		if d.scheme == PostgreDriver {
+			_ = rootDSN.Set("DB", "postgres")
+			root = rootDSN.DSN()
+		} else {
+			_ = rootDSN.Set("DB", "")
+			root = "mysql://" + rootDSN.DSN()
+		}
+		if err = tmpl.Execute(&yamlTpl, struct {
+			Root string
+			Main string
+		}{
+			Root: root,
+			Main: d.original,
+		}); err != nil {
+			return nil, err
+		}
+	default:
+		if err = tmpl.Execute(&yamlTpl, struct {
+			Main string
+			Root string
+		}{
+			Main: d.original,
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	// BUILD A LOCAL RUNTIME MANAGER
+	localRuntime := viper.New()
+	bootstrap, err := manager.NewBootstrap(ctx, localRuntime)
+	if err != nil {
+		return nil, err
+	}
+	if err := bootstrap.RegisterTemplate(ctx, "yaml", yamlTpl.String()); err != nil {
+		return nil, err
+	}
+	bootstrap.MustReset(ctx, nil)
+	mgr, err := manager.NewManager(ctx, runtime.NsInstall, localRuntime)
+	if err != nil {
+		return nil, err
+	}
+	if err := mgr.Bootstrap(bootstrap.String()); err != nil {
+		return nil, err
+	}
+	item, err := mgr.Registry().Get("main", registry.WithType(pb.ItemType_STORAGE))
+	if err != nil {
+		return nil, err
+	}
+
+	var st storage.Storage
+	if !item.As(&st) {
+		return nil, errors.WithMessage(errors.SqlDAO, "registry item not found")
+	}
+
+	resolved, err := st.Resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+	resolvedDSN, err := NewStorageDSN(resolved)
+	if err != nil {
+		return nil, err
+	}
+
+	// First try a ping
+	var dbNotFound bool
+	if db, err := st.Get(ctx); err != nil {
+		dbNotFound = isDatabaseNotFound(resolvedDSN.Driver(), err)
+		if !dbNotFound {
+			return nil, err
+		}
+	} else {
+
+		gdb, ok := db.(*gorm.DB)
+		if !ok {
+			return nil, errors.WithMessage(errors.SqlDAO, "driver is not a gorm DB")
+		}
+		version, charset, er := d.getServerInfo(ctx, gdb)
+		if er != nil {
+			// MySQL opens lazily, so a missing database is reported by the
+			// first query rather than by st.Get(). Continue through the
+			// creation path instead of masking this error below.
+			if !isDatabaseNotFound(resolvedDSN.Driver(), er) {
+				return nil, er
+			}
+			dbNotFound = true
+		} else {
+			install, admin, er := d.checkCellsInstallExists(ctx, gdb)
+			if er != nil {
+				return nil, er
+			}
+			return &ServerInfos{
+				DbVersion:   version,
+				DbCharset:   charset,
+				TablesFound: install,
+				AdminFound:  admin,
+			}, nil
+		}
+
+	}
+
+	if create {
+		log.Logger(ctx).Infof("Database %s not found in %s, trying to create it, this may require some specific permissions", resolvedDSN.DSN(), d.original)
+		switch resolvedDSN.Driver() {
+		case SqliteDriver:
+			dbPath := resolvedDSN.DBName()
+			dir := path.Dir(dbPath)
+			if s, e := os.Stat(dir); e == nil {
+				if !s.IsDir() {
+					return nil, fmt.Errorf("%s is not a directory", dir)
+				}
+			} else if er := os.MkdirAll(dir, 0755); er == nil {
+			} else {
+				return nil, fmt.Errorf("cannot create directory %s: %v", dir, e)
+			}
+		case MySQLDriver, PostgreDriver:
+			dbName := strings.Trim(resolvedDSN.DBName(), "/")
+			rootItem, err := mgr.Registry().Get("root", registry.WithType(pb.ItemType_STORAGE))
+			if err != nil {
+				return nil, err
+			}
+
+			var rootSt storage.Storage
+			rootItem.As(&rootSt)
+
+			rootDB, err := rootSt.Get(ctx)
+			if err != nil {
+				return nil, errors.New("couldn't get root storage")
+			}
+
+			rootGormDB, ok := rootDB.(*gorm.DB)
+			if !ok {
+				return nil, errors.New("not a gorm DB")
+			}
+			if tx := rootGormDB.Exec(fmt.Sprintf("create database %s", dbName)); tx.Error != nil {
+				return nil, fmt.Errorf("could not auto-create database %q: %w — the install user may lack the CREATE DATABASE privilege; either grant it or pre-create the database", dbName, tx.Error)
+			}
+		}
+
+		// The target storage may already be cached from the failed existence
+		// check. Evict it so the next Get opens a connection after the database
+		// has been created instead of reusing the pre-creation handle.
+		if deleter, ok := st.(interface {
+			Del(context.Context, ...map[string]interface{}) (bool, error)
+		}); ok {
+			if _, err := deleter.Del(ctx); err != nil {
+				return nil, err
+			}
+		}
+
+		// Now reconnect to new DB to retrieve info
+		if db, err := st.Get(ctx); err == nil {
+			gdb, ok := db.(*gorm.DB)
+			if !ok {
+				return nil, errors.WithMessage(errors.SqlDAO, "driver is not a gorm DB")
+			}
+			version, charset, er := d.getServerInfo(ctx, gdb)
+			return &ServerInfos{
+				DbVersion: version,
+				DbCharset: charset,
+			}, er
+		} else {
+			return nil, err
+		}
+	}
+	return &ServerInfos{}, err
+}
+
+// isDatabaseNotFound reports errors that mean the server is reachable but the
+// configured database itself has not been created yet.
+func isDatabaseNotFound(driver string, err error) bool {
+	if err == nil {
+		return false
+	}
+
+	switch driver {
+	case MySQLDriver:
+		var me *mysql.MySQLError
+		return stderrors.As(err, &me) && me.Number == 1049
+	case PostgreDriver:
+		return strings.Contains(err.Error(), "3D000")
+	case SqliteDriver:
+		return stderrors.Is(err, os.ErrNotExist)
+	default:
+		return false
+	}
+}
+
+func (d *cellDsn) checkCellsInstallExists(ctx context.Context, db *gorm.DB) (install bool, admin bool, e error) {
+	// 1) Do both tables exist?
+	hasTree := db.Migrator().HasTable("idm_user_idx_tree")
+	hasAttr := db.Migrator().HasTable("idm_user_attributes")
+	if !hasTree || !hasAttr {
+		return false, false, nil
+	}
+
+	// 2) Mark install = true
+	install = true
+
+	// 3) Count “admin” matches via a join
+	var count int64
+	err := db.
+		Table("idm_user_idx_tree as t").
+		Joins("JOIN idm_user_attributes as a ON t.uuid = a.uuid").
+		Where("a.name = ? AND a.value = ?", "profile", "admin").
+		Count(&count).Error
+	if err != nil {
+		return install, false, err
+	}
+
+	// 4) If count > 0, admin exists
+	admin = count > 0
+	return
+}
+
+// GetServerInfo returns the database server’s version string and character set,
+// for mysql, postgres or sqlite.
+func (d *cellDsn) getServerInfo(ctx context.Context, db *gorm.DB) (version string, charset string, err error) {
+	switch db.Dialector.Name() {
+	case "mysql":
+		// VERSION() exists in MySQL and MariaDB
+		if err = db.Raw("SELECT VERSION()").Scan(&version).Error; err != nil {
+			return
+		}
+		// Per-database character set
+		if err = db.Raw("SELECT @@character_set_database").Scan(&charset).Error; err != nil {
+			return
+		}
+
+	case "postgres":
+		// SHOW server_version gives you a clean semver
+		if err = db.Raw("SHOW server_version").Scan(&version).Error; err != nil {
+			return
+		}
+		// SHOW server_encoding → e.g. UTF8
+		if err = db.Raw("SHOW server_encoding").Scan(&charset).Error; err != nil {
+			return
+		}
+
+	case "sqlite":
+		// SQLite version
+		if err = db.Raw("SELECT sqlite_version()").Scan(&version).Error; err != nil {
+			return
+		}
+		// File encoding (always UTF-8/UTF-16)
+		if err = db.Raw("PRAGMA encoding").Scan(&charset).Error; err != nil {
+			return
+		}
+
+	default:
+		return "", "", fmt.Errorf("unsupported dialect %q", db.Dialector.Name())
+	}
+
+	return
+}
+
+func (d *cellDsn) cleanDSN(dsn string, parserType string) (string, error) {
+	switch parserType {
+	case "mysql":
+		dsn := strings.TrimPrefix(dsn, MySQLDriver+"://")
+		conf, err := mysql.ParseDSN(dsn)
+		if err != nil {
+			return "", err
+		}
+		for k := range d.vars {
+			if v, ok := conf.Params[k]; ok {
+				if v != "<no value>" {
+					d.vars[k] = v
+				}
+				delete(conf.Params, k)
+			}
+		}
+
+		// For unix socket connections, skip host/port parsing
+		if conf.Net == "unix" {
+			d.hosts = []string{conf.FormatDSN()}
+		} else {
+			hostsStr, port, err := net2.SplitHostPort(conf.Addr)
+			if err != nil {
+				return "", err
+			}
+
+			hosts := strings.Split(hostsStr, ",")
+			if replicas := d.vars["replicasAddr"]; replicas != "" {
+				hosts = append(hosts, strings.Split(replicas, ",")...)
+			}
+
+			d.hosts = []string{}
+			for _, host := range hosts {
+				if !strings.Contains(host, ":") {
+					hostConf := conf.Clone()
+					hostConf.Addr = net2.JoinHostPort(host, port)
+					d.hosts = append(d.hosts, hostConf.FormatDSN())
+				} else {
+					replicaHost, replicaPort, err := net2.SplitHostPort(host)
+					if err != nil {
+						continue
+					}
+					// Using port defined for all hosts
+					if replicaPort == "" {
+						replicaPort = port
+					}
+					hostConf := conf.Clone()
+					hostConf.Addr = net2.JoinHostPort(replicaHost, replicaPort)
+					d.hosts = append(d.hosts, hostConf.FormatDSN())
+				}
+			}
+		}
+
+		return conf.FormatDSN(), nil
+	case "gorm":
+		u, er := url.Parse(dsn)
+		if er != nil {
+			return dsn, er
+		}
+		query := u.Query()
+		driver := query.Get("driver")
+		if driver == "" {
+			return "", errors.New("please provide a driver parameter for gorm scheme")
+		}
+		query.Del("driver")
+		// Replace scheme
+		u.Scheme = driver
+		if u.Scheme == "mysql" {
+			conn := query.Get("conn")
+			query.Del("conn")
+			u.Host = fmt.Sprintf("%s(%s:%s)", conn, u.Hostname(), u.Port())
+			u.RawQuery = query.Encode()
+			return d.cleanDSN(u.String(), "mysql")
+		} else {
+			u.RawQuery = query.Encode()
+			return d.cleanDSN(u.String(), "url")
+		}
+	case "sqlite":
+		// Extract reserved vars from SQLite URI query parameters without modifying the DSN.
+		// url.Parse cannot handle sqlite://file::memory:... URIs, so parse the query string directly.
+		if idx := strings.Index(dsn, "?"); idx >= 0 {
+			if q, err := url.ParseQuery(dsn[idx+1:]); err == nil {
+				for k := range d.vars {
+					if q.Has(k) {
+						if v := q.Get(k); v != "<no value>" {
+							d.vars[k] = v
+						}
+					}
+				}
+			}
+		}
+		return dsn, nil
+	default:
+		u, er := url.Parse(dsn)
+		if er != nil {
+			return dsn, er
+		}
+
+		query := u.Query()
+		for k := range d.vars {
+			if query.Has(k) {
+				if query.Get(k) != "<no value>" {
+					d.vars[k] = query.Get(k)
+				}
+				query.Del(k)
+			}
+		}
+		u.RawQuery = query.Encode()
+
+		for _, host := range strings.Split(u.Host, ",") {
+			hostURL := std.DeepClone(u)
+			hostURL.User = u.User
+			hostURL.Host = host
+
+			d.hosts = append(d.hosts, hostURL.String())
+		}
+
+		return u.String(), nil
+	}
+}

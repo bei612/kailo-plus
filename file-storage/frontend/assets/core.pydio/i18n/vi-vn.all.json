@@ -1,0 +1,2510 @@
+{
+  "0": {
+    "other": "Phiên bản mới nhất"
+  },
+  "1": {
+    "other": "Tên tập tin"
+  },
+  "10": {
+    "other": "Tập tin văn bản"
+  },
+  "100": {
+    "other": "Không thể tìm thấy tập tin "
+  },
+  "101": {
+    "other": "Thư mục gốc và thư mục cuối giống nhau!"
+  },
+  "102": {
+    "other": "Gặp lỗi khi tạo tệp :"
+  },
+  "103": {
+    "other": "Không thể tìm thấy thư mục "
+  },
+  "104": {
+    "other": "Đi đến vị trí nhất định"
+  },
+  "105": {
+    "other": "Gửi Url qua email để truy cập trực tiếp vị trí này."
+  },
+  "106": {
+    "other": "Gủi thư"
+  },
+  "107": {
+    "other": "Tên và/hoặc email của bạn"
+  },
+  "108": {
+    "other": "Thư đến"
+  },
+  "109": {
+    "other": "URL có thể nhấn"
+  },
+  "11": {
+    "other": "Javascript"
+  },
+  "110": {
+    "other": "Thêm một bình luận"
+  },
+  "111": {
+    "other": "Email sau đã được gửi đi :"
+  },
+  "112": {
+    "other": "Gửi email không thành công : "
+  },
+  "113": {
+    "other": "Lựa chọn trống!"
+  },
+  "114": {
+    "other": "Đã xảy ra lỗi trong quá trình sao chép!"
+  },
+  "115": {
+    "other": "Tệp tin được lưu thành công"
+  },
+  "116": {
+    "other": "tập tin"
+  },
+  "117": {
+    "other": "Thư mục"
+  },
+  "118": {
+    "other": "Tải xuống nhiều tệp"
+  },
+  "119": {
+    "other": "Nhấn vào từng tệp để tải xuống."
+  },
+  "12": {
+    "other": "Ảnh GIF"
+  },
+  "120": {
+    "other": "Bạn không được phép xóa toàn bộ cấu trúc thư mục!"
+  },
+  "121": {
+    "other": "Tập tinh hình ảnh "
+  },
+  "122": {
+    "other": "Thùng rác"
+  },
+  "123": {
+    "other": "đã được chuyển đến "
+  },
+  "124": {
+    "other": "Ghi đè tập tin hiện có?"
+  },
+  "125": {
+    "other": "Tệp / thư mục có tên đó đã tồn tại (tên không phân biệt chữ hoa chữ thường). Vui lòng chọn cái khác!"
+  },
+  "126": {
+    "other": "Hình ảnh thu nhỏ"
+  },
+  "127": {
+    "other": "Kích thước"
+  },
+  "128": {
+    "other": "tệp tin được chọn."
+  },
+  "129": {
+    "other": "Lượt xem"
+  },
+  "13": {
+    "other": "Ảnh JPG"
+  },
+  "130": {
+    "other": "Thư mục"
+  },
+  "131": {
+    "other": "Thông tin chi tiết"
+  },
+  "132": {
+    "other": "Không có tệp tin hay thư mục nào"
+  },
+  "133": {
+    "other": "Tên"
+  },
+  "134": {
+    "other": "Kiểu"
+  },
+  "135": {
+    "other": "Kích thước"
+  },
+  "136": {
+    "other": "Xem ảnh lớn hơn"
+  },
+  "138": {
+    "other": "Lần sửa đổi cuối."
+  },
+  "139": {
+    "other": "Chỉnh sửa trực tuyến"
+  },
+  "14": {
+    "other": "Trang HTML"
+  },
+  "140": {
+    "other": "Phát toàn bộ thư mục"
+  },
+  "141": {
+    "other": "Đang đọc thư mục"
+  },
+  "142": {
+    "other": "Đăng nhập như "
+  },
+  "143": {
+    "other": "Duyệt với tư cách khách. Đăng nhập."
+  },
+  "144": {
+    "other": "Chưa đăng nhập."
+  },
+  "145": {
+    "other": "Dấu trang của tôi"
+  },
+  "146": {
+    "other": "Xoá dấu trang"
+  },
+  "147": {
+    "other": "Đánh dấu"
+  },
+  "148": {
+    "other": "Thư mục gốc"
+  },
+  "149": {
+    "other": "Tải lại"
+  },
+  "15": {
+    "other": "Trang HTML"
+  },
+  "150": {
+    "other": "Hiển thị"
+  },
+  "151": {
+    "other": "Chuyển chế độ hiện thị..."
+  },
+  "152": {
+    "other": "Bật tắt Bookmark"
+  },
+  "153": {
+    "other": "Thêm/loại bỏ mục ở danh sách yêu thích"
+  },
+  "152-on": {
+    "other": "Dấu trang"
+  },
+  "153-on": {
+    "other": "Thêm mục vào danh sách yêu thích"
+  },
+  "152-off": {
+    "other": "Loại bỏ dấu trang"
+  },
+  "153-off": {
+    "other": "Loại bỏ mục từ Danh sách yêu thích"
+  },
+  "154": {
+    "other": "Thư mục mới"
+  },
+  "155": {
+    "other": "Tạo thư mục mới"
+  },
+  "156": {
+    "other": "Tệp trống mới"
+  },
+  "157": {
+    "other": "Tạo tệp rỗng mới"
+  },
+  "158": {
+    "other": "Đổi tên tệp hoặc thư mục đã chọn"
+  },
+  "159": {
+    "other": "Sao chép lựa chọn đến..."
+  },
+  "16": {
+    "other": "Tệp tin REAL"
+  },
+  "160": {
+    "other": "Chuyển tệp tin được chọn đến..."
+  },
+  "161": {
+    "other": "Xóa tệp tin được chọn."
+  },
+  "162": {
+    "other": "Chỉnh sửa tệp tin văn bản trực tuyến."
+  },
+  "163": {
+    "other": "Đăng nhập"
+  },
+  "164": {
+    "other": "Đăng xuất"
+  },
+  "165": {
+    "other": "Cài đặt"
+  },
+  "166": {
+    "other": "Thông tin"
+  },
+  "167": {
+    "other": "Thông tin Pydio"
+  },
+  "168": {
+    "other": "Kết nối với APPLICATION_TITLE"
+  },
+  "169": {
+    "other": "Ngắt kết nối khỏi APPLICATION_TITLE"
+  },
+  "17": {
+    "other": "Tệp tin REAL"
+  },
+  "170": {
+    "other": "Thư mục hiện tại"
+  },
+  "171": {
+    "other": "Duyệt"
+  },
+  "172": {
+    "other": "Lựa chọn của bạn"
+  },
+  "173": {
+    "other": "Tên thư mục mới"
+  },
+  "174": {
+    "other": "Tên tập tin mới"
+  },
+  "175": {
+    "other": "Chọn thư mục đích"
+  },
+  "176": {
+    "other": "Các tệp đã chọn sẽ được chuyển vào thùng rác."
+  },
+  "177": {
+    "other": "Bạn có chắc chắn muốn xóa vĩnh viễn các tệp đã chọn không?"
+  },
+  "178": {
+    "other": "Trước đó"
+  },
+  "179": {
+    "other": "Tiếp theo"
+  },
+  "18": {
+    "other": "PERL script"
+  },
+  "180": {
+    "other": "Nhập thông tin đăng nhâp/mật khẩu"
+  },
+  "181": {
+    "other": "Đăng nhập"
+  },
+  "182": {
+    "other": "Mật khẩu"
+  },
+  "183": {
+    "other": "Vui lòng chọn một thư mục đích khác với thư mục gốc!"
+  },
+  "184": {
+    "other": "Tìm kiếm trong thư mục hiện tại và thư mục con"
+  },
+  "185": {
+    "other": "Dừng tìm kiếm"
+  },
+  "186": {
+    "other": "Xem trước hình ảnh"
+  },
+  "187": {
+    "other": "Phiên bản trực tuyến - "
+  },
+  "189": {
+    "other": "Chỉnh sửa tùy chọn của tôi"
+  },
+  "19": {
+    "other": "Tệp ZIP"
+  },
+  "190": {
+    "other": "Ngôn ngữ"
+  },
+  "191": {
+    "other": "Hiển thị mặc định"
+  },
+  "192": {
+    "other": "Danh sách"
+  },
+  "193": {
+    "other": "Hình ảnh thu nhỏ"
+  },
+  "194": {
+    "other": "Thay đổi mật khẩu"
+  },
+  "195": {
+    "other": "Thuộc tính người dùng"
+  },
+  "196": {
+    "other": "Ngôn ngữ của bạn khác với ngôn ngữ hiện tại! \\n Bạn có muốn tải lại trang để chuyển đổi ngôn ngữ không?"
+  },
+  "197": {
+    "other": "Thay đổi mật khẩu của bạn sẽ có hiệu lực sau khi bạn đăng xuất."
+  },
+  "198": {
+    "other": "Mới"
+  },
+  "199": {
+    "other": "Xác nhận"
+  },
+  "2": {
+    "other": "Kích thước"
+  },
+  "20": {
+    "other": "Tập tin WAV"
+  },
+  "200": {
+    "other": "Thay đổi kho lưu trữ thành..."
+  },
+  "201": {
+    "other": "Cảnh báo, một số thay đổi của bạn chưa được lưu!\\n Bạn có chắc chắn muốn đóng không?"
+  },
+  "202": {
+    "other": "Cảnh báo, bản sao đệ quy!"
+  },
+  "203": {
+    "other": "Thư mục đích giống như thư mục gốc!"
+  },
+  "204": {
+    "other": "Tệp tin \""
+  },
+  "205": {
+    "other": "\" vượt quá giới hạn kích thước ("
+  },
+  "206": {
+    "other": "Mb).\\n Nó sẽ không được tải lên."
+  },
+  "207": {
+    "other": "Bạn không có quyền ghi trên thư mục này"
+  },
+  "208": {
+    "other": "Bạn không có quyền đọc trên thư mục này"
+  },
+  "209": {
+    "other": "Lỗi máy chủ nội bộ, vui lòng liên lạc quản trị viên!"
+  },
+  "21": {
+    "other": "PHP script"
+  },
+  "210": {
+    "other": "Tải lên không thành công"
+  },
+  "211": {
+    "other": "Tệp tin quá lớn! Vui lòng liên lạc với quản trị viên hoặc sử dụng máy khách để đồng bộ hóa."
+  },
+  "212": {
+    "other": "Không tìm thấy tệp tin nào trên máy chủ!"
+  },
+  "213": {
+    "other": "Gặp lỗi khi sao chép tệp tin vào thư mục hiện tại"
+  },
+  "214": {
+    "other": "Duyệt"
+  },
+  "215": {
+    "other": "Bắt đầu tải lên"
+  },
+  "216": {
+    "other": "Xóa"
+  },
+  "217": {
+    "other": "Xoá thành công"
+  },
+  "218": {
+    "other": "Xóa khỏi hàng đợi"
+  },
+  "219": {
+    "other": "Đã hoàn thành"
+  },
+  "22": {
+    "other": "PHP script"
+  },
+  "220": {
+    "other": "Trống"
+  },
+  "221": {
+    "other": "Thùng rác trống"
+  },
+  "222": {
+    "other": "Phục hồi"
+  },
+  "223": {
+    "other": "Khôi phục tệp tin về vị trí ban đầu"
+  },
+  "224": {
+    "other": "Đi đến"
+  },
+  "225": {
+    "other": "Đổi tên yêu thích"
+  },
+  "226": {
+    "other": "Thông tin chi tiết"
+  },
+  "227": {
+    "other": "Chuyển sang chế độ xem bảng chi tiết"
+  },
+  "228": {
+    "other": "Hình thu nhỏ"
+  },
+  "229": {
+    "other": "Chuyển sang chế độ xem hình thu nhỏ"
+  },
+  "23": {
+    "other": "Tệp tin"
+  },
+  "230": {
+    "other": "Chạy"
+  },
+  "231": {
+    "other": "Chạy trình chiếu"
+  },
+  "232": {
+    "other": "Dừng lại"
+  },
+  "233": {
+    "other": "Dừng trình chiếu"
+  },
+  "234": {
+    "other": "Xem hình ảnh được chọn"
+  },
+  "235": {
+    "other": "Toàn màn hình"
+  },
+  "236": {
+    "other": "Phục hồi"
+  },
+  "237": {
+    "other": "Mật khẩu cũ"
+  },
+  "238": {
+    "other": "Mật khẩu không giống nhau!"
+  },
+  "239": {
+    "other": "Vui lòng điền mật khẩu hiện tại của bạn"
+  },
+  "24": {
+    "other": "Thư mục gốc"
+  },
+  "240": {
+    "other": "Bạn đã nhập sai mật khẩu!"
+  },
+  "241": {
+    "other": "Tùy chọn của bạn đã được lưu thành công!"
+  },
+  "242": {
+    "other": "Svn Log"
+  },
+  "243": {
+    "other": "Xem lại"
+  },
+  "244": {
+    "other": "Tác giả"
+  },
+  "245": {
+    "other": "Ngày"
+  },
+  "246": {
+    "other": "Tin nhắn"
+  },
+  "247": {
+    "other": "Giải nén"
+  },
+  "248": {
+    "other": "Giải nén lựa chọn từ zip sang..."
+  },
+  "249": {
+    "other": "Người dùng"
+  },
+  "25": {
+    "other": "Tải lên một hoặc nhiều tệp (tối đa %s vào thư mục: "
+  },
+  "250": {
+    "other": "Workspaces"
+  },
+  "251": {
+    "other": "Logs"
+  },
+  "252": {
+    "other": "Đã đạt đến giới hạn kích thước tệp."
+  },
+  "253": {
+    "other": "Đã xảy ra lỗi HTTP:"
+  },
+  "254": {
+    "other": "Đã sảy ra lỗi IO:"
+  },
+  "255": {
+    "other": "Đây là một lỗi bảo mật:"
+  },
+  "256": {
+    "other": "Đã tải lên"
+  },
+  "257": {
+    "other": "Loại bỏ"
+  },
+  "258": {
+    "other": "Số lượng tệp tin :"
+  },
+  "259": {
+    "other": "Tổng kích thước :"
+  },
+  "26": {
+    "other": "Tạo một thư mục mới trong: "
+  },
+  "260": {
+    "other": "bytes"
+  },
+  "261": {
+    "other": "Ghi nhớ đăng nhập"
+  },
+  "262": {
+    "other": "Một hoặc nhiều tệp hiện đã tồn tại \\n đã có trong thư mục đính. \\n Bạn muốn làm gì?"
+  },
+  "263": {
+    "other": "Ghi đè"
+  },
+  "264": {
+    "other": "Bỏ qua"
+  },
+  "265": {
+    "other": "Tệp tin"
+  },
+  "266": {
+    "other": "B"
+  },
+  "267": {
+    "other": "Tạo mới"
+  },
+  "268": {
+    "other": "Tạo một bảng mới"
+  },
+  "269": {
+    "other": "Cấu trúc"
+  },
+  "27": {
+    "other": "Tải lên"
+  },
+  "270": {
+    "other": "Chỉnh sửa cấu trúc bảng"
+  },
+  "271": {
+    "other": "Bỏ"
+  },
+  "272": {
+    "other": "Xóa bảng đang mở"
+  },
+  "273": {
+    "other": "Chèn"
+  },
+  "274": {
+    "other": "Chèn bản ghi mới"
+  },
+  "275": {
+    "other": "Bạn có chắc chắn muốn bỏ (các) bảng đã chọn không?"
+  },
+  "276": {
+    "other": "Chỉnh sửa bản ghi đã chọn"
+  },
+  "277": {
+    "other": "Xóa bản ghi được chọn"
+  },
+  "278": {
+    "other": "Bạn có chắc bạn muốn xóa (các) bản ghi được chọn?"
+  },
+  "279": {
+    "other": "Bảng"
+  },
+  "28": {
+    "other": "Tạo tệp tin mới trong : "
+  },
+  "280": {
+    "other": "Bản ghi"
+  },
+  "281": {
+    "other": "Giới hạn tải lên"
+  },
+  "282": {
+    "other": "Kích thước mỗi tệp tin"
+  },
+  "283": {
+    "other": "Tổng kích thước"
+  },
+  "284": {
+    "other": "Số tệp tin"
+  },
+  "285": {
+    "other": "Không thể tìm thấy người dùng, vui lòng thử lại. \\n Hãy đảm bảo Caps Lock của bạn chưa được sử dụng!"
+  },
+  "286": {
+    "other": "Người dùng của bạn đã lỗi thời với phiên bản hiện tại, vui lòng sử dụng quy trình nâng cấp."
+  },
+  "287": {
+    "other": "Quyền đối với tệp"
+  },
+  "288": {
+    "other": "Người dùng"
+  },
+  "289": {
+    "other": "Nhóm"
+  },
+  "29": {
+    "other": "Tạo mới"
+  },
+  "290": {
+    "other": "Tất cả"
+  },
+  "291": {
+    "other": "Áp dụng đệ quy?"
+  },
+  "292": {
+    "other": "Chia sẻ"
+  },
+  "293": {
+    "other": "Tạo một liên kết công khai đến tệp này"
+  },
+  "294": {
+    "other": "Thời gian hết hạn liên kết (tính bằng ngày) và mật khẩu (để trống nếu không có mật khẩu)."
+  },
+  "295": {
+    "other": "Hết hạn"
+  },
+  "296": {
+    "other": "Sao chép URL dưới đây:"
+  },
+  "297": {
+    "other": "Người dùng mới"
+  },
+  "298": {
+    "other": "Tạo người dùng mới"
+  },
+  "299": {
+    "other": "Không gian làm việc"
+  },
+  "3": {
+    "other": "Kiểu"
+  },
+  "30": {
+    "other": "Viết tên cho thư mục rồi nhấp vào &quot; Tạo &quot;"
+  },
+  "300": {
+    "other": "Tạo một không gian làm việc mới"
+  },
+  "301": {
+    "other": "Chỉnh sửa cấu hình"
+  },
+  "302": {
+    "other": "Sao chép dưới dạng văn bản"
+  },
+  "303": {
+    "other": "Sao chép lựa chọn dưới dạng văn bản được cách nhau bằng tab."
+  },
+  "304": {
+    "other": "Quay lại"
+  },
+  "305": {
+    "other": "Back to Homepage"
+  },
+  "305b": {
+    "other": "My Workspaces"
+  },
+  "306": {
+    "other": "Quá nhiều thứ"
+  },
+  "307": {
+    "other": "Điền vào các trường tùy chọn"
+  },
+  "308": {
+    "other": "Tạo liên kết"
+  },
+  "309": {
+    "other": "Tạo"
+  },
+  "31": {
+    "other": "Bạn phải chọn một tệp tin"
+  },
+  "310": {
+    "other": "Tùy chọn"
+  },
+  "311": {
+    "other": "Tự động tải lên khi một tệp tin được thêm vào"
+  },
+  "312": {
+    "other": "Tùy chọn trình tải lên"
+  },
+  "313": {
+    "other": "Nén..."
+  },
+  "314": {
+    "other": "Nén mục lựa chọn thành zip..."
+  },
+  "315": {
+    "other": "Nén mục lựa chọn thành"
+  },
+  "316": {
+    "other": "Xem/Chỉnh sửa"
+  },
+  "317": {
+    "other": "Biên tập Nguồn"
+  },
+  "318": {
+    "other": "Trình xem mã nguồn CodePress"
+  },
+  "319": {
+    "other": "Trình soạn thảo HTML"
+  },
+  "32": {
+    "other": "Khám phá"
+  },
+  "320": {
+    "other": "Trình chỉnh sửa WYSIWYG cho HTML"
+  },
+  "321": {
+    "other": "Chọn"
+  },
+  "322": {
+    "other": "Chọn tệp tin hiện tại"
+  },
+  "323": {
+    "other": "Gửi email cho URL này"
+  },
+  "324": {
+    "other": "Không có trình chỉnh sửa nào"
+  },
+  "325": {
+    "other": "Phù hợp nhất"
+  },
+  "326": {
+    "other": "Không phù hợp"
+  },
+  "327": {
+    "other": "100%"
+  },
+  "328": {
+    "other": "Trình đọc tài liệu"
+  },
+  "329": {
+    "other": "Xem trực tuyến pdf,svg, tif,.."
+  },
+  "33": {
+    "other": "Lỗi tải lên tập tin !"
+  },
+  "330": {
+    "other": "Vui lòng đợi khi các trang được hiện thỉ..."
+  },
+  "331": {
+    "other": "Trang"
+  },
+  "332": {
+    "other": "của"
+  },
+  "333": {
+    "other": "Trình chỉnh sửa ảnh Pixlr"
+  },
+  "334": {
+    "other": "thêm"
+  },
+  "335": {
+    "other": "Vui lòng nhập số trang từ 1 đến "
+  },
+  "336": {
+    "other": "Xin lỗi bạn không thể bỏ các thư mục, chỉ bỏ các tệp tin!"
+  },
+  "337": {
+    "other": "Bắt đầu tải lên tự động"
+  },
+  "338": {
+    "other": "Đóng bảng điều khiển khi quá trình tải lên kết thúc"
+  },
+  "339": {
+    "other": "Tập tin đã tồn tại"
+  },
+  "34": {
+    "other": "Tệp tin"
+  },
+  "340": {
+    "other": "Cảnh báo"
+  },
+  "341": {
+    "other": "Thông tin tệp tin"
+  },
+  "342": {
+    "other": "Thông tin thư mục"
+  },
+  "343": {
+    "other": "Thông tin hình ảnh"
+  },
+  "344": {
+    "other": "Tìm kiếm trên"
+  },
+  "345": {
+    "other": "No version information could be retrieved"
+  },
+  "346": {
+    "other": "Phiên bản của bạn đã được cập nhật"
+  },
+  "347": {
+    "other": "Đã có phiên bản mới (%s)! Truy cập %s"
+  },
+  "348": {
+    "other": "Một không gian làm việc mới đã được chia sẻ."
+  },
+  "349": {
+    "other": "Cảnh báo, thiếu đối số"
+  },
+  "35": {
+    "other": "đã được tạo thành công trong thư mục"
+  },
+  "350": {
+    "other": "Tên này đã có người dùng, vui lòng chọn tên khác."
+  },
+  "351": {
+    "other": "Bạn không có quyền chia sẻ công khai các mục."
+  },
+  "352": {
+    "other": "Tên workspace này đã tồn tại, vui lòng chọn tên khác."
+  },
+  "353": {
+    "other": "Người dùng đích"
+  },
+  "354": {
+    "other": "Tạo người dùng mới hoặc chọn một trong những người dùng hiện có của bạn từ danh sách."
+  },
+  "355": {
+    "other": "Tên người dùng"
+  },
+  "356": {
+    "other": "Mật khẩu người dùng"
+  },
+  "357": {
+    "other": "Kho lưu trữ đích"
+  },
+  "358": {
+    "other": "Chọn tên cho không gian làm việc chung."
+  },
+  "359": {
+    "other": "Nhãn"
+  },
+  "36": {
+    "other": "Kích thước của nó là"
+  },
+  "360": {
+    "other": "Quyền"
+  },
+  "361": {
+    "other": "Đọc"
+  },
+  "362": {
+    "other": "Ghi"
+  },
+  "363": {
+    "other": "Đã chia sẻ"
+  },
+  "364": {
+    "other": "Bạn không có quyền thực hiện thao tác này"
+  },
+  "365": {
+    "other": "Bạn không được phép tải lên nhiều hơn %s tệp cùng một lúc."
+  },
+  "366": {
+    "other": "Người dùng này không có không gian làm việc nào đang hoạt động."
+  },
+  "367": {
+    "other": "Bạn không được phép tải lên các loại tệp tin này. Vui lòng chọn trong số các phần mở rộng sau : "
+  },
+  "368": {
+    "other": "Đã giải nén thành công lựa chọn từ kho lưu trữ %s đến thư mục %s"
+  },
+  "369": {
+    "other": "Shortcut"
+  },
+  "37": {
+    "other": "Phải phải viết một tên hợp lệ"
+  },
+  "370": {
+    "other": "Tải xuống công khai APPLICATION_TITLE"
+  },
+  "371": {
+    "other": "Yêu cầu mật khẩu để tải xuống"
+  },
+  "372": {
+    "other": "Không gian làm việc hiện tại"
+  },
+  "373": {
+    "other": "Nơi đến"
+  },
+  "374": {
+    "other": "Bạn không thể sao chép thư mục trên không gian làm việc"
+  },
+  "375": {
+    "other": "Chúng tôi đã phát hiện bạn không hoạt động kể từ __IDLE__. Để đảm bảo an toàn cho dữ liệu của bạn, bạn sẽ được đang xuất trong __LOGOUT__"
+  },
+  "375t": {
+    "other": "Bạn còn đó không?"
+  },
+  "376": {
+    "other": "Nhấp vào bất kỳ đâu để tiếp tục phiên bản của bạn"
+  },
+  "378": {
+    "other": "Cảnh báo, mật khẩu bị bỏ trống hoặc quá ngắn!"
+  },
+  "379": {
+    "other": "Từ không an toàn!"
+  },
+  "38": {
+    "other": "Thư mục"
+  },
+  "380": {
+    "other": "Quá ngắn"
+  },
+  "381": {
+    "other": "Rất yếu"
+  },
+  "382": {
+    "other": "Yếu"
+  },
+  "383": {
+    "other": "Trung bình"
+  },
+  "384": {
+    "other": "Mạnh"
+  },
+  "385": {
+    "other": "Rất mạnh"
+  },
+  "validation.login.lowercase": {
+    "other": "Vui lòng chỉ sử dụng các ký tự viết thường cho thông tin đăng nhập"
+  },
+  "validation.login.format": {
+    "other": "Vui lòng sử dụng ký tự chữ và số hoặc email hợp lệ để đăng nhập"
+  },
+  "386": {
+    "other": "Bạn đăng nhập không thành công 3 lần.\\nĐể đảm bảo tính bảo mật, vui lòng nhập mã xuất hiện trong hình ảnh."
+  },
+  "389": {
+    "other": "Vui lòng đọc đoạn code bên dưới :"
+  },
+  "39": {
+    "other": "đã được tạo trong"
+  },
+  "390": {
+    "other": "Code"
+  },
+  "391": {
+    "other": "Không có kho lưu trữ"
+  },
+  "392": {
+    "other": "Cảnh báo, phiên bản APPLICATION_TITLE đã thay đổi (bây giờ là %s), vui lòng xóa bộ nhớ cache của trình duyệt và làm mới trang để đảm bảo rằng mọi thứ đều hoạt động bình thường!"
+  },
+  "393": {
+    "other": "Cảnh báo, độ dài tên phải dưới %s, tên của tệp này sẽ bị cắt ngắn!"
+  },
+  "394": {
+    "other": "Rất tiếc, hiện tại không thể chia sẻ thư mục bằng trình điều khiển xác thực hiện tại (người dùng không thể chỉnh sửa). Mặc dù vậy, vẫn có thể chia sẻ tệp."
+  },
+  "395": {
+    "other": "Mục bạn đã kéo thả có vẻ là một thư mục và các thư mục này không thể được tải lên máy chủ. Bạn có chắc chắn muốn tải nó lên không?"
+  },
+  "396": {
+    "other": "Auth. Method"
+  },
+  "397": {
+    "other": "Tải xuống theo từng phần"
+  },
+  "398": {
+    "other": "Tải xuống tệp đã chọn theo từng phần"
+  },
+  "399": {
+    "other": "Nhập số lượng phân đoạn để tải xuống, sau đó nhấp vào nút và từng tệp để tải xuống."
+  },
+  "4": {
+    "other": "Đã sửa đổi"
+  },
+  "40": {
+    "other": "Thư mục đã tồn tại (tên không biệt chữ hoa hay chữ thường)"
+  },
+  "400": {
+    "other": "Số lượng phân đoạn :"
+  },
+  "401": {
+    "other": "Bạn có thể tải xuống và cài đặt phần mềm sau để lắp ráp các phân đoạn một lần trên máy tính của mình: "
+  },
+  "402": {
+    "other": "http://www.hjsplit.org/"
+  },
+  "41": {
+    "other": "đã được đổi tên thành"
+  },
+  "411": {
+    "other": "Mở"
+  },
+  "412": {
+    "other": "Chỉ tải lên"
+  },
+  "413": {
+    "other": "Chia sẻ bởi"
+  },
+  "414": {
+    "other": "Sử dụng mũi tên để điều hướng và +/- để thay đổi thu phóng"
+  },
+  "415": {
+    "other": "Thay đổi khả năng hiển thị của bảng điều khiển bên trái"
+  },
+  "416": {
+    "other": "Bảng điều khiển bên trái"
+  },
+  "417": {
+    "other": "Tạo một cell..."
+  },
+  "418": {
+    "other": "Tạo một cell"
+  },
+  "419": {
+    "other": "Đang tải mẫu..."
+  },
+  "42": {
+    "other": "tới"
+  },
+  "420": {
+    "other": "Vui lòng chọn một mẫu từ danh sách"
+  },
+  "421": {
+    "other": "Mới %s"
+  },
+  "422": {
+    "other": "Vui lòng hoàn thành các thông số cần thiết. Di chuyển các tiêu đề trường bằng chuột để biết thêm thông tin."
+  },
+  "423": {
+    "other": "Xóa không gian làm việc"
+  },
+  "424": {
+    "other": "Bạn có chắc chắn muốn xóa không gian làm việc này? Quá trình này không thể đảo ngược."
+  },
+  "425": {
+    "other": "Không gian làm việc hiện đã được tạo, nó được thêm vào danh sách không gian làm việc của bạn, nếu bạn muốn xóa nó, hãy đảm bảo chuyển sang không gian làm việc khác, sau đó nhấp vào dấu thập đỏ bên cạnh tên không gian làm việc."
+  },
+  "426": {
+    "other": "Đã có lỗi khi tạo không gian làm việc"
+  },
+  "427": {
+    "other": "Đã có lỗi khi xóa không gian làm việc"
+  },
+  "428": {
+    "other": "Không gian làm việc được xóa thành công"
+  },
+  "429": {
+    "other": "Đây là cách workspace sẽ xuất hiện trong danh sách của bạn."
+  },
+  "43": {
+    "other": "đã tồn tại (tên không phân biệt chữ hoa chữ thường)"
+  },
+  "430": {
+    "other": "Tệp tin thông thường"
+  },
+  "431": {
+    "other": "Mô hình mẫu"
+  },
+  "432": {
+    "other": "Tệp tin của tôi"
+  },
+  "433": {
+    "other": "sẵn sàng"
+  },
+  "434": {
+    "other": "đang gửi"
+  },
+  "435": {
+    "other": "xong"
+  },
+  "436": {
+    "other": "lỗi"
+  },
+  "437": {
+    "other": "Rất tiếc, có vẻ như mã thông báo bảo mật của bạn đã hết hạn! Vui lòng %s bằng cách nhấn tải lại hoặc F5 trong trình duyệt của bạn!"
+  },
+  "438": {
+    "other": "tải lại trang"
+  },
+  "439": {
+    "other": "Các tùy chọn chính"
+  },
+  "44": {
+    "other": "đã bị xóa"
+  },
+  "440": {
+    "other": "Đồng ý"
+  },
+  "441": {
+    "other": "Không"
+  },
+  "442": {
+    "other": "Tài khoản của tôi"
+  },
+  "443": {
+    "other": "Cập nhật thông tin các nhân của bạn"
+  },
+  "444": {
+    "other": "Vui lòng cập nhật mật khẩu của bạn, nếu không bạn sẽ không thể đăng nhập."
+  },
+  "445": {
+    "other": "Bạn sẽ được đang xuất ngay bây giờ, vui lòng nhập lại mật khẩu mới của bạn, cám ơn!"
+  },
+  "446": {
+    "other": "Trình bày"
+  },
+  "447": {
+    "other": "Nhóm của tôi"
+  },
+  "448": {
+    "other": "tạo người dùng"
+  },
+  "449": {
+    "other": "Tạo %s, chọn mật khẩu"
+  },
+  "45": {
+    "other": "thư mục"
+  },
+  "450": {
+    "other": "Sắp xếp theo ..."
+  },
+  "451": {
+    "other": "Sắp xếp hình thu nhỏ theo ..."
+  },
+  "452": {
+    "other": "Kích thước thumbs"
+  },
+  "453": {
+    "other": "Đặt kích thước hình thu nhỏ"
+  },
+  "454": {
+    "other": "Chọn tập tin trên máy tính của bạn"
+  },
+  "455": {
+    "other": "Không gian làm việc"
+  },
+  "456": {
+    "other": "Thêm"
+  },
+  "457": {
+    "other": "cập nhật"
+  },
+  "458": {
+    "other": "loại bỏ"
+  },
+  "459": {
+    "other": "Thư mục trên cùng"
+  },
+  "46": {
+    "other": "tệp tin"
+  },
+  "460": {
+    "other": "Danh sách"
+  },
+  "461": {
+    "other": "Chuyển sang dạng xem danh sách"
+  },
+  "462": {
+    "other": "Xem trước"
+  },
+  "463": {
+    "other": "Tải về tất cả"
+  },
+  "464": {
+    "other": "Tải xuống tất cả các nội dung không gian làm việc cùng một lúc (zipped)"
+  },
+  "465": {
+    "other": "Hiển thị các URL thay thế (gắn kết các workspaces riêng biệt)"
+  },
+  "466": {
+    "other": "Đang tải..."
+  },
+  "467": {
+    "other": "Tất các các yếu tố được chia sẻ"
+  },
+  "468": {
+    "other": "Không gian làm việc"
+  },
+  "469": {
+    "other": "Cells"
+  },
+  "47": {
+    "other": "Bạn có thực sự muốn xóa"
+  },
+  "470": {
+    "other": "Ngày tạo %d"
+  },
+  "471": {
+    "other": "Được tạo theo ngày %d của người dùng %u"
+  },
+  "472": {
+    "other": "Được chia sẻ bởi %u"
+  },
+  "473": {
+    "other": "Được tạo theo ngày %d của người dùng %u"
+  },
+  "474": {
+    "other": "Mô tả không có sẵn"
+  },
+  "475": {
+    "other": "Tệp được chia sẻ giữa tất cả các người dùng"
+  },
+  "476": {
+    "other": "Không gian làm việc cá nhân"
+  },
+  "477": {
+    "other": "Chọn tệp tin hoặc thư mục để xem chi tiết tại đây"
+  },
+  "478": {
+    "other": "Không có kết quả nào được tìm thấy"
+  },
+  "479": {
+    "other": "Quên mật khẩu?"
+  },
+  "48": {
+    "other": "Ok"
+  },
+  "480": {
+    "other": "Duyệt qua tất cả các thư mục của không gian làm việc hiện tại."
+  },
+  "481": {
+    "other": "Tất cả các tệp tin và thư mục được chia sẻ của bạn"
+  },
+  "482": {
+    "other": "Truy cập nhanh vào các mục đã đánh dấu của bạn"
+  },
+  "483": {
+    "other": "Bạn không được phép tạo thêm người dùng!"
+  },
+  "484": {
+    "other": "Tạo người dùng"
+  },
+  "485": {
+    "other": "Tạo người dùng được chia sẻ"
+  },
+  "486": {
+    "other": "Tuỳ chọn nâng cao"
+  },
+  "487": {
+    "other": "Cơ bản"
+  },
+  "488": {
+    "other": "Bộ lọc nâng cao"
+  },
+  "489": {
+    "other": "Metadata"
+  },
+  "49": {
+    "other": "Cancel"
+  },
+  "490": {
+    "other": "Khoảng thời gian"
+  },
+  "491": {
+    "other": "Sau"
+  },
+  "492": {
+    "other": "cho đến khi"
+  },
+  "493": {
+    "other": "Hôm nay"
+  },
+  "494": {
+    "other": "Hôm qua"
+  },
+  "494t": {
+    "other": "Tomorrow"
+  },
+  "495": {
+    "other": "Tuần trước"
+  },
+  "496": {
+    "other": "Tháng trước"
+  },
+  "497": {
+    "other": "Năm trước"
+  },
+  "498": {
+    "other": "Thuộc tính tài liệu"
+  },
+  "499": {
+    "other": "Tệp tin"
+  },
+  "5": {
+    "other": "Các hành động"
+  },
+  "50": {
+    "other": "Tệp tin Exe"
+  },
+  "500": {
+    "other": "Phần mở rộng"
+  },
+  "501": {
+    "other": "hoặc"
+  },
+  "502": {
+    "other": "Chỉ thư mục"
+  },
+  "503": {
+    "other": "Kích thước"
+  },
+  "504": {
+    "other": "1k,1M,1G"
+  },
+  "505": {
+    "other": "tới"
+  },
+  "506": {
+    "other": "Thông số ứng dụng(người dùng, không gian làm việc, cấu hình)"
+  },
+  "507": {
+    "other": "Chào mừng bạn vào %s"
+  },
+  "508": {
+    "other": "Tôi vừa tạo một tài khoản cho bạn trên %s. Để kết nối, vui lòng nhấn vào liên kết sau %li và sử dụng các thông tin đăng nhập sau: <br><br> Đăng nhập:%u <br><br> Mật khẩu: %p"
+  },
+  "509": {
+    "other": "Lưu lại thành một nhóm"
+  },
+  "51": {
+    "other": "Soạn thảo văn bản"
+  },
+  "510": {
+    "other": "Vui lòng nhập một nhãn nhóm"
+  },
+  "511": {
+    "other": "%s của tôi"
+  },
+  "512": {
+    "other": "Toàn màn hình máy tính"
+  },
+  "513": {
+    "other": "hiện"
+  },
+  "514": {
+    "other": "ẩn"
+  },
+  "515": {
+    "other": "Không có dấu trang - Kéo các thư mục hoặc tệp vào đây để truy cập nhanh."
+  },
+  "516": {
+    "other": "mở rộng"
+  },
+  "517": {
+    "other": "thu lại"
+  },
+  "518": {
+    "other": "Ngoài ra, bạn có thể vào <a class='create_file_alt_link'> tạo tệp tin trống mới </a>."
+  },
+  "519": {
+    "other": "Cập nhật người dùng"
+  },
+  "52": {
+    "other": "Đang chỉnh sửa tập tin"
+  },
+  "520": {
+    "other": "Cập nhật dữ liệu người dùng và mật khẩu"
+  },
+  "521": {
+    "other": "Người dùng đã được cập nhật thành công"
+  },
+  "522": {
+    "other": "ID người dùng"
+  },
+  "523": {
+    "other": "Mật khẩu"
+  },
+  "524": {
+    "other": "Cập nhật mật khẩu"
+  },
+  "525": {
+    "other": "Hiển thị hình ảnh gốc"
+  },
+  "526": {
+    "other": "Phiên bản độ phân bản thấp"
+  },
+  "527": {
+    "other": "Đã chia sẻ với"
+  },
+  "528": {
+    "other": "Người dùng nội bộ"
+  },
+  "53": {
+    "other": "Lưu"
+  },
+  "530": {
+    "other": "Người dùng khách"
+  },
+  "531": {
+    "other": "Người dùng"
+  },
+  "532": {
+    "other": "Nhóm"
+  },
+  "533": {
+    "other": "ID được sử dụng để đăng nhập, vui lòng sử dụng ký tự chữ và số hoặc chữ thường email."
+  },
+  "534": {
+    "other": "Mật khẩu được sử dụng để đăng nhập"
+  },
+  "535": {
+    "other": "Gửi mật khẩu qua email"
+  },
+  "536": {
+    "other": "Gửi email chào mừng bao gồm mật khẩu cho người dùng mới"
+  },
+  "537": {
+    "other": "Tệp tin quá lớn! Kích thước tối đa là %i"
+  },
+  "538": {
+    "other": "Tải lên xảy ra lỗi: không tìm thấy tệp tin trên máy chủ!"
+  },
+  "539": {
+    "other": "Lỗi tải lên: tệp không hoàn chỉnh"
+  },
+  "54": {
+    "other": "Huỷ"
+  },
+  "540": {
+    "other": "Tải lên xảy ra lỗi: không thể tìm thấy thư mục mẫu"
+  },
+  "541": {
+    "other": "Tải lên xảy ra lỗi: không thể ghi vào thư mục mẫu"
+  },
+  "542": {
+    "other": "Tải lên xảy ra lỗi: một tiện ích mở rộng PHP đã dừng hoạt hoạt động quá trình tải lên."
+  },
+  "543": {
+    "other": "Kết quả giới hạn trong %s."
+  },
+  "544": {
+    "other": "Hiển thị thêm"
+  },
+  "545": {
+    "other": "Chia sẻ từ xa"
+  },
+  "546": {
+    "other": "Mục này đã được chia sẻ với bạn bởi %%OWNER%% từ một vị trí từ xa. Bạn có muốn tiếp tục ?"
+  },
+  "547": {
+    "other": "Đồng ý"
+  },
+  "548": {
+    "other": "Từ chối"
+  },
+  "549": {
+    "other": "Trước đây bạn đã chấp nhận mục này đã được chia sẻ với bạn bởi %%OWNER%% từ một vị trí từ xa. Bạn có muốn từ chối nó ngay bây giờ?"
+  },
+  "55": {
+    "other": "đã được sửa đổi"
+  },
+  "550": {
+    "other": "Từ chối chia sẻ này"
+  },
+  "551": {
+    "other": "Từ chối"
+  },
+  "552": {
+    "other": "Vui lòng cung cấp mật khẩu."
+  },
+  "553": {
+    "other": "Mật mã không hợp lệ, vui lòng thử lại. \\n Đảm bảo Caps Lock của bạn chưa được kích hoạt!"
+  },
+  "554": {
+    "other": "%s kết quả trong Thùng rác"
+  },
+  "556": {
+    "other": "Khởi chạy nhiệm vụ %s chạy nền"
+  },
+  "557": {
+    "other": "Thông tin cần thiết"
+  },
+  "558": {
+    "other": "Vui lòng cung cấp mật khẩu để vào không gian làm việc này."
+  },
+  "559": {
+    "other": "Xác thực không chính xác cho workspace này."
+  },
+  "56": {
+    "other": "Ảnh BMP"
+  },
+  "560": {
+    "other": "Yêu cầu xác thực"
+  },
+  "561": {
+    "other": "Chúng tôi sẽ chuyển hướng bạn đến trang xác thực của nhà cung cấp. Nếu bạn không được chuyển hướng tự động, hãy nhấn OK để thử lại..."
+  },
+  "562": {
+    "other": "Thư mục này rỗng!"
+  },
+  "563": {
+    "other": "Không gian làm việc này trống!"
+  },
+  "564": {
+    "other": "Thùng rác rỗng."
+  },
+  "565": {
+    "other": "Bắt đầu thêm tệp hoặc thư mục bằng cách chọn chúng hoặc kéo trực tiếp từ màn hình của bạn"
+  },
+  "566": {
+    "other": "Bạn không được phép thêm tệp vào đây"
+  },
+  "567": {
+    "other": "Duyệt qua thùng rác"
+  },
+  "568": {
+    "other": "Nhóm"
+  },
+  "569": {
+    "other": "Nhóm mới"
+  },
+  "57": {
+    "other": "Ảnh PNG"
+  },
+  "570": {
+    "other": "Xóa nhóm"
+  },
+  "571": {
+    "other": "Chưa có nhóm nào được tạo"
+  },
+  "572": {
+    "other": "Tạo nhóm của riêng bạn để dễ dàng chia sẻ dữ liệu giữa nhiều người dùng"
+  },
+  "571.readonly": {
+    "other": "Không có đội nào"
+  },
+  "572.readonly": {
+    "other": "Bạn không được phép tạo nhóm nhưng một số người dùng được cho phép có thể chia sẻ nhóm với bạn"
+  },
+  "571.create_team_action": {
+    "other": "Tạo và chỉnh sửa nhóm"
+  },
+  "571.create_team_legend": {
+    "other": "Cho phép người dùng tạo và chỉnh sửa nhóm của riêng họ"
+  },
+  "573": {
+    "other": "Thêm người dùng vào nhóm"
+  },
+  "574": {
+    "other": "Xóa khỏi nhóm"
+  },
+  "575": {
+    "other": "Thành viên nhóm"
+  },
+  "576": {
+    "other": "%s thành viên"
+  },
+  "577": {
+    "other": "Không thành viên"
+  },
+  "578": {
+    "other": "Nhãn nhóm"
+  },
+  "579": {
+    "other": "Tạo nhóm"
+  },
+  "58": {
+    "other": "Tệp tin CSS"
+  },
+  "580": {
+    "other": "Chỉnh sửa nhãn nhóm"
+  },
+  "581": {
+    "other": "Người dùng thuộc (các) nhóm %s"
+  },
+  "582": {
+    "other": "Xóa người dùng"
+  },
+  "583": {
+    "other": "Tìm kiếm thư mục"
+  },
+  "584": {
+    "other": "Thư mục"
+  },
+  "585": {
+    "other": "Không có người dùng khách nào"
+  },
+  "586": {
+    "other": "Tạo người dùng của riêng bạn và chia sẻ tệp tin hoặc thư mục từ không gian làm việc của bạn với họ."
+  },
+  "587": {
+    "other": "Không có kết quả"
+  },
+  "588": {
+    "other": "Nhập vào hộp tìm kiếm để tìm kiếm người dùng"
+  },
+  "589": {
+    "other": "Người dùng khách"
+  },
+  "59": {
+    "other": "Tệp tin MP3"
+  },
+  "590": {
+    "other": "Người dùng nội bộ"
+  },
+  "591": {
+    "other": "Chọn tên cho nhóm, và bạn có thể thêm người dùng sau khi tạo."
+  },
+  "592": {
+    "other": "Sổ địa chỉ"
+  },
+  "593": {
+    "other": "Người dùng được chia sẻ"
+  },
+  "594": {
+    "other": "Máy chủ đáng tin cậy"
+  },
+  "595": {
+    "other": "Tìm kiếm người dùng..."
+  },
+  "596": {
+    "other": "Máy chủ '%s'"
+  },
+  "597": {
+    "other": "tất cả"
+  },
+  "598": {
+    "other": "Gửi tin nhắn"
+  },
+  "599": {
+    "other": "Thêm người dùng"
+  },
+  "599-a": {
+    "other": "All Results"
+  },
+  "6": {
+    "other": "Đổi tên"
+  },
+  "60": {
+    "other": "Tệp tin RAR"
+  },
+  "600": {
+    "other": "Chỉnh sửa người dùng"
+  },
+  "601": {
+    "other": "Một cell đã chia sẻ"
+  },
+  "602": {
+    "other": "%1 cell được chia sẻ"
+  },
+  "603": {
+    "other": "Nhóm"
+  },
+  "604": {
+    "other": "Người dùng từ xa"
+  },
+  "605": {
+    "other": "Các tùy chọn tìm kiếm khác"
+  },
+  "606": {
+    "other": "Ít tùy chọn tìm kiếm hơn"
+  },
+  "607": {
+    "other": "Hoạt động gần đây của bạn - Nhập để tìm kiếm tệp bên trong tất cả workspaces"
+  },
+  "608": {
+    "other": "Thư mục hiện tại"
+  },
+  "609": {
+    "other": "Toàn bộ workspace"
+  },
+  "61": {
+    "other": "Tệp tin GZ"
+  },
+  "610": {
+    "other": "All workspaces"
+  },
+  "611": {
+    "other": "Nhập để tìm kiếm"
+  },
+  "612": {
+    "other": "Khoảng tùy chỉnh"
+  },
+  "613": {
+    "other": "Lớn hơn..."
+  },
+  "614": {
+    "other": "Nhỏ hơn..."
+  },
+  "615": {
+    "other": "Thực hiện"
+  },
+  "616": {
+    "other": "Mặt nạ"
+  },
+  "617": {
+    "other": "Nhập"
+  },
+  "618": {
+    "other": "Chuyển đổi ngôn ngữ..."
+  },
+  "619": {
+    "other": "Tìm kiếm giới hạn trong thư mục hiện tại và thư mục con của nó"
+  },
+  "62": {
+    "other": "Thư mục gốc"
+  },
+  "620": {
+    "other": "Tìm kiếm giới hạn trong workspace hiện tại"
+  },
+  "621": {
+    "other": "Trường này không đươc để trống"
+  },
+  "622": {
+    "other": "Error Stack"
+  },
+  "623": {
+    "other": "Sao chép"
+  },
+  "624": {
+    "other": "Đã sao chép!"
+  },
+  "625": {
+    "other": "Thư"
+  },
+  "626": {
+    "other": "Tệp tin được chia sẻ với tôi"
+  },
+  "627": {
+    "other": "Chia sẻ từ máy chủ từ xa"
+  },
+  "628": {
+    "other": "Phục hồi"
+  },
+  "629": {
+    "other": "Chưa có hồ sơ nào"
+  },
+  "63": {
+    "other": "Đăng xuất"
+  },
+  "630": {
+    "other": "Các thư mục được chia sẻ với tôi"
+  },
+  "631": {
+    "other": "Cell này trống!"
+  },
+  "632": {
+    "other": "Chưa có cell nào"
+  },
+  "633": {
+    "other": "Cell là không gian được chia sẻ với những người khác để cộng tác trên tài liệu"
+  },
+  "634": {
+    "other": "Bạn"
+  },
+  "634b": {
+    "other": "Nhóm của bạn"
+  },
+  "634c": {
+    "other": "Tất cả người dùng"
+  },
+  "635": {
+    "other": "Phòng Chat"
+  },
+  "636": {
+    "other": "Bắt đầu nhập và nhấn Enter"
+  },
+  "637": {
+    "other": "Không có tin nhắn nào, bắt đầu nhập để chat với người dùng khác của cell này!"
+  },
+  "638": {
+    "other": "Cell chứa nhiều thư mục gốc hoặc tệp tin, bạn không thể tải dữ liệu trực tiếp lên đây."
+  },
+  "639": {
+    "other": "Trong cell này"
+  },
+  "64": {
+    "other": "Tệp tin XLS"
+  },
+  "640": {
+    "other": "Tạo cell với %s"
+  },
+  "641": {
+    "other": "Xóa khỏi cell hiện tại"
+  },
+  "642": {
+    "other": "Thêm vào cell hiện tại"
+  },
+  "643": {
+    "other": "Bây giờ bạn chia sẻ cell với %s"
+  },
+  "644": {
+    "other": "Không thể tạo cell: %s"
+  },
+  "65": {
+    "other": "Tệp từ"
+  },
+  "66": {
+    "other": "Sao chép"
+  },
+  "67": {
+    "other": "Tệp đã chọn"
+  },
+  "68": {
+    "other": "Dán vào"
+  },
+  "69": {
+    "other": "Hoặc chọn một thư mục khác"
+  },
+  "7": {
+    "other": "Xóa"
+  },
+  "70": {
+    "other": "Di chuyển"
+  },
+  "71": {
+    "other": "Tệp này đã tồn tại (tên không phân biệt chữ hoa chữ thường)"
+  },
+  "72": {
+    "other": "Đường dẫn thư mục gốc không đúng. Kiểm tra nó trong tệp conf/conf.php"
+  },
+  "73": {
+    "other": "đã được sao chép vào thư mục"
+  },
+  "74": {
+    "other": "đã được di chuyển vào thư mục"
+  },
+  "75": {
+    "other": "Tệp users.txt không có trong thư mục riêng tư"
+  },
+  "76": {
+    "other": "Tệp tin này đã bị xóa"
+  },
+  "77": {
+    "other": "Gửi"
+  },
+  "78": {
+    "other": "Pass"
+  },
+  "79": {
+    "other": "Tệp PDF"
+  },
+  "8": {
+    "other": "Thư mục"
+  },
+  "80": {
+    "other": "Tệp tin MOV"
+  },
+  "81": {
+    "other": "Tệp tin AVI"
+  },
+  "82": {
+    "other": "Tệp tin MPE"
+  },
+  "83": {
+    "other": "Tệp tin MPEG"
+  },
+  "84": {
+    "other": "Trợ giúp"
+  },
+  "85": {
+    "other": "Làm mới"
+  },
+  "86": {
+    "other": "Đóng"
+  },
+  "87": {
+    "other": "Tìm kiếm"
+  },
+  "88": {
+    "other": "Tải về"
+  },
+  "89": {
+    "other": "Không thể mở tập tin"
+  },
+  "9": {
+    "other": "Tệp tin Midi"
+  },
+  "90": {
+    "other": "In"
+  },
+  "91": {
+    "other": "Tệp tin FLASH"
+  },
+  "92": {
+    "other": "Ngôn ngữ"
+  },
+  "93": {
+    "other": "Để chọn ngôn ngữ của bạn, trình duyệt của bạn phải chấp nhận cookies."
+  },
+  "94": {
+    "other": "Đăng nhập"
+  },
+  "95": {
+    "other": "Chọn ngôn ngữ của bạn :"
+  },
+  "96": {
+    "other": "Chọn thư mục đích trong cây thư mục: "
+  },
+  "97": {
+    "other": "Tải lên tập tin"
+  },
+  "98": {
+    "other": "Nhấn vào bất kỳ đâu trên hộp này để đóng nó."
+  },
+  "99": {
+    "other": "nó không thể ghi được. Có thể có vấn đề về quyền, vui lòng kiểm tra với quản trị viên của bạn."
+  },
+  "about_access_key": {
+    "other": "A"
+  },
+  "bookmarks_access_key": {
+    "other": "B"
+  },
+  "byte_unit_symbol": {
+    "other": "B"
+  },
+  "copy_access_key": {
+    "other": "C"
+  },
+  "create_repo_accesskey": {
+    "other": "R"
+  },
+  "create_user_accesskey": {
+    "other": "U"
+  },
+  "date_format": {
+    "other": "Y/m/d H:i"
+  },
+  "date_intl_locale": {
+    "other": "en_US"
+  },
+  "date_relative_date": {
+    "other": "on DATE"
+  },
+  "date_relative_date_format": {
+    "other": "F, jS Y"
+  },
+  "date_relative_days_ago": {
+    "other": "%s ngày trước"
+  },
+  "date_relative_days_ahead": {
+    "other": "trong %s ngày"
+  },
+  "date_relative_time": {
+    "other": "TIME"
+  },
+  "date_relative_time_format": {
+    "other": "H:i"
+  },
+  "date_relative_today": {
+    "other": "[Today at] LT"
+  },
+  "date_relative_tomorrow": {
+    "other": "[Tomorrow at] LT"
+  },
+  "date_relative_yesterday": {
+    "other": "[Yesterday at] LT"
+  },
+  "date_relative_lastweek": {
+    "other": "[Last] dddd [at] LT"
+  },
+  "date_relative_nextweek": {
+    "other": "dddd [at] LT"
+  },
+  "delete_access_key": {
+    "other": "D"
+  },
+  "detail_access_key": {
+    "other": "L"
+  },
+  "download_access_key": {
+    "other": "w"
+  },
+  "edit_access_key": {
+    "other": "E"
+  },
+  "empty_recycle_access_key": {
+    "other": "y"
+  },
+  "file_access_key": {
+    "other": "F"
+  },
+  "folder_access_key": {
+    "other": "N"
+  },
+  "languageLabel": {
+    "other": "Tiếng Anh"
+  },
+  "leftpane_accesskey": {
+    "other": "L"
+  },
+  "list_access_key": {
+    "other": "i"
+  },
+  "move_access_key": {
+    "other": "M"
+  },
+  "open_with_access": {
+    "other": "e"
+  },
+  "parent_access_key": {
+    "other": "P"
+  },
+  "plugtype.desc.access": {
+    "other": "Các plugin xác định cách một workspace sẽ truy cập vào cả back-end của nó (một tập tin lưu trữ hoặc tương tự) và các hành động và thiết kế chính."
+  },
+  "plugtype.desc.action": {
+    "other": "Các plugin hướng tính năng cho các khía cạnh khác nhau"
+  },
+  "plugtype.desc.auth": {
+    "other": "Cách thông tin người dùng được lưu trữ trong backend"
+  },
+  "plugtype.desc.authfront": {
+    "other": "Các phương pháp thu thập thông tin xác thực (biểu mẫu web, khóa api, v. v.)"
+  },
+  "plugtype.desc.boot": {
+    "other": "Plugin duy nhất để tải framework"
+  },
+  "plugtype.desc.cache": {
+    "other": "Plugin duy nhất để thiết lập bộ đệm máy chủ được ứng dụng sử dụng"
+  },
+  "plugtype.desc.conf": {
+    "other": "Cách dữ liệu cấu hình được lưu trữ trong backend"
+  },
+  "plugtype.desc.cypher": {
+    "other": "Các plugin mã hóa dữ liệu"
+  },
+  "plugtype.desc.editor": {
+    "other": "Người xem hoặc người chỉnh sửa cho nhiều loại mime"
+  },
+  "plugtype.desc.feed": {
+    "other": "Triển khai để lưu trữ dữ liệu sự kiện (hiện chỉ có SQL)"
+  },
+  "plugtype.desc.gui": {
+    "other": "Giao diện web chính, chủ đề và tiện ích mở rộng"
+  },
+  "plugtype.desc.helper": {
+    "other": "Công cụ trợ giúp cho các tác vụ quản trị"
+  },
+  "plugtype.desc.index": {
+    "other": "Các công cụ lập chỉ mục dữ liệu cung cấp tùy chọn tìm kiếm nhanh"
+  },
+  "plugtype.desc.log": {
+    "other": "Gửi nhật ký ứng dụng đến nhiều kênh khác nhau"
+  },
+  "plugtype.desc.mailer": {
+    "other": "Các công cụ để cho phép ứng dụng gửi email"
+  },
+  "plugtype.desc.search-engine": {
+    "other": "Các tùy chọn cho bộ máy tìm kiếm"
+  },
+  "plugtype.desc.meta": {
+    "other": "Các tính năng bổ sung sẽ được thêm vào workspaces"
+  },
+  "plugtype.desc.metastore": {
+    "other": "Các cách triển khai khác nhau để lưu trữ metadata cùng với các tệp và thư mục"
+  },
+  "plugtype.desc.mq": {
+    "other": "Triển khai một máy chủ PUB / SUB đơn giản"
+  },
+  "plugtype.desc.sec": {
+    "other": "Các tính năng bảo mật nâng cao"
+  },
+  "plugtype.desc.shorten": {
+    "other": "Các dịch vụ web để rút ngắn các liên kết công khai"
+  },
+  "plugtype.desc.uploader": {
+    "other": "Trình tải lên dựa trên các công nghệ khác nhau như HTML, Javascript, Java và các công nghệ khác"
+  },
+  "plugtype.title.access": {
+    "other": "Trình điều khiển Workspace"
+  },
+  "plugtype.title.action": {
+    "other": "Action plugins"
+  },
+  "plugtype.title.auth": {
+    "other": "Backends xác thực"
+  },
+  "plugtype.title.authfront": {
+    "other": "Frontends xác thực"
+  },
+  "plugtype.title.boot": {
+    "other": "Bộ tải"
+  },
+  "plugtype.title.cache": {
+    "other": "Bộ nhớ đệm máy chủ"
+  },
+  "plugtype.title.conf": {
+    "other": "Cấu hình bộ nhớ"
+  },
+  "plugtype.title.cypher": {
+    "other": "Công cụ mã hóa"
+  },
+  "plugtype.title.editor": {
+    "other": "Trình chỉnh sửa"
+  },
+  "plugtype.title.feed": {
+    "other": "Bộ nhớ thông báo sự kiện"
+  },
+  "plugtype.title.gui": {
+    "other": "Giao diện đồ họa người dùng"
+  },
+  "plugtype.title.helper": {
+    "other": "Người giúp đỡ"
+  },
+  "plugtype.title.index": {
+    "other": "Nhập dữ liệu"
+  },
+  "plugtype.title.log": {
+    "other": "Loggers"
+  },
+  "plugtype.title.mailer": {
+    "other": "Người gửi thư"
+  },
+  "plugtype.title.search-engine": {
+    "other": "Máy tìm kiếm"
+  },
+  "plugtype.title.meta": {
+    "other": "Workspace Meta Aspects"
+  },
+  "plugtype.title.metastore": {
+    "other": "Bộ nhớ metadata"
+  },
+  "plugtype.title.mq": {
+    "other": "Tin nhắn tức thời"
+  },
+  "plugtype.title.sec": {
+    "other": "Bảo mật"
+  },
+  "plugtype.title.shorten": {
+    "other": "Rút gọn URL"
+  },
+  "plugtype.title.uploader": {
+    "other": "Trình tải lên"
+  },
+  "preview_access_key": {
+    "other": "e"
+  },
+  "react.1": {
+    "other": "thư mục chính"
+  },
+  "react.2": {
+    "other": "hành động lớn"
+  },
+  "refresh_access_key": {
+    "other": "h"
+  },
+  "rename_access_key": {
+    "other": "R"
+  },
+  "restore_access_key": {
+    "other": "o"
+  },
+  "settings_access_key": {
+    "other": "g"
+  },
+  "svn_log_access_key": {
+    "other": "L"
+  },
+  "thumbs_access_key": {
+    "other": "T"
+  },
+  "upload_access_key": {
+    "other": "U"
+  },
+  "view_access_key": {
+    "other": "V"
+  },
+  "public_link_user": {
+    "other": "Truy cập công khai"
+  },
+  "background.move.file": {
+    "other": "Đang di chuyển tệp trong nền ..."
+  },
+  "background.move.folder": {
+    "other": "Đang di chuyển thư mục trong nền ..."
+  },
+  "background.copy.selection": {
+    "other": "Đang sao chép lựa chọn trong nền ..."
+  },
+  "overlay.lock.file": {
+    "other": "Tập tin đã bị khóa"
+  },
+  "overlay.lock.folder": {
+    "other": "Thư mục đã bị khóa"
+  },
+  "overlay.watch.file": {
+    "other": "Hiện đang xem tệp này"
+  },
+  "overlay.watch.folder": {
+    "other": "Hiện đang theo dõi thư mục này"
+  },
+  "overlay.shared.file": {
+    "other": "Tệp tin được chia sẻ, nhấn để chỉnh sửa"
+  },
+  "overlay.shared.folder": {
+    "other": "Thư mục được chia sẻ, nhấn để chỉnh sửa"
+  },
+  "overlay.bookmark.file": {
+    "other": "Tệp tin được đánh dấu"
+  },
+  "overlay.bookmark.folder": {
+    "other": "Thư mục được đánh dấu"
+  },
+  "bookmark.button.tip.add": {
+    "other": "Thêm mục này vào mục yêu thích"
+  },
+  "bookmark.button.tip.remove": {
+    "other": "Xóa dấu trang này"
+  },
+  "bookmark.button.tip.mixed": {
+    "other": "Giá trị hỗn hợp, nhấp để thêm chúng vào mục yêu thích"
+  },
+  "bookmark.button.tip.saving": {
+    "other": "Lưu trạng thái của dấu trang"
+  },
+  "bookmark.secondary.inside": {
+    "other": "Bên trong"
+  },
+  "mkfile.empty.template.label": {
+    "other": "Tệp tin rỗng"
+  },
+  "mkfile.untitled.document": {
+    "other": "Tài liệu không có tiêu đề"
+  },
+  "filename.forbidden.slash": {
+    "other": "Không được sử dụng / trong tên tệp!"
+  },
+  "filename.forbidden.empty": {
+    "other": "You must provide a name!"
+  },
+  "filename.trailing-leading.spaces": {
+    "other": "Warning, it seems that the name begins or ends with a blank character (perhaps a typo?)"
+  },
+  "rename.newvalue.error.similar": {
+    "other": "Vui lòng sử dụng một giá trị khác để đổi tên!"
+  },
+  "rename.processing": {
+    "other": "Đang đổi tên %1 sang %2"
+  },
+  "cells.quick-filter": {
+    "other": "Bộ lọc Cells"
+  },
+  "ws.quick-filter": {
+    "other": "Bộ lọc không gian làm việc"
+  },
+  "visibility.panel.title": {
+    "other": "Hiển thị"
+  },
+  "visibility.panel.right-read": {
+    "other": "Lượt xem"
+  },
+  "visibility.panel.right-edit": {
+    "other": "Chỉnh sửa"
+  },
+  "visibility.panel.list.users": {
+    "other": "Người dùng"
+  },
+  "visibility.panel.list.teams": {
+    "other": "Nhóm của bạn"
+  },
+  "visibility.panel.edit": {
+    "other": "Thay đổi mức độ hiển thị"
+  },
+  "visibility.panel.save": {
+    "other": "Lưu thay đổi"
+  },
+  "visibility.panel.revert": {
+    "other": "Hoàn nguyên những thay đổi"
+  },
+  "visibility.panel.error": {
+    "other": "Đã xảy ra lỗi"
+  },
+  "visibility.panel.pickuser": {
+    "other": "Chọn người dùng..."
+  },
+  "visibility.panel.setvisible": {
+    "other": "Đặt hiển thị thành..."
+  },
+  "visibility.users.advanced": {
+    "other": "Tính năng nâng cao này cho phép bạn quyết định xem những người dùng bạn tạo trong sổ địa chỉ của mình có thể được nhìn thấy và/hoặc chỉnh sửa bởi những người dùng khác hay không. Theo mặc định, người dùng của bạn chỉ hiển thị với bạn."
+  },
+  "user.unknown": {
+    "other": "Không xác định"
+  },
+  "addressbook.pick.group": {
+    "other": "Chọn nhóm"
+  },
+  "addressbook.pick.multiple": {
+    "other": "Multiple Selection"
+  },
+  "confirm.dialog.title": {
+    "other": "Xác nhận"
+  },
+  "confirm.dialog.destructive": {
+    "other": "Sắp xóa"
+  },
+  "confirm.dialog.skipNext": {
+    "other": "Đừng cảnh báo tôi vào lần sau"
+  },
+  "material.paginator.rows": {
+    "other": "Số dòng trên mỗi trang"
+  },
+  "material.paginator.of": {
+    "other": "của"
+  },
+  "form.input-image.fileTypes": {
+    "other": "Vui lòng chỉ sử dụng ảnh (jpeg,png,bmp,webp)"
+  },
+  "form.input-image.clearButton": {
+    "other": "Thiết lập lại"
+  },
+  "form.input-image.clearConfirm": {
+    "other": "Bạn có muốn xóa ảnh hiện tại không?"
+  },
+  "form.input-image.avatarMax": {
+    "other": "Vui lòng sử dụng ảnh nhỏ hơn 5MB"
+  },
+  "searchengine.start": {
+    "other": "Start typing to search for files and folders"
+  },
+  "searchengine.searching": {
+    "other": "Đang tìm kiếm..."
+  },
+  "searchengine.main.placeholder": {
+    "other": "Tìm kiếm..."
+  },
+  "searchengine.topbar.title": {
+    "other": "Tìm kiếm: "
+  },
+  "searchengine.scope.title": {
+    "other": "Tìm kiếm trong..."
+  },
+  "searchengine.share.title": {
+    "other": "Shared"
+  },
+  "searchengine.share.hint": {
+    "other": "No status"
+  },
+  "searchengine.share.option.link": {
+    "other": "Public Link"
+  },
+  "searchengine.share.option.cell": {
+    "other": "Shared in Cell"
+  },
+  "searchengine.share.option.any": {
+    "other": "Public Link or Cell"
+  },
+  "searchengine.format.title": {
+    "other": "Format"
+  },
+  "searchengine.format.file-only": {
+    "other": "Files Only"
+  },
+  "searchengine.advanced-filter.tooltip": {
+    "other": "Bộ lọc nâng cao"
+  },
+  "searchengine.results.foundN": {
+    "other": "Tìm thấy %1"
+  },
+  "searchengine.results.withMore": {
+    "other": "Hiển thị %1, tải thêm..."
+  },
+  "searchengine.query.action.save": {
+    "other": "Lưu"
+  },
+  "searchengine.query.action.save-new": {
+    "other": "Save Query"
+  },
+  "searchengine.query.action.save-legend": {
+    "other": "Save this search query for later re-use"
+  },
+  "searchengine.query.action.clear": {
+    "other": "Xóa"
+  },
+  "searchengine.query.action.clear-all": {
+    "other": "Clear All"
+  },
+  "searchengine.query.action.delete": {
+    "other": "Xóa"
+  },
+  "searchengine.query.action.delete-confirm": {
+    "other": "Delete this saved query?"
+  },
+  "searchengine.query.save-label": {
+    "other": "Nhập tên nhãn mới"
+  },
+  "searchengine.field.basenameOrContent": {
+    "other": "Tên/Nội dung"
+  },
+  "searchengine.complete.group.saved": {
+    "other": "Saved Searches"
+  },
+  "searchengine.complete.group.history": {
+    "other": "Last Searches"
+  },
+  "searchengine.complete.group.suggestion": {
+    "other": "Advanced Suggestion"
+  },
+  "searchengine.complete.suggestion.intro": {
+    "other": "Do you mean"
+  },
+  "searchengine.complete.suggestion.remain": {
+    "other": "containing '%s'"
+  },
+  "searchengine.complete.activefilters": {
+    "other": "Filters:"
+  },
+  "searchengine.complete.activefilters-edit": {
+    "other": "Click to modify"
+  },
+  "chat.dropzone.remove": {
+    "other": "Remove"
+  },
+  "chat.dropzone.preview": {
+    "other": "Include preview?"
+  },
+  "chat.dropzone.inline": {
+    "other": "Insert inline"
+  },
+  "chat.load-older": {
+    "other": "Các mục cũ hơn"
+  },
+  "chat.msg.edit": {
+    "other": "Edit Message"
+  },
+  "chat.msg.save": {
+    "other": "Save Changes"
+  },
+  "chat.msg.revert": {
+    "other": "Revert Changes"
+  },
+  "chat.msg.delete": {
+    "other": "Delete Message"
+  },
+  "chat.msg.delete.confirm.title": {
+    "other": "Delete Message?"
+  },
+  "chat.msg.delete.confirm": {
+    "other": "This action cannot be undone"
+  },
+  "chat.link.doc.loading": {
+    "other": "Loading document..."
+  },
+  "chat.link.doc.opening": {
+    "other": "Opening document..."
+  },
+  "chat.link.doc.goto": {
+    "other": "Go to document"
+  },
+  "chat.link.doc.not-found": {
+    "other": "Document not found, it may have been deleted."
+  },
+  "chat.link.doc.click-indicator": {
+    "other": "Click to open %s"
+  },
+  "chat.link.doc.open-in": {
+    "other": "Open document in..."
+  },
+  "workspace.quota-usage": {
+    "other": "Phân bổ dung lượng lưu trữ"
+  },
+  "action.delete.permanently": {
+    "other": "Xóa vĩnh viễn"
+  },
+  "action.delete.permanently.warning": {
+    "other": "xin lưu ý, bạn không thể undo!"
+  },
+  "action.goto.label": {
+    "other": "Đi đến thư mục"
+  },
+  "action.copymove.recent": {
+    "other": "Thư mục truy cập gần đây"
+  },
+  "action.copymove.root": {
+    "other": "Thư mục gốc"
+  }
+}

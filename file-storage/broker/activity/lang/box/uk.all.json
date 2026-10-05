@@ -1,0 +1,89 @@
+{
+  "AccessedBy": {
+    "other": "Доступ надано користувачеві {{.Actor}}"
+  },
+  "AccessedObject": {
+    "other": "Доступ до {{.Object}}"
+  },
+  "AccessedObjectBy": {
+    "other": "{{.Object}} був доступний {{.Actor}}"
+  },
+  "Cell": {
+    "other": "Комірка"
+  },
+  "CreatedBy": {
+    "other": "Створено користувачем {{.Actor}}"
+  },
+  "CreatedObject": {
+    "other": "Створено {{.Object}}"
+  },
+  "CreatedObjectBy": {
+    "other": "{{.Object}} було створено {{.Actor}}"
+  },
+  "DeletedBy": {
+    "other": "Видалено користувачем {{.Actor}}"
+  },
+  "DeletedObject": {
+    "other": "Видалено {{.Object}}"
+  },
+  "DeletedObjectBy": {
+    "other": "{{.Object}} було видалено {{.Actor}}"
+  },
+  "SharedWs": {
+    "other": "Поділитися у {{.Object}}"
+  },
+  "SharedWsWithYou": {
+    "other": "{{.Actor}} поділився {{.Object}} з вами"
+  },
+  "DigestTitle": {
+    "other": "Це ваш щоденний дайджест Pydio"
+  },
+  "Document": {
+    "other": "Документ"
+  },
+  "Folder": {
+    "other": "Тека"
+  },
+  "ModifiedBy": {
+    "other": "Змінено користувачем {{.Actor}}"
+  },
+  "ModifiedObject": {
+    "other": "Змінено {{.Object}}"
+  },
+  "ModifiedObjectBy": {
+    "other": "{{.Object}} було змінено {{.Actor}}"
+  },
+  "MetaModifiedBy": {
+    "other": "Метадані змінені користувачем {{.Actor}}"
+  },
+  "MetaModifiedObject": {
+    "other": "Змінено метаданні у {{.Object}}"
+  },
+  "MetaModifiedObjectBy": {
+    "other": "{{.Actor}} Змінив метаданні у {{.Object}}"
+  },
+  "CommentedBy": {
+    "other": "{{.Actor}} прокоментував"
+  },
+  "CommentedObject": {
+    "other": "Прокоментовано {{.Object}}"
+  },
+  "CommentedObjectBy": {
+    "other": "{{.Actor}} опублікував новий коментар до {{.Object}}"
+  },
+  "MovedBy": {
+    "other": "Переміщено користувачем {{.Actor}}"
+  },
+  "MovedObject": {
+    "other": "Переміщено {{.Object}}"
+  },
+  "MovedObjectBy": {
+    "other": "{{.Object}} був переміщений користувачем {{.Actor}}"
+  },
+  "Workspace": {
+    "other": "Робочий простір"
+  },
+  "DateFormat": {
+    "other": "2006-01-02 15:04"
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "Jobs.Default.Thumbs": {
+    "other": "Wyodrębnij miniaturki obrazów i dane Exif"
+  },
+  "Jobs.Default.ThumbsCache": {
+    "other": "Wyczyść pamięć podręczną miniatur dla usuniętych plików"
+  },
+  "Jobs.Default.Directories": {
+    "other": "Synchronizuj zewnętrzne katalogi"
+  },
+  "Jobs.Default.PruneJobs": {
+    "other": "Wyczyść zadania i zadania w harmonogramie"
+  },
+  "Jobs.Default.FakeLongJob": {
+    "other": "Fałszywe zadanie w długim czasie (do testowania)"
+  },
+  "Jobs.Default.FakeUsersJob": {
+    "other": "Tworzenie losowych użytkowników (do testowania)"
+  },
+  "Jobs.Default.FakeGrpcJob": {
+    "other": "Przykładowe zadanie RPC (do celów testowych)"
+  },
+  "Jobs.Default.ArchiveJobs": {
+    "other": "Usługa automatycznego archiwizowania zmian"
+  },
+  "Jobs.Default.CleanUserData": {
+    "other": "Wyczyść lub prześlij dane użytkownika podczas usuwania"
+  },
+  "Jobs.Default.CleanOrphanFiles": {
+    "other": "Wyczyść osierocone pliki po 24 godzinach"
+  },
+  "Jobs.Default.CleanExpiredACLs": {
+    "other": "Wyczyść wygasłe listy ACL po 10 dniach"
+  },
+  "Jobs.User.Compress": {
+    "other": "Kompresowanie zaznaczenia..."
+  },
+  "Jobs.User.Extract": {
+    "other": "Wypakowywanie archiwum..."
+  },
+  "Jobs.User.Delete": {
+    "other": "Usuwanie zaznaczenia w tle..."
+  },
+  "Jobs.User.DirCopy": {
+    "other": "Kopiowanie folderu w tle..."
+  },
+  "Jobs.User.DirMove": {
+    "other": "Przenoszenie folderu w tle..."
+  },
+  "Jobs.User.FileCopy": {
+    "other": "Kopiowanie pliku w tle..."
+  },
+  "Jobs.User.FileMove": {
+    "other": "Przenoszenie pliku w tle..."
+  },
+  "Jobs.User.MultipleCopy": {
+    "other": "Kopiowanie zaznaczenia w tle..."
+  },
+  "Jobs.User.MultipleMove": {
+    "other": "Przenoszenie zaznaczenia w tle..."
+  },
+  "Jobs.User.MoveRecycle": {
+    "other": "Przenoszenie do kosza w tle..."
+  },
+  "Jobs.User.ResyncDS": {
+    "other": "Synchronizuj plik datasource {{.DsName}} i zahashuj nowe pliki"
+  },
+  "Jobs.User.Wget": {
+    "other": "Pobieranie pliku w tle..."
+  },
+  "Jobs.User.DeletingItem": {
+    "other": "Usunięto %s"
+  },
+  "Jobs.User.CopyingItem": {
+    "other": "Skopiowano %s"
+  },
+  "Jobs.User.MovingItem": {
+    "other": "Przeniesiono %s"
+  }
+}

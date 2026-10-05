@@ -1,0 +1,269 @@
+{
+  "Mail.Main.Copyright": {
+    "other": "منصة مشاركة الملفات بفخر مدعومة من Pydio"
+  },
+  "Mail.Main.Troubleshoot": {
+    "other": "إذا كان الزر {ACTION}لا يعمل لديك، فقط قم بنسخ وصق الرابط أدناه في متصفح الويب الخاص بك."
+  },
+  "Mail.Main.Greeting": {
+    "other": "مرحبا"
+  },
+  "Mail.Main.Signature": {
+    "other": "مع خالص التقدير،"
+  },
+  "Mail.ResetPassword.Subject": {
+    "other": "إعادة تعيين كلمة المرور المطلوبة لـ {{.Configs.Title}}"
+  },
+  "Mail.ResetPassword.Intros": {
+    "other": "تم استلام طلب إعادة تعيين كلمة المرور للحساب الخاص بك في {{.Configs.Title}}."
+  },
+  "Mail.ResetPassword.Outros": {
+    "other": "إذا لم تقم بتفعيل هذا الطلب، يمكنك تجاهل ذلك بأمان. إذا كنت تواصل تلقي رسائل البريد الإلكتروني هكذا، يرجى تنبيه المسؤول الخاص بك لأنه قد يكون مشكلة أمنية."
+  },
+  "Mail.ResetPassword.LinkLabel": {
+    "other": "إعادة تعيين كلمة مروري"
+  },
+  "Mail.ResetPassword.LinkInstructions": {
+    "other": "انقر لإعادة تعيين كلمة المرور"
+  },
+  "Mail.ResetPasswordDone.Subject": {
+    "other": "تم إعادة تعيين كلمة المرور الخاصة بك في {{.Configs.Title}}"
+  },
+  "Mail.ResetPasswordDone.Intros": {
+    "other": "بخصوص طلب إعادة تعيين كلمة المرور الخاصة بك، تم إعادة تعيين كلمة المرور الخاصة بك بنجاح لـ {{.Configs.Title}}."
+  },
+  "Mail.ResetPasswordDone.Outros": {
+    "other": "إذا لم تقم بطلب هذه العملية، يرجى تنبيه المسؤول الخاص بك على الفور لأن هذا قد يكون مشكلة أمنية."
+  },
+  "Mail.Digest.Subject": {
+    "other": "الإشعارات {{.Configs.Title}} الخاصة بك"
+  },
+  "Mail.Digest.Intros": {
+    "other": "فيما يلي ملخص لجميع الإشعارات التي تلقيتها في {{.Configs.Title}}"
+  },
+  "Mail.DM.Subject": {
+    "other": "أرسل لك {{.TplData.From}} رسالة!"
+  },
+  "Mail.DM.Intros": {
+    "other": "أرسل لك {{.TplData.From}} رسالة باستخدام {{.Configs.Title}} تطبيق: {{.TplData.Message}}"
+  },
+  "Mail.Welcome.Subject": {
+    "other": "مرحبا بكم في {{.Configs.Title}}"
+  },
+  "Mail.Welcome.Intros": {
+    "other": "تم إنشاء حساب لك في {{.Configs.Title}}. \n معلومات تسجيل الدخول الخاصة بك {{.TplData.Login}}{{if .TplData.Password}} وكلمة المرور الخاصة بك {{.TplData.Password}}. يمكنك تغييرها عند تسجيل الدخول لأول مرة{{end}}."
+  },
+  "Mail.Welcome.LinkInstructions": {
+    "other": "انقر لتسجيل الدخول"
+  },
+  "Mail.Welcome.LinkLabel": {
+    "other": "تسجيل الدخول إلى {{.Configs.Title}}"
+  },
+  "Mail.Welcome.Outros": {
+    "other": "{{.Configs.Title}} منصة مشاركة الملفات مستخدمة من قبل فريقك للتعاون بكفاءة على الوثائق. نحن سعداء بوجودك على متنك!"
+  },
+  "Mail.Invite.Subject": {
+    "other": "قام {{.TplData.Inviter}} بدعوتك في {{.Configs.Title}}"
+  },
+  "Mail.Invite.Intros": {
+    "other": "تم إنشاء حساب لك من قبل {{.TplData.Inviter}} في {{.Configs.Title}}. \n معلومات تسجيل الدخول الخاصة بك هي {{.TplData.Login}}{{if .TplData.Password}} وكلمة المرور الخاصة بك هي {{.TplData.Password}}. يمكنك تغييرها لأول مرة تقوم بتسجيل الدخول إلى{{end}}."
+  },
+  "Mail.Invite.LinkInstructions": {
+    "other": "انقر لتسجيل الدخول"
+  },
+  "Mail.Invite.LinkLabel": {
+    "other": "تسجيل الدخول إلى {{.Configs.Title}}"
+  },
+  "Mail.Invite.Outros": {
+    "other": "{{.Configs.Title}} منصة مشاركة الملفات مستخدمة من قبل فريق {{.TplData.Inviter}} للتعاون بكفاءة على الوثائق. نحن سعداء بوجودك على متنك!"
+  },
+  "Mail.Cell.Subject": {
+    "other": "أضافك {{.TplData.Inviter}} إلى الخلية {{.TplData.Cell}}"
+  },
+  "Mail.Cell.Intros": {
+    "other": "قام {{.TplData.Inviter}} بتضمينك في الخلية {{.TplData.Cell}} على {{.Configs.Title}}! يمكنك بدء مشاركة الملفات والمجلدات معا والتعاون بكفاءة."
+  },
+  "Mail.Cell.LinkInstructions": {
+    "other": "انقر لفتح الخلية"
+  },
+  "Mail.Cell.LinkLabel": {
+    "other": "فتح {{.TplData.Cell}}"
+  },
+  "Mail.PublicFile.Subject": {
+    "other": "{{.TplData.Inviter}} يشارك ملفًا معك"
+  },
+  "Mail.PublicFile.Intros": {
+    "other": "{{.TplData.Inviter}} يشارك ملفًا معك.\n\n '{{.TplData.Message}} \n\n {{if .TplData.Expire}}ستنتهي صلاحية الرابط في {{.TplData.Expire}}{{end}}\n\n{{if .TplData.MaxDownloads}}الحد الأقصى للتنزيلات:{{.TplData.MaxDownloads}}{{end}}"
+  },
+  "Mail.PublicFile.LinkLabel": {
+    "other": "فتح {{.TplData.FileName}}"
+  },
+  "Mail.PublicFile.LinkInstructions": {
+    "other": "انقر لمعاينة الملف في المتصفح الخاص بك"
+  },
+  "Mail.PublicFile.Outros": {
+    "other": "{{.Configs.Title}} منصة مشاركة الملفات مستخدمة من قبل فريق {{.TplData.Inviter}} للتعاون بكفاءة على الوثائق."
+  },
+  "Mail.PublicFolder.Subject": {
+    "other": "{{.TplData.Inviter}} يشارك مجلداً معك"
+  },
+  "Mail.PublicFolder.Intros": {
+    "other": "{{.TplData.Inviter}} يشارك مجلد معك.\n\n '{{.TplData.Message}} \n\n {{if .TplData.Expire}}ستنتهي صلاحية الرابط في {{.TplData.Expire}}{{end}}\n\n{{if .TplData.MaxDownloads}}الحد الأقصى للتنزيلات:{{.TplData.MaxDownloads}}{{end}}"
+  },
+  "Mail.PublicFolder.LinkLabel": {
+    "other": "فتح {{.TplData.FolderName}}"
+  },
+  "Mail.PublicFolder.LinkInstructions": {
+    "other": "انقر لمعاينة الملف في المتصفح الخاص بك"
+  },
+  "Mail.PublicFolder.Outros": {
+    "other": "{{.Configs.Title}} منصة مشاركة الملفات مستخدمة من قبل فريق {{.TplData.Inviter}} للتعاون بكفاءة على الوثائق."
+  },
+  "Mail.AdminTestMail.Subject": {
+    "other": "{{.Configs.Title}} يرسل لك بريد إلكتروني تجريبي"
+  },
+  "Mail.AdminTestMail.Intros": {
+    "other": "{{.TplData.Message}}"
+  },
+  "Mail.AdminTestMail.LinkLabel": {
+    "other": "الخلايا المفتوحة"
+  },
+  "Mail.AdminTestMail.LinkInstructions": {
+    "other": "انقر لفتح الواجهة الأمامية"
+  },
+  "Mail.AdminTestMail.Outros": {
+    "other": "{{.Configs.Title}} منصة مشاركة الملفات تستخدم من قبل الفرق للتعاون بكفاءة على الوثائق."
+  },
+  "Mail.Config.Title": {
+    "other": "المرسال"
+  },
+  "Mail.Config.From.Label": {
+    "other": "عنوان البريد الإلكتروني للمرسل الافتراضي"
+  },
+  "Mail.Config.From.Description": {
+    "other": "العنوان لاستخدامه كعنوان افتراضي عند إرسال رسائل البريد الإلكتروني. يجب عليك استخدام بريد دعم مناسب بدلاً من البريد الإلكتروني بدون-رد."
+  },
+  "Mail.Config.FixOutlookDisplay": {
+    "other": "إصلاح العملاء أوتلووك (تعطيل CSS بداخل الشبكة)"
+  },
+  "Mail.Config.Queue.Label": {
+    "other": "نوع قائمة الانتظار"
+  },
+  "Mail.Config.Queue.Description": {
+    "other": "طبقة ثابتة لتخزين رسائل البريد الإلكتروني المعلقة"
+  },
+  "Mail.Config.Queue.ValueBolt": {
+    "other": "قاعدة بيانات في الملف (Bolt)"
+  },
+  "Mail.Config.Queue.ValueMemory": {
+    "other": "في الذاكرة"
+  },
+  "Mail.Config.Mailer.Label": {
+    "other": "محرك البريد"
+  },
+  "Mail.Config.Mailer.Description": {
+    "other": "المحرك المستخدم لإرسال رسائل البريد الإلكتروني"
+  },
+  "Mail.Config.Disabled.Label": {
+    "other": "غير مفعّل (لا تقم بتمكين رسائل البريد الإلكتروني)"
+  },
+  "Mail.Config.NoOp.Label": {
+    "other": "No-Op (تمكين رسائل البريد الإلكتروني ولكن لا ترسل أي شيء)"
+  },
+  "Mail.Config.NoOp.Dump": {
+    "other": "كتابة رسائل البريد الإلكتروني للملف لغرض تصحيح الأخطاء"
+  },
+  "Mail.Config.NoOp.DumpTarget": {
+    "other": "المجلد المستهدف لكتابة رسائل البريد الإلكتروني"
+  },
+  "Mail.Config.Smtp.Label": {
+    "other": "خادم SMTP"
+  },
+  "Mail.Config.Smtp.Host.Label": {
+    "other": "اسم مضيف الخادم"
+  },
+  "Mail.Config.Smtp.Host.Description": {
+    "other": "مضيف خادم SMTP، مثل smtp.gmail.com"
+  },
+  "Mail.Config.Smtp.Port.Label": {
+    "other": "منفذ الخادم"
+  },
+  "Mail.Config.Smtp.Port.Description": {
+    "other": "منفذ خادم SMTP، مثل 587 (غير آمن) أو 465 (TLS)"
+  },
+  "Mail.Config.Smtp.User.Label": {
+    "other": "مستخدم الاتصال"
+  },
+  "Mail.Config.Smtp.User.Description": {
+    "other": "اسم المستخدم مطلوب للاتصال بخادم SMTP"
+  },
+  "Mail.Config.Smtp.Password.Label": {
+    "other": "كلمة مرور الاتصال"
+  },
+  "Mail.Config.Smtp.Password.Description": {
+    "other": "كلمة المرور مطلوبة للاتصال بخادم SMTP"
+  },
+  "Mail.Config.Smtp.Security.Label": {
+    "other": "أمان الاتصال"
+  },
+  "Mail.Config.Smtp.Security.Description": {
+    "other": "البروتوكول المستخدم لتأمين الاتصال. المسح غير مدعوم، إذا لزم الأمر استخدام Sendmail مخصص بدلاً من ذلك."
+  },
+  "Mail.Config.Smtp.SkipVerify.Label": {
+    "other": "شهادة موقعة ذاتيا"
+  },
+  "Mail.Config.Smtp.SkipVerify.Description": {
+    "other": "تعطيل التحقق من الشهادة إذا كانت شهادة خادم SMTP الخاصة بك موقعة تلقائياً"
+  },
+  "Mail.Config.Smtp.LocalName.Label": {
+    "other": "الإسم المحلي للجهاز الاتصال"
+  },
+  "Mail.Config.Smtp.LocalName.Description": {
+    "other": "خادم SMTP يرسل إتصال 'localhost' في أمر EHLO بشكل افتراضي، استخدم هذا الحقل لتعيين اسم محلي مخصص"
+  },
+  "Mail.Config.SendGrid.Label": {
+    "other": "خدمة SendGrid"
+  },
+  "Mail.Config.SendGrid.ApiKey.Label": {
+    "other": "مفتاح API"
+  },
+  "Mail.Config.SendGrid.ApiKey.Description": {
+    "other": "مفتاح Api الذي يوفره SendGrid للاتصال بالخدمة"
+  },
+  "Mail.Config.Sendmail.Label": {
+    "other": "Sendmail"
+  },
+  "Mail.Config.Sendmail.Legend": {
+    "other": "تحذير: المسار التنفيذي الافتراضي هو /usr/bin/sendmail. إذا كنت بحاجة إلى تغييره، الرجاء التأكد من تعيين مفتاح 'الافتراضي > sendmail' في ملف تكوين pydio.json الخاص بك."
+  },
+  "Mail.Config.Sendmail.Executable.Label": {
+    "other": "مسار قابل للتنفيذ"
+  },
+  "Mail.Config.Sendmail.Executable.Description": {
+    "other": "المسار الكامل لـ sendmail قابل للتنفيذ على الخادم"
+  },
+  "Mail.Config.Sendmail.Executable.Other": {
+    "other": "مسار آخر (تم تعيينه يدوياً في ملف التكوين pydio.json)"
+  },
+  "Mail.Config.FromName.Label": {
+    "other": "اسم عرض المرسلين الافتراضي"
+  },
+  "Mail.Config.FromName.Description": {
+    "other": "اسم العرض الافتراضي  لاستخدامه عند إرسال رسائل البريد الإلكتروني."
+  },
+  "Mail.Config.FromCtl.Label": {
+    "other": "عنوان من/المُرسل والاسم المراد استخدامهما"
+  },
+  "Mail.Config.FromCtl.Description": {
+    "other": "تحديد عنوان المرسل / اسم المرسل الذي سيتم استخدامه. إذا لم يتم تكوين عنوان البريد الإلكتروني المستخدم الافتراضي من العنوان والاسم سيتم استخدامه في جميع الحالات."
+  },
+  "Mail.Config.FromCtlUser.Label": {
+    "other": "إرسال البريد من المستخدم"
+  },
+  "Mail.Config.FromCtlSender.Label": {
+    "other": "إرسال البريد بالنيابة عن المستخدم"
+  },
+  "Mail.Config.FromCtlDefault.Label": {
+    "other": "إرسال دائمًا من العنوان الافتراضي/الاسم الافتراضي"
+  }
+}

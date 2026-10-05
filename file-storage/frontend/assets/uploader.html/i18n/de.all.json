@@ -1,0 +1,179 @@
+{
+  "start": {
+    "other": "Starten"
+  },
+  "pause": {
+    "other": "Pausieren"
+  },
+  "clear": {
+    "other": "Leeren"
+  },
+  "clear-header": {
+    "other": "Liste leeren..."
+  },
+  "clear-finished": {
+    "other": "Uploads abgeschlossen"
+  },
+  "clear-failed": {
+    "other": "Gescheiterte Uploads"
+  },
+  "clear-all": {
+    "other": "Alle Transfers"
+  },
+  "list.show-more": {
+    "other": "%d mehr - alle anzeigen"
+  },
+  "options.existing": {
+    "other": "Bei Dateien mit gleichem Namen:"
+  },
+  "options.existing.alert": {
+    "other": "Hochladung stoppen und nachfragen"
+  },
+  "options.existing.folders": {
+    "other": "Ordnern umbenennen dann Dataien"
+  },
+  "options.existing.merge": {
+    "other": "Nur Dateien umbenennen (Ordner zusammenführen)"
+  },
+  "options.existing.overwrite": {
+    "other": "Bestehende Datei still überschreiben"
+  },
+  "confirm.rename.all": {
+    "other": "Ordner umbenennen, dann widersprüchliche Dateien"
+  },
+  "confirm.rename.merge": {
+    "other": "Nur Dateien umbenennen (Ordner zusammenführen)"
+  },
+  "confirm.overwrite": {
+    "other": "Ordner zusammenführen und Dateien überschreiben"
+  },
+  "confirm.save.choice": {
+    "other": "Auswahl für die nächsten Uploads speichern"
+  },
+  "options": {
+    "other": "Upload-Optionen"
+  },
+  "upload.forbidden": {
+    "other": "Sie dürfen hier keine Dateien hochladen"
+  },
+  "task.label": {
+    "other": "Hochladen von Dateien..."
+  },
+  "task.status.folders": {
+    "other": "Ordner werden erstellt"
+  },
+  "task.message.folder-one": {
+    "other": "Ordner wird erstellt"
+  },
+  "task.message.folder-many": {
+    "other": "%s Ordner werden erstellt"
+  },
+  "task.status.analyse": {
+    "other": "Bereite die Dateien für den Upload"
+  },
+  "task.message.analyse-many": {
+    "other": "Analyse von %s Elementen..."
+  },
+  "task.message.analyse-one": {
+    "other": "Analyse eines Element"
+  },
+  "task.message.analyse-wait": {
+    "other": "Bitte warten..."
+  },
+  "task.status.ready": {
+    "other": "Bereit zum Upload"
+  },
+  "task.status.paused": {
+    "other": "Upload pausiert"
+  },
+  "task.status.upload": {
+    "other": "Dateien werden hochgeladen"
+  },
+  "task.message.upload-progress": {
+    "other": "%s% hochgeladen"
+  },
+  "no-folders-support": {
+    "other": "Ihr Browser unterstützt das Hochladen von Ordnern nicht"
+  },
+  "analyze.step": {
+    "other": "Dateien und Ordner werden für den Upload vorbereitet..."
+  },
+  "drophere": {
+    "other": "Dateien hier ablegen"
+  },
+  "drop-or": {
+    "other": "oder"
+  },
+  "drop-pick-file": {
+    "other": "Dateien durchsuchen"
+  },
+  "drop-pick-folder": {
+    "other": "Ordner durchsuchen"
+  },
+  "dialog.title": {
+    "other": "Transfers"
+  },
+  "attempt": {
+    "other": "Versuch"
+  },
+  "status.new": {
+    "other": "Steht aus"
+  },
+  "status.error": {
+    "other": "Fehler aufgetreten"
+  },
+  "status.pause": {
+    "other": "Pausiert"
+  },
+  "status.analyse": {
+    "other": "Analyzing..."
+  },
+  "status.dir.new": {
+    "other": "Ordner wartet auf Upload..."
+  },
+  "status.file.new": {
+    "other": "Datei wartet auf Upload..."
+  },
+  "status.dir.analyse": {
+    "other": "Ordner wird analysiert..."
+  },
+  "status.file.analyse": {
+    "other": "Datei wird analysiert..."
+  },
+  "status.dir.loading": {
+    "other": "Ordner wird erstellt"
+  },
+  "status.file.loading": {
+    "other": "Datei wird hochgeladen"
+  },
+  "status.dir.loaded": {
+    "other": "Ordner erstellt"
+  },
+  "status.file.loaded": {
+    "other": "Datei hochgeladen"
+  },
+  "status.part.loaded": {
+    "other": "Chunk hochgeladen"
+  },
+  "status.part.loading": {
+    "other": "Chunk wird hochgeladen"
+  },
+  "status.multi-pause": {
+    "other": "Aktuellen Chunk vor dem Pausieren beenden"
+  },
+  "status.file.cannot-pause": {
+    "other": "Dieser Upload kann nicht angehalten werden"
+  },
+  "status.part.cannot-pause": {
+    "other": "Die Chunk-Upload kann nicht angehalten werden"
+  },
+  "status.error.aborted": {
+    "other": "durch Benutzer unterbrochen"
+  },
+  "status.error.403": {
+    "other": "Sie dürfen hier nicht hochladen"
+  },
+  "status.error.422": {
+    "other": "Kontingent erreicht, kann nicht mehr hochladen"
+  }
+}

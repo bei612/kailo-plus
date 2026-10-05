@@ -359,7 +359,8 @@ export interface ActionCommand {
     /**
      * 成员动作的目标 Principal；resource.transfer_owner 的新 owner
      */
-    principalId?: string;
+    principalId?:    string;
+    resourceCreate?: ResourceCreateClass;
     /**
      * Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
      */
@@ -740,6 +741,14 @@ export interface MemoryWriteClass {
 export enum ExpectedHeadState {
     Absent = "ABSENT",
     Found = "FOUND",
+}
+
+export interface ResourceCreateClass {
+    evidenceDigest: string;
+    evidenceRef:    string;
+    nativeRef:      string;
+    nativeType:     string;
+    typeKey:        string;
 }
 
 /**
@@ -1793,9 +1802,12 @@ export enum TaskStatus {
 export enum WorkflowKind {
     AgentInstallation = "AGENT_INSTALLATION",
     BuzzIdentityProjection = "BUZZ_IDENTITY_PROJECTION",
+    ComponentBinding = "COMPONENT_BINDING",
+    ComponentDisable = "COMPONENT_DISABLE",
     ComponentRelease = "COMPONENT_RELEASE",
     MembershipProjection = "MEMBERSHIP_PROJECTION",
     MembershipRevocation = "MEMBERSHIP_REVOCATION",
+    ResourceProvision = "RESOURCE_PROVISION",
     SecretRefRehome = "SECRET_REF_REHOME",
     TenantLifecycle = "TENANT_LIFECYCLE",
     WorkspaceLifecycle = "WORKSPACE_LIFECYCLE",
@@ -1929,20 +1941,23 @@ export interface ClientKeyStatus {
  */
 export interface ComponentConformanceAuthorization {
     expectedResponseDigest: string;
-    operation:              AdapterProtocolOperation;
+    operation:              ComponentConformanceOperation;
     requestDigest:          string;
     requestJson:            string;
     token:                  string;
 }
 
 /**
- * ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
+ * 原登记套件的真实操作种类；MCP 方法不属于 AdapterProtocolOperation，也不要求原生 peer 实现 Adapter API。
  */
-export enum AdapterProtocolOperation {
+export enum ComponentConformanceOperation {
     Cancel = "cancel",
     Execute = "execute",
     ExtractUsage = "extract_usage",
     Handshake = "handshake",
+    MCPCall = "mcp_call",
+    MCPInitialize = "mcp_initialize",
+    MCPList = "mcp_list",
     MapNativeStatusError = "map_native_status_error",
     Observe = "observe",
     QueryRevision = "query_revision",
@@ -1990,6 +2005,7 @@ export interface PlanClass {
     actionExecutionId:  string;
     artifactDigest:     string;
     componentReleaseId: string;
+    connectorKind?:     ConnectorKind;
     contractDigests:    string[];
     /**
      * 独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
@@ -2007,22 +2023,36 @@ export interface PlanClass {
     workflowId:  string;
 }
 
+export enum ConnectorKind {
+    ProtocolPeer = "PROTOCOL_PEER",
+    RemoteAdapter = "REMOTE_ADAPTER",
+}
+
 export interface PlanStep {
     caseKey: string;
     /**
      * 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
      * native 任务元数据。
      */
-    contractKey?:          string;
-    expectedHttpStatus:    number;
-    expectedResponseJson:  string;
-    idempotencyKey:        string;
-    operation:             AdapterProtocolOperation;
-    referenceAssetId?:     string;
-    referenceFromStepKey?: string;
-    referenceResourceId?:  string;
-    requestJson:           string;
-    stepKey:               string;
+    contractKey?: string;
+    /**
+     * Adapter 为实际 HTTP 状态；MCP 原生结果固定 0，不以伪造 HTTP 状态证明协议成功。
+     */
+    expectedHttpStatus:     number;
+    expectedMcpResultKind?: MCPResultKind;
+    expectedResponseJson:   string;
+    idempotencyKey:         string;
+    operation:              ComponentConformanceOperation;
+    referenceAssetId?:      string;
+    referenceFromStepKey?:  string;
+    referenceResourceId?:   string;
+    requestJson:            string;
+    stepKey:                string;
+}
+
+export enum MCPResultKind {
+    Error = "ERROR",
+    Result = "RESULT",
 }
 
 /**
@@ -2049,8 +2079,10 @@ export interface TargetClass {
 export interface WorkerBuildClass {
     adapterProtocolVersions: string[];
     buildId:                 string;
+    connectorKinds?:         string[];
     driverRegistryKeys:      string[];
     hostApiVersion:          string;
+    mcpProtocolVersions?:    string[];
     platformPortKeys:        PlatformPortKey[];
     reportedAt:              Date;
     subject:                 Subject;
@@ -2751,6 +2783,10 @@ export interface AgentVersionContentTurnLimitsClass {
  */
 export interface ApplicationAdapterDirectory {
     adapters: ApplicationAdapterDelivery[];
+    /**
+     * 受控部署事实，不是 Tool 注册表或业务授权；原生 MCP peer 不接收 ActionToken。
+     */
+    protocolPeers?: ApplicationProtocolPeerDelivery[];
 }
 
 export interface ApplicationAdapterDelivery {
@@ -2769,6 +2805,38 @@ export interface ApplicationSecretReader {
     audience:           string;
     roleName:           string;
     servicePrincipalId: string;
+}
+
+export interface ApplicationProtocolPeerDelivery {
+    adapterServiceRef: string;
+    artifactDigest:    string;
+    bindings:          ApplicationProtocolPeerBindingDelivery[];
+    maxResponseBytes:  number;
+    mcpUrl:            string;
+    nativeInstanceRef: string;
+    timeoutSeconds:    number;
+}
+
+export interface ApplicationProtocolPeerBindingDelivery {
+    bindingId:     string;
+    configDigest:  string;
+    isolationMode: string;
+    /**
+     * 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
+     */
+    nativeResources?:   ApplicationNativeResourceDelivery[];
+    nativeScopeRef:     string;
+    servicePrincipalId: string;
+    tenantId:           string;
+    workspaceId?:       string;
+}
+
+export interface ApplicationNativeResourceDelivery {
+    evidenceDigest: string;
+    evidenceRef:    string;
+    nativeRef:      string;
+    nativeType:     string;
+    typeKey:        string;
 }
 
 /**
@@ -2974,6 +3042,37 @@ export interface ComponentConformanceIdentityContext {
 }
 
 /**
+ * ADR-12 / design07§5.2 固定的出站逻辑操作。服务入站操作不通过此面调用。
+ */
+export enum AdapterProtocolOperation {
+    Cancel = "cancel",
+    Execute = "execute",
+    ExtractUsage = "extract_usage",
+    Handshake = "handshake",
+    MapNativeStatusError = "map_native_status_error",
+    Observe = "observe",
+    QueryRevision = "query_revision",
+    Reconcile = "reconcile",
+    ResolveNativeScope = "resolve_native_scope",
+    ValidateBinding = "validate_binding",
+}
+
+/**
+ * 原 COMPONENT_CONFORMANCE_ENVIRONMENT_FILE 的 PROTOCOL_PEER 分支，仅隔离套件运行事实；readOnlyTools
+ * 固定隔离实例实际上可安全执行的只读探针，不授予生产业务权限。
+ */
+export interface ComponentProtocolPeerEnvironment {
+    artifactDigest:       string;
+    initializeResultJson: string;
+    listResultJson:       string;
+    maxResponseBytes:     number;
+    maxSteps:             number;
+    mcpUrl:               string;
+    readOnlyTools:        string[];
+    timeoutSeconds:       number;
+}
+
+/**
  * 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
  */
 export interface ComponentReleaseApprovalTarget {
@@ -3075,11 +3174,21 @@ export interface LlmRouteCreateInputProviderSecretRef {
 export interface PlatformBuildInfo {
     adapterProtocolVersions: string[];
     buildId:                 string;
+    connectorKinds?:         string[];
     driverRegistryKeys:      string[];
     hostApiVersion:          string;
+    mcpProtocolVersions?:    string[];
     platformPortKeys:        PlatformPortKey[];
     reportedAt:              Date;
     subject:                 Subject;
+}
+
+export interface ResourceCreate {
+    evidenceDigest: string;
+    evidenceRef:    string;
+    nativeRef:      string;
+    nativeType:     string;
+    typeKey:        string;
 }
 
 /**
@@ -3615,9 +3724,10 @@ export interface ObservationElement {
     contentReference?:       ContentReferenceClass;
     errorClass?:             ErrorClass;
     httpStatus:              number;
+    mcpResultKind?:          MCPResultKind;
     nativeObservation?:      ExecutionClass;
     nativeScopeObservation?: NativeScopeObservationClass;
-    operation:               AdapterProtocolOperation;
+    operation:               ComponentConformanceOperation;
     requestDigest:           string;
     responseDigest:          string;
     /**
@@ -3644,6 +3754,7 @@ export interface ComponentConformancePlan {
     actionExecutionId:  string;
     artifactDigest:     string;
     componentReleaseId: string;
+    connectorKind?:     ConnectorKind;
     contractDigests:    string[];
     /**
      * 独立隔离身份投递的完整规范化摘要，不含私钥或token，不是生产policy。
@@ -3667,16 +3778,20 @@ export interface ComponentConformancePlanStep {
      * 只由 Core 从该 release implements 的 ACTIVE 契约步骤固定。存在时 expectedResponseJson 为该能力的业务结果，不是
      * native 任务元数据。
      */
-    contractKey?:          string;
-    expectedHttpStatus:    number;
-    expectedResponseJson:  string;
-    idempotencyKey:        string;
-    operation:             AdapterProtocolOperation;
-    referenceAssetId?:     string;
-    referenceFromStepKey?: string;
-    referenceResourceId?:  string;
-    requestJson:           string;
-    stepKey:               string;
+    contractKey?: string;
+    /**
+     * Adapter 为实际 HTTP 状态；MCP 原生结果固定 0，不以伪造 HTTP 状态证明协议成功。
+     */
+    expectedHttpStatus:     number;
+    expectedMcpResultKind?: MCPResultKind;
+    expectedResponseJson:   string;
+    idempotencyKey:         string;
+    operation:              ComponentConformanceOperation;
+    referenceAssetId?:      string;
+    referenceFromStepKey?:  string;
+    referenceResourceId?:   string;
+    requestJson:            string;
+    stepKey:                string;
 }
 
 /**
@@ -3698,9 +3813,10 @@ export interface ComponentConformanceStepObservation {
     contentReference?:       ContentReferenceClass;
     errorClass?:             ErrorClass;
     httpStatus:              number;
+    mcpResultKind?:          MCPResultKind;
     nativeObservation?:      ExecutionClass;
     nativeScopeObservation?: NativeScopeObservationClass;
-    operation:               AdapterProtocolOperation;
+    operation:               ComponentConformanceOperation;
     requestDigest:           string;
     responseDigest:          string;
     /**
@@ -3728,6 +3844,46 @@ export interface FreshApprovalAdmissionResult {
     admitted:           boolean;
     reason?:            ReasonCode;
     satisfiedSelectors: ApprovalSelector[];
+}
+
+export interface ResourceProvisionAdvanceRequest {
+    cancelRequested: boolean;
+    runId:           string;
+    target:          ResourceProvisionAdvanceRequestTarget;
+}
+
+export interface ResourceProvisionAdvanceRequestTarget {
+    actionExecutionId:    string;
+    bindingId:            string;
+    bindingVersion:       number;
+    componentReleaseId:   string;
+    nativeInstanceRef:    string;
+    nativeScopeRef:       string;
+    projectionGeneration: number;
+    reference:            ResourceCreateClass;
+    resourceId:           string;
+    resourceVersion:      number;
+    workflowId:           string;
+}
+
+export interface ResourceProvisionAdvanceResult {
+    resourceId:    string;
+    status:        TaskStatus;
+    waitingReason: string;
+}
+
+export interface ResourceProvisionTarget {
+    actionExecutionId:    string;
+    bindingId:            string;
+    bindingVersion:       number;
+    componentReleaseId:   string;
+    nativeInstanceRef:    string;
+    nativeScopeRef:       string;
+    projectionGeneration: number;
+    reference:            ResourceCreateClass;
+    resourceId:           string;
+    resourceVersion:      number;
+    workflowId:           string;
 }
 
 /**

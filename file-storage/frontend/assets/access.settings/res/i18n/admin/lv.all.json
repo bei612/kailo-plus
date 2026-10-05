@@ -1,0 +1,2411 @@
+{
+  "dashboard.tab.dashboard": {
+    "other": "Informācijas panelis"
+  },
+  "dashboard.tab.activity": {
+    "other": "Aktivitāte"
+  },
+  "loading": {
+    "other": "Ielādē..."
+  },
+  "ds.board.ds.legend": {
+    "other": "Datu avoti ir konkrētas uzglabāšanas vietas kuras tiek veidotas Pydio direktoriju kokā. Tās var būtizvietotas uz atsevišķiem datu nesējiem pēc nepieciešamības."
+  },
+  "ds.board.ds.internal.legend": {
+    "other": "Internal DataSources are used to store binaries like files versions"
+  },
+  "ds.board.ds.title": {
+    "other": "Datu avoti"
+  },
+  "ds.board.enc.legend": {
+    "other": "Galvenās atslēgas tiek Pydio ģenerē automātiski un tiek glabātas uz servera aizsargātā atslēgu failā (keychain). Lietojiet zemākesošos rīkus lai eksportētu/importētu šīs atslēgas ja nepieciešama pārinstalācija vai jauna servera pievienošana"
+  },
+  "ds.board.enc.title": {
+    "other": "Encryption Master Keys"
+  },
+  "ds.board.versioning.legend": {
+    "other": "Jūs varat definēt kā tiek veidotas failu versijas katram datu avotam un cik versijas laika gaitā tiks saglabātas."
+  },
+  "ds.board.versioning.title": {
+    "other": "Versiju veidošanas noteikumi"
+  },
+  "ds.board.wsfromds.title": {
+    "other": "Create Workspace"
+  },
+  "ds.board.wsfromds.legend": {
+    "other": "Create a new workspace at the root of datasource %s"
+  },
+  "ds.board.wsfromds.field": {
+    "other": "Nosaukums"
+  },
+  "ds.board.wsfromds.defaultPrefix": {
+    "other": "Datu avots %s"
+  },
+  "ds.format-picker.title": {
+    "other": "Create DataSource"
+  },
+  "ds.format-picker.legend": {
+    "other": "DataSources are mount points allowing you to attach actual storage to the application. First select the way data is organized inside storage."
+  },
+  "ds.format-picker.submit": {
+    "other": "Sākt"
+  },
+  "ds.format-picker.flat.title": {
+    "other": "Flat Storage"
+  },
+  "ds.format-picker.flat.legend": {
+    "other": "The files are stored as binaries along regular snapshots of the tree structure to ensure an efficient disaster recovery. This is the recommended option for best performances and scalability."
+  },
+  "ds.format-picker.structured.title": {
+    "other": "Import Existing Data"
+  },
+  "ds.format-picker.structured.legend": {
+    "other": "The tree structure is reflected in the storage and maintained in real-time synchronization. This legacy option is NOT recommended and should only be used for importing existing data. It is event-based and must not be used in high load or clustered installation."
+  },
+  "ds.format-picker.internal.title": {
+    "other": "Cells Internals"
+  },
+  "ds.format-picker.internal.legend": {
+    "other": "Used to store internal binaries (e.g. files versions, thumbnails). Limited features, data is not indexed in search engines."
+  },
+  "ds.editor.delete.warning": {
+    "other": "Vai vēlaties dzēst šo datu avotu? Tas ir neatgriezenisks process un Jūs varat zaudēt visus datus kas saistīti ar šiem avotiem!"
+  },
+  "ds.editor.enc": {
+    "other": "Ieslēgt šifrēšanu pārējiem"
+  },
+  "ds.editor.enc.dialog.disable": {
+    "other": "Ja iepriekš bijāt ieslēdzis šifrēšanu šim datu avotam visi šifrētie dati būs nelasāmi! Vai vēlaties to darīt?"
+  },
+  "ds.editor.enc.dialog.enable.1": {
+    "other": "Ieslēdzot šifrēšanu datu avotam tiks uzsākt šifrēšanas process izmantojot Jūsu izvēlēto šifrēšanas atslēgu."
+  },
+  "ds.editor.enc.dialog.enable.2": {
+    "other": "Atcerieties, ka ja Jūs neeskportēsiet un neizveidosiet rezerves kopiju galvenajai šifrēšanas atslēgai un būs nepieciešama servera pārinstalācija,"
+  },
+  "ds.editor.enc.dialog.enable.2bold": {
+    "other": "tiks pazaudēti visi dati!"
+  },
+  "ds.editor.enc.dialog.enable.3": {
+    "other": "Ņemiet vērā, ka tas prasa lielākus procesora resursus lai ātri un bez aizķeršanās šifrētu/dešifrētu datus."
+  },
+  "ds.editor.enc.dialog.enable.create": {
+    "other": "Set an identifier for the new key"
+  },
+  "ds.editor.enc.key": {
+    "other": "Šifrēšanas atslēga"
+  },
+  "ds.editor.enc.key.clear": {
+    "other": "No Encryption"
+  },
+  "ds.editor.enc.key.create": {
+    "other": "Set up encryption with a new key..."
+  },
+  "ds.editor.enc.validate": {
+    "other": "Es saprotu"
+  },
+  "ds.editor.enc.warning": {
+    "other": "Uzmanību!"
+  },
+  "ds.editor.legend.delete.1": {
+    "other": "Datu avot dzēšana ir destruktīvs process : Ja arī tas NEIZDZĒSĪS datus uz datu nesējiem, tiks iznīcināti datu indeksi un noņemtas visi ACL uzstādījumi indeksētajiem datiem."
+  },
+  "ds.editor.legend.delete.2": {
+    "other": "Pārliecinieties vai vispirms ir nodzēstas visas darbvirsmas kuras norāda uz šo datu avotu pirms to nodzēšat."
+  },
+  "ds.editor.legend.delete.button": {
+    "other": "Nodzēst Datu avotu"
+  },
+  "ds.editor.legend.local": {
+    "other": "Failu sistēmas Datu avoti uztur failus uz servera datu nesējiem, tā ir pamata direktorija un kalpo kā mērķis priekš s3 bucket. Tādēļ izvēlētajai direktorijai jāatbilst sekojošiem nosacījumiem:"
+  },
+  "ds.editor.legend.local.li.1": {
+    "other": "Vismaz 2 līmeņus dziļāk."
+  },
+  "ds.editor.legend.local.li.2": {
+    "other": "Augstākstāvošai direktorijai jābūt rakstāmai priekš aplikācijas servisa lietotājiem"
+  },
+  "ds.editor.legend.local.li.3": {
+    "other": "Mērķa direktorijai jābūt saderīgai ar DNS nosaukumiem (mazie burti, bez atstarpēm un speciālajām zīmēm)."
+  },
+  "ds.editor.legend.resync": {
+    "other": "Atkārtota sinhronizācija noskanēs datu avotu un noteiks izmaiņas kuras nav indeksētas."
+  },
+  "ds.editor.legend.resync.button": {
+    "other": "Atkārtota sinhronizācija"
+  },
+  "ds.editor.legend.s3.1": {
+    "other": "Attālinātas glabāšanas datu avoti sniegs datus no attālināta, s3 savietojama datu avota pastarpinot visus pieprasījumus."
+  },
+  "ds.editor.legend.s3.2": {
+    "other": "Izmantot standarta API atslēgu /Api paroli autentifikācijai, priekš AmazonS3 atstājiet tukšu mērķa saiti vai lietojiet jūsu glabātuves saiti priekš citiem jūsu risinājumiem."
+  },
+  "ds.editor.storage.legend.fs": {
+    "other": "Browse data from a local or network-attached file system."
+  },
+  "ds.editor.storage.legend.fs.peer": {
+    "other": "Restricting datasource to a peer address will start the service only a specific node. Using \"Any\" value will start service on all nodes where Cells is running, which can be handy if a shared filesystem is mounted on all nodes at the same location, or if your node may change its IP on restart. To avoid conflicts, it is better to either use ANY for all datasources or select specific nodes for all datasources."
+  },
+  "ds.editor.storage.legend.fs.path": {
+    "other": "Make sure that last folder is lowercase and that its parent is writeable. If your existing folder is uppercase, you can use symbolic links to work around this limitation."
+  },
+  "ds.editor.storage.legend.s3": {
+    "other": "Pārlūkot datus no Amazon S3 bucket vai S3 savietojamas datu glabātuves."
+  },
+  "ds.editor.storage.legend.azure": {
+    "other": "Pārlūkot datus no Azure Blob Storage bucket."
+  },
+  "ds.editor.storage.legend.gcs": {
+    "other": "Pārlūkot datus no Google Cloud Storage bucket."
+  },
+  "ds.editor.storage.legend.versioning": {
+    "other": "Set up versioning policy to keep files contents modifications history. Beware that it will use additional storage space."
+  },
+  "ds.editor.storage.legend.encryption": {
+    "other": "Encryption at rest can be used to make sure files are never stored in clear format inside the storage. This may be useful if you do not trust the storage provider."
+  },
+  "ds.editor.storage.readOnly": {
+    "other": "Read-only mode"
+  },
+  "ds.editor.storage.legend.readOnly": {
+    "other": "Use read-only mode if you require Cells to never write any hidden files and to use native eTags as checksums (this can be necessary for buckets with huge amount of existing data). However, please note that any workspaces created on this datasource should be set as Read Only, as move feature cannot function properly."
+  },
+  "ds.editor.storage.flatStorage": {
+    "other": "Keep data structure on storage"
+  },
+  "ds.editor.storage.legend.flatStorage": {
+    "other": "Flat (unstructured) storage is best for performances. Use structured storage only if you want to make sure to see the files and folders reproduced inside the actual storage (or mapping to a folder with pre-existing data). This CANNOT be changed after datasource creation."
+  },
+  "ds.editor.storage.skipResync": {
+    "other": "Skip full resynchronisation at restart"
+  },
+  "ds.editor.storage.legend.skipResync": {
+    "other": "For huge datasources, you may want to avoid full resynchronisation at restart time."
+  },
+  "ds.editor.storage.checksumMapper": {
+    "other": "Store checksums locally (do not modify objects)"
+  },
+  "ds.editor.storage.nativeEtags": {
+    "other": "Use Native Etags (will disable Desktop Sync)"
+  },
+  "ds.editor.storage.legend.checksumMapper": {
+    "other": "For proper changes detection, files checksums (md5) are computed by Cells (or by the storage with an in-place copy, when possible) and attached as metadata to objects. For best performances, use Native ETags flag to keep the storage original values, but beware that this will disable Desktop Synchronization on this datasource. You can also simply prevent objects modification, while still computing checksums, by storing metadata locally."
+  },
+  "ds.editor.new": {
+    "other": "Jauns Datu avots"
+  },
+  "ds.editor.name.inuse": {
+    "other": "This name is already in use, make sure to pick another one!"
+  },
+  "ds.editor.options": {
+    "other": "Pamata opcijas"
+  },
+  "ds.editor.datamanagement": {
+    "other": "Datu pārvaldība"
+  },
+  "ds.editor.options.enabled": {
+    "other": "Ieslēgts"
+  },
+  "ds.editor.options.id": {
+    "other": "Datu avota identifikators"
+  },
+  "ds.editor.options.port": {
+    "other": "Iekšējais ports"
+  },
+  "ds.editor.selector.completer": {
+    "other": "Izvēlieties direktoriju"
+  },
+  "ds.editor.selector.completer.hint": {
+    "other": "Izvēlieties nosaraksta vai ierakstiet ceļu un apstipriniet"
+  },
+  "ds.editor.selector.completer.create": {
+    "other": "tiks izveidota direktorija"
+  },
+  "ds.editor.selector.error.depth": {
+    "other": "Pārliecinieties ka ir izvēlēta direktorija ar diviem zemākiem līmeņiem. Objektu uzglabāšana sāksies no augstākstāvošas direktorijas."
+  },
+  "ds.editor.selector.error.dnsname": {
+    "other": "Folder is exposed as an S3 bucket and must comply to DNS names (lowercase, no space or special characters)."
+  },
+  "ds.editor.selector.folder": {
+    "other": "Lokālā direktorija"
+  },
+  "ds.editor.selector.folder.hint": {
+    "other": "Izvēlieties avotu lai ielādētu direktorijas"
+  },
+  "ds.editor.selector.peer": {
+    "other": "Avota adrese"
+  },
+  "ds.editor.selector.peer.any": {
+    "other": "Any peer (unique node or distributed FS)"
+  },
+  "ds.editor.selector.peer.word": {
+    "other": "Peer"
+  },
+  "ds.editor.selector.peer.invalid": {
+    "other": "invalid"
+  },
+  "ds.editor.selector.mkdir": {
+    "other": "Create Folder"
+  },
+  "ds.editor.selector.mkdir.legend": {
+    "other": "Create a new folder under %s"
+  },
+  "ds.editor.selector.mkdir.field": {
+    "other": "Folder name"
+  },
+  "ds.editor.storage.fs.macos": {
+    "other": "MacOSX operētājsistēma"
+  },
+  "ds.editor.storage.azure.api": {
+    "other": "Azure konta nosaukums"
+  },
+  "ds.editor.storage.azure.secret": {
+    "other": "Azure atslēga"
+  },
+  "ds.editor.storage.azure.bucket": {
+    "other": "Bucket nosaukums"
+  },
+  "ds.editor.storage.gcs.credentials": {
+    "other": "Iekopējiet GCS JSON faila saturu"
+  },
+  "ds.editor.storage.gcs.bucket": {
+    "other": "Bucket nosaukums"
+  },
+  "ds.editor.storage.s3.api": {
+    "other": "S3 Api atslēga"
+  },
+  "ds.editor.storage.s3.bucket": {
+    "other": "Bucket nosaukums"
+  },
+  "ds.editor.storage.s3.endpoint.type": {
+    "other": "Endpoint Type"
+  },
+  "ds.editor.storage.s3.signatureVersion": {
+    "other": "Signature Version"
+  },
+  "ds.editor.storage.s3.endpoint.amazon": {
+    "other": "Amazon S3"
+  },
+  "ds.editor.storage.s3.endpoint.custom": {
+    "other": "Other S3-Compatible Storage"
+  },
+  "ds.editor.storage.s3.endpoint.minio": {
+    "other": "Minio Server"
+  },
+  "ds.editor.storage.s3.endpoint": {
+    "other": "Speciāls galamērķa URL"
+  },
+  "ds.editor.storage.s3.endpoint.hint": {
+    "other": "include http(s)://"
+  },
+  "ds.editor.storage.s3.region": {
+    "other": "S3 Api Region"
+  },
+  "ds.editor.storage.s3.path": {
+    "other": "Iekšējais ceļš"
+  },
+  "ds.editor.storage.s3.secret": {
+    "other": "S3 Api Parole"
+  },
+  "ds.editor.storage.buckets.legend": {
+    "other": "Select one or more buckets"
+  },
+  "ds.editor.storage.buckets.reload": {
+    "other": "Reload buckets"
+  },
+  "ds.editor.storage.buckets.create": {
+    "other": "Create Bucket"
+  },
+  "ds.editor.storage.buckets.create.hint": {
+    "other": "Bucket name"
+  },
+  "ds.editor.storage.buckets.regexp": {
+    "other": "Use regular expression"
+  },
+  "ds.editor.storage.buckets.regexp.hint": {
+    "other": "Regular expression"
+  },
+  "ds.editor.storage.buckets.cont.nokeys": {
+    "other": "Setup storage to load buckets"
+  },
+  "ds.editor.storage.buckets.cont.loading": {
+    "other": "Loading accessible buckets"
+  },
+  "ds.editor.storage.buckets.cont.empty": {
+    "other": "No buckets found"
+  },
+  "ds.editor.storage.s3.legend.tags": {
+    "other": "Synchronize S3 tags from buckets or objects (use  a comma-separated list of patterns to match). Please note that this will perform additional requests to storage and may slow down sync process. Original tags will be mapped to pydio:s3-bucket-tag-NAME and pydio:s3-object-tag-NAME internally."
+  },
+  "ds.editor.storage.s3.bucketsTags": {
+    "other": "Buckets Tags (multiple buckets enabled)"
+  },
+  "ds.editor.storage.s3.objectsTags": {
+    "other": "Objects Tags"
+  },
+  "ds.editor.storage.s3.legend.bucketPathPrefix": {
+    "other": "Use a path prefix inside the bucket (will create a virtual folder to store objects)"
+  },
+  "ds.editor.storage.s3.bucketPathPrefix": {
+    "other": "Path prefix"
+  },
+  "ds.editor.storage.s3.legend.storageClass": {
+    "other": "Custom Storage Class (leave empty to use STANDARD). Amazon S3 supports the following values: REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR. Beware that using GLACIER or equivalent will make the datasource write-only, as objects have to be manually restored before being available for download."
+  },
+  "ds.editor.storage.s3.storageClass": {
+    "other": "Storage Class"
+  },
+  "ds.editor.title": {
+    "other": "Datu avots %s"
+  },
+  "ds.editor.versioning": {
+    "other": "Versiju noteikumi"
+  },
+  "ds.editor.versioning.disabled": {
+    "other": "Neieslēgt versiju veidošanu"
+  },
+  "ds.editor.tab.button-back": {
+    "other": "Atpakaļ"
+  },
+  "ds.editor.tab.button-next": {
+    "other": "Nākamā"
+  },
+  "ds.editor.tab.button-create": {
+    "other": "Izveidot"
+  },
+  "ds.editor.tab.identifier": {
+    "other": "Identifikators"
+  },
+  "ds.editor.tab.main": {
+    "other": "Pamata opcijas"
+  },
+  "ds.editor.tab.storage": {
+    "other": "Glabātuves veids"
+  },
+  "ds.editor.tab.lifecycle": {
+    "other": "Data Lifecycle"
+  },
+  "ds.editor.tab.advanced": {
+    "other": "Advanced Options"
+  },
+  "ds.editor.initFlatFromSnapshot": {
+    "other": "If this storage was previously used as a flat datasource, initialize it from an existing snapshot file (must be found inside the storage)"
+  },
+  "ds.editor.foldersShardingPattern": {
+    "other": "By default, all files are stored inside a unique folder. Use a pattern 'N:P:Q' to auto-create sub folders id[:N]/id[:P]/id[:Q]/..."
+  },
+  "ds.editor.initFlatFromSnapshot.hint": {
+    "other": "Path to snapshot inside storage (e.g. $snapshot.db)"
+  },
+  "ds.editor.foldersShardingPattern.hint": {
+    "other": "Sharding pattern (e.g. N:P:Q)"
+  },
+  "ds.encryption": {
+    "other": "Šifrēts"
+  },
+  "ds.encryption.key.emptyState": {
+    "other": "Nav izveidota galvenā atslēga"
+  },
+  "ds.encryption.key.create": {
+    "other": "Izveidot atslēgu"
+  },
+  "ds.encryption.key.created": {
+    "other": "Izveidota"
+  },
+  "ds.encryption.key.delete": {
+    "other": "Dzēst atslēgu"
+  },
+  "ds.encryption.key.delete.warning": {
+    "other": "Ja atslēga tiek izmantota esošajiem šifrētajiem failiem, šī darbība būs destruktīva! Vai tiešām vēlaties to darīt?"
+  },
+  "ds.encryption.key.export": {
+    "other": "Eksportēt atslēgu"
+  },
+  "ds.encryption.key.export.confirm": {
+    "other": "Apstiprināt paroli"
+  },
+  "ds.encryption.key.export.fail": {
+    "other": "Kļūda eksportēšanas laikā"
+  },
+  "ds.encryption.key.export.password": {
+    "other": "Ievadiet sarežģītu paroli"
+  },
+  "ds.encryption.key.export.result.copy": {
+    "other": "Kopēt rezultātu uz failu lai saglabātu atslēgu"
+  },
+  "ds.encryption.key.id": {
+    "other": "Identifikators"
+  },
+  "ds.encryption.key.import": {
+    "other": "Importēt atslēgu"
+  },
+  "ds.encryption.key.import.content": {
+    "other": "Iekopēt atslēgu no rezerves kopijas faila"
+  },
+  "ds.encryption.key.import.fail": {
+    "other": "Kļūda veicot importēšanu"
+  },
+  "ds.encryption.key.import.id": {
+    "other": "Atslēgas unikāls identifikators"
+  },
+  "ds.encryption.key.import.label": {
+    "other": "Lasāms nosaukums šai atslēgai"
+  },
+  "ds.encryption.key.import.password": {
+    "other": "Eksportēšanas laikā lietotā atslēga"
+  },
+  "ds.encryption.key.import.success": {
+    "other": "Atslēga veiksmīgi importēta"
+  },
+  "ds.encryption.key.label": {
+    "other": "Nosaukums"
+  },
+  "ds.encryption.key.owner": {
+    "other": "Īpašnieks"
+  },
+  "ds.name": {
+    "other": "Nosaukums"
+  },
+  "ds.status": {
+    "other": "Statuss"
+  },
+  "ds.status.disabled": {
+    "other": "Izslēgts"
+  },
+  "ds.status.index": {
+    "other": "Indeksēt uz leju"
+  },
+  "ds.status.ko": {
+    "other": "Apstādinātie servisi"
+  },
+  "ds.status.ko-peers": {
+    "other": "Mērķis %s nav atrasts"
+  },
+  "ds.status.na": {
+    "other": "Nav pieejams"
+  },
+  "ds.status.object": {
+    "other": "Objekti zemāk"
+  },
+  "ds.status.ok": {
+    "other": "Darbojas visi servisi"
+  },
+  "ds.status.starting": {
+    "other": "Sāk datu avotu..."
+  },
+  "ds.status.sync": {
+    "other": "Sinhronizēt uz leju"
+  },
+  "ds.storage": {
+    "other": "Glabātuves veids"
+  },
+  "ds.storage.fs": {
+    "other": "Lokālā failu sistēma"
+  },
+  "ds.storage.s3": {
+    "other": "S3 savietojama datu glabātuve"
+  },
+  "ds.storage.azure": {
+    "other": "Azure Blob datu glabātuve"
+  },
+  "ds.storage.gcs": {
+    "other": "Google Cloud datu glabātuve"
+  },
+  "ds.storage.title": {
+    "other": "Datu glabātuve"
+  },
+  "ds.versioning": {
+    "other": "Versiju veidošana"
+  },
+  "ds.syncStatus": {
+    "other": "Last Sync"
+  },
+  "ds.emptyState": {
+    "other": "No datasources created yet"
+  },
+  "ds.versioning.description": {
+    "other": "Apraksts"
+  },
+  "ds.versioning.name": {
+    "other": "Nosaukums"
+  },
+  "ds.versioning.periods": {
+    "other": "Aiturēšanas stratēģija"
+  },
+  "ds.versioning.storage": {
+    "other": "Uzglabāšana"
+  },
+  "logs.1": {
+    "other": "Servera log faili"
+  },
+  "logs.10": {
+    "other": "Eksportēt un lejupielādēt"
+  },
+  "logs.11": {
+    "other": "Eksportēt kā..."
+  },
+  "logs.2": {
+    "other": "Izvēlieties dienu"
+  },
+  "logs.filter.legend": {
+    "other": "Filtrēt pēc..."
+  },
+  "logs.export.disabled": {
+    "other": "Izvēlieties dienu vai filtrējiet rezultātu"
+  },
+  "logs.export.clicklink": {
+    "other": "Nospiediet uz saites lai lejupielādētu"
+  },
+  "logs.filter.period": {
+    "other": "Laika periods"
+  },
+  "logs.filter.period.from": {
+    "other": "No"
+  },
+  "logs.filter.period.to": {
+    "other": "Kam"
+  },
+  "logs.filter.period.time": {
+    "other": "At..."
+  },
+  "logs.filter.login": {
+    "other": "Pieslēgties"
+  },
+  "logs.filter.ip": {
+    "other": "IP"
+  },
+  "logs.filter.fulltext": {
+    "other": "Pilna teksta meklēšana"
+  },
+  "logs.tz.tooltip": {
+    "other": "Show local/server timezone"
+  },
+  "logs.tz.local": {
+    "other": "Local Timezone"
+  },
+  "logs.tz.server": {
+    "other": "Server Timezone"
+  },
+  "logs.toggleTheme": {
+    "other": "Light/Dark Theme"
+  },
+  "logs.sys.note": {
+    "other": "Ņemiet vērā:"
+  },
+  "logs.sys.note.content": {
+    "other": "Tukši log faili var nozīmēt to ka serveris nestrādā pilnas darbības režīmā. Iestatiet loga failu veidošanas līmeni neizmantojot --log=production argumentu vai iestatot mainīgo PYDIO_LOGS_LEVEL=production."
+  },
+  "logs.3": {
+    "other": "Filtrēt log failus"
+  },
+  "logs.4": {
+    "other": "Uzspiediet uz rindas lai iegūtu vairāk informācijas"
+  },
+  "logs.5": {
+    "other": "Notikuma informācija"
+  },
+  "logs.6": {
+    "other": "Eksportēt log failus"
+  },
+  "logs.7": {
+    "other": "Eksportēt no"
+  },
+  "logs.8": {
+    "other": "Uz"
+  },
+  "logs.9": {
+    "other": "Fails tiks eksportēts CSV formātā ar semikola atdalītāju (;) un laukiem kuri ir iekļauti pēdiņās (\")."
+  },
+  "logs.level": {
+    "other": "Līmenis"
+  },
+  "logs.level.exact": {
+    "other": "(only)"
+  },
+  "logs.level.greaterthan": {
+    "other": "(and up)"
+  },
+  "logs.service": {
+    "other": "Serviss"
+  },
+  "logs.message": {
+    "other": "Ziņa"
+  },
+  "logs.noentries": {
+    "other": "Nav ierakstu"
+  },
+  "logs.noresults": {
+    "other": "Nav rezultātu"
+  },
+  "logs.details.copy": {
+    "other": "Copy log to clipboard"
+  },
+  "logs.details.show-focus": {
+    "other": "Show +/- 5 minutes"
+  },
+  "logs.details.close": {
+    "other": "Close log detail"
+  },
+  "logs.details.user": {
+    "other": "User"
+  },
+  "logs.details.user-attributes": {
+    "other": "User Attributes"
+  },
+  "logs.details.date": {
+    "other": "Event Date"
+  },
+  "logs.details.msg": {
+    "other": "Event Message"
+  },
+  "logs.details.service": {
+    "other": "Emitting Service"
+  },
+  "logs.details.connection": {
+    "other": "Connection IP"
+  },
+  "logs.details.agent": {
+    "other": "User-Agent"
+  },
+  "logs.details.protocol": {
+    "other": "Protocol"
+  },
+  "logs.details.node": {
+    "other": "File/Folder"
+  },
+  "logs.details.transfer-size": {
+    "other": "Transfer Size"
+  },
+  "logs.details.workspace": {
+    "other": "In Workspace"
+  },
+  "menu.0": {
+    "other": "Informācijas panelis"
+  },
+  "menu.1": {
+    "other": "Aktivitāte"
+  },
+  "menu.10": {
+    "other": "Paplašinājusm failu sūtīšanai caur Web UI"
+  },
+  "menu.11": {
+    "other": "Autentifikācija"
+  },
+  "menu.11b": {
+    "other": "Autentifikācija"
+  },
+  "menu.12": {
+    "other": "Konfigurē administrācijas paneli"
+  },
+  "menu.13": {
+    "other": "Logu ierakstīšana"
+  },
+  "menu.14": {
+    "other": "Paziņojumi"
+  },
+  "menu.15": {
+    "other": "Kā lietotāji saņem paziņojumus no dažādām aplikācijas daļām."
+  },
+  "menu.16": {
+    "other": "Pydio Booster"
+  },
+  "menu.17": {
+    "other": "Nekavējoši paziņojumi un ārējais paatrināšanas rīks"
+  },
+  "menu.18": {
+    "other": "Visi spraudņi"
+  },
+  "menu.19": {
+    "other": "Pieejamie spraudņi"
+  },
+  "menu.2": {
+    "other": "Servera log faili"
+  },
+  "menu.20": {
+    "other": "Lietotāja iespējas"
+  },
+  "menu.21": {
+    "other": "Gala lietotāja parametri"
+  },
+  "menu.22": {
+    "other": "Sākuma lapa"
+  },
+  "menu.23": {
+    "other": "Sākuma lapa pēc lietotāja pieslēgšanās sistēmai. Konfigurējiet parādāmos elementus un saites."
+  },
+  "menu.3": {
+    "other": "Izskats"
+  },
+  "menu.4": {
+    "other": "Tēma, logo, attēlošanas opcijas"
+  },
+  "menu.5": {
+    "other": "Koplietošanas iespējas"
+  },
+  "menu.6": {
+    "other": "Opcijas visu failu un direktoriju koplietošanai"
+  },
+  "menu.7": {
+    "other": "Redaktori"
+  },
+  "menu.8": {
+    "other": "Ieslēgt/izslēgt redaktorus un iestatīt to parametrus"
+  },
+  "menu.9": {
+    "other": "Augšuplādētāji"
+  },
+  "menu.metadata": {
+    "other": "Metadati"
+  },
+  "menu.metadata.description": {
+    "other": "Lietotājiem labojami lauki kas pievienoti datiem"
+  },
+  "metadata.definition": {
+    "other": "Definīcija"
+  },
+  "metadata.delete.confirm": {
+    "other": "Vai vēlaties dzēst šos meta datus?"
+  },
+  "metadata.editor.label.error": {
+    "other": "Meta datu nosaukums nevar būt tukšs"
+  },
+  "metadata.editor.ns.error": {
+    "other": "Izvēlieties nosaukumu šie meta datiem"
+  },
+  "metadata.editor.ns.exists": {
+    "other": "Šāds nosaukums jau ir, izvēlieties citu"
+  },
+  "metadata.editor.selection": {
+    "other": "Izvēles vērtības"
+  },
+  "metadata.editor.selection.key": {
+    "other": "Atslēga"
+  },
+  "metadata.editor.selection.value": {
+    "other": "Vērtība"
+  },
+  "metadata.editor.selection.steps": {
+    "other": "Show as steps"
+  },
+  "metadata.editor.tags.cleared": {
+    "other": "Notīrītie tagi nosaukumiem %s"
+  },
+  "metadata.editor.tags.reset": {
+    "other": "Atiestatīt tagus"
+  },
+  "metadata.editor.title.create": {
+    "other": "Izveidot nosaukumu"
+  },
+  "metadata.empty": {
+    "other": "Nav definēti meta dati"
+  },
+  "metadata.indexable": {
+    "other": "Indeksējams"
+  },
+  "metadata.label": {
+    "other": "Nosaukums"
+  },
+  "metadata.namespace": {
+    "other": "Nosaukums"
+  },
+  "metadata.namespace.add": {
+    "other": "+ Nosaukums"
+  },
+  "metadata.namespaces": {
+    "other": "Nosaukumi"
+  },
+  "metadata.namespaces.legend": {
+    "other": "Lietotāji var pievienot failiem un direktorijām meta datus. Jūs varat definēt kādus meta datus vēlaties parādīt un vai šos datus var mainīt standarta lietotāji."
+  },
+  "metadata.order": {
+    "other": "Kārtība"
+  },
+  "metadata.group": {
+    "other": "Group"
+  },
+  "metadata.group-field": {
+    "other": "Group Name (creates an expandable section). Use '/' for sub-groups."
+  },
+  "metadata.default-group": {
+    "other": "No Group"
+  },
+  "metadata.toggle.index": {
+    "other": "Indeksēt meklēšanas dzinējā"
+  },
+  "metadata.toggle.read": {
+    "other": "Ierobežot redzamību administratoriem"
+  },
+  "metadata.toggle.write": {
+    "other": "Ierobežot labošanu administratoriem"
+  },
+  "metadata.type": {
+    "other": "Veids"
+  },
+  "metadata.type.string": {
+    "other": "Short Text"
+  },
+  "metadata.type.textarea": {
+    "other": "Paragraph"
+  },
+  "metadata.type.integer": {
+    "other": "Number"
+  },
+  "metadata.group.lists": {
+    "other": "List"
+  },
+  "metadata.group.internal": {
+    "other": "Internal"
+  },
+  "metadata.type.boolean": {
+    "other": "True/False value"
+  },
+  "metadata.type.date": {
+    "other": "Date or Time"
+  },
+  "metadata.type.stars_rate": {
+    "other": "Novērtējums ar zvaigznēm"
+  },
+  "metadata.type.css_label": {
+    "other": "Color Labels"
+  },
+  "metadata.type.auto_complete": {
+    "other": "Auto Complete"
+  },
+  "metadata.type.tags": {
+    "other": "Extensible Tags (legacy)"
+  },
+  "metadata.type.choice": {
+    "other": "Select from values"
+  },
+  "metadata.type.multi_value": {
+    "other": "Multi Value select"
+  },
+  "metadata.type.tag_cloud": {
+    "other": "Tag Cloud"
+  },
+  "metadata.type.tag_cloud.values": {
+    "other": "Tag Cloud values"
+  },
+  "metadata.tag_cloud.entity.hint": {
+    "other": "Comma-separated list of possible tags"
+  },
+  "metadata.tag_cloud.entity": {
+    "other": "Values"
+  },
+  "metadata.type.json": {
+    "other": "JSON (internal format)"
+  },
+  "metadata.type.url": {
+    "other": "URL"
+  },
+  "metadata.type.date.format": {
+    "other": "Formāts"
+  },
+  "metadata.type.date.format.date": {
+    "other": "Datums"
+  },
+  "metadata.type.date.format.date-time": {
+    "other": "Date & Time"
+  },
+  "metadata.type.date.format.time": {
+    "other": "Time"
+  },
+  "metadata.type.date.display": {
+    "other": "Rādīt"
+  },
+  "metadata.type.date.display.normal": {
+    "other": "Normal"
+  },
+  "metadata.type.date.display.relative": {
+    "other": "Relative (xx days ago...)"
+  },
+  "metadata.type.reaction": {
+    "other": "Reaction"
+  },
+  "metadata.type.integer.format": {
+    "other": "Formāts"
+  },
+  "metadata.type.integer.format.general": {
+    "other": "General"
+  },
+  "metadata.type.integer.format.bytesize": {
+    "other": "Byte Size"
+  },
+  "metadata.type.integer.format.percentage": {
+    "other": "Percentage"
+  },
+  "metadata.type.integer.format.progress": {
+    "other": "Progress"
+  },
+  "metadata.toggle.list-visibility": {
+    "other": "Show value in files list"
+  },
+  "metadata.toggle.prompt": {
+    "other": "Prompt Metadata tagging on Upload"
+  },
+  "metadata.field.validation": {
+    "other": "Field Validation"
+  },
+  "metadata.validation.max-length.gte-min-length": {
+    "other": "Maximum length must be greater than or equal to minimum length"
+  },
+  "metadata.validation.max-value.gte-min-value": {
+    "other": "Maximum value must be greater than or equal to minimum value"
+  },
+  "metadata.validation.default-length.min": {
+    "other": "Default value length (%s) must be at least %s characters"
+  },
+  "metadata.validation.default-length.max": {
+    "other": "Default value length (%s) must not exceed %s characters"
+  },
+  "metadata.validation.default-value.min": {
+    "other": "Default value (%s) must be at least %s"
+  },
+  "metadata.validation.default-value.max": {
+    "other": "Default value (%s) must not exceed %s"
+  },
+  "metadata.editor.selection.key_exists": {
+    "other": "This key already exists"
+  },
+  "metadata.toggle.required": {
+    "other": "Required"
+  },
+  "metadata.boolean.yes": {
+    "other": "Yes"
+  },
+  "metadata.boolean.no": {
+    "other": "No"
+  },
+  "metadata.toggle.defaults": {
+    "other": "Enforce Defaults"
+  },
+  "metadata.field.mandatory": {
+    "other": "Mandatory"
+  },
+  "perfs.booster.description": {
+    "other": "Pārbauda vai Pydio Booster ir palaists un ieslēgta WebSocket komunikācija"
+  },
+  "perfs.booster.error": {
+    "other": "Pydio Booster kļūda, skatiet atbilstošo paneli"
+  },
+  "perfs.booster.help": {
+    "other": "Pydio Booster piedāvā papildus rīku lai pievienotu WebSocket atbalstu un Augšupielādes/Lejupielādes paātrinātājus priekš Pydio."
+  },
+  "perfs.booster.title": {
+    "other": "Pydio Booster"
+  },
+  "perfs.cache.description": {
+    "other": "Pārbauda vai Pydio ir konfigurēts lai lietotu kešu"
+  },
+  "perfs.cache.error": {
+    "other": "Izskatās ka nav ieslēgts kešošanas serviss."
+  },
+  "perfs.cache.help": {
+    "other": "Pydio var pieslēgties ārējam kešošanas serverim, piemēram Redis vai Memcache, vai izmantot iekšējās atmiņas kešu lai paātrinātu pārlūkošanas ātrumu."
+  },
+  "perfs.cache.title": {
+    "other": "Pydio kešs"
+  },
+  "perfs.cli.description": {
+    "other": "Pārvietojiet laikietilpīgus uz komandrindu."
+  },
+  "perfs.cli.error": {
+    "other": "Uzmanību, komandrinda nav ieslēgta!"
+  },
+  "perfs.cli.help": {
+    "other": "Ieslēgt komandrindu pamata iestatījumos. Tas palielinās ātrdarbību priekš gala lietotāja un laikietilpīgi procesi tiks deleģēti citiem procesiem."
+  },
+  "perfs.cli.title": {
+    "other": "Komandrindas PHP"
+  },
+  "perfs.debug.description": {
+    "other": "Pārbaudiet vai atkļūdošanas režīms uz servera ir izslēgts"
+  },
+  "perfs.debug.error": {
+    "other": "Uzmanību, viens no parametriem PYDIO_SERVER_DEBUG, PYDIO_CLIENT_DEBUG vai PYDIO_SKIP_CACHE ir ieslēgts kā True!"
+  },
+  "perfs.debug.help": {
+    "other": "Pārliecinieties vai uz servera ir izslēgts atkļūdošanas režīms. To var izdarīt manuāli conf/booststrap_context.php (vai /etc/pydio/bootstrap_context.php) failā."
+  },
+  "perfs.debug.title": {
+    "other": "Atkļūdošanas režīmi"
+  },
+  "perfs.desc": {
+    "other": "Pārbauda sistēmas iestatījumus iespējamajiem uzlabojumiem."
+  },
+  "perfs.load.description": {
+    "other": "Noteikt paaugstinātu servera slodzi (tikai Linux serveriem)"
+  },
+  "perfs.load.error": {
+    "other": "Maybe adding some CPU or RAM to your server could be necessary."
+  },
+  "perfs.load.help": {
+    "other": "Paaugstināta servera slodze var norādīt par ierobežotu procesoru skaitu vai nepietiekamu operatīvo atmiņu priekš Pydio lietošanas."
+  },
+  "perfs.load.title": {
+    "other": "Servera noslodze"
+  },
+  "perfs.mailer.description": {
+    "other": "Pērbauda vai e-pastu sūtīšana izmanto Rindas iespējas"
+  },
+  "perfs.mailer.error": {
+    "other": "E-pastu sūtīšana nav konfigurētas, lai atliktu e-pasta ziņojumu sūtīšanu."
+  },
+  "perfs.mailer.help": {
+    "other": "Using a mail queue prevents the direct sending of emails for each action and request. Instead, it stores them in a separate database and processes the queue independently."
+  },
+  "perfs.mailer.title": {
+    "other": "E-pasta sūtīšanas rinda"
+  },
+  "perfs.more": {
+    "other": "Vairāk informācijas"
+  },
+  "perfs.opcache.description": {
+    "other": "Pārbauda vai ir aktīvs PHP Opcode kešs"
+  },
+  "perfs.opcache.error": {
+    "other": "Nevar atrast nevienu php paplašinājumu no APC, APCu, Opcache vai XCache."
+  },
+  "perfs.opcache.help": {
+    "other": "Pydio ir PHP Framework ar augstu atmiņas pieprasījumu, ielādējot failus atmiņā. Pārliecinieties vai ir ieslēgts PHP Opcache vai APC/u, Opcache vai XCache."
+  },
+  "perfs.opcache.title": {
+    "other": "Opcode keša paplašinājums"
+  },
+  "perfs.score": {
+    "other": "Ātrdarbības rādītājs"
+  },
+  "perfs.tests": {
+    "other": "Atrdarbības testi"
+  },
+  "perfs.title": {
+    "other": "Sistēmas ātrdarbība"
+  },
+  "perfs.widget": {
+    "other": "Pievienot rīkjoslu pārvaldības panelim"
+  },
+  "plugins.1": {
+    "other": "Pamata opcijas"
+  },
+  "plugins.2": {
+    "other": "Galvenais dzinējs"
+  },
+  "plugins.3": {
+    "other": "Sekundārais dzinējs"
+  },
+  "plugins.4": {
+    "other": "ERedaktoru spraudņi ir priekšskatījuma/redaktori kuri ir asociēti ar noteiktiem failu veidiem aplikācijā.\n                    Šie spraudņi uztur specifiskus GUI (paplašīnājumus) un var deklarēt atbalstītos mime tipus.\n                    Kārtošanas parametri ļauj definēt prioritāti priekš 'atvērt ar...' darbības."
+  },
+  "plugins.5": {
+    "other": "Saglabāt"
+  },
+  "plugins.6": {
+    "other": "Atgriezties"
+  },
+  "plugins.list.column.enabled": {
+    "other": "Ieslēgts"
+  },
+  "plugins.list.column.label": {
+    "other": "Nosaukums"
+  },
+  "plugins.list.column.id": {
+    "other": "Id"
+  },
+  "plugins.list.column.description": {
+    "other": "Apraksts"
+  },
+  "plugins.list.action.edit": {
+    "other": "Labot spraudņa parametrus"
+  },
+  "plugins.documentation": {
+    "other": "Dokumentācija"
+  },
+  "policies.policy.create": {
+    "other": "Izveidot"
+  },
+  "policies.policy.description": {
+    "other": "Noteikumu apraksts"
+  },
+  "policies.policy.name": {
+    "other": "Noteikumu nosaukums"
+  },
+  "policies.policy.rules": {
+    "other": "# Rules"
+  },
+  "policies.policy.display": {
+    "other": "Show policy rules"
+  },
+  "policies.policy.edit": {
+    "other": "Edit policy rules"
+  },
+  "policies.policy.editLabels": {
+    "other": "Edit Labels"
+  },
+  "policies.policy.saveLabels": {
+    "other": "Saglabāt"
+  },
+  "policies.policy.delete": {
+    "other": "Delete policy"
+  },
+  "policies.policy.delete.confirm": {
+    "other": "Are you sure you want to delete this policy? Make sure it does not break the security of the application!"
+  },
+  "policies.policy.new": {
+    "other": "+ Jauns noteikums"
+  },
+  "policies.policy.type": {
+    "other": "Noteikuma veids"
+  },
+  "policies.rule.create": {
+    "other": "Add new rule"
+  },
+  "policies.rule.delete": {
+    "other": "Delete Rule"
+  },
+  "policies.acl.empty-string": {
+    "other": "No policies defined, create one use to it as a dynamic workspace permission."
+  },
+  "policies.rule.delete.confirm": {
+    "other": "Are you sure you want to remove this security rule? This could break the security model of the application!"
+  },
+  "policies.type.acl.legend": {
+    "other": "Šie noteikumi tiek lietoti lai dinamiski piešķirtu lasīšanas/rakstīšanas tiesības darbvirsmu piekļuvei vai šūnām balstoties un pieprasījuma kontekstu un/vai šūnas meta datiem. Tās tiek definētas šeit un tiek lietotas Piekļuves Kontroles Panelī (Acl) priekš lietotājiem un lomām."
+  },
+  "policies.type.acl.title": {
+    "other": "Uz konteksktu balstītas ACL piekļuves"
+  },
+  "policies.type.oidc.legend": {
+    "other": "OpenId Connect Service izmanto lietotāju autentifikācijai pirms notiek pieslēgšanās pie API. Šo iespēju var atslēgtlietotājiem atkarībā no pieprasījuma konteksta, piemēram atslēgt pieslēgšanos no IP adresēm vai noteiktā laikā."
+  },
+  "policies.type.oidc.title": {
+    "other": "OpenId Connect Resursi"
+  },
+  "policies.type.rest.legend": {
+    "other": "Šie noteikumi aizsargā REST API balsoties uz per-uri / per-method. Tā piešķir pamata piekļuvi specifiskiem API publiskai piekļuvei un ierobežojumus daudzu API piekļuvei lai pārliecinātos ka piekļuve notiek tikai caur aplikāciju. Šos parametrus nav nepieciešams mainīt, ja vien Jums tas ir nepieciešams."
+  },
+  "policies.type.rest.title": {
+    "other": "REST resursi"
+  },
+  "react.1": {
+    "other": "augstāk esoša direktorija"
+  },
+  "react.10": {
+    "other": "Mantotas tiesības"
+  },
+  "react.11": {
+    "other": "Neaizpildītas tiesības"
+  },
+  "react.12": {
+    "other": "Notīrīt tiesības"
+  },
+  "react.13": {
+    "other": "Rādīt visas tiesības"
+  },
+  "react.14": {
+    "other": "Rādīt rezultātu koku"
+  },
+  "react.2": {
+    "other": "vairākas darbības reizē"
+  },
+  "react.3": {
+    "other": "Meklēšanas rezultāti priekš '%s'"
+  },
+  "react.4": {
+    "other": "Aizvērt rezultātus"
+  },
+  "react.5": {
+    "other": "aizliegt"
+  },
+  "react.5a": {
+    "other": "lasīt"
+  },
+  "react.5b": {
+    "other": "rakstīt"
+  },
+  "react.5c": {
+    "other": "access"
+  },
+  "react.6": {
+    "other": "zemāk stāvošs"
+  },
+  "react.7": {
+    "other": "Izveidot noteikumu"
+  },
+  "react.8": {
+    "other": "Jūs vēlaties mainīt piekļuvi zemākā līmenī. Šī direktorija pēc noklusējuma būs pieejama\n                        tikai lasīšanas režīmā, un apakšdirektorijām piekļuves būs jāveic selektīvi. Izvēlieties\n                        vai vēlaties atļaujas pārkopēt uz apakšdirektorijām, vai notīrīt to atļaujas, kas tās padarīs\n                        nepieejamas pēc noklusējuma."
+  },
+  "react.9": {
+    "other": "Jūs vēlaties atslēgt atļauju pārvaldību apakšlīmenī: visas\n                        apakšdirektorijas automātiski pārmantos šīs direktorijas atļaujas un esošie iestatījumi\n                        šīm apakšdirektorijām tiks zaudētas. Vai vēlaties apstiprināt?"
+  },
+  "scheduler.1": {
+    "other": "Plānotājs ir paredzēts lai automātiski palaistu regulārus uzdevumus. Tas nepieciešams lai palaistu regulāras komandas: ja izmantojast Pydio Booster, tad tas ir nepieciešams. Citos gadījumos var lietot CRON komandu katru minūti."
+  },
+  "scheduler.2": {
+    "other": "%1 na ieslēgta komandrinda, plānotājs nevarēs palaist uzdevumus."
+  },
+  "scheduler.3": {
+    "other": "globālās konfigurācijas"
+  },
+  "user.1": {
+    "other": "+ Lietotājs"
+  },
+  "user.10": {
+    "other": "Piekļuve %i darbvirsmām"
+  },
+  "user.11": {
+    "other": "%i lomas"
+  },
+  "user.12": {
+    "other": "Grupas ceļš"
+  },
+  "user.13": {
+    "other": "koplietots"
+  },
+  "user.14": {
+    "other": "Izveidot jaunu lomu"
+  },
+  "user.15": {
+    "other": "Izveidot jaunu grupu"
+  },
+  "user.16": {
+    "other": "Grupas identifikators"
+  },
+  "user.16.empty": {
+    "other": "Ievadiet unikālu identifikatoru"
+  },
+  "user.16.format": {
+    "other": "Izmantojiet tikai ciparu un burtu simbolus"
+  },
+  "user.17": {
+    "other": "Grupas nosaukums"
+  },
+  "user.17.empty": {
+    "other": "Ievadiet grupas nosaukumu"
+  },
+  "user.18": {
+    "other": "Lomas identifikators"
+  },
+  "user.18.empty": {
+    "other": "Ievadiet nosaukumu šai lomai"
+  },
+  "user.19": {
+    "other": "Jauns lietotājs"
+  },
+  "user.2": {
+    "other": "+ Grupa"
+  },
+  "user.20": {
+    "other": "Lietotājs tiks izveidots grupā %s"
+  },
+  "user.21": {
+    "other": "Lietotāja pieslēgšanās"
+  },
+  "user.22": {
+    "other": "Lietotāja parole"
+  },
+  "user.23": {
+    "other": "Apstiprināt paroli"
+  },
+  "user.24": {
+    "other": "Root grupa"
+  },
+  "user.25": {
+    "other": "Root grupas loma"
+  },
+  "user.26": {
+    "other": "%s grupas loma"
+  },
+  "user.27": {
+    "other": "Lietot personīgo lomu"
+  },
+  "user.3": {
+    "other": "Grupas"
+  },
+  "user.4": {
+    "other": "Lomas"
+  },
+  "user.5": {
+    "other": "Grupas un Lietotāji"
+  },
+  "user.6": {
+    "other": "+ Loma"
+  },
+  "user.7": {
+    "other": "Meklēt lietotājus un grupas"
+  },
+  "user.8": {
+    "other": "Iestatīt parametrus šai grupai un pielietot tos visām grupām un lietotājiem."
+  },
+  "user.9": {
+    "other": "Pēdējo reizi pieslēdzies"
+  },
+  "user.moveto.hint": {
+    "other": "Select destination group, leave '/' for root group."
+  },
+  "user.filter.tooltip": {
+    "other": "Filtrēt lietotāju sarakstu..."
+  },
+  "user.filter.locks": {
+    "other": "Locked Users"
+  },
+  "user.filter.hidden": {
+    "other": "Public Links (hidden)"
+  },
+  "user.filter.status": {
+    "other": "Status"
+  },
+  "user.type.hidden": {
+    "other": "Public User"
+  },
+  "user.type.hidden.legend": {
+    "other": "Public users are created for public links (one per link) and are hidden by default. It can be useful to list them to detect locked public links."
+  },
+  "user.rootgroup.legend": {
+    "other": "Permissions applied to the entire user hierarchy"
+  },
+  "user.filter.internal": {
+    "other": "Iekšējie lietotāji"
+  },
+  "user.filter.shared": {
+    "other": "Koplietotie lietotāji"
+  },
+  "user.filter.admins": {
+    "other": "Tikai administratori"
+  },
+  "user.filter.all": {
+    "other": "Visi lietotāji"
+  },
+  "user.filter.anon": {
+    "other": "Rādīt anonīmos"
+  },
+  "versions.editor.delete": {
+    "other": "Dzēst noteikumu"
+  },
+  "versions.editor.delete.confirm": {
+    "other": "Vai vēlaties dzēst šo noteikumu? Tas ir neatgriezeniski!"
+  },
+  "versions.editor.error.lastdelete": {
+    "other": "Pēdējais periods ir konfigurēts lai nodzēstu visas versijas, jaunu nevar pievienot!"
+  },
+  "versions.editor.title": {
+    "other": "Noteikums %s"
+  },
+  "versions.period.keep-all": {
+    "other": "Paturēt visus"
+  },
+  "versions.period.keep-all.always": {
+    "other": "Vienmēr paturēt visas versijas"
+  },
+  "versions.period.keep-n": {
+    "other": "Paturēt %s versijas"
+  },
+  "versions.period.keep-n-after": {
+    "other": "Paturēt %1 versijas pēc %2"
+  },
+  "versions.period.max-n": {
+    "other": "Maks. %s versijas"
+  },
+  "versions.period.remove-all": {
+    "other": "Nodzēst visas"
+  },
+  "versions.period.remove-all-after": {
+    "other": "Nodzēst visas pēc %s"
+  },
+  "versions.period.retentions-n": {
+    "other": "%s saglabāšanas periods"
+  },
+  "virtual.create": {
+    "other": "+ Šablona ceļš"
+  },
+  "virtual.create.button": {
+    "other": "Izveidot"
+  },
+  "virtual.label": {
+    "other": "Nosaukums"
+  },
+  "virtual.col.id": {
+    "other": "Template ID"
+  },
+  "virtual.col.code": {
+    "other": "Template Code"
+  },
+  "virtual.label.new": {
+    "other": "Label for template"
+  },
+  "virtual.legend.1": {
+    "other": "Šablonu ceļi tiek izrēķināti dinamiski atkarībā no konteksta. Tos var lietot kā darbvirsmu pamatu aizvietotājus fiksētam datu avota ceļam.     Pēc noklusējuma tos izmanto lai izveidotu Personīgo failu darbvirsmas kuras norāda uz atsevišķu direktoriju katram lietotājam un lai aprēķinātu ceļu lietotāju Šūnu direktorijām."
+  },
+  "virtual.legend.2": {
+    "other": "Lietojiet redaktorā Ctrl+Atstarpe lai redzētu iespējāmās vērtības. Patreiz atbalstītās vērtības: Lietotājvārds (tiek atpazīts dinamiski atkarībā kāds lietotājs pieslēdzies) un Datu avoti (lai dinamiski atlasītu datu avotu)."
+  },
+  "virtual.title": {
+    "other": "Šablonu ceļi"
+  },
+  "virtual.save": {
+    "other": "Save template"
+  },
+  "virtual.delete": {
+    "other": "Delete template"
+  },
+  "virtual.delete.confirm": {
+    "other": "Are you sure you wish to delete this template path? Operation is not reversible!"
+  },
+  "virtual.code": {
+    "other": "Template code"
+  },
+  "virtual.code.display": {
+    "other": "Display code"
+  },
+  "virtual.code.edit": {
+    "other": "Edit code"
+  },
+  "virtual.card.title": {
+    "other": "Dynamically computed path"
+  },
+  "virtual.card.cleanOnDelete": {
+    "other": "Upon user deletion, rename data to {deleted-NAME-UUID}."
+  },
+  "virtual.card.cleanOnDelete-legend-off": {
+    "other": "This option should not be used if the template path is not creating a folder for each user (using User.Name)."
+  },
+  "virtual.card.cleanOnDelete-legend-on": {
+    "other": "This option may be recommended as the template path seems to create a folder for each user (using User.Name)."
+  },
+  "ws.1": {
+    "other": "Pārvaldīt Datu avotus"
+  },
+  "ws.10": {
+    "other": "Izvēlēties Datu avotu"
+  },
+  "ws.11": {
+    "other": "Darbvirsma veidota uz ..."
+  },
+  "ws.12": {
+    "other": "Šablons %s"
+  },
+  "ws.13": {
+    "other": "Šablona opcijas"
+  },
+  "ws.14": {
+    "other": "Iestatīt pamata opcijas"
+  },
+  "ws.15": {
+    "other": "Darbvirsmas opcijas"
+  },
+  "ws.16": {
+    "other": "Izvēlaties glabāšanas dzinēju"
+  },
+  "ws.17": {
+    "other": "Izvēlieties glabāšanas veidu"
+  },
+  "ws.18": {
+    "other": "Ielādē dzinēju"
+  },
+  "ws.19": {
+    "other": "Saglabāt lai pievienotu funkcijas"
+  },
+  "ws.2": {
+    "other": "Aizvērt Datu avotus"
+  },
+  "ws.20": {
+    "other": "Izveidot"
+  },
+  "ws.21": {
+    "other": "Šablona pamata opcijas"
+  },
+  "ws.22": {
+    "other": "Darbvirsmas pamata opcijas"
+  },
+  "ws.23": {
+    "other": "Dzēst darbvirsmu"
+  },
+  "ws.24": {
+    "other": "Zemākstāvošas darbvirsmas"
+  },
+  "ws.25": {
+    "other": "Koplietojumi"
+  },
+  "ws.26": {
+    "other": "Direktoriju atļaujas"
+  },
+  "ws.27": {
+    "other": "Papildu iespējas"
+  },
+  "ws.28": {
+    "other": "Kopsavilkums"
+  },
+  "ws.29": {
+    "other": "Parametri"
+  },
+  "ws.3": {
+    "other": "+ darbvirsma"
+  },
+  "ws.filter.workspaces": {
+    "other": "Filter workspaces..."
+  },
+  "ws.30": {
+    "other": "Vispārīgās Opcijas"
+  },
+  "ws.31": {
+    "other": "Noņemt funkciju"
+  },
+  "ws.32": {
+    "other": "Pievienot funkciju..."
+  },
+  "ws.33": {
+    "other": "Pēdējās aktivitātes"
+  },
+  "ws.34": {
+    "other": "Pēdējās darbības darbvirsmā"
+  },
+  "ws.35": {
+    "other": "Pieejams %i lietotājiem"
+  },
+  "ws.36": {
+    "other": "+ %i koplietoti faili vai direktorijas"
+  },
+  "ws.37": {
+    "other": "Darbvirsmas kuras lieto šo šablonu"
+  },
+  "ws.38": {
+    "other": "Koplietotie dati šajā darbvirsmā"
+  },
+  "ws.39": {
+    "other": "Īpašnieks"
+  },
+  "ws.4": {
+    "other": "+ datu avots"
+  },
+  "ws.40": {
+    "other": "Koplietojuma veids"
+  },
+  "ws.41": {
+    "other": "Ceļš"
+  },
+  "ws.42": {
+    "other": "Direktoriju līmeņa atļaujas"
+  },
+  "ws.43": {
+    "other": "Norādiet noklusētās piekļuves tiesības šīs darbvirsmas direktorijām.\n                                Lai ieslēgtu atļauju pārvaldību apakšdirektorijām izvēlieties 'APAKŠDIREKTORIJA' šai direktiorjai.\n                                Šī direktorija pēc noklusējuma tiks iestatīta kā lasāma un Jums būs iespēja ļaut pieeju\n                                pēc nepieciešamības jebkurai apakšdirektorijai."
+  },
+  "ws.44": {
+    "other": "Please be aware that this is only a mask: if you modify the real folders directly, you may have\n                                to edit this mask accordingly. Also, these permissions may be globally limited by the 'Default Rights'\n                                parameter set for this workspace (see the General tab)."
+  },
+  "ws.45": {
+    "other": "As its parameters are using 'PYDIO_USER' or 'PYDIO_GROUP_*' keywords, the contents of\n                                this workspace will vary depending on the currently authenticated user. For this reason, you cannot browse the\n                                folders directly and assign permissions to them, but you can freely define some generic paths that will be used as masks."
+  },
+  "ws.46": {
+    "other": "Pievienot funkciju"
+  },
+  "ws.47": {
+    "other": "Izvēlēties funkciju"
+  },
+  "ws.48": {
+    "other": "Uzmanību, šī darbvirsma/šablons nav labojams, jo tas ir definēts conf/bootstrap_repositories.php failā."
+  },
+  "ws.49": {
+    "other": ""
+  },
+  "ws.4b": {
+    "other": "+ versijas noteikums"
+  },
+  "ws.5": {
+    "other": "Slug"
+  },
+  "ws.50": {
+    "other": "Indeksācija"
+  },
+  "ws.51": {
+    "other": "Šai darbvirsmai ir indeksācija (%s). Normāli indeksācija tiek veikta automātiski kad tiek pievienoti/noņemti faili\n                    aplikācijā. Ja veicat labojumus datu krātuvē, iespējams ka laiku pa laikam Jums būs jāpalaiž\n                    manuāla indeksācija. Nospiediet pogu lai uzsāktu indeksāciju vai izveidojiet uzdevumu plānotājā\n                    lai veiktu regulāru indeksāciju."
+  },
+  "ws.52": {
+    "other": "Ņemiet vērā: par cik šai darbvirsmai ir specifisks saturs, tad indeksācija tiks veikta katram lietotājam atsevišķi."
+  },
+  "ws.53": {
+    "other": "Palaist indeksāciju"
+  },
+  "ws.54": {
+    "other": "Katru dienu 03:00"
+  },
+  "ws.55": {
+    "other": "Automātiska tīrīšana"
+  },
+  "ws.56": {
+    "other": "Šai darbvirsmai ir iestatīta \"tīrīšana\", kura nodzēsīs dokumentus kuri nav aiztikti vismaz %s dienas. Pārliecinieties ka ir pievienots uzdevums\n                    plānotājā lai darbvirsmā regulāri pārbaudītu šādu dokumentu esamību. Jūs varat lietot pogu zemāk lai izveidotu šo uzdevumu automātisku,\n                    vai veikt tīrīšanu tieši."
+  },
+  "ws.57": {
+    "other": "Uzmanību: Šai darbvirsmai ir specifisks saturs, tīrīšana tiks veikta katram lietotājam atsevišķi."
+  },
+  "ws.58": {
+    "other": "Iztīrīt"
+  },
+  "ws.59": {
+    "other": "Katru dienu 04:00"
+  },
+  "ws.6": {
+    "other": "Jauna Darbvirsma"
+  },
+  "ws.60": {
+    "other": "Darbvirsmas aktivitāte"
+  },
+  "ws.61": {
+    "other": "Darbvirsmas aktivitāte lietotājam tiek parādīta labās puses panelī. Jūs varat notīrīt visas aktivitātes\n                            šai darbvirsmai. Tas var noderēt ja palaižat serveri no testa režīma\n                            kurā ir uzkrājusies testēšanas informācija."
+  },
+  "ws.62": {
+    "other": "Notīrīt aktivitātes"
+  },
+  "ws.63": {
+    "other": "Uzmanību, tiks notīrītas visas lietotāju aktivitātes darbvirsmā. Vai vēlaties to darīt?"
+  },
+  "ws.64": {
+    "other": "Notīrīti %s notikumi"
+  },
+  "ws.65": {
+    "other": "Darbvirsmas uzturēšana"
+  },
+  "ws.66": {
+    "other": "Aktīvie uzdevumi"
+  },
+  "ws.67": {
+    "other": "Nav aktīvu uzdevumu"
+  },
+  "ws.68": {
+    "other": "Nav parametru"
+  },
+  "ws.69": {
+    "other": "Uz šablona balstīta darbvirsma"
+  },
+  "ws.7": {
+    "other": "Jauns Datu avots"
+  },
+  "ws.70": {
+    "other": "Uz dzinēja balstīta darbvirsma"
+  },
+  "ws.71": {
+    "other": "Izpildiet zemāk esošos soļus"
+  },
+  "ws.72": {
+    "other": "Aizpildiet formu labajā pusē"
+  },
+  "ws.73": {
+    "other": "Izvēlieties vērtību pirms turpināt"
+  },
+  "ws.74": {
+    "other": "Lietojiet formu labajā pusē lai izveidotu jaunu Datu avotu. "
+  },
+  "ws.75": {
+    "other": "Datu avots definē kur tiek glabāti dati."
+  },
+  "ws.76": {
+    "other": "Pydio savietos visus datu avotus kopējā izkārtojumā kurā Jūs varēsiet pieškirt darbvirsmu lietošanas atļaujas."
+  },
+  "ws.8": {
+    "other": "Eksistējošs datu avots"
+  },
+  "ws.9": {
+    "other": "Datu avotu punkti"
+  },
+  "ws.board.empty": {
+    "other": "Nav definētas darbvirsmas"
+  },
+  "ws.board.summary": {
+    "other": "Darbvirsmas sākums"
+  },
+  "ws.board.syncable": {
+    "other": "Sync"
+  },
+  "ws.complete.datasources": {
+    "other": "DataSources"
+  },
+  "ws.complete.folders": {
+    "other": "Internal Folders"
+  },
+  "ws.complete.label": {
+    "other": "Select a DataSource or a Template Path"
+  },
+  "ws.complete.additional": {
+    "other": "Additional Root"
+  },
+  "ws.complete.resolves": {
+    "other": "Norāda uz"
+  },
+  "ws.complete.templates": {
+    "other": "Iepriekš sagatavotu šablonu ceļi"
+  },
+  "ws.dashboard": {
+    "other": "Darbvirsmas definē priekš lietotājiem galveno piekļuves punktu datiem. Pērliecinieties vai nodefinēts vismaz viens datu avots lai varētu izveidot darbvirsmu kura norādīs ceļu uz šo datu avotu."
+  },
+  "ws.editor.data.legend": {
+    "other": "Workspace exposes one or many 'roots' to the users: choose one or more paths from any DataSource or a Template Path that will be resolved automatically at runtime."
+  },
+  "ws.editor.data.title": {
+    "other": "Datu piekļuve"
+  },
+  "ws.editor.default_rights": {
+    "other": "Iestatīt noklusētās piekļuves šai darbvirsmai (tiek pielietots visiem aplikācijas iekšējiem lietotājiem). Jūs varat ignorēt šīs atļaujas lietotāja / lomas / grupas līmenī. Atrodas Lietotāju sadaļā."
+  },
+  "ws.editor.default_rights.hint": {
+    "other": "Default Rights"
+  },
+  "ws.editor.default_rights.none": {
+    "other": "Neviens"
+  },
+  "ws.editor.default_rights.read": {
+    "other": "Tikai lasāms"
+  },
+  "ws.editor.default_rights.readwrite": {
+    "other": "Lasīt un Rakstīt"
+  },
+  "ws.editor.default_rights.write": {
+    "other": "Tikai rakstīt"
+  },
+  "ws.editor.description": {
+    "other": "Papildu apraksts (nav obligāts)"
+  },
+  "ws.editor.help.1": {
+    "other": "Darbvirsmas ļauj lietotājiem piekļuvi datiem. Tās ļauj redzēt vienu vai vairākas direktorijas datu avotā."
+  },
+  "ws.editor.help.2": {
+    "other": "Nepieciešams pareizi organizēt datus lai lietotājiem tā būtu vienkārši saprotama struktūra. Jūs varat veidot darbvirsmas dažādam organizācijas nodaļām (finanses, mārketings, tehniskā atbalsta nodaļa, u.t.t.), vai tikai projektam, u.c. Jūs varat piešķirt piekļuvi darbvirsmām lietotāju / lomu / grupu līmenī."
+  },
+  "ws.editor.help.delete": {
+    "other": "Uzmanību, šī operācija ir bīstama un neatgriezeniska!"
+  },
+  "ws.editor.label.legend": {
+    "other": "Cilvēkiem lasāms darbvirsmas nosaukums"
+  },
+  "ws.editor.options.legend": {
+    "other": "Nosaukums un apraksts kuru parāda lietotājiem. Izvēlieties vienkāršu un paskaidrojošu nosaukumu lai lietotājiem būtu vienkāršāk organizēt datus."
+  },
+  "ws.editor.other": {
+    "other": "Citas iespējas"
+  },
+  "ws.editor.other.layout": {
+    "other": "Darbvirsmas izkārtojums"
+  },
+  "ws.editor.other.layout.default": {
+    "other": "Noklusētais"
+  },
+  "ws.editor.other.layout.easy": {
+    "other": "Ātrās nosūtīšanas izkārtojums (tikai enterprise versijā)"
+  },
+  "ws.editor.other.skiprecycle": {
+    "other": "Skip Recycle Bin"
+  },
+  "ws.editor.other.skiprecycle.legend": {
+    "other": "Disable recycle bin on this workspace: all files will be permanently deleted. This does not apply to Cells created inside this workspace, files will always be moved to workspace recycle to avoid human errors."
+  },
+  "ws.editor.other.sync": {
+    "other": "Ļaut darbvirsmas sinhronizāciju"
+  },
+  "ws.editor.other.sync.legend": {
+    "other": "Desktop synchronisation allows users to synchronize their files offline on their computer. Warning, this feature is currently supported for personal files only, as shared workspaces may create conflicts if many users synchronize docs in the same folder. For personal files, you can also enable/disable this feature on a per-role basis using Security Policies."
+  },
+  "ws.editor.other.sync-personal": {
+    "other": "(personal workspaces only)"
+  },
+  "ws.editor.sync.warning": {
+    "other": "Uzmanību!"
+  },
+  "ws.editor.sync.warning.validate": {
+    "other": "I understand"
+  },
+  "ws.editor.sync.warning.enable": {
+    "other": "Enabling sync on shared workspaces may have unexpected results if many users are syncing and editing files together. Please note that THIS FEATURE IS CURRENTLY NOT SUPPORTED by our professional services. Please use this feature at your own risk!"
+  },
+  "ws.editor.sync.warning.disable": {
+    "other": "If people are connected to this workspace, their sync task will not be working any more! Are you sure you want to change that?"
+  },
+  "ws.editor.other.quota": {
+    "other": "Disk Usage Quota (leave 0 for no limit). This quota is computed on all files of this workspace (or user-specific contents for workspaces like Personal Files)."
+  },
+  "ws.editor.other.quota.noquota": {
+    "other": "No Quota set"
+  },
+  "ws.editor.path.folder": {
+    "other": "Direktorijas ceļš"
+  },
+  "ws.editor.path.template": {
+    "other": "Šablona ceļš"
+  },
+  "ws.editor.slug.legend": {
+    "other": "Tehniskais nosaukums kuru lieto parauga saitēs, tiek izveidota automātiski un to ir iespējams pielāgot."
+  },
+  "services.text-filter.hint": {
+    "other": "Filter..."
+  },
+  "services.filter.nofilter": {
+    "other": "Visi servisi"
+  },
+  "services.filter.started": {
+    "other": "Tikai strādājošie"
+  },
+  "services.filter.stopped": {
+    "other": "Tikai apstādinātie"
+  },
+  "services.peerfilter.title": {
+    "other": "Izvēlēties punktu"
+  },
+  "services.toggle.details": {
+    "other": "Vairāk informācijas"
+  },
+  "services.empty.loading": {
+    "other": "Loading services status"
+  },
+  "services.empty.noservice": {
+    "other": "No service"
+  },
+  "services.column.name": {
+    "other": "Servisa nosaukums"
+  },
+  "services.column.description": {
+    "other": "Apraksts"
+  },
+  "services.column.version": {
+    "other": "Versija"
+  },
+  "services.column.tag": {
+    "other": "Tags"
+  },
+  "services.column.peers": {
+    "other": "Serveri"
+  },
+  "services.tag.gateway.title": {
+    "other": "Vārtejas"
+  },
+  "services.tag.gateway.description": {
+    "other": "Publiskie servisi piekļūšanai pie platformas"
+  },
+  "services.tag.datasource.title": {
+    "other": "Datu avoti"
+  },
+  "services.tag.datasource.description": {
+    "other": "Krātuves galapunkti kurus lietot lai pa tiešo piekļūtu failu glabātuvei. Galvenie servisi ir atbildīgi lai uzsāktu apakšservisus (katram datu avotam)."
+  },
+  "services.tag.data.title": {
+    "other": "Dati"
+  },
+  "services.tag.data.description": {
+    "other": "Servisi kuri uztur datus un meta datus."
+  },
+  "services.tag.idm.title": {
+    "other": "Identitāšu pārvaldība"
+  },
+  "services.tag.idm.description": {
+    "other": "Visi servisi kuri saistīti ar autentifikāciju un autorizāciju, lomām, drošības noteikumiem, u.c."
+  },
+  "services.tag.scheduler.title": {
+    "other": "Plānotājs"
+  },
+  "services.tag.scheduler.description": {
+    "other": "Servisi fona darbību pārvaldībai. Uzdevumu serveris var tikt izvietots vairākos serveros."
+  },
+  "services.tag.broker.title": {
+    "other": "Starpnieks"
+  },
+  "services.tag.broker.description": {
+    "other": "Servisi darbību apstrādei (priekš lietotājiem) kuri darbojas visā serverī."
+  },
+  "services.tag.frontend.title": {
+    "other": "Lietotāja lapa"
+  },
+  "services.tag.frontend.description": {
+    "other": "Web servisi priekš lietotājiem ar kuriem darbojas pārlūkā"
+  },
+  "services.tag.discovery.title": {
+    "other": "Atklāt"
+  },
+  "services.tag.discovery.description": {
+    "other": "Pamata konfigurācijas un servisu reģistri kurus izsauc citi servisi."
+  },
+  "services.service.ip": {
+    "other": "Darbojas uz %s"
+  },
+  "services.service.datasource.sync": {
+    "other": "Sinhronizēt"
+  },
+  "services.service.datasource.objects": {
+    "other": "Objekti"
+  },
+  "services.service.datasource.objects.legend": {
+    "other": "S3 līmenis lai sniegtu servisu kā datu glabātuvei"
+  },
+  "services.service.datasource.legend": {
+    "other": "Datu avots sinhronizē datus no objektu līmeņa uz indeksējamu datu bāzi."
+  },
+  "services.service.datasource.index": {
+    "other": "Indeksācija"
+  },
+  "scheduler.title": {
+    "other": "Plānotājs"
+  },
+  "scheduler.legend": {
+    "other": "Flows running in background on a periodical basis or triggered by events"
+  },
+  "scheduler.system.title": {
+    "other": "System Flows"
+  },
+  "scheduler.system.legend": {
+    "other": "These Flows are registered by default inside the application. They are generally in charge of extracting information from node in background, or doing some cleaning operations."
+  },
+  "scheduler.inactives.title": {
+    "other": "Inactive Flows"
+  },
+  "scheduler.inactives.legend": {
+    "other": "These Flows are inactive, click on a Flow to enable it."
+  },
+  "scheduler.system.empty": {
+    "other": "No Flows scheduled."
+  },
+  "scheduler.users.title": {
+    "other": "Users Flows"
+  },
+  "scheduler.users.legend": {
+    "other": "These Flows are dynamically created and trigged by user actions."
+  },
+  "scheduler.users.empty": {
+    "other": "No Flows launched by users"
+  },
+  "scheduler.cellsflows.cta.button": {
+    "other": "+ Custom Flow"
+  },
+  "scheduler.cellsflows.cta.text": {
+    "other": "Do you need to create your own Flow? Discover how Cells Flows makes it easy to automate your repetitive manual tasks in Cells."
+  },
+  "scheduler.cellsflows.dialog.button": {
+    "other": "Find out more"
+  },
+  "scheduler.cellsflows.dialog.text": {
+    "other": "From creating your own workflows to scheduling tasks or integrating with third-party tools, our customizable components help you to respond events and take action automatically."
+  },
+  "scheduler.job.label": {
+    "other": "Nosaukums"
+  },
+  "scheduler.job.endTime": {
+    "other": "Pēdējo reizi izpildīts"
+  },
+  "scheduler.job.status": {
+    "other": "Statuss"
+  },
+  "scheduler.job.owner": {
+    "other": "Īpašnieks"
+  },
+  "scheduler.job.trigger": {
+    "other": "Palaist"
+  },
+  "scheduler.job.delete": {
+    "other": "Dzēst"
+  },
+  "scheduler.job.delete.confirm": {
+    "other": "Are you sure you want to delete this Flow? This operation cannot be reverted!"
+  },
+  "scheduler.tasks.delete.confirm": {
+    "other": "Are you sure you want to clear all tasks for this Flow?"
+  },
+  "scheduler.trigger.picker.title": {
+    "other": "Trigger job on..."
+  },
+  "scheduler.trigger.type.nodes": {
+    "other": "Files and folders (nodes) events : detect files modifications to move them or update their metadata automatically."
+  },
+  "scheduler.trigger.type.workspaces": {
+    "other": "Workspace events : triggered on workspace creation / deletion. Use the Scope flag to filter Workspaces from Cells"
+  },
+  "scheduler.trigger.type.acls": {
+    "other": "ACL events : access control lists link workspaces, nodes and roles together to provide accesses to data."
+  },
+  "scheduler.trigger.type.users": {
+    "other": "User events : triggered when adding/removing user and when users log in and log out. Can be used for triggering validation flows or assigning accesses."
+  },
+  "scheduler.trigger.type.roles": {
+    "other": "Role events : can be used to automate accesses based on role names. Use IsTeam, IsGroup, IsUser flags to filter roles."
+  },
+  "scheduler.trigger.type.chat": {
+    "other": "Chat Events: react to new chat message or chat room modification"
+  },
+  "scheduler.trigger.type.chat-messages": {
+    "other": "Chat Messages Events"
+  },
+  "scheduler.trigger.type.chat-rooms": {
+    "other": "Chat Rooms Events"
+  },
+  "scheduler.trigger.create.node": {
+    "other": "Izveidot punktu"
+  },
+  "scheduler.trigger.create.node.description": {
+    "other": "A new file was uploaded or a new folder was created."
+  },
+  "scheduler.trigger.read.node": {
+    "other": "Lasīt punktu"
+  },
+  "scheduler.trigger.read.node.description": {
+    "other": "A file was downloaded or a folder content was listed."
+  },
+  "scheduler.trigger.update.path": {
+    "other": "Atjaunot ceļu"
+  },
+  "scheduler.trigger.update.path.description": {
+    "other": "A file or folder was moved or renamed."
+  },
+  "scheduler.trigger.update.content": {
+    "other": "Atjaunot saturu"
+  },
+  "scheduler.trigger.update.content.description": {
+    "other": "A file content was updated by edition or upload overwriting."
+  },
+  "scheduler.trigger.update.metadata": {
+    "other": "Atjaunot meta datus"
+  },
+  "scheduler.trigger.update.metadata.description": {
+    "other": "Internal metadata were modified on file or folder."
+  },
+  "scheduler.trigger.update.user-metadata": {
+    "other": "Update User Metadata"
+  },
+  "scheduler.trigger.update.user-metadata.description": {
+    "other": "User-defined metadata were modified (event contains updated metadata)."
+  },
+  "scheduler.trigger.delete.node": {
+    "other": "Dzēst punktu"
+  },
+  "scheduler.trigger.delete.node.description": {
+    "other": "A file or a folder was definitively deleted."
+  },
+  "scheduler.trigger.create.user": {
+    "other": "Izveidot lietotāju"
+  },
+  "scheduler.trigger.create.user.description": {
+    "other": "A user or a group was created."
+  },
+  "scheduler.trigger.read.user": {
+    "other": "Lasīt lietotāju"
+  },
+  "scheduler.trigger.read.user.description": {
+    "other": "A user or a group was accessed or listed."
+  },
+  "scheduler.trigger.update.user": {
+    "other": "Atjaunot lietotāju"
+  },
+  "scheduler.trigger.update.user.description": {
+    "other": "A user or a group data was updated. Typically happens if user changes a preference or admin assigns a role."
+  },
+  "scheduler.trigger.delete.user": {
+    "other": "Dzēst lietotāju"
+  },
+  "scheduler.trigger.delete.user.description": {
+    "other": "A user or a group was deleted."
+  },
+  "scheduler.trigger.bind.user": {
+    "other": "Lietotāja piesaiste"
+  },
+  "scheduler.trigger.bind.user.description": {
+    "other": "A user has logged in."
+  },
+  "scheduler.trigger.logout.user": {
+    "other": "Atslēgties"
+  },
+  "scheduler.trigger.logout.user.description": {
+    "other": "A user has logged out."
+  },
+  "scheduler.trigger.role.create": {
+    "other": "Create Role"
+  },
+  "scheduler.trigger.role.create.description": {
+    "other": "A new role was created, by admin or by users."
+  },
+  "scheduler.trigger.role.update": {
+    "other": "Update Role"
+  },
+  "scheduler.trigger.role.update.description": {
+    "other": "A role has been updated."
+  },
+  "scheduler.trigger.role.delete": {
+    "other": "Delete Role"
+  },
+  "scheduler.trigger.role.delete.description": {
+    "other": "A role has been deleted."
+  },
+  "scheduler.trigger.workspace.create": {
+    "other": "Create Workspace"
+  },
+  "scheduler.trigger.workspace.create.description": {
+    "other": "A new Workspace or Cell was created."
+  },
+  "scheduler.trigger.workspace.update": {
+    "other": "Update Workspace"
+  },
+  "scheduler.trigger.workspace.update.description": {
+    "other": "A Workspace or a Cell has been updated."
+  },
+  "scheduler.trigger.workspace.delete": {
+    "other": "Delete Workspace"
+  },
+  "scheduler.trigger.workspace.delete.description": {
+    "other": "A Workspace or a Cell has been deleted."
+  },
+  "scheduler.trigger.acl.create": {
+    "other": "Create/Update ACL"
+  },
+  "scheduler.trigger.acl.create.description": {
+    "other": "An Access Control was opened."
+  },
+  "scheduler.trigger.acl.delete": {
+    "other": "Delete ACL"
+  },
+  "scheduler.trigger.acl.delete.description": {
+    "other": "An Access Control was removed."
+  },
+  "scheduler.trigger.chat-message.put": {
+    "other": "New Chat Message"
+  },
+  "scheduler.trigger.chat-message.put.description": {
+    "other": "A Message was posted in a ChatRoom."
+  },
+  "scheduler.trigger.chat-message.delete": {
+    "other": "Chat Message Deleted"
+  },
+  "scheduler.trigger.chat-message.delete.description": {
+    "other": "A Message was deleted from a ChatRoom."
+  },
+  "scheduler.trigger.chat-room.put": {
+    "other": "New Chat Room"
+  },
+  "scheduler.trigger.chat-room.put.description": {
+    "other": "A new ChatRoom was created."
+  },
+  "scheduler.trigger.chat-room.delete": {
+    "other": "Delete Chat Room"
+  },
+  "scheduler.trigger.chat-room.delete.description": {
+    "other": "A Chatroom has been deleted."
+  },
+  "scheduler.trigger.events": {
+    "other": "Notikumi"
+  },
+  "scheduler.trigger.manual": {
+    "other": "Manuāla palaišana"
+  },
+  "scheduler.trigger.periodic": {
+    "other": "Periodisks plānotājs"
+  },
+  "scheduler.job.disabled": {
+    "other": "izslēgts"
+  },
+  "scheduler.tasks.running.count": {
+    "other": "darbojas %s uzdevumi"
+  },
+  "scheduler.task.action.pause": {
+    "other": "Pauzēt uzdevumu"
+  },
+  "scheduler.task.action.resume": {
+    "other": "Pabeigt uzdevumu"
+  },
+  "scheduler.task.action.stop": {
+    "other": "Apstādināt"
+  },
+  "scheduler.task.action.delete": {
+    "other": "Dzēst"
+  },
+  "scheduler.task.action.enable": {
+    "other": "Enable Flow"
+  },
+  "scheduler.task.action.run": {
+    "other": "Palaist"
+  },
+  "scheduler.task.action.disable": {
+    "other": "Disable Flow"
+  },
+  "scheduler.task.id": {
+    "other": "ID"
+  },
+  "scheduler.task.start": {
+    "other": "Sākt"
+  },
+  "scheduler.task.end": {
+    "other": "Beigt"
+  },
+  "scheduler.task.duration": {
+    "other": "Duration"
+  },
+  "scheduler.task.status": {
+    "other": "Statuss"
+  },
+  "scheduler.task.message": {
+    "other": "Ziņa"
+  },
+  "scheduler.tasks.running": {
+    "other": "Aktīvie uzdevumi"
+  },
+  "scheduler.tasks.history": {
+    "other": "Uzdevumu vēsture"
+  },
+  "scheduler.tasks.history.empty": {
+    "other": "Nav palaists vēl neviens uzdevums"
+  },
+  "scheduler.tasks.history.more": {
+    "other": "nav parādīti citi %s uzdevumi..."
+  },
+  "scheduler.tasks.running.empty": {
+    "other": "Nedarbojas neviens uzdevums"
+  },
+  "scheduler.tasks.bulk.delete": {
+    "other": "Dzēst uzdevumus"
+  },
+  "scheduler.tasks.bulk.enable": {
+    "other": "Ieslēgt vairākus"
+  },
+  "scheduler.tasks.bulk.disable": {
+    "other": "Izslēgt vairākus"
+  },
+  "scheduler.tasks.bulk.clear": {
+    "other": "Notīrīt visu"
+  },
+  "scheduler.tasks.activity.title": {
+    "other": "Task Activity"
+  },
+  "scheduler.tasks.activity.loading": {
+    "other": "Loading activity..."
+  },
+  "scheduler.tasks.activity.empty": {
+    "other": "No logs found"
+  },
+  "scheduler.schedule.monthly": {
+    "other": "Katra mēneša %1 %2"
+  },
+  "scheduler.schedule.monthly.short": {
+    "other": "Katra mēneša %1"
+  },
+  "scheduler.schedule.weekly": {
+    "other": "Katru %1 %2"
+  },
+  "scheduler.schedule.weekly.short": {
+    "other": "Katru %1"
+  },
+  "scheduler.schedule.daily": {
+    "other": "Katru dienu %1"
+  },
+  "scheduler.schedule.daily.short": {
+    "other": "%1"
+  },
+  "scheduler.schedule.timely": {
+    "other": "Katru %1"
+  },
+  "scheduler.schedule.title": {
+    "other": "Flow Schedule"
+  },
+  "scheduler.schedule.type": {
+    "other": "Plānotāja veids"
+  },
+  "scheduler.schedule.type.manual": {
+    "other": "Manuāli"
+  },
+  "scheduler.schedule.type.monthly": {
+    "other": "Katru mēnesi"
+  },
+  "scheduler.schedule.type.weekly": {
+    "other": "Katru nedēļu"
+  },
+  "scheduler.schedule.type.daily": {
+    "other": "Katru dienu"
+  },
+  "scheduler.schedule.type.timely": {
+    "other": "Katru..."
+  },
+  "scheduler.schedule.type.once": {
+    "other": "Run Once"
+  },
+  "scheduler.schedule.detail.monthday": {
+    "other": "Mēneša diena"
+  },
+  "scheduler.schedule.detail.weekday": {
+    "other": "Nedēļas diena"
+  },
+  "scheduler.schedule.detail.daytime": {
+    "other": "Dienas laiks"
+  },
+  "scheduler.schedule.detail.daydate": {
+    "other": "Unique Date"
+  },
+  "scheduler.schedule.detail.minutes": {
+    "other": "Laiks minūtēs"
+  },
+  "scheduler.job-parameters.dialog": {
+    "other": "Flow Parameters"
+  },
+  "scheduler.job-parameters.button": {
+    "other": "Parametri"
+  },
+  "developer.rest.apis": {
+    "other": "Rest APIs Dokumentācija"
+  },
+  "developer.rest.apis.legend": {
+    "other": "Zemāk minēti visi API kuri ir pieejami Pydio. Lai izmantotu šos API vispirms ir jāveic autentifikācija ar OpenIDConnect servisu klai saņemti derīgu JWT. Vairāk skatīt tiešsaistē administratora rokasgrāmatā."
+  },
+  "mailer.test.title": {
+    "other": "Sūtīt testa e-pastu"
+  },
+  "mailer.test.legend": {
+    "other": "Pārliecinieties vai saglabājāt konfigurāciju pirms sūtat testa e-pastu."
+  },
+  "mailer.test.loading": {
+    "other": "Ielādē e-pastu sūtīšanas bibliotēku..."
+  },
+  "sites.title": {
+    "other": "Sites"
+  },
+  "sites.externals": {
+    "other": "External URLs"
+  },
+  "sites.details": {
+    "other": "<div>\nSites define how Cells is binding to network interfaces and how it is exposed to the outside world.\nUse ‘<i>./cells configure sites</i>’ to manage your sites from the command line.\n<br/><br/>\nEach site has the following parameters:\n\n<ol>\n<li>1. <u>Bind(s)</u>: one or more [ip/hostname:port] to hook the internal webserver to.</li>\n<li>2. <u>TLS Settings</u>: TLS configuration for HTTPS support.</li>\n<li>3. <u>External URL</u>: the URL you communicate to your end-users. It can differ from your bind address, typically if the app is behind a reverse-proxy or inside a container with ports mapping.</li>\n<li>4. <u>Maintenance Mode</u> [On|Off]: display a maintenance page on this endpoint, although Cells is running.</li>\n</ol></div>"
+  },
+  "sites.details.note": {
+    "other": "<div><i>Additional notes</i>\n<ol>\n<li>1. When there are no sites defined, Cells use a default configuration (https://0.0.0.0:8080 with self-signed).</li>\n<li>2. Sites can be overridden at runtime by using ‘--bind’ flag or ‘CELLS_BIND’ environment variable.\n</li>\n</ol></div>"
+  },
+  "sites.externals.details": {
+    "other": "<div>\nCells uses its detected public URL in some features. It will try to use the most appropriate value based on your configuration. <br/><br/>For example:\n<ul>\n<li>&bull; If a unique site is defined and it has an external URL, that one is probably correct.</li>\n<li>&bull; When multiple sites are defined, you may want to force a unique URL that will be used for all external communication.</li>\n<li>&bull; If no external URL is detected, it will fallback to the internal bind address. In that case, you probably do not want to send a private IP (or 0.0.0.0:port…) to the outside world.</li>\n</ul>\n\n<br/>\nThe fields below show the detected values. Select to edit or type in a custom value and hit enter to save.\n</div>"
+  },
+  "sites.mailer.url": {
+    "other": "URL used to build links in emails"
+  },
+  "sites.links.url": {
+    "other": "URL used to build public links"
+  },
+  "sites.no-defaults": {
+    "other": "No defaults set"
+  },
+  "sites.enter-to-save": {
+    "other": "(hit enter to save)"
+  },
+  "sites.detected.sites": {
+    "other": "Sites currently detected"
+  },
+  "sites.configs.command": {
+    "other": "Use './cells config sites' command to edit sites."
+  },
+  "sites.column.bind": {
+    "other": "Bind"
+  },
+  "sites.column.tls": {
+    "other": "TLS"
+  },
+  "sites.column.external": {
+    "other": "Reverse Proxy"
+  },
+  "sites.configs.tls.letsencrypt": {
+    "other": "Let's Encrypt"
+  },
+  "sites.configs.tls.self": {
+    "other": "Self Signed"
+  },
+  "sites.configs.tls.certificate": {
+    "other": "Certificate"
+  },
+  "sites.configs.tls.notls": {
+    "other": "No TLS"
+  },
+  "sites.configs.tls.notls-reverse": {
+    "other": "No TLS behind proxy"
+  }
+}

@@ -1,0 +1,179 @@
+{
+  "start": {
+    "other": "开始"
+  },
+  "pause": {
+    "other": "暂停"
+  },
+  "clear": {
+    "other": "清除"
+  },
+  "clear-header": {
+    "other": "清空列表..."
+  },
+  "clear-finished": {
+    "other": "上传完成"
+  },
+  "clear-failed": {
+    "other": "上传失败"
+  },
+  "clear-all": {
+    "other": "所有传输"
+  },
+  "list.show-more": {
+    "other": "%d 个更多 - 显示所有"
+  },
+  "options.existing": {
+    "other": "如果存在同名文件："
+  },
+  "options.existing.alert": {
+    "other": "停止上传并提醒我"
+  },
+  "options.existing.folders": {
+    "other": "重命名文件夹，然后重命名文件"
+  },
+  "options.existing.merge": {
+    "other": "仅重命名文件(合并文件夹)"
+  },
+  "options.existing.overwrite": {
+    "other": "静默覆盖现有文件"
+  },
+  "confirm.rename.all": {
+    "other": "重命名文件夹，然后是冲突的文件"
+  },
+  "confirm.rename.merge": {
+    "other": "仅重命名文件(合并文件夹)"
+  },
+  "confirm.overwrite": {
+    "other": "合并文件夹并覆盖文件"
+  },
+  "confirm.save.choice": {
+    "other": "保存选择以供下次上传"
+  },
+  "options": {
+    "other": "上传选项"
+  },
+  "upload.forbidden": {
+    "other": "您无权在此上传此文件"
+  },
+  "task.label": {
+    "other": "正在向服务器上传文件..."
+  },
+  "task.status.folders": {
+    "other": "创建文件夹"
+  },
+  "task.message.folder-one": {
+    "other": "创建一个文件夹"
+  },
+  "task.message.folder-many": {
+    "other": "正在创建 %s 个文件夹"
+  },
+  "task.status.analyse": {
+    "other": "正在准备要上载的文件"
+  },
+  "task.message.analyse-many": {
+    "other": "正在分析 %s 项..."
+  },
+  "task.message.analyse-one": {
+    "other": "分析一个项目"
+  },
+  "task.message.analyse-wait": {
+    "other": "请稍等……"
+  },
+  "task.status.ready": {
+    "other": "准备上传"
+  },
+  "task.status.paused": {
+    "other": "上传已暂停"
+  },
+  "task.status.upload": {
+    "other": "正在上传文件"
+  },
+  "task.message.upload-progress": {
+    "other": "上传中 %s%"
+  },
+  "no-folders-support": {
+    "other": "您的浏览器似乎不支持拖放文件夹"
+  },
+  "analyze.step": {
+    "other": "正在准备要上传的文件和文件夹..."
+  },
+  "drophere": {
+    "other": "将文件拖放到这里"
+  },
+  "drop-or": {
+    "other": "或"
+  },
+  "drop-pick-file": {
+    "other": "浏览文件"
+  },
+  "drop-pick-folder": {
+    "other": "浏览文件夹"
+  },
+  "dialog.title": {
+    "other": "传输"
+  },
+  "attempt": {
+    "other": "尝试"
+  },
+  "status.new": {
+    "other": "待处理"
+  },
+  "status.error": {
+    "other": "发生错误"
+  },
+  "status.pause": {
+    "other": "暂停"
+  },
+  "status.analyse": {
+    "other": "正在分析..."
+  },
+  "status.dir.new": {
+    "other": "等待上传的文件夹..."
+  },
+  "status.file.new": {
+    "other": "等待上传的文件..."
+  },
+  "status.dir.analyse": {
+    "other": "正在分析文件夹..."
+  },
+  "status.file.analyse": {
+    "other": "正在分析文件..."
+  },
+  "status.dir.loading": {
+    "other": "正在创建文件夹"
+  },
+  "status.file.loading": {
+    "other": "正在上传文件"
+  },
+  "status.dir.loaded": {
+    "other": "文件夹已创建"
+  },
+  "status.file.loaded": {
+    "other": "文件已上传"
+  },
+  "status.part.loaded": {
+    "other": "片块已上传"
+  },
+  "status.part.loading": {
+    "other": "正在上传片块"
+  },
+  "status.multi-pause": {
+    "other": "暂停前完成当前块"
+  },
+  "status.file.cannot-pause": {
+    "other": "无法暂停此传输"
+  },
+  "status.part.cannot-pause": {
+    "other": "无法暂停片块传输"
+  },
+  "status.error.aborted": {
+    "other": "被用户打断"
+  },
+  "status.error.403": {
+    "other": "您无权上传到这里"
+  },
+  "status.error.422": {
+    "other": "配额已达，无法上传更多"
+  }
+}

@@ -1,0 +1,80 @@
+/*
+ * Copyright (c) 2019-2022. Abstrium SAS <team (at) pydio.com>
+ * This file is part of Pydio Cells.
+ *
+ * Pydio Cells is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Pydio Cells is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with Pydio Cells.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * The latest code can be found at <https://pydio.com>.
+ */
+
+package redis
+
+import (
+	"context"
+	"crypto/tls"
+	"net/url"
+	"strings"
+	"time"
+
+	redis "github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
+
+	"github.com/pydio/cells/v5/common/telemetry/log"
+	"github.com/pydio/cells/v5/common/utils/std"
+)
+
+var (
+	clients = make(map[string]redis.UniversalClient)
+)
+
+func NewClient(ctx context.Context, u *url.URL, tc *tls.Config) (redis.UniversalClient, error) {
+	str := u.Redacted()
+	cli, ok := clients[str]
+	if ok {
+		return cli, nil
+	}
+
+	hosts := strings.Split(u.Host, ",")
+	user := u.User.Username()
+	pwd, _ := u.User.Password()
+
+	addrs, ok := u.Query()["replicasAddr"]
+	if ok {
+		for _, addr := range addrs {
+			hosts = append(hosts, strings.Split(addr, ",")...)
+		}
+	}
+
+	oo := &redis.UniversalOptions{
+		Addrs:    hosts,
+		Username: user,
+		Password: pwd,
+	}
+
+	cli = redis.NewUniversalClient(oo)
+
+	if err := std.Retry(ctx, func() error {
+		if err := cli.Ping(ctx).Err(); err != nil {
+			log.Logger(ctx).Warn("[redis] connection unavailable, retrying in 10s...", zap.Error(err))
+			return err
+		}
+
+		return nil
+	}, 10*time.Second, 10*time.Minute); err != nil {
+		return nil, err
+	}
+
+	clients[str] = cli
+	return cli, nil
+}

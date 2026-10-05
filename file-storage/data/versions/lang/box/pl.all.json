@@ -1,0 +1,103 @@
+{
+  "Job.Version.Title": {
+    "other": "Zadanie oparte na zdarzeniach do replikacji danych dla wersjonowania"
+  },
+  "Job.Version.StatusFile": {
+    "other": "Utworzono wersję {{.Uuid}} wewnątrz kosza wersji "
+  },
+  "Job.Version.StatusMeta": {
+    "other": "Utworzono metadane wersji dla {{.Uuid}}"
+  },
+  "Job.Version.StatusPrune": {
+    "one": "Przycięto {{.Count}} wersję",
+    "other": "Przycięto {{.Count}} wersje"
+  },
+  "Job.Pruning.Title": {
+    "other": "Czyszczenie plików wersji dla usuniętych węzłów"
+  },
+  "Job.Pruning.StatusDone": {
+    "one": "Pomyślnie usunięto {{.Count}} wersję",
+    "other": "Pomyślnie usunięto {{.Count}} wersje."
+  },
+  "Config.GroupPolicy.Title": {
+    "other": "Polityka"
+  },
+  "Config.GroupPolicy.Name.Label": {
+    "other": "Nazwa"
+  },
+  "Config.GroupPolicy.Name.Description": {
+    "other": "Nazwa Polityki"
+  },
+  "Config.GroupPolicy.Description.Label": {
+    "other": "Opis"
+  },
+  "Config.GroupPolicy.Description.Description": {
+    "other": "Opis Polityki"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Label": {
+    "other": "Przechowywanie"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Description": {
+    "other": "Źródło danych używane do przechowywania wersji"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Label": {
+    "other": "Kosz"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Description": {
+    "other": "Kosz używany wewnątrz tego źródła danych"
+  },
+  "Config.GroupSizes.Title": {
+    "other": "Kimity Rozmiaru"
+  },
+  "Config.GroupSizes.MaxTotalSize.Label": {
+    "other": "Globalny rozmiar wszystkich wersji przechowywanych w tym koszu"
+  },
+  "Config.GroupSizes.MaxTotalSize.Description": {
+    "other": "Ogranicz całkowity zajęty rozmiar. Jeśli limit zostanie osiągnięty, najstarsze wersje będą usuwane. Użyj -1, aby wyłączyć limit"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Label": {
+    "other": "Suma rozmiarów dla wersji jednego danego pliku"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Description": {
+    "other": "Ogranicz rozmiar zajmowany przez wszystkie wersje jednego pliku. Jeśli limit zostanie osiągnięty, najstarsze wersje będą usuwane. Użyj -1, aby wyłączyć limit"
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Label": {
+    "other": "Ignoruj pliki większe niż..."
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Description": {
+    "other": "NIE wersjonuj plików o rozmiarze większym niż ten limit. Użyj -1, aby wyłączyć limit"
+  },
+  "Config.GroupRetention.Title": {
+    "other": "Okresy Przechowywania"
+  },
+  "Config.GroupRetention.Description": {
+    "other": "Liczba wersji do zachowania na okres"
+  },
+  "Config.GroupRetention.IntervalStart.Name": {
+    "other": "Początek Okresu"
+  },
+  "Config.GroupRetention.IntervalStart.Description": {
+    "other": "Punkt początkowy używany do obliczania okresu. 0 oznacza czas utworzenia ostatniej wersji, użyj innego okresu, aby ustawić limit"
+  },
+  "Config.GroupRetention.MaxNumber.Name": {
+    "other": "Maksymalna Liczba Wersji"
+  },
+  "Config.GroupRetention.MaxNumber.Description": {
+    "other": "Maksymalna liczba wersji do zachowania w tym okresie. Użyj -1, aby zachować wszystkie wersje, 0, aby usunąć wszystkie."
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Name": {
+    "other": "Po usunięciu oryginalnego pliku"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Description": {
+    "other": "Liczba wersji do zachowania po usunięciu oryginalnego pliku."
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepAll": {
+    "other": "Utwórz kopię zapasową wszystkich istniejących wersji"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepLast": {
+    "other": "Utwórz kopię zapasową tylko najnowszej wersji"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepNone": {
+    "other": "Usuń wszystkie istniejące wersje"
+  }
+}

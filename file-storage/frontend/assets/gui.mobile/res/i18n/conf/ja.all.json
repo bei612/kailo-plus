@@ -1,0 +1,56 @@
+{
+  "1.android": {
+    "other": "Android OS で %s にアクセスできるネイティブの APPLICATION_TITLE クライアントがあります。"
+  },
+  "1.ios": {
+    "other": "Iphone/iPad経由で %s にアクセスできるネイティブアプリケーションがあります！"
+  },
+  "2.android": {
+    "other": "すでに設定されています。事前設定されたリモートサーバーにこのサーバーを追加します"
+  },
+  "2.ios": {
+    "other": "すでに設定されています。事前設定されたリモートサーバーにこのサーバーを追加します"
+  },
+  "3.android": {
+    "other": "今すぐPlayストアに送ってください！"
+  },
+  "3.ios": {
+    "other": "今すぐApp Storeに送ってください！"
+  },
+  "4.android": {
+    "other": "気にしません。 %s のウェブバージョンを使わせてください。"
+  },
+  "4.ios": {
+    "other": "気にしません。 %s のウェブバージョンを使わせてください。"
+  },
+  "Mobile": {
+    "other": "モバイル"
+  },
+  "Template extending gui.ajax for small screen terminals.": {
+    "other": "小さな画面端末用のテンプレートgui.ajaxを拡張します。"
+  },
+  "Disable this feature": {
+    "other": "この機能を無効にする"
+  },
+  "Do not display a smart banner when opening web interface on a mobile terminal.": {
+    "other": "モバイル端末でWebインターフェースを開くときは、スマートバナーを表示しないでください。"
+  },
+  "iOS Application Icon": {
+    "other": "iOS アプリのアイコン"
+  },
+  "iOS Application ID": {
+    "other": "iOS アプリケーションID"
+  },
+  "iOS Application ID on the store": {
+    "other": "iOSアプリケーションID"
+  },
+  "Android Application ID": {
+    "other": "Android アプリケーション ID"
+  },
+  "Android App ID": {
+    "other": "Android App ID"
+  },
+  "Android App Icon": {
+    "other": "Android アプリアイコン"
+  }
+}

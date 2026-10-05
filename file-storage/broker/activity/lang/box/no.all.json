@@ -1,0 +1,89 @@
+{
+  "AccessedBy": {
+    "other": "Åpnet av {{.Actor}}"
+  },
+  "AccessedObject": {
+    "other": "Åpnet {{.Object}}"
+  },
+  "AccessedObjectBy": {
+    "other": "{{.Object}} ble åpnet av {{.Actor}}"
+  },
+  "Cell": {
+    "other": "Cell"
+  },
+  "CreatedBy": {
+    "other": "Opprettet av {{.Actor}}"
+  },
+  "CreatedObject": {
+    "other": "Opprettet {{.Object}}"
+  },
+  "CreatedObjectBy": {
+    "other": "{{.Object}} ble opprettet av {{.Actor}}"
+  },
+  "DeletedBy": {
+    "other": "Slettet av {{.Actor}}"
+  },
+  "DeletedObject": {
+    "other": "Slettet {{.Object}}"
+  },
+  "DeletedObjectBy": {
+    "other": "{{.Object}} ble slettet av {{.Actor}}"
+  },
+  "SharedWs": {
+    "other": "Delt i {{.Object}}"
+  },
+  "SharedWsWithYou": {
+    "other": "{{.Actor}} har delt {{.Object}} med deg"
+  },
+  "DigestTitle": {
+    "other": "Dette er din daglige Pydio Digest"
+  },
+  "Document": {
+    "other": "Dokument"
+  },
+  "Folder": {
+    "other": "Mappe"
+  },
+  "ModifiedBy": {
+    "other": "Endret av {{.Actor}}"
+  },
+  "ModifiedObject": {
+    "other": "Endret {{.Object}}"
+  },
+  "ModifiedObjectBy": {
+    "other": "{{.Object}} ble endret av {{.Actor}}"
+  },
+  "MetaModifiedBy": {
+    "other": "Metadata endret av {{.Actor}}"
+  },
+  "MetaModifiedObject": {
+    "other": "Endret metadata på {{.Object}}"
+  },
+  "MetaModifiedObjectBy": {
+    "other": "{{.Actor}} endret metadata på {{.Object}}"
+  },
+  "CommentedBy": {
+    "other": "Kommentert av {{.Actor}}"
+  },
+  "CommentedObject": {
+    "other": "Kommenterte {{.Object}}"
+  },
+  "CommentedObjectBy": {
+    "other": "{{.Actor}} publiserte ny kommentar på {{.Object}}"
+  },
+  "MovedBy": {
+    "other": "Flyttet av {{.Actor}}"
+  },
+  "MovedObject": {
+    "other": "Flyttet {{.Object}}"
+  },
+  "MovedObjectBy": {
+    "other": "{{.Object}} ble flyttet av {{.Actor}}"
+  },
+  "Workspace": {
+    "other": "Arbeidsområde"
+  },
+  "DateFormat": {
+    "other": "2006-01-02 15:04"
+  }
+}

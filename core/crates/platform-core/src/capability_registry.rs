@@ -78,6 +78,6 @@ mod tests {
         ));
         assert!(action_exposed("application_binding.create"));
         assert!(action_exposed("application_binding.disable"));
-        assert!(!action_exposed("resource.create"));
+        assert!(action_exposed("resource.create"));
     }
 }

@@ -1,0 +1,35 @@
+{
+  "1": {
+    "other": "Biên tập Nguồn"
+  },
+  "10": {
+    "other": "Kích thước thụt lề"
+  },
+  "2": {
+    "other": "Đánh dấu cú pháp với CodeMirror"
+  },
+  "3": {
+    "other": "Wrapping"
+  },
+  "3b": {
+    "other": "Toggle lines wrapping"
+  },
+  "4": {
+    "other": "Số"
+  },
+  "5": {
+    "other": "Hiển thị / Ẩn số dòng"
+  },
+  "6": {
+    "other": "Chuyển đến dòng"
+  },
+  "7": {
+    "other": "Lùi lại"
+  },
+  "8": {
+    "other": "Thực hiện lại"
+  },
+  "9": {
+    "other": "Tìm kiếm theo từ"
+  }
+}

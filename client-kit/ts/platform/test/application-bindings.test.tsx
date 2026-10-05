@@ -116,10 +116,17 @@ describe("shared external service connection management", () => {
     expect(frame?.getAttribute("src")).toBe(nativePage.url);
     expect(frame?.getAttribute("sandbox")).toBe("allow-scripts allow-same-origin allow-forms allow-downloads");
     expect(frame?.getAttribute("referrerpolicy")).toBe("no-referrer");
+    const independent = host.querySelector("a");
+    expect(independent?.getAttribute("href")).toBe(nativePage.url);
+    expect(independent?.getAttribute("target")).toBe("_blank");
+    expect(independent?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(independent?.getAttribute("referrerpolicy")).toBe("no-referrer");
+    expect(independent?.textContent).toContain("Open service in a new tab");
     expect(send.mock.calls.at(-1)?.[0].path).toBe(`/api/v1/application-bindings/${connection.bindingId}/native-page`);
     revoked = true;
     await click(button(host, "Refresh"));
     expect(host.querySelector("iframe")).toBeNull();
+    expect(host.querySelector("a")).toBeNull();
     expect(send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
   });
 
@@ -130,6 +137,7 @@ describe("shared external service connection management", () => {
       <NativeApplicationPage bindingId={connection.bindingId} onBack={() => {}} />
     </PlatformProvider>);
     expect(host.querySelector("iframe")).toBeNull();
+    expect(host.querySelector("a")).toBeNull();
     await click(button(host, "Open service page"));
     expect(openNativePage.mock.calls).toEqual([[connection.bindingId]]);
   });
@@ -145,6 +153,7 @@ describe("shared external service connection management", () => {
         <NativeApplicationPage bindingId={connection.bindingId} onBack={() => {}} />
       </PlatformProvider>);
       expect(host.querySelector("iframe")).toBeNull();
+      expect(host.querySelector("a")).toBeNull();
     }
   });
 });

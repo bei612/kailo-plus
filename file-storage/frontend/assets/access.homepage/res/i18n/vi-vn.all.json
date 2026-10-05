@@ -1,0 +1,266 @@
+{
+  "39": {
+    "other": "Đây là danh sách các workspaces bạn có thể truy cập. Những workspace này có thể là của cá nhân hoặc các chia sẻ được tạo bởi các thành viên khác."
+  },
+  "40": {
+    "other": "Xin chào, %s! "
+  },
+  "41": {
+    "other": "Thiết lập mặc định workspace này"
+  },
+  "42": {
+    "other": "Enter"
+  },
+  "43": {
+    "other": "Thông tin cá nhân"
+  },
+  "43t": {
+    "other": "Dữ liệu cá nhân"
+  },
+  "44": {
+    "other": "Tài khoản"
+  },
+  "45": {
+    "other": "Dữ liệu cá nhân"
+  },
+  "46": {
+    "other": "Danh bạ"
+  },
+  "47": {
+    "other": "User và nhóm bạn đã tạo"
+  },
+  "48": {
+    "other": "Các users bạn đã tạo"
+  },
+  "49": {
+    "other": "Các external users bạn đã tạo"
+  },
+  "50": {
+    "other": "Các nhóm bạn tham gia"
+  },
+  "51": {
+    "other": "Tên các nhóm được sử dụng khi bạn chia sẻ"
+  },
+  "52": {
+    "other": "Bạn có thực sự muốn xóa nhóm này? Việc này sẽ không thể phục hồi sau khi xóa."
+  },
+  "53": {
+    "other": "Bắt đầu làm quen"
+  },
+  "54": {
+    "other": "Bắt đầu làm quen với APPLICATION_TITLE trên các videos hướng dẫn"
+  },
+  "55": {
+    "other": "Các tính năng mới trong APPLICATION_TITLE? <a>Xem các videos hướng dẫn</a>!"
+  },
+  "56": {
+    "other": "Làm quen với APPLICATION_TITLE? Xin giới thiệu một số videos hướng dẫn dành cho bạn!"
+  },
+  "57": {
+    "other": "Tải APPLICATION_TITLE cho..."
+  },
+  "58": {
+    "other": "Android"
+  },
+  "59": {
+    "other": "iPhone/iPad"
+  },
+  "60": {
+    "other": "Mac OS"
+  },
+  "61": {
+    "other": "Windows"
+  },
+  "62": {
+    "other": "<h2>[How-to] Một workspace là gì?</h2>\n            Video này sẽ giải thích cho bạn một Workspaces ra sao trong APPLICATION_TITLE\n            <ul>\n                <li>Tại sao Workspaces là trung tâm của APPLICATION_TITLE?</li>\n                <li>Workspaces dưới cái nhìn của dân kỹ thuật?</li>\n                <li>Workspaces sẽ giúp bạn thế nào trong việc quản lý dữ liệu?</li>\n            </ul>\n            "
+  },
+  "63": {
+    "other": "<h2>[How-to] Upload dữ liệu lên APPLICATION_TITLE</h2>\n            Làm quen với APPLICATION_TITLE và học cách upload dữ liệu\n            <ul>\n                <li>Kéo và thả file vào APPLICATION_TITLE</li>\n                <li>Tạo mới một thư mục</li>\n                <li>Đổi tên file hay thư mục</li>\n                <li>Download dữ liệu về máy</li>\n            </ul>            "
+  },
+  "64": {
+    "other": "<h2>[How-to] Tìm kiếm và quản lý files</h2>\n            Đoạn phim này sẽ hướng dẫn bạn quản lý dữ liệu nhanh gọn và dễ dàng trong APPLICATION_TITLE\n            <ul>\n                <li>Thanh tìm kiếm trên các workspace</li>\n                <li>Cách thức hiển thị, Các tổ hợp phím tắt</li>\n                <li>Sắp xếp Files</li>\n                <li>Meta Data, Các đánh dấu</li>\n            </ul>\n            "
+  },
+  "65": {
+    "other": "Tìm hiểu thêm trên APPLICATION_TITLE channel!"
+  },
+  "66": {
+    "other": "<h2>[How-to] Sử dụng APPLICATION_TITLE trên các thiết bị iOS</h2>\n                            Đoạn phim này hướng dẫn cách sử dụng APPLICATION_TITLE (có trên App Store). Cách thức tương tự như trên Android.\n<ul><li>Thiết lập kết nối tới server</li>\n<li>Duyệt danh sách các files</li>\n<li>Lưu file trên máy và tương tác với các phần mềm bên thứ ba</li>\n<li>Bảo vệ app với mã PIN</li>\n<li>Sử dụng đánh dấu và tìm kiếm</li></ul>"
+  },
+  "67": {
+    "other": "Nếu bạn không phải là %s, %logout."
+  },
+  "68": {
+    "other": "Tải app Sync Client cho Windows"
+  },
+  "69": {
+    "other": "Tải app Sync Client cho Mac OSX"
+  },
+  "70": {
+    "other": "Cách sử dụng app trên thiết bị iOS"
+  },
+  "71": {
+    "other": "Cách sử dụng app trên thiết bị Android"
+  },
+  "72": {
+    "other": "Server QRCode"
+  },
+  "73": {
+    "other": "Dễ dàng kết nối với các ứng dụng di động"
+  },
+  "74": {
+    "other": "Quyeets mã QRCode này để cấu hình nhanh ứng dụng di động"
+  },
+  "75": {
+    "other": "Tìm kiếm trên tất cả các file..."
+  },
+  "76": {
+    "other": "Truy cập %1 qua menu trên góc trái"
+  },
+  "77": {
+    "other": "bảng điều khiển cho admin"
+  },
+  "78": {
+    "other": "Chọn workspace đích"
+  },
+  "79": {
+    "other": "<h2>[How-to] Chia sẻ file và thư mục</h2>\n            Sau đây sẽ hướng dẫn bạn cách chia sẻ file, thư mục với các thành viên nội bộ hoặc bên ngoài tổ chức của bạn\n            <ul>\n                <li>Tạo chia sẻ với người ngoài tổ chức</li>\n                <li>Chia sẻ với nhóm nội bộ</li>\n                <li>Chia sẻ thư mục giống như một workspace</li>\n                <li>Chọn layout cho thư mục chia sẻ</li>\n                <li>Tạo một thư mục cho việc gửi file ẩn danh</li>\n                <li>Quản lý user và  phân quyền</li>\n            </ul>\n            "
+  },
+  "80": {
+    "other": "<h2>[How-to] Sharing : tăng cường bảo mật</h2>\n            Đoạn phim này sẽ giới thiệu các thiết lập để giúp bạn tăng cường tính bảo mật của các chia sẻ\n            <ul>\n                <li>Bảo mật với password</li>\n                <li>Định ngày hết hạn</li>\n                <li>Giới hạn số lần downloads</li>\n            </ul>\n            "
+  },
+  "81": {
+    "other": "<h2>[How-to] Thay đổi đường dẫn tới dữ liệu chia sẻ</h2>\n            Các bước để làm đường dẫn dễ sử dụng hơn so với mặc định.\n            "
+  },
+  "82": {
+    "other": "<h2>[How-to] Phân quyền cho liên kết chia sẻ</h2>\n            Đoạn phim này sẽ giúp bạn cách quản lý quyền truy cập vào các chia sẻ\n            <ul>\n                <li>Xem trước</li>\n                <li>Download</li>\n                <li>Upload / Edit</li>\n            </ul>\n            "
+  },
+  "83": {
+    "other": "<h2>[How-to] Ngôn ngữ</h2>\n            APPLICATION_TITLE có sẵn 28 ngôn ngữ. Đoạn phim này sẽ giới thiệu cách bạn thay đổi ngôn ngữ trong APPLICATION_TITLE.\n            "
+  },
+  "84": {
+    "other": "<h2>[How-to] Thông báo khi dữ liệu chia sẻ được sử dụng</h2>\n            Cách tức thiết lập thông báo trên dữ liệu chia sẻ khi có yêu cầu truy cập, sửa, xóa.\n            "
+  },
+  "85": {
+    "other": "<h2>[How-to] Trình soạn thảo theo nhóm Collabora</h2>\n            Đoạn phim này sẽ giới thiệu cách thức làm việc với tài liệu office trên collabora. Lời cảm ơn dành cho bộ soạn thảo Collabora online\n            <ul>\n                <li>Làm việc với các loại docs, presentations, spreadsheets</li>\n                <li>Soạn thảo theo thời gian thực</li>\n                <li>Tạo mới tài liệu ngay trên trình duyệt</li>\n            </ul>\n            "
+  },
+  "86": {
+    "other": "Bắt đầu chạy video"
+  },
+  "87": {
+    "other": "Những hoạt động gần đây"
+  },
+  "88": {
+    "other": "Kéo và thả file vào đây"
+  },
+  "89": {
+    "other": "Chọn file để upload"
+  },
+  "90": {
+    "other": "Chọn workspace đích"
+  },
+  "91": {
+    "other": "Giữ lại files của bạn trên máy với Desktop Sync Client"
+  },
+  "92": {
+    "other": "Applications Download"
+  },
+  "93": {
+    "other": "Upload nhanh"
+  },
+  "94": {
+    "other": "Video Hướng dẫn"
+  },
+  "desc": {
+    "other": "Trang chào mừng"
+  },
+  "title": {
+    "other": "Home"
+  },
+  "search.result.location": {
+    "other": "Thư mục"
+  },
+  "search.facets.title": {
+    "other": "Kết quả lọc..."
+  },
+  "search.facet.type": {
+    "other": "Kiểu"
+  },
+  "search.facet.extension": {
+    "other": "Phần mở rộng"
+  },
+  "search.facet.size": {
+    "other": "Kích thước"
+  },
+  "search.facet.modified": {
+    "other": "Đã sửa đổi"
+  },
+  "search.facet.found": {
+    "other": "Đã tìm thấy"
+  },
+  "search.facet.metadata": {
+    "other": "Metadata"
+  },
+  "search.sorter.relevant.desc": {
+    "other": "Most Relevant First"
+  },
+  "search.sorter.modified.desc": {
+    "other": "Recently Added First"
+  },
+  "search.sorter.modified.asc": {
+    "other": "Oldest First"
+  },
+  "search.sorter.size.desc": {
+    "other": "Biggest First"
+  },
+  "search.sorter.size.asc": {
+    "other": "Smallest First"
+  },
+  "facet.label.file": {
+    "other": "Tệp tin"
+  },
+  "facet.label.folder": {
+    "other": "Thư mục"
+  },
+  "facet.label.size.lt.1MB": {
+    "other": "< 1MB"
+  },
+  "facet.label.size.1MB.to.10MB": {
+    "other": "1MB to 10MB"
+  },
+  "facet.label.size.10MB.to.100MB": {
+    "other": "10MB to 100MB"
+  },
+  "facet.label.size.gt.100MB": {
+    "other": "> 100MB"
+  },
+  "facet.label.date.moments": {
+    "other": "Vừa nãy"
+  },
+  "facet.label.date.today": {
+    "other": "Hôm nay"
+  },
+  "facet.label.date.last.7": {
+    "other": "7 ngày trước"
+  },
+  "facet.label.date.last.30": {
+    "other": "30 ngày trước"
+  },
+  "facet.label.date.older.30": {
+    "other": "Cũ hơn 30 ngày"
+  },
+  "facet.label.found.contents": {
+    "other": "Nội Dung"
+  },
+  "facet.label.found.basename": {
+    "other": "Tên tệp"
+  },
+  "reco.bookmark": {
+    "other": "Bookmark"
+  },
+  "reco.workspace": {
+    "other": "Workspace"
+  },
+  "reco.cell": {
+    "other": "Cell"
+  }
+}

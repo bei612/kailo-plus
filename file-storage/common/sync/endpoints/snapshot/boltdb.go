@@ -1,0 +1,620 @@
+/*
+ * Copyright (c) 2019-2021. Abstrium SAS <team (at) pydio.com>
+ * This file is part of Pydio Cells.
+ *
+ * Pydio Cells is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Pydio Cells is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with Pydio Cells.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * The latest code can be found at <https://pydio.com>.
+ */
+
+// Package snapshot provides fast in-memory or on-file implementations of endpoint
+// for storing snapshots
+package snapshot
+
+import (
+	"bytes"
+	"context"
+	"net/url"
+	"os"
+	"path"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gobwas/glob"
+	"go.etcd.io/bbolt"
+	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/pydio/cells/v5/common/errors"
+	"github.com/pydio/cells/v5/common/proto/tree"
+	"github.com/pydio/cells/v5/common/sync/endpoints"
+	"github.com/pydio/cells/v5/common/sync/merger"
+	"github.com/pydio/cells/v5/common/sync/model"
+	"github.com/pydio/cells/v5/common/telemetry/log"
+	"github.com/pydio/cells/v5/common/utils/uuid"
+)
+
+var (
+	bucketName        = []byte("snapshot")
+	captureBucketName = []byte("capture")
+)
+
+var (
+	_ model.PathSyncTarget   = (*BoltSnapshot)(nil)
+	_ model.PathSyncSource   = (*BoltSnapshot)(nil)
+	_ model.MetadataReceiver = (*BoltSnapshot)(nil)
+)
+
+const (
+	scheme = "snapshot"
+)
+
+func init() {
+	endpoints.Register(scheme, endpoints.OpenURLFunc(func(ctx context.Context, u *url.URL, _ ...*url.URL) (model.Endpoint, error) {
+		snapshotFullPath := u.Path
+
+		var gg []glob.Glob
+		if metas := u.Query().Get("metadataGlobs"); metas != "" {
+			for _, m := range strings.Split(metas, ",") {
+				gl, er := glob.Compile(m)
+				if er != nil {
+					return nil, er
+				}
+				gg = append(gg, gl)
+			}
+		}
+
+		snap, er := NewBoltSnapshot(ctx, snapshotFullPath, "")
+		if er != nil {
+			return nil, er
+		}
+		if u.Query().Get("createBucket") == "true" {
+			if err := snap.AutoCreateBucket(); err != nil {
+				snap.Close()
+				return nil, err
+			}
+		}
+		if len(gg) > 0 {
+			snap.setMetadataGlobs(gg)
+		}
+		return snap, nil
+	}))
+
+}
+
+type BoltSnapshot struct {
+	ctx        context.Context
+	db         *bbolt.DB
+	name       string
+	empty      bool
+	folderPath string
+
+	createsSession     map[string]tree.N
+	createsSessionLock *sync.Mutex
+
+	autoBatchChan  chan tree.N
+	autoBatchClose chan struct{}
+
+	manualCollector  bool
+	captureStripPath bool
+	metadataGlobs    []glob.Glob
+}
+
+func NewBoltSnapshot(ctx context.Context, folderOrFullPath, name string) (*BoltSnapshot, error) {
+	var openName string
+	if name == "" {
+		folderOrFullPath, name = path.Split(folderOrFullPath)
+		openName = name
+	} else {
+		openName = "snapshot-" + name // Important for backward compat, if name was passed explicitly
+	}
+	s := &BoltSnapshot{
+		name: name,
+		ctx:  ctx,
+	}
+	options := bbolt.DefaultOptions
+	options.Timeout = 5 * time.Second
+	s.folderPath = folderOrFullPath
+	p := filepath.Join(s.folderPath, openName)
+	if _, err := os.Stat(p); err != nil {
+		s.empty = true
+	}
+	db, err := bbolt.Open(p, 0644, options)
+	if err != nil {
+		return nil, err
+	}
+	s.db = db
+
+	s.autoBatchChan = make(chan tree.N)
+	s.autoBatchClose = make(chan struct{}, 1)
+
+	go s.startAutoBatching()
+
+	return s, nil
+}
+
+func (s *BoltSnapshot) AutoCreateBucket() error {
+	s.manualCollector = true
+	close(s.autoBatchClose) // Disable batching
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		if b := tx.Bucket(bucketName); b == nil {
+			_, er := tx.CreateBucket(bucketName)
+			return er
+		}
+		return nil
+	})
+}
+
+func (s *BoltSnapshot) SetCaptureStripPath() {
+	s.captureStripPath = true
+}
+
+func (s *BoltSnapshot) setMetadataGlobs(globs []glob.Glob) {
+	s.metadataGlobs = globs
+}
+
+func (s *BoltSnapshot) ProvidesMetadataNamespaces() ([]glob.Glob, bool) {
+	return s.metadataGlobs, len(s.metadataGlobs) > 0
+}
+
+func (s *BoltSnapshot) sortByKey(data map[string]tree.N) (output []tree.N) {
+	var kk []string
+	for k := range data {
+		kk = append(kk, k)
+	}
+	sort.Strings(kk)
+	for _, k := range kk {
+		output = append(output, data[k])
+	}
+	return
+}
+
+func (s *BoltSnapshot) startAutoBatching() {
+	defer func() {
+		close(s.autoBatchChan)
+	}()
+	creates := make(map[string]tree.N, 500)
+	nextTime := 1 * time.Hour
+	flush := func() {
+		if len(creates) == 0 {
+			return
+		}
+		log.Logger(s.ctx).Info("Flushing AutoBatcher")
+		s.db.Update(func(tx *bbolt.Tx) error {
+			b := tx.Bucket(bucketName)
+			if b == nil {
+				return errors.New("cannot find root bucket - you need to create a bucket or set createBucket=true")
+			}
+			for _, node := range s.sortByKey(creates) {
+				b.Put([]byte(node.GetPath()), s.marshal(node))
+			}
+			return nil
+		})
+		creates = make(map[string]tree.N, 500)
+	}
+	for {
+		select {
+		case node := <-s.autoBatchChan:
+			if queued, ok := creates[node.GetPath()]; ok {
+				if node.GetMTime() > queued.GetMTime() {
+					creates[node.GetPath()] = node
+				}
+			} else {
+				creates[node.GetPath()] = node
+			}
+			nextTime = 300 * time.Millisecond
+			if len(creates) == 500 {
+				flush()
+			}
+		case <-time.After(nextTime):
+			// Autoflush after 300ms idle
+			flush()
+			nextTime = 1 * time.Hour
+		case <-s.autoBatchClose:
+			flush()
+			log.Logger(s.ctx).Debug("Closing AutoBatcher")
+			return
+		}
+	}
+}
+
+func (s *BoltSnapshot) StartSession(ctx context.Context, rootNode tree.N, silent bool) (string, error) {
+	s.createsSession = make(map[string]tree.N)
+	s.createsSessionLock = &sync.Mutex{}
+	return uuid.New(), nil
+}
+
+func (s *BoltSnapshot) FlushSession(ctx context.Context, sessionUuid string) error {
+	if len(s.createsSession) == 0 {
+		return nil
+	}
+	log.Logger(ctx).Info("Flushing BoltDB creates", zap.Int("creates", len(s.createsSession)))
+	e := s.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(bucketName)
+		if b == nil {
+			return errors.New("cannot find root bucket")
+		}
+		s.createsSessionLock.Lock()
+		for _, node := range s.sortByKey(s.createsSession) {
+			b.Put([]byte(node.GetPath()), s.marshal(node))
+		}
+		s.createsSessionLock.Unlock()
+		return nil
+	})
+	s.createsSession = make(map[string]tree.N)
+	return e
+}
+
+func (s *BoltSnapshot) FinishSession(ctx context.Context, sessionUuid string) error {
+	er := s.FlushSession(ctx, sessionUuid)
+	if er != nil {
+		return er
+	}
+	// Empty createsSession map
+	s.createsSessionLock.Lock()
+	s.createsSession = nil
+	s.createsSessionLock.Unlock()
+	return nil
+}
+
+func (s *BoltSnapshot) CreateNode(ctx context.Context, node tree.N, updateIfExists bool) (err error) {
+	if s.createsSession != nil {
+		return s.db.View(func(tx *bbolt.Tx) error {
+			b := tx.Bucket(bucketName)
+			if b == nil {
+				return errors.New("cannot find root bucket")
+			}
+			s.createsSessionLock.Lock()
+			defer s.createsSessionLock.Unlock()
+			// Create parents if necessary
+			dir := strings.Trim(path.Dir(node.GetPath()), "/")
+			if dir != "" && dir != "." {
+				parts := strings.Split(strings.Trim(path.Dir(node.GetPath()), "/"), "/")
+				for i := 0; i < len(parts); i++ {
+					pKey := strings.Join(parts[:i+1], "/")
+					if _, ok := s.createsSession[pKey]; ok {
+						continue
+					}
+					if ex := b.Get([]byte(pKey)); ex != nil {
+						continue
+					}
+					s.createsSession[pKey] = &tree.Node{Path: pKey, Type: tree.NodeType_COLLECTION, Etag: "-1"}
+				}
+			}
+			s.createsSession[node.GetPath()] = node
+			return nil
+		})
+	} else {
+		var nn []tree.N
+		er := s.db.View(func(tx *bbolt.Tx) error {
+			b := tx.Bucket(bucketName)
+			if b == nil {
+				return errors.New("cannot find root bucket")
+			}
+			// Create parents if necessary
+			dir := strings.Trim(path.Dir(node.GetPath()), "/")
+			if dir != "" && dir != "." {
+				parts := strings.Split(strings.Trim(path.Dir(node.GetPath()), "/"), "/")
+				for i := 0; i < len(parts); i++ {
+					pKey := strings.Join(parts[:i+1], "/")
+					if ex := b.Get([]byte(pKey)); ex == nil {
+						nn = append(nn, &tree.Node{Path: pKey, Type: tree.NodeType_COLLECTION, Etag: "-1"})
+					}
+				}
+			}
+			nn = append(nn, node)
+			return nil
+		})
+		if er != nil {
+			return
+		}
+		if s.manualCollector {
+			// Do not AutoBatch
+			return s.db.Update(func(tx *bbolt.Tx) error {
+				b := tx.Bucket(bucketName)
+				if b == nil {
+					return errors.New("cannot find root bucket")
+				}
+				for _, n := range nn {
+					_ = b.Put([]byte(n.GetPath()), s.marshal(n))
+				}
+				return nil
+			})
+		}
+		for _, n := range nn {
+			s.autoBatchChan <- n
+		}
+		return nil
+	}
+}
+
+func (s *BoltSnapshot) DeleteNode(ctx context.Context, path string) (err error) {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(bucketName)
+		if b == nil {
+			return errors.New("cannot find root bucket")
+		}
+		if d := b.Get([]byte(path)); d != nil {
+			b.Delete([]byte(path))
+			// Delete children
+			c := b.Cursor()
+			prefix := []byte(strings.TrimRight(path, "/") + "/")
+			var children [][]byte
+			for k, _ := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, _ = c.Next() {
+				children = append(children, k)
+			}
+			for _, k := range children {
+				b.Delete(k)
+			}
+		}
+		return nil
+	})
+}
+
+func (s *BoltSnapshot) MoveNode(ctx context.Context, oldPath string, newPath string) (err error) {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(bucketName)
+		if b == nil {
+			return errors.New("cannot find root bucket")
+		}
+		var moves [][]byte
+		if d := b.Get([]byte(oldPath)); d != nil {
+			moves = append(moves, []byte(oldPath))
+			// Delete children
+			c := b.Cursor()
+			prefix := []byte(oldPath + "/")
+			for k, _ := c.Seek(prefix); k != nil && (string(k) == oldPath || bytes.HasPrefix(k, prefix)); k, _ = c.Next() {
+				moves = append(moves, k)
+			}
+		}
+		for _, m := range moves {
+			renamed := path.Join(newPath, strings.TrimPrefix(string(m), oldPath))
+			if node, e := s.unmarshal(b.Get(m)); e == nil {
+				node.SetPath(renamed)
+				b.Delete(m)
+				b.Put([]byte(renamed), s.marshal(node))
+			}
+		}
+		return nil
+	})
+}
+
+func (s *BoltSnapshot) IsEmpty() bool {
+	return s.empty
+}
+
+func (s *BoltSnapshot) Close(delete ...bool) {
+	if !s.manualCollector {
+		close(s.autoBatchClose)
+	}
+	<-time.After(500 * time.Millisecond)
+	s.db.Close()
+	<-time.After(500 * time.Millisecond)
+	if len(delete) > 0 && delete[0] && s.folderPath != "" {
+		os.RemoveAll(s.folderPath)
+	}
+}
+
+// Shutdown implements Shutdowner
+func (s *BoltSnapshot) Shutdown() (err error) {
+	s.Close()
+	return nil
+}
+
+func (s *BoltSnapshot) Capture(ctx context.Context, source model.PathSyncSource, paths ...string) error {
+	// Capture in temporary bucket
+	e := s.db.Update(func(tx *bbolt.Tx) error {
+		var capture *bbolt.Bucket
+		var e error
+		if b := tx.Bucket(captureBucketName); b != nil {
+			if e = tx.DeleteBucket(captureBucketName); e != nil {
+				return e
+			}
+		}
+		if capture, e = tx.CreateBucket(captureBucketName); e != nil {
+			return e
+		}
+		if len(paths) == 0 {
+			return source.Walk(ctx, func(path string, node tree.N, err error) error {
+				return capture.Put([]byte(path), s.marshal(node))
+			}, "/", true)
+		} else {
+			for _, p := range paths {
+				e := source.Walk(ctx, func(path string, node tree.N, err error) error {
+					if err != nil {
+						log.Logger(ctx).Error("BoltDB:Capture: ignoring path, error is not nil", zap.String("path", path), zap.Error(err))
+						return err
+					}
+					if s.captureStripPath {
+						// Strip prefix from path and replace on node
+						path = strings.TrimPrefix(path, p+"/")
+						node.SetPath(path)
+					}
+					return capture.Put([]byte(path), s.marshal(node))
+				}, p, true)
+				if e != nil {
+					return e
+				}
+			}
+			return nil
+		}
+	})
+	if e != nil {
+		return e
+	}
+	// Now copy all to original bucket
+	if e = s.db.Update(func(tx *bbolt.Tx) error {
+		var cleared *bbolt.Bucket
+		var e error
+		if b := tx.Bucket(bucketName); b != nil {
+			if e = tx.DeleteBucket(bucketName); e != nil {
+				return e
+			}
+		}
+		if cleared, e = tx.CreateBucket(bucketName); e != nil {
+			return e
+		}
+		if captured := tx.Bucket(captureBucketName); captured != nil {
+			if e := captured.ForEach(func(k, v []byte) error {
+				return cleared.Put(k, v)
+			}); e != nil {
+				return e
+			}
+		}
+		return tx.DeleteBucket(captureBucketName)
+	}); e == nil {
+		s.empty = false
+	}
+	return e
+}
+
+func (s *BoltSnapshot) LoadNode(ctx context.Context, path string, extendedStats ...bool) (node tree.N, err error) {
+	if path == "/" {
+		// Return fake Root
+		node = &tree.Node{Path: "/"}
+	} else {
+		err = s.db.View(func(tx *bbolt.Tx) error {
+			if b := tx.Bucket(bucketName); b != nil {
+				value := b.Get([]byte(path))
+				if value != nil {
+					if node, err = s.unmarshal(value); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		} else if node == nil {
+			err = errors.WithMessagef(errors.NodeNotFound, "node not found in snapshot %s", path)
+			return nil, err
+		}
+	}
+	if len(extendedStats) > 0 && extendedStats[0] {
+		var size, folders, files int64
+		_ = s.Walk(nil, func(path string, node tree.N, err error) error {
+			if node.IsLeaf() {
+				size += node.GetSize()
+				files += 1
+			} else {
+				folders += 1
+			}
+			return nil
+		}, path, true)
+		node.SetChildrenSize(uint64(size))
+		node.SetChildrenFiles(uint64(files))
+		node.SetChildrenFolders(uint64(folders))
+	}
+	return
+}
+
+func (s *BoltSnapshot) GetEndpointInfo() model.EndpointInfo {
+	return model.EndpointInfo{
+		URI:                   scheme + "://" + s.name,
+		RequiresNormalization: false,
+		RequiresFoldersRescan: false,
+	}
+}
+
+func (s *BoltSnapshot) Walk(ctx context.Context, walkFunc model.WalkNodesFunc, root string, recursive bool) (err error) {
+	root = strings.Trim(root, "/") + "/"
+	err = s.db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(bucketName)
+		if b == nil {
+			return nil
+		}
+		return b.ForEach(func(k, v []byte) error {
+			key := string(k)
+			if root != "/" && !strings.HasPrefix(key, root) {
+				return nil
+			}
+			if !recursive && strings.Contains(strings.TrimPrefix(key, root), "/") {
+				return nil
+			}
+			if node, e := s.unmarshal(v); e == nil {
+				if er := walkFunc(key, node, nil); er != nil {
+					return er
+				}
+			}
+			return nil
+		})
+	})
+	return err
+}
+
+func (s *BoltSnapshot) Watch(ctx context.Context, recursivePath string) (*model.WatchObject, error) {
+	return nil, errors.New("not.implemented")
+}
+
+func (s *BoltSnapshot) CreateMetadata(ctx context.Context, node tree.N, namespace string, jsonValue string) error {
+	return s.updateMetadata(ctx, node.GetPath(), namespace, jsonValue, false)
+}
+
+func (s *BoltSnapshot) UpdateMetadata(ctx context.Context, node tree.N, namespace string, jsonValue string) error {
+	return s.updateMetadata(ctx, node.GetPath(), namespace, jsonValue, false)
+}
+
+func (s *BoltSnapshot) DeleteMetadata(ctx context.Context, node tree.N, namespace string) error {
+	return s.updateMetadata(ctx, node.GetPath(), namespace, "", true)
+}
+
+func (s *BoltSnapshot) updateMetadata(ctx context.Context, nodePath string, namespace string, jsonValue string, del bool) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		if b := tx.Bucket(bucketName); b != nil {
+			value := b.Get([]byte(nodePath))
+			if value != nil {
+				if n, err := s.unmarshal(value); err != nil {
+					return err
+				} else {
+					if del {
+						mm := n.GetMetaStore()
+						delete(mm, namespace)
+						n.SetMetaStore(mm)
+					} else {
+						n.SetRawMetadata(map[string]string{namespace: jsonValue})
+					}
+					// Now store back
+					return b.Put([]byte(nodePath), s.marshal(n))
+				}
+			} else {
+				return errors.WithMessage(errors.NodeNotFound, "cannot find node for updating metadata on "+nodePath)
+			}
+		} else {
+			return errors.WithMessage(errors.StatusInternalServerError, "cannot find internal bucket")
+		}
+	})
+
+}
+
+func (s *BoltSnapshot) marshal(node tree.N) []byte {
+	store := node.AsProto().Clone()
+	if !s.manualCollector && store.Type != merger.NodeType_METADATA {
+		store.SetMetaStore(nil)
+	}
+	data, _ := proto.Marshal(store)
+	return data
+}
+
+func (s *BoltSnapshot) unmarshal(value []byte) (tree.N, error) {
+	var n tree.Node
+	if e := proto.Unmarshal(value, &n); e != nil {
+		return nil, e
+	} else {
+		return &n, nil
+	}
+}

@@ -1,0 +1,59 @@
+{
+  "1": {
+    "other": "Dokumenty  Libre Office"
+  },
+  "10": {
+    "other": "Vytvořit prázdný dokument"
+  },
+  "11": {
+    "other": "Formát dokumentu"
+  },
+  "12": {
+    "other": "You can also <a>create an empty document</a>"
+  },
+  "13": {
+    "other": "Dokument bez názvu"
+  },
+  "14": {
+    "other": "Dokument byl vytvořen, nyní ho můžete upravovat"
+  },
+  "15": {
+    "other": "Neznámý formát dokumentu"
+  },
+  "2": {
+    "other": "Libre Office External browser window"
+  },
+  "ext.doc": {
+    "other": "Microsoft Word 97/2000/XP/2003"
+  },
+  "ext.docx": {
+    "other": "Microsoft Word 2007/2010/2013 XML"
+  },
+  "ext.odg": {
+    "other": "ODF kresba"
+  },
+  "ext.odp": {
+    "other": "ODF prezentace"
+  },
+  "ext.ods": {
+    "other": "ODF tabulky"
+  },
+  "ext.odt": {
+    "other": "ODF textový dokument"
+  },
+  "ext.ppt": {
+    "other": "Microsoft PowerPoint 97/2000/XP/2003"
+  },
+  "ext.pptx": {
+    "other": "Microsoft PowerPoint 2007/2010/2013 XML"
+  },
+  "ext.rtf": {
+    "other": "Formátovaný text"
+  },
+  "ext.xls": {
+    "other": "Microsoft Excel 97/2000/XP/2003"
+  },
+  "ext.xlsx": {
+    "other": "Microsoft Excel 2007/2010/2013 XML"
+  }
+}

@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+package service;
+
+option go_package="github.com/pydio/cells/v5/common/proto/service";
+
+import "google/protobuf/any.proto";
+import "google/protobuf/empty.proto";
+import "orm.proto";
+
+enum OperationType {
+    OR = 0;
+    AND = 1;
+}
+
+enum ResourcePolicyAction {
+    ANY = 0;
+    OWNER = 1;
+    READ = 2;
+    WRITE = 3;
+    EDIT_RULES = 4;
+}
+
+message Query {
+    repeated google.protobuf.Any SubQueries = 1;
+    OperationType Operation = 2;
+    ResourcePolicyQuery ResourcePolicyQuery = 3;
+    int64 Offset = 4;
+    int64 Limit = 5;
+    int32 groupBy = 6;
+    string SortField = 7;
+    bool SortDesc = 8;
+}
+
+message ResourcePolicyQuery {
+    repeated string Subjects = 1;
+    bool Empty = 2;
+    bool Any = 3;
+    string LeftIdentifier = 4;
+    ResourcePolicyAction Action = 5;
+}
+
+message ResourcePolicy {
+    option (orm.ormPolicy).enabled = true;
+
+    int64 id = 1                    [(orm.orm).gorm = {column: "id"; autoIncrement: true;}];
+    string Resource = 2             [(orm.orm).gorm = {column: "resource";type: "varchar(255)";index:',composite:res'}];
+    ResourcePolicyAction Action = 3 [(orm.orm).gorm = {column: "action";type: "varchar(255)"; size:255; serializer: "proto_enum"; index:',composite:ac'}];
+    string Subject = 4              [(orm.orm).gorm = {column: "subject";type:"varchar(255)"; size:255; index:',composite:sub'}];
+    enum PolicyEffect {
+        deny = 0;
+        allow = 1;
+    }
+    PolicyEffect Effect = 5         [(orm.orm).gorm = {column: "effect"; type:"varchar(10)"; serializer: "proto_enum"}];
+    string JsonConditions = 6       [(orm.orm).gorm = {column: "conditions";}];
+}
+
+service ServiceManager {
+    rpc Start(StartRequest) returns (StartResponse);
+    rpc Stop(StopRequest) returns (StopResponse);
+}
+
+message StartRequest {
+    string name = 1;
+}
+
+message StartResponse {
+    bool OK = 1;
+}
+
+message StopRequest {
+    string name = 1;
+}
+
+message StopResponse {
+    bool OK = 1;
+}
+
+// ModifyLoginRequest is used to send a ModifyLogin call
+message ModifyLoginRequest {
+    string OldLogin = 1;
+    string NewLogin = 2;
+    bool DryRun = 3;
+    map<string,string> Options = 4;
+}
+
+// ModifyLoginResponse indicates if operation succeeded and adds optional message
+message ModifyLoginResponse {
+    bool Success = 1;
+    repeated string Messages = 2;
+}
+
+// LoginModifier can be implemented by any service, thus indicating that it can handle a Login Modification request
+service LoginModifier {
+    rpc ModifyLogin(ModifyLoginRequest) returns (ModifyLoginResponse);
+}
+
+message Error {
+    string ID = 1;
+    uint32 Code = 2;
+    string Status = 3;
+    string Details = 4;
+}
+
+message ErrorDetail {
+    string Key = 1;
+    string StringValue = 2;
+    bytes JsonValue = 3;
+}
+
+message ErrorSentinel {
+    string Name = 1;
+}
+
+message MigrateRequest {
+    repeated string Services = 1;
+    string Version = 2;
+}
+
+message MigrateResponse {
+    bool Success = 1;
+}
+
+// MigrateService receives MigrateRequest to trigger one or more service migrations
+service MigrateService {
+    rpc Migrate(MigrateRequest) returns (MigrateResponse);
+}

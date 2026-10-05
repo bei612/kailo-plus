@@ -1,0 +1,80 @@
+{
+  "Jobs.Default.Thumbs": {
+    "other": "Extrahieren von Vorschaubildern und Exif-Daten"
+  },
+  "Jobs.Default.ThumbsCache": {
+    "other": "Thumbnail-Cache für gelöschte Dateien entfernen"
+  },
+  "Jobs.Default.Directories": {
+    "other": "Externe Verzeichnisse synchronisieren"
+  },
+  "Jobs.Default.PruneJobs": {
+    "other": "Aktuelle Aufträgen und Aufgaben im Taskmanager bereinigen"
+  },
+  "Jobs.Default.FakeLongJob": {
+    "other": "Simuliere lang laufenden Job (zu Testzwecken)"
+  },
+  "Jobs.Default.FakeUsersJob": {
+    "other": "Erstellung zufälliger Benutzer (zu Testzwecken)"
+  },
+  "Jobs.Default.FakeGrpcJob": {
+    "other": "Muster RPC-Job (zu Testzwecken)"
+  },
+  "Jobs.Default.ArchiveJobs": {
+    "other": "Automatische Archivierung des Änderungsdienstes"
+  },
+  "Jobs.Default.CleanUserData": {
+    "other": "Benutzerdaten beim Löschen bereinigen oder übertragen"
+  },
+  "Jobs.Default.CleanOrphanFiles": {
+    "other": "Löschen von verwaisten Dateien nach 24 Stunden"
+  },
+  "Jobs.Default.CleanExpiredACLs": {
+    "other": "Löschen abgelaufener ACLs nach 10 Tagen"
+  },
+  "Jobs.User.Compress": {
+    "other": "Auswahl wird komprimiert..."
+  },
+  "Jobs.User.Extract": {
+    "other": "Archiv wird entpackt..."
+  },
+  "Jobs.User.Delete": {
+    "other": "Auswahl wird im Hintergrund gelöscht..."
+  },
+  "Jobs.User.DirCopy": {
+    "other": "Ordner wird im Hintergrund kopiert..."
+  },
+  "Jobs.User.DirMove": {
+    "other": "Ordner wird im Hintergrund verschoben..."
+  },
+  "Jobs.User.FileCopy": {
+    "other": "Datei wird im Hintergrund kopiert..."
+  },
+  "Jobs.User.FileMove": {
+    "other": "Datei wird im Hintergrund verschoben..."
+  },
+  "Jobs.User.MultipleCopy": {
+    "other": "Auswahl wird im Hintergrund kopiert..."
+  },
+  "Jobs.User.MultipleMove": {
+    "other": "Auswahl wird im Hintergrund verschoben..."
+  },
+  "Jobs.User.MoveRecycle": {
+    "other": "Wird im Hintergrund in den Papierkorb verschoben..."
+  },
+  "Jobs.User.ResyncDS": {
+    "other": "Datenquelle {{.DsName}} synchronisieren und dann neue Dateien neu hashen"
+  },
+  "Jobs.User.Wget": {
+    "other": "Datei wird im Hintergrund heruntergeladen..."
+  },
+  "Jobs.User.DeletingItem": {
+    "other": "Lösche %s"
+  },
+  "Jobs.User.CopyingItem": {
+    "other": "Kopie von %s"
+  },
+  "Jobs.User.MovingItem": {
+    "other": "%s wird verschoben"
+  }
+}

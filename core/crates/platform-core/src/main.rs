@@ -58,6 +58,7 @@ mod platform_info;
 mod platform_keys;
 mod platform_views;
 mod publish_reconcile;
+mod resource_provision;
 mod role_reconcile;
 mod roles;
 mod roster_reconcile;
@@ -86,7 +87,17 @@ use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt().json().init();
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .json()
+                .with_filter(tracing_subscriber::filter::LevelFilter::INFO)
+                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                    telemetry::safe_log_target(metadata.target())
+                })),
+        )
+        .init();
 
     // 部署引导（DD-82、ADR-11）：不监听任何端口、不取 OpenBao 投递，做完即退出。
     // 只有能在 Core 容器内执行命令的人能走到这里。

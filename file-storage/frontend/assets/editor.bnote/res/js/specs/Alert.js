@@ -1,0 +1,70 @@
+/*
+ * Copyright 2025 Charles du Jeu - Abstrium SAS <team (at) pyd.io>
+ * This file is part of Pydio.
+ *
+ * Pydio is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Pydio is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with Pydio.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * The latest code can be found at <https://pydio.com>.
+ */
+
+import { defaultProps } from '@blocknote/core';
+import { createReactBlockSpec } from '@blocknote/react';
+import { RiAlertFill } from 'react-icons/ri';
+import { AlertBlock } from '../blocks/AlertBlock';
+
+export const AlertSpecType = 'alert';
+
+// The Alert block.
+export const Alert = createReactBlockSpec(
+    {
+        type: AlertSpecType,
+        propSchema: {
+            textAlignment: defaultProps.textAlignment,
+            textColor: defaultProps.textColor,
+            type: {
+                default: 'warning',
+                values: ['warning', 'error', 'info', 'success'],
+            },
+        },
+        content: 'inline',
+    },
+    {
+        render: (props) => <AlertBlock {...props} />,
+    },
+);
+
+export const alertBlockSpecs = { alert: Alert() };
+import { t } from '../messages';
+// Custom Slash Menu item to insert a block after the current one.
+export const insertAlertItem = (editor) => ({
+    title: t('alert-spec.title'),
+    onItemClick: () => {
+        const currentBlock = editor.getTextCursorPosition().block;
+        editor.insertBlocks(
+            [
+                {
+                    type: AlertSpecType,
+                    props: { type: 'warning' },
+                    content: [{ type: 'text', text: '', styles: {} }],
+                },
+            ],
+            currentBlock,
+            'after',
+        );
+    },
+    aliases: ['alert', 'al'],
+    group: editor.dictionary.slash_menu.emoji.group,
+    icon: <RiAlertFill size={18} />,
+    subtext: t('alert-spec.subtext'),
+});

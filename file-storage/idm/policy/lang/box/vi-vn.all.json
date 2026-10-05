@@ -1,0 +1,65 @@
+{
+  "PolicyGroup.PublicAccess.Title": {
+    "other": "Điểm truy cập công khai"
+  },
+  "PolicyGroup.PublicAccess.Description": {
+    "other": "Điểm truy cập mở giúp quá trình tìm thông tin các endpoints"
+  },
+  "PolicyGroup.PublicAccess.Rule1": {
+    "other": "Điểm truy cập mở giúp việc dò thông tin hệ thống (GET)"
+  },
+  "PolicyGroup.PublicAccess.Rule2": {
+    "other": "Điểm truy cập mở cho dịch vụ thay đổi mật khẩu (PUT, POST)"
+  },
+  "PolicyGroup.PublicAccess.Rule3": {
+    "other": "Điểm truy cập mở vào dịch vụ cung cấp giao diện (GET)"
+  },
+  "PolicyGroup.PublicAccess.Rule4": {
+    "other": "Điểm truy cập mở cho việc khởi tạo session cho giao diện (POST)"
+  },
+  "PolicyGroup.PublicInstall.Title": {
+    "other": "Đường truy cập vào dịch vụ cài đặt (cho lần chạy đầu tiên)"
+  },
+  "PolicyGroup.PublicInstall.Description": {
+    "other": "Điểm truy cập mở công khai cho lần khởi chạy đầu tiên"
+  },
+  "PolicyGroup.PublicInstall.Rule1": {
+    "other": "Điểm truy cập mở cho dịch vụ cài đặt (GET, POST)"
+  },
+  "PolicyGroup.LoggedUsers.Title": {
+    "other": "Truy cập dành cho User đã chứng thực và Admin"
+  },
+  "PolicyGroup.LoggedUsers.Description": {
+    "other": "Quản lý việc try cập vào rest APIs cho các loại user standard/shared/admin"
+  },
+  "PolicyGroup.LoggedUsers.Rule1": {
+    "other": "Các nhà quản trị có toàn quyền truy cập vào REST"
+  },
+  "PolicyGroup.LoggedUsers.Rule2": {
+    "other": "REST mặc định cho user đã chứng thực"
+  },
+  "PolicyGroup.LoggedUsers.Rule3": {
+    "other": "Danh sách và tìm kiếm theo metadata"
+  },
+  "PolicyGroup.LoggedUsers.Rule4": {
+    "other": "Cập nhật metadata"
+  },
+  "PolicyGroup.LoggedUsers.Rule5": {
+    "other": "Thiết lập Read-access trên dịch vụ frontend"
+  },
+  "PolicyGroup.LoggedUsers.Rule6": {
+    "other": "Cấp quyền ghi vào FrontendService ngoại trừ tải lên nhị phân toàn cầu"
+  },
+  "PolicyGroup.LoggedUsers.Rule7": {
+    "other": "Default REST accesses API V2 for a logged user"
+  },
+  "PolicyGroup.OIDC.Title": {
+    "other": "OpenIdConnect Operations"
+  },
+  "PolicyGroup.OIDC.Description": {
+    "other": "Bật/Tắt chứng thực user với máy chủ OpenID Connect"
+  },
+  "PolicyGroup.OIDC.Rule1": {
+    "other": "Điểm truy cập mặc định cho việc đăng nhập của tất cả các user"
+  }
+}

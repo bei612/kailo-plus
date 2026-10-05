@@ -1,0 +1,29 @@
+{
+  "Pages": {
+    "other": "Pages"
+  },
+  "Display Folders as Pages": {
+    "other": "Display Folders as Pages"
+  },
+  "ext": {
+    "other": "Notepad"
+  },
+  "Page Contents Metadata Name": {
+    "other": "Page Contents Metadata Name"
+  },
+  "Set a metadata namespace to store folder pages contents. Metadata must be created before using that.": {
+    "other": "Set a metadata namespace to store folder pages contents. Metadata must be created before using that."
+  },
+  "Is Page Metadata Name": {
+    "other": "Is Page Metadata Name"
+  },
+  "Set a metadata namespace to enable/disable the page behavior.": {
+    "other": "Set a metadata namespace to enable/disable the page behavior."
+  },
+  "Abstract Metadata Name": {
+    "other": "Abstract Metadata Name"
+  },
+  "Set a metadata namespace to be used as description for pages": {
+    "other": "Set a metadata namespace to be used as description for pages"
+  }
+}

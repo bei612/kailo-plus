@@ -1,0 +1,59 @@
+{
+  "1": {
+    "other": "Libre办公室文档"
+  },
+  "10": {
+    "other": "创建空文档"
+  },
+  "11": {
+    "other": "文档格式"
+  },
+  "12": {
+    "other": "您也可以 <a>创建空文档</a>"
+  },
+  "13": {
+    "other": "无标题文档"
+  },
+  "14": {
+    "other": "文档已创建，您现在可以编辑了"
+  },
+  "15": {
+    "other": "未知文档格式"
+  },
+  "2": {
+    "other": "Libre办公室外部浏览器窗口"
+  },
+  "ext.doc": {
+    "other": "微软Word 97/2000/XP/2003"
+  },
+  "ext.docx": {
+    "other": "微软Word 2007/2010/2013 XML"
+  },
+  "ext.odg": {
+    "other": "ODF 绘图"
+  },
+  "ext.odp": {
+    "other": "ODF 演示文稿"
+  },
+  "ext.ods": {
+    "other": "ODF 电子表格"
+  },
+  "ext.odt": {
+    "other": "ODF 文本文档"
+  },
+  "ext.ppt": {
+    "other": "微软PowerPoint 97/2000/XP/2003"
+  },
+  "ext.pptx": {
+    "other": "微软PowerPoint 2007/2010/2013 XML"
+  },
+  "ext.rtf": {
+    "other": "富文本"
+  },
+  "ext.xls": {
+    "other": "微软Excel 97/2000/XP/2003"
+  },
+  "ext.xlsx": {
+    "other": "微软Excel 2007/2010/2013 XML"
+  }
+}

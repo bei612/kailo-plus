@@ -1,0 +1,580 @@
+/*
+ * Copyright (c) 2018. Abstrium SAS <team (at) pydio.com>
+ * This file is part of Pydio Cells.
+ *
+ * Pydio Cells is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Pydio Cells is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with Pydio Cells.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * The latest code can be found at <https://pydio.com>.
+ */
+
+package grpc
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/pydio/cells/v5/common"
+	"github.com/pydio/cells/v5/common/auth"
+	"github.com/pydio/cells/v5/common/broker"
+	"github.com/pydio/cells/v5/common/middleware/keys"
+	"github.com/pydio/cells/v5/common/proto/idm"
+	pbservice "github.com/pydio/cells/v5/common/proto/service"
+	"github.com/pydio/cells/v5/common/proto/tree"
+	"github.com/pydio/cells/v5/common/runtime/manager"
+	"github.com/pydio/cells/v5/common/storage/sql/resources"
+	"github.com/pydio/cells/v5/common/telemetry/log"
+	"github.com/pydio/cells/v5/common/utils/cache"
+	cache_helper "github.com/pydio/cells/v5/common/utils/cache/helper"
+	json "github.com/pydio/cells/v5/common/utils/jsonx"
+	"github.com/pydio/cells/v5/common/utils/propagator"
+	"github.com/pydio/cells/v5/idm/meta"
+	"github.com/pydio/cells/v5/idm/meta/json_schema"
+)
+
+// Handler definition.
+type Handler struct {
+	idm.UnimplementedUserMetaServiceServer
+	tree.UnimplementedNodeProviderStreamerServer
+	pbservice.UnimplementedLoginModifierServer
+}
+
+var cacheConfig = cache.Config{
+	Prefix: "pydio.grpc.user-meta/data",
+}
+
+func NewHandler(ctx context.Context) *Handler {
+	h := &Handler{}
+	go func() {
+		<-ctx.Done()
+		h.Stop()
+	}()
+	return h
+}
+
+func (h *Handler) Stop() {
+	//_ = h.searchCachePool.Close(context.Background())
+}
+
+// UpdateUserMeta adds, updates or deletes user meta.
+func (h *Handler) UpdateUserMeta(ctx context.Context, request *idm.UpdateUserMetaRequest) (*idm.UpdateUserMetaResponse, error) {
+
+	dao, err := manager.Resolve[meta.DAO](ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	response := &idm.UpdateUserMetaResponse{}
+	namespaces, _ := dao.GetNamespaceDao().List(ctx)
+	nodes := make(map[string]*tree.Node)
+	sources := make(map[string]*tree.Node)
+	for _, metaData := range request.MetaDatas {
+		var prevValue string
+		if request.Operation == idm.UpdateUserMetaRequest_PUT {
+			// Check JsonValue is valid json
+			var data interface{}
+
+			if er := json.Unmarshal([]byte(metaData.GetJsonValue()), &data); er != nil {
+				return nil, fmt.Errorf("make sure to use JSON format for metadata: %s", er.Error())
+			}
+			// ADD / UPDATE
+			if newMeta, prev, err := dao.Set(ctx, metaData); err == nil {
+				response.MetaDatas = append(response.MetaDatas, newMeta)
+				prevValue = prev
+			} else {
+				return nil, err
+			}
+		} else {
+			// DELETE
+			if prev, err := dao.Del(ctx, metaData); err == nil {
+				prevValue = prev
+				// Remove this namespace from ResolvedNode as it will used for targets later on
+				if metaData.ResolvedNode != nil && metaData.ResolvedNode.MetaStore != nil {
+					delete(metaData.ResolvedNode.MetaStore, metaData.Namespace)
+				}
+			} else {
+				return nil, err
+			}
+		}
+		h.clearCacheForNode(ctx, metaData.NodeUuid)
+		var src *tree.Node
+		if s, o := sources[metaData.NodeUuid]; o {
+			src = s
+		} else {
+			// Create a fake container to publish just the changed metas and their previous value
+			src = &tree.Node{Uuid: metaData.NodeUuid, MetaStore: make(map[string]string)}
+			sources[metaData.NodeUuid] = src
+		}
+		// Attach previous value, and meta policies to Source node
+		src.MetaStore[metaData.Namespace] = prevValue
+		if pols, e := json.Marshal(metaData.Policies); e == nil {
+			src.MetaStore["pydio:meta-policies"] = string(pols)
+		}
+		if metaData.ResolvedNode != nil {
+			if metaData.ResolvedNode.MetaStore == nil {
+				metaData.ResolvedNode.MetaStore = map[string]string{}
+			}
+			nodes[metaData.NodeUuid] = metaData.ResolvedNode
+		}
+	}
+
+	go func(ctx context.Context) {
+		subjects, _ := auth.SubjectsForResourcePolicyQuery(ctx, nil)
+
+		for nodeId, source := range sources {
+
+			// Reload Metas
+			// Try to use resolved node or create fake one
+			nCtx := ctx
+			target := &tree.Node{Uuid: nodeId, MetaStore: make(map[string]string)}
+			if resolved, ok := nodes[nodeId]; ok {
+				if resolved.GetEtag() == common.NodeFlagEtagTemporary {
+					// SKIP EVENT - WE ARE DIRECTLY SETTING USER_META DURING NODE CREATION
+					continue
+				}
+				target = resolved
+				if len(resolved.AppearsIn) > 0 {
+					nCtx = propagator.WithAdditionalMetadata(ctx, map[string]string{
+						keys.CtxWorkspaceUuid: resolved.AppearsIn[0].WsUuid,
+					})
+				}
+			}
+			searchUserMetaAny, err := anypb.New(&idm.SearchUserMetaRequest{
+				NodeUuids: []string{target.Uuid},
+			})
+			if err != nil {
+				continue
+			}
+
+			resourceQueryAny, err := anypb.New(&pbservice.ResourcePolicyQuery{
+				Subjects: subjects,
+				Action:   pbservice.ResourcePolicyAction_READ,
+			})
+			if err != nil {
+				continue
+			}
+
+			query := &pbservice.Query{
+				SubQueries: []*anypb.Any{
+					searchUserMetaAny, resourceQueryAny,
+				},
+				Operation: pbservice.OperationType_AND,
+			}
+			metas, e := dao.Search(ctx, query)
+			if e != nil {
+				continue
+			}
+			for _, val := range metas {
+				if _, ok := namespaces[val.Namespace]; ok {
+					target.MetaStore[val.Namespace] = val.JsonValue
+				}
+			}
+			broker.MustPublish(nCtx, common.TopicMetaChanges, &tree.NodeChangeEvent{
+				Type:   tree.NodeChangeEvent_UPDATE_USER_META,
+				Source: source,
+				Target: target,
+			})
+		}
+		// Additional event - translate req operation to event operation
+		var evOp idm.UpdateUserMetaEvent_UserMetaOpEvent
+		switch request.Operation {
+		case idm.UpdateUserMetaRequest_PUT:
+			evOp = idm.UpdateUserMetaEvent_PUT
+		case idm.UpdateUserMetaRequest_DELETE:
+			evOp = idm.UpdateUserMetaEvent_DELETE
+		}
+		for _, metaData := range request.MetaDatas {
+			broker.MustPublish(ctx, common.TopicUserMetaDiffs, &idm.UpdateUserMetaEvent{
+				Operation: evOp,
+				UserMeta:  metaData,
+			})
+		}
+	}(context.WithoutCancel(ctx))
+
+	return response, nil
+
+}
+
+// SearchUserMeta retrieves meta based on various criteria.
+func (h *Handler) SearchUserMeta(request *idm.SearchUserMetaRequest, stream idm.UserMetaService_SearchUserMetaServer) error {
+
+	ctx := stream.Context()
+
+	dao, err := manager.Resolve[meta.DAO](ctx)
+	if err != nil {
+		return err
+	}
+
+	searchUserMetaAny, err := anypb.New(request)
+	if err != nil {
+		return err
+	}
+
+	if request.ResourceQuery == nil {
+		request.ResourceQuery = &pbservice.ResourcePolicyQuery{}
+	}
+	request.ResourceQuery.Action = pbservice.ResourcePolicyAction_READ
+	resourceQueryAny, err := anypb.New(request.ResourceQuery)
+	if err != nil {
+		return err
+	}
+
+	query := &pbservice.Query{
+		SubQueries: []*anypb.Any{
+			searchUserMetaAny, resourceQueryAny,
+		},
+		Operation: pbservice.OperationType_AND,
+	}
+
+	results, err := dao.Search(ctx, query)
+	if err != nil {
+		return err
+	}
+	for _, result := range results {
+		if e := stream.Send(&idm.SearchUserMetaResponse{UserMeta: result}); e != nil {
+			return e
+		}
+	}
+	return nil
+
+}
+
+// ReadNodeStream Implements ReadNodeStream to be a meta provider.
+func (h *Handler) ReadNodeStream(stream tree.NodeProviderStreamer_ReadNodeStreamServer) error {
+
+	ctx := stream.Context()
+
+	dao, err := manager.Resolve[meta.DAO](ctx)
+	if err != nil {
+		return err
+	}
+
+	subjects, e := auth.SubjectsForResourcePolicyQuery(context.WithoutCancel(ctx), nil)
+	if e != nil {
+		return e
+	}
+
+	for {
+		req, er := stream.Recv()
+		if req == nil {
+			break
+		}
+		if er != nil {
+			return er
+		}
+		node := req.Node
+		var results []*idm.UserMeta
+		var err error
+		if r, ok := h.resultsFromCache(ctx, node.Uuid, subjects); ok {
+			results = r
+		} else {
+			searchUserMetaAny, err := anypb.New(&idm.SearchUserMetaRequest{
+				NodeUuids: []string{node.Uuid},
+			})
+			if err != nil {
+				return err
+			}
+
+			resourceQueryAny, err := anypb.New(&pbservice.ResourcePolicyQuery{
+				Subjects: subjects,
+				Action:   pbservice.ResourcePolicyAction_READ,
+			})
+			if err != nil {
+				return err
+			}
+
+			query := &pbservice.Query{
+				SubQueries: []*anypb.Any{
+					searchUserMetaAny, resourceQueryAny,
+				},
+				Operation: pbservice.OperationType_AND,
+			}
+
+			results, err = dao.Search(ctx, query)
+			log.Logger(ctx).Debug(fmt.Sprintf("Got %d results for node", len(results)), node.ZapUuid())
+			if err == nil {
+				h.resultsToCache(ctx, node.Uuid, subjects, results)
+			}
+		}
+		if err == nil && len(results) > 0 {
+			for _, result := range results {
+				node.MetaStore[result.Namespace] = result.JsonValue
+			}
+		}
+		stream.Send(&tree.ReadNodeResponse{Node: node})
+	}
+
+	return nil
+}
+
+// UpdateUserMetaNamespace Update/Delete a namespace.
+func (h *Handler) UpdateUserMetaNamespace(ctx context.Context, request *idm.UpdateUserMetaNamespaceRequest) (*idm.UpdateUserMetaNamespaceResponse, error) {
+
+	dao, err := manager.Resolve[meta.DAO](ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	response := &idm.UpdateUserMetaNamespaceResponse{}
+	namespaceDAO := dao.GetNamespaceDao()
+	if request.Operation == idm.UpdateUserMetaNamespaceRequest_DELETE {
+		for _, metaNameSpace := range request.Namespaces {
+			if err := namespaceDAO.Del(ctx, metaNameSpace); err != nil {
+				return nil, err
+			} else {
+				broker.MustPublish(ctx, common.TopicIdmEvent, &idm.ChangeEvent{
+					Type:          idm.ChangeEventType_DELETE,
+					MetaNamespace: metaNameSpace,
+				})
+			}
+		}
+	}
+	if request.Operation == idm.UpdateUserMetaNamespaceRequest_PUT {
+		for _, metaNameSpace := range request.Namespaces {
+
+			if err, ups := namespaceDAO.Upsert(ctx, metaNameSpace); err != nil {
+				return nil, err
+			} else if ups {
+				broker.MustPublish(ctx, common.TopicIdmEvent, &idm.ChangeEvent{
+					Type:          idm.ChangeEventType_UPDATE,
+					MetaNamespace: metaNameSpace,
+				})
+			} else {
+				broker.MustPublish(ctx, common.TopicIdmEvent, &idm.ChangeEvent{
+					Type:          idm.ChangeEventType_CREATE,
+					MetaNamespace: metaNameSpace,
+				})
+			}
+			response.Namespaces = append(response.Namespaces, metaNameSpace)
+		}
+	}
+	return response, nil
+
+}
+
+// ListUserMetaNamespace List all namespaces from underlying DAO.
+func (h *Handler) ListUserMetaNamespace(request *idm.ListUserMetaNamespaceRequest, stream idm.UserMetaService_ListUserMetaNamespaceServer) error {
+
+	ctx := stream.Context()
+
+	dao, err := manager.Resolve[meta.DAO](ctx)
+	if err != nil {
+		return err
+	}
+
+	namespaceDAO := dao.GetNamespaceDao()
+	//TODO how to prefil MultiValue Choices with Entities and Values?
+	if results, err := namespaceDAO.List(ctx); err == nil {
+		for _, result := range results {
+			stream.Send(&idm.ListUserMetaNamespaceResponse{UserMetaNamespace: result})
+		}
+	}
+	return nil
+}
+
+func (h *Handler) ModifyLogin(ctx context.Context, req *pbservice.ModifyLoginRequest) (*pbservice.ModifyLoginResponse, error) {
+	dao, err := manager.Resolve[meta.DAO](ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return resources.ModifyLogin(ctx, dao, req)
+}
+
+func (h *Handler) GetFieldSchema(ctx context.Context, req *idm.GetFieldSchemaRequest) (*idm.JsonSchemaResponse, error) {
+	schema := json_schema.GetMetaSchema(req.FieldType)
+	return &idm.JsonSchemaResponse{
+		JsonSchema: schema,
+	}, nil
+}
+
+func (h *Handler) GetNamespaceSchema(ctx context.Context, req *idm.GetNamespaceSchemaRequest) (*idm.JsonSchemaResponse, error) {
+
+	dao, err := manager.Resolve[meta.DAO](ctx)
+	if err != nil {
+		return nil, err
+	}
+	namespaceDAO := dao.GetNamespaceDao()
+
+	if req.FieldType != "" && req.Namespace != "" {
+		schema, err := namespaceDAO.GetNamespaceSchemaSample(ctx, req.FieldType, req.Namespace, req.Format)
+		if err != nil {
+			return nil, err
+		}
+
+		return &idm.JsonSchemaResponse{
+			JsonSchema: schema,
+		}, nil
+	}
+
+	if schema, err := namespaceDAO.GetJSONSchema(ctx); err == nil {
+		return &idm.JsonSchemaResponse{
+			JsonSchema: schema,
+		}, nil
+	} else {
+		return nil, err
+	}
+}
+
+func (h *Handler) GetEntityValues(ctx context.Context, req *idm.GetMetaEntityValuesRequest) (*idm.MetaEntityValueResponse, error) {
+	dao, err := manager.Resolve[meta.DAO](ctx)
+	if err != nil {
+		return nil, err
+	}
+	entityDAO := dao.GetEntityValueDao()
+
+	values, err := entityDAO.GetEntityValues(ctx, req.EntityUuid)
+	if err != nil {
+		return nil, err
+	}
+
+	return &idm.MetaEntityValueResponse{
+		EntityValue: values,
+	}, nil
+}
+
+func (h *Handler) DeleteEntity(ctx context.Context, req *idm.GetMetaEntityValuesRequest) (*idm.DeleteEntityValuesResponse, error) {
+	dao, err := manager.Resolve[meta.DAO](ctx)
+	if err != nil {
+		return nil, err
+	}
+	evDAO := dao.GetEntityValueDao()
+
+	resp, err := evDAO.DeleteEntity(ctx, req.EntityUuid)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func (h *Handler) CreateEntity(ctx context.Context, req *idm.CreateEntityRequest) (*idm.CreateEntityResponse, error) {
+	dao, err := manager.Resolve[meta.DAO](ctx)
+	if err != nil {
+		return nil, err
+	}
+	evDAO := dao.GetEntityValueDao()
+
+	entity, err := evDAO.CreateEntity(ctx, req.Entity)
+	if err != nil {
+		return nil, err
+	}
+
+	return &idm.CreateEntityResponse{
+		Entity: entity,
+	}, nil
+}
+
+func (h *Handler) CreateEntityValues(ctx context.Context, req *idm.CreateEntityValueRequest) (*idm.CreateEntityValueResponse, error) {
+	dao, err := manager.Resolve[meta.DAO](ctx)
+	if err != nil {
+		return nil, err
+	}
+	evDAO := dao.GetEntityValueDao()
+
+	values, err := evDAO.CreateEntityValues(ctx, req.EntityValue)
+	if err != nil {
+		return nil, err
+	}
+
+	return &idm.CreateEntityValueResponse{
+		EntityValue: values,
+	}, nil
+}
+
+func (h *Handler) LinkMetaToEntityValue(ctx context.Context, req *idm.MetaToEntityValueRequest) (*idm.MetaToEntityValueResponse, error) {
+	dao, err := manager.Resolve[meta.DAO](ctx)
+	if err != nil {
+		return nil, err
+	}
+	evDAO := dao.GetEntityValueDao()
+	link, er := evDAO.LinkMetaValue(ctx, req.MetaUuid, req.EntityValueUuid)
+	if er != nil {
+		return nil, er
+	}
+	return &idm.MetaToEntityValueResponse{
+		Success: link,
+	}, nil
+}
+
+func (h *Handler) GetMetadata(ctx context.Context, req *idm.GetMetadataRequest) (*idm.UserMeta, error) {
+	dao, err := manager.Resolve[meta.DAO](ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	meta, err := dao.GetMeta(ctx, req.NodeUuid, req.Namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	return meta, nil
+}
+
+func (h *Handler) UnlinkMetaFromEntityValue(ctx context.Context, req *idm.MetaToEntityValueRequest) (*idm.MetaToEntityValueResponse, error) {
+	dao, err := manager.Resolve[meta.DAO](ctx)
+	if err != nil {
+		return nil, err
+	}
+	evDAO := dao.GetEntityValueDao()
+	unlink, er := evDAO.UnlinkMetaValue(ctx, req.MetaUuid, req.EntityValueUuid)
+	if er != nil {
+		return nil, er
+	}
+	return &idm.MetaToEntityValueResponse{
+		Success: unlink,
+	}, nil
+}
+
+func (h *Handler) resultsToCache(ctx context.Context, nodeId string, searchSubjects []string, results []*idm.UserMeta) {
+
+	sc, _ := cache_helper.ResolveCache(ctx, common.CacheTypeShared, cacheConfig)
+	if sc == nil {
+		return
+	}
+	key := fmt.Sprintf("%s-%s", nodeId, strings.Join(searchSubjects, "-"))
+	if data, e := json.Marshal(results); e == nil {
+		sc.Set(key, data)
+	}
+}
+
+func (h *Handler) resultsFromCache(ctx context.Context, nodeId string, searchSubjects []string) (results []*idm.UserMeta, found bool) {
+	sc, _ := cache_helper.ResolveCache(ctx, common.CacheTypeShared, cacheConfig)
+	if sc == nil {
+		return
+	}
+	key := fmt.Sprintf("%s-%s", nodeId, strings.Join(searchSubjects, "-"))
+	if data, ok := sc.GetBytes(key); ok {
+		if er := json.Unmarshal(data, &results); er == nil {
+			return results, true
+		}
+	}
+
+	return
+}
+
+func (h *Handler) clearCacheForNode(ctx context.Context, nodeId string) {
+	sc, _ := cache_helper.ResolveCache(ctx, common.CacheTypeShared, cacheConfig)
+	if sc == nil {
+		return
+	}
+	if clears, e := sc.KeysByPrefix(nodeId + "-"); e == nil {
+		for _, k := range clears {
+			_ = sc.Delete(k)
+		}
+	}
+
+}

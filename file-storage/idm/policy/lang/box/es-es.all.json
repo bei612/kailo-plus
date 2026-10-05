@@ -1,0 +1,65 @@
+{
+  "PolicyGroup.PublicAccess.Title": {
+    "other": "Acceso público"
+  },
+  "PolicyGroup.PublicAccess.Description": {
+    "other": "Acceso público para detectar endpoints"
+  },
+  "PolicyGroup.PublicAccess.Rule1": {
+    "other": "Acceso anónimo a la función de descubrimiento (GET)"
+  },
+  "PolicyGroup.PublicAccess.Rule2": {
+    "other": "Acceso anónimo a la función de restablecimiento de contraseña de los endpoints (PUT, POST)"
+  },
+  "PolicyGroup.PublicAccess.Rule3": {
+    "other": "Acceso anónimo a la función de carga del estado frontend (GET)"
+  },
+  "PolicyGroup.PublicAccess.Rule4": {
+    "other": "Acceso anónimo a función de iniciacialización de la sesión (POST)"
+  },
+  "PolicyGroup.PublicInstall.Title": {
+    "other": "Instalación (primera ejecución)"
+  },
+  "PolicyGroup.PublicInstall.Description": {
+    "other": "Los puntos finales de instalación requieren acceso público en la primera ejecución"
+  },
+  "PolicyGroup.PublicInstall.Rule1": {
+    "other": "Acceso anónimo para instalar puntos finales (GET, POST)"
+  },
+  "PolicyGroup.LoggedUsers.Title": {
+    "other": "Accesos de Usuario Administrador y Usuario Registrado"
+  },
+  "PolicyGroup.LoggedUsers.Description": {
+    "other": "Decida el modo en que los usuarios estándar/usuarios compartidos/usuarios administradores acceden a las APIs"
+  },
+  "PolicyGroup.LoggedUsers.Rule1": {
+    "other": "Acceso REST completo para el perfil de Admin"
+  },
+  "PolicyGroup.LoggedUsers.Rule2": {
+    "other": "Acceso REST predeterminado para usuarios registrados"
+  },
+  "PolicyGroup.LoggedUsers.Rule3": {
+    "other": "Listar y buscar metadatos definidos por el usuario"
+  },
+  "PolicyGroup.LoggedUsers.Rule4": {
+    "other": "Actualizar metadatos definidos por el usuario"
+  },
+  "PolicyGroup.LoggedUsers.Rule5": {
+    "other": "Acceso de lectura a todo FrontendService"
+  },
+  "PolicyGroup.LoggedUsers.Rule6": {
+    "other": "Acceso de escritura a FrontendService excepto subidas de binarios globales"
+  },
+  "PolicyGroup.LoggedUsers.Rule7": {
+    "other": "Default REST accesses API V2 for a logged user"
+  },
+  "PolicyGroup.OIDC.Title": {
+    "other": "Operaciones OpenIdConnect"
+  },
+  "PolicyGroup.OIDC.Description": {
+    "other": "Habilitar/Desahabilitar autentificación en OpenID Connect Server"
+  },
+  "PolicyGroup.OIDC.Rule1": {
+    "other": "Acceso por defecto al inicio de sesión para todos los usuarios"
+  }
+}

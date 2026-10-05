@@ -1,0 +1,179 @@
+{
+  "start": {
+    "other": "Почати"
+  },
+  "pause": {
+    "other": "Пауза"
+  },
+  "clear": {
+    "other": "Очистити"
+  },
+  "clear-header": {
+    "other": "Очистити список..."
+  },
+  "clear-finished": {
+    "other": "Завершені завантаження"
+  },
+  "clear-failed": {
+    "other": "Помилки завантаження"
+  },
+  "clear-all": {
+    "other": "Всі завантаження"
+  },
+  "list.show-more": {
+    "other": "Ще %d — показати всі"
+  },
+  "options.existing": {
+    "other": "Якщо файл із такою назвою вже існує:"
+  },
+  "options.existing.alert": {
+    "other": "Припинити завантаження та сповістити мене"
+  },
+  "options.existing.folders": {
+    "other": "Перейменувати теки, потім файли"
+  },
+  "options.existing.merge": {
+    "other": "Перейменовувати лише файли (об’єднувати теки)"
+  },
+  "options.existing.overwrite": {
+    "other": "Перезаписувати існуючий файл без попередження"
+  },
+  "confirm.rename.all": {
+    "other": "Перейменовувати спочатку теки, а потім — конфліктні файли"
+  },
+  "confirm.rename.merge": {
+    "other": "Перейменовувати лише файли (об’єднувати теки)"
+  },
+  "confirm.overwrite": {
+    "other": "Об’єднувати теки та перезаписувати файли"
+  },
+  "confirm.save.choice": {
+    "other": "Запам’ятати вибір для наступних завантажень"
+  },
+  "options": {
+    "other": "Налаштування завантаження"
+  },
+  "upload.forbidden": {
+    "other": "Ви не можете завантажити цей файл сюди"
+  },
+  "task.label": {
+    "other": "Завантаження файлів на сервер..."
+  },
+  "task.status.folders": {
+    "other": "Створення тек"
+  },
+  "task.message.folder-one": {
+    "other": "Створення однієї теки"
+  },
+  "task.message.folder-many": {
+    "other": "Створення тек (%s)"
+  },
+  "task.status.analyse": {
+    "other": "Підготовка файлів до завантаження"
+  },
+  "task.message.analyse-many": {
+    "other": "Обробка %s елементів..."
+  },
+  "task.message.analyse-one": {
+    "other": "Аналіз одного об’єкта"
+  },
+  "task.message.analyse-wait": {
+    "other": "Будь ласка, зачекайте..."
+  },
+  "task.status.ready": {
+    "other": "Готово до завантаження"
+  },
+  "task.status.paused": {
+    "other": "Завантаження призупинено"
+  },
+  "task.status.upload": {
+    "other": "Завантаження файлів"
+  },
+  "task.message.upload-progress": {
+    "other": "Завантаження: %s%"
+  },
+  "no-folders-support": {
+    "other": "Схоже, ваш браузер не підтримує перетягування тек"
+  },
+  "analyze.step": {
+    "other": "Підготовка файлів і тек до завантаження..."
+  },
+  "drophere": {
+    "other": "Перетягніть файли сюди"
+  },
+  "drop-or": {
+    "other": "або"
+  },
+  "drop-pick-file": {
+    "other": "огляд файлів"
+  },
+  "drop-pick-folder": {
+    "other": "оберіть теки"
+  },
+  "dialog.title": {
+    "other": "Завантаження"
+  },
+  "attempt": {
+    "other": "спроба"
+  },
+  "status.new": {
+    "other": "Очікує підтвердження"
+  },
+  "status.error": {
+    "other": "Сталася помилка"
+  },
+  "status.pause": {
+    "other": "Призупинено"
+  },
+  "status.analyse": {
+    "other": "Аналіз..."
+  },
+  "status.dir.new": {
+    "other": "Тека чекає на завантаження..."
+  },
+  "status.file.new": {
+    "other": "Файл, що очікує на завантаження..."
+  },
+  "status.dir.analyse": {
+    "other": "Аналіз теки..."
+  },
+  "status.file.analyse": {
+    "other": "Аналіз файлу..."
+  },
+  "status.dir.loading": {
+    "other": "Створення теки"
+  },
+  "status.file.loading": {
+    "other": "Завантаження файлу"
+  },
+  "status.dir.loaded": {
+    "other": "Теку створено"
+  },
+  "status.file.loaded": {
+    "other": "Файл завантажено"
+  },
+  "status.part.loaded": {
+    "other": "Частину завантажено"
+  },
+  "status.part.loading": {
+    "other": "Завантаження частини"
+  },
+  "status.multi-pause": {
+    "other": "Завершення поточної частини перед паузою"
+  },
+  "status.file.cannot-pause": {
+    "other": "Не можу призупинити дане завантаження"
+  },
+  "status.part.cannot-pause": {
+    "other": "Неможливо призупинити завантаження частини"
+  },
+  "status.error.aborted": {
+    "other": "перервано користувачем"
+  },
+  "status.error.403": {
+    "other": "ви не можете завантажити тут"
+  },
+  "status.error.422": {
+    "other": "квоту досягнуто, не можна завантажити більше"
+  }
+}

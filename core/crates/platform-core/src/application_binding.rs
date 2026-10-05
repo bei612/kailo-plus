@@ -14,6 +14,8 @@ use crate::governance::{Definition, Execution, Params, Refusal, Target};
 pub(crate) mod gateway;
 #[path = "application_binding_native.rs"]
 pub(crate) mod native;
+#[path = "application_binding_peer.rs"]
+pub(crate) mod peer;
 #[path = "application_binding_pep.rs"]
 pub(crate) mod pep;
 #[path = "application_binding_projection.rs"]
@@ -224,8 +226,8 @@ async fn approved_release(
     .fetch_optional(&mut *conn)
     .await?;
     let (manifest, schema, digest) = row.ok_or_else(blocked)?;
+    let connector = native::Connector::from_manifest(&manifest)?;
     if collab_bridge::limits::canonical_digest(&manifest) != digest
-        || manifest["executionConnector"]["mode"] != "REMOTE_ADAPTER"
         || !matches!(
             manifest["frontendDelivery"]["mode"].as_str(),
             Some("NONE" | "NATIVE_PAGE")
@@ -294,10 +296,10 @@ async fn approved_release(
     let service: bool = sqlx::query_scalar(
         "select exists(select 1 from identity.service_principal s join identity.principal p on p.id=s.principal_id
          where s.principal_id=$1 and p.tenant_id=$2 and p.kind='SERVICE' and p.status='ACTIVE'
-           and s.audience=$3 and (s.component_binding_id is null
+           and ($5 or s.audience=$3) and (s.component_binding_id is null
                 or (s.component_binding_kind='APPLICATION' and s.component_binding_id=$4)))",
     ).bind(request.service).bind(tenant).bind(text(&manifest["executionConnector"], "actionTokenAudience")?)
-     .bind(request.id).fetch_one(&mut *conn).await?;
+     .bind(request.id).bind(connector == native::Connector::ProtocolPeer).fetch_one(&mut *conn).await?;
     if !service {
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
@@ -328,6 +330,7 @@ fn enabled_operations(manifest: &Value, contract: &Value) -> Result<(), Refusal>
         {
             return Err(blocked());
         }
+        native::Connector::from_manifest(manifest)?.validate_action(matching[0])?;
     }
     Ok(())
 }
@@ -778,7 +781,10 @@ async fn finish_generation(
               and p.observation->>'workspaceId' is not distinct from b.workspace_id::text
               and p.observation->>'configDigest'=b.config_digest
               and p.observation->>'nativeInstanceRef'=b.native_instance_ref
-              and s.audience=r.manifest->'executionConnector'->>'actionTokenAudience'
+              and (s.audience=r.manifest->'executionConnector'->>'actionTokenAudience'
+                   or (r.manifest->'executionConnector'->>'mode'='PROTOCOL_PEER'
+                       and r.manifest->'executionConnector'->>'actionTokenAudience'='NONE'
+                       and p.observation->>'protocol'='MCP'))
               and (not exists(select 1 from catalog.resource tool join catalog.tool_definition d on d.resource_id=tool.id
                     where tool.application_binding_id=b.id and d.source='APPLICATION')
                    or (p.native_gateway_route_id is not null and p.gateway_config_hash is not null and p.gateway_state='ACTIVE'))
@@ -857,22 +863,42 @@ async fn finish_generation(
             where binding_id=$1 and native_gateway_route_id is not null and gateway_state is distinct from 'REVOKED')
             or exists(select 1 from projection.application_category where binding_id=$1)
             or exists(select 1 from admission.external_execution where component_binding_id=$1
-                and platform_status not in ('SUCCEEDED','FAILED','CANCELLED'))")
+                and platform_status not in ('SUCCEEDED','FAILED','CANCELLED'))
+            or exists(select 1 from admission.action_execution a join catalog.component_release r on r.id=a.component_release_id
+                where a.component_binding_kind='APPLICATION' and a.component_binding_id=$1 and a.dispatch_state='DISPATCHED'
+                  and r.manifest->'executionConnector'->>'mode'='PROTOCOL_PEER'
+                  and not exists(select 1 from audit.audit_event result
+                    where result.event_key=a.operation_id::text||':child:'||a.id::text||':protocol-result'
+                      and result.operation_id=a.operation_id and result.tenant_id=a.tenant_id
+                      and result.workspace_id is not distinct from a.workspace_id
+                      and result.action_key=a.action_key and result.action_version=a.action_version
+                      and result.target_id=a.target_id and result.parameter_hash=a.parameter_hash
+                      and result.event_type='RESULT' and result.result_code in ('SUCCEEDED','FAILED')))")
             .bind(ae.target_id).fetch_one(&mut *tx).await?;
         if pending {
             return Err(Refusal::Precondition(ReasonCode::ProjectionDelayed));
         }
         sqlx::query(
             "update catalog.resource set state='RETAINED_READ_ONLY',version=version+1
-            where application_binding_id=$1 and state in ('PROVISIONING','ACTIVE')",
+            where application_binding_id=$1 and state='ACTIVE'",
         )
         .bind(ae.target_id)
         .execute(&mut *tx)
         .await?;
+        // Only this lifecycle's unfinished Tool projections are ours to fail.
+        // An independent resource.create keeps its own Workflow responsibility;
+        // no unconfirmed native reference becomes retained content here.
+        sqlx::query("update catalog.resource r set state='FAILED',version=version+1
+            where r.application_binding_id=$1 and r.state='PROVISIONING' and r.type_key='tool.definition'
+              and exists(select 1 from catalog.tool_definition t where t.resource_id=r.id and t.source='APPLICATION')
+              and exists(select 1 from admission.action_execution original
+                where original.id=r.projection_action_execution_id and original.target_id=$1
+                  and original.action_key=$2)")
+            .bind(ae.target_id).bind(CREATE).execute(&mut *tx).await?;
         sqlx::query(
             "update catalog.tool_definition set status='DELETED' where source='APPLICATION'
             and status<>'DELETED' and resource_id in(select id from catalog.resource
-              where application_binding_id=$1 and state='RETAINED_READ_ONLY')",
+              where application_binding_id=$1 and state in ('RETAINED_READ_ONLY','FAILED'))",
         )
         .bind(ae.target_id)
         .execute(&mut *tx)
@@ -1027,7 +1053,7 @@ mod binding_admission_tests {
     #[test]
     fn selected_category_cannot_publish_an_unimplemented_execution_mode() {
         let contract = json!({"operationContracts":[{"contractKey":"files.read@v1"}]});
-        let manifest = json!({"actionDefinitions":[{"actionKey":"files.read@v1","executionMode":"SYNC","confirmationMode":"NONE"},
+        let manifest = json!({"executionConnector":{"mode":"REMOTE_ADAPTER","adapterProtocolRange":"1","actionTokenAudience":"isolated-adapter"},"actionDefinitions":[{"actionKey":"files.read@v1","executionMode":"SYNC","confirmationMode":"NONE"},
             {"actionKey":"optional.edit@v1","executionMode":"TEMPORAL","confirmationMode":"EXPLICIT"}]});
         enabled_operations(&manifest, &contract).unwrap();
         for (field, value) in [

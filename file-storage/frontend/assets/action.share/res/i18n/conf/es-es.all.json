@@ -1,0 +1,176 @@
+{
+  "Allow users to generate public links on files": {
+    "other": "Permite a los usuarios generar enlaces públicos"
+  },
+  "Allow users to generate public links on folders": {
+    "other": "Permite a los usuarios crear enlaces públicos de carpetas"
+  },
+  "Allow users to manually choose a hash for the generated links": {
+    "other": "Permite a los usuarios modificar el hash de los enlaces generados"
+  },
+  "Authorizations": {
+    "other": "Autorizaciones"
+  },
+  "Avoid labels duplication": {
+    "other": "Evitar duplicación de etiquetas"
+  },
+  "Background Color": {
+    "other": "Color de Fondo"
+  },
+  "Create QRCode": {
+    "other": "Crea Código QR"
+  },
+  "Create and display QRCode for shared link": {
+    "other": "Crea y muestra un código QR para el enlace compartido"
+  },
+  "Disable Folder Sharing": {
+    "other": "Desactivar Intercambio de Carpetas"
+  },
+  "Disallow users to create shared folders if a workspace already exists with the same label": {
+    "other": "No permitir a los usuarios crear carpetas compartidas si un workspace ya existe con la misma etiqueta"
+  },
+  "Do not allow users to create public links, only private links (password-protected)": {
+    "other": "No permitir a los usuarios crear enlaces públicos, sólo privados (con contraseña)"
+  },
+  "Download Button": {
+    "other": "Botón de Descarga"
+  },
+  "Download text": {
+    "other": "Texto de descarga"
+  },
+  "Download text w/ Pass": {
+    "other": "Texto de descarga con contraseña"
+  },
+  "Enable folder sharing": {
+    "other": "Activar el uso compartido de carpetas"
+  },
+  "Enable folder sharing (workspace and minisite)": {
+    "other": "Activar uso compartido de carpetas (workspace y minisitio)"
+  },
+  "Enable internal file sharing (sharing with users existing or temporary users)": {
+    "other": "Activar uso compartido de archivos internos (uso compartido con usuarios o usuarios temporales)"
+  },
+  "Enable internal folder sharing (sharing with users existing or temporary users)": {
+    "other": "Activar uso compartido de carpetas internas (uso compartido con usuarios o usuarios temporales)"
+  },
+  "Enable public link generation for files": {
+    "other": "Activar la generación de enlaces públicos para los archivos"
+  },
+  "Enable public links for files": {
+    "other": "Activar enlaces públicos para los archivos"
+  },
+  "Files: enable internal sharing": {
+    "other": "Archivos: activar uso compartido interno"
+  },
+  "Files: enable public links": {
+    "other": "Archivos: activar enlaces públicos"
+  },
+  "Folder Sharing": {
+    "other": "Compartir Carpeta"
+  },
+  "Folders: enable internal sharing": {
+    "other": "Carpetas: activar uso compartido interno"
+  },
+  "Folders: enable public links": {
+    "other": "Carpetas: activar enlaces públicos"
+  },
+  "Force External Mailer": {
+    "other": "Forzar Gestor de Correo Externo"
+  },
+  "Fork Events Forwarding": {
+    "other": "Fork Events Forwarding"
+  },
+  "Hash minimum length": {
+    "other": "Longitud Mínima del Hash"
+  },
+  "Hash user-editable": {
+    "other": "Hash editable por el usuario"
+  },
+  "If you detect performances issues while modifiyng files under deep trees, try activating that one. Please be sure of what you do, this may trigger a whole lot of php processes on the server.": {
+    "other": "Si tiene problemas de rendimiento al modificar archivos en directorios de muchos niveles, pruebe a activar esta opción. Asegurese de lo que está haciendo, esta opción puede activar muchos procesos php en el servidor."
+  },
+  "Image used as a button for downloading the file": {
+    "other": "Imagen usada como botón para descargar el archivo"
+  },
+  "Internal Sharing": {
+    "other": "Uso compartido Interno"
+  },
+  "Link Generation": {
+    "other": "Generación de Enlace"
+  },
+  "Mandatory prefix for users created temporary users login": {
+    "other": "Prefijo obligatorio para usuarios temporales"
+  },
+  "Maximum download limit for file, 0 = unlimited": {
+    "other": "Número máximo de descargas por archivo, 0 = ilimitado"
+  },
+  "Maximum file download limit": {
+    "other": "Límite máximo de descarga de archivos"
+  },
+  "Maximum file expiration limit": {
+    "other": "Límite máximo de expiración de archivos"
+  },
+  "Maximum share expiration limit for file in days, 0 = unlimited": {
+    "other": "Tiempo de expiración máximo para archivos compartidos en dias, 0 = ilimitado"
+  },
+  "Minimum length of the generated hash": {
+    "other": "Longitud mínima del hash generado"
+  },
+  "Minisite": {
+    "other": "Minisitio"
+  },
+  "Minisites and Workspaces": {
+    "other": "Minisitios y Workspaces"
+  },
+  "Minisites only": {
+    "other": "Sólo Minisitios"
+  },
+  "Page Title": {
+    "other": "Título de la Página"
+  },
+  "Set password mandatory": {
+    "other": "Establecer contraseña obligatoria"
+  },
+  "Sharing parameters and authorizations": {
+    "other": "Sharing parameters and authorizations"
+  },
+  "Share page background color.": {
+    "other": "Compartir color de fondo de la página."
+  },
+  "Share page text color.": {
+    "other": "Compartir color de texto de página."
+  },
+  "Share page text shadow color.": {
+    "other": "Compartir color de sombra de texto de página."
+  },
+  "Shared users configurations": {
+    "other": "Configuración de usuario compartida"
+  },
+  "Sharing Features": {
+    "other": "Funcionalidades de Uso Compartido"
+  },
+  "Text Color": {
+    "other": "Color de Texto"
+  },
+  "Text Shadow": {
+    "other": "Sombra de Texto"
+  },
+  "Tmp users prefix": {
+    "other": "Prefijo de usuarios Tmp"
+  },
+  "Use Rewrite Rule": {
+    "other": "Usar regla de reescritura"
+  },
+  "Use external mailer for invitations": {
+    "other": "Usar gestor de correo externo para invitaciones"
+  },
+  "Use web server RewriteEngine mechanism to generate prettier URLs": {
+    "other": "Usa la funcionalidad RewriteEngine del servidor web para generar URLs más legibles"
+  },
+  "Weblink Page": {
+    "other": "Página de enlace web"
+  },
+  "Workspaces only": {
+    "other": "Sólo Workspaces"
+  }
+}

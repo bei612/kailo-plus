@@ -1,0 +1,37 @@
+{
+  "Auth.PruneJob.Title": {
+    "other": "Remover tokens revogados e chaves de redefinição de senha expiradas"
+  },
+  "Auth.PruneJob.Revoked": {
+    "one": "Excluído {{.Count}} token revogado expirado",
+    "other": "Excluído {{.Count}} tokens revogados expirados"
+  },
+  "Auth.PruneJob.ResetToken": {
+    "one": "Excluído {{.DeletionCount}} token de redefinição de senha expirado",
+    "other": "Excluído {{.DeletionCount}} tokens de redefinição de senha expirada"
+  },
+  "ResetPassword.Err.EmailNotFound": {
+    "other": "Endereço de e-mail correspondente não encontrado"
+  },
+  "ResetPassword.Success.EmailSent": {
+    "other": "Um e-mail foi enviado para você com mais instruções"
+  },
+  "ResetPassword.Err.Unknown": {
+    "other": "Ops, algo errado aconteceu - Por favor, reinicie o processo de redefinição de senha"
+  },
+  "ResetPassword.Err.TokenExpired": {
+    "other": "Token expirado, por favor, siga novamente o processo de redefinição de senha!"
+  },
+  "ResetPassword.Err.TokenNotCorresponding": {
+    "other": "Token não corresponde a este identificador de usuário!"
+  },
+  "ResetPassword.Err.UserNotFound": {
+    "other": "Usuário correspondente não encontrado!"
+  },
+  "ResetPassword.Err.ResetFailed": {
+    "other": "Ocorreu um erro ao tentar definir a nova senha!"
+  },
+  "ResetPassword.Success.ResetFinished": {
+    "other": "Sua senha foi redefinida com sucesso, agora você pode voltar para a página de login!"
+  }
+}

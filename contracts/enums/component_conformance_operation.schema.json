@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enums/component_conformance_operation.schema.json",
+  "title": "ComponentConformanceOperation",
+  "description": "原登记套件的真实操作种类；MCP 方法不属于 AdapterProtocolOperation，也不要求原生 peer 实现 Adapter API。",
+  "type": "string",
+  "enum": ["handshake", "validate_binding", "resolve_native_scope", "execute", "observe", "cancel", "reconcile", "query_revision", "extract_usage", "map_native_status_error", "mcp_initialize", "mcp_list", "mcp_call"]
+}

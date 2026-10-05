@@ -1,0 +1,179 @@
+{
+  "start": {
+    "other": "Bắt đầu"
+  },
+  "pause": {
+    "other": "Tạm dừng"
+  },
+  "clear": {
+    "other": "Xóa"
+  },
+  "clear-header": {
+    "other": "Xoá danh sách..."
+  },
+  "clear-finished": {
+    "other": "Tải lên thành công"
+  },
+  "clear-failed": {
+    "other": "Tải lên không thành công"
+  },
+  "clear-all": {
+    "other": "Tất cả các lần chuyển"
+  },
+  "list.show-more": {
+    "other": "%d nhiều hơn - hiển thị tất cả"
+  },
+  "options.existing": {
+    "other": "Nếu một tệp có cùng tên tồn tại:"
+  },
+  "options.existing.alert": {
+    "other": "Dừng tải lên và thông báo cho tôi"
+  },
+  "options.existing.folders": {
+    "other": "Đổi tên thư mục rồi đến tập tin"
+  },
+  "options.existing.merge": {
+    "other": "Chỉ đổi tên tệp (hợp nhất thư mục)"
+  },
+  "options.existing.overwrite": {
+    "other": "Mặc định ghi đè tập tin nếu đã tồn tại"
+  },
+  "confirm.rename.all": {
+    "other": "Đổi tên các thư mục, sau đó đổi tên các tệp xung đột"
+  },
+  "confirm.rename.merge": {
+    "other": "Chỉ đổi tên tệp (hợp nhất thư mục)"
+  },
+  "confirm.overwrite": {
+    "other": "Hợp nhất các thư mục và ghi đè tệp tin"
+  },
+  "confirm.save.choice": {
+    "other": "Lưu sự lựa chọn cho lần tải lên tiếp theo"
+  },
+  "options": {
+    "other": "Tùy chọn tải lên"
+  },
+  "upload.forbidden": {
+    "other": "Bạn không được phép tải lên tập tin này ở đây"
+  },
+  "task.label": {
+    "other": "Đang tải tệp lên máy chủ..."
+  },
+  "task.status.folders": {
+    "other": "Tạo Thư mục"
+  },
+  "task.message.folder-one": {
+    "other": "Đang tạo thư mục"
+  },
+  "task.message.folder-many": {
+    "other": "Đang tạo %s thư mục"
+  },
+  "task.status.analyse": {
+    "other": "Đang chuẩn bị cho việc upload"
+  },
+  "task.message.analyse-many": {
+    "other": "Đang phân tích %s tệp..."
+  },
+  "task.message.analyse-one": {
+    "other": "Đang phân tích một tệp"
+  },
+  "task.message.analyse-wait": {
+    "other": "Vui lòng chờ..."
+  },
+  "task.status.ready": {
+    "other": "Sẵn sàng để tải lên"
+  },
+  "task.status.paused": {
+    "other": "Upload đang tạm dừng"
+  },
+  "task.status.upload": {
+    "other": "Tải lên tập tin"
+  },
+  "task.message.upload-progress": {
+    "other": "Đang tải lên \"%s\""
+  },
+  "no-folders-support": {
+    "other": "Có vẻ như trình duyệt của bạn không hỗ trợ kéo thả thư mục"
+  },
+  "analyze.step": {
+    "other": "Chuẩn bị tập tin và thư mục để tải lên..."
+  },
+  "drophere": {
+    "other": "Thả các tập tin ở đây"
+  },
+  "drop-or": {
+    "other": "hoặc"
+  },
+  "drop-pick-file": {
+    "other": "duyệt các tệp tin"
+  },
+  "drop-pick-folder": {
+    "other": "duyệt các thư mục"
+  },
+  "dialog.title": {
+    "other": "Transfers"
+  },
+  "attempt": {
+    "other": "attempt"
+  },
+  "status.new": {
+    "other": "Đang chờ"
+  },
+  "status.error": {
+    "other": "Đã xảy ra lỗi"
+  },
+  "status.pause": {
+    "other": "Đã tạm dừng"
+  },
+  "status.analyse": {
+    "other": "Đang phân tích..."
+  },
+  "status.dir.new": {
+    "other": "Thư mục đang chờ để tải lên..."
+  },
+  "status.file.new": {
+    "other": "Tệp đang chờ để tải lên..."
+  },
+  "status.dir.analyse": {
+    "other": "Đang phân tích thư mục..."
+  },
+  "status.file.analyse": {
+    "other": "Đang phân tích tệp..."
+  },
+  "status.dir.loading": {
+    "other": "Đang tạo thư mục"
+  },
+  "status.file.loading": {
+    "other": "Đang tải lên tập tin"
+  },
+  "status.dir.loaded": {
+    "other": "Thư mục đã tạo"
+  },
+  "status.file.loaded": {
+    "other": "Tệp tin đã được tải lên"
+  },
+  "status.part.loaded": {
+    "other": "Đoạn tệp đã tải lên"
+  },
+  "status.part.loading": {
+    "other": "Đang tải phân đoạn tệp lên"
+  },
+  "status.multi-pause": {
+    "other": "Chấm dứt phân đoạn tệp hiện tại trước khi tạm dừng"
+  },
+  "status.file.cannot-pause": {
+    "other": "Không thể tạm dừng chuyển giao này"
+  },
+  "status.part.cannot-pause": {
+    "other": "Không thể tạm dừng chuyển đoạn này"
+  },
+  "status.error.aborted": {
+    "other": "đã bị dừng bởi người dùng"
+  },
+  "status.error.403": {
+    "other": "bạn không được phép tải lên tập tin này ở đây"
+  },
+  "status.error.422": {
+    "other": "không thể tải lên thêm được vi bạn đã dùng quá giới hạn dung lượng lưu trữ"
+  }
+}

@@ -1,0 +1,12 @@
+version: v1
+name: local/options/orm
+lint:
+  use:
+    - DEFAULT
+breaking:
+  use:
+    - FILE
+deps:
+  - buf.build/googleapis/googleapis
+  - buf.build/grpc-ecosystem/grpc-gateway
+  - buf.build/torq/go-proto-validators

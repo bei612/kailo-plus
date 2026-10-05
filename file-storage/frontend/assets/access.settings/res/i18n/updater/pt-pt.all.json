@@ -1,0 +1,125 @@
+{
+  "title": {
+    "other": "Atualizações do Software"
+  },
+  "legend": {
+    "other": "Atualizações binárias no aplicativo"
+  },
+  "current.version": {
+    "other": "Versão atual"
+  },
+  "confirm.update": {
+    "other": "Tem certeza que deseja realizar a atualização?"
+  },
+  "packages.available": {
+    "other": "Os seguintes pacotes estão disponíveis para atualização"
+  },
+  "checking": {
+    "other": "Procurando por atualizações disponíveis..."
+  },
+  "noupdates": {
+    "other": "Nenhuma atualização necessária detectada: clique para executar uma nova verificação."
+  },
+  "alert.noselect": {
+    "other": "Por favor, selecione pelo menos um pacote!"
+  },
+  "package.released": {
+    "other": "Lançado"
+  },
+  "package.revision": {
+    "other": "Revisão"
+  },
+  "check.legend": {
+    "other": "Clique para verificar se há novas atualizações"
+  },
+  "check.button": {
+    "other": "Verificar agora"
+  },
+  "package.version": {
+    "other": "Versão"
+  },
+  "package.label": {
+    "other": "Rótulo"
+  },
+  "package.details": {
+    "other": "Detalhes"
+  },
+  "package.changelog": {
+    "other": "Mostrar Changelog"
+  },
+  "start.update": {
+    "other": "Iniciar Atualização"
+  },
+  "configs.save": {
+    "other": "Salvar configurações"
+  },
+  "upgrade.ed.title": {
+    "other": "Atualizar para Cells Enterprise"
+  },
+  "upgrade.ed.button.next": {
+    "other": "Próximo"
+  },
+  "upgrade.ed.button.start": {
+    "other": "Iniciar"
+  },
+  "upgrade.ed.button.cancel": {
+    "other": "Cancelar"
+  },
+  "upgrade.ed.button.install": {
+    "other": "Instalar agora"
+  },
+  "upgrade.ed.button.close": {
+    "other": "Fechar"
+  },
+  "upgrade.ed.eula.title": {
+    "other": "Aceite o Contrato de Licença do Usuário Final"
+  },
+  "upgrade.ed.eula.check": {
+    "other": "Aceito, assim, esta EULA"
+  },
+  "upgrade.ed.key.title": {
+    "other": "Informe uma chave de licença válida (fornecida por um representante de vendas Pydio)"
+  },
+  "upgrade.ed.key.legend": {
+    "other": "Se você não possui uma, você pode receber uma chave de teste entrando em contato com as vendas usando o botão abaixo ou diretamente via "
+  },
+  "upgrade.ed.key.hint": {
+    "other": "Cole a chave fornecida aqui..."
+  },
+  "upgrade.ed.version.loading": {
+    "other": "Procurando pela versão mais próxima do Cells Enterprise"
+  },
+  "upgrade.ed.version.error": {
+    "other": "Não é possível carregar versões disponíveis para Cells Enterprise!"
+  },
+  "upgrade.ed.version.error.string": {
+    "other": "Erro foi"
+  },
+  "upgrade.ed.version.available": {
+    "other": "Pronto para instalar %s"
+  },
+  "upgrade.ed.version.released": {
+    "other": "Lançado"
+  },
+  "upgrade.ed.version.arch": {
+    "other": "Arquitetura"
+  },
+  "upgrade.ed.version.description": {
+    "other": "Descrição"
+  },
+  "upgrade.ed.version.legend": {
+    "other": "Ao clicar em Avançar irá baixar esta nova versão e substituir o binário do Cells atual. Um backup do executável original será feito dentro da sua pasta de configuração de células (sob %s), se você precisar recuperá-lo."
+  },
+  "upgrade.ed.version.nomatch": {
+    "other": "Não foi possível encontrar uma versão similar para o Cells Enterprise"
+  },
+  "upgrade.ed.version.nomatch.legend1": {
+    "other": "Para evitar a mistura de atualização de repositório e binários, recomendamos a atualização do Cells Home para Enterprise da mesma versão."
+  },
+  "upgrade.ed.version.nomatch.legend2": {
+    "other": "Por favor, primeiro atualize sua versão atual para um dos seguintes e, em seguida, tente atualizar novamente para o Cells Enterprise."
+  },
+  "upgrade.ed.installing": {
+    "other": "Instalando atualização, aguarde..."
+  }
+}

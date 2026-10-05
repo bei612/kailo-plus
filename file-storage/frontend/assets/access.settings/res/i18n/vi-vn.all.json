@@ -1,0 +1,563 @@
+{
+  "1": {
+    "other": "Dữ liệu cấu hình"
+  },
+  "10": {
+    "other": "Meta Sources"
+  },
+  "100": {
+    "other": "Các thiết lập chung cho plugins '%s'"
+  },
+  "101": {
+    "other": "Tên"
+  },
+  "102": {
+    "other": "User name"
+  },
+  "103": {
+    "other": "Mô tả"
+  },
+  "104": {
+    "other": "Bật"
+  },
+  "105": {
+    "other": "Tự động kiểm tra"
+  },
+  "106": {
+    "other": "User name duy nhất"
+  },
+  "107": {
+    "other": "Các thiết lập của plugin"
+  },
+  "108": {
+    "other": "Documentation"
+  },
+  "109": {
+    "other": "Các thiết lập cơ bản"
+  },
+  "11": {
+    "other": "Thêm mới source"
+  },
+  "110": {
+    "other": "Workspaces và Người dùng"
+  },
+  "111": {
+    "other": "Backend"
+  },
+  "112": {
+    "other": "<b>Mặc định gán role này </b> cho các user được tạo mới từ lúc này."
+  },
+  "113": {
+    "other": "Role đã được thay đổi thành công"
+  },
+  "114": {
+    "other": "Áp dụng cho"
+  },
+  "115": {
+    "other": "Scheme"
+  },
+  "116": {
+    "other": "Tên Template"
+  },
+  "117": {
+    "other": "Template Driver"
+  },
+  "118": {
+    "other": "Thêm group"
+  },
+  "119": {
+    "other": "Thêm group cho user"
+  },
+  "12": {
+    "other": "Meta Plugin"
+  },
+  "120": {
+    "other": "Phiên bản Pro"
+  },
+  "121": {
+    "other": "Yêu cầu dịch vụ trợ giúp cho việc cài đặt"
+  },
+  "122": {
+    "other": "Thiết lập hệ thống"
+  },
+  "123": {
+    "other": "Các plugins khác"
+  },
+  "124": {
+    "other": "Source"
+  },
+  "125": {
+    "other": "Alias"
+  },
+  "126": {
+    "other": "Bạn có chắc khi muốn xóa các dữ liệu vừa chọn?"
+  },
+  "127": {
+    "other": "Chú ý, bạn vui lòng không sử dụng các ký tự đặc biệt, tên đăng nhập nên được tạo với '%s'"
+  },
+  "128": {
+    "other": "Xóa group thành công"
+  },
+  "129": {
+    "other": "Refresh bộ nhớ cache của plugins"
+  },
+  "13": {
+    "other": "Bạn có chắc muốn xóa source này?"
+  },
+  "130": {
+    "other": "Xóa bộ nhớ cache của plugins. Việc này là cần thiết khi bạn thêm mới plugins."
+  },
+  "131": {
+    "other": "Bộ nhớ cache của plugins đã được xóa thành công!"
+  },
+  "132": {
+    "other": "Bộ nhớ cache đã được xóa, tuy nhiên bạn đang chạy ở chế độ bỏ qua cache (SKIP_CACHE)."
+  },
+  "133": {
+    "other": "Các thiết lập cơ bản"
+  },
+  "134": {
+    "other": "Thêm/bớt các plugins chức năng. Xin vui lòng kiểm tra plugin có hoạt tốt hay không. Thiết lập các tham số chung cho plugins."
+  },
+  "135": {
+    "other": "Bật/Tắt các plugins quan trọng (auth, conf, mail,...), xin vui lòng kiểm tra xem chúng có hoạt động tốt hay không. Việc thiết lập thông số cho các plugins này được làm ở Các Cấu Hình Chính"
+  },
+  "136": {
+    "other": "Cấu hình chung cho các plugins chính và cho mỗi plugin. Bật/Tắt plugins"
+  },
+  "137": {
+    "other": "Quản lý và giám sát truy cập vào ứng dụng: Ai đã truy cập vào dữ liệu nào, tạo mới user, roles ..."
+  },
+  "138": {
+    "other": "Tạo mới và xóa các workspace, thêm tính năng bằng cách thêm các meta sources."
+  },
+  "139": {
+    "other": "Quản lý users và groups"
+  },
+  "14": {
+    "other": "True"
+  },
+  "140": {
+    "other": "Thiết lập profiles và áp dụng cho tất cả các users."
+  },
+  "141": {
+    "other": "Công cụ để quản lý trạng thái của ứng dụng."
+  },
+  "142": {
+    "other": "Giám sát toàn bộ hoạt động của server"
+  },
+  "143": {
+    "other": "Xin vui lòng đọc thông tin tổng hợp về trạng thái của ứng dụng lúc khởi động"
+  },
+  "144": {
+    "other": "Developer Resources"
+  },
+  "145": {
+    "other": "Các tài liệu chung dành cho các developers"
+  },
+  "146": {
+    "other": "Actions API"
+  },
+  "147": {
+    "other": "Danh dách tất cả các actions và thông số của nó từ tất cả các plugins"
+  },
+  "148": {
+    "other": "Hooks Definitions"
+  },
+  "149": {
+    "other": "Danh sách các hooks, thông tin về hooks, cách thức tương tác của hooks với các plugins."
+  },
+  "15": {
+    "other": "False"
+  },
+  "150": {
+    "other": "Chọn repository"
+  },
+  "151": {
+    "other": "Root Group"
+  },
+  "152": {
+    "other": "Root Group Role"
+  },
+  "153": {
+    "other": "Áp dụng cho tất cả users trong groups"
+  },
+  "154": {
+    "other": "Repository Templates"
+  },
+  "155": {
+    "other": "Access Drivers"
+  },
+  "156": {
+    "other": "Standard"
+  },
+  "157": {
+    "other": "Administrator"
+  },
+  "158": {
+    "other": "Chia sẻ"
+  },
+  "159": {
+    "other": "Khách"
+  },
+  "160": {
+    "other": "Nhóm đã được tạo thành công"
+  },
+  "161": {
+    "other": "Bạn đang tài khoản của mình vào trong một nhóm và bạn sẽ mất quyền super-admininistrative. Vui lòng đăng nhập vào tài khoản khác nếu bạn thực sự muốn làm điều đó. Hủy bỏ."
+  },
+  "162": {
+    "other": "Bạn không được phép cập nhật user %s"
+  },
+  "163": {
+    "other": "Sắp xếp lại roles cho user %s"
+  },
+  "164": {
+    "other": "Cập nhật roles thành công"
+  },
+  "165": {
+    "other": "Lưu thành công thiết lập cá nhân"
+  },
+  "166": {
+    "other": "Thiết lập thành công khóa (%1) cho user (%2)"
+  },
+  "167": {
+    "other": "Mở khóa user (%s) thành công"
+  },
+  "168": {
+    "other": "%1 users đã được chuyển đến group %2"
+  },
+  "169": {
+    "other": "Không có user nào đã di chuyển, hình như có gì chưa đúng!"
+  },
+  "17": {
+    "other": "Ngày"
+  },
+  "170": {
+    "other": "Bật %1 (%2)"
+  },
+  "171": {
+    "other": "Import Users (trên bản Enterprise)"
+  },
+  "172": {
+    "other": "Danh sách services"
+  },
+  "173": {
+    "other": "Thông tin về các dịch vụ backend của Pydio"
+  },
+  "174": {
+    "other": "Identity Management"
+  },
+  "175": {
+    "other": "Quản lý dữ liệu"
+  },
+  "176": {
+    "other": "Security Policies"
+  },
+  "177": {
+    "other": "Security Policies"
+  },
+  "18": {
+    "other": "I.P."
+  },
+  "19": {
+    "other": "Level"
+  },
+  "2": {
+    "other": "Thành viên"
+  },
+  "20": {
+    "other": "User"
+  },
+  "21": {
+    "other": "Hành động"
+  },
+  "22": {
+    "other": "Params"
+  },
+  "22a": {
+    "other": "Thông tin chi tiết"
+  },
+  "23": {
+    "other": "Tên dùng để test"
+  },
+  "24": {
+    "other": "Dữ liệu dùng để test"
+  },
+  "25": {
+    "other": "Workspaces Access"
+  },
+  "26": {
+    "other": "Thay đổi mật khẩu"
+  },
+  "27": {
+    "other": "Quyền quản trị"
+  },
+  "28": {
+    "other": "User có quyền quản trị?"
+  },
+  "29": {
+    "other": "Read"
+  },
+  "2b": {
+    "other": "Quản lý dữ liệu"
+  },
+  "3": {
+    "other": "Workspaces"
+  },
+  "30": {
+    "other": "Ghi"
+  },
+  "32": {
+    "other": "Access Drivers"
+  },
+  "33": {
+    "other": "Đang tải..."
+  },
+  "34": {
+    "other": "Bạn có chắc chắn muốn xóa user này? Hoạt động này là không thể đảo ngược!"
+  },
+  "35": {
+    "other": "Bạn có chắc chắn muốn xóa user này? Hoạt động này là không thể đảo ngược!"
+  },
+  "36": {
+    "other": "Bạn chưa điền các thông tin bắt buộc!"
+  },
+  "37": {
+    "other": "Chú ý, mật khẩu và chuỗi xác nhận khác nhau!"
+  },
+  "38": {
+    "other": "Xin vui lòng nhập tên truy cập!"
+  },
+  "39": {
+    "other": "Vui lòng điền cả hai trường mật khẩu!"
+  },
+  "3b": {
+    "other": "Storage"
+  },
+  "3c": {
+    "other": "Template Paths"
+  },
+  "4": {
+    "other": "Logs"
+  },
+  "40": {
+    "other": "Vui lòng kiểm tra thư để xác nhận!"
+  },
+  "41": {
+    "other": "Datasource Nodes"
+  },
+  "42": {
+    "other": "Vui lòng chọn một driver!"
+  },
+  "43": {
+    "other": "Tên này đã tồn tại. Hãy chọn một tên khác!"
+  },
+  "44": {
+    "other": "User đã được tạo thành công"
+  },
+  "45": {
+    "other": "User vừa được chuyển thành admin "
+  },
+  "46": {
+    "other": "Quyền của user vừa được chuyển "
+  },
+  "47": {
+    "other": "Thông tin của user vừa được lưu "
+  },
+  "48": {
+    "other": "Mật khẩu của user vừa được đổi thành công "
+  },
+  "49": {
+    "other": "Không thể đổi mật khẩu"
+  },
+  "5": {
+    "other": "PHP"
+  },
+  "50": {
+    "other": "Có lỗi: đã tồn tại workspace cùng tên"
+  },
+  "51": {
+    "other": "Thư mục lưu cấu hình không ghi được"
+  },
+  "52": {
+    "other": "Tạo mới workspace thành công! Bạn có thể thêm các 'Metadata Source' để thêm các lớp tính năng trên dữ liệu"
+  },
+  "53": {
+    "other": "Có lỗi khi lưu thay đổi trên workspace"
+  },
+  "54": {
+    "other": "Thay đổi trên workspace đã được lưu thành công"
+  },
+  "55": {
+    "other": "Chú ý, bạn chỉ có thể thêm duy nhất 1 plugin cho mỗi loại."
+  },
+  "56": {
+    "other": "Thêm mới meta source thành công"
+  },
+  "57": {
+    "other": "Xóa meta source thành công"
+  },
+  "58": {
+    "other": "Lưu các thay đổi trên meta source thành công"
+  },
+  "59": {
+    "other": "Xóa workspace thành công"
+  },
+  "6": {
+    "other": "Tên truy cập"
+  },
+  "60": {
+    "other": "User vừa được xóa thành công"
+  },
+  "61": {
+    "other": "Các tham số được thiết lập không đúng!"
+  },
+  "62": {
+    "other": "Bảng tổng hợp các quyền"
+  },
+  "63": {
+    "other": "Tất cả"
+  },
+  "64": {
+    "other": "Quyền của role vừa được thay đổi "
+  },
+  "65": {
+    "other": "Role đã tồn tại, vui lòng chọn tên khác!"
+  },
+  "66": {
+    "other": "Role đã được tạo thành công"
+  },
+  "67": {
+    "other": "Không tìm thấy role "
+  },
+  "68": {
+    "other": "Xóa role thành công"
+  },
+  "69": {
+    "other": "Roles"
+  },
+  "7": {
+    "other": "Admin"
+  },
+  "70": {
+    "other": "User Roles"
+  },
+  "71": {
+    "other": "Các roles khả dụng"
+  },
+  "72": {
+    "other": "Kéo và thả role để thêm vào user"
+  },
+  "73": {
+    "other": "Role đã được thêm vào user "
+  },
+  "74": {
+    "other": "Role đã được xóa khỏi user "
+  },
+  "75": {
+    "other": "Tạo role mới"
+  },
+  "76": {
+    "other": "Role Id"
+  },
+  "77": {
+    "other": "Kiểm soát truy cập"
+  },
+  "78": {
+    "other": "Dữ liệu cá nhân"
+  },
+  "79": {
+    "other": "Workspace"
+  },
+  "8": {
+    "other": "Tên workspace"
+  },
+  "80": {
+    "other": "Tinh chỉnh quyền truy cập cho user này (Ấn vào workspace nếu bạn muốn chuyển nó thành workspace mặc định khi user đăng nhập)"
+  },
+  "81": {
+    "other": "Các dữ liệu chuyên biệt cho workspace"
+  },
+  "82": {
+    "other": "Batch-edit users"
+  },
+  "83": {
+    "other": "Kéo và thả roles để gán cho những user đã chọn (các user được tạo ra cho việc chia sẻ sẽ được bỏ qua)"
+  },
+  "84": {
+    "other": "Users Roles"
+  },
+  "85": {
+    "other": "Tinh chỉnh bộ lọc các actions"
+  },
+  "86": {
+    "other": "danh sách các actions bị vô hiệu hóa cho role này, được ngăn cách bởi dấu phẩy."
+  },
+  "87": {
+    "other": "Cập nhật danh sách actions cho role đã thành công"
+  },
+  "88": {
+    "other": "Workspace này được thiết lập trong bootstrap_repository. php, bạn không thể thay đổi meta sources từ giao diện."
+  },
+  "89": {
+    "other": "Các dữ liệu khác của người dùng"
+  },
+  "9": {
+    "other": "Giao thức của dữ liệu nguồn"
+  },
+  "90": {
+    "other": "Workspace mới"
+  },
+  "91": {
+    "other": "Tạo mới một workspace mẫu"
+  },
+  "92": {
+    "other": "Tạo mới một workspace mẫu"
+  },
+  "93": {
+    "other": "Thay đổi"
+  },
+  "94": {
+    "other": "Thay đổi một loạt"
+  },
+  "95": {
+    "other": "Đặt tên và lựa chọn giao thức của dữ liệu nguồn (Xin điền đầy đủ các thông tin bắt buộc. Bạn có thể đưa chuột lên tên các đề mcj để biết thêm thông tin yêu cầu)."
+  },
+  "96": {
+    "other": "Một khi tên và giao thức dữ liệu nguồn được thiết lập, các trường được bạn định nghĩa trước trên workspace mẫu sẽ xuất hiện ở dạng checkbox. Các trường còn lại sẽ được điền tiếp khi user sử dụng mẫu này. Nếu bạn không muốn user thay đổi một trường nào đó thì bật nó lên và để giá trị rỗng."
+  },
+  "97": {
+    "other": "Thiết lập mới cho plugin được lưu thành công"
+  },
+  "98": {
+    "other": "Cài đặt chính"
+  },
+  "99": {
+    "other": "Các plugins phụ trợ"
+  },
+  "topbar.title": {
+    "other": "Cells Console"
+  },
+  "topbar.button.advanced": {
+    "other": "Bật/Tắt các thiết lập nâng cao"
+  },
+  "topbar.button.about": {
+    "other": "Thêm thông tin về Pydio Cells"
+  },
+  "group_access": {
+    "other": "g"
+  },
+  "repository_access_key": {
+    "other": "N"
+  },
+  "role_access": {
+    "other": "o"
+  },
+  "uploaders-chunk-size-warn-multiple": {
+    "other": "Part size must be a multiple of 10MB!"
+  },
+  "uploaders-chunk-size-warn-too-small": {
+    "other": "Part size must be at least 10MB!"
+  }
+}

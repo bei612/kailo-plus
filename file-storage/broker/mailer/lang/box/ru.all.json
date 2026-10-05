@@ -1,0 +1,269 @@
+{
+  "Mail.Main.Copyright": {
+    "other": "Файловая платформа с гордостью работает на Pydio"
+  },
+  "Mail.Main.Troubleshoot": {
+    "other": "Если кнопка {ACTION} не работает у вас, просто скопируйте и вставьте ссылку ниже в ваш веб-браузер."
+  },
+  "Mail.Main.Greeting": {
+    "other": "Привет"
+  },
+  "Mail.Main.Signature": {
+    "other": "С уважением,"
+  },
+  "Mail.ResetPassword.Subject": {
+    "other": "Для {{.Configs.Title}} запрошен сброс пароля"
+  },
+  "Mail.ResetPassword.Intros": {
+    "other": "Запрос на сброс пароля был получен для вашей учетной записи на {{.Configs.Title}}."
+  },
+  "Mail.ResetPassword.Outros": {
+    "other": "Если вы не делали этот запрос, вы можете просто проигнорировать это сообщение. Если вы продолжаете получать такие письма, пожалуйста, сообщите администратору, так как это может быть проблемой безопасности."
+  },
+  "Mail.ResetPassword.LinkLabel": {
+    "other": "Сбросить мой пароль"
+  },
+  "Mail.ResetPassword.LinkInstructions": {
+    "other": "Нажмите для сброса пароля"
+  },
+  "Mail.ResetPasswordDone.Subject": {
+    "other": "Ваш пароль на {{.Configs.Title}} был сброшен"
+  },
+  "Mail.ResetPasswordDone.Intros": {
+    "other": "По вашему запросу, ваш пароль был успешно сброшен на {{.Configs.Title}}."
+  },
+  "Mail.ResetPasswordDone.Outros": {
+    "other": "Если вы не вызывали эту операцию, пожалуйста, немедленно сообщите администратору, так как это может быть проблемой безопасности."
+  },
+  "Mail.Digest.Subject": {
+    "other": "Ваши уведомления на {{.Configs.Title}}"
+  },
+  "Mail.Digest.Intros": {
+    "other": "Ниже приводится краткая информация о всех уведомлениях, которые вы получили от {{.Configs.Title}}"
+  },
+  "Mail.DM.Subject": {
+    "other": "{{.TplData.From}} отправил вам сообщение!"
+  },
+  "Mail.DM.Intros": {
+    "other": "{{.TplData.From}} отправил вам сообщение, используя приложение {{.Configs.Title}}: {{.TplData.Message}}"
+  },
+  "Mail.Welcome.Subject": {
+    "other": "Добро пожаловать на {{.Configs.Title}}"
+  },
+  "Mail.Welcome.Intros": {
+    "other": "Для вас создана учётная запись {{.Configs.Title}}. \nВаш логин: {{.TplData.Login}}{{if .TplData.Password}} , пароль: {{.TplData.Password}}. Вы можете изменить его при первом входе{{end}}."
+  },
+  "Mail.Welcome.LinkInstructions": {
+    "other": "Нажмите, чтобы войти"
+  },
+  "Mail.Welcome.LinkLabel": {
+    "other": "Войти в {{.Configs.Title}}"
+  },
+  "Mail.Welcome.Outros": {
+    "other": "Система обмена файлами {{.Configs.Title}} используется вашей командой для эффективного взаимодействия с документами. Мы рады видеть вас на борту!"
+  },
+  "Mail.Invite.Subject": {
+    "other": "{{.TplData.Inviter}} приглашает вас на {{.Configs.Title}}"
+  },
+  "Mail.Invite.Intros": {
+    "other": "{{.TplData.Inviter}} создал для вас учётную запись на {{.Configs.Title}}. \n Ваш логин: {{.TplData.Login}}{{if .TplData.Password}} , пароль: {{.TplData.Password}}. Вы можете изменить его при первом входе{{end}}."
+  },
+  "Mail.Invite.LinkInstructions": {
+    "other": "Нажмите, чтобы войти"
+  },
+  "Mail.Invite.LinkLabel": {
+    "other": "Войти в {{.Configs.Title}}"
+  },
+  "Mail.Invite.Outros": {
+    "other": "Система обмена файлами {{.Configs.Title}} используется командой {{.TplData.Inviter}} для эффективного взаимодействия с документами. Мы рады видеть вас на борту!"
+  },
+  "Mail.Cell.Subject": {
+    "other": "{{.TplData.Inviter}} добавил вас в ячейку {{.TplData.Cell}}"
+  },
+  "Mail.Cell.Intros": {
+    "other": "{{.TplData.Inviter}} включил вас в ячейку {{.TplData.Cell}} на {{.Configs.Title}}.! Вы можете начать делиться файлами и папками вместе и эффективно сотрудничать."
+  },
+  "Mail.Cell.LinkInstructions": {
+    "other": "Нажмите, чтобы открыть ячейку"
+  },
+  "Mail.Cell.LinkLabel": {
+    "other": "Открыть {{.TplData.Cell}}"
+  },
+  "Mail.PublicFile.Subject": {
+    "other": "{{.TplData.Inviter}} отправил вам файл"
+  },
+  "Mail.PublicFile.Intros": {
+    "other": "{{.TplData.Inviter}} отправил вам файл.\n\n '{{.TplData.Message}}' \n\n {{if .TplData.Expire}}Ссылка истекает {{.TplData.Expire}}{{end}}\n\n{{if .TplData.MaxDownloads}}Максимум загрузок:{{.TplData.MaxDownloads}}{{end}}"
+  },
+  "Mail.PublicFile.LinkLabel": {
+    "other": "Открыть {{.TplData.FileName}}"
+  },
+  "Mail.PublicFile.LinkInstructions": {
+    "other": "Нажмите, чтобы просмотреть файл в вашем браузере"
+  },
+  "Mail.PublicFile.Outros": {
+    "other": "Система обмена файлами {{.Configs.Title}} используется командой {{.TplData.Inviter}} для эффективного взаимодействия с документами."
+  },
+  "Mail.PublicFolder.Subject": {
+    "other": "{{.TplData.Inviter}} предоставил вам доступ к папке"
+  },
+  "Mail.PublicFolder.Intros": {
+    "other": "{{.TplData.Inviter}} предоставил вам доступ к папке.\n\n '{{.TplData.Message}}' \n\n {{if .TplData.Expire}}Ссылка истекает {{.TplData.Expire}}{{end}}\n\n{{if .TplData.MaxDownloads}}Максимум загрузок:{{.TplData.MaxDownloads}}{{end}}"
+  },
+  "Mail.PublicFolder.LinkLabel": {
+    "other": "Открыть {{.TplData.FolderName}}"
+  },
+  "Mail.PublicFolder.LinkInstructions": {
+    "other": "Нажмите, чтобы просмотреть документы в вашем браузере"
+  },
+  "Mail.PublicFolder.Outros": {
+    "other": "Система обмена файлами {{.Configs.Title}} используется {{.TplData.Inviter}} для эффективного обмена документами."
+  },
+  "Mail.AdminTestMail.Subject": {
+    "other": "{{.Configs.Title}} отправил вам тестовое сообщение"
+  },
+  "Mail.AdminTestMail.Intros": {
+    "other": "{{.TplData.Message}}"
+  },
+  "Mail.AdminTestMail.LinkLabel": {
+    "other": "Открыть ячейки"
+  },
+  "Mail.AdminTestMail.LinkInstructions": {
+    "other": "Нажмите, чтобы открыть интерфейс"
+  },
+  "Mail.AdminTestMail.Outros": {
+    "other": "Система обмена файлами {{.Configs.Title}} используется командами для эффективного взаимодействия с документами."
+  },
+  "Mail.Config.Title": {
+    "other": "Рассыльщик"
+  },
+  "Mail.Config.From.Label": {
+    "other": "Email отправителя по умолчанию"
+  },
+  "Mail.Config.From.Description": {
+    "other": "Адрес, используемый по умолчанию при отправке писем. Вы должны использовать правильный email поддержки вместо email без ответа."
+  },
+  "Mail.Config.FixOutlookDisplay": {
+    "other": "Исправление Outlook Клиентов (отключить встраивание CSS)"
+  },
+  "Mail.Config.Queue.Label": {
+    "other": "Тип очереди"
+  },
+  "Mail.Config.Queue.Description": {
+    "other": "Место для хранения очереди писем"
+  },
+  "Mail.Config.Queue.ValueBolt": {
+    "other": "Файловая база (Bolt)"
+  },
+  "Mail.Config.Queue.ValueMemory": {
+    "other": "Бд в памяти"
+  },
+  "Mail.Config.Mailer.Label": {
+    "other": "Почтовый движок"
+  },
+  "Mail.Config.Mailer.Description": {
+    "other": "Движок, используемый для отправки писем"
+  },
+  "Mail.Config.Disabled.Label": {
+    "other": "Отключено (не включать письма)"
+  },
+  "Mail.Config.NoOp.Label": {
+    "other": "No-Op (включить письма, но ничего не отправлять)"
+  },
+  "Mail.Config.NoOp.Dump": {
+    "other": "Записывать письма в файл для отладки"
+  },
+  "Mail.Config.NoOp.DumpTarget": {
+    "other": "Целевая папка для записи писем"
+  },
+  "Mail.Config.Smtp.Label": {
+    "other": "SMTP-сервер"
+  },
+  "Mail.Config.Smtp.Host.Label": {
+    "other": "Имя хоста сервера"
+  },
+  "Mail.Config.Smtp.Host.Description": {
+    "other": "Хост SMTP-сервера, например smtp.gmail.com"
+  },
+  "Mail.Config.Smtp.Port.Label": {
+    "other": "Порт сервера"
+  },
+  "Mail.Config.Smtp.Port.Description": {
+    "other": "Порт SMTP-сервера, например 587 (небезопасно) или 465 (TLS)"
+  },
+  "Mail.Config.Smtp.User.Label": {
+    "other": "Пользователь для подключения"
+  },
+  "Mail.Config.Smtp.User.Description": {
+    "other": "Имя пользователя, используемое для подключения к SMTP серверу"
+  },
+  "Mail.Config.Smtp.Password.Label": {
+    "other": "Пароль для подключения"
+  },
+  "Mail.Config.Smtp.Password.Description": {
+    "other": "Пароль, используемый для подключения к SMTP серверу"
+  },
+  "Mail.Config.Smtp.Security.Label": {
+    "other": "Безопасность Соединения"
+  },
+  "Mail.Config.Smtp.Security.Description": {
+    "other": "Протокол, используемый для защиты соединения. Очистка не поддерживается, при необходимости используйте вместо этого пользовательскую отправку по электронной почте."
+  },
+  "Mail.Config.Smtp.SkipVerify.Label": {
+    "other": "Самоподписанный сертификат"
+  },
+  "Mail.Config.Smtp.SkipVerify.Description": {
+    "other": "Отключить проверку сертификата, если ваш сертификат SMTP сервера самоподписан"
+  },
+  "Mail.Config.Smtp.LocalName.Label": {
+    "other": "Локальное имя номеронабирателя"
+  },
+  "Mail.Config.Smtp.LocalName.Description": {
+    "other": "SMTP отправляет 'localhost' в EHLO команде по умолчанию, используйте данное поле для назначения локального имени на выбор"
+  },
+  "Mail.Config.SendGrid.Label": {
+    "other": "Сервис SendGrid"
+  },
+  "Mail.Config.SendGrid.ApiKey.Label": {
+    "other": "Api Ключ"
+  },
+  "Mail.Config.SendGrid.ApiKey.Description": {
+    "other": "Api Key, предоставленный SendGrid для подключения к сервису"
+  },
+  "Mail.Config.Sendmail.Label": {
+    "other": "Отправить почту"
+  },
+  "Mail.Config.Sendmail.Legend": {
+    "other": "ВНИМАНИЕ: По умолчанию путь к исполняемому файлу /usr/bin/sendmail. Если вам нужно изменить его, пожалуйста, не забудьте установить ключ 'defaults > sendmail' в файле конфигурации pydio.json."
+  },
+  "Mail.Config.Sendmail.Executable.Label": {
+    "other": "Путь к исполняемому файлу"
+  },
+  "Mail.Config.Sendmail.Executable.Description": {
+    "other": "Полный путь к исполняемому файлу sendmail на сервере"
+  },
+  "Mail.Config.Sendmail.Executable.Other": {
+    "other": "Другой путь (вручную задается в файле конфигурации pydio.json)"
+  },
+  "Mail.Config.FromName.Label": {
+    "other": "Отображаемое имя отправителя по умолчанию"
+  },
+  "Mail.Config.FromName.Description": {
+    "other": "Имя, отображаемое по умолчанию, при отправке писем."
+  },
+  "Mail.Config.FromCtl.Label": {
+    "other": "Адрес отправителя и имя"
+  },
+  "Mail.Config.FromCtl.Description": {
+    "other": "Укажите, какой адрес / имя отправителя использовать. Если адрес электронной почты пользователя не настроен, адрес и имя по умолчанию будут использоваться всегда."
+  },
+  "Mail.Config.FromCtlUser.Label": {
+    "other": "Отправить почту от пользователя"
+  },
+  "Mail.Config.FromCtlSender.Label": {
+    "other": "Отправить почту от имени пользователя"
+  },
+  "Mail.Config.FromCtlDefault.Label": {
+    "other": "Всегда отправлять с адресов/имени по умолчанию"
+  }
+}

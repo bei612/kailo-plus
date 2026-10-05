@@ -1,0 +1,103 @@
+{
+  "Job.Version.Title": {
+    "other": "Задания на основе события для копирования данных для версий"
+  },
+  "Job.Version.StatusFile": {
+    "other": "Создана версия {{.Uuid}} внутри корзины версий "
+  },
+  "Job.Version.StatusMeta": {
+    "other": "Создана версия метаданных для {{.Uuid}}"
+  },
+  "Job.Version.StatusPrune": {
+    "one": "Очищено {{.Count}} версий",
+    "other": "Очищено {{.Count}} версий"
+  },
+  "Job.Pruning.Title": {
+    "other": "Очистка файлов версий для удаленных узлов"
+  },
+  "Job.Pruning.StatusDone": {
+    "one": "Успешно удалено {{.Count}} версия",
+    "other": "Успешно удалено {{.Count}} версий."
+  },
+  "Config.GroupPolicy.Title": {
+    "other": "Политика"
+  },
+  "Config.GroupPolicy.Name.Label": {
+    "other": "Наименование"
+  },
+  "Config.GroupPolicy.Name.Description": {
+    "other": "Наименование Политики"
+  },
+  "Config.GroupPolicy.Description.Label": {
+    "other": "Описание"
+  },
+  "Config.GroupPolicy.Description.Description": {
+    "other": "Описание политики"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Label": {
+    "other": "Хранилище"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Description": {
+    "other": "Источник данных, используемый для хранения версий"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Label": {
+    "other": "Корзина"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Description": {
+    "other": "Корзина, используемая внутри этого источника данных"
+  },
+  "Config.GroupSizes.Title": {
+    "other": "Ограничения по размеру"
+  },
+  "Config.GroupSizes.MaxTotalSize.Label": {
+    "other": "Общий размер всех версий, хранящихся в этой корзине"
+  },
+  "Config.GroupSizes.MaxTotalSize.Description": {
+    "other": "Ограничение общего размера. Если ограничение установлено, старые версии будут удалены. Используйте -1 для снятия ограничения"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Label": {
+    "other": "Общий размер для всех версий одного файла"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Description": {
+    "other": "Ограничить размер для всех версий одного файла. Если достигнут лимит, старые версии будут удалены. Используйте -1 для отсутствия ограничения"
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Label": {
+    "other": "Игнорировать файлы больше, чем..."
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Description": {
+    "other": "Не создавать версии для файлов больше этого размера. Используйте -1 для снятия ограничения"
+  },
+  "Config.GroupRetention.Title": {
+    "other": "Сроки хранения"
+  },
+  "Config.GroupRetention.Description": {
+    "other": "Количество версий для хранения за период"
+  },
+  "Config.GroupRetention.IntervalStart.Name": {
+    "other": "Начало периода"
+  },
+  "Config.GroupRetention.IntervalStart.Description": {
+    "other": "Начальная точка, используемая для периода вычислений. 0 - время последней установленной версии, используйте другой период для установления предела"
+  },
+  "Config.GroupRetention.MaxNumber.Name": {
+    "other": "Максимальное количество версий"
+  },
+  "Config.GroupRetention.MaxNumber.Description": {
+    "other": "Максимальное количество версий для сохранения за этот период. Используйте -1 для сохранения всех версий, 0 для удаления всех."
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Name": {
+    "other": "После удаления изначального файла"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Description": {
+    "other": "Количество версий, которые нужно оставить после удаления изначального файла."
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepAll": {
+    "other": "Сделать резервную копию для всех существующих версий"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepLast": {
+    "other": "Сделать резервную копию только для наиболее недавней версии"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepNone": {
+    "other": "Удалить все существующие версии"
+  }
+}

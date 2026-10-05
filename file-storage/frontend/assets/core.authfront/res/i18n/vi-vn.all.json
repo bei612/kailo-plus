@@ -1,0 +1,35 @@
+{
+  "1": {
+    "other": "Đặt lại mật khẩu"
+  },
+  "2": {
+    "other": "Thiết lập mật khẩu mới"
+  },
+  "3": {
+    "other": "Xin vui lòng nhập tên đăng nhập hoặc địa chỉ email của bạn, một mật khẩu đặt lại sẽ được gửi đến cho bạn qua email."
+  },
+  "4": {
+    "other": "Tài khoản hoặc email của bạn"
+  },
+  "5": {
+    "other": "Yêu cầu đặt lại mật khẩu đã được gửi đến email đã đăng ký với tài khoản của bạn. Nhấp vào liên kết trong email để tạo lại mật khẩu."
+  },
+  "6": {
+    "other": "Cảm ơn bạn, hãy tải lại ngay bây giờ để đăng nhập!"
+  },
+  "7": {
+    "other": "Đặt lại mật khẩu đã được yêu cầu trên tài khoản liên quan đến địa chỉ email này. Nếu bạn không phải là tác giả của yêu cầu này, bạn có thể bỏ qua email này. Nếu không, bấm vào liên kết sau để đặt lại mật khẩu của bạn:"
+  },
+  "8": {
+    "other": "Sử dụng mẫu dưới đây để đặt lại mật khẩu của bạn. Vui lòng nhập tên đăng nhập và mật khẩu mới hai lần."
+  },
+  "9": {
+    "other": "Please enter your username and password"
+  },
+  "10": {
+    "other": "Please enter the password you received"
+  },
+  "11": {
+    "other": "Login failed: could not recognise your username or password"
+  }
+}

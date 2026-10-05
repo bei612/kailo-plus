@@ -84,9 +84,11 @@ pub(super) async fn publish(state: &ServiceState, ae: &Execution) -> Result<(), 
             serde_json::to_string(&name).map_err(|_| invalid())?
         ));
     }
-    let backend = service
-        .adapter_backend_auth(&audience)
-        .map_err(|_| blocked())?;
+    let mut native_target = json!({"name":target,"mcp":{"host":adapter.mcp_url()?.as_str()}});
+    if native::Connector::from_manifest(&manifest)? == native::Connector::RemoteAdapter {
+        native_target["policies"] =
+            json!({"backendAuth":service.adapter_backend_auth(&audience).map_err(|_| blocked())?});
+    }
     let route = json!({"name":target,"gateways":[signer.gateway_name()],"matches":[{"path":{"exact":url.path()}}],
         "policies":{"mcpAuthentication":{"mode":"strict","issuer":signer.issuer(),"audiences":[signer.audience()],
             "jwks":serde_json::to_string(signer.public_jwks()).map_err(|_|invalid())?,"resourceMetadata":{"resource":url.as_str()},
@@ -102,7 +104,7 @@ pub(super) async fn publish(state: &ServiceState, ae: &Execution) -> Result<(), 
                     "externalExecutionId":"has(mcpGuardrails.externalExecutionId) ? mcpGuardrails.externalExecutionId : ''",
                     "toolName":"has(mcpGuardrails.toolName) ? mcpGuardrails.toolName : ''"}}]}},
         "backends":[{"mcp":{"statefulMode":"stateless","prefixMode":"conditional","failureMode":"failClosed",
-            "targets":[{"name":target,"mcp":{"host":adapter.mcp_url()?.as_str()},"policies":{"backendAuth":backend}}]}}]});
+            "targets":[native_target]}}]});
     let digest = collab_bridge::limits::canonical_digest(&route);
     sqlx::query("update projection.application_runtime set native_gateway_route_id=$1,gateway_config_hash=$2,gateway_state='PENDING'
         where binding_id=$3 and generation=$4 and action_execution_id=$5 and state='PENDING'")
@@ -146,6 +148,53 @@ pub(super) async fn publish(state: &ServiceState, ae: &Execution) -> Result<(), 
     Ok(())
 }
 
+/// Read-only validation of a pending peer binding uses the same native Gateway
+/// and ExtMcp service. The existing lifecycle AE is the sole admission; this
+/// route cannot call tools or confer an Agent Session's business permissions.
+pub(super) async fn publish_validation(
+    state: &ServiceState,
+    ae: &Execution,
+    generation: i64,
+    adapter: &native::Adapter,
+) -> Result<reqwest::Url, Refusal> {
+    let signer = state.agent_tool_sessions.as_ref().ok_or_else(blocked)?;
+    let service = state.gateway_service_auth.as_ref().ok_or_else(blocked)?;
+    let mut url = route_url(signer, ae.target_id, generation)?;
+    url.path_segments_mut()
+        .map_err(|_| invalid())?
+        .push("validation");
+    let target = peer::target(ae.target_id, generation);
+    let route = json!({"name":target,"gateways":[signer.gateway_name()],"matches":[{"path":{"exact":url.path()}}],
+        "policies":{"jwtAuth":state.auth.core_mcp_authentication().map_err(|_| blocked())?,
+            "mcpAuthorization":{"rules":["mcp.methodName in ['initialize', 'ping', 'notifications/initialized', 'tools/list']"]},
+            "mcpGuardrails":{"processors":[{"kind":"remote","host":service.ext_mcp_url().as_str(),
+                "policies":{"backendAuth":service.backend_auth()},"failureMode":"failClosed",
+                "methods":{"*":"request","initialize":"full","ping":"full","tools/list":"full"},
+                "requestHeaders":{"allowed":["authorization",peer::HEADER]},
+                "metadata":{"managementAction":"has(mcpGuardrails.managementAction) ? mcpGuardrails.managementAction : ''",
+                    "managementBearer":"has(mcpGuardrails.managementBearer) ? mcpGuardrails.managementBearer : ''"}}]}},
+        "backends":[{"mcp":{"statefulMode":"stateless","prefixMode":"conditional","failureMode":"failClosed",
+            "targets":[{"name":target,"mcp":{"host":adapter.mcp_url()?.as_str()}}]}}]});
+    let mut tx = state.pool.begin().await?;
+    let current:bool=sqlx::query_scalar("select exists(select 1 from catalog.application_binding b
+        join projection.application_runtime p on p.binding_id=b.id and p.action_execution_id=b.projection_action_execution_id
+        where b.id=$1 and b.projection_action_execution_id=$2 and b.state='PROVISIONING' and p.state='PENDING'
+          and p.generation=$3 for update of b,p)").bind(ae.target_id).bind(ae.id).bind(generation).fetch_one(&mut *tx).await?;
+    if !current {
+        return Err(conflict());
+    }
+    let gateway = crate::model_route::Gateway::from_env()?;
+    gateway
+        .admin(
+            &["api", "config", "resources", "traffic.route"],
+            Some(json!({"resources":[{"value":route}]})),
+        )
+        .await?;
+    crate::agent_tool_runtime::require_route(&gateway, &target, Some(&route)).await?;
+    tx.commit().await?;
+    Ok(url)
+}
+
 pub(super) async fn revoke(state: &ServiceState, ae: &Execution) -> Result<(), Refusal> {
     let mut tx = state.pool.begin().await?;
     let binding:Option<Uuid>=sqlx::query_scalar("select id from catalog.application_binding
@@ -172,6 +221,22 @@ pub(super) async fn revoke(state: &ServiceState, ae: &Execution) -> Result<(), R
             .bind(id)
             .execute(&mut *tx)
             .await?;
+        }
+    }
+    let validation_generations: Vec<i64> = sqlx::query_scalar(
+        "select p.generation from projection.application_runtime p
+        join catalog.component_release r on r.id=p.component_release_id where p.binding_id=$1
+          and r.manifest->'executionConnector'->>'mode'='PROTOCOL_PEER'",
+    )
+    .bind(ae.target_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    if !validation_generations.is_empty() {
+        let gateway = crate::model_route::Gateway::from_env()?;
+        for generation in validation_generations {
+            let id = peer::target(ae.target_id, generation);
+            gateway.delete("traffic.route", &id).await?;
+            crate::agent_tool_runtime::require_route(&gateway, &id, None).await?;
         }
     }
     tx.commit().await?;

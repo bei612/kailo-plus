@@ -1,0 +1,17 @@
+{
+  "1": {
+    "other": "Comentários"
+  },
+  "2": {
+    "other": "Digite seu comentário aqui"
+  },
+  "3": {
+    "other": "Publicar"
+  },
+  "4": {
+    "other": "Ir para %s"
+  },
+  "empty-state": {
+    "other": "Sem comentários"
+  }
+}

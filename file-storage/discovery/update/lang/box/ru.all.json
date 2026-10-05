@@ -1,0 +1,74 @@
+{
+  "Update.Config.Title": {
+    "other": "Обновить конфигурацию"
+  },
+  "Update.Config.Url.Label": {
+    "other": "Обновить сервер"
+  },
+  "Update.Config.Url.Description": {
+    "other": "Http URL сервера обновления"
+  },
+  "Update.Config.PublicKey.Label": {
+    "other": "Открытый ключ"
+  },
+  "Update.Config.PublicKey.Description": {
+    "other": "Официальный ключ, используемый для проверки подписи двоичных файлов."
+  },
+  "Update.Config.Channel.Label": {
+    "other": "Канал обновления"
+  },
+  "Update.Config.Channel.Description": {
+    "other": "Канал, используемый для запроса обновлений. Установите флажок на Стабильный, если не уверены."
+  },
+  "Update.Config.Channel.ValueStable": {
+    "other": "Стабильный"
+  },
+  "Update.Config.Channel.ValueDev": {
+    "other": "Dev (используйте на свой страх и риск)"
+  },
+  "Update.Config.ProxyHost.Label": {
+    "other": "Прокси"
+  },
+  "Update.Config.ProxyHost.Description": {
+    "other": "Прокси-сервер, если необходим для исходящих соединений"
+  },
+  "Update.Config.ProxyUser.Label": {
+    "other": "Пользователь proxy"
+  },
+  "Update.Config.ProxyUser.Description": {
+    "other": "Пользователь для идентификации на прокси-сервере"
+  },
+  "Update.Config.ProxyPassword.Label": {
+    "other": "Пароль прокси"
+  },
+  "Update.Config.ProxyPassword.Description": {
+    "other": "Пароль для идентификации прокси-сервера"
+  },
+  "Update.Config.Disable.Label": {
+    "other": "Отключить проверку обновлений"
+  },
+  "Update.Config.Disable.Description": {
+    "other": "Если ваш сервер не имеет доступа к внешнему миру, не пытаться соединиться с сайтом обновлений."
+  },
+  "Update.Process.Start": {
+    "other": "Upgrading Binary"
+  },
+  "Update.Process.Progress": {
+    "other": "Downloading Binary {progress}%..."
+  },
+  "Update.Process.Verify": {
+    "other": "Download Finished, now verifying package..."
+  },
+  "Update.Process.Finished": {
+    "other": "Binary package has been successfully verified, you can now restart the service."
+  },
+  "Update.SetCapDetected.Warning": {
+    "other": "WARNING: you are using a reserved port on one of your binding URL. This requires a root capability to start web service."
+  },
+  "Update.SetCapDetected.Hint": {
+    "other": "If you are not using systemd with the 'AmbientCapabilities=CAP_NET_BIND_SERVICE' parameter, you must execute the following command to authorize the new binary to use this port *before* restarting your instance:"
+  },
+  "Update.SetCapDetected.Command": {
+    "other": "$ sudo setcap 'cap_net_bind_service=+ep' <path to your binary>"
+  }
+}

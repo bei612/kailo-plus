@@ -1,0 +1,74 @@
+{
+  "Update.Config.Title": {
+    "other": "更新設定"
+  },
+  "Update.Config.Url.Label": {
+    "other": "更新伺服器"
+  },
+  "Update.Config.Url.Description": {
+    "other": "更新伺服器的 HTTP URL"
+  },
+  "Update.Config.PublicKey.Label": {
+    "other": "公鑰"
+  },
+  "Update.Config.PublicKey.Description": {
+    "other": "官方公鑰，用於驗證二進位檔案的簽名。"
+  },
+  "Update.Config.Channel.Label": {
+    "other": "更新頻道"
+  },
+  "Update.Config.Channel.Description": {
+    "other": "用於請求更新的通道。如不確定，請選擇 Stable。"
+  },
+  "Update.Config.Channel.ValueStable": {
+    "other": "穩定"
+  },
+  "Update.Config.Channel.ValueDev": {
+    "other": "開發（請自行承擔風險）"
+  },
+  "Update.Config.ProxyHost.Label": {
+    "other": "代理"
+  },
+  "Update.Config.ProxyHost.Description": {
+    "other": "若需連外，請填寫代理伺服器 Host"
+  },
+  "Update.Config.ProxyUser.Label": {
+    "other": "代理使用者名稱"
+  },
+  "Update.Config.ProxyUser.Description": {
+    "other": "用於代理伺服器身份驗證的使用者"
+  },
+  "Update.Config.ProxyPassword.Label": {
+    "other": "代理密碼"
+  },
+  "Update.Config.ProxyPassword.Description": {
+    "other": "用於代理伺服器身份驗證的密碼"
+  },
+  "Update.Config.Disable.Label": {
+    "other": "停用更新檢查"
+  },
+  "Update.Config.Disable.Description": {
+    "other": "如果您的伺服器無法連接外部網路，請勿嘗試連線至更新網站。"
+  },
+  "Update.Process.Start": {
+    "other": "正在升級二進位檔案"
+  },
+  "Update.Process.Progress": {
+    "other": "正在下載二進位檔案 {progress}%..."
+  },
+  "Update.Process.Verify": {
+    "other": "下載完成，正在驗證套件..."
+  },
+  "Update.Process.Finished": {
+    "other": "二進位檔案驗證成功，您現在可以重新啟動服務。"
+  },
+  "Update.SetCapDetected.Warning": {
+    "other": "警告：您的綁定 URL 使用了保留連接埠，啟動 Web 服務需要 root 權限。"
+  },
+  "Update.SetCapDetected.Hint": {
+    "other": "如果未使用 systemd 並設定 'AmbientCapabilities=CAP_NET_BIND_SERVICE' 參數，請在重新啟動實例之前執行以下命令，以授權新二進位檔案使用此連接埠："
+  },
+  "Update.SetCapDetected.Command": {
+    "other": "$ sudo setcap 'cap_net_bind_service=+ep' <path to your binary>"
+  }
+}

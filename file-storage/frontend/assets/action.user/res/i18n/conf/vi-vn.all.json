@@ -1,0 +1,20 @@
+{
+  "User Account Panel": {
+    "other": "Bảng điều khiển tải khoản người dùng"
+  },
+  "User account panel for managing settings and opening address book": {
+    "other": "Bảng điều khiển tài khoản người dùng để quản lý cài đặt và mở sổ địa chỉ"
+  },
+  "Disable Address Book": {
+    "other": "Vô hiệu hóa Address Book"
+  },
+  "Do not display address book in user account panel.": {
+    "other": "Không hiển thị address book trong bảng tài khoản user."
+  },
+  "User Dashboard": {
+    "other": "Bảng điều khiển User"
+  },
+  "User home dashboard, can be displayed before accessing to workspaces": {
+    "other": "Bảng điều khiển User home, có thể được hiển thị trước khi truy cập vào workspaces"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "Auth.PruneJob.Title": {
+    "other": "取り消されたトークンと期限切れのリセットパスワードキー"
+  },
+  "Auth.PruneJob.Revoked": {
+    "one": "{{.Count}} 個の期限切れトークンを削除しました。",
+    "other": "{{.Count}} 個の期限切れの失効されたトークンを削除しました。"
+  },
+  "Auth.PruneJob.ResetToken": {
+    "one": "{{.DeletionCount}} 個の期限切れのリセットパスワードを削除しました。",
+    "other": "{{.DeletionCount}} 個の期限切れのリセットパスワードトークンを削除しました"
+  },
+  "ResetPassword.Err.EmailNotFound": {
+    "other": "対応するメールアドレスが見つかりません"
+  },
+  "ResetPassword.Success.EmailSent": {
+    "other": "詳細な手順を記載したメールが送信されました"
+  },
+  "ResetPassword.Err.Unknown": {
+    "other": "エラーが発生しました - パスワードのリセットプロセスを試してください"
+  },
+  "ResetPassword.Err.TokenExpired": {
+    "other": "トークンの有効期限が切れています。パスワードのリセット処理をもう一度行ってください！"
+  },
+  "ResetPassword.Err.TokenNotCorresponding": {
+    "other": "トークンはこのユーザー識別子に対応していません！"
+  },
+  "ResetPassword.Err.UserNotFound": {
+    "other": "該当するユーザーが見つかりません！"
+  },
+  "ResetPassword.Err.ResetFailed": {
+    "other": "パスワードの更新中にエラーが発生しました"
+  },
+  "ResetPassword.Success.ResetFinished": {
+    "other": "パスワードのリセットが完了しました。ログインページに戻ることができます。"
+  }
+}

@@ -1,0 +1,2411 @@
+{
+  "dashboard.tab.dashboard": {
+    "other": "ダッシュボード"
+  },
+  "dashboard.tab.activity": {
+    "other": "アクティビティ"
+  },
+  "loading": {
+    "other": "読み込み中…"
+  },
+  "ds.board.ds.legend": {
+    "other": "データソースはPydioのグローバルツリー配下のストレージに存在します。データソースは必要に応じて複数のストレージノードで分散できます。"
+  },
+  "ds.board.ds.internal.legend": {
+    "other": "Internal DataSourcesはファイルのバージョンなどのバイナリを保存するために使用されます"
+  },
+  "ds.board.ds.title": {
+    "other": "データソース"
+  },
+  "ds.board.enc.legend": {
+    "other": "マスターキーはPydioサービスによって自動的に生成され保護されたキーチェーンの中に保存されます。再インストールや別のサーバーにインストールする際に、以下のツールを使ってそれらの鍵をエクスポート・インポートしてください。"
+  },
+  "ds.board.enc.title": {
+    "other": "マスター暗号鍵"
+  },
+  "ds.board.versioning.legend": {
+    "other": "各データソースのバージョン管理方法、およびアプリケーションが時間の経過とともに保持されるバージョンの数を定義できます。"
+  },
+  "ds.board.versioning.title": {
+    "other": "バージョン管理ポリシー"
+  },
+  "ds.board.wsfromds.title": {
+    "other": "ワークスペースの作成"
+  },
+  "ds.board.wsfromds.legend": {
+    "other": "データソース %s のルートに新しいワークスペースを作成"
+  },
+  "ds.board.wsfromds.field": {
+    "other": "ラベル"
+  },
+  "ds.board.wsfromds.defaultPrefix": {
+    "other": "データ ソース %s"
+  },
+  "ds.format-picker.title": {
+    "other": "データソースを作成"
+  },
+  "ds.format-picker.legend": {
+    "other": "データソースは実際のストレージをアプリケーションにアタッチできるマウントポイントです。最初に、データをストレージ内に整理する方法を選択します。"
+  },
+  "ds.format-picker.submit": {
+    "other": "スタート"
+  },
+  "ds.format-picker.flat.title": {
+    "other": "フラットストレージ"
+  },
+  "ds.format-picker.flat.legend": {
+    "other": "ファイルは、効率的な障害復旧を確実にするために、ツリー構造の定期的なスナップショットとともにバイナリとして保存されます。これは、最高のパフォーマンスとスケーラビリティのために推奨されるオプションです。"
+  },
+  "ds.format-picker.structured.title": {
+    "other": "既存のデータをインポート"
+  },
+  "ds.format-picker.structured.legend": {
+    "other": "ツリー構造は、ストレージに反映され、リアルタイム同期で維持されます。 このレガシーオプションは推奨されません。既存のデータをインポートする場合にのみ使用してください。 これはイベントベースであり、高負荷またはクラスタ化されたインストールでは使用しないでください。"
+  },
+  "ds.format-picker.internal.title": {
+    "other": "Cells の内部"
+  },
+  "ds.format-picker.internal.legend": {
+    "other": "内部バイナリ（ファイルのバージョン、サムネイルなど）を保存するために使用します。限られた機能は、検索エンジンではデータのインデックスが作成されません。"
+  },
+  "ds.editor.delete.warning": {
+    "other": "本当にこのデーターベースを削除しますか。この操作は取り消し不能で、データーベースにリンクされているすべてのデータを失う可能性があります。"
+  },
+  "ds.editor.enc": {
+    "other": "残りの暗号化を有効化する"
+  },
+  "ds.editor.enc.dialog.disable": {
+    "other": "以前このデーターベースを暗号化をしていた場合、全ての暗号化ファイルは読めなくなります。本当に続行しますか。"
+  },
+  "ds.editor.enc.dialog.enable.1": {
+    "other": "データソースで暗号化を有効にすると、提供する暗号キーを使用してストレージ上のデータの暗号化が開始されます。"
+  },
+  "ds.editor.enc.dialog.enable.2": {
+    "other": "マスターキーをエクスポートしてバックアップしていない場合、または何らかの理由でサーバーを再インストールする必要がある場合は、ご注意ください。"
+  },
+  "ds.editor.enc.dialog.enable.2bold": {
+    "other": "全てのデータが失われます。"
+  },
+  "ds.editor.enc.dialog.enable.3": {
+    "other": "また、データのスムーズに素早く暗号化/復号化をするには、より多くのCPUが必要になる場合もあります。"
+  },
+  "ds.editor.enc.dialog.enable.create": {
+    "other": "新しいキーの識別子を設定"
+  },
+  "ds.editor.enc.key": {
+    "other": "暗号化キー"
+  },
+  "ds.editor.enc.key.clear": {
+    "other": "暗号化なし"
+  },
+  "ds.editor.enc.key.create": {
+    "other": "新しいキーで暗号化を設定..."
+  },
+  "ds.editor.enc.validate": {
+    "other": "了解しました"
+  },
+  "ds.editor.enc.warning": {
+    "other": "警告！"
+  },
+  "ds.editor.legend.delete.1": {
+    "other": "データソースの削除は破壊的な操作です。ストレージ内のデータを削除するわけではありませんが、既存のインデックスを破棄し、インデックス化されたノードにリンクされているすべてのACLのリンクを解除します。"
+  },
+  "ds.editor.legend.delete.2": {
+    "other": "削除する前に、データソースを指しているすべてのワークスペースを削除してください。"
+  },
+  "ds.editor.legend.delete.button": {
+    "other": "データソースの削除"
+  },
+  "ds.editor.legend.local": {
+    "other": "ファイルシステムのデータソースは、オブジェクトストレージサーバを介して、親フォルダから起動し、ターゲットに s3 バケットとしてファイルを提供します。このため、選択されたフォルダは以下の条件を満たしている必要があります。"
+  },
+  "ds.editor.legend.local.li.1": {
+    "other": "少なくとも２つのレベルの深さ。"
+  },
+  "ds.editor.legend.local.li.2": {
+    "other": "親フォルダはアプリケーションサービスユーザーによって書き込み可能でなければなりません"
+  },
+  "ds.editor.legend.local.li.3": {
+    "other": "ターゲットフォルダはDNS名 (小文字、スペース、特殊文字など) に準拠している必要があります。  "
+  },
+  "ds.editor.legend.resync": {
+    "other": "再同期は、現在インデックス化されていないストレージをスキャンし、変更を検出します。"
+  },
+  "ds.editor.legend.resync.button": {
+    "other": "再同期する"
+  },
+  "ds.editor.legend.s3.1": {
+    "other": "リモートストレージデータソースは、すべてのリクエストをプロキシすることにより、リモートの s3 互換ストレージからファイルを提供します。"
+  },
+  "ds.editor.legend.s3.2": {
+    "other": "標準のAPIキー/APIシークレットを使用して認証、Amazon S3 にエンドポイントURLを空のままにするか、他のオンプレミスストレージにURLを使用します。"
+  },
+  "ds.editor.storage.legend.fs": {
+    "other": "ローカルまたはネットワーク接続されたファイルシステムからデータを参照します。"
+  },
+  "ds.editor.storage.legend.fs.peer": {
+    "other": "データ ソースをピアアドレスに制限すると、サービスは特定のノードのみが開始されます。 「Any」の値を使用すると、Cells が実行されているすべてのノードでサービスが開始されます。 共有ファイルシステムが同じ場所にあるすべてのノードにマウントされている場合に便利です。 または、再起動時にあなたのノードがIPを変更する可能性がある場合。 競合を回避するには、すべてのデータソースに ANY を使用するか、すべてのデータソースに対して特定のノードを選択することをお勧めします。"
+  },
+  "ds.editor.storage.legend.fs.path": {
+    "other": "最後のフォルダが小文字で、その親が書き込み可能であることを確認してください。 既存のフォルダが大文字の場合は、この制限を回避するためにシンボリックリンクを使用できます。"
+  },
+  "ds.editor.storage.legend.s3": {
+    "other": "Amazon S3 バケットまたはS3互換ストレージからデータを参照します。"
+  },
+  "ds.editor.storage.legend.azure": {
+    "other": "Azure Blob Storage Bucket からデータを参照します。"
+  },
+  "ds.editor.storage.legend.gcs": {
+    "other": "Google Cloud Storage Bucketからデータを参照します。"
+  },
+  "ds.editor.storage.legend.versioning": {
+    "other": "ファイルの内容変更履歴を保持するためのバージョン管理ポリシーを設定します。追加のストレージスペースを使用することに注意してください。"
+  },
+  "ds.editor.storage.legend.encryption": {
+    "other": "残りの暗号化は、ファイルが保存されていないことを確認するために使用することができます。 これはストレージプロバイダを信頼しない場合に便利です。"
+  },
+  "ds.editor.storage.readOnly": {
+    "other": "読み取り専用モード"
+  },
+  "ds.editor.storage.legend.readOnly": {
+    "other": "隠しファイルを書かないように Cells に要求し、ネイティブの eTags をチェックサムとして使用する場合、読み取り専用モードを使用します(これは膨大なデータを持つバケットに必要です)。 ただし、移動機能が正しく機能しないので、このデータソースで作成されたワークスペースは 読み取り専用 に設定してください。"
+  },
+  "ds.editor.storage.flatStorage": {
+    "other": "データ構造をストレージに保持する"
+  },
+  "ds.editor.storage.legend.flatStorage": {
+    "other": "フラット(非構造) ストレージは、パフォーマンスに最適です。 実際のストレージ内で再現されたファイルとフォルダを確認したい場合(または既存のデータを含むフォルダにマッピングする場合) にのみ、構造化ストレージを使用してください。 これはデータソース作成後に変更できません。"
+  },
+  "ds.editor.storage.skipResync": {
+    "other": "再起動時に完全な再同期をスキップする"
+  },
+  "ds.editor.storage.legend.skipResync": {
+    "other": "膨大なデータソースの場合は、再起動時に完全な再同期を避けることができます。"
+  },
+  "ds.editor.storage.checksumMapper": {
+    "other": "チェックサムをローカルに保存(オブジェクトを変更しない)"
+  },
+  "ds.editor.storage.nativeEtags": {
+    "other": "ネイティブEtagsを使用（デスクトップ同期を無効にします）"
+  },
+  "ds.editor.storage.legend.checksumMapper": {
+    "other": "適切な変更を検出するために、ファイルのチェックサム（md5）は、Cells によって（または、可能な場合はインプレースコピーを使用したスト​​レージによって）計算され、メタデータとしてオブジェクトに添付されます。最高のパフォーマンスを得るには、ネイティブETagフラグを使用してストレージの元の値を保持しますが、これにより、このデータソースでデスクトップ同期が無効になることに注意してください。メタデータをローカルに保存することで、チェックサムを計算しながら、オブジェクトの変更を簡単に防ぐこともできます。"
+  },
+  "ds.editor.new": {
+    "other": "新しいデータ ソース"
+  },
+  "ds.editor.name.inuse": {
+    "other": "この名前は既に使用されています。別の名前を選択してください！"
+  },
+  "ds.editor.options": {
+    "other": "メインオプション"
+  },
+  "ds.editor.datamanagement": {
+    "other": "データ管理"
+  },
+  "ds.editor.options.enabled": {
+    "other": "有効"
+  },
+  "ds.editor.options.id": {
+    "other": "データソース識別子"
+  },
+  "ds.editor.options.port": {
+    "other": "内部ポート"
+  },
+  "ds.editor.selector.completer": {
+    "other": "フォルダを選択"
+  },
+  "ds.editor.selector.completer.hint": {
+    "other": "リストから選択またはパスを入力し、Enter キーを押します"
+  },
+  "ds.editor.selector.completer.create": {
+    "other": "新しいフォルダを作成します"
+  },
+  "ds.editor.selector.error.depth": {
+    "other": "2階層の深いフォルダを選択してください。親フォルダからオブジェクトストレージが開始されます。"
+  },
+  "ds.editor.selector.error.dnsname": {
+    "other": "フォルダはS3バケットとして公開され、DNS名(小文字、スペース、特殊文字なし) に準拠している必要があります。"
+  },
+  "ds.editor.selector.folder": {
+    "other": "ローカルフォルダ"
+  },
+  "ds.editor.selector.folder.hint": {
+    "other": "フォルダを読み込むピアを選択します"
+  },
+  "ds.editor.selector.peer": {
+    "other": "ピアアドレス"
+  },
+  "ds.editor.selector.peer.any": {
+    "other": "任意のピア (ユニークノードまたは分散FS)"
+  },
+  "ds.editor.selector.peer.word": {
+    "other": "ピア"
+  },
+  "ds.editor.selector.peer.invalid": {
+    "other": "無効"
+  },
+  "ds.editor.selector.mkdir": {
+    "other": "フォルダを作成"
+  },
+  "ds.editor.selector.mkdir.legend": {
+    "other": "%s の下に新しいフォルダを作成します"
+  },
+  "ds.editor.selector.mkdir.field": {
+    "other": "フォルダ名"
+  },
+  "ds.editor.storage.fs.macos": {
+    "other": "オペレーティングシステムは MacOSX です"
+  },
+  "ds.editor.storage.azure.api": {
+    "other": "Azure アカウント名"
+  },
+  "ds.editor.storage.azure.secret": {
+    "other": "Azure Secret Key"
+  },
+  "ds.editor.storage.azure.bucket": {
+    "other": "バケット名"
+  },
+  "ds.editor.storage.gcs.credentials": {
+    "other": "GCS JSON 資格情報ファイルの内容を貼り付け"
+  },
+  "ds.editor.storage.gcs.bucket": {
+    "other": "バケット名"
+  },
+  "ds.editor.storage.s3.api": {
+    "other": "S3 APIキー"
+  },
+  "ds.editor.storage.s3.bucket": {
+    "other": "バケット名"
+  },
+  "ds.editor.storage.s3.endpoint.type": {
+    "other": "エンドポイントタイプ"
+  },
+  "ds.editor.storage.s3.signatureVersion": {
+    "other": "署名のバージョン"
+  },
+  "ds.editor.storage.s3.endpoint.amazon": {
+    "other": "Amazon S3"
+  },
+  "ds.editor.storage.s3.endpoint.custom": {
+    "other": "S3互換ストレージ"
+  },
+  "ds.editor.storage.s3.endpoint.minio": {
+    "other": "Minio サーバー"
+  },
+  "ds.editor.storage.s3.endpoint": {
+    "other": "カスタムエンドポイントURL"
+  },
+  "ds.editor.storage.s3.endpoint.hint": {
+    "other": "http(s):// を含む"
+  },
+  "ds.editor.storage.s3.region": {
+    "other": "S3 Api リージョン"
+  },
+  "ds.editor.storage.s3.path": {
+    "other": "内部パス"
+  },
+  "ds.editor.storage.s3.secret": {
+    "other": "S3 Apiシークレット"
+  },
+  "ds.editor.storage.buckets.legend": {
+    "other": "1つ以上のバケットを選択"
+  },
+  "ds.editor.storage.buckets.reload": {
+    "other": "バケットを再読み込み"
+  },
+  "ds.editor.storage.buckets.create": {
+    "other": "バケットを作成"
+  },
+  "ds.editor.storage.buckets.create.hint": {
+    "other": "バケット名"
+  },
+  "ds.editor.storage.buckets.regexp": {
+    "other": "正規表現を使用"
+  },
+  "ds.editor.storage.buckets.regexp.hint": {
+    "other": "正規表現"
+  },
+  "ds.editor.storage.buckets.cont.nokeys": {
+    "other": "バケットをロードするストレージをセットアップします"
+  },
+  "ds.editor.storage.buckets.cont.loading": {
+    "other": "アクセス可能なバケットを読み込み中"
+  },
+  "ds.editor.storage.buckets.cont.empty": {
+    "other": "バケットが見つかりません"
+  },
+  "ds.editor.storage.s3.legend.tags": {
+    "other": "バケットまたはオブジェクトからS3タグを同期します（一致するパターンのコンマ区切りリストを使用します）。これにより、ストレージへの追加のリクエストが実行され、同期プロセスが遅くなる可能性があることに注意してください。元のタグは、内部でpydio：s3-bucket-tag-NAMEおよびpydio：s3-object-tag-NAMEにマッピングされます。"
+  },
+  "ds.editor.storage.s3.bucketsTags": {
+    "other": "バケットタグ（複数のバケットが有効）"
+  },
+  "ds.editor.storage.s3.objectsTags": {
+    "other": "オブジェクトタグ"
+  },
+  "ds.editor.storage.s3.legend.bucketPathPrefix": {
+    "other": "Bucket 内のパスプレフィックスを使用します (オブジェクトを格納する仮想フォルダを作成します)"
+  },
+  "ds.editor.storage.s3.bucketPathPrefix": {
+    "other": "パスプレフィックス"
+  },
+  "ds.editor.storage.s3.legend.storageClass": {
+    "other": "カスタム ストレージ クラス (空白のままにして標準を使用) Amazon S3 は以下の値をサポートします: REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR. GLACIERまたは同等の機能を使用すると、データソースは書き込み専用になりますので、ダウンロード前にオブジェクトを手動で復元する必要があります。"
+  },
+  "ds.editor.storage.s3.storageClass": {
+    "other": "ストレージクラス"
+  },
+  "ds.editor.title": {
+    "other": "データ ソース %s"
+  },
+  "ds.editor.versioning": {
+    "other": "バージョン管理ポリシー"
+  },
+  "ds.editor.versioning.disabled": {
+    "other": "バージョン管理を有効にしない"
+  },
+  "ds.editor.tab.button-back": {
+    "other": "戻る"
+  },
+  "ds.editor.tab.button-next": {
+    "other": "次へ"
+  },
+  "ds.editor.tab.button-create": {
+    "other": "作成"
+  },
+  "ds.editor.tab.identifier": {
+    "other": "識別子"
+  },
+  "ds.editor.tab.main": {
+    "other": "メインオプション"
+  },
+  "ds.editor.tab.storage": {
+    "other": "ストレージタイプ"
+  },
+  "ds.editor.tab.lifecycle": {
+    "other": "データのライフサイクル"
+  },
+  "ds.editor.tab.advanced": {
+    "other": "その他のオプション"
+  },
+  "ds.editor.initFlatFromSnapshot": {
+    "other": "このストレージが以前にフラットデータソースとして使用されていた場合は、既存のスナップショットファイルから初期化します（ストレージ内にある必要があります）"
+  },
+  "ds.editor.foldersShardingPattern": {
+    "other": "デフォルトでは、すべてのファイルは一意のフォルダ内に格納されています。サブフォルダID[:N]/id[:P]/id[:Q]/... を自動作成するには、パターン 'N:P:Q' を使用します。"
+  },
+  "ds.editor.initFlatFromSnapshot.hint": {
+    "other": "Path to snapshot inside storage (e.g. $snapshot.db)"
+  },
+  "ds.editor.foldersShardingPattern.hint": {
+    "other": "Sharding pattern (e.g. N:P:Q)"
+  },
+  "ds.encryption": {
+    "other": "暗号化"
+  },
+  "ds.encryption.key.emptyState": {
+    "other": "マスターキーが作成されていません"
+  },
+  "ds.encryption.key.create": {
+    "other": "キーの作成"
+  },
+  "ds.encryption.key.created": {
+    "other": "作成日時"
+  },
+  "ds.encryption.key.delete": {
+    "other": "キーを削除"
+  },
+  "ds.encryption.key.delete.warning": {
+    "other": "キーが現在暗号化されたデータに使用されている場合、これは非常に破壊的な操作です！本当にそれを行ってもよろしいですか？"
+  },
+  "ds.encryption.key.export": {
+    "other": "キーをエクスポート"
+  },
+  "ds.encryption.key.export.confirm": {
+    "other": "パスワードの確認"
+  },
+  "ds.encryption.key.export.fail": {
+    "other": "エクスポート中に問題が発生しました"
+  },
+  "ds.encryption.key.export.password": {
+    "other": "強力なパスワードを入力してください"
+  },
+  "ds.encryption.key.export.result.copy": {
+    "other": "結果をファイルにコピーしてキーを保存します"
+  },
+  "ds.encryption.key.id": {
+    "other": "識別子"
+  },
+  "ds.encryption.key.import": {
+    "other": "鍵をインポート"
+  },
+  "ds.encryption.key.import.content": {
+    "other": "バックアップファイルからキーを貼り付けます"
+  },
+  "ds.encryption.key.import.fail": {
+    "other": "インポート中に問題が発生しました"
+  },
+  "ds.encryption.key.import.id": {
+    "other": "このキーの一意の識別子"
+  },
+  "ds.encryption.key.import.label": {
+    "other": "このキーの人間が読めるラベル"
+  },
+  "ds.encryption.key.import.password": {
+    "other": "エクスポート時に使用されるパスワード"
+  },
+  "ds.encryption.key.import.success": {
+    "other": "キーは正常にインポートされました"
+  },
+  "ds.encryption.key.label": {
+    "other": "ラベル"
+  },
+  "ds.encryption.key.owner": {
+    "other": "所有者"
+  },
+  "ds.name": {
+    "other": "名前"
+  },
+  "ds.status": {
+    "other": "ステータス"
+  },
+  "ds.status.disabled": {
+    "other": "無効"
+  },
+  "ds.status.index": {
+    "other": "インデックスダウン"
+  },
+  "ds.status.ko": {
+    "other": "サービスが停止しました"
+  },
+  "ds.status.ko-peers": {
+    "other": "ノード %s が見つかりません"
+  },
+  "ds.status.na": {
+    "other": "N/A"
+  },
+  "ds.status.object": {
+    "other": "オブジェクトダウン"
+  },
+  "ds.status.ok": {
+    "other": "実行中のすべてのサービス"
+  },
+  "ds.status.starting": {
+    "other": "データソースを開始中..."
+  },
+  "ds.status.sync": {
+    "other": "同期ダウン"
+  },
+  "ds.storage": {
+    "other": "ストレージタイプ"
+  },
+  "ds.storage.fs": {
+    "other": "ローカルファイル システム"
+  },
+  "ds.storage.s3": {
+    "other": "S3互換ストレージ"
+  },
+  "ds.storage.azure": {
+    "other": "Azure Blob Storage"
+  },
+  "ds.storage.gcs": {
+    "other": "Google Cloud Storage"
+  },
+  "ds.storage.title": {
+    "other": "ストレージ"
+  },
+  "ds.versioning": {
+    "other": "バージョン管理"
+  },
+  "ds.syncStatus": {
+    "other": "前回の同期"
+  },
+  "ds.emptyState": {
+    "other": "データソースはまだ作成されていません"
+  },
+  "ds.versioning.description": {
+    "other": "備考"
+  },
+  "ds.versioning.name": {
+    "other": "名前"
+  },
+  "ds.versioning.periods": {
+    "other": "保持期間"
+  },
+  "ds.versioning.storage": {
+    "other": "ストレージ"
+  },
+  "logs.1": {
+    "other": "サーバーログ"
+  },
+  "logs.10": {
+    "other": "エクスポートとダウンロード"
+  },
+  "logs.11": {
+    "other": "指定してエクスポート"
+  },
+  "logs.2": {
+    "other": "日付を選択"
+  },
+  "logs.filter.legend": {
+    "other": "フィルター..."
+  },
+  "logs.export.disabled": {
+    "other": "日付またはフィルタ結果を選択"
+  },
+  "logs.export.clicklink": {
+    "other": "ダウンロードするリンクをクリックしてください"
+  },
+  "logs.filter.period": {
+    "other": "期間"
+  },
+  "logs.filter.period.from": {
+    "other": "開始"
+  },
+  "logs.filter.period.to": {
+    "other": "終了"
+  },
+  "logs.filter.period.time": {
+    "other": "At..."
+  },
+  "logs.filter.login": {
+    "other": "ログイン"
+  },
+  "logs.filter.ip": {
+    "other": "IP"
+  },
+  "logs.filter.fulltext": {
+    "other": "全文検索"
+  },
+  "logs.tz.tooltip": {
+    "other": "ローカル/サーバのタイムゾーンを表示"
+  },
+  "logs.tz.local": {
+    "other": "ローカルタイムゾーン"
+  },
+  "logs.tz.server": {
+    "other": "サーバーのタイムゾーン"
+  },
+  "logs.toggleTheme": {
+    "other": "ライト/ダークテーマ"
+  },
+  "logs.sys.note": {
+    "other": "注記:"
+  },
+  "logs.sys.note.content": {
+    "other": "空のログエントリは、サーバーが本番モードで実行されていないことを意味します。 --log=production 引数を渡すか、環境変数 PYDIO_LOGS_LEVEL=production を設定して、このログレベルを設定してください。"
+  },
+  "logs.3": {
+    "other": "フィルタログ"
+  },
+  "logs.4": {
+    "other": "詳細は行をクリックしてください"
+  },
+  "logs.5": {
+    "other": "イベント詳細"
+  },
+  "logs.6": {
+    "other": "ログをエクスポート"
+  },
+  "logs.7": {
+    "other": "エクスポート元"
+  },
+  "logs.8": {
+    "other": "終了"
+  },
+  "logs.9": {
+    "other": "ファイルは、セミコロン(;) の区切り文字と二重引用符(\") で囲まれたフィールドでCSV形式でエクスポートされます。"
+  },
+  "logs.level": {
+    "other": "レベル"
+  },
+  "logs.level.exact": {
+    "other": "(only)"
+  },
+  "logs.level.greaterthan": {
+    "other": "(and up)"
+  },
+  "logs.service": {
+    "other": "サービス"
+  },
+  "logs.message": {
+    "other": "メッセージ"
+  },
+  "logs.noentries": {
+    "other": "エントリがありません"
+  },
+  "logs.noresults": {
+    "other": "結果がありません"
+  },
+  "logs.details.copy": {
+    "other": "ログをクリップボードにコピー"
+  },
+  "logs.details.show-focus": {
+    "other": "+ / - 5 分表示"
+  },
+  "logs.details.close": {
+    "other": "ログの詳細を閉じる"
+  },
+  "logs.details.user": {
+    "other": "ユーザー"
+  },
+  "logs.details.user-attributes": {
+    "other": "ユーザー属性"
+  },
+  "logs.details.date": {
+    "other": "イベント日時"
+  },
+  "logs.details.msg": {
+    "other": "イベントメッセージ"
+  },
+  "logs.details.service": {
+    "other": "発生したサービス"
+  },
+  "logs.details.connection": {
+    "other": "接続IP"
+  },
+  "logs.details.agent": {
+    "other": "ユーザーエージェント"
+  },
+  "logs.details.protocol": {
+    "other": "プロトコル"
+  },
+  "logs.details.node": {
+    "other": "ファイル/フォルダ"
+  },
+  "logs.details.transfer-size": {
+    "other": "転送サイズ"
+  },
+  "logs.details.workspace": {
+    "other": "ワークスペース"
+  },
+  "menu.0": {
+    "other": "ダッシュボード"
+  },
+  "menu.1": {
+    "other": "アクティビティ"
+  },
+  "menu.10": {
+    "other": "Web UI経由でファイルを送信するためのエクステンション"
+  },
+  "menu.11": {
+    "other": "認証"
+  },
+  "menu.11b": {
+    "other": "認証"
+  },
+  "menu.12": {
+    "other": "Configs Backends"
+  },
+  "menu.13": {
+    "other": "ロガー"
+  },
+  "menu.14": {
+    "other": "通知"
+  },
+  "menu.15": {
+    "other": "ユーザーがアプリケーションのさまざまな部分から通知を受け取る方法。"
+  },
+  "menu.16": {
+    "other": "Pydio Booster"
+  },
+  "menu.17": {
+    "other": "インスタントメッセージと外部アクセラレータツール"
+  },
+  "menu.18": {
+    "other": "すべてのプラグイン"
+  },
+  "menu.19": {
+    "other": "利用可能なプラグイン"
+  },
+  "menu.2": {
+    "other": "サーバーログ"
+  },
+  "menu.20": {
+    "other": "ユーザーの機能"
+  },
+  "menu.21": {
+    "other": "エンドユーザーのパラメータ"
+  },
+  "menu.22": {
+    "other": "ウェルカムページ"
+  },
+  "menu.23": {
+    "other": "ログイン後のユーザーのランディングページ。表示される要素とリンクを設定します。"
+  },
+  "menu.3": {
+    "other": "外観"
+  },
+  "menu.4": {
+    "other": "テーマ、ロゴ、外観のオプション"
+  },
+  "menu.5": {
+    "other": "共有機能"
+  },
+  "menu.6": {
+    "other": "共有するすべてのファイルとフォルダのオプション"
+  },
+  "menu.7": {
+    "other": "エディター"
+  },
+  "menu.8": {
+    "other": "エディタの有効化/無効化とパラメータの管理"
+  },
+  "menu.9": {
+    "other": "アップローダー"
+  },
+  "menu.metadata": {
+    "other": "メタデータ"
+  },
+  "menu.metadata.description": {
+    "other": "データに添付されたユーザー編集可能なフィールド"
+  },
+  "metadata.definition": {
+    "other": "定義"
+  },
+  "metadata.delete.confirm": {
+    "other": "このメタデータを削除してもよろしいですか？"
+  },
+  "metadata.editor.label.error": {
+    "other": "メタデータラベルは空にできません"
+  },
+  "metadata.editor.ns.error": {
+    "other": "メタデータのネームスペースを選択"
+  },
+  "metadata.editor.ns.exists": {
+    "other": "名前は既に存在します。別の名前を選択してください。"
+  },
+  "metadata.editor.selection": {
+    "other": "値を選択"
+  },
+  "metadata.editor.selection.key": {
+    "other": "キー"
+  },
+  "metadata.editor.selection.value": {
+    "other": "値"
+  },
+  "metadata.editor.selection.steps": {
+    "other": "ステップとして表示"
+  },
+  "metadata.editor.tags.cleared": {
+    "other": "ネームスペース %s のタグをクリアしました"
+  },
+  "metadata.editor.tags.reset": {
+    "other": "タグをリセット"
+  },
+  "metadata.editor.title.create": {
+    "other": "ネームスペースを作成"
+  },
+  "metadata.empty": {
+    "other": "メタデータが未定義です"
+  },
+  "metadata.indexable": {
+    "other": "インデックス"
+  },
+  "metadata.label": {
+    "other": "ラベル"
+  },
+  "metadata.namespace": {
+    "other": "名前"
+  },
+  "metadata.namespace.add": {
+    "other": "+ ネームスペース"
+  },
+  "metadata.namespaces": {
+    "other": "ネームスペース"
+  },
+  "metadata.namespaces.legend": {
+    "other": "メタデータは、ユーザーが任意のファイルまたはフォルダーに添付することが可能です。ここでは、表示するメタデータの種類と、各メタデータが管理者ユーザーではなく標準ユーザーによって読み取り/書き込み可能かどうかを定義できます。"
+  },
+  "metadata.order": {
+    "other": "順序"
+  },
+  "metadata.group": {
+    "other": "グループ"
+  },
+  "metadata.group-field": {
+    "other": "グループ名 (拡張可能なセクションを作成します) サブグループには '/' を使用します。"
+  },
+  "metadata.default-group": {
+    "other": "グループなし"
+  },
+  "metadata.toggle.index": {
+    "other": "検索エンジンのインデックス"
+  },
+  "metadata.toggle.read": {
+    "other": "管理者に表示を制限する"
+  },
+  "metadata.toggle.write": {
+    "other": "エディションを管理者に制限"
+  },
+  "metadata.type": {
+    "other": "種別"
+  },
+  "metadata.type.string": {
+    "other": "短いテキスト"
+  },
+  "metadata.type.textarea": {
+    "other": "段落"
+  },
+  "metadata.type.integer": {
+    "other": "番号"
+  },
+  "metadata.group.lists": {
+    "other": "List"
+  },
+  "metadata.group.internal": {
+    "other": "Internal"
+  },
+  "metadata.type.boolean": {
+    "other": "True/False値"
+  },
+  "metadata.type.date": {
+    "other": "日付と時刻"
+  },
+  "metadata.type.stars_rate": {
+    "other": "星の評価"
+  },
+  "metadata.type.css_label": {
+    "other": "カラーラベル"
+  },
+  "metadata.type.auto_complete": {
+    "other": "Auto Complete"
+  },
+  "metadata.type.tags": {
+    "other": "Extensible Tags (legacy)"
+  },
+  "metadata.type.choice": {
+    "other": "値から選択"
+  },
+  "metadata.type.multi_value": {
+    "other": "Multi Value select"
+  },
+  "metadata.type.tag_cloud": {
+    "other": "Tag Cloud"
+  },
+  "metadata.type.tag_cloud.values": {
+    "other": "Tag Cloud values"
+  },
+  "metadata.tag_cloud.entity.hint": {
+    "other": "Comma-separated list of possible tags"
+  },
+  "metadata.tag_cloud.entity": {
+    "other": "Values"
+  },
+  "metadata.type.json": {
+    "other": "JSON (内部フォーマット)"
+  },
+  "metadata.type.url": {
+    "other": "URL"
+  },
+  "metadata.type.date.format": {
+    "other": "フォーマット"
+  },
+  "metadata.type.date.format.date": {
+    "other": "日時"
+  },
+  "metadata.type.date.format.date-time": {
+    "other": "日付と時刻"
+  },
+  "metadata.type.date.format.time": {
+    "other": "時間"
+  },
+  "metadata.type.date.display": {
+    "other": "表示"
+  },
+  "metadata.type.date.display.normal": {
+    "other": "標準"
+  },
+  "metadata.type.date.display.relative": {
+    "other": "相対（xx日前...）"
+  },
+  "metadata.type.reaction": {
+    "other": "リアクション"
+  },
+  "metadata.type.integer.format": {
+    "other": "フォーマット"
+  },
+  "metadata.type.integer.format.general": {
+    "other": "全般"
+  },
+  "metadata.type.integer.format.bytesize": {
+    "other": "Byte Size"
+  },
+  "metadata.type.integer.format.percentage": {
+    "other": "パーセント"
+  },
+  "metadata.type.integer.format.progress": {
+    "other": "進捗状況"
+  },
+  "metadata.toggle.list-visibility": {
+    "other": "ファイルリストに値を表示"
+  },
+  "metadata.toggle.prompt": {
+    "other": "Prompt Metadata tagging on Upload"
+  },
+  "metadata.field.validation": {
+    "other": "Field Validation"
+  },
+  "metadata.validation.max-length.gte-min-length": {
+    "other": "Maximum length must be greater than or equal to minimum length"
+  },
+  "metadata.validation.max-value.gte-min-value": {
+    "other": "Maximum value must be greater than or equal to minimum value"
+  },
+  "metadata.validation.default-length.min": {
+    "other": "Default value length (%s) must be at least %s characters"
+  },
+  "metadata.validation.default-length.max": {
+    "other": "Default value length (%s) must not exceed %s characters"
+  },
+  "metadata.validation.default-value.min": {
+    "other": "Default value (%s) must be at least %s"
+  },
+  "metadata.validation.default-value.max": {
+    "other": "Default value (%s) must not exceed %s"
+  },
+  "metadata.editor.selection.key_exists": {
+    "other": "This key already exists"
+  },
+  "metadata.toggle.required": {
+    "other": "Required"
+  },
+  "metadata.boolean.yes": {
+    "other": "Yes"
+  },
+  "metadata.boolean.no": {
+    "other": "No"
+  },
+  "metadata.toggle.defaults": {
+    "other": "Enforce Defaults"
+  },
+  "metadata.field.mandatory": {
+    "other": "必須"
+  },
+  "perfs.booster.description": {
+    "other": "Pydio Booster が起動していることを確認し、WebSocket 通信を有効にします。"
+  },
+  "perfs.booster.error": {
+    "other": "Pydio Booster にエラーがあります, 専用パネルを確認してください"
+  },
+  "perfs.booster.help": {
+    "other": "Pydio Boosterは、PydioでWebSocketサポートとアップロード/ダウンロードアクセラレータを追加するための、展開が簡単な追加ツールを提供します。"
+  },
+  "perfs.booster.title": {
+    "other": "Pydio Booster"
+  },
+  "perfs.cache.description": {
+    "other": "Pydio がキャッシュレイヤーを使用するように設定されていることを確認します。"
+  },
+  "perfs.cache.error": {
+    "other": "キャッシュサービスをアクティベートしたことがないようです。"
+  },
+  "perfs.cache.help": {
+    "other": "PydioはRedisやMemcacheのような外部キャッシュサーバに接続したり、ファイル閲覧パフォーマンスを大幅に向上させるためにインメモリキャッシュを使用することができます。"
+  },
+  "perfs.cache.title": {
+    "other": "Pydio Cache"
+  },
+  "perfs.cli.description": {
+    "other": "時間のかかるタスクをコマンドラインに委任します。"
+  },
+  "perfs.cli.error": {
+    "other": "警告：コマンドラインが有効になっていません！"
+  },
+  "perfs.cli.help": {
+    "other": "コアパラメータでコマンドラインを有効にします。時間のかかるタスクが他のプロセスに委任されるため、エンドユーザーのパフォーマンスが大幅に向上します。"
+  },
+  "perfs.cli.title": {
+    "other": "コマンドラインPHP"
+  },
+  "perfs.debug.description": {
+    "other": "サーバーでデバッグモードが無効になっているかどうかを確認します"
+  },
+  "perfs.debug.error": {
+    "other": "警告: PYDIO_SERVER_DEBUG, PYDIO_CLIENT_DEBUG, PYDIO_SKIP_CACHE が True に設定されています!"
+  },
+  "perfs.debug.help": {
+    "other": "サーバでデバッグモードを無効にするようにしてください。conf/booststrap_context.php (または /etc/pydio/bootstrap_context.php) ファイルを編集して手動で行います。"
+  },
+  "perfs.debug.title": {
+    "other": "デバッグモード"
+  },
+  "perfs.desc": {
+    "other": "改善の可能性があるシステム構成を確認しています。"
+  },
+  "perfs.load.description": {
+    "other": "サーバーの高負荷を検出する（Linuxサーバーのみ）"
+  },
+  "perfs.load.error": {
+    "other": "サーバーにCPUやRAMを追加する必要があるかもしれません。"
+  },
+  "perfs.load.help": {
+    "other": "サーバーの負荷が高い場合は、Pydioを使用しているため、サーバーにCPUまたはRAMがないことを示している可能性があります。"
+  },
+  "perfs.load.title": {
+    "other": "サーバー負荷"
+  },
+  "perfs.mailer.description": {
+    "other": "メーラーがキュー機能を使用しているか確認します。"
+  },
+  "perfs.mailer.error": {
+    "other": "メーラーはメールの送信を再送するように設定されていません。"
+  },
+  "perfs.mailer.help": {
+    "other": "メールキューを使用すると、アクションとリクエストごとにメールを直接送信できなくなります。 代わりに、それらを別のデータベースに格納し、独立してキューを処理します。"
+  },
+  "perfs.mailer.title": {
+    "other": "メールキュー"
+  },
+  "perfs.more": {
+    "other": "詳細情報"
+  },
+  "perfs.opcache.description": {
+    "other": "PHP Opcode キャッシュが有効であることをチェックします。"
+  },
+  "perfs.opcache.error": {
+    "other": "APC、APCu、Opcache、XCacheからPHP拡張を検出できませんでした。"
+  },
+  "perfs.opcache.help": {
+    "other": "Pydioは豊富なPHPフレームワークで、メモリに多くのファイルを読み込む必要があります。 APC/u、Opcache、XCacheなどのPHP Opcache を有効にしてください。"
+  },
+  "perfs.opcache.title": {
+    "other": "Opcode Cache Extension"
+  },
+  "perfs.score": {
+    "other": "パフォーマンススコア"
+  },
+  "perfs.tests": {
+    "other": "パフォーマンステスト"
+  },
+  "perfs.title": {
+    "other": "システムパフォーマンス"
+  },
+  "perfs.widget": {
+    "other": "ダッシュボードにウィジェットを追加"
+  },
+  "plugins.1": {
+    "other": "全般的なオプション"
+  },
+  "plugins.2": {
+    "other": "マスター ドライバ"
+  },
+  "plugins.3": {
+    "other": "セカンダリドライバ"
+  },
+  "plugins.4": {
+    "other": "エディタプラグインは、アプリケーション内のファイルタイプに関連付けられているプレビューカー/エディタです。\nこれらのプラグインは、特にGUI（拡張）でハンドルで、それらがサポートするMimeTypeを宣言できます。\n注文パラメータは、 'Open...'アクションの優先順位を定義することもできます。"
+  },
+  "plugins.5": {
+    "other": "変更を保存"
+  },
+  "plugins.6": {
+    "other": "元に戻す"
+  },
+  "plugins.list.column.enabled": {
+    "other": "有効化"
+  },
+  "plugins.list.column.label": {
+    "other": "ラベル"
+  },
+  "plugins.list.column.id": {
+    "other": "Id"
+  },
+  "plugins.list.column.description": {
+    "other": "備考"
+  },
+  "plugins.list.action.edit": {
+    "other": "プラグインのパラメータを編集"
+  },
+  "plugins.documentation": {
+    "other": "ドキュメンテーション"
+  },
+  "policies.policy.create": {
+    "other": "作成"
+  },
+  "policies.policy.description": {
+    "other": "ポリシーの説明"
+  },
+  "policies.policy.name": {
+    "other": "ポリシー名"
+  },
+  "policies.policy.rules": {
+    "other": "# ルール"
+  },
+  "policies.policy.display": {
+    "other": "ポリシールールを表示"
+  },
+  "policies.policy.edit": {
+    "other": "ポリシールールを編集"
+  },
+  "policies.policy.editLabels": {
+    "other": "ラベルを編集"
+  },
+  "policies.policy.saveLabels": {
+    "other": "変更を保存"
+  },
+  "policies.policy.delete": {
+    "other": "ポリシーを削除"
+  },
+  "policies.policy.delete.confirm": {
+    "other": "このポリシーを削除してもよろしいですか？アプリケーションのセキュリティが損なわれないことを確認してください！"
+  },
+  "policies.policy.new": {
+    "other": "+ 新しいポリシー"
+  },
+  "policies.policy.type": {
+    "other": "ポリシータイプ"
+  },
+  "policies.rule.create": {
+    "other": "新しいルールを追加"
+  },
+  "policies.rule.delete": {
+    "other": "ルールを削除"
+  },
+  "policies.acl.empty-string": {
+    "other": "ポリシーが定義されておらず、動的なワークスペース権限として使用するものを作成します。"
+  },
+  "policies.rule.delete.confirm": {
+    "other": "このセキュリティルールを削除してもよろしいですか？これはアプリケーションのセキュリティモデルを外れる可能性があります！"
+  },
+  "policies.type.acl.legend": {
+    "other": "これらのポリシーは、リクエストコンテキストおよび/またはノードメタデータに基づいてワークスペースまたはノードへの読み書きアクセスを動的に提供するために使用されます。 ここで定義され、ユーザとロールの Access Control Panel で使用されます。"
+  },
+  "policies.type.acl.title": {
+    "other": "コンテキストベースのACL"
+  },
+  "policies.type.oidc.legend": {
+    "other": "OpenID Connectサービスは、APIへのアクセスの前に、ユーザーの認証に使用されます。 そのため、リクエストコンテキストに基づいて、一連のユーザのログイン操作を完全に無効にすることができます。 指定されたIPのセットまたは一度に記録を無効にします。"
+  },
+  "policies.type.oidc.title": {
+    "other": "OpenId Connect リソース"
+  },
+  "policies.type.rest.legend": {
+    "other": "これらのポリシーは、URI / メソッド毎に REST API を保護します。 特定のAPI への基本的なアクセスを許可します。 そして、API への制限アクセスを行い、フロントエンドアプリケーションのみでアクセスできるようにします。 正確な知見をお持ちでない場合、変更はしないでください。"
+  },
+  "policies.type.rest.title": {
+    "other": "REST リソース"
+  },
+  "react.1": {
+    "other": "親フォルダ"
+  },
+  "react.10": {
+    "other": "パーミッションを継承する"
+  },
+  "react.11": {
+    "other": "権限が空です"
+  },
+  "react.12": {
+    "other": "権限をクリア"
+  },
+  "react.13": {
+    "other": "すべての権限を表示"
+  },
+  "react.14": {
+    "other": "結果のツリーを表示"
+  },
+  "react.2": {
+    "other": "一括操作"
+  },
+  "react.3": {
+    "other": "'%s' の検索結果"
+  },
+  "react.4": {
+    "other": "結果を閉じる"
+  },
+  "react.5": {
+    "other": "拒否する"
+  },
+  "react.5a": {
+    "other": "読み込み"
+  },
+  "react.5b": {
+    "other": "書き込み"
+  },
+  "react.5c": {
+    "other": "アクセス"
+  },
+  "react.6": {
+    "other": "下位"
+  },
+  "react.7": {
+    "other": "ルールを作成"
+  },
+  "react.8": {
+    "other": "下位レベルで権限を管理しようとしています。このフォルダーはデフォルトで読み取り専用であり、その子のアクセス許可を選択的に管理します。選ぶ\n 現在の権限をその子にコピーするか、またはそれらの権限をクリアするかどうか。これにより、デフォルトで子にアクセスできなくなります。"
+  },
+  "react.9": {
+    "other": "サブレベルでアクセス許可の管理を無効にしようとしています。すべての子がこのフォルダーのアクセス許可を自動的に継承し、これらの子の現在の設定は失われます。確認してもよろしいですか？"
+  },
+  "scheduler.1": {
+    "other": "スケジューラは定期的にタスクを自動的にトリガーするために使用されます。 マスターコマンドを定期的に起動する必要があります。Pydio Booster を使用している場合は、これをトリガーする必要があります。 それ以外の場合は、CRON を使用して、毎分マスターコマンドを起動します。"
+  },
+  "scheduler.2": {
+    "other": "%1でコマンドラインが有効になっていないため、スケジューラはジョブを実行できません。"
+  },
+  "scheduler.3": {
+    "other": "グローバル設定"
+  },
+  "user.1": {
+    "other": "+ ユーザー"
+  },
+  "user.10": {
+    "other": "%i ワークスペースへのアクセス"
+  },
+  "user.11": {
+    "other": "%i ロール"
+  },
+  "user.12": {
+    "other": "グループパス"
+  },
+  "user.13": {
+    "other": "共有"
+  },
+  "user.14": {
+    "other": "新しいロールを作成"
+  },
+  "user.15": {
+    "other": "新しいグループを作成"
+  },
+  "user.16": {
+    "other": "グループ識別子"
+  },
+  "user.16.empty": {
+    "other": "一意の識別子を入力してください"
+  },
+  "user.16.format": {
+    "other": "英数字のみを使用してください"
+  },
+  "user.17": {
+    "other": "グループラベル"
+  },
+  "user.17.empty": {
+    "other": "このグループのラベルを入力してください"
+  },
+  "user.18": {
+    "other": "ロール識別子"
+  },
+  "user.18.empty": {
+    "other": "このロールのラベルを入力してください"
+  },
+  "user.19": {
+    "other": "新しいユーザーを作成"
+  },
+  "user.2": {
+    "other": "+ グループ"
+  },
+  "user.20": {
+    "other": "グループ %s にユーザーが作成されます"
+  },
+  "user.21": {
+    "other": "ユーザーログイン"
+  },
+  "user.22": {
+    "other": "ユーザーパスワード"
+  },
+  "user.23": {
+    "other": "パスワードの確認"
+  },
+  "user.24": {
+    "other": "ルートグループ"
+  },
+  "user.25": {
+    "other": "ルートグループロール"
+  },
+  "user.26": {
+    "other": "%s グループロール"
+  },
+  "user.27": {
+    "other": "ユーザー個人のロール"
+  },
+  "user.3": {
+    "other": "グループ"
+  },
+  "user.4": {
+    "other": "ロール"
+  },
+  "user.5": {
+    "other": "グループとユーザー"
+  },
+  "user.6": {
+    "other": "+ ロール"
+  },
+  "user.7": {
+    "other": "ユーザーとグループを検索"
+  },
+  "user.8": {
+    "other": "このグループのパラメータを設定して、すべてのグループとユーザーを適用します。"
+  },
+  "user.9": {
+    "other": "最後の接続"
+  },
+  "user.moveto.hint": {
+    "other": "宛先グループを選択し、ルートグループには「/」を残します。"
+  },
+  "user.filter.tooltip": {
+    "other": "ユーザー一覧をフィルター..."
+  },
+  "user.filter.locks": {
+    "other": "ロックされたユーザー"
+  },
+  "user.filter.hidden": {
+    "other": "公開リンク (非表示)"
+  },
+  "user.filter.status": {
+    "other": "ステータス"
+  },
+  "user.type.hidden": {
+    "other": "パブリックユーザ"
+  },
+  "user.type.hidden.legend": {
+    "other": "Public users are created for public links (one per link) and are hidden by default. It can be useful to list them to detect locked public links."
+  },
+  "user.rootgroup.legend": {
+    "other": "ユーザ階層全体に適用される権限"
+  },
+  "user.filter.internal": {
+    "other": "内部ユーザー"
+  },
+  "user.filter.shared": {
+    "other": "共有ユーザー"
+  },
+  "user.filter.admins": {
+    "other": "管理者のみ"
+  },
+  "user.filter.all": {
+    "other": "すべてのユーザ"
+  },
+  "user.filter.anon": {
+    "other": "匿名で表示"
+  },
+  "versions.editor.delete": {
+    "other": "ポリシーを削除"
+  },
+  "versions.editor.delete.confirm": {
+    "other": "このポリシーを削除してよろしいですか？　この処理は取り消しできません。"
+  },
+  "versions.editor.error.lastdelete": {
+    "other": "最後の期間はすべてのバージョンを削除するように設定されています。新しい期間を追加することはできません！"
+  },
+  "versions.editor.title": {
+    "other": "ポリシー %s"
+  },
+  "versions.period.keep-all": {
+    "other": "すべて保持"
+  },
+  "versions.period.keep-all.always": {
+    "other": "常にすべてのバージョンを保持"
+  },
+  "versions.period.keep-n": {
+    "other": "%s バージョンを保持"
+  },
+  "versions.period.keep-n-after": {
+    "other": "%1 の後に %2のバージョンを保持します"
+  },
+  "versions.period.max-n": {
+    "other": "最大 %s バージョン"
+  },
+  "versions.period.remove-all": {
+    "other": "すべて削除"
+  },
+  "versions.period.remove-all-after": {
+    "other": "%s 日後すべて削除"
+  },
+  "versions.period.retentions-n": {
+    "other": "保持期間 %s"
+  },
+  "virtual.create": {
+    "other": "+ テンプレートパス"
+  },
+  "virtual.create.button": {
+    "other": "作成"
+  },
+  "virtual.label": {
+    "other": "ラベル"
+  },
+  "virtual.col.id": {
+    "other": "テンプレートID"
+  },
+  "virtual.col.code": {
+    "other": "テンプレートコード"
+  },
+  "virtual.label.new": {
+    "other": "テンプレートのラベル"
+  },
+  "virtual.legend.1": {
+    "other": "テンプレートパスは、コンテキストに応じて動的に計算されます。 これらは、固定データソースパスの代わりにワークスペースのルートとして使用できます。 これらはデフォルトで、ユーザーごとに異なるフォルダーを指す個人用ファイルワークスペースを作成し、ユーザーのCellsフォルダーの場所を計算するために使用されます。"
+  },
+  "virtual.legend.2": {
+    "other": "エディター内でCtrl + Spaceを使用して、可能な値に関するヒントを取得します。 現在サポートされている値は、User.Name（現在のユーザーがログインしたログインに動的に解決される）とDataSources（データソースを動的に選択するため）です。"
+  },
+  "virtual.title": {
+    "other": "テンプレートパス"
+  },
+  "virtual.save": {
+    "other": "テンプレートを保存"
+  },
+  "virtual.delete": {
+    "other": "テンプレートを削除"
+  },
+  "virtual.delete.confirm": {
+    "other": "このテンプレートパスを削除してもよろしいですか？ 削除を取り消すことはできません。"
+  },
+  "virtual.code": {
+    "other": "テンプレートコード"
+  },
+  "virtual.code.display": {
+    "other": "コードを表示"
+  },
+  "virtual.code.edit": {
+    "other": "コードを編集"
+  },
+  "virtual.card.title": {
+    "other": "動的に計算されたパス"
+  },
+  "virtual.card.cleanOnDelete": {
+    "other": "ユーザーの削除時、データの名前を {deleted-NAME-UUID} に変更します。"
+  },
+  "virtual.card.cleanOnDelete-legend-off": {
+    "other": "テンプレートパスが(User.Name を使用して) 各ユーザのフォルダを作成していない場合は、このオプションを使用しないでください。"
+  },
+  "virtual.card.cleanOnDelete-legend-on": {
+    "other": "テンプレートパスはユーザーごとにフォルダーを作成するように見えるため (User.Name を使用)、このオプションをお勧めします。"
+  },
+  "ws.1": {
+    "other": "データソースの管理"
+  },
+  "ws.10": {
+    "other": "データソースを選択"
+  },
+  "ws.11": {
+    "other": "ワークスペースの基準..."
+  },
+  "ws.12": {
+    "other": "テンプレート %s"
+  },
+  "ws.13": {
+    "other": "テンプレートオプション"
+  },
+  "ws.14": {
+    "other": "一般的なオプションの設定"
+  },
+  "ws.15": {
+    "other": "ワークスペースオプション"
+  },
+  "ws.16": {
+    "other": "ストレージドライバを選択"
+  },
+  "ws.17": {
+    "other": "ストレージの種類を選択"
+  },
+  "ws.18": {
+    "other": "ドライバを読み込み中"
+  },
+  "ws.19": {
+    "other": "機能を追加するために保存"
+  },
+  "ws.2": {
+    "other": "データソースを閉じる"
+  },
+  "ws.20": {
+    "other": "作成"
+  },
+  "ws.21": {
+    "other": "テンプレートの一般オプション"
+  },
+  "ws.22": {
+    "other": "ワークスペースの一般オプション"
+  },
+  "ws.23": {
+    "other": "ワークスペースを削除"
+  },
+  "ws.24": {
+    "other": "子ワークスペース"
+  },
+  "ws.25": {
+    "other": "共有"
+  },
+  "ws.26": {
+    "other": "フォルダ権限"
+  },
+  "ws.27": {
+    "other": "追加機能"
+  },
+  "ws.28": {
+    "other": "サマリー"
+  },
+  "ws.29": {
+    "other": "パラメーター"
+  },
+  "ws.3": {
+    "other": "+ ワークスペース"
+  },
+  "ws.filter.workspaces": {
+    "other": "ワークスペースを絞り込む..."
+  },
+  "ws.30": {
+    "other": "全般的なオプション"
+  },
+  "ws.31": {
+    "other": "機能を削除"
+  },
+  "ws.32": {
+    "other": "機能を追加..."
+  },
+  "ws.33": {
+    "other": "最近のアクティビティ"
+  },
+  "ws.34": {
+    "other": "このワークスペースの最後のイベント"
+  },
+  "ws.35": {
+    "other": "%i ユーザーにアクセス可能"
+  },
+  "ws.36": {
+    "other": "+ %i 個のファイルまたはフォルダが共有されています"
+  },
+  "ws.37": {
+    "other": "このテンプレートを使用するワークスペース"
+  },
+  "ws.38": {
+    "other": "このワークスペースの共有アイテム"
+  },
+  "ws.39": {
+    "other": "所有者"
+  },
+  "ws.4": {
+    "other": "+ データソース"
+  },
+  "ws.40": {
+    "other": "共有タイプ"
+  },
+  "ws.41": {
+    "other": "パス"
+  },
+  "ws.42": {
+    "other": "フォルダレベルの権限"
+  },
+  "ws.43": {
+    "other": "ここで、このワークスペースフォルダへのデフォルトのアクセス許可を指定します。 サブレベルで権限管理を有効にするには、特定のフォルダーで 'CHILDREN' を選択します。\nこれにより、現在のフォルダーがデフォルトで読み取り専用に設定され、その子フォルダーへのアクセスを選択的に開くことができます。"
+  },
+  "ws.44": {
+    "other": "Please be aware that this is only a mask: if you modify the real folders directly, you may have\n                                to edit this mask accordingly. Also, these permissions may be globally limited by the 'Default Rights'\n                                parameter set for this workspace (see the General tab)."
+  },
+  "ws.45": {
+    "other": "As its parameters are using 'PYDIO_USER' or 'PYDIO_GROUP_*' keywords, the contents of\n                                this workspace will vary depending on the currently authenticated user. For this reason, you cannot browse the\n                                folders directly and assign permissions to them, but you can freely define some generic paths that will be used as masks."
+  },
+  "ws.46": {
+    "other": "機能を追加"
+  },
+  "ws.47": {
+    "other": "機能を選択"
+  },
+  "ws.48": {
+    "other": "このワークスペース/テンプレートは、conf/bootstrap_repositories.phpファイルで直接定義されているため、編集できません。"
+  },
+  "ws.49": {
+    "other": ""
+  },
+  "ws.4b": {
+    "other": "+ バージョンポリシー"
+  },
+  "ws.5": {
+    "other": "スラッグ"
+  },
+  "ws.50": {
+    "other": "インデックス"
+  },
+  "ws.51": {
+    "other": "このワークスペースにはインデクサー（%s）があります。 通常、ファイルがアプリケーションインタフェースを介して追加/削除されると、インデックスは「オンザフライ」で行われます。 ただし、ストレージレベルで直接変更を行っている場合は、時間から索引付けを手動で再起動する必要があります。 下のボタンを使用するには、インデックスのどちらかのインデックスを使用するか、スケジューラでタスクをプログラムして、定期的に索引付けを実行します。"
+  },
+  "ws.52": {
+    "other": "注意: この作業はユーザー固有の内容であるため、ユーザーごとにインデックス作成が開始されます。"
+  },
+  "ws.53": {
+    "other": "今すぐインデックスを起動"
+  },
+  "ws.54": {
+    "other": "毎日午前3時にスケジュールする"
+  },
+  "ws.55": {
+    "other": "自動パージ"
+  },
+  "ws.56": {
+    "other": "このワークスペースには、%s 日以降に残っていないドキュメントを自動的に削除するための「パージ」設定があります。 このワークスペースを定期的に処理し、期限切れ文書を探すためにスケジューラでタスクを追加してください。 下のボタンを使用してこのタスクを自動的に作成することができます、Okはパージを直接実行できます。"
+  },
+  "ws.57": {
+    "other": "注意: この作業にはユーザー固有のコンテンツが含まれているため、各ユーザーに対してパージが実行されます。"
+  },
+  "ws.58": {
+    "other": "今すぐパージ"
+  },
+  "ws.59": {
+    "other": "毎日午前4時にスケジュールする"
+  },
+  "ws.6": {
+    "other": "新しいワークスペース"
+  },
+  "ws.60": {
+    "other": "ワークスペースのアクティビティ"
+  },
+  "ws.61": {
+    "other": "ワークスペースのアクティビティは、右側のパネルのユーザーに表示されます。 このワークスペースのすべてのアクティビティをクリアすることができます。これは便利なものになる可能性があります。 このワークスペースにいくつかのテストを行ったステージング期間後にプロダクションで「ライブ」になっている場合。"
+  },
+  "ws.62": {
+    "other": "アクティビティをクリア"
+  },
+  "ws.63": {
+    "other": "警告、これはユーザーに表示されるこのワークスペースのすべてのアクティビティをクリアします。本当にそれを行ってもよろしいですか？"
+  },
+  "ws.64": {
+    "other": "%s 件の予定を消去しました"
+  },
+  "ws.65": {
+    "other": "ワークスペースのメンテナンス"
+  },
+  "ws.66": {
+    "other": "実行中のタスク"
+  },
+  "ws.67": {
+    "other": "実行中のタスクはありません"
+  },
+  "ws.68": {
+    "other": "パラメータがありません"
+  },
+  "ws.69": {
+    "other": "テンプレートベースのワークスペース"
+  },
+  "ws.7": {
+    "other": "新しいデータ ソース"
+  },
+  "ws.70": {
+    "other": "ドライバーベースのワークスペース"
+  },
+  "ws.71": {
+    "other": "以下の手順を完了してください"
+  },
+  "ws.72": {
+    "other": "右側のフォームに記入してください"
+  },
+  "ws.73": {
+    "other": "続ける前に値を選択"
+  },
+  "ws.74": {
+    "other": "右側のフォームを使用して、新しいデータソースを作成します。 "
+  },
+  "ws.75": {
+    "other": "データソースは、データが格納される場所を定義します。"
+  },
+  "ws.76": {
+    "other": "Pydio はすべてのデータソースを 1 つのマスターツリーに集約し、ワークスペースを使用して権利を割り当てることができます。"
+  },
+  "ws.8": {
+    "other": "既存のデータ ソース"
+  },
+  "ws.9": {
+    "other": "データソースノード"
+  },
+  "ws.board.empty": {
+    "other": "ワークスペースが定義されていません"
+  },
+  "ws.board.summary": {
+    "other": "ワークスペースのルート"
+  },
+  "ws.board.syncable": {
+    "other": "同期"
+  },
+  "ws.complete.datasources": {
+    "other": "データソース"
+  },
+  "ws.complete.folders": {
+    "other": "内部フォルダ"
+  },
+  "ws.complete.label": {
+    "other": "データソースまたはテンプレートパスを選択"
+  },
+  "ws.complete.additional": {
+    "other": "追加ルート"
+  },
+  "ws.complete.resolves": {
+    "other": "解決先"
+  },
+  "ws.complete.templates": {
+    "other": "プリセットテンプレートパス"
+  },
+  "ws.dashboard": {
+    "other": "ワークスペースは、ユーザーデータへの主なアクセス ポイントを定義します。 このデータソースのパスが指すワークスペースを作成するために、少なくとも 1 つのデータソースを定義してください。"
+  },
+  "ws.editor.data.legend": {
+    "other": "ワークスペースはユーザーに 1 つまたは複数の 'ルート' を公開します。実行時に自動的に解決されるデータソースまたはテンプレートパスから1つ以上のパスを選択します。"
+  },
+  "ws.editor.data.title": {
+    "other": "データアクセス"
+  },
+  "ws.editor.default_rights": {
+    "other": "このワークスペースにデフォルトの権限を設定します（アプリケーションのすべての内部ユーザーに適用されます）。 ピープルのセクションでは、ユーザー/役割ごと/グループごとにこれらの権限を上書きできます。"
+  },
+  "ws.editor.default_rights.hint": {
+    "other": "デフォルトの権限"
+  },
+  "ws.editor.default_rights.none": {
+    "other": "なし"
+  },
+  "ws.editor.default_rights.read": {
+    "other": "読み取り専用"
+  },
+  "ws.editor.default_rights.readwrite": {
+    "other": "読み込みと書き込み"
+  },
+  "ws.editor.default_rights.write": {
+    "other": "書き込み専用"
+  },
+  "ws.editor.description": {
+    "other": "追加の説明 (オプション)"
+  },
+  "ws.editor.help.1": {
+    "other": "ワークスペースは、あなたのデータへのアクセスをユーザーに付与します。データソース内で選択した1つまたは複数のフォルダを公開します。"
+  },
+  "ws.editor.help.2": {
+    "other": "データがどのようにユーザーに表示されるかを適切に整理することが重要です。 組織のさまざまな部分(財務、マーケティング、技術データなど) のワークスペースを作成することができます。 をクリックします。プロジェクトごとなどに、ユーザーごと/ロールごと/グループごとにワークスペースにアクセス権を割り当てることができます。"
+  },
+  "ws.editor.help.delete": {
+    "other": "警告、危険な操作です！これは取り消せません。"
+  },
+  "ws.editor.label.legend": {
+    "other": "このワークスペースの人間に優しいラベル"
+  },
+  "ws.editor.options.legend": {
+    "other": "ユーザーにラベルと説明が表示されます。ユーザーがデータを整理しやすくするために、わかりやすい名前を選択してください。"
+  },
+  "ws.editor.other": {
+    "other": "その他のプロパティ"
+  },
+  "ws.editor.other.layout": {
+    "other": "ワークスペースのレイアウト"
+  },
+  "ws.editor.other.layout.default": {
+    "other": "デフォルト"
+  },
+  "ws.editor.other.layout.easy": {
+    "other": "簡単転送レイアウト（エンタープライズ版のみ）"
+  },
+  "ws.editor.other.skiprecycle": {
+    "other": "ごみ箱をスキップ"
+  },
+  "ws.editor.other.skiprecycle.legend": {
+    "other": "このワークスペースのごみ箱を無効にします。すべてのファイルが完全に削除されます。 このワークスペース内で作成されたセルには適用されません。ヒューマンエラーを避けるため、ファイルは常にワークスペースのリサイクルに移動されます。"
+  },
+  "ws.editor.other.sync": {
+    "other": "Allow desktop synchronisation (still experimental)"
+  },
+  "ws.editor.other.sync.legend": {
+    "other": "デスクトップ同期により、ユーザーはコンピュータ上のファイルをオフラインで同期することができます。 警告、この機能は個人用ファイルでのみサポートされています。多くのユーザーが同じフォルダにドキュメントを同期すると、共有ワークスペースが競合を生じる可能性があります。 個人用ファイルの場合は、セキュリティポリシーを使用してロールごとにこの機能を有効/無効にすることもできます。"
+  },
+  "ws.editor.other.sync-personal": {
+    "other": "(個人用ワークスペースのみ)"
+  },
+  "ws.editor.sync.warning": {
+    "other": "警告！"
+  },
+  "ws.editor.sync.warning.validate": {
+    "other": "了解しました"
+  },
+  "ws.editor.sync.warning.enable": {
+    "other": "多くのユーザーがファイルを同期して編集している場合、共有ワークスペースでの同期を有効にすると予期しない結果が発生する可能性があります。 この機能は現在当社のプロフェッショナルサービスによってサポートされていませんのでご注意ください。ご自身の責任においてこの機能をご利用ください！"
+  },
+  "ws.editor.sync.warning.disable": {
+    "other": "ユーザーがこのワークスペースに接続している場合、同期タスクは機能しなくなります。 それを変更してもよろしいですか？"
+  },
+  "ws.editor.other.quota": {
+    "other": "ディスク使用量クォータ (制限しない場合は 0 のままにします)。このクォータは、このワークスペースのすべてのファイル (または個人ファイルなどのワークスペースのユーザー固有のコンテンツ) に対して計算されます。"
+  },
+  "ws.editor.other.quota.noquota": {
+    "other": "クォータが設定されていません"
+  },
+  "ws.editor.path.folder": {
+    "other": "フォルダパス"
+  },
+  "ws.editor.path.template": {
+    "other": "テンプレートパス"
+  },
+  "ws.editor.slug.legend": {
+    "other": "たとえばURLで使用される技術名称で、自動的に計算されますが、カスタマイズすることができます。"
+  },
+  "services.text-filter.hint": {
+    "other": "フィルター..."
+  },
+  "services.filter.nofilter": {
+    "other": "すべてのサービス"
+  },
+  "services.filter.started": {
+    "other": "実行中のみ"
+  },
+  "services.filter.stopped": {
+    "other": "停止のみ"
+  },
+  "services.peerfilter.title": {
+    "other": "ノードの選択"
+  },
+  "services.toggle.details": {
+    "other": "詳細を表示"
+  },
+  "services.empty.loading": {
+    "other": "サービスの状態を読み込み中"
+  },
+  "services.empty.noservice": {
+    "other": "サービスがありません"
+  },
+  "services.column.name": {
+    "other": "サービス名"
+  },
+  "services.column.description": {
+    "other": "備考"
+  },
+  "services.column.version": {
+    "other": "バージョン"
+  },
+  "services.column.tag": {
+    "other": "タグ"
+  },
+  "services.column.peers": {
+    "other": "ピア"
+  },
+  "services.tag.gateway.title": {
+    "other": "ゲートウェイ"
+  },
+  "services.tag.gateway.description": {
+    "other": "プラットフォームにアクセスするための公開サービス"
+  },
+  "services.tag.datasource.title": {
+    "other": "データソース"
+  },
+  "services.tag.datasource.description": {
+    "other": "ファイルストレージにアクセスするために使用されるストレージエンドポイント。 メインサービスは、サブサービスの開始を担当します（データソースごと）。"
+  },
+  "services.tag.data.title": {
+    "other": "データ"
+  },
+  "services.tag.data.description": {
+    "other": "データとメタデータを処理するサービス。"
+  },
+  "services.tag.idm.title": {
+    "other": "アイデンティティ管理"
+  },
+  "services.tag.idm.description": {
+    "other": "認証と承認、役割、セキュリティポリシーなどに関連するすべてのサービス。"
+  },
+  "services.tag.scheduler.title": {
+    "other": "スケジューラ"
+  },
+  "services.tag.scheduler.description": {
+    "other": "バックグラウンドジョブを管理するためのサービス。 タスクサーバーは、さまざまなピアにディスパッチできます。"
+  },
+  "services.tag.broker.title": {
+    "other": "ブローカー（Broker）"
+  },
+  "services.tag.broker.description": {
+    "other": "アプリケーション全体でイベントを（通常はユーザーに向けて）ディスパッチおよび処理するサービス。"
+  },
+  "services.tag.frontend.title": {
+    "other": "フロントエンド"
+  },
+  "services.tag.frontend.description": {
+    "other": "ブラウザのユーザーインターフェイス用のWebサービス"
+  },
+  "services.tag.discovery.title": {
+    "other": "ディスカバリー"
+  },
+  "services.tag.discovery.description": {
+    "other": "他のすべてのサービスによって呼び出される基本的な構成とサービスレジストリ。"
+  },
+  "services.service.ip": {
+    "other": "%s で実行中"
+  },
+  "services.service.datasource.sync": {
+    "other": "同期"
+  },
+  "services.service.datasource.objects": {
+    "other": "オブジェクト"
+  },
+  "services.service.datasource.objects.legend": {
+    "other": "データをオブジェクトストレージとして提供するS3レイヤー"
+  },
+  "services.service.datasource.legend": {
+    "other": "データソースは、オブジェクトレイヤーからインデックス DB にデータを同期します。"
+  },
+  "services.service.datasource.index": {
+    "other": "インデックス"
+  },
+  "scheduler.title": {
+    "other": "スケジューラ"
+  },
+  "scheduler.legend": {
+    "other": "定期的にバックグラウンドで実行されているジョブ、またはイベントによってトリガーされたジョブ"
+  },
+  "scheduler.system.title": {
+    "other": "システムフロー"
+  },
+  "scheduler.system.legend": {
+    "other": "これらのフローは、デフォルトでアプリケーション内に登録されます。 バックグラウンドのノードから情報を抽出したり、何らかのクリーニング操作を行ったりするのが一般的です。"
+  },
+  "scheduler.inactives.title": {
+    "other": "非アクティブなフロー"
+  },
+  "scheduler.inactives.legend": {
+    "other": "これらのフローは非アクティブです。フローを有効にするには、フローをクリックします。"
+  },
+  "scheduler.system.empty": {
+    "other": "フローはスケジュールされていません。"
+  },
+  "scheduler.users.title": {
+    "other": "ユーザーのフロー"
+  },
+  "scheduler.users.legend": {
+    "other": "これらのフローは動的に作成され、ユーザーアクションによってトリガーされます。"
+  },
+  "scheduler.users.empty": {
+    "other": "ユーザーによって起動されたフローはありません"
+  },
+  "scheduler.cellsflows.cta.button": {
+    "other": "+ カスタムフロー"
+  },
+  "scheduler.cellsflows.cta.text": {
+    "other": "独自のフローを作成する必要がありますか? セルフローにより、セル内で繰り返し手動タスクを簡単に自動化できます。"
+  },
+  "scheduler.cellsflows.dialog.button": {
+    "other": "詳細はこちら"
+  },
+  "scheduler.cellsflows.dialog.text": {
+    "other": "独自のワークフローの作成からタスクのスケジュール、サードパーティのツールとの統合まで、カスタマイズ可能なコンポーネントにより、イベントに対応し、自動的にアクションを実行できます。"
+  },
+  "scheduler.job.label": {
+    "other": "ラベル"
+  },
+  "scheduler.job.endTime": {
+    "other": "最後の実行"
+  },
+  "scheduler.job.status": {
+    "other": "ステータス"
+  },
+  "scheduler.job.owner": {
+    "other": "所有者"
+  },
+  "scheduler.job.trigger": {
+    "other": "トリガー"
+  },
+  "scheduler.job.delete": {
+    "other": "削除"
+  },
+  "scheduler.job.delete.confirm": {
+    "other": "このフローを削除してもよろしいですか？この操作は元に戻せません！"
+  },
+  "scheduler.tasks.delete.confirm": {
+    "other": "このフローのすべてのタスクをクリアしてもよろしいですか？"
+  },
+  "scheduler.trigger.picker.title": {
+    "other": "ジョブをトリガーする..."
+  },
+  "scheduler.trigger.type.nodes": {
+    "other": "ファイルとフォルダ(ノード)イベント:ファイルの変更を検出して、ファイルを移動したり、メタデータを自動的に更新したりします。"
+  },
+  "scheduler.trigger.type.workspaces": {
+    "other": "ワークスペースイベント: ワークスペースの作成/削除時にトリガーされます。セルからワークスペースをフィルタリングするには、スコープフラグを使用します"
+  },
+  "scheduler.trigger.type.acls": {
+    "other": "ACL イベント : アクセス制御リストは、ワークスペース、ノード、ロールをリンクして、データへのアクセス権を提供します。"
+  },
+  "scheduler.trigger.type.users": {
+    "other": "ユーザーイベント: ユーザーの追加/削除時、およびユーザーのログイン/ログアウト時にトリガーされます。バリデーションフローのトリガーやアクセスの割り当てに使用できます。"
+  },
+  "scheduler.trigger.type.roles": {
+    "other": "ロールイベント: ロール名に基づいてアクセスを自動化するために使用できます。IsTeam, IsGroup, IsUser フラグを使用してロールをフィルタリングします。"
+  },
+  "scheduler.trigger.type.chat": {
+    "other": "チャットイベント: 新しいチャットメッセージまたはチャットルームの変更に反応します"
+  },
+  "scheduler.trigger.type.chat-messages": {
+    "other": "チャットメッセージイベント"
+  },
+  "scheduler.trigger.type.chat-rooms": {
+    "other": "チャットルームイベント"
+  },
+  "scheduler.trigger.create.node": {
+    "other": "ノードを作成"
+  },
+  "scheduler.trigger.create.node.description": {
+    "other": "新しいファイルがアップロードされたか、新しいフォルダが作成されました"
+  },
+  "scheduler.trigger.read.node": {
+    "other": "ノードの読み取り"
+  },
+  "scheduler.trigger.read.node.description": {
+    "other": "ファイルがダウンロードされたか、フォルダ内容が一覧表示されました"
+  },
+  "scheduler.trigger.update.path": {
+    "other": "パスを更新"
+  },
+  "scheduler.trigger.update.path.description": {
+    "other": "ファイルまたはフォルダが移動または名前変更されました。"
+  },
+  "scheduler.trigger.update.content": {
+    "other": "コンテンツを更新"
+  },
+  "scheduler.trigger.update.content.description": {
+    "other": "ファイルの内容は、編集またはアップロード上書きによって更新されました。"
+  },
+  "scheduler.trigger.update.metadata": {
+    "other": "メタデータを更新"
+  },
+  "scheduler.trigger.update.metadata.description": {
+    "other": "ファイルまたはフォルダの内部メタデータが変更されました。"
+  },
+  "scheduler.trigger.update.user-metadata": {
+    "other": "ユーザメタデータを更新"
+  },
+  "scheduler.trigger.update.user-metadata.description": {
+    "other": "ユーザー定義のメタデータが変更されました (イベントには更新されたメタデータが含まれています)。"
+  },
+  "scheduler.trigger.delete.node": {
+    "other": "ノードを削除"
+  },
+  "scheduler.trigger.delete.node.description": {
+    "other": "ファイルまたはフォルダが確実に削除されました。"
+  },
+  "scheduler.trigger.create.user": {
+    "other": "ユーザーを作成"
+  },
+  "scheduler.trigger.create.user.description": {
+    "other": "ユーザーまたはグループが作成されました。"
+  },
+  "scheduler.trigger.read.user": {
+    "other": "ユーザーの読み取り"
+  },
+  "scheduler.trigger.read.user.description": {
+    "other": "ユーザーまたはグループがアクセスまたはリストされました。"
+  },
+  "scheduler.trigger.update.user": {
+    "other": "ユーザーを更新"
+  },
+  "scheduler.trigger.update.user.description": {
+    "other": "ユーザーまたはグループデータが更新されました。通常、ユーザーが設定を変更した場合や、管理者がロールを割り当てた場合に発生します。"
+  },
+  "scheduler.trigger.delete.user": {
+    "other": "ユーザーを削除"
+  },
+  "scheduler.trigger.delete.user.description": {
+    "other": "ユーザーまたはグループが削除されました。"
+  },
+  "scheduler.trigger.bind.user": {
+    "other": "ユーザーバインド"
+  },
+  "scheduler.trigger.bind.user.description": {
+    "other": "ユーザーがログインしました。"
+  },
+  "scheduler.trigger.logout.user": {
+    "other": "ユーザーログアウト"
+  },
+  "scheduler.trigger.logout.user.description": {
+    "other": "ユーザーがログアウトしました。"
+  },
+  "scheduler.trigger.role.create": {
+    "other": "ロールを作成"
+  },
+  "scheduler.trigger.role.create.description": {
+    "other": "管理者またはユーザーによって新しいロールが作成されました。"
+  },
+  "scheduler.trigger.role.update": {
+    "other": "ロールを更新"
+  },
+  "scheduler.trigger.role.update.description": {
+    "other": "ロールが更新されました。"
+  },
+  "scheduler.trigger.role.delete": {
+    "other": "ロールを削除"
+  },
+  "scheduler.trigger.role.delete.description": {
+    "other": "ロールが削除されました。"
+  },
+  "scheduler.trigger.workspace.create": {
+    "other": "ワークスペースを作成"
+  },
+  "scheduler.trigger.workspace.create.description": {
+    "other": "新しいワークスペースまたはセルが作成されました。"
+  },
+  "scheduler.trigger.workspace.update": {
+    "other": "ワークスペースを更新"
+  },
+  "scheduler.trigger.workspace.update.description": {
+    "other": "ワークスペースまたはセルが更新されました。"
+  },
+  "scheduler.trigger.workspace.delete": {
+    "other": "ワークスペースを削除"
+  },
+  "scheduler.trigger.workspace.delete.description": {
+    "other": "ワークスペースまたはセルが削除されました。"
+  },
+  "scheduler.trigger.acl.create": {
+    "other": "ACLの作成/更新"
+  },
+  "scheduler.trigger.acl.create.description": {
+    "other": "アクセス制御が開かれました。"
+  },
+  "scheduler.trigger.acl.delete": {
+    "other": "ACL の削除"
+  },
+  "scheduler.trigger.acl.delete.description": {
+    "other": "アクセス制御が削除されました。"
+  },
+  "scheduler.trigger.chat-message.put": {
+    "other": "新規チャットメッセージ"
+  },
+  "scheduler.trigger.chat-message.put.description": {
+    "other": "チャットルームにメッセージが投稿されました。"
+  },
+  "scheduler.trigger.chat-message.delete": {
+    "other": "チャットメッセージが削除されました。"
+  },
+  "scheduler.trigger.chat-message.delete.description": {
+    "other": "チャットルームからメッセージが削除されました。"
+  },
+  "scheduler.trigger.chat-room.put": {
+    "other": "新しいチャットルーム"
+  },
+  "scheduler.trigger.chat-room.put.description": {
+    "other": "新しいチャットルームが作成されました。"
+  },
+  "scheduler.trigger.chat-room.delete": {
+    "other": "チャットルームを削除"
+  },
+  "scheduler.trigger.chat-room.delete.description": {
+    "other": "チャットルームが削除されました。"
+  },
+  "scheduler.trigger.events": {
+    "other": "イベント"
+  },
+  "scheduler.trigger.manual": {
+    "other": "手動トリガー"
+  },
+  "scheduler.trigger.periodic": {
+    "other": "定期スケジュール"
+  },
+  "scheduler.job.disabled": {
+    "other": "無効"
+  },
+  "scheduler.tasks.running.count": {
+    "other": "%s 件のタスクが実行中です"
+  },
+  "scheduler.task.action.pause": {
+    "other": "タスクを一時停止"
+  },
+  "scheduler.task.action.resume": {
+    "other": "タスクを再開"
+  },
+  "scheduler.task.action.stop": {
+    "other": "今すぐ停止"
+  },
+  "scheduler.task.action.delete": {
+    "other": "削除"
+  },
+  "scheduler.task.action.enable": {
+    "other": "フローを有効にする"
+  },
+  "scheduler.task.action.run": {
+    "other": "今すぐ実行"
+  },
+  "scheduler.task.action.disable": {
+    "other": "フローを無効にする"
+  },
+  "scheduler.task.id": {
+    "other": "ID"
+  },
+  "scheduler.task.start": {
+    "other": "開始"
+  },
+  "scheduler.task.end": {
+    "other": "終了"
+  },
+  "scheduler.task.duration": {
+    "other": "期間"
+  },
+  "scheduler.task.status": {
+    "other": "ステータス"
+  },
+  "scheduler.task.message": {
+    "other": "メッセージ"
+  },
+  "scheduler.tasks.running": {
+    "other": "実行中のタスク"
+  },
+  "scheduler.tasks.history": {
+    "other": "タスク履歴"
+  },
+  "scheduler.tasks.history.empty": {
+    "other": "まだ実行されているタスクはありません"
+  },
+  "scheduler.tasks.history.more": {
+    "other": "他に %s 個のタスクが表示されていません..."
+  },
+  "scheduler.tasks.running.empty": {
+    "other": "現在実行中のタスクはありません"
+  },
+  "scheduler.tasks.bulk.delete": {
+    "other": "タスクを削除"
+  },
+  "scheduler.tasks.bulk.enable": {
+    "other": "複数を有効にする"
+  },
+  "scheduler.tasks.bulk.disable": {
+    "other": "複数を無効にする"
+  },
+  "scheduler.tasks.bulk.clear": {
+    "other": "すべてクリア"
+  },
+  "scheduler.tasks.activity.title": {
+    "other": "タスクのアクティビティ"
+  },
+  "scheduler.tasks.activity.loading": {
+    "other": "アクティビティを読み込み中..."
+  },
+  "scheduler.tasks.activity.empty": {
+    "other": "ログが見つかりません"
+  },
+  "scheduler.schedule.monthly": {
+    "other": "毎月の %1 ごとに %2"
+  },
+  "scheduler.schedule.monthly.short": {
+    "other": "毎月 %1 回"
+  },
+  "scheduler.schedule.weekly": {
+    "other": "%1 ごとに %2"
+  },
+  "scheduler.schedule.weekly.short": {
+    "other": "%1 ごと"
+  },
+  "scheduler.schedule.daily": {
+    "other": "毎日 %1"
+  },
+  "scheduler.schedule.daily.short": {
+    "other": "%1 に"
+  },
+  "scheduler.schedule.timely": {
+    "other": "%1 ごと"
+  },
+  "scheduler.schedule.title": {
+    "other": "フロースケジュール"
+  },
+  "scheduler.schedule.type": {
+    "other": "スケジュールタイプ"
+  },
+  "scheduler.schedule.type.manual": {
+    "other": "手動"
+  },
+  "scheduler.schedule.type.monthly": {
+    "other": "月次"
+  },
+  "scheduler.schedule.type.weekly": {
+    "other": "週次"
+  },
+  "scheduler.schedule.type.daily": {
+    "other": "日次"
+  },
+  "scheduler.schedule.type.timely": {
+    "other": "常に..."
+  },
+  "scheduler.schedule.type.once": {
+    "other": "一度だけ実行"
+  },
+  "scheduler.schedule.detail.monthday": {
+    "other": "Day of the month"
+  },
+  "scheduler.schedule.detail.weekday": {
+    "other": "Day of the week"
+  },
+  "scheduler.schedule.detail.daytime": {
+    "other": "Time of the day"
+  },
+  "scheduler.schedule.detail.daydate": {
+    "other": "ユニークな日付"
+  },
+  "scheduler.schedule.detail.minutes": {
+    "other": "期間 (分)"
+  },
+  "scheduler.job-parameters.dialog": {
+    "other": "フローパラメータ"
+  },
+  "scheduler.job-parameters.button": {
+    "other": "パラメータ"
+  },
+  "developer.rest.apis": {
+    "other": "REST API ドキュメント"
+  },
+  "developer.rest.apis.legend": {
+    "other": "以下はPydio Cellsで利用可能なすべてのAPIです。 これらの API を使用するには、まず OpenIDConnect サービスに対して認証して有効な JWT を取得する必要があります。 詳細については、オンライン管理者ガイドを参照してください。"
+  },
+  "mailer.test.title": {
+    "other": "テストメールを送信"
+  },
+  "mailer.test.legend": {
+    "other": "テストメールを送信する前に、構成の変更を必ず保存してください。"
+  },
+  "mailer.test.loading": {
+    "other": "Mailerライブラリを読み込んでいます..."
+  },
+  "sites.title": {
+    "other": "サイト"
+  },
+  "sites.externals": {
+    "other": "外部 URL"
+  },
+  "sites.details": {
+    "other": "<div>\nサイトは、Cells がネットワーク インターフェイスにどのようにバインドされ、どのように外部に公開されるかを定義します。\nコマンドラインからサイトを管理するには、'<i>./cells configure sites</i>'を使用します。\n<br/> <br/>\n各サイトには次のパラメータがあります。\n\n<ol>\n<li>1. <u>バインド</u>：内部ウェブサーバーをフックする1つ以上の [ip/hostname:port]</li>\n<li>2. <u> TLS設定</u>：HTTPSサポート用のTLS構成</li>\n<li>3. <u>公開URL</u>：エンドユーザーに伝えるURL。 通常、アプリがリバースプロキシの背後にある場合、またはポートマッピングのあるコンテナ内にある場合は、バインドアドレスとは異なる可能性があります。</li>\n<li> 4. <u>メンテナンスモード</u> [オン|オフ]：セルは実行中ですが、このエンドポイントにメンテナンスページを表示します。</li>\n</ol> </div>"
+  },
+  "sites.details.note": {
+    "other": "<div> <i>追記</i>\n<ol>\n<li>1. サイトが定義されていない場合、Cellsはデフォルト構成（自己署名付きのhttps://0.0.0.0:8080）を使用します。</li>\n<li>2. '--bind'フラグまたは'CELLS_BIND'環境変数を使用して、実行時にサイトをオーバーライドできます。\n</li>\n</ol> </div>"
+  },
+  "sites.externals.details": {
+    "other": "<div>\nCellsは、検出されたパブリックURLを一部の機能で使用します。 構成に基づいて最も適切な値を使用しようとします。 <br/> <br/>例：\n<ul>\n<li>&bull; 一意のサイトが定義されていて、外部URLがある場合、それはおそらく正しいです。</li>\n<li>&bull; 複数のサイトが定義されている場合、すべての外部通信に使用される一意のURLを強制することができます。</li>\n<li>&bull; 公開URLが検出されない場合は、内部バインドアドレスにフォールバックします。 プライベートIP（または0.0.0.0:port…）を外部に送信したくない場合です。</li>\n</ul>\n\n<br/>\n以下のフィールドは、検出された値を示しています。 選択して編集するか、カスタム値を入力し、Enterキーを押して保存します。\n</div>"
+  },
+  "sites.mailer.url": {
+    "other": "メールにリンクを作成するために使用されるURL"
+  },
+  "sites.links.url": {
+    "other": "パブリックリンクの構築に使用されるURL"
+  },
+  "sites.no-defaults": {
+    "other": "既定の設定なし"
+  },
+  "sites.enter-to-save": {
+    "other": "(Enterキーを押して保存)"
+  },
+  "sites.detected.sites": {
+    "other": "現在検出されているサイト"
+  },
+  "sites.configs.command": {
+    "other": "サイトを編集するには、'./cells config sites' コマンドを使用します。"
+  },
+  "sites.column.bind": {
+    "other": "バインド"
+  },
+  "sites.column.tls": {
+    "other": "TLS"
+  },
+  "sites.column.external": {
+    "other": "リバースプロキシ"
+  },
+  "sites.configs.tls.letsencrypt": {
+    "other": "Let's Encrypt"
+  },
+  "sites.configs.tls.self": {
+    "other": "自己署名"
+  },
+  "sites.configs.tls.certificate": {
+    "other": "証明書"
+  },
+  "sites.configs.tls.notls": {
+    "other": "TLS を使用しない"
+  },
+  "sites.configs.tls.notls-reverse": {
+    "other": "プロキシの背後にTLSがありません"
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "cont.btn.fb": {
+    "other": "Facebook"
+  },
+  "cont.btn.github": {
+    "other": "Github Star"
+  },
+  "cont.btn.tw": {
+    "other": "Twitter"
+  },
+  "cont.intro": {
+    "other": "Le code est disponible au public sur Github. Si vous voulez fixer un bug, aidez les autres dans le forum ou soumettre une nouvelle fonctionnalité, impliquez vous dans la communauté!\n                            Ou simplement répandez la bonne parole sur les réseaux sociaux!"
+  },
+  "cont.subtitle": {
+    "other": "Pydio Cells est un logiciel gratuit et open source. Contribuez!"
+  },
+  "cont.title": {
+    "other": "Faites vivre le projet!"
+  },
+  "cont.topic.pr": {
+    "other": "Soumettre une modification via les Pull Requests github"
+  },
+  "cont.topic.report": {
+    "other": "J'ai trouvé un bug! Direction le forum."
+  },
+  "cont.topic.report.2": {
+    "other": "Mon bug est sûr: ouvrir une Issue Github."
+  },
+  "cont.topic.translate": {
+    "other": "Comment créer ou completer une traduction?"
+  },
+  "ent.advanced": {
+    "other": "Une console d'admin unique"
+  },
+  "ent.advanced.legend": {
+    "other": "Surveillance en temps réel et rapports, imports/exports de données, etc."
+  },
+  "ent.btn.contact": {
+    "other": "Contactez un commercial"
+  },
+  "ent.btn.more": {
+    "other": "En savoir plus"
+  },
+  "ent.features": {
+    "other": "Des fonctionnalités orientées entreprises"
+  },
+  "ent.features.legend": {
+    "other": "Connecteurs AD/LDAP, Logs auditables, mise en page EasyTransfer..."
+  },
+  "ent.subtitle": {
+    "other": "PLUS DE FONCTIONS - PRÊT POUR LA RGPD - BRANDING AVANCE"
+  },
+  "ent.support": {
+    "other": "Support et Maintenance"
+  },
+  "ent.support.legend": {
+    "other": "L'équipe de développeurs officielle de Pydio à votre service"
+  },
+  "ent.title": {
+    "other": "Découvrez Pydio Cells Enterprise"
+  },
+  "ent.upgrade": {
+    "other": "Mettre à jour maintenant!"
+  },
+  "ent.upgrade.legend": {
+    "other": "Mise à niveau vers Cells Enterprise (licence requise)"
+  },
+  "welc.btn.advanced": {
+    "other": "Réglages Avancés"
+  },
+  "welc.btn.parameters": {
+    "other": "Gestion des paramètres"
+  },
+  "welc.btn.start": {
+    "other": "Démarrage rapide"
+  },
+  "welc.btn.users": {
+    "other": "Utilisateurs"
+  },
+  "welc.btn.ws": {
+    "other": "Dépôts"
+  },
+  "welc.guide": {
+    "other": "Si vous ne savez pas où commencer, le Guide Administrateur est sans doute un bon endroit pour débuter!"
+  },
+  "welc.intro": {
+    "other": "C'est votre tableau de bord pour administrer Pydio Cells. Naviguez dans le menu à gauche pour créer des <a class=\"doc-link\" data-path=\"/data/workspaces\">workspaces</a> and des <a class=\"doc-link\" data-path=\"/idm/users\">utilisateurs</a>,\n                            surveiller les <a class=\"doc-link\" data-path=\"/admin/logs\">événements</a> sur les fichiers, et gérer les <a class=\"doc-link\" data-path=\"/parameters/core\">configurations</a> et les <a class=\"doc-link\" data-path=\"/plugins/manager\">plugins</a>."
+  },
+  "welc.import": {
+    "other": "Si vous utilisez actuellement une installation Pydio 8, veuillez noter que <u>Pydio 8 sera considéré en fin de vie à la fin de 2019</u>. Vous pouvez utiliser <a class=\"doc-link\" data-path=\"/data/migration\">l'outil d'import</a> pour migrer toutes les données vers Pydio Cells."
+  },
+  "welc.subtitle": {
+    "other": "Administrez et surveillez l'activité de la plateforme"
+  },
+  "welc.title": {
+    "other": "Bienvenue sur Pydio Cells v4"
+  },
+  "welc.title.5": {
+    "other": "Welcome to Pydio Cells v5"
+  },
+  "card.quick-access": {
+    "other": "Accès rapide"
+  },
+  "card.quick-access.add": {
+    "other": "Ajouter un raccourci..."
+  },
+  "card.update.current": {
+    "other": "Version du logiciel"
+  },
+  "card.update.no-updates": {
+    "other": "Le logiciel est à jour"
+  },
+  "card.update.new-version": {
+    "other": "Une nouvelle version est disponible"
+  },
+  "recentLogs.title": {
+    "other": "Derniers événements"
+  },
+  "recentLogs.errors": {
+    "other": "Erreurs"
+  },
+  "recentLogs.emptyState": {
+    "other": "Aucune activité"
+  },
+  "recentLogs.more": {
+    "other": "Toutes les activités"
+  },
+  "graph.files": {
+    "other": "Activité des fichiers"
+  },
+  "graph.connections": {
+    "other": "Connexions Web"
+  }
+}

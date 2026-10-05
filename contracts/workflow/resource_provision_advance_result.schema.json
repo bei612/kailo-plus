@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/resource_provision_advance_result.schema.json",
+  "title": "ResourceProvisionAdvanceResult", "type": "object", "additionalProperties": false,
+  "required": ["resourceId", "status", "waitingReason"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "status": {"$ref": "../enums/task_status.schema.json"},
+    "waitingReason": {"type": "string"}
+  }
+}

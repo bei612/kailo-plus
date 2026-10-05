@@ -1,0 +1,134 @@
+{
+  "cont.btn.fb": {
+    "other": "フォローする"
+  },
+  "cont.btn.github": {
+    "other": "Github スター"
+  },
+  "cont.btn.tw": {
+    "other": "Twitter"
+  },
+  "cont.intro": {
+    "other": "コードはGithubで公開されています。バグを修正したい、フォーラムで他の人を助けたい、またはイカした機能を追加したいですか？であれば是非参加してください!\n                            または、ソーシャルネットワークであなたの愛を誇示しましょう!"
+  },
+  "cont.subtitle": {
+    "other": "Pydio Cellsはフリーのオープンソースソフトウェアです。貢献しましょう!"
+  },
+  "cont.title": {
+    "other": "Pay it forward!"
+  },
+  "cont.topic.pr": {
+    "other": "私は新しい機能を実装しました: github Pull Requests"
+  },
+  "cont.topic.report": {
+    "other": "バグを見つけたと思います！フォーラムに投稿してください。"
+  },
+  "cont.topic.report.2": {
+    "other": "不具合を修正してほしいです: github issueを開く"
+  },
+  "cont.topic.translate": {
+    "other": "言語翻訳を作成または完了するにはどうすればよいですか?"
+  },
+  "ent.advanced": {
+    "other": "管理画面の詳細ダッシュボード"
+  },
+  "ent.advanced.legend": {
+    "other": "プラットフォームの使用状況をリアルタイムで監視するためのユニークな管理ダッシュボードです。"
+  },
+  "ent.btn.contact": {
+    "other": "営業担当に連絡"
+  },
+  "ent.btn.more": {
+    "other": "もっと詳しく"
+  },
+  "ent.features": {
+    "other": "エンタープライズ版の機能"
+  },
+  "ent.features.legend": {
+    "other": "エンタープライズ版の機能 : AD/LDAPコネクタ、コンプライアンスのための監査ログ、EasyTransfer..."
+  },
+  "ent.subtitle": {
+    "other": "その他の機能 - GDPRコンプライアンス - 拡張されたブランディング"
+  },
+  "ent.support": {
+    "other": "サポートとメンテナンス"
+  },
+  "ent.support.legend": {
+    "other": "コアチームから直接インストールのヘルプを受けます。"
+  },
+  "ent.title": {
+    "other": "Pydio Cells Enterpriseを発見する"
+  },
+  "ent.upgrade": {
+    "other": "今すぐアップグレード！"
+  },
+  "ent.upgrade.legend": {
+    "other": "アプリ内アップグレード Cells Enterprise（ライセンスが必要）"
+  },
+  "welc.btn.advanced": {
+    "other": "高度な設定"
+  },
+  "welc.btn.parameters": {
+    "other": "パラメーターについて"
+  },
+  "welc.btn.start": {
+    "other": "はじめに"
+  },
+  "welc.btn.users": {
+    "other": "ユーザー"
+  },
+  "welc.btn.ws": {
+    "other": "ワークスペース"
+  },
+  "welc.guide": {
+    "other": "どこから始めればよいかわからない場合は、管理者ガイドをお読みください。"
+  },
+  "welc.intro": {
+    "other": "これは、Pydioを管理するためのダッシュボードです。 左側のメニューを使用して、<a class=\"doc-link\" data-path=\"/data/workspaces\">ワークスペース</a>と<a class=\"doc-link\" data-path=\"/idm/users\"> users </a>、プラットフォームで発生したすべての<a class=\"doc-link\" data-path=\"/admin/logs\">イベント</a>、<a class=\"doc -link\" data-path =\"/parameters/core\">構成</a>および<a class=\"doc-link\" data-path=\"/plugins/manager\">プラグイン</a>を確認します。"
+  },
+  "welc.import": {
+    "other": "現在Pydio8のインストールを実行している場合は、<u> Pydio8は2019年末にサポート終了と見なされることに注意してください</u>。 <a class=\"doc-link\" data-path=\"/data/migration\">インポートツール</a>を使用して、すべてのデータをPydio Cells に移行できます。"
+  },
+  "welc.subtitle": {
+    "other": "プラットフォームのアクティビティを管理および監視する場所"
+  },
+  "welc.title": {
+    "other": "Pydio Cells v4 へようこそ"
+  },
+  "welc.title.5": {
+    "other": "Welcome to Pydio Cells v5"
+  },
+  "card.quick-access": {
+    "other": "クイック アクセス"
+  },
+  "card.quick-access.add": {
+    "other": "ショートカットを追加..."
+  },
+  "card.update.current": {
+    "other": "ソフトウェアバージョン"
+  },
+  "card.update.no-updates": {
+    "other": "ソフトフェアは最新です."
+  },
+  "card.update.new-version": {
+    "other": "新しいバージョンが利用可能です。"
+  },
+  "recentLogs.title": {
+    "other": "最後のイベント"
+  },
+  "recentLogs.errors": {
+    "other": "エラー"
+  },
+  "recentLogs.emptyState": {
+    "other": "アクティビティが見つかりません"
+  },
+  "recentLogs.more": {
+    "other": "すべてのアクティビティ"
+  },
+  "graph.files": {
+    "other": "ファイルのアクティビティ"
+  },
+  "graph.connections": {
+    "other": "ウェブコネクション"
+  }
+}

@@ -1,0 +1,314 @@
+{
+  "welcome.stepLabel": {
+    "other": "Điều khoản sử dụng"
+  },
+  "welcome.title": {
+    "other": "Chào mừng bạn đến với Pydio Cells Installation Wizard"
+  },
+  "welcome.legend": {
+    "other": "Điều này sẽ cài đặt tất cả các dịch vụ trên máy chủ. Vui lòng đồng ý với các điều khoản dưới đây trước khi bắt đầu"
+  },
+  "welcome.agreed": {
+    "other": "Tôi đồng ý với các điều khoản"
+  },
+  "database.stepLabel": {
+    "other": "Kết nối Database"
+  },
+  "database.title": {
+    "other": "Cấu hình Database"
+  },
+  "database.legend": {
+    "other": "Pydio yêu cầu ít nhất một bộ lưu trữ SQL để cấu hình và lập chỉ mục dữ liệu. Cấu hình ở đây để kết nối đến máy chủ MySQL / MariaDB của bạn."
+  },
+  "database.legend.bold": {
+    "other": "Vui lòng chắc chắn rằng database của bạn đang chạy MySQL phiên bản 5.6 hoặc cao hơn"
+  },
+  "database.legend1": {
+    "other": "Pydio requires at least one SQL storage for configuration and data indexation."
+  },
+  "database.legend2": {
+    "other": "Supported databases are MySQL/MariaDB or PostgreSQL or SQLite."
+  },
+  "database.installDetected": {
+    "other": "Cells đã được thiết lập trong database. Vui lòng xác nhận để tiếp tục hoặc "
+  },
+  "database.installDetected.retry": {
+    "other": "hãy thử lại với giá trị mới"
+  },
+  "database.useDefaultsSet": {
+    "other": "Mặc định thì kết nối tới cơ sở dữ liệu đã được thiết lập, chỉ cần tiếp tục để xác kiểm tra kết nối."
+  },
+  "database.forceConfigure": {
+    "other": "Thêm mới một database."
+  },
+  "admin.stepLabel": {
+    "other": "Admin User"
+  },
+  "admin.title": {
+    "other": "Admin user and frontend defaults"
+  },
+  "admin.legend": {
+    "other": "Cung cấp thông tin đăng nhập cho người dùng quản trị. Bỏ trống nếu bạn đang triển khai trên cài đặt hiện có."
+  },
+  "admin.adminFound": {
+    "other": "Người dùng đã được tìm thấy trong DB. Kiếm tra nếu bạn muốn một cái mới."
+  },
+  "advanced.stepLabel": {
+    "other": "Cài đặt nâng cao"
+  },
+  "advanced.title": {
+    "other": "Cài đặt năng cao (Không bắt buộc)"
+  },
+  "advanced.legend": {
+    "other": "Dịch vụ Pydio Cells sẽ được triển khai trên máy. Bạn có thể cài theo một số tùy chọn nâng cao ở dưới đây để phù hợp với máy của bạn."
+  },
+  "advanced.toggle": {
+    "other": "Hiển thị thiết lập nâng cao"
+  },
+  "advanced.default.datasource": {
+    "other": "Một datasource để lưu trữ dữ liệu cá nhân và dữ liệu của cells được tạo khi khởi động. Bạn có thể tạo các datasources sau quá trình cài đặt."
+  },
+  "advanced.mongo.title": {
+    "other": "Thiết lập kết nối tới MongoDB"
+  },
+  "advanced.mongo.legend": {
+    "other": "Cấu hình kết nối tới MongoDB. MongoDB giúp việc nâng cấp dễ dàng hơn và là yêu cầu bắt buộc nếu bạn xây dựng một cluster. Nếu bạn chưa có sẵn MongoDB thì thiết lập này có thể làm sau khi đã cài đặt Cells thành công."
+  },
+  "advanced.mongo.host": {
+    "other": "Địa chỉ máy chủ"
+  },
+  "advanced.mongo.port": {
+    "other": "Cổng"
+  },
+  "advanced.mongo.db": {
+    "other": "Tên database"
+  },
+  "advanced.mongo.username": {
+    "other": "Tên đăng nhập"
+  },
+  "advanced.mongo.password": {
+    "other": "Mật khẩu"
+  },
+  "advanced.mongo.authSource": {
+    "other": "Auth DB"
+  },
+  "advanced.mongo.validate": {
+    "other": "Kiểm tra kết nối"
+  },
+  "license.stepLabel": {
+    "other": "Giấy phép doanh nghiệp"
+  },
+  "license.title": {
+    "other": "Giấy phép doanh nghiệp của Pydio Cells"
+  },
+  "license.success": {
+    "other": "Giấy phép đăng ký đã được tìm thấy."
+  },
+  "license.details": {
+    "other": "Cài đặt này hợp lệ cho %count người dùng cho đến khi %expiration."
+  },
+  "license.failed": {
+    "other": "Gặp lỗi khi cố gắng xác minh mã bản quyền này. Vui lòng liên hệ với bộ phận hỗ trợ để được giúp đỡ."
+  },
+  "license.required": {
+    "other": "Cần có mã cấp phép để chạy được Enterprise Distribution. Dùng thử trong 30 ngày hoặc vui lòng liên lạc để mua thêm"
+  },
+  "license.fieldLabel": {
+    "other": "Chuỗi giấy phép"
+  },
+  "license.fieldLegend": {
+    "other": "Vui lòng sao chép và dán mã bản quyền mà bạn đã được cung cấp."
+  },
+  "apply.stepLabel": {
+    "other": "Áp dụng cài đặt"
+  },
+  "apply.title": {
+    "other": "Xin vui lòng chờ khi Pydio Cells đang thực hiện việc cài đặt..."
+  },
+  "apply.success": {
+    "other": "Cài đặt thành công, các dịch vụ đang khởi động, quá trình này sẽ tải lại các trang khi các dịch vụ được khởi động."
+  },
+  "apply.success.restarted": {
+    "other": "Cài đặt thành công, các dịch vụ đã được khởi động, vui lòng tải lại trang (trang sẽ tự động tải lại trong %1s)"
+  },
+  "apply.error": {
+    "other": "Có lỗi trong khi thực hiện cài đặt! Vui lòng kiểm tra cấu hình của bạn."
+  },
+  "apply.error.detail": {
+    "other": "Lỗi: "
+  },
+  "form.dbConnectionType.label": {
+    "other": "Kiểu kết nối"
+  },
+  "form.dbConnectionType.mysql_tcp": {
+    "other": "MySQL/MariaDB - TCP"
+  },
+  "form.dbConnectionType.mysql_socket": {
+    "other": "MySQL/MariaDB - Socket"
+  },
+  "form.dbConnectionType.pg_tcp": {
+    "other": "PostGreSQL - TCP"
+  },
+  "form.dbConnectionType.pg_socket": {
+    "other": "PostGreSQL - Socket"
+  },
+  "form.dbConnectionType.sqlite": {
+    "other": "SQLite (dev purpose only)"
+  },
+  "form.dbConnectionType.manual": {
+    "other": "Thủ công"
+  },
+  "form.dbTCPHostname.label": {
+    "other": "Tên Host"
+  },
+  "form.dbTCPHostname.legend": {
+    "other": "Nơi máy chủ mysql đang chạy"
+  },
+  "form.dbName.label": {
+    "other": "Tên database"
+  },
+  "form.dbName.legend": {
+    "other": "Database to use (sẽ được tạo nếu nó không tồn tại)"
+  },
+  "form.dbTCPPort.label": {
+    "other": "Cổng"
+  },
+  "form.dbTCPPort.legend": {
+    "other": "Cổng kết nối đến mysql"
+  },
+  "form.dbUser.label": {
+    "other": "Database User"
+  },
+  "form.dbUser.legend": {
+    "other": "Bỏ trống nếu thấy không cần thiết"
+  },
+  "form.dbPassword.label": {
+    "other": "Mật khẩu Database"
+  },
+  "form.dbPassword.legend": {
+    "other": "Bỏ trống nếu thấy không cần thiết"
+  },
+  "form.dbSocketFile.label": {
+    "other": "Socket"
+  },
+  "form.dbSocketFile.legend": {
+    "other": "Nhập vị trí của tệp socket để kết nối"
+  },
+  "form.dbSocketFileSQLite.label": {
+    "other": "Database Path"
+  },
+  "form.dbSocketFileSQLite.legend": {
+    "other": "Enter the location of the SQLite database"
+  },
+  "form.dbSqliteFile.label": {
+    "other": "File Path"
+  },
+  "form.dbSqliteFile.legend": {
+    "other": "Enter the location of the file to use as database"
+  },
+  "form.dbManualDSN.label": {
+    "other": "DSN"
+  },
+  "form.dbManualDSN.legend": {
+    "other": "Sử dụng DSN kiểu Golang để mô tả kết nối database"
+  },
+  "form.frontendApplicationTitle.label": {
+    "other": "Tên Ứng Dụng"
+  },
+  "form.frontendApplicationTitle.legend": {
+    "other": "Cài đặt tiêu đề chính của bạn"
+  },
+  "form.frontendDefaultLanguage.label": {
+    "other": "Ngôn ngữ mặc định"
+  },
+  "form.frontendLogin.label": {
+    "other": "Đăng nhập Admin user *"
+  },
+  "form.frontendLogin.legend": {
+    "other": "Mã định danh được sử dụng để đăng nhập"
+  },
+  "form.frontendPassword.label": {
+    "other": "Mật khẩu Admin"
+  },
+  "form.frontendPassword.legend": {
+    "other": "Mật khẩu được sử dụng để đăng nhập"
+  },
+  "form.frontendRepeatPassword.label": {
+    "other": "Xác nhận mật khẩu"
+  },
+  "form.frontendRepeatPassword.legend": {
+    "other": "Xác nhận mật khẩu hai lần"
+  },
+  "form.dsFolder.label": {
+    "other": "Đường dẫn mặc định của datasource"
+  },
+  "form.dsFolder.legend": {
+    "other": "Sử dụng đường dẫn tuyệt đối trên máy chủ"
+  },
+  "form.dsType.Label": {
+    "other": "Storage Type"
+  },
+  "form.dsType.FS": {
+    "other": "Local FS (lưu trữ tất cả dữ liệu trên máy chủ này)"
+  },
+  "form.dsType.S3": {
+    "other": "Amazon S3 / S3-compatible (store inside S3 buckets)"
+  },
+  "form.dsS3Custom.label": {
+    "other": "URL, append ?minio=true if Minio."
+  },
+  "form.dsS3Custom.legend": {
+    "other": "Để trống nếu bạn dùng Amazon S3"
+  },
+  "form.dsS3CustomRegion.label": {
+    "other": "S3 Custom region"
+  },
+  "form.dsS3CustomRegion.legend": {
+    "other": "Leave empty for default (us-east-1)"
+  },
+  "form.dsS3ApiKey.label": {
+    "other": "S3 Api Key"
+  },
+  "form.dsS3ApiKey.legend": {
+    "other": "Key để kết nối với S3"
+  },
+  "form.dsS3ApiSecret.label": {
+    "other": "S3 Api Secret"
+  },
+  "form.dsS3ApiSecret.legend": {
+    "other": "Khóa Bí mật"
+  },
+  "form.dsS3ValidateKeys": {
+    "other": "Kết nối tới S3 để xác định buckets"
+  },
+  "form.s3BucketsPrefix.label": {
+    "other": "Buckets prefix"
+  },
+  "form.s3BucketsPrefix.legend": {
+    "other": "Một tiền tố duy nhất để tạo 6 buckets mặc định"
+  },
+  "form.bucketList.found": {
+    "other": "Bucket(s) đã tồn tại"
+  },
+  "form.bucketList.toCreate": {
+    "other": "Bucket(s) sẽ được tạo"
+  },
+  "form.bucketList.notFound": {
+    "other": "Không tìm thấy buckets"
+  },
+  "form.bucketList.warnCreate": {
+    "other": "Bạn không được phép tạo buckets, hãy tạo chúng theo cách thủ công!"
+  },
+  "stepper.button.next": {
+    "other": "Tiếp theo"
+  },
+  "stepper.button.back": {
+    "other": "Quay lại"
+  },
+  "stepper.button.last": {
+    "other": "Cài đặt ngay"
+  },
+  "stepper.button.reload": {
+    "other": "Tải lại"
+  }
+}

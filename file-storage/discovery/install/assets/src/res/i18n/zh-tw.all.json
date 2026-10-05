@@ -1,0 +1,314 @@
+{
+  "welcome.stepLabel": {
+    "other": "使用條款"
+  },
+  "welcome.title": {
+    "other": "歡迎使用 Pydio Cells 安裝精靈"
+  },
+  "welcome.legend": {
+    "other": "此動作將在目前的伺服器上安裝所有服務。請在開始前先同意下列授權條款"
+  },
+  "welcome.agreed": {
+    "other": "我同意使用條款"
+  },
+  "database.stepLabel": {
+    "other": "資料庫連接"
+  },
+  "database.title": {
+    "other": "資料庫設定"
+  },
+  "database.legend": {
+    "other": "Pydio 需要至少一個 SQL 資料庫來儲存設定與資料索引。請在此設定 MySQL/MariaDB 伺服器的連線資訊。"
+  },
+  "database.legend.bold": {
+    "other": "請確定您的資料庫為 MySQL 5.6 以上版本"
+  },
+  "database.legend1": {
+    "other": "Pydio requires at least one SQL storage for configuration and data indexation."
+  },
+  "database.legend2": {
+    "other": "Supported databases are MySQL/MariaDB or PostgreSQL or SQLite."
+  },
+  "database.installDetected": {
+    "other": "此資料庫中似乎已安裝過 Cells。請確認是否要繼續操作或 "
+  },
+  "database.installDetected.retry": {
+    "other": "以新設定值重試"
+  },
+  "database.useDefaultsSet": {
+    "other": "預設資料庫已設定，請點擊「下一步」驗證連線。"
+  },
+  "database.forceConfigure": {
+    "other": "設定另一個資料庫。"
+  },
+  "admin.stepLabel": {
+    "other": "管理員使用者"
+  },
+  "admin.title": {
+    "other": "管理員使用者與前端預設值"
+  },
+  "admin.legend": {
+    "other": "請輸入管理員帳號資訊。如果您是基於現有安裝進行部署，可留空不填。"
+  },
+  "admin.adminFound": {
+    "other": "資料庫中已存在管理員使用者，請確認是否要建立新的帳號。"
+  },
+  "advanced.stepLabel": {
+    "other": "進階設定"
+  },
+  "advanced.title": {
+    "other": "進階設定（可選）"
+  },
+  "advanced.legend": {
+    "other": "Pydio Cells 服務將部署在此機器上。您可以查看下方進階設定來微調您的配置。"
+  },
+  "advanced.toggle": {
+    "other": "顯示進階設定"
+  },
+  "advanced.default.datasource": {
+    "other": "系統啟動時，將自動建立一個預設資料空間來源來存放使用者個人資料與協作體資料。您也可以稍後再建立其他資料來源。"
+  },
+  "advanced.mongo.title": {
+    "other": "設定 MongoDB 連線"
+  },
+  "advanced.mongo.legend": {
+    "other": "這有助於提升系統的擴充性，在進行叢集部署時必不可少。如果您還沒有可用的 MongoDB，可以先略過，之後再進行設定。"
+  },
+  "advanced.mongo.host": {
+    "other": "伺服器 host"
+  },
+  "advanced.mongo.port": {
+    "other": "伺服器連接埠"
+  },
+  "advanced.mongo.db": {
+    "other": "資料庫名稱"
+  },
+  "advanced.mongo.username": {
+    "other": "使用者名稱"
+  },
+  "advanced.mongo.password": {
+    "other": "密碼"
+  },
+  "advanced.mongo.authSource": {
+    "other": "身份驗證資料庫"
+  },
+  "advanced.mongo.validate": {
+    "other": "測試連線"
+  },
+  "license.stepLabel": {
+    "other": "企業授權"
+  },
+  "license.title": {
+    "other": "Pydio Cells 企業授權"
+  },
+  "license.success": {
+    "other": "已成功偵測到授權檔案。"
+  },
+  "license.details": {
+    "other": "本安裝版本適用於 %count 位使用者，效期至 %expiration。"
+  },
+  "license.failed": {
+    "other": "驗證此授權金鑰時發生錯誤，請聯繫技術支援。"
+  },
+  "license.required": {
+    "other": "若要執行企業版本，必須具有有效的授權金鑰。若需要 30 天試用版授權或想取得報價，請聯絡我們"
+  },
+  "license.fieldLabel": {
+    "other": "授權字串"
+  },
+  "license.fieldLegend": {
+    "other": "請複製並貼上提供給您的授權金鑰。"
+  },
+  "apply.stepLabel": {
+    "other": "套用安裝"
+  },
+  "apply.title": {
+    "other": "請耐心等待 Pydio Cells 完成安裝..."
+  },
+  "apply.success": {
+    "other": "安裝成功，服務正在啟動。當服務啟動後，安裝程式將重新載入頁面。"
+  },
+  "apply.success.restarted": {
+    "other": "安裝成功，服務已啟動，請立即重新載入頁面 (將在 %1s 秒內自動重新載入)"
+  },
+  "apply.error": {
+    "other": "安裝過程中發生錯誤！請檢查您的設定。"
+  },
+  "apply.error.detail": {
+    "other": "錯誤： "
+  },
+  "form.dbConnectionType.label": {
+    "other": "連線類型"
+  },
+  "form.dbConnectionType.mysql_tcp": {
+    "other": "MySQL/MariaDB - TCP"
+  },
+  "form.dbConnectionType.mysql_socket": {
+    "other": "MySQL/MariaDB - Socket"
+  },
+  "form.dbConnectionType.pg_tcp": {
+    "other": "PostGreSQL - TCP"
+  },
+  "form.dbConnectionType.pg_socket": {
+    "other": "PostGreSQL - Socket"
+  },
+  "form.dbConnectionType.sqlite": {
+    "other": "SQLite (dev purpose only)"
+  },
+  "form.dbConnectionType.manual": {
+    "other": "手動"
+  },
+  "form.dbTCPHostname.label": {
+    "other": "Host 名稱"
+  },
+  "form.dbTCPHostname.legend": {
+    "other": "Server where mysql is running"
+  },
+  "form.dbName.label": {
+    "other": "資料庫名稱"
+  },
+  "form.dbName.legend": {
+    "other": "要使用的資料庫 (如果不存在會自動建立)"
+  },
+  "form.dbTCPPort.label": {
+    "other": "連接埠"
+  },
+  "form.dbTCPPort.legend": {
+    "other": "Port to connect to mysql"
+  },
+  "form.dbUser.label": {
+    "other": "資料庫使用者"
+  },
+  "form.dbUser.legend": {
+    "other": "如果不需要，請留白"
+  },
+  "form.dbPassword.label": {
+    "other": "資料庫密碼"
+  },
+  "form.dbPassword.legend": {
+    "other": "如果不需要，請留白"
+  },
+  "form.dbSocketFile.label": {
+    "other": "Socket"
+  },
+  "form.dbSocketFile.legend": {
+    "other": "輸入要連接的 socket 檔案位置"
+  },
+  "form.dbSocketFileSQLite.label": {
+    "other": "Database Path"
+  },
+  "form.dbSocketFileSQLite.legend": {
+    "other": "Enter the location of the SQLite database"
+  },
+  "form.dbSqliteFile.label": {
+    "other": "File Path"
+  },
+  "form.dbSqliteFile.legend": {
+    "other": "Enter the location of the file to use as database"
+  },
+  "form.dbManualDSN.label": {
+    "other": "DSN"
+  },
+  "form.dbManualDSN.legend": {
+    "other": "使用 Golang 風格的 DSN 來描述資料庫連線"
+  },
+  "form.frontendApplicationTitle.label": {
+    "other": "應用程式標題"
+  },
+  "form.frontendApplicationTitle.legend": {
+    "other": "安裝主標題"
+  },
+  "form.frontendDefaultLanguage.label": {
+    "other": "預設語言"
+  },
+  "form.frontendLogin.label": {
+    "other": "管理員帳號登入*"
+  },
+  "form.frontendLogin.legend": {
+    "other": "用於登入的識別碼"
+  },
+  "form.frontendPassword.label": {
+    "other": "管理員密碼*"
+  },
+  "form.frontendPassword.legend": {
+    "other": "登入密碼"
+  },
+  "form.frontendRepeatPassword.label": {
+    "other": "確認密碼"
+  },
+  "form.frontendRepeatPassword.legend": {
+    "other": "二次確認密碼"
+  },
+  "form.dsFolder.label": {
+    "other": "預設資料來源的路徑"
+  },
+  "form.dsFolder.legend": {
+    "other": "在伺服器上使用絕對路徑"
+  },
+  "form.dsType.Label": {
+    "other": "儲存類型"
+  },
+  "form.dsType.FS": {
+    "other": "本機檔案系統 (所有資料都存在此伺服器上)"
+  },
+  "form.dsType.S3": {
+    "other": "Amazon S3 / S3相容 (儲存於 S3 儲存桶)"
+  },
+  "form.dsS3Custom.label": {
+    "other": "URL，若使用 Minio，請在後方加上 ?minio=true。"
+  },
+  "form.dsS3Custom.legend": {
+    "other": "使用 Amazon 時請留白"
+  },
+  "form.dsS3CustomRegion.label": {
+    "other": "自訂 S3 區域"
+  },
+  "form.dsS3CustomRegion.legend": {
+    "other": "預設留空 (us-east-1)"
+  },
+  "form.dsS3ApiKey.label": {
+    "other": "S3 API 金鑰"
+  },
+  "form.dsS3ApiKey.legend": {
+    "other": "連接 S3 的金鑰"
+  },
+  "form.dsS3ApiSecret.label": {
+    "other": "S3 API 密鑰"
+  },
+  "form.dsS3ApiSecret.legend": {
+    "other": "密鑰"
+  },
+  "form.dsS3ValidateKeys": {
+    "other": "連接到 S3 並定義存儲桶"
+  },
+  "form.s3BucketsPrefix.label": {
+    "other": "儲存桶前綴"
+  },
+  "form.s3BucketsPrefix.legend": {
+    "other": "用於建立6個預設儲存桶的前綴"
+  },
+  "form.bucketList.found": {
+    "other": "以下儲存桶已經存在"
+  },
+  "form.bucketList.toCreate": {
+    "other": "以下儲存桶將被建立"
+  },
+  "form.bucketList.notFound": {
+    "other": "找不到以下儲存桶"
+  },
+  "form.bucketList.warnCreate": {
+    "other": "你無權建立儲存桶，請務必手動建立！"
+  },
+  "stepper.button.next": {
+    "other": "下一步"
+  },
+  "stepper.button.back": {
+    "other": "上一步"
+  },
+  "stepper.button.last": {
+    "other": "立即安裝"
+  },
+  "stepper.button.reload": {
+    "other": "重新讀取"
+  }
+}

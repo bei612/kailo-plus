@@ -1,0 +1,179 @@
+{
+  "start": {
+    "other": "Пуск"
+  },
+  "pause": {
+    "other": "Пауза"
+  },
+  "clear": {
+    "other": "Очистить"
+  },
+  "clear-header": {
+    "other": "Очистить список..."
+  },
+  "clear-finished": {
+    "other": "Завершенные загрузки"
+  },
+  "clear-failed": {
+    "other": "Ошибки при загрузке"
+  },
+  "clear-all": {
+    "other": "Все загрузки"
+  },
+  "list.show-more": {
+    "other": "%d больше - показать все"
+  },
+  "options.existing": {
+    "other": "Если файл с таким именем существует:"
+  },
+  "options.existing.alert": {
+    "other": "Остановить загрузку и оповестить меня"
+  },
+  "options.existing.folders": {
+    "other": "Переименовать папки, а затем файлы"
+  },
+  "options.existing.merge": {
+    "other": "Переименовать только файлы (объединить папки)"
+  },
+  "options.existing.overwrite": {
+    "other": "Перезаписать существующий файл без запроса"
+  },
+  "confirm.rename.all": {
+    "other": "Переименовать папки, а затем конфликтующие файлы"
+  },
+  "confirm.rename.merge": {
+    "other": "Переименовать только файлы (объединить папки)"
+  },
+  "confirm.overwrite": {
+    "other": "Объединить папки и перезаписать файлы"
+  },
+  "confirm.save.choice": {
+    "other": "Сохранить выбор для следующих загрузок"
+  },
+  "options": {
+    "other": "Настройки загрузки"
+  },
+  "upload.forbidden": {
+    "other": "Вы не можете загружать этот файл здесь"
+  },
+  "task.label": {
+    "other": "Загрузка файлов на сервер..."
+  },
+  "task.status.folders": {
+    "other": "Создание папок"
+  },
+  "task.message.folder-one": {
+    "other": "Создание одной папки"
+  },
+  "task.message.folder-many": {
+    "other": "Создание папок %s"
+  },
+  "task.status.analyse": {
+    "other": "Подготовка файлов к загрузке"
+  },
+  "task.message.analyse-many": {
+    "other": "Анализ элементов %s..."
+  },
+  "task.message.analyse-one": {
+    "other": "Анализ одного элемента"
+  },
+  "task.message.analyse-wait": {
+    "other": "Пожалуйста, подождите..."
+  },
+  "task.status.ready": {
+    "other": "Готово к загрузке"
+  },
+  "task.status.paused": {
+    "other": "Загрузка приостановлена"
+  },
+  "task.status.upload": {
+    "other": "Загрузка файлов"
+  },
+  "task.message.upload-progress": {
+    "other": "Загрузка %s"
+  },
+  "no-folders-support": {
+    "other": "Похоже, ваш браузер не поддерживает перетаскивание папок"
+  },
+  "analyze.step": {
+    "other": "Подготовка файлов и папок для загрузки..."
+  },
+  "drophere": {
+    "other": "Перетащите файлы сюда"
+  },
+  "drop-or": {
+    "other": "или"
+  },
+  "drop-pick-file": {
+    "other": "обзор файлов"
+  },
+  "drop-pick-folder": {
+    "other": "обзор папок"
+  },
+  "dialog.title": {
+    "other": "Загрузки"
+  },
+  "attempt": {
+    "other": "попытка"
+  },
+  "status.new": {
+    "other": "Ожидают"
+  },
+  "status.error": {
+    "other": "Произошла ошибка"
+  },
+  "status.pause": {
+    "other": "Приостановлено"
+  },
+  "status.analyse": {
+    "other": "Анализ..."
+  },
+  "status.dir.new": {
+    "other": "Папка ожидает загрузки..."
+  },
+  "status.file.new": {
+    "other": "Папка ожидает загрузки..."
+  },
+  "status.dir.analyse": {
+    "other": "Анализ папки..."
+  },
+  "status.file.analyse": {
+    "other": "Анализ файла..."
+  },
+  "status.dir.loading": {
+    "other": "Создание папки"
+  },
+  "status.file.loading": {
+    "other": "Загрузка файла"
+  },
+  "status.dir.loaded": {
+    "other": "Папка создана"
+  },
+  "status.file.loaded": {
+    "other": "Файл загружен"
+  },
+  "status.part.loaded": {
+    "other": "Часть загружена"
+  },
+  "status.part.loading": {
+    "other": "Загрузка части"
+  },
+  "status.multi-pause": {
+    "other": "Завершение текущей части перед паузой"
+  },
+  "status.file.cannot-pause": {
+    "other": "Невозможно приостановить эту загрузку"
+  },
+  "status.part.cannot-pause": {
+    "other": "Невозможно приостановить загрузку части"
+  },
+  "status.error.aborted": {
+    "other": "прервано пользователем"
+  },
+  "status.error.403": {
+    "other": "вы не можете загрузить здесь"
+  },
+  "status.error.422": {
+    "other": "достигнута квота, больше нельзя загрузить"
+  }
+}

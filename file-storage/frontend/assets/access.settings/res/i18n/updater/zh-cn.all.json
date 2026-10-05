@@ -1,0 +1,125 @@
+{
+  "title": {
+    "other": "软件更新"
+  },
+  "legend": {
+    "other": "应用内二进制更新"
+  },
+  "current.version": {
+    "other": "当前版本"
+  },
+  "confirm.update": {
+    "other": "您确定要执行更新吗？"
+  },
+  "packages.available": {
+    "other": "以下软件包可供更新"
+  },
+  "checking": {
+    "other": "正在检查可用的更新..."
+  },
+  "noupdates": {
+    "other": "未检测到必要的更新：点击执行新的检查。"
+  },
+  "alert.noselect": {
+    "other": "请选择至少一个软件包！"
+  },
+  "package.released": {
+    "other": "已发布"
+  },
+  "package.revision": {
+    "other": "修订"
+  },
+  "check.legend": {
+    "other": "点击查看新更新"
+  },
+  "check.button": {
+    "other": "立即检查"
+  },
+  "package.version": {
+    "other": "版本"
+  },
+  "package.label": {
+    "other": "标签"
+  },
+  "package.details": {
+    "other": "详细信息"
+  },
+  "package.changelog": {
+    "other": "显示变更日志"
+  },
+  "start.update": {
+    "other": "开始升级"
+  },
+  "configs.save": {
+    "other": "保存设置"
+  },
+  "upgrade.ed.title": {
+    "other": "升级到Cells企业"
+  },
+  "upgrade.ed.button.next": {
+    "other": "下一步"
+  },
+  "upgrade.ed.button.start": {
+    "other": "开始"
+  },
+  "upgrade.ed.button.cancel": {
+    "other": "取消"
+  },
+  "upgrade.ed.button.install": {
+    "other": "立即安装"
+  },
+  "upgrade.ed.button.close": {
+    "other": "关闭"
+  },
+  "upgrade.ed.eula.title": {
+    "other": "请接受最终用户许可协议"
+  },
+  "upgrade.ed.eula.check": {
+    "other": "因此我接受这个EULA"
+  },
+  "upgrade.ed.key.title": {
+    "other": "输入一个有效的许可证密钥(由 Pydio 销售代表提供)"
+  },
+  "upgrade.ed.key.legend": {
+    "other": "如果您没有，可以通过使用下面的按钮联系销售或直接通过以下方式接收试用密钥 "
+  },
+  "upgrade.ed.key.hint": {
+    "other": "在此粘贴提供的密钥..."
+  },
+  "upgrade.ed.version.loading": {
+    "other": "寻找最接近的Cells企业版本"
+  },
+  "upgrade.ed.version.error": {
+    "other": "无法加载Cells 企业的可用版本！"
+  },
+  "upgrade.ed.version.error.string": {
+    "other": "错误为"
+  },
+  "upgrade.ed.version.available": {
+    "other": "准备安装 %s"
+  },
+  "upgrade.ed.version.released": {
+    "other": "已发布"
+  },
+  "upgrade.ed.version.arch": {
+    "other": "架构"
+  },
+  "upgrade.ed.version.description": {
+    "other": "描述"
+  },
+  "upgrade.ed.version.legend": {
+    "other": "点击“下一步”现在将下载这个新版本并替换您当前的 Cells 二进制文件。 如果您需要恢复，原始可执行文件的备份将保存在您的单元格配置文件夹(位于 %s 下) 中。"
+  },
+  "upgrade.ed.version.nomatch": {
+    "other": "无法找到类似的Cells企业版"
+  },
+  "upgrade.ed.version.nomatch.legend1": {
+    "other": "为了避免混合升级和更新，我们建议在同一版本中将Cells家庭版升级为企业版。"
+  },
+  "upgrade.ed.version.nomatch.legend2": {
+    "other": "请先更新您当前的版本为以下其中一个，然后再重新尝试升级为企业版。"
+  },
+  "upgrade.ed.installing": {
+    "other": "正在安装升级，请稍候..."
+  }
+}

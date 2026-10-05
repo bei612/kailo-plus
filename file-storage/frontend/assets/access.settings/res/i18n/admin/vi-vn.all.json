@@ -1,0 +1,2411 @@
+{
+  "dashboard.tab.dashboard": {
+    "other": "Bảng điều khiển"
+  },
+  "dashboard.tab.activity": {
+    "other": "Hoạt động"
+  },
+  "loading": {
+    "other": "Đang tải..."
+  },
+  "ds.board.ds.legend": {
+    "other": "Datasources là các đường dẫn tới dữ liệu và được Pydio tập hợp vào một cây thư mục duy nhất. Nó có thể nằm ở nhiều nơi khác nhau trong hệ thống lưu trữ của bạn."
+  },
+  "ds.board.ds.internal.legend": {
+    "other": "Internal DataSources are used to store binaries like files versions"
+  },
+  "ds.board.ds.title": {
+    "other": "DataSources"
+  },
+  "ds.board.enc.legend": {
+    "other": "Master key được sinh tự động và lưu trong keychain của hệ điều hành. Sử dụng công cụ dưới đây để xuất/nhập các khóa trong trường hợp bạn di chuyển Pydio Cells qua một server khác"
+  },
+  "ds.board.enc.title": {
+    "other": "Encryption Master Keys"
+  },
+  "ds.board.versioning.legend": {
+    "other": "Bạn có thể cấu hình việc tạo version cho files theo từng datasource, hơn nữa có thể quy định số version được giữ lại trong một thời gian nhất định."
+  },
+  "ds.board.versioning.title": {
+    "other": "Versioning Policies"
+  },
+  "ds.board.wsfromds.title": {
+    "other": "Tạo workspace"
+  },
+  "ds.board.wsfromds.legend": {
+    "other": "Tạo một workspace mới ở thư mục gốc của datasource %s"
+  },
+  "ds.board.wsfromds.field": {
+    "other": "Nhãn"
+  },
+  "ds.board.wsfromds.defaultPrefix": {
+    "other": "DataSource %s"
+  },
+  "ds.format-picker.title": {
+    "other": "Tạo Datasource"
+  },
+  "ds.format-picker.legend": {
+    "other": "DataSource được xem là lối vào của một thiết bị lưu trữ mà bạn kết nối vào hệ thống. Bạn cần phải lựa chọn cách mà dữ liệu được tổ chức trong thiết bị lưu trữ này."
+  },
+  "ds.format-picker.submit": {
+    "other": "Bắt đầu"
+  },
+  "ds.format-picker.flat.title": {
+    "other": "Bộ lưu trữ theo định dạng phẳng"
+  },
+  "ds.format-picker.flat.legend": {
+    "other": "The files are stored as binaries along regular snapshots of the tree structure to ensure an efficient disaster recovery. This is the recommended option for best performances and scalability."
+  },
+  "ds.format-picker.structured.title": {
+    "other": "Trích xuất từ dữ liệu đã có"
+  },
+  "ds.format-picker.structured.legend": {
+    "other": "The tree structure is reflected in the storage and maintained in real-time synchronization. This legacy option is NOT recommended and should only be used for importing existing data. It is event-based and must not be used in high load or clustered installation."
+  },
+  "ds.format-picker.internal.title": {
+    "other": "Cells nội bộ"
+  },
+  "ds.format-picker.internal.legend": {
+    "other": "Được sử dụng để lưu trữ dữ liệu chương trình (ví dụ các phiên bản sao lưu, thumbnails). Một vài chức năng sẽ bị hạn chế ví dụ không hỗ trợ tìm kiếm."
+  },
+  "ds.editor.delete.warning": {
+    "other": "Bạn có chắc chắn muốn xóa datasource này? Bạn sẽ không quay lại được và sẽ mất các link được tạo ra trên dữ liệu!"
+  },
+  "ds.editor.enc": {
+    "other": "Bật chế độ mã hóa trên Rest Api"
+  },
+  "ds.editor.enc.dialog.disable": {
+    "other": "Nếu trước đây bạn đã kích hoạt mã hóa trên datasource này, tất cả dữ liệu đã mã hóa sẽ không thể đọc được! Bạn có chắc chắn muốn làm điều đó?"
+  },
+  "ds.editor.enc.dialog.enable.1": {
+    "other": "Khi chế độ mã hóa được bật sẽ kích hoạt quá trình mã hóa dữ liệu với khóa cho trước."
+  },
+  "ds.editor.enc.dialog.enable.2": {
+    "other": "Xin lưu ý rằng nếu bạn sao lưu khóa chính của mình và nếu bạn phải cài đặt lại máy chủ vì bất kỳ lý do gì,"
+  },
+  "ds.editor.enc.dialog.enable.2bold": {
+    "other": "tất cả dữ liệu sẽ bị mất!"
+  },
+  "ds.editor.enc.dialog.enable.3": {
+    "other": "Bạn cũng phải lưu ý rằng nó có thể cần nhiều CPU hơn để việc mã hóa / giải mã dữ liệu được nhanh chóng."
+  },
+  "ds.editor.enc.dialog.enable.create": {
+    "other": "Đặt tên cho khóa mới"
+  },
+  "ds.editor.enc.key": {
+    "other": "Encryption Key"
+  },
+  "ds.editor.enc.key.clear": {
+    "other": "Không mã hoá"
+  },
+  "ds.editor.enc.key.create": {
+    "other": "Thiết lập mã hóa với một khóa mới..."
+  },
+  "ds.editor.enc.validate": {
+    "other": "Tôi hiểu"
+  },
+  "ds.editor.enc.warning": {
+    "other": "Chú ý!"
+  },
+  "ds.editor.legend.delete.1": {
+    "other": "Khi xóa một datasouce, nó sẽ không xóa dữ liệu nhưng toàn bộ đường link cũng như thông tin được xây dựng trên dữ liệu sẽ bị mất."
+  },
+  "ds.editor.legend.delete.2": {
+    "other": "Để xóa datasource, trước tiên hãy xóa tất cả các workspaces được tạo ra từ datasource này."
+  },
+  "ds.editor.legend.delete.button": {
+    "other": "Xóa DataSource"
+  },
+  "ds.editor.legend.local": {
+    "other": "Datasources sẽ được Pydio chuyển hóa thành một S3 buket. Do đó tên của thư mục đầu vào datasource phải tuân theo các quy tắc sau:"
+  },
+  "ds.editor.legend.local.li.1": {
+    "other": "Ít nhất hai cấp độ, ví dụ /data/ds."
+  },
+  "ds.editor.legend.local.li.2": {
+    "other": "Cấp quyền đọc/ghi cho thư mục đầu vào của datasource"
+  },
+  "ds.editor.legend.local.li.3": {
+    "other": "Tên thư mục phải theo quy tắc đặt tên DNS (chữ thường, không có dấu cách hoặc ký tự đặc biệt)."
+  },
+  "ds.editor.legend.resync": {
+    "other": "Resynchronization sẽ quét bộ dữ liệu và phát hiện các thay đổi hiện chưa được lập chỉ mục."
+  },
+  "ds.editor.legend.resync.button": {
+    "other": "Re-synchronize"
+  },
+  "ds.editor.legend.s3.1": {
+    "other": "Các datasources bên ngoài cũng sẽ được chuyển hóa thành các điểm truy cập theo giao thức S3."
+  },
+  "ds.editor.legend.s3.2": {
+    "other": "Sử dụng API Key / Api Secret để xác thực, để trống URL nếu sử dụng AmazonS3 hoặc sử dụng URL của riêng bạn."
+  },
+  "ds.editor.storage.legend.fs": {
+    "other": "Xem dữ liệu trên máy chủ hoặc từ một máy chủ NAT."
+  },
+  "ds.editor.storage.legend.fs.peer": {
+    "other": "Trong một cụm máy chủ Cells, thiết lập dịch vụ datasource trên một địa chỉ cụ thể (peer address) sẽ chỉ cho phép dịch vụ phục vụ trên máy chủ đó mà thôi. Nếu sử dụng \"Bất kỳ\" (any) thì tất cả các node sẽ có thể dùng dịch vụ này và nó sẽ phát huy tác dụng nếu như máy chủ bị thay đổi địa chỉ. Để tránh những xung đột có thể xảy ra, chúng ta nên để chung 1 thiết lập (hoặc là peer address, hoặc là any) cho tất cả các datasources trong cụm máy chủ Cells."
+  },
+  "ds.editor.storage.legend.fs.path": {
+    "other": "Tên thư mục phải viết bằng ký tự thường và cells có quyên ghi/đọc trên thư mục cha. Nếu thư mục đã có sẵn với tên viết bằng ký tự in hoa, thì bạn có thể tạo cho nó một symbol link để sử dụng."
+  },
+  "ds.editor.storage.legend.s3": {
+    "other": "Duyệt dữ liệu từ các S3 bucket."
+  },
+  "ds.editor.storage.legend.azure": {
+    "other": "Duyệt dữ liệu từ Azure Blob bucket."
+  },
+  "ds.editor.storage.legend.gcs": {
+    "other": "Duyệt dữ liệu từ Google Cloud Storage bucket."
+  },
+  "ds.editor.storage.legend.versioning": {
+    "other": "Thiết lập chính sách phiên bản để giữ lịch sử sửa đổi nội dung tệp. Chú ý rằng nó sẽ sử dụng thêm không gian lưu trữ."
+  },
+  "ds.editor.storage.legend.encryption": {
+    "other": "Mã hóa ở chế độ ngủ có thể được sử dụng để đảm bảo các tệp không bao giờ được lưu trữ ở định dạng clear format bên trong bộ nhớ. Điều này có thể sẽ hữu ích nếu bạn không tin vao nhà cung cấp dịch vụ lưu trữ."
+  },
+  "ds.editor.storage.readOnly": {
+    "other": "Chế độ chỉ đọc"
+  },
+  "ds.editor.storage.legend.readOnly": {
+    "other": "Hãy sử dụng chế độ Chỉ đọc nếu bạn yêu cầu Cells không bao giờ viết bất cứ tệp ẩn nào và sử dụng eTags gốc làm checksums( điều này có thể cần thiết cho buckets với các nhóm dữ liệu hiện có rất lớn). Tuy nhiên, vui lòng chú ý rằng bất cứ không gian làm việc nào được tạo trên datasource này phải được đặt là Chỉ đọc, vì tính năng di chuyển có thể hoạt động không được chính xác."
+  },
+  "ds.editor.storage.flatStorage": {
+    "other": "Giữ nguyên cấu trúc thư mục của thư mục dùng để lưu trữ"
+  },
+  "ds.editor.storage.legend.flatStorage": {
+    "other": "Bộ lưu trũ Flat (phi cấu trúc) có ưu điểm đem lại tốc độ xử lý cao. Dùng bộ lưu trữ kiểu có cấu trúc chỉ khi bạn đã có sẵn khối dữ liệu lưu trữ trên thư mục dùng làm nơi lưu trữ. Bạn phải quyết định một trong hai lựa chọn vì sẽ không thể thay đổi sau này."
+  },
+  "ds.editor.storage.skipResync": {
+    "other": "Bỏ qua việc đồng bộ dữ liệu lúc khởi động"
+  },
+  "ds.editor.storage.legend.skipResync": {
+    "other": "Nếu datasource có dung lượng lớn, bạn cần phải bỏ qua bước đồng bộ khi khởi động Cells."
+  },
+  "ds.editor.storage.checksumMapper": {
+    "other": "Lưu trữ tổng kiểm tra cục bộ (không sửa đổi các đối tượng)"
+  },
+  "ds.editor.storage.nativeEtags": {
+    "other": "Sử dụng Native Etags (sẽ tắt đồng bộ máy tính để bàn)"
+  },
+  "ds.editor.storage.legend.checksumMapper": {
+    "other": "Để phát hiện thay đổi thích hợp, các tệp checksums(md5) đã được tính toán bởi Cells(hoặc bởi bộ lưu trữ với bản sao tại chỗ, khi có thể) và được đính kèm dưới dạng siêu dữ liệu cho các đối tượng. Để có hiệu suất tốt nhất, hãy sử dụng cờ Native ETags để giữ các giá trị gốc cho bộ nhớ, nhưng hay lưu ý rằng điều này sẽ vô hiệu hóa Desktop Synchronization trên datasource này. Bạn cũng có thể đơn giản ngăn việc sửa đổi đối tượng, trong khi vẫn tính checksums, bằng cách lưu trữ siêu dữ liệu trên máy chủ Cells."
+  },
+  "ds.editor.new": {
+    "other": "Tạo mới DataSource"
+  },
+  "ds.editor.name.inuse": {
+    "other": "Tên này đã được sử dụng, hãy chọn một tên khác!"
+  },
+  "ds.editor.options": {
+    "other": "Tùy chọn chính"
+  },
+  "ds.editor.datamanagement": {
+    "other": "Quản lý dữ liệu"
+  },
+  "ds.editor.options.enabled": {
+    "other": "Đã bật"
+  },
+  "ds.editor.options.id": {
+    "other": "Tên DataSource"
+  },
+  "ds.editor.options.port": {
+    "other": "Internal Port"
+  },
+  "ds.editor.selector.completer": {
+    "other": "Chọn một thư mục"
+  },
+  "ds.editor.selector.completer.hint": {
+    "other": "Chọn từ danh sách hoặc nhập một đường dẫn và nhấn Enter"
+  },
+  "ds.editor.selector.completer.create": {
+    "other": "thư mục sẽ được tạo"
+  },
+  "ds.editor.selector.error.depth": {
+    "other": "Hãy chắc chắn để chọn một thư mục hai cấp. Lưu trữ đối tượng sẽ bắt đầu trên thư mục cha."
+  },
+  "ds.editor.selector.error.dnsname": {
+    "other": "Thư mục được hiện thị dưới dạng S3 bucket phải tuân theo tên DNS(chữ thường, không có khoảng trắng, ký tự đặc biệt)."
+  },
+  "ds.editor.selector.folder": {
+    "other": "Local Folder"
+  },
+  "ds.editor.selector.folder.hint": {
+    "other": "Select a peer to load folders"
+  },
+  "ds.editor.selector.peer": {
+    "other": "Peer Address"
+  },
+  "ds.editor.selector.peer.any": {
+    "other": "Any peer (unique node or distributed FS)"
+  },
+  "ds.editor.selector.peer.word": {
+    "other": "Ngang hàng"
+  },
+  "ds.editor.selector.peer.invalid": {
+    "other": "không hợp lệ"
+  },
+  "ds.editor.selector.mkdir": {
+    "other": "Tạo Thư mục"
+  },
+  "ds.editor.selector.mkdir.legend": {
+    "other": "Tạo một thư mục mới dưới %s"
+  },
+  "ds.editor.selector.mkdir.field": {
+    "other": "Tên thư mục"
+  },
+  "ds.editor.storage.fs.macos": {
+    "other": "Hệ điều hành là MacOSX"
+  },
+  "ds.editor.storage.azure.api": {
+    "other": "Tên tài khoản Azure"
+  },
+  "ds.editor.storage.azure.secret": {
+    "other": "Azure Secret Key"
+  },
+  "ds.editor.storage.azure.bucket": {
+    "other": "Tên Bucket"
+  },
+  "ds.editor.storage.gcs.credentials": {
+    "other": "Dán nội dung của GCS JSON"
+  },
+  "ds.editor.storage.gcs.bucket": {
+    "other": "Tên Bucket"
+  },
+  "ds.editor.storage.s3.api": {
+    "other": "S3 Api Key"
+  },
+  "ds.editor.storage.s3.bucket": {
+    "other": "Tên Bucket"
+  },
+  "ds.editor.storage.s3.endpoint.type": {
+    "other": "Endpoint Type"
+  },
+  "ds.editor.storage.s3.signatureVersion": {
+    "other": "Signature Version"
+  },
+  "ds.editor.storage.s3.endpoint.amazon": {
+    "other": "Amazon S3"
+  },
+  "ds.editor.storage.s3.endpoint.custom": {
+    "other": "Other S3-Compatible Storage"
+  },
+  "ds.editor.storage.s3.endpoint.minio": {
+    "other": "Minio Server"
+  },
+  "ds.editor.storage.s3.endpoint": {
+    "other": "Thay đổi endpoint URL"
+  },
+  "ds.editor.storage.s3.endpoint.hint": {
+    "other": "include http(s)://"
+  },
+  "ds.editor.storage.s3.region": {
+    "other": "S3 Api Region"
+  },
+  "ds.editor.storage.s3.path": {
+    "other": "Đường dẫn bên trong"
+  },
+  "ds.editor.storage.s3.secret": {
+    "other": "S3 Api Secret"
+  },
+  "ds.editor.storage.buckets.legend": {
+    "other": "Chọn một hoặc nhiều buckets"
+  },
+  "ds.editor.storage.buckets.reload": {
+    "other": "Tải lại buckets"
+  },
+  "ds.editor.storage.buckets.create": {
+    "other": "Create Bucket"
+  },
+  "ds.editor.storage.buckets.create.hint": {
+    "other": "Bucket name"
+  },
+  "ds.editor.storage.buckets.regexp": {
+    "other": "Biểu thức chính quy"
+  },
+  "ds.editor.storage.buckets.regexp.hint": {
+    "other": "Biểu thức chính quy"
+  },
+  "ds.editor.storage.buckets.cont.nokeys": {
+    "other": "Thiết lập lưu trữ để tại buckets"
+  },
+  "ds.editor.storage.buckets.cont.loading": {
+    "other": "Đang tải buckets có thể truy cập"
+  },
+  "ds.editor.storage.buckets.cont.empty": {
+    "other": "Không tìm thấy buckets"
+  },
+  "ds.editor.storage.s3.legend.tags": {
+    "other": "Đồng bộ hóa thẻ S3 từ buckets hoặc objects (sử dụng danh sách các mẫu được phân tách bằng dấu phẩy để khớp). Hãy chú ý rằng điều này sẽ thực hiện các yêu cầu bổ sung đối với bộ nhớ và có thể làm chậm quá trình đồng bộ hóa. Các thẻ gốc sẽ được chỉ đến pydio:s3-bucket-tag-NAME and pydio:s3-object-tag-NAME."
+  },
+  "ds.editor.storage.s3.bucketsTags": {
+    "other": "Buckets Tags (multiple buckets enabled)"
+  },
+  "ds.editor.storage.s3.objectsTags": {
+    "other": "Objects Tags"
+  },
+  "ds.editor.storage.s3.legend.bucketPathPrefix": {
+    "other": "Use a path prefix inside the bucket (will create a virtual folder to store objects)"
+  },
+  "ds.editor.storage.s3.bucketPathPrefix": {
+    "other": "Path prefix"
+  },
+  "ds.editor.storage.s3.legend.storageClass": {
+    "other": "Custom Storage Class (leave empty to use STANDARD). Amazon S3 supports the following values: REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR. Beware that using GLACIER or equivalent will make the datasource write-only, as objects have to be manually restored before being available for download."
+  },
+  "ds.editor.storage.s3.storageClass": {
+    "other": "Storage Class"
+  },
+  "ds.editor.title": {
+    "other": "DataSource %s"
+  },
+  "ds.editor.versioning": {
+    "other": "Versioning Policy"
+  },
+  "ds.editor.versioning.disabled": {
+    "other": "Không kích hoạt versioning"
+  },
+  "ds.editor.tab.button-back": {
+    "other": "Quay lại"
+  },
+  "ds.editor.tab.button-next": {
+    "other": "Tiếp theo"
+  },
+  "ds.editor.tab.button-create": {
+    "other": "Tạo mới"
+  },
+  "ds.editor.tab.identifier": {
+    "other": "User name"
+  },
+  "ds.editor.tab.main": {
+    "other": "Các tùy chọn chính"
+  },
+  "ds.editor.tab.storage": {
+    "other": "Kiểu storage"
+  },
+  "ds.editor.tab.lifecycle": {
+    "other": "Vòng đời của dữ liệu"
+  },
+  "ds.editor.tab.advanced": {
+    "other": "Tùy chọn Nâng cao"
+  },
+  "ds.editor.initFlatFromSnapshot": {
+    "other": "Nếu thư mục này đã từng được kích hoạt với định dạng flat, bạn có thể khôi phục từ một snaphot được lưu trong chính thư mục"
+  },
+  "ds.editor.foldersShardingPattern": {
+    "other": "By default, all files are stored inside a unique folder. Use a pattern 'N:P:Q' to auto-create sub folders id[:N]/id[:P]/id[:Q]/..."
+  },
+  "ds.editor.initFlatFromSnapshot.hint": {
+    "other": "Path to snapshot inside storage (e.g. $snapshot.db)"
+  },
+  "ds.editor.foldersShardingPattern.hint": {
+    "other": "Sharding pattern (e.g. N:P:Q)"
+  },
+  "ds.encryption": {
+    "other": "Đã mã hóa"
+  },
+  "ds.encryption.key.emptyState": {
+    "other": "Không có khóa chính"
+  },
+  "ds.encryption.key.create": {
+    "other": "Tạo key"
+  },
+  "ds.encryption.key.created": {
+    "other": "Được tạo ra"
+  },
+  "ds.encryption.key.delete": {
+    "other": "Xóa Key"
+  },
+  "ds.encryption.key.delete.warning": {
+    "other": "Nếu bạn đang có dữ liệu mã hóa với key này, thì khi xóa key sẽ không thể giải mã dữ liệu! Bạn có chắc không?"
+  },
+  "ds.encryption.key.export": {
+    "other": "Export Key"
+  },
+  "ds.encryption.key.export.confirm": {
+    "other": "Xác nhận mật khẩu"
+  },
+  "ds.encryption.key.export.fail": {
+    "other": "Đã xảy ra lỗi trong quá trình export"
+  },
+  "ds.encryption.key.export.password": {
+    "other": "Xin nhập vào một password đủ chắc chắn"
+  },
+  "ds.encryption.key.export.result.copy": {
+    "other": "Sao chép kết quả vào một tệp để lưu key"
+  },
+  "ds.encryption.key.id": {
+    "other": "User name"
+  },
+  "ds.encryption.key.import": {
+    "other": "Import Key"
+  },
+  "ds.encryption.key.import.content": {
+    "other": "Dán key ở đây từ tập tin sao lưu của bạn"
+  },
+  "ds.encryption.key.import.fail": {
+    "other": "Đã xảy ra lỗi trong quá trình import key"
+  },
+  "ds.encryption.key.import.id": {
+    "other": "Tên duy nhất cho khóa này"
+  },
+  "ds.encryption.key.import.label": {
+    "other": "Tên dễ đọc cho key này"
+  },
+  "ds.encryption.key.import.password": {
+    "other": "Thiết lập password khi export key"
+  },
+  "ds.encryption.key.import.success": {
+    "other": "Key đã được import thành công"
+  },
+  "ds.encryption.key.label": {
+    "other": "Tên"
+  },
+  "ds.encryption.key.owner": {
+    "other": "Chủ sở hữu"
+  },
+  "ds.name": {
+    "other": "Tên"
+  },
+  "ds.status": {
+    "other": "Trạng thái"
+  },
+  "ds.status.disabled": {
+    "other": "Tắt"
+  },
+  "ds.status.index": {
+    "other": "Index down"
+  },
+  "ds.status.ko": {
+    "other": "Dịch vụ đã tắt"
+  },
+  "ds.status.ko-peers": {
+    "other": "Không tìm thấy Node %s"
+  },
+  "ds.status.na": {
+    "other": "Không xác định"
+  },
+  "ds.status.object": {
+    "other": "Objects down"
+  },
+  "ds.status.ok": {
+    "other": "Tất cả các dịch vụ đang chạy"
+  },
+  "ds.status.starting": {
+    "other": "Bắt đầu datasource..."
+  },
+  "ds.status.sync": {
+    "other": "Đồng bộ xuống"
+  },
+  "ds.storage": {
+    "other": "Kiểu storage"
+  },
+  "ds.storage.fs": {
+    "other": "Hệ thống file trên hệ điều hành"
+  },
+  "ds.storage.s3": {
+    "other": "Storage kiểu S3"
+  },
+  "ds.storage.azure": {
+    "other": "Storage kiểu Azure Blob"
+  },
+  "ds.storage.gcs": {
+    "other": "Storage kiểu Google"
+  },
+  "ds.storage.title": {
+    "other": "Storage"
+  },
+  "ds.versioning": {
+    "other": "Phiên bản"
+  },
+  "ds.syncStatus": {
+    "other": "Lần đồng bộ cuối"
+  },
+  "ds.emptyState": {
+    "other": "Chưa có datasource nào được tạo"
+  },
+  "ds.versioning.description": {
+    "other": "Mô tả"
+  },
+  "ds.versioning.name": {
+    "other": "Tên"
+  },
+  "ds.versioning.periods": {
+    "other": "Quy tắc giữ lại các phiên bản"
+  },
+  "ds.versioning.storage": {
+    "other": "Lưu trữ"
+  },
+  "logs.1": {
+    "other": "Nhật ký máy chủ"
+  },
+  "logs.10": {
+    "other": "Trích xuất và tải xuống"
+  },
+  "logs.11": {
+    "other": "Trích xuất dưới dạng..."
+  },
+  "logs.2": {
+    "other": "Chọn một ngày"
+  },
+  "logs.filter.legend": {
+    "other": "Lọc theo..."
+  },
+  "logs.export.disabled": {
+    "other": "Chọn một ngày hoặc lọc kết quả"
+  },
+  "logs.export.clicklink": {
+    "other": "Nhấp vào liên kết để tải xuống"
+  },
+  "logs.filter.period": {
+    "other": "Khoảng thời gian"
+  },
+  "logs.filter.period.from": {
+    "other": "Từ"
+  },
+  "logs.filter.period.to": {
+    "other": "Đến"
+  },
+  "logs.filter.period.time": {
+    "other": "Vào lúc..."
+  },
+  "logs.filter.login": {
+    "other": "Đăng nhập"
+  },
+  "logs.filter.ip": {
+    "other": "Địa chỉ IP"
+  },
+  "logs.filter.fulltext": {
+    "other": "Tìm kiếm toàn văn bản"
+  },
+  "logs.tz.tooltip": {
+    "other": "Hiển thị múi giờ theo vị trí của bạn/trên máy chủ"
+  },
+  "logs.tz.local": {
+    "other": "Múi giờ địa phương của bạn"
+  },
+  "logs.tz.server": {
+    "other": "Múi giờ của máy chủ"
+  },
+  "logs.toggleTheme": {
+    "other": "Chế độ màu Sáng/Tối"
+  },
+  "logs.sys.note": {
+    "other": "Xin lưu ý:"
+  },
+  "logs.sys.note.content": {
+    "other": "Các mục nhật ký trống có thể có nghĩa là máy chủ không chạy trong chế độ production. Đảm bảo bật log này bằng cách thêm đối số --log = production hoặc đặt biến môi trường PYDIO_LOGS_LEVEL = production."
+  },
+  "logs.3": {
+    "other": "Nhật ký bộ lọc"
+  },
+  "logs.4": {
+    "other": "Bấm vào một dòng để biết chi tiết"
+  },
+  "logs.5": {
+    "other": "Chi tiết sự kiện"
+  },
+  "logs.6": {
+    "other": "Nhật ký trich xuất"
+  },
+  "logs.7": {
+    "other": "Trích xuất từ"
+  },
+  "logs.8": {
+    "other": "Tới"
+  },
+  "logs.9": {
+    "other": "Tệp sẽ được xuất dưới dạng định dạng CSV phân cách bởi (;) và các trường được đặt trong dấu ngoặc kép (\")."
+  },
+  "logs.level": {
+    "other": "Mức độ"
+  },
+  "logs.level.exact": {
+    "other": "(only)"
+  },
+  "logs.level.greaterthan": {
+    "other": "(and up)"
+  },
+  "logs.service": {
+    "other": "Dịch vụ"
+  },
+  "logs.message": {
+    "other": "Tin nhắn"
+  },
+  "logs.noentries": {
+    "other": "Không có đầu vào"
+  },
+  "logs.noresults": {
+    "other": "Không có kết quả"
+  },
+  "logs.details.copy": {
+    "other": "Copy log to clipboard"
+  },
+  "logs.details.show-focus": {
+    "other": "Show +/- 5 minutes"
+  },
+  "logs.details.close": {
+    "other": "Close log detail"
+  },
+  "logs.details.user": {
+    "other": "User"
+  },
+  "logs.details.user-attributes": {
+    "other": "User Attributes"
+  },
+  "logs.details.date": {
+    "other": "Event Date"
+  },
+  "logs.details.msg": {
+    "other": "Event Message"
+  },
+  "logs.details.service": {
+    "other": "Emitting Service"
+  },
+  "logs.details.connection": {
+    "other": "Connection IP"
+  },
+  "logs.details.agent": {
+    "other": "User-Agent"
+  },
+  "logs.details.protocol": {
+    "other": "Protocol"
+  },
+  "logs.details.node": {
+    "other": "File/Folder"
+  },
+  "logs.details.transfer-size": {
+    "other": "Transfer Size"
+  },
+  "logs.details.workspace": {
+    "other": "In Workspace"
+  },
+  "menu.0": {
+    "other": "Bảng điều khiển"
+  },
+  "menu.1": {
+    "other": "Hoạt động"
+  },
+  "menu.10": {
+    "other": "Tiện ích mở rộng để gửi tệp qua giao diện Web"
+  },
+  "menu.11": {
+    "other": "Xác thực"
+  },
+  "menu.11b": {
+    "other": "Xác thực"
+  },
+  "menu.12": {
+    "other": "Cấu hình Backends"
+  },
+  "menu.13": {
+    "other": "Loggers"
+  },
+  "menu.14": {
+    "other": "Thông báo"
+  },
+  "menu.15": {
+    "other": "Cách người dùng nhận thông báo từ các phần khác nhau của ứng dụng."
+  },
+  "menu.16": {
+    "other": "Pydio Booster"
+  },
+  "menu.17": {
+    "other": "Tin nhắn tức thời và công cụ tăng tốc bên ngoài"
+  },
+  "menu.18": {
+    "other": "Tất cả các plugin"
+  },
+  "menu.19": {
+    "other": "Plugin có thể dùng"
+  },
+  "menu.2": {
+    "other": "Nhật ký máy chủ"
+  },
+  "menu.20": {
+    "other": "Tính năng người dùng"
+  },
+  "menu.21": {
+    "other": "Thông số người dùng cuối"
+  },
+  "menu.22": {
+    "other": "Trang chào mừng"
+  },
+  "menu.23": {
+    "other": "Trang đích cho người dùng sau khi đăng nhập. Cấu hình các yếu tố và liên kết được hiển thị."
+  },
+  "menu.3": {
+    "other": "Thay đổi giao diện"
+  },
+  "menu.4": {
+    "other": "Theme, logo, cách thức trình bày"
+  },
+  "menu.5": {
+    "other": "Tính năng chia sẻ"
+  },
+  "menu.6": {
+    "other": "Tùy chọn cho việc chia sẻ file và folder"
+  },
+  "menu.7": {
+    "other": "Trình chỉnh sửa"
+  },
+  "menu.8": {
+    "other": "Bật / tắt trình soạn thảo và quản lý tham số của chúng"
+  },
+  "menu.9": {
+    "other": "Công cụ upload"
+  },
+  "menu.metadata": {
+    "other": "Metadata"
+  },
+  "menu.metadata.description": {
+    "other": "Các ghi chú được user đính vào dữ liệu"
+  },
+  "metadata.definition": {
+    "other": "Định nghĩa"
+  },
+  "metadata.delete.confirm": {
+    "other": "Bạn có chắc chắn muốn xóa metadata này không?"
+  },
+  "metadata.editor.label.error": {
+    "other": "Nhãn Metadata không thể để trống"
+  },
+  "metadata.editor.ns.error": {
+    "other": "Chọn một namespace cho siêu dữ liệu này"
+  },
+  "metadata.editor.ns.exists": {
+    "other": "Tên này đã tồn tại, hãy chọn một tên khác"
+  },
+  "metadata.editor.selection": {
+    "other": "Các giá trị lựa chọn"
+  },
+  "metadata.editor.selection.key": {
+    "other": "Từ khóa"
+  },
+  "metadata.editor.selection.value": {
+    "other": "Giá trị"
+  },
+  "metadata.editor.selection.steps": {
+    "other": "Hiển thị the bước"
+  },
+  "metadata.editor.tags.cleared": {
+    "other": "Đã xóa tags cho namespaces %s"
+  },
+  "metadata.editor.tags.reset": {
+    "other": "Đặt lại tags"
+  },
+  "metadata.editor.title.create": {
+    "other": "Tạo Namespace"
+  },
+  "metadata.empty": {
+    "other": "Không có metadata được định nghĩa"
+  },
+  "metadata.indexable": {
+    "other": "Có thể lập danh sách chỉ mục"
+  },
+  "metadata.label": {
+    "other": "Nhãn"
+  },
+  "metadata.namespace": {
+    "other": "Tên"
+  },
+  "metadata.namespace.add": {
+    "other": "+ Namespace"
+  },
+  "metadata.namespaces": {
+    "other": "Namespaces"
+  },
+  "metadata.namespaces.legend": {
+    "other": "Người dùng có thể đính kèm metadata vào bất kỳ tệp hoặc thư mục nào. Bạn có thể xác định ở đây loại metadata bạn muốn hiển thị và liệu mỗi meta có thể đọc / ghi được bởi người dùng thường hay không so với người dùng quản trị viên."
+  },
+  "metadata.order": {
+    "other": "Thứ tự"
+  },
+  "metadata.group": {
+    "other": "Group"
+  },
+  "metadata.group-field": {
+    "other": "Group Name (creates an expandable section). Use '/' for sub-groups."
+  },
+  "metadata.default-group": {
+    "other": "No Group"
+  },
+  "metadata.toggle.index": {
+    "other": "Chỉ mục trong search engine"
+  },
+  "metadata.toggle.read": {
+    "other": "Không hiển thị đối với admins"
+  },
+  "metadata.toggle.write": {
+    "other": "Bản hạn chế cho admins"
+  },
+  "metadata.type": {
+    "other": "Loại"
+  },
+  "metadata.type.string": {
+    "other": "Miêu tả ngắn"
+  },
+  "metadata.type.textarea": {
+    "other": "Đoạn văn"
+  },
+  "metadata.type.integer": {
+    "other": "Số"
+  },
+  "metadata.group.lists": {
+    "other": "List"
+  },
+  "metadata.group.internal": {
+    "other": "Internal"
+  },
+  "metadata.type.boolean": {
+    "other": "Giá trị đúng/sai"
+  },
+  "metadata.type.date": {
+    "other": "Ngày hoặc Thời điểm"
+  },
+  "metadata.type.stars_rate": {
+    "other": "Đánh giá sao"
+  },
+  "metadata.type.css_label": {
+    "other": "Nhãn gắn màu"
+  },
+  "metadata.type.auto_complete": {
+    "other": "Auto Complete"
+  },
+  "metadata.type.tags": {
+    "other": "Extensible Tags (legacy)"
+  },
+  "metadata.type.choice": {
+    "other": "Lựa chọn từ các giá trị"
+  },
+  "metadata.type.multi_value": {
+    "other": "Multi Value select"
+  },
+  "metadata.type.tag_cloud": {
+    "other": "Tag Cloud"
+  },
+  "metadata.type.tag_cloud.values": {
+    "other": "Tag Cloud values"
+  },
+  "metadata.tag_cloud.entity.hint": {
+    "other": "Comma-separated list of possible tags"
+  },
+  "metadata.tag_cloud.entity": {
+    "other": "Values"
+  },
+  "metadata.type.json": {
+    "other": "JSON (định dạng riêng)"
+  },
+  "metadata.type.url": {
+    "other": "URL"
+  },
+  "metadata.type.date.format": {
+    "other": "Định dạng"
+  },
+  "metadata.type.date.format.date": {
+    "other": "Ngày"
+  },
+  "metadata.type.date.format.date-time": {
+    "other": "Ngày & Thời điểm"
+  },
+  "metadata.type.date.format.time": {
+    "other": "Thời điểm"
+  },
+  "metadata.type.date.display": {
+    "other": "Hiển thị"
+  },
+  "metadata.type.date.display.normal": {
+    "other": "Bình thường"
+  },
+  "metadata.type.date.display.relative": {
+    "other": "Tương đối (xxx ngày trước đây...)"
+  },
+  "metadata.type.reaction": {
+    "other": "Phản ứng"
+  },
+  "metadata.type.integer.format": {
+    "other": "Định dạng"
+  },
+  "metadata.type.integer.format.general": {
+    "other": "Tổng quát"
+  },
+  "metadata.type.integer.format.bytesize": {
+    "other": "Tính theo Byte"
+  },
+  "metadata.type.integer.format.percentage": {
+    "other": "Tính theo phần trăm"
+  },
+  "metadata.type.integer.format.progress": {
+    "other": "Theo tiến trình hoàn thành"
+  },
+  "metadata.toggle.list-visibility": {
+    "other": "Hiển thị các giá trị trong danh sách các tệp"
+  },
+  "metadata.toggle.prompt": {
+    "other": "Prompt Metadata tagging on Upload"
+  },
+  "metadata.field.validation": {
+    "other": "Field Validation"
+  },
+  "metadata.validation.max-length.gte-min-length": {
+    "other": "Maximum length must be greater than or equal to minimum length"
+  },
+  "metadata.validation.max-value.gte-min-value": {
+    "other": "Maximum value must be greater than or equal to minimum value"
+  },
+  "metadata.validation.default-length.min": {
+    "other": "Default value length (%s) must be at least %s characters"
+  },
+  "metadata.validation.default-length.max": {
+    "other": "Default value length (%s) must not exceed %s characters"
+  },
+  "metadata.validation.default-value.min": {
+    "other": "Default value (%s) must be at least %s"
+  },
+  "metadata.validation.default-value.max": {
+    "other": "Default value (%s) must not exceed %s"
+  },
+  "metadata.editor.selection.key_exists": {
+    "other": "This key already exists"
+  },
+  "metadata.toggle.required": {
+    "other": "Required"
+  },
+  "metadata.boolean.yes": {
+    "other": "Yes"
+  },
+  "metadata.boolean.no": {
+    "other": "No"
+  },
+  "metadata.toggle.defaults": {
+    "other": "Enforce Defaults"
+  },
+  "metadata.field.mandatory": {
+    "other": "Bắt buộc"
+  },
+  "perfs.booster.description": {
+    "other": "Kiểm tra xem Pydio Booster đã được khởi động chưa và cho phép giao tiếp WebSocket"
+  },
+  "perfs.booster.error": {
+    "other": "Lỗi Pydio Booster, xem bảng chuyên dụng"
+  },
+  "perfs.booster.help": {
+    "other": "Pydio Booster cung cấp một công cụ bổ sung dễ triển khai để thêm hỗ trợ WebSocket và Upload/Download các điểm tích lũy trong Pydio."
+  },
+  "perfs.booster.title": {
+    "other": "Pydio Booster"
+  },
+  "perfs.cache.description": {
+    "other": "Kiểm tra xem Pydio có được cấu hình để sử dụng lớp bộ nhớ đệm (cache) không"
+  },
+  "perfs.cache.error": {
+    "other": "Có vẻ như bạn đã không kích hoạt dịch vụ bộ nhớ đệm (cache)."
+  },
+  "perfs.cache.help": {
+    "other": "Pydio có thể kết nối với máy chủ bộ đệm ngoài như Redis hoặc Memcache, hoặc sử dụng bộ đệm trong bộ nhớ để cải thiện đáng kể hiệu suất duyệt tệp."
+  },
+  "perfs.cache.title": {
+    "other": "Pydio Cache"
+  },
+  "perfs.cli.description": {
+    "other": "Trì hoãn các tác vụ tốn thời gian để dòng lệnh."
+  },
+  "perfs.cli.error": {
+    "other": "Chú ý, Chế độ php cli đang tắt!"
+  },
+  "perfs.cli.help": {
+    "other": "Kích hoạt dòng lệnh trong core parameters. Điều này làm thuận tiện cho người dùng vì các tác vụ cần thời gia được chạy trên tiến trình khác."
+  },
+  "perfs.cli.title": {
+    "other": "Command-line PHP"
+  },
+  "perfs.debug.description": {
+    "other": "Kiểm tra nếu chế độ debug bị tắt trên máy chủ"
+  },
+  "perfs.debug.error": {
+    "other": "Chú ý, một trong những PYDIO_SERVER_DEBUG, PYDIO_CLIENT_DEBUG hoặc PYDIO_SKIP_CACHE được đặt thành True!"
+  },
+  "perfs.debug.help": {
+    "other": "Đảm bảo tắt các chế độ debug trên máy chủ. Điều này được thực hiện thủ công bằng cách chỉnh sửa tệp conf/booststrap_context.php (or /etc/pydio/bootstrap_context.php)."
+  },
+  "perfs.debug.title": {
+    "other": "Chế độ Debug"
+  },
+  "perfs.desc": {
+    "other": "Kiểm tra cấu hình hệ thống để cải thiện."
+  },
+  "perfs.load.description": {
+    "other": "Phát hiện máy chủ vận hành công suất cao (chỉ máy chủ Linux)"
+  },
+  "perfs.load.error": {
+    "other": "Maybe adding some CPU or RAM to your server could be necessary."
+  },
+  "perfs.load.help": {
+    "other": "Máy chủ vận hành công suất cao có thể cho thấy rằng máy chủ của bạn thiếu CPU hoặc RAM do việc sử dụng Pydio của bạn."
+  },
+  "perfs.load.title": {
+    "other": "Trạng thái server"
+  },
+  "perfs.mailer.description": {
+    "other": "Kiểm tra xem mailer có đang sử dụng tính năng Queue"
+  },
+  "perfs.mailer.error": {
+    "other": "Mailer không được cấu hình để trì hoãn gửi email."
+  },
+  "perfs.mailer.help": {
+    "other": "Using a mail queue prevents the direct sending of emails for each action and request. Instead, it stores them in a separate database and processes the queue independently."
+  },
+  "perfs.mailer.title": {
+    "other": "Hàng đợi Mailer"
+  },
+  "perfs.more": {
+    "other": "Thêm thông tin"
+  },
+  "perfs.opcache.description": {
+    "other": "Kiểm tra xem bộ nhớ đệm Opcode PHP có hoạt động không"
+  },
+  "perfs.opcache.error": {
+    "other": "Không thể phát hiện bất kỳ extention nào từ APC, APCu, Opcache hoặc XCache."
+  },
+  "perfs.opcache.help": {
+    "other": "Pydio là PHP framework phong phú đòi hỏi phải tải rất nhiều tệp trong bộ nhớ. Đảm bảo bật Opcache PHP như APC/u, Opcache hoặc XCache."
+  },
+  "perfs.opcache.title": {
+    "other": "Opcode Cache Extension"
+  },
+  "perfs.score": {
+    "other": "Điểm hiệu năng"
+  },
+  "perfs.tests": {
+    "other": "Kểm tra hiệu năng"
+  },
+  "perfs.title": {
+    "other": "Hiệu năng hệ thống"
+  },
+  "perfs.widget": {
+    "other": "Thêm widget vào bảng điều khiển"
+  },
+  "plugins.1": {
+    "other": "Cài đặt chung"
+  },
+  "plugins.2": {
+    "other": "Master Driver"
+  },
+  "plugins.3": {
+    "other": "Secondary Driver"
+  },
+  "plugins.4": {
+    "other": "Editor plugins là trình xem trước / trình chỉnh sửa được sử dụng cho các loại file.\n                     Các plugin này được xử lý cụ thể trong GUI (tiện ích mở rộng) và có thể khai báo các mimetypes mà chúng hỗ trợ.\n                     Tham số thứ tự cũng cho phép xác định mức độ ưu tiên cho hành động 'mở bằng...'."
+  },
+  "plugins.5": {
+    "other": "Lưu thay đổi"
+  },
+  "plugins.6": {
+    "other": "Phục hồi"
+  },
+  "plugins.list.column.enabled": {
+    "other": "Bật"
+  },
+  "plugins.list.column.label": {
+    "other": "Nhãn"
+  },
+  "plugins.list.column.id": {
+    "other": "Id"
+  },
+  "plugins.list.column.description": {
+    "other": "Mô tả"
+  },
+  "plugins.list.action.edit": {
+    "other": "Chỉnh sửa tham số plugin"
+  },
+  "plugins.documentation": {
+    "other": "Tài liệu"
+  },
+  "policies.policy.create": {
+    "other": "Tạo"
+  },
+  "policies.policy.description": {
+    "other": "Mô tả Policy"
+  },
+  "policies.policy.name": {
+    "other": "Tên Policy"
+  },
+  "policies.policy.rules": {
+    "other": "# Quy tắc"
+  },
+  "policies.policy.display": {
+    "other": "Hiển thị các quy tắc chính sách"
+  },
+  "policies.policy.edit": {
+    "other": "Chỉnh sửa các quy tắc chính sách"
+  },
+  "policies.policy.editLabels": {
+    "other": "Chỉnh sửa nhãn"
+  },
+  "policies.policy.saveLabels": {
+    "other": "Lưu các thay đổi"
+  },
+  "policies.policy.delete": {
+    "other": "Xóa Policy"
+  },
+  "policies.policy.delete.confirm": {
+    "other": "Bạn có chắc chắn muốn xóa chính sách này? Hãy chắc chắn rằng nó không phá vỡ tính bảo mật của ứng dụng!"
+  },
+  "policies.policy.new": {
+    "other": "+ Policy mới"
+  },
+  "policies.policy.type": {
+    "other": "Loại Policy"
+  },
+  "policies.rule.create": {
+    "other": "Thêm rule mới"
+  },
+  "policies.rule.delete": {
+    "other": "Xoá rule"
+  },
+  "policies.acl.empty-string": {
+    "other": "No policies defined, create one use to it as a dynamic workspace permission."
+  },
+  "policies.rule.delete.confirm": {
+    "other": "Bạn có chắc chắn muốn xóa quy tắc bảo mật này? Nó có thể phá vỡ mô hình bảo mật của ứng dụng!"
+  },
+  "policies.type.acl.legend": {
+    "other": "Các Policy này được sử dụng để tự động cung cấp quyền truy cập đọc / ghi vào các workspaces hoặc các thư mục tùy theo hoàn cảnh hoặc tùy theo giá trị metadata đính kèm trên dữ liệu. Chúng được định nghĩa ở đây và được sử dụng trong bảng Access Control của users hoặc roles."
+  },
+  "policies.type.acl.title": {
+    "other": "ACL dựa vào bối cảnh"
+  },
+  "policies.type.oidc.legend": {
+    "other": "Dịch vụ OpenID Connect được sử dụng để xác thực trước khi user có thể truy cập vào API. Bạn có thể tùy chỉnh cho phép user login theo một bối cảnh nhất định, ví dụ như chỉ cho user login từ một danh sách các địa chỉ IP trong một khoảng thời gian cho trước."
+  },
+  "policies.type.oidc.title": {
+    "other": "OpenId Connect Resources"
+  },
+  "policies.type.rest.legend": {
+    "other": "Các policy này đang bảo vệ REST API theo từng uri, từng http methods. Nó cho chỉ cho phép các truy cập tối thiểu vào một số APIs công khai như dịch vụ discovery, dịch vụ cho frontend. Bạn không nên thay đổi nếu không nắm rõ vai trò của nó."
+  },
+  "policies.type.rest.title": {
+    "other": "REST Resources"
+  },
+  "react.1": {
+    "other": "thư mục chính"
+  },
+  "react.10": {
+    "other": "Kế thừa quyền"
+  },
+  "react.11": {
+    "other": "Không có quyền"
+  },
+  "react.12": {
+    "other": "Xóa quyền"
+  },
+  "react.13": {
+    "other": "Hiển thị tất cả các quyền"
+  },
+  "react.14": {
+    "other": "Hiển thị cây kết quả"
+  },
+  "react.2": {
+    "other": "hành động lớn"
+  },
+  "react.3": {
+    "other": "Kết quả tìm kiếm cho '%s'"
+  },
+  "react.4": {
+    "other": "Đóng kết quả"
+  },
+  "react.5": {
+    "other": "từ chối"
+  },
+  "react.5a": {
+    "other": "đọc"
+  },
+  "react.5b": {
+    "other": "ghi"
+  },
+  "react.5c": {
+    "other": "access"
+  },
+  "react.6": {
+    "other": "các thư mục con"
+  },
+  "react.7": {
+    "other": "Tạo một rule"
+  },
+  "react.8": {
+    "other": "Bạn sắp quản lý quyền ở cấp thấp hơn. Thư mục này mặc định sẽ chỉ được đọc\n                         và bạn sẽ quản lý các quyền một cách chọn lọc trên cấp dưới của nó. Chọn\n                         có nên sao chép các quyền hiện tại cho  cấp dưới của nó hay để xóa các quyền của chúng, điều này sẽ làm\n                         chúng không thể truy cập theo mặc định."
+  },
+  "react.9": {
+    "other": "Bạn sắp tắt chức năng quản lý quyền ở thư mục cấp dưới: tất cả\n                         thư mục cấp dưới sẽ tự động kế thừa quyền thư mục này và nếu có các thiết lập khác trước đây \n                         thì sẽ bị xóa. Bạn có chắc chắn để xác nhận?"
+  },
+  "scheduler.1": {
+    "other": "Trình lập lịch biểu được sử dụng để lên lịch các tác vụ. Nó yêu cầu khởi chạy một lệnh chính: nếu bạn đang sử dụng Pydio Booster, nó sẽ kích hoạt điều này cho bạn. Nếu không, sử dụng CRON để khởi chạy lệnh chính mỗi phút."
+  },
+  "scheduler.2": {
+    "other": "Command-line không được kích hoạt trong %1, bộ lập lịch sẽ không thể chạy."
+  },
+  "scheduler.3": {
+    "other": "cấu hình chung"
+  },
+  "user.1": {
+    "other": "+ Người dùng"
+  },
+  "user.10": {
+    "other": "Truy cập vào %i workspaces"
+  },
+  "user.11": {
+    "other": "%i vai trò"
+  },
+  "user.12": {
+    "other": "Group path"
+  },
+  "user.13": {
+    "other": "đã chia sẻ"
+  },
+  "user.14": {
+    "other": "Tạo mới role"
+  },
+  "user.15": {
+    "other": "Tạo một nhóm mới"
+  },
+  "user.16": {
+    "other": "Tên group"
+  },
+  "user.16.empty": {
+    "other": "Vui lòng cung cấp một tên duy nhất"
+  },
+  "user.16.format": {
+    "other": "Vui lòng chỉ sử dụng các ký tự chữ và số"
+  },
+  "user.17": {
+    "other": "Tên nhóm"
+  },
+  "user.17.empty": {
+    "other": "Vui lòng cung cấp nhãn cho nhóm này"
+  },
+  "user.18": {
+    "other": "Tên Role"
+  },
+  "user.18.empty": {
+    "other": "Vui lòng cung cấp nhãn cho role này"
+  },
+  "user.19": {
+    "other": "Tạo người dùng mới"
+  },
+  "user.2": {
+    "other": "+ Nhóm"
+  },
+  "user.20": {
+    "other": "Người dùng sẽ được tạo trong nhóm %s"
+  },
+  "user.21": {
+    "other": "Tên đăng nhập"
+  },
+  "user.22": {
+    "other": "Mật khẩu"
+  },
+  "user.23": {
+    "other": "Xác nhận mật khẩu"
+  },
+  "user.24": {
+    "other": "Root Group"
+  },
+  "user.25": {
+    "other": "Root Group Role"
+  },
+  "user.26": {
+    "other": "%s Group Role"
+  },
+  "user.27": {
+    "other": "User Personal Role"
+  },
+  "user.3": {
+    "other": "Groups"
+  },
+  "user.4": {
+    "other": "Roles"
+  },
+  "user.5": {
+    "other": "Groups & Users"
+  },
+  "user.6": {
+    "other": "+ Role"
+  },
+  "user.7": {
+    "other": "Tìm kiếm người dùng và nhóm"
+  },
+  "user.8": {
+    "other": "Đặt tham số trên nhóm này để áp dụng tất cả các nhóm và người dùng."
+  },
+  "user.9": {
+    "other": "Kết nối lần cuối"
+  },
+  "user.moveto.hint": {
+    "other": "Chọn group đích, hoặc dùng \"/\" để đưa vào group gốc."
+  },
+  "user.filter.tooltip": {
+    "other": "Lọc danh sách người dùng..."
+  },
+  "user.filter.locks": {
+    "other": "Locked Users"
+  },
+  "user.filter.hidden": {
+    "other": "Public Links (hidden)"
+  },
+  "user.filter.status": {
+    "other": "Status"
+  },
+  "user.type.hidden": {
+    "other": "Public User"
+  },
+  "user.type.hidden.legend": {
+    "other": "Public users are created for public links (one per link) and are hidden by default. It can be useful to list them to detect locked public links."
+  },
+  "user.rootgroup.legend": {
+    "other": "Permissions applied to the entire user hierarchy"
+  },
+  "user.filter.internal": {
+    "other": "Người dùng nội bộ"
+  },
+  "user.filter.shared": {
+    "other": "Shared users"
+  },
+  "user.filter.admins": {
+    "other": "Chỉ dành cho admin"
+  },
+  "user.filter.all": {
+    "other": "Mọi người dùng"
+  },
+  "user.filter.anon": {
+    "other": "Hiển thị ẩn danh"
+  },
+  "versions.editor.delete": {
+    "other": "Xóa Policy"
+  },
+  "versions.editor.delete.confirm": {
+    "other": "Bạn có chắc chắn muốn xóa policy này? Điều này là không thể hoàn tác!"
+  },
+  "versions.editor.error.lastdelete": {
+    "other": "The last period is configured to delete all versions, you cannot add a new one!"
+  },
+  "versions.editor.title": {
+    "other": "Policy %s"
+  },
+  "versions.period.keep-all": {
+    "other": "Giữ tất cả"
+  },
+  "versions.period.keep-all.always": {
+    "other": "Luôn giữ tất cả các phiên bản"
+  },
+  "versions.period.keep-n": {
+    "other": "Giữ %s phiên bản"
+  },
+  "versions.period.keep-n-after": {
+    "other": "Giữ các phiên bản %1 sau %2"
+  },
+  "versions.period.max-n": {
+    "other": "Tối đa %s phiên bản"
+  },
+  "versions.period.remove-all": {
+    "other": "Xóa tất cả"
+  },
+  "versions.period.remove-all-after": {
+    "other": "Xóa tất cả sau %s"
+  },
+  "versions.period.retentions-n": {
+    "other": "Thời gian duy trì %s"
+  },
+  "virtual.create": {
+    "other": "+ Đường dẫn Template"
+  },
+  "virtual.create.button": {
+    "other": "Tạo"
+  },
+  "virtual.label": {
+    "other": "Tên"
+  },
+  "virtual.col.id": {
+    "other": "ID mẫu"
+  },
+  "virtual.col.code": {
+    "other": "Mã mẫu"
+  },
+  "virtual.label.new": {
+    "other": "Nhãn dán cho mẫu"
+  },
+  "virtual.legend.1": {
+    "other": "Template Path được tính toán tùy thuộc vào ngữ cảnh. Chúng có thể được sử dụng làm gốc cho các workspaces thay thế một đường dẫn datasource. Chúng được sử dụng theo mặc định để tạo workspace Personal Files để trỏ đến một thư mục khác nhau cho mỗi người dùng và để tính toán vị trí của các thư mục Cells của người dùng."
+  },
+  "virtual.legend.2": {
+    "other": "Sử dụng Ctrl + Space bên trong trình chỉnh sửa để nhận gợi ý về các giá trị có thể. Các giá trị hiện tại được hỗ trợ là: User.Name (được giải quyết một cách linh hoạt cho người dùng đăng nhập hiện tại) và DataSources (để chọn một datasource động)."
+  },
+  "virtual.title": {
+    "other": "Đường dẫn Template"
+  },
+  "virtual.save": {
+    "other": "Lưu mẫu"
+  },
+  "virtual.delete": {
+    "other": "Xóa mẫu"
+  },
+  "virtual.delete.confirm": {
+    "other": "Bạn có chắc chắn muốn xóa đường dẫn mẫu này? Hoạt động này không thể đảo ngược!"
+  },
+  "virtual.code": {
+    "other": "Mã mẫu"
+  },
+  "virtual.code.display": {
+    "other": "Mã hiển thị"
+  },
+  "virtual.code.edit": {
+    "other": "Chỉnh sửa code"
+  },
+  "virtual.card.title": {
+    "other": "Tính toán đường dẫn tự động"
+  },
+  "virtual.card.cleanOnDelete": {
+    "other": "Khi người dùng bị xóa, thư mục cá nhân sẽ bị đổi tên thành {deleted-NAME-UUID}."
+  },
+  "virtual.card.cleanOnDelete-legend-off": {
+    "other": "This option should not be used if the template path is not creating a folder for each user (using User.Name)."
+  },
+  "virtual.card.cleanOnDelete-legend-on": {
+    "other": "This option may be recommended as the template path seems to create a folder for each user (using User.Name)."
+  },
+  "ws.1": {
+    "other": "Manage DataSources"
+  },
+  "ws.10": {
+    "other": "Chọn một DataSource"
+  },
+  "ws.11": {
+    "other": "Workspace dựa trên ..."
+  },
+  "ws.12": {
+    "other": "Template %s"
+  },
+  "ws.13": {
+    "other": "Tùy chọn Template"
+  },
+  "ws.14": {
+    "other": "Đặt tùy chọn chung"
+  },
+  "ws.15": {
+    "other": "Tùy chọn Workspace"
+  },
+  "ws.16": {
+    "other": "Chọn Storage Driver"
+  },
+  "ws.17": {
+    "other": "Chọn kiểu Storage"
+  },
+  "ws.18": {
+    "other": "Đang tải drivers"
+  },
+  "ws.19": {
+    "other": "Lưu để thêm tính năng"
+  },
+  "ws.2": {
+    "other": "Đóng DataSources"
+  },
+  "ws.20": {
+    "other": "Tạo"
+  },
+  "ws.21": {
+    "other": "Cài đặt chung Template"
+  },
+  "ws.22": {
+    "other": "Cài đặt chung Workspace"
+  },
+  "ws.23": {
+    "other": "Xóa workspace"
+  },
+  "ws.24": {
+    "other": "Workspaces cấp dưới"
+  },
+  "ws.25": {
+    "other": "Chia sẻ"
+  },
+  "ws.26": {
+    "other": "Quyền thư mục"
+  },
+  "ws.27": {
+    "other": "Tính năng bổ sung"
+  },
+  "ws.28": {
+    "other": "Tổng hợp"
+  },
+  "ws.29": {
+    "other": "Tham số"
+  },
+  "ws.3": {
+    "other": "+ workspace"
+  },
+  "ws.filter.workspaces": {
+    "other": "Lọc các workspaces..."
+  },
+  "ws.30": {
+    "other": "Cài đặt chung"
+  },
+  "ws.31": {
+    "other": "Xóa tính năng"
+  },
+  "ws.32": {
+    "other": "Thêm một tính năng..."
+  },
+  "ws.33": {
+    "other": "Hoạt động gần đây"
+  },
+  "ws.34": {
+    "other": "Sự kiện cuối cùng trên workspace"
+  },
+  "ws.35": {
+    "other": "Có thể truy cập tới %i người dùng"
+  },
+  "ws.36": {
+    "other": "+ %i tệp hoặc thư mục được chia sẻ"
+  },
+  "ws.37": {
+    "other": "Workspaces sử dụng template này"
+  },
+  "ws.38": {
+    "other": "Các mục được chia sẻ trong workspace này"
+  },
+  "ws.39": {
+    "other": "Chủ sở hữu"
+  },
+  "ws.4": {
+    "other": "+ dataSource"
+  },
+  "ws.40": {
+    "other": "Loại chia sẻ"
+  },
+  "ws.41": {
+    "other": "Đường dẫn"
+  },
+  "ws.42": {
+    "other": "Cấp quyền thư mục"
+  },
+  "ws.43": {
+    "other": "Chỉ định ở đây quyền truy cập mặc định cho các thư mục workspace này.\n                                 Để bật quản lý quyền ở cấp độ phụ, hãy chọn 'thư mục con' trên một thư mục nhất định.\n                                 Điều này sẽ đặt thư mục hiện tại là chỉ đọc theo mặc định và bạn sẽ có thể mở truy cập\n                                 có chọn lọc đối với bất kỳ thư mục con."
+  },
+  "ws.44": {
+    "other": "Please be aware that this is only a mask: if you modify the real folders directly, you may have\n                                to edit this mask accordingly. Also, these permissions may be globally limited by the 'Default Rights'\n                                parameter set for this workspace (see the General tab)."
+  },
+  "ws.45": {
+    "other": "As its parameters are using 'PYDIO_USER' or 'PYDIO_GROUP_*' keywords, the contents of\n                                this workspace will vary depending on the currently authenticated user. For this reason, you cannot browse the\n                                folders directly and assign permissions to them, but you can freely define some generic paths that will be used as masks."
+  },
+  "ws.46": {
+    "other": "Thêm một tính năng"
+  },
+  "ws.47": {
+    "other": "Chọn tính năng"
+  },
+  "ws.48": {
+    "other": "Cẩn thận, workspace/template này không thể chỉnh sửa được, vì nó được định nghĩa trực tiếp trong conf/bootstrap_repositories.php."
+  },
+  "ws.49": {
+    "other": ""
+  },
+  "ws.4b": {
+    "other": "+ version policy"
+  },
+  "ws.5": {
+    "other": "Slug"
+  },
+  "ws.50": {
+    "other": "Lập chỉ mục"
+  },
+  "ws.51": {
+    "other": "Workspace này có một bộ chỉ mục (%s).  Thông thường, việc lập chỉ mục được thực hiện \"nhanh chóng\" khi các tệp được thêm / xóa\n                    thông qua các giao diện ứng dụng. Tuy nhiên, nếu bạn đang thực hiện một số sửa đổi trực tiếp ở cấp độ lưu trữ, đôi khi bạn có thể\n                    phải kích hoạt lại một chỉ mục theo cách thủ công. Sử dụng các nút bên dưới để lập chỉ mục ngay bây giờ hoặc lập trình một tác vụ trong bộ lập lịch\n                    để chạy lập chỉ mục một cách thường xuyên."
+  },
+  "ws.52": {
+    "other": "Xin lưu ý: vì worksace này có nội dung dành riêng cho người dùng, việc lập chỉ mục sẽ được khởi chạy cho mỗi người dùng."
+  },
+  "ws.53": {
+    "other": "Khởi động lập chỉ mục ngay bây giờ"
+  },
+  "ws.54": {
+    "other": "Lên lịch mỗi ngày vào lúc 3AM"
+  },
+  "ws.55": {
+    "other": "Tự động thanh lọc"
+  },
+  "ws.56": {
+    "other": "Workspace này có thiết lập \"thanh lọc\", để tự động xóa các tài liệu còn sót lại kể từ %s ngày.  Đảm bảo thêm một tác vụ trong\n                    bộ lập lịch để thường xuyên xử lý workspace này và tìm tài liệu đã hết hạn.  Bạn có thể sử dụng các nút bên dưới để tạo tác vụ này tự động,\n                    ok chạy thanh trừng trực tiếp."
+  },
+  "ws.57": {
+    "other": "Xin lưu ý: vì worksace này có nội dung dành riêng cho người dùng, thanh lọc sẽ được chạy cho mỗi người dùng."
+  },
+  "ws.58": {
+    "other": "Thanh lọc ngay"
+  },
+  "ws.59": {
+    "other": "Lên lịch mỗi ngày vào lúc 4AM"
+  },
+  "ws.6": {
+    "other": "Workspace mới"
+  },
+  "ws.60": {
+    "other": "Hoạt động Workspace"
+  },
+  "ws.61": {
+    "other": "Hoạt động của workspace được hiển thị cho người dùng trong bảng điều khiển bên phải.  Bạn có thể xóa tất cả hoạt động\n                            cho workspace này, có thể tiện dụng, ví dụ:  nếu bạn đang \"sống\" trong sản xuất sau một giai đoạn dàn dựng mà bạn đã thực hiện\n                            một số thử nghiệm trong workspace này."
+  },
+  "ws.62": {
+    "other": "Xóa hoạt động"
+  },
+  "ws.63": {
+    "other": "Chú ý, điều này sẽ xóa tất cả hoạt động của workspace này được hiển thị cho người dùng. Bạn có chắc chắn muốn làm điều đó?"
+  },
+  "ws.64": {
+    "other": "Đã xóa các sự kiện %s"
+  },
+  "ws.65": {
+    "other": "Bảo trì Workspace"
+  },
+  "ws.66": {
+    "other": "Thực hiện tác vụ"
+  },
+  "ws.67": {
+    "other": "Không có tác vụ đang chạy"
+  },
+  "ws.68": {
+    "other": "Không có tham số"
+  },
+  "ws.69": {
+    "other": "Template-based workspace"
+  },
+  "ws.7": {
+    "other": "Tạo mới DataSource"
+  },
+  "ws.70": {
+    "other": "Driver-based workspace"
+  },
+  "ws.71": {
+    "other": "Hoàn thành các bước dưới đây"
+  },
+  "ws.72": {
+    "other": "Điền vào mẫu ở bên phải"
+  },
+  "ws.73": {
+    "other": "Chọn giá trị trước khi tiếp tục"
+  },
+  "ws.74": {
+    "other": "Sử dụng biểu mẫu bên phải để tạo DataSource mới. "
+  },
+  "ws.75": {
+    "other": "DataSource xác định nơi dữ liệu của bạn được lưu trữ."
+  },
+  "ws.76": {
+    "other": "Pydio sẽ tổng hợp tất cả các datasource của bạn thành một master tree, trên đó bạn có thể gán quyền bằng cách sử dụng các workspace."
+  },
+  "ws.8": {
+    "other": "DataSource hiện có"
+  },
+  "ws.9": {
+    "other": "Datasource Nodes"
+  },
+  "ws.board.empty": {
+    "other": "Không có workspaces được xác định"
+  },
+  "ws.board.summary": {
+    "other": "Workspace Roots"
+  },
+  "ws.board.syncable": {
+    "other": "Đồng bộ"
+  },
+  "ws.complete.datasources": {
+    "other": "DataSources"
+  },
+  "ws.complete.folders": {
+    "other": "Internal Folders"
+  },
+  "ws.complete.label": {
+    "other": "Select a DataSource or a Template Path"
+  },
+  "ws.complete.additional": {
+    "other": "Additional Root"
+  },
+  "ws.complete.resolves": {
+    "other": "Giải quyết"
+  },
+  "ws.complete.templates": {
+    "other": "Đường dẫn Template đặt sẵn"
+  },
+  "ws.dashboard": {
+    "other": "Workspaces xác định điểm truy cập chính vào dữ liệu của bạn cho người dùng. Đảm bảo xác định ít nhất một nguồn dữ liệu để có thể tạo workspace sẽ trỏ đến đường dẫn của datasource này."
+  },
+  "ws.editor.data.legend": {
+    "other": "Workspace hiển thị một hoặc nhiều 'roots' cho người dùng: chọn một hoặc nhiều đường dẫn từ bất kỳ DataSource hoặc Đường dẫn Template nào sẽ được giải quyết tự động khi chạy."
+  },
+  "ws.editor.data.title": {
+    "other": "Truy cập dữ liệu"
+  },
+  "ws.editor.default_rights": {
+    "other": "Thiết lập quyền mặc định cho workspace này (áp dụng cho tất cả người dùng nội bộ của ứng dụng). Bạn có thể ghi đè các quyền này trên cơ sở per-user / per-role / per-group basis trong phần People."
+  },
+  "ws.editor.default_rights.hint": {
+    "other": "Default Rights"
+  },
+  "ws.editor.default_rights.none": {
+    "other": "Trống"
+  },
+  "ws.editor.default_rights.read": {
+    "other": "Chỉ đọc"
+  },
+  "ws.editor.default_rights.readwrite": {
+    "other": "Đọc và Viết"
+  },
+  "ws.editor.default_rights.write": {
+    "other": "Chỉ ghi"
+  },
+  "ws.editor.description": {
+    "other": "Mô tả bổ sung (không bắt buộc)"
+  },
+  "ws.editor.help.1": {
+    "other": "Workspaces cấp quyền truy cập vào dữ liệu của bạn cho người dùng. Chúng hiển thị một hoặc nhiều thư mục được chọn trong các datasource của bạn."
+  },
+  "ws.editor.help.2": {
+    "other": "Điều quan trọng là tổ chức đúng cách dữ liệu sẽ được trình bày cho người dùng của bạn. Bạn có thể tạo các workspaces cho các bộ phận khác nhau trong tổ chức của mình (tài chính, tiếp thị, dữ liệu kỹ thuật, v. v.), trên cơ sở từng dự án, v. v. Sau đó, bạn có thể gán quyền truy cập vào các workspaces trên mỗi người dùng / mỗi vai trò / mỗi người cơ sở nhóm."
+  },
+  "ws.editor.help.delete": {
+    "other": "Chú ý, hoạt động nguy hiểm! Điều này là không thể đảo ngược."
+  },
+  "ws.editor.label.legend": {
+    "other": "Nhãn Human-friendly cho workspace này"
+  },
+  "ws.editor.options.legend": {
+    "other": "Nhãn và mô tả được hiển thị cho người dùng. Chọn một tên tự giải thích để giúp người dùng tổ chức dữ liệu tốt hơn."
+  },
+  "ws.editor.other": {
+    "other": "Other Properties"
+  },
+  "ws.editor.other.layout": {
+    "other": "Bố trí Workspace"
+  },
+  "ws.editor.other.layout.default": {
+    "other": "Mặc định"
+  },
+  "ws.editor.other.layout.easy": {
+    "other": "Giao diện chuyển dễ dàng (chỉ dành cho enterprise)"
+  },
+  "ws.editor.other.skiprecycle": {
+    "other": "Không đặt thùng rác"
+  },
+  "ws.editor.other.skiprecycle.legend": {
+    "other": "Nếu bạn không đặt thùng rác thì tệp bị xóa sẽ không có khả năng tìm lại. Tuy nhiên nếu một Cells được tạo từ một thư mục trong một workspace đã có sẵn, thì file bị xóa sẽ luôn nằm ở thùng rác chung của workspace đó."
+  },
+  "ws.editor.other.sync": {
+    "other": "Cho phép đồng bộ hóa desktop"
+  },
+  "ws.editor.other.sync.legend": {
+    "other": "Đồng bộ hóa desktop cho phép người dùng đồng bộ hóa các tệp ngoại tuyến trên máy tính của họ. Chú ý, tính năng này hiện chỉ được hỗ trợ cho các tệp cá nhân, vì các workspace được chia sẻ có thể tạo xung đột nếu nhiều người dùng đồng bộ hóa tài liệu trong cùng một thư mục. Đối với các tệp cá nhân, bạn cũng có thể bật / tắt tính năng này trên cơ sở từng vai trò bằng Chính sách bảo mật."
+  },
+  "ws.editor.other.sync-personal": {
+    "other": "(chỉ workspaces cá nhân)"
+  },
+  "ws.editor.sync.warning": {
+    "other": "Chú ý!"
+  },
+  "ws.editor.sync.warning.validate": {
+    "other": "Tôi hiểu"
+  },
+  "ws.editor.sync.warning.enable": {
+    "other": "Kích hoạt đồng bộ hóa trên các workspaces được chia sẻ có thể có kết quả không mong muốn nếu nhiều người dùng đang đồng bộ hóa và chỉnh sửa các tệp với nhau. Xin lưu ý rằng TÍNH NĂNG NÀY HIỆN TẠI KHÔNG ĐƯỢC HỖ TRỢ bởi các dịch vụ chuyên nghiệp của chúng tôi. Vui lòng sử dụng tính năng này có nguy cơ của riêng bạn!"
+  },
+  "ws.editor.sync.warning.disable": {
+    "other": "Nếu mọi người được kết nối với workspace này, tác vụ đồng bộ hóa của họ sẽ không còn hoạt động nữa! Bạn có chắc chắn muốn thay đổi điều đó?"
+  },
+  "ws.editor.other.quota": {
+    "other": "Disk Usage Quota (leave 0 for no limit). This quota is computed on all files of this workspace (or user-specific contents for workspaces like Personal Files)."
+  },
+  "ws.editor.other.quota.noquota": {
+    "other": "No Quota set"
+  },
+  "ws.editor.path.folder": {
+    "other": "Đường dẫn Thư mục"
+  },
+  "ws.editor.path.template": {
+    "other": "Đường dẫn Template"
+  },
+  "ws.editor.slug.legend": {
+    "other": "Tên kỹ thuật được sử dụng ví dụ trong URL, được tính toán tự động nhưng bạn có thể tùy chỉnh nó."
+  },
+  "services.text-filter.hint": {
+    "other": "Filter..."
+  },
+  "services.filter.nofilter": {
+    "other": "Tất cả dịch vụ"
+  },
+  "services.filter.started": {
+    "other": "Chỉ ứng dụng đang chạy"
+  },
+  "services.filter.stopped": {
+    "other": "Chỉ dừng lại"
+  },
+  "services.peerfilter.title": {
+    "other": "Chọn Node"
+  },
+  "services.toggle.details": {
+    "other": "Hiển thị chi tiết"
+  },
+  "services.empty.loading": {
+    "other": "Đang lấy thông tin về trạng thái của các dịch vụ"
+  },
+  "services.empty.noservice": {
+    "other": "Không có dịch vụ nào"
+  },
+  "services.column.name": {
+    "other": "Tên dịch vụ"
+  },
+  "services.column.description": {
+    "other": "Mô tả"
+  },
+  "services.column.version": {
+    "other": "Phiên bản"
+  },
+  "services.column.tag": {
+    "other": "Tag"
+  },
+  "services.column.peers": {
+    "other": "Ngang hàng"
+  },
+  "services.tag.gateway.title": {
+    "other": "Cổng"
+  },
+  "services.tag.gateway.description": {
+    "other": "Các dịch vụ World-facing để truy cập vào nền tảng"
+  },
+  "services.tag.datasource.title": {
+    "other": "Data Sources"
+  },
+  "services.tag.datasource.description": {
+    "other": "Điểm cuối storage được sử dụng để truy cập kho lưu trữ tập tin cụ thể. Các dịch vụ chính phụ trách bắt đầu các dịch vụ phụ (trên mỗi datasource)."
+  },
+  "services.tag.data.title": {
+    "other": "Dữ liệu"
+  },
+  "services.tag.data.description": {
+    "other": "Dịch vụ xử lý data và metadata."
+  },
+  "services.tag.idm.title": {
+    "other": "Quản lý danh tính"
+  },
+  "services.tag.idm.description": {
+    "other": "Tất cả các dịch vụ liên quan đến xác thực và ủy quyền, vai trò, chính sách bảo mật, v. v."
+  },
+  "services.tag.scheduler.title": {
+    "other": "Lập kế hoạch"
+  },
+  "services.tag.scheduler.description": {
+    "other": "Dịch vụ quản lý công việc nền. Máy chủ tác vụ có thể được gửi qua các đồng nghiệp khác nhau."
+  },
+  "services.tag.broker.title": {
+    "other": "Môi giới"
+  },
+  "services.tag.broker.description": {
+    "other": "Dịch vụ gửi và xử lý các sự kiện (nói chung đối với người dùng) trên ứng dụng."
+  },
+  "services.tag.frontend.title": {
+    "other": "Frontend"
+  },
+  "services.tag.frontend.description": {
+    "other": "Web services cho giao diện người dùng trong trình duyệt"
+  },
+  "services.tag.discovery.title": {
+    "other": "Khám phá"
+  },
+  "services.tag.discovery.description": {
+    "other": "Cấu hình cơ bản và đăng ký dịch vụ được gọi bởi tất cả các dịch vụ khác."
+  },
+  "services.service.ip": {
+    "other": "Đang chạy trên %s"
+  },
+  "services.service.datasource.sync": {
+    "other": "Đồng bộ"
+  },
+  "services.service.datasource.objects": {
+    "other": "Objects"
+  },
+  "services.service.datasource.objects.legend": {
+    "other": "Lớp S3 để phục vụ dữ liệu dưới dạng lưu trữ đối tượng"
+  },
+  "services.service.datasource.legend": {
+    "other": "Datasource đang đồng bộ hóa dữ liệu từ lớp đối tượng sang index DB."
+  },
+  "services.service.datasource.index": {
+    "other": "Lập chỉ mục"
+  },
+  "scheduler.title": {
+    "other": "Lập kế hoạch"
+  },
+  "scheduler.legend": {
+    "other": "Flows chạy trong nền trên cơ sở định kỳ hoặc được kích hoạt bởi các sự kiện"
+  },
+  "scheduler.system.title": {
+    "other": "Các Flow trong hệ thống"
+  },
+  "scheduler.system.legend": {
+    "other": "Những Flows này được đi kèm mặc định bên trong ứng dụng. Chúng chịu trách nhiệm trích xuất thông tin từ node tự động hoặc thực hiện một số nhiệm vụ dọn dẹp."
+  },
+  "scheduler.inactives.title": {
+    "other": "Flows không hoạt động"
+  },
+  "scheduler.inactives.legend": {
+    "other": "Những Flows này đang không hoạt động, ấn vào để bật chúng."
+  },
+  "scheduler.system.empty": {
+    "other": "Không có Flows trong kế hoạch."
+  },
+  "scheduler.users.title": {
+    "other": "Những Flows của người dùng"
+  },
+  "scheduler.users.legend": {
+    "other": "Những Flow này được tạo ra tự động và kích hoạt dựa theo thao tác của người sử dụng."
+  },
+  "scheduler.users.empty": {
+    "other": "Không có Flow nào được khởi động bởi người dùng"
+  },
+  "scheduler.cellsflows.cta.button": {
+    "other": "+ Thêm mới Flow"
+  },
+  "scheduler.cellsflows.cta.text": {
+    "other": "Bạn cần tạo một Flow mới? Tìm hiểu làm thế nào Cells Flows có thể tự động hóa những công việc thức tạp trong Cells."
+  },
+  "scheduler.cellsflows.dialog.button": {
+    "other": "Tìm hiểu thêm"
+  },
+  "scheduler.cellsflows.dialog.text": {
+    "other": "Các mô-dun linh hoạt trong Cells sẽ giúp ban xây dựng các WorkFlows để lập trình những công việc hoặc tích hợp tiện ích từ bên ngoài."
+  },
+  "scheduler.job.label": {
+    "other": "Nhãn"
+  },
+  "scheduler.job.endTime": {
+    "other": "Lần thực hiện cuối"
+  },
+  "scheduler.job.status": {
+    "other": "Trạng thái"
+  },
+  "scheduler.job.owner": {
+    "other": "Chủ sở hữu"
+  },
+  "scheduler.job.trigger": {
+    "other": "Kích hoạt"
+  },
+  "scheduler.job.delete": {
+    "other": "Xóa"
+  },
+  "scheduler.job.delete.confirm": {
+    "other": "Bạn có muốn xóa Flow này không? Bạn sẽ không phục hồi Flow này sau khi xóa!"
+  },
+  "scheduler.tasks.delete.confirm": {
+    "other": "Bạn có chắc muốn xóa hết dữ liệu của Flow này?"
+  },
+  "scheduler.trigger.picker.title": {
+    "other": "Trigger job on..."
+  },
+  "scheduler.trigger.type.nodes": {
+    "other": "Files and folders (nodes) events : detect files modifications to move them or update their metadata automatically."
+  },
+  "scheduler.trigger.type.workspaces": {
+    "other": "Workspace events : triggered on workspace creation / deletion. Use the Scope flag to filter Workspaces from Cells"
+  },
+  "scheduler.trigger.type.acls": {
+    "other": "ACL events : access control lists link workspaces, nodes and roles together to provide accesses to data."
+  },
+  "scheduler.trigger.type.users": {
+    "other": "User events : triggered when adding/removing user and when users log in and log out. Can be used for triggering validation flows or assigning accesses."
+  },
+  "scheduler.trigger.type.roles": {
+    "other": "Role events : can be used to automate accesses based on role names. Use IsTeam, IsGroup, IsUser flags to filter roles."
+  },
+  "scheduler.trigger.type.chat": {
+    "other": "Chat Events: react to new chat message or chat room modification"
+  },
+  "scheduler.trigger.type.chat-messages": {
+    "other": "Chat Messages Events"
+  },
+  "scheduler.trigger.type.chat-rooms": {
+    "other": "Chat Rooms Events"
+  },
+  "scheduler.trigger.create.node": {
+    "other": "Tạo node"
+  },
+  "scheduler.trigger.create.node.description": {
+    "other": "A new file was uploaded or a new folder was created."
+  },
+  "scheduler.trigger.read.node": {
+    "other": "Đọc node"
+  },
+  "scheduler.trigger.read.node.description": {
+    "other": "A file was downloaded or a folder content was listed."
+  },
+  "scheduler.trigger.update.path": {
+    "other": "Cập nhật đường dẫn"
+  },
+  "scheduler.trigger.update.path.description": {
+    "other": "A file or folder was moved or renamed."
+  },
+  "scheduler.trigger.update.content": {
+    "other": "Cập nhật nội dung"
+  },
+  "scheduler.trigger.update.content.description": {
+    "other": "A file content was updated by edition or upload overwriting."
+  },
+  "scheduler.trigger.update.metadata": {
+    "other": "Cập nhật Metadata"
+  },
+  "scheduler.trigger.update.metadata.description": {
+    "other": "Internal metadata were modified on file or folder."
+  },
+  "scheduler.trigger.update.user-metadata": {
+    "other": "Cập nhật Metadata người dùng"
+  },
+  "scheduler.trigger.update.user-metadata.description": {
+    "other": "User-defined metadata were modified (event contains updated metadata)."
+  },
+  "scheduler.trigger.delete.node": {
+    "other": "Xóa node"
+  },
+  "scheduler.trigger.delete.node.description": {
+    "other": "A file or a folder was definitively deleted."
+  },
+  "scheduler.trigger.create.user": {
+    "other": "Tạo người dùng"
+  },
+  "scheduler.trigger.create.user.description": {
+    "other": "A user or a group was created."
+  },
+  "scheduler.trigger.read.user": {
+    "other": "Đọc User"
+  },
+  "scheduler.trigger.read.user.description": {
+    "other": "A user or a group was accessed or listed."
+  },
+  "scheduler.trigger.update.user": {
+    "other": "Cập nhật người dùng"
+  },
+  "scheduler.trigger.update.user.description": {
+    "other": "A user or a group data was updated. Typically happens if user changes a preference or admin assigns a role."
+  },
+  "scheduler.trigger.delete.user": {
+    "other": "Xóa Người dùng"
+  },
+  "scheduler.trigger.delete.user.description": {
+    "other": "A user or a group was deleted."
+  },
+  "scheduler.trigger.bind.user": {
+    "other": "Ràng buộc người dùng"
+  },
+  "scheduler.trigger.bind.user.description": {
+    "other": "A user has logged in."
+  },
+  "scheduler.trigger.logout.user": {
+    "other": "Đăng xuất người dùng"
+  },
+  "scheduler.trigger.logout.user.description": {
+    "other": "A user has logged out."
+  },
+  "scheduler.trigger.role.create": {
+    "other": "Create Role"
+  },
+  "scheduler.trigger.role.create.description": {
+    "other": "A new role was created, by admin or by users."
+  },
+  "scheduler.trigger.role.update": {
+    "other": "Update Role"
+  },
+  "scheduler.trigger.role.update.description": {
+    "other": "A role has been updated."
+  },
+  "scheduler.trigger.role.delete": {
+    "other": "Delete Role"
+  },
+  "scheduler.trigger.role.delete.description": {
+    "other": "A role has been deleted."
+  },
+  "scheduler.trigger.workspace.create": {
+    "other": "Create Workspace"
+  },
+  "scheduler.trigger.workspace.create.description": {
+    "other": "A new Workspace or Cell was created."
+  },
+  "scheduler.trigger.workspace.update": {
+    "other": "Update Workspace"
+  },
+  "scheduler.trigger.workspace.update.description": {
+    "other": "A Workspace or a Cell has been updated."
+  },
+  "scheduler.trigger.workspace.delete": {
+    "other": "Delete Workspace"
+  },
+  "scheduler.trigger.workspace.delete.description": {
+    "other": "A Workspace or a Cell has been deleted."
+  },
+  "scheduler.trigger.acl.create": {
+    "other": "Create/Update ACL"
+  },
+  "scheduler.trigger.acl.create.description": {
+    "other": "An Access Control was opened."
+  },
+  "scheduler.trigger.acl.delete": {
+    "other": "Delete ACL"
+  },
+  "scheduler.trigger.acl.delete.description": {
+    "other": "An Access Control was removed."
+  },
+  "scheduler.trigger.chat-message.put": {
+    "other": "New Chat Message"
+  },
+  "scheduler.trigger.chat-message.put.description": {
+    "other": "A Message was posted in a ChatRoom."
+  },
+  "scheduler.trigger.chat-message.delete": {
+    "other": "Chat Message Deleted"
+  },
+  "scheduler.trigger.chat-message.delete.description": {
+    "other": "A Message was deleted from a ChatRoom."
+  },
+  "scheduler.trigger.chat-room.put": {
+    "other": "New Chat Room"
+  },
+  "scheduler.trigger.chat-room.put.description": {
+    "other": "A new ChatRoom was created."
+  },
+  "scheduler.trigger.chat-room.delete": {
+    "other": "Delete Chat Room"
+  },
+  "scheduler.trigger.chat-room.delete.description": {
+    "other": "A Chatroom has been deleted."
+  },
+  "scheduler.trigger.events": {
+    "other": "Events"
+  },
+  "scheduler.trigger.manual": {
+    "other": "Hướng dẫn kích hoạt"
+  },
+  "scheduler.trigger.periodic": {
+    "other": "Lịch trình định kỳ"
+  },
+  "scheduler.job.disabled": {
+    "other": "tắt"
+  },
+  "scheduler.tasks.running.count": {
+    "other": "%s tác vụ đang chạy"
+  },
+  "scheduler.task.action.pause": {
+    "other": "Tạm dừng tác vụ"
+  },
+  "scheduler.task.action.resume": {
+    "other": "Tiếp tục tác vụ"
+  },
+  "scheduler.task.action.stop": {
+    "other": "Dừng lại"
+  },
+  "scheduler.task.action.delete": {
+    "other": "Xóa"
+  },
+  "scheduler.task.action.enable": {
+    "other": "Kích hoạt Flow"
+  },
+  "scheduler.task.action.run": {
+    "other": "Chạy ngay"
+  },
+  "scheduler.task.action.disable": {
+    "other": "Tắt Flow"
+  },
+  "scheduler.task.id": {
+    "other": "ID"
+  },
+  "scheduler.task.start": {
+    "other": "Bắt đầu"
+  },
+  "scheduler.task.end": {
+    "other": "Kết thúc"
+  },
+  "scheduler.task.duration": {
+    "other": "Khoảng thời gian"
+  },
+  "scheduler.task.status": {
+    "other": "Trạng thái"
+  },
+  "scheduler.task.message": {
+    "other": "Tin nhắn"
+  },
+  "scheduler.tasks.running": {
+    "other": "Thực hiện tác vụ"
+  },
+  "scheduler.tasks.history": {
+    "other": "Lịch sử tác vụ"
+  },
+  "scheduler.tasks.history.empty": {
+    "other": "Chưa có tác vụ nào chạy"
+  },
+  "scheduler.tasks.history.more": {
+    "other": "%s tác vụ khác không được hiển thị..."
+  },
+  "scheduler.tasks.running.empty": {
+    "other": "Không có nhiệm vụ hiện đang chạy"
+  },
+  "scheduler.tasks.bulk.delete": {
+    "other": "Xóa tác vụ"
+  },
+  "scheduler.tasks.bulk.enable": {
+    "other": "Kích hoạt nhiều"
+  },
+  "scheduler.tasks.bulk.disable": {
+    "other": "Vô hiệu hóa nhiều"
+  },
+  "scheduler.tasks.bulk.clear": {
+    "other": "Xóa tất cả"
+  },
+  "scheduler.tasks.activity.title": {
+    "other": "Hoạt động công việc"
+  },
+  "scheduler.tasks.activity.loading": {
+    "other": "Đang tải hoạt động..."
+  },
+  "scheduler.tasks.activity.empty": {
+    "other": "Không tìm thấy bản ghi"
+  },
+  "scheduler.schedule.monthly": {
+    "other": "Mỗi %1 của mỗi tháng tại %2"
+  },
+  "scheduler.schedule.monthly.short": {
+    "other": "Mỗi %1 của mỗi tháng"
+  },
+  "scheduler.schedule.weekly": {
+    "other": "Mỗi %1 của %2"
+  },
+  "scheduler.schedule.weekly.short": {
+    "other": "Mỗi %1"
+  },
+  "scheduler.schedule.daily": {
+    "other": "Mỗi ngày tại %1"
+  },
+  "scheduler.schedule.daily.short": {
+    "other": "Tại %1"
+  },
+  "scheduler.schedule.timely": {
+    "other": "Mỗi %1"
+  },
+  "scheduler.schedule.title": {
+    "other": "Lập lịch cho Flow"
+  },
+  "scheduler.schedule.type": {
+    "other": "Loại lịch trình"
+  },
+  "scheduler.schedule.type.manual": {
+    "other": "Thủ công"
+  },
+  "scheduler.schedule.type.monthly": {
+    "other": "Hàng tháng"
+  },
+  "scheduler.schedule.type.weekly": {
+    "other": "Hàng tuần"
+  },
+  "scheduler.schedule.type.daily": {
+    "other": "Hàng ngày"
+  },
+  "scheduler.schedule.type.timely": {
+    "other": "Mỗi..."
+  },
+  "scheduler.schedule.type.once": {
+    "other": "Run Once"
+  },
+  "scheduler.schedule.detail.monthday": {
+    "other": "Ngày trong tháng"
+  },
+  "scheduler.schedule.detail.weekday": {
+    "other": "Ngày trong tuần"
+  },
+  "scheduler.schedule.detail.daytime": {
+    "other": "Thời gian trong ngày"
+  },
+  "scheduler.schedule.detail.daydate": {
+    "other": "Unique Date"
+  },
+  "scheduler.schedule.detail.minutes": {
+    "other": "Thời gian tính bằng phút"
+  },
+  "scheduler.job-parameters.dialog": {
+    "other": "Các tham số cho Flow"
+  },
+  "scheduler.job-parameters.button": {
+    "other": "Tham số"
+  },
+  "developer.rest.apis": {
+    "other": "Tài liệu API còn lại"
+  },
+  "developer.rest.apis.legend": {
+    "other": "Dưới đây là tất cả các API có sẵn trong các tế bào Pydio. Để sử dụng các API này, trước tiên bạn phải xác thực với dịch vụ OpenIDConnect để có được JWT hợp lệ. Xem hướng dẫn quản trị viên trực tuyến để tìm hiểu thêm."
+  },
+  "mailer.test.title": {
+    "other": "Gửi email kiểm tra"
+  },
+  "mailer.test.legend": {
+    "other": "Đảm bảo lưu các thay đổi cấu hình của bạn trước khi gửi email kiểm tra."
+  },
+  "mailer.test.loading": {
+    "other": "Đang tải thư viện thư..."
+  },
+  "sites.title": {
+    "other": "Sites"
+  },
+  "sites.externals": {
+    "other": "URL bên ngoài"
+  },
+  "sites.details": {
+    "other": "<div>\nSites chứa địa chỉ url mà người dùng cuối dùng để truy cập vào Cells.\nDùng lệnh ‘<i>./cells configure sites</i>’ để quản lý danh sách url từ dòng lệnh.\n<br/><br/>\nMỗi một site có những tham số sau:\n\n<ol>\n<li>1. <u>Bind(s)</u>: Có ít nhất một [ip/hostname:port] là địa chỉ ip:port của dịch vụ đang mở.</li>\n<li>2. <u>TLS Settings</u>: Các cấu hình TLS để thiết lập giao thức HTTPS.</li>\n<li>3. <u>External URL</u>: Người dùng cuối sẽ dùng url này để truy cập vào Cells. Nếu Cells đứng sau một reverse proxy thì url này có thể khác với bind ở trên.</li>\n<li>4. <u>Maintenance Mode</u> [On|Off]: hiển thị tình trạng bảo trì của Cells.</li>\n</ol></div>"
+  },
+  "sites.details.note": {
+    "other": "<div><i>Ghi chú</i>\n<ol>\n<li>1. Mặc định thì Cells chạy ở https://0.0.0.0:8080 với chứng thực self-signed.</li>\n<li>2. Sites có thể được thiết lập thông qua biến môi trường ‘CELLS_BIND’ hoặc tham số dòng lệnh ‘--bind’.\n</li>\n</ol></div>"
+  },
+  "sites.externals.details": {
+    "other": "<div>\nCells uses its detected public URL in some features. It will try to use the most appropriate value based on your configuration. <br/><br/>For example:\n<ul>\n<li>&bull; If a unique site is defined and it has an external URL, that one is probably correct.</li>\n<li>&bull; When multiple sites are defined, you may want to force a unique URL that will be used for all external communication.</li>\n<li>&bull; If no external URL is detected, it will fallback to the internal bind address. In that case, you probably do not want to send a private IP (or 0.0.0.0:port…) to the outside world.</li>\n</ul>\n\n<br/>\nThe fields below show the detected values. Select to edit or type in a custom value and hit enter to save.\n</div>"
+  },
+  "sites.mailer.url": {
+    "other": "URL used to build links in emails"
+  },
+  "sites.links.url": {
+    "other": "URL used to build public links"
+  },
+  "sites.no-defaults": {
+    "other": "No defaults set"
+  },
+  "sites.enter-to-save": {
+    "other": "(hit enter to save)"
+  },
+  "sites.detected.sites": {
+    "other": "Sites currently detected"
+  },
+  "sites.configs.command": {
+    "other": "Use './cells config sites' command to edit sites."
+  },
+  "sites.column.bind": {
+    "other": "Bind"
+  },
+  "sites.column.tls": {
+    "other": "TLS"
+  },
+  "sites.column.external": {
+    "other": "Reverse Proxy"
+  },
+  "sites.configs.tls.letsencrypt": {
+    "other": "Let's Encrypt"
+  },
+  "sites.configs.tls.self": {
+    "other": "Self Signed"
+  },
+  "sites.configs.tls.certificate": {
+    "other": "Certificate"
+  },
+  "sites.configs.tls.notls": {
+    "other": "No TLS"
+  },
+  "sites.configs.tls.notls-reverse": {
+    "other": "No TLS behind proxy"
+  }
+}

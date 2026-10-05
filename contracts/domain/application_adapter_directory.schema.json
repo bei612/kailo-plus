@@ -23,6 +23,37 @@
           }
         }}
       }
+    }},
+    "protocolPeers": {"type": "array", "description": "受控部署事实，不是 Tool 注册表或业务授权；原生 MCP peer 不接收 ActionToken。", "items": {
+      "title": "ApplicationProtocolPeerDelivery", "type": "object", "additionalProperties": false,
+      "required": ["adapterServiceRef", "mcpUrl", "nativeInstanceRef", "artifactDigest", "timeoutSeconds", "maxResponseBytes", "bindings"],
+      "properties": {
+        "adapterServiceRef": {"type": "string"}, "mcpUrl": {"type": "string"},
+        "nativeInstanceRef": {"type": "string"}, "artifactDigest": {"type": "string"},
+        "timeoutSeconds": {"type": "integer", "minimum": 1},
+        "maxResponseBytes": {"type": "integer", "minimum": 1},
+        "bindings": {"type": "array", "items": {
+          "title": "ApplicationProtocolPeerBindingDelivery", "type": "object", "additionalProperties": false,
+          "required": ["bindingId", "tenantId", "servicePrincipalId", "nativeScopeRef", "configDigest", "isolationMode"],
+          "properties": {
+            "bindingId": {"type": "string", "format": "uuid"},
+            "tenantId": {"type": "string", "format": "uuid"},
+            "workspaceId": {"type": "string", "format": "uuid"},
+            "servicePrincipalId": {"type": "string", "format": "uuid"},
+            "nativeScopeRef": {"type": "string"}, "configDigest": {"type": "string"},
+            "isolationMode": {"type": "string"},
+            "nativeResources": {"type": "array", "description": "绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。", "items": {
+              "title": "ApplicationNativeResourceDelivery", "type": "object", "additionalProperties": false,
+              "required": ["typeKey", "nativeType", "nativeRef", "evidenceRef", "evidenceDigest"],
+              "properties": {
+                "typeKey": {"type": "string"}, "nativeType": {"type": "string"},
+                "nativeRef": {"type": "string"}, "evidenceRef": {"type": "string"},
+                "evidenceDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+              }
+            }}
+          }
+        }}
+      }
     }}
   }
 }

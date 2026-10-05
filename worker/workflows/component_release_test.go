@@ -36,7 +36,7 @@ func releaseWorkflowTest(t *testing.T, project ...func(context.Context, generate
 	}
 	plan := &generated.PlanClass{WorkflowID: t.Name(), ActionExecutionID: "original-action", OperationID: "original-operation",
 		ComponentReleaseID: "candidate", ArtifactDigest: "artifact", PlanDigest: "frozen-plan", SuiteDigest: "frozen-suite", ContractDigests: []string{"contract"},
-		Steps: []generated.PlanStep{{CaseKey: "capability", StepKey: "execute", IdempotencyKey: "original-key", Operation: generated.AdapterProtocolOperation("execute")}}}
+		Steps: []generated.PlanStep{{CaseKey: "capability", StepKey: "execute", IdempotencyKey: "original-key", Operation: generated.ComponentConformanceOperation("execute")}}}
 	return env, ComponentTaskInput{Kind: generated.WorkflowKind("COMPONENT_RELEASE"), Release: plan}
 }
 
@@ -83,7 +83,7 @@ func TestComponentReleaseLostACKOnlyReconcilesOriginalAttempt(t *testing.T) {
 			if probe.Reconcile == nil || !*probe.Reconcile {
 				t.Fatal("uncertain write was dispatched again")
 			}
-			return generated.ComponentConformanceStepObservation{CaseKey: "capability", StepKey: "execute", Operation: generated.AdapterProtocolOperation("reconcile")}, nil
+			return generated.ComponentConformanceStepObservation{CaseKey: "capability", StepKey: "execute", Operation: generated.ComponentConformanceOperation("reconcile")}, nil
 		})
 	env.OnActivity("RecordComponentConformance", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, report generated.ComponentConformanceObservation) (generated.ComponentReleaseReceipt, error) {
@@ -105,7 +105,7 @@ func TestComponentReleasePreviousRunningSurvivesNextProbeRejection(t *testing.T)
 		t.Run(rejection, func(t *testing.T) {
 			env, in := releaseWorkflowTest(t)
 			in.Release.Steps = append(in.Release.Steps, generated.PlanStep{CaseKey: "capability", StepKey: "cancel",
-				IdempotencyKey: "original-key", Operation: generated.AdapterProtocolOperation("cancel")})
+				IdempotencyKey: "original-key", Operation: generated.ComponentConformanceOperation("cancel")})
 			attempts, unsafe := 0, false
 			env.OnActivity("RunComponentConformanceStep", mock.Anything, mock.Anything).Return(
 				func(_ context.Context, probe generated.ComponentConformanceProbe) (generated.ComponentConformanceStepObservation, error) {
@@ -139,7 +139,7 @@ func TestComponentReleasePreviousRunningSurvivesNextProbeRejection(t *testing.T)
 
 func TestComponentReleaseCheckedSameKeyTerminalCanFinishFailedSuite(t *testing.T) {
 	env, in := releaseWorkflowTest(t)
-	in.Release.Steps = append(in.Release.Steps, generated.PlanStep{StepKey: "cancel", IdempotencyKey: "original-key", Operation: generated.AdapterProtocolOperation("cancel")})
+	in.Release.Steps = append(in.Release.Steps, generated.PlanStep{StepKey: "cancel", IdempotencyKey: "original-key", Operation: generated.ComponentConformanceOperation("cancel")})
 	attempts := 0
 	env.OnActivity("RunComponentConformanceStep", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, _ generated.ComponentConformanceProbe) (generated.ComponentConformanceStepObservation, error) {
@@ -162,7 +162,7 @@ func TestComponentReleaseCheckedSameKeyTerminalCanFinishFailedSuite(t *testing.T
 
 func TestComponentReleaseCancellationDrainsUnknownWithoutAnotherProbe(t *testing.T) {
 	env, in := releaseWorkflowTest(t)
-	in.Release.Steps = append(in.Release.Steps, generated.PlanStep{CaseKey: "next", StepKey: "never", Operation: generated.AdapterProtocolOperation("execute")})
+	in.Release.Steps = append(in.Release.Steps, generated.PlanStep{CaseKey: "next", StepKey: "never", Operation: generated.ComponentConformanceOperation("execute")})
 	attempts := 0
 	env.OnActivity("RunComponentConformanceStep", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, probe generated.ComponentConformanceProbe) (generated.ComponentConformanceStepObservation, error) {
@@ -192,7 +192,7 @@ func TestComponentReleaseCancellationDrainsUnknownWithoutAnotherProbe(t *testing
 
 func TestComponentReleaseCommittedReportLostACKContinuesWithoutProbes(t *testing.T) {
 	env, in := releaseWorkflowTest(t)
-	observations := []generated.ComponentConformanceStepObservation{{CaseKey: "capability", StepKey: "execute", Operation: generated.AdapterProtocolOperation("execute")}}
+	observations := []generated.ComponentConformanceStepObservation{{CaseKey: "capability", StepKey: "execute", Operation: generated.ComponentConformanceOperation("execute")}}
 	// When provided, reuse the actual isolated wire observations in the Core
 	// persistence check; this does not turn the SDK simulation into live Temporal.
 	if path := os.Getenv("COMPONENT_CONFORMANCE_WIRE_EVIDENCE"); path != "" {
@@ -281,7 +281,7 @@ func TestComponentReleaseCancelProjectionCANKeepsDrainedObservations(t *testing.
 		}
 		return nil
 	})
-	in.Release.Steps = append(in.Release.Steps, generated.PlanStep{CaseKey: "next", StepKey: "never", Operation: generated.AdapterProtocolOperation("execute")})
+	in.Release.Steps = append(in.Release.Steps, generated.PlanStep{CaseKey: "next", StepKey: "never", Operation: generated.ComponentConformanceOperation("execute")})
 	attempts := 0
 	env.OnActivity("RunComponentConformanceStep", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, probe generated.ComponentConformanceProbe) (generated.ComponentConformanceStepObservation, error) {

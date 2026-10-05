@@ -1,0 +1,103 @@
+{
+  "Job.Version.Title": {
+    "other": "Event gebaseerde taak voor het repliceren van data voor versiebeheer"
+  },
+  "Job.Version.StatusFile": {
+    "other": "Versie {{.Uuid}} aangemaakt binnen versie bucket "
+  },
+  "Job.Version.StatusMeta": {
+    "other": "Versie metadata gemaakt voor {{.Uuid}}"
+  },
+  "Job.Version.StatusPrune": {
+    "one": "Versie {{.Count}} opgeschoond",
+    "other": "Versies {{.Count}} opgeschoond"
+  },
+  "Job.Pruning.Title": {
+    "other": "Versiebestanden opschonen voor verwijderde nodes"
+  },
+  "Job.Pruning.StatusDone": {
+    "one": "Successfully removed {{.Count}} version",
+    "other": "Successfully removed {{.Count}} versions."
+  },
+  "Config.GroupPolicy.Title": {
+    "other": "Beleid"
+  },
+  "Config.GroupPolicy.Name.Label": {
+    "other": "Naam"
+  },
+  "Config.GroupPolicy.Name.Description": {
+    "other": "Beleidsnaam"
+  },
+  "Config.GroupPolicy.Description.Label": {
+    "other": "Beschrijving"
+  },
+  "Config.GroupPolicy.Description.Description": {
+    "other": "Beschrijving van beleid"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Label": {
+    "other": "Bewaar"
+  },
+  "Config.GroupPolicy.VersionsDataSourceName.Description": {
+    "other": "DataSource gebruikt om versies op te slaan"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Label": {
+    "other": "Bucket"
+  },
+  "Config.GroupPolicy.VersionsDataSourceBucket.Description": {
+    "other": "Bucket gebruikt binnen deze gegevensbron"
+  },
+  "Config.GroupSizes.Title": {
+    "other": "Grootte Limieten"
+  },
+  "Config.GroupSizes.MaxTotalSize.Label": {
+    "other": "Globale grootte van alle versies in deze bucket"
+  },
+  "Config.GroupSizes.MaxTotalSize.Description": {
+    "other": "Limiteer de totale genomen grootte. Als het limiet is bereikt, worden de oudste versies verwijderd. Gebruik -1 voor geen limiet"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Label": {
+    "other": "Cumulatieve grote voor versies van één bepaald bestand"
+  },
+  "Config.GroupSizes.MaxSizePerFile.Description": {
+    "other": "Limiteer de grootte van alle versies van één bestand. Als het limiet is bereikt, worden de oudste versies verwijderd. Gebruik -1 voor geen limiet"
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Label": {
+    "other": "Negeer bestanden groter dan..."
+  },
+  "Config.GroupSizes.IgnoreFilesGreaterThan.Description": {
+    "other": "Gebruik geen versiebeheer bij bestanden van meer dan deze limiet gebruiken. Gebruik -1 voor geen limiet"
+  },
+  "Config.GroupRetention.Title": {
+    "other": "Bewaar periodes"
+  },
+  "Config.GroupRetention.Description": {
+    "other": "Aantal te behouden versies per periode"
+  },
+  "Config.GroupRetention.IntervalStart.Name": {
+    "other": "Begindatum"
+  },
+  "Config.GroupRetention.IntervalStart.Description": {
+    "other": "Startpunt gebruikt voor de berekeningsperiode. 0 is de tijd van de laatste ingestelde versie, gebruik een andere periode om een limiet in te stellen"
+  },
+  "Config.GroupRetention.MaxNumber.Name": {
+    "other": "Maximaal aantal versies"
+  },
+  "Config.GroupRetention.MaxNumber.Description": {
+    "other": "Max aantal versies om deze periode te behouden. Gebruik -1 om alle versies te bewaren, 0 om alles te verwijderen."
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Name": {
+    "other": "After original file deletion"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.Description": {
+    "other": "Number of versions to keep after original file deletion."
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepAll": {
+    "other": "Backup all existing versions"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepLast": {
+    "other": "Backup most recent version only"
+  },
+  "Config.GroupRetention.NodeDeletedStrategy.KeepNone": {
+    "other": "Verwijder alle bestaande versies"
+  }
+}

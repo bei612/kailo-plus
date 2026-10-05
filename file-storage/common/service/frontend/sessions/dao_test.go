@@ -1,0 +1,67 @@
+package sessions
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gorilla/sessions"
+
+	"github.com/pydio/cells/v5/common/runtime/manager"
+	"github.com/pydio/cells/v5/common/storage/test"
+
+	. "github.com/smartystreets/goconvey/convey"
+)
+
+var (
+	testcases = test.TemplateSQL(NewSQLDAO)
+)
+
+func TestInsert(t *testing.T) {
+
+	test.RunStorageTests(testcases, t, func(ctx context.Context) {
+
+		Convey("Test Crud", t, func() {
+
+			dao, er := manager.Resolve[DAO](ctx)
+			So(er, ShouldBeNil)
+			So(dao, ShouldNotBeNil)
+
+			req := httptest.NewRequest("GET", "https://example.com/a/frontend", nil)
+			response := httptest.NewRecorder()
+
+			s, er := dao.GetSession(req)
+			So(er, ShouldBeNil)
+			So(s, ShouldNotBeNil)
+			So(s.IsNew, ShouldBeTrue)
+			//id := s.ID
+
+			// We must call registry.Save() to actual DB storage
+			reg := sessions.GetRegistry(req)
+			er = reg.Save(response)
+			So(er, ShouldBeNil)
+			So(response.Header().Get("Set-Cookie"), ShouldNotBeEmpty)
+
+			cookieString := response.Header().Get("Set-Cookie")
+			fmt.Println("Set-Cookie", cookieString)
+			So(s.Options.SameSite, ShouldEqual, http.SameSiteStrictMode)
+			So(strings.Contains(cookieString, "SameSite=Strict"), ShouldBeTrue)
+
+			req2 := httptest.NewRequest("GET", "https://example.com/a/frontend", nil)
+			req2.Header.Set("Cookie", strings.Split(cookieString, ";")[0])
+			s, er = dao.GetSession(req2)
+			So(er, ShouldBeNil)
+			So(s, ShouldNotBeNil)
+			So(s.IsNew, ShouldBeFalse)
+
+			s.Values["newKey"] = "newValue"
+			_ = reg.Save(response)
+
+		})
+
+	})
+
+}

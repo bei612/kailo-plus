@@ -1,0 +1,503 @@
+{
+  "#Items per page": {
+    "other": "#Элементов на странице"
+  },
+  "16X16 Icon for representing the template": {
+    "other": "16X16 Иконка для представления шаблона"
+  },
+  "A user-defined description of the content of this workspace": {
+    "other": "Пользовательское описание содержимого Workspace-а"
+  },
+  "API endpoint - Used to launch the window allowing the user to authenticate and accept the terms of the app": {
+    "other": "Конечная точка API - Используется для запуска окна, позволяющего пользователю пройти проверку подлинности и принять условия приложения"
+  },
+  "API endpoint - Used to refresh or validate the token retrieved in the authentication part": {
+    "other": "API endpoint - Используется для обновления или проверки токена, полученного во время аутентификации"
+  },
+  "API setting - Redirect URL for the OAuth Application": {
+    "other": "Настройка API - Перенаправление URL для OAuth приложения"
+  },
+  "Absolute path to the public folder where temporary download links will be created. This is used for legacy purpose, newly created links do not use it anymore, but use the Base URI instead.": {
+    "other": "Абсолютный путь к публичной папке, где будут созданы временные ссылки для скачивания. Это используется для устаревших целей, для новых ссылок больше не используется, вместо этого используются Базовые URI."
+  },
+  "Admin Login": {
+    "other": "Логин администратора"
+  },
+  "Admin email": {
+    "other": "Email администратора"
+  },
+  "Administrator email, not used for the moment": {
+    "other": "Email администратора, не используется на данный момент"
+  },
+  "Alias": {
+    "other": "Псевдоним"
+  },
+  "Alias for replacing the generated unique id of the repository": {
+    "other": "Псевдоним для замены создаваемого уникального идентификатора проекта"
+  },
+  "Allow group administrators to create a repository from this template.": {
+    "other": "Разрешить администраторам групп создавать репозиторий из этого шаблона."
+  },
+  "Allow non-admin users to create a repository from this template.": {
+    "other": "Разрешить пользователям не администраторам создавать workspace из этого шаблона."
+  },
+  "Allow the users to pick an existing user when sharing a folder": {
+    "other": "Разрешить пользователям выбирать существующего пользователя при совместном использовании папки"
+  },
+  "Allow to group admins": {
+    "other": "Разрешить группировать администраторов"
+  },
+  "Allow to user": {
+    "other": "Разрешить пользователю"
+  },
+  "App Title": {
+    "other": "Название приложения"
+  },
+  "Ascending": {
+    "other": "По возрастанию"
+  },
+  "Auth Driver Commons": {
+    "other": "Общие драйверы авторизации"
+  },
+  "Auth URL": {
+    "other": "URL аутентификации"
+  },
+  "Auto Create User": {
+    "other": "Автоматически создавать пользователя"
+  },
+  "Auto apply role": {
+    "other": "Автоматически применять роль"
+  },
+  "Big Icon": {
+    "other": "Большая иконка"
+  },
+  "Big Icon for representing the template": {
+    "other": "Большая иконка для представления шаблона"
+  },
+  "Browser Access": {
+    "other": "Доступ из браузера"
+  },
+  "Character Encoding": {
+    "other": "Кодировка символов"
+  },
+  "Client ID": {
+    "other": "ID клиента"
+  },
+  "Client SECRET": {
+    "other": "Секрет клиента"
+  },
+  "Comma separated list of metastore and meta plugins, that will be automatically applied to all repositories created with this driver": {
+    "other": "Разделенный запятыми список мета-хранилищ и мета-плагинов, которые будут автоматически применяться ко всем рабочим областям, созданным этим драйвером"
+  },
+  "Comma-separated list of extensions to hide. Extensions, files and folders that are hidden are also access forbidden.": {
+    "other": "Разделенный запятыми список расширений для сокрытия. Расширения, файлы и папки, которые скрыты, также запрещены."
+  },
+  "Comma-separated list of specific files to hide": {
+    "other": "Список файлов, разделённых запятыми для сокрытия"
+  },
+  "Comma-separated list of specific folders to hide": {
+    "other": "Разделённый запятыми список папок для сокрытия"
+  },
+  "Command Line": {
+    "other": "Командная строка"
+  },
+  "Command-line Active": {
+    "other": "Доступ к командной строке"
+  },
+  "Command-line PHP": {
+    "other": "Командная строка PHP"
+  },
+  "Common URI to access the shares. Please READ THE DOC to safely use this feature.": {
+    "other": "Общий URI для доступа к общим ресурсам. Пожалуйста, прочтите документацию, чтобы безопасно использовать эту функцию."
+  },
+  "Compression Features": {
+    "other": "Функции сжатия"
+  },
+  "Core Connexion": {
+    "other": "Core Connexion"
+  },
+  "DSN": {
+    "other": "DSN"
+  },
+  "Data Source Name": {
+    "other": "Имя источника данных"
+  },
+  "Database": {
+    "other": "База данных"
+  },
+  "Database file": {
+    "other": "Файл базы данных"
+  },
+  "Database name": {
+    "other": "Имя базы данных"
+  },
+  "Database server": {
+    "other": "Сервер базы данных"
+  },
+  "Default Label": {
+    "other": "Метка по умолчанию"
+  },
+  "Default Language": {
+    "other": "Язык по умолчанию"
+  },
+  "Default Metasources": {
+    "other": "Мета-источники по умолчанию"
+  },
+  "Default Rights": {
+    "other": "Права по умолчанию"
+  },
+  "Default field to sort on": {
+    "other": "Поле сортировки по умолчанию"
+  },
+  "Default language when a user does not have set his/her own.": {
+    "other": "Язык по умолчанию, когда пользователь не установил свой собственный."
+  },
+  "Default realm for authentication. Please READ THE DOC to safely use this feature.": {
+    "other": "Область аутентификации по умолчанию. Пожалуйста, прочтите документацию, чтобы безопасно использовать эту функцию."
+  },
+  "Default sorting direction": {
+    "other": "Порядок сортировки по умолчанию"
+  },
+  "Delegates download operations to an alternative agent, either webserver or pydio agent. Warning, this requires external modules to be installed. When using XSendFile/XaccelRedirect, you have to manually add the folders where files will be downloaded in the module configuration": {
+    "other": "Делегирует операции загрузки альтернативному агенту, веб-серверу или агенту pydio. Внимание, это требует установки внешних модулей. При использовании XSendFile/XaccelRedirect, вы должны в настройках модуля вручную добавить папки, куда будут загружены файлы"
+  },
+  "Descending": {
+    "other": "По убыванию"
+  },
+  "Description": {
+    "other": "Описание"
+  },
+  "Digest Realm": {
+    "other": "Область дайджеста"
+  },
+  "Disable WebDAV": {
+    "other": "Отключить WebDAV"
+  },
+  "Disable Zip browsing": {
+    "other": "Отключить просмотр Zip"
+  },
+  "Disable Zip files inline browsing. This can be necessary if you always store huge zip archives: it can have some impact on performance.": {
+    "other": "Отключить просмотр Zip файлов. Это может быть необходимо, если вы всегда храните огромные zip-архивы: это может повлиять на производительность."
+  },
+  "Display the list of files and folder when accessing through the browser": {
+    "other": "Отображение списка файлов и папок при доступе через браузер"
+  },
+  "Download Delegation": {
+    "other": "Скачать делегацию"
+  },
+  "Download Folder (Legacy)": {
+    "other": "Папка загрузок (Устаревшее)"
+  },
+  "Download URL": {
+    "other": "URL для скачивания"
+  },
+  "Driver": {
+    "other": "Драйвер"
+  },
+  "Driver type (do not touch)": {
+    "other": "Тип драйвера (не трогать)"
+  },
+  "Enable WebDAV": {
+    "other": "Включить WebDAV"
+  },
+  "Enable WebDAV for all users by default. If set to false, users will have to manually enable WebDAV via their preferences panel.": {
+    "other": "Включить WebDAV для всех пользователей по умолчанию. Если установлено значение false, пользователи должны вручную включить WebDAV через панель настроек."
+  },
+  "Enable for all users": {
+    "other": "Включить для всех"
+  },
+  "Enable the webDAV support. Please READ THE DOC to safely use this feature.": {
+    "other": "Включить поддержку webDAV. Пожалуйста, прочитайте документацию, чтобы безопасно использовать эту функцию."
+  },
+  "Existing users": {
+    "other": "Существующие пользователи"
+  },
+  "Explicitly disable WebDAV access for this repository.": {
+    "other": "Отключить доступ по WebDAV для этого репозитория."
+  },
+  "File": {
+    "other": "Файл"
+  },
+  "File Type": {
+    "other": "Тип файла"
+  },
+  "File size": {
+    "other": "Размер"
+  },
+  "Filename length": {
+    "other": "Длина имени файла"
+  },
+  "Filesystem Commons": {
+    "other": "Общие файловые системы"
+  },
+  "For exotic auth drivers, an user ID that must be considered as admin by default.": {
+    "other": "Для нестандартных драйверов аутентификации, имя пользователя которое будет считаться администратором."
+  },
+  "For multiple authentication, apply this role to users authenticated via this driver": {
+    "other": "Для множественной аутентификации, применить эту роль к пользователям, авторизованным через этот драйвер"
+  },
+  "Force Basic Auth": {
+    "other": "Принудительно включить Basic Auth"
+  },
+  "Force remote sorting when in paginated mode. Warning, this can impact the performances.": {
+    "other": "Принудительная удаленная сортировка в режиме пагинации. Предупреждение, это может повлиять на производительность."
+  },
+  "Group Path": {
+    "other": "Путь группы"
+  },
+  "Gzip Download": {
+    "other": "Скачать Gzip"
+  },
+  "Gzip Limit": {
+    "other": "Ограничение Gzip"
+  },
+  "Gzip files on-the-fly before downloading. Disabled by default, as it's generally useful only on small files, and decreases performances on big files. This has nothing to see with the Zip Creation feature, it's just a on-the-fly compression applied on a unique file at download.": {
+    "other": "Сжимать файлы на лету в Gzip перед загрузкой. По умолчанию отключено, т.к. это в основном полезно для маленьких файлов и снижает производительность на больших файлах. Это никак не связано с функцией создания Zip архива, это просто сжатие на лету для конкретного файла при загрузке."
+  },
+  "Hide extensions": {
+    "other": "Скрыть расширения"
+  },
+  "Hide files": {
+    "other": "Скрыть файлы"
+  },
+  "Hide folders": {
+    "other": "Скрыть папки"
+  },
+  "Hide recycle bin": {
+    "other": "Скрыть корзину"
+  },
+  "Host": {
+    "other": "Хост"
+  },
+  "Host used in webDAV protocol. Should be detected by default. Please READ THE DOC to safely use this feature.": {
+    "other": "Хост, используемый в протоколе webDAV. Может быть обнаружен по умолчанию. Пожалуйста, прочитайте документацию, чтобы безопасно использовать эту функцию."
+  },
+  "If activated, a default limit should be set above when files are no more compressed.": {
+    "other": "Если включено, выше должен быть установлен лимит по умолчанию, когда файлы более не будут сжаты."
+  },
+  "If not inferred directly from the current pydio URL plus the public base URI, replace the public access URL here.": {
+    "other": "Если не введен напрямую с текущего URL-адреса pydio плюс общедоступный URI, замените URL доступа здесь."
+  },
+  "If set to a given URL, the login action will not trigger the display of login screen but redirect to this URL.": {
+    "other": "Если задать данный URL, действие логина не вызовет экран входа, а перенаправит на этот URL."
+  },
+  "If you encounter problems with online zip creation or multiple files downloading, you can disable the feature.": {
+    "other": "Если вы столкнетесь с проблемами с онлайн-созданием zip или загрузкой нескольких файлов, вы можете отключить эту функцию."
+  },
+  "If you have tons of workspaces (which is not recommanded), admin users login can take a long time while updating admin access to all repositories. Use this option to disable this step, admin will always have access to the Settings.": {
+    "other": "Если у вас есть куча проектов (которые не были изменены), то вход администраторов может занять много времени при обновлении прав администратора во всех репозиториях. Используйте эту опцию, чтобы отключить этот шаг, администратор всегда будет иметь доступ к настройкам."
+  },
+  "If your server does not set correctly its charset, it can be good to specify it here manually.": {
+    "other": "Если ваш сервер неправильно установил кодировку, то его можно указывать вручную."
+  },
+  "Leave empty if you do not want to use a recycle bin.": {
+    "other": "Оставьте пустым, если не хотите использовать корзину."
+  },
+  "Login Redirect": {
+    "other": "Перенаправление Входа"
+  },
+  "Main": {
+    "other": "Основные параметры"
+  },
+  "Main container for core Pydio settings (application title, sharing, webdav server config, etc...)": {
+    "other": "Основной контейнер для основных настроек Pydio (название приложения, общий доступ, конфигурация сервера webdav и т.д...)"
+  },
+  "Maximum characters length of new files or folders": {
+    "other": "Максимальная длина символов новых файлов или папок"
+  },
+  "Metadata and indexation": {
+    "other": "Метаданные и индексация"
+  },
+  "Miscellaneous": {
+    "other": "Прочее"
+  },
+  "Modification date": {
+    "other": "Дата изменения"
+  },
+  "Name": {
+    "other": "Имя"
+  },
+  "OAuth Commons": {
+    "other": "OAuth Commons"
+  },
+  "On Windows running IIS, set this option to true if the COM extension is loaded, this may enable the use of the php command line.": {
+    "other": "On Windows running IIS, set this option to true if the COM extension is loaded, this may enable the use of the php command line."
+  },
+  "On specific hosts, you may have to use a specific path to access the php command line": {
+    "other": "On specific hosts, you may have to use a specific path to access the php command line"
+  },
+  "Once in pagination mode, number of items to display per page.": {
+    "other": "Once in pagination mode, number of items to display per page."
+  },
+  "Pagination Threshold": {
+    "other": "Pagination Threshold"
+  },
+  "Password": {
+    "other": "Пароль"
+  },
+  "Prefilled label for the new repository, you can use the PYDIO_USER keyworkd in it.": {
+    "other": "Prefilled label for the new workspace, you can use the PYDIO_USER keyworkd in it."
+  },
+  "Public Base URI": {
+    "other": "Публичный URI базы"
+  },
+  "Pydio Main Options": {
+    "other": "Pydio Main Options"
+  },
+  "Read Only": {
+    "other": "Только чтение"
+  },
+  "Read and Write": {
+    "other": "Чтение и запись"
+  },
+  "Recycle Bin Folder": {
+    "other": "Папка корзины"
+  },
+  "Redirect URL": {
+    "other": "Переадресация URL"
+  },
+  "Remote Sorting": {
+    "other": "Удаленная сортировка"
+  },
+  "Remote Sorting Default Direction": {
+    "other": "Направление удаленной сортировки по умолчанию"
+  },
+  "Remote Sorting Default Field": {
+    "other": "Удаленная сортировка по умолчанию"
+  },
+  "Repository Commons": {
+    "other": "Комменты репозитория"
+  },
+  "Repository Slug": {
+    "other": "Repository Slug"
+  },
+  "Scope": {
+    "other": "Область"
+  },
+  "Server URL": {
+    "other": "Server URL"
+  },
+  "Server URL used to build share links and notifications. It will be detected if empty.": {
+    "other": "Server URL used to build share links and notifications. It will be detected if empty."
+  },
+  "Session credentials": {
+    "other": "Session credentials"
+  },
+  "Set this repository group owner : only users of this group will see it": {
+    "other": "Set this repository group owner : only users of this group will see it"
+  },
+  "Set up a specific encoding (try IBM850 or CP437) for filenames to fix characters problems during Zip creation. This may create OS-incompatible archives (Win/Mac).": {
+    "other": "Set up a specific encoding (try IBM850 or CP437) for filenames to fix characters problems during Zip creation. This may create OS-incompatible archives (Win/Mac). If you still have issue, you can add //TRANSLIT after the encoding string to force transliteration of unknown characters in your target encoding (example CP437//TRANSLIT)."
+  },
+  "Shares Host": {
+    "other": "Shares Host"
+  },
+  "Shares URI": {
+    "other": "Shares URI"
+  },
+  "Sharing": {
+    "other": "Поделиться"
+  },
+  "Show files beginning with a .": {
+    "other": "Show files beginning with a ."
+  },
+  "Show hidden files": {
+    "other": "Показать скрытые файлы"
+  },
+  "Skip auto-update admin rights": {
+    "other": "Пропустить автообновление прав администратора"
+  },
+  "Small Icon": {
+    "other": "Маленькая иконка"
+  },
+  "Template Options": {
+    "other": "Параметры шаблона"
+  },
+  "Temporary Folder": {
+    "other": "Временная папка"
+  },
+  "This authentication mechanism is less secure, but will avoid the users having to re-enter a password in some case.": {
+    "other": "This authentication mechanism is less secure, but will avoid the users having to re-enter a password in some case."
+  },
+  "This is necessary only if you have errors concerning the tmp dir access or writeability : most probably, they are due to PHP SAFE MODE (should disappear in php6) or various OPEN_BASEDIR restrictions. In that case, create and set writeable a tmp folder somewhere at the root of your hosting (but above the web/ or www/ or http/ if possible!!) and enter here the full path to this folder": {
+    "other": "This is necessary only if you have errors concerning the tmp dir access or writeability : most probably, they are due to PHP SAFE MODE (should disappear in php6) or various OPEN_BASEDIR restrictions. In that case, create and set writeable a tmp folder somewhere at the root of your hosting (but above the web/ or www/ or http/ if possible!!) and enter here the full path to this folder"
+  },
+  "This right pattern (empty, r, or rw) will be applied at user creation for this repository.": {
+    "other": "This right pattern (empty, r, or rw) will be applied at user creation for this workspace."
+  },
+  "Token URL": {
+    "other": "Token URL"
+  },
+  "Transmit Clear Pass": {
+    "other": "Transmit Clear Pass"
+  },
+  "Try to use the current Pydio user credentials for connecting. Warning, the PYDIO_SESSION_SET_CREDENTIALS config must be set to true!": {
+    "other": "Try to use the current Pydio user credentials for connecting. Warning, the PYDIO_SESSION_SET_CREDENTIALS config must be set to true!"
+  },
+  "URI where to serve the public links": {
+    "other": "URI where to serve the public links"
+  },
+  "Use COM class": {
+    "other": "Use COM class"
+  },
+  "Use MySQLi": {
+    "other": "Use MySQLi"
+  },
+  "Use PHP MySQLi extension": {
+    "other": "Use PHP MySQLi extension"
+  },
+  "Use Pydio framework via the command line, allowing CRONTAB jobs or background actions.": {
+    "other": "Use Pydio framework via the command line, allowing CRONTAB jobs or background actions."
+  },
+  "User": {
+    "other": "Пользователь"
+  },
+  "User Credentials": {
+    "other": "Учетные данные пользователя"
+  },
+  "User name": {
+    "other": "Имя пользователя"
+  },
+  "User name - Can be overriden on a per-user basis (see users 'Personal Data' tab)": {
+    "other": "Имя пользователя - может быть переопределен на основе каждого пользователя (см. вкладку \"Личные данные\")"
+  },
+  "User password": {
+    "other": "Пароль пользователя"
+  },
+  "User password - Can be overriden on a per-user basis.": {
+    "other": "Пароль пользователя - может быть переопределен для каждого пользователя."
+  },
+  "WebDAV Server": {
+    "other": "WebDAV Server"
+  },
+  "When a folder will contain more items than this number, display will switch to pagination mode, for better performances.": {
+    "other": "When a folder will contain more items than this number, display will switch to pagination mode, for better performances."
+  },
+  "When set to true, the user object is created automatically if the authentication succeed. Used by remote authentication systems.": {
+    "other": "When set to true, the user object is created automatically if the authentication succeed. Used by remote authentication systems."
+  },
+  "Whether the password will be transmitted clear or encoded between the client and the server": {
+    "other": "Whether the password will be transmitted clear or encoded between the client and the server"
+  },
+  "Whether to show the recycle bin folder. Unlike in the following options, the folder will be hidden but still writeable.": {
+    "other": "Whether to show the recycle bin folder. Unlike in the following options, the folder will be hidden but still writeable."
+  },
+  "Write Only (upload)": {
+    "other": "Только запись (загрузка)"
+  },
+  "Your application title": {
+    "other": "This title will appear as the window title, in the splash screen."
+  },
+  "Zip Creation": {
+    "other": "Создание Zip"
+  },
+  "Zip Encoding": {
+    "other": "Кодировка Zip"
+  },
+  "Merge Workspaces and Cells": {
+    "other": "Объединить рабочие области и ячейки"
+  },
+  "Do not display workspaces and cells separately": {
+    "other": "Не показывать отдельно рабочие области и ячейки"
+  }
+}

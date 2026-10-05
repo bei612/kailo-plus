@@ -1,0 +1,80 @@
+{
+  "Jobs.Default.Thumbs": {
+    "other": "Images: extraction des vignettes et des données Exif"
+  },
+  "Jobs.Default.ThumbsCache": {
+    "other": "Suppression des vignettes pour les fichiers supprimés"
+  },
+  "Jobs.Default.Directories": {
+    "other": "Synchronisation des annuaires utilisateurs externes"
+  },
+  "Jobs.Default.PruneJobs": {
+    "other": "Nettoyage des jobs et tâches du scheduler"
+  },
+  "Jobs.Default.FakeLongJob": {
+    "other": "Longue tâche (pour le test)"
+  },
+  "Jobs.Default.FakeUsersJob": {
+    "other": "Création d'utilisateurs aléatoires (pour le test)"
+  },
+  "Jobs.Default.FakeGrpcJob": {
+    "other": "Tâche RPC (pour le test)"
+  },
+  "Jobs.Default.ArchiveJobs": {
+    "other": "Archivage automatique du service Changes"
+  },
+  "Jobs.Default.CleanUserData": {
+    "other": "Nettoyer ou transférer les données utilisateur lors de la suppression"
+  },
+  "Jobs.Default.CleanOrphanFiles": {
+    "other": "Nettoyer les fichiers orphelins après 24h"
+  },
+  "Jobs.Default.CleanExpiredACLs": {
+    "other": "Supprimer les ACL expirées après 10 jours"
+  },
+  "Jobs.User.Compress": {
+    "other": "Compression de la selection..."
+  },
+  "Jobs.User.Extract": {
+    "other": "Extraction de l'archive..."
+  },
+  "Jobs.User.Delete": {
+    "other": "Suppression de la selection en tâche de fond..."
+  },
+  "Jobs.User.DirCopy": {
+    "other": "Copie du répertoire en tâche de fond..."
+  },
+  "Jobs.User.DirMove": {
+    "other": "Déplacement du répertoire en tâche de fond..."
+  },
+  "Jobs.User.FileCopy": {
+    "other": "Copie du fichier en tâche de fond..."
+  },
+  "Jobs.User.FileMove": {
+    "other": "Déplacement du fichier en tâche de fond..."
+  },
+  "Jobs.User.MultipleCopy": {
+    "other": "Copie de la sélection en tâche de fond..."
+  },
+  "Jobs.User.MultipleMove": {
+    "other": "Déplacement de la sélection en tâche de fond..."
+  },
+  "Jobs.User.MoveRecycle": {
+    "other": "Déplacement dans la corbeille en tâche de fond..."
+  },
+  "Jobs.User.ResyncDS": {
+    "other": "Synchroniser la source de données {{.DsName}} puis calculer les nouvelles signatures"
+  },
+  "Jobs.User.Wget": {
+    "other": "Téléchargement du fichier en tâche de fond..."
+  },
+  "Jobs.User.DeletingItem": {
+    "other": "Suppression de %s"
+  },
+  "Jobs.User.CopyingItem": {
+    "other": "Copie de %s"
+  },
+  "Jobs.User.MovingItem": {
+    "other": "Déplacement de %s"
+  }
+}

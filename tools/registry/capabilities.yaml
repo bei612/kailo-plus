@@ -86,10 +86,12 @@ capabilities:
   actions:
   - application_binding.create
   - application_binding.disable
+  - resource.create
   tools: []
   workflow_kinds:
   - COMPONENT_BINDING
   - COMPONENT_DISABLE
+  - RESOURCE_PROVISION
 - id: component.capability_contracts
   exposure: tenant_admin
   routes:

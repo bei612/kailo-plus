@@ -1,0 +1,59 @@
+{
+  "1": {
+    "other": "Libre Office Documents"
+  },
+  "10": {
+    "other": "空のドキュメントを作成"
+  },
+  "11": {
+    "other": "ドキュメント形式"
+  },
+  "12": {
+    "other": "空のドキュメントを <a>作成することもできます</a>"
+  },
+  "13": {
+    "other": "無題ドキュメント"
+  },
+  "14": {
+    "other": "ドキュメントが作成されました。編集できるようになりました"
+  },
+  "15": {
+    "other": "不明なドキュメント形式"
+  },
+  "2": {
+    "other": "Libre Office 外部ブラウザウィンドウ"
+  },
+  "ext.doc": {
+    "other": "Microsoft Word 97/2000/XP/2003"
+  },
+  "ext.docx": {
+    "other": "Microsoft Word 2007/2010/2013 XML"
+  },
+  "ext.odg": {
+    "other": "ODF 図形描画"
+  },
+  "ext.odp": {
+    "other": "ODF プレゼンテーション"
+  },
+  "ext.ods": {
+    "other": "ODF 表計算ドキュメント"
+  },
+  "ext.odt": {
+    "other": "ODF 文書ドキュメント"
+  },
+  "ext.ppt": {
+    "other": "Microsoft PowerPoint 97/2000/XP/2003"
+  },
+  "ext.pptx": {
+    "other": "Microsoft PowerPoint 2007/2010/2013 XML"
+  },
+  "ext.rtf": {
+    "other": "リッチテキスト"
+  },
+  "ext.xls": {
+    "other": "Microsoft Excel 97/2000/XP/2003"
+  },
+  "ext.xlsx": {
+    "other": "Microsoft Excel 2007/2010/2013 XML"
+  }
+}

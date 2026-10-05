@@ -1,0 +1,8 @@
+storages:
+{{- range $k, $v := .storages }}
+  {{- if $v }}
+  {{ $k }}:
+    uri: {{ index $v "dsn" }}
+    driver: {{ index $v "driver" }}
+  {{- end }}
+{{- end }}

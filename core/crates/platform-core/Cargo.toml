@@ -25,7 +25,8 @@ ring = "0.17"
 nostr = { version = "0.44", default-features = false, features = ["std"] }
 sha2 = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-rmcp = { version = "=3.1.2", default-features = false, features = ["server", "transport-streamable-http-server"] }
+rmcp = { version = "=3.1.2", default-features = false, features = ["server", "client", "transport-streamable-http-server", "transport-streamable-http-client-reqwest"] }
+mcp-http = { package = "reqwest", version = "=0.13.5", default-features = false, features = ["json", "rustls"] }
 prost = "0.14"
 prost-wkt-types = { version = "0.7", features = ["vendored-protox"] }
 tonic = { version = "0.14", features = ["codegen", "transport"] }

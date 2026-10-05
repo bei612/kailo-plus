@@ -1,0 +1,473 @@
+{
+  "30 days max": {
+    "other": "最多30天"
+  },
+  "Remove versions after 30 days": {
+    "other": "30 天后移除版本"
+  },
+  "Keep All": {
+    "other": "保留所有"
+  },
+  "Keep all versions forever": {
+    "other": "永远保持所有版本"
+  },
+  "Regular Pruning": {
+    "other": "定期修剪"
+  },
+  "Prune versions regularly at various intervals": {
+    "other": "以不同的时间间隔定期修剪版本"
+  },
+  "aclAction.Name": {
+    "other": "名称"
+  },
+  "aclAction.Value": {
+    "other": "值"
+  },
+  "aclSingleQuery.Actions": {
+    "other": "行动"
+  },
+  "aclSingleQuery.NodeIDs": {
+    "other": "节点标识符"
+  },
+  "aclSingleQuery.Not": {
+    "other": "非"
+  },
+  "aclSingleQuery.RoleIDs": {
+    "other": "角色标识符"
+  },
+  "aclSingleQuery.WorkspaceIDs": {
+    "other": "工作区标识符"
+  },
+  "aclSingleQuery.not": {
+    "other": "非"
+  },
+  "actionOutputSingleQuery.ErrorStringRegexp": {
+    "other": "在错误字符串上搜索 (regexp)"
+  },
+  "actionOutputSingleQuery.IsSuccess": {
+    "other": "成功"
+  },
+  "actionOutputSingleQuery.JsonBodyHasKey": {
+    "other": "Json 主体有密钥..."
+  },
+  "actionOutputSingleQuery.JsonBodyRegexp": {
+    "other": "搜索 Json 正文(regexp)"
+  },
+  "actionOutputSingleQuery.JsonBodySizeGreaterThan": {
+    "other": "Json 主体的大小大于"
+  },
+  "actionOutputSingleQuery.JsonBodySizeSmallerThan": {
+    "other": "Json 主体的大小小于"
+  },
+  "actionOutputSingleQuery.Not": {
+    "other": "非"
+  },
+  "actionOutputSingleQuery.StringBodyRegexp": {
+    "other": "搜索字符串主体(regexp)"
+  },
+  "actionOutputSingleQuery.StringBodySizeGreaterThan": {
+    "other": "字符串主体的大小大于"
+  },
+  "actionOutputSingleQuery.StringBodySizeSmallerThan": {
+    "other": "字符串主体的大小小于"
+  },
+  "actionOutputSingleQuery.TaskTimeGt": {
+    "other": "任务时间晚于"
+  },
+  "actionOutputSingleQuery.TaskTimeLt": {
+    "other": "任务时间早于"
+  },
+  "actionOutputSingleQuery.FreeCondition": {
+    "other": "自由条件"
+  },
+  "dataSelectorSingleQuery.JsonPath": {
+    "other": "JSON 路径"
+  },
+  "conditionCIDRCondition.CIDR": {
+    "other": "CIDR"
+  },
+  "conditionCIDRCondition.cidr": {
+    "other": "cidr"
+  },
+  "conditionStringEqualCondition.Equals": {
+    "other": "等于"
+  },
+  "conditionStringEqualCondition.equals": {
+    "other": "等于"
+  },
+  "conditionStringMatchCondition.Matches": {
+    "other": "匹配"
+  },
+  "conditionStringMatchCondition.matches": {
+    "other": " 匹配"
+  },
+  "conditionPathGlobCondition.glob": {
+    "other": "图案"
+  },
+  "conditionBooleanCondition.value": {
+    "other": "True"
+  },
+  "contextMetaCondition.CIDRCondition": {
+    "other": "CIDR 状况"
+  },
+  "contextMetaCondition.EqualsSubjectCondition": {
+    "other": "标题等于"
+  },
+  "contextMetaCondition.ResourceContainsCondition": {
+    "other": "资源包含"
+  },
+  "contextMetaCondition.StringEqualCondition": {
+    "other": "字符串等于"
+  },
+  "contextMetaCondition.StringMatchCondition": {
+    "other": "字符串匹配"
+  },
+  "contextMetaCondition.StringPairsEqualCondition": {
+    "other": "字符串对等于"
+  },
+  "contextMetaCondition.StringNotMatchCondition": {
+    "other": "字符串不匹配"
+  },
+  "contextMetaCondition.WithinPeriodCondition": {
+    "other": "日期期间"
+  },
+  "contextMetaCondition.OfficeHoursCondition": {
+    "other": "办公时间"
+  },
+  "contextMetaCondition.DateAfterCondition": {
+    "other": "日期晚于"
+  },
+  "contextMetaCondition.PathGlobCondition": {
+    "other": "全局匹配器"
+  },
+  "contextMetaCondition.BooleanCondition": {
+    "other": "布尔值"
+  },
+  "contextMetaField.ContentType": {
+    "other": "内容类型"
+  },
+  "contextMetaField.CookiesString": {
+    "other": "曲奇字符串"
+  },
+  "contextMetaField.HttpProtocol": {
+    "other": "HTTP 协议"
+  },
+  "contextMetaField.RemoteAddress": {
+    "other": "远程地址"
+  },
+  "contextMetaField.RequestHostname": {
+    "other": "请求主机名"
+  },
+  "contextMetaField.RequestHost": {
+    "other": "请求主机"
+  },
+  "contextMetaField.RequestPort": {
+    "other": "请求端口"
+  },
+  "contextMetaField.RequestMethod": {
+    "other": "请求方法"
+  },
+  "contextMetaField.RequestURI": {
+    "other": "请求URI"
+  },
+  "contextMetaField.ServerTime": {
+    "other": "服务器时间"
+  },
+  "contextMetaField.UserAgent": {
+    "other": "用户代理"
+  },
+  "contextMetaSingleQuery.Condition": {
+    "other": "条件"
+  },
+  "contextMetaSingleQuery.FieldName": {
+    "other": "字段名"
+  },
+  "roleSingleQuery.HasAutoApply": {
+    "other": "有自动应用"
+  },
+  "roleSingleQuery.IsGroupRole": {
+    "other": "是组角色"
+  },
+  "roleSingleQuery.IsTeam": {
+    "other": "是团队"
+  },
+  "roleSingleQuery.IsUserRole": {
+    "other": "用户角色"
+  },
+  "roleSingleQuery.Label": {
+    "other": "标签"
+  },
+  "roleSingleQuery.Not": {
+    "other": "非"
+  },
+  "roleSingleQuery.Uuid": {
+    "other": "用户uid"
+  },
+  "roleSingleQuery.not": {
+    "other": "非"
+  },
+  "treeQuery.Content": {
+    "other": "内容"
+  },
+  "treeQuery.DurationDate": {
+    "other": "修改日期(使用比较)"
+  },
+  "treeQuery.Extension": {
+    "other": "文件扩展名"
+  },
+  "treeQuery.FileName": {
+    "other": "文件名"
+  },
+  "treeQuery.FileNameOrContent": {
+    "other": "文件名或内容"
+  },
+  "treeQuery.FreeString": {
+    "other": "类似 Bleve 的搜索字符串"
+  },
+  "treeQuery.GeoQuery": {
+    "other": "地理位置查询"
+  },
+  "treeQuery.MaxDate": {
+    "other": "修改早于"
+  },
+  "treeQuery.MaxSize": {
+    "other": "最大大小"
+  },
+  "treeQuery.MinDate": {
+    "other": "修改自"
+  },
+  "treeQuery.MinSize": {
+    "other": "大小超过"
+  },
+  "treeQuery.Not": {
+    "other": "非"
+  },
+  "treeQuery.PathDepth": {
+    "other": "路径深度"
+  },
+  "treeQuery.PathPrefix": {
+    "other": "路径前缀"
+  },
+  "treeQuery.Paths": {
+    "other": "绝对路径"
+  },
+  "treeQuery.Type": {
+    "other": "类型"
+  },
+  "treeQuery.Type.COLLECTION": {
+    "other": "文件夹"
+  },
+  "treeQuery.Type.LEAF": {
+    "other": "文件"
+  },
+  "treeQuery.Type.UNKNOWN": {
+    "other": "任意"
+  },
+  "treeQuery.UUIDs": {
+    "other": "节点UUIDs"
+  },
+  "treeQuery.ETag": {
+    "other": "ETag"
+  },
+  "userSingleQuery.AttributeAnyValue": {
+    "other": "有任何值"
+  },
+  "userSingleQuery.AttributeName": {
+    "other": "属性名称"
+  },
+  "userSingleQuery.AttributeValue": {
+    "other": "属性值"
+  },
+  "userSingleQuery.ConnectedSince": {
+    "other": "连接自"
+  },
+  "userSingleQuery.FullPath": {
+    "other": "完整路径"
+  },
+  "userSingleQuery.GroupPath": {
+    "other": "组路径"
+  },
+  "userSingleQuery.HasProfile": {
+    "other": "有个人资料"
+  },
+  "userSingleQuery.HasRole": {
+    "other": "有角色"
+  },
+  "userSingleQuery.Login": {
+    "other": "登录"
+  },
+  "userSingleQuery.NodeType": {
+    "other": "对象类型"
+  },
+  "userSingleQuery.NodeType.GROUP": {
+    "other": "组"
+  },
+  "userSingleQuery.NodeType.UNKNOWN": {
+    "other": "任意"
+  },
+  "userSingleQuery.NodeType.USER": {
+    "other": "用户"
+  },
+  "userSingleQuery.Not": {
+    "other": "非"
+  },
+  "userSingleQuery.Password": {
+    "other": "密码"
+  },
+  "userSingleQuery.Recursive": {
+    "other": "递归"
+  },
+  "userSingleQuery.Uuid": {
+    "other": "用户uid"
+  },
+  "userSingleQuery.not": {
+    "other": "非"
+  },
+  "workspaceSingleQuery.AttributeName": {
+    "other": "属性名称"
+  },
+  "workspaceSingleQuery.AttributeValue": {
+    "other": "属性值"
+  },
+  "workspaceSingleQuery.Description": {
+    "other": "说明"
+  },
+  "workspaceSingleQuery.HasAttribute": {
+    "other": "有属性"
+  },
+  "workspaceSingleQuery.Label": {
+    "other": "标签"
+  },
+  "workspaceSingleQuery.LastUpdated": {
+    "other": "最近更新时间"
+  },
+  "workspaceSingleQuery.Not": {
+    "other": "非"
+  },
+  "workspaceSingleQuery.Scope": {
+    "other": "范围"
+  },
+  "workspaceSingleQuery.Slug": {
+    "other": "迟缓"
+  },
+  "workspaceSingleQuery.Uuid": {
+    "other": "用户uid"
+  },
+  "workspaceSingleQuery.description": {
+    "other": "说明"
+  },
+  "workspaceSingleQuery.label": {
+    "other": "标签"
+  },
+  "workspaceSingleQuery.not": {
+    "other": "非"
+  },
+  "workspaceSingleQuery.scope": {
+    "other": "工作区类型"
+  },
+  "workspaceSingleQuery.scope.ADMIN": {
+    "other": "工作区"
+  },
+  "workspaceSingleQuery.scope.ANY": {
+    "other": "任意"
+  },
+  "workspaceSingleQuery.scope.LINK": {
+    "other": "公开链接"
+  },
+  "workspaceSingleQuery.scope.ROOM": {
+    "other": "单元"
+  },
+  "workspaceSingleQuery.slug": {
+    "other": "迟缓"
+  },
+  "workspaceSingleQuery.uuid": {
+    "other": "用户uid"
+  },
+  "dataSourceSingleQuery.Name": {
+    "other": "名称"
+  },
+  "dataSourceSingleQuery.IsDisabled": {
+    "other": "已禁用"
+  },
+  "dataSourceSingleQuery.StorageType": {
+    "other": "存储类型"
+  },
+  "dataSourceSingleQuery.StorageType.REMOTE": {
+    "other": "远程"
+  },
+  "dataSourceSingleQuery.StorageType.ANY": {
+    "other": "任意"
+  },
+  "dataSourceSingleQuery.StorageType.LOCALFS": {
+    "other": "本地"
+  },
+  "dataSourceSingleQuery.PeerAddress": {
+    "other": "对等地址"
+  },
+  "dataSourceSingleQuery.FlatStorage": {
+    "other": "平面存储"
+  },
+  "dataSourceSingleQuery.SkipSyncOnRestart": {
+    "other": "重启时跳过同步"
+  },
+  "dataSourceSingleQuery.IsVersioned": {
+    "other": "已有版本"
+  },
+  "dataSourceSingleQuery.IsEncrypted": {
+    "other": "已加密"
+  },
+  "dataSourceSingleQuery.EncryptionMode": {
+    "other": "加密模式"
+  },
+  "dataSourceSingleQuery.EncryptionMode.USER": {
+    "other": "用户密钥"
+  },
+  "dataSourceSingleQuery.EncryptionMode.USER_PWD": {
+    "other": "用户-密码"
+  },
+  "dataSourceSingleQuery.EncryptionMode.CLEAR": {
+    "other": "清除"
+  },
+  "dataSourceSingleQuery.EncryptionMode.MASTER": {
+    "other": "主-密钥"
+  },
+  "dataSourceSingleQuery.EncryptionKey": {
+    "other": "加密密钥"
+  },
+  "dataSourceSingleQuery.VersioningPolicyName": {
+    "other": "版本政策"
+  },
+  "dataSourceSingleQuery.StorageConfigurationName": {
+    "other": "配置键"
+  },
+  "dataSourceSingleQuery.StorageConfigurationValue": {
+    "other": "配置值"
+  },
+  "dataSourceSingleQuery.ObjectServiceName": {
+    "other": "对象服务"
+  },
+  "dataSourceSingleQuery.Not": {
+    "other": "非"
+  },
+  "triggerFilterQuery.IsSchedule": {
+    "other": "预定触发"
+  },
+  "triggerFilterQuery.IsApiHook": {
+    "other": "由 Webhook 触发"
+  },
+  "triggerFilterQuery.ApiHookSlug": {
+    "other": "Webhook Api Slug"
+  },
+  "triggerFilterQuery.RunParameterName": {
+    "other": "运行参数名"
+  },
+  "triggerFilterQuery.RunParameterValue": {
+    "other": "运行参数值"
+  },
+  "triggerFilterQuery.IsManual": {
+    "other": "手动触发"
+  },
+  "triggerFilterQuery.EventNames": {
+    "other": "事件"
+  }
+}

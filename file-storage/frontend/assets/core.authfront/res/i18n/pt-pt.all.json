@@ -1,0 +1,35 @@
+{
+  "1": {
+    "other": "Recuperar senha"
+  },
+  "2": {
+    "other": "Digite sua nova senha"
+  },
+  "3": {
+    "other": "Por favor, insira seu nome de usuário ou endereço de e-mail, pois uma senha de redefinição será enviada para você por e-mail."
+  },
+  "4": {
+    "other": "Seu usuário ou e-mail"
+  },
+  "5": {
+    "other": "Uma solicitação de redefinição de senha foi enviada para o e-mail registrado com sua conta. Clique no link no e-mail para recriar uma senha."
+  },
+  "6": {
+    "other": "Obrigado. Por favor, recarregue agora para entrar!"
+  },
+  "7": {
+    "other": "Uma redefinição de senha foi solicitada na conta associada a este endereço de e-mail. Se você não é o autor deste pedido, pode ignorar este e-mail. Caso contrário, clique no link a seguir para redefinir sua senha:"
+  },
+  "8": {
+    "other": "Use o formulário abaixo para redefinir sua senha. Por favor, digite seu login e a nova senha duas vezes."
+  },
+  "9": {
+    "other": "Please enter your username and password"
+  },
+  "10": {
+    "other": "Please enter the password you received"
+  },
+  "11": {
+    "other": "Login failed: could not recognise your username or password"
+  }
+}
