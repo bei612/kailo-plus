@@ -951,3 +951,27 @@ Windows 原交叉构建经历基础依赖冷层，最终产出 Win11 x64 NSIS �
 `relay-build.log` `0a9b5edfd3c638a8b2c563b855fb21d66c0b0e4941efc99e3010660a79083f5c`；
 `full.log` `d511bd89dcd9b75733d1a676367e7cc7cffab0596194ba25fa9560825797794b`；
 `full-final.log` `081a8c923e4f08ee93a0c364bec6727cbc7fdd727458f7e56e7dce8e70d969fc`。
+
+### 同批 Web 限定投递与三人真实浏览器读回（03:23–03:26 UTC）
+
+上述源码与产物以 `7de631d841d72b5ac32c6f1093a278b5f8b8326a` 提交并普通 push。
+根代理确认索引 tree 等于已验最终候选；原有 66 个脏文件的 numstat 逐项相同，
+没有把历史 +6107/-422 混入提交。冻结 Compose 使用正式 sole `.env` 与原项目目录，
+仅执行 `up -d --no-deps --no-build --pull never buzz-web`，退出 0。
+03:23:39Z 新 Web 为 `d3e75136…`、running/healthy；28 个项目容器仅 Web 改变，
+无删除，Core/Worker/Relay/Gateway 未替换，未运行迁移。配置摘要不变，匿名入口 302。
+原 Windows 测试包投递至 `dist/desktop-client/Kailo_0.5.23_x64-setup.exe`，
+字节摘要 `1342aa56…`；旧 `f93b0f36…` 包保留在上述 Data 原件目录，未声称设备验收。
+
+独立浏览器命令 97432 实际退出 0。三账号正常 OIDC，返回的新 Web buildId 均为
+`sha256:f76af8a137a7f962d08d2971583c2a131fdc9ae363e2cf787d59e846e2d0e8e2`；
+每人读回既有三条消息。在各自稳定挂载的 10 秒窗口内，阻断的已读 PUT 均仅一次，
+同 CAS version 的 GET 后没有自动重发；明确 reload 属于新挂载，不计入该窗口。
+三人共享高对比设置均完成 false→true、刷新后仍 true、UI 恢复 false。
+所有 `/api` 非 GET/HEAD 均中止，未向服务端送达写入；不将本次检查记作已读写成功、
+新消息、双 Agent 回复或长期稳定性验收。Playwright 只用于实际消费面的投递后核对。
+
+部署前后原件：`codex-channel-read-recovery-20261005.tLs1fL/web-deploy-receipt.md`。
+浏览器原件：`codex-three-humans-web-readback-20261005.eAonly/browser-readback.log`，
+SHA-256 `071931a44f99d7c2f51a077af329c03159b3ae907e10002ef04db1b3861d1194`；
+同目录 `command-result.json` 保存实际退出码，`browser-inline.txt` 保存完整观察代码。
