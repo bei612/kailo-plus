@@ -19,7 +19,7 @@ use tokio::{
 };
 use uuid::Uuid;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub(crate) enum RuntimeError {
     #[error("runtime 未投递或投影不成立")]
     Unavailable,
@@ -50,6 +50,28 @@ pub(crate) struct RuntimeRef {
 
 type ProcessSlot = Arc<Mutex<Option<Process>>>;
 
+// Correlation for an already sent native start, not another execution registry.
+// Its enclosing Process fixes Installation/generation/hash. Only native IDs or
+// an uncertain protocol result are retained; never request/response bodies.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum StartOwner {
+    Session {
+        tenant: Uuid,
+        workspace: Uuid,
+        root: String,
+        version: Uuid,
+    },
+    Turn {
+        invocation: Uuid,
+        thread: String,
+    },
+}
+
+struct StartReceipt {
+    id: u64,
+    outcome: Option<Result<String, RuntimeError>>,
+}
+
 pub(crate) struct Supervisor {
     binary: PathBuf,
     root: PathBuf,
@@ -78,6 +100,7 @@ struct Process {
     home: PathBuf,
     next_id: u64,
     pending_line: Vec<u8>,
+    start_receipts: HashMap<StartOwner, StartReceipt>,
     // 仅保留活动 turn 的 native 时间/引用，不保留通知正文或 durable usage。
     native_activity: HashMap<Uuid, NativeActivity>,
 }
@@ -357,6 +380,7 @@ impl Supervisor {
             home,
             next_id: 0,
             pending_line: Vec::new(),
+            start_receipts: HashMap::new(),
             native_activity: HashMap::new(),
         };
         let initialized = process.rpc("initialize", json!({"clientInfo":{"name":"platform-core","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}), self.timeout, self.max_message_bytes).await?;
@@ -432,11 +456,26 @@ impl Supervisor {
     pub(crate) async fn start_thread(
         &self,
         projection: &RuntimeRef,
+        owner: StartOwner,
         tool_config: &Value,
     ) -> Result<String, RuntimeError> {
-        let response = self
-            .call(
-                projection,
+        if !matches!(owner, StartOwner::Session { .. }) {
+            return Err(RuntimeError::Protocol);
+        }
+        let slot = self
+            .processes
+            .lock()
+            .await
+            .get(&projection.installation_id)
+            .cloned()
+            .ok_or(RuntimeError::Unavailable)?;
+        let mut locked = slot.lock().await;
+        let process = locked.as_mut().ok_or(RuntimeError::Unavailable)?;
+        process
+            .check(projection.generation, &projection.config_hash)
+            .await?;
+        let response = process
+            .rpc_owned(
                 "thread/start",
                 json!({
                     "ephemeral":false,
@@ -444,10 +483,71 @@ impl Supervisor {
                     "allowProviderModelFallback":false,
                     "config":tool_config,
                 }),
+                None,
+                self.timeout,
+                self.max_message_bytes,
+                Some(owner),
             )
             .await?;
+        check_thread_projection(&response, &process.model, &process.home)?;
         let thread_id = isolated_thread_id(&response)?;
         Ok(thread_id.to_owned())
+    }
+
+    /// Read only the reply belonging to the original in-process request. A
+    /// restarted/lost Process has no such evidence and remains UNKNOWN.
+    pub(crate) async fn observe_start(
+        &self,
+        projection: &RuntimeRef,
+        owner: &StartOwner,
+    ) -> Result<String, RuntimeError> {
+        let slot = self
+            .processes
+            .lock()
+            .await
+            .get(&projection.installation_id)
+            .cloned()
+            .ok_or(RuntimeError::Unknown)?;
+        let mut locked = slot.lock().await;
+        let process = locked.as_mut().ok_or(RuntimeError::Unknown)?;
+        process
+            .check(projection.generation, &projection.config_hash)
+            .await?;
+        process
+            .observe_start(owner, self.timeout, self.max_message_bytes)
+            .await
+    }
+
+    /// Forget volatile correlation only after the existing DB receipt committed.
+    pub(crate) async fn acknowledge_start(
+        &self,
+        projection: &RuntimeRef,
+        owner: &StartOwner,
+        native: &str,
+    ) {
+        let Some(slot) = self
+            .processes
+            .lock()
+            .await
+            .get(&projection.installation_id)
+            .cloned()
+        else {
+            return;
+        };
+        let mut locked = slot.lock().await;
+        let Some(process) = locked.as_mut() else {
+            return;
+        };
+        if process.generation == projection.generation
+            && process.config_hash == projection.config_hash
+            && process
+                .start_receipts
+                .get(owner)
+                .and_then(|r| r.outcome.as_ref())
+                .is_some_and(|r| matches!(r, Ok(value) if value == native))
+        {
+            process.start_receipts.remove(owner);
+        }
     }
 
     /// SF-COD-09：只恢复已持久 thread ID，不传 path/history，不启动新 turn。
@@ -650,7 +750,7 @@ impl Supervisor {
         }
         inputs.push(json!({"type":"text","text":input,"textElements":[]}));
         let result = process
-            .rpc_traced(
+            .rpc_owned(
                 "turn/start",
                 json!({"threadId":thread,
             "clientUserMessageId":invocation.to_string(),"input":inputs,
@@ -658,6 +758,10 @@ impl Supervisor {
                 Some(&trace),
                 self.timeout,
                 self.max_message_bytes,
+                Some(StartOwner::Turn {
+                    invocation,
+                    thread: thread.to_owned(),
+                }),
             )
             .await;
         // 事务只提供 fence；无论 RPC 结果如何，先前已提交的 trace/native 意图都保留。
@@ -1111,8 +1215,31 @@ impl Process {
         timeout: Duration,
         max: usize,
     ) -> Result<Value, RuntimeError> {
+        self.rpc_owned(method, params, traceparent, timeout, max, None)
+            .await
+    }
+
+    async fn rpc_owned(
+        &mut self,
+        method: &str,
+        params: Value,
+        traceparent: Option<&str>,
+        timeout: Duration,
+        max: usize,
+        owner: Option<StartOwner>,
+    ) -> Result<Value, RuntimeError> {
+        if owner
+            .as_ref()
+            .is_some_and(|owner| self.start_receipts.contains_key(owner))
+        {
+            return Err(RuntimeError::Unknown); // observe the old request, never resend
+        }
         self.next_id = self.next_id.checked_add(1).ok_or(RuntimeError::Protocol)?;
         let id = self.next_id;
+        if let Some(owner) = owner {
+            self.start_receipts
+                .insert(owner, StartReceipt { id, outcome: None });
+        }
         let mut request = json!({"id":id,"method":method,"params":params});
         if let Some(trace) = traceparent {
             request["trace"] = json!({"traceparent":trace});
@@ -1122,35 +1249,8 @@ impl Process {
             .map_err(|_| RuntimeError::Unknown)??;
         let read = async {
             loop {
-                // fill_buf/consume bounds allocation before parsing, even without a newline.
-                loop {
-                    let available = self
-                        .stdout
-                        .fill_buf()
-                        .await
-                        .map_err(|_| RuntimeError::Unknown)?;
-                    if available.is_empty() {
-                        return Err(RuntimeError::Unknown);
-                    }
-                    let end = available.iter().position(|b| *b == b'\n').map(|i| i + 1);
-                    let n = end.unwrap_or(available.len());
-                    if self
-                        .pending_line
-                        .len()
-                        .checked_add(n)
-                        .is_none_or(|len| len > max)
-                    {
-                        return Err(RuntimeError::Protocol);
-                    }
-                    self.pending_line.extend_from_slice(&available[..n]);
-                    self.stdout.consume(n);
-                    if end.is_some() {
-                        break;
-                    }
-                }
-                let message: Value = serde_json::from_slice(&self.pending_line)
-                    .map_err(|_| RuntimeError::Protocol)?;
-                self.pending_line.clear();
+                let message = self.read_message(max).await?;
+                self.capture_start_receipt(&message);
                 if message.get("id").and_then(Value::as_u64) == Some(id)
                     && message.get("method").is_none()
                 {
@@ -1166,6 +1266,126 @@ impl Process {
                 }
                 // 不复制正文。活动只取原生 envelope 的时间与 thread/turn 引用；
                 // usage/account/RPC response 不重置 idle timer、不当 durable usage。
+                record_native_activity(
+                    &mut self.native_activity,
+                    &message,
+                    chrono::Utc::now().timestamp_millis(),
+                )?;
+            }
+        };
+        tokio::time::timeout(timeout, read)
+            .await
+            .map_err(|_| RuntimeError::Unknown)?
+    }
+
+    async fn read_message(&mut self, max: usize) -> Result<Value, RuntimeError> {
+        // fill_buf/consume preserves partial lines on cancellation and bounds
+        // allocation before parsing, even without a newline.
+        loop {
+            let available = self
+                .stdout
+                .fill_buf()
+                .await
+                .map_err(|_| RuntimeError::Unknown)?;
+            if available.is_empty() {
+                return Err(RuntimeError::Unknown);
+            }
+            let end = available.iter().position(|b| *b == b'\n').map(|i| i + 1);
+            let n = end.unwrap_or(available.len());
+            if self
+                .pending_line
+                .len()
+                .checked_add(n)
+                .is_none_or(|len| len > max)
+            {
+                return Err(RuntimeError::Protocol);
+            }
+            self.pending_line.extend_from_slice(&available[..n]);
+            self.stdout.consume(n);
+            if end.is_some() {
+                break;
+            }
+        }
+        let message =
+            serde_json::from_slice(&self.pending_line).map_err(|_| RuntimeError::Protocol)?;
+        self.pending_line.clear();
+        Ok(message)
+    }
+
+    fn capture_start_receipt(&mut self, message: &Value) {
+        if message.get("method").is_some() {
+            return;
+        }
+        let Some(id) = message.get("id").and_then(Value::as_u64) else {
+            return;
+        };
+        let Some((owner, receipt)) = self
+            .start_receipts
+            .iter_mut()
+            .find(|(_, receipt)| receipt.id == id)
+        else {
+            return;
+        };
+        if receipt.outcome.is_some() {
+            return;
+        }
+        let outcome = if message.get("error").is_some() {
+            Err(RuntimeError::Unknown)
+        } else if let Some(result) = message.get("result") {
+            match owner {
+                StartOwner::Session { .. } => {
+                    check_thread_projection(result, &self.model, &self.home)
+                        .and_then(|()| isolated_thread_id(result).map(str::to_owned))
+                }
+                StartOwner::Turn { .. } => {
+                    let turn = result.get("turn");
+                    match turn {
+                        Some(turn)
+                            if matches!(
+                                turn.get("status").and_then(Value::as_str),
+                                Some("inProgress" | "completed" | "failed" | "interrupted")
+                            ) =>
+                        {
+                            turn.get("id")
+                                .and_then(Value::as_str)
+                                .filter(|id| !id.is_empty())
+                                .map(str::to_owned)
+                                .ok_or(RuntimeError::Protocol)
+                        }
+                        _ => Err(RuntimeError::Protocol),
+                    }
+                }
+            }
+        } else {
+            Err(RuntimeError::Protocol)
+        };
+        receipt.outcome = Some(outcome);
+    }
+
+    async fn observe_start(
+        &mut self,
+        owner: &StartOwner,
+        timeout: Duration,
+        max: usize,
+    ) -> Result<String, RuntimeError> {
+        if !self.start_receipts.contains_key(owner) {
+            return Err(RuntimeError::Unknown);
+        }
+        let read = async {
+            loop {
+                if let Some(outcome) = self
+                    .start_receipts
+                    .get(owner)
+                    .and_then(|r| r.outcome.clone())
+                {
+                    return outcome;
+                }
+                let message = self.read_message(max).await?;
+                self.capture_start_receipt(&message);
+                if message.get("id").is_some() && message.get("method").is_some() {
+                    self.send(&json!({"id":message["id"],"error":{"code":-32000,"message":"PLATFORM_ADMISSION_REQUIRED"}})).await?;
+                    return Err(RuntimeError::AdmissionRequired);
+                }
                 record_native_activity(
                     &mut self.native_activity,
                     &message,
@@ -1755,8 +1975,172 @@ mod activity_tests {
             home: PathBuf::from("/runtime-test"),
             next_id: 0,
             pending_line: Vec::new(),
+            start_receipts: HashMap::new(),
             native_activity: HashMap::new(),
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
+    async fn receipt_late_native_start_survives_rpc_timeout_and_unrelated_read() {
+        let pool = PgPool::connect(&std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let native = Uuid::new_v4().to_string();
+        let birth = StartOwner::Session {
+            tenant: Uuid::new_v4(),
+            workspace: Uuid::new_v4(),
+            root: "a".repeat(64),
+            version: Uuid::new_v4(),
+        };
+        let turn = StartOwner::Turn {
+            invocation: Uuid::new_v4(),
+            thread: Uuid::new_v4().to_string(),
+        };
+        for (method, owner, response) in [
+            (
+                "thread/start",
+                birth,
+                json!({"thread":{"id":native,"ephemeral":false,"parentThreadId":null,
+                "forkedFromId":null,"environments":[],"modelProvider":"platform_gateway"},
+                "modelProvider":"platform_gateway","model":"model","cwd":"/runtime-test",
+                "approvalPolicy":"on-request","approvalsReviewer":"user"}),
+            ),
+            (
+                "turn/start",
+                turn,
+                json!({"turn":{"id":native,"status":"inProgress"}}),
+            ),
+        ] {
+            // The native double deliberately cannot answer request 1 until
+            // request 2 arrives. This exercises real stdio timeout, not a
+            // guessed wall-clock sleep or cancellation of a stand-alone task.
+            let late = json!({"id":1,"result":response});
+            let script = format!("IFS= read -r first; IFS= read -r observer; printf '%s\\n' '{}' '{{\"id\":2,\"result\":{{}}}}'; exec sleep 300", late);
+            let mut process = recovery_process(&pool, Uuid::new_v4(), "hash", &script).await;
+            assert!(matches!(
+                process
+                    .rpc_owned(
+                        method,
+                        json!({}),
+                        None,
+                        Duration::from_millis(25),
+                        8192,
+                        Some(owner.clone())
+                    )
+                    .await,
+                Err(RuntimeError::Unknown)
+            ));
+            assert_eq!(process.next_id, 1);
+            // The same owner cannot send another native start after timeout.
+            assert!(matches!(
+                process
+                    .rpc_owned(
+                        method,
+                        json!({}),
+                        None,
+                        Duration::from_secs(2),
+                        8192,
+                        Some(owner.clone())
+                    )
+                    .await,
+                Err(RuntimeError::Unknown)
+            ));
+            assert_eq!(process.next_id, 1);
+            process
+                .rpc("thread/read", json!({}), Duration::from_secs(2), 8192)
+                .await
+                .unwrap();
+            assert_eq!(
+                process
+                    .observe_start(&owner, Duration::from_secs(2), 8192)
+                    .await
+                    .unwrap(),
+                native
+            );
+            assert_eq!(
+                process
+                    .observe_start(&owner, Duration::from_secs(2), 8192)
+                    .await
+                    .unwrap(),
+                native
+            );
+            assert_eq!(process.next_id, 2, "observation never sends another start");
+            let foreign = StartOwner::Turn {
+                invocation: Uuid::new_v4(),
+                thread: native.clone(),
+            };
+            assert!(matches!(
+                process
+                    .observe_start(&foreign, Duration::from_secs(2), 8192)
+                    .await,
+                Err(RuntimeError::Unknown)
+            ));
+            assert!(matches!(
+                process.check(2, "hash").await,
+                Err(RuntimeError::Unavailable)
+            ));
+            assert!(matches!(
+                process.check(1, "foreign-hash").await,
+                Err(RuntimeError::Unavailable)
+            ));
+            terminate(&mut process.child, Duration::from_secs(2))
+                .await
+                .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
+    async fn receipt_native_exit_does_not_invent_a_result_or_allow_resend() {
+        let pool = PgPool::connect(&std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut process = recovery_process(
+            &pool,
+            Uuid::new_v4(),
+            "hash",
+            "IFS= read -r request; exit 0",
+        )
+        .await;
+        let owner = StartOwner::Turn {
+            invocation: Uuid::new_v4(),
+            thread: Uuid::new_v4().to_string(),
+        };
+        assert!(matches!(
+            process
+                .rpc_owned(
+                    "turn/start",
+                    json!({}),
+                    None,
+                    Duration::from_secs(2),
+                    8192,
+                    Some(owner.clone())
+                )
+                .await,
+            Err(RuntimeError::Unknown)
+        ));
+        assert!(matches!(
+            process
+                .observe_start(&owner, Duration::from_secs(2), 8192)
+                .await,
+            Err(RuntimeError::Unknown)
+        ));
+        assert!(matches!(
+            process
+                .rpc_owned(
+                    "turn/start",
+                    json!({}),
+                    None,
+                    Duration::from_secs(2),
+                    8192,
+                    Some(owner)
+                )
+                .await,
+            Err(RuntimeError::Unknown)
+        ));
+        assert_eq!(process.next_id, 1);
+        process.child.wait().await.unwrap();
     }
 
     #[test]

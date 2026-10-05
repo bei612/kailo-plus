@@ -3957,3 +3957,88 @@ automationRuns 路径读取，独立 observe-task-57ad.log 与原库终态读回
 本次未跑 full、产品构建或部署；文档变更单独跑原 check-docs.sh。
 只证明当前版本的 CHANNEL_MESSAGE → POST_MESSAGE 及关联历史，
 不覆盖 Schedule、Webhook、步骤审批、所有管理动作、组件或三端交付。
+
+## 2026-10-05 原生 start 迟到回执修复（独立交付批）
+
+19:55 的新版本协作复验中，三名 HUMAN 正常登录，第一条消息发布返回
+200；等待回复 240 秒后操作程序退出失败。它不能沿用 16:58 的六次回复
+成功结论。原件为 Data 目录
+`codex-component-runtime-integration-20261005.lciVUS/live-collaboration-306aa.log`。
+
+本批相对 `306aa41bdfbee661572262aba6aba68cf095ef39` 修复原有接缝，
+不等待独立业务组件候选、不改设计、契约、迁移、权限或额度配置。
+
+### 权威、影响与确定行为
+
+1. 沿 DD-15/105 的 Session、Invocation 与 UNKNOWN 规则。重新核验的
+   Codex commit 为 `7498521d288b9b3b96ffba4eedf089d8d6e06a84`，
+   `codex-rs/app-server-protocol/src/protocol/v2/thread.rs::ThreadStartParams`
+   和 `codex-rs/app-server-protocol/src/protocol/v2/turn.rs::TurnStartParams`
+   仍为实际协议输入；不把线程列表或 observer 超时当作重发许可。
+2. 本地可复现缺陷是 `Process::rpc_traced` 超时后，下一个 RPC 收到旧
+   request ID 的响应时将其丢弃。现在原 Process 保留原 start 的 request
+   ID、冻结 owner 和经过校验的 native ID；普通 RPC 与仅观察读取都收取
+   此回执。Session 的写方是原 birth/observe_birth，Turn 的写方是原
+   first_turn/record_turn，原 AgentTask Activity 消费结果。提交原数据库
+   回执后才移除易失关联；不新增执行注册表，不保存正文或凭据。
+3. 原请求派发仍经过 holder、fresh authorization 与原事务 fence；第二段
+   birth 事务重新检查原 holder。观察迟到回执时不持数据库锁等待 stdio，
+   写回重新锁定原 AE 与 Session，核 tenant/workspace/installation/version/
+   generation/root/thread，不把异 scope 或异 generation 当作幂等成功。
+   UNKNOWN 与后续成功绑定使用不同审计键，避免前次审计吞掉后续证据。
+4. 同 owner 重入只观察、不再发送 start；读取沿原配置限额与超时。原生
+   进程退出、关联丢失、畸形或未知响应保留 UNKNOWN_EXTERNAL_RESULT。
+   仅原发送路径在返回后、持原 AE fence 且无 model trace/native/usage
+   副作用事实时才能回到 CREATED，下一次派发仍重新准入；其他不明结果
+   不变成成功或确定失败。进程销毁时易失关联随原 Process 释放，历史已
+   丢失的回执不从线程文件猜测补写。三端沿原 BFF Task 状态消费，无新增
+   页面、错误枚举、网络入口或客户端重试路径；没有数据库兼容迁移。
+
+### 实际验证与未覆盖范围
+
+原 SDK 镜像为
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实查 4 CPU、8 GiB 内存与相同 memory+swap、UID 1000，Cargo 并行 16，
+缓存位于 Data。原隔离 PostgreSQL 的 84 条迁移候选用于定向验证，不是
+业务库；本独立 82 迁移基底的全量验证另行记录，不借未来库冒充通过。
+
+执行原 Cargo 目标：`receipt_ -- --ignored --nocapture`、
+`terminal_holder_recovers_without_releasing_units_and_fences_old_birth`、
+`sibling_turn_arriving_after_idle_keeps_original_invocation_created`；后两项
+同样显式 `--ignored --nocapture`，随后原 `clippy --all-targets -- -D warnings`。
+实际 5 个新增与 2 个原目标通过，Clippy 退出 0。stdio peer 实际等第二个
+请求才返回第一个响应，验证晚到与禁止重发；它不是实际 Codex 模型调用。
+真实隔离事务验证原回执写方及 scope；取消测试针对实际 handler 所用的
+保留执行 helper，不把它称为 HTTP/OIDC 断连全链复现。
+
+移除生产 late-response capture 和无 trace 判据后，实际 2 项失败、退出
+101；逐字还原后 7 项和 Clippy 再次退出 0。原件目录为
+`codex-agent-receipt-regression-20261005.XvkUjX/`：
+
+- `receipt-restored-2.log` SHA256：
+  `ce329a23e06d4c3b4a08a3c13609380b5f4bf36d9d244b0f1133e717e4960c89`。
+- `receipt-mutation.log` SHA256：
+  `2bc5a07c8325721e2f6cd45bbbd6a2befcda94667ffc47f7dc6ed0aeca613dc2`。
+
+早先执行副本缺 buzz-core/proto、共享生成缓存不匹配，以及隔离 fixture
+缺登记/登记未清理所致失败均保留。fixture 现串行并按自身标记清理，末次
+查得自有目录登记及 Tenant 均为零；未削弱生产守卫、修改真实账号或额度。
+本节记录定向证据，不声称全量检查、提交、部署或新消息业务复验已完成。
+
+### 独立 82 迁移基底的最终检查
+
+固定树 `3fef5968ac43edd5cd50934c0334cb3a740d95f8` 相对
+`d0f956010a052f5abfb10024a5ead04d046b7408` 为 6 文件 +1218/-54。
+原 `./tools/check.sh --full`（句柄 6796）实际退出 0：Core 200 项通过、
+20 项 ignored，四侧验证、Workflow replay、218 schema、82 条隔离库迁移
+前进/回退/再前进、SQLx、44 项约束及来源检查通过。随后直接使用该次
+已编译 binary，在同一 82 迁移隔离库显式执行上述 7 项 ignored 目标，
+全部通过，退出 0；未重新编译。清理读回自有 fixture 定义和 Invocation
+均为零。实际部署配置预检明确 SKIP；未安装 gitleaks，使用原内置扫描。
+
+原件仍在上述 Data 目录：`runtime-full.log` SHA256
+`19ed72a878d5b50df18afcb039d7889fafbd55f557cd6c1b4a0dafedb73f2d6d`；
+`runtime-82-targeted.log` SHA256
+`07eb721b46adb573bc34b6c0ce2f50d5333b8c588e8964bd3514c0fc2129d263`。
+此处追加的是完成后的验证回执，不改变已验证源码；只走文档快路径。
+检查通过不代表部署完成，也不证明旧丢失回执已经恢复或新协作轮次通过。

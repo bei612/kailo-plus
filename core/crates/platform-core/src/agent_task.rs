@@ -23,6 +23,8 @@ use crate::{
 
 pub(crate) const WORKFLOW_TYPE: &str = "AgentTaskWorkflow";
 mod post_message;
+#[cfg(test)]
+pub(crate) mod receipt_tests;
 
 #[derive(FromRow)]
 struct Invocation {
@@ -75,6 +77,28 @@ pub(crate) async fn advance(
     if Uuid::parse_str(&input.run_id).is_err() {
         return StatusCode::BAD_REQUEST.into_response();
     }
+    // The Activity HTTP observer may time out while a native RPC is already
+    // accepted. Keep this one invocation of the existing handler alive to
+    // record its receipt; losing the HTTP connection must not drop that write.
+    // This is not a retry: all holder/fresh-admission checks remain below.
+    retain_accepted(id, advance_accepted(state, input, id)).await
+}
+
+pub(crate) async fn retain_accepted(
+    id: Uuid,
+    accepted: impl std::future::Future<Output = Response> + Send + 'static,
+) -> Response {
+    match tokio::spawn(accepted).await {
+        Ok(response) => response,
+        Err(_) => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+    }
+}
+
+async fn advance_accepted(
+    state: ServiceState,
+    input: AgentTaskAdvanceRequest,
+    id: Uuid,
+) -> Response {
     let mut invocation: Invocation = match sqlx::query_as(LOAD)
         .bind(id)
         .fetch_optional(&state.pool)
@@ -244,6 +268,33 @@ pub(crate) async fn advance(
         }
         invocation.cancel_pending = true;
     }
+    if invocation.runtime_thread_id.is_none() && state.agent_runtime.is_some() {
+        let hash: Option<String> = match sqlx::query_scalar(
+            "select config_hash from catalog.agent_runtime_projection
+            where installation_resource_id=$1 and generation=$2 and agent_version_asset_id=$3",
+        )
+        .bind(invocation.installation_resource_id)
+        .bind(invocation.projection_generation)
+        .bind(invocation.agent_version_asset_id)
+        .fetch_optional(&state.pool)
+        .await
+        {
+            Ok(value) => value,
+            Err(error) => return unavailable(error),
+        };
+        let Some(config_hash) = hash else {
+            return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT");
+        };
+        let projection = RuntimeRef {
+            installation_id: invocation.installation_resource_id,
+            generation: invocation.projection_generation,
+            config_hash,
+        };
+        match crate::agent_session::observe_birth(&state, id, &projection).await {
+            Ok(thread) => invocation.runtime_thread_id = thread,
+            Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+        }
+    }
     // 已落 dispatch intent 而无 native ID 的情况必须保留 UNKNOWN；取消也不能
     // 将未知 dispatch 写成「确定未发生」。不调用第二次 turn/start。
     if invocation.runtime_thread_id.is_none()
@@ -285,6 +336,24 @@ pub(crate) async fn advance(
             .is_err()
         {
             return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT");
+        }
+        if invocation.runtime_turn_id.is_none()
+            && matches!(invocation.status.as_str(), "DISPATCHING" | "UNKNOWN")
+        {
+            let owner = crate::agent_runtime::StartOwner::Turn {
+                invocation: id,
+                thread: thread.to_owned(),
+            };
+            if let Ok(turn) = runtime.observe_start(&projection, &owner).await {
+                return match record_turn(&state, &invocation, thread, Ok(turn.clone())).await {
+                    Ok(true) => {
+                        runtime.acknowledge_start(&projection, &owner, &turn).await;
+                        result(id, TaskStatus::Running, "NONE")
+                    }
+                    Ok(false) => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+                    Err(error) => unavailable(error),
+                };
+            }
         }
         // thread/start is not model dispatch. Only a still-CREATED Invocation
         // can consume the original source and its Session's frozen core event.
@@ -674,8 +743,23 @@ async fn first_turn(
     // in an audit/error. Even a pre-RPC error retains the committed intent.
     drop(memory);
     drop(source);
+    let native = observed.as_ref().ok().cloned();
     match record_turn(state, invocation, thread, observed).await {
-        Ok(true) => result(invocation.id, TaskStatus::Running, "NONE"),
+        Ok(true) => {
+            if let (Some(runtime), Some(native)) = (state.agent_runtime.as_ref(), native) {
+                runtime
+                    .acknowledge_start(
+                        projection,
+                        &crate::agent_runtime::StartOwner::Turn {
+                            invocation: invocation.id,
+                            thread: thread.to_owned(),
+                        },
+                        &native,
+                    )
+                    .await;
+            }
+            result(invocation.id, TaskStatus::Running, "NONE")
+        }
         Ok(false) => result(
             invocation.id,
             TaskStatus::Running,
@@ -966,19 +1050,81 @@ async fn record_turn(
     observed: Result<String, crate::agent_runtime::RuntimeError>,
 ) -> Result<bool, sqlx::Error> {
     let mut tx = state.pool.begin().await?;
-    let ae = crate::governance::lock_execution(&mut tx, invocation.action_execution_id).await?;
+    let bound =
+        record_turn_in_transaction(&state.pool, &mut tx, invocation, thread, observed).await?;
+    tx.commit().await?;
+    Ok(bound)
+}
+
+async fn record_turn_in_transaction(
+    pool: &sqlx::PgPool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    invocation: &Invocation,
+    thread: &str,
+    observed: Result<String, crate::agent_runtime::RuntimeError>,
+) -> Result<bool, sqlx::Error> {
+    let ae = crate::governance::lock_execution(tx, invocation.action_execution_id).await?;
+    // A delayed sender may record its own accepted receipt after its holder
+    // expires, but never bind another Session/generation or claim a foreign
+    // thread as an idempotent success.
+    let scoped: Option<bool> = sqlx::query_scalar(
+        "select true from catalog.agent_invocation i join catalog.agent_session s
+         on s.workspace_id=i.workspace_id and s.root_event_id=i.root_event_id
+           and s.installation_resource_id=i.installation_resource_id and s.tenant_id=i.tenant_id
+           and s.agent_version_asset_id=i.agent_version_asset_id and s.projection_generation=i.projection_generation
+         where i.id=$1 and i.action_execution_id=$2 and i.tenant_id=$3 and i.workspace_id=$4
+           and i.installation_resource_id=$5 and i.agent_version_asset_id=$6
+           and i.projection_generation=$7 and i.root_event_id=$8 and i.workflow_id=$9
+           and s.runtime_thread_id=$10 for update of i,s",
+    ).bind(invocation.id).bind(ae.id).bind(invocation.tenant_id).bind(invocation.workspace_id)
+        .bind(invocation.installation_resource_id).bind(invocation.agent_version_asset_id)
+        .bind(invocation.projection_generation).bind(&invocation.root_event_id).bind(&invocation.workflow_id)
+        .bind(thread).fetch_optional(&mut **tx).await?;
+    if scoped != Some(true)
+        || ae.tenant_id != invocation.tenant_id
+        || ae.workspace_id != Some(invocation.workspace_id)
+    {
+        return Ok(false);
+    }
     let turn = observed
         .as_ref()
         .ok()
         .filter(|turn| !turn.is_empty())
         .map(String::as_str);
+    // Only the original first_turn sender reaches this receipt path, after
+    // start_turn has returned. Its native RPC is preceded by a committed
+    // model trace under the same AE fence. With no trace and no native/other
+    // side-effect evidence, the RPC was not sent: retain CREATED so the next
+    // Activity can renew its holder and perform fresh admission. A trace,
+    // even without a turn ID, is UNKNOWN and never authorizes another send.
+    let not_sent: bool = turn.is_none()
+        && sqlx::query_scalar(
+            "select exists(select 1 from catalog.agent_invocation i
+             where i.id=$1 and i.action_execution_id=$2
+               and i.status in ('DISPATCHING','UNKNOWN')
+               and i.runtime_turn_id is null and i.native_status is null
+               and i.reply_event_id is null and i.post_message_intent is null
+               and not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
+               and not exists(select 1 from outbox.usage_event u where u.invocation_id=i.id))",
+        )
+        .bind(invocation.id)
+        .bind(ae.id)
+        .fetch_one(&mut **tx)
+        .await?;
+    let status = if turn.is_some() {
+        "RUNNING"
+    } else if not_sent {
+        "CREATED"
+    } else {
+        "UNKNOWN"
+    };
     let changed = sqlx::query("update catalog.agent_invocation i set runtime_turn_id=$2,status=$3,updated_at=now()
         where i.id=$1 and i.action_execution_id=$4 and i.status in ('DISPATCHING','UNKNOWN')
           and i.runtime_turn_id is null and exists(select 1 from catalog.agent_session s
             where s.workspace_id=i.workspace_id and s.root_event_id=i.root_event_id
               and s.installation_resource_id=i.installation_resource_id and s.runtime_thread_id=$5)")
-        .bind(invocation.id).bind(turn).bind(if turn.is_some() { "RUNNING" } else { "UNKNOWN" })
-        .bind(ae.id).bind(thread).execute(&mut *tx).await?;
+        .bind(invocation.id).bind(turn).bind(status)
+        .bind(ae.id).bind(thread).execute(&mut **tx).await?;
     if changed.rows_affected() != 1 {
         // Another Activity may already have read back the exact native ID.
         // Do not overwrite its observed status or mistake that for a resend.
@@ -989,20 +1135,28 @@ async fn record_turn(
         .bind(invocation.id)
         .bind(ae.id)
         .bind(turn)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
         return Ok(turn.is_some() && bound);
     }
-    turn_audit(
-        state,
-        &mut tx,
+    turn_audit_in_pool(
+        pool,
+        tx,
         &ae,
         invocation.id,
         (
-            "observed",
+            if not_sent {
+                "not-sent"
+            } else if turn.is_some() {
+                "bound"
+            } else {
+                "observed"
+            },
             "RECONCILIATION",
             if turn.is_some() {
                 "NATIVE_TURN_BOUND"
+            } else if not_sent {
+                "DISPATCH_NOT_SENT"
             } else {
                 "UNKNOWN_EXTERNAL_RESULT"
             },
@@ -1013,7 +1167,6 @@ async fn record_turn(
         )],
     )
     .await?;
-    tx.commit().await?;
     Ok(turn.is_some())
 }
 
@@ -1025,8 +1178,19 @@ async fn turn_audit(
     outcome: (&str, &str, &str),
     evidence_refs: Vec<crate::audit::Evidence>,
 ) -> Result<(), sqlx::Error> {
+    turn_audit_in_pool(&state.pool, tx, ae, invocation, outcome, evidence_refs).await
+}
+
+async fn turn_audit_in_pool(
+    pool: &sqlx::PgPool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ae: &crate::governance::Execution,
+    invocation: Uuid,
+    outcome: (&str, &str, &str),
+    evidence_refs: Vec<crate::audit::Evidence>,
+) -> Result<(), sqlx::Error> {
     let (stage, event_type, result_code) = outcome;
-    let def = crate::governance::exact_definition(&state.pool, &ae.action_key, ae.action_version)
+    let def = crate::governance::exact_definition(pool, &ae.action_key, ae.action_version)
         .await
         .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
     let human: Option<Uuid> = sqlx::query_scalar(

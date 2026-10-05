@@ -55,6 +55,7 @@ impl TurnMemory {
 #[derive(FromRow)]
 struct BirthSession {
     tenant_id: Uuid,
+    agent_version_asset_id: Uuid,
     workspace_id: Uuid,
     root_event_id: String,
     installation_resource_id: Uuid,
@@ -69,6 +70,40 @@ struct BirthSession {
     core_memory_state: String,
     core_memory_event_id: Option<String>,
     status: String,
+}
+
+#[derive(FromRow)]
+struct BirthReceiptScope {
+    tenant_id: Uuid,
+    agent_version_asset_id: Uuid,
+    workspace_id: Uuid,
+    root_event_id: String,
+    installation_resource_id: Uuid,
+    projection_generation: i64,
+}
+
+impl From<&BirthSession> for BirthReceiptScope {
+    fn from(s: &BirthSession) -> Self {
+        Self {
+            tenant_id: s.tenant_id,
+            agent_version_asset_id: s.agent_version_asset_id,
+            workspace_id: s.workspace_id,
+            root_event_id: s.root_event_id.clone(),
+            installation_resource_id: s.installation_resource_id,
+            projection_generation: s.projection_generation,
+        }
+    }
+}
+
+impl BirthReceiptScope {
+    fn owner(&self) -> crate::agent_runtime::StartOwner {
+        crate::agent_runtime::StartOwner::Session {
+            tenant: self.tenant_id,
+            workspace: self.workspace_id,
+            root: self.root_event_id.clone(),
+            version: self.agent_version_asset_id,
+        }
+    }
 }
 
 /// AgentTask 已核证当前 Activity holder 与 runtime admission 后调用。
@@ -148,6 +183,11 @@ pub(crate) async fn birth(
         .begin()
         .await
         .map_err(|_| RuntimeError::Unknown)?;
+    state
+        .capacity
+        .lock_birth_holder(&mut tx, holder)
+        .await
+        .map_err(|_| RuntimeError::Unavailable)?;
     let intent = lock_birth(&mut tx, invocation_id, projection).await?;
     if intent.status != "STARTING"
         || intent.runtime_thread_id.is_some()
@@ -164,13 +204,37 @@ pub(crate) async fn birth(
     crate::agent_invocation::fresh_invocation(state, &mut tx, invocation_id)
         .await
         .map_err(|_| RuntimeError::AdmissionRequired)?;
-    let observed = runtime.start_thread(projection, &tool_config).await;
+    let scope = BirthReceiptScope::from(&intent);
+    let observed = runtime
+        .start_thread(projection, scope.owner(), &tool_config)
+        .await;
+    record_birth_receipt(&mut tx, &scope, memory_state, memory_event, &observed).await?;
+    tx.commit().await.map_err(|_| RuntimeError::Unknown)?;
+    if let Ok(thread) = &observed {
+        runtime
+            .acknowledge_start(projection, &scope.owner(), thread)
+            .await;
+    }
+    Ok(Birth {
+        runtime_thread_id: observed?,
+        core_memory,
+    })
+}
+
+async fn record_birth_receipt(
+    tx: &mut Transaction<'_, Postgres>,
+    intent: &BirthReceiptScope,
+    memory_state: &str,
+    memory_event: Option<&str>,
+    observed: &Result<String, RuntimeError>,
+) -> Result<(), RuntimeError> {
     let thread = observed.as_ref().ok().map(String::as_str);
     let changed = sqlx::query(
         "update catalog.agent_session set runtime_thread_id=$1,status=$2
         where workspace_id=$3 and root_event_id=$4 and installation_resource_id=$5
-          and projection_generation=$6 and status='STARTING' and runtime_thread_id is null
-          and core_memory_state=$7 and core_memory_event_id is not distinct from $8",
+          and projection_generation=$6 and status in ('STARTING','UNKNOWN') and runtime_thread_id is null
+          and core_memory_state=$7 and core_memory_event_id is not distinct from $8
+          and tenant_id=$9 and agent_version_asset_id=$10",
     )
     .bind(thread)
     .bind(if observed.is_ok() {
@@ -184,17 +248,97 @@ pub(crate) async fn birth(
     .bind(intent.projection_generation)
     .bind(memory_state)
     .bind(memory_event)
-    .execute(&mut *tx)
+    .bind(intent.tenant_id)
+    .bind(intent.agent_version_asset_id)
+    .execute(&mut **tx)
     .await
     .map_err(|_| RuntimeError::Unknown)?;
     if changed.rows_affected() != 1 {
         return Err(RuntimeError::Unknown);
     }
+    Ok(())
+}
+
+/// Observe the exact already-sent birth. No native create, source/Memory read,
+/// new admission or guess from a thread list is allowed on this path.
+pub(crate) async fn observe_birth(
+    state: &ServiceState,
+    invocation: Uuid,
+    projection: &RuntimeRef,
+) -> Result<Option<String>, RuntimeError> {
+    let runtime = state.agent_runtime.as_ref().ok_or(RuntimeError::Unknown)?;
+    let scope: BirthReceiptScope = sqlx::query_as(
+        "select s.tenant_id,s.agent_version_asset_id,s.workspace_id,s.root_event_id,
+         s.installation_resource_id,s.projection_generation
+         from catalog.agent_invocation i join catalog.agent_session s
+           on s.workspace_id=i.workspace_id and s.root_event_id=i.root_event_id
+           and s.installation_resource_id=i.installation_resource_id and s.tenant_id=i.tenant_id
+           and s.agent_version_asset_id=i.agent_version_asset_id and s.projection_generation=i.projection_generation
+         join catalog.agent_runtime_projection p on p.installation_resource_id=s.installation_resource_id
+           and p.generation=s.projection_generation and p.agent_version_asset_id=s.agent_version_asset_id
+         where i.id=$1 and s.installation_resource_id=$2 and s.projection_generation=$3 and p.config_hash=$4",
+    ).bind(invocation).bind(projection.installation_id).bind(projection.generation).bind(&projection.config_hash)
+        .fetch_optional(&state.pool).await.map_err(|_| RuntimeError::Unknown)?.ok_or(RuntimeError::Unknown)?;
+    let status: (String, Option<String>) = sqlx::query_as(
+        "select status,runtime_thread_id from catalog.agent_session
+        where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3",
+    )
+    .bind(scope.workspace_id)
+    .bind(&scope.root_event_id)
+    .bind(scope.installation_resource_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| RuntimeError::Unknown)?;
+    if let Some(thread) = status.1 {
+        return Ok(Some(thread));
+    }
+    if status.0 == "PENDING" {
+        return Ok(None);
+    }
+    if !matches!(status.0.as_str(), "STARTING" | "UNKNOWN") {
+        return Err(RuntimeError::Unknown);
+    }
+    // No database/lifecycle locks span this bounded stdio read.
+    let thread = runtime.observe_start(projection, &scope.owner()).await?;
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|_| RuntimeError::Unknown)?;
+    let ae: Uuid =
+        sqlx::query_scalar("select action_execution_id from catalog.agent_invocation where id=$1")
+            .bind(invocation)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| RuntimeError::Unknown)?;
+    crate::governance::lock_execution(&mut tx, ae)
+        .await
+        .map_err(|_| RuntimeError::Unknown)?;
+    let frozen: (String, Option<String>, Option<String>) = sqlx::query_as("select core_memory_state,core_memory_event_id,runtime_thread_id
+        from catalog.agent_session where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3
+          and tenant_id=$4 and agent_version_asset_id=$5 and projection_generation=$6 for update")
+        .bind(scope.workspace_id).bind(&scope.root_event_id).bind(scope.installation_resource_id)
+        .bind(scope.tenant_id).bind(scope.agent_version_asset_id).bind(scope.projection_generation)
+        .fetch_one(&mut *tx).await.map_err(|_| RuntimeError::Unknown)?;
+    match frozen.2.as_deref() {
+        Some(bound) if bound == thread => (),
+        Some(_) => return Err(RuntimeError::Unknown),
+        None => {
+            record_birth_receipt(
+                &mut tx,
+                &scope,
+                &frozen.0,
+                frozen.1.as_deref(),
+                &Ok(thread.clone()),
+            )
+            .await?
+        }
+    }
     tx.commit().await.map_err(|_| RuntimeError::Unknown)?;
-    Ok(Birth {
-        runtime_thread_id: observed?,
-        core_memory,
-    })
+    runtime
+        .acknowledge_start(projection, &scope.owner(), &thread)
+        .await;
+    Ok(Some(thread))
 }
 
 /// A thread ID alone does not prove a first turn: a crash after birth must
@@ -393,7 +537,7 @@ async fn lock_birth(
     if active != Some(true) {
         return Err(RuntimeError::Unavailable);
     }
-    let session: BirthSession = sqlx::query_as("select s.tenant_id,s.workspace_id,s.root_event_id,
+    let session: BirthSession = sqlx::query_as("select s.tenant_id,s.agent_version_asset_id,s.workspace_id,s.root_event_id,
         s.installation_resource_id,s.projection_generation,p.config_hash,s.runtime_thread_id,
         s.core_memory_state,s.core_memory_event_id,s.status,m.version as memory_version,
         a.version as agent_binding_version,c.version as counterparty_binding_version,
@@ -747,5 +891,93 @@ mod dispatch_idle_tests {
             Err(RuntimeError::Unknown)
         ));
         tx.rollback().await.unwrap();
+    }
+}
+
+#[cfg(test)]
+mod birth_receipt_tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
+    async fn receipt_http_observer_cancel_keeps_original_birth_scope_and_native_result() {
+        let pool = sqlx::PgPool::connect(&std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let tenant = crate::agent_task::receipt_tests::fixture(&mut tx).await;
+        let mut intent: BirthReceiptScope = sqlx::query_as("select s.tenant_id,s.agent_version_asset_id,s.workspace_id,s.root_event_id,s.installation_resource_id,
+            s.projection_generation
+            from catalog.agent_session s join catalog.agent_runtime_projection p on p.installation_resource_id=s.installation_resource_id
+              and p.generation=s.projection_generation
+            where s.tenant_id=$1 and s.status='PENDING' order by s.root_event_id,s.installation_resource_id limit 1")
+            .bind(tenant).fetch_one(&mut *tx).await.unwrap();
+        sqlx::query(
+            "update catalog.agent_session set runtime_thread_id=null,status='STARTING'
+            where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3",
+        )
+        .bind(intent.workspace_id)
+        .bind(&intent.root_event_id)
+        .bind(intent.installation_resource_id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let (entered, started) = tokio::sync::oneshot::channel();
+        let (receipt, delivered) = tokio::sync::oneshot::channel();
+        let (finished, done) = tokio::sync::oneshot::channel();
+        let id = Uuid::new_v4();
+        let observer = tokio::spawn(crate::agent_task::retain_accepted(id, async move {
+            entered.send(()).unwrap();
+            let native: String = delivered.await.unwrap();
+            // A native ID is never transplanted into another generation or
+            // another frozen memory snapshot, even after an observer expires.
+            intent.projection_generation += 1;
+            assert!(matches!(
+                record_birth_receipt(&mut tx, &intent, "ABSENT", None, &Ok(native.clone())).await,
+                Err(RuntimeError::Unknown)
+            ));
+            intent.projection_generation -= 1;
+            assert!(matches!(
+                record_birth_receipt(&mut tx, &intent, "UNREADABLE", None, &Ok(native.clone()))
+                    .await,
+                Err(RuntimeError::Unknown)
+            ));
+            record_birth_receipt(&mut tx, &intent, "ABSENT", None, &Ok(native.clone()))
+                .await
+                .unwrap();
+            // Duplicate receipts cannot overwrite the already bound thread.
+            assert!(matches!(
+                record_birth_receipt(
+                    &mut tx,
+                    &intent,
+                    "ABSENT",
+                    None,
+                    &Ok(Uuid::new_v4().to_string())
+                )
+                .await,
+                Err(RuntimeError::Unknown)
+            ));
+            let recorded: (String, String) = sqlx::query_as(
+                "select status,runtime_thread_id from catalog.agent_session
+                where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3",
+            )
+            .bind(intent.workspace_id)
+            .bind(&intent.root_event_id)
+            .bind(intent.installation_resource_id)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+            let changed: i64 = sqlx::query_scalar("select count(*) from catalog.agent_session where tenant_id=$1 and runtime_thread_id=$2")
+                .bind(tenant).bind(&native).fetch_one(&mut *tx).await.unwrap();
+            tx.rollback().await.unwrap();
+            finished.send((recorded, changed)).unwrap();
+            axum::response::IntoResponse::into_response(axum::http::StatusCode::OK)
+        }));
+        started.await.unwrap();
+        observer.abort();
+        assert!(observer.await.unwrap_err().is_cancelled());
+        let native = Uuid::new_v4().to_string();
+        receipt.send(native.clone()).unwrap();
+        assert_eq!(done.await.unwrap(), (("ACTIVE".into(), native), 1));
     }
 }
