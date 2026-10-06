@@ -782,7 +782,6 @@ services:
     networks: [app]
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
-      NATIVE_PAGE_ORIGINS: ${NATIVE_PAGE_ORIGINS:-}
       WEB_EDITOR_ORIGINS: ${WEB_EDITOR_ORIGINS:-}
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
 

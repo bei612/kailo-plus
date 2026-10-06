@@ -1,5 +1,8 @@
 # 外部服务接入管理客户端
 
+当前原生管理页面合同已于 2026-10-06 按用户要求修正为禁止 iframe；本文此前的
+frame 记录只描述历史产物，不再是当前实现或部署指令。在线编辑的独立协议不在本次变更范围。
+
 ## 变更边界
 
 关联 `.design/03` §3、`07` §4.6、DD-88/94。此批把已存在的
@@ -247,3 +250,36 @@ NSIS 文件 `dist/desktop-client/Kailo_0.5.23_x64-setup.exe` 的实际 SHA256 �
 `assembly-windows-build.log` SHA256 为 `6d5a7191c85934b5df3a0594a701fbdc5a6d42b3f83532b2f6f72aa626ec507d`。
 chunk 大小、两个 Rust 未使用项、跨平台编译及跳过签名警告均保留。
 本记录不宣称新产物部署、原生组件登录、Win11 实机、Mobile 或完整业务验收通过。
+
+### 2026-10-06 完整原生页面无 iframe 入口
+
+1. 权威：用户明确禁止三个独立服务后台使用 iframe；设计 `07` §4.6、DD-87
+   已同步为 Web 独立页面、Desktop 隔离 Host，保留服务完整原生 UI、独立会话和
+   既有公共服务接缝。打开页面不等于认证或组件接入验收。
+2. 影响：共享 `NativeApplicationPage` 的真实调用方仍为
+   `ApplicationBindingsPanel`；两个宿主复用同一入口。只删除 Web iframe
+   渲染与 Caddy 的原生后台 frame-src 放行、Web 无调用方环境投递；Core
+   `NATIVE_PAGE_ORIGINS` 及原 BFF descriptor 校验保留，Desktop 的独立窗口、
+   原生登录导航和 IPC 隔离不变。无契约、迁移、业务数据或密钥变更。
+3. 副作用：页面仍从有效 ACTIVE binding 与最新授权读取，不接受客户端地址。
+   Web 使用已有 `noopener noreferrer` / `no-referrer` 链接，不复制原生后台，
+   不为外部登录共享平台 cookie、token 或管理员身份。删除 iframe 不改变服务
+   自身 SSO、内部权限、数据库、工作流或经 AgentGateway 的工具注册。
+4. 异常：未知 binding/generation/origin 不显示入口；刷新或返回焦点重新查证，
+   查证中或被撤权时撤去链接。Mobile 不增加入口。窗口关闭不代表第三方退出，
+   第三方会话状态也不被渲染成平台业务成功。
+
+已有独立 SDK `kailo-native-page-sdk-4rbmbz` 实际限额 4 CPU / 4 GiB，执行前
+无在途工具进程，Data 缓存不变。同步本次入口、词条及原检查文件后执行
+`node_modules/.bin/vitest run test/application-bindings.test.tsx --pool=threads --maxWorkers=1`：
+`Test Files 1 passed; Tests 8 passed`，退出 0。SDK 副本重新加回 iframe 后，
+同命令实际 `1 failed / 7 passed`，错误 `expected <iframe …> to be null`，退出 1。
+正式文件原字节复制恢复、`cmp` 退出 0，同命令恢复 `8 passed`，退出 0。
+三个日志为 Data 候选 `codex-native-page-navigation-20261005.4rBmBZ` 下
+`native-page-no-frame.log`、`native-page-no-frame-mutation.log`、
+`native-page-no-frame-restored.log`。此窄验复用了旧候选其余共享依赖，不能代替
+当前完整工程类型检查、真实 Cells SSO、组件 scope、Win11 或发布验收。
+
+Cells 固定源码 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的原生页面与
+认证接缝证据仍见 `file-storage/fork/verify/native-identity.md`；没有另造 SSO。
+截至本次入口检查，原生 fork 镜像构建与独立投递仍在推进，不能宣称 Cells 已可用。

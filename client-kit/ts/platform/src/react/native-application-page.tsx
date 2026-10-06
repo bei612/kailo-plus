@@ -51,10 +51,7 @@ export function NativeApplicationPage({ bindingId, onBack }: { bindingId: string
         // Native host receives the binding ID, never a browser-selected URL.
         void nativeHost(bindingId).catch(setError).finally(() => setOpening(false));
       }}>{t("bindings.openNative")}</Button>
-      : <iframe key={`${page.bindingId}:${page.projectionGeneration}:${page.url}`}
-        className="min-h-96 w-full flex-1 border-0" title={t("bindings.nativeTitle")}
-        src={page.url} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
-        referrerPolicy="no-referrer" />}
+      : null}
     {error ? <ReadFailure error={error} onRetry={() => setError(undefined)} /> : null}
   </section>;
 }

@@ -364,7 +364,6 @@ enum PlatformMessageKey {
   componentActionsReview,
   bindingsOpenNative,
   bindingsOpenIndependent,
-  bindingsNativeTitle,
   bindingsNativeBoundary,
   bindingsBoundary,
   bindingsScope,
@@ -1971,10 +1970,9 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Open service in a new tab',
     '在新标签页打开独立服务',
   ),
-  PlatformMessageKey.bindingsNativeTitle: ('Independent service', '独立服务页面'),
   PlatformMessageKey.bindingsNativeBoundary: (
-    'This is the service\'s own page and sign-in. If embedding is refused, its independent service remains available; Kailo does not bypass its policy.',
-    '这里使用服务自己的页面和登录。若服务不允许嵌入，其独立服务仍可使用；Kailo 不会绕过它的限制。',
+    'Open the service\'s complete native page with its own sign-in and session. Kailo does not copy its administration pages or grant additional permissions.',
+    '打开服务自己的完整原生页面，使用服务自身的登录和会话。Kailo 不复制其管理页面，也不授予额外权限。',
   ),
   PlatformMessageKey.bindingsBoundary: (
     'Manage connections to Kailo. Each external service keeps its own administration, data and runtime.',

@@ -106,16 +106,13 @@ describe("shared external service connection management", () => {
     url: "https://service.example.test/admin/#/settings", origin: "https://service.example.test",
     allowedOrigins: ["https://service.example.test", "https://login.example.test"] };
 
-  it("opens only a server-resolved native page and removes the frame when access is revoked", async () => {
+  it("opens the complete independent native page without a frame and removes its entry when access is revoked", async () => {
     let revoked = false;
     const { host, send } = await mount((request) => request.path.endsWith("/native-page")
       ? revoked ? { status: 403, body: {} } : { status: 200, body: nativePage }
       : { status: 200, body: { bindings: [{ ...connection, hasNativePage: true }], canCreate: false } });
     await click(button(host, "Open service page"));
-    const frame = host.querySelector("iframe");
-    expect(frame?.getAttribute("src")).toBe(nativePage.url);
-    expect(frame?.getAttribute("sandbox")).toBe("allow-scripts allow-same-origin allow-forms allow-downloads");
-    expect(frame?.getAttribute("referrerpolicy")).toBe("no-referrer");
+    expect(host.querySelector("iframe")).toBeNull();
     const independent = host.querySelector("a");
     expect(independent?.getAttribute("href")).toBe(nativePage.url);
     expect(independent?.getAttribute("target")).toBe("_blank");
@@ -142,7 +139,7 @@ describe("shared external service connection management", () => {
     expect(openNativePage.mock.calls).toEqual([[connection.bindingId]]);
   });
 
-  it("rejects wrong binding, stale generation, unapproved origins and platform origin frames", async () => {
+  it("rejects wrong binding, stale generation, unapproved origins and platform origin pages", async () => {
     for (const page of [{ ...nativePage, bindingId: "another-binding" },
       { ...nativePage, projectionGeneration: 0 }, { ...nativePage, allowedOrigins: [] },
       { ...nativePage, url: "https://user:password@service.example.test/admin" },
