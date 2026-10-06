@@ -18,7 +18,7 @@ import {
 } from "@client-kit/contracts";
 import { PlatformProvider, useDeviceLocale } from "@client-kit/platform/react/context";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
-import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
+import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
 import { ConversationList, ConversationVisibilityProvider, useConversations } from "@client-kit/platform/react/new-message";
 import { conversationVisibility } from "../bff-client";
 import { useSettingsShortcuts } from "@client-kit/platform/react/use-settings-shortcuts";
@@ -158,6 +158,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   );
   const [tab, setTab] = useState<Tab>("channel");
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
+  const [channelActivity, setChannelActivity] = useState<ReadonlyMap<string, string | null>>(() => new Map());
   const settingsReturnTab = useRef<Tab>("channel");
   useEffect(() => {
     if (tab !== "settings") settingsReturnTab.current = tab;
@@ -292,7 +293,9 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             <AppSidebarFrame aria-label={t("platform.title")}
               footer={<SidebarMenu><SidebarMenuItem><WebSidebarProfileCard session={session} settingsOpen={tab === "settings"}
                 onOpenSettings={() => setTab("settings")} onSignOut={onSignOut} /></SidebarMenuItem></SidebarMenu>}
-              dialogs={<CreateChannelDialog open={createChannelOpen} onOpenChange={setCreateChannelOpen} />}>
+              dialogs={<ChannelBrowser key={session.tenantPrincipalId} open={createChannelOpen} onOpenChange={setCreateChannelOpen}
+                lastMessageAtByChannelId={channelActivity}
+                onSelect={async (workspace) => { await workspaces.refetch(); setChosen(workspace.id); setTab("channel"); }} />}>
               <AppSidebarPrimaryMenu onNewMessage={() => setTab("new-message")} onSelectHome={() => setTab("inbox")}
                 homeBadgeCount={notificationSettings?.settings.homeBadgeEnabled && inboxUnreadCount !== null ? inboxUnreadCount : undefined}
                 onSelectPlatformSection={setTab}
@@ -304,6 +307,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               onCloseSelected={() => { setChosenConversation(null); setTab("inbox"); }}
               onSelect={(conversation) => { setChosenConversation(conversation); setTab("conversation"); }} />
             <ChannelSidebar principalId={session.tenantPrincipalId} workspaces={rows} selectedId={active} active={tab === "channel"}
+              onActivity={setChannelActivity}
               reads={userState} preferencePending={preference.isPending || preferenceUnknown}
               onSelect={(id) => { setChosen(id); setTab("channel"); }}
               onCreate={() => setCreateChannelOpen(true)}

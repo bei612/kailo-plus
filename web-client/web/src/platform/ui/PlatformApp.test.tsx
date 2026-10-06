@@ -58,8 +58,8 @@ vi.mock("@client-kit/platform/react/protocol-document-bridge", () => ({
     <div data-document-binding={bindingId} />
   ),
 }));
-vi.mock("@client-kit/platform/react/create-channel-dialog", () => ({
-  CreateChannelDialog: ({ open }: { open: boolean }) => (
+vi.mock("@client-kit/platform/react/channel-browser", () => ({
+  ChannelBrowser: ({ open }: { open: boolean }) => (
     <div data-testid="shared-create-channel-dialog" data-open={open} />
   ),
 }));

@@ -534,7 +534,7 @@ fn message_query_cursor(
     }
 }
 
-async fn window_author(
+pub(crate) async fn window_author(
     state: &BffState,
     ctx: &ExecutionContext,
     host: &str,
@@ -569,7 +569,7 @@ fn single_event_tag<'a>(event: &'a nostr::Event, key: &str) -> Option<&'a str> {
 }
 
 #[allow(clippy::result_large_err)]
-fn web_channel_view(
+pub(crate) fn web_channel_view(
     event: &nostr::Event,
     channel: &str,
     relay_author: &str,

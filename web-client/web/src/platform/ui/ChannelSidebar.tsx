@@ -11,8 +11,8 @@ import { useChannelSortPreference } from "@client-kit/platform/react/sidebar/use
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { inboxReadContexts, type useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Hash } from "lucide-react";
-import { useState } from "react";
+import { ChannelGlyph } from "@client-kit/platform/react/channel-glyph";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { bff } from "@/platform/bff-client";
 import { platformQueries } from "./queries";
@@ -22,7 +22,7 @@ import { inboxEvents } from "./InboxPane";
 type Group = "starred" | "channels";
 
 export function ChannelSidebar({ principalId, workspaces, selectedId, active, reads, preferencePending,
-  onSelect, onCreate, onSetPreference,
+  onSelect, onCreate, onSetPreference, onActivity,
 }: {
   principalId: string;
   workspaces: WorkspaceView[];
@@ -33,6 +33,7 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
   onSelect: (id: string) => void;
   onCreate: () => void;
   onSetPreference: (id: string, next: { starred: boolean; muted: boolean }) => void;
+  onActivity?: (activity: ReadonlyMap<string, string | null>) => void;
 }) {
   const t = useT();
   const queryClient = useQueryClient();
@@ -54,6 +55,11 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
     },
   });
   const preferences = reads.state?.workspacePreferences ?? {};
+  const activity = useMemo(() => new Map([...(!messages.isError ? messages.data ?? [] : [])].map(([id, events]) => {
+    const latest = events.reduce<number | null>((at, event) => Math.max(at ?? event.createdAt, event.createdAt), null);
+    return [id, latest === null ? null : new Date(latest * 1000).toISOString()] as const;
+  })), [messages.data, messages.isError]);
+  useEffect(() => { onActivity?.(activity); }, [activity, onActivity]);
   const rows = workspaces.map((workspace) => {
     const events = messages.data?.get(workspace.id) ?? [];
     const latest = events.reduce<number | null>((at, event) => Math.max(at ?? event.createdAt, event.createdAt), null);
@@ -87,11 +93,11 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
     actionsTestId={`${key}-section-actions`} sortMode={sortModeFor(key)}
     onSortModeChange={(value) => setSortModeFor(key, value)}
     onMarkAllRead={canWriteRead ? () => mark(items.map((row) => row.id), true) : undefined}
-    onCreateChannel={key === "channels" ? onCreate : undefined} createChannelLabel={t("channel.create.title")}
+    onCreateChannel={key === "channels" ? onCreate : undefined} createChannelLabel={t("channel.browser.title")}
     renderRow={(channel) => <ChannelRow channel={channel} isActive={active && selectedId === channel.id}
       hasUnread={unread.has(channel.id)} hasThreadUnread={unread.has(channel.id)}
       isMuted={preferences[channel.id]?.muted} onSelectChannel={onSelect}
-      glyph={(className) => <Hash className={className} />} />}
+      glyph={(className) => <ChannelGlyph className={className} channel={{ visibility: workspaces.find((workspace) => workspace.id === channel.id)?.visibility }} />} />}
     renderContextMenu={(channel) => <ChannelContextMenuItems channel={channel}
       hasUnread={unread.has(channel.id)} isMuted={preferences[channel.id]?.muted}
       isStarred={preferences[channel.id]?.starred} onCopy={copy}

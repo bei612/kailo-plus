@@ -1,0 +1,23 @@
+{
+  "items": [
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "visibility": "open",
+      "channel": { "channelId": "00000000-0000-4000-8000-000000000004", "channelType": "stream", "name": "Public discussion", "archived": false },
+      "isMember": false,
+      "memberCount": 1,
+      "createdAt": "2026-10-06T00:00:00.001Z",
+      "joinActionKey": "workspace.join"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "visibility": "private",
+      "channel": { "channelId": "00000000-0000-4000-8000-000000000005", "channelType": "forum", "name": "Private discussion", "archived": false },
+      "isMember": true,
+      "memberCount": 2,
+      "createdAt": "2026-10-06T00:00:00.001Z",
+      "membershipState": "ACTIVE"
+    }
+  ],
+  "nextCursor": "00000000-0000-4000-8000-000000000005"
+}

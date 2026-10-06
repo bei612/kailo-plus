@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/discoverable_workspace_page.schema.json",
+  "title": "DiscoverableWorkspacePage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items"],
+  "properties": {
+    "items": { "type": "array", "items": { "$ref": "discoverable_workspace.schema.json" } },
+    "nextCursor": { "type": "string", "format": "uuid" }
+  }
+}

@@ -70,6 +70,8 @@
 //     final conversationPreferenceRequest = conversationPreferenceRequestFromJson(jsonString);
 //     final conversationView = conversationViewFromJson(jsonString);
 //     final delegatedActionMetadataV1 = delegatedActionMetadataV1FromJson(jsonString);
+//     final discoverableWorkspace = discoverableWorkspaceFromJson(jsonString);
+//     final discoverableWorkspacePage = discoverableWorkspacePageFromJson(jsonString);
 //     final evidenceView = evidenceViewFromJson(jsonString);
 //     final invitationRedemptionView = invitationRedemptionViewFromJson(jsonString);
 //     final invitationRedemptionRequest = invitationRedemptionRequestFromJson(jsonString);
@@ -135,6 +137,7 @@
 //     final taskStateReport = taskStateReportFromJson(jsonString);
 //     final workflowRef = workflowRefFromJson(jsonString);
 //     final workspaceChannelCreate = workspaceChannelCreateFromJson(jsonString);
+//     final workspaceVisibility = workspaceVisibilityFromJson(jsonString);
 //     final affectedOwnerRef = affectedOwnerRefFromJson(jsonString);
 //     final agentInstallationAdvanceRequest = agentInstallationAdvanceRequestFromJson(jsonString);
 //     final agentInstallationAdvanceResult = agentInstallationAdvanceResultFromJson(jsonString);
@@ -620,6 +623,18 @@ DelegatedActionMetadataV1 delegatedActionMetadataV1FromJson(String str) =>
 String delegatedActionMetadataV1ToJson(DelegatedActionMetadataV1 data) =>
     json.encode(data.toJson());
 
+DiscoverableWorkspace discoverableWorkspaceFromJson(String str) =>
+    DiscoverableWorkspace.fromJson(json.decode(str));
+
+String discoverableWorkspaceToJson(DiscoverableWorkspace data) =>
+    json.encode(data.toJson());
+
+DiscoverableWorkspacePage discoverableWorkspacePageFromJson(String str) =>
+    DiscoverableWorkspacePage.fromJson(json.decode(str));
+
+String discoverableWorkspacePageToJson(DiscoverableWorkspacePage data) =>
+    json.encode(data.toJson());
+
 EvidenceView evidenceViewFromJson(String str) =>
     EvidenceView.fromJson(json.decode(str));
 
@@ -1006,6 +1021,12 @@ WorkspaceChannelCreate workspaceChannelCreateFromJson(String str) =>
 
 String workspaceChannelCreateToJson(WorkspaceChannelCreate data) =>
     json.encode(data.toJson());
+
+WorkspaceVisibility workspaceVisibilityFromJson(String str) =>
+    workspaceVisibilityValues.map[json.decode(str)]!;
+
+String workspaceVisibilityToJson(WorkspaceVisibility data) =>
+    json.encode(workspaceVisibilityValues.reverse[data]);
 
 AffectedOwnerRef affectedOwnerRefFromJson(String str) =>
     AffectedOwnerRef.fromJson(json.decode(str));
@@ -2751,6 +2772,9 @@ class ActionCommand {
   ///Workspace 内动作的执行 Workspace
   final String? workspaceId;
 
+  ///仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+  final WorkspaceVisibility? workspaceVisibility;
+
   ActionCommand({
     required this.actionKey,
     this.agentVersionContent,
@@ -2787,6 +2811,7 @@ class ActionCommand {
     this.tenantId,
     this.workspaceChannel,
     this.workspaceId,
+    this.workspaceVisibility,
   });
 
   factory ActionCommand.fromJson(Map<String, dynamic> json) => ActionCommand(
@@ -2862,6 +2887,9 @@ class ActionCommand {
         ? null
         : WorkspaceChannelClass.fromJson(json["workspaceChannel"]),
     workspaceId: json["workspaceId"],
+    workspaceVisibility: json["workspaceVisibility"] == null
+        ? null
+        : workspaceVisibilityValues.map[json["workspaceVisibility"]]!,
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -2900,6 +2928,8 @@ class ActionCommand {
     "tenantId": tenantId,
     "workspaceChannel": workspaceChannel?.toJson(),
     "workspaceId": workspaceId,
+    "workspaceVisibility":
+        workspaceVisibilityValues.reverse[workspaceVisibility],
   });
 }
 
@@ -4050,6 +4080,18 @@ enum ChannelType { FORUM, STREAM }
 final channelTypeValues = EnumValues({
   "forum": ChannelType.FORUM,
   "stream": ChannelType.STREAM,
+});
+
+///仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+///
+///DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
+///
+///Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
+enum WorkspaceVisibility { OPEN, PRIVATE }
+
+final workspaceVisibilityValues = EnumValues({
+  "open": WorkspaceVisibility.OPEN,
+  "private": WorkspaceVisibility.PRIVATE,
 });
 
 ///POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -8105,6 +8147,188 @@ class DelegatedActionMetadataV1 {
   });
 }
 
+class DiscoverableWorkspace {
+  final ChannelClass channel;
+  final DateTime createdAt;
+  final String id;
+
+  ///已通过当前 HUMAN Workspace 准入，而非只表示 join 已受理。
+  final bool isMember;
+  final JoinActionKey? joinActionKey;
+  final int memberCount;
+  final WorkspaceMembershipState? membershipState;
+  final WorkspaceVisibility visibility;
+
+  DiscoverableWorkspace({
+    required this.channel,
+    required this.createdAt,
+    required this.id,
+    required this.isMember,
+    this.joinActionKey,
+    required this.memberCount,
+    this.membershipState,
+    required this.visibility,
+  });
+
+  factory DiscoverableWorkspace.fromJson(Map<String, dynamic> json) =>
+      DiscoverableWorkspace(
+        channel: ChannelClass.fromJson(json["channel"]),
+        createdAt: DateTime.parse(json["createdAt"]),
+        id: json["id"],
+        isMember: json["isMember"],
+        joinActionKey: json["joinActionKey"] == null
+            ? null
+            : joinActionKeyValues.map[json["joinActionKey"]]!,
+        memberCount: json["memberCount"],
+        membershipState: json["membershipState"] == null
+            ? null
+            : workspaceMembershipStateValues.map[json["membershipState"]]!,
+        visibility: workspaceVisibilityValues.map[json["visibility"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "channel": channel.toJson(),
+    "createdAt": createdAt.toIso8601String(),
+    "id": id,
+    "isMember": isMember,
+    "joinActionKey": joinActionKeyValues.reverse[joinActionKey],
+    "memberCount": memberCount,
+    "membershipState": workspaceMembershipStateValues.reverse[membershipState],
+    "visibility": workspaceVisibilityValues.reverse[visibility],
+  });
+}
+
+///Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。
+class ChannelClass {
+  final bool archived;
+  final String channelId;
+  final ChannelType channelType;
+  final String? description;
+  final String name;
+  final DateTime? ttlDeadline;
+  final int? ttlSeconds;
+
+  ChannelClass({
+    required this.archived,
+    required this.channelId,
+    required this.channelType,
+    this.description,
+    required this.name,
+    this.ttlDeadline,
+    this.ttlSeconds,
+  });
+
+  factory ChannelClass.fromJson(Map<String, dynamic> json) => ChannelClass(
+    archived: json["archived"],
+    channelId: json["channelId"],
+    channelType: channelTypeValues.map[json["channelType"]]!,
+    description: json["description"],
+    name: json["name"],
+    ttlDeadline: json["ttlDeadline"] == null
+        ? null
+        : DateTime.parse(json["ttlDeadline"]),
+    ttlSeconds: json["ttlSeconds"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "archived": archived,
+    "channelId": channelId,
+    "channelType": channelTypeValues.reverse[channelType],
+    "description": description,
+    "name": name,
+    "ttlDeadline": ttlDeadline?.toIso8601String(),
+    "ttlSeconds": ttlSeconds,
+  });
+}
+
+enum JoinActionKey { WORKSPACE_JOIN }
+
+final joinActionKeyValues = EnumValues({
+  "workspace.join": JoinActionKey.WORKSPACE_JOIN,
+});
+
+///WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
+enum WorkspaceMembershipState { ACTIVE, ERROR, PROVISIONING, REVOKED, REVOKING }
+
+final workspaceMembershipStateValues = EnumValues({
+  "ACTIVE": WorkspaceMembershipState.ACTIVE,
+  "ERROR": WorkspaceMembershipState.ERROR,
+  "PROVISIONING": WorkspaceMembershipState.PROVISIONING,
+  "REVOKED": WorkspaceMembershipState.REVOKED,
+  "REVOKING": WorkspaceMembershipState.REVOKING,
+});
+
+class DiscoverableWorkspacePage {
+  final List<DiscoverableWorkspacePageItem> items;
+  final String? nextCursor;
+
+  DiscoverableWorkspacePage({required this.items, this.nextCursor});
+
+  factory DiscoverableWorkspacePage.fromJson(Map<String, dynamic> json) =>
+      DiscoverableWorkspacePage(
+        items: List<DiscoverableWorkspacePageItem>.from(
+          json["items"].map((x) => DiscoverableWorkspacePageItem.fromJson(x)),
+        ),
+        nextCursor: json["nextCursor"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "items": List<dynamic>.from(items.map((x) => x.toJson())),
+    "nextCursor": nextCursor,
+  });
+}
+
+class DiscoverableWorkspacePageItem {
+  final ChannelClass channel;
+  final DateTime createdAt;
+  final String id;
+
+  ///已通过当前 HUMAN Workspace 准入，而非只表示 join 已受理。
+  final bool isMember;
+  final JoinActionKey? joinActionKey;
+  final int memberCount;
+  final WorkspaceMembershipState? membershipState;
+  final WorkspaceVisibility visibility;
+
+  DiscoverableWorkspacePageItem({
+    required this.channel,
+    required this.createdAt,
+    required this.id,
+    required this.isMember,
+    this.joinActionKey,
+    required this.memberCount,
+    this.membershipState,
+    required this.visibility,
+  });
+
+  factory DiscoverableWorkspacePageItem.fromJson(Map<String, dynamic> json) =>
+      DiscoverableWorkspacePageItem(
+        channel: ChannelClass.fromJson(json["channel"]),
+        createdAt: DateTime.parse(json["createdAt"]),
+        id: json["id"],
+        isMember: json["isMember"],
+        joinActionKey: json["joinActionKey"] == null
+            ? null
+            : joinActionKeyValues.map[json["joinActionKey"]]!,
+        memberCount: json["memberCount"],
+        membershipState: json["membershipState"] == null
+            ? null
+            : workspaceMembershipStateValues.map[json["membershipState"]]!,
+        visibility: workspaceVisibilityValues.map[json["visibility"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "channel": channel.toJson(),
+    "createdAt": createdAt.toIso8601String(),
+    "id": id,
+    "isMember": isMember,
+    "joinActionKey": joinActionKeyValues.reverse[joinActionKey],
+    "memberCount": memberCount,
+    "membershipState": workspaceMembershipStateValues.reverse[membershipState],
+    "visibility": workspaceVisibilityValues.reverse[visibility],
+  });
+}
+
 ///GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
 ///授权；每种证据另向其权威源查证原对象仍存在：明确不存在回 404（正文为 NOT_FOUND 的不可用视图），权威源不提供查证接口为 UNVERIFIABLE，权威源不可达回
 ///503。不可用时不回任何 ref 内容。
@@ -9558,13 +9782,31 @@ class WorkspaceView {
   final String name;
   final String slug;
 
-  WorkspaceView({required this.id, required this.name, required this.slug});
+  ///Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
+  final WorkspaceVisibility? visibility;
 
-  factory WorkspaceView.fromJson(Map<String, dynamic> json) =>
-      WorkspaceView(id: json["id"], name: json["name"], slug: json["slug"]);
+  WorkspaceView({
+    required this.id,
+    required this.name,
+    required this.slug,
+    this.visibility,
+  });
 
-  Map<String, dynamic> toJson() =>
-      _stripNulls({"id": id, "name": name, "slug": slug});
+  factory WorkspaceView.fromJson(Map<String, dynamic> json) => WorkspaceView(
+    id: json["id"],
+    name: json["name"],
+    slug: json["slug"],
+    visibility: json["visibility"] == null
+        ? null
+        : workspaceVisibilityValues.map[json["visibility"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "id": id,
+    "name": name,
+    "slug": slug,
+    "visibility": workspaceVisibilityValues.reverse[visibility],
+  });
 }
 
 ///GET /api/v1/workspaces/{workspaceId}/members 回应数组的元素，按人聚合（DD-77）。
@@ -9598,17 +9840,6 @@ class WorkspaceMemberView {
     "state": workspaceMembershipStateValues.reverse[state],
   });
 }
-
-///WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
-enum WorkspaceMembershipState { ACTIVE, ERROR, PROVISIONING, REVOKED, REVOKING }
-
-final workspaceMembershipStateValues = EnumValues({
-  "ACTIVE": WorkspaceMembershipState.ACTIVE,
-  "ERROR": WorkspaceMembershipState.ERROR,
-  "PROVISIONING": WorkspaceMembershipState.PROVISIONING,
-  "REVOKED": WorkspaceMembershipState.REVOKED,
-  "REVOKING": WorkspaceMembershipState.REVOKING,
-});
 
 ///PUT /api/v1/user-state/workspaces/{workspaceId} 的请求体（DD-40）：该 Workspace 的收藏与静音。version
 ///是读到的 CollaborationUserState 版本，不符即 409；updatedAt 由 Core 用库时钟补写，不取调用方的值。

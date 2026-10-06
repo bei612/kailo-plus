@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/workspace_visibility.schema.json",
+  "title": "WorkspaceVisibility",
+  "description": "DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。",
+  "type": "string",
+  "enum": ["open", "private"]
+}

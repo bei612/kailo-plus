@@ -10,6 +10,7 @@
     "idempotencyKey"
   ],
   "properties": {
+    "workspaceVisibility": { "$ref": "../domain/workspace_visibility.schema.json", "description": "仅 workspace.create 使用；省略保持旧命令的 private 可见性。" },
     "workspaceChannel": {"$ref": "../domain/workspace_channel_create.schema.json"},
     "conversationOpen": {"$ref": "conversation_open_request.schema.json"},
     "componentAction": {"$ref": "../domain/component_action_input.schema.json"},

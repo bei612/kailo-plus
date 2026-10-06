@@ -19,6 +19,12 @@ void main() {
             ConversationPreferenceRequest.fromJson(value).toJson(),
         'workspace-channel-create.sample.json': (value) =>
             ActionCommand.fromJson(value).toJson(),
+        'workspace-public-create.sample.json': (value) =>
+            ActionCommand.fromJson(value).toJson(),
+        'workspace-join.sample.json': (value) =>
+            ActionCommand.fromJson(value).toJson(),
+        'discoverable-workspaces.sample.json': (value) =>
+            DiscoverableWorkspacePage.fromJson(value).toJson(),
         'conversation-open.sample.json': (value) =>
             ActionCommand.fromJson(value).toJson(),
         'conversation-participants.sample.json': (value) =>

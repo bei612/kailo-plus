@@ -6,6 +6,24 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn public_workspace_roundtrip_preserves_visibility_and_membership_evidence() {
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(name: &str) {
+        let raw = fs::read_to_string(sample_path().with_file_name(name)).unwrap();
+        let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let typed: T = serde_json::from_str(&raw).unwrap();
+        assert_eq!(original, serde_json::to_value(typed).unwrap());
+    }
+    roundtrip::<contracts::ActionCommand>("workspace-public-create.sample.json");
+    roundtrip::<contracts::ActionCommand>("workspace-join.sample.json");
+    roundtrip::<contracts::DiscoverableWorkspacePage>("discoverable-workspaces.sample.json");
+    let legacy: contracts::WorkspaceView = serde_json::from_value(serde_json::json!({
+        "id": "00000000-0000-4000-8000-000000000004", "slug": "legacy", "name": "Legacy"
+    }))
+    .unwrap();
+    assert!(legacy.visibility.is_none());
+}
+
+#[test]
 fn delegated_metadata_roundtrip_keeps_only_platform_result() {
     let raw =
         fs::read_to_string(sample_path().with_file_name("delegated-action-metadata.sample.json"))

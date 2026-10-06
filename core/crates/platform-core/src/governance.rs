@@ -416,6 +416,7 @@ pub(crate) async fn exact_policy(pool: &PgPool, id: Uuid, version: i32) -> Resul
 pub enum Semantic {
     ConversationOpen,
     WorkspaceCreate,
+    WorkspaceJoin,
     /// Workspace 暂停与恢复（`.design/06` §7.3、DD-46）：从 Tenant scope 指向
     /// Workspace，准入落定即置 SUSPENDING/RESTORING，由 WORKSPACE_LIFECYCLE 收敛。
     WorkspaceSuspend,
@@ -482,6 +483,7 @@ impl Semantic {
         Some(match k {
             "conversation.open" => Self::ConversationOpen,
             "workspace.create" => Self::WorkspaceCreate,
+            "workspace.join" => Self::WorkspaceJoin,
             "workspace.suspend" => Self::WorkspaceSuspend,
             "workspace.restore" => Self::WorkspaceRestore,
             "tenant.suspend" => Self::TenantSuspend,
@@ -618,6 +620,7 @@ impl Semantic {
             || matches!(
                 self,
                 Self::TenantMemberRevoke
+                    | Self::WorkspaceJoin
                     | Self::ConversationOpen
                     | Self::TenantDelete
                     | Self::AgentDefinitionCreate
@@ -703,6 +706,7 @@ impl Semantic {
 /// 权威，不接收上游业务正文、凭据或 host environment。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Params {
+    pub workspace_visibility: Option<contracts::WorkspaceVisibility>,
     pub workspace_channel: Option<Value>,
     pub conversation_open: Option<Value>,
     pub workspace_id: Option<Uuid>,
@@ -738,6 +742,9 @@ pub struct Params {
 impl Params {
     pub(crate) fn to_json(&self) -> Value {
         let mut m = serde_json::Map::new();
+        if let Some(visibility) = &self.workspace_visibility {
+            m.insert("workspaceVisibility".into(), json!(visibility));
+        }
         if let Some(input) = &self.workspace_channel {
             m.insert("workspaceChannel".into(), input.clone());
         }
@@ -839,6 +846,11 @@ impl Params {
         };
         let text = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_owned);
         Some(Self {
+            workspace_visibility: v
+                .get("workspaceVisibility")
+                .map(|value| serde_json::from_value(value.clone()))
+                .transpose()
+                .ok()?,
             workspace_channel: v.get("workspaceChannel").cloned(),
             conversation_open: v.get("conversationOpen").cloned(),
             workspace_id: uuid("workspaceId"),
@@ -905,6 +917,34 @@ pub(crate) fn valid_slug(s: &str) -> bool {
 
 #[cfg(test)]
 mod workspace_channel_tests {
+    #[test]
+    fn workspace_join_only_accepts_the_authenticated_self_subject() {
+        let mut command: contracts::ActionCommand = serde_json::from_value(serde_json::json!({
+            "actionKey": "workspace.join", "idempotencyKey": uuid::Uuid::new_v4(), "workspaceId": uuid::Uuid::new_v4(),
+        })).unwrap();
+        assert!(super::parse_command(super::Semantic::WorkspaceJoin, &command).is_ok());
+        command.principal_id = Some(uuid::Uuid::new_v4().to_string());
+        assert!(super::parse_command(super::Semantic::WorkspaceJoin, &command).is_err());
+        command.principal_id = None;
+        command.workspace_visibility = Some(contracts::WorkspaceVisibility::Open);
+        assert!(super::parse_command(super::Semantic::WorkspaceJoin, &command).is_err());
+    }
+
+    #[test]
+    fn workspace_visibility_is_frozen_and_legacy_commands_stay_unchanged() {
+        let mut command: contracts::ActionCommand = serde_json::from_str(include_str!(
+            "../../../../contracts/samples/workspace-channel-create.sample.json"
+        ))
+        .unwrap();
+        let before = super::parse_command(super::Semantic::WorkspaceCreate, &command).unwrap();
+        assert!(before.workspace_visibility.is_none());
+        assert!(before.to_json().get("workspaceVisibility").is_none());
+        command.workspace_visibility = Some(contracts::WorkspaceVisibility::Open);
+        let after = super::parse_command(super::Semantic::WorkspaceCreate, &command).unwrap();
+        assert_eq!(after.to_json()["workspaceVisibility"], "open");
+        assert_ne!(before.to_json(), after.to_json());
+        assert_eq!(super::Params::from_json(&after.to_json()).unwrap(), after);
+    }
     use super::*;
 
     #[test]
@@ -950,6 +990,9 @@ mod workspace_channel_tests {
 
 fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params, Refusal> {
     let bad = || Refusal::Precondition(ReasonCode::InvalidParameters);
+    if cmd.workspace_visibility.is_some() && sem != Semantic::WorkspaceCreate {
+        return Err(bad());
+    }
     if cmd.workspace_channel.is_some() && sem != Semantic::WorkspaceCreate {
         return Err(bad());
     }
@@ -971,6 +1014,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .map_err(|_| bad())
     };
     let p = Params {
+        workspace_visibility: cmd.workspace_visibility.clone(),
         workspace_channel: cmd
             .workspace_channel
             .as_ref()
@@ -1327,6 +1371,14 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
                 && p.original_action_execution_id.is_none()
                 && p.slug.as_deref().is_some_and(valid_slug)
                 && p.name.as_deref().is_some_and(|n| !n.is_empty())
+        }
+        Semantic::WorkspaceJoin => {
+            p.workspace_id.is_some()
+                && p.principal_id.is_none()
+                && p.invitation_id.is_none()
+                && p.original_action_execution_id.is_none()
+                && p.slug.is_none()
+                && p.name.is_none()
         }
         // 暂停与恢复只指向一个 Workspace；它不是执行 Workspace（TENANT_ONLY）
         Semantic::WorkspaceSuspend | Semantic::WorkspaceRestore => {
@@ -1946,15 +1998,27 @@ async fn resolve_target(
                 None => Err(Refusal::Precondition(ReasonCode::TargetNotFound)),
             }
         }
-        Semantic::WorkspaceMemberAdd | Semantic::WorkspaceMemberRevoke => {
-            let (ws, principal) = (p.workspace_id, p.principal_id);
+        Semantic::WorkspaceJoin
+        | Semantic::WorkspaceMemberAdd
+        | Semantic::WorkspaceMemberRevoke => {
+            // Joining never accepts a caller-supplied subject or changes another membership.
+            let (ws, principal) = (
+                p.workspace_id,
+                if sem == Semantic::WorkspaceJoin {
+                    Some(initiator)
+                } else {
+                    p.principal_id
+                },
+            );
             // Workspace 必须属于该 Tenant 且 ACTIVE：跨 Tenant 的 ID 与不存在是
             // 同一个回答
             let ws_ok: Option<i32> = sqlx::query_scalar(&format!(
-                "select 1 from identity.workspace where id = $1 and tenant_id = $2 and state = 'ACTIVE'{for_update}"
+                "select 1 from identity.workspace where id = $1 and tenant_id = $2 and state = 'ACTIVE'
+                   and (not $3 or visibility = 'open'){for_update}"
             ))
             .bind(ws)
             .bind(tenant)
+            .bind(sem == Semantic::WorkspaceJoin)
             .fetch_optional(&mut *conn)
             .await?;
             if ws_ok.is_none() {
@@ -2003,11 +2067,15 @@ async fn resolve_target(
                     workspace_id: ws,
                 }),
                 // 恢复访问建立新 membership version 并重走建立对账（DD-45）
-                Some((id, version, state)) if state == "REVOKED" => Ok(Target {
-                    id,
-                    version,
-                    workspace_id: ws,
-                }),
+                Some((id, version, state))
+                    if state == "REVOKED" && sem != Semantic::WorkspaceJoin =>
+                {
+                    Ok(Target {
+                        id,
+                        version,
+                        workspace_id: ws,
+                    })
+                }
                 Some(_) => Err(Refusal::Conflict(ReasonCode::TargetStateConflict)),
             }
         }
@@ -2231,6 +2299,7 @@ impl Governance {
         def: &Definition,
         target: &Target,
     ) -> Result<Evaluation, Refusal> {
+        let is_workspace_join = def.action_key == "workspace.join";
         let is_installation_create = def.action_key == "agent.installation.create";
         let is_installation_permission = matches!(
             def.action_key.as_str(),
@@ -2565,7 +2634,8 @@ impl Governance {
         // - 从未加入：fresh workspace manage 为真即满足（`03` §2），即由 DD-82 授予、
         //   不要求先加入 Workspace 的 Workspace admin。
         // 本切片 Workspace 动作检查的正是 workspace manage，Check 为假时不设例外。
-        if (is_installation_permission
+        if (is_workspace_join
+            || is_installation_permission
             || is_agent_cancel
             || is_memory
             || is_route_create
@@ -2635,9 +2705,27 @@ impl Governance {
                 }
                 workspace_manage = management.allowed;
             }
+            // DD-80 self-join establishes membership; it cannot require that membership
+            // already exist. Its sole exception is a fresh, public, same-tenant target
+            // with no previous membership. Revocations are not undone by this route.
+            let public_join = if is_workspace_join && membership.is_none() {
+                sqlx::query_scalar::<_, bool>(
+                    "select exists(select 1 from identity.workspace where id = $1
+                     and tenant_id = $2 and state = 'ACTIVE' and visibility = 'open')",
+                )
+                .bind(target.workspace_id)
+                .bind(actor.tenant_id)
+                .fetch_one(&self.pool)
+                .await?
+                    && def.permission == "discover"
+                    && permission_object_type == "tenant"
+                    && checked.allowed
+            } else {
+                false
+            };
             let admitted = match membership.as_deref() {
                 Some("ACTIVE") => true,
-                None => workspace_manage,
+                None => workspace_manage || public_join,
                 Some(_) if workspace_manage => {
                     let management = self
                         .spicedb
@@ -3051,6 +3139,7 @@ impl Governance {
             return Ok(None);
         }
         let params = Params {
+            workspace_visibility: None,
             workspace_channel: None,
             conversation_open: None,
             workspace_id: None,
@@ -3152,6 +3241,7 @@ impl Governance {
             return Ok(None);
         }
         let params = Params {
+            workspace_visibility: None,
             workspace_channel: None,
             conversation_open: None,
             workspace_id: None,
@@ -4458,6 +4548,7 @@ impl Governance {
             sem,
             Semantic::ComponentReleaseRegister | Semantic::ComponentReleaseApprove
         ) || sem == Semantic::ResourceCreate
+            || sem == Semantic::WorkspaceJoin
             || sem.is_application_binding()
             || sem.is_installation_permission()
             || sem.is_capability_contract()
@@ -4485,6 +4576,7 @@ impl Governance {
             sem,
             Semantic::ComponentReleaseRegister | Semantic::ComponentReleaseApprove
         ) || sem == Semantic::ResourceCreate
+            || sem == Semantic::WorkspaceJoin
             || sem.is_application_binding()
             || sem.is_installation_permission()
             || sem.is_capability_contract()
@@ -4828,13 +4920,14 @@ impl Governance {
             }
             Semantic::WorkspaceCreate => {
                 let version = sqlx::query_scalar(
-                    "insert into identity.workspace (id, tenant_id, slug, name, state)
-                     values ($1, $2, $3, $4, 'PROVISIONING') returning version",
+                    "insert into identity.workspace (id, tenant_id, slug, name, state, visibility)
+                     values ($1, $2, $3, $4, 'PROVISIONING', $5) returning version",
                 )
                 .bind(target.id)
                 .bind(ae.tenant_id)
                 .bind(&params.slug)
                 .bind(&params.name)
+                .bind(wire(params.workspace_visibility.as_ref().unwrap_or(&contracts::WorkspaceVisibility::Private)))
                 .fetch_one(&mut **tx)
                 .await?;
                 // CONTROL 代签创建 Channel，不是业务创建者。创建者的成员事实与
@@ -4874,14 +4967,14 @@ impl Governance {
                 .await?;
                 advanced.ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?
             }
-            Semantic::WorkspaceMemberAdd if target.version == 0 => {
+            Semantic::WorkspaceMemberAdd | Semantic::WorkspaceJoin if target.version == 0 => {
                 sqlx::query_scalar(
                     "insert into identity.workspace_membership (id, workspace_id, tenant_principal_id, state)
                      values ($1, $2, $3, 'PROVISIONING') returning version",
                 )
                 .bind(target.id)
                 .bind(params.workspace_id)
-                .bind(params.principal_id)
+                .bind(if sem == Semantic::WorkspaceJoin { Some(ae.initiator_principal_id) } else { params.principal_id })
                 .fetch_one(&mut **tx)
                 .await?
             }
@@ -4895,6 +4988,7 @@ impl Governance {
                 .fetch_one(&mut **tx)
                 .await?
             }
+            Semantic::WorkspaceJoin => return Err(Refusal::Conflict(ReasonCode::TargetStateConflict)),
             Semantic::WorkspaceMemberRevoke => {
                 // 先关门再收敛：REVOKING 即拒绝该 Workspace 的新动作（DD-41）
                 sqlx::query_scalar(
@@ -6524,6 +6618,7 @@ impl Governance {
                     .await
                 }
                 Semantic::WorkspaceMemberAdd
+                | Semantic::WorkspaceJoin
                 | Semantic::WorkspaceMemberRevoke
                 | Semantic::TenantMemberRevoke
                 | Semantic::TenantMemberAdmit => {

@@ -149,6 +149,7 @@ capabilities:
   - /api/v1/approvals/{workflow_id}/withdraw
   actions:
   - workspace.create
+  - workspace.join
   - workspace.member.add
   - workspace.member.revoke
   - tenant.member.revoke
@@ -288,6 +289,7 @@ capabilities:
   routes:
   - /app/
   - /api/v1/workspaces
+  - /api/v1/discoverable-workspaces
   - /api/v1/workspaces/{workspace_id}/members
   - /api/v1/audit
   - /api/v1/profile

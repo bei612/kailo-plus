@@ -8,6 +8,26 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 import type { DelegatedActionMetadataV1 } from "../src/generated/contracts.js";
+import type { DiscoverableWorkspacePage } from "../src/generated/contracts.js";
+
+test("public discovery keeps product visibility separate from signed channel metadata", () => {
+  const load = (name: string) => JSON.parse(readFileSync(new URL(`../../../../contracts/samples/${name}`, import.meta.url), "utf8"));
+  for (const name of ["workspace-public-create.sample.json", "workspace-join.sample.json"]) {
+    const original: ActionCommand = load(name);
+    const back: ActionCommand = { actionKey: original.actionKey, idempotencyKey: original.idempotencyKey,
+      name: original.name, slug: original.slug, workspaceId: original.workspaceId,
+      workspaceVisibility: original.workspaceVisibility, workspaceChannel: original.workspaceChannel };
+    deepStrictEqual(JSON.parse(JSON.stringify(back)), original);
+  }
+  const original: DiscoverableWorkspacePage = load("discoverable-workspaces.sample.json");
+  const back: DiscoverableWorkspacePage = { nextCursor: original.nextCursor, items: original.items.map(row => ({
+    id: row.id, visibility: row.visibility, isMember: row.isMember, memberCount: row.memberCount,
+    createdAt: row.createdAt, membershipState: row.membershipState, joinActionKey: row.joinActionKey,
+    channel: { channelId: row.channel.channelId, channelType: row.channel.channelType,
+      name: row.channel.name, archived: row.channel.archived },
+  })) };
+  deepStrictEqual(JSON.parse(JSON.stringify(back)), original);
+});
 
 test("delegated metadata preserves only platform result", () => {
   const original: DelegatedActionMetadataV1 = JSON.parse(readFileSync(new URL("../../../../contracts/samples/delegated-action-metadata.sample.json", import.meta.url), "utf8"));

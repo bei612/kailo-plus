@@ -18,8 +18,11 @@ import {
   writeChannelSnapshot,
 } from "@/features/channels/channelSnapshot";
 import { CHANNEL_MEMBERS_STALE_TIME_MS } from "@/features/channels/rosterFreshness";
+import { useBffClient } from "@client-kit/platform/react/context";
+import { WorkspaceVisibility } from "@client-kit/contracts";
 
 export const channelsQueryKey = ["channels"] as const;
+export const workspaceVisibilityQueryKey = ["platform", "workspace-visibility"] as const;
 /** Keeps focused polling at the established one-minute cadence. */
 export const CHANNELS_REFETCH_INTERVAL_MS = 60_000;
 /** Suppresses the expensive focus refetch until the channel list is old. */
@@ -273,6 +276,7 @@ export async function refreshChannelsQuery({
 }
 
 export function useChannelsQuery(options?: { enabled?: boolean }) {
+  const bff = useBffClient();
   const relayUrl = useActiveCommunity().relayUrl;
   // CommunityQueryProvider remounts its QueryClient for every community. Only
   // the active identity may authorize a persisted snapshot: Community.pubkey
@@ -325,6 +329,21 @@ export function useChannelsQuery(options?: { enabled?: boolean }) {
     refetchInterval,
     ...channelsFocusRefetchPolicy,
   });
+  // Relay private is a protocol projection, not product visibility (DD-80).
+  // Keep the signed/native snapshot untouched; only the displayed channels are
+  // joined with Core's admitted metadata. Unknown facts never imply public.
+  const workspaces = useQuery({
+    queryKey: [...workspaceVisibilityQueryKey, ownerPubkey],
+    enabled: (options?.enabled ?? true) && ownerPubkey !== null,
+    queryFn: () => bff.workspaces(),
+    refetchInterval,
+  });
+  const visibleChannels = React.useMemo(() => {
+    const visibility = new Map(workspaces.data?.filter((workspace) => workspace.visibility !== undefined
+      && Object.values(WorkspaceVisibility).includes(workspace.visibility)).map((workspace) => [workspace.id, workspace.visibility!]));
+    return query.data?.flatMap((channel) => channel.channelType === "dm" ? [channel]
+      : !workspaces.isError && visibility.has(channel.id) ? [{ ...channel, visibility: visibility.get(channel.id)! }] : []);
+  }, [query.data, workspaces.data, workspaces.isError]);
 
   React.useEffect(() => {
     if (
@@ -345,7 +364,8 @@ export function useChannelsQuery(options?: { enabled?: boolean }) {
     relayUrl,
   ]);
 
-  return query;
+  return { ...query, data: visibleChannels, isError: query.isError || workspaces.isError,
+    error: query.error ?? workspaces.error, isLoading: query.isLoading || workspaces.isLoading };
 }
 
 export function useChannelMembersQuery(

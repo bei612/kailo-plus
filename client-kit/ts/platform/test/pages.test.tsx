@@ -13,6 +13,7 @@ import { WorkflowsPage, validAutomationRuns } from "../src/react/workflows";
 import { PlatformNavigation, platformNavigationSections } from "../src/react/navigation";
 import { LegacySecretRefManagement, RoleManagement, RoleMembers } from "../src/react/roles";
 import { CreateChannelDialog } from "../src/react/create-channel-dialog";
+import { ChannelBrowser } from "../src/react/channel-browser";
 import type { BffReply, BffRequest, BffTransport } from "../src/transport";
 import { TransportError } from "../src/transport";
 import { button, click, render, settle, type } from "./render";
@@ -35,6 +36,93 @@ const key = (pubkey: string, state = "ACTIVE") => ({
   pubkey,
   state,
   createdAt: new Date().toISOString(),
+});
+
+describe("original channel browser with governed public membership", () => {
+  const workspace = { id: "b8acd285-a7de-4b2b-9c26-584ea4f55b59", visibility: "open",
+    channel: { channelId: "b8acd285-a7de-4b2b-9c26-584ea4f55b59", channelType: "stream", name: "Release planning", archived: false },
+    isMember: false, memberCount: 1, createdAt: "2026-10-06T00:00:00Z", joinActionKey: "workspace.join" };
+  function browserEnvironment() {
+    Object.defineProperty(document, "fonts", { configurable: true, value: { ready: Promise.resolve() } });
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  }
+  it("does not open on acceptance and refreshes the same membership without a second write", async () => {
+    browserEnvironment();
+    let membership: "absent" | "PROVISIONING" | "ACTIVE" = "absent";
+    const t = transport((request) => {
+      if (request.method === "POST") {
+        membership = "PROVISIONING";
+        return { status: 202, body: { operationId: "join-operation", actionExecutionId: "join-execution",
+          actionKey: "workspace.join", gateState: "ALLOWED", dispatchState: "DISPATCHED" } };
+      }
+      if (request.path.startsWith("/api/v1/discoverable-workspaces")) return { status: 200, body: { items: [{ ...workspace,
+        isMember: membership === "ACTIVE", ...(membership === "absent" ? {} : { membershipState: membership, joinActionKey: undefined }),
+      }] } };
+      if (request.path.startsWith("/api/v1/role-workspaces")) return { status: 200, body: { workspaces: [] } };
+      return { status: 200, body: [] };
+    });
+    const select = vi.fn();
+    const close = vi.fn();
+    await mount(t, <ChannelBrowser open onOpenChange={close} onSelect={select} />);
+    await settle();
+    await click(button(document.body, "Join"));
+    expect(select).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Being set up");
+    membership = "ACTIVE";
+    await click(document.querySelector<HTMLButtonElement>("[data-testid=channel-join-status]")!);
+    expect(select).toHaveBeenCalledOnce();
+    expect(select.mock.calls[0]?.[0]).toMatchObject({ id: workspace.id, isMember: true, membershipState: "ACTIVE" });
+    const writes = t.send.mock.calls.map(([r]) => r).filter((r) => r.method === "POST");
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.body).toMatchObject({ actionKey: "workspace.join", workspaceId: workspace.id });
+    expect(writes[0]?.body).not.toHaveProperty("principalId");
+  });
+  it("keeps the original idempotency key after a lost join response", async () => {
+    browserEnvironment();
+    const t = transport((request) => request.method === "POST"
+      ? { status: 503, body: { class: ErrorClass.Unknown, reason: ReasonCode.DependencyUnavailable, operationId: "join-operation" } }
+      : request.path.startsWith("/api/v1/discoverable-workspaces") ? { status: 200, body: { items: [workspace] } }
+      : request.path.startsWith("/api/v1/role-workspaces") ? { status: 200, body: { workspaces: [] } }
+      : { status: 200, body: [] });
+    const select = vi.fn();
+    await mount(t, <ChannelBrowser open onOpenChange={() => {}} onSelect={select} />);
+    await settle();
+    await click(button(document.body, "Join"));
+    await click(document.querySelector<HTMLButtonElement>("[data-testid=channel-join-status]")!);
+    const writes = t.send.mock.calls.map(([r]) => r).filter((r) => r.method === "POST");
+    expect(writes).toHaveLength(2);
+    expect(writes[1]?.body).toEqual(writes[0]?.body);
+    expect(select).not.toHaveBeenCalled();
+  });
+  it("recovers an accepted join after directory read failure without another write", async () => {
+    browserEnvironment();
+    let accepted = false;
+    let recover = false;
+    const t = transport((request) => {
+      if (request.method === "POST") {
+        accepted = true;
+        return { status: 202, body: { operationId: "join-operation", actionExecutionId: "join-execution",
+          actionKey: "workspace.join", gateState: "ALLOWED", dispatchState: "DISPATCHED" } };
+      }
+      if (request.path.startsWith("/api/v1/discoverable-workspaces")) {
+        if (accepted && !recover) return { status: 503, body: {} };
+        return { status: 200, body: { items: [{ ...workspace,
+          ...(recover ? { isMember: true, membershipState: "ACTIVE", joinActionKey: undefined } : {}),
+        }] } };
+      }
+      return { status: 200, body: { workspaces: [] } };
+    });
+    const select = vi.fn();
+    await mount(t, <ChannelBrowser open onOpenChange={() => {}} onSelect={select} />);
+    await settle();
+    await click(button(document.body, "Join"));
+    expect(select).not.toHaveBeenCalled();
+    recover = true;
+    await click(document.querySelector<HTMLButtonElement>("[data-testid=channel-join-status]")!);
+    expect(select).toHaveBeenCalledOnce();
+    expect(t.send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
+  });
 });
 
 describe("shared original channel creation entry", () => {
@@ -79,6 +167,16 @@ describe("shared original channel creation entry", () => {
     expect(t.send.mock.calls.find(([request]) => request.method === "POST")?.[0].body).toMatchObject({
       workspaceChannel: { channelType: "forum", description: "Architecture decisions" },
     });
+  });
+  it("uses the original public/private control but keeps product visibility outside Relay metadata", async () => {
+    const t = routes(() => recorded);
+    await mount(t, <CreateChannelDialog open onOpenChange={() => {}} />);
+    const dialog = await fill();
+    await click(dialog.querySelector<HTMLButtonElement>("[data-testid=create-channel-permissions-option-open]")!);
+    await click(button(dialog, "Create channel"));
+    const command = t.send.mock.calls.find(([request]) => request.method === "POST")?.[0].body as ActionCommand;
+    expect(command.workspaceVisibility).toBe("open");
+    expect(command.workspaceChannel).not.toHaveProperty("visibility");
   });
   it("keeps the original unknown command and blocks dismissing it until it is located", async () => {
     let writes = 0;
@@ -2543,6 +2641,21 @@ describe("platform pages render only through the host theme", () => {
         : name === surface.name ? inspectedSurface
         : name === picker.name ? inspectedPicker
         : name === appearance.name ? inspectedAppearance : text;
+      if (name === "channel-type-settings.tsx") {
+        // Fixed Buzz ChannelTypeSettings sizes the TTL menu to its trigger.
+        // This exact native layout attribute does not create another theme.
+        const nativeWidth = 'style={{ minWidth: "var(--radix-dropdown-menu-trigger-width)" }}';
+        expect(inspected.split(nativeWidth)).toHaveLength(2);
+        inspected = inspected.replace(nativeWidth, "");
+      }
+      if (name === "channel-permissions-settings.tsx") {
+        // Buzz 779af8886caae1317b4de962082429867ab61503
+        // desktop/src/features/channels/ui/ChannelPermissionsSettings.tsx
+        // uses this same trigger-width layout, not a colour/theme override.
+        const nativeWidth = /style=\{\{\s*minWidth: "var\(--radix-dropdown-menu-trigger-width\)",\s*\}\}/g;
+        expect(inspected.match(nativeWidth)).toHaveLength(1);
+        inspected = inspected.replace(nativeWidth, "");
+      }
       if (name === "new-message.tsx" || name === "inbox-surface.tsx") {
         // Fixed Buzz NewMessageScreen and HomeView use the host's dark root,
         // not another provider. HomeView at the same pin, line 687, repeats

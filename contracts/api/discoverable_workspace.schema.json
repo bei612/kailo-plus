@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/discoverable_workspace.schema.json",
+  "title": "DiscoverableWorkspace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "visibility", "channel", "isMember", "memberCount", "createdAt"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "visibility": { "$ref": "../domain/workspace_visibility.schema.json" },
+    "channel": { "$ref": "web_channel_view.schema.json" },
+    "isMember": { "type": "boolean", "description": "已通过当前 HUMAN Workspace 准入，而非只表示 join 已受理。" },
+    "memberCount": { "type": "integer", "minimum": 0 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "membershipState": { "$ref": "../enums/workspace_membership_state.schema.json" },
+    "joinActionKey": { "type": "string", "const": "workspace.join" }
+  }
+}

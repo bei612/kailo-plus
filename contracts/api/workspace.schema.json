@@ -9,6 +9,7 @@
   "properties": {
     "id": { "type": "string", "format": "uuid" },
     "slug": { "type": "string" },
-    "name": { "type": "string" }
+    "name": { "type": "string" },
+    "visibility": { "$ref": "../domain/workspace_visibility.schema.json", "description": "Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。" }
   }
 }

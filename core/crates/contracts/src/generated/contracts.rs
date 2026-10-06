@@ -938,6 +938,10 @@ pub struct ActionCommand {
     /// Workspace 内动作的执行 Workspace
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
+
+    /// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_visibility: Option<WorkspaceVisibility>,
 }
 
 /// 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
@@ -1561,6 +1565,19 @@ pub enum ChannelType {
     Forum,
 
     Stream,
+}
+
+/// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+///
+/// DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
+///
+/// Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceVisibility {
+    Open,
+
+    Private,
 }
 
 /// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -3961,6 +3978,108 @@ pub struct DelegatedActionMetadataV1 {
     pub workflow_id: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoverableWorkspace {
+    pub channel: ChannelClass,
+
+    pub created_at: String,
+
+    pub id: String,
+
+    /// 已通过当前 HUMAN Workspace 准入，而非只表示 join 已受理。
+    pub is_member: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub join_action_key: Option<JoinActionKey>,
+
+    pub member_count: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub membership_state: Option<WorkspaceMembershipState>,
+
+    pub visibility: WorkspaceVisibility,
+}
+
+/// Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelClass {
+    pub archived: bool,
+
+    pub channel_id: String,
+
+    pub channel_type: ChannelType,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    pub name: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_deadline: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum JoinActionKey {
+    #[serde(rename = "workspace.join")]
+    WorkspaceJoin,
+}
+
+/// WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum WorkspaceMembershipState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "ERROR")]
+    Error,
+
+    #[serde(rename = "PROVISIONING")]
+    Provisioning,
+
+    #[serde(rename = "REVOKED")]
+    Revoked,
+
+    #[serde(rename = "REVOKING")]
+    Revoking,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoverableWorkspacePage {
+    pub items: Vec<DiscoverableWorkspacePageItem>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoverableWorkspacePageItem {
+    pub channel: ChannelClass,
+
+    pub created_at: String,
+
+    pub id: String,
+
+    /// 已通过当前 HUMAN Workspace 准入，而非只表示 join 已受理。
+    pub is_member: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub join_action_key: Option<JoinActionKey>,
+
+    pub member_count: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub membership_state: Option<WorkspaceMembershipState>,
+
+    pub visibility: WorkspaceVisibility,
+}
+
 /// GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
 /// 授权；每种证据另向其权威源查证原对象仍存在：明确不存在回 404（正文为 NOT_FOUND 的不可用视图），权威源不提供查证接口为 UNVERIFIABLE，权威源不可达回
 /// 503。不可用时不回任何 ref 内容。
@@ -4821,6 +4940,10 @@ pub struct WorkspaceView {
     pub name: String,
 
     pub slug: String,
+
+    /// Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<WorkspaceVisibility>,
 }
 
 /// GET /api/v1/workspaces/{workspaceId}/members 回应数组的元素，按人聚合（DD-77）。
@@ -4835,25 +4958,6 @@ pub struct WorkspaceMemberView {
     pub pubkeys: Vec<String>,
 
     pub state: WorkspaceMembershipState,
-}
-
-/// WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum WorkspaceMembershipState {
-    #[serde(rename = "ACTIVE")]
-    Active,
-
-    #[serde(rename = "ERROR")]
-    Error,
-
-    #[serde(rename = "PROVISIONING")]
-    Provisioning,
-
-    #[serde(rename = "REVOKED")]
-    Revoked,
-
-    #[serde(rename = "REVOKING")]
-    Revoking,
 }
 
 /// PUT /api/v1/user-state/workspaces/{workspaceId} 的请求体（DD-40）：该 Workspace 的收藏与静音。version

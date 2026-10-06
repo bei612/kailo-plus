@@ -66,6 +66,8 @@
     "./react/forum/ForumComposerSurface": "./src/react/forum/ForumComposerSurface.tsx",
     "./react/new-message": "./src/react/new-message.tsx",
     "./react/create-channel-dialog": "./src/react/create-channel-dialog.tsx",
+    "./react/channel-browser": "./src/react/channel-browser.tsx",
+    "./react/channel-glyph": "./src/react/channel-glyph.tsx",
     "./react/profile-settings": "./src/react/profile-settings.tsx",
     "./keyboard-platform": "./src/keyboard-platform.ts",
     "./react/use-settings-shortcuts": "./src/react/use-settings-shortcuts.ts",

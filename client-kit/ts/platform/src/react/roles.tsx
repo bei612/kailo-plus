@@ -12,6 +12,8 @@ import { useLoad } from "./use-load";
 import { Input } from "./composer/shared/ui/input";
 import { cn } from "./profile/buzz/shared/lib/cn";
 import { ChannelTypeSettings, DEFAULT_EPHEMERAL_TTL_SECONDS } from "./channel-type-settings";
+import { WorkspaceVisibility } from "@client-kit/contracts";
+import { ChannelPermissionsSettings } from "./channel-permissions-settings";
 
 type Change = { key: string; principal: RoleMemberView; idempotencyKey: string };
 type Outcome =
@@ -109,6 +111,7 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: Ch
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
+  const [visibility, setVisibility] = useState(WorkspaceVisibility.Private);
   const [temporary, setTemporary] = useState(false);
   const [ttlSeconds, setTtlSeconds] = useState(DEFAULT_EPHEMERAL_TTL_SECONDS);
   const [command, setCommand] = useState<ActionCommand | null>(null);
@@ -131,6 +134,7 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: Ch
     // The original channel form has no infrastructure slug field. Use its existing
     // stable creation intent key; management forms may still choose a readable slug.
     const intent = command ?? { actionKey, idempotencyKey, name: name.trim(), slug: channelType === undefined ? slug.trim() : idempotencyKey,
+      workspaceVisibility: visibility,
       workspaceChannel: { channelType: channelType ?? ChannelType.Stream, ...(description.trim() ? { description: description.trim() } : {}), ...(temporary ? { ttlSeconds } : {}) } };
     inFlight.current = true;
     setCommand(intent);
@@ -151,6 +155,7 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: Ch
       setName("");
       setSlug("");
       setDescription("");
+      setVisibility(WorkspaceVisibility.Private);
       setTemporary(false);
       setTtlSeconds(DEFAULT_EPHEMERAL_TTL_SECONDS);
     } catch (error) {
@@ -165,7 +170,7 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: Ch
     }
   };
 
-  return { actionKey, name, setName, slug, setSlug, description, setDescription, temporary, setTemporary, ttlSeconds, setTtlSeconds, channelType, command, busy, failure, submission,
+  return { actionKey, name, setName, slug, setSlug, description, setDescription, visibility, setVisibility, temporary, setTemporary, ttlSeconds, setTtlSeconds, channelType, command, busy, failure, submission,
     locked, openTasks, pendingCreates, reloadOpenTasks, submit };
 }
 
@@ -218,6 +223,7 @@ export function WorkspaceCreateForm({ state, channel = false }: { state: Workspa
       </label> : null}
       {channel ? <ChannelTypeSettings disabled={locked} temporary={state.temporary} ttlSeconds={state.ttlSeconds}
         onTemporaryChange={state.setTemporary} onTtlSecondsChange={state.setTtlSeconds} /> : null}
+      <ChannelPermissionsSettings disabled={locked} visibility={state.visibility} onVisibilityChange={state.setVisibility} testIdPrefix="create-channel" variant="segmented" />
       {submission ? (
         <div role="status" className="break-words text-sm">
           <p>{t("workspace.create.recorded", { execution: submission.actionExecutionId, operation: submission.operationId, gate: submission.gateState, dispatch: submission.dispatchState })}</p>

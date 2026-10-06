@@ -657,6 +657,10 @@ export interface ActionCommand {
      * Workspace 内动作的执行 Workspace
      */
     workspaceId?: string;
+    /**
+     * 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+     */
+    workspaceVisibility?: WorkspaceVisibility;
 }
 
 /**
@@ -1080,6 +1084,18 @@ export interface WorkspaceChannelClass {
 export enum ChannelType {
     Forum = "forum",
     Stream = "stream",
+}
+
+/**
+ * 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+ *
+ * DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
+ *
+ * Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
+ */
+export enum WorkspaceVisibility {
+    Open = "open",
+    Private = "private",
 }
 
 /**
@@ -2592,6 +2608,67 @@ export interface DelegatedActionMetadataV1 {
     workflowId?:         string;
 }
 
+export interface DiscoverableWorkspace {
+    channel:   ChannelClass;
+    createdAt: Date;
+    id:        string;
+    /**
+     * 已通过当前 HUMAN Workspace 准入，而非只表示 join 已受理。
+     */
+    isMember:         boolean;
+    joinActionKey?:   JoinActionKey;
+    memberCount:      number;
+    membershipState?: WorkspaceMembershipState;
+    visibility:       WorkspaceVisibility;
+}
+
+/**
+ * Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。
+ */
+export interface ChannelClass {
+    archived:     boolean;
+    channelId:    string;
+    channelType:  ChannelType;
+    description?: string;
+    name:         string;
+    ttlDeadline?: Date;
+    ttlSeconds?:  number;
+}
+
+export enum JoinActionKey {
+    WorkspaceJoin = "workspace.join",
+}
+
+/**
+ * WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
+ */
+export enum WorkspaceMembershipState {
+    Active = "ACTIVE",
+    Error = "ERROR",
+    Provisioning = "PROVISIONING",
+    Revoked = "REVOKED",
+    Revoking = "REVOKING",
+}
+
+export interface DiscoverableWorkspacePage {
+    items:       DiscoverableWorkspacePageItem[];
+    nextCursor?: string;
+}
+
+export interface DiscoverableWorkspacePageItem {
+    channel:   ChannelClass;
+    createdAt: Date;
+    id:        string;
+    /**
+     * 已通过当前 HUMAN Workspace 准入，而非只表示 join 已受理。
+     */
+    isMember:         boolean;
+    joinActionKey?:   JoinActionKey;
+    memberCount:      number;
+    membershipState?: WorkspaceMembershipState;
+    visibility:       WorkspaceVisibility;
+}
+
 /**
  * GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
  * 授权；每种证据另向其权威源查证原对象仍存在：明确不存在回 404（正文为 NOT_FOUND 的不可用视图），权威源不提供查证接口为 UNVERIFIABLE，权威源不可达回
@@ -3221,6 +3298,10 @@ export interface WorkspaceView {
     id:   string;
     name: string;
     slug: string;
+    /**
+     * Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
+     */
+    visibility?: WorkspaceVisibility;
 }
 
 /**
@@ -3234,17 +3315,6 @@ export interface WorkspaceMemberView {
      */
     pubkeys: string[];
     state:   WorkspaceMembershipState;
-}
-
-/**
- * WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
- */
-export enum WorkspaceMembershipState {
-    Active = "ACTIVE",
-    Error = "ERROR",
-    Provisioning = "PROVISIONING",
-    Revoked = "REVOKED",
-    Revoking = "REVOKING",
 }
 
 /**

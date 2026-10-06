@@ -2466,3 +2466,70 @@ REQ-24 删除这些功能。源码验收不代表新 Web/Windows 包已投递。
 原 `check-docs.sh` 经既有离线 npm cache 执行退出 0，日志为
 `thread-panel-docs-restored.log`；首次默认 npm cache 权限失败保留，不以改权限绕过。
 这只证明词条同源和本批源码检查，不是 Mobile 页面、镜像或设备验收。
+
+## 原频道浏览与公开加入接入（2026-10-06，REQ-24 / DD-80）
+
+本批以 `a54c5910144b83fa3bccb6351ac14701e214162c` 的线程交付为比较基准。
+实现已写入，但本段不证明真实双用户加入、部署、新安装包或生产就绪。
+
+动手前的四项依据与实际边界：
+
+1. 权威：DD-80 的公开是同 Tenant 内可发现并经 Core 加入，不是把 Relay
+   协议频道设成公开。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/channels/ui/ChannelBrowserDialog.tsx::ChannelBrowserDialog`、
+   `ChannelCard`、`ChannelCreateView`，以及
+   `desktop/src/features/channels/ui/ChannelPermissionsSettings.tsx::ChannelPermissionsSettings`
+   已逐符号核验并提取共享；保留原搜索、模糊匹配、分类、排序、键盘选择、成员数、
+   创建视图和公开／私有分段控件，不另写简版页面。
+2. 影响：`workspace.create` 冻结可选 `workspaceVisibility`，旧请求与旧数据缺省
+   private；Core `identity.workspace.visibility` 是产品事实。新增
+   `workspace.join` 仍从原 `/api/v1/actions` 进入，只取已认证本人，落原
+   WorkspaceMembership，再走现有 MEMBERSHIP_PROJECTION / Temporal / SpiceDB / Buzz
+   对账，不增加计时器、成员表或 Workflow 权威。两端同一浏览组件使用新只读目录；
+   Native 的签名缓存不改写，只用 Core 已准入目录投射展示可见性，避免把协议 private
+   误画成产品私有。加入后刷新原频道与 Core 目录，再导航。
+3. 副作用：目录仅给同 Tenant 公开频道或已有成员的私有频道；原 CONTROL 读取签名
+   channel metadata，复用既有签名／频道／作者校验，不复制消息正文。外部读取后再核
+   Tenant、成员、binding 版本与准入。没有原成员关系才能 self-join，REVOKED 不可
+   借公开入口复活；原管理员成员恢复动作仍是其恢复路径。
+4. 异常：空目录是真空列表；分页重复 ID、重复 cursor、未知可见性／成员枚举拒绝消费。
+   受理、PROVISIONING、读取失败均不算加入成功；只有回读 ACTIVE 且 isMember 才打开。
+   UNKNOWN 保留同幂等命令；已受理后的目录暂时失败只重读，不再次写入。身份卸载丢弃
+   迟到结果。数据库回退遇到已存在 open Workspace 必须停止，不能静默抹掉可见性。
+
+实际证据仍在既有 4 CPU／8 GiB SDK 的 Data
+`codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`：
+
+- `public-channel-generation.log`：原 `tools/gen.sh` 四侧生成及原同源 Dart 生成退出 0。
+  输出进入工作树，没有手写生成类型。独立 thread-only 产物已先交付，不以此批混入
+  未验的消息编辑契约或审计文案。
+- shared 源与 test、Web、Desktop TypeScript 退出 0。原 pages 整文件 228/228；
+  后补“已受理后目录失败可恢复”真实回归，最终仅频道／主题 12/12。原生缓存 hooks
+  10/10。日志 `public-channel-types-contracts-restored.log`、`public-channel-ui-final.log`、
+  `public-channel-ui-restored-final.log`、`public-channel-native-hooks.log`。
+  初轮提取代码的可空索引、generated PageItem 类型，以及 Native 安装副本旧契约
+  错误已修，原失败日志保留；没有修改产品去迁就旧夹具。
+- Core `workspace_channel_tests` 3/3；Rust 原 roundtrip 19/19，TS 22/22，Go
+  `./internal/contracts` 退出 0，Dart 17/17。日志 `public-channel-core-restored.log`、
+  `public-channel-core-final.log`、`public-channel-go-dart.log`。前批 `.001Z` 样例和
+  原 TTL minWidth 精确例外已纳入；Permissions 同一原生布局属性也精确核验，不放宽
+  其它主题规则。原兼容检查相对 contracts-v0.1.0 匹配 3 个历史 schema，退出 0
+  （`public-channel-compatibility.log`）；这不等于所有旧客户端能读新增返回字段，
+  strict additionalProperties 消费者仍须随版本交付，Core 迁移与服务先于新客户端。
+- SDK-only 提前确认加入、丢失 visibility、拦死目录失败后的状态重读，各真实 1 fail；
+  Core 放开自加入 principalId 也真实 1 fail。对应
+  `public-channel-{join,visibility,recovery,core}-mutation.log`；均从正式源码原字节还原，
+  cmp 退出 0，随后频道 12/12 与 Core 3/3 通过。
+- 原迁移 SQL 在已有隔离 `scope_verify` 库事务内 up / down / up，验证默认 private
+  与原 MEMBERSHIP_PROJECTION 后 ROLLBACK，退出 0；构造事务内 open Workspace 后
+  down 真实退出 3：`Open workspaces prevent visibility rollback`，连接退出后记录、
+  列和 action 均回到原状态，业务库未动。日志 `public-channel-migration-transaction.log`
+  和 `public-channel-migration-stop.log`。SDK 的 sqlx 连接该隔离 PG 没有返回回执后已
+  取消，不声称 sqlx CLI 三步成功，也没有变更网络来绕通。
+
+完整原模板、已有频道可见性修改、项目主页专有 glyph、真实双端公开加入验收仍是
+后续交付缺口，没有从 REQ-24 删除。本批没有构建镜像、部署或改变在线权限。
+
+主代理收口时补验原 `cargo fmt --all --check`，首次退出 1（新增 Rust 代码格式），
+同一 SDK 执行原 formatter 后再次退出 0；只更新本批三个 Rust 文件。
+最终包含前批 `.001Z` 样例，合计 50 文件，不把格式通过计作新增产品能力。

@@ -26,6 +26,206 @@ use crate::bff::{db_enum, resolve_execution_context, BffState};
 use crate::governance::{Actor, TenantLifecycleOffer, WorkspaceLifecycleOffer};
 use crate::spicedb::{Consistency, RelationshipFilter};
 
+#[derive(Deserialize)]
+pub struct DiscoveryQuery {
+    cursor: Option<Uuid>,
+}
+
+#[derive(sqlx::FromRow, PartialEq)]
+struct DiscoveryRow {
+    id: Uuid,
+    visibility: String,
+    version: i32,
+    channel_id: String,
+    binding_version: i32,
+    membership_state: Option<String>,
+    membership_version: Option<i32>,
+    member_count: i64,
+    created_at: chrono::DateTime<chrono::Utc>,
+}
+
+async fn discovery_rows(
+    state: &BffState,
+    ctx: &crate::bff::ExecutionContext,
+    cursor: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<DiscoveryRow>, sqlx::Error> {
+    sqlx::query_as(
+        "select w.id, w.visibility, w.version, b.channel_id::text as channel_id,
+                b.version as binding_version, wm.state as membership_state,
+                wm.version as membership_version, w.created_at,
+                (select count(*) from identity.workspace_membership members
+                 where members.workspace_id = w.id and members.state = 'ACTIVE') as member_count
+         from identity.workspace w
+         join projection.workspace_buzz_binding b on b.workspace_id = w.id and b.state = 'ACTIVE'
+         left join identity.workspace_membership wm on wm.workspace_id = w.id and wm.tenant_principal_id = $2
+         where w.tenant_id = $1 and w.state = 'ACTIVE' and ($3::uuid is null or w.id > $3)
+           and (w.visibility = 'open' or wm.state = 'ACTIVE')
+         order by w.id limit $4",
+    ).bind(ctx.tenant_id).bind(ctx.tenant_principal_id).bind(cursor).bind(limit).fetch_all(&state.pool).await
+}
+
+async fn discover_tenant(
+    state: &BffState,
+    ctx: &crate::bff::ExecutionContext,
+) -> Result<(), Response> {
+    let checked = state
+        .governance
+        .spicedb
+        .check(
+            "tenant",
+            &ctx.tenant_id.to_string(),
+            "discover",
+            &ctx.tenant_principal_id.to_string(),
+            Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+    if checked.zed_token.is_empty() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+    }
+    if !checked.allowed {
+        return Err(StatusCode::FORBIDDEN.into_response());
+    }
+    Ok(())
+}
+
+/// DD-80 public discovery is not message admission. Metadata is read from the
+/// original signed Relay snapshot by the existing CONTROL identity, never cached
+/// as a second channel authority. Private nonmember rows never reach that reader.
+pub async fn discoverable_workspaces(
+    State(state): State<BffState>,
+    Query(query): Query<DiscoveryQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    if let Err(r) = discover_tenant(&state, &ctx).await {
+        return r;
+    }
+    let page = state.governance.cfg.role_member_page_limit;
+    let Some(limit) = page.checked_add(1) else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let mut rows = match discovery_rows(&state, &ctx, query.cursor, limit).await {
+        Ok(rows) => rows,
+        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+    let more = rows.len() as i64 > page;
+    rows.truncate(page as usize);
+    let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let admitted = match crate::web_transport::workspace_admissions(&state, &ctx, &ids).await {
+        Ok(v) => v,
+        Err(e) => return e.into_response(),
+    };
+    let (control, host) = match crate::tenant_lifecycle::control_client(
+        &state.memory_service,
+        ctx.tenant_id,
+        crate::tenant_lifecycle::ProjectionDirection::Establish,
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let author = match crate::web_transport::window_author(&state, &ctx, &host).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let join_definition =
+        match crate::governance::active_definition(&state.pool, "workspace.join").await {
+            Ok(value) => value,
+            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        };
+    let join_exposed = crate::capability_registry::action_exposed("workspace.join")
+        && join_definition.is_some_and(|def| {
+            def.target_type == "WORKSPACE_MEMBERSHIP"
+                && def.workspace_rule == "WORKSPACE_REQUIRED"
+                && def.permission == "discover"
+                && def.permission_object_type == "tenant"
+                && def.workflow_kind.as_deref() == Some("MEMBERSHIP_PROJECTION")
+        });
+    let mut items = Vec::with_capacity(rows.len());
+    for row in &rows {
+        let event = match control.channel_metadata(&state.http, &row.channel_id).await {
+            Ok(Some(event)) => event,
+            _ => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        };
+        let channel =
+            match crate::web_transport::web_channel_view(&event, &row.channel_id, &author.1) {
+                Ok(v) => v,
+                Err(r) => return r,
+            };
+        let mut item = serde_json::json!({
+            "id": row.id, "visibility": row.visibility, "channel": channel,
+            "isMember": admitted.contains_key(&row.id), "memberCount": row.member_count,
+            "createdAt": row.created_at,
+        });
+        if let Some(membership) = &row.membership_state {
+            item["membershipState"] = membership.clone().into();
+        }
+        if join_exposed
+            && row.visibility == "open"
+            && row.membership_state.is_none()
+            && !channel.archived
+        {
+            item["joinActionKey"] = "workspace.join".into();
+        }
+        let parsed = match serde_json::from_value::<contracts::DiscoverableWorkspacePageItem>(item)
+        {
+            Ok(v) => v,
+            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        };
+        items.push(parsed);
+    }
+    // Scope and projection must still be the same after the external reads.
+    let current = match resolve_execution_context(&state, &headers).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    if current.tenant_id != ctx.tenant_id || current.tenant_principal_id != ctx.tenant_principal_id
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    if let Err(r) = discover_tenant(&state, &current).await {
+        return r;
+    }
+    let mut observed = match discovery_rows(&state, &current, query.cursor, limit).await {
+        Ok(v) => v,
+        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+    observed.truncate(page as usize);
+    if observed != rows {
+        return StatusCode::CONFLICT.into_response();
+    }
+    let current_admitted =
+        match crate::web_transport::workspace_admissions(&state, &current, &ids).await {
+            Ok(value) => value,
+            Err(error) => return error.into_response(),
+        };
+    if ids
+        .iter()
+        .any(|id| admitted.contains_key(id) != current_admitted.contains_key(id))
+    {
+        return StatusCode::CONFLICT.into_response();
+    }
+    match crate::web_transport::window_author(&state, &current, &host).await {
+        Ok(now) if now == author => {}
+        _ => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    }
+    Json(contracts::DiscoverableWorkspacePage {
+        items,
+        next_cursor: if more {
+            rows.last().map(|row| row.id.to_string())
+        } else {
+            None
+        },
+    })
+    .into_response()
+}
+
 /// 我在当前 Tenant 里能进的 Workspace。
 ///
 /// 只列 HUMAN scope 已准入且两侧 binding 都 ACTIVE 的——列出一个
@@ -35,8 +235,8 @@ pub async fn list_workspaces(State(state): State<BffState>, headers: HeaderMap) 
         Ok(c) => c,
         Err(r) => return r,
     };
-    let rows = match sqlx::query_as::<_, (Uuid, String, String)>(
-        "select w.id, w.slug, w.name
+    let rows = match sqlx::query_as::<_, (Uuid, String, String, String)>(
+        "select w.id, w.slug, w.name, w.visibility
          from identity.workspace w
          join identity.tenant tenant
            on tenant.id = w.tenant_id and tenant.state = 'ACTIVE'
@@ -57,20 +257,31 @@ pub async fn list_workspaces(State(state): State<BffState>, headers: HeaderMap) 
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
-    let ids: Vec<Uuid> = rows.iter().map(|(id, _, _)| *id).collect();
+    let ids: Vec<Uuid> = rows.iter().map(|(id, _, _, _)| *id).collect();
     let admitted = match crate::web_transport::workspace_admissions(&state, &ctx, &ids).await {
         Ok(admitted) => admitted,
         Err(e) => return e.into_response(),
     };
+    if rows
+        .iter()
+        .any(|(_, _, _, visibility)| !matches!(visibility.as_str(), "open" | "private"))
+    {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
     (
         StatusCode::OK,
         Json(
             rows.into_iter()
-                .filter(|(id, _, _)| admitted.contains_key(id))
-                .map(|(id, slug, name)| WorkspaceView {
+                .filter(|(id, _, _, _)| admitted.contains_key(id))
+                .map(|(id, slug, name, visibility)| WorkspaceView {
                     id: id.to_string(),
                     slug,
                     name,
+                    visibility: Some(if visibility == "open" {
+                        contracts::WorkspaceVisibility::Open
+                    } else {
+                        contracts::WorkspaceVisibility::Private
+                    }),
                 })
                 .collect::<Vec<_>>(),
         ),

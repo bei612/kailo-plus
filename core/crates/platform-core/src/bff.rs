@@ -344,6 +344,10 @@ pub fn router(state: BffState) -> Router {
             get(crate::platform_views::list_workspaces),
         )
         .exposed_route(
+            "/api/v1/discoverable-workspaces",
+            get(crate::platform_views::discoverable_workspaces),
+        )
+        .exposed_route(
             "/api/v1/workspaces/{workspace_id}/members",
             get(crate::platform_views::list_members),
         )

@@ -211,6 +211,12 @@
 //    delegatedActionMetadataV1, err := UnmarshalDelegatedActionMetadataV1(bytes)
 //    bytes, err = delegatedActionMetadataV1.Marshal()
 //
+//    discoverableWorkspace, err := UnmarshalDiscoverableWorkspace(bytes)
+//    bytes, err = discoverableWorkspace.Marshal()
+//
+//    discoverableWorkspacePage, err := UnmarshalDiscoverableWorkspacePage(bytes)
+//    bytes, err = discoverableWorkspacePage.Marshal()
+//
 //    evidenceView, err := UnmarshalEvidenceView(bytes)
 //    bytes, err = evidenceView.Marshal()
 //
@@ -405,6 +411,9 @@
 //
 //    workspaceChannelCreate, err := UnmarshalWorkspaceChannelCreate(bytes)
 //    bytes, err = workspaceChannelCreate.Marshal()
+//
+//    workspaceVisibility, err := UnmarshalWorkspaceVisibility(bytes)
+//    bytes, err = workspaceVisibility.Marshal()
 //
 //    affectedOwnerRef, err := UnmarshalAffectedOwnerRef(bytes)
 //    bytes, err = affectedOwnerRef.Marshal()
@@ -1244,6 +1253,26 @@ func (r *DelegatedActionMetadataV1) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalDiscoverableWorkspace(data []byte) (DiscoverableWorkspace, error) {
+	var r DiscoverableWorkspace
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *DiscoverableWorkspace) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalDiscoverableWorkspacePage(data []byte) (DiscoverableWorkspacePage, error) {
+	var r DiscoverableWorkspacePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *DiscoverableWorkspacePage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalEvidenceView(data []byte) (EvidenceView, error) {
 	var r EvidenceView
 	err := json.Unmarshal(data, &r)
@@ -1891,6 +1920,16 @@ func UnmarshalWorkspaceChannelCreate(data []byte) (WorkspaceChannelCreate, error
 }
 
 func (r *WorkspaceChannelCreate) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWorkspaceVisibility(data []byte) (WorkspaceVisibility, error) {
+	var r WorkspaceVisibility
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WorkspaceVisibility) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2733,6 +2772,8 @@ type ActionCommand struct {
 	WorkspaceChannel *WorkspaceChannelClass `json:"workspaceChannel,omitempty"`
 	// Workspace 内动作的执行 Workspace
 	WorkspaceID *string `json:"workspaceId,omitempty"`
+	// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+	WorkspaceVisibility *WorkspaceVisibility `json:"workspaceVisibility,omitempty"`
 }
 
 // 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
@@ -3899,6 +3940,46 @@ type DelegatedActionMetadataV1 struct {
 	WorkflowID         *string             `json:"workflowId,omitempty"`
 }
 
+type DiscoverableWorkspace struct {
+	Channel   ChannelClass `json:"channel"`
+	CreatedAt time.Time    `json:"createdAt"`
+	ID        string       `json:"id"`
+	// 已通过当前 HUMAN Workspace 准入，而非只表示 join 已受理。
+	IsMember        bool                      `json:"isMember"`
+	JoinActionKey   *JoinActionKey            `json:"joinActionKey,omitempty"`
+	MemberCount     int64                     `json:"memberCount"`
+	MembershipState *WorkspaceMembershipState `json:"membershipState,omitempty"`
+	Visibility      WorkspaceVisibility       `json:"visibility"`
+}
+
+// Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。
+type ChannelClass struct {
+	Archived    bool        `json:"archived"`
+	ChannelID   string      `json:"channelId"`
+	ChannelType ChannelType `json:"channelType"`
+	Description *string     `json:"description,omitempty"`
+	Name        string      `json:"name"`
+	TTLDeadline *time.Time  `json:"ttlDeadline,omitempty"`
+	TTLSeconds  *int64      `json:"ttlSeconds,omitempty"`
+}
+
+type DiscoverableWorkspacePage struct {
+	Items      []DiscoverableWorkspacePageItem `json:"items"`
+	NextCursor *string                         `json:"nextCursor,omitempty"`
+}
+
+type DiscoverableWorkspacePageItem struct {
+	Channel   ChannelClass `json:"channel"`
+	CreatedAt time.Time    `json:"createdAt"`
+	ID        string       `json:"id"`
+	// 已通过当前 HUMAN Workspace 准入，而非只表示 join 已受理。
+	IsMember        bool                      `json:"isMember"`
+	JoinActionKey   *JoinActionKey            `json:"joinActionKey,omitempty"`
+	MemberCount     int64                     `json:"memberCount"`
+	MembershipState *WorkspaceMembershipState `json:"membershipState,omitempty"`
+	Visibility      WorkspaceVisibility       `json:"visibility"`
+}
+
 // GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
 // 授权；每种证据另向其权威源查证原对象仍存在：明确不存在回 404（正文为 NOT_FOUND 的不可用视图），权威源不提供查证接口为 UNVERIFIABLE，权威源不可达回
 // 503。不可用时不回任何 ref 内容。
@@ -4265,6 +4346,8 @@ type WorkspaceView struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Slug string `json:"slug"`
+	// Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
+	Visibility *WorkspaceVisibility `json:"visibility,omitempty"`
 }
 
 // GET /api/v1/workspaces/{workspaceId}/members 回应数组的元素，按人聚合（DD-77）。
@@ -5742,6 +5825,18 @@ const (
 	Stream ChannelType = "stream"
 )
 
+// 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+//
+// DD-80 的产品可见性：open 仅指同 Tenant 成员可发现并经 Core 加入；Relay 投影始终 private。
+//
+// Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。
+type WorkspaceVisibility string
+
+const (
+	Open    WorkspaceVisibility = "open"
+	Private WorkspaceVisibility = "private"
+)
+
 // ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe
 // seam 能把它收敛，不能因无 native ID 就自动重放（DD-48）。
 type ActionDispatchState string
@@ -6173,6 +6268,23 @@ const (
 	TentacledACTIVE   ItemState = "ACTIVE"
 )
 
+type JoinActionKey string
+
+const (
+	WorkspaceJoin JoinActionKey = "workspace.join"
+)
+
+// WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
+type WorkspaceMembershipState string
+
+const (
+	WorkspaceMembershipStateACTIVE       WorkspaceMembershipState = "ACTIVE"
+	WorkspaceMembershipStateERROR        WorkspaceMembershipState = "ERROR"
+	WorkspaceMembershipStatePROVISIONING WorkspaceMembershipState = "PROVISIONING"
+	WorkspaceMembershipStateREVOKED      WorkspaceMembershipState = "REVOKED"
+	WorkspaceMembershipStateREVOKING     WorkspaceMembershipState = "REVOKING"
+)
+
 // 解引用只显示不可用时的原因：原证据已不存在（HTTP 404）、敏感级别未获授权、存量种类不可识别、权威源无法按该 ID 查证其仍存在。
 type EvidenceUnavailableReason string
 
@@ -6322,17 +6434,6 @@ const (
 	ForumComment         WebMessageType = "FORUM_COMMENT"
 	ForumPost            WebMessageType = "FORUM_POST"
 	WebMessageTypeSTREAM WebMessageType = "STREAM"
-)
-
-// WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。
-type WorkspaceMembershipState string
-
-const (
-	WorkspaceMembershipStateACTIVE       WorkspaceMembershipState = "ACTIVE"
-	WorkspaceMembershipStateERROR        WorkspaceMembershipState = "ERROR"
-	WorkspaceMembershipStatePROVISIONING WorkspaceMembershipState = "PROVISIONING"
-	WorkspaceMembershipStateREVOKED      WorkspaceMembershipState = "REVOKED"
-	WorkspaceMembershipStateREVOKING     WorkspaceMembershipState = "REVOKING"
 )
 
 type CapabilityVectorFormat string

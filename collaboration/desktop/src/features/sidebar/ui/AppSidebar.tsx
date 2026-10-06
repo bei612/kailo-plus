@@ -1,6 +1,8 @@
 import * as React from "react";
 import { AppSidebarFrame } from "@client-kit/platform/react/sidebar/app-sidebar-frame";
-import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
+import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
+import { useQueryClient } from "@tanstack/react-query";
+import { channelsQueryKey, workspaceVisibilityQueryKey } from "@/features/channels/hooks";
 import { ConversationList, useConversations } from "@client-kit/platform/react/new-message";
 import { translate, resolveLocale } from "@client-kit/platform/i18n";
 
@@ -73,6 +75,7 @@ export function AppSidebar({
   onUnstarChannel,
 }: AppSidebarProps) {
   const [isCreateChannelOpen, setCreateChannelOpen] = React.useState(false);
+  const queryClient = useQueryClient();
   const { open: sidebarOpen, openMobile } = useSidebar();
   const isMobile = useIsMobile();
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -245,7 +248,9 @@ export function AppSidebar({
                 />
               </SidebarMenuItem>
             </SidebarMenu></>}
-      dialogs={<CreateChannelDialog open={isCreateChannelOpen} onOpenChange={setCreateChannelOpen} />}>
+      dialogs={<ChannelBrowser key={currentPrincipalId} open={isCreateChannelOpen} onOpenChange={setCreateChannelOpen}
+        lastMessageAtByChannelId={new Map(channels.map((channel) => [channel.id, channel.lastMessageAt]))}
+        onSelect={async (workspace) => { await Promise.all([queryClient.invalidateQueries({ queryKey: channelsQueryKey }), queryClient.invalidateQueries({ queryKey: workspaceVisibilityQueryKey })]); onSelectChannel(workspace.channel.channelId); }} />}>
               <AppSidebarPrimaryMenu
                 onNewMessage={onNewMessage}
                 homeBadgeCount={homeBadgeCount}
@@ -315,7 +320,7 @@ export function AppSidebar({
                     selectedChannelId={selectedChannelId}
                     title="Channels"
                     onCreateChannel={() => setCreateChannelOpen(true)}
-                    createChannelLabel={translate(resolveLocale(), "channel.create.title")}
+                    createChannelLabel={translate(resolveLocale(), "channel.browser.title")}
                     unreadChannelIds={unreadChannelIds}
                     mutedChannelIds={mutedChannelIds}
                     onMuteChannel={onMuteChannel}
