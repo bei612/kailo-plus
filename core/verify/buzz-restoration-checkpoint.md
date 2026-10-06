@@ -867,3 +867,76 @@ Playwright 沿既有真实浏览器会话截图；第一次切到收件箱时会
 Workflows、全站双语和 Windows/Mobile 实机验收。本次不宣称每个子页面、弹窗、
 异常态或 Web/Desktop 官方等效已经验收。Data 本次约剩 6.2 GiB，已有 WeKnora
 单次构建继续运行；没有启动重复编译、全量检查或清空共享缓存。
+
+## 2026-10-06 21:58 UTC 实际发布、逐页截图与 Agent 验证
+
+上述 21:17 时点的旧版本状态由本节后续结果更新。源码增量已普通推送：
+`cc71bf7b10388e450a550bcf01a562b3c7527865` 为共源服务入口、Forum 作者资料和
+频道回复状态保留，12 路径 +332/-13；`ef92cc73ccd2482f759fdc7b19ffa6843e4b2d79`
+为 WeKnora 后端产物/真实单服务部署回执，2 路径 +138/-3。二者不修改设计合同。
+
+Core/Worker 实际构建源为 `433ec461456f9def7da892b270cdceb9def77fca`；Web 唯一
+构建源为 `cc71bf7b10388e450a550bcf01a562b3c7527865`，没有先构建 433 Web 再重建。
+原发布入口、registry push 与三个部署入口均退出 0。镜像实际读回：
+
+- Core `sha256:b1c8108f6e1f6c34e27d566f9010e369f07138dec32c3f8e0a11f8a5499ceb6b`。
+- Worker `sha256:5bc2763db9af3298c3adee3680349ac7941ebaf8fa5946b9073e3419c2106fbf`。
+- Web `sha256:b54d6bccfaa10fdd5d6c8a30746ff236052dbcfc9ff8ab74c029a6c1c469c415`。
+
+原迁移入口先前向执行 `20261006230000_capacity_active_session_recovery`，94 条迁移
+全部成功；随后 Core→Worker→Web 投递，Core health 200，Web healthy，三容器
+restart count 为 0。源码锁、SBOM/provenance、registry 独立读回、真实命令与日志
+在 `/volumes/data/kailo/tmp/buzz-runtime-author-release-20261006.VJnPeY/release-receipt.md`。
+复用原 Data builder/cache，但确有基础层下载及依赖安装，不称完全离线。
+
+正常 OIDC 重新登录并刷新新版后，Playwright 实际截图并逐张打开：同一 Data 视觉
+目录 `/volumes/data/kailo/tmp/kailo-visual-release-20261006.vlPvnU/` 的
+`109-cc71-channel.png`、`110-cc71-inbox.png`、`111-cc71-pulse.png`、
+`112-cc71-agents.png`、`113-cc71-members.png`、`114-cc71-author.png`、
+`115-cc71-profile-settings.png`、`116-cc71-notifications.png`、
+`117-cc71-shortcuts.png`、`118-cc71-appearance.png`。
+
+本次明确的改善：侧栏与 Inbox 的读取错误不再出现；Inbox 呈现原双栏空态，
+不是全频道流水；Pulse 呈现原筛选/编辑器空态；Agent 定义恢复卡片；频道作者
+可打开实际 event-scoped 资料辅助列。成员页仍是管理表单，Agent 下半部仍堆叠
+治理管理区，Projects 仍缺，不能据此验收完整官方体验。资料的真实 kind-0
+未设置显示名时展示原公钥回退，不假造资料。通知页实际显示浏览器通知被阻止，
+不改浏览器权限冒充原生通知成功。外观页即时切英文实际读回 Appearance/Theme/
+Preferences，随后恢复中文；这不是全站所有子页双语穷尽验收。
+
+主线程随后仅从真实频道编辑器新发一条消息，选中两个已有 Agent Installation，
+标记 `KAILO-CC71-20261006-2156`，明确禁止工具与外部动作，没有重发旧 UNKNOWN。
+消息发送成功不等于 Agent 完成：初查两个 invocation 分别 CREATED 和
+RUNNING/native completed，均无回复引用。实际只读记录及原日志定位为：
+
+- `2bc7a1f0-5bcc-4611-bfb7-2cc264a636cd` 为 CREATED，关联 session 为 PENDING，
+  自身没有 thread 或 lease。占用同一安装执行名额的是旧 UNKNOWN 调用，其原线程
+  resume 报 `THREAD_NOT_FOUND`；不是新调用恢复线程失败。未释放证据不足的旧
+  UNKNOWN、伪造新线程或把新调用称成功。
+- `3ffbbd52-ccda-4e14-b875-e55682ed387e` 已生成，但 OpenMeter 不能投递用量。
+  原 Kafka 容器实际 `OOMKilled=true`、exit 137，20:21:51 UTC 停止；API/sink
+  日志为 broker DNS 不可用。保留原镜像、卷与所有业务状态，仅启动同一个 Kafka
+  容器；确认本机约 31 GiB 可用内存后，把唯一 `.env` 的 Kafka 内存预算从
+  2 GiB 提到 4 GiB，同步实际 cgroup memory/swap 都为 4 GiB，原 JVM heap 1 GiB
+  和 CPU 2 不变。没有修改额度、计费判断、密钥或清除用量。
+- Kafka 随后 healthy；原对账自动将第二份 invocation 于 21:58:17 UTC 收敛为
+  COMPLETED/native completed，reply event 为
+  `929ce5d337962464d96154a15c79cc2a170773f3f72d3ce3e2cb4bfab17fe557`。
+  浏览器实际读到 Agent `0fe864a6…58bb` 的同标记回复，没有再次调用模型。
+
+这是一次真实单 Agent 收尾恢复，不是双 Agent/三人稳定协作验收；另一安装的
+线程恢复缺口仍由原路径修复。Kafka 本机预算属于运行投递，不提交含秘密的 `.env`。
+本批仍无新 Windows/Mobile 包、全量检查通过或全部页面/弹窗的等效验收；不把
+截图数量当成独立页面数量，也不把容器 healthy 当成功能完成。
+
+补充实际逐图复核：上述视觉目录 `119-cc71-appearance-en.png` 为外观英文切换，
+`120-cc71-agent-reply.png` 为新 Agent 回复。后者同时暴露频道时间顺序疑点：今天
+的新消息之后还展示昨天的 Agent 回复，需要核对原版线程分组与时间排序，不能
+只凭回复可见称频道细节恢复。
+
+发布回执所在目录中的 `01-workflows.png`、`02-tasks.png`、
+`03-approvals-loaded.png`、`04-audit.png`、`05-devices.png` 也已由主线程逐张打开。
+工作流为选定频道空态与创建卡片，仍有重复刷新和技术文案；任务页呈现真实状态，
+但动作名仍为原始技术键；审批为加载完成的空队列；审计仍有 ALLOWED、EVALUATING
+等未翻译结果；设备只展示协议身份及撤销入口。本次没有执行审批、撤销或工作流
+写入，不使用加载中的审批截图作为验收。这些差距仍属于未完成项。

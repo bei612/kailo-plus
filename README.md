@@ -6,6 +6,17 @@
 
 ## 当前使用与恢复范围（2026-10-06）
 
+- 21:58 UTC 本批已实际投递：Core/Worker 源码固定 `433ec461456f9def7da892b270cdceb9def77fca`，
+  Web 固定 `cc71bf7b10388e450a550bcf01a562b3c7527865`，数据库 94 条迁移成功。
+  入口仍为 `http://192.168.0.193:58090/app/`。实际打开新版截图确认侧栏/Inbox
+  读取错误消失，Pulse、Agent 卡片、作者资料及中英外观可见；成员与 Agent
+  部分管理区仍非原版等效，Projects 未恢复，不能称全功能交付。
+  WeKnora 新后端已部署并完成一次普通用户原生 SSO；三服务平台绑定仍未完成。
+  新频道双 Agent 实测中，一份 invocation 在计量 Kafka 恢复后自动完成并可见回复，
+  另一份仍被旧原生线程不存在卡住，不能称双 Agent 或三人协作稳定。
+  最新截图、真实失败及恢复边界见[恢复检查记录](core/verify/buzz-restoration-checkpoint.md)
+  末节。Windows/Mobile 没有本批新包或设备验收；完整检查尚无新的通过结果。
+
 - 21:17 UTC 实际复核：源码分支与远端均为
   `0238a858f87a32b1d90eaafb5a27691321d4b5c4`，包含消息作者资料与 Agent 派发
   原子性修复，尚未部署。线上 Core/Worker/Web 仍是 19:13 批；本轮正常 OIDC
