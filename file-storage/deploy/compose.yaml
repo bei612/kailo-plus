@@ -44,7 +44,8 @@ services:
       CELLS_NO_TLS: ${CELLS_NO_TLS:?explicit native TLS choice required}
       CELLS_HEALTH_URL: ${CELLS_HEALTH_URL:?required}
       CELLS_OAUTH_CONNECTORS: ${CELLS_OAUTH_CONNECTORS:?native connector configuration required}
-    secrets: [cells_install, cells_oidc_client_secret]
+      CELLS_OAUTH_SECRET_FILE: /run/secrets/cells_oauth_secret
+    secrets: [cells_install, cells_oidc_client_secret, cells_oauth_secret]
     volumes:
       - type: bind
         source: ${CELLS_DATA_DIR:?required}
@@ -70,6 +71,8 @@ secrets:
     file: ${CELLS_DB_PASSWORD_FILE:?existing controlled password file required}
   cells_oidc_client_secret:
     file: ${CELLS_OIDC_CLIENT_SECRET_FILE:?existing controlled OIDC client secret required}
+  cells_oauth_secret:
+    file: ${CELLS_OAUTH_SECRET_FILE:?existing controlled native OAuth JSON secret required}
 
 networks:
   cells-data:

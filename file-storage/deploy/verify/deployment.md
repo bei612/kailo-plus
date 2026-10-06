@@ -2,12 +2,12 @@
 
 ## 当前结果
 
-2026-10-05 22:30 UTC 补齐原生 OIDC 的实际部署投递：Compose 将受控
-`CELLS_OAUTH_CONNECTORS` 送到 Cells 的原配置生产者，并将独立 client secret
+2026-10-05 22:30 UTC 的原生 OIDC 投递记录存在错误判断：Compose 将受控
+`CELLS_OAUTH_CONNECTORS` 送进容器，但上游对应生产者实际没有有效调用；独立 client secret
 挂到 connector 实际读取的 `/run/secrets/cells_oidc_client_secret`。此前只有
 HTTP handler，没有这两项运行输入，构建成功也不能据此完成原生登录。
 launcher 复用原 secret 文件检查，核对 connector 引用与实际 mount 一致；
-不生成用户、管理员、密钥或新身份权威。实际部署和真实 IdP 登录仍未完成。
+不生成用户、管理员、密钥或新身份权威。2026-10-06 的真实服务验证已纠正此结论，见末节；环境变量存在不能证明原生配置已生效。
 
 2026-10-05 原生身份源码进入完整 c57f fork 后，当前 Compose 已改为必填 `CELLS_IMAGE` immutable digest，不再投递下文旧 5.0.2 baseline。历史只读 registry/配置检查证据保留，不能代表新 fork 产物。新源码未构建/部署，实际原生 OIDC 配置仍未投递。
 
@@ -143,3 +143,59 @@ internal，不删除或共享其他项目网络。既有 `start.sh --check` 同�
 `build.log`、`deploy.log`（默认地址池失败）、`deploy-subnet.log`（原生启动失败）、
 `subnet-mutation.log`（退出 2）与 `subnet-restored.log`（退出 0）。
 本节记录的是首次实际失败及对应修正，修正后的镜像和登录不借用首次构建结果验收。
+
+## 2026-10-06 原生启动与配置消费实测
+
+固定 apps `8e6aa4bb7a12ea43fe250db32398b8e7dd24396b` 的原构建命令退出 0，
+生成 `file-storage-service@sha256:a1c229f039bd4214874f307568283b0450ad5156de8a8b0dfd89f1a9bdb8010e`。
+同一次构建实际执行 `cells version`，输出 `5.0.3-dev` 与该完整 apps commit，
+修正了前次版本解析崩溃。构建仍实际下载部分固定基础层及缺失模块，不能称全离线；
+`BUILD_STAMP` 当次带尾随 Z，而原 `common/naming.go::MakeCellsVersion` 只解析无 Z
+格式，因此版本页的 Built 显示零时间，不能拿该展示当正确构建时间证据。
+
+原 `deploy/start.sh` 实际启动独立 PostgreSQL 与 Cells，两个服务均 healthy。
+Playwright 访问原生页面取得完整原版登录表单，不是平台重写或 iframe。
+但 `/auth/kailo/login` 返回 `503 Native OIDC is unavailable`，没有成功 SSO。
+原生管理命令实际创建并回读 3 个 `standard` 用户，逐一对应既有 ACTIVE human，
+没有映射原生 admin。映射只写进本组件受控 connector 配置，尚未证明登录。
+
+四步依据与修正：
+
+1. 权威为 DD-87/93、原生独立身份配置及上游 Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `cmd/admin-config-set.go::updateConfigCmd`、
+   `idm/oauth/grpc/service/service.go::initDefaults` 与
+   `idm/oauth/web/service/service.go::init`。前者未解析 JSON 且忽略 `config.Set`
+   错误，后者环境变量生产者的唯一挂接被注释；原 OAuth 首次迁移包含不安全默认 secret。
+2. 影响仅为原配置命令、原镜像 entrypoint、现有独立 Compose/launcher 与组件私有
+   secret 文件；无 Core 数据、成员、权限或工作流迁移。原 JSON 参数被实际解码，
+   Set/Save 任一失败返回错误而不显示成功。原 password connector 与完整 UI 保留。
+3. 同一 entrypoint 在原安装流程完成后、原 `cells start` 开放监听前，调用同一原命令
+   投递组件自己的 OAuth secret 与 connector；不引入初始化容器、第二配置权威或共享
+   平台密钥。secret 是 owner-only JSON 字符串文件，与外部 IdP client secret 分离。
+4. 畸形 JSON、配置写入失败、缺失/默认/复用 secret 均拒绝；不吞异常，不回退管理员。
+   真实回读发现旧默认 OAuth secret 后已停止此次新建 Cells 容器，保留独立数据库，
+   没有清库重装或宣称就绪。同一密钥文件在后续重启保持，不随启动生成新值。
+
+现有 `start.sh --check` 的受控配置验证退出 0；私有副本改成原默认 secret 后退出 2，
+原字节恢复且 `cmp` 退出 0 后，原检查恢复退出 0。Bash/sh 语法检查退出 0。
+本轮镜像与运行日志位于
+`/volumes/data/kailo/tmp/cells-native-fixed-20261006.F1fLT8/`：
+`build.log`、`deploy.log`、`oauth-secret-mutation.log`、`oauth-secret-restored.log`。
+原配置命令窄验证复用受限 `kailo-cells-native-check-lftow7`（4 CPU / 8 GiB），
+执行 `go test -mod=readonly ./cmd -run "TestConfigSet|TestDisplayMap" -count=1 -v`。
+首次编译实际下载缺失的固定模块，随后原包初始化因默认工作目录不可写而退出 1，
+日志为 `native-config-command.log`；改用原 `CELLS_WORKING_DIR` 指向缓存内独立临时
+目录后，原展示用例及三个配置用例全部通过，退出 0（`native-config-command-restored.log`）。
+没有为验证修改产品的工作目录规则。
+
+实现后的私有副本将配置写入故意恢复为原字符串且忽略 Set 错误，实际得到
+`TestConfigSetKeepsJSONConnectorValues` 与 `TestConfigSetPropagatesWriteFailure`
+两项失败、另外两项通过，退出 1（`native-config-command-mutation.log`）。
+按正式源原字节还原且 `cmp` 退出 0 后，同命令四项全部通过，退出 0，
+`ok github.com/pydio/cells/v5/cmd 0.023s`（`native-config-command-final.log`）。
+原 CLI help 同步明确字符串需要保留 JSON 双引号，布尔、数字、数组和对象保留各自
+类型；全文调用检索仅现有 entrypoint 两处，两者均传入 JSON。
+
+修正后的新镜像启动、真实 SSO callback、本人身份回读及平台 binding 尚未通过；
+不借用上述旧镜像 healthy、原账号准备或源码窄验声称完成。

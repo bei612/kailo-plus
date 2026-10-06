@@ -21,9 +21,9 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -49,6 +49,9 @@ SYNTAX
   - configName: name of the parameter
   - configValue: json-encoded value of the parameter you want to set/change
 
+  Strings must include JSON double quotes (protected from the shell with single
+  quotes). Booleans, numbers, arrays and objects retain their JSON types.
+
 EXAMPLES
 
   Change the port of micro.web service (rest api)
@@ -56,6 +59,11 @@ EXAMPLES
 
   Json parameter value
   $ ` + os.Args[0] + ` admin config set pydio.grpc.yourservice configName '{"key":"value"}'
+
+  String, boolean and array parameter values
+  $ ` + os.Args[0] + ` admin config set pydio.grpc.yourservice configName '"value"'
+  $ ` + os.Args[0] + ` admin config set pydio.grpc.yourservice configName true
+  $ ` + os.Args[0] + ` admin config set pydio.grpc.yourservice configName '["first","second"]'
 
 `,
 	Args: func(cmd *cobra.Command, args []string) error {
@@ -66,18 +74,23 @@ EXAMPLES
 		// IsValidService ?
 		return nil
 	},
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 		path := args[1]
-		data := args[2]
-
-		config.Set(cmd.Context(), data, "services", id, path)
-
-		if err := config.Save(cmd.Context(), "cli", fmt.Sprintf("Set by path %s/%s", id, path)); err == nil {
-			cmd.Println(promptui.IconGood + " Config set")
-		} else {
-			log.Fatal(err)
+		var data any
+		if err := json.Unmarshal([]byte(args[2]), &data); err != nil {
+			return errors.New("configuration value must be valid JSON")
 		}
+
+		if err := config.Set(cmd.Context(), data, "services", id, path); err != nil {
+			return err
+		}
+
+		if err := config.Save(cmd.Context(), "cli", fmt.Sprintf("Set by path %s/%s", id, path)); err != nil {
+			return err
+		}
+		cmd.Println(promptui.IconGood + " Config set")
+		return nil
 	},
 	PostRun: func(cmd *cobra.Command, args []string) {
 		cmd.Println("Delaying exit to make sure write operations are committed.")

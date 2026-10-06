@@ -46,12 +46,15 @@ if [ "${1#-}" != "$1" ]; then
 	fi
 fi
 
-# Workaround issue of key generation at first run until it is fixed.
-# cells version > /dev/null
+# Apply the same controlled native configuration before opening any frontend
+# listener. The old CELLS_OAUTH_CONNECTORS migration is not invoked upstream.
+if [ "$1" = "cells" ] && [ "${2:-}" = "start" ] && [ -n "${CELLS_OAUTH_CONNECTORS:-}" ]; then
+	: "${CELLS_OAUTH_SECRET_FILE:?native OAuth secret JSON file required}"
+	[ -s "$CELLS_OAUTH_SECRET_FILE" ] || exit 1
+	cells admin config set pydio.web.oauth secret "$(cat "$CELLS_OAUTH_SECRET_FILE")"
+	cells admin config set pydio.web.oauth connectors "$CELLS_OAUTH_CONNECTORS"
+fi
 
-# if [ "$2" != "version" ]; then
-# 	echo "### $(cells version)"
-# fi 
 echo "[DEBUG] About to run command: [$@]"
 
 exec "$@"
