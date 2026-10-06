@@ -1,5 +1,6 @@
 import * as React from "react";
 import { AppSidebarFrame } from "@client-kit/platform/react/sidebar/app-sidebar-frame";
+import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
 import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
 import { useQueryClient } from "@tanstack/react-query";
 import { channelsQueryKey, workspaceVisibilityQueryKey } from "@/features/channels/hooks";
@@ -260,6 +261,8 @@ export function AppSidebar({
                 selectedView={selectedView}
               />
 
+              {currentPrincipalId ? <NativeApplicationEntries scopeKey={`${activeCommunity.id}:${currentPrincipalId}`}
+                workspace={selectedView === "channel" ? channels.find((channel) => channel.id === selectedChannelId && channel.channelType !== "dm") : undefined} /> : null}
               {currentPrincipalId ? <DesktopConversations currentPrincipalId={currentPrincipalId}
                 selectedChannelId={selectedView === "channel" ? selectedChannelId : null}
                 onSelectChannel={onSelectChannel} onNewMessage={onNewMessage} onCloseSelected={onSelectHome} /> : null}

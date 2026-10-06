@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { StreamFrame } from "../bff-client";
 import { ChannelPane } from "./ChannelPane";
 import { setLocale } from "@client-kit/platform/i18n";
+import type { TimelineMessage } from "@client-kit/platform/react/messages";
 
 // Isolate the stream lifecycle from the rich editor. Original Tiptap is mounted
 // by Composer/ChannelRead tests; the channel and original message rows mount here.
@@ -50,6 +51,24 @@ vi.mock("@/features/chat/ui/MessageContent", () => ({
 }));
 vi.mock("@/shared/i18n", () => ({ t: (key: string) => key }));
 vi.mock("@/shared/lib/relative-time", () => ({ relativeTime: () => "now" }));
+vi.mock("./ChannelThreadPane", async () => {
+  const { useState } = await import("react");
+  return { ChannelThreadPane: ({selected, onOpenAuthor, onAuthorScopeUnavailable}: {
+    selected: TimelineMessage; onOpenAuthor: (message: TimelineMessage) => void; onAuthorScopeUnavailable: () => void;
+  }) => {
+    const [pending, setPending] = useState(false);
+    return <section data-testid="thread-lifetime">
+      <button onClick={() => setPending(true)}>pending reply</button>
+      <output>{pending ? "reply pending" : "reply idle"}</output>
+      <button onClick={() => onOpenAuthor(selected)}>thread author</button>
+      <button onClick={onAuthorScopeUnavailable}>thread unavailable</button>
+    </section>;
+  }};
+});
+vi.mock("./MessageAuthorProfile", async (original) => ({
+  ...await original<typeof import("./MessageAuthorProfile")>(),
+  MessageAuthorProfile: ({onClose}: {onClose: () => void}) => <button data-testid="close-author" onClick={onClose}>close author</button>,
+}));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLDivElement;
@@ -125,4 +144,23 @@ it("keeps an uncertain connection distinct from a denial", async () => {
   expect(markup).toContain("existing message");
   expect(markup).toContain('data-testid="message-composer"');
   expect(markup).not.toContain("PERMISSION_DENIED");
+});
+
+it("keeps the existing reply mounted while an author profile opens and closes", async () => {
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-a"]')!.click());
+  const thread = host.querySelector('[data-testid="thread-lifetime"]')!;
+  await act(async () => thread.querySelector<HTMLButtonElement>('button')!.click());
+  await act(async () => [...thread.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === "thread author")!.click());
+  expect(host.querySelector('[data-testid="thread-lifetime"]')).toBe(thread);
+  expect(thread.textContent).toContain("reply pending");
+  expect(thread.parentElement?.className).toBe("hidden");
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="close-author"]')!.click());
+  expect(thread.parentElement?.className).toBe("contents");
+  expect(thread.textContent).toContain("reply pending");
+  const author = host.querySelector<HTMLElement>('[data-event-id="event-a"] [role="button"][aria-label="Profile"]')!;
+  await act(async () => author.click());
+  expect(host.querySelector('[data-testid="thread-lifetime"]')).toBe(thread);
+  await act(async () => [...thread.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === "thread unavailable")!.click());
+  expect(host.querySelector('[data-testid="close-author"]')).toBeNull();
+  expect(thread.textContent).toContain("reply pending");
 });

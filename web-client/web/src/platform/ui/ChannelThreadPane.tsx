@@ -11,11 +11,12 @@ import { Composer } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { MessageAuthorIdentity } from "./MessageAuthorProfile";
 
-export function ChannelThreadPane({ workspaceId, principalId, selected, members, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor }: {
+export function ChannelThreadPane({ workspaceId, principalId, selected, members, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: WorkspaceMemberView[];
   disabled: boolean; onClose: () => void; onCopyMessage: (message: TimelineMessage) => void;
   onCopyLink?: (message: TimelineMessage) => void;
   onOpenAuthor?: (message: TimelineMessage) => void;
+  onAuthorScopeUnavailable?: () => void;
 }) {
   const t = useT(); const locale = useLocale();
   const rootId = getThreadReference(selected.tags ?? []).rootId ?? selected.id;
@@ -52,6 +53,9 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, members,
   }, [rows, selected.id]);
   const data = useMemo(() => buildThreadPanelData(rows, rootId, replyId, expanded), [rows, rootId, replyId, expanded]);
   const unavailable = denied || thread.isError || (thread.isSuccess && !data.threadHead);
+  useEffect(() => {
+    if (unavailable || interrupted) onAuthorScopeUnavailable?.();
+  }, [unavailable, interrupted, onAuthorScopeUnavailable]);
   const loading = thread.isPending || thread.hasNextPage || thread.isFetchingNextPage;
   const canReply = !disabled && !unavailable && !interrupted && !loading &&
     rows.some((row) => row.id === replyId) &&

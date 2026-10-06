@@ -1,7 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { ApplicationBindingsPanel, bindingDocument } from "../src/react/application-bindings";
 import { NativeApplicationPage, validNativePage } from "../src/react/native-application-page";
+import { NativeApplicationEntries } from "../src/react/native-application-entries";
+import { SidebarProvider } from "../src/react/sidebar/sidebar";
+import { act, useState } from "react";
 import { PlatformProvider } from "../src/react/context";
 import { type BffReply, type BffRequest, TransportError } from "../src/transport";
 import { button, click, render, type } from "./render";
@@ -29,6 +32,8 @@ async function mount(route: (request: BffRequest) => BffReply | Promise<BffReply
 }
 
 describe("shared external service connection management", () => {
+  beforeEach(() => vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} })));
+  afterEach(() => vi.unstubAllGlobals());
   it("submits creation through the original action without interpreting native configuration or claiming active", async () => {
     const { host, send } = await mount((request) => request.method === "GET"
       ? { status: 200, body: { bindings: [], canCreate: true } }
@@ -152,5 +157,76 @@ describe("shared external service connection management", () => {
       expect(host.querySelector("iframe")).toBeNull();
       expect(host.querySelector("a")).toBeNull();
     }
+  });
+
+  it("discovers a native sidebar entry without management permission and opens only the fresh approved Web page", async () => {
+    let revoked = false;
+    const send=vi.fn(async(request:BffRequest)=>request.path.endsWith("/native-page")
+      ? {status:200,body:nativePage}
+      : revoked ? {status:403,body:{}} : {status:200,body:{bindings:[{...connection,hasNativePage:true,canDisable:false}],canCreate:false}});
+    const host=await render(<PlatformProvider client={createBffClient({send})} locale="en"><SidebarProvider>
+      <NativeApplicationEntries scopeKey="human" />
+    </SidebarProvider></PlatformProvider>);
+    expect(document.querySelector(`a[href="${nativePage.url}"]`)).toBeNull();
+    await click(host.querySelector<HTMLButtonElement>(`button[aria-label="${connection.componentTypeKey}"]`)!);
+    const link=document.querySelector(`a[href="${nativePage.url}"]`);
+    expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(send.mock.calls.every(([request])=>request.method==="GET")).toBe(true);
+    revoked=true;
+    await act(async()=>window.dispatchEvent(new Event("focus")));
+    expect(document.querySelector(`a[href="${nativePage.url}"]`)).toBeNull();
+    expect(host.textContent).not.toContain(connection.componentTypeKey);
+  });
+
+  it("uses the same discovered entry for Desktop and hands only its binding to the isolated host",async()=>{
+    const openNativePage=vi.fn(async(_id:string)=>{});
+    const client=createBffClient({send:async(request)=>({status:200,body:request.path.endsWith("/native-page")?nativePage:
+      {bindings:[{...connection,hasNativePage:true}],canCreate:false}})});
+    const host=await render(<PlatformProvider client={client} locale="zh-CN" openNativePage={openNativePage}><SidebarProvider>
+      <NativeApplicationEntries scopeKey="human" />
+    </SidebarProvider></PlatformProvider>);
+    await click(host.querySelector<HTMLButtonElement>(`button[aria-label="${connection.componentTypeKey}"]`)!);
+    await click(button(document.body,"打开服务页面"));
+    expect(openNativePage.mock.calls).toEqual([[connection.bindingId]]);
+    expect(document.querySelector(`a[href="${nativePage.url}"]`)).toBeNull();
+    expect(document.querySelector("iframe")).toBeNull();
+  });
+
+  it("does not manufacture entries for inactive, non-native or empty bindings",async()=>{
+    for(const bindings of [[],[{...connection,state:"DISABLED",hasNativePage:true}],[{...connection,hasNativePage:false}]]){
+      const client=createBffClient({send:async()=>({status:200,body:{bindings,canCreate:false}})});
+      const host=await render(<PlatformProvider client={client} locale="en"><SidebarProvider><NativeApplicationEntries scopeKey="human" /></SidebarProvider></PlatformProvider>);
+      expect(host.querySelector('[data-testid="native-application-entries"]')).toBeNull();
+      expect(host.textContent).not.toContain(connection.componentTypeKey);
+    }
+  });
+
+  it("consumes later authorized pages but rejects a repeating offset rather than reusing stale entries",async()=>{
+    const send=vi.fn(async(request:BffRequest)=>({status:200,body:request.path.endsWith("offset=0")
+      ? {bindings:[],canCreate:false,nextOffset:1}
+      : {bindings:[{...connection,hasNativePage:true}],canCreate:false,nextOffset:1}}));
+    const host=await render(<PlatformProvider client={createBffClient({send})} locale="en"><SidebarProvider><NativeApplicationEntries scopeKey="human" /></SidebarProvider></PlatformProvider>);
+    await click(button(host,"Next page"));
+    expect(send.mock.calls.at(-1)?.[0].path).toBe("/api/v1/application-bindings?offset=1");
+    expect(host.textContent).not.toContain(connection.componentTypeKey);
+    expect([...host.querySelectorAll("button")].some((element)=>element.textContent==="Next page")).toBe(false);
+  });
+
+  it("withdraws the old workspace entry and late native response on a scope change",async()=>{
+    let resolvePage:((reply:BffReply)=>void)|undefined;
+    const send=vi.fn(async(request:BffRequest):Promise<BffReply>=>request.path.endsWith("/native-page")
+      ? new Promise((resolve)=>{resolvePage=resolve;})
+      : {status:200,body:{bindings:request.path.includes("workspaceId=first")?[{...connection,workspaceId:"first",hasNativePage:true}]:[],canCreate:false}});
+    const client=createBffClient({send});
+    function Consumer(){const [id,setId]=useState("first");return <PlatformProvider client={client} locale="en"><button onClick={()=>setId("second")}>Switch scope</button><SidebarProvider><NativeApplicationEntries scopeKey="human" workspace={{id,name:id}} /></SidebarProvider></PlatformProvider>;}
+    const host=await render(<Consumer/>);
+    await click(host.querySelector<HTMLButtonElement>(`button[aria-label="${connection.componentTypeKey}"]`)!);
+    await click(button(host,"Switch scope"));
+    await act(async()=>resolvePage?.({status:200,body:nativePage}));
+    expect(host.textContent).not.toContain(connection.componentTypeKey);
+    expect(document.querySelector(`a[href="${nativePage.url}"]`)).toBeNull();
+    expect(send.mock.calls.some(([request])=>request.path.includes("workspaceId=second"))).toBe(true);
   });
 });

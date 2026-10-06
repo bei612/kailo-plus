@@ -47,6 +47,7 @@ import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport
 import { ChannelSidebar } from "./ChannelSidebar";
 import { SidebarProvider, SidebarTrigger, SidebarMenu, SidebarMenuItem } from "@client-kit/platform/react/sidebar/sidebar";
 import { AppSidebarFrame } from "@client-kit/platform/react/sidebar/app-sidebar-frame";
+import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
 import { AppSidebarPrimaryMenu } from "@client-kit/platform/react/sidebar/app-sidebar-primary-menu";
 import { WebSidebarProfileCard } from "./SidebarProfileCard";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -240,6 +241,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     </div> :
     channel.isError && !channel.data ? <Notice text={t("platform.loadFailed")} /> : !channel.data ? <Notice text={t("platform.loadingWorkspaces")} /> :
     channel.data.channelType === "forum" ? <ForumPane key={`${session.tenantPrincipalId}:${active}`} workspaceId={active}
+      onStartDm={(pubkey)=>{setInitialRecipientPubkey(pubkey);setTab("new-message");}}
       channelId={channel.data.channelId} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onOpenMessageLink={openMessageLink} target={messageTarget ?? undefined} /> :
     channel.data.channelType === "stream" ? <><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
       onStartDm={(pubkey)=>{setInitialRecipientPubkey(pubkey);setTab("new-message");}}
@@ -319,6 +321,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 onSelectPlatformSection={setTab}
                 selectedPlatformSection={tab === "channel" || tab === "inbox" || tab === "settings" || tab === "new-message" || tab === "conversation" ? null : tab}
                 selectedView={tab === "inbox" ? "home" : tab === "new-message" ? "new-message" : tab === "channel" || tab === "conversation" || tab === "settings" ? "channel" : "platform"} />
+            <NativeApplicationEntries scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`}
+              workspace={tab === "channel" && activeRow?.isMember === true ? activeRow : undefined} />
             <ConversationList currentPrincipalId={session.tenantPrincipalId} items={conversations.items} loading={conversations.loading}
               error={conversations.error} selectedId={tab === "conversation" ? chosenConversation?.id ?? null : null}
               onNewMessage={() => {setInitialRecipientPubkey(undefined);setTab("new-message");}} onReload={() => { void conversations.reload().catch(() => undefined); }}

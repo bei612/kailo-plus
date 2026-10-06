@@ -3031,3 +3031,37 @@ Core 新作者证据反向验证：仅在同一 SDK 源码删去 `profile_event`
 反向验证仅在 SDK 将 `MessageAuthorIdentity` 的 `onOpenProfile` 回调断开，三个新增入口用例全部失败（3 失败 / 14 跳过，退出 1）。还原后与正式文件字节 cmp 0，再运行 Web tsc 与上述六文件，27 项通过，退出 0。日志根目录 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`，文件为 `thread-inbox-author-mutation.log` 与 `thread-inbox-author-restored.log`。
 
 失败记录保留：第一次 SDK 缺少基线已提交的 `inboxWindowEvents` 导出，tsc 退出 2、未执行测试；从基线恢复准确 `inbox-events.ts` 后，26 项通过、Inbox 新夹具缺少 PlatformProvider 而失败。夹具改用真实 Provider 后 9 项通过，未为夹具放宽产品校验。少量 React act 警告仍存在。对应日志 `thread-inbox-author-final.log`、`thread-inbox-author-baseline-restored.log`、`thread-inbox-author-fixture.log`、`thread-inbox-author-provider.log`。本批是源码与窄验交付，不是新部署或浏览器端到端验收；原版全部资料/Inbox 功能完成度不得据此整体标满。
+
+## Web / Desktop 共源独立服务入口（2026-10-06）
+
+基线 `4fe3170c58523d7204131776ccaeb54b52f3e0c2`。新增共享 `NativeApplicationEntries`，由 Web `PlatformApp` 与 Desktop `AppSidebar` 实际消费；现有 `ApplicationBindingsPanel` 仍负责接入管理。没有把 Cells、WeKnora、Wren 写成硬编码分支，也没有把独立服务的原生后台重写为平台页面。
+
+实现前四步结论：
+
+- 权威：`.design/07` §4.6、DD-88/94、SS-WEB-COMPONENT-HOST / SS-DSK-COMPONENT-HOST。现有 `core/crates/platform-core/src/application_binding_read.rs::page` 先核对 scope 和 fresh `discover`，再独立计算 `canCreate` / `canDisable`；因此非管理员可以发现已授权页面，不需要新管理权限或 Core API。
+- 影响面：只增加共享读取/原侧栏菜单与原弹层消费者。原 SidebarGroup / SidebarMenuButton 来自 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/shared/ui/sidebar.tsx`，DialogContent 来自同 commit 的 `desktop/src/shared/ui/dialog.tsx`；都使用已经共源的实现。组件名称取实际 `componentTypeKey`，组织级和当前已参与、非 DM 的 Workspace 各自调用现有分页 binding 列表。另按主线程要求把 Forum 的已有 `onStartDm` 接回同一 NewMessage 导航，不改变资料准入。
+- 副作用：只有 `ACTIVE` 且 `hasNativePage=true` 的 binding 生成服务入口；列表不读取配置/密钥，也不授予管理权限。选择后仍由原 `NativeApplicationPage` 新鲜解析和校验入口，Web `_blank` / `noopener noreferrer` / `no-referrer`，Desktop 仅向原隔离 host 传 binding ID，绝不传调用者选择的 URL。没有 iframe，没有 Mobile 消费者。
+- 边界：切身份/频道即重挂对应读取；焦点返回清除旧选择并重新查询，错误、挂起或撤权时移除旧链接/host 操作。`validBindingPage` 原严格递增 offset 拒绝重复游标；分页不自动发无限请求，当前页无活动服务不伪造服务按钮。scope 切换后的迟到页面响应不能恢复旧入口。撤去 Kailo 入口不等于关闭独立服务会话。
+
+实现后沿既有 4 CPU / 8 GiB SDK 一次最终序列：shared 源码和测试 tsc、Web tsc、Desktop tsc 全部退出 0；原 `application-bindings.test.tsx` 共 13 项通过，包含五个新增真实共源消费者用例：非管理员发现/隔离 Web 链接、Desktop 只收 binding ID、空/非 ACTIVE/非原生绑定无入口、重复 offset 拒绝、切 scope 丢弃旧响应。英文及中文实际按钮均被消费。
+
+仅私有 SDK 移除 ACTIVE 筛选后，无入口用例实际 1 失败 / 12 跳过、退出 1；原字节 cmp 0 恢复后上述 13 项及三侧类型检查通过。日志根目录 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`，最终 `native-entries-restored.log`（原进程退出 0），负向 `native-entries-mutation.log`。首轮 shared tsc 已通过，但新增 SidebarProvider 夹具缺 jsdom 的 matchMedia，8 通过 / 5 失败；补浏览器夹具后，原 SidebarMenuLabel 的隐藏粗体副本使按 textContent 精确查按钮的夹具失败，改按组件实际可访问名称查询后 13 项通过。`native-entries-final.log`、`native-entries-fixture.log` 与 `native-entries-accessible.log` 保留原事实，未放宽产品准入。
+
+未运行 full、镜像构建、部署或真实服务浏览器验收。本批不证明任一服务已经拥有 ACTIVE binding、SSO 已闭环、二开镜像已投递或完整原生业务可用；只交付已经接到两个实际宿主的同一受治理入口，不将三服务集成状态整体标为完成。
+
+## Forum 作者资料及频道线程状态保留（2026-10-06）
+
+基线 `4fe3170c58523d7204131776ccaeb54b52f3e0c2`，与上述共源服务入口一批收口。实现前四步结论：
+
+- 权威：REQ-24、DD-39/75/80。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/forum/ui/ForumPostCard.tsx::ForumPostCard` 在作者处使用原资料弹层。此次只将 Web 已有 ForumView 的 renderAuthor 接回原共享身份触发器和资料面板；不重写 Forum 卡片、布局或编辑器。
+- 影响面：ForumPane 的真实消费者是 PlatformApp 和 InboxDrafts，两处均接入现有 NewMessage 回调；ChannelPane、ChannelThreadPane 的作者资料打开/关闭影响原回复组件生命周期。Core 的现有 event-scoped 作者资料读取、签名与 fresh scope 校验不变；无合同、数据库、配置或持久状态增加，旧客户端格式不变。Desktop 原资料入口不变，Mobile 不增加组件宿主。
+- 副作用：点击 Forum 作者不选择帖子、不写已读，仍惰性查询实际帖子或回复 event 的作者。频道资料打开时隐藏而不卸载已有回复组件，保留草稿及未决发送，不重建发送、不盲目重试 UNKNOWN。Forum 同样保留原帖子/回复编辑器挂载；身份、scope、流中断或撤权关闭资料，隐藏的线程仍能通知父级撤下资料。
+- 边界：空消息不生成作者入口；错误或流中断停止展示作者资料；本人不生成给本人的私聊入口。资料读取失败、返回作者不符、迟到响应仍交由已有资料组件处理。权限、业务冲突、暂时故障及结果不明沿原六类错误合同处理，不改为成功。无新 secret、quota、工作流、正文存储或独立注册权威。文案全部复用现有中英词条。
+
+实现后使用同一 4 CPU / 8 GiB SDK。首轮 Web tsc 退出 0，其余六文件 28 项通过，但 Forum 夹具错误导入未公开的 VirtualizedList 子路径，Forum 套件未运行；改为仅模拟 jsdom 缺失的虚拟布局后，下一轮明确报缺 ResizeObserver。补齐浏览器夹具后，真实 ForumView 的两项 DOM 检查通过。未扩大产品出口、放宽权限或替换真实 Forum 卡片。少量 React act 警告保留，不宣称浏览器视觉验收。
+
+反向验证只在 SDK 恢复旧的“打开资料即卸载线程”条件，并断开 Forum 作者面板回调，实际 3 项失败 / 4 项通过、退出 1；分别捕获线程 DOM 消失与帖子/回复资料无法打开。两处从正式源码恢复并逐字 cmp 0。日志根目录 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`：`forum-author-thread.log`、`forum-author-fixture.log`、`forum-author-browser-fixture.log`、`forum-thread-mutation.log`。状态保留检查验证组件生命周期，不冒充实际模型或外部副作用端到端证据。
+
+还原后同一批 Web `tsc --noEmit` 及七文件 Vitest 实际退出 0，30 项通过：ForumPane 2、ChannelPane 5、ChannelThreadPane 4、InboxDrafts 2、InboxPane 9、InboxThreadPane 4、MessageAuthorProfile 4。原件为同目录 `forum-thread-restored.log`。
+
+本批未运行 full、未构建部署新 Web/Windows、没有新增实际浏览器截图。不能据此声称全站双语、全部原版资料功能、三组件原生业务或 Web/Desktop 等效已经完成；原完整检查退出 137 的失败边界仍保留。

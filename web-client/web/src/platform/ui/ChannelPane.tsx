@@ -196,7 +196,8 @@ export function ChannelPane({
   const anchoredTarget = useRef<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<TimelineMessage | null>(null);
   const [profileTarget, setProfileTarget] = useState<TimelineMessage | null>(null);
-  useEffect(() => { setProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied]);
+  const closeProfile = useCallback(() => setProfileTarget(null), []);
+  useEffect(() => { setProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied, live]);
   useEffect(() => {
     if (!targetMessageId || anchoredTarget.current === targetMessageId) return;
     const target = [...(messageList.current?.children ?? [])].find((item) => item.getAttribute("data-event-id") === targetMessageId);
@@ -414,7 +415,7 @@ export function ChannelPane({
               <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={targetMessageId === message.id}
                 renderIdentity={message.pubkey && live && !denied ? (node) => <MessageAuthorIdentity
                   target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:message.id,pubkey:message.pubkey!}}
-                  onOpen={() => {setReplyTarget(null);setProfileTarget(message);}}>{node}</MessageAuthorIdentity> : undefined}
+                  onOpen={() => setProfileTarget(message)}>{node}</MessageAuthorIdentity> : undefined}
                 renderActions={(ref) => <MessageActionBarSurface ref={ref} message={message} onCopyMessage={copyMessage}
                   onEdit={message.kind === 9 && live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && message.signerPubkey === ownProfile.data.pubkey ? setEditTarget : undefined}
                   onReply={!conversation && message.kind === 9 && live && !denied && !archived && !metadataPending ? (target)=>{setProfileTarget(null);setReplyTarget(target);} : undefined}
@@ -464,11 +465,11 @@ export function ChannelPane({
     {profileTarget?.pubkey && live && !denied ? <MessageAuthorProfile key={`${myPrincipalId}:${workspaceId}:${profileTarget.id}`}
       target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:profileTarget.id,pubkey:profileTarget.pubkey}}
       onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}
-    {!conversation && replyTarget && !profileTarget ? <ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
+    {!conversation && replyTarget ? <div className={profileTarget ? "hidden" : "contents"}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
       workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
-      onOpenAuthor={setProfileTarget}
+      onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeProfile}
       members={(members.data ?? []).filter((member): member is WorkspaceMemberView => "state" in member)} disabled={archived || metadataPending || denied || !live}
-      onClose={() => setReplyTarget(null)} onCopyMessage={copyMessage} onCopyLink={copyMessageLink} /> : null}
+      onClose={() => setReplyTarget(null)} onCopyMessage={copyMessage} onCopyLink={copyMessageLink} /></div> : null}
     </div>
   );
 }

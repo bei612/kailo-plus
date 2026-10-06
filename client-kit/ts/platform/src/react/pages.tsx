@@ -40,6 +40,7 @@ import { ComponentReleasesPanel } from "./component-releases";
 import { ApplicationBindingsPanel } from "./application-bindings";
 
 export { AgentDefinitionsPage } from "./agents";
+export { NativeApplicationEntries } from "./native-application-entries";
 
 /** 按读取状态渲染：载入中、结果不明（可重试）、或数据。 */
 export function Resource<T>({

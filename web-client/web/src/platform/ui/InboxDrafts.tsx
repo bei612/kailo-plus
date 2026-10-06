@@ -98,7 +98,7 @@ function DraftEditor({ principalId, item, destination, members, autoSend, onBack
       onStartDm={members.some((member) => member.principalId === principalId && member.pubkeys.includes(profileTarget.pubkey)) ? undefined : onStartDm} /> : null}</div>;
   return <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60"><InboxDetailHeader title={item.channelLabel} openLabel={t("drafts.open")} onBack={onBack} />
     {destination.kind === "conversation" ? <ChannelPane workspaceId={destination.conversation.id} conversation={destination.conversation} myPrincipalId={principalId} autoSendDraftKey={autoSendDraftKey} restoreEditEventId={target.editEventId} />
-      : channel.data?.channelType === ChannelType.Forum ? <ForumPane workspaceId={entry.draft.channelId} channelId={channel.data.channelId} archived={channel.data.archived} myPrincipalId={principalId}
+      : channel.data?.channelType === ChannelType.Forum ? <ForumPane workspaceId={entry.draft.channelId} channelId={channel.data.channelId} archived={channel.data.archived} myPrincipalId={principalId} onStartDm={onStartDm}
           restoreDraftKey={entry.key} autoSendDraftKey={autoSendDraftKey} />
         : <ChannelPane workspaceId={entry.draft.channelId} myPrincipalId={principalId} autoSendDraftKey={autoSendDraftKey} restoreEditEventId={target.editEventId} />}
   </section>;
