@@ -26,16 +26,11 @@ export function formatNotificationTitle(opts: {
   channelLabel: string | null;
 }): string {
   return opts.channelLabel
-    ? `${opts.prefix} in ${opts.channelLabel}`
+    ? translate(getLocale(), "platform.notifications.inChannel", { prefix: opts.prefix, channel: opts.channelLabel })
     : opts.prefix;
 }
 
 export type MessageNotificationSource = "mention" | "thread_reply";
-
-const MESSAGE_BODY_FALLBACKS: Record<MessageNotificationSource, string> = {
-  mention: "Something in Buzz needs your attention.",
-  thread_reply: "New reply",
-};
 
 /**
  * Canonical copy for every message-shaped desktop notification (home-feed
@@ -59,18 +54,19 @@ export function formatMessageNotification(opts: {
   const channelName = opts.channelName?.trim() || null;
   const body = truncateNotificationBody(
     content,
-    MESSAGE_BODY_FALLBACKS[source],
+    translate(getLocale(), source === "mention" ? "platform.notifications.mentionFallback" : "platform.notifications.replyFallback"),
   );
 
   const channelLabel = channelName ? `#${channelName}` : null;
   const prefix =
     source === "mention"
       ? senderName
-        ? `${senderName} mentioned you`
-        : "@Mention"
+        ? translate(getLocale(), "platform.notifications.mentionedYou", { sender: senderName })
+        : translate(getLocale(), "platform.notifications.mentionTitle")
       : senderName
-        ? `${senderName} replied`
-        : "Reply";
+        ? translate(getLocale(), "platform.notifications.replied", { sender: senderName })
+        : translate(getLocale(), "buzz.reply");
 
   return { title: formatNotificationTitle({ prefix, channelLabel }), body };
 }
+import { getLocale, translate } from "../../i18n";

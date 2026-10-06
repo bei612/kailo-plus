@@ -461,8 +461,9 @@ No Core, Worker, platform contract, permission or workflow authority changed.
 The native project is read through the original `ProjectRepository`; its
 decrypted PostgreSQL connection must equal the exact versioned SecretRef value
 read through the original OpenBao Agent. This first validator supports a
-PostgreSQL project `NAMESPACE` with one connection SecretRef. It does not echo
-unverified `DEDICATED_INSTANCE` or other isolation claims. Existing native UI
+PostgreSQL project `NAMESPACE` with one connection SecretRef. This historical
+slice did not support `DEDICATED_INSTANCE`; the design-alignment correction
+below supersedes that isolation-mode restriction. Existing native UI
 datasource support is not removed, but unsupported platform validators cannot
 activate a binding through this consumer.
 
@@ -779,3 +780,68 @@ Config parsing is not native login, datasource readonly-role evidence, model
 execution, Temporal/business termination, governed disclosure or deployment
 acceptance. No heavybuild, full, live configuration/DB/permission change,
 model call, product deployment or GitNexus execution was performed.
+
+## Dedicated native instance/project alignment (2026-10-06)
+
+DD-12 and design `08` section 6 require `DEDICATED_INSTANCE`. The previously
+implemented binding validator instead accepted only `NAMESPACE` and its test
+explicitly required the design's mode to fail. That was an implementation
+mismatch, not an upstream limitation or a reason to change the design.
+
+At fixed GenBI `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/apollo/server/repositories/projectRepository.ts::ProjectRepository.getCurrentProject`
+selects the first project ordered by ID. The original UI's current-project
+service delegates to it; an adapter-only `findOneBy(id)` did not establish that
+the binding and the visible native UI used the same project. The validator now
+accepts the frozen dedicated-instance mode and compares that original current
+project's ID with its controlled project ID before reading the connection
+credential or issuing any datasource ACL query.
+
+Impact and boundaries: native identity remains the existing dedicated Gateway
+OIDC and independently verified JOSE instance grant; every original UI route
+and feature is retained. The existing Core binding document, fresh PEP,
+OpenBao receipt and actual PostgreSQL readonly-role checks remain unchanged.
+No new binding registry, project selector, schema, secret or API is introduced.
+An absent/current-project mismatch cannot activate the binding; unsupported
+isolation modes remain refused. Existing NAMESPACE metadata is not silently
+migrated or grandfathered: an operator must supply the approved dedicated
+instance facts through the normal binding lifecycle. Matching a native project
+is not proof that deployment storage or credentials are physically dedicated;
+that remains actual deployment evidence. No live binding or database is changed.
+
+The existing post-implementation `nativeQuery.test.ts` route case now checks
+DEDICATED_INSTANCE in the actual observation, refuses NAMESPACE and rejects a
+different project returned by the original current-project consumer. It retains
+the original secret receipt, writable-role, wrong-credential and fresh-PEP checks.
+
+Actual verification reused `kailo-wren-query-sdk-itgs2n`, image
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`,
+UID 1000:1000, 4 CPU / 4 GiB / equal memory+swap limit and the existing isolated
+test database. It was idle before execution; host available memory was 38 GiB.
+The current native source and migrations were synchronized, not the reference
+checkout. No dependencies were installed and no product build was run.
+
+```sh
+sudo -n docker exec -w /work kailo-wren-query-sdk-itgs2n \
+  node node_modules/jest/bin/jest.js --runInBand src/nativeQuery.test.ts \
+  -t 'validates the actual binding route'
+```
+
+The actual result was 1 passed / 12 excluded, exit 0; this is not acceptance of
+the excluded queries. Removing only `project.id !== this.config.projectId`
+from the SDK copy produced exactly one failure, exit 1: expected HTTP 403,
+received HTTP 200. Restoration from the formal source and `cmp` both succeeded;
+the same target then passed 1/1 again, exit 0. The native current-project
+mismatch in this route case is injected at its repository boundary; native
+PostgreSQL credential/role checks use the existing real isolated fixture.
+
+Raw logs are under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/`:
+`wren-dedicated-binding.log`, `wren-dedicated-binding-mutation.log` and
+`wren-dedicated-binding-restored.log`. First startup spent 383 seconds mostly
+waiting for source/dependency disk reads; the restored run took 8.7 seconds.
+The original `node .yarn/releases/yarn-4.5.3.cjs check-types` also exited 0
+in the same restored SDK (`wren-dedicated-types.log`, no diagnostics).
+Upstream `status data-query` reports no newer reference commit. No live login,
+ApplicationBinding activation, release approval, model call or deployed
+question-to-SQL flow is proved by this isolated source verification.

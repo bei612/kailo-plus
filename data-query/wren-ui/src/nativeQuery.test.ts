@@ -376,7 +376,7 @@ integration('original Wren query handler, SDK and native history', () => {
       adapterServiceRef: 'native-wren',
       nativeInstanceRef: delivery.nativeInstanceRef,
       nativeScopeRef: delivery.nativeScopeRef,
-      isolationMode: 'NAMESPACE',
+      isolationMode: 'DEDICATED_INSTANCE',
       normalizedConfig: { projectId: 1 },
       configDigest: digest({ projectId: 1 }),
       secretRefs: [reference],
@@ -510,6 +510,7 @@ integration('original Wren query handler, SDK and native history', () => {
       expect(valid.status).toBe(200);
       expect(await valid.json()).toMatchObject({
         bindingId: delivery.bindingId,
+        isolationMode: 'DEDICATED_INSTANCE',
         secretReads: [
           {
             secretKey: reference.secretKey,
@@ -531,14 +532,14 @@ integration('original Wren query handler, SDK and native history', () => {
         process.env.WREN_PLATFORM_BINDING_CONFIG_FILE,
         JSON.stringify({
           ...metadata,
-          binding: { ...binding, isolationMode: 'DEDICATED_INSTANCE' },
+          binding: { ...binding, isolationMode: 'NAMESPACE' },
         }),
       );
       expect(
         (
           await manage('validate_binding', {
             ...args,
-            isolationMode: 'DEDICATED_INSTANCE',
+            isolationMode: 'NAMESPACE',
           })
         ).status,
       ).toBe(503);
@@ -546,6 +547,15 @@ integration('original Wren query handler, SDK and native history', () => {
         process.env.WREN_PLATFORM_BINDING_CONFIG_FILE,
         JSON.stringify(metadata),
       );
+      // The original UI follows getCurrentProject, not an adapter-only id.
+      // A different first project must not activate the frozen binding.
+      const currentProject = jest.spyOn(mockComponents.projectRepository, 'getCurrentProject');
+      currentProject.mockImplementationOnce(async () => ({
+        ...(await mockComponents.projectRepository.findOneBy({ id: 1 })),
+        id: 2,
+      }));
+      expect((await manage('validate_binding', args)).status).toBe(403);
+      currentProject.mockRestore();
       wrongCredential = true;
       expect((await manage('validate_binding', args)).status).toBe(403);
       wrongCredential = false;

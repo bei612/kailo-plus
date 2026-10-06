@@ -4389,3 +4389,43 @@ stream/forum 完整包、合法旧包、缺失/错误封装与未知类型。私
 `cargo clippy --offline --locked -j16 -p platform-core --all-targets -- -D warnings`
 退出 0（39.88 秒）。此前失败记录保留，不改写成首次通过。
 格式化字节已回写正式树，精确增量 `git diff --check` 退出 0；未重新生成契约或构建镜像。
+
+### 同批私聊投影执行器漏注册（2026-10-06）
+
+关联 REQ-24、DD-80 与既有 CONVERSATION_PROJECTION。只读检查会话
+`36667917-f326-4a36-86f2-e0b31a0ea4c8`：绑定仍 PROVISIONING、投影键为空；
+本人确为参与者，租户、成员、身份及租户 binding 均 ACTIVE。因此本人访问 403
+是投影未完成时的正确拒绝，不应放宽 Core 的参与者或身份校验。
+
+原 Temporal Describe 退出 0，Workflow
+`platform:CONVERSATION_PROJECTION:6179e160-6055-4e9a-ae63-1793509c230c:36667917-f326-4a36-86f2-e0b31a0ea4c8:1`
+的 Run `01a11123-9bb1-7cb4-8bc1-1c95e0dab591` 仍 RUNNING；待执行 Activity
+`ProjectConversation` 第 16 次尝试，原错误为
+`unable to find activityType=ProjectConversation`、`ActivityNotRegisteredError`。
+已部署 `0d6b2833aa22151dfcd78851872a21a5f9e361d6` 的
+`worker/main.go::main` 确实没有注册既有
+`worker/activities/conversation.go::CoreAPI.ProjectConversation`，而
+`worker/workflows/conversation.go::conversationProjection` 已调度该方法。
+Core 投影函数在调用 Relay 前会先进入 RECONCILING，现场仍为 PROVISIONING
+也与执行器从未调用 Core 一致。
+
+修复仅在原 Worker 注册表加入 `w.RegisterActivity(core.ProjectConversation)`。
+没有新建 Workflow、队列、状态机或消息权威，不修改身份、权限、配额、重试策略、
+运行数据或投影终态。已授权管理动作继续经原 ActionExecution、outbox、Temporal
+与原 Core 服务认证接缝执行；重复投递及结果不明仍由原投影逻辑处理。
+
+实现后在同一 4 CPU／8 GiB SDK 运行
+`go test . ./workflows -run Conversation -count=1`，退出 0：
+`ok apps/worker 0.007s [no tests to run]`、`ok apps/worker/workflows 0.037s`。
+首轮 SDK 输入漏同步含 Conversation 字段的现有 component_task.go，退出 1，报
+`in.Conversation undefined`；补齐同批原文件后通过，未改变产品类型。
+原 Workflow 用例注册整个 CoreAPI mock，因此不能捕获生产 main 的漏注册；本次
+没有新增检查，不以该用例通过冒充线上注册或私聊业务成功。需要新 Worker 投递后
+回读原 Activity 执行与 Relay 投影证据；旧 Relay 不具备相应投影支持仍可能构成
+后续独立阻断。本次不强制重试、不重启旧任务、不将 UNKNOWN 改成成功。
+
+另只读确认本批拒绝空 Workspace 创建意图不会切断现有首个频道路径：唯一生产
+Workspace 插入在 governance 的 WorkspaceCreate 分支；Worker create 分支才调用
+ProvisionWorkspaceBuzz。现场首个 `kailo` Workspace 与本次新频道均各有一份原
+workspace.create ActionExecution，且冻结参数具有 `parameters.params` 对象。
+验证脚本中的直接 SQL 夹具不是 bootstrap 生产入口，不为夹具恢复空意图降级。

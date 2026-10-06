@@ -2239,6 +2239,30 @@ SDK-only 移除草稿行的 sendIntent 删除禁用，检查实际 1 fail/1 pass
 `drafts-notifications-native.log`、`drafts-delete-mutation.log`、`drafts-delete-restored.log`。
 最后 UNKNOWN 路径日志为 `drafts-unknown-final.log`、`drafts-unknown-mutation.log`、
 `drafts-unknown-restored.log`。
+
+### 原通知标题与正文回退同源翻译（后续独立增量）
+
+REQ-24 的原通知输出完整保留，修复固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/notifications/lib/notificationFormat.ts::formatMessageNotification`
+提取后遗留的英文。重新核对路径与符号存在，直接在既有共享函数中调用当前设备
+locale；回复标题复用既有 `buzz.reply`，另六项加入唯一 TypeScript catalog，
+Dart 由原生成器同步。没有新通知规则或语言目录。
+
+四步结论：权威仍是既有设备语言；影响仅共享格式函数、Native 原 feed/live consumer
+与 catalog 投影，不改变触发、权限、scope、幂等或后端契约；副作用仅通知文案，
+保留原发送者优先、未知发送者不泄漏公钥的中性回退；无频道／空正文／trim／截断
+沿原分支，逐次调用读取 locale，切语言后无需重载模块。Web 当前发送者标题与消息
+正文路径未改，不将本次翻译归成后台通知能力扩展。
+
+同一受限 SDK 实际共享 tsc 退出 0，原 format/feed 九项通过；新增事后用例实际在
+同一模块内从 English 切到中文，核对原英文及中文空正文回退。SDK-only 将频道连接
+词强制英文，原中文断言真实失败；原字节 cmp 退出 0 后九项再次通过。Dart 生成及
+原 `--check` 退出 0。初次缺少 formatter PATH 的失败保留，使用镜像已有
+`/usr/lib/dart/bin/dart` 后完成，没有安装工具。
+日志为同一 Data 目录下 `notification-copy-{final,tests,catalog,mutation,restored}.log`。
+本增量发生在主线 ee9a7 冻结 full 启动之后；该 full 不覆盖本增量，未新跑 full、
+打包、部署或系统通知端到端验收。
 原 AlertDialog 依赖按 Desktop 实际锁版本 1.1.23 复用；三锁由原包管理器生成。
 缓存缺包导致离线解析失败后仅补取缺失包，不能声称本次零联网。
 16 个草稿词条及 Dart 同源输出已生成；未新建验证脚本，未全量构建或部署草稿增量。

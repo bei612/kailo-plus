@@ -35,6 +35,12 @@ enum PlatformMessageKey {
   inboxFilterLabel,
   inboxReply,
   platformNotificationsMention,
+  platformNotificationsInChannel,
+  platformNotificationsMentionedYou,
+  platformNotificationsReplied,
+  platformNotificationsMentionTitle,
+  platformNotificationsMentionFallback,
+  platformNotificationsReplyFallback,
   platformNotificationsThreadReply,
   platformNotificationsMentionDescription,
   platformNotificationsThreadReplyDescription,
@@ -1205,6 +1211,24 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.inboxReply: ('Reply in thread', '在线程中回复'),
   PlatformMessageKey.platformNotificationsMention: ('@Mentions', '@提及'),
+  PlatformMessageKey.platformNotificationsInChannel: (
+    '{prefix} in {channel}',
+    '{prefix} · {channel}',
+  ),
+  PlatformMessageKey.platformNotificationsMentionedYou: (
+    '{sender} mentioned you',
+    '{sender}提及了你',
+  ),
+  PlatformMessageKey.platformNotificationsReplied: (
+    '{sender} replied',
+    '{sender}已回复',
+  ),
+  PlatformMessageKey.platformNotificationsMentionTitle: ('@Mention', '@提及'),
+  PlatformMessageKey.platformNotificationsMentionFallback: (
+    'Something in Buzz needs your attention.',
+    'Buzz 中有事项需要你关注。',
+  ),
+  PlatformMessageKey.platformNotificationsReplyFallback: ('New reply', '新回复'),
   PlatformMessageKey.platformNotificationsThreadReply: (
     'Thread replies',
     '线程回复',

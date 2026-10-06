@@ -6,6 +6,13 @@
 
 ## 当前使用与恢复范围（2026-10-06）
 
+- 共享草稿、通知、Agent 授权摘要及频道命名修正批 `344a4b6352180527052a659070b9dce2452d3da6`
+  已提交并推送，但尚未部署。固定树集中 `tools/check.sh --full` 已结束，退出 1：
+  TypeScript 检查及产物追溯／来源核对未通过；Rust、Go、Dart、静态检查和文档
+  检查通过。具体失败、跳过及本批后续窄验边界见
+  [恢复检查记录](core/verify/buzz-restoration-checkpoint.md)。不以源码提交或局部
+  通过宣称完整 Buzz、私聊、三服务或多人多 Agent 已可交付。
+
 - 12:40 UTC，后续共享界面批 `c674f5782ed918c63e691d94f60df7f3c37bb5ba` 已构建并
   单独投递 Web，实际镜像为
   `587815d0cf1a4964c1342f99b24e289fc402e0e9be22a4fc9fcf9dc2a3e28389`，

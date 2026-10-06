@@ -394,3 +394,28 @@ Web/Desktop 共用此组件，Mobile 不新增页面；没有契约、持久数�
 未完成草稿、撤权、策略失效仍不可提交。切换编辑器不会发送动作，无新增
 副作用或状态终结要求。定向交互检查在实现后加入，验证及变异结果另随实际
 输出记录；此处不把源码修复视为新版本浏览器验收。
+
+### 2026-10-06 共享草稿、通知与 Agent 接缝批集中结果
+
+源码提交 `344a4b6352180527052a659070b9dce2452d3da6` 已普通 push 至
+`work/buzz-restoration-20261006`，远端独立读回一致；相对
+`c674f5782ed918c63e691d94f60df7f3c37bb5ba` 为 94 文件 +2783/-1587。
+固定树 `ee9a7aa5995cbc7bd4c8e1c0d6c985c7b16095b0` 的原
+`tools/check.sh --full` 在 4 CPU／8 GiB SDK、Data 缓存下退出 1。
+原始日志位于 Data 的
+`buzz-runtime-drafts-batch.102bnA/tmp.xi2Rzzyp4d.check.log`。
+
+实际通过：Cargo fmt/clippy/test、gofmt/vet/test、TypeScript 类型检查、Dart
+analyze/test、四侧生成、242 个 schema 与三份历史契约兼容、Workflow replay、
+文档六项与能力注册表。实际失败：node --test，以及发布追溯和上游来源核对；
+后两项包含 Web 追溯 digest 未同步、conversation 的 Core/Worker digest 无对应
+dist 发布记录、Relay/Desktop/Web 新源码与旧 artifact 来源不同。不得修改摘要
+冒充新产物，也不得把静态通过写成全量通过。数据库实际迁移演练和导出树部署
+配置预检因没有对应输入明确 SKIP；未安装 gitleaks，不将内置扫描替代该工具。
+
+该批尚未发布。线上 Web 仍为 c674，Core/Worker 仍为先前 0d6 批。
+344 的 Core 发布在 COPY 阶段发现仍需补 Worker Activity 注册后主动取消，
+退出 130，未进入本次 Cargo 编译、未产出或部署镜像。Relay 原构建因 Corepack
+获取 pnpm 的 registry 连接超时退出 1，重试亦失败；没有用旧镜像冒充新源码。
+随后补入的通知文案中英同源、ProjectConversation 原 Activity 注册及 Wren
+DEDICATED_INSTANCE 修正，各有实现后窄验记录，不属于此固定树 full 的覆盖范围。

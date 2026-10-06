@@ -29,7 +29,7 @@ test("enriches a feed notification with its loaded channel name", () => {
   assert.equal(item.channelName, "ship-room");
   assert.equal(
     formatFeedNotification(item, "Taylor").title,
-    "Taylor mentioned you in #ship-room",
+    "Taylor提及了你 · #ship-room",
   );
 });
 
@@ -38,7 +38,7 @@ test("preserves feed-provided channel metadata", () => {
   const item = enrichFeedItemChannel(original, channels);
 
   assert.equal(item, original);
-  assert.equal(formatFeedNotification(item).title, "@Mention in #backend-name");
+  assert.equal(formatFeedNotification(item).title, "@提及 · #backend-name");
 });
 
 test("falls back safely when the channel list has not loaded the channel", () => {
@@ -46,7 +46,7 @@ test("falls back safely when the channel list has not loaded the channel", () =>
   const item = enrichFeedItemChannel(original, []);
 
   assert.equal(item, original);
-  assert.equal(formatFeedNotification(item).title, "@Mention");
+  assert.equal(formatFeedNotification(item).title, "@提及");
 });
 
 test("eligible items are the feed's mentions in chronological order", () => {

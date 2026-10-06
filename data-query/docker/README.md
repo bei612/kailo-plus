@@ -255,9 +255,13 @@ The release type/digest/range must come from the actual approved source-built
 release. The namespace is exactly `tenants/<tenantId>` and the socket is the
 component's `/run/kailo-query/bao.sock`; neither comes from an incoming request.
 
-This first datasource validator supports an existing PostgreSQL project as a
-`NAMESPACE` and one connection SecretRef. It does not echo other isolation-mode
-claims as proven. Its pinned KV v2 value has `connectionInfo` in the original
+This datasource validator accepts the design's `DEDICATED_INSTANCE` binding
+with one existing PostgreSQL project and one connection SecretRef. The project
+must be the same project selected by the original UI's `getCurrentProject`,
+not a different project reachable only through an adapter-supplied ID. Other
+isolation modes are refused. Dedicated deployment ownership, its database and
+credentials remain controlled deployment facts; matching a project alone does
+not prove infrastructure isolation. Its pinned KV v2 value has `connectionInfo` in the original
 Wren Postgres shape (`host`, `port`, `database`, `user`, `password`, `ssl`). The
 value stays in process memory and must equal the original project's decrypted
 connection. It does not create or alter that project or database account. Other

@@ -57,7 +57,7 @@ async function loadBindingDelivery(
     binding.workspaceId !== config.workspaceId ||
     binding.nativeInstanceRef !== config.nativeInstanceRef ||
     binding.nativeScopeRef !== config.nativeScopeRef ||
-    binding.isolationMode !== 'NAMESPACE' ||
+    binding.isolationMode !== 'DEDICATED_INSTANCE' ||
     !uuid.test(binding.componentReleaseId) ||
     !Array.isArray(binding.secretRefs) ||
     binding.secretRefs.length !== 1 ||
@@ -223,11 +223,13 @@ export class NativeBindingService {
       canonical({ ...delivery.binding, idempotencyKey: key })
     )
       throw denied();
-    const project = await this.projects.findOneBy({
-      id: this.config.projectId,
-    });
+    // GenBI's original UI selects the first native project. The governed
+    // binding must address that same project in this dedicated instance,
+    // not an otherwise-valid hidden project selected only by the adapter.
+    const project = await this.projects.getCurrentProject();
     if (
       !project ||
+      project.id !== this.config.projectId ||
       project.type !== DataSourceName.POSTGRES ||
       digest({
         type: project.type,
