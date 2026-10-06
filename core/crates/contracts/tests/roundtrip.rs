@@ -6,6 +6,21 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn workspace_membership_projection_preserves_true_false_and_unknown() {
+    for member in [None, Some(false), Some(true)] {
+        let mut value = serde_json::json!({
+            "id": "00000000-0000-4000-8000-000000000004", "slug": "scope", "name": "Scope"
+        });
+        if let Some(member) = member {
+            value["isMember"] = member.into();
+        }
+        let typed: contracts::WorkspaceView = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(typed.is_member, member);
+        assert_eq!(serde_json::to_value(typed).unwrap(), value);
+    }
+}
+
+#[test]
 fn public_workspace_roundtrip_preserves_visibility_and_membership_evidence() {
     fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(name: &str) {
         let raw = fs::read_to_string(sample_path().with_file_name(name)).unwrap();
@@ -217,6 +232,7 @@ fn web_publish_message_roundtrip_preserves_mentions_and_legacy_absence() {
         "web-publish-content-only.sample.json",
         "web-forum-post.sample.json",
         "web-forum-comment.sample.json",
+        "web-message-edit.sample.json",
     ] {
         let raw = fs::read_to_string(sample_path().with_file_name(sample)).unwrap();
         let original: serde_json::Value = serde_json::from_str(&raw).unwrap();

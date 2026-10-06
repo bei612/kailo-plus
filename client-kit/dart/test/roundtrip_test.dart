@@ -9,6 +9,19 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('workspace membership keeps true false and absence distinct', () {
+    for (final member in <bool?>[null, false, true]) {
+      final value = <String, dynamic>{
+        'id': 'scope',
+        'name': 'Scope',
+        'slug': 'scope',
+        if (member != null) 'isMember': member,
+      };
+      final typed = WorkspaceView.fromJson(value);
+      expect(typed.isMember, member);
+      expect(typed.toJson(), value);
+    }
+  });
   test(
     'conversation references roundtrip without inventing optional cursor',
     () {
@@ -275,6 +288,7 @@ void main() {
   for (final sample in [
     'web-publish-mention.sample.json',
     'web-publish-content-only.sample.json',
+    'web-message-edit.sample.json',
   ]) {
     test('WebPublishMessageRequest round-trip $sample', () {
       final original = jsonDecode(

@@ -4,8 +4,56 @@ import { setLocale } from "../src/i18n";
 import { ComposerReplyBanner, MessageRowSurface, MessageActionBarSurface, type TimelineMessage } from "../src/react/messages";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { render, click } from "./render";
+import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "../src/react/messages";
 
 const message: TimelineMessage = { id: "message", pubkey: "author", author: "Alice", body: "Hello", createdAt: 1770000000, depth: 0, time: "", tags: [] };
+
+it("overlays only the original author's same-channel latest edit while retaining row identity and ancestry", () => {
+  const original = {id:"original",kind:9,pubkey:"alice",created_at:1,content:"before",tags:[["h","channel"],["e","root","","reply"],["p","bob"],["imeta","url old"]]};
+  const edit = {id:"edit",kind:40003,pubkey:"alice",created_at:2,content:"after",tags:[["h","channel"],["e","original"],["p","carol"]]};
+  const [result] = applyMessageEdits([original], [edit, {...edit,id:"old",created_at:0,content:"stale"},
+    {...edit,id:"forged",created_at:8,pubkey:"mallory",content:"wrong author"},
+    {...edit,id:"foreign",created_at:9,tags:[["h","other"],["e","original"]],content:"wrong scope"}]);
+  expect(result).toEqual({...original,content:"after",tags:[["h","channel"],["e","root","","reply"],["p","bob"],["p","carol"]]});
+  const unscoped = {...original,tags:[]};
+  expect(applyMessageEdits([unscoped], [{...edit,tags:[["e","original"]]}])).toEqual([unscoped]);
+});
+
+it("restores original file labels and media spoilers without leaving media markdown in edited body", () => {
+  const image = "https://relay.example/media/image.png";
+  const file = "https://relay.example/media/report.pdf";
+  const body = `Text\n\n||![image](${image})||\n[Report \\[final\\]](${file})`;
+  const tags = [["imeta",`url ${image}`,"m image/png",`x ${"a".repeat(64)}`,"size 3"],
+    ["imeta",`url ${file}`,"m application/pdf",`x ${"b".repeat(64)}`,"size 4","filename report.pdf"]];
+  const media = restoreImetaMediaDisplayLabels(body, imetaMediaFromTags(tags));
+  expect(media[1]?.displayLabel).toBe("Report [final]");
+  expect(stripImetaMediaLines(body, media)).toBe("Text");
+  expect([...findSpoileredImetaMediaUrls(body, media)]).toEqual([image]);
+});
+
+it("uses the original editing banner ahead of reply mode and retains Chinese/English cancel controls", async () => {
+  const cancel = vi.fn();
+  const host = await render(<ComposerReplyBanner isEditing replyTarget={message} onCancelEdit={cancel} />);
+  await act(async () => setLocale("zh-CN"));
+  expect(host.textContent).toContain("正在编辑消息");
+  expect(host.textContent).not.toContain("正在回复");
+  await click(host.querySelector<HTMLButtonElement>('[aria-label="取消编辑"]')!);
+  expect(cancel).toHaveBeenCalledTimes(1);
+  await act(async () => setLocale("en"));
+  expect(host.textContent).toContain("Editing message");
+});
+
+it("opens the original edit menu and transfers focus only after its close handoff", async () => {
+  const edit = vi.fn();
+  const host = await render(<TooltipProvider><MessageActionBarSurface message={message} onCopyMessage={vi.fn()} onEdit={edit} /></TooltipProvider>);
+  const trigger = host.querySelector<HTMLButtonElement>('[data-testid="more-actions-message"]')!;
+  await act(async () => { trigger.focus(); trigger.dispatchEvent(new KeyboardEvent("keydown", {key:"ArrowDown", bubbles:true})); });
+  const item = document.querySelector<HTMLElement>('[data-testid="edit-message-message"]');
+  expect(item).not.toBeNull();
+  await click(item!);
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  expect(edit).toHaveBeenCalledWith(message);
+});
 
 it("keeps the original avatar, author, timestamp, measured hover rail and actual copy action", async () => {
   const copy = vi.fn();

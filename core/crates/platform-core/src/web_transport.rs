@@ -297,7 +297,7 @@ async fn resolve_mentions(
             .await
         {
             Ok(check) if check.zed_token.is_empty() => {
-                return Err(StatusCode::SERVICE_UNAVAILABLE.into_response())
+                return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
             }
             Ok(check) if check.allowed => {}
             Ok(_) => return Err(StatusCode::FORBIDDEN.into_response()),
@@ -689,7 +689,7 @@ pub async fn query_channel(
 /// timeline. Window exhaustion remains the relay-signed NIP-CW bounds event;
 /// thread continuation follows the original native forward-keyset algorithm.
 #[allow(clippy::too_many_arguments, clippy::result_large_err)]
-fn verify_message_page(
+pub(crate) fn verify_message_page(
     events: Vec<nostr::Event>,
     channel: &str,
     message_type: &contracts::WebMessageType,
@@ -698,7 +698,7 @@ fn verify_message_page(
     relay_author: Option<&str>,
     cap: i64,
 ) -> Result<(Vec<nostr::Event>, Option<contracts::WebMessageCursor>), Response> {
-    let window = *message_type == contracts::WebMessageType::ForumPost;
+    let window = root.is_none() && relay_author.is_some();
     let mut ids = std::collections::HashSet::new();
     let mut rows = Vec::new();
     let mut overlays = Vec::new();
@@ -935,22 +935,39 @@ async fn publish(
         Publication::Hide => CONVERSATION_HIDE_ACTION,
         Publication::Reopen => CONVERSATION_REOPEN_ACTION,
     };
-    let (message_type, parent_event_id) = match &publication {
+    let (message_type, parent_event_id, edit_event_id) = match &publication {
         Publication::Message(req) => (
             req.message_type
                 .clone()
                 .unwrap_or(contracts::WebMessageType::Stream),
             req.parent_event_id.clone(),
+            req.edit_event_id.clone(),
         ),
-        Publication::Hide | Publication::Reopen => (contracts::WebMessageType::Stream, None),
+        Publication::Hide | Publication::Reopen => (contracts::WebMessageType::Stream, None, None),
     };
-    if !valid_message_intent(&message_type, parent_event_id.as_deref())
+    if edit_event_id.is_none() && !valid_message_intent(&message_type, parent_event_id.as_deref())
+        || edit_event_id.as_deref().is_some_and(|id| {
+            nostr::EventId::from_hex(id).map_or(true, |parsed| parsed.to_hex() != id)
+                || parent_event_id.is_some()
+        })
         || matches!(target, MessageTarget::Conversation(_))
             && message_type != contracts::WebMessageType::Stream
     {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let requested_kind = i32::from(message_kind(&message_type));
+    let requested_kind = if edit_event_id.is_some() {
+        KIND_STREAM_MESSAGE_EDIT as i32
+    } else {
+        i32::from(message_kind(&message_type))
+    };
+    if let Publication::Message(request) = &publication {
+        if edit_event_id.is_some()
+            && request.content.trim().is_empty()
+            && request.attachments.as_ref().is_none_or(Vec::is_empty)
+        {
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+    }
 
     // 幂等键由调用方为「这一次发送意图」生成，重发时带同一个键（DD-81）。
     // 缺失即拒绝：没有它，结果不明后的重发只能再发一条。
@@ -985,9 +1002,10 @@ async fn publish(
         target_ids: Vec<Option<Uuid>>,
         message_kind: i32,
         parent_event_id: Option<String>,
+        edit_event_id: Option<String>,
     }
     let previous = match sqlx::query_as::<_, PreviousPublish>(
-        r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.message_kind, a.parent_event_id,
+        r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.message_kind, a.parent_event_id, a.edit_event_id,
                   array(select r.target_id from audit.audit_event r
                     where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                       and r.action_key=$3 and r.target_type=$4
@@ -1023,6 +1041,7 @@ async fn publish(
             || !mention_intent_matches(&p.mention_installation_ids, &mention_ids)
             || p.message_kind != requested_kind
             || p.parent_event_id != parent_event_id
+            || p.edit_event_id != edit_event_id
         {
             return StatusCode::CONFLICT.into_response();
         }
@@ -1035,7 +1054,7 @@ async fn publish(
                         operation_id: p.operation_id,
                     }),
                 )
-                    .into_response()
+                    .into_response();
             }
             Some("REJECTED") => {
                 return error_body(
@@ -1043,7 +1062,7 @@ async fn publish(
                     ErrorClass::Denied,
                     ReasonCode::PublishRejected,
                     Some(p.operation_id),
-                )
+                );
             }
             Some("NOT_DELIVERED") => {}
             // 还没有结论：仍是那一次的结果不明，不能再发一条
@@ -1053,7 +1072,7 @@ async fn publish(
                     ErrorClass::Unknown,
                     ReasonCode::PublishResultUnknown,
                     Some(p.operation_id),
-                )
+                );
             }
         }
     }
@@ -1115,6 +1134,31 @@ async fn publish(
         return c.into_response();
     }
 
+    // The browser selects a semantic target, never its author, channel or tags.
+    // Read the original signed event through the already admitted actor, then
+    // let Relay recheck native edit ownership at ingestion as well.
+    let edit_target = match edit_event_id.as_deref() {
+        Some(id) => {
+            let event = match read_message_event(&state, &client, &channel_id, id).await {
+                Ok(event) => event,
+                Err(response) => return response,
+            };
+            if event.pubkey != keys.public_key() {
+                return error_body(
+                    StatusCode::FORBIDDEN,
+                    ErrorClass::Denied,
+                    ReasonCode::PermissionDenied,
+                    None,
+                );
+            }
+            if event.kind.as_u16() != message_kind(&message_type) {
+                return StatusCode::BAD_REQUEST.into_response();
+            }
+            Some(event)
+        }
+        None => None,
+    };
+
     let ancestry = match parent_event_id.as_deref() {
         Some(parent) => {
             match resolve_message_parent(&state, &client, &channel_id, parent, &message_type).await
@@ -1151,6 +1195,12 @@ async fn publish(
     // DISPATCH 审计之后才发送——之后无论结果如何，这条消息动作都可关联
     // （Stage 1 退出门禁），结果不明时也有一个能去 Relay 查证的键（DD-81）。
     let signed = match publication {
+        Publication::Message(_) if edit_target.is_some() => client.sign_message_edit(
+            edit_target.as_ref().expect("edit target checked"),
+            &content,
+            &media_tags,
+            &mentions,
+        ),
         Publication::Message(_) => client.sign_channel_message_kind(
             &channel_id,
             &content,
@@ -1229,8 +1279,8 @@ async fn publish(
             .rows_affected(),
             None => sqlx::query(
                 "insert into admission.publish_attempt
-                     (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id)
-                 values ($1, $2, $3, $4, $5, $6, $7) on conflict do nothing"
+                     (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id, edit_event_id)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict do nothing"
             )
             .bind(ctx.tenant_principal_id)
             .bind(idempotency_key)
@@ -1239,6 +1289,7 @@ async fn publish(
             .bind(&mention_ids)
             .bind(requested_kind)
             .bind(&parent_event_id)
+            .bind(&edit_event_id)
             .execute(&mut *tx)
             .await?
             .rows_affected(),
@@ -1250,10 +1301,11 @@ async fn publish(
                 mention_installation_ids: Vec<Uuid>,
                 message_kind: i32,
                 parent_event_id: Option<String>,
+                edit_event_id: Option<String>,
                 target_ids: Vec<Option<Uuid>>,
             }
             let frozen: ConcurrentPublish = sqlx::query_as(
-                "select a.mention_installation_ids, a.message_kind, a.parent_event_id,
+                "select a.mention_installation_ids, a.message_kind, a.parent_event_id, a.edit_event_id,
                     array(select r.target_id from audit.audit_event r
                       where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                         and r.action_key=$3 and r.target_type=$4
@@ -1266,6 +1318,7 @@ async fn publish(
             return Ok(if publish_scope_matches(&frozen.target_ids, target.id())
                 && mention_intent_matches(&frozen.mention_installation_ids, &mention_ids)
                 && frozen.message_kind == requested_kind && frozen.parent_event_id == parent_event_id
+                && frozen.edit_event_id == edit_event_id
                 { Claim::Pending } else { Claim::TargetMismatch });
         }
         append(
@@ -1290,7 +1343,7 @@ async fn publish(
                 ErrorClass::Unknown,
                 ReasonCode::PublishResultUnknown,
                 None,
-            )
+            );
         }
         Err(e) => {
             tracing::warn!(error = %e, "发布前审计未写入，不发送");
@@ -1414,7 +1467,7 @@ pub(crate) fn limit_response(
                 ErrorClass::Precondition,
                 ReasonCode::DependencyUnavailable,
                 operation_id,
-            )
+            );
         }
     };
     let mut response = error_body(status, ErrorClass::Limit, reason, operation_id);
@@ -1609,7 +1662,9 @@ async fn query_messages_for(
     let mut root_event = None;
     let mut cap = page_limit(&state, &limits);
     let mut filter = serde_json::json!({"kinds":[message_kind(&message_type)], "#h":[channel_id]});
-    let author = if message_type == contracts::WebMessageType::ForumPost {
+    let author = if query.parent_event_id.is_none()
+        && message_type != contracts::WebMessageType::ForumComment
+    {
         let author = match window_author(&state, &ctx, &community_host).await {
             Ok(author) => author,
             Err(response) => return response,
@@ -1654,7 +1709,17 @@ async fn query_messages_for(
             filter["before_id"] = cursor.event_id.clone().into();
         }
     }
-    match client.query(&state.http, &[filter]).await {
+    let mut filters = vec![filter];
+    if let Some(root) = &root_event {
+        // Native thread aux covers replies, not its separately fetched head.
+        // Fetch the head's latest author-signed overlay in the same admitted
+        // request so reopening a thread cannot resurrect pre-edit content.
+        filters.push(serde_json::json!({
+            "kinds": [KIND_STREAM_MESSAGE_EDIT], "#h": [channel_id],
+            "#e": [root.id.to_hex()], "authors": [root.pubkey.to_hex()], "limit": 1,
+        }));
+    }
+    match client.query(&state.http, &filters).await {
         Ok(events) => {
             let events = match serde_json::from_value(events) {
                 Ok(events) => events,
@@ -1719,8 +1784,7 @@ pub fn page_limit(state: &BffState, limits: &RelayLimits) -> i64 {
 pub struct WorkspaceScope {
     pub channel_id: String,
     pub community_host: String,
-    /// stream generation 使用真实的准入依据，不为无 Membership 的管理者捏造
-    /// membership version。管理资格仍在每次请求与 stream 再准入时 fresh Check。
+    /// 记录目录/管理准入的真实依据；协作读写还必须确认是 Membership。
     pub admission_epoch: WorkspaceAdmissionEpoch,
 }
 
@@ -1745,17 +1809,35 @@ pub enum WorkspaceAdmissionEpoch {
     },
 }
 
+impl WorkspaceAdmissionEpoch {
+    pub(crate) fn is_member(&self) -> bool {
+        matches!(self, Self::Membership { .. })
+    }
+}
+
 /// HUMAN 的 Workspace scope guard（`.design/03` §2、`DD-41/46`）。
 ///
-/// Membership 与管理资格共用同一判定；Buzz 读写还必须有两侧 ACTIVE binding。
+/// 协作读写必须是实际成员；管理可见性不代表原生 Channel roster 参与资格。
 pub async fn admit_workspace(
     state: &BffState,
     ctx: &ExecutionContext,
     workspace_id: Uuid,
 ) -> Result<WorkspaceScope, Response> {
-    admit_workspace_scope(state, ctx, workspace_id)
+    admit_collaboration_workspace_scope(state, ctx, workspace_id)
         .await
         .map_err(IntoResponse::into_response)
+}
+
+pub(crate) async fn admit_collaboration_workspace_scope(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    workspace_id: Uuid,
+) -> Result<WorkspaceScope, AdmissionFailure> {
+    let scope = admit_workspace_scope(state, ctx, workspace_id).await?;
+    if !scope.admission_epoch.is_member() {
+        return Err(AdmissionFailure::Denied);
+    }
+    Ok(scope)
 }
 
 /// Workspace 准入不通过的三种情形。
@@ -2236,6 +2318,29 @@ async fn fetch_media_for(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn collaboration_membership_is_not_management_visibility() {
+        assert!(WorkspaceAdmissionEpoch::Membership {
+            tenant_version: 1,
+            workspace_version: 1,
+            membership_id: Uuid::nil(),
+            version: 1,
+        }
+        .is_member());
+        assert!(!WorkspaceAdmissionEpoch::WorkspaceManage {
+            tenant_version: 1,
+            workspace_version: 1,
+        }
+        .is_member());
+        assert!(!WorkspaceAdmissionEpoch::TenantManage {
+            tenant_version: 1,
+            workspace_version: 1,
+            membership_id: Uuid::nil(),
+            membership_version: 1,
+        }
+        .is_member());
+    }
 
     #[test]
     fn forum_message_intents_enforce_parent_combinations_and_canonical_ids() {

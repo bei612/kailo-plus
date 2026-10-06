@@ -137,7 +137,11 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
             };
             let mut visible_channels: std::collections::HashSet<Uuid> = channels
                 .into_iter()
-                .filter(|(_, workspace_id)| admitted.contains_key(workspace_id))
+                .filter(|(_, workspace_id)| {
+                    admitted
+                        .get(workspace_id)
+                        .is_some_and(|epoch| epoch.is_member())
+                })
                 .map(|(channel_id, _)| channel_id)
                 .collect();
             match visible_conversation_channels(&state, &ctx, &channel_ids).await {
@@ -466,7 +470,12 @@ async fn require_visible_channel(
         StatusCode::SERVICE_UNAVAILABLE.into_response()
     })?;
     match workspace_id {
-        Some(workspace_id) => require_visible_workspace(state, ctx, workspace_id).await,
+        Some(workspace_id) => {
+            crate::web_transport::admit_collaboration_workspace_scope(state, ctx, workspace_id)
+                .await
+                .map(|_| ())
+                .map_err(IntoResponse::into_response)
+        }
         None => {
             let conversations = visible_conversation_channels(state, ctx, &[channel_id]).await?;
             if conversations.contains(&channel_id) {
@@ -530,10 +539,12 @@ enum ReadScope {
 impl ReadTarget {
     async fn admit(self, state: &BffState, ctx: &ExecutionContext) -> Result<ReadScope, Response> {
         match self {
-            Self::Workspace(id) => crate::web_transport::admit_workspace_scope(state, ctx, id)
-                .await
-                .map(ReadScope::Workspace)
-                .map_err(IntoResponse::into_response),
+            Self::Workspace(id) => {
+                crate::web_transport::admit_collaboration_workspace_scope(state, ctx, id)
+                    .await
+                    .map(ReadScope::Workspace)
+                    .map_err(IntoResponse::into_response)
+            }
             Self::Conversation(id) => crate::conversations::admit(state, ctx, id)
                 .await
                 .map(ReadScope::Conversation),

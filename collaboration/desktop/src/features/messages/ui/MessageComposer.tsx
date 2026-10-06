@@ -1,6 +1,7 @@
 import * as React from "react";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
+import { imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
 import {
   useChannelLinks,
   type ChannelSuggestion,
@@ -53,6 +54,8 @@ function MessageComposerImpl({
   containerClassName,
   layoutMode = "standalone",
   disabled = false,
+  editTarget,
+  onCancelEdit,
   draftKey,
   autoSubmitDraftKey = null,
   onAutoSubmitComplete,
@@ -86,7 +89,7 @@ function MessageComposerImpl({
   } = useComposerLinkPreviews(previewContent);
   const [isFormattingOpen, setIsFormattingOpen] = React.useState(false);
   const drafts = useDrafts();
-  const effectiveDraftKey = draftKey ?? channelId;
+  const effectiveDraftKey = editTarget ? null : (draftKey ?? channelId);
   const effectiveDraftKeyRef = React.useRef(effectiveDraftKey);
   effectiveDraftKeyRef.current = effectiveDraftKey;
   const mentions = useMentions(channelId, profiles);
@@ -212,6 +215,22 @@ function MessageComposerImpl({
     },
   });
   const linkEditor = useLinkEditor(richText);
+  // Original edit hydration: retain attachment labels/spoilers and edit only
+  // the body. The ordinary composer stays mounted with its own draft owner.
+  const hydratedEdit = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!editTarget || !richText.editor || hydratedEdit.current === editTarget.id) return;
+    hydratedEdit.current = editTarget.id;
+    const attachments = restoreImetaMediaDisplayLabels(editTarget.body, imetaMediaFromTags(editTarget.tags));
+    const content = stripImetaMediaLines(editTarget.body, attachments);
+    runComposerUpdate(() => {
+      setComposerContent(content);
+      richText.setContent(content);
+      media.setPendingImeta(attachments);
+      setSpoileredAttachmentUrls(new Set(findSpoileredImetaMediaUrls(editTarget.body, attachments)));
+    }, attachments);
+    richText.focus();
+  }, [editTarget, richText.editor, richText.setContent, richText.focus, media.setPendingImeta, runComposerUpdate, setComposerContent, setSpoileredAttachmentUrls]);
   syncContentRefFromEditorRef.current = () => {
     const markdown = richText.getMarkdown();
     contentRef.current = markdown;
@@ -466,6 +485,9 @@ function MessageComposerImpl({
     formRef={formRef} scrollRef={composerScrollRef} onEditorKeyDown={handleEditorKeyDown}
     header={<>
           <ComposerReplyBanner
+            isEditing={editTarget !== undefined}
+            isEditCancelDisabled={isSubmitLocked || isSending}
+            onCancelEdit={onCancelEdit}
             replyTarget={replyTarget}
             onCancelReply={onCancelReply}
           />

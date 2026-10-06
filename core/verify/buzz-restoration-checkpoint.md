@@ -595,3 +595,67 @@ Web 仍为 a59 镜像，Windows 旧包未更新；新 Thread、公开频道及�
 本次只登记 DD-74/75、SS-BUZ-GOVERNANCE、SS-OMT-AUTH 已实际发生的投递，
 没有新 schema、权限或默认租户；唯一删除的精确缓存键已由原流程重建。源码摘要
 来自原构建 helper 的真实回执，四处 Compose pin 与两个既有来源记录同步。
+
+## 2026-10-06 18:02 UTC 网关登录修复上线与恢复批集中验证
+
+本批沿用 DD-74/75、SS-WEB-PRESENTATION 与原治理链，恢复原消息编辑、回复及附件
+呈现、成员可见频道和当前选中频道的读取、Workflows 运行列表与详情交互。Web/Desktop
+复用同一消息语义与原组件；没有第二套工作流执行器、身份或业务正文存储。编辑目标
+必须属于本人及当前频道，消息结果不明保持原意图并只对账，不因重试另发副作用；
+无成员频道不回退默认频道。桌面编辑意图仍为进程内状态，重启恢复未验收。
+
+影响面覆盖共享呈现、Web BFF、原生命令、Relay 已有 kind 40003 编辑协议、Core
+准入和 migration 20261006210000；协议字段为可选 edit_target，旧请求保持原义，
+四侧生成物和往返同步。成员选择使用授权的 workspace 列表，不以浏览器选择代替
+服务端授权。附件完整媒体属性的后续恢复和 Workflow 名称批仍在并行实现，不计入
+本候选完成范围；不修改旧版本 hash 或把缺失终态证据渲染为成功。
+
+固定候选 e14bf7619d751544c0c1671708d9baa4ceccd07c 的原
+`./tools/check.sh --full` 已结束，退出 1。日志：
+`/volumes/data/kailo/tmp/buzz-edit-member-full-20261006.902Ske/full.log`。
+SDK 实际限额 4 CPU / 8 GiB，独立库 kailo_edit_member_e14bf7，未操作业务库。
+原始结果摘录：
+
+```text
+PASS cargo clippy / gofmt / go vet / tsc --noEmit / dart analyze
+PASS 四侧生成同步、242 个 schema 与 3 个历史 schema 兼容
+PASS 前进、回退、再前进三步演练、sqlx 离线核对、44 个枚举约束
+PASS cargo test / go test / node --test / dart test / Workflow replay
+FAIL cargo fmt
+FAIL 两处 Relay 与一处 metering 的旧产物引用、设计封闭列表漏列 CONVERSATION_PROJECTION
+FAIL desktop-client / model-gateway / web-client 产物与本次源码不匹配
+```
+
+格式差异已用同一 SDK 的 rustfmt 处理两处 Core 文件；三个追溯引用同步已上线
+真实 Relay/Metering 摘要。设计提交 4305c7578875ec13c17705f76b4a3cf35da92384
+同步原生私聊的 CONVERSATION_PROJECTION 封闭列表和使用映射，并包含前置
+Workflow 版本名称决定；CI pin 同步。首次修正后 trace 仍退出 1，发现新 Gateway
+的两个引用未同步，以及生成器读取使用映射而非封闭列表；两项随后一并修正。
+复用最小 SDK 运行文档检查因不含完整实施文档失败，保留该失败，不作为验证通过。
+修正没有把以上
+full 的退出 1 改写为通过，也没有在每个小修后重跑 full。
+最终固定树 db5b4c02625c315122d5ab952ff8476392d9ceb4 的原 trace 单步退出 0：
+文档检查通过、22 条追溯记录通过、能力注册表与追溯一致；
+原件为同目录 trace-final.log。该单步不替代仍未闭合的全量发布验收。
+
+Gateway 使用固定提交 cdc79c4a3fa8d6888e8df9ab3c28b95814bd2108 经原
+tools/build-upstream.sh model-gateway 完成编译、原生 version 自检、registry push
+及来源登记。原构建会话退出码未保留，不补造；完整日志、产物和 registry 摘要
+已独立核对，位于
+`/volumes/data/kailo/tmp/buzz-oidc-release-20261006.VdZaRV/`。
+产物为 sha256:6a4c61d44263fb2385926c624f0d9a5a6e85348cbbbfa4484cd4e919508331f5，
+真实源码摘要来自原 helper，不手算或弱化源码范围。构建复用 Data 缓存，仍拉取了
+基础层，不能称全程离线。
+
+18:02:16 UTC 仅 agentgateway 以该摘要重建，原 Compose up 退出 0；
+前后容器清单证明其他服务未替换。匿名 SSE 连续三次均 401、无 Set-Cookie、
+无重定向；没有更改额度、权限或清除用户会话。playwright-cli 经真实 OIDC 表单
+正常登录并回到 /app/，频道同步成功，截图
+`/volumes/data/kailo/tmp/kailo-visual-release-20261006.vlPvnU/65-gateway-6a4-normal-login.png`
+已实际打开检查。Web 仍是 a59 旧产物，截图仍有 UUID 频道标题和缺少原版导航，
+不把网关发布冒充新界面上线、完整 i18n 或全页面等效验收。
+
+Web/Desktop 新源码仍须原打包和实际部署/安装；Windows 签名与安装业务验收、
+Mobile 发布签名、三人双 Agent 稳定协作及三个可插拔服务全链尚未完成。Full 中
+实际部署 .env 预检跳过、未安装 gitleaks 的边界保留。此提交是阶段性开发交付，
+不是生产就绪声明。

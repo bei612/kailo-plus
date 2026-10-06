@@ -77,9 +77,10 @@ export function InboxPane({
         new Set(workspaces.map((workspace) => workspace.id)).size !== workspaces.length
       )
         throw new Error("Invalid Workspace directory");
-      const next: Snapshot = { mentions: [], activity: [], workspaces, members: new Map() };
+      const joined = workspaces.filter((workspace) => workspace.isMember === true);
+      const next: Snapshot = { mentions: [], activity: [], workspaces: joined, members: new Map() };
       // One HTTP read at a time. No browser Relay filter, signer or unbounded SSE fan-out.
-      for (const workspace of workspaces) {
+      for (const workspace of joined) {
         if (epoch !== generation.current) return;
         const members = await client.members(workspace.id);
         if (
@@ -135,7 +136,7 @@ export function InboxPane({
         next.members.set(workspace.id, members);
       }
       // A scope removed during aggregation cannot survive as a cached row.
-      const visible = new Set((await client.workspaces()).map((workspace) => workspace.id));
+      const visible = new Set((await client.workspaces()).filter((workspace) => workspace.isMember === true).map((workspace) => workspace.id));
       next.mentions = next.mentions.filter((event) => visible.has(event.channelId));
       next.activity = next.activity.filter((event) => visible.has(event.channelId));
       next.workspaces = next.workspaces.filter((workspace) => visible.has(workspace.id));

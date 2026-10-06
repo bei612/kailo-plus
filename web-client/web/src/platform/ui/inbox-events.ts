@@ -3,7 +3,7 @@ export type Event = BuzzEvent & { createdAt: number; channelId: string; category
 export const hex = /^[0-9a-f]{64}$/;
 
 /** The query is already scope-filtered by Core; mismatched/unverifiable data is never shown. */
-export function inboxEvents(raw: unknown, workspace: string): Event[] {
+export function inboxEvents(raw: unknown, workspace: string, kind: 9 | 40003 = 9): Event[] {
   if (!Array.isArray(raw)) throw new Error("Invalid message page");
   return raw.map((value: unknown) => {
     const event = value as BuzzEvent;
@@ -11,7 +11,7 @@ export function inboxEvents(raw: unknown, workspace: string): Event[] {
       !event ||
       !hex.test(event.id) ||
       !hex.test(event.pubkey) ||
-      event.kind !== 9 ||
+      event.kind !== kind ||
       !Number.isSafeInteger(event.created_at) ||
       event.created_at < 0 ||
       !Number.isFinite(new Date(event.created_at * 1000).getTime()) ||

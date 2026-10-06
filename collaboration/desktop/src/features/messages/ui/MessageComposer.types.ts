@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import type { MediaUploadController } from "@/features/messages/lib/useMediaUpload";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
+import type { TimelineMessage } from "@/features/messages/types";
 
 export type MessageComposerProps = {
   surface?: "stream" | "forum";
@@ -14,6 +15,8 @@ export type MessageComposerProps = {
    */
   layoutMode?: "dock" | "standalone";
   disabled?: boolean;
+  editTarget?: TimelineMessage;
+  onCancelEdit?: () => void;
   draftKey?: string;
   /**
    * When provided, the composer fires `submitMessage` once on mount after

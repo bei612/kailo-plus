@@ -51,6 +51,8 @@
     "./react/messages": "./src/react/messages/index.ts",
     "./react/messages/chat-header": "./src/react/messages/chat-header.tsx",
     "./react/messages/types": "./src/react/messages/types.ts",
+    "./react/messages/parseImeta": "./src/react/messages/parseImeta.ts",
+    "./react/messages/messageEdits": "./src/react/messages/messageEdits.ts",
     "./react/messages/dateFormatters": "./src/react/messages/dateFormatters.ts",
     "./react/messages/datetime": "./src/react/messages/datetime.ts",
     "./react/messages/threadTreeLayout": "./src/react/messages/threadTreeLayout.ts",

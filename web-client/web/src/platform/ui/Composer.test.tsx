@@ -15,6 +15,7 @@ import {
   type AgentInstallationView,
 } from "@client-kit/contracts";
 import { Composer } from "./ChannelPane";
+import { loadDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -203,6 +204,42 @@ it("sends an unsent Inbox draft once after confirmation", async () => {
   expect(state.publish).toHaveBeenCalledTimes(1);
 });
 
+it("restores an original edit body and never changes an unresolved edit's key for changed content", async () => {
+  const publish = vi.fn().mockRejectedValue(new TransportError("lost edit receipt"));
+  const confirmed = vi.fn();
+  const target = {id:"a".repeat(64),author:"Alice",pubkey:"alice",body:"Original body",createdAt:1,time:"",depth:0,tags:[]};
+  const props = {workspaceId:"workspace-edit",draftIdentity:"alice",draftKey:`edit:workspace-edit:${target.id}`,editTarget:target,onPublish:publish,onConfirmed:confirmed};
+  let host = await render(<Composer {...props} />);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("Original body");
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "Edited body");
+  await click(button(host,"platform.send"));
+  const key = publish.mock.calls[0][2];
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "A different edit");
+  await click(button(host,"platform.send"));
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(confirmed).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("platform.sendUnknown");
+  await act(async () => { mounted!.root.unmount(); mounted!.host.remove(); mounted = undefined; });
+  host = await render(<Composer {...props} autoSendDraftKey={props.draftKey} />);
+  await settle();
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publish.mock.calls[0][2]).toBe(key);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("A different edit");
+});
+
+it("keeps original edit attachment presentation metadata in the existing scoped draft", async () => {
+  const hash = "b".repeat(64);
+  const url = `https://relay.invalid/media/${hash}`;
+  const target = {id:"c".repeat(64),author:"Alice",pubkey:"alice",body:`Original\n\n[Report label](${url})`,createdAt:1,time:"",depth:0,
+    tags:[["imeta",`url ${url}`,`x ${hash}`,"m application/pdf","size 12","filename report.pdf","dim 640x480","thumb https://relay.invalid/thumb","duration 3","blurhash original-blur"]]};
+  const draftKey = `edit:workspace-metadata:${target.id}`;
+  await render(<Composer workspaceId="workspace-metadata" draftIdentity="alice" draftKey={draftKey} editTarget={target} />);
+  await settle();
+  expect(loadDraftEntry(draftKey)?.pendingImeta[0]).toMatchObject({
+    displayLabel:"Report label", filename:"report.pdf", dim:"640x480", thumb:"https://relay.invalid/thumb", duration:3, blurhash:"original-blur",
+  });
+});
+
 it.each(["identity", "channel"])("does not transfer an old draft, attachments, mentions or intent into an empty %s scope", async (changed) => {
   state.publish.mockRejectedValue(new TransportError("lost response"));
   const upload = vi.fn().mockResolvedValue({ sha256: "a".repeat(64), size: 4, type: "text/plain", url: "media:old" });
@@ -237,8 +274,8 @@ it.each(["identity", "channel"])("does not transfer an old draft, attachments, m
 it("does not let an old scope receipt unlock a new scope send", async () => {
   let oldReceipt!: () => void;
   let newReceipt!: () => void;
-  state.publish.mockImplementationOnce(() => new Promise<void>((resolve) => { oldReceipt = resolve; }))
-    .mockImplementationOnce(() => new Promise<void>((resolve) => { newReceipt = resolve; }));
+  state.publish.mockImplementationOnce(() => new Promise((resolve) => { oldReceipt = () => resolve({eventId:"old-event",operationId:"old-operation"}); }))
+    .mockImplementationOnce(() => new Promise((resolve) => { newReceipt = () => resolve({eventId:"new-event",operationId:"new-operation"}); }));
   const host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="workspace-a" />);
   await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "old send");
   await click(button(host, "platform.send"));

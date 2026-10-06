@@ -452,6 +452,9 @@ enum PlatformMessageKey {
   channelArchived,
   buzzReplyingTo,
   buzzCancelReply,
+  buzzEditMessage,
+  buzzEditingMessage,
+  buzzCancelEdit,
   platformLinkChannelUnavailable,
   platformLinkMessageOutsideHistory,
   platformLinkOpenFromChannel,
@@ -868,6 +871,7 @@ enum PlatformMessageKey {
   platformDevicesRevokeUnknown,
   platformDevicesRevokeRejected,
   platformNotMember,
+  platformChannelMembershipRequired,
   platformRefresh,
   platformBack,
   platformConfirm,
@@ -2169,6 +2173,9 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.channelArchived: ('This channel is archived.', '此频道已归档。'),
   PlatformMessageKey.buzzReplyingTo: ('Replying to {author}', '正在回复 {author}'),
   PlatformMessageKey.buzzCancelReply: ('Cancel reply', '取消回复'),
+  PlatformMessageKey.buzzEditMessage: ('Edit message', '编辑消息'),
+  PlatformMessageKey.buzzEditingMessage: ('Editing message', '正在编辑消息'),
+  PlatformMessageKey.buzzCancelEdit: ('Cancel edit', '取消编辑'),
   PlatformMessageKey.platformLinkChannelUnavailable: (
     'This channel is unavailable or you are not a member.',
     '该频道不可用，或你不是频道成员。',
@@ -3301,6 +3308,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.platformNotMember: (
     'Your account is not a member of any organization yet. If you were invited, open your invitation link.',
     '你的账号还不是任何组织的成员。如果你收到了邀请，请打开邀请链接。',
+  ),
+  PlatformMessageKey.platformChannelMembershipRequired: (
+    'You can manage this channel, but must join it before reading or sending messages.',
+    '你可以管理此频道，但需要先成为频道成员才能查看或发送消息。',
   ),
   PlatformMessageKey.platformRefresh: ('Refresh', '刷新'),
   PlatformMessageKey.platformBack: ('Back', '返回'),

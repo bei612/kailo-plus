@@ -557,6 +557,9 @@ export const platformMessages = {
   "channel.archived": { en: "This channel is archived.", "zh-CN": "此频道已归档。" },
   "buzz.replyingTo": { en: "Replying to {author}", "zh-CN": "正在回复 {author}" },
   "buzz.cancelReply": { en: "Cancel reply", "zh-CN": "取消回复" },
+  "buzz.editMessage": { en: "Edit message", "zh-CN": "编辑消息" },
+  "buzz.editingMessage": { en: "Editing message", "zh-CN": "正在编辑消息" },
+  "buzz.cancelEdit": { en: "Cancel edit", "zh-CN": "取消编辑" },
   "platform.linkChannelUnavailable": { en: "This channel is unavailable or you are not a member.", "zh-CN": "该频道不可用，或你不是频道成员。" },
   "platform.linkMessageOutsideHistory": { en: "The linked message is not in the current channel history.", "zh-CN": "当前频道历史中没有该链接指向的消息。" },
   "platform.linkOpenFromChannel": { en: "Open this message from its channel.", "zh-CN": "请从所属频道打开这条消息。" },
@@ -1108,6 +1111,10 @@ export const platformMessages = {
   "platform.notMember": {
     en: "Your account is not a member of any organization yet. If you were invited, open your invitation link.",
     "zh-CN": "你的账号还不是任何组织的成员。如果你收到了邀请，请打开邀请链接。",
+  },
+  "platform.channel.membershipRequired": {
+    en: "You can manage this channel, but must join it before reading or sending messages.",
+    "zh-CN": "你可以管理此频道，但需要先成为频道成员才能查看或发送消息。",
   },
   "platform.refresh": { en: "Refresh", "zh-CN": "刷新" },
   "platform.back": { en: "Back", "zh-CN": "返回" },

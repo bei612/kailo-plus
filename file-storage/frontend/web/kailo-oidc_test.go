@@ -315,7 +315,7 @@ func TestKailoOIDCNativeConsumer(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if u.Scheme != "https" || u.Host != "cells.example.invalid" || u.Path != "/auth/callback" || u.Query().Get("code") != "native-one-use-code" || strings.Contains(u.String(), "external-token") {
+				if u.Scheme != "https" || u.Host != "cells.example.invalid" || u.Path != "/login/callback" || u.Query().Get("code") != "native-one-use-code" || strings.Contains(u.String(), "external-token") {
 					t.Fatal("native UI did not receive only its own authorization code")
 				}
 			}
@@ -371,8 +371,12 @@ func TestKailoOIDCNativeCallback(t *testing.T) {
 		}
 	}
 	got, err := nativeFrontendCallback(origin, &pauth.GetLoginResponse{ClientID: config.DefaultOAuthClientID, RequestURL: "https://cells.example.invalid/oauth2/auth"})
-	if err != nil || got.String() != "https://cells.example.invalid/auth/callback" {
+	if err != nil || got.String() != "https://cells.example.invalid/login/callback" {
 		t.Fatalf("original CreateLogin shape refused: %v", err)
+	}
+	got, err = nativeFrontendCallback(origin, &pauth.GetLoginResponse{ClientID: config.DefaultOAuthClientID, RequestURL: "https://cells.example.invalid/oauth2/auth?redirect_uri=https%3A%2F%2Fcells.example.invalid%2Fauth%2Fcallback&state=native-state"})
+	if err != nil || got.String() != "https://cells.example.invalid/login/callback?state=native-state" {
+		t.Fatalf("registered native redirect did not reach original UI callback: %v", err)
 	}
 }
 

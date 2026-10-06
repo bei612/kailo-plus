@@ -362,6 +362,56 @@ impl IdentityClient {
         self.sign(message_kind(message_type), content, &tags)
     }
 
+    /// Buzz 779af8886caae1317b4de962082429867ab61503,
+    /// desktop/src-tauri/src/events.rs::build_message_edit. The original
+    /// immutable message supplies scope and target; only newly added mentions
+    /// notify. Existing identity/emoji references are not erased by a client
+    /// that did not replace that optional snapshot.
+    pub fn sign_message_edit(
+        &self,
+        target: &Event,
+        content: &str,
+        media_tags: &[Vec<String>],
+        mention_pubkeys: &[String],
+    ) -> Result<Event, OperatorError> {
+        if target.verify().is_err()
+            || target.pubkey != self.keys.public_key()
+            || !matches!(target.kind.as_u16(), 9 | 45001 | 45003)
+            || content.trim().is_empty() && media_tags.is_empty()
+        {
+            return Err(OperatorError::Sign(
+                "Invalid message edit target or content".into(),
+            ));
+        }
+        let channels: Vec<_> = target
+            .tags
+            .iter()
+            .map(Tag::as_slice)
+            .filter(|tag| tag.first().is_some_and(|key| key == "h"))
+            .collect();
+        let channel = match channels.as_slice() {
+            [tag] if tag.len() == 2 => &tag[1],
+            _ => return Err(OperatorError::Sign("Invalid message edit scope".into())),
+        };
+        let mut tags = vec![
+            vec!["h".into(), channel.clone()],
+            vec!["e".into(), target.id.to_hex()],
+        ];
+        tags.extend(media_tags.iter().cloned());
+        for pubkey in mention_pubkeys {
+            let key = nostr::PublicKey::from_hex(pubkey)
+                .map_err(|_| OperatorError::Sign("Mention public key is invalid".into()))?
+                .to_hex();
+            if !target.tags.iter().any(|tag| {
+                tag.as_slice().first().is_some_and(|name| name == "p")
+                    && tag.as_slice().get(1) == Some(&key)
+            }) {
+                tags.push(vec!["p".into(), key]);
+            }
+        }
+        self.sign(KIND_STREAM_MESSAGE_EDIT as u16, content, &tags)
+    }
+
     /// 首次发布意图的固定创建时间与 NIP-10 引用决定唯一 Reply ID。
     /// 正文只留在调用请求内，Core 持久化该 ID 后才可以发送。
     pub fn sign_channel_reply_at(
@@ -789,7 +839,7 @@ impl IdentityClient {
                     _ => {
                         return Err(OperatorError::NotConverged(
                             "Channel discovery 的 archived 状态未知".into(),
-                        ))
+                        ));
                     }
                 });
             }
@@ -1100,6 +1150,63 @@ const BLOSSOM_AUTH_TTL_SECS: u64 = 600;
 #[cfg(test)]
 mod mention_tests {
     use super::*;
+
+    #[test]
+    fn edits_keep_original_scope_identity_and_notify_only_new_mentions() {
+        let keys = Keys::generate();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            "http://relay.example",
+            "relay.example",
+        )
+        .unwrap();
+        let old_mention = Keys::generate().public_key().to_hex();
+        let new_mention = Keys::generate().public_key().to_hex();
+        let original = client
+            .sign_channel_message_mentions(
+                "channel",
+                "before",
+                &[],
+                std::slice::from_ref(&old_mention),
+            )
+            .unwrap();
+        let edited = client
+            .sign_message_edit(&original, "after", &[], &[old_mention, new_mention.clone()])
+            .unwrap();
+        edited.verify().unwrap();
+        assert_eq!(edited.kind.as_u16(), 40003);
+        assert_eq!(edited.pubkey, original.pubkey);
+        let tags: Vec<_> = edited
+            .tags
+            .iter()
+            .map(|tag| tag.as_slice().to_vec())
+            .collect();
+        assert_eq!(
+            tags,
+            vec![
+                vec!["h".into(), "channel".into()],
+                vec!["e".into(), original.id.to_hex()],
+                vec!["p".into(), new_mention]
+            ]
+        );
+        let outsider = Keys::generate();
+        let other = IdentityClient::new(
+            Custody::Server,
+            &outsider.secret_key().to_secret_hex(),
+            "http://relay.example",
+            "relay.example",
+        )
+        .unwrap();
+        assert!(other
+            .sign_message_edit(&original, "forged", &[], &[])
+            .is_err());
+        assert!(client.sign_message_edit(&original, "", &[], &[]).is_err());
+        let unscoped = client.sign(9, "unscoped", &[]).unwrap();
+        assert!(client
+            .sign_message_edit(&unscoped, "changed", &[], &[])
+            .is_err());
+    }
 
     #[test]
     fn forum_signatures_keep_native_kind_and_nip10_ancestry() {

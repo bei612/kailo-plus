@@ -33,7 +33,7 @@ implementation:
   paths: [core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/stream.rs, core/crates/platform-core/src/publish_reconcile.rs, core/crates/collab-bridge, web-client, client-kit/ts/platform/src/react/mention-autocomplete.tsx, client-kit/ts/platform/src/react/use-mention-selection.ts, collaboration/desktop/src/features/messages/ui/MentionAutocomplete.tsx]
   surfaces: [web]
   schemas: [contracts/api/web_publish_message_request.schema.json, contracts/api/web_message_query.schema.json, contracts/api/web_message_cursor.schema.json, contracts/api/web_message_type.schema.json, contracts/api/web_channel_view.schema.json]
-  migrations: [core/migrations/20260923070000_audit_dispatch_index.up.sql, core/migrations/20261006190000_publish_message_ancestry.up.sql, core/migrations/20261006190000_publish_message_ancestry.down.sql]
+  migrations: [core/migrations/20260923070000_audit_dispatch_index.up.sql, core/migrations/20261006190000_publish_message_ancestry.up.sql, core/migrations/20261006190000_publish_message_ancestry.down.sql, core/migrations/20261006210000_publish_message_edit.up.sql, core/migrations/20261006210000_publish_message_edit.down.sql]
 
 runtime:
   routes: ["/api/v1/workspaces/{workspace_id}/messages", "/api/v1/workspaces/{workspace_id}/stream", "/api/v1/workspaces/{workspace_id}/channel"]
@@ -46,5 +46,5 @@ release:
     - name: web-client
       digest: sha256:4580ec22a409abcb31e3c3e4fdfbe40ab64c1ebde54fdcb2961a5409954303a6
     - name: collaboration-relay
-      digest: sha256:3ee0bfd3472f810ecec1503082ad8787ecb878d3b8efb39340d980c4662015bd
+      digest: sha256:c5a484b74e75d24de8f65cab625aa76b3319434bf5d34ffca6821dd39ca5ca30
   gate: blocked_until_seams_closed

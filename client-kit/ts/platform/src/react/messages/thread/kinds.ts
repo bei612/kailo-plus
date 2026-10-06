@@ -7,6 +7,7 @@ export const KIND_STREAM_MESSAGE = 9;
 // kind:40099 system message. Treated as a deletion marker alongside kind:5.
 export const KIND_NIP29_DELETE_EVENT = 9005;
 export const KIND_STREAM_MESSAGE_V2 = 40002;
+export const KIND_STREAM_MESSAGE_EDIT = 40003;
 export const KIND_CHANNEL_THREAD_SUMMARY = 39005;
 export const KIND_CHANNEL_WINDOW_BOUNDS = 39006;
 export const KIND_SYSTEM_MESSAGE = 40099;
@@ -38,6 +39,7 @@ export const CHANNEL_EVENT_KINDS = [
   KIND_DELETION, // 5 — NIP-09 event deletions
   KIND_NIP29_DELETE_EVENT, // 9005 — NIP-29 / Buzz-native deletions
   ...CHANNEL_MESSAGE_EVENT_KINDS,
+  KIND_STREAM_MESSAGE_EDIT,
   KIND_SYSTEM_MESSAGE, // 40099 — system messages (join, leave, etc.)
 ] as const;
 
@@ -46,6 +48,7 @@ export const CHANNEL_EVENT_KINDS = [
 // reference over the loaded message ids, so a late deletion for a visible old
 // message still applies.
 export const CHANNEL_AUX_EVENT_KINDS = [
+  KIND_STREAM_MESSAGE_EDIT,
   KIND_DELETION, // 5 — NIP-09 event deletions
   KIND_NIP29_DELETE_EVENT, // 9005 — NIP-29 / Buzz-native deletions
 ] as const;

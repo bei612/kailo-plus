@@ -4,6 +4,7 @@ import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { openStream } from "@/platform/bff-client";
 import { inboxEvents } from "./inbox-events";
+import { applyMessageEdits } from "@client-kit/platform/react/messages";
 
 // Both Inbox and the channel thread consume the same admitted query/cache;
 // signed events stay in Relay, and this is only a disposable client projection.
@@ -27,9 +28,10 @@ export function useWorkspaceThread(principalId: string, workspaceId: string, roo
         throw new Error("Thread cursor did not advance");
       }
       const events = inboxEvents(page.events.filter((event) => event && typeof event === "object" && "kind" in event && event.kind === 9), workspaceId);
+      const edits = inboxEvents(page.events.filter((event) => event && typeof event === "object" && "kind" in event && event.kind === 40003), workspaceId, 40003);
       const deleted = new Set(page.events.flatMap((event) => event && typeof event === "object" && "kind" in event && (event.kind === 5 || event.kind === 9005) && "tags" in event && Array.isArray(event.tags)
         ? event.tags.filter((tag: string[]) => tag[0] === "e").map((tag: string[]) => tag[1]) : []));
-      return { events, deleted, nextCursor: cursor };
+      return { events, edits, deleted, nextCursor: cursor };
     },
     getNextPageParam: (page) => page.nextCursor,
   });
@@ -46,8 +48,9 @@ export function useWorkspaceThread(principalId: string, workspaceId: string, roo
   }), [workspaceId, cache, key]);
   const messages = useMemo(() => {
     const deleted = new Set(thread.data?.pages.flatMap((page) => [...page.deleted]));
-    return [...new Map(thread.data?.pages.flatMap((page) => page.events).filter((event) => !deleted.has(event.id)).map((event) => [event.id, event])).values()]
+    const messages = [...new Map(thread.data?.pages.flatMap((page) => page.events).filter((event) => !deleted.has(event.id)).map((event) => [event.id, event])).values()]
       .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+    return applyMessageEdits(messages, thread.data?.pages.flatMap((page) => page.edits ?? []).filter((event) => !deleted.has(event.id)) ?? []);
   }, [thread.data]);
   return { thread, messages, denied, interrupted, refresh: () => cache.invalidateQueries({queryKey: key}) };
 }

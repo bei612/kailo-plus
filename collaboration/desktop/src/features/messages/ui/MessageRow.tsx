@@ -48,6 +48,7 @@ type MessageRowProps = {
     onMarkUnread?: (message: TimelineMessage) => void;
     onMarkRead?: (message: TimelineMessage) => void;
     onReply?: (message: TimelineMessage) => void;
+    onEdit?: (message: TimelineMessage) => void;
     onSendToChannel?: (message: TimelineMessage) => Promise<void>;
     onUnfollowThread?: (message: TimelineMessage) => void;
     onEntranceComplete?: (messageId: string) => void;
@@ -67,7 +68,7 @@ export const MessageRow = React.memo(function MessageRow(props: MessageRowProps)
  return <MessageRowSurface {...props} resolveMediaUrl={rewriteRelayUrl}
  renderIdentity={message.pubkey ? (node,kind)=>kind === "author" ? <MessageAuthorIdentity pubkey={message.pubkey}>{node}</MessageAuthorIdentity> : <UserProfilePopover pubkey={message.pubkey!}><button className="flex shrink-0 items-start rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring" type="button">{node}</button></UserProfilePopover> : undefined}
  renderBody={(className)=><VideoReviewCommentMarkdown channelNames={channelNames} className={className} content={message.body} messageId={message.id} linkPreviewsSuppressed={hasLinkPreviewSuppression(message.tags)} linkPreviewTags={message.tags} imetaByUrl={imetaByUrl} mentionNames={mentionNames} mentionPubkeysByName={mentionPubkeysByName} searchQuery={searchQuery} videoReviewCommentRootId={videoReviewCommentRootId} videoReviewContext={videoReviewContext}/>}
- renderActions={(ref)=><MessageActionBar {...props} ref={ref} onSendToChannel={onSendToChannel && canSendMessageToChannel(message,currentPubkey) ? handleSendToChannel : undefined}/>}
+ renderActions={(ref)=><MessageActionBar {...props} ref={ref} onEdit={message.kind === 9 && message.signerPubkey === currentPubkey && !message.pending ? props.onEdit : undefined} onSendToChannel={onSendToChannel && canSendMessageToChannel(message,currentPubkey) ? handleSendToChannel : undefined}/>}
  reference={<SentFromThreadLine channelId={channelId} tags={message.tags}/>} />;
 },
   (prev, next) =>

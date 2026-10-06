@@ -160,7 +160,7 @@ pub async fn discoverable_workspaces(
             };
         let mut item = serde_json::json!({
             "id": row.id, "visibility": row.visibility, "channel": channel,
-            "isMember": admitted.contains_key(&row.id), "memberCount": row.member_count,
+            "isMember": admitted.get(&row.id).is_some_and(|epoch| epoch.is_member()), "memberCount": row.member_count,
             "createdAt": row.created_at,
         });
         if let Some(membership) = &row.membership_state {
@@ -205,10 +205,10 @@ pub async fn discoverable_workspaces(
             Ok(value) => value,
             Err(error) => return error.into_response(),
         };
-    if ids
-        .iter()
-        .any(|id| admitted.contains_key(id) != current_admitted.contains_key(id))
-    {
+    if ids.iter().any(|id| {
+        admitted.get(id).map(|epoch| epoch.is_member())
+            != current_admitted.get(id).map(|epoch| epoch.is_member())
+    }) {
         return StatusCode::CONFLICT.into_response();
     }
     match crate::web_transport::window_author(&state, &current, &host).await {
@@ -226,10 +226,9 @@ pub async fn discoverable_workspaces(
     .into_response()
 }
 
-/// 我在当前 Tenant 里能进的 Workspace。
+/// 当前 Tenant 的成员或管理可见 Workspace；isMember 单独表示协作参与资格。
 ///
-/// 只列 HUMAN scope 已准入且两侧 binding 都 ACTIVE 的——列出一个
-/// 点进去会 403 的 Workspace，比不列更糟：它把「存在但你进不去」变成了可见信息。
+/// 不以 manage 冒充 Channel roster，也不为修复协作目录删掉管理入口。
 pub async fn list_workspaces(State(state): State<BffState>, headers: HeaderMap) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(c) => c,
@@ -277,6 +276,7 @@ pub async fn list_workspaces(State(state): State<BffState>, headers: HeaderMap) 
                     id: id.to_string(),
                     slug,
                     name,
+                    is_member: Some(admitted.get(&id).is_some_and(|epoch| epoch.is_member())),
                     visibility: Some(if visibility == "open" {
                         contracts::WorkspaceVisibility::Open
                     } else {
@@ -302,8 +302,8 @@ pub async fn list_members(
         Ok(c) => c,
         Err(r) => return r,
     };
-    if let Err(r) = crate::web_transport::admit_workspace(&state, &ctx, workspace_id).await {
-        return r;
+    if let Err(r) = crate::web_transport::admit_workspace_scope(&state, &ctx, workspace_id).await {
+        return r.into_response();
     }
     // 一人多把公钥时按人聚合：左连接直接展开会让同一个人出现多行。公钥是公开
     // 事实，与私钥托管无关；客户端据此把任一端签发的消息归到同一个人名下（DD-77）。

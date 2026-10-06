@@ -37,6 +37,7 @@ vi.mock("@/platform/bff-client", async () => ({
     members: () => state.members(),
     workspaces: async () => [],
     agentInstallations: async () => ({ installations: [] }),
+    profile: async () => ({pubkey:"mine"}),
   },
   fetchUserState: () => state.fetch(),
   markRead: (request: ReadMarkRequest) => state.mark(request),
@@ -95,6 +96,18 @@ function retry() {
   if (!button) throw new Error("Missing retry");
   return button;
 }
+
+it("applies a live same-author edit to one existing row without counting or notifying a new message", async () => {
+  await open();
+  state.notify.mockClear();
+  const edited = {...event(11),kind:40003,content:"edited",tags:[["h","channel-a"],["e","event-10"]]};
+  await act(async () => state.receive!({type:"event",event:edited}));
+  await flush();
+  expect(host.querySelectorAll('[data-testid="message-row"]')).toHaveLength(1);
+  expect(host.querySelectorAll('[data-event-id="event-10"]')).toHaveLength(1);
+  expect(host.querySelector('[data-event-id="event-11"]')).toBeNull();
+  expect(state.notify).not.toHaveBeenCalled();
+});
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();

@@ -39,6 +39,7 @@ import { Button } from "@/shared/ui/button";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
 import { ChannelThreadPane } from "./ChannelThreadPane";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
+import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
 import { useRichTextEditor, type LinkSelectionInfo } from "@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor";
 import { useLinkEditor } from "@client-kit/platform/react/composer/features/messages/lib/useLinkEditor";
@@ -46,7 +47,7 @@ import type { ParsedMessageLink } from "@client-kit/platform/react/composer/feat
 import { initDraftStore, loadDraftEntry, saveDraftEntry, clearDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 import { ComposerAttachments, DropZoneOverlay } from "@client-kit/platform/react/composer/features/messages/ui/ComposerAttachments";
 import { useComposerAttachmentSpoilers } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAttachmentSpoilers";
-import type { BlobDescriptor } from "@client-kit/platform/react/composer/features/messages/lib/imetaMediaMarkdown";
+import type { ImetaMedia } from "@client-kit/platform/react/composer/features/messages/lib/imetaMediaMarkdown";
 
 const toIso = (unix: number) => new Date(unix * 1_000).toISOString();
 
@@ -164,6 +165,7 @@ export function ChannelPane({
   autoSendDraftKey,
   archived = false,
   metadataPending = false,
+  restoreEditEventId,
 }: {
   workspaceId: string;
   myPrincipalId: string;
@@ -174,12 +176,18 @@ export function ChannelPane({
   autoSendDraftKey?: string;
   archived?: boolean;
   metadataPending?: boolean;
+  restoreEditEventId?: string;
 }) {
   const queryClient = useQueryClient();
   const notifications = useBrowserNotifications();
-  const { events, status, live, denied } = useChannelStream(workspaceId, conversation?.id, (event) => receiveNotification(event), () => {
+  const { events: rawEvents, status, live, denied } = useChannelStream(workspaceId, conversation?.id, (event) => receiveNotification(event), () => {
     if (!conversation) void queryClient.invalidateQueries({ queryKey: ["platform", "channel-descriptor", myPrincipalId, workspaceId] });
   }, archived);
+  const events = useMemo(() => applyMessageEdits(rawEvents.filter((event) => event.kind === 9), rawEvents), [rawEvents]);
+  const ownProfile = useQuery({ queryKey: ["platform", "edit-author", myPrincipalId], queryFn: () => bff.profile() });
+  const [editTarget, setEditTarget] = useState<TimelineMessage | null>(null);
+  const [composerBusy, setComposerBusy] = useState(false);
+  const restoredEdit = useRef(false);
   const messageList = useRef<HTMLUListElement>(null);
   const anchoredTarget = useRef<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<TimelineMessage | null>(null);
@@ -236,6 +244,11 @@ export function ChannelPane({
     signerPubkey: event.pubkey, author: byPubkey.get(event.pubkey)?.displayName ?? truncatePubkey(event.pubkey),
     body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0,
   })), [events, byPubkey]);
+  useEffect(() => {
+    if (!restoreEditEventId || restoredEdit.current || !ownProfile.isSuccess) return;
+    const message = timelineMessages.find((item) => item.id === restoreEditEventId && item.signerPubkey === ownProfile.data.pubkey);
+    if (message) { restoredEdit.current = true; setEditTarget(message); }
+  }, [restoreEditEventId, timelineMessages, ownProfile.isSuccess, ownProfile.data]);
   const copyMessage = async (message: TimelineMessage) => {
     const taggedKeys = new Set(message.tags?.filter((tag) => tag[0] === "p").map((tag) => tag[1]));
     const identities = (members.data ?? []).flatMap((member) => member.pubkeys.filter((key) => taggedKeys.has(key)).map((pubkey) => ({ pubkey, label: member.displayName })));
@@ -265,7 +278,7 @@ export function ChannelPane({
   const receiveNotification = useEffectEvent((event: BuzzEvent) => {
     // No notification from unresolved identity/preferences or stale admission.
     // This path only receives new frames after the actual BFF live fence.
-    if (denied || !members.isSuccess || members.isFetching || !userState.isSuccess || userState.isFetching || userState.isError ||
+    if (event.kind !== 9 || denied || !members.isSuccess || members.isFetching || !userState.isSuccess || userState.isFetching || userState.isError ||
       mine.size === 0 || mine.has(event.pubkey)) return;
     const mentioned = event.tags.some((tag) => tag[0] === "p" && mine.has(tag[1] ?? ""));
     const thread = getThreadReference(event.tags);
@@ -394,6 +407,7 @@ export function ChannelPane({
               <div className={`flex flex-col gap-1 ${followedByContinuation ? "pb-0" : "pb-2.5"}`}>
               <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={targetMessageId === message.id}
                 renderActions={(ref) => <MessageActionBarSurface ref={ref} message={message} onCopyMessage={copyMessage}
+                  onEdit={message.kind === 9 && live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && message.signerPubkey === ownProfile.data.pubkey ? setEditTarget : undefined}
                   onReply={!conversation && message.kind === 9 && live && !denied && !archived && !metadataPending ? setReplyTarget : undefined}
                   onCopyLink={copyMessageLink} />}
                 renderBody={(className) => <div className={className}><MessageContent
@@ -409,16 +423,34 @@ export function ChannelPane({
           );
         })}
       </ul>
+      {restoreEditEventId && live && !editTarget && !events.some((event) => event.id === restoreEditEventId) ? <p role="status">{t("platform.linkMessageOutsideHistory")}</p> : null}
+      {!denied && editTarget ? <Composer key={`edit:${editTarget.id}`} workspaceId={conversation ? undefined : workspaceId}
+        editTarget={editTarget} onCancelEdit={() => setEditTarget(null)} onConfirmed={() => setEditTarget(null)} draftIdentity={myPrincipalId}
+        draftKey={`edit:${workspaceId}:${editTarget.id}`} draftChannelId={workspaceId}
+        autoSendDraftKey={autoSendDraftKey}
+        disabled={denied || !live || archived || metadataPending || !ownProfile.isSuccess || ownProfile.isFetching || ownProfile.data.pubkey !== editTarget.signerPubkey}
+        onSendingChange={setComposerBusy} onOpenMessageLink={onOpenMessageLink}
+        onUpload={conversation ? (file) => uploadConversationMedia(conversation.id, file) : undefined}
+        onMediaUrl={conversation ? (sha) => mediaUrl(conversation.id, sha, conversation.id) : undefined}
+        onPublish={async (content, attachments, key, mentions) => {
+          const receipt = await (conversation ? publishConversationMessage(conversation.id, content, attachments, key, editTarget.id)
+            : publishMessage(workspaceId, content, attachments, key, mentions, {editEventId: editTarget.id}));
+          if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Message edit has no confirmed receipt.");
+          return receipt;
+        }} /> : null}
+      <div hidden={editTarget !== null}>
       {denied ? null : conversation
-        ? <Composer disabled={conversation.state !== "ACTIVE"}
+        ? <Composer disabled={conversation.state !== "ACTIVE"} onSendingChange={setComposerBusy}
             draftIdentity={myPrincipalId} draftKey={conversation.id} autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink}
             onPublish={(content, attachments, key) => publishConversationMessage(conversation.id, content, attachments, key)}
             onMediaUrl={(sha256) => mediaUrl(conversation.id, sha256, conversation.id)}
             onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
         : <>{archived ? <p role="status">{t("channel.archived")}</p> : null}<Composer
             disabled={archived || metadataPending}
+            onSendingChange={setComposerBusy}
             workspaceId={workspaceId} draftIdentity={myPrincipalId} draftKey={workspaceId}
             autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink} /></>}
+      </div>
     </div>
     {!conversation && replyTarget ? <ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
       workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
@@ -428,7 +460,7 @@ export function ChannelPane({
   );
 }
 
-type Pending = { name: string; descriptor: MediaDescriptor; receivedAt: number };
+type Pending = { name: string; descriptor: MediaDescriptor; receivedAt: number; nativeMetadata?: ImetaMedia };
 
 /**
  * 一次发送意图的幂等键（UUID v4）。不用 crypto.randomUUID：它只在安全上下文中
@@ -442,7 +474,11 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", onCancel, autoSendDraftKey, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange }: {
+export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", onCancel, autoSendDraftKey, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onConfirmed, draftChannelId }: {
+  editTarget?: TimelineMessage;
+  onCancelEdit?: () => void;
+  onConfirmed?: () => void;
+  draftChannelId?: string;
   surface?: "stream" | "forum";
   workspaceId?: string;
   onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[]) => Promise<unknown>;
@@ -519,7 +555,7 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
   const intent = useRef<{ key: string; signature: string } | null>(null);
   const owner = useMemo(() => ({ active: true }), [workspaceId, draftIdentity, draftKey]);
   useEffect(() => { owner.active = true; return () => { owner.active = false; }; }, [owner]);
-  const asBlob = (entry: Pending): BlobDescriptor => ({ ...entry.descriptor, filename: entry.name, uploaded: entry.receivedAt });
+  const asBlob = (entry: Pending): ImetaMedia => ({ ...entry.nativeMetadata, ...entry.descriptor, filename: entry.name, uploaded: entry.receivedAt });
   const removeAttachment = useCallback((url: string) => {
     setPending((items) => items.filter((item) => item.descriptor.url !== url));
     setOriginals((current) => { const next = new Map(current); next.delete(url); return next; });
@@ -622,10 +658,15 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
     if (!richText.editor) return;
     if (draftIdentity && draftKey) initDraftStore(draftIdentity, window.location.origin);
     const saved = draftIdentity && draftKey ? loadDraftEntry(draftKey) : undefined;
-    richText.setContent(saved?.content ?? "");
-    setDraft(saved?.content ?? "");
-    setPending((saved?.pendingImeta ?? []).map(({ uploaded, filename, sha256, size, type, url }) => ({
-        name: filename ?? sha256, receivedAt: uploaded, descriptor: { sha256, size, type, url },
+    const editableMedia = editTarget ? restoreImetaMediaDisplayLabels(editTarget.body, imetaMediaFromTags(editTarget.tags)) : [];
+    const content = saved?.content ?? (editTarget ? stripImetaMediaLines(editTarget.body, editableMedia) : "");
+    richText.setContent(content);
+    setDraft(content);
+    setPending((saved?.pendingImeta ?? editableMedia).map((media) => ({
+      name: media.filename ?? media.sha256,
+      receivedAt: media.uploaded,
+      descriptor: { sha256: media.sha256, size: media.size, type: media.type, url: media.url },
+      nativeMetadata: media,
     })));
     intent.current = saved?.sendIntent ?? null;
     setMentionInstallationIds(saved?.mentionInstallationIds ?? []);
@@ -637,24 +678,24 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
     setProblemNeutral(false);
     setDragging(false);
     setOriginals(new Map());
-    attachmentActions.setSpoileredAttachmentUrls(new Set(saved?.spoileredAttachmentUrls ?? []));
+    attachmentActions.setSpoileredAttachmentUrls(new Set(saved?.spoileredAttachmentUrls ?? (editTarget ? findSpoileredImetaMediaUrls(editTarget.body, editableMedia) : [])));
     draftReady.current = Boolean(draftIdentity && draftKey);
     setLoadedDraftOwner(owner);
     return () => { draftReady.current = false; };
   }, [draftIdentity, draftKey, richText.editor, richText.setContent, owner, setMentionSelectedIndex]);
   const persistDraft = useCallback((content: string, attachments: Pending[]) => {
     if (!draftReady.current || !draftKey || !owner.active || loadedDraftOwner !== owner) return;
-    if (!content.trim() && attachments.length === 0) { clearDraftEntry(draftKey); return; }
+    if (!content.trim() && attachments.length === 0 && !intent.current) { clearDraftEntry(draftKey); return; }
     const previous = loadDraftEntry(draftKey);
     const timestamp = new Date().toISOString();
     saveDraftEntry(draftKey, {
-      content, channelId: workspaceId ?? draftKey, selectionStart: content.length, selectionEnd: content.length,
+      content, channelId: workspaceId ?? draftChannelId ?? draftKey, selectionStart: content.length, selectionEnd: content.length,
       createdAt: previous?.createdAt ?? timestamp, updatedAt: timestamp, status: "active",
-      pendingImeta: attachments.map(({ descriptor, name, receivedAt }) => ({ ...descriptor, filename: name, uploaded: receivedAt })),
+      pendingImeta: attachments.map(asBlob),
       spoileredAttachmentUrls: [...attachmentActions.spoileredAttachmentUrls], ...(intent.current ? { sendIntent: intent.current } : {}),
       mentionInstallationIds,
     });
-  }, [draftKey, workspaceId, owner, loadedDraftOwner, mentionInstallationIds, attachmentActions.spoileredAttachmentUrls]);
+  }, [draftKey, workspaceId, draftChannelId, owner, loadedDraftOwner, mentionInstallationIds, attachmentActions.spoileredAttachmentUrls]);
   useEffect(() => { persistDraft(richText.getMarkdown(), pending); }, [draftRevision, pending, persistDraft, richText.getMarkdown]);
 
   const send = useCallback(() => {
@@ -672,6 +713,13 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
       attachments.map((a) => [a.sha256, a.filename, a.spoiler]),
       mentionInstallationIds,
     ]);
+    if (editTarget && intent.current && intent.current.signature !== signature) {
+      // An earlier edit may already exist on the Relay. Changing its payload
+      // cannot silently replace that unresolved intent with a fresh command.
+      setProblemNeutral(true);
+      setProblem(t("platform.sendUnknown", {operation: ""}));
+      return;
+    }
     if (intent.current?.signature !== signature) {
       intent.current = { key: newIntentKey(), signature };
     }
@@ -698,6 +746,8 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
         setOriginals((current) => new Map([...current].filter(([url]) => !pending.some((entry) => entry.descriptor.url === url))));
         attachmentActions.setSpoileredAttachmentUrls((current) => new Set([...current].filter((url) => !pending.some((entry) => entry.descriptor.url === url))));
         setMentionInstallationIds((current) => current.filter((id) => !mentionInstallationIds.includes(id)));
+        if (editTarget && draftKey) clearDraftEntry(draftKey);
+        onConfirmed?.();
       })
       .catch((e: unknown) => {
         if (!owner.active) return;
@@ -720,7 +770,7 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
         }
       })
       .finally(() => { if (owner.active) setSending(false); });
-  }, [pending, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls]);
+  }, [pending, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed]);
   sendRef.current = send;
 
   const autoSent = useRef<typeof owner | null>(null);
@@ -742,7 +792,8 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
   const ComposerSurface = surface === "forum" ? ForumComposerSurface : MessageComposerSurface;
   return <ComposerSurface
     containerClassName={containerClassName}
-    header={<ComposerReplyBanner replyTarget={replyTarget} onCancelReply={sending ? undefined : onCancelReply} />}
+    header={<ComposerReplyBanner replyTarget={replyTarget} onCancelReply={sending ? undefined : onCancelReply}
+      isEditing={editTarget !== undefined} isEditCancelDisabled={sending} onCancelEdit={onCancelEdit} />}
     overlays={<>{linkEditor.card}{linkEditor.dialog}</>}
     formProps={{
       onSubmit: (event) => { event.preventDefault(); send(); },

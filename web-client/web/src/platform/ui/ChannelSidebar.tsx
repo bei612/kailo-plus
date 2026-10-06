@@ -40,12 +40,13 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
   const [collapsed, setCollapsed] = useState<Record<Group, boolean>>({ starred: false, channels: false });
   // Tenant principal IDs already scope the Web host; no browser Relay identity is invented.
   const { sortModeFor, setSortModeFor } = useChannelSortPreference(principalId);
+  const joined = workspaces.filter((workspace) => workspace.isMember === true);
   const messages = useQuery({
-    queryKey: ["platform", "sidebar-messages", principalId, ...workspaces.map((workspace) => workspace.id)],
-    enabled: workspaces.length > 0,
+    queryKey: ["platform", "sidebar-messages", principalId, ...joined.map((workspace) => workspace.id)],
+    enabled: joined.length > 0,
     queryFn: async ({ signal }) => {
       const pages = new Map<string, ReturnType<typeof inboxEvents>>();
-      for (const workspace of workspaces) {
+      for (const workspace of joined) {
         signal.throwIfAborted();
         const page = await bff.workspaceMessages(workspace.id);
         signal.throwIfAborted();
@@ -61,7 +62,7 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
   })), [messages.data, messages.isError]);
   useEffect(() => { onActivity?.(activity); }, [activity, onActivity]);
   const rows = workspaces.map((workspace) => {
-    const events = messages.data?.get(workspace.id) ?? [];
+    const events = workspace.isMember === true ? messages.data?.get(workspace.id) ?? [] : [];
     const latest = events.reduce<number | null>((at, event) => Math.max(at ?? event.createdAt, event.createdAt), null);
     return { ...workspace, lastMessageAt: latest === null ? null : new Date(latest * 1000).toISOString() };
   });
@@ -69,7 +70,7 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
   const canWriteRead = knownActivity && !reads.pending && !reads.unknown && !preferencePending;
   const canWritePreference = reads.state !== null && !reads.pending && !reads.unknown && !preferencePending;
   const unread = new Set(knownActivity ? rows.filter((row) =>
-    messages.data?.get(row.id)?.some((event) => event.createdAt > (reads.readAt(inboxReply(event.tags) ? `msg:${event.id}` : row.id) ?? -Infinity)),
+    row.isMember === true && messages.data?.get(row.id)?.some((event) => event.createdAt > (reads.readAt(inboxReply(event.tags) ? `msg:${event.id}` : row.id) ?? -Infinity)),
   ).map((row) => row.id) : []);
   const mark = (ids: string[], read: boolean) => {
     if (!canWriteRead) return;
@@ -101,8 +102,8 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
     renderContextMenu={(channel) => <ChannelContextMenuItems channel={channel}
       hasUnread={unread.has(channel.id)} isMuted={preferences[channel.id]?.muted}
       isStarred={preferences[channel.id]?.starred} onCopy={copy}
-      onMarkChannelRead={canWriteRead ? (id) => mark([id], true) : undefined}
-      onMarkChannelUnread={canWriteRead ? (id) => mark([id], false) : undefined}
+      onMarkChannelRead={canWriteRead && joined.some((row) => row.id === channel.id) ? (id) => mark([id], true) : undefined}
+      onMarkChannelUnread={canWriteRead && joined.some((row) => row.id === channel.id) ? (id) => mark([id], false) : undefined}
       onStarChannel={canWritePreference ? (id) => updatePreference(id, { starred: true }) : undefined}
       onUnstarChannel={canWritePreference ? (id) => updatePreference(id, { starred: false }) : undefined}
       onMuteChannel={canWritePreference ? (id) => updatePreference(id, { muted: true }) : undefined}
@@ -112,7 +113,7 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
   return <TooltipProvider>
     {messages.isError || reads.failed ? <p role="alert" className="px-4 text-sm">
       {t("platform.loadFailed")} <Button size="sm" onClick={() => { void messages.refetch(); void reads.refresh(); }}>{t("platform.retry")}</Button>
-    </p> : workspaces.length > 0 && (messages.isPending || reads.state === null) ? <p role="status" className="px-4 text-sm">{t("platform.loading")}</p> : null}
+    </p> : joined.length > 0 && (messages.isPending || reads.state === null) ? <p role="status" className="px-4 text-sm">{t("platform.loading")}</p> : null}
     {starred.length > 0 ? group("starred", starred) : null}
     {group("channels", rows.filter((row) => !preferences[row.id]?.starred))}
   </TooltipProvider>;

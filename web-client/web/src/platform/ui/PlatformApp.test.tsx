@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 import { PlatformApp } from "./PlatformApp";
 
-const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: "" }));
+const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: "", memberA: true, memberB: true, tab: "members", channelEnabled: false }));
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
   return {
@@ -18,30 +18,35 @@ vi.mock("react", async (original) => {
               accessMode: state.accessMode,
             }
           : initial === "channel"
-            ? "members"
-            : initial,
+            ? state.tab
+            : typeof initial === "function" ? initial() : initial,
         vi.fn(),
       ];
     },
   };
 });
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: (options: { queryKey: string[] }) => ({
+  useQuery: (options: { queryKey: string[]; enabled?: boolean }) => {
+    if (options.queryKey[1] === "channel-descriptor") state.channelEnabled = options.enabled === true;
+    return ({
     data:
       options.queryKey[1] === "workspaces"
         ? [
-            { id: "workspace-a", name: "A" },
-            { id: "workspace-b", name: "B" },
+            { id: "workspace-a", name: "A", isMember: state.memberA },
+            { id: "workspace-b", name: "B", isMember: state.memberB },
           ]
         : { workspacePreferences: {} },
     isError: false,
     isPending: false,
-  }),
+  }); },
   useMutation: () => ({ mutate: vi.fn() }),
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 vi.mock("@client-kit/platform/react/context", () => ({
   useDeviceLocale: () => "en",
+  useUiT: () => (key: string) => key,
+  useT: () => (key: string) => key,
+  useUiLocale: () => "en",
   PlatformProvider: ({
     children,
     documentTheme,
@@ -64,10 +69,15 @@ vi.mock("@client-kit/platform/react/channel-browser", () => ({
   ),
 }));
 vi.mock("@client-kit/platform/react/new-message", () => ({
+  ConversationVisibilityProvider: ({ children }: { children: React.ReactNode }) => children,
   useConversations: () => ({ items: [], loading: false, error: null, reload: vi.fn() }),
   ConversationList: () => <div data-testid="shared-conversation-list" />,
 }));
 vi.mock("./NewMessagePage", () => ({ NewMessagePage: () => null }));
+vi.mock("./SidebarProfileCard", () => ({
+  WebSidebarProfileCard: ({ onOpenSettings }: { onOpenSettings: () => void }) =>
+    <button data-testid="sidebar-settings" onClick={onOpenSettings} />,
+}));
 vi.mock("@client-kit/platform/react/use-inbox-state", () => ({
   useInboxState: () => ({ state: { version: 0, workspacePreferences: {} }, refresh: vi.fn() }),
 }));
@@ -99,10 +109,15 @@ vi.mock("@client-kit/platform/react/invitations", () => ({
 vi.mock("@/platform/ui/ChannelPane", () => ({ ChannelPane: () => null }));
 vi.mock("@/platform/ui/InboxPane", () => ({ InboxPane: () => null }));
 vi.mock("@/platform/ui/SettingsPane", () => ({ SettingsPane: () => null }));
+vi.mock("./BrowserNotifications", () => ({
+  BrowserNotificationsProvider: ({ children }: { children: React.ReactNode }) => children,
+  useBrowserNotifications: () => null,
+}));
 vi.mock("@/shared/i18n", () => ({ getLocale: () => "en", t: (key: string) => key }));
 vi.mock("@/shared/theme/ThemeProvider", () => ({ useTheme: () => ({ isDark: true }) }));
 vi.mock("@/platform/bff-client", () => ({
   bff: { workspaces: vi.fn() },
+  conversationVisibility: vi.fn(),
   BffError: class extends Error {},
   fetchUserState: vi.fn(),
   setWorkspacePreference: vi.fn(),
@@ -113,6 +128,10 @@ beforeEach(() => {
   state.hook = 0;
   state.accessMode = "FULL";
   state.documentTheme = "";
+  state.memberA = true;
+  state.memberB = true;
+  state.tab = "members";
+  state.channelEnabled = false;
   window.history.replaceState({}, "", "/app/");
 });
 it("uses the native shared restricted view without mounting ordinary workspace menus", () => {
@@ -143,6 +162,23 @@ it("routes a native file menu through the normal platform session with the resol
   expect(markup).toContain(`data-document-binding="${binding}"`);
   expect(markup).not.toContain('data-testid="workspace-members"');
   expect(state.documentTheme).toBe("DARK");
+});
+
+it("defaults to an actual membership without deleting management-visible workspaces", () => {
+  state.memberB = false;
+  const markup = renderToStaticMarkup(<PlatformApp />);
+  expect(markup).toContain('data-selected="workspace-a" data-channels="2"');
+  expect(markup).toContain('data-testid="shared-management-panels"');
+});
+
+it("shows a nonmember state instead of opening a Relay query when no channel is joined", () => {
+  state.memberA = false;
+  state.memberB = false;
+  state.tab = "channel";
+  const markup = renderToStaticMarkup(<PlatformApp />);
+  expect(markup).toContain('data-channels="2"');
+  expect(markup).toContain("platform.channel.membershipRequired");
+  expect(state.channelEnabled).toBe(false);
 });
 
 it("does not expose the document bridge to a lifecycle-restricted platform session", () => {

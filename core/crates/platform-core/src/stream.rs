@@ -5,14 +5,13 @@
 //! **对不上就重新取 snapshot**，而不是从某个猜测的位置接着读。
 //!
 //! generation 绑定真实的成员、Tenant/Workspace 生命周期版本与 Channel；暂停后
-//! 恢复也不能复用暂停前的 snapshot。管理资格仍做 fresh Check，但没有对应的
-//! Core 授权版本可证明撤销后重新授予未发生，因此管理者的新流始终取完整 snapshot。
+//! 恢复也不能复用暂停前的 snapshot。Workspace 管理可见性不是频道参与资格；
+//! 协作流要求当前 ACTIVE membership，不以管理者身份读取未加入频道。
 //!
 //! 续流走 SSE 自带的协议，不另造：generation 作为事件 `id:` 下发，浏览器的
-//! EventSource 断线后自动重连并把它放进 `Last-Event-ID` 头带回来；重连间隔
-//! 由这里经 `retry:` 下发。EventSource 只在网络错误时自动重连；重连请求得到
-//! HTTP 错误时它永久关闭，页面按 `retry` 帧里的同一个间隔重新打开（重开即重取
-//! snapshot）。两条路径的时长都来自服务端，客户端不写死任何时长。
+//! EventSource 支持通过 `Last-Event-ID` 续流；重连间隔由这里经 `retry:` 下发。
+//! Web 断线后先关闭旧连接并确认平台会话，再按同一间隔重新打开并取完整 snapshot，
+//! 防止失效会话反复触发登录事务。客户端不写死重连时长。
 //!
 //! 流只转发当前 active scope 的事件（`.design/09`）：filter 由 Core 构造并锁定
 //! 在该 Workspace 的 Channel 上，调用方没有提交 filter 的入口。
@@ -35,8 +34,8 @@ use uuid::Uuid;
 
 use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
 use crate::web_transport::{
-    actor_keys, admit_workspace_scope, community_client, community_limits, page_limit,
-    AdmissionFailure, WorkspaceAdmissionEpoch, WorkspaceScope,
+    actor_keys, admit_collaboration_workspace_scope, community_client, community_limits,
+    page_limit, AdmissionFailure, WorkspaceAdmissionEpoch, WorkspaceScope,
 };
 
 #[derive(Clone, Copy)]
@@ -57,7 +56,7 @@ impl StreamTarget {
         ctx: &ExecutionContext,
     ) -> Result<StreamScope, AdmissionFailure> {
         match self {
-            Self::Workspace(id) => admit_workspace_scope(state, ctx, id)
+            Self::Workspace(id) => admit_collaboration_workspace_scope(state, ctx, id)
                 .await
                 .map(StreamScope::Workspace),
             Self::Conversation(id) => crate::conversations::admit(state, ctx, id)
@@ -81,10 +80,12 @@ impl StreamScope {
             ],
             Self::Conversation(_) => vec![contracts::WebMessageType::Stream],
         };
-        kinds
+        let mut kinds: Vec<_> = kinds
             .iter()
             .map(collab_bridge::bridge::message_kind)
-            .collect()
+            .collect();
+        kinds.push(collab_bridge::bridge::KIND_STREAM_MESSAGE_EDIT as u16);
+        kinds
     }
 
     fn channel_id(&self) -> &str {
@@ -224,18 +225,37 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
         // 的消息再渲染一遍。
         None
     } else {
+        let author =
+            match crate::web_transport::window_author(&state, &ctx, scope.community_host()).await {
+                Ok(author) => author,
+                Err(_) => return closed_in_band(retry, "upstream-unavailable"),
+            };
+        let cap = page_limit(&state, &limits)
+            .min(i64::from(collab_bridge::bridge::BRIDGE_WINDOW_MAX_LIMIT));
         match client
             .query(
                 &state.http,
                 &[serde_json::json!({
-                    "kinds": message_kinds,
+                    "kinds": [collab_bridge::bridge::message_kind(&contracts::WebMessageType::Stream)],
                     "#h": [scope.channel_id()],
-                    "limit": page_limit(&state, &limits),
+                    "limit": cap,
+                    "top_level": true,
+                    "include_aux": true,
                 })],
             )
             .await
         {
-            Ok(v) => Some(v),
+            Ok(v) => {
+                let verified = serde_json::from_value(v).ok().and_then(|events| {
+                    crate::web_transport::verify_message_page(events, scope.channel_id(),
+                        &contracts::WebMessageType::Stream, None, None, Some(&author.1), cap).ok()
+                });
+                let Some((events, _)) = verified else { return closed_in_band(retry, "upstream-unavailable"); };
+                match crate::web_transport::window_author(&state, &ctx, scope.community_host()).await {
+                    Ok(current) if current == author => Some(serde_json::json!(events)),
+                    _ => return closed_in_band(retry, "binding-not-active"),
+                }
+            },
             // 限流是 LIMIT，不是上游不可用：原因如实下发，重连间隔不短于预算
             // 给出的重置时刻，免得每次重连的 snapshot 继续消耗同一份额度
             Err(e) if e.limit() == Some(LimitKind::RateLimited) => {
@@ -533,8 +553,8 @@ mod tests {
             binding_version: 1,
             tenant_binding_version: 1,
         });
-        assert_eq!(workspace.message_kinds(), vec![9, 45001, 45003]);
-        assert_eq!(conversation.message_kinds(), vec![9]);
+        assert_eq!(workspace.message_kinds(), vec![9, 45001, 45003, 40003]);
+        assert_eq!(conversation.message_kinds(), vec![9, 40003]);
         assert!(workspace.can_resume());
         assert!(!conversation.can_resume());
         assert!(!workspace.same_admission(&conversation));

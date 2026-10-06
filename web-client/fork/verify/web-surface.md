@@ -2581,3 +2581,107 @@ Gateway 复用原本地 SDK 镜像 `sha256:17a2ffedc7792a8dc0bfb17f34d6dd928db5e
 自然收敛后，事务 Cookie 从 150 降到 0，再导航 `/app/` 得到正常 IdP 登录页
 HTTP 200、一个新事务，原页面无需重置账号即可重新登录。这证明旧数据能自然收敛，
 不代表新代码已上线。此批未构建/部署，不宣称线上 431 修复已验收。
+
+### 2026-10-06 原消息编辑恢复（源码窄验，未部署）
+
+四步结论：
+
+1. 权威沿 REQ-24、DD-39、DD-81 的 Buzz 原消息与 Kailo 治理边界。固定上游
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/messages/ui/MessageActionBar.tsx::MessageActionBar`、
+   `desktop/src/features/messages/ui/ComposerReplyEditBanner.tsx::ComposerReplyEditBanner`、
+   `desktop/src/features/messages/lib/applyEditTagOverlay.mjs::applyEditTagOverlay`、
+   `desktop/src/features/messages/lib/imetaMediaMarkdown.ts::restoreImetaMediaDisplayLabels`
+   与 `desktop/src-tauri/src/commands/messages.rs::edit_message` 是本批复用来源。
+2. 原菜单、编辑横条、富编辑器、附件标签与剧透恢复进入共用 TypeScript；Web 与
+   Desktop 的频道真实消费者接线。Web 使用原 messages 发布端点的可选
+   `editEventId`，Core 仍只保存目标外部引用与原发布回执，原消息正文仍归 Relay。
+   四侧契约增加可选字段，旧消息请求无此字段保持原语义；迁移新增 nullable 引用
+   及 kind 40003 约束，回退遇编辑回执明确停止，不删除外部副作用证据。
+3. 不接受浏览器提供的 raw event、签名或任意 tags。原消息需验签、当前本人签名、
+   相同频道和既有准入；原 h/e 派生关系不能由客户端覆盖。Web 结果不明时保留原
+   intent，修改正文不能换幂等键重派；Desktop 复用原 unconfirmed 签名缓存。
+   读端按原 kind 40003 覆盖展示，保持原消息 id、作者与时间，不新增消息权威。
+4. 未找到原消息、签名／scope／身份不符、空编辑以及结果缺少确认回执均不成功。
+   身份或频道切换后的迟到完成不能清除新视图草稿；窗口 aux、SSE、线程根消息的
+   编辑均进入相同已验签投影。未知结果不渲染为成功，不把编辑事件当新通知。
+
+既有 4 CPU／8 GiB SDK 的独立 `message-edit.AGX058/apps` 副本实际完成：共享
+source/test TypeScript、Web TypeScript、Desktop TypeScript 均退出 0；共享 16
+（含并行原生页面 8）、Web Composer/ChannelRead/Thread 32、Native timeline/replay
+40 项通过；Core web_transport 20、stream 2、bridge 编辑 1、Rust 契约 19 项通过。
+Go contracts、TypeScript 契约 23、Dart 契约 18 项通过，Core/bridge clippy
+`-D warnings` 退出 0。旧 fixture 缺有效 receipt、E2E repair kind 集缺 40003 的
+首次失败已定位并修复，不改产品中文默认或移除断言。新样例最初显式空附件数组
+触发既有 Go `omitempty` 的空数组省略差异，改用合法缺省无附件样例后四侧通过；
+本批不声称修复生成器所有可选空集合的线格式等价。
+
+实现后的破坏验证：私有副本分别移除共享编辑作者校验、Web UNKNOWN 重派保护、
+bridge 原作者校验，均实际失败；按正式原字节恢复后上述对应检查通过。
+日志位于 Data `codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/apps/`
+的 `edit-*-final.log`、`edit-author-mutation.log`、`edit-bridge-mutation.log` 与
+`web-client/edit-unknown-mutation.log`。专用隔离 PostgreSQL 的新库
+`kailo_edit_agx058` 全量 up、新迁移 down/up 退出 0，未连接业务数据库。
+
+边界：本批没有全量检查、镜像构建、真实 Relay 编辑发布或浏览器部署验收；Native
+IPC Rust 尚未编译，须在后续 Native 打包编译验证。原 Agent owner 代编辑、空编辑
+转删除、反应／huddle、论坛编辑菜单和线程面编辑入口仍未恢复，不能据此称原版全部
+消息交互已完成。普通本人频道消息编辑是本批实际接入范围，不删减其余交付需求。
+
+#### 同批交叉复核后的原生与附件边界纠正
+
+原 Native `UNCONFIRMED` 是进程内 holder，不是耐久 outbox。编辑现按
+Relay／签名人／原目标先 claim，再派发；同目标结果未明时改正文拒绝，同意图只回读
+原签名事件，不重派。确认 ACK／验签回读或首次确定拒绝才释放，迟到回读不清新意图。
+因此关闭编辑器／切频道后重开不再绕过 UNKNOWN；应用进程重启后的未决恢复仍未验收，
+不能据此发布为完整原生编辑。新增 claim/resolve 用例已写入，但原生 Rust 编译实际
+停在 `glib-sys`：缺 `glib-2.0.pc`（要求 >=2.70）；GTK3/WebKitGTK4.1 预检同样缺失。
+本轮未安装依赖，未执行这条 Native Rust 用例；日志 `edit-native-rust-check.log`。
+
+Web 编辑恢复不再丢弃原附件的 `displayLabel/dim/thumb/duration/blurhash`：它们保留在
+原 pending 与身份隔离草稿中。当前生成的 `WebMessageAttachment` 只接受
+`filename/sha256/size/spoiler/type/url`，扩展显示元数据尚无 BFF 发布字段，不能称
+编辑后完整保真。没有借此放宽契约或透传任意 tags。Web/Native 类型检查通过，
+Composer 17 项通过；私有移除 `nativeMetadata` 后新增元数据用例确实失败，恢复后
+同范围通过，见 `web-client/edit-{followup,metadata-mutation,metadata-restored}.log`。
+
+只读检查当前 Relay `BUZZ_MEMBER_EVENT_KINDS=9,41010,41012`，普通成员发布
+40003 会被原 `governance::check_event_kind` 拒绝；原生
+`ingest::validate_edit_ownership` 的同频道／作者／成员校验与窗口 aux 原协议仍保留。
+本次未更改此运行配置；需合批投递已定事件种类并真实验证，不能以源码通过称线上可用。
+
+## Workflows 原运行历史卡片恢复（2026-10-06）
+
+本批四步影响核对与实现结论：
+
+1. 权威为 `.design/01` REQ-23/24、`02` DD-106、`06` §9.1：原 Workflows
+   页面保留，Temporal 仍是唯一执行器。固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/workflows/ui/WorkflowDetailPanel.tsx::WorkflowDetailPanel`
+   运行卡片布局、原生 button、Chevron 展开收起及选中样式直接复用到共享
+   `client-kit/ts/platform/src/react/workflows.tsx::AutomationRunHistory`。
+2. Web `PlatformApp` 与 Desktop `platform.$section` 已消费同一个 `WorkflowsPage`，
+   本批只替换其中运行历史的表格呈现。读取仍为生成的 `AutomationRunPage`、
+   本人 `TaskView`、步骤审批子任务和用量外部引用；详情继续原 `TaskDetail` 与
+   Approvals reader。没有新契约、数据库状态、迁移、执行端点或正文副本。
+3. 卡片选择仅是本地呈现状态，不提交任何动作。既有完整 scope/关联/枚举/游标校验
+   仍在渲染前执行，`TaskStatusBadge` 的 UNKNOWN 优先级同时用于卡片和原详情。
+   原生 `type=button` 保留键盘操作，按钮内不嵌套可交互控件；详情及审批按钮处于
+   独立展开区域。中英文全部沿用现有词条，不新增英文常量或第二词库。
+4. 空页只在成功读回后展示；拒绝、依赖失败、未知枚举、跨 Workspace 关联与循环
+   游标不伪装成空历史。切 Workspace 丢弃迟到结果；展开/收起不触发业务写入，
+   审批详情仍独立重新准入。未增加服务端状态，因此没有新的终结/回收链。
+
+在原 `kailo-agent-receipt-xvkujx`（4 CPU、8 GiB）中，现有 shared
+`tsc --noEmit`、`tsc --noEmit -p tsconfig.test.json` 均退出 0；
+`vitest run test/pages.test.tsx -t "independent shared Workflows page" --pool=threads --maxWorkers=1`
+实际 27 项通过，205 项非本范围跳过。实现后在私有副本把选中回调改成始终清空，
+已有展开用例实际 1 项失败（`expected 'false' to be 'true'`，退出 1）；正式原字节
+恢复 `cmp` 退出 0，原 27 项再次通过。日志在 Data
+`oidc-stream-sdk-20261006.36llvb/workflows-history{,-mutation,-restored}.log`。
+
+边界：这只是已有完整后端支持的运行历史呈现纵向，不代表 Workflows 全功能恢复。
+定义列表/完整编辑布局仍是现有治理页面，而非原版完整卡片/编辑面；任意多步骤执行
+与原步骤轨迹尚不由本批后端合同提供。本批不伪造步骤数量、持续时间或执行轨迹，
+不恢复 Relay WorkflowEngine，也不删除这些既有交付需求。未运行 full、镜像构建或
+真实部署浏览器验收，本批结果不能称为线上可用。

@@ -1,4 +1,5 @@
 import type { ChannelMember, RelayEvent } from "@/shared/api/types";
+import { applyMessageEdits } from "@client-kit/platform/react/messages/messageEdits";
 
 import type { TimelineMessage } from "@/features/messages/types";
 import { getThreadReference } from "@/features/messages/lib/threading";
@@ -120,9 +121,9 @@ export function formatTimelineMessages(
   // on every live message; the map is computed once per distinct roster.
   const roleByPubkey = members ? channelRoleMap(members) : EMPTY_ROLE_MAP;
   const deletedEventIds = getDeletedEventIds(events);
-  const visibleEvents = events.filter(
+  const visibleEvents = applyMessageEdits(events.filter(
     (event) => isTimelineContentEvent(event) && !deletedEventIds.has(event.id),
-  );
+  ), events.filter((event) => !deletedEventIds.has(event.id)));
   const eventsById = new Map(visibleEvents.map((event) => [event.id, event]));
   const depthByEventId = new Map<string, number>();
   const resolvingEventIds = new Set<string>();

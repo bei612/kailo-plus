@@ -199,3 +199,47 @@ Playwright 访问原生页面取得完整原版登录表单，不是平台重写
 
 修正后的新镜像启动、真实 SSO callback、本人身份回读及平台 binding 尚未通过；
 不借用上述旧镜像 healthy、原账号准备或源码窄验声称完成。
+
+## 2026-10-06 原生 OAuth 回调与原 UI 接缝
+
+apps `3309938e3d5f7665fde398d8b95c1e4f6da7a1ca` 经原受限 builder 构建及推送退出 0，
+产物为 `sha256:3a569d2f0595dec838c137bdec4f238951f29846e9e4c21e2a464ac4b6234a00`；
+版本自检显示 `5.0.3-dev`、正确构建时间与该完整 commit。原独立 launcher 退出 0，
+保留数据库，只替换 Cells 容器。原配置回读确认 OAuth secret 等于受控文件，
+保留 `pydio` 与 `kailo-oidc` 两类 connector，以及三个不同原生 UUID 映射。
+这些结果仍不代表 SSO 完成。
+
+第一人的真实浏览器授权已完成外部 IdP 校验及原生单次 code 签发，但被送到
+`/auth/callback` 后原页面仍是登录框，未发出原 `/a/frontend/session` 请求。
+固定上游 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`idm/oauth/grpc/handler.go::Exchange` 以 `/auth/callback` 作为内部 OAuth
+`redirect_uri`；同版本 `frontend/assets/gui.ajax/res/js/ui/ReactUI/router/Router.js::getRoutes`
+把真正的 UI `LoginCallbackRouter` 挂在 `/login/callback`，其
+`frontend/assets/gui.ajax/res/js/ui/ReactUI/router/LoginCallbackRouter.js::LoginCallbackRouterWrapper`
+调用原 `RestClient.sessionLoginWithAuthCode`。此前接缝错误混用了两种地址。
+
+诊断仅将同次未消费的原生 code 送到这个既有 UI 路由，原 session 交换与用户状态
+读取均实际成功，首页显示原新手引导。页面身份为 `kailo-bootstrap-admin`，UUID
+`1860170d-e93e-499d-8140-ce54011c29ab`，profile 为 `standard`、`isAdmin=false`。
+实际截图 `01-native-identity-diagnostic.png` 已打开复核；这一手动定位只证明后半链，
+不作为正常登录完成或其他两人验收。
+
+本次修正只在 `nativeFrontendCallback` 验证内部注册回调后，将最终浏览器落点改为
+原 UI `/login/callback`，保留同源、原 client、单次 code、state、fresh native policy
+及 `LoginSuccessWrapper`，不修改内部 Exchange、注册 URI、账号、权限或密钥。
+跨源／未知 client／畸形回调继续拒绝；没有新增页面、第二 session 权威或认证绕行。
+旧 IdP callback `/auth/kailo/callback` 与 native code 格式不变，无数据迁移。
+
+本节构建、部署及截图原件在
+`/volumes/data/kailo/tmp/cells-oauth-release-20261006.sXLzLf/`；浏览器诊断不替代修正版
+产物的正常三人登录、平台 binding、资源与工具调用验收。
+
+实现后复用原 4 CPU / 8 GiB Go SDK，执行
+`go test -mod=readonly ./frontend/web -run TestKailoOIDC -count=1 -v`。
+首轮 SDK 没有同步已提交的 `common/auth/native-oidc-user.go`，因此编译报两个
+undefined symbol（`native-callback-tests.log`）；从同一固定 3309938 源补齐该文件后，
+八个顶层目标与九个 HTTP 子例全部通过（`native-callback-baseline.log`，退出 0）。
+私有 SDK 删除新增的 UI 路由映射后，两个正向 HTTP 子例及 callback 用例真实失败，
+其余拒绝分支保持通过（`native-callback-mutation.log`，退出 1）。按正式源原字节
+还原且 `cmp` 退出 0 后，原全部目标恢复通过（`native-callback-restored.log`，
+退出 0，`ok github.com/pydio/cells/v5/frontend/web 1.041s`）。未运行 full。

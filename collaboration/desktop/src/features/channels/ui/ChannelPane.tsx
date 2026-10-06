@@ -1,4 +1,9 @@
 import * as React from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useActiveCommunity } from "@/features/platform/activeCommunity";
+import { editMessage } from "@/shared/api/tauriMessages";
+import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
+import type { TimelineMessage } from "@/features/messages/types";
 import { AnimatePresence } from "motion/react";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useMediaUpload } from "@/features/messages/lib/useMediaUpload";
@@ -94,6 +99,43 @@ export const ChannelPane = React.memo(function ChannelPane({
   threadFirstUnreadReplyId,
 }: ChannelPaneProps) {
   const timelineScrollRef = React.useRef<HTMLDivElement>(null);
+  const community = useActiveCommunity();
+  const queryClient = useQueryClient();
+  const [editTarget, setEditTarget] = React.useState<TimelineMessage | null>(null);
+  const [editing, setEditing] = React.useState(false);
+  const editOwner = React.useMemo(() => ({}), [activeChannel.id, community.relayUrl, currentPubkey]);
+  const editOwnerRef = React.useRef(editOwner);
+  editOwnerRef.current = editOwner;
+  React.useEffect(() => {
+    setEditTarget(null);
+    setEditing(false);
+  }, [editOwner]);
+  const saveEdit = async (content: string, mentions: string[], media: string[][] = []) => {
+    if (!editTarget || !currentPubkey || editing || editTarget.signerPubkey !== currentPubkey) {
+      throw new Error("Edit identity or receipt is not available.");
+    }
+    const captured = editTarget;
+    const requestedOwner = editOwner;
+    setEditing(true);
+    try {
+      const receipt = await editMessage(activeChannel.id, captured.id, content,
+        media.filter((tag) => tag[0] === "imeta"), mentions, community.relayUrl, currentPubkey);
+      if (!receipt.id || receipt.kind !== 40003 || receipt.pubkey !== currentPubkey ||
+          !receipt.tags.some((tag) => tag[0] === "e" && tag[1] === captured.id)) {
+        throw new Error("relay publish outcome unknown");
+      }
+      // Refetch original Relay projection. A returned receipt is not a second
+      // editable-message authority and does not replace the immutable row id.
+      if (channelPaneMountedRef.current && editOwnerRef.current === requestedOwner) {
+        void queryClient.invalidateQueries({queryKey: channelMessagesKey(activeChannel.id)});
+        setEditTarget((current) => current === captured ? null : current);
+      }
+    } finally {
+      if (channelPaneMountedRef.current && editOwnerRef.current === requestedOwner) {
+        setEditing(false);
+      }
+    }
+  };
   const messageTimelineRef = React.useRef<MessageTimelineHandle>(null);
   const composerWrapperRef = React.useRef<HTMLDivElement>(null);
   const { goChannel } = useAppNavigation();
@@ -313,6 +355,7 @@ export const ChannelPane = React.memo(function ChannelPane({
               onMarkUnread={onMarkUnread}
               onMarkRead={onMarkRead}
               onReply={timelineReplyHandler}
+              onEdit={isComposerDisabled || editing ? undefined : setEditTarget}
               onOpenThread={onOpenThread}
               channelName={activeChannel.name}
               isSendingVideoReviewComment={isSending}
@@ -335,7 +378,23 @@ export const ChannelPane = React.memo(function ChannelPane({
               <ComposerUploadProgressOverlay />
               <div className="composer-dock composer-overlay-corner-masks relative pointer-events-auto">
                 <ComposerDockBackdrop gutterClassName="inset-x-5" />
-                <MessageComposer
+                {editTarget ? (
+                  <MessageComposer
+                    key={`edit:${editTarget.id}`}
+                    channelId={activeChannel.id}
+                    channelName={activeChannel.name}
+                    editTarget={editTarget}
+                    onCancelEdit={() => setEditTarget(null)}
+                    containerClassName="px-5 pb-0"
+                    layoutMode="dock"
+                    profiles={profiles}
+                    disabled={isComposerDisabled}
+                    isSending={editing}
+                    onSend={saveEdit}
+                    showBackgroundUploadProgress={false}
+                  />
+                ) : null}
+                <div hidden={editTarget !== null}><MessageComposer
                   channelId={activeChannel.id}
                   channelName={activeChannel.name}
                   containerClassName="px-5 pb-0"
@@ -355,7 +414,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                       : `Message #${activeChannel.name}`
                   }
                   showTopBorder={false}
-                />
+                /></div>
               </div>
             </div>
             {canDropInMainColumn && mainComposerMedia.isDragOver ? (

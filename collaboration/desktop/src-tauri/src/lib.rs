@@ -247,6 +247,7 @@ pub fn run() {
             search_messages,
             search_users,
             send_channel_message,
+            edit_message,
             set_window_vibrancy,
             show_native_notification,
             sign_event,

@@ -4899,6 +4899,10 @@ pub struct WebPublishMessageRequest {
 
     pub content: String,
 
+    /// 编辑原 Buzz 消息；BFF 回读同 Channel 原事件并核对本人签名身份，发原 kind 40003。与 parentEventId 互斥，缺省保持原新消息语义。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edit_event_id: Option<String>,
+
     /// 用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mention_installation_ids: Option<Vec<String>>,
@@ -4931,11 +4935,17 @@ pub struct WebMessageAttachment {
     pub url: String,
 }
 
-/// GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 且两侧 binding 都 ACTIVE 的
-/// Workspace。Workspace id 同时是其 Channel id（DD-80）。
+/// GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 或 fresh manage 管理资格，且两侧
+/// binding 都 ACTIVE 的 Workspace。管理可见不代表可读取协作消息；isMember 投影真实成员事实。Workspace id 同时是其 Channel
+/// id（DD-80）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceView {
     pub id: String,
+
+    /// 调用方是否有 ACTIVE WorkspaceMembership；管理资格不使该值为真。旧回应缺省表示未知，不得当作已加入频道。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_member: Option<bool>,
 
     pub name: String,
 

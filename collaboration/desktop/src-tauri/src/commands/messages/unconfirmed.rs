@@ -15,6 +15,35 @@ use std::sync::{LazyLock, Mutex};
 static UNCONFIRMED: LazyLock<Mutex<HashMap<String, nostr::Event>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// An edit has one outstanding intent per original target. Claim before I/O;
+/// subsequent calls observe the same signed event rather than issuing another
+/// edit. This shares the existing native holder (not a second outbox).
+pub(super) fn claim_edit(key: &str, fresh: nostr::Event) -> Result<(nostr::Event, bool), String> {
+    let mut map = UNCONFIRMED
+        .lock()
+        .map_err(|_| "relay publish outcome unknown")?;
+    if let Some(event) = map.get(key) {
+        if event.content != fresh.content || event.tags != fresh.tags {
+            return Err("relay publish outcome unknown".into());
+        }
+        return Ok((event.clone(), false));
+    }
+    map.insert(key.to_owned(), fresh.clone());
+    Ok((fresh, true))
+}
+
+/// Only a confirmed read/ACK or the first dispatch's definite rejection can
+/// retire the claimed intent. A late observation never clears a newer edit.
+pub(super) fn resolve_edit(key: &str, id: nostr::EventId) -> Result<(), String> {
+    let mut map = UNCONFIRMED
+        .lock()
+        .map_err(|_| "relay publish outcome unknown")?;
+    if map.get(key).is_some_and(|event| event.id == id) {
+        map.remove(key);
+    }
+    Ok(())
+}
+
 /// Keep the original signed profile intent in the existing native holder.
 /// Unlike immutable messages, replaceable metadata is observed, never re-sent.
 pub(crate) fn claim_profile(
@@ -139,6 +168,31 @@ mod tests {
             .custom_created_at(nostr::Timestamp::from(created_at))
             .sign_with_keys(keys)
             .unwrap()
+    }
+
+    #[test]
+    fn edits_claim_one_target_intent_until_confirmed_and_reject_changed_payload() {
+        let keys = Keys::generate();
+        let key = format!("edit-test:{}", keys.public_key());
+        let first = message(&keys, "first edit", 100);
+        let (claimed, dispatch) = super::claim_edit(&key, first.clone()).unwrap();
+        assert!(dispatch);
+        let (observed, dispatch) =
+            super::claim_edit(&key, message(&keys, "first edit", 101)).unwrap();
+        assert!(!dispatch);
+        assert_eq!(observed.id, claimed.id);
+        assert_eq!(
+            super::claim_edit(&key, message(&keys, "changed", 102)).unwrap_err(),
+            "relay publish outcome unknown"
+        );
+        super::resolve_edit(&key, message(&keys, "unrelated", 103).id).unwrap();
+        assert!(super::claim_edit(&key, message(&keys, "changed", 104)).is_err());
+        super::resolve_edit(&key, first.id).unwrap();
+        assert!(
+            super::claim_edit(&key, message(&keys, "next confirmed edit", 105))
+                .unwrap()
+                .1
+        );
     }
 
     #[test]

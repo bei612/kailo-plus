@@ -275,3 +275,41 @@ tools/registry/capabilities.yaml 与追溯记录不一致；先生成并入库�
 `registry-check.rMYr5Y/tools/registry/capabilities.yaml`。两次 start 均在获取
 wrapped secret、重建 Core 前退出；没有重启 Core、Worker 或其他服务，没有
 修改业务身份、容量、权限与数据。本段不声称新镜像健康或业务验收完成。
+
+## 2026-10-06：管理可见 Workspace 不再误作默认聊天频道
+
+权威与根因：`.design/03` §2 与 `DD-41/46/80` 区分管理 scope 与原生频道成员。
+本次只读查明：报告 503 的 Workspace 与两级 Buzz binding 均 ACTIVE，39000
+元数据签名及 channel 标签成立，但 seam-verifier 没有该 Workspace 的
+WorkspaceMembership，Relay roster 也不含其 SERVER 身份；目录因 fresh manage
+正确列出此 Workspace，Web 却将它误选为聊天频道。该用户在另一个 Workspace
+有 ACTIVE membership，双人私聊也正常。因此不是全局认证失效，不通过 CONTROL
+代读私有消息，不自动加人，不修改旧频道名称或业务数据。
+
+影响面：`WorkspaceView.isMember` 可选投影读取既有 ACTIVE membership；
+Core 保留全部管理可见目录与成员管理页，发现页不再把 manage 当 isMember。
+消息、频道元数据、媒体、SSE、已读位置的协作准入统一要求实际成员；失去资格
+仍拒绝，binding 不可查证仍失败，不伪装空频道。Web 默认先选择已加入频道，
+管理-only 行仍能显式打开管理入口；公开加入仍走已有 `workspace.join`，私有
+不生成自助加入。共享 Inbox/Web 活动查询/Native visibility 投影只消费成员行。
+没有新实体、工作流、存储或第二聊天权威，Mobile 管理目录保持原消费。
+
+兼容与异常：字段只由 Core 写、四语言生成类型读取；true/false/缺省三态保持。
+旧客户端忽略新可选字段，新客户端将缺省视为未知而不当成员，发布顺序为 Core
+先于客户端。无数据迁移；空目录保持原空态，零个已加入频道显示明确非成员状态。
+切 scope、撤权、目录失败、元数据未知/签名错误均沿既有拒绝及再准入，不回退默认
+Tenant，不把管理资格降为协作授权。发现页的外部读取后 fence 同时比较成员事实。
+
+实现后定向证据：复用 4 CPU / 8 GiB 的既有 SDK 与 Data 缓存；原 `tools/gen.sh`
+退出 0。Core `cargo clippy --offline --locked -j16 -p platform-core --bin platform-core
+-- -D warnings` 退出 0；`web_transport::tests` 21/21，Rust roundtrip 20/20，
+Go contracts 包通过，Dart roundtrip 19/19、TS roundtrip 24/24。
+shared/Web/Desktop 类型检查通过，shared Inbox 11/11，Web 默认选择/侧栏 10/10。
+私有副本将 `WorkspaceAdmissionEpoch::is_member` 改为恒真，新增真实消费者断言
+实际 0/1 失败（exit 101）；原字节还原后 1/1 通过，未禁用检查。
+
+首次窄验的 SDK 本地包副本落后、Dart 默认缓存不可写以及旧 SSR 夹具缺少已恢复
+Profile/Conversation provider 造成的失败已原样保留；同步真实源和已有缓存、补齐
+隔离夹具后得到上面的通过结果，没有以修改产品行为迁就环境。日志位于
+`/volumes/data/kailo/tmp/oidc-stream-sdk-20261006.36llvb/membership-*.log`。
+本批未构建或部署；当前运行实例的旧 503 不能据源码窄验宣称已线上修复。

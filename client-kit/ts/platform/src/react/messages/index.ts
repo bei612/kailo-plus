@@ -18,3 +18,5 @@ export * from "./threadTreeLayout";
 export * from "./types";
 export * from "./useMeasuredCssVariable";
 export * from "./threading";
+export { applyMessageEdits } from "./messageEdits";
+export { imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "./editAttachments";

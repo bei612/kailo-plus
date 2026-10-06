@@ -14,6 +14,33 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestWorkspaceMembershipProjection(t *testing.T) {
+	for _, raw := range []string{
+		`{"id":"scope","name":"Scope","slug":"scope"}`,
+		`{"id":"scope","name":"Scope","slug":"scope","isMember":false}`,
+		`{"id":"scope","name":"Scope","slug":"scope","isMember":true}`,
+	} {
+		var typed generated.WorkspaceView
+		if err := json.Unmarshal([]byte(raw), &typed); err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var expected, actual any
+		if err := json.Unmarshal([]byte(raw), &expected); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(encoded, &actual); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(expected, actual) {
+			t.Fatalf("membership evidence changed: %s", encoded)
+		}
+	}
+}
+
 func TestApplicationBindingProtocolRoundtrip(t *testing.T) {
 	for _, fixture := range []struct {
 		name   string
@@ -261,7 +288,7 @@ func TestCanaryRoundtripPreservesEveryField(t *testing.T) {
 }
 
 func TestWebPublishMessageRoundtrip(t *testing.T) {
-	for _, sample := range []string{"web-publish-mention.sample.json", "web-publish-content-only.sample.json"} {
+	for _, sample := range []string{"web-publish-mention.sample.json", "web-publish-content-only.sample.json", "web-message-edit.sample.json"} {
 		t.Run(sample, func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", sample))
 			if err != nil {

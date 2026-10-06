@@ -180,6 +180,11 @@ func nativeFrontendCallback(origin *url.URL, login *nativeauth.GetLoginResponse)
 	if err != nil || redirect.Scheme != origin.Scheme || redirect.Host != origin.Host || redirect.Path != "/auth/callback" {
 		return nil, errors.New("not a native frontend callback")
 	}
+	// The native OAuth client/Exchange owns /auth/callback as redirect_uri;
+	// the original React Router mounts LoginCallbackRouter at /login/callback.
+	// Deliver its native one-use code to that existing UI consumer, without
+	// changing the OAuth client's registered redirect or bypassing Exchange.
+	redirect.Path = "/login/callback"
 	values := redirect.Query()
 	if state := q.Get("state"); state != "" {
 		values.Set("state", state)

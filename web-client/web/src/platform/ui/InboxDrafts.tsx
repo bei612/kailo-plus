@@ -13,9 +13,13 @@ import { InboxThreadPane } from "./InboxThreadPane";
 import { ForumPane } from "./ForumPane";
 
 /** Existing Web composer namespaces, resolved against the stored destination (never inferred from a secret or a fallback scope). */
-export function draftMessageTarget(entry: DraftListEntry): { messageType: WebMessageType; parentEventId?: string; threadRootId?: string } | null {
+export function draftMessageTarget(entry: DraftListEntry): { messageType: WebMessageType; parentEventId?: string; threadRootId?: string; editEventId?: string } | null {
   const scope = entry.draft.channelId;
   if (entry.key === scope) return { messageType: WebMessageType.Stream };
+  if (entry.key.startsWith(`edit:${scope}:`)) {
+    const editEventId = entry.key.slice(`edit:${scope}:`.length);
+    return /^[0-9a-f]{64}$/.test(editEventId) ? {messageType: WebMessageType.Stream, editEventId} : null;
+  }
   for (const [prefix, messageType] of [[`thread:${scope}:`, WebMessageType.Stream], [`forum:${scope}:`, WebMessageType.ForumComment]] as const) {
     if (!entry.key.startsWith(prefix)) continue;
     const parent = entry.key.slice(prefix.length);
@@ -86,9 +90,9 @@ function DraftEditor({ principalId, item, destination, members, autoSend, onBack
     replyTargetEventId={target.threadRootId ? target.parentEventId : undefined}
     channelName={item.channelLabel} members={members} onBack={onBack} onOpen={onBack} autoSendDraftKey={autoSendDraftKey} />;
   return <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60"><InboxDetailHeader title={item.channelLabel} openLabel={t("drafts.open")} onBack={onBack} />
-    {destination.kind === "conversation" ? <ChannelPane workspaceId={destination.conversation.id} conversation={destination.conversation} myPrincipalId={principalId} autoSendDraftKey={autoSendDraftKey} />
+    {destination.kind === "conversation" ? <ChannelPane workspaceId={destination.conversation.id} conversation={destination.conversation} myPrincipalId={principalId} autoSendDraftKey={autoSendDraftKey} restoreEditEventId={target.editEventId} />
       : channel.data?.channelType === ChannelType.Forum ? <ForumPane workspaceId={entry.draft.channelId} channelId={channel.data.channelId} archived={channel.data.archived} myPrincipalId={principalId}
           restoreDraftKey={entry.key} autoSendDraftKey={autoSendDraftKey} />
-        : <ChannelPane workspaceId={entry.draft.channelId} myPrincipalId={principalId} autoSendDraftKey={autoSendDraftKey} />}
+        : <ChannelPane workspaceId={entry.draft.channelId} myPrincipalId={principalId} autoSendDraftKey={autoSendDraftKey} restoreEditEventId={target.editEventId} />}
   </section>;
 }

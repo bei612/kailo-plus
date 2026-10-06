@@ -339,7 +339,7 @@ export function useChannelsQuery(options?: { enabled?: boolean }) {
     refetchInterval,
   });
   const visibleChannels = React.useMemo(() => {
-    const visibility = new Map(workspaces.data?.filter((workspace) => workspace.visibility !== undefined
+    const visibility = new Map(workspaces.data?.filter((workspace) => workspace.isMember === true && workspace.visibility !== undefined
       && Object.values(WorkspaceVisibility).includes(workspace.visibility)).map((workspace) => [workspace.id, workspace.visibility!]));
     return query.data?.flatMap((channel) => channel.channelType === "dm" ? [channel]
       : !workspaces.isError && visibility.has(channel.id) ? [{ ...channel, visibility: visibility.get(channel.id)! }] : []);

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/workspace.schema.json",
   "title": "WorkspaceView",
-  "description": "GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 且两侧 binding 都 ACTIVE 的 Workspace。Workspace id 同时是其 Channel id（DD-80）。",
+  "description": "GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 或 fresh manage 管理资格，且两侧 binding 都 ACTIVE 的 Workspace。管理可见不代表可读取协作消息；isMember 投影真实成员事实。Workspace id 同时是其 Channel id（DD-80）。",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "slug", "name"],
@@ -10,6 +10,7 @@
     "id": { "type": "string", "format": "uuid" },
     "slug": { "type": "string" },
     "name": { "type": "string" },
+    "isMember": { "type": "boolean", "description": "调用方是否有 ACTIVE WorkspaceMembership；管理资格不使该值为真。旧回应缺省表示未知，不得当作已加入频道。" },
     "visibility": { "$ref": "../domain/workspace_visibility.schema.json", "description": "Core 产品可见性，不从 Relay private 投影推断；旧回应可能省略。" }
   }
 }

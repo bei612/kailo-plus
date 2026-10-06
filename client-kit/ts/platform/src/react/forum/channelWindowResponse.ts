@@ -24,25 +24,9 @@ export type ChannelWindowPage<E extends RelayEvent = RelayEvent> = {
   hasMore: boolean;
 };
 
-const KIND_CHANNEL_THREAD_SUMMARY = 39005;
-const KIND_CHANNEL_WINDOW_BOUNDS = 39006;
-const KIND_DELETION = 5;
-const KIND_NIP29_DELETE_EVENT = 9005;
-const KIND_STREAM_MESSAGE = 9;
-const KIND_STREAM_MESSAGE_V2 = 40002;
-const KIND_SYSTEM_MESSAGE = 40099;
-export const CHANNEL_AUX_EVENT_KINDS = [
-  KIND_DELETION, // 5 — NIP-09 event deletions
-  KIND_NIP29_DELETE_EVENT, // 9005 — NIP-29 / Buzz-native deletions
-] as const;
-
-// Visible content kinds a channel window / thread returns as their own rows.
-// Mirrors the native timeline kind set.
-export const CHANNEL_TIMELINE_CONTENT_KINDS = [
-  KIND_STREAM_MESSAGE, // 9
-  KIND_STREAM_MESSAGE_V2, // 40002
-  KIND_SYSTEM_MESSAGE, // 40099 — system rows (join/leave/channel-created)
-] as const;
+import { KIND_CHANNEL_THREAD_SUMMARY, KIND_CHANNEL_WINDOW_BOUNDS,
+  CHANNEL_AUX_EVENT_KINDS, CHANNEL_TIMELINE_CONTENT_KINDS } from "../messages/thread/kinds";
+export { CHANNEL_AUX_EVENT_KINDS, CHANNEL_TIMELINE_CONTENT_KINDS } from "../messages/thread/kinds";
 
 const CONTENT_KINDS = new Set<number>(CHANNEL_TIMELINE_CONTENT_KINDS);
 const AUX_KINDS = new Set<number>(CHANNEL_AUX_EVENT_KINDS);

@@ -48,7 +48,7 @@ export function useInboxState(client: BffClient) {
       }
       current.current = next;
       setState(next);
-      setVisibleChannels(new Set(workspaces.map((workspace) => workspace.id)));
+      setVisibleChannels(new Set(workspaces.filter((workspace) => workspace.isMember === true).map((workspace) => workspace.id)));
     } catch {
       if (generation === epoch.current) setFailed(true);
     }

@@ -67,6 +67,7 @@ type TimelineMessageListProps = {
   onMarkUnread?: (message: TimelineMessage) => void;
   onMarkRead?: (message: TimelineMessage) => void;
   onReply?: (message: TimelineMessage) => void;
+  onEdit?: (message: TimelineMessage) => void;
   onOpenThread?: (message: TimelineMessage) => void;
   isSendingVideoReviewComment?: boolean;
   onSendVideoReviewComment?: (
@@ -122,6 +123,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
   onMarkUnread,
   onMarkRead,
   onReply,
+  onEdit,
   onOpenThread,
   isSendingVideoReviewComment = false,
   onSendVideoReviewComment,
@@ -222,6 +224,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
               onMarkRead={onMarkRead}
               onMarkUnread={onMarkUnread}
               onReply={onReply}
+              onEdit={onEdit}
               onOpenThread={onOpenThread}
               profiles={profiles}
               searchActiveMessageId={searchActiveMessageId}
@@ -249,6 +252,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
       onMarkRead,
       onMarkUnread,
       onReply,
+  onEdit,
       onOpenThread,
       profiles,
       searchActiveMessageId,

@@ -10,11 +10,12 @@ import {
 	type AutomationRunPage,
 } from "@client-kit/contracts";
 import { useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { relativeTime } from "../format";
 import { AutomationManagement } from "./agents";
 import { useBffClient, useLocale, useT } from "./context";
 import { TaskDetail, TaskStatusBadge } from "./governance";
-import { Button, Cell, Notice, ReadFailure, Table } from "./ui";
+import { Button, Notice, ReadFailure } from "./ui";
 import { useLoad } from "./use-load";
 
 export function WorkflowsPage() {
@@ -118,6 +119,7 @@ function AutomationRunHistory({
 	const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
 	const [index, setIndex] = useState(0);
 	const [open, setOpen] = useState<string | null>(null);
+	const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 	const cursor = cursors[index];
 	const [state, reload] = useLoad(
 		`automation-runs:${workspaceId}:${resourceId}:${cursor ?? ""}`,
@@ -165,44 +167,65 @@ function AutomationRunHistory({
 							{page.runs.length === 0 ? (
 								<Notice>{t("workflows.noRuns")}</Notice>
 							) : (
-								<Table
-									head={[
-										t("tasks.created"),
-										t("tasks.execution"),
-										t("platform.state"),
-										t("tasks.waitingReason"),
-										t("workflows.progress"),
-										t("workflows.usage"),
-										t("workflows.stepApproval"),
-									]}
-								>
-									{page.runs.map((run) => (
-										<tr key={run.task.actionExecutionId}>
-											<Cell title={run.task.createdAt}>
-												{relativeTime(locale, run.task.createdAt)}
-											</Cell>
-											<Cell>
-												<Button
-													onClick={() => setOpen(run.task.actionExecutionId)}
+								<div className="space-y-2">
+									{/* Buzz 779af8886caae1317b4de962082429867ab61503:
+									    desktop/src/features/workflows/ui/WorkflowDetailPanel.tsx
+									    WorkflowDetailPanel run cards. Temporal TaskView replaces
+									    Relay WorkflowRun; no fabricated step trace or duration. */}
+									{page.runs.map((run) => {
+										const id = run.task.actionExecutionId;
+										const isSelected = selectedRunId === id;
+										return (
+											<div
+												className={`overflow-hidden rounded-xl border bg-card/70 transition-colors ${isSelected
+													? "border-primary/40 bg-primary/5 shadow-xs"
+													: "border-border/70 hover:bg-muted/20"}`}
+												key={id}
+											>
+												<button
+													aria-expanded={isSelected}
+													aria-label={id}
+													className="w-full px-4 py-3 text-left"
+													data-testid={isSelected ? "workflow-selected-run" : undefined}
+													onClick={() => setSelectedRunId(isSelected ? null : id)}
+													type="button"
 												>
-													{run.task.actionExecutionId}
-												</Button>
-											</Cell>
-											<Cell>
-												<TaskStatusBadge task={run.task} />
-											</Cell>
-											<Cell>{run.task.waitingReason ?? "—"}</Cell>
-											<Cell>{run.progress ?? "—"}</Cell>
-											<Cell mono>{run.usageEventIds.join(", ") || "—"}</Cell>
-											<Cell>{run.stepApprovalTask ? <div className="flex flex-col gap-1">
-												<TaskStatusBadge task={run.stepApprovalTask} />
-												<Button onClick={() => setOpen(run.stepApprovalTask!.actionExecutionId)}>
-													{t("workflows.stepApproval")}
-												</Button>
-											</div> : "—"}</Cell>
-										</tr>
-									))}
-								</Table>
+													<div className="flex items-start justify-between gap-3">
+														<div className="min-w-0 flex-1">
+															<div className="flex items-center gap-2">
+																{isSelected ? <ChevronDown aria-hidden className="h-4 w-4 text-muted-foreground" />
+																	: <ChevronRight aria-hidden className="h-4 w-4 text-muted-foreground" />}
+																<span className="truncate font-mono text-xs font-medium" title={id}>{id}</span>
+																<TaskStatusBadge task={run.task} />
+															</div>
+															<div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pl-6 text-2xs text-muted-foreground">
+																<time dateTime={run.task.createdAt} title={run.task.createdAt}>{relativeTime(locale, run.task.createdAt)}</time>
+																{run.progress ? <span>{t("workflows.progress")}: {run.progress}</span> : null}
+																{run.stepApprovalTask ? <TaskStatusBadge task={run.stepApprovalTask} /> : null}
+															</div>
+															{run.task.waitingReason ? <p className="mt-2 break-words pl-6 text-xs text-muted-foreground">{run.task.waitingReason}</p> : null}
+														</div>
+													</div>
+												</button>
+												{isSelected ? (
+													<div className="border-t border-border/60 bg-background/60 px-4 py-4">
+														<div className="mb-3 flex items-center gap-2 text-2xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+															<span>{t("tasks.execution")}</span>
+														</div>
+														<dl className="space-y-3 text-xs">
+															<div><dt className="text-muted-foreground">{t("workflows.usage")}</dt>
+																<dd className="mt-1 break-all font-mono">{run.usageEventIds.join(", ") || "—"}</dd></div>
+														</dl>
+														<div className="mt-3 flex flex-wrap gap-2">
+															<Button onClick={() => setOpen(id)}>{t("tasks.execution")}</Button>
+															{run.stepApprovalTask ? <Button onClick={() => setOpen(run.stepApprovalTask!.actionExecutionId)}>{t("workflows.stepApproval")}</Button> : null}
+														</div>
+													</div>
+												) : null}
+											</div>
+										);
+									})}
+								</div>
 							)}
 							<div className="flex gap-2">
 								{index > 0 ? (

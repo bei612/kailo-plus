@@ -29,7 +29,7 @@ const state = (version = 0) => ({
   readContexts: {},
   workspacePreferences: {},
 });
-const workspace = { id: "scope-a", name: "A", slug: "a" };
+const workspace = { id: "scope-a", name: "A", slug: "a", isMember: true };
 
 describe("shared upstream Inbox aggregation", () => {
   it("uses the oldest unread reply without changing the stable thread root", () => {

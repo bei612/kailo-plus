@@ -152,10 +152,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const [chosenConversation, setChosenConversation] = useState<ConversationView | null>(null);
   const [messageTarget, setMessageTarget] = useState<ParsedMessageLink | null>(null);
   const [messageLinkProblem, setMessageLinkProblem] = useState<string | null>(null);
-  const [chosen, setChosen] = useState<string | null>(
-    // 未选定 Workspace 时 Core 省略该字段（contracts 的可选字段一律缺省而非 null）
-    session.currentWorkspaceId ?? null,
-  );
+  const [chosen, setChosen] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("channel");
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
   const [channelActivity, setChannelActivity] = useState<ReadonlyMap<string, string | null>>(() => new Map());
@@ -171,14 +168,18 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
 
   const rows = workspaces.isError ? [] : workspaces.data ?? [];
   // Only use fresh admitted directory rows; a revoked previous selection cannot remain active.
-  const active = rows.find((workspace) => workspace.id === chosen)?.id ?? rows[0]?.id ?? null;
+  const activeRow = rows.find((workspace) => workspace.id === chosen)
+    ?? rows.find((workspace) => workspace.id === session.currentWorkspaceId && workspace.isMember === true)
+    ?? rows.find((workspace) => workspace.isMember === true)
+    ?? rows[0];
+  const active = activeRow?.id ?? null;
   const channel = useQuery({
     queryKey: ["platform", "channel-descriptor", session.tenantPrincipalId, active],
-    enabled: Boolean(active) && tab === "channel",
+    enabled: Boolean(active) && activeRow?.isMember === true && tab === "channel",
     queryFn: () => bff.workspaceChannel(active!),
   });
   const openMessageLink = (link: ParsedMessageLink) => {
-    if (!rows.some((workspace) => workspace.id === link.channelId)) {
+    if (!rows.some((workspace) => workspace.id === link.channelId && workspace.isMember === true)) {
       setMessageLinkProblem(t("platform.linkChannelUnavailable"));
       return;
     }
@@ -227,6 +228,13 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   ) : !active ? (
     <Notice text={t("platform.noWorkspace")} />
   ) : tab === "channel" ? (
+    activeRow?.isMember !== true ? <div className="flex flex-col gap-3 p-4">
+      <p role="status">{t("platform.channel.membershipRequired")}</p>
+      <div className="flex gap-2">
+        <Button onClick={() => setTab("members")}>{t("platform.tab.members")}</Button>
+        {activeRow?.visibility === "open" ? <Button onClick={() => setCreateChannelOpen(true)}>{t("channel.browser.title")}</Button> : null}
+      </div>
+    </div> :
     channel.isError && !channel.data ? <Notice text={t("platform.loadFailed")} /> : !channel.data ? <Notice text={t("platform.loadingWorkspaces")} /> :
     channel.data.channelType === "forum" ? <ForumPane key={`${session.tenantPrincipalId}:${active}`} workspaceId={active}
       channelId={channel.data.channelId} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onOpenMessageLink={openMessageLink} target={messageTarget ?? undefined} /> :
@@ -320,7 +328,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             </p> : null}
             </AppSidebarFrame>
         <ContentSurface>
-          {tab === "channel" && active && !workspaces.isError && !channel.isError && channel.data ?
+          {tab === "channel" && active && activeRow?.isMember === true && !workspaces.isError && !channel.isError && channel.data ?
             <ChatHeader title={channel.data.name} description={channel.data.description ?? undefined}
               leadingContent={channel.data.channelType === "forum" ? <FileText className="h-4 w-4 text-muted-foreground" /> : <Hash className="h-4 w-4 translate-y-px text-muted-foreground" />}
               onCopyTitle={async (title) => {

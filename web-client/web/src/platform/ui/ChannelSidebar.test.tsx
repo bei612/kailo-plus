@@ -36,8 +36,8 @@ const reads: ComponentProps<typeof ChannelSidebar>["reads"] = {
   state: { version: 3, readContexts: {}, workspacePreferences: { one: { starred: true, muted: false } } },
   failed: false, unknown: false, pending: false, refresh: vi.fn(), write: vi.fn(), readAt: () => 20, visibleChannels: new Set(["one", "two"]),
 };
-function markup(overrides: Partial<typeof reads> = {}) {
-  return renderToStaticMarkup(<ChannelSidebar principalId="me" workspaces={[{ id: "one", name: "One", slug: "one" }, { id: "two", name: "Two", slug: "two" }]}
+function markup(overrides: Partial<typeof reads> = {}, isMember = true) {
+  return renderToStaticMarkup(<ChannelSidebar principalId="me" workspaces={[{ id: "one", name: "One", slug: "one", isMember }, { id: "two", name: "Two", slug: "two", isMember }]}
     selectedId="two" active reads={{ ...reads, ...overrides }} preferencePending={false}
     onSelect={vi.fn()} onCreate={vi.fn()} onSetPreference={vi.fn()} />);
 }
@@ -61,4 +61,12 @@ it("renders a failed activity observation as an error, not a confirmed read stat
   expect(html).toContain('role="alert"');
   expect(html).not.toContain('data-read-enabled="true"');
   snapshot.failed = false;
+});
+it("keeps management-visible rows without unread markers or read commands for nonmembers", () => {
+  snapshot.failed = false;
+  const html = markup({}, false);
+  expect(html).toContain('data-id="one"');
+  expect(html).not.toContain('data-unread="true"');
+  expect(html).not.toContain('data-read-enabled="true"');
+  expect(html).toContain('data-star-enabled="true"');
 });

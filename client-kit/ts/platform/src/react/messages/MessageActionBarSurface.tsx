@@ -8,6 +8,7 @@ import {
   Link2,
   MailCheck,
   MailOpen,
+  Pencil,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -40,6 +41,7 @@ function MoreActionsMenu({
   isFollowingThread,
   isUnread,
   onCopyMessage,
+  onEdit,
 }: {
   /** Channel UUID for the Copy link action. When null/undefined, the
    *  Copy link entry is hidden (e.g. inbox preview rows that don't have it). */
@@ -47,6 +49,7 @@ function MoreActionsMenu({
   message: TimelineMessage;
   /** Resolves the mention identities carried by Copy message. */
   onCopyMessage: (message: TimelineMessage) => void;
+  onEdit?: (message: TimelineMessage) => void;
   onFollowThread?: (message: TimelineMessage) => void;
   onMarkUnread?: (message: TimelineMessage) => void;
   onMarkRead?: (message: TimelineMessage) => void;
@@ -59,6 +62,9 @@ function MoreActionsMenu({
 }) {
   const translateUi = useUiT();
   const hasCopyActions = !message.pending;
+  // Original Buzz menu-to-editor focus transfer: wait for Radix to close,
+  // otherwise its exit focus restoration steals the editor's first keys.
+  const pendingEditRef = React.useRef<(() => void) | null>(null);
   // "Copy message" copies the Markdown body verbatim, so its plain flavor is
   // already readable anywhere. The HTML sidecar adds only identity, letting a
   // paste back into Buzz re-light each chip with the pubkey the author tagged.
@@ -83,7 +89,15 @@ function MoreActionsMenu({
         </TooltipTrigger>
         <TooltipContent>{translateUi("buzz.moreActions")}</TooltipContent>
       </Tooltip>
-      <DropdownMenuContent align="end" side="top" sideOffset={6}>
+      <DropdownMenuContent align="end" side="top" sideOffset={6}
+        onCloseAutoFocus={(event) => {
+          const startEdit = pendingEditRef.current;
+          if (startEdit) { event.preventDefault(); pendingEditRef.current = null; startEdit(); }
+        }}>
+        {!message.pending && onEdit ? <DropdownMenuItem data-testid={`edit-message-${message.id}`}
+          onSelect={() => { pendingEditRef.current = () => onEdit(message); }}>
+          <Pencil className="h-4 w-4" />{translateUi("buzz.editMessage")}
+        </DropdownMenuItem> : null}
         {onMarkRead || onMarkUnread ? (
           <DropdownMenuItem
             data-testid={`mark-read-toggle-${message.id}`}
@@ -188,6 +202,7 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
   isFollowingThread,
   isUnread,
   onCopyMessage,
+  onEdit,
 }: {
   /** Channel UUID — required for the Copy link action; when omitted the
    *  action is hidden (callers like the home inbox that lack the context). */
@@ -208,12 +223,14 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
   isUnread?: boolean;
   /** Resolves the mention identities carried by Copy message. */
   onCopyMessage: (message: TimelineMessage) => void;
+  onEdit?: (message: TimelineMessage) => void;
 }) {
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
   const translateUi = useUiT();
   const hasReplyAction = Boolean(onReply);
 
   const hasMoreMenuActions =
+    Boolean(onEdit) ||
     Boolean(onMarkUnread) ||
     Boolean(onMarkRead) ||
     Boolean(onFollowThread) ||
@@ -283,6 +300,7 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
 
           {hasMoreMenuActions ? (
             <MoreActionsMenu
+              onEdit={onEdit}
               onCopyLink={onCopyLink}
               message={message}
               onFollowThread={onFollowThread}

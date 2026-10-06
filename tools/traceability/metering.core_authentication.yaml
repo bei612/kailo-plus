@@ -35,5 +35,5 @@ runtime:
 release:
   artifacts:
     - name: metering
-      digest: sha256:9881721605755f4f0ef95e340f2e8c43f05208d3d33876e3734f61d746ea6783
+      digest: sha256:ed8f821f2a1ee510751a68fcb41d9a09cbeff66c693fdd7ad9fffea1b1ec6907
   gate: blocked_until_seams_closed

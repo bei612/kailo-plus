@@ -362,6 +362,117 @@ pub async fn send_channel_message(
     })
 }
 
+/// The original kind-40003 edit, using the same scoped publisher and unknown
+/// receipt cache as ordinary messages. The target is read, never client-trusted.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn edit_message(
+    channel_id: String,
+    event_id: String,
+    content: String,
+    media_tags: Vec<Vec<String>>,
+    mention_pubkeys: Vec<String>,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    if expected_relay_url.trim().is_empty()
+        || nostr::PublicKey::from_hex(&expected_signer_pubkey).is_err()
+    {
+        return Err("edit requires the captured community and signer".into());
+    }
+    let channel = uuid::Uuid::parse_str(&channel_id).map_err(|e| e.to_string())?;
+    let target_id = nostr::EventId::from_hex(&event_id).map_err(|e| e.to_string())?;
+    if content.trim().is_empty() && media_tags.is_empty() {
+        return Err("empty edits require the separate deletion action".into());
+    }
+    let relay_base = crate::relay::relay_api_base_url_with_override(&state);
+    let keys = state.signing_keys()?;
+    assert_expected_relay_scope(Some(&expected_relay_url), &relay_base)?;
+    assert_expected_signer(Some(&expected_signer_pubkey), &keys.public_key().to_hex())?;
+    let targets = crate::relay::query_relay_at_with_keys(
+        &state, &relay_base,
+        &[serde_json::json!({"ids":[target_id.to_hex()],"kinds":[9,45001,45003],"#h":[channel.to_string()]})],
+        &keys, None,
+    ).await?;
+    let target = targets
+        .iter()
+        .find(|event| event.id == target_id)
+        .ok_or("edit target unavailable")?;
+    target.verify().map_err(|e| e.to_string())?;
+    if target.pubkey != keys.public_key()
+        || !matches!(target.kind.as_u16(), 9 | 45001 | 45003)
+        || channel_id_from_tags(target).as_deref() != Some(channel_id.as_str())
+        || target
+            .tags
+            .iter()
+            .filter(|tag| tag.as_slice().first().is_some_and(|key| key == "h"))
+            .count()
+            != 1
+    {
+        return Err("edit target author or channel mismatch".into());
+    }
+    let original_mentions: Vec<&str> = target
+        .tags
+        .iter()
+        .filter_map(|tag| {
+            let values = tag.as_slice();
+            (values.first().map(String::as_str) == Some("p"))
+                .then(|| values.get(1).map(String::as_str))
+                .flatten()
+        })
+        .collect();
+    let new_mentions: Vec<&str> = mention_pubkeys
+        .iter()
+        .map(String::as_str)
+        .filter(|pubkey| !original_mentions.contains(pubkey))
+        .collect();
+    let builder = events::build_message_edit(
+        channel,
+        target_id,
+        content.trim(),
+        events::MessageEditTags {
+            media: &media_tags,
+            custom_emoji: &[],
+            mentions: &new_mentions,
+            mention_refs: None,
+        },
+        false,
+    )?;
+    let fresh = builder.sign_with_keys(&keys).map_err(|e| e.to_string())?;
+    let intent_key = format!("edit:{relay_base}:{}:{target_id}", keys.public_key());
+    let (event, first) = unconfirmed::claim_edit(&intent_key, fresh)?;
+    if first {
+        match crate::relay::submit_signed_event_at_with_keys(&event, &state, &relay_base, &keys)
+            .await
+        {
+            Ok(_) => {
+                unconfirmed::resolve_edit(&intent_key, event.id)?;
+                return serde_json::to_value(event)
+                    .map_err(|_| "relay publish outcome unknown".into());
+            }
+            Err(error) if !unconfirmed::outcome_unknown(&error) => {
+                unconfirmed::resolve_edit(&intent_key, event.id)?;
+                return Err(error);
+            }
+            Err(_) => {}
+        }
+    }
+    // Lost ACK / remounted composer: query the original signed intent. An
+    // absent event is unknown, never permission to dispatch a new edit.
+    let observed = crate::relay::query_relay_at_with_keys(
+        &state, &relay_base,
+        &[serde_json::json!({"ids":[event.id.to_hex()],"kinds":[40003],"#h":[channel.to_string()]})],
+        &keys, None,
+    ).await.map_err(|_| "relay publish outcome unknown".to_string())?;
+    let actual = observed
+        .iter()
+        .find(|actual| actual.id == event.id && actual.verify().is_ok())
+        .ok_or("relay publish outcome unknown")?;
+    unconfirmed::resolve_edit(&intent_key, event.id)?;
+    serde_json::to_value(actual).map_err(|_| "relay publish outcome unknown".into())
+}
+
 // ── Local helpers ───────────────────────────────────────────────────────────
 
 fn channel_id_from_tags(ev: &nostr::Event) -> Option<String> {

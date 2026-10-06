@@ -9,6 +9,15 @@ import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 import type { DelegatedActionMetadataV1 } from "../src/generated/contracts.js";
 import type { DiscoverableWorkspacePage } from "../src/generated/contracts.js";
+import type { WorkspaceView } from "../src/generated/contracts.js";
+
+test("workspace membership keeps true, false and absent distinct", () => {
+  for (const isMember of [undefined, false, true]) {
+    const original: WorkspaceView = { id: "scope", name: "Scope", slug: "scope", ...(isMember === undefined ? {} : { isMember }) };
+    const back: WorkspaceView = { id: original.id, name: original.name, slug: original.slug, isMember: original.isMember };
+    deepStrictEqual(JSON.parse(JSON.stringify(back)), original);
+  }
+});
 
 test("public discovery keeps product visibility separate from signed channel metadata", () => {
   const load = (name: string) => JSON.parse(readFileSync(new URL(`../../../../contracts/samples/${name}`, import.meta.url), "utf8"));
@@ -310,7 +319,7 @@ test("canary round-trip 保留每个字段", () => {
   }
 });
 
-for (const sample of ["web-publish-mention.sample.json", "web-publish-content-only.sample.json", "web-forum-post.sample.json", "web-forum-comment.sample.json"]) {
+for (const sample of ["web-publish-mention.sample.json", "web-publish-content-only.sample.json", "web-forum-post.sample.json", "web-forum-comment.sample.json", "web-message-edit.sample.json"]) {
   test(`WebPublishMessageRequest round-trip ${sample}`, () => {
     const raw = readFileSync(new URL(`../../../../contracts/samples/${sample}`, import.meta.url), "utf8");
     const original: unknown = JSON.parse(raw);
