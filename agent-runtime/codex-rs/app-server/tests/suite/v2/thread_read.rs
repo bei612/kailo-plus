@@ -1324,7 +1324,7 @@ async fn thread_read_returns_forked_from_id_for_forked_threads() -> Result<()> {
 }
 
 #[tokio::test]
-async fn thread_read_loaded_thread_returns_precomputed_path_before_materialization() -> Result<()> {
+async fn thread_read_loaded_thread_returns_durable_birth_path() -> Result<()> {
     let server = create_mock_responses_server_repeating_assistant("Done").await;
     let codex_home = TempDir::new()?;
     MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
@@ -1344,8 +1344,8 @@ async fn thread_read_loaded_thread_returns_precomputed_path_before_materializati
         timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(start_id)).await??;
     let thread_path = thread.path.clone().expect("thread path");
     assert!(
-        !thread_path.exists(),
-        "fresh thread rollout should not be materialized yet"
+        thread_path.exists(),
+        "persistent birth must already have a durable rollout"
     );
 
     let read_id = mcp
@@ -1528,7 +1528,7 @@ async fn paginated_thread_name_set_is_reflected_in_read_list_and_metadata_resume
 }
 
 #[tokio::test]
-async fn thread_read_include_turns_rejects_unmaterialized_loaded_thread() -> Result<()> {
+async fn thread_read_include_turns_reads_empty_durable_legacy_thread() -> Result<()> {
     let server = create_mock_responses_server_repeating_assistant("Done").await;
     let codex_home = TempDir::new()?;
     MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
@@ -1549,8 +1549,8 @@ async fn thread_read_include_turns_rejects_unmaterialized_loaded_thread() -> Res
         timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(start_id)).await??;
     let thread_path = thread.path.clone().expect("thread path");
     assert!(
-        !thread_path.exists(),
-        "fresh thread rollout should not be materialized yet"
+        thread_path.exists(),
+        "persistent birth must already have a durable rollout"
     );
 
     let read_id = mcp
@@ -1559,26 +1559,16 @@ async fn thread_read_include_turns_rejects_unmaterialized_loaded_thread() -> Res
             include_turns: true,
         })
         .await?;
-    let read_err: JSONRPCError = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_error_message(RequestId::Integer(read_id)),
-    )
-    .await??;
-
-    assert!(
-        read_err
-            .error
-            .message
-            .contains("includeTurns is unavailable before first user message"),
-        "unexpected error: {}",
-        read_err.error.message
-    );
+    let ThreadReadResponse { thread: read } =
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(read_id)).await??;
+    assert_eq!(read.id, thread.id);
+    assert!(read.turns.is_empty());
 
     Ok(())
 }
 
 #[tokio::test]
-async fn thread_turns_list_rejects_unmaterialized_loaded_thread() -> Result<()> {
+async fn thread_turns_list_keeps_unprojected_paginated_history_unavailable() -> Result<()> {
     let server = create_mock_responses_server_repeating_assistant("Done").await;
     let codex_home = TempDir::new()?;
     MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
@@ -1591,6 +1581,7 @@ async fn thread_turns_list_rejects_unmaterialized_loaded_thread() -> Result<()> 
     let start_id = mcp
         .send_thread_start_request_with_auto_env(ThreadStartParams {
             model: Some("mock-model".to_string()),
+            history_mode: Some(ThreadHistoryMode::Paginated),
             ..Default::default()
         })
         .await?;
@@ -1598,8 +1589,8 @@ async fn thread_turns_list_rejects_unmaterialized_loaded_thread() -> Result<()> 
         timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(start_id)).await??;
     let thread_path = thread.path.clone().expect("thread path");
     assert!(
-        !thread_path.exists(),
-        "fresh thread rollout should not be materialized yet"
+        thread_path.exists(),
+        "persistent birth must already have a durable rollout"
     );
 
     let read_id = mcp
@@ -1616,15 +1607,8 @@ async fn thread_turns_list_rejects_unmaterialized_loaded_thread() -> Result<()> 
         mcp.read_stream_until_error_message(RequestId::Integer(read_id)),
     )
     .await??;
-
-    assert!(
-        read_err
-            .error
-            .message
-            .contains("thread/turns/list is unavailable before first user message"),
-        "unexpected error: {}",
-        read_err.error.message
-    );
+    assert_eq!(read_err.error.code, -32601);
+    assert_eq!(read_err.error.message, "list_turns is not supported yet");
 
     Ok(())
 }

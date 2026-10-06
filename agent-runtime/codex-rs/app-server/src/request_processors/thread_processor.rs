@@ -1549,6 +1549,17 @@ impl ThreadRequestProcessor {
                 otel.name = "app_server.thread_start.config_snapshot",
             ))
             .await;
+        // Kailo persists the returned ID as the AgentSession birth receipt.
+        // Non-ephemeral alone only stages a rollout until the first user turn;
+        // acknowledging that staged ID can strand the Session after a restart
+        // or an idle unload. Use the original durable ThreadStore barrier before
+        // the ACK, without creating a turn or a second history authority.
+        if !config_snapshot.ephemeral {
+            thread_store
+                .persist_thread(thread_id, PersistContext::Standard)
+                .await
+                .map_err(|err| internal_error(format!("failed to persist new thread: {err}")))?;
+        }
         let mut thread = build_thread_from_snapshot(
             thread_id,
             session_configured.session_id.to_string(),

@@ -1,6 +1,7 @@
 use anyhow::Context;
 use anyhow::Result;
 use app_test_support::ChatGptAuthFixture;
+use app_test_support::MockResponsesConfig;
 use app_test_support::PathBufExt;
 use app_test_support::TestAppServer;
 use app_test_support::create_mock_responses_server_repeating_assistant;
@@ -26,6 +27,8 @@ use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::TextPosition;
 use codex_app_server_protocol::TextRange;
 use codex_app_server_protocol::ThreadHistoryMode;
+use codex_app_server_protocol::ThreadResumeParams;
+use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::ThreadSource;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
@@ -69,6 +72,60 @@ use super::analytics::wait_for_analytics_payload;
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const INVALID_REQUEST_ERROR_CODE: i64 = -32600;
 const EXEC_POLICY_PARSE_WARNING_SUMMARY: &str = "Error parsing rules; custom rules not applied.";
+
+#[tokio::test]
+async fn persistent_thread_birth_survives_restart_without_a_model_turn() -> Result<()> {
+    let server = create_mock_responses_server_repeating_assistant("Done").await;
+    for history_mode in [ThreadHistoryMode::Legacy, ThreadHistoryMode::Paginated] {
+        let codex_home = TempDir::new()?;
+        MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
+        let mut first = TestAppServer::builder()
+            .with_codex_home(codex_home.path())
+            .build_initialized()
+            .await?;
+        let id = first
+            .send_thread_start_request_with_auto_env(ThreadStartParams {
+                model: Some("mock-model".to_string()),
+                ephemeral: Some(false),
+                history_mode: Some(history_mode),
+                ..Default::default()
+            })
+            .await?;
+        let ThreadStartResponse { thread, .. } =
+            timeout(DEFAULT_READ_TIMEOUT, first.read_response(id)).await??;
+        assert!(thread.turns.is_empty());
+        assert!(thread.path.as_ref().expect("durable path").exists());
+        let thread_id = thread.id;
+        drop(first);
+        let mut second = TestAppServer::builder()
+            .with_codex_home(codex_home.path())
+            .build_initialized()
+            .await?;
+        let id = second
+            .send_thread_resume_request(ThreadResumeParams {
+                thread_id: thread_id.clone(),
+                exclude_turns: true,
+                ..Default::default()
+            })
+            .await?;
+        let ThreadResumeResponse { thread, .. } =
+            timeout(DEFAULT_READ_TIMEOUT, second.read_response(id)).await??;
+        assert_eq!(thread.id, thread_id);
+        assert!(!thread.ephemeral);
+        assert_eq!(thread.status, ThreadStatus::Idle);
+    }
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .all(|request| {
+                request.method.as_str() != "POST" || !request.url.path().ends_with("/responses")
+            })
+    );
+    Ok(())
+}
 
 fn is_exec_policy_config_warning(notification: &JSONRPCNotification) -> bool {
     notification.method == "configWarning"
@@ -388,8 +445,8 @@ async fn thread_start_creates_thread_and_emits_started() -> Result<()> {
     let thread_path = thread.path.clone().expect("thread path should be present");
     assert!(thread_path.is_absolute(), "thread path should be absolute");
     assert!(
-        !thread_path.exists(),
-        "fresh thread rollout should not be materialized until first user message"
+        thread_path.exists(),
+        "persistent thread/start must acknowledge a durable rollout before the first user message"
     );
 
     // Wire contract: thread title field is `name`, serialized as null when unset.
