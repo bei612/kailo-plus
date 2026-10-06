@@ -53,6 +53,12 @@ ServicePrincipal 只承担机器调用和审计归因，不能成为 Resource/As
 
 ## 3. 消息写入与读取
 
+### 原生私聊与多设备映射
+
+REQ-24、DD-77/80 的私聊使用 `03` 的 ConversationBuzzBinding。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `.references/buzz/crates/buzz-relay/src/handlers/command_executor.rs::handle_dm_open` 会把认证公钥加入参与者；`.references/buzz/crates/buzz-db/src/store/dm.rs::{open_dm,create_dm,compute_participant_hash}` 以公钥集合去重并建立 private DM。因此 CONTROL 不能直接冒充发起人调用原路径，否则成为私聊成员；也不能把设备公钥数当作人数。
+
+该接缝在既有 DM_OPEN 命令中承载 CONTROL-only 投影：固定 Core conversation/channel 引用、不可变 Principal 集合、当前 Principal→公钥 roster 与单调 generation，原生 dm Channel 和消息存储保持不变。CONTROL 身份与每个参与者身份分别验证；命令 actor 是已准入 HUMAN，而签发者仅为 CONTROL。所有普通用户原生创建/扩张 DM 仍拒绝，经 BFF 完成管理准入后，Web 由本人的 SERVER identity 读取/发布，Desktop/Mobile 由各自 CLIENT identity 直连同一 private DM。平台不得向客户端下发 CONTROL key，也不得把私聊包装成全 Tenant 可读事件。
+
 ### 密钥托管按端确定
 
 托管模型是 Client Surface 每端的属性，不是全局前提。它只决定谁持钥、谁签名，不决定治理结论。
