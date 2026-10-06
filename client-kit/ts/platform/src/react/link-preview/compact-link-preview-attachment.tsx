@@ -1,0 +1,188 @@
+// Shared original Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/shared/ui/compact-link-preview-attachment.tsx.
+import { ImageOff } from "lucide-react";
+import { useRef, useState } from "react";
+
+import type { ResolvedLinkPreview } from "./types";
+import { cn } from "../profile/buzz/shared/lib/cn";
+import {
+  Attachment,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentMedia,
+  AttachmentTitle,
+  AttachmentTrigger,
+} from "../composer/shared/ui/attachment";
+import { useUiT } from "../context";
+import { LinkPreviewControls } from "./link-preview-controls";
+import { useSmoothCorners } from "../profile/buzz/shared/ui/smoothCorners";
+
+function getHostname(preview: ResolvedLinkPreview): string {
+  try {
+    return new URL(preview.href).hostname.replace(/^www\./, "");
+  } catch {
+    return preview.provider;
+  }
+}
+
+function LinkPreviewImageFallback({
+  preview,
+}: {
+  preview: ResolvedLinkPreview;
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground"
+      data-link-preview-image-fallback=""
+    >
+      {preview.faviconDataUrl ? (
+        <img
+          alt=""
+          className="size-7 rounded-md object-contain opacity-70"
+          src={preview.faviconDataUrl}
+        />
+      ) : (
+        <ImageOff className="size-5 opacity-60" />
+      )}
+    </div>
+  );
+}
+
+export function CompactLinkPreviewAttachment({
+  className,
+  onOpen,
+  onRemove,
+  preview,
+  showControls = false,
+}: {
+  className?: string;
+  onOpen?: () => void;
+  onRemove?: () => void;
+  preview: ResolvedLinkPreview;
+  showControls?: boolean;
+}) {
+  const t = useUiT();
+  const reserveImage = preview.imageState !== "none";
+  const imageSrc =
+    preview.imageState === "image" ? (preview.imageDataUrl ?? null) : null;
+  const [failedImageSrc, setFailedImageSrc] = useState<string | null>(null);
+  // The shell clips its corners with a smooth-corner (squircle) path, and the
+  // thumbnail sits flush against its left edge — so the thumbnail's left
+  // corners are carved by that path while its right corners are its own.
+  // A plain border-radius can never match a squircle of the same radius, so
+  // give the thumbnail the same treatment: both sides then share one curve.
+  const thumbnailRef = useRef<HTMLDivElement | null>(null);
+  useSmoothCorners(thumbnailRef);
+  const showImage = Boolean(imageSrc && failedImageSrc !== imageSrc);
+  const showFallback =
+    preview.imageState === "fallback" || Boolean(imageSrc && !showImage);
+  const hostname = getHostname(preview);
+
+  return (
+    <div className={cn("relative w-96 max-w-full shrink-0", className)}>
+      <Attachment
+        className={cn(
+          "w-full bg-transparent no-underline shadow-none hover:bg-transparent",
+          reserveImage
+            ? "gap-0 border-0 px-0 py-0 hover:border-transparent"
+            : "rounded-none border-0 border-l-[3px] border-border px-0 py-1 pl-3 hover:border-border",
+        )}
+        data-image-state={preview.imageState}
+        data-link-preview={preview.kind}
+        orientation="horizontal"
+      >
+        {reserveImage ? (
+          <AttachmentMedia
+            ref={thumbnailRef}
+            aria-hidden={showImage ? undefined : "true"}
+            className="aspect-auto h-16 w-26 rounded-2xl bg-muted"
+            data-link-preview-thumbnail=""
+            variant="image"
+          >
+            {showImage ? (
+              <img
+                alt={t("linkPreview.imageAlt", { domain: preview.imageDomain ?? preview.provider })}
+                className="h-full w-full object-cover"
+                onError={() => setFailedImageSrc(imageSrc)}
+                src={imageSrc ?? undefined}
+              />
+            ) : showFallback ? (
+              <LinkPreviewImageFallback preview={preview} />
+            ) : (
+              <div
+                className="h-full w-full animate-pulse bg-muted-foreground/10"
+                data-link-preview-skeleton=""
+              />
+            )}
+          </AttachmentMedia>
+        ) : null}
+        <AttachmentContent className={reserveImage ? "px-2 py-1.5" : undefined}>
+          <a
+            className="relative z-20 flex w-fit max-w-full min-w-0 items-center gap-1.5 text-xs font-normal leading-4 text-muted-foreground/70 group-hover/attachment:underline"
+            data-link-preview-hostname=""
+            href={preview.href}
+            onClick={
+              onOpen
+                ? (event) => {
+                    event.preventDefault();
+                    onOpen();
+                  }
+                : undefined
+            }
+            rel="noreferrer"
+            target="_blank"
+          >
+            {preview.faviconDataUrl ? (
+              <img
+                alt=""
+                aria-hidden="true"
+                className="size-3 shrink-0 rounded-sm object-contain"
+                data-link-preview-hostname-favicon=""
+                src={preview.faviconDataUrl}
+              />
+            ) : null}
+            <span className="truncate">{hostname}</span>
+          </a>
+          <AttachmentTitle className="group-hover/attachment:underline">
+            {preview.title}
+          </AttachmentTitle>
+          {preview.description ? (
+            <AttachmentDescription className="text-muted-foreground/70">
+              {preview.description}
+            </AttachmentDescription>
+          ) : null}
+        </AttachmentContent>
+        {onOpen ? (
+          <AttachmentTrigger
+            aria-label={t("linkPreview.open", { provider: preview.provider, type: preview.typeLabel, title: preview.title })}
+            className={reserveImage ? undefined : "rounded-none"}
+            onClick={onOpen}
+          >
+            <span className="sr-only">
+              {t("linkPreview.open", { provider: preview.provider, type: preview.typeLabel, title: preview.title })}
+            </span>
+          </AttachmentTrigger>
+        ) : (
+          <AttachmentTrigger
+            asChild
+            className={reserveImage ? undefined : "rounded-none"}
+          >
+            <a
+              aria-label={t("linkPreview.open", { provider: preview.provider, type: preview.typeLabel, title: preview.title })}
+              href={preview.href}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <span className="sr-only">
+                {t("linkPreview.open", { provider: preview.provider, type: preview.typeLabel, title: preview.title })}
+              </span>
+            </a>
+          </AttachmentTrigger>
+        )}
+      </Attachment>
+      {showControls ? (
+        <LinkPreviewControls onRemove={onRemove} placement="left" />
+      ) : null}
+    </div>
+  );
+}

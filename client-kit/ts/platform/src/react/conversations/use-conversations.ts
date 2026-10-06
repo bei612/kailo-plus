@@ -105,6 +105,35 @@ export function useConversationOpen(currentPrincipalId: string, recipients: Conv
   const [busy, setBusy] = useState(false);
   const [locked, setLocked] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const readPendingConversation = async (): Promise<ConversationView | undefined> => {
+    const expected = intent.current?.command.conversationOpen?.participantPrincipalIds;
+    if (!expected) return undefined;
+    let cursor: string | undefined;
+    const seen = new Set<string>();
+    do {
+      const page = await client.conversations(cursor);
+      const conversation = page.items.find((item) => item.participantPrincipalIds.length === expected.length &&
+        item.participantPrincipalIds.every((id) => expected.includes(id)));
+      if (conversation) return conversation;
+      cursor = page.nextCursor;
+      if (cursor && seen.has(cursor)) throw new TransportError("Conversation cursor did not advance.");
+      if (cursor) seen.add(cursor);
+    } while (cursor);
+    return undefined;
+  };
+  // Inspect the existing intent only. In particular, a lost action response must
+  // not turn the status button into another conversation.open submission.
+  const checkStatus = async (): Promise<void> => {
+    if (inFlight.current || !intent.current) return;
+    inFlight.current = true; setBusy(true);
+    try {
+      const conversation = await readPendingConversation();
+      if (conversation?.state === "ACTIVE") setNotice(null);
+      else setNotice(translateUi(conversation?.state === "DISABLED" ? "dm.disabled" : "dm.preparationPending"));
+    } catch (error) {
+      setNotice(isOutcomeUnknown(error) ? translateUi("dm.retryUnknown") : error instanceof Error ? error.message : translateUi("dm.unavailable"));
+    } finally { inFlight.current = false; setBusy(false); }
+  };
   const prepareConversation = async (): Promise<ConversationView> => {
     if (inFlight.current) throw new ConversationPreparationPending(translateUi("dm.preparing"));
     if (!currentPrincipalId || recipients.length === 0) throw new Error(translateUi("dm.chooseFirst"));
@@ -123,13 +152,7 @@ export function useConversationOpen(currentPrincipalId: string, recipients: Conv
           throw new Error(receipt.reason ?? translateUi("dm.denied"));
         }
       }
-      const expected = intent.current.command.conversationOpen!.participantPrincipalIds;
-      let cursor: string | undefined;
-      const seen = new Set<string>();
-      do {
-        const page = await client.conversations(cursor);
-        const conversation = page.items.find((item) => item.participantPrincipalIds.length === expected.length &&
-          item.participantPrincipalIds.every((id) => expected.includes(id)));
+      const conversation = await readPendingConversation();
         if (conversation?.state === "ACTIVE") {
           if (!visibility) throw new Error(translateUi("dm.visibilityUnavailable"));
           if (!reopen.current && (await visibility.read(conversation)).has(conversation.channelId))
@@ -142,10 +165,6 @@ export function useConversationOpen(currentPrincipalId: string, recipients: Conv
           return conversation;
         }
         if (conversation?.state === "DISABLED") throw new Error(translateUi("dm.disabled"));
-        cursor = page.nextCursor;
-        if (cursor && seen.has(cursor)) throw new TransportError("Conversation cursor did not advance.");
-        if (cursor) seen.add(cursor);
-      } while (cursor);
       const message = translateUi("dm.preparationPending");
       setNotice(message); throw new ConversationPreparationPending(message);
     } catch (error) {
@@ -154,5 +173,5 @@ export function useConversationOpen(currentPrincipalId: string, recipients: Conv
       throw error;
     } finally { inFlight.current = false; setBusy(false); }
   };
-  return { prepareConversation, busy, locked, notice };
+  return { prepareConversation, checkStatus, busy, locked, notice };
 }

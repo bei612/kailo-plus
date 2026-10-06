@@ -14,9 +14,10 @@ export const settingsSectionKeys = {
 } as const;
 const icons = { profile: UserRound, appearance: MonitorCog, notifications: BellRing, shortcuts: Keyboard };
 
-export function SettingsNavigation({ locale, section, onSelect, icons: suppliedIcons }: {
+export function SettingsNavigation({ locale, section, onSelect, icons: suppliedIcons, sidebarState = "expanded", isMobile = false }: {
   locale: PlatformLocale; section: SettingsSection; onSelect: (section: SettingsSection) => void;
   icons?: Partial<Record<SettingsSection, ReactNode>>;
+  sidebarState?: "expanded" | "collapsed"; isMobile?: boolean;
 }) {
   const group = translate(locale, "platform.settings.personal");
   return <SidebarGroup>
@@ -26,7 +27,8 @@ export function SettingsNavigation({ locale, section, onSelect, icons: suppliedI
         const Icon = icons[value];
         const label = translate(locale, settingsSectionKeys[value]);
         return <SidebarMenuItem key={value}><SidebarMenuButton aria-pressed={section === value}
-          data-testid={`settings-nav-${value}`} isActive={section === value} onClick={() => onSelect(value)} type="button">
+          data-testid={`settings-nav-${value}`} isActive={section === value} onClick={() => onSelect(value)} type="button"
+          tooltip={label} sidebarState={sidebarState} isMobile={isMobile}>
           {suppliedIcons?.[value] ?? <Icon className={`h-4 w-4 shrink-0 transition-colors ${section === value ? "text-sidebar-active-foreground" : "text-sidebar-foreground/70"}`} />}
           <span className="grid min-w-0 overflow-hidden" data-sidebar="menu-label">
             <span aria-hidden="true" className="invisible col-start-1 row-start-1 truncate font-semibold">{label}</span>

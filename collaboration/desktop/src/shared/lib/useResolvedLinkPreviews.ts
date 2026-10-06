@@ -2,6 +2,8 @@ import * as React from "react";
 
 import { invokeTauri } from "@/shared/api/tauri";
 import type { SupportedLinkPreview } from "./linkPreview";
+import type { ResolvedLinkPreview, LinkPreviewImageState } from "@client-kit/platform/linkPreviewTypes";
+export type { ResolvedLinkPreview, LinkPreviewImageState } from "@client-kit/platform/linkPreviewTypes";
 
 type LinkPreviewImageFetchState =
   | "none"
@@ -406,16 +408,6 @@ export function loadLinkPreviewMetadata(href: string): {
 export function resetLinkPreviewMetadataCache(): void {
   metadataLoader.reset();
 }
-
-export type LinkPreviewImageState = "pending" | "image" | "fallback" | "none";
-
-export type ResolvedLinkPreview = SupportedLinkPreview & {
-  description?: string | null;
-  faviconDataUrl?: string | null;
-  imageState: LinkPreviewImageState;
-  /** Metadata extraction completed successfully; safe to snapshot after media uploads. */
-  snapshotReady?: boolean;
-};
 
 type ResolvedMetadataByHref = Record<
   string,

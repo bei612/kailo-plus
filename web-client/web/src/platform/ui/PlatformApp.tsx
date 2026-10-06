@@ -61,6 +61,9 @@ import { platformQueries } from "@/platform/ui/queries";
 import { getLocale, t } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { useTheme } from "@/shared/theme/ThemeProvider";
+import { ChatHeader } from "@client-kit/platform/react/messages/chat-header";
+import { FileText, Hash } from "lucide-react";
+import { toast } from "sonner";
 
 type Tab = "channel" | "inbox" | "settings" | "new-message" | "conversation" | PlatformNavigationSection;
 
@@ -308,9 +311,15 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             </p> : null}
             </AppSidebarFrame>
         <ContentSurface>
-          <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
+          {tab === "channel" && active && !workspaces.isError && !channel.isError && channel.data ?
+            <ChatHeader title={channel.data.name} description={channel.data.description ?? undefined}
+              leadingContent={channel.data.channelType === "forum" ? <FileText className="h-4 w-4 text-muted-foreground" /> : <Hash className="h-4 w-4 translate-y-px text-muted-foreground" />}
+              onCopyTitle={async (title) => {
+                try { await navigator.clipboard.writeText(title); toast.success(translate(getLocale(), "platform.profile.copied")); }
+                catch { toast.error(translate(getLocale(), "platform.profile.copyFailed")); }
+              }} /> : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
             {tabLabel(tab)}
-          </header>
+          </header>}
           <main className="min-h-0 flex-1 overflow-auto p-4">{body}</main>
         </ContentSurface>
           </div>

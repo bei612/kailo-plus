@@ -32,8 +32,41 @@ import { getLocale, setLocale, platformLocaleStorageKey, type PlatformThemeMode 
 import { createBffClient } from "../src/client";
 import { PlatformProvider, useT, useUiT } from "../src/react/context";
 import { button, click, render, type } from "./render";
+import { parseLinkPreviewSnapshots, parseLinkPreviewTextSnapshots, LinkPreviewAttachmentPresentation, LinkPreviewStyleSetting, setLinkPreviewStyle, useLinkPreviewStyle } from "../src/react/link-preview";
 
 describe("shared Buzz settings presentation", () => {
+  it("applies the original link-preview setting to a real mounted message card", async () => {
+    const href = "https://example.com/product";
+    const snapshot = ["link-preview", "snapshot", "1", href, "Product", "Example", "Full description", "", "", "", ""];
+    const preview = parseLinkPreviewTextSnapshots([snapshot], href)[0]!;
+    setLinkPreviewStyle("compact");
+    function Message() {
+      const style = useLinkPreviewStyle();
+      return <div data-testid="message-preview"><LinkPreviewAttachmentPresentation style={style} preview={preview} /></div>;
+    }
+    const host = await render(<><LinkPreviewStyleSetting isDark={false} /><Message /></>);
+    expect(host.querySelector('[data-testid="message-preview"] [data-link-preview-inline]')).toBeNull();
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="link-preview-style-rich"]')!);
+    expect(host.querySelector('[data-testid="message-preview"] [data-link-preview-inline]')).not.toBeNull();
+    expect(localStorage.getItem("buzz.appearance.linkPreviewStyle")).toBe("rich");
+    const expand = host.querySelector<HTMLButtonElement>('[data-testid="message-preview"] button[aria-expanded]')!;
+    await click(expand);
+    expect(expand.getAttribute("aria-expanded")).toBe("false");
+    expect(host.querySelector('[data-testid="message-preview"]')?.textContent).not.toContain("Full description");
+  });
+  it("does not infer a media origin for Web snapshot text or relax Native validation", () => {
+    const href = "https://example.com/product";
+    const hash = "a".repeat(64);
+    const snapshot = ["link-preview", "snapshot", "1", href, "Product", "Example", "Description", `https://untrusted.example/media/${hash}.png`, hash, "https://untrusted.example/favicon.png", hash];
+    const text = parseLinkPreviewTextSnapshots([snapshot], href);
+    expect(text).toHaveLength(1);
+    expect(text[0]).toMatchObject({ title: "Product", imageDataUrl: null, faviconDataUrl: null, imageState: "none" });
+    expect(parseLinkPreviewSnapshots([snapshot], href, "https://relay.example")).toEqual([]);
+    expect(parseLinkPreviewSnapshots([snapshot], href, null)).toEqual([]);
+    expect(parseLinkPreviewTextSnapshots([snapshot], "unrelated content")).toEqual([]);
+    expect(parseLinkPreviewTextSnapshots([snapshot], `||${href}||`)).toEqual([]);
+    expect(parseLinkPreviewTextSnapshots([[...snapshot.slice(0, 2), "unknown", ...snapshot.slice(3)]], href)).toEqual([]);
+  });
   it("updates a memoized Buzz primitive and honors an explicit host locale", async () => {
     localStorage.clear();
     const client = createBffClient({ send: async () => { throw new Error("No server locale store"); } });
@@ -325,9 +358,13 @@ describe("shared Buzz settings presentation", () => {
     const host = await render(<ShortcutSettings locale="zh-CN" shortcuts={[
       { id: "open-settings", keys: "Ctrl+,", category: "Navigation", ...shortcutText("zh-CN", "open-settings")! },
       { id: "format-strikethrough", keys: "Ctrl+Shift+X", category: "Formatting", ...shortcutText("zh-CN", "format-strikethrough")! },
+      { id: "format-bold", keys: "⌘B", category: "Formatting", ...shortcutText("zh-CN", "format-bold")! },
+      { id: "zoom-in", keys: "⌘+", category: "Formatting", ...shortcutText("zh-CN", "zoom-in")! },
     ]} />);
     expect([...host.querySelectorAll("h2")].map((el) => el.textContent)).toEqual(["导航", "格式"]);
     expect([...host.querySelectorAll('[data-shortcut="format-strikethrough"] kbd')].map((el) => el.textContent)).toEqual(["Ctrl", "Shift", "X"]);
+    expect([...host.querySelectorAll('[data-shortcut="format-bold"] kbd')].map((el) => el.textContent)).toEqual(["⌘", "B"]);
+    expect([...host.querySelectorAll('[data-shortcut="zoom-in"] kbd')].map((el) => el.textContent)).toEqual(["⌘", "+"]);
     expect(host.querySelectorAll('[data-slot="settings-section-card"]')).toHaveLength(2);
   });
 });

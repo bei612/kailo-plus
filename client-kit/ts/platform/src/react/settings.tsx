@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { useDeviceLocale } from "./context";
 import { SettingsNavigation, SettingsContentSurface, SettingsSectionHeader, type SettingsSection } from "./settings-surface";
 import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from "./settings-option-group";
+import { TooltipProvider } from "./sidebar/tooltip";
 export { SettingsNavigation, SettingsContentSurface, SettingsSectionHeader, settingsSectionKeys, type SettingsSection } from "./settings-surface";
 import {
   platformThemeModeKeys,
@@ -174,7 +175,8 @@ export function ShortcutSettings({
             <div className="min-w-0 flex-1"><span className="text-sm font-medium text-foreground">{shortcut.label}</span>
               <span className="ml-2 text-muted-foreground/70" data-settings-subcopy>{shortcut.description}</span></div>
             <span className="flex items-center gap-1" aria-label={shortcut.keys}>
-              {shortcut.keys.split(/(?<!\+)\+(?!\s*$)/).map((part) => part.trim()).filter(Boolean).map((part) =>
+              {shortcut.keys.replace(/^([⌘⌃⌥⇧]+)(.+)$/, (_all, modifiers: string, key: string) => [...modifiers, key].join("+"))
+                .split(/(?<!\+)\+(?!\s*$)/).map((part) => part.trim()).filter(Boolean).map((part) =>
                 <kbd key={part} className="inline-flex h-6 min-w-6 items-center justify-center rounded border border-border/70 bg-muted/60 px-1.5 font-mono text-xs text-muted-foreground">{part}</kbd>)}
             </span>
           </SettingsOptionRow>)}
@@ -197,8 +199,8 @@ export function SettingsPage({
 }) {
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col bg-sidebar sm:flex-row" data-testid="settings-page">
-      <nav aria-label={translate(locale, "platform.settings.title")} className="shrink-0 text-sidebar-foreground sm:w-[var(--sidebar-width)]">
-        <SettingsNavigation locale={locale} section={section} onSelect={onSelect} />
+      <nav aria-label={translate(locale, "platform.settings.title")} className="shrink-0 text-sidebar-foreground sm:w-(--sidebar-width)">
+        <TooltipProvider><SettingsNavigation locale={locale} section={section} onSelect={onSelect} /></TooltipProvider>
       </nav>
       <SettingsContentSurface section={section}>{children}</SettingsContentSurface>
     </div>

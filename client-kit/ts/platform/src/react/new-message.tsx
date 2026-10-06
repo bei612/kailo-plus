@@ -443,7 +443,7 @@ export function NewMessageScreen({currentPrincipalId, renderComposer}: {
           {translateUi("dm.directoryUnavailable")}
         </p>
       ) : null}
-      {opening.notice ? <p className="px-5 pb-2 text-sm text-muted-foreground" role="status">{opening.notice}<button type="button" disabled={isPending || opening.locked} onClick={() => void opening.prepareConversation().then(() => setSubmitErrorMessage(null)).catch(() => undefined)}>{translateUi("dm.checkStatus")}</button></p> : null}
+      {opening.notice ? <p className="px-5 pb-2 text-sm text-muted-foreground" role="status">{opening.notice}<button type="button" disabled={isPending} onClick={() => void opening.checkStatus().then(() => setSubmitErrorMessage(null))}>{translateUi("dm.checkStatus")}</button></p> : null}
       {submitErrorMessage && !opening.notice ? (
         <p className="px-5 pb-2 text-sm text-destructive">
           {submitErrorMessage}

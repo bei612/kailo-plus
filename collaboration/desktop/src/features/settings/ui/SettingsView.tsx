@@ -116,7 +116,7 @@ export function SettingsView({
         </SidebarHeader>
 
         <SidebarContent>
-          <SettingsNavigation locale={locale} section={section} onSelect={onSectionChange} />
+          <SettingsNavigation locale={locale} section={section} onSelect={onSectionChange} sidebarState={sidebarOpen ? "expanded" : "collapsed"} isMobile={isMobile} />
         </SidebarContent>
 
         <SidebarFooter>

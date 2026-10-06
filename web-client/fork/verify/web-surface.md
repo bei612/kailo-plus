@@ -2065,3 +2065,60 @@ TypeScript 检查退出 0，设置 16 项通过；Desktop TypeScript 检查退�
 `settings-category-mutation.log`、`settings-switch-mutation.log`。
 本批未运行 full/build、未部署或重新发布。浏览器系统通知/声音、Web 链接预览与
 线程布局真实消费者、原设置其余栏目仍是恢复缺口，不能宣称全部设置已恢复。
+
+### 原链接预览共用与设置实际消费（独立后续批）
+
+关联 REQ-24、SS-WEB-PRESENTATION、DD-75。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/shared/lib/linkPreview.ts::extractSupportedLinkPreviews`、
+`desktop/src/shared/lib/linkPreviewSnapshot.ts::parseLinkPreviewSnapshots`、
+`desktop/src/shared/lib/linkPreviewStylePreference.ts::useLinkPreviewStyle`、
+`desktop/src/shared/ui/link-preview-attachment.tsx::LinkPreviewAttachmentPresentation`、
+`desktop/src/shared/ui/compact-link-preview-attachment.tsx::CompactLinkPreviewAttachment`、
+`desktop/src/shared/ui/rich-link-preview-attachment.tsx::RichLinkPreviewAttachment`、
+`desktop/src/shared/ui/link-preview-controls.tsx::LinkPreviewControls` 与
+`desktop/src/features/settings/ui/AppearanceSettingsControls.tsx::LinkPreviewStyleSetting`
+已核对后迁入 `client-kit/ts/platform/src/react/link-preview/`，原 Native 入口改为
+薄宿主或重导出，删除无调用方的 Native 控制器副本；Web 的 `MessageContent`
+和 `SettingsPane` 实际消费同一原版 compact/rich 卡片与原设置控件。
+
+改前四步结论：
+
+- 权威：沿原签名消息的 `link-preview` snapshot 读取文本，不新增 Core 内容权威，
+  不把恢复控件等同于完整链接预览服务已恢复。
+- 影响：消息 Markdown/快照解析、compact/rich 偏好、原卡片与设置、Native 原媒体宿主，
+  Web/Desktop 共用一个 TS 主体；Mobile 仅更新同源词条生成物，不新增组件宿主。
+  原设备存储键 `buzz.appearance.linkPreviewStyle`、默认值与 snapshot 版本均不变，
+  无数据库/API/工作流字段变更或数据迁移。
+- 副作用：Web 只解析已经过现有消息读取准入的 snapshot 文本，保留 URL 必须出现在
+  正文、未知版本拒绝、重复去重与原文本边界；不猜 Relay origin，不外抓图片或 favicon。
+  Web 专用文本解析入口绝不返回远端媒体 URL；Native 仍走原可信 origin 与媒体代理。
+- 边界：空/未知/无关 snapshot 不生成卡片；原 `link-preview none` 禁止快照显示；
+  rich/compact 设置立即影响实际卡片且沿原本机偏好持久化。两宿主共用原设置导航 tooltip，
+  Mac 组合快捷键按键帽拆分并保留加号键。此批没有新增异步业务状态、写操作或错误分类。
+
+实现后在既有 SDK（4 CPU / 8 GiB）运行，不另建工具或 full/build：共享 source/test tsc、
+Native tsc、Web tsc 均退出 0；共享设置 18 项与原消息头 2 项通过；原生
+`linkPreview.test.mjs`、`linkPreviewSnapshot.test.mjs`、`linkPreviewStylePreference.test.mjs`
+合计 30 项通过；Web SettingsPane/ProfileSettings/MessageContent 合计 17 项通过。
+同批私聊状态回归追加后共享 33 项通过。Dart 用既有生成脚本生成并 `--check` 通过；
+此项是词条同步证据，不是 Mobile 整机或 Flutter 验收。
+
+SDK-only 主动破坏：让文本快照泄漏 image URL、把实际样式更新固定为 compact、
+把消息头实际 title 改固定文本，产生 3 个真实失败；按正式字节恢复并 `cmp` 退出 0。
+既有主题检查同步实际双宿主 primary/sidebar 变量映射，并只校验原 HomeView 的确切
+布局宽度/dark 背景与 InboxRowActionButton 的原提醒 tint，未放宽任意字面颜色。
+随后将实际设置背景改为 `bg-forbidden`，语义色检查真实失败；恢复后两项主题检查通过。
+
+日志仍在 Data 下 `codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`：
+`link-preview-narrow.log` 保留首次严格类型失败，`link-preview-restored.log` 保留 Native nullable
+host 失败；对应实现修正后 `link-preview-host-final.log` 记录 Native/Web 通过；
+`link-preview-header-mutation.log` 是 3 项破坏记录；`link-preview-header-restored.log`、
+`link-preview-theme-restored.log`、`link-preview-dm-final.log` 保留旧主题扫描对原 Inbox
+颜色/布局误判的失败；`link-preview-theme-final.log` 记录两项恢复通过，
+`dm-theme-mutation.log` 同批记录私聊按钮 2 项与颜色 1 项失败，
+最终恢复日志为 `dm-theme-restored.log`。
+
+明确剩余：Web 还不生成新的远端链接 metadata snapshot，签名 snapshot 图片/favicon
+尚未接通可信 BFF 媒体路径；原 Stream 线程布局没有 Web 完整消费者。它们仍属原版
+恢复范围，不能通过隐藏需求或永久关闭入口宣称完成。此批未重新构建、打包或部署。

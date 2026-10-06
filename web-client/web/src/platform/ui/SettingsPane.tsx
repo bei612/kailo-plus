@@ -28,6 +28,7 @@ import { TransportError } from "@client-kit/platform/transport";
 import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from "@client-kit/platform/react/settings-option-group";
 import { Switch } from "@client-kit/platform/react/switch";
 import { useUiLocale } from "@client-kit/platform/react/context";
+import { LinkPreviewStyleSetting } from "@client-kit/platform/react/link-preview";
 
 function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] {
   const mod = isMacPlatform() ? "⌘" : "Ctrl+";
@@ -62,6 +63,7 @@ export function SettingsPane() {
           </ThemeSettingsControls>
           <SettingsOptionGroup data-testid="appearance-preferences-card" title={translate(locale, "platform.settings.preferences")}>
             <ConversationDisplaySettings locale={locale} />
+            <LinkPreviewStyleSetting isDark={appearance.isDark} />
           </SettingsOptionGroup>
           </SettingsOptionGroupList>
         </section>

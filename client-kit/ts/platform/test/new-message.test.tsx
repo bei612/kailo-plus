@@ -215,4 +215,31 @@ describe("shared original new-message surface", () => {
     expect(writes[1]!.body).toEqual(writes[0]!.body);
     expect(onReady).toHaveBeenCalledOnce();
   });
+  it("keeps status inspection enabled while recipients are locked and never sends the retained draft", async () => {
+    const {mount, transport, onReady, activate, visibility} = setup({active: false, hidden: true});
+    const host = await mount();
+    await keyboard(host.querySelector("#new-dm-search")!, "Enter");
+    await click(button(host, "Send retained draft"));
+    expect(button(host, "Check status").disabled).toBe(false);
+    await click(button(host, "Check status"));
+    expect(host.textContent).toContain("being prepared");
+    expect(host.querySelector<HTMLInputElement>("#new-dm-search")!.disabled).toBe(true);
+    activate();
+    await click(button(host, "Check status"));
+    expect(host.textContent).not.toContain("being prepared");
+    expect(transport.send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
+    expect(visibility.prepare).not.toHaveBeenCalled();
+    expect(onReady).not.toHaveBeenCalled();
+  });
+  it("queries UNKNOWN open intent without replaying conversation.open from the status button", async () => {
+    const {mount, transport, onReady} = setup({unknown: true, active: false});
+    const host = await mount();
+    await keyboard(host.querySelector("#new-dm-search")!, "Enter");
+    await click(button(host, "Send retained draft"));
+    expect(button(host, "Check status").disabled).toBe(false);
+    await click(button(host, "Check status"));
+    expect(transport.send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
+    expect(host.textContent).toContain("being prepared");
+    expect(onReady).not.toHaveBeenCalled();
+  });
 });

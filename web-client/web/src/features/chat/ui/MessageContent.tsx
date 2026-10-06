@@ -28,6 +28,8 @@ import remarkMentions from "@/features/chat/lib/remark-mentions";
 import { mediaUrl } from "@/platform/bff-client";
 import { t } from "@/shared/i18n";
 import { useTheme } from "@/shared/theme/ThemeProvider";
+import { LinkPreviewAttachmentPresentation, parseLinkPreviewTextSnapshots, useLinkPreviewStyle } from "@client-kit/platform/react/link-preview";
+import { AttachmentGroup } from "@client-kit/platform/react/composer/shared/ui/attachment";
 
 const IMAGE_MAX_WIDTH = 384;
 const IMAGE_MAX_HEIGHT = 256;
@@ -267,6 +269,9 @@ export function MessageContent({
   );
   const mentionNames = [...mentionsByName.values()].map((mention) => mention.name);
   const mediaByUrl = imetaMedia(mediaTags);
+  const previewStyle = useLinkPreviewStyle();
+  const previews = mediaTags?.some((tag) => tag.length === 2 && tag[0] === "link-preview" && tag[1] === "none")
+    ? [] : parseLinkPreviewTextSnapshots(mediaTags, content);
 
   return (
     <MarkdownRenderContext.Provider value={{ mediaByUrl, mentionsByName, workspaceId, conversationId, onOpenMessageLink }}>
@@ -280,6 +285,10 @@ export function MessageContent({
           {displayContent(content)}
         </ReactMarkdown>
       </MessageBody>
+      {previews.length ? <AttachmentGroup data-link-preview-list=""
+        className={previewStyle === "compact" ? "max-w-full flex-row flex-wrap items-start overflow-visible pb-0" : "max-w-full flex-col items-start overflow-visible pb-0"}>
+        {previews.map((preview, index) => <LinkPreviewAttachmentPresentation key={preview.href} preview={preview} style={previewStyle} showControls={index === 0} />)}
+      </AttachmentGroup> : null}
     </MarkdownRenderContext.Provider>
   );
 }

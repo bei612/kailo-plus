@@ -8,10 +8,16 @@
     "profile-assets.ts"
   ],
   "exports": {
+    "./react/link-preview": "./src/react/link-preview/index.ts",
+    "./linkPreview": "./src/react/link-preview/linkPreview.ts",
+    "./linkPreviewSnapshot": "./src/react/link-preview/linkPreviewSnapshot.ts",
+    "./linkPreviewStylePreference": "./src/react/link-preview/linkPreviewStylePreference.ts",
+    "./linkPreviewTypes": "./src/react/link-preview/types.ts",
     "./react/inbox-surface": "./src/react/inbox-surface.tsx",
     "./react/use-resizable-inbox-list-width": "./src/react/use-resizable-inbox-list-width.ts",
     "./react/forum/channelWindowResponse": "./src/react/forum/channelWindowResponse.ts",
     "./react/messages": "./src/react/messages/index.ts",
+    "./react/messages/chat-header": "./src/react/messages/chat-header.tsx",
     "./react/messages/types": "./src/react/messages/types.ts",
     "./react/messages/dateFormatters": "./src/react/messages/dateFormatters.ts",
     "./react/messages/datetime": "./src/react/messages/datetime.ts",

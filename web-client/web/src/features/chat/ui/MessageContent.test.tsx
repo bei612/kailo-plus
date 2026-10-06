@@ -1,6 +1,11 @@
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
+import type { ReactNode } from "react";
+import { PlatformProvider } from "@client-kit/platform/react/context";
+import { createBffClient } from "@client-kit/platform/client";
 import { describe, expect, it } from "vitest";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
+const client = createBffClient({ send: async () => { throw new Error("Rendering performs no BFF writes"); } });
+const renderToStaticMarkup = (ui: ReactNode) => renderMarkup(<PlatformProvider client={client} locale="en">{ui}</PlatformProvider>);
 
 const PERSON = "11".repeat(32);
 const AGENT = "22".repeat(32);
@@ -11,6 +16,19 @@ const WORKSPACE = "00000000-0000-4000-8000-000000000001";
 const SHA = "ab".repeat(32);
 
 describe("MessageContent", () => {
+  it("renders admitted snapshot text through the original preview without remote images", () => {
+    const href = "https://example.com/product";
+    const snapshot = ["link-preview", "snapshot", "1", href, "Signed title", "Example", "Signed description", IMAGE_URL, SHA, IMAGE_URL, SHA];
+    const html = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE} content={href} mediaTags={[snapshot]} />);
+    expect(html).toContain('data-link-preview="generic-link"');
+    expect(html).toContain("Signed title");
+    expect(html).toContain("Signed description");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain(IMAGE_URL);
+    const suppressed = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE} content={href} mediaTags={[snapshot, ["link-preview", "none"]]} />);
+    expect(suppressed).not.toContain("data-link-preview=");
+    expect(suppressed).toContain(href);
+  });
   it("keeps original image and text spoilers hidden while preserving admitted media reads", () => {
     const html = renderToStaticMarkup(
       <MessageContent

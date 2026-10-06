@@ -2345,7 +2345,8 @@ describe("platform pages render only through the host theme", () => {
   );
   const semanticColors = [
     "accent", "accent-foreground", "background", "border", "destructive", "destructive-foreground",
-    "foreground", "input", "muted", "muted-foreground", "primary", "ring", "secondary", "secondary-foreground", "popover-foreground",
+    "foreground", "input", "muted", "muted-foreground", "primary", "primary-foreground", "ring", "secondary", "secondary-foreground", "popover-foreground",
+    "sidebar-foreground",
     "sidebar-ring", "sidebar-accent", "sidebar-accent-foreground", "sidebar-active", "sidebar-active-foreground",
   ];
   const neutral = new Set(["transparent", "current", "inherit"]);
@@ -2521,15 +2522,42 @@ describe("platform pages render only through the host theme", () => {
         : name === surface.name ? inspectedSurface
         : name === picker.name ? inspectedPicker
         : name === appearance.name ? inspectedAppearance : text;
-      if (name === "new-message.tsx") {
-        // Fixed Buzz NewMessageScreen uses the host's dark root, not another
-        // theme provider. Keep its original translucency and blur details.
+      if (name === "new-message.tsx" || name === "inbox-surface.tsx") {
+        // Fixed Buzz NewMessageScreen and HomeView use the host's dark root,
+        // not another provider. HomeView at the same pin, line 687, repeats
+        // this exact shared header backdrop. Keep translucency and blur.
         const variants = inspected.match(/\bdark:[a-z0-9:/-]+/g);
         expect(variants).toEqual([
           "dark:bg-background/70", "dark:backdrop-blur-xl",
           "dark:supports-backdrop-filter:bg-background/55",
         ]);
         for (const variant of variants ?? []) inspected = inspected.replace(variant, "");
+      }
+      if (name === "inbox-surface.tsx") {
+        // Original HomeView split layout: dimensions are not colour/theme
+        // expressions. Verify the exact host-controlled width attributes.
+        const layout = ts.createSourceFile(name, inspected, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+        const layoutStyles: import("typescript").JsxAttribute[] = [];
+        const visitLayout = (node: import("typescript").Node) => {
+          if (ts.isJsxAttribute(node) && node.name.getText(layout) === "style") layoutStyles.push(node);
+          ts.forEachChild(node, visitLayout);
+        };
+        visitLayout(layout);
+        expect(layoutStyles.map((node) => node.getText(layout).replace(/\s+/g, ""))).toEqual([
+          'style={{"--home-inbox-list-width":`${listWidth}px`,"--home-auxiliary-width":`${auxiliaryWidth??0}px`}asReact.CSSProperties}',
+          'style={{left:`${listWidth}px`}}',
+        ]);
+        for (const node of layoutStyles.sort((a, b) => b.getStart(layout) - a.getStart(layout))) {
+          inspected = inspected.slice(0, node.getStart(layout)) + inspected.slice(node.end);
+        }
+        for (const grid of [
+          "grid-cols-[var(--home-inbox-list-width)_minmax(0,1fr)_var(--home-auxiliary-width)]",
+          "grid-cols-[var(--home-inbox-list-width)_minmax(0,1fr)]",
+          "grid-cols-[minmax(0,1fr)_var(--home-auxiliary-width)]",
+        ]) {
+          expect(inspected.split(grid)).toHaveLength(2);
+          inspected = inspected.replace(grid, "grid-cols-1");
+        }
       }
       for (const pattern of [
         /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/,
@@ -2559,7 +2587,20 @@ describe("platform pages render only through the host theme", () => {
       visit(parsed);
       let text = source.text;
       for (const node of metadata.sort((a, b) => b.getStart(parsed) - a.getStart(parsed))) text = text.slice(0, node.getStart(parsed)) + text.slice(node.end);
+      if (source.name === "inbox-surface.tsx") {
+        // Buzz 779af8886caae1317b4de962082429867ab61503,
+        // desktop/src/features/home/ui/InboxListPane.tsx::InboxRowActionButton.
+        // Preserve only this exact original active reminder tint, not a general
+        // allowance for literal colours elsewhere in the shared UI.
+        const originalTint = 'active && "bg-blue-500/10 text-blue-500 hover:text-blue-500"';
+        expect(text.split(originalTint)).toHaveLength(2);
+        text = text.replace(originalTint, "active");
+      }
       for (const [, utility, token] of text.matchAll(colorUtility)) {
+        if (token === "sidebar") {
+          for (const config of hosts) expect(config).toContain('DEFAULT: "hsl(var(--sidebar-background))"');
+          continue;
+        }
         // Native Switch ring-offset utilities are width or a host colour,
         // not colours named "offset-2" / "offset-background".
         if (utility === "ring" && /^offset-\d+$/.test(token!)) continue;

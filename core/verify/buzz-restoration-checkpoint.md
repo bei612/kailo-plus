@@ -1,5 +1,77 @@
 # Buzz 共享界面与受治理私聊：开发检查点
 
+## 已部署 Web 的逐页浏览器实测
+
+2026-10-06，源提交 `064cd615a33a1f21920e99291e3a63b7b06bb6fe` 的 Web
+`54928e5a5a16053ae750479c1a8a0ef6ff39d33323d24cff807aec4c8e7e3df2`
+在正常本人 OIDC 会话中接受 Playwright CLI 实际操作，1440×1000。31 组编号截图
+及逐页结果位于 Data 的 `kailo-visual-release-20261006.vlPvnU/RESULTS.md`。
+包含频道、创建弹窗、Inbox 与线程、新私聊、成员、Agent、工作流／定义／历史、
+任务、审批、审计、设备、四个设置页、折叠侧栏及中英文刷新状态。当前不存在的
+Pulse、Projects、三个组件入口没有截图，不记为已验证；Win11/Mobile 不在本轮。
+
+实际创建频道“Kailo Web 浏览器验收 20261006”，操作
+`6a8ce687-b838-446f-afbe-9d8ea62ec701` 已完成；进入该频道使用共享富编辑器发送
+验证文字并真实读回。另仅提交一次私聊 open，任务仍待对账，草稿保留，未视为
+已送达。Playwright 点击“查看状态”实际报 `element is not enabled`，已定位为
+冻结收件人的锁被误用于只读查询按钮；后续源码修复不等于本镜像已修好。
+
+默认中文、切英文后刷新保留已实际验证；审计中的机器标识仍为英文，原版全部
+文案覆盖不因此宣称完成。三个平台管理员读取接口实际返回 403，未绕过权限。
+未观察到 JavaScript pageerror；这不替代全部交互验收。已打开 PNG 复核原侧栏、
+真实消息、Inbox、外观及工作流，仍明确记录泛称频道标题、短公钥 Agent 名称、
+缺失创建选项和简化管理布局，而非只凭 DOM 或编译认定等效。
+
+## 新版截图后的频道标题修复（源码增量）
+
+实际新 Web 截图 `kailo-visual-release-20261006.vlPvnU/01-channel-new-release.png`
+显示频道主体已有原头像／日期／编辑器，但上方仍是泛称“频道”。沿 REQ-24、
+DD-39/75，按 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/chat/ui/ChatHeader.tsx::ChatHeader` 核实原标题、说明提示、
+glyph、复制按钮与状态呈现，提入共用包；Desktop 保留原本机剪贴板及频道状态，
+Web 使用已准入的 `WebChannelView.name/description` 与浏览器剪贴板。
+
+影响面是两个宿主与同一呈现组件；旧重复标题 DOM 删除，不新建数据源、协议字段
+或频道权威。空标题不复制；未加载或准入失败不拿上一频道标题充当当前事实；
+说明空值不生成提示，长标题沿原样截断。剪贴板失败显示既有中英文错误反馈，
+不渲染为成功；动作不产生外部业务写入、额度、审批或新生命周期。
+三端认证路径不变，Mobile 不引入该 TypeScript 页面。Header 的原成员管理、
+Terminal 与资料交互缺口仍属于完整恢复范围，本次标题修复不冒充全部 Header。
+源码写入后增加标题／说明／复制与空值两项检查，已在现有受限 SDK 实际通过；
+将标题故意改为固定文本后检查真实失败，恢复后通过。双宿主类型检查通过；
+尚未发布，日志与同批链接预览边界见 `web-client/fork/verify/web-surface.md`。
+
+## 私聊状态查询修复（同批源码）
+
+沿 REQ-24、DD-39/75 与既有 Conversation 准入语义，原问题不是收件人应该解锁，
+而是只读状态查询错误复用了冻结写意图的锁。原 `useConversationOpen` 抽出已有
+会话查找，供准备发送与只读 `checkStatus` 共用；`NewMessageScreen` 的状态按钮
+仅在查询执行期间禁用。影响限于共享 hook、原页面与事后回归，两宿主自动消费，
+没有契约、数据库、Workflow 或 Mobile 路径变更。
+
+查询只读取同一冻结参与者集合，不创建新幂等键、不发送 `conversation.open`、
+不恢复隐藏会话、不自动发送草稿。查询为空、结果不明或不可查证仍显示未完成；
+查到 ACTIVE 也不伪造消息送达，真正发送继续走原准备／准入路径。重复点击由原
+in-flight 锁拒绝并发，收件人仍冻结；失败不丢草稿、不放宽身份或作用域。
+
+实现后原私聊 13 项、设置 18 项、消息头 2 项共 33 项通过。仅在 SDK 副本恢复旧
+按钮禁用条件，新增两项确实失败；按原字节还原 `cmp` 退出 0 后 33 项再次通过。
+原件为 Data 的
+`codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`
+下 `dm-theme-mutation.log` 与 `dm-theme-restored.log`。该按钮修复尚未部署，
+也没有解除当前旧 Relay 上的私聊待对账问题。
+
+## Core 构建缓存纠正（未构建验证）
+
+前一原 release 日志显示仅缓存 Cargo registry，源码变化仍重新编译整组依赖。
+依 ADR-06、07 §2.1，并复用现有 Desktop Windows 配方的缓存／导出方式，原
+`core/Dockerfile` 增加锁定 target 缓存，构建成功才复制 executable 到 `/out`，
+最终 runtime 从该导出读取，不将缓存或工具链复制进产物。没有新发布脚本，
+运行时权威、API、契约、数据库、资源配置均不变。
+并发由缓存锁串行写入，缓存缺失正常重建；编译失败不执行导出，不能把旧缓存
+二进制报告为新发布成功。该增量不在已经部署的 `0d6b2833a` 中，留待下一次
+必要 Core 发布实际验证；本轮不额外触发编译，不声称已经获得热缓存耗时证据。
+
 ## 2026-10-06 11:58 后续投递与来源清单修正
 
 Core／Worker 源提交 `0d6b2833aa22151dfcd78851872a21a5f9e361d6` 的原 release
@@ -14,6 +86,14 @@ Relay 原构建入口在编译前退出 2：来源清单仍把已部分恢复的
 原 `upstream_manifest.py diff collaboration --check` 输出清单与实际一致（965 项）、
 退出 0。数量是原路径缺失／迁移事实，不是功能完成度；REQ-24 的完整恢复范围不变。
 该修正只影响来源记录及构建输入校验，不改变认证、权限、状态、协议或副作用。
+
+修正清单并固定提交 `3673b23b0dd02fe34d7be14fe725e0b350c33565` 后，Relay 原
+`tools/build-upstream.sh collaboration-relay` 在已有 8 CPU／16 GiB 的 Data builder
+运行，最终退出 1：`pnpm install --frozen-lockfile` 下载固定 pnpm 11.4.0 时
+`UND_ERR_CONNECT_TIMEOUT`。原件
+`buzz-relay-restoration-20261006.hOhSoy/relay-release-corrected.log`。
+未生成或投递新 Relay，不改旧镜像的成员 kind 开关，不以新 Core/Web 代替 Relay
+接缝验收；该失败只阻断此产物，其他界面恢复与真实浏览器走查继续。
 
 2026-10-06。本记录对应第一批源码，不是部署、完整 Buzz 功能恢复或生产就绪声明。
 权威为 REQ-24、DD-39/40/53/75/80/81；设计已单独提交到

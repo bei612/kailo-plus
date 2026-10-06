@@ -35,6 +35,8 @@ remove_paths:
   - desktop/src/shared/lib/fontSizePreference.ts
   - desktop/src/shared/lib/conversationDensityPreference.ts
   - desktop/src/shared/ui/segmented-control.tsx
+  # Original preview controls now have one shared implementation; Native keeps its real settings host.
+  - desktop/src/shared/ui/link-preview-controls.tsx
   # Original picker selection and popover surface are shared by Web and Desktop.
   - desktop/src/features/messages/lib/useMentionSelection.ts
   - desktop/src/shared/ui/popoverSurface.ts
