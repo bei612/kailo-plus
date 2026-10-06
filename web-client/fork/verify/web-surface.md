@@ -3001,3 +3001,16 @@ Core 新作者证据反向验证：仅在同一 SDK 源码删去 `profile_event`
 仍未声明完成：本批 Web 新作者入口落在频道/私聊主消息行，未新增 Forum 帖子和线程内作者入口；原资料 Follow/Unfollow、Wave/Huddle、在线状态、共同频道、NIP-OA owner 核验、Agent 管理及活动完整页仍须各自原有治理接线。本批没有伪按钮、虚构 owner 或借用 Pulse 权限打开这些功能。没有真实浏览器部署验收，不以源码共享和夹具通过声称全部原版资料能力已恢复。
 
 主线程补充回执：正式最新 `message-row.test.tsx` 8 项通过、退出 0（不是上面的旧 SDK 4 项），日志 `/volumes/data/kailo/tmp/pulse-agent-integration-20261006.yBMzaY/message-row-restored.log`；同目录 `theme-mutation.log` 记录精确原版主题例外被破坏后失败，`theme-restored.log` 记录原字节还原后单项通过。这两项属于主线程独立改动，不混入本批 30 个源码路径。
+
+## 2026-10-06 共享附件交互中英文补全
+
+四步结论：
+
+1. 权威是 DD-53 的平台自有文案双语、设备语言即时应用与业务内容保持原文；复用固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/messages/ui/ComposerAttachments.tsx::ComposerAttachments/MediaAttachmentItem/ComposerSnapshotCard`，只替换英文呈现，不改原布局或媒体处理。
+2. 影响面经检索确认：Web `web-client/web/src/platform/ui/ChannelPane.tsx::Composer` 及 Desktop `collaboration/desktop/src/features/messages/ui/MessageComposer.tsx::MessageComposer` 经既有包装共用同一 TypeScript 组件；Inbox/线程使用原 Composer 时同样生效。只新增 catalog 词条及 Dart 投影，无契约、服务端状态、数据库、配置或消息正文迁移。
+3. 副作用：上传/移除/还原/取消原回调、URL 解析、附件编辑、剧透及准入不变，不新增消息/草稿/上传权威；无新权限、额度或 secret 路径。提供方 displayLabel 与文件名保持原文，不把平台语言强加给业务内容。
+4. 边界：无文件名时仍走原 hash/type 回退，但回退名与上传提示按 locale 翻译；空附件仍返回 null；有名附件、提供方标签、上传占位及已打开的 lightbox 切语言继续使用原状态。未知发布结果、重试与幂等逻辑不变。Mobile 不新增附件编辑入口，仅按既有工具同步 catalog。
+
+实现后在既有 4 CPU / 8 GiB SDK 的独立 `message-edit.AGX058/apps` 快照验证。共享源 tsc 退出 0；测试 tsc 首次指出新夹具缺少既有必填 `uploaded`，补齐夹具后测试 tsc 退出 0、三项 DOM 用例通过。用例验证中英即时切换、原 remove/revert/cancel 回调和文件名/提供方标签保真，没有替换原组件。首次 CLI 路径沿符号链接误解析到不存在的 TypeScript bin，未启动类型检查；改为原 SDK 已安装 bin 的明确路径，没有安装依赖或改工具链。
+
+私有 SDK 把还原按钮改回英文裸文案后，三例中 1 失败 / 2 通过、退出 1，断言明确为 expected `还原` / actual `Revert`。逐字还原生产源码并与正式文件 cmp 0 后，三例再次全部通过、退出 0；原 `gen-platform-i18n.py --check` 同批通过。日志位于 Data `header-sidebar-fix-20261006.q5aiVW/composer-attachment-locale-{baseline,check,fixture-restored,mutation,restored}.log`。本批不运行 full、宿主构建或部署，不以共享 DOM 验证宣称全站双语已穷尽。

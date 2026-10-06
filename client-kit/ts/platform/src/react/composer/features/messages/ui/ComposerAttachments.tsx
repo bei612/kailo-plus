@@ -203,7 +203,7 @@ function ComposerSnapshotCard({
         </AttachmentContent>
         <AttachmentActions className="ml-4">
           <AttachmentAction
-            aria-label={`Remove ${displayName}`}
+            aria-label={translateUi("buzz.removeNamedAttachment", { name: displayName })}
             className="border-0 bg-transparent text-muted-foreground/70 shadow-none hover:text-foreground hover:shadow-none focus-visible:bg-muted focus-visible:ring-0"
             data-testid={`composer-${snapshotKind}-snapshot-remove`}
             onClick={() => onRemove(attachment.url)}
@@ -283,9 +283,9 @@ const MediaAttachmentItem = React.forwardRef<
     attachment.displayLabel?.trim() ||
     (attachment.sha256
       ? isVideo
-        ? `Video attachment ${hash}`
-        : `Attachment ${hash}`
-      : attachment.filename?.trim() || `Attachment ${hash}`);
+        ? translateUi("buzz.videoAttachmentHash", { hash })
+        : translateUi("buzz.attachmentHash", { hash })
+      : attachment.filename?.trim() || translateUi("buzz.attachmentHash", { hash }));
   const thumbUrl = attachment.thumb
     ? rewriteRelayUrl(attachment.thumb)
     : rewriteRelayUrl(attachment.url);
@@ -480,7 +480,7 @@ const MediaAttachmentItem = React.forwardRef<
                           size="sm"
                           type="button"
                         >
-                          Revert
+                          {translateUi("buzz.revert")}
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>{translateUi("buzz.revertImage")}</TooltipContent>
@@ -541,7 +541,7 @@ const MediaAttachmentItem = React.forwardRef<
         <Tooltip disableHoverableContent>
           <TooltipTrigger asChild>
             <button
-              aria-label={`Remove ${mediaLabel}`}
+              aria-label={translateUi("buzz.removeNamedAttachment", { name: mediaLabel })}
               type="button"
               onClick={() => onRemove(attachment.url)}
               className={COMPOSER_MEDIA_REMOVE_CLASS}
@@ -706,7 +706,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
               const label =
                 attachment.filename ||
                 attachment.url.split("/").pop() ||
-                `file ${hash}`;
+                translateUi("buzz.fileHash", { hash });
               return (
                 <motion.div
                   key={attachment.url}
@@ -900,7 +900,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                     {preview.posterUrl ? (
                       <img
                         src={preview.posterUrl}
-                        alt={`Uploading ${preview.filename ?? "video"}`}
+                        alt={translateUi("buzz.uploadingNamedAttachment", { name: preview.filename ?? translateUi("buzz.video") })}
                         className="h-full w-full object-cover"
                       />
                     ) : (
@@ -908,7 +908,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                     )}
                     <div className="absolute inset-0 flex items-end rounded-2xl bg-background/25 px-2 pb-1.5">
                       <Progress
-                        aria-label={`Uploading ${preview.filename ?? "attachment"}`}
+                        aria-label={translateUi("buzz.uploadingNamedAttachment", { name: preview.filename ?? translateUi("buzz.attachment") })}
                         className={cn(
                           "h-1",
                           preview.posterUrl
