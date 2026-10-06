@@ -4484,3 +4484,67 @@ SQLX_OFFLINE=true CARGO_TARGET_DIR=/cache/rust-target cargo clippy --offline --l
 `reply-timestamp-restored.log`。本次没有 full 或新 Core 镜像构建／投递，旧
 已拒绝回复与三人两 Agent 主线不因此变为成功。计量及 Relay 的独立实际投递
 与旧私聊绑定自动 ACTIVE 记录在同目录 `receipt.md`，不混作本源码的线上验收。
+
+## 2026-10-06：首次模型派发原子提交与已建线程的 holder 换代
+
+权威仍是 DD-48/65、设计 03 §8、11 §2、12 §2、17 §10。固定 Codex
+`7498521d288b9b3b96ffba4eedf089d8d6e06a84` 的
+`codex-rs/app-server-protocol/src/protocol/v2/thread.rs::ThreadStartParams`
+非 ephemeral 线程语义不变，不增加第二个 Session、额度或执行状态权威。
+
+本次影响面是 `first_turn → prepare_dispatch → commit_dispatch →
+gateway_usage::prepare_turn → Supervisor::start_turn`。原发送者正常返回时，
+既有回执路径能够把确定未发送且无 trace 的结果退回 CREATED；但此前
+DISPATCHING 与 model trace 分两次提交，进程在两者之间退出会留下恢复者
+不能安全重放的未知结果。本次把原 DISPATCHING、审计与 model trace 放进
+同一事务，准备拒绝则一起回滚。唯一模型 RPC 仍在持久 trace 之后，原
+fresh 权限、计量、代次、线程和 native idle 检查保留；提交不明仍只观察。
+
+两条真实入口（已有线程、birth 成功）都传原 `AgentTaskAdvanceRequest`。
+`prepare_dispatch` 复用 `capacity.lock_birth_holder`，持有原 pool→lease
+锁后才取 AE→Tenant/Workspace→Invocation/Session 锁，直到原子提交；
+不能用等待前的 EXISTS 快照借到后继 Activity 的租约。新迁移
+`20261006230000` 只扩既有 `capacity_invocation_unstarted`：CREATED 且
+ACTIVE Session 已有线程、没有 turn/native/reply/post-message/trace/usage
+时，可在原 Activity 确切终结、同代次与同租约的既有恢复链换代。
+原线程、units 和租约保留，不经过 RELEASED。UNKNOWN/DISPATCHING、取消、
+Session STARTING/UNKNOWN、错误代次或缺 Activity 终态仍拒绝。down 只恢复
+原 PENDING-only 判断，不删除业务数据或审计。
+
+只读线上复核中，旧 Invocation `db6dfccb-f0db-409a-8ed6-d81e64e277d9`
+仍为 UNKNOWN，原 lease 也 UNKNOWN；缺 turn/trace 或 THREAD_NOT_FOUND
+不能让历史自动满足新不变量，本次没有释放或重发它。
+`dd871fd9-eb88-4261-9a83-62b974aa4393` 仍 CREATED/PENDING；
+`3e7b57d0-b11e-4a69-8f81-184b09fc3612` 仍是既有
+FAILED_REPLY_NOT_DELIVERED 终态。没有改线上身份、权限或额度，当前旧安装
+的占位阻塞不因此宣称解除。
+
+验证使用原 4 CPU/8 GiB SDK 和唯一 `/cache/rust-target`，在原隔离
+Postgres 服务创建独立 `agent_dispatch_atomic_20261006_7dc531` 库，没有
+迁移原 `component_runtime_lcivus` 或生产库。首次 psql 因 SDK UID 没有
+passwd 条目退出 2（`local user with ID 1000 does not exist`）；从受控
+连接在进程内提供 PGUSER 后恢复。旧 SDK 首轮只有 93 条迁移，因此先同步
+固定候选完整源码，再补齐已提交的 22000，并对 23000 执行 down/up。
+原 SQLx 最终退出 0：`agent_dispatch_atomic_20261006_7dc531|94|20261006230000`。
+
+同批 `cargo test --offline --locked -j16 -p platform-core --bin platform-core`
+实际结果：`agent_task:: -- --include-ignored --test-threads=1` 27/27，
+`capacity::recovery_tests -- --ignored --test-threads=1` 2/2，
+`agent_runtime::` 10 通过、4 项环境检查明确 ignored，`gateway_usage::`
+12/12；`cargo clippy --offline --locked -j16 -p platform-core --bin
+platform-core -- -D warnings` 退出 0。不是主线程旧 full 的结果。
+
+实现后的两条新增检查均做真实破坏验证：独立库经原 SQLx revert 换回旧
+PENDING-only 函数，ACTIVE-thread 用例实际退出 101，原 SQLx run 恢复后
+holder 两例再次 2/2；SDK 中故意在 trace 准备拒绝时提交 DISPATCHING，
+原子回滚用例实际退出 101，断言为 expected CREATED / actual DISPATCHING。
+随后已恢复原字节，七个实现/迁移文件正式树与 SDK cmp 0。最后的新 receipt
+与两项 holder 恢复复跑合入作者资料 Core 批次：session 1935 实际 receipt
+1/1、holder 2/2 通过，clippy 退出 0；未再单独编译同一 Core。该次日志为
+Data `codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/message-author-core-final.log`。
+没有运行本批 full、构建或部署。
+
+原始日志位于 Data `header-sidebar-fix-20261006.q5aiVW/`：
+`agent-dispatch-baseline.log`、`agent-holder-mutation-restored.log`、
+`agent-dispatch-mutation.log`。SDK I/O 等待如实包含在日志时长中，变异失败
+不是编译错误或缺配置导致的失败。

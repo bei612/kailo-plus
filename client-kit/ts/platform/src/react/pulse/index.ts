@@ -1,4 +1,7 @@
 export { PulseView } from "./ui/PulseView";
+export { ProfileSummaryView } from "./ProfileSummaryView";
+export { UserProfilePopoverSurface, UserProfilePopoverBody } from "./UserProfilePopover";
+export type { ProfilePopoverBodyProps } from "./UserProfilePopover";
 export { PulseHostProvider } from "./host";
 export type { PulseHost, PulseEvent, PulseComposerProps } from "./host";
 export { PeopleMentionAutocomplete } from "./PeopleMentionAutocomplete";

@@ -5025,8 +5025,9 @@ pub struct WebProfileUpdateRequest {
     pub nip05_handle: Option<String>,
 }
 
-/// Current own profile read from Buzz, never a Core profile copy. An absent kind:0 is an
-/// empty profile, not a fabricated event.
+/// Profile read from Buzz for the current identity or an author proven by a currently
+/// admitted channel/private-conversation message, never a Core profile copy. An absent
+/// kind:0 is an empty profile, not a fabricated event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebProfileView {

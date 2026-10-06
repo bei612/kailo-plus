@@ -376,18 +376,19 @@ async fn lock_tenant(
 
 /// SS-COD-TRACE：只在真实 invocation/slot/quota 事实齐备之后、原生模型副作用之前持久。
 pub(crate) async fn prepare_turn(
-    pool: &PgPool,
+    tx: &mut Transaction<'_, Postgres>,
     openmeter: &OpenMeter,
     projection: &crate::agent_runtime::RuntimeRef,
     invocation: Uuid,
     thread: &str,
 ) -> Result<String, &'static str> {
-    let mut tx = pool.begin().await.map_err(|_| "模型 dispatch 事务不可用")?;
-    lock_tenant(&mut tx, invocation).await?;
+    // Invocation DISPATCHING and its mandatory trace share the caller's
+    // transaction. A failed CHECK must not strand an unsent turn in UNKNOWN.
+    lock_tenant(tx, invocation).await?;
     let facts: TurnFacts = sqlx::query_as(TURN_FACTS)
         .bind(invocation)
         .bind(thread)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(|_| "模型准入事实不可读")?
         .ok_or("模型准入事实不成立")?;
@@ -430,12 +431,12 @@ pub(crate) async fn prepare_turn(
         .bind(facts.workspace_id).bind(facts.gateway_principal_id).bind(&facts.customer_id).bind(&facts.namespace)
         .bind(&subject).bind(facts.binding_version).bind(serde_json::to_value(meters).map_err(|_| "模型 meter 投影不可编码")?)
         .bind(invocation_meter.map(serde_json::to_value).transpose().map_err(|_| "Invocation meter 投影不可编码")?)
-        .execute(&mut *tx).await.map_err(|_| "模型 trace 不可持久")?;
+        .execute(&mut **tx).await.map_err(|_| "模型 trace 不可持久")?;
     if inserted.rows_affected() != 1 {
         return Err("模型已有 dispatch 意图；只能按原生引用观察");
     }
     usage_audit(
-        &mut tx,
+        tx,
         facts.operation_id,
         "model-dispatch-intent",
         "DISPATCH",
@@ -443,9 +444,6 @@ pub(crate) async fn prepare_turn(
         vec![Evidence::new(EvidenceKind::TraceId, &trace)],
     )
     .await?;
-    tx.commit()
-        .await
-        .map_err(|_| "模型 dispatch 意图提交不明")?;
     Ok(format!("00-{trace}-{span}-01"))
 }
 

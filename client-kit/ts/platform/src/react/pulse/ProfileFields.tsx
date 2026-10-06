@@ -28,7 +28,7 @@ export function buildPublicFields({
   pubkey,
   locale,
 }: {
-  profile: Profile | undefined;
+  profile: Pick<Profile, "nip05Handle"> | undefined;
   pubkey: string;
   locale: PlatformLocale;
 }): ProfileField[] {
@@ -65,24 +65,25 @@ export function buildPublicFields({
   return fields;
 }
 
-export function ProfileFieldGroup({ fields }: { fields: ProfileField[] }) {
+export function ProfileFieldGroup({ fields, copy }: { fields: ProfileField[]; copy: (value: string) => Promise<void> }) {
   return (
     <PanelSectionGroup>
       <div className="divide-y divide-border/55">
         {fields.map((field) => (
-          <ProfileFieldRow field={field} key={field.testId} />
+          <ProfileFieldRow field={field} copyText={copy} key={field.testId} />
         ))}
       </div>
     </PanelSectionGroup>
   );
 }
 
-function ProfileFieldRow({ field }: { field: ProfileField }) {
+function ProfileFieldRow({ field, copyText }: { field: ProfileField; copyText: (value: string) => Promise<void> }) {
   const locale = useUiLocale();
   const Icon = field.icon;
   const { copied, copy } = useCopyFeedback({
     label: field.label,
     value: field.copyValue ?? "",
+    writeTextToClipboard: copyText,
   });
 
   const content = (

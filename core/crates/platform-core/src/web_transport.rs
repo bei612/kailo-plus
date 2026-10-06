@@ -1717,11 +1717,107 @@ pub(crate) async fn community_limits(
     }
 }
 
-/// 读该 Workspace 的历史消息。
-///
-/// filter 由 Core 构造，Browser 不提交任何 filter。`DD-39` 明写 Browser「不能
-/// 提交 raw signed event 或任意 Relay filter 绕过语义命令」——放开 filter 就等于
-/// 把 Relay 的查询面原样暴露给浏览器，scope 边界随之失效。
+/// Read a profile only for the author proven by an admitted signed message.
+pub async fn message_author_profile(
+    State(state): State<BffState>,
+    Path((workspace_id, event_id)): Path<(Uuid, String)>,
+    headers: HeaderMap,
+) -> Response {
+    message_author_profile_for(
+        state,
+        MessageTarget::Workspace(workspace_id),
+        headers,
+        event_id,
+    )
+    .await
+}
+
+pub async fn conversation_message_author_profile(
+    State(state): State<BffState>,
+    Path((conversation_id, event_id)): Path<(Uuid, String)>,
+    headers: HeaderMap,
+) -> Response {
+    message_author_profile_for(
+        state,
+        MessageTarget::Conversation(conversation_id),
+        headers,
+        event_id,
+    )
+    .await
+}
+
+async fn message_author_profile_for(
+    state: BffState,
+    target: MessageTarget,
+    headers: HeaderMap,
+    event_id: String,
+) -> Response {
+    if nostr::EventId::from_hex(&event_id).is_err() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let read_target = match target {
+        MessageTarget::Workspace(id) => crate::user_state::ReadTarget::Workspace(id),
+        MessageTarget::Conversation(id) => crate::user_state::ReadTarget::Conversation(id),
+        MessageTarget::Pulse(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(response) => return response,
+    };
+    let admitted = match read_target.admit(&state, &ctx).await {
+        Ok(scope) => scope,
+        Err(response) => return response,
+    };
+    let keys = match actor_keys(&state, &ctx).await {
+        Ok(keys) => keys,
+        Err(response) => return response,
+    };
+    let client = match community_client(&state, &keys, admitted.community_host()) {
+        Ok(client) => client,
+        Err(response) => return response,
+    };
+    // The original signed event proves this author belongs to this readable
+    // message surface. Neither a requested pubkey nor the Pulse directory does.
+    let message = match read_message_event(&state, &client, admitted.channel_id(), &event_id).await
+    {
+        Ok(message) => message,
+        Err(response) => return response,
+    };
+    let author = message.pubkey.to_hex();
+    let profile = match crate::web_profile::read_author(&state, &client, &author).await {
+        Ok(profile) => profile,
+        Err(response) => return response,
+    };
+    let current = match read_target.admit(&state, &ctx).await {
+        Ok(scope) => scope,
+        Err(response) => return response,
+    };
+    let current_keys = match actor_keys(&state, &ctx).await {
+        Ok(keys) => keys,
+        Err(response) => return response,
+    };
+    if !admitted.same_admission(&current) || current_keys.public_key() != keys.public_key() {
+        return AdmissionFailure::BindingNotActive.into_response();
+    }
+    let mut view = crate::web_profile::view(author, profile.as_ref(), admitted.community_host());
+    let media_prefix = match target {
+        MessageTarget::Workspace(id) => format!("/api/v1/workspaces/{id}/media/"),
+        MessageTarget::Conversation(id) => format!("/api/v1/conversations/{id}/media/"),
+        MessageTarget::Pulse(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    for path in view.avatar_media_paths.values_mut() {
+        if let Some(hash) = path.strip_prefix("/api/v1/profile/media/") {
+            *path = format!("{media_prefix}{hash}");
+        }
+    }
+    (
+        [(axum::http::header::CACHE_CONTROL, "no-store")],
+        Json(view),
+    )
+        .into_response()
+}
+
+/// History filters are constructed by Core, never arbitrary browser filters (DD-39).
 pub async fn query_messages(
     State(state): State<BffState>,
     Path(workspace_id): Path<Uuid>,

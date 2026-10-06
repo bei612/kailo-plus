@@ -3,17 +3,17 @@ import { Check, Copy } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { usePulseHost } from "./host";
 import { useUiT } from "../context";
 import { cn } from "../profile/buzz/shared/lib/cn";
 
 export function useCopyFeedback({
   value,
+  writeTextToClipboard,
 }: {
   label: string;
   value: string;
+  writeTextToClipboard: (value: string) => Promise<void>;
 }) {
-  const {copy: writeTextToClipboard} = usePulseHost();
   const t = useUiT();
   const [copied, setCopied] = React.useState(false);
   const resetTimerRef = React.useRef<number | null>(null);

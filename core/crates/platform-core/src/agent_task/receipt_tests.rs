@@ -56,6 +56,53 @@ async fn cleanup_definition(pool: &sqlx::PgPool) {
     .unwrap();
 }
 
+#[tokio::test]
+#[ignore = "requires disposable AGENT_INVOKE_TEST_DATABASE_URL and fixture OPENMETER_* configuration"]
+async fn dispatch_preparation_refusal_rolls_back_intent_instead_of_stranding_unknown() {
+    use sqlx::Acquire;
+    let (pool, _lock) = pool().await;
+    let mut tx = pool.begin().await.unwrap();
+    let tenant = fixture(&mut tx).await;
+    let row = invocation(&mut tx, tenant).await;
+    let projection = RuntimeRef {
+        installation_id: row.installation_resource_id,
+        generation: row.projection_generation,
+        config_hash: "a".repeat(64),
+    };
+    let openmeter = crate::openmeter::OpenMeter::from_env().unwrap();
+    // This existing fixture deliberately has no ACTIVE model binding/slot.
+    // The actual prepare_turn must refuse before any HTTP/native request.
+    // A savepoint permits inspecting the caller's original state afterwards.
+    let mut dispatch = tx.begin().await.unwrap();
+    sqlx::query("update catalog.agent_invocation set status='DISPATCHING' where id=$1")
+        .bind(row.id)
+        .execute(&mut *dispatch)
+        .await
+        .unwrap();
+    assert!(matches!(
+        commit_dispatch(
+            dispatch,
+            &openmeter,
+            &projection,
+            row.id,
+            row.runtime_thread_id.as_deref().unwrap(),
+        )
+        .await,
+        Err(RuntimeError::AdmissionRequired)
+    ));
+    assert_eq!(status(&mut tx, row.id).await, "CREATED");
+    let trace_count: i64 = sqlx::query_scalar(
+        "select count(*) from projection.agent_model_trace where invocation_id=$1",
+    )
+    .bind(row.id)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(trace_count, 0);
+    tx.rollback().await.unwrap();
+    cleanup_definition(&pool).await;
+}
+
 async fn invocation(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, tenant: Uuid) -> Invocation {
     let id: Uuid = sqlx::query_scalar("select id from catalog.agent_invocation where tenant_id=$1 order by source_event_id limit 1")
         .bind(tenant).fetch_one(&mut **tx).await.unwrap();

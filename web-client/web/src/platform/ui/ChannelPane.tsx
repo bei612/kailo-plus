@@ -39,6 +39,7 @@ import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/f
 import { Button } from "@/shared/ui/button";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
 import { ChannelThreadPane } from "./ChannelThreadPane";
+import { MessageAuthorIdentity, MessageAuthorProfile } from "./MessageAuthorProfile";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
 import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
@@ -167,6 +168,7 @@ export function ChannelPane({
   archived = false,
   metadataPending = false,
   restoreEditEventId,
+  onStartDm,
 }: {
   workspaceId: string;
   myPrincipalId: string;
@@ -178,6 +180,7 @@ export function ChannelPane({
   archived?: boolean;
   metadataPending?: boolean;
   restoreEditEventId?: string;
+  onStartDm?: (pubkey: string) => void;
 }) {
   const queryClient = useQueryClient();
   const notifications = useBrowserNotifications();
@@ -192,6 +195,8 @@ export function ChannelPane({
   const messageList = useRef<HTMLUListElement>(null);
   const anchoredTarget = useRef<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<TimelineMessage | null>(null);
+  const [profileTarget, setProfileTarget] = useState<TimelineMessage | null>(null);
+  useEffect(() => { setProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied]);
   useEffect(() => {
     if (!targetMessageId || anchoredTarget.current === targetMessageId) return;
     const target = [...(messageList.current?.children ?? [])].find((item) => item.getAttribute("data-event-id") === targetMessageId);
@@ -407,9 +412,12 @@ export function ChannelPane({
               {firstUnread ? <UnreadDivider /> : null}
               <div className={`flex flex-col gap-1 ${followedByContinuation ? "pb-0" : "pb-2.5"}`}>
               <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={targetMessageId === message.id}
+                renderIdentity={message.pubkey && live && !denied ? (node) => <MessageAuthorIdentity
+                  target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:message.id,pubkey:message.pubkey!}}
+                  onOpen={() => {setReplyTarget(null);setProfileTarget(message);}}>{node}</MessageAuthorIdentity> : undefined}
                 renderActions={(ref) => <MessageActionBarSurface ref={ref} message={message} onCopyMessage={copyMessage}
                   onEdit={message.kind === 9 && live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && message.signerPubkey === ownProfile.data.pubkey ? setEditTarget : undefined}
-                  onReply={!conversation && message.kind === 9 && live && !denied && !archived && !metadataPending ? setReplyTarget : undefined}
+                  onReply={!conversation && message.kind === 9 && live && !denied && !archived && !metadataPending ? (target)=>{setProfileTarget(null);setReplyTarget(target);} : undefined}
                   onCopyLink={copyMessageLink} />}
                 renderBody={(className) => <div className={className}><MessageContent
                 content={message.body}
@@ -453,7 +461,10 @@ export function ChannelPane({
             autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink} /></>}
       </div>
     </div>
-    {!conversation && replyTarget ? <ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
+    {profileTarget?.pubkey && live && !denied ? <MessageAuthorProfile key={`${myPrincipalId}:${workspaceId}:${profileTarget.id}`}
+      target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:profileTarget.id,pubkey:profileTarget.pubkey}}
+      onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}
+    {!conversation && replyTarget && !profileTarget ? <ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
       workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
       members={(members.data ?? []).filter((member): member is WorkspaceMemberView => "state" in member)} disabled={archived || metadataPending || denied || !live}
       onClose={() => setReplyTarget(null)} onCopyMessage={copyMessage} onCopyLink={copyMessageLink} /> : null}

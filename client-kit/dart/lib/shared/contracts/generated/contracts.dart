@@ -9922,8 +9922,9 @@ class WebProfileUpdateRequest {
   });
 }
 
-///Current own profile read from Buzz, never a Core profile copy. An absent kind:0 is an
-///empty profile, not a fabricated event.
+///Profile read from Buzz for the current identity or an author proven by a currently
+///admitted channel/private-conversation message, never a Core profile copy. An absent
+///kind:0 is an empty profile, not a fabricated event.
 class WebProfileView {
   final String? about;
 

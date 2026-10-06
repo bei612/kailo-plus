@@ -76,6 +76,30 @@ fn avatar_reader_maps_only_original_community_hashes_and_both_animation_parts() 
     assert!(avatar_media_paths(Some("data:image/svg+xml,inline"), "community.example").is_empty());
 }
 
+#[test]
+fn admitted_message_author_profile_is_not_the_reading_identity() {
+    let author = nostr::Keys::generate();
+    let reader = nostr::Keys::generate();
+    let signed = event(
+        &author,
+        nostr::Kind::Metadata,
+        r#"{"name":"Message author","about":"Original profile"}"#,
+    );
+    let read = profile_event(json!([signed]), &author.public_key().to_hex()).unwrap();
+    let profile = view(
+        author.public_key().to_hex(),
+        read.as_ref(),
+        "community.example",
+    );
+    assert_eq!(profile.pubkey, author.public_key().to_hex());
+    assert_eq!(profile.display_name.as_deref(), Some("Message author"));
+    assert_eq!(profile.about.as_deref(), Some("Original profile"));
+    assert!(profile_event(json!([signed]), &reader.public_key().to_hex()).is_err());
+    let missing = view(author.public_key().to_hex(), None, "community.example");
+    assert!(missing.event_id.is_none());
+    assert!(missing.display_name.is_none());
+}
+
 #[tokio::test]
 async fn saved_response_cannot_retarget_or_change_the_original_intent() {
     let tenant = Uuid::new_v4();

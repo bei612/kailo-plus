@@ -2,6 +2,9 @@ import * as React from "react";
 
 import { useUserProfileQuery } from "./host";
 import { ProfileAvatar } from "../profile/buzz/features/profile/ui/ProfileAvatar";
+import { AvatarHostProvider } from "../profile/avatar-host";
+import { useUiLocale } from "../context";
+import type { UserProfileSummary } from "./host";
 import { usePulseHost } from "./host";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { truncateNpub } from "./host";
@@ -68,7 +71,13 @@ function HoverPubkeyName({
   );
 }
 
-export function UserProfilePopover({
+export function UserProfilePopover(props: UserProfilePopoverProps) {
+  const host = usePulseHost();
+  return <UserProfilePopoverSurface {...props} onOpenProfile={host.openProfile}
+    renderBody={(body) => <PulseProfilePopoverBody {...body} />} />;
+}
+
+export function UserProfilePopoverSurface({
   children,
   pubkey,
   triggerElement = "div",
@@ -77,12 +86,16 @@ export function UserProfilePopover({
   triggerTestId,
   enableProfilePanel = true,
   enableHoverPopover = true,
-}: UserProfilePopoverProps) {
+  onOpenProfile: openProfilePanel,
+  renderBody,
+}: UserProfilePopoverProps & {
+  onOpenProfile?: (pubkey: string) => void;
+  renderBody: (props: ProfilePopoverBodyProps) => React.ReactNode;
+}) {
   const [open, setOpen] = React.useState(false);
   const hoverTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  const { openProfile: openProfilePanel } = usePulseHost();
   const canOpenProfilePanel = enableProfilePanel && Boolean(openProfilePanel);
 
   const clearHoverTimer = React.useCallback(() => {
@@ -165,13 +178,8 @@ export function UserProfilePopover({
         </TriggerElement>
       </PopoverAnchor>
       {open ? (
-        <UserProfilePopoverBody
-          canOpenProfilePanel={canOpenProfilePanel}
-          onContentMouseEnter={handleContentMouseEnter}
-          onMouseLeave={handleMouseLeave}
-          onTriggerClick={handleTriggerClick}
-          pubkey={pubkey}
-        />
+        renderBody({canOpenProfilePanel,onContentMouseEnter:handleContentMouseEnter,
+          onMouseLeave:handleMouseLeave,onTriggerClick:handleTriggerClick,pubkey})
       ) : null}
     </Popover>
   );
@@ -182,34 +190,48 @@ export function UserProfilePopover({
  * open — the trigger shell above stays cheap enough for grids that render
  * hundreds of instances.
  */
-function UserProfilePopoverBody({
-  canOpenProfilePanel,
-  onContentMouseEnter,
-  onMouseLeave,
-  onTriggerClick,
-  pubkey,
-}: {
+export type ProfilePopoverBodyProps = {
   canOpenProfilePanel: boolean;
   onContentMouseEnter: () => void;
   onMouseLeave: () => void;
   onTriggerClick: (event: React.MouseEvent) => void;
   pubkey: string;
+};
+
+function PulseProfilePopoverBody(props: ProfilePopoverBodyProps) {
+  const host=usePulseHost();
+  const profile=useUserProfileQuery(props.pubkey);
+  return <UserProfilePopoverBody {...props} profile={profile.data} mediaUrl={host.mediaUrl}/>;
+}
+
+export function UserProfilePopoverBody({
+  canOpenProfilePanel,
+  onContentMouseEnter,
+  onMouseLeave,
+  onTriggerClick,
+  pubkey,
+  profile,
+  mediaUrl,
+  status,
+}: ProfilePopoverBodyProps & {
+  profile: Pick<UserProfileSummary, "displayName" | "avatarUrl" | "about" | "nip05Handle"> | undefined;
+  mediaUrl: (url: string) => string;
+  status?: React.ReactNode;
 }) {
-  const profileQuery = useUserProfileQuery(pubkey);
-  const profile = profileQuery.data;
+  const locale=useUiLocale();
   const displayName = profile?.displayName ?? truncateNpub(pubkey);
   const profileDescription = profile?.about?.trim() ?? "";
   const profileSubheader = profileDescription || profile?.nip05Handle?.trim();
 
   const profileHeaderContent = (
     <>
-      <ProfileAvatar
+      <AvatarHostProvider value={{locale,rewriteMediaUrl:mediaUrl}}><ProfileAvatar
         avatarUrl={profile?.avatarUrl ?? null}
         className="h-10 w-10 text-xs"
         iconClassName="h-5 w-5"
         label={displayName}
         testId="user-profile-popover-avatar"
-      />
+      /></AvatarHostProvider>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -242,6 +264,7 @@ function UserProfilePopoverBody({
       side="top"
       sideOffset={8}
     >
+      {status}
       {canOpenProfilePanel ? (
         <button
           className="flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg text-left text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring [&_*]:cursor-pointer"

@@ -1,4 +1,4 @@
-//! Own NIP-01 metadata, through the original BFF collaboration transport (DD-39/75/80/81).
+//! NIP-01 metadata reads and own-profile writes through the original BFF transport (DD-39/75/80/81).
 //! Buzz owns the profile. Core stores only the original publish intent/event ID and audit.
 use axum::{
     extract::State,
@@ -68,7 +68,7 @@ async fn client(
     Ok((client, host))
 }
 
-/// A successful query must be a verified own kind:0, not an arbitrary row supplied
+/// A successful query must be a verified expected-author kind:0, not an arbitrary row supplied
 /// by the browser or a malformed Relay response. Empty is a real missing profile.
 fn profile_event(value: Value, author: &str) -> Result<Option<nostr::Event>, ()> {
     let rows = value.as_array().ok_or(())?;
@@ -90,14 +90,23 @@ fn profile_event(value: Value, author: &str) -> Result<Option<nostr::Event>, ()>
 }
 
 async fn read(state: &BffState, client: &IdentityClient) -> Result<Option<nostr::Event>, Response> {
+    read_author(state, client, &client.pubkey_hex()).await
+}
+
+/// Caller supplies an author proven by an admitted message, never a browser-selected identity.
+pub(crate) async fn read_author(
+    state: &BffState,
+    client: &IdentityClient,
+    author: &str,
+) -> Result<Option<nostr::Event>, Response> {
     let value = client
         .query(
             &state.http,
-            &[json!({"kinds":[0], "authors":[client.pubkey_hex()], "limit":1})],
+            &[json!({"kinds":[0], "authors":[author], "limit":1})],
         )
         .await
         .map_err(|e| relay_error_response(&e, None))?;
-    profile_event(value, &client.pubkey_hex()).map_err(|_| unavailable())
+    profile_event(value, author).map_err(|_| unavailable())
 }
 
 pub(crate) fn avatar_media_paths(
@@ -142,7 +151,7 @@ pub(crate) fn avatar_media_paths(
     paths
 }
 
-fn view(author: String, event: Option<&nostr::Event>, host: &str) -> WebProfileView {
+pub(crate) fn view(author: String, event: Option<&nostr::Event>, host: &str) -> WebProfileView {
     let content = event
         .and_then(|e| serde_json::from_str::<Value>(&e.content).ok())
         .unwrap_or(Value::Null);

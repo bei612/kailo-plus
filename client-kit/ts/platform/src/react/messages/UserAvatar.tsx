@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { useUiT } from "../context";
 import { avatarSourceUrlForShape } from "../profile/buzz/features/profile/ui/ProfileAvatarEditor.utils";
 import { parseAnimatedAvatarUrl } from "../profile/buzz/shared/lib/animatedAvatar";
 import { cn } from "../profile/buzz/shared/lib/cn";
@@ -69,6 +70,7 @@ export function UserAvatar({
   imageDraggable,
   testId,
 }: UserAvatarProps) {
+  const t = useUiT();
   const initials = getInitials(initialsLabel ?? displayName);
   const resolvedShape = shape ?? "circle";
   const shapedAvatarUrl = avatarSourceUrlForShape(avatarUrl, resolvedShape);
@@ -101,7 +103,7 @@ export function UserAvatar({
     >
       {src ? (
         <AvatarImage
-          alt={`${displayName} avatar`}
+          alt={`${displayName} ${t("platform.profile.avatar")}`}
           className={cn("object-cover", !animated && "bg-secondary")}
           data-testid={testId ? `${testId}-image` : undefined}
           draggable={imageDraggable}

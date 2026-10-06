@@ -696,37 +696,9 @@ async fn first_turn(
             "RUNTIME_ADMISSION_UNAVAILABLE",
         );
     }
-    match prepare_dispatch(
-        state,
-        invocation,
-        projection,
-        thread,
-        source.author.as_deref(),
-        &memory,
-        holder,
-    )
-    .await
-    {
-        Ok(()) => {}
-        Err(crate::agent_runtime::RuntimeError::Unknown) => {
-            return result(
-                invocation.id,
-                TaskStatus::Running,
-                "UNKNOWN_EXTERNAL_RESULT",
-            );
-        }
-        Err(_) => {
-            return result(
-                invocation.id,
-                TaskStatus::Running,
-                "RUNTIME_ADMISSION_UNAVAILABLE",
-            )
-        }
-    }
-    let core = first_turn_memory_context(&memory);
-    // Context reads can outlive the original Activity observation. Before a
-    // new native side effect, re-read that same run/activity/attempt; a retry
-    // holder is not authorization for a delayed earlier HTTP request.
+    // Source/context reads may outlive this holder. Recheck before committing
+    // any dispatch intent, so a definitely stale Activity leaves CREATED
+    // available to the existing cancellation/recovery lifecycle.
     let current = match i32::try_from(holder.attempt) {
         Ok(attempt) => state
             .capacity
@@ -742,20 +714,58 @@ async fn first_turn(
             .ok(),
         Err(_) => None,
     };
-    let observed = match (current, state.agent_runtime.as_ref()) {
+    let runtime = match (current, state.agent_runtime.as_ref()) {
         (Some(holder), Some(runtime)) if holder.held && !holder.workflow_cancel_requested => {
             runtime
-                .start_turn(
-                    state,
-                    projection,
-                    invocation.id,
-                    thread,
-                    (&source.content, core),
-                )
-                .await
         }
-        _ => Err(crate::agent_runtime::RuntimeError::AdmissionRequired),
+        _ => {
+            return result(
+                invocation.id,
+                TaskStatus::Running,
+                "RUNTIME_ADMISSION_UNAVAILABLE",
+            )
+        }
     };
+    let trace = match prepare_dispatch(
+        state,
+        invocation,
+        projection,
+        thread,
+        source.author.as_deref(),
+        &memory,
+        holder,
+    )
+    .await
+    {
+        Ok(trace) => trace,
+        Err(crate::agent_runtime::RuntimeError::Unknown) => {
+            return result(
+                invocation.id,
+                TaskStatus::Running,
+                "UNKNOWN_EXTERNAL_RESULT",
+            );
+        }
+        Err(_) => {
+            return result(
+                invocation.id,
+                TaskStatus::Running,
+                "RUNTIME_ADMISSION_UNAVAILABLE",
+            )
+        }
+    };
+    let core = first_turn_memory_context(&memory);
+    // The same transaction committed DISPATCHING, audit and model trace.
+    // From this point every error retains UNKNOWN and never retries start.
+    let observed = runtime
+        .start_turn(
+            state,
+            projection,
+            invocation.id,
+            thread,
+            (&source.content, core),
+            &trace,
+        )
+        .await;
     // Neither source nor decrypted core crosses this RPC lifetime or appears
     // in an audit/error. Even a pre-RPC error retains the committed intent.
     drop(memory);
@@ -922,7 +932,7 @@ async fn prepare_dispatch(
     source_author: Option<&str>,
     memory: &TurnMemory,
     holder: &AgentTaskAdvanceRequest,
-) -> Result<(), crate::agent_runtime::RuntimeError> {
+) -> Result<String, crate::agent_runtime::RuntimeError> {
     use crate::agent_runtime::RuntimeError;
     crate::service_api::audit_gate(state)
         .await
@@ -932,6 +942,17 @@ async fn prepare_dispatch(
         .begin()
         .await
         .map_err(|_| RuntimeError::Unknown)?;
+    // Use the same pool -> lease fence as Session birth and holder handover.
+    // An EXISTS snapshot alone cannot authorize a delayed predecessor after
+    // it waited for a recovering holder's Invocation/Session locks.
+    if holder.invocation_id != invocation.id.to_string() {
+        return Err(RuntimeError::AdmissionRequired);
+    }
+    state
+        .capacity
+        .lock_birth_holder(&mut tx, holder)
+        .await
+        .map_err(|_| RuntimeError::AdmissionRequired)?;
     let ae = crate::governance::lock_execution(&mut tx, invocation.action_execution_id)
         .await
         .map_err(|_| RuntimeError::Unknown)?;
@@ -1099,7 +1120,25 @@ async fn prepare_dispatch(
     )
     .await
     .map_err(|_| RuntimeError::Unknown)?;
-    tx.commit().await.map_err(|_| RuntimeError::Unknown)
+    commit_dispatch(tx, &state.openmeter, projection, invocation.id, thread).await
+}
+
+// This consumes the same transaction that wrote DISPATCHING and its audit.
+// No caller can commit the intent separately from the mandatory model trace.
+async fn commit_dispatch(
+    mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    openmeter: &crate::openmeter::OpenMeter,
+    projection: &RuntimeRef,
+    invocation: Uuid,
+    thread: &str,
+) -> Result<String, crate::agent_runtime::RuntimeError> {
+    use crate::agent_runtime::RuntimeError;
+    let trace =
+        crate::gateway_usage::prepare_turn(&mut tx, openmeter, projection, invocation, thread)
+            .await
+            .map_err(|_| RuntimeError::AdmissionRequired)?;
+    tx.commit().await.map_err(|_| RuntimeError::Unknown)?;
+    Ok(trace)
 }
 
 async fn record_turn(

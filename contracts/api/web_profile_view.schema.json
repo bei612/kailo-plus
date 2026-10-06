@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/web_profile_view.schema.json",
   "title": "WebProfileView",
-  "description": "Current own profile read from Buzz, never a Core profile copy. An absent kind:0 is an empty profile, not a fabricated event.",
+  "description": "Profile read from Buzz for the current identity or an author proven by a currently admitted channel/private-conversation message, never a Core profile copy. An absent kind:0 is an empty profile, not a fabricated event.",
   "type": "object",
   "additionalProperties": false,
   "required": ["pubkey", "eventId", "displayName", "avatarUrl", "about", "nip05Handle", "avatarMediaPaths"],

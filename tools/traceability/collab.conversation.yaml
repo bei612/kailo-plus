@@ -28,7 +28,7 @@ implementation:
   migrations: [core/migrations/20261006080000_conversation_buzz_binding.up.sql, core/migrations/20261006080000_conversation_buzz_binding.down.sql, collaboration/migrations/0047_governed_dm_projection.sql]
 
 runtime:
-  routes: ["/api/v1/conversations", "/api/v1/conversation-participants", "/api/v1/conversations/{conversation_id}/messages", "/api/v1/conversations/{conversation_id}/stream", "/api/v1/conversations/{conversation_id}/media", "/api/v1/conversations/{conversation_id}/media/{sha256}", "/api/v1/conversations/{conversation_id}/hide", "/api/v1/conversations/{conversation_id}/reopen", "/api/v1/conversations/{conversation_id}/visibility"]
+  routes: ["/api/v1/conversations", "/api/v1/conversation-participants", "/api/v1/conversations/{conversation_id}/messages", "/api/v1/conversations/{conversation_id}/stream", "/api/v1/conversations/{conversation_id}/media", "/api/v1/conversations/{conversation_id}/media/{sha256}", "/api/v1/conversations/{conversation_id}/hide", "/api/v1/conversations/{conversation_id}/reopen", "/api/v1/conversations/{conversation_id}/visibility", "/api/v1/conversations/{conversation_id}/messages/{event_id}/author-profile"]
   actions: [conversation.open, conversation.message.publish, conversation.hide, conversation.reopen]
   workflow_kinds: [CONVERSATION_PROJECTION]
 

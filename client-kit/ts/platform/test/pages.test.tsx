@@ -2603,7 +2603,7 @@ describe("platform pages render only through the host theme", () => {
     readFileSync(join(root, dir, "tailwind.config.js"), "utf8"),
   );
   const semanticColors = [
-    "accent", "accent-foreground", "background", "border", "destructive", "destructive-foreground",
+    "accent", "accent-foreground", "background", "border", "card", "destructive", "destructive-foreground",
     "foreground", "input", "muted", "muted-foreground", "primary", "primary-foreground", "ring", "secondary", "secondary-foreground", "popover-foreground",
     "sidebar-foreground",
     "sidebar-ring", "sidebar-accent", "sidebar-accent-foreground", "sidebar-active", "sidebar-active-foreground",
@@ -2861,6 +2861,23 @@ describe("platform pages render only through the host theme", () => {
       visit(parsed);
       let text = source.text;
       for (const node of metadata.sort((a, b) => b.getStart(parsed) - a.getStart(parsed))) text = text.slice(0, node.getStart(parsed)) + text.slice(node.end);
+      if (source.name === "agents.tsx") {
+        // REQ-24: preserve these exact WorkflowCard accents from Buzz
+        // 779af8886caae1317b4de962082429867ab61503,
+        // desktop/src/features/workflows/ui/WorkflowCard.tsx::TRIGGER_ACCENTS/ACTION_ACCENTS.
+        // This is not a general allowance for literal colours in platform pages.
+        const card = parsed.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "AutomationCard");
+        expect(card).toBeDefined();
+        for (const accent of [
+          "border-emerald-400/30 bg-emerald-600 text-white",
+          "border-blue-400/30 bg-blue-600 text-white",
+          "border-blue-300/30 bg-blue-600 text-white",
+        ]) {
+          expect(card!.getText(parsed).split(accent)).toHaveLength(2);
+          expect(text.split(accent)).toHaveLength(2);
+          text = text.replace(accent, "");
+        }
+      }
       if (source.name === "inbox-surface.tsx") {
         // Buzz 779af8886caae1317b4de962082429867ab61503,
         // desktop/src/features/home/ui/InboxListPane.tsx::InboxRowActionButton.

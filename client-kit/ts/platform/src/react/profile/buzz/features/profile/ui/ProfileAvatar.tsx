@@ -8,7 +8,7 @@ import { avatarSourceUrlForShape } from "./ProfileAvatarEditor.utils";
 import { parseAnimatedAvatarUrl } from "../../../shared/lib/animatedAvatar";
 import { cn } from "../../../shared/lib/cn";
 import { getInitials } from "../../../shared/lib/initials";
-import { useAvatarHost } from "../../../../avatar-host";
+import { useAvatarViewHost } from "../../../../avatar-host";
 import { Avatar, AvatarFallback, AvatarImage } from "../../../shared/ui/avatar";
 import { Spinner } from "../../../shared/ui/spinner";
 
@@ -70,7 +70,7 @@ export function ProfileAvatar({
   untrusted = false,
 }: ProfileAvatarProps) {
   const t = useAvatarText();
-  const { rewriteMediaUrl: rewriteRelayUrl } = useAvatarHost();
+  const { rewriteMediaUrl: rewriteRelayUrl } = useAvatarViewHost();
   const initials = getInitials(initialsLabel ?? label);
   const presentation = useAvatarPresentation(avatarUrl);
   const presentedAvatarUrl = presentation?.displayUrl ?? avatarUrl;
@@ -126,7 +126,7 @@ export function ProfileAvatar({
     >
       {src !== undefined ? (
         <AvatarImage
-          alt={`${label} avatar`}
+          alt={`${label} ${t("platform.profile.avatar")}`}
           className={cn(
             "object-cover",
             presentation?.state === "pending" && "brightness-75",

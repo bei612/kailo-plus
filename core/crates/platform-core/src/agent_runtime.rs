@@ -764,7 +764,7 @@ impl Supervisor {
     }
 
     /// SS-COD-TRACE/APP：唯一已准入 Invocation 发派，Core context 仅在本次 RPC 内。
-    /// 先提交不可重放 trace 意图，再持生命周期 fence/fresh 授权至原生 RPC 返回。
+    /// 调用方已原子提交 Invocation/trace 意图；此处再持生命周期 fence/fresh 授权至 RPC 返回。
     pub(crate) async fn start_turn(
         &self,
         state: &crate::service_api::ServiceState,
@@ -772,20 +772,12 @@ impl Supervisor {
         invocation: Uuid,
         thread: &str,
         source_context: (&str, Option<&str>),
+        trace: &str,
     ) -> Result<String, RuntimeError> {
         let (input, core_memory) = source_context;
         if Uuid::parse_str(thread).is_err() || input.is_empty() {
             return Err(RuntimeError::Protocol);
         }
-        let trace = crate::gateway_usage::prepare_turn(
-            &state.pool,
-            &state.openmeter,
-            projection,
-            invocation,
-            thread,
-        )
-        .await
-        .map_err(|_| RuntimeError::Unavailable)?;
         let mut guard = crate::gateway_usage::dispatch_guard(
             &state.pool,
             &state.openmeter,
@@ -863,7 +855,7 @@ impl Supervisor {
                 json!({"threadId":thread,
             "clientUserMessageId":invocation.to_string(),"input":inputs,
             "additionalContext":context}),
-                Some(&trace),
+                Some(trace),
                 self.timeout,
                 self.max_message_bytes,
                 Some(StartOwner::Turn {

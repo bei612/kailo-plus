@@ -4,8 +4,8 @@ import { translate } from "@client-kit/platform/i18n";
 import { useUiLocale } from "@client-kit/platform/react/context";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
-import { UserAvatar } from "../messages/UserAvatar";
-import { usePulseHost } from "./host";
+import { ProfileAvatar } from "../profile/buzz/features/profile/ui/ProfileAvatar";
+import { AvatarHostProvider } from "../profile/avatar-host";
 import {
   buildPublicFields,
   ProfileFieldGroup,
@@ -17,13 +17,16 @@ export function ProfileSummaryView({
   displayName,
   profile,
   pubkey,
+  copy,
+  mediaUrl,
 }: {
   displayName: string;
-  profile: Profile | undefined;
+  profile: Pick<Profile, "displayName" | "avatarUrl" | "about" | "nip05Handle"> | undefined;
   pubkey: string;
+  copy: (value: string) => Promise<void>;
+  mediaUrl: (url: string) => string;
 }) {
   const locale = useUiLocale();
-  const host = usePulseHost();
   const fields = React.useMemo(
     () => buildPublicFields({ profile, pubkey, locale }),
     [profile, pubkey, locale],
@@ -32,14 +35,15 @@ export function ProfileSummaryView({
   return (
     <div className="flex flex-col gap-6 pt-2">
       <div className="flex flex-col items-center gap-3 text-center">
-        <UserAvatar
-          avatarUrl={profile?.avatarUrl ?? null}
-          className="h-20 w-20 text-xl"
-          accent
-          resolveMediaUrl={host.mediaUrl}
-          displayName={displayName}
-          testId="user-profile-avatar"
-        />
+        <AvatarHostProvider value={{ locale, rewriteMediaUrl: mediaUrl }}>
+          <ProfileAvatar
+            avatarUrl={profile?.avatarUrl ?? null}
+            className="h-20 w-20 text-xl"
+            iconClassName="h-8 w-8"
+            label={displayName}
+            testId="user-profile-avatar"
+          />
+        </AvatarHostProvider>
 
         <div className="flex flex-col items-center gap-1">
           <h3
@@ -58,7 +62,7 @@ export function ProfileSummaryView({
         </div>
       </div>
 
-      <ProfileFieldGroup fields={fields} />
+      <ProfileFieldGroup fields={fields} copy={copy} />
     </div>
   );
 }

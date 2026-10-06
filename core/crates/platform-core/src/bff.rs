@@ -347,6 +347,10 @@ pub fn router(state: BffState) -> Router {
             get(crate::web_transport::query_messages).post(crate::web_transport::publish_message),
         )
         .exposed_route(
+            "/api/v1/workspaces/{workspace_id}/messages/{event_id}/author-profile",
+            get(crate::web_transport::message_author_profile),
+        )
+        .exposed_route(
             "/api/v1/workspaces/{workspace_id}/channel",
             get(crate::web_transport::query_channel),
         )
@@ -505,6 +509,10 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/conversations/{conversation_id}/messages",
             get(crate::web_transport::query_conversation_messages)
                 .post(crate::web_transport::publish_conversation_message),
+        )
+        .exposed_route(
+            "/api/v1/conversations/{conversation_id}/messages/{event_id}/author-profile",
+            get(crate::web_transport::conversation_message_author_profile),
         )
         .exposed_route(
             "/api/v1/conversations/{conversation_id}/media",

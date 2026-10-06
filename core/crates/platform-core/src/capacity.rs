@@ -437,7 +437,8 @@ impl Capacity {
     }
 
     /// A delayed request from a terminal holder must not borrow its successor's
-    /// HELD lease. Keep this lock until Session STARTING commits.
+    /// HELD lease. Keep this lock until Session STARTING or Invocation
+    /// DISPATCHING plus its model trace commits.
     pub(crate) async fn lock_birth_holder(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -972,6 +973,16 @@ mod recovery_tests {
     #[tokio::test]
     #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
     async fn terminal_holder_recovers_without_releasing_units_and_fences_old_birth() {
+        verify_terminal_holder_recovery(false).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
+    async fn terminal_holder_recovers_born_session_without_replacing_its_thread() {
+        verify_terminal_holder_recovery(true).await;
+    }
+
+    async fn verify_terminal_holder_recovery(started_thread: bool) {
         let pool = PgPool::connect(&std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").unwrap())
             .await
             .unwrap();
@@ -1165,6 +1176,31 @@ mod recovery_tests {
             .await
             .unwrap());
         previous.projection_generation = 1;
+        let thread = started_thread.then(Uuid::new_v4);
+        if let Some(thread) = thread {
+            sqlx::query("update catalog.agent_session set status='ACTIVE',runtime_thread_id=$2 where installation_resource_id=$1 and root_event_id=repeat('a',64)")
+                .bind(scope.2).bind(thread.to_string()).execute(&mut *tx).await.unwrap();
+        }
+        for dispatched in ["DISPATCHING", "UNKNOWN"] {
+            sqlx::query("update catalog.agent_invocation set status=$2 where id=$1")
+                .bind(lease.invocation_id)
+                .bind(dispatched)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            assert!(
+                !capacity
+                    .recover_unstarted(&mut tx, &lease, &facts, holder, (&previous, &next))
+                    .await
+                    .unwrap(),
+                "uncertain dispatch cannot be handed over: {dispatched}"
+            );
+        }
+        sqlx::query("update catalog.agent_invocation set status='CREATED' where id=$1")
+            .bind(lease.invocation_id)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
         assert!(capacity
             .recover_unstarted(&mut tx, &lease, &facts, holder, (&previous, &next))
             .await
@@ -1214,6 +1250,10 @@ mod recovery_tests {
         let audit_count:i64=sqlx::query_scalar("select count(*) from audit.audit_event where operation_id=$1 and result_code='CAPACITY_HOLDER_RECOVERED'")
             .bind(operation).fetch_one(&mut *tx).await.unwrap();
         assert_eq!(audit_count, 1, "same-holder retry never repeats handover");
+        let actual_thread: Option<String> = sqlx::query_scalar(
+            "select runtime_thread_id from catalog.agent_session where installation_resource_id=$1 and root_event_id=repeat('a',64)",
+        ).bind(scope.2).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(actual_thread, thread.map(|id| id.to_string()));
         tx.rollback().await.unwrap();
     }
 }

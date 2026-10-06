@@ -2533,6 +2533,7 @@ REQ-24 删除这些功能。源码验收不代表新 Web/Windows 包已投递。
 主代理收口时补验原 `cargo fmt --all --check`，首次退出 1（新增 Rust 代码格式），
 同一 SDK 执行原 formatter 后再次退出 0；只更新本批三个 Rust 文件。
 最终包含前批 `.001Z` 样例，合计 50 文件，不把格式通过计作新增产品能力。
+
 ## 2026-10-06：旧 Web 会话 431 与 SSE 登录事务累积
 
 真实旧浏览器会话的 Cookie 元数据记录到 150 个 `agw_oidc_t_*` 事务 Cookie，
@@ -2754,7 +2755,6 @@ filename、把缩略图错误映射为原 blob，两次各真实失败 1 项，�
 不恢复 Relay WorkflowEngine，也不删除这些既有交付需求。未运行 full、镜像构建或
 真实部署浏览器验收，本批结果不能称为线上可用。
 
-
 ## Workflows 原定义卡片、名称与编辑弹层恢复（2026-10-06）
 
 本批四步影响核对与实现结论：
@@ -2812,6 +2812,7 @@ filename、把缩略图错误映射为原 blob，两次各真实失败 1 项，�
 本批未运行 full、镜像构建或部署浏览器验收。原任意多步骤、过滤器及完整原生
 步骤轨迹仍未由现有冻结执行合同提供，不能宣称 Workflows 全功能已恢复；
 这些仍是交付缺口，不删除原需求，不渲染不可执行的假配置。
+
 ## 线上侧栏窗口辅助事件消费纠正（2026-10-06）
 
 实查已投递 Web `sha256:a2ce986c8375b368c43f05c7d9fb687d570219314222afa11db077af559106d8`：
@@ -2971,3 +2972,32 @@ CPU/内存压力及 Docker 限额。没有构建镜像或执行 full。
 比较基准 `07b48d405d18463de676be0547798f450e47f89e`。原同名识别仍拒绝歧义，异常只携带稳定类型及显示名；Web 与 Desktop 消费同一 `pulse.mentionAmbiguous` 中英键，未恢复英文异常直出、未改变身份选择或发布幂等。
 
 原 4 CPU / 8 GiB SDK 中运行 `tools/gen-platform-i18n.py`，生成既有 Dart 文案；shared、Desktop、Web 的 `tsc --noEmit` 均退出 0，Pulse 5 项通过。Web 现有 Composer 用例新增同名错误映射后 21 项通过。仅在私有验证副本将 catch 改回直接显示 error.message，实际用例失败（退出 1）：`expected 'AMBIGUOUS_MENTION' to be 'pulse.mentionAmbiguous'`；恢复原字节 cmp 0 后再验 21 项通过。验证运行期间 SDK 启动延迟曾无输出，未扩大限额或重启服务；最终原进程退出 0。没有运行 full、构建或部署，不借此证明三人两 Agent 或线上 Pulse 已完成。
+
+### 频道/私聊消息作者公共资料接线（2026-10-06，独立增量）
+
+比较基准 `d0304fed82fdca81e4a3a047dc0eba6244f045d1`。本批只恢复实际频道/私聊消息作者的原 hover/open 资料入口；不以 Pulse Community 目录绕过频道或私聊参与者准入，不恢复另一套 Agent 执行或资料权威。
+
+四步影响结论：
+
+1. 权威：`V-REQ-24`、`DD-39/75/80/81` 与原 `SS-WEB-RELAY`。Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/profile/ui/UserProfilePopover.tsx::UserProfilePopover/UserProfilePopoverBody` 和 `desktop/src/features/profile/ui/UserProfilePanelSections.tsx::ProfileSummaryView` 提供原呈现；`desktop/src/features/profile/ui/UserProfilePanel.tsx::UserProfilePanel` 提供原面板消费。只读 git show 核验该 commit/路径/符号，没有执行上游文件。
+2. 影响面：两条新增只读 BFF author-profile 路由由现有 workspace/conversation message capability 登记；请求只能提交消息 event ID，服务器以本人 SERVER 查询并验证原消息签名、kind、精确 channel 和 event ID，随后从该消息公钥读取 kind:0。原 `ReadTarget/ReadScope` 准入及 generation 对比直接共用，仅开放 crate 内可见性；本人 profile 写入仍经原 read(current signer)，语义不变。共享原资料正文改为显式 clipboard/media 输入，Native 原面板实际消费并删除两份重复正文/字段文件。Web 使用原 lazy hover shell、原可调整宽度面板、真实消息作者 query key；没有逐行加载资料。
+3. 副作用：没有数据写入、迁移、新队列、身份目录或内容缓存权威。缓存只在客户端当前 principal/scope/event/author 下，后台读取前后重新检查准入和当前 SERVER key；Workspace membership epoch 或 Conversation 两级 binding 版本改变即丢弃结果。头像的原 Community URL 映射到当前 workspace/conversation 媒体路由，不借本人全局 profile 媒体入口。Core 只投影原资料字段，既不复制正文入库，也不构造 owner/验证身份事实。
+4. 边界：没有 kind:0 是真实空资料（eventId/name 等为空），不是伪造消息；无消息、错误作者、签名/标签错误、身份或成员撤销不返回资料。依赖不可读沿原错误分类拒绝，不当空资料成功。客户端旧 scope/作者数据不会渲染为新 scope 的资料；查询失败显式错误，重试仍读取同一已准入消息。关闭/切频道/撤权移除面板，当前非 live 时不保留可用操作；原本人身份不显示“发起私聊”。未知写结果、额度和工作流本批无适用对象，未新增限制或迁移。
+
+合同兼容：`WebProfileView` 仅修正描述以涵盖“当前身份或已准入消息作者”。原 `tools/gen.sh` 四侧生成退出 0；逐字 diff 证明 Rust/Go/TS/Dart 仅注释变化，字段及序列化格式不变。旧数据与旧客户端格式不变，无需迁移。两条路由必须先由包含新 registry 的 Core 投递，再投递消费它们的 Web；旧 Core 上不能把 404 当成资料加载成功。没有登记虚假 artifact digest，仍是 in_progress。
+
+实现后窄验（既有 4 CPU / 8 GiB SDK，无 full/build/deploy）：shared 源码与测试 tsc 0、Pulse 5 项通过；Web tsc 0，Composer 21 + ChannelPane 4 + MessageAuthorProfile 4 = 29 项通过；Desktop tsc 0。新作者用例覆盖 lazy trigger、真实 private event 路由、返回作者不符拒绝、scope 切换不能复用旧资料。私有副本删除返回作者比对，实际 1 失败 / 3 跳过，退出 1；原字节 cmp 0 还原后作者 4 项通过。初轮 Web 类型检查因 file: 包副本未同步新增出口而失败，投递真实共享源码后通过，未改产品迁就。少量 React act 警告仍存在，不隐瞒、不冒充浏览器验收。
+
+四侧既有往返：TS 25 通过；Dart 20 通过；Go internal/contracts 通过；Rust contracts 21 通过。Dart 首次缺少已有 PUB_CACHE 投递，报 `Creation failed, path = '/.pub-cache' (Permission denied)`，只补投递原 `/cache/pub` 后通过，未安装新 SDK 或依赖。
+
+Core 集中窄验 `message-author-core-final.log` 原进程退出 0：`cargo test --offline --locked -j16 -p platform-core --bin platform-core` 分别筛选 `web_profile::tests`（4 通过 / 1 忽略）、`user_state::tests`（1 通过）和 `web_transport::tests`（25 通过）。profile 中忽略的是既有需 `PROFILE_TEST_DATABASE_URL` 的数据库发布意图用例，不算本批已验收。`cargo test --offline --locked -j16 -p contracts` 往返 21 通过；`cargo clippy --offline --locked -j16 -p platform-core --bin platform-core -- -Dwarnings` 退出 0。为避免同 Core 重复编译，本次同源 SDK 同时加入队友冻结 runtime 7 路径并在原隔离数据库复跑原子回执恢复 1 项、holder 恢复 2 项，均通过；没有更改业务库、配额或执行原模型。
+
+Core 新作者证据反向验证：仅在同一 SDK 源码删去 `profile_event` 的作者公钥比对，重新编译后 `admitted_message_author_profile_is_not_the_reading_identity` 实际 0 通过 / 1 失败、退出 101，失败断言为读者不能替代消息作者。恢复原源码、与正式字节 cmp 0，再次编译后原资料 4 通过 / 1 忽略、退出 0。首次负向命令的 login shell 丢失已有 Cargo PATH 而报 127，原日志 `message-author-core-mutation.log` 保留；改用同一容器原 exec PATH，真正编译并执行的负向日志为 `message-author-core-mutation-run.log`，还原日志为 `message-author-core-restored.log`，没有换源码根、安装依赖或拿旧 binary 代替新输入。
+
+交叉复核纠正：资料摘要与悬浮卡不能把通用 `UserAvatar` 当作原 `ProfileAvatar` 的等价替代。两处现恢复既有共享 `ProfileAvatar`，保留 primary/20 fallback、空姓名 UserRound、逐 URL 图片失败/缓存回退和 pending presentation；同一 AvatarHost 仅允许展示消费者只注入 locale/media resolver，原编辑器仍须提供真实 uploader/haptic，不补假函数。头像 alt 复用既有 `platform.profile.avatar` 中英键。共享资料主头像保留原 h-20/w-20 与 h-8/w-8 fallback 图标尺寸，没有重新设计外观。
+
+最终窄验曾在 `message-author-profile-final.log` 明确失败：shared/Web tsc 已退出 0，但两个 Vitest worker 启动超时，0 tests、2 errors、退出 1；后续 Native tsc 因原 `set -e` 未执行。未扩大 timeout/资源限额，也没有把更早通过结果当作这次最终头像输入验收。恢复原头像后的单批 `message-author-profile-avatar-final.log` 退出 0：shared 源码/测试 tsc、Web/Desktop tsc、原头像 3 项（含真实上传成功/拒绝、只读展示的动画样式与空名图标）、Pulse 5 项、作者资料 4 项和 ChannelPane 4 项均通过。私有 SDK 移除原头像透明背景后，新增用例实际 1 失败 / 2 跳过、退出 1；原字节 cmp 0 恢复后头像 3 项通过。同轮 message-row 4 项是旧 SDK 夹具，不代表另批正式新增 8 项；另批最新检查由主线程独立记录。日志为同一宿主 Data 目录下 `message-author-avatar-{mutation,restored}.log`。
+
+仍未声明完成：本批 Web 新作者入口落在频道/私聊主消息行，未新增 Forum 帖子和线程内作者入口；原资料 Follow/Unfollow、Wave/Huddle、在线状态、共同频道、NIP-OA owner 核验、Agent 管理及活动完整页仍须各自原有治理接线。本批没有伪按钮、虚构 owner 或借用 Pulse 权限打开这些功能。没有真实浏览器部署验收，不以源码共享和夹具通过声称全部原版资料能力已恢复。
+
+主线程补充回执：正式最新 `message-row.test.tsx` 8 项通过、退出 0（不是上面的旧 SDK 4 项），日志 `/volumes/data/kailo/tmp/pulse-agent-integration-20261006.yBMzaY/message-row-restored.log`；同目录 `theme-mutation.log` 记录精确原版主题例外被破坏后失败，`theme-restored.log` 记录原字节还原后单项通过。这两项属于主线程独立改动，不混入本批 30 个源码路径。

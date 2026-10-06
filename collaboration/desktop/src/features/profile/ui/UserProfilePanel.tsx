@@ -1,7 +1,9 @@
 import { useUserProfileQuery } from "@/features/profile/hooks";
 import { translate } from "@client-kit/platform/i18n";
 import { useDeviceLocale } from "@client-kit/platform/react/context";
-import { ProfileSummaryView } from "@/features/profile/ui/UserProfilePanelSections";
+import { ProfileSummaryView } from "@client-kit/platform/react/pulse";
+import { writeTextToClipboard } from "@/shared/lib/clipboard";
+import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { useEscapeKey } from "@/shared/hooks/useEscapeKey";
 import { useIsThreadPanelOverlay } from "@/shared/hooks/use-mobile";
 import {
@@ -83,6 +85,8 @@ export function UserProfilePanel({
           displayName={displayName}
           profile={profile}
           pubkey={pubkey}
+          copy={writeTextToClipboard}
+          mediaUrl={rewriteRelayUrl}
         />
       </AuxiliaryPanelBody>
     </AuxiliaryPanel>

@@ -76,6 +76,8 @@ export function createBffClient(transport: BffTransport) {
   return {
     transport,
     profile: () => get<WebProfileView>("/api/v1/profile"),
+    messageAuthorProfile: (workspaceId: string, eventId: string) => get<WebProfileView>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/messages/${encodeURIComponent(eventId)}/author-profile`),
+    conversationMessageAuthorProfile: (conversationId: string, eventId: string) => get<WebProfileView>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(eventId)}/author-profile`),
     updateProfile: (body: WebProfileUpdateRequest) => call<{ eventId: string; operationId: string }>({ method: "PUT", path: "/api/v1/profile", body }),
 
     /** 部署的公开平台信息（DD-111）：界面上的产品名只取自这里，不写在客户端里。 */

@@ -526,18 +526,22 @@ async fn visible_conversation_channels(
 }
 
 #[derive(Clone, Copy)]
-enum ReadTarget {
+pub(crate) enum ReadTarget {
     Workspace(Uuid),
     Conversation(Uuid),
 }
 
-enum ReadScope {
+pub(crate) enum ReadScope {
     Workspace(crate::web_transport::WorkspaceScope),
     Conversation(crate::conversations::ConversationScope),
 }
 
 impl ReadTarget {
-    async fn admit(self, state: &BffState, ctx: &ExecutionContext) -> Result<ReadScope, Response> {
+    pub(crate) async fn admit(
+        self,
+        state: &BffState,
+        ctx: &ExecutionContext,
+    ) -> Result<ReadScope, Response> {
         match self {
             Self::Workspace(id) => {
                 crate::web_transport::admit_collaboration_workspace_scope(state, ctx, id)
@@ -553,21 +557,21 @@ impl ReadTarget {
 }
 
 impl ReadScope {
-    fn channel_id(&self) -> &str {
+    pub(crate) fn channel_id(&self) -> &str {
         match self {
             Self::Workspace(scope) => &scope.channel_id,
             Self::Conversation(scope) => &scope.channel_id,
         }
     }
 
-    fn community_host(&self) -> &str {
+    pub(crate) fn community_host(&self) -> &str {
         match self {
             Self::Workspace(scope) => &scope.community_host,
             Self::Conversation(scope) => &scope.community_host,
         }
     }
 
-    fn same_admission(&self, current: &Self) -> bool {
+    pub(crate) fn same_admission(&self, current: &Self) -> bool {
         match (self, current) {
             (Self::Workspace(before), Self::Workspace(after)) => {
                 before.channel_id == after.channel_id

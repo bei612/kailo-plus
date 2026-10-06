@@ -36,7 +36,7 @@ implementation:
   migrations: [core/migrations/20260923070000_audit_dispatch_index.up.sql, core/migrations/20261006190000_publish_message_ancestry.up.sql, core/migrations/20261006190000_publish_message_ancestry.down.sql, core/migrations/20261006210000_publish_message_edit.up.sql, core/migrations/20261006210000_publish_message_edit.down.sql]
 
 runtime:
-  routes: ["/api/v1/workspaces/{workspace_id}/messages", "/api/v1/workspaces/{workspace_id}/stream", "/api/v1/workspaces/{workspace_id}/channel"]
+  routes: ["/api/v1/workspaces/{workspace_id}/messages", "/api/v1/workspaces/{workspace_id}/stream", "/api/v1/workspaces/{workspace_id}/channel", "/api/v1/workspaces/{workspace_id}/messages/{event_id}/author-profile"]
   actions: [workspace.message.publish]
 
 release:

@@ -767,3 +767,64 @@ Agent 卡片复用 Buzz `779af8886caae1317b4de962082429867ab61503` 的
 
 此批 Pulse、Agent 卡片和已提交 Inbox 纠正尚未构建部署；运行配置未开放
 Pulse kind 1/7/5。现有线上版本、旧 Windows 包和 Mobile 验收边界不变。
+
+### 2026-10-06 集中检查失败与发布边界
+
+后续提及歧义的中英文修复已提交并推送至
+`d0304fed82fdca81e4a3a047dc0eba6244f045d1`，但未部署。集中检查的实际输入
+仍是 `fb38358d1801d48e4a7d24caf8340d4f640cab6a`，不覆盖后续提交或在途修改。
+原 `tools/check.sh --full` 已完成静态检查、契约、Cargo/Go/Dart 测试和
+Workflow replay；真实数据库迁移因未投递 DATABASE_URL 而跳过，不算通过。
+
+该轮存在两个明确失败：TypeScript 的共享页面主题检查拒绝恢复的原版卡片
+配色和已有 `card` 语义色；追溯检查找不到 conversation 对应 Core/Worker
+发布产物，并报告 Pulse 缺少发布 digest。单独提取 TypeScript 原始输出后，
+contracts 为 25/25，共享 platform 为 471/472。不能删减原版呈现或填入
+无对应产物的 digest 来通过检查。
+
+针对主题检查的窄验有两次 worker 启动超时，均为 0 个用例实际执行，不能
+称修复通过。Data 可用空间降至约 3 GiB、磁盘等待持续升高后，停止已有失败
+的全量检查容器 `042487551fb99f38aab52924a1275a1e5719c0d67dffb2db67f03d3943e39051`，
+最终退出码为 137，未完成 supply、seam、security 等后续步骤。只停止本轮检查，不清共享缓存、
+不停止线上服务、不改认证授权或运行配置；完整失败日志保留在 Data
+`pulse-agent-integration-20261006.yBMzaY/`。原脚本退出清理其自建临时源码目录，
+源码可由固定 Git 输入重建；清理后 Data 可用空间约 5.1 GiB。
+本轮没有完整检查退出 0 的证据。
+
+Playwright 截图 `87-current-channel-a2ce.png` 已打开检查，实际线上仍是旧
+Web 产物 `sha256:a2ce986c8375b368c43f05c7d9fb687d570219314222afa11db077af559106d8`；
+截图中的侧栏载入错误与未恢复入口仍存在，不作为 Web/Desktop 原版体验
+等效、每页视觉验收或三人多 Agent 稳定协作的通过证据。
+
+本节更新后，在既有 4 CPU / 8 GiB SDK 使用固定设计
+`81cf51331655c61274f95ebf0204791331fc115e` 执行 `tools/check-docs.sh`。
+首次未指定已有 npm 缓存而报 ENOTCACHED（退出 1）；沿用原 `/cache/npm`
+并保持离线后退出 0：277 个设计引用闭合、87 个实体、115 个 DD、29 个 SS、
+87 个验收场景中 86 个已映射、1 个明确排除，两侧 markdownlint 均通过。
+未安装或下载依赖。
+日志分别为上述目录 `checkpoint-docs.log`、`checkpoint-docs-cached.log`；
+该文档检查不替代源码、发布产物或浏览器功能验收。
+
+本次消息头像文案改动对应 DD-53、REQ-24：固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/shared/ui/UserAvatar.tsx::UserAvatar` 原样交互保留，共享
+`client-kit/ts/platform/src/react/messages/UserAvatar.tsx::UserAvatar`
+只将英文裸写的图片替代文本接入既有 `platform.profile.avatar` 中英 key。
+影响读取方为消息行、线程摘要、Inbox、Pulse、Forum 与 Desktop 的原共享
+包装器；locale 沿既有设备/宿主上下文，不新增偏好权威。显示名仍保持原文，
+空头像不产生图片，动画/静态图均使用同一替代文本；尺寸、回退色、形状、媒体
+地址解析、加载失败行为不变。无契约、数据库、Workflow 或认证授权变化，
+不新增异步状态、副作用、兼容窗口或错误分类。
+
+资源释放后，同 SDK 的主题定向检查实际通过 1 项（237 个范围外用例跳过）。
+修正只承认两端已有的 `card` 语义色，以及固定 Buzz commit 的
+`desktop/src/features/workflows/ui/WorkflowCard.tsx::TRIGGER_ACCENTS/ACTION_ACCENTS`
+三个精确配色；每个配色必须唯一出现在现有 `AutomationCard`，其他位置不
+豁免。没有改产品配色、主题或页面，也没有放开任意硬编码色。随后仅在 SDK
+副本卡片追加 `bg-pink-500`，实际报 `expected [ 'pink-500' ] to deeply equal []`
+并退出 1；还原后源码 SHA-256 与变异前一致，再次 1 项通过、退出 0。
+原件为 `theme-mutation.log`、`theme-restored.log`，不是整套页面测试通过。
+
+最新消息头像源码与正式 `message-row.test.tsx` 同步后，已有消息行 8 项
+全部通过（`message-row-restored.log`）。早先队友 SDK 的旧夹具只有 4 项，
+不将旧夹具结果冒充当前输入验收；该 8 项也不构成每页视觉或全 i18n 覆盖证明。

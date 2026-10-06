@@ -2,6 +2,8 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { AvatarHostProvider } from "../src/react/profile/avatar-host";
 import { useAvatarUpload } from "../src/react/profile/buzz/features/profile/useAvatarUpload";
+import { ProfileAvatar } from "../src/react/profile/buzz/features/profile/ui/ProfileAvatar";
+import { buildAnimatedAvatarUrl } from "../src/react/profile/buzz/shared/lib/animatedAvatar";
 import { render, settle } from "./render";
 
 function OriginalUpload({ saved }: { saved: (url: string) => void }) {
@@ -22,6 +24,21 @@ async function select(host: HTMLElement) {
 }
 
 describe("original avatar upload consumes its captured host uploader", () => {
+  it("keeps original animated styling and empty-identity fallback with a read-only host", async () => {
+    const rewrite = vi.fn((url: string) => `/governed-media/${encodeURIComponent(url)}`);
+    const host = await render(<AvatarHostProvider value={{ locale: "zh-CN", rewriteMediaUrl: rewrite }}>
+      <ProfileAvatar avatarUrl={null} label="" testId="empty-avatar" />
+      <ProfileAvatar avatarUrl={buildAnimatedAvatarUrl("https://community.example/poster.png", "https://community.example/motion.png")} label="Alice" testId="animated-avatar" />
+    </AvatarHostProvider>);
+    expect(host.querySelector('[data-testid="empty-avatar-fallback"] .lucide-user-round')).not.toBeNull();
+    const animated = host.querySelector<HTMLElement>('[data-testid="animated-avatar"]')!;
+    expect(animated.classList.contains("bg-transparent")).toBe(true);
+    expect(animated.classList.contains("shadow-none")).toBe(true);
+    expect(rewrite).toHaveBeenCalledWith("https://community.example/poster.png");
+    await act(async () => animated.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+    expect(rewrite).toHaveBeenCalledWith("https://community.example/motion.png");
+  });
+
   it("passes actual bytes and only applies the returned image URL", async () => {
     const upload = vi.fn(async () => ({ url: "https://community.example/media/actual.png", type: "image/png" }));
     const saved = vi.fn();
