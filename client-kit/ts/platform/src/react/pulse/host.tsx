@@ -5,6 +5,7 @@ import { npubEncode } from "nostr-tools/nip19";
 import { newIdempotencyKey } from "../../governance";
 import { isOutcomeUnknown } from "../../transport";
 import { usePulseQuery } from "./hooks";
+import { ProfilePanel } from "./ProfilePanel";
 export { UserProfilePopover } from "./UserProfilePopover";
 export { AnimatedCount } from "./AnimatedCount";
 
@@ -31,7 +32,14 @@ export type PulseHost = {
 };
 const Context=React.createContext<PulseHost|null>(null);
 export function PulseHostProvider({host,children}:{host:PulseHost;children:React.ReactNode}) {
-  return <Context.Provider key={host.scopeKey} value={host}>{children}</Context.Provider>;
+  return <PulseScope key={host.scopeKey} host={host}>{children}</PulseScope>;
+}
+function PulseScope({host,children}:{host:PulseHost;children:React.ReactNode}) {
+  const [profileKey,setProfileKey]=React.useState<string|null>(null);
+  const value=React.useMemo(()=>({...host,openProfile:host.openProfile??setProfileKey}),[host]);
+  return <Context.Provider value={value}><div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+    {children}{profileKey?<ProfilePanel key={profileKey} pubkey={profileKey} onClose={()=>setProfileKey(null)}/>:null}
+  </div></Context.Provider>;
 }
 export function usePulseHost() { const host=React.useContext(Context); if(!host)throw new Error("Pulse host unavailable");return host; }
 export function truncateNpub(key:string) { const value=npubEncode(key);return `${value.slice(0,12)}…${value.slice(-6)}`; }

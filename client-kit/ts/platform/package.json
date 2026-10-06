@@ -9,6 +9,7 @@
   ],
   "exports": {
     "./react/pulse": "./src/react/pulse/index.ts",
+    "./react/pulse/mentions": "./src/react/pulse/mentions.ts",
     "./react/thread": "./src/react/messages/thread/index.ts",
     "./react/thread/kinds": "./src/react/messages/thread/kinds.ts",
     "./react/thread/threadPanel": "./src/react/messages/thread/threadPanel.ts",

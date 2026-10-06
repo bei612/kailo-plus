@@ -1,3 +1,4 @@
+import { PeopleMentionAutocomplete, detectPrefixQuery, selectedMentionLabel, extractMentionPubkeys, type MentionSuggestion } from "@client-kit/platform/react/pulse";
 // 频道（SS-WEB-RELAY、SS-WEB-01）：消息、附件、已读位置。
 //
 // 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
@@ -474,14 +475,15 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", onCancel, autoSendDraftKey, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onConfirmed, draftChannelId }: {
+export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", onCancel, autoSendDraftKey, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onConfirmed, draftChannelId }: {
+  mentionPeople?: readonly MentionSuggestion[];
   editTarget?: TimelineMessage;
   onCancelEdit?: () => void;
   onConfirmed?: () => void;
   draftChannelId?: string;
   surface?: "stream" | "forum";
   workspaceId?: string;
-  onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[]) => Promise<unknown>;
+  onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[], humanMentionPubkeys?: string[]) => Promise<unknown>;
   onCancel?: () => void;
   containerClassName?: string;
   layoutMode?: "standalone" | "dock";
@@ -498,6 +500,11 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
   /** Original Inbox sends only after its explicit confirmation, using this editor's existing intent. */
   autoSendDraftKey?: string;
 }) {
+  const [humanQuery, setHumanQuery] = useState<{query:string;startIndex:number;cursor:number}|null>(null);
+  const humanBindings = useRef(new Map<string,string>());
+  const [humanNames,setHumanNames] = useState<string[]>([]);
+  const humanSuggestions = useMemo(()=>mentionPeople?.filter(person=>humanQuery!==null && person.displayName.toLowerCase().includes(humanQuery.query.toLowerCase()))??[],[mentionPeople,humanQuery]);
+  const {mentionSelectedIndex:humanIndex,setMentionSelectedIndex:setHumanIndex}=useMentionSelection(humanSuggestions);
   const [draft, setDraft] = useState("");
   const [draftRevision, setDraftRevision] = useState(0);
   const [pending, setPending] = useState<Pending[]>([]);
@@ -637,16 +644,35 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
   const linkSelectionRef = useRef<(info: LinkSelectionInfo | null) => void>(() => {});
   const linkShortcutRef = useRef<() => boolean>(() => false);
   const autocompleteOpenRef = useRef(mentionPickerOpen);
-  autocompleteOpenRef.current = mentionPickerOpen;
+  autocompleteOpenRef.current = mentionPickerOpen || humanSuggestions.length > 0;
   const richText = useRichTextEditor({
     placeholder: placeholder ?? t("platform.message"), editable: !disabled && !sending,
     readClipboardText: () => navigator.clipboard.readText(),
-    onUpdate: ({ text }) => { setDraft(text); setDraftRevision((value) => value + 1); }, onSubmit: () => sendRef.current(),
+    mentionNames:humanNames,
+    getMentionIdentities:()=>[...humanBindings.current].map(([label,pubkey])=>({label,pubkey})),
+    onUpdate: ({ text, cursor }) => {
+      setDraft(text); setDraftRevision((value) => value + 1);
+      const query=mentionPeople?detectPrefixQuery("@",text,cursor,mentionPeople.map(person=>person.displayName.toLowerCase())):null;
+      setHumanQuery(query?{...query,cursor}:null);
+    }, onSubmit: () => sendRef.current(),
     isAutocompleteOpen: autocompleteOpenRef,
     onEditLink: (info) => editLinkRef.current(info),
     onLinkSelectionChange: (info) => linkSelectionRef.current(info),
     onLinkShortcut: () => linkShortcutRef.current(),
   });
+  const selectHuman = (person:MentionSuggestion) => {
+    if(disabled||sending||!mentionPeople?.some(candidate=>candidate.pubkey===person.pubkey))return;
+    const position=richText.getPlainTextAndCursor();
+    const label=selectedMentionLabel(person.displayName,person.pubkey,humanBindings.current);
+    humanBindings.current.set(label,person.pubkey);setHumanNames([...humanBindings.current.keys()]);
+    richText.replacePlainTextRange(humanQuery?.startIndex??position.cursor,humanQuery?.cursor??position.cursor,"@"+label+" ");
+    setHumanQuery(null);setHumanIndex(0);
+  };
+  const openPeople=()=>{
+    const position=richText.getPlainTextAndCursor();
+    setHumanQuery({query:"",startIndex:position.cursor,cursor:position.cursor});
+    richText.editor?.commands.focus();
+  };
   const linkEditor = useLinkEditor(richText, {
     openExternal: (url) => { window.open(url, "_blank", "noopener,noreferrer"); },
     openMessageLink: (link) => { if (onOpenMessageLink) onOpenMessageLink(link); else setProblem(t("platform.linkOpenFromChannel")); },
@@ -673,6 +699,7 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
     setMentionInstallationIds(saved?.mentionInstallationIds ?? []);
     setMentionPickerOpen(false);
     setMentionSelectedIndex(0);
+    humanBindings.current.clear();setHumanNames([]);setHumanQuery(null);
     setSending(false);
     setUploading(0);
     setProblem(null);
@@ -709,6 +736,12 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
     // 不本地插入这条消息：它要等 Relay 接受并回传 event id 才算发出去。
     // 先渲染再等确认，会让一条被拒绝的消息看起来已经发出。草稿与附件也只在
     // 确认后才清空——发送失败时它们都还在。
+    let humanMentionPubkeys:string[]=[];
+    try {
+      humanMentionPubkeys=extractMentionPubkeys({text:content,selectedMentions:humanBindings.current,
+        memberCandidates:mentionPeople?.map(person=>({...person,isMember:true}))??[]});
+      if(humanMentionPubkeys.some(pubkey=>!mentionPeople?.some(person=>person.pubkey===pubkey)))throw new Error(t("platform.loadFailed"));
+    } catch(error) {setProblem(error instanceof Error?error.message:t("platform.loadFailed"));return;}
     const signature = JSON.stringify([
       content,
       attachments.map((a) => {
@@ -718,6 +751,7 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
         return [a.sha256, a.filename, a.spoiler, ...(Object.values(metadata).some((value) => value !== undefined) ? [metadata] : [])];
       }),
       mentionInstallationIds,
+      ...(humanMentionPubkeys.length?[humanMentionPubkeys]:[]),
     ]);
     if (editTarget && intent.current && intent.current.signature !== signature) {
       // An earlier edit may already exist on the Relay. Changing its payload
@@ -733,7 +767,7 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
     persistDraft(content, pending);
     setSending(true);
     const publish = onPublish
-      ? onPublish(content, attachments, key, mentionInstallationIds)
+      ? onPublish(content, attachments, key, mentionInstallationIds, humanMentionPubkeys)
       : workspaceId
         ? publishMessage(workspaceId, content, attachments, key, mentionInstallationIds).then((receipt) => {
             if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Message has no confirmed receipt.");
@@ -747,6 +781,7 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
         if (richText.getMarkdown().trim() === content) {
           richText.setContent("");
           setDraft("");
+          humanBindings.current.clear();setHumanNames([]);setHumanQuery(null);
         }
         setPending((current) => current.filter((p) => !pending.includes(p)));
         setOriginals((current) => new Map([...current].filter(([url]) => !pending.some((entry) => entry.descriptor.url === url))));
@@ -776,7 +811,7 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
         }
       })
       .finally(() => { if (owner.active) setSending(false); });
-  }, [pending, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed]);
+  }, [pending, workspaceId, mentionPeople, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed]);
   sendRef.current = send;
 
   const autoSent = useRef<typeof owner | null>(null);
@@ -812,6 +847,11 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
       onDrop: (event) => { setDragging(false); if (!disabled && !sending && event.dataTransfer.files.length) { event.preventDefault(); void attach(event.dataTransfer.files); } },
     }}
     onEditorKeyDown={(event) => {
+      if(humanSuggestions.length){
+        if(event.key==="Escape"){event.preventDefault();setHumanQuery(null);return;}
+        if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();setHumanIndex(index=>(index+(event.key==="ArrowDown"?1:humanSuggestions.length-1))%humanSuggestions.length);return;}
+        if((event.key==="Enter"||event.key==="Tab")&&humanSuggestions[humanIndex]){event.preventDefault();selectHuman(humanSuggestions[humanIndex]);return;}
+      }
       if (event.key === "Tab" && !event.shiftKey && linkEditor.isCardOpen) {
         event.preventDefault(); linkEditor.focusCardFirstControl();
       }
@@ -822,11 +862,14 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
       isSending: sending, isUploading: uploading > 0,
       onFormattingToggle: setIsFormattingOpen,
       onLinkButton: linkEditor.openFromToolbar,
-      onOpenMentionPicker: workspaceId ? () => setMentionPickerOpen((open) => !open) : undefined,
+      onOpenMentionPicker: mentionPeople ? openPeople : workspaceId ? () => setMentionPickerOpen((open) => !open) : undefined,
       onPaperclip: () => picker.current?.click(),
       sendDisabled: disabled || sending || uploading > 0 || !mentionVerified || (!draft.trim() && pending.length === 0),
     }}>
       {dragging ? <DropZoneOverlay /> : null}
+      {mentionPeople?<div className="relative"><PeopleMentionAutocomplete suggestions={humanSuggestions} selectedIndex={humanIndex}
+        composerOwnsFocus={!disabled&&!sending&&humanQuery!==null}
+        onSelect={selectHuman} onDismiss={()=>setHumanQuery(null)}/></div>:null}
       {workspaceId !== undefined ? <div className="relative flex flex-wrap items-center gap-2 text-xs">
         <Button type="button" variant="ghost" data-mention-picker-trigger=""
         onKeyDown={(event) => {

@@ -142,6 +142,31 @@ beforeEach(() => {
   });
 });
 
+it("publishes the explicit human picker identity and retains it with the same UNKNOWN intent", async () => {
+  const pubkey="a".repeat(64);
+  const publish=vi.fn().mockRejectedValue(new TransportError("Unknown"));
+  const host=await render(<Composer draftIdentity="pulse-scope" mentionPeople={[{pubkey,displayName:"Alex"}]} onPublish={publish}/>);
+  await click(host.querySelector('[aria-label="Mention someone"]') as HTMLButtonElement);
+  await act(async()=>{host.querySelector('[aria-label="Mention someone Alex"]')!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}));});
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toContain("Alex");
+  await click(button(host,"platform.send"));
+  await settle();
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publish.mock.calls[0]?.[4]).toEqual([pubkey]);
+  await click(button(host,"platform.send"));
+  await settle();
+  expect(publish.mock.calls[1]?.[2]).toEqual(publish.mock.calls[0]?.[2]);
+  expect(publish.mock.calls[1]?.[4]).toEqual([pubkey]);
+});
+
+it("resolves a typed human mention only from the current projected directory",async()=>{
+  const pubkey="b".repeat(64),publish=vi.fn().mockResolvedValue({});
+  const host=await render(<Composer draftIdentity="pulse-typed" mentionPeople={[{pubkey,displayName:"Blair"}]} onPublish={publish}/>);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!,"Hello @Blair");
+  await click(button(host,"platform.send"));await settle();
+  expect(publish.mock.calls[0]?.[4]).toEqual([pubkey]);
+});
+
 it("uses the original rich text toolbar and preserves a scoped UNKNOWN draft and idempotency key after remount", async () => {
   state.publish.mockRejectedValue(new TransportError("lost response"));
   let host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="workspace-a" />);

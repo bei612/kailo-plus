@@ -29,6 +29,7 @@ const MENTION_DEBOUNCE_MS = 120,
 export function useMentions(
   channelId: string | null,
   profiles?: UserProfileLookup,
+  people?: readonly MentionSuggestion[],
 ) {
   const [mentionQuery, setMentionQuery] = React.useState<string | null>(null);
   const [mentionStartIndex, setMentionStartIndex] = React.useState(0);
@@ -39,8 +40,8 @@ export function useMentions(
   const membersQuery = useChannelMembersQuery(channelId);
   const members = membersQuery.data;
   const mentionCandidates = React.useMemo(
-    () => buildMentionCandidates({ members, profiles }),
-    [members, profiles],
+    () => people?.map(person=>({...person,avatarUrl:person.avatarUrl??null,role:null,secondaryLabel:null,isMember:true})) ?? buildMentionCandidates({ members, profiles }),
+    [members, profiles, people],
   );
   const searchableNames = React.useMemo(
     () => [

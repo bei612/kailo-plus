@@ -67,6 +67,7 @@ function MessageComposerImpl({
   onSend,
   placeholder,
   profiles,
+  mentionPeople,
   replyTarget = null,
   mediaController,
   showBackgroundUploadProgress = true,
@@ -92,7 +93,7 @@ function MessageComposerImpl({
   const effectiveDraftKey = editTarget ? null : (draftKey ?? channelId);
   const effectiveDraftKeyRef = React.useRef(effectiveDraftKey);
   effectiveDraftKeyRef.current = effectiveDraftKey;
-  const mentions = useMentions(channelId, profiles);
+  const mentions = useMentions(channelId, profiles, mentionPeople);
   const channelLinks = useChannelLinks();
   const emojiAutocomplete = useEmojiAutocomplete();
   const internalMedia = useMediaUpload({ deferUploadsUntilSend: true });

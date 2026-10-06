@@ -5,6 +5,7 @@ import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import type { TimelineMessage } from "@/features/messages/types";
 
 export type MessageComposerProps = {
+  mentionPeople?: readonly import("./MentionAutocomplete").MentionSuggestion[];
   surface?: "stream" | "forum";
   channelId?: string | null;
   channelName: string;

@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "../src/i18n";
-import { PulseHostProvider, usePulsePublisher, type PulseHost } from "../src/react/pulse/host";
+import { PulseHostProvider, usePulseHost, usePulsePublisher, type PulseHost } from "../src/react/pulse/host";
+import { extractMentionPubkeys, selectedMentionLabel } from "../src/react/pulse/extractMentionPubkeys";
+import { canonicalNpub } from "../src/react/conversations/pubkey";
 import { PulseView } from "../src/react/pulse/ui/PulseView";
 import { NoteCard } from "../src/react/pulse/ui/NoteCard";
 import { Operation } from "@client-kit/contracts";
@@ -10,7 +12,12 @@ import { button, click, render } from "./render";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 
 const author="a".repeat(64), viewer="b".repeat(64), eventId="c".repeat(64);
-beforeEach(()=>setLocale("en"));
+beforeEach(()=>{
+  setLocale("en");
+  vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener:()=>{},removeEventListener:()=>{}}));
+  vi.stubGlobal("ResizeObserver",class {observe(){} disconnect(){} unobserve(){}});
+});
+afterEach(()=>vi.unstubAllGlobals());
 function host(overrides:Partial<PulseHost>={}):PulseHost {
   return {scopeKey:"tenant:viewer",pubkey:viewer,query:async()=>[],publish:async()=>({eventId}),
     copy:async()=>{},startDm:async()=>{},mediaUrl:url=>url,renderContent:content=><p>{content}</p>,
@@ -22,6 +29,36 @@ function wrap(value:PulseHost,children:React.ReactNode) {
 }
 
 describe("original Pulse governed consumers",()=>{
+  it("opens the original public profile fields for the actual author and copies the full identity",async()=>{
+    const copy=vi.fn(async()=>{}),startDm=vi.fn(async()=>{});
+    const query=vi.fn<PulseHost["query"]>(async(request)=>request.view==="PROFILES"?[{
+      id:eventId,pubkey:author,created_at:1,kind:0,tags:[],
+      content:JSON.stringify({display_name:"Actual author",about:"Original public biography",nip05:"author@example.org"}),
+    }]:[]);
+    function Open(){const host=usePulseHost();return <button onClick={()=>host.openProfile?.(author)}>Open author</button>;}
+    const ui=await render(wrap(host({copy,startDm,query}),<Open/>));
+    await click(button(ui,"Open author"));
+    await vi.waitFor(()=>expect(ui.textContent).toContain("Original public biography"));
+    expect(query).toHaveBeenCalledWith({view:"PROFILES",authors:[author]});
+    expect(ui.textContent).toContain("Actual author");
+    expect(ui.textContent).toContain("author@example.org");
+    await click(ui.querySelector('[data-testid="user-profile-public-key"]') as HTMLButtonElement);
+    expect(copy).toHaveBeenCalledWith(canonicalNpub(author));
+    await click(ui.querySelector('[data-testid="user-profile-nip05"]') as HTMLButtonElement);
+    expect(copy).toHaveBeenCalledWith("author@example.org");
+    await click(button(ui,"Start direct message"));
+    expect(startDm).toHaveBeenCalledWith(author);
+    expect(ui.querySelector('[data-testid="user-profile-panel"]')).toBeNull();
+  });
+
+  it("retains two explicit same-name selections without rebinding the first recipient",()=>{
+    const selected=new Map<string,string>();
+    selected.set(selectedMentionLabel("Alex",author,selected),author);
+    const second=selectedMentionLabel("Alex",viewer,selected);
+    selected.set(second,viewer);
+    expect(extractMentionPubkeys({text:"@Alex and @"+second,selectedMentions:selected,memberCandidates:[]})).toEqual([author,viewer]);
+    expect(extractMentionPubkeys({text:"@Alex",selectedMentions:selected,memberCandidates:[]})).toEqual([author]);
+  });
   it("preserves original feed tabs and passes new posts to the host, not a Workspace",async()=>{
     const publish=vi.fn<PulseHost["publish"]>(async()=>({eventId}));const query=vi.fn<PulseHost["query"]>(async()=>[]);
     const ui=await render(wrap(host({publish,query}),<PulseView currentPubkey={viewer}/>));

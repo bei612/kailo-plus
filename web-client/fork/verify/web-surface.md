@@ -2904,3 +2904,64 @@ Core 3/3、共享 16/16 再次通过。首轮 UI fixture 缺 TooltipProvider 报
 提及 picker、资料完整面板及 NIP-OA owner 认证展示还未闭合：当前不拿 kind:0 的
 自报 bot 字段伪造 Agent 身份，不编造 owner。核心帖/回复消费者接通不等于原版
 全部细节已验收，以上缺口保留，不删除原交付要求。
+
+## 2026-10-06 Pulse 人类提及与公共资料增量
+
+此增量基于已冻结 Pulse 树 `cace573505319b1ddb117936f87f89fecfe15b01`，
+不改上一批验证输入，也不包含 Core、契约、运行配置或发布产物变更。
+
+四步影响结论：
+
+1. 权威仍是 REQ-24 与 design `81cf51331655c61274f95ebf0204791331fc115e`
+   的 Community 边界。提及目录复用原 conversationParticipants API：当前 Tenant
+   的 ACTIVE HUMAN/成员/identity 投影及 tenant.discover，不从显示名猜 Principal。
+   资料仍由 Relay 的真实 kind:0 作者记录提供，不把本人资料代替被查看者。
+2. Web/Desktop 共用原人类候选行、前缀检测、精确提及范围及同名选择绑定算法；
+   两宿主 Pulse 读取同一既有目录分页。Native 原 useMentions 仅增加真实目录输入，
+   不赋予 Community 人员虚构频道角色；非 Pulse 原频道 roster 路径保持原样。
+   Web 现有 Composer 增加可选人类目录和第五个发布参数，原 AgentInstallation
+   picker、工作区准入及旧消息签名保持原行为。实际人类公钥集合纳入发送意图；
+   UNKNOWN 保留原键，不清空草稿或所选身份。无持久化正文、迁移或新注册表。
+3. 原资料头像、简介展开、可复制公钥/NIP-05、可调整宽度辅助面板和 DM 接线
+   共用 TS；切 scope 时整个面板实例卸载。未绑定、目录读取失败时不猜身份；
+   所选公钥已不在当前投影时不发。资料读取失败明确报错并可重试，不伪造资料。
+4. 同名键不互相覆盖；手工输入的完整名称仅从实际当前目录解析，歧义保持拒绝。
+   目录有 nextCursor 才显示加载更多，失败不显示成功。既有受治理 DM 负责再次
+   准入；资料面板不开放旧未治理 Agent 执行器或设置。现有错误归类不变。
+
+上游依据为 `779af8886caae1317b4de962082429867ab61503`：
+
+- `desktop/src/features/messages/ui/MentionAutocomplete.tsx::MentionAutocomplete`；
+- `desktop/src/features/messages/lib/extractMentionPubkeys.ts::selectedMentionLabel/extractMentionPubkeys`；
+- `desktop/src/shared/lib/mentionOccurrences.ts::mentionOccurrences` 与
+  `desktop/src/shared/lib/detectPrefixQuery.ts::detectPrefixQuery`；
+- `desktop/src/features/profile/ui/UserProfilePanelSections.tsx::ProfileSummaryView`、
+  `desktop/src/features/profile/ui/UserProfilePanelFields.tsx::ProfileFieldGroup`、
+  `desktop/src/shared/ui/HoverCopyIndicator.tsx::HoverCopyIndicator`。
+
+使用现有已二开副本抽取这些控件，保留此前身份消歧修正；没有新造简化聊天编辑器。
+界面技能仅用于保留原控件与布局，不引入另一套视觉方案。
+
+验证在原 `kailo-agent-receipt-xvkujx`（4 CPU/8 GiB）执行，实际查过当前进程、
+CPU/内存压力及 Docker 限额。没有构建镜像或执行 full。
+
+- shared `tsc --noEmit`、`tsc -p tsconfig.test.json`、Web/Desktop
+  `tsc --noEmit`：均退出 0；最终提及手工输入增量继续通过 Web 实例用例。
+- shared `vitest run test/pulse.test.tsx --pool=threads --maxWorkers=1`：5/5。
+- Web `vitest run src/platform/ui/Composer.test.tsx --pool=threads --maxWorkers=1`：20/20。
+- Native 原 `node --import ./test-loader.mjs --experimental-strip-types --test src/shared/lib/detectPrefixQuery.test.mjs`：
+  16/16，日志 `pulse-people-native-helper.log`。纯算法保留独立导出，Node 消费不加载 UI barrel。
+- 实现后 SDK 私有变异：资料目标换成本人，资料作者用例失败；发布参数的 mentions
+  清空，人类 picker 用例失败。两次退出均 1；恢复原字节 cmp 为 0，恢复后 5/5
+  与 19/19 通过；随后加入完整名称键解析用例，Web 最终 20/20。
+- 初轮暴露 readonly 头像误用编辑器 host，以及 Native 目录 role 类型错误，已修正；
+  jsdom matchMedia/ResizeObserver 与 mousedown 夹具已按原控件补全。最终共享资料
+  用例有 React act 异步更新告警但退出 0，不把告警隐去。
+
+日志沿用 Data 中 `profile-settings-ortsoo.DRR20F/pulse-people-{shared,hosts,final,mutation,restored,typed}.log`。
+
+状态：源码写入和上述窄验完成；本增量尚未提交、构建、部署或真实浏览器验收。
+人类公共资料不是原完整用户/Agent 面板全部验收：关注/取消关注、Wave/Huddle、
+状态/在线投影、关联频道、NIP-OA owner 与 Agent 运行管理仍需各自真实治理接线；
+未创建假入口或伪造 owner，不删除这些原交付需求。Pulse 原 feed 一次有界查询的
+行为未改成新搜索/分页产品；本批新增分页仅复用已有人员目录的 nextCursor。

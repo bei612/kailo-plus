@@ -1,3 +1,10 @@
 export { PulseView } from "./ui/PulseView";
 export { PulseHostProvider } from "./host";
 export type { PulseHost, PulseEvent, PulseComposerProps } from "./host";
+export { PeopleMentionAutocomplete } from "./PeopleMentionAutocomplete";
+export type { MentionSuggestion } from "./PeopleMentionAutocomplete";
+export { extractMentionPubkeys, selectedMentionLabel, mentionMatchCandidates } from "./extractMentionPubkeys";
+export { detectPrefixQuery } from "./detectPrefixQuery";
+export { mentionOccurrences } from "./mentionOccurrences";
+export type { MentionPubkeyCandidate } from "./extractMentionPubkeys";
+export { usePeopleDirectory, PeopleDirectoryStatus } from "./usePeopleDirectory";

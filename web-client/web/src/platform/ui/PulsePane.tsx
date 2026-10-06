@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { PulseHostProvider, PulseView, type PulseHost } from "@client-kit/platform/react/pulse";
+import { PulseHostProvider, PulseView, usePeopleDirectory, PeopleDirectoryStatus, type PulseHost } from "@client-kit/platform/react/pulse";
 import { useT } from "@client-kit/platform/react/context";
 import { bff, publishPulse, queryPulse, uploadPulseMedia, pulseMediaUrl } from "../bff-client";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
@@ -9,6 +9,7 @@ import { Composer } from "./ChannelPane";
 /** The original Pulse surface; only transport/signing/media belong to Web. */
 export function PulsePane({scopeKey,onStartDm}:{scopeKey:string;onStartDm:(pubkey:string)=>void}) {
   const t=useT();
+  const directory=usePeopleDirectory(scopeKey);
   const profile=useQuery({queryKey:["platform",scopeKey,"own-profile"],queryFn:()=>bff.profile(),retry:false});
   const scope=useMemo(()=>({active:true,media:new Map<string,string>()}),[scopeKey,profile.data?.pubkey]);
   useEffect(()=>{scope.active=true;return()=>{scope.active=false;};},[scope]);
@@ -26,10 +27,11 @@ export function PulsePane({scopeKey,onStartDm}:{scopeKey:string;onStartDm:(pubke
       renderContent:(content,tags)=><MessageContent content={content} mediaTags={tags} onMediaUrl={pulseMediaUrl}/>,
       renderComposer:(props)=><div className={props.className}>{props.header}<Composer surface="forum"
         disabled={props.disabled||props.isSending} placeholder={props.placeholder} onCancel={props.onCancel}
+        mentionPeople={directory.query.isSuccess?directory.people:[]}
         draftIdentity={scopeKey} onUpload={uploadPulseMedia} onMediaUrl={pulseMediaUrl}
-        onPublish={async(content,attachments)=>{check();return props.onSubmit(content,[],[...attachments]);}}/></div>,
+        onPublish={async(content,attachments,_key,_agents,mentions)=>{check();return props.onSubmit(content,mentions??[],[...attachments]);}}/><PeopleDirectoryStatus directory={directory}/></div>,
     };
-  },[scopeKey,scope,profile.data?.pubkey,onStartDm,t]);
+  },[scopeKey,scope,profile.data?.pubkey,onStartDm,t,directory.people,directory.query.isSuccess,directory.query.hasNextPage,directory.query.isFetchingNextPage,directory.query.isError]);
   if(!profile.data||profile.isError)return <p role={profile.isError?"alert":"status"}>{t(profile.isError?"platform.loadFailed":"platform.loading")}</p>;
   return <PulseHostProvider host={host}><PulseView currentPubkey={profile.data.pubkey}/></PulseHostProvider>;
 }

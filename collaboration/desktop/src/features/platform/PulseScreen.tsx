@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { PulseHostProvider, PulseView, type PulseHost } from "@client-kit/platform/react/pulse";
+import { PulseHostProvider, PulseView, usePeopleDirectory, PeopleDirectoryStatus, type PulseHost } from "@client-kit/platform/react/pulse";
 import { useT } from "@client-kit/platform/react/context";
 import { useNativeSession } from "./activeCommunity";
 import { createPulseTransport } from "./pulseTransport";
@@ -12,6 +12,7 @@ import { writeTextToClipboard } from "@/shared/lib/clipboard";
 
 export function PulseScreen() {
   const session=useNativeSession();const navigate=useNavigate();const t=useT();
+  const directory=usePeopleDirectory(session.facts.communityHost+":"+session.devicePubkey);
   const scope=useMemo(()=>({active:true}),[session]);
   useEffect(()=>{scope.active=true;return()=>{scope.active=false;};},[scope]);
   const limit=session.facts.relayQueryLimit;
@@ -25,15 +26,16 @@ export function PulseScreen() {
       renderComposer:(props)=><div className={props.className}>{props.header}<MessageComposer surface="forum"
         channelName={t("platform.tab.pulse")} disabled={props.disabled} isSending={props.isSending}
         profiles={props.profiles} placeholder={props.placeholder} onCancelReply={props.onCancel}
+        mentionPeople={directory.query.isSuccess?directory.people:[]}
         onSend={async(content,mentions,mediaTags)=>{
           const attachments=[...parseImetaTags(mediaTags??[]).values()].map(media=>({
             url:media.url,sha256:media.x,type:media.m,size:media.size,dim:media.dim,
             filename:media.filename,displayLabel:media.alt,blurhash:media.blurhash,thumb:media.thumb,duration:media.duration,image:media.image,
           }));
           await props.onSubmit(content,mentions,attachments);
-        }}/></div>,
+        }}/><PeopleDirectoryStatus directory={directory}/></div>,
     };
-  },[session,scope,limit,navigate,t]);
+  },[session,scope,limit,navigate,t,directory.people,directory.query.isSuccess,directory.query.hasNextPage,directory.query.isFetchingNextPage,directory.query.isError]);
   if(!host)return <p role="alert">{t("platform.loadFailed")}</p>;
   return <PulseHostProvider host={host}><PulseView currentPubkey={session.devicePubkey}/></PulseHostProvider>;
 }
