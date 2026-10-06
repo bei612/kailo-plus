@@ -1,5 +1,6 @@
 # Complete fixed native Cells source plus Kailo-owned source changes.
-# No native fork artifact has yet been built, deployed or accepted.
+# Native fork artifact and three-user browser SSO are verified; platform bindings
+# and tool/resource governance are not accepted by that browser result.
 project: file-storage
 reference_tree: cells
 upstream_url: https://github.com/pydio/cells
@@ -14,12 +15,12 @@ artifacts:
     build_dockerfile: file-storage/tools/docker/images/cells/buildx-dockerfile
     inputs: [file-storage/]
     build_args: [CELLS_VERSION, GIT_REV, BUILD_STAMP, DOCKER_ENTRYPOINT_SRC_DIR]
-    source_digest: none
-    artifact_digest: none
-    blocked: Native source fork is not yet built or deployed. The original Dockerfile now selects only the pinned Go 1.26.8 source-compile stage with the unchanged native lock and original entrypoint; an upstream download image is not an integrated artifact.
+    source_digest: sha256:1547a9b78302988da3f7c986b48de73fcb064fb153b6ed7028db010284297aea
+    artifact_digest: sha256:e2bd0ea9fd61ca0d1d6d2f7d834519081ccdde6843c3bc6bb15f8511c2eec7d4
+    blocked: Platform ApplicationBinding, resource and tool governance integration is not yet accepted. The fixed native fork is built and independently deployed; three distinct standard users completed normal browser SSO and retained their own identities after refresh.
 
 source_facts: [SF-CEL-01, SF-CEL-03, SF-CEL-04, SF-CEL-05, SF-CEL-06]
 source_seams: []
 compatibility_evidence: [file-storage/fork/verify/native-identity.md, file-storage/adapter/verify/query-revision.md, file-storage/deploy/verify/deployment.md]
 owner: team-capabilities
-last_reverified: 2026-10-05
+last_reverified: 2026-10-06

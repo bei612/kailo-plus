@@ -91,3 +91,40 @@
 同一个受限 Node SDK 的原 frozen install/build（session 4329）实际退出 0：四个新增所需锁定包安装完成，`webpack 5.104.1 compiled successfully in 58306 ms`。`cells-login-ui-build-deps-corrected.log` SHA-256 为 `757bcad5f333fca40c8560f129eeb58d17ffe66b683ab9435260a9a86d9106ab`。原输出 `frontend/assets/core.authfront/res/dist/AuthfrontCoreActions.min.js` SHA-256 为 `3606e882f96ad1f469951277755f6d488b0d998acab934c92e5167260bc6196f`；对应 `.gz` 为 `7127a8d25ae55c16b203e0ac51b5675938f3544a96e4cf2ea0c15b00215cd513`，解压后与 JS 逐字 cmp 0。生成 JS 实际包含 `PASSWORD_AUTH_ONLY` 限定和 `KAILO_OIDC_LOGIN` 消费，不是手工修改的发布包。上述证明原生前端已生成；Go 验证、产品镜像、部署及真实 SSO 仍未据此验收。
 
 随后原 Go 目标 session 62410 实际退出 0：8 个 OIDC 顶层目标、9 个原生 HTTP consumer 子例和原 service 16 个断言通过；日志 `cells-login-ui-go.log` SHA-256 为 `698bdb77f6e9a70a696e73ac0dba494361c7572493f3610634f7cc772fc99d41`。主动删除生产 `nativeOIDCLoginOption` 的重复 challenge 拒绝判断，原新目标 session 31981 退出 1，输出 `ambiguous or malformed native login query exposed a login option`；原件 `cells-login-ui-production-mutation.log` 为 `44becbd8691bfc52440a6fc73ba7a3a85389cc90e9977593cb1c94e0b533b1e4`。apply_patch 逐字还原后 handler SHA-256 与变异前相同，为 `b9917f1fa4b1543d8d41e60a7638fcb26c554221a37a6b509cfb40bb5ccae4ee`；原完整窄目标 session 4835 再次退出 0，`cells-login-ui-restored.log` 为 `2471a8b7941633e09eaa15437a5a2e981e3808c337377227d11105a0ef9d0fea`。未运行产品镜像、真实 SSO、full 或部署，本节不扩大为三组件接入验收。
+
+## 2026-10-06 三人正常原生 SSO 已部署验收
+
+18:31 UTC，apps `afc462d836c770b6f402372b53cd05b3c203786a` 的 Cells 修正版
+经原 builder 构建、原 registry 推送和独立 `deploy/start.sh` 投递均退出 0。
+原 helper 计算源码摘要
+`sha256:1547a9b78302988da3f7c986b48de73fcb064fb153b6ed7028db010284297aea`，
+产物为 `sha256:e2bd0ea9fd61ca0d1d6d2f7d834519081ccdde6843c3bc6bb15f8511c2eec7d4`，
+registry 读回及运行容器镜像一致。原版本命令打印该完整 apps commit、`5.0.3-dev`
+及正确构建时间。Cells 为 4 CPU / 8 GiB，独立数据库为 2 CPU / 2 GiB；仅前者容器
+被替换，数据库容器与数据未重建，两者 healthy 且 restart count 为 0。
+构建使用原缓存挂载，但仍实际拉取基础层，不声称完全离线。
+
+三位用户各用新建独立 Playwright 浏览器会话，从
+`http://192.168.0.193:58092/` 原登录页面点击 Kailo，经过 IdP 本人账号登录及正常
+callback 自动进入原生 `/welcome/`。没有改 URL、注入 token、重置密码或共用登录态。
+页面身份读回及随后刷新读回完全一致：
+
+| IdP 登录用户 | Cells 原生 UUID | 原生 profile / admin |
+|---|---|---|
+| kailo-bootstrap-admin | 1860170d-e93e-499d-8140-ce54011c29ab | standard / false |
+| seam-verifier | 7f1849a6-a5cf-4c05-b8d1-2c1e478aa804 | standard / false |
+| collab-third-20261005 | c8b9eb70-e840-4b5d-a372-4dc1a3a59de4 | standard / false |
+
+原新手引导按 Skip 退出后，账户菜单显示各自用户名，Home、All Files、Bookmarks、
+Personal Files、Common Files 等原生页面内容可见。三张截图已逐张打开复核，不是
+HTTP 200 或容器健康推断。页面本身为顶层独立原生窗口（`window.top === window`）；
+原页面有一个无 src 的 `about:blank` 内部 frame，不是 Kailo 以 iframe 承载组件页面。
+本次三张截图仍为英文，默认中文与完整中英切换尚未验收；不能把本次 SSO 结果计为
+语言要求通过。
+
+原件目录 `/volumes/data/kailo/tmp/cells-callback-release-20261006.bxGWHg/`：
+`build.log`、`deploy.log`、`three-identities-after-refresh.log`、
+`01-admin-native-home.png`、`02-peer-native-home.png`、`03-third-native-home.png`。
+运行配置仍是受控 owner-only 文件，不入源码；原 helper 的固定源码及匹配来源清单
+保存在该目录的 `apps/`。本段不代表三服务完整接入、Web/Desktop 宿主入口、当前
+平台 Workspace scope、ApplicationBinding、MCP 工具、资源或平台工作流已经验收。
