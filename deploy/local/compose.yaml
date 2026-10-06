@@ -833,12 +833,6 @@ services:
       AGENTGATEWAY_MODEL_PORT: ${AGENTGATEWAY_MODEL_PORT:?必须显式提供 Gateway 私网模型 listener 端口}
       BFF_SERVICE_NAME: ${BFF_SERVICE_NAME:?必须显式提供，禁止硬编码}
       SERVICE_CONTAINER_PORT: ${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}
-      GATEWAY_SERVICE_ISSUER: ${GATEWAY_SERVICE_ISSUER:?existing Gateway SERVICE identity required}
-      GATEWAY_SERVICE_AUDIENCE: ${GATEWAY_SERVICE_AUDIENCE:?existing Gateway SERVICE audience required}
-      GATEWAY_SERVICE_CALLER_ID: ${GATEWAY_SERVICE_CALLER_ID:?existing Gateway SERVICE caller required}
-      GATEWAY_SERVICE_SIGNING_KEY_FILE: ${GATEWAY_SERVICE_SIGNING_KEY_FILE:?existing Gateway signer path required}
-      GATEWAY_SERVICE_KEY_ID: ${GATEWAY_SERVICE_KEY_ID:?existing Gateway signer version required}
-      GATEWAY_SERVICE_TOKEN_SECONDS: ${GATEWAY_SERVICE_TOKEN_SECONDS:?existing Gateway token lifetime required}
       AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY: ${AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY:?必须显式提供 Gateway 独占凭据目录}
     env_file:
       # 浏览器客户端密钥由网关持有，浏览器不持有。文件在 gitignore 的 secrets/ 下。

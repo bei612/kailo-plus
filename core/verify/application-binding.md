@@ -673,3 +673,57 @@ SQLx prepare --check 均通过，保留原 potentially-unused-query 提示。
 完整命令、失败和日志摘要见
 `/volumes/data/kailo/tmp/codex-component-runtime-integration-20261005.lciVUS/core-union-20261006.1GeV2Z/handoff.md`，
 回执 SHA256 `101cd1d39871249d4a8a8e49d7e243c5026ccd5179d584b09e82fbe6797a1676`。
+
+### 2026-10-06 可选 Gateway SERVICE 部署回归
+
+1. 设计与来源：DD-105 的独立 Gateway SERVICE 与 Tool Session 沿原十五项
+   全缺省/完整组边界；DD-92 APPLICATION 模型继续原 Core PEP。基于
+   `b9d64ad70ec0079853520faf7ab1ea4bb9830657` 的独立修复，不改变在途 full
+   `d2f33b12` 或 release `b9d64ad7` 输入。实际 `.env` 全缺省时原 Compose
+   `config --quiet` 退出 1（签名文件必填），证明可选能力被错误提升为平台前提。
+2. 影响：只改原 Compose、start-core、init-local、Gateway YAML、配置说明及
+   既有 security 检查。原 PYGATEWAY 校验后派生非密 runtime YAML 与 Compose
+   overlay；原初始化 start-core→Gateway 顺序实际消费。全缺省清除旧派生签名及
+   具名 listener；完整组按同一 Tool URL/name 投递原生 gateways，仅私网端口，
+   不发布宿主入口。冲突端口读取原 binds、adminAddr 与 MODEL 配置。
+3. 副作用：派生 YAML 为 0444，以供原镜像 UID 65532 读取；overlay 为 0600，
+   私钥权限与所有权不变，不读出或复制私钥。base APPLICATION conditional
+   extAuthz 的 deny 保留；没有 SERVICE 投递就不能取得 Core 授权。仅有具名
+   gateway 的 port 不产生工具或后端；仍由治理 traffic.route 的精确路径、Session
+   strict 与 MCP guardrails 控制。配置变更需要原部署流程重建 Gateway；
+   start-core 仍只重建 Core，不偷偷重启其他服务。
+4. 异常与证据：原 producer 后置检查覆盖完整组、关闭清理、部分组、过长 TTL、
+   共用 Worker 身份和四类端口冲突，最终退出 0。只在隔离执行副本删除部分组
+   `exit 2`，同一原检查真实断言失败退出 1；逐字恢复 cmp 0 后通过。
+   `producer-mutation.log` SHA256
+   `1430a0a1a6673d3398c5a5519eb99bd5b0b2fab9976a1f5070e8526ccb8c352a`；
+   `producer-final.log` SHA256
+   `11d2cd551d6fedfc0ac813f1d3d2cd18b7852eab0b70fdc15edc91b597cb2deb`。
+
+实际新 Gateway `44234913` 镜像以原 UID 65532、4 CPU/8 GiB、只读配置执行
+`--validate-only`，全缺省通过。首次测试输入漏隐式 cookie、隔离网络无法读取
+OIDC discovery，以及旧运行环境缺新增 BFF 两非密字段，均保留真实失败；补齐
+测试输入并仅只读现有 IdP 后退出 0，不修改产品来迁就测试。
+`native-default-complete-input.log` SHA256
+`30b214deb6985d939861f68d0a9030e21a70be6dc8180cfe440641736228e5ee`。
+
+原 native `get_effective_config`/`materialize_config` 在环境展开前读取 YAML，
+故不能将 JSON map 直接藏在环境占位符里。此批沿原派生器生成真实 YAML 对象；
+`append_traffic_routes` 原样追加 resource.value，与 Core require_route 的 exact
+读回一致。base 显式 routes 空列表保证删除最后路由后的 absent 读回。
+本段证明配置解析和部署消费者，不是模型推理、工具调用或组件业务 E2E。
+原件位于
+`/volumes/data/kailo/tmp/codex-gateway-optional-deployment-20261006.KWAiDS/`。
+
+完整十五项以同一原 PYGATEWAY 生成原生配置；独立 SERVICE 公钥/签名文件沿
+受控 OpenBao 投递，未共享 Worker 或浏览器身份。真实具名私网入口选择
+`kailo-agent-tools` / `http://agentgateway:18082/`，原模型端口为 18081，
+没有新增宿主端口。原镜像 UID 65532、4 CPU/8 GiB、签名卷只读执行
+`--validate-only` 实际退出 0。首次 runner 漏隐式测试 cookie 退出 1，补同一
+公开 fixture 后恢复；未改原生配置或私钥。实投 YAML 与已验证输入 cmp 0，
+真实 `.env` 加派生 overlay 的 Compose `config --quiet` 退出 0。
+原件目录为
+`/volumes/data/kailo/tmp/codex-gateway-service-delivery-20261006.45u1tR/`，
+`native-complete-restored.log` SHA256
+`30b214deb6985d939861f68d0a9030e21a70be6dc8180cfe440641736228e5ee`。
+本次没有启停 Gateway，没有模型推理或 Tool 业务请求；解析成功不代表业务授权通过。

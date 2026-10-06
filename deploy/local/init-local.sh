@@ -87,7 +87,13 @@ migration_image=$("${CONTAINER_DOCKER[@]}" image inspect --format '{{.Id}}' \
   echo '缺少当前 tools/check.Dockerfile 配方对应的固定检查镜像；先由现有检查入口准备' >&2
   exit 2
 }
-compose() { "${CONTAINER_DOCKER[@]}" compose --env-file .env -f compose.yaml "$@"; }
+compose() {
+  local gateway_delivery=()
+  if [ -s secrets/agentgateway-service.compose.json ]; then
+    gateway_delivery=(-f secrets/agentgateway-service.compose.json)
+  fi
+  "${CONTAINER_DOCKER[@]}" compose --env-file .env -f compose.yaml "${gateway_delivery[@]}" "$@"
+}
 
 migrate_core_database() (
   database_container=$(compose ps -q core-db)

@@ -108,21 +108,56 @@ if [ "$gateway_present" -ne 0 ] && [ "$gateway_present" -ne "${#gateway_names[@]
   exit 2
 fi
 gateway_compose=()
-if [ "$gateway_present" -ne 0 ]; then
+if [ "$gateway_present" -eq 0 ] || [ "$gateway_present" -eq "${#gateway_names[@]}" ]; then
   gateway_config=$(mktemp)
   for gateway_name in "${gateway_names[@]}"; do export "$gateway_name"; done
   OIDC_ISSUER="$OIDC_ISSUER" OIDC_SERVICE_CLIENT_ID="$OIDC_SERVICE_CLIENT_ID" \
   OIDC_WORKER_CLIENT_ID="$OIDC_WORKER_CLIENT_ID" BFF_SERVICE_NAME="$BFF_SERVICE_NAME" \
   SERVICE_CONTAINER_PORT="$SERVICE_CONTAINER_PORT" \
   AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY="$AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY" \
-  python3 - "$gateway_config" <<'PYGATEWAY'
+  AGENTGATEWAY_MODEL_PORT="$AGENTGATEWAY_MODEL_PORT" \
+  python3 - "$gateway_config" "$gateway_present" <<'PYGATEWAY'
 import base64
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
 import sys
+import tempfile
 from urllib.parse import urlsplit
+
+def write_backend_auth(value, gateways):
+    # This is deployment metadata derived from the same validated group, not a
+    # new input or credential store. Keep it for init-local's subsequent Gateway
+    # start, and replace the old value when returning to the all-absent mode.
+    source = Path("model-gateway-config.yaml").read_text(encoding="utf-8")
+    for marker, replacement in (
+        ("gateways: {} # GATEWAY_SERVICE_DELIVERY_GATEWAYS", "gateways: " + json.dumps(gateways)),
+        ("backendAuth: null # GATEWAY_SERVICE_DELIVERY_AUTH", "backendAuth: " + json.dumps(value)),
+    ):
+        if source.count(marker) != 1:
+            raise SystemExit("Gateway 原配置缺少唯一投递位置")
+        source = source.replace(marker, replacement)
+    destination = Path("secrets/agentgateway-service.yaml").resolve()
+    overlay = {"configs": {"agentgateway_config": {"file": str(destination)}}}
+    for target, content, mode in ((destination, source, 0o444),
+                           (Path("secrets/agentgateway-service.compose.json"), json.dumps(overlay), 0o600)):
+        descriptor, temporary = tempfile.mkstemp(prefix=".gateway-service-", dir=target.parent)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                stream.write(content + "\n")
+                os.fchmod(stream.fileno(), mode)
+            os.replace(temporary, target)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+    return overlay
+
+if sys.argv[2] == "0":
+    delivery = write_backend_auth(None, {})
+    with open(sys.argv[1], "w", encoding="utf-8") as stream:
+        json.dump(delivery, stream)
+    raise SystemExit(0)
 
 def reject():
     raise SystemExit("Gateway service/Tool 投递无效；必须独立身份、精确私网 URL 与真实 public-only JWKS")
@@ -192,9 +227,20 @@ try:
         or os.environ["AGENT_TOOL_SESSION_AUDIENCE"] in (os.environ["OIDC_SERVICE_CLIENT_ID"], os.environ["GATEWAY_SERVICE_AUDIENCE"])):
         reject()
     gateway = urlsplit(os.environ["AGENT_TOOL_GATEWAY_URL"])
-    if (gateway.scheme not in ("http", "https") or not gateway.hostname
+    source = Path("model-gateway-config.yaml").read_text(encoding="utf-8")
+    bind_ports = re.findall(r"(?m)^- port: ([0-9]+)$", source)
+    admin_addresses = re.findall(r"(?m)^  adminAddr: ([^\s]+)$", source)
+    if not bind_ports or len(admin_addresses) != 1:
+        reject()
+    reserved_ports = {int(value) for value in bind_ports}
+    reserved_ports.add(int(admin_addresses[0].rsplit(":", 1)[1]))
+    reserved_ports.add(int(os.environ["AGENTGATEWAY_MODEL_PORT"]))
+    if (gateway.scheme != "http" or gateway.hostname != "agentgateway"
+        or gateway.port is None or gateway.port < 1
+        or gateway.port in reserved_ports
+        or gateway.path not in ("", "/")
         or gateway.username is not None or gateway.password is not None or gateway.query or gateway.fragment
-        or not os.environ["AGENT_TOOL_GATEWAY_NAME"].strip()):
+        or not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", os.environ["AGENT_TOOL_GATEWAY_NAME"])):
         reject()
     for name, path in (("AGENT_TOOL_MCP_URL", "/service/v1/agent-tools/mcp"),
                        ("AGENT_TOOL_EXT_MCP_URL", "/")):
@@ -207,9 +253,18 @@ try:
 except (OSError, ValueError, KeyError, TypeError):
     reject()
 
+delivery = write_backend_auth({"jwtSign": {
+    "signingKey": {"file": str(private)}, "alg": "ES256",
+    "kid": os.environ["GATEWAY_SERVICE_KEY_ID"],
+    "claims": {"iss": os.environ["GATEWAY_SERVICE_ISSUER"],
+               "aud": os.environ["GATEWAY_SERVICE_AUDIENCE"],
+               "sub": os.environ["GATEWAY_SERVICE_CALLER_ID"],
+               "azp": os.environ["GATEWAY_SERVICE_CALLER_ID"]},
+    "ttl": lifetime + "s"}}, {os.environ["AGENT_TOOL_GATEWAY_NAME"]: {"port": gateway.port}})
+delivery["services"] = {"core-bff": {"volumes": [{"type": "bind", "source": str(public),
+    "target": str(public), "read_only": True, "bind": {"create_host_path": False}}]}}
 with open(sys.argv[1], "w", encoding="utf-8") as stream:
-    json.dump({"services": {"core-bff": {"volumes": [{"type": "bind", "source": str(public),
-        "target": str(public), "read_only": True, "bind": {"create_host_path": False}}]}}}, stream)
+    json.dump(delivery, stream)
 PYGATEWAY
   gateway_compose=(-f "$gateway_config")
 fi

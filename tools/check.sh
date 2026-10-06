@@ -721,6 +721,8 @@ step_security() { hdr "9/10 受影响安全不变式"
   python3 - <<'PY' || FAIL=1
 import glob, os, re, subprocess, sys, yaml
 import pathlib
+import json
+import tempfile
 
 # 初始化顺序检查生产脚本；配置预检只使用实际部署输入，不维护第二套配置。
 initializer = pathlib.Path("deploy/local/init-local.sh").read_text(encoding="utf-8")
@@ -769,6 +771,58 @@ UniqueKeysLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
 d = yaml.load(open("deploy/local/compose.yaml", encoding="utf-8"), Loader=UniqueKeysLoader)
 raw = open("deploy/local/compose.yaml", encoding="utf-8").read()
 bad = []
+# Exercise the actual existing deployment producer, not a second renderer.
+starter = pathlib.Path("deploy/local/start-core.sh").read_text(encoding="utf-8")
+gateway_start = starter.index("gateway_names=(")
+gateway_end = starter.index("\nproject=", gateway_start)
+gateway_program = "set -eu\n" + starter[gateway_start:gateway_end]
+with tempfile.TemporaryDirectory() as temporary:
+    location = pathlib.Path(temporary)
+    (location / "secrets").mkdir()
+    (location / "model-gateway-config.yaml").write_text(
+        pathlib.Path("deploy/local/model-gateway-config.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+    public = location / "public.json"
+    public.write_text(json.dumps({"keys": [{"kty": "EC", "crv": "P-256", "alg": "ES256",
+        "kid": "fixture", "x": "A" * 43, "y": "A" * 43}]}), encoding="utf-8")
+    identity = {"GATEWAY_SERVICE_ISSUER": "fixture-gateway", "GATEWAY_SERVICE_AUDIENCE": "fixture-core",
+        "GATEWAY_SERVICE_CALLER_ID": "fixture-caller", "GATEWAY_SERVICE_JWKS_FILE": str(public),
+        "GATEWAY_SERVICE_MAX_TOKEN_SECONDS": "60", "GATEWAY_SERVICE_SIGNING_KEY_FILE": "/private/fixture.pem",
+        "GATEWAY_SERVICE_KEY_ID": "fixture", "GATEWAY_SERVICE_TOKEN_SECONDS": "30",
+        "AGENT_TOOL_MCP_URL": "http://core-bff:8082/service/v1/agent-tools/mcp",
+        "AGENT_TOOL_EXT_MCP_URL": "http://core-bff:8082/", "AGENT_TOOL_SESSION_ISSUER": "fixture-tool",
+        "AGENT_TOOL_SESSION_AUDIENCE": "fixture-tool-audience", "AGENT_TOOL_SESSION_TOKEN_SECONDS": "30",
+        "AGENT_TOOL_GATEWAY_URL": "http://agentgateway:18081", "AGENT_TOOL_GATEWAY_NAME": "fixture"}
+    base_env = {k: v for k, v in os.environ.items() if not k.startswith(("GATEWAY_SERVICE_", "AGENT_TOOL_"))}
+    base_env.update(OIDC_ISSUER="fixture-oidc", OIDC_SERVICE_CLIENT_ID="fixture-service",
+        OIDC_WORKER_CLIENT_ID="fixture-worker", BFF_SERVICE_NAME="core-bff", SERVICE_CONTAINER_PORT="8082",
+        AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY="/private", AGENTGATEWAY_MODEL_PORT="18080", TMPDIR=temporary)
+    def produce(values):
+        return subprocess.run(["bash", "-c", gateway_program], cwd=temporary,
+                              env=base_env | values, capture_output=True).returncode
+    output = location / "secrets/agentgateway-service.yaml"
+    def derived():
+        return yaml.safe_load(output.read_text(encoding="utf-8"))
+    if produce(identity) != 0 or derived()["llm"]["policies"]["extAuthz"]["conditional"][0]["policies"]["backendAuth"]["jwtSign"]["claims"]["sub"] != "fixture-caller":
+        bad.append("Gateway 完整组未由原 producer 投递精确独立 SERVICE")
+    if derived()["gateways"] != {"fixture": {"port": 18081}}:
+        bad.append("Gateway 具名 listener 必须取同一 Tool URL/name，不能用 admin/browser 入口")
+    if output.stat().st_mode & 0o777 != 0o444:
+        bad.append("Gateway 非密配置必须能由原非 root 镜像读取；不得扩大私钥权限")
+    if (produce({}) != 0 or derived()["gateways"] != {}
+            or derived()["llm"]["policies"]["extAuthz"]["conditional"][0]["policies"]["backendAuth"] is not None):
+        bad.append("Gateway 全缺省未清除旧签名投递")
+    for invalid in ({"GATEWAY_SERVICE_ISSUER": "partial"},
+                    identity | {"GATEWAY_SERVICE_TOKEN_SECONDS": "60"},
+                    identity | {"GATEWAY_SERVICE_CALLER_ID": "fixture-worker"},
+                    *(identity | {"AGENT_TOOL_GATEWAY_URL": f"http://agentgateway:{port}"}
+                      for port in (8080, 8091, 15000, 18080))):
+        if produce(invalid) == 0 or derived()["gateways"] != {}:
+            bad.append("Gateway 部分/超期/共用 Worker 身份必须拒绝且不能覆盖原投递")
+gateway_env = d["services"]["agentgateway"].get("environment") or {}
+if any(name.startswith("GATEWAY_SERVICE_") for name in gateway_env):
+    bad.append("Gateway 不得把可选 SERVICE 完整组变为 Compose 全局必填或第二直接输入")
+if "gateway_delivery=(-f secrets/agentgateway-service.compose.json)" not in initializer:
+    bad.append("Gateway 初始化缺少原派生 Compose 配置消费者")
 # 同一部署事实只维护一次；这里校验消费者投影，不读取真实 .env 或任何 secret。
 # 去掉必填提示文案后比较表达式，提示文字变化不影响语义。
 projections = {
@@ -999,7 +1053,18 @@ for svc, spec in (d.get("services") or {}).items():
 # 再逐条判定。没有任何一条能落在检查之外。
 agw_cfg = "deploy/local/model-gateway-config.yaml"
 if os.path.exists(agw_cfg):
-    agw = yaml.safe_load(open(agw_cfg, encoding="utf-8"))
+    agw_source = pathlib.Path(agw_cfg).read_text(encoding="utf-8")
+    if "gateways: {} # GATEWAY_SERVICE_DELIVERY_GATEWAYS" not in agw_source:
+        bad.append("Gateway 缺少原派生具名 listener 消费者")
+    agw = yaml.safe_load(agw_source)
+    if agw.get("routes") != []:
+        bad.append("Gateway 原 traffic.route 集合须有明确空列表，保证最后一条删除读回")
+    application_check = agw["llm"]["policies"]["extAuthz"]["conditional"]
+    if (len(application_check) != 1
+            or application_check[0].get("condition") != "has(apiKey.componentBindingId)"
+            or application_check[0].get("failureMode") != "deny"
+            or application_check[0].get("policies", {}).get("backendAuth") is not None):
+        bad.append("APPLICATION 模型必须保留精确条件与 extAuthz deny；未投递不能假冒 SERVICE")
     PROJECTED = {"x-platform-oidc-issuer", "x-platform-oidc-subject"}
     # 原生入口标识（DD-78）：只许原生 listener 投影，且值固定；浏览器 listener
     # 必须移除它，否则浏览器自报就能打开只对原生端开放的入口

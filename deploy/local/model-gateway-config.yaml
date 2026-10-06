@@ -40,6 +40,12 @@ config:
 # 独立模型入口（DD-70/71/110）：只在容器网络提供，不属于 Web/Bearer 用户代理。
 # keys 由 Core 以 Installation 专属 SecretRef/hash 与 allowedModels 原生投影；此处
 # 空集合不产生共享 key。Hybrid 资源合入以后仍必须使用 strict 入站认证。
+# No listener exists without the validated complete SERVICE/Tool group. Native
+# traffic.route projections attach to this exact map; no alternate route store.
+gateways: {} # GATEWAY_SERVICE_DELIVERY_GATEWAYS
+# Hybrid traffic.route values are appended unchanged here. Keep an explicit
+# empty list so deletion of the last route still has exact absent read-back.
+routes: []
 llm:
   port: ${AGENTGATEWAY_MODEL_PORT}
   policies:
@@ -59,18 +65,10 @@ llm:
         failureMode: deny
         includeRequestHeaders: [content-type]
         policies:
-          backendAuth:
-            jwtSign:
-              signingKey:
-                file: ${GATEWAY_SERVICE_SIGNING_KEY_FILE}
-              alg: ES256
-              kid: ${GATEWAY_SERVICE_KEY_ID}
-              claims:
-                iss: ${GATEWAY_SERVICE_ISSUER}
-                aud: ${GATEWAY_SERVICE_AUDIENCE}
-                sub: ${GATEWAY_SERVICE_CALLER_ID}
-                azp: ${GATEWAY_SERVICE_CALLER_ID}
-              ttl: ${GATEWAY_SERVICE_TOKEN_SECONDS}s
+            # Only the existing complete SERVICE delivery emits jwtSign. With
+            # no delivery the check stays mandatory, but has no service token:
+            # Core rejects it; ordinary AGENT keys do not enter this condition.
+            backendAuth: null # GATEWAY_SERVICE_DELIVERY_AUTH
         protocol:
           http:
             path: "'/service/v1/application-models/check'"
