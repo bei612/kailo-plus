@@ -451,6 +451,61 @@ async fn apply_returns_unauthorized_for_fetch_requests() {
 }
 
 #[tokio::test]
+async fn event_source_without_fetch_metadata_never_starts_login() {
+	for accept in [
+		"text/event-stream",
+		"text/event-stream; charset=utf-8",
+		"application/json, Text/Event-Stream",
+	] {
+		let policy = test_policy();
+		let mut req = request(Method::GET, "http://app.example.com/private", None);
+		req
+			.headers_mut()
+			.insert(header::ACCEPT, accept.parse().unwrap());
+		let err = test_helpers::test_policy(&policy, &mut req)
+			.await
+			.expect_err("EventSource cannot complete an interactive login")
+			.downcast();
+		let response = err.into_response_with_grpc(false);
+		assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+		assert!(!response.headers().contains_key(header::SET_COOKIE));
+		assert!(!response.headers().contains_key(header::LOCATION));
+	}
+	let mut policy = test_policy();
+	policy.login = Some(super::OidcLogin {
+		path: "/auth/start".into(),
+		redirect: Some("/sign-in".into()),
+	});
+	let mut req = request(Method::GET, "http://app.example.com/private", None);
+	req
+		.headers_mut()
+		.insert(header::ACCEPT, "text/event-stream".parse().unwrap());
+	let response = test_helpers::test_policy(&policy, &mut req)
+		.await
+		.unwrap()
+		.direct_response
+		.unwrap();
+	assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+	assert!(!response.headers().contains_key(header::SET_COOKIE));
+	assert_eq!(response.headers()[header::LOCATION], "/sign-in");
+	// Normal navigation and an unrelated media type retain the original login flow.
+	for accept in ["text/html", "text/event-streaming"] {
+		let policy = test_policy();
+		let mut req = request(Method::GET, "http://app.example.com/private", None);
+		req
+			.headers_mut()
+			.insert(header::ACCEPT, accept.parse().unwrap());
+		let response = test_helpers::test_policy(&policy, &mut req)
+			.await
+			.unwrap()
+			.direct_response
+			.unwrap();
+		assert_eq!(response.status(), StatusCode::FOUND);
+		assert!(response.headers().contains_key(header::SET_COOKIE));
+	}
+}
+
+#[tokio::test]
 async fn apply_bypasses_cors_preflight_requests() {
 	let policy = test_policy();
 	let mut req = request(Method::OPTIONS, "https://app.example.com/private", None);

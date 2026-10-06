@@ -254,12 +254,23 @@ impl OidcPolicy {
 			}
 		}
 
-		// Fetches cannot complete cross-origin login.
+		// Fetches cannot complete cross-origin login. In an HTTP development
+		// origin browsers omit Fetch Metadata, but EventSource still advertises
+		// its response media type. It must not mint a login transaction per retry.
 		let non_navigation = req.headers().get("sec-fetch-mode").is_some_and(|mode| {
 			matches!(
 				mode.to_str(),
 				Ok("cors" | "no-cors" | "same-origin" | "websocket")
 			)
+		}) || req.headers().get_all(header::ACCEPT).iter().any(|value| {
+			value.to_str().is_ok_and(|value| {
+				value.split(',').any(|media_type| {
+					media_type
+						.split(';')
+						.next()
+						.is_some_and(|kind| kind.trim().eq_ignore_ascii_case("text/event-stream"))
+				})
+			})
 		});
 		let login_redirect = self
 			.login

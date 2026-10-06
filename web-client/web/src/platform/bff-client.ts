@@ -19,7 +19,7 @@ import type {
 import { createBffClient } from "@client-kit/platform/client";
 import { hiddenConversationChannels, type ConversationVisibilityHost } from "@client-kit/platform/react/new-message";
 import { newIdempotencyKey } from "@client-kit/platform/governance";
-import { TransportError } from "@client-kit/platform/transport";
+import { BffError, SessionEndedError, TransportError } from "@client-kit/platform/transport";
 import { type BffRequest, unwrap } from "@client-kit/platform/transport";
 import { createFetchTransport } from "@client-kit/platform/web-fetch";
 
@@ -28,8 +28,13 @@ export { BffError } from "@client-kit/platform/transport";
 /**
  * 网关会话已不在：浏览器只能经一次顶层导航重新登录，由网关带去 IdP。
  */
+let returningToLogin = false;
 const transport = createFetchTransport({
-  onSessionEnded: () => window.location.assign(window.location.href),
+  onSessionEnded: () => {
+    if (returningToLogin) return;
+    returningToLogin = true;
+    window.location.assign(window.location.href);
+  },
 });
 
 export const bff = createBffClient(transport);
@@ -196,14 +201,11 @@ export type StreamFrame =
 /**
  * 打开一条 Workspace 事件流。
  *
- * 续流用 SSE 自带的协议：服务端把 generation 作为事件 id、把重连间隔作为
- * retry 下发，EventSource 断线后按该间隔自动重连，并把 id 放进 Last-Event-ID
- * 带回。对不上时服务端重发 snapshot，而不是从某个猜测的位置接着读。
+ * 服务端把 generation 作为事件 id、把重连间隔作为 retry 下发。断线后先关闭
+ * 原 EventSource，确认当前会话仍有效，才按该间隔重新订阅并取得 fresh snapshot。
  *
- * EventSource 只在网络错误时自动重连：重连请求得到 HTTP 错误（BFF 重启期间
- * 网关回 503）时它永久关闭。此时按服务端 `retry` 帧给出的同一间隔重新打开，
- * 重开即重取 snapshot。从未收到过间隔（第一次连接就失败）时不自定时长，
- * 如实显示已断开。
+ * 会话探测也无法到达后端时仍使用同一 retry 间隔，不再打开未经确认的流。
+ * 从未收到过间隔（第一次连接就失败）时不自定时长，如实显示已断开。
  *
  * `session-revoked`、`scope-revoked` 与 `identity-revoked` 是确定的拒绝，必须
  * 主动停下；其余关闭原因（包括 `readmission-unavailable`）仍交给重连。
@@ -213,6 +215,29 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
   let retryMillis: number | undefined;
   let reopen: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
+
+  const recover = async () => {
+    try {
+      // EventSource cannot expose an HTTP status or stop a cross-origin
+      // redirect itself. Probe through the existing manual-redirect transport
+      // before permitting another subscription or top-level login.
+      await bff.session();
+    } catch (error) {
+      if (stopped) return;
+      if (error instanceof SessionEndedError ||
+        (error instanceof BffError && (error.status === 401 || error.status === 403))) {
+        stopped = true;
+        onFrame({ type: "ended" });
+        return;
+      }
+      if (retryMillis !== undefined) reopen = setTimeout(() => { void recover(); }, retryMillis);
+      else onFrame({ type: "ended" });
+      return;
+    }
+    if (stopped) return;
+    if (retryMillis !== undefined) reopen = setTimeout(open, retryMillis);
+    else onFrame({ type: "ended" });
+  };
 
   const open = () => {
     if (stopped) return;
@@ -262,19 +287,13 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
     });
     es.addEventListener("error", () => {
       if (stopped || source !== es) return;
-      if (es.readyState !== EventSource.CLOSED) {
-        onFrame({ type: "interrupted" });
-        return;
-      }
-      // A permanently closed source cannot supply more authoritative frames.
+      // Even CONNECTING would otherwise retry without observing an expired
+      // browser session, repeatedly creating OIDC transactions on HTTP origins.
+      es.close();
       source = undefined;
-      if (retryMillis === undefined) {
-        onFrame({ type: "ended" });
-        return;
-      }
       clearTimeout(reopen);
-      reopen = setTimeout(open, retryMillis);
       onFrame({ type: "interrupted" });
+      void recover();
     });
   };
 

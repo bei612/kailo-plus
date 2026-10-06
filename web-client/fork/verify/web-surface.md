@@ -2533,3 +2533,51 @@ REQ-24 删除这些功能。源码验收不代表新 Web/Windows 包已投递。
 主代理收口时补验原 `cargo fmt --all --check`，首次退出 1（新增 Rust 代码格式），
 同一 SDK 执行原 formatter 后再次退出 0；只更新本批三个 Rust 文件。
 最终包含前批 `.001Z` 样例，合计 50 文件，不把格式通过计作新增产品能力。
+## 2026-10-06：旧 Web 会话 431 与 SSE 登录事务累积
+
+真实旧浏览器会话的 Cookie 元数据记录到 150 个 `agw_oidc_t_*` 事务 Cookie，
+其名称、分隔符和值长度合计约 82 KiB；不记录值。消息流约每两秒发出一次请求，
+`Accept: text/event-stream` 存在而 `Sec-Fetch-Mode` 缺失，随后重定向到 IdP；
+旧会话访问 IdP 返回 431，新会话可以正常登录。原因是明文 HTTP 环境的浏览器
+不发 Fetch Metadata，Gateway 把 SSE 重连当成交互式登录，每次创建新事务 Cookie。
+Web 原 `openStream` 在 CONNECTING 时放任原生重试，在 CLOSED 时按服务端间隔
+重开，两条分支都没有检查当前登录会话。
+
+实现前四步影响结论：
+
+1. 权威仍为 DD-39、`.design/09` 的 AgentGateway OIDC 与 BFF 会话；没有新增认证
+   或 Cookie 存储。上游 `1f7ebbf87cbdbe9517f6f181221879d04dc50692` 的
+   `crates/agentgateway/src/http/oidc/mod.rs::OidcPolicy::apply`、
+   `crates/agentgateway/src/http/oidc/callback.rs::start_login`、
+   `crates/agentgateway/src/http/oidc/session.rs::default_transaction_ttl`
+   均经固定提交检索确认。此修复是原 SS-AGW-OIDC / SS-WEB-RELAY 接缝适配。
+2. 写方是 Gateway 的原登录事务，读方是原回调；Web Workspace/Conversation 共用
+   `openStream`。字段、数据库、契约、Desktop/Mobile 本机身份链均不变。Gateway
+   在无 Fetch Metadata 时也按 SSE Accept 拒绝非导航请求，不创建事务 Cookie。
+   Web 断流先关闭原 EventSource，再复用 `bff.session` 的 manual-redirect transport；
+   有效会话才按原服务端 retry 间隔重开并取 fresh snapshot。并发会话失效只触发一次
+   顶层登录导航。
+3. 不放宽认证，不扩大任何 header 上限，不清全部站点 Cookie；JWT、nonce、PKCE、
+   callback 与多标签并发事务语义不变。Accept 判断只决定拒绝方式，不授予身份。
+   不把断线或探测失败显示成“已同步”，不改变消息发布/UNKNOWN 的幂等或对账。
+4. 会话明确失效或 403 停止流；探测网络/503 不开新流，按同一服务端间隔继续探测；
+   未取得 retry 时不自定间隔。卸载取消定时器，迟到帧及迟到探测不复活流。普通 HTML
+   导航仍走原登录；旧事务只按原 TTL 自然过期，不删除其他账号/IdP Cookie。
+
+实现后窄验在既有 4 CPU / 8 GiB SDK 中运行：
+`vitest run src/platform/bff-client.test.ts --pool=threads --maxWorkers=1`，10/10 通过，
+退出 0。SDK 私有副本移除 error 回调的 `es.close()`，两个 CONNECTING/会话拒绝
+场景实际失败，退出 1；原字节恢复 cmp 0 后通过。日志在 Data
+`metering-delivery-release-20261006.hZ7KbB/oidc-stream-{mutation,restored,final}.log`。
+Gateway 复用原本地 SDK 镜像 `sha256:17a2ffedc7792a8dc0bfb17f34d6dd928db5efff67d5698d3c449cb6ffb94936`
+及原 ci 编译缓存；实际 Rust 1.98.0、4 CPU / 8 GiB、Cargo `-j16`，离线运行
+`cargo test --locked --offline --profile ci -j16 -p agentgateway --lib http::oidc::tests -- --test-threads=1`，
+18/18 通过，退出 0。新增用例覆盖无 Fetch Metadata 的 SSE 401/无 Set-Cookie、
+带 login route 及普通导航。私有快照把 SSE 判断改为不匹配媒体类型，原新用例
+实际失败（返回 302 而非拒绝），退出 101；原字节恢复 cmp 0 后同范围 18/18、退出 0。
+日志位于 Data `oidc-stream-sdk-20261006.36llvb/oidc-{tests,mutation,restored}.log`。
+
+现场仅把本人旧诊断页导航到空白页停止旧循环，没有删 Cookie；按原五分钟 TTL
+自然收敛后，事务 Cookie 从 150 降到 0，再导航 `/app/` 得到正常 IdP 登录页
+HTTP 200、一个新事务，原页面无需重置账号即可重新登录。这证明旧数据能自然收敛，
+不代表新代码已上线。此批未构建/部署，不宣称线上 431 修复已验收。
