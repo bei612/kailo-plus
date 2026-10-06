@@ -65,6 +65,8 @@ NIP-AE 内容是 Agent 自身保存的上下文，不是 system policy、develop
 5. 活跃 Session 始终使用固定的 core event，不中途刷新。core 更新只影响之后创建的 Session。
 6. 进程重启时用 `runtime_thread_id` 调用 Codex `thread/resume`；不从 Relay 消息重建已持久的 Codex rollout，也不从内存 ACP queue 恢复。
 
+协作 scope 与运行 Session 身份不同：scope 保持 `(workspace_id, root_event_id)`，同一 Installation 在该 scope 内按固定 `projection_generation` 分代。同代恢复原 `runtime_thread_id`；升级/回滚完成旧代排空、激活新代后，同 root 的新触发创建新 Session，旧 Session 的 version、generation、thread 与 core event 引用保留。新 Session 使用新代配置和新建时的 core head，只按原规则取得有界 Relay 上下文；不篡改旧 Session，不复制旧 rollout，不为升级强迫用户另开协作线程。排空中的 UNKNOWN 不以创建新 Session 跳过（`03` §7、`17`）。
+
 Relay 线程上下文和 Codex Session 历史不重复全量注入：Relay 只为新触发提供线程/DM 的有界协作事实，Codex ThreadStore 保存 Agent 已处理该 Session 的持久上下文。
 
 ## 5. Memory Action 与读写规则
