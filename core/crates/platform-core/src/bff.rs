@@ -308,6 +308,22 @@ pub fn router(state: BffState) -> Router {
         .route("/healthz", get(healthz))
         .exposed_route("/api/v1/session", get(current_session))
         .exposed_route(
+            "/api/v1/pulse/query",
+            axum::routing::post(crate::pulse::query),
+        )
+        .exposed_route(
+            "/api/v1/pulse/publish",
+            axum::routing::post(crate::web_transport::publish_pulse),
+        )
+        .exposed_route(
+            "/api/v1/pulse/media",
+            axum::routing::post(crate::web_transport::upload_pulse_media),
+        )
+        .exposed_route(
+            "/api/v1/pulse/media/{sha256}",
+            get(crate::web_transport::fetch_pulse_media),
+        )
+        .exposed_route(
             "/api/v1/profile",
             get(crate::web_profile::get).put(crate::web_profile::update),
         )

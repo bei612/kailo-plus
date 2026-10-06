@@ -22,8 +22,9 @@ function Skeleton({className}: {className: string}) { return <div className={`an
 function getKeyboardSearchSelection<T>({currentQuery, rankedQuery, results}: {currentQuery: string; rankedQuery: string; results: T[]}) {
   return currentQuery.trim().length > 0 && currentQuery.trim() === rankedQuery.trim() ? results[0] ?? null : null;
 }
-export function NewMessageScreen({currentPrincipalId, renderComposer}: {
+export function NewMessageScreen({currentPrincipalId, renderComposer, initialRecipientPubkey}: {
   currentPrincipalId: string;
+  initialRecipientPubkey?: string;
   renderComposer: (host: NewMessageComposerHost) => React.ReactNode;
 }) {
   const translateUi = useUiT();
@@ -38,6 +39,16 @@ export function NewMessageScreen({currentPrincipalId, renderComposer}: {
     maxParticipants, removeUser, searchError, searchQuery, searchResults, selectUser, selectedUsers,
     setSearchQuery } = useConversationDirectory(currentPrincipalId);
   const opening = useConversationOpen(currentPrincipalId, selectedUsers);
+  const seededRecipient = React.useRef<string | undefined>(undefined);
+  React.useEffect(() => {
+    if (!initialRecipientPubkey || seededRecipient.current === initialRecipientPubkey) return;
+    setSearchQuery(initialRecipientPubkey);
+    const recipient = searchResults.find((person) => person.pubkeys.includes(initialRecipientPubkey));
+    if (recipient) {
+      selectUser(recipient);
+      seededRecipient.current = initialRecipientPubkey;
+    }
+  }, [initialRecipientPubkey, searchResults, selectUser, setSearchQuery]);
   const isPending = opening.busy;
   const isSearchTransitionPending = searchQuery.trim() !== deferredSearchQuery;
   const visibleSearchResults =

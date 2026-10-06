@@ -48,6 +48,11 @@ import { InstallationMemory } from "./memory";
 import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
+import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
+import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
+
+// Original UnifiedAgentsSection grid at Buzz 779af8886caae1317b4de962082429867ab61503.
+const IDENTITY_CARD_GRID_CLASS = "w-full grid-cols-1 [@container(min-width:21rem)]:grid-cols-2 [@container(min-width:32rem)]:grid-cols-3 [@container(min-width:43rem)]:grid-cols-4 [@container(min-width:54rem)]:grid-cols-5 grid gap-3";
 
 function validDefinition(value: AgentDefinitionView): boolean {
   return !!value && typeof value.resourceId === "string" && !!value.resourceId
@@ -78,6 +83,7 @@ export function AgentDefinitionsPage() {
   const offset = offsets[pageIndex] ?? 0;
   const [state, reload] = useLoad(`agent-definitions:${offset}`, () => client.agentDefinitions(offset));
   const [selected, setSelected] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const [edit, setEdit] = useState<{ target: AgentDefinitionView; owner: boolean } | null>(null);
   const [locked, setLocked] = useState(false);
   const [versionEdit, setVersionEdit] = useState<VersionEdit | null>(null);
@@ -91,10 +97,9 @@ export function AgentDefinitionsPage() {
   const nextOffset = page?.nextOffset;
 
   return (
-    <div className="flex flex-col gap-6" data-testid="agent-definitions">
+    <div className="mx-auto w-full max-w-6xl space-y-8 [container-type:inline-size]" data-testid="agent-definitions">
       <p className="text-sm text-muted-foreground">{t("agents.definitionOnly")}</p>
       {/* 写意图不随列表/详情刷新或翻页卸载；未知结果保留冻结版本与原幂等键。 */}
-      <DefinitionAction edit={edit} externalBlocked={versionEdit !== null || versionLocked} onReset={() => setEdit(null)} onLocked={setLocked} onRecorded={() => { setSelected(null); reload(); }} />
       <VersionAction edit={versionEdit} onReset={() => setVersionEdit(null)} onLocked={setVersionLocked}
         onRecorded={() => { setVersionRevision((value) => value + 1); reload(); }} />
       <section className="flex flex-col gap-3">
@@ -102,19 +107,18 @@ export function AgentDefinitionsPage() {
         {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
           : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
           : <>
-            {page.definitions.length === 0 ? <Notice>{t("agents.none")}</Notice> : (
-              <Table head={[t("agents.name"), t("agents.slug"), t("agents.owner"), t("agents.publishedVersion"), t("platform.state"), ""]}>
+            {page.definitions.length === 0 ? <Notice>{t("agents.none")}</Notice> : null}
+              <div className={IDENTITY_CARD_GRID_CLASS} data-testid="agents-library-personas">
+                <CreateIdentityCard ariaLabel={t("agents.create")} label={t("agents.create")}
+                  dataTestId="new-agent-card" disabled={blocked || edit !== null || versionEdit !== null}
+                  onClick={() => setCreateOpen(true)} />
                 {page.definitions.map((row) => (
-                  <tr key={row.resourceId}>
-                    <Cell>{row.displayName}</Cell><Cell mono>{row.stableSlug}</Cell>
-                    <Cell mono>{row.ownerPrincipalId}</Cell>
-                    <Cell mono>{row.currentPublishedVersionAssetId ?? "—"}</Cell>
-                    <Cell><Badge tone="neutral">{t("agents.definitionReady")}</Badge></Cell>
-                    <Cell><Button disabled={blocked || versionEdit !== null} onClick={() => setSelected(row.resourceId)}>{t("agents.open")}</Button></Cell>
-                  </tr>
+                  <AgentIdentityCard key={row.resourceId} dataTestId={`agent-definition-${row.resourceId}`}
+                    label={row.displayName} subtitle={row.stableSlug} ariaLabel={t("agents.open")}
+                    statusBadge={<Badge tone="neutral">{t("agents.definitionReady")}</Badge>}
+                    disabled={blocked || versionEdit !== null} onClick={() => setSelected(row.resourceId)} />
                 ))}
-              </Table>
-            )}
+              </div>
             <div className="flex gap-2">
               {pageIndex > 0 ? <Button disabled={blocked || versionEdit !== null} onClick={() => { setSelected(null); setPageIndex(pageIndex - 1); }}>{t("roles.previous")}</Button> : null}
               {nextOffset !== undefined ? <Button disabled={blocked || versionEdit !== null} onClick={() => {
@@ -125,6 +129,12 @@ export function AgentDefinitionsPage() {
             </div>
           </>}
       </section>
+      {/* Keep the governed intent mounted when the original creation card closes. */}
+      <div hidden={!createOpen && edit === null} data-testid="agent-definition-editor">
+        <DefinitionAction edit={edit} externalBlocked={versionEdit !== null || versionLocked} onReset={() => setEdit(null)} onLocked={setLocked}
+          onRecorded={() => { setSelected(null); reload(); }} />
+        <Button disabled={blocked} onClick={() => { setCreateOpen(false); setEdit(null); }}>{t("platform.cancel")}</Button>
+      </div>
       {selected ? <DefinitionDetail key={`${selected}:${versionRevision}`} resourceId={selected} locked={blocked || versionEdit !== null}
         onEdit={(target, owner) => setEdit({ target, owner })} onVersionEdit={setVersionEdit} /> : null}
       <ToolManagement />
@@ -1410,19 +1420,41 @@ function InstallationList({ workspaceId, locked, onPermission, onManage }: {
       : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={() => { setSelected(null); reload(); }} />
       : <>
         {page.installations.length === 0 ? <Notice>{t("agents.installation.none")}</Notice>
-          : <Table head={[t("agents.installation.id"), t("agents.installation.version"), t("agents.installation.principal"), t("platform.state"), ""]}>
-            {page.installations.map((row) => <tr key={row.resourceId}>
-              <Cell mono>{row.resourceId}</Cell><Cell mono>{row.pinnedVersionAssetId}</Cell><Cell mono>{row.agentPrincipalId}</Cell>
-              <Cell><Badge tone="neutral">{t(installationLabels[row.state])}</Badge></Cell>
-              <Cell><Button disabled={locked} onClick={() => setSelected(row.resourceId)}>{t("agents.installation.open")}</Button></Cell>
-            </tr>)}
-          </Table>}
+          : <div className={IDENTITY_CARD_GRID_CLASS}>
+            {page.installations.map((row) => <InstallationIdentityCard key={row.resourceId} row={row}
+              locked={locked} onOpen={() => setSelected(row.resourceId)} />)}
+          </div>}
         <div className="flex gap-2">
           {pageIndex > 0 ? <Button disabled={locked} onClick={() => changePage(pageIndex - 1)}>{t("roles.previous")}</Button> : null}
           {next !== undefined ? <Button disabled={locked} onClick={() => { setOffsets((old) => [...old.slice(0, pageIndex + 1), next]); changePage(pageIndex + 1); }}>{t("roles.next")}</Button> : null}
         </div>
         {selected ? <InstallationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked} onPermission={onPermission} onManage={onManage} /> : null}
       </>}
+  </div>;
+}
+
+function InstallationIdentityCard({ row, locked, onOpen }: {
+  row: AgentInstallationView; locked: boolean; onOpen: () => void;
+}) {
+  const client = useBffClient();
+  const t = useT();
+  // A visible installation does not confer Version-read permission. Read the
+  // exact pinned version; never borrow the latest definition or another scope.
+  const [state, reload] = useLoad(`installation-card:${row.resourceId}:${row.pinnedVersionAssetId}`,
+    () => client.agentVersion(row.pinnedVersionAssetId));
+  const candidate = state.status === "ok" ? state.data : null;
+  const version = candidate && validVersion(candidate, row.agentResourceId)
+    && candidate.assetId === row.pinnedVersionAssetId ? candidate : null;
+  return <div className="flex min-w-0 flex-col gap-2">
+    <AgentIdentityCard dataTestId={`agent-installation-${row.resourceId}`}
+      label={version?.content.personaIdentity.displayName ?? t("agents.installation.id")}
+      subtitle={version?.content.personaIdentity.description ?? row.resourceId}
+      ariaLabel={t("agents.installation.open")} disabled={locked} onClick={onOpen}
+      statusBadge={<Badge tone="neutral">{t(installationLabels[row.state])}</Badge>} />
+    <p className="break-all text-xs text-muted-foreground">{t("agents.installation.version")}: {row.pinnedVersionAssetId}</p>
+    <p className="break-all text-xs text-muted-foreground">{t("agents.installation.principal")}: {row.agentPrincipalId}</p>
+    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
+      : !version ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} /> : null}
   </div>;
 }
 

@@ -92,6 +92,17 @@ capabilities:
   tools: []
   workflow_kinds:
   - CONVERSATION_PROJECTION
+- id: collab.pulse
+  exposure: end_user
+  routes:
+  - /api/v1/pulse/query
+  - /api/v1/pulse/publish
+  - /api/v1/pulse/media
+  - /api/v1/pulse/media/{sha256}
+  actions:
+  - pulse.publish
+  tools: []
+  workflow_kinds: []
 - id: collab.user_state
   exposure: end_user
   routes:

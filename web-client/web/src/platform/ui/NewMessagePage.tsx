@@ -4,8 +4,9 @@ import { NewMessageScreen } from "@client-kit/platform/react/new-message";
 import { mediaUrl, publishConversationMessage, uploadConversationMedia } from "../bff-client";
 import { Composer } from "./ChannelPane";
 
-export function NewMessagePage({ currentPrincipalId, onConversationOpened }: {
+export function NewMessagePage({ currentPrincipalId, onConversationOpened, initialRecipientPubkey }: {
   currentPrincipalId: string;
+  initialRecipientPubkey?: string;
   onConversationOpened: (conversation: ConversationView) => void | Promise<void>;
 }) {
   const scope = useMemo(() => ({ active: true, media: new Map<string, string>() }), [currentPrincipalId]);
@@ -20,7 +21,7 @@ export function NewMessagePage({ currentPrincipalId, onConversationOpened }: {
       if (scope.active) setNavigationProblem({ scope, conversation });
     }
   };
-  return <><NewMessageScreen key={currentPrincipalId} currentPrincipalId={currentPrincipalId} renderComposer={(host) =>
+  return <><NewMessageScreen key={currentPrincipalId} currentPrincipalId={currentPrincipalId} initialRecipientPubkey={initialRecipientPubkey} renderComposer={(host) =>
     <Composer disabled={host.disabled} placeholder={host.placeholder}
       onMediaUrl={(sha256) => {
         const url = scope.media.get(sha256);

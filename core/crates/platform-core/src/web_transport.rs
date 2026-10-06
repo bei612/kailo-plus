@@ -47,6 +47,7 @@ pub const CONVERSATION_REOPEN_ACTION: &str = "conversation.reopen";
 
 enum Publication {
     Message(PublishRequest),
+    Pulse(contracts::PulsePublishRequest),
     Hide,
     Reopen,
 }
@@ -55,19 +56,20 @@ enum Publication {
 enum MessageTarget {
     Workspace(Uuid),
     Conversation(Uuid),
+    Pulse(Uuid),
 }
 
 impl MessageTarget {
     fn id(self) -> Uuid {
         match self {
-            Self::Workspace(id) | Self::Conversation(id) => id,
+            Self::Workspace(id) | Self::Conversation(id) | Self::Pulse(id) => id,
         }
     }
 
     fn workspace_id(self) -> Option<Uuid> {
         match self {
             Self::Workspace(id) => Some(id),
-            Self::Conversation(_) => None,
+            Self::Conversation(_) | Self::Pulse(_) => None,
         }
     }
 
@@ -75,6 +77,7 @@ impl MessageTarget {
         match self {
             Self::Workspace(_) => PUBLISH_ACTION,
             Self::Conversation(_) => CONVERSATION_PUBLISH_ACTION,
+            Self::Pulse(_) => crate::pulse::PUBLISH_ACTION,
         }
     }
 
@@ -82,6 +85,7 @@ impl MessageTarget {
         match self {
             Self::Workspace(_) => "CHANNEL",
             Self::Conversation(_) => "CONVERSATION",
+            Self::Pulse(_) => "TENANT",
         }
     }
 
@@ -99,6 +103,12 @@ impl MessageTarget {
                 let scope = crate::conversations::admit(state, ctx, id).await?;
                 Ok((scope.channel_id, scope.community_host))
             }
+            Self::Pulse(id) if id == ctx.tenant_id => {
+                let scope = crate::pulse::admit(state, ctx).await?;
+                // Generation fence only; never written as an h tag or Workspace.
+                Ok((scope.version.to_string(), scope.community_host))
+            }
+            Self::Pulse(_) => Err(StatusCode::FORBIDDEN.into_response()),
         }
     }
 }
@@ -129,7 +139,7 @@ fn attachment_media_url(raw: &str, community_host: &str) -> Option<reqwest::Url>
     Some(url)
 }
 
-impl RenderAttachment for contracts::WebMessageAttachment {
+impl RenderAttachment for contracts::AttachmentElement {
     /// 按上游客户端的同一形式输出：正文追加一行 markdown，另带一条 NIP-92
     /// `imeta`。形式必须与原生端一致，否则原生端收到 Web 发的图看不见
     /// （上游 `formatImetaMediaLine`/`buildImetaTags`，`SF-BUZ-36`）。
@@ -391,6 +401,48 @@ pub async fn publish_conversation_message(
         body,
     )
     .await
+}
+
+pub(crate) async fn publish_pulse(
+    State(state): State<BffState>,
+    headers: HeaderMap,
+    Json(request): Json<contracts::PulsePublishRequest>,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(e) => return e,
+    };
+    publish(
+        state,
+        MessageTarget::Pulse(ctx.tenant_id),
+        headers,
+        Publication::Pulse(request),
+    )
+    .await
+}
+
+pub(crate) async fn upload_pulse_media(
+    State(state): State<BffState>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(e) => return e,
+    };
+    upload_media_for(state, MessageTarget::Pulse(ctx.tenant_id), headers, body).await
+}
+
+pub(crate) async fn fetch_pulse_media(
+    State(state): State<BffState>,
+    Path(hash): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(e) => return e,
+    };
+    fetch_media_for(state, MessageTarget::Pulse(ctx.tenant_id), hash, headers).await
 }
 
 async fn publish_message_for(
@@ -983,7 +1035,7 @@ async fn publish(
         Err(r) => return r,
     };
     let action_key = match &publication {
-        Publication::Message(_) => target.action(),
+        Publication::Message(_) | Publication::Pulse(_) => target.action(),
         Publication::Hide => CONVERSATION_HIDE_ACTION,
         Publication::Reopen => CONVERSATION_REOPEN_ACTION,
     };
@@ -994,6 +1046,11 @@ async fn publish(
                 .unwrap_or(contracts::WebMessageType::Stream),
             req.parent_event_id.clone(),
             req.edit_event_id.clone(),
+        ),
+        Publication::Pulse(req) => (
+            contracts::WebMessageType::Stream,
+            req.target_event_id.clone(),
+            None,
         ),
         Publication::Hide | Publication::Reopen => (contracts::WebMessageType::Stream, None, None),
     };
@@ -1007,7 +1064,12 @@ async fn publish(
     {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let requested_kind = if edit_event_id.is_some() {
+    let requested_kind = if let Publication::Pulse(req) = &publication {
+        match crate::pulse::publication_kind(req) {
+            Ok(kind) => i32::from(kind),
+            Err(e) => return e,
+        }
+    } else if edit_event_id.is_some() {
         KIND_STREAM_MESSAGE_EDIT as i32
     } else {
         i32::from(message_kind(&message_type))
@@ -1038,7 +1100,7 @@ async fn publish(
 
     let mention_ids = match mention_targets(match &publication {
         Publication::Message(req) => req.mention_installation_ids.as_deref(),
-        Publication::Hide | Publication::Reopen => None,
+        Publication::Hide | Publication::Reopen | Publication::Pulse(_) => None,
     }) {
         Some(ids) => ids,
         None => return StatusCode::BAD_REQUEST.into_response(),
@@ -1133,8 +1195,12 @@ async fn publish(
     // borrow their authorization or trigger an Agent from another scope.
     let mentions_result = match target {
         MessageTarget::Workspace(id) => resolve_mentions(&state, &ctx, id, &mention_ids).await,
-        MessageTarget::Conversation(_) if mention_ids.is_empty() => Ok(Vec::new()),
-        MessageTarget::Conversation(_) => Err(StatusCode::BAD_REQUEST.into_response()),
+        MessageTarget::Conversation(_) | MessageTarget::Pulse(_) if mention_ids.is_empty() => {
+            Ok(Vec::new())
+        }
+        MessageTarget::Conversation(_) | MessageTarget::Pulse(_) => {
+            Err(StatusCode::BAD_REQUEST.into_response())
+        }
     };
     let mentions = match mentions_result {
         Ok(keys) => keys,
@@ -1152,9 +1218,14 @@ async fn publish(
 
     let mut content = String::new();
     let mut media_tags = Vec::new();
-    if let Publication::Message(req) = &publication {
-        content.push_str(&req.content);
-        for a in req.attachments.as_deref().unwrap_or_default() {
+    let message = match &publication {
+        Publication::Message(req) => Some((&req.content, req.attachments.as_deref())),
+        Publication::Pulse(req) => Some((&req.content, req.attachments.as_deref())),
+        Publication::Hide | Publication::Reopen => None,
+    };
+    if let Some((text, attachments)) = message {
+        content.push_str(text);
+        for a in attachments.unwrap_or_default() {
             let Some((line, tag)) = a.render(&community_host) else {
                 return StatusCode::BAD_REQUEST.into_response();
             };
@@ -1211,7 +1282,15 @@ async fn publish(
         None => None,
     };
 
-    let ancestry = match parent_event_id.as_deref() {
+    let pulse_tags = if let Publication::Pulse(req) = &publication {
+        match crate::pulse::publication_tags(&state, &client, req, &media_tags).await {
+            Ok(tags) => Some(tags),
+            Err(e) => return e,
+        }
+    } else {
+        None
+    };
+    let ancestry = match parent_event_id.as_deref().filter(|_| pulse_tags.is_none()) {
         Some(parent) => {
             match resolve_message_parent(&state, &client, &channel_id, parent, &message_type).await
             {
@@ -1262,6 +1341,11 @@ async fn publish(
             ancestry
                 .as_ref()
                 .map(|(root, parent)| (root.as_str(), parent.as_str())),
+        ),
+        Publication::Pulse(_) => client.sign(
+            requested_kind as u16,
+            &content,
+            pulse_tags.as_deref().unwrap_or_default(),
         ),
         // Original Buzz DM commands, never caller-selected raw kinds/tags.
         Publication::Hide => client.sign(41012, "", &[vec!["h".into(), channel_id.clone()]]),
@@ -2792,6 +2876,18 @@ mod tests {
     }
 
     #[test]
+    fn pulse_uses_tenant_community_not_workspace_or_conversation() {
+        let id = Uuid::from_u128(1);
+        let pulse = MessageTarget::Pulse(id);
+        assert_eq!(pulse.id(), id);
+        assert_eq!(pulse.workspace_id(), None);
+        assert_eq!(pulse.target_type(), "TENANT");
+        assert_eq!(pulse.action(), crate::pulse::PUBLISH_ACTION);
+        assert_ne!(pulse.action(), MessageTarget::Workspace(id).action());
+        assert_ne!(pulse.action(), MessageTarget::Conversation(id).action());
+    }
+
+    #[test]
     fn mention_intent_is_a_canonical_installation_set() {
         let first = Uuid::from_u128(1);
         let second = Uuid::from_u128(2);
@@ -2965,7 +3061,7 @@ mod tests {
         extension: &str,
         filename: Option<&str>,
         spoiler: Option<bool>,
-    ) -> contracts::WebMessageAttachment {
+    ) -> contracts::AttachmentElement {
         let hash = "a".repeat(64);
         let mut value = serde_json::json!({
             "url": format!("https://relay.example/media/{hash}.{extension}"),

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/pulse_query_request.schema.json",
+  "title": "PulseQueryRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["view"],
+  "properties": {
+    "view": {"type": "string", "enum": ["NOTES", "CONTACTS", "REACTIONS", "PROFILES", "LIKED", "AGENTS"]},
+    "authors": {"type": "array", "items": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+    "eventIds": {"type": "array", "items": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+    "before": {"type": "integer", "minimum": 0}
+  }
+}

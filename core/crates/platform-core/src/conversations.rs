@@ -75,7 +75,7 @@ pub(crate) async fn admit_reconciliation(
     })
 }
 
-async fn fresh_discover(
+pub(crate) async fn fresh_discover(
     state: &ServiceState,
     tenant: Uuid,
     principal: Uuid,

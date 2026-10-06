@@ -56,6 +56,7 @@ import { ForumPane } from "@/platform/ui/ForumPane";
 import { InboxPane } from "@/platform/ui/InboxPane";
 import { SettingsPane } from "@/platform/ui/SettingsPane";
 import { NewMessagePage } from "./NewMessagePage";
+import { PulsePane } from "./PulsePane";
 import { translate } from "@client-kit/platform/i18n";
 import { platformQueries } from "@/platform/ui/queries";
 import { getLocale, t } from "@/shared/i18n";
@@ -154,6 +155,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const [messageLinkProblem, setMessageLinkProblem] = useState<string | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("channel");
+  const [initialRecipientPubkey, setInitialRecipientPubkey] = useState<string>();
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
   const [channelActivity, setChannelActivity] = useState<ReadonlyMap<string, string | null>>(() => new Map());
   const settingsReturnTab = useRef<Tab>("channel");
@@ -209,6 +211,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       "new-message": translate(getLocale(), "sidebar.newMessage"),
       conversation: translate(getLocale(), "sidebar.messages"),
       inbox: translate(getLocale(), "inbox.title"),
+      pulse: translate(getLocale(), "platform.tab.pulse"),
       members: t("platform.tab.members"),
       agents: t("platform.tab.agents"),
       workflows: translate(getLocale(), "platform.tab.workflows"),
@@ -245,7 +248,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   );
   const body =
     tab === "new-message" ? (
-      <NewMessagePage currentPrincipalId={session.tenantPrincipalId} onConversationOpened={(conversation) => {
+      <NewMessagePage currentPrincipalId={session.tenantPrincipalId} initialRecipientPubkey={initialRecipientPubkey} onConversationOpened={(conversation) => {
         setChosenConversation(conversation);
         setTab("conversation");
         void conversations.reload().catch(() => undefined);
@@ -265,6 +268,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
           setTab("channel");
         }}
       />
+    ) : tab === "pulse" ? (
+      <PulsePane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`} onStartDm={(pubkey)=>{
+        setInitialRecipientPubkey(pubkey);setTab("new-message");
+      }}/>
     ) : tab === "agents" ? (
       <AgentDefinitionsPage />
     ) : tab === "workflows" ? (
@@ -304,14 +311,14 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               dialogs={<ChannelBrowser key={session.tenantPrincipalId} open={createChannelOpen} onOpenChange={setCreateChannelOpen}
                 lastMessageAtByChannelId={channelActivity}
                 onSelect={async (workspace) => { await workspaces.refetch(); setChosen(workspace.id); setTab("channel"); }} />}>
-              <AppSidebarPrimaryMenu onNewMessage={() => setTab("new-message")} onSelectHome={() => setTab("inbox")}
+              <AppSidebarPrimaryMenu onNewMessage={() => {setInitialRecipientPubkey(undefined);setTab("new-message");}} onSelectHome={() => setTab("inbox")}
                 homeBadgeCount={notificationSettings?.settings.homeBadgeEnabled && inboxUnreadCount !== null ? inboxUnreadCount : undefined}
                 onSelectPlatformSection={setTab}
                 selectedPlatformSection={tab === "channel" || tab === "inbox" || tab === "settings" || tab === "new-message" || tab === "conversation" ? null : tab}
                 selectedView={tab === "inbox" ? "home" : tab === "new-message" ? "new-message" : tab === "channel" || tab === "conversation" || tab === "settings" ? "channel" : "platform"} />
             <ConversationList currentPrincipalId={session.tenantPrincipalId} items={conversations.items} loading={conversations.loading}
               error={conversations.error} selectedId={tab === "conversation" ? chosenConversation?.id ?? null : null}
-              onNewMessage={() => setTab("new-message")} onReload={() => { void conversations.reload().catch(() => undefined); }}
+              onNewMessage={() => {setInitialRecipientPubkey(undefined);setTab("new-message");}} onReload={() => { void conversations.reload().catch(() => undefined); }}
               onCloseSelected={() => { setChosenConversation(null); setTab("inbox"); }}
               onSelect={(conversation) => { setChosenConversation(conversation); setTab("conversation"); }} />
             <ChannelSidebar principalId={session.tenantPrincipalId} workspaces={rows} selectedId={active} active={tab === "channel"}

@@ -2848,3 +2848,59 @@ filename、把缩略图错误映射为原 blob，两次各真实失败 1 项，�
 侧栏 fixture 尚未同步已提交的 `isMember` 字段，1 项失败；同步正式 fixture
 后恢复，未改产品准入迁就测试。日志位于 Data
 `header-sidebar-fix-20261006.q5aiVW/inbox-window-{final,mutation,post-mutation}.log`。
+
+## 2026-10-06 原版 Pulse 共源与本人 Community 调用链
+
+本批源码实现，不是运行验收或生产就绪声明。设计权威为
+`81cf51331655c61274f95ebf0204791331fc115e` 的 `09-统一身份与Buzz协议投影.md`
+§3「原版 Pulse 的 Community 边界」及 REQ-24。上游固定
+`779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/pulse/ui/PulseView.tsx::PulseView`、
+`desktop/src/features/pulse/ui/NoteCard.tsx::NoteCard`、
+`desktop/src/features/pulse/ui/AgentActivityCard.tsx::AgentActivityCard`、
+`desktop/src/features/pulse/ui/PulseTabBar.tsx::PulseTabBar` 原组件移入共源包，
+Web `PulsePane` 和 Desktop `PulseScreen` 消费同份主体，不用 Workspace/Task 仿造 Pulse。
+原 `desktop/src-tauri/src/commands/social.rs::{get_global_notes,get_liked_notes,get_contact_list}`
+查询、`desktop/src-tauri/src/events.rs::build_note` 事件及
+`crates/buzz-sdk/src/builders.rs::{build_reaction,build_remove_reaction}` 标签保留。
+Community 查询事实来自 `crates/buzz-db/src/store/event.rs::EventQuery::for_community`。
+
+动手前四步与实现影响：
+
+1. 权威：当前 Tenant 的 Community；ACTIVE 成员、绑定、本人密钥与 fresh
+   `tenant.discover` 沿现有准入。Web 本人 SERVER 经 BFF，Desktop 本人 CLIENT
+   直 Relay；不授予 Workspace、工具或 Agent 执行权限。正文、联系人、反应均在 Relay。
+2. 影响：共享原卡片/标签页、原富文本 Composer、头像与媒体呈现、NewMessageScreen
+   精确 pubkey→可见 Principal 目录匹配，两宿主导航；Core 原 publish_attempt、审计与
+   原对账循环扩展 Pulse target=TENANT、workspace_id=NULL。四语言生成
+   Pulse 请求及可选 native `relayQueryLimit`；附件提取为原 WebMessageAttachment
+   公共 schema，字段未删减，旧 JSON 保持可读。没有数据库迁移或第二份消息库。
+3. 副作用：签名输入只接受 NOTE/LIKE/UNLIKE 语义，不接受任意 kind/tag；点赞/撤销
+   读取同 Community 真帖子、撤销仅本人反应。原 NIP-09 删除与反应关联，项目评论
+   `a=30617:*` 不混入 Pulse。读写前后重验身份/binding；结果不明保留原幂等键，
+   不把未决回执当成功或自动重发新意图。公众资料按真实作者读取，不用本人资料替代。
+4. 边界：空返回与失败分离；NIP-11 原 max_limit 控制批量查询。native 新字段可缺省，
+   获取失败不破坏旧连接事实，Pulse 无真实限额不发无界查询。跨租户/身份切换用独立
+   query key 与 active fence，不展示旧响应。回复只引用可读 kind:1，未知签名或种类拒绝。
+
+窄验证在既有 4 CPU/8 GiB SDK 执行，未构建镜像或 full：Core check、clippy
+`-D warnings` 退出 0；Core Pulse 3/3；shared 原页面与 DM 13 项合计 16/16；
+shared 源/测试 TS、Web TS、Desktop TS 均退出 0。四语言原 roundtrip：Rust 21、
+TS 25、Dart 20 全通过，Go contracts 包通过；原 `tools/gen.sh` 退出 0。
+原 registry 生成输出 23 条能力 / 20 个封闭 kind。Core 新 Pulse schema 不通过
+`include_str!` 读取；使用现有四侧生成物，不增加发布时缺失的源码输入。
+
+实现后的私有 SDK 破坏：删去反应 content 约束，Core 真实 1 项失败（退出 101）；
+去掉 UNKNOWN 幂等键保留，UI 真实 1 项失败（退出 1）。原字节恢复 cmp=0 后
+Core 3/3、共享 16/16 再次通过。首轮 UI fixture 缺 TooltipProvider 报错，按真实
+宿主 provider 补齐；Dart 首轮缺 PUB_CACHE 报 `/.pub-cache Permission denied`，
+改用既有 `/cache/pub` 后成功，没有安装新 SDK 或更改产品权限。
+日志在 Data `codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`
+的 `pulse-{core-check,core-clippy,shared-tests,roundtrip,roundtrip-dart-ts,mutation-ui,mutation-core,restored}.log`。
+
+尚未验收：这批没有 Pulse 产物 digest、没有投递 Relay 1/7/5、没有真实浏览器跨人
+帖/回复闭环；故追溯为 in_progress、发布门禁保持未闭合。原 Search 按钮上游本身
+没有处理器，不宣称新增搜索。Projects 没有被改成任务页。Web 原 Composer 的人类
+提及 picker、资料完整面板及 NIP-OA owner 认证展示还未闭合：当前不拿 kind:0 的
+自报 bot 字段伪造 Agent 身份，不编造 owner。核心帖/回复消费者接通不等于原版
+全部细节已验收，以上缺口保留，不删除原交付要求。

@@ -61,6 +61,7 @@ mod platform_keys;
 mod platform_views;
 mod protocol_session;
 mod publish_reconcile;
+mod pulse;
 mod resource_provision;
 mod role_reconcile;
 mod roles;
@@ -171,7 +172,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(0) => return Err("OpenBao 没有启用任何 audit device：取用不留痕，拒绝启动".into()),
             Ok(n) => tracing::info!(devices = n, "OpenBao audit device 已启用"),
             Err(e) => {
-                return Err(format!("读取 OpenBao audit device 清单失败，拒绝启动: {e}").into())
+                return Err(format!("读取 OpenBao audit device 清单失败，拒绝启动: {e}").into());
             }
         }
         let catalog_tenant = platform_bootstrap::ensure(

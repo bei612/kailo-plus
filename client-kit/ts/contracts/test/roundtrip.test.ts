@@ -274,7 +274,20 @@ test("manual capability and deleted definition preserve optional compatibility",
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), JSON.parse(raw));
 });
 
-import type { Canary, CapabilityConformanceVectors, WebPublishMessageRequest, WebMessageQuery, WebMessageCursor, WebChannelView } from "../src/generated/contracts.js";
+import type { Canary, CapabilityConformanceVectors, WebPublishMessageRequest, WebMessageQuery, WebMessageCursor, WebChannelView, PulsePublishRequest, PulseQueryRequest, NativeCommunityFacts } from "../src/generated/contracts.js";
+
+test("Pulse shares original attachment fields and optional native Relay limit", () => {
+  const load = (name:string) => JSON.parse(readFileSync(new URL(`../../../../contracts/samples/${name}`,import.meta.url),"utf8"));
+  const publish:PulsePublishRequest=load("pulse-publish.sample.json");
+  const back:PulsePublishRequest={operation:publish.operation,content:publish.content,targetEventId:publish.targetEventId,mentions:publish.mentions,attachments:publish.attachments};
+  deepStrictEqual(JSON.parse(JSON.stringify(back)),publish);
+  const query:PulseQueryRequest=load("pulse-query.sample.json");
+  deepStrictEqual(JSON.parse(JSON.stringify({view:query.view,authors:query.authors,eventIds:query.eventIds,before:query.before} satisfies PulseQueryRequest)),query);
+  for(const relayQueryLimit of [undefined,100]) {
+    const facts:NativeCommunityFacts={relayUrl:"wss://relay.example",communityHost:"relay.example",relayQueryLimit};
+    deepStrictEqual(JSON.parse(JSON.stringify(facts)),{relayUrl:facts.relayUrl,communityHost:facts.communityHost,...(relayQueryLimit===undefined?{}:{relayQueryLimit})});
+  }
+});
 
 const samplePath = fileURLToPath(
   new URL("../../../../contracts/samples/canary.sample.json", import.meta.url),

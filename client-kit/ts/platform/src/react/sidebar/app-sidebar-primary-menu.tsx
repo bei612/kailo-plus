@@ -2,12 +2,13 @@
 import { translate } from "../../i18n";
 import { useUiLocale } from "../context";
 import { PlatformNavigation, type PlatformNavigationSection as PlatformSection } from "../navigation";
-import { Bot, ClipboardCheck, History, Inbox, ListChecks, MonitorSmartphone, Users, Workflow, SquarePen } from "lucide-react";
+import { Activity, Bot, ClipboardCheck, History, Inbox, ListChecks, MonitorSmartphone, Users, Workflow, SquarePen } from "lucide-react";
 import { SidebarHeader, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem } from "./sidebar";
 import { SidebarMenuLabel } from "./sidebar-menu-label";
 type SidebarSelectedView = "home" | "channel" | "platform" | "new-message";
 
 const PLATFORM_SECTION_ICON = {
+  pulse: <Activity className="h-4 w-4" />,
   members: <Users className="h-4 w-4" />,
   agents: <Bot className="h-4 w-4" />,
   workflows: <Workflow className="h-4 w-4" />,

@@ -730,3 +730,40 @@ Applied 20261006220000/migrate automation version name (1.508192ms)
 IdP 会话注销、新口令正常登录均实测。其他两名用户未改密；不在本记录存储秘密。
 Cells 的独立凭据暴露、两轮轮换和真实拒绝／三用户重登录边界，单独记录于
 file-storage/fork/verify/native-identity.md；不把保留原签名公钥等同所有 JWT 即刻撤销。
+
+## 2026-10-06 Pulse 与原版 Agent 卡片集中恢复
+
+在已推送 `9aaa34b130fe54076a30cb741683b654f80267b1` 上合并两项实现，
+没有以本文替代页面或发布验收。Pulse 共源主体、Community 读写、本人签名与
+原对账链的四步影响、四语言验证、实际变异失败及剩余缺口见
+`web-client/fork/verify/web-surface.md` 末节。
+
+Agent 卡片复用 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/agents/ui/AgentIdentityCard.tsx::AgentIdentityCard`、
+同目录 `CreateIdentityCard.tsx::CreateIdentityCard`、
+`IdentityInitialsAvatar.tsx::IdentityInitialsAvatar` 和
+`UnifiedAgentsSection.tsx::IDENTITY_CARD_GRID_CLASS`。实现放入 shared
+`client-kit/ts/platform/src/react/agent-library/`，Web/Desktop 的现有
+`AgentDefinitionsPage` 同时消费，不各写一份页面。
+
+四步结论：权威为 REQ-24、DD-24/25/74/75 和设计 17；仅改变已有定义／安装
+页面呈现与选择，不新增端点、状态、数据库、注册表或 Workflow。创建和编辑仍走
+原治理意图，关闭表单不卸载未决动作，UNKNOWN 继续锁定。安装卡片只读取现有
+授权 API 的精确 pinnedVersion，并核对 Agent 与 asset 一致；拒绝或错误版本不
+借用其他 persona，保留原标识、错误及重试。原详情、版本、授权、权限与记忆
+管理继续存在；原完整资料抽屉、运行轨迹、Teams/catalog 与运行控制尚未恢复。
+
+既有受限 SDK 内共享源码和测试类型检查退出 0；AgentDefinitionsPage
+94/94 通过（144 个范围外用例跳过）。移除 pin 一致性核对后错误身份用例实际
+失败，恢复 cmp=0 后 94/94 通过。原件位于 Data
+`header-sidebar-fix-20261006.q5aiVW/agent-library-{final,mutation}.log`。
+
+线上额外验收：Playwright 截图 81–86 已打开复核，私聊重新进入读到历史；
+经原创建页面提交公开频道“频道恢复验收 20261006”，任务完成后刷新列表、进入
+新频道得到真实中文名称。操作 `a54d5db7-1d88-4926-a56d-819b10d110bc`，
+不是只把 ALLOWED/DISPATCHED 当完成；没有删除验收频道。该频道只含创建者，
+不作为三人多 Agent 协作验收。截图保存在 Data
+`kailo-visual-release-20261006.vlPvnU/`。
+
+此批 Pulse、Agent 卡片和已提交 Inbox 纠正尚未构建部署；运行配置未开放
+Pulse kind 1/7/5。现有线上版本、旧 Windows 包和 Mobile 验收边界不变。

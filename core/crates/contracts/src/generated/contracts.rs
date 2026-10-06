@@ -4236,6 +4236,10 @@ pub struct NativeCommunityFacts {
     /// 该 Tenant 的 Community host，可能带非默认端口
     pub community_host: String,
 
+    /// 当前固定 Relay NIP-11 的 max_limit；旧客户端忽略，新 Pulse 消费者缺失时不猜测上限。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relay_query_limit: Option<i64>,
+
     /// 原生端直连的 Relay 地址
     pub relay_url: String,
 }
@@ -4492,6 +4496,116 @@ pub enum ProtocolSessionViewState {
     Saved,
 
     Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PulsePublishRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<Vec<AttachmentElement>>,
+
+    pub content: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mentions: Option<Vec<String>>,
+
+    pub operation: Operation,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_event_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentElement {
+    /// 原 Buzz imeta 模糊预览编码。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blurhash: Option<String>,
+
+    /// 原 Buzz imeta 媒体尺寸显示元数据。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dim: Option<String>,
+
+    /// 原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_label: Option<String>,
+
+    /// 原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration: Option<f64>,
+
+    /// 原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+
+    /// 原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+
+    pub sha256: String,
+
+    pub size: i64,
+
+    /// 沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spoiler: Option<bool>,
+
+    /// 当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thumb: Option<String>,
+
+    #[serde(rename = "type")]
+    pub web_message_attachment_type: String,
+
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Operation {
+    #[serde(rename = "LIKE")]
+    Like,
+
+    #[serde(rename = "NOTE")]
+    Note,
+
+    #[serde(rename = "UNLIKE")]
+    Unlike,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PulseQueryRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authors: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_ids: Option<Vec<String>>,
+
+    pub view: View,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum View {
+    #[serde(rename = "AGENTS")]
+    Agents,
+
+    #[serde(rename = "CONTACTS")]
+    Contacts,
+
+    #[serde(rename = "LIKED")]
+    Liked,
+
+    #[serde(rename = "NOTES")]
+    Notes,
+
+    #[serde(rename = "PROFILES")]
+    Profiles,
+
+    #[serde(rename = "REACTIONS")]
+    Reactions,
 }
 
 /// PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
@@ -4801,6 +4915,51 @@ pub struct WebChannelView {
     pub ttl_seconds: Option<i64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebMessageAttachment {
+    /// 原 Buzz imeta 模糊预览编码。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blurhash: Option<String>,
+
+    /// 原 Buzz imeta 媒体尺寸显示元数据。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dim: Option<String>,
+
+    /// 原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_label: Option<String>,
+
+    /// 原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration: Option<f64>,
+
+    /// 原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+
+    /// 原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+
+    pub sha256: String,
+
+    pub size: i64,
+
+    /// 沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spoiler: Option<bool>,
+
+    /// 当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thumb: Option<String>,
+
+    #[serde(rename = "type")]
+    pub web_message_attachment_type: String,
+
+    pub url: String,
+}
+
 /// 原 Buzz 线程分页的复合游标；下一请求以 before=createdAt、beforeId=eventId 原样提交，避免同秒回复丢失。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -4899,7 +5058,7 @@ pub struct WebProfileView {
 #[serde(rename_all = "camelCase")]
 pub struct WebPublishMessageRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub attachments: Option<Vec<WebMessageAttachment>>,
+    pub attachments: Option<Vec<AttachmentElement>>,
 
     pub content: String,
 
@@ -4917,51 +5076,6 @@ pub struct WebPublishMessageRequest {
     /// 原 Relay 消息引用；BFF 在当前 Channel 回读验签并解析 NIP-10 祖先。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_event_id: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebMessageAttachment {
-    /// 原 Buzz imeta 模糊预览编码。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub blurhash: Option<String>,
-
-    /// 原 Buzz imeta 媒体尺寸显示元数据。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dim: Option<String>,
-
-    /// 原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub display_label: Option<String>,
-
-    /// 原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub duration: Option<f64>,
-
-    /// 原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filename: Option<String>,
-
-    /// 原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub image: Option<String>,
-
-    pub sha256: String,
-
-    pub size: i64,
-
-    /// 沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub spoiler: Option<bool>,
-
-    /// 当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thumb: Option<String>,
-
-    #[serde(rename = "type")]
-    pub web_message_attachment_type: String,
-
-    pub url: String,
 }
 
 /// GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 或 fresh manage 管理资格，且两侧

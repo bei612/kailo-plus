@@ -84,6 +84,8 @@
 //     final platformToolPage = platformToolPageFromJson(jsonString);
 //     final platformToolView = platformToolViewFromJson(jsonString);
 //     final protocolSessionView = protocolSessionViewFromJson(jsonString);
+//     final pulsePublishRequest = pulsePublishRequestFromJson(jsonString);
+//     final pulseQueryRequest = pulseQueryRequestFromJson(jsonString);
 //     final readMarkRequest = readMarkRequestFromJson(jsonString);
 //     final roleMemberPage = roleMemberPageFromJson(jsonString);
 //     final roleWorkspacePage = roleWorkspacePageFromJson(jsonString);
@@ -92,6 +94,7 @@
 //     final tenantInvitationView = tenantInvitationViewFromJson(jsonString);
 //     final userStateVersion = userStateVersionFromJson(jsonString);
 //     final webChannelView = webChannelViewFromJson(jsonString);
+//     final webMessageAttachment = webMessageAttachmentFromJson(jsonString);
 //     final webMessageCursor = webMessageCursorFromJson(jsonString);
 //     final webMessageQuery = webMessageQueryFromJson(jsonString);
 //     final webMessageType = webMessageTypeFromJson(jsonString);
@@ -704,6 +707,18 @@ ProtocolSessionView protocolSessionViewFromJson(String str) =>
 String protocolSessionViewToJson(ProtocolSessionView data) =>
     json.encode(data.toJson());
 
+PulsePublishRequest pulsePublishRequestFromJson(String str) =>
+    PulsePublishRequest.fromJson(json.decode(str));
+
+String pulsePublishRequestToJson(PulsePublishRequest data) =>
+    json.encode(data.toJson());
+
+PulseQueryRequest pulseQueryRequestFromJson(String str) =>
+    PulseQueryRequest.fromJson(json.decode(str));
+
+String pulseQueryRequestToJson(PulseQueryRequest data) =>
+    json.encode(data.toJson());
+
 ReadMarkRequest readMarkRequestFromJson(String str) =>
     ReadMarkRequest.fromJson(json.decode(str));
 
@@ -747,6 +762,12 @@ WebChannelView webChannelViewFromJson(String str) =>
     WebChannelView.fromJson(json.decode(str));
 
 String webChannelViewToJson(WebChannelView data) => json.encode(data.toJson());
+
+WebMessageAttachment webMessageAttachmentFromJson(String str) =>
+    WebMessageAttachment.fromJson(json.decode(str));
+
+String webMessageAttachmentToJson(WebMessageAttachment data) =>
+    json.encode(data.toJson());
 
 WebMessageCursor webMessageCursorFromJson(String str) =>
     WebMessageCursor.fromJson(json.decode(str));
@@ -8586,19 +8607,30 @@ class NativeCommunityFacts {
   ///该 Tenant 的 Community host，可能带非默认端口
   final String communityHost;
 
+  ///当前固定 Relay NIP-11 的 max_limit；旧客户端忽略，新 Pulse 消费者缺失时不猜测上限。
+  final int? relayQueryLimit;
+
   ///原生端直连的 Relay 地址
   final String relayUrl;
 
-  NativeCommunityFacts({required this.communityHost, required this.relayUrl});
+  NativeCommunityFacts({
+    required this.communityHost,
+    this.relayQueryLimit,
+    required this.relayUrl,
+  });
 
   factory NativeCommunityFacts.fromJson(Map<String, dynamic> json) =>
       NativeCommunityFacts(
         communityHost: json["communityHost"],
+        relayQueryLimit: json["relayQueryLimit"],
         relayUrl: json["relayUrl"],
       );
 
-  Map<String, dynamic> toJson() =>
-      _stripNulls({"communityHost": communityHost, "relayUrl": relayUrl});
+  Map<String, dynamic> toJson() => _stripNulls({
+    "communityHost": communityHost,
+    "relayQueryLimit": relayQueryLimit,
+    "relayUrl": relayUrl,
+  });
 }
 
 ///GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。
@@ -9012,6 +9044,181 @@ final protocolSessionViewStateValues = EnumValues({
   "REVOKED": ProtocolSessionViewState.REVOKED,
   "SAVED": ProtocolSessionViewState.SAVED,
   "UNKNOWN": ProtocolSessionViewState.UNKNOWN,
+});
+
+class PulsePublishRequest {
+  final List<AttachmentElement>? attachments;
+  final String content;
+  final List<String>? mentions;
+  final Operation operation;
+  final String? targetEventId;
+
+  PulsePublishRequest({
+    this.attachments,
+    required this.content,
+    this.mentions,
+    required this.operation,
+    this.targetEventId,
+  });
+
+  factory PulsePublishRequest.fromJson(Map<String, dynamic> json) =>
+      PulsePublishRequest(
+        attachments: json["attachments"] == null
+            ? null
+            : List<AttachmentElement>.from(
+                json["attachments"]!.map((x) => AttachmentElement.fromJson(x)),
+              ),
+        content: json["content"],
+        mentions: json["mentions"] == null
+            ? null
+            : List<String>.from(json["mentions"]!.map((x) => x)),
+        operation: operationValues.map[json["operation"]]!,
+        targetEventId: json["targetEventId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "attachments": attachments == null
+        ? null
+        : List<dynamic>.from(attachments!.map((x) => x.toJson())),
+    "content": content,
+    "mentions": mentions == null
+        ? null
+        : List<dynamic>.from(mentions!.map((x) => x)),
+    "operation": operationValues.reverse[operation],
+    "targetEventId": targetEventId,
+  });
+}
+
+class AttachmentElement {
+  ///原 Buzz imeta 模糊预览编码。
+  final String? blurhash;
+
+  ///原 Buzz imeta 媒体尺寸显示元数据。
+  final String? dim;
+
+  ///原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
+  final String? displayLabel;
+
+  ///原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
+  final double? duration;
+
+  ///原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
+  final String? filename;
+
+  ///原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
+  final String? image;
+  final String sha256;
+  final int size;
+
+  ///沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
+  final bool? spoiler;
+
+  ///当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
+  final String? thumb;
+  final String type;
+  final String url;
+
+  AttachmentElement({
+    this.blurhash,
+    this.dim,
+    this.displayLabel,
+    this.duration,
+    this.filename,
+    this.image,
+    required this.sha256,
+    required this.size,
+    this.spoiler,
+    this.thumb,
+    required this.type,
+    required this.url,
+  });
+
+  factory AttachmentElement.fromJson(Map<String, dynamic> json) =>
+      AttachmentElement(
+        blurhash: json["blurhash"],
+        dim: json["dim"],
+        displayLabel: json["displayLabel"],
+        duration: json["duration"]?.toDouble(),
+        filename: json["filename"],
+        image: json["image"],
+        sha256: json["sha256"],
+        size: json["size"],
+        spoiler: json["spoiler"],
+        thumb: json["thumb"],
+        type: json["type"],
+        url: json["url"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "blurhash": blurhash,
+    "dim": dim,
+    "displayLabel": displayLabel,
+    "duration": duration,
+    "filename": filename,
+    "image": image,
+    "sha256": sha256,
+    "size": size,
+    "spoiler": spoiler,
+    "thumb": thumb,
+    "type": type,
+    "url": url,
+  });
+}
+
+enum Operation { LIKE, NOTE, UNLIKE }
+
+final operationValues = EnumValues({
+  "LIKE": Operation.LIKE,
+  "NOTE": Operation.NOTE,
+  "UNLIKE": Operation.UNLIKE,
+});
+
+class PulseQueryRequest {
+  final List<String>? authors;
+  final int? before;
+  final List<String>? eventIds;
+  final View view;
+
+  PulseQueryRequest({
+    this.authors,
+    this.before,
+    this.eventIds,
+    required this.view,
+  });
+
+  factory PulseQueryRequest.fromJson(Map<String, dynamic> json) =>
+      PulseQueryRequest(
+        authors: json["authors"] == null
+            ? null
+            : List<String>.from(json["authors"]!.map((x) => x)),
+        before: json["before"],
+        eventIds: json["eventIds"] == null
+            ? null
+            : List<String>.from(json["eventIds"]!.map((x) => x)),
+        view: viewValues.map[json["view"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "authors": authors == null
+        ? null
+        : List<dynamic>.from(authors!.map((x) => x)),
+    "before": before,
+    "eventIds": eventIds == null
+        ? null
+        : List<dynamic>.from(eventIds!.map((x) => x)),
+    "view": viewValues.reverse[view],
+  });
+}
+
+enum View { AGENTS, CONTACTS, LIKED, NOTES, PROFILES, REACTIONS }
+
+final viewValues = EnumValues({
+  "AGENTS": View.AGENTS,
+  "CONTACTS": View.CONTACTS,
+  "LIKED": View.LIKED,
+  "NOTES": View.NOTES,
+  "PROFILES": View.PROFILES,
+  "REACTIONS": View.REACTIONS,
 });
 
 ///PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
@@ -9540,6 +9747,82 @@ class WebChannelView {
   });
 }
 
+class WebMessageAttachment {
+  ///原 Buzz imeta 模糊预览编码。
+  final String? blurhash;
+
+  ///原 Buzz imeta 媒体尺寸显示元数据。
+  final String? dim;
+
+  ///原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
+  final String? displayLabel;
+
+  ///原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
+  final double? duration;
+
+  ///原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
+  final String? filename;
+
+  ///原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
+  final String? image;
+  final String sha256;
+  final int size;
+
+  ///沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
+  final bool? spoiler;
+
+  ///当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
+  final String? thumb;
+  final String type;
+  final String url;
+
+  WebMessageAttachment({
+    this.blurhash,
+    this.dim,
+    this.displayLabel,
+    this.duration,
+    this.filename,
+    this.image,
+    required this.sha256,
+    required this.size,
+    this.spoiler,
+    this.thumb,
+    required this.type,
+    required this.url,
+  });
+
+  factory WebMessageAttachment.fromJson(Map<String, dynamic> json) =>
+      WebMessageAttachment(
+        blurhash: json["blurhash"],
+        dim: json["dim"],
+        displayLabel: json["displayLabel"],
+        duration: json["duration"]?.toDouble(),
+        filename: json["filename"],
+        image: json["image"],
+        sha256: json["sha256"],
+        size: json["size"],
+        spoiler: json["spoiler"],
+        thumb: json["thumb"],
+        type: json["type"],
+        url: json["url"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "blurhash": blurhash,
+    "dim": dim,
+    "displayLabel": displayLabel,
+    "duration": duration,
+    "filename": filename,
+    "image": image,
+    "sha256": sha256,
+    "size": size,
+    "spoiler": spoiler,
+    "thumb": thumb,
+    "type": type,
+    "url": url,
+  });
+}
+
 ///原 Buzz 线程分页的复合游标；下一请求以 before=createdAt、beforeId=eventId 原样提交，避免同秒回复丢失。
 class WebMessageCursor {
   final int createdAt;
@@ -9691,7 +9974,7 @@ class WebProfileView {
 ///Web HUMAN 的原 Buzz 消息语义输入；身份、Channel、回复祖先与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或
 ///signed event。
 class WebPublishMessageRequest {
-  final List<WebMessageAttachment>? attachments;
+  final List<AttachmentElement>? attachments;
   final String content;
 
   ///编辑原 Buzz 消息；BFF 回读同 Channel 原事件并核对本人签名身份，发原 kind 40003。与 parentEventId 互斥，缺省保持原新消息语义。
@@ -9717,10 +10000,8 @@ class WebPublishMessageRequest {
       WebPublishMessageRequest(
         attachments: json["attachments"] == null
             ? null
-            : List<WebMessageAttachment>.from(
-                json["attachments"]!.map(
-                  (x) => WebMessageAttachment.fromJson(x),
-                ),
+            : List<AttachmentElement>.from(
+                json["attachments"]!.map((x) => AttachmentElement.fromJson(x)),
               ),
         content: json["content"],
         editEventId: json["editEventId"],
@@ -9744,82 +10025,6 @@ class WebPublishMessageRequest {
         : List<dynamic>.from(mentionInstallationIds!.map((x) => x)),
     "messageType": webMessageTypeValues.reverse[messageType],
     "parentEventId": parentEventId,
-  });
-}
-
-class WebMessageAttachment {
-  ///原 Buzz imeta 模糊预览编码。
-  final String? blurhash;
-
-  ///原 Buzz imeta 媒体尺寸显示元数据。
-  final String? dim;
-
-  ///原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
-  final String? displayLabel;
-
-  ///原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
-  final double? duration;
-
-  ///原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
-  final String? filename;
-
-  ///原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
-  final String? image;
-  final String sha256;
-  final int size;
-
-  ///沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
-  final bool? spoiler;
-
-  ///当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
-  final String? thumb;
-  final String type;
-  final String url;
-
-  WebMessageAttachment({
-    this.blurhash,
-    this.dim,
-    this.displayLabel,
-    this.duration,
-    this.filename,
-    this.image,
-    required this.sha256,
-    required this.size,
-    this.spoiler,
-    this.thumb,
-    required this.type,
-    required this.url,
-  });
-
-  factory WebMessageAttachment.fromJson(Map<String, dynamic> json) =>
-      WebMessageAttachment(
-        blurhash: json["blurhash"],
-        dim: json["dim"],
-        displayLabel: json["displayLabel"],
-        duration: json["duration"]?.toDouble(),
-        filename: json["filename"],
-        image: json["image"],
-        sha256: json["sha256"],
-        size: json["size"],
-        spoiler: json["spoiler"],
-        thumb: json["thumb"],
-        type: json["type"],
-        url: json["url"],
-      );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "blurhash": blurhash,
-    "dim": dim,
-    "displayLabel": displayLabel,
-    "duration": duration,
-    "filename": filename,
-    "image": image,
-    "sha256": sha256,
-    "size": size,
-    "spoiler": spoiler,
-    "thumb": thumb,
-    "type": type,
-    "url": url,
   });
 }
 

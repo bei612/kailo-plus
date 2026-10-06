@@ -1,0 +1,32 @@
+capability_id: collab.pulse
+title: 原版 Pulse 共源页面与 Community 本人调用链
+stage: S1
+status: in_progress
+exposure: end_user
+design:
+  requirements: [V-REQ-24]
+  decisions: [DD-39]
+  facts: []
+  seams: [SS-BUZ-GOVERNANCE, SS-WEB-RELAY]
+  blockers: []
+  entities: [BuzzIdentityBinding, TenantBuzzBinding]
+validation:
+  scenarios: []
+  evidence:
+    - dimension: 安全边界
+      ref: web-client/fork/verify/web-surface.md
+    - dimension: 上游接缝
+      ref: web-client/fork/verify/web-surface.md
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/platform-core/src/pulse.rs, core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/publish_reconcile.rs, client-kit/ts/platform/src/react/pulse/ui/PulseView.tsx, web-client/web/src/platform/ui/PulsePane.tsx, collaboration/desktop/src/features/platform/PulseScreen.tsx, collaboration/desktop/src/features/platform/pulseTransport.ts]
+  surfaces: [web, desktop]
+  schemas: [contracts/api/pulse_query_request.schema.json, contracts/api/pulse_publish_request.schema.json, contracts/api/web_message_attachment.schema.json, contracts/api/native_community.schema.json]
+  migrations: []
+runtime:
+  routes: ["/api/v1/pulse/query", "/api/v1/pulse/publish", "/api/v1/pulse/media", "/api/v1/pulse/media/{sha256}"]
+  actions: [pulse.publish]
+  workflow_kinds: []
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

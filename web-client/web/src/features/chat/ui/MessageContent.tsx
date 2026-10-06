@@ -49,7 +49,7 @@ type ImetaMedia = { sha256: string; mime: string; dimensions: ImageDimensions | 
 type MarkdownRenderContextValue = {
   mediaByUrl: ReadonlyMap<string, ImetaMedia>;
   mentionsByName: ReadonlyMap<string, MessageMention>;
-  workspaceId: string;
+  resolveMediaUrl: (sha256: string) => string;
   conversationId?: string;
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
 };
@@ -84,16 +84,14 @@ function imetaMedia(mediaTags: readonly (readonly string[])[] | undefined) {
 function BffMedia({
   media,
   alt,
-  workspaceId,
-  conversationId,
+  resolveMediaUrl,
 }: {
   media: ImetaMedia;
   alt?: string;
-  workspaceId: string;
-  conversationId?: string;
+  resolveMediaUrl: (sha256: string) => string;
 }) {
   const [failed, setFailed] = useState(false);
-  const src = mediaUrl(workspaceId, media.sha256, conversationId);
+  const src = resolveMediaUrl(media.sha256);
   const dimensions = media.dimensions;
   const intrinsic = dimensions ?? DEFAULT_IMAGE_DIMENSIONS;
   const scale = dimensions
@@ -142,7 +140,7 @@ function BffMedia({
 }
 
 const MarkdownImage: NonNullable<Components["img"]> = ({ src, alt }) => {
-  const { mediaByUrl, workspaceId, conversationId } = useMarkdownRenderContext();
+  const { mediaByUrl, resolveMediaUrl } = useMarkdownRenderContext();
   const media = src ? mediaByUrl.get(src) : undefined;
   // 没有 imeta 背书的图片地址不加载：退回成一条普通链接
   if (!media) {
@@ -152,11 +150,11 @@ const MarkdownImage: NonNullable<Components["img"]> = ({ src, alt }) => {
       </a>
     );
   }
-  return <BffMedia media={media} alt={alt} workspaceId={workspaceId} conversationId={conversationId} />;
+  return <BffMedia media={media} alt={alt} resolveMediaUrl={resolveMediaUrl} />;
 };
 
 const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
-  const { mediaByUrl, workspaceId, conversationId, onOpenMessageLink } = useMarkdownRenderContext();
+  const { mediaByUrl, resolveMediaUrl, onOpenMessageLink } = useMarkdownRenderContext();
   const messageLink = href ? parseMessageLink(href) : null;
   if (messageLink?.ok && onOpenMessageLink) {
     return <a href={href} onClick={(event) => { event.preventDefault(); onOpenMessageLink(messageLink.value); }}>{children}</a>;
@@ -171,7 +169,7 @@ const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
   }
   // 附件经 BFF 下载：同源，凭网关 cookie
   return (
-    <a href={mediaUrl(workspaceId, media.sha256, conversationId)} download={String(children) || "attachment"}>
+    <a href={resolveMediaUrl(media.sha256)} download={String(children) || "attachment"}>
       <Download className="mr-1 inline h-3.5 w-3.5" />
       {children}
     </a>
@@ -253,13 +251,15 @@ export function MessageContent({
   content,
   workspaceId,
   conversationId,
+  onMediaUrl,
   mentions = [],
   mediaTags,
   onOpenMessageLink,
 }: {
   content: string;
-  workspaceId: string;
+  workspaceId?: string;
   conversationId?: string;
+  onMediaUrl?: (sha256: string) => string;
   mentions?: readonly MessageMention[];
   mediaTags?: readonly (readonly string[])[];
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
@@ -272,9 +272,13 @@ export function MessageContent({
   const previewStyle = useLinkPreviewStyle();
   const previews = mediaTags?.some((tag) => tag.length === 2 && tag[0] === "link-preview" && tag[1] === "none")
     ? [] : parseLinkPreviewTextSnapshots(mediaTags, content);
+  const resolveMediaUrl = onMediaUrl ?? ((sha256: string) => {
+    if (!workspaceId && !conversationId) throw new Error("Message media scope missing");
+    return mediaUrl(workspaceId ?? conversationId!, sha256, conversationId);
+  });
 
   return (
-    <MarkdownRenderContext.Provider value={{ mediaByUrl, mentionsByName, workspaceId, conversationId, onOpenMessageLink }}>
+    <MarkdownRenderContext.Provider value={{ mediaByUrl, mentionsByName, resolveMediaUrl, onOpenMessageLink }}>
       <MessageBody className={`${MESSAGE_BODY_CLASS_NAME} buzz-message-markdown`}>
         <ReactMarkdown
           urlTransform={(url) => parseMessageLink(url).ok ? url : defaultUrlTransform(url)}

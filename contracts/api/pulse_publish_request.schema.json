@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/pulse_publish_request.schema.json",
+  "title": "PulsePublishRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operation", "content"],
+  "properties": {
+    "operation": {"type": "string", "enum": ["NOTE", "LIKE", "UNLIKE"]},
+    "content": {"type": "string"},
+    "targetEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "mentions": {"type": "array", "items": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+    "attachments": {"type": "array", "items": {"$ref": "web_message_attachment.schema.json"}}
+  }
+}

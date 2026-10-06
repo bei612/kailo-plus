@@ -15,6 +15,8 @@ import type {
   WorkspacePreferenceRequest,
   WebMessageAttachment,
   WebPublishMessageRequest,
+  PulseQueryRequest,
+  PulsePublishRequest,
 } from "@client-kit/contracts";
 import { createBffClient } from "@client-kit/platform/client";
 import { hiddenConversationChannels, type ConversationVisibilityHost } from "@client-kit/platform/react/new-message";
@@ -38,6 +40,23 @@ const transport = createFetchTransport({
 });
 
 export const bff = createBffClient(transport);
+
+export async function queryPulse(request: PulseQueryRequest): Promise<{events:BuzzEvent[];mediaPaths:Record<string,string>}> {
+  const page = await call<{events: BuzzEvent[];mediaPaths:Record<string,string>}>({method: "POST", path: "/api/v1/pulse/query", body: request});
+  if (!Array.isArray(page.events)) throw new TransportError("Invalid Pulse response");
+  return page;
+}
+export async function publishPulse(request: PulsePublishRequest, idempotencyKey: string): Promise<{eventId:string;operationId:string}> {
+  const path = "/api/v1/pulse/publish";
+  return unwrap({method:"POST",path}, await transport.exchange(path, {method:"POST",
+    headers:{"Content-Type":"application/json","Idempotency-Key":idempotencyKey}, body:JSON.stringify(request)}));
+}
+export async function uploadPulseMedia(file: File): Promise<MediaDescriptor> {
+  const path = "/api/v1/pulse/media";
+  return unwrap({method:"POST",path}, await transport.exchange(path, {method:"POST",
+    headers:{"Content-Type":file.type || "application/octet-stream"},body:file}));
+}
+export function pulseMediaUrl(hash: string): string { return `/api/v1/pulse/media/${encodeURIComponent(hash)}`; }
 
 export const conversationVisibility: ConversationVisibilityHost = {
   read: async (conversation) => {

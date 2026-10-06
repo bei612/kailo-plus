@@ -19,6 +19,7 @@ import {
   type PlatformSection,
 } from "@/features/platform/platformSections";
 import { useNativeSession } from "@/features/platform/activeCommunity";
+import { PulseScreen } from "@/features/platform/PulseScreen";
 
 export const Route = createFileRoute("/platform/$section")({
   params: {
@@ -42,6 +43,7 @@ function PlatformRouteComponent() {
 
 function PlatformScreen({ section }: { section: PlatformSection }) {
   const session = useNativeSession();
+  if (section === "pulse") return <PulseScreen />;
   return (
     <div
       className="flex min-h-0 flex-1 flex-col overflow-auto px-6 pb-6 pt-14"

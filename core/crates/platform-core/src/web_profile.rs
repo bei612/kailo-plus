@@ -100,7 +100,7 @@ async fn read(state: &BffState, client: &IdentityClient) -> Result<Option<nostr:
     profile_event(value, &client.pubkey_hex()).map_err(|_| unavailable())
 }
 
-fn avatar_media_paths(
+pub(crate) fn avatar_media_paths(
     picture: Option<&str>,
     host: &str,
 ) -> std::collections::HashMap<String, String> {
@@ -515,7 +515,7 @@ pub(crate) async fn update(
             return match previous(&state, &ctx, key).await {
                 Ok(Some(attempt)) => attempt_response(&attempt, ctx.tenant_id, &parameter_hash),
                 _ => unavailable(),
-            }
+            };
         }
     }
     let (result, response) = match fresh_client.deliver(&state.http, &event, admitted).await {

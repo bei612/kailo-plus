@@ -9,6 +9,32 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('Pulse requests and optional native limit preserve original fields', () {
+    final publish =
+        jsonDecode(
+              File(
+                '../../contracts/samples/pulse-publish.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    expect(PulsePublishRequest.fromJson(publish).toJson(), publish);
+    final query =
+        jsonDecode(
+              File(
+                '../../contracts/samples/pulse-query.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    expect(PulseQueryRequest.fromJson(query).toJson(), query);
+    for (final limit in <int?>[null, 100]) {
+      final value = <String, dynamic>{
+        'relayUrl': 'wss://relay.example',
+        'communityHost': 'relay.example',
+        if (limit != null) 'relayQueryLimit': limit,
+      };
+      expect(NativeCommunityFacts.fromJson(value).toJson(), value);
+    }
+  });
   test('workspace membership keeps true false and absence distinct', () {
     for (final member in <bool?>[null, false, true]) {
       final value = <String, dynamic>{

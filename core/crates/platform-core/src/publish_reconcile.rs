@@ -161,6 +161,7 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
     .bind(
         [
             PUBLISH_ACTION,
+            crate::pulse::PUBLISH_ACTION,
             CONVERSATION_PUBLISH_ACTION,
             CONVERSATION_HIDE_ACTION,
             CONVERSATION_REOPEN_ACTION,
@@ -231,6 +232,7 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
     .bind(
         [
             PUBLISH_ACTION,
+            crate::pulse::PUBLISH_ACTION,
             CONVERSATION_PUBLISH_ACTION,
             CONVERSATION_HIDE_ACTION,
             CONVERSATION_REOPEN_ACTION,
@@ -303,6 +305,52 @@ async fn settle_one(state: &ServiceState, p: &Pending) -> &'static str {
 }
 
 async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'static str> {
+    if p.action_key == crate::pulse::PUBLISH_ACTION {
+        if p.target_type.as_deref() != Some("TENANT")
+            || p.target_id != Some(p.tenant_id)
+            || p.workspace_id.is_some()
+        {
+            return Err("EVIDENCE_MISSING");
+        }
+        let actor = p.actor_principal_id.ok_or("EVIDENCE_MISSING")?;
+        let before = crate::pulse::admit_actor(state, p.tenant_id, actor)
+            .await
+            .map_err(|_| "ACTOR_UNREADABLE")?;
+        let keys = crate::web_transport::server_actor_keys(
+            &state.pool,
+            &state.secrets,
+            p.tenant_id,
+            actor,
+        )
+        .await
+        .map_err(|_| "ACTOR_UNREADABLE")?;
+        let client = collab_bridge::bridge::IdentityClient::new(
+            collab_bridge::bridge::Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            &state.relay_transport,
+            &before.community_host,
+        )
+        .map_err(|_| "ACTOR_UNREADABLE")?;
+        let exists = client
+            .event_exists(&state.http, &p.event_id)
+            .await
+            .map_err(|_| "QUERY_FAILED")?;
+        let after = crate::pulse::admit_actor(state, p.tenant_id, actor)
+            .await
+            .map_err(|_| "ACTOR_UNREADABLE")?;
+        let current = crate::web_transport::server_actor_keys(
+            &state.pool,
+            &state.secrets,
+            p.tenant_id,
+            actor,
+        )
+        .await
+        .map_err(|_| "ACTOR_UNREADABLE")?;
+        if before != after || keys.public_key() != current.public_key() {
+            return Err("ACTOR_UNREADABLE");
+        }
+        return Ok(exists);
+    }
     if p.action_key == PUBLISH_ACTION {
         if p.target_type.as_deref() != Some("CHANNEL")
             || p.workspace_id.is_none()

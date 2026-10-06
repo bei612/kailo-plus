@@ -7,6 +7,7 @@
   "additionalProperties": false,
   "required": ["relayUrl", "communityHost"],
   "properties": {
+    "relayQueryLimit": { "type": "integer", "minimum": 1, "description": "当前固定 Relay NIP-11 的 max_limit；旧客户端忽略，新 Pulse 消费者缺失时不猜测上限。" },
     "relayUrl": { "type": "string", "description": "原生端直连的 Relay 地址" },
     "communityHost": { "type": "string", "description": "该 Tenant 的 Community host，可能带非默认端口" }
   }

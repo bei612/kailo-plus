@@ -265,3 +265,29 @@ fn capability_vectors_roundtrip_preserves_order_and_encoded_values() {
     let typed: contracts::CapabilityConformanceVectors = serde_json::from_str(&raw).unwrap();
     assert_eq!(original, serde_json::to_value(typed).unwrap());
 }
+
+#[test]
+fn pulse_requests_and_native_limit_roundtrip() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("pulse-publish.sample.json")).unwrap();
+    let typed: contracts::PulsePublishRequest = serde_json::from_str(&raw).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&raw).unwrap(),
+        serde_json::to_value(typed).unwrap()
+    );
+    let raw = fs::read_to_string(sample_path().with_file_name("pulse-query.sample.json")).unwrap();
+    let typed: contracts::PulseQueryRequest = serde_json::from_str(&raw).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&raw).unwrap(),
+        serde_json::to_value(typed).unwrap()
+    );
+    for limit in [None, Some(100)] {
+        let mut value =
+            serde_json::json!({"relayUrl":"wss://relay.example","communityHost":"relay.example"});
+        if let Some(limit) = limit {
+            value["relayQueryLimit"] = serde_json::json!(limit);
+        }
+        let typed: contracts::NativeCommunityFacts = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(typed).unwrap(), value);
+    }
+}

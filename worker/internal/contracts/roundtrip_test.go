@@ -14,6 +14,48 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestPulseRoundtrip(t *testing.T) {
+	for name, target := range map[string]any{"pulse-publish.sample.json": &generated.PulsePublishRequest{}, "pulse-query.sample.json": &generated.PulseQueryRequest{}} {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(raw, target); err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := json.Marshal(target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var before, after any
+		if err := json.Unmarshal(raw, &before); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(encoded, &after); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(before, after) {
+			t.Fatalf("Pulse roundtrip changed %s", name)
+		}
+	}
+	for _, raw := range []string{`{"relayUrl":"wss://relay.example","communityHost":"relay.example"}`, `{"relayUrl":"wss://relay.example","communityHost":"relay.example","relayQueryLimit":100}`} {
+		var typed generated.NativeCommunityFacts
+		if err := json.Unmarshal([]byte(raw), &typed); err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var before, after any
+		_ = json.Unmarshal([]byte(raw), &before)
+		_ = json.Unmarshal(encoded, &after)
+		if !reflect.DeepEqual(before, after) {
+			t.Fatal("optional native limit changed")
+		}
+	}
+}
+
 func TestWorkspaceMembershipProjection(t *testing.T) {
 	for _, raw := range []string{
 		`{"id":"scope","name":"Scope","slug":"scope"}`,

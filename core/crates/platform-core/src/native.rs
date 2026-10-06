@@ -60,14 +60,24 @@ pub async fn community(State(state): State<BffState>, headers: HeaderMap) -> Res
     .fetch_optional(&state.pool)
     .await
     {
-        Ok(Some(host)) => (
-            StatusCode::OK,
-            Json(NativeCommunityFacts {
-                relay_url: state.relay_native_url_template.replace("{host}", &host),
-                community_host: host,
-            }),
-        )
-            .into_response(),
+        Ok(Some(host)) => {
+            let relay_query_limit =
+                match crate::web_transport::community_limits(&state, &host).await {
+                    Ok(limits) => Some(limits.max_limit),
+                    // Existing native connection facts stay usable. Pulse cannot
+                    // issue a bounded query without the optional current limit.
+                    Err(_) => None,
+                };
+            (
+                StatusCode::OK,
+                Json(NativeCommunityFacts {
+                    relay_query_limit,
+                    relay_url: state.relay_native_url_template.replace("{host}", &host),
+                    community_host: host,
+                }),
+            )
+                .into_response()
+        }
         // 协作面尚未就绪：不给一个连不上或连错 Community 的地址
         Ok(None) => StatusCode::CONFLICT.into_response(),
         Err(e) => {

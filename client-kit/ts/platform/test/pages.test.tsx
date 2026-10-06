@@ -332,7 +332,7 @@ describe("independent shared Workflows page", () => {
       const [section, setSection] = useState<"agents" | "workflows">("agents");
       return <><PlatformNavigation locale="en" selectedSection={section}
         onSelectSection={(next) => { if (next === "agents" || next === "workflows") setSection(next); }}
-        icons={{ members: null, agents: null, workflows: null, tasks: null, approvals: null, audit: null, devices: null }} />
+        icons={{ pulse: null, members: null, agents: null, workflows: null, tasks: null, approvals: null, audit: null, devices: null }} />
         {section === "agents" ? <AgentDefinitionsPage /> : <WorkflowsPage />}</>;
     }
     const host = await mount(t, <Host />);
@@ -1215,6 +1215,50 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await settle();
   }
   const posts = (t: ReturnType<typeof routes>) => t.send.mock.calls.map(([r]) => r).filter((r) => r.path === "/api/v1/actions");
+
+  it("uses the original identity cards and creation entry without executing an Agent", async () => {
+    const t = routes();
+    const host = await mount(t, <AgentDefinitionsPage />);
+    await settle();
+    const card = host.querySelector<HTMLElement>("[data-testid=agent-definition-agent-1]")!;
+    expect(card.className).toContain("aspect-[4/5]");
+    expect(card.textContent).toContain("Governed Agent");
+    expect(card.textContent).toContain("Definition ready");
+    const editor = host.querySelector<HTMLElement>("[data-testid=agent-definition-editor]")!;
+    expect(editor.hidden).toBe(true);
+    await click(host.querySelector<HTMLElement>("[data-testid=new-agent-card]")!);
+    expect(editor.hidden).toBe(false);
+    await click(button(card, "View definition"));
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-definitions/agent-1" });
+    expect(posts(t)).toHaveLength(0);
+  });
+
+  it("renders installation identity only from its authorized exact pinned version", async () => {
+    const t = routes((request) => request.path === "/api/v1/agent-versions/published-1"
+      ? { status: 200, body: { ...version, assetId: "published-1", state: "PUBLISHED", canUpdate: false, canPublish: false,
+        content: { ...content, personaIdentity: { displayName: "Pinned persona", description: "Actual pinned description" } } } } : undefined);
+    const host = await mount(t, <AgentDefinitionsPage />);
+    await settle();
+    const card = host.querySelector<HTMLElement>("[data-testid=agent-installation-installation-1]")!;
+    expect(card.textContent).toContain("Pinned persona");
+    expect(card.textContent).toContain("Actual pinned description");
+    expect(card.textContent).not.toContain("Governed Agent");
+    await click(button(card, "View installation"));
+    expect(host.querySelector("[data-testid=agent-installation-detail]")).not.toBeNull();
+    expect(posts(t)).toHaveLength(0);
+  });
+
+  it("does not borrow another version identity or infer Version permission from an installation", async () => {
+    const t = routes((request) => request.path === "/api/v1/agent-versions/published-1"
+      ? { status: 200, body: { ...version, assetId: "another-version", content: { ...content,
+        personaIdentity: { displayName: "Wrong identity" } } } } : undefined);
+    const host = await mount(t, <AgentDefinitionsPage />);
+    await settle();
+    const card = host.querySelector<HTMLElement>("[data-testid=agent-installation-installation-1]")!;
+    expect(card.textContent).not.toContain("Wrong identity");
+    expect(card.parentElement?.querySelector("[role=status]")?.textContent).toContain("the result is unknown");
+    expect(posts(t)).toHaveLength(0);
+  });
 
   it("preserves explicit Tool references across directory pages and freezes them into draft content", async () => {
     const first = { resourceId: "list-tool", resourceVersion: 1, ownerPrincipalId: "human-1", name: "agent.memory.entry.list",
@@ -3028,8 +3072,8 @@ describe("AgentDefinitionsPage installation read-only facts", () => {
       expect(controls).not.toContain(label);
     }
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
-    expect(t.send.mock.calls.some(([r]) => r.path.startsWith("/api/v1/agent-versions/"))).toBe(false);
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-installations?workspaceId=workspace-1&offset=0" });
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-versions/pinned-asset-1" });
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-installations/installation-1" });
   });
 

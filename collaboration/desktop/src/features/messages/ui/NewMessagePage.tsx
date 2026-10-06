@@ -8,8 +8,9 @@ import { getChannels } from "@/shared/api/tauri";
 import { useSendMessageMutation } from "../hooks";
 import { MessageComposer } from "./MessageComposer";
 
-export function NewMessagePage({ currentPrincipalId, onConversationOpened }: {
+export function NewMessagePage({ currentPrincipalId, onConversationOpened, initialRecipientPubkey }: {
   currentPrincipalId: string;
+  initialRecipientPubkey?: string;
   onConversationOpened: (conversation: ConversationView) => void | Promise<void>;
 }) {
   const identity = useIdentityQuery();
@@ -27,7 +28,7 @@ export function NewMessagePage({ currentPrincipalId, onConversationOpened }: {
       if (scope.active) setNavigationProblem({ scope, conversation });
     }
   };
-  return <><NewMessageScreen key={currentPrincipalId} currentPrincipalId={currentPrincipalId} renderComposer={(host) =>
+  return <><NewMessageScreen key={currentPrincipalId} currentPrincipalId={currentPrincipalId} initialRecipientPubkey={initialRecipientPubkey} renderComposer={(host) =>
     <MessageComposer channelName="new message" containerClassName="px-5"
       disabled={host.disabled || send.isPending || !identity.data} isSending={host.isSending || send.isPending}
       placeholder={host.placeholder} showBackgroundUploadProgress

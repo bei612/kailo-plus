@@ -253,6 +253,12 @@
 //    protocolSessionView, err := UnmarshalProtocolSessionView(bytes)
 //    bytes, err = protocolSessionView.Marshal()
 //
+//    pulsePublishRequest, err := UnmarshalPulsePublishRequest(bytes)
+//    bytes, err = pulsePublishRequest.Marshal()
+//
+//    pulseQueryRequest, err := UnmarshalPulseQueryRequest(bytes)
+//    bytes, err = pulseQueryRequest.Marshal()
+//
 //    readMarkRequest, err := UnmarshalReadMarkRequest(bytes)
 //    bytes, err = readMarkRequest.Marshal()
 //
@@ -276,6 +282,9 @@
 //
 //    webChannelView, err := UnmarshalWebChannelView(bytes)
 //    bytes, err = webChannelView.Marshal()
+//
+//    webMessageAttachment, err := UnmarshalWebMessageAttachment(bytes)
+//    bytes, err = webMessageAttachment.Marshal()
 //
 //    webMessageCursor, err := UnmarshalWebMessageCursor(bytes)
 //    bytes, err = webMessageCursor.Marshal()
@@ -1393,6 +1402,26 @@ func (r *ProtocolSessionView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalPulsePublishRequest(data []byte) (PulsePublishRequest, error) {
+	var r PulsePublishRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *PulsePublishRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalPulseQueryRequest(data []byte) (PulseQueryRequest, error) {
+	var r PulseQueryRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *PulseQueryRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalReadMarkRequest(data []byte) (ReadMarkRequest, error) {
 	var r ReadMarkRequest
 	err := json.Unmarshal(data, &r)
@@ -1470,6 +1499,16 @@ func UnmarshalWebChannelView(data []byte) (WebChannelView, error) {
 }
 
 func (r *WebChannelView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebMessageAttachment(data []byte) (WebMessageAttachment, error) {
+	var r WebMessageAttachment
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebMessageAttachment) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4048,6 +4087,8 @@ type LegacySecretRefBinding struct {
 type NativeCommunityFacts struct {
 	// 该 Tenant 的 Community host，可能带非默认端口
 	CommunityHost string `json:"communityHost"`
+	// 当前固定 Relay NIP-11 的 max_limit；旧客户端忽略，新 Pulse 消费者缺失时不猜测上限。
+	RelayQueryLimit *int64 `json:"relayQueryLimit,omitempty"`
 	// 原生端直连的 Relay 地址
 	RelayURL string `json:"relayUrl"`
 }
@@ -4140,6 +4181,44 @@ type ProtocolSessionView struct {
 	TenantID               string                   `json:"tenantId"`
 	Version                int64                    `json:"version"`
 	WorkspaceID            *string                  `json:"workspaceId,omitempty"`
+}
+
+type PulsePublishRequest struct {
+	Attachments   []AttachmentElement `json:"attachments,omitempty"`
+	Content       string              `json:"content"`
+	Mentions      []string            `json:"mentions,omitempty"`
+	Operation     Operation           `json:"operation"`
+	TargetEventID *string             `json:"targetEventId,omitempty"`
+}
+
+type AttachmentElement struct {
+	// 原 Buzz imeta 模糊预览编码。
+	Blurhash *string `json:"blurhash,omitempty"`
+	// 原 Buzz imeta 媒体尺寸显示元数据。
+	Dim *string `json:"dim,omitempty"`
+	// 原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
+	DisplayLabel *string `json:"displayLabel,omitempty"`
+	// 原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
+	Duration *float64 `json:"duration,omitempty"`
+	// 原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
+	Filename *string `json:"filename,omitempty"`
+	// 原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
+	Image  *string `json:"image,omitempty"`
+	Sha256 string  `json:"sha256"`
+	Size   int64   `json:"size"`
+	// 沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
+	Spoiler *bool `json:"spoiler,omitempty"`
+	// 当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
+	Thumb *string `json:"thumb,omitempty"`
+	Type  string  `json:"type"`
+	URL   string  `json:"url"`
+}
+
+type PulseQueryRequest struct {
+	Authors  []string `json:"authors,omitempty"`
+	Before   *int64   `json:"before,omitempty"`
+	EventIDS []string `json:"eventIds,omitempty"`
+	View     ViewEnum `json:"view"`
 }
 
 // PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
@@ -4276,6 +4355,29 @@ type WebChannelView struct {
 	TTLSeconds  *int64      `json:"ttlSeconds,omitempty"`
 }
 
+type WebMessageAttachment struct {
+	// 原 Buzz imeta 模糊预览编码。
+	Blurhash *string `json:"blurhash,omitempty"`
+	// 原 Buzz imeta 媒体尺寸显示元数据。
+	Dim *string `json:"dim,omitempty"`
+	// 原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
+	DisplayLabel *string `json:"displayLabel,omitempty"`
+	// 原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
+	Duration *float64 `json:"duration,omitempty"`
+	// 原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
+	Filename *string `json:"filename,omitempty"`
+	// 原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
+	Image  *string `json:"image,omitempty"`
+	Sha256 string  `json:"sha256"`
+	Size   int64   `json:"size"`
+	// 沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
+	Spoiler *bool `json:"spoiler,omitempty"`
+	// 当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
+	Thumb *string `json:"thumb,omitempty"`
+	Type  string  `json:"type"`
+	URL   string  `json:"url"`
+}
+
 // 原 Buzz 线程分页的复合游标；下一请求以 before=createdAt、beforeId=eventId 原样提交，避免同秒回复丢失。
 type WebMessageCursor struct {
 	CreatedAt int64  `json:"createdAt"`
@@ -4322,8 +4424,8 @@ type WebProfileView struct {
 // Web HUMAN 的原 Buzz 消息语义输入；身份、Channel、回复祖先与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或
 // signed event。
 type WebPublishMessageRequest struct {
-	Attachments []WebMessageAttachment `json:"attachments,omitempty"`
-	Content     string                 `json:"content"`
+	Attachments []AttachmentElement `json:"attachments,omitempty"`
+	Content     string              `json:"content"`
 	// 编辑原 Buzz 消息；BFF 回读同 Channel 原事件并核对本人签名身份，发原 kind 40003。与 parentEventId 互斥，缺省保持原新消息语义。
 	EditEventID *string `json:"editEventId,omitempty"`
 	// 用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
@@ -4331,29 +4433,6 @@ type WebPublishMessageRequest struct {
 	MessageType            *WebMessageType `json:"messageType,omitempty"`
 	// 原 Relay 消息引用；BFF 在当前 Channel 回读验签并解析 NIP-10 祖先。
 	ParentEventID *string `json:"parentEventId,omitempty"`
-}
-
-type WebMessageAttachment struct {
-	// 原 Buzz imeta 模糊预览编码。
-	Blurhash *string `json:"blurhash,omitempty"`
-	// 原 Buzz imeta 媒体尺寸显示元数据。
-	Dim *string `json:"dim,omitempty"`
-	// 原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
-	DisplayLabel *string `json:"displayLabel,omitempty"`
-	// 原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
-	Duration *float64 `json:"duration,omitempty"`
-	// 原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
-	Filename *string `json:"filename,omitempty"`
-	// 原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
-	Image  *string `json:"image,omitempty"`
-	Sha256 string  `json:"sha256"`
-	Size   int64   `json:"size"`
-	// 沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
-	Spoiler *bool `json:"spoiler,omitempty"`
-	// 当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
-	Thumb *string `json:"thumb,omitempty"`
-	Type  string  `json:"type"`
-	URL   string  `json:"url"`
 }
 
 // GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 或 fresh manage 管理资格，且两侧
@@ -6397,6 +6476,25 @@ const (
 	ReadOnly         ProtocolSessionViewState = "READ_ONLY"
 	StateOPEN        ProtocolSessionViewState = "OPEN"
 	TentacledUNKNOWN ProtocolSessionViewState = "UNKNOWN"
+)
+
+type Operation string
+
+const (
+	Like   Operation = "LIKE"
+	Note   Operation = "NOTE"
+	Unlike Operation = "UNLIKE"
+)
+
+type ViewEnum string
+
+const (
+	Agents    ViewEnum = "AGENTS"
+	Contacts  ViewEnum = "CONTACTS"
+	Liked     ViewEnum = "LIKED"
+	Notes     ViewEnum = "NOTES"
+	Profiles  ViewEnum = "PROFILES"
+	Reactions ViewEnum = "REACTIONS"
 )
 
 type CreateActionKey string

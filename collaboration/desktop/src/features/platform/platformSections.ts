@@ -16,6 +16,7 @@ export const PLATFORM_SECTION_LABEL: Record<
   PlatformSection,
   PlatformMessageKey
 > = {
+  pulse: "platform.tab.pulse",
   members: "platform.tab.members",
   agents: "platform.tab.agents",
   workflows: "platform.tab.workflows",

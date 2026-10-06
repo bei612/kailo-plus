@@ -8,6 +8,7 @@
     "profile-assets.ts"
   ],
   "exports": {
+    "./react/pulse": "./src/react/pulse/index.ts",
     "./react/thread": "./src/react/messages/thread/index.ts",
     "./react/thread/kinds": "./src/react/messages/thread/kinds.ts",
     "./react/thread/threadPanel": "./src/react/messages/thread/threadPanel.ts",
@@ -200,6 +201,7 @@
     "test": "tsc --noEmit -p tsconfig.test.json && vitest run"
   },
   "peerDependencies": {
+    "@tanstack/react-query": "^5.90.21",
     "@radix-ui/react-alert-dialog": "1.1.23",
     "@radix-ui/react-separator": "^1.1.8",
     "@tanstack/react-virtual": "3.14.10",
@@ -240,6 +242,7 @@
     "@radix-ui/react-toggle": "^1.1.10"
   },
   "devDependencies": {
+    "@tanstack/react-query": "5.101.4",
     "@radix-ui/react-alert-dialog": "1.1.23",
     "@radix-ui/react-separator": "^1.1.8",
     "@tanstack/react-virtual": "3.14.10",
