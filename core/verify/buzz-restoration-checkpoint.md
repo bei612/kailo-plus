@@ -419,3 +419,54 @@ dist 发布记录、Relay/Desktop/Web 新源码与旧 artifact 来源不同。�
 获取 pnpm 的 registry 连接超时退出 1，重试亦失败；没有用旧镜像冒充新源码。
 随后补入的通知文案中英同源、ProjectConversation 原 Activity 注册及 Wren
 DEDICATED_INSTANCE 修正，各有实现后窄验记录，不属于此固定树 full 的覆盖范围。
+
+### 2026-10-06 13:42–14:17 UTC 实际投递与浏览器复验
+
+前节是历史固定树结果。Core/Worker 已从干净提交
+`f5f786cadcf0ad88d5fd13c2e964c92ebf0b328a` 经原 release、registry 和启动入口投递，
+实际退出 0，镜像分别为 `08c62ac1e4bdc857f3599b9ba40406a8d913ff530d69fed22df9c59b4a8c4802`
+与 `6e0ed202debb887725a7ef890f22b5f889cde88aa98e7a2cf442acae01d6b1d7`。
+Core health200、Worker 原队列启动、原90条迁移成功；原件为 Data 的
+`buzz-dm-worker-release-20261006.85FUKC/deployment-receipt.md`。原私聊
+ProjectConversation 确已执行，状态自动推进至 RECONCILING，但仍返回
+UNKNOWN_EXTERNAL_RESULT；截图39实际显示私聊断连、stream403，不能算可用。
+
+Web 干净源码 `a59e2f50ae1c4f73a363816a1cece646b7116f83` 经原
+`tools/build-upstream.sh web-client` 在既有8CPU/16GiB有限swap、Data缓存builder
+构建退出0；原件为 `buzz-drafts-notifications-web.F37mSj/build-web-client.RyxK7J.log`。
+构建真实拉取了基础镜像层，不宣称离线；存在大JS chunk警告。官方helper写回
+source `92ff49c47cb4ccafe017aff6946f88535576a0ed97e1ba3479799386938c9d14` 与
+artifact `4580ec22a409abcb31e3c3e4fdfbe40ab64c1ebde54fdcb2961a5409954303a6`。
+registry manifest独立HEAD200且Digest一致，本机镜像存在。原Compose只执行
+`up -d --no-deps --no-build --pull never buzz-web`，退出0，启动于
+`2026-10-06T14:07:42.198612302Z`，healthy、RestartCount0。Web无卷、无凭据，
+仍只连原app网络；本次不更新Relay或Windows。17份已有Web追溯同步实际镜像，
+不改gate、不以摘要更新冒充能力或未决全量检查通过。
+
+真实登录、未mock的Playwright截图在
+`/volumes/data/kailo/tmp/kailo-visual-release-20261006.vlPvnU/`：
+
+- `40-a59-draft-restored.png`：现有验收频道输入草稿，切到收件箱再返回，原文仍在；
+  随后刷新亦读回同一草稿，未发送消息。
+- `41-a59-notifications-zh.png`、`42-a59-notifications-en.png`：原共享通知布局、
+  中英文标签实际显示；关闭声音、刷新并重新进入通知页后开关仍关闭，再恢复开启。
+  语言验证后恢复中文。浏览器报告通知已阻止，因此没有把系统弹窗交付记为通过。
+- 三张图均实际打开检查。侧栏、头像、消息行和富编辑器不再是旧文本堆叠，但
+  当前旧频道标题仍是UUID、Pulse/Projects/外部服务入口及完整消息菜单仍未补齐。
+  这不是原版全页面、Desktop或Mobile等效验收。
+
+浏览器检查中的两次定位错误保留：`main`有两处造成strict-mode错误；刷新后
+设置页未保持，直接找通知按钮失败。重新经原个人菜单进入设置后验证成功，
+未把定位失败抹除或归为业务通过。新回复/TTL源码仍不在此发布镜像中。
+
+Relay重试原入口退出1，日志
+`buzz-drafts-notifications-web.F37mSj/build-collaboration-relay.8DPl3x.log`：
+`failed to list workers ... /run/docker.sock: use of closed network connection`。
+未进入编译、未产出新Relay。Agent实际新调用两份准入已ALLOWED/DISPATCHED，
+其中一份native完成但BILLING_UNAVAILABLE、未发最终回帖；原OpenMeter Kafka早已
+OOM退出，单服务恢复后仍存在精确事件入口去重claim而未存储的问题，继续修复，
+不改账本、扩大额度或重放模型。不能称稳定三人双Agent已重新通过。
+
+本批只同步既有DD-74/75与SS-WEB-PRESENTATION的部署事实，无新契约、权限、
+租户默认值或业务状态；未决UNKNOWN保持原处理。全量检查仍以前节退出1为准，
+后续窄验和真实页面检查不替代 `tools/check.sh --full`。

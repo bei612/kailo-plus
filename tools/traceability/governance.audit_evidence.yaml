@@ -37,5 +37,5 @@ release:
     - name: core
       digest: sha256:2f17c22140f4a71a684ff50c5872a7d72af0d71b878f50cd6b96d81b3303682a
     - name: web-client
-      digest: sha256:6141e274ae8ca893d32318b1384e3d35a792c04eda88fe45d03b740c3814fd06
+      digest: sha256:4580ec22a409abcb31e3c3e4fdfbe40ab64c1ebde54fdcb2961a5409954303a6
   gate: ready

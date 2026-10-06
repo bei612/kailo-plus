@@ -6,8 +6,29 @@
 
 ## 当前使用与恢复范围（2026-10-06）
 
+- 14:07 UTC，Web 源码 `a59e2f50ae1c4f73a363816a1cece646b7116f83` 已通过原
+  `tools/build-upstream.sh web-client` 构建并单服务部署，均退出 0；镜像为
+  `4580ec22a409abcb31e3c3e4fdfbe40ab64c1ebde54fdcb2961a5409954303a6`，
+  registry 摘要读回一致、容器 healthy。实际 Playwright 复验确认频道草稿切页及
+  刷新仍保留，通知页中英切换生效，声音开关刷新后保存，验证后恢复中文与原开关。
+  入口仍为 `http://192.168.0.193:58090/app/`。旧频道 UUID 标题、私聊未闭合、
+  原版部分菜单和页面缺口仍存在，不宣称完整原版体验；本批未更新 Windows 包。
+  新回复和临时频道源码不在此镜像内。截图及实际失败边界见
+  [恢复检查记录](core/verify/buzz-restoration-checkpoint.md)。
+
+- 13:42 UTC，修复版 `f5f786cadcf0ad88d5fd13c2e964c92ebf0b328a` 的 Core/Worker
+  已沿原发布和启动入口投递，构建、push、部署均退出 0，registry 摘要独立读回一致。
+  Core 为 `08c62ac1e4bdc857f3599b9ba40406a8d913ff530d69fed22df9c59b4a8c4802`，
+  Worker 为 `6e0ed202debb887725a7ef890f22b5f889cde88aa98e7a2cf442acae01d6b1d7`；
+  health 200、原 Worker 队列启动、90 条迁移均成功，其余 26 个同项目容器不变。
+  原私聊 Activity 已实际执行，不再报未注册；绑定自动进入 RECONCILING，仍返回
+  UNKNOWN_EXTERNAL_RESULT，不能称私聊已可用。没有重发旧任务、修改权限或额度。
+  原回执见 Data 的 `buzz-dm-worker-release-20261006.85FUKC/deployment-receipt.md`。
+  Web、Relay 和 Windows 包不随本次两服务投递升级。
+
 - 共享草稿、通知、Agent 授权摘要及频道命名修正批 `344a4b6352180527052a659070b9dce2452d3da6`
-  已提交并推送，但尚未部署。固定树集中 `tools/check.sh --full` 已结束，退出 1：
+  已提交并推送，Core/Worker 与 Web 草稿、通知已随后续修复批分别投递。
+  固定树集中 `tools/check.sh --full` 已结束，退出 1：
   TypeScript 检查及产物追溯／来源核对未通过；Rust、Go、Dart、静态检查和文档
   检查通过。具体失败、跳过及本批后续窄验边界见
   [恢复检查记录](core/verify/buzz-restoration-checkpoint.md)。不以源码提交或局部
