@@ -13,6 +13,8 @@ void main() {
     'conversation references roundtrip without inventing optional cursor',
     () {
       final readers = <String, dynamic Function(Map<String, dynamic>)>{
+        'delegated-action-metadata.sample.json': (value) =>
+            DelegatedActionMetadataV1.fromJson(value).toJson(),
         'conversation-preference.sample.json': (value) =>
             ConversationPreferenceRequest.fromJson(value).toJson(),
         'workspace-channel-create.sample.json': (value) =>

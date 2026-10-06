@@ -392,10 +392,14 @@ async fn advance_accepted(
             };
             return first_turn(&state, &invocation, &projection, thread, memory, &input).await;
         }
-        if invocation.cancel_pending {
+        if needs_native_interrupt(
+            invocation.cancel_pending,
+            invocation.native_status.as_deref(),
+        ) {
             if let Some(turn) = invocation.runtime_turn_id.as_deref() {
                 // interrupt 回应不明仍继续只读同一 turn；它可能已经终结，不能
                 // 因 native「无 active turn」错误阻断 terminal observation。
+                // 已持久化的 native 终态无需再次取消；业务用量未收敛仍照常观察。
                 let _ = runtime.interrupt(&projection, thread, turn).await;
             }
         }
@@ -2743,6 +2747,10 @@ async fn finish_billed_turn(
     result(invocation.id, status, "NONE")
 }
 
+fn needs_native_interrupt(cancel_pending: bool, native_status: Option<&str>) -> bool {
+    cancel_pending && !matches!(native_status, Some("completed" | "failed" | "interrupted"))
+}
+
 fn billed_outcome(
     native_status: &str,
     reply: Option<&str>,
@@ -3009,10 +3017,22 @@ mod memory_context_tests {
 #[cfg(test)]
 mod reply_tests {
     use super::{
-        billed_outcome, definite_reply_refusal, native_reply, result_channel, UnboundTurnHistory,
+        billed_outcome, definite_reply_refusal, native_reply, needs_native_interrupt,
+        result_channel, UnboundTurnHistory,
     };
     use serde_json::json;
     use uuid::Uuid;
+
+    #[test]
+    fn persisted_native_terminal_does_not_repeat_interrupt_while_billing_waits() {
+        for status in ["completed", "failed", "interrupted"] {
+            assert!(!needs_native_interrupt(true, Some(status)));
+        }
+        for status in [None, Some("inProgress"), Some("unknown")] {
+            assert!(needs_native_interrupt(true, status));
+            assert!(!needs_native_interrupt(false, status));
+        }
+    }
 
     fn history_turn(invocation: Uuid) -> serde_json::Value {
         json!({"id":Uuid::new_v4(),"itemsView":"full","status":"completed",

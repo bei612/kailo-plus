@@ -7,6 +7,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
+import type { DelegatedActionMetadataV1 } from "../src/generated/contracts.js";
+
+test("delegated metadata preserves only platform result", () => {
+  const original: DelegatedActionMetadataV1 = JSON.parse(readFileSync(new URL("../../../../contracts/samples/delegated-action-metadata.sample.json", import.meta.url), "utf8"));
+  const back: DelegatedActionMetadataV1 = { operationId: original.operationId, actionExecutionId: original.actionExecutionId,
+    actionKey: original.actionKey, gateState: original.gateState, dispatchState: original.dispatchState, workflowId: original.workflowId };
+  deepStrictEqual(JSON.parse(JSON.stringify(back)), original);
+});
 
 test("workspace creation preserves native channel kind and description", () => {
   const original: ActionCommand = JSON.parse(readFileSync(new URL("../../../../contracts/samples/workspace-channel-create.sample.json", import.meta.url), "utf8"));

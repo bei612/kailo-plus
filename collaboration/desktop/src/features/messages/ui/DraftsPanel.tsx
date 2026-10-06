@@ -1,5 +1,5 @@
+import { DraftListSurface, DraftSendConfirm, type DraftSurfaceItem } from "@client-kit/platform/react/draft-surfaces";
 import { resolveLocale, translate } from "@client-kit/platform/i18n";
-import { FileText, Lock, Pencil, Send, Trash2 } from "lucide-react";
 import * as React from "react";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
@@ -24,19 +24,8 @@ import {
 } from "@/features/messages/lib/threading";
 import { getEventById } from "@/shared/api/tauri";
 import type { Channel } from "@/shared/api/types";
-import { cn } from "@/shared/lib/cn";
 import { formatItemTimestamp } from "@/shared/lib/datetime";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/alert-dialog";
-import { Button } from "@/shared/ui/button";
 import { Markdown } from "@/shared/ui/markdown";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 
 const SENT_DRAFT_PREFIX = "sent:";
 const THREAD_DRAFT_PREFIX = "thread:";
@@ -142,43 +131,6 @@ function resolveDraftSources({
   return sources;
 }
 
-function DraftRowActionButton({
-  children,
-  disabled = false,
-  label,
-  onClick,
-}: {
-  children: React.ReactNode;
-  disabled?: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          aria-label={label}
-          className="h-7 w-7 rounded-full p-0 text-muted-foreground hover:text-foreground"
-          disabled={disabled}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            if (!disabled) {
-              onClick();
-            }
-          }}
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          {children}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  );
-}
-
 export function canOpenDraft(draft: DraftState, source: DraftSource): boolean {
   return (
     draft.status !== "sent" &&
@@ -268,176 +220,17 @@ export async function sendDraftEntry(
   });
 }
 
-// ── Send confirmation dialog ──────────────────────────────────────────────────
-
-type SendConfirmDialogProps = {
-  channelLabel: string;
-  isDm: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-  open: boolean;
-};
-
-export function SendConfirmDialog({
-  channelLabel,
-  isDm,
-  onCancel,
-  onConfirm,
-  open,
-}: SendConfirmDialogProps) {
-  const destination = isDm ? channelLabel : `#${channelLabel}`;
-  return (
-    <AlertDialog
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          onCancel();
-        }
-      }}
-      open={open}
-    >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Send message</AlertDialogTitle>
-          <AlertDialogDescription>
-            Are you sure you want to send this message to {destination}?
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <Button onClick={onCancel} size="sm" type="button" variant="outline">
-            Cancel
-          </Button>
-          <Button onClick={onConfirm} size="sm" type="button">
-            Send
-          </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
+export function toDraftSurfaceItem({ entry, rootStatus, source }: DraftViewItem): DraftSurfaceItem {
+  return { entry, channelLabel: source.channel ? source.channel.channelType === "dm" ? source.label : `#${source.label}` : UNKNOWN_CHANNEL_LABEL,
+    createdAt: formatDraftCreatedAt(entry.draft), isPrivate: source.channel?.visibility === "private",
+    isOrphaned: rootStatus === "deleted", canOpen: canOpenDraft(entry.draft, source) && rootStatus !== "deleted",
+    canSend: canSendDraft(entry.draft, source, rootStatus) };
 }
 
-// ── DraftRow ─────────────────────────────────────────────────────────────────
-
-function DraftRow({
-  entry,
-  onDelete,
-  onOpen,
-  onSelect,
-  onSend,
-  rootStatus,
-  selected,
-  source,
-}: {
-  entry: DraftListEntry;
-  onDelete: (draftKey: string) => void;
-  onOpen: (entry: DraftListEntry) => void;
-  onSelect: () => void;
-  onSend: (entry: DraftListEntry) => void;
-  rootStatus: RootStatus;
-  selected: boolean;
-  source: DraftSource;
+export function SendConfirmDialog({ channelLabel, isDm, onCancel, onConfirm, open }: {
+  channelLabel: string; isDm: boolean; onCancel: () => void; onConfirm: () => void; open: boolean;
 }) {
-  const isSent = entry.draft.status === "sent";
-  const isOrphaned = rootStatus === "deleted";
-  const canOpen = canOpenDraft(entry.draft, source) && !isOrphaned;
-  const canSend = canSendDraft(entry.draft, source, rootStatus);
-  const isPrivate = source.channel?.visibility === "private";
-  const isDm = source.channel?.channelType === "dm";
-  const channelLabel = source.channel
-    ? isDm
-      ? source.label
-      : `#${source.label}`
-    : UNKNOWN_CHANNEL_LABEL;
-
-  return (
-    <div
-      className={cn(
-        "group/draft-row relative rounded-md border border-border/70 bg-background transition-colors hover:bg-muted/40 focus-within:bg-muted/40",
-        selected && "border-primary/30 bg-muted/60",
-        isOrphaned && "opacity-50",
-      )}
-      data-testid={`home-draft-item-${entry.key}`}
-    >
-      <button
-        aria-label={`View draft in ${channelLabel}`}
-        className="block w-full min-w-0 px-3 py-3 text-left disabled:cursor-default"
-        onClick={onSelect}
-        type="button"
-      >
-        <div className="min-w-0 pr-0 transition-[padding] group-hover/draft-row:pr-20 group-focus-within/draft-row:pr-20">
-          <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-            {isPrivate ? <Lock className="h-3.5 w-3.5 shrink-0" /> : null}
-            <span
-              className={cn(
-                "truncate font-medium",
-                source.channel ? "text-foreground" : "text-muted-foreground",
-                isOrphaned && "text-muted-foreground",
-              )}
-            >
-              {channelLabel}
-            </span>
-            <span className="shrink-0 text-muted-foreground/70">
-              {formatDraftCreatedAt(entry.draft)}
-            </span>
-            {isOrphaned ? (
-              <span
-                className="shrink-0 rounded px-1 py-0.5 text-2xs font-medium text-destructive/70 ring-1 ring-destructive/30"
-                data-testid={`home-draft-orphaned-label-${entry.key}`}
-              >
-                thread deleted
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-1 max-h-10 overflow-hidden text-sm font-medium leading-5 text-foreground">
-            <Markdown
-              className="inbox-preview-markdown text-inherit leading-5"
-              content={getDraftPreview(entry.draft)}
-              interactive={false}
-            />
-          </div>
-        </div>
-      </button>
-
-      {/* Hover action buttons: edit / delete / send (order per spec) */}
-      <div className="pointer-events-none absolute right-2 top-2 flex items-center gap-0.5 rounded-full bg-background/95 p-0.5 opacity-0 shadow-xs ring-1 ring-border/70 transition-opacity group-hover/draft-row:pointer-events-auto group-hover/draft-row:opacity-100 group-focus-within/draft-row:pointer-events-auto group-focus-within/draft-row:opacity-100">
-        {isSent ? null : (
-          <>
-            <DraftRowActionButton
-              disabled={!canOpen}
-              label={
-                canOpen
-                  ? "Open draft"
-                  : isOrphaned
-                    ? "Thread deleted"
-                    : "No channel link"
-              }
-              onClick={() => onOpen(entry)}
-            >
-              <Pencil className="h-4 w-4" />
-            </DraftRowActionButton>
-            <DraftRowActionButton
-              disabled={!canSend}
-              label={
-                canSend
-                  ? "Send message"
-                  : isOrphaned
-                    ? "Thread deleted"
-                    : "No channel link"
-              }
-              onClick={() => onSend(entry)}
-            >
-              <Send className="h-4 w-4" />
-            </DraftRowActionButton>
-          </>
-        )}
-        <DraftRowActionButton
-          label="Delete draft"
-          onClick={() => onDelete(entry.key)}
-        >
-          <Trash2 className="h-4 w-4" />
-        </DraftRowActionButton>
-      </div>
-    </div>
-  );
+  return open ? <DraftSendConfirm destination={isDm ? channelLabel : `#${channelLabel}`} onCancel={onCancel} onConfirm={onConfirm} /> : null;
 }
 
 // ── Shared derivation: active draft count ────────────────────────────────────
@@ -546,98 +339,11 @@ type DraftsPanelProps = {
   selectedDraftKey: string | null;
 };
 
-export function DraftsPanel({
-  items,
-  onDeleteDraft,
-  onSelectDraft,
-  selectedDraftKey,
-}: DraftsPanelProps) {
+export function DraftsPanel({ items, onDeleteDraft, onSelectDraft, selectedDraftKey }: DraftsPanelProps) {
   const { goChannel } = useAppNavigation();
-
-  // Send confirmation dialog state.
-  const [sendTarget, setSendTarget] = React.useState<DraftListEntry | null>(
-    null,
-  );
-
-  const handleOpen = React.useCallback(
-    (entry: DraftListEntry) => {
-      void openDraftEntry(entry, goChannel);
-    },
-    [goChannel],
-  );
-
-  const handleDelete = React.useCallback(
-    (draftKey: string) => {
-      onDeleteDraft(draftKey);
-    },
-    [onDeleteDraft],
-  );
-
-  const handleSendRequest = React.useCallback((entry: DraftListEntry) => {
-    setSendTarget(entry);
-  }, []);
-
-  const handleSendCancel = React.useCallback(() => {
-    setSendTarget(null);
-  }, []);
-
-  const handleSendConfirm = React.useCallback(() => {
-    if (!sendTarget) return;
-    const entry = sendTarget;
-    setSendTarget(null);
-    void sendDraftEntry(entry, goChannel);
-  }, [sendTarget, goChannel]);
-
-  const sendDialogSource =
-    items.find((item) => item.entry.key === sendTarget?.key)?.source ??
-    UNKNOWN_DRAFT_SOURCE;
-  const sendDialogIsDm = sendDialogSource.channel?.channelType === "dm";
-  const sendDialogChannelLabel = sendDialogSource.channel
-    ? sendDialogSource.label
-    : UNKNOWN_CHANNEL_LABEL;
-
-  if (items.length === 0) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
-        <FileText className="h-8 w-8 text-muted-foreground/50" />
-        <p className="text-sm text-muted-foreground">No drafts</p>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div
-        className="flex-1 space-y-2 overflow-y-auto p-4"
-        data-testid="home-inbox-drafts-list"
-      >
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Drafts
-        </h3>
-        {items.map(({ entry, rootStatus, source }) => (
-          <DraftRow
-            entry={entry}
-            key={entry.key}
-            onDelete={handleDelete}
-            onOpen={handleOpen}
-            onSelect={() => onSelectDraft(entry.key)}
-            onSend={handleSendRequest}
-            rootStatus={rootStatus}
-            selected={entry.key === selectedDraftKey}
-            source={source}
-          />
-        ))}
-      </div>
-
-      {sendTarget ? (
-        <SendConfirmDialog
-          channelLabel={sendDialogChannelLabel}
-          isDm={sendDialogIsDm}
-          onCancel={handleSendCancel}
-          onConfirm={handleSendConfirm}
-          open={true}
-        />
-      ) : null}
-    </>
-  );
+  return <DraftListSurface items={items.map(toDraftSurfaceItem)} selectedKey={selectedDraftKey}
+    onDelete={onDeleteDraft} onSelect={onSelectDraft}
+    onOpen={(entry) => { void openDraftEntry(entry, goChannel); }}
+    onSend={(entry) => { void sendDraftEntry(entry, goChannel); }}
+    renderPreview={(draft, className) => <Markdown className={className} content={getDraftPreview(draft)} interactive={false} />} />;
 }

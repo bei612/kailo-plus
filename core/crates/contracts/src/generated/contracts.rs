@@ -3932,6 +3932,31 @@ pub struct ConversationView {
     pub version: i64,
 }
 
+/// 已授权普通 Action 的 v1 平台元数据结果；不含业务正文、邀请凭证、文档或协议会话。仅 agent.invoke、automation.run 及已接入普通
+/// resource 动作使用；与通用 BFF ActionSubmission 的可选扩展解耦。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DelegatedActionMetadataV1 {
+    pub action_execution_id: String,
+
+    pub action_key: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_workflow_id: Option<String>,
+
+    pub dispatch_state: ActionDispatchState,
+
+    pub gate_state: ActionGateState,
+
+    pub operation_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<ReasonCode>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
+}
+
 /// GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
 /// 授权；每种证据另向其权威源查证原对象仍存在：明确不存在回 404（正文为 NOT_FOUND 的不可用视图），权威源不提供查证接口为 UNVERIFIABLE，权威源不可达回
 /// 503。不可用时不回任何 ref 内容。

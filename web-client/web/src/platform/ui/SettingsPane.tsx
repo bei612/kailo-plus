@@ -29,6 +29,7 @@ import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from 
 import { Switch } from "@client-kit/platform/react/switch";
 import { useUiLocale } from "@client-kit/platform/react/context";
 import { LinkPreviewStyleSetting } from "@client-kit/platform/react/link-preview";
+import { BrowserNotificationSettings } from "./BrowserNotifications";
 
 function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] {
   const mod = isMacPlatform() ? "⌘" : "Ctrl+";
@@ -68,7 +69,7 @@ export function SettingsPane() {
           </SettingsOptionGroupList>
         </section>
       ) : section === "notifications" ? (
-        <WorkspaceNotifications />
+        <><BrowserNotificationSettings /><WorkspaceNotifications /></>
       ) : (
         <ShortcutSettings
           locale={locale}

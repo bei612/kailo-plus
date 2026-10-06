@@ -8,11 +8,16 @@
     "profile-assets.ts"
   ],
   "exports": {
+    "./react/notifications": "./src/react/notifications/index.ts",
+    "./react/notifications/sound": "./src/react/notifications/sound.ts",
+    "./react/notifications/notificationFormat": "./src/react/notifications/notificationFormat.ts",
+    "./react/notifications/foregroundReady": "./src/react/notifications/foregroundReady.ts",
     "./react/link-preview": "./src/react/link-preview/index.ts",
     "./linkPreview": "./src/react/link-preview/linkPreview.ts",
     "./linkPreviewSnapshot": "./src/react/link-preview/linkPreviewSnapshot.ts",
     "./linkPreviewStylePreference": "./src/react/link-preview/linkPreviewStylePreference.ts",
     "./linkPreviewTypes": "./src/react/link-preview/types.ts",
+    "./react/draft-surfaces": "./src/react/draft-surfaces.tsx",
     "./react/inbox-surface": "./src/react/inbox-surface.tsx",
     "./react/use-resizable-inbox-list-width": "./src/react/use-resizable-inbox-list-width.ts",
     "./react/forum/channelWindowResponse": "./src/react/forum/channelWindowResponse.ts",
@@ -164,6 +169,7 @@
     "test": "tsc --noEmit -p tsconfig.test.json && vitest run"
   },
   "peerDependencies": {
+    "@radix-ui/react-alert-dialog": "1.1.23",
     "@radix-ui/react-separator": "^1.1.8",
     "@tanstack/react-virtual": "3.14.10",
     "@radix-ui/react-popover": "^1.1.15",
@@ -203,6 +209,7 @@
     "@radix-ui/react-toggle": "^1.1.10"
   },
   "devDependencies": {
+    "@radix-ui/react-alert-dialog": "1.1.23",
     "@radix-ui/react-separator": "^1.1.8",
     "@tanstack/react-virtual": "3.14.10",
     "@radix-ui/react-popover": "^1.1.15",

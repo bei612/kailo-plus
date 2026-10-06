@@ -1,5 +1,39 @@
 # Buzz 共享界面与受治理私聊：开发检查点
 
+## 12:40：共享标题／设置／预览及状态查询批投递
+
+实现提交 `c674f5782ed918c63e691d94f60df7f3c37bb5ba` 已普通 push，远端独立读回
+一致。相对 `3673b23b0dd02fe34d7be14fe725e0b350c33565` 为 42 文件 +2045/-1644，
+主要为原实现迁入共用包及 Native 重导出，不是删去原功能。选定树
+`dbb2740f727862aabda94ed83e66220ae8705ddf` 在独立 SDK 副本通过同源词条检查与
+原 `check-docs.sh`；未混入尚未闭合的 Inbox 草稿或下一批 Agent 准入修复。
+
+原 `tools/build-upstream.sh web-client` 在 8 CPU／16 GiB、Data 持久缓存的既有
+builder 实际退出 0；产物
+`587815d0cf1a4964c1342f99b24e289fc402e0e9be22a4fc9fcf9dc2a3e28389`，
+source digest 为 `f7d1245d7e319dd287464bfe591378b9a5cca3e56d18070c06d913e9329f4b28`。
+registry 独立 HEAD 200、摘要相同。原 Compose 仅更新 Web，命令退出 0，实际
+启动时间 12:40:55 UTC，随后 healthy；Core/Worker/Relay 镜像与启动时间不变。
+
+本次实际配方仍是 `npm ci`，并非尚在工作树的 npm 持久下载缓存改进，不能宣称
+完全离线；日志报告 27 项依赖漏洞（26 moderate、1 high），尚无处置验收。
+构建也明确提示原样式末尾的 spoiler `@import` 顺序错误；已在主源码移到全部
+规则前，留待下一完整功能批验证发布，不将此镜像记为已修好剧透样式或完整体验。
+没有为这两处再单独启动构建，也没有隐藏构建警告或修改审计结果。
+
+原件在 Data 的 `buzz-web-preview-release-20261006.NgyUR0/`：`web-build.log`
+SHA256 `297929b869b2c284db99dc4497b023e7b0740eb8b143e10c6f12ca86d30fd152`，
+`web-deploy.log` SHA256
+`0c9d447b0a60555ee0161b71a691ca73630ea7623b4456e6a69a3a751e0d2331`。
+后续浏览器通过同一真实 OIDC 会话补拍 `32`–`38` 七张图，原件同目录
+`C674-RESULTS.md`。原设置左导航可达，紧凑／丰富预览切换、刷新再进入后仍保存，
+最后已还原紧凑。没有重新创建私聊、发送消息或调用模型。
+频道头仍显示 UUID，侧栏名称正确：Core 读取 ActionExecution 的创建参数时未进入
+原 `parameters.params`，误判无 metadata 后沿 slug 创建；不是前端应把目录名当作
+Relay 权威的理由。现有私聊 stream GET 403，界面显示连接断开；旧 pending intent
+随刷新消失，因此没有适用对象验证本版状态按钮，不伪造 intent 或重发 open。
+这些实际失败继续计入缺口，不将原 064 版 31 组图当成本版全部页面再次验收。
+
 ## 已部署 Web 的逐页浏览器实测
 
 2026-10-06，源提交 `064cd615a33a1f21920e99291e3a63b7b06bb6fe` 的 Web

@@ -4,6 +4,22 @@
 import '../contracts/contracts.dart';
 
 enum PlatformMessageKey {
+  draftsEmpty,
+  draftsSelect,
+  draftsSelectHint,
+  draftsView,
+  draftsOpen,
+  draftsSend,
+  draftsDelete,
+  draftsThreadDeleted,
+  draftsNoChannel,
+  draftsConfirm,
+  draftsYou,
+  draftsDraft,
+  draftsAttachments,
+  draftsBack,
+  draftsOrphaned,
+  draftsUnknownChannel,
   inboxOptions,
   inboxMarkAllRead,
   inboxDrafts,
@@ -1128,6 +1144,37 @@ enum PlatformMessageKey {
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
+  PlatformMessageKey.draftsEmpty: ('No drafts', '暂无草稿'),
+  PlatformMessageKey.draftsSelect: ('Select a draft', '选择一份草稿'),
+  PlatformMessageKey.draftsSelectHint: (
+    'Pick a draft to preview it and choose what to do next.',
+    '选择草稿以预览、继续编辑或发送。',
+  ),
+  PlatformMessageKey.draftsView: (
+    'View draft in {channel}',
+    '查看 {channel} 中的草稿',
+  ),
+  PlatformMessageKey.draftsOpen: ('Open draft', '打开草稿'),
+  PlatformMessageKey.draftsSend: ('Send message', '发送消息'),
+  PlatformMessageKey.draftsDelete: ('Delete draft', '删除草稿'),
+  PlatformMessageKey.draftsThreadDeleted: ('Thread deleted', '线程已删除'),
+  PlatformMessageKey.draftsNoChannel: ('Destination unavailable', '目标不可用'),
+  PlatformMessageKey.draftsConfirm: (
+    'Are you sure you want to send this message to {destination}?',
+    '确定向 {destination} 发送这条消息吗？',
+  ),
+  PlatformMessageKey.draftsYou: ('You', '你'),
+  PlatformMessageKey.draftsDraft: ('Draft', '草稿'),
+  PlatformMessageKey.draftsAttachments: (
+    '{count} attachment(s)',
+    '{count} 个附件',
+  ),
+  PlatformMessageKey.draftsBack: ('Back to drafts list', '返回草稿列表'),
+  PlatformMessageKey.draftsOrphaned: (
+    'The original thread was deleted. This draft can no longer be opened or sent.',
+    '原线程已删除，此草稿无法再打开或发送。',
+  ),
+  PlatformMessageKey.draftsUnknownChannel: ('Unknown channel', '未知频道'),
   PlatformMessageKey.inboxOptions: ('Inbox options', '收件箱选项'),
   PlatformMessageKey.inboxMarkAllRead: ('Mark all as read', '全部标为已读'),
   PlatformMessageKey.inboxDrafts: ('Drafts', '草稿'),

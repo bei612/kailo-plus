@@ -21,7 +21,9 @@ pub(crate) struct Installation {
 
 #[cfg(test)]
 mod cancellation_tests {
-    use super::cancellation_required;
+    use super::{
+        cancellation_required, metadata_output_schema_hashes, output_schema_hash, schema_hash,
+    };
     use chrono::{TimeDelta, Utc};
 
     #[test]
@@ -36,6 +38,94 @@ mod cancellation_tests {
         }
         for state in ["", "PAUSED", "DISABLED", "FUTURE_STATE"] {
             assert!(cancellation_required(state, future, now).is_err());
+        }
+    }
+
+    #[test]
+    fn metadata_output_compatibility_is_exact_and_action_scoped() {
+        let old = schema_hash(include_str!(
+            "../../../../contracts/compatibility/action-submission-v1.json"
+        ));
+        let extended = schema_hash(include_str!(
+            "../../../../contracts/compatibility/action-submission-v2.json"
+        ));
+        assert_eq!(
+            old,
+            "fb2d299d4cdc34507fd41dbc311609b4315b01bd2f4650a2f3207641afeedcc9"
+        );
+        assert_eq!(
+            extended,
+            "1bf219fdb0b7cd39707273b16f219ce4f6b7d70f802795abf21060ec7e4589be"
+        );
+        for action in ["agent.invoke", "automation.run"] {
+            let accepted = metadata_output_schema_hashes(action);
+            assert_eq!(
+                accepted,
+                vec![output_schema_hash(), old.clone(), extended.clone()]
+            );
+            assert!(!accepted.contains(&"0".repeat(64)));
+            assert!(!accepted.contains(&schema_hash("unknown future output")));
+        }
+        for action in [
+            "agent.memory.entry.read",
+            "tenant.member.invite",
+            "document.open",
+            "unknown.action",
+            "",
+        ] {
+            assert!(metadata_output_schema_hashes(action).is_empty());
+        }
+    }
+
+    #[test]
+    fn ordinary_execution_submission_matches_metadata_contract_without_credentials() {
+        let id = uuid::Uuid::new_v4();
+        let schema: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../contracts/api/delegated_action_metadata_v1.schema.json"
+        ))
+        .unwrap();
+        for action in [
+            "agent.invoke",
+            "automation.run",
+            "resource.create",
+            "resource.grant_read",
+            "resource.revoke_read",
+        ] {
+            let execution = super::Execution {
+                id,
+                operation_id: id,
+                tenant_id: id,
+                workspace_id: Some(id),
+                action_key: action.into(),
+                action_version: 1,
+                initiator_principal_id: id,
+                actor_principal_id: id,
+                target_id: id,
+                parameter_hash: "0".repeat(64),
+                parameters: None,
+                temporal_workflow_id: Some(id.to_string()),
+                cancel_first_run_id: None,
+                approval_workflow_id: None,
+                approval_expires_at: None,
+                gate_state: "ALLOWED".into(),
+                dispatch_state: "DISPATCHED".into(),
+                reason_code: None,
+                correlation_id: id,
+                updated_at: Utc::now(),
+            };
+            let actual = serde_json::to_value(execution.submission()).unwrap();
+            let metadata: contracts::DelegatedActionMetadataV1 =
+                serde_json::from_value(actual.clone()).unwrap();
+            assert_eq!(serde_json::to_value(metadata).unwrap(), actual);
+            for field in actual.as_object().unwrap().keys() {
+                assert!(
+                    schema["properties"].get(field).is_some(),
+                    "{action}: unexpected {field}"
+                );
+            }
+            for field in ["invitation", "protocolSessionId", "documentLaunch"] {
+                assert!(actual.get(field).is_none());
+            }
         }
     }
 }
@@ -128,12 +218,29 @@ fn has_agent_consumer(key: &str) -> bool {
 }
 
 pub(crate) fn output_schema_hash() -> String {
-    format!(
-        "{:x}",
-        Sha256::digest(
-            include_str!("../../../../contracts/api/action_submission.schema.json").as_bytes()
-        )
-    )
+    schema_hash(include_str!(
+        "../../../../contracts/api/delegated_action_metadata_v1.schema.json"
+    ))
+}
+
+fn schema_hash(schema: &str) -> String {
+    format!("{:x}", Sha256::digest(schema.as_bytes()))
+}
+
+/// Only ordinary metadata actions shared the old BFF envelope. Tool/application
+/// and memory contracts retain their own exact hashes and never enter this path.
+pub(crate) fn metadata_output_schema_hashes(action: &str) -> Vec<String> {
+    if !matches!(action, "agent.invoke" | "automation.run") && !has_agent_consumer(action) {
+        return Vec::new();
+    }
+    [
+        include_str!("../../../../contracts/api/delegated_action_metadata_v1.schema.json"),
+        include_str!("../../../../contracts/compatibility/action-submission-v1.json"),
+        include_str!("../../../../contracts/compatibility/action-submission-v2.json"),
+    ]
+    .into_iter()
+    .map(schema_hash)
+    .collect()
 }
 
 pub(super) fn normalize(

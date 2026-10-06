@@ -1382,6 +1382,36 @@ pub struct WorkspaceProvisionResponse {
     pub channel_id: String,
 }
 
+fn workspace_creation_intent(
+    parameters: &serde_json::Value,
+    legacy_slug: &str,
+) -> Result<(String, Option<contracts::WorkspaceChannelCreate>), StatusCode> {
+    // ActionExecution stores the frozen Params under `params`, not at the root.
+    // Missing/malformed envelopes are not evidence of a legacy create intent.
+    let params = parameters
+        .get("params")
+        .filter(|value| value.is_object())
+        .and_then(crate::governance::Params::from_json)
+        .ok_or(StatusCode::CONFLICT)?;
+    let requested_name = params
+        .name
+        .filter(|name| !name.trim().is_empty())
+        .ok_or(StatusCode::CONFLICT)?;
+    let metadata: Option<contracts::WorkspaceChannelCreate> = params
+        .workspace_channel
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|_| StatusCode::CONFLICT)?;
+    let name = if metadata.is_some() {
+        requested_name
+    } else {
+        // A valid older action without native metadata retains its original slug
+        // intent across retries. This does not rename an existing native channel.
+        legacy_slug.to_owned()
+    };
+    Ok((name, metadata))
+}
+
 /// 建该 Workspace 的 Channel 并查证后落 binding（`DD-01`：一个 Workspace 绑一个
 /// Channel）。
 ///
@@ -1465,30 +1495,15 @@ pub async fn provision_workspace_buzz(
     if intents.len() > 1 {
         return StatusCode::CONFLICT.into_response();
     }
-    let input = intents.first();
-    let metadata: Option<contracts::WorkspaceChannelCreate> = match input
-        .and_then(|v| v.get("workspaceChannel"))
-        .map(|v| serde_json::from_value(v.clone()))
-        .transpose()
-    {
-        Ok(metadata) => metadata,
-        Err(_) => return StatusCode::CONFLICT.into_response(),
+    let Some(input) = intents.first() else {
+        return StatusCode::CONFLICT.into_response();
     };
-    // Old in-flight actions created the native name from slug. Preserve their
-    // original write intent across retries rather than relabeling an existing channel.
-    let name = if metadata.is_some() {
-        let Some(name) = input
-            .and_then(|v| v.get("name"))
-            .and_then(serde_json::Value::as_str)
-        else {
-            return StatusCode::CONFLICT.into_response();
-        };
-        name
-    } else {
-        &ws.slug
+    let (name, metadata) = match workspace_creation_intent(input, &ws.slug) {
+        Ok(intent) => intent,
+        Err(status) => return status.into_response(),
     };
     if let Err(e) = control
-        .ensure_channel(&state.http, &channel, name, metadata.as_ref())
+        .ensure_channel(&state.http, &channel, &name, metadata.as_ref())
         .await
     {
         tracing::warn!(error = %e, "建立 Channel 失败");
@@ -1837,6 +1852,57 @@ async fn read_roster(
             tracing::info!(error = %e, "Channel roster 读取失败");
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         })
+}
+
+#[cfg(test)]
+mod workspace_creation_intent_tests {
+    use super::workspace_creation_intent;
+    use serde_json::json;
+
+    #[test]
+    fn current_envelope_keeps_native_title_kind_and_description() {
+        for kind in ["stream", "forum"] {
+            let input = json!({"params":{"name":"Requested title", "slug":"stable-id",
+                "workspaceChannel":{"channelType":kind,"description":"Requested description"}},"targetVersion":1});
+            let (name, metadata) = workspace_creation_intent(&input, "stable-id").unwrap();
+            assert_eq!(name, "Requested title");
+            assert_eq!(
+                serde_json::to_value(metadata.unwrap()).unwrap(),
+                input["params"]["workspaceChannel"]
+            );
+        }
+    }
+
+    #[test]
+    fn legitimate_legacy_envelope_keeps_original_slug_intent() {
+        let (name, metadata) = workspace_creation_intent(
+            &json!({"params":{"name":"Old display title","slug":"original-slug"},"targetVersion":1}),
+            "original-slug",
+        ).unwrap();
+        assert_eq!(name, "original-slug");
+        assert!(metadata.is_none());
+    }
+
+    #[test]
+    fn malformed_envelopes_never_downgrade_to_legacy_creation() {
+        for input in [
+            json!({}),
+            json!(null),
+            json!({"params":null}),
+            json!({"params":[]}),
+            json!({"params":{}}),
+            json!({"name":"Flattened title","workspaceChannel":{"channelType":"stream"}}),
+            json!({"params":{"name":"Title","workspaceChannel":null}}),
+            json!({"params":{"name":"Title","workspaceChannel":{"channelType":"unknown"}}}),
+            json!({"params":{"workspaceChannel":{"channelType":"stream"}}}),
+            json!({"params":{"name":" ","workspaceChannel":{"channelType":"stream"}}}),
+        ] {
+            assert!(
+                workspace_creation_intent(&input, "stable-id").is_err(),
+                "{input}"
+            );
+        }
+    }
 }
 
 #[cfg(test)]

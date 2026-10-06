@@ -287,9 +287,9 @@ async fn fresh(
         where s.delegation_id=$1 and s.action_key=$2 and s.action_version=$3 and s.target_type='RESOURCE'
           and s.target_id=$4 and s.create_workspace_id is null and s.tool_resource_id is null
           and p.tenant_id=$5 and p.status='ACTIVE' and p.mode='CONSUME_ONLY'
-          and p.output_schema_hash=$6 and p.redaction_policy='PLATFORM_METADATA_ONLY')")
+          and p.output_schema_hash=any($6) and p.redaction_policy='PLATFORM_METADATA_ONLY')")
         .bind(grant).bind(ACTION).bind(def.version).bind(row.id).bind(row.tenant_id)
-        .bind(crate::governance::delegation::output_schema_hash()).fetch_one(&mut **tx).await?;
+        .bind(crate::governance::delegation::metadata_output_schema_hashes(ACTION)).fetch_one(&mut **tx).await?;
     if !valid {
         return Err(denied());
     }

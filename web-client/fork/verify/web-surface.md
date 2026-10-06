@@ -2122,3 +2122,129 @@ host 失败；对应实现修正后 `link-preview-host-final.log` 记录 Native/
 明确剩余：Web 还不生成新的远端链接 metadata snapshot，签名 snapshot 图片/favicon
 尚未接通可信 BFF 媒体路径；原 Stream 线程布局没有 Web 完整消费者。它们仍属原版
 恢复范围，不能通过隐藏需求或永久关闭入口宣称完成。此批未重新构建、打包或部署。
+
+### 原通知与声音设置的实际 Web 消费（后续独立批）
+
+REQ-24、SS-WEB-PRESENTATION、DD-75。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503`，
+`desktop/src/features/settings/ui/NotificationSettingsCard.tsx::NotificationSettingsCard`、
+`desktop/src/features/settings/ui/SoundPicker.tsx::SoundPicker`、
+`desktop/src/features/notifications/hooks.ts::useNotificationSettings`、
+`desktop/src/features/notifications/lib/sound.ts::playNotificationSound`、
+`desktop/src/features/notifications/lib/desktop.ts::sendDesktopNotification` 是本批复用依据。
+原设置卡片、声音选择器、声音槽/偏好与文本截断迁入共享 TS，Native 留原系统权限与发送适配。
+Web 经同一偏好控制器接浏览器真实 Notification API，不引入第二用户/权限/消息源。
+
+改前四步：
+
+- 权威：消息仍由 BFF 已授权 SSE 交付，本人通知偏好使用原
+  `buzz-notification-settings.v2:<pubkey>` 设备键；频道/DM 静音仍来自 Core 原 CAS。
+  Web 本人 pubkey 由现有本人资料读取，不用默认租户、公用身份或客户端自选密钥。
+- 影响：原通知 hooks、设置卡片、SoundPicker、ForegroundReady、原声音/格式函数及
+  Web PlatformApp/SettingsPane/ChannelPane/InboxPane 的真实消费者。未改变契约、
+  数据库、Workflow 或业务配额；没有新增依赖与词条目录。
+- 副作用：仅用户点击开关才请求浏览器通知权限；未获权限、身份/成员/偏好读取未确定、
+  自己发言、历史 snapshot、断线补发、重复帧与撤权后帧不产生新通知。
+  constructor 失败不播放提示音、不声称送达；原生发送不迁到 Web。切换身份时
+  阻止旧偏好写到新身份命名空间，并丢弃迟到权限结果。
+- 边界：保留原 mention 与 thread_reply 两声音槽、总开关恢复细粒度选择、活动页提醒开关；
+  Web 只对现有活动频道/私聊实时流作实际消费，不伪装后台全频道订阅。
+  原 Inbox 的实际已准入未读行数回传给原 Sidebar badge，读取中、失败、结果不明或卸载
+  则撤掉计数；通知无新增业务状态、事务或迁移。音效沿既有 Vite base 投递，
+  `web-client/web/public/sounds` 的 24 个原资源与 Native 文件逐一 `cmp` 退出 0。
+
+实现后定向检查由同一 SDK 合批执行；原旧 ChannelPane/ChannelRead 的整模块 mock
+漏掉实际共享控件使用的 useUiT，已改为保留真实 hooks 的局部 mock 并显式设置英文 fixture，
+没有为了测试修改生产翻译默认值或跳过真实控件。最终共享 source/test、Web、Native tsc
+均退出 0；共享通知 2 项与同批草稿 2 项通过；Web ChannelRead 8、ChannelPane 4、
+BrowserNotifications 2、Composer 14、草稿 2 合计 30 项通过；Native 原通知 1 与原草稿
+58 合计 59 项通过。日志为原 Data SDK 目录下
+`drafts-notifications-shared.log`、`drafts-notifications-web-restored.log`、
+`drafts-notifications-native.log`；范围合并报告不意味着通知有 59 个专属用例。
+
+SDK-only 依次移除迟到权限 owner 校验、移除活动页默认不提醒条件、让断线帧绕过 live
+条件。`notifications-mutation.log` 分别出现共享 1 个失败和 Web 2 个失败，退出 1；
+恢复三个正式文件并逐个 `cmp` 退出 0 后，`notifications-restored.log` 共享 2/2、Web
+10/10（BrowserNotifications 2 + ChannelRead 8）通过，退出 0。通知构造/权限的这些
+证据使用真实 React 消费链和受控浏览器 API 替身，不冒充已在用户电脑弹出系统通知。
+本批不等于已完成浏览器全频道后台提醒、未打开线程的全量订阅或系统原生推送；这些仍是
+完整恢复缺口，不从 REQ-24 删除。未在本批运行 full、打包或部署。
+
+## 新版真实浏览器回执及私聊状态按钮修复（2026-10-06）
+
+部署 `064cd615a` 的 Web 镜像 `sha256:54928e5a5a16053ae750479c1a8a0ef6ff39d33323d24cff807aec4c8e7e3df2`
+经独立 inspect 为 healthy。正常 OIDC、1440×1000、默认中文，真实逐页点击并截图：
+Data `kailo-visual-release-20261006.vlPvnU/RESULTS.md` 包含 18 项实际状态与截图编号。
+本人创建专用验收频道，`workspace.create` 操作
+`6a8ce687-b838-446f-afbe-9d8ea62ec701` 在任务页已完成，刷新可进入并发送/读回测试消息；
+Inbox 真线程可读；英文切换后刷新仍保持英文。私聊只提交一次开通请求，任务仍待对账，
+没有把准备中渲染成送达。原创建表单完整选项、外部服务入口、原设置全量仍缺失。
+
+四步复核：权威为既定 Core/Temporal `conversation.open` 与原收件人选择，不新增状态权威；
+影响面为共享 `useConversationOpen`、原 `NewMessageScreen` 与两端共同消费，未改契约或后台；
+原错误是把冻结收件人集合的 `locked` 同时用来禁用只读状态查询，造成 pending 后按钮永远不可点；
+状态查询现只读取同一冻结参与人集合的会话目录，不重发 `conversation.open`，不执行隐藏会话 reopen，
+不发送草稿、不解锁收件人，不把 UNKNOWN 或 PROVISIONING 当成 ACTIVE。
+网络未知、目录读取失败保留通知及原意图；已有明确发送操作仍沿原幂等重试链。
+
+实现后共享 source/test tsc 退出 0，私聊 13 项包含 pending 锁定可查询及 UNKNOWN 查询不重发。
+SDK-only 将按钮恢复旧 `isPending || opening.locked` 条件，两个新增用例真实失败；
+原字节 cmp 退出 0 后，同批私聊 13 + 设置 18 + 消息头 2 共 33 项通过。
+日志 `dm-theme-mutation.log`、`dm-theme-restored.log` 位于上述已有 SDK 的 Data 验证目录。
+这是源码修复验证，不能声称该按钮修复已在本轮截图中的镜像部署。
+
+## 原版草稿目录与恢复消费（2026-10-06）
+
+依据 REQ-24、DD-74/DD-75 的完整恢复及共源要求，复用固定 Buzz
+`779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/messages/ui/DraftsPanel.tsx::DraftsPanel/SendConfirmDialog`、
+`desktop/src/features/messages/ui/DraftDetailPane.tsx::DraftDetailPane` 与
+`desktop/src/features/messages/lib/useDrafts.ts::initDraftStore`。本轮 git show/grep
+重新确认这些符号和路径存在；只读上游，没有执行其代码。
+
+四步结论：
+
+- 权威：沿原 identity＋relay/origin 命名空间的 useDrafts 设备存储；Core/Relay 仍决定
+  实际频道、私聊与发布准入。没有第二份消息或草稿服务，没有 Core 正文存储。
+- 影响：列表／详情／确认框提取为两端共同消费的 draft-surfaces；Native 保留原
+  目的地解析、原导航与发送；Web Inbox 读真实已有草稿，恢复到现有 ChannelPane、
+  InboxThreadPane 或 ForumPane。字段、数据库、Workflow 不变，无迁移对象。
+  Web 的 stream/thread/forum-post/forum-comment key 必须与已存 channelId 精确对应，
+  不从未知 key 猜 scope，不回退默认频道。
+- 副作用：未发送草稿的确认发送只触发原 Composer 一次，恢复原草稿正文／附件和 sendIntent；
+  已有 sendIntent 的 UNKNOWN 草稿只恢复并显示未知，绝不自动重派或推导新键。
+  原手动重试链保持，不将其全量验收归入本批，不把 accepted 当已送达。有未明发送意图时两端列表与
+  详情均不可删除，Web 删除调用方再次核对存储中的意图；无隐藏重发链。
+- 边界：身份切换前清空旧目录呈现；目的地不存在、成员／会话目录失败或非 ACTIVE、
+  频道归档及类型不符均不挂载可发送编辑器。原线程根读取失败仍由真实线程页关闭发送。
+  空正文且无附件不入目录；日期无效不崩溃；附件正文未复制到另一存储。未读 badge
+  只回传 Inbox 已有真实行计数，读取中／失败／未知／卸载返回 null。
+
+实现后同一 4 CPU／8 GiB SDK 合批验证：共享源／测试 tsc、Web tsc、Desktop tsc
+均退出 0；共享草稿 2＋通知 2 共 4 项、Web 30 项、Native 草稿与通知 59 项通过。
+其中新 Web 草稿用例验证四种真实 key、身份隔离、UNKNOWN 删除拒绝；Composer 新
+用例验证原草稿恢复。随后交叉复核新增 UNKNOWN 自动派发拒绝：最后 Web tsc 与
+Composer 15 项均退出 0，包含未发送草稿确认后仅一次发送、UNKNOWN 草稿不自动重派。
+已重新核实 c674 本身即持久并恢复 mentionInstallationIds，不是本批临时添加。
+旧 fixture 的语言默认／context mock
+已随真实共享控件更新，不改生产逻辑迁就断言。首次 fixture 编译及旧副本错误保留在日志。
+SDK-only 移除草稿行的 sendIntent 删除禁用，检查实际 1 fail/1 pass、退出 1；
+按正式原字节恢复且 cmp 退出 0 后 2/2、退出 0。
+另将新增自动发送的 UNKNOWN guard 在 SDK-only 移除，实际捕获 publish 调用从 1
+变为 2，目标用例退出 1；恢复原字节并 cmp 退出 0 后完整 Composer 15 项通过、退出 0。
+
+日志位于 Data `codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`：
+`drafts-notifications-first.log`、`drafts-notifications-hosts.log`（保留失败），
+`drafts-notifications-shared.log`、`drafts-notifications-web-restored.log`、
+`drafts-notifications-native.log`、`drafts-delete-mutation.log`、`drafts-delete-restored.log`。
+最后 UNKNOWN 路径日志为 `drafts-unknown-final.log`、`drafts-unknown-mutation.log`、
+`drafts-unknown-restored.log`。
+原 AlertDialog 依赖按 Desktop 实际锁版本 1.1.23 复用；三锁由原包管理器生成。
+缓存缺包导致离线解析失败后仅补取缺失包，不能声称本次零联网。
+16 个草稿词条及 Dart 同源输出已生成；未新建验证脚本，未全量构建或部署草稿增量。
+Web 草稿页不是已部署浏览器验收，原附件预览完整细节及论坛线上链仍有各自验收缺口。
+
+随后对已部署 c674 Web 真实窄验的 7 张截图与边界见 Data
+`kailo-visual-release-20261006.vlPvnU/C674-RESULTS.md`：设置布局与链接预览丰富偏好
+刷新保持通过，频道标题仍显示内部频道 slug（不是 workspace ID）、现有私聊 stream403 已报主线；没有为状态按钮
+重发 conversation.open，也没有把缺少 pending 意图的页面算成按钮业务验收。

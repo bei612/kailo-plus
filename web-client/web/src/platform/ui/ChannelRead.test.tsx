@@ -9,19 +9,25 @@ import type { ReadMarkRequest } from "@client-kit/contracts";
 import type { StreamFrame, UserState } from "../bff-client";
 import { ChannelPane } from "./ChannelPane";
 import { platformQueries } from "./queries";
+import { setLocale } from "@client-kit/platform/i18n";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({
   receive: null as null | ((frame: StreamFrame) => void),
   fetch: vi.fn(),
   mark: vi.fn(),
+  notify: vi.fn(),
+  members: vi.fn(),
   reason: (value: string) => value,
 }));
-vi.mock("@client-kit/platform/react/context", () => ({ useReasonText: () => state.reason }));
+vi.mock("@client-kit/platform/react/context", async (original) => ({
+  ...await original<typeof import("@client-kit/platform/react/context")>(), useReasonText: () => state.reason,
+}));
+vi.mock("./BrowserNotifications", () => ({ useBrowserNotifications: () => ({ notify: state.notify, settings: { homeBadgeEnabled: true } }) }));
 vi.mock("@/platform/bff-client", async () => ({
   BffError: (await import("@client-kit/platform/transport")).BffError,
   bff: {
-    members: async () => [],
+    members: () => state.members(),
     workspaces: async () => [],
     agentInstallations: async () => ({ installations: [] }),
   },
@@ -78,11 +84,13 @@ function retry() {
   return button;
 }
 beforeEach(() => {
+  setLocale("en");
   vi.useFakeTimers();
   vi.clearAllMocks();
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
   projection = { version: 3, readContexts: {}, workspacePreferences: {} };
   state.fetch.mockImplementation(async () => structuredClone(projection));
+  state.members.mockResolvedValue([]);
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -95,6 +103,28 @@ afterEach(async () => {
   client.clear();
   host.remove();
   vi.useRealTimers();
+});
+
+it("notifies only a new admitted live mention, never a snapshot, duplicate, disconnected replay or revoked stream", async () => {
+  state.members.mockResolvedValue([{ principalId: "human-a", displayName: "Me", pubkeys: ["mine"] }]);
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+  await open();
+  const mention = (seconds: number) => ({ ...event(seconds), tags: [["h", "channel-a"], ["p", "mine"]] });
+  await act(async () => { state.receive!({ type: "snapshot", events: [mention(20)] }); state.receive!({ type: "live" }); });
+  expect(state.notify).not.toHaveBeenCalled();
+  await act(async () => state.receive!({ type: "event", event: mention(30) }));
+  expect(state.notify).toHaveBeenCalledTimes(1);
+  expect(state.notify.mock.calls[0]?.[0]).toMatchObject({ eventId: "event-30", slot: "mention" });
+  await act(async () => {
+    state.receive!({ type: "event", event: mention(30) });
+    state.receive!({ type: "interrupted" });
+    state.receive!({ type: "event", event: mention(40) });
+    state.receive!({ type: "live" });
+    state.receive!({ type: "event", event: mention(40) });
+    state.receive!({ type: "closed", reason: "scope-revoked" });
+    state.receive!({ type: "event", event: mention(50) });
+  });
+  expect(state.notify).toHaveBeenCalledTimes(1);
 });
 
 it.each([new TransportError("lost ACK"), new BffError(403, "denied")])(

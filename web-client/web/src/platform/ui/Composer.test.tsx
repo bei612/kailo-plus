@@ -2,6 +2,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { TransportError } from "@client-kit/platform/transport";
+import { setLocale } from "@client-kit/platform/i18n";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import type { Editor } from "@tiptap/core";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -124,6 +125,7 @@ function installation(resourceId: string): AgentInstallationView {
 }
 beforeEach(() => {
   localStorage.clear();
+  setLocale("en");
   state.pages = [
     { installations: [installation("agent-b"), installation("agent-a")] },
   ];
@@ -168,6 +170,37 @@ it("preserves original rich editor formatting through draft restore and Markdown
   expect(host.querySelector('[data-testid="message-input"] strong')?.textContent).toBe("format me");
   await click(button(host, "platform.send"));
   expect(state.publish.mock.calls[0][1]).toBe("**format me**");
+});
+
+it("restores UNKNOWN Inbox drafts without automatically redispatching their publication", async () => {
+  state.publish.mockRejectedValue(new TransportError("lost response"));
+  let host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="workspace-a" />);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "retained Inbox send");
+  await click(button(host, "platform.send"));
+  const key = state.publish.mock.calls[0][3];
+  await act(async () => { mounted!.root.unmount(); mounted!.host.remove(); mounted = undefined; });
+  host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="workspace-a" autoSendDraftKey="workspace-a" />);
+  await settle();
+  expect(state.publish).toHaveBeenCalledTimes(1);
+  expect(state.publish.mock.calls[0][3]).toBe(key);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("retained Inbox send");
+  expect(host.textContent).toContain("platform.sendUnknown");
+  await rerender(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="workspace-a" autoSendDraftKey="workspace-a" />);
+  await settle();
+  expect(state.publish).toHaveBeenCalledTimes(1);
+});
+
+it("sends an unsent Inbox draft once after confirmation", async () => {
+  let host = await render(<Composer workspaceId="workspace-unsent" draftIdentity="alice" draftKey="workspace-unsent" />);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "unsent Inbox draft");
+  await act(async () => { mounted!.root.unmount(); mounted!.host.remove(); mounted = undefined; });
+  host = await render(<Composer workspaceId="workspace-unsent" draftIdentity="alice" draftKey="workspace-unsent" autoSendDraftKey="workspace-unsent" />);
+  await settle();
+  expect(state.publish).toHaveBeenCalledTimes(1);
+  expect(state.publish.mock.calls[0][1]).toBe("unsent Inbox draft");
+  await rerender(<Composer workspaceId="workspace-unsent" draftIdentity="alice" draftKey="workspace-unsent" autoSendDraftKey="workspace-unsent" />);
+  await settle();
+  expect(state.publish).toHaveBeenCalledTimes(1);
 });
 
 it.each(["identity", "channel"])("does not transfer an old draft, attachments, mentions or intent into an empty %s scope", async (changed) => {

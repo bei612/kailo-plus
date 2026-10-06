@@ -7,7 +7,10 @@ COPY client-kit/ts/platform /src/client-kit/ts/platform
 WORKDIR /src/web-client/web
 COPY web-client/web/package.json web-client/web/package-lock.json ./
 COPY web-client/web/.npmrc ./
-RUN npm ci
+# file: 依赖按副本安装，必须保留上面的完整 client-kit 输入。
+# 共享源码变化会重做安装，但 registry 包复用同一 BuildKit 的持久下载缓存。
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    npm ci --prefer-offline --no-audit --no-fund
 
 COPY web-client/web/ ./
 ARG VITE_BASE_PATH=/app/

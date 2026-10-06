@@ -2574,6 +2574,21 @@ export interface ConversationView {
 }
 
 /**
+ * 已授权普通 Action 的 v1 平台元数据结果；不含业务正文、邀请凭证、文档或协议会话。仅 agent.invoke、automation.run 及已接入普通
+ * resource 动作使用；与通用 BFF ActionSubmission 的可选扩展解耦。
+ */
+export interface DelegatedActionMetadataV1 {
+    actionExecutionId:   string;
+    actionKey:           string;
+    approvalWorkflowId?: string;
+    dispatchState:       ActionDispatchState;
+    gateState:           ActionGateState;
+    operationId:         string;
+    reason?:             ReasonCode;
+    workflowId?:         string;
+}
+
+/**
  * GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
  * 授权；每种证据另向其权威源查证原对象仍存在：明确不存在回 404（正文为 NOT_FOUND 的不可用视图），权威源不提供查证接口为 UNVERIFIABLE，权威源不可达回
  * 503。不可用时不回任何 ref 内容。

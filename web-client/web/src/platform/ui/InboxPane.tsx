@@ -19,6 +19,7 @@ import { UserAvatar } from "@client-kit/platform/react/messages";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@client-kit/platform/react/sidebar/context-menu";
 import { ExternalLink, MailOpen } from "lucide-react";
 import { InboxThreadPane } from "./InboxThreadPane";
+import { InboxDrafts, useInboxDrafts } from "./InboxDrafts";
 import { inboxReadContexts, useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hex, inboxEvents, type Event } from "./inbox-events";
@@ -36,9 +37,11 @@ type Snapshot = {
 export function InboxPane({
   principalId,
   onOpen,
+  onUnreadCount,
 }: {
   principalId: string;
   onOpen: (workspaceId: string) => void;
+  onUnreadCount?: (count: number | null) => void;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -49,10 +52,12 @@ export function InboxPane({
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [selectedDraft, setSelectedDraft] = useState<string | null>(null);
+  const drafts = useInboxDrafts(principalId);
   const container = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState<number | null>(null);
   const resize = useResizableInboxListWidth();
-  useEffect(() => { setSelected(null); }, [principalId]);
+  useEffect(() => { setSelected(null); setSelectedDraft(null); }, [principalId]);
   useEffect(() => {
     const node = container.current;
     if (!node) return;
@@ -172,6 +177,11 @@ export function InboxPane({
     void load();
     void reads.refresh();
   };
+  useEffect(() => {
+    onUnreadCount?.(failed || reads.failed || reads.unknown || !snapshot || !reads.state ? null : rows.filter((row) =>
+      row.items.some((event) => event.createdAt > (reads.readAt(inboxReply(event.tags) ? `msg:${event.id}` : event.channelId) ?? 0))).length);
+  }, [onUnreadCount, failed, reads.failed, reads.unknown, snapshot, reads.state, rows, reads.readAt]);
+  useEffect(() => () => onUnreadCount?.(null), [onUnreadCount]);
   if (failed || reads.failed || reads.unknown)
     return (
       <section role="status">
@@ -193,16 +203,24 @@ export function InboxPane({
     );
   const chosen = rows.find((row) => row.scopeKey === selected);
   const narrow = width !== null && width < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
-  const showList = !narrow || !chosen;
-  const showDetail = !narrow || Boolean(chosen);
+  const hasSelection = filter === "drafts" ? drafts.entries.some((entry) => entry.key === selectedDraft) : Boolean(chosen);
+  const showList = !narrow || !hasSelection;
+  const showDetail = !narrow || hasSelection;
   const listWidth = width === null ? resize.inboxListWidthPx : Math.min(resize.inboxListWidthPx, Math.max(INBOX_COLUMN_MIN_WIDTH_PX, width - INBOX_COLUMN_MIN_WIDTH_PX));
   const isRead = (row: typeof rows[number]) => row.items.every((event) => event.createdAt <= (reads.readAt(inboxReply(event.tags) ? `msg:${event.id}` : event.channelId) ?? 0));
+  const header = <InboxListHeader filter={filter} onFilterChange={setFilter} activeDraftCount={drafts.entries.length} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly}
+    unreadCount={visibleRows.filter((row) => !isRead(row)).length} pending={reads.pending}
+    onMarkAllRead={() => reads.write(inboxReadContexts(visibleRows.flatMap((row) => row.items), true))} />;
+  if (filter === "drafts") return <InboxLayout containerRef={container} listWidth={listWidth} showList={showList} showDetail={showDetail}
+    onResize={resize.handleInboxListResizeStart} onReset={resize.canResetInboxListWidth ? resize.handleInboxListWidthReset : undefined}>
+    <InboxDrafts key={principalId} principalId={principalId} workspaces={snapshot.workspaces} members={snapshot.members} entries={drafts.entries}
+      selectedKey={selectedDraft} onSelect={setSelectedDraft} onDelete={drafts.remove} showList={showList} showDetail={showDetail} header={header}
+      onBack={narrow ? () => setSelectedDraft(null) : undefined} />
+  </InboxLayout>;
   return <InboxLayout containerRef={container} listWidth={listWidth} showList={showList} showDetail={showDetail}
     onResize={resize.handleInboxListResizeStart} onReset={resize.canResetInboxListWidth ? resize.handleInboxListWidthReset : undefined}>
     {showList ? <section aria-label={t("inbox.title")} className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60 ${showDetail ? "after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:z-40 after:w-px after:bg-border/35 after:content-['']" : ""}`}>
-      <InboxListHeader filter={filter} onFilterChange={setFilter} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly}
-        unreadCount={visibleRows.filter((row) => !isRead(row)).length} pending={reads.pending}
-        onMarkAllRead={() => reads.write(inboxReadContexts(visibleRows.flatMap((row) => row.items), true))} />
+      {header}
       <div className="-mt-13 min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pt-13" data-testid="home-inbox-list">
         {visibleRows.map((row) => {
           const item = row.item;

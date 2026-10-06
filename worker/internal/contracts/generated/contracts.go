@@ -208,6 +208,9 @@
 //    conversationView, err := UnmarshalConversationView(bytes)
 //    bytes, err = conversationView.Marshal()
 //
+//    delegatedActionMetadataV1, err := UnmarshalDelegatedActionMetadataV1(bytes)
+//    bytes, err = delegatedActionMetadataV1.Marshal()
+//
 //    evidenceView, err := UnmarshalEvidenceView(bytes)
 //    bytes, err = evidenceView.Marshal()
 //
@@ -1228,6 +1231,16 @@ func UnmarshalConversationView(data []byte) (ConversationView, error) {
 }
 
 func (r *ConversationView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalDelegatedActionMetadataV1(data []byte) (DelegatedActionMetadataV1, error) {
+	var r DelegatedActionMetadataV1
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *DelegatedActionMetadataV1) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -3869,6 +3882,19 @@ type ConversationView struct {
 	ParticipantPrincipalIDS []string  `json:"participantPrincipalIds"`
 	State                   ItemState `json:"state"`
 	Version                 int64     `json:"version"`
+}
+
+// 已授权普通 Action 的 v1 平台元数据结果；不含业务正文、邀请凭证、文档或协议会话。仅 agent.invoke、automation.run 及已接入普通
+// resource 动作使用；与通用 BFF ActionSubmission 的可选扩展解耦。
+type DelegatedActionMetadataV1 struct {
+	ActionExecutionID  string              `json:"actionExecutionId"`
+	ActionKey          string              `json:"actionKey"`
+	ApprovalWorkflowID *string             `json:"approvalWorkflowId,omitempty"`
+	DispatchState      ActionDispatchState `json:"dispatchState"`
+	GateState          ActionGateState     `json:"gateState"`
+	OperationID        string              `json:"operationId"`
+	Reason             *ReasonCode         `json:"reason,omitempty"`
+	WorkflowID         *string             `json:"workflowId,omitempty"`
 }
 
 // GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh

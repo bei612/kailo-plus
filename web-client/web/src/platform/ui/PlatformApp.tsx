@@ -64,6 +64,7 @@ import { useTheme } from "@/shared/theme/ThemeProvider";
 import { ChatHeader } from "@client-kit/platform/react/messages/chat-header";
 import { FileText, Hash } from "lucide-react";
 import { toast } from "sonner";
+import { BrowserNotificationsProvider, useBrowserNotifications } from "./BrowserNotifications";
 
 type Tab = "channel" | "inbox" | "settings" | "new-message" | "conversation" | PlatformNavigationSection;
 
@@ -128,7 +129,7 @@ export function PlatformApp() {
           }}
         />
       ) : (
-        <ConversationVisibilityProvider value={conversationVisibility}><SignedIn session={session} /></ConversationVisibilityProvider>
+        <BrowserNotificationsProvider key={session.tenantPrincipalId} principalId={session.tenantPrincipalId}><ConversationVisibilityProvider value={conversationVisibility}><SignedIn session={session} /></ConversationVisibilityProvider></BrowserNotificationsProvider>
       )}
     </PlatformProvider>
   );
@@ -143,6 +144,8 @@ function Notice({ text }: { text: string }) {
 }
 
 function SignedIn({ session }: { session: PlatformSessionView }) {
+  const notificationSettings = useBrowserNotifications();
+  const [inboxUnreadCount, setInboxUnreadCount] = useState<number | null>(null);
   const workspaces = useQuery(platformQueries.workspaces);
   const userState = useInboxState(bff);
   const conversations = useConversations();
@@ -247,6 +250,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ) : tab === "inbox" ? (
       <InboxPane
         principalId={session.tenantPrincipalId}
+        onUnreadCount={setInboxUnreadCount}
         onOpen={(workspaceId) => {
           setChosen(workspaceId);
           setTab("channel");
@@ -290,6 +294,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 onOpenSettings={() => setTab("settings")} onSignOut={onSignOut} /></SidebarMenuItem></SidebarMenu>}
               dialogs={<CreateChannelDialog open={createChannelOpen} onOpenChange={setCreateChannelOpen} />}>
               <AppSidebarPrimaryMenu onNewMessage={() => setTab("new-message")} onSelectHome={() => setTab("inbox")}
+                homeBadgeCount={notificationSettings?.settings.homeBadgeEnabled && inboxUnreadCount !== null ? inboxUnreadCount : undefined}
                 onSelectPlatformSection={setTab}
                 selectedPlatformSection={tab === "channel" || tab === "inbox" || tab === "settings" || tab === "new-message" || tab === "conversation" ? null : tab}
                 selectedView={tab === "inbox" ? "home" : tab === "new-message" ? "new-message" : tab === "channel" || tab === "conversation" || tab === "settings" ? "channel" : "platform"} />

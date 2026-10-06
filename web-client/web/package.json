@@ -17,6 +17,7 @@
     "test": "vitest run src"
   },
   "dependencies": {
+    "@radix-ui/react-alert-dialog": "1.1.23",
     "@radix-ui/react-separator": "^1.1.8",
     "@tanstack/react-virtual": "3.14.10",
     "@radix-ui/react-popover": "^1.1.15",

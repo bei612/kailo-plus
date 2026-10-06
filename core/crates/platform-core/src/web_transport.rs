@@ -471,6 +471,8 @@ fn valid_message_intent(message_type: &contracts::WebMessageType, parent: Option
     }
 }
 
+// Preserve the BFF's existing typed HTTP error response at this validation boundary.
+#[allow(clippy::result_large_err)]
 fn channel_message_event(
     value: serde_json::Value,
     channel: &str,
@@ -513,6 +515,7 @@ fn invalid_message_evidence() -> Response {
     )
 }
 
+#[allow(clippy::result_large_err)]
 fn message_query_cursor(
     query: &contracts::WebMessageQuery,
 ) -> Result<Option<contracts::WebMessageCursor>, Response> {
@@ -565,6 +568,7 @@ fn single_event_tag<'a>(event: &'a nostr::Event, key: &str) -> Option<&'a str> {
     values.next().is_none().then_some(value)
 }
 
+#[allow(clippy::result_large_err)]
 fn web_channel_view(
     event: &nostr::Event,
     channel: &str,
@@ -669,7 +673,7 @@ pub async fn query_channel(
 /// Validate original Relay rows and overlays without materializing another
 /// timeline. Window exhaustion remains the relay-signed NIP-CW bounds event;
 /// thread continuation follows the original native forward-keyset algorithm.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::result_large_err)]
 fn verify_message_page(
     events: Vec<nostr::Event>,
     channel: &str,
@@ -780,9 +784,9 @@ fn verify_message_page(
         .map(|event| event.id.to_hex())
         .collect();
     for event in auxiliary {
-        if !first_hop.contains(&event.id.to_hex())
-            && !([KIND_DELETION, KIND_NIP29_DELETE_EVENT].contains(&u32::from(event.kind.as_u16()))
-                && refers_to(event, &first_hop))
+        if !(first_hop.contains(&event.id.to_hex())
+            || ([KIND_DELETION, KIND_NIP29_DELETE_EVENT].contains(&u32::from(event.kind.as_u16()))
+                && refers_to(event, &first_hop)))
         {
             return Err(invalid_message_evidence());
         }

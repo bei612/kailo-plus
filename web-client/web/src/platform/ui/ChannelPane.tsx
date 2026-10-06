@@ -11,7 +11,8 @@ import { useReasonText } from "@client-kit/platform/react/context";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useBrowserNotifications } from "./BrowserNotifications";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
 import {
   BffError,
@@ -52,15 +53,18 @@ const toIso = (unix: number) => new Date(unix * 1_000).toISOString();
  * 帧翻成状态。状态只在收到 `live` 时显示为已同步；连接中断期间如实显示为
  * 重连中——结果不明不渲染成成功。
  */
-function useChannelStream(workspaceId: string, conversationId?: string) {
+function useChannelStream(workspaceId: string, conversationId?: string, onLiveEvent?: (event: BuzzEvent) => void) {
   const reasonText = useReasonText();
   const [events, setEvents] = useState<BuzzEvent[]>([]);
   const [status, setStatus] = useState(t("platform.stream.connecting"));
   const [live, setLive] = useState(false);
   const [denied, setDenied] = useState(false);
+  const seen = useRef(new Set<string>());
+  const receiveLive = useEffectEvent((event: BuzzEvent) => onLiveEvent?.(event));
 
   useEffect(() => {
     let closed = false;
+    let ready = false;
     setEvents([]);
     setLive(false);
     setDenied(false);
@@ -69,18 +73,26 @@ function useChannelStream(workspaceId: string, conversationId?: string) {
       if (closed) return;
       switch (frame.type) {
         case "snapshot":
+          ready = false;
+          for (const event of frame.events) seen.current.add(event.id);
           setEvents([...frame.events].sort((a, b) => a.created_at - b.created_at));
           break;
         case "event":
+          if (!seen.current.has(frame.event.id)) {
+            seen.current.add(frame.event.id);
+            if (ready) receiveLive(frame.event);
+          }
           setEvents((prev) =>
             prev.some((e) => e.id === frame.event.id) ? prev : [...prev, frame.event],
           );
           break;
         case "live":
+          ready = true;
           setLive(true);
           setStatus(t("platform.stream.synced"));
           break;
         case "closed":
+          ready = false;
           setLive(false);
           if (
             frame.reason === "session-revoked" ||
@@ -102,10 +114,12 @@ function useChannelStream(workspaceId: string, conversationId?: string) {
           }
           break;
         case "interrupted":
+          ready = false;
           setLive(false);
           setStatus(t("platform.stream.reconnecting"));
           break;
         case "ended":
+          ready = false;
           setLive(false);
           setStatus(t("platform.stream.ended"));
           break;
@@ -138,6 +152,7 @@ export function ChannelPane({
   conversation,
   onOpenMessageLink,
   targetMessageId,
+  autoSendDraftKey,
 }: {
   workspaceId: string;
   myPrincipalId: string;
@@ -145,9 +160,11 @@ export function ChannelPane({
   conversation?: ConversationView;
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
   targetMessageId?: string;
+  autoSendDraftKey?: string;
 }) {
   const queryClient = useQueryClient();
-  const { events, status, live, denied } = useChannelStream(workspaceId, conversation?.id);
+  const notifications = useBrowserNotifications();
+  const { events, status, live, denied } = useChannelStream(workspaceId, conversation?.id, (event) => receiveNotification(event));
   const messageList = useRef<HTMLUListElement>(null);
   const anchoredTarget = useRef<string | null>(null);
   useEffect(() => {
@@ -224,6 +241,23 @@ export function ChannelPane({
   const muted = conversation
     ? !userState.data?.conversationPreferences || userState.isError || userState.isFetching || (userState.data.conversationPreferences[conversation.id]?.muted ?? false)
     : userState.data?.workspacePreferences[workspaceId]?.muted ?? false;
+  const receiveNotification = useEffectEvent((event: BuzzEvent) => {
+    // No notification from unresolved identity/preferences or stale admission.
+    // This path only receives new frames after the actual BFF live fence.
+    if (denied || !members.isSuccess || members.isFetching || !userState.isSuccess || userState.isFetching || userState.isError ||
+      mine.size === 0 || mine.has(event.pubkey)) return;
+    const mentioned = event.tags.some((tag) => tag[0] === "p" && mine.has(tag[1] ?? ""));
+    const thread = getThreadReference(event.tags);
+    const participated = thread.rootId !== null && events.some((prior) => mine.has(prior.pubkey) &&
+      (prior.id === thread.rootId || getThreadReference(prior.tags).rootId === thread.rootId));
+    // Original mention precedence and thread-participation semantics. Ordinary
+    // channel activity is not falsely promoted into a desktop alert.
+    if (!mentioned && (muted || !participated || !thread.parentId)) return;
+    notifications?.notify({ eventId: event.id, title: byPubkey.get(event.pubkey)?.displayName ?? t("platform.title"),
+      body: event.content, slot: mentioned ? "mention" : "thread_reply",
+      onOpen: () => { const target = document.querySelector(`[data-event-id="${event.id}"]`); if (target instanceof HTMLElement) { target.scrollIntoView({ block: "center" }); target.focus({ preventScroll: true }); } },
+    });
+  });
 
   // 分隔线锚定在打开频道时的已读位置：推进已读后它不应立刻消失。
   // 换 Workspace 时由父组件按 key 重建本组件，锚点随之清零。
@@ -302,11 +336,11 @@ export function ChannelPane({
   useEffect(() => {
     const title = t("app.title");
     document.title =
-      !visible && !muted && unreadFromOthers > 0 ? `(${unreadFromOthers}) ${title}` : title;
+      !visible && !muted && notifications?.settings.homeBadgeEnabled !== false && unreadFromOthers > 0 ? `(${unreadFromOthers}) ${title}` : title;
     return () => {
       document.title = title;
     };
-  }, [visible, muted, unreadFromOthers]);
+  }, [visible, muted, unreadFromOthers, notifications?.settings.homeBadgeEnabled]);
 
   return (
     <div className="flex h-full flex-col gap-2">
@@ -358,11 +392,11 @@ export function ChannelPane({
       </ul>
       {denied ? null : conversation
         ? <Composer disabled={conversation.state !== "ACTIVE"}
-            draftIdentity={myPrincipalId} draftKey={conversation.id} onOpenMessageLink={onOpenMessageLink}
+            draftIdentity={myPrincipalId} draftKey={conversation.id} autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink}
             onPublish={(content, attachments, key) => publishConversationMessage(conversation.id, content, attachments, key)}
             onMediaUrl={(sha256) => mediaUrl(conversation.id, sha256, conversation.id)}
             onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
-        : <Composer workspaceId={workspaceId} draftIdentity={myPrincipalId} draftKey={workspaceId} onOpenMessageLink={onOpenMessageLink} />}
+        : <Composer workspaceId={workspaceId} draftIdentity={myPrincipalId} draftKey={workspaceId} autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink} />}
     </div>
   );
 }
@@ -381,7 +415,7 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", onCancel }: {
+export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", onCancel, autoSendDraftKey }: {
   surface?: "stream" | "forum";
   workspaceId?: string;
   onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[]) => Promise<unknown>;
@@ -393,6 +427,8 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
   draftIdentity?: string;
   draftKey?: string;
+  /** Original Inbox sends only after its explicit confirmation, using this editor's existing intent. */
+  autoSendDraftKey?: string;
 }) {
   const [draft, setDraft] = useState("");
   const [draftRevision, setDraftRevision] = useState(0);
@@ -649,6 +685,22 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
       .finally(() => { if (owner.active) setSending(false); });
   }, [pending, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls]);
   sendRef.current = send;
+
+  const autoSent = useRef<typeof owner | null>(null);
+  useEffect(() => {
+    if (!autoSendDraftKey || autoSendDraftKey !== draftKey || autoSent.current === owner ||
+        loadedDraftOwner !== owner || !draftReady.current || !owner.active || disabled || sending || uploading > 0 || !mentionVerified ||
+        (!richText.getMarkdown().trim() && pending.length === 0)) return;
+    autoSent.current = owner;
+    if (intent.current) {
+      // A restored UNKNOWN intent may predate complete draft metadata. Opening
+      // it must not derive a new signature/key and dispatch another effect.
+      setProblemNeutral(true);
+      setProblem(t("platform.sendUnknown", { operation: "" }));
+      return;
+    }
+    send();
+  }, [autoSendDraftKey, draftKey, owner, loadedDraftOwner, disabled, sending, uploading, mentionVerified, pending.length, richText.getMarkdown, send]);
 
   const ComposerSurface = surface === "forum" ? ForumComposerSurface : MessageComposerSurface;
   return <ComposerSurface

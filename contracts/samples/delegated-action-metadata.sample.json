@@ -1,0 +1,8 @@
+{
+  "operationId": "32fbef55-5c86-4fd7-8ec3-1c7aefb512c0",
+  "actionExecutionId": "9992a220-8f6a-4146-bfdc-369e83d20b3b",
+  "actionKey": "agent.invoke",
+  "gateState": "ALLOWED",
+  "dispatchState": "DISPATCHED",
+  "workflowId": "agent-task-metadata-fixture"
+}

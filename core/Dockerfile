@@ -17,6 +17,8 @@ COPY collaboration/Cargo.toml /build/apps/collaboration/Cargo.toml
 COPY collaboration/crates/buzz-core /build/apps/collaboration/crates/buzz-core
 COPY tools/registry/capabilities.yaml /build/apps/tools/registry/capabilities.yaml
 COPY contracts/api/action_submission.schema.json /build/apps/contracts/api/action_submission.schema.json
+COPY contracts/api/delegated_action_metadata_v1.schema.json /build/apps/contracts/api/delegated_action_metadata_v1.schema.json
+COPY contracts/compatibility/action-submission-v1.json contracts/compatibility/action-submission-v2.json /build/apps/contracts/compatibility/
 COPY contracts/api/conversation_open_request.schema.json /build/apps/contracts/api/conversation_open_request.schema.json
 COPY contracts/api/agent_memory_entry_page.schema.json contracts/api/agent_memory_entry_view.schema.json contracts/api/agent_memory_read_view.schema.json /build/apps/contracts/api/
 COPY contracts/domain/agent_memory_entry_list_input.schema.json contracts/domain/agent_memory_entry_read_input.schema.json contracts/domain/application_model_gateway_config.schema.json /build/apps/contracts/domain/
@@ -25,12 +27,14 @@ ENV SQLX_OFFLINE=true
 ARG PLATFORM_BUILD_ID
 ENV PLATFORM_BUILD_ID=${PLATFORM_BUILD_ID}
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo build --release --locked --bin platform-core
+    --mount=type=cache,target=/build/apps/core/target,sharing=locked \
+    cargo build --release --locked --bin platform-core \
+    && install -D target/release/platform-core /out/platform-core
 
 # 原 helper 实际构建的固定 agent-runtime digest 是唯一 binary/config 来源。
 # 直接复用其最小 runtime：包含 Codex 所需 CA/libssl/liblzma 与 /etc/codex，
 # 不在 Core recipe 再编译第二份 Codex，也不只拷 executable 漏掉动态库。
 FROM ${AGENT_RUNTIME_IMAGE} AS runtime
-COPY --from=builder /build/apps/core/target/release/platform-core /usr/local/bin/platform-core
+COPY --from=builder /out/platform-core /usr/local/bin/platform-core
 USER 10001
 ENTRYPOINT ["/usr/local/bin/platform-core"]

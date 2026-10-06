@@ -14,9 +14,10 @@ import { Button } from "@/shared/ui/button";
 import { Composer } from "./ChannelPane";
 import { inboxEvents } from "./inbox-events";
 
-export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEventId, channelName, members, onBack, onOpen }: {
+export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEventId, channelName, members, onBack, onOpen, autoSendDraftKey }: {
   principalId: string; workspaceId: string; rootId: string; selectedEventId: string; channelName: string;
   members: WorkspaceMemberView[]; onBack?: () => void; onOpen: () => void;
+  autoSendDraftKey?: string;
 }) {
   const client = useBffClient(); const t = useT(); const locale = useLocale(); const cache = useQueryClient();
   const [anchor] = useState(selectedEventId);
@@ -72,7 +73,7 @@ export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEven
         })}
       {!unavailable && thread.hasNextPage ? <Button disabled={thread.isFetchingNextPage} onClick={() => { void thread.fetchNextPage(); }}>{t("forum.more")}</Button> : null}
     </div>
-    <Composer workspaceId={workspaceId} draftIdentity={principalId} draftKey={`thread:${workspaceId}:${rootId}`} disabled={!canReply}
+    <Composer workspaceId={workspaceId} draftIdentity={principalId} draftKey={`thread:${workspaceId}:${rootId}`} autoSendDraftKey={autoSendDraftKey} disabled={!canReply}
       placeholder={t("inbox.reply")} onPublish={async (content, attachments, idempotencyKey, installations) => {
         if (!replyParent.current) throw new Error("Inbox reply parent is unavailable.");
         const receipt = await publishMessage(workspaceId, content, attachments, idempotencyKey, installations,

@@ -5,6 +5,7 @@ import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { StreamFrame } from "../bff-client";
 import { ChannelPane } from "./ChannelPane";
+import { setLocale } from "@client-kit/platform/i18n";
 
 // Isolate the stream lifecycle from the rich editor. Original Tiptap is mounted
 // by Composer/ChannelRead tests; the channel and original message rows mount here.
@@ -22,7 +23,8 @@ const state = vi.hoisted(() => ({
   queryClient: { invalidateQueries: vi.fn() },
   mutation: { isPending: false, mutate: vi.fn() },
 }));
-vi.mock("@client-kit/platform/react/context", () => ({
+vi.mock("@client-kit/platform/react/context", async (original) => ({
+  ...await original<typeof import("@client-kit/platform/react/context")>(),
   useReasonText: () => state.reason,
 }));
 vi.mock("@tanstack/react-query", () => ({
@@ -59,6 +61,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 beforeEach(async () => {
+  setLocale("en");
   state.stop.mockClear();
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);

@@ -9,7 +9,6 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
@@ -969,13 +968,13 @@ async fn delegations(
             join catalog.result_exposure_policy exposure on exposure.id=scope.result_exposure_policy_id
               and exposure.version=scope.result_exposure_policy_version and exposure.tenant_id=g.tenant_id
               and exposure.status='ACTIVE' and exposure.mode='CONSUME_ONLY'
-              and exposure.output_schema_hash=$8 and exposure.redaction_policy='PLATFORM_METADATA_ONLY'
+              and exposure.output_schema_hash=any($8) and exposure.redaction_policy='PLATFORM_METADATA_ONLY'
             where scope.delegation_id=g.id and scope.target_type='RESOURCE' and scope.target_id=$5
               and scope.create_workspace_id is null and scope.tool_resource_id is null)
         order by g.id offset $6 limit $7")
         .bind(ctx.tenant_id).bind(row.workspace_id).bind(row.owner_principal_id)
         .bind(row.executor_installation_resource_id).bind(row.resource_id).bind(offset).bind(limit)
-        .bind(format!("{:x}",Sha256::digest(include_str!("../../../../contracts/api/action_submission.schema.json").as_bytes())))
+        .bind(crate::governance::delegation::metadata_output_schema_hashes("automation.run"))
         .fetch_all(&mut *conn).await.map_err(crate::service_api::unavailable)?;
     let next =
         (rows.len() == usize::try_from(limit).unwrap_or(usize::MAX)).then_some(offset + limit);

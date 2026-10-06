@@ -19,6 +19,7 @@ func TestApplicationBindingProtocolRoundtrip(t *testing.T) {
 		name   string
 		target any
 	}{
+		{"delegated-action-metadata.sample.json", new(generated.DelegatedActionMetadataV1)},
 		{"application-model-admission.sample.json", new(generated.ApplicationModelAdmission)},
 		{"application-model-config.sample.json", new(generated.ApplicationModelGatewayConfig)},
 		{"application-peer-credentials.sample.json", new(generated.ApplicationAdapterDirectory)},

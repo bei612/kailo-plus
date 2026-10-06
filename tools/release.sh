@@ -36,6 +36,9 @@ git archive --format=tar "$COMMIT" .dockerignore core worker \
   collaboration/Cargo.toml collaboration/crates/buzz-core \
   model-gateway/crates/protos/proto/ext_mcp.proto \
   contracts/api/action_submission.schema.json \
+  contracts/api/delegated_action_metadata_v1.schema.json \
+  contracts/compatibility/action-submission-v1.json \
+  contracts/compatibility/action-submission-v2.json \
   contracts/api/conversation_open_request.schema.json \
   contracts/api/agent_memory_entry_page.schema.json \
   contracts/api/agent_memory_entry_view.schema.json \

@@ -878,10 +878,10 @@ async fn management_grant(
           and scope.action_key=$7 and scope.action_version=$8 and scope.target_type='RESOURCE' and scope.target_id=$9
           and scope.create_workspace_id is null and scope.tool_resource_id is null
           and exposure.tenant_id=$3 and exposure.status='ACTIVE' and exposure.mode='CONSUME_ONLY'
-          and exposure.output_schema_hash=$10 and exposure.redaction_policy=$11)")
+          and exposure.output_schema_hash=any($10) and exposure.redaction_policy=$11)")
         .bind(p.delegation_id).bind(p.delegation_version).bind(row.tenant_id).bind(row.workspace_id)
         .bind(row.owner_principal_id).bind(row.executor_installation_resource_id).bind(ACTION).bind(run_def.version)
-        .bind(row.id).bind(contracts_hash()).bind("PLATFORM_METADATA_ONLY").fetch_one(&mut **tx).await?;
+        .bind(row.id).bind(crate::governance::delegation::metadata_output_schema_hashes("automation.run")).bind("PLATFORM_METADATA_ONLY").fetch_one(&mut **tx).await?;
     if !allowed {
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
@@ -1635,9 +1635,9 @@ async fn fresh(
         where s.delegation_id=$1 and s.action_key=$2 and s.action_version=$3 and s.target_type='RESOURCE'
           and s.target_id=$4 and s.create_workspace_id is null and s.tool_resource_id is null
           and p.tenant_id=$5 and p.status='ACTIVE' and p.mode='CONSUME_ONLY'
-          and p.output_schema_hash=$6 and p.redaction_policy=$7)")
+          and p.output_schema_hash=any($6) and p.redaction_policy=$7)")
         .bind(row.delegation_id).bind(ACTION).bind(def.version).bind(row.resource_id).bind(row.tenant_id)
-        .bind(contracts_hash()).bind("PLATFORM_METADATA_ONLY").fetch_one(&mut **tx).await?;
+        .bind(crate::governance::delegation::metadata_output_schema_hashes("automation.run")).bind("PLATFORM_METADATA_ONLY").fetch_one(&mut **tx).await?;
     if !scope {
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
@@ -1733,16 +1733,6 @@ async fn fresh(
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
     revision.ok_or_else(|| Refusal::Unavailable("Automation permission 未读取".into()))
-}
-
-fn contracts_hash() -> String {
-    use sha2::{Digest, Sha256};
-    format!(
-        "{:x}",
-        Sha256::digest(
-            include_str!("../../../../contracts/api/action_submission.schema.json").as_bytes()
-        )
-    )
 }
 
 #[derive(FromRow)]

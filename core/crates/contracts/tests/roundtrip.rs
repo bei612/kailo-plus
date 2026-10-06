@@ -6,6 +6,16 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn delegated_metadata_roundtrip_keeps_only_platform_result() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("delegated-action-metadata.sample.json"))
+            .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: contracts::DelegatedActionMetadataV1 = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
+
+#[test]
 fn workspace_channel_roundtrip_keeps_native_metadata() {
     let raw =
         fs::read_to_string(sample_path().with_file_name("workspace-channel-create.sample.json"))

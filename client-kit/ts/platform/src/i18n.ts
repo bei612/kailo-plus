@@ -94,6 +94,22 @@ export function platformPluralForm(locale: PlatformLocale, count: number): "one"
 type Message = { readonly en: string; readonly "zh-CN": string };
 
 export const platformMessages = {
+  "drafts.empty": { en: "No drafts", "zh-CN": "暂无草稿" },
+  "drafts.select": { en: "Select a draft", "zh-CN": "选择一份草稿" },
+  "drafts.selectHint": { en: "Pick a draft to preview it and choose what to do next.", "zh-CN": "选择草稿以预览、继续编辑或发送。" },
+  "drafts.view": { en: "View draft in {channel}", "zh-CN": "查看 {channel} 中的草稿" },
+  "drafts.open": { en: "Open draft", "zh-CN": "打开草稿" },
+  "drafts.send": { en: "Send message", "zh-CN": "发送消息" },
+  "drafts.delete": { en: "Delete draft", "zh-CN": "删除草稿" },
+  "drafts.threadDeleted": { en: "Thread deleted", "zh-CN": "线程已删除" },
+  "drafts.noChannel": { en: "Destination unavailable", "zh-CN": "目标不可用" },
+  "drafts.confirm": { en: "Are you sure you want to send this message to {destination}?", "zh-CN": "确定向 {destination} 发送这条消息吗？" },
+  "drafts.you": { en: "You", "zh-CN": "你" },
+  "drafts.draft": { en: "Draft", "zh-CN": "草稿" },
+  "drafts.attachments": { en: "{count} attachment(s)", "zh-CN": "{count} 个附件" },
+  "drafts.back": { en: "Back to drafts list", "zh-CN": "返回草稿列表" },
+  "drafts.orphaned": { en: "The original thread was deleted. This draft can no longer be opened or sent.", "zh-CN": "原线程已删除，此草稿无法再打开或发送。" },
+  "drafts.unknownChannel": { en: "Unknown channel", "zh-CN": "未知频道" },
   "inbox.options": { en: "Inbox options", "zh-CN": "收件箱选项" },
   "inbox.markAllRead": { en: "Mark all as read", "zh-CN": "全部标为已读" },
   "inbox.drafts": { en: "Drafts", "zh-CN": "草稿" },

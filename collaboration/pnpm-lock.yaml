@@ -71,7 +71,7 @@ importers:
         version: file:../client-kit/ts/contracts
       '@client-kit/platform':
         specifier: file:../../client-kit/ts/platform
-        version: file:../client-kit/ts/platform(aac51d0bb684b8f883887d82dd60b6c6)
+        version: file:../client-kit/ts/platform(1e18c3a77e5edf6be119c966ec477680)
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -560,6 +560,7 @@ packages:
       '@client-kit/contracts': 0.0.0
       '@emoji-mart/data': ^1.2.1
       '@mediapipe/tasks-vision': ^0.10.35
+      '@radix-ui/react-alert-dialog': 1.1.23
       '@radix-ui/react-avatar': ^1.1.11
       '@radix-ui/react-context-menu': ^2.2.16
       '@radix-ui/react-dialog': ^1.1.15
@@ -3778,11 +3779,12 @@ snapshots:
 
   '@client-kit/contracts@file:../client-kit/ts/contracts': {}
 
-  '@client-kit/platform@file:../client-kit/ts/platform(aac51d0bb684b8f883887d82dd60b6c6)':
+  '@client-kit/platform@file:../client-kit/ts/platform(1e18c3a77e5edf6be119c966ec477680)':
     dependencies:
       '@client-kit/contracts': file:../client-kit/ts/contracts
       '@emoji-mart/data': 1.2.1
       '@mediapipe/tasks-vision': 0.10.35
+      '@radix-ui/react-alert-dialog': 1.1.23(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@radix-ui/react-avatar': 1.1.12(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@radix-ui/react-context-menu': 2.2.16(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@radix-ui/react-dialog': 1.1.23(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

@@ -42,6 +42,14 @@ ADR-03 要求四门语言由同一 schema 生成。四个生成器支持的构�
 | `adapter/<category>.vN/` | 能力契约 schema：`<category>` 为 Catalog 登记的能力类别键，预置 `file_storage`、`knowledge`、`data_query`（`DD-102`、`DD-103`），`vN` 为契约版本。按 `.design/07` §2.4 的 v1 契约键固定参数/结果 schema、错误映射与到 SpiceDB permission 的映射，是该契约与其一致性套件的唯一权威；契约键增删或语义变化只以新版本目录发布（`DD-88`）。schema 文件随 `EXT-BASE` 的能力模型实现建立 |
 | `component-host/` | Component manifest 与 Host API |
 | `workflow/` | Workflow input、Update/Signal、projection、ExternalExecution |
+| `compatibility/` | 已发布合同的原始字节归档，仅用于精确识别旧授权摘要；不作为新接口或类型生成输入。`action-submission-v1.json` 来自 `20dbd472b8baa8ff775322c3c72e59f0c1f7933a:contracts/api/action_submission.schema.json`；`v2` 来自 `b9d64ad70ec0079853520faf7ab1ea4bb9830657` 同路径。旧相对 `$ref` 原样保留以保持摘要，不能将归档作为当前位置可解析的活动 schema。 |
+
+`api/delegated_action_metadata_v1.schema.json` 是普通受委托动作的平台元数据输出合同；
+通用 BFF 回应增加其他动作的可选字段不改变该合同。旧 `ActionSubmission` 的两份已发布
+摘要只在 `agent.invoke`、`automation.run` 与已接入的普通 resource 动作内兼容；仍需匹配
+原 action/version、target、tenant、授权期限与状态。组件工具和记忆仍核验各自输出合同，
+不能借此接收其他摘要或业务内容。新授权仍只接受新目录的 v1 摘要，旧摘要只供已存在
+授权的执行核验；没有迁移或重签现存 DelegationGrant。
 
 ## 3. 改动流程
 

@@ -69,6 +69,7 @@
 //     final conversationParticipantPage = conversationParticipantPageFromJson(jsonString);
 //     final conversationPreferenceRequest = conversationPreferenceRequestFromJson(jsonString);
 //     final conversationView = conversationViewFromJson(jsonString);
+//     final delegatedActionMetadataV1 = delegatedActionMetadataV1FromJson(jsonString);
 //     final evidenceView = evidenceViewFromJson(jsonString);
 //     final invitationRedemptionView = invitationRedemptionViewFromJson(jsonString);
 //     final invitationRedemptionRequest = invitationRedemptionRequestFromJson(jsonString);
@@ -611,6 +612,12 @@ ConversationView conversationViewFromJson(String str) =>
     ConversationView.fromJson(json.decode(str));
 
 String conversationViewToJson(ConversationView data) =>
+    json.encode(data.toJson());
+
+DelegatedActionMetadataV1 delegatedActionMetadataV1FromJson(String str) =>
+    DelegatedActionMetadataV1.fromJson(json.decode(str));
+
+String delegatedActionMetadataV1ToJson(DelegatedActionMetadataV1 data) =>
     json.encode(data.toJson());
 
 EvidenceView evidenceViewFromJson(String str) =>
@@ -8037,6 +8044,55 @@ class ConversationView {
     ),
     "state": itemStateValues.reverse[state],
     "version": version,
+  });
+}
+
+///已授权普通 Action 的 v1 平台元数据结果；不含业务正文、邀请凭证、文档或协议会话。仅 agent.invoke、automation.run 及已接入普通
+///resource 动作使用；与通用 BFF ActionSubmission 的可选扩展解耦。
+class DelegatedActionMetadataV1 {
+  final String actionExecutionId;
+  final String actionKey;
+  final String? approvalWorkflowId;
+  final ActionDispatchState dispatchState;
+  final ActionGateState gateState;
+  final String operationId;
+  final ReasonCode? reason;
+  final String? workflowId;
+
+  DelegatedActionMetadataV1({
+    required this.actionExecutionId,
+    required this.actionKey,
+    this.approvalWorkflowId,
+    required this.dispatchState,
+    required this.gateState,
+    required this.operationId,
+    this.reason,
+    this.workflowId,
+  });
+
+  factory DelegatedActionMetadataV1.fromJson(Map<String, dynamic> json) =>
+      DelegatedActionMetadataV1(
+        actionExecutionId: json["actionExecutionId"],
+        actionKey: json["actionKey"],
+        approvalWorkflowId: json["approvalWorkflowId"],
+        dispatchState: actionDispatchStateValues.map[json["dispatchState"]]!,
+        gateState: actionGateStateValues.map[json["gateState"]]!,
+        operationId: json["operationId"],
+        reason: json["reason"] == null
+            ? null
+            : reasonCodeValues.map[json["reason"]]!,
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "actionKey": actionKey,
+    "approvalWorkflowId": approvalWorkflowId,
+    "dispatchState": actionDispatchStateValues.reverse[dispatchState],
+    "gateState": actionGateStateValues.reverse[gateState],
+    "operationId": operationId,
+    "reason": reasonCodeValues.reverse[reason],
+    "workflowId": workflowId,
   });
 }
 

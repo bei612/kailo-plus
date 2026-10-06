@@ -55,6 +55,7 @@ export type ForumViewProps = {
   renderContent: (message: ForumMessage, preview: boolean) => React.ReactNode;
   renderComposer: (postId: string | null, close: () => void) => React.ReactNode;
   renderDelete?: (message: ForumMessage, reply: boolean) => React.ReactNode;
+  initialComposerOpen?: boolean;
 };
 
 function Skeleton({ className }: { className: string }) {
@@ -69,8 +70,8 @@ export function ForumView(props: ForumViewProps) {
 function ForumVisit({ channelId, isMember, archived, posts, post, replies, selectedPostId,
   loading, error, hasMore, loadingMore, onMore, onRetry, onSelectPost, targetEventId,
   onTargetReached, onCopy, labels, formatTime, renderAuthor, renderContent,
-  renderComposer, renderDelete }: ForumViewProps) {
-  const [composerOpen, setComposerOpen] = React.useState(false);
+  renderComposer, renderDelete, initialComposerOpen = false }: ForumViewProps) {
+  const [composerOpen, setComposerOpen] = React.useState(initialComposerOpen);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
     if (!targetEventId || !post) return;

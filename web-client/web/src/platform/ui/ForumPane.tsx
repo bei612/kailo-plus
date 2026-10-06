@@ -28,15 +28,21 @@ function eventsFrom(value: unknown): BuzzEvent[] {
 const project = (event: BuzzEvent): ForumMessage => ({ eventId: event.id, pubkey: event.pubkey,
   content: event.content, createdAt: event.created_at, tags: event.tags });
 
-export function ForumPane({ workspaceId, channelId, archived, myPrincipalId, onOpenMessageLink, target }: {
+export function ForumPane({ workspaceId, channelId, archived, myPrincipalId, onOpenMessageLink, target, restoreDraftKey, autoSendDraftKey }: {
   workspaceId: string; channelId: string; archived: boolean; myPrincipalId: string;
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
   target?: ParsedMessageLink;
+  restoreDraftKey?: string;
+  autoSendDraftKey?: string;
 }) {
   const labels = useForumLabels();
   const queryClient = useQueryClient();
   const key = React.useMemo(() => ["platform", "forum", myPrincipalId, workspaceId, channelId] as const, [myPrincipalId, workspaceId, channelId]);
-  const [selectedPostId, setSelectedPostId] = React.useState<string | null>(null);
+  const [selectedPostId, setSelectedPostId] = React.useState<string | null>(() => {
+    const prefix = `forum:${workspaceId}:`;
+    const parent = restoreDraftKey?.startsWith(prefix) ? restoreDraftKey.slice(prefix.length) : undefined;
+    return parent && /^[0-9a-f]{64}$/.test(parent) ? parent : null;
+  });
   const [targetEventId, setTargetEventId] = React.useState<string | null>(null);
   React.useEffect(() => {
     if (target?.channelId === channelId) {
@@ -86,6 +92,7 @@ export function ForumPane({ workspaceId, channelId, archived, myPrincipalId, onO
   const error = denied || members.error || selectedQuery.error ? t("buzz.forumUnavailable")
     : selectedPostId && thread.isSuccess && !root ? t("buzz.forumRootUnavailable") : null;
   return <ForumView channelId={channelId} isMember={isMember} archived={archived} selectedPostId={selectedPostId}
+    initialComposerOpen={restoreDraftKey === `forum:${workspaceId}:post`}
     targetEventId={targetEventId} onTargetReached={() => setTargetEventId(null)}
     onSelectPost={setSelectedPostId} posts={inChannel.filter((event) => event.kind === 45001).map((event) => ({ ...project(event), threadSummary: summaries.get(event.id) }))}
     post={root ? project(root) : undefined} replies={replies} loading={selectedQuery.isPending} error={error ? String(error) : null}
@@ -96,7 +103,7 @@ export function ForumPane({ workspaceId, channelId, archived, myPrincipalId, onO
     renderContent={(message, preview) => <MessageContent workspaceId={workspaceId} content={preview && message.content.length > 200 ? `${message.content.slice(0, 200)}...` : message.content}
       mediaTags={message.tags} mentions={mentions} onOpenMessageLink={onOpenMessageLink} />}
     renderComposer={(parentId, close) => <Composer key={parentId ?? "post"} workspaceId={workspaceId} surface="forum" disabled={!isMember || archived || Boolean(error)}
-      draftIdentity={myPrincipalId} draftKey={`forum:${workspaceId}:${parentId ?? "post"}`} placeholder={parentId ? labels.replyPlaceholder : labels.postPlaceholder} onCancel={parentId ? undefined : close}
+      draftIdentity={myPrincipalId} draftKey={`forum:${workspaceId}:${parentId ?? "post"}`} autoSendDraftKey={autoSendDraftKey} placeholder={parentId ? labels.replyPlaceholder : labels.postPlaceholder} onCancel={parentId ? undefined : close}
       onOpenMessageLink={onOpenMessageLink} onPublish={async (content, attachments, idempotencyKey, installationIds) => {
         const receipt = await publishMessage(workspaceId, content, attachments, idempotencyKey, installationIds,
           { messageType: parentId ? WebMessageType.ForumComment : WebMessageType.ForumPost, ...(parentId ? { parentEventId: parentId } : {}) });

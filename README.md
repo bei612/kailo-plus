@@ -6,6 +6,18 @@
 
 ## 当前使用与恢复范围（2026-10-06）
 
+- 12:40 UTC，后续共享界面批 `c674f5782ed918c63e691d94f60df7f3c37bb5ba` 已构建并
+  单独投递 Web，实际镜像为
+  `587815d0cf1a4964c1342f99b24e289fc402e0e9be22a4fc9fcf9dc2a3e28389`，
+  registry 摘要核对一致，容器 healthy。包含 Relay 频道标题读取、原版设置布局和链接
+  预览文本卡片、只读私聊状态按钮；Core/Worker/Relay 未随此次 Web 投递改变。
+  原 build 与 compose 均退出 0，原件在 Data 的
+  `buzz-web-preview-release-20261006.NgyUR0/`。本版仍非完整 Buzz 恢复，
+  未升级旧 Windows 包，也未解除私聊后端或新 Agent 权限准入阻断。
+  后续 7 张实际截图确认设置左侧导航、预览模式切换和刷新保存可用，但新建频道
+  标题仍显示 UUID：后端读取创建参数的层级错误，实际把 slug 写成 Relay 名称。
+  现有私聊 stream 也返回 403。两项均属未完成的功能，不能以容器健康或页面渲染
+  宣称已恢复；详情见同一截图目录的 `C674-RESULTS.md`。
 - 11:58 UTC，本批 Core／Worker 已实际投递，原发布与部署命令均退出 0。
   Core 为 `e0a5e8103c86bdf60250ca6e7928257e194d72f70773e64ed7e7a3636116465f`，
   Worker 为 `146c1dec681ff0f2dc1469f86cc4b2a0bf7f59d6875501c7a9ed831dac2c41f3`；
@@ -41,9 +53,11 @@
   刷新频道列表进入新频道并发送消息；本轮已按此路径实际完成。原公开／私有、
   TTL 和模板选项尚未恢复，不能将当前创建表单称为完整原版。
   私聊已能选择真实成员，但本次 `conversation.open` 仍待对账，“查看状态”
-  按钮错误禁用的修复属于下一源码批；不要将草稿或等待状态视为消息已送达。
+  按钮错误禁用的源码已随 12:40 Web 投递，但私聊后端仍未查证完成；不要将草稿
+  或等待状态视为消息已送达。
   逐页截图和原始回执在 Data 的
-  `kailo-visual-release-20261006.vlPvnU/RESULTS.md`，包含 31 组编号截图。
+  `kailo-visual-release-20261006.vlPvnU/RESULTS.md`，原版次 31 组编号截图，
+  本次后续 7 张为 `32`–`38`，各自关联实际版本，不合称全页面等效通过。
 - 第二批固定源码树的完整检查已结束，退出 1；本批局部检查通过不替代完整验收。已过与未过项见
   [本批源码及验证边界](core/verify/buzz-restoration-checkpoint.md)。Cells、WeKnora、
   Wren 保持独立服务和原生管理界面；本轮不宣称三服务完整接入已经完成。

@@ -4277,3 +4277,115 @@ platform-core -- --ignored`）进程 `33126` 退出 0、1/1，通过后未再修
 `a63a30b7e3d86e8d9782e8699856ef9b9ed7aa9e902ff77266e42ae876c85e02`；
 `mutation-restored.log` SHA256
 `1ec310091e01b93a09d6bed54d2085e1ed77df7d95472297e2dd43a1f4ca2ece`。
+
+## 新双 Agent 消息准入与旧终态取消（2026-10-06）
+
+权威是 DD-49、03 §6 的 DelegationScope/ResultExposurePolicy 交集，以及 DD-48、12 §2
+的原 Runtime 终态。设计要求核验实际动作输出合同，并未要求把所有动作绑定到不断增加
+可选字段的 BFF `ActionSubmission` 字节。影响面为 `delegation::{validate_scope,
+output_schema_hash}`、目录默认摘要、`agent_invocation::fresh`、Automation 的启用、运行
+和候选授权查询；组件工具与记忆仍各自精确核验，没有改权限权威、授权内容或用量状态。
+
+12:18 UTC 在真实 Web 经原 OIDC 登录、选择两个原 Agent Installation 后只发送一次双
+提及消息。发布 HTTP 200，event `fd8037a46d052844e677b32c87e16906a668d85c57cb5ddf592fdb8704526f24`，
+operation `85e4b16c-0985-44c2-94df-02b5bdde3b66`。Relay 读回 kind 9、原 channel h-tag
+与两把真实 Agent p-tag。两个 ActionExecution `575b89db-00da-4a62-9e71-e2f977e0042e`、
+`0ec02f74-e9dd-41fd-8032-e0596460d997` 均在 Invocation 创建前 DENIED/PERMISSION_DENIED。
+两份实际 Grant ACTIVE、未过期、无 max_uses 限额；不属于配额耗尽。
+
+根因是 Grant 保存原合法输出摘要 `fb2d299d4cdc34507fd41dbc311609b4315b01bd2f4650a2f3207641afeedcc9`，
+而 Core 重新计算当前通用回应得到 `1bf219fdb0b7cd39707273b16f219ce4f6b7d70f802795abf21060ec7e4589be`。
+源码 `20dbd472b8baa8ff775322c3c72e59f0c1f7933a` 到
+`b9d64ad70ec0079853520faf7ab1ea4bb9830657` 的
+`contracts/api/action_submission.schema.json` 只增加其他动作使用的可选
+`protocolSessionId`、`documentLaunch`；普通 Agent 元数据输出没有变化。
+
+修复增加明确的 `DelegatedActionMetadataV1`，新目录使用其固定合同摘要，旧合法摘要从
+上述两个原提交的字节归档计算，只对已有普通元数据动作兼容，不是任意旧 hash 通配。
+未知动作返回空兼容集合；新授权只接受新目录的 v1 摘要，防止继续新增旧摘要引用；
+application/memory 路径不消费它。SQL 原 action/version、
+target、tenant、tool/create 限制、ACTIVE/有效期、次数、SpiceDB fresh permission 均保留。
+新旧客户端仍读取原回应，无数据迁移、不重签 Grant、不放开正文/凭据。
+三个编译期 `include_str` 输入同时登记在原 Docker COPY、构建 allowlist 与 release archive。
+
+只读事务对上述两份实际 Grant 分别核验六个输入：原摘要匹配 true，当前错误通用摘要、
+跨 action、跨 resource、未知摘要、有效期终点均 false（12 行，命令退出 0、ROLLBACK）。
+这是授权元数据条件核验，不冒充完整新 Agent 执行或撤权运行场景。
+
+另一个独立旧问题：Invocation `4cfe99fe-1e45-46d2-834b-411027412a9d` 已保存 native
+`completed`，但用量关联缺失仍处于业务 RUNNING/cancel_pending。原 advance 每次又发送
+interrupt。固定 Codex `7498521d288b9b3b96ffba4eedf089d8d6e06a84` 的
+`codex-rs/app-server/src/request_processors/turn_processor.rs::turn_interrupt_inner`
+明确拒绝已结束且没有 active turn 的 interrupt。修复只跳过已证实 completed/failed/interrupted
+的重复取消，未知/在途仍走原取消；原历史观察、用量对账和业务终态判定继续执行。
+这不会把用量缺失当成功或释放其业务状态。
+
+旧 Gateway 同用户 request 的 trace 缺失、dispatch 集合为空不能按时间/主体猜补；
+旧 Invocation `db6dfccb-f0db-409a-8ed6-d81e64e277d9` 的原 thread 在本人 Codex state
+只读查询为零条，原 RPC 分类 THREAD_NOT_FOUND。两者保持原 UNKNOWN/对账边界，
+未直接更新业务库、释放容量、重发执行或新起第二 Runtime。
+
+本批原 `tools/gen.sh` 四侧生成退出 0；TypeScript contracts 21/21、Dart roundtrip
+17/17、Go contracts 包通过。SDK 原路径仍为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/apps`，
+执行容器 `kailo-agent-receipt-xvkujx` 回读 4 CPU、8 GiB memory/swap、Data caches。
+首次 Rust 命令因 login shell PATH 不含 rustfmt 退出 127，未编译；首次 Dart 因缺
+PUB_CACHE 退出 1，随后误用不支持的 `--no-pub` 退出 64；使用已有 `/cache/pub` 与原
+`dart test test/roundtrip_test.dart` 恢复通过。均未更改工具或安装依赖。
+本节不声明已部署修复或三人双 Agent 新版端到端成功。
+
+实现后窄验 `cargo test --offline --locked -j16 -p platform-core --bin platform-core
+governance::delegation::cancellation_tests` 为 3/3，`agent_task::reply_tests` 为 11/11；
+`cargo test --offline --locked -j16 -p contracts --test roundtrip` 为 18/18。
+前者包括旧摘要/未知摘要/非适用动作、原撤销及墙钟过期规则，以及真实
+`Execution::submission` 序列化后与新生成类型逐字段相等、不包含凭据/正文扩展。
+仅在 SDK 私有副本删去 v1 兼容分支，同用例实际失败 101（缺少原合法摘要）；
+将 terminal interrupt 判断取反，实际失败 101。还原产品原字节并 rustfmt 后，
+3/3 与 11/11 再次通过。没有改业务库或生产进程来制造变异。
+
+Clippy `--all-targets -- -D warnings` 退出 101：`web_transport.rs` 的 477、518、572、
+681 行报告 `result_large_err`，783 行 `nonminimal_bool`。它们属于此前频道读取实现，
+本批未掩盖或修改这些诊断，已交主线处理，不能把组合命令称为全通过。
+原 `check.sh contract` 因 SDK `HOME=/`、无权创建 `/tooling` 在 dependency prepare
+退出 2，未执行其兼容部分；单独执行该脚本原有只读兼容 Python 段，退出 0：
+`相对 contracts-v0.1.0 无破坏性变更（242 个 schema，匹配 3 个历史 schema）`。
+新 v1 为新增合同不冒充历史已有；完整门禁由集中发布批执行。
+
+兼容窗口仅服务现存旧摘要委托，不是永久旧读路径。关闭条件为两份旧摘要的有效委托
+引用归零：经原授权生命周期到期/撤销并按新目录合同正常重发，再在下一计划内收缩批
+删除旧摘要接收与编译归档输入。现场两份授权期限为 9999 年，不能声称会很快自然到期，
+因此关闭窗口需要通过原 HUMAN 授权入口显式替换；本批不直接改 Grant 或伪称已收缩。
+
+最终使用包含 rustfmt/gofmt 的原 SDK PATH 重新运行 `tools/gen.sh`、`tools/gen.sh --check`，
+两者退出 0，四侧逐一 PASS；首轮 login shell 丢失 gofmt 造成的注释尾空白已由原生成
+格式步骤消除，没有手改生成类型或改生成器。精确本批路径 `git diff --check` 退出 0。
+
+### 同批真实频道标题根因
+
+新 Web 中看到的 `faac020b-b9d3-41ea-8c07-8bd5986ff184` 是 Workspace slug，
+真实 Workspace/Channel 是 `4225c37a-890f-4ca7-9212-a4c35f468d3b`。只读回查其
+`workspace.create` ActionExecution `c73f477b-5e19-4abc-8108-a03f019d45e3`（12:12:38 UTC）：
+`parameters.name/workspaceChannel` 均为空；`parameters.params.name` 为原请求标题，
+`parameters.params.workspaceChannel` 为原 stream 与说明，动作 ALLOWED/DISPATCHED。
+
+已部署 `0d6b2833aa22151dfcd78851872a21a5f9e361d6` 的
+`core/crates/platform-core/src/governance.rs::open_execution` 写入
+`{params: ..., targetVersion: ...}`；同提交
+`core/crates/platform-core/src/tenant_lifecycle.rs::provision_workspace_buzz` 却读取外层
+name/workspaceChannel，误判成旧无 metadata 输入并把 slug 传给 Relay。
+`core/crates/collab-bridge/src/bridge.rs::IdentityClient::ensure_channel` 确实核验了其传入
+slug，因此不是 Relay 忽略本次实际发送的名称，亦不能以目录名称遮盖该错误。
+
+修复复用原 `governance::Params::from_json` 解码 `parameters.params`。完整新包保留真实
+name、channelType 与 description；合法旧包没有 workspaceChannel 才继续原 slug 创建
+意图。缺包、非对象、缺标题、空标题、null/未知类型的 metadata 均 CONFLICT，不当成旧包
+降级创建；已存在 binding 的幂等返回未改变。不新增合同、名称映射或任何业务写入。
+现场已创建频道不自动重命名；其纠正必须走原受治理元数据修改链，不能直接更新数据库。
+
+实现后原 SDK 定向 `tenant_lifecycle::workspace_creation_intent_tests` 3/3 通过，覆盖
+stream/forum 完整包、合法旧包、缺失/错误封装与未知类型。私有副本把解码恢复为读取
+外层对象，原三项实际全部失败（0/3，退出 101）；还原并 rustfmt 后 3/3 再次通过。
+同批同步主线 `web_transport.rs` 五处 lint 收口，最终
+`cargo clippy --offline --locked -j16 -p platform-core --all-targets -- -D warnings`
+退出 0（39.88 秒）。此前失败记录保留，不改写成首次通过。
+格式化字节已回写正式树，精确增量 `git diff --check` 退出 0；未重新生成契约或构建镜像。

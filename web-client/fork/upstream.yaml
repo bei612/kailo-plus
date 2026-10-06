@@ -14,7 +14,8 @@ evidence_commit: a6766c482533d028582d0efcfd3740769f86217c
 implementation_base_commit: a6766c482533d028582d0efcfd3740769f86217c
 base_divergence: none
 
-# 整块删除的上游路径（浏览器直连 Relay、本地 signer 与一期不交付的页面，SS-WEB-RELAY）。
+# 原路径不再存在的事实清单：含已替换的直连／signer、迁入共享包的呈现及恢复缺口。
+# 不是缩减交付范围的授权；原页面和功能仍按 REQ-24 完整恢复。
 # 与实际一致由 `upstream_manifest.py diff web-client --check` 核对。
 remove_paths:
   - web/playwright.config.ts
@@ -94,8 +95,8 @@ artifacts:
     build_context: .
     build_dockerfile: web-client/web/Dockerfile
     inputs: [web-client/web/, client-kit/ts/contracts/, client-kit/ts/platform/]
-    source_digest: sha256:7dd936af3d0c642ed4959e60aba6f4084104723937d821cba852659464fa01f4
-    artifact_digest: sha256:54928e5a5a16053ae750479c1a8a0ef6ff39d33323d24cff807aec4c8e7e3df2
+    source_digest: sha256:f7d1245d7e319dd287464bfe591378b9a5cca3e56d18070c06d913e9329f4b28
+    artifact_digest: sha256:587815d0cf1a4964c1342f99b24e289fc402e0e9be22a4fc9fcf9dc2a3e28389
 
 source_facts: [SF-WEB-01, SF-WEB-04, SF-WEB-05, SF-WEB-06, SF-WEB-07]
 source_seams: [SS-WEB-RELAY, SS-WEB-01, SS-WEB-PRESENTATION]

@@ -4,6 +4,7 @@
 @import "@client-kit/platform/typography.css";
 @import "@client-kit/platform/react/composer/prosemirror.css";
 @import "@client-kit/platform/react/composer/composer.css";
+@import "@client-kit/platform/react/composer/spoilers.css";
 @config "../../../tailwind.config.js";
 /* 共用平台包放在被忽略的目录里，Tailwind 不自动扫描，显式登记（ADR-09） */
 @source "../../../node_modules/@client-kit/platform/src";
@@ -71,4 +72,3 @@
   line-height: 1;
   transform: translateY(-0.08em);
 }
-@import "@client-kit/platform/react/composer/spoilers.css";
