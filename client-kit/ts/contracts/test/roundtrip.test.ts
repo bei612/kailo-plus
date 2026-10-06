@@ -224,6 +224,7 @@ test("automation POST_MESSAGE round-trip preserves action and native schedule", 
   const typed: AutomationVersionContent = JSON.parse(raw);
   ok(typed.action.kind === "POST_MESSAGE");
   const reconstructed: AutomationVersionContent = {
+    ...(typed.name !== undefined ? { name: typed.name } : {}),
     trigger: { kind: typed.trigger.kind, scheduleSpec: typed.trigger.scheduleSpec && {
       everySeconds: typed.trigger.scheduleSpec.everySeconds, offsetSeconds: typed.trigger.scheduleSpec.offsetSeconds,
       catchupWindowSeconds: typed.trigger.scheduleSpec.catchupWindowSeconds,

@@ -243,11 +243,20 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
     if object.keys().any(|key| {
         !matches!(
             key.as_str(),
-            "trigger" | "action" | "resultTarget" | "approvalPolicy"
+            "name" | "trigger" | "action" | "resultTarget" | "approvalPolicy"
         )
     }) {
         return Err(invalid_management());
     }
+    let name = match value.get("name") {
+        None => None,
+        Some(value) => Some(
+            value
+                .as_str()
+                .filter(|name| !name.trim().is_empty())
+                .ok_or_else(invalid_management)?,
+        ),
+    };
     let trigger = value
         .get("trigger")
         .and_then(Value::as_object)
@@ -343,6 +352,7 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
         policy,
         version,
         result,
+        name,
     ))
 }
 
@@ -352,12 +362,17 @@ pub(crate) fn version_content(
     policy: Option<Uuid>,
     version: Option<i32>,
     result: &str,
+    name: Option<&str>,
 ) -> Value {
     let mut content =
         json!({"trigger":trigger,"action":action,"approvalPolicyId":policy,"resultTarget":result});
     // Preserve the exact pre-step hash for existing versions with no policy.
     if let Some(version) = version {
         content["approvalPolicyVersion"] = json!(version);
+    }
+    // Do not add a null key: unnamed historical versions must keep their exact digest.
+    if let Some(name) = name {
+        content["name"] = json!(name);
     }
     content
 }
@@ -706,7 +721,8 @@ pub(crate) async fn management_prewrite(
                 a.state,a.projection_action_execution_id,v.config_hash,
                 jsonb_build_object('trigger',v.trigger,'action',v.action,
                 'approvalPolicyId',v.approval_policy_id,'resultTarget',v.result_target)
-                || case when v.approval_policy_version is null then '{}'::jsonb else jsonb_build_object('approvalPolicyVersion',v.approval_policy_version) end content
+                || case when v.approval_policy_version is null then '{}'::jsonb else jsonb_build_object('approvalPolicyVersion',v.approval_policy_version) end
+                || case when v.name is null then '{}'::jsonb else jsonb_build_object('name',v.name) end content
                 from catalog.automation_version v join catalog.asset a on a.id=v.asset_id
                 where v.asset_id=$1 and v.automation_resource_id=$2 and v.state='PUBLISHED'
                   and a.tenant_id=$3 and a.resource_id=$2 and a.state='PUBLISHED' and a.version=$4
@@ -832,11 +848,12 @@ async fn management_insert_version(
         values($1,$2,$3,'automation.version',$4,$4,$1::text,'DRAFT',1,$1)")
         .bind(ae.id).bind(ae.tenant_id).bind(resource).bind(ae.initiator_principal_id).execute(&mut **tx).await?;
     sqlx::query("insert into catalog.automation_version
-        (asset_id,automation_resource_id,ordinal,trigger,action,approval_policy_id,result_target,config_hash,state,approval_policy_version)
-        values($1,$2,$3,$4,$5,$6,$7,$8,'DRAFT',$9)")
+        (asset_id,automation_resource_id,ordinal,trigger,action,approval_policy_id,result_target,config_hash,state,approval_policy_version,name)
+        values($1,$2,$3,$4,$5,$6,$7,$8,'DRAFT',$9,$10)")
         .bind(ae.id).bind(resource).bind(ordinal).bind(&content["trigger"]).bind(&content["action"])
         .bind(approval).bind(content["resultTarget"].as_str()).bind(collab_bridge::limits::canonical_digest(&content))
         .bind(content.get("approvalPolicyVersion").and_then(Value::as_i64).and_then(|v|i32::try_from(v).ok()))
+        .bind(content.get("name").and_then(Value::as_str))
         .execute(&mut **tx).await?;
     Ok(())
 }
@@ -1102,7 +1119,8 @@ pub(crate) async fn management_dispatch(
     let version:ManagementVersion=sqlx::query_as("select a.id asset_id,a.owner_principal_id,a.state,
         a.projection_action_execution_id,v.config_hash,jsonb_build_object('trigger',v.trigger,'action',v.action,
           'approvalPolicyId',v.approval_policy_id,'resultTarget',v.result_target)
-          || case when v.approval_policy_version is null then '{}'::jsonb else jsonb_build_object('approvalPolicyVersion',v.approval_policy_version) end content
+          || case when v.approval_policy_version is null then '{}'::jsonb else jsonb_build_object('approvalPolicyVersion',v.approval_policy_version) end
+          || case when v.name is null then '{}'::jsonb else jsonb_build_object('name',v.name) end content
         from catalog.asset a join catalog.automation_version v on v.asset_id=a.id
         where a.id=$1 and a.tenant_id=$2 and a.resource_id=$3 and a.type_key='automation.version'
           and v.automation_resource_id=$3 for update of a,v")
@@ -1454,6 +1472,7 @@ struct Run {
     approval_policy_id: Option<Uuid>,
     approval_policy_version: Option<i32>,
     result_target: String,
+    name: Option<String>,
     config_hash: String,
     enabled_at: DateTime<Utc>,
     version_owner_principal_id: Uuid,
@@ -1465,7 +1484,7 @@ const RUN: &str = "select r.id resource_id,r.tenant_id,d.workspace_id,r.version 
     i.agent_principal_id,case when $2::uuid is null then d.delegation_id else invocation.delegation_id end delegation_id,
     v.asset_id automation_version_asset_id,a.version automation_version,p.agent_version_asset_id,
     p.generation projection_generation,v.trigger,v.action,v.approval_policy_id,v.approval_policy_version,
-    v.result_target,v.config_hash,d.enabled_at,a.owner_principal_id version_owner_principal_id
+    v.result_target,v.name,v.config_hash,d.enabled_at,a.owner_principal_id version_owner_principal_id
     from catalog.automation_definition d join catalog.resource r on r.id=d.resource_id
     join catalog.resource_type_definition type on type.type_key=r.type_key
     left join catalog.agent_invocation invocation on invocation.id=$2 and invocation.automation_resource_id=r.id
@@ -1599,6 +1618,7 @@ async fn fresh(
                 row.approval_policy_id,
                 row.approval_policy_version,
                 &row.result_target,
+                row.name.as_deref(),
             ))
     {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));

@@ -781,6 +781,7 @@ struct VersionRow {
     approval_policy_id: Option<Uuid>,
     approval_policy_version: Option<i32>,
     result_target: String,
+    name: Option<String>,
 }
 async fn versions(
     state: &BffState,
@@ -791,7 +792,7 @@ async fn versions(
     limit: i64,
 ) -> Result<(Vec<contracts::AutomationVersionView>, Option<i64>), Response> {
     let rows:Vec<VersionRow>=sqlx::query_as("select a.id asset_id,a.owner_principal_id,a.version asset_version,
-        a.state asset_state,v.ordinal,v.state,v.config_hash,v.trigger,v.action,v.approval_policy_id,v.approval_policy_version,v.result_target
+        a.state asset_state,v.ordinal,v.state,v.config_hash,v.trigger,v.action,v.approval_policy_id,v.approval_policy_version,v.result_target,v.name
         from catalog.automation_version v join catalog.asset a on a.id=v.asset_id
         where v.automation_resource_id=$1 and a.resource_id=$1 and a.tenant_id=$2
           and a.type_key='automation.version' and a.state<>'DELETED' and a.projection_action_execution_id is null
@@ -872,6 +873,7 @@ async fn versions(
             version.approval_policy_id,
             version.approval_policy_version,
             &version.result_target,
+            version.name.as_deref(),
         );
         if version.state != version.asset_state
             || collab_bridge::limits::canonical_digest(&content) != version.config_hash
@@ -907,6 +909,9 @@ async fn versions(
             trigger["scheduleSpec"] = value.clone();
         }
         let mut exposed_content = json!({"trigger":trigger,"action":content["action"],"resultTarget":content["resultTarget"]});
+        if let Some(name) = content.get("name") {
+            exposed_content["name"] = name.clone();
+        }
         if let (Some(id), Some(version)) =
             (version.approval_policy_id, version.approval_policy_version)
         {

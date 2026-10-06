@@ -479,7 +479,7 @@ describe("shared Automation schedule consumer", () => {
     activeProjectionGeneration: 1, projection: { generation: 1, agentVersionAssetId: "schedule-agent-version",
       runtimeProfileKey: "schedule-profile", configHash: "a".repeat(64), state: "ACTIVE" },
   };
-  const scheduleContent = { trigger: { kind: "SCHEDULE", scheduleSpec: { everySeconds: 300, offsetSeconds: 0, catchupWindowSeconds: 60 } },
+  const scheduleContent = { name: "Scheduled report", trigger: { kind: "SCHEDULE", scheduleSpec: { everySeconds: 300, offsetSeconds: 0, catchupWindowSeconds: 60 } },
     action: { kind: "AGENT_TURN", template: "Report" }, resultTarget: "CHANNEL" };
   const setup = async (targets: unknown, content?: unknown, recheckStatus?: number, recheck?: Record<string, unknown>, policies?: unknown,
     readOverride?: (request: BffRequest) => BffReply | undefined) => {
@@ -515,7 +515,9 @@ describe("shared Automation schedule consumer", () => {
     });
     const host = await mount(t, <WorkflowsPage />);
     await settle();
-    const section = host.querySelector("[data-testid=agent-automations]") as HTMLElement;
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
+    // Original Dialog portals its content; exercise the same user-visible tree.
+    const section = document.body;
     const field = (label: string) => [...section.querySelectorAll("label")].find((node) => node.textContent?.startsWith(label))!;
     const choose = async (label: string, value: string) => {
       const select = field(label).querySelector("select")!;
@@ -532,6 +534,7 @@ describe("shared Automation schedule consumer", () => {
       await settle();
     };
     await choose("Executor installation", installation.resourceId);
+    if (content) await click(button(section, "Close"));
     return { section, t, field, choose, fill };
   };
 
@@ -565,6 +568,51 @@ describe("shared Automation schedule consumer", () => {
     });
     await settle();
   };
+
+  it("restores the create card and original dialog while preserving an unsubmitted draft on close", async () => {
+    const { section, t, field, fill } = await setup(["TRIGGER_THREAD"]);
+    expect(section.querySelector('[role="dialog"][data-testid="workflow-editor-dialog"]')).not.toBeNull();
+    await fill("Instruction template", "Keep this draft");
+    await click(button(section, "Close"));
+    expect(section.querySelector('[data-testid="workflow-editor-dialog"]')).toBeNull();
+    await click(section.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
+    expect(field("Instruction template").querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Keep this draft");
+    expect(t.send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(0);
+  });
+
+  it("uses the original inline name editor and freezes its name through YAML and UNKNOWN", async () => {
+    const { section, t, fill } = await setup(["TRIGGER_THREAD"]);
+    await click(section.querySelector<HTMLButtonElement>('button[aria-label="Edit workflow name"]')!);
+    await type(section.querySelector<HTMLInputElement>('input[aria-label="Workflow name"]')!, "协作播报");
+    await click(section.querySelector<HTMLButtonElement>('button[aria-label="Save workflow name"]')!);
+    await fill("Instruction template", "Report");
+    await click(button(section, "Workflow YAML"));
+    expect(section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!.value).toContain("协作播报");
+    await click(button(section, "Form"));
+    expect(section.querySelector('[data-testid="workflow-editor-dialog"]')?.textContent).toContain("协作播报");
+    await click(button(section, "Review request"));
+    await click(button(section, "Submit governed request"));
+    expect(section.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.disabled).toBe(true);
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(section.querySelector('[data-testid="workflow-editor-dialog"]')).not.toBeNull();
+    await click(button(section, "Re-check same request"));
+    const writes = t.send.mock.calls.filter(([request]) => request.method === "POST").map(([request]) => request.body);
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).toEqual(writes[0]);
+    expect(writes[0]).toMatchObject({ automationVersionContent: { name: "协作播报" } });
+  });
+
+  it("renders real authorized version semantics in the original card, without inventing a workflow name", async () => {
+    const { section } = await setup(["CHANNEL"], scheduleContent);
+    const card = section.querySelector('[data-testid="workflow-card-schedule-automation"]')!;
+    expect(card.querySelector('[data-testid="workflow-card-semantic-label"]')?.textContent).toBe("Scheduled report");
+    expect(card.textContent).toContain("Report");
+    expect(card.textContent).toContain("Schedule");
+    expect(card.textContent).toContain("schedule-version");
+    expect(card.textContent).toContain("#Schedule workspace");
+    await click(button(section, "View definition"));
+    expect(section.querySelector('[data-testid="workflow-detail-panel"]')).not.toBeNull();
+  });
 
   const enabled = { resourceId: "schedule-automation", workspaceId: installation.workspaceId,
     ownerPrincipalId: installation.ownerPrincipalId, executorInstallationResourceId: installation.resourceId,
@@ -706,7 +754,8 @@ describe("shared Automation schedule consumer", () => {
     const request = t.send.mock.calls.find(([entry]) => entry.path === "/api/v1/actions")![0].body;
     expect(request).toEqual({ actionKey: "automation.create", idempotencyKey: expect.any(String), explicitConfirmation: true,
       workspaceId: installation.workspaceId, executorInstallationResourceId: "thread-only", automationVersionContent: copied });
-    expect(t.send.mock.calls.filter(([entry]) => entry.path.startsWith("/api/v1/automations/schedule-automation?"))).toHaveLength(2);
+    // Card metadata, explicit details, then fresh authorization immediately before copy.
+    expect(t.send.mock.calls.filter(([entry]) => entry.path.startsWith("/api/v1/automations/schedule-automation?"))).toHaveLength(3);
   });
 
   it("does not copy a stale version after source permission is revoked", async () => {
@@ -718,7 +767,7 @@ describe("shared Automation schedule consumer", () => {
     revoked = true;
     await click(button(section, "Copy as new draft"));
     expect(section.textContent).toContain("Not allowed");
-    expect(section.querySelector('option[value="schedule-installation"]')?.parentElement).toHaveProperty("value", installation.resourceId);
+    expect(section.querySelector('[data-testid="workflow-editor-dialog"]')).toBeNull();
     expect(t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions")).toHaveLength(0);
   });
 

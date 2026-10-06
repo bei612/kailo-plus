@@ -1122,6 +1122,10 @@ pub struct AutomationVersionContentClass {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<ApprovalPolicyElement>,
 
+    /// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
     pub result_target: AutomationResultTarget,
 
     pub trigger: ContentTrigger,
@@ -5363,6 +5367,10 @@ pub struct AutomationVersionContent {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<ApprovalPolicyElement>,
+
+    /// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 
     pub result_target: AutomationResultTarget,
 

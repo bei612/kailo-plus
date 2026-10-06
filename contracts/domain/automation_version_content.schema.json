@@ -7,6 +7,7 @@
   "additionalProperties": false,
   "required": ["trigger", "action", "resultTarget"],
   "properties": {
+    "name": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。"},
     "approvalPolicy":{"$ref":"automation_approval_policy_ref.schema.json"},
     "trigger": {
       "type": "object",

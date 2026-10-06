@@ -3257,12 +3257,16 @@ class ApplicationBindingCreateSecretRef {
 class AutomationVersionContentClass {
   final ContentAction action;
   final ApprovalPolicyElement? approvalPolicy;
+
+  ///原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
+  final String? name;
   final AutomationResultTarget resultTarget;
   final ContentTrigger trigger;
 
   AutomationVersionContentClass({
     required this.action,
     this.approvalPolicy,
+    this.name,
     required this.resultTarget,
     required this.trigger,
   });
@@ -3273,6 +3277,7 @@ class AutomationVersionContentClass {
         approvalPolicy: json["approvalPolicy"] == null
             ? null
             : ApprovalPolicyElement.fromJson(json["approvalPolicy"]),
+        name: json["name"],
         resultTarget: automationResultTargetValues.map[json["resultTarget"]]!,
         trigger: ContentTrigger.fromJson(json["trigger"]),
       );
@@ -3280,6 +3285,7 @@ class AutomationVersionContentClass {
   Map<String, dynamic> toJson() => _stripNulls({
     "action": action.toJson(),
     "approvalPolicy": approvalPolicy?.toJson(),
+    "name": name,
     "resultTarget": automationResultTargetValues.reverse[resultTarget],
     "trigger": trigger.toJson(),
   });
@@ -10789,12 +10795,16 @@ class AutomationScheduleSpec {
 class AutomationVersionContent {
   final AutomationVersionContentAction action;
   final ApprovalPolicyElement? approvalPolicy;
+
+  ///原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
+  final String? name;
   final AutomationResultTarget resultTarget;
   final AutomationVersionContentTrigger trigger;
 
   AutomationVersionContent({
     required this.action,
     this.approvalPolicy,
+    this.name,
     required this.resultTarget,
     required this.trigger,
   });
@@ -10805,6 +10815,7 @@ class AutomationVersionContent {
         approvalPolicy: json["approvalPolicy"] == null
             ? null
             : ApprovalPolicyElement.fromJson(json["approvalPolicy"]),
+        name: json["name"],
         resultTarget: automationResultTargetValues.map[json["resultTarget"]]!,
         trigger: AutomationVersionContentTrigger.fromJson(json["trigger"]),
       );
@@ -10812,6 +10823,7 @@ class AutomationVersionContent {
   Map<String, dynamic> toJson() => _stripNulls({
     "action": action.toJson(),
     "approvalPolicy": approvalPolicy?.toJson(),
+    "name": name,
     "resultTarget": automationResultTargetValues.reverse[resultTarget],
     "trigger": trigger.toJson(),
   });

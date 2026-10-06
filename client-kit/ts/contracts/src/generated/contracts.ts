@@ -773,8 +773,12 @@ export interface ApplicationBindingCreateSecretRef {
 export interface AutomationVersionContentClass {
     action:          AutomationVersionContentAction;
     approvalPolicy?: ApprovalPolicyElement;
-    resultTarget:    AutomationResultTarget;
-    trigger:         AutomationVersionContentTrigger;
+    /**
+     * 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
+     */
+    name?:        string;
+    resultTarget: AutomationResultTarget;
+    trigger:      AutomationVersionContentTrigger;
 }
 
 export interface AutomationVersionContentAction {
@@ -3602,8 +3606,12 @@ export interface AutomationScheduleSpec {
 export interface AutomationVersionContent {
     action:          AutomationVersionContentActionClass;
     approvalPolicy?: ApprovalPolicyElement;
-    resultTarget:    AutomationResultTarget;
-    trigger:         AutomationVersionContentTriggerClass;
+    /**
+     * 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
+     */
+    name?:        string;
+    resultTarget: AutomationResultTarget;
+    trigger:      AutomationVersionContentTriggerClass;
 }
 
 export interface AutomationVersionContentActionClass {

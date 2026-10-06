@@ -2685,3 +2685,62 @@ Composer 17 项通过；私有移除 `nativeMetadata` 后新增元数据用例�
 与原步骤轨迹尚不由本批后端合同提供。本批不伪造步骤数量、持续时间或执行轨迹，
 不恢复 Relay WorkflowEngine，也不删除这些既有交付需求。未运行 full、镜像构建或
 真实部署浏览器验收，本批结果不能称为线上可用。
+
+
+## Workflows 原定义卡片、名称与编辑弹层恢复（2026-10-06）
+
+本批四步影响核对与实现结论：
+
+1. 权威为 REQ-23/24、DD-106 与设计提交
+   `746084844d5dacc65c15e8e9a18bbb23710b3d2a` 的 `03` §7、`06` §9.1。
+   固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的完整源码路径及符号为
+   `desktop/src/features/workflows/ui/WorkflowsView.tsx::WorkflowsView`、
+   `desktop/src/features/workflows/ui/WorkflowCard.tsx::WorkflowCard`、
+   `desktop/src/features/workflows/ui/WorkflowDetailPanel.tsx::WorkflowDetailPanel`、
+   `desktop/src/features/workflows/ui/WorkflowDialog.tsx::WorkflowNameEditor`。
+   本批复用其创建卡片、响应式卡片网格、触发/动作图示、详情头部、原 Dialog
+   和行内名称编辑；没有恢复 Buzz 执行引擎，也没有给缺失后端的步骤造入口。
+2. Web/Desktop 仍消费同一个共享 `WorkflowsPage`/`AutomationManagement`。
+   名称存于既有 `catalog.automation_version.name` 可空字段，随版本正文及
+   config_hash 冻结；创建/发布写入、启用/发布 SQL 摘要重建、RUN 校验、
+   原有 Asset 授权详情 reader 同步读取。原数据库不可变版本 trigger 仍覆盖新列。
+   列表按当前 pin 或显式标识的有权读取版本展示真实名称、触发/动作与频道，
+   不是把 UUID 伪装成名称；每张卡复用原详情 API，不建立第二名称目录。
+   表单、YAML、复制、提交预览共用生成的可选 name 字段；未命名旧版本明确显示
+   “未命名工作流”，不猜名称、不回填旧行、不重算历史摘要。
+3. 权限、scope、Asset read、创建能力、幂等 key 和 Temporal 路径均保持原链。
+   关闭未提交弹层保留本地草稿；UNKNOWN 提交不能通过关闭、Escape 或点击
+   遮罩丢失原意图，重试仍使用原 command。名称不是授权依据，没有 secret、
+   业务正文复制或新增工作流权威。列表读取失败仍显示失败，不替换为假空列表。
+4. 无名称/空名称/非字符串名称、旧数据、版本切换、跨 scope、失败及迟到结果
+   沿原六类错误及 fresh 授权行为；不新增运行状态。新迁移仅扩展可空列，
+   down 在已有命名版本时拒绝丢弃事实。旧版本不出现 name/null 新键；
+   带名称的新版本需 Core/客户端协调投递，旧严格 reader 不承诺接受新字段，
+   更不能以兼容为由丢弃名称或重写已有摘要。
+
+实现后在既有 4 CPU/8 GiB SDK 集中验证：
+
+- shared source/test `tsc --noEmit` 均退出 0；原 pages Workflows/Automation
+  范围 78 项通过（157 项非本范围跳过）。SDK 故意去掉表单 name 传递，
+  新行内编辑用例实际 1 项失败；原字节恢复 `cmp` 退出 0 后原 78 项再次通过。
+- Core `automation::management_evidence` 11 项通过、3 项既有数据库集成用例
+  忽略；新名称校验实际断言旧摘要形状不变、名称进入新摘要和未知类型拒绝。
+  本批没有运行这 3 个被忽略的既有集成场景。Core 原
+  `cargo clippy --offline --locked -j16 -p platform-core --bin platform-core -- -D warnings`
+  同批退出 0。
+- 原 `tools/gen.sh --check` 四侧与同源词库通过；Rust 往返 20、
+  TypeScript 往返 24、Dart 往返 19、Go contracts 包全部通过。首次 SDK PATH
+  缺 rustfmt/gofmt 导致同步检查失败，补入已有工具路径并按原格式化后恢复通过，
+  未修改生成器。私有交付从 `239400fa1106789cf866f8409b1d45a2468b6c2c`
+  精选 schema 再经原生成命令产生四侧，不夹带并发附件契约。
+- 原 check.sh 兼容段对 `contracts-v0.1.0` 通过（242 个 Git 已跟踪 schema、
+  匹配 3 个历史 schema）；这不是对所有历史新业务契约的完整兼容证明。
+- 独立 `kailo_workflow_name_36llvb` 库经原 sqlx 工具完成全迁移，再对
+  `20261006220000` 实际 down/up，三步退出 0。临时接入的隔离 SDK 网络
+  在演练后移除；没有修改业务库、父线程验证库或运行态工作流。
+
+日志保存在 Data `oidc-stream-sdk-20261006.36llvb/` 的
+`workflows-{editor,editor-mutation,editor-restored,contracts,core,migration,compat,selected-gen}.log`。
+本批未运行 full、镜像构建或部署浏览器验收。原任意多步骤、过滤器及完整原生
+步骤轨迹仍未由现有冻结执行合同提供，不能宣称 Workflows 全功能已恢复；
+这些仍是交付缺口，不删除原需求，不渲染不可执行的假配置。

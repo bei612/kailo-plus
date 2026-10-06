@@ -21,8 +21,8 @@ import { useLoad } from "./use-load";
 export function WorkflowsPage() {
 	const t = useT();
 	return (
-		<div className="flex flex-col gap-4" data-testid="workflows-page">
-			<h2 className="font-medium">{t("platform.tab.workflows")}</h2>
+		<div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-7 sm:px-6 sm:py-8" data-testid="workflows-page" data-scroll-restoration-id="workflows-list">
+			<div className="mx-auto mb-8 w-full max-w-6xl"><h2 className="text-2xl font-semibold tracking-tight">{t("platform.tab.workflows")}</h2></div>
 			<AutomationManagement
 				renderRunHistory={(resourceId, workspaceId) => (
 					<AutomationRunHistory

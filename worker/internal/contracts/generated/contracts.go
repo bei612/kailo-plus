@@ -2847,10 +2847,12 @@ type ApplicationBindingCreateSecretRef struct {
 //
 // REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
 type AutomationVersionContentClass struct {
-	Action         AutomationVersionContentAction  `json:"action"`
-	ApprovalPolicy *ApprovalPolicyElement          `json:"approvalPolicy,omitempty"`
-	ResultTarget   AutomationResultTarget          `json:"resultTarget"`
-	Trigger        AutomationVersionContentTrigger `json:"trigger"`
+	Action         AutomationVersionContentAction `json:"action"`
+	ApprovalPolicy *ApprovalPolicyElement         `json:"approvalPolicy,omitempty"`
+	// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
+	Name         *string                         `json:"name,omitempty"`
+	ResultTarget AutomationResultTarget          `json:"resultTarget"`
+	Trigger      AutomationVersionContentTrigger `json:"trigger"`
 }
 
 type AutomationVersionContentAction struct {
@@ -4592,10 +4594,12 @@ type AutomationScheduleSpec struct {
 
 // REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
 type AutomationVersionContent struct {
-	Action         AutomationVersionContentActionClass  `json:"action"`
-	ApprovalPolicy *ApprovalPolicyElement               `json:"approvalPolicy,omitempty"`
-	ResultTarget   AutomationResultTarget               `json:"resultTarget"`
-	Trigger        AutomationVersionContentTriggerClass `json:"trigger"`
+	Action         AutomationVersionContentActionClass `json:"action"`
+	ApprovalPolicy *ApprovalPolicyElement              `json:"approvalPolicy,omitempty"`
+	// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
+	Name         *string                              `json:"name,omitempty"`
+	ResultTarget AutomationResultTarget               `json:"resultTarget"`
+	Trigger      AutomationVersionContentTriggerClass `json:"trigger"`
 }
 
 type AutomationVersionContentActionClass struct {

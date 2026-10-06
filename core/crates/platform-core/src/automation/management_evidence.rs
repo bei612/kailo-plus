@@ -319,6 +319,45 @@ async fn joint_native_receipts_keep_the_projection_fenced_until_both_are_confirm
 }
 
 #[test]
+fn version_name_is_frozen_without_rewriting_unnamed_history() {
+    let legacy = json!({"trigger":{"kind":"CHANNEL_MESSAGE"},"action":{"kind":"POST_MESSAGE","template":"literal"},"resultTarget":"TRIGGER_THREAD"});
+    let old = management_content(&legacy).unwrap();
+    assert_eq!(
+        old,
+        json!({"trigger":{"kind":"CHANNEL_MESSAGE"},"action":{"kind":"POST_MESSAGE","template":"literal"},"resultTarget":"TRIGGER_THREAD","approvalPolicyId":null})
+    );
+    let mut named = legacy;
+    named["name"] = json!("协作播报");
+    let frozen = management_content(&named).unwrap();
+    assert_eq!(frozen["name"], "协作播报");
+    assert_ne!(
+        collab_bridge::limits::canonical_digest(&old),
+        collab_bridge::limits::canonical_digest(&frozen)
+    );
+    assert_eq!(
+        frozen,
+        super::version_content(
+            old["trigger"].clone(),
+            old["action"].clone(),
+            None,
+            None,
+            "TRIGGER_THREAD",
+            Some("协作播报")
+        )
+    );
+    for invalid in [
+        json!(null),
+        json!(""),
+        json!(" \n\t"),
+        json!(123),
+        json!({}),
+    ] {
+        named["name"] = invalid;
+        assert!(management_content(&named).is_err());
+    }
+}
+
+#[test]
 fn step_approval_reference_is_explicit_and_changes_the_frozen_version_hash() {
     let plain = json!({"trigger":{"kind":"CHANNEL_MESSAGE"},"action":{"kind":"POST_MESSAGE","template":"literal"},"resultTarget":"TRIGGER_THREAD"});
     let old = management_content(&plain).unwrap();
