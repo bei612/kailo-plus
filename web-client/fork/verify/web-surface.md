@@ -2650,6 +2650,74 @@ Composer 17 项通过；私有移除 `nativeMetadata` 后新增元数据用例�
 `ingest::validate_edit_ownership` 的同频道／作者／成员校验与窗口 aux 原协议仍保留。
 本次未更改此运行配置；需合批投递已定事件种类并真实验证，不能以源码通过称线上可用。
 
+## Web 编辑附件发布保真（2026-10-06）
+
+本批补齐上一节仅保存 pending 元数据、未进入发布合同的缺口，四步结论：
+
+1. 权威为 REQ-24、DD-74/DD-75 与 SF-BUZ-36。固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/messages/lib/imetaMediaMarkdown.ts::imetaMediaFromTags`、
+   `buildImetaTags`、`restoreImetaMediaDisplayLabels`、`formatImetaMediaLine`
+   决定原编辑器实际字段与正文标签；本批没有另写附件编辑器。
+2. 唯一 `WebMessageAttachment` 增加可选 `displayLabel/dim/blurhash/thumb/duration/image`，
+   四侧同源生成。共享 `BlobDescriptor` 直接复用该契约，不再手写重复字段。
+   Web 从原事件恢复到身份隔离草稿、pending、原 BFF 发布载荷，再由
+   `web_transport.rs::RenderAttachment::render` 生成原 imeta 与 Markdown。
+   显示标签只进入正文，filename 仍独立保留；原附件缺省 filename 时不把 UI 显示
+   用 hash 伪造成文件名，新上传则保留实际 File.name。没有新端点、表、媒体目录或正文副本。
+3. 原同社区 authority（含端口）及无凭据/query/fragment 的 URL 边界抽为同一
+   `attachment_media_url`，同时用于 blob、缩略图与海报。缩略图必须同 hash；
+   海报只接受原 video/mp4 对应的本地独立被动图片，时长须正有限数。实际 blob、
+   MIME、大小、缩略图、海报与时长仍由固定上游
+   `crates/buzz-relay/src/handlers/imeta.rs::validate_imeta_tags`、
+   `verify_imeta_blobs` 校验，不复制 sidecar 权威。
+4. 旧字段缺省仍可读写；无扩展字段时保留原幂等签名形状，新字段进入同一个
+   sendIntent 摘要。已有 UNKNOWN 编辑不因新元数据而换新 key 或自动重发。
+   非法引用在签名前拒绝，Relay 拒绝与未知结果继续原六类错误与对账链。
+   无新增状态或迁移；Mobile 仅同步契约，没有新增编辑宿主。
+   部署必须先更新 Core，再更新 Web：optional 保证旧载荷可读，不代表旧 Core
+   能渲染新增元数据；新 Web 对旧 Core 的组合不在本次保真验收范围。
+
+受限原 SDK `kailo-agent-receipt-xvkujx`（4 CPU/8 GiB）一次集中验证：
+共享 source/test、Web、Desktop 类型检查退出 0；Composer 17 项通过；Core 附件
+7 项、Rust 契约 20 项、Go 契约、TypeScript 契约 24 项、Dart 契约 19 项通过，
+Core clippy（`-D warnings`）退出 0。
+原 `tools/gen.sh --check` 四侧及同源词库通过；原 `tools/check.sh` 的兼容比对
+对 `contracts-v0.1.0` 通过（262 个 schema，匹配 3 个历史 schema）。
+初次 SDK 旧 Git alternates 不可达，随后只导入原发布 tag 的 bundle，在同 SDK
+执行原检查代码；未修改检查工具或历史 tag。上述证据属于附件独立输入，不含并发
+Workflows name 增量。
+
+实现后的私有破坏验证：发送时删去扩展字段，保真用例实际失败 1 项，原字节
+恢复 `cmp` 退出 0 后 Composer 17 项再次通过。另在 SDK 同时删去 dim/blurhash 并
+绕开缩略图同域校验，两新增 Core 用例实际失败（5 通过、2 失败，退出 101）；
+恢复正式原字节后 7 项全部通过。证据根为 Data 的
+`codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`，
+生成日志 `attachment-gen{,-check}.log`，其 `apps/` 下
+`attachment-{ts,roundtrip,compat,core,mutation,restored}.log` 及
+`attachment-core-{mutation,restored}.log`。
+
+缺省文件名的视频实测进一步暴露真实消费者缺口：原缩略图
+`<hash>.thumb.jpg` 经过旧 Web URL 解析会抛错（当次 17 通过、1 失败）。
+现沿固定上游 `crates/buzz-relay/src/api/media.rs::validate_media_path/get_blob`
+补原 BFF 媒体读取的唯一缩略图变体，仍经原准入、本人签名与社区客户端，不接受任意
+路径或外域代理。最终 Web 类型检查与 Composer 18 项通过；分别重新引入伪造
+filename、把缩略图错误映射为原 blob，两次各真实失败 1 项，原字节恢复后 18 项
+全部通过。原失败及修复证据为
+`attachment-final-web.log`、`attachment-thumbnail-web.log`、
+`attachment-{filename,thumbnail}-mutation.log` 与 `attachment-final-restored.log`。
+
+补齐真实缩略图读取后，Core 附件 8 项与 clippy（`-D warnings`）再次退出 0。
+私有副本放宽 `relay_media_path` 白名单，原缩略图读取用例实际拒绝漏检
+（`.jpg` 被错误接受，1 项失败、退出 101）；恢复正式原字节 `cmp` 退出 0，
+8 项全部再次通过。日志为 `attachment-thumbnail-core.log`、
+`attachment-thumbnail-core-mutation.log`、`attachment-thumbnail-core-restored.log`。
+
+本批没有 full、镜像构建或真实媒体发布验收，不宣称线上编辑已完成。原编辑器
+自身的投影上限仍存在：`alt/fallback/service` 不在固定版本 BlobDescriptor，
+本批不冒称跨客户端任意 imeta 字段无损。原 Native Rust 缺工具链依赖、进程重启
+未决编辑耐久性及 Relay 事件种类投递仍沿上一节明确边界，不由本批附件窄验解除。
+
 ## Workflows 原运行历史卡片恢复（2026-10-06）
 
 本批四步影响核对与实现结论：

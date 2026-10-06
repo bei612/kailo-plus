@@ -109,6 +109,26 @@ trait RenderAttachment {
     fn render(&self, community_host: &str) -> Option<(String, Vec<String>)>;
 }
 
+/// The existing BFF media-origin fence applies to every attachment URL, not
+/// just the original blob. Sidecar/content validation remains in Buzz Relay.
+fn attachment_media_url(raw: &str, community_host: &str) -> Option<reqwest::Url> {
+    let url = reqwest::Url::parse(raw).ok()?;
+    let authority = match url.port() {
+        Some(port) => format!("{}:{port}", url.host_str()?),
+        None => url.host_str()?.to_owned(),
+    };
+    if authority != community_host
+        || !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return None;
+    }
+    Some(url)
+}
+
 impl RenderAttachment for contracts::WebMessageAttachment {
     /// 按上游客户端的同一形式输出：正文追加一行 markdown，另带一条 NIP-92
     /// `imeta`。形式必须与原生端一致，否则原生端收到 Web 发的图看不见
@@ -129,7 +149,7 @@ impl RenderAttachment for contracts::WebMessageAttachment {
         if self.sha256.len() != 64 || !self.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
             return None;
         }
-        let url = reqwest::Url::parse(&self.url).ok()?;
+        let url = attachment_media_url(&self.url, community_host)?;
         let ext = url
             .path()
             .strip_prefix("/media/")?
@@ -139,20 +159,7 @@ impl RenderAttachment for contracts::WebMessageAttachment {
             && ext
                 .chars()
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
-        // 比 authority 而不只是主机名：Relay 把非默认端口算作 host 的一部分
-        // （SF-BUZ-41），Community host 带端口时 URL 也必须带同一个端口
-        let authority = match url.port() {
-            Some(port) => format!("{}:{port}", url.host_str()?),
-            None => url.host_str()?.to_owned(),
-        };
-        if authority != community_host
-            || !ext_ok
-            || !matches!(url.scheme(), "http" | "https")
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-        {
+        if !ext_ok {
             return None;
         }
         let mut tag = vec![
@@ -163,6 +170,44 @@ impl RenderAttachment for contracts::WebMessageAttachment {
         ];
         if self.size > 0 {
             tag.push(format!("size {}", self.size));
+        }
+        // Original buildImetaTags fields, in the same order. A thumbnail is
+        // tied to this blob; a video poster is a standalone local image.
+        for (key, value) in [("dim", &self.dim), ("blurhash", &self.blurhash)] {
+            if let Some(value) = value.as_deref().filter(|value| !value.is_empty()) {
+                tag.push(format!("{key} {value}"));
+            }
+        }
+        if let Some(thumb) = self.thumb.as_deref().filter(|value| !value.is_empty()) {
+            let thumb_url = attachment_media_url(thumb, community_host)?;
+            if thumb_url.path() != format!("/media/{}.thumb.jpg", self.sha256) {
+                return None;
+            }
+            tag.push(format!("thumb {thumb}"));
+        }
+        if let Some(duration) = self.duration {
+            if self.web_message_attachment_type != "video/mp4"
+                || !duration.is_finite()
+                || duration <= 0.0
+            {
+                return None;
+            }
+            tag.push(format!("duration {duration}"));
+        }
+        if let Some(image) = self.image.as_deref().filter(|value| !value.is_empty()) {
+            if self.web_message_attachment_type != "video/mp4" {
+                return None;
+            }
+            let image_url = attachment_media_url(image, community_host)?;
+            let (hash, ext) = image_url.path().strip_prefix("/media/")?.split_once('.')?;
+            // Buzz handlers/imeta.rs::validate_imeta_tags validates imeta posters.
+            if hash.len() != 64
+                || !hash.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))
+                || !matches!(ext, "jpg" | "png" | "gif" | "webp")
+            {
+                return None;
+            }
+            tag.push(format!("image {image}"));
         }
         if let Some(filename) = self.filename.as_deref().filter(|name| !name.is_empty()) {
             tag.push(format!("filename {filename}"));
@@ -193,7 +238,14 @@ impl RenderAttachment for contracts::WebMessageAttachment {
                 format!("\n{media}")
             }
         } else {
-            let label = if filename.is_empty() {
+            let label = if let Some(label) = self
+                .display_label
+                .as_deref()
+                .map(str::trim)
+                .filter(|label| !label.is_empty())
+            {
+                label
+            } else if filename.is_empty() {
                 self.url.rsplit('/').next().unwrap_or_default()
             } else {
                 filename
@@ -2237,7 +2289,7 @@ async fn upload_media_for(
 
 /// 取回一份媒体。
 ///
-/// 路径由 Core 拼成 `/media/<sha256>`，不接受调用方给出的任意路径——放开它
+/// 路径由 Core 拼成 `/media/<sha256>` 或原 `<sha256>.thumb.jpg`，不接受任意路径——放开它
 /// 等于把 Relay 的整个 HTTP 面变成一个可代签的代理。
 pub async fn fetch_media(
     State(state): State<BffState>,
@@ -2277,10 +2329,9 @@ async fn fetch_media_for(
         Ok(c) => c,
         Err(r) => return r,
     };
-    // sha256 必须是 64 位十六进制。不校验就等于把路径段交给调用方拼。
-    if sha256.len() != 64 || !sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+    let Some(media_path) = relay_media_path(&sha256) else {
         return StatusCode::BAD_REQUEST.into_response();
-    }
+    };
     let (.., community_host) = match target.admit(&state, &ctx).await {
         Ok(s) => s,
         Err(r) => return r,
@@ -2298,10 +2349,7 @@ async fn fetch_media_for(
         return c.into_response();
     }
 
-    match client
-        .fetch_media(&state.http, &format!("/media/{sha256}"))
-        .await
-    {
+    match client.fetch_media(&state.http, &media_path).await {
         Ok((bytes, content_type)) => (
             StatusCode::OK,
             [(axum::http::header::CONTENT_TYPE, content_type)],
@@ -2313,6 +2361,14 @@ async fn fetch_media_for(
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
     }
+}
+
+/// The native thumbnail is the only supported derived-media path. Keep the
+/// original hash fence; a caller cannot supply an arbitrary signed Relay URL.
+fn relay_media_path(media_ref: &str) -> Option<String> {
+    let hash = media_ref.strip_suffix(".thumb.jpg").unwrap_or(media_ref);
+    (hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()))
+        .then(|| format!("/media/{media_ref}"))
 }
 
 #[cfg(test)]
@@ -2959,6 +3015,95 @@ mod tests {
                 ],
                 "file metadata must retain the original filename independently of Markdown"
             );
+        }
+    }
+
+    #[test]
+    fn attachment_edit_preserves_native_metadata_and_independent_display_label() {
+        let request: PublishRequest = serde_json::from_str(include_str!(
+            "../../../../contracts/samples/web-message-edit.sample.json"
+        ))
+        .unwrap();
+        let attachment = &request.attachments.unwrap()[0];
+        let (body, tags) = attachment.render("relay.example").unwrap();
+        assert_eq!(body, format!("\n[Meeting recording]({})", attachment.url));
+        assert_eq!(
+            tags,
+            vec![
+                "imeta".to_owned(),
+                format!("url {}", attachment.url),
+                "m video/mp4".into(),
+                format!("x {}", attachment.sha256),
+                "size 42".into(),
+                "dim 640x480".into(),
+                "blurhash LEHV6nWB2yk8pyo0adR*.7kCMdnj".into(),
+                format!("thumb {}", attachment.thumb.as_ref().unwrap()),
+                "duration 3.25".into(),
+                format!("image {}", attachment.image.as_ref().unwrap()),
+                "filename voice-note-recording.mp4".into(),
+            ]
+        );
+        let mut labelled = attachment.clone();
+        labelled.display_label = Some("  [meeting]\\notes  ".into());
+        assert_eq!(
+            labelled.render("relay.example").unwrap().0,
+            format!("\n[\\[meeting\\]\\\\notes]({})", labelled.url)
+        );
+    }
+
+    #[test]
+    fn attachment_extended_urls_and_duration_keep_the_original_media_fence() {
+        let mut attachment = media_attachment("video/mp4", "mp4", Some("video.mp4"), None);
+        let hash = attachment.sha256.clone();
+        for invalid in [
+            format!("https://other.example/media/{hash}.thumb.jpg"),
+            format!("https://reader@relay.example/media/{hash}.thumb.jpg"),
+            format!("https://relay.example/media/{hash}.thumb.jpg?token=bad"),
+            format!("https://relay.example/media/{hash}.thumb.jpg#fragment"),
+            format!("https://relay.example/media/{}.thumb.jpg", "b".repeat(64)),
+        ] {
+            attachment.thumb = Some(invalid);
+            assert!(attachment.render("relay.example").is_none());
+        }
+        attachment.thumb = None;
+        for invalid in [
+            format!("https://other.example/media/{hash}.jpg"),
+            format!("https://reader:secret@relay.example/media/{hash}.jpg"),
+            format!("https://relay.example/media/{hash}.jpg?token=bad"),
+            format!("https://relay.example/media/{hash}.thumb.jpg"),
+            format!("https://relay.example/media/{hash}.mp4"),
+        ] {
+            attachment.image = Some(invalid);
+            assert!(attachment.render("relay.example").is_none());
+        }
+        attachment.image = None;
+        for duration in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            attachment.duration = Some(duration);
+            assert!(attachment.render("relay.example").is_none());
+        }
+        attachment.duration = Some(3.25);
+        assert!(attachment.render("relay.example").is_some());
+        attachment.web_message_attachment_type = "image/png".into();
+        assert!(attachment.render("relay.example").is_none());
+    }
+
+    #[test]
+    fn attachment_media_read_accepts_only_blob_or_original_thumbnail() {
+        let hash = "a".repeat(64);
+        assert_eq!(relay_media_path(&hash), Some(format!("/media/{hash}")));
+        let thumb = format!("{hash}.thumb.jpg");
+        assert_eq!(relay_media_path(&thumb), Some(format!("/media/{thumb}")));
+        for invalid in [
+            format!("{hash}.jpg"),
+            format!("{hash}.thumb.png"),
+            format!("{hash}.thumb.jpg?token=bad"),
+            format!("{hash}.thumb.jpg#part"),
+            format!("../{thumb}"),
+            format!("{hash}/thumb.jpg"),
+            format!("{}.thumb.jpg", "g".repeat(64)),
+            format!("https://other.example/media/{thumb}"),
+        ] {
+            assert!(relay_media_path(&invalid).is_none(), "{invalid}");
         }
     }
 

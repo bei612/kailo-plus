@@ -1,4 +1,18 @@
 {
   "content": "Edited original message",
-  "editEventId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  "editEventId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "attachments": [{
+    "url": "https://relay.example/media/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "type": "video/mp4",
+    "size": 42,
+    "filename": "voice-note-recording.mp4",
+    "displayLabel": "Meeting recording",
+    "dim": "640x480",
+    "blurhash": "LEHV6nWB2yk8pyo0adR*.7kCMdnj",
+    "thumb": "https://relay.example/media/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.thumb.jpg",
+    "duration": 3.25,
+    "image": "https://relay.example/media/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.jpg",
+    "spoiler": false
+  }]
 }

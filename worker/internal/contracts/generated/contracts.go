@@ -4334,14 +4334,26 @@ type WebPublishMessageRequest struct {
 }
 
 type WebMessageAttachment struct {
+	// 原 Buzz imeta 模糊预览编码。
+	Blurhash *string `json:"blurhash,omitempty"`
+	// 原 Buzz imeta 媒体尺寸显示元数据。
+	Dim *string `json:"dim,omitempty"`
+	// 原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
+	DisplayLabel *string `json:"displayLabel,omitempty"`
+	// 原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
+	Duration *float64 `json:"duration,omitempty"`
 	// 原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
 	Filename *string `json:"filename,omitempty"`
-	Sha256   string  `json:"sha256"`
-	Size     int64   `json:"size"`
+	// 原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
+	Image  *string `json:"image,omitempty"`
+	Sha256 string  `json:"sha256"`
+	Size   int64   `json:"size"`
 	// 沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
-	Spoiler *bool  `json:"spoiler,omitempty"`
-	Type    string `json:"type"`
-	URL     string `json:"url"`
+	Spoiler *bool `json:"spoiler,omitempty"`
+	// 当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
+	Thumb *string `json:"thumb,omitempty"`
+	Type  string  `json:"type"`
+	URL   string  `json:"url"`
 }
 
 // GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 或 fresh manage 管理资格，且两侧

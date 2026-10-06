@@ -227,17 +227,27 @@ it("restores an original edit body and never changes an unresolved edit's key fo
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("A different edit");
 });
 
-it("keeps original edit attachment presentation metadata in the existing scoped draft", async () => {
+it.each(["voice-note-report.mp4", undefined])("publishes original edit attachment metadata and label with filename %s", async (filename) => {
   const hash = "b".repeat(64);
-  const url = `https://relay.invalid/media/${hash}`;
+  const url = `https://relay.invalid/media/${hash}.mp4`;
+  const thumb = `https://relay.invalid/media/${hash}.thumb.jpg`;
+  const image = filename ? `https://relay.invalid/media/${"d".repeat(64)}.jpg` : undefined;
+  const publish = vi.fn().mockResolvedValue({eventId:"edit-receipt",operationId:"edit-operation"});
   const target = {id:"c".repeat(64),author:"Alice",pubkey:"alice",body:`Original\n\n[Report label](${url})`,createdAt:1,time:"",depth:0,
-    tags:[["imeta",`url ${url}`,`x ${hash}`,"m application/pdf","size 12","filename report.pdf","dim 640x480","thumb https://relay.invalid/thumb","duration 3","blurhash original-blur"]]};
+    tags:[["imeta",`url ${url}`,`x ${hash}`,"m video/mp4","size 12",...(filename ? [`filename ${filename}`] : []),"dim 640x480",`thumb ${thumb}`,"duration 3",...(image ? [`image ${image}`] : []),"blurhash original-blur"]]};
   const draftKey = `edit:workspace-metadata:${target.id}`;
-  await render(<Composer workspaceId="workspace-metadata" draftIdentity="alice" draftKey={draftKey} editTarget={target} />);
+  const host = await render(<Composer workspaceId="workspace-metadata" draftIdentity="alice" draftKey={draftKey} editTarget={target} onPublish={publish} />);
   await settle();
-  expect(loadDraftEntry(draftKey)?.pendingImeta[0]).toMatchObject({
-    displayLabel:"Report label", filename:"report.pdf", dim:"640x480", thumb:"https://relay.invalid/thumb", duration:3, blurhash:"original-blur",
-  });
+  const metadata = {displayLabel:"Report label", ...(filename ? {filename} : {}), dim:"640x480", thumb, duration:3, ...(image ? {image} : {}), blurhash:"original-blur"};
+  expect(loadDraftEntry(draftKey)?.pendingImeta[0]).toMatchObject(metadata);
+  expect(loadDraftEntry(draftKey)?.pendingImeta[0]?.filename).toBe(filename);
+  if (!filename) {
+    expect(host.querySelector('img')?.getAttribute('src')).toBe(`/api/v1/workspaces/workspace-metadata/media/${hash}.thumb.jpg`);
+  }
+  await click(button(host,"platform.send"));
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publish.mock.calls[0][1][0]).toEqual({sha256:hash, url, type:"video/mp4", size:12, spoiler:false, ...metadata});
+  expect(publish.mock.calls[0][0]).toBe("Original");
 });
 
 it.each(["identity", "channel"])("does not transfer an old draft, attachments, mentions or intent into an empty %s scope", async (changed) => {

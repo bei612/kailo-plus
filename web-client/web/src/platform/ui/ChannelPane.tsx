@@ -460,7 +460,7 @@ export function ChannelPane({
   );
 }
 
-type Pending = { name: string; descriptor: MediaDescriptor; receivedAt: number; nativeMetadata?: ImetaMedia };
+type Pending = { name: string; descriptor: MediaDescriptor; receivedAt: number };
 
 /**
  * 一次发送意图的幂等键（UUID v4）。不用 crypto.randomUUID：它只在安全上下文中
@@ -555,7 +555,7 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
   const intent = useRef<{ key: string; signature: string } | null>(null);
   const owner = useMemo(() => ({ active: true }), [workspaceId, draftIdentity, draftKey]);
   useEffect(() => { owner.active = true; return () => { owner.active = false; }; }, [owner]);
-  const asBlob = (entry: Pending): ImetaMedia => ({ ...entry.nativeMetadata, ...entry.descriptor, filename: entry.name, uploaded: entry.receivedAt });
+  const asBlob = (entry: Pending): ImetaMedia => ({ ...entry.descriptor, uploaded: entry.receivedAt });
   const removeAttachment = useCallback((url: string) => {
     setPending((items) => items.filter((item) => item.descriptor.url !== url));
     setOriginals((current) => { const next = new Map(current); next.delete(url); return next; });
@@ -575,7 +575,7 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
       const file = new File([new Uint8Array(bytes)], `${source.name.replace(/\.[^.]*$/, "")}.png`, { type: "image/png" });
       const descriptor = await (onUpload ? onUpload(file) : uploadMedia(workspaceId!, file));
       if (!owner.active || !pendingRef.current.includes(source)) throw new Error("Attachment draft changed during upload.");
-      const replacement = { name: file.name, descriptor, receivedAt: Date.now() };
+      const replacement = { name: file.name, descriptor: { ...descriptor, filename: file.name }, receivedAt: Date.now() };
       setPending((items) => items.map((item) => item === source ? replacement : item));
       setOriginals((current) => {
         const next = new Map(current);
@@ -591,11 +591,13 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
     const descriptor = pendingRef.current.find((item) => item.descriptor.url === url)?.descriptor;
     // AnimatePresence retains a removed thumbnail while it exits. Resolve its
     // hash only to the same admitted BFF scope; never load the source origin.
-    const sha256 = descriptor?.sha256 ?? new URL(url).pathname.match(/^\/media\/([a-f\d]{64})\.[a-z\d]+$/i)?.[1];
+    const media = new URL(url).pathname.match(/^\/media\/([a-f\d]{64})(\.thumb\.jpg|\.[a-z\d]+)$/i);
+    const sha256 = descriptor?.sha256 ?? media?.[1];
     if (!sha256) throw new Error("Attachment media reference is invalid.");
-    if (onMediaUrl) return onMediaUrl(sha256);
+    const mediaRef = media?.[2]?.toLowerCase() === ".thumb.jpg" ? `${sha256}.thumb.jpg` : sha256;
+    if (onMediaUrl) return onMediaUrl(mediaRef);
     if (!workspaceId) throw new Error("Attachment media scope is unavailable.");
-    return mediaUrl(workspaceId, sha256);
+    return mediaUrl(workspaceId, mediaRef);
   }, [workspaceId, onMediaUrl]);
   const fetchMediaBytes = useCallback(async (url: string) => {
     const response = await fetch(resolveMediaUrl(url), { credentials: "same-origin" });
@@ -611,7 +613,7 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
         try {
           if (!onUpload && !workspaceId) throw new Error("Message destination is unavailable.");
           const descriptor = await (onUpload ? onUpload(file) : uploadMedia(workspaceId!, file));
-          if (owner.active) setPending((p) => [...p, { name: file.name, descriptor, receivedAt: Date.now() }]);
+          if (owner.active) setPending((p) => [...p, { name: file.name, descriptor: { ...descriptor, filename: file.name }, receivedAt: Date.now() }]);
         } catch (e) {
           if (!owner.active) return;
           setProblemNeutral(e instanceof ConversationPreparationPending || isOutcomeUnknown(e));
@@ -662,11 +664,10 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
     const content = saved?.content ?? (editTarget ? stripImetaMediaLines(editTarget.body, editableMedia) : "");
     richText.setContent(content);
     setDraft(content);
-    setPending((saved?.pendingImeta ?? editableMedia).map((media) => ({
-      name: media.filename ?? media.sha256,
-      receivedAt: media.uploaded,
-      descriptor: { sha256: media.sha256, size: media.size, type: media.type, url: media.url },
-      nativeMetadata: media,
+    setPending((saved?.pendingImeta ?? editableMedia).map(({ uploaded, ...descriptor }) => ({
+      name: descriptor.filename ?? descriptor.sha256,
+      receivedAt: uploaded,
+      descriptor,
     })));
     intent.current = saved?.sendIntent ?? null;
     setMentionInstallationIds(saved?.mentionInstallationIds ?? []);
@@ -704,13 +705,18 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
     if (!content && pending.length === 0) return;
     setProblem(null);
     setProblemNeutral(false);
-    const attachments = pending.map((p) => ({ ...p.descriptor, filename: p.name, spoiler: attachmentActions.spoileredAttachmentUrls.has(p.descriptor.url) }));
+    const attachments = pending.map((p) => ({ ...p.descriptor, spoiler: attachmentActions.spoileredAttachmentUrls.has(p.descriptor.url) }));
     // 不本地插入这条消息：它要等 Relay 接受并回传 event id 才算发出去。
     // 先渲染再等确认，会让一条被拒绝的消息看起来已经发出。草稿与附件也只在
     // 确认后才清空——发送失败时它们都还在。
     const signature = JSON.stringify([
       content,
-      attachments.map((a) => [a.sha256, a.filename, a.spoiler]),
+      attachments.map((a) => {
+        const metadata = { displayLabel: a.displayLabel, dim: a.dim, blurhash: a.blurhash, thumb: a.thumb, duration: a.duration, image: a.image };
+        // Keep the existing signature for legacy attachments with no extended
+        // metadata; every newly supported published field is part of intent.
+        return [a.sha256, a.filename, a.spoiler, ...(Object.values(metadata).some((value) => value !== undefined) ? [metadata] : [])];
+      }),
       mentionInstallationIds,
     ]);
     if (editTarget && intent.current && intent.current.signature !== signature) {

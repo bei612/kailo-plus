@@ -3285,17 +3285,41 @@ export interface WebPublishMessageRequest {
 
 export interface WebMessageAttachment {
     /**
+     * 原 Buzz imeta 模糊预览编码。
+     */
+    blurhash?: string;
+    /**
+     * 原 Buzz imeta 媒体尺寸显示元数据。
+     */
+    dim?: string;
+    /**
+     * 原附件 Markdown 链接显示名称；与 filename 分离，只写入消息正文，不生成 imeta 字段。
+     */
+    displayLabel?: string;
+    /**
+     * 原 video/mp4 时长（秒），须为正有限数；Relay 校验原 sidecar。
+     */
+    duration?: number;
+    /**
      * 原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
      */
     filename?: string;
-    sha256:    string;
-    size:      number;
+    /**
+     * 原 video/mp4 独立 poster 图片引用；只允许当前 Community 的媒体路径，Relay 校验原图片 sidecar。
+     */
+    image?: string;
+    sha256: string;
+    size:   number;
     /**
      * 沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
      */
     spoiler?: boolean;
-    type:     string;
-    url:      string;
+    /**
+     * 当前 Community 内与附件 hash 相同的原 .thumb.jpg 引用；Relay 验证实际缩略图存在。
+     */
+    thumb?: string;
+    type:   string;
+    url:    string;
 }
 
 /**

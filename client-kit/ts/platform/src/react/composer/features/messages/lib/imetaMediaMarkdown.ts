@@ -7,13 +7,10 @@
 import type { WebMessageAttachment } from "@client-kit/contracts";
 /** Native Buzz upload metadata; base fields use the generated four-language attachment contract. */
 export type BlobDescriptor = WebMessageAttachment & {
-  uploaded: number; dim?: string; blurhash?: string; thumb?: string; duration?: number; image?: string; filename?: string;
+  uploaded: number;
 };
 
-export type ImetaMedia = BlobDescriptor & {
-  /** Composer-only label used for attachment links; not emitted in imeta. */
-  displayLabel?: string;
-};
+export type ImetaMedia = BlobDescriptor;
 
 /**
  * Build the imeta tag set for an outbound event from a list of attachments.
