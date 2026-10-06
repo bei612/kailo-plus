@@ -75,7 +75,7 @@ it("keeps credential-free GET query parameters and never creates a form", async 
 it("accepts only exact editor/window UI evidence, never a claimed save terminal", async () => {
   vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => {});
   const client = createBffClient({ send: async () => ({ status: 200, body: session }) });
-  const host = await render(<PlatformProvider client={client} documentTheme="LIGHT"><ProtocolDocumentSurface bindingId={session.applicationBindingId}
+  const host = await render(<PlatformProvider client={client} locale="en" documentTheme="LIGHT"><ProtocolDocumentSurface bindingId={session.applicationBindingId}
     sessionId={sessionId} actionExecutionId={sessionId} reference={reference} launch={launch} onBack={() => {}} /></PlatformProvider>);
   const frame = host.querySelector("iframe")!;
   await act(async () => {
@@ -95,7 +95,7 @@ it("removes a launched frame after fresh origins revoke access and never recover
   const submit = vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => {});
   let body = session;
   const client = createBffClient({ send: async () => ({ status: 200, body }) });
-  const host = await render(<PlatformProvider client={client} documentTheme="LIGHT"><ProtocolDocumentSurface bindingId={session.applicationBindingId}
+  const host = await render(<PlatformProvider client={client} locale="en" documentTheme="LIGHT"><ProtocolDocumentSurface bindingId={session.applicationBindingId}
     sessionId={sessionId} actionExecutionId={sessionId} reference={reference} launch={launch} onBack={() => {}} /></PlatformProvider>);
   body = { ...session, effectiveEditorOrigins: [] };
   await click(button(host, "Refresh"));
@@ -108,11 +108,21 @@ it("removes a launched frame after fresh origins revoke access and never recover
 
 it("does not register a document write on unsupported hosts", async () => {
   const send = vi.fn(async () => ({ status: 200, body: session }));
-  const host = await render(<PlatformProvider client={createBffClient({ send })}>
+  const host = await render(<PlatformProvider client={createBffClient({ send })} locale="en">
     <ProtocolDocumentAction bindingId={session.applicationBindingId} projectionGeneration={4} command={{ actionKey: "file_storage.open_view@v1", resourceId: reference.resourceId, resourceVersion: 1 }}
       selection={{ reference, actionVersion: 1 }} onBack={() => {}} />
   </PlatformProvider>);
   expect(host.textContent).toContain("unavailable in this host");
+  expect(send).not.toHaveBeenCalled();
+});
+
+it("keeps the default Chinese unsupported-host notice without registering a document write", async () => {
+  const send = vi.fn(async () => ({ status: 200, body: session }));
+  const host = await render(<PlatformProvider client={createBffClient({ send })}>
+    <ProtocolDocumentAction bindingId={session.applicationBindingId} projectionGeneration={4} command={{ actionKey: "file_storage.open_view@v1", resourceId: reference.resourceId, resourceVersion: 1 }}
+      selection={{ reference, actionVersion: 1 }} onBack={() => {}} />
+  </PlatformProvider>);
+  expect(host.textContent).toContain("当前客户端不支持在线文档。");
   expect(send).not.toHaveBeenCalled();
 });
 

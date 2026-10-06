@@ -2263,6 +2263,29 @@ Dart 由原生成器同步。没有新通知规则或语言目录。
 日志为同一 Data 目录下 `notification-copy-{final,tests,catalog,mutation,restored}.log`。
 本增量发生在主线 ee9a7 冻结 full 启动之后；该 full 不覆盖本增量，未新跑 full、
 打包、部署或系统通知端到端验收。
+
+### 冻结 full 的 Node 失败定位（独立检查修复）
+
+主线 `buzz-runtime-drafts-batch.102bnA/tmp.xi2Rzzyp4d.check.log` 的 Node 失败
+并不是缺少产品代码。原 `tools/check.sh` 将 `pnpm -r test` 子输出重定向到
+`/dev/null`，无现存子日志；在既有受限 SDK 仅用原 ee9a7 冻结的 contracts/platform
+源码重跑原命令，得到 contracts 21 项通过、shared 446 中 441 通过／5 失败。
+没有混入后来通知文案六文件增量。
+
+根因与修复范围只在既有三个检查文件：protocol-document 的三项英语断言未明确
+locale；sidebar-shell 的英语菜单断言同样沿用了旧默认；pages 的主题扫描把直接复用
+的 AlertDialog 遮罩当成自造颜色。英语 fixture 明确 en，同时保留中文默认文档提示和
+中文侧栏真实动作断言。遮罩仅精确匹配固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/shared/ui/alert-dialog.tsx::AlertDialogOverlay` 原节点、颜色、透明度及
+两项原 motion/blur 常量；没有整体放行 black，也没有改生产 UI 或降保真。
+
+四步结论：REQ-24 原 UI 与唯一中文默认语义不变；影响仅检查消费者，无 schema／
+数据／Workflow 变化；不改变授权或发送，不制造成功回执；英文、中文默认、原遮罩
+及其他实际色值仍可判定。实际 test tsc 与三个文件 245 项通过。SDK-only 将原遮罩
+60 改 50，并把中文不支持提示换成英文，两个对应检查均真实失败、退出 1；还原原字节
+cmp 退出 0 后原三个文件 245/245、退出 0。没有新脚本、重跑 full、修改 artifact 或构建。
+原失败及修复输出在既有 SDK 的 `ee9a7-node-{reproduce,fixed,mutation,restored}.log`。
 原 AlertDialog 依赖按 Desktop 实际锁版本 1.1.23 复用；三锁由原包管理器生成。
 缓存缺包导致离线解析失败后仅补取缺失包，不能声称本次零联网。
 16 个草稿词条及 Dart 同源输出已生成；未新建验证脚本，未全量构建或部署草稿增量。

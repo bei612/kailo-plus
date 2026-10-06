@@ -2596,6 +2596,15 @@ describe("platform pages render only through the host theme", () => {
         expect(text.split(originalTint)).toHaveLength(2);
         text = text.replace(originalTint, "active");
       }
+      if (source.name === "draft-surfaces.tsx") {
+        // Buzz 779af8886caae1317b4de962082429867ab61503,
+        // desktop/src/shared/ui/alert-dialog.tsx::AlertDialogOverlay.
+        // This exact modal backdrop is original; other literal colours remain
+        // scanned, including any change to this element or its opacity.
+        const originalOverlay = '<AlertDialog.Overlay className={cn("fixed inset-0 z-50 bg-black/60", MODAL_OVERLAY_MOTION_CLASS, MODAL_BACKDROP_BLUR_CLASS)} />';
+        expect(text.split(originalOverlay)).toHaveLength(2);
+        text = text.replace(originalOverlay, "");
+      }
       for (const [, utility, token] of text.matchAll(colorUtility)) {
         if (token === "sidebar") {
           for (const config of hosts) expect(config).toContain('DEFAULT: "hsl(var(--sidebar-background))"');

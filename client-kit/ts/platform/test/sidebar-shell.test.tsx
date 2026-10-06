@@ -1,5 +1,6 @@
 import { act } from "react";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "../src/i18n";
 import { SidebarProvider, SidebarTrigger } from "../src/react/sidebar/sidebar";
 import { AppSidebarFrame } from "../src/react/sidebar/app-sidebar-frame";
 import { AppSidebarPrimaryMenu } from "../src/react/sidebar/app-sidebar-primary-menu";
@@ -12,8 +13,18 @@ beforeAll(() => {
     addListener: vi.fn(), removeListener: vi.fn(),
   })) });
 });
+beforeEach(() => setLocale("en"));
 
 describe("shared original sidebar shell", () => {
+  it("keeps the Chinese Inbox label connected to the same host action", async () => {
+    setLocale("zh-CN");
+    const home = vi.fn();
+    const host = await render(<SidebarProvider><AppSidebarPrimaryMenu onNewMessage={vi.fn()}
+      onSelectHome={home} onSelectPlatformSection={vi.fn()} homeBadgeCount={0}
+      selectedView="platform" selectedPlatformSection="workflows" /></SidebarProvider>);
+    await click([...host.querySelectorAll("button")].find((item) => item.textContent === "收件箱收件箱")!);
+    expect(home).toHaveBeenCalledOnce();
+  });
   it("retains the original collapse control, keyboard shortcut, resize rail and content slots", async () => {
     const host = await render(<SidebarProvider><SidebarTrigger /><AppSidebarFrame
       pinnedHeader={<span>search host</span>} above={<span>unread above</span>} below={<span>unread below</span>}
