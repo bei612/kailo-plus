@@ -72,6 +72,21 @@ impl StreamTarget {
 }
 
 impl StreamScope {
+    fn message_kinds(&self) -> Vec<u16> {
+        let kinds = match self {
+            Self::Workspace(_) => vec![
+                contracts::WebMessageType::Stream,
+                contracts::WebMessageType::ForumPost,
+                contracts::WebMessageType::ForumComment,
+            ],
+            Self::Conversation(_) => vec![contracts::WebMessageType::Stream],
+        };
+        kinds
+            .iter()
+            .map(collab_bridge::bridge::message_kind)
+            .collect()
+    }
+
     fn channel_id(&self) -> &str {
         match self {
             Self::Workspace(scope) => &scope.channel_id,
@@ -173,7 +188,18 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
     // generation 由「谁 + 哪个 Channel + 哪次准入」共同决定。把 principal 放进去
     // 是必要的：同一个 Channel 上不同人看到的 scope 一样，但撤权只影响其中一个，
     // 而撤权必须让那个人的旧 generation 失效。
-    let generation = scope.generation(&ctx.tenant_principal_id);
+    // A changed native event set must refresh the snapshot even when the
+    // membership epoch stayed the same across a client/server upgrade.
+    let message_kinds = scope.message_kinds();
+    let generation = format!(
+        "{}:{}",
+        scope.generation(&ctx.tenant_principal_id),
+        message_kinds
+            .iter()
+            .map(u16::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+    );
     // 上次拿到的 generation 由 EventSource 放在 Last-Event-ID 里带回。
     // 缺失或对不上都意味着要重新取 snapshot。管理者的准入只有 fresh Check，
     // 不能从生命周期版本推断管理授权未曾撤销再授予，不跳过完整 snapshot。
@@ -202,7 +228,7 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
             .query(
                 &state.http,
                 &[serde_json::json!({
-                    "kinds": [9],
+                    "kinds": message_kinds,
                     "#h": [scope.channel_id()],
                     "limit": page_limit(&state, &limits),
                 })],
@@ -241,7 +267,7 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
         .subscribe(
             session,
             &keys,
-            vec![serde_json::json!({ "kinds": [9], "#h": [scope.channel_id()] })],
+            vec![serde_json::json!({ "kinds": message_kinds, "#h": [scope.channel_id()] })],
             &limits,
         )
         .await
@@ -488,6 +514,31 @@ fn generation_of(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn forum_kinds_are_native_workspace_events_not_private_conversation_events() {
+        let workspace = StreamScope::Workspace(WorkspaceScope {
+            channel_id: Uuid::from_u128(1).to_string(),
+            community_host: "relay.example".into(),
+            admission_epoch: WorkspaceAdmissionEpoch::Membership {
+                tenant_version: 1,
+                workspace_version: 1,
+                membership_id: Uuid::from_u128(2),
+                version: 1,
+            },
+        });
+        let conversation = StreamScope::Conversation(crate::conversations::ConversationScope {
+            channel_id: Uuid::from_u128(3).to_string(),
+            community_host: "relay.example".into(),
+            binding_version: 1,
+            tenant_binding_version: 1,
+        });
+        assert_eq!(workspace.message_kinds(), vec![9, 45001, 45003]);
+        assert_eq!(conversation.message_kinds(), vec![9]);
+        assert!(workspace.can_resume());
+        assert!(!conversation.can_resume());
+        assert!(!workspace.same_admission(&conversation));
+    }
 
     #[test]
     fn private_stream_fences_scope_and_always_refreshes_snapshot() {

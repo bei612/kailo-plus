@@ -1,14 +1,14 @@
 import type { ConversationView } from "@client-kit/contracts";
 import { useEffect, useMemo, useState } from "react";
 import { NewMessageScreen } from "@client-kit/platform/react/new-message";
-import { publishConversationMessage, uploadConversationMedia } from "../bff-client";
+import { mediaUrl, publishConversationMessage, uploadConversationMedia } from "../bff-client";
 import { Composer } from "./ChannelPane";
 
 export function NewMessagePage({ currentPrincipalId, onConversationOpened }: {
   currentPrincipalId: string;
   onConversationOpened: (conversation: ConversationView) => void | Promise<void>;
 }) {
-  const scope = useMemo(() => ({ active: true }), [currentPrincipalId]);
+  const scope = useMemo(() => ({ active: true, media: new Map<string, string>() }), [currentPrincipalId]);
   const [navigationProblem, setNavigationProblem] = useState<{ scope: typeof scope; conversation: ConversationView } | null>(null);
   useEffect(() => { scope.active = true; return () => { scope.active = false; }; }, [scope]);
   const openConfirmed = async (conversation: ConversationView) => {
@@ -22,10 +22,18 @@ export function NewMessagePage({ currentPrincipalId, onConversationOpened }: {
   };
   return <><NewMessageScreen key={currentPrincipalId} currentPrincipalId={currentPrincipalId} renderComposer={(host) =>
     <Composer disabled={host.disabled} placeholder={host.placeholder}
+      onMediaUrl={(sha256) => {
+        const url = scope.media.get(sha256);
+        if (!url) throw new Error("Attachment was not uploaded in this conversation view.");
+        return url;
+      }}
       onUpload={async (file) => {
         const conversation = await host.prepareConversation();
         if (!scope.active) throw new Error("Conversation view is no longer active.");
-        return uploadConversationMedia(conversation.id, file);
+        const descriptor = await uploadConversationMedia(conversation.id, file);
+        if (!scope.active) throw new Error("Conversation view is no longer active.");
+        scope.media.set(descriptor.sha256, mediaUrl(conversation.id, descriptor.sha256, conversation.id));
+        return descriptor;
       }}
       onPublish={async (content, attachments, key) => {
         const conversation = await host.prepareConversation();

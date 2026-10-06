@@ -4627,6 +4627,62 @@ pub struct UserStateVersion {
     pub version: i64,
 }
 
+/// Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebChannelView {
+    pub archived: bool,
+
+    pub channel_id: String,
+
+    pub channel_type: ChannelType,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    pub name: String,
+}
+
+/// 原 Buzz 线程分页的复合游标；下一请求以 before=createdAt、beforeId=eventId 原样提交，避免同秒回复丢失。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebMessageCursor {
+    pub created_at: i64,
+
+    pub event_id: String,
+}
+
+/// 同一已准入 Channel 的原生消息分页或线程读取。before/beforeId 必须成对，频道窗口向前翻历史，线程沿原 Relay
+/// 协议向后读回复；上界来自运行时配置与原协议上界，不接受任意 Relay filter。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebMessageQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_type: Option<WebMessageType>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_event_id: Option<String>,
+}
+
+/// 原 Buzz 频道消息语义。缺省 STREAM 保持旧请求；不允许调用者提交任意事件 kind。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum WebMessageType {
+    #[serde(rename = "FORUM_COMMENT")]
+    ForumComment,
+
+    #[serde(rename = "FORUM_POST")]
+    ForumPost,
+
+    Stream,
+}
+
 /// Own Buzz kind:0 metadata. The authenticated host chooses the signer and Tenant; no raw
 /// event, author, relay URL or management tags are accepted. Omitted fields are preserved;
 /// empty strings explicitly clear a field.
@@ -4679,8 +4735,8 @@ pub struct WebProfileView {
     pub pubkey: String,
 }
 
-/// Web HUMAN 的频道根消息语义输入；身份、Channel 与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或 signed
-/// event。
+/// Web HUMAN 的原 Buzz 消息语义输入；身份、Channel、回复祖先与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或
+/// signed event。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebPublishMessageRequest {
@@ -4692,13 +4748,28 @@ pub struct WebPublishMessageRequest {
     /// 用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mention_installation_ids: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_type: Option<WebMessageType>,
+
+    /// 原 Relay 消息引用；BFF 在当前 Channel 回读验签并解析 NIP-10 祖先。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_event_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WebMessageAttachment {
+    /// 原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+
     pub sha256: String,
 
     pub size: i64,
+
+    /// 沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spoiler: Option<bool>,
 
     #[serde(rename = "type")]
     pub web_message_attachment_type: String,

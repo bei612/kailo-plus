@@ -33,6 +33,12 @@ func TestApplicationBindingProtocolRoundtrip(t *testing.T) {
 		{"conversation-participants.sample.json", new(generated.ConversationParticipantPage)},
 		{"conversation-page.sample.json", new(generated.ConversationPage)},
 		{"conversation-projection.sample.json", new(generated.ConversationProjectionRequest)},
+		{"web-forum-post.sample.json", new(generated.WebPublishMessageRequest)},
+		{"web-forum-comment.sample.json", new(generated.WebPublishMessageRequest)},
+		{"web-forum-query.sample.json", new(generated.WebMessageQuery)},
+		{"web-message-query-legacy.sample.json", new(generated.WebMessageQuery)},
+		{"web-message-cursor.sample.json", new(generated.WebMessageCursor)},
+		{"web-forum-channel.sample.json", new(generated.WebChannelView)},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", fixture.name))

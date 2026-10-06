@@ -1,4 +1,5 @@
 import * as React from "react";
+import { AppSidebarFrame } from "@client-kit/platform/react/sidebar/app-sidebar-frame";
 import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
 import { ConversationList, useConversations } from "@client-kit/platform/react/new-message";
 import { translate, resolveLocale } from "@client-kit/platform/i18n";
@@ -29,12 +30,8 @@ import {
   useSidebarLoadingShape,
 } from "@/features/sidebar/ui/sidebarLoadingSkeleton";
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
   SidebarMenu,
   SidebarMenuItem,
-  SidebarRail,
   useSidebar,
 } from "@/shared/ui/sidebar";
 
@@ -188,23 +185,10 @@ export function AppSidebar({
     "Current identity";
 
   return (
-    <Sidebar
-      className="!z-[100] !border-r-0"
-      collapsible="offcanvas"
-      data-testid="app-sidebar"
-      onClick={(event) => {
-        if (isSidebarBackgroundTarget(event.target)) {
-          onBackgroundClick?.();
-        }
-      }}
-      variant="sidebar"
-    >
-      <div
-        className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
-        data-sidebar-background
-        data-testid="app-sidebar-scroll-anchor"
-      >
-        <AppSidebarPinnedHeader
+    <AppSidebarFrame onClick={(event) => {
+      if (isSidebarBackgroundTarget(event.target)) onBackgroundClick?.();
+    }} scrollRef={scrollRef}
+      pinnedHeader={<AppSidebarPinnedHeader
           currentPubkey={currentPubkey}
           currentChannelId={
             selectedView === "channel" ? selectedChannelId : null
@@ -215,14 +199,8 @@ export function AppSidebar({
           searchFocusRequest={searchFocusRequests[0]}
           scopeSearchFocusRequest={searchFocusRequests[1]}
           suggestionChannels={channels}
-        />
-
-        <div
-          className="relative flex min-h-0 flex-1 flex-col"
-          data-sidebar-background
-          data-testid="sidebar-channel-content"
-        >
-          {unreadAboveCount > 0 ? (
+        />}
+      above={unreadAboveCount > 0 ? (
             <MoreUnreadButton
               count={unreadAboveCount}
               emphasis={hasHighPriorityAbove ? "primary" : "default"}
@@ -232,17 +210,42 @@ export function AppSidebar({
               testId="sidebar-more-unread-above"
             />
           ) : null}
-
-          <SidebarContent
-            className="buzz-sidebar-scrollbar overscroll-none [overflow-anchor:none]"
-            data-sidebar-background
-            ref={scrollRef}
-          >
-            <div
-              className="flex w-full flex-col gap-2 px-[3px]"
-              data-sidebar-background
-              data-testid="sidebar-scroll-content"
-            >
+      below={unreadBelowCount > 0 ? (
+            <MoreUnreadButton
+              bottomClassName="bottom-full"
+              count={unreadBelowCount}
+              emphasis={hasHighPriorityBelow ? "primary" : "default"}
+              label={sidebarOverflowUnreadLabel(unreadBelowCount)}
+              onClick={scrollToNextBelow}
+              position="bottom"
+              testId="sidebar-more-unread-below"
+            />
+          ) : null}
+      footer={<>            {relayConnectionCard.showSidebarRelayConnectionCard &&
+            (isMobile ? openMobile : sidebarOpen) ? (
+              <SidebarRelayConnectionCard
+                className="mb-2"
+                isConnected={relayConnectionCard.isRelayConnectionSuccess}
+                isReconnectPending={relayConnectionCard.isRelayReconnectPending}
+                isWaitingOnReconnectHook={
+                  relayConnectionCard.isWaitingOnReconnectHook
+                }
+                onDismiss={relayConnectionCard.onDismissRelayConnectionCard}
+                onReconnect={relayConnectionCard.onReconnectRelay}
+              />
+            ) : null}
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarProfileCard
+                  activeCommunity={activeCommunity}
+                  onOpenSettings={onSelectSettings}
+                  onSignOut={onSignOut}
+                  profile={profile}
+                  resolvedDisplayName={resolvedDisplayName}
+                />
+              </SidebarMenuItem>
+            </SidebarMenu></>}
+      dialogs={<CreateChannelDialog open={isCreateChannelOpen} onOpenChange={setCreateChannelOpen} />}>
               <AppSidebarPrimaryMenu
                 onNewMessage={onNewMessage}
                 homeBadgeCount={homeBadgeCount}
@@ -254,7 +257,7 @@ export function AppSidebar({
 
               {currentPrincipalId ? <DesktopConversations currentPrincipalId={currentPrincipalId}
                 selectedChannelId={selectedView === "channel" ? selectedChannelId : null}
-                onSelectChannel={onSelectChannel} onNewMessage={onNewMessage} /> : null}
+                onSelectChannel={onSelectChannel} onNewMessage={onNewMessage} onCloseSelected={onSelectHome} /> : null}
               {isLoading ? (
                 <SidebarLoadingContent shape={sidebarLoadingShape} />
               ) : (
@@ -329,66 +332,20 @@ export function AppSidebar({
                   {errorMessage}
                 </div>
               ) : null}
-            </div>
-          </SidebarContent>
-        </div>
-
-        <div className="relative z-30 shrink-0" data-buzz-glass-footer-wrap>
-          {unreadBelowCount > 0 ? (
-            <MoreUnreadButton
-              bottomClassName="bottom-full"
-              count={unreadBelowCount}
-              emphasis={hasHighPriorityBelow ? "primary" : "default"}
-              label={sidebarOverflowUnreadLabel(unreadBelowCount)}
-              onClick={scrollToNextBelow}
-              position="bottom"
-              testId="sidebar-more-unread-below"
-            />
-          ) : null}
-
-          <SidebarFooter>
-            {relayConnectionCard.showSidebarRelayConnectionCard &&
-            (isMobile ? openMobile : sidebarOpen) ? (
-              <SidebarRelayConnectionCard
-                className="mb-2"
-                isConnected={relayConnectionCard.isRelayConnectionSuccess}
-                isReconnectPending={relayConnectionCard.isRelayReconnectPending}
-                isWaitingOnReconnectHook={
-                  relayConnectionCard.isWaitingOnReconnectHook
-                }
-                onDismiss={relayConnectionCard.onDismissRelayConnectionCard}
-                onReconnect={relayConnectionCard.onReconnectRelay}
-              />
-            ) : null}
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarProfileCard
-                  activeCommunity={activeCommunity}
-                  onOpenSettings={onSelectSettings}
-                  onSignOut={onSignOut}
-                  profile={profile}
-                  resolvedDisplayName={resolvedDisplayName}
-                />
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarFooter>
-        </div>
-      </div>
-
-      <CreateChannelDialog open={isCreateChannelOpen} onOpenChange={setCreateChannelOpen} />
-      <SidebarRail />
-    </Sidebar>
+    </AppSidebarFrame>
   );
 }
 
-function DesktopConversations({ currentPrincipalId, selectedChannelId, onSelectChannel, onNewMessage }: {
+function DesktopConversations({ currentPrincipalId, selectedChannelId, onSelectChannel, onNewMessage, onCloseSelected }: {
   currentPrincipalId: string; selectedChannelId: string | null;
   onSelectChannel: (id: string) => void; onNewMessage: () => void;
+  onCloseSelected: () => void;
 }) {
   const conversations = useConversations();
   return <ConversationList currentPrincipalId={currentPrincipalId} items={conversations.items}
     loading={conversations.loading} error={conversations.error}
     selectedId={conversations.items.find((conversation) => conversation.channelId === selectedChannelId)?.id ?? null}
     onSelect={(conversation) => onSelectChannel(conversation.channelId)} onNewMessage={onNewMessage}
+    onCloseSelected={onCloseSelected}
     onReload={() => { void conversations.reload().catch(() => undefined); }} />;
 }

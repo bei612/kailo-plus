@@ -4,6 +4,7 @@ import type { MediaUploadController } from "@/features/messages/lib/useMediaUplo
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 
 export type MessageComposerProps = {
+  surface?: "stream" | "forum";
   channelId?: string | null;
   channelName: string;
   containerClassName?: string;

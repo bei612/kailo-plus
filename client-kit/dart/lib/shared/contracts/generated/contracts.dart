@@ -88,6 +88,10 @@
 //     final taskView = taskViewFromJson(jsonString);
 //     final tenantInvitationView = tenantInvitationViewFromJson(jsonString);
 //     final userStateVersion = userStateVersionFromJson(jsonString);
+//     final webChannelView = webChannelViewFromJson(jsonString);
+//     final webMessageCursor = webMessageCursorFromJson(jsonString);
+//     final webMessageQuery = webMessageQueryFromJson(jsonString);
+//     final webMessageType = webMessageTypeFromJson(jsonString);
 //     final webProfileUpdateRequest = webProfileUpdateRequestFromJson(jsonString);
 //     final webProfileView = webProfileViewFromJson(jsonString);
 //     final webPublishMessageRequest = webPublishMessageRequestFromJson(jsonString);
@@ -716,6 +720,29 @@ UserStateVersion userStateVersionFromJson(String str) =>
 
 String userStateVersionToJson(UserStateVersion data) =>
     json.encode(data.toJson());
+
+WebChannelView webChannelViewFromJson(String str) =>
+    WebChannelView.fromJson(json.decode(str));
+
+String webChannelViewToJson(WebChannelView data) => json.encode(data.toJson());
+
+WebMessageCursor webMessageCursorFromJson(String str) =>
+    WebMessageCursor.fromJson(json.decode(str));
+
+String webMessageCursorToJson(WebMessageCursor data) =>
+    json.encode(data.toJson());
+
+WebMessageQuery webMessageQueryFromJson(String str) =>
+    WebMessageQuery.fromJson(json.decode(str));
+
+String webMessageQueryToJson(WebMessageQuery data) =>
+    json.encode(data.toJson());
+
+WebMessageType webMessageTypeFromJson(String str) =>
+    webMessageTypeValues.map[json.decode(str)]!;
+
+String webMessageTypeToJson(WebMessageType data) =>
+    json.encode(webMessageTypeValues.reverse[data]);
 
 WebProfileUpdateRequest webProfileUpdateRequestFromJson(String str) =>
     WebProfileUpdateRequest.fromJson(json.decode(str));
@@ -9175,6 +9202,95 @@ class UserStateVersion {
   Map<String, dynamic> toJson() => _stripNulls({"version": version});
 }
 
+///Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。
+class WebChannelView {
+  final bool archived;
+  final String channelId;
+  final ChannelType channelType;
+  final String? description;
+  final String name;
+
+  WebChannelView({
+    required this.archived,
+    required this.channelId,
+    required this.channelType,
+    this.description,
+    required this.name,
+  });
+
+  factory WebChannelView.fromJson(Map<String, dynamic> json) => WebChannelView(
+    archived: json["archived"],
+    channelId: json["channelId"],
+    channelType: channelTypeValues.map[json["channelType"]]!,
+    description: json["description"],
+    name: json["name"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "archived": archived,
+    "channelId": channelId,
+    "channelType": channelTypeValues.reverse[channelType],
+    "description": description,
+    "name": name,
+  });
+}
+
+///原 Buzz 线程分页的复合游标；下一请求以 before=createdAt、beforeId=eventId 原样提交，避免同秒回复丢失。
+class WebMessageCursor {
+  final int createdAt;
+  final String eventId;
+
+  WebMessageCursor({required this.createdAt, required this.eventId});
+
+  factory WebMessageCursor.fromJson(Map<String, dynamic> json) =>
+      WebMessageCursor(createdAt: json["createdAt"], eventId: json["eventId"]);
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"createdAt": createdAt, "eventId": eventId});
+}
+
+///同一已准入 Channel 的原生消息分页或线程读取。before/beforeId 必须成对，频道窗口向前翻历史，线程沿原 Relay
+///协议向后读回复；上界来自运行时配置与原协议上界，不接受任意 Relay filter。
+class WebMessageQuery {
+  final int? before;
+  final String? beforeId;
+  final WebMessageType? messageType;
+  final String? parentEventId;
+
+  WebMessageQuery({
+    this.before,
+    this.beforeId,
+    this.messageType,
+    this.parentEventId,
+  });
+
+  factory WebMessageQuery.fromJson(Map<String, dynamic> json) =>
+      WebMessageQuery(
+        before: json["before"],
+        beforeId: json["beforeId"],
+        messageType: json["messageType"] == null
+            ? null
+            : webMessageTypeValues.map[json["messageType"]]!,
+        parentEventId: json["parentEventId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "before": before,
+    "beforeId": beforeId,
+    "messageType": webMessageTypeValues.reverse[messageType],
+    "parentEventId": parentEventId,
+  });
+}
+
+///原 Buzz 频道消息语义。缺省 STREAM 保持旧请求；不允许调用者提交任意事件 kind。
+enum WebMessageType { FORUM_COMMENT, FORUM_POST, STREAM }
+
+final webMessageTypeValues = EnumValues({
+  "FORUM_COMMENT": WebMessageType.FORUM_COMMENT,
+  "FORUM_POST": WebMessageType.FORUM_POST,
+  "STREAM": WebMessageType.STREAM,
+});
+
 ///Own Buzz kind:0 metadata. The authenticated host chooses the signer and Tenant; no raw
 ///event, author, relay URL or management tags are accepted. Omitted fields are preserved;
 ///empty strings explicitly clear a field.
@@ -9267,19 +9383,25 @@ class WebProfileView {
   });
 }
 
-///Web HUMAN 的频道根消息语义输入；身份、Channel 与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或 signed
-///event。
+///Web HUMAN 的原 Buzz 消息语义输入；身份、Channel、回复祖先与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或
+///signed event。
 class WebPublishMessageRequest {
   final List<WebMessageAttachment>? attachments;
   final String content;
 
   ///用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
   final List<String>? mentionInstallationIds;
+  final WebMessageType? messageType;
+
+  ///原 Relay 消息引用；BFF 在当前 Channel 回读验签并解析 NIP-10 祖先。
+  final String? parentEventId;
 
   WebPublishMessageRequest({
     this.attachments,
     required this.content,
     this.mentionInstallationIds,
+    this.messageType,
+    this.parentEventId,
   });
 
   factory WebPublishMessageRequest.fromJson(Map<String, dynamic> json) =>
@@ -9295,6 +9417,10 @@ class WebPublishMessageRequest {
         mentionInstallationIds: json["mentionInstallationIds"] == null
             ? null
             : List<String>.from(json["mentionInstallationIds"]!.map((x) => x)),
+        messageType: json["messageType"] == null
+            ? null
+            : webMessageTypeValues.map[json["messageType"]]!,
+        parentEventId: json["parentEventId"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -9305,32 +9431,49 @@ class WebPublishMessageRequest {
     "mentionInstallationIds": mentionInstallationIds == null
         ? null
         : List<dynamic>.from(mentionInstallationIds!.map((x) => x)),
+    "messageType": webMessageTypeValues.reverse[messageType],
+    "parentEventId": parentEventId,
   });
 }
 
 class WebMessageAttachment {
+  ///原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
+  final String? filename;
   final String sha256;
   final int size;
+
+  ///沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
+  final bool? spoiler;
   final String type;
   final String url;
 
   WebMessageAttachment({
+    this.filename,
     required this.sha256,
     required this.size,
+    this.spoiler,
     required this.type,
     required this.url,
   });
 
   factory WebMessageAttachment.fromJson(Map<String, dynamic> json) =>
       WebMessageAttachment(
+        filename: json["filename"],
         sha256: json["sha256"],
         size: json["size"],
+        spoiler: json["spoiler"],
         type: json["type"],
         url: json["url"],
       );
 
-  Map<String, dynamic> toJson() =>
-      _stripNulls({"sha256": sha256, "size": size, "type": type, "url": url});
+  Map<String, dynamic> toJson() => _stripNulls({
+    "filename": filename,
+    "sha256": sha256,
+    "size": size,
+    "spoiler": spoiler,
+    "type": type,
+    "url": url,
+  });
 }
 
 ///GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 且两侧 binding 都 ACTIVE 的

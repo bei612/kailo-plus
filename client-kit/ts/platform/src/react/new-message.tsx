@@ -9,6 +9,8 @@ import { formatRecipientName, useConversationDirectory, useConversationOpen } fr
 export { useConversations, useConversationDirectory } from "./conversations/use-conversations";
 export { ConversationPreparationPending } from "./conversations/use-conversations";
 export { ConversationList } from "./conversations/conversation-list";
+export { ConversationVisibilityProvider, useConversationInvalidation, type ConversationVisibilityHost } from "./conversations/use-conversation-state";
+export { DM_VISIBILITY_KIND, hiddenConversationChannels } from "./conversations/visibility";
 export type NewMessageComposerHost = {
   disabled: boolean;
   isSending: boolean;

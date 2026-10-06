@@ -236,7 +236,7 @@ test("manual capability and deleted definition preserve optional compatibility",
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), JSON.parse(raw));
 });
 
-import type { Canary, CapabilityConformanceVectors, WebPublishMessageRequest } from "../src/generated/contracts.js";
+import type { Canary, CapabilityConformanceVectors, WebPublishMessageRequest, WebMessageQuery, WebMessageCursor, WebChannelView } from "../src/generated/contracts.js";
 
 const samplePath = fileURLToPath(
   new URL("../../../../contracts/samples/canary.sample.json", import.meta.url),
@@ -282,7 +282,7 @@ test("canary round-trip 保留每个字段", () => {
   }
 });
 
-for (const sample of ["web-publish-mention.sample.json", "web-publish-content-only.sample.json"]) {
+for (const sample of ["web-publish-mention.sample.json", "web-publish-content-only.sample.json", "web-forum-post.sample.json", "web-forum-comment.sample.json"]) {
   test(`WebPublishMessageRequest round-trip ${sample}`, () => {
     const raw = readFileSync(new URL(`../../../../contracts/samples/${sample}`, import.meta.url), "utf8");
     const original: unknown = JSON.parse(raw);
@@ -297,3 +297,20 @@ for (const sample of ["web-publish-mention.sample.json", "web-publish-content-on
     }
   });
 }
+
+test("forum query, cursor and native channel preserve each generated field and legacy absence", () => {
+  const load = (name: string) => JSON.parse(readFileSync(new URL(`../../../../contracts/samples/${name}`, import.meta.url), "utf8"));
+  for (const name of ["web-forum-query.sample.json", "web-message-query-legacy.sample.json"]) {
+    const query: WebMessageQuery = load(name);
+    const back: WebMessageQuery = { messageType: query.messageType, parentEventId: query.parentEventId, before: query.before, beforeId: query.beforeId };
+    deepStrictEqual(JSON.parse(JSON.stringify(back)), query);
+  }
+  const cursor: WebMessageCursor = load("web-message-cursor.sample.json");
+  const backCursor: WebMessageCursor = { createdAt: cursor.createdAt, eventId: cursor.eventId };
+  deepStrictEqual(JSON.parse(JSON.stringify(backCursor)), cursor);
+  const channel: WebChannelView = load("web-forum-channel.sample.json");
+  const backChannel: WebChannelView = { channelId: channel.channelId, channelType: channel.channelType, name: channel.name, description: channel.description, archived: channel.archived };
+  deepStrictEqual(JSON.parse(JSON.stringify(backChannel)), channel);
+  const query: WebMessageQuery = load("web-forum-query.sample.json");
+  deepStrictEqual([query.before, query.beforeId], [cursor.createdAt, cursor.eventId]);
+});

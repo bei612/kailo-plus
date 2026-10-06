@@ -17,6 +17,9 @@ import type {
   WebPublishMessageRequest,
 } from "@client-kit/contracts";
 import { createBffClient } from "@client-kit/platform/client";
+import { hiddenConversationChannels, type ConversationVisibilityHost } from "@client-kit/platform/react/new-message";
+import { newIdempotencyKey } from "@client-kit/platform/governance";
+import { TransportError } from "@client-kit/platform/transport";
 import { type BffRequest, unwrap } from "@client-kit/platform/transport";
 import { createFetchTransport } from "@client-kit/platform/web-fetch";
 
@@ -30,6 +33,23 @@ const transport = createFetchTransport({
 });
 
 export const bff = createBffClient(transport);
+
+export const conversationVisibility: ConversationVisibilityHost = {
+  read: async (conversation) => {
+    const page = await call<{events: unknown}>({method: "GET", path: `/api/v1/conversations/${encodeURIComponent(conversation.id)}/visibility`});
+    return hiddenConversationChannels(page.events);
+  },
+  prepare: async (conversation, hidden) => {
+    const path = `/api/v1/conversations/${encodeURIComponent(conversation.id)}/${hidden ? "hide" : "reopen"}`;
+    const key = newIdempotencyKey();
+    return async () => {
+      const receipt = unwrap<{eventId: string; operationId: string}>({method: "POST", path}, await transport.exchange(path, {
+        method: "POST", headers: {"Idempotency-Key": key},
+      }));
+      if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Invalid DM publication receipt");
+    };
+  },
+};
 
 export async function publishConversationMessage(conversationId: string, content: string,
   attachments: readonly MediaDescriptor[], idempotencyKey: string): Promise<{ eventId: string; operationId: string }> {
@@ -62,6 +82,7 @@ export type BuzzEvent = {
 export type UserState = {
   /** `updatedAt` 由 Core 用库时钟写入。 */
   workspacePreferences: Record<string, { starred: boolean; muted: boolean; updatedAt?: string }>;
+  conversationPreferences?: Record<string, { starred: boolean; muted: boolean; updatedAt?: string }>;
   /** context key（Channel ID 等）→ 已读到的时刻，RFC 3339 UTC。三端读写同一个值。 */
   readContexts: Record<string, string>;
   version: number;
@@ -97,6 +118,7 @@ export async function publishMessage(
   attachments: readonly MediaDescriptor[],
   idempotencyKey: string,
   mentionInstallationIds: string[] = [],
+  intent?: Pick<WebPublishMessageRequest, "messageType" | "parentEventId">,
 ): Promise<{ eventId: string; operationId: string }> {
   const path = `/api/v1/workspaces/${workspaceId}/messages`;
   return unwrap(
@@ -104,7 +126,7 @@ export async function publishMessage(
     await transport.exchange(path, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
-      body: JSON.stringify({ content, attachments: [...attachments], mentionInstallationIds } satisfies WebPublishMessageRequest),
+      body: JSON.stringify({ content, attachments: [...attachments], mentionInstallationIds, ...intent } satisfies WebPublishMessageRequest),
     }),
   );
 }

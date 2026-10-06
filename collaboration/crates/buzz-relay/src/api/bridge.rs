@@ -14,6 +14,9 @@ use base64::Engine;
 use serde_json::Value;
 
 use buzz_auth::{LimitType, Nip98ReplayGuard, DEFAULT_REPLAY_TTL_SECS};
+use buzz_core::relay::{
+    BRIDGE_THREAD_MAX_LIMIT, BRIDGE_WINDOW_DEFAULT_LIMIT, BRIDGE_WINDOW_MAX_LIMIT,
+};
 use buzz_core::TenantContext;
 
 use crate::handlers::ingest::{IngestAuth, IngestError};
@@ -268,7 +271,6 @@ fn extract_channel_from_filter(filter: &nostr::Filter) -> Option<uuid::Uuid> {
 // deserialization, so we extract them from the raw JSON Value first.
 
 const BRIDGE_FEED_MAX_LIMIT: i64 = 100;
-const BRIDGE_THREAD_MAX_LIMIT: u32 = 500;
 
 /// The `before_id` extension field, with "present but malformed" kept distinct
 /// from "absent": NIP-CW's cursor grammar says a malformed value MUST reject
@@ -404,8 +406,6 @@ fn extract_page_offset(raw: &Value, limit: Option<i64>) -> Option<i64> {
 /// Default and maximum row budget for a channel-window request. The budget
 /// counts row events only; summary/bounds overlays and the aux closure never
 /// consume it (docs/bridge-channel-window.md).
-const BRIDGE_WINDOW_DEFAULT_LIMIT: u32 = 50;
-const BRIDGE_WINDOW_MAX_LIMIT: u32 = 200;
 
 /// Aux closure kinds: reactions, deletions (NIP-09 + NIP-29), edits.
 const WINDOW_AUX_KINDS: [u32; 4] = [

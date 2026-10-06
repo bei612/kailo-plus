@@ -11,6 +11,21 @@ const WORKSPACE = "00000000-0000-4000-8000-000000000001";
 const SHA = "ab".repeat(32);
 
 describe("MessageContent", () => {
+  it("keeps original image and text spoilers hidden while preserving admitted media reads", () => {
+    const html = renderToStaticMarkup(
+      <MessageContent
+        content={`||hidden text||\n\n||![poster](${IMAGE_URL})||`}
+        mediaTags={[["imeta", `url ${IMAGE_URL}`, "m image/png", `x ${SHA}`]]}
+        workspaceId={WORKSPACE}
+      />,
+    );
+    expect(html.match(/data-revealed="false"/g)).toHaveLength(2);
+    expect(html.match(/aria-label="Reveal spoiler"/g)).toHaveLength(2);
+    expect(html).toContain("buzz-spoiler--block");
+    expect(html).toContain(`src="/api/v1/workspaces/${WORKSPACE}/media/${SHA}"`);
+    expect(html).not.toContain(`src="${IMAGE_URL}"`);
+  });
+
   it("renders human and agent mentions and preserves soft line breaks", () => {
     const html = renderToStaticMarkup(
       <MessageContent

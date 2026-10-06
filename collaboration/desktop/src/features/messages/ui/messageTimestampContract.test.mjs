@@ -9,7 +9,7 @@ import test from "node:test";
  * covered by `shared/lib/datetime.test.mjs`.
  */
 const source = readFileSync(
-  new URL("./MessageTimestamp.tsx", import.meta.url),
+  new URL("./MessageTimestamp.tsx", import.meta.resolve("@client-kit/platform/react/messages")),
   "utf8",
 ).replace(/\s+/g, " ");
 

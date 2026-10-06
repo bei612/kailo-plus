@@ -6,6 +6,15 @@ use serde_json::{json, Value};
 use thiserror::Error;
 use url::{Host, Url};
 
+/// Existing HTTP bridge top-level window default.
+pub const BRIDGE_WINDOW_DEFAULT_LIMIT: u32 = 50;
+/// Existing HTTP bridge top-level window ceiling.
+pub const BRIDGE_WINDOW_MAX_LIMIT: u32 = 200;
+/// Existing HTTP bridge thread-subtree ceiling, shared with native callers.
+pub const BRIDGE_THREAD_MAX_LIMIT: u32 = 500;
+/// Existing native thread-subtree traversal depth.
+pub const DEFAULT_THREAD_DEPTH_LIMIT: u32 = 64;
+
 /// Errors returned while canonicalizing a relay URL for runtime identity.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum NormalizeRelayUrlError {

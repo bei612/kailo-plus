@@ -4,6 +4,7 @@ import type { SearchHighlightNavigation } from "@/app/navigation/searchHighlight
 import { getCachedSearchHitEvent } from "@/app/navigation/searchHitEventCache";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { ChannelScreen } from "@/features/channels/ui/ChannelScreen";
+import { ForumScreen } from "@/features/forum/ForumScreen";
 import {
   getThreadReference,
   isBroadcastReply,
@@ -223,6 +224,11 @@ export function ChannelRouteScreen({
 
   if (!activeChannel && channelsQuery.isPending) {
     return <ViewLoadingFallback includeHeader kind="channel" />;
+  }
+
+  if (activeChannel?.channelType === "forum") {
+    return <ForumScreen channel={activeChannel} currentPubkey={identityQuery.data?.pubkey}
+      targetMessageId={targetMessageId} targetThreadRootId={targetThreadRootId} />;
   }
 
   return (

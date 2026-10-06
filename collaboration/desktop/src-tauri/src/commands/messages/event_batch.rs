@@ -8,7 +8,7 @@ use crate::{app_state::AppState, relay::query_relay};
 // chunks so a large id list cannot silently lose late events.
 const EVENT_QUERY_CHUNK_SIZE: usize = 1_000;
 
-const GET_EVENT_KINDS: [u32; 3] = [9, 40002, 40099];
+const GET_EVENT_KINDS: [u32; 5] = [9, 40002, 40099, 45001, 45003];
 
 #[tauri::command]
 pub async fn get_event(event_id: String, state: State<'_, AppState>) -> Result<String, String> {

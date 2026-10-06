@@ -17,6 +17,14 @@ use url::Url;
 
 use crate::limits::ApiBudget;
 use crate::operator::{LimitKind, OperatorError};
+pub use buzz_core::kind::{
+    KIND_DELETION, KIND_NIP29_DELETE_EVENT, KIND_REACTION, KIND_STREAM_MESSAGE_EDIT,
+    KIND_THREAD_SUMMARY, KIND_WINDOW_BOUNDS,
+};
+pub use buzz_core::nip10::parse_thread_markers;
+pub use buzz_core::relay::{
+    BRIDGE_THREAD_MAX_LIMIT, BRIDGE_WINDOW_MAX_LIMIT, DEFAULT_THREAD_DEPTH_LIMIT,
+};
 
 /// Buzz 的事件 kind。取自上游 `buzz-core/src/kind.rs` 的同名常量，
 /// 不是本仓库自定义的编号——改动必须回到上游确认。
@@ -30,6 +38,14 @@ const KIND_CHANNEL_MESSAGE: u16 = 9;
 const KIND_CHANNEL_CREATE: u16 = 9007;
 const KIND_CHANNEL_EDIT_METADATA: u16 = 9002;
 const KIND_CHANNEL_METADATA: u16 = 39000;
+
+pub fn message_kind(message_type: &contracts::WebMessageType) -> u16 {
+    match message_type {
+        contracts::WebMessageType::Stream => buzz_core::kind::KIND_STREAM_MESSAGE as u16,
+        contracts::WebMessageType::ForumPost => buzz_core::kind::KIND_FORUM_POST as u16,
+        contracts::WebMessageType::ForumComment => buzz_core::kind::KIND_FORUM_COMMENT as u16,
+    }
+}
 
 /// roster 的两个层级。Tenant 成员投影到 relay roster，Workspace 成员投影到
 /// 所属 Channel 的 roster（`DD-45`）。
@@ -283,14 +299,54 @@ impl IdentityClient {
         media_tags: &[Vec<String>],
         mention_pubkeys: &[String],
     ) -> Result<Event, OperatorError> {
+        self.sign_channel_message_kind(
+            channel_id,
+            content,
+            media_tags,
+            mention_pubkeys,
+            &contracts::WebMessageType::Stream,
+            None,
+        )
+    }
+
+    /// The original Buzz message kinds and NIP-10 tags; ancestry is resolved
+    /// by the admitted caller, never supplied as arbitrary browser tags.
+    pub fn sign_channel_message_kind(
+        &self,
+        channel_id: &str,
+        content: &str,
+        media_tags: &[Vec<String>],
+        mention_pubkeys: &[String],
+        message_type: &contracts::WebMessageType,
+        ancestry: Option<(&str, &str)>,
+    ) -> Result<Event, OperatorError> {
+        if matches!(message_type, contracts::WebMessageType::ForumPost) && ancestry.is_some()
+            || matches!(message_type, contracts::WebMessageType::ForumComment) && ancestry.is_none()
+        {
+            return Err(OperatorError::Sign(
+                "Message ancestry does not match its type".into(),
+            ));
+        }
         let mut tags = vec![vec!["h".to_owned(), channel_id.to_owned()]];
+        if let Some((root, parent)) = ancestry {
+            let root = nostr::EventId::from_hex(root)
+                .map_err(|_| OperatorError::Sign("Invalid thread root".into()))?
+                .to_hex();
+            let parent = nostr::EventId::from_hex(parent)
+                .map_err(|_| OperatorError::Sign("Invalid thread parent".into()))?
+                .to_hex();
+            if root != parent {
+                tags.push(vec!["e".into(), root, String::new(), "root".into()]);
+            }
+            tags.push(vec!["e".into(), parent, String::new(), "reply".into()]);
+        }
         tags.extend(media_tags.iter().cloned());
         for pubkey in mention_pubkeys {
             let key = nostr::PublicKey::from_hex(pubkey)
                 .map_err(|_| OperatorError::Sign("Mention public key is invalid".into()))?;
             tags.push(vec!["p".to_owned(), key.to_hex()]);
         }
-        self.sign(KIND_CHANNEL_MESSAGE, content, &tags)
+        self.sign(message_kind(message_type), content, &tags)
     }
 
     /// 原 Task 的确定完成时间与 NIP-10 引用决定唯一 Reply ID；不取签名时钟。
@@ -728,7 +784,7 @@ impl IdentityClient {
         Ok(Some(archived.unwrap_or(false)))
     }
 
-    async fn channel_metadata(
+    pub async fn channel_metadata(
         &self,
         http: &reqwest::Client,
         channel_id: &str,
@@ -1031,6 +1087,138 @@ const BLOSSOM_AUTH_TTL_SECS: u64 = 600;
 #[cfg(test)]
 mod mention_tests {
     use super::*;
+
+    #[test]
+    fn forum_signatures_keep_native_kind_and_nip10_ancestry() {
+        let keys = Keys::generate();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            "http://relay.example",
+            "relay.example",
+        )
+        .unwrap();
+        let root = "a".repeat(64);
+        let parent = "b".repeat(64);
+        let media = vec![vec![
+            "imeta".into(),
+            "url https://relay.example/media/image.png".into(),
+        ]];
+        let mention = Keys::generate().public_key().to_hex();
+        let post = client
+            .sign_channel_message_kind(
+                "channel",
+                "post",
+                &media,
+                std::slice::from_ref(&mention),
+                &contracts::WebMessageType::ForumPost,
+                None,
+            )
+            .unwrap();
+        post.verify().unwrap();
+        assert_eq!(post.kind.as_u16(), buzz_core::kind::KIND_FORUM_POST as u16);
+        assert_eq!(post.pubkey, keys.public_key());
+        assert!(parse_thread_markers(&post.tags).resolve().is_none());
+        let tags: Vec<_> = post
+            .tags
+            .iter()
+            .map(|tag| tag.as_slice().to_vec())
+            .collect();
+        assert_eq!(
+            tags,
+            vec![
+                vec!["h".into(), "channel".into()],
+                media[0].clone(),
+                vec!["p".into(), mention]
+            ]
+        );
+        for (reply_to, expected_tags) in [(&root, 2), (&parent, 3)] {
+            let reply = client
+                .sign_channel_message_kind(
+                    "channel",
+                    "reply",
+                    &[],
+                    &[],
+                    &contracts::WebMessageType::ForumComment,
+                    Some((&root, reply_to)),
+                )
+                .unwrap();
+            reply.verify().unwrap();
+            assert_eq!(
+                reply.kind.as_u16(),
+                buzz_core::kind::KIND_FORUM_COMMENT as u16
+            );
+            assert_eq!(reply.tags.len(), expected_tags);
+            assert_eq!(
+                parse_thread_markers(&reply.tags).resolve(),
+                Some((root.clone(), reply_to.clone()))
+            );
+        }
+        let stream_reply = client
+            .sign_channel_message_kind(
+                "channel",
+                "reply",
+                &[],
+                &[],
+                &contracts::WebMessageType::Stream,
+                Some((&root, &parent)),
+            )
+            .unwrap();
+        stream_reply.verify().unwrap();
+        assert_eq!(
+            stream_reply.kind.as_u16(),
+            buzz_core::kind::KIND_STREAM_MESSAGE as u16
+        );
+        assert_eq!(
+            parse_thread_markers(&stream_reply.tags).resolve(),
+            Some((root.clone(), parent))
+        );
+    }
+
+    #[test]
+    fn forum_signing_rejects_wrong_or_invalid_ancestry() {
+        let keys = Keys::generate();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            "http://relay.example",
+            "relay.example",
+        )
+        .unwrap();
+        let id = "a".repeat(64);
+        assert!(client
+            .sign_channel_message_kind(
+                "channel",
+                "post",
+                &[],
+                &[],
+                &contracts::WebMessageType::ForumPost,
+                Some((&id, &id))
+            )
+            .is_err());
+        assert!(client
+            .sign_channel_message_kind(
+                "channel",
+                "comment",
+                &[],
+                &[],
+                &contracts::WebMessageType::ForumComment,
+                None
+            )
+            .is_err());
+        for ancestry in [("not-an-id", id.as_str()), (id.as_str(), "not-an-id")] {
+            assert!(client
+                .sign_channel_message_kind(
+                    "channel",
+                    "comment",
+                    &[],
+                    &[],
+                    &contracts::WebMessageType::ForumComment,
+                    Some(ancestry)
+                )
+                .is_err());
+        }
+    }
 
     #[test]
     fn root_mention_signs_exact_p_and_keeps_media_without_thread() {

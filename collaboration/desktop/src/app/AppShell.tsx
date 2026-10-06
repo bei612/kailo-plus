@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation } from "@tanstack/react-router";
 import { deriveShellRoute, markAllReadSources } from "@/app/AppShell.helpers";
 import * as BuzzTheme from "@client-kit/platform/react/surfaces";
+import { useConversations, useConversationInvalidation } from "@client-kit/platform/react/new-message";
+import { checkedUserState, conversationNotificationMutes } from "@client-kit/platform/inbox";
 import { AppShellProvider } from "@/app/AppShellContext";
 import { AppShellChannelSurface } from "@/app/AppShellChannelSurface";
 import { AppTopChrome } from "@/app/AppTopChrome";
@@ -89,7 +91,7 @@ export function AppShell() {
     ? locationSearchSection
     : DEFAULT_SETTINGS_SECTION;
   const identityQuery = useIdentityQuery();
-  const { mutedChannelIds, muteChannel, unmuteChannel } = useChannelMutes(
+  const localMutes = useChannelMutes(
     identityQuery.data?.pubkey,
   );
   const { starredChannelIds, starChannel, unstarChannel } = useChannelStars(
@@ -103,6 +105,29 @@ export function AppShell() {
   const feedItemState = useFeedItemState(identityQuery.data?.pubkey);
   const channelsQuery = useChannelsQuery();
   const channels = channelsQuery.data ?? [];
+  const conversations = useConversations();
+  const conversationInvalidation = useConversationInvalidation();
+  const conversationState = useQuery({
+    queryKey: ["platform", "conversation-preferences", identityQuery.data?.pubkey, conversationInvalidation?.revision],
+    queryFn: async () => checkedUserState(await nativeSession.client.collaborationUserState()),
+    enabled: !!identityQuery.data?.pubkey,
+  });
+  // Original non-DM local preferences remain unchanged. Private-conversation
+  // notification decisions come only from the same Core CAS used by its menu.
+  const mutedChannelIds = React.useMemo(() => conversationNotificationMutes(
+    localMutes.mutedChannelIds, channels.filter((channel) => channel.channelType === "dm").map((channel) => channel.id),
+    conversations.items.filter((item) => item.state === "ACTIVE"),
+    conversations.loading || conversations.error || conversationState.isError || conversationState.isFetching
+      ? undefined : conversationState.data?.conversationPreferences,
+  ), [channels, conversations.items, conversations.loading, conversations.error, conversationState.data, conversationState.isError, conversationState.isFetching, localMutes.mutedChannelIds]);
+  // Governed DMs have their original menu in ConversationList. Never let an old
+  // native sidebar callback recreate a second private-conversation mute store.
+  const muteChannel = (id: string) => {
+    if (channels.some((channel) => channel.id === id && channel.channelType !== "dm")) localMutes.muteChannel(id);
+  };
+  const unmuteChannel = (id: string) => {
+    if (channels.some((channel) => channel.id === id && channel.channelType !== "dm")) localMutes.unmuteChannel(id);
+  };
   const refetchHomeFeedFromLiveSignal = React.useEffectEvent(() => {
     void homeFeedQuery.refetch();
   });

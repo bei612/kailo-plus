@@ -8,6 +8,22 @@
     "profile-assets.ts"
   ],
   "exports": {
+    "./react/forum/channelWindowResponse": "./src/react/forum/channelWindowResponse.ts",
+    "./react/messages": "./src/react/messages/index.ts",
+    "./react/messages/types": "./src/react/messages/types.ts",
+    "./react/messages/dateFormatters": "./src/react/messages/dateFormatters.ts",
+    "./react/messages/datetime": "./src/react/messages/datetime.ts",
+    "./react/messages/threadTreeLayout": "./src/react/messages/threadTreeLayout.ts",
+    "./react/messages/messageGrouping": "./src/react/messages/messageGrouping.ts",
+    "./react/messages/sentFromThread": "./src/react/messages/sentFromThread.ts",
+    "./react/messages/emojiOnly": "./src/react/messages/emojiOnly.ts",
+    "./react/messages/observeElementBlockSize": "./src/react/messages/observeElementBlockSize.ts",
+    "./react/messages/useMeasuredCssVariable": "./src/react/messages/useMeasuredCssVariable.ts",
+    "./react/messages/chromeLayout": "./src/react/messages/chromeLayout.ts",
+    "./react/messages/icons": "./src/react/messages/icons.ts",
+    "./react/messages/threading": "./src/react/messages/threading.ts",
+    "./react/forum/ForumView": "./src/react/forum/ForumView.tsx",
+    "./react/forum/ForumComposerSurface": "./src/react/forum/ForumComposerSurface.tsx",
     "./react/new-message": "./src/react/new-message.tsx",
     "./react/create-channel-dialog": "./src/react/create-channel-dialog.tsx",
     "./react/profile-settings": "./src/react/profile-settings.tsx",
@@ -63,6 +79,10 @@
     "./react/sidebar/dropdown-menu": "./src/react/sidebar/dropdown-menu.tsx",
     "./react/sidebar/tooltip": "./src/react/sidebar/tooltip.tsx",
     "./react/sidebar/primitives": "./src/react/sidebar/primitives.tsx",
+    "./react/sidebar/sidebar": "./src/react/sidebar/sidebar.tsx",
+    "./react/sidebar/app-sidebar-frame": "./src/react/sidebar/app-sidebar-frame.tsx",
+    "./react/sidebar/app-sidebar-primary-menu": "./src/react/sidebar/app-sidebar-primary-menu.tsx",
+    "./react/sidebar/sidebar-profile-card": "./src/react/sidebar/sidebar-profile-card.tsx",
     "./react/sidebar/channel-group": "./src/react/sidebar/channel-group.tsx",
     "./react/sidebar/channel-row": "./src/react/sidebar/channel-row.tsx",
     "./react/sidebar/channel-context-menu": "./src/react/sidebar/channel-context-menu.tsx",
@@ -114,13 +134,30 @@
     "./react/composer/composer.css": "./src/react/composer/composer.css",
     "./react/composer/features/messages/lib/useDrafts": "./src/react/composer/features/messages/lib/useDrafts.ts",
     "./react/composer/features/messages/lib/imetaMediaMarkdown": "./src/react/composer/features/messages/lib/imetaMediaMarkdown.ts",
-    "./react/composer/shared/lib/localStorageQuota": "./src/react/composer/shared/lib/localStorageQuota.ts"
+    "./react/composer/shared/lib/localStorageQuota": "./src/react/composer/shared/lib/localStorageQuota.ts",
+    "./react/composer/shared/ui/toggle": "./src/react/composer/shared/ui/toggle.tsx",
+    "./react/composer/shared/ui/progress": "./src/react/composer/shared/ui/progress.tsx",
+    "./react/composer/shared/ui/attachment": "./src/react/composer/shared/ui/attachment.tsx",
+    "./react/composer/features/messages/ui/useComposerAttachmentSpoilers": "./src/react/composer/features/messages/ui/useComposerAttachmentSpoilers.ts",
+    "./react/composer/features/messages/ui/ComposerImageEditor": "./src/react/composer/features/messages/ui/ComposerImageEditor.tsx",
+    "./react/composer/features/messages/ui/ComposerAttachments": "./src/react/composer/features/messages/ui/ComposerAttachments.tsx",
+    "./react/composer/features/messages/lib/attachmentPreview": "./src/react/composer/features/messages/lib/attachmentPreview.ts",
+    "./react/composer/features/messages/lib/attachmentHost": "./src/react/composer/features/messages/lib/attachmentHost.tsx",
+    "./react/composer/features/messages/lib/useAttachmentEditing": "./src/react/composer/features/messages/lib/useAttachmentEditing.ts",
+    "./react/composer/features/messages/lib/audioAttachment": "./src/react/composer/features/messages/lib/audioAttachment.ts",
+    "./react/composer/spoilers.css": "./src/react/composer/spoilers.css",
+    "./react/composer/shared/ui/markdownMedia": "./src/react/composer/shared/ui/markdownMedia.ts",
+    "./react/composer/shared/ui/markdown/SpoilerInline": "./src/react/composer/shared/ui/markdown/SpoilerInline.tsx",
+    "./react/composer/shared/ui/SpoilerParticles": "./src/react/composer/shared/ui/SpoilerParticles.tsx",
+    "./react/composer/shared/lib/remarkSpoilers": "./src/react/composer/shared/lib/remarkSpoilers.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "tsc --noEmit -p tsconfig.test.json && vitest run"
   },
   "peerDependencies": {
+    "@radix-ui/react-separator": "^1.1.8",
+    "@tanstack/react-virtual": "3.14.10",
     "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-dialog": "^1.1.15",
     "yaml": "^2.8.3",
@@ -154,9 +191,12 @@
     "@tiptap/react": "3.22.5",
     "@tiptap/starter-kit": "3.22.5",
     "linkifyjs": "^4.3.2",
-    "tiptap-markdown": "^0.9.0"
+    "tiptap-markdown": "^0.9.0",
+    "@radix-ui/react-toggle": "^1.1.10"
   },
   "devDependencies": {
+    "@radix-ui/react-separator": "^1.1.8",
+    "@tanstack/react-virtual": "3.14.10",
     "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-dialog": "^1.1.15",
     "yaml": "^2.8.3",
@@ -195,7 +235,8 @@
     "@tiptap/react": "3.22.5",
     "@tiptap/starter-kit": "3.22.5",
     "linkifyjs": "^4.3.2",
-    "tiptap-markdown": "^0.9.0"
+    "tiptap-markdown": "^0.9.0",
+    "@radix-ui/react-toggle": "^1.1.10"
   },
   "peerDependenciesMeta": {
     "@types/react": {

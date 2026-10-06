@@ -187,12 +187,28 @@ fn web_publish_message_roundtrip_preserves_mentions_and_legacy_absence() {
     for sample in [
         "web-publish-mention.sample.json",
         "web-publish-content-only.sample.json",
+        "web-forum-post.sample.json",
+        "web-forum-comment.sample.json",
     ] {
         let raw = fs::read_to_string(sample_path().with_file_name(sample)).unwrap();
         let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
         let typed: contracts::WebPublishMessageRequest = serde_json::from_str(&raw).unwrap();
         assert_eq!(original, serde_json::to_value(typed).unwrap(), "{sample}");
     }
+}
+
+#[test]
+fn forum_channel_and_composite_cursor_roundtrip_preserve_native_fields() {
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(name: &str) {
+        let raw = fs::read_to_string(sample_path().with_file_name(name)).unwrap();
+        let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let typed: T = serde_json::from_str(&raw).unwrap();
+        assert_eq!(original, serde_json::to_value(typed).unwrap(), "{name}");
+    }
+    roundtrip::<contracts::WebMessageQuery>("web-forum-query.sample.json");
+    roundtrip::<contracts::WebMessageQuery>("web-message-query-legacy.sample.json");
+    roundtrip::<contracts::WebMessageCursor>("web-message-cursor.sample.json");
+    roundtrip::<contracts::WebChannelView>("web-forum-channel.sample.json");
 }
 
 #[test]

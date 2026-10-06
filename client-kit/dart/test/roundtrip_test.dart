@@ -25,6 +25,18 @@ void main() {
             ConversationPage.fromJson(value).toJson(),
         'conversation-projection.sample.json': (value) =>
             ConversationProjectionRequest.fromJson(value).toJson(),
+        'web-forum-post.sample.json': (value) =>
+            WebPublishMessageRequest.fromJson(value).toJson(),
+        'web-forum-comment.sample.json': (value) =>
+            WebPublishMessageRequest.fromJson(value).toJson(),
+        'web-forum-query.sample.json': (value) =>
+            WebMessageQuery.fromJson(value).toJson(),
+        'web-message-query-legacy.sample.json': (value) =>
+            WebMessageQuery.fromJson(value).toJson(),
+        'web-message-cursor.sample.json': (value) =>
+            WebMessageCursor.fromJson(value).toJson(),
+        'web-forum-channel.sample.json': (value) =>
+            WebChannelView.fromJson(value).toJson(),
       };
       for (final entry in readers.entries) {
         final original =

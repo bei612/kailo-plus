@@ -47,6 +47,14 @@ pub struct ThreadRef {
     pub parent_event_id: EventId,
 }
 
+/// Native forum event kinds from Buzz; not an arbitrary event-kind override.
+#[derive(Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForumMessageKind {
+    Post,
+    Reply,
+}
+
 fn thread_tags(tr: &ThreadRef) -> Result<Vec<Tag>, String> {
     let root = tr.root_event_id.to_hex();
     let parent = tr.parent_event_id.to_hex();
@@ -137,6 +145,43 @@ pub fn build_message_with_client_tags(
     relay_base: &str,
     client_tags: &[Vec<String>],
 ) -> Result<EventBuilder, String> {
+    build_message_for_surface(
+        channel_id,
+        content,
+        thread_ref,
+        mentions,
+        media_tags,
+        custom_emoji_tags,
+        mention_ref_tags,
+        link_preview_tags,
+        sent_from_thread_tag,
+        relay_base,
+        client_tags,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_message_for_surface(
+    channel_id: Uuid,
+    content: &str,
+    thread_ref: Option<&ThreadRef>,
+    mentions: &[&str],
+    media_tags: &[Vec<String>],
+    custom_emoji_tags: &[Vec<String>],
+    mention_ref_tags: &[Vec<String>],
+    link_preview_tags: &[Vec<String>],
+    sent_from_thread_tag: Option<&[String]>,
+    relay_base: &str,
+    client_tags: &[Vec<String>],
+    forum_kind: Option<ForumMessageKind>,
+) -> Result<EventBuilder, String> {
+    let kind = match forum_kind {
+        None => 9,
+        Some(ForumMessageKind::Post) if thread_ref.is_none() => 45001,
+        Some(ForumMessageKind::Reply) if thread_ref.is_some() => 45003,
+        Some(_) => return Err("forum post/reply thread reference mismatch".into()),
+    };
     if sent_from_thread_tag.is_some() && thread_ref.is_some() {
         return Err("sent-from-thread provenance requires a top-level message".into());
     }
@@ -152,5 +197,87 @@ pub fn build_message_with_client_tags(
     crate::link_preview_tags::append(link_preview_tags, relay_base, &mut tags)?;
     append_sent_from_thread_tag(sent_from_thread_tag, &mut tags)?;
     append_client_tags(client_tags, &mut tags)?;
-    Ok(EventBuilder::new(Kind::Custom(9), content).tags(tags))
+    Ok(EventBuilder::new(Kind::Custom(kind), content).tags(tags))
+}
+
+#[cfg(test)]
+mod forum_tests {
+    use super::*;
+
+    #[test]
+    fn forum_events_preserve_channel_thread_and_signer_evidence() {
+        let keys = nostr::Keys::generate();
+        let channel = Uuid::new_v4();
+        let root = EventId::from_hex("11".repeat(32)).unwrap();
+        let reference = ThreadRef {
+            root_event_id: root,
+            parent_event_id: root,
+        };
+        for (kind, thread, expected) in [
+            (None, None, 9),
+            (Some(ForumMessageKind::Post), None, 45001),
+            (Some(ForumMessageKind::Reply), Some(&reference), 45003),
+        ] {
+            let event = build_message_for_surface(
+                channel,
+                "body",
+                thread,
+                &[],
+                &[],
+                &[],
+                &[],
+                &[],
+                None,
+                "",
+                &[],
+                kind,
+            )
+            .unwrap()
+            .sign_with_keys(&keys)
+            .unwrap();
+            assert_eq!(event.kind.as_u16(), expected);
+            assert_eq!(event.pubkey, keys.public_key());
+            event.verify().unwrap();
+            assert!(event
+                .tags
+                .iter()
+                .any(|tag| tag.as_slice() == ["h", &channel.to_string()]));
+            if expected == 45003 {
+                assert!(event
+                    .tags
+                    .iter()
+                    .any(|tag| tag.as_slice() == ["e", &root.to_hex(), "", "reply"]));
+            }
+        }
+        assert!(build_message_for_surface(
+            channel,
+            "body",
+            Some(&reference),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            None,
+            "",
+            &[],
+            Some(ForumMessageKind::Post)
+        )
+        .is_err());
+        assert!(build_message_for_surface(
+            channel,
+            "body",
+            None,
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            None,
+            "",
+            &[],
+            Some(ForumMessageKind::Reply)
+        )
+        .is_err());
+    }
 }

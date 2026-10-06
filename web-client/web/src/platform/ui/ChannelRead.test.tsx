@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { BffError, TransportError } from "@client-kit/platform/transport";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReadMarkRequest } from "@client-kit/contracts";
@@ -59,7 +60,7 @@ async function open() {
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <ChannelPane workspaceId="workspace-a" myPrincipalId="human-a" />
+        <TooltipProvider><ChannelPane workspaceId="workspace-a" myPrincipalId="human-a" /></TooltipProvider>
       </QueryClientProvider>,
     );
   });
@@ -117,6 +118,31 @@ it.each([new TransportError("lost ACK"), new BffError(403, "denied")])(
     expect(state.mark).toHaveBeenCalledTimes(1);
   },
 );
+
+it("mounts the original rich composer in a real channel DOM and removes it on revocation", async () => {
+  state.mark.mockRejectedValue(new BffError(403, "denied"));
+  await open();
+  expect(host.querySelector('[data-testid="message-input"]')?.getAttribute("contenteditable")).toBe("true");
+  expect(host.querySelector('[aria-label="Toggle formatting"]')).not.toBeNull();
+  await act(async () => state.receive!({ type: "closed", reason: "scope-revoked" }));
+  expect(host.querySelector('[data-testid="message-composer"]')).toBeNull();
+});
+
+it("renders real stream events through the original shared message row and groups adjacent authors", async () => {
+  state.mark.mockImplementation(async () => ({ version: 4 }));
+  await open();
+  await act(async () => state.receive!({ type: "event", event: event(20) }));
+  await flush();
+  expect(host.querySelectorAll('[data-testid="message-row"]')).toHaveLength(2);
+  expect(host.querySelectorAll('[data-testid="message-avatar"]')).toHaveLength(1);
+  expect(host.querySelectorAll('[data-testid="message-author"]')).toHaveLength(1);
+  expect(host.querySelectorAll('[data-testid="message-timestamp"]')).toHaveLength(2);
+  expect(host.querySelectorAll('[data-testid="message-timeline-day-divider"]')).toHaveLength(1);
+  expect(host.querySelector('[data-testid="copy-link-message-event-20"]')).not.toBeNull();
+  await act(async () => state.receive!({ type: "closed", reason: "scope-revoked" }));
+  await flush();
+  expect(host.querySelectorAll('[data-testid="message-row"]')).toHaveLength(0);
+});
 
 it("explicit recovery reads first and retries only the frozen request, not a newer event", async () => {
   state.mark.mockRejectedValue(new TransportError("lost ACK"));

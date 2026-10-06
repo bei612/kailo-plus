@@ -1,5 +1,36 @@
 # buzz-desktop：Kailo 一期版本的核验
 
+## 2026-10-06 原 Forum 页面与共享宿主恢复
+
+权威：REQ-24、DD-80；复用 `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/forum/ui/ForumView.tsx::ForumView`、
+`desktop/src/features/forum/ui/ForumPostCard.tsx::ForumPostCard`、
+`desktop/src/features/forum/ui/ForumThreadPanel.tsx::ForumThreadPanel` 与
+`desktop/src/features/forum/ui/ForumComposer.tsx::ForumComposerVisit` 的完整布局。
+原帖子列表、帖子／回复区、分页控件和 full composer 外观进入
+`client-kit/ts/platform/src/react/forum/`；Desktop 与 Web 实际消费同一个组件，
+不建立论坛正文表或第二消息权威。Native 沿原 channel window/thread subtree，
+Web 沿原 BFF messages 语义端点；39005/39006 原解析器也由两端共享。
+
+影响面为频道类型路由、9/45001/45003 发布、NIP-10 父子关系、已确认事件回执和复合分页游标。
+Native 带当前 Relay／签名者身份围栏，Web 由 BFF 从准入 binding 读取真实签名 39000 描述，
+未知类型不回退 stream。空列表只在读取成功时显示；撤权、错误读取、无确认回执不冒充成功；
+归档与非成员不可发布。窗口 200、线程 500、原生默认深度 64 从既有实现抽为
+`buzz_core::relay` 的协议常量，数值与行为不变，不新增配置或准入限制。
+
+本批执行证据位于受限 SDK 的 `profile-settings-ortsoo.DRR20F` 目录：
+共享 Forum／侧栏／消息行 9 项通过，原 Native 窗口解析／分组／日期／时间控件 25 项通过，
+Web 频道读取 7 项与撤权 4 项通过。先后在私有 SDK 删除 Forum 成员限制、侧栏折叠调用、
+pending 消息分组保护，分别捕获 1、1、1 个失败；全部还原，字节比对一致，9 项再次通过。
+三侧 TypeScript 检查通过。首次 Web 撤权 fixture 依赖全局 hook 序号导致 4 项失败；
+改真实 DOM 挂载后发现 fixture 的非稳定函数触发重渲染，停止该次检查，固定 mock 引用后 4 项通过。
+未将失败结果删除或包装为生产实现错误。
+
+仍未覆盖：原 Forum 删除／编辑操作、compact composer、完整资料面板、Forum 专属已读联动，
+以及本批 Native Rust 签名用例、真实 Relay 发布与浏览器交互的实际执行证据。
+本批没有构建或部署发行包，运行环境仍需发布新 Core／Native／Web 并投递已批准的论坛事件种类。
+这些是明确缺口，不称原版 Forum 全功能或生产交付已经完成。
+
 ## 范围
 
 基线 block/buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/`（Tauri，SF-DSK-01/02）。
@@ -136,6 +167,75 @@ Relay 侧的证据有两项：roster 已把该公钥移除，Relay 库中没有�
 与 Mobile 上看到的现象相同。截图在 `/volumes/data/kailo/tmp/native-evidence/`（`desktop-*.png`），
 夹具已拆除，宿主机 hosts 已恢复。
 
+## 2026-09-29 发送结果、注销与断线恢复（源码树）
+
+对应 `docs/acceptance/stage-1.md`「关闭前必须补齐」第 4 项在 Desktop 源码上的部分。本节只覆盖源码树；安装包没有重建，也没有在安装包上执行。
+
+**发送结果。** 两条发送路径的失败都归入四类：被拒、限流、未发出、结果不明（`src/shared/api/relayPublishOutcome.ts`）。WebSocket 路径抛出带类型的错误。REST 路径沿用 `src-tauri/src/relay.rs` 已固定的错误前缀，再做同样的归类。界面在 composer 内显示持续存在的状态（`data-testid="composer-send-outcome"`），文案来自共享目录 `native.send.*`，Relay 原文不上屏。结果不明使用非错误样式。之所以不用 toast：常驻 toast 会盖住发送键（实测），一闪而过的 toast 又等于没有提示。
+
+**结果不明时原样重发。** Relay 按事件 id 去重：buzz-db `store/event.rs` 用 `ON CONFLICT DO NOTHING`，主键为 `(community_id, created_at, id)`；buzz-relay `handlers/ingest.rs` 在 `!was_inserted` 时回 `accepted:true, "duplicate:"`。据此两条路径都按「Relay 地址 + 作者 + kind + 正文 + 标签」的指纹，保留结果不明的已签名事件，用户原样再发时重发同一个事件：
+- WebSocket：`relayClientSession.sendMessage`，社区切换时清空；
+- REST：`src-tauri/src/commands/messages/unconfirmed.rs`，`send_channel_message` 经 `submit_reusing_unconfirmed` 提交。
+
+确认被接受之后才清除记录；此后再发同样正文，就是一条新消息。
+
+**注销。** `platform_sign_out` 依次执行：撤销 Core PlatformSession（`POST /api/v1/logout`）；按 discovery 的 `revocation_endpoint` 以 RFC 7009 在 IdP 作废刷新令牌；删除 keyring 中的刷新令牌与内存中的访问令牌。命令返回 `{coreSessionRevoked, refreshTokenRevoked}`，共用包据此在登录页如实显示「服务端未确认」。协作面卸载时断开以设备身份认证的 Relay 连接（`connectCommunity.ts::disconnectCommunity`）。在此之前，退出后单例 socket 仍连着 Relay。设备私钥保留，与退出确认文案一致。
+
+| 检查 | 结果 |
+|---|---|
+| `pnpm test` | `pass 2297`、`fail 0` |
+| `pnpm typecheck` | 通过 |
+| `cargo test --lib` | `395 passed; 0 failed; 9 ignored` |
+| `cargo clippy --all-targets -- -D warnings` | 通过 |
+| Playwright smoke：messaging、relay-reconnect、platform-pages、platform-bootstrap、relay-reconnect-affordance、relay-connectivity 六个文件 | `96 passed` |
+| `core/verify/native-e2e.sh desktop`（当前本地拓扑与 Keycloak） | `1 passed`。设备撤销后，同一设备直连发布得到 Relay 的 `relay returned 403 Forbidden: You must be a relay member …`；注销时 Core 与 IdP 均确认，原刷新令牌随后被 IdP 以 4xx 拒绝 |
+
+新增断言：
+- `relayClientUnconfirmedResend.test.mjs`（6 例）；
+- `useMentionSendFlow.helpers.test.mjs`：文案映射；
+- `unconfirmed.rs`（6 例，含命令路径上的假 Relay）；
+- `platform::api::sign_out_tests`（2 例）；
+- Playwright 5 例：被拒与限流时草稿保留、状态持续存在，再发后状态撤下；未收到 OK 就断线时显示结果不明，重连后 Relay 已存储的那条回到时间线，原样重发不重新签名，时间线只有一条；退出后 mock Relay socket 为 0；服务端未确认时显示对应文案。
+
+破坏核验（均已还原并复验通过）：
+- 取消 WebSocket 路径的未确认记录：单测 2 例失败；Playwright 时间线出现 2 条（期望 1）。
+- 取消 REST 复用：`unconfirmed.rs` 2 例失败，命令路径用例失败。
+- 跳过 IdP 撤销：`sign_out_tests` 2 例失败。
+- 不渲染 composer 状态：Playwright 2 例失败。
+- 去掉卸载时断开 Relay：退出用例得到 socket 数 1（期望 0）。
+
+断线期间的非同步提示沿用上游的侧栏与浮层重连卡片（「Reconnecting」等英文原文），本次没有迁入共享文案目录。另外，`cargo fmt --check` 报出 `lib.rs`、`platform/config.rs`、`egress_guard_tests.rs` 的格式差异，`pnpm check` 报出四个既有文件的格式差异。这些都来自已提交的代码，不是本增量引入的。
+
+## 接手产物登记复核（2026-09-30）
+
+现有安装包 `dist/desktop-client/Kailo_0.5.23_amd64.deb` 实际 SHA-256 为
+`e2720d130e9467b0d09e61da3f43e5dc522d78e0db26a7f06321b3256a3c1081`，
+与 `collaboration/fork/upstream.yaml` 的 `desktop-client.artifact_digest` 相等；
+来源记录的 `source_digest` 已经 seam 门禁核对与当前输入一致。
+两份引用 Desktop 的能力追溯记录已同步该摘要，`status: in_progress` 保持不变。
+
+本次没有安装或启动该 `.deb`，没有把上述源码树、smoke 或历史安装包核验
+重新归到这个新摘要。旧 `Buzz_0.5.23_amd64.deb` 的摘要为 `14e4cc9c…`，
+与当前包不同，保留的旧文件不是当前构建或当前端到端证据。
+
+## 共享日期与 Relay 文案增量（2026-09-30）
+
+搜索相对时间与草稿时间改读现有共享日期函数，保留秒/毫秒转换、非法时间处理、
+搜索与 draft 行为。侧栏九条连接文案改读共享 TS 目录，Dart 由既有生成器投影，
+状态分支、按钮禁用与 reconnect/dismiss 回调不变；没有新增界面或设置。
+整体 typecheck、定向格式与现有日期相关 37 项测试退出 0；初次安装 kit 副本缺少
+新 key 的失败及按 ADR-18 原命令刷新后的通过记录均保留，package/lock 摘要未变。
+共享目录破坏核验、独立复核范围见
+`core/verify/functional-layout-regression.md`「共享主题与协作界面呈现增量」。
+
+现有构建入口实际退出 0，5 分 31.886 秒，source 为
+`sha256:d7cd027254577c9ace4d4942400e36a21576e33fae601b27c81d1fcc04c6f4c0`，
+`dist/desktop-client/Kailo_0.5.23_amd64.deb` 字节摘要与登记同为
+`sha256:b90bd3722482f9fe8bf557dbba9588d6dc966806ff8d934e3fbece88a02e1bab`。
+日志为 `/volumes/data/kailo/tmp/codex-desktop-ui-current-artifact-20260930.log`。
+此包未安装或启动，完整工作树产物不视为本批选定源码提交的发布证明，也不替代
+本节呈现、logout、断线恢复或管理平面的安装验收。
+
 ## 外观说明使用部署显示名（2026-09-30）
 
 `SettingsPanels.tsx::ThemeSettingsCard` 的两段说明以共享 `{name}` 参数消费既有
@@ -155,6 +255,7 @@ NativeSession 的显示名，无值时使用共享中性标题；外观与主题
 日志为 `/volumes/data/kailo/tmp/codex-native-name-desktop-artifact-root-20260930.log`；
 前两次执行包装失败保留于同目录，未据其报告构建完成。该包未安装或启动，来自
 完整工作树的产物不作为选定源码提交的发布证明，能力状态与三端验收结论不变。
+
 
 ## 2026-10-02 Windows x64 NSIS unsigned 测试包（独立纯呈现源码）
 

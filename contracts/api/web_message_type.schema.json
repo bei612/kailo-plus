@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_message_type.schema.json",
+  "title": "WebMessageType",
+  "type": "string",
+  "enum": ["STREAM", "FORUM_POST", "FORUM_COMMENT"],
+  "description": "原 Buzz 频道消息语义。缺省 STREAM 保持旧请求；不允许调用者提交任意事件 kind。"
+}

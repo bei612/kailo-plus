@@ -1,11 +1,11 @@
 capability_id: collab.channel.message
 title: Web 经 BFF 读取、订阅与发布 Channel 消息，Core 以本人 Nostr 身份代签
 stage: S1
-status: shipped
+status: in_progress
 exposure: end_user
 
 design:
-  requirements: [V-REQ-01, V-REQ-02, V-REQ-03]
+  requirements: [V-REQ-01, V-REQ-02, V-REQ-03, V-REQ-24]
   decisions: [DD-02, DD-39, DD-72, DD-81]
   facts: [SF-BUZ-32, SF-BUZ-40]
   seams: [SS-WEB-RELAY, SS-BUZ-SERVER-CLIENT]
@@ -15,6 +15,8 @@ design:
 validation:
   scenarios: [V-SCN-01, V-SCN-28]
   evidence:
+    - dimension: 故障与恢复
+      ref: core/verify/buzz-restoration-checkpoint.md
     - dimension: 上游接缝
       ref: collaboration/fork/verify/server-client.md
     - dimension: 上游接缝
@@ -30,11 +32,11 @@ implementation:
   owners: [team-platform]
   paths: [core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/stream.rs, core/crates/platform-core/src/publish_reconcile.rs, core/crates/collab-bridge, web-client, client-kit/ts/platform/src/react/mention-autocomplete.tsx, client-kit/ts/platform/src/react/use-mention-selection.ts, collaboration/desktop/src/features/messages/ui/MentionAutocomplete.tsx]
   surfaces: [web]
-  schemas: []
-  migrations: [core/migrations/20260923070000_audit_dispatch_index.up.sql]
+  schemas: [contracts/api/web_publish_message_request.schema.json, contracts/api/web_message_query.schema.json, contracts/api/web_message_cursor.schema.json, contracts/api/web_message_type.schema.json, contracts/api/web_channel_view.schema.json]
+  migrations: [core/migrations/20260923070000_audit_dispatch_index.up.sql, core/migrations/20261006190000_publish_message_ancestry.up.sql, core/migrations/20261006190000_publish_message_ancestry.down.sql]
 
 runtime:
-  routes: ["/api/v1/workspaces/{workspace_id}/messages", "/api/v1/workspaces/{workspace_id}/stream"]
+  routes: ["/api/v1/workspaces/{workspace_id}/messages", "/api/v1/workspaces/{workspace_id}/stream", "/api/v1/workspaces/{workspace_id}/channel"]
   actions: [workspace.message.publish]
 
 release:
@@ -45,4 +47,4 @@ release:
       digest: sha256:6141e274ae8ca893d32318b1384e3d35a792c04eda88fe45d03b740c3814fd06
     - name: collaboration-relay
       digest: sha256:3ee0bfd3472f810ecec1503082ad8787ecb878d3b8efb39340d980c4662015bd
-  gate: shipped
+  gate: blocked_until_seams_closed

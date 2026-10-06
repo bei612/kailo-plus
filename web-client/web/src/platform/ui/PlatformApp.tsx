@@ -19,7 +19,8 @@ import {
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
-import { ConversationList, useConversations } from "@client-kit/platform/react/new-message";
+import { ConversationList, ConversationVisibilityProvider, useConversations } from "@client-kit/platform/react/new-message";
+import { conversationVisibility } from "../bff-client";
 import { useSettingsShortcuts } from "@client-kit/platform/react/use-settings-shortcuts";
 import { ProtocolDocumentBridge } from "@client-kit/platform/react/protocol-document-bridge";
 import {
@@ -30,7 +31,6 @@ import {
 import { WorkflowsPage } from "@client-kit/platform/react/workflows";
 import { RedemptionProgress, TenantInvitations } from "@client-kit/platform/react/invitations";
 import {
-  PlatformNavigation,
   type PlatformNavigationSection,
 } from "@client-kit/platform/react/navigation";
 import {
@@ -45,21 +45,14 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { ChannelSidebar } from "./ChannelSidebar";
-import {
-  Bot,
-  ClipboardCheck,
-  Hash,
-  Inbox,
-  History,
-  ListChecks,
-  MonitorSmartphone,
-  Settings,
-  Users,
-  Workflow,
-} from "lucide-react";
+import { SidebarProvider, SidebarTrigger, SidebarMenu, SidebarMenuItem } from "@client-kit/platform/react/sidebar/sidebar";
+import { AppSidebarFrame } from "@client-kit/platform/react/sidebar/app-sidebar-frame";
+import { AppSidebarPrimaryMenu } from "@client-kit/platform/react/sidebar/app-sidebar-primary-menu";
+import { WebSidebarProfileCard } from "./SidebarProfileCard";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BffError, bff, setWorkspacePreference, signOut } from "@/platform/bff-client";
 import { ChannelPane } from "@/platform/ui/ChannelPane";
+import { ForumPane } from "@/platform/ui/ForumPane";
 import { InboxPane } from "@/platform/ui/InboxPane";
 import { SettingsPane } from "@/platform/ui/SettingsPane";
 import { NewMessagePage } from "./NewMessagePage";
@@ -131,7 +124,7 @@ export function PlatformApp() {
           }}
         />
       ) : (
-        <SignedIn session={session} />
+        <ConversationVisibilityProvider value={conversationVisibility}><SignedIn session={session} /></ConversationVisibilityProvider>
       )}
     </PlatformProvider>
   );
@@ -171,6 +164,11 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const rows = workspaces.isError ? [] : workspaces.data ?? [];
   // Only use fresh admitted directory rows; a revoked previous selection cannot remain active.
   const active = rows.find((workspace) => workspace.id === chosen)?.id ?? rows[0]?.id ?? null;
+  const channel = useQuery({
+    queryKey: ["platform", "channel-descriptor", session.tenantPrincipalId, active],
+    enabled: Boolean(active) && tab === "channel",
+    queryFn: () => bff.workspaceChannel(active!),
+  });
   const openMessageLink = (link: ParsedMessageLink) => {
     if (!rows.some((workspace) => workspace.id === link.channelId)) {
       setMessageLinkProblem(t("platform.linkChannelUnavailable"));
@@ -221,8 +219,11 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   ) : !active ? (
     <Notice text={t("platform.noWorkspace")} />
   ) : tab === "channel" ? (
-    <><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
-      onOpenMessageLink={openMessageLink} targetMessageId={messageTarget?.channelId === active ? messageTarget.messageId : undefined} /></>
+    channel.isError ? <Notice text={t("platform.loadFailed")} /> : channel.isPending ? <Notice text={t("platform.loadingWorkspaces")} /> :
+    channel.data.channelType === "forum" ? <ForumPane key={`${session.tenantPrincipalId}:${active}`} workspaceId={active}
+      channelId={channel.data.channelId} archived={channel.data.archived} myPrincipalId={session.tenantPrincipalId} onOpenMessageLink={openMessageLink} target={messageTarget ?? undefined} /> :
+    channel.data.channelType === "stream" ? <><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
+      onOpenMessageLink={openMessageLink} targetMessageId={messageTarget?.channelId === active ? messageTarget.messageId : undefined} /></> : <Notice text={t("platform.loadFailed")} />
   ) : (
     <MembersPane key={active} workspaceId={active} />
   );
@@ -271,79 +272,27 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     );
 
   return (
-    <div className="relative isolate flex h-dvh flex-col overflow-hidden bg-sidebar text-sm">
-      <GradientLayer />
-      <div className="relative z-10 flex h-9 shrink-0 items-center px-4 font-semibold">
-        {t("platform.title")}
-      </div>
-      <div className="flex min-h-0 flex-1">
-        <aside
-          aria-label={t("platform.title")}
-          className="relative z-10 flex w-[300px] shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground"
-          data-testid="app-sidebar"
-        >
-          <nav
-            aria-label={t("platform.title")}
-            className="shrink-0 px-2"
-            data-testid="sidebar-primary-menu"
-          >
-            <PlatformNavigation
-              locale={getLocale()}
-              selectedSection={
-                tab === "channel" || tab === "inbox" || tab === "settings" || tab === "new-message" || tab === "conversation" ? null : tab
-              }
-              onSelectSection={setTab}
-              icons={{
-                members: <Users className="h-4 w-4" />,
-                agents: <Bot className="h-4 w-4" />,
-                workflows: <Workflow className="h-4 w-4" />,
-                tasks: <ListChecks className="h-4 w-4" />,
-                approvals: <ClipboardCheck className="h-4 w-4" />,
-                audit: <History className="h-4 w-4" />,
-                devices: <MonitorSmartphone className="h-4 w-4" />,
-              }}
-              firstRow={
-                <>
-                  <li className="group/menu-item relative" data-sidebar="menu-item">
-                    <Button
-                      aria-pressed={tab === "inbox"}
-                      className="h-8 w-full justify-start gap-2 text-left font-normal"
-                      data-testid="sidebar-inbox"
-                      data-sidebar="menu-button"
-                      data-active={tab === "inbox"}
-                      size="sm"
-                      type="button"
-                      variant={tab === "inbox" ? "secondary" : "ghost"}
-                      onClick={() => setTab("inbox")}
-                    >
-                      <Inbox className="h-4 w-4" />
-                      {translate(getLocale(), "inbox.title")}
-                    </Button>
-                  </li>
-                  <li className="group/menu-item relative" data-sidebar="menu-item">
-                    <Button
-                      aria-pressed={tab === "channel"}
-                      className="h-8 w-full justify-start gap-2 text-left font-normal"
-                      data-testid="sidebar-channel"
-                      data-sidebar="menu-button"
-                      data-active={tab === "channel"}
-                      size="sm"
-                      type="button"
-                      variant={tab === "channel" ? "secondary" : "ghost"}
-                      onClick={() => setTab("channel")}
-                    >
-                      <Hash className="h-4 w-4" />
-                      {t("platform.tab.channel")}
-                    </Button>
-                  </li>
-                </>
-              }
-            />
-          </nav>
-          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto px-3 py-2">
+    <div className="relative h-dvh overflow-hidden overscroll-none">
+      <div className="absolute inset-0 z-10 flex min-h-0 flex-row overflow-hidden bg-background">
+        <GradientLayer />
+        <SidebarProvider className="relative z-10 min-h-0 min-w-0 flex-1 flex-col overflow-visible" data-testid="app-sidebar-layer">
+          <div className="relative z-45 flex h-(--buzz-top-chrome-height,40px) shrink-0 cursor-default select-none items-center bg-sidebar pl-3 pr-3 text-sidebar-foreground" data-testid="app-top-chrome">
+            <SidebarTrigger className="h-[28px] w-[28px] rounded-[4px] text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
+            <div className="flex min-w-0 flex-1 items-center" id="app-top-chrome-content" />
+          </div>
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            <AppSidebarFrame aria-label={t("platform.title")}
+              footer={<SidebarMenu><SidebarMenuItem><WebSidebarProfileCard session={session} settingsOpen={tab === "settings"}
+                onOpenSettings={() => setTab("settings")} onSignOut={onSignOut} /></SidebarMenuItem></SidebarMenu>}
+              dialogs={<CreateChannelDialog open={createChannelOpen} onOpenChange={setCreateChannelOpen} />}>
+              <AppSidebarPrimaryMenu onNewMessage={() => setTab("new-message")} onSelectHome={() => setTab("inbox")}
+                onSelectPlatformSection={setTab}
+                selectedPlatformSection={tab === "channel" || tab === "inbox" || tab === "settings" || tab === "new-message" || tab === "conversation" ? null : tab}
+                selectedView={tab === "inbox" ? "home" : tab === "new-message" ? "new-message" : tab === "channel" || tab === "conversation" || tab === "settings" ? "channel" : "platform"} />
             <ConversationList currentPrincipalId={session.tenantPrincipalId} items={conversations.items} loading={conversations.loading}
               error={conversations.error} selectedId={tab === "conversation" ? chosenConversation?.id ?? null : null}
               onNewMessage={() => setTab("new-message")} onReload={() => { void conversations.reload().catch(() => undefined); }}
+              onCloseSelected={() => { setChosenConversation(null); setTab("inbox"); }}
               onSelect={(conversation) => { setChosenConversation(conversation); setTab("conversation"); }} />
             <ChannelSidebar principalId={session.tenantPrincipalId} workspaces={rows} selectedId={active} active={tab === "channel"}
               reads={userState} preferencePending={preference.isPending || preferenceUnknown}
@@ -356,35 +305,16 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               {preferenceUnknown ? translate(getLocale(), "sidebar.preferenceUnknown") : t("platform.loadFailed")}
               <Button size="sm" onClick={() => void userState.refresh()}>{t("platform.retry")}</Button>
             </p> : null}
-          </div>
-          <div className="flex shrink-0 items-center gap-2 p-3">
-            <span className="min-w-0 flex-1 truncate text-muted-foreground">
-              {session.displayName}
-            </span>
-            <Button
-              size="icon"
-              type="button"
-              variant="ghost"
-              aria-label={translate(getLocale(), "platform.settings.title")}
-              aria-pressed={tab === "settings"}
-              data-testid="sidebar-settings"
-              onClick={() => setTab("settings")}
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
-            <Button size="sm" type="button" variant="outline" onClick={onSignOut}>
-              {t("platform.signOut")}
-            </Button>
-          </div>
-        </aside>
+            </AppSidebarFrame>
         <ContentSurface>
           <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
             {tabLabel(tab)}
           </header>
           <main className="min-h-0 flex-1 overflow-auto p-4">{body}</main>
         </ContentSurface>
+          </div>
+        </SidebarProvider>
       </div>
-      <CreateChannelDialog open={createChannelOpen} onOpenChange={setCreateChannelOpen} />
     </div>
   );
 }

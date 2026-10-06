@@ -265,6 +265,18 @@
 //    userStateVersion, err := UnmarshalUserStateVersion(bytes)
 //    bytes, err = userStateVersion.Marshal()
 //
+//    webChannelView, err := UnmarshalWebChannelView(bytes)
+//    bytes, err = webChannelView.Marshal()
+//
+//    webMessageCursor, err := UnmarshalWebMessageCursor(bytes)
+//    bytes, err = webMessageCursor.Marshal()
+//
+//    webMessageQuery, err := UnmarshalWebMessageQuery(bytes)
+//    bytes, err = webMessageQuery.Marshal()
+//
+//    webMessageType, err := UnmarshalWebMessageType(bytes)
+//    bytes, err = webMessageType.Marshal()
+//
 //    webProfileUpdateRequest, err := UnmarshalWebProfileUpdateRequest(bytes)
 //    bytes, err = webProfileUpdateRequest.Marshal()
 //
@@ -1406,6 +1418,46 @@ func UnmarshalUserStateVersion(data []byte) (UserStateVersion, error) {
 }
 
 func (r *UserStateVersion) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebChannelView(data []byte) (WebChannelView, error) {
+	var r WebChannelView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebChannelView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebMessageCursor(data []byte) (WebMessageCursor, error) {
+	var r WebMessageCursor
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebMessageCursor) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebMessageQuery(data []byte) (WebMessageQuery, error) {
+	var r WebMessageQuery
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebMessageQuery) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebMessageType(data []byte) (WebMessageType, error) {
+	var r WebMessageType
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebMessageType) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4102,6 +4154,30 @@ type UserStateVersion struct {
 	Version int64 `json:"version"`
 }
 
+// Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。
+type WebChannelView struct {
+	Archived    bool        `json:"archived"`
+	ChannelID   string      `json:"channelId"`
+	ChannelType ChannelType `json:"channelType"`
+	Description *string     `json:"description,omitempty"`
+	Name        string      `json:"name"`
+}
+
+// 原 Buzz 线程分页的复合游标；下一请求以 before=createdAt、beforeId=eventId 原样提交，避免同秒回复丢失。
+type WebMessageCursor struct {
+	CreatedAt int64  `json:"createdAt"`
+	EventID   string `json:"eventId"`
+}
+
+// 同一已准入 Channel 的原生消息分页或线程读取。before/beforeId 必须成对，频道窗口向前翻历史，线程沿原 Relay
+// 协议向后读回复；上界来自运行时配置与原协议上界，不接受任意 Relay filter。
+type WebMessageQuery struct {
+	Before        *int64          `json:"before,omitempty"`
+	BeforeID      *string         `json:"beforeId,omitempty"`
+	MessageType   *WebMessageType `json:"messageType,omitempty"`
+	ParentEventID *string         `json:"parentEventId,omitempty"`
+}
+
 // Own Buzz kind:0 metadata. The authenticated host chooses the signer and Tenant; no raw
 // event, author, relay URL or management tags are accepted. Omitted fields are preserved;
 // empty strings explicitly clear a field.
@@ -4130,20 +4206,27 @@ type WebProfileView struct {
 	Pubkey           string            `json:"pubkey"`
 }
 
-// Web HUMAN 的频道根消息语义输入；身份、Channel 与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或 signed
-// event。
+// Web HUMAN 的原 Buzz 消息语义输入；身份、Channel、回复祖先与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或
+// signed event。
 type WebPublishMessageRequest struct {
 	Attachments []WebMessageAttachment `json:"attachments,omitempty"`
 	Content     string                 `json:"content"`
 	// 用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
-	MentionInstallationIDS []string `json:"mentionInstallationIds,omitempty"`
+	MentionInstallationIDS []string        `json:"mentionInstallationIds,omitempty"`
+	MessageType            *WebMessageType `json:"messageType,omitempty"`
+	// 原 Relay 消息引用；BFF 在当前 Channel 回读验签并解析 NIP-10 祖先。
+	ParentEventID *string `json:"parentEventId,omitempty"`
 }
 
 type WebMessageAttachment struct {
-	Sha256 string `json:"sha256"`
-	Size   int64  `json:"size"`
-	Type   string `json:"type"`
-	URL    string `json:"url"`
+	// 原 Buzz imeta filename；仅为显示及下载名称，不参与媒体存储寻址。
+	Filename *string `json:"filename,omitempty"`
+	Sha256   string  `json:"sha256"`
+	Size     int64   `json:"size"`
+	// 沿原 Buzz Markdown 隐藏图片或视频；普通文件仍为文件链接。
+	Spoiler *bool  `json:"spoiler,omitempty"`
+	Type    string `json:"type"`
+	URL     string `json:"url"`
 }
 
 // GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 且两侧 binding 都 ACTIVE 的
@@ -6198,6 +6281,15 @@ const (
 	Redeemed                      TenantInvitationStatus = "REDEEMED"
 	TenantInvitationStatusEXPIRED TenantInvitationStatus = "EXPIRED"
 	TenantInvitationStatusREVOKED TenantInvitationStatus = "REVOKED"
+)
+
+// 原 Buzz 频道消息语义。缺省 STREAM 保持旧请求；不允许调用者提交任意事件 kind。
+type WebMessageType string
+
+const (
+	ForumComment         WebMessageType = "FORUM_COMMENT"
+	ForumPost            WebMessageType = "FORUM_POST"
+	WebMessageTypeSTREAM WebMessageType = "STREAM"
 )
 
 // WorkspaceMembership 状态机。REVOKING 期间立即拒绝新动作；重新授权创建新 membership version，不复活旧投影。

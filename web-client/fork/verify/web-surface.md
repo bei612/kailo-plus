@@ -1714,3 +1714,136 @@ Web 仅在普通已登录 SignedIn 挂载原 hook，打开现有 SettingsPane �
 没有 full、产品构建、部署或真实设备快捷键验收；Desktop 全工程类型/打包
 留联合批执行，本刀仅重导出原调用点且保留原 ModifierKeyboardEvent 类型形状。
 独立补丁不包含 Cells schema/生成物或上一 Surface 实现。
+
+## 原侧栏主体跨端共用（2026-10-06）
+
+本批以 REQ-24、DD-53 和 ADR-09 为权威，恢复现有 Desktop 的原侧栏呈现，
+不新增业务实体，不把 Web 身份改为 Relay 直连。固定上游
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/shared/ui/sidebar.tsx::SidebarProvider/Sidebar/SidebarRail`、
+`desktop/src/features/sidebar/ui/AppSidebar.tsx::AppSidebar`、
+`desktop/src/features/sidebar/ui/AppSidebarPinnedHeader.tsx::AppSidebarPrimaryMenu`、
+`desktop/src/features/sidebar/ui/SidebarProfileCard.tsx::SidebarProfileCard` 和
+`desktop/src/features/profile/ui/ProfilePopover.tsx::ProfilePopover` 已重新只读解析。
+
+影响面：原 Sidebar 的折叠、快捷键、宽度磁吸与拖拽、响应式 Sheet、菜单样式，
+以及 AppSidebar 的滚动容器、固定头尾、头像弹层集中进入共享 TS。
+Desktop 原 Sidebar 仅保留本机触觉注入；Desktop AppSidebar 和 Web SignedIn
+都实际消费同一 AppSidebarFrame、PrimaryMenu、ProfileCard。Web 删除独立
+固定宽 aside 和自行排布的设置/退出按钮。Web 头像只读既有本人 profile
+BFF 与 avatarMediaPaths；设置关闭后恢复查询。原 Native 搜索、未读溢出按钮、
+Relay 状态卡和本机资料缓存通过原宿主插槽保留，未删除对应功能。
+
+副作用与异常：目录、收藏静音 CAS、DM hide/reopen、会话与授权仍为既有调用。
+新增共享层不读 Relay、不持钥、不存业务数据；只保留上游原 UI 宽度和折叠偏好。
+切换会话按真实 platformSessionId/principalId 隔离头像查询，查询失败不使用
+旧成功响应冒充当前资料。未提供的未读计数不伪造为已知 0。Web 没有当前社区名称
+投影，卡片次行使用真实 tenantId，不能编造社区名称或读取管理员租户目录。
+
+范围说明：这批不是全功能完成声明。Web 原 TopbarSearch 所需消息/用户搜索 BFF
+尚未接通；不制造目录过滤冒充全文搜索。当前 Desktop 已有的社区浏览、频道分组
+拖拽、Pulse/Projects 等与固定上游的差异仍需真实接线，不能以本批共享壳验收抵销。
+本批未改 Forum 正文、Composer、频道创建契约或任何权限规则。
+
+执行证据：`python3 tools/upstream_manifest.py status` 退出 0，Buzz HEAD 等于
+固定基准，Temporal SDK 仍如实报告领先 75 个提交；未更新版本。
+本批限定路径 `git diff --check` 退出 0。实现后补共享侧栏交互 3 用例，
+交集中前端 SDK 验证；此条记录不声称这些用例、三端编译、full、打包或部署已通过。
+没有独立启动编译，也没有提交或 push；后续真实输出由联合批补记。
+
+### 2026-10-06 原消息行共享与 Forum 契约后置验证
+
+权威与影响：沿 REQ-24 保留原页面而非精简替代。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/ui/MessageRow.tsx::MessageRow`、
+`desktop/src/features/messages/ui/MessageActionBar.tsx::MessageActionBar`、
+`desktop/src/features/messages/ui/MessageHeader.tsx::MessageHeaderRow`、
+`desktop/src/features/messages/ui/MessageTimestamp.tsx::MessageTimestamp`、
+`desktop/src/features/messages/ui/DayDivider.tsx::DayDivider`、
+`desktop/src/features/messages/ui/UnreadDivider.tsx::UnreadDivider`、
+`desktop/src/shared/ui/UserAvatar.tsx::UserAvatar` 与
+`desktop/src/features/messages/lib/messageGrouping.ts::hasSameMessageAuthor`
+均已按完整 commit/path/symbol 重新核验。当前 fork 已有的治理/i18n 适配保留。
+
+原消息行布局、头像回退/动画、作者/时间、连续消息时间槽、悬浮动作轨道、
+线程连线与折叠布局迁到 `client-kit/ts/platform/src/react/messages/`；
+Desktop 原 `MessageRow` 继续提供实际资料弹窗、Markdown、原生剪贴板和
+线程动作适配，原工具函数只重导出共享实现。Web `ChannelPane` 删除
+简版作者/时间/正文组合，实际使用同一行、日期与未读分隔。复制消息保留
+原 mention HTML，复制链接使用原链接协议；浏览器拒绝剪贴板时不显示成功。
+
+副作用与边界：不改 Relay 正文权威、目录身份、BFF 准入、发布幂等、已读
+CAS 或 UNKNOWN 语义；共享呈现不新增状态权威。缺作者资料用原头像回退，
+不编造他人资料；pending 保留作者与发送中状态，不合并为已送达连续行，
+不出现已送达复制动作；撤权仍清空消息和写入口。Web 他人完整资料弹窗、
+线程摘要/跟随等消费者仍有缺口，本批不能证明原全功能恢复或部署完成。
+
+实际联合 SDK：固定镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+`kailo-agent-receipt-xvkujx` 实际 cgroup 4 CPU / 8 GiB，源码与缓存均在 Data
+盘。三侧 `tsc --noEmit` 及 shared test 配置检查退出 0；共享消息行 3/3、
+Forum 3/3、侧栏 3/3，Web `ChannelRead` 7/7、`ChannelPane` 4/4，原生日期/
+分组/窗口/时间契约 25/25。SDK 将 pending 不可合并条件移除，消息行检查
+真实出现 1 failed / 2 passed；原字节还原后共享三组 9/9。
+Web 原 SSR fixture 全局编号模拟所有子组件 useState，新增真实消息子树后
+发生槽位碰撞；检查已改真实 DOM/act 挂载与稳定 mock 依赖，保留原四项
+撤权/迟到事件断言，不以屏蔽原消息行的方式让检查通过。
+
+联合原始日志目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`。
+文件为 `forum-shared-tsc.log`、`forum-web-tsc.log`、`forum-desktop-tsc.log`、
+`forum-sidebar-message-restored.log`、`message-row-mutation.log`、
+`forum-web-channel-restored.log`、`forum-web-tests.log`、`forum-native-tests.log`。
+`forum-web-tests.log` 保留了早期旧 fixture 失败；最终四项恢复结果以
+`forum-web-channel-restored.log` 为准，不能只截取前一次失败或后一次成功。
+
+已实现 Forum 契约的后置证据：新增六个 `contracts/samples/web-forum-*` /
+`web-message-{cursor,query-legacy}.sample.json`，现有四侧 roundtrip 消费原
+发帖/回复类型、父消息、完整复合游标、原论坛描述、附件 filename/spoiler。
+旧 content-only 请求、缺省 query 与新增可选字段同时回读。成对游标拒绝
+由原 Core `message_query_cursor` / `forum_cursor_requires_the_complete_canonical_key`
+承担，不在四侧另建校验权威。
+
+SDK 中实际执行：
+
+- `cd worker && go test ./internal/contracts -count=1`：
+  `ok apps/worker/internal/contracts 0.004s`，退出 0。
+- `cd client-kit/ts/contracts && ./node_modules/.bin/tsc --noEmit -p tsconfig.test.json && node --test --experimental-strip-types test/roundtrip.test.ts`：
+  `tests 20, pass 20, fail 0`，退出 0。
+- `cd client-kit/dart && dart test test/roundtrip_test.dart`：
+  `+17: All tests passed!`，退出 0；首例逐项往返六个新样例。
+- 在同一固定镜像、4 CPU / 8 GiB、只读挂载正式 apps 下运行既有
+  `tools/check.sh` 的 `LAST_TAG` 兼容比较段：
+  `PASS 相对 contracts-v0.1.0 无破坏性变更（242 个 schema，匹配 3 个历史 schema）`。
+  此处未重复四侧生成，不等同于 `gen.sh --check` 或 full。
+
+SDK-only 变异：Go 把生成 JSON tag `beforeId` / `filename` 改名，新增
+Forum query/post 两样例真实失败，退出 1；Dart 把序列化 filename 改名，
+新附件样例报告缺 filename，退出 1；TS 删除生成 WebMessageQuery.beforeId，
+现有 roundtrip 类型检查报 TS2561/TS2551 三项、退出 2。三侧均从正式生成物
+原字节还原、`cmp` 退出 0，再运行上述各侧命令通过。正式生成物未手改。
+Rust `core/crates/contracts/tests/roundtrip.rs` 已追加对应样例并交主线同一次
+Cargo 验证；本条记录未执行或声明 Rust roundtrip 通过。full、打包、截图、
+部署、提交与 push 不在本子批执行，不能用类型检查替代端上视觉验收。
+
+迁移追加证据：指定隔离 PostgreSQL `kailo-buzz-full-pg-uOp8YM` 的
+`scope_verify` 初始为 89 条迁移、最新 `20261006180000`，
+`admission.publish_attempt` 与 `identity.principal` 均 0 行。在上述
+受限 SDK 内，对同一迁移目录实际执行 `sqlx migrate run --source core/migrations`、
+`sqlx migrate revert --source core/migrations`、再次 `run`，原输出为：
+
+```text
+Applied 20261006190000/migrate publish message ancestry (1.327999473s)
+Applied 20261006190000/revert publish message ancestry (69.061438ms)
+Applied 20261006190000/migrate publish message ancestry (25.99064ms)
+scope_verify|90|20261006190000|0
+```
+
+退出 0，最终两新字段存在，发布记录与身份记录仍为 0；没有触碰正式业务库。
+密码只经受控 stdin/environment 投递，未打印。首轮发现指定 PG 在默认
+bridge、SDK 位于另一隔离网络，连接未进入迁移；终止该连接进程退出 143，
+临时将此隔离 PG 接入 SDK 既有网络后执行成功，结束后已断开临时连接，
+PG 恢复只有原 bridge。原始成功日志为上述日志目录的
+`forum-migration-roundtrip.log`。有新语义记录时的 down 保护未实测：
+隔离库没有可引用的 Principal，本批不为此创建业务身份或绕过外键；
+不能把空表往返声称为该保护路径已验收。

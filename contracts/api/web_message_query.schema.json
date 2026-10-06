@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_message_query.schema.json",
+  "title": "WebMessageQuery",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "messageType": {"$ref": "web_message_type.schema.json"},
+    "parentEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "before": {"type": "integer", "minimum": 0},
+    "beforeId": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "description": "同一已准入 Channel 的原生消息分页或线程读取。before/beforeId 必须成对，频道窗口向前翻历史，线程沿原 Relay 协议向后读回复；上界来自运行时配置与原协议上界，不接受任意 Relay filter。"
+}

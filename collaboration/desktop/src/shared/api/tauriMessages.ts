@@ -15,12 +15,14 @@ export async function sendChannelMessage(
   expectedRelayUrl?: string,
   expectedSignerPubkey?: string,
   rootEventId?: string | null,
+  forumKind?: "post" | "reply",
 ): Promise<SendChannelMessageResult> {
   const response = await invokeTauri<RawSendChannelMessageResult>(
     "send_channel_message",
     {
       channelId,
       content,
+      forumKind: forumKind ?? null,
       parentEventId,
       rootEventId: rootEventId ?? null,
       mediaTags: mediaTags ?? null,

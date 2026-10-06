@@ -1,15 +1,14 @@
+// Extracted from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src; host authority remains outside this presentation module.
 import type * as React from "react";
 
-import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
-import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
-import { isMacPlatform } from "@/shared/lib/platform";
+import { Popover, PopoverContent, PopoverTrigger } from "../conversations/popover";
+import { isMacPlatform } from "../../keyboard-platform";
 
 interface ProfilePopoverProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   displayName: string;
-  avatarUrl: string | null;
-  avatarDataUrl?: string | null;
+  avatar: React.ReactNode;
   onOpenSettings: () => void;
   children: React.ReactNode;
   // Optional outer container whose clicks should NOT close the popover.
@@ -28,8 +27,7 @@ export function ProfilePopover({
   open,
   onOpenChange,
   displayName,
-  avatarUrl,
-  avatarDataUrl,
+  avatar,
   onOpenSettings,
   children,
   triggerContainerRef,
@@ -59,13 +57,7 @@ export function ProfilePopover({
       >
         <div aria-label="Profile menu" role="menu">
           <div className="flex items-center gap-2 px-3 pt-2 pb-2">
-            <ProfileAvatar
-              avatarDataUrl={avatarDataUrl}
-              avatarUrl={avatarUrl}
-              className="h-8 w-8 text-xs"
-              iconClassName="h-4 w-4"
-              label={displayName}
-            />
+            {avatar}
             <p className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight text-popover-foreground">
               {displayName}
             </p>

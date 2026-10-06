@@ -4,10 +4,14 @@
 // 这里不另写一份。身份由网关验证后投影给 BFF，这里没有任何可自报的身份字段。
 
 import type {
+  WebMessageQuery,
+  WebMessageCursor,
+  WebChannelView,
   ActionCommand,
   ActionSubmission,
   ConversationPage,
   ConversationParticipantPage,
+  ConversationPreferenceRequest,
   ApplicationBindingPage,
   ApplicationNativePage,
   AgentDefinitionPage,
@@ -111,10 +115,16 @@ export function createBffClient(transport: BffTransport) {
     },
 
     collaborationUserState: () => get<CollaborationUserState>("/api/v1/user-state"),
-    workspaceMessages: (workspaceId: string) =>
-      get<{ events: unknown }>(
-        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/messages`,
-      ),
+    setConversationPreference: (id: string, body: ConversationPreferenceRequest) =>
+      call<UserStateVersion>({ method: "PUT", path: `/api/v1/user-state/conversations/${encodeURIComponent(id)}`, body }),
+    workspaceChannel: (workspaceId: string) => get<WebChannelView>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/channel`),
+    workspaceMessages: (workspaceId: string, options?: WebMessageQuery) => {
+      const query = new URLSearchParams();
+      for (const [name, value] of Object.entries(options ?? {})) {
+        if (value !== undefined) query.set(name, String(value));
+      }
+      return get<{ events: unknown; nextCursor?: WebMessageCursor }>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/messages${query.size ? `?${query}` : ""}`);
+    },
     markRead: (body: ReadMarkRequest) =>
       call<UserStateVersion>({ method: "PUT", path: "/api/v1/user-state/read", body }),
 

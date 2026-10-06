@@ -108,3 +108,126 @@ Win11／浏览器验收仍需在新产物上进行。
 运行；已输出 Rust fmt/clippy、Go vet、TypeScript/Dart 静态检查、四侧生成同步、
 契约兼容与数据库往返通过，Rust 测试链接仍未结束。此记录没有完整检查退出码，
 不授予发布资格。后续附件与私聊菜单改动不在该固定树中，不能借用这次 full 验收。
+
+## 第三批附件恢复：实现边界
+
+REQ-24、DD-39/75/81 要求保留原附件交互及双宿主签名边界。原版依据为 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/lib/imetaMediaMarkdown.ts::formatImetaMediaLine`、
+`buildImetaTags`，以及
+`desktop/src/features/messages/ui/ComposerImageEditor.tsx::ComposerImageEditor` 和
+`desktop/src/features/messages/ui/ComposerAttachments.tsx::ComposerAttachments`。
+Web/Desktop 共享原附件、画笔编辑及剧透界面；Core 原 Web 发布接缝补回文件、
+音频、语音 MP4 与 Agent/Team PNG 的原文件卡片表达，不将它们误当普通图片。
+
+写入方为 Web 原共享附件操作，读取方为 BFF 生成请求类型、原 Relay imeta 校验
+和原生消息渲染。`WebMessageAttachment` 增加可选 `filename`、`spoiler`，四侧已由
+既有生成器生成；未增加正文表、媒体目录、状态机或 Workflow。旧请求缺省字段
+保持旧语义；旧 Core 的严格契约会拒绝新字段，所以部署顺序必须先 Core 后 Web，
+不能对旧 Core 开放新客户端功能。样例同时保留旧附件和携带新字段的附件。
+
+媒体 URL 仍限定已准入 Community 的原媒体路径，拒绝异 host、userinfo、查询
+和片段。Relay 原 sidecar/imeta 校验仍决定文件是否存在以及 MIME、size、filename
+是否合法；Core 不复制媒体权威。文字标签沿原版转义；仅图片和视频采用原版
+剧透语法，普通文件卡片不伪装隐藏。空字段保持原行为，超限仍走现有 LIMIT，
+缺身份／binding／权限保持拒绝；撤权再准入、并发重发与 UNKNOWN 使用原发布
+幂等及对账路径，不因附件增加而重发或宣布成功。
+
+SDK 首次生成缺 npm 缓存环境，实际退出 1（`EACCES mkdir /.npm`）；未修改系统
+权限，改用既有 `/cache/npm` 并显式 offline 后，四侧生成退出 0。这里只登记
+生成结果，新增五项 Rust 检查及第三批四侧往返尚不能记为通过；第二批 full
+仍使用其固定树，不覆盖本批新字段和界面。
+
+## 第四批论坛与原版页面接线（2026-10-06）
+
+本批实现沿 REQ-24、DD-39/75/77/80；不是新建论坛服务或另存帖子正文。
+固定上游 `779af8886caae1317b4de962082429867ab61503` 的
+`.references/buzz/crates/buzz-relay/src/api/bridge.rs::handle_channel_window_filter`
+与 `extract_thread_cursor`，以及
+`.references/buzz/desktop/src-tauri/src/commands/messages.rs::get_thread_replies`
+定义实际分页行为；
+`.references/buzz/crates/buzz-core/src/nip10.rs::parse_thread_markers`
+继续直接复用。上述路径及符号已按固定 commit 重新检索。
+
+四步影响结论：
+
+1. 权威：帖子、回复、删除／反应辅助事件、39005 摘要、39006 窗口边界均由
+   Relay 提供。Core 仅校验 scope、签名、绑定的 Relay author，并转换语义请求；
+   不复制正文、不以返回条数推断主帖窗口终结。
+2. 影响：Web 原消息请求增加可选 messageType/parentEventId，查询增加成对
+   before/beforeId；四语言类型由原生成器生成。旧请求省略时仍是 stream。
+   发布幂等记录增加原消息 kind 和 parent 引用，旧记录迁为 kind 9／无 parent；
+   同键异 kind/parent 拒绝，不把新写动作并入旧终态。存在新语义记录时回退迁移
+   明确拒绝。Core 应先于使用新字段的客户端投递。
+3. 副作用：Web 仍经 BFF 本人代签；Desktop/Mobile 本机持钥与 Relay 准入不变。
+   私聊不接收 Forum 类型。类型与 NIP-10 祖先矛盾、缺签名、跨频道、非绑定
+   Relay 签发摘要／边界、游标残缺均拒绝；查询后再次读取权限、身份与绑定。
+   新 `GET /api/v1/workspaces/{workspace_id}/channel` 读取原 39000 元数据，
+   不把三端共用 Workspace 目录改成依赖 Web 托管私钥，也不从空消息猜频道类型。
+4. 边界：空主帖窗口仍须有原签名 bounds；线程沿原 Native 复合游标向后读取，
+   同秒 event id 为排序决胜键。分页使用运行配置、NIP-11 与原 bridge 上界的
+   交集，原上界和深度从 buzz-core 共用，不新造开发限制。原两跳 aux 闭包不接收
+   无关目标。重入／重复投递沿原 publish_attempt；网络不明保持 UNKNOWN，
+   撤权拒绝，不据重试次数伪造成功或失败。新增的字段不是新业务状态，无另设
+   清理队列；原预留、执行对账与生命周期继续负责收敛。错误仍归于 DENIED、
+   BLOCKED、PRECONDITION、LIMIT、CONFLICT、UNKNOWN；畸形客户端参数拒绝 400。
+
+当前执行证据：四侧生成两轮均退出 0（后轮加入真实 WebChannelView）；Dart
+文案已同步新论坛文案。实现后新增的分页、签名、类型与频道描述检查正在进行，
+不记为已验收。首次窄验证误选 `--lib`，原输出
+`error: no library targets found in package platform-core`，退出 101；改为该工程
+真实的 `--bin platform-core` 后执行，不改产品代码掩盖工具目标错误。
+
+第二批原完整检查现已结束，退出 1：Rust/Go/TypeScript/Dart、Workflow replay
+通过；冻结设计中的 Wren/SS/SF/COMPONENT_ACTION 追溯不闭合、conversation
+缺 release digest、新 Relay/Desktop/Web 源码与旧产物来源不匹配。实际部署
+配置预检明确跳过。没有重启该全量检查，也没有将它作为第四批通过依据。
+第四批未部署、新 EXE 未产出；原侧栏与消息行的共享恢复同属新批，不凭源码
+或局部检查宣称 Web/Desktop 原版体验已完整等效。
+
+### 第四批集中验证回执
+
+同一受限 SDK（4 CPU、8 GiB，Cargo 16 并行）执行结束：Core binary 单元检查
+`247 passed; 0 failed; 29 ignored`；collab-bridge `3 passed; 0 failed`；Rust
+契约 roundtrip `17 passed; 0 failed`。29 项 ignored 不计作通过，也不等于真实
+数据库、Relay 或多人协作场景验收。此前第二次 Core 编译因 SDK 快照仍是旧版，
+出现 13 个缺失符号／参数错误，退出 101；同步已提交的第二批 Core 及本批明确
+修改后通过，没有为旧快照修改正式实现。失败原件仍保留。
+
+隔离副本主动移除消息 kind/祖先、完整游标、频道签发者、窗口签发者、线程
+游标顺序五处校验，原检查实际 `14 passed; 5 failed`、退出 101。随后恢复正式
+源码原字节，`cmp` 退出 0，再执行上面的全部 Core 检查通过。正式源码未被
+破坏；没有以忽略失败或放宽断言使检查通过。
+
+原日志位于 Data 的
+`codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`：
+`forum-core.log`、`forum-core-bin.log` 保留两次执行错误，
+`forum-core-mutation.log` 保存五项真实失败，
+`forum-core-restored-all.log`、`forum-bridge.log`、`forum-rust-roundtrip.log`
+保存还原后的结果。Go、TypeScript、Dart 契约往返及变异结果，与共享侧栏、消息行、
+论坛的三侧类型检查和交互结果另见 `web-client/fork/verify/web-surface.md`。
+
+原隔离库 `scope_verify` 实际完成新增迁移的前进、回退、再前进，退出 0；最终
+90 条迁移、最新 `20261006190000`，publish_attempt 与 principal 仍为零行，
+没有操作正式库。带新语义记录时的回退保护未实际演练，不把空库往返覆盖成该
+场景。临时网络连接已经恢复；日志为同目录 `forum-migration-roundtrip.log`。
+
+设计候选的原 `check-docs.sh` 最终退出 0：276 个引用、87 个实体、115 个决策、
+29 个接缝、87 个场景均闭合。第一次检查因导出时中文路径被 Git 引号转义而
+漏同步旧覆盖矩阵，退出 1；采用 Git 原始路径重新导出后通过，未修改矩阵凑数。
+原件 `fourth-docs.log` 与 `fourth-docs-restored.log` 均保留。设计独立提交为
+`3553eba86e566455ece3547f9168fa4b6124b757`，实现引用该固定版本。
+
+实现后交叉复核发现原生 kind 7 reaction 不必携带 `h`，若只允许 kind 5 无 `h`
+会使正常 Forum 整页拒绝。现按固定上游
+`779af8886caae1317b4de962082429867ab61503` 的
+`crates/buzz-relay/src/handlers/ingest.rs::derive_reaction_channel` 与
+`reactions_do_not_require_h_tag` 修复；仍要求事件签名、无冲突 `h` 及当前页目标
+闭包。新增四个正常／错频道／重复标签／无关目标断言后，19 项通过；隔离副本
+退回 kind 5-only 时该检查确实失败，原字节恢复后 19 项再次通过，rustfmt 退出 0。
+日志为同目录 `forum-core-native-reaction.log`、
+`forum-native-reaction-mutation.log`、`forum-native-reaction-restored.log`。
+
+设计 push 首次被外层遗留 pre-push 错误调用 apps 全量检查、因缺 TMPDIR 拒绝；
+没有修改钩子或运行未受限构建。已通过文档检查的独立设计 commit 经同远端的
+apps Git 发送到设计分支，远端独立读回为上述 commit；没有混入实现提交。

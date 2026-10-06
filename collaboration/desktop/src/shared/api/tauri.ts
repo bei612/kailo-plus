@@ -247,6 +247,9 @@ export async function getThreadReplies(
   options?: {
     limit?: number;
     depthLimit?: number;
+    forumThread?: boolean;
+    relayUrl?: string;
+    signerPubkey?: string;
     cursor?: ThreadCursor | null;
   },
 ): Promise<ThreadRepliesResponse> {
@@ -257,6 +260,9 @@ export async function getThreadReplies(
       channelId: channelId ?? null,
       limit: options?.limit ?? null,
       depthLimit: options?.depthLimit ?? null,
+      forumThread: options?.forumThread ?? null,
+      expectedRelayUrl: options?.relayUrl ?? null,
+      expectedSignerPubkey: options?.signerPubkey ?? null,
       cursor: options?.cursor
         ? {
             created_at: options.cursor.createdAt,

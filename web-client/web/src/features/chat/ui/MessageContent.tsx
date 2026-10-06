@@ -22,6 +22,8 @@ import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markd
 import { parseMessageLink, type ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import remarkSpoilers from "@client-kit/platform/react/composer/shared/lib/remarkSpoilers";
+import { SpoilerInline } from "@client-kit/platform/react/composer/shared/ui/markdown/SpoilerInline";
 import remarkMentions from "@/features/chat/lib/remark-mentions";
 import { mediaUrl } from "@/platform/bff-client";
 import { t } from "@/shared/i18n";
@@ -271,8 +273,9 @@ export function MessageContent({
       <MessageBody className={`${MESSAGE_BODY_CLASS_NAME} buzz-message-markdown`}>
         <ReactMarkdown
           urlTransform={(url) => parseMessageLink(url).ok ? url : defaultUrlTransform(url)}
-          remarkPlugins={[remarkGfm, remarkBreaks, [remarkMentions, { mentionNames }]]}
-          components={MARKDOWN_COMPONENTS}
+          remarkPlugins={[remarkGfm, remarkBreaks, remarkSpoilers, [remarkMentions, { mentionNames }]]}
+          components={{ ...MARKDOWN_COMPONENTS, spoiler: ({ children, ...props }: { children?: import("react").ReactNode; "data-block-spoiler"?: string }) =>
+            <SpoilerInline block={props["data-block-spoiler"] != null}>{children}</SpoilerInline> } as Components}
         >
           {displayContent(content)}
         </ReactMarkdown>

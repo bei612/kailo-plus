@@ -1,0 +1,12 @@
+{
+  "content": "# Release discussion\nPlease review the attached notes.",
+  "messageType": "FORUM_POST",
+  "attachments": [{
+    "url": "https://relay.example/media/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pdf",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "type": "application/pdf",
+    "size": 42,
+    "filename": "release-notes.pdf",
+    "spoiler": false
+  }]
+}

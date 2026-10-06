@@ -3,6 +3,7 @@ import type { ActionCommand, ActionSubmission, ConversationParticipant, Conversa
 import { useBffClient } from "../context";
 import { newIdempotencyKey } from "../../governance";
 import { isOutcomeUnknown, TransportError } from "../../transport";
+import { useConversationVisibilityHost, useConversationInvalidation } from "./use-conversation-state";
 
 export function formatRecipientName(user: ConversationParticipant) { return user.displayName; }
 export class ConversationPreparationPending extends Error {}
@@ -61,6 +62,7 @@ export function useConversationDirectory(currentPrincipalId: string) {
 
 export function useConversations() {
   const client = useBffClient();
+  const invalidation = useConversationInvalidation();
   const [items, setItems] = useState<ConversationView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -87,13 +89,16 @@ export function useConversations() {
       throw error;
     } finally { if (epoch === generation.current) setLoading(false); }
   }, [client]);
-  useEffect(() => { void reload().catch(() => undefined); return () => { generation.current++; }; }, [reload]);
+  useEffect(() => { void reload().catch(() => undefined); return () => { generation.current++; }; }, [reload, invalidation?.revision]);
   return { items, loading, error, reload };
 }
 
 /** A receipt freezes the participant set and idempotency key until native ACTIVE evidence exists. */
 export function useConversationOpen(currentPrincipalId: string, recipients: ConversationParticipant[]) {
   const client = useBffClient();
+  const visibility = useConversationVisibilityHost();
+  const invalidation = useConversationInvalidation();
+  const reopen = useRef<(() => Promise<void>) | null>(null);
   const intent = useRef<{ command: ActionCommand; receipt?: ActionSubmission } | null>(null);
   const inFlight = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -124,7 +129,17 @@ export function useConversationOpen(currentPrincipalId: string, recipients: Conv
         const page = await client.conversations(cursor);
         const conversation = page.items.find((item) => item.participantPrincipalIds.length === expected.length &&
           item.participantPrincipalIds.every((id) => expected.includes(id)));
-        if (conversation?.state === "ACTIVE") return conversation;
+        if (conversation?.state === "ACTIVE") {
+          if (!visibility) throw new Error("Conversation visibility is unavailable.");
+          if (!reopen.current && (await visibility.read(conversation)).has(conversation.channelId))
+            reopen.current = await visibility.prepare(conversation, false);
+          if (reopen.current) {
+            try { await reopen.current(); reopen.current = null; }
+            catch (error) { if (!isOutcomeUnknown(error)) reopen.current = null; throw error; }
+          }
+          invalidation?.changed();
+          return conversation;
+        }
         if (conversation?.state === "DISABLED") throw new Error("This direct message is disabled.");
         cursor = page.nextCursor;
         if (cursor && seen.has(cursor)) throw new TransportError("Conversation cursor did not advance.");

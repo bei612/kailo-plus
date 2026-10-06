@@ -25,6 +25,8 @@ afterEach(() => {
     mounted.host.remove();
     mounted = undefined;
   }
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 async function render(ui: ReactNode) {
   const host = document.createElement("div");
@@ -89,6 +91,7 @@ vi.mock("@/platform/bff-client", () => ({
   openStream: vi.fn(),
   uploadMedia: vi.fn(),
   fetchUserState: vi.fn(),
+  mediaUrl: (workspace: string, sha256: string) => `/api/v1/workspaces/${workspace}/media/${sha256}`,
 }));
 vi.mock("@/shared/i18n", () => ({ t: (key: string) => key }));
 vi.mock("@/features/chat/ui/MessageContent", () => ({
@@ -214,6 +217,57 @@ it("does not let an old scope receipt unlock a new scope send", async () => {
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("new send");
   await act(async () => newReceipt());
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
+});
+
+it("reuses original image preview, spoiler, drawing upload and revert against admitted BFF media", async () => {
+  const hash = "a".repeat(64);
+  const editedHash = "b".repeat(64);
+  const original = { sha256: hash, size: 4, type: "image/png", url: `https://relay.invalid/media/${hash}.png` };
+  const edited = { ...original, sha256: editedHash, url: `https://relay.invalid/media/${editedHash}.png` };
+  const upload = vi.fn().mockResolvedValueOnce(original).mockResolvedValueOnce(edited);
+  const fetchBytes = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new Uint8Array([1, 2]).buffer });
+  vi.stubGlobal("fetch", fetchBytes);
+  vi.stubGlobal("Image", class { src = ""; naturalWidth = 32; naturalHeight = 32; decode = async () => {}; });
+  Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => "blob:edited-source") });
+  Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+  const drawing = { clearRect: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), fill: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), drawImage: vi.fn() };
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(drawing as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => callback({ arrayBuffer: async () => new Uint8Array([3, 4]).buffer } as Blob));
+  const host = await render(<Composer workspaceId="workspace-a" onUpload={upload} />);
+  const fileInput = host.querySelector<HTMLInputElement>('[data-testid="attach-input"]')!;
+  await act(async () => {
+    Object.defineProperty(fileInput, "files", { configurable: true, value: [new File(["png"], "picture.png", { type: "image/png" })] });
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(host.querySelector("img")?.getAttribute("src")).toBe(`/api/v1/workspaces/workspace-a/media/${hash}`);
+  await click(host.querySelector<HTMLElement>('[data-testid="composer-attachment-annotate"]')!);
+  await click(document.querySelector<HTMLElement>('[data-testid="composer-attachment-spoiler"]')!);
+  expect(document.querySelector('[data-lightbox-media-spoiler]')).not.toBeNull();
+  await click(document.querySelector<HTMLElement>('[data-testid="composer-attachment-edit"]')!);
+  const sourceImage = document.querySelector<HTMLImageElement>('[role="dialog"] img')!;
+  await act(async () => {
+    Object.defineProperties(sourceImage, { naturalWidth: { value: 32 }, naturalHeight: { value: 32 } });
+    sourceImage.dispatchEvent(new Event("load"));
+  });
+  const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="composer-image-editor-canvas"]')!;
+  Object.defineProperty(canvas, "setPointerCapture", { value: vi.fn() });
+  vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, top: 0, left: 0, width: 32, height: 32, bottom: 32, right: 32, toJSON: () => ({}) });
+  await act(async () => {
+    canvas.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientX: 8, clientY: 8, button: 0 }));
+    canvas.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+  });
+  await click(document.querySelector<HTMLElement>('[data-testid="composer-image-editor-save"]')!);
+  expect(fetchBytes).toHaveBeenCalledWith(`/api/v1/workspaces/workspace-a/media/${hash}`, { credentials: "same-origin" });
+  expect(upload).toHaveBeenCalledTimes(2);
+  expect(upload.mock.calls[1][0].type).toBe("image/png");
+  expect(host.querySelector("img")?.getAttribute("src")).toBe(`/api/v1/workspaces/workspace-a/media/${editedHash}`);
+  await click(host.querySelector<HTMLElement>('[data-testid="composer-attachment-annotate"]')!);
+  expect(document.querySelector('[data-lightbox-media-spoiler]')).not.toBeNull();
+  await click(document.querySelector<HTMLElement>('[data-testid="composer-attachment-revert"]')!);
+  await click(document.querySelector<HTMLElement>('[aria-label="Close lightbox"]')!);
+  await click(button(host, "platform.send"));
+  expect(state.publish.mock.calls[0][2]).toEqual([{ ...original, filename: "picture.png", spoiler: true }]);
+  expect(host.querySelector('[data-testid="composer-media-attachment"]')).toBeNull();
 });
 async function select(host: HTMLElement, id: string) {
   await click(button(host, "platform.mentionAgent"));

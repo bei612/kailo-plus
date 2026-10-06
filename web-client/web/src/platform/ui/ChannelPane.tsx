@@ -5,7 +5,7 @@
 
 import { AgentTrigger, ReasonCode, type AgentInstallationView, type ReadMarkRequest, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { MentionAutocomplete } from "@client-kit/platform/react/mention-autocomplete";
-import { ConversationPreparationPending } from "@client-kit/platform/react/new-message";
+import { ConversationPreparationPending, useConversationInvalidation } from "@client-kit/platform/react/new-message";
 import { useMentionSelection } from "@client-kit/platform/react/use-mention-selection";
 import { useReasonText } from "@client-kit/platform/react/context";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
@@ -25,17 +25,25 @@ import {
   uploadConversationMedia,
   type StreamFrame,
   uploadMedia,
+  mediaUrl,
 } from "@/platform/bff-client";
 import { platformQueries } from "@/platform/ui/queries";
 import { t } from "@/shared/i18n";
 import { truncatePubkey } from "@/shared/lib/pubkey";
-import { relativeTime } from "@/shared/lib/relative-time";
+import { toast } from "sonner";
+import { MessageRowSurface, MessageActionBarSurface, DayDivider, UnreadDivider, formatDayGroupLabel, isSameDay, hasSameMessageAuthor, isWithinGroupingWindow, startsNewMessageGroup, getThreadReference, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { buildMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
+import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { Button } from "@/shared/ui/button";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
+import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
 import { useRichTextEditor, type LinkSelectionInfo } from "@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor";
 import { useLinkEditor } from "@client-kit/platform/react/composer/features/messages/lib/useLinkEditor";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { initDraftStore, loadDraftEntry, saveDraftEntry, clearDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
+import { ComposerAttachments, DropZoneOverlay } from "@client-kit/platform/react/composer/features/messages/ui/ComposerAttachments";
+import { useComposerAttachmentSpoilers } from "@client-kit/platform/react/composer/features/messages/ui/useComposerAttachmentSpoilers";
+import type { BlobDescriptor } from "@client-kit/platform/react/composer/features/messages/lib/imetaMediaMarkdown";
 
 const toIso = (unix: number) => new Date(unix * 1_000).toISOString();
 
@@ -166,6 +174,10 @@ export function ChannelPane({
     },
   });
   const userState = useQuery(platformQueries.userState);
+  const conversationInvalidation = useConversationInvalidation();
+  useEffect(() => {
+    if (conversation) void queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey });
+  }, [conversation?.id, conversationInvalidation?.revision, queryClient]);
 
   // 作者按成员名显示。一个人可能有多把公钥（Web 与各台原生设备，DD-77），
   // 任一把签发的消息都归到同一个人名下；取不到时退回上游统一的 pubkey 缩写。
@@ -186,6 +198,22 @@ export function ChannelPane({
     () => new Set((members.data ?? []).find((m) => m.principalId === myPrincipalId)?.pubkeys),
     [members.data, myPrincipalId],
   );
+  const timelineMessages = useMemo<TimelineMessage[]>(() => events.map((event) => ({
+    id: event.id, createdAt: event.created_at, pubkey: event.pubkey,
+    signerPubkey: event.pubkey, author: byPubkey.get(event.pubkey)?.displayName ?? truncatePubkey(event.pubkey),
+    body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0,
+  })), [events, byPubkey]);
+  const copyMessage = async (message: TimelineMessage) => {
+    const taggedKeys = new Set(message.tags?.filter((tag) => tag[0] === "p").map((tag) => tag[1]));
+    const identities = (members.data ?? []).flatMap((member) => member.pubkeys.filter((key) => taggedKeys.has(key)).map((pubkey) => ({ pubkey, label: member.displayName })));
+    const html = buildMentionClipboardHtml({ identities, text: message.body });
+    try {
+    await (html && typeof ClipboardItem !== "undefined"
+      ? navigator.clipboard.write([new ClipboardItem({ "text/plain": new Blob([message.body], { type: "text/plain" }), "text/html": new Blob([html], { type: "text/html" }) })])
+      : navigator.clipboard.writeText(message.body));
+    toast.success("Message copied to clipboard");
+    } catch { toast.error("Failed to copy to clipboard"); }
+  };
 
   // 已读：key 是该 Workspace 的 Channel ID，取自消息自身的 h 标签（.design/03）
   const channelId = events
@@ -193,7 +221,9 @@ export function ChannelPane({
     ?.tags.find((tag) => tag[0] === "h")?.[1];
   const lastReadIso = channelId ? userState.data?.readContexts[channelId] : undefined;
   const lastRead = lastReadIso ? Date.parse(lastReadIso) / 1_000 : 0;
-  const muted = userState.data?.workspacePreferences[workspaceId]?.muted ?? false;
+  const muted = conversation
+    ? !userState.data?.conversationPreferences || userState.isError || userState.isFetching || (userState.data.conversationPreferences[conversation.id]?.muted ?? false)
+    : userState.data?.workspacePreferences[workspaceId]?.muted ?? false;
 
   // 分隔线锚定在打开频道时的已读位置：推进已读后它不应立刻消失。
   // 换 Workspace 时由父组件按 key 重建本组件，锚点随之清零。
@@ -289,33 +319,39 @@ export function ChannelPane({
           onClick={() => { void retryRead(); }}>{t("platform.retry")}</Button>
       </div> : null}
       {targetMessageId && live && !events.some((event) => event.id === targetMessageId) ? <p role="status">{t("platform.linkMessageOutsideHistory")}</p> : null}
-      <ul ref={messageList} className="min-h-0 flex-1 space-y-2 overflow-auto" aria-label={t("platform.tab.channel")}>
-        {events.map((e, i) => {
-          const author = byPubkey.get(e.pubkey);
+      <ul ref={messageList} className="min-h-0 flex-1 overflow-auto" aria-label={t("platform.tab.channel")}>
+        {timelineMessages.map((message, i) => {
+          const previous = timelineMessages[i - 1];
+          const next = timelineMessages[i + 1];
           const firstUnread =
             anchor !== null &&
-            e.created_at > anchor &&
-            !mine.has(e.pubkey) &&
+            message.createdAt > anchor &&
+            !mine.has(message.pubkey ?? "") &&
             !events.slice(0, i).some((p) => p.created_at > anchor && !mine.has(p.pubkey));
+          const newDay = !previous || !isSameDay(previous.createdAt, message.createdAt);
+          const isContinuation = !newDay && !firstUnread && !startsNewMessageGroup(message) && hasSameMessageAuthor(previous, message) && isWithinGroupingWindow(previous?.createdAt, message.createdAt);
+          const followedByContinuation = next && isSameDay(message.createdAt, next.createdAt) && !startsNewMessageGroup(next) && hasSameMessageAuthor(message, next) && isWithinGroupingWindow(message.createdAt, next.createdAt);
           return (
-            <li key={e.id} data-event-id={e.id} tabIndex={targetMessageId === e.id ? -1 : undefined} className={targetMessageId === e.id ? "rounded-lg ring-1 ring-ring" : undefined}>
-              {firstUnread ? (
-                <div className="my-1 border-t border-primary text-xs text-primary">
-                  {t("platform.newMessages")}
-                </div>
-              ) : null}
-              <span className="font-medium">{author?.displayName ?? truncatePubkey(e.pubkey)}</span>{" "}
-              <span className="text-xs text-muted-foreground" title={toIso(e.created_at)}>
-                {relativeTime(e.created_at)}
-              </span>
-              <MessageContent
-                content={e.content}
-                mediaTags={e.tags}
+            <li key={message.id} data-event-id={message.id} tabIndex={targetMessageId === message.id ? -1 : undefined}>
+              {newDay ? <DayDivider label={formatDayGroupLabel(message.createdAt)} sticky={false} /> : null}
+              {firstUnread ? <UnreadDivider /> : null}
+              <div className={`flex flex-col gap-1 ${followedByContinuation ? "pb-0" : "pb-2.5"}`}>
+              <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={targetMessageId === message.id}
+                renderActions={(ref) => <MessageActionBarSurface ref={ref} message={message} onCopyMessage={copyMessage}
+                  onCopyLink={channelId ? async (target) => {
+                    const { rootId } = getThreadReference(target.tags ?? []);
+                    try { await navigator.clipboard.writeText(buildMessageLink({ channelId, messageId: target.id, threadRootId: rootId })); toast.success("Link copied to clipboard"); }
+                    catch { toast.error("Failed to copy to clipboard"); }
+                  } : undefined} />}
+                renderBody={(className) => <div className={className}><MessageContent
+                content={message.body}
+                mediaTags={message.tags}
                 mentions={mentions}
                 workspaceId={workspaceId}
                 conversationId={conversation?.id}
                 onOpenMessageLink={onOpenMessageLink}
-              />
+              /></div>} />
+              </div>
             </li>
           );
         })}
@@ -324,6 +360,7 @@ export function ChannelPane({
         ? <Composer disabled={conversation.state !== "ACTIVE"}
             draftIdentity={myPrincipalId} draftKey={conversation.id} onOpenMessageLink={onOpenMessageLink}
             onPublish={(content, attachments, key) => publishConversationMessage(conversation.id, content, attachments, key)}
+            onMediaUrl={(sha256) => mediaUrl(conversation.id, sha256, conversation.id)}
             onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
         : <Composer workspaceId={workspaceId} draftIdentity={myPrincipalId} draftKey={workspaceId} onOpenMessageLink={onOpenMessageLink} />}
     </div>
@@ -344,10 +381,13 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ workspaceId, onPublish, onUpload, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey }: {
+export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", onCancel }: {
+  surface?: "stream" | "forum";
   workspaceId?: string;
-  onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string) => Promise<unknown>;
+  onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[]) => Promise<unknown>;
+  onCancel?: () => void;
   onUpload?: (file: File) => Promise<MediaDescriptor>;
+  onMediaUrl?: (sha256: string) => string;
   disabled?: boolean;
   placeholder?: string;
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
@@ -363,6 +403,12 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
   const [mentionInstallationIds, setMentionInstallationIds] = useState<string[]>([]);
   const [mentionPickerOpen, setMentionPickerOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+  const [originals, setOriginals] = useState<Map<string, Pending>>(() => new Map());
+  const originalsRef = useRef(originals);
+  originalsRef.current = originals;
   const installations = useInfiniteQuery({
     queryKey: ["platform", "mention-installations", workspaceId],
     queryFn: ({ pageParam }) => bff.agentInstallations(workspaceId!, pageParam),
@@ -403,6 +449,53 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
   const intent = useRef<{ key: string; signature: string } | null>(null);
   const owner = useMemo(() => ({ active: true }), [workspaceId, draftIdentity, draftKey]);
   useEffect(() => { owner.active = true; return () => { owner.active = false; }; }, [owner]);
+  const asBlob = (entry: Pending): BlobDescriptor => ({ ...entry.descriptor, filename: entry.name, uploaded: entry.receivedAt });
+  const removeAttachment = useCallback((url: string) => {
+    setPending((items) => items.filter((item) => item.descriptor.url !== url));
+    setOriginals((current) => { const next = new Map(current); next.delete(url); return next; });
+  }, []);
+  const revertAttachment = useCallback((url: string) => {
+    const original = originalsRef.current.get(url);
+    if (!original) return null;
+    setPending((items) => items.map((item) => item.descriptor.url === url ? original : item));
+    setOriginals((current) => { const next = new Map(current); next.delete(url); return next; });
+    return asBlob(original);
+  }, []);
+  const uploadEditedAttachment = useCallback(async (url: string, bytes: Uint8Array) => {
+    const source = pendingRef.current.find((item) => item.descriptor.url === url);
+    if (!source || !owner.active) throw new Error("Attachment is no longer in this draft.");
+    setUploading((count) => count + 1);
+    try {
+      const file = new File([new Uint8Array(bytes)], `${source.name.replace(/\.[^.]*$/, "")}.png`, { type: "image/png" });
+      const descriptor = await (onUpload ? onUpload(file) : uploadMedia(workspaceId!, file));
+      if (!owner.active || !pendingRef.current.includes(source)) throw new Error("Attachment draft changed during upload.");
+      const replacement = { name: file.name, descriptor, receivedAt: Date.now() };
+      setPending((items) => items.map((item) => item === source ? replacement : item));
+      setOriginals((current) => {
+        const next = new Map(current);
+        next.delete(url);
+        next.set(descriptor.url, current.get(url) ?? source);
+        return next;
+      });
+      return asBlob(replacement);
+    } finally { if (owner.active) setUploading((count) => count - 1); }
+  }, [onUpload, workspaceId, owner]);
+  const attachmentActions = useComposerAttachmentSpoilers({ removeAttachment, revertAttachment, uploadEditedAttachment });
+  const resolveMediaUrl = useCallback((url: string) => {
+    const descriptor = pendingRef.current.find((item) => item.descriptor.url === url)?.descriptor;
+    // AnimatePresence retains a removed thumbnail while it exits. Resolve its
+    // hash only to the same admitted BFF scope; never load the source origin.
+    const sha256 = descriptor?.sha256 ?? new URL(url).pathname.match(/^\/media\/([a-f\d]{64})\.[a-z\d]+$/i)?.[1];
+    if (!sha256) throw new Error("Attachment media reference is invalid.");
+    if (onMediaUrl) return onMediaUrl(sha256);
+    if (!workspaceId) throw new Error("Attachment media scope is unavailable.");
+    return mediaUrl(workspaceId, sha256);
+  }, [workspaceId, onMediaUrl]);
+  const fetchMediaBytes = useCallback(async (url: string) => {
+    const response = await fetch(resolveMediaUrl(url), { credentials: "same-origin" });
+    if (!response.ok) throw new Error(`Attachment read failed (${response.status}).`);
+    return new Uint8Array(await response.arrayBuffer());
+  }, [resolveMediaUrl]);
 
   const attach = useCallback(
     async (files: FileList | readonly File[] | null) => {
@@ -472,6 +565,9 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
     setUploading(0);
     setProblem(null);
     setProblemNeutral(false);
+    setDragging(false);
+    setOriginals(new Map());
+    attachmentActions.setSpoileredAttachmentUrls(new Set(saved?.spoileredAttachmentUrls ?? []));
     draftReady.current = Boolean(draftIdentity && draftKey);
     setLoadedDraftOwner(owner);
     return () => { draftReady.current = false; };
@@ -485,10 +581,10 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
       content, channelId: workspaceId ?? draftKey, selectionStart: content.length, selectionEnd: content.length,
       createdAt: previous?.createdAt ?? timestamp, updatedAt: timestamp, status: "active",
       pendingImeta: attachments.map(({ descriptor, name, receivedAt }) => ({ ...descriptor, filename: name, uploaded: receivedAt })),
-      spoileredAttachmentUrls: [], ...(intent.current ? { sendIntent: intent.current } : {}),
+      spoileredAttachmentUrls: [...attachmentActions.spoileredAttachmentUrls], ...(intent.current ? { sendIntent: intent.current } : {}),
       mentionInstallationIds,
     });
-  }, [draftKey, workspaceId, owner, loadedDraftOwner, mentionInstallationIds]);
+  }, [draftKey, workspaceId, owner, loadedDraftOwner, mentionInstallationIds, attachmentActions.spoileredAttachmentUrls]);
   useEffect(() => { persistDraft(richText.getMarkdown(), pending); }, [draftRevision, pending, persistDraft, richText.getMarkdown]);
 
   const send = useCallback(() => {
@@ -497,13 +593,13 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
     if (!content && pending.length === 0) return;
     setProblem(null);
     setProblemNeutral(false);
-    const attachments = pending.map((p) => p.descriptor);
+    const attachments = pending.map((p) => ({ ...p.descriptor, filename: p.name, spoiler: attachmentActions.spoileredAttachmentUrls.has(p.descriptor.url) }));
     // 不本地插入这条消息：它要等 Relay 接受并回传 event id 才算发出去。
     // 先渲染再等确认，会让一条被拒绝的消息看起来已经发出。草稿与附件也只在
     // 确认后才清空——发送失败时它们都还在。
     const signature = JSON.stringify([
       content,
-      attachments.map((a) => a.sha256),
+      attachments.map((a) => [a.sha256, a.filename, a.spoiler]),
       mentionInstallationIds,
     ]);
     if (intent.current?.signature !== signature) {
@@ -513,7 +609,7 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
     persistDraft(content, pending);
     setSending(true);
     const publish = onPublish
-      ? onPublish(content, attachments, key)
+      ? onPublish(content, attachments, key, mentionInstallationIds)
       : workspaceId
         ? publishMessage(workspaceId, content, attachments, key, mentionInstallationIds)
         : Promise.reject(new Error("Message destination is unavailable."));
@@ -525,7 +621,9 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
           richText.setContent("");
           setDraft("");
         }
-        setPending((current) => current.filter((p) => !attachments.includes(p.descriptor)));
+        setPending((current) => current.filter((p) => !pending.includes(p)));
+        setOriginals((current) => new Map([...current].filter(([url]) => !pending.some((entry) => entry.descriptor.url === url))));
+        attachmentActions.setSpoileredAttachmentUrls((current) => new Set([...current].filter((url) => !pending.some((entry) => entry.descriptor.url === url))));
         setMentionInstallationIds((current) => current.filter((id) => !mentionInstallationIds.includes(id)));
       })
       .catch((e: unknown) => {
@@ -549,10 +647,11 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
         }
       })
       .finally(() => { if (owner.active) setSending(false); });
-  }, [pending, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft]);
+  }, [pending, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls]);
   sendRef.current = send;
 
-  return <MessageComposerSurface
+  const ComposerSurface = surface === "forum" ? ForumComposerSurface : MessageComposerSurface;
+  return <ComposerSurface
     overlays={<>{linkEditor.card}{linkEditor.dialog}</>}
     formProps={{
       onSubmit: (event) => { event.preventDefault(); send(); },
@@ -560,8 +659,9 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
         if (disabled || sending || !event.clipboardData.files.length) return;
         event.preventDefault(); void attach(event.clipboardData.files);
       },
-      onDragOver: (event) => { if (!disabled && !sending && event.dataTransfer.types.includes("Files")) event.preventDefault(); },
-      onDrop: (event) => { if (!disabled && !sending && event.dataTransfer.files.length) { event.preventDefault(); void attach(event.dataTransfer.files); } },
+      onDragOver: (event) => { if (!disabled && !sending && event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } },
+      onDragLeave: (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); },
+      onDrop: (event) => { setDragging(false); if (!disabled && !sending && event.dataTransfer.files.length) { event.preventDefault(); void attach(event.dataTransfer.files); } },
     }}
     onEditorKeyDown={(event) => {
       if (event.key === "Tab" && !event.shiftKey && linkEditor.isCardOpen) {
@@ -569,6 +669,7 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
       }
     }}
     toolbar={{ layoutMode: "standalone", composerDisabled: disabled || sending,
+      extraActions: onCancel ? <Button type="button" variant="ghost" disabled={sending} onClick={onCancel}>{t("platform.cancel")}</Button> : undefined,
       editor: richText.editor, formattingDisabled: disabled || sending, isFormattingOpen,
       isSending: sending, isUploading: uploading > 0,
       onFormattingToggle: setIsFormattingOpen,
@@ -577,6 +678,7 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
       onPaperclip: () => picker.current?.click(),
       sendDisabled: disabled || sending || uploading > 0 || !mentionVerified || (!draft.trim() && pending.length === 0),
     }}>
+      {dragging ? <DropZoneOverlay /> : null}
       {workspaceId !== undefined ? <div className="relative flex flex-wrap items-center gap-2 text-xs">
         <Button type="button" variant="ghost" data-mention-picker-trigger=""
         onKeyDown={(event) => {
@@ -619,28 +721,12 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
           {problem}
         </div>
       ) : null}
-      {pending.length > 0 || uploading > 0 ? (
-        <ul className="flex flex-wrap gap-2 text-xs" aria-label={t("platform.attachments")}>
-          {pending.map((p) => (
-            <li
-              key={p.descriptor.sha256}
-              className="flex items-center gap-1 rounded border px-2 py-0.5"
-            >
-              {p.name}
-              <button
-                type="button"
-                aria-label={`${t("platform.removeAttachment")} ${p.name}`}
-                onClick={() => setPending((cur) => cur.filter((x) => x !== p))}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </li>
-          ))}
-          {uploading > 0 ? (
-            <li className="text-muted-foreground">{t("platform.uploading")}</li>
-          ) : null}
-        </ul>
-      ) : null}
+      <ComposerAttachments attachments={pending.map(asBlob)} resolveMediaUrl={resolveMediaUrl}
+        fetchMediaBytes={fetchMediaBytes} isUploading={uploading > 0} uploadingCount={uploading}
+        onRemove={attachmentActions.handleRemoveAttachment} onEditSave={attachmentActions.handleAttachmentEditSave}
+        onRevert={attachmentActions.handleAttachmentRevert} onToggleSpoiler={attachmentActions.handleToggleAttachmentSpoiler}
+        spoileredUrls={attachmentActions.spoileredAttachmentUrls}
+        originalUrlByUrl={new Map([...originals].map(([url, entry]) => [url, entry.descriptor.url]))} />
         <input
           ref={picker}
           type="file"
@@ -653,5 +739,5 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
             e.target.value = "";
           }}
         />
-  </MessageComposerSurface>;
+  </ComposerSurface>;
 }

@@ -22,12 +22,13 @@ export function ProfileAvatarControls({ avatarUrl, label, locale, isDark, onChan
   </EmojiBurstProvider></AvatarHostProvider>;
 }
 
-export function ProfileAvatarPreview({ avatarUrl, label, locale, rewriteMediaUrl, upload }: {
+export function ProfileAvatarPreview({ avatarUrl, label, locale, rewriteMediaUrl, upload, className = "size-24", iconClassName, testId }: {
   locale: PlatformLocale;
+  className?: string; iconClassName?: string; testId?: string;
   avatarUrl: string | null; label: string; rewriteMediaUrl: AvatarHost["rewriteMediaUrl"]; upload: AvatarHost["uploadMediaBytes"];
 }) {
   const host = useMemo<AvatarHost>(() => ({ locale, rewriteMediaUrl, performDefaultHaptic: browserHaptic,
     uploadMediaBytes: upload,
   }), [locale, rewriteMediaUrl, upload]);
-  return <AvatarHostProvider value={host}><ProfileAvatar avatarUrl={avatarUrl} label={label} className="size-24" /></AvatarHostProvider>;
+  return <AvatarHostProvider value={host}><ProfileAvatar avatarUrl={avatarUrl} label={label} className={className} iconClassName={iconClassName} testId={testId} /></AvatarHostProvider>;
 }

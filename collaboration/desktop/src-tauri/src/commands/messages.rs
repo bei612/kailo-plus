@@ -1,3 +1,4 @@
+use buzz_core_pkg::relay::{BRIDGE_THREAD_MAX_LIMIT, DEFAULT_THREAD_DEPTH_LIMIT};
 use tauri::State;
 
 use crate::{
@@ -138,31 +139,58 @@ fn search_messages_limit(limit: Option<u32>) -> u32 {
 /// from a previous page back as `cursor` to fetch the next batch. The event-id
 /// tiebreak prevents same-second replies from being skipped.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn get_thread_replies(
     root_event_id: String,
     channel_id: Option<String>,
     limit: Option<u32>,
     depth_limit: Option<u32>,
     cursor: Option<crate::models::ThreadCursor>,
+    forum_thread: Option<bool>,
+    expected_relay_url: Option<String>,
+    expected_signer_pubkey: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<ThreadRepliesResponse, String> {
-    let cap = limit.unwrap_or(200).min(500);
-    let filter = build_thread_replies_filter(
+    let cap = limit.unwrap_or(200).min(BRIDGE_THREAD_MAX_LIMIT);
+    let mut filter = build_thread_replies_filter(
         &root_event_id,
         channel_id.as_deref(),
-        depth_limit.unwrap_or(64),
+        depth_limit.unwrap_or(DEFAULT_THREAD_DEPTH_LIMIT),
         cap,
         cursor.as_ref(),
     );
+    if forum_thread.unwrap_or(false) {
+        filter.insert("kinds".to_string(), serde_json::json!([9, 45003]));
+    }
 
-    let events = query_relay(&state, &[serde_json::Value::Object(filter)]).await?;
+    let relay_base = crate::relay::relay_api_base_url_with_override(&state);
+    let keys = state.signing_keys()?;
+    assert_expected_relay_scope(expected_relay_url.as_deref(), &relay_base)?;
+    assert_expected_signer(
+        expected_signer_pubkey.as_deref(),
+        &keys.public_key().to_hex(),
+    )?;
+    let events = crate::relay::query_relay_at_with_keys(
+        &state,
+        &relay_base,
+        &[serde_json::Value::Object(filter)],
+        &keys,
+        None,
+    )
+    .await?;
 
     // A full page implies there may be more; hand back the last event's
     // composite key as the next cursor (the DB returns replies strictly after
     // it, tiebroken by event_id so same-second replies are not skipped).
     let reply_events: Vec<_> = events
         .iter()
-        .filter(|event| TIMELINE_KINDS.contains(&(event.kind.as_u16() as u32)))
+        .filter(|event| {
+            if forum_thread.unwrap_or(false) {
+                matches!(event.kind.as_u16(), 9 | 45003)
+            } else {
+                TIMELINE_KINDS.contains(&(event.kind.as_u16() as u32))
+            }
+        })
         .collect();
     let next_cursor = if reply_events.len() as u32 >= cap {
         reply_events.last().map(|ev| crate::models::ThreadCursor {
@@ -240,6 +268,7 @@ pub async fn send_channel_message(
     mention_pubkeys: Option<Vec<String>>,
     expected_relay_url: Option<String>,
     expected_signer_pubkey: Option<String>,
+    forum_kind: Option<events::ForumMessageKind>,
     state: State<'_, AppState>,
 ) -> Result<SendChannelMessageResponse, String> {
     let channel_uuid = uuid::Uuid::parse_str(&channel_id)
@@ -287,7 +316,7 @@ pub async fn send_channel_message(
         }
         None => None,
     };
-    let builder = events::build_message(
+    let builder = events::build_message_for_surface(
         channel_uuid,
         content.trim(),
         thread_ref.as_ref(),
@@ -298,6 +327,8 @@ pub async fn send_channel_message(
         &link_previews,
         sent_from_thread_tag.as_deref(),
         &relay_base,
+        &[],
+        forum_kind,
     )?;
 
     // `created_at` is the signed event's own second, not a post-publication

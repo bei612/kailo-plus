@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_message_cursor.schema.json",
+  "title": "WebMessageCursor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["createdAt", "eventId"],
+  "properties": {
+    "createdAt": {"type": "integer", "minimum": 0},
+    "eventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "description": "原 Buzz 线程分页的复合游标；下一请求以 before=createdAt、beforeId=eventId 原样提交，避免同秒回复丢失。"
+}

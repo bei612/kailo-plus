@@ -5,8 +5,24 @@ import 'dart:io' show Platform;
 import '../contracts/contracts.dart';
 
 enum PlatformMessageKey {
+  forumBack,
+  forumStart,
+  forumArchived,
+  forumJoin,
+  forumEmpty,
+  forumEmptyHint,
+  forumNoReplies,
+  forumMore,
+  forumRetry,
+  forumReplyOne,
+  forumReplyMany,
+  forumPostPlaceholder,
+  forumReplyPlaceholder,
+  forumCancel,
   sidebarPreferenceUnknown,
   sidebarStarred,
+  sidebarCloseMessage,
+  sidebarVisibilityUnknown,
   sidebarMessages,
   sidebarNewMessage,
   sidebarChannels,
@@ -911,11 +927,39 @@ enum PlatformMessageKey {
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
+  PlatformMessageKey.forumBack: ('Back to posts', '返回帖子'),
+  PlatformMessageKey.forumStart: ('Start a new post...', '发起新帖子…'),
+  PlatformMessageKey.forumArchived: ('This forum is archived.', '此论坛已归档。'),
+  PlatformMessageKey.forumJoin: (
+    'Join this forum to create posts.',
+    '加入此论坛后可以发帖。',
+  ),
+  PlatformMessageKey.forumEmpty: ('No posts yet', '还没有帖子'),
+  PlatformMessageKey.forumEmptyHint: (
+    'Start a discussion by creating the first post.',
+    '创建第一个帖子，开始讨论。',
+  ),
+  PlatformMessageKey.forumNoReplies: (
+    'No replies yet. Be the first to respond.',
+    '还没有回复，来发表你的看法。',
+  ),
+  PlatformMessageKey.forumMore: ('Load more', '加载更多'),
+  PlatformMessageKey.forumRetry: ('Retry', '重试'),
+  PlatformMessageKey.forumReplyOne: ('{count} reply', '{count} 条回复'),
+  PlatformMessageKey.forumReplyMany: ('{count} replies', '{count} 条回复'),
+  PlatformMessageKey.forumPostPlaceholder: ('Write your post...', '撰写帖子…'),
+  PlatformMessageKey.forumReplyPlaceholder: ('Reply to this post...', '回复此帖子…'),
+  PlatformMessageKey.forumCancel: ('Cancel', '取消'),
   PlatformMessageKey.sidebarPreferenceUnknown: (
     'This preference change is not confirmed. Recheck its state before making another change.',
     '此偏好更改尚未确认，请重新查证后再更改。',
   ),
   PlatformMessageKey.sidebarStarred: ('Starred', '收藏'),
+  PlatformMessageKey.sidebarCloseMessage: ('Close direct message', '关闭私聊'),
+  PlatformMessageKey.sidebarVisibilityUnknown: (
+    'Outcome not yet known. Retry confirms the same operation.',
+    '操作结果尚未确定，重试将确认同一操作。',
+  ),
   PlatformMessageKey.sidebarMessages: ('Messages', '私聊'),
   PlatformMessageKey.sidebarNewMessage: ('New message', '新消息'),
   PlatformMessageKey.sidebarChannels: ('Channels', '频道'),

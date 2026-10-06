@@ -1,48 +1,35 @@
-import { renderToStaticMarkup } from "react-dom/server";
+// @vitest-environment jsdom
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { StreamFrame } from "../bff-client";
 import { ChannelPane } from "./ChannelPane";
 
+// Isolate the stream lifecycle from the rich editor. Original Tiptap is mounted
+// by Composer/ChannelRead tests; the channel and original message rows mount here.
+vi.mock("@tiptap/react", async (original) => ({
+  ...(await original<typeof import("@tiptap/react")>()), useEditor: () => null,
+}));
+
 const state = vi.hoisted(() => ({
-  cursor: 0,
-  values: [] as unknown[],
-  effects: [] as (() => unknown)[],
   receive: null as null | ((frame: StreamFrame) => void),
   stop: vi.fn(),
-}));
-vi.mock("react", async (original) => ({
-  ...(await original<typeof import("react")>()),
-  useState: (initial: unknown) => {
-    const index = state.cursor++;
-    if (!(index in state.values))
-      state.values[index] = typeof initial === "function" ? initial() : initial;
-    return [
-      state.values[index],
-      (value: unknown) => {
-        state.values[index] = typeof value === "function" ? value(state.values[index]) : value;
-      },
-    ];
-  },
-  useEffect: (effect: () => unknown) => {
-    state.effects.push(effect);
-  },
-  useMemo: (compute: () => unknown) => compute(),
-  useCallback: (callback: unknown) => callback,
-  useRef: (current: unknown) => ({ current }),
+  reason: (reason: string) => reason,
+  members: { isSuccess: true, data: [] },
+  userState: { isSuccess: true, data: { version: 0, readContexts: {}, workspacePreferences: {} } },
+  infinite: { data: { pages: [] }, isSuccess: true },
+  queryClient: { invalidateQueries: vi.fn() },
+  mutation: { isPending: false, mutate: vi.fn() },
 }));
 vi.mock("@client-kit/platform/react/context", () => ({
-  useReasonText: () => (reason: string) => reason,
+  useReasonText: () => state.reason,
 }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: (options: { queryKey: string[] }) => ({
-    isSuccess: true,
-    data: options.queryKey.includes("members")
-      ? []
-      : { version: 0, readContexts: {}, workspacePreferences: {} },
-  }),
-  useInfiniteQuery: () => ({ data: { pages: [] }, isSuccess: true }),
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
-  useMutation: () => ({ isPending: false, mutate: vi.fn() }),
+  useQuery: (options: { queryKey: string[] }) => options.queryKey.includes("members") ? state.members : state.userState,
+  useInfiniteQuery: () => state.infinite,
+  useQueryClient: () => state.queryClient,
+  useMutation: () => state.mutation,
 }));
 vi.mock("@/platform/bff-client", () => ({
   bff: { members: vi.fn(), workspaces: vi.fn() },
@@ -62,20 +49,21 @@ vi.mock("@/features/chat/ui/MessageContent", () => ({
 vi.mock("@/shared/i18n", () => ({ t: (key: string) => key }));
 vi.mock("@/shared/lib/relative-time", () => ({ relativeTime: () => "now" }));
 
-function render() {
-  state.cursor = 0;
-  state.effects = [];
-  return renderToStaticMarkup(<ChannelPane workspaceId="workspace-a" myPrincipalId="human-a" />);
-}
-
-afterEach(() => vi.unstubAllGlobals());
-
-beforeEach(() => {
-  state.values = [];
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+let host: HTMLDivElement;
+let root: Root;
+function render() { return host.innerHTML; }
+afterEach(async () => {
+  await act(async () => root.unmount());
+  host.remove();
+  vi.unstubAllGlobals();
+});
+beforeEach(async () => {
   state.stop.mockClear();
-  vi.stubGlobal("document", { visibilityState: "visible" });
-  render();
-  state.effects[0]();
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  await act(async () => { root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" myPrincipalId="human-a" /></TooltipProvider>); });
+  await act(async () => {
   state.receive!({
     type: "snapshot",
     events: [
@@ -90,13 +78,15 @@ beforeEach(() => {
     ],
   });
   state.receive!({ type: "live" });
+  });
 });
 
 it.each(["session-revoked", "scope-revoked", "identity-revoked"])(
   "removes message and write controls after %s and cannot be revived by a late frame",
-  (reason) => {
+  async (reason) => {
     expect(render()).toContain("existing message");
-    expect(render()).toContain('aria-label="platform.message"');
+    expect(render()).toContain('data-testid="message-composer"');
+    await act(async () => {
     state.receive!({ type: "closed", reason });
     state.receive!({ type: "live" });
     state.receive!({
@@ -112,10 +102,11 @@ it.each(["session-revoked", "scope-revoked", "identity-revoked"])(
         },
       ],
     });
+    });
     const markup = render();
     expect(markup).not.toContain("existing message");
     expect(markup).not.toContain("late message");
-    expect(markup).not.toContain('aria-label="platform.message"');
+    expect(markup).not.toContain('data-testid="message-composer"');
     expect(markup).not.toContain('data-testid="attach-input"');
     expect(markup).toContain(
       reason === "session-revoked" ? "SESSION_NOT_ACTIVE" : "PERMISSION_DENIED",
@@ -124,11 +115,11 @@ it.each(["session-revoked", "scope-revoked", "identity-revoked"])(
   },
 );
 
-it("keeps an uncertain connection distinct from a denial", () => {
-  state.receive!({ type: "closed", reason: "readmission-unavailable" });
+it("keeps an uncertain connection distinct from a denial", async () => {
+  await act(async () => state.receive!({ type: "closed", reason: "readmission-unavailable" }));
   const markup = render();
   expect(markup).toContain("platform.stream.reconnecting");
   expect(markup).toContain("existing message");
-  expect(markup).toContain('aria-label="platform.message"');
+  expect(markup).toContain('data-testid="message-composer"');
   expect(markup).not.toContain("PERMISSION_DENIED");
 });

@@ -3,7 +3,9 @@ import { emit } from "@tauri-apps/api/event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { NativeBootstrap } from "@client-kit/platform/react/NativeBootstrap";
-import { type ReactNode, useEffect, useLayoutEffect, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ConversationVisibilityProvider } from "@client-kit/platform/react/new-message";
+import { createConversationVisibility } from "@/features/platform/conversationVisibility";
 
 import { router } from "@/app/router";
 import { ThemeGrainientBackground } from "@/app/ThemeGrainientBackground";
@@ -154,6 +156,9 @@ function CommunityQueryProvider({
  */
 function CommunityApp({ devicePubkey }: { devicePubkey: string }) {
   const community = useActiveCommunity();
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
+  const conversationVisibility = useMemo(() => createConversationVisibility(devicePubkey, () => active.current), [devicePubkey]);
   const bootSplashPhase = useBootSplashHold();
   // 注销后不留以设备身份认证的 Relay 连接（见 disconnectCommunity）
   useEffect(() => disconnectCommunity, []);
@@ -161,7 +166,7 @@ function CommunityApp({ devicePubkey }: { devicePubkey: string }) {
   return (
     <CommunityQueryProvider pubkey={devicePubkey} relayUrl={community.relayUrl}>
       <CommunityThemeController />
-      <RouterProvider router={router} />
+      <ConversationVisibilityProvider value={conversationVisibility}><RouterProvider router={router} /></ConversationVisibilityProvider>
       {bootSplashPhase !== "done" ? (
         <div
           aria-hidden="true"

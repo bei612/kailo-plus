@@ -1,5 +1,23 @@
 // Inbox aggregation extracted from Buzz Home (779af8886caae1317b4de962082429867ab61503).
 // Hosts supply already admitted events. This module grants no access and holds no user state.
+import type { ConversationView } from "@client-kit/contracts";
+
+/** Map Core preference bindings to original Relay channels for notification consumers. */
+export function conversationNotificationMutes(
+  legacy: ReadonlySet<string>, privateChannelIds: readonly string[],
+  conversations: readonly Pick<ConversationView, "id" | "channelId">[],
+  preferences: CollaborationUserState["conversationPreferences"],
+): ReadonlySet<string> {
+  const result = new Set(legacy);
+  const bindings = new Map(conversations.map((item) => [item.channelId, item.id]));
+  for (const channelId of privateChannelIds) {
+    result.delete(channelId);
+    const binding = bindings.get(channelId);
+    // Missing/fetching projection is not evidence of an unmuted conversation.
+    if (!binding || !preferences || preferences[binding]?.muted) result.add(channelId);
+  }
+  return result;
+}
 export type InboxEvent = {
   id: string;
   tags: string[][];
@@ -112,6 +130,7 @@ export type CollaborationUserState = {
     string,
     { starred: boolean; muted: boolean; updatedAt?: string }
   >;
+  conversationPreferences?: Record<string, { starred: boolean; muted: boolean; updatedAt?: string }>;
   readContexts: Record<string, string>;
   version: number;
 };
@@ -129,6 +148,10 @@ export function checkedUserState(
     !value.workspacePreferences ||
     typeof value.workspacePreferences !== "object" ||
     Array.isArray(value.workspacePreferences) ||
+    (value.conversationPreferences !== undefined &&
+      (!value.conversationPreferences || typeof value.conversationPreferences !== "object" ||
+       Array.isArray(value.conversationPreferences) || Object.values(value.conversationPreferences).some(
+         (entry) => !entry || typeof entry.starred !== "boolean" || typeof entry.muted !== "boolean"))) ||
     Object.values(value.readContexts).some(
       (mark) => typeof mark !== "string" || !Number.isFinite(Date.parse(mark)),
     )

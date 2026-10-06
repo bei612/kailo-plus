@@ -71,3 +71,4 @@
   line-height: 1;
   transform: translateY(-0.08em);
 }
+@import "@client-kit/platform/react/composer/spoilers.css";

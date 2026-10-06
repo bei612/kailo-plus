@@ -17,12 +17,16 @@
 
 use crate::audit::Evidence;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
-use collab_bridge::bridge::{Custody, Delivery, IdentityClient};
+use collab_bridge::bridge::{
+    message_kind, parse_thread_markers, Custody, Delivery, IdentityClient, KIND_DELETION,
+    KIND_NIP29_DELETE_EVENT, KIND_REACTION, KIND_STREAM_MESSAGE_EDIT, KIND_THREAD_SUMMARY,
+    KIND_WINDOW_BOUNDS,
+};
 use collab_bridge::limits::RelayLimits;
 use collab_bridge::operator::{LimitKind, OperatorError};
 use contracts::EvidenceKind;
@@ -110,8 +114,9 @@ impl RenderAttachment for contracts::WebMessageAttachment {
     /// `imeta`。形式必须与原生端一致，否则原生端收到 Web 发的图看不见
     /// （上游 `formatImetaMediaLine`/`buildImetaTags`，`SF-BUZ-36`）。
     ///
-    /// 只接受图片与视频：通用文件在上游还要带 filename 与链接文字，一期
-    /// Web 不提供那条入口。
+    /// 复用固定 Buzz 的 formatImetaMediaLine/buildImetaTags 表达规则，保留
+    /// 文件链接、音频、快照 PNG 与图片/视频剧透；MIME 和 filename 的权威
+    /// 校验仍由 Relay 原 imeta validator/sidecar 执行，不建立另一媒体目录。
     ///
     /// URL 只核结构：必须是**本 Workspace 的 Community host** 下的
     /// `/media/<sha256>.<ext>`。不核它就等于让 BFF 替任何人签一条指向任意
@@ -121,11 +126,6 @@ impl RenderAttachment for contracts::WebMessageAttachment {
         if self.size < 0 {
             return None;
         }
-        let kind = match self.web_message_attachment_type.split_once('/') {
-            Some(("image", _)) => "image",
-            Some(("video", _)) => "video",
-            _ => return None,
-        };
         if self.sha256.len() != 64 || !self.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
             return None;
         }
@@ -147,6 +147,9 @@ impl RenderAttachment for contracts::WebMessageAttachment {
         };
         if authority != community_host
             || !ext_ok
+            || !matches!(url.scheme(), "http" | "https")
+            || !url.username().is_empty()
+            || url.password().is_some()
             || url.query().is_some()
             || url.fragment().is_some()
         {
@@ -161,7 +164,47 @@ impl RenderAttachment for contracts::WebMessageAttachment {
         if self.size > 0 {
             tag.push(format!("size {}", self.size));
         }
-        Some((format!("\n![{kind}]({})", self.url), tag))
+        if let Some(filename) = self.filename.as_deref().filter(|name| !name.is_empty()) {
+            tag.push(format!("filename {filename}"));
+        }
+        // Buzz 779af8886caae1317b4de962082429867ab61503:
+        // desktop/src/features/messages/lib/imetaMediaMarkdown.ts::formatImetaMediaLine.
+        // Snapshots and packaged voice notes use the original file-card path.
+        let filename = self.filename.as_deref().unwrap_or_default();
+        let lower = filename.to_lowercase();
+        let snapshot = lower.ends_with(".agent.png") || lower.ends_with(".team.png");
+        let voice_note = self
+            .web_message_attachment_type
+            .eq_ignore_ascii_case("video/mp4")
+            && lower.starts_with("voice-note-")
+            && lower.ends_with(".mp4");
+        let kind = if self.web_message_attachment_type.starts_with("video/") && !voice_note {
+            Some("video")
+        } else if self.web_message_attachment_type.starts_with("image/") && !snapshot {
+            Some("image")
+        } else {
+            None
+        };
+        let line = if let Some(kind) = kind {
+            let media = format!("![{kind}]({})", self.url);
+            if self.spoiler == Some(true) {
+                format!("\n||{media}||")
+            } else {
+                format!("\n{media}")
+            }
+        } else {
+            let label = if filename.is_empty() {
+                self.url.rsplit('/').next().unwrap_or_default()
+            } else {
+                filename
+            };
+            let escaped = label
+                .replace('\\', "\\\\")
+                .replace('[', "\\[")
+                .replace(']', "\\]");
+            format!("\n[{escaped}]({})", self.url)
+        };
+        Some((line, tag))
     }
 }
 
@@ -177,6 +220,8 @@ pub struct PublishResponse {
 #[derive(Debug, Serialize)]
 pub struct QueryResponse {
     pub events: serde_json::Value,
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<contracts::WebMessageCursor>,
 }
 
 fn mention_targets(ids: Option<&[String]>) -> Option<Vec<Uuid>> {
@@ -406,7 +451,454 @@ pub async fn conversation_visibility(
     if before != after || keys.public_key() != current.public_key() {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
-    Json(QueryResponse { events }).into_response()
+    Json(QueryResponse {
+        events,
+        next_cursor: None,
+    })
+    .into_response()
+}
+
+fn valid_message_intent(message_type: &contracts::WebMessageType, parent: Option<&str>) -> bool {
+    if parent
+        .is_some_and(|id| nostr::EventId::from_hex(id).map_or(true, |parsed| parsed.to_hex() != id))
+    {
+        return false;
+    }
+    match message_type {
+        contracts::WebMessageType::Stream => true,
+        contracts::WebMessageType::ForumPost => parent.is_none(),
+        contracts::WebMessageType::ForumComment => parent.is_some(),
+    }
+}
+
+fn channel_message_event(
+    value: serde_json::Value,
+    channel: &str,
+) -> Result<nostr::Event, Response> {
+    let event: nostr::Event =
+        serde_json::from_value(value).map_err(|_| invalid_message_evidence())?;
+    let channels: Vec<_> = event
+        .tags
+        .iter()
+        .map(nostr::Tag::as_slice)
+        .filter(|tag| tag.first().is_some_and(|key| key == "h"))
+        .collect();
+    let message_type = [
+        contracts::WebMessageType::Stream,
+        contracts::WebMessageType::ForumPost,
+        contracts::WebMessageType::ForumComment,
+    ]
+    .into_iter()
+    .find(|kind| message_kind(kind) == event.kind.as_u16());
+    let ancestry = parse_thread_markers(&event.tags).resolve();
+    let valid_kind_and_ancestry = message_type.as_ref().is_some_and(|kind| {
+        valid_message_intent(kind, ancestry.as_ref().map(|(_, parent)| parent.as_str()))
+    });
+    if !valid_kind_and_ancestry
+        || event.verify().is_err()
+        || channels.len() != 1
+        || channels[0].get(1).map(String::as_str) != Some(channel)
+    {
+        return Err(invalid_message_evidence());
+    }
+    Ok(event)
+}
+
+fn invalid_message_evidence() -> Response {
+    error_body(
+        StatusCode::SERVICE_UNAVAILABLE,
+        ErrorClass::Precondition,
+        ReasonCode::DependencyUnavailable,
+        None,
+    )
+}
+
+fn message_query_cursor(
+    query: &contracts::WebMessageQuery,
+) -> Result<Option<contracts::WebMessageCursor>, Response> {
+    match (query.before, query.before_id.as_deref()) {
+        (None, None) => Ok(None),
+        (Some(created_at), Some(event_id))
+            if created_at >= 0
+                && nostr::EventId::from_hex(event_id).is_ok_and(|id| id.to_hex() == event_id) =>
+        {
+            Ok(Some(contracts::WebMessageCursor {
+                created_at,
+                event_id: event_id.to_owned(),
+            }))
+        }
+        _ => Err(StatusCode::BAD_REQUEST.into_response()),
+    }
+}
+
+async fn window_author(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    host: &str,
+) -> Result<(i32, String), Response> {
+    let row: Option<(i32, Option<String>)> = sqlx::query_as(
+        "select version, relay_self_pubkey from projection.tenant_buzz_binding
+         where tenant_id=$1 and normalized_host=$2 and state='ACTIVE'",
+    )
+    .bind(ctx.tenant_id)
+    .bind(host)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|_| invalid_message_evidence())?;
+    match row {
+        Some((version, Some(author)))
+            if nostr::PublicKey::from_hex(&author).is_ok_and(|key| key.to_hex() == author) =>
+        {
+            Ok((version, author))
+        }
+        _ => Err(invalid_message_evidence()),
+    }
+}
+
+fn single_event_tag<'a>(event: &'a nostr::Event, key: &str) -> Option<&'a str> {
+    let mut values = event
+        .tags
+        .iter()
+        .map(nostr::Tag::as_slice)
+        .filter(|tag| tag.first().is_some_and(|name| name == key));
+    let value = values.next()?.get(1)?.as_str();
+    values.next().is_none().then_some(value)
+}
+
+fn web_channel_view(
+    event: &nostr::Event,
+    channel: &str,
+    relay_author: &str,
+) -> Result<contracts::WebChannelView, Response> {
+    if event.kind.as_u16() != 39000
+        || event.verify().is_err()
+        || event.pubkey.to_hex() != relay_author
+        || single_event_tag(event, "d") != Some(channel)
+    {
+        return Err(invalid_message_evidence());
+    }
+    let one = |key: &str| -> Result<Option<&str>, Response> {
+        let mut tags = event
+            .tags
+            .iter()
+            .map(nostr::Tag::as_slice)
+            .filter(|tag| tag.first().is_some_and(|name| name == key));
+        let tag = tags.next();
+        if tags.next().is_some() || tag.is_some_and(|tag| tag.len() != 2) {
+            return Err(invalid_message_evidence());
+        }
+        Ok(tag.map(|tag| tag[1].as_str()))
+    };
+    let name = one("name")?.ok_or_else(invalid_message_evidence)?;
+    let channel_type = one("t")?.ok_or_else(invalid_message_evidence)?;
+    let archived = match one("archived")? {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(_) => return Err(invalid_message_evidence()),
+    };
+    let mut view = serde_json::json!({"channelId":channel,"channelType":channel_type,"name":name,"archived":archived});
+    if let Some(description) = one("about")? {
+        view["description"] = description.into();
+    }
+    serde_json::from_value(view).map_err(|_| invalid_message_evidence())
+}
+
+/// Native channel metadata for the browser's actual admitted Channel. The
+/// shared Workspace directory remains usable by CLIENT-custody native hosts.
+pub async fn query_channel(
+    State(state): State<BffState>,
+    Path(workspace_id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(response) => return response,
+    };
+    let scope = match admit_workspace(&state, &ctx, workspace_id).await {
+        Ok(scope) => scope,
+        Err(response) => return response,
+    };
+    let keys = match actor_keys(&state, &ctx).await {
+        Ok(keys) => keys,
+        Err(response) => return response,
+    };
+    let client = match community_client(&state, &keys, &scope.community_host) {
+        Ok(client) => client,
+        Err(response) => return response,
+    };
+    if let Err(error) = community_limits(&state, &scope.community_host).await {
+        return error.into_response();
+    }
+    let author = match window_author(&state, &ctx, &scope.community_host).await {
+        Ok(author) => author,
+        Err(response) => return response,
+    };
+    let event = match client
+        .channel_metadata(&state.http, &scope.channel_id)
+        .await
+    {
+        Ok(Some(event)) => event,
+        Ok(None) => return invalid_message_evidence(),
+        Err(error) => return relay_error_response(&error, None),
+    };
+    let view = match web_channel_view(&event, &scope.channel_id, &author.1) {
+        Ok(view) => view,
+        Err(response) => return response,
+    };
+    let current = match admit_workspace(&state, &ctx, workspace_id).await {
+        Ok(scope) => scope,
+        Err(response) => return response,
+    };
+    let current_keys = match actor_keys(&state, &ctx).await {
+        Ok(keys) => keys,
+        Err(response) => return response,
+    };
+    if current.channel_id != scope.channel_id
+        || current.community_host != scope.community_host
+        || current.admission_epoch != scope.admission_epoch
+        || current_keys.public_key() != keys.public_key()
+    {
+        return AdmissionFailure::BindingNotActive.into_response();
+    }
+    match window_author(&state, &ctx, &current.community_host).await {
+        Ok(observed) if observed == author => Json(view).into_response(),
+        _ => AdmissionFailure::BindingNotActive.into_response(),
+    }
+}
+
+/// Validate original Relay rows and overlays without materializing another
+/// timeline. Window exhaustion remains the relay-signed NIP-CW bounds event;
+/// thread continuation follows the original native forward-keyset algorithm.
+#[allow(clippy::too_many_arguments)]
+fn verify_message_page(
+    events: Vec<nostr::Event>,
+    channel: &str,
+    message_type: &contracts::WebMessageType,
+    root: Option<&str>,
+    cursor: Option<&contracts::WebMessageCursor>,
+    relay_author: Option<&str>,
+    cap: i64,
+) -> Result<(Vec<nostr::Event>, Option<contracts::WebMessageCursor>), Response> {
+    let window = *message_type == contracts::WebMessageType::ForumPost;
+    let mut ids = std::collections::HashSet::new();
+    let mut rows = Vec::new();
+    let mut overlays = Vec::new();
+    let mut auxiliary = Vec::new();
+    for event in &events {
+        let kind = u32::from(event.kind.as_u16());
+        if event.verify().is_err() || !ids.insert(event.id) {
+            return Err(invalid_message_evidence());
+        }
+        let h = single_event_tag(event, "h");
+        // Native reactions and NIP-09 deletions derive their channel from the
+        // target event. The target closure below still binds them to this page.
+        let target_scoped_auxiliary = [KIND_DELETION, KIND_REACTION].contains(&kind)
+            && !event
+                .tags
+                .iter()
+                .any(|tag| tag.as_slice().first().is_some_and(|name| name == "h"));
+        if h != Some(channel) && !target_scoped_auxiliary {
+            return Err(invalid_message_evidence());
+        }
+        if [KIND_THREAD_SUMMARY, KIND_WINDOW_BOUNDS].contains(&kind) {
+            if !window || relay_author != Some(event.pubkey.to_hex().as_str()) {
+                return Err(invalid_message_evidence());
+            }
+            overlays.push(event);
+        } else if [
+            KIND_DELETION,
+            KIND_REACTION,
+            KIND_NIP29_DELETE_EVENT,
+            KIND_STREAM_MESSAGE_EDIT,
+        ]
+        .contains(&kind)
+        {
+            if !window && root.is_none() {
+                return Err(invalid_message_evidence());
+            }
+            auxiliary.push(event);
+        } else {
+            channel_message_event(serde_json::json!(event), channel)?;
+            let matches = match root {
+                Some(root) => {
+                    [
+                        contracts::WebMessageType::Stream,
+                        contracts::WebMessageType::ForumComment,
+                    ]
+                    .iter()
+                    .any(|kind| message_kind(kind) == event.kind.as_u16())
+                        && parse_thread_markers(&event.tags)
+                            .resolve()
+                            .is_some_and(|(id, _)| id == root)
+                }
+                None => event.kind.as_u16() == message_kind(message_type),
+            };
+            let after_cursor = cursor.is_none_or(|cursor| {
+                let time = event.created_at.as_secs();
+                let id = event.id.to_hex();
+                if root.is_some() {
+                    (time, id.as_str()) > (cursor.created_at as u64, cursor.event_id.as_str())
+                } else {
+                    time < cursor.created_at as u64
+                        || time == cursor.created_at as u64 && id > cursor.event_id
+                }
+            });
+            if !matches || !after_cursor {
+                return Err(invalid_message_evidence());
+            }
+            rows.push(event);
+        }
+    }
+    if i64::try_from(rows.len()).map_or(true, |len| len > cap) {
+        return Err(invalid_message_evidence());
+    }
+    if !rows.windows(2).all(|pair| {
+        let (a, b) = (pair[0], pair[1]);
+        if root.is_some() {
+            (a.created_at, a.id) < (b.created_at, b.id)
+        } else {
+            a.created_at > b.created_at || a.created_at == b.created_at && a.id < b.id
+        }
+    }) {
+        return Err(invalid_message_evidence());
+    }
+
+    // Only the original two-hop aux closure is admissible: row actions, then
+    // deletions of those actions. A signed event for an unrelated row is not evidence.
+    let mut targets: std::collections::HashSet<_> =
+        rows.iter().map(|event| event.id.to_hex()).collect();
+    targets.extend(root.map(str::to_owned));
+    let refers_to = |event: &nostr::Event, targets: &std::collections::HashSet<String>| {
+        event.tags.iter().map(nostr::Tag::as_slice).any(|tag| {
+            tag.first().is_some_and(|key| key == "e")
+                && tag.get(1).is_some_and(|id| targets.contains(id))
+        })
+    };
+    let first_hop: std::collections::HashSet<_> = auxiliary
+        .iter()
+        .filter(|event| refers_to(event, &targets))
+        .map(|event| event.id.to_hex())
+        .collect();
+    for event in auxiliary {
+        if !first_hop.contains(&event.id.to_hex())
+            && !([KIND_DELETION, KIND_NIP29_DELETE_EVENT].contains(&u32::from(event.kind.as_u16()))
+                && refers_to(event, &first_hop))
+        {
+            return Err(invalid_message_evidence());
+        }
+    }
+    let mut bounds_seen = false;
+    let mut summaries = std::collections::HashSet::new();
+    for overlay in overlays {
+        let content: serde_json::Value =
+            serde_json::from_str(&overlay.content).map_err(|_| invalid_message_evidence())?;
+        if u32::from(overlay.kind.as_u16()) == KIND_WINDOW_BOUNDS {
+            let suffix = cursor.map_or_else(
+                || "head".to_owned(),
+                |cursor| format!("{}:{}", cursor.created_at, cursor.event_id),
+            );
+            let expected = format!("{channel}:{suffix}");
+            if bounds_seen || single_event_tag(overlay, "d") != Some(expected.as_str()) {
+                return Err(invalid_message_evidence());
+            }
+            bounds_seen = true;
+            match content.get("has_more").and_then(serde_json::Value::as_bool) {
+                Some(false)
+                    if content
+                        .get("next_cursor")
+                        .is_some_and(serde_json::Value::is_null) => {}
+                Some(true) => {
+                    let last = rows.last().ok_or_else(invalid_message_evidence)?;
+                    let next = &content["next_cursor"];
+                    if next["created_at"].as_u64() != Some(last.created_at.as_secs())
+                        || next["id"].as_str() != Some(last.id.to_hex().as_str())
+                    {
+                        return Err(invalid_message_evidence());
+                    }
+                }
+                _ => return Err(invalid_message_evidence()),
+            }
+        } else {
+            let id = single_event_tag(overlay, "e").ok_or_else(invalid_message_evidence)?;
+            if single_event_tag(overlay, "d") != Some(id)
+                || !targets.contains(id)
+                || !summaries.insert(id)
+                || content["reply_count"].as_u64().is_none()
+                || content["descendant_count"].as_u64().is_none()
+                || !content["participants"].is_array()
+            {
+                return Err(invalid_message_evidence());
+            }
+        }
+    }
+    if window && !bounds_seen {
+        return Err(invalid_message_evidence());
+    }
+    let next_cursor = if root.is_some() && rows.len() as i64 == cap {
+        rows.last().map(|event| contracts::WebMessageCursor {
+            created_at: event.created_at.as_secs() as i64,
+            event_id: event.id.to_hex(),
+        })
+    } else {
+        None
+    };
+    Ok((events, next_cursor))
+}
+
+async fn read_message_event(
+    state: &BffState,
+    client: &IdentityClient,
+    channel: &str,
+    id: &str,
+) -> Result<nostr::Event, Response> {
+    let response = client
+        .query(
+            &state.http,
+            &[serde_json::json!({"ids":[id], "#h":[channel], "limit":1})],
+        )
+        .await
+        .map_err(|error| relay_error_response(&error, None))?;
+    let mut events = response
+        .as_array()
+        .cloned()
+        .ok_or_else(invalid_message_evidence)?;
+    if events.is_empty() {
+        return Err(StatusCode::NOT_FOUND.into_response());
+    }
+    if events.len() != 1 {
+        return Err(invalid_message_evidence());
+    }
+    let event = channel_message_event(events.remove(0), channel)?;
+    if event.id.to_hex() != id {
+        return Err(invalid_message_evidence());
+    }
+    Ok(event)
+}
+
+async fn resolve_message_parent(
+    state: &BffState,
+    client: &IdentityClient,
+    channel: &str,
+    parent_id: &str,
+    message_type: &contracts::WebMessageType,
+) -> Result<(String, String), Response> {
+    let parent = read_message_event(state, client, channel, parent_id).await?;
+    let root_id = parse_thread_markers(&parent.tags)
+        .resolve()
+        .map_or_else(|| parent.id.to_hex(), |(root, _)| root);
+    let root = if root_id == parent_id {
+        parent
+    } else {
+        read_message_event(state, client, channel, &root_id).await?
+    };
+    if parse_thread_markers(&root.tags).resolve().is_some()
+        || root.kind.as_u16() == message_kind(&contracts::WebMessageType::ForumComment)
+        || *message_type == contracts::WebMessageType::ForumComment
+            && root.kind.as_u16() != message_kind(&contracts::WebMessageType::ForumPost)
+    {
+        return Err(StatusCode::BAD_REQUEST.into_response());
+    }
+    Ok((root_id, parent_id.to_owned()))
 }
 
 async fn publish(
@@ -424,6 +916,22 @@ async fn publish(
         Publication::Hide => CONVERSATION_HIDE_ACTION,
         Publication::Reopen => CONVERSATION_REOPEN_ACTION,
     };
+    let (message_type, parent_event_id) = match &publication {
+        Publication::Message(req) => (
+            req.message_type
+                .clone()
+                .unwrap_or(contracts::WebMessageType::Stream),
+            req.parent_event_id.clone(),
+        ),
+        Publication::Hide | Publication::Reopen => (contracts::WebMessageType::Stream, None),
+    };
+    if !valid_message_intent(&message_type, parent_event_id.as_deref())
+        || matches!(target, MessageTarget::Conversation(_))
+            && message_type != contracts::WebMessageType::Stream
+    {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let requested_kind = i32::from(message_kind(&message_type));
 
     // 幂等键由调用方为「这一次发送意图」生成，重发时带同一个键（DD-81）。
     // 缺失即拒绝：没有它，结果不明后的重发只能再发一条。
@@ -456,9 +964,11 @@ async fn publish(
         result: Option<String>,
         mention_installation_ids: Vec<Uuid>,
         target_ids: Vec<Option<Uuid>>,
+        message_kind: i32,
+        parent_event_id: Option<String>,
     }
     let previous = match sqlx::query_as::<_, PreviousPublish>(
-        r#"select a.operation_id, a.event_id, a.mention_installation_ids,
+        r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.message_kind, a.parent_event_id,
                   array(select r.target_id from audit.audit_event r
                     where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                       and r.action_key=$3 and r.target_type=$4
@@ -492,6 +1002,8 @@ async fn publish(
     if let Some(p) = &previous {
         if !publish_scope_matches(&p.target_ids, target.id())
             || !mention_intent_matches(&p.mention_installation_ids, &mention_ids)
+            || p.message_kind != requested_kind
+            || p.parent_event_id != parent_event_id
         {
             return StatusCode::CONFLICT.into_response();
         }
@@ -584,6 +1096,32 @@ async fn publish(
         return c.into_response();
     }
 
+    let ancestry = match parent_event_id.as_deref() {
+        Some(parent) => {
+            match resolve_message_parent(&state, &client, &channel_id, parent, &message_type).await
+            {
+                Ok(ancestry) => Some(ancestry),
+                Err(response) => return response,
+            }
+        }
+        None => None,
+    };
+    // A reply lookup is external I/O. Do not sign with admission or a key
+    // revoked while its parent was being read.
+    let current_scope = match target.admit(&state, &ctx).await {
+        Ok(scope) => scope,
+        Err(response) => return response,
+    };
+    let current_keys = match actor_keys(&state, &ctx).await {
+        Ok(keys) => keys,
+        Err(response) => return response,
+    };
+    if current_scope != (channel_id.clone(), community_host.clone())
+        || keys.public_key() != current_keys.public_key()
+    {
+        return AdmissionFailure::BindingNotActive.into_response();
+    }
+
     // 预算在落 DISPATCH 之前取：取不到就既不落账也不发送，请求不打到 Relay
     let admitted = match client.admit() {
         Ok(a) => a,
@@ -594,9 +1132,16 @@ async fn publish(
     // DISPATCH 审计之后才发送——之后无论结果如何，这条消息动作都可关联
     // （Stage 1 退出门禁），结果不明时也有一个能去 Relay 查证的键（DD-81）。
     let signed = match publication {
-        Publication::Message(_) => {
-            client.sign_channel_message_mentions(&channel_id, &content, &media_tags, &mentions)
-        }
+        Publication::Message(_) => client.sign_channel_message_kind(
+            &channel_id,
+            &content,
+            &media_tags,
+            &mentions,
+            &message_type,
+            ancestry
+                .as_ref()
+                .map(|(root, parent)| (root.as_str(), parent.as_str())),
+        ),
         // Original Buzz DM commands, never caller-selected raw kinds/tags.
         Publication::Hide => client.sign(41012, "", &[vec!["h".into(), channel_id.clone()]]),
         Publication::Reopen => client.sign(41010, "", &[vec!["h".into(), channel_id.clone()]]),
@@ -665,33 +1210,44 @@ async fn publish(
             .rows_affected(),
             None => sqlx::query(
                 "insert into admission.publish_attempt
-                     (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids)
-                 values ($1, $2, $3, $4, $5) on conflict do nothing"
+                     (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id)
+                 values ($1, $2, $3, $4, $5, $6, $7) on conflict do nothing"
             )
             .bind(ctx.tenant_principal_id)
             .bind(idempotency_key)
             .bind(operation_id)
             .bind(&event_id)
             .bind(&mention_ids)
+            .bind(requested_kind)
+            .bind(&parent_event_id)
             .execute(&mut *tx)
             .await?
             .rows_affected(),
         };
         if claimed == 0 {
             // 同一个键的另一次请求抢先了：那一次在发，这一次不发
-            let (frozen, targets): (Vec<Uuid>, Vec<Option<Uuid>>) = sqlx::query_as(
-                "select a.mention_installation_ids,
+            #[derive(sqlx::FromRow)]
+            struct ConcurrentPublish {
+                mention_installation_ids: Vec<Uuid>,
+                message_kind: i32,
+                parent_event_id: Option<String>,
+                target_ids: Vec<Option<Uuid>>,
+            }
+            let frozen: ConcurrentPublish = sqlx::query_as(
+                "select a.mention_installation_ids, a.message_kind, a.parent_event_id,
                     array(select r.target_id from audit.audit_event r
                       where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                         and r.action_key=$3 and r.target_type=$4
-                        and r.workspace_id is not distinct from $5)
+                        and r.workspace_id is not distinct from $5) as target_ids
                  from admission.publish_attempt a
                  where a.tenant_principal_id=$1 and a.idempotency_key=$2")
                 .bind(ctx.tenant_principal_id).bind(idempotency_key)
                 .bind(action_key).bind(target.target_type()).bind(target.workspace_id())
                 .fetch_one(&mut *tx).await?;
-            return Ok(if publish_scope_matches(&targets, target.id())
-                && mention_intent_matches(&frozen, &mention_ids) { Claim::Pending } else { Claim::TargetMismatch });
+            return Ok(if publish_scope_matches(&frozen.target_ids, target.id())
+                && mention_intent_matches(&frozen.mention_installation_ids, &mention_ids)
+                && frozen.message_kind == requested_kind && frozen.parent_event_id == parent_event_id
+                { Claim::Pending } else { Claim::TargetMismatch });
         }
         append(
             &mut tx,
@@ -962,23 +1518,51 @@ pub async fn query_messages(
     State(state): State<BffState>,
     Path(workspace_id): Path<Uuid>,
     headers: HeaderMap,
+    Query(query): Query<contracts::WebMessageQuery>,
 ) -> Response {
-    query_messages_for(state, MessageTarget::Workspace(workspace_id), headers).await
+    query_messages_for(
+        state,
+        MessageTarget::Workspace(workspace_id),
+        headers,
+        query,
+    )
+    .await
 }
 
 pub async fn query_conversation_messages(
     State(state): State<BffState>,
     Path(conversation_id): Path<Uuid>,
     headers: HeaderMap,
+    Query(query): Query<contracts::WebMessageQuery>,
 ) -> Response {
-    query_messages_for(state, MessageTarget::Conversation(conversation_id), headers).await
+    query_messages_for(
+        state,
+        MessageTarget::Conversation(conversation_id),
+        headers,
+        query,
+    )
+    .await
 }
 
 async fn query_messages_for(
     state: BffState,
     target: MessageTarget,
     headers: HeaderMap,
+    query: contracts::WebMessageQuery,
 ) -> Response {
+    let cursor = match message_query_cursor(&query) {
+        Ok(cursor) => cursor,
+        Err(response) => return response,
+    };
+    let message_type = query
+        .message_type
+        .unwrap_or(contracts::WebMessageType::Stream);
+    if !valid_message_intent(&message_type, query.parent_event_id.as_deref())
+        || matches!(target, MessageTarget::Conversation(_))
+            && message_type != contracts::WebMessageType::Stream
+    {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
@@ -1001,16 +1585,105 @@ async fn query_messages_for(
         Err(c) => return c.into_response(),
     };
 
-    // kind 9 是 NIP-29 的频道消息；`#h` 把结果限定在该 Workspace 的 Channel 内。
-    // limit 不接受调用方指定：取部署登记值与 NIP-11 `max_limit` 的交集——Relay 的
-    // 上限不是平台该放行的值，登记值也不能超过 Relay 声明的上界（`.design/09`）。
-    let filter = serde_json::json!({
-        "kinds": [9],
-        "#h": [channel_id],
-        "limit": page_limit(&state, &limits),
-    });
+    // Original Forum posts and NIP-10 threads use the same admitted native
+    // event page; no second Forum projection or body store is created.
+    let mut root_event = None;
+    let mut cap = page_limit(&state, &limits);
+    let mut filter = serde_json::json!({"kinds":[message_kind(&message_type)], "#h":[channel_id]});
+    let author = if message_type == contracts::WebMessageType::ForumPost {
+        let author = match window_author(&state, &ctx, &community_host).await {
+            Ok(author) => author,
+            Err(response) => return response,
+        };
+        cap = cap.min(i64::from(collab_bridge::bridge::BRIDGE_WINDOW_MAX_LIMIT));
+        filter["top_level"] = true.into();
+        filter["include_summaries"] = true.into();
+        filter["include_aux"] = true.into();
+        Some(author)
+    } else {
+        None
+    };
+    if let Some(root_id) = query.parent_event_id.as_deref() {
+        let root = match read_message_event(&state, &client, &channel_id, root_id).await {
+            Ok(root) => root,
+            Err(response) => return response,
+        };
+        if parse_thread_markers(&root.tags).resolve().is_some()
+            || root.kind.as_u16() == message_kind(&contracts::WebMessageType::ForumComment)
+            || message_type == contracts::WebMessageType::ForumComment
+                && root.kind.as_u16() != message_kind(&contracts::WebMessageType::ForumPost)
+        {
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        root_event = Some(root);
+        cap = cap.min(i64::from(collab_bridge::bridge::BRIDGE_THREAD_MAX_LIMIT));
+        filter["kinds"] = serde_json::json!([
+            message_kind(&contracts::WebMessageType::Stream),
+            message_kind(&contracts::WebMessageType::ForumComment)
+        ]);
+        filter["#e"] = serde_json::json!([root_id]);
+        filter["depth_limit"] = collab_bridge::bridge::DEFAULT_THREAD_DEPTH_LIMIT.into();
+        filter["include_aux"] = true.into();
+    }
+    filter["limit"] = cap.into();
+    if let Some(cursor) = &cursor {
+        if root_event.is_some() {
+            filter["thread_cursor"] = cursor.created_at.into();
+            filter["thread_cursor_id"] = cursor.event_id.clone().into();
+        } else {
+            filter["until"] = cursor.created_at.into();
+            filter["before_id"] = cursor.event_id.clone().into();
+        }
+    }
     match client.query(&state.http, &[filter]).await {
-        Ok(events) => (StatusCode::OK, Json(QueryResponse { events })).into_response(),
+        Ok(events) => {
+            let events = match serde_json::from_value(events) {
+                Ok(events) => events,
+                Err(_) => return invalid_message_evidence(),
+            };
+            let (mut verified, next_cursor) = match verify_message_page(
+                events,
+                &channel_id,
+                &message_type,
+                query.parent_event_id.as_deref(),
+                cursor.as_ref(),
+                author.as_ref().map(|(_, key)| key.as_str()),
+                cap,
+            ) {
+                Ok(page) => page,
+                Err(response) => return response,
+            };
+            if let Some(root) = root_event {
+                verified.insert(0, root);
+            }
+            let current = match target.admit(&state, &ctx).await {
+                Ok(scope) => scope,
+                Err(response) => return response,
+            };
+            let current_keys = match actor_keys(&state, &ctx).await {
+                Ok(keys) => keys,
+                Err(response) => return response,
+            };
+            if current != (channel_id, community_host)
+                || current_keys.public_key() != keys.public_key()
+            {
+                return AdmissionFailure::BindingNotActive.into_response();
+            }
+            if let Some(author) = author {
+                match window_author(&state, &ctx, &current.1).await {
+                    Ok(observed) if observed == author => {}
+                    _ => return AdmissionFailure::BindingNotActive.into_response(),
+                }
+            }
+            (
+                StatusCode::OK,
+                Json(QueryResponse {
+                    events: serde_json::json!(verified),
+                    next_cursor,
+                }),
+            )
+                .into_response()
+        }
         Err(e) => {
             tracing::warn!(error = %e, "查询历史失败");
             relay_error_response(&e, None)
@@ -1546,6 +2219,323 @@ mod tests {
     use super::*;
 
     #[test]
+    fn forum_message_intents_enforce_parent_combinations_and_canonical_ids() {
+        use contracts::WebMessageType::{ForumComment, ForumPost, Stream};
+        let id = "a".repeat(64);
+        assert!(valid_message_intent(&Stream, None));
+        assert!(valid_message_intent(&Stream, Some(&id)));
+        assert!(valid_message_intent(&ForumPost, None));
+        assert!(!valid_message_intent(&ForumPost, Some(&id)));
+        assert!(!valid_message_intent(&ForumComment, None));
+        assert!(valid_message_intent(&ForumComment, Some(&id)));
+        for bad in [
+            String::new(),
+            "a".repeat(63),
+            "g".repeat(64),
+            id.to_uppercase(),
+        ] {
+            assert!(!valid_message_intent(&Stream, Some(&bad)));
+            assert!(!valid_message_intent(&ForumComment, Some(&bad)));
+        }
+    }
+
+    #[test]
+    fn forum_extension_keeps_old_stream_requests_and_queries_readable() {
+        let request: PublishRequest =
+            serde_json::from_value(serde_json::json!({"content":"old client"})).unwrap();
+        assert!(request.message_type.is_none());
+        assert!(request.parent_event_id.is_none());
+        let message_type = request
+            .message_type
+            .unwrap_or(contracts::WebMessageType::Stream);
+        assert!(valid_message_intent(
+            &message_type,
+            request.parent_event_id.as_deref()
+        ));
+        assert_eq!(message_kind(&message_type), 9);
+        let query: contracts::WebMessageQuery =
+            serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(query.message_type.is_none());
+        assert!(query.parent_event_id.is_none());
+        assert!(query.before.is_none());
+        assert!(serde_json::from_value::<PublishRequest>(
+            serde_json::json!({"content":"x","messageType":"UNKNOWN"})
+        )
+        .is_err());
+        assert!(serde_json::from_value::<contracts::WebMessageQuery>(
+            serde_json::json!({"messageType":"UNKNOWN"})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn forum_message_evidence_rejects_foreign_unsigned_tampered_and_unknown_events() {
+        let keys = nostr::Keys::generate();
+        let signed = |kind, tags: Vec<nostr::Tag>| {
+            nostr::EventBuilder::new(nostr::Kind::Custom(kind), "body")
+                .tags(tags)
+                .sign_with_keys(&keys)
+                .unwrap()
+        };
+        let channel_tag = || nostr::Tag::parse(["h", "channel"]).unwrap();
+        let id = "a".repeat(64);
+        for message_type in [
+            contracts::WebMessageType::Stream,
+            contracts::WebMessageType::ForumPost,
+            contracts::WebMessageType::ForumComment,
+        ] {
+            let mut tags = vec![channel_tag()];
+            if message_type == contracts::WebMessageType::ForumComment {
+                tags.push(nostr::Tag::parse(["e", id.as_str(), "", "reply"]).unwrap());
+            }
+            let event = signed(message_kind(&message_type), tags);
+            let value = serde_json::to_value(&event).unwrap();
+            assert_eq!(
+                channel_message_event(value.clone(), "channel").unwrap().id,
+                event.id
+            );
+            assert!(channel_message_event(value.clone(), "other-channel").is_err());
+            let mut unsigned = value.clone();
+            unsigned.as_object_mut().unwrap().remove("sig");
+            assert!(channel_message_event(unsigned, "channel").is_err());
+            let mut tampered = value;
+            tampered["content"] = "different body".into();
+            assert!(channel_message_event(tampered, "channel").is_err());
+        }
+        for event in [
+            signed(42, vec![channel_tag()]),
+            signed(9, vec![]),
+            signed(9, vec![channel_tag(), channel_tag()]),
+            signed(
+                message_kind(&contracts::WebMessageType::ForumComment),
+                vec![channel_tag()],
+            ),
+            signed(
+                message_kind(&contracts::WebMessageType::ForumPost),
+                vec![
+                    channel_tag(),
+                    nostr::Tag::parse(["e", id.as_str(), "", "reply"]).unwrap(),
+                ],
+            ),
+        ] {
+            assert!(
+                channel_message_event(serde_json::to_value(event).unwrap(), "channel").is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn forum_cursor_requires_the_complete_canonical_key() {
+        let id = "a".repeat(64);
+        for value in [
+            serde_json::json!({"before":1}),
+            serde_json::json!({"beforeId":id}),
+            serde_json::json!({"before":-1,"beforeId":id}),
+            serde_json::json!({"before":1,"beforeId":id.to_uppercase()}),
+            serde_json::json!({"before":1,"beforeId":"invalid"}),
+        ] {
+            let query = serde_json::from_value(value).unwrap();
+            assert!(message_query_cursor(&query).is_err());
+        }
+        let query = serde_json::from_value(serde_json::json!({"before":1,"beforeId":id})).unwrap();
+        let cursor = message_query_cursor(&query).unwrap().unwrap();
+        assert_eq!(cursor.created_at, 1);
+        assert_eq!(cursor.event_id, id);
+    }
+
+    #[test]
+    fn channel_descriptor_reads_signed_native_type_not_message_contents() {
+        let keys = nostr::Keys::generate();
+        let channel = Uuid::from_u128(1).to_string();
+        let sign = |kind: &str, archived: Option<&str>| {
+            let mut tags = vec![
+                nostr::Tag::parse(["d", channel.as_str()]).unwrap(),
+                nostr::Tag::parse(["name", "forum-channel"]).unwrap(),
+                nostr::Tag::parse(["t", kind]).unwrap(),
+            ];
+            if let Some(value) = archived {
+                tags.push(nostr::Tag::parse(["archived", value]).unwrap());
+            }
+            nostr::EventBuilder::new(nostr::Kind::Custom(39000), "")
+                .tags(tags)
+                .sign_with_keys(&keys)
+                .unwrap()
+        };
+        let event = sign("forum", None);
+        let view = web_channel_view(&event, &channel, &keys.public_key().to_hex()).unwrap();
+        assert_eq!(view.channel_id, channel);
+        assert_eq!(serde_json::to_value(view.channel_type).unwrap(), "forum");
+        assert!(!view.archived);
+        assert!(
+            web_channel_view(
+                &sign("forum", Some("true")),
+                &channel,
+                &keys.public_key().to_hex()
+            )
+            .unwrap()
+            .archived
+        );
+        assert!(web_channel_view(
+            &sign("future-type", None),
+            &channel,
+            &keys.public_key().to_hex()
+        )
+        .is_err());
+        assert!(web_channel_view(
+            &sign("forum", Some("unknown")),
+            &channel,
+            &keys.public_key().to_hex()
+        )
+        .is_err());
+        assert!(web_channel_view(
+            &event,
+            &Uuid::from_u128(2).to_string(),
+            &keys.public_key().to_hex()
+        )
+        .is_err());
+        assert!(web_channel_view(
+            &event,
+            &channel,
+            &nostr::Keys::generate().public_key().to_hex()
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn forum_window_requires_bound_relay_signed_bounds_and_scoped_auxiliary() {
+        let author = nostr::Keys::generate();
+        let relay = nostr::Keys::generate();
+        let sign = |kind: u16, content: String, tags: Vec<Vec<&str>>, keys: &nostr::Keys| {
+            nostr::EventBuilder::new(nostr::Kind::Custom(kind), content)
+                .tags(
+                    tags.into_iter()
+                        .map(|parts| nostr::Tag::parse(parts).unwrap()),
+                )
+                .sign_with_keys(keys)
+                .unwrap()
+        };
+        let row = sign(
+            message_kind(&contracts::WebMessageType::ForumPost),
+            "post".into(),
+            vec![vec!["h", "channel"]],
+            &author,
+        );
+        let row_id = row.id.to_hex();
+        let bounds = |keys| {
+            sign(
+                KIND_WINDOW_BOUNDS as u16,
+                serde_json::json!({"has_more":false,"next_cursor":null}).to_string(),
+                vec![vec!["h", "channel"], vec!["d", "channel:head"]],
+                keys,
+            )
+        };
+        let check = |events| {
+            verify_message_page(
+                events,
+                "channel",
+                &contracts::WebMessageType::ForumPost,
+                None,
+                None,
+                Some(&relay.public_key().to_hex()),
+                2,
+            )
+        };
+        assert!(check(vec![row.clone(), bounds(&relay)]).is_ok());
+        assert!(check(vec![bounds(&relay)]).is_ok());
+        assert!(check(vec![row.clone()]).is_err());
+        assert!(check(vec![row.clone(), bounds(&author)]).is_err());
+        let reaction = sign(
+            KIND_REACTION as u16,
+            "+".into(),
+            vec![vec!["h", "channel"], vec!["e", &row_id]],
+            &author,
+        );
+        let reaction_id = reaction.id.to_hex();
+        let deletion = sign(
+            KIND_DELETION as u16,
+            String::new(),
+            vec![vec!["e", &reaction_id]],
+            &author,
+        );
+        assert!(check(vec![row.clone(), reaction, deletion, bounds(&relay)]).is_ok());
+        let native_reaction = sign(
+            KIND_REACTION as u16,
+            "+".into(),
+            vec![vec!["e", &row_id]],
+            &author,
+        );
+        assert!(check(vec![row.clone(), native_reaction, bounds(&relay)]).is_ok());
+        for channel_tags in [
+            vec![vec!["h", "other-channel"]],
+            vec![vec!["h", "channel"], vec!["h", "other-channel"]],
+        ] {
+            let mut tags = channel_tags;
+            tags.push(vec!["e", &row_id]);
+            let reaction = sign(KIND_REACTION as u16, "+".into(), tags, &author);
+            assert!(check(vec![row.clone(), reaction, bounds(&relay)]).is_err());
+        }
+        let unrelated = "b".repeat(64);
+        let unrelated_native_reaction = sign(
+            KIND_REACTION as u16,
+            "+".into(),
+            vec![vec!["e", &unrelated]],
+            &author,
+        );
+        assert!(check(vec![row.clone(), unrelated_native_reaction, bounds(&relay)]).is_err());
+        let reaction = sign(
+            KIND_REACTION as u16,
+            "+".into(),
+            vec![vec!["h", "channel"], vec!["e", &unrelated]],
+            &author,
+        );
+        assert!(check(vec![row.clone(), reaction, bounds(&relay)]).is_err());
+        let bad_cursor = sign(KIND_WINDOW_BOUNDS as u16,
+            serde_json::json!({"has_more":true,"next_cursor":{"created_at":row.created_at.as_secs(),"id":unrelated}}).to_string(),
+            vec![vec!["h","channel"],vec!["d","channel:head"]], &relay);
+        assert!(check(vec![row, bad_cursor]).is_err());
+    }
+
+    #[test]
+    fn forum_thread_keeps_same_second_replies_with_a_forward_cursor() {
+        let keys = nostr::Keys::generate();
+        let root = "a".repeat(64);
+        let mut rows: Vec<_> = ["first", "second"]
+            .into_iter()
+            .map(|content| {
+                nostr::EventBuilder::new(
+                    nostr::Kind::Custom(message_kind(&contracts::WebMessageType::ForumComment)),
+                    content,
+                )
+                .tags([
+                    nostr::Tag::parse(["h", "channel"]).unwrap(),
+                    nostr::Tag::parse(["e", root.as_str(), "", "reply"]).unwrap(),
+                ])
+                .custom_created_at(nostr::Timestamp::from_secs(1))
+                .sign_with_keys(&keys)
+                .unwrap()
+            })
+            .collect();
+        rows.sort_by_key(|event| event.id);
+        let check = |events, cursor| {
+            verify_message_page(
+                events,
+                "channel",
+                &contracts::WebMessageType::ForumComment,
+                Some(&root),
+                cursor,
+                None,
+                1,
+            )
+        };
+        let (_, cursor) = check(vec![rows[0].clone()], None).unwrap();
+        let cursor = cursor.unwrap();
+        assert_eq!(cursor.event_id, rows[0].id.to_hex());
+        assert!(check(vec![rows[1].clone()], Some(&cursor)).is_ok());
+        assert!(check(vec![rows[0].clone()], Some(&cursor)).is_err());
+        assert!(check(Vec::new(), Some(&cursor)).unwrap().1.is_none());
+    }
+
+    #[test]
     fn private_messages_keep_conversation_audit_scope() {
         let id = Uuid::from_u128(1);
         let dm = MessageTarget::Conversation(id);
@@ -1729,5 +2719,148 @@ mod tests {
             RelayCheck::Mismatch.stream_reason(),
             RelayCheck::Unavailable.stream_reason()
         );
+    }
+
+    fn media_attachment(
+        media_type: &str,
+        extension: &str,
+        filename: Option<&str>,
+        spoiler: Option<bool>,
+    ) -> contracts::WebMessageAttachment {
+        let hash = "a".repeat(64);
+        let mut value = serde_json::json!({
+            "url": format!("https://relay.example/media/{hash}.{extension}"),
+            "sha256": hash,
+            "type": media_type,
+            "size": 42,
+        });
+        if let Some(filename) = filename {
+            value["filename"] = filename.into();
+        }
+        if let Some(spoiler) = spoiler {
+            value["spoiler"] = spoiler.into();
+        }
+        serde_json::from_value(value).expect("generated attachment contract")
+    }
+
+    /// Fixed Buzz 779af8886caae1317b4de962082429867ab61503,
+    /// desktop/src/features/messages/lib/imetaMediaMarkdown.ts::formatImetaMediaLine
+    /// and ::buildImetaTags: these are file-card links, not inline image/video.
+    #[test]
+    fn attachment_file_cards_preserve_native_classification_and_filename() {
+        for (mime, extension, filename) in [
+            ("application/pdf", "pdf", "report.pdf"),
+            ("audio/mpeg", "mp3", "recording.mp3"),
+            ("video/mp4", "mp4", "voice-note-recording.mp4"),
+            ("video/mp4", "mp4", "VOICE-NOTE-RECORDING.MP4"),
+            ("image/png", "png", "helper.agent.png"),
+            ("image/png", "png", "engineers.team.png"),
+            ("image/png", "png", "HELPER.AGENT.PNG"),
+        ] {
+            let attachment = media_attachment(mime, extension, Some(filename), Some(true));
+            let (body, tags) = attachment.render("relay.example").unwrap();
+            assert_eq!(
+                body,
+                format!("\n[{filename}]({})", attachment.url),
+                "{filename}"
+            );
+            assert_eq!(
+                tags,
+                vec![
+                    "imeta".to_owned(),
+                    format!("url {}", attachment.url),
+                    format!("m {mime}"),
+                    format!("x {}", attachment.sha256),
+                    "size 42".to_owned(),
+                    format!("filename {filename}"),
+                ],
+                "file metadata must retain the original filename independently of Markdown"
+            );
+        }
+    }
+
+    #[test]
+    fn attachment_images_and_videos_keep_inline_spoilers() {
+        for (mime, extension, filename, kind) in [
+            ("image/png", "png", "photo.png", "image"),
+            ("video/mp4", "mp4", "movie.mp4", "video"),
+            ("video/webm", "webm", "voice-note-recording.mp4", "video"),
+            ("video/mp4", "mp4", "voice-note-recording.webm", "video"),
+        ] {
+            for spoiler in [None, Some(false), Some(true)] {
+                let attachment = media_attachment(mime, extension, Some(filename), spoiler);
+                let (body, tags) = attachment.render("relay.example").unwrap();
+                let media = format!("![{kind}]({})", attachment.url);
+                assert_eq!(
+                    body,
+                    if spoiler == Some(true) {
+                        format!("\n||{media}||")
+                    } else {
+                        format!("\n{media}")
+                    },
+                    "{filename} spoiler={spoiler:?}"
+                );
+                assert!(tags.contains(&format!("filename {filename}")));
+                assert!(
+                    tags.iter().all(|tag| !tag.starts_with("spoiler")),
+                    "spoiler is durable Markdown, not an invented imeta field"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn attachment_file_labels_escape_markdown_without_changing_imeta() {
+        let filename = r"report\[final].pdf";
+        let attachment = media_attachment("application/pdf", "pdf", Some(filename), None);
+        let (body, tags) = attachment.render("relay.example").unwrap();
+        assert_eq!(
+            body,
+            format!("\n[{}]({})", r"report\\\[final\].pdf", attachment.url)
+        );
+        assert!(tags.contains(&format!("filename {filename}")));
+    }
+
+    #[test]
+    fn attachment_urls_stay_in_the_admitted_community() {
+        let mut attachment = media_attachment("application/pdf", "pdf", Some("report.pdf"), None);
+        let hash = attachment.sha256.clone();
+        for url in [
+            format!("https://other.example/media/{hash}.pdf"),
+            format!("https://reader@relay.example/media/{hash}.pdf"),
+            format!("https://reader:password@relay.example/media/{hash}.pdf"),
+            format!("https://relay.example/media/{hash}.pdf?download=1"),
+            format!("https://relay.example/media/{hash}.pdf#download"),
+            format!("https://relay.example:8443/media/{hash}.pdf"),
+        ] {
+            attachment.url = url;
+            assert!(
+                attachment.render("relay.example").is_none(),
+                "must reject {}",
+                attachment.url
+            );
+        }
+        assert!(
+            attachment.render("relay.example:8443").is_some(),
+            "the admitted authority includes its configured port"
+        );
+    }
+
+    #[test]
+    fn attachment_legacy_missing_optional_fields_remains_readable() {
+        let mut image = media_attachment("image/png", "png", None, None);
+        assert_eq!(image.filename, None);
+        assert_eq!(image.spoiler, None);
+        image.size = 0;
+        let (body, tags) = image.render("relay.example").unwrap();
+        assert_eq!(body, format!("\n![image]({})", image.url));
+        assert_eq!(
+            tags.len(),
+            4,
+            "legacy zero size emits no size or filename imeta fields"
+        );
+        let file = media_attachment("application/pdf", "pdf", None, None);
+        let (body, _) = file.render("relay.example").unwrap();
+        assert_eq!(body, format!("\n[{}.pdf]({})", file.sha256, file.url));
     }
 }

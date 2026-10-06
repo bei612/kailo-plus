@@ -5,6 +5,13 @@
     "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "type": "image/png",
     "size": 42
+  }, {
+    "url": "https://relay.example/media/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.png",
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "type": "image/png",
+    "size": 84,
+    "filename": "diagram.png",
+    "spoiler": true
   }],
   "mentionInstallationIds": ["00000000-0000-4000-8000-000000000001"]
 }

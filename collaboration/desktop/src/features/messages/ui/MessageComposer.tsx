@@ -1,5 +1,6 @@
 import * as React from "react";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
+import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
 import {
   useChannelLinks,
   type ChannelSuggestion,
@@ -46,6 +47,7 @@ import { useComposerLinkPreviews } from "./useComposerLinkPreviews";
 import { scheduleSettleGatedAutoSubmit } from "./messageComposerAutoSubmit";
 import type { MessageComposerProps } from "./MessageComposer.types";
 function MessageComposerImpl({
+  surface = "stream",
   channelId = null,
   channelName,
   containerClassName,
@@ -457,7 +459,8 @@ function MessageComposerImpl({
     if (!voiceNote.hasAttachmentRef.current) void media.handlePaperclip();
   }, [media.handlePaperclip, voiceNote.hasAttachmentRef]);
   const acceptsDrop = ownsDropZone && voiceNote.acceptsAttachment;
-  return <MessageComposerSurface
+  const ComposerSurface = surface === "forum" ? ForumComposerSurface : MessageComposerSurface;
+  return <ComposerSurface
     submitLocked={isSubmitLocked}
     containerClassName={containerClassName} showTopBorder={showTopBorder}
     formRef={formRef} scrollRef={composerScrollRef} onEditorKeyDown={handleEditorKeyDown}
@@ -561,6 +564,6 @@ function MessageComposerImpl({
                 ) : null}
               </div>
             )}
-  </MessageComposerSurface>;
+  </ComposerSurface>;
 }
 export const MessageComposer = React.memo(MessageComposerImpl);
