@@ -117,6 +117,16 @@ Browser 不直连 Relay 也不持有 signer。这一边界同时覆盖消息、p
 
 原 NIP-44 kind:30078 收藏/静音/已读同步在 Buzz Web 上固定由 Core CollaborationUserState 取代，理由是不在服务端保留用户解密私钥（DD-40）。该理由不适用于原生端——它们本地持钥，自身即可解密。原生端的收藏/静音/已读仍以 Core CollaborationUserState 为唯一权威，以保证三端一致与可撤权，但这是一致性要求而非密钥要求；原生端不得另建第二份用户状态权威。
 
+该用户状态同时覆盖 Workspace 和参与者私聊：收藏/静音分别按 Workspace 与 ConversationBuzzBinding 引用保存，已读仍使用原 Channel/Message/Thread 键，绝不把私聊引用当作 Workspace。私聊隐藏/恢复继续消费 Relay 原生 channel_members.hidden_at 和 NIP-DV 快照；Web 经 BFF 本人 SERVER 身份签发，原生端本人 CLIENT 签发，均须 Relay 当前参与者准入。隐藏不撤销成员、不删除正文，也不改变其他参与者的视图；结果不明只查证同一命令，不盲目重发。
+
+### 宿主用户资料与头像
+
+用户资料是 Buzz 协作能力，不是外部业务组件。Web 与 Desktop 复用原头像编辑器的图片、emoji 与动态头像能力；Web 的资料签名及媒体传输仍遵守本节 BFF 边界，Desktop 仍本机持钥。不得用另写一个裁剪功能的设置页代替原控件。
+
+固定上游 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `.references/buzz/desktop/src/features/profile/lib/animatedAvatarCapture.ts::{openAvatarCamera,stopAvatarCamera,createSegmenter}` 使用视频摄像头、停止媒体轨道及 MediaPipe 分割；`.references/buzz/desktop/src-tauri/tauri.conf.json::app.security.csp` 已包含 `wasm-unsafe-eval`（SF-DSK-03）。依据 REQ-08 与用户要求的原版功能复用，宿主可执行随自身版本固定的头像 WASM，Web 使用 `script-src 'self' 'wasm-unsafe-eval'`，不允许 JavaScript `unsafe-eval` 或外域脚本；WASM、loader 与模型均由宿主同源提供，版本与字节固定，不从运行时组件配置取得。
+
+Web 摄像头许可仅为 `camera=(self)`，且须由用户在头像控件中发起并取得浏览器授权；不申请麦克风。拒绝授权、无设备或非安全上下文时呈现明确不可用原因，不宣称采集成功；退出采集、切换身份或关闭页面时释放媒体轨道，不后台持续采集。该许可是同源宿主能力，不是同源模块之间的权限隔离；跨源组件页面不得取得摄像头委派。DD-60 的“不因 release 放宽”仍成立：组件登记、Tenant 与 binding 不能改变这些宿主策略，外部页面和文档编辑器仍按 `07` 的隔离边界承载。Mobile 不因此成为组件宿主。
+
 ### BFF Relay 连接模型
 
 - 每个 TenantBuzzBinding 在 `ACTIVE` 前抓取 NIP-11，按 `03` 的 digest 规则保存 snapshot digest。BFF 使用该快照与自身更严格配置的交集，不把 1024 subscription、10 filters/REQ、1000 limit、512 KiB frame 当作可超越的建议值；Workspace scope 的订阅必须合并在单 REQ 不超过 10 个 filter，分页 limit 不超过 1000（SF-BUZ-28）。

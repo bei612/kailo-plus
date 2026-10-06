@@ -164,6 +164,8 @@ ACTIVE → SUSPENDING → SUSPENDED → RESTORING → ACTIVE
 
 ### 7.3 Workspace 暂停与恢复
 
+REQ-24 的原版临时频道 TTL 语义是到期归档，不是删除：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `buzz/crates/buzz-db/src/store/channel.rs::reap_expired_ephemeral_channels` 与 `buzz/crates/buzz-relay/src/main.rs::main` 回收路径写入 archive 并驱逐订阅。接入仍收敛到下列 Workspace 暂停状态与既有 `WORKSPACE_LIFECYCLE`，不能仅让 Relay 到期而 Core 长期保持 ACTIVE，也不增加删除 Workflow 或第二套定时调度权威。到期后恢复沿原恢复路径重新查证，不盲目重新创建频道；未获得归档终态证据时保持中性对账状态，不渲染已完成。
+
 ```text
 ACTIVE → SUSPENDING → SUSPENDED → RESTORING → ACTIVE
                  \→ ERROR          \→ ERROR
