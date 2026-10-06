@@ -30,6 +30,12 @@ try:
     env = os.environ
     require(re.fullmatch(r'kailo-cells-[a-z0-9][a-z0-9_-]*', env['CELLS_COMPOSE_PROJECT']), 'independent kailo-cells project required')
     require(re.fullmatch(r'[^\s@]+@sha256:[a-f0-9]{64}', env['CELLS_IMAGE']), 'recorded immutable native fork image required')
+    connectors = json.loads(env['CELLS_OAUTH_CONNECTORS'])
+    require(isinstance(connectors, list) and all(isinstance(c, dict) for c in connectors), 'native connector list required')
+    oidc = [c for c in connectors if c.get('type') == 'kailo-oidc']
+    require(len(oidc) == 1 and isinstance(oidc[0].get('config'), dict), 'one native OIDC connector required')
+    require(oidc[0]['config'].get('clientSecretFile') == '/run/secrets/cells_oidc_client_secret', 'native connector credential must match the Compose secret mount')
+    require(secret_file('CELLS_OIDC_CLIENT_SECRET_FILE').strip(), 'nonempty native OIDC client secret required')
     install = json.loads(secret_file('CELLS_INSTALL_FILE'))
     require(isinstance(install, dict), 'native install JSON object required')
     require(isinstance(install.get('frontendLogin'), str) and install['frontendLogin'].strip(), 'native admin login required; browser installer is not enabled')

@@ -1,0 +1,25 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"api/protocol_session_view.schema.json",
+  "title":"ProtocolSessionView",
+  "description":"03/18: only the initiating HUMAN's fresh-authorized original Session facts. No PAT, launch credential, native body or replacement revision is recoverable from this reader.",
+  "type":"object","additionalProperties":false,
+  "required":["protocolSessionId","actionExecutionId","applicationBindingId","tenantId","reference","baseRevision","state","admittedMode","launchTheme","launchLocale","expiresAt","version","effectiveEditorOrigins"],
+  "properties":{
+    "protocolSessionId":{"type":"string","format":"uuid"},
+    "actionExecutionId":{"type":"string","format":"uuid"},
+    "applicationBindingId":{"type":"string","format":"uuid"},
+    "tenantId":{"type":"string","format":"uuid"},
+    "workspaceId":{"type":"string","format":"uuid"},
+    "reference":{"$ref":"../domain/content_reference.schema.json"},
+    "baseRevision":{"type":"string","minLength":1},
+    "state":{"$ref":"../workflow/protocol_session_reconcile_round.schema.json#/properties/state"},
+    "admittedMode":{"type":"string","enum":["VIEW","EDIT"]},
+    "launchTheme":{"type":"string","enum":["LIGHT","DARK"]},
+    "launchLocale":{"type":"string","enum":["en","zh-CN"]},
+    "expiresAt":{"type":"string","format":"date-time"},
+    "version":{"type":"integer","minimum":1},
+    "resultRevision":{"type":"string","minLength":1},
+    "effectiveEditorOrigins":{"type":"array","uniqueItems":true,"items":{"type":"string"}}
+  }
+}

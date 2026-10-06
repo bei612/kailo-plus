@@ -7,16 +7,32 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
-import type { AutomationRunPage } from "../src/generated/contracts.js";
+import type { AutomationRunPage, AutomationDetailView } from "../src/generated/contracts.js";
 import type { AutomationVersionContent } from "../src/generated/contracts.js";
 import type { ComponentConformanceStepObservation } from "../src/generated/contracts.js";
 import type { ComponentReleaseApprovalReport } from "../src/generated/contracts.js";
 import type { ApplicationNativePage } from "../src/generated/contracts.js";
 import type { AdapterBindingObservation, AdapterExecutionReference } from "../src/generated/contracts.js";
 import type { ApplicationAdapterDirectory } from "../src/generated/contracts.js";
+import type { ApplicationModelAdmission, ApplicationModelGatewayConfig } from "../src/generated/contracts.js";
+
+test("application model preserves exact route references and absent correlation", () => {
+  const raw=readFileSync(new URL("../../../../contracts/samples/application-model-admission.sample.json",import.meta.url),"utf8");
+  const typed:ApplicationModelAdmission=JSON.parse(raw);
+  const back:ApplicationModelAdmission={
+    bindingId:typed.bindingId,gatewayPrincipalId:typed.gatewayPrincipalId,generation:typed.generation,
+    method:typed.method,path:typed.path,traceparent:typed.traceparent,
+  };
+  deepStrictEqual(JSON.parse(JSON.stringify(back)),JSON.parse(raw));
+  const config=readFileSync(new URL("../../../../contracts/samples/application-model-config.sample.json",import.meta.url),"utf8");
+  const parsed:ApplicationModelGatewayConfig=JSON.parse(config);
+  const encoded:ApplicationModelGatewayConfig={routeResourceIds:parsed.routeResourceIds,meterKeys:parsed.meterKeys};
+  deepStrictEqual(JSON.parse(JSON.stringify(encoded)),JSON.parse(config));
+});
 
 test("native credential delivery preserves exact binding, generation and references", () => {
-  const raw = readFileSync(new URL("../../../../contracts/samples/application-peer-credentials.sample.json", import.meta.url), "utf8");
+  for (const sample of ["application-peer-credentials.sample.json", "application-model-delivery.sample.json"]) {
+  const raw = readFileSync(new URL(`../../../../contracts/samples/${sample}`, import.meta.url), "utf8");
   const typed: ApplicationAdapterDirectory = JSON.parse(raw);
   const reconstructed: ApplicationAdapterDirectory = {
     adapters: typed.adapters,
@@ -24,6 +40,15 @@ test("native credential delivery preserves exact binding, generation and referen
       adapterServiceRef: peer.adapterServiceRef, mcpUrl: peer.mcpUrl,
       nativeInstanceRef: peer.nativeInstanceRef, artifactDigest: peer.artifactDigest,
       timeoutSeconds: peer.timeoutSeconds, maxResponseBytes: peer.maxResponseBytes,
+      secretReaders: peer.secretReaders?.map(reader => ({servicePrincipalId: reader.servicePrincipalId,
+        audience: reader.audience, roleName: reader.roleName})),
+      modelCredentialDeliveries: peer.modelCredentialDeliveries?.map(receipt => ({
+        bindingId: receipt.bindingId, generation: receipt.generation, configDigest: receipt.configDigest,
+        servicePrincipalId: receipt.servicePrincipalId, routeResourceId: receipt.routeResourceId,
+        nativeScopeRef: receipt.nativeScopeRef, nativeModelRef: receipt.nativeModelRef,
+        secretRef: {locator: receipt.secretRef.locator, version: receipt.secretRef.version, audience: receipt.secretRef.audience},
+        requestId: receipt.requestId, verificationNonce: receipt.verificationNonce, nativeProof: receipt.nativeProof,
+      })),
       bindings: peer.bindings.map(binding => ({
         bindingId: binding.bindingId, tenantId: binding.tenantId, workspaceId: binding.workspaceId,
         servicePrincipalId: binding.servicePrincipalId, nativeScopeRef: binding.nativeScopeRef,
@@ -37,6 +62,7 @@ test("native credential delivery preserves exact binding, generation and referen
     })),
   };
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), JSON.parse(raw));
+  }
 });
 import type { ActionCommand, ResourceProvisionAdvanceRequest } from "../src/generated/contracts.js";
 
@@ -167,6 +193,15 @@ test("automation run pages preserve UNKNOWN and empty page", () => {
     nextCursor: page.nextCursor,
   }));
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), original);
+});
+
+test("manual capability and deleted definition preserve optional compatibility", () => {
+  const raw = readFileSync(new URL("../../../../contracts/samples/automation-manual-delete.sample.json", import.meta.url), "utf8");
+  const typed: AutomationDetailView[] = JSON.parse(raw);
+  const reconstructed: AutomationDetailView[] = typed.map(detail => ({ automation: detail.automation,
+    versions: detail.versions, delegations: detail.delegations, canManage: detail.canManage, canRun: detail.canRun }));
+  ok(typed[0]!.canRun === undefined && typed[1]!.canRun === true && typed[2]!.automation.state === "DELETED");
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), JSON.parse(raw));
 });
 
 import type { Canary, CapabilityConformanceVectors, WebPublishMessageRequest } from "../src/generated/contracts.js";

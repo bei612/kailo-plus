@@ -1,0 +1,13 @@
+# Opt-in transport only. No model, key, identity, binding or grant is created.
+# Values come from the platform's sole deploy/local/.env via start.sh.
+services:
+  app:
+    environment:
+      KNOWLEDGE_PLATFORM_MODEL_BASE_URL: ${AGENTGATEWAY_MODEL_BASE_URL:?existing authenticated Gateway model URL required}
+    networks:
+      platform_edge: {}
+
+networks:
+  platform_edge:
+    external: true
+    name: ${PLATFORM_EDGE_NETWORK:?existing platform edge network required}

@@ -288,8 +288,9 @@ pub(super) async fn metering(state: &ServiceState, ae: &Execution) -> Result<(),
     fresh(state, ae).await?;
     let applicable: bool = sqlx::query_scalar(
         "select exists(select 1 from catalog.application_binding b
-        join catalog.action_definition d on d.component_release_id=b.component_release_id
-        where b.id=$1 and cardinality(d.meters)>0)",
+        where b.id=$1 and (b.model_call_mode='PLATFORM_LLM_ROUTE' or exists(
+          select 1 from catalog.action_definition d where d.component_release_id=b.component_release_id
+            and cardinality(d.meters)>0)))",
     )
     .bind(ae.target_id)
     .fetch_one(&mut *tx)

@@ -48,6 +48,38 @@ type nativeOIDCFixture struct {
 
 var nativeOIDCTestProvider sync.Once
 
+func TestKailoOIDCLoginOption(t *testing.T) {
+	f := newNativeOIDCFixture(t)
+	request := func(query string) *http.Request {
+		return httptest.NewRequest(http.MethodGet, "https://cells.example.invalid/login"+query, nil).WithContext(f.ctx)
+	}
+	option := nativeOIDCLoginOption(request(""))
+	if len(option) != 2 || option["label"] != f.connector.Name || option["href"] != KailoOIDCLoginPath {
+		t.Fatalf("expected only the native login label and route, got %v", option)
+	}
+	challenge := "native challenge&redirect_uri=https://other.example.invalid"
+	option = nativeOIDCLoginOption(request("?" + url.Values{"login_challenge": {challenge}, "redirect_uri": {"https://other.example.invalid"}}.Encode()))
+	login, err := url.Parse(option["href"])
+	if err != nil || login.IsAbs() || login.Host != "" || login.Path != KailoOIDCLoginPath || len(login.Query()) != 1 || login.Query().Get("login_challenge") != challenge {
+		t.Fatalf("native challenge must remain encoded data on the same route: %v", option)
+	}
+	for _, query := range []string{"?login_challenge=one&login_challenge=two", "?login_challenge=%zz"} {
+		if nativeOIDCLoginOption(request(query)) != nil {
+			t.Fatal("ambiguous or malformed native login query exposed a login option")
+		}
+	}
+	invalid := f.connector
+	invalid.Config.RedirectURI = "https://other.example.invalid" + KailoOIDCCallbackPath
+	for _, entries := range [][]kailoOIDCConnector{nil, {f.connector, f.connector}, {invalid}} {
+		if err := config.Set(f.ctx, entries, "services", "pydio.web.oauth", "connectors"); err != nil {
+			t.Fatal(err)
+		}
+		if nativeOIDCLoginOption(request("")) != nil {
+			t.Fatal("unavailable native connector exposed a login option")
+		}
+	}
+}
+
 func newNativeOIDCFixture(t *testing.T) *nativeOIDCFixture {
 	t.Helper()
 	f := &nativeOIDCFixture{t: t, ctx: config.WithStubStore(context.Background()), subject: "idp-subject", email: "external@example.invalid", user: &idm.User{Uuid: "native-user", Login: "native-login", Attributes: map[string]string{"email": "native@example.invalid"}}}

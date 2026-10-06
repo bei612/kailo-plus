@@ -1606,3 +1606,111 @@ Web 检查外推为原生端撤权或设备验收。
 纠正后只运行未完成宿主项，不将前次整组算成功。npm 配置/peer 告警、
 Motion reduced-motion 与 React act 告警保留。未执行本批 full、产品构建、
 部署或真实设备验收；旧产物摘要不代表本候选，后续由联合批集中收口。
+
+## Web 原生文件选择与协议承载（2026-10-05）
+
+基准为联合输入树 `58299f2bfc08e1951a5652cd187bd03194a99a04`。
+本节只登记实现后的消费者证据，不代表 Cells/DocumentServer 真实服务已激活或部署。
+
+1. 输入与权威：依 `.design/18` §6/7、`.design/07` §4.5，复用原
+   `ContentReference`、`POST /api/v1/actions`、ProtocolSession 及本人状态读取。
+   原生文件菜单从 Cells 已认证节点/版本接口经同源 typed producer 给出确定引用；
+   Web 不反查原生数据来拼引用，不增加文件目录或手填 JSON 入口。
+   `application_page.rs::entry` 仅补 SOURCE_BOUND_PROTOCOL/v1 的原生来源 URL
+   读取，保留原 binding/generation、投影、权限和来源集合校验。
+2. 实际调用方：Cells 原文件菜单打开正常 Web `/app/?protocolBinding=…`；
+   PlatformApp 仍先读取正常平台会话，受限会话不挂承载入口，Web 使用原 Buzz
+   ThemeProvider 的已解析 LIGHT/DARK 和原 locale。共享 ProtocolDocumentBridge
+   校验原 opener、精确 native origin、一次性 nonce、binding 与 generation；
+   nonce 只隔离迟到消息，不授予权限。用户明确确认后，ProtocolDocumentAction
+   将原引用、Resource version、Workspace、来源 binding/generation 冻结进原 Action。
+   未注册 Desktop 或 Mobile 编辑入口。
+3. 副作用与呈现：ProtocolDocumentSurface 先读同一 Session/AE/binding/revision；
+   首次真实回应的 launch 仅一次提交到独立 editor iframe，POST 隐藏表单提交后
+   立即移除，GET 不允许凭据 formFields，也不把票拼进 URL。
+   EDITOR_ORIGINS 经唯一部署配置派生 WEB_EDITOR_ORIGINS；Core 投递与 Web
+   frame-src/form-action 消费相同集合，预检拒绝通配、非纯 origin 与越界集合。
+   此处没有给现网写入 origin，也没有自动生成或恢复已丢失 PAT。
+4. 失败边界：读失败、来源撤销或 Session 终止即关闭承载，不假报保存成功。
+   UNKNOWN 只显式查询原冻结幂等请求，不能用另一 operation/AE 的回应解锁。
+   主题/语言变化只改变宿主并提示下一次安全打开，不静默 reload 编辑器。
+   editor 消息仅作 loading/dirty/close UI evidence，不作为权限、计费或保存终态。
+
+只读上游证据：DocumentServer commit
+`f580eb58439432310943ece02c9730c6a21365e7`，完整路径
+`/volumes/kailo/.references/DocumentServer/web-apps/apps/api/wopi/editor-wopi.ejs`，
+符号 `onAppReady`、`sendEditNotification`、`onRequestClose`；对应真实
+`App_LoadingStatus`、`Edit_Notification`、`UI_Close`，不发明 SAVED 消息权威。
+
+私有验证原件目录：
+`/volumes/data/kailo/tmp/codex-web-protocol-surface-20261005.Sv3Qhy`。
+固定 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实际 4 CPU / 8 GiB / swap 0、UID 1000，执行前读取进程与 CPU/内存压力。
+原 `tools/gen.sh` 和 `tools/gen-platform-i18n.py` 最终退出 0；完整 Cells
+合同由所属切片与本批在联合树统一生成，不能用本次 UI 的部分 schema 验证集合
+覆盖 Cells 完整 Core/Worker 生成产物。
+
+`consumer-targeted.log` 实际退出 0：共享原测试 TS 编译与 Vitest 两文件
+24 项通过；Web `npm run typecheck && npm test` 退出 0、11 文件 49 项通过。
+此前 `shared-targeted.log` 退出 2 是物理依赖副本缺少锁内 yaml@2.9.1，
+补现有同版本缓存后恢复，未改锁。`shared-restored.log` 退出 1：101 项通过，
+另三测试文件的 Vitest fork 启动超时；未改变超时、并行度或将其算作全包通过。
+生成首次失败（numeric const 与文案 key）、Dart HOME 权限失败均保留原件，
+修正 schema 等价编码/合法文案键与原受控工具 HOME 后 `gen-final.exit=0`。
+Docker/IO 等待没有通过重启宿主、daemon 或另建重复任务规避。
+
+生产守卫变异在这两份私有新源进行：去掉 launch 一次性消费、editor 消息的
+contentWindow 检查、原生来源消息的 opener 检查。原消费者实际恰有 3 项失败、
+13 项通过，`mutation.exit=1`；失败分别是第二次表单提交、错误窗口伪造 dirty、
+错误窗口提前接受文件选择。两源用 apply_patch 逐字还原，cmp 均为 0，
+恢复 SHA-256 分别为
+`987c84e0515852876763106ce50402a1c824b7964af7f88115a5b1dfef63311f`、
+`f4c62a7ff590007427b1c9dd3a5c4d2c3132a6b34ba4415c130d88c92a5f68e3`。
+
+还原后 `final-targeted.log` 的 24 项再次通过，但附加 pages 源扫描因稀疏副本
+缺原 Desktop 输入退出 1；从同一基准机械补齐三个原文件后，
+`final-restored.log` 为 233 项通过、原主题守卫一项 5000ms 超时，退出 1。
+未改变该守卫或超时；只复跑此原主题 describe 的两项均通过，其余 208 项为
+目标选择跳过。`final-host.exit=0` 同时包含格式后的 Web 类型检查、原
+PlatformApp 四项、原 i18n/file-size 检查与跨侧文案生成检查。
+这些结果不能合称一次共享全包通过；失败原件完整保留，联合 full 另行验证。
+
+仍未验收：真实 Cells 菜单→正常 OIDC→WOPI editor 的浏览器闭环、编辑保存与
+撤权后的真实 PAT/原生服务响应；本切片不声称真实 E2E 或设备兼容完成。
+Core 单一原生来源读取增量留联合 Core 检查；本批没有 full、产品构建、部署、
+模型请求或业务配置写入，Desktop GAP-DSK-EDITOR-01 保持关闭。
+
+## 原版设置快捷键共用消费（2026-10-05）
+
+关联 DD-53、REQ-08、ADR-09；比较基准为前一 Surface 冻结树
+`699312ba35345bf10f05e1dd16fb112e70196a10`，不是重交其 17 路径。
+固定 Buzz commit `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/app/useSettingsShortcuts.ts::useSettingsShortcuts` 与
+`desktop/src/shared/lib/platform.ts::hasPrimaryShortcutModifier/isMacPlatform`
+提供原 Cmd/Ctrl+, 行为；`desktop/src/app/AppShell.tsx::AppShell`
+是其真实宿主调用方。源码只读，未执行上游内容。
+
+四步影响：输入仍为原平台修饰键及逗号（保留物理 Comma 和额外修饰键排除）；
+将原 React 监听与平台判别提取到共享 TS，Desktop 原导入重导出；
+Web 仅在普通已登录 SignedIn 挂载原 hook，打开现有 SettingsPane 后返回原 tab，
+快捷键列表复用同源既有英文/中文键；未登录、受限会话及文档专用宿主不注册。
+没有新偏好、后端请求、授权或存储，原 Workspace 选择仍由宿主拥有。
+这是一项实际快捷键补齐，不声称原 16 项设置已全部恢复。
+
+原受限 SDK `kailo-web-document-sv3qhy`（固定 10ad 镜像、UID 1000、
+4 CPU、8 GiB、无额外 swap）执行。开跑时无其他 Node/Cargo/rustc，
+可用内存约 38 GiB、memory PSI avg10 为 0。原 manifest status 返回 0，
+并如实提示该稀疏副本未挂载 buzz-web 上游，未声称已完成上游更新。
+`settings-targeted.log` 与 `settings-restored.log` 实际退出 0：
+共享原 tsc 两目标及设置 22 项通过，Web 原 typecheck 与 npm test 的
+12 文件/53 项通过，末次 i18n/file-size 原检查通过。
+将生产 SignedIn 的 hook 注册改为 disabled 后，真实页面消费测试两项失败，
+`settings-mutation.exit=1`；apply_patch 逐字恢复且 cmp 为 0 后再得到上述通过。
+恢复日志 SHA-256：
+`247e8d022702ff0db73338d051d59932a99500328962fb7d39d05915ad2b8e20`。
+格式器首次从工程根跨嵌套配置执行被拒绝，未改配置；
+使用原 Web 工作目录格式化新增 Web 测试成功。
+
+没有 full、产品构建、部署或真实设备快捷键验收；Desktop 全工程类型/打包
+留联合批执行，本刀仅重导出原调用点且保留原 ModifierKeyboardEvent 类型形状。
+独立补丁不包含 Cells schema/生成物或上一 Surface 实现。

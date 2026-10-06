@@ -74,20 +74,48 @@ pub async fn submit_action(
     if cmd.source_event_id.is_some() && cmd.action_key != crate::agent_invocation::ACTION {
         return Refusal::Precondition(ReasonCode::InvalidParameters).respond(None);
     }
-    let result = if cmd.action_key == crate::agent_invocation::ACTION {
+    let result = if crate::protocol_session::command::is_action(&cmd.action_key) {
+        crate::protocol_session::command::submit(&state, &ctx, &headers, &cmd).await
+    } else if cmd.component_action.is_some() {
+        crate::application_action::submit(&state, &ctx, &cmd).await
+    } else if cmd.action_key == crate::agent_invocation::ACTION {
         crate::agent_invocation::submit_manual(&state, &ctx, &cmd).await
+    } else if cmd.action_key == crate::automation::ACTION {
+        crate::automation::submit_manual(&state, &ctx, &cmd).await
     } else if crate::agent_memory::write::is_action(&cmd.action_key) {
         state.governance.submit_memory(&state, &ctx, &cmd).await
     } else {
         state.governance.submit(actor(&ctx), &cmd).await
     };
     match result {
-        Ok((status, submission)) => (status, Json(submission)).into_response(),
+        Ok((status, submission)) => {
+            let mut response = (status, Json(submission)).into_response();
+            // A protocol launch contains a native bearer only in its ephemeral
+            // form fields. It must not enter any browser/proxy response cache.
+            if crate::protocol_session::command::is_action(&cmd.action_key) {
+                response.headers_mut().insert(
+                    axum::http::header::CACHE_CONTROL,
+                    axum::http::HeaderValue::from_static("no-store"),
+                );
+            }
+            response
+        }
         Err((refusal, op)) => refusal.respond(op),
     }
 }
 
 fn parse_action_command(value: Value) -> Result<ActionCommand, Refusal> {
+    if value.get("actionKey").and_then(Value::as_str) == Some(crate::automation::ACTION) {
+        crate::automation::manual::validate_command(&value)?;
+    }
+    if value.get("componentAction").is_some() {
+        let parsed: ActionCommand = serde_json::from_value(value.clone())
+            .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
+        if serde_json::to_value(&parsed).ok().as_ref() != Some(&value) {
+            return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
+        }
+        return Ok(parsed);
+    }
     // NONE must not carry a credential field, even null: generated Option
     // fields otherwise erase the difference between null and absence.
     if value.get("actionKey").and_then(Value::as_str) == Some("llm_route.create")
@@ -110,6 +138,34 @@ mod action_command_tests {
     use super::*;
     use serde_json::json;
 
+    #[test]
+    fn component_command_parser_does_not_erase_unknown_body_or_null_fields() {
+        let resource = Uuid::new_v4();
+        let raw = json!({"actionKey":"fixture.query","idempotencyKey":Uuid::new_v4(),"resourceId":resource,"resourceVersion":1,
+            "componentAction":{"actionVersion":1,"inputReference":{"resourceId":resource,"nativeObjectRef":"view",
+                "nativeRevision":"revision","displayName":"View","mediaType":"application/json"},
+                "resultExposurePolicyId":Uuid::new_v4(),"resultExposurePolicyVersion":1}});
+        assert!(parse_action_command(raw.clone()).is_ok());
+        for pointer in [
+            "/sql",
+            "/componentAction/sql",
+            "/componentAction/inputReference/sql",
+        ] {
+            let mut changed = raw.clone();
+            let (parent, key) = pointer.rsplit_once('/').unwrap();
+            changed
+                .pointer_mut(parent)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .insert(key.into(), json!("not a reference"));
+            assert!(parse_action_command(changed).is_err());
+        }
+        let mut changed = raw;
+        changed["workspaceId"] = Value::Null;
+        assert!(parse_action_command(changed).is_err());
+    }
+
     fn route_command() -> Value {
         let source = json!({
             "id": Uuid::new_v4().to_string(),
@@ -125,6 +181,50 @@ mod action_command_tests {
                 "providerCredentialMode": "NONE",
             },
         })
+    }
+
+    #[test]
+    fn manual_run_rejects_client_pin_actor_and_source_even_if_null() {
+        let command = json!({"actionKey":"automation.run","idempotencyKey":Uuid::new_v4(),
+            "resourceId":Uuid::new_v4(),"resourceVersion":1,"workspaceId":Uuid::new_v4(),"explicitConfirmation":true});
+        assert!(parse_action_command(command.clone()).is_ok());
+        for field in [
+            "assetId",
+            "assetVersion",
+            "delegationId",
+            "delegationVersion",
+            "executorInstallationResourceId",
+            "sourceEventId",
+            "sourcePrincipalId",
+            "resultTarget",
+            "componentAction",
+        ] {
+            let mut value = command.clone();
+            value[field] = Value::Null;
+            assert!(
+                matches!(
+                    parse_action_command(value),
+                    Err(Refusal::Precondition(ReasonCode::InvalidParameters))
+                ),
+                "{field}"
+            );
+        }
+        for value in [Value::Null, json!(false)] {
+            let mut invalid = command.clone();
+            invalid["explicitConfirmation"] = value;
+            assert!(parse_action_command(invalid).is_err());
+        }
+        // A structurally valid component command must not bypass manual input
+        // validation through the component parser's early return.
+        let mut mixed = command;
+        mixed["componentAction"] = json!({"actionVersion":1,
+            "inputReference":{"resourceId":Uuid::new_v4(),"nativeObjectRef":"view",
+                "nativeRevision":"revision","displayName":"View","mediaType":"application/json"},
+            "resultExposurePolicyId":Uuid::new_v4(),"resultExposurePolicyVersion":1});
+        assert!(matches!(
+            parse_action_command(mixed),
+            Err(Refusal::Precondition(ReasonCode::InvalidParameters))
+        ));
     }
 
     #[test]

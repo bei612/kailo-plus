@@ -1,0 +1,12 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"workflow/protocol_session_reconcile_round.schema.json",
+  "title":"ProtocolSessionReconcileRound","type":"object","additionalProperties":false,
+  "description":"Actual original Session snapshot. The Activity result freezes this query round into history, not into a new authority.",
+  "required":["sessionVersion","state"],
+  "properties":{
+    "sessionVersion":{"type":"integer","minimum":1},
+    "state":{"type":"string","enum":["ADMITTED","OPENING","OPEN","DIRTY","SAVED","READ_ONLY","CONFLICT","REVOKED","CLOSED","EXPIRED","UNKNOWN","FAILED"]},
+    "writeObservation":{"$ref":"../adapter/protocol.v1/protocol_write_observation.schema.json"}
+  }
+}

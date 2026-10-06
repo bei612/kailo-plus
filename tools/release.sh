@@ -41,6 +41,7 @@ git archive --format=tar "$COMMIT" .dockerignore core worker \
   contracts/api/agent_memory_read_view.schema.json \
   contracts/domain/agent_memory_entry_list_input.schema.json \
   contracts/domain/agent_memory_entry_read_input.schema.json \
+  contracts/domain/application_model_gateway_config.schema.json \
   tools/registry/capabilities.yaml agent-runtime/fork/upstream.yaml | tar -xf - -C "$BUILD_CONTEXT" \
   || die "无法从固定 commit 导出构建上下文"
 

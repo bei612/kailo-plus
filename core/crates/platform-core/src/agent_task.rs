@@ -792,6 +792,37 @@ async fn source_message(
     invocation: &Invocation,
 ) -> Result<TaskSource, crate::agent_runtime::RuntimeError> {
     use crate::agent_runtime::RuntimeError;
+    if invocation.source_kind == "MANUAL" {
+        let ae = crate::governance::load_execution(&state.pool, invocation.action_execution_id)
+            .await
+            .map_err(|_| RuntimeError::Unavailable)?
+            .ok_or(RuntimeError::AdmissionRequired)?;
+        let bound: bool = sqlx::query_scalar(
+            "select exists(select 1 from projection.workflow_ref w
+            where w.workflow_id=$1 and w.action_execution_id=$2 and w.tenant_id=$3
+              and w.workspace_id=$4 and w.run_id is not null)",
+        )
+        .bind(&invocation.workflow_id)
+        .bind(ae.id)
+        .bind(invocation.tenant_id)
+        .bind(invocation.workspace_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|_| RuntimeError::Unavailable)?;
+        if !bound
+            || !crate::automation::manual::frozen_source(
+                &ae,
+                &invocation.source_event_id,
+                &invocation.root_event_id,
+            )
+        {
+            return Err(RuntimeError::AdmissionRequired);
+        }
+        return Ok(TaskSource {
+            author: None,
+            content: invocation.source_event_id.clone(),
+        });
+    }
     if invocation.source_kind == "SCHEDULE" {
         let source:Option<String>=sqlx::query_scalar("select i.source_event_id from catalog.agent_invocation i
             join admission.action_execution ae on ae.id=i.action_execution_id
@@ -951,10 +982,13 @@ async fn prepare_dispatch(
         serde_json::from_value(content).map_err(|_| RuntimeError::AdmissionRequired)?;
     let channel = crate::agent_version::reply_to_channel(&content)
         .map_err(|_| RuntimeError::AdmissionRequired)?;
-    if !matches!(
-        (invocation.source_kind.as_str(), channel),
-        ("BUZZ_EVENT", false) | ("SCHEDULE", true)
-    ) {
+    if result_channel(
+        &invocation.source_kind,
+        invocation.automation_action_kind.is_some(),
+        channel,
+    )
+    .is_none()
+    {
         return Err(RuntimeError::AdmissionRequired);
     }
     // Recheck under the same Session lock as the dispatch CAS. Two callers
@@ -986,6 +1020,14 @@ async fn prepare_dispatch(
     .await
     .map_err(|_| RuntimeError::Unknown)?;
     let source_matches = match invocation.source_kind.as_str() {
+        "MANUAL" => {
+            source_author.is_none()
+                && crate::automation::manual::frozen_source(
+                    &ae,
+                    &invocation.source_event_id,
+                    &invocation.root_event_id,
+                )
+        }
         "SCHEDULE" => {
             source_author.is_none()
                 && ae
@@ -1688,8 +1730,8 @@ struct ReplyBinding {
     channel_id: Uuid,
 }
 
-/// Consume only the original message-triggered AGENT_TURN result location.
-/// An arbitrary AgentVersion replyPolicy key is not a broadcast policy.
+/// Consume the frozen AGENT_TURN result location: ordinary Agent messages use
+/// their reply policy, while Automations use their immutable version/source.
 async fn lock_reply(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     invocation: &Invocation,
@@ -1731,7 +1773,9 @@ async fn lock_reply(
            and v.automation_resource_id=i.automation_resource_id and v.state='PUBLISHED'
            and v.action->>'kind'='AGENT_TURN'
            and ((i.source_kind='BUZZ_EVENT' and v.trigger->>'kind' in ('CHANNEL_MESSAGE','MENTION') and v.result_target='TRIGGER_THREAD')
-             or (i.source_kind='SCHEDULE' and v.trigger->>'kind'='SCHEDULE' and v.result_target='CHANNEL'))
+             or (i.source_kind='SCHEDULE' and v.trigger->>'kind'='SCHEDULE' and v.result_target='CHANNEL')
+             or (i.source_kind='MANUAL' and v.trigger->>'kind' in ('CHANNEL_MESSAGE','MENTION','SCHEDULE')
+               and v.result_target=case when v.trigger->>'kind'='SCHEDULE' then 'CHANNEL' else 'TRIGGER_THREAD' end))
          join catalog.agent_installation a on a.resource_id=i.installation_resource_id and a.workspace_id=i.workspace_id
          join catalog.agent_version av on av.asset_id=i.agent_version_asset_id
            and av.agent_resource_id=a.agent_resource_id and av.state in ('PUBLISHED','RETIRED')
@@ -1771,14 +1815,29 @@ async fn lock_reply(
         ));
     }
     // Both pre-sign and pre-delivery callers take this fence. Frozen Automation
-    // source selects TRIGGER_THREAD for Buzz or CHANNEL for Schedule; an already
+    // source selects TRIGGER_THREAD for Buzz or CHANNEL for Schedule/manual; an already
     // persisted reply ID is only observed.
-    if crate::agent_version::reply_to_channel(&content)? != (invocation.source_kind == "SCHEDULE")
-        || !matches!(invocation.source_kind.as_str(), "BUZZ_EVENT" | "SCHEDULE")
+    if result_channel(
+        &invocation.source_kind,
+        invocation.automation_action_kind.is_some(),
+        crate::agent_version::reply_to_channel(&content)?,
+    )
+    .is_none()
     {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     Ok((ae, binding))
+}
+
+// DD-107/17 §2: an Automation uses its frozen version/source, not the
+// ordinary AgentVersion's static reply policy. Never widen ordinary mentions.
+fn result_channel(source: &str, automation: bool, agent_channel: bool) -> Option<bool> {
+    match (automation, source) {
+        (true, "BUZZ_EVENT") => Some(false),
+        (true, "SCHEDULE" | "MANUAL") => Some(true),
+        (false, "BUZZ_EVENT") if !agent_channel => Some(false),
+        _ => None,
+    }
 }
 
 /// Full durable history is already fenced by the unique Invocation clientId.
@@ -2119,7 +2178,8 @@ async fn publish_reply(
             &binding.channel_id.to_string(),
             text,
             reply_ancestry(invocation),
-            (invocation.source_kind == "SCHEDULE").then_some(invocation.id),
+            matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
+                .then_some(invocation.id),
             completed_at,
         )
         .map_err(|_| unknown())?;
@@ -2430,7 +2490,8 @@ async fn reconcile_reply(
             &intent.agent_pubkey,
             &intent.channel_id.to_string(),
             reply_ancestry(invocation),
-            (invocation.source_kind == "SCHEDULE").then_some(invocation.id),
+            matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
+                .then_some(invocation.id),
         )
         .await;
     if !matches!(observed, Ok(true)) {
@@ -2947,7 +3008,9 @@ mod memory_context_tests {
 
 #[cfg(test)]
 mod reply_tests {
-    use super::{billed_outcome, definite_reply_refusal, native_reply, UnboundTurnHistory};
+    use super::{
+        billed_outcome, definite_reply_refusal, native_reply, result_channel, UnboundTurnHistory,
+    };
     use serde_json::json;
     use uuid::Uuid;
 
@@ -2956,6 +3019,23 @@ mod reply_tests {
             "startedAt":100,"completedAt":105,"items":[
                 {"type":"userMessage","clientId":invocation.to_string()},
                 {"type":"agentMessage","id":"answer","phase":"final_answer","text":"native answer"}]})
+    }
+
+    #[test]
+    fn automation_reply_uses_frozen_source_without_widening_ordinary_agent_policy() {
+        for channel in [false, true] {
+            assert_eq!(result_channel("BUZZ_EVENT", true, channel), Some(false));
+            for source in ["SCHEDULE", "MANUAL"] {
+                assert_eq!(result_channel(source, true, channel), Some(true));
+                assert_eq!(result_channel(source, false, channel), None);
+            }
+            for source in ["WEBHOOK", "FUTURE_SOURCE", ""] {
+                assert_eq!(result_channel(source, true, channel), None);
+                assert_eq!(result_channel(source, false, channel), None);
+            }
+        }
+        assert_eq!(result_channel("BUZZ_EVENT", false, false), Some(false));
+        assert_eq!(result_channel("BUZZ_EVENT", false, true), None);
     }
 
     #[test]

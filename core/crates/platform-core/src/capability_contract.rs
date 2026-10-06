@@ -229,13 +229,16 @@ fn registration(raw: &Value) -> Result<Registration, Refusal> {
     )?;
     let resources = value["resourceTypeFamily"].as_array().ok_or_else(bad)?;
     let operations = value["operationContracts"].as_array().ok_or_else(bad)?;
+    let protocol_kinds = value["protocolSessionKinds"].as_array().ok_or_else(bad)?;
     if resources.is_empty()
         || operations.is_empty()
-        || !value["protocolSessionKinds"]
-            .as_array()
-            .is_some_and(Vec::is_empty)
+        || (!protocol_kinds.is_empty()
+            && (category != "file_storage"
+                || protocol_kinds.len() != 1
+                || protocol_kinds[0].as_str() != Some(crate::protocol_session::KIND)))
     {
-        // 当前没有已编译 Application ProtocolSession kind，不能登记一个不可调用的入口。
+        // Only the actual FILE_STORAGE Session consumer is compiled. Catalog
+        // registration must not expose any other, still-unimplemented kind.
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     let mut types = BTreeSet::new();
@@ -696,6 +699,35 @@ mod registration_tests {
                 "authorizationTargetRule":"same resource or asset"},"requiredDeclarations":["OBSERVE"],"protocolSessionKinds":[],
             "schemaDocuments":[schema.to_string()],
             "testVectorsJson":vector_input(json!({}),json!({})).to_string()})
+    }
+
+    #[test]
+    fn only_the_compiled_file_storage_protocol_kind_can_be_registered() {
+        let mut value = input(json!({"type":"object"}));
+        value["categoryKey"] = json!("file_storage");
+        value["resourceTypeFamily"][0]["typeKey"] = json!("file_storage.collection");
+        value["operationContracts"][0]["contractKey"] = json!("file_storage.read@v1");
+        let mut vectors = vector_input(json!({}), json!({}));
+        vectors["cases"][0]["steps"][0]["contractKey"] = json!("file_storage.read@v1");
+        value["testVectorsJson"] = json!(vectors.to_string());
+        value["protocolSessionKinds"] = json!([crate::protocol_session::KIND]);
+        let registered = registration(&value).expect("compiled FILE_STORAGE consumer");
+        assert_eq!(registered.category, "file_storage");
+        assert_eq!(
+            registered.content["protocolSessionKinds"],
+            value["protocolSessionKinds"]
+        );
+        for kinds in [
+            json!(["file_storage.future_session"]),
+            json!([crate::protocol_session::KIND, crate::protocol_session::KIND]),
+            json!([crate::protocol_session::KIND, "UNKNOWN"]),
+        ] {
+            value["protocolSessionKinds"] = kinds;
+            assert!(registration(&value).is_err());
+        }
+        let mut unrelated = input(json!({"type":"object"}));
+        unrelated["protocolSessionKinds"] = json!([crate::protocol_session::KIND]);
+        assert!(registration(&unrelated).is_err());
     }
 
     #[test]

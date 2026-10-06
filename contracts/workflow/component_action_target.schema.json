@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/component_action_target.schema.json",
+  "title": "ComponentActionTarget",
+  "description": "原 ComponentTaskWorkflow(kind=COMPONENT_ACTION) 的冻结引用；全部业务参数仍从原 AE 的引用/hash读取。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actionExecutionId", "workflowId", "bindingId", "bindingVersion", "componentReleaseId", "projectionGeneration"],
+  "properties": {
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "workflowId": {"type": "string"},
+    "bindingId": {"type": "string", "format": "uuid"},
+    "bindingVersion": {"type": "integer", "minimum": 1},
+    "componentReleaseId": {"type": "string", "format": "uuid"},
+    "projectionGeneration": {"type": "integer", "minimum": 1}
+  }
+}

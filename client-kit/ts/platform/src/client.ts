@@ -43,6 +43,7 @@ import type {
   PlatformToolPage,
   PlatformSessionView,
   PlatformTenantPage,
+  ProtocolSessionView,
   RoleMemberPage,
   RoleWorkspacePage,
   TaskView,
@@ -93,6 +94,8 @@ export function createBffClient(transport: BffTransport) {
 
     /** Integration metadata only; credentials and native administration stay server-side. */
     applicationNativePage: (bindingId: string) => get<ApplicationNativePage>(`/api/v1/application-bindings/${encodeURIComponent(bindingId)}/native-page`),
+    /** Original actor's fresh-authorized metadata; never recovers a launch credential. */
+    protocolSession: (sessionId: string) => get<ProtocolSessionView>(`/api/v1/protocol-sessions/${encodeURIComponent(sessionId)}`),
     applicationBindings: (workspaceId?: string, offset = 0) => {
       const query = new URLSearchParams({ offset: String(offset) });
       if (workspaceId !== undefined) query.set("workspaceId", workspaceId);

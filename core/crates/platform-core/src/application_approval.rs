@@ -47,6 +47,29 @@ pub(crate) async fn lock_parent_refs(
     conn: &mut PgConnection,
     id: Uuid,
 ) -> Result<Option<Uuid>, sqlx::Error> {
+    // A HUMAN protocol action is already a root; it has no Agent Invocation to
+    // borrow. Keep its original AE lock before Tenant/owner/approval locks.
+    let root:Option<Uuid>=sqlx::query_scalar("select a.id from admission.action_execution a
+        join catalog.action_definition d on d.id=a.action_definition_id
+          and d.component_release_id=a.component_release_id and d.execution_mode='PROTOCOL'
+        join identity.principal human on human.id=a.actor_principal_id and human.tenant_id=a.tenant_id
+          and human.kind='HUMAN'
+        where a.id=$1 and a.component_binding_kind='APPLICATION' and a.parent_action_execution_id is null
+          and a.actor_principal_id=a.initiator_principal_id
+          and a.action_key in ('file_storage.open_view@v1','file_storage.open_edit@v1') for update of a")
+        .bind(id).fetch_optional(&mut *conn).await?;
+    if root.is_some() {
+        return Ok(root);
+    }
+    let human:Option<Uuid>=sqlx::query_scalar("select a.id from admission.action_execution a
+        join identity.principal p on p.id=a.actor_principal_id and p.tenant_id=a.tenant_id and p.kind='HUMAN'
+        where a.id=$1 and a.parent_action_execution_id is null and a.actor_principal_id=a.initiator_principal_id
+          and a.component_binding_kind='APPLICATION' and a.parameters->>'componentActionKind'='COMPONENT_ACTION'
+        for update of a")
+        .bind(id).fetch_optional(&mut *conn).await?;
+    if human.is_some() {
+        return Ok(human);
+    }
     sqlx::query_scalar("select p.id from admission.action_execution a
         join admission.action_execution p on p.id=a.parent_action_execution_id
           and p.operation_id=a.operation_id and p.tenant_id=a.tenant_id
@@ -296,7 +319,14 @@ pub(crate) async fn qualify(
           and p.operation_id=a.operation_id and p.workspace_id is not distinct from a.workspace_id
         join catalog.agent_invocation i on i.action_execution_id=p.id and i.tenant_id=p.tenant_id
         where a.id=$1 and p.gate_state='ALLOWED' and p.dispatch_state='DISPATCHED'
-          and i.status='RUNNING' and i.native_status='inProgress' and not i.cancel_pending)")
+          and i.status='RUNNING' and i.native_status='inProgress' and not i.cancel_pending)
+        or exists(select 1 from admission.action_execution a
+          join identity.principal p on p.id=a.actor_principal_id and p.tenant_id=a.tenant_id and p.kind='HUMAN' and p.status='ACTIVE'
+          join identity.tenant_membership m on m.tenant_principal_id=p.id and m.tenant_id=p.tenant_id and m.state='ACTIVE'
+          join identity.tenant t on t.id=a.tenant_id and t.state='ACTIVE'
+          where a.id=$1 and a.parent_action_execution_id is null and a.actor_principal_id=a.initiator_principal_id
+            and a.component_binding_kind='APPLICATION' and a.parameters->>'componentActionKind'='COMPONENT_ACTION'
+            and a.gate_state in ('EVALUATING','WAITING','ALLOWED'))")
         .bind(ae.id).fetch_one(&mut *conn).await?;
     if !parent_live {
         return Ok(refused(ReasonCode::ApprovalInvalidated));
@@ -387,14 +417,36 @@ pub(crate) async fn require_consumable(
     ae: &Execution,
     def: &Definition,
 ) -> Result<(), Refusal> {
+    require_approval(g, conn, ae, def, false).await
+}
+
+pub(crate) async fn require_consumed(
+    g: &Governance,
+    conn: &mut PgConnection,
+    ae: &Execution,
+    def: &Definition,
+) -> Result<(), Refusal> {
+    if !crate::application_action::is_human(ae) {
+        return Err(conflict());
+    }
+    require_approval(g, conn, ae, def, true).await
+}
+
+async fn require_approval(
+    g: &Governance,
+    conn: &mut PgConnection,
+    ae: &Execution,
+    def: &Definition,
+    consumed: bool,
+) -> Result<(), Refusal> {
     if def.confirmation_mode != "APPROVAL" {
         return Ok(());
     }
     let workflow = ae.approval_workflow_id.as_deref().ok_or_else(unknown)?;
-    let row:Option<(bool,Value)>=sqlx::query_as("select status='APPROVED' and coalesce(consume_deadline>
-        clock_timestamp()+make_interval(secs=>$2::bigint),false),decisions from projection.approval_projection
+    let row:Option<(bool,Value)>=sqlx::query_as("select case when $4 then status='CONSUMED' else status='APPROVED' and coalesce(consume_deadline>
+        clock_timestamp()+make_interval(secs=>$2::bigint),false) end,decisions from projection.approval_projection
         where workflow_id=$1 and action_execution_id=$3")
-        .bind(workflow).bind(g.cfg.dispatch_margin_seconds).bind(ae.id).fetch_optional(&mut *conn).await?;
+        .bind(workflow).bind(g.cfg.dispatch_margin_seconds).bind(ae.id).bind(consumed).fetch_optional(&mut *conn).await?;
     let Some((true, decisions)) = row else {
         return Err(Refusal::Denied(ReasonCode::ApprovalConsumeWindowClosed));
     };

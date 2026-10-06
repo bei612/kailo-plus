@@ -38,6 +38,7 @@ async fn schedule_intent_keeps_the_original_admission_dispatchable() {
         "automation.enable",
         "automation.pause",
         "automation.disable",
+        "automation.delete",
         "automation.rotate_webhook_secret",
     ] {
         for intent in [
@@ -131,6 +132,103 @@ fn native_intents_require_every_receipt_before_the_same_ae_can_complete() {
     assert!(super::management_intents_complete(
         &json!({"webhookSecretIntent":{"complete":true}})
     ));
+}
+
+#[tokio::test]
+#[ignore = "requires WORKFLOW_MANUAL_TEST_DATABASE_URL pointing at an isolated schedule_dispatch_verify_manual_* database"]
+async fn delete_uses_original_local_and_native_receipt_writers_without_erasing_history() {
+    let pool = sqlx::PgPool::connect(&std::env::var("WORKFLOW_MANUAL_TEST_DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    let database: String = sqlx::query_scalar("select current_database()")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(database.starts_with("schedule_dispatch_verify_manual_"));
+    let def = governance::exact_definition(&pool, "automation.delete", 1)
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let tenant = crate::agent_task::receipt_tests::fixture(&mut tx).await;
+    let (owner,workspace,installation):(Uuid,Uuid,Uuid) = sqlx::query_as("select r.owner_principal_id,i.workspace_id,i.resource_id
+        from catalog.agent_installation i join catalog.resource r on r.id=i.resource_id where r.tenant_id=$1 order by i.resource_id limit 1")
+        .bind(tenant).fetch_one(&mut *tx).await.unwrap();
+    let original_invocations: i64 =
+        sqlx::query_scalar("select count(*) from catalog.agent_invocation where tenant_id=$1")
+            .bind(tenant)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    for native_receipts in [false, true] {
+        let id = Uuid::new_v4();
+        let resource = Uuid::new_v4();
+        let asset = Uuid::new_v4();
+        let mut parameters = json!({"targetVersion":1});
+        if native_receipts {
+            parameters["scheduleIntent"] = json!({"started":true});
+            parameters["webhookSecretIntent"] = json!({"writeStarted":true});
+        }
+        sqlx::query("insert into admission.action_execution(id,operation_id,tenant_id,workspace_id,action_key,action_version,
+            initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id,parameters)
+            values($1,$1,$2,$3,'automation.delete',1,$4,$4,$5,'delete-receipt-fixture','ALLOWED',$6,$1,$7)")
+            .bind(id).bind(tenant).bind(workspace).bind(owner).bind(resource)
+            .bind(if native_receipts{"UNKNOWN"}else{"DISPATCHED"}).bind(parameters).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,component_type_key,
+            native_type,native_id,state,version,projection_action_execution_id)
+            values($1,$2,'automation',$3,$4,'core','automation',$1::text,'ACTIVE',2,$5)")
+            .bind(resource).bind(tenant).bind(workspace).bind(owner).bind(native_receipts.then_some(id)).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into catalog.automation_definition(resource_id,workspace_id,executor_installation_resource_id,state,version)
+            values($1,$2,$3,'DISABLED',1)").bind(resource).bind(workspace).bind(installation).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into catalog.asset(id,tenant_id,resource_id,type_key,owner_principal_id,native_ref,state,version)
+            values($1,$2,$3,'automation.version',$4,$1::text,'DRAFT',1)")
+            .bind(asset).bind(tenant).bind(resource).bind(owner).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into catalog.automation_version(asset_id,automation_resource_id,ordinal,trigger,action,result_target,config_hash,state)
+            values($1,$2,1,'{\"kind\":\"CHANNEL_MESSAGE\"}','{\"kind\":\"POST_MESSAGE\",\"template\":\"fixture\"}','TRIGGER_THREAD',repeat('a',64),'DRAFT')")
+            .bind(asset).bind(resource).execute(&mut *tx).await.unwrap();
+        let ae = governance::lock_execution(&mut tx, id).await.unwrap();
+        if native_receipts {
+            // Native evidence is injected only at the original receipt boundary;
+            // this check does not exercise Temporal/OpenBao RPCs or E2E deletion.
+            super::complete_management_intent(&mut tx, &ae, &def, "scheduleIntent")
+                .await
+                .unwrap();
+            let partial:(String,Option<Uuid>) = sqlx::query_as("select d.state,r.projection_action_execution_id
+                from catalog.automation_definition d join catalog.resource r on r.id=d.resource_id where r.id=$1")
+                .bind(resource).fetch_one(&mut *tx).await.unwrap();
+            assert_eq!(partial, ("DISABLED".into(), Some(id)));
+            super::complete_management_intent(&mut tx, &ae, &def, "scheduleIntent")
+                .await
+                .unwrap();
+            super::complete_management_intent(&mut tx, &ae, &def, "webhookSecretIntent")
+                .await
+                .unwrap();
+        } else {
+            super::tombstone(&mut tx, &ae).await.unwrap();
+        }
+        let final_state:(String,i32,String,Option<Uuid>) = sqlx::query_as("select d.state,d.version,r.state,r.projection_action_execution_id
+            from catalog.automation_definition d join catalog.resource r on r.id=d.resource_id where r.id=$1")
+            .bind(resource).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(final_state, ("DELETED".into(), 2, "ACTIVE".into(), None));
+        let retained: bool = sqlx::query_scalar("select exists(select 1 from catalog.automation_version where asset_id=$1 and automation_resource_id=$2)")
+            .bind(asset).bind(resource).fetch_one(&mut *tx).await.unwrap();
+        assert!(retained);
+        for sql in ["update catalog.automation_definition set state='ENABLED',version=version+1 where resource_id=$1",
+            "delete from catalog.automation_definition where resource_id=$1"] {
+            sqlx::query("savepoint tombstone_guard").execute(&mut *tx).await.unwrap();
+            assert!(sqlx::query(sql).bind(resource).execute(&mut *tx).await.is_err());
+            sqlx::query("rollback to savepoint tombstone_guard").execute(&mut *tx).await.unwrap();
+            sqlx::query("release savepoint tombstone_guard").execute(&mut *tx).await.unwrap();
+        }
+    }
+    let after: i64 =
+        sqlx::query_scalar("select count(*) from catalog.agent_invocation where tenant_id=$1")
+            .bind(tenant)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    assert_eq!(after, original_invocations);
+    tx.rollback().await.unwrap();
+    pool.close().await;
 }
 
 #[tokio::test]
@@ -251,7 +349,7 @@ fn step_approval_reference_is_explicit_and_changes_the_frozen_version_hash() {
 }
 
 #[test]
-fn five_management_commands_require_their_exact_fields() {
+fn six_management_commands_require_their_exact_fields() {
     let workspace = Uuid::new_v4();
     let installation = Uuid::new_v4();
     let resource = Uuid::new_v4();
@@ -287,6 +385,11 @@ fn five_management_commands_require_their_exact_fields() {
         ),
         (
             Semantic::AutomationDisable,
+            json!({"resourceId":resource,"resourceVersion":1,
+            "explicitConfirmation":true}),
+        ),
+        (
+            Semantic::AutomationDelete,
             json!({"resourceId":resource,"resourceVersion":1,
             "explicitConfirmation":true}),
         ),
@@ -493,7 +596,9 @@ async fn real_run_query_and_pause_predicate_remain_valid_in_empty_database() {
         .0;
     let sql = format!("with d as(select $1::text state), invocation as(select $2::uuid id,$3::text status,$4::boolean cancel_pending)
         select (($2::uuid is null{predicate} from d cross join invocation");
-    for state in ["ENABLED", "PAUSED", "DISABLED", "DRAFT", "UNKNOWN"] {
+    for state in [
+        "ENABLED", "PAUSED", "DISABLED", "DELETED", "DRAFT", "UNKNOWN",
+    ] {
         for invocation in [None, Some(Uuid::new_v4())] {
             for status in [
                 "CREATED",
@@ -515,7 +620,7 @@ async fn real_run_query_and_pause_predicate_remain_valid_in_empty_database() {
                     let expected = match invocation {
                         None => state == "ENABLED",
                         Some(_) => {
-                            matches!(state, "ENABLED" | "PAUSED" | "DISABLED")
+                            matches!(state, "ENABLED" | "PAUSED" | "DISABLED" | "DELETED")
                                 && matches!(
                                     status,
                                     "CREATED" | "DISPATCHING" | "RUNNING" | "UNKNOWN"

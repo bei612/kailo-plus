@@ -1,0 +1,17 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"domain/native_document_selection.schema.json",
+  "title":"NativeDocumentSelection",
+  "description":"18: native authenticated file-menu metadata from the Adapter typed reference producer. This is NOT Action admission; the normal Kailo HUMAN session must independently fresh-admit the frozen target and version. No ticket or content bytes.",
+  "type":"object","additionalProperties":false,
+  "required":["bindingId","generation","workspaceId","resourceVersion","actionKey","actionVersion","reference"],
+  "properties":{
+    "bindingId":{"type":"string","format":"uuid"},
+    "generation":{"type":"integer","minimum":1},
+    "workspaceId":{"type":"string","format":"uuid"},
+    "resourceVersion":{"type":"integer","minimum":1},
+    "actionKey":{"type":"string","enum":["file_storage.open_view@v1","file_storage.open_edit@v1"]},
+    "actionVersion":{"type":"integer","minimum":1,"maximum":1},
+    "reference":{"$ref":"content_reference.schema.json"}
+  }
+}

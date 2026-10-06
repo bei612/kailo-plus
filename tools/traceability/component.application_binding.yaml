@@ -6,7 +6,7 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-04]
-  decisions: [DD-58, DD-88, DD-94, DD-98]
+  decisions: [DD-58, DD-88, DD-90, DD-94, DD-98]
   # 此列表仅登记 EXT-BASE 决策；跨阶段消费者由既有核验记录关联。
   # DD-12 属 EXT-DATA，DD-70/DD-71 属 S1，不把通用接入重新归为具体组件。
   facts: []
@@ -23,6 +23,8 @@ validation:
       ref: core/verify/cells-query-disclosure.md
     - dimension: 合同一致
       ref: core/verify/application-binding-client.md
+    - dimension: 合同一致
+      ref: core/verify/component-action.md
 
 implementation:
   owners: [team-platform]
@@ -35,19 +37,27 @@ implementation:
     - core/crates/platform-core/src/application_binding_read.rs
     - core/crates/platform-core/src/application_binding_pep.rs
     - core/crates/platform-core/src/application_tool.rs
+    - core/crates/platform-core/src/application_action.rs
     - core/crates/platform-core/src/agent_tool_pep.rs
     - core/crates/platform-core/src/application_execution.rs
     - core/crates/platform-core/src/application_page.rs
     - core/crates/platform-core/src/resource_provision.rs
     - core/crates/platform-core/src/bff.rs
     - worker/workflows/application_binding.go
+    - worker/workflows/component_action.go
+    - worker/activities/component_action.go
     - worker/workflows/resource_provision.go
     - client-kit/ts/platform/src/react/application-bindings.tsx
+    - client-kit/ts/platform/src/react/component-actions.tsx
   surfaces: [web, desktop]
   schemas:
     - contracts/api/application_binding_page.schema.json
     - contracts/api/application_native_page.schema.json
     - contracts/domain/application_binding_create.schema.json
+    - contracts/domain/component_action_input.schema.json
+    - contracts/workflow/component_action_target.schema.json
+    - contracts/workflow/component_action_advance_request.schema.json
+    - contracts/workflow/component_action_advance_result.schema.json
     - contracts/domain/application_adapter_directory.schema.json
     - contracts/adapter/protocol.v1/query_revision_request.schema.json
     - contracts/adapter/protocol.v1/query_revision_response.schema.json
@@ -73,16 +83,18 @@ implementation:
     - core/migrations/20261005016000_protocol_peer_terminal_guard.down.sql
     - core/migrations/20261005017000_resource_reference.up.sql
     - core/migrations/20261005017000_resource_reference.down.sql
+    - core/migrations/20261005020000_component_action.up.sql
+    - core/migrations/20261005020000_component_action.down.sql
 
 runtime:
   routes: ["/api/v1/application-bindings", "/api/v1/application-bindings/{id}/native-page"]
   actions: [application_binding.create, application_binding.disable, resource.create]
   tools: []
-  workflow_kinds: [COMPONENT_BINDING, COMPONENT_DISABLE, RESOURCE_PROVISION]
+  workflow_kinds: [COMPONENT_BINDING, COMPONENT_DISABLE, RESOURCE_PROVISION, COMPONENT_ACTION]
 
 release:
   artifacts:
     - name: web-client
-      digest: sha256:1f7c2596ab2c1ebe67a562f63101b00d01fd578d1a2eef534294cd0738699c18
+      digest: sha256:6141e274ae8ca893d32318b1384e3d35a792c04eda88fe45d03b740c3814fd06
   # 该 digest 仅指 Web 产物；不证明本批新增服务端逻辑或独立组件已验收。
   gate: blocked_until_seams_closed

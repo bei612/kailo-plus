@@ -23,6 +23,7 @@
 package wopi
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -62,6 +63,10 @@ type FileInfo struct {
 	// PostMessageOrigin is a string for the domain the host page sends/receives PostMessages from, we only listen to
 	// messages from this domain.
 	PostMessageOrigin string `json:"PostMessageOrigin,omitempty"`
+	// The official ONLYOFFICE WOPI page emits UI evidence only when these
+	// standard flags are present. They never prove a saved native revision.
+	EditNotificationPostMessage bool `json:"EditNotificationPostMessage,omitempty"`
+	ClosePostMessage            bool `json:"ClosePostMessage,omitempty"`
 	// SupportsRename indicates if the integration supports renaming the document with the RenameFile operation.
 	// Default is false. Starting with 24.04.13, when set to false, the UI buttons and menu to rename the document are hidden.
 	SupportsRename bool `json:"SupportsRename,omitempty"`
@@ -178,6 +183,34 @@ func getNodeInfos(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+	if facts := sessionFacts(ctx); facts != nil {
+		version, err := sessionRevision(ctx, n)
+		if err != nil {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		f.Version = version.VersionId
+		f.Size = version.Size
+		f.LastModifiedTime = time.Unix(version.MTime, 0).UTC().Format(time.RFC3339)
+		f.UserId = facts.PlatformHumanID
+		f.UserFriendlyName = facts.DisplayName
+		// EDIT's head check happened at admission/creation. Subsequent saves
+		// cannot replace the immutable base revision or turn the same admitted
+		// session into a historical VIEW merely because its first save advanced
+		// head. Each writer is independently fresh-admitted by protocol PEP.
+		f.UserCanWrite = f.UserCanWrite && facts.AdmittedMode == "EDIT"
+		f.DisableCopy = f.DisableCopy || !facts.ExportAllowed
+		f.DisableExport = f.DisableExport || !facts.ExportAllowed
+		f.HideExportOption = f.HideExportOption || !facts.ExportAllowed
+		f.DisablePrint = f.DisablePrint || !facts.ExportAllowed
+		f.HidePrintOption = f.HidePrintOption || !facts.ExportAllowed
+		// The origin is read from this request's authenticated fresh Core PEP,
+		// not an Origin header or caller-selected URL. Missing origin was already
+		// rejected by Resolve, so the editor cannot fall back to wildcard '*'.
+		f.PostMessageOrigin = facts.PostMessageOrigin
+		f.EditNotificationPostMessage = true
+		f.ClosePostMessage = true
+	}
 
 	data, _ := json.Marshal(f)
 	if _, er := w.Write(data); er != nil {
@@ -194,7 +227,18 @@ func download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	read, err := client.GetObject(r.Context(), n, &models.GetRequestData{StartOffset: 0, Length: -1})
+	request := &models.GetRequestData{StartOffset: 0, Length: -1}
+	contentLength := n.GetSize()
+	if facts := sessionFacts(r.Context()); facts != nil {
+		version, err := sessionRevision(r.Context(), n)
+		if err != nil {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		request.VersionId = facts.BaseRevision
+		contentLength = version.Size
+	}
+	read, err := client.GetObject(r.Context(), n, request)
 	if err != nil {
 		log.Logger(r.Context()).Error("cannot get object", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
@@ -202,7 +246,7 @@ func download(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", n.GetSize()))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", contentLength))
 	defer read.Close()
 	written, err := io.Copy(w, read)
 	if err != nil {
@@ -224,23 +268,24 @@ func uploadStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if LastModifiedTime changed, ask user to resolve the conflict
-	coolTimeStr := r.Header.Get("X-COOL-WOPI-Timestamp")
-	if coolTimeStr != "" {
-		coolTime, err := time.Parse(time.RFC3339, coolTimeStr)
-
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+	conflict, err := timestampConflict(r, n.GetModTime())
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	evidence, err := beginSessionWrite(r, n)
+	if err != nil {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	if conflict {
+		if evidence != nil {
+			evidence.Phase = "CONFLICT"
+			_, _ = finishSessionWrite(r, n, evidence)
 		}
-
-		if !coolTime.Equal(n.GetModTime()) {
-			w.WriteHeader(http.StatusConflict)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"COOLStatusCode": 1010,
-			})
-			return
-		}
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"COOLStatusCode": 1010})
+		return
 	}
 
 	var size int64
@@ -248,9 +293,39 @@ func uploadStream(w http.ResponseWriter, r *http.Request) {
 		size, _ = strconv.ParseInt(h[0], 10, 64)
 	}
 
-	written, err := client.PutObject(r.Context(), n, r.Body, &models.PutRequestData{
+	ctx := r.Context()
+	if facts := sessionFacts(ctx); facts != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, facts.ExpiresAt)
+		defer cancel()
+	}
+	written, err := client.PutObject(ctx, n, r.Body, &models.PutRequestData{
 		Size: size,
 	})
+	if evidence != nil {
+		evidence.BytesWritten = written.Size
+		if written.ETag != "" {
+			evidence.NativeETag = written.ETag
+		}
+		evidence.Phase = "UNKNOWN"
+		if err != nil && written.Size == 0 {
+			evidence.Phase = "FAILED"
+			evidence.NativeETag = ""
+		}
+		if err == nil {
+			if revision, proofErr := writtenRevision(ctx, n, written); proofErr == nil {
+				evidence.Phase = "ACCEPTED"
+				evidence.ResultRevision = revision
+			}
+		}
+		state, receiptErr := finishSessionWrite(r, n, evidence)
+		if err == nil && (receiptErr != nil || state != "SAVED") {
+			// The bytes may be stored, but neither a missing receipt nor an
+			// unproven native version can be reported as a confirmed save.
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+	}
 	if err != nil {
 		log.Logger(r.Context()).Error("cannot put object", zap.Int64("already written data Length", written.Size), zap.Error(err))
 		if written.Size == 0 {
@@ -273,7 +348,7 @@ func uploadStream(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"LastModifiedTime": n.GetModTime().Format(time.RFC3339),
+		"LastModifiedTime": n.GetModTime().UTC().Truncate(time.Second).Format(time.RFC3339),
 	})
 }
 

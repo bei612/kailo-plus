@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"domain/document_launch_descriptor.schema.json",
+  "title":"DocumentLaunchDescriptor",
+  "description":"DD-95/103: transient, fixed-origin launch returned by the admitted binding adapter; credentials are only string form fields, never a persisted Task, chat or ContentReference.",
+  "type":"object","additionalProperties":false,
+  "required":["method","actionUrl","formFields","editorOrigin","expiresAt"],
+  "properties":{
+    "method":{"type":"string","enum":["GET","POST"]},
+    "actionUrl":{"type":"string"},
+    "formFields":{"type":"object","additionalProperties":{"type":"string"}},
+    "editorOrigin":{"type":"string"},
+    "expiresAt":{"type":"string"}
+  }
+}

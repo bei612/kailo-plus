@@ -4,6 +4,9 @@
 //    canary, err := UnmarshalCanary(bytes)
 //    bytes, err = canary.Marshal()
 //
+//    applicationModelAdmission, err := UnmarshalApplicationModelAdmission(bytes)
+//    bytes, err = applicationModelAdmission.Marshal()
+//
 //    adapterBindingObservation, err := UnmarshalAdapterBindingObservation(bytes)
 //    bytes, err = adapterBindingObservation.Marshal()
 //
@@ -24,6 +27,36 @@
 //
 //    adapterPepCheckResponse, err := UnmarshalAdapterPepCheckResponse(bytes)
 //    bytes, err = adapterPepCheckResponse.Marshal()
+//
+//    protocolRevisionQuery, err := UnmarshalProtocolRevisionQuery(bytes)
+//    bytes, err = protocolRevisionQuery.Marshal()
+//
+//    adapterProtocolSessionLaunchRequest, err := UnmarshalAdapterProtocolSessionLaunchRequest(bytes)
+//    bytes, err = adapterProtocolSessionLaunchRequest.Marshal()
+//
+//    adapterProtocolSessionLaunchResponse, err := UnmarshalAdapterProtocolSessionLaunchResponse(bytes)
+//    bytes, err = adapterProtocolSessionLaunchResponse.Marshal()
+//
+//    protocolSessionLifecyclePepResponse, err := UnmarshalProtocolSessionLifecyclePepResponse(bytes)
+//    bytes, err = protocolSessionLifecyclePepResponse.Marshal()
+//
+//    adapterProtocolSessionLifecycleRequest, err := UnmarshalAdapterProtocolSessionLifecycleRequest(bytes)
+//    bytes, err = adapterProtocolSessionLifecycleRequest.Marshal()
+//
+//    adapterProtocolSessionLifecycleResponse, err := UnmarshalAdapterProtocolSessionLifecycleResponse(bytes)
+//    bytes, err = adapterProtocolSessionLifecycleResponse.Marshal()
+//
+//    protocolSessionPepRequest, err := UnmarshalProtocolSessionPepRequest(bytes)
+//    bytes, err = protocolSessionPepRequest.Marshal()
+//
+//    protocolSessionPepResponse, err := UnmarshalProtocolSessionPepResponse(bytes)
+//    bytes, err = protocolSessionPepResponse.Marshal()
+//
+//    protocolWriteObservation, err := UnmarshalProtocolWriteObservation(bytes)
+//    bytes, err = protocolWriteObservation.Marshal()
+//
+//    protocolWriteReceipt, err := UnmarshalProtocolWriteReceipt(bytes)
+//    bytes, err = protocolWriteReceipt.Marshal()
 //
 //    adapterQueryRevisionRequest, err := UnmarshalAdapterQueryRevisionRequest(bytes)
 //    bytes, err = adapterQueryRevisionRequest.Marshal()
@@ -190,6 +223,9 @@
 //    platformToolView, err := UnmarshalPlatformToolView(bytes)
 //    bytes, err = platformToolView.Marshal()
 //
+//    protocolSessionView, err := UnmarshalProtocolSessionView(bytes)
+//    bytes, err = protocolSessionView.Marshal()
+//
 //    readMarkRequest, err := UnmarshalReadMarkRequest(bytes)
 //    bytes, err = readMarkRequest.Marshal()
 //
@@ -244,6 +280,9 @@
 //    applicationBindingCreate, err := UnmarshalApplicationBindingCreate(bytes)
 //    bytes, err = applicationBindingCreate.Marshal()
 //
+//    applicationModelGatewayConfig, err := UnmarshalApplicationModelGatewayConfig(bytes)
+//    bytes, err = applicationModelGatewayConfig.Marshal()
+//
 //    automationApprovalPolicyRef, err := UnmarshalAutomationApprovalPolicyRef(bytes)
 //    bytes, err = automationApprovalPolicyRef.Marshal()
 //
@@ -261,6 +300,9 @@
 //
 //    capabilityContractRegistration, err := UnmarshalCapabilityContractRegistration(bytes)
 //    bytes, err = capabilityContractRegistration.Marshal()
+//
+//    componentActionInput, err := UnmarshalComponentActionInput(bytes)
+//    bytes, err = componentActionInput.Marshal()
 //
 //    componentConformanceEnvironment, err := UnmarshalComponentConformanceEnvironment(bytes)
 //    bytes, err = componentConformanceEnvironment.Marshal()
@@ -289,6 +331,9 @@
 //    delegationScopeParameters, err := UnmarshalDelegationScopeParameters(bytes)
 //    bytes, err = delegationScopeParameters.Marshal()
 //
+//    documentLaunchDescriptor, err := UnmarshalDocumentLaunchDescriptor(bytes)
+//    bytes, err = documentLaunchDescriptor.Marshal()
+//
 //    errorBody, err := UnmarshalErrorBody(bytes)
 //    bytes, err = errorBody.Marshal()
 //
@@ -298,8 +343,14 @@
 //    llmRouteCreateInput, err := UnmarshalLlmRouteCreateInput(bytes)
 //    bytes, err = llmRouteCreateInput.Marshal()
 //
+//    nativeDocumentSelection, err := UnmarshalNativeDocumentSelection(bytes)
+//    bytes, err = nativeDocumentSelection.Marshal()
+//
 //    platformBuildInfo, err := UnmarshalPlatformBuildInfo(bytes)
 //    bytes, err = platformBuildInfo.Marshal()
+//
+//    protocolSessionOpenInput, err := UnmarshalProtocolSessionOpenInput(bytes)
+//    bytes, err = protocolSessionOpenInput.Marshal()
 //
 //    resourceCreate, err := UnmarshalResourceCreate(bytes)
 //    bytes, err = resourceCreate.Marshal()
@@ -382,6 +433,15 @@
 //    automationScheduleTaskInput, err := UnmarshalAutomationScheduleTaskInput(bytes)
 //    bytes, err = automationScheduleTaskInput.Marshal()
 //
+//    componentActionAdvanceRequest, err := UnmarshalComponentActionAdvanceRequest(bytes)
+//    bytes, err = componentActionAdvanceRequest.Marshal()
+//
+//    componentActionAdvanceResult, err := UnmarshalComponentActionAdvanceResult(bytes)
+//    bytes, err = componentActionAdvanceResult.Marshal()
+//
+//    componentActionTarget, err := UnmarshalComponentActionTarget(bytes)
+//    bytes, err = componentActionTarget.Marshal()
+//
 //    componentConformanceObservation, err := UnmarshalComponentConformanceObservation(bytes)
 //    bytes, err = componentConformanceObservation.Marshal()
 //
@@ -399,6 +459,18 @@
 //
 //    freshApprovalAdmissionResult, err := UnmarshalFreshApprovalAdmissionResult(bytes)
 //    bytes, err = freshApprovalAdmissionResult.Marshal()
+//
+//    protocolSessionReconcileRequest, err := UnmarshalProtocolSessionReconcileRequest(bytes)
+//    bytes, err = protocolSessionReconcileRequest.Marshal()
+//
+//    protocolSessionReconcileResult, err := UnmarshalProtocolSessionReconcileResult(bytes)
+//    bytes, err = protocolSessionReconcileResult.Marshal()
+//
+//    protocolSessionReconcileRound, err := UnmarshalProtocolSessionReconcileRound(bytes)
+//    bytes, err = protocolSessionReconcileRound.Marshal()
+//
+//    protocolSessionReconcileTarget, err := UnmarshalProtocolSessionReconcileTarget(bytes)
+//    bytes, err = protocolSessionReconcileTarget.Marshal()
 //
 //    resourceProvisionAdvanceRequest, err := UnmarshalResourceProvisionAdvanceRequest(bytes)
 //    bytes, err = resourceProvisionAdvanceRequest.Marshal()
@@ -428,6 +500,16 @@ func UnmarshalCanary(data []byte) (Canary, error) {
 }
 
 func (r *Canary) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApplicationModelAdmission(data []byte) (ApplicationModelAdmission, error) {
+	var r ApplicationModelAdmission
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApplicationModelAdmission) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -498,6 +580,106 @@ func UnmarshalAdapterPepCheckResponse(data []byte) (AdapterPepCheckResponse, err
 }
 
 func (r *AdapterPepCheckResponse) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProtocolRevisionQuery(data []byte) (ProtocolRevisionQuery, error) {
+	var r ProtocolRevisionQuery
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProtocolRevisionQuery) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterProtocolSessionLaunchRequest(data []byte) (AdapterProtocolSessionLaunchRequest, error) {
+	var r AdapterProtocolSessionLaunchRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterProtocolSessionLaunchRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterProtocolSessionLaunchResponse(data []byte) (AdapterProtocolSessionLaunchResponse, error) {
+	var r AdapterProtocolSessionLaunchResponse
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterProtocolSessionLaunchResponse) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProtocolSessionLifecyclePepResponse(data []byte) (ProtocolSessionLifecyclePepResponse, error) {
+	var r ProtocolSessionLifecyclePepResponse
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProtocolSessionLifecyclePepResponse) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterProtocolSessionLifecycleRequest(data []byte) (AdapterProtocolSessionLifecycleRequest, error) {
+	var r AdapterProtocolSessionLifecycleRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterProtocolSessionLifecycleRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterProtocolSessionLifecycleResponse(data []byte) (AdapterProtocolSessionLifecycleResponse, error) {
+	var r AdapterProtocolSessionLifecycleResponse
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterProtocolSessionLifecycleResponse) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProtocolSessionPepRequest(data []byte) (ProtocolSessionPepRequest, error) {
+	var r ProtocolSessionPepRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProtocolSessionPepRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProtocolSessionPepResponse(data []byte) (ProtocolSessionPepResponse, error) {
+	var r ProtocolSessionPepResponse
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProtocolSessionPepResponse) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProtocolWriteObservation(data []byte) (ProtocolWriteObservation, error) {
+	var r ProtocolWriteObservation
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProtocolWriteObservation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProtocolWriteReceipt(data []byte) (ProtocolWriteReceipt, error) {
+	var r ProtocolWriteReceipt
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProtocolWriteReceipt) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -1051,6 +1233,16 @@ func (r *PlatformToolView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalProtocolSessionView(data []byte) (ProtocolSessionView, error) {
+	var r ProtocolSessionView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProtocolSessionView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalReadMarkRequest(data []byte) (ReadMarkRequest, error) {
 	var r ReadMarkRequest
 	err := json.Unmarshal(data, &r)
@@ -1231,6 +1423,16 @@ func (r *ApplicationBindingCreate) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalApplicationModelGatewayConfig(data []byte) (ApplicationModelGatewayConfig, error) {
+	var r ApplicationModelGatewayConfig
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApplicationModelGatewayConfig) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAutomationApprovalPolicyRef(data []byte) (AutomationApprovalPolicyRef, error) {
 	var r AutomationApprovalPolicyRef
 	err := json.Unmarshal(data, &r)
@@ -1288,6 +1490,16 @@ func UnmarshalCapabilityContractRegistration(data []byte) (CapabilityContractReg
 }
 
 func (r *CapabilityContractRegistration) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentActionInput(data []byte) (ComponentActionInput, error) {
+	var r ComponentActionInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentActionInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -1381,6 +1593,16 @@ func (r *DelegationScopeParameters) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalDocumentLaunchDescriptor(data []byte) (DocumentLaunchDescriptor, error) {
+	var r DocumentLaunchDescriptor
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *DocumentLaunchDescriptor) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalErrorBody(data []byte) (ErrorBody, error) {
 	var r ErrorBody
 	err := json.Unmarshal(data, &r)
@@ -1411,6 +1633,16 @@ func (r *LlmRouteCreateInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalNativeDocumentSelection(data []byte) (NativeDocumentSelection, error) {
+	var r NativeDocumentSelection
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *NativeDocumentSelection) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalPlatformBuildInfo(data []byte) (PlatformBuildInfo, error) {
 	var r PlatformBuildInfo
 	err := json.Unmarshal(data, &r)
@@ -1418,6 +1650,16 @@ func UnmarshalPlatformBuildInfo(data []byte) (PlatformBuildInfo, error) {
 }
 
 func (r *PlatformBuildInfo) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProtocolSessionOpenInput(data []byte) (ProtocolSessionOpenInput, error) {
+	var r ProtocolSessionOpenInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProtocolSessionOpenInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -1691,6 +1933,36 @@ func (r *AutomationScheduleTaskInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalComponentActionAdvanceRequest(data []byte) (ComponentActionAdvanceRequest, error) {
+	var r ComponentActionAdvanceRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentActionAdvanceRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentActionAdvanceResult(data []byte) (ComponentActionAdvanceResult, error) {
+	var r ComponentActionAdvanceResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentActionAdvanceResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalComponentActionTarget(data []byte) (ComponentActionTarget, error) {
+	var r ComponentActionTarget
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ComponentActionTarget) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalComponentConformanceObservation(data []byte) (ComponentConformanceObservation, error) {
 	var r ComponentConformanceObservation
 	err := json.Unmarshal(data, &r)
@@ -1748,6 +2020,46 @@ func UnmarshalFreshApprovalAdmissionResult(data []byte) (FreshApprovalAdmissionR
 }
 
 func (r *FreshApprovalAdmissionResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProtocolSessionReconcileRequest(data []byte) (ProtocolSessionReconcileRequest, error) {
+	var r ProtocolSessionReconcileRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProtocolSessionReconcileRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProtocolSessionReconcileResult(data []byte) (ProtocolSessionReconcileResult, error) {
+	var r ProtocolSessionReconcileResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProtocolSessionReconcileResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProtocolSessionReconcileRound(data []byte) (ProtocolSessionReconcileRound, error) {
+	var r ProtocolSessionReconcileRound
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProtocolSessionReconcileRound) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProtocolSessionReconcileTarget(data []byte) (ProtocolSessionReconcileTarget, error) {
+	var r ProtocolSessionReconcileTarget
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProtocolSessionReconcileTarget) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -1840,6 +2152,15 @@ type Variant struct {
 	Kind        VariantKind `json:"kind"`
 	MessageBody *string     `json:"messageBody,omitempty"`
 	TaskAttempt *int64      `json:"taskAttempt,omitempty"`
+}
+
+type ApplicationModelAdmission struct {
+	BindingID          string `json:"bindingId"`
+	GatewayPrincipalID string `json:"gatewayPrincipalId"`
+	Generation         int64  `json:"generation"`
+	Method             string `json:"method"`
+	Path               string `json:"path"`
+	Traceparent        string `json:"traceparent"`
 }
 
 // 07§5/6.2：validate_binding 的非正文观察。精确原生scope/实例、隔离与配置引用摘要，不是用户声明的通过布尔值。
@@ -1957,18 +2278,163 @@ type AdapterPepCheckResponse struct {
 	OperationID              string `json:"operationId"`
 }
 
+// DD-90/18§5.4：原保存结果不明会话的确切写入证据查证；只核已有 ACCEPTED writer observation 对应的原生
+// VersionId，不提供文件字节或当前权限。
+type ProtocolRevisionQuery struct {
+	BaseRevision      string                `json:"baseRevision"`
+	ProtocolSessionID string                `json:"protocolSessionId"`
+	WriteObservation  WriteObservationClass `json:"writeObservation"`
+}
+
+// 18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never
+// file bytes or an authorization grant.
+type WriteObservationClass struct {
+	BaseModifiedAt time.Time `json:"baseModifiedAt"`
+	BytesWritten   int64     `json:"bytesWritten"`
+	CorrelationRef string    `json:"correlationRef"`
+	Editors        string    `json:"editors"`
+	NativeEtag     *string   `json:"nativeEtag,omitempty"`
+	Phase          Phase     `json:"phase"`
+	ResultRevision *string   `json:"resultRevision,omitempty"`
+}
+
+// 18: execute the original admitted file protocol Session, not an arbitrary editor URL or
+// native object create. All fields are frozen Core facts and the whole body is covered by
+// ActionToken.
+type AdapterProtocolSessionLaunchRequest struct {
+	AdmittedMode                 TedMode               `json:"admittedMode"`
+	AuthorizationTargetNativeRef string                `json:"authorizationTargetNativeRef"`
+	ExpiresAt                    string                `json:"expiresAt"`
+	IdempotencyKey               string                `json:"idempotencyKey"`
+	Locale                       Locale                `json:"locale"`
+	ProtocolSessionID            string                `json:"protocolSessionId"`
+	Reference                    ContentReferenceClass `json:"reference"`
+	Theme                        Theme                 `json:"theme"`
+}
+
+// 18: the original native PAT reference plus transient launch descriptor. This value occurs
+// only in the original execute response; it must not be stored as reconciliation evidence
+// or recovered by reminting a token.
+type AdapterProtocolSessionLaunchResponse struct {
+	LaunchDescriptor LaunchDescriptorClass `json:"launchDescriptor"`
+	NativeSessionRef string                `json:"nativeSessionRef"`
+}
+
+// DD-95/103: transient, fixed-origin launch returned by the admitted binding adapter;
+// credentials are only string form fields, never a persisted Task, chat or ContentReference.
+type LaunchDescriptorClass struct {
+	ActionURL    string            `json:"actionUrl"`
+	EditorOrigin string            `json:"editorOrigin"`
+	ExpiresAt    string            `json:"expiresAt"`
+	FormFields   map[string]string `json:"formFields"`
+	Method       Method            `json:"method"`
+}
+
+// DD-90, 18 §5.1: binding-authenticated permission to observe/revoke the original document
+// PAT. These closed lifecycle facts never authorize file reads, writes or token creation.
+type ProtocolSessionLifecyclePepResponse struct {
+	Decision          DecisionEnum `json:"decision"`
+	ExpiresAt         time.Time    `json:"expiresAt"`
+	NativeObjectRef   string       `json:"nativeObjectRef"`
+	ProtocolSessionID string       `json:"protocolSessionId"`
+	RequestedMode     TedMode      `json:"requestedMode"`
+}
+
+// 18 §5.1: observe/cancel the same native document PAT only. No access token, launch
+// descriptor or file bytes.
+type AdapterProtocolSessionLifecycleRequest struct {
+	IdempotencyKey    string `json:"idempotencyKey"`
+	NativeObjectRef   string `json:"nativeObjectRef"`
+	ProtocolSessionID string `json:"protocolSessionId"`
+}
+
+// Original Cells PAT metadata only. ABSENT is a successful native lookup; errors must
+// remain unavailable, never ABSENT.
+type AdapterProtocolSessionLifecycleResponse struct {
+	ExpiresAt         *time.Time  `json:"expiresAt,omitempty"`
+	NativeObjectRef   string      `json:"nativeObjectRef"`
+	NativeSessionRef  *string     `json:"nativeSessionRef,omitempty"`
+	NativeState       NativeState `json:"nativeState"`
+	ProtocolSessionID string      `json:"protocolSessionId"`
+}
+
+// 18 §5.2: authenticated binding→Core PEP for an existing ProtocolSession. No native token
+// grants platform permissions.
+type ProtocolSessionPepRequest struct {
+	BindingID         string                 `json:"bindingId"`
+	NativeObjectRef   string                 `json:"nativeObjectRef"`
+	NativeOperation   NativeOperation        `json:"nativeOperation"`
+	ProtocolSessionID string                 `json:"protocolSessionId"`
+	WriteObservation  *WriteObservationClass `json:"writeObservation,omitempty"`
+}
+
+// Original Session facts, not native revision existence or write success. Cells must still
+// query its exact VersionId and ACLs.
+type ProtocolSessionPepResponse struct {
+	AdmittedMode  TedMode      `json:"admittedMode"`
+	BaseRevision  string       `json:"baseRevision"`
+	Decision      DecisionEnum `json:"decision"`
+	DisplayName   string       `json:"displayName"`
+	ExpiresAt     time.Time    `json:"expiresAt"`
+	ExportAllowed bool         `json:"exportAllowed"`
+	MinZedToken   string       `json:"minZedToken"`
+	// Confirmed original native token/session reference. Required by native READ/WRITE
+	// consumers, absent before the first native OPEN creation.
+	NativeSessionRef *string `json:"nativeSessionRef,omitempty"`
+	// Original active issuer from the HUMAN's frozen ExternalIdentity, never a browser-supplied
+	// claim.
+	OidcIssuer string `json:"oidcIssuer"`
+	// Original active subject paired with oidcIssuer. Cells resolves its existing explicit
+	// native user link; no email or display-name fallback.
+	OidcSubject     string `json:"oidcSubject"`
+	PlatformHumanID string `json:"platformHumanId"`
+	// Exact canonical platform PUBLIC_ORIGIN from the Core deployment, never the native request
+	// Origin or a browser-supplied field. Required by the native FileInfo consumer; unavailable
+	// origin refuses its editor projection.
+	PostMessageOrigin *string `json:"postMessageOrigin,omitempty"`
+}
+
+// 18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never
+// file bytes or an authorization grant.
+type ProtocolWriteObservation struct {
+	BaseModifiedAt time.Time `json:"baseModifiedAt"`
+	BytesWritten   int64     `json:"bytesWritten"`
+	CorrelationRef string    `json:"correlationRef"`
+	Editors        string    `json:"editors"`
+	NativeEtag     *string   `json:"nativeEtag,omitempty"`
+	Phase          Phase     `json:"phase"`
+	ResultRevision *string   `json:"resultRevision,omitempty"`
+}
+
+// Receipt of native write evidence. It grants no read or write permission.
+type ProtocolWriteReceipt struct {
+	ProtocolSessionID string                    `json:"protocolSessionId"`
+	State             ProtocolWriteReceiptState `json:"state"`
+}
+
 // 07§5.2与ADR-12：查询同一native对象当前权威revision；ActionToken通过Authorization头传输，幂等键与Idempotency-Key头一致。authorizationTargetNativeRef仅为Core从实际受权Resource/Asset解析的原生目标定位，参与同一参数签名；adapter须核实被查对象在该目标及固定binding
 // scope内。缺省保持确切目标查询，不授予一般子对象读取。不是execute或权限授予。
 type AdapterQueryRevisionRequest struct {
-	AuthorizationTargetNativeRef *string `json:"authorizationTargetNativeRef,omitempty"`
-	IdempotencyKey               string  `json:"idempotencyKey"`
-	NativeObjectRef              string  `json:"nativeObjectRef"`
+	AuthorizationTargetNativeRef *string                 `json:"authorizationTargetNativeRef,omitempty"`
+	IdempotencyKey               string                  `json:"idempotencyKey"`
+	NativeObjectRef              string                  `json:"nativeObjectRef"`
+	ProtocolReconcile            *ProtocolReconcileClass `json:"protocolReconcile,omitempty"`
+}
+
+// DD-90/18§5.4：原保存结果不明会话的确切写入证据查证；只核已有 ACCEPTED writer observation 对应的原生
+// VersionId，不提供文件字节或当前权限。
+type ProtocolReconcileClass struct {
+	BaseRevision      string                `json:"baseRevision"`
+	ProtocolSessionID string                `json:"protocolSessionId"`
+	WriteObservation  WriteObservationClass `json:"writeObservation"`
 }
 
 // 07§5.2与18§5：只返回被查证同一native对象当前权威revision，不替换调用方冻结ContentReference、不以mtime/ETag猜测revision。未知或fresh授权失败不得生成成功应答。
 type AdapterQueryRevisionResponse struct {
-	NativeObjectRef string `json:"nativeObjectRef"`
-	NativeRevision  string `json:"nativeRevision"`
+	CorrelationRef    *string `json:"correlationRef,omitempty"`
+	NativeObjectRef   string  `json:"nativeObjectRef"`
+	NativeRevision    string  `json:"nativeRevision"`
+	ProtocolSessionID *string `json:"protocolSessionId,omitempty"`
 }
 
 // DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
@@ -1998,6 +2464,7 @@ type ActionCommand struct {
 	CapabilityContractRef *CapabilityContractRefClass `json:"capabilityContractRef,omitempty"`
 	// 仅 capability_contract.register：真实 schema 与测试向量内容。
 	CapabilityContractRegistration *CapabilityContractRegistrationClass `json:"capabilityContractRegistration,omitempty"`
+	ComponentAction                *ComponentActionClass                `json:"componentAction,omitempty"`
 	// 仅组件批准：已登记的不可变ComponentRelease标识。
 	ComponentReleaseID           *string                            `json:"componentReleaseId,omitempty"`
 	ComponentReleaseRegistration *ComponentReleaseRegistrationClass `json:"componentReleaseRegistration,omitempty"`
@@ -2009,7 +2476,8 @@ type ActionCommand struct {
 	DelegationVersion *int64 `json:"delegationVersion,omitempty"`
 	// 仅 automation.create：同一 Workspace 的确切 AgentInstallation Resource，不从名称或当前默认配置推断。
 	ExecutorInstallationResourceID *string `json:"executorInstallationResourceId,omitempty"`
-	// EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
+	// EXPLICIT 动作或 HUMAN owner 的一次手动 automation.run，由用户在当前目标详情上确认后设为 true；其他动作不得携带。手动运行只提交
+	// resourceId/resourceVersion/workspaceId 与同一幂等键，不选择 Grant、Agent、来源或结果位置。
 	ExplicitConfirmation *bool `json:"explicitConfirmation,omitempty"`
 	// 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
 	IdempotencyKey string `json:"idempotencyKey"`
@@ -2025,8 +2493,11 @@ type ActionCommand struct {
 	// 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
 	OriginalActionExecutionID *string `json:"originalActionExecutionId,omitempty"`
 	// 成员动作的目标 Principal；resource.transfer_owner 的新 owner
-	PrincipalID    *string              `json:"principalId,omitempty"`
-	ResourceCreate *ResourceCreateClass `json:"resourceCreate,omitempty"`
+	PrincipalID *string `json:"principalId,omitempty"`
+	// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
+	// identity; no Agent or caller-selected native credentials.
+	ProtocolSessionOpen *ProtocolSessionOpenClass `json:"protocolSessionOpen,omitempty"`
+	ResourceCreate      *ResourceCreateClass      `json:"resourceCreate,omitempty"`
 	// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
 	ResourceID *string `json:"resourceId,omitempty"`
 	// 调用方实际读取的 Resource 版本；与当前事实不同即 CONFLICT
@@ -2189,6 +2660,15 @@ type CapabilityContractRegistrationResourceTypeFamily struct {
 	TypeKey string `json:"typeKey"`
 }
 
+// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
+// Core/Temporal。
+type ComponentActionClass struct {
+	ActionVersion               int64                 `json:"actionVersion"`
+	InputReference              ContentReferenceClass `json:"inputReference"`
+	ResultExposurePolicyID      string                `json:"resultExposurePolicyId"`
+	ResultExposurePolicyVersion int64                 `json:"resultExposurePolicyVersion"`
+}
+
 // 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
 // Worker 独立执行隔离套件。
 type ComponentReleaseRegistrationClass struct {
@@ -2259,6 +2739,24 @@ type MemoryWriteClass struct {
 	Value *string `json:"value,omitempty"`
 }
 
+// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
+// identity; no Agent or caller-selected native credentials.
+//
+// 03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL.
+// Revision and presentation are frozen once; session expiry comes from controlled Core
+// delivery.
+type ProtocolSessionOpenClass struct {
+	ActionVersion int64 `json:"actionVersion"`
+	// The selected native source binding; must equal the target's real binding, not an
+	// authorization claim.
+	ApplicationBindingID string `json:"applicationBindingId"`
+	Locale               Locale `json:"locale"`
+	// Exact approved projection selected by the native menu; never latest.
+	ProjectionGeneration int64                 `json:"projectionGeneration"`
+	Reference            ContentReferenceClass `json:"reference"`
+	Theme                Theme                 `json:"theme"`
+}
+
 type ResourceCreateClass struct {
 	EvidenceDigest string `json:"evidenceDigest"`
 	EvidenceRef    string `json:"evidenceRef"`
@@ -2270,15 +2768,17 @@ type ResourceCreateClass struct {
 // POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
 // 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
 type ActionSubmission struct {
-	ActionExecutionID  string              `json:"actionExecutionId"`
-	ActionKey          string              `json:"actionKey"`
-	ApprovalWorkflowID *string             `json:"approvalWorkflowId,omitempty"`
-	DispatchState      ActionDispatchState `json:"dispatchState"`
-	GateState          ActionGateState     `json:"gateState"`
-	Invitation         *InvitationClass    `json:"invitation,omitempty"`
-	OperationID        string              `json:"operationId"`
-	Reason             *ReasonCode         `json:"reason,omitempty"`
-	WorkflowID         *string             `json:"workflowId,omitempty"`
+	ActionExecutionID  string                 `json:"actionExecutionId"`
+	ActionKey          string                 `json:"actionKey"`
+	ApprovalWorkflowID *string                `json:"approvalWorkflowId,omitempty"`
+	DispatchState      ActionDispatchState    `json:"dispatchState"`
+	DocumentLaunch     *LaunchDescriptorClass `json:"documentLaunch,omitempty"`
+	GateState          ActionGateState        `json:"gateState"`
+	Invitation         *InvitationClass       `json:"invitation,omitempty"`
+	OperationID        string                 `json:"operationId"`
+	ProtocolSessionID  *string                `json:"protocolSessionId,omitempty"`
+	Reason             *ReasonCode            `json:"reason,omitempty"`
+	WorkflowID         *string                `json:"workflowId,omitempty"`
 }
 
 // tenant.member.invite 首次回应里一次性出现的邀请（DD-83）。link 含明文凭据（在 URL fragment
@@ -2401,8 +2901,9 @@ type InstallationElement struct {
 	AgentPrincipalID           string              `json:"agentPrincipalId"`
 	AgentPrincipalState        AgentPrincipalState `json:"agentPrincipalState"`
 	AgentResourceID            string              `json:"agentResourceId"`
-	// 同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
-	// Schedule。
+	// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
+	// 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
+	// 准入。缺失或空集合不支持 Schedule。
 	AutomationResultTargets []AutomationResultTarget         `json:"automationResultTargets,omitempty"`
 	ChannelBinding          *InstallationChannelBinding      `json:"channelBinding,omitempty"`
 	ExecutionPermission     *InstallationExecutionPermission `json:"executionPermission,omitempty"`
@@ -2464,8 +2965,9 @@ type AgentInstallationView struct {
 	AgentPrincipalID           string              `json:"agentPrincipalId"`
 	AgentPrincipalState        AgentPrincipalState `json:"agentPrincipalState"`
 	AgentResourceID            string              `json:"agentResourceId"`
-	// 同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
-	// Schedule。
+	// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
+	// 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
+	// 准入。缺失或空集合不支持 Schedule。
 	AutomationResultTargets []AutomationResultTarget                  `json:"automationResultTargets,omitempty"`
 	ChannelBinding          *AgentInstallationViewChannelBinding      `json:"channelBinding,omitempty"`
 	ExecutionPermission     *AgentInstallationViewExecutionPermission `json:"executionPermission,omitempty"`
@@ -2779,7 +3281,10 @@ type AutomationDelegationView struct {
 type AutomationDetailView struct {
 	Automation AutomationElement `json:"automation"`
 	// 当前 Resource manage；不是运行准入、额度允许或业务成功。
-	CanManage            bool                `json:"canManage"`
+	CanManage bool `json:"canManage"`
+	// 仅当前 ACTIVE HUMAN owner、Workspace membership 与 Resource execute，以及已启用固定版本允许显示手动运行；仍须原
+	// automation.run 的准入、Delegation、额度及步骤审批。缺省关闭，不是业务成功。
+	CanRun               *bool               `json:"canRun,omitempty"`
 	Delegations          []DelegationElement `json:"delegations"`
 	NextDelegationOffset *int64              `json:"nextDelegationOffset,omitempty"`
 	NextVersionOffset    *int64              `json:"nextVersionOffset,omitempty"`
@@ -3227,6 +3732,26 @@ type PlatformToolView struct {
 	Status           ToolStatus    `json:"status"`
 }
 
+// 03/18: only the initiating HUMAN's fresh-authorized original Session facts. No PAT,
+// launch credential, native body or replacement revision is recoverable from this reader.
+type ProtocolSessionView struct {
+	ActionExecutionID      string                   `json:"actionExecutionId"`
+	AdmittedMode           TedMode                  `json:"admittedMode"`
+	ApplicationBindingID   string                   `json:"applicationBindingId"`
+	BaseRevision           string                   `json:"baseRevision"`
+	EffectiveEditorOrigins []string                 `json:"effectiveEditorOrigins"`
+	ExpiresAt              time.Time                `json:"expiresAt"`
+	LaunchLocale           Locale                   `json:"launchLocale"`
+	LaunchTheme            Theme                    `json:"launchTheme"`
+	ProtocolSessionID      string                   `json:"protocolSessionId"`
+	Reference              ContentReferenceClass    `json:"reference"`
+	ResultRevision         *string                  `json:"resultRevision,omitempty"`
+	State                  ProtocolSessionViewState `json:"state"`
+	TenantID               string                   `json:"tenantId"`
+	Version                int64                    `json:"version"`
+	WorkspaceID            *string                  `json:"workspaceId,omitempty"`
+}
+
 // PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
 // ID、msg:<Buzz event id> 或 thread:<Buzz root event id>；version 是读到的 CollaborationUserState
 // 版本，不符即 409。
@@ -3469,31 +3994,55 @@ type ApplicationAdapterDirectory struct {
 }
 
 type ApplicationAdapterDelivery struct {
-	ActionTokenAudience string                    `json:"actionTokenAudience"`
-	AdapterServiceRef   string                    `json:"adapterServiceRef"`
-	ArtifactDigest      string                    `json:"artifactDigest"`
-	BaseURL             string                    `json:"baseUrl"`
-	MaxResponseBytes    int64                     `json:"maxResponseBytes"`
-	MCPURL              *string                   `json:"mcpUrl,omitempty"`
-	NativeInstanceRef   string                    `json:"nativeInstanceRef"`
-	SecretReaders       []ApplicationSecretReader `json:"secretReaders"`
-	TimeoutSeconds      int64                     `json:"timeoutSeconds"`
+	ActionTokenAudience       string                               `json:"actionTokenAudience"`
+	AdapterServiceRef         string                               `json:"adapterServiceRef"`
+	ArtifactDigest            string                               `json:"artifactDigest"`
+	BaseURL                   string                               `json:"baseUrl"`
+	MaxResponseBytes          int64                                `json:"maxResponseBytes"`
+	MCPURL                    *string                              `json:"mcpUrl,omitempty"`
+	ModelCredentialDeliveries []ApplicationModelCredentialDelivery `json:"modelCredentialDeliveries,omitempty"`
+	NativeInstanceRef         string                               `json:"nativeInstanceRef"`
+	SecretReaders             []AdapterSecretReader                `json:"secretReaders"`
+	TimeoutSeconds            int64                                `json:"timeoutSeconds"`
 }
 
-type ApplicationSecretReader struct {
+// 受控原生模型凭据交接回执；无密钥值，不创建模型，不替代OpenBao审计或binding准入。
+type ApplicationModelCredentialDelivery struct {
+	BindingID          string                           `json:"bindingId"`
+	ConfigDigest       string                           `json:"configDigest"`
+	Generation         int64                            `json:"generation"`
+	NativeModelRef     string                           `json:"nativeModelRef"`
+	NativeProof        string                           `json:"nativeProof"`
+	NativeScopeRef     string                           `json:"nativeScopeRef"`
+	RequestID          string                           `json:"requestId"`
+	RouteResourceID    string                           `json:"routeResourceId"`
+	SecretRef          ApplicationModelServiceSecretRef `json:"secretRef"`
+	ServicePrincipalID string                           `json:"servicePrincipalId"`
+	VerificationNonce  string                           `json:"verificationNonce"`
+}
+
+type ApplicationModelServiceSecretRef struct {
+	Audience string `json:"audience"`
+	Locator  string `json:"locator"`
+	Version  int64  `json:"version"`
+}
+
+type AdapterSecretReader struct {
 	Audience           string `json:"audience"`
 	RoleName           string `json:"roleName"`
 	ServicePrincipalID string `json:"servicePrincipalId"`
 }
 
 type ApplicationProtocolPeerDelivery struct {
-	AdapterServiceRef string                                   `json:"adapterServiceRef"`
-	ArtifactDigest    string                                   `json:"artifactDigest"`
-	Bindings          []ApplicationProtocolPeerBindingDelivery `json:"bindings"`
-	MaxResponseBytes  int64                                    `json:"maxResponseBytes"`
-	MCPURL            string                                   `json:"mcpUrl"`
-	NativeInstanceRef string                                   `json:"nativeInstanceRef"`
-	TimeoutSeconds    int64                                    `json:"timeoutSeconds"`
+	AdapterServiceRef         string                                   `json:"adapterServiceRef"`
+	ArtifactDigest            string                                   `json:"artifactDigest"`
+	Bindings                  []ApplicationProtocolPeerBindingDelivery `json:"bindings"`
+	MaxResponseBytes          int64                                    `json:"maxResponseBytes"`
+	MCPURL                    string                                   `json:"mcpUrl"`
+	ModelCredentialDeliveries []ApplicationModelCredentialDelivery     `json:"modelCredentialDeliveries,omitempty"`
+	NativeInstanceRef         string                                   `json:"nativeInstanceRef"`
+	SecretReaders             []ProtocolPeerSecretReader               `json:"secretReaders,omitempty"`
+	TimeoutSeconds            int64                                    `json:"timeoutSeconds"`
 }
 
 type ApplicationProtocolPeerBindingDelivery struct {
@@ -3528,6 +4077,12 @@ type ApplicationNativeResourceDelivery struct {
 	TypeKey        string `json:"typeKey"`
 }
 
+type ProtocolPeerSecretReader struct {
+	Audience           string `json:"audience"`
+	RoleName           string `json:"roleName"`
+	ServicePrincipalID string `json:"servicePrincipalId"`
+}
+
 // DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
 // ActionCommand。
 type ApplicationBindingCreate struct {
@@ -3556,6 +4111,13 @@ type ApplicationBindingCreateSecretRefClass struct {
 	Locator   string `json:"locator"`
 	SecretKey string `json:"secretKey"`
 	Version   int64  `json:"version"`
+}
+
+// DD-92: modelGateway within the approved binding config. Only existing route and meter
+// references; no provider configuration, credential value or native model row.
+type ApplicationModelGatewayConfig struct {
+	MeterKeys        []string `json:"meterKeys"`
+	RouteResourceIDS []string `json:"routeResourceIds"`
 }
 
 // DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
@@ -3655,6 +4217,15 @@ type CapabilityContractRegistrationOperationContractClass struct {
 type CapabilityContractRegistrationResourceTypeFamilyClass struct {
 	Kind    string `json:"kind"`
 	TypeKey string `json:"typeKey"`
+}
+
+// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
+// Core/Temporal。
+type ComponentActionInput struct {
+	ActionVersion               int64                 `json:"actionVersion"`
+	InputReference              ContentReferenceClass `json:"inputReference"`
+	ResultExposurePolicyID      string                `json:"resultExposurePolicyId"`
+	ResultExposurePolicyVersion int64                 `json:"resultExposurePolicyVersion"`
 }
 
 // 07§8A 的隔离环境投递配置，不是 Catalog/binding 权威。由运维配置精确绑定已装载候选 artifact；逐次短期模拟 token 仅由 Core
@@ -3760,6 +4331,16 @@ type DelegationScopeParameters struct {
 	ToolResourceID     *string            `json:"toolResourceId,omitempty"`
 }
 
+// DD-95/103: transient, fixed-origin launch returned by the admitted binding adapter;
+// credentials are only string form fields, never a persisted Task, chat or ContentReference.
+type DocumentLaunchDescriptor struct {
+	ActionURL    string            `json:"actionUrl"`
+	EditorOrigin string            `json:"editorOrigin"`
+	ExpiresAt    string            `json:"expiresAt"`
+	FormFields   map[string]string `json:"formFields"`
+	Method       Method            `json:"method"`
+}
+
 // 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
 type ErrorBody struct {
 	Class ErrorClass `json:"class"`
@@ -3793,6 +4374,19 @@ type LlmRouteCreateInputProviderSecretRef struct {
 	Version  int64  `json:"version"`
 }
 
+// 18: native authenticated file-menu metadata from the Adapter typed reference producer.
+// This is NOT Action admission; the normal Kailo HUMAN session must independently
+// fresh-admit the frozen target and version. No ticket or content bytes.
+type NativeDocumentSelection struct {
+	ActionKey       NativeDocumentSelectionActionKey `json:"actionKey"`
+	ActionVersion   int64                            `json:"actionVersion"`
+	BindingID       string                           `json:"bindingId"`
+	Generation      int64                            `json:"generation"`
+	Reference       ContentReferenceClass            `json:"reference"`
+	ResourceVersion int64                            `json:"resourceVersion"`
+	WorkspaceID     string                           `json:"workspaceId"`
+}
+
 // 设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
 type PlatformBuildInfo struct {
 	AdapterProtocolVersions []string          `json:"adapterProtocolVersions"`
@@ -3804,6 +4398,21 @@ type PlatformBuildInfo struct {
 	PlatformPortKeys        []PlatformPortKey `json:"platformPortKeys"`
 	ReportedAt              time.Time         `json:"reportedAt"`
 	Subject                 Subject           `json:"subject"`
+}
+
+// 03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL.
+// Revision and presentation are frozen once; session expiry comes from controlled Core
+// delivery.
+type ProtocolSessionOpenInput struct {
+	ActionVersion int64 `json:"actionVersion"`
+	// The selected native source binding; must equal the target's real binding, not an
+	// authorization claim.
+	ApplicationBindingID string `json:"applicationBindingId"`
+	Locale               Locale `json:"locale"`
+	// Exact approved projection selected by the native menu; never latest.
+	ProjectionGeneration int64                 `json:"projectionGeneration"`
+	Reference            ContentReferenceClass `json:"reference"`
+	Theme                Theme                 `json:"theme"`
 }
 
 type ResourceCreate struct {
@@ -4190,6 +4799,38 @@ type AutomationScheduleTaskInput struct {
 	SourceKind    AutomationScheduleSource `json:"sourceKind"`
 }
 
+type ComponentActionAdvanceRequest struct {
+	CancelRequested bool                                `json:"cancelRequested"`
+	RunID           string                              `json:"runId"`
+	Target          ComponentActionAdvanceRequestTarget `json:"target"`
+}
+
+// 原 ComponentTaskWorkflow(kind=COMPONENT_ACTION) 的冻结引用；全部业务参数仍从原 AE 的引用/hash读取。
+type ComponentActionAdvanceRequestTarget struct {
+	ActionExecutionID    string `json:"actionExecutionId"`
+	BindingID            string `json:"bindingId"`
+	BindingVersion       int64  `json:"bindingVersion"`
+	ComponentReleaseID   string `json:"componentReleaseId"`
+	ProjectionGeneration int64  `json:"projectionGeneration"`
+	WorkflowID           string `json:"workflowId"`
+}
+
+type ComponentActionAdvanceResult struct {
+	ActionExecutionID string     `json:"actionExecutionId"`
+	Status            TaskStatus `json:"status"`
+	WaitingReason     string     `json:"waitingReason"`
+}
+
+// 原 ComponentTaskWorkflow(kind=COMPONENT_ACTION) 的冻结引用；全部业务参数仍从原 AE 的引用/hash读取。
+type ComponentActionTarget struct {
+	ActionExecutionID    string `json:"actionExecutionId"`
+	BindingID            string `json:"bindingId"`
+	BindingVersion       int64  `json:"bindingVersion"`
+	ComponentReleaseID   string `json:"componentReleaseId"`
+	ProjectionGeneration int64  `json:"projectionGeneration"`
+	WorkflowID           string `json:"workflowId"`
+}
+
 // 受信 Worker 的一次实际线协议观察，附着冻结 ActionExecution。Core 以自身 plan 逐项匹配，不接收 pass 布尔值；UNKNOWN
 // 不表示套件失败或成功。响应正文与测试凭据不进入报告。
 type ComponentConformanceObservation struct {
@@ -4308,6 +4949,66 @@ type FreshApprovalAdmissionResult struct {
 	SatisfiedSelectors []ApprovalSelector `json:"satisfiedSelectors"`
 }
 
+type ProtocolSessionReconcileRequest struct {
+	CancelRequested bool                                  `json:"cancelRequested"`
+	Round           *RoundClass                           `json:"round,omitempty"`
+	RunID           string                                `json:"runId"`
+	Target          ProtocolSessionReconcileRequestTarget `json:"target"`
+}
+
+// Actual original Session snapshot. The Activity result freezes this query round into
+// history, not into a new authority.
+type RoundClass struct {
+	SessionVersion   int64                    `json:"sessionVersion"`
+	State            ProtocolSessionViewState `json:"state"`
+	WriteObservation *WriteObservationClass   `json:"writeObservation,omitempty"`
+}
+
+// DD-90: immutable first UNKNOWN input for the original Session's one Workflow.
+type ProtocolSessionReconcileRequestTarget struct {
+	ActionDefinitionID   string `json:"actionDefinitionId"`
+	ActionExecutionID    string `json:"actionExecutionId"`
+	BaseRevision         string `json:"baseRevision"`
+	BindingID            string `json:"bindingId"`
+	CorrelationRef       string `json:"correlationRef"`
+	NativeObjectRef      string `json:"nativeObjectRef"`
+	ProjectionGeneration int64  `json:"projectionGeneration"`
+	ProtocolSessionID    string `json:"protocolSessionId"`
+	ReleaseID            string `json:"releaseId"`
+	SessionVersion       int64  `json:"sessionVersion"`
+	WorkflowID           string `json:"workflowId"`
+}
+
+type ProtocolSessionReconcileResult struct {
+	ProtocolSessionID string     `json:"protocolSessionId"`
+	Round             RoundClass `json:"round"`
+	Status            TaskStatus `json:"status"`
+	WaitingReason     string     `json:"waitingReason"`
+}
+
+// Actual original Session snapshot. The Activity result freezes this query round into
+// history, not into a new authority.
+type ProtocolSessionReconcileRound struct {
+	SessionVersion   int64                    `json:"sessionVersion"`
+	State            ProtocolSessionViewState `json:"state"`
+	WriteObservation *WriteObservationClass   `json:"writeObservation,omitempty"`
+}
+
+// DD-90: immutable first UNKNOWN input for the original Session's one Workflow.
+type ProtocolSessionReconcileTarget struct {
+	ActionDefinitionID   string `json:"actionDefinitionId"`
+	ActionExecutionID    string `json:"actionExecutionId"`
+	BaseRevision         string `json:"baseRevision"`
+	BindingID            string `json:"bindingId"`
+	CorrelationRef       string `json:"correlationRef"`
+	NativeObjectRef      string `json:"nativeObjectRef"`
+	ProjectionGeneration int64  `json:"projectionGeneration"`
+	ProtocolSessionID    string `json:"protocolSessionId"`
+	ReleaseID            string `json:"releaseId"`
+	SessionVersion       int64  `json:"sessionVersion"`
+	WorkflowID           string `json:"workflowId"`
+}
+
 type ResourceProvisionAdvanceRequest struct {
 	CancelRequested bool                                  `json:"cancelRequested"`
 	RunID           string                                `json:"runId"`
@@ -4387,12 +5088,12 @@ const (
 type ErrorClass string
 
 const (
-	Conflict          ErrorClass = "CONFLICT"
-	ErrorClassBLOCKED ErrorClass = "BLOCKED"
-	ErrorClassDENIED  ErrorClass = "DENIED"
-	ErrorClassUNKNOWN ErrorClass = "UNKNOWN"
-	Limit             ErrorClass = "LIMIT"
-	Precondition      ErrorClass = "PRECONDITION"
+	ErrorClassBLOCKED  ErrorClass = "BLOCKED"
+	ErrorClassCONFLICT ErrorClass = "CONFLICT"
+	ErrorClassDENIED   ErrorClass = "DENIED"
+	ErrorClassUNKNOWN  ErrorClass = "UNKNOWN"
+	Limit              ErrorClass = "LIMIT"
+	Precondition       ErrorClass = "PRECONDITION"
 )
 
 type VariantKind string
@@ -4430,6 +5131,79 @@ const (
 	ExternalExecutionStatusUNKNOWN   ExternalExecutionStatus = "UNKNOWN"
 	PendingDispatch                  ExternalExecutionStatus = "PENDING_DISPATCH"
 	Succeeded                        ExternalExecutionStatus = "SUCCEEDED"
+)
+
+type Phase string
+
+const (
+	Accepted      Phase = "ACCEPTED"
+	PhaseCONFLICT Phase = "CONFLICT"
+	PhaseFAILED   Phase = "FAILED"
+	PhaseUNKNOWN  Phase = "UNKNOWN"
+	Started       Phase = "STARTED"
+)
+
+type TedMode string
+
+const (
+	Edit TedMode = "EDIT"
+	View TedMode = "VIEW"
+)
+
+type Locale string
+
+const (
+	En   Locale = "en"
+	ZhCN Locale = "zh-CN"
+)
+
+type Theme string
+
+const (
+	Dark  Theme = "DARK"
+	Light Theme = "LIGHT"
+)
+
+type Method string
+
+const (
+	Get  Method = "GET"
+	Post Method = "POST"
+)
+
+type DecisionEnum string
+
+const (
+	DecisionALLOW DecisionEnum = "ALLOW"
+)
+
+type NativeState string
+
+const (
+	NativeStateABSENT  NativeState = "ABSENT"
+	NativeStateACTIVE  NativeState = "ACTIVE"
+	NativeStateEXPIRED NativeState = "EXPIRED"
+)
+
+type NativeOperation string
+
+const (
+	NativeOperationOBSERVE NativeOperation = "OBSERVE"
+	NativeOperationOPEN    NativeOperation = "OPEN"
+	NativeOperationREAD    NativeOperation = "READ"
+	TokenObserve           NativeOperation = "TOKEN_OBSERVE"
+	TokenRevoke            NativeOperation = "TOKEN_REVOKE"
+	Write                  NativeOperation = "WRITE"
+)
+
+type ProtocolWriteReceiptState string
+
+const (
+	PurpleCONFLICT ProtocolWriteReceiptState = "CONFLICT"
+	PurpleDIRTY    ProtocolWriteReceiptState = "DIRTY"
+	PurpleFAILED   ProtocolWriteReceiptState = "FAILED"
+	PurpleSAVED    ProtocolWriteReceiptState = "SAVED"
+	PurpleUNKNOWN  ProtocolWriteReceiptState = "UNKNOWN"
 )
 
 type NativeScopeResult string
@@ -4528,14 +5302,14 @@ const (
 type CapabilityRequiredDeclaration string
 
 const (
-	Cancel         CapabilityRequiredDeclaration = "CANCEL"
-	Meter          CapabilityRequiredDeclaration = "METER"
-	Observe        CapabilityRequiredDeclaration = "OBSERVE"
-	OnlineEditing  CapabilityRequiredDeclaration = "ONLINE_EDITING"
-	ReadEdge       CapabilityRequiredDeclaration = "READ_EDGE"
-	RevisionQuery  CapabilityRequiredDeclaration = "REVISION_QUERY"
-	TenantDelete   CapabilityRequiredDeclaration = "TENANT_DELETE"
-	VersionedModel CapabilityRequiredDeclaration = "VERSIONED_MODEL"
+	Cancel                               CapabilityRequiredDeclaration = "CANCEL"
+	CapabilityRequiredDeclarationOBSERVE CapabilityRequiredDeclaration = "OBSERVE"
+	Meter                                CapabilityRequiredDeclaration = "METER"
+	OnlineEditing                        CapabilityRequiredDeclaration = "ONLINE_EDITING"
+	ReadEdge                             CapabilityRequiredDeclaration = "READ_EDGE"
+	RevisionQuery                        CapabilityRequiredDeclaration = "REVISION_QUERY"
+	TenantDelete                         CapabilityRequiredDeclaration = "TENANT_DELETE"
+	VersionedModel                       CapabilityRequiredDeclaration = "VERSIONED_MODEL"
 )
 
 type ResultExposureMode string
@@ -4660,9 +5434,9 @@ const (
 type GrantState string
 
 const (
+	PurpleEXPIRED GrantState = "EXPIRED"
+	PurpleREVOKED GrantState = "REVOKED"
 	StateACTIVE   GrantState = "ACTIVE"
-	StateEXPIRED  GrantState = "EXPIRED"
-	StateREVOKED  GrantState = "REVOKED"
 	StateREVOKING GrantState = "REVOKING"
 )
 
@@ -4707,7 +5481,7 @@ type AgentMemoryEntryPageState string
 const (
 	BoundExceeded AgentMemoryEntryPageState = "BOUND_EXCEEDED"
 	Complete      AgentMemoryEntryPageState = "COMPLETE"
-	StateUNKNOWN  AgentMemoryEntryPageState = "UNKNOWN"
+	FluffyUNKNOWN AgentMemoryEntryPageState = "UNKNOWN"
 )
 
 type AgentMemoryReadViewState string
@@ -4859,6 +5633,7 @@ const (
 type AutomationState string
 
 const (
+	AutomationStateDELETED  AutomationState = "DELETED"
 	AutomationStateDISABLED AutomationState = "DISABLED"
 	AutomationStateDRAFT    AutomationState = "DRAFT"
 	Enabled                 AutomationState = "ENABLED"
@@ -4884,17 +5659,19 @@ const (
 type WorkflowKind string
 
 const (
-	AgentInstallation      WorkflowKind = "AGENT_INSTALLATION"
-	BuzzIdentityProjection WorkflowKind = "BUZZ_IDENTITY_PROJECTION"
-	ComponentBinding       WorkflowKind = "COMPONENT_BINDING"
-	ComponentDisable       WorkflowKind = "COMPONENT_DISABLE"
-	ComponentRelease       WorkflowKind = "COMPONENT_RELEASE"
-	MembershipProjection   WorkflowKind = "MEMBERSHIP_PROJECTION"
-	MembershipRevocation   WorkflowKind = "MEMBERSHIP_REVOCATION"
-	ResourceProvision      WorkflowKind = "RESOURCE_PROVISION"
-	SecretRefRehome        WorkflowKind = "SECRET_REF_REHOME"
-	TenantLifecycle        WorkflowKind = "TENANT_LIFECYCLE"
-	WorkspaceLifecycle     WorkflowKind = "WORKSPACE_LIFECYCLE"
+	AgentInstallation        WorkflowKind = "AGENT_INSTALLATION"
+	BuzzIdentityProjection   WorkflowKind = "BUZZ_IDENTITY_PROJECTION"
+	ComponentAction          WorkflowKind = "COMPONENT_ACTION"
+	ComponentBinding         WorkflowKind = "COMPONENT_BINDING"
+	ComponentDisable         WorkflowKind = "COMPONENT_DISABLE"
+	ComponentRelease         WorkflowKind = "COMPONENT_RELEASE"
+	MembershipProjection     WorkflowKind = "MEMBERSHIP_PROJECTION"
+	MembershipRevocation     WorkflowKind = "MEMBERSHIP_REVOCATION"
+	ProtocolSessionReconcile WorkflowKind = "PROTOCOL_SESSION_RECONCILE"
+	ResourceProvision        WorkflowKind = "RESOURCE_PROVISION"
+	SecretRefRehome          WorkflowKind = "SECRET_REF_REHOME"
+	TenantLifecycle          WorkflowKind = "TENANT_LIFECYCLE"
+	WorkspaceLifecycle       WorkflowKind = "WORKSPACE_LIFECYCLE"
 )
 
 type CapabilityContractStatus string
@@ -5056,6 +5833,23 @@ const (
 	StatusPROVISIONING ToolStatus = "PROVISIONING"
 )
 
+type ProtocolSessionViewState string
+
+const (
+	Admitted         ProtocolSessionViewState = "ADMITTED"
+	Closed           ProtocolSessionViewState = "CLOSED"
+	FluffyCONFLICT   ProtocolSessionViewState = "CONFLICT"
+	FluffyDIRTY      ProtocolSessionViewState = "DIRTY"
+	FluffyEXPIRED    ProtocolSessionViewState = "EXPIRED"
+	FluffyFAILED     ProtocolSessionViewState = "FAILED"
+	FluffyREVOKED    ProtocolSessionViewState = "REVOKED"
+	FluffySAVED      ProtocolSessionViewState = "SAVED"
+	Opening          ProtocolSessionViewState = "OPENING"
+	ReadOnly         ProtocolSessionViewState = "READ_ONLY"
+	StateOPEN        ProtocolSessionViewState = "OPEN"
+	TentacledUNKNOWN ProtocolSessionViewState = "UNKNOWN"
+)
+
 type CreateActionKey string
 
 const (
@@ -5138,6 +5932,13 @@ const (
 	AdapterProtocolOperationValidateBinding      AdapterProtocolOperation = "validate_binding"
 )
 
+type NativeDocumentSelectionActionKey string
+
+const (
+	FileStorageOpenEditV1 NativeDocumentSelectionActionKey = "file_storage.open_edit@v1"
+	FileStorageOpenViewV1 NativeDocumentSelectionActionKey = "file_storage.open_view@v1"
+)
+
 // ApprovalPolicy.owner_requirement（.design/03 §4）。
 type ApprovalOwnerRequirement string
 
@@ -5151,8 +5952,8 @@ const (
 type ApprovalSelfApproval string
 
 const (
-	Allow                    ApprovalSelfApproval = "ALLOW"
-	ApprovalSelfApprovalDENY ApprovalSelfApproval = "DENY"
+	ApprovalSelfApprovalALLOW ApprovalSelfApproval = "ALLOW"
+	ApprovalSelfApprovalDENY  ApprovalSelfApproval = "DENY"
 )
 
 type AutomationScheduleSource string

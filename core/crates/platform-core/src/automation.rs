@@ -17,10 +17,12 @@ use crate::{
 
 pub(crate) const ACTION: &str = "automation.run";
 
+pub(crate) mod manual;
 pub(crate) mod post_message;
 mod schedule;
 pub(crate) mod step_approval;
 mod webhook_secret;
+pub(crate) use manual::submit_manual;
 pub(crate) use schedule::admit_schedule;
 pub(crate) use schedule::converge_scope_schedules;
 pub(crate) use schedule::interval as schedule_spec;
@@ -403,6 +405,7 @@ pub(crate) fn validate_management_params(
         | Semantic::AutomationEnable
         | Semantic::AutomationPause
         | Semantic::AutomationDisable
+        | Semantic::AutomationDelete
         | Semantic::AutomationRotateWebhookSecret => {
             p.workspace_id.is_none()
                 && p.executor_installation_resource_id.is_none()
@@ -530,7 +533,8 @@ pub(crate) async fn management_target(
     ) {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
-    if (sem == Semantic::AutomationPause && row.automation_state != "ENABLED")
+    if row.automation_state == "DELETED"
+        || (sem == Semantic::AutomationPause && row.automation_state != "ENABLED")
         || (sem == Semantic::AutomationEnable && row.automation_state == "ENABLED")
         || (sem == Semantic::AutomationDisable && row.automation_state == "DISABLED")
     {
@@ -626,11 +630,9 @@ async fn management_installation(
     step_approval::validate_policy(tx, tenant, policy, version, true).await?;
     let requested: contracts::ContentClass = serde_json::from_value(requested)
         .map_err(|_| Refusal::Unavailable("Installation 已发布 Version 不符合共享契约".into()))?;
-    if crate::agent_version::reply_to_channel(&requested)?
-        != (content.get("resultTarget").and_then(Value::as_str) == Some("CHANNEL"))
-    {
-        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
-    }
+    // Validate the registered AgentVersion policy, without using the ordinary
+    // Agent's output location to override the frozen Automation/source contract.
+    crate::agent_version::reply_to_channel(&requested)?;
     if content.pointer("/action/kind").and_then(Value::as_str) == Some("POST_MESSAGE") {
         Ok(())
     } else {
@@ -668,6 +670,9 @@ pub(crate) async fn management_prewrite(
     let row = management_resource(tx, ae.tenant_id, ae.target_id, true)
         .await?
         .ok_or(Refusal::Precondition(ReasonCode::TargetNotFound))?;
+    if row.automation_state == "DELETED" {
+        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
     if !crate::agent_definition::active_owner(tx, ae.tenant_id, row.owner_principal_id).await?
         || !management_projection(g, &row).await?
     {
@@ -780,8 +785,11 @@ pub(crate) async fn management_prewrite(
             .await?;
             Ok(())
         }
-        Semantic::AutomationPause | Semantic::AutomationDisable => {
-            if sem == Semantic::AutomationDisable {
+        Semantic::AutomationPause | Semantic::AutomationDisable | Semantic::AutomationDelete => {
+            if matches!(
+                sem,
+                Semantic::AutomationDisable | Semantic::AutomationDelete
+            ) {
                 webhook_secret::freeze(g, tx, ae, &row).await?;
             }
             sqlx::query("update catalog.automation_definition set state=$2,version=version+1 where resource_id=$1")
@@ -792,6 +800,13 @@ pub(crate) async fn management_prewrite(
                 .execute(&mut **tx)
                 .await?;
             schedule::freeze(tx, ae, &row, None, None, sem).await?;
+            if sem == Semantic::AutomationDelete {
+                let intents: bool = sqlx::query_scalar("select parameters ?| array['scheduleIntent','webhookSecretIntent'] from admission.action_execution where id=$1")
+                    .bind(ae.id).fetch_one(&mut **tx).await?;
+                if !intents {
+                    tombstone(tx, ae).await?;
+                }
+            }
             Ok(())
         }
         _ => Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
@@ -962,7 +977,7 @@ pub(crate) async fn defer_management_dispatch(
          set dispatch_state=case when parameters ?| array['scheduleIntent','webhookSecretIntent']
            then 'NOT_DISPATCHED' else dispatch_state end
          where id=$1 and gate_state='ALLOWED' and dispatch_state='DISPATCHED'
-           and action_key in ('automation.enable','automation.pause','automation.disable','automation.rotate_webhook_secret')
+           and action_key in ('automation.enable','automation.pause','automation.disable','automation.delete','automation.rotate_webhook_secret')
          returning coalesce(parameters ?| array['scheduleIntent','webhookSecretIntent'],false)",
     )
     .bind(id)
@@ -1004,6 +1019,10 @@ async fn complete_management_intent(
         .await?;
         return Ok(());
     }
+    if ae.action_key == "automation.delete" && parameters["webhookSecretIntent"]["aborting"] != true
+    {
+        tombstone(tx, ae).await?;
+    }
     sqlx::query("update catalog.resource set projection_action_execution_id=null where id=$1 and projection_action_execution_id=$2")
         .bind(ae.target_id).bind(ae.id).execute(&mut **tx).await?;
     let outcome = if parameters["webhookSecretIntent"]["aborting"] == true {
@@ -1012,6 +1031,29 @@ async fn complete_management_intent(
         Ok(())
     };
     governance::record_dispatch(tx, ae.id, def.audit_class(), outcome, Vec::new()).await?;
+    Ok(())
+}
+
+/// Only the original management transaction / last native receipt reaches this
+/// tombstone. Resource permissions and every admitted run remain untouched.
+async fn tombstone(
+    tx: &mut Transaction<'_, Postgres>,
+    ae: &governance::Execution,
+) -> Result<(), Refusal> {
+    let changed = sqlx::query(
+        "update catalog.automation_definition d set state='DELETED',version=d.version+1
+        from catalog.resource r where d.resource_id=$1 and r.id=d.resource_id and r.tenant_id=$2
+          and d.state='DISABLED' and d.schedule_id is null and d.webhook_secret_ref is null
+          and (r.projection_action_execution_id is null or r.projection_action_execution_id=$3)",
+    )
+    .bind(ae.target_id)
+    .bind(ae.tenant_id)
+    .bind(ae.id)
+    .execute(&mut **tx)
+    .await?;
+    if changed.rows_affected() != 1 {
+        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
     Ok(())
 }
 
@@ -1448,7 +1490,7 @@ const RUN: &str = "select r.id resource_id,r.tenant_id,d.workspace_id,r.version 
       and r.application_binding_id is null and r.state='ACTIVE' and r.projection_action_execution_id is null
       and type.status='ACTIVE' and d.enabled_at is not null
       and (($2::uuid is null and d.state='ENABLED') or ($2::uuid is not null
-        and d.state in ('ENABLED','PAUSED','DISABLED') and invocation.id is not null
+        and d.state in ('ENABLED','PAUSED','DISABLED','DELETED') and invocation.id is not null
         and invocation.status in ('CREATED','DISPATCHING','RUNNING','UNKNOWN') and not invocation.cancel_pending))
       and t.state='ACTIVE' and w.state='ACTIVE' and v.state='PUBLISHED' and a.state='PUBLISHED'
       and a.type_key='automation.version' and a.projection_action_execution_id is null
@@ -1715,11 +1757,12 @@ struct FrozenInvocation {
     delegation_id: Uuid,
     source_event_id: String,
     root_event_id: String,
+    source_kind: String,
 }
 
 const FROZEN_INVOCATION_SQL: &str = "select i.automation_resource_id,i.automation_version_asset_id,i.action_execution_id,a.operation_id,
             a.action_version,i.agent_version_asset_id,i.projection_generation,i.delegation_id,
-            i.source_event_id,i.root_event_id
+            i.source_event_id,i.root_event_id,i.source_kind
          from catalog.agent_invocation i join admission.action_execution a on a.id=i.action_execution_id
          where i.id=$1 and not i.cancel_pending
            and (($6 and not $5 and $3::text is null and i.status in ('CREATED','DISPATCHING','UNKNOWN')
@@ -1869,9 +1912,22 @@ async fn recheck_invocation(
     {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
-    if row.trigger.get("kind").and_then(Value::as_str) == Some("SCHEDULE") {
+    if frozen.source_kind == "MANUAL" {
+        if !manual::frozen_source(&ae, &frozen.source_event_id, &frozen.root_event_id) {
+            return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+        }
+        manual::fresh_owner(
+            g,
+            tx,
+            row.tenant_id,
+            row.workspace_id,
+            row.resource_id,
+            row.owner_principal_id,
+        )
+        .await?;
+    } else if frozen.source_kind == "SCHEDULE" {
         schedule::frozen_source(g, tx, &ae, &frozen).await?;
-    } else {
+    } else if frozen.source_kind == "BUZZ_EVENT" {
         let author = ae
             .parameters
             .as_ref()
@@ -1886,6 +1942,8 @@ async fn recheck_invocation(
             .and_then(Value::as_str)
             .ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))?;
         source_human(g, tx, &runtime_scope(&row), author, pubkey).await?;
+    } else {
+        return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
     fresh_executor(state, tx, &row).await?;
     let revision = fresh(g, tx, &row, &def, Some(frozen.operation_id)).await?;
@@ -2522,18 +2580,67 @@ async fn admit(
     event: &Event,
     author: Uuid,
 ) -> Result<(), Refusal> {
-    let idempotency = Uuid::new_v5(&snapshot.resource_id, event.id.to_hex().as_bytes());
-    let existed: bool = sqlx::query_scalar(
-        "select exists(select 1 from admission.action_execution
-        where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3)",
+    admit_source(state, snapshot, def, AdmissionSource::Relay(event, author))
+        .await
+        .map(|_| ())
+}
+
+enum AdmissionSource<'a> {
+    Relay(&'a Event, Uuid),
+    Manual(
+        &'a crate::bff::ExecutionContext,
+        &'a contracts::ActionCommand,
+    ),
+}
+
+async fn admit_source(
+    state: &ServiceState,
+    snapshot: &Run,
+    def: &Definition,
+    origin: AdmissionSource<'_>,
+) -> Result<Uuid, Refusal> {
+    let (idempotency, source, root, source_kind, author) = match &origin {
+        AdmissionSource::Relay(event, author) => {
+            let source = event.id.to_hex();
+            let root = collab_bridge::nip10::parse_thread_markers(&event.tags)
+                .resolve()
+                .map(|(root, _)| root)
+                .unwrap_or_else(|| source.clone());
+            (
+                Uuid::new_v5(&snapshot.resource_id, source.as_bytes()),
+                source,
+                root,
+                "BUZZ_EVENT",
+                *author,
+            )
+        }
+        AdmissionSource::Manual(ctx, command) => {
+            let key = Uuid::parse_str(&command.idempotency_key)
+                .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
+            let source = manual::source(ctx.tenant_principal_id, snapshot.resource_id, key);
+            (
+                key,
+                source.clone(),
+                source,
+                "MANUAL",
+                ctx.tenant_principal_id,
+            )
+        }
+    };
+    let existed: Option<Uuid> = sqlx::query_scalar(
+        "select id from admission.action_execution
+        where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3",
     )
     .bind(snapshot.tenant_id)
     .bind(snapshot.owner_principal_id)
     .bind(idempotency)
-    .fetch_one(&state.pool)
+    .fetch_optional(&state.pool)
     .await?;
-    if existed {
-        return Ok(());
+    if let Some(id) = existed {
+        if let AdmissionSource::Manual(_, command) = &origin {
+            manual::check_replay(&state.pool, id, command).await?;
+        }
+        return Ok(id);
     }
     let ready = if snapshot.action.get("kind").and_then(Value::as_str) == Some("POST_MESSAGE") {
         Ok(None)
@@ -2565,27 +2672,43 @@ async fn admit(
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
     // Tenant 串行边界里再次去重；这里是新 AE，尚不存在可先锁的 execution。
-    let existed: bool = sqlx::query_scalar(
-        "select exists(select 1 from admission.action_execution
-        where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3)",
+    let existed: Option<Uuid> = sqlx::query_scalar(
+        "select id from admission.action_execution
+        where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3",
     )
     .bind(row.tenant_id)
     .bind(row.owner_principal_id)
     .bind(idempotency)
-    .fetch_one(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await?;
-    if existed {
-        return Ok(());
+    if let Some(id) = existed {
+        if let AdmissionSource::Manual(_, command) = &origin {
+            manual::check_replay(&mut *tx, id, command).await?;
+        }
+        return Ok(id);
     }
-    let root = collab_bridge::nip10::parse_thread_markers(&event.tags)
-        .resolve()
-        .map(|(root, _)| root)
-        .unwrap_or_else(|| event.id.to_hex());
-    let parameters = json!({"targetVersion":row.resource_version,"automationVersionAssetId":row.automation_version_asset_id,
+    let mut parameters = json!({"targetVersion":row.resource_version,"automationVersionAssetId":row.automation_version_asset_id,
         "automationVersion":row.automation_version,"agentVersionAssetId":row.agent_version_asset_id,
-        "projectionGeneration":row.projection_generation,"sourceEventId":event.id.to_hex(),
-        "rootEventId":root,"sourcePrincipalId":author,"sourcePubkey":event.pubkey.to_hex(),
+        "projectionGeneration":row.projection_generation,"sourceEventId":source,
+        "rootEventId":root,"sourcePrincipalId":author,
         "delegationId":row.delegation_id});
+    match &origin {
+        AdmissionSource::Relay(event, _) => {
+            parameters["sourcePubkey"] = json!(event.pubkey.to_hex())
+        }
+        AdmissionSource::Manual(ctx, command) => {
+            // The BFF proves the HUMAN owner; no client chooses a Grant, pin,
+            // Agent actor, Relay event, or output location.
+            if row.owner_principal_id != ctx.tenant_principal_id
+                || row.human_identity_id != Some(ctx.human_identity_id)
+                || command.resource_version != Some(i64::from(row.resource_version))
+            {
+                return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+            }
+            parameters["sourceKind"] = json!(source_kind);
+            parameters["manualRequest"] = manual::request(command)?;
+        }
+    }
     let ae = governance::open_automation_execution(
         &mut tx,
         Actor {
@@ -2611,18 +2734,41 @@ async fn admit(
         }) {
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
-        source_human(
-            &state.governance,
-            &mut tx,
-            &runtime_scope(&row),
-            author,
-            &event.pubkey.to_hex(),
-        )
-        .await?;
+        match &origin {
+            AdmissionSource::Relay(event, _) => {
+                source_human(
+                    &state.governance,
+                    &mut tx,
+                    &runtime_scope(&row),
+                    author,
+                    &event.pubkey.to_hex(),
+                )
+                .await?
+            }
+            AdmissionSource::Manual(_, _) => {
+                manual::fresh_owner(
+                    &state.governance,
+                    &mut tx,
+                    row.tenant_id,
+                    row.workspace_id,
+                    row.resource_id,
+                    row.owner_principal_id,
+                )
+                .await?
+            }
+        }
         fresh_executor(state, &mut tx, &row).await?;
         fresh(&state.governance, &mut tx, &row, def, None).await
     }
     .await;
+    if source_kind == "MANUAL" {
+        if let Err(Refusal::Unavailable(message)) = &result {
+            // No invocation/native run has been started: roll back the unknown
+            // admission, so the same client key may recheck instead of leaving
+            // an EVALUATING AE with no durable executor to reconcile it.
+            return Err(Refusal::Unavailable(message.clone()));
+        }
+    }
     state
         .governance
         .record_automation_decision(
@@ -2638,22 +2784,30 @@ async fn admit(
         return if matches!(error, Refusal::Unavailable(_)) {
             Err(error)
         } else {
-            Ok(())
+            Ok(ae.id)
         };
     }
-    let invocation = Uuid::new_v4();
-    let workflow = crate::component_task::workflow_id(
-        "AGENT_TASK",
-        row.tenant_id,
-        &invocation.to_string(),
-        row.automation_version,
-    );
+    let invocation = if source_kind == "MANUAL" {
+        Uuid::new_v5(&row.resource_id, source.as_bytes())
+    } else {
+        Uuid::new_v4()
+    };
+    let workflow = if source_kind == "MANUAL" {
+        manual::workflow(row.tenant_id, row.resource_id, &source)
+    } else {
+        crate::component_task::workflow_id(
+            "AGENT_TASK",
+            row.tenant_id,
+            &invocation.to_string(),
+            row.automation_version,
+        )
+    };
     sqlx::query("insert into catalog.agent_session
         (tenant_id,workspace_id,root_event_id,installation_resource_id,agent_version_asset_id,
-         projection_generation,core_memory_state,status) values($1,$2,$3,$4,$5,$6,'UNREADABLE','PENDING')
+         projection_generation,core_memory_state,status,source_kind) values($1,$2,$3,$4,$5,$6,'UNREADABLE','PENDING',$7)
         on conflict(workspace_id,root_event_id,installation_resource_id) do nothing")
         .bind(row.tenant_id).bind(row.workspace_id).bind(&root).bind(row.executor_installation_resource_id)
-        .bind(row.agent_version_asset_id).bind(row.projection_generation).execute(&mut *tx).await?;
+        .bind(row.agent_version_asset_id).bind(row.projection_generation).bind(source_kind).execute(&mut *tx).await?;
     let same: bool = sqlx::query_scalar(
         "select agent_version_asset_id=$4 and projection_generation=$5
         and status in ('PENDING','ACTIVE') from catalog.agent_session
@@ -2671,11 +2825,11 @@ async fn admit(
     }
     sqlx::query("insert into catalog.agent_invocation
         (id,tenant_id,workspace_id,root_event_id,source_event_id,installation_resource_id,agent_version_asset_id,
-         projection_generation,delegation_id,automation_resource_id,automation_version_asset_id,action_execution_id,workflow_id,status)
-        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'CREATED')")
-        .bind(invocation).bind(row.tenant_id).bind(row.workspace_id).bind(&root).bind(event.id.to_hex())
+         projection_generation,delegation_id,automation_resource_id,automation_version_asset_id,action_execution_id,workflow_id,status,source_kind)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'CREATED',$14)")
+        .bind(invocation).bind(row.tenant_id).bind(row.workspace_id).bind(&root).bind(&source)
         .bind(row.executor_installation_resource_id).bind(row.agent_version_asset_id).bind(row.projection_generation)
-        .bind(row.delegation_id).bind(row.resource_id).bind(row.automation_version_asset_id).bind(ae.id).bind(&workflow)
+        .bind(row.delegation_id).bind(row.resource_id).bind(row.automation_version_asset_id).bind(ae.id).bind(&workflow).bind(source_kind)
         .execute(&mut *tx).await?;
     sqlx::query("insert into projection.workflow_ref
         (workflow_id,workflow_type,workflow_version,kind,tenant_id,workspace_id,operation_id,action_execution_id,projection_state)
@@ -2688,7 +2842,8 @@ async fn admit(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    dispatch(state, invocation).await
+    dispatch(state, invocation).await?;
+    Ok(ae.id)
 }
 
 async fn dispatch(state: &ServiceState, id: Uuid) -> Result<(), Refusal> {
@@ -2733,17 +2888,47 @@ async fn dispatch(state: &ServiceState, id: Uuid) -> Result<(), Refusal> {
         if !active {
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
-        let row = run(&mut tx, resource, None).await?;
+        // The admission is already durable. Disable/delete prevent new runs,
+        // not this frozen one; every original Grant/scope check still applies.
+        let row = run(&mut tx, resource, Some(id)).await?;
         if row.automation_version_asset_id != version
             || row.agent_version_asset_id != agent_version
             || row.projection_generation != generation
             || ae.action_version != def.version
-            || ae.frozen_target_version() != Some(row.resource_version)
+            || ae
+                .frozen_target_version()
+                .is_none_or(|version| version <= 0)
         {
             return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
         }
         let used:bool=sqlx::query_scalar("select exists(select 1 from admission.delegation_use where delegation_id=$1 and operation_id=$2)")
             .bind(row.delegation_id).bind(ae.operation_id).fetch_one(&mut *tx).await?;
+        if ae
+            .parameters
+            .as_ref()
+            .and_then(|p| p.get("sourceKind"))
+            .and_then(Value::as_str)
+            == Some("MANUAL")
+        {
+            let source = ae
+                .parameters
+                .as_ref()
+                .and_then(|p| p.get("sourceEventId"))
+                .and_then(Value::as_str)
+                .ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))?;
+            if !manual::frozen_source(&ae, source, source) {
+                return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+            }
+            manual::fresh_owner(
+                &state.governance,
+                &mut tx,
+                row.tenant_id,
+                row.workspace_id,
+                row.resource_id,
+                row.owner_principal_id,
+            )
+            .await?;
+        }
         fresh_executor(state, &mut tx, &row).await?;
         let revision = fresh(
             &state.governance,

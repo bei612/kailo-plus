@@ -471,7 +471,8 @@ The same Agent now exposes only its owner-mode Unix API proxy, using its origina
 AppRole in memory, without a token sink, cache or network listener. The exact
 KV version is read afresh, and its actual request ID is returned for Core's
 existing audit verification. Native source
-`/volumes/kailo/.references/openbao/internal/command/agentproxyshared/cache/listener.go`
+`/volumes/kailo/.references/openbao/internal/command/agentproxyshared/cache/listener.go::StartListener`
+at fixed commit `735723da5628148f232497a48a35a137b6512103`
 requires socket mode, user and group together before constructing the Unix
 permission configuration; the deployment now supplies all three from the same
 explicit UID/GID. This is not a second secret broker.
@@ -531,3 +532,250 @@ lifecycle is no longer an unimplemented always-refusing endpoint, but these
 fixture results do not prove a live binding ACTIVE. The native browser's own
 query path still has no Human platform Action producer; the machine consumer
 must not be represented as completion of that separate entry path.
+
+## Standalone native startup and internal callback delivery (2026-10-05)
+
+This independent slice starts from assembly tree
+`9e1de0b71754f83516dbd41b714d5e29603181de`; it does not overwrite the
+already integrated HUMAN ComponentTask producer. DD-87/DD-93 and
+`08` SS-WRN-IDENTITY/SS-WRN-GOVERNANCE keep the original native UI, database
+and service pipeline independent. No platform database is opened here.
+
+Source facts are from fixed GenBI
+`c5f02a0391c87420dba78632dcd86073710deb72`:
+`wren-ui/src/apollo/server/config.ts::defaultConfig/getConfig` supplied public
+encryption defaults; `wren-ui/Dockerfile::CMD` started native Knex then Next;
+`docker/docker-compose.yaml::services` shared one volume between SQLite,
+Engine and Qdrant. `wren-ai-service/src/providers/engine/wren.py::WrenUI.execute_sql`
+and `wren-ai-service/src/force_deploy.py::force_deploy` called the original
+GraphQL endpoint without authentication. With the previously delivered JOSE
+middleware, that native callback was correctly refused, not a reason to exempt
+GraphQL or send a platform user's token.
+
+Four-step impact: (1) consume only component-specific controlled files and
+explicit deployment metadata; (2) load the native DATA_KEY before the original
+native Knex migration/Next process and separate native volumes; (3) use the issuer's
+standard client-credentials grant in the two real native AI callback consumers,
+with dedicated audience/instance authorization still checked by existing JOSE;
+(4) missing credentials, mismatched endpoint, token denial or redirect do not
+send an unauthenticated query, and a failed migration does not start Next.
+No Action/Workflow/permission/schema/registry authority changes. The source
+manifest only registers the actual changed AI-service image build target beside
+the UI target; its artifact remains `none` until a real source build.
+
+The original Compose entry now explicitly delivers required AI startup variables,
+native OIDC registration and file paths. It cannot default to an unmodified UI
+or AI image. The AI recipe now includes its existing committed Poetry lock.
+Image digest provenance and the original Python base/OS dependency resolution
+still need release preparation and a real build; no reproducibility claim is
+made from this edit. Existing installations must preserve their database and
+keys before the new volume names are adopted; no automatic migration, key
+rotation or deletion was performed.
+
+Post-implementation checks used the existing fixed 10ad SDK, UID 1000,
+4 CPU / 8 GiB / equal memory+swap limit, a dedicated Data cache copy, and no
+installation. Native startup Node tests passed 5/5; Python stdlib tests passed
+6/6, including the actual WrenUI and force_deploy production consumers with
+HTTP/config dependencies substituted. These are not real IdP, aiohttp network,
+Knex migration, production Node 18/Python 3.12 image or model acceptance.
+SDK versions are Node 24 / Python 3.13. No full or product build was started.
+
+Removing the actual migration failure gate produced one failure/Node exit 1.
+Removing the actual WrenUI Authorization/Origin dispatch produced one failure/
+Python exit 1. Both production files were apply_patch restored, cmp 0; final
+startup/provider checks passed 11/11, exit 0. Original Compose `config --quiet`
+with synthetic metadata and empty fixture credential files exited 0 (only the
+upstream obsolete-version warning); missing DATA_KEY directory configuration
+exited 1. This parsing test never started services or read real credentials.
+
+Receipts under `codex-wren-standalone-20261005.7HvM3h`:
+
+- `mutation.log`: `ec20e9df0c1d76c278b9d7cf09bb9113f28713b4421d1e928f5af601e87ad282`.
+- `final-targeted.log`: `55a5e66c98606072a92f01ce36ee0907d5139ece9ea187bec9bc782baf053b0b`.
+- `compose-config.log`: `16f261ca7d0f12f7e4f12e6f1586fb78cf924239aaacc1d283a660e058a463de`.
+- `compose-missing-key.log`: `8a1ee7c27f2153d4faa3841af20cfe36f8086215eeaf68fc3cdd5584f348a5ca`.
+
+Required live facts remain explicit: source-built UI and AI images plus matching
+Engine/Ibis/bootstrap/Qdrant digests; TLS native origin; real dedicated browser
+and native service OIDC registrations with signed instance access; owner-only
+retained DATA_KEY/client files; actual native model/embedding/data-source
+configuration and database permissions. The optional governed-query overlay
+still requires approved release/binding/SecretRef/resource facts. No such facts,
+commit/push, deployment or working GenBI question-to-SQL E2E are asserted here.
+
+### Native startup configuration correction
+
+Review found unsupported restrictions in the new entrypoint: a fixed SQLite
+path, database type, bind address, and input passphrase length range. These
+restrictions were removed. At the same fixed upstream commit above,
+`wren-ui/knexfile.js` selects `pg` with `PG_URL`, otherwise native SQLite with
+`SQLITE_FILE`; `wren-ui/src/apollo/server/utils/encryptor.ts::Encryptor.createSecretKey`
+derives the AES key with PBKDF2, without the invented input-length rule.
+The entrypoint now preserves original database/network configuration; Compose
+delivers the native settings explicitly. File permission, nonempty key and
+control-character checks remain. The native OIDC requirement is unchanged.
+
+The original `force_deploy` backoff could repeat a mutation after a lost reply.
+It was removed; such a failure propagates from that invocation. This is not
+cross-restart deduplication: the unchanged original AI entrypoint and Compose
+restart policy can invoke the optional `SHOULD_FORCE_DEPLOY` startup operation
+again. Native deployment state must be inspected before recovery. No platform
+workflow or native receipt has been fabricated for this startup operation.
+
+After these changes, the same idle 4 CPU/8 GiB fixed SDK ran the actual startup
+and callback targets: Node 7/7 and Python 7/7, exit 0. Tests load the original
+Knex config for PostgreSQL and a custom SQLite path, check configured address/
+port preservation, and inject loss of the actual force_deploy response. They
+do not connect to a real DB/issuer. Restoring the hardcoded address caused one
+failure (exit 1); adding automatic re-entry after the lost response caused one
+error (exit 1). Both production sources were apply_patch restored, cmp 0,
+then all 14 tests passed again. Original Compose parsing with synthetic
+metadata also exited 0; no service was started.
+
+Correction receipts in the same private directory:
+
+- `correction-config-mutation.log`: `42b2e012b4d7e3187bab919ed0d1dc0bd6d31fce732b71057d2ab8a3911d941e`.
+- `correction-retry-mutation.log`: `8199c1294d0bb86e501b32bc08af688d3de9c357e40321bb4037f451d07ae6bc`.
+- `correction-restored.log`: `8e5dfa7ae416aa82ad7c1f571c2c0787613738c08b25254987210575488a37d4`.
+- `correction-compose.log`: `05f794ec465edad9ad943c7a7897023b243bcde0ad7337c5ebf570adb62c25cc`.
+
+### Combined source consumer corrections (20:25 UTC)
+
+The standalone delta was integrated with the HUMAN query producer without
+replacing that producer or the shared native-page surface. The original UI
+port is now consumed by the UI listener, native Gateway upstream and AI
+callback together; previously only the listener changed, leaving two callers
+on the old port. This changes deployment plumbing, not a new endpoint,
+identity, workflow or database authority. Empty required port remains a
+configuration failure rather than a default route to another instance.
+
+At the same fixed GenBI commit above,
+`wren-ui/src/apollo/server/services/deployService.ts::DeployService.deploy`
+returns `{status, error}`, not a Boolean. The original force-deploy consumer
+now requires an actual `SUCCESS` status without errors; HTTP 200, null data,
+FAILED, IN_PROGRESS and unknown status do not print confirmation. The supplied
+runtime template also leaves the original optional `SHOULD_FORCE_DEPLOY`
+empty, preventing forced mutation replay on ordinary container restart while
+preserving native UI deployment. Explicit operator recovery still requires
+native-state inspection. These runtime defaults and retained encryption keys
+are recorded in apps/07 section 1.2, not imposed as Core startup dependencies.
+
+Actual combined checks in the same fixed 10ad SDK, 4 CPU/8 GiB, owner 1000,
+Data-only execution copy: original Node target 7/7 and Python target 7/7,
+including seven deployment-response subcases, exited 0. Removing the actual
+SUCCESS guard in the execution copy produced three assertion failures and
+exit 1; apply_patch restoration and cmp against the candidate exited 0, then
+both targets passed again. Original Docker Compose JSON with a nondefault
+fixture port confirmed all three consumers matched; restoring the hardcoded
+Gateway port produced AssertionError/exit 1. Restored configuration cmp and
+the same assertions, including empty startup force-deploy, exited 0. The
+upstream obsolete Compose version warning remains. No real credentials,
+services, native data, model calls or live deployment were involved.
+
+Combined receipts under `codex-component-runtime-integration-20261005.lciVUS`:
+`wren-startup-union-restored.log` SHA256
+`949d83591f629452229640cba1177edba089c1cb0c63bc456412dca9a3aa1e4a`;
+`wren-deploy-status-mutation.log` SHA256
+`e3d4cd0b8200ff63575e88c0eeea78746f8e29f50aa3c2b27b94d3e62642b4a0`.
+These checks do not replace whole-batch full, production-version builds,
+native authentication/database/model E2E or actual source commit and push.
+
+### Final native credential correction and HUMAN receipt (2026-10-05)
+
+The native service credential reader no longer invents a 4096-byte maximum
+for the issuer's owner-only delivered client secret. The approved native
+identity delivery remains the only source; regular-file/no-symlink/owner-only,
+nonempty and control-character rejection are unchanged. This aligns with the
+same native DATA_KEY reader, which does not impose an unsupported length.
+No new configuration knob, credential, account or permission was created.
+The deployment guide now consistently describes WREN_UI_PORT rather than
+claiming Docker EXPOSE overrides it. No database/schema migration is involved.
+
+In the existing fixed 10ad SDK, owner 1000, 4 CPU/4 GiB/no extra swap,
+the original Python entry ran 8 tests, exit 0. Reintroducing the removed
+length check in the isolated execution copy caused exactly the new actual
+credential-consumer case to fail, exit 1; byte restoration/cmp and the same
+8 tests then exited 0. These are synthetic transport fixtures, not issuer
+or native deployment acceptance. Receipts in the combined Data directory:
+`wren-identity-config-mutation.log` SHA256
+`22e49e244fd3e52bc8f548f32c0c43fafae506b3f67306d9450636a61cfc3c75`;
+`wren-identity-config-restored.log` SHA256
+`3d05864adaa7a067c6dd8f488b76741afad7cdf90e6cdbe6566339424de57b0f`.
+
+The already-running original HUMAN query target also terminated exit 0:
+four HUMAN cases passed, nine other cases were excluded by the HUMAN filter.
+It covers the actual native handler's HUMAN reference and proven-unsent
+refusals, not all 13 cases or a deployed datasource. Original receipt
+`wren-human-union-restored.log` SHA256
+`e3c371aa5f54c8317b6440f7a9d80fab4e3927b3ba46ff2c71c28025b2318f59`.
+
+### Native release/runtime configuration projection (2026-10-05)
+
+Four-step change record: (1) Fixed GenBI
+`c5f02a0391c87420dba78632dcd86073710deb72` already supplies the native
+Compose/AI Dockerfile and this fork's signed native UI/service identity readers.
+The existing fork manifest already registers `data-query-ui` and
+`data-query-ai-service` for the original `tools/build-upstream.sh`.
+(2) The runtime example still instructed a second `component.env`, and generic
+`PROJECT_DIR`, `PLATFORM`, `HOST_PORT`, `DB_TYPE` and telemetry inputs could
+consume unrelated platform values. The AI Dockerfile's original Python 3.12.0
+base tags were floating. These are delivery defects, not a missing native UI.
+(3) Keep the original separate native Compose; its non-secret WREN-prefixed
+inputs now come from the sole `deploy/local/.env`. Derive the native issuer
+from `OIDC_ISSUER` and callback from `WREN_PUBLIC_ORIGIN`; retain dedicated
+native client/cookie and instance authorization. The original PostgreSQL
+`PG_URL` comes only from a component-specific credential file. Paths reject
+implicit creation. Qdrant is on an internal data network with only its original
+AI client. The optional existing query overlay consumes the same deployment
+file and original binding/query metadata, not a new registry or grant producer.
+(4) Preserve native UI, AI/Engine/Ibis/bootstrap pipeline, native databases,
+keys and model configuration. No Core model/approval/schema or identity changes.
+
+Compatibility: explicitly launch the original native Compose with
+`--env-file deploy/local/.env` from apps, preserving the existing native Compose
+project name and retained volumes for an established installation. Do not apply
+this as an implicit database/storage migration. Wren is deliberately not included
+in the platform Compose: required-variable interpolation runs even for disabled
+profiles, so an include would make absent optional Wren block Core startup.
+Native config/secret paths and actual source-built UI/AI/Gateway image references
+are required for Wren launch only. This change neither creates default business
+identities nor assigns instance/native database permissions.
+
+Registry metadata was read using original `docker buildx imagetools inspect`,
+each exit 0; no image build/pull or service startup occurred. Python remains
+the exact original 3.12.0: bookworm index
+`sha256:5eba34eb667213abb09a4c470365180d5706076f76945e49b963ac15d428a684`
+and slim-bookworm index
+`sha256:19a6235339a74eca01227b03629f63b6f5020abc21142436eced6ec3a9839a76`.
+The sole example pins the original unchanged dependencies at Engine/Ibis
+0.22.0, bootstrap 0.1.5 and Qdrant 1.11.0 using their actual registry indices;
+these are dependencies, not source-built Kailo UI/AI acceptance. UI/AI manifest
+source/artifact digests remain `none` until the original release builds complete.
+OS/package downloads in the native recipe have not been proven reproducible.
+
+Postimplementation checks used the existing fixed 10ad SDK, owner 1000,
+4 CPU/8 GiB/no extra swap, Python 3.13 for JSON assertions, plus the original
+Docker Compose parser. No dependencies were downloaded or new runner installed.
+Synthetic non-secret metadata confirmed 18/18 actual native configuration
+consumers, a nondefault UI port shared by listener/Gateway/AI callback, isolation
+from conflicting generic platform variables, preserved private data and no
+extra host ports. Replacing the production Qdrant network with the general
+native network produced exit 1; apply_patch restored the exact bytes and all
+18 passed again, exit 0. Original PostgreSQL credential-file projection and
+seven existing query-overlay assertions passed, exit 0. Missing UI image,
+native config directory, controlled DB credential file or public port each
+failed config, exit 1, rather than selecting an original image/default identity.
+The first assertion run incorrectly treated the parser's omitted default-false
+`create_host_path` JSON field as true; that exit 1 is preserved separately.
+Correcting that representation assertion required no production workaround.
+The upstream obsolete Compose version warning is retained.
+
+Receipts are under `codex-web-protocol-surface-20261005.Sv3Qhy/apps/`
+`wren-release.OtFNCI/`. Restored `compose-restored.log` SHA256
+`b77dfcf5f4dcb6af209b640f4e3fb26eba29c877342c20d2558c526438e594cd`;
+production `compose-network-mutation.log` SHA256
+`1146746a80c78e7d0071367b7fd7215f2e024357f6f6612ea9ac2eb58873e617`.
+Config parsing is not native login, datasource readonly-role evidence, model
+execution, Temporal/business termination, governed disclosure or deployment
+acceptance. No heavybuild, full, live configuration/DB/permission change,
+model call, product deployment or GitNexus execution was performed.

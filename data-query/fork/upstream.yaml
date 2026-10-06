@@ -12,6 +12,13 @@ artifacts:
     inputs: [data-query/wren-ui/]
     source_digest: none
     artifact_digest: none
+  - name: data-query-ai-service
+    kind: image
+    build_context: data-query/wren-ai-service
+    build_dockerfile: data-query/wren-ai-service/docker/Dockerfile
+    inputs: [data-query/wren-ai-service/]
+    source_digest: none
+    artifact_digest: none
 source_facts: [SF-WRN-07, SF-WRN-08, SF-WRN-09]
 source_seams: [SS-WRN-IDENTITY, SS-WRN-GOVERNANCE]
 compatibility_evidence: [data-query/fork/verify/native-integration.md]

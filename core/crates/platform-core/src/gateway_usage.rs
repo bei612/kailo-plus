@@ -36,6 +36,8 @@ struct Page {
     untracked_requests: Option<i64>,
     #[serde(default)]
     request_set_complete: Option<bool>,
+    #[serde(default)]
+    credential_revoked: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -71,10 +73,23 @@ impl RequestSet {
         principal: Uuid,
         batch: i64,
     ) -> Result<bool, &'static str> {
+        self.absorb_set(page, Some(trace), principal, batch)
+    }
+
+    fn absorb_set(
+        &mut self,
+        page: Page,
+        trace: Option<&str>,
+        principal: Uuid,
+        batch: i64,
+    ) -> Result<bool, &'static str> {
         page.validate(self.after, batch)?;
+        if trace.is_none() && page.credential_revoked != Some(true) {
+            return Err("Application Gateway credential 尚未原生撤销");
+        }
         let count = page
             .submitted_requests
-            .filter(|count| *count > 0)
+            .filter(|count| *count > 0 || (*count == 0 && trace.is_none()))
             .ok_or("Gateway native dispatch 集合缺失或为空；不能证明零用量")?;
         if page.request_set_complete != Some(true)
             || page.pending_requests != Some(0)
@@ -89,7 +104,7 @@ impl RequestSet {
         let exhausted = page.entries.is_empty();
         let user = principal.to_string();
         for entry in page.entries {
-            if entry.trace_id.as_deref() != Some(trace)
+            if trace.is_some_and(|trace| entry.trace_id.as_deref() != Some(trace))
                 || entry.agentgateway_user.as_deref() != Some(user.as_str())
                 || entry.dispatch_attempt.is_none_or(|attempt| attempt < 0)
                 || !self.ids.insert(entry.id)
@@ -146,17 +161,21 @@ struct TurnFacts {
 
 #[derive(FromRow)]
 struct Correlation {
-    invocation_id: Uuid,
+    invocation_id: Option<Uuid>,
     operation_id: Uuid,
     tenant_id: Uuid,
-    workspace_id: Uuid,
-    installation_resource_id: Uuid,
-    agent_version_asset_id: Uuid,
+    workspace_id: Option<Uuid>,
+    installation_resource_id: Option<Uuid>,
+    agent_version_asset_id: Option<Uuid>,
     gateway_principal_id: Uuid,
     customer_id: String,
     namespace: String,
     subject_key: String,
     meter_projection: Value,
+    component_binding_id: Option<Uuid>,
+    component_release_id: Option<Uuid>,
+    component_projection_generation: Option<i64>,
+    binding_attribution: bool,
 }
 
 #[derive(FromRow)]
@@ -258,7 +277,8 @@ fn memory_child_meters(
 const CORRELATION: &str = "select t.invocation_id,t.operation_id,t.tenant_id,t.workspace_id,
  i.installation_resource_id,i.agent_version_asset_id,t.gateway_principal_id,
  t.openmeter_customer_id customer_id,t.openmeter_namespace namespace,t.subject_key,
- t.meter_projection
+ t.meter_projection,NULL::uuid component_binding_id,NULL::uuid component_release_id,
+ NULL::bigint component_projection_generation,false binding_attribution
  from projection.agent_model_trace t join catalog.agent_invocation i on i.id=t.invocation_id
  join admission.action_execution a on a.id=i.action_execution_id
  where t.trace_id=$1 and a.operation_id=t.operation_id and a.tenant_id=t.tenant_id
@@ -618,23 +638,91 @@ pub(crate) async fn record_invocation_usage(
         .map_err(|_| "Invocation usage 提交结果不明")
 }
 
+/// DD-92 attribution resolves the native authenticated user against an original
+/// frozen binding projection, including revoked projections with late usage.
+/// Missing/unknown trace is an attribution gap, never an exemption from billing.
+async fn application_correlation(
+    tx: &mut Transaction<'_, Postgres>,
+    entry: &Entry,
+) -> Result<Option<Correlation>, &'static str> {
+    let Some(user) = entry
+        .agentgateway_user
+        .as_deref()
+        .and_then(|v| Uuid::parse_str(v).ok())
+    else {
+        return Ok(None);
+    };
+    let rows: Vec<Correlation> = sqlx::query_as("select NULL::uuid invocation_id,
+        a.operation_id,b.tenant_id,b.workspace_id,NULL::uuid installation_resource_id,
+        NULL::uuid agent_version_asset_id,b.service_principal_id gateway_principal_id,
+        p.model_projection->>'customerId' customer_id,p.model_projection->>'namespace' namespace,
+        p.model_projection->>'subject' subject_key,p.model_projection->'meters' meter_projection,
+        b.id component_binding_id,b.component_release_id,p.generation component_projection_generation,
+        true binding_attribution
+        from projection.application_runtime p join catalog.application_binding b on b.id=p.binding_id
+        join admission.action_execution a on a.id=p.action_execution_id and a.target_id=b.id
+          and a.action_key='application_binding.create' and a.tenant_id=b.tenant_id
+          and a.workspace_id is not distinct from b.workspace_id
+        join identity.service_principal s on s.principal_id=b.service_principal_id
+          and s.component_binding_kind='APPLICATION' and s.component_binding_id=b.id
+        where b.service_principal_id=$1 and p.model_projection is not null and p.model_dispatch_started
+          and p.model_projection->>'gatewayPrincipalId'=s.principal_id::text
+          and p.model_projection->>'operationId'=a.operation_id::text
+          and p.component_release_id=b.component_release_id")
+        .bind(user).fetch_all(&mut **tx).await.map_err(|_|"Application model attribution unavailable")?;
+    let mut rows = rows.into_iter();
+    let Some(mut origin) = rows.next() else {
+        return Ok(None);
+    };
+    if rows.next().is_some() {
+        return Err("Application native identity has ambiguous generations");
+    }
+    if let Some(trace) = entry.trace_id.as_deref().filter(|s| !s.is_empty()) {
+        let parents:Vec<(Uuid,Option<Uuid>)>=sqlx::query_as("select distinct a.operation_id,a.workspace_id
+            from admission.action_execution a join admission.external_execution e on e.action_execution_id=a.id
+            join identity.principal actor on actor.id=a.actor_principal_id and actor.tenant_id=a.tenant_id
+            left join catalog.agent_invocation i on i.id::text=a.parameters->>'invocationId'
+              and i.runtime_turn_id=a.parameters->>'runtimeTurnId'
+            left join projection.agent_model_trace t on t.invocation_id=i.id and t.operation_id=a.operation_id
+            where a.component_binding_id=$1 and a.component_projection_generation=$2
+              and a.tenant_id=$3 and ($4::uuid is null or a.workspace_id=$4)
+              and (t.trace_id=$5 or (actor.kind='HUMAN' and a.actor_principal_id=a.initiator_principal_id
+                and a.parameters->>'componentActionKind'='COMPONENT_ACTION'
+                and replace(a.operation_id::text,'-','')=$5)) and a.dispatch_state='DISPATCHED'
+              and e.component_binding_id=a.component_binding_id
+              and e.component_projection_generation=a.component_projection_generation
+              and e.operation_id=a.operation_id")
+            .bind(origin.component_binding_id).bind(origin.component_projection_generation)
+            .bind(origin.tenant_id).bind(origin.workspace_id).bind(trace)
+            .fetch_all(&mut **tx).await.map_err(|_|"Application model parent evidence unavailable")?;
+        if let [(operation, workspace)] = parents.as_slice() {
+            origin.operation_id = *operation;
+            origin.workspace_id = *workspace;
+            origin.binding_attribution = false;
+        } else {
+            return Err("Application supplied trace lacks one exact original operation");
+        }
+    }
+    Ok(Some(origin))
+}
+
 /// 来源、scope、meter 和数量在 checkpoint 前一起持久。所有重读只接受同一事件。
 async fn correlate(
     tx: &mut Transaction<'_, Postgres>,
     entry: &Entry,
     namespace: &str,
 ) -> Result<(), &'static str> {
-    let trace = entry
-        .trace_id
-        .as_deref()
-        .filter(|trace| !trace.is_empty())
-        .ok_or("Gateway durable usage 缺 Core trace")?;
-    let origin: Correlation = sqlx::query_as(CORRELATION)
-        .bind(trace)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|_| "Gateway trace 归因不可读")?
-        .ok_or("Gateway trace 没有同 Invocation/operation 写前意图")?;
+    let trace = entry.trace_id.as_deref().filter(|trace| !trace.is_empty());
+    let origin = if let Some(origin) = application_correlation(tx, entry).await? {
+        origin
+    } else {
+        sqlx::query_as::<_, Correlation>(CORRELATION)
+            .bind(trace.ok_or("Gateway durable usage 缺 Core trace")?)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|_| "Gateway trace 归因不可读")?
+            .ok_or("Gateway trace 没有同 Invocation/operation 写前意图")?
+    };
     let gateway_user = origin.gateway_principal_id.to_string();
     if origin.namespace != namespace
         || entry.agentgateway_user.as_deref() != Some(gateway_user.as_str())
@@ -669,9 +757,18 @@ async fn correlate(
     if meters.is_empty() {
         return Err("Gateway usage 冻结 meter 为空");
     }
-    let dimensions = json!({"tenant_id":origin.tenant_id,"workspace_id":origin.workspace_id,
-        "operation_id":origin.operation_id,"agent_installation_resource_id":origin.installation_resource_id,
-        "agent_version_asset_id":origin.agent_version_asset_id,"provider":provider,"model":model});
+    let dimensions = if let Some(binding) = origin.component_binding_id {
+        json!({"tenant_id":origin.tenant_id,"workspace_id":origin.workspace_id,
+            "operation_id":origin.operation_id,"component_binding_id":binding,
+            "component_release_id":origin.component_release_id,
+            "component_projection_generation":origin.component_projection_generation,
+            "attribution":if origin.binding_attribution {"BINDING"} else {"OPERATION"},
+            "provider":provider,"model":model})
+    } else {
+        json!({"tenant_id":origin.tenant_id,"workspace_id":origin.workspace_id,
+            "operation_id":origin.operation_id,"agent_installation_resource_id":origin.installation_resource_id,
+            "agent_version_asset_id":origin.agent_version_asset_id,"provider":provider,"model":model})
+    };
     let mut data = dimensions.clone();
     for (key, quantity) in [
         ("inputTokens", entry.usage.input_tokens),
@@ -708,13 +805,18 @@ async fn correlate(
         sqlx::query("insert into outbox.usage_event
             (id,invocation_id,operation_id,tenant_id,workspace_id,openmeter_customer_id,
              agent_installation_resource_id,source_type,source_id,native_seq,meter_key,subject_key,quantity,
-             occurred_at,dimensions,openmeter_event_id,event,settlement_status)
-             values($1,$2,$3,$4,$5,$6,$7,'GATEWAY_DURABLE_USAGE',$8,$15,$9,$10,$11,$12,$13,$1,$14,'PENDING_PUBLISH')
+             occurred_at,dimensions,openmeter_event_id,event,settlement_status,
+             component_binding_id,component_release_id,component_projection_generation,openmeter_namespace)
+             values($1,$2,$3,$4,$5,$6,$7,'GATEWAY_DURABLE_USAGE',$8,$15,$9,$10,$11,$12,$13,$1,$14,'PENDING_PUBLISH',
+                $16,$17,$18,$19)
              on conflict(tenant_id,source_type,source_id,meter_key) do nothing")
             .bind(id).bind(origin.invocation_id).bind(origin.operation_id).bind(origin.tenant_id)
             .bind(origin.workspace_id).bind(&origin.customer_id).bind(origin.installation_resource_id)
             .bind(entry.id).bind(&meter.key).bind(&origin.subject_key).bind(quantity).bind(entry.completed_at)
-            .bind(&dimensions).bind(&event).bind(entry.seq).execute(&mut **tx).await.map_err(|_| "Gateway UsageEvent 不可持久")?;
+            .bind(&dimensions).bind(&event).bind(entry.seq)
+            .bind(origin.component_binding_id).bind(origin.component_release_id)
+            .bind(origin.component_projection_generation).bind(&origin.namespace)
+            .execute(&mut **tx).await.map_err(|_| "Gateway UsageEvent 不可持久")?;
         let frozen: (Uuid,Value,i64) = sqlx::query_as("select id,event,native_seq from outbox.usage_event
             where tenant_id=$1 and source_type='GATEWAY_DURABLE_USAGE' and source_id=$2 and meter_key=$3")
             .bind(origin.tenant_id).bind(entry.id).bind(&meter.key).fetch_one(&mut **tx).await
@@ -722,17 +824,20 @@ async fn correlate(
         if frozen != (id, event, entry.seq) {
             return Err("Gateway stable ID 的冻结 usage 内容不一致");
         }
+        let mut evidence = vec![
+            Evidence::new(EvidenceKind::UsageEventId, id),
+            Evidence::new(EvidenceKind::AgentgatewayUsageId, entry.id),
+        ];
+        if let Some(trace) = trace {
+            evidence.push(Evidence::new(EvidenceKind::TraceId, trace));
+        }
         usage_audit(
             tx,
             origin.operation_id,
             &format!("usage:{id}:PENDING_PUBLISH"),
             "RECONCILIATION",
             "PENDING_PUBLISH",
-            vec![
-                Evidence::new(EvidenceKind::UsageEventId, id),
-                Evidence::new(EvidenceKind::AgentgatewayUsageId, entry.id),
-                Evidence::new(EvidenceKind::TraceId, trace),
-            ],
+            evidence,
         )
         .await?;
     }
@@ -1021,6 +1126,16 @@ impl Ingress {
         batch: i64,
         trace: Option<&str>,
     ) -> Result<Page, &'static str> {
+        self.read_identity_page(after, batch, trace, None).await
+    }
+
+    async fn read_identity_page(
+        &self,
+        after: i64,
+        batch: i64,
+        trace: Option<&str>,
+        principal: Option<Uuid>,
+    ) -> Result<Page, &'static str> {
         let token = self
             .tokens
             .token()
@@ -1033,6 +1148,9 @@ impl Ingress {
             .query(&[("after", after), ("limit", batch)]);
         if let Some(trace) = trace {
             request = request.query(&[("traceId", trace)]);
+        }
+        if let Some(principal) = principal {
+            request = request.query(&[("gatewayUser", principal.to_string())]);
         }
         let response = request
             .send()
@@ -1069,7 +1187,56 @@ impl Ingress {
         }
         let mut requests = RequestSet::default();
         loop {
-            let page = self.read_page(requests.after, batch, Some(trace)).await?;
+            let page = self
+                .read_identity_page(requests.after, batch, Some(trace), Some(principal))
+                .await?;
+            if requests.absorb(page, trace, principal, batch)? {
+                return Ok(requests.entries);
+            }
+        }
+    }
+
+    async fn application_requests(
+        &self,
+        principal: Uuid,
+        batch: i64,
+    ) -> Result<Vec<Entry>, &'static str> {
+        if batch <= 0 {
+            return Err("Gateway usage 治理对账批次无效");
+        }
+        let mut requests = RequestSet::default();
+        loop {
+            let page = self
+                .read_identity_page(requests.after, batch, None, Some(principal))
+                .await?;
+            if requests.absorb_set(page, None, principal, batch)? {
+                return Ok(requests.entries);
+            }
+        }
+    }
+
+    async fn attributed_application_requests(
+        &self,
+        trace: &str,
+        principal: Uuid,
+        batch: i64,
+    ) -> Result<Vec<Entry>, &'static str> {
+        let mut requests = RequestSet::default();
+        loop {
+            let page = self
+                .read_identity_page(requests.after, batch, Some(trace), Some(principal))
+                .await?;
+            // Called only after the original child EE's native terminal proof.
+            // No matching trace means no operation-attributed set, NOT zero
+            // binding usage: untraced calls retain independent binding billing.
+            if requests.submitted.is_none()
+                && page.entries.is_empty()
+                && page.submitted_requests == Some(0)
+                && page.pending_requests == Some(0)
+                && page.untracked_requests == Some(0)
+            {
+                return Ok(Vec::new());
+            }
             if requests.absorb(page, trace, principal, batch)? {
                 return Ok(requests.entries);
             }
@@ -1272,6 +1439,253 @@ impl Ingress {
 /// CHECK completion consumes the actual native dispatch set and the separately
 /// acknowledged COUNT when the frozen action is Automation. This is committed metering, not invoice finalization
 /// or STRICT reservation release. An empty native set is never zero usage proof.
+/// Read-only feature evidence from the same native durable endpoint. A legacy
+/// Gateway which does not implement the credential/dispatch fence cannot activate
+/// an APPLICATION model binding.
+pub(crate) async fn verify_application_reader(principal: Uuid) -> Result<(), &'static str> {
+    let ingress = Ingress::from_env(&opentelemetry::global::meter("platform-core"))
+        .map_err(|_| "Application native usage reader unavailable")?;
+    let batch = std::env::var("GOVERNANCE_RECONCILE_BATCH")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v > 0)
+        .ok_or("Application model reconciliation batch unavailable")?;
+    let page = tokio::time::timeout(
+        ingress.timeout,
+        ingress.read_identity_page(0, batch, None, Some(principal)),
+    )
+    .await
+    .map_err(|_| "Application native usage reader timed out")??;
+    if page.credential_revoked.is_none()
+        || page.submitted_requests.is_none()
+        || page.pending_requests.is_none()
+        || page.untracked_requests.is_none()
+    {
+        return Err("Gateway application dispatch fence unavailable");
+    }
+    Ok(())
+}
+
+pub(crate) async fn committed_application(
+    pool: &PgPool,
+    openmeter: &OpenMeter,
+    binding: Uuid,
+    generation: i64,
+) -> Result<Option<Value>, &'static str> {
+    let (principal, namespace, projection):(Uuid,String,Value)=sqlx::query_as(
+        "select b.service_principal_id,p.model_projection->>'namespace',p.model_projection
+         from catalog.application_binding b join projection.application_runtime p on p.binding_id=b.id
+         where b.id=$1 and p.generation=$2 and b.state='DISABLING' and p.model_dispatch_started")
+        .bind(binding).bind(generation).fetch_one(pool).await.map_err(|_|"Application model drain scope unavailable")?;
+    if namespace != openmeter.namespace() {
+        return Err("Application model namespace mismatch");
+    }
+    let batch = std::env::var("GOVERNANCE_RECONCILE_BATCH")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v > 0)
+        .ok_or("Application model reconciliation batch unavailable")?;
+    let ingress = Ingress::from_env(&opentelemetry::global::meter("platform-core"))
+        .map_err(|_| "Application native usage reader unavailable")?;
+    let entries = tokio::time::timeout(
+        ingress.timeout,
+        ingress.application_requests(principal, batch),
+    )
+    .await
+    .map_err(|_| "Application native usage observation timed out")??;
+    let meters: Vec<GatewayMeter> = serde_json::from_value(projection["meters"].clone())
+        .map_err(|_| "Application frozen meters unavailable")?;
+    if meters.is_empty() {
+        return Err("Application frozen meter set is empty");
+    }
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|_| "Application usage transaction unavailable")?;
+    let mut expected = HashSet::new();
+    for entry in &entries {
+        correlate(&mut tx, entry, &namespace).await?;
+        for meter in &meters {
+            expected.insert((entry.id, meter.key.clone()));
+        }
+    }
+    let rows:Vec<(Uuid,String,bool)>=sqlx::query_as(
+        "select source_id,meter_key,settlement_status='COMMITTED' and stored_at is not null
+         from outbox.usage_event where component_binding_id=$1 and component_projection_generation=$2
+           and source_type='GATEWAY_DURABLE_USAGE'")
+        .bind(binding).bind(generation).fetch_all(&mut *tx).await.map_err(|_|"Application stored usage unavailable")?;
+    let observed: HashSet<_> = rows.iter().map(|(id, key, _)| (*id, key.clone())).collect();
+    tx.commit()
+        .await
+        .map_err(|_| "Application usage commit outcome unknown")?;
+    if observed != expected || rows.iter().any(|(_, _, committed)| !*committed) {
+        return Ok(None);
+    }
+    let mut ids: Vec<_> = entries.iter().map(|e| e.id).collect();
+    ids.sort_unstable();
+    Ok(Some(
+        json!({"gatewayPrincipalId":principal,"generation":generation,
+        "credentialRevoked":true,"submittedRequests":ids.len(),
+        "requestSetDigest":collab_bridge::limits::canonical_digest(&json!(ids))}),
+    ))
+}
+
+/// The HUMAN component Workflow waits on its own original operation's native
+/// dispatch set and the same outbox stored-at receipts as Agent invocations.
+pub(crate) async fn committed_application_action(
+    pool: &PgPool,
+    openmeter: &OpenMeter,
+    action: Uuid,
+) -> Result<bool, &'static str> {
+    let facts: Option<(Uuid, Uuid, i64, Uuid, String, Value)> = sqlx::query_as(
+        "select a.operation_id,b.id,p.generation,b.service_principal_id,
+           p.model_projection->>'namespace',p.model_projection->'meters'
+         from admission.action_execution a
+         join identity.principal actor on actor.id=a.actor_principal_id and actor.tenant_id=a.tenant_id
+         join admission.external_execution e on e.action_execution_id=a.id and e.operation_id=a.operation_id
+         join catalog.application_binding b on b.id=a.component_binding_id
+         join projection.application_runtime p on p.binding_id=b.id and p.generation=a.component_projection_generation
+         where a.id=$1 and actor.kind='HUMAN' and a.actor_principal_id=a.initiator_principal_id
+           and a.parameters->>'componentActionKind'='COMPONENT_ACTION' and a.dispatch_state='DISPATCHED'
+           and e.component_binding_id=b.id and e.component_projection_generation=p.generation
+           and e.terminal_at is not null and e.platform_status in ('SUCCEEDED','FAILED','CANCELLED')
+           and b.model_call_mode='PLATFORM_LLM_ROUTE' and p.model_dispatch_started")
+        .bind(action).fetch_optional(pool).await.map_err(|_| "HUMAN model operation unavailable")?;
+    let Some((operation, binding, generation, principal, namespace, meters)) = facts else {
+        let mode: Option<String> = sqlx::query_scalar(
+            "select b.model_call_mode from admission.action_execution a
+            join catalog.application_binding b on b.id=a.component_binding_id where a.id=$1",
+        )
+        .bind(action)
+        .fetch_optional(pool)
+        .await
+        .map_err(|_| "HUMAN model scope unavailable")?;
+        return Ok(mode.as_deref() == Some("NONE"));
+    };
+    if namespace != openmeter.namespace() {
+        return Err("HUMAN model namespace mismatch");
+    }
+    let batch = std::env::var("GOVERNANCE_RECONCILE_BATCH")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v > 0)
+        .ok_or("HUMAN model reconciliation batch unavailable")?;
+    let ingress = Ingress::from_env(&opentelemetry::global::meter("platform-core"))
+        .map_err(|_| "HUMAN model native reader unavailable")?;
+    let entries = tokio::time::timeout(
+        ingress.timeout,
+        ingress.attributed_application_requests(&operation.simple().to_string(), principal, batch),
+    )
+    .await
+    .map_err(|_| "HUMAN model usage observation timed out")??;
+    let meters: Vec<GatewayMeter> =
+        serde_json::from_value(meters).map_err(|_| "HUMAN model frozen meters unavailable")?;
+    if meters.is_empty() {
+        return Err("HUMAN model frozen meter set empty");
+    }
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|_| "HUMAN model usage transaction unavailable")?;
+    let mut expected = HashSet::new();
+    for entry in &entries {
+        correlate(&mut tx, entry, &namespace).await?;
+        for meter in &meters {
+            expected.insert((entry.id, meter.key.clone()));
+        }
+    }
+    let rows: Vec<(Uuid, String, bool)> = sqlx::query_as(
+        "select source_id,meter_key,
+        settlement_status='COMMITTED' and stored_at is not null from outbox.usage_event
+        where operation_id=$1 and component_binding_id=$2 and component_projection_generation=$3
+          and source_type='GATEWAY_DURABLE_USAGE' and dimensions->>'attribution'='OPERATION'",
+    )
+    .bind(operation)
+    .bind(binding)
+    .bind(generation)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|_| "HUMAN model stored usage unavailable")?;
+    tx.commit()
+        .await
+        .map_err(|_| "HUMAN model usage commit unknown")?;
+    Ok(rows.iter().all(|(_, _, committed)| *committed)
+        && rows
+            .iter()
+            .map(|(id, key, _)| (*id, key.clone()))
+            .collect::<HashSet<_>>()
+            == expected)
+}
+
+async fn application_model_children(
+    pool: &PgPool,
+    ingress: &Ingress,
+    invocation: Uuid,
+    turn: &str,
+    facts: &SettlementFacts,
+    batch: i64,
+) -> Result<Vec<Uuid>, &'static str> {
+    let bindings:Vec<(Uuid,i64,Uuid,Value)>=sqlx::query_as(
+        "select distinct b.id,p.generation,b.service_principal_id,p.model_projection->'meters'
+         from admission.action_execution child
+         join admission.external_execution e on e.action_execution_id=child.id
+         join catalog.agent_invocation i on i.id::text=child.parameters->>'invocationId'
+           and i.runtime_turn_id=child.parameters->>'runtimeTurnId'
+         join catalog.application_binding b on b.id=child.component_binding_id
+         join projection.application_runtime p on p.binding_id=b.id and p.generation=child.component_projection_generation
+         where i.id=$1 and i.runtime_turn_id=$2 and child.operation_id=$3
+           and child.dispatch_state='DISPATCHED' and p.model_dispatch_started
+           and b.model_call_mode='PLATFORM_LLM_ROUTE'
+           and e.component_binding_id=b.id and e.component_projection_generation=p.generation
+           and e.terminal_at is not null and e.platform_status in ('SUCCEEDED','FAILED','CANCELLED')")
+        .bind(invocation).bind(turn).bind(facts.operation_id).fetch_all(pool).await
+        .map_err(|_|"Application model child projections unavailable")?;
+    let mut ids = Vec::new();
+    for (binding, generation, principal, meters) in bindings {
+        let entries = tokio::time::timeout(
+            ingress.timeout,
+            ingress.attributed_application_requests(&facts.trace_id, principal, batch),
+        )
+        .await
+        .map_err(|_| "Application model child usage observation timed out")??;
+        let meters: Vec<GatewayMeter> =
+            serde_json::from_value(meters).map_err(|_| "Application model meters unavailable")?;
+        if meters.is_empty() {
+            return Err("Application model meter set is empty");
+        }
+        let mut tx = pool
+            .begin()
+            .await
+            .map_err(|_| "Application model child transaction unavailable")?;
+        for entry in &entries {
+            correlate(&mut tx, entry, &facts.namespace).await?;
+            let rows: Vec<(Uuid, String)> = sqlx::query_as(
+                "select id,meter_key from outbox.usage_event
+                 where source_type='GATEWAY_DURABLE_USAGE' and source_id=$1
+                   and component_binding_id=$2 and component_projection_generation=$3
+                   and operation_id=$4 and dimensions->>'attribution'='OPERATION'",
+            )
+            .bind(entry.id)
+            .bind(binding)
+            .bind(generation)
+            .bind(facts.operation_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|_| "Application model child event set unavailable")?;
+            let found: HashSet<_> = rows.iter().map(|(_, key)| key.as_str()).collect();
+            let expected: HashSet<_> = meters.iter().map(|m| m.key.as_str()).collect();
+            if found != expected || rows.len() != meters.len() {
+                return Err("Application model child event set mismatch");
+            }
+            ids.extend(rows.into_iter().map(|(id, _)| id));
+        }
+        tx.commit()
+            .await
+            .map_err(|_| "Application model child usage commit unknown")?;
+    }
+    Ok(ids)
+}
+
 pub(crate) async fn committed_turn(
     pool: &PgPool,
     openmeter: &OpenMeter,
@@ -1310,8 +1724,8 @@ pub(crate) async fn committed_turn(
     }
     let (meters, count) = frozen_turn_meters(
         &facts.action_key,
-        facts.meter_projection,
-        facts.invocation_meter_projection,
+        facts.meter_projection.clone(),
+        facts.invocation_meter_projection.clone(),
         &facts.meters,
     )?;
     let batch = std::env::var("GOVERNANCE_RECONCILE_BATCH")
@@ -1439,6 +1853,11 @@ pub(crate) async fn committed_turn(
     }
     tx.commit().await.map_err(|_| "计量全集关联提交结果不明")?;
     for id in crate::application_execution::committed_children(pool, invocation, turn).await? {
+        ids.push(id);
+        evidence.push(Evidence::new(EvidenceKind::UsageEventId, id));
+        evidence.push(Evidence::new(EvidenceKind::OpenmeterEventId, id));
+    }
+    for id in application_model_children(pool, &ingress, invocation, turn, &facts, batch).await? {
         ids.push(id);
         evidence.push(Evidence::new(EvidenceKind::UsageEventId, id));
         evidence.push(Evidence::new(EvidenceKind::OpenmeterEventId, id));
@@ -1681,6 +2100,55 @@ mod usage_tests {
         assert!(set
             .absorb(page(vec![], 1, 2), &trace, principal, 2)
             .is_err());
+    }
+
+    #[test]
+    fn application_empty_set_requires_native_revocation_not_missing_requests() {
+        let principal = Uuid::new_v4();
+        for revoked in [None, Some(false)] {
+            let mut snapshot = page(vec![], 0, 0);
+            snapshot.credential_revoked = revoked;
+            assert!(RequestSet::default()
+                .absorb_set(snapshot, None, principal, 2)
+                .is_err());
+        }
+        let mut snapshot = page(vec![], 0, 0);
+        snapshot.credential_revoked = Some(true);
+        assert!(RequestSet::default()
+            .absorb_set(snapshot, None, principal, 2)
+            .expect("native tombstone and complete dispatch set"));
+        let mut pending = page(vec![], 0, 1);
+        pending.credential_revoked = Some(true);
+        pending.pending_requests = Some(1);
+        assert!(RequestSet::default()
+            .absorb_set(pending, None, principal, 2)
+            .is_err());
+    }
+
+    #[test]
+    fn application_generation_set_does_not_borrow_an_agent_request_on_same_trace() {
+        let trace = Uuid::new_v4().simple().to_string();
+        let application = Uuid::new_v4();
+        let agent = Uuid::new_v4();
+        let mut snapshot = page(vec![entry(Uuid::new_v4(), 1, &trace, agent)], 1, 1);
+        snapshot.credential_revoked = Some(true);
+        assert!(RequestSet::default()
+            .absorb_set(snapshot, None, application, 2)
+            .is_err());
+
+        // A binding's native outbox also contains requests without any Agent
+        // trace. They remain binding attribution, not a made-up Invocation.
+        let mut native = entry(Uuid::new_v4(), 1, &trace, application);
+        native["traceId"] = Value::Null;
+        let mut snapshot = page(vec![native], 1, 1);
+        snapshot.credential_revoked = Some(true);
+        let mut set = RequestSet::default();
+        assert!(!set.absorb_set(snapshot, None, application, 2).unwrap());
+        let mut end = page(vec![], 1, 1);
+        end.credential_revoked = Some(true);
+        assert!(set.absorb_set(end, None, application, 2).unwrap());
+        assert_eq!(set.entries.len(), 1);
+        assert!(set.entries[0].trace_id.is_none());
     }
 
     #[test]

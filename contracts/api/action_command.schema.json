@@ -10,6 +10,8 @@
     "idempotencyKey"
   ],
   "properties": {
+    "componentAction": {"$ref": "../domain/component_action_input.schema.json"},
+    "protocolSessionOpen":{"$ref":"../domain/protocol_session_open_input.schema.json","description":"Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN identity; no Agent or caller-selected native credentials."},
     "resourceCreate": {"$ref": "../domain/resource_create.schema.json"},
     "actionKey": {
       "type": "string"
@@ -133,7 +135,7 @@
     },
     "explicitConfirmation": {
       "type": "boolean",
-      "description": "EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带"
+      "description": "EXPLICIT 动作或 HUMAN owner 的一次手动 automation.run，由用户在当前目标详情上确认后设为 true；其他动作不得携带。手动运行只提交 resourceId/resourceVersion/workspaceId 与同一幂等键，不选择 Grant、Agent、来源或结果位置。"
     }
   }
 }

@@ -151,7 +151,7 @@ fn pending(records: Vec<StoredRequestLog>) -> PendingBatch {
 
 async fn outbox_ids(backend: &Backend, after: Option<i64>) -> (Vec<(i64, String)>, i64) {
 	let resp = backend
-		.usage_outbox(UsageOutboxRequest { after, limit: None, trace_id: None })
+		.usage_outbox(UsageOutboxRequest { gateway_user: None, after, limit: None, trace_id: None })
 		.await
 		.unwrap();
 	(
@@ -189,7 +189,7 @@ async fn usage_outbox_holds_llm_records_in_commit_order(backend: Backend, _db: T
 
 	// Re-reading is stable, and prompt content is not part of the outbox.
 	let resp = backend
-		.usage_outbox(UsageOutboxRequest {
+		.usage_outbox(UsageOutboxRequest { gateway_user: None,
 			after: None,
 			limit: Some(1),
 			trace_id: None,
@@ -211,8 +211,8 @@ async fn usage_outbox_holds_llm_records_in_commit_order(backend: Backend, _db: T
 	// a completion survives independently and prevents an empty tail claiming zero.
 	let mut admitted = record("admitted", true);
 	admitted.trace_id = Some("5bf92f3577b34da6a3ce929d0e0e4736".to_string());
-	backend.begin_usage(&admitted.id, admitted.trace_id.as_deref(), admitted.started_at, 0).await.unwrap();
-	let request = UsageOutboxRequest { after: None, limit: None, trace_id: admitted.trace_id.clone() };
+	backend.begin_usage(&admitted.id, admitted.trace_id.as_deref(), admitted.started_at, 0, None).await.unwrap();
+	let request = UsageOutboxRequest { gateway_user: None, after: None, limit: None, trace_id: admitted.trace_id.clone() };
 	let before = backend.usage_outbox(request.clone()).await.unwrap();
 	assert!(before.entries.is_empty());
 	assert_eq!((before.submitted_requests, before.pending_requests, before.untracked_requests), (1, 1, 0));
@@ -225,20 +225,20 @@ async fn usage_outbox_holds_llm_records_in_commit_order(backend: Backend, _db: T
 	assert_eq!(after.entries[0].dispatch_attempt, Some(0));
 	assert_eq!((after.submitted_requests, after.pending_requests, after.untracked_requests), (1, 0, 0));
 	assert!(after.request_set_complete);
-	let empty = backend.usage_outbox(UsageOutboxRequest { after: None, limit: None, trace_id: Some("6bf92f3577b34da6a3ce929d0e0e4736".to_string()) }).await.unwrap();
+	let empty = backend.usage_outbox(UsageOutboxRequest { gateway_user: None, after: None, limit: None, trace_id: Some("6bf92f3577b34da6a3ce929d0e0e4736".to_string()) }).await.unwrap();
 	assert_eq!(empty.submitted_requests, 0);
 	assert!(!empty.request_set_complete);
 
 	// A completion with another trace cannot satisfy this accepted request's receipt.
 	admitted.id = "foreign-completion".to_string();
-	backend.begin_usage(&admitted.id, admitted.trace_id.as_deref(), admitted.started_at, 1).await.unwrap();
+	backend.begin_usage(&admitted.id, admitted.trace_id.as_deref(), admitted.started_at, 1, None).await.unwrap();
 	admitted.trace_id = Some("6bf92f3577b34da6a3ce929d0e0e4736".to_string());
 	let mut foreign = pending(vec![admitted]);
 	assert!(flush_log_store_batch(&backend, &mut foreign).await);
-	let not_complete = backend.usage_outbox(UsageOutboxRequest { after: None, limit: None, trace_id: Some("5bf92f3577b34da6a3ce929d0e0e4736".to_string()) }).await.unwrap();
+	let not_complete = backend.usage_outbox(UsageOutboxRequest { gateway_user: None, after: None, limit: None, trace_id: Some("5bf92f3577b34da6a3ce929d0e0e4736".to_string()) }).await.unwrap();
 	assert_eq!((not_complete.submitted_requests, not_complete.pending_requests), (2, 1));
 	assert!(!not_complete.request_set_complete);
-	assert!(backend.usage_outbox(UsageOutboxRequest { after: None, limit: None, trace_id: Some("not-a-trace".to_string()) }).await.is_err());
+	assert!(backend.usage_outbox(UsageOutboxRequest { gateway_user: None, after: None, limit: None, trace_id: Some("not-a-trace".to_string()) }).await.is_err());
 }
 
 async fn failed_flush_keeps_records_until_persisted(backend: Backend, db: TestDb) {
@@ -316,9 +316,65 @@ fn retry_delay_is_capped() {
 	assert_eq!(retry_delay(40), LOG_STORE_RETRY_MAX);
 }
 
+async fn application_dispatch_revocation_keeps_pending_native_effects(backend: Backend, db: TestDb) {
+	use crate::config_store::{ConfigResourceStore, ConfigResourceKind, ConfigResourceUpsertRequest, ConfigResourceUpsert, prepare_resources};
+	use crate::http::apikey::{APIKey, Claims};
+	let pool=match &db {
+		TestDb::Sqlite{pool,..}=>crate::database::DatabasePool::Sqlite(pool.clone()),
+		TestDb::Postgres(pool)=>crate::database::DatabasePool::Postgres(pool.clone()),
+	};
+	let store=ConfigResourceStore::from_pool(pool).await.unwrap();
+	let user=uuid::Uuid::new_v4().to_string();
+	let key=APIKey::new("isolated-application-model-dispatch-fixture");
+	let prepared=prepare_resources(ConfigResourceKind::LlmApiKey,ConfigResourceUpsertRequest{
+		resources:vec![ConfigResourceUpsert{value:serde_json::json!({
+			"keyHash":format!("sha256:{}",key.sha256().as_str()),
+			"metadata":{"user":user,"servicePrincipalId":user,"componentBindingId":uuid::Uuid::new_v4().to_string()},
+			"allowedModels":[]
+		})}]
+	}).unwrap();
+	let created=store.create_prepared(prepared).await.unwrap();
+	let resource=&created.resources[0];
+	let claims=Claims{key,metadata:resource.value["metadata"].clone()};
+	let identity=DispatchIdentity::from_claims(Some(&claims)).unwrap().unwrap();
+	let request=UsageOutboxRequest{gateway_user:Some(user.clone()),..Default::default()};
+	let before=backend.usage_outbox(request.clone()).await.unwrap();
+	assert!(!before.credential_revoked && !before.request_set_complete);
+	let mut completed=record(&uuid::Uuid::new_v4().to_string(),true);
+	completed.agentgateway_user=Some(user.clone());
+	backend.begin_usage(&completed.id,completed.trace_id.as_deref(),completed.started_at,0,Some(&identity)).await.unwrap();
+	store.delete(ConfigResourceKind::LlmApiKey,&resource.id).await.unwrap();
+	assert!(backend.begin_usage("never-dispatched",None,completed.started_at,0,Some(&identity)).await.is_err());
+	let waiting=backend.usage_outbox(request.clone()).await.unwrap();
+	assert!(waiting.credential_revoked);
+	assert_eq!((waiting.submitted_requests,waiting.pending_requests),(1,1));
+	assert!(!waiting.request_set_complete,"a tombstone does not settle an unknown provider outcome");
+	let mut batch=pending(vec![completed]);
+	assert!(flush_log_store_batch(&backend,&mut batch).await);
+	let settled=backend.usage_outbox(request.clone()).await.unwrap();
+	assert!(settled.credential_revoked && settled.request_set_complete);
+	assert_eq!((settled.submitted_requests,settled.pending_requests,settled.untracked_requests),(1,0,0));
+	let absent=backend.usage_outbox(UsageOutboxRequest{gateway_user:Some(uuid::Uuid::new_v4().to_string()),..Default::default()}).await.unwrap();
+	assert!(!absent.credential_revoked && !absent.request_set_complete,"missing identity never proves zero usage");
+	let mut legacy=record(&uuid::Uuid::new_v4().to_string(),true);
+	legacy.agentgateway_user=Some(user);
+	let mut batch=pending(vec![legacy]);
+	assert!(flush_log_store_batch(&backend,&mut batch).await);
+	let untracked=backend.usage_outbox(request).await.unwrap();
+	assert_eq!(untracked.untracked_requests,1);
+	assert!(!untracked.request_set_complete);
+}
+
 macro_rules! backend_tests {
 	($backend:ident, $($attr:meta),*) => {
 		mod $backend {
+			#[tokio::test]
+			$(#[$attr])*
+			async fn application_dispatch_revocation_keeps_pending_native_effects() {
+				let (backend, db) = super::$backend().await;
+				super::application_dispatch_revocation_keeps_pending_native_effects(backend, db).await;
+			}
+
 			#[tokio::test]
 			$(#[$attr])*
 			async fn usage_outbox_holds_llm_records_in_commit_order() {

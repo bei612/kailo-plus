@@ -265,6 +265,9 @@ func (a *TokenHandler) GenerateDocumentAccessToken(req *restful.Request, resp *r
 	if !ok {
 		return errors.WithStack(errors.MissingClaims)
 	}
+	if datRequest.ClientID != "" {
+		return a.generatePlatformDocumentToken(ctx, datRequest.ClientID, readResp.GetNode(), claims, req, resp)
+	}
 
 	permission := "r" // Must be read at least by default !
 	if readResp.Node.GetStringMeta(common.MetaFlagReadonly) == "" {

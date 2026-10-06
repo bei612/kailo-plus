@@ -52,6 +52,7 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY migrations ./migrations
 COPY knexfile.js ./knexfile.js
+COPY docker-entrypoint.mjs ./docker-entrypoint.mjs
 
 # Copy knex and its dependencies from builder to runner
 COPY --from=builder /app/node_modules/knex ./node_modules/knex
@@ -73,4 +74,4 @@ ENV PORT 3000
 
 # server.js is created by next build from the standalone output
 # https://nextjs.org/docs/pages/api-reference/next-config-js/output
-CMD yarn knex migrate:latest && HOSTNAME="0.0.0.0" node server.js
+CMD ["node", "docker-entrypoint.mjs"]

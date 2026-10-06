@@ -1,4 +1,5 @@
-import { Button, Typography } from 'antd';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Button, Input, InputNumber, Typography } from 'antd';
 import SQLCodeBlock from '@/components/code/SQLCodeBlock';
 import PreviewData from '@/components/dataPreview/PreviewData';
 import { COLUMN } from '@/components/table/BaseTable';
@@ -23,6 +24,34 @@ export default function ViewMetadata(props: Props) {
 
   const onPreviewData = () => {
     previewViewData({ variables: { where: { id: viewId } } });
+  };
+
+  const [resourceId, setResourceId] = useState('');
+  const [limit, setLimit] = useState<number | null>(null);
+  const [reference, setReference] = useState('');
+  const [referenceError, setReferenceError] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const selection = useRef(0);
+  useEffect(() => {
+    selection.current++;
+    setReference('');
+    setReferenceError(false);
+    setExporting(false);
+    return () => { selection.current++; };
+  }, [viewId]);
+  const exportReference = async () => {
+    const current = ++selection.current;
+    setExporting(true); setReference(''); setReferenceError(false);
+    try {
+      const query = new URLSearchParams({ resourceId, viewId: String(viewId), limit: String(limit) });
+      const response = await fetch(`/api/platform-query-reference?${query}`, { credentials: 'same-origin', cache: 'no-store' });
+      if (!response.ok) throw new Error('reference unavailable');
+      const value = await response.json();
+      if (value.resourceId !== resourceId || typeof value.nativeObjectRef !== 'string' ||
+        typeof value.nativeRevision !== 'string') throw new Error('invalid reference');
+      if (current === selection.current) setReference(JSON.stringify(value, null, 2));
+    } catch { if (current === selection.current) setReferenceError(true); }
+    finally { if (current === selection.current) setExporting(false); }
   };
 
   // View only can input Name (alias), so it should show alias as Name in metadata.
@@ -72,6 +101,21 @@ export default function ViewMetadata(props: Props) {
             previewData={previewViewDataResult?.data?.previewViewData}
           />
         </div>
+      </div>
+      <div className="mb-6" data-testid="metadata__platform-query-reference">
+        <Typography.Text className="d-block gray-7 mb-2">Kailo governed query reference</Typography.Text>
+        <Typography.Paragraph>
+          Select this existing view and a row limit. Export only a frozen native reference;
+          submit it from Kailo under your own platform session and approvals. No query runs here.
+        </Typography.Paragraph>
+        <Input aria-label="Kailo resource ID" placeholder="Kailo resource ID" value={resourceId}
+          disabled={exporting} onChange={(event) => { selection.current++; setReference(''); setResourceId(event.target.value); }} />
+        <InputNumber aria-label="Query row limit" placeholder="Row limit" precision={0} min={1}
+          value={limit} disabled={exporting} onChange={(value) => { selection.current++; setReference(''); setLimit(value); }} />
+        <Button loading={exporting} disabled={!resourceId.trim() || !Number.isSafeInteger(limit) || limit <= 0}
+          onClick={() => void exportReference()}>Export reference</Button>
+        {referenceError ? <Alert type="error" message="The native reference could not be verified. Nothing was executed." /> : null}
+        {reference ? <Input.TextArea aria-label="Frozen query reference" value={reference} readOnly autoSize /> : null}
       </div>
     </>
   );

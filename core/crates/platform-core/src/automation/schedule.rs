@@ -345,8 +345,10 @@ pub(super) async fn dispatch(
         let old = intent["oldId"].as_str();
         let new = intent["id"].as_str();
         let enabling = sem == governance::Semantic::AutomationEnable;
-        let deleting =
-            sem == governance::Semantic::AutomationDisable || (enabling && new.is_none());
+        let deleting = matches!(
+            sem,
+            governance::Semantic::AutomationDisable | governance::Semantic::AutomationDelete
+        ) || (enabling && new.is_none());
         let clean_old = old.is_some() && (enabling || deleting);
         let (native_id, flag, operation) = if clean_old
             && old != new

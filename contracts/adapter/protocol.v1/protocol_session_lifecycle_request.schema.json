@@ -1,0 +1,13 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"adapter/protocol.v1/protocol_session_lifecycle_request.schema.json",
+  "title":"AdapterProtocolSessionLifecycleRequest",
+  "description":"18 §5.1: observe/cancel the same native document PAT only. No access token, launch descriptor or file bytes.",
+  "type":"object","additionalProperties":false,
+  "required":["protocolSessionId","nativeObjectRef","idempotencyKey"],
+  "properties":{
+    "protocolSessionId":{"type":"string","format":"uuid"},
+    "nativeObjectRef":{"type":"string","minLength":1},
+    "idempotencyKey":{"type":"string","format":"uuid"}
+  }
+}

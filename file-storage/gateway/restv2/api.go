@@ -277,7 +277,7 @@ func (h *Handler) TreeContentRevisionToVersion(ctx context.Context, contentRevis
 		VersionId:   contentRevision.GetVersionId(),
 		Description: contentRevision.GetDescription(),
 		Draft:       contentRevision.GetDraft(),
-		IsHead:      contentRevision.GetIsHead(),
+		IsHead:      contentRevision.GetIsHead() && contentRevision.MatchesCurrentNode(node),
 		MTime:       contentRevision.GetMTime(),
 		Size:        contentRevision.GetSize(),
 		ETag:        contentRevision.GetETag(),

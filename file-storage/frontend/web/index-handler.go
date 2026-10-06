@@ -98,6 +98,9 @@ func (h *IndexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"MAIN_ELEMENT":        "ajxp_desktop",
 		"PRELOADED_BOOT_CONF": bootConf,
 	}
+	if login := nativeOIDCLoginOption(r); login != nil {
+		startParameters["KAILO_OIDC_LOGIN"] = login
+	}
 
 	if regXml, e := xml.Marshal(registry); e == nil {
 		startParameters["PRELOADED_REGISTRY"] = string(regXml)

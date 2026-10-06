@@ -1,0 +1,12 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"adapter/protocol.v1/protocol_session_launch_response.schema.json",
+  "title":"AdapterProtocolSessionLaunchResponse",
+  "description":"18: the original native PAT reference plus transient launch descriptor. This value occurs only in the original execute response; it must not be stored as reconciliation evidence or recovered by reminting a token.",
+  "type":"object","additionalProperties":false,
+  "required":["nativeSessionRef","launchDescriptor"],
+  "properties":{
+    "nativeSessionRef":{"type":"string"},
+    "launchDescriptor":{"$ref":"../../domain/document_launch_descriptor.schema.json"}
+  }
+}

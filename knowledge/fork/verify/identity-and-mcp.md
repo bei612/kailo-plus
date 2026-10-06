@@ -1,8 +1,231 @@
 # Independent knowledge service: identity delivery and MCP boundary
 
-This candidate is not an approved `KNOWLEDGE@v1` implementation, an active
-ApplicationBinding, or an exposed Kailo Tool. It does not modify Core/contracts,
-the current component integration tree, live configuration, or native data.
+## Follow-up: existing native model credential delivery (not deployed)
+
+This independent change follows DD-92 and `.design/03` §8, `.design/07`
+component admission, and `.design/08` §9.2. It depends on the APPLICATION model
+projection batch and the separately frozen authenticated-transport correction;
+it does not change the currently building knowledge/Gateway source inputs.
+
+1. **Authority and original consumer.** The pinned native source is WeKnora
+   `2be7bd40631dda1dd485306038f07a62e9ee287e`. Its
+   `internal/router/routes_infra.go::RegisterModelRoutes` already guards
+   `PUT /models/:id/credentials` with `AdminOrSystemAdmin`.
+   `ModelCredentialsHandler::Put` uses the original
+   `ModelService::GetModelByID/UpdateModelCredentials`; native encryption and
+   native database ownership remain unchanged. `middleware/auth.go::Auth`
+   routes Bearer through the original `ValidateToken`, not the API-key path.
+   The operator helper sends only this short-lived native session, never an
+   `X-API-Key`, a Core identity, or a manufactured model-creation request.
+2. **Impact and actual readers/writers.** The original Core model projection
+   freezes a service-audience `serviceSecretRef` for the exact existing KV
+   locator/version, registered reader, native scope and per-route random nonce.
+   The Core-only SecretRef remains internal for key reconciliation; its audience
+   is not relaxed. `application_binding_native::Adapter::model_reader_delivery`
+   reads the existing controlled AdapterDirectory, including PROTOCOL_PEER.
+   Original `provision.py model-reader` registers that exact read-only AppRole
+   and emits an OpenBao Agent template, without reading/copying a key or creating
+   a namespace/mount/model. Agent's same response provides value, KV version and
+   request ID. OpenBao's pinned `go.mod` selects openbao-template `v1.0.1`;
+   its `dependency/vault_common.go::Secret.RequestID` and
+   `dependency/vault_read.go::fetchSecret` preserve this actual request ID.
+   The service receipt is then verified by the existing
+   `AuditObserver::verify_secret_reads` request/response pair and registered role.
+3. **Side effects and completion.** `provision.py model-delivery` reads controlled
+   input files, validates the existing native tenant/model/name/base URL via
+   native GET, and sends at most one credential PUT when the stored value is
+   known to differ. It rechecks the native row and reads the original credential
+   subresource using a frozen nonce. Native Go and Core use standard HMAC-SHA256
+   over `application-model-key:v1`, native tenant/model and nonce. No value or
+   reusable unscoped key digest is returned. `configured=true` is insufficient:
+   it cannot distinguish the intended fixed KV version from another key. The
+   original runtime row gains an immutable metadata-only receipt (migration
+   `20261005022000`); ACTIVE requires native proof plus original service-read
+   audit, not HTTP success. The old binding scope is filled only at final
+   activation, so provisioning consumes the already frozen native observation
+   instead of requiring that final field prematurely.
+4. **Failures and recovery.** Old native handlers which ignore the new nonce
+   cannot receive a credential through this helper: lack of nonce echo rejects
+   before write. Unknown/mixed request fields, foreign/builtin native models,
+   different nonce/key/scope/version, missing service reader or audit evidence
+   reject. A lost write acknowledgement is recovered only by read-back; retries
+   first read the current value and do not blindly repeat a write. A proof from
+   another nonce/generation cannot activate this generation. Replaying the
+   identical verified receipt is explicitly idempotent ACK recovery, not a new
+   operation. Existing verified receipts survive an audit-file rotation; they
+   cannot be replaced or erased. Downgrade refuses while new projection/delivery
+   facts exist. The constraint is NOT VALID for historical rows; existing ACTIVE
+   rows without a delivery receipt are denied by the new runtime admission
+   consumer, not silently backfilled or claimed delivered.
+
+The controlled input contains `projection` (the original generation's nonsecret
+model projection) and `models` (existing native model ID and exact endpoint for
+each route). It is not a second catalog. Use the original deployment operator
+to read the exact binding/generation metadata and merge the resulting
+`model-delivery-receipt.json` into that peer/adapter's
+`modelCredentialDeliveries` in the existing controlled directory. The helper
+does not write Core's business DB, mutate the directory automatically, or set a
+binding ACTIVE. Registered reader audience, native response and audit metadata
+are all independently checked by Core. An operator must have a legitimate
+native Admin session; no login or credentials are created by this code.
+
+Implementation-first evidence is in the existing native entrypoint suite and
+native handler tests, not another verification service. The original Python
+suite first exited 1 because its execution copy lacked `render_proxy.awk`;
+after including that unchanged production input, 20 tests exited 0. Removing
+the production HMAC comparison made the wrong-key case fail (exit 1); exact
+restoration and the same 20 tests exited 0. These are loopback synthetic HTTP
+requests, not a live OpenBao/model run. The original four-side `tools/gen.sh`
+and `--check` exited 0; Mobile catalog outputs remained byte-identical. Core
+compilation and the Rust executable round trip remain pending at this receipt
+point; native Go results follow below. No
+live configuration, model request, credential, activation or deployment changed.
+
+The additional original reader-provisioning consumer case then passed with the
+same suite (21 tests, exit 0): fixed KV reference, no key read by the operator
+helper, actual RequestID template, and refusal to overwrite a mismatched existing
+policy. Logs under `codex-knowledge-model-delivery-20261005.UXbRcn` are
+`native-delivery-positive.log` (incomplete-input failure),
+`native-delivery-complete-input.log`, `native-delivery-mutation.log`,
+`native-delivery-restored.log`, `native-reader-delivery-final.log`, and
+`gen-check-format.log`. No other agent's source, runtime or shared Rust cache
+was changed by these checks.
+
+The original executable wire consumers subsequently passed in the same bounded
+SDK: TypeScript 14 tests, Dart 15 tests and the Go contracts package, combined
+exit 0 (`wire-ts-dart-go.log`). They reused existing dependencies and locks;
+no installation, dependency upgrade or shared Rust compilation was performed.
+
+Migration acceptance used only the owned isolated database
+`application_model_union_xl5agt`, initially 85 successful migrations through
+`20261005021000`. Within rolled-back transactions, original 22000 up/down/up
+exited 0; the existing dispatch SQL fixture and the exact original model
+projection guard test's SQL exited 0. Removing the production frozen-nonce
+comparison made that target fail with `stale challenge activated model`
+(exit 3). Exact restoration, cmp 0, and the same target passed, exit 0.
+The original down migration correctly refused retained delivery facts, exit 3.
+Final read-back remained 85 migrations, zero failures and no new receipt column.
+Logs are `migration-up-down-up.log`, `migration-model-guards.log`,
+`migration-model-mutation.log`, `migration-model-restored.log` and
+`migration-delivery-down-refused.log` under the same receipt directory. These
+are real database constraint tests with synthetic fixture facts, not a claim
+that Rust provisioning, native signed delivery or live audit acceptance passed.
+
+Source integration must preserve product provenance: all three existing
+knowledge artifacts currently declare `inputs: [knowledge/]` without an
+`exclude`. The original manifest consumer excludes the manifest and verify
+documents, but includes `internal/handler` and `fork/deploy`. Applying this
+follow-up therefore changes all three recorded source digests under that
+declared boundary, even where a Dockerfile does not consume an individual
+file. No active build input or recorded digest was edited to hide that change.
+
+The independent follow-up also corrects these declared input boundaries without
+rewriting artifact/source digests. The native UI context and all COPY sources are
+inside `knowledge/frontend/`, including its lockfile, Dockerfile, ignore rules,
+Vite inputs and nginx/entrypoint files. Its input is now that directory alone.
+The document-reader Dockerfile copies only `packages/` and `docreader/`; its
+locked Python dependencies and `generate_proto.sh` read within the latter.
+Its inputs therefore retain those two directories plus the actual Dockerfile
+and root `.dockerignore`. The backend has a broad `COPY . .`, original Go
+embeds, anydoc sources, license bundling and shipped configuration/scripts;
+its broad input remains, excluding only `frontend/` which the actual root
+`.dockerignore` already excludes. This avoids a backend credential fix becoming
+a frontend/document-reader source change without guessing away backend inputs.
+Changing the declared boundary itself changes the digest recipe: existing
+records remain historical and are not asserted valid under the new recipe.
+No current build was restarted and no new product build was performed here.
+
+At the 2026-10-06 00:00 UTC handoff, a read-only transaction through the
+existing `kailo-knowledge-postgres-1` returned native migration `104`, dirty
+false, and one active OIDC user with an active owner membership in native tenant
+`10000` (user `116a8d6b-c7cd-4abb-b6a4-1bd8589eda24`, not system admin).
+There were zero undeleted native model rows, including builtin models. Thus the
+existing owner is a real management prerequisite, but there is no existing
+model ID to bind to a platform route. This read did not fetch credential or
+password columns and is not an HTTP authorization/session-validity test.
+No model was created and no credential or role was changed.
+
+The existing native Compose environment file is
+`/volumes/data/kailo/tmp/codex-knowledge-runtime-20261005.o07j5k/apps/knowledge/fork/deploy/.env`;
+its existing controlled delivery directory is
+`/volumes/kailo/apps/deploy/local/secrets/knowledge-native`. Only whitelisted
+nonsecret origin and file-location fields were inspected. The new
+`KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE`, `KNOWLEDGE_MODEL_CREDENTIAL_FILE` and
+`KNOWLEDGE_NATIVE_ADMIN_SESSION_FILE` keys are currently absent. No short-lived
+native session token was extracted or persisted. Before live delivery, the
+original Core generation's real route/reader/challenge metadata, an existing
+matching native model, an Agent-rendered fixed-version credential receipt and
+a valid native Admin/owner session must exist. Synthetic fixture metadata does
+not satisfy those prerequisites; this batch remains undeployed.
+
+The original native handler target subsequently exited 0 (session 35469):
+`go test ./internal/handler -run '^TestModelCredentialsDelivery' -count=1`.
+It used the existing `kailo-knowledge-native-check-wkkigg` SDK, Go 1.26.8,
+4 CPU/8 GiB/no extra swap, an independent `/tmp/model-delivery-UXbRcn`
+execution copy and the existing native module/build caches. GOPROXY was off,
+GOTOOLCHAIN local and GOFLAGS `-mod=readonly`; no dependency, lock or compiler
+was installed or changed. The long original link was allowed to finish without
+restart. The three tests consume the real original handler, not a replacement
+HTTP implementation or a live credential write.
+
+Removing only the production tenant equality check made the existing
+`TestModelCredentialsDeliveryRejectsUnknownMixedOrForeign` fail with
+`foreign model produced a proof`, exit 1 (60414). The execution copy was restored
+with apply_patch; host cmp exited 0, and the complete original delivery target
+passed, exit 0 (85508). Both canonical and container source SHA256 are
+`28af3d6a8327d57a9c8f47668520e016c8b0e56c78475c8b95df9e93be331755`.
+Original log digests in the same receipt directory are:
+
+- `native-go-handler.log`: `b633a8b0d8e89e7d301311f08aa95a708d5089a775504d3b4793d3dd5792e53f`.
+- `native-go-mutation.log`: `cc167488ab08aa41e6bccc76b0e2addba228d0bbb87d47050b1e664ef95ee9d0`.
+- `native-go-restored.log`: `e6e9bc9e623fed84a6d4a8db824a57129f9975e1019b1cf1d514e76eddd66d52`.
+
+No public Rust target was used. Core provisioning/Clippy and Rust roundtrip
+still require their original checks after the shared compilation window opens;
+native Go success does not substitute for them or for real credential delivery.
+
+### Authorized native model initialization: actual endpoint refusal
+
+At 2026-10-06 00:18:10 UTC, normal OIDC login and the original `/auth/me` API
+confirmed the same tenant `10000` owner. The original `/models` list had no
+matching row. One authorized native `POST /models` attempted to initialize a
+nonbuiltin `KnowledgeQA`/`remote` model, with native provider `generic`, no
+credential and no inference request. Its name was the real ACTIVE platform
+virtual route `5c57957c-e7dd-4173-b286-1722af88209a`, not an invented provider
+model. The existing Gateway ConfigResource source facts were provider
+`vision-27b-uat-chat-ejyuhu`, revision 1, format `completions`, and model
+`vision-27b-uat-chat-qwen-ejyuhu`, revision 1, native provider model `qwen`.
+The selected model base URL was the actual Core runtime configuration
+`http://agentgateway:18081/v1`; the original remote create branch performs only
+native repository creation, not a model pull or completion.
+
+The API returned HTTP 400/code 1000: the original SSRF check could not resolve
+`agentgateway`. A subsequent normal API list read confirmed no matching model;
+native model ID remains absent. There was no blind POST retry. Original receipt
+`native-model-initialize.log` SHA256 is
+`400a29d4f56198ca00213ec7936a087d78c548c1c36e08175eb6c0fbdb602d24`
+in the same independent receipt directory (session 26757, exit 1).
+
+Selective live deployment read-back explains the refusal: WeKnora app is only
+on `kailo-knowledge_native_ui` and `kailo-knowledge_native_data`; the Gateway
+is on the platform's app/edge/its-own-data networks. The actual Gateway publishes
+only 8080 as host 58090 (browser/BFF) and 8091 as host 58091 (native `/api/`
+BFF), not the strict-key LLM listener on 18081. Those published user endpoints
+must not be guessed to be model endpoints. No existing dedicated APPLICATION
+model endpoint was found in the selected deployment fields. Core's private
+hostname is therefore not evidence of reachability from an independent service.
+The missing production seam is controlled exposure of the existing Gateway
+model listener to this independent component. This attempt did not join Core/DB
+networks, broaden SSRF, bypass the Gateway, create a dummy model, extract a
+session token, or write a credential. A model object is not registered ready.
+
+## Historical native identity/source-delivery batch
+
+The following original batch was not an approved `KNOWLEDGE@v1` implementation,
+an active ApplicationBinding, or an exposed Kailo Tool. That batch did not modify
+Core/contracts, the then-current component integration tree, live configuration,
+or native data. The follow-up above does modify Core/contracts in its independent
+candidate; the historical statement is not a description of that new slice.
 
 The complete frozen fork is now present in the implementation workspace at
 `apps/knowledge/`: 4088 source paths, including the native frontend, backend,
@@ -324,3 +547,338 @@ SHA256 `232b29ea1e56dbee1a5df200a9a6cd62843a17e53d13b02b4c9df625a5790c86`.
 The failed full and first build remain historical evidence. This correction
 does not establish a deployed service, backend/document-reader artifacts,
 vulnerability remediation or component business acceptance.
+
+### Native runtime credential delivery — 2026-10-05
+
+Implementation base: `57adcd1612bfd421c8b93d843deae7c4b66604bb`.
+The private implementation and receipt directory is
+`/volumes/data/kailo/tmp/codex-knowledge-runtime-20261005.o07j5k`.
+
+Four-step impact and authority review:
+
+1. Authority: DD-71/93 and design 08 §5/§9 retain the independent native
+   accounts, OIDC login, UI and database. `fork/deploy/provision.py` consumes
+   the original Keycloak administrative API and OpenBao KV v2/AppRole/Agent,
+   not Core, a new identity service or a component activation operation.
+2. Impact: only the existing standalone Compose, configuration references,
+   provisioning consumer and its existing entrypoint evidence are extended.
+   `KNOWLEDGE_UI_BIND_ADDRESS` replaces the loopback literal; no app API,
+   protocol contract, business database, binding or Tool is created by it.
+   Existing operator credential files are never mounted into native services.
+3. Side effects: only an exact independent confidential OIDC client and a
+   dedicated OpenBao namespace/path/policy/AppRole are created. Existing
+   callback/client/key mismatches refuse rather than overwrite. KV creation
+   uses CAS 0; rerun first reads the same client and KV version. Uncertain
+   HTTP writes are not retried inside the consumer. No native admin, platform
+   membership, application binding or model permission is granted.
+4. Exceptions: absent/ambiguous client, wrong callback, malformed private
+   file, wrong AES byte length or secret mismatch refuse. Agent delivery is
+   wrapped, single-use AppRole authentication and exact versioned reads;
+   `error_on_missing_key` and `exit_on_retry_failure` are enabled. Operator
+   errors never print upstream bodies or credential values. Native startup
+   still requires the independent PostgreSQL, Redis and document reader.
+
+Fixed upstream evidence was rechecked read-only:
+
+- `2be7bd40631dda1dd485306038f07a62e9ee287e`,
+  `WeKnora/internal/handler/auth.go::OIDCRedirectCallback`,
+  `WeKnora/internal/application/service/user.go::LoginWithOIDC`, and
+  `WeKnora/internal/container/container.go::initDocReaderClient`.
+  The callback remains `/api/v1/auth/oidc/callback`. Native support for a
+  disconnected document reader is not used as a deployment fallback.
+- `735723da5628148f232497a48a35a137b6512103`,
+  `openbao/internal/command/agent/config/config.go::parseAutoAuth` and
+  `openbao/website/content/docs/agent-and-proxy/autoauth/methods/approle.mdx`,
+  `secret_id_response_wrapping_path`: Agent validates the exact AppRole
+  secret-id creation path. Templates read KV with `?version=1`, not a
+  write-style `secret` template argument.
+
+Actual controlled development operations:
+
+- `python3 knowledge/fork/deploy/provision.py` exited 0. The independent
+  native client UUID is `fdf173f1-3b00-45a6-9234-9f8df19a52e3`, namespace
+  `knowledge-native`, KV version 1. Two subsequent lookup-first runs kept
+  that same client and version; they only issued fresh one-use Agent delivery.
+- The existing fixed OpenBao image
+  `sha256:7d26314820a535ef346f1e63911809e4d356b48068fef00a9dcb3400bb9e11b6`
+  ran native `bao agent -config=…/agent.hcl` with 1 CPU, 256 MiB memory,
+  equal memory/swap, UID/GID 1000, all capabilities dropped, and one private
+  delivery-directory mount. It exited 0 after rendering six native secret
+  files and the original Redis configuration. No sink token or operator
+  credential is mounted into the native application.
+- Original failures are retained: the first JSON Agent configuration was
+  rejected (exit 1); the initial version argument selected a write request,
+  which the read-only policy correctly rejected with HTTP 403. That Agent
+  was stopped, not made more privileged. The corrected HCL plus versioned
+  GET completed. No policy permission was broadened to make it pass.
+
+Post-implementation validation used the existing fixed SDK
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+at 4 CPUs/8 GiB, original Data cache, no build or package installation.
+`python3 fork/deploy/test_native_entrypoint.py` passed 14 tests. Removing
+the production exact-client comparison caused the callback mismatch test
+to fail with `ConfigurationError not raised` (exit 1); byte restoration
+then passed all 14 (exit 0). The earlier mutation first exhausted its mock
+response list; that inadequate negative fixture was corrected before the
+actual guard-failure result was accepted.
+
+Receipt SHA-256 values (files under the directory above):
+
+- `native-provision.log`: `d614afd46abb8639987488779c0b4ee6862e630c0961a45d7badaa2f177ef86b`.
+- `native-delivery.log`: `ec2dfb8a3d107910f70631a869c22e9639e5c0c0157b5019bf686037848fa10b`.
+- `native-delivery-hcl.log`: `1b37d5d3638699cea2d5cb6a20ebd0d5391f1bcc2af5fbc52669e9cde4f605aa`.
+- `native-delivery-versioned.log`: `d0984a1a4c5c9fa5bde2aea1d523207a1825f0d2431be33590953e8dde0b421c`.
+- `native-entrypoint-mutation-final.log`: `22293f065739558014d4590268db292125437b76af1d876c454ecaf44218b612`.
+- `native-entrypoint-restored-final.log`: `f2985e54ed7498e534ca07a638a380f94819d7ef07a591c42b4d610e91704378`.
+
+This record proves provisioning and file delivery, not native login or
+knowledge use. At this receipt point no native service, public MCP Tool or
+Kailo binding has been activated, and no model request has been made. The
+document-reader build is still running. Runtime-wrapper changes made after
+its initial input staging require final frozen-input artifact reconciliation;
+the first build's late record write cannot establish that new input's origin.
+
+The independent Compose also explicitly delivers `AUTO_RECOVER_DIRTY=false`;
+the existing native entrypoint rejects a different value. At the same pinned
+WeKnora commit, `WeKnora/internal/container/container.go::initDB` otherwise
+defaults this switch to true, and
+`WeKnora/internal/database/migration.go::RunMigrationsWithOptions` can force
+the recorded migration version. Disabling that native recovery prevents an
+unknown migration result from being treated as completed. This runtime
+switch is registered in the implementation operations baseline §1. Native
+database version/dirty readback is still required after startup; health alone
+does not establish migration success. The final entrypoint check passed all
+14 tests, exit 0 (`native-entrypoint-final.log`, SHA256
+`98e2c1e6dafa9adb3a4f63f209231ed30ebe6a2630338bfd8598bb714b880db7`).
+Removing this dirty-recovery guard from the isolated execution mirror caused
+the existing startup refusal case to fail (14 tests, 1 failure, exit 1);
+byte-for-byte restoration passed all 14, exit 0. Receipts are
+`native-dirty-mutation.log` (SHA256
+`9470dbe466ca37cd6f1aa06be6b586b903b732a7a10ae681de6ee635c3a0915d`)
+and `native-dirty-restored.log` (SHA256
+`f9ef00017caa2702daf282381ab6c7f1ab6d560d0023b5d78f4f51e57461cbf8`).
+
+The already-built app's binary was read from its exact immutable image and
+inspected with the existing SDK's `go version -m`, without executing the app.
+Its actual build metadata is Version `2be7bd40631d`, CommitID
+`6112fdb6dfbdee9897a34e374988e6d79f37406c`, BuildTime
+`2026-10-05T13:21:51+00:00`, and GoVersion `go1.26.8`. These are artifact facts,
+not a claim that the private runtime candidate has already been built.
+`native-app-binary-metadata.log` SHA256 is
+`a4e20313428cb5aeabe24d4ebdb02ba7fa85fc3e6c66805c40d7e818eaee194b`.
+The original `knowledge/Makefile` build target injects these environment
+values into the binary; the original `knowledge/scripts/build_images.sh`
+supplies the native GOPROXY default. The original build log did not retain
+all five effective build arguments, so complete historical argument identity
+is not asserted.
+
+The original document-reader build (handle 98126) subsequently exited 0 and
+published `127.0.0.1:55000/knowledge-document-reader:2be7bd40631d` at
+`sha256:96c3b7fca577682e6550ca235116c987180907d1b06ce17be081e5370d3b7dc9`.
+`docreader-build.log` SHA256 is
+`4c5cb5203ae8250b29ac16f783f050d2a653edb9ad6fcba4d6d1f1d808cd8086`.
+It used the original full LibreOffice and Playwright WebKit dependency steps;
+the intermediate missing-library warning was followed by the original
+`playwright install-deps webkit`. This first build consumed the initially
+staged source, before deployment-wrapper edits; its late manifest write is
+not accepted as final frozen-source evidence. Final original-helper source
+reconciliation is still required.
+
+The first actual native Compose `up -d` failed before any container existed:
+Docker's predefined address pools were fully allocated. The retained
+`native-compose-up.log` SHA256 is
+`f450e8a2d3c1509f0db460fdba4803757c6d8f06ef7a4735638943a0e37b18ff`.
+The original Compose now requires explicit UI/data IPAM subnets. Development
+delivery selected `10.200.0.0/24` and `10.200.1.0/24` only after checking every
+Docker IPAM range, the host's LAN/VPN routes and the operational manual's
+Pod/Service CIDRs. No existing network or global Docker configuration was
+modified. The next original Compose invocation (87021) has created these
+two project networks and four native volumes; at this receipt point container
+creation is still running, not a healthy-service or login result.
+
+Model integration was checked independently of document-reader availability.
+At fixed WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`WeKnora/internal/handler/model.go::ModelHandler.CreateModel`,
+`WeKnora/internal/models/chat/chat.go::ConfigFromModel`, and
+`WeKnora/internal/models/rerank/reranker.go::ConfigFromModel` consume the native
+base URL, credentials and headers. Design 08 §5/§9.2 requires an authorized
+`PLATFORM_LLM_ROUTE`, configured through this native management surface.
+The current Core `model_route::provision`/`resolve` still bind credentials to
+`catalog.agent_model_binding` and an AgentInstallation; release/binding
+admission still accepts only `allowedModelCallModes=[NONE]`. Thus an existing
+Agent key, an arbitrary model URL, or a falsely declared NONE mode cannot
+establish WeKnora model integration. No such credential reuse, default model,
+model request or public knowledge Tool was introduced by this runtime batch.
+
+### Independent native login: actual deployment and corrected SSRF delivery
+
+At 2026-10-05 19:16:56 UTC the original five-service Compose was running and
+normal browser OIDC login completed at
+`http://192.168.0.193:58094/platform/knowledge-bases`, title `WeKnora`.
+The original startup handle 87021 exited 0. This is independent native
+service use, not a Kailo `ACTIVE` binding or a platform Tool activation.
+
+The first browser run exited 1: `/api/v1/auth/config` and
+`/api/v1/auth/oidc/config` returned 200, but `/api/v1/auth/oidc/url` returned
+403. Its structured error explicitly identified the IP-literal IdP discovery
+URL as rejected by native SSRF protection. At fixed commit
+`2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`WeKnora/internal/utils/security.go::loadSSRFWhitelist` and
+`WeKnora/internal/application/service/system_setting.go::applySSRFWhitelist`
+consume the deployment-owned `SSRF_WHITELIST_EXTRA`; the latter preserves it
+when native system settings are loaded. The original Compose now passes that
+existing setting from `KNOWLEDGE_SSRF_WHITELIST_EXTRA`. This deployment supplies
+only the exact already-approved IdP host `192.168.0.193`, not a subnet or a
+wildcard. Native SSRF remains enabled. The whitelist applies to all native
+outbound clients, not solely OIDC; it must not be expanded implicitly from
+user-supplied URLs. No credentials or roles changed to make login pass.
+
+Original `docker compose ... config --quiet` and `up -d --no-deps app`
+exited 0 (handle 21525); only the existing native app was recreated, with
+the same immutable image. No platform container or database was restarted.
+The restored browser run (62541) exited 0: OIDC authorization URL 200,
+callback 302, followed by actual native `auth/me`, `knowledge-bases`,
+`models`, `organizations` and other page data requests all 200. Console
+errors, page errors and failed requests were all zero. The selected anchor
+and `main` counters were zero and do not establish navigation completeness;
+the final native route, title and authenticated API results establish login.
+The existing bounded browser container and normal identity-provider form
+were reused, without cookies fabricated or exported. Only normal login
+side effects occurred; no model, knowledge content, Tool, quota or platform
+permission write was performed.
+
+Original receipts under
+`/volumes/data/kailo/tmp/codex-knowledge-runtime-20261005.o07j5k/`:
+
+- `native-login.log` (failure, exit 1), SHA256
+  `cfeef73a9d1d0b38cd8334e311c03bdf7176ca419a697f5901995e9783d78c58`.
+- `native-oidc-config-up.log` (exit 0), SHA256
+  `ab152bbb8e3e4dfd520ae61935b766a5c4e37c85b4f60dcdd6c4d3475b0b7812`.
+- `native-login-restored.log` (exit 0), SHA256
+  `2b5729259d15660c322eb7e4ad5bfcbc56b5b35f194b1b911b35013332796db1`.
+
+Native page/login acceptance does not prove model completion, retrieval,
+document processing, embedded Kailo presentation or native MCP governance.
+The independent APPLICATION model consumer is a separate unaccepted batch.
+Runtime wrapper edits are still not covered by final frozen-source image
+reconciliation; existing artifact digests were not changed to disguise that.
+
+The native database was also read through its own existing Postgres container:
+`select version,dirty from schema_migrations` returned `104|f`, exit 0.
+`native-migration-readback.log` SHA256 is
+`c700b955b3290e83a6864dd54557ed4bc6999f15f4fc4d8087a2163192a321bc`.
+This read did not modify business records or migration bookkeeping.
+
+## 2026-10-06 independent model transport and native model initialization
+
+This slice changes deployment wiring, not the pending model credential delivery
+or APPLICATION authorization implementation. Source is the selected deployment
+files from the `lciVUS` working tree over `306aa41b`; the exact `before/` and patch
+are retained under
+`/volumes/data/kailo/tmp/codex-knowledge-edge-20261006.hk1xfO/`.
+
+Four-step implementation boundary:
+
+1. Authority: DD-92 / design 03 and 07 §9 permit the independent native service
+   to consume the existing Gateway model route. Apps 07 §1 forbids publishing
+   LLM/admin host ports. The existing edge network is used; no new Gateway,
+   proxy, Core/database network attachment or shared service identity is added.
+2. Consumers: the sole platform `.env` supplies `PLATFORM_EDGE_NETWORK` and the
+   existing derived `AGENTGATEWAY_MODEL_BASE_URL`. Platform Compose uses that
+   network name and model-host alias. The new native `start.sh --platform-model`
+   actually consumes the optional Compose overlay and only recreates `app`.
+   Standalone startup without the argument has no platform prerequisite.
+3. Effects: the original native entrypoint adds only the exact model URL host
+   to the existing `SSRF_WHITELIST_EXTRA`, preserving approved IdP entries.
+   Fixed WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`,
+   `internal/utils/security.go::{ValidateURLForSSRF,IsSSRFWhitelisted}` and
+   the native system-setting merge consume this field; no global SSRF disable,
+   wildcard, CIDR, new policy database or model credential is introduced.
+   This native host exception applies to outbound clients generally, not only
+   models, and is not a per-port firewall or model authorization grant.
+4. Failures: invalid URL/host, missing sole inputs or failed Compose validation
+   refuse startup. External edge must already exist. Native databases, reader
+   and frontend never join edge. Unknown native POST outcomes are read back,
+   not retried; model keys and inference remain outside this transport step.
+
+Operational entry: first start the independent service with
+`bash knowledge/fork/deploy/start.sh`. To integrate an existing service, use
+`bash knowledge/fork/deploy/start.sh --platform-model /absolute/platform/deploy/local/.env`;
+add `--validate` for render-only validation. Keep the native `.env` beside its
+Compose file. Set the platform's new network field to the inspected existing
+edge name, preserving that network rather than creating a replacement. Do not
+copy platform model URL or network values into the native `.env`. No build or
+identity bootstrap is performed. Gateway LLM strict Bearer authentication and
+the Core APPLICATION model checks remain required independently.
+
+Post-implementation checks used existing 4 CPU / 8 GiB SDK containers, without
+Cargo, image build or full. The original native unittest module passed 18 tests.
+Removing the actual exact-host guard caused three malformed-host cases to fail
+with exit 1; exact restoration passed all 18. The original `step_security`
+host-alias/network-name block passed on the candidate Compose; hardcoding its
+model alias caused exit 1, restoration passed. This is a targeted block check,
+not the whole security/full gate. Actual Compose rendering proved only app
+joins the existing external edge and no new app host port is published.
+The first Python run had two missing original nginx-fixture errors; corrected
+execution paths passed. A first security-block run lacked PyYAML in the native
+SDK; the existing check SDK supplied it, without installation. Failures remain
+in `native-positive.log` and `security-fragment.log`.
+
+Authorized runtime delivery changed only one nonsecret line in sole `.env`:
+`PLATFORM_EDGE_NETWORK=platform-local_edge`. First start exited 1 because the
+running image had no local repository-digest reference; the existing app kept
+running. The same immutable registry manifest was HTTP 200, pulling that exact
+image exited 0, and the original start entry then exited 0. Only WeKnora app was
+recreated, retaining image
+`sha256:db4ec09f76ee61b403cc79cf56c131dbfb6810e473dc7fadb0fb21ff2f08a8c8`;
+Gateway, native frontend, PostgreSQL, Redis and reader IDs/start times did not
+change. App is healthy and its actual networks are native UI/data plus existing
+edge. From that app, unauthenticated `GET /v1/models` returned 401. Gateway still
+publishes only its previous 8080/8091 listeners, not LLM/admin. Reachability and
+strict rejection do not prove model inference or credential delivery.
+
+At 00:35:30 UTC normal native OIDC login verified the existing owner and tenant
+10000. Model listing first found no corresponding object, a single native
+`POST /api/v1/models` returned 201, and exact `GET` returned 200. Native model
+`54b825a1-e74a-4e56-b691-59d7c0b6fb57` is the nonbuiltin `KnowledgeQA` / `remote`
+model for the existing virtual route `5c57957c-e7dd-4173-b286-1722af88209a`,
+provider `generic`, base URL `http://agentgateway:18081/v1`. Its native `active`
+field is only the original model-record status, not a Kailo ACTIVE binding or
+successful inference. No key was written, no inference requested, and the old
+native runtime still lacks the pending credential-proof implementation.
+Receipt: `native-model-initialize.log`, SHA256
+`f68665e0339ee41346bf61e646b24e92c9a088acf28e7dc60efe7d65aafa1437`.
+The deployment uses private wrapper files; source commit/push, whole security,
+full, product source reconciliation and model business E2E remain unclaimed.
+
+## Current unbuilt source declaration (2026-10-06)
+
+The final source tree incorporates the transport, credential-delivery and edge
+changes above. All three existing artifact recipes declare `inputs: [knowledge/]`;
+their historical images therefore do not attest to this current source tree.
+Following `06` section 2's existing unbuilt-artifact semantics, the current
+manifest records both digests as `none`. No checker, source scope, capability
+exposure, recipe or feature code is removed or relaxed. `04`'s reference-service
+boundary and `03` section 6 keep this implementation's release/binding unopened
+without blocking the independent platform source delivery. This is not a completed
+reference-service release or a declaration that the historical images disappeared.
+
+Historical manifest pairs retained exactly (source digest / artifact digest):
+
+- Service: `sha256:2a5df0ee4bb58329ebead428b981e3d32383bbd04fe29d1a7406b1a56e922087`
+  / `sha256:f3f11f0623e16ea560cc04c08f2ee0ab27e33115237051a3f208a7ff573a3ccf`.
+- Native UI: `sha256:b67e28596c8c993fd55305339fe933c44a005283505b0076d358a3395704f858`
+  / `sha256:c38540cdaba49f1ee7bfb4a8418579c1108ee47ea762f9ea88ddcbc7c78dc6d8`.
+- Document reader: `sha256:31317e92482af6ef75d8a19c5487f91f802b37448d4fc34704f39352819706a7`
+  / `sha256:96c3b7fca577682e6550ca235116c987180907d1b06ce17be081e5370d3b7dc9`.
+
+The root's existing read-only production transaction found no rows in
+`catalog.component_release`, `catalog.application_binding`, or
+`projection.application_runtime`; no platform binding or approved release was
+withdrawn or activated here. The independent native service and prior login
+remain separate facts. Runtime image references, credentials and native data are
+unchanged. The running historical build keeps reading the unchanged lci worktree;
+these source/manifest edits are held in the separate final Git index. Any later
+artifact must be recorded against its actual frozen input, never relabeled as
+this source revision without a matching build. Platform Web/Desktop/Gateway
+artifact requirements are unchanged.

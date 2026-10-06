@@ -6,6 +6,7 @@ import {
 } from '../repositories/apiHistoryRepository';
 import { IDeployLogRepository } from '../repositories/deployLogRepository';
 import { IProjectRepository } from '../repositories/projectRepository';
+import { IViewRepository } from '../repositories/viewRepository';
 import { Manifest } from '../mdl/type';
 import { IQueryService, PreviewDataResponse } from './queryService';
 import { verifyPostgresReader } from './nativeBindingService';
@@ -23,6 +24,29 @@ export type GovernedQueryInput = {
   deploymentId: number;
   deploymentHash: string;
   limit: number;
+};
+
+// One native schema for the real MCP list and the approved capability input.
+// Agents may supply SQL directly to this native service; HUMAN workflows use
+// only the reference alternative, so Core/Temporal never persist SQL bodies.
+export const queryInputSchema = {
+  type: 'object' as const,
+  oneOf: [{
+    type: 'object', additionalProperties: false,
+    required: ['sql', 'deploymentId', 'deploymentHash', 'limit'],
+    properties: {
+      sql: { type: 'string', minLength: 1 }, deploymentId: { type: 'integer', minimum: 1 },
+      deploymentHash: { type: 'string', pattern: '^[a-f0-9]{40}$' }, limit: { type: 'integer', minimum: 1 },
+    },
+  }, {
+    type: 'object', additionalProperties: false,
+    required: ['resourceId', 'nativeObjectRef', 'nativeRevision', 'displayName', 'mediaType'],
+    properties: {
+      resourceId: { type: 'string', format: 'uuid' }, nativeObjectRef: { type: 'string', minLength: 1 },
+      nativeRevision: { type: 'string', pattern: '^[a-f0-9]{64}$' }, displayName: { type: 'string' },
+      mediaType: { const: 'application/json' },
+    },
+  }],
 };
 
 const invalid = () => new NativeQueryRefusal(400, 'INVALID_QUERY_PARAMETERS');
@@ -63,7 +87,49 @@ export class NativeQueryService {
     private readonly deployments: IDeployLogRepository,
     private readonly history: ApiHistoryRepository,
     private readonly queries: IQueryService,
+    private readonly views?: IViewRepository,
   ) {}
+
+  // A browser may export an existing native view's immutable query selection.
+  // This is a reference, not platform admission. Core independently verifies
+  // the supplied resource's tenant/binding and current caller authorization.
+  async reference(resourceId: string, viewId: number, limit: number) {
+    if (!uuid.test(resourceId) || !Number.isSafeInteger(viewId) || viewId <= 0 ||
+      !Number.isSafeInteger(limit) || limit <= 0 || !this.views) throw invalid();
+    const view = await this.views.findOneBy({ id: viewId, projectId: this.config.projectId });
+    const deployment = await this.deployments.findLastProjectDeployLog(this.config.projectId);
+    if (!view || !view.statement?.trim() || !deployment || deployment.status !== 'SUCCESS' ||
+      deployment.projectId !== this.config.projectId || !/^[a-f0-9]{40}$/.test(deployment.hash)) throw unavailable();
+    const selection = { viewId, deploymentId: deployment.id, deploymentHash: deployment.hash, limit };
+    return {
+      resourceId,
+      nativeObjectRef: JSON.stringify(selection),
+      nativeRevision: digest({ bindingId: this.config.bindingId, projectId: this.config.projectId,
+        connection: this.config.projectConnectionDigest, selection, sql: view.statement }),
+      displayName: view.name,
+      mediaType: 'application/json',
+    };
+  }
+
+  private async referencedInput(raw: Record<string, unknown>): Promise<GovernedQueryInput> {
+    if (!this.views || Object.keys(raw).sort().join(',') !==
+      'displayName,mediaType,nativeObjectRef,nativeRevision,resourceId' ||
+      typeof raw.resourceId !== 'string' || !uuid.test(raw.resourceId) ||
+      typeof raw.nativeObjectRef !== 'string' || typeof raw.nativeRevision !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(raw.nativeRevision) || typeof raw.displayName !== 'string' ||
+      raw.mediaType !== 'application/json') throw invalid();
+    let selection: { viewId: number; deploymentId: number; deploymentHash: string; limit: number };
+    try { selection = JSON.parse(raw.nativeObjectRef); } catch { throw invalid(); }
+    if (!selection || Object.keys(selection).sort().join(',') !== 'deploymentHash,deploymentId,limit,viewId' ||
+      !Number.isSafeInteger(selection.viewId) || selection.viewId <= 0) throw invalid();
+    const view = await this.views.findOneBy({ id: selection.viewId, projectId: this.config.projectId });
+    if (!view || raw.nativeRevision !== digest({ bindingId: this.config.bindingId, projectId: this.config.projectId,
+      connection: this.config.projectConnectionDigest, selection, sql: view.statement })) {
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    }
+    return queryInput({ sql: view.statement, deploymentId: selection.deploymentId,
+      deploymentHash: selection.deploymentHash, limit: selection.limit });
+  }
 
   private observation(record: ApiHistory) {
     return {
@@ -97,7 +163,7 @@ export class NativeQueryService {
         Object.keys(raw).length !== 0)
     )
       throw invalid();
-    const input = describing ? undefined : queryInput(raw);
+    const referenced = !!raw && typeof raw === 'object' && !Array.isArray(raw) && 'nativeObjectRef' in raw;
     // Read target claims only to reconstruct Core's already-frozen envelope.
     // No native scope or identity is trusted until JOSE and original PEP pass.
     let targetClaims: Record<string, unknown>;
@@ -123,9 +189,43 @@ export class NativeQueryService {
       claims.action_definition_version !== 1 ||
       claims.target_type !== 'RESOURCE' ||
       typeof claims.target_id !== 'string' ||
-      !uuid.test(claims.target_id)
+      !uuid.test(claims.target_id) ||
+      (claims.agent_principal_id === undefined && (
+        claims.actor_principal_id !== claims.initiating_human_principal_id ||
+        typeof claims.external_execution_id !== 'string' || !uuid.test(claims.external_execution_id) ||
+        claims.idempotency_key !== key))
     ) {
       throw scopeDenied();
+    }
+    if (referenced && (raw as Record<string, unknown>).resourceId !== claims.target_id) throw scopeDenied();
+    const rejectUnsentReference = async () => {
+      if (referenced) {
+        // Core already owns a dispatched EE. Preserve this authenticated
+        // native request in the original history so observe can distinguish
+        // a proven pre-query refusal from a missing/late writer. A competing
+        // reservation is never overwritten or interpreted as not executed.
+        const id = randomUUID();
+        const hash = String(claims.normalized_parameter_hash);
+        const reserved = await this.history.reserveGovernedQuery({
+          id, projectId: this.config.projectId, apiType: ApiType.RUN_SQL,
+          requestPayload: { action, inputReference: raw }, headers: {}, statusCode: 202, durationMs: 0,
+          governanceBindingId: this.config.bindingId, governanceKey: key,
+          governanceActionExecutionId: String(claims.action_execution_id),
+          governanceOperationId: String(claims.operation_id), governanceParameterHash: hash,
+          governanceState: 'UNKNOWN',
+        });
+        if (reserved && !(await this.history.rejectUnsentGovernedQuery(id, hash))) throw unavailable();
+      }
+    };
+    let input: GovernedQueryInput | undefined;
+    try {
+      input = describing ? undefined : referenced
+        ? await this.referencedInput(raw as Record<string, unknown>) : queryInput(raw);
+    } catch (error) {
+      if (error instanceof NativeQueryRefusal && [400, 412].includes(error.status)) {
+        await rejectUnsentReference();
+      }
+      throw error;
     }
     const project = await this.projects.findOneBy({
       id: this.config.projectId,
@@ -142,6 +242,7 @@ export class NativeQueryService {
         schema: project.schema,
       }) !== this.config.projectConnectionDigest
     ) {
+      await rejectUnsentReference();
       throw new NativeQueryRefusal(412, 'QUERY_NATIVE_SCOPE_CHANGED');
     }
     const deployment = describing
@@ -161,6 +262,7 @@ export class NativeQueryService {
       deployment.status !== 'SUCCESS' ||
       !/^[a-f0-9]{40}$/.test(deployment.hash)
     ) {
+      await rejectUnsentReference();
       throw new NativeQueryRefusal(412, 'QUERY_DEPLOYMENT_CHANGED');
     }
     const id = randomUUID();

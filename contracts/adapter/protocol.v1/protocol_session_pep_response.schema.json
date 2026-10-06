@@ -1,0 +1,22 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"adapter/protocol.v1/protocol_session_pep_response.schema.json",
+  "title":"ProtocolSessionPepResponse",
+  "description":"Original Session facts, not native revision existence or write success. Cells must still query its exact VersionId and ACLs.",
+  "type":"object","additionalProperties":false,
+  "required":["decision","platformHumanId","oidcIssuer","oidcSubject","displayName","admittedMode","minZedToken","baseRevision","expiresAt","exportAllowed"],
+  "properties":{
+    "decision":{"type":"string","enum":["ALLOW"]},
+    "platformHumanId":{"type":"string","format":"uuid"},
+    "oidcIssuer":{"type":"string","minLength":1,"description":"Original active issuer from the HUMAN's frozen ExternalIdentity, never a browser-supplied claim."},
+    "oidcSubject":{"type":"string","minLength":1,"description":"Original active subject paired with oidcIssuer. Cells resolves its existing explicit native user link; no email or display-name fallback."},
+    "displayName":{"type":"string","minLength":1},
+    "admittedMode":{"type":"string","enum":["VIEW","EDIT"]},
+    "minZedToken":{"type":"string","minLength":1},
+    "baseRevision":{"type":"string","minLength":1},
+    "expiresAt":{"type":"string","format":"date-time"},
+    "exportAllowed":{"type":"boolean"},
+    "postMessageOrigin":{"type":"string","format":"uri","minLength":1,"description":"Exact canonical platform PUBLIC_ORIGIN from the Core deployment, never the native request Origin or a browser-supplied field. Required by the native FileInfo consumer; unavailable origin refuses its editor projection."},
+    "nativeSessionRef":{"type":"string","minLength":1,"description":"Confirmed original native token/session reference. Required by native READ/WRITE consumers, absent before the first native OPEN creation."}
+  }
+}

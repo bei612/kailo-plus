@@ -75,6 +75,10 @@ func (h *Handler) ListVersions(request *tree.ListVersionsRequest, versionsStream
 
 	log.Logger(ctx).Debug("[VERSION] ListVersions for node ", request.Node.Zap())
 	node := request.GetNode()
+	head, err := latestPublishedVersion(ctx, dao, node.GetUuid())
+	if err != nil {
+		return err
+	}
 	var filters map[string]any
 	authorized := []string{"draftStatus", "ownerUuid"}
 	if len(request.Filters) > 0 {
@@ -98,6 +102,10 @@ func (h *Handler) ListVersions(request *tree.ListVersionsRequest, versionsStream
 	}
 
 	for l := range logs {
+		// Existing IsHead previously had no producer. The original native
+		// store selects a real latest published reference; the API's actual
+		// ACL-checked node must additionally match its content (not its mtime).
+		l.IsHead = head != nil && l.VersionId == head.VersionId && l.MatchesCurrentNode(node)
 		if l.GetLocation() == nil {
 			l.Location = versions.DefaultLocation(ctx, request.Node.Uuid, l.VersionId)
 		}
@@ -120,10 +128,46 @@ func (h *Handler) HeadVersion(ctx context.Context, request *tree.HeadVersionRequ
 	if e != nil {
 		return nil, e
 	}
+	if v == nil || v.VersionId == "" || v.VersionId != request.GetVersionId() {
+		return nil, errors.WithStack(errors.VersionNotFound)
+	}
+	head, err := latestPublishedVersion(ctx, dao, request.GetNodeUuid())
+	if err != nil {
+		return nil, err
+	}
+	v.IsHead = head != nil && !v.Draft && v.VersionId == head.VersionId
 	if v.GetLocation() == nil {
 		v.Location = versions.DefaultLocation(ctx, request.GetNodeUuid(), v.VersionId)
 	}
 	return &tree.HeadVersionResponse{Version: v}, nil
+}
+
+// Both fixed native stores return GetVersions in their original descending
+// insertion order. Drain the native stream (Bolt otherwise retains its read
+// transaction), selecting its first published reference rather than sorting or
+// inventing a head from a timestamp/content hash in the platform.
+func latestPublishedVersion(ctx context.Context, dao versions.DAO, nodeID string) (*tree.ContentRevision, error) {
+	stream, err := dao.GetVersions(ctx, nodeID, 0, 0, "", true, map[string]any{"draftStatus": "published"})
+	if err != nil {
+		return nil, err
+	}
+	var head *tree.ContentRevision
+	var failure error
+	for revision := range stream {
+		if failure == nil && ctx.Err() != nil {
+			failure = ctx.Err()
+		}
+		if revision == nil || revision.VersionId == "" || revision.Draft {
+			if failure == nil {
+				failure = errors.WithStack(errors.VersionNotFound)
+			}
+			continue
+		}
+		if head == nil {
+			head = revision
+		}
+	}
+	return head, failure
 }
 
 func (h *Handler) DeleteVersion(ctx context.Context, request *tree.HeadVersionRequest) (*tree.DeleteVersionResponse, error) {

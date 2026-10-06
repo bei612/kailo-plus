@@ -14,6 +14,7 @@
         "nativeInstanceRef": {"type": "string"}, "artifactDigest": {"type": "string"},
         "actionTokenAudience": {"type": "string"}, "timeoutSeconds": {"type": "integer"},
         "maxResponseBytes": {"type": "integer"},
+        "modelCredentialDeliveries": {"$ref":"#/$defs/modelCredentialDeliveries"},
         "secretReaders": {"type": "array", "items": {
           "title": "ApplicationSecretReader", "type": "object", "additionalProperties": false,
           "required": ["servicePrincipalId", "roleName", "audience"],
@@ -32,6 +33,8 @@
         "nativeInstanceRef": {"type": "string"}, "artifactDigest": {"type": "string"},
         "timeoutSeconds": {"type": "integer", "minimum": 1},
         "maxResponseBytes": {"type": "integer", "minimum": 1},
+        "secretReaders": {"$ref":"#/properties/adapters/items/properties/secretReaders"},
+        "modelCredentialDeliveries": {"$ref":"#/$defs/modelCredentialDeliveries"},
         "bindings": {"type": "array", "items": {
           "title": "ApplicationProtocolPeerBindingDelivery", "type": "object", "additionalProperties": false,
           "required": ["bindingId", "tenantId", "servicePrincipalId", "nativeScopeRef", "configDigest", "isolationMode"],
@@ -63,6 +66,27 @@
             }}
           }
         }}
+      }
+    }}
+  },
+  "$defs": {
+    "modelCredentialDeliveries": {"type":"array", "description":"受控原生模型凭据交接回执；无密钥值，不创建模型，不替代OpenBao审计或binding准入。", "items":{
+      "title":"ApplicationModelCredentialDelivery", "type":"object", "additionalProperties":false,
+      "required":["bindingId","generation","configDigest","servicePrincipalId","routeResourceId","nativeScopeRef","nativeModelRef","secretRef","requestId","verificationNonce","nativeProof"],
+      "properties":{
+        "bindingId":{"type":"string","format":"uuid"},
+        "generation":{"type":"integer","minimum":1},
+        "configDigest":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+        "servicePrincipalId":{"type":"string","format":"uuid"},
+        "routeResourceId":{"type":"string","format":"uuid"},
+        "nativeScopeRef":{"type":"string"},"nativeModelRef":{"type":"string"},
+        "secretRef":{"title":"ApplicationModelServiceSecretRef","type":"object","additionalProperties":false,
+          "required":["locator","version","audience"],"properties":{
+            "locator":{"type":"string"},"version":{"type":"integer","minimum":1},"audience":{"type":"string"}
+          }},
+        "requestId":{"type":"string","format":"uuid"},
+        "verificationNonce":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+        "nativeProof":{"type":"string","pattern":"^[0-9a-f]{64}$"}
       }
     }}
   }

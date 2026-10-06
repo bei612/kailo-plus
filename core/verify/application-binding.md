@@ -503,3 +503,173 @@ OpenBao/Gateway/第三方 MCP 两账号端到端调用，也未执行真实 disa
 线上需另有获批 release、两份受控 binding/native scope 事实、准确 SecretRef 版本、
 原审计与 Gateway 投递配置，以及实际 Resource/ToolBinding 和调用授权；没有因
 本批测试创建这些业务对象。未构建、部署、运行 full 或调用模型。
+
+### APPLICATION 模型接缝：独立源码批的实现与验证边界
+
+本增量基于 `306aa41bdfbee661572262aba6aba68cf095ef39`。关联 DD-20/21/92、
+设计 03 的 ApplicationBinding 与 UsageEvent、07 §6.3/§10；下列是已写入实现的
+变更说明，不是运行验收。当前没有提交、发布、部署或发出新的模型请求。
+
+1. 权威：模型路由继续是原 `llm_route`/AgentGateway ConfigResource；配置由独立
+   服务管理。binding 只冻结获准的 route/meter 引用、自己的 SERVICE 和 generation。
+   不借 AgentInstallation 身份，不写组件模型数据库；SELF_MANAGED_MODEL 尚未开放。
+2. 影响：原 binding create/advance/disable 消费 `modelGateway` 配置；原 Core
+   服务端入口核已认证 Gateway Claims、scope、fresh route/Quota 和审计。既有原生
+   API key、usage_dispatches 与 usage outbox 增加绑定身份关联，不建第二模型目录或账本。
+   四语言 schema 同源生成；原 Agent `prepare_turn`、AE 锁、trace 意图和 native RPC
+   顺序未修改。绑定无 trace 时归原 generation 的创建 operation，不伪造 Invocation。
+3. 副作用：Gateway 原 ConfigResource 行与 usage_dispatches 在同一原数据库事务中
+   核验、写入；先撤 key 则新 dispatch 拒绝，先 dispatch 则留下不可跳过的 pending。
+   Core 21000 扩展原投影与 outbox 约束；原生 PostgreSQL 新增 0004，不改历史迁移。
+   SQLite 使用原库事务增加可空身份列。旧 Agent 行保留，旧未闭合请求不能证明零用量。
+4. 异常：丢 ACK 不重建 key、不重发模型请求；disable 必须见原生 key 撤销、完整
+   dispatch/completion 集合、原 OpenMeter stored_at 后才关闭。空集合仅在原生撤销
+   证明成立时可收口；缺数量或 token 字段不填零。可选 trace 只能定位真实同 binding
+   child/operation；来源不明不能借另一 Agent 的同 trace 用量。
+
+固定上游证据为 `.references/agentgateway` 的完整 commit
+`1f7ebbf87cbdbe9517f6f181221879d04dc50692`：
+`agentgateway/crates/agentgateway/src/http/apikey.rs::Claims`、
+`APIKeyAuthentication::apply` 提供已认证 API key metadata；
+`agentgateway/crates/agentgateway/src/http/ext_authz.rs::ExtAuthz::check_http`
+提供原生 HTTP/CEL ExtAuthz。ConfigResource 与 durable usage dispatch 是既有 Kailo
+二开接缝；本次没有把它们写成上游原生已有的能力。
+
+已实际执行原 `./tools/gen.sh` 及 `./tools/gen.sh --check`，句柄 91372 退出 0，
+Rust/Go/TypeScript/Dart 与 Mobile catalog 同步通过。执行使用原 SDK 4 CPU/8 GiB、
+无额外 swap、Data 缓存和离线 npm；日志
+`/volumes/data/kailo/tmp/codex-application-model-20261005.Qzf1iT/gen.log`，SHA-256
+`b8c5020e3810f43c5a847f77c11beab1cb63250a0f8477b65eae8c53ebb54d37`。
+首次机械导出因私有 sparse checkout 缺少六个 TS 契约路径失败，未执行生成；完整导出
+后才运行以上成功命令，未伪造缺失文件或修改生成工具。
+
+隔离库 `application_model_qzf1it` 已运行原 83 条迁移，up 与原 down/up 均退出 0，
+读回 `83|20261005021000|0`；不触业务库。原 Core 模型目标 3 项（含实际数据库约束、
+保留事实时拒绝 down）与用量目标 12 项通过。首轮编译的两个字段部分移动错误已修；
+首轮 Clippy 的一处布尔表达式告警已修。原完整日志保留于同 Data 目录的
+`core-check.log`、`core-targeted-restored.log`、`migrations-up.log` 和
+`migrations-roundtrip.log`。之后共享 target 命中了别的私有候选 contracts 缓存：
+本树已生成的类型被误报缺失，同时要求本树没有的字段；原失败输出保留
+`core-stale-contracts.log`，仅清理 contracts 包缓存，未修改契约迎合错误。
+
+撤销运行期 ExtAuthz 配置不能绕过本次准入：原 Gateway HTTP 成功分支只在与该 key
+冻结策略完全一致且未缓存时留下请求内证据，原 provider dispatch 消费这份证据与
+同一 key 身份；缓存 Allow、不同服务成功或缺策略均不构成证据。不新增持久化
+准入权威。HUMAN 的非空 trace 按原 AE operation 与同 EE/binding/generation 查证，
+不借 AgentInvocation，也不把未知 trace 默默降级；主线 HUMAN 调用点另有精确增量，
+需与已交付的人类动作一起编译，不能以旧基底本模块通过替代。
+
+恢复批句柄 49371 实际退出 0：Core 模型 3 项、用量 12 项、Clippy all-targets 与
+Rust 契约 roundtrip 13 项全部通过，原件 `core-final.log`；未将过滤为零项的其他
+集成测试算作通过。Gateway 编译、其余三侧 roundtrip、生产守卫破坏还原仍在收口；
+全量检查未运行。
+运行投递还需要原 OpenBao Agent 的受控凭据文件与服务自身模型配置；没有以新 API
+回传 Core audience 的 Secret，没有以本批源码声称 WeKnora 模型或工具调用已经可用。
+
+联合输入已改为 `lciVUS/apps` 当前真实 schema 与 HUMAN/ProtocolSession 消费者。
+原 gen/check 句柄 67737 实际退出 0，四语言和 Mobile catalog 全部同步；六个生成
+文件回投逐项 cmp 退出 0，`ApplicationModelAdmission`、`protocol_session_id` 与
+`document_launch` 同时保留。真实产物 SHA 在同 Data 目录 `union-generated.sha256`。
+完整执行副本的首次 tar 因 `--no-recursion` 参数位置报错，外层末命令退出 0 不能
+代表归档通过；随后原归档成员集合与 Git NUL 清单一致、提取内容 `tar --compare`
+退出 0，未重新导出或遗漏宿主。该问题不影响独立完整生成输入的实际 gen 结果。
+
+HUMAN trace 的准入和用量均定位原 AE/EE；无 AgentInvocation 不是拒绝 HUMAN 的
+理由。模型准入 ACCESS 采用同次 fresh 校验过的 caller AE 和其 exact Definition，
+action/version/target/hash/operation/initiator 整体一致，实际 actor 仍是组件 SERVICE；
+无 trace/模型发现才使用 binding 创建上下文。最初只改三个归因字段的草稿经复核
+纠正，未编译、部署或作为验收证据；唯一联合实现是 `model-audit-attribution.patch`
+SHA-256 `d180ee04c64ef9702e3be18ba2a0d2fb7832183bbda263fe527b88cd5378404d`。
+该 HUMAN 联合调用点与审计修正仍待联合 Core 编译，不能以旧基底 49371 通过替代。
+原 EE 终态后，Gateway 明确 submitted/pending/untracked 三项为 0 时，可证明该
+operation 没有 trace 归属请求；未知字段不等同该证明，无 trace 的调用继续独立
+binding 计量，不据此宣称整个绑定零用量。
+
+Gateway 恢复句柄 34585 已实际退出 0：ExtAuthz 51 项、原日志存储 8 项通过，
+首次列出的 5 项 PostgreSQL ignored 随后以原 `--ignored` 入口真实运行并全部通过。
+`gateway-targeted-restored.log` SHA-256
+`25a3359fdad02767a5584ad1bc5c27f0615a199015accb070d116e0d7e398b6b`。
+测试中一个 `PolicyResponse` must-use 告警随后通过显式消费返回值修正，未抑制告警。
+
+联合隔离库 `application_model_union_xl5agt` 原迁移句柄 42734 退出 0，读回
+`85|20261005021000|0`，包含 HUMAN、ProtocolSession 与模型迁移；仅复用原约束
+fixture，不触业务数据库。`union-migrations.log` SHA-256
+`fa52ffd3919c782077e8f248040d7ee55a07401010e04e5c4640d832bfc6e8fa`。
+原三侧消费者句柄 26830 退出 0：TypeScript 14 项、Dart 15 项、Go contracts 通过；
+复用既有固定 SDK 的依赖与 lock，无新安装。`union-wire.log` SHA-256
+`832002554eb118e0d7a503eefe86124ec5d5f2396a82ec79129a661aadbe0df5`。
+联合 Core 前置失败原件保留：HUMAN 增量格式差异、直接 rustfmt 使用错误 edition、
+误用该二进制包不存在的 `--lib` 目标；均未当作编译通过，随后回到原 cargo fmt 与
+cargo test 入口。生产守卫破坏还原和联合 Core 结果另按真实终态记载。
+
+联合 Core 44949 实际编译成功；原测试 216 passed/22 ignored/1 failed，唯一失败为
+Automation 原 SQL 的字段缺失。查证是执行时只覆盖 APPLICATION 专用数据库变量，
+遗漏通用 `DATABASE_URL`：SDK 默认仍指 57 条迁移的 `scope_verify`，对应列确实不存在。
+本次隔离库 `application_model_union_xl5agt` 是 85 条迁移，列实际存在；迁移终态
+21:34:29 UTC，Core 测试结果 21:37:36 UTC，不是迁移竞态。未修改 Automation 源码。
+显式投递专库后，句柄 4904 复用同一已编译 binary 执行原单目标，1 passed/退出 0；
+`union-automation-sql-restored.log` SHA-256
+`4b0375689e2a645f2bd5ec643de50d105dc5a545faddedf2d1ab0bbc2bdc36f7`。
+错误库的失败保留，不把它记为产品缺陷或抹为整组 0。
+
+联合 Core 定向恢复句柄 90079 实际退出 0：模型 3 项与 HUMAN 2 项（包含原生产
+函数、85 迁移专库与原约束 fixture）通过，Clippy `--all-targets -- -D warnings`
+通过，Rust 契约 roundtrip 13 项通过。过滤为零项的集成目标未算成通过。
+`union-core-targeted.log` SHA-256
+`626523d6944628bba824dda12d9a0e9d5f19da51ada0f3a3081788215d07863e`。
+此次使用联合 HUMAN/ProtocolSession 输入与完整 caller 审计元数据版本；机械格式
+修正已按窄 hunk 回投 lciVUS，并逐项 cmp 与执行副本一致。未运行本批 full、未
+部署模型接缝，未以这些本地证据声称原生组件模型调用验收完成。
+
+Gateway 生产守卫反例句柄 87899 已结束：移除 exact ExtAuthz 策略比较、SQLite
+以及 PostgreSQL 的 `deleted_at IS NULL` 守卫后，三个原消费者目标分别真实断言
+失败，退出码均为 101；不是编译错误导致的假反例。反例 harness 确认三个预期失败
+后退出 0，`gateway-mutation.log` SHA-256
+`3e355a18e54ab09171f70902db1c1712d814f37935c78b209b334081c0196e0a`。
+三处生产源码已 apply_patch 还原，逐字 cmp 与反例前及 lciVUS 一致；恢复目标
+10506 仍需按真实终态记载，未提前把还原测试计为通过。
+
+输入比对句柄 8391 已结束：在原选定 Core/contract 输入范围，当前 lciVUS 相比
+本次执行副本新增两份运行时源码 `agent_task.rs`、`agent_task/receipt_tests.rs`，
+两份原验证文档和 Gateway 测试 must-use 修正；10 处上游符号链接的链接文字相同，
+不能把 cmp 跟随悬空/目录链接的输出当源码漂移。90079 的通过不覆盖随后合入的
+20db 运行时增量，后者由其原验证和最终联合 full 消费；未重复导出完整仓库。
+
+Gateway 恢复句柄 10506 实际退出 0，`application_` 原目标 4 项通过：三个对应守卫
+及一项原日志指标目标均成功，真实 PostgreSQL 目标未跳过，must-use 告警不再出现。
+`gateway-guard-restored.log` SHA-256
+`94dc38be5cc531394b4eea4f9da6ce2e5419ba3914165d96adaec4c6cc8566c6`。
+
+网关产物阶段获明确授权后按原 `tools/build-upstream.sh model-gateway` 执行，唯一
+候选是 lciVUS；固定 `kailo-core-data` 8 CPU/16 GiB、Data 缓存，22:15 UTC 预检
+690 MiB/16 GiB、host 可用约 38 GiB、memory PSI 0。仅取 sole `.env` 的非密
+REGISTRY_HOST，未 source 整份环境或投递业务凭据。预备锁回执曾误引用不存在的
+`ui/package-lock.json`，在 helper 调用前退出 1，未开始构建；随后按实际
+`ui/pnpm-lock.yaml` 记录，未修改锁。原 helper 句柄 19813 已启动，日志在
+`/volumes/data/kailo/tmp/codex-component-runtime-integration-20261005.lciVUS/application-model-gateway-build.log`；
+镜像摘要与发布状态只在实际终态后登记，不以构建启动声称完成或部署。
+
+上述 Gateway 19813 随后实际退出 0，原 helper 完成构建、推送和来源登记：
+source `sha256:be117e45670e9870f93b4e73d5f99bd3ceec58da822c034f9978fa0adbf3ce1b`，
+artifact `sha256:442349136506fdb51f1feb5958a63c7d2cfda65cf194fa6e3774d3189c6dd420`。
+原 registry v2 独立读回 HTTP 200，响应摘要及 manifest 正文字节摘要均一致。
+日志 SHA256 `d3d69442e4601e0dc42a75cada302521d29aed8508cc3d0cde36a3a11a0143ec`；
+完整回执为同目录 `application-model-gateway-build-receipt.md`。这是构建与推送完成，
+不是 Gateway 部署或组件模型调用线上验收。
+
+2026-10-06 联合 Core 输入包含随后合入的 HUMAN、模型凭据交接、Workflows
+manual/delete 和运行时取消，并消费 66311 原四侧生成结果。45313 首批 workspace
+测试通过（Core 225 passed/27 ignored、contracts 14、SecretStore 17），两个独占
+隔离库各 87 条迁移、失败 0，22000/23000 down/up 通过；随后 ignored 模型目标因
+执行命令遗漏原 `application-execution-base.sql` 而触发 tenant 外键拒绝，整批退出
+101。未修改产品、测试或 FK；补执行原既有 fixture 后，69327 实际退出 0：模型
+1、HUMAN 1、manual 5、management 13、receipt 8 项通过，workspace Clippy 与
+SQLx prepare --check 均通过，保留原 potentially-unused-query 提示。
+
+仅执行副本移除 `parse_action_command` 的 manual 原始参数守卫，40767 原目标
+首先在 assetId 拒绝断言失败，退出 101；逐字恢复后 37425 fmt 与原目标 1 项通过，
+748 个固定输入哈希全部恢复一致。本轮业务源码净变化为 0，不重复已有 workspace
+测试，不把 fixture 输入纠正记为业务修复，也不将定向结果替代最终 full 或部署。
+完整命令、失败和日志摘要见
+`/volumes/data/kailo/tmp/codex-component-runtime-integration-20261005.lciVUS/core-union-20261006.1GeV2Z/handoff.md`，
+回执 SHA256 `101cd1d39871249d4a8a8e49d7e243c5026ccd5179d584b09e82fbe6797a1676`。

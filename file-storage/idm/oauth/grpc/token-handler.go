@@ -13,6 +13,7 @@ import (
 	"github.com/ory/fosite/token/hmac"
 	"github.com/ory/fosite/token/jwt"
 
+	patUUID "github.com/pborman/uuid"
 	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/auth/claim"
 	"github.com/pydio/cells/v5/common/config"
@@ -137,6 +138,16 @@ func (p *PATHandler) Verify(ctx context.Context, request *auth.VerifyTokenReques
 			cl.Extra["secret_pair"] = pat.SecretPair
 		}
 	}
+	// Only the native DOCUMENT producer may bind a PAT to a platform Session.
+	// The original native PAT record remains the token/revocation authority.
+	if pat.Type == auth.PatType_DOCUMENT && patUUID.Parse(pat.RevocationKey) != nil &&
+		pat.Uuid == pat.RevocationKey && pat.AutoRefreshWindow == 0 {
+		if cl.Extra == nil {
+			cl.Extra = map[string]interface{}{}
+		}
+		cl.Extra["protocol_session_id"] = pat.RevocationKey
+		cl.Extra["native_protocol_token_ref"] = pat.Uuid
+	}
 
 	m, _ := json.Marshal(cl)
 
@@ -147,6 +158,11 @@ func (p *PATHandler) Verify(ctx context.Context, request *auth.VerifyTokenReques
 }
 
 func (p *PATHandler) Generate(ctx context.Context, request *auth.PatGenerateRequest) (*auth.PatGenerateResponse, error) {
+	if request.Type == auth.PatType_DOCUMENT && request.RevocationKey != "" {
+		if err := validatePlatformDocumentToken(ctx, request); err != nil {
+			return nil, err
+		}
+	}
 	dao, err := p.getDao(ctx)
 	if err != nil {
 		return nil, err
@@ -162,6 +178,11 @@ func (p *PATHandler) Generate(ctx context.Context, request *auth.PatGenerateRequ
 		AutoRefreshWindow: request.AutoRefreshWindow,
 		ExpiresAt:         request.ExpiresAt,
 		RevocationKey:     request.RevocationKey,
+	}
+	if request.Type == auth.PatType_DOCUMENT && request.RevocationKey != "" {
+		// The original native UUID PK is the creation fence. A repeated or
+		// ambiguous dispatch may observe this record but cannot mint a new PAT.
+		token.Uuid = request.RevocationKey
 	}
 
 	if request.AutoRefreshWindow > 0 {

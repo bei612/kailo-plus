@@ -1076,7 +1076,7 @@ fn proxy_context(log: &RequestLog) -> cel::ProxyContext {
 }
 
 impl RequestLog {
-	pub(crate) async fn begin_usage_dispatch(&mut self) -> anyhow::Result<()> {
+	pub(crate) async fn begin_usage_dispatch(&mut self, claims: Option<&crate::http::apikey::Claims>) -> anyhow::Result<()> {
 		if self.llm_request.is_none() {
 			return Ok(());
 		}
@@ -1088,7 +1088,8 @@ impl RequestLog {
 		self.usage_request_id = None;
 		self.llm_response = Default::default();
 		let trace = self.outgoing_span.as_ref().or(self.incoming_span.as_ref()).map(|s| s.trace_id().to_string());
-		let id = log_store::begin_usage(trace, self.start.as_datetime().with_timezone(&chrono::Utc), i64::from(self.retry_attempt.unwrap_or(0))).await?;
+		let application = log_store::DispatchIdentity::from_claims(claims)?;
+		let id = log_store::begin_usage(trace, self.start.as_datetime().with_timezone(&chrono::Utc), i64::from(self.retry_attempt.unwrap_or(0)), application).await?;
 		self.usage_request_id = Some(id);
 		Ok(())
 	}

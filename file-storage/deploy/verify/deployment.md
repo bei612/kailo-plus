@@ -2,6 +2,13 @@
 
 ## 当前结果
 
+2026-10-05 22:30 UTC 补齐原生 OIDC 的实际部署投递：Compose 将受控
+`CELLS_OAUTH_CONNECTORS` 送到 Cells 的原配置生产者，并将独立 client secret
+挂到 connector 实际读取的 `/run/secrets/cells_oidc_client_secret`。此前只有
+HTTP handler，没有这两项运行输入，构建成功也不能据此完成原生登录。
+launcher 复用原 secret 文件检查，核对 connector 引用与实际 mount 一致；
+不生成用户、管理员、密钥或新身份权威。实际部署和真实 IdP 登录仍未完成。
+
 2026-10-05 原生身份源码进入完整 c57f fork 后，当前 Compose 已改为必填 `CELLS_IMAGE` immutable digest，不再投递下文旧 5.0.2 baseline。历史只读 registry/配置检查证据保留，不能代表新 fork 产物。新源码未构建/部署，实际原生 OIDC 配置仍未投递。
 
 已实现独立 `file-storage/deploy/compose.yaml` 和 `start.sh`：直接运行官方 Cells UI/API 与独立 PostgreSQL；没有 Core 数据库、ApplicationBinding、Resource.create 或模型权限启动依赖。原生身份和服务数据仍归 Cells，不复制到 Core。
@@ -53,3 +60,43 @@ OCI config 的 version label 为 `5.0.2`，revision label 为空；这里不把 
 原件分别为该目录 `valid.log`、`default-admin-rejected.log`、`cross-database-rejected.log`、`restored.log`。检查本机原 Compose 帮助时确认 `start` 不支持 `--wait`，实现已使用其实际支持的 `up --no-build --no-recreate --pull never --wait --wait-timeout`，不是假定 CLI 功能。
 
 未执行 full、产品编译、镜像构建、生产配置投递、服务启动、Core binding、模型或工具调用。联合批次由主线统一验证；本回执不声称部署已完成。
+
+## OIDC 投递补齐的影响与实测
+
+权威仍为 `.design/07` §4.6 和上述独立原生管理边界。重新核对只读 Cells
+`c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`idm/oauth/grpc/service/service.go::initDefaults`，原生生产者直接消费
+`CELLS_OAUTH_CONNECTORS`；`upstream_manifest.py status file-storage` 退出 0，
+HEAD 即基准，无新提交。新增投递只连接该生产者与已有
+`frontend/web/kailo-oidc.go::loadKailoOIDC/readNativeOIDCSecret`，不改变 UI、
+Core、四语言契约、数据库格式、Workflow 或权限判断。Web/Desktop 继续使用
+服务自己的登录，Mobile 不新增原生管理入口。
+
+变更为 `compose.yaml`、`start.sh` 和原 `.env.example`：配置中唯一的
+`kailo-oidc` connector 必须引用已挂载的同一 client secret；缺失、空文件、
+权限不合规或挂载错位在启动前拒绝，不回退共享凭据。这是 `PRECONDITION`
+类运行输入问题，不写新的 API reason code。原 native handler 继续负责
+OIDC 配置语义、超时、state/nonce/PKCE 与撤权。此刀没有外部请求、在途任务、
+重放、新状态或持久迁移；原调用幂等、UNKNOWN 和并发边界不变。
+
+本次原件目录 `codex-cells-oidc-delivery-20261005.u69qeA` 位于 Data tmp。
+原 `start.sh --check fixture.env` 退出 0；原 Compose JSON 实际读回两项
+投递对应关系，输出 `PASS native connector and matching secret mount reach Cells`。
+临时删除生产 Compose 的 connector 环境字段后，同一读回检查因
+`KeyError: CELLS_OAUTH_CONNECTORS` 退出 1；原行还原后退出 0。
+将隔离 fixture secret 权限改为 0644，原 launcher 退出 2；恢复 0600 后
+原 `--check` 退出 0。项目标签 `kailo-cells-fixture` 的容器数量为零。
+
+最终配置检查日志 `check-final.log` SHA-256 为
+`5c6031aa55784577465989342a94c5c1049139d472fabf96a6bc57c8d6d002fb`；
+生产变异 `render-mutation-exit.log` 为
+`7bbec8d1ea752e1a30fe64902ca2beea7e1b7f039200a743ab455f00364144d2`；
+恢复 `render-restored-exit.log` 为
+`9fdad3035d1f9342febf5e5bcf7b01d53a5a0796b6e35c0044cb9bdb1864ac45`。
+第一次 fixture 使用 Compose 不支持的 shell source 行，原配置检查退出 1；
+修正为 dotenv 原字段后通过。第一次读回断言误以为 target 不含
+`/run/secrets/`，实际 Compose 已规范化为绝对路径，修正观察后通过。
+首次变异包装命令提前展开 shell 退出码，不能据其 exit 0 计通过，已用
+同一生产变异和正确 pipefail 重跑得到上述真实 exit 1。没有修改产品迎合
+这些执行器错误。启动脚本 Bash/Python 只做既有运行输入与容器元数据检查，
+未编译、未运行宿主项目 SDK、未启动任何业务实例；整批 full 仍由联合批次执行。

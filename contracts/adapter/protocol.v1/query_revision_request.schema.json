@@ -9,6 +9,7 @@
   "properties": {
     "nativeObjectRef": {"type": "string"},
     "idempotencyKey": {"type": "string"},
-    "authorizationTargetNativeRef": {"type": "string"}
+    "authorizationTargetNativeRef": {"type": "string"},
+    "protocolReconcile": {"$ref": "protocol_revision_query.schema.json"}
   }
 }

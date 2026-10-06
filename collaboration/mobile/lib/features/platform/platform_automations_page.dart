@@ -109,4 +109,5 @@ String platformAutomationStateText(
   AutomationState.ENABLED => PlatformMessageKey.agentsAutomationStateEnabled,
   AutomationState.PAUSED => PlatformMessageKey.agentsAutomationStatePaused,
   AutomationState.DISABLED => PlatformMessageKey.agentsAutomationStateDisabled,
+  AutomationState.DELETED => PlatformMessageKey.agentsAutomationStateDeleted,
 }, locale: locale);

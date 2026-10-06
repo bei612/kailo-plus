@@ -2,6 +2,8 @@
 """Deliver file-backed secrets to the unchanged native WeKnora process."""
 
 import os
+import ipaddress
+import re
 import stat
 import sys
 from urllib.parse import urlsplit
@@ -91,6 +93,7 @@ def prepare_environment(original):
         ("REDIS_ADDR", "redis:6379"),
         ("DOCREADER_ADDR", "docreader:50051"),
         ("OIDC_AUTH_ENABLE", "true"),
+        ("AUTO_RECOVER_DIRTY", "false"),
     ):
         if env.get(name) != expected:
             raise ConfigurationError(f"{name}: independent deployment value required")
@@ -100,6 +103,27 @@ def prepare_environment(original):
     http_url(env, "OIDC_AUTH_ISSUER_URL")
     http_url(env, "OIDC_AUTH_DISCOVERY_URL")
     http_url(env, "FRONTEND_BASE_URL", origin=True)
+    if "KNOWLEDGE_PLATFORM_MODEL_BASE_URL" in env:
+        value = http_url(env, "KNOWLEDGE_PLATFORM_MODEL_BASE_URL")
+        parsed = urlsplit(value)
+        host = parsed.hostname
+        try:
+            ipaddress.ip_address(host)
+            exact_host = True
+        except ValueError:
+            exact_host = len(host) <= 253 and all(
+                re.fullmatch(r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?", label)
+                for label in host.split(".")
+            )
+        if not exact_host or parsed.path != "/v1" or parsed.port == 0:
+            raise ConfigurationError("KNOWLEDGE_PLATFORM_MODEL_BASE_URL: exact Gateway host and /v1 required")
+        # Reuse the native global SSRF allowlist, preserving existing approved
+        # IdP hosts. No wildcard/CIDR is derived and other targets stay denied.
+        allowed = [item.strip() for item in env.get("SSRF_WHITELIST_EXTRA", "").split(",") if item.strip()]
+        if host not in allowed:
+            allowed.append(host)
+        env["SSRF_WHITELIST_EXTRA"] = ",".join(allowed)
+        del env["KNOWLEDGE_PLATFORM_MODEL_BASE_URL"]
     scopes = required(env, "OIDC_AUTH_SCOPES").replace(",", " ").split()
     if "openid" not in scopes or len(scopes) != len(set(scopes)):
         raise ConfigurationError("OIDC_AUTH_SCOPES: unique scopes including openid required")

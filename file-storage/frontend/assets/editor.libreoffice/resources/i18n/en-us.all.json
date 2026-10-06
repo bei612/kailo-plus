@@ -1,4 +1,7 @@
 {
+  "kailo_view": { "other": "Open in Kailo (view)" },
+  "kailo_edit": { "other": "Open in Kailo (edit)" },
+  "kailo_reference_unavailable": { "other": "The native file reference could not be verified. Nothing was submitted to Kailo." },
   "1": {
     "other": "Libre Office Documents"
   },

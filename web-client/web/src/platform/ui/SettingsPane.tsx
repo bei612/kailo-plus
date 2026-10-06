@@ -1,5 +1,6 @@
 import { ThemeSettingsControls } from "@client-kit/platform/react/theme-settings-controls";
 import { isBuzzTheme } from "@client-kit/platform/theme/use-appearance";
+import { isMacPlatform } from "@client-kit/platform/keyboard-platform";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { translate } from "@client-kit/platform/i18n";
@@ -35,6 +36,12 @@ export function SettingsPane() {
         <ShortcutSettings
           locale={locale}
           shortcuts={[
+            {
+              id: "open-settings",
+              label: translate(locale, "platform.shortcuts.open-settings.label"),
+              description: translate(locale, "platform.shortcuts.open-settings.description"),
+              keys: isMacPlatform() ? "⌘," : "Ctrl+,",
+            },
             // The Web composer is a single-line Input, not Desktop's rich editor.
             {
               id: "send-message",

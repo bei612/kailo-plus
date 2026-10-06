@@ -9,3 +9,6 @@
 *.pdf binary
 *.woff binary
 *.woff2 binary
+
+# Preserve the fixed native aggregate byte-for-byte, including upstream CRLF.
+document-editor/** -text

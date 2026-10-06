@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"adapter/protocol.v1/protocol_session_lifecycle_pep_response.schema.json",
+  "title":"ProtocolSessionLifecyclePepResponse",
+  "description":"DD-90, 18 §5.1: binding-authenticated permission to observe/revoke the original document PAT. These closed lifecycle facts never authorize file reads, writes or token creation.",
+  "type":"object","additionalProperties":false,
+  "required":["decision","protocolSessionId","nativeObjectRef","requestedMode","expiresAt"],
+  "properties":{
+    "decision":{"type":"string","const":"ALLOW"},
+    "protocolSessionId":{"type":"string","format":"uuid"},
+    "nativeObjectRef":{"type":"string","minLength":1},
+    "requestedMode":{"type":"string","enum":["VIEW","EDIT"]},
+    "expiresAt":{"type":"string","format":"date-time"}
+  }
+}

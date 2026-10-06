@@ -8,7 +8,8 @@
 name: platform-local
 
 networks:
-  edge:       # 仅公开入口可达
+  edge:       # 仅入口运行体可达；独立服务只经此层消费已鉴权公共服务
+    name: ${PLATFORM_EDGE_NETWORK:?必须显式提供已有平台 edge 网络名}
   app:        # Core/BFF、Worker、Web 静态服务
   mgmt:       # 管理面与 admin router
   component:  # 各上游组件 runtime
@@ -515,7 +516,7 @@ services:
   # 它只接受 AgentGateway 投影的内网身份 header，缺任一条即拒绝（.design/09）。
   # 只在 app 网络：Browser 永远到不了它，必须经 edge 上的网关。
   core-bff:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:ff7c389aa1ac48bebb94434b095ae267e4cd71e69daa163b71b6412401098fe2
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/core@sha256:2a02f558367cb8351e0a3092be8b31423bc166511c519be1d5e75411136a922e
     build:
       context: ../..
       dockerfile: core/Dockerfile
@@ -558,6 +559,8 @@ services:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?必须显式提供，禁止硬编码}
       NATIVE_PAGE_ORIGINS: ${NATIVE_PAGE_ORIGINS:-}
+      EDITOR_ORIGINS: ${EDITOR_ORIGINS:-}
+      WEB_EDITOR_ORIGINS: ${WEB_EDITOR_ORIGINS:-}
       # 每人可同时登记的原生设备上界（DD-77）
       BFF_CLIENT_KEYS_PER_PRINCIPAL: ${BFF_CLIENT_KEYS_PER_PRINCIPAL:?必须显式提供，禁止硬编码}
       # 设备投影仍在收敛时，原生端按服务端给出的间隔重查，不在客户端写死
@@ -724,7 +727,7 @@ services:
   # API（状态投影与 Buzz roster 投影）——Buzz 的签名留在 Core，CONTROL 私钥在
   # 那里（DD-72）。
   worker:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:36ce8000303eef14fd4ca8a53b25febea79c6ec83c7f01d0d050cff8bb8601de
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/worker@sha256:13e34dd1d4114bcc3fd462946f57925fc92ebe62610b12d101157833afc94b33
     build:
       context: ../..
       dockerfile: worker/Dockerfile
@@ -780,6 +783,7 @@ services:
     environment:
       PLATFORM_DISPLAY_NAME: ${PLATFORM_DISPLAY_NAME:?必须显式提供，禁止硬编码}
       NATIVE_PAGE_ORIGINS: ${NATIVE_PAGE_ORIGINS:-}
+      WEB_EDITOR_ORIGINS: ${WEB_EDITOR_ORIGINS:-}
     # 镜像自带 HEALTHCHECK（/app/healthz），不在这里重复定义。
 
   # AgentGateway 是 Browser 侧的 OIDC PEP（SS-AGW-OIDC、DD-02）。
@@ -797,7 +801,7 @@ services:
     # agentgateway-data 是它自己的私有数据网络，只为到达 request log / usage outbox 库。
     networks:
       edge:
-        aliases: ["${PUBLIC_HOST:?必须显式提供，禁止硬编码}"]
+        aliases: ["${PUBLIC_HOST:?必须显式提供，禁止硬编码}", "${AGENTGATEWAY_MODEL_HOST:?必须显式提供模型入口主机名}"]
       app:
         aliases: ["${PUBLIC_HOST:?必须显式提供，禁止硬编码}"]
       agentgateway-data: {}
@@ -827,6 +831,14 @@ services:
       AGENTGATEWAY_ADMIN_CLIENT_ID: ${OIDC_SERVICE_CLIENT_ID:?必须显式提供，禁止硬编码}
       AGENTGATEWAY_ADMIN_AUDIENCE: ${AGENTGATEWAY_ADMIN_AUDIENCE:?必须显式提供，禁止硬编码}
       AGENTGATEWAY_MODEL_PORT: ${AGENTGATEWAY_MODEL_PORT:?必须显式提供 Gateway 私网模型 listener 端口}
+      BFF_SERVICE_NAME: ${BFF_SERVICE_NAME:?必须显式提供，禁止硬编码}
+      SERVICE_CONTAINER_PORT: ${SERVICE_CONTAINER_PORT:?必须显式提供，禁止硬编码}
+      GATEWAY_SERVICE_ISSUER: ${GATEWAY_SERVICE_ISSUER:?existing Gateway SERVICE identity required}
+      GATEWAY_SERVICE_AUDIENCE: ${GATEWAY_SERVICE_AUDIENCE:?existing Gateway SERVICE audience required}
+      GATEWAY_SERVICE_CALLER_ID: ${GATEWAY_SERVICE_CALLER_ID:?existing Gateway SERVICE caller required}
+      GATEWAY_SERVICE_SIGNING_KEY_FILE: ${GATEWAY_SERVICE_SIGNING_KEY_FILE:?existing Gateway signer path required}
+      GATEWAY_SERVICE_KEY_ID: ${GATEWAY_SERVICE_KEY_ID:?existing Gateway signer version required}
+      GATEWAY_SERVICE_TOKEN_SECONDS: ${GATEWAY_SERVICE_TOKEN_SECONDS:?existing Gateway token lifetime required}
       AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY: ${AGENTGATEWAY_PROVIDER_SECRET_DIRECTORY:?必须显式提供 Gateway 独占凭据目录}
     env_file:
       # 浏览器客户端密钥由网关持有，浏览器不持有。文件在 gitignore 的 secrets/ 下。

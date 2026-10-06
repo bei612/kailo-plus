@@ -67,6 +67,18 @@ pub mod proto {
 #[derive(Default, ::cel::DynamicType)]
 pub struct ExtAuthzDynamicMetadata(serde_json::Map<String, JsonValue>);
 
+/// Request-local evidence, never a client header or cached authorization. The
+/// original Core-managed API key pins the exact native policy that must have
+/// received a fresh successful response before an APPLICATION model effect.
+#[derive(Clone, Debug)]
+pub(crate) struct ApplicationModelAdmission(String);
+
+impl ApplicationModelAdmission {
+	pub(crate) fn matches(&self, claims: &crate::http::apikey::Claims) -> bool {
+		self.0 == claims.key.sha256().as_str()
+	}
+}
+
 #[apply(schema!)]
 pub struct BodyOptions {
 	/// Maximum request body size to send to the authorization service. Defaults to 8192 bytes.
@@ -197,6 +209,24 @@ pub struct ExtAuthz {
 }
 
 impl ExtAuthz {
+	fn record_application_model_admission(&self, req: &mut Request) {
+		let proof = (|| {
+			let claims = req.extensions().get::<crate::http::apikey::Claims>()?;
+			claims.metadata.get("componentBindingId")?;
+			let expected: Self = serde_json::from_value(claims.metadata.get("modelAdmissionPolicy")?.clone()).ok()?;
+			// A cache hit or a different successful authorization service does not
+			// prove this binding's current Core scope/permission/quota checks.
+			if self.cache.is_some() || expected.cache.is_some()
+				|| serde_json::to_value(self).ok()? != serde_json::to_value(expected).ok()? {
+				return None;
+			}
+			Some(ApplicationModelAdmission(claims.key.sha256().as_str().to_owned()))
+		})();
+		if let Some(proof) = proof {
+			req.extensions_mut().insert(proof);
+		}
+	}
+
 	pub fn with_configured_cache_store(mut self) -> Self {
 		self.cache_store = self
 			.cache
@@ -876,6 +906,9 @@ impl ExtAuthz {
 			},
 		};
 		if resp.status().is_success() {
+			if resp.status() == StatusCode::OK {
+				self.record_application_model_admission(req);
+			}
 			let mut included_headers = HeaderMap::new();
 			for k in include_response_headers {
 				if let Some(h) = resp.headers().get(k) {

@@ -37,9 +37,9 @@
 
 ## 完成边界
 
-- 原 Go 锁与完整 UI 没有改变；仅执行原包窄编译/测试，没有产品镜像、集群或业务写操作。
+- 首轮身份批没有改变原 Go 锁与完整 UI；仅执行原包窄编译/测试，没有产品镜像、集群或业务写操作。后续原生登录页接线见末节。
 - 新 HTTP consumer 的源与 case 不等于运行配置已投递或三人真实身份可登录；尚无该 native OIDC client/受控 secret/native UUID 链接投递证据。
-- 未增加原生登录页按钮；当前入口为同一原生 UI 宿主 `/auth/kailo/login`，不是第二前端。
+- 首轮只有同一原生 UI 宿主 `/auth/kailo/login`；末节将该入口接到原生登录对话框，不建立第二前端。源码接线不代表发布产物已更新。
 - 未闭合 SS-CEL-WOPI 的每请求 fresh PEP/用户 PAT、平台撤权与原生 session 生命周期、Gateway 工具生产消费或平台 Temporal 工作流，不据这个局部身份批宣称所有权限/工作流接入。
 - 原 query_revision adapter 的既有隔离 21 case 证据不冒充本 native 身份代码已通过，也不授权历史 ContentReference。
 
@@ -72,3 +72,22 @@
 该纠正首次原窄目标 session 63757 exit 1，`native-go-config-final.log` SHA-256 `4327a729cef81d43b94b25dfbe4e0268de103f02ef0886139d46178c1cd40e65`：6 个旧 OIDC 目标和 service 16 断言通过，新增配置用例只修改 fixture 对象而未写回 native config，故 cookie 仍取旧值。修正为实际 `config.Set` producer 后，同原目标 session 15859 exit 0，`native-go-config-corrected.log` SHA-256 `98e4f0238ce14aee45dda19a5d5779e0b132e47d97f3c39f029f23e020b60ec0`：7 个 OIDC 顶层目标/9 个 HTTP consumer 子例及原 service 16 断言全部通过。新增用例覆盖缺失/非正配置、不同值确切投递、cookie 实际读回配置值、configured secret bound 和局域网 HTTP(S) origin；不使用生产默认或真实外部凭据。
 
 配置纠正后 handler SHA-256 `5f6162843f40ef26a85e622f3c7e357a4af69653f8131127ef76fd5b5acfa73b`，test SHA-256 `496962693bffb1c835b6420849fc8a4271b96b0a8a789c5072d30a81d9731c5b`。首轮 guard 变异与逐字恢复原件继续保留；后续纠正未改变该 subject/policy 拒绝条件。该最后目标未额外跑 full/vet/镜像，不把首轮 vet 结果冒称新整批验收。
+
+## 原生登录页接线（2026-10-05，源码阶段）
+
+1. 权威：`.design/07` §4.6 的独立原生后台、公共身份复用和不重写页面；固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的 `frontend/web/index-handler.go::IndexHandler.ServeHTTP` 与 `frontend/assets/core.authfront/res/js/index.js::LoginPasswordDialog` 已重新用 Git 核验。原生 handler 存在但登录页没有消费者，故不是新的身份能力或新需求。
+2. 影响：原 index 向现有 `StartParameters` 写可选 `KAILO_OIDC_LOGIN`；原 `LoginPasswordDialog.render` 直接用原 FlatButton 消费 label/href。新增字段只含配置显示名与既有同源登录路径，旧 UI 忽略该字段；没有数据库、Core 合同、身份或权限迁移。Web/Desktop 承载的是同一个外部原生页，Mobile 没有新增入口。
+3. 副作用：不序列化 connector、用户链接、client secret 路径或密钥；不接受外部 return URL。原 login_challenge 只作转义后的参数传给既有原生登录链，后者仍核原生 client/callback。分享页的 `PASSWORD_AUTH_ONLY` 不显示此按钮，原密码认证不被隐式替换；按钮不触发自动登录或重试。
+4. 异常：缺配置、多个 connector、非法 callback、畸形或重复 challenge 不生成该选项；无 challenge 走已有原生 CreateLogin。直接调用认证路由仍按原 handler 拒绝无效配置、身份、policy 或交易。并发点击使用现有单浏览器交易替换语义，不增加持久状态、Quota、副作用账本或成功推断；错误分类继续沿原身份/准入与上游不明路径，本批不增加错误枚举。
+
+独立候选为 `codex-component-runtime-integration-20261005.lciVUS/apps`，生产四路径相对接收索引为 4 文件 +62/-1（含后置 Go 检查）。原 Go 窄目标使用固定 Go SDK、4 CPU/8 GiB/同等 memory+swap、Data 缓存，不使用宿主工具链；运行原件为 `cells-login-ui-go.log`，记录时尚未终态。
+
+原前端安装首先实际退出 1：`ERR_PNPM_BROKEN_LOCKFILE`，重复 `@babel/code-frame@7.29.0`、`@babel/helper-plugin-utils@7.28.6`，同时已有依赖仍引用丢失的 code-frame 7.28.6。重复内容在上述固定 upstream commit 亦存在；按 npm registry 对确切 7.28.6 返回的 integrity/dependencies 恢复其原版本条目，删除完全相同的 helper 条目，不删除锁文件或浮动升级。下一次 frozen 安装退出 1，发现三个 rjsf snapshot 仍引用不存在的 lodash 4.17.21；对齐该锁已经选定的 4.17.23，保留原 integrity。上游既有 lodash 升级为 `8fca06c2ce7639ce9a92e1423c46abeaeb0b15b5::frontend/assets/pnpm-lock.yaml`。两次失败原件分别保留为 `cells-login-ui-build.log`、`cells-login-ui-build-lock-corrected.log`。
+
+修正后同一个原 pnpm 10.7.1 frozen 安装实际完成 756 个锁定包（10m 5.6s），随后原 `core.authfront build` 退出 1：`Cannot find package '@babel/plugin-syntax-dynamic-import'`；webpack 5.104.1 报一个错误。完整原件为 `cells-login-ui-build-lock-restored.log`，不把安装成功记为编译成功。
+
+核对同一原 `frontend/assets/webpack-commons.js::configLoader` 后，`core.authfront/package.json` 同时缺少该配置直接消费的 dynamic-import plugin 和 TypeScript preset 声明；原锁已经分别有 7.8.3 和 7.28.5 的 integrity/snapshot。只将这两个确切版本加入原包 devDependencies 与锁的该 importer，不改共享 webpack 配方、不移除 preset、不浮动升级，其他 importer 不变。
+
+同一个受限 Node SDK 的原 frozen install/build（session 4329）实际退出 0：四个新增所需锁定包安装完成，`webpack 5.104.1 compiled successfully in 58306 ms`。`cells-login-ui-build-deps-corrected.log` SHA-256 为 `757bcad5f333fca40c8560f129eeb58d17ffe66b683ab9435260a9a86d9106ab`。原输出 `frontend/assets/core.authfront/res/dist/AuthfrontCoreActions.min.js` SHA-256 为 `3606e882f96ad1f469951277755f6d488b0d998acab934c92e5167260bc6196f`；对应 `.gz` 为 `7127a8d25ae55c16b203e0ac51b5675938f3544a96e4cf2ea0c15b00215cd513`，解压后与 JS 逐字 cmp 0。生成 JS 实际包含 `PASSWORD_AUTH_ONLY` 限定和 `KAILO_OIDC_LOGIN` 消费，不是手工修改的发布包。上述证明原生前端已生成；Go 验证、产品镜像、部署及真实 SSO 仍未据此验收。
+
+随后原 Go 目标 session 62410 实际退出 0：8 个 OIDC 顶层目标、9 个原生 HTTP consumer 子例和原 service 16 个断言通过；日志 `cells-login-ui-go.log` SHA-256 为 `698bdb77f6e9a70a696e73ac0dba494361c7572493f3610634f7cc772fc99d41`。主动删除生产 `nativeOIDCLoginOption` 的重复 challenge 拒绝判断，原新目标 session 31981 退出 1，输出 `ambiguous or malformed native login query exposed a login option`；原件 `cells-login-ui-production-mutation.log` 为 `44becbd8691bfc52440a6fc73ba7a3a85389cc90e9977593cb1c94e0b533b1e4`。apply_patch 逐字还原后 handler SHA-256 与变异前相同，为 `b9917f1fa4b1543d8d41e60a7638fcb26c554221a37a6b509cfb40bb5ccae4ee`；原完整窄目标 session 4835 再次退出 0，`cells-login-ui-restored.log` 为 `2471a8b7941633e09eaa15437a5a2e981e3808c337377227d11105a0ef9d0fea`。未运行产品镜像、真实 SSO、full 或部署，本节不扩大为三组件接入验收。

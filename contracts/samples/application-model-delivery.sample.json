@@ -1,0 +1,34 @@
+{
+  "adapters": [],
+  "protocolPeers": [{
+    "adapterServiceRef": "fixture-native-mcp",
+    "mcpUrl": "https://native.invalid/mcp",
+    "nativeInstanceRef": "fixture-instance",
+    "artifactDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "timeoutSeconds": 10,
+    "maxResponseBytes": 65536,
+    "bindings": [],
+    "secretReaders": [{
+      "servicePrincipalId": "00000000-0000-0000-0000-000000000004",
+      "audience": "fixture-native-service",
+      "roleName": "fixture-reader"
+    }],
+    "modelCredentialDeliveries": [{
+      "bindingId": "00000000-0000-0000-0000-000000000002",
+      "generation": 1,
+      "configDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "servicePrincipalId": "00000000-0000-0000-0000-000000000004",
+      "routeResourceId": "00000000-0000-0000-0000-000000000005",
+      "nativeScopeRef": "42",
+      "nativeModelRef": "00000000-0000-0000-0000-000000000006",
+      "secretRef": {
+        "locator": "tenants/00000000-0000-0000-0000-000000000001/kv/application-model/binding/1",
+        "version": 1,
+        "audience": "fixture-native-service"
+      },
+      "requestId": "00000000-0000-0000-0000-000000000007",
+      "verificationNonce": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "nativeProof": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }]
+  }]
+}

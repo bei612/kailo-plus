@@ -1,6 +1,7 @@
 # Independent native service, not a Kailo runtime/Tool registry.
 # Exact image digests must be proved against the pinned source before deployment.
-# No build directive, platform network, Docker socket, or platform database mount.
+# No build directive, Docker socket, or platform database mount. The optional
+# model-gateway overlay attaches only app to the existing platform edge.
 name: kailo-knowledge
 
 services:
@@ -22,7 +23,7 @@ services:
       - ./render_proxy.awk:/opt/kailo-knowledge/render_proxy.awk:ro
       - ../../frontend/nginx-api-proxy.conf:/opt/kailo-knowledge/native-api-proxy.conf:ro
     ports:
-      - "127.0.0.1:${KNOWLEDGE_UI_PORT:?independent native UI port required}:80"
+      - "${KNOWLEDGE_UI_BIND_ADDRESS:?explicit native UI bind address required}:${KNOWLEDGE_UI_PORT:?independent native UI port required}:80"
     networks: [native_ui]
     depends_on:
       app:
@@ -42,6 +43,8 @@ services:
       LOG_PATH: ""
       LLM_DEBUG_LOG: "false"
       WEKNORA_LLM_STREAM_RAW_DUMP: ""
+      # Native dirty recovery forces a migration version; never guess completion.
+      AUTO_RECOVER_DIRTY: "false"
       DB_DRIVER: postgres
       DB_HOST: postgres
       DB_PORT: "5432"
@@ -61,6 +64,9 @@ services:
       OIDC_AUTH_CLIENT_ID: ${KNOWLEDGE_OIDC_CLIENT_ID:?independent native OIDC client required}
       OIDC_AUTH_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
       OIDC_AUTH_SCOPES: openid profile email
+      # Native SSRF remains enabled. Explicit deployment-approved hosts only;
+      # needed when the real IdP uses a private address or an IP literal.
+      SSRF_WHITELIST_EXTRA: ${KNOWLEDGE_SSRF_WHITELIST_EXTRA:-}
       FRONTEND_BASE_URL: ${KNOWLEDGE_NATIVE_ORIGIN:?native frontend origin required}
     volumes:
       - ./native_entrypoint.py:/opt/kailo-knowledge/native_entrypoint.py:ro
@@ -165,8 +171,14 @@ secrets:
 
 networks:
   native_ui:
+    ipam:
+      config:
+        - subnet: ${KNOWLEDGE_UI_SUBNET:?explicit nonoverlapping native UI subnet required}
   native_data:
     internal: true
+    ipam:
+      config:
+        - subnet: ${KNOWLEDGE_DATA_SUBNET:?explicit nonoverlapping native data subnet required}
 
 volumes:
   native_files:

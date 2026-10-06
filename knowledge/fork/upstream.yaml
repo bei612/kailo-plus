@@ -1,5 +1,5 @@
 # Full native source fork; identity/correlation changes retain the native UI.
-# Native UI and adapted app images are built; document reader and deployment remain unverified.
+# Prior native image facts remain in fork/verify; the current source has no matching artifact yet.
 project: knowledge
 reference_tree: WeKnora
 upstream_url: https://github.com/Tencent/WeKnora
@@ -13,26 +13,27 @@ artifacts:
     build_context: knowledge
     build_dockerfile: knowledge/docker/Dockerfile.app
     inputs: [knowledge/]
+    exclude: [knowledge/frontend/]
     build_args: [GOPROXY_ARG, VERSION_ARG, COMMIT_ID_ARG, BUILD_TIME_ARG, GO_VERSION_ARG]
-    source_digest: sha256:d8b22b7e06470d70d67ad6e7230c1f0ec5ddd9a6048940bed9a65578f5766cdd
-    artifact_digest: sha256:db4ec09f76ee61b403cc79cf56c131dbfb6810e473dc7fadb0fb21ff2f08a8c8
-    blocked: Adapted native service image built; service credentials, deployment and Gateway/Core MCP consumption remain unverified.
+    source_digest: none
+    artifact_digest: none
+    blocked: Current credential-delivery and edge source has no matching artifact; historical native app build is retained in evidence, not approved for this revision or binding.
   - name: knowledge-native-ui
     kind: image
     build_context: knowledge/frontend
     build_dockerfile: knowledge/frontend/Dockerfile
-    inputs: [knowledge/]
-    source_digest: sha256:70fa2b6f9b429fcff426e630e80306c4fd65d267b9d7943669fe6760565b823a
-    artifact_digest: sha256:fe86075f63f92527715144b079141447b87005e8697ea5b353d736d4915bc0f4
-    blocked: Native UI image built; deployment, authenticated browser acceptance and npm vulnerability remediation remain unverified.
+    inputs: [knowledge/frontend/]
+    source_digest: none
+    artifact_digest: none
+    blocked: Current declared knowledge source inputs have no matching UI artifact; historical UI build and its unresolved vulnerability/browser acceptance remain in evidence.
   - name: knowledge-document-reader
     kind: image
     build_context: knowledge
     build_dockerfile: knowledge/docker/Dockerfile.docreader
-    inputs: [knowledge/]
+    inputs: [knowledge/docker/Dockerfile.docreader, knowledge/.dockerignore, knowledge/packages/, knowledge/docreader/]
     source_digest: none
     artifact_digest: none
-    blocked: Source-built document reader image and native document processing acceptance are not yet verified.
+    blocked: Current declared knowledge source inputs have no matching reader artifact; prior deployed reader remains historical and native document processing acceptance remains unverified.
 
 source_facts: [SF-WEK-01, SF-WEK-02, SF-WEK-03, SF-WEK-06, SF-WEK-12]
 source_seams: [SS-WEK-ASYNC-TRACE, SS-WEK-LLM-CTX]

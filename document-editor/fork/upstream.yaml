@@ -1,0 +1,23 @@
+# Complete native DocumentServer aggregate and each gitlink fixed by that tree.
+# This is source delivery, not a built image or an active editor binding.
+project: document-editor
+reference_tree: DocumentServer
+upstream_url: https://github.com/ONLYOFFICE/DocumentServer
+evidence_commit: f580eb58439432310943ece02c9730c6a21365e7
+implementation_base_commit: f580eb58439432310943ece02c9730c6a21365e7
+base_divergence: none
+artifacts: []
+source_components:
+  core: 3250a848ee4ef20c2fb8c38dc86350ec579124b8
+  core-fonts: 7030c6681fb5bbed560675cb42422f91df15d5c9
+  dictionaries: d3223bbb777883db66ac3cd249f71c6ebdc992c7
+  document-formats: 7d7576a3fe2337c30f4c9b40fae70a69dc68ba08
+  document-templates: 71430c9f183489e8912f54f9dc859e369cf0dfb4
+  sdkjs: 72b0421c0bbf9d01eed9cf14834ae47eb2df1b50
+  server: d6df308acb9877a9365c741b30741de96202816e
+  web-apps: 9c0ca538c3b211052347df09d2a4d6781f023403
+source_facts: [SF-OFF-03, SF-OFF-07, SF-OFF-08, SF-OFF-09, SF-OFF-10]
+source_seams: [SS-OFF-WOPI]
+compatibility_evidence: [document-editor/fork/verify/wopi-permissions.md]
+owner: team-capabilities
+last_reverified: 2026-10-05

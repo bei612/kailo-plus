@@ -11,8 +11,10 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ProjectRepository } from './apollo/server/repositories/projectRepository';
 import { DeployLogRepository } from './apollo/server/repositories/deployLogRepository';
+import { ViewRepository } from './apollo/server/repositories/viewRepository';
 import { ApiHistoryRepository } from './apollo/server/repositories/apiHistoryRepository';
 import { QueryService } from './apollo/server/services/queryService';
+import { NativeQueryService } from './apollo/server/services/nativeQueryService';
 import { WrenEngineAdaptor } from './apollo/server/adaptors/wrenEngineAdaptor';
 import { IbisAdaptor } from './apollo/server/adaptors/ibisAdaptor';
 import { encryptConnectionInfo } from './apollo/server/dataSource';
@@ -87,7 +89,7 @@ integration('original Wren query handler, SDK and native history', () => {
         connection_info: '{}',
       })
       .onConflict('id')
-      .ignore();
+      .merge();
     await database('deploy_log')
       .insert({
         id: 1,
@@ -101,7 +103,7 @@ integration('original Wren query handler, SDK and native history', () => {
         }),
       })
       .onConflict('id')
-      .ignore();
+      .merge();
     keys = await generateKeyPair('ES256');
     gatewayKeys = await generateKeyPair('ES256');
     directory = mkdtempSync(join(tmpdir(), 'wren-governed-query-'));
@@ -185,6 +187,7 @@ integration('original Wren query handler, SDK and native history', () => {
     mockComponents = {
       projectRepository: new ProjectRepository(database),
       deployLogRepository: new DeployLogRepository(database),
+      viewRepository: new ViewRepository(database),
       apiHistoryRepository: new ApiHistoryRepository(database),
       queryService: new QueryService({
         wrenEngineAdaptor: new WrenEngineAdaptor({
@@ -768,5 +771,87 @@ integration('original Wren query handler, SDK and native history', () => {
     ).toBe(403);
     expect(queries).toBe(0);
     expect(peps).toBe(0);
+  });
+
+  const humanReference = async () => {
+    const view = await mockComponents.viewRepository.createOne({ projectId: 1, name: `reference_${randomUUID()}`,
+      statement: 'SELECT 1', cached: false });
+    const service = new NativeQueryService(delivery, mockComponents.projectRepository,
+      mockComponents.deployLogRepository, mockComponents.apiHistoryRepository, mockComponents.queryService,
+      mockComponents.viewRepository);
+    const reference = await service.reference(resource, view.id, 5);
+    expect(JSON.stringify(reference)).not.toContain('SELECT');
+    const ae = randomUUID(), operation = randomUUID(), key = randomUUID();
+    const humanClaims = {
+      tenant_id: delivery.tenantId, workspace_id: delivery.workspaceId,
+      action_execution_id: ae, operation_id: operation, actor_principal_id: actor,
+      initiating_human_principal_id: actor, action_key: 'data_query.query', action_definition_version: 1,
+      target_type: 'RESOURCE', target_id: resource, normalized_parameter_hash: digest({ target: { resourceId: resource }, input: reference }),
+      authorization_min_zed_token: 'fixture-original', external_execution_id: randomUUID(), idempotency_key: key,
+      result_exposure_policy_id: randomUUID(), result_exposure_policy_version: 1,
+    };
+    const signHuman = (changed = {}) => new SignJWT({ ...humanClaims, ...changed })
+      .setProtectedHeader({ alg: 'ES256', kid: 'action' }).setIssuer(delivery.actionTokenIssuer)
+      .setAudience(delivery.actionTokenAudience).setJti(randomUUID()).setIssuedAt().setExpirationTime('5m').sign(keys.privateKey);
+    const token = await signHuman();
+    const execute = (requestKey: string, ticket = token) => fetch(`${endpoint}/execute`, { method: 'POST',
+      headers: { authorization: `Bearer ${ticket}`, 'content-type': 'application/json', 'idempotency-key': requestKey },
+      body: JSON.stringify({ actionKey: 'data_query.query', idempotencyKey: requestKey,
+        arguments: { target: { resourceId: resource }, input: reference } }),
+    });
+    return { view, service, ae, operation, key, signHuman, execute };
+  };
+
+  it('executes a HUMAN view reference through the real handler once, binds its key and refuses changed native content', async () => {
+    const { view, ae, operation, key, execute } = await humanReference();
+    try {
+      expect((await execute(randomUUID())).status).toBe(403);
+      expect(queries).toBe(0);
+      const first = await execute(key);
+      expect(first.status).toBe(200);
+      const result = await first.json();
+      expect(result.execution.platformStatus).toBe('SUCCEEDED');
+      expect(JSON.parse(result.resultJson).data).toEqual([[1]]);
+      expect(queries).toBe(1);
+      expect((await execute(key)).status).toBe(200);
+      expect(queries).toBe(1);
+      await database('view').where({ id: view.id }).update({ statement: 'SELECT 2' });
+      expect((await execute(key)).status).toBe(412);
+      expect(queries).toBe(1);
+      const stored = await mockComponents.apiHistoryRepository.findOneBy({ governanceBindingId: delivery.bindingId, governanceKey: key });
+      expect(stored.governanceActionExecutionId).toBe(ae);
+      expect(stored.governanceOperationId).toBe(operation);
+      expect(stored.requestPayload.sql).toBe('SELECT 1');
+      expect(stored.governanceState).toBe('SUCCEEDED');
+    } finally {
+      await database('view').where({ id: view.id }).delete();
+    }
+  });
+
+  it.each(['view', 'connection', 'deployment'])('records a proven unsent HUMAN %s refusal in original native history', async (changed) => {
+    const { view, service, key, signHuman, execute } = await humanReference();
+    const originalProject = await database('project').where({ id: 1 }).first();
+    try {
+      if (changed === 'view') {
+        await database('view').where({ id: view.id }).update({ statement: 'SELECT 2' });
+      }
+      if (changed === 'connection') {
+        await database('project').where({ id: 1 }).update({ connection_info: '{"changed":true}' });
+      } else if (changed === 'deployment') {
+        await database('deploy_log').where({ id: input.deploymentId }).update({ status: 'FAILED' });
+      }
+      const external = randomUUID();
+      const claims = { idempotency_key: key, external_execution_id: external };
+      expect((await execute(key, await signHuman(claims))).status).toBe(412);
+      expect(queries).toBe(0);
+      const ref = { externalExecutionId: external, idempotencyKey: key, nativeType: 'wren.api_history' };
+      const observed = await service.observe(await signHuman({ ...claims,
+        normalized_parameter_hash: digest({ operation: 'observe', arguments: ref }) }), ref);
+      expect(observed).toMatchObject({ platformStatus: 'FAILED', nativeId: expect.any(String), terminalAt: expect.any(Date) });
+    } finally {
+      await database('project').where({ id: 1 }).update({ connection_info: originalProject.connection_info });
+      await database('deploy_log').where({ id: input.deploymentId }).update({ status: 'SUCCESS' });
+      await database('view').where({ id: view.id }).delete();
+    }
   });
 });

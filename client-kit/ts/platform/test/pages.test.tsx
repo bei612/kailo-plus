@@ -357,6 +357,75 @@ describe("shared Automation schedule consumer", () => {
     await settle();
   };
 
+  const enabled = { resourceId: "schedule-automation", workspaceId: installation.workspaceId,
+    ownerPrincipalId: installation.ownerPrincipalId, executorInstallationResourceId: installation.resourceId,
+    resourceVersion: 2, resourceState: "ACTIVE", state: "ENABLED",
+    pinnedVersionAssetId: "schedule-version", delegationId: "schedule-grant" };
+  const manualRead = (canRun: unknown, canManage = false, state = "ENABLED") => (request: BffRequest): BffReply | undefined => {
+    const automation = { ...enabled, state };
+    if (request.path.startsWith("/api/v1/automations?")) return { status: 200, body: { automations: [automation], canCreate: true } };
+    if (request.path.startsWith("/api/v1/automations/schedule-automation?")) return { status: 200, body: {
+      automation, versions: [], delegations: [], canManage, ...(canRun === undefined ? {} : { canRun }),
+    } };
+    return undefined;
+  };
+
+  it.each([403, 409])("freezes one owner run without client Grant/pin/source and preserves UNKNOWN after %s", async (status) => {
+    const { section, t } = await setup(["TRIGGER_THREAD", "CHANNEL"], scheduleContent, status, undefined, undefined, manualRead(true));
+    await click(button(section, "View definition"));
+    expect([...section.querySelectorAll("button")].some((node) => node.textContent === "Delete")).toBe(false);
+    await click(button(section, "Run once"));
+    expect(section.textContent).toContain("Admission, delegation, quota and step approval still apply");
+    await click(button(section, "Review request")); await click(button(section, "Submit governed request"));
+    await click(button(section, "Re-check same request"));
+    expect(section.textContent).toContain("Outcome is not confirmed");
+    expect(section.textContent).toContain("schedule-op");
+    expect([...section.querySelectorAll("button")].some((node) => node.textContent === "Cancel request")).toBe(false);
+    await click(button(section, "Re-check same request"));
+    const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions").map(([request]) => request.body);
+    expect(writes).toHaveLength(3);
+    expect(writes[0]).toEqual({ actionKey: "automation.run", idempotencyKey: expect.any(String), explicitConfirmation: true,
+      resourceId: enabled.resourceId, resourceVersion: enabled.resourceVersion, workspaceId: enabled.workspaceId });
+    expect(writes[1]).toEqual(writes[0]); expect(writes[2]).toEqual(writes[0]);
+  });
+
+  it.each([undefined, false, "true", null])("does not generate manual execution without an exact capability fact (%j)", async (canRun) => {
+    const { section, t } = await setup(["TRIGGER_THREAD", "CHANNEL"], scheduleContent, undefined, undefined, undefined, manualRead(canRun));
+    await click(button(section, "View definition"));
+    expect([...section.querySelectorAll("button")].some((node) => node.textContent === "Run once")).toBe(false);
+    expect(t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions")).toHaveLength(0);
+  });
+
+  it("allows explicit deletion while an original run remains unknown and never labels an unknown delete completed", async () => {
+    const originalRun = { actionKey: "automation.run", actionExecutionId: "existing-run", operationId: "existing-operation",
+      targetId: enabled.resourceId, workspaceId: enabled.workspaceId, gateState: "ALLOWED", dispatchState: "UNKNOWN" };
+    const reads = manualRead(false, true);
+    const { section, t } = await setup(["TRIGGER_THREAD", "CHANNEL"], scheduleContent, undefined, undefined, undefined,
+      (request) => request.path === "/api/v1/tasks" ? { status: 200, body: [originalRun] } : reads(request));
+    await click(button(section, "View definition")); await click(button(section, "Delete"));
+    expect(section.textContent).toContain("Versions and run history remain; admitted runs are not canceled");
+    await click(button(section, "Review request")); await click(button(section, "Submit governed request"));
+    await click(button(section, "Re-check same request"));
+    const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions").map(([request]) => request.body);
+    expect(writes).toHaveLength(2);
+    expect(writes[0]).toEqual({ actionKey: "automation.delete", idempotencyKey: expect.any(String), explicitConfirmation: true,
+      resourceId: enabled.resourceId, resourceVersion: enabled.resourceVersion });
+    expect(writes[1]).toEqual(writes[0]);
+    expect(section.textContent).toContain("Outcome is not confirmed");
+    expect(section.textContent).not.toContain("Deleted");
+  });
+
+  it("retains a readable tombstone and history without management or manual-run controls", async () => {
+    const { section, t } = await setup(["TRIGGER_THREAD", "CHANNEL"], scheduleContent, undefined, undefined, undefined, manualRead(false, false, "DELETED"));
+    await click(button(section, "View definition"));
+    expect(section.textContent).toContain("Deleted");
+    expect(section.querySelector("[data-testid=workflow-runs]")).not.toBeNull();
+    for (const label of ["Run once", "Delete", "Enable", "Pause", "Disable", "Publish a new version"]) {
+      expect([...section.querySelectorAll("button")].some((node) => node.textContent === label)).toBe(false);
+    }
+    expect(t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions")).toHaveLength(0);
+  });
+
   it("roundtrips the original YAML editor into the same form and freezes structured UNKNOWN submission", async () => {
     const { section, t, field, fill } = await setup(["TRIGGER_THREAD"]);
     await fill("Instruction template", "Original");

@@ -16,6 +16,8 @@ import {
   ReasonCode,
 } from "@client-kit/contracts";
 import { PlatformProvider } from "@client-kit/platform/react/context";
+import { useSettingsShortcuts } from "@client-kit/platform/react/use-settings-shortcuts";
+import { ProtocolDocumentBridge } from "@client-kit/platform/react/protocol-document-bridge";
 import {
   ApprovalsPage,
   LifecycleRestrictedView,
@@ -50,7 +52,7 @@ import {
   Users,
   Workflow,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BffError, bff, setWorkspacePreference, signOut } from "@/platform/bff-client";
 import { ChannelPane } from "@/platform/ui/ChannelPane";
 import { InboxPane } from "@/platform/ui/InboxPane";
@@ -59,11 +61,14 @@ import { translate } from "@client-kit/platform/i18n";
 import { platformQueries } from "@/platform/ui/queries";
 import { getLocale, t } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
+import { useTheme } from "@/shared/theme/ThemeProvider";
 
 type Tab = "channel" | "inbox" | "settings" | PlatformNavigationSection;
 
 /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
 export function PlatformApp() {
+  const { isDark } = useTheme();
+  const documentBinding = new URLSearchParams(window.location.search).get("protocolBinding");
   const [session, setSession] = useState<PlatformSessionView | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 已登录 IdP 但还不是成员（兑换了邀请、等待 admin 确认）：会话 403 是如实的「还不能
@@ -106,11 +111,18 @@ export function PlatformApp() {
   if (error) return <Notice text={error} />;
   if (!session) return <Notice text={t("platform.loadingIdentity")} />;
   return (
-    <PlatformProvider client={bff} locale={getLocale()}>
+    <PlatformProvider client={bff} locale={getLocale()} documentTheme={isDark ? "DARK" : "LIGHT"}>
       {session.accessMode === PlatformSessionAccessMode.LifecycleRestricted ? (
         <LifecycleRestrictedView
           displayName={t("platform.title")}
           onSignOut={() => void signOut()}
+        />
+      ) : documentBinding !== null ? (
+        <ProtocolDocumentBridge
+          bindingId={documentBinding}
+          onBack={() => {
+            window.location.assign("/app/");
+          }}
         />
       ) : (
         <SignedIn session={session} />
@@ -136,6 +148,15 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     session.currentWorkspaceId ?? null,
   );
   const [tab, setTab] = useState<Tab>("channel");
+  const settingsReturnTab = useRef<Tab>("channel");
+  useEffect(() => {
+    if (tab !== "settings") settingsReturnTab.current = tab;
+  }, [tab]);
+  useSettingsShortcuts({
+    open: tab === "settings",
+    onOpenSettings: useCallback(() => setTab("settings"), []),
+    onClose: useCallback(() => setTab(settingsReturnTab.current), []),
+  });
 
   // 收藏的排在前面；其余保持服务端顺序
   const prefs = userState.data?.workspacePreferences ?? {};

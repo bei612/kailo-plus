@@ -65,6 +65,10 @@ pub struct ServiceState {
 pub fn router(state: ServiceState) -> Router {
     let worker = Router::new()
         .route(
+            "/service/v1/protocol-sessions/reconcile",
+            post(crate::protocol_session::reconcile::advance),
+        )
+        .route(
             "/service/v1/component-releases/authorize-probe",
             post(crate::component_release::authorize_probe),
         )
@@ -96,6 +100,15 @@ pub fn router(state: ServiceState) -> Router {
         .route(
             "/service/v1/application-bindings/advance",
             post(crate::application_binding::advance),
+        )
+        .route(
+            "/service/v1/application-models/check",
+            axum::routing::get(crate::model_route::application::check)
+                .post(crate::model_route::application::check),
+        )
+        .route(
+            "/service/v1/component-actions/advance",
+            post(crate::application_action::advance),
         )
         .route(
             "/service/v1/resources/advance",

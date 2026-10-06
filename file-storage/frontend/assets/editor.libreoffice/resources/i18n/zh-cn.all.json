@@ -1,4 +1,7 @@
 {
+  "kailo_view": { "other": "在 Kailo 中查看" },
+  "kailo_edit": { "other": "在 Kailo 中编辑" },
+  "kailo_reference_unavailable": { "other": "无法核验原生文件引用；未向 Kailo 提交任何操作。" },
   "1": {
     "other": "Libre办公室文档"
   },

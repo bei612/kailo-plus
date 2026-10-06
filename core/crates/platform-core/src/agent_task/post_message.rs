@@ -269,7 +269,8 @@ async fn publish(
             &binding.channel_id.to_string(),
             &text,
             reply_ancestry(invocation),
-            (invocation.source_kind == "SCHEDULE").then_some(invocation.id),
+            matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
+                .then_some(invocation.id),
             u64::try_from(created_at.timestamp()).map_err(|_| unknown())?,
         )
         .map_err(|_| unknown())?;

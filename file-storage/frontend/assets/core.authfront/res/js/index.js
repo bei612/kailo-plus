@@ -228,6 +228,7 @@ let LoginPasswordDialog = createReactClass({
 
     render(){
         const passwordOnly = this.state.globalParameters.get('PASSWORD_AUTH_ONLY');
+        const nativeLogin = !passwordOnly && this.state.globalParameters.get('KAILO_OIDC_LOGIN');
         const secureLoginForm = passwordOnly || this.state.authParameters.get('SECURE_LOGIN_FORM');
         const forgotPasswordLink = this.state.authParameters.get('ENABLE_FORGOT_PASSWORD') && !passwordOnly;
         const pydio = Pydio.getInstance()
@@ -302,6 +303,13 @@ let LoginPasswordDialog = createReactClass({
                 {loginLegend && <div className={"loginLegend"}>{loginLegend}</div>}
                 {errorMessage}
                 {additionalComponentsTop}
+                {nativeLogin && <FlatButton
+                    label={nativeLogin.label}
+                    href={nativeLogin.href}
+                    disabled={this.state.loading}
+                    fullWidth={true}
+                    primary={true}
+                />}
                 <form autoComplete={secureLoginForm?"off":"on"} className={"loginForm"}>
                     {!passwordOnly && <TextField
                         className="blurDialogTextField loginInputLogin"

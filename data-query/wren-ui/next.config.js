@@ -45,6 +45,10 @@ const nextConfig = withLess({
         source: '/platform-adapter/v1/observe',
         destination: '/api/platform-adapter/observe',
       },
+      {
+        source: '/platform-adapter/v1/execute',
+        destination: '/api/platform-adapter/execute',
+      },
     ];
   },
   async redirects() {

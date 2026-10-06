@@ -1,8 +1,9 @@
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 import { PlatformApp } from "./PlatformApp";
 
-const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL" }));
+const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: "" }));
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
   return {
@@ -40,7 +41,21 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 vi.mock("@client-kit/platform/react/context", () => ({
-  PlatformProvider: ({ children }: { children: React.ReactNode }) => children,
+  PlatformProvider: ({
+    children,
+    documentTheme,
+  }: {
+    children: React.ReactNode;
+    documentTheme?: string;
+  }) => {
+    state.documentTheme = documentTheme ?? "";
+    return children;
+  },
+}));
+vi.mock("@client-kit/platform/react/protocol-document-bridge", () => ({
+  ProtocolDocumentBridge: ({ bindingId }: { bindingId: string }) => (
+    <div data-document-binding={bindingId} />
+  ),
 }));
 vi.mock("@client-kit/platform/react/governance", () => ({
   LifecycleRestrictedView: () => <div data-testid="shared-lifecycle-restricted" />,
@@ -64,6 +79,7 @@ vi.mock("@/platform/ui/ChannelPane", () => ({ ChannelPane: () => null }));
 vi.mock("@/platform/ui/InboxPane", () => ({ InboxPane: () => null }));
 vi.mock("@/platform/ui/SettingsPane", () => ({ SettingsPane: () => null }));
 vi.mock("@/shared/i18n", () => ({ getLocale: () => "en", t: (key: string) => key }));
+vi.mock("@/shared/theme/ThemeProvider", () => ({ useTheme: () => ({ isDark: true }) }));
 vi.mock("@/platform/bff-client", () => ({
   bff: { workspaces: vi.fn() },
   BffError: class extends Error {},
@@ -75,6 +91,8 @@ vi.mock("@/platform/bff-client", () => ({
 beforeEach(() => {
   state.hook = 0;
   state.accessMode = "FULL";
+  state.documentTheme = "";
+  window.history.replaceState({}, "", "/app/");
 });
 it("uses the native shared restricted view without mounting ordinary workspace menus", () => {
   state.accessMode = "LIFECYCLE_RESTRICTED";
@@ -91,4 +109,21 @@ it("retains the host-selected Workspace and mounts all shared management panels 
   expect(markup).toContain('data-workspace="workspace-b"');
   expect(markup).not.toContain('data-workspace="workspace-a"');
   expect(markup).toContain('data-testid="sidebar-settings"');
+});
+
+it("routes a native file menu through the normal platform session with the resolved Buzz theme", () => {
+  const binding = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  window.history.replaceState({}, "", `/app/?protocolBinding=${binding}`);
+  const markup = renderToStaticMarkup(<PlatformApp />);
+  expect(markup).toContain(`data-document-binding="${binding}"`);
+  expect(markup).not.toContain('data-testid="workspace-members"');
+  expect(state.documentTheme).toBe("DARK");
+});
+
+it("does not expose the document bridge to a lifecycle-restricted platform session", () => {
+  window.history.replaceState({}, "", "/app/?protocolBinding=dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+  state.accessMode = "LIFECYCLE_RESTRICTED";
+  const markup = renderToStaticMarkup(<PlatformApp />);
+  expect(markup).toContain('data-testid="shared-lifecycle-restricted"');
+  expect(markup).not.toContain("data-document-binding");
 });

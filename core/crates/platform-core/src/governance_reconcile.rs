@@ -171,6 +171,12 @@ pub fn spawn(
                 tracing::warn!(reason_code=%crate::governance::wire(&error.reason()),
                     state="UNKNOWN", "自动化持久触发对账未完成；原 checkpoint 保留");
             }
+            if let Err(error) =
+                crate::protocol_session::maintenance::reconcile(&state, cfg.batch).await
+            {
+                tracing::warn!(reason_code=%crate::governance::wire(&error.reason()),
+                    state="UNKNOWN", "ProtocolSession 原生 token 生命周期未收敛");
+            }
             if let Err(error) = crate::agent_invocation::reconcile(&state, cfg.batch).await {
                 tracing::warn!(reason_code=%crate::governance::wire(&error.reason()),
                     state="UNKNOWN", "普通 Agent 持久触发对账未完成；原 checkpoint 保留");

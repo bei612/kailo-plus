@@ -49,6 +49,7 @@ cd "$(dirname "$0")"
 # PUBLIC_ORIGIN 是浏览器入口的唯一根地址，回调与邀请页均从它派生。
 OIDC_ISSUER="$OIDC_ISSUER" OIDC_REALM="$OIDC_REALM" PUBLIC_ORIGIN="$PUBLIC_ORIGIN" \
 NATIVE_PAGE_ORIGINS="${NATIVE_PAGE_ORIGINS:-}" \
+EDITOR_ORIGINS="${EDITOR_ORIGINS:-}" WEB_EDITOR_ORIGINS="${WEB_EDITOR_ORIGINS:-}" \
 PUBLIC_HOST="$PUBLIC_HOST" OIDC_HOST="$OIDC_HOST" BUZZ_RELAY_HOST="$BUZZ_RELAY_HOST" \
 BUZZ_RELAY_PORT="$BUZZ_RELAY_PORT" AGENTGATEWAY_PORT="$AGENTGATEWAY_PORT" \
 KEYCLOAK_PORT="$KEYCLOAK_PORT" CORE_DB_USER="$CORE_DB_USER" CORE_DB_NAME="$CORE_DB_NAME" \
@@ -141,23 +142,28 @@ for name, expected_path, host_name, port_name in (
             or value.path != expected_path or port != checked_port(port_name)
             or value.hostname != host(host_name)):
         raise SystemExit(f"{name} 的 scheme、authority、host 或 path 与本地拓扑不符")
-native_origins = os.environ["NATIVE_PAGE_ORIGINS"]
-if any(ord(char) < 0x20 or ord(char) == 0x7f for char in native_origins):
-    raise SystemExit("NATIVE_PAGE_ORIGINS 只允许以空格分隔的精确 HTTP(S) origin")
-seen_native_origins = set()
-for raw in native_origins.split():
-    if not re.fullmatch(r"https?://(?:[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|\[[0-9a-f:]+\])(?::[1-9][0-9]*)?", raw):
-        raise SystemExit("NATIVE_PAGE_ORIGINS 不允许路径、凭据、通配符或 CSP 指令")
-    try:
-        value = urlsplit(raw)
-        port = value.port
-    except ValueError:
-        raise SystemExit("NATIVE_PAGE_ORIGINS 含无效 origin") from None
-    if (port == 0 or (value.scheme == "http" and port == 80)
-            or (value.scheme == "https" and port == 443)
-            or raw == os.environ["PUBLIC_ORIGIN"] or raw in seen_native_origins):
-        raise SystemExit("NATIVE_PAGE_ORIGINS 必须规范化、去重且不同于平台来源")
-    seen_native_origins.add(raw)
+origin_sets = {}
+for name in ("NATIVE_PAGE_ORIGINS", "EDITOR_ORIGINS", "WEB_EDITOR_ORIGINS"):
+    configured = os.environ[name]
+    if any(ord(char) < 0x20 or ord(char) == 0x7f for char in configured):
+        raise SystemExit(f"{name} 只允许以空格分隔的精确 HTTP(S) origin")
+    origins = set()
+    for raw in configured.split():
+        if not re.fullmatch(r"https?://(?:[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|\[[0-9a-f:]+\])(?::[1-9][0-9]*)?", raw):
+            raise SystemExit(f"{name} 不允许路径、凭据、通配符或 CSP 指令")
+        try:
+            value = urlsplit(raw)
+            port = value.port
+        except ValueError:
+            raise SystemExit(f"{name} 含无效 origin") from None
+        if (port == 0 or (value.scheme == "http" and port == 80)
+                or (value.scheme == "https" and port == 443)
+                or raw == os.environ["PUBLIC_ORIGIN"] or raw in origins):
+            raise SystemExit(f"{name} 必须规范化、去重且不同于平台来源")
+        origins.add(raw)
+    origin_sets[name] = origins
+if not origin_sets["WEB_EDITOR_ORIGINS"].issubset(origin_sets["EDITOR_ORIGINS"]):
+    raise SystemExit("WEB_EDITOR_ORIGINS 不得扩大 EDITOR_ORIGINS 部署许可")
 host("BUZZ_RELAY_HOST")
 checked_port("BUZZ_RELAY_PORT")
 checked_port("CORE_DB_PORT")

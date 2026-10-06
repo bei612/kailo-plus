@@ -2048,7 +2048,7 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update catalog.agent_memory_binding set state='REVOKED',version=version+1 where installation_resource_id in (select id from catalog.resource where tenant_id=$1) and state<>'REVOKED'",
         "update catalog.agent_model_binding set secret_status='REVOKED' where installation_resource_id in (select id from catalog.resource where tenant_id=$1) and secret_status<>'REVOKED'",
         "update catalog.agent_session set status='CLOSED' where tenant_id=$1 and status<>'CLOSED'",
-        "update catalog.automation_definition set state='DISABLED',pinned_version_asset_id=null,version=version+1 where resource_id in (select id from catalog.resource where tenant_id=$1)",
+        "update catalog.automation_definition set state='DISABLED',pinned_version_asset_id=null,version=version+1 where state<>'DELETED' and resource_id in (select id from catalog.resource where tenant_id=$1)",
         "update catalog.automation_version set state='RETIRED' where automation_resource_id in (select id from catalog.resource where tenant_id=$1) and state<>'RETIRED'",
         "update catalog.agent_definition set status='DELETED',current_published_version_asset_id=null where resource_id in (select id from catalog.resource where tenant_id=$1)",
         "update catalog.agent_version set state='RETIRED' where asset_id in (select id from catalog.asset where tenant_id=$1) and state<>'RETIRED'",

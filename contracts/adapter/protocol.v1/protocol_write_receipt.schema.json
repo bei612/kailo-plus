@@ -1,0 +1,12 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"adapter/protocol.v1/protocol_write_receipt.schema.json",
+  "title":"ProtocolWriteReceipt",
+  "description":"Receipt of native write evidence. It grants no read or write permission.",
+  "type":"object","additionalProperties":false,
+  "required":["protocolSessionId","state"],
+  "properties":{
+    "protocolSessionId":{"type":"string","format":"uuid"},
+    "state":{"type":"string","enum":["DIRTY","SAVED","UNKNOWN","CONFLICT","FAILED"]}
+  }
+}

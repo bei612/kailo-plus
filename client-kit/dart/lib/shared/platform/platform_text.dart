@@ -5,6 +5,37 @@ import 'dart:io' show Platform;
 import '../contracts/contracts.dart';
 
 enum PlatformMessageKey {
+  documentReopen,
+  documentAdmissionBoundary,
+  documentReconcile,
+  documentModeView,
+  documentModeEdit,
+  documentSourceUnavailable,
+  documentSourceInvalid,
+  documentAwaitSource,
+  documentFixedRevision,
+  documentAppearancePending,
+  documentUnsupportedHost,
+  documentInvalidLaunch,
+  documentClosed,
+  documentOpening,
+  documentNoLaunch,
+  documentEditorTitle,
+  documentUiLoading,
+  documentUiDirty,
+  documentUiClose,
+  documentStateAdmitted,
+  documentStateOpening,
+  documentStateOpen,
+  documentStateDirty,
+  documentStateSaved,
+  documentStateConflict,
+  documentStateUnknown,
+  documentStateReadonly,
+  documentStateClosed,
+  documentStateExpired,
+  documentStateRevoked,
+  documentStateFailed,
   inboxTitle,
   inboxAll,
   inboxMention,
@@ -24,6 +55,12 @@ enum PlatformMessageKey {
   capabilitiesTitle,
   componentsTitle,
   bindingsTitle,
+  componentActionsTitle,
+  componentActionsBoundary,
+  componentActionsDocument,
+  componentActionsInvalid,
+  componentActionsPrepare,
+  componentActionsReview,
   bindingsOpenNative,
   bindingsOpenIndependent,
   bindingsNativeTitle,
@@ -344,6 +381,11 @@ enum PlatformMessageKey {
   agentsAutomationEnable,
   agentsAutomationPause,
   agentsAutomationDisable,
+  agentsAutomationDelete,
+  agentsAutomationRun,
+  agentsAutomationStateDeleted,
+  agentsAutomationRunConfirm,
+  agentsAutomationDeleteConfirm,
   agentsAutomationExecutor,
   agentsAutomationNoExecutor,
   agentsAutomationSelect,
@@ -762,6 +804,94 @@ enum PlatformMessageKey {
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
+  PlatformMessageKey.documentReopen: (
+    'Reopen with fresh access check',
+    '重新校验权限并打开',
+  ),
+  PlatformMessageKey.documentAdmissionBoundary: (
+    'Open this exact file revision with a fresh access check. The editor cannot grant access or confirm saving on behalf of the server.',
+    '重新校验权限后打开此固定文件版本。编辑器不能代替服务端授权或确认保存。',
+  ),
+  PlatformMessageKey.documentReconcile: ('Check the original request', '查证原请求'),
+  PlatformMessageKey.documentModeView: (
+    'View this revision (read only)',
+    '查看此版本（只读）',
+  ),
+  PlatformMessageKey.documentModeEdit: (
+    'Request editing this revision',
+    '申请编辑此版本',
+  ),
+  PlatformMessageKey.documentSourceUnavailable: (
+    'Open a document from the authorized native file menu in the Web client.',
+    '请从已授权的原生文件菜单在 Web 客户端打开文档。',
+  ),
+  PlatformMessageKey.documentSourceInvalid: (
+    'The native file selection does not match this binding and generation. No action was submitted.',
+    '原生文件选择与当前绑定及代次不符，未提交任何动作。',
+  ),
+  PlatformMessageKey.documentAwaitSource: (
+    'Waiting for the selected native file reference…',
+    '正在等待原生文件选择的固定引用…',
+  ),
+  PlatformMessageKey.documentFixedRevision: (
+    'Fixed revision: {revision}',
+    '固定版本：{revision}',
+  ),
+  PlatformMessageKey.documentAppearancePending: (
+    'Editor theme and language will sync after a safe reopen. Unsaved or unknown changes are not reloaded.',
+    '编辑器主题与语言将在安全重开后同步；未保存或结果不明时不会重新加载。',
+  ),
+  PlatformMessageKey.documentUnsupportedHost: (
+    'Online documents are unavailable in this host.',
+    '当前客户端不支持在线文档。',
+  ),
+  PlatformMessageKey.documentInvalidLaunch: (
+    'The document launch could not be verified. Its credential will not be submitted again.',
+    '文档打开信息未能通过校验，不会再次提交该凭据。',
+  ),
+  PlatformMessageKey.documentClosed: (
+    'This document session is no longer open.',
+    '此文档会话已不能继续使用。',
+  ),
+  PlatformMessageKey.documentOpening: (
+    'Opening the authorized document…',
+    '正在打开已获准的文档…',
+  ),
+  PlatformMessageKey.documentNoLaunch: (
+    'The one-time launch cannot be recovered. This view only reads the original session; it does not resend it.',
+    '一次性打开信息不可恢复。此视图只读取原会话，不会重发。',
+  ),
+  PlatformMessageKey.documentEditorTitle: ('Document editor', '文档编辑器'),
+  PlatformMessageKey.documentUiLoading: (
+    'The editor reported its loading state; server session status is shown separately.',
+    '编辑器已报告加载状态；服务端会话状态单独显示。',
+  ),
+  PlatformMessageKey.documentUiDirty: (
+    'The editor reports changes. This is not confirmation that they have been saved.',
+    '编辑器报告发生修改，这不表示已经保存。',
+  ),
+  PlatformMessageKey.documentUiClose: (
+    'The editor requested closing. Saving and session completion still require server confirmation.',
+    '编辑器请求关闭，保存与会话结束仍须服务端确认。',
+  ),
+  PlatformMessageKey.documentStateAdmitted: ('Admitted', '已准入'),
+  PlatformMessageKey.documentStateOpening: ('Opening', '正在打开'),
+  PlatformMessageKey.documentStateOpen: ('Open', '已打开'),
+  PlatformMessageKey.documentStateDirty: (
+    'Changes awaiting confirmation',
+    '修改待确认',
+  ),
+  PlatformMessageKey.documentStateSaved: ('Save confirmed', '已确认保存'),
+  PlatformMessageKey.documentStateConflict: ('Revision conflict', '版本冲突'),
+  PlatformMessageKey.documentStateUnknown: (
+    'Outcome unknown; reconciling the original session',
+    '结果不明，正在对账原会话',
+  ),
+  PlatformMessageKey.documentStateReadonly: ('Read only', '只读'),
+  PlatformMessageKey.documentStateClosed: ('Closed', '已关闭'),
+  PlatformMessageKey.documentStateExpired: ('Expired', '已过期'),
+  PlatformMessageKey.documentStateRevoked: ('Access revoked', '访问已撤销'),
+  PlatformMessageKey.documentStateFailed: ('Failed', '失败'),
   PlatformMessageKey.inboxTitle: ('Inbox', '收件箱'),
   PlatformMessageKey.inboxAll: ('All', '全部'),
   PlatformMessageKey.inboxMention: ('Mentions', '提及'),
@@ -796,6 +926,27 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.capabilitiesTitle: ('Capability contracts', '能力契约'),
   PlatformMessageKey.componentsTitle: ('Component releases', '组件发行版本'),
   PlatformMessageKey.bindingsTitle: ('External service connections', '外部服务连接'),
+  PlatformMessageKey.componentActionsTitle: (
+    'Run a component action',
+    '执行组件动作',
+  ),
+  PlatformMessageKey.componentActionsBoundary: (
+    'Use a registered action and a frozen native content reference. Supply actionKey, target ID/version, optional workspaceId, and componentAction (actionVersion, inputReference, existing resultExposurePolicyId/version). Never paste SQL, credentials or result bodies. Core checks your current permission, approval and quota; native pages retain their own sessions.',
+    '使用已登记动作及冻结的原生内容引用。填写 actionKey、目标 ID/版本、可选 workspaceId，以及 componentAction（actionVersion、inputReference、已存在的 resultExposurePolicyId/version）。不要粘贴 SQL、凭据或结果正文。Core 重核本人当前权限、审批和额度；原生页面仍使用自己的会话。',
+  ),
+  PlatformMessageKey.componentActionsDocument: (
+    'Component action references (JSON)',
+    '组件动作引用（JSON）',
+  ),
+  PlatformMessageKey.componentActionsInvalid: (
+    'Invalid or mismatched action references. Nothing was submitted.',
+    '动作引用格式无效或目标不一致，尚未提交。',
+  ),
+  PlatformMessageKey.componentActionsPrepare: ('Review action', '核对动作'),
+  PlatformMessageKey.componentActionsReview: (
+    'Confirm this frozen action. An uncertain outcome can only reconcile this same intent.',
+    '确认此次冻结动作。结果不明时只能查证同一请求，不重新执行。',
+  ),
   PlatformMessageKey.bindingsOpenNative: ('Open service page', '打开服务页面'),
   PlatformMessageKey.bindingsOpenIndependent: (
     'Open service in a new tab',
@@ -1640,8 +1791,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.agentsVersionHash: ('Configuration hash', '配置摘要'),
   PlatformMessageKey.agentsAutomationTitle: ('Automations', '自动化'),
   PlatformMessageKey.agentsAutomationScope: (
-    'Manage immutable versions and governed state. No manual run or external-trigger controls.',
-    '管理不可变版本与受治理状态；不提供手动运行或外部触发入口。',
+    'Manage immutable versions, owner-requested runs and governed state.',
+    '管理不可变版本、负责人单次运行与受治理状态。',
   ),
   PlatformMessageKey.agentsAutomationNone: (
     'No readable, materialized automation in this workspace',
@@ -1671,6 +1822,17 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.agentsAutomationEnable: ('Enable', '启用'),
   PlatformMessageKey.agentsAutomationPause: ('Pause', '暂停'),
   PlatformMessageKey.agentsAutomationDisable: ('Disable', '停用'),
+  PlatformMessageKey.agentsAutomationDelete: ('Delete', '删除'),
+  PlatformMessageKey.agentsAutomationRun: ('Run once', '运行一次'),
+  PlatformMessageKey.agentsAutomationStateDeleted: ('Deleted', '已删除'),
+  PlatformMessageKey.agentsAutomationRunConfirm: (
+    'Run the enabled pinned version once as its owner. Admission, delegation, quota and step approval still apply. Results go to this workspace channel; this does not publish a trigger message.',
+    '以当前所有者运行已启用的固定版本一次，仍核对准入、委托、额度与步骤审批。结果发送到本 Workspace 频道，不发布触发消息。',
+  ),
+  PlatformMessageKey.agentsAutomationDeleteConfirm: (
+    'Permanently remove this definition from active lists after disabling triggers and retiring its secrets. Versions and run history remain; admitted runs are not canceled.',
+    '停用触发并退役相关秘密后，永久将此定义移出活动列表。版本与运行历史保留，已准入运行不会被取消。',
+  ),
   PlatformMessageKey.agentsAutomationExecutor: (
     'Executor installation',
     '执行器安装',

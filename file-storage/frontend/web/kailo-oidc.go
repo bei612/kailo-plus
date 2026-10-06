@@ -44,10 +44,7 @@ const (
 	kailoOIDCCookie       = "cells_kailo_oidc"
 )
 
-type kailoOIDCUser struct {
-	Subject  string `json:"subject"`
-	UserUUID string `json:"userUuid"`
-}
+type kailoOIDCUser = auth.NativeOIDCUser
 
 type kailoOIDCConfig struct {
 	Issuer                   string          `json:"issuer"`
@@ -90,6 +87,24 @@ func loadKailoOIDC(ctx context.Context) (kailoOIDCConnector, error) {
 		return kailoOIDCConnector{}, err
 	}
 	return *selected, nil
+}
+
+// Only public presentation data enters the native UI boot parameters. The
+// connector, explicit user links and credential locator remain server-side.
+func nativeOIDCLoginOption(r *http.Request) map[string]string {
+	c, err := loadKailoOIDC(r.Context())
+	if err != nil {
+		return nil
+	}
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil || len(query["login_challenge"]) > 1 {
+		return nil
+	}
+	login := &url.URL{Path: KailoOIDCLoginPath}
+	if challenge := query.Get("login_challenge"); challenge != "" {
+		login.RawQuery = url.Values{"login_challenge": {challenge}}.Encode()
+	}
+	return map[string]string{"label": c.Name, "href": login.String()}
 }
 
 func nativeOIDCURL(raw string) (*url.URL, error) {
@@ -140,15 +155,7 @@ func (c kailoOIDCConnector) digest() string {
 }
 
 func (c kailoOIDCConnector) nativeUserUUID(issuer, subject string) (string, error) {
-	if issuer != c.Config.Issuer || subject == "" {
-		return "", errors.New("unrecognized OIDC identity")
-	}
-	for _, link := range c.Config.Users {
-		if link.Subject == subject {
-			return link.UserUUID, nil
-		}
-	}
-	return "", errors.New("OIDC identity is not linked to a native user")
+	return auth.NativeOIDCUserUUID(c.Config.Issuer, c.Config.Users, issuer, subject)
 }
 
 func nativeFrontendCallback(origin *url.URL, login *nativeauth.GetLoginResponse) (*url.URL, error) {

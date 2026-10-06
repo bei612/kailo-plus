@@ -1,0 +1,8 @@
+{
+  "bindingId": "ac4f4d28-71e2-4f4d-8db0-621be6d51c97",
+  "gatewayPrincipalId": "da10e654-064b-4a61-afb2-4d5e2ca541dd",
+  "generation": 2,
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "traceparent": ""
+}

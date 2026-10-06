@@ -32,6 +32,7 @@ import { InvitationForApproval } from "./invitations";
 import { Resource } from "./pages";
 import { Badge, Button, Cell, Notice, Table, type Tone } from "./ui";
 import { useLoad } from "./use-load";
+import { ComponentActionsPanel } from "./component-actions";
 
 const approvalTone: Record<ApprovalStatus, Tone> = {
   [ApprovalStatus.Requested]: "neutral",
@@ -69,7 +70,7 @@ export function LifecycleRestrictedView({
         </Button>
       </nav>
       <main className="mx-auto w-full max-w-5xl p-4">
-        {tab === "tasks" ? <TasksPage /> : <ApprovalsPage />}
+        {tab === "tasks" ? <TasksPage allowComponentActions={false} /> : <ApprovalsPage />}
       </main>
     </div>
   );
@@ -153,12 +154,12 @@ export function TaskStatusBadge({ task }: { task: TaskView }) {
 }
 
 /** 本人发起的受治理动作与详情。 */
-export function TasksPage() {
+export function TasksPage({ allowComponentActions = true }: { allowComponentActions?: boolean } = {}) {
   const [open, setOpen] = useState<string | null>(null);
   return open ? (
     <TaskDetail key={open} actionExecutionId={open} onBack={() => setOpen(null)} onOpen={setOpen} />
   ) : (
-    <TaskList onOpen={setOpen} />
+    <><TaskList onOpen={setOpen} />{allowComponentActions ? <ComponentActionsPanel onOpen={setOpen} /> : null}</>
   );
 }
 

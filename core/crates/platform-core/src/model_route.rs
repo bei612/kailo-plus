@@ -14,6 +14,9 @@ use crate::{
     spicedb::{Consistency, Relationship, Write},
 };
 
+#[path = "application_model_route.rs"]
+pub(crate) mod application;
+
 type CreateInput = contracts::LlmRouteCreateInput;
 
 fn create_input(params: &crate::governance::Params) -> Result<CreateInput, Refusal> {
@@ -2749,6 +2752,10 @@ impl Gateway {
     }
 
     async fn check_model(&self, model: &str, secret: &SecretValue) -> Result<(), Refusal> {
+        self.check_models(&[model.to_owned()], secret).await
+    }
+
+    async fn check_models(&self, models: &[String], secret: &SecretValue) -> Result<(), Refusal> {
         let mut url = self.model_base.clone();
         url.path_segments_mut()
             .map_err(|_| unavailable())?
@@ -2769,7 +2776,13 @@ impl Gateway {
             .get("data")
             .and_then(Value::as_array)
             .ok_or_else(unavailable)?;
-        if rows.len() != 1 || rows[0].get("id").and_then(Value::as_str) != Some(model) {
+        let actual: Option<std::collections::BTreeSet<_>> = rows
+            .iter()
+            .map(|row| row.get("id").and_then(Value::as_str))
+            .collect();
+        let expected: std::collections::BTreeSet<_> = models.iter().map(String::as_str).collect();
+        if expected.is_empty() || rows.len() != expected.len() || actual.as_ref() != Some(&expected)
+        {
             return Err(unavailable());
         }
         // 发现成功只证实当前 credential/route reload，不当 Responses/stream/tool 协议验收。

@@ -96,18 +96,21 @@ type SecretRefRehomeTarget struct {
 
 // ComponentTaskInput 是 ComponentTaskWorkflow 的统一输入。
 type ComponentTaskInput struct {
-	Kind                generated.WorkflowKind                          `json:"kind"`
-	Membership          *MembershipTarget                               `json:"membership,omitempty"`
-	Scope               *ScopeTarget                                    `json:"scope,omitempty"`
-	Identity            *IdentityTarget                                 `json:"identity,omitempty"`
-	Rehome              *SecretRefRehomeTarget                          `json:"rehome,omitempty"`
-	Installation        *generated.AgentInstallationWorkflowTarget      `json:"installation,omitempty"`
-	Release             *generated.PlanClass                            `json:"release,omitempty"`
-	ReleaseApproval     *generated.ComponentReleaseApprovalTarget       `json:"releaseApproval,omitempty"`
-	ApplicationBinding  *generated.ApplicationBindingTarget             `json:"applicationBinding,omitempty"`
-	ResourceProvision   *generated.ResourceProvisionTarget              `json:"resourceProvision,omitempty"`
-	ReleaseObservations []generated.ComponentConformanceStepObservation `json:"releaseObservations,omitempty"`
-	ReleaseReconcile    bool                                            `json:"releaseReconcile,omitempty"`
+	Kind                 generated.WorkflowKind                          `json:"kind"`
+	Membership           *MembershipTarget                               `json:"membership,omitempty"`
+	Scope                *ScopeTarget                                    `json:"scope,omitempty"`
+	Identity             *IdentityTarget                                 `json:"identity,omitempty"`
+	Rehome               *SecretRefRehomeTarget                          `json:"rehome,omitempty"`
+	Installation         *generated.AgentInstallationWorkflowTarget      `json:"installation,omitempty"`
+	Release              *generated.PlanClass                            `json:"release,omitempty"`
+	ReleaseApproval      *generated.ComponentReleaseApprovalTarget       `json:"releaseApproval,omitempty"`
+	ApplicationBinding   *generated.ApplicationBindingTarget             `json:"applicationBinding,omitempty"`
+	ResourceProvision    *generated.ResourceProvisionTarget              `json:"resourceProvision,omitempty"`
+	ComponentAction      *generated.ComponentActionTarget                `json:"componentAction,omitempty"`
+	ProtocolSession      *generated.ProtocolSessionReconcileTarget       `json:"protocolSession,omitempty"`
+	ProtocolSessionRound *generated.ProtocolSessionReconcileRound        `json:"protocolSessionRound,omitempty"`
+	ReleaseObservations  []generated.ComponentConformanceStepObservation `json:"releaseObservations,omitempty"`
+	ReleaseReconcile     bool                                            `json:"releaseReconcile,omitempty"`
 	// continue-as-new 时带入的 history 长度累计。投影的 event_id 按 workflow ID
 	// 单调去重（06 §2：按 workflow ID 而非 run ID 聚合），新 run 的 history 从零
 	// 数起，不加上它，续跑后的投影会被当成旧事件丢掉。
@@ -312,11 +315,15 @@ func (t *task) cancel() error {
 // 分支，那会让未实现的能力看起来像执行过了。
 func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
 	if in.CancelPending && in.Kind != generated.AgentInstallation && in.Kind != generated.WorkflowKind("COMPONENT_RELEASE") &&
-		in.Kind != generated.WorkflowKind("COMPONENT_BINDING") && in.Kind != generated.WorkflowKind("COMPONENT_DISABLE") && in.Kind != generated.WorkflowKind("RESOURCE_PROVISION") && !(in.Kind == generated.TenantLifecycle &&
+		in.Kind != generated.WorkflowKind("COMPONENT_BINDING") && in.Kind != generated.WorkflowKind("COMPONENT_DISABLE") && in.Kind != generated.WorkflowKind("RESOURCE_PROVISION") && in.Kind != generated.WorkflowKind("COMPONENT_ACTION") && in.Kind != generated.WorkflowKind("PROTOCOL_SESSION_RECONCILE") && !(in.Kind == generated.TenantLifecycle &&
 		in.Scope != nil && in.Scope.Operation == scopeOperationDelete) {
 		return newTask(ctx, in).cancel()
 	}
 	switch in.Kind {
+	case generated.WorkflowKind("PROTOCOL_SESSION_RECONCILE"):
+		return protocolSession(ctx, in)
+	case generated.WorkflowKind("COMPONENT_ACTION"):
+		return componentAction(ctx, in)
 	case generated.WorkflowKind("RESOURCE_PROVISION"):
 		return resourceProvision(ctx, in)
 	case generated.MembershipProjection:

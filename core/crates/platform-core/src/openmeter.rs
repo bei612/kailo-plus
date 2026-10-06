@@ -848,8 +848,23 @@ impl OpenMeter {
         action: &str,
         keys: &[String],
     ) -> Result<(Vec<GatewayMeter>, Option<InvocationMeter>), Error> {
-        self.execution_meters(tenant, customer_id, subject, action, keys, true)
+        self.execution_meters(tenant, customer_id, subject, Some(action), keys, true)
             .await
+    }
+
+    /// DD-92: the binding's registered SERVICE uses native Gateway SUM meters;
+    /// it is not an Agent invocation and cannot manufacture an invocation count.
+    pub(crate) async fn application_model_meters(
+        &self,
+        tenant: Uuid,
+        customer_id: &str,
+        subject: &str,
+        keys: &[String],
+    ) -> Result<Vec<GatewayMeter>, Error> {
+        let (meters, _) = self
+            .execution_meters(tenant, customer_id, subject, None, keys, true)
+            .await?;
+        Ok(meters)
     }
 
     /// DD-107 POST_MESSAGE has exactly the native COUNT meter, not a synthetic
@@ -866,7 +881,7 @@ impl OpenMeter {
                 tenant,
                 customer_id,
                 subject,
-                "automation.run",
+                Some("automation.run"),
                 &["automation.run".to_owned()],
                 false,
             )
@@ -882,7 +897,7 @@ impl OpenMeter {
         tenant: Uuid,
         customer_id: &str,
         subject: &str,
-        action: &str,
+        action: Option<&str>,
         keys: &[String],
         require_model: bool,
     ) -> Result<(Vec<GatewayMeter>, Option<InvocationMeter>), Error> {
@@ -932,6 +947,9 @@ impl OpenMeter {
             }
             // 05 §2.9 的封闭计数键，实际 aggregation/type/id 来自原生 meter。
             if key == "automation.run" {
+                if action.is_none() {
+                    return Err(Error::Precondition);
+                }
                 if meter.aggregation != "count"
                     || meter.value_property.is_some()
                     || meter.dimensions.as_ref().is_some_and(|d| {
@@ -973,11 +991,20 @@ impl OpenMeter {
                             "$.tenant_id"
                                 | "$.workspace_id"
                                 | "$.operation_id"
-                                | "$.agent_installation_resource_id"
-                                | "$.agent_version_asset_id"
                                 | "$.provider"
                                 | "$.model"
-                        )
+                        ) && !match action {
+                            Some(_) => matches!(
+                                p.as_str(),
+                                "$.agent_installation_resource_id" | "$.agent_version_asset_id"
+                            ),
+                            None => matches!(
+                                p.as_str(),
+                                "$.component_binding_id"
+                                    | "$.component_release_id"
+                                    | "$.component_projection_generation"
+                            ),
+                        }
                     })
                 })
             {
@@ -993,7 +1020,12 @@ impl OpenMeter {
         if require_model && selected.is_empty() {
             return Err(Error::Precondition);
         }
-        Ok((selected, InvocationMeter::for_action(action, invocation)?))
+        let count = match action {
+            Some(action) => InvocationMeter::for_action(action, invocation)?,
+            None if invocation.is_none() => None,
+            None => return Err(Error::Precondition),
+        };
+        Ok((selected, count))
     }
 
     pub(crate) async fn memory_read_meters(

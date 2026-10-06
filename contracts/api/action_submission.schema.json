@@ -41,6 +41,12 @@
     },
     "invitation": {
       "$ref": "issued_invitation.schema.json"
+    },
+    "protocolSessionId": {
+      "type": "string", "format": "uuid"
+    },
+    "documentLaunch": {
+      "$ref": "../domain/document_launch_descriptor.schema.json"
     }
   }
 }

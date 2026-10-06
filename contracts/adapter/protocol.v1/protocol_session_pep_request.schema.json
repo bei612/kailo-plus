@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"adapter/protocol.v1/protocol_session_pep_request.schema.json",
+  "title":"ProtocolSessionPepRequest",
+  "description":"18 §5.2: authenticated binding→Core PEP for an existing ProtocolSession. No native token grants platform permissions.",
+  "type":"object","additionalProperties":false,
+  "required":["protocolSessionId","nativeObjectRef","nativeOperation","bindingId"],
+  "properties":{
+    "protocolSessionId":{"type":"string","format":"uuid"},
+    "nativeObjectRef":{"type":"string","minLength":1},
+    "nativeOperation":{"type":"string","enum":["OPEN","READ","WRITE","OBSERVE","TOKEN_OBSERVE","TOKEN_REVOKE"]},
+    "bindingId":{"type":"string","format":"uuid"},
+    "writeObservation":{"$ref":"protocol_write_observation.schema.json"}
+  }
+}

@@ -86,6 +86,8 @@ export async function middleware(request: NextRequest) {
     [
       '/api/platform-adapter/mcp',
       '/api/platform-adapter/observe',
+      '/api/platform-adapter/execute',
+      '/platform-adapter/v1/execute',
       '/platform-adapter/v1/observe',
       '/api/platform-adapter/handshake',
       '/api/platform-adapter/validate_binding',

@@ -29,6 +29,14 @@ pub(crate) async fn check(
     headers: HeaderMap,
     body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
+    // The two original protocol request variants are closed machine schemas.
+    // A Session callback authenticates the binding, not an Agent's ActionToken.
+    let body = match body {
+        Ok(Json(raw)) if raw.get("protocolSessionId").is_some() => {
+            return crate::protocol_session::pep_check(State(state), headers, raw).await
+        }
+        other => other,
+    };
     let result=async {
         let Json(raw)=body.map_err(|_|invalid())?;
         let parsed:contracts::AdapterPepCheckRequest=serde_json::from_value(raw.clone()).map_err(|_|invalid())?;
@@ -72,13 +80,47 @@ pub(crate) async fn check(
                and p.kind='SERVICE' and p.status='ACTIVE'
              where b.id=$1 and b.state in ('PROVISIONING','ACTIVE','DISABLING') for share of b,s,p")
             .bind(binding).fetch_optional(&mut *tx).await?;
-        if current.as_ref()!=Some(&(tenant,workspace,client,audience,status.clone(),lifecycle)) {
+        if current.as_ref()!=Some(&(tenant,workspace,client,audience.clone(),status.clone(),lifecycle)) {
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
         let def=crate::governance::exact_definition_for_execution(&state.pool,&ae).await?;
         let operation=text(&raw,"operation")?;
         let arguments:Value=serde_json::from_str(text(&raw,"argumentsJson")?).map_err(|_|invalid())?;
         let management=crate::action_token::management_operation(&ae.action_key,&status,operation);
+        if def.execution_mode=="PROTOCOL" {
+            let observing=matches!(operation,"observe"|"cancel")
+                || (operation=="query_revision" && arguments.get("protocolReconcile").is_some());
+            let parameters=ae.parameters.as_ref().ok_or_else(invalid)?;
+            let expected_workspace=ae.workspace_id.map(|id|json!(id));
+            let attached:bool=sqlx::query_scalar("select exists(select 1 from admission.action_execution a
+                join catalog.application_binding b on b.id=a.component_binding_id and b.component_release_id=a.component_release_id
+                where a.id=$1 and b.id=$2 and b.tenant_id=a.tenant_id
+                  and (b.state='ACTIVE' or ($3 and b.state='DISABLING'))
+                  and (b.workspace_id is null or b.workspace_id=a.workspace_id)
+                  and b.active_projection_generation=a.component_projection_generation)")
+                .bind(ae.id).bind(binding).bind(observing).fetch_one(&mut *tx).await?;
+            if !attached || (!observing && status!="ACTIVE")
+                || !matches!(operation,"query_revision"|"execute"|"observe"|"cancel") || raw.get("contentReference").is_some()
+                || claims["tenant_id"]!=json!(ae.tenant_id) || claims.get("workspace_id")!=expected_workspace.as_ref()
+                || claims["actor_principal_id"]!=json!(ae.actor_principal_id) || claims["initiating_human_principal_id"]!=json!(ae.initiator_principal_id)
+                || claims["operation_id"]!=json!(ae.operation_id) || claims["action_key"]!=ae.action_key
+                || claims["action_definition_version"]!=ae.action_version || claims["target_type"]!=def.target_type
+                || claims["target_id"]!=json!(ae.target_id) || claims.get("agent_principal_id").is_some()
+                || claims.get("delegation_id").is_some() || claims.get("delegation_version").is_some()
+                || claims.get("result_exposure_policy_id").is_some() || claims.get("result_exposure_policy_version").is_some()
+                || claims["normalized_parameter_hash"]!=collab_bridge::limits::canonical_digest(&json!({"operation":operation,"arguments":arguments}))
+                || claims["authorization_min_zed_token"].as_str().is_none_or(str::is_empty)
+                || parameters["protocolSessionOpen"].is_null() {return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));}
+            tx.commit().await?;
+            let revision=if matches!(operation,"observe"|"cancel") {
+                crate::protocol_session::lifecycle::authorize(&state,&ae,&audience,operation,&arguments).await?
+            }else if operation=="query_revision" {
+                crate::protocol_session::revision_read(&state,&ae,&audience,&arguments).await?
+            }else{crate::protocol_session::launch::authorize(&state,&ae,&audience,&arguments).await?};
+            let response:contracts::AdapterPepCheckResponse=serde_json::from_value(json!({"actionExecutionId":ae.id,
+                "operationId":ae.operation_id,"authorizationMinZedToken":revision})).map_err(|_|invalid())?;
+            return Ok(response);
+        }
         if !management {
             let parameters=ae.parameters.as_ref().ok_or_else(invalid)?;
             let attached:bool=sqlx::query_scalar("select exists(select 1 from admission.action_execution a
@@ -96,7 +138,9 @@ pub(crate) async fn check(
                 || ae.gate_state!="ALLOWED" || ae.dispatch_state!="DISPATCHED"
                 || claims["tenant_id"]!=json!(ae.tenant_id) || claims.get("workspace_id")!=expected_workspace.as_ref()
                 || claims["actor_principal_id"]!=json!(ae.actor_principal_id)
-                || claims["agent_principal_id"]!=json!(ae.actor_principal_id)
+                || (if crate::application_action::is_human(&ae) {claims.get("agent_principal_id").is_some()
+                    || claims.get("delegation_id").is_some() || claims.get("delegation_version").is_some()}
+                    else {claims["agent_principal_id"]!=json!(ae.actor_principal_id)})
                 || claims["initiating_human_principal_id"]!=json!(ae.initiator_principal_id)
                 || claims["operation_id"]!=json!(ae.operation_id) || claims["action_key"]!=ae.action_key
                 || claims["action_definition_version"]!=ae.action_version || claims["target_type"]!=def.target_type
@@ -109,6 +153,24 @@ pub(crate) async fn check(
                 || claims["authorization_min_zed_token"].as_str().is_none_or(str::is_empty)
                 || (!observing && !querying && crate::application_tool::target(&arguments)?!=(def.target_type.as_str(),ae.target_id)) {
                 return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+            }
+            if crate::application_action::is_human(&ae) && !observing && !querying {
+                // A signed preflight ticket is unusable until the original
+                // transaction has frozen this exact EE/key/hash. It cannot be
+                // presented with another key to start a second native request.
+                let frozen:bool=sqlx::query_scalar("select exists(select 1 from admission.external_execution e
+                    join projection.workflow_ref w on w.workflow_id=e.workflow_id and w.action_execution_id=e.action_execution_id
+                      and w.workflow_type='ComponentTaskWorkflow' and w.kind='COMPONENT_ACTION'
+                    where e.id=$1 and e.idempotency_key=$2 and e.action_execution_id=$3 and e.operation_id=$4
+                      and e.component_binding_id=$5 and e.tenant_id=$6 and e.request_digest=$7
+                      and e.platform_status in ('UNKNOWN','RUNNING') and e.usage_projection is not null)")
+                    .bind(uuid(&claims,"external_execution_id")?).bind(uuid(&claims,"idempotency_key")?)
+                    .bind(ae.id).bind(ae.operation_id).bind(binding).bind(ae.tenant_id).bind(&hash)
+                    .fetch_one(&mut *tx).await?;
+                if !frozen{return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));}
+                crate::application_catalog::approval::require_consumed(
+                    &state.governance,&mut tx,&ae,&def,
+                ).await?;
             }
             tx.commit().await?;
             let revision=if observing {

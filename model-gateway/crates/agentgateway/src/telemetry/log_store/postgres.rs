@@ -88,10 +88,17 @@ impl PostgresLogStore {
 			.collect()
 	}
 
-	pub async fn begin_usage(&self, id: &str, trace: Option<&str>, started_at: chrono::DateTime<chrono::Utc>, attempt: i64) -> anyhow::Result<()> {
+	pub async fn begin_usage(&self, id: &str, trace: Option<&str>, started_at: chrono::DateTime<chrono::Utc>, attempt: i64, application: Option<&super::DispatchIdentity>) -> anyhow::Result<()> {
 		let mut tx = self.pool.begin().await?;
-		sqlx::query("INSERT INTO usage_dispatches (id, trace_id, started_at, attempt) VALUES ($1,$2,$3,$4)")
-			.bind(id).bind(trace).bind(started_at).bind(attempt).execute(&mut *tx).await?;
+		if let Some(identity) = application.filter(|identity| identity.application) {
+			// The native ConfigResource DELETE/UPDATE locks the same row. Either the
+			// key is revoked first, or this attempt is durable before revocation commits.
+			let value: Json<Value> = sqlx::query_scalar("SELECT value_json FROM agw_config_resources WHERE kind='llm.apiKey' AND id=$1 AND deleted_at IS NULL FOR SHARE")
+				.bind(&identity.key_id).fetch_one(&mut *tx).await?;
+			identity.validate_resource(&value.0)?;
+		}
+		sqlx::query("INSERT INTO usage_dispatches (id, trace_id, started_at, attempt, gateway_user) VALUES ($1,$2,$3,$4,$5)")
+			.bind(id).bind(trace).bind(started_at).bind(attempt).bind(application.map(|a| a.user.as_str())).execute(&mut *tx).await?;
 		tx.commit().await?;
 		Ok(())
 	}
@@ -99,13 +106,14 @@ impl PostgresLogStore {
 	pub async fn usage_outbox(
 		&self,
 		request: &UsageOutboxRequest,
-	) -> anyhow::Result<(Vec<UsageOutboxEntry>, (i64, i64, i64))> {
+	) -> anyhow::Result<(Vec<UsageOutboxEntry>, (i64, i64, i64), bool)> {
 		let mut tx = self.pool.begin().await?;
 		sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY").execute(&mut *tx).await?;
 		let rows = sqlx::query(SELECT_USAGE_OUTBOX)
 			.bind(request.after.unwrap_or(0))
 			.bind(limit(request.limit))
 			.bind(request.trace_id.as_deref())
+			.bind(request.gateway_user.as_deref())
 			.fetch_all(&mut *tx)
 			.await?;
 		let entries = rows
@@ -141,13 +149,17 @@ impl PostgresLogStore {
 				})
 			})
 			.collect::<anyhow::Result<Vec<_>>>()?;
-		let counts = sqlx::query("SELECT count(*) AS submitted, count(*) FILTER (WHERE o.log_id IS NULL OR l.trace_id IS DISTINCT FROM d.trace_id) AS pending FROM usage_dispatches d LEFT JOIN usage_outbox o ON o.log_id=d.id LEFT JOIN request_logs l ON l.id=o.log_id WHERE ($1::text IS NULL OR d.trace_id=$1)")
-			.bind(request.trace_id.as_deref()).fetch_one(&mut *tx).await?;
-		let untracked: i64 = sqlx::query_scalar("SELECT count(*) FROM usage_outbox o JOIN request_logs l ON l.id=o.log_id LEFT JOIN usage_dispatches d ON d.id=o.log_id WHERE d.id IS NULL AND ($1::text IS NULL OR l.trace_id=$1)")
-			.bind(request.trace_id.as_deref()).fetch_one(&mut *tx).await?;
+		let counts = sqlx::query("SELECT count(*) AS submitted, count(*) FILTER (WHERE o.log_id IS NULL OR l.trace_id IS DISTINCT FROM d.trace_id OR (d.gateway_user IS NOT NULL AND l.agentgateway_user IS DISTINCT FROM d.gateway_user)) AS pending FROM usage_dispatches d LEFT JOIN usage_outbox o ON o.log_id=d.id LEFT JOIN request_logs l ON l.id=o.log_id WHERE ($1::text IS NULL OR d.trace_id=$1) AND ($2::text IS NULL OR coalesce(d.gateway_user,l.agentgateway_user)=$2 OR ($1::text IS NOT NULL AND d.gateway_user IS NULL AND l.id IS NULL))")
+			.bind(request.trace_id.as_deref()).bind(request.gateway_user.as_deref()).fetch_one(&mut *tx).await?;
+		let untracked: i64 = sqlx::query_scalar("SELECT count(*) FROM usage_outbox o JOIN request_logs l ON l.id=o.log_id LEFT JOIN usage_dispatches d ON d.id=o.log_id WHERE (d.id IS NULL OR (d.gateway_user IS NOT NULL AND d.gateway_user IS DISTINCT FROM l.agentgateway_user)) AND ($1::text IS NULL OR l.trace_id=$1) AND ($2::text IS NULL OR l.agentgateway_user=$2)")
+			.bind(request.trace_id.as_deref()).bind(request.gateway_user.as_deref()).fetch_one(&mut *tx).await?;
 		let counts = (counts.try_get("submitted")?, counts.try_get("pending")?, untracked);
+		let credential_revoked = if let Some(user) = request.gateway_user.as_ref().filter(|_|request.trace_id.is_none()) {
+			sqlx::query_scalar("SELECT count(*)>0 AND bool_and(deleted_at IS NOT NULL) FROM agw_config_resources WHERE kind='llm.apiKey' AND value_json->'metadata'->>'user'=$1 AND value_json->'metadata'->>'componentBindingId' IS NOT NULL")
+				.bind(user).fetch_one(&mut *tx).await?
+		} else { false };
 		tx.commit().await?;
-		Ok((entries, counts))
+		Ok((entries, counts, credential_revoked))
 	}
 
 	pub async fn search(&self, request: SearchRequest) -> anyhow::Result<SearchResponse> {
@@ -721,6 +733,7 @@ JOIN request_logs ON request_logs.id = usage_outbox.log_id
 LEFT JOIN usage_dispatches ON usage_dispatches.id = usage_outbox.log_id
 WHERE usage_outbox.seq > $1
 AND ($3::text IS NULL OR request_logs.trace_id = $3)
+AND ($4::text IS NULL OR request_logs.agentgateway_user = $4)
 ORDER BY usage_outbox.seq ASC
 LIMIT $2
 "#;

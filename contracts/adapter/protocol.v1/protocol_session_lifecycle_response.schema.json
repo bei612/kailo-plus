@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"adapter/protocol.v1/protocol_session_lifecycle_response.schema.json",
+  "title":"AdapterProtocolSessionLifecycleResponse",
+  "description":"Original Cells PAT metadata only. ABSENT is a successful native lookup; errors must remain unavailable, never ABSENT.",
+  "type":"object","additionalProperties":false,
+  "required":["protocolSessionId","nativeObjectRef","nativeState"],
+  "properties":{
+    "protocolSessionId":{"type":"string","format":"uuid"},
+    "nativeObjectRef":{"type":"string","minLength":1},
+    "nativeState":{"type":"string","enum":["ACTIVE","EXPIRED","ABSENT"]},
+    "nativeSessionRef":{"type":"string","format":"uuid"},
+    "expiresAt":{"type":"string","format":"date-time"}
+  }
+}

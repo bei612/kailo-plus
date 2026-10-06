@@ -40,23 +40,25 @@ const (
 type contextKey string
 
 type Claims struct {
-	ClientApp      interface{} `json:"aud" mapstructure:"aud"`
-	Issuer         string      `json:"iss" mapstructure:"iss"`
-	SessionID      string      `json:"sid" mapstructure:"sid"`
-	Subject        string      `json:"sub" mapstructure:"sub"`
-	Nonce          string      `json:"nonce" mapstructure:"nonce"`
-	Name           string      `json:"name" mapstructure:"name"`
-	Email          string      `json:"email" mapstructure:"email"`
-	Profile        string      `json:"profile" mapstructure:"profile"`
-	Verified       bool        `json:"email_verified" mapstructure:"email_verified"`
-	Public         bool        `json:"public" mapstructure:"public"`
-	Roles          string      `json:"roles" mapstructure:"roles"`
-	Expiry         time.Time   `json:"expiry" mapstructure:"expiry"`
-	AuthSource     string      `json:"authSource" mapstructure:"authSource"`
-	DisplayName    string      `json:"displayName" mapstructure:"displayName"`
-	GroupPath      string      `json:"groupPath" mapstructure:"groupPath"`
-	ProvidesScopes bool        `json:"providesScopes" mapstructure:"providesScopes"`
-	Scopes         []string    `json:"scopes" mapstructure:"scopes"`
+	ClientApp              interface{} `json:"aud" mapstructure:"aud"`
+	Issuer                 string      `json:"iss" mapstructure:"iss"`
+	SessionID              string      `json:"sid" mapstructure:"sid"`
+	Subject                string      `json:"sub" mapstructure:"sub"`
+	Nonce                  string      `json:"nonce" mapstructure:"nonce"`
+	Name                   string      `json:"name" mapstructure:"name"`
+	Email                  string      `json:"email" mapstructure:"email"`
+	Profile                string      `json:"profile" mapstructure:"profile"`
+	Verified               bool        `json:"email_verified" mapstructure:"email_verified"`
+	Public                 bool        `json:"public" mapstructure:"public"`
+	Roles                  string      `json:"roles" mapstructure:"roles"`
+	Expiry                 time.Time   `json:"expiry" mapstructure:"expiry"`
+	AuthSource             string      `json:"authSource" mapstructure:"authSource"`
+	DisplayName            string      `json:"displayName" mapstructure:"displayName"`
+	GroupPath              string      `json:"groupPath" mapstructure:"groupPath"`
+	ProvidesScopes         bool        `json:"providesScopes" mapstructure:"providesScopes"`
+	Scopes                 []string    `json:"scopes" mapstructure:"scopes"`
+	ProtocolSessionID      string      `json:"protocol_session_id" mapstructure:"protocol_session_id"`
+	NativeProtocolTokenRef string      `json:"native_protocol_token_ref" mapstructure:"native_protocol_token_ref"`
 
 	secretPair string
 }

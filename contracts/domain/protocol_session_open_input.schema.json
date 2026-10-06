@@ -1,0 +1,16 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"domain/protocol_session_open_input.schema.json",
+  "title":"ProtocolSessionOpenInput",
+  "description":"03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL. Revision and presentation are frozen once; session expiry comes from controlled Core delivery.",
+  "type":"object","additionalProperties":false,
+  "required":["reference","actionVersion","theme","locale","applicationBindingId","projectionGeneration"],
+  "properties":{
+    "applicationBindingId":{"type":"string","format":"uuid","description":"The selected native source binding; must equal the target's real binding, not an authorization claim."},
+    "projectionGeneration":{"type":"integer","minimum":1,"description":"Exact approved projection selected by the native menu; never latest."},
+    "reference":{"$ref":"content_reference.schema.json"},
+    "actionVersion":{"type":"integer","minimum":1},
+    "theme":{"type":"string","enum":["LIGHT","DARK"]},
+    "locale":{"type":"string","enum":["en","zh-CN"]}
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ApplicationModelAdmission",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["bindingId", "gatewayPrincipalId", "generation", "method", "path", "traceparent"],
+  "properties": {
+    "bindingId": {"type": "string", "format": "uuid"},
+    "gatewayPrincipalId": {"type": "string", "format": "uuid"},
+    "generation": {"type": "integer"},
+    "method": {"type": "string"},
+    "path": {"type": "string"},
+    "traceparent": {"type": "string"}
+  }
+}

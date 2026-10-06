@@ -136,6 +136,7 @@ const automationLabels = {
   [AutomationState.Enabled]: "agents.automation.state.enabled",
   [AutomationState.Paused]: "agents.automation.state.paused",
   [AutomationState.Disabled]: "agents.automation.state.disabled",
+  [AutomationState.Deleted]: "agents.automation.state.deleted",
 } as const satisfies Record<AutomationState, PlatformMessageKey>;
 const automationVersionLabels = {
   [AgentVersionState.Draft]: "agents.automation.state.draft",
@@ -223,7 +224,11 @@ function validApprovalPolicy(value: AutomationVersionView["content"]["approvalPo
 function validAutomationDetail(value: AutomationDetailView, resource: string, workspace: string): boolean {
   const parent = value?.automation;
   return !!value && !!parent && validAutomation(parent) && parent.resourceId === resource && parent.workspaceId === workspace
-    && typeof value.canManage === "boolean" && Array.isArray(value.versions)
+    && typeof value.canManage === "boolean"
+    && (value.canRun === undefined || typeof value.canRun === "boolean")
+    && (value.canRun !== true || parent.state === AutomationState.Enabled)
+    && (parent.state !== AutomationState.Deleted || !value.canManage)
+    && Array.isArray(value.versions)
     && value.versions.every((row) => validAutomationVersion(row, parent))
     && new Set(value.versions.map((row) => row.assetId)).size === value.versions.length
     && Array.isArray(value.delegations) && value.delegations.every((row) => row
@@ -235,7 +240,7 @@ function validAutomationDetail(value: AutomationDetailView, resource: string, wo
     && new Set(value.delegations.map((row) => row.delegationId)).size === value.delegations.length;
 }
 
-type AutomationEdit = { detail: AutomationDetailView; action: "publish_version" | "enable" | "pause" | "disable" }
+type AutomationEdit = { detail: AutomationDetailView; action: "publish_version" | "enable" | "pause" | "disable" | "delete" | "run" }
   | { detail: AutomationDetailView; action: "copy"; content: AutomationVersionView["content"] };
 
 export function AutomationManagement({ renderRunHistory }: {
@@ -371,7 +376,10 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, renderRunHi
         ? <Button disabled={locked} onClick={() => onEdit({ detail, action: "enable" })}>{t("agents.automation.enable")}</Button> : null}
       {row.state === AutomationState.Enabled ? <Button disabled={locked} onClick={() => onEdit({ detail, action: "pause" })}>{t("agents.automation.pause")}</Button> : null}
       {row.state !== AutomationState.Disabled ? <Button disabled={locked} onClick={() => onEdit({ detail, action: "disable" })}>{t("agents.automation.disable")}</Button> : null}
+      <Button disabled={locked} onClick={() => onEdit({ detail, action: "delete" })}>{t("agents.automation.delete")}</Button>
     </div> : null}
+    {detail.canRun === true && row.state === AutomationState.Enabled ? <Button className="w-fit" disabled={locked}
+      onClick={() => onEdit({ detail, action: "run" })}>{t("agents.automation.run")}</Button> : null}
     {detail.versions.length === 0 ? <Notice>{t("agents.automation.noVersion")}</Notice>
       : <Table head={[t("agents.publishedVersion"), t("agents.resourceVersion"), t("platform.state"), t("agents.automation.trigger"), t("agents.automation.template"), ""]}>
         {detail.versions.map((version) => <tr key={version.assetId}>
@@ -458,7 +466,8 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
     () => workspaceId ? client.automations(workspaceId, 0) : Promise.resolve(null));
   const [tasks, reloadTasks] = useLoad("automation-actions-in-flight", client.tasks);
   const taskRows = tasks.status === "ok" && Array.isArray(tasks.data) && tasks.data.every(validDefinitionTask) ? tasks.data : null;
-  const pending = taskRows?.filter((task) => task.actionKey.startsWith("automation.") && taskPhase(task).tone === "neutral") ?? [];
+  const pending = taskRows?.filter((task) => task.actionKey.startsWith("automation.") && task.actionKey !== "automation.run"
+    && taskPhase(task).tone === "neutral") ?? [];
   const requestBlocked = !taskRows || pending.some((task) => !creating ? task.targetId === edit.detail.automation.resourceId : task.actionKey === "automation.create");
   const executorPage = installations.status === "ok" && installations.data && Array.isArray(installations.data.installations)
     && installations.data.installations.every((row) => validInstallation(row) && row.workspaceId === workspaceId)
@@ -548,13 +557,15 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
   };
   const prepare = () => {
     if (intent || busy || requestBlocked || !workspaceId || (creating && (!canCreate || !executor))
-      || (!creating && !edit.detail.canManage)
+      || (!creating && (edit.action === "run" ? edit.detail.canRun !== true
+        || edit.detail.automation.state !== AutomationState.Enabled : !edit.detail.canManage))
       || (contentAction && !contentAvailable)
       || (edit?.action === "enable" && !enableAvailable)) return;
     const command: ActionCommand = { actionKey: !creating ? `automation.${edit.action}` : "automation.create",
       idempotencyKey: newIdempotencyKey(), explicitConfirmation: true };
     if (!creating) { command.resourceId = edit.detail.automation.resourceId; command.resourceVersion = edit.detail.automation.resourceVersion; }
     else { command.workspaceId = workspaceId; command.executorInstallationResourceId = executor!.resourceId; }
+    if (edit?.action === "run") command.workspaceId = workspaceId;
     if (contentAction && content) command.automationVersionContent = content;
     if (edit?.action === "enable" && version && grant) {
       command.assetId = version.assetId; command.assetVersion = version.assetVersion;
@@ -592,13 +603,16 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
     } finally { inFlight.current = false; setBusy(false); reloadTasks(); }
   };
   const title = creating ? "agents.automation.create" : edit.action === "publish_version" ? "agents.automation.publish"
-    : edit.action === "enable" ? "agents.automation.enable" : edit.action === "pause" ? "agents.automation.pause" : "agents.automation.disable";
+    : edit.action === "enable" ? "agents.automation.enable" : edit.action === "pause" ? "agents.automation.pause"
+    : edit.action === "run" ? "agents.automation.run" : edit.action === "delete" ? "agents.automation.delete" : "agents.automation.disable";
   // Scope 尚未读成真实 Workspace 时不制造空执行器/未知创建表单；已冻结的写意图仍保留。
   if (!workspaceId && !intent) return null;
   return <section className="flex flex-col gap-3 rounded-md border p-3">
     <h3 className="text-sm font-medium">{t(title)}</h3>
     {!intent ? <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
       {!creating ? <p className="break-words text-sm">{edit.detail.automation.resourceId} · {t("agents.resourceVersion")}: {edit.detail.automation.resourceVersion}</p> : null}
+      {edit?.action === "run" ? <Notice>{t("agents.automation.runConfirm")}</Notice> : null}
+      {edit?.action === "delete" ? <Notice>{t("agents.automation.deleteConfirm")}</Notice> : null}
       {creating ? <>
         {installations.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
           : !executorPage ? <AgentReadFailure error={installations.status === "error" ? installations.error : undefined} onRetry={reloadInstallations} />

@@ -22,18 +22,76 @@ package wopi
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/pydio/cells/v5/common"
 	auth2 "github.com/pydio/cells/v5/common/auth"
+	"github.com/pydio/cells/v5/common/auth/protocol"
+	clientgrpc "github.com/pydio/cells/v5/common/client/grpc"
 	"github.com/pydio/cells/v5/common/config"
+	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/proto/idm"
 	"github.com/pydio/cells/v5/common/proto/tree"
 	json "github.com/pydio/cells/v5/common/utils/jsonx"
+	"google.golang.org/grpc"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
+
+type onlyOfficeFileInfoFixture struct {
+	nodes.Client
+	grpc.ClientConnInterface
+	node *tree.Node
+}
+
+func (f *onlyOfficeFileInfoFixture) ReadNode(_ context.Context, _ *tree.ReadNodeRequest, _ ...grpc.CallOption) (*tree.ReadNodeResponse, error) {
+	return &tree.ReadNodeResponse{Node: f.node}, nil
+}
+
+func (f *onlyOfficeFileInfoFixture) Invoke(_ context.Context, method string, request any, response any, _ ...grpc.CallOption) error {
+	if method != "/tree.NodeVersioner/HeadVersion" || request.(*tree.HeadVersionRequest).VersionId != "original-version" {
+		panic("unexpected native revision query")
+	}
+	response.(*tree.HeadVersionResponse).Version = &tree.ContentRevision{VersionId: "original-version", Size: 7, MTime: 1768477881}
+	return nil
+}
+
+func TestOnlyOfficeFileInfoProjectsFreshSession(t *testing.T) {
+	nodeID := "00000000-0000-4000-8000-000000000001"
+	fixture := &onlyOfficeFileInfoFixture{node: &tree.Node{Uuid: nodeID, Path: "/documents/report.docx", Size: 99,
+		MetaStore: map[string]string{common.MetaNamespaceNodeName: `"report.docx"`}}}
+	originalClient := client
+	client = fixture
+	t.Cleanup(func() { client = originalClient })
+	clientgrpc.RegisterMock(common.ServiceVersionsGRPC, fixture)
+	for _, mode := range []string{"VIEW", "EDIT"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := config.WithStubStore(context.Background())
+			ctx = auth2.WithImpersonate(ctx, &idm.User{Uuid: "native-human", Login: "original-native-human"})
+			ctx = context.WithValue(ctx, protocolFactsKey{}, &protocol.Facts{PlatformHumanID: "platform-human", DisplayName: "Original Human",
+				AdmittedMode: mode, BaseRevision: "original-version", ExportAllowed: false, PostMessageOrigin: "https://platform.example"})
+			request := mux.SetURLVars(httptest.NewRequest(http.MethodGet, "/wopi/files/"+nodeID, nil).WithContext(ctx), map[string]string{"uuid": nodeID})
+			response := httptest.NewRecorder()
+			getNodeInfos(response, request)
+			if response.Code != http.StatusOK {
+				t.Fatalf("actual CheckFileInfo consumer failed: %d", response.Code)
+			}
+			var info FileInfo
+			if err := json.Unmarshal(response.Body.Bytes(), &info); err != nil {
+				t.Fatal(err)
+			}
+			if info.PostMessageOrigin != "https://platform.example" || !info.EditNotificationPostMessage || !info.ClosePostMessage ||
+				!info.DisableCopy || !info.DisableExport || !info.DisablePrint || !info.HideExportOption || !info.HidePrintOption ||
+				info.Version != "original-version" || info.Size != 7 || info.UserId != "platform-human" || info.UserCanWrite != (mode == "EDIT") {
+				t.Fatalf("fresh original Session projection was lost: %+v", info)
+			}
+		})
+	}
+}
 
 func TestFileInfo(t *testing.T) {
 	Convey("TestFileInfo", t, func() {

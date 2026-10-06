@@ -1,11 +1,17 @@
 version: "3"
+name: ${WREN_COMPOSE_PROJECT_NAME:?independent Wren Compose project is required}
 
 volumes:
   data:
+  native-ui-data:
+  native-qdrant-data:
 
 networks:
   wren:
     driver: bridge
+  wren-ai-service-data:
+    driver: bridge
+    internal: true
 
 services:
   # Separate native OIDC policy/cookies and configuration ownership. Core's
@@ -13,71 +19,81 @@ services:
   wren-native-gateway:
     image: ${WREN_GATEWAY_IMAGE:?source-built AgentGateway image is required}
     restart: on-failure
-    platform: ${PLATFORM}
+    platform: ${WREN_PLATFORM:?native platform is required}
     command: ["-f", "/etc/agentgateway/native-gateway.yaml"]
     env_file:
       # Deliver WREN_OIDC_CLIENT_SECRET and independent OIDC_COOKIE_SECRET.
       # Controlled component-specific delivery only; never the platform .env.
       - ${WREN_OIDC_SECRET_ENV_FILE:?dedicated OIDC secret delivery file is required}
     environment:
-      WREN_OIDC_ISSUER: ${WREN_OIDC_ISSUER:?dedicated issuer is required}
+      WREN_OIDC_ISSUER: ${OIDC_ISSUER:?platform identity issuer is required}
       WREN_OIDC_CLIENT_ID: ${WREN_OIDC_CLIENT_ID:?dedicated browser client is required}
-      WREN_OIDC_REDIRECT_URI: ${WREN_OIDC_REDIRECT_URI:?native callback URI is required}
+      WREN_OIDC_REDIRECT_URI: ${WREN_PUBLIC_ORIGIN:?native public origin is required}/oauth/callback
       WREN_GATEWAY_HTTP_PORT: ${WREN_GATEWAY_HTTP_PORT:?native Gateway listen port is required}
       WREN_GATEWAY_ADMIN_PORT: ${WREN_GATEWAY_ADMIN_PORT:?loopback admin port is required}
-      # Original native Dockerfile fixes PORT/EXPOSE to 3000.
-      WREN_UI_UPSTREAM: wren-ui:3000
+      WREN_UI_UPSTREAM: wren-ui:${WREN_UI_PORT:?native UI port is required}
     volumes:
       - ./native-gateway.yaml:/etc/agentgateway/native-gateway.yaml:ro
     ports:
-      - ${HOST_PORT}:${WREN_GATEWAY_HTTP_PORT:?native Gateway listen port is required}
+      - ${WREN_PUBLIC_BIND_ADDR:?native public bind address is required}:${WREN_PUBLIC_PORT:?native public port is required}:${WREN_GATEWAY_HTTP_PORT:?native Gateway listen port is required}
     networks:
       - wren
     depends_on:
       - wren-ui
 
   bootstrap:
-    image: ghcr.io/canner/wren-bootstrap:${WREN_BOOTSTRAP_VERSION}
-    restart: on-failure
-    platform: ${PLATFORM}
+    image: ${WREN_BOOTSTRAP_IMAGE:?fixed compatible native bootstrap image is required}
+    restart: "no"
+    platform: ${WREN_PLATFORM:?native platform is required}
     environment:
       DATA_PATH: /app/data
     volumes:
       - data:/app/data
     command: /bin/sh /app/init.sh
+    networks:
+      - wren
 
   wren-engine:
-    image: ghcr.io/canner/wren-engine:${WREN_ENGINE_VERSION}
+    image: ${WREN_ENGINE_IMAGE:?fixed compatible native Engine image is required}
     restart: on-failure
-    platform: ${PLATFORM}
+    platform: ${WREN_PLATFORM:?native platform is required}
     expose:
       - ${WREN_ENGINE_PORT}
       - ${WREN_ENGINE_SQL_PORT}
     volumes:
       - data:/usr/src/app/etc
-      - ${PROJECT_DIR}/data:/usr/src/app/data
+      - type: bind
+        source: ${WREN_PROJECT_DIR:?native configuration directory is required}/data
+        target: /usr/src/app/data
+        bind:
+          create_host_path: false
     networks:
       - wren
     depends_on:
-      - bootstrap
+      bootstrap:
+        condition: service_completed_successfully
 
   ibis-server:
-    image: ghcr.io/canner/wren-engine-ibis:${IBIS_SERVER_VERSION}
+    image: ${WREN_IBIS_IMAGE:?fixed compatible native Ibis image is required}
     restart: on-failure
-    platform: ${PLATFORM}
+    platform: ${WREN_PLATFORM:?native platform is required}
     expose:
-      - ${IBIS_SERVER_PORT}
+      - ${WREN_IBIS_SERVER_PORT:?native Ibis port is required}
     environment:
       WREN_ENGINE_ENDPOINT: http://wren-engine:${WREN_ENGINE_PORT}
     volumes:
-      - ${LOCAL_STORAGE:-.}:/usr/src/app/data
+      - type: bind
+        source: ${WREN_LOCAL_STORAGE:?native Ibis storage directory is required}
+        target: /usr/src/app/data
+        bind:
+          create_host_path: false
     networks:
       - wren
 
   wren-ai-service:
-    image: ghcr.io/canner/wren-ai-service:${WREN_AI_SERVICE_VERSION}
+    image: ${WREN_AI_IMAGE:?source-built native AI Service image with OIDC callback is required}
     restart: on-failure
-    platform: ${PLATFORM}
+    platform: ${WREN_PLATFORM:?native platform is required}
     expose:
       - ${WREN_AI_SERVICE_PORT}
     environment:
@@ -85,62 +101,99 @@ services:
       # using PYTHONUNBUFFERED: 1 can fix this
       PYTHONUNBUFFERED: 1
       CONFIG_PATH: /app/config.yaml
+      WREN_NATIVE_SERVICE_IDENTITY_FILE: /run/wren-ai-native/identity.json
+      QDRANT_HOST: qdrant
+      WREN_AI_SERVICE_PORT: ${WREN_AI_SERVICE_PORT}
+      WREN_UI_PORT: ${WREN_UI_PORT:?native UI port is required}
+      WREN_UI_ENDPOINT: http://wren-ui:${WREN_UI_PORT:?native UI port is required}
+      SHOULD_FORCE_DEPLOY: ${WREN_SHOULD_FORCE_DEPLOY:-}
     env_file:
-      - ${PROJECT_DIR}/.env
+      - ${WREN_AI_SECRET_ENV_FILE:?component-only model credential delivery is required}
     volumes:
-      - ${PROJECT_DIR}/config.yaml:/app/config.yaml:ro
-      - ${PROJECT_DIR}/data:/app/data:ro
+      - type: bind
+        source: ${WREN_PROJECT_DIR:?native configuration directory is required}/config.yaml
+        target: /app/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${WREN_PROJECT_DIR:?native configuration directory is required}/data
+        target: /app/data
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${WREN_AI_IDENTITY_DIR:?dedicated native service identity delivery is required}
+        target: /run/wren-ai-native
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       - wren
+      - wren-ai-service-data
     depends_on:
       - qdrant
 
   qdrant:
-    image: qdrant/qdrant:v1.11.0
+    image: ${WREN_QDRANT_IMAGE:?fixed Qdrant image is required}
     restart: on-failure
     expose:
       - 6333
       - 6334
     volumes:
-      - data:/qdrant/storage
+      - native-qdrant-data:/qdrant/storage
     networks:
-      - wren
+      - wren-ai-service-data
 
   wren-ui:
     image: ${WREN_UI_IMAGE:?source-built WREN_UI_IMAGE is required}
     restart: on-failure
-    platform: ${PLATFORM}
+    platform: ${WREN_PLATFORM:?native platform is required}
+    env_file:
+      # PG_URL only when the existing native PostgreSQL backend is selected.
+      # For SQLite this component-only file can be empty; never platform .env.
+      - ${WREN_UI_SECRET_ENV_FILE:?component-only native DB credential delivery is required}
     environment:
       WREN_NATIVE_IDENTITY_JSON: ${WREN_NATIVE_IDENTITY_JSON:?native identity configuration is required}
-      DB_TYPE: sqlite
-      # /app is the working directory in the container
-      SQLITE_FILE: /app/data/db.sqlite3
+      WREN_ENCRYPTION_PASSWORD_FILE: /run/wren-native/encryption-password
+      WREN_ENCRYPTION_SALT_FILE: /run/wren-native/encryption-salt
+      DB_TYPE: ${WREN_DB_TYPE:?native database backend is required}
+      # The original Knex configuration selects PostgreSQL or SQLite.
+      SQLITE_FILE: ${WREN_SQLITE_FILE:?native SQLite path is required}
+      HOSTNAME: ${WREN_UI_BIND_ADDRESS:?native UI bind address is required}
+      PORT: ${WREN_UI_PORT:?native UI port is required}
       WREN_ENGINE_ENDPOINT: http://wren-engine:${WREN_ENGINE_PORT}
       WREN_AI_ENDPOINT: http://wren-ai-service:${WREN_AI_SERVICE_PORT}
-      IBIS_SERVER_ENDPOINT: http://ibis-server:${IBIS_SERVER_PORT}
+      IBIS_SERVER_ENDPOINT: http://ibis-server:${WREN_IBIS_SERVER_PORT:?native Ibis port is required}
       # this is for telemetry to know the model, i think ai-service might be able to provide a endpoint to get the information
-      GENERATION_MODEL: ${GENERATION_MODEL}
+      GENERATION_MODEL: ${WREN_GENERATION_MODEL:-}
       # telemetry
       WREN_ENGINE_PORT: ${WREN_ENGINE_PORT}
       WREN_AI_SERVICE_VERSION: ${WREN_AI_SERVICE_VERSION}
       WREN_UI_VERSION: ${WREN_UI_VERSION}
       WREN_ENGINE_VERSION: ${WREN_ENGINE_VERSION}
-      USER_UUID: ${USER_UUID}
-      POSTHOG_API_KEY: ${POSTHOG_API_KEY}
-      POSTHOG_HOST: ${POSTHOG_HOST}
-      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED}
+      USER_UUID: ${WREN_USER_UUID:-}
+      POSTHOG_API_KEY: ${WREN_POSTHOG_API_KEY:-}
+      POSTHOG_HOST: ${WREN_POSTHOG_HOST:-}
+      TELEMETRY_ENABLED: ${WREN_TELEMETRY_ENABLED:?native telemetry setting is required}
       # client side
-      NEXT_PUBLIC_USER_UUID: ${USER_UUID}
-      NEXT_PUBLIC_POSTHOG_API_KEY: ${POSTHOG_API_KEY}
-      NEXT_PUBLIC_POSTHOG_HOST: ${POSTHOG_HOST}
-      NEXT_PUBLIC_TELEMETRY_ENABLED: ${TELEMETRY_ENABLED}
-      EXPERIMENTAL_ENGINE_RUST_VERSION: ${EXPERIMENTAL_ENGINE_RUST_VERSION}
+      NEXT_PUBLIC_USER_UUID: ${WREN_USER_UUID:-}
+      NEXT_PUBLIC_POSTHOG_API_KEY: ${WREN_POSTHOG_API_KEY:-}
+      NEXT_PUBLIC_POSTHOG_HOST: ${WREN_POSTHOG_HOST:-}
+      NEXT_PUBLIC_TELEMETRY_ENABLED: ${WREN_TELEMETRY_ENABLED:?native telemetry setting is required}
+      EXPERIMENTAL_ENGINE_RUST_VERSION: ${WREN_EXPERIMENTAL_ENGINE_RUST_VERSION:?native engine mode is required}
       # configs
       WREN_PRODUCT_VERSION: ${WREN_PRODUCT_VERSION}
     expose:
-      - 3000
+      - ${WREN_UI_PORT:?native UI port is required}
     volumes:
-      - data:/app/data
+      - native-ui-data:/app/data
+      - type: bind
+        source: ${WREN_NATIVE_DATA_KEY_DIR:?component-specific native DATA_KEY delivery directory is required}
+        target: /run/wren-native
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       - wren
     depends_on:

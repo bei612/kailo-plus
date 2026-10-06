@@ -31,7 +31,7 @@
     "projection": {"$ref": "agent_installation_projection_view.schema.json"},
     "automationResultTargets": {
       "type": "array",
-      "description": "同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持 Schedule。",
+      "description": "同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持 Schedule。",
       "items": {"$ref": "../enums/automation_result_target.schema.json"}
     },
     "readPermission": {

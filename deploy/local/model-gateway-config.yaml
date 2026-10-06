@@ -50,6 +50,33 @@ llm:
         header:
           name: authorization
           prefix: 'Bearer '
+    # DD-92: native verified SERVICE key metadata enters the existing Core PEP.
+    # AgentInstallation keys do not match this condition. No model body is sent.
+    extAuthz:
+      conditional:
+      - condition: has(apiKey.componentBindingId)
+        host: http://${BFF_SERVICE_NAME}:${SERVICE_CONTAINER_PORT}/
+        failureMode: deny
+        includeRequestHeaders: [content-type]
+        policies:
+          backendAuth:
+            jwtSign:
+              signingKey:
+                file: ${GATEWAY_SERVICE_SIGNING_KEY_FILE}
+              alg: ES256
+              kid: ${GATEWAY_SERVICE_KEY_ID}
+              claims:
+                iss: ${GATEWAY_SERVICE_ISSUER}
+                aud: ${GATEWAY_SERVICE_AUDIENCE}
+                sub: ${GATEWAY_SERVICE_CALLER_ID}
+                azp: ${GATEWAY_SERVICE_CALLER_ID}
+              ttl: ${GATEWAY_SERVICE_TOKEN_SECONDS}s
+        protocol:
+          http:
+            path: "'/service/v1/application-models/check'"
+            body: "{'bindingId': apiKey.componentBindingId, 'gatewayPrincipalId': apiKey.servicePrincipalId, 'generation': apiKey.projectionGeneration, 'method': request.method, 'path': request.path, 'traceparent': ('traceparent' in request.headers) ? request.headers['traceparent'] : ''}"
+            addRequestHeaders:
+              content-type: "'application/json'"
   models: []
 
 binds:
@@ -221,4 +248,3 @@ binds:
           pathPrefix: /api/
       backends:
       - host: ${BFF_UPSTREAM}
-

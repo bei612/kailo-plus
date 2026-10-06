@@ -36,6 +36,38 @@ impl Default for ExtAuthz {
 }
 
 #[test]
+fn application_model_proof_requires_exact_fresh_policy_and_same_credential() {
+	use crate::http::apikey::{APIKey, Claims};
+	use super::ApplicationModelAdmission;
+	let policy = serde_json::json!({"host":"http://example.com/","failureMode":"deny",
+		"protocol":{"http":{"path":"'/service/v1/application-models/check'"}}});
+	let authz: ExtAuthz = serde_json::from_value(policy.clone()).unwrap();
+	let mut req = ::http::Request::builder().uri("http://example.com/v1/chat/completions")
+		.body(http::Body::empty()).unwrap();
+	let claims = Claims { key: APIKey::new("isolated-admission-proof"), metadata: serde_json::json!({
+		"componentBindingId":uuid::Uuid::new_v4().to_string(), "modelAdmissionPolicy":policy}) };
+	req.extensions_mut().insert(claims.clone());
+	assert!(req.extensions().get::<ApplicationModelAdmission>().is_none());
+	// The original cached-response consumer must never mint a fresh proof.
+	let cached=super::CachedHttpPolicyResponse::Allow { headers:HeaderMap::new(),dynamic_metadata:None };
+	let _ = cached.apply(&mut req).unwrap();
+	assert!(req.extensions().get::<ApplicationModelAdmission>().is_none());
+	authz.record_application_model_admission(&mut req);
+	let proof=req.extensions_mut().remove::<ApplicationModelAdmission>().unwrap();
+	assert!(proof.matches(&claims));
+	let foreign=Claims {key:APIKey::new("isolated-other-credential"),metadata:claims.metadata.clone()};
+	assert!(!proof.matches(&foreign));
+	let mut changed=policy.clone(); changed["host"]=serde_json::json!("http://other.example.com/");
+	let changed:ExtAuthz=serde_json::from_value(changed).unwrap();
+	changed.record_application_model_admission(&mut req);
+	assert!(req.extensions().get::<ApplicationModelAdmission>().is_none());
+	let mut missing=claims; missing.metadata.as_object_mut().unwrap().remove("modelAdmissionPolicy");
+	req.extensions_mut().insert(missing);
+	authz.record_application_model_admission(&mut req);
+	assert!(req.extensions().get::<ApplicationModelAdmission>().is_none());
+}
+
+#[test]
 fn ext_authz_https_host_defaults_port_and_tls_policy() {
 	let authz: ExtAuthz = serde_json::from_value(serde_json::json!({
 		"host": "https://foo.com/",

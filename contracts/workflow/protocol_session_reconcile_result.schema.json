@@ -1,0 +1,12 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"workflow/protocol_session_reconcile_result.schema.json",
+  "title":"ProtocolSessionReconcileResult","type":"object","additionalProperties":false,
+  "required":["protocolSessionId","round","status","waitingReason"],
+  "properties":{
+    "protocolSessionId":{"type":"string","format":"uuid"},
+    "round":{"$ref":"protocol_session_reconcile_round.schema.json"},
+    "status":{"$ref":"../enums/task_status.schema.json"},
+    "waitingReason":{"type":"string","minLength":1}
+  }
+}

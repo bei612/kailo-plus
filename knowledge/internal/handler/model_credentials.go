@@ -1,7 +1,13 @@
 package handler
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/errors"
@@ -29,6 +35,36 @@ func NewModelCredentialsHandler(svc interfaces.ModelService) *ModelCredentialsHa
 type modelCredentialsPutRequest struct {
 	APIKey    *string `json:"api_key,omitempty"`
 	AppSecret *string `json:"app_secret,omitempty"`
+	// Optional read-back challenge, not another credential or write operation.
+	VerificationNonce *string `json:"verification_nonce,omitempty"`
+}
+
+type modelCredentialsResponse struct {
+	dto.CredentialsResponse
+	VerificationNonce string `json:"verification_nonce,omitempty"`
+	APIKeyProof       string `json:"api_key_proof,omitempty"`
+}
+
+func modelCredentialResponse(model *types.Model, nonce *string) modelCredentialsResponse {
+	response := modelCredentialsResponse{CredentialsResponse: dto.CredentialsResponse{
+		Fields: map[string]dto.CredentialFieldMetadata{
+			"api_key":    {Configured: model.Parameters.APIKey != ""},
+			"app_secret": {Configured: model.Parameters.AppSecret != ""},
+		},
+	}}
+	if nonce != nil {
+		response.VerificationNonce = *nonce
+	}
+	if nonce != nil && model.Parameters.APIKey != "" {
+		// A fresh challenge proves the value loaded from this native row, without
+		// returning the value or a reusable credential fingerprint. The caller
+		// must verify its own nonce and this exact tenant/model, not configured=true.
+		mac := hmac.New(sha256.New, []byte(model.Parameters.APIKey))
+		_, _ = mac.Write([]byte("application-model-key:v1\x00" + strconv.FormatUint(model.TenantID, 10) +
+			"\x00" + model.ID + "\x00" + *nonce))
+		response.APIKeyProof = hex.EncodeToString(mac.Sum(nil))
+	}
+	return response
 }
 
 func (h *ModelCredentialsHandler) Put(c *gin.Context) {
@@ -41,9 +77,23 @@ func (h *ModelCredentialsHandler) Put(c *gin.Context) {
 	}
 
 	var req modelCredentialsPutRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.Error(errors.NewBadRequestError(err.Error()))
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		c.Error(errors.NewBadRequestError("invalid model credential request"))
 		return
+	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		c.Error(errors.NewBadRequestError("invalid model credential request"))
+		return
+	}
+	if req.VerificationNonce != nil {
+		decoded, err := hex.DecodeString(*req.VerificationNonce)
+		if err != nil || len(decoded) != 32 || hex.EncodeToString(decoded) != *req.VerificationNonce ||
+			req.APIKey != nil || req.AppSecret != nil {
+			c.Error(errors.NewBadRequestError("verification requires an exact nonce and no credential write"))
+			return
+		}
 	}
 	if req.APIKey == nil && req.AppSecret == nil {
 		m, err := h.svc.GetModelByID(ctx, id)
@@ -51,12 +101,11 @@ func (h *ModelCredentialsHandler) Put(c *gin.Context) {
 			c.Error(errors.NewNotFoundError("Model not found"))
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"success": true, "data": dto.CredentialsResponse{
-			Fields: map[string]dto.CredentialFieldMetadata{
-				"api_key":    {Configured: m.Parameters.APIKey != ""},
-				"app_secret": {Configured: m.Parameters.AppSecret != ""},
-			},
-		}})
+		if req.VerificationNonce != nil && (m.ID != id || m.TenantID != tenantID || m.IsBuiltin) {
+			c.Error(errors.NewNotFoundError("Model not found"))
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": modelCredentialResponse(m, req.VerificationNonce)})
 		return
 	}
 
@@ -75,12 +124,7 @@ func (h *ModelCredentialsHandler) Put(c *gin.Context) {
 		return
 	}
 
-	resp := dto.CredentialsResponse{
-		Fields: map[string]dto.CredentialFieldMetadata{
-			"api_key":    {Configured: updated.Parameters.APIKey != ""},
-			"app_secret": {Configured: updated.Parameters.AppSecret != ""},
-		},
-	}
+	resp := modelCredentialResponse(updated, nil)
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": resp})
 }
 

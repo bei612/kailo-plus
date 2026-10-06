@@ -60,6 +60,37 @@ pub(crate) struct Adapter {
 }
 
 impl Adapter {
+    /// Same controlled reader registration as binding secrets. These are only
+    /// delivery facts: the model lifecycle still verifies the native proof and
+    /// the original OpenBao request/response audit pair before activation.
+    pub(crate) fn model_reader_delivery(
+        &self,
+        principal: Uuid,
+        binding: Uuid,
+    ) -> Result<(Value, Vec<Value>), Refusal> {
+        let readers: Vec<_> = self.value["secretReaders"]
+            .as_array()
+            .ok_or_else(blocked)?
+            .iter()
+            .filter(|reader| reader["servicePrincipalId"] == json!(principal))
+            .collect();
+        let [reader] = readers.as_slice() else {
+            return Err(blocked());
+        };
+        text(reader, "roleName")?;
+        text(reader, "audience")?;
+        let deliveries = self
+            .value
+            .get("modelCredentialDeliveries")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|delivery| delivery["bindingId"] == json!(binding))
+            .cloned()
+            .collect();
+        Ok(((*reader).clone(), deliveries))
+    }
+
     pub(super) fn mcp_url(&self) -> Result<reqwest::Url, Refusal> {
         let url = reqwest::Url::parse(text(&self.value, "mcpUrl")?).map_err(|_| blocked())?;
         if !matches!(url.scheme(), "https" | "http")
@@ -178,8 +209,18 @@ impl Adapter {
             return Err(invalid());
         }
         let audience = text(&self.value, "actionTokenAudience")?;
+        let protocol = crate::governance::exact_definition_for_execution(&state.pool, ae)
+            .await?
+            .execution_mode
+            == "PROTOCOL";
+        let protocol_launch = operation == "execute" && protocol;
         let token = if matches!(ae.action_key.as_str(), super::CREATE | super::DISABLE) {
             crate::action_token::issue_binding_management(state, ae, audience, operation, arguments)
+                .await?
+        } else if protocol_launch {
+            crate::action_token::issue_protocol_launch(state, ae, audience, arguments).await?
+        } else if protocol && matches!(operation, "observe" | "cancel") {
+            crate::action_token::issue_protocol_lifecycle(state, ae, audience, operation, arguments)
                 .await?
         } else if operation == "query_revision" {
             crate::action_token::issue_query_revision(state, ae, audience, arguments).await?
@@ -189,15 +230,56 @@ impl Adapter {
             )
             .await?
         };
+        self.send(
+            operation,
+            key,
+            arguments,
+            &token,
+            operation == "query_revision" || protocol,
+            None,
+        )
+        .await
+    }
+
+    /// The caller has committed the original EE's UNKNOWN dispatch fence.
+    /// This does not mint another identity or retry the native execution.
+    pub(crate) async fn execute_prepared(
+        &self,
+        ae: &Execution,
+        key: Uuid,
+        arguments: &Value,
+        token: &str,
+    ) -> Result<Value, Refusal> {
+        let envelope =
+            json!({"idempotencyKey":key,"actionKey":ae.action_key,"arguments":arguments});
+        let trace = crate::model_route::application::human_traceparent(ae);
+        self.send("execute", key, &envelope, token, false, trace.as_deref())
+            .await
+    }
+
+    async fn send(
+        &self,
+        operation: &str,
+        key: Uuid,
+        arguments: &Value,
+        token: &str,
+        canonical_body: bool,
+        traceparent: Option<&str>,
+    ) -> Result<Value, Refusal> {
         let origin = text(&self.value, "baseUrl")?.trim_end_matches('/');
         let request = self
             .http
             .post(format!("{origin}/platform-adapter/v1/{operation}"))
-            .bearer_auth(&token)
+            .bearer_auth(token)
             .header("Idempotency-Key", key.to_string());
+        let request = if let Some(traceparent) = traceparent {
+            request.header("traceparent", traceparent)
+        } else {
+            request
+        };
         // The revision endpoint compares exactly the same bytes used in the
         // signed parameter hash; no parallel serializer or target envelope.
-        let request = if operation == "query_revision" {
+        let request = if canonical_body {
             request
                 .header(reqwest::header::CONTENT_TYPE, "application/json")
                 .body(collab_bridge::limits::canonical_json(arguments))

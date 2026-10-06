@@ -192,7 +192,7 @@ pub(crate) fn target(arguments: &Value) -> Result<(&str, Uuid), Refusal> {
     Ok((kind, id))
 }
 
-async fn schemas(
+pub(crate) async fn schemas(
     conn: &mut PgConnection,
     binding: Uuid,
     action: &str,
@@ -318,6 +318,9 @@ pub(crate) async fn fresh_execution(
     gov: &crate::governance::Governance,
     ae: &Execution,
 ) -> Result<crate::governance::Evaluation, Refusal> {
+    if crate::application_action::is_human(ae) {
+        return crate::application_action::fresh_execution(gov, ae).await;
+    }
     let mut tx = gov.pool.begin().await?;
     let parameters = ae.parameters.as_ref().ok_or_else(denied)?;
     let invocation = parameters["invocationId"]
@@ -864,7 +867,7 @@ pub(crate) async fn prepare(
     if !crate::capability_contract::schema_validator(input, &docs)?.is_valid(&arguments["input"]) {
         return Err(invalid());
     }
-    if definition.execution_mode != "SYNC"
+    if !matches!(definition.execution_mode.as_str(), "SYNC" | "TEMPORAL")
         || !matches!(definition.confirmation_mode.as_str(), "NONE" | "APPROVAL")
     {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));

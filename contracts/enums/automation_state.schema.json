@@ -4,5 +4,5 @@
   "title": "AutomationState",
   "description": "03 §7、05 §2.9：AutomationDefinition 的真实管理状态，不是 Invocation 终态。",
   "type": "string",
-  "enum": ["DRAFT", "ENABLED", "PAUSED", "DISABLED"]
+  "enum": ["DRAFT", "ENABLED", "PAUSED", "DISABLED", "DELETED"]
 }

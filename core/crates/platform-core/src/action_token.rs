@@ -170,7 +170,16 @@ pub(crate) async fn issue_binding_management(
 async fn sign_claims(
     state: &ServiceState,
     audience: &str,
+    claims: Value,
+) -> Result<String, Refusal> {
+    sign_claims_before(state, audience, claims, None).await
+}
+
+async fn sign_claims_before(
+    state: &ServiceState,
+    audience: &str,
     mut claims: Value,
+    deadline: Option<i64>,
 ) -> Result<String, Refusal> {
     let config = delivery()?;
     let issuer = text(&config, "issuer")?;
@@ -209,6 +218,10 @@ async fn sign_claims(
     let expires = now
         .checked_add(config["tokenSeconds"].as_i64().ok_or_else(invalid)?)
         .ok_or_else(invalid)?;
+    let expires = deadline.map_or(expires, |deadline| expires.min(deadline));
+    if expires <= now {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
     claims["jti"] = json!(Uuid::new_v4());
     claims["iss"] = json!(issuer);
     claims["aud"] = json!(audience);
@@ -254,13 +267,43 @@ pub(crate) async fn issue_application(
     ae: &Execution,
     arguments: &Value,
 ) -> Result<(String, String), Refusal> {
+    if crate::application_action::is_human(ae) {
+        return Err(invalid());
+    }
+    issue_application_intent(state, ae, arguments, None).await
+}
+
+pub(crate) async fn issue_component_action(
+    state: &ServiceState,
+    ae: &Execution,
+    arguments: &Value,
+    external: Uuid,
+    key: Uuid,
+) -> Result<(String, String), Refusal> {
+    if !crate::application_action::is_human(ae) || external.is_nil() || key.is_nil() {
+        return Err(invalid());
+    }
+    issue_application_intent(state, ae, arguments, Some((external, key))).await
+}
+
+async fn issue_application_intent(
+    state: &ServiceState,
+    ae: &Execution,
+    arguments: &Value,
+    intent: Option<(Uuid, Uuid)>,
+) -> Result<(String, String), Refusal> {
     let parameters = ae.parameters.as_ref().ok_or_else(invalid)?;
     let (kind, target) = crate::application_tool::target(arguments)?;
     if target != ae.target_id
         || parameters["targetType"] != kind
         || parameters["toolParameterHash"] != collab_bridge::limits::canonical_digest(arguments)
         || ae.gate_state != "ALLOWED"
-        || ae.dispatch_state != "NOT_DISPATCHED"
+        || ae.dispatch_state
+            != if crate::application_action::is_human(ae) {
+                "DISPATCHED"
+            } else {
+                "NOT_DISPATCHED"
+            }
     {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
@@ -282,17 +325,17 @@ pub(crate) async fn issue_application(
         where a.id=$1 and a.component_binding_kind='APPLICATION'")
         .bind(ae.id).fetch_optional(&state.pool).await?;
     let audience = audience.ok_or(Refusal::Denied(ReasonCode::BindingNotActive))?;
-    let token = sign_claims(
-        state,
-        &audience,
-        application_claims(
-            ae,
-            parameters,
-            parameters["toolParameterHash"].clone(),
-            revision,
-        )?,
-    )
-    .await?;
+    let mut claims = application_claims(
+        ae,
+        parameters,
+        parameters["toolParameterHash"].clone(),
+        revision,
+    )?;
+    if let Some((external, key)) = intent {
+        claims["external_execution_id"] = json!(external);
+        claims["idempotency_key"] = json!(key);
+    }
+    let token = sign_claims(state, &audience, claims).await?;
     Ok((token, audience))
 }
 
@@ -305,6 +348,40 @@ pub(crate) async fn issue_query_revision(
     audience: &str,
     arguments: &Value,
 ) -> Result<String, Refusal> {
+    let definition = crate::governance::exact_definition_for_execution(&state.pool, ae).await?;
+    if definition.execution_mode == "PROTOCOL" {
+        let revision =
+            crate::protocol_session::revision_read(state, ae, audience, arguments).await?;
+        let parameters = ae.parameters.as_ref().ok_or_else(invalid)?;
+        let deadline = parameters["protocolExpiresAt"]
+            .as_str()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|time| time.timestamp())
+            .ok_or_else(invalid)?;
+        let mut claims = json!({"tenant_id":ae.tenant_id,"actor_principal_id":ae.actor_principal_id,
+            "initiating_human_principal_id":ae.initiator_principal_id,"operation_id":ae.operation_id,
+            "action_execution_id":ae.id,"action_key":ae.action_key,"action_definition_version":ae.action_version,
+            "target_type":definition.target_type,"target_id":ae.target_id,
+            "normalized_parameter_hash":collab_bridge::limits::canonical_digest(&json!({"operation":"query_revision","arguments":arguments})),
+            "authorization_min_zed_token":revision});
+        if let Some(workspace) = ae.workspace_id {
+            claims["workspace_id"] = json!(workspace);
+        }
+        // Reconciliation is bounded by the existing short-lived ActionToken
+        // configuration, but may inspect an original outcome after Session
+        // expiry. It cannot grant file access or renew the document PAT.
+        return sign_claims_before(
+            state,
+            audience,
+            claims,
+            if arguments.get("protocolReconcile").is_some() {
+                None
+            } else {
+                Some(deadline)
+            },
+        )
+        .await;
+    }
     let (facts, revision) =
         crate::application_tool::fresh_revision_read(state, ae, arguments).await?;
     if audience != facts.audience {
@@ -326,6 +403,58 @@ pub(crate) async fn issue_query_revision(
     .await
 }
 
+pub(crate) async fn issue_protocol_launch(
+    state: &ServiceState,
+    ae: &Execution,
+    audience: &str,
+    arguments: &Value,
+) -> Result<String, Refusal> {
+    let revision =
+        crate::protocol_session::launch::authorize(state, ae, audience, arguments).await?;
+    let definition = crate::governance::exact_definition_for_execution(&state.pool, ae).await?;
+    let parameters = ae.parameters.as_ref().ok_or_else(invalid)?;
+    let deadline = parameters["protocolExpiresAt"]
+        .as_str()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|time| time.timestamp())
+        .ok_or_else(invalid)?;
+    let mut claims = json!({"tenant_id":ae.tenant_id,"actor_principal_id":ae.actor_principal_id,
+        "initiating_human_principal_id":ae.initiator_principal_id,"operation_id":ae.operation_id,
+        "action_execution_id":ae.id,"action_key":ae.action_key,"action_definition_version":ae.action_version,
+        "target_type":definition.target_type,"target_id":ae.target_id,
+        "normalized_parameter_hash":collab_bridge::limits::canonical_digest(&json!({"operation":"execute","arguments":arguments})),
+        "authorization_min_zed_token":revision});
+    if let Some(workspace) = ae.workspace_id {
+        claims["workspace_id"] = json!(workspace);
+    }
+    sign_claims_before(state, audience, claims, Some(deadline)).await
+}
+
+/// An expired/revoked Session can still observe or revoke its original native
+/// PAT. This short ticket has no content operation and cannot mint a new PAT.
+pub(crate) async fn issue_protocol_lifecycle(
+    state: &ServiceState,
+    ae: &Execution,
+    audience: &str,
+    operation: &str,
+    arguments: &Value,
+) -> Result<String, Refusal> {
+    let revision =
+        crate::protocol_session::lifecycle::authorize(state, ae, audience, operation, arguments)
+            .await?;
+    let definition = crate::governance::exact_definition_for_execution(&state.pool, ae).await?;
+    let mut claims = json!({"tenant_id":ae.tenant_id,"actor_principal_id":ae.actor_principal_id,
+        "initiating_human_principal_id":ae.initiator_principal_id,"operation_id":ae.operation_id,
+        "action_execution_id":ae.id,"action_key":ae.action_key,"action_definition_version":ae.action_version,
+        "target_type":definition.target_type,"target_id":ae.target_id,
+        "normalized_parameter_hash":collab_bridge::limits::canonical_digest(&json!({"operation":operation,"arguments":arguments})),
+        "authorization_min_zed_token":revision});
+    if let Some(workspace) = ae.workspace_id {
+        claims["workspace_id"] = json!(workspace);
+    }
+    sign_claims(state, audience, claims).await
+}
+
 fn application_claims(
     ae: &Execution,
     parameters: &Value,
@@ -341,6 +470,12 @@ fn application_claims(
         "delegation_id":parameters["delegationId"],"delegation_version":parameters["delegationVersion"],
         "result_exposure_policy_id":parameters["resultExposurePolicyId"],
         "result_exposure_policy_version":parameters["resultExposurePolicyVersion"]});
+    if crate::application_action::is_human(ae) {
+        let object = claims.as_object_mut().ok_or_else(invalid)?;
+        object.remove("agent_principal_id");
+        object.remove("delegation_id");
+        object.remove("delegation_version");
+    }
     if let Some(workspace) = ae.workspace_id {
         claims["workspace_id"] = json!(workspace);
     }
@@ -369,7 +504,8 @@ pub(crate) async fn observation_revision(
     }
     let revision:Option<String>=sqlx::query_scalar("select d.zed_token from admission.external_execution e
         join admission.action_execution a on a.id=e.action_execution_id and a.operation_id=e.operation_id
-        join admission.action_execution root on root.id=a.parent_action_execution_id and root.operation_id=a.operation_id
+        join admission.action_execution root on root.id=coalesce(a.parent_action_execution_id,a.id) and root.operation_id=a.operation_id
+          and root.parent_action_execution_id is null
         join projection.workflow_ref w on w.action_execution_id=root.id and w.workflow_id=e.workflow_id
         join catalog.application_binding b on b.id=e.component_binding_id and b.component_release_id=e.component_release_id
           and b.state in ('ACTIVE','DISABLING')
@@ -378,6 +514,9 @@ pub(crate) async fn observation_revision(
         join admission.action_decision d on d.action_execution_id=a.id and d.operation_id=a.operation_id
           and d.scope_decision='ALLOW' and d.authorization_decision='ALLOW' and d.zed_token is not null and d.zed_token<>''
         where a.id=$1 and e.id=$2 and e.component_binding_id=$3 and e.tenant_id=$4
+          and (a.parent_action_execution_id is not null or
+            (a.actor_principal_id=a.initiator_principal_id and a.parameters->>'componentActionKind'='COMPONENT_ACTION'
+             and w.workflow_type='ComponentTaskWorkflow' and w.kind='COMPONENT_ACTION'))
           and e.workspace_id is not distinct from $5 and e.idempotency_key=$6 and e.native_type=$7
           and e.native_id is not distinct from $8 and a.component_binding_id=e.component_binding_id
           and a.component_projection_generation=e.component_projection_generation and a.component_release_id=e.component_release_id

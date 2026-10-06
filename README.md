@@ -6,6 +6,60 @@
 
 ## 最新复核与投递事实（2026-10-05）
 
+### Workflows 复制保存与停用已实际闭合
+
+当前在线 Web 经正常 OIDC 登录，从原工作流复制配置，完成 YAML/表单
+往返后实际提交 `automation.create`。BFF 回读证实只新增一个 DRAFT，
+owner 为当前 HUMAN，配置与源版本一致，没有复制固定版本、启用状态或
+Delegation。随后通过同一页面停用新草稿，独立回读为 DISABLED；源定义
+逐字段不变，没有发送频道消息或调用模型。原浏览器操作退出 0。
+
+这补齐的是此前只有预览证据的“复制后保存”，不是删除、手动触发、多步骤
+执行或完整 Workflows 交付。新草稿保留正常审计并已停用，未直接删除数据。
+原件为 Data 的 `codex-component-runtime-integration-20261005.lciVUS/workflow-copy-save.log`，
+SHA256 `45c3e3e7fbb6777a4e5af824d36aa20aa17712208b3a9e7b1724bd108b2bdd60`。
+
+### 21:48 UTC：运行时回执修复已推送，稳定协作与组件交付尚未闭合
+
+独立运行时修复提交 `20dbd472b8baa8ff775322c3c72e59f0c1f7933a` 已普通
+push，远端 main 独立读回一致；相对父提交为 6 文件 +1236/-54。
+修复保留原进程所属 `thread/start`、`turn/start` 的迟到回执，持久化原生引用后
+才确认消费，不重新派发结果不明的请求。原完整检查退出 0，另在 82 迁移隔离库
+实际运行 7 项回归并通过；部署配置预检仍明确跳过，不能替代线上验收。
+具体输入、日志摘要、失败及未覆盖范围见
+[Agent 回执验证](core/verify/agent-definition.md)。
+
+原正式 Core/Worker 发布进程仍在运行，Core 已进入 release 构建；此时尚未
+导出或部署新 Core 镜像。19:55 的三 HUMAN、两 Agent 复验在等待回复 240 秒后
+失败，不能沿用下方 16:58 的成功记录宣称当前稳定可用。随后只读核对的两个旧
+异常任务占满 2/2 执行槽；新回执修复不补造旧进程已丢失的回执，重启也不是
+原生执行已终结的证据。未盲目重发旧消息、直接修改业务状态或强制释放容量。
+
+组件模型调用、HUMAN 动作与协议会话仍属于后续独立交付批。WeKnora 已有原生
+登录和部分读取的实际证据，其新二开产物仍在导出；Cells、Wren 尚无完整部署
+及业务验收。三服务保留各自原生 UI、数据库与独立生命周期，不是 Core 的启动
+依赖；适配源码、局部检查和原生页面登录均不等于平台工具、模型或资源链已完成。
+
+### 原功能批 Core/Worker 已投递（19:23 UTC）
+
+干净 `306aa41bdfbee661572262aba6aba68cf095ef39` 的原正式发布命令退出 0；
+Core/Worker 镜像已上传，registry 独立读回的 digest 与产物一致。
+沿原 `start-core.sh --no-build` 重新投递一次性凭据，再启动原 Worker；
+实际运行 Core 为 `sha256:9c52cc8586736b3c47d0e75b9ebbb93e09951419d9c2d5ef43b1148b15d7f453`，
+Worker 为 `sha256:63c6ff561dc1a67dc26a9007201063b89fd842b61582c0fb119a09bae1fb1c6d`。
+19:28 UTC Core health HTTP 200，Worker 日志确认原 Temporal 队列启动；
+部署前后只有 Core/Worker 容器改变，其余 21 个项目容器 ID 不变。
+本批没有新增数据库迁移，没有重建 Web、Windows、Relay 或调用模型。
+
+Compose 的两处 pin 同步到上述实际产物，仅供复用原功能批；不表示这些镜像
+含本次候选的 ProtocolSession、HUMAN 组件动作或独立组件模型接线。
+新后端的业务回归与三个组件真实业务、三端设备/签名验收仍分别未完成。
+原件位于 Data 的 `codex-release-306aa41-20261005.RPxWPS/`，
+`core-worker-deploy.log` SHA256 为
+`f685fcc38d0680733400ccfc3bec9d0171a8877d89403f1f5e91834c0765d801`。
+部署命令外层 tee 不传递左侧退出码，因此以上成功依据是原 release 的实际终态、
+registry 摘要、两容器镜像/启动事实与各自健康或队列回读，不以 tee 的退出码代替。
+
 ### 新共享 Web 已投递，真实运行历史读回通过（18:54–18:56 UTC）
 
 原容器执行异常恢复后，旧 Web 在没有重启的情况下先恢复 healthy。随后仅以

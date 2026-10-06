@@ -83,6 +83,7 @@ pub(crate) struct Supervisor {
 }
 
 struct Process {
+    installation_id: Uuid,
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
@@ -108,6 +109,98 @@ struct Process {
 struct NativeActivity {
     turn_id: Uuid,
     emitted_at_ms: i64,
+}
+
+// Diagnostic metadata only, not native terminal evidence or a recovery authority.
+// Never retain/log the native message, data, request parameters, or config.
+struct RpcDiagnostic {
+    installation: Uuid,
+    generation: i64,
+    request_id: u64,
+    method: &'static str,
+    thread: Option<Uuid>,
+}
+
+impl RpcDiagnostic {
+    fn new(
+        installation: Uuid,
+        generation: i64,
+        request_id: u64,
+        method: &str,
+        params: &Value,
+    ) -> Self {
+        let method = match method {
+            "initialize" => "initialize",
+            "config/read" => "config/read",
+            "thread/start" => "thread/start",
+            "thread/read" => "thread/read",
+            "thread/resume" => "thread/resume",
+            "thread/unsubscribe" => "thread/unsubscribe",
+            "thread/loaded/list" => "thread/loaded/list",
+            "thread/turns/list" => "thread/turns/list",
+            "turn/start" => "turn/start",
+            "turn/interrupt" => "turn/interrupt",
+            _ => "UNRECOGNIZED_METHOD",
+        };
+        Self {
+            installation,
+            generation,
+            request_id,
+            method,
+            thread: params
+                .get("threadId")
+                .and_then(Value::as_str)
+                .and_then(|id| Uuid::parse_str(id).ok()),
+        }
+    }
+
+    fn error_category(&self, error: &Value) -> (Option<i64>, &'static str) {
+        let code = error.get("code").and_then(Value::as_i64);
+        let message = error.get("message").and_then(Value::as_str);
+        // Codex 7498521d288b9b3b96ffba4eedf089d8d6e06a84:
+        // app-server/src/error_code.rs::{invalid_request,server_draining_error};
+        // request_processors/thread_processor.rs::{thread_resume_inner,thread_store_resume_read_error}.
+        // Exact request-bound matches only. Unknown text is never copied out.
+        if code == Some(-32600) && self.method == "thread/resume" {
+            if let Some(thread) = self.thread {
+                if message == Some(format!("no rollout found for thread id {thread}").as_str()) {
+                    return (code, "THREAD_NOT_FOUND");
+                }
+                if message == Some(format!("thread {thread} is closing; retry thread/resume after the thread is closed").as_str()) {
+                    return (code, "THREAD_CLOSING");
+                }
+            }
+        }
+        if code == Some(-32600) && message == Some("Server is draining; retry after reconnecting") {
+            return (code, "SERVER_DRAINING");
+        }
+        (
+            code,
+            match code {
+                Some(-32600) => "INVALID_REQUEST",
+                Some(-32601) => "METHOD_NOT_FOUND",
+                Some(-32602) => "INVALID_PARAMS",
+                Some(-32603) => "INTERNAL_ERROR",
+                Some(-32001) => "OVERLOADED",
+                Some(_) => "UNCLASSIFIED_NATIVE_ERROR",
+                None => "INVALID_ERROR_ENVELOPE",
+            },
+        )
+    }
+
+    fn emit(&self, phase: &'static str, code: Option<i64>, category: &'static str) {
+        tracing::warn!(
+            installation_id = %self.installation,
+            generation = self.generation,
+            request_id = self.request_id,
+            method = self.method,
+            thread_id = ?self.thread,
+            rpc_phase = phase,
+            rpc_code = code,
+            rpc_category = category,
+            "native runtime RPC did not complete successfully"
+        );
+    }
 }
 
 fn hosted_search_disabled(config: &Value) -> bool {
@@ -366,6 +459,7 @@ impl Supervisor {
         let stdin = child.stdin.take().ok_or(RuntimeError::Unavailable)?;
         let stdout = child.stdout.take().ok_or(RuntimeError::Unavailable)?;
         let mut process = Process {
+            installation_id: projection.installation_id,
             child,
             stdin,
             stdout: BufReader::new(stdout),
@@ -439,11 +533,25 @@ impl Supervisor {
         process
             .check(projection.generation, &projection.config_hash)
             .await?;
+        let thread = params
+            .get("threadId")
+            .and_then(Value::as_str)
+            .and_then(|id| Uuid::parse_str(id).ok());
         let response = process
             .rpc(method, params, self.timeout, self.max_message_bytes)
             .await?;
         if matches!(method, "thread/start" | "thread/resume") {
-            check_thread_projection(&response, &process.model, &process.home)?;
+            if let Err(error) = check_thread_projection(&response, &process.model, &process.home) {
+                RpcDiagnostic::new(
+                    projection.installation_id,
+                    projection.generation,
+                    process.next_id,
+                    method,
+                    &json!({"threadId":thread}),
+                )
+                .emit("PROJECTION", None, "INVALID_THREAD_PROJECTION");
+                return Err(error);
+            }
         }
         Ok(response)
     }
@@ -1236,6 +1344,8 @@ impl Process {
         }
         self.next_id = self.next_id.checked_add(1).ok_or(RuntimeError::Protocol)?;
         let id = self.next_id;
+        let diagnostic =
+            RpcDiagnostic::new(self.installation_id, self.generation, id, method, &params);
         if let Some(owner) = owner {
             self.start_receipts
                 .insert(owner, StartReceipt { id, outcome: None });
@@ -1244,9 +1354,18 @@ impl Process {
         if let Some(trace) = traceparent {
             request["trace"] = json!({"traceparent":trace});
         }
-        tokio::time::timeout(timeout, self.send(&request))
-            .await
-            .map_err(|_| RuntimeError::Unknown)??;
+        match tokio::time::timeout(timeout, self.send(&request)).await {
+            Ok(Ok(())) => {}
+            Err(_) => {
+                diagnostic.emit("SEND", None, "TIMEOUT");
+                return Err(RuntimeError::Unknown);
+            }
+            Ok(Err(error)) => {
+                diagnostic.emit("SEND", None, "IO_UNAVAILABLE");
+                return Err(error);
+            }
+        }
+        let mut native_error_received = false;
         let read = async {
             loop {
                 let message = self.read_message(max).await?;
@@ -1254,7 +1373,10 @@ impl Process {
                 if message.get("id").and_then(Value::as_u64) == Some(id)
                     && message.get("method").is_none()
                 {
-                    if message.get("error").is_some() {
+                    if let Some(error) = message.get("error") {
+                        native_error_received = true;
+                        let (code, category) = diagnostic.error_category(error);
+                        diagnostic.emit("RESPONSE", code, category);
                         return Err(RuntimeError::Unknown);
                     }
                     return message.get("result").cloned().ok_or(RuntimeError::Protocol);
@@ -1273,9 +1395,25 @@ impl Process {
                 )?;
             }
         };
-        tokio::time::timeout(timeout, read)
-            .await
-            .map_err(|_| RuntimeError::Unknown)?
+        match tokio::time::timeout(timeout, read).await {
+            Err(_) => {
+                diagnostic.emit("READ", None, "TIMEOUT");
+                Err(RuntimeError::Unknown)
+            }
+            Ok(outcome) => {
+                if let Err(error) = &outcome {
+                    if !native_error_received {
+                        let category = match error {
+                            RuntimeError::Protocol => "INVALID_RPC_RESPONSE",
+                            RuntimeError::AdmissionRequired => "ADMISSION_REQUIRED",
+                            RuntimeError::Unavailable | RuntimeError::Unknown => "IO_UNAVAILABLE",
+                        };
+                        diagnostic.emit("READ", None, category);
+                    }
+                }
+                outcome
+            }
+        }
     }
 
     async fn read_message(&mut self, max: usize) -> Result<Value, RuntimeError> {
@@ -1507,6 +1645,10 @@ fn record_native_activity(
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "agent_runtime/diagnostic_tests.rs"]
+mod diagnostic_tests;
 
 #[cfg(test)]
 mod activity_tests {
@@ -1937,7 +2079,7 @@ mod activity_tests {
         pool.close().await;
     }
 
-    async fn recovery_process(
+    pub(super) async fn recovery_process(
         pool: &PgPool,
         installation: Uuid,
         hash: &str,
@@ -1961,6 +2103,7 @@ mod activity_tests {
             .spawn()
             .unwrap();
         Process {
+            installation_id: installation,
             stdin: child.stdin.take().unwrap(),
             stdout: BufReader::new(child.stdout.take().unwrap()),
             child,

@@ -153,7 +153,7 @@ async fn view(
         let content: contracts::ContentClass = serde_json::from_value(row.version_content)
             .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
         match crate::agent_version::reply_to_channel(&content) {
-            Ok(channel) => result_targets.push(if channel { "CHANNEL" } else { "TRIGGER_THREAD" }),
+            Ok(_) => result_targets.extend(["TRIGGER_THREAD", "CHANNEL"]),
             Err(Refusal::Blocked(_) | Refusal::Precondition(_)) => {}
             Err(error) => return Err(error.respond(None)),
         }

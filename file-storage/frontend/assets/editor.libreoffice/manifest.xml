@@ -5,6 +5,7 @@
         formId="libreoffice_box" label="CONF_MESSAGE[Collabora Online]" description="CONF_MESSAGE[Collabora Online Editor for office documents]">
 
     <server_settings>
+        <global_param name="KAILO_DOCUMENT_BINDING" type="string" label="CONF_MESSAGE[Kailo document binding projection]" description="CONF_MESSAGE[Controlled bindingId/generation, Resource/version, native workspace/root and platform origin metadata. Empty disables the platform link; this does not grant access.]" mandatory="false" expose="true"/>
         <global_param name="LIBREOFFICE_CODE_VERSION" type="select" label="CONF_MESSAGE[Code Version]" description="CONF_MESSAGE[Some URLs differ between old versions (Version lower than 6) and more recent versions (Version greater than 21+)]" default="v6" mandatory="true" expose="true" choices="v6|6 and lower,v21|21 and upper"/>
         <global_param name="LIBREOFFICE_SSL" type="boolean" label="CONF_MESSAGE[Libre Office SSL]" description="CONF_MESSAGE[Libre Office uses ssl]" default="true" mandatory="true" expose="true"/>
         <global_param name="LIBREOFFICE_SSL_SKIP_VERIFY" type="boolean" label="CONF_MESSAGE[Skip Certificate Verification]" description="CONF_MESSAGE[Use TLS without validating the certificate]" default="true" mandatory="true" expose="true"/>

@@ -19,7 +19,10 @@ func TestApplicationBindingProtocolRoundtrip(t *testing.T) {
 		name   string
 		target any
 	}{
+		{"application-model-admission.sample.json", new(generated.ApplicationModelAdmission)},
+		{"application-model-config.sample.json", new(generated.ApplicationModelGatewayConfig)},
 		{"application-peer-credentials.sample.json", new(generated.ApplicationAdapterDirectory)},
+		{"application-model-delivery.sample.json", new(generated.ApplicationAdapterDirectory)},
 		{"application-binding-observations.sample.json", new([]generated.AdapterBindingObservation)},
 		{"adapter-execution-references.sample.json", new([]generated.AdapterExecutionReference)},
 		{"resource-create.sample.json", new(generated.ActionCommand)},
@@ -153,6 +156,32 @@ func TestAutomationRunPagesRoundtrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(original, back) {
 		t.Fatalf("run history round-trip changed fields: %s", encoded)
+	}
+}
+
+func TestAutomationManualDeleteRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "automation-manual-delete.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original any
+	if err := json.Unmarshal(raw, &original); err != nil {
+		t.Fatal(err)
+	}
+	var typed []generated.AutomationDetailView
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back any
+	if err := json.Unmarshal(encoded, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(original, back) {
+		t.Fatalf("manual/tombstone roundtrip lost wire fields: %s", encoded)
 	}
 }
 

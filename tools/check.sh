@@ -682,7 +682,7 @@ for tree, f in um.records().items():
     # 基准 commit 必须可解析：.references 的对象库或上游远端里真的有它
     if re.fullmatch(r"[0-9a-f]{40}", str(m.get("implementation_base_commit"))):
         try:
-            um.upstream_repo(f, m)
+            um.upstream_tree(f, m)
         except SystemExit as e:
             bad.append(str(e))
     for a in m.get("artifacts") or []:
@@ -830,8 +830,13 @@ for service, host_key, networks in (
     for network in networks:
         aliases = d["services"][service]["networks"][network].get("aliases", [])
         aliases = [re.sub(r"\$\{(\w+):\?[^}]*\}", r"${\1}", str(value)) for value in aliases]
-        if aliases != ["${" + host_key + "}"]:
+        expected_aliases = ["${" + host_key + "}"]
+        if service == "agentgateway" and network == "edge":
+            expected_aliases.append("${AGENTGATEWAY_MODEL_HOST}")
+        if aliases != expected_aliases:
             bad.append(f"{service}.{network}: DNS alias 必须取自公共主机名输入 {host_key}")
+if re.sub(r"\$\{(\w+):\?[^}]*\}", r"${\1}", d["networks"]["edge"].get("name", "")) != "${PLATFORM_EDGE_NETWORK}":
+    bad.append("edge: 必须使用唯一部署配置中的 PLATFORM_EDGE_NETWORK")
 retired = {"OIDC_JWKS_URI", "OIDC_TOKEN_URL", "OIDC_REDIRECT_URI",
            "TENANT_INVITATION_LINK_BASE", "TEMPORAL_TARGET_URL", "CORE_SERVICE_URL", "CORE_DATABASE_URL",
            "BUZZ_RELAY_WS_URL", "BUZZ_RELAY_TRANSPORT", "RELAY_OPERATOR_API_ORIGIN"}

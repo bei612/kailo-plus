@@ -36,6 +36,8 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
+from urllib.parse import urljoin, urlsplit
 
 import yaml
 
@@ -49,6 +51,24 @@ def _run(*args, **kw):
 
 def _list(m, key):
     return [str(x) for x in (m.get(key) or [])]
+
+
+def _components(m):
+    """可选的原生 gitlink 展开声明；不是另一份上游版本权威。"""
+    pins = m.get("source_components")
+    if pins is None:
+        return None
+    if not isinstance(pins, dict) or not pins:
+        raise ValueError("source_components 须为非空的路径 -> 40 位 commit 映射")
+    for rel, commit in pins.items():
+        if (not isinstance(rel, str) or not rel or rel.startswith("/")
+                or any(p in ("", ".", "..") for p in rel.split("/"))
+                or "\\" in rel or any(ord(c) < 32 for c in rel)
+                or rel == "fork" or rel.startswith("fork/")):
+            raise ValueError(f"source_components 路径不是树内的规范相对路径：{rel!r}")
+        if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+            raise ValueError(f"source_components {rel}: 不是 40 位 commit")
+    return pins
 
 
 def _not_source(rel):
@@ -144,6 +164,12 @@ def problems(path, m, check_digest=True):
         bad.append("evidence_commit 与 implementation_base_commit 不同，但 base_divergence 声明为 none")
     if not m.get("reference_tree"):
         bad.append("缺少 reference_tree：.references 下对应的上游目录名")
+    try:
+        components = _components(m)
+        if components is not None and m.get("module"):
+            bad.append("module 引用不得登记 source_components")
+    except ValueError as error:
+        bad.append(str(error))
     for gone in ("patch_series", "patch_series_digest", "vendor_files"):
         if gone in m:
             bad.append(f"{gone} 已废弃（ADR-16）：改动直接在树里，共用代码以本地路径依赖引用")
@@ -261,12 +287,110 @@ def upstream_repo(path, m, want=None):
     return repo
 
 
+def _gitlinks(repo, commit):
+    raw = _run("git", "--git-dir", repo, "ls-tree", "-r", "-z", commit)
+    links = {}
+    for entry in raw.split(b"\0"):
+        if entry:
+            fields, rel = entry.split(b"\t", 1)
+            mode, kind, obj = fields.decode().split(" ")
+            if mode == "160000" and kind == "commit":
+                links[rel.decode()] = obj
+    return links
+
+
+def _component_urls(path, m, repo, commit, links):
+    """URL 来自同一个固定树的 .gitmodules，只展开真正存在的 gitlink。"""
+    raw = _run("git", "--git-dir", repo, "config", "--blob", f"{commit}:.gitmodules",
+               "--null", "--get-regexp", r"^submodule\..*\.(path|url)$")
+    entries = {}
+    for entry in raw.decode().split("\0"):
+        if entry:
+            key, value = entry.split("\n", 1)
+            name, field = key[len("submodule."):].rsplit(".", 1)
+            fields = entries.setdefault(name, {})
+            if field in fields:
+                sys.exit(f"{path}: {commit} .gitmodules 的 {name}.{field} 重复")
+            fields[field] = value
+    urls = {}
+    for fields in entries.values():
+        rel = fields.get("path")
+        if rel not in links:
+            continue
+        if rel in urls or not fields.get("url"):
+            sys.exit(f"{path}: {commit} 的 gitlink {rel} 缺少唯一 .gitmodules URL")
+        url = fields["url"]
+        if url.startswith(("./", "../")):
+            parent = str(m["upstream_url"])
+            if urlsplit(parent).scheme not in ("https", "http"):
+                sys.exit(f"{path}: {rel} 相对 URL 的父仓库不是 HTTP(S) URL")
+            url = urljoin(parent.rstrip("/") + "/", url)
+        urls[rel] = url
+    if set(urls) != set(links):
+        sys.exit(f"{path}: {commit} 的 gitlink 缺少 .gitmodules URL：{sorted(set(links) - set(urls))}")
+    return urls
+
+
+def upstream_tree(path, m, want=None):
+    """真实基准 commit 的源码树；声明展开时以该树自己的 gitlink 固定子仓库。
+
+    只在缓存组合 tree，manifest 的 implementation_base_commit 不换成派生对象。
+    未声明展开的旧记录保持原语义；已声明的路径/commit 必须精确等于原基准。
+    status/sync 的新树则取新 commit 自己的 gitlink，不把旧 pin 套到新上游。
+    """
+    repo = upstream_repo(path, m, want)
+    commit = want or str(m["implementation_base_commit"])
+    try:
+        pins = _components(m)
+    except ValueError as error:
+        sys.exit(f"{path}: {error}")
+    if pins is None:
+        return repo, commit
+    base = str(m["implementation_base_commit"])
+    upstream_repo(path, m)
+    actual = _gitlinks(repo, base)
+    if pins != actual:
+        sys.exit(f"{path}: source_components 不等于 {base} 的实际 gitlink：声明 {pins}；实际 {actual}")
+    links = actual if commit == base else _gitlinks(repo, commit)
+    if not links:
+        return repo, commit
+    urls = _component_urls(path, m, repo, commit, links)
+    child_trees = {}
+    for rel, pin in sorted(links.items()):
+        child = dict(reference_tree=f"{m['reference_tree']}/{rel}", upstream_url=urls[rel],
+                     implementation_base_commit=pin)
+        child_repo = upstream_repo(path, child)
+        if _gitlinks(child_repo, pin):
+            sys.exit(f"{path}: {rel}@{pin} 还有未登记的嵌套 gitlink，不能证明完整展开源码")
+        alt = os.path.join(repo, "objects", "info", "alternates")
+        with open(alt, "a+", encoding="utf-8") as f:
+            f.seek(0)
+            objects = os.path.abspath(os.path.join(child_repo, "objects"))
+            if objects not in f.read().splitlines():
+                f.write(objects + "\n")
+        child_trees[rel] = pin
+    fd, index = tempfile.mkstemp(prefix="expanded-index-", dir=repo)
+    os.close(fd)
+    os.remove(index)
+    env = dict(os.environ, GIT_DIR=repo, GIT_INDEX_FILE=index,
+               GIT_WORK_TREE=os.path.abspath(tree_of(path)))
+    try:
+        _run("git", "read-tree", commit, env=env)
+        for rel, pin in child_trees.items():
+            _run("git", "update-index", "--force-remove", "--", rel, env=env)
+            _run("git", "read-tree", f"--prefix={rel}/", pin + "^{tree}", env=env)
+        return repo, _run("git", "write-tree", env=env).decode().strip()
+    finally:
+        if os.path.exists(index):
+            os.remove(index)
+
+
 class _Index:
     """二开树当前内容（fork/ 之外）的临时 index，挂在上游对象库上。"""
 
     def __init__(self, path, m):
         self.tree = tree_of(path)
-        self.repo = upstream_repo(path, m)
+        self.repo, self.base = upstream_tree(path, m)
         self.file = os.path.join(self.repo, f"upstream-index-{os.getpid()}")
         self.env = dict(os.environ, GIT_DIR=self.repo, GIT_WORK_TREE=os.path.abspath(self.tree),
                         GIT_INDEX_FILE=self.file)
@@ -315,10 +439,10 @@ def diff(name, mode=""):
     path, m = _source_record(name)
     base = str(m["implementation_base_commit"])
     with _Index(path, m) as ix:
-        if ix.git("ls-tree", "--name-only", base, "fork").strip():
+        if ix.git("ls-tree", "--name-only", ix.base, "fork").strip():
             sys.exit(f"上游在 {base[:12]} 有自己的 fork/，与本仓库自有目录冲突")
         if mode == "--check":
-            got, want = _removed(ix, base), sorted(_list(m, "remove_paths"))
+            got, want = _removed(ix, ix.base), sorted(_list(m, "remove_paths"))
             if got != want:
                 for x in sorted(set(got) - set(want)):
                     print(f"  整块删除但未登记：{x}")
@@ -331,7 +455,7 @@ def diff(name, mode=""):
         if extra is None:
             sys.exit(__doc__)
         sys.stdout.flush()
-        subprocess.run(["git", "-c", "core.quotepath=off", "diff", "--cached", "-M", *extra, base],
+        subprocess.run(["git", "-c", "core.quotepath=off", "diff", "--cached", "-M", *extra, ix.base],
                        env=ix.env, check=True)
 
 
@@ -340,9 +464,8 @@ def added_lines(name):
     path, m, _ = resolve(name)
     if m.get("module"):
         return
-    base = str(m["implementation_base_commit"])
     with _Index(path, m) as ix:
-        out = ix.git("diff", "--cached", "-U0", "--no-renames", "--text", base).decode(errors="replace")
+        out = ix.git("diff", "--cached", "-U0", "--no-renames", "--text", ix.base).decode(errors="replace")
     cur = ""
     for line in out.split("\n"):
         if line.startswith("+++ "):
@@ -408,19 +531,19 @@ def status(only=None):
         if head == base:
             print(f"  {label}: 无新提交（HEAD 即基准 {base[:12]}）{suffix}")
             continue
-        repo = upstream_repo(path, m, head)
-        upstream_repo(path, m)
+        repo, head_tree = upstream_tree(path, m, head)
+        _, base_tree = upstream_tree(path, m)
         env = dict(os.environ, GIT_DIR=repo)
         is_desc = subprocess.run(["git", "merge-base", "--is-ancestor", base, head], env=env).returncode == 0
         commits = _run("git", "rev-list", "--count", f"{base}..{head}", env=env).decode().strip()
-        files = [f for f in _run("git", "-c", "core.quotepath=off", "diff", "--name-only", base, head,
+        files = [f for f in _run("git", "-c", "core.quotepath=off", "diff", "--name-only", base_tree, head_tree,
                                  env=env).decode().split("\n") if f]
         print(f"  {label}: 上游 HEAD {head[:12]} 相对基准 {base[:12]} "
               f"{'领先' if is_desc else '分叉'} {commits} 个提交，涉及 {len(files)} 个文件{suffix}")
         if m.get("module"):
             continue
         with _Index(path, m) as ix:
-            ours = set(f for f in ix.git("diff", "--cached", "--name-only", "--no-renames", base)
+            ours = set(f for f in ix.git("diff", "--cached", "--name-only", "--no-renames", ix.base)
                        .decode().split("\n") if f)
         both = sorted(set(files) & ours)
         print(f"    其中本仓库也改过 {len(both)} 个（合并时可能冲突）：" + ("、".join(both[:20]) or "无")
@@ -439,8 +562,7 @@ def sync(name, to=None, into=None):
     target = to or _reference_head(m)
     if not target:
         sys.exit(f"{path}: 没有 --to，且 .references/{m.get('reference_tree')} 不存在")
-    repo = upstream_repo(path, m, target)
-    upstream_repo(path, m)
+    repo, target_tree = upstream_tree(path, m, target)
     target = _run("git", "--git-dir", repo, "rev-parse", target + "^{commit}").decode().strip()
     if target == base:
         print(f"  {name}: 目标即基准 {base[:12]}，无需合并")
@@ -451,8 +573,15 @@ def sync(name, to=None, into=None):
         ours = _run("git", "commit-tree", ours_tree, "-p", base, "-m", "current tree",
                     env=dict(ix.env, GIT_AUTHOR_NAME="sync", GIT_AUTHOR_EMAIL="sync@localhost",
                              GIT_COMMITTER_NAME="sync", GIT_COMMITTER_EMAIL="sync@localhost")).decode().strip()
+        if target_tree != target:
+            # merge-tree 的两侧须为 commit；这里只建缓存视图，真实 target 仍作为父与输出来源。
+            target_view = _run("git", "commit-tree", target_tree, "-p", target, "-m", "expanded upstream tree",
+                               env=dict(ix.env, GIT_AUTHOR_NAME="sync", GIT_AUTHOR_EMAIL="sync@localhost",
+                                        GIT_COMMITTER_NAME="sync", GIT_COMMITTER_EMAIL="sync@localhost")).decode().strip()
+        else:
+            target_view = target
         r = subprocess.run(["git", "-c", "core.quotepath=off", "merge-tree", "--write-tree", "--name-only",
-                            "--merge-base", base, ours, target], env=ix.env, capture_output=True, text=True)
+                            "--merge-base", ix.base, ours, target_view], env=ix.env, capture_output=True, text=True)
         if r.returncode not in (0, 1):
             sys.exit(r.stderr)
         lines = r.stdout.split("\n")

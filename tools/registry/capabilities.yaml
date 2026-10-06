@@ -33,6 +33,8 @@ capabilities:
   - automation.enable
   - automation.pause
   - automation.disable
+  - automation.delete
+  - automation.run
   - agent.memory.core.read
   - agent.memory.entry.list
   - agent.memory.entry.read
@@ -92,6 +94,7 @@ capabilities:
   - COMPONENT_BINDING
   - COMPONENT_DISABLE
   - RESOURCE_PROVISION
+  - COMPONENT_ACTION
 - id: component.capability_contracts
   exposure: tenant_admin
   routes:

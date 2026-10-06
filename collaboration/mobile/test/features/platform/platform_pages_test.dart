@@ -158,6 +158,44 @@ void main() {
     }
 
     for (final locale in [const Locale('en'), const Locale('zh', 'CN')]) {
+      testWidgets(
+        'Deleted Automation remains read-only ${locale.toLanguageTag()}',
+        (tester) async {
+          final body = detail(schedule, 'CHANNEL');
+          (body['automation'] as Map<String, Object?>)['state'] = 'DELETED';
+          body['canManage'] = false;
+          body['canRun'] = false;
+          await show(tester, body, locale: locale);
+          expect(
+            find.byKey(const ValueKey('platform-automation-detail')),
+            findsOneWidget,
+          );
+          expect(
+            find.text(
+              platformText(
+                PlatformMessageKey.agentsAutomationStateDeleted,
+                locale: locale.toLanguageTag(),
+              ),
+            ),
+            findsOneWidget,
+          );
+          for (final key in [
+            PlatformMessageKey.agentsAutomationRun,
+            PlatformMessageKey.agentsAutomationDelete,
+            PlatformMessageKey.agentsAutomationEnable,
+            PlatformMessageKey.agentsAutomationPublish,
+          ]) {
+            expect(
+              find.text(platformText(key, locale: locale.toLanguageTag())),
+              findsNothing,
+            );
+          }
+          expect(find.text('Authorized template'), findsOneWidget);
+        },
+      );
+    }
+
+    for (final locale in [const Locale('en'), const Locale('zh', 'CN')]) {
       testWidgets('Schedule channel and seconds are explicit in $locale', (
         tester,
       ) async {

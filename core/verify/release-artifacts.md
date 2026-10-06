@@ -1015,3 +1015,30 @@ Automation POST_MESSAGE 的真实 COUNT 与终态也尚未据本批称通过。
 `full-final.log` SHA `bf2d249d08a97d3034f985f3bb3018f77fffd60bd6b60cb253fb3f3f456e7af5`；
 `web-build.log` SHA `d123f3c3dace69100f64a5442f739900c97daefeaf368301cb450912076619e5`。
 原有未选 66 文件 +6107/-422 保留，不混入本批。
+
+## 2026-10-06 组件模型配置的 Core 发布输入
+
+冻结集成树 `d2f33b120040af368a6dcf12763c5f5642244f6a` 的
+`core/crates/platform-core/src/application_model_route.rs::configuration` 在编译期读取
+`contracts/domain/application_model_gateway_config.schema.json`，但 Core Dockerfile、
+根构建白名单和 `tools/release.sh` 的固定树归档都没有该输入。全源码 SDK 检查
+不能证明裁剪后的正式发布上下文完整；缺文件会在正式编译时失败，不是模型服务故障。
+
+- 权威：既有 DD-92 模型接入消费者及 ADR-06 的真实源码来源要求；只补齐既有输入，
+  不另立模型配置、工具目录或业务契约。
+- 影响面：`.dockerignore`、`core/Dockerfile`、`tools/release.sh` 三处。
+  生产 writer/reader、契约字节、数据库迁移和 Workflow input 均不变，
+  Web/Desktop/Mobile 不增加分支。修正不在现有 Web、Desktop、Gateway 的来源输入范围。
+- 副作用：仍按确切文件逐项允许，不扩大为整个 contracts、部署配置或 secret 目录；
+  仍从实际 commit 归档，并由原 Core 编译器消费同一 schema，不从宿主额外注入。
+- 异常：缺路径时原归档或 COPY 失败，畸形 schema 仍由原消费者拒绝；
+  没有新增运行状态、幂等键、重试或外部副作用，不改变 UNKNOWN 裁决与六类错误映射。
+
+实现后执行原 `release.sh` 中的真实 `git archive` 命令，使用上述固定树的契约文件：
+归档内容与源码 `cmp` 相同，白名单及 COPY 指向一致；`bash -n tools/release.sh`
+和选定 diff whitespace 检查均退出 0。随后实际移除新增归档项，在全新目录重新执行
+相同归档命令，文件存在性检查退出 1；还原后归档及字节比较再次退出 0。
+破坏前后还原的脚本 SHA-256 均为
+`75e0c20f86acc63b7bd30785bcfd8aebb091e18b72ec7feae7ee7e4fc374c5d2`。
+这是发布输入的窄验证，不是新镜像构建或完整检查通过声明；在途原 full 仍针对 d2f 树，
+这三个发布文件的增量与后续实际 release 必须分别保留证据，不把旧 full 记到新 recipe 上。

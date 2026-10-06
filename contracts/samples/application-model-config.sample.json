@@ -1,0 +1,4 @@
+{
+  "routeResourceIds": ["ebfcb00e-04ad-4cdc-9263-f6ae36bde5a7"],
+  "meterKeys": ["model.input_tokens", "model.output_tokens"]
+}

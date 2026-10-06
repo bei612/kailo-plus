@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "application_model_gateway_config.schema.json",
+  "title": "ApplicationModelGatewayConfig",
+  "description": "DD-92: modelGateway within the approved binding config. Only existing route and meter references; no provider configuration, credential value or native model row.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["routeResourceIds", "meterKeys"],
+  "properties": {
+    "routeResourceIds": {
+      "type": "array",
+      "items": {"type": "string", "format": "uuid"}
+    },
+    "meterKeys": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}

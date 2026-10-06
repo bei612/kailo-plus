@@ -470,6 +470,7 @@ pub enum Semantic {
     AutomationEnable,
     AutomationPause,
     AutomationDisable,
+    AutomationDelete,
     AutomationRotateWebhookSecret,
     ResourceTransferOwner,
     ResourceCreate,
@@ -523,6 +524,7 @@ impl Semantic {
             "automation.enable" => Self::AutomationEnable,
             "automation.pause" => Self::AutomationPause,
             "automation.disable" => Self::AutomationDisable,
+            "automation.delete" => Self::AutomationDelete,
             "automation.rotate_webhook_secret" => Self::AutomationRotateWebhookSecret,
             "resource.transfer_owner" => Self::ResourceTransferOwner,
             "resource.create" => Self::ResourceCreate,
@@ -545,6 +547,7 @@ impl Semantic {
                 | Self::AutomationPause
                 | Self::AutomationDisable
                 | Self::AutomationRotateWebhookSecret
+                | Self::AutomationDelete
         )
     }
 
@@ -582,6 +585,7 @@ impl Semantic {
                     | Self::AutomationEnable
                     | Self::AutomationPause
                     | Self::AutomationDisable
+                    | Self::AutomationDelete
             )
     }
 
@@ -1303,6 +1307,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         | Semantic::AutomationPause
         | Semantic::AutomationDisable
         | Semantic::AutomationRotateWebhookSecret
+        | Semantic::AutomationDelete
         | Semantic::CapabilityContractRegister
         | Semantic::CapabilityContractApprove
         | Semantic::CapabilityContractDeprecate
@@ -1436,6 +1441,7 @@ async fn resolve_target(
         | Semantic::AutomationEnable
         | Semantic::AutomationPause
         | Semantic::AutomationDisable
+        | Semantic::AutomationDelete
         | Semantic::AutomationRotateWebhookSecret => {
             crate::automation::management_target(conn, tenant, initiator, def, p, frozen, lock)
                 .await
@@ -2753,6 +2759,11 @@ impl Governance {
         let source = ae
             .parameters
             .as_ref()
+            .filter(|p| {
+                p.get("sourceKind")
+                    .and_then(Value::as_str)
+                    .is_none_or(|kind| kind == "BUZZ_EVENT")
+            })
             .and_then(|p| p.get("sourceEventId"))
             .and_then(Value::as_str)
             .into_iter()
@@ -3175,6 +3186,8 @@ impl Execution {
             workflow_id: self.temporal_workflow_id.clone(),
             // 凭据不从库里来：只在签发的那一次回应里由 decide 填入
             invitation: None,
+            protocol_session_id: None,
+            document_launch: None,
         }
     }
 }
@@ -3281,6 +3294,7 @@ pub(crate) async fn open_execution_values(
         idempotency_key,
         correlation_id,
         None,
+        None,
     )
     .await
 }
@@ -3335,8 +3349,42 @@ pub(crate) async fn open_memory_child(
         idempotency_key,
         Some(parent.correlation_id),
         Some((parent.id, parent.operation_id)),
+        None,
     )
     .await?)
+}
+
+/// The same root factory freezes an APPLICATION protocol's exact declaration
+/// on its first INSERT. It does not backfill identity after admission.
+pub(crate) async fn open_protocol_execution(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Actor,
+    application: &(Uuid, i64, crate::application_catalog::ApplicationDefinition),
+    target: &Target,
+    parameters: Value,
+    hash: String,
+    idempotency_key: Uuid,
+) -> Result<Execution, sqlx::Error> {
+    let (binding, generation, application) = application;
+    open_execution_in_operation(
+        tx,
+        actor,
+        actor.principal_id,
+        &application.definition,
+        target,
+        parameters,
+        hash,
+        idempotency_key,
+        None,
+        None,
+        Some((
+            application.definition_id,
+            *binding,
+            application.component_release_id,
+            *generation,
+        )),
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3351,6 +3399,7 @@ async fn open_execution_in_operation(
     idempotency_key: Uuid,
     correlation_id: Option<Uuid>,
     parent: Option<(Uuid, Uuid)>,
+    application: Option<(Uuid, Uuid, Uuid, i64)>,
 ) -> Result<Execution, sqlx::Error> {
     let ae_id = Uuid::new_v4();
     let operation_id = parent
@@ -3361,8 +3410,10 @@ async fn open_execution_in_operation(
              (id, operation_id, tenant_id, workspace_id, action_key, action_version,
               initiator_principal_id, actor_principal_id, target_id, parameter_hash,
               parameters, idempotency_key, gate_state, dispatch_state, correlation_id,
-              parent_action_execution_id)
-         values ($1,$2,$3,$4,$5,$6,$7,$13,$8,$9,$10,$11,'EVALUATING','NOT_DISPATCHED',$12,$14)",
+              parent_action_execution_id,action_definition_id,component_binding_kind,
+              component_binding_id,component_release_id,component_projection_generation)
+         values ($1,$2,$3,$4,$5,$6,$7,$13,$8,$9,$10,$11,'EVALUATING','NOT_DISPATCHED',$12,$14,
+             $15,$16,$17,$18,$19)",
     )
     .bind(ae_id)
     .bind(operation_id)
@@ -3378,6 +3429,11 @@ async fn open_execution_in_operation(
     .bind(correlation_id.unwrap_or(operation_id))
     .bind(acting_principal)
     .bind(parent.map(|(id, _)| id))
+    .bind(application.map(|(id, _, _, _)| id))
+    .bind(application.map(|_| "APPLICATION"))
+    .bind(application.map(|(_, binding, _, _)| binding))
+    .bind(application.map(|(_, _, release, _)| release))
+    .bind(application.map(|(_, _, _, generation)| generation))
     .execute(&mut **tx)
     .await?;
     let ae = lock_execution(tx, ae_id).await?;
@@ -3814,7 +3870,7 @@ impl Governance {
         actor: Actor,
         cmd: &contracts::ActionCommand,
     ) -> Result<(StatusCode, ActionSubmission), (Refusal, Option<Uuid>)> {
-        if cmd.memory_write.is_some() {
+        if cmd.memory_write.is_some() || cmd.protocol_session_open.is_some() {
             return Err((Refusal::Precondition(ReasonCode::InvalidParameters), None));
         }
         // Catalog 中仍 ACTIVE 的旧定义也不能绕开发布 exposure。目录缺失或为
@@ -4177,7 +4233,7 @@ impl Governance {
     /// 把门禁从 EVALUATING/WAITING 落到一个不再推进的状态，同事务写 ActionDecision
     /// 与审计。
     #[allow(clippy::too_many_arguments)]
-    async fn close_gate(
+    pub(crate) async fn close_gate(
         &self,
         ae: &Execution,
         def: &Definition,
@@ -4500,6 +4556,7 @@ impl Governance {
                 | Semantic::AutomationEnable
                 | Semantic::AutomationPause
                 | Semantic::AutomationDisable
+                | Semantic::AutomationDelete
                 | Semantic::AutomationRotateWebhookSecret => {
                     crate::automation::management_prewrite(self, tx, ae, def, sem, params).await?;
                     if completes && !crate::automation::defer_management_dispatch(tx, ae.id).await?
@@ -4511,6 +4568,7 @@ impl Governance {
                             match sem {
                                 Semantic::AutomationEnable => "AUTOMATION_ENABLED",
                                 Semantic::AutomationPause => "AUTOMATION_PAUSED",
+                                Semantic::AutomationDelete => "AUTOMATION_DELETED",
                                 _ => "AUTOMATION_DISABLED",
                             },
                             Vec::new(),
@@ -4800,6 +4858,7 @@ impl Governance {
             | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish | Semantic::AgentVersionRetire
             | Semantic::AutomationCreate | Semantic::AutomationPublish | Semantic::AutomationEnable
             | Semantic::AutomationPause | Semantic::AutomationDisable | Semantic::AutomationRotateWebhookSecret
+            | Semantic::AutomationDelete
             // 业务 Tenant 生命周期在上面单独落定
             | Semantic::TenantSuspend
             | Semantic::TenantRestore => {
@@ -6248,6 +6307,9 @@ impl Governance {
         {
             return Ok(());
         }
+        if crate::application_action::is_human(&ae) {
+            return crate::application_action::start(self, &ae).await;
+        }
         let def = exact_definition_for_execution(&self.pool, &ae).await?;
         let Some(sem) = Semantic::from_key(&def.action_key) else {
             return Ok(());
@@ -6397,6 +6459,7 @@ impl Governance {
                 | Semantic::AgentVersionCreate | Semantic::AgentVersionUpdate | Semantic::AgentVersionPublish | Semantic::AgentVersionRetire
                 | Semantic::AutomationCreate | Semantic::AutomationPublish | Semantic::AutomationEnable
                 | Semantic::AutomationPause | Semantic::AutomationDisable | Semantic::AutomationRotateWebhookSecret
+                | Semantic::AutomationDelete
                 | Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke
                 | Semantic::AgentInstallationExecuteGrant | Semantic::AgentInstallationExecuteRevoke
                 | Semantic::ResourceGrantRead | Semantic::ResourceRevokeRead
@@ -6500,9 +6563,14 @@ impl Governance {
 
         let mut application_evaluation = None;
         if application {
-            let mut fresh = crate::application_tool::fresh_execution(self, ae)
-                .await
-                .map_err(|e| (e, op))?;
+            let mut fresh = if def.execution_mode == "PROTOCOL" {
+                crate::protocol_session::fresh_for_governance(self, ae)
+                    .await
+                    .map(|(evaluation, _)| evaluation)
+            } else {
+                crate::application_tool::fresh_execution(self, ae).await
+            }
+            .map_err(|e| (e, op))?;
             self.check_quota(ae.tenant_id, def, &mut fresh)
                 .await
                 .map_err(|e| (e, op))?;
@@ -7010,7 +7078,14 @@ impl Governance {
         ae: &Execution,
         def: &Definition,
     ) -> Result<(), Refusal> {
-        let mut eval = match crate::application_tool::fresh_execution(self, ae).await {
+        let fresh = if def.execution_mode == "PROTOCOL" {
+            crate::protocol_session::fresh_for_governance(self, ae)
+                .await
+                .map(|(evaluation, _)| evaluation)
+        } else {
+            crate::application_tool::fresh_execution(self, ae).await
+        };
+        let mut eval = match fresh {
             Ok(eval) => eval,
             Err(Refusal::Unavailable(error)) => return Err(Refusal::Unavailable(error)),
             Err(refusal) => Evaluation {
@@ -7080,6 +7155,11 @@ impl Governance {
             self.close_gate(ae, def, "RECHECK", "REVOKED", &eval, &reason, None)
                 .await?;
             self.invalidate(ae.id).await;
+        } else if crate::application_action::is_human(ae) {
+            let current = load_execution(&self.pool, ae.id).await?.ok_or_else(|| {
+                Refusal::Unavailable("original component action unavailable".into())
+            })?;
+            crate::application_action::start(self, &current).await?;
         }
         Ok(())
     }

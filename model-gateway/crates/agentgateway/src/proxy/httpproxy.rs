@@ -3050,8 +3050,16 @@ async fn make_backend_call(
 	let span_target = backend_call.span_target;
 	dtrace::trace(|trace| trace.backend_call_started(&call.target));
 	let upstream = inputs.upstream.clone();
+	if let Some(claims) = call.req.extensions().get::<crate::http::apikey::Claims>()
+		.filter(|claims| claims.metadata.get("componentBindingId").is_some()) {
+		let authorized = call.req.extensions().get::<crate::http::ext_authz::ApplicationModelAdmission>()
+			.is_some_and(|proof| proof.matches(claims));
+		if log.is_none() || !authorized {
+			return Err(ProxyError::ProcessingString("durable application model admission is unavailable".to_string()).into());
+		}
+	}
 	if let Some(log) = log.as_deref_mut() {
-		log.begin_usage_dispatch().await.map_err(|_| ProxyError::ProcessingString("durable model request admission is unavailable".to_string()))?;
+		log.begin_usage_dispatch(call.req.extensions().get::<crate::http::apikey::Claims>()).await.map_err(|_| ProxyError::ProcessingString("durable model request admission is unavailable".to_string()))?;
 	}
 	let llm_logging = log.as_ref().map(|l| llm::LLMLogging {
 		response: l.llm_response.clone(),

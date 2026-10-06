@@ -7,6 +7,9 @@
     "src"
   ],
   "exports": {
+    "./keyboard-platform": "./src/keyboard-platform.ts",
+    "./react/use-settings-shortcuts": "./src/react/use-settings-shortcuts.ts",
+    "./react/protocol-document-bridge": "./src/react/protocol-document-bridge.tsx",
     "./theme/prominent-active-tab": "./src/theme/prominent-active-tab.ts",
     "./react/prominent-active-tab-setting": "./src/react/prominent-active-tab-setting.tsx",
     "./react/switch": "./src/react/switch.tsx",

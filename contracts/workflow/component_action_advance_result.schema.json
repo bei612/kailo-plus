@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow/component_action_advance_result.schema.json",
+  "title": "ComponentActionAdvanceResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actionExecutionId", "status", "waitingReason"],
+  "properties": {
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "status": {"$ref": "../enums/task_status.schema.json"},
+    "waitingReason": {"type": "string"}
+  }
+}

@@ -5,14 +5,32 @@
 
 use std::{fs, path::PathBuf};
 #[test]
-fn peer_credentials_roundtrip_keeps_binding_generation_and_exact_references() {
-    let raw = fs::read_to_string(
-        sample_path().with_file_name("application-peer-credentials.sample.json"),
-    )
-    .unwrap();
+fn application_model_roundtrip_preserves_route_identity_and_missing_correlation() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("application-model-admission.sample.json"))
+            .unwrap();
     let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    let typed: contracts::ApplicationAdapterDirectory = serde_json::from_str(&raw).unwrap();
+    let typed: contracts::ApplicationModelAdmission = serde_json::from_str(&raw).unwrap();
     assert_eq!(original, serde_json::to_value(typed).unwrap());
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("application-model-config.sample.json"))
+            .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: contracts::ApplicationModelGatewayConfig = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
+
+#[test]
+fn peer_credentials_roundtrip_keeps_binding_generation_and_exact_references() {
+    for sample in [
+        "application-peer-credentials.sample.json",
+        "application-model-delivery.sample.json",
+    ] {
+        let raw = fs::read_to_string(sample_path().with_file_name(sample)).unwrap();
+        let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let typed: contracts::ApplicationAdapterDirectory = serde_json::from_str(&raw).unwrap();
+        assert_eq!(original, serde_json::to_value(typed).unwrap());
+    }
 }
 
 #[test]
@@ -90,6 +108,22 @@ fn automation_run_pages_roundtrip_preserves_unknown_and_empty_page() {
     let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
     let typed: Vec<contracts::AutomationRunPage> = serde_json::from_str(&raw).unwrap();
     assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
+
+#[test]
+fn automation_manual_delete_preserves_optional_run_and_tombstone() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("automation-manual-delete.sample.json"))
+            .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: Vec<contracts::AutomationDetailView> = serde_json::from_str(&raw).unwrap();
+    assert_eq!(typed[0].can_run, None);
+    assert_eq!(typed[1].can_run, Some(true));
+    assert_eq!(
+        typed[2].automation.state,
+        contracts::AutomationState::Deleted
+    );
+    assert_eq!(serde_json::to_value(typed).unwrap(), original);
 }
 
 fn sample_path() -> PathBuf {

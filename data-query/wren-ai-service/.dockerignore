@@ -2,4 +2,5 @@
 !src
 !entrypoint.sh
 !pyproject.toml
+!poetry.lock
 src/eval

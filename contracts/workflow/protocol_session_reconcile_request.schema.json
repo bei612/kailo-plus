@@ -1,0 +1,12 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"workflow/protocol_session_reconcile_request.schema.json",
+  "title":"ProtocolSessionReconcileRequest","type":"object","additionalProperties":false,
+  "required":["target","runId","cancelRequested"],
+  "properties":{
+    "target":{"$ref":"protocol_session_reconcile_target.schema.json"},
+    "runId":{"type":"string","format":"uuid"},
+    "cancelRequested":{"type":"boolean"},
+    "round":{"$ref":"protocol_session_reconcile_round.schema.json"}
+  }
+}

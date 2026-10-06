@@ -93,10 +93,12 @@ pub(crate) async fn register_release_definitions(
         {
             return Err(blocked());
         }
-        // The current APPLICATION MCP caller has no generic Temporal kind.
-        // A declaration alone must not invent a Workflow or activate that path.
-        if !matches!(text(declaration, "executionMode")?, "SYNC" | "PROTOCOL")
-            || text(declaration, "workflowType")? != "NONE"
+        if !matches!(
+            text(declaration, "executionMode")?,
+            "SYNC" | "PROTOCOL" | "TEMPORAL"
+        ) || (declaration["executionMode"] == "TEMPORAL"
+            && declaration["workflowType"] != "ComponentTaskWorkflow")
+            || (declaration["executionMode"] != "TEMPORAL" && declaration["workflowType"] != "NONE")
         {
             return Err(blocked());
         }
@@ -155,7 +157,9 @@ pub(crate) async fn register_release_definitions(
              workflow_type,workflow_kind,capacity_policy,capacity_pool_key,quota_policy,meters,result_exposure,audit_policy,
              obs_correlation_mode,obs_progress_source,obs_terminal_source,obs_usage_source,obs_cost_source,obs_redaction_policy,
              status,component_release_id,implementation_declaration)
-            values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NULL,NULL,'NATIVE',NULL,$13,$14,$15,$16,
+            values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
+             CASE WHEN $9='TEMPORAL' THEN 'ComponentTaskWorkflow' END,
+             CASE WHEN $9='TEMPORAL' THEN 'COMPONENT_ACTION' END,'NATIVE',NULL,$13,$14,$15,$16,
              $17,$18,$19,$20,$21,$22,'ACTIVE',$23,$24)
             on conflict(action_key,version,component_release_id) do nothing")
             .bind(key).bind(version).bind(&component).bind(text(declaration,"targetType")?)

@@ -14,7 +14,7 @@ import {
   translate,
 } from "../i18n";
 
-type Platform = { client: BffClient; locale: PlatformLocale; openNativePage?: (bindingId: string) => Promise<void> };
+type Platform = { client: BffClient; locale: PlatformLocale; openNativePage?: (bindingId: string) => Promise<void>; documentTheme?: "LIGHT" | "DARK" };
 
 const PlatformContext = createContext<Platform | null>(null);
 
@@ -23,12 +23,15 @@ export function PlatformProvider({
   locale,
   children,
   openNativePage,
+  documentTheme,
 }: {
   client: BffClient;
   /** 缺省按浏览器/系统语言 */
   locale?: PlatformLocale;
   children: ReactNode;
   openNativePage?: (bindingId: string) => Promise<void>;
+  /** Only the Web host opts in. Desktop GAP-DSK-EDITOR-01 and Mobile stay closed. */
+  documentTheme?: "LIGHT" | "DARK";
 }) {
   // A replacement client is a new authenticated transport scope. Reset its
   // consumers together: read snapshots, frozen writes and late receipts must
@@ -36,7 +39,7 @@ export function PlatformProvider({
   const [scope, setScope] = useState({ client, generation: 0 });
   if (scope.client !== client) setScope({ client, generation: scope.generation + 1 });
   return (
-    <PlatformContext.Provider value={{ client, locale: locale ?? resolveLocale(), openNativePage }}>
+    <PlatformContext.Provider value={{ client, locale: locale ?? resolveLocale(), openNativePage, documentTheme }}>
       <Fragment key={scope.generation}>{children}</Fragment>
     </PlatformContext.Provider>
   );
@@ -53,6 +56,8 @@ export function useBffClient(): BffClient {
 }
 
 export function useNativePageHost() { return usePlatform().openNativePage; }
+
+export function useDocumentTheme() { return usePlatform().documentTheme; }
 
 export function useLocale(): PlatformLocale {
   return usePlatform().locale;

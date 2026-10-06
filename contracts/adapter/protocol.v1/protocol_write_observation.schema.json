@@ -1,0 +1,17 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"adapter/protocol.v1/protocol_write_observation.schema.json",
+  "title":"ProtocolWriteObservation",
+  "description":"18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never file bytes or an authorization grant.",
+  "type":"object","additionalProperties":false,
+  "required":["phase","correlationRef","editors","baseModifiedAt","bytesWritten"],
+  "properties":{
+    "phase":{"type":"string","enum":["STARTED","ACCEPTED","UNKNOWN","CONFLICT","FAILED"]},
+    "correlationRef":{"type":"string","minLength":1},
+    "editors":{"type":"string"},
+    "baseModifiedAt":{"type":"string","format":"date-time"},
+    "bytesWritten":{"type":"integer","minimum":0},
+    "nativeEtag":{"type":"string","minLength":1},
+    "resultRevision":{"type":"string","minLength":1}
+  }
+}

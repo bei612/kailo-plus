@@ -10,6 +10,7 @@
     "versions": {"type": "array", "items": {"$ref": "automation_version_view.schema.json"}},
     "delegations": {"type": "array", "items": {"$ref": "automation_delegation_view.schema.json"}},
     "canManage": {"type": "boolean", "description": "当前 Resource manage；不是运行准入、额度允许或业务成功。"},
+    "canRun": {"type": "boolean", "description": "仅当前 ACTIVE HUMAN owner、Workspace membership 与 Resource execute，以及已启用固定版本允许显示手动运行；仍须原 automation.run 的准入、Delegation、额度及步骤审批。缺省关闭，不是业务成功。"},
     "nextVersionOffset": {"type": "integer", "minimum": 1},
     "nextDelegationOffset": {"type": "integer", "minimum": 1}
   }

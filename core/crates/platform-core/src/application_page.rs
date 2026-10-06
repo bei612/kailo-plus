@@ -74,7 +74,14 @@ pub(crate) fn release_origins(frontend: &Value) -> Result<Vec<String>, Refusal> 
 /// The entry belongs to the release's binding schema. It is never supplied by
 /// a launch request and must not contain URL credentials or bearer parameters.
 pub(crate) fn entry(manifest: &Value, config: &Value) -> Result<Url, Refusal> {
-    if manifest["frontendDelivery"]["mode"] != "NATIVE_PAGE" {
+    // A source-bound editor may also declare its independent native file UI.
+    // This reads only that already-approved origin/entry; it does not launch an
+    // editor, grant protocol permission or enable the blocked Desktop host.
+    let frontend = &manifest["frontendDelivery"];
+    if frontend["mode"] != "NATIVE_PAGE"
+        && !(frontend["mode"] == "SOURCE_BOUND_PROTOCOL"
+            && frontend["launchDescriptorSchemaVersion"] == "1")
+    {
         return Err(unavailable());
     }
     let text = config["nativePageUrl"].as_str().ok_or_else(invalid)?;
@@ -257,5 +264,18 @@ mod tests {
         assert!(entry(&manifest, &json!({})).is_err());
         assert!(entry(&json!({"frontendDelivery":{"mode":"NONE"}}), &json!({})).is_err());
         assert!(release_origins(&json!({"nativePageOrigins":["https://service.example.test","https://service.example.test"]})).is_err());
+    }
+
+    #[test]
+    fn document_source_entry_requires_declared_native_origin_and_supported_protocol() {
+        let config = json!({"nativePageUrl":"https://files.example.test/ui/"});
+        let mut manifest = json!({"frontendDelivery":{"mode":"SOURCE_BOUND_PROTOCOL",
+            "launchDescriptorSchemaVersion":"1","nativePageOrigins":["https://files.example.test"]}});
+        assert!(entry(&manifest, &config).is_ok());
+        manifest["frontendDelivery"]["launchDescriptorSchemaVersion"] = json!("unknown");
+        assert!(entry(&manifest, &config).is_err());
+        manifest["frontendDelivery"]["launchDescriptorSchemaVersion"] = json!("1");
+        manifest["frontendDelivery"]["nativePageOrigins"] = json!([]);
+        assert!(entry(&manifest, &config).is_err());
     }
 }

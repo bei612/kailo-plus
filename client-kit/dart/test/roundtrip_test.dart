@@ -9,17 +9,51 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('native credentials preserve binding generation and exact references', () {
-    final original =
+  test('application model preserves route references and absent correlation', () {
+    final admission =
         jsonDecode(
               File(
-                '../../contracts/samples/application-peer-credentials.sample.json',
+                '../../contracts/samples/application-model-admission.sample.json',
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;
-    final typed = ApplicationAdapterDirectory.fromJson(original);
-    expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
+    expect(
+      jsonDecode(
+        jsonEncode(ApplicationModelAdmission.fromJson(admission).toJson()),
+      ),
+      equals(admission),
+    );
+    final config =
+        jsonDecode(
+              File(
+                '../../contracts/samples/application-model-config.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    expect(
+      jsonDecode(
+        jsonEncode(ApplicationModelGatewayConfig.fromJson(config).toJson()),
+      ),
+      equals(config),
+    );
   });
+  test(
+    'native credentials preserve binding generation and exact references',
+    () {
+      for (final sample in [
+        'application-peer-credentials.sample.json',
+        'application-model-delivery.sample.json',
+      ]) {
+        final original =
+            jsonDecode(
+                  File('../../contracts/samples/$sample').readAsStringSync(),
+                )
+                as Map<String, dynamic>;
+        final typed = ApplicationAdapterDirectory.fromJson(original);
+        expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
+      }
+    },
+  );
   test('resource reference preserves evidence and original workflow', () {
     final original =
         jsonDecode(
@@ -154,6 +188,27 @@ void main() {
         .toList();
     expect(
       jsonDecode(jsonEncode(typed.map((page) => page.toJson()).toList())),
+      equals(original),
+    );
+  });
+  test('manual run capability and deleted definition preserve wire fields', () {
+    final original =
+        jsonDecode(
+              File(
+                '../../contracts/samples/automation-manual-delete.sample.json',
+              ).readAsStringSync(),
+            )
+            as List<dynamic>;
+    final typed = original
+        .map(
+          (row) => AutomationDetailView.fromJson(row as Map<String, dynamic>),
+        )
+        .toList();
+    expect(typed[0].canRun, isNull);
+    expect(typed[1].canRun, isTrue);
+    expect(typed[2].automation.state, AutomationState.DELETED);
+    expect(
+      jsonDecode(jsonEncode(typed.map((row) => row.toJson()).toList())),
       equals(original),
     );
   });

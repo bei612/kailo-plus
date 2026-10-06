@@ -8,6 +8,8 @@
   "required": ["nativeObjectRef", "nativeRevision"],
   "properties": {
     "nativeObjectRef": {"type": "string"},
-    "nativeRevision": {"type": "string"}
+    "nativeRevision": {"type": "string"},
+    "protocolSessionId": {"type": "string", "format": "uuid"},
+    "correlationRef": {"type": "string"}
   }
 }

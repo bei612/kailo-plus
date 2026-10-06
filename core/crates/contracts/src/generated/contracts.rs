@@ -12,6 +12,7 @@
 // }
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// 可用 JSON Schema 子集的可执行定义。它穷举 contracts/README.md 第 1
 /// 节允许的每一种构造；四侧生成器必须全部生成成功并通过双向序列化。新增构造先加进本文件并四侧验证通过，才允许在其他 schema 中使用。
@@ -135,6 +136,22 @@ pub enum VariantKind {
 
     #[serde(rename = "TASK")]
     Task,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationModelAdmission {
+    pub binding_id: String,
+
+    pub gateway_principal_id: String,
+
+    pub generation: i64,
+
+    pub method: String,
+
+    pub path: String,
+
+    pub traceparent: String,
 }
 
 /// 07§5/6.2：validate_binding 的非正文观察。精确原生scope/实例、隔离与配置引用摘要，不是用户声明的通过布尔值。
@@ -281,7 +298,7 @@ pub struct AdapterExecutionReference {
 #[serde(rename_all = "camelCase")]
 pub struct AdapterExecutionResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ContentReferenceClass>,
+    pub content_reference: Option<ReferenceClass>,
 
     pub execution: ExecutionClass,
 
@@ -292,7 +309,7 @@ pub struct AdapterExecutionResponse {
 /// design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ContentReferenceClass {
+pub struct ReferenceClass {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asset_id: Option<String>,
 
@@ -371,7 +388,7 @@ pub struct AdapterPepCheckRequest {
     pub binding_id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ContentReferenceClass>,
+    pub content_reference: Option<ReferenceClass>,
 
     pub operation: String,
 }
@@ -387,6 +404,333 @@ pub struct AdapterPepCheckResponse {
     pub operation_id: String,
 }
 
+/// DD-90/18§5.4：原保存结果不明会话的确切写入证据查证；只核已有 ACCEPTED writer observation 对应的原生
+/// VersionId，不提供文件字节或当前权限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolRevisionQuery {
+    pub base_revision: String,
+
+    pub protocol_session_id: String,
+
+    pub write_observation: WriteObservationClass,
+}
+
+/// 18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never
+/// file bytes or an authorization grant.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteObservationClass {
+    pub base_modified_at: String,
+
+    pub bytes_written: i64,
+
+    pub correlation_ref: String,
+
+    pub editors: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_etag: Option<String>,
+
+    pub phase: Phase,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_revision: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Phase {
+    #[serde(rename = "ACCEPTED")]
+    Accepted,
+
+    #[serde(rename = "CONFLICT")]
+    Conflict,
+
+    #[serde(rename = "FAILED")]
+    Failed,
+
+    #[serde(rename = "STARTED")]
+    Started,
+
+    #[serde(rename = "UNKNOWN")]
+    Unknown,
+}
+
+/// 18: execute the original admitted file protocol Session, not an arbitrary editor URL or
+/// native object create. All fields are frozen Core facts and the whole body is covered by
+/// ActionToken.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterProtocolSessionLaunchRequest {
+    pub admitted_mode: TedMode,
+
+    pub authorization_target_native_ref: String,
+
+    pub expires_at: String,
+
+    pub idempotency_key: String,
+
+    pub locale: Locale,
+
+    pub protocol_session_id: String,
+
+    pub reference: ReferenceClass,
+
+    pub theme: Theme,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TedMode {
+    #[serde(rename = "EDIT")]
+    Edit,
+
+    #[serde(rename = "VIEW")]
+    View,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Locale {
+    En,
+
+    #[serde(rename = "zh-CN")]
+    ZhCn,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Theme {
+    #[serde(rename = "DARK")]
+    Dark,
+
+    #[serde(rename = "LIGHT")]
+    Light,
+}
+
+/// 18: the original native PAT reference plus transient launch descriptor. This value occurs
+/// only in the original execute response; it must not be stored as reconciliation evidence
+/// or recovered by reminting a token.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterProtocolSessionLaunchResponse {
+    pub launch_descriptor: LaunchDescriptorClass,
+
+    pub native_session_ref: String,
+}
+
+/// DD-95/103: transient, fixed-origin launch returned by the admitted binding adapter;
+/// credentials are only string form fields, never a persisted Task, chat or ContentReference.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchDescriptorClass {
+    pub action_url: String,
+
+    pub editor_origin: String,
+
+    pub expires_at: String,
+
+    pub form_fields: HashMap<String, String>,
+
+    pub method: Method,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Method {
+    #[serde(rename = "GET")]
+    Get,
+
+    #[serde(rename = "POST")]
+    Post,
+}
+
+/// DD-90, 18 §5.1: binding-authenticated permission to observe/revoke the original document
+/// PAT. These closed lifecycle facts never authorize file reads, writes or token creation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolSessionLifecyclePepResponse {
+    pub decision: Decision,
+
+    pub expires_at: String,
+
+    pub native_object_ref: String,
+
+    pub protocol_session_id: String,
+
+    pub requested_mode: TedMode,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Decision {
+    #[serde(rename = "ALLOW")]
+    Allow,
+}
+
+/// 18 §5.1: observe/cancel the same native document PAT only. No access token, launch
+/// descriptor or file bytes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterProtocolSessionLifecycleRequest {
+    pub idempotency_key: String,
+
+    pub native_object_ref: String,
+
+    pub protocol_session_id: String,
+}
+
+/// Original Cells PAT metadata only. ABSENT is a successful native lookup; errors must
+/// remain unavailable, never ABSENT.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterProtocolSessionLifecycleResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+
+    pub native_object_ref: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_session_ref: Option<String>,
+
+    pub native_state: NativeState,
+
+    pub protocol_session_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum NativeState {
+    #[serde(rename = "ABSENT")]
+    Absent,
+
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "EXPIRED")]
+    Expired,
+}
+
+/// 18 §5.2: authenticated binding→Core PEP for an existing ProtocolSession. No native token
+/// grants platform permissions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolSessionPepRequest {
+    pub binding_id: String,
+
+    pub native_object_ref: String,
+
+    pub native_operation: NativeOperation,
+
+    pub protocol_session_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub write_observation: Option<WriteObservationClass>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum NativeOperation {
+    Observe,
+
+    Open,
+
+    Read,
+
+    #[serde(rename = "TOKEN_OBSERVE")]
+    TokenObserve,
+
+    #[serde(rename = "TOKEN_REVOKE")]
+    TokenRevoke,
+
+    Write,
+}
+
+/// Original Session facts, not native revision existence or write success. Cells must still
+/// query its exact VersionId and ACLs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolSessionPepResponse {
+    pub admitted_mode: TedMode,
+
+    pub base_revision: String,
+
+    pub decision: Decision,
+
+    pub display_name: String,
+
+    pub expires_at: String,
+
+    pub export_allowed: bool,
+
+    pub min_zed_token: String,
+
+    /// Confirmed original native token/session reference. Required by native READ/WRITE
+    /// consumers, absent before the first native OPEN creation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_session_ref: Option<String>,
+
+    /// Original active issuer from the HUMAN's frozen ExternalIdentity, never a browser-supplied
+    /// claim.
+    pub oidc_issuer: String,
+
+    /// Original active subject paired with oidcIssuer. Cells resolves its existing explicit
+    /// native user link; no email or display-name fallback.
+    pub oidc_subject: String,
+
+    pub platform_human_id: String,
+
+    /// Exact canonical platform PUBLIC_ORIGIN from the Core deployment, never the native request
+    /// Origin or a browser-supplied field. Required by the native FileInfo consumer; unavailable
+    /// origin refuses its editor projection.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_message_origin: Option<String>,
+}
+
+/// 18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never
+/// file bytes or an authorization grant.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolWriteObservation {
+    pub base_modified_at: String,
+
+    pub bytes_written: i64,
+
+    pub correlation_ref: String,
+
+    pub editors: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_etag: Option<String>,
+
+    pub phase: Phase,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_revision: Option<String>,
+}
+
+/// Receipt of native write evidence. It grants no read or write permission.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolWriteReceipt {
+    pub protocol_session_id: String,
+
+    pub state: ProtocolWriteReceiptState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ProtocolWriteReceiptState {
+    #[serde(rename = "CONFLICT")]
+    Conflict,
+
+    #[serde(rename = "DIRTY")]
+    Dirty,
+
+    #[serde(rename = "FAILED")]
+    Failed,
+
+    #[serde(rename = "SAVED")]
+    Saved,
+
+    #[serde(rename = "UNKNOWN")]
+    Unknown,
+}
+
 ///
 /// 07§5.2与ADR-12：查询同一native对象当前权威revision；ActionToken通过Authorization头传输，幂等键与Idempotency-Key头一致。authorizationTargetNativeRef仅为Core从实际受权Resource/Asset解析的原生目标定位，参与同一参数签名；adapter须核实被查对象在该目标及固定binding
 /// scope内。缺省保持确切目标查询，不授予一般子对象读取。不是execute或权限授予。
@@ -399,6 +743,21 @@ pub struct AdapterQueryRevisionRequest {
     pub idempotency_key: String,
 
     pub native_object_ref: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol_reconcile: Option<ProtocolReconcileClass>,
+}
+
+/// DD-90/18§5.4：原保存结果不明会话的确切写入证据查证；只核已有 ACCEPTED writer observation 对应的原生
+/// VersionId，不提供文件字节或当前权限。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolReconcileClass {
+    pub base_revision: String,
+
+    pub protocol_session_id: String,
+
+    pub write_observation: WriteObservationClass,
 }
 
 ///
@@ -406,9 +765,15 @@ pub struct AdapterQueryRevisionRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdapterQueryRevisionResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correlation_ref: Option<String>,
+
     pub native_object_ref: String,
 
     pub native_revision: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol_session_id: Option<String>,
 }
 
 /// DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
@@ -477,6 +842,9 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capability_contract_registration: Option<CapabilityContractRegistrationClass>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component_action: Option<ComponentActionClass>,
+
     /// 仅组件批准：已登记的不可变ComponentRelease标识。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub component_release_id: Option<String>,
@@ -500,7 +868,8 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub executor_installation_resource_id: Option<String>,
 
-    /// EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
+    /// EXPLICIT 动作或 HUMAN owner 的一次手动 automation.run，由用户在当前目标详情上确认后设为 true；其他动作不得携带。手动运行只提交
+    /// resourceId/resourceVersion/workspaceId 与同一幂等键，不选择 Grant、Agent、来源或结果位置。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub explicit_confirmation: Option<bool>,
 
@@ -532,8 +901,13 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub principal_id: Option<String>,
 
+    /// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
+    /// identity; no Agent or caller-selected native credentials.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub resource_create: Option<ReferenceClass>,
+    pub protocol_session_open: Option<ProtocolSessionOpenClass>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_create: Option<ResourceCreateClass>,
 
     /// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -954,6 +1328,20 @@ pub struct CapabilityContractRegistrationResourceTypeFamily {
     pub type_key: String,
 }
 
+/// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
+/// Core/Temporal。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentActionClass {
+    pub action_version: i64,
+
+    pub input_reference: ReferenceClass,
+
+    pub result_exposure_policy_id: String,
+
+    pub result_exposure_policy_version: i64,
+}
+
 /// 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
 /// Worker 独立执行隔离套件。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1101,9 +1489,34 @@ pub enum ExpectedHeadState {
     Found,
 }
 
+/// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
+/// identity; no Agent or caller-selected native credentials.
+///
+/// 03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL.
+/// Revision and presentation are frozen once; session expiry comes from controlled Core
+/// delivery.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReferenceClass {
+pub struct ProtocolSessionOpenClass {
+    pub action_version: i64,
+
+    /// The selected native source binding; must equal the target's real binding, not an
+    /// authorization claim.
+    pub application_binding_id: String,
+
+    pub locale: Locale,
+
+    /// Exact approved projection selected by the native menu; never latest.
+    pub projection_generation: i64,
+
+    pub reference: ReferenceClass,
+
+    pub theme: Theme,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceCreateClass {
     pub evidence_digest: String,
 
     pub evidence_ref: String,
@@ -1129,12 +1542,18 @@ pub struct ActionSubmission {
 
     pub dispatch_state: ActionDispatchState,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_launch: Option<LaunchDescriptorClass>,
+
     pub gate_state: ActionGateState,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub invitation: Option<InvitationClass>,
 
     pub operation_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol_session_id: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<ReasonCode>,
@@ -1576,8 +1995,9 @@ pub struct InstallationElement {
 
     pub agent_resource_id: String,
 
-    /// 同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
-    /// Schedule。
+    /// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
+    /// 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
+    /// 准入。缺失或空集合不支持 Schedule。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_result_targets: Option<Vec<AutomationResultTarget>>,
 
@@ -1749,8 +2169,9 @@ pub struct AgentInstallationView {
 
     pub agent_resource_id: String,
 
-    /// 同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
-    /// Schedule。
+    /// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
+    /// 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
+    /// 准入。缺失或空集合不支持 Schedule。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_result_targets: Option<Vec<AutomationResultTarget>>,
 
@@ -2586,6 +3007,11 @@ pub struct AutomationDetailView {
     /// 当前 Resource manage；不是运行准入、额度允许或业务成功。
     pub can_manage: bool,
 
+    /// 仅当前 ACTIVE HUMAN owner、Workspace membership 与 Resource execute，以及已启用固定版本允许显示手动运行；仍须原
+    /// automation.run 的准入、Delegation、额度及步骤审批。缺省关闭，不是业务成功。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_run: Option<bool>,
+
     pub delegations: Vec<DelegationElement>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2624,6 +3050,9 @@ pub struct AutomationElement {
 /// 03 §7、05 §2.9：AutomationDefinition 的真实管理状态，不是 Invocation 终态。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AutomationState {
+    #[serde(rename = "DELETED")]
+    Deleted,
+
     #[serde(rename = "DISABLED")]
     Disabled,
 
@@ -2811,6 +3240,9 @@ pub enum WorkflowKind {
     #[serde(rename = "BUZZ_IDENTITY_PROJECTION")]
     BuzzIdentityProjection,
 
+    #[serde(rename = "COMPONENT_ACTION")]
+    ComponentAction,
+
     #[serde(rename = "COMPONENT_BINDING")]
     ComponentBinding,
 
@@ -2825,6 +3257,9 @@ pub enum WorkflowKind {
 
     #[serde(rename = "MEMBERSHIP_REVOCATION")]
     MembershipRevocation,
+
+    #[serde(rename = "PROTOCOL_SESSION_RECONCILE")]
+    ProtocolSessionReconcile,
 
     #[serde(rename = "RESOURCE_PROVISION")]
     ResourceProvision,
@@ -3100,7 +3535,7 @@ pub struct ComponentConformanceWireObservation {
 #[serde(rename_all = "camelCase")]
 pub struct ProbeClass {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ContentReferenceClass>,
+    pub content_reference: Option<ReferenceClass>,
 
     pub plan: PlanClass,
 
@@ -3697,6 +4132,73 @@ pub struct PlatformToolView {
     pub status: ToolStatus,
 }
 
+/// 03/18: only the initiating HUMAN's fresh-authorized original Session facts. No PAT,
+/// launch credential, native body or replacement revision is recoverable from this reader.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolSessionView {
+    pub action_execution_id: String,
+
+    pub admitted_mode: TedMode,
+
+    pub application_binding_id: String,
+
+    pub base_revision: String,
+
+    pub effective_editor_origins: Vec<String>,
+
+    pub expires_at: String,
+
+    pub launch_locale: Locale,
+
+    pub launch_theme: Theme,
+
+    pub protocol_session_id: String,
+
+    pub reference: ReferenceClass,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_revision: Option<String>,
+
+    pub state: ProtocolSessionViewState,
+
+    pub tenant_id: String,
+
+    pub version: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ProtocolSessionViewState {
+    Admitted,
+
+    Closed,
+
+    Conflict,
+
+    Dirty,
+
+    Expired,
+
+    Failed,
+
+    Open,
+
+    Opening,
+
+    #[serde(rename = "READ_ONLY")]
+    ReadOnly,
+
+    Revoked,
+
+    Saved,
+
+    Unknown,
+}
+
 /// PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
 /// ID、msg:<Buzz event id> 或 thread:<Buzz root event id>；version 是读到的 CollaborationUserState
 /// 版本，不符即 409。
@@ -4206,16 +4708,55 @@ pub struct ApplicationAdapterDelivery {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_url: Option<String>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_credential_deliveries: Option<Vec<ApplicationModelCredentialDelivery>>,
+
     pub native_instance_ref: String,
 
-    pub secret_readers: Vec<ApplicationSecretReader>,
+    pub secret_readers: Vec<AdapterSecretReader>,
 
     pub timeout_seconds: i64,
 }
 
+/// 受控原生模型凭据交接回执；无密钥值，不创建模型，不替代OpenBao审计或binding准入。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ApplicationSecretReader {
+pub struct ApplicationModelCredentialDelivery {
+    pub binding_id: String,
+
+    pub config_digest: String,
+
+    pub generation: i64,
+
+    pub native_model_ref: String,
+
+    pub native_proof: String,
+
+    pub native_scope_ref: String,
+
+    pub request_id: String,
+
+    pub route_resource_id: String,
+
+    pub secret_ref: ApplicationModelServiceSecretRef,
+
+    pub service_principal_id: String,
+
+    pub verification_nonce: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ApplicationModelServiceSecretRef {
+    pub audience: String,
+
+    pub locator: String,
+
+    pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterSecretReader {
     pub audience: String,
 
     pub role_name: String,
@@ -4236,7 +4777,13 @@ pub struct ApplicationProtocolPeerDelivery {
 
     pub mcp_url: String,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_credential_deliveries: Option<Vec<ApplicationModelCredentialDelivery>>,
+
     pub native_instance_ref: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret_readers: Option<Vec<ProtocolPeerSecretReader>>,
 
     pub timeout_seconds: i64,
 }
@@ -4301,6 +4848,16 @@ pub struct ApplicationNativeResourceDelivery {
     pub type_key: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolPeerSecretReader {
+    pub audience: String,
+
+    pub role_name: String,
+
+    pub service_principal_id: String,
+}
+
 /// DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
 /// ActionCommand。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4351,6 +4908,16 @@ pub struct ApplicationBindingCreateSecretRefClass {
     pub secret_key: String,
 
     pub version: i64,
+}
+
+/// DD-92: modelGateway within the approved binding config. Only existing route and meter
+/// references; no provider configuration, credential value or native model row.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationModelGatewayConfig {
+    pub meter_keys: Vec<String>,
+
+    pub route_resource_ids: Vec<String>,
 }
 
 /// DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
@@ -4521,6 +5088,20 @@ pub struct CapabilityContractRegistrationResourceTypeFamilyClass {
     pub kind: String,
 
     pub type_key: String,
+}
+
+/// Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
+/// Core/Temporal。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentActionInput {
+    pub action_version: i64,
+
+    pub input_reference: ReferenceClass,
+
+    pub result_exposure_policy_id: String,
+
+    pub result_exposure_policy_version: i64,
 }
 
 /// 07§8A 的隔离环境投递配置，不是 Catalog/binding 权威。由运维配置精确绑定已装载候选 artifact；逐次短期模拟 token 仅由 Core
@@ -4734,6 +5315,22 @@ pub struct DelegationScopeParameters {
     pub tool_resource_id: Option<String>,
 }
 
+/// DD-95/103: transient, fixed-origin launch returned by the admitted binding adapter;
+/// credentials are only string form fields, never a persisted Task, chat or ContentReference.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentLaunchDescriptor {
+    pub action_url: String,
+
+    pub editor_origin: String,
+
+    pub expires_at: String,
+
+    pub form_fields: HashMap<String, String>,
+
+    pub method: Method,
+}
+
 /// 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -4788,6 +5385,36 @@ pub struct LlmRouteCreateInputProviderSecretRef {
     pub version: i64,
 }
 
+/// 18: native authenticated file-menu metadata from the Adapter typed reference producer.
+/// This is NOT Action admission; the normal Kailo HUMAN session must independently
+/// fresh-admit the frozen target and version. No ticket or content bytes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeDocumentSelection {
+    pub action_key: NativeDocumentSelectionActionKey,
+
+    pub action_version: i64,
+
+    pub binding_id: String,
+
+    pub generation: i64,
+
+    pub reference: ReferenceClass,
+
+    pub resource_version: i64,
+
+    pub workspace_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum NativeDocumentSelectionActionKey {
+    #[serde(rename = "file_storage.open_edit@v1")]
+    FileStorageOpenEditV1,
+
+    #[serde(rename = "file_storage.open_view@v1")]
+    FileStorageOpenViewV1,
+}
+
 /// 设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -4811,6 +5438,28 @@ pub struct PlatformBuildInfo {
     pub reported_at: String,
 
     pub subject: Subject,
+}
+
+/// 03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL.
+/// Revision and presentation are frozen once; session expiry comes from controlled Core
+/// delivery.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolSessionOpenInput {
+    pub action_version: i64,
+
+    /// The selected native source binding; must equal the target's real binding, not an
+    /// authorization claim.
+    pub application_binding_id: String,
+
+    pub locale: Locale,
+
+    /// Exact approved projection selected by the native menu; never latest.
+    pub projection_generation: i64,
+
+    pub reference: ReferenceClass,
+
+    pub theme: Theme,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5484,6 +6133,60 @@ pub struct AutomationScheduleTaskInput {
     pub source_kind: AutomationScheduleSource,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentActionAdvanceRequest {
+    pub cancel_requested: bool,
+
+    pub run_id: String,
+
+    pub target: ComponentActionAdvanceRequestTarget,
+}
+
+/// 原 ComponentTaskWorkflow(kind=COMPONENT_ACTION) 的冻结引用；全部业务参数仍从原 AE 的引用/hash读取。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentActionAdvanceRequestTarget {
+    pub action_execution_id: String,
+
+    pub binding_id: String,
+
+    pub binding_version: i64,
+
+    pub component_release_id: String,
+
+    pub projection_generation: i64,
+
+    pub workflow_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentActionAdvanceResult {
+    pub action_execution_id: String,
+
+    pub status: TaskStatus,
+
+    pub waiting_reason: String,
+}
+
+/// 原 ComponentTaskWorkflow(kind=COMPONENT_ACTION) 的冻结引用；全部业务参数仍从原 AE 的引用/hash读取。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentActionTarget {
+    pub action_execution_id: String,
+
+    pub binding_id: String,
+
+    pub binding_version: i64,
+
+    pub component_release_id: String,
+
+    pub projection_generation: i64,
+
+    pub workflow_id: String,
+}
+
 /// 受信 Worker 的一次实际线协议观察，附着冻结 ActionExecution。Core 以自身 plan 逐项匹配，不接收 pass 布尔值；UNKNOWN
 /// 不表示套件失败或成功。响应正文与测试凭据不进入报告。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5516,7 +6219,7 @@ pub struct ObservationElement {
     pub case_key: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ContentReferenceClass>,
+    pub content_reference: Option<ReferenceClass>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_class: Option<ErrorClass>,
@@ -5635,7 +6338,7 @@ pub struct ComponentConformancePlanStep {
 #[serde(rename_all = "camelCase")]
 pub struct ComponentConformanceProbe {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ContentReferenceClass>,
+    pub content_reference: Option<ReferenceClass>,
 
     pub plan: PlanClass,
 
@@ -5652,7 +6355,7 @@ pub struct ComponentConformanceStepObservation {
     pub case_key: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ContentReferenceClass>,
+    pub content_reference: Option<ReferenceClass>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_class: Option<ErrorClass>,
@@ -5708,6 +6411,111 @@ pub struct FreshApprovalAdmissionResult {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ProtocolSessionReconcileRequest {
+    pub cancel_requested: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub round: Option<RoundClass>,
+
+    pub run_id: String,
+
+    pub target: ProtocolSessionReconcileRequestTarget,
+}
+
+/// Actual original Session snapshot. The Activity result freezes this query round into
+/// history, not into a new authority.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoundClass {
+    pub session_version: i64,
+
+    pub state: ProtocolSessionViewState,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub write_observation: Option<WriteObservationClass>,
+}
+
+/// DD-90: immutable first UNKNOWN input for the original Session's one Workflow.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolSessionReconcileRequestTarget {
+    pub action_definition_id: String,
+
+    pub action_execution_id: String,
+
+    pub base_revision: String,
+
+    pub binding_id: String,
+
+    pub correlation_ref: String,
+
+    pub native_object_ref: String,
+
+    pub projection_generation: i64,
+
+    pub protocol_session_id: String,
+
+    pub release_id: String,
+
+    pub session_version: i64,
+
+    pub workflow_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolSessionReconcileResult {
+    pub protocol_session_id: String,
+
+    pub round: RoundClass,
+
+    pub status: TaskStatus,
+
+    pub waiting_reason: String,
+}
+
+/// Actual original Session snapshot. The Activity result freezes this query round into
+/// history, not into a new authority.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolSessionReconcileRound {
+    pub session_version: i64,
+
+    pub state: ProtocolSessionViewState,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub write_observation: Option<WriteObservationClass>,
+}
+
+/// DD-90: immutable first UNKNOWN input for the original Session's one Workflow.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolSessionReconcileTarget {
+    pub action_definition_id: String,
+
+    pub action_execution_id: String,
+
+    pub base_revision: String,
+
+    pub binding_id: String,
+
+    pub correlation_ref: String,
+
+    pub native_object_ref: String,
+
+    pub projection_generation: i64,
+
+    pub protocol_session_id: String,
+
+    pub release_id: String,
+
+    pub session_version: i64,
+
+    pub workflow_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceProvisionAdvanceRequest {
     pub cancel_requested: bool,
 
@@ -5733,7 +6541,7 @@ pub struct ResourceProvisionAdvanceRequestTarget {
 
     pub projection_generation: i64,
 
-    pub reference: ReferenceClass,
+    pub reference: ResourceCreateClass,
 
     pub resource_id: String,
 
@@ -5769,7 +6577,7 @@ pub struct ResourceProvisionTarget {
 
     pub projection_generation: i64,
 
-    pub reference: ReferenceClass,
+    pub reference: ResourceCreateClass,
 
     pub resource_id: String,
 

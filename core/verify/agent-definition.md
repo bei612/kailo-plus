@@ -4065,9 +4065,9 @@ automationRuns 路径读取，独立 observe-task-57ad.log 与原库终态读回
    的执行不能走零派发取消；三端仍消费原 TaskStatus 与等待原因。
 4. 源码核对确认该 cleanup 不要求 `holder.held=true`：已 RELEASED 才直接
    返回 CANCELED，否则调用原 `release_holder`/`Capacity::begin_release`。
-   后者再次核查无 turn/trace/Operation usage；已有匹配的持久 Activity
-   terminal_event_id 时可直接 RELEASED，否则仅 RELEASING，不归还 units。
-   释放尚未确认仍等待，不强制释放原 holder。
+   后者再次核查无 turn/trace/Operation usage；没有 Activity 终态时只标记
+   RELEASING，不归还 units；已有匹配终态时可沿原分支释放。释放尚未确认
+   仍等待，不强制释放原 holder。
 
 ### 实际定向验证与反例
 
@@ -4109,43 +4109,171 @@ HTTP→Temporal→Supervisor 控制流；将取消块移回 birth 后，writer �
 构建或部署，不证明两条旧 `cancel_pending=false` 任务已经恢复，不重放旧
 UNKNOWN。提交、发布及线上新取消验收由主线另行记录。
 
-## 2026-10-05 AgentTask 本人取消治理入口（独立取消批）
+## 2026-10-05 Workflows 原页面复制保存与停用
 
-基准 `20dbd472b8baa8ff775322c3c72e59f0c1f7933a`。依据 DD-84 与设计
-06 §8，复用已有任务详情、Action submit、取消意图及原 Temporal history
-消费；没有新增 Workflow、权限、委托、计量、迁移或 AgentTask rerun。
+沿设计 06 §9.1 的原创建及停用动作，复用 Data 中既有
+`codex-three-human-two-agent-20261005.poEa9c/automation/ui-post-message.cjs`，
+新增 `copy-save` 操作分支，没有产品源码、契约或权限变更。原
+`happy_nobel` 浏览器容器实际为 4 CPU、8 GiB，正常 OIDC 登录且密码只从
+既有受控挂载读取；只一次性放行所选页面提交的 create、disable 请求，
+不改写响应、不直接写业务数据库，也不新增测试框架。
 
-1. 原 `control_original` 必须有 kind、`cancel_target` 固定 ComponentTask，
-   会拒绝合法 AgentTask。现仅对确切 `agent.invoke@1`、`automation.run@1`
-   的原 AgentTask 定义允许空 kind；其他既有组件控制保持原类型与 kind。
-2. 原 Resource 控制还会把控制目标 AE ID 当作 Resource。现从同 Tenant、
-   本人原 AE 解析真实 Installation/Automation，核验原生目录与授权投影，
-   再走原 fresh execute Check、Workspace 状态与成员准入。控制目录在原
-   两个动态定义登记之后创建，沿用源定义 scope/permission，不覆盖或复活旧行。
-3. WorkflowRef 必须匹配原 AE、Tenant、Workspace、Operation、type/kind，
-   原 run 必须属于 Temporal 返回的 first/current 链，才进入原取消派发。
-   先持久化 UNKNOWN 与 first run/control ID，再 RequestCancel 并核 history；
-   RPC 成功仍不等于原任务终态，不手工释放 Capacity，不重放原模型调用。
-4. 共享任务详情原 `cancelActionKey` 消费不改；未登记的 rerun 继续关闭。
-   本入口不读取第三方日志，不修改业务库或 runtime RPC 回执保存规则。
+句柄 78492 实际退出 0，按 UI 执行复制、选择原 Installation、切换 YAML
+和表单、核对并提交请求。创建 AE 为
+`1ea8ae5d-afb0-40f2-876e-7f9189cfd65e`，返回 ALLOWED/DISPATCHED；
+授权读回唯一新 Resource `67f60fde-d1a8-471a-87f9-ab42c358cc6d`，
+状态 DRAFT、当前 HUMAN owner、无 pin/Delegation，版本配置与原配置相同。
+随后页面提交 `automation.disable`，AE
+`7ccc38cc-3093-46e6-8282-87fb471a3c23` 返回 ALLOWED/DISPATCHED，
+独立回读新 Resource 为 DISABLED，原 Resource 的定义逐字段未变。
 
-实现后原 registry 生成及 `--check` 通过。固定原 4CPU/8GiB SDK、Cargo16，
-隔离 `runtime_receipt_xvkujx` 的 82 条迁移上执行
-`cargo test -p platform-core --bin platform-core task_control::tests -- --include-ignored --nocapture`：
-3/3 通过；其中原生产注册、control_original 与 cancel_projection 直接消费
-真实 PG 事务，覆盖幂等登记、两种动作、错人/租户/权限/Workspace/Operation/
-Workflow 与未开放 rerun。run-chain 检查另覆盖 CAN 和旧链拒绝。
+该新对象保留正常审计与版本记录，没有物理删除；没有授权委托、启用
+Schedule、发送消息或模型调用，不受两个旧 Codex 执行槽占用的影响。
+没有重复提交不明请求或借用原运行历史证明本次新运行。
+本次没有重新构建或部署；只证明复制配置真实保存和新草稿停用，
+不证明删除、手动触发、多步骤或三端全部 Workflows 功能。
 
-SDK 执行副本恢复旧 kind 守卫并移除 chain 比较后，原目标 1 passed/2 failed，
-退出 101；两源 apply_patch 逐字恢复、cmp 0 后，同 3 项与原
-`cargo clippy -p platform-core --all-targets -- -D warnings` 组合退出 0（16349）。
-原件在 `codex-agent-task-cancel-20261005.nqwoaX/`：`mutation.log` SHA256
-`7cdc51b9cffcb028cb619819f71517fe76b293ee74c4021c46631ad3898e0e13`；
-`final-targeted.log` SHA256
-`052670003e62a908bf90eaa1c47516fc925a0c2314459a55bf4a58b73703cd5f`。
+原件 `codex-component-runtime-integration-20261005.lciVUS/workflow-copy-save.log`
+SHA256：`45c3e3e7fbb6777a4e5af824d36aa20aa17712208b3a9e7b1724bd108b2bdd60`。
 
-首次执行的镜像 PATH、Buzz 路径依赖和 ExtMcp proto 镜像输入遗漏分别产生
-127/1/101，原件保留；补原固定源输入后通过，没有安装替代工具或删除门禁。
-这些验证不包含真实 OIDC→BFF→Temporal cancel E2E，不证明旧两条 UNKNOWN
-已经收敛；22:16 只读快照仍是两条 UNKNOWN lease 占池 2/2。独立取消批
-此后与上节 before-birth 修复合并，再走集中 full 和发布，尚未部署。
+## 2026-10-06 Workflows 负责人单次运行与保留历史删除
+
+本刀基于 apps `20dbd472b8baa8ff775322c3c72e59f0c1f7933a`，权威设计
+`1b235beedb8cf41a612129504b45c73151b27a18`；仅独立候选
+`/volumes/data/kailo/tmp/codex-workflow-manual-delete-20261005.qEFNOj/apps` 写入。
+改前四步结论与实际消费者如下：
+
+1. DD-107／设计06 §9.1：手动是当前 HUMAN owner 的一次原 `automation.run`，
+   不增加触发类型或执行引擎。原 BFF 接受六个明确确认的请求字段，服务端冻结
+   pin、Installation/generation、Delegation 与 Agent actor；当前成员和 Resource.execute
+   仍 fresh。`manual:<owner>:<resource>:<key>` 只作稳定来源引用，不伪造 Relay。
+2. 影响原 `automation/manual.rs::submit_manual`、准入／Invocation／WorkflowRef
+   持久化和 AgentTaskWorkflow；同 key 的 UNKNOWN 读回原 AE/operation，改参数冲突。
+   删除复用原 disable fence、Schedule 与 SecretRef 回执，全部确认后才 DELETED。
+   不取消在途、不释放 Capacity；原 Resource 权限、Version、运行与审计均保留。
+3. 设计03 §7／17 §2：普通 Agent 回复策略不变；Automation 用冻结版本及实际来源，
+   Buzz 回原 Thread，Schedule/manual 回同 Workspace Channel。prepare、source、lock_reply
+   与原 publisher 同步判定，客户端不选择位置；不绕过 Grant 或当前 Channel 权限。
+4. 共用 AutomationManagement 增加严格 `canRun === true` 的确认／同意图重试和删除；
+   旧 run UNKNOWN 不挡独立管理操作。Mobile 仍只读。可选 canRun 保持旧响应兼容，
+   DELETED 为不可逆墓碑；23000 down 在已有 manual/deleted 历史时拒绝，绝不删历史。
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-manual-qefnoj.WJ5V0Q/`。
+原固定 SDK `10ad51a2…`、4CPU/8GiB、无额外 swap，Cargo 保留 16 jobs；公共缓存在
+取消批 full84656 实际0并释放后才使用。独占演练库
+`schedule_dispatch_verify_manual_qefnoj` 原 SQLx 83 up、23000 down/up 实际0；不用在线库。
+所有新 SQL 为原运行时 query，未新增离线 query! 缓存。
+
+恢复组合 session96284 实际0：原手动目标5项（含真实AE重试／source约束）、
+管理目标13项（含实际本地及 native 回执写方）、原API参数1项、回复10项通过，
+Core/contracts all-targets Clippy `-D warnings` 通过；Rust原契约往返13项通过。
+首次管理101真实暴露 tombstone 联表更新 `version` 歧义，已改为 `d.version+1`，
+首轮12通过／1失败原件未删。native 回执夹具进入原写方，不冒称 Temporal/OpenBao RPC。
+独立库末次原查询 Tenant／Invocation／AE 各为0，所有夹具写入已回退。
+
+仅在私有执行副本主动移除冻结版本守卫、放行部分删除回执、将 Schedule/manual
+回复误放 Thread，原目标分别 native101／各一项真实失败；随后三个生产源逐字
+cmp0还原并恢复组合0。UI 原目标47通过／171过滤，共享类型0；缺失 canRun 放行与
+run UNKNOWN 挡删除的两个生产变异实际2失败／exit1，还原后47通过。
+TS原契约14项、Go/Dart新往返各1项通过，四侧 gen/check、registry 和最终 i18n check0。
+初次 pnpm PATH、fork worker启动失败、纯 jsdom 导入100570ms的I/O等待及副本漏固定
+Tailwind输入均保留；没有延长测试timeout、更换worker pool或改生产样式逃过门禁。
+
+关键原件 SHA256：
+
+- `rust-management.log`：`5f007e11b38c4f4979f0f81237937a5accd75ced6e1ecbd9eb59adbf06faa65f`。
+- `rust-management-restored.log`：`49d92b6b3d395a99ab2a97154a2c20f3375cd8ad99b13bc4846df4623dd8a8eb`。
+- `clippy-restored.log`：`c55dae6e4f9da5c6f0948e8f810b5dfe46928f8eef7cd2063237b41a6d5a3f09`。
+- `rust-manual-mutant.log`：`00ed34cc576f8460f3edf304bc45d6a692a5e2f67ddc2e5ce5ed126a7cd8e07b`。
+- `rust-management-mutant.log`：`3b21aa34168ca7e7fe70f5c0524481cf216458a4976403d99792515f1f066bec`。
+- `rust-reply-mutant.log`：`785c8046482cbcf6452244a3b78fd8a75346ec5996d0288a0133432a959b4edb`。
+- `ts-pages-restored.log`：`7db4867ea0f416417192ca865a019172632e98d69977460beaf81c5dd58be053`。
+- `ts-pages-mutant.log`：`220e689d9e655daa23a499bec24e5d311c727240a716a683dc98067e19a4c29d`。
+
+手动 OIDC/BFF 权限、首次真实 Start、Relay/OpenMeter 业务终态与 native 删除RPC未联合
+端到端验收；该库的 writer 目标不覆盖完整 submit_manual 调用链。未发模型或消息、
+不改业务额度／权限／配置、不跑全量、不构建新产品或部署。本节不将旧客户端产物
+算成本功能产物，不宣称实现已提交、上线或用户业务已通过。
+
+Mobile 单列后置回执：原固定 Flutter3.41.7／Dart3.11.5 镜像
+`sha256:644e3cea0a8440ce75804b67ceab77b16a87b39d9e9d89b07aceca7a98af1aa3`，
+4CPU／8GiB／swap0、既有 Data SDK 与 pub 缓存；原 `platform_pages_test.dart` 目标。
+首轮34466 exit1为稀疏验证副本漏原固定 theme/auth/test-support 输入、97级联错误，
+`.first` 原件保留；仅补缺20db源，未改生产逻辑逃过。恢复47195 actual0，
+离线 enforce-lockfile pub、原两文件 format、原三文件 analyze 全0，113/113通过。
+私有 DELETED 显示误映射 Disabled，52028 actual1／111通过2失败，en/zh原line173
+分别抓到缺失 Deleted／已删除。随后两个owned源与冻结qEF及联合lci逐字cmp0；
+仅原页面目标 --no-pub 恢复82648 native0／113通过，不重复pub/analyze/format。
+最终容器外层actual0；本处是同源两消费者的私有窄验证，不冒称联合full或设备验收。
+
+- `flutter-analyze.log.first`：`ea23b35ac4fac85e57ee59a68684d57a037f4665ecca569814a5019063ba9ea7`。
+- `flutter-pages.log.baseline`：`2aa195d0c7be719de47e75f3442948083699823a6e8c6b868fd4e66503e7c143`。
+- `flutter-pages.log.mutant`：`31e442e32af07e7aa0f0551a7ad18a883de1fee655edf744bd6aea1056271990`。
+- `flutter-pages-restored-final.log`：`125c5ff5a55cf776c9b492810428caf0987dd2e08e86304496312df3a3f51d58`。
+
+## 原生恢复 RPC 的受限错误诊断（2026-10-06）
+
+本增量基于 `2da4f033e019c96cc3f563329458ef92e7699a42`，只修改 Core
+`agent_runtime.rs` 及其事后检查，不修改 Runtime、契约、Workflow、业务状态或容量。
+输入/依据为 DD-48、SS-COD-APP、设计 `12` §2、`19` §4 与 RB-07：恢复必须观察
+原 thread，缺少 native history 不等于未执行，原生拒绝也不是业务失败证明。
+实际调用方为 `agent_task::advance → agent_session::resume_existing →
+Supervisor::resume_thread → Process::rpc_owned`。现有 reader 已收到的 JSON-RPC
+错误原先被直接折叠为 `RuntimeError::Unknown`，错误码和可安全分类的原因均丢失。
+
+实现沿现有结构化日志，仅记录 Installation、generation、原请求 ID、固定方法名、
+经 UUID 解析的原请求 thread ID、数字 code 与封闭错误类别。方法不在原白名单时只记
+`UNRECOGNIZED_METHOD`；任意 `message/data`、参数、凭据、正文、原生配置与路径都不记录。
+`THREAD_NOT_FOUND/THREAD_CLOSING` 只在 `thread/resume` 的 `-32600` 错误与本次
+确切 thread 的固定文案全部匹配时成立；其他错误只按原生数值码归类。发送/读取超时、
+传输/协议失败、thread 投影校验失败分别标明原阶段。所有返回和 UNKNOWN 语义保持原状，
+不增加重试、释放槽位、原生执行或新的诊断持久权威。
+
+固定源码证据：`/volumes/kailo/.references/codex`，commit
+`7498521d288b9b3b96ffba4eedf089d8d6e06a84`，
+`codex-rs/app-server/src/error_code.rs::{invalid_request,server_draining_error}` 与
+`codex-rs/app-server/src/request_processors/thread_processor.rs::{thread_resume_inner,thread_store_resume_read_error}`。
+原生错误可能含敏感内容，因此不是裁剪后保留原文，而是仅输出上述确定映射。
+
+现场只读元数据证明旧 db6 的恢复请求持续到达原生 `message_processor::process_request`；
+现有日志未记录其原生错误 payload，stdio 模式也没有可旁读的 daemon control socket。
+未读活 pipe、未启动第二 Runtime、未重发任务。本增量尚未部署时不能据此宣布已取得该
+旧任务的准确错误或已收敛。合批投递后，下一次原 Workflow 恢复调用即可提供安全分类；
+即使返回 `THREAD_NOT_FOUND`，仍必须保留业务 UNKNOWN，不能推定未执行或强放容量。
+
+实际后置验证：固定 SDK `10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+回读 4 CPU / 8 GiB、memory+swap 同限额、Cargo16 与 Data cache；独立
+`runtime_recovery_verify_porc8f` 只供 Process 原 advisory ownership 夹具，迟到回执用原
+隔离 82 迁移库 `runtime_receipt_xvkujx`，均未访问业务库。原组合命令：
+
+```sh
+cargo fmt -p platform-core --check
+cargo test --locked -p platform-core agent_runtime::diagnostic_tests -- --include-ignored
+cargo test --locked -p platform-core agent_runtime::activity_tests
+cargo test --locked -p platform-core receipt_late_native_start_survives_rpc_timeout_and_unrelated_read -- --ignored
+cargo clippy --locked -p platform-core --all-targets -- -D warnings
+```
+
+数据库地址分别由 `RUNTIME_RECOVERY_TEST_DATABASE_URL` 与
+`AGENT_INVOKE_TEST_DATABASE_URL` 提供；前者强制隔离库名前缀
+`runtime_recovery_verify_`。诊断 2/2、原 activity 9/9（另 3 ignored）、显式迟到回执
+1/1 与 Clippy 全部通过，组合进程 `6081` 实际退出 0。真实 stdio 错误响应注入包括
+确定 thread 错误、敏感 message/data、非法 code；原 RPC 消费者仍 UNKNOWN，仅一次请求，
+捕获的实际结构化日志无敏感原文。未执行另外两项 ignored 数据库目标，不以此替代 full。
+
+原件在 `/volumes/data/kailo/tmp/codex-runtime-recovery-diagnostic-20261006.POrc8f/`：
+`targeted-complete-input.log` SHA256
+`e472a046cd35ac4127638ee5a589f119a5f5799c81c90a76daba97922be0b481`。
+初次 fmt 的 Buzz manifest 遗漏退出 1；两次编译分别因验证副本未纳入契约输入、输入复制
+未完成退出 101，保留 `targeted.log`、`targeted-restored.log`。补全固定源码并逐字比对
+后通过；没有修改契约、门禁或生产输入。未单独 full、构建镜像、提交、部署或模型调用。
+
+生产变异只在原执行副本跳过 `rpc_owned` 的 RESPONSE `emit`，实际编译成功后同一
+`rpc_rejection_logs_only_correlated_metadata_and_remains_unknown` 断言日志数 `0 != 1`，
+进程 `13862` 退出 101。逐字还原、生产源与测试分别 cmp 0 后，原同目标（`--bin
+platform-core -- --ignored`）进程 `33126` 退出 0、1/1，通过后未再修改产品字节。
+`mutation.log` SHA256
+`a63a30b7e3d86e8d9782e8699856ef9b9ed7aa9e902ff77266e42ae876c85e02`；
+`mutation-restored.log` SHA256
+`1ec310091e01b93a09d6bed54d2085e1ed77df7d95472297e2dd43a1f4ca2ece`。

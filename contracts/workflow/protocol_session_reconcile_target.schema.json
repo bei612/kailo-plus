@@ -1,0 +1,20 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"workflow/protocol_session_reconcile_target.schema.json",
+  "title":"ProtocolSessionReconcileTarget","type":"object","additionalProperties":false,
+  "description":"DD-90: immutable first UNKNOWN input for the original Session's one Workflow.",
+  "required":["actionExecutionId","protocolSessionId","sessionVersion","workflowId","bindingId","releaseId","projectionGeneration","actionDefinitionId","baseRevision","nativeObjectRef","correlationRef"],
+  "properties":{
+    "actionExecutionId":{"type":"string","format":"uuid"},
+    "protocolSessionId":{"type":"string","format":"uuid"},
+    "sessionVersion":{"type":"integer","minimum":1},
+    "workflowId":{"type":"string","minLength":1},
+    "bindingId":{"type":"string","format":"uuid"},
+    "releaseId":{"type":"string","format":"uuid"},
+    "projectionGeneration":{"type":"integer","minimum":1},
+    "actionDefinitionId":{"type":"string","format":"uuid"},
+    "baseRevision":{"type":"string","minLength":1},
+    "nativeObjectRef":{"type":"string","minLength":1},
+    "correlationRef":{"type":"string","minLength":1}
+  }
+}

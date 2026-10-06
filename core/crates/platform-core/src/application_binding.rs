@@ -82,6 +82,7 @@ pub(crate) struct Requested {
     config: Value,
     config_digest: String,
     secret_refs: Vec<Value>,
+    model_mode: String,
     retain: bool,
 }
 
@@ -104,7 +105,11 @@ fn requested(value: &Value) -> Result<Requested, Refusal> {
         ],
         &["nativeScopeRef"],
     )?;
-    if value["modelCallMode"] != "NONE" || value["callIdentityMode"] != "INSTANCE_SERVICE" {
+    if !matches!(
+        value["modelCallMode"].as_str(),
+        Some("NONE" | "PLATFORM_LLM_ROUTE")
+    ) || value["callIdentityMode"] != "INSTANCE_SERVICE"
+    {
         return Err(blocked());
     }
     let categories = value["capabilityCategories"]
@@ -173,6 +178,7 @@ fn requested(value: &Value) -> Result<Requested, Refusal> {
         config_digest: collab_bridge::limits::canonical_digest(&config),
         config,
         secret_refs,
+        model_mode: text(value, "modelCallMode")?.into(),
         retain: value["retainOnTenantDelete"]
             .as_bool()
             .ok_or_else(invalid)?,
@@ -234,12 +240,17 @@ async fn approved_release(
             manifest["frontendDelivery"]["mode"].as_str(),
             Some("NONE" | "NATIVE_PAGE")
         )
-        || manifest["allowedModelCallModes"] != json!(["NONE"])
         || !crate::capability_contract::schema_validator(&schema, &BTreeMap::new())?
             .is_valid(&request.config)
     {
         return Err(blocked());
     }
+    crate::model_route::application::configuration(
+        &request.model_mode,
+        &request.config,
+        &json!(request.categories),
+        &manifest,
+    )?;
     if manifest["frontendDelivery"]["mode"] == "NATIVE_PAGE" {
         crate::application_page::entry(&manifest, &request.config)?;
     }
@@ -480,12 +491,13 @@ pub(crate) async fn prewrite(
              adapter_service_ref,native_instance_ref,native_scope_ref,isolation_mode,call_identity_mode,
              capability_categories,normalized_config,config_digest,secret_refs,model_call_mode,
              retain_on_tenant_delete,state,version,created_by_action_execution_id,projection_action_execution_id)
-            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'INSTANCE_SERVICE',$11,$12,$13,$14,'NONE',$15,
+            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'INSTANCE_SERVICE',$11,$12,$13,$14,$17,$15,
                 'PROVISIONING',1,$16,$16) returning version")
             .bind(request.id).bind(ae.tenant_id).bind(ae.workspace_id).bind(text(&manifest,"componentTypeKey")?)
             .bind(request.release).bind(request.service).bind(&request.adapter_ref).bind(&request.native_instance)
             .bind(&request.native_scope).bind(&request.isolation).bind(json!(categories)).bind(&request.config)
             .bind(&request.config_digest).bind(json!(request.secret_refs)).bind(request.retain).bind(ae.id)
+            .bind(&request.model_mode)
             .fetch_one(&mut **tx).await?;
         let assigned = sqlx::query("update identity.service_principal set component_binding_kind='APPLICATION',component_binding_id=$1
             where principal_id=$2 and component_binding_id is null")
@@ -641,12 +653,17 @@ pub(crate) async fn advance(
             projection::permissions(&state,&ae).await?;
             projection::metering(&state,&ae).await?;
             gateway::publish(&state,&ae).await?;
+            crate::model_route::application::provision(&state,&ae).await?;
             finish_generation(&state,&ae,true).await?;
             return Ok(json!({"bindingId":id,"status":"COMPLETED","waitingReason":"NONE"}));
         }
         if status=="DISABLING" || (input["cancelRequested"]==true && ae.action_key==CREATE) {
             projection::revoke(&state,&ae).await?;
             gateway::revoke(&state,&ae).await?;
+            crate::model_route::application::revoke(&state,&ae).await?;
+            if !crate::protocol_session::maintenance::drain_binding(&state,id).await? {
+                return Ok(json!({"bindingId":id,"status":"RUNNING","waitingReason":"UNKNOWN_EXTERNAL_RESULT"}));
+            }
             let executions:Vec<Uuid>=sqlx::query_scalar("select id from admission.external_execution
                 where component_binding_id=$1 and tenant_id=$2 order by id")
                 .bind(id).bind(ae.tenant_id).fetch_all(&state.pool).await?;
@@ -894,7 +911,9 @@ async fn finish_generation(
                       and result.target_id=a.target_id and result.parameter_hash=a.parameter_hash
                       and result.event_type='RESULT' and result.result_code in ('SUCCEEDED','FAILED')))")
             .bind(ae.target_id).fetch_one(&mut *tx).await?;
-        if pending {
+        if pending
+            || crate::protocol_session::maintenance::binding_pending(&mut tx, ae.target_id).await?
+        {
             return Err(Refusal::Precondition(ReasonCode::ProjectionDelayed));
         }
         // Routes and every frozen consumer are terminal before retiring the

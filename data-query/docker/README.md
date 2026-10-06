@@ -9,7 +9,11 @@
 
 ## Volume
 
-Shared data using `data` volume.
+Engine bootstrap retains the original `data` volume. The native UI database
+uses `native-ui-data`; Qdrant uses `native-qdrant-data`. Neither is mounted
+in Core or another capability service. This split is for a new independent
+deployment; do not apply it to an existing installation as an implicit data
+migration. Preserve its database, index and original encryption keys first.
 
 Path structure as following:
 
@@ -22,21 +26,114 @@ Path structure as following:
 
 - Check out [Network drivers overview](https://docs.docker.com/engine/network/drivers/) to learn more about `bridge` network driver.
 
+The original native stack has its own Compose project and `wren` network,
+not Core's default application network. Qdrant is only on the internal
+`wren-ai-service-data` network; the AI service is its sole native client.
+Only the explicitly selected query-governance overlay connects the native UI
+and its credential agent to an existing private platform protocol network.
+
 ## How to start with OpenAI
 
-1. copy `.env.example` to `.env` and modify the OpenAI API key.
-2. copy `config.example.yaml` to `config.yaml` for AI service configuration.
-3. start all services: `docker-compose --env-file .env up -d`.
-4. stop all services: `docker-compose --env-file .env down`.
+1. From the apps root, copy the sole `deploy/local/.env.example` to
+   `deploy/local/.env` if that deployment file does not already exist. Fill its
+   `WREN_*` section; do not create a second `component.env` or overwrite an
+   existing deployment file. The native `.env.example` is only a pointer.
+   Set an independent `WREN_COMPOSE_PROJECT_NAME` and actual source-built
+   `WREN_UI_IMAGE`, `WREN_AI_IMAGE` and `WREN_GATEWAY_IMAGE` digest references.
+   The fixed Engine/Ibis/bootstrap/Qdrant dependencies preserve the original
+   GenBI recipe, not an original UI/AI replacement. Registered build entries
+   already exist as `tools/build-upstream.sh data-query-ui` and
+   `tools/build-upstream.sh data-query-ai-service`; run them only in the normal
+   resource-checked release batch with the real registry supplied.
+2. Deliver native OIDC/cookie keys and model provider credentials in the two
+   separate component-only files. No platform `.env` is mounted or sourced.
+   `WREN_UI_SECRET_ENV_FILE` is a third component-only file: it supplies the
+   original `PG_URL` when `WREN_DB_TYPE=pg`, and may be empty for SQLite.
+   Database passwords do not belong in the sole non-secret deployment file.
+   Deliver the original native database encryption password/salt as owner-only
+   files under `WREN_NATIVE_DATA_KEY_DIR`; no values belong in this repository.
+3. Copy `data-query/docker/config.example.yaml` to the private
+   `WREN_PROJECT_DIR/config.yaml` and
+   configure actual native model/embedding providers. This is a native service
+   configuration, not proof of a platform ModelRoute or billing integration.
+   Set `WREN_PROJECT_DIR` and `WREN_LOCAL_STORAGE` to existing absolute native
+   directories. Bind mounts reject implicit creation of missing config/data
+   paths; retain the original native files and independent data volumes.
+4. Validate without printing resolved secrets:
+   `docker compose --env-file deploy/local/.env -f data-query/docker/docker-compose.yaml config --quiet`.
+5. After release-level checks, use the existing entry:
+   `docker compose --env-file deploy/local/.env -f data-query/docker/docker-compose.yaml up -d --no-build`.
+   Stop with the same files and `down`, never `down -v` for retained data.
+
+The UI image's original startup now loads the two DATA_KEY files before its
+original Knex migration and Next standalone server. Missing, empty, symlinked or
+group/world-readable key files abort startup without logging their contents.
+The public upstream encryption defaults are not used by this release entry.
+The original `knexfile.js` continues to select this component's PostgreSQL
+(`DB_TYPE=pg`, component-only `PG_URL`) or SQLite (`SQLITE_FILE`) database.
+The sole deployment inputs are `WREN_DB_TYPE` and `WREN_SQLITE_FILE`; Compose
+projects them to the original native names. These are native deployment
+settings, never Core database credentials. Compose forwards them
+and `WREN_UI_BIND_ADDRESS`/`WREN_UI_PORT`; the entrypoint does not overwrite
+the configured database, address or port. Keep the Gateway upstream and AI
+service endpoint consistent with that port. A nonzero migration exit never
+starts Next. A key change does not re-encrypt old native data: keep
+the same keys with database backups and perform any rotation through native
+re-encryption, not by replacing a deployment file.
+
+Engine startup waits for the one-shot original bootstrap to finish successfully.
+The existing Native Gateway remains the only published browser port. The UI,
+AI Service, Ibis, Engine and database/index storage are not exposed as host ports.
+
+The original AI provider `src/providers/engine/wren.py::WrenUI.execute_sql`
+and startup `src/force_deploy.py::force_deploy` now authenticate the existing
+GraphQL callback using the issuer's standard client-credentials grant. This is
+a component-specific native service account, not a HUMAN/platform session or a
+Core ServicePrincipal privilege. Its issued JWT must have the same dedicated
+UI audience and signed instance entitlement checked by the existing JOSE
+middleware. GraphQL is not exempted. No default account/grant is provisioned.
+
+Deliver `WREN_AI_IDENTITY_DIR/identity.json` with exactly `uiEndpoint`,
+`publicOrigin`, `tokenEndpoint`, `clientId` and `secretFile`. The private
+endpoint uses the configured `WREN_UI_PORT`; the public origin matches the actual browser
+registration. The token endpoint comes from that issuer's real registration,
+not a user request. The file referenced by `secretFile` is an owner-only
+component-client credential in the same mounted directory. Neither the UI
+encryption keys nor browser OIDC/cookie keys are mounted in the AI service.
+Every callback re-reads this delivery and obtains a fresh token, so rotations
+and issuer denial are not hidden by a local cache. Both HTTP calls reject
+redirects; missing delivery/token failure refuses the callback without exposing
+credentials or issuing an unauthenticated query.
+
+`force_deploy` does not automatically retry the GraphQL mutation after a lost
+response: failure remains visible and does not prove the native mutation was
+not applied. This is a per-invocation guarantee, not cross-restart deduplication.
+The original AI entrypoint invokes this optional startup mutation when
+`SHOULD_FORCE_DEPLOY` is set from `WREN_SHOULD_FORCE_DEPLOY`; a later service restart or an explicit invocation
+can invoke it again. Inspect native deployment state before such recovery;
+no native task ID or platform workflow is fabricated for this startup operation.
+The supplied environment template leaves this optional switch empty. Native UI
+deployment remains available; ordinary service restarts do not force deployment.
+
+The original UI/AI/Engine pipeline remains native. This source slice neither
+invokes a model nor claims a live datasource, OIDC registration, image build or
+real question-to-SQL acceptance. Those deployment facts remain prerequisites.
 
 ### Optional
 
-- If your port 3000 is occupied, you can modify the `HOST_PORT` in `.env`.
+- Select `WREN_PUBLIC_PORT` in `deploy/local/.env`; no public port is selected
+  by default. `WREN_PUBLIC_ORIGIN` derives from `PUBLIC_HOST` and that port,
+  while `WREN_PUBLIC_BIND_ADDR` derives from `PUBLIC_BIND_ADDR`.
+- Wren is not included in the platform Compose. Its absent inputs do not
+  prevent Core startup; required inputs fail closed only on explicit Wren
+  Compose invocation. Do not use a disabled profile to bypass missing native
+  credentials: Compose interpolates required variables before profile selection.
 
 ## How to start with custom LLM
 
 To start with a custom LLM, the process is similar to starting with OpenAI. The main difference is that you need to modify the `config.yaml` file
-that we created on the previous step. After modifying the file, you can restart the services by running `docker-compose --env-file .env up -d --force-recreate wren-ai-service`.
+that we created on the previous step. After verifying the configuration and any native deployment response, use the same original entry from the apps root:
+`docker compose --env-file deploy/local/.env -f data-query/docker/docker-compose.yaml up -d --no-build wren-ai-service`.
 
 For detailed information on how to modify the configuration for different LLM providers and models, please refer to the [AI Service Configuration](../wren-ai-service/docs/configuration.md).
 This guide provides comprehensive instructions on setting up various LLM providers, embedders, and other components of the AI service.
@@ -55,13 +152,17 @@ Deployment inputs (no credential values belong in source):
 
 - `WREN_GATEWAY_IMAGE`: the verified source-built AgentGateway image digest.
 - `WREN_GATEWAY_HTTP_PORT` and `WREN_GATEWAY_ADMIN_PORT`: explicit native
-  Gateway ports; admin remains bound only to loopback. `HOST_PORT` is the
-  existing public port input. The UI private port 3000 follows its original
-  Dockerfile's `PORT` and `EXPOSE`, not a new platform listener.
-- `WREN_OIDC_ISSUER`, `WREN_OIDC_CLIENT_ID`: the native service's dedicated
-  OIDC registration, not the platform browser client.
-- `WREN_OIDC_REDIRECT_URI`: the externally reachable native origin followed
-  by `/oauth/callback`, registered exactly at that issuer.
+  Gateway ports; admin remains bound only to loopback. `WREN_PUBLIC_PORT` is the
+  public port input. `WREN_UI_PORT` configures the UI listener and
+  both the Gateway upstream and AI callback endpoint; `EXPOSE` is metadata,
+  not an instruction to override the configured port.
+- `OIDC_ISSUER`, `WREN_OIDC_CLIENT_ID`: the same public identity issuer,
+  with the native service's dedicated registration, not the platform browser
+  client. Compose projects the sole issuer to the existing native Gateway
+  `WREN_OIDC_ISSUER` consumer.
+- `WREN_PUBLIC_ORIGIN`: Compose derives the native Gateway's existing
+  `WREN_OIDC_REDIRECT_URI` by appending `/oauth/callback`; register that exact
+  URI at the issuer. Do not independently configure another callback/issuer.
 - `WREN_OIDC_SECRET_ENV_FILE`: a component-specific, controlled delivery file
   containing `WREN_OIDC_CLIENT_SECRET` and a separate `OIDC_COOKIE_SECRET`
   (the original Gateway's 32-byte AES key, hex-encoded); never point it at the
@@ -172,6 +273,22 @@ locator/version and lifecycle time. A previously rendered template alone cannot
 satisfy that fresh audit requirement. The native UI and Agent must run with the
 explicitly configured delivery ownership; mounting the directory does not grant
 new OpenBao policy permissions.
+
+The overlay's non-secret paths, versions and endpoint metadata are also in
+the sole `deploy/local/.env` Wren section. Use the same file for both original
+Compose inputs, never a second environment authority:
+
+```sh
+docker compose --env-file deploy/local/.env \
+  -f data-query/docker/docker-compose.yaml \
+  -f data-query/docker/query-governance.yaml config --quiet
+```
+
+After the real release/binding/native-role prerequisites are satisfied, the
+same command with `up -d --no-build` is the existing runtime entry. Blank overlay
+inputs reject that explicit launch; they do not provision an AppRole, namespace,
+binding, service identity, grant or datasource. Successful config parsing alone
+does not establish native login, read-only query execution or governed disclosure.
 
 `/platform-adapter/v1/handshake` and `/validate_binding` require the existing
 `application_binding.create` ActionToken for this exact binding and fresh Core

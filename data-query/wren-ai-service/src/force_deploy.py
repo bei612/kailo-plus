@@ -7,26 +7,43 @@ import os
 from pathlib import Path
 
 import aiohttp
-import backoff
 from dotenv import load_dotenv
+from src.providers.engine.native_identity import native_headers
 
 if Path(".env.dev").exists():
     load_dotenv(".env.dev", override=True)
 
 
-@backoff.on_exception(backoff.expo, aiohttp.ClientError, max_time=60, max_tries=3)
 async def force_deploy():
+    # A lost response cannot establish that this mutation was not applied.
+    # Do not automatically replay it; leave the startup failure visible.
     async with aiohttp.ClientSession() as session:
+        endpoint = os.environ["WREN_UI_ENDPOINT"]
+        headers = await native_headers(
+            session, endpoint, aiohttp.ClientTimeout(total=60)
+        )
         async with session.post(
-            f"{os.getenv("WREN_UI_ENDPOINT", "http://wren-ui:3000")}/api/graphql",
+            f"{endpoint}/api/graphql",
+            headers=headers,
+            allow_redirects=False,
             json={
                 "query": "mutation Deploy($force: Boolean) { deploy(force: $force) }",
                 "variables": {"force": True},
             },
             timeout=aiohttp.ClientTimeout(total=60),  # 60 seconds
         ) as response:
+            response.raise_for_status()
             res = await response.json()
-            print(f"Forcing deployment: {res}")
+            data = res.get("data") if isinstance(res, dict) else None
+            deploy = data.get("deploy") if isinstance(data, dict) else None
+            if (
+                not isinstance(deploy, dict)
+                or deploy.get("status") != "SUCCESS"
+                or res.get("errors")
+                or deploy.get("error")
+            ):
+                raise RuntimeError("Native model deployment was not confirmed")
+            print("Native model deployment response confirmed")
 
 
 if os.getenv("ENGINE", "wren_ui") == "wren_ui":

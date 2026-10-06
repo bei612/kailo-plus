@@ -98,10 +98,45 @@ pub fn enabled() -> bool {
 }
 
 /// A provider attempt is durably identified before dispatch; a lost completion stays pending.
-pub(super) async fn begin_usage(trace_id: Option<String>, started_at: DateTime<Utc>, attempt: i64) -> anyhow::Result<String> {
+pub(super) struct DispatchIdentity {
+	user: String,
+	key_id: Option<String>,
+	key_hash: String,
+	metadata: Value,
+	application: bool,
+}
+
+impl DispatchIdentity {
+	pub(super) fn from_claims(claims: Option<&crate::http::apikey::Claims>) -> anyhow::Result<Option<Self>> {
+		let Some(claims) = claims else { return Ok(None) };
+		let application=claims.metadata.get("componentBindingId").is_some();
+		if !application && claims.metadata.get("user").and_then(Value::as_str).is_none() { return Ok(None) }
+		let string = |key: &str| claims.metadata.get(key).and_then(Value::as_str)
+			.filter(|s| !s.is_empty()).ok_or_else(|| anyhow::anyhow!("application model identity is incomplete"));
+		let user = string("user")?;
+		if application {
+			anyhow::ensure!(user == string("servicePrincipalId")?, "application model principal mismatch");
+		}
+		Ok(Some(Self {
+			user: user.to_owned(),
+			key_id: if application { Some(string(crate::config_store::API_KEY_ID_METADATA)?.to_owned()) } else { None },
+			key_hash: format!("sha256:{}", claims.key.sha256().as_str()),
+			metadata: claims.metadata.clone(),
+			application,
+		}))
+	}
+
+	fn validate_resource(&self, value: &Value) -> anyhow::Result<()> {
+		anyhow::ensure!(value.get("keyHash").and_then(Value::as_str) == Some(self.key_hash.as_str())
+			&& value.get("metadata") == Some(&self.metadata), "application model credential changed");
+		Ok(())
+	}
+}
+
+pub(super) async fn begin_usage(trace_id: Option<String>, started_at: DateTime<Utc>, attempt: i64, application: Option<DispatchIdentity>) -> anyhow::Result<String> {
 	let store = REQUEST_LOG_STORE.get().ok_or_else(|| anyhow::anyhow!("request log database is not configured"))?;
 	let id = uuid::Uuid::now_v7().to_string();
-	store.request(|tx| LogStoreMsg::BeginUsage { id: id.clone(), trace_id, started_at, attempt, tx }).await?;
+	store.request(|tx| LogStoreMsg::BeginUsage { id: id.clone(), trace_id, started_at, attempt, application, tx }).await?;
 	Ok(id)
 }
 
@@ -200,6 +235,7 @@ enum LogStoreMsg {
 		trace_id: Option<String>,
 		started_at: DateTime<Utc>,
 		attempt: i64,
+		application: Option<DispatchIdentity>,
 		tx: QueryResponse<()>,
 	},
 	Search {
@@ -431,8 +467,8 @@ async fn process_log_store_msg(
 	msg: LogStoreMsg,
 ) -> bool {
 	match msg {
-		LogStoreMsg::BeginUsage { id, trace_id, started_at, attempt, tx } => {
-			let _ = tx.send(backend.begin_usage(&id, trace_id.as_deref(), started_at, attempt).await);
+		LogStoreMsg::BeginUsage { id, trace_id, started_at, attempt, application, tx } => {
+			let _ = tx.send(backend.begin_usage(&id, trace_id.as_deref(), started_at, attempt, application.as_ref()).await);
 			false
 		},
 		LogStoreMsg::Record(pending) => {
@@ -689,6 +725,9 @@ pub struct UsageOutboxRequest {
 	/// Filter the entries and their durable dispatch set by the same exact trace.
 	#[serde(default)]
 	pub trace_id: Option<String>,
+	/// Exact verified API-key user for an APPLICATION binding's full dispatch set.
+	#[serde(default)]
+	pub gateway_user: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -704,6 +743,8 @@ pub struct UsageOutboxResponse {
 	/// A nonempty trace set whose durable dispatches all have committed outbox entries.
 	/// It does not certify provider quantities or OpenMeter settlement.
 	pub request_set_complete: bool,
+	/// All stored APPLICATION credentials for this exact user are tombstoned.
+	pub credential_revoked: bool,
 }
 
 /// One completed LLM request as recorded at completion. Prompt and completion content is not
@@ -731,7 +772,7 @@ pub struct UsageOutboxEntry {
 }
 
 impl UsageOutboxResponse {
-	fn new(request: &UsageOutboxRequest, entries: Vec<UsageOutboxEntry>, counts: (i64, i64, i64)) -> Self {
+	fn new(request: &UsageOutboxRequest, entries: Vec<UsageOutboxEntry>, counts: (i64, i64, i64), credential_revoked: bool) -> Self {
 		let next_cursor = entries
 			.last()
 			.map(|e| e.seq)
@@ -742,7 +783,10 @@ impl UsageOutboxResponse {
 			submitted_requests: counts.0,
 			pending_requests: counts.1,
 			untracked_requests: counts.2,
-			request_set_complete: request.trace_id.is_some() && counts.0 > 0 && counts.1 == 0 && counts.2 == 0,
+			request_set_complete: counts.1 == 0 && counts.2 == 0 &&
+				((request.trace_id.is_some() && counts.0 > 0) ||
+				(request.gateway_user.is_some() && credential_revoked)),
+			credential_revoked,
 		}
 	}
 }
@@ -1065,17 +1109,20 @@ impl Backend {
 		if request.trace_id.as_deref().is_some_and(|trace| trace.len() != 32 || !trace.bytes().all(|b| b.is_ascii_hexdigit())) {
 			anyhow::bail!("usage trace identity is invalid");
 		}
-		let (entries, counts) = match self {
+		if request.gateway_user.as_deref().is_some_and(|user| uuid::Uuid::parse_str(user).is_err()) {
+			anyhow::bail!("usage application identity is invalid");
+		}
+		let (entries, counts, credential_revoked) = match self {
 			Self::Sqlite(store) => store.usage_outbox(&request).await?,
 			Self::Postgres(store) => store.usage_outbox(&request).await?,
 		};
-		Ok(UsageOutboxResponse::new(&request, entries, counts))
+		Ok(UsageOutboxResponse::new(&request, entries, counts, credential_revoked))
 	}
 
-	async fn begin_usage(&self, id: &str, trace: Option<&str>, started_at: DateTime<Utc>, attempt: i64) -> anyhow::Result<()> {
+	async fn begin_usage(&self, id: &str, trace: Option<&str>, started_at: DateTime<Utc>, attempt: i64, application: Option<&DispatchIdentity>) -> anyhow::Result<()> {
 		match self {
-			Self::Sqlite(store) => store.begin_usage(id, trace, started_at, attempt).await,
-			Self::Postgres(store) => store.begin_usage(id, trace, started_at, attempt).await,
+			Self::Sqlite(store) => store.begin_usage(id, trace, started_at, attempt, application).await,
+			Self::Postgres(store) => store.begin_usage(id, trace, started_at, attempt, application).await,
 		}
 	}
 

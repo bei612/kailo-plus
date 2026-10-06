@@ -1,14 +1,81 @@
 import assert from 'node:assert/strict';
-import { generateKeyPairSync, randomBytes, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { createAdapter, queryDigest } from '../src/query-revision.mjs';
+import { canonical, createAdapter, queryDigest } from '../src/query-revision.mjs';
 
 const ids = Array.from({ length: 12 }, (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`);
 const args = { idempotencyKey: 'same-original-query', nativeObjectRef: ids[3] };
+
+test('original HUMAN PAT observe/cancel use metadata only and the same scoped UUID', async (t) => {
+  const argumentsValue = { protocolSessionId: ids[7], nativeObjectRef: ids[3], idempotencyKey: ids[7] };
+  for (const operation of ['observe', 'cancel']) {
+    await t.test(operation, async (nested) => {
+      const { state, invoke } = await setup(nested, { arguments: argumentsValue, operation, human: true });
+      const answer = await invoke({ path: `/platform-adapter/v1/${operation}` });
+      assert.equal(answer.status, 200);
+      assert.deepEqual(await answer.json(), { protocolSessionId: ids[7], nativeObjectRef: ids[3], nativeState: 'ABSENT' });
+      assert.equal(state.peps, 2);
+      assert.deepEqual(state.nativeReads, [`/v2/auth/token/document/${ids[7]}/${ids[3]}`]);
+      assert.equal(state.queries.length, 0);
+    });
+  }
+});
+
+test('PAT unknown, extra secret fields or unconfirmed DELETE are never absence', async (t) => {
+  const argumentsValue = { protocolSessionId: ids[7], nativeObjectRef: ids[3], idempotencyKey: ids[7] };
+  for (const change of [
+    { operation: 'observe', nativeStatus: 503 },
+    { operation: 'observe', nativeObservation: { protocolSessionId: ids[7], nativeObjectRef: ids[3], nativeState: 'ABSENT', accessToken: 'must-not-disclose' } },
+    { operation: 'cancel', nativeObservation: { protocolSessionId: ids[7], nativeObjectRef: ids[3], nativeState: 'ACTIVE',
+      nativeSessionRef: ids[7], expiresAt: new Date(Date.now() + 60000).toISOString() } },
+  ]) {
+    await t.test(change.operation, async (nested) => {
+      const { invoke } = await setup(nested, { arguments: argumentsValue, human: true, ...change });
+      const answer = await invoke({ path: `/platform-adapter/v1/${change.operation}` });
+      assert.equal(answer.status, 503);
+      assert.deepEqual(await answer.json(), { error: 'adapter request refused' });
+    });
+  }
+});
+
+test('an Agent or unavailable original-ref PEP cannot use PAT lifecycle', async (t) => {
+  const argumentsValue = { protocolSessionId: ids[7], nativeObjectRef: ids[3], idempotencyKey: ids[7] };
+  const agent = await setup(t, { arguments: argumentsValue, operation: 'cancel' });
+  assert.equal((await agent.invoke({ path: '/platform-adapter/v1/cancel' })).status, 401);
+  assert.equal(agent.state.nativeReads.length, 0);
+  const denied = await setup(t, { arguments: argumentsValue, operation: 'cancel', human: true,
+    pep: (_state, response) => reply(response, 403, {}) });
+  assert.equal((await denied.invoke({ path: '/platform-adapter/v1/cancel' })).status, 503);
+  assert.equal(denied.state.nativeReads.length, 0);
+});
+
+test('original accepted save verifies its exact historical VersionId, never another head', async (t) => {
+  const writeObservation = { phase: 'ACCEPTED', correlationRef: 'original-write', editors: 'human',
+    baseModifiedAt: '2026-10-05T00:00:00Z', bytesWritten: 7, nativeEtag: 'accepted-native-etag', resultRevision: 'accepted-version' };
+  const argumentsValue = { idempotencyKey: ids[7], nativeObjectRef: ids[3],
+    protocolReconcile: { protocolSessionId: ids[7], baseRevision: 'original-base', writeObservation } };
+  const versions = { Versions: [{ VersionId: 'different-current-head', IsHead: true, Size: '123', ETag: 'later' },
+    { VersionId: 'accepted-version', Size: '7', ETag: 'accepted-native-etag' }] };
+  const { state, invoke } = await setup(t, { arguments: argumentsValue, human: true, versions });
+  const answer = await invoke();
+  assert.equal(answer.status, 200);
+  assert.deepEqual(await answer.json(), { nativeObjectRef: ids[3], nativeRevision: 'accepted-version',
+    protocolSessionId: ids[7], correlationRef: 'original-write' });
+  assert.equal(state.peps, 2);
+  for (const version of [{ VersionId: 'accepted-version', Size: '7', ETag: 'other' },
+    { VersionId: 'accepted-version', Size: '8', ETag: 'accepted-native-etag' },
+    { VersionId: 'different', Size: '7', ETag: 'accepted-native-etag', IsHead: true },
+    { VersionId: 'accepted-version', Size: '7', ETag: 'accepted-native-etag', Draft: true }]) {
+    await t.test('mismatching native writer evidence', async (nested) => {
+      const fixture = await setup(nested, { arguments: argumentsValue, human: true, versions: { Versions: [version] } });
+      assert.equal((await fixture.invoke()).status, 503);
+    });
+  }
+});
 
 async function listen(server) {
   await new Promise((resolve, reject) => {
@@ -25,6 +92,7 @@ function reply(response, status, value) {
 
 async function setup(t, changes = {}) {
   const requestArguments = changes.arguments ?? args;
+  const operation = changes.operation ?? 'query_revision';
   const directory = await mkdtemp(join(tmpdir(), 'file-storage-adapter-'));
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const jwksFile = join(directory, 'jwks.json');
@@ -39,6 +107,14 @@ async function setup(t, changes = {}) {
   const versions = { Versions: [{ VersionId: 'older', MTime: '999999', IsHead: false },
     { VersionId: 'head-native-version', IsHead: true, PreSignedGET: { Url: 'must-not-disclose' }, ContentHash: 'not-a-revision' }] };
   const upstream = createServer(async (request, response) => {
+    if (request.url === '/hosting/discovery') {
+      state.discoveryReads = (state.discoveryReads ?? 0) + 1;
+      response.writeHead(changes.discoveryStatus ?? 200, { 'content-type': 'application/xml' });
+      return response.end(changes.discovery ?? `<wopi-discovery><net-zone name="external-http"><app name="word">
+        <action ext="docx" name="edit" urlsrc="${origin}/hosting/wopi/word/edit?&lt;thm=THEME_ID&amp;&gt;&lt;ui=UI_LLCC&amp;&gt;"/>
+        <action ext="docx" name="view" urlsrc="${origin}/hosting/wopi/word/view?&lt;thm=THEME_ID&amp;&gt;&lt;ui=UI_LLCC&amp;&gt;"/>
+      </app></net-zone></wopi-discovery>`);
+    }
     if (request.url === '/oidc/token') {
       assert.equal(request.headers.authorization, `Basic ${Buffer.from(`binding-client:${oidcSecret}`).toString('base64')}`);
       return reply(response, 200, { access_token: 'ephemeral-fixture-oidc', token_type: 'Bearer' });
@@ -50,7 +126,7 @@ async function setup(t, changes = {}) {
       for await (const chunk of request) body += chunk;
       const parsed = JSON.parse(body);
       assert.equal(parsed.bindingId, ids[0]);
-      assert.equal(parsed.operation, 'query_revision');
+      assert.equal(parsed.operation, operation);
       assert.deepEqual(JSON.parse(parsed.argumentsJson), requestArguments);
       if (changes.pep) return changes.pep(state, response, parsed);
       return reply(response, 200, { actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: `fresh-${state.peps}` });
@@ -61,6 +137,20 @@ async function setup(t, changes = {}) {
     }
     assert.equal(request.headers.authorization, `Bearer ${nativeSecret}`);
     state.nativeReads.push(request.url);
+    if (request.url === '/v2/auth/token/document') {
+      assert.equal(request.method, 'POST');
+      let body = '';
+      for await (const chunk of request) body += chunk;
+      state.patCreates = [...(state.patCreates ?? []), JSON.parse(body)];
+      response.setHeader('x-kailo-native-session-ref', changes.nativeSessionRef ?? ids[7]);
+      return reply(response, changes.nativeStatus ?? 200, { AccessToken: 'one-native-pat-fixture' });
+    }
+    if (request.url === `/v2/auth/token/document/${ids[7]}/${ids[3]}`) {
+      assert.equal(request.method, operation === 'cancel' ? 'DELETE' : 'GET');
+      return reply(response, changes.nativeStatus ?? 200, changes.nativeObservation ?? {
+        protocolSessionId: ids[7], nativeObjectRef: ids[3], nativeState: 'ABSENT',
+      });
+    }
     if (request.url === `/v2/n/node/${ids[2]}?Flags=WithVersionsAll`) return reply(response, 200, changes.root ?? root);
     if (request.url === `/v2/n/node/${ids[3]}?Flags=WithVersionsAll`) return reply(response, 200, changes.target ?? target);
     if (request.url === `/v2/n/node/${ids[10]}?Flags=WithVersionsAll`) return reply(response, 200, changes.authorized ?? {
@@ -81,7 +171,8 @@ async function setup(t, changes = {}) {
     cellsRestBaseUrl: `${origin}/v2`, cellsBearerFile: join(directory, 'native-credential'),
     actionTokenIssuer: `${origin}/issuer`, actionTokenAudience: 'file-storage-private-adapter', actionTokenJwksFile: jwksFile,
     corePepUrl: `${origin}/service/v1/adapter/pep_check`, oidcTokenUrl: `${origin}/oidc/token`, oidcClientId: 'binding-client',
-    oidcClientSecretFile: join(directory, 'oidc-credential'), timeoutMs: 3000, maxBodyBytes: 65536, listenHost: '127.0.0.1', listenPort: 1 };
+    oidcClientSecretFile: join(directory, 'oidc-credential'), timeoutMs: 3000, maxBodyBytes: 65536, listenHost: '127.0.0.1', listenPort: 1,
+    ...(changes.documentLaunch ? { documentLaunch: { cellsPublicOrigin: origin, documentServerOrigin: origin } } : {}) };
   const adapter = createAdapter(config);
   const adapterOrigin = await listen(adapter);
   t.after(async () => {
@@ -96,7 +187,11 @@ async function setup(t, changes = {}) {
       initiating_human_principal_id: ids[9], operation_id: ids[6], action_execution_id: ids[7],
       target_type: 'RESOURCE', target_id: ids[10], action_key: 'file_storage.read', action_definition_version: 1,
       delegation_id: ids[11], delegation_version: 1, result_exposure_policy_id: ids[9], result_exposure_policy_version: 1,
-      authorization_min_zed_token: 'original', normalized_parameter_hash: queryDigest(requestArguments), ...change };
+      authorization_min_zed_token: 'original', normalized_parameter_hash: createHash('sha256')
+        .update(canonical({ operation, arguments: requestArguments })).digest('hex'),
+      ...(changes.human ? { actor_principal_id: ids[9], agent_principal_id: undefined,
+        action_key: 'file_storage.open_edit@v1', delegation_id: undefined, delegation_version: undefined,
+        result_exposure_policy_id: undefined, result_exposure_policy_version: undefined } : {}), ...change };
     const encodedHeader = Buffer.from(JSON.stringify({ alg: 'ES256', kid: 'test-current', typ: 'JWT' })).toString('base64url');
     const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
     const signature = sign('sha256', Buffer.from(`${encodedHeader}.${payload}`), { key, dsaEncoding: 'ieee-p1363' }).toString('base64url');
@@ -105,7 +200,7 @@ async function setup(t, changes = {}) {
   async function invoke(options = {}) {
     return fetch(`${adapterOrigin}${options.path ?? '/platform-adapter/v1/query_revision'}`, {
       method: 'POST', headers: { authorization: `Bearer ${options.token ?? token()}`, 'content-type': 'application/json',
-        'idempotency-key': options.key ?? requestArguments.idempotencyKey }, body: options.raw ?? JSON.stringify(requestArguments),
+        'idempotency-key': options.key ?? requestArguments.idempotencyKey }, body: options.raw ?? canonical(requestArguments),
     });
   }
   return { state, token, invoke, target };
@@ -120,6 +215,53 @@ test('HTTP protocol reaches fixed native UUID + NodeVersions and discloses only 
   assert.equal(state.peps, 2);
   assert.equal(state.nativeReads.length, 3);
   assert.deepEqual(state.queries, [{ FilterBy: 'VersionsAll', Offset: 0, Limit: 0, Flags: ['WithMetaNone'] }]);
+});
+
+test('HUMAN execute selects ONLYOFFICE native discovery and posts one scoped native PAT', async (t) => {
+  for (const mode of ['VIEW', 'EDIT']) {
+    await t.test(mode, async (nested) => {
+      const input = { protocolSessionId: ids[7], reference: { nativeObjectRef: ids[3], nativeRevision: 'head-native-version' },
+        authorizationTargetNativeRef: ids[10], admittedMode: mode, theme: 'DARK', locale: 'zh-CN',
+        expiresAt: new Date(Date.now() + 60000).toISOString(), idempotencyKey: ids[7] };
+      const fixture = await setup(nested, { operation: 'execute', arguments: input, human: true, documentLaunch: true,
+        target: { Uuid: ids[3], Type: 'LEAF', Path: 'documents/root/authorized/report.docx', ContextWorkspace: { Uuid: ids[1] } } });
+      const answer = await fixture.invoke({ path: '/platform-adapter/v1/execute',
+        token: fixture.token({ action_key: mode === 'EDIT' ? 'file_storage.open_edit@v1' : 'file_storage.open_view@v1' }) });
+      assert.equal(answer.status, 200);
+      const result = await answer.json();
+      assert.equal(result.execution.nativeId, ids[7]);
+      const descriptor = JSON.parse(result.resultJson).launchDescriptor;
+      const action = new URL(descriptor.actionUrl);
+      assert.equal(action.pathname, `/hosting/wopi/word/${mode.toLowerCase()}`);
+      assert.equal(action.origin, descriptor.editorOrigin);
+      assert.equal(action.searchParams.get('thm'), '2');
+      assert.equal(action.searchParams.get('lang'), 'zh-CN');
+      assert.equal(action.searchParams.get('ui'), 'zh-CN');
+      assert.equal(action.searchParams.get('dchat'), '1');
+      assert.equal(action.searchParams.get('usid'), ids[7]);
+      assert.equal(new URL(action.searchParams.get('wopisrc')).pathname, `/wopi/files/${ids[3]}`);
+      assert.equal(action.searchParams.has('access_token'), false);
+      assert.deepEqual(descriptor.formFields, { access_token: 'one-native-pat-fixture', access_token_ttl: String(Date.parse(input.expiresAt)) });
+      assert.equal(fixture.state.peps, 2);
+      assert.equal(fixture.state.discoveryReads, 1);
+      assert.deepEqual(fixture.state.patCreates, [{ Path: 'documents/root/authorized/report.docx', ClientID: ids[7] }]);
+    });
+  }
+});
+
+test('ONLYOFFICE disclosure rejects a changed editor origin or unconfirmed PAT reference', async (t) => {
+  const input = { protocolSessionId: ids[7], reference: { nativeObjectRef: ids[3], nativeRevision: 'head-native-version' },
+    authorizationTargetNativeRef: ids[10], admittedMode: 'EDIT', theme: 'LIGHT', locale: 'en',
+    expiresAt: new Date(Date.now() + 60000).toISOString(), idempotencyKey: ids[7] };
+  for (const change of [{ discovery: '<wopi-discovery><net-zone><app><action ext="docx" name="edit" urlsrc="https://unregistered.invalid/hosting/wopi/word/edit"/></app></net-zone></wopi-discovery>' },
+    { nativeSessionRef: ids[0] }]) {
+    await t.test(Object.keys(change)[0], async (nested) => {
+      const fixture = await setup(nested, { operation: 'execute', arguments: input, human: true, documentLaunch: true,
+        target: { Uuid: ids[3], Type: 'LEAF', Path: 'documents/root/authorized/report.docx', ContextWorkspace: { Uuid: ids[1] } }, ...change });
+      assert.equal((await fixture.invoke({ path: '/platform-adapter/v1/execute' })).status, 503);
+      assert.equal(fixture.state.patCreates?.length ?? 0, change.discovery ? 0 : 1);
+    });
+  }
 });
 
 test('signed scope, parameter, expiry and content-policy failures never reach native reader', async (t) => {
@@ -204,7 +346,7 @@ test('same read intent remains fresh and unknown operations create no capability
   assert.equal((await invoke()).status, 200);
   assert.equal((await invoke()).status, 200);
   assert.equal(state.peps, 4);
-  assert.equal((await invoke({ path: '/platform-adapter/v1/execute' })).status, 404);
+  assert.equal((await invoke({ path: '/platform-adapter/v1/execute' })).status, 503);
   assert.equal(state.peps, 4);
 });
 

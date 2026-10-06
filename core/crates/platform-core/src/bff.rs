@@ -474,6 +474,10 @@ pub fn router(state: BffState) -> Router {
         )
         .exposed_route("/api/v1/tasks", get(crate::governance_api::list_tasks))
         .exposed_route(
+            "/api/v1/protocol-sessions/{protocol_session_id}",
+            get(crate::protocol_session::read::get),
+        )
+        .exposed_route(
             "/api/v1/tasks/{action_execution_id}",
             get(crate::governance_api::get_task),
         )

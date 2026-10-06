@@ -710,7 +710,7 @@ pub async fn list(
         Err(error) => return crate::service_api::unavailable(error),
     };
     let rows: Vec<AutomationRow> = match sqlx::query_as(&format!(
-        "{ROW} and d.workspace_id=$2 order by r.id offset $3 limit $4"
+        "{ROW} and d.workspace_id=$2 and d.state<>'DELETED' order by r.id offset $3 limit $4"
     ))
     .bind(ctx.tenant_id)
     .bind(q.workspace_id)
@@ -1063,8 +1063,41 @@ pub async fn get(
         Err(error) => return error,
     }
     let can_manage = match permission(&state, &ctx, "resource", row.resource_id, "manage").await {
-        Ok(allowed) => allowed,
+        Ok(allowed) => allowed && row.state != "DELETED",
         Err(error) => return error,
+    };
+    let owner_member: bool = match sqlx::query_scalar(
+        "select exists(select 1 from identity.workspace_membership
+        where workspace_id=$1 and tenant_principal_id=$2 and state='ACTIVE')",
+    )
+    .bind(row.workspace_id)
+    .bind(ctx.tenant_principal_id)
+    .fetch_one(&mut *tx)
+    .await
+    {
+        Ok(member) => member,
+        Err(error) => return crate::service_api::unavailable(error),
+    };
+    let can_run = if row.state == "ENABLED"
+        && row.owner_principal_id == ctx.tenant_principal_id
+        && owner_member
+        && row.pinned_version_state.as_deref() == Some("PUBLISHED")
+        && row.pinned_asset_state.as_deref() == Some("PUBLISHED")
+        && row.pinned_projection.is_none()
+        && row.delegation_id.is_some()
+    {
+        match crate::automation::manual::available(&state.governance).await {
+            Ok(true) => {
+                match permission(&state, &ctx, "resource", row.resource_id, "execute").await {
+                    Ok(allowed) => allowed,
+                    Err(error) => return error,
+                }
+            }
+            Ok(false) => false,
+            Err(error) => return error.respond(None),
+        }
+    } else {
+        false
     };
     let (versions, next_version) =
         match versions(&state, &mut tx, &ctx, &row, version_offset, limit).await {
@@ -1080,7 +1113,7 @@ pub async fn get(
         (Vec::new(), None)
     };
     match serde_json::from_value::<contracts::AutomationDetailView>(json!({"automation":automation,
-        "versions":versions,"delegations":grants,"canManage":can_manage,
+        "versions":versions,"delegations":grants,"canManage":can_manage,"canRun":can_run,
         "nextVersionOffset":next_version,"nextDelegationOffset":next_grant}))
     {
         Ok(value) => Json(value).into_response(),

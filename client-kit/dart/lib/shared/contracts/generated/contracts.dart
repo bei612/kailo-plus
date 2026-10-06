@@ -1,6 +1,7 @@
 // To parse this JSON data, do
 //
 //     final canary = canaryFromJson(jsonString);
+//     final applicationModelAdmission = applicationModelAdmissionFromJson(jsonString);
 //     final adapterBindingObservation = adapterBindingObservationFromJson(jsonString);
 //     final adapterExecutionObservation = adapterExecutionObservationFromJson(jsonString);
 //     final adapterExecutionReference = adapterExecutionReferenceFromJson(jsonString);
@@ -8,6 +9,16 @@
 //     final adapterExecutionUsage = adapterExecutionUsageFromJson(jsonString);
 //     final adapterPepCheckRequest = adapterPepCheckRequestFromJson(jsonString);
 //     final adapterPepCheckResponse = adapterPepCheckResponseFromJson(jsonString);
+//     final protocolRevisionQuery = protocolRevisionQueryFromJson(jsonString);
+//     final adapterProtocolSessionLaunchRequest = adapterProtocolSessionLaunchRequestFromJson(jsonString);
+//     final adapterProtocolSessionLaunchResponse = adapterProtocolSessionLaunchResponseFromJson(jsonString);
+//     final protocolSessionLifecyclePepResponse = protocolSessionLifecyclePepResponseFromJson(jsonString);
+//     final adapterProtocolSessionLifecycleRequest = adapterProtocolSessionLifecycleRequestFromJson(jsonString);
+//     final adapterProtocolSessionLifecycleResponse = adapterProtocolSessionLifecycleResponseFromJson(jsonString);
+//     final protocolSessionPepRequest = protocolSessionPepRequestFromJson(jsonString);
+//     final protocolSessionPepResponse = protocolSessionPepResponseFromJson(jsonString);
+//     final protocolWriteObservation = protocolWriteObservationFromJson(jsonString);
+//     final protocolWriteReceipt = protocolWriteReceiptFromJson(jsonString);
 //     final adapterQueryRevisionRequest = adapterQueryRevisionRequestFromJson(jsonString);
 //     final adapterQueryRevisionResponse = adapterQueryRevisionResponseFromJson(jsonString);
 //     final adapterScopeObservation = adapterScopeObservationFromJson(jsonString);
@@ -63,6 +74,7 @@
 //     final platformTenantPage = platformTenantPageFromJson(jsonString);
 //     final platformToolPage = platformToolPageFromJson(jsonString);
 //     final platformToolView = platformToolViewFromJson(jsonString);
+//     final protocolSessionView = protocolSessionViewFromJson(jsonString);
 //     final readMarkRequest = readMarkRequestFromJson(jsonString);
 //     final roleMemberPage = roleMemberPageFromJson(jsonString);
 //     final roleWorkspacePage = roleWorkspacePageFromJson(jsonString);
@@ -81,12 +93,14 @@
 //     final agentVersionContent = agentVersionContentFromJson(jsonString);
 //     final applicationAdapterDirectory = applicationAdapterDirectoryFromJson(jsonString);
 //     final applicationBindingCreate = applicationBindingCreateFromJson(jsonString);
+//     final applicationModelGatewayConfig = applicationModelGatewayConfigFromJson(jsonString);
 //     final automationApprovalPolicyRef = automationApprovalPolicyRefFromJson(jsonString);
 //     final automationScheduleSpec = automationScheduleSpecFromJson(jsonString);
 //     final automationVersionContent = automationVersionContentFromJson(jsonString);
 //     final capabilityConformanceVectors = capabilityConformanceVectorsFromJson(jsonString);
 //     final capabilityContractRef = capabilityContractRefFromJson(jsonString);
 //     final capabilityContractRegistration = capabilityContractRegistrationFromJson(jsonString);
+//     final componentActionInput = componentActionInputFromJson(jsonString);
 //     final componentConformanceEnvironment = componentConformanceEnvironmentFromJson(jsonString);
 //     final componentConformanceFixture = componentConformanceFixtureFromJson(jsonString);
 //     final componentConformanceIdentity = componentConformanceIdentityFromJson(jsonString);
@@ -96,10 +110,13 @@
 //     final contentReference = contentReferenceFromJson(jsonString);
 //     final delegationGrantParameters = delegationGrantParametersFromJson(jsonString);
 //     final delegationScopeParameters = delegationScopeParametersFromJson(jsonString);
+//     final documentLaunchDescriptor = documentLaunchDescriptorFromJson(jsonString);
 //     final errorBody = errorBodyFromJson(jsonString);
 //     final resolvedIdentity = resolvedIdentityFromJson(jsonString);
 //     final llmRouteCreateInput = llmRouteCreateInputFromJson(jsonString);
+//     final nativeDocumentSelection = nativeDocumentSelectionFromJson(jsonString);
 //     final platformBuildInfo = platformBuildInfoFromJson(jsonString);
+//     final protocolSessionOpenInput = protocolSessionOpenInputFromJson(jsonString);
 //     final resourceCreate = resourceCreateFromJson(jsonString);
 //     final runtimeProfileDirectory = runtimeProfileDirectoryFromJson(jsonString);
 //     final taskStateReport = taskStateReportFromJson(jsonString);
@@ -127,12 +144,19 @@
 //     final automationScheduleAdmitRequest = automationScheduleAdmitRequestFromJson(jsonString);
 //     final automationScheduleAdmitResult = automationScheduleAdmitResultFromJson(jsonString);
 //     final automationScheduleTaskInput = automationScheduleTaskInputFromJson(jsonString);
+//     final componentActionAdvanceRequest = componentActionAdvanceRequestFromJson(jsonString);
+//     final componentActionAdvanceResult = componentActionAdvanceResultFromJson(jsonString);
+//     final componentActionTarget = componentActionTargetFromJson(jsonString);
 //     final componentConformanceObservation = componentConformanceObservationFromJson(jsonString);
 //     final componentConformancePlan = componentConformancePlanFromJson(jsonString);
 //     final componentConformanceProbe = componentConformanceProbeFromJson(jsonString);
 //     final componentConformanceStepObservation = componentConformanceStepObservationFromJson(jsonString);
 //     final freshApprovalAdmissionRequest = freshApprovalAdmissionRequestFromJson(jsonString);
 //     final freshApprovalAdmissionResult = freshApprovalAdmissionResultFromJson(jsonString);
+//     final protocolSessionReconcileRequest = protocolSessionReconcileRequestFromJson(jsonString);
+//     final protocolSessionReconcileResult = protocolSessionReconcileResultFromJson(jsonString);
+//     final protocolSessionReconcileRound = protocolSessionReconcileRoundFromJson(jsonString);
+//     final protocolSessionReconcileTarget = protocolSessionReconcileTargetFromJson(jsonString);
 //     final resourceProvisionAdvanceRequest = resourceProvisionAdvanceRequestFromJson(jsonString);
 //     final resourceProvisionAdvanceResult = resourceProvisionAdvanceResultFromJson(jsonString);
 //     final resourceProvisionTarget = resourceProvisionTargetFromJson(jsonString);
@@ -144,6 +168,12 @@ import 'dart:convert';
 Canary canaryFromJson(String str) => Canary.fromJson(json.decode(str));
 
 String canaryToJson(Canary data) => json.encode(data.toJson());
+
+ApplicationModelAdmission applicationModelAdmissionFromJson(String str) =>
+    ApplicationModelAdmission.fromJson(json.decode(str));
+
+String applicationModelAdmissionToJson(ApplicationModelAdmission data) =>
+    json.encode(data.toJson());
 
 AdapterBindingObservation adapterBindingObservationFromJson(String str) =>
     AdapterBindingObservation.fromJson(json.decode(str));
@@ -185,6 +215,76 @@ AdapterPepCheckResponse adapterPepCheckResponseFromJson(String str) =>
     AdapterPepCheckResponse.fromJson(json.decode(str));
 
 String adapterPepCheckResponseToJson(AdapterPepCheckResponse data) =>
+    json.encode(data.toJson());
+
+ProtocolRevisionQuery protocolRevisionQueryFromJson(String str) =>
+    ProtocolRevisionQuery.fromJson(json.decode(str));
+
+String protocolRevisionQueryToJson(ProtocolRevisionQuery data) =>
+    json.encode(data.toJson());
+
+AdapterProtocolSessionLaunchRequest adapterProtocolSessionLaunchRequestFromJson(
+  String str,
+) => AdapterProtocolSessionLaunchRequest.fromJson(json.decode(str));
+
+String adapterProtocolSessionLaunchRequestToJson(
+  AdapterProtocolSessionLaunchRequest data,
+) => json.encode(data.toJson());
+
+AdapterProtocolSessionLaunchResponse
+adapterProtocolSessionLaunchResponseFromJson(String str) =>
+    AdapterProtocolSessionLaunchResponse.fromJson(json.decode(str));
+
+String adapterProtocolSessionLaunchResponseToJson(
+  AdapterProtocolSessionLaunchResponse data,
+) => json.encode(data.toJson());
+
+ProtocolSessionLifecyclePepResponse protocolSessionLifecyclePepResponseFromJson(
+  String str,
+) => ProtocolSessionLifecyclePepResponse.fromJson(json.decode(str));
+
+String protocolSessionLifecyclePepResponseToJson(
+  ProtocolSessionLifecyclePepResponse data,
+) => json.encode(data.toJson());
+
+AdapterProtocolSessionLifecycleRequest
+adapterProtocolSessionLifecycleRequestFromJson(String str) =>
+    AdapterProtocolSessionLifecycleRequest.fromJson(json.decode(str));
+
+String adapterProtocolSessionLifecycleRequestToJson(
+  AdapterProtocolSessionLifecycleRequest data,
+) => json.encode(data.toJson());
+
+AdapterProtocolSessionLifecycleResponse
+adapterProtocolSessionLifecycleResponseFromJson(String str) =>
+    AdapterProtocolSessionLifecycleResponse.fromJson(json.decode(str));
+
+String adapterProtocolSessionLifecycleResponseToJson(
+  AdapterProtocolSessionLifecycleResponse data,
+) => json.encode(data.toJson());
+
+ProtocolSessionPepRequest protocolSessionPepRequestFromJson(String str) =>
+    ProtocolSessionPepRequest.fromJson(json.decode(str));
+
+String protocolSessionPepRequestToJson(ProtocolSessionPepRequest data) =>
+    json.encode(data.toJson());
+
+ProtocolSessionPepResponse protocolSessionPepResponseFromJson(String str) =>
+    ProtocolSessionPepResponse.fromJson(json.decode(str));
+
+String protocolSessionPepResponseToJson(ProtocolSessionPepResponse data) =>
+    json.encode(data.toJson());
+
+ProtocolWriteObservation protocolWriteObservationFromJson(String str) =>
+    ProtocolWriteObservation.fromJson(json.decode(str));
+
+String protocolWriteObservationToJson(ProtocolWriteObservation data) =>
+    json.encode(data.toJson());
+
+ProtocolWriteReceipt protocolWriteReceiptFromJson(String str) =>
+    ProtocolWriteReceipt.fromJson(json.decode(str));
+
+String protocolWriteReceiptToJson(ProtocolWriteReceipt data) =>
     json.encode(data.toJson());
 
 AdapterQueryRevisionRequest adapterQueryRevisionRequestFromJson(String str) =>
@@ -522,6 +622,12 @@ PlatformToolView platformToolViewFromJson(String str) =>
 String platformToolViewToJson(PlatformToolView data) =>
     json.encode(data.toJson());
 
+ProtocolSessionView protocolSessionViewFromJson(String str) =>
+    ProtocolSessionView.fromJson(json.decode(str));
+
+String protocolSessionViewToJson(ProtocolSessionView data) =>
+    json.encode(data.toJson());
+
 ReadMarkRequest readMarkRequestFromJson(String str) =>
     ReadMarkRequest.fromJson(json.decode(str));
 
@@ -626,6 +732,14 @@ ApplicationBindingCreate applicationBindingCreateFromJson(String str) =>
 String applicationBindingCreateToJson(ApplicationBindingCreate data) =>
     json.encode(data.toJson());
 
+ApplicationModelGatewayConfig applicationModelGatewayConfigFromJson(
+  String str,
+) => ApplicationModelGatewayConfig.fromJson(json.decode(str));
+
+String applicationModelGatewayConfigToJson(
+  ApplicationModelGatewayConfig data,
+) => json.encode(data.toJson());
+
 AutomationApprovalPolicyRef automationApprovalPolicyRefFromJson(String str) =>
     AutomationApprovalPolicyRef.fromJson(json.decode(str));
 
@@ -663,6 +777,12 @@ CapabilityContractRegistration capabilityContractRegistrationFromJson(
 String capabilityContractRegistrationToJson(
   CapabilityContractRegistration data,
 ) => json.encode(data.toJson());
+
+ComponentActionInput componentActionInputFromJson(String str) =>
+    ComponentActionInput.fromJson(json.decode(str));
+
+String componentActionInputToJson(ComponentActionInput data) =>
+    json.encode(data.toJson());
 
 ComponentConformanceEnvironment componentConformanceEnvironmentFromJson(
   String str,
@@ -724,6 +844,12 @@ DelegationScopeParameters delegationScopeParametersFromJson(String str) =>
 String delegationScopeParametersToJson(DelegationScopeParameters data) =>
     json.encode(data.toJson());
 
+DocumentLaunchDescriptor documentLaunchDescriptorFromJson(String str) =>
+    DocumentLaunchDescriptor.fromJson(json.decode(str));
+
+String documentLaunchDescriptorToJson(DocumentLaunchDescriptor data) =>
+    json.encode(data.toJson());
+
 ErrorBody errorBodyFromJson(String str) => ErrorBody.fromJson(json.decode(str));
 
 String errorBodyToJson(ErrorBody data) => json.encode(data.toJson());
@@ -740,10 +866,22 @@ LlmRouteCreateInput llmRouteCreateInputFromJson(String str) =>
 String llmRouteCreateInputToJson(LlmRouteCreateInput data) =>
     json.encode(data.toJson());
 
+NativeDocumentSelection nativeDocumentSelectionFromJson(String str) =>
+    NativeDocumentSelection.fromJson(json.decode(str));
+
+String nativeDocumentSelectionToJson(NativeDocumentSelection data) =>
+    json.encode(data.toJson());
+
 PlatformBuildInfo platformBuildInfoFromJson(String str) =>
     PlatformBuildInfo.fromJson(json.decode(str));
 
 String platformBuildInfoToJson(PlatformBuildInfo data) =>
+    json.encode(data.toJson());
+
+ProtocolSessionOpenInput protocolSessionOpenInputFromJson(String str) =>
+    ProtocolSessionOpenInput.fromJson(json.decode(str));
+
+String protocolSessionOpenInputToJson(ProtocolSessionOpenInput data) =>
     json.encode(data.toJson());
 
 ResourceCreate resourceCreateFromJson(String str) =>
@@ -919,6 +1057,26 @@ AutomationScheduleTaskInput automationScheduleTaskInputFromJson(String str) =>
 String automationScheduleTaskInputToJson(AutomationScheduleTaskInput data) =>
     json.encode(data.toJson());
 
+ComponentActionAdvanceRequest componentActionAdvanceRequestFromJson(
+  String str,
+) => ComponentActionAdvanceRequest.fromJson(json.decode(str));
+
+String componentActionAdvanceRequestToJson(
+  ComponentActionAdvanceRequest data,
+) => json.encode(data.toJson());
+
+ComponentActionAdvanceResult componentActionAdvanceResultFromJson(String str) =>
+    ComponentActionAdvanceResult.fromJson(json.decode(str));
+
+String componentActionAdvanceResultToJson(ComponentActionAdvanceResult data) =>
+    json.encode(data.toJson());
+
+ComponentActionTarget componentActionTargetFromJson(String str) =>
+    ComponentActionTarget.fromJson(json.decode(str));
+
+String componentActionTargetToJson(ComponentActionTarget data) =>
+    json.encode(data.toJson());
+
 ComponentConformanceObservation componentConformanceObservationFromJson(
   String str,
 ) => ComponentConformanceObservation.fromJson(json.decode(str));
@@ -960,6 +1118,38 @@ FreshApprovalAdmissionResult freshApprovalAdmissionResultFromJson(String str) =>
 
 String freshApprovalAdmissionResultToJson(FreshApprovalAdmissionResult data) =>
     json.encode(data.toJson());
+
+ProtocolSessionReconcileRequest protocolSessionReconcileRequestFromJson(
+  String str,
+) => ProtocolSessionReconcileRequest.fromJson(json.decode(str));
+
+String protocolSessionReconcileRequestToJson(
+  ProtocolSessionReconcileRequest data,
+) => json.encode(data.toJson());
+
+ProtocolSessionReconcileResult protocolSessionReconcileResultFromJson(
+  String str,
+) => ProtocolSessionReconcileResult.fromJson(json.decode(str));
+
+String protocolSessionReconcileResultToJson(
+  ProtocolSessionReconcileResult data,
+) => json.encode(data.toJson());
+
+ProtocolSessionReconcileRound protocolSessionReconcileRoundFromJson(
+  String str,
+) => ProtocolSessionReconcileRound.fromJson(json.decode(str));
+
+String protocolSessionReconcileRoundToJson(
+  ProtocolSessionReconcileRound data,
+) => json.encode(data.toJson());
+
+ProtocolSessionReconcileTarget protocolSessionReconcileTargetFromJson(
+  String str,
+) => ProtocolSessionReconcileTarget.fromJson(json.decode(str));
+
+String protocolSessionReconcileTargetToJson(
+  ProtocolSessionReconcileTarget data,
+) => json.encode(data.toJson());
 
 ResourceProvisionAdvanceRequest resourceProvisionAdvanceRequestFromJson(
   String str,
@@ -1172,6 +1362,43 @@ final variantKindValues = EnumValues({
   "MESSAGE": VariantKind.MESSAGE,
   "TASK": VariantKind.TASK,
 });
+
+class ApplicationModelAdmission {
+  final String bindingId;
+  final String gatewayPrincipalId;
+  final int generation;
+  final String method;
+  final String path;
+  final String traceparent;
+
+  ApplicationModelAdmission({
+    required this.bindingId,
+    required this.gatewayPrincipalId,
+    required this.generation,
+    required this.method,
+    required this.path,
+    required this.traceparent,
+  });
+
+  factory ApplicationModelAdmission.fromJson(Map<String, dynamic> json) =>
+      ApplicationModelAdmission(
+        bindingId: json["bindingId"],
+        gatewayPrincipalId: json["gatewayPrincipalId"],
+        generation: json["generation"],
+        method: json["method"],
+        path: json["path"],
+        traceparent: json["traceparent"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "gatewayPrincipalId": gatewayPrincipalId,
+    "generation": generation,
+    "method": method,
+    "path": path,
+    "traceparent": traceparent,
+  });
+}
 
 ///07§5/6.2：validate_binding 的非正文观察。精确原生scope/实例、隔离与配置引用摘要，不是用户声明的通过布尔值。
 class AdapterBindingObservation {
@@ -1422,7 +1649,7 @@ class AdapterExecutionReference {
 ///ADR-12 执行响应分离原生任务观察与能力结果。HTTP 接收不是终态；resultJson 只在原生 SUCCEEDED 且符合固定结果 schema 时消费。它不进入
 ///Core 的套件报告。
 class AdapterExecutionResponse {
-  final ContentReferenceClass? contentReference;
+  final ReferenceClass? contentReference;
   final ExecutionClass execution;
   final String? resultJson;
 
@@ -1436,7 +1663,7 @@ class AdapterExecutionResponse {
       AdapterExecutionResponse(
         contentReference: json["contentReference"] == null
             ? null
-            : ContentReferenceClass.fromJson(json["contentReference"]),
+            : ReferenceClass.fromJson(json["contentReference"]),
         execution: ExecutionClass.fromJson(json["execution"]),
         resultJson: json["resultJson"],
       );
@@ -1449,7 +1676,7 @@ class AdapterExecutionResponse {
 }
 
 ///design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
-class ContentReferenceClass {
+class ReferenceClass {
   final String? assetId;
   final String displayName;
   final String mediaType;
@@ -1457,7 +1684,7 @@ class ContentReferenceClass {
   final String nativeRevision;
   final String resourceId;
 
-  ContentReferenceClass({
+  ReferenceClass({
     this.assetId,
     required this.displayName,
     required this.mediaType,
@@ -1466,15 +1693,14 @@ class ContentReferenceClass {
     required this.resourceId,
   });
 
-  factory ContentReferenceClass.fromJson(Map<String, dynamic> json) =>
-      ContentReferenceClass(
-        assetId: json["assetId"],
-        displayName: json["displayName"],
-        mediaType: json["mediaType"],
-        nativeObjectRef: json["nativeObjectRef"],
-        nativeRevision: json["nativeRevision"],
-        resourceId: json["resourceId"],
-      );
+  factory ReferenceClass.fromJson(Map<String, dynamic> json) => ReferenceClass(
+    assetId: json["assetId"],
+    displayName: json["displayName"],
+    mediaType: json["mediaType"],
+    nativeObjectRef: json["nativeObjectRef"],
+    nativeRevision: json["nativeRevision"],
+    resourceId: json["resourceId"],
+  );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "assetId": assetId,
@@ -1600,7 +1826,7 @@ class AdapterPepCheckRequest {
   final String actionToken;
   final String argumentsJson;
   final String bindingId;
-  final ContentReferenceClass? contentReference;
+  final ReferenceClass? contentReference;
   final String operation;
 
   AdapterPepCheckRequest({
@@ -1618,7 +1844,7 @@ class AdapterPepCheckRequest {
         bindingId: json["bindingId"],
         contentReference: json["contentReference"] == null
             ? null
-            : ContentReferenceClass.fromJson(json["contentReference"]),
+            : ReferenceClass.fromJson(json["contentReference"]),
         operation: json["operation"],
       );
 
@@ -1657,6 +1883,527 @@ class AdapterPepCheckResponse {
   });
 }
 
+///DD-90/18§5.4：原保存结果不明会话的确切写入证据查证；只核已有 ACCEPTED writer observation 对应的原生
+///VersionId，不提供文件字节或当前权限。
+class ProtocolRevisionQuery {
+  final String baseRevision;
+  final String protocolSessionId;
+  final WriteObservationClass writeObservation;
+
+  ProtocolRevisionQuery({
+    required this.baseRevision,
+    required this.protocolSessionId,
+    required this.writeObservation,
+  });
+
+  factory ProtocolRevisionQuery.fromJson(Map<String, dynamic> json) =>
+      ProtocolRevisionQuery(
+        baseRevision: json["baseRevision"],
+        protocolSessionId: json["protocolSessionId"],
+        writeObservation: WriteObservationClass.fromJson(
+          json["writeObservation"],
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "baseRevision": baseRevision,
+    "protocolSessionId": protocolSessionId,
+    "writeObservation": writeObservation.toJson(),
+  });
+}
+
+///18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never
+///file bytes or an authorization grant.
+class WriteObservationClass {
+  final DateTime baseModifiedAt;
+  final int bytesWritten;
+  final String correlationRef;
+  final String editors;
+  final String? nativeEtag;
+  final Phase phase;
+  final String? resultRevision;
+
+  WriteObservationClass({
+    required this.baseModifiedAt,
+    required this.bytesWritten,
+    required this.correlationRef,
+    required this.editors,
+    this.nativeEtag,
+    required this.phase,
+    this.resultRevision,
+  });
+
+  factory WriteObservationClass.fromJson(Map<String, dynamic> json) =>
+      WriteObservationClass(
+        baseModifiedAt: DateTime.parse(json["baseModifiedAt"]),
+        bytesWritten: json["bytesWritten"],
+        correlationRef: json["correlationRef"],
+        editors: json["editors"],
+        nativeEtag: json["nativeEtag"],
+        phase: phaseValues.map[json["phase"]]!,
+        resultRevision: json["resultRevision"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "baseModifiedAt": baseModifiedAt.toIso8601String(),
+    "bytesWritten": bytesWritten,
+    "correlationRef": correlationRef,
+    "editors": editors,
+    "nativeEtag": nativeEtag,
+    "phase": phaseValues.reverse[phase],
+    "resultRevision": resultRevision,
+  });
+}
+
+enum Phase { ACCEPTED, CONFLICT, FAILED, STARTED, UNKNOWN }
+
+final phaseValues = EnumValues({
+  "ACCEPTED": Phase.ACCEPTED,
+  "CONFLICT": Phase.CONFLICT,
+  "FAILED": Phase.FAILED,
+  "STARTED": Phase.STARTED,
+  "UNKNOWN": Phase.UNKNOWN,
+});
+
+///18: execute the original admitted file protocol Session, not an arbitrary editor URL or
+///native object create. All fields are frozen Core facts and the whole body is covered by
+///ActionToken.
+class AdapterProtocolSessionLaunchRequest {
+  final TedMode admittedMode;
+  final String authorizationTargetNativeRef;
+  final String expiresAt;
+  final String idempotencyKey;
+  final Locale locale;
+  final String protocolSessionId;
+  final ReferenceClass reference;
+  final Theme theme;
+
+  AdapterProtocolSessionLaunchRequest({
+    required this.admittedMode,
+    required this.authorizationTargetNativeRef,
+    required this.expiresAt,
+    required this.idempotencyKey,
+    required this.locale,
+    required this.protocolSessionId,
+    required this.reference,
+    required this.theme,
+  });
+
+  factory AdapterProtocolSessionLaunchRequest.fromJson(
+    Map<String, dynamic> json,
+  ) => AdapterProtocolSessionLaunchRequest(
+    admittedMode: tedModeValues.map[json["admittedMode"]]!,
+    authorizationTargetNativeRef: json["authorizationTargetNativeRef"],
+    expiresAt: json["expiresAt"],
+    idempotencyKey: json["idempotencyKey"],
+    locale: localeValues.map[json["locale"]]!,
+    protocolSessionId: json["protocolSessionId"],
+    reference: ReferenceClass.fromJson(json["reference"]),
+    theme: themeValues.map[json["theme"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "admittedMode": tedModeValues.reverse[admittedMode],
+    "authorizationTargetNativeRef": authorizationTargetNativeRef,
+    "expiresAt": expiresAt,
+    "idempotencyKey": idempotencyKey,
+    "locale": localeValues.reverse[locale],
+    "protocolSessionId": protocolSessionId,
+    "reference": reference.toJson(),
+    "theme": themeValues.reverse[theme],
+  });
+}
+
+enum TedMode { EDIT, VIEW }
+
+final tedModeValues = EnumValues({"EDIT": TedMode.EDIT, "VIEW": TedMode.VIEW});
+
+enum Locale { EN, ZH_CN }
+
+final localeValues = EnumValues({"en": Locale.EN, "zh-CN": Locale.ZH_CN});
+
+enum Theme { DARK, LIGHT }
+
+final themeValues = EnumValues({"DARK": Theme.DARK, "LIGHT": Theme.LIGHT});
+
+///18: the original native PAT reference plus transient launch descriptor. This value occurs
+///only in the original execute response; it must not be stored as reconciliation evidence
+///or recovered by reminting a token.
+class AdapterProtocolSessionLaunchResponse {
+  final LaunchDescriptorClass launchDescriptor;
+  final String nativeSessionRef;
+
+  AdapterProtocolSessionLaunchResponse({
+    required this.launchDescriptor,
+    required this.nativeSessionRef,
+  });
+
+  factory AdapterProtocolSessionLaunchResponse.fromJson(
+    Map<String, dynamic> json,
+  ) => AdapterProtocolSessionLaunchResponse(
+    launchDescriptor: LaunchDescriptorClass.fromJson(json["launchDescriptor"]),
+    nativeSessionRef: json["nativeSessionRef"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "launchDescriptor": launchDescriptor.toJson(),
+    "nativeSessionRef": nativeSessionRef,
+  });
+}
+
+///DD-95/103: transient, fixed-origin launch returned by the admitted binding adapter;
+///credentials are only string form fields, never a persisted Task, chat or ContentReference.
+class LaunchDescriptorClass {
+  final String actionUrl;
+  final String editorOrigin;
+  final String expiresAt;
+  final Map<String, String> formFields;
+  final Method method;
+
+  LaunchDescriptorClass({
+    required this.actionUrl,
+    required this.editorOrigin,
+    required this.expiresAt,
+    required this.formFields,
+    required this.method,
+  });
+
+  factory LaunchDescriptorClass.fromJson(Map<String, dynamic> json) =>
+      LaunchDescriptorClass(
+        actionUrl: json["actionUrl"],
+        editorOrigin: json["editorOrigin"],
+        expiresAt: json["expiresAt"],
+        formFields: Map.from(
+          json["formFields"],
+        ).map((k, v) => MapEntry<String, String>(k, v)),
+        method: methodValues.map[json["method"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionUrl": actionUrl,
+    "editorOrigin": editorOrigin,
+    "expiresAt": expiresAt,
+    "formFields": Map.from(
+      formFields,
+    ).map((k, v) => MapEntry<String, dynamic>(k, v)),
+    "method": methodValues.reverse[method],
+  });
+}
+
+enum Method { GET, POST }
+
+final methodValues = EnumValues({"GET": Method.GET, "POST": Method.POST});
+
+///DD-90, 18 §5.1: binding-authenticated permission to observe/revoke the original document
+///PAT. These closed lifecycle facts never authorize file reads, writes or token creation.
+class ProtocolSessionLifecyclePepResponse {
+  final Decision decision;
+  final DateTime expiresAt;
+  final String nativeObjectRef;
+  final String protocolSessionId;
+  final TedMode requestedMode;
+
+  ProtocolSessionLifecyclePepResponse({
+    required this.decision,
+    required this.expiresAt,
+    required this.nativeObjectRef,
+    required this.protocolSessionId,
+    required this.requestedMode,
+  });
+
+  factory ProtocolSessionLifecyclePepResponse.fromJson(
+    Map<String, dynamic> json,
+  ) => ProtocolSessionLifecyclePepResponse(
+    decision: decisionValues.map[json["decision"]]!,
+    expiresAt: DateTime.parse(json["expiresAt"]),
+    nativeObjectRef: json["nativeObjectRef"],
+    protocolSessionId: json["protocolSessionId"],
+    requestedMode: tedModeValues.map[json["requestedMode"]]!,
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "decision": decisionValues.reverse[decision],
+    "expiresAt": expiresAt.toIso8601String(),
+    "nativeObjectRef": nativeObjectRef,
+    "protocolSessionId": protocolSessionId,
+    "requestedMode": tedModeValues.reverse[requestedMode],
+  });
+}
+
+enum Decision { ALLOW }
+
+final decisionValues = EnumValues({"ALLOW": Decision.ALLOW});
+
+///18 §5.1: observe/cancel the same native document PAT only. No access token, launch
+///descriptor or file bytes.
+class AdapterProtocolSessionLifecycleRequest {
+  final String idempotencyKey;
+  final String nativeObjectRef;
+  final String protocolSessionId;
+
+  AdapterProtocolSessionLifecycleRequest({
+    required this.idempotencyKey,
+    required this.nativeObjectRef,
+    required this.protocolSessionId,
+  });
+
+  factory AdapterProtocolSessionLifecycleRequest.fromJson(
+    Map<String, dynamic> json,
+  ) => AdapterProtocolSessionLifecycleRequest(
+    idempotencyKey: json["idempotencyKey"],
+    nativeObjectRef: json["nativeObjectRef"],
+    protocolSessionId: json["protocolSessionId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "idempotencyKey": idempotencyKey,
+    "nativeObjectRef": nativeObjectRef,
+    "protocolSessionId": protocolSessionId,
+  });
+}
+
+///Original Cells PAT metadata only. ABSENT is a successful native lookup; errors must
+///remain unavailable, never ABSENT.
+class AdapterProtocolSessionLifecycleResponse {
+  final DateTime? expiresAt;
+  final String nativeObjectRef;
+  final String? nativeSessionRef;
+  final NativeState nativeState;
+  final String protocolSessionId;
+
+  AdapterProtocolSessionLifecycleResponse({
+    this.expiresAt,
+    required this.nativeObjectRef,
+    this.nativeSessionRef,
+    required this.nativeState,
+    required this.protocolSessionId,
+  });
+
+  factory AdapterProtocolSessionLifecycleResponse.fromJson(
+    Map<String, dynamic> json,
+  ) => AdapterProtocolSessionLifecycleResponse(
+    expiresAt: json["expiresAt"] == null
+        ? null
+        : DateTime.parse(json["expiresAt"]),
+    nativeObjectRef: json["nativeObjectRef"],
+    nativeSessionRef: json["nativeSessionRef"],
+    nativeState: nativeStateValues.map[json["nativeState"]]!,
+    protocolSessionId: json["protocolSessionId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "expiresAt": expiresAt?.toIso8601String(),
+    "nativeObjectRef": nativeObjectRef,
+    "nativeSessionRef": nativeSessionRef,
+    "nativeState": nativeStateValues.reverse[nativeState],
+    "protocolSessionId": protocolSessionId,
+  });
+}
+
+enum NativeState { ABSENT, ACTIVE, EXPIRED }
+
+final nativeStateValues = EnumValues({
+  "ABSENT": NativeState.ABSENT,
+  "ACTIVE": NativeState.ACTIVE,
+  "EXPIRED": NativeState.EXPIRED,
+});
+
+///18 §5.2: authenticated binding→Core PEP for an existing ProtocolSession. No native token
+///grants platform permissions.
+class ProtocolSessionPepRequest {
+  final String bindingId;
+  final String nativeObjectRef;
+  final NativeOperation nativeOperation;
+  final String protocolSessionId;
+  final WriteObservationClass? writeObservation;
+
+  ProtocolSessionPepRequest({
+    required this.bindingId,
+    required this.nativeObjectRef,
+    required this.nativeOperation,
+    required this.protocolSessionId,
+    this.writeObservation,
+  });
+
+  factory ProtocolSessionPepRequest.fromJson(Map<String, dynamic> json) =>
+      ProtocolSessionPepRequest(
+        bindingId: json["bindingId"],
+        nativeObjectRef: json["nativeObjectRef"],
+        nativeOperation: nativeOperationValues.map[json["nativeOperation"]]!,
+        protocolSessionId: json["protocolSessionId"],
+        writeObservation: json["writeObservation"] == null
+            ? null
+            : WriteObservationClass.fromJson(json["writeObservation"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "nativeObjectRef": nativeObjectRef,
+    "nativeOperation": nativeOperationValues.reverse[nativeOperation],
+    "protocolSessionId": protocolSessionId,
+    "writeObservation": writeObservation?.toJson(),
+  });
+}
+
+enum NativeOperation { OBSERVE, OPEN, READ, TOKEN_OBSERVE, TOKEN_REVOKE, WRITE }
+
+final nativeOperationValues = EnumValues({
+  "OBSERVE": NativeOperation.OBSERVE,
+  "OPEN": NativeOperation.OPEN,
+  "READ": NativeOperation.READ,
+  "TOKEN_OBSERVE": NativeOperation.TOKEN_OBSERVE,
+  "TOKEN_REVOKE": NativeOperation.TOKEN_REVOKE,
+  "WRITE": NativeOperation.WRITE,
+});
+
+///Original Session facts, not native revision existence or write success. Cells must still
+///query its exact VersionId and ACLs.
+class ProtocolSessionPepResponse {
+  final TedMode admittedMode;
+  final String baseRevision;
+  final Decision decision;
+  final String displayName;
+  final DateTime expiresAt;
+  final bool exportAllowed;
+  final String minZedToken;
+
+  ///Confirmed original native token/session reference. Required by native READ/WRITE
+  ///consumers, absent before the first native OPEN creation.
+  final String? nativeSessionRef;
+
+  ///Original active issuer from the HUMAN's frozen ExternalIdentity, never a browser-supplied
+  ///claim.
+  final String oidcIssuer;
+
+  ///Original active subject paired with oidcIssuer. Cells resolves its existing explicit
+  ///native user link; no email or display-name fallback.
+  final String oidcSubject;
+  final String platformHumanId;
+
+  ///Exact canonical platform PUBLIC_ORIGIN from the Core deployment, never the native request
+  ///Origin or a browser-supplied field. Required by the native FileInfo consumer; unavailable
+  ///origin refuses its editor projection.
+  final String? postMessageOrigin;
+
+  ProtocolSessionPepResponse({
+    required this.admittedMode,
+    required this.baseRevision,
+    required this.decision,
+    required this.displayName,
+    required this.expiresAt,
+    required this.exportAllowed,
+    required this.minZedToken,
+    this.nativeSessionRef,
+    required this.oidcIssuer,
+    required this.oidcSubject,
+    required this.platformHumanId,
+    this.postMessageOrigin,
+  });
+
+  factory ProtocolSessionPepResponse.fromJson(Map<String, dynamic> json) =>
+      ProtocolSessionPepResponse(
+        admittedMode: tedModeValues.map[json["admittedMode"]]!,
+        baseRevision: json["baseRevision"],
+        decision: decisionValues.map[json["decision"]]!,
+        displayName: json["displayName"],
+        expiresAt: DateTime.parse(json["expiresAt"]),
+        exportAllowed: json["exportAllowed"],
+        minZedToken: json["minZedToken"],
+        nativeSessionRef: json["nativeSessionRef"],
+        oidcIssuer: json["oidcIssuer"],
+        oidcSubject: json["oidcSubject"],
+        platformHumanId: json["platformHumanId"],
+        postMessageOrigin: json["postMessageOrigin"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "admittedMode": tedModeValues.reverse[admittedMode],
+    "baseRevision": baseRevision,
+    "decision": decisionValues.reverse[decision],
+    "displayName": displayName,
+    "expiresAt": expiresAt.toIso8601String(),
+    "exportAllowed": exportAllowed,
+    "minZedToken": minZedToken,
+    "nativeSessionRef": nativeSessionRef,
+    "oidcIssuer": oidcIssuer,
+    "oidcSubject": oidcSubject,
+    "platformHumanId": platformHumanId,
+    "postMessageOrigin": postMessageOrigin,
+  });
+}
+
+///18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never
+///file bytes or an authorization grant.
+class ProtocolWriteObservation {
+  final DateTime baseModifiedAt;
+  final int bytesWritten;
+  final String correlationRef;
+  final String editors;
+  final String? nativeEtag;
+  final Phase phase;
+  final String? resultRevision;
+
+  ProtocolWriteObservation({
+    required this.baseModifiedAt,
+    required this.bytesWritten,
+    required this.correlationRef,
+    required this.editors,
+    this.nativeEtag,
+    required this.phase,
+    this.resultRevision,
+  });
+
+  factory ProtocolWriteObservation.fromJson(Map<String, dynamic> json) =>
+      ProtocolWriteObservation(
+        baseModifiedAt: DateTime.parse(json["baseModifiedAt"]),
+        bytesWritten: json["bytesWritten"],
+        correlationRef: json["correlationRef"],
+        editors: json["editors"],
+        nativeEtag: json["nativeEtag"],
+        phase: phaseValues.map[json["phase"]]!,
+        resultRevision: json["resultRevision"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "baseModifiedAt": baseModifiedAt.toIso8601String(),
+    "bytesWritten": bytesWritten,
+    "correlationRef": correlationRef,
+    "editors": editors,
+    "nativeEtag": nativeEtag,
+    "phase": phaseValues.reverse[phase],
+    "resultRevision": resultRevision,
+  });
+}
+
+///Receipt of native write evidence. It grants no read or write permission.
+class ProtocolWriteReceipt {
+  final String protocolSessionId;
+  final ProtocolWriteReceiptState state;
+
+  ProtocolWriteReceipt({required this.protocolSessionId, required this.state});
+
+  factory ProtocolWriteReceipt.fromJson(Map<String, dynamic> json) =>
+      ProtocolWriteReceipt(
+        protocolSessionId: json["protocolSessionId"],
+        state: protocolWriteReceiptStateValues.map[json["state"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "protocolSessionId": protocolSessionId,
+    "state": protocolWriteReceiptStateValues.reverse[state],
+  });
+}
+
+enum ProtocolWriteReceiptState { CONFLICT, DIRTY, FAILED, SAVED, UNKNOWN }
+
+final protocolWriteReceiptStateValues = EnumValues({
+  "CONFLICT": ProtocolWriteReceiptState.CONFLICT,
+  "DIRTY": ProtocolWriteReceiptState.DIRTY,
+  "FAILED": ProtocolWriteReceiptState.FAILED,
+  "SAVED": ProtocolWriteReceiptState.SAVED,
+  "UNKNOWN": ProtocolWriteReceiptState.UNKNOWN,
+});
+
 ///
 ///07§5.2与ADR-12：查询同一native对象当前权威revision；ActionToken通过Authorization头传输，幂等键与Idempotency-Key头一致。authorizationTargetNativeRef仅为Core从实际受权Resource/Asset解析的原生目标定位，参与同一参数签名；adapter须核实被查对象在该目标及固定binding
 ///scope内。缺省保持确切目标查询，不授予一般子对象读取。不是execute或权限授予。
@@ -1664,11 +2411,13 @@ class AdapterQueryRevisionRequest {
   final String? authorizationTargetNativeRef;
   final String idempotencyKey;
   final String nativeObjectRef;
+  final ProtocolReconcileClass? protocolReconcile;
 
   AdapterQueryRevisionRequest({
     this.authorizationTargetNativeRef,
     required this.idempotencyKey,
     required this.nativeObjectRef,
+    this.protocolReconcile,
   });
 
   factory AdapterQueryRevisionRequest.fromJson(Map<String, dynamic> json) =>
@@ -1676,35 +2425,76 @@ class AdapterQueryRevisionRequest {
         authorizationTargetNativeRef: json["authorizationTargetNativeRef"],
         idempotencyKey: json["idempotencyKey"],
         nativeObjectRef: json["nativeObjectRef"],
+        protocolReconcile: json["protocolReconcile"] == null
+            ? null
+            : ProtocolReconcileClass.fromJson(json["protocolReconcile"]),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "authorizationTargetNativeRef": authorizationTargetNativeRef,
     "idempotencyKey": idempotencyKey,
     "nativeObjectRef": nativeObjectRef,
+    "protocolReconcile": protocolReconcile?.toJson(),
+  });
+}
+
+///DD-90/18§5.4：原保存结果不明会话的确切写入证据查证；只核已有 ACCEPTED writer observation 对应的原生
+///VersionId，不提供文件字节或当前权限。
+class ProtocolReconcileClass {
+  final String baseRevision;
+  final String protocolSessionId;
+  final WriteObservationClass writeObservation;
+
+  ProtocolReconcileClass({
+    required this.baseRevision,
+    required this.protocolSessionId,
+    required this.writeObservation,
+  });
+
+  factory ProtocolReconcileClass.fromJson(Map<String, dynamic> json) =>
+      ProtocolReconcileClass(
+        baseRevision: json["baseRevision"],
+        protocolSessionId: json["protocolSessionId"],
+        writeObservation: WriteObservationClass.fromJson(
+          json["writeObservation"],
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "baseRevision": baseRevision,
+    "protocolSessionId": protocolSessionId,
+    "writeObservation": writeObservation.toJson(),
   });
 }
 
 ///
 ///07§5.2与18§5：只返回被查证同一native对象当前权威revision，不替换调用方冻结ContentReference、不以mtime/ETag猜测revision。未知或fresh授权失败不得生成成功应答。
 class AdapterQueryRevisionResponse {
+  final String? correlationRef;
   final String nativeObjectRef;
   final String nativeRevision;
+  final String? protocolSessionId;
 
   AdapterQueryRevisionResponse({
+    this.correlationRef,
     required this.nativeObjectRef,
     required this.nativeRevision,
+    this.protocolSessionId,
   });
 
   factory AdapterQueryRevisionResponse.fromJson(Map<String, dynamic> json) =>
       AdapterQueryRevisionResponse(
+        correlationRef: json["correlationRef"],
         nativeObjectRef: json["nativeObjectRef"],
         nativeRevision: json["nativeRevision"],
+        protocolSessionId: json["protocolSessionId"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "correlationRef": correlationRef,
     "nativeObjectRef": nativeObjectRef,
     "nativeRevision": nativeRevision,
+    "protocolSessionId": protocolSessionId,
   });
 }
 
@@ -1771,6 +2561,7 @@ class ActionCommand {
 
   ///仅 capability_contract.register：真实 schema 与测试向量内容。
   final CapabilityContractRegistrationClass? capabilityContractRegistration;
+  final ComponentActionClass? componentAction;
 
   ///仅组件批准：已登记的不可变ComponentRelease标识。
   final String? componentReleaseId;
@@ -1788,7 +2579,8 @@ class ActionCommand {
   ///仅 automation.create：同一 Workspace 的确切 AgentInstallation Resource，不从名称或当前默认配置推断。
   final String? executorInstallationResourceId;
 
-  ///EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
+  ///EXPLICIT 动作或 HUMAN owner 的一次手动 automation.run，由用户在当前目标详情上确认后设为 true；其他动作不得携带。手动运行只提交
+  ///resourceId/resourceVersion/workspaceId 与同一幂等键，不选择 Grant、Agent、来源或结果位置。
   final bool? explicitConfirmation;
 
   ///调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
@@ -1812,7 +2604,11 @@ class ActionCommand {
 
   ///成员动作的目标 Principal；resource.transfer_owner 的新 owner
   final String? principalId;
-  final ReferenceClass? resourceCreate;
+
+  ///Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
+  ///identity; no Agent or caller-selected native credentials.
+  final ProtocolSessionOpenClass? protocolSessionOpen;
+  final ResourceCreateClass? resourceCreate;
 
   ///Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
   final String? resourceId;
@@ -1843,6 +2639,7 @@ class ActionCommand {
     this.automationVersionContent,
     this.capabilityContractRef,
     this.capabilityContractRegistration,
+    this.componentAction,
     this.componentReleaseId,
     this.componentReleaseRegistration,
     this.delegationGrant,
@@ -1857,6 +2654,7 @@ class ActionCommand {
     this.name,
     this.originalActionExecutionId,
     this.principalId,
+    this.protocolSessionOpen,
     this.resourceCreate,
     this.resourceId,
     this.resourceVersion,
@@ -1894,6 +2692,9 @@ class ActionCommand {
         : CapabilityContractRegistrationClass.fromJson(
             json["capabilityContractRegistration"],
           ),
+    componentAction: json["componentAction"] == null
+        ? null
+        : ComponentActionClass.fromJson(json["componentAction"]),
     componentReleaseId: json["componentReleaseId"],
     componentReleaseRegistration: json["componentReleaseRegistration"] == null
         ? null
@@ -1918,9 +2719,12 @@ class ActionCommand {
     name: json["name"],
     originalActionExecutionId: json["originalActionExecutionId"],
     principalId: json["principalId"],
+    protocolSessionOpen: json["protocolSessionOpen"] == null
+        ? null
+        : ProtocolSessionOpenClass.fromJson(json["protocolSessionOpen"]),
     resourceCreate: json["resourceCreate"] == null
         ? null
-        : ReferenceClass.fromJson(json["resourceCreate"]),
+        : ResourceCreateClass.fromJson(json["resourceCreate"]),
     resourceId: json["resourceId"],
     resourceVersion: json["resourceVersion"],
     slug: json["slug"],
@@ -1940,6 +2744,7 @@ class ActionCommand {
     "automationVersionContent": automationVersionContent?.toJson(),
     "capabilityContractRef": capabilityContractRef?.toJson(),
     "capabilityContractRegistration": capabilityContractRegistration?.toJson(),
+    "componentAction": componentAction?.toJson(),
     "componentReleaseId": componentReleaseId,
     "componentReleaseRegistration": componentReleaseRegistration?.toJson(),
     "delegationGrant": delegationGrant?.toJson(),
@@ -1954,6 +2759,7 @@ class ActionCommand {
     "name": name,
     "originalActionExecutionId": originalActionExecutionId,
     "principalId": principalId,
+    "protocolSessionOpen": protocolSessionOpen?.toJson(),
     "resourceCreate": resourceCreate?.toJson(),
     "resourceId": resourceId,
     "resourceVersion": resourceVersion,
@@ -2684,6 +3490,37 @@ class CapabilityContractRegistrationResourceTypeFamily {
       _stripNulls({"kind": kind, "typeKey": typeKey});
 }
 
+///Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
+///Core/Temporal。
+class ComponentActionClass {
+  final int actionVersion;
+  final ReferenceClass inputReference;
+  final String resultExposurePolicyId;
+  final int resultExposurePolicyVersion;
+
+  ComponentActionClass({
+    required this.actionVersion,
+    required this.inputReference,
+    required this.resultExposurePolicyId,
+    required this.resultExposurePolicyVersion,
+  });
+
+  factory ComponentActionClass.fromJson(Map<String, dynamic> json) =>
+      ComponentActionClass(
+        actionVersion: json["actionVersion"],
+        inputReference: ReferenceClass.fromJson(json["inputReference"]),
+        resultExposurePolicyId: json["resultExposurePolicyId"],
+        resultExposurePolicyVersion: json["resultExposurePolicyVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionVersion": actionVersion,
+    "inputReference": inputReference.toJson(),
+    "resultExposurePolicyId": resultExposurePolicyId,
+    "resultExposurePolicyVersion": resultExposurePolicyVersion,
+  });
+}
+
 ///组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
 ///Worker 独立执行隔离套件。
 class ComponentReleaseRegistrationClass {
@@ -2946,14 +3783,62 @@ final expectedHeadStateValues = EnumValues({
   "FOUND": ExpectedHeadState.FOUND,
 });
 
-class ReferenceClass {
+///Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
+///identity; no Agent or caller-selected native credentials.
+///
+///03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL.
+///Revision and presentation are frozen once; session expiry comes from controlled Core
+///delivery.
+class ProtocolSessionOpenClass {
+  final int actionVersion;
+
+  ///The selected native source binding; must equal the target's real binding, not an
+  ///authorization claim.
+  final String applicationBindingId;
+  final Locale locale;
+
+  ///Exact approved projection selected by the native menu; never latest.
+  final int projectionGeneration;
+  final ReferenceClass reference;
+  final Theme theme;
+
+  ProtocolSessionOpenClass({
+    required this.actionVersion,
+    required this.applicationBindingId,
+    required this.locale,
+    required this.projectionGeneration,
+    required this.reference,
+    required this.theme,
+  });
+
+  factory ProtocolSessionOpenClass.fromJson(Map<String, dynamic> json) =>
+      ProtocolSessionOpenClass(
+        actionVersion: json["actionVersion"],
+        applicationBindingId: json["applicationBindingId"],
+        locale: localeValues.map[json["locale"]]!,
+        projectionGeneration: json["projectionGeneration"],
+        reference: ReferenceClass.fromJson(json["reference"]),
+        theme: themeValues.map[json["theme"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionVersion": actionVersion,
+    "applicationBindingId": applicationBindingId,
+    "locale": localeValues.reverse[locale],
+    "projectionGeneration": projectionGeneration,
+    "reference": reference.toJson(),
+    "theme": themeValues.reverse[theme],
+  });
+}
+
+class ResourceCreateClass {
   final String evidenceDigest;
   final String evidenceRef;
   final String nativeRef;
   final String nativeType;
   final String typeKey;
 
-  ReferenceClass({
+  ResourceCreateClass({
     required this.evidenceDigest,
     required this.evidenceRef,
     required this.nativeRef,
@@ -2961,13 +3846,14 @@ class ReferenceClass {
     required this.typeKey,
   });
 
-  factory ReferenceClass.fromJson(Map<String, dynamic> json) => ReferenceClass(
-    evidenceDigest: json["evidenceDigest"],
-    evidenceRef: json["evidenceRef"],
-    nativeRef: json["nativeRef"],
-    nativeType: json["nativeType"],
-    typeKey: json["typeKey"],
-  );
+  factory ResourceCreateClass.fromJson(Map<String, dynamic> json) =>
+      ResourceCreateClass(
+        evidenceDigest: json["evidenceDigest"],
+        evidenceRef: json["evidenceRef"],
+        nativeRef: json["nativeRef"],
+        nativeType: json["nativeType"],
+        typeKey: json["typeKey"],
+      );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "evidenceDigest": evidenceDigest,
@@ -2985,9 +3871,11 @@ class ActionSubmission {
   final String actionKey;
   final String? approvalWorkflowId;
   final ActionDispatchState dispatchState;
+  final LaunchDescriptorClass? documentLaunch;
   final ActionGateState gateState;
   final InvitationClass? invitation;
   final String operationId;
+  final String? protocolSessionId;
   final ReasonCode? reason;
   final String? workflowId;
 
@@ -2996,9 +3884,11 @@ class ActionSubmission {
     required this.actionKey,
     this.approvalWorkflowId,
     required this.dispatchState,
+    this.documentLaunch,
     required this.gateState,
     this.invitation,
     required this.operationId,
+    this.protocolSessionId,
     this.reason,
     this.workflowId,
   });
@@ -3009,11 +3899,15 @@ class ActionSubmission {
         actionKey: json["actionKey"],
         approvalWorkflowId: json["approvalWorkflowId"],
         dispatchState: actionDispatchStateValues.map[json["dispatchState"]]!,
+        documentLaunch: json["documentLaunch"] == null
+            ? null
+            : LaunchDescriptorClass.fromJson(json["documentLaunch"]),
         gateState: actionGateStateValues.map[json["gateState"]]!,
         invitation: json["invitation"] == null
             ? null
             : InvitationClass.fromJson(json["invitation"]),
         operationId: json["operationId"],
+        protocolSessionId: json["protocolSessionId"],
         reason: json["reason"] == null
             ? null
             : reasonCodeValues.map[json["reason"]]!,
@@ -3025,9 +3919,11 @@ class ActionSubmission {
     "actionKey": actionKey,
     "approvalWorkflowId": approvalWorkflowId,
     "dispatchState": actionDispatchStateValues.reverse[dispatchState],
+    "documentLaunch": documentLaunch?.toJson(),
     "gateState": actionGateStateValues.reverse[gateState],
     "invitation": invitation?.toJson(),
     "operationId": operationId,
+    "protocolSessionId": protocolSessionId,
     "reason": reasonCodeValues.reverse[reason],
     "workflowId": workflowId,
   });
@@ -3627,8 +4523,9 @@ class InstallationElement {
   final AgentPrincipalState agentPrincipalState;
   final String agentResourceId;
 
-  ///同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
-  ///Schedule。
+  ///同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
+  ///则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
+  ///准入。缺失或空集合不支持 Schedule。
   final List<AutomationResultTarget>? automationResultTargets;
   final InstallationChannelBinding? channelBinding;
   final InstallationExecutionPermission? executionPermission;
@@ -3932,8 +4829,9 @@ class AgentInstallationView {
   final AgentPrincipalState agentPrincipalState;
   final String agentResourceId;
 
-  ///同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
-  ///Schedule。
+  ///同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
+  ///则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
+  ///准入。缺失或空集合不支持 Schedule。
   final List<AutomationResultTarget>? automationResultTargets;
   final AgentInstallationViewChannelBinding? channelBinding;
   final AgentInstallationViewExecutionPermission? executionPermission;
@@ -5366,6 +6264,10 @@ class AutomationDetailView {
 
   ///当前 Resource manage；不是运行准入、额度允许或业务成功。
   final bool canManage;
+
+  ///仅当前 ACTIVE HUMAN owner、Workspace membership 与 Resource execute，以及已启用固定版本允许显示手动运行；仍须原
+  ///automation.run 的准入、Delegation、额度及步骤审批。缺省关闭，不是业务成功。
+  final bool? canRun;
   final List<DelegationElement> delegations;
   final int? nextDelegationOffset;
   final int? nextVersionOffset;
@@ -5374,6 +6276,7 @@ class AutomationDetailView {
   AutomationDetailView({
     required this.automation,
     required this.canManage,
+    this.canRun,
     required this.delegations,
     this.nextDelegationOffset,
     this.nextVersionOffset,
@@ -5384,6 +6287,7 @@ class AutomationDetailView {
       AutomationDetailView(
         automation: AutomationElement.fromJson(json["automation"]),
         canManage: json["canManage"],
+        canRun: json["canRun"],
         delegations: List<DelegationElement>.from(
           json["delegations"].map((x) => DelegationElement.fromJson(x)),
         ),
@@ -5397,6 +6301,7 @@ class AutomationDetailView {
   Map<String, dynamic> toJson() => _stripNulls({
     "automation": automation.toJson(),
     "canManage": canManage,
+    "canRun": canRun,
     "delegations": List<dynamic>.from(delegations.map((x) => x.toJson())),
     "nextDelegationOffset": nextDelegationOffset,
     "nextVersionOffset": nextVersionOffset,
@@ -5454,9 +6359,10 @@ class AutomationElement {
 }
 
 ///03 §7、05 §2.9：AutomationDefinition 的真实管理状态，不是 Invocation 终态。
-enum AutomationState { DISABLED, DRAFT, ENABLED, PAUSED }
+enum AutomationState { DELETED, DISABLED, DRAFT, ENABLED, PAUSED }
 
 final automationStateValues = EnumValues({
+  "DELETED": AutomationState.DELETED,
   "DISABLED": AutomationState.DISABLED,
   "DRAFT": AutomationState.DRAFT,
   "ENABLED": AutomationState.ENABLED,
@@ -5777,11 +6683,13 @@ final taskStatusValues = EnumValues({
 enum WorkflowKind {
   AGENT_INSTALLATION,
   BUZZ_IDENTITY_PROJECTION,
+  COMPONENT_ACTION,
   COMPONENT_BINDING,
   COMPONENT_DISABLE,
   COMPONENT_RELEASE,
   MEMBERSHIP_PROJECTION,
   MEMBERSHIP_REVOCATION,
+  PROTOCOL_SESSION_RECONCILE,
   RESOURCE_PROVISION,
   SECRET_REF_REHOME,
   TENANT_LIFECYCLE,
@@ -5791,11 +6699,13 @@ enum WorkflowKind {
 final workflowKindValues = EnumValues({
   "AGENT_INSTALLATION": WorkflowKind.AGENT_INSTALLATION,
   "BUZZ_IDENTITY_PROJECTION": WorkflowKind.BUZZ_IDENTITY_PROJECTION,
+  "COMPONENT_ACTION": WorkflowKind.COMPONENT_ACTION,
   "COMPONENT_BINDING": WorkflowKind.COMPONENT_BINDING,
   "COMPONENT_DISABLE": WorkflowKind.COMPONENT_DISABLE,
   "COMPONENT_RELEASE": WorkflowKind.COMPONENT_RELEASE,
   "MEMBERSHIP_PROJECTION": WorkflowKind.MEMBERSHIP_PROJECTION,
   "MEMBERSHIP_REVOCATION": WorkflowKind.MEMBERSHIP_REVOCATION,
+  "PROTOCOL_SESSION_RECONCILE": WorkflowKind.PROTOCOL_SESSION_RECONCILE,
   "RESOURCE_PROVISION": WorkflowKind.RESOURCE_PROVISION,
   "SECRET_REF_REHOME": WorkflowKind.SECRET_REF_REHOME,
   "TENANT_LIFECYCLE": WorkflowKind.TENANT_LIFECYCLE,
@@ -6265,7 +7175,7 @@ class ComponentConformanceWireObservation {
 ///原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
 ///history 承接，不建立另一执行账本。
 class ProbeClass {
-  final ContentReferenceClass? contentReference;
+  final ReferenceClass? contentReference;
   final PlanClass plan;
 
   ///只查询同一步冻结幂等键；不再发送原 execute/CREATE。
@@ -6282,7 +7192,7 @@ class ProbeClass {
   factory ProbeClass.fromJson(Map<String, dynamic> json) => ProbeClass(
     contentReference: json["contentReference"] == null
         ? null
-        : ContentReferenceClass.fromJson(json["contentReference"]),
+        : ReferenceClass.fromJson(json["contentReference"]),
     plan: PlanClass.fromJson(json["plan"]),
     reconcile: json["reconcile"],
     stepIndex: json["stepIndex"],
@@ -7292,6 +8202,115 @@ class PlatformToolView {
   });
 }
 
+///03/18: only the initiating HUMAN's fresh-authorized original Session facts. No PAT,
+///launch credential, native body or replacement revision is recoverable from this reader.
+class ProtocolSessionView {
+  final String actionExecutionId;
+  final TedMode admittedMode;
+  final String applicationBindingId;
+  final String baseRevision;
+  final List<String> effectiveEditorOrigins;
+  final DateTime expiresAt;
+  final Locale launchLocale;
+  final Theme launchTheme;
+  final String protocolSessionId;
+  final ReferenceClass reference;
+  final String? resultRevision;
+  final ProtocolSessionViewState state;
+  final String tenantId;
+  final int version;
+  final String? workspaceId;
+
+  ProtocolSessionView({
+    required this.actionExecutionId,
+    required this.admittedMode,
+    required this.applicationBindingId,
+    required this.baseRevision,
+    required this.effectiveEditorOrigins,
+    required this.expiresAt,
+    required this.launchLocale,
+    required this.launchTheme,
+    required this.protocolSessionId,
+    required this.reference,
+    this.resultRevision,
+    required this.state,
+    required this.tenantId,
+    required this.version,
+    this.workspaceId,
+  });
+
+  factory ProtocolSessionView.fromJson(Map<String, dynamic> json) =>
+      ProtocolSessionView(
+        actionExecutionId: json["actionExecutionId"],
+        admittedMode: tedModeValues.map[json["admittedMode"]]!,
+        applicationBindingId: json["applicationBindingId"],
+        baseRevision: json["baseRevision"],
+        effectiveEditorOrigins: List<String>.from(
+          json["effectiveEditorOrigins"].map((x) => x),
+        ),
+        expiresAt: DateTime.parse(json["expiresAt"]),
+        launchLocale: localeValues.map[json["launchLocale"]]!,
+        launchTheme: themeValues.map[json["launchTheme"]]!,
+        protocolSessionId: json["protocolSessionId"],
+        reference: ReferenceClass.fromJson(json["reference"]),
+        resultRevision: json["resultRevision"],
+        state: protocolSessionViewStateValues.map[json["state"]]!,
+        tenantId: json["tenantId"],
+        version: json["version"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "admittedMode": tedModeValues.reverse[admittedMode],
+    "applicationBindingId": applicationBindingId,
+    "baseRevision": baseRevision,
+    "effectiveEditorOrigins": List<dynamic>.from(
+      effectiveEditorOrigins.map((x) => x),
+    ),
+    "expiresAt": expiresAt.toIso8601String(),
+    "launchLocale": localeValues.reverse[launchLocale],
+    "launchTheme": themeValues.reverse[launchTheme],
+    "protocolSessionId": protocolSessionId,
+    "reference": reference.toJson(),
+    "resultRevision": resultRevision,
+    "state": protocolSessionViewStateValues.reverse[state],
+    "tenantId": tenantId,
+    "version": version,
+    "workspaceId": workspaceId,
+  });
+}
+
+enum ProtocolSessionViewState {
+  ADMITTED,
+  CLOSED,
+  CONFLICT,
+  DIRTY,
+  EXPIRED,
+  FAILED,
+  OPEN,
+  OPENING,
+  READ_ONLY,
+  REVOKED,
+  SAVED,
+  UNKNOWN,
+}
+
+final protocolSessionViewStateValues = EnumValues({
+  "ADMITTED": ProtocolSessionViewState.ADMITTED,
+  "CLOSED": ProtocolSessionViewState.CLOSED,
+  "CONFLICT": ProtocolSessionViewState.CONFLICT,
+  "DIRTY": ProtocolSessionViewState.DIRTY,
+  "EXPIRED": ProtocolSessionViewState.EXPIRED,
+  "FAILED": ProtocolSessionViewState.FAILED,
+  "OPEN": ProtocolSessionViewState.OPEN,
+  "OPENING": ProtocolSessionViewState.OPENING,
+  "READ_ONLY": ProtocolSessionViewState.READ_ONLY,
+  "REVOKED": ProtocolSessionViewState.REVOKED,
+  "SAVED": ProtocolSessionViewState.SAVED,
+  "UNKNOWN": ProtocolSessionViewState.UNKNOWN,
+});
+
 ///PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
 ///ID、msg:<Buzz event id> 或 thread:<Buzz root event id>；version 是读到的 CollaborationUserState
 ///版本，不符即 409。
@@ -8228,8 +9247,9 @@ class ApplicationAdapterDelivery {
   final String baseUrl;
   final int maxResponseBytes;
   final String? mcpUrl;
+  final List<ApplicationModelCredentialDelivery>? modelCredentialDeliveries;
   final String nativeInstanceRef;
-  final List<ApplicationSecretReader> secretReaders;
+  final List<AdapterSecretReader> secretReaders;
   final int timeoutSeconds;
 
   ApplicationAdapterDelivery({
@@ -8239,6 +9259,7 @@ class ApplicationAdapterDelivery {
     required this.baseUrl,
     required this.maxResponseBytes,
     this.mcpUrl,
+    this.modelCredentialDeliveries,
     required this.nativeInstanceRef,
     required this.secretReaders,
     required this.timeoutSeconds,
@@ -8252,9 +9273,16 @@ class ApplicationAdapterDelivery {
         baseUrl: json["baseUrl"],
         maxResponseBytes: json["maxResponseBytes"],
         mcpUrl: json["mcpUrl"],
+        modelCredentialDeliveries: json["modelCredentialDeliveries"] == null
+            ? null
+            : List<ApplicationModelCredentialDelivery>.from(
+                json["modelCredentialDeliveries"]!.map(
+                  (x) => ApplicationModelCredentialDelivery.fromJson(x),
+                ),
+              ),
         nativeInstanceRef: json["nativeInstanceRef"],
-        secretReaders: List<ApplicationSecretReader>.from(
-          json["secretReaders"].map((x) => ApplicationSecretReader.fromJson(x)),
+        secretReaders: List<AdapterSecretReader>.from(
+          json["secretReaders"].map((x) => AdapterSecretReader.fromJson(x)),
         ),
         timeoutSeconds: json["timeoutSeconds"],
       );
@@ -8266,25 +9294,113 @@ class ApplicationAdapterDelivery {
     "baseUrl": baseUrl,
     "maxResponseBytes": maxResponseBytes,
     "mcpUrl": mcpUrl,
+    "modelCredentialDeliveries": modelCredentialDeliveries == null
+        ? null
+        : List<dynamic>.from(modelCredentialDeliveries!.map((x) => x.toJson())),
     "nativeInstanceRef": nativeInstanceRef,
     "secretReaders": List<dynamic>.from(secretReaders.map((x) => x.toJson())),
     "timeoutSeconds": timeoutSeconds,
   });
 }
 
-class ApplicationSecretReader {
+///受控原生模型凭据交接回执；无密钥值，不创建模型，不替代OpenBao审计或binding准入。
+class ApplicationModelCredentialDelivery {
+  final String bindingId;
+  final String configDigest;
+  final int generation;
+  final String nativeModelRef;
+  final String nativeProof;
+  final String nativeScopeRef;
+  final String requestId;
+  final String routeResourceId;
+  final ApplicationModelServiceSecretRef secretRef;
+  final String servicePrincipalId;
+  final String verificationNonce;
+
+  ApplicationModelCredentialDelivery({
+    required this.bindingId,
+    required this.configDigest,
+    required this.generation,
+    required this.nativeModelRef,
+    required this.nativeProof,
+    required this.nativeScopeRef,
+    required this.requestId,
+    required this.routeResourceId,
+    required this.secretRef,
+    required this.servicePrincipalId,
+    required this.verificationNonce,
+  });
+
+  factory ApplicationModelCredentialDelivery.fromJson(
+    Map<String, dynamic> json,
+  ) => ApplicationModelCredentialDelivery(
+    bindingId: json["bindingId"],
+    configDigest: json["configDigest"],
+    generation: json["generation"],
+    nativeModelRef: json["nativeModelRef"],
+    nativeProof: json["nativeProof"],
+    nativeScopeRef: json["nativeScopeRef"],
+    requestId: json["requestId"],
+    routeResourceId: json["routeResourceId"],
+    secretRef: ApplicationModelServiceSecretRef.fromJson(json["secretRef"]),
+    servicePrincipalId: json["servicePrincipalId"],
+    verificationNonce: json["verificationNonce"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "configDigest": configDigest,
+    "generation": generation,
+    "nativeModelRef": nativeModelRef,
+    "nativeProof": nativeProof,
+    "nativeScopeRef": nativeScopeRef,
+    "requestId": requestId,
+    "routeResourceId": routeResourceId,
+    "secretRef": secretRef.toJson(),
+    "servicePrincipalId": servicePrincipalId,
+    "verificationNonce": verificationNonce,
+  });
+}
+
+class ApplicationModelServiceSecretRef {
+  final String audience;
+  final String locator;
+  final int version;
+
+  ApplicationModelServiceSecretRef({
+    required this.audience,
+    required this.locator,
+    required this.version,
+  });
+
+  factory ApplicationModelServiceSecretRef.fromJson(
+    Map<String, dynamic> json,
+  ) => ApplicationModelServiceSecretRef(
+    audience: json["audience"],
+    locator: json["locator"],
+    version: json["version"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "audience": audience,
+    "locator": locator,
+    "version": version,
+  });
+}
+
+class AdapterSecretReader {
   final String audience;
   final String roleName;
   final String servicePrincipalId;
 
-  ApplicationSecretReader({
+  AdapterSecretReader({
     required this.audience,
     required this.roleName,
     required this.servicePrincipalId,
   });
 
-  factory ApplicationSecretReader.fromJson(Map<String, dynamic> json) =>
-      ApplicationSecretReader(
+  factory AdapterSecretReader.fromJson(Map<String, dynamic> json) =>
+      AdapterSecretReader(
         audience: json["audience"],
         roleName: json["roleName"],
         servicePrincipalId: json["servicePrincipalId"],
@@ -8303,7 +9419,9 @@ class ApplicationProtocolPeerDelivery {
   final List<ApplicationProtocolPeerBindingDelivery> bindings;
   final int maxResponseBytes;
   final String mcpUrl;
+  final List<ApplicationModelCredentialDelivery>? modelCredentialDeliveries;
   final String nativeInstanceRef;
+  final List<ProtocolPeerSecretReader>? secretReaders;
   final int timeoutSeconds;
 
   ApplicationProtocolPeerDelivery({
@@ -8312,7 +9430,9 @@ class ApplicationProtocolPeerDelivery {
     required this.bindings,
     required this.maxResponseBytes,
     required this.mcpUrl,
+    this.modelCredentialDeliveries,
     required this.nativeInstanceRef,
+    this.secretReaders,
     required this.timeoutSeconds,
   });
 
@@ -8327,7 +9447,21 @@ class ApplicationProtocolPeerDelivery {
         ),
         maxResponseBytes: json["maxResponseBytes"],
         mcpUrl: json["mcpUrl"],
+        modelCredentialDeliveries: json["modelCredentialDeliveries"] == null
+            ? null
+            : List<ApplicationModelCredentialDelivery>.from(
+                json["modelCredentialDeliveries"]!.map(
+                  (x) => ApplicationModelCredentialDelivery.fromJson(x),
+                ),
+              ),
         nativeInstanceRef: json["nativeInstanceRef"],
+        secretReaders: json["secretReaders"] == null
+            ? null
+            : List<ProtocolPeerSecretReader>.from(
+                json["secretReaders"]!.map(
+                  (x) => ProtocolPeerSecretReader.fromJson(x),
+                ),
+              ),
         timeoutSeconds: json["timeoutSeconds"],
       );
 
@@ -8337,7 +9471,13 @@ class ApplicationProtocolPeerDelivery {
     "bindings": List<dynamic>.from(bindings.map((x) => x.toJson())),
     "maxResponseBytes": maxResponseBytes,
     "mcpUrl": mcpUrl,
+    "modelCredentialDeliveries": modelCredentialDeliveries == null
+        ? null
+        : List<dynamic>.from(modelCredentialDeliveries!.map((x) => x.toJson())),
     "nativeInstanceRef": nativeInstanceRef,
+    "secretReaders": secretReaders == null
+        ? null
+        : List<dynamic>.from(secretReaders!.map((x) => x.toJson())),
     "timeoutSeconds": timeoutSeconds,
   });
 }
@@ -8488,6 +9628,31 @@ class ApplicationNativeResourceDelivery {
   });
 }
 
+class ProtocolPeerSecretReader {
+  final String audience;
+  final String roleName;
+  final String servicePrincipalId;
+
+  ProtocolPeerSecretReader({
+    required this.audience,
+    required this.roleName,
+    required this.servicePrincipalId,
+  });
+
+  factory ProtocolPeerSecretReader.fromJson(Map<String, dynamic> json) =>
+      ProtocolPeerSecretReader(
+        audience: json["audience"],
+        roleName: json["roleName"],
+        servicePrincipalId: json["servicePrincipalId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "audience": audience,
+    "roleName": roleName,
+    "servicePrincipalId": servicePrincipalId,
+  });
+}
+
 ///DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
 ///ActionCommand。
 class ApplicationBindingCreate {
@@ -8617,6 +9782,31 @@ class ApplicationBindingCreateSecretRefClass {
     "locator": locator,
     "secretKey": secretKey,
     "version": version,
+  });
+}
+
+///DD-92: modelGateway within the approved binding config. Only existing route and meter
+///references; no provider configuration, credential value or native model row.
+class ApplicationModelGatewayConfig {
+  final List<String> meterKeys;
+  final List<String> routeResourceIds;
+
+  ApplicationModelGatewayConfig({
+    required this.meterKeys,
+    required this.routeResourceIds,
+  });
+
+  factory ApplicationModelGatewayConfig.fromJson(Map<String, dynamic> json) =>
+      ApplicationModelGatewayConfig(
+        meterKeys: List<String>.from(json["meterKeys"].map((x) => x)),
+        routeResourceIds: List<String>.from(
+          json["routeResourceIds"].map((x) => x),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "meterKeys": List<dynamic>.from(meterKeys.map((x) => x)),
+    "routeResourceIds": List<dynamic>.from(routeResourceIds.map((x) => x)),
   });
 }
 
@@ -9026,6 +10216,37 @@ class CapabilityContractRegistrationResourceTypeFamilyClass {
 
   Map<String, dynamic> toJson() =>
       _stripNulls({"kind": kind, "typeKey": typeKey});
+}
+
+///Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
+///Core/Temporal。
+class ComponentActionInput {
+  final int actionVersion;
+  final ReferenceClass inputReference;
+  final String resultExposurePolicyId;
+  final int resultExposurePolicyVersion;
+
+  ComponentActionInput({
+    required this.actionVersion,
+    required this.inputReference,
+    required this.resultExposurePolicyId,
+    required this.resultExposurePolicyVersion,
+  });
+
+  factory ComponentActionInput.fromJson(Map<String, dynamic> json) =>
+      ComponentActionInput(
+        actionVersion: json["actionVersion"],
+        inputReference: ReferenceClass.fromJson(json["inputReference"]),
+        resultExposurePolicyId: json["resultExposurePolicyId"],
+        resultExposurePolicyVersion: json["resultExposurePolicyVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionVersion": actionVersion,
+    "inputReference": inputReference.toJson(),
+    "resultExposurePolicyId": resultExposurePolicyId,
+    "resultExposurePolicyVersion": resultExposurePolicyVersion,
+  });
 }
 
 ///07§8A 的隔离环境投递配置，不是 Catalog/binding 权威。由运维配置精确绑定已装载候选 artifact；逐次短期模拟 token 仅由 Core
@@ -9452,6 +10673,45 @@ class DelegationScopeParameters {
   });
 }
 
+///DD-95/103: transient, fixed-origin launch returned by the admitted binding adapter;
+///credentials are only string form fields, never a persisted Task, chat or ContentReference.
+class DocumentLaunchDescriptor {
+  final String actionUrl;
+  final String editorOrigin;
+  final String expiresAt;
+  final Map<String, String> formFields;
+  final Method method;
+
+  DocumentLaunchDescriptor({
+    required this.actionUrl,
+    required this.editorOrigin,
+    required this.expiresAt,
+    required this.formFields,
+    required this.method,
+  });
+
+  factory DocumentLaunchDescriptor.fromJson(Map<String, dynamic> json) =>
+      DocumentLaunchDescriptor(
+        actionUrl: json["actionUrl"],
+        editorOrigin: json["editorOrigin"],
+        expiresAt: json["expiresAt"],
+        formFields: Map.from(
+          json["formFields"],
+        ).map((k, v) => MapEntry<String, String>(k, v)),
+        method: methodValues.map[json["method"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionUrl": actionUrl,
+    "editorOrigin": editorOrigin,
+    "expiresAt": expiresAt,
+    "formFields": Map.from(
+      formFields,
+    ).map((k, v) => MapEntry<String, dynamic>(k, v)),
+    "method": methodValues.reverse[method],
+  });
+}
+
 ///统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
 class ErrorBody {
   final ErrorClass errorBodyClass;
@@ -9577,6 +10837,63 @@ class LlmRouteCreateInputProviderSecretRef {
   });
 }
 
+///18: native authenticated file-menu metadata from the Adapter typed reference producer.
+///This is NOT Action admission; the normal Kailo HUMAN session must independently
+///fresh-admit the frozen target and version. No ticket or content bytes.
+class NativeDocumentSelection {
+  final NativeDocumentSelectionActionKey actionKey;
+  final int actionVersion;
+  final String bindingId;
+  final int generation;
+  final ReferenceClass reference;
+  final int resourceVersion;
+  final String workspaceId;
+
+  NativeDocumentSelection({
+    required this.actionKey,
+    required this.actionVersion,
+    required this.bindingId,
+    required this.generation,
+    required this.reference,
+    required this.resourceVersion,
+    required this.workspaceId,
+  });
+
+  factory NativeDocumentSelection.fromJson(Map<String, dynamic> json) =>
+      NativeDocumentSelection(
+        actionKey:
+            nativeDocumentSelectionActionKeyValues.map[json["actionKey"]]!,
+        actionVersion: json["actionVersion"],
+        bindingId: json["bindingId"],
+        generation: json["generation"],
+        reference: ReferenceClass.fromJson(json["reference"]),
+        resourceVersion: json["resourceVersion"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": nativeDocumentSelectionActionKeyValues.reverse[actionKey],
+    "actionVersion": actionVersion,
+    "bindingId": bindingId,
+    "generation": generation,
+    "reference": reference.toJson(),
+    "resourceVersion": resourceVersion,
+    "workspaceId": workspaceId,
+  });
+}
+
+enum NativeDocumentSelectionActionKey {
+  FILE_STORAGE_OPEN_EDIT_V1,
+  FILE_STORAGE_OPEN_VIEW_V1,
+}
+
+final nativeDocumentSelectionActionKeyValues = EnumValues({
+  "file_storage.open_edit@v1":
+      NativeDocumentSelectionActionKey.FILE_STORAGE_OPEN_EDIT_V1,
+  "file_storage.open_view@v1":
+      NativeDocumentSelectionActionKey.FILE_STORAGE_OPEN_VIEW_V1,
+});
+
 ///设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
 class PlatformBuildInfo {
   final List<String> adapterProtocolVersions;
@@ -9642,6 +10959,51 @@ class PlatformBuildInfo {
     ),
     "reportedAt": reportedAt.toIso8601String(),
     "subject": subjectValues.reverse[subject],
+  });
+}
+
+///03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL.
+///Revision and presentation are frozen once; session expiry comes from controlled Core
+///delivery.
+class ProtocolSessionOpenInput {
+  final int actionVersion;
+
+  ///The selected native source binding; must equal the target's real binding, not an
+  ///authorization claim.
+  final String applicationBindingId;
+  final Locale locale;
+
+  ///Exact approved projection selected by the native menu; never latest.
+  final int projectionGeneration;
+  final ReferenceClass reference;
+  final Theme theme;
+
+  ProtocolSessionOpenInput({
+    required this.actionVersion,
+    required this.applicationBindingId,
+    required this.locale,
+    required this.projectionGeneration,
+    required this.reference,
+    required this.theme,
+  });
+
+  factory ProtocolSessionOpenInput.fromJson(Map<String, dynamic> json) =>
+      ProtocolSessionOpenInput(
+        actionVersion: json["actionVersion"],
+        applicationBindingId: json["applicationBindingId"],
+        locale: localeValues.map[json["locale"]]!,
+        projectionGeneration: json["projectionGeneration"],
+        reference: ReferenceClass.fromJson(json["reference"]),
+        theme: themeValues.map[json["theme"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionVersion": actionVersion,
+    "applicationBindingId": applicationBindingId,
+    "locale": localeValues.reverse[locale],
+    "projectionGeneration": projectionGeneration,
+    "reference": reference.toJson(),
+    "theme": themeValues.reverse[theme],
   });
 }
 
@@ -11090,6 +12452,133 @@ class AutomationScheduleTaskInput {
   });
 }
 
+class ComponentActionAdvanceRequest {
+  final bool cancelRequested;
+  final String runId;
+  final ComponentActionAdvanceRequestTarget target;
+
+  ComponentActionAdvanceRequest({
+    required this.cancelRequested,
+    required this.runId,
+    required this.target,
+  });
+
+  factory ComponentActionAdvanceRequest.fromJson(Map<String, dynamic> json) =>
+      ComponentActionAdvanceRequest(
+        cancelRequested: json["cancelRequested"],
+        runId: json["runId"],
+        target: ComponentActionAdvanceRequestTarget.fromJson(json["target"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "cancelRequested": cancelRequested,
+    "runId": runId,
+    "target": target.toJson(),
+  });
+}
+
+///原 ComponentTaskWorkflow(kind=COMPONENT_ACTION) 的冻结引用；全部业务参数仍从原 AE 的引用/hash读取。
+class ComponentActionAdvanceRequestTarget {
+  final String actionExecutionId;
+  final String bindingId;
+  final int bindingVersion;
+  final String componentReleaseId;
+  final int projectionGeneration;
+  final String workflowId;
+
+  ComponentActionAdvanceRequestTarget({
+    required this.actionExecutionId,
+    required this.bindingId,
+    required this.bindingVersion,
+    required this.componentReleaseId,
+    required this.projectionGeneration,
+    required this.workflowId,
+  });
+
+  factory ComponentActionAdvanceRequestTarget.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentActionAdvanceRequestTarget(
+    actionExecutionId: json["actionExecutionId"],
+    bindingId: json["bindingId"],
+    bindingVersion: json["bindingVersion"],
+    componentReleaseId: json["componentReleaseId"],
+    projectionGeneration: json["projectionGeneration"],
+    workflowId: json["workflowId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "bindingId": bindingId,
+    "bindingVersion": bindingVersion,
+    "componentReleaseId": componentReleaseId,
+    "projectionGeneration": projectionGeneration,
+    "workflowId": workflowId,
+  });
+}
+
+class ComponentActionAdvanceResult {
+  final String actionExecutionId;
+  final TaskStatus status;
+  final String waitingReason;
+
+  ComponentActionAdvanceResult({
+    required this.actionExecutionId,
+    required this.status,
+    required this.waitingReason,
+  });
+
+  factory ComponentActionAdvanceResult.fromJson(Map<String, dynamic> json) =>
+      ComponentActionAdvanceResult(
+        actionExecutionId: json["actionExecutionId"],
+        status: taskStatusValues.map[json["status"]]!,
+        waitingReason: json["waitingReason"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "status": taskStatusValues.reverse[status],
+    "waitingReason": waitingReason,
+  });
+}
+
+///原 ComponentTaskWorkflow(kind=COMPONENT_ACTION) 的冻结引用；全部业务参数仍从原 AE 的引用/hash读取。
+class ComponentActionTarget {
+  final String actionExecutionId;
+  final String bindingId;
+  final int bindingVersion;
+  final String componentReleaseId;
+  final int projectionGeneration;
+  final String workflowId;
+
+  ComponentActionTarget({
+    required this.actionExecutionId,
+    required this.bindingId,
+    required this.bindingVersion,
+    required this.componentReleaseId,
+    required this.projectionGeneration,
+    required this.workflowId,
+  });
+
+  factory ComponentActionTarget.fromJson(Map<String, dynamic> json) =>
+      ComponentActionTarget(
+        actionExecutionId: json["actionExecutionId"],
+        bindingId: json["bindingId"],
+        bindingVersion: json["bindingVersion"],
+        componentReleaseId: json["componentReleaseId"],
+        projectionGeneration: json["projectionGeneration"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "bindingId": bindingId,
+    "bindingVersion": bindingVersion,
+    "componentReleaseId": componentReleaseId,
+    "projectionGeneration": projectionGeneration,
+    "workflowId": workflowId,
+  });
+}
+
 ///受信 Worker 的一次实际线协议观察，附着冻结 ActionExecution。Core 以自身 plan 逐项匹配，不接收 pass 布尔值；UNKNOWN
 ///不表示套件失败或成功。响应正文与测试凭据不进入报告。
 class ComponentConformanceObservation {
@@ -11151,7 +12640,7 @@ class ComponentConformanceObservation {
 
 class ObservationElement {
   final String caseKey;
-  final ContentReferenceClass? contentReference;
+  final ReferenceClass? contentReference;
   final ErrorClass? errorClass;
   final int httpStatus;
   final McpResultKind? mcpResultKind;
@@ -11185,7 +12674,7 @@ class ObservationElement {
         caseKey: json["caseKey"],
         contentReference: json["contentReference"] == null
             ? null
-            : ContentReferenceClass.fromJson(json["contentReference"]),
+            : ReferenceClass.fromJson(json["contentReference"]),
         errorClass: json["errorClass"] == null
             ? null
             : errorClassValues.map[json["errorClass"]]!,
@@ -11398,7 +12887,7 @@ class ComponentConformancePlanStep {
 ///原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
 ///history 承接，不建立另一执行账本。
 class ComponentConformanceProbe {
-  final ContentReferenceClass? contentReference;
+  final ReferenceClass? contentReference;
   final PlanClass plan;
 
   ///只查询同一步冻结幂等键；不再发送原 execute/CREATE。
@@ -11416,7 +12905,7 @@ class ComponentConformanceProbe {
       ComponentConformanceProbe(
         contentReference: json["contentReference"] == null
             ? null
-            : ContentReferenceClass.fromJson(json["contentReference"]),
+            : ReferenceClass.fromJson(json["contentReference"]),
         plan: PlanClass.fromJson(json["plan"]),
         reconcile: json["reconcile"],
         stepIndex: json["stepIndex"],
@@ -11432,7 +12921,7 @@ class ComponentConformanceProbe {
 
 class ComponentConformanceStepObservation {
   final String caseKey;
-  final ContentReferenceClass? contentReference;
+  final ReferenceClass? contentReference;
   final ErrorClass? errorClass;
   final int httpStatus;
   final McpResultKind? mcpResultKind;
@@ -11467,7 +12956,7 @@ class ComponentConformanceStepObservation {
     caseKey: json["caseKey"],
     contentReference: json["contentReference"] == null
         ? null
-        : ContentReferenceClass.fromJson(json["contentReference"]),
+        : ReferenceClass.fromJson(json["contentReference"]),
     errorClass: json["errorClass"] == null
         ? null
         : errorClassValues.map[json["errorClass"]]!,
@@ -11564,6 +13053,240 @@ class FreshApprovalAdmissionResult {
   });
 }
 
+class ProtocolSessionReconcileRequest {
+  final bool cancelRequested;
+  final RoundClass? round;
+  final String runId;
+  final ProtocolSessionReconcileRequestTarget target;
+
+  ProtocolSessionReconcileRequest({
+    required this.cancelRequested,
+    this.round,
+    required this.runId,
+    required this.target,
+  });
+
+  factory ProtocolSessionReconcileRequest.fromJson(Map<String, dynamic> json) =>
+      ProtocolSessionReconcileRequest(
+        cancelRequested: json["cancelRequested"],
+        round: json["round"] == null
+            ? null
+            : RoundClass.fromJson(json["round"]),
+        runId: json["runId"],
+        target: ProtocolSessionReconcileRequestTarget.fromJson(json["target"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "cancelRequested": cancelRequested,
+    "round": round?.toJson(),
+    "runId": runId,
+    "target": target.toJson(),
+  });
+}
+
+///Actual original Session snapshot. The Activity result freezes this query round into
+///history, not into a new authority.
+class RoundClass {
+  final int sessionVersion;
+  final ProtocolSessionViewState state;
+  final WriteObservationClass? writeObservation;
+
+  RoundClass({
+    required this.sessionVersion,
+    required this.state,
+    this.writeObservation,
+  });
+
+  factory RoundClass.fromJson(Map<String, dynamic> json) => RoundClass(
+    sessionVersion: json["sessionVersion"],
+    state: protocolSessionViewStateValues.map[json["state"]]!,
+    writeObservation: json["writeObservation"] == null
+        ? null
+        : WriteObservationClass.fromJson(json["writeObservation"]),
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "sessionVersion": sessionVersion,
+    "state": protocolSessionViewStateValues.reverse[state],
+    "writeObservation": writeObservation?.toJson(),
+  });
+}
+
+///DD-90: immutable first UNKNOWN input for the original Session's one Workflow.
+class ProtocolSessionReconcileRequestTarget {
+  final String actionDefinitionId;
+  final String actionExecutionId;
+  final String baseRevision;
+  final String bindingId;
+  final String correlationRef;
+  final String nativeObjectRef;
+  final int projectionGeneration;
+  final String protocolSessionId;
+  final String releaseId;
+  final int sessionVersion;
+  final String workflowId;
+
+  ProtocolSessionReconcileRequestTarget({
+    required this.actionDefinitionId,
+    required this.actionExecutionId,
+    required this.baseRevision,
+    required this.bindingId,
+    required this.correlationRef,
+    required this.nativeObjectRef,
+    required this.projectionGeneration,
+    required this.protocolSessionId,
+    required this.releaseId,
+    required this.sessionVersion,
+    required this.workflowId,
+  });
+
+  factory ProtocolSessionReconcileRequestTarget.fromJson(
+    Map<String, dynamic> json,
+  ) => ProtocolSessionReconcileRequestTarget(
+    actionDefinitionId: json["actionDefinitionId"],
+    actionExecutionId: json["actionExecutionId"],
+    baseRevision: json["baseRevision"],
+    bindingId: json["bindingId"],
+    correlationRef: json["correlationRef"],
+    nativeObjectRef: json["nativeObjectRef"],
+    projectionGeneration: json["projectionGeneration"],
+    protocolSessionId: json["protocolSessionId"],
+    releaseId: json["releaseId"],
+    sessionVersion: json["sessionVersion"],
+    workflowId: json["workflowId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionDefinitionId": actionDefinitionId,
+    "actionExecutionId": actionExecutionId,
+    "baseRevision": baseRevision,
+    "bindingId": bindingId,
+    "correlationRef": correlationRef,
+    "nativeObjectRef": nativeObjectRef,
+    "projectionGeneration": projectionGeneration,
+    "protocolSessionId": protocolSessionId,
+    "releaseId": releaseId,
+    "sessionVersion": sessionVersion,
+    "workflowId": workflowId,
+  });
+}
+
+class ProtocolSessionReconcileResult {
+  final String protocolSessionId;
+  final RoundClass round;
+  final TaskStatus status;
+  final String waitingReason;
+
+  ProtocolSessionReconcileResult({
+    required this.protocolSessionId,
+    required this.round,
+    required this.status,
+    required this.waitingReason,
+  });
+
+  factory ProtocolSessionReconcileResult.fromJson(Map<String, dynamic> json) =>
+      ProtocolSessionReconcileResult(
+        protocolSessionId: json["protocolSessionId"],
+        round: RoundClass.fromJson(json["round"]),
+        status: taskStatusValues.map[json["status"]]!,
+        waitingReason: json["waitingReason"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "protocolSessionId": protocolSessionId,
+    "round": round.toJson(),
+    "status": taskStatusValues.reverse[status],
+    "waitingReason": waitingReason,
+  });
+}
+
+///Actual original Session snapshot. The Activity result freezes this query round into
+///history, not into a new authority.
+class ProtocolSessionReconcileRound {
+  final int sessionVersion;
+  final ProtocolSessionViewState state;
+  final WriteObservationClass? writeObservation;
+
+  ProtocolSessionReconcileRound({
+    required this.sessionVersion,
+    required this.state,
+    this.writeObservation,
+  });
+
+  factory ProtocolSessionReconcileRound.fromJson(Map<String, dynamic> json) =>
+      ProtocolSessionReconcileRound(
+        sessionVersion: json["sessionVersion"],
+        state: protocolSessionViewStateValues.map[json["state"]]!,
+        writeObservation: json["writeObservation"] == null
+            ? null
+            : WriteObservationClass.fromJson(json["writeObservation"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "sessionVersion": sessionVersion,
+    "state": protocolSessionViewStateValues.reverse[state],
+    "writeObservation": writeObservation?.toJson(),
+  });
+}
+
+///DD-90: immutable first UNKNOWN input for the original Session's one Workflow.
+class ProtocolSessionReconcileTarget {
+  final String actionDefinitionId;
+  final String actionExecutionId;
+  final String baseRevision;
+  final String bindingId;
+  final String correlationRef;
+  final String nativeObjectRef;
+  final int projectionGeneration;
+  final String protocolSessionId;
+  final String releaseId;
+  final int sessionVersion;
+  final String workflowId;
+
+  ProtocolSessionReconcileTarget({
+    required this.actionDefinitionId,
+    required this.actionExecutionId,
+    required this.baseRevision,
+    required this.bindingId,
+    required this.correlationRef,
+    required this.nativeObjectRef,
+    required this.projectionGeneration,
+    required this.protocolSessionId,
+    required this.releaseId,
+    required this.sessionVersion,
+    required this.workflowId,
+  });
+
+  factory ProtocolSessionReconcileTarget.fromJson(Map<String, dynamic> json) =>
+      ProtocolSessionReconcileTarget(
+        actionDefinitionId: json["actionDefinitionId"],
+        actionExecutionId: json["actionExecutionId"],
+        baseRevision: json["baseRevision"],
+        bindingId: json["bindingId"],
+        correlationRef: json["correlationRef"],
+        nativeObjectRef: json["nativeObjectRef"],
+        projectionGeneration: json["projectionGeneration"],
+        protocolSessionId: json["protocolSessionId"],
+        releaseId: json["releaseId"],
+        sessionVersion: json["sessionVersion"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionDefinitionId": actionDefinitionId,
+    "actionExecutionId": actionExecutionId,
+    "baseRevision": baseRevision,
+    "bindingId": bindingId,
+    "correlationRef": correlationRef,
+    "nativeObjectRef": nativeObjectRef,
+    "projectionGeneration": projectionGeneration,
+    "protocolSessionId": protocolSessionId,
+    "releaseId": releaseId,
+    "sessionVersion": sessionVersion,
+    "workflowId": workflowId,
+  });
+}
+
 class ResourceProvisionAdvanceRequest {
   final bool cancelRequested;
   final String runId;
@@ -11597,7 +13320,7 @@ class ResourceProvisionAdvanceRequestTarget {
   final String nativeInstanceRef;
   final String nativeScopeRef;
   final int projectionGeneration;
-  final ReferenceClass reference;
+  final ResourceCreateClass reference;
   final String resourceId;
   final int resourceVersion;
   final String workflowId;
@@ -11626,7 +13349,7 @@ class ResourceProvisionAdvanceRequestTarget {
     nativeInstanceRef: json["nativeInstanceRef"],
     nativeScopeRef: json["nativeScopeRef"],
     projectionGeneration: json["projectionGeneration"],
-    reference: ReferenceClass.fromJson(json["reference"]),
+    reference: ResourceCreateClass.fromJson(json["reference"]),
     resourceId: json["resourceId"],
     resourceVersion: json["resourceVersion"],
     workflowId: json["workflowId"],
@@ -11680,7 +13403,7 @@ class ResourceProvisionTarget {
   final String nativeInstanceRef;
   final String nativeScopeRef;
   final int projectionGeneration;
-  final ReferenceClass reference;
+  final ResourceCreateClass reference;
   final String resourceId;
   final int resourceVersion;
   final String workflowId;
@@ -11708,7 +13431,7 @@ class ResourceProvisionTarget {
         nativeInstanceRef: json["nativeInstanceRef"],
         nativeScopeRef: json["nativeScopeRef"],
         projectionGeneration: json["projectionGeneration"],
-        reference: ReferenceClass.fromJson(json["reference"]),
+        reference: ResourceCreateClass.fromJson(json["reference"]),
         resourceId: json["resourceId"],
         resourceVersion: json["resourceVersion"],
         workflowId: json["workflowId"],

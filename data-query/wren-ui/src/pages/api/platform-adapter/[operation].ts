@@ -7,7 +7,7 @@ import {
   McpError,
   ErrorCode,
 } from '@modelcontextprotocol/sdk/types.js';
-import { NativeQueryService } from '@server/services/nativeQueryService';
+import { NativeQueryService, queryInputSchema } from '@server/services/nativeQueryService';
 import { NativeBindingService } from '@server/services/nativeBindingService';
 import {
   authenticateQueryGateway,
@@ -19,18 +19,6 @@ import {
 // independent native browser OIDC middleware. They do not accept cookies,
 // native UI bearer tokens or an identity chosen in the request body.
 export const config = { api: { bodyParser: false } };
-
-const inputSchema = {
-  type: 'object' as const,
-  additionalProperties: false,
-  required: ['sql', 'deploymentId', 'deploymentHash', 'limit'],
-  properties: {
-    sql: { type: 'string', minLength: 1 },
-    deploymentId: { type: 'integer', minimum: 1 },
-    deploymentHash: { type: 'string', pattern: '^[a-f0-9]{40}$' },
-    limit: { type: 'integer', minimum: 1 },
-  },
-};
 
 function bearer(request: NextApiRequest): string {
   const token =
@@ -63,7 +51,7 @@ export default async function handler(
   try {
     if (
       request.method !== 'POST' ||
-      !['mcp', 'observe', 'handshake', 'validate_binding'].includes(
+      !['mcp', 'execute', 'observe', 'handshake', 'validate_binding'].includes(
         String(request.query.operation),
       )
     ) {
@@ -108,6 +96,7 @@ export default async function handler(
           components.deployLogRepository,
           components.apiHistoryRepository,
           components.queryService,
+          components.viewRepository,
         );
       }
       return service;
@@ -119,6 +108,20 @@ export default async function handler(
       response
         .status(200)
         .json(await (await queries()).observe(bearer(request), raw));
+      return;
+    }
+    if (request.query.operation === 'execute') {
+      const raw = await body(request, delivered.requestMaxBytes);
+      const key = request.headers['idempotency-key'];
+      if (!raw || Object.keys(raw).sort().join(',') !== 'actionKey,arguments,idempotencyKey' ||
+        typeof key !== 'string' || raw.idempotencyKey !== key ||
+        !['data_query.query', 'data_query.dry_run'].includes(raw.actionKey) ||
+        !raw.arguments || Object.keys(raw.arguments).sort().join(',') !== 'input,target' ||
+        !raw.arguments.target || Object.keys(raw.arguments.target).join(',') !== 'resourceId' ||
+        raw.arguments.target.resourceId !== raw.arguments.input?.resourceId) {
+        throw new NativeQueryRefusal(400, 'QUERY_INVALID_REQUEST');
+      }
+      response.status(200).json(await (await queries()).execute(bearer(request), key, raw.actionKey, raw.arguments.input));
       return;
     }
     const machine = request.headers['x-kailo-gateway-authorization'];
@@ -135,12 +138,12 @@ export default async function handler(
         {
           name: 'data_query.query',
           description: 'Query one frozen native deployment',
-          inputSchema,
+          inputSchema: queryInputSchema,
         },
         {
           name: 'data_query.dry_run',
           description: 'Validate SQL against one frozen native deployment',
-          inputSchema,
+          inputSchema: queryInputSchema,
         },
         {
           name: 'data_query.describe',

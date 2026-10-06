@@ -99,6 +99,15 @@ export enum VariantKind {
     Task = "TASK",
 }
 
+export interface ApplicationModelAdmission {
+    bindingId:          string;
+    gatewayPrincipalId: string;
+    generation:         number;
+    method:             string;
+    path:               string;
+    traceparent:        string;
+}
+
 /**
  * 07§5/6.2：validate_binding 的非正文观察。精确原生scope/实例、隔离与配置引用摘要，不是用户声明的通过布尔值。
  */
@@ -258,6 +267,227 @@ export interface AdapterPepCheckResponse {
 }
 
 /**
+ * DD-90/18§5.4：原保存结果不明会话的确切写入证据查证；只核已有 ACCEPTED writer observation 对应的原生
+ * VersionId，不提供文件字节或当前权限。
+ */
+export interface ProtocolRevisionQuery {
+    baseRevision:      string;
+    protocolSessionId: string;
+    writeObservation:  WriteObservationClass;
+}
+
+/**
+ * 18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never
+ * file bytes or an authorization grant.
+ */
+export interface WriteObservationClass {
+    baseModifiedAt:  Date;
+    bytesWritten:    number;
+    correlationRef:  string;
+    editors:         string;
+    nativeEtag?:     string;
+    phase:           Phase;
+    resultRevision?: string;
+}
+
+export enum Phase {
+    Accepted = "ACCEPTED",
+    Conflict = "CONFLICT",
+    Failed = "FAILED",
+    Started = "STARTED",
+    Unknown = "UNKNOWN",
+}
+
+/**
+ * 18: execute the original admitted file protocol Session, not an arbitrary editor URL or
+ * native object create. All fields are frozen Core facts and the whole body is covered by
+ * ActionToken.
+ */
+export interface AdapterProtocolSessionLaunchRequest {
+    admittedMode:                 TedMode;
+    authorizationTargetNativeRef: string;
+    expiresAt:                    string;
+    idempotencyKey:               string;
+    locale:                       Locale;
+    protocolSessionId:            string;
+    reference:                    ContentReferenceClass;
+    theme:                        Theme;
+}
+
+export enum TedMode {
+    Edit = "EDIT",
+    View = "VIEW",
+}
+
+export enum Locale {
+    En = "en",
+    ZhCN = "zh-CN",
+}
+
+export enum Theme {
+    Dark = "DARK",
+    Light = "LIGHT",
+}
+
+/**
+ * 18: the original native PAT reference plus transient launch descriptor. This value occurs
+ * only in the original execute response; it must not be stored as reconciliation evidence
+ * or recovered by reminting a token.
+ */
+export interface AdapterProtocolSessionLaunchResponse {
+    launchDescriptor: LaunchDescriptorClass;
+    nativeSessionRef: string;
+}
+
+/**
+ * DD-95/103: transient, fixed-origin launch returned by the admitted binding adapter;
+ * credentials are only string form fields, never a persisted Task, chat or ContentReference.
+ */
+export interface LaunchDescriptorClass {
+    actionUrl:    string;
+    editorOrigin: string;
+    expiresAt:    string;
+    formFields:   { [key: string]: string };
+    method:       Method;
+}
+
+export enum Method {
+    Get = "GET",
+    Post = "POST",
+}
+
+/**
+ * DD-90, 18 §5.1: binding-authenticated permission to observe/revoke the original document
+ * PAT. These closed lifecycle facts never authorize file reads, writes or token creation.
+ */
+export interface ProtocolSessionLifecyclePepResponse {
+    decision:          Decision;
+    expiresAt:         Date;
+    nativeObjectRef:   string;
+    protocolSessionId: string;
+    requestedMode:     TedMode;
+}
+
+export enum Decision {
+    Allow = "ALLOW",
+}
+
+/**
+ * 18 §5.1: observe/cancel the same native document PAT only. No access token, launch
+ * descriptor or file bytes.
+ */
+export interface AdapterProtocolSessionLifecycleRequest {
+    idempotencyKey:    string;
+    nativeObjectRef:   string;
+    protocolSessionId: string;
+}
+
+/**
+ * Original Cells PAT metadata only. ABSENT is a successful native lookup; errors must
+ * remain unavailable, never ABSENT.
+ */
+export interface AdapterProtocolSessionLifecycleResponse {
+    expiresAt?:        Date;
+    nativeObjectRef:   string;
+    nativeSessionRef?: string;
+    nativeState:       NativeState;
+    protocolSessionId: string;
+}
+
+export enum NativeState {
+    Absent = "ABSENT",
+    Active = "ACTIVE",
+    Expired = "EXPIRED",
+}
+
+/**
+ * 18 §5.2: authenticated binding→Core PEP for an existing ProtocolSession. No native token
+ * grants platform permissions.
+ */
+export interface ProtocolSessionPepRequest {
+    bindingId:         string;
+    nativeObjectRef:   string;
+    nativeOperation:   NativeOperation;
+    protocolSessionId: string;
+    writeObservation?: WriteObservationClass;
+}
+
+export enum NativeOperation {
+    Observe = "OBSERVE",
+    Open = "OPEN",
+    Read = "READ",
+    TokenObserve = "TOKEN_OBSERVE",
+    TokenRevoke = "TOKEN_REVOKE",
+    Write = "WRITE",
+}
+
+/**
+ * Original Session facts, not native revision existence or write success. Cells must still
+ * query its exact VersionId and ACLs.
+ */
+export interface ProtocolSessionPepResponse {
+    admittedMode:  TedMode;
+    baseRevision:  string;
+    decision:      Decision;
+    displayName:   string;
+    expiresAt:     Date;
+    exportAllowed: boolean;
+    minZedToken:   string;
+    /**
+     * Confirmed original native token/session reference. Required by native READ/WRITE
+     * consumers, absent before the first native OPEN creation.
+     */
+    nativeSessionRef?: string;
+    /**
+     * Original active issuer from the HUMAN's frozen ExternalIdentity, never a browser-supplied
+     * claim.
+     */
+    oidcIssuer: string;
+    /**
+     * Original active subject paired with oidcIssuer. Cells resolves its existing explicit
+     * native user link; no email or display-name fallback.
+     */
+    oidcSubject:     string;
+    platformHumanId: string;
+    /**
+     * Exact canonical platform PUBLIC_ORIGIN from the Core deployment, never the native request
+     * Origin or a browser-supplied field. Required by the native FileInfo consumer; unavailable
+     * origin refuses its editor projection.
+     */
+    postMessageOrigin?: string;
+}
+
+/**
+ * 18 §5.4: authenticated native PutFile evidence for the existing ProtocolSession; never
+ * file bytes or an authorization grant.
+ */
+export interface ProtocolWriteObservation {
+    baseModifiedAt:  Date;
+    bytesWritten:    number;
+    correlationRef:  string;
+    editors:         string;
+    nativeEtag?:     string;
+    phase:           Phase;
+    resultRevision?: string;
+}
+
+/**
+ * Receipt of native write evidence. It grants no read or write permission.
+ */
+export interface ProtocolWriteReceipt {
+    protocolSessionId: string;
+    state:             ProtocolWriteReceiptState;
+}
+
+export enum ProtocolWriteReceiptState {
+    Conflict = "CONFLICT",
+    Dirty = "DIRTY",
+    Failed = "FAILED",
+    Saved = "SAVED",
+    Unknown = "UNKNOWN",
+}
+
+/**
  *
  * 07§5.2与ADR-12：查询同一native对象当前权威revision；ActionToken通过Authorization头传输，幂等键与Idempotency-Key头一致。authorizationTargetNativeRef仅为Core从实际受权Resource/Asset解析的原生目标定位，参与同一参数签名；adapter须核实被查对象在该目标及固定binding
  * scope内。缺省保持确切目标查询，不授予一般子对象读取。不是execute或权限授予。
@@ -266,6 +496,17 @@ export interface AdapterQueryRevisionRequest {
     authorizationTargetNativeRef?: string;
     idempotencyKey:                string;
     nativeObjectRef:               string;
+    protocolReconcile?:            ProtocolReconcileClass;
+}
+
+/**
+ * DD-90/18§5.4：原保存结果不明会话的确切写入证据查证；只核已有 ACCEPTED writer observation 对应的原生
+ * VersionId，不提供文件字节或当前权限。
+ */
+export interface ProtocolReconcileClass {
+    baseRevision:      string;
+    protocolSessionId: string;
+    writeObservation:  WriteObservationClass;
 }
 
 /**
@@ -273,8 +514,10 @@ export interface AdapterQueryRevisionRequest {
  * 07§5.2与18§5：只返回被查证同一native对象当前权威revision，不替换调用方冻结ContentReference、不以mtime/ETag猜测revision。未知或fresh授权失败不得生成成功应答。
  */
 export interface AdapterQueryRevisionResponse {
-    nativeObjectRef: string;
-    nativeRevision:  string;
+    correlationRef?:    string;
+    nativeObjectRef:    string;
+    nativeRevision:     string;
+    protocolSessionId?: string;
 }
 
 /**
@@ -326,6 +569,7 @@ export interface ActionCommand {
      * 仅 capability_contract.register：真实 schema 与测试向量内容。
      */
     capabilityContractRegistration?: CapabilityContractRegistrationClass;
+    componentAction?:                ComponentActionClass;
     /**
      * 仅组件批准：已登记的不可变ComponentRelease标识。
      */
@@ -348,7 +592,8 @@ export interface ActionCommand {
      */
     executorInstallationResourceId?: string;
     /**
-     * EXPLICIT 动作由用户在当前目标详情上确认后设为 true；其他动作不得携带
+     * EXPLICIT 动作或 HUMAN owner 的一次手动 automation.run，由用户在当前目标详情上确认后设为 true；其他动作不得携带。手动运行只提交
+     * resourceId/resourceVersion/workspaceId 与同一幂等键，不选择 Grant、Agent、来源或结果位置。
      */
     explicitConfirmation?: boolean;
     /**
@@ -379,8 +624,13 @@ export interface ActionCommand {
     /**
      * 成员动作的目标 Principal；resource.transfer_owner 的新 owner
      */
-    principalId?:    string;
-    resourceCreate?: ResourceCreateClass;
+    principalId?: string;
+    /**
+     * Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
+     * identity; no Agent or caller-selected native credentials.
+     */
+    protocolSessionOpen?: ProtocolSessionOpenClass;
+    resourceCreate?:      ResourceCreateClass;
     /**
      * Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
      */
@@ -652,6 +902,17 @@ export interface CapabilityContractRegistrationResourceTypeFamily {
 }
 
 /**
+ * Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
+ * Core/Temporal。
+ */
+export interface ComponentActionClass {
+    actionVersion:               number;
+    inputReference:              ContentReferenceClass;
+    resultExposurePolicyId:      string;
+    resultExposurePolicyVersion: number;
+}
+
+/**
  * 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
  * Worker 独立执行隔离套件。
  */
@@ -763,6 +1024,30 @@ export enum ExpectedHeadState {
     Found = "FOUND",
 }
 
+/**
+ * Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
+ * identity; no Agent or caller-selected native credentials.
+ *
+ * 03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL.
+ * Revision and presentation are frozen once; session expiry comes from controlled Core
+ * delivery.
+ */
+export interface ProtocolSessionOpenClass {
+    actionVersion: number;
+    /**
+     * The selected native source binding; must equal the target's real binding, not an
+     * authorization claim.
+     */
+    applicationBindingId: string;
+    locale:               Locale;
+    /**
+     * Exact approved projection selected by the native menu; never latest.
+     */
+    projectionGeneration: number;
+    reference:            ContentReferenceClass;
+    theme:                Theme;
+}
+
 export interface ResourceCreateClass {
     evidenceDigest: string;
     evidenceRef:    string;
@@ -780,9 +1065,11 @@ export interface ActionSubmission {
     actionKey:           string;
     approvalWorkflowId?: string;
     dispatchState:       ActionDispatchState;
+    documentLaunch?:     LaunchDescriptorClass;
     gateState:           ActionGateState;
     invitation?:         InvitationClass;
     operationId:         string;
+    protocolSessionId?:  string;
     reason?:             ReasonCode;
     workflowId?:         string;
 }
@@ -1038,8 +1325,9 @@ export interface InstallationElement {
     agentPrincipalState:         AgentPrincipalState;
     agentResourceId:             string;
     /**
-     * 同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
-     * Schedule。
+     * 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
+     * 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
+     * 准入。缺失或空集合不支持 Schedule。
      */
     automationResultTargets?: AutomationResultTarget[];
     channelBinding?:          InstallationChannelBinding;
@@ -1141,8 +1429,9 @@ export interface AgentInstallationView {
     agentPrincipalState:         AgentPrincipalState;
     agentResourceId:             string;
     /**
-     * 同固定 Version、ACTIVE 投影与原生 Profile 的已验证回复目标；不代表 execute、Delegation 或 quota 准入。缺失或空集合不支持
-     * Schedule。
+     * 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
+     * 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
+     * 准入。缺失或空集合不支持 Schedule。
      */
     automationResultTargets?: AutomationResultTarget[];
     channelBinding?:          AgentInstallationViewChannelBinding;
@@ -1672,7 +1961,12 @@ export interface AutomationDetailView {
     /**
      * 当前 Resource manage；不是运行准入、额度允许或业务成功。
      */
-    canManage:             boolean;
+    canManage: boolean;
+    /**
+     * 仅当前 ACTIVE HUMAN owner、Workspace membership 与 Resource execute，以及已启用固定版本允许显示手动运行；仍须原
+     * automation.run 的准入、Delegation、额度及步骤审批。缺省关闭，不是业务成功。
+     */
+    canRun?:               boolean;
     delegations:           DelegationElement[];
     nextDelegationOffset?: number;
     nextVersionOffset?:    number;
@@ -1695,6 +1989,7 @@ export interface AutomationElement {
  * 03 §7、05 §2.9：AutomationDefinition 的真实管理状态，不是 Invocation 终态。
  */
 export enum AutomationState {
+    Deleted = "DELETED",
     Disabled = "DISABLED",
     Draft = "DRAFT",
     Enabled = "ENABLED",
@@ -1828,11 +2123,13 @@ export enum TaskStatus {
 export enum WorkflowKind {
     AgentInstallation = "AGENT_INSTALLATION",
     BuzzIdentityProjection = "BUZZ_IDENTITY_PROJECTION",
+    ComponentAction = "COMPONENT_ACTION",
     ComponentBinding = "COMPONENT_BINDING",
     ComponentDisable = "COMPONENT_DISABLE",
     ComponentRelease = "COMPONENT_RELEASE",
     MembershipProjection = "MEMBERSHIP_PROJECTION",
     MembershipRevocation = "MEMBERSHIP_REVOCATION",
+    ProtocolSessionReconcile = "PROTOCOL_SESSION_RECONCILE",
     ResourceProvision = "RESOURCE_PROVISION",
     SecretRefRehome = "SECRET_REF_REHOME",
     TenantLifecycle = "TENANT_LIFECYCLE",
@@ -2433,6 +2730,43 @@ export interface PlatformToolView {
 }
 
 /**
+ * 03/18: only the initiating HUMAN's fresh-authorized original Session facts. No PAT,
+ * launch credential, native body or replacement revision is recoverable from this reader.
+ */
+export interface ProtocolSessionView {
+    actionExecutionId:      string;
+    admittedMode:           TedMode;
+    applicationBindingId:   string;
+    baseRevision:           string;
+    effectiveEditorOrigins: string[];
+    expiresAt:              Date;
+    launchLocale:           Locale;
+    launchTheme:            Theme;
+    protocolSessionId:      string;
+    reference:              ContentReferenceClass;
+    resultRevision?:        string;
+    state:                  ProtocolSessionViewState;
+    tenantId:               string;
+    version:                number;
+    workspaceId?:           string;
+}
+
+export enum ProtocolSessionViewState {
+    Admitted = "ADMITTED",
+    Closed = "CLOSED",
+    Conflict = "CONFLICT",
+    Dirty = "DIRTY",
+    Expired = "EXPIRED",
+    Failed = "FAILED",
+    Open = "OPEN",
+    Opening = "OPENING",
+    ReadOnly = "READ_ONLY",
+    Revoked = "REVOKED",
+    Saved = "SAVED",
+    Unknown = "UNKNOWN",
+}
+
+/**
  * PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
  * ID、msg:<Buzz event id> 或 thread:<Buzz root event id>；version 是读到的 CollaborationUserState
  * 版本，不符即 409。
@@ -2820,31 +3154,57 @@ export interface ApplicationAdapterDirectory {
 }
 
 export interface ApplicationAdapterDelivery {
-    actionTokenAudience: string;
-    adapterServiceRef:   string;
-    artifactDigest:      string;
-    baseUrl:             string;
-    maxResponseBytes:    number;
-    mcpUrl?:             string;
-    nativeInstanceRef:   string;
-    secretReaders:       ApplicationSecretReader[];
-    timeoutSeconds:      number;
+    actionTokenAudience:        string;
+    adapterServiceRef:          string;
+    artifactDigest:             string;
+    baseUrl:                    string;
+    maxResponseBytes:           number;
+    mcpUrl?:                    string;
+    modelCredentialDeliveries?: ApplicationModelCredentialDelivery[];
+    nativeInstanceRef:          string;
+    secretReaders:              AdapterSecretReader[];
+    timeoutSeconds:             number;
 }
 
-export interface ApplicationSecretReader {
+/**
+ * 受控原生模型凭据交接回执；无密钥值，不创建模型，不替代OpenBao审计或binding准入。
+ */
+export interface ApplicationModelCredentialDelivery {
+    bindingId:          string;
+    configDigest:       string;
+    generation:         number;
+    nativeModelRef:     string;
+    nativeProof:        string;
+    nativeScopeRef:     string;
+    requestId:          string;
+    routeResourceId:    string;
+    secretRef:          ApplicationModelServiceSecretRef;
+    servicePrincipalId: string;
+    verificationNonce:  string;
+}
+
+export interface ApplicationModelServiceSecretRef {
+    audience: string;
+    locator:  string;
+    version:  number;
+}
+
+export interface AdapterSecretReader {
     audience:           string;
     roleName:           string;
     servicePrincipalId: string;
 }
 
 export interface ApplicationProtocolPeerDelivery {
-    adapterServiceRef: string;
-    artifactDigest:    string;
-    bindings:          ApplicationProtocolPeerBindingDelivery[];
-    maxResponseBytes:  number;
-    mcpUrl:            string;
-    nativeInstanceRef: string;
-    timeoutSeconds:    number;
+    adapterServiceRef:          string;
+    artifactDigest:             string;
+    bindings:                   ApplicationProtocolPeerBindingDelivery[];
+    maxResponseBytes:           number;
+    mcpUrl:                     string;
+    modelCredentialDeliveries?: ApplicationModelCredentialDelivery[];
+    nativeInstanceRef:          string;
+    secretReaders?:             ProtocolPeerSecretReader[];
+    timeoutSeconds:             number;
 }
 
 export interface ApplicationProtocolPeerBindingDelivery {
@@ -2883,6 +3243,12 @@ export interface ApplicationNativeResourceDelivery {
     typeKey:        string;
 }
 
+export interface ProtocolPeerSecretReader {
+    audience:           string;
+    roleName:           string;
+    servicePrincipalId: string;
+}
+
 /**
  * DD-88/94：pin 已批准 release 的业务绑定选择。只携带 SecretRef，不接受密钥正文或运行端点 URL。Workspace 取原
  * ActionCommand。
@@ -2913,6 +3279,15 @@ export interface ApplicationBindingCreateSecretRefClass {
     locator:   string;
     secretKey: string;
     version:   number;
+}
+
+/**
+ * DD-92: modelGateway within the approved binding config. Only existing route and meter
+ * references; no provider configuration, credential value or native model row.
+ */
+export interface ApplicationModelGatewayConfig {
+    meterKeys:        string[];
+    routeResourceIds: string[];
 }
 
 /**
@@ -3032,6 +3407,17 @@ export interface CapabilityContractRegistrationOperationContractClass {
 export interface CapabilityContractRegistrationResourceTypeFamilyClass {
     kind:    string;
     typeKey: string;
+}
+
+/**
+ * Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
+ * Core/Temporal。
+ */
+export interface ComponentActionInput {
+    actionVersion:               number;
+    inputReference:              ContentReferenceClass;
+    resultExposurePolicyId:      string;
+    resultExposurePolicyVersion: number;
 }
 
 /**
@@ -3170,6 +3556,18 @@ export interface DelegationScopeParameters {
 }
 
 /**
+ * DD-95/103: transient, fixed-origin launch returned by the admitted binding adapter;
+ * credentials are only string form fields, never a persisted Task, chat or ContentReference.
+ */
+export interface DocumentLaunchDescriptor {
+    actionUrl:    string;
+    editorOrigin: string;
+    expiresAt:    string;
+    formFields:   { [key: string]: string };
+    method:       Method;
+}
+
+/**
  * 统一错误体（apps/06-工程基线规范.md 第 4 节）。不携带业务正文、secret、原始 SQL、文件内容或完整 prompt/response。
  */
 export interface ErrorBody {
@@ -3213,6 +3611,26 @@ export interface LlmRouteCreateInputProviderSecretRef {
 }
 
 /**
+ * 18: native authenticated file-menu metadata from the Adapter typed reference producer.
+ * This is NOT Action admission; the normal Kailo HUMAN session must independently
+ * fresh-admit the frozen target and version. No ticket or content bytes.
+ */
+export interface NativeDocumentSelection {
+    actionKey:       NativeDocumentSelectionActionKey;
+    actionVersion:   number;
+    bindingId:       string;
+    generation:      number;
+    reference:       ContentReferenceClass;
+    resourceVersion: number;
+    workspaceId:     string;
+}
+
+export enum NativeDocumentSelectionActionKey {
+    FileStorageOpenEditV1 = "file_storage.open_edit@v1",
+    FileStorageOpenViewV1 = "file_storage.open_view@v1",
+}
+
+/**
  * 设计03的当前已部署主体能力事实，由原受信服务/当前Web产物观察产生，不接受管理表单声明。
  */
 export interface PlatformBuildInfo {
@@ -3225,6 +3643,27 @@ export interface PlatformBuildInfo {
     platformPortKeys:        PlatformPortKey[];
     reportedAt:              Date;
     subject:                 Subject;
+}
+
+/**
+ * 03/07/18: the original HUMAN file protocol action, not an arbitrary editor or native URL.
+ * Revision and presentation are frozen once; session expiry comes from controlled Core
+ * delivery.
+ */
+export interface ProtocolSessionOpenInput {
+    actionVersion: number;
+    /**
+     * The selected native source binding; must equal the target's real binding, not an
+     * authorization claim.
+     */
+    applicationBindingId: string;
+    locale:               Locale;
+    /**
+     * Exact approved projection selected by the native menu; never latest.
+     */
+    projectionGeneration: number;
+    reference:            ContentReferenceClass;
+    theme:                Theme;
 }
 
 export interface ResourceCreate {
@@ -3746,6 +4185,42 @@ export interface AutomationScheduleTaskInput {
     sourceKind:     AutomationScheduleSource;
 }
 
+export interface ComponentActionAdvanceRequest {
+    cancelRequested: boolean;
+    runId:           string;
+    target:          ComponentActionAdvanceRequestTarget;
+}
+
+/**
+ * 原 ComponentTaskWorkflow(kind=COMPONENT_ACTION) 的冻结引用；全部业务参数仍从原 AE 的引用/hash读取。
+ */
+export interface ComponentActionAdvanceRequestTarget {
+    actionExecutionId:    string;
+    bindingId:            string;
+    bindingVersion:       number;
+    componentReleaseId:   string;
+    projectionGeneration: number;
+    workflowId:           string;
+}
+
+export interface ComponentActionAdvanceResult {
+    actionExecutionId: string;
+    status:            TaskStatus;
+    waitingReason:     string;
+}
+
+/**
+ * 原 ComponentTaskWorkflow(kind=COMPONENT_ACTION) 的冻结引用；全部业务参数仍从原 AE 的引用/hash读取。
+ */
+export interface ComponentActionTarget {
+    actionExecutionId:    string;
+    bindingId:            string;
+    bindingVersion:       number;
+    componentReleaseId:   string;
+    projectionGeneration: number;
+    workflowId:           string;
+}
+
 /**
  * 受信 Worker 的一次实际线协议观察，附着冻结 ActionExecution。Core 以自身 plan 逐项匹配，不接收 pass 布尔值；UNKNOWN
  * 不表示套件失败或成功。响应正文与测试凭据不进入报告。
@@ -3888,6 +4363,74 @@ export interface FreshApprovalAdmissionResult {
     admitted:           boolean;
     reason?:            ReasonCode;
     satisfiedSelectors: ApprovalSelector[];
+}
+
+export interface ProtocolSessionReconcileRequest {
+    cancelRequested: boolean;
+    round?:          RoundClass;
+    runId:           string;
+    target:          ProtocolSessionReconcileRequestTarget;
+}
+
+/**
+ * Actual original Session snapshot. The Activity result freezes this query round into
+ * history, not into a new authority.
+ */
+export interface RoundClass {
+    sessionVersion:    number;
+    state:             ProtocolSessionViewState;
+    writeObservation?: WriteObservationClass;
+}
+
+/**
+ * DD-90: immutable first UNKNOWN input for the original Session's one Workflow.
+ */
+export interface ProtocolSessionReconcileRequestTarget {
+    actionDefinitionId:   string;
+    actionExecutionId:    string;
+    baseRevision:         string;
+    bindingId:            string;
+    correlationRef:       string;
+    nativeObjectRef:      string;
+    projectionGeneration: number;
+    protocolSessionId:    string;
+    releaseId:            string;
+    sessionVersion:       number;
+    workflowId:           string;
+}
+
+export interface ProtocolSessionReconcileResult {
+    protocolSessionId: string;
+    round:             RoundClass;
+    status:            TaskStatus;
+    waitingReason:     string;
+}
+
+/**
+ * Actual original Session snapshot. The Activity result freezes this query round into
+ * history, not into a new authority.
+ */
+export interface ProtocolSessionReconcileRound {
+    sessionVersion:    number;
+    state:             ProtocolSessionViewState;
+    writeObservation?: WriteObservationClass;
+}
+
+/**
+ * DD-90: immutable first UNKNOWN input for the original Session's one Workflow.
+ */
+export interface ProtocolSessionReconcileTarget {
+    actionDefinitionId:   string;
+    actionExecutionId:    string;
+    baseRevision:         string;
+    bindingId:            string;
+    correlationRef:       string;
+    nativeObjectRef:      string;
+    projectionGeneration: number;
+    protocolSessionId:    string;
+    releaseId:            string;
+    sessionVersion:       number;
+    workflowId:           string;
 }
 
 export interface ResourceProvisionAdvanceRequest {

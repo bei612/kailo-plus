@@ -10,6 +10,7 @@ import orjson
 from src.config import settings
 from src.core.engine import Engine, remove_limit_statement
 from src.providers.loader import provider
+from src.providers.engine.native_identity import NativeIdentityUnavailable, native_headers
 
 logger = logging.getLogger("wren-ai-service")
 
@@ -44,8 +45,13 @@ class WrenUI(Engine):
             data["limit"] = limit
 
         try:
+            headers = await native_headers(
+                session, self._endpoint, aiohttp.ClientTimeout(total=timeout)
+            )
             async with session.post(
                 f"{self._endpoint}/api/graphql",
+                headers=headers,
+                allow_redirects=False,
                 json={
                     "query": "mutation PreviewSql($data: PreviewSQLDataInput) { previewSql(data: $data) }",
                     "variables": {"data": data},
@@ -131,6 +137,12 @@ class WrenUI(Engine):
                         ),
                     },
                 )
+        except NativeIdentityUnavailable:
+            return (
+                False,
+                {},
+                {"error_message": "Native service identity unavailable"},
+            )
         except asyncio.TimeoutError:
             return (
                 False,

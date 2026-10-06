@@ -70,6 +70,60 @@ pub(crate) struct Registration {
     pub contracts: Vec<(String, i32)>,
 }
 
+fn validate_frontend_delivery(manifest: &Value) -> Result<(), Refusal> {
+    let frontend = &manifest["frontendDelivery"];
+    exact_fields(
+        frontend,
+        &["mode", "extensionSlots", "editorOrigins"],
+        &["nativePageOrigins", "launchDescriptorSchemaVersion"],
+    )?;
+    if frontend["extensionSlots"] != json!([]) || manifest.get("hostApiRange").is_some() {
+        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
+    }
+    match frontend["mode"].as_str() {
+        Some("NONE" | "NATIVE_PAGE") => {
+            if frontend["editorOrigins"] != json!([])
+                || frontend.get("launchDescriptorSchemaVersion").is_some()
+            {
+                return Err(bad());
+            }
+            if frontend["mode"] == "NATIVE_PAGE" {
+                crate::application_page::release_origins(frontend)?;
+            } else if frontend
+                .get("nativePageOrigins")
+                .is_some_and(|v| v != &json!([]))
+            {
+                return Err(bad());
+            }
+        }
+        Some("SOURCE_BOUND_PROTOCOL") => {
+            if frontend["launchDescriptorSchemaVersion"] != "1" {
+                return Err(bad());
+            }
+            let origins = frontend["editorOrigins"].as_array().ok_or_else(bad)?;
+            let mut seen = BTreeSet::new();
+            if origins.is_empty()
+                || origins.iter().any(|value| {
+                    value.as_str().is_none_or(|origin| {
+                        !crate::protocol_session::launch::valid_editor_pattern(origin)
+                            || !seen.insert(origin)
+                    })
+                })
+            {
+                return Err(bad());
+            }
+            if frontend
+                .get("nativePageOrigins")
+                .is_some_and(|v| v != &json!([]))
+            {
+                crate::application_page::release_origins(frontend)?;
+            }
+        }
+        _ => return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
+    }
+    Ok(())
+}
+
 // Class/connector combinations are closed design values, not release-supplied
 // execution code. Unsupported delivery modes cannot enter this dispatch path.
 pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
@@ -154,27 +208,7 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
     {
         return Err(bad());
     }
-    let frontend = &manifest["frontendDelivery"];
-    exact_fields(
-        frontend,
-        &["mode", "extensionSlots", "editorOrigins"],
-        &["nativePageOrigins"],
-    )?;
-    if !matches!(frontend["mode"].as_str(), Some("NONE" | "NATIVE_PAGE"))
-        || frontend["extensionSlots"] != json!([])
-        || frontend["editorOrigins"] != json!([])
-        || manifest.get("hostApiRange").is_some()
-    {
-        return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
-    }
-    if frontend["mode"] == "NATIVE_PAGE" {
-        crate::application_page::release_origins(frontend)?;
-    } else if frontend
-        .get("nativePageOrigins")
-        .is_some_and(|value| value != &json!([]))
-    {
-        return Err(bad());
-    }
+    validate_frontend_delivery(&manifest)?;
     let connector = &manifest["executionConnector"];
     exact_fields(
         connector,
@@ -197,9 +231,22 @@ pub(crate) fn registration(raw: &Value) -> Result<Registration, Refusal> {
         return Err(bad());
     }
     text(&manifest, "dataLocation")?;
-    // No model gateway consumer is admitted by this metadata path. A component
-    // declaring model use must first have the corresponding governed connector.
-    if manifest["allowedModelCallModes"] != json!(["NONE"]) {
+    // DD-92: declarations expose only installed model consumers. The binding
+    // still verifies selected categories, native route/quota/key and usage fence.
+    let modes = manifest["allowedModelCallModes"]
+        .as_array()
+        .ok_or_else(bad)?;
+    if modes.is_empty()
+        || modes
+            .iter()
+            .any(|mode| !matches!(mode.as_str(), Some("NONE" | "PLATFORM_LLM_ROUTE")))
+        || modes
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<BTreeSet<_>>()
+            .len()
+            != modes.len()
+    {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     let mut secrets = BTreeSet::new();
@@ -2192,6 +2239,28 @@ async fn read_releases(
 #[cfg(test)]
 mod report_tests {
     use super::*;
+
+    #[test]
+    fn source_bound_protocol_registration_keeps_closed_frontend_contract() {
+        let valid = json!({"frontendDelivery":{"mode":"SOURCE_BOUND_PROTOCOL","extensionSlots":[],
+            "editorOrigins":["https://*.office.example.test"],"launchDescriptorSchemaVersion":"1",
+            "nativePageOrigins":["http://192.168.0.193:8080"]}});
+        validate_frontend_delivery(&valid).unwrap();
+        for changed in [
+            json!({"mode":"SOURCE_BOUND_PROTOCOL","extensionSlots":[],"editorOrigins":[] ,"launchDescriptorSchemaVersion":"1"}),
+            json!({"mode":"SOURCE_BOUND_PROTOCOL","extensionSlots":[],"editorOrigins":["https://editor.example.test/path"],"launchDescriptorSchemaVersion":"1"}),
+            json!({"mode":"SOURCE_BOUND_PROTOCOL","extensionSlots":[],"editorOrigins":["https://editor.example.test"],"launchDescriptorSchemaVersion":"2"}),
+            json!({"mode":"SOURCE_BOUND_PROTOCOL","extensionSlots":["undeclared"],"editorOrigins":["https://editor.example.test"],"launchDescriptorSchemaVersion":"1"}),
+            json!({"mode":"SOURCE_BOUND_PROTOCOL","extensionSlots":[],"editorOrigins":["https://editor.example.test"],"launchDescriptorSchemaVersion":"1","nativePageOrigins":["*"]}),
+            json!({"mode":"NONE","extensionSlots":[],"editorOrigins":[],"launchDescriptorSchemaVersion":"1"}),
+        ] {
+            assert!(validate_frontend_delivery(&json!({"frontendDelivery":changed})).is_err());
+        }
+        validate_frontend_delivery(
+            &json!({"frontendDelivery":{"mode":"NONE","extensionSlots":[],"editorOrigins":[]}}),
+        )
+        .unwrap();
+    }
 
     #[test]
     fn native_mcp_report_requires_real_protocol_result_not_adapter_status() {

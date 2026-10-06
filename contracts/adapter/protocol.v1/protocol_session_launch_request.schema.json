@@ -1,0 +1,18 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"adapter/protocol.v1/protocol_session_launch_request.schema.json",
+  "title":"AdapterProtocolSessionLaunchRequest",
+  "description":"18: execute the original admitted file protocol Session, not an arbitrary editor URL or native object create. All fields are frozen Core facts and the whole body is covered by ActionToken.",
+  "type":"object","additionalProperties":false,
+  "required":["protocolSessionId","reference","authorizationTargetNativeRef","admittedMode","theme","locale","expiresAt","idempotencyKey"],
+  "properties":{
+    "protocolSessionId":{"type":"string","format":"uuid"},
+    "reference":{"$ref":"../../domain/content_reference.schema.json"},
+    "authorizationTargetNativeRef":{"type":"string"},
+    "admittedMode":{"type":"string","enum":["VIEW","EDIT"]},
+    "theme":{"type":"string","enum":["LIGHT","DARK"]},
+    "locale":{"type":"string","enum":["en","zh-CN"]},
+    "expiresAt":{"type":"string"},
+    "idempotencyKey":{"type":"string","format":"uuid"}
+  }
+}
