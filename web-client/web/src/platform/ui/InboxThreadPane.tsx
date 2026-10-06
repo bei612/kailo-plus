@@ -12,12 +12,15 @@ import { publishMessage } from "@/platform/bff-client";
 import { Button } from "@/shared/ui/button";
 import { Composer } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
+import { MessageAuthorIdentity, type MessageAuthor } from "./MessageAuthorProfile";
 
-export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEventId, channelName, members, onBack, onOpen, autoSendDraftKey, replyTargetEventId }: {
+export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEventId, channelName, members, onBack, onOpen, autoSendDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable }: {
   principalId: string; workspaceId: string; rootId: string; selectedEventId: string; channelName: string;
   members: WorkspaceMemberView[]; onBack?: () => void; onOpen: () => void;
   autoSendDraftKey?: string;
   replyTargetEventId?: string;
+  onOpenAuthor?: (target: MessageAuthor) => void;
+  onAuthorScopeUnavailable?: (workspaceId: string) => void;
 }) {
   const t = useT(); const locale = useLocale();
   const [anchor] = useState(selectedEventId);
@@ -36,6 +39,9 @@ export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEven
     else if (thread.hasNextPage && !thread.isFetchingNextPage && !thread.isError) void thread.fetchNextPage();
   }, [anchor, messages.length, thread.hasNextPage, thread.isFetchingNextPage, thread.isError, thread.fetchNextPage]);
   const unavailable = denied || thread.isError || (thread.isSuccess && !messages.some((event) => event.id === rootId));
+  useEffect(() => {
+    if (unavailable || interrupted) onAuthorScopeUnavailable?.(workspaceId);
+  }, [unavailable, interrupted, workspaceId, onAuthorScopeUnavailable]);
   const canReply = !unavailable && !interrupted && thread.isSuccess && replyParent.current !== null && messages.some((message) => message.id === replyParent.current) && members.some((member) => member.principalId === principalId && member.state === WorkspaceMembershipState.Active);
   return <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60" data-testid="home-inbox-detail">
     <InboxDetailHeader title={channelName} onBack={onBack} onOpen={onOpen} openLabel={t("inbox.open")} />
@@ -45,6 +51,9 @@ export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEven
           const author = members.find((member) => member.pubkeys.includes(event.pubkey))?.displayName || truncatePubkey(event.pubkey);
           const edge = inboxThread(event.tags);
           return <div key={event.id} data-message-id={event.id}><MessageRowSurface highlighted={event.id === anchor}
+            renderIdentity={onOpenAuthor && !interrupted ? (node) => <MessageAuthorIdentity
+              target={{principalId,workspaceId,eventId:event.id,pubkey:event.pubkey}}
+              onOpen={() => onOpenAuthor({principalId,workspaceId,eventId:event.id,pubkey:event.pubkey})}>{node}</MessageAuthorIdentity> : undefined}
             message={{ id: event.id, author, pubkey: event.pubkey, createdAt: event.createdAt, body: event.content,
               time: relativeTime(locale, new Date(event.createdAt * 1000).toISOString()), depth: 0, tags: event.tags,
               rootId: edge.rootId, parentId: edge.parentId }} renderBody={(className) => <div className={className}><MessageContent workspaceId={workspaceId} content={event.content} mediaTags={event.tags} /></div>} /></div>;

@@ -10,13 +10,14 @@ import type { StreamFrame } from "../bff-client";
 import { ChannelThreadPane } from "./ChannelThreadPane";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({query: vi.fn(), publish: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
+const state = vi.hoisted(() => ({query: vi.fn(), publish: vi.fn(), profile: vi.fn(), openAuthor: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
 vi.mock("@client-kit/platform/react/context", async (original) => ({
   ...await original<typeof import("@client-kit/platform/react/context")>(),
   useBffClient: () => ({workspaceMessages: state.query}), useLocale: () => "en", useT: () => (key: string) => key,
 }));
 vi.mock("@/features/chat/ui/MessageContent", () => ({MessageContent: ({content}: {content: string}) => <p>{content}</p>}));
 vi.mock("@/platform/bff-client", () => ({
+  bff: {messageAuthorProfile: (...args: unknown[]) => state.profile(...args)},
   publishMessage: (...args: unknown[]) => state.publish(...args),
   openStream: (_scope: string, receive: (frame: StreamFrame) => void) => {state.receive = receive; return () => {};},
 }));
@@ -33,7 +34,7 @@ async function mount() {
   await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider>
     <ChannelThreadPane workspaceId="workspace" principalId="human" selected={selected}
       members={[{principalId: "human", displayName: "Alice", pubkeys: [author], state: WorkspaceMembershipState.Active}]}
-      disabled={false} onClose={vi.fn()} onCopyMessage={vi.fn()} />
+      disabled={false} onClose={vi.fn()} onCopyMessage={vi.fn()} onOpenAuthor={state.openAuthor} />
   </TooltipProvider></QueryClientProvider>));
   await settle();
 }
@@ -44,6 +45,7 @@ beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollTo", {configurable: true, value: vi.fn()});
   state.query.mockResolvedValue({events: [rootEvent, reply]});
   state.publish.mockResolvedValue({eventId: "d".repeat(64), operationId: "operation"});
+  state.profile.mockResolvedValue({pubkey:author,eventId:"profile",displayName:"Verified author",about:null,avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}});
   query = new QueryClient({defaultOptions: {queries: {retry: false}}});
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
@@ -74,4 +76,18 @@ it("traverses forward cursors and refuses a repeated cursor without offering an 
   expect(state.query).toHaveBeenCalledTimes(2);
   expect(state.query.mock.calls[1]?.[1]).toMatchObject({before: 2, beforeId: replyId});
   expect(host.querySelector<HTMLButtonElement>('[data-testid="host-send"]')?.disabled).toBe(true);
+});
+it("keeps thread author lookup lazy and opens only the actual admitted message author", async () => {
+  await mount();
+  expect(state.profile).not.toHaveBeenCalled();
+  const trigger = [...host.querySelectorAll<HTMLElement>('[role="button"][aria-label="Profile"]')].find((node) => node.textContent === "Alice")!;
+  expect(trigger).toBeDefined();
+  await act(async () => {trigger.dispatchEvent(new MouseEvent("mouseover", {bubbles:true})); await vi.advanceTimersByTimeAsync(600);});
+  await settle();
+  expect(state.profile).toHaveBeenCalledWith("workspace", rootId);
+  await act(async () => trigger.click());
+  expect(state.openAuthor).toHaveBeenCalledWith(expect.objectContaining({id:rootId,pubkey:author}));
+  await act(async () => state.receive!({type:"closed",reason:"scope-revoked"}));
+  await settle();
+  expect(host.querySelector('[aria-label="Profile"]')).toBeNull();
 });

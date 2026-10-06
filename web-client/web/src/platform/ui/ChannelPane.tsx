@@ -466,6 +466,7 @@ export function ChannelPane({
       onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}
     {!conversation && replyTarget && !profileTarget ? <ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
       workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
+      onOpenAuthor={setProfileTarget}
       members={(members.data ?? []).filter((member): member is WorkspaceMemberView => "state" in member)} disabled={archived || metadataPending || denied || !live}
       onClose={() => setReplyTarget(null)} onCopyMessage={copyMessage} onCopyLink={copyMessageLink} /> : null}
     </div>

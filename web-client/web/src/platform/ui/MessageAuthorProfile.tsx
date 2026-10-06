@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { MessageCircle } from "lucide-react";
-import type { ReactNode } from "react";
+import { useLayoutEffect, type ReactNode } from "react";
 import { ProfileSummaryView, UserProfilePopoverSurface, UserProfilePopoverBody, type ProfilePopoverBodyProps } from "@client-kit/platform/react/pulse";
 import { AuxiliaryPanel, AuxiliaryPanelBody, AuxiliaryPanelHeader, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock, useThreadPanelWidth } from "@client-kit/platform/react/thread";
 import { useEscapeKey } from "@client-kit/platform/react/thread/useEscapeKey";
@@ -10,7 +10,7 @@ import { truncatePubkey } from "@client-kit/platform/format";
 import { bff } from "../bff-client";
 import { Button } from "@/shared/ui/button";
 
-type MessageAuthor = {
+export type MessageAuthor = {
   principalId: string;
   workspaceId: string;
   conversationId?: string;
@@ -37,11 +37,13 @@ function useMessageAuthor(target: MessageAuthor) {
 
 const copy = (value: string) => navigator.clipboard.writeText(value);
 
-export function MessageAuthorIdentity({ target, children, onOpen }: {
+export function MessageAuthorIdentity({ target, children, onOpen, triggerElement, triggerClassName }: {
   target: MessageAuthor; children: ReactNode; onOpen: () => void;
+  triggerElement?: "div" | "span"; triggerClassName?: string;
 }) {
   const t=useUiT();
   return <UserProfilePopoverSurface pubkey={target.pubkey} triggerAriaLabel={t("platform.settings.profile")}
+    triggerElement={triggerElement} triggerClassName={triggerClassName}
     onOpenProfile={onOpen} renderBody={(props) => <MessageAuthorHover {...props} target={target} />}>
     {children}
   </UserProfilePopoverSurface>;
@@ -57,15 +59,17 @@ function MessageAuthorHover({target,...props}: ProfilePopoverBodyProps & {target
     status={!data?<p role={query.isError?"alert":"status"}>{t(query.isError?"platform.loadFailed":"platform.loading")}</p>:undefined}/>;
 }
 
-export function MessageAuthorProfile({target,onClose,onStartDm}: {
+export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isSinglePanelView=false}: {
   target:MessageAuthor;onClose:()=>void;onStartDm?: (pubkey:string)=>void;
+  onWidthChange?: (width: number) => void; isSinglePanelView?: boolean;
 }) {
   const t=useUiT();
   const query=useMessageAuthor(target);
   const width=useThreadPanelWidth();
+  useLayoutEffect(() => { onWidthChange?.(width.widthPx); }, [onWidthChange, width.widthPx]);
   useEscapeKey(onClose,true);
   const data=query.isSuccess&&!query.isFetching?query.data:undefined;
-  return <AuxiliaryPanel onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart}
+  return <AuxiliaryPanel onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart} isSinglePanelView={isSinglePanelView}
     onResetWidth={width.onResetWidth} canResetWidth={width.canReset} testId="user-profile-panel"
     resizeHandleAriaLabel={t("platform.profile.resize")} resizeHandleTestId="user-profile-resize-handle"
     header={<AuxiliaryPanelHeader data-testid="user-profile-panel-header" inset="wide" resizeBorder>

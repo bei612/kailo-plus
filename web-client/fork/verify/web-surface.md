@@ -3014,3 +3014,20 @@ Core 新作者证据反向验证：仅在同一 SDK 源码删去 `profile_event`
 实现后在既有 4 CPU / 8 GiB SDK 的独立 `message-edit.AGX058/apps` 快照验证。共享源 tsc 退出 0；测试 tsc 首次指出新夹具缺少既有必填 `uploaded`，补齐夹具后测试 tsc 退出 0、三项 DOM 用例通过。用例验证中英即时切换、原 remove/revert/cancel 回调和文件名/提供方标签保真，没有替换原组件。首次 CLI 路径沿符号链接误解析到不存在的 TypeScript bin，未启动类型检查；改为原 SDK 已安装 bin 的明确路径，没有安装依赖或改工具链。
 
 私有 SDK 把还原按钮改回英文裸文案后，三例中 1 失败 / 2 通过、退出 1，断言明确为 expected `还原` / actual `Revert`。逐字还原生产源码并与正式文件 cmp 0 后，三例再次全部通过、退出 0；原 `gen-platform-i18n.py --check` 同批通过。日志位于 Data `header-sidebar-fix-20261006.q5aiVW/composer-attachment-locale-{baseline,check,fixture-restored,mutation,restored}.log`。本批不运行 full、宿主构建或部署，不以共享 DOM 验证宣称全站双语已穷尽。
+
+## Web 线程与 Inbox 的原作者资料入口（2026-10-06，独立增量）
+
+基线为 `0238a858f87a32b1d90eaafb5a27691321d4b5c4`，合并时保留 `433ec461456f9def7da892b270cdceb9def77fca` 的共享附件双语增量。本批复用刚交付的 `MessageAuthorIdentity` / `MessageAuthorProfile` 与原 `UserProfilePopoverSurface`、`ProfileSummaryView`、`InboxLayout`、`AuxiliaryPanel`，接通频道线程、Inbox 列表、所选线程及实际线程草稿的作者入口。没有复制面板、目录或头像实现。
+
+实现前四步结论：
+
+- 权威：REQ-24、DD-39/75/80；原作者身份来自已准入的实际消息，而不是 Pulse 的 Community 目录。上游 `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/home/ui/InboxListPane.tsx::InboxListPane`、`desktop/src/features/home/ui/InboxMessageRow.tsx::InboxMessageRow` 在头像和姓名处使用原 `UserProfilePopover`；`desktop/src/features/home/ui/HomeView.tsx::HomeView` 使用原资料辅助列与窄屏单列行为。本批使用这些已抽取的共源主体，不重新设计页面。
+- 影响面：Web 的 `ChannelThreadPane`、`InboxPane`、`InboxThreadPane` 及后者实际草稿调用方；`PlatformApp` 只将已验证公钥交给现有受治理 NewMessage 入口。原 BFF 消息作者 API、身份/scope/签名校验、共享 UI 和 Desktop 调用均不变；无合同字段、迁移、工作流或存储增加。
+- 副作用：首次渲染不发逐行资料请求，hover/open 才以当前 Principal、Workspace 和真实 event ID 读取；点击作者不选择 Inbox 项、不写已读。旧身份资料不能跨身份展示；原 SSE 准入拒绝/中断关闭相应线程资料入口，Inbox 资料仍须处于实际可见频道中。本人资料不显示向本人发起 DM。Inbox 窄屏打开资料时保留线程挂载，避免丢失原回复/未决发送状态。
+- 边界：消息为空/作者缺失不造资料，查询失败沿原错误与重试表现；撤权/断流不借缓存恢复权限。原加载、返回作者不符和 scope 切换仍由同一资料组件处理。只读资料不因无发送权限而关闭。原页的 Follow/Wave/Agent 资料能力与 Forum 作者入口没有被假实现或宣布完成。
+
+实现后窄验使用既有 `kailo-agent-receipt-xvkujx`（4 CPU / 8 GiB），未安装依赖、未运行 Cargo/full/build/deploy。Web `tsc --noEmit` 退出 0；同一次 Vitest 六文件共 27 项通过：ChannelThreadPane 4、InboxThreadPane 4、InboxPane 9、InboxDrafts 2、MessageAuthorProfile 4、ChannelPane 4。新增用例实际点击原作者触发器，核对 event 作用域、惰性查询、撤权关闭、身份切换清理和不写已读。
+
+反向验证仅在 SDK 将 `MessageAuthorIdentity` 的 `onOpenProfile` 回调断开，三个新增入口用例全部失败（3 失败 / 14 跳过，退出 1）。还原后与正式文件字节 cmp 0，再运行 Web tsc 与上述六文件，27 项通过，退出 0。日志根目录 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`，文件为 `thread-inbox-author-mutation.log` 与 `thread-inbox-author-restored.log`。
+
+失败记录保留：第一次 SDK 缺少基线已提交的 `inboxWindowEvents` 导出，tsc 退出 2、未执行测试；从基线恢复准确 `inbox-events.ts` 后，26 项通过、Inbox 新夹具缺少 PlatformProvider 而失败。夹具改用真实 Provider 后 9 项通过，未为夹具放宽产品校验。少量 React act 警告仍存在。对应日志 `thread-inbox-author-final.log`、`thread-inbox-author-baseline-restored.log`、`thread-inbox-author-fixture.log`、`thread-inbox-author-provider.log`。本批是源码与窄验交付，不是新部署或浏览器端到端验收；原版全部资料/Inbox 功能完成度不得据此整体标满。

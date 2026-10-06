@@ -16,6 +16,7 @@ import { InboxRow } from "@client-kit/platform/react/inbox-row";
 import { InboxLayout, InboxListHeader, InboxEmptyDetail, InboxRowActionButton, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
 import { useResizableInboxListWidth, INBOX_SINGLE_COLUMN_BREAKPOINT_PX, INBOX_COLUMN_MIN_WIDTH_PX } from "@client-kit/platform/react/use-resizable-inbox-list-width";
 import { UserAvatar } from "@client-kit/platform/react/messages";
+import { AUXILIARY_PANEL_DEFAULT_WIDTH_PX, AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@client-kit/platform/react/thread";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@client-kit/platform/react/sidebar/context-menu";
 import { ExternalLink, MailOpen } from "lucide-react";
 import { InboxThreadPane } from "./InboxThreadPane";
@@ -26,6 +27,7 @@ import { hex, inboxWindowEvents, type Event } from "./inbox-events";
 export { inboxEvents } from "./inbox-events";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { Button } from "@/shared/ui/button";
+import { MessageAuthorIdentity, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
 
 type Snapshot = {
   mentions: Event[];
@@ -38,10 +40,12 @@ export function InboxPane({
   principalId,
   onOpen,
   onUnreadCount,
+  onStartDm,
 }: {
   principalId: string;
   onOpen: (workspaceId: string) => void;
   onUnreadCount?: (count: number | null) => void;
+  onStartDm?: (pubkey: string) => void;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -53,11 +57,16 @@ export function InboxPane({
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedDraft, setSelectedDraft] = useState<string | null>(null);
+  const [profileTarget, setProfileTarget] = useState<MessageAuthor | null>(null);
+  const [profileWidth, setProfileWidth] = useState(AUXILIARY_PANEL_DEFAULT_WIDTH_PX);
+  const closeAuthorScope = useCallback((workspaceId: string) => {
+    setProfileTarget((target) => target?.workspaceId === workspaceId ? null : target);
+  }, []);
   const drafts = useInboxDrafts(principalId);
   const container = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState<number | null>(null);
   const resize = useResizableInboxListWidth();
-  useEffect(() => { setSelected(null); setSelectedDraft(null); }, [principalId]);
+  useEffect(() => { setSelected(null); setSelectedDraft(null); setProfileTarget(null); }, [principalId]);
   useEffect(() => {
     const node = container.current;
     if (!node) return;
@@ -203,22 +212,27 @@ export function InboxPane({
         ),
     );
   const chosen = rows.find((row) => row.scopeKey === selected);
+  const authorTarget = profileTarget?.principalId === principalId && reads.visibleChannels.has(profileTarget.workspaceId) &&
+    snapshot.workspaces.some((workspace) => workspace.id === profileTarget.workspaceId) ? profileTarget : null;
+  const singleAuxiliary = Boolean(authorTarget) && width !== null && width < AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX;
   const narrow = width !== null && width < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
   const hasSelection = filter === "drafts" ? drafts.entries.some((entry) => entry.key === selectedDraft) : Boolean(chosen);
-  const showList = !narrow || !hasSelection;
-  const showDetail = !narrow || hasSelection;
+  const showList = !singleAuxiliary && (!narrow || !hasSelection);
+  const showDetail = !singleAuxiliary && (!narrow || hasSelection);
   const listWidth = width === null ? resize.inboxListWidthPx : Math.min(resize.inboxListWidthPx, Math.max(INBOX_COLUMN_MIN_WIDTH_PX, width - INBOX_COLUMN_MIN_WIDTH_PX));
   const isRead = (row: typeof rows[number]) => row.items.every((event) => event.createdAt <= (reads.readAt(inboxReply(event.tags) ? `msg:${event.id}` : event.channelId) ?? 0));
-  const header = <InboxListHeader filter={filter} onFilterChange={setFilter} activeDraftCount={drafts.entries.length} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly}
+  const header = <InboxListHeader filter={filter} onFilterChange={(next) => {setProfileTarget(null);setFilter(next);}} activeDraftCount={drafts.entries.length} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly}
     unreadCount={visibleRows.filter((row) => !isRead(row)).length} pending={reads.pending}
     onMarkAllRead={() => reads.write(inboxReadContexts(visibleRows.flatMap((row) => row.items), true))} />;
   if (filter === "drafts") return <InboxLayout containerRef={container} listWidth={listWidth} showList={showList} showDetail={showDetail}
     onResize={resize.handleInboxListResizeStart} onReset={resize.canResetInboxListWidth ? resize.handleInboxListWidthReset : undefined}>
     <InboxDrafts key={principalId} principalId={principalId} workspaces={snapshot.workspaces} members={snapshot.members} entries={drafts.entries}
       selectedKey={selectedDraft} onSelect={setSelectedDraft} onDelete={drafts.remove} showList={showList} showDetail={showDetail} header={header}
+      onStartDm={onStartDm}
       onBack={narrow ? () => setSelectedDraft(null) : undefined} />
   </InboxLayout>;
   return <InboxLayout containerRef={container} listWidth={listWidth} showList={showList} showDetail={showDetail}
+    hasAuxiliary={Boolean(authorTarget)} singleAuxiliary={singleAuxiliary} auxiliaryWidth={profileWidth}
     onResize={resize.handleInboxListResizeStart} onReset={resize.canResetInboxListWidth ? resize.handleInboxListWidthReset : undefined}>
     {showList ? <section aria-label={t("inbox.title")} className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60 ${showDetail ? "after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:z-40 after:w-px after:bg-border/35 after:content-['']" : ""}`}>
       {header}
@@ -229,15 +243,17 @@ export function InboxPane({
           const sender = member?.displayName || truncatePubkey(item.pubkey);
           const read = isRead(row);
           const mark = () => reads.write(inboxReadContexts(row.items, !read));
+          const target = {principalId,workspaceId:item.channelId,eventId:item.id,pubkey:item.pubkey};
           return <ContextMenu key={row.scopeKey}><ContextMenuTrigger asChild><div>
-            <InboxRow id={item.id} selected={row.scopeKey === selected} read={read} sender={sender}
-              avatar={<UserAvatar avatarUrl={null} displayName={sender} size="sm" />}
+            <InboxRow id={item.id} selected={row.scopeKey === selected} read={read}
+              sender={<MessageAuthorIdentity target={target} triggerElement="span" triggerClassName="min-w-0 max-w-full" onOpen={() => setProfileTarget(target)}><span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">{sender}</span></MessageAuthorIdentity>}
+              avatar={<MessageAuthorIdentity target={target} onOpen={() => setProfileTarget(target)}><UserAvatar avatarUrl={null} displayName={sender} size="sm" /></MessageAuthorIdentity>}
               timestamp={relativeTime(locale, new Date(row.latestActivityAt * 1000).toISOString())}
               unread={row.unreadCount > 1 ? t("inbox.unreadCount", { count: row.unreadCount }) : null}
               label={t(item.category === "mention" ? "inbox.mentionedIn" : "inbox.threadIn")}
               channel={snapshot.workspaces.find((workspace) => workspace.id === item.channelId)?.name ?? null}
               openLabel={t("inbox.openItem", { sender })}
-              onSelect={() => { setSelected(row.scopeKey); if (!read) reads.write(inboxReadContexts(row.items, true)); }}
+              onSelect={() => { setProfileTarget(null);setSelected(row.scopeKey); if (!read) reads.write(inboxReadContexts(row.items, true)); }}
               preview={<MessageContent content={item.content} workspaceId={item.channelId} mediaTags={item.tags} />}
               actions={<>
                 <InboxRowActionButton disabled={reads.pending} label={t(read ? "inbox.markUnread" : "inbox.markRead")} onClick={mark}><MailOpen className="h-4 w-4" /></InboxRowActionButton>
@@ -254,10 +270,14 @@ export function InboxPane({
         </div></div> : null}
       </div>
     </section> : null}
-    {showDetail ? chosen ? <InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}
+    {chosen && (showDetail || singleAuxiliary) ? <div className={singleAuxiliary ? "hidden" : "contents"}><InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}
       workspaceId={chosen.item.channelId} rootId={chosen.conversationId} selectedEventId={chosen.item.id}
+      onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeAuthorScope}
       channelName={snapshot.workspaces.find((workspace) => workspace.id === chosen.item.channelId)?.name ?? ""}
       members={snapshot.members.get(chosen.item.channelId) ?? []} onBack={narrow ? () => setSelected(null) : undefined}
-      onOpen={() => onOpen(chosen.item.channelId)} /> : <InboxEmptyDetail /> : null}
+      onOpen={() => onOpen(chosen.item.channelId)} /></div> : showDetail ? <InboxEmptyDetail /> : null}
+    {authorTarget ? <MessageAuthorProfile key={`${principalId}:${authorTarget.workspaceId}:${authorTarget.eventId}`}
+      target={authorTarget} onClose={() => setProfileTarget(null)} onWidthChange={setProfileWidth} isSinglePanelView={singleAuxiliary}
+      onStartDm={snapshot.members.get(authorTarget.workspaceId)?.some((member) => member.principalId === principalId && member.pubkeys.includes(authorTarget.pubkey)) ? undefined : onStartDm} /> : null}
   </InboxLayout>;
 }

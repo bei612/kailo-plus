@@ -9,11 +9,13 @@ import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { publishMessage } from "@/platform/bff-client";
 import { Composer } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
+import { MessageAuthorIdentity } from "./MessageAuthorProfile";
 
-export function ChannelThreadPane({ workspaceId, principalId, selected, members, disabled, onClose, onCopyMessage, onCopyLink }: {
+export function ChannelThreadPane({ workspaceId, principalId, selected, members, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: WorkspaceMemberView[];
   disabled: boolean; onClose: () => void; onCopyMessage: (message: TimelineMessage) => void;
   onCopyLink?: (message: TimelineMessage) => void;
+  onOpenAuthor?: (message: TimelineMessage) => void;
 }) {
   const t = useT(); const locale = useLocale();
   const rootId = getThreadReference(selected.tags ?? []).rootId ?? selected.id;
@@ -72,6 +74,9 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, members,
     threadRepliesPending={loading} threadRepliesError={unavailable}
     onRetryThreadReplies={denied ? undefined : () => {void thread.refetch();}}
     renderRow={(row) => <MessageRowSurface {...row} layoutVariant="thread-reply"
+      renderIdentity={row.message.pubkey && onOpenAuthor && !unavailable && !interrupted ? (node) => <MessageAuthorIdentity
+        target={{principalId,workspaceId,eventId:row.message.id,pubkey:row.message.pubkey!}}
+        onOpen={() => onOpenAuthor(row.message)}>{node}</MessageAuthorIdentity> : undefined}
       renderBody={(className) => <div className={className}><MessageContent workspaceId={workspaceId} content={row.message.body} mediaTags={row.message.tags} /></div>}
       renderActions={(ref) => <MessageActionBarSurface ref={ref} message={row.message} onCopyMessage={onCopyMessage}
         onCopyLink={onCopyLink}

@@ -264,6 +264,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ) : tab === "inbox" ? (
       <InboxPane
         principalId={session.tenantPrincipalId}
+        onStartDm={(pubkey)=>{setInitialRecipientPubkey(pubkey);setTab("new-message");}}
         onUnreadCount={setInboxUnreadCount}
         onOpen={(workspaceId) => {
           setChosen(workspaceId);
