@@ -917,7 +917,7 @@ mod workspace_channel_tests {
         assert_eq!(
             parameters.workspace_channel.as_ref().unwrap(),
             &json!({
-                "channelType": "forum", "description": "Decisions and discussion threads",
+                "channelType": "forum", "description": "Decisions and discussion threads", "ttlSeconds": 604800,
             })
         );
         assert_eq!(
@@ -934,6 +934,12 @@ mod workspace_channel_tests {
                 .to_json()
         );
         let mut legacy = command;
+        for invalid in [0, -1, i64::from(i32::MAX) + 1] {
+            legacy.workspace_channel.as_mut().unwrap().ttl_seconds = Some(invalid);
+            assert!(parse_command(Semantic::WorkspaceCreate, &legacy).is_err());
+        }
+        legacy.workspace_channel.as_mut().unwrap().ttl_seconds = None;
+        assert!(parse_command(Semantic::WorkspaceCreate, &legacy).is_ok());
         legacy.workspace_channel = None;
         assert!(parse_command(Semantic::WorkspaceCreate, &legacy)
             .unwrap()
@@ -945,6 +951,14 @@ mod workspace_channel_tests {
 fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params, Refusal> {
     let bad = || Refusal::Precondition(ReasonCode::InvalidParameters);
     if cmd.workspace_channel.is_some() && sem != Semantic::WorkspaceCreate {
+        return Err(bad());
+    }
+    if cmd
+        .workspace_channel
+        .as_ref()
+        .and_then(|channel| channel.ttl_seconds)
+        .is_some_and(|seconds| seconds <= 0 || seconds > i64::from(i32::MAX))
+    {
         return Err(bad());
     }
     if !sem.takes_explicit_confirmation() && cmd.explicit_confirmation.is_some() {

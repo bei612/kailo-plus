@@ -28,8 +28,9 @@ function eventsFrom(value: unknown): BuzzEvent[] {
 const project = (event: BuzzEvent): ForumMessage => ({ eventId: event.id, pubkey: event.pubkey,
   content: event.content, createdAt: event.created_at, tags: event.tags });
 
-export function ForumPane({ workspaceId, channelId, archived, myPrincipalId, onOpenMessageLink, target, restoreDraftKey, autoSendDraftKey }: {
+export function ForumPane({ workspaceId, channelId, archived, metadataPending = false, myPrincipalId, onOpenMessageLink, target, restoreDraftKey, autoSendDraftKey }: {
   workspaceId: string; channelId: string; archived: boolean; myPrincipalId: string;
+  metadataPending?: boolean;
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
   target?: ParsedMessageLink;
   restoreDraftKey?: string;
@@ -53,12 +54,16 @@ export function ForumPane({ workspaceId, channelId, archived, myPrincipalId, onO
   const [denied, setDenied] = React.useState<string | null>(null);
   const mounted = React.useRef(true);
   React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  React.useEffect(() => openStream(workspaceId, (frame) => {
+  React.useEffect(() => {
+    if (archived) return;
+    return openStream(workspaceId, (frame) => {
     if (frame.type === "event" || frame.type === "snapshot" || frame.type === "live") void queryClient.invalidateQueries({ queryKey: key });
+    if (frame.type === "closed") void queryClient.invalidateQueries({ queryKey: ["platform", "channel-descriptor", myPrincipalId, workspaceId] });
     if (frame.type === "closed" && ["session-revoked", "scope-revoked", "identity-revoked"].includes(frame.reason)) {
       setDenied(frame.reason); queryClient.removeQueries({ queryKey: key });
     }
-  }), [workspaceId, queryClient, key]);
+    });
+  }, [workspaceId, queryClient, key, archived, myPrincipalId]);
   const members = useQuery({ queryKey: ["platform", "members", workspaceId], queryFn: () => bff.members(workspaceId), enabled: !denied });
   const isMember = !members.isError && (members.data ?? []).some((member) => member.principalId === myPrincipalId && member.state === WorkspaceMembershipState.Active);
   const posts = useInfiniteQuery({ queryKey: [...key, "posts"], initialPageParam: null as WebMessageCursor | null, enabled: !denied,
@@ -102,7 +107,7 @@ export function ForumPane({ workspaceId, channelId, archived, myPrincipalId, onO
       return <div className="flex items-center gap-2"><UserAvatar avatarUrl={null} displayName={name} size={large ? "md" : "sm"} /><MessageAuthorText>{name}</MessageAuthorText></div>; }}
     renderContent={(message, preview) => <MessageContent workspaceId={workspaceId} content={preview && message.content.length > 200 ? `${message.content.slice(0, 200)}...` : message.content}
       mediaTags={message.tags} mentions={mentions} onOpenMessageLink={onOpenMessageLink} />}
-    renderComposer={(parentId, close) => <Composer key={parentId ?? "post"} workspaceId={workspaceId} surface="forum" disabled={!isMember || archived || Boolean(error)}
+    renderComposer={(parentId, close) => <Composer key={parentId ?? "post"} workspaceId={workspaceId} surface="forum" disabled={!isMember || archived || metadataPending || Boolean(error)}
       draftIdentity={myPrincipalId} draftKey={`forum:${workspaceId}:${parentId ?? "post"}`} autoSendDraftKey={autoSendDraftKey} placeholder={parentId ? labels.replyPlaceholder : labels.postPlaceholder} onCancel={parentId ? undefined : close}
       onOpenMessageLink={onOpenMessageLink} onPublish={async (content, attachments, idempotencyKey, installationIds) => {
         const receipt = await publishMessage(workspaceId, content, attachments, idempotencyKey, installationIds,

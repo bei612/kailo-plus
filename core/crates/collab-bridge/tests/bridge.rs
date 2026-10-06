@@ -233,6 +233,7 @@ async fn publish_gate(http: &reqwest::Client, origin: &str, control: &Keys, host
     let metadata = contracts::WorkspaceChannelCreate {
         channel_type: contracts::ChannelType::Forum,
         description: Some("Architecture discussion".into()),
+        ttl_seconds: Some(604800),
     };
     for _ in 0..2 {
         owner_client

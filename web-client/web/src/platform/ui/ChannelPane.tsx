@@ -3,7 +3,7 @@
 // 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
 // signer——签名由 BFF 以本人身份代做。
 
-import { AgentTrigger, ReasonCode, type AgentInstallationView, type ReadMarkRequest, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
+import { AgentTrigger, ReasonCode, WebMessageType, type AgentInstallationView, type ReadMarkRequest, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { MentionAutocomplete } from "@client-kit/platform/react/mention-autocomplete";
 import { ConversationPreparationPending, useConversationInvalidation } from "@client-kit/platform/react/new-message";
 import { useMentionSelection } from "@client-kit/platform/react/use-mention-selection";
@@ -37,6 +37,7 @@ import { buildMessageLink } from "@client-kit/platform/react/composer/features/m
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { Button } from "@/shared/ui/button";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
+import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
 import { useRichTextEditor, type LinkSelectionInfo } from "@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor";
 import { useLinkEditor } from "@client-kit/platform/react/composer/features/messages/lib/useLinkEditor";
@@ -53,7 +54,7 @@ const toIso = (unix: number) => new Date(unix * 1_000).toISOString();
  * 帧翻成状态。状态只在收到 `live` 时显示为已同步；连接中断期间如实显示为
  * 重连中——结果不明不渲染成成功。
  */
-function useChannelStream(workspaceId: string, conversationId?: string, onLiveEvent?: (event: BuzzEvent) => void) {
+function useChannelStream(workspaceId: string, conversationId?: string, onLiveEvent?: (event: BuzzEvent) => void, onClosed?: () => void, archived = false) {
   const reasonText = useReasonText();
   const [events, setEvents] = useState<BuzzEvent[]>([]);
   const [status, setStatus] = useState(t("platform.stream.connecting"));
@@ -61,8 +62,14 @@ function useChannelStream(workspaceId: string, conversationId?: string, onLiveEv
   const [denied, setDenied] = useState(false);
   const seen = useRef(new Set<string>());
   const receiveLive = useEffectEvent((event: BuzzEvent) => onLiveEvent?.(event));
+  const refreshMetadata = useEffectEvent(() => onClosed?.());
 
   useEffect(() => {
+    if (archived) {
+      setLive(false);
+      setStatus(t("channel.archived"));
+      return;
+    }
     let closed = false;
     let ready = false;
     setEvents([]);
@@ -93,6 +100,7 @@ function useChannelStream(workspaceId: string, conversationId?: string, onLiveEv
           break;
         case "closed":
           ready = false;
+          refreshMetadata();
           setLive(false);
           if (
             frame.reason === "session-revoked" ||
@@ -129,7 +137,7 @@ function useChannelStream(workspaceId: string, conversationId?: string, onLiveEv
       closed = true;
       stop();
     };
-  }, [workspaceId, conversationId, reasonText]);
+  }, [workspaceId, conversationId, reasonText, archived]);
 
   return { events, status, live, denied };
 }
@@ -153,6 +161,8 @@ export function ChannelPane({
   onOpenMessageLink,
   targetMessageId,
   autoSendDraftKey,
+  archived = false,
+  metadataPending = false,
 }: {
   workspaceId: string;
   myPrincipalId: string;
@@ -161,12 +171,17 @@ export function ChannelPane({
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
   targetMessageId?: string;
   autoSendDraftKey?: string;
+  archived?: boolean;
+  metadataPending?: boolean;
 }) {
   const queryClient = useQueryClient();
   const notifications = useBrowserNotifications();
-  const { events, status, live, denied } = useChannelStream(workspaceId, conversation?.id, (event) => receiveNotification(event));
+  const { events, status, live, denied } = useChannelStream(workspaceId, conversation?.id, (event) => receiveNotification(event), () => {
+    if (!conversation) void queryClient.invalidateQueries({ queryKey: ["platform", "channel-descriptor", myPrincipalId, workspaceId] });
+  }, archived);
   const messageList = useRef<HTMLUListElement>(null);
   const anchoredTarget = useRef<string | null>(null);
+  const [replyTarget, setReplyTarget] = useState<TimelineMessage | null>(null);
   useEffect(() => {
     if (!targetMessageId || anchoredTarget.current === targetMessageId) return;
     const target = [...(messageList.current?.children ?? [])].find((item) => item.getAttribute("data-event-id") === targetMessageId);
@@ -372,6 +387,7 @@ export function ChannelPane({
               <div className={`flex flex-col gap-1 ${followedByContinuation ? "pb-0" : "pb-2.5"}`}>
               <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={targetMessageId === message.id}
                 renderActions={(ref) => <MessageActionBarSurface ref={ref} message={message} onCopyMessage={copyMessage}
+                  onReply={!conversation && message.kind === 9 && live && !denied && !archived && !metadataPending ? setReplyTarget : undefined}
                   onCopyLink={channelId ? async (target) => {
                     const { rootId } = getThreadReference(target.tags ?? []);
                     try { await navigator.clipboard.writeText(buildMessageLink({ channelId, messageId: target.id, threadRootId: rootId })); toast.success(t("buzz.copiedLink")); }
@@ -396,7 +412,19 @@ export function ChannelPane({
             onPublish={(content, attachments, key) => publishConversationMessage(conversation.id, content, attachments, key)}
             onMediaUrl={(sha256) => mediaUrl(conversation.id, sha256, conversation.id)}
             onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
-        : <Composer workspaceId={workspaceId} draftIdentity={myPrincipalId} draftKey={workspaceId} autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink} />}
+        : <>{archived ? <p role="status">{t("channel.archived")}</p> : null}<Composer
+            key={replyTarget?.id ?? workspaceId}
+            disabled={archived || metadataPending || Boolean(replyTarget && (!live || !events.some((event) => event.id === replyTarget.id)))}
+            workspaceId={workspaceId} draftIdentity={myPrincipalId}
+            draftKey={replyTarget ? `thread:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}:${replyTarget.id}` : workspaceId}
+            replyTarget={replyTarget} onCancelReply={() => setReplyTarget(null)}
+            autoSendDraftKey={replyTarget ? undefined : autoSendDraftKey} onOpenMessageLink={onOpenMessageLink}
+            onPublish={replyTarget ? async (content, attachments, key, installations) => {
+              const receipt = await publishMessage(workspaceId, content, attachments, key, installations,
+                { messageType: WebMessageType.Stream, parentEventId: replyTarget.id });
+              if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Reply has no confirmed receipt.");
+              return receipt;
+            } : undefined} /></>}
     </div>
   );
 }
@@ -415,11 +443,13 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", onCancel, autoSendDraftKey }: {
+export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", onCancel, autoSendDraftKey, replyTarget, onCancelReply }: {
   surface?: "stream" | "forum";
   workspaceId?: string;
   onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[]) => Promise<unknown>;
   onCancel?: () => void;
+  replyTarget?: { author: string; body: string; id: string } | null;
+  onCancelReply?: () => void;
   onUpload?: (file: File) => Promise<MediaDescriptor>;
   onMediaUrl?: (sha256: string) => string;
   disabled?: boolean;
@@ -647,7 +677,10 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
     const publish = onPublish
       ? onPublish(content, attachments, key, mentionInstallationIds)
       : workspaceId
-        ? publishMessage(workspaceId, content, attachments, key, mentionInstallationIds)
+        ? publishMessage(workspaceId, content, attachments, key, mentionInstallationIds).then((receipt) => {
+            if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Message has no confirmed receipt.");
+            return receipt;
+          })
         : Promise.reject(new Error("Message destination is unavailable."));
     void publish
       .then(() => {
@@ -704,6 +737,7 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
 
   const ComposerSurface = surface === "forum" ? ForumComposerSurface : MessageComposerSurface;
   return <ComposerSurface
+    header={<ComposerReplyBanner replyTarget={replyTarget} onCancelReply={sending ? undefined : onCancelReply} />}
     overlays={<>{linkEditor.card}{linkEditor.dialog}</>}
     formProps={{
       onSubmit: (event) => { event.preventDefault(); send(); },

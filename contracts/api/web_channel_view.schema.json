@@ -10,7 +10,9 @@
     "channelType": {"$ref": "../domain/workspace_channel_create.schema.json#/properties/channelType"},
     "name": {"type": "string"},
     "description": {"type": "string"},
-    "archived": {"type": "boolean"}
+    "archived": {"type": "boolean"},
+    "ttlSeconds": {"$ref": "../domain/workspace_channel_create.schema.json#/properties/ttlSeconds"},
+    "ttlDeadline": {"type": "string", "format": "date-time"}
   },
   "description": "Web 经 BFF 以本人身份读取已准入 Workspace 对应的原 Relay 39000 元数据；类型来自原生签名证据，不从消息列表推断，不另存业务正文。"
 }

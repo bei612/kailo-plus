@@ -1,5 +1,7 @@
 import { expect, it, vi } from "vitest";
-import { MessageRowSurface, MessageActionBarSurface, type TimelineMessage } from "../src/react/messages";
+import { act } from "react";
+import { setLocale } from "../src/i18n";
+import { ComposerReplyBanner, MessageRowSurface, MessageActionBarSurface, type TimelineMessage } from "../src/react/messages";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { render, click } from "./render";
 
@@ -35,4 +37,16 @@ it("keeps pending sends ungrouped and prevents delivered-message copy actions", 
   expect(host.querySelector('[data-testid="message-send-status"]')?.textContent).toBe("Sending…");
   expect(host.querySelector('[data-testid="copy-link-message-message"]')).toBeNull();
   expect(host.querySelector('[data-testid="more-actions-message"]')).toBeNull();
+});
+
+it("shares the original reply banner and cancel callback with reactive Chinese and English labels", async () => {
+  const cancel = vi.fn();
+  const host = await render(<ComposerReplyBanner replyTarget={message} onCancelReply={cancel} />);
+  await act(async () => setLocale("zh-CN"));
+  expect(host.textContent).toContain("正在回复 Alice");
+  await click(host.querySelector<HTMLButtonElement>('[aria-label="取消回复"]')!);
+  expect(cancel).toHaveBeenCalledTimes(1);
+  await act(async () => setLocale("en"));
+  expect(host.textContent).toContain("Replying to Alice");
+  expect(host.querySelector('[aria-label="Cancel reply"]')).not.toBeNull();
 });

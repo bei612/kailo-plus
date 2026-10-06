@@ -11,6 +11,7 @@ import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { useLoad } from "./use-load";
 import { Input } from "./composer/shared/ui/input";
 import { cn } from "./profile/buzz/shared/lib/cn";
+import { ChannelTypeSettings, DEFAULT_EPHEMERAL_TTL_SECONDS } from "./channel-type-settings";
 
 type Change = { key: string; principal: RoleMemberView; idempotencyKey: string };
 type Outcome =
@@ -108,6 +109,8 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: Ch
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
+  const [temporary, setTemporary] = useState(false);
+  const [ttlSeconds, setTtlSeconds] = useState(DEFAULT_EPHEMERAL_TTL_SECONDS);
   const [command, setCommand] = useState<ActionCommand | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<WriteFailure | null>(null);
@@ -128,7 +131,7 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: Ch
     // The original channel form has no infrastructure slug field. Use its existing
     // stable creation intent key; management forms may still choose a readable slug.
     const intent = command ?? { actionKey, idempotencyKey, name: name.trim(), slug: channelType === undefined ? slug.trim() : idempotencyKey,
-      workspaceChannel: { channelType: channelType ?? ChannelType.Stream, ...(description.trim() ? { description: description.trim() } : {}) } };
+      workspaceChannel: { channelType: channelType ?? ChannelType.Stream, ...(description.trim() ? { description: description.trim() } : {}), ...(temporary ? { ttlSeconds } : {}) } };
     inFlight.current = true;
     setCommand(intent);
     setBusy(true);
@@ -148,6 +151,8 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: Ch
       setName("");
       setSlug("");
       setDescription("");
+      setTemporary(false);
+      setTtlSeconds(DEFAULT_EPHEMERAL_TTL_SECONDS);
     } catch (error) {
       const failed = writeFailure(error);
       setFailure(failed);
@@ -160,7 +165,7 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: Ch
     }
   };
 
-  return { actionKey, name, setName, slug, setSlug, description, setDescription, channelType, command, busy, failure, submission,
+  return { actionKey, name, setName, slug, setSlug, description, setDescription, temporary, setTemporary, ttlSeconds, setTtlSeconds, channelType, command, busy, failure, submission,
     locked, openTasks, pendingCreates, reloadOpenTasks, submit };
 }
 
@@ -211,6 +216,8 @@ export function WorkspaceCreateForm({ state, channel = false }: { state: Workspa
         <input required disabled={locked} value={slug} onChange={(event) => setSlug(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2 text-sm" />
         <span className="text-xs text-muted-foreground">{t("workspace.create.slugHint")}</span>
       </label> : null}
+      {channel ? <ChannelTypeSettings disabled={locked} temporary={state.temporary} ttlSeconds={state.ttlSeconds}
+        onTemporaryChange={state.setTemporary} onTtlSecondsChange={state.setTtlSeconds} /> : null}
       {submission ? (
         <div role="status" className="break-words text-sm">
           <p>{t("workspace.create.recorded", { execution: submission.actionExecutionId, operation: submission.operationId, gate: submission.gateState, dispatch: submission.dispatchState })}</p>

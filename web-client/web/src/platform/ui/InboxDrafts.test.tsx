@@ -20,6 +20,9 @@ it("resolves only existing draft namespaces belonging to the stored destination"
   const parent = "a".repeat(64);
   expect(draftMessageTarget({key: "scope", draft})).toEqual({messageType: WebMessageType.Stream});
   expect(draftMessageTarget({key: `thread:scope:${parent}`, draft})).toEqual({messageType: WebMessageType.Stream, parentEventId: parent});
+  const reply = "b".repeat(64);
+  expect(draftMessageTarget({key: `thread:scope:${parent}:${reply}`, draft})).toEqual({messageType: WebMessageType.Stream, threadRootId: parent, parentEventId: reply});
+  expect(draftMessageTarget({key: `thread:scope:${parent}:invalid`, draft})).toBeNull();
   expect(draftMessageTarget({key: "forum:scope:post", draft})).toEqual({messageType: WebMessageType.ForumPost});
   expect(draftMessageTarget({key: `forum:scope:${parent}`, draft})).toEqual({messageType: WebMessageType.ForumComment, parentEventId: parent});
   expect(draftMessageTarget({key: `thread:other:${parent}`, draft})).toBeNull();

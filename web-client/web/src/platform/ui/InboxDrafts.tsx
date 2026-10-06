@@ -13,12 +13,16 @@ import { InboxThreadPane } from "./InboxThreadPane";
 import { ForumPane } from "./ForumPane";
 
 /** Existing Web composer namespaces, resolved against the stored destination (never inferred from a secret or a fallback scope). */
-export function draftMessageTarget(entry: DraftListEntry): { messageType: WebMessageType; parentEventId?: string } | null {
+export function draftMessageTarget(entry: DraftListEntry): { messageType: WebMessageType; parentEventId?: string; threadRootId?: string } | null {
   const scope = entry.draft.channelId;
   if (entry.key === scope) return { messageType: WebMessageType.Stream };
   for (const [prefix, messageType] of [[`thread:${scope}:`, WebMessageType.Stream], [`forum:${scope}:`, WebMessageType.ForumComment]] as const) {
     if (!entry.key.startsWith(prefix)) continue;
     const parent = entry.key.slice(prefix.length);
+    if (messageType === WebMessageType.Stream && /^[0-9a-f]{64}:[0-9a-f]{64}$/.test(parent)) {
+      const [threadRootId, parentEventId] = parent.split(":");
+      return { messageType, threadRootId, parentEventId };
+    }
     if (messageType === WebMessageType.ForumComment && parent === "post") return { messageType: WebMessageType.ForumPost };
     return /^[0-9a-f]{64}$/.test(parent) ? { messageType, parentEventId: parent } : null;
   }
@@ -78,7 +82,9 @@ function DraftEditor({ principalId, item, destination, members, autoSend, onBack
   if (!valid || !target || !destination) return <section><InboxDetailHeader title={item.channelLabel} openLabel={t("drafts.open")} onBack={onBack} /><p role="status" className="p-5">{destination?.kind === "workspace" && channel.isPending ? t("platform.loading") : t("drafts.noChannel")}</p></section>;
   const autoSendDraftKey = autoSend ? entry.key : undefined;
   if (target.parentEventId && target.messageType === WebMessageType.Stream) return <InboxThreadPane principalId={principalId} workspaceId={entry.draft.channelId}
-    rootId={target.parentEventId} selectedEventId={target.parentEventId} channelName={item.channelLabel} members={members} onBack={onBack} onOpen={onBack} autoSendDraftKey={autoSendDraftKey} />;
+    rootId={target.threadRootId ?? target.parentEventId} selectedEventId={target.parentEventId}
+    replyTargetEventId={target.threadRootId ? target.parentEventId : undefined}
+    channelName={item.channelLabel} members={members} onBack={onBack} onOpen={onBack} autoSendDraftKey={autoSendDraftKey} />;
   return <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60"><InboxDetailHeader title={item.channelLabel} openLabel={t("drafts.open")} onBack={onBack} />
     {destination.kind === "conversation" ? <ChannelPane workspaceId={destination.conversation.id} conversation={destination.conversation} myPrincipalId={principalId} autoSendDraftKey={autoSendDraftKey} />
       : channel.data?.channelType === ChannelType.Forum ? <ForumPane workspaceId={entry.draft.channelId} channelId={channel.data.channelId} archived={channel.data.archived} myPrincipalId={principalId}

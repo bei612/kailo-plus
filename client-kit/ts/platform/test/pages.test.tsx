@@ -65,6 +65,7 @@ describe("shared original channel creation entry", () => {
       workspaceChannel: { channelType: "stream" },
     } });
     const intent = writes[0]?.body as ActionCommand;
+    expect(intent.workspaceChannel?.ttlSeconds).toBeUndefined();
     expect(intent.slug).toBe(intent.idempotencyKey);
     expect(dialog.textContent).toContain("create-execution");
     expect(dialog.textContent).not.toContain("Channel created");
@@ -87,17 +88,37 @@ describe("shared original channel creation entry", () => {
     const close = vi.fn();
     await mount(t, <CreateChannelDialog open onOpenChange={close} />);
     const dialog = await fill();
+    await click(dialog.querySelector<HTMLButtonElement>("[data-testid=create-channel-channel-type-option-temporary]")!);
     await click(button(dialog, "Create channel"));
     expect(dialog.querySelector<HTMLButtonElement>("button[aria-label=Close]")?.disabled).toBe(true);
     expect([...dialog.querySelectorAll("input")].every((input) => input.disabled)).toBe(true);
     expect(dialog.querySelector<HTMLTextAreaElement>("textarea")?.disabled).toBe(true);
+    expect(dialog.querySelector<HTMLButtonElement>("[data-testid=create-channel-ttl]")?.disabled).toBe(true);
+    expect(dialog.querySelector<HTMLButtonElement>("[data-testid=create-channel-channel-type-option-ongoing]")?.matches(":disabled")).toBe(true);
     const retry = dialog.querySelector<HTMLButtonElement>("[data-testid=create-channel-submit]")!;
     await click(retry);
     const commands = t.send.mock.calls.map(([request]) => request).filter((request) => request.method === "POST");
     expect(commands).toHaveLength(2);
     expect(commands[1]?.body).toEqual(commands[0]?.body);
+    expect(commands[0]?.body).toMatchObject({ workspaceChannel: { ttlSeconds: 604800 } });
     expect(dialog.querySelector<HTMLButtonElement>("button[aria-label=Close]")?.disabled).toBe(false);
     expect(close).not.toHaveBeenCalled();
+  });
+  it("keeps the original temporary channel presets and submits the selected native TTL", async () => {
+    const t = routes(() => recorded);
+    await mount(t, <CreateChannelDialog open onOpenChange={() => {}} />);
+    const dialog = await fill();
+    await click(dialog.querySelector<HTMLButtonElement>("[data-testid=create-channel-channel-type-option-temporary]")!);
+    const trigger = dialog.querySelector<HTMLButtonElement>("[data-testid=create-channel-ttl]")!;
+    expect(trigger.textContent).toContain("7 days");
+    await act(async () => { trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+    await settle();
+    expect(document.querySelectorAll("[data-testid^=create-channel-ttl-option-]")).toHaveLength(9);
+    await click(document.querySelector<HTMLButtonElement>("[data-testid=create-channel-ttl-option-1800]")!);
+    await click(button(dialog, "Create channel"));
+    expect(t.send.mock.calls.find(([request]) => request.method === "POST")?.[0].body).toMatchObject({
+      workspaceChannel: { channelType: "stream", ttlSeconds: 1800 },
+    });
   });
   it.each([
     ["en", "You do not have permission to create a channel.", "Create channel"],

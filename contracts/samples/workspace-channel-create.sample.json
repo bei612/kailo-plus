@@ -5,6 +5,7 @@
   "slug": "architecture",
   "workspaceChannel": {
     "channelType": "forum",
-    "description": "Decisions and discussion threads"
+    "description": "Decisions and discussion threads",
+    "ttlSeconds": 604800
   }
 }

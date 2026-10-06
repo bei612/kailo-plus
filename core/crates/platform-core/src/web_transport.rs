@@ -604,6 +604,21 @@ fn web_channel_view(
     if let Some(description) = one("about")? {
         view["description"] = description.into();
     }
+    match (one("ttl")?, one("ttl_deadline")?) {
+        (None, None) => {}
+        (Some(ttl), Some(deadline)) => {
+            let seconds = ttl
+                .parse::<i32>()
+                .ok()
+                .filter(|value| *value > 0)
+                .ok_or_else(invalid_message_evidence)?;
+            chrono::DateTime::parse_from_rfc3339(deadline)
+                .map_err(|_| invalid_message_evidence())?;
+            view["ttlSeconds"] = seconds.into();
+            view["ttlDeadline"] = deadline.into();
+        }
+        _ => return Err(invalid_message_evidence()),
+    }
     serde_json::from_value(view).map_err(|_| invalid_message_evidence())
 }
 
@@ -2403,6 +2418,65 @@ mod tests {
             &nostr::Keys::generate().public_key().to_hex()
         )
         .is_err());
+    }
+
+    #[test]
+    fn channel_descriptor_requires_signed_complete_native_ttl_metadata() {
+        let keys = nostr::Keys::generate();
+        let channel = Uuid::from_u128(1).to_string();
+        let sign = |ttl: Option<&str>, deadline: Option<&str>, archived: bool| {
+            let mut tags = vec![
+                nostr::Tag::parse(["d", channel.as_str()]).unwrap(),
+                nostr::Tag::parse(["name", "temporary-channel"]).unwrap(),
+                nostr::Tag::parse(["t", "stream"]).unwrap(),
+            ];
+            for (key, value) in [("ttl", ttl), ("ttl_deadline", deadline)] {
+                if let Some(value) = value {
+                    tags.push(nostr::Tag::parse([key, value]).unwrap());
+                }
+            }
+            if archived {
+                tags.push(nostr::Tag::parse(["archived", "true"]).unwrap());
+            }
+            nostr::EventBuilder::new(nostr::Kind::Custom(39000), "")
+                .tags(tags)
+                .sign_with_keys(&keys)
+                .unwrap()
+        };
+        let deadline = "2026-10-13T00:00:00Z";
+        let event = sign(Some("604800"), Some(deadline), true);
+        let view = web_channel_view(&event, &channel, &keys.public_key().to_hex()).unwrap();
+        assert!(view.archived);
+        let wire = serde_json::to_value(view).unwrap();
+        assert_eq!(wire["ttlSeconds"], 604800);
+        assert_eq!(wire["ttlDeadline"], deadline);
+        let ongoing = web_channel_view(
+            &sign(None, None, false),
+            &channel,
+            &keys.public_key().to_hex(),
+        )
+        .unwrap();
+        let wire = serde_json::to_value(ongoing).unwrap();
+        assert!(wire.get("ttlSeconds").is_none());
+        assert!(wire.get("ttlDeadline").is_none());
+        for (ttl, deadline) in [
+            (Some("604800"), None),
+            (None, Some(deadline)),
+            (Some("0"), Some(deadline)),
+            (Some("-1"), Some(deadline)),
+            (Some("2147483648"), Some(deadline)),
+            (Some("604800"), Some("unknown")),
+        ] {
+            assert!(web_channel_view(
+                &sign(ttl, deadline, false),
+                &channel,
+                &keys.public_key().to_hex()
+            )
+            .is_err());
+        }
+        let mut forged = event;
+        forged.content = "tampered".into();
+        assert!(web_channel_view(&forged, &channel, &keys.public_key().to_hex()).is_err());
     }
 
     #[test]

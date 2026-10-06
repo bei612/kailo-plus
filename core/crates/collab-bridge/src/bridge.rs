@@ -195,6 +195,14 @@ impl IdentityClient {
             if let Some(description) = metadata.description.as_deref() {
                 tags.push(tag("about", description));
             }
+            if let Some(ttl) = metadata.ttl_seconds {
+                // Original Buzz kind:9007 consumes `ttl`; the Relay owns
+                // activity renewal and automatic archival, not Core/Temporal.
+                if ttl <= 0 || ttl > i64::from(i32::MAX) {
+                    return Err(OperatorError::Sign("Invalid channel TTL".into()));
+                }
+                tags.push(tag("ttl", &ttl.to_string()));
+            }
         }
         let accepted = self.publish(http, KIND_CHANNEL_CREATE, "", &tags).await?;
         let duplicate = accepted.get("accepted").and_then(|v| v.as_bool()) == Some(false)
@@ -236,6 +244,11 @@ impl IdentityClient {
         if one("name")?.as_deref() != Some(buzz_core::channel::canonical_channel_name(name))
             || one("t")?.as_deref() != expected_kind.as_str()
             || one("about")?.as_deref().unwrap_or("") != description
+            || one("ttl")?.as_deref()
+                != metadata
+                    .and_then(|m| m.ttl_seconds)
+                    .map(|ttl| ttl.to_string())
+                    .as_deref()
             || event
                 .tags
                 .iter()

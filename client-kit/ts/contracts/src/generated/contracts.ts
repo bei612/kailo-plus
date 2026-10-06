@@ -1071,6 +1071,10 @@ export interface ResourceCreateClass {
 export interface WorkspaceChannelClass {
     channelType:  ChannelType;
     description?: string;
+    /**
+     * 原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
+     */
+    ttlSeconds?: number;
 }
 
 export enum ChannelType {
@@ -3108,6 +3112,8 @@ export interface WebChannelView {
     channelType:  ChannelType;
     description?: string;
     name:         string;
+    ttlDeadline?: Date;
+    ttlSeconds?:  number;
 }
 
 /**
@@ -3959,6 +3965,10 @@ export interface WorkflowRef {
 export interface WorkspaceChannelCreate {
     channelType:  ChannelType;
     description?: string;
+    /**
+     * 原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
+     */
+    ttlSeconds?: number;
 }
 
 /**

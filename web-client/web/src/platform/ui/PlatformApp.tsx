@@ -226,10 +226,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   ) : !active ? (
     <Notice text={t("platform.noWorkspace")} />
   ) : tab === "channel" ? (
-    channel.isError ? <Notice text={t("platform.loadFailed")} /> : channel.isPending ? <Notice text={t("platform.loadingWorkspaces")} /> :
+    channel.isError && !channel.data ? <Notice text={t("platform.loadFailed")} /> : !channel.data ? <Notice text={t("platform.loadingWorkspaces")} /> :
     channel.data.channelType === "forum" ? <ForumPane key={`${session.tenantPrincipalId}:${active}`} workspaceId={active}
-      channelId={channel.data.channelId} archived={channel.data.archived} myPrincipalId={session.tenantPrincipalId} onOpenMessageLink={openMessageLink} target={messageTarget ?? undefined} /> :
-    channel.data.channelType === "stream" ? <><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
+      channelId={channel.data.channelId} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onOpenMessageLink={openMessageLink} target={messageTarget ?? undefined} /> :
+    channel.data.channelType === "stream" ? <><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} archived={channel.data.archived} metadataPending={channel.isFetching || channel.isError} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
       onOpenMessageLink={openMessageLink} targetMessageId={messageTarget?.channelId === active ? messageTarget.messageId : undefined} /></> : <Notice text={t("platform.loadFailed")} />
   ) : (
     <MembersPane key={active} workspaceId={active} />

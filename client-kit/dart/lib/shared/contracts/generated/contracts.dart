@@ -4022,17 +4022,26 @@ class WorkspaceChannelClass {
   final ChannelType channelType;
   final String? description;
 
-  WorkspaceChannelClass({required this.channelType, this.description});
+  ///原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
+  final int? ttlSeconds;
+
+  WorkspaceChannelClass({
+    required this.channelType,
+    this.description,
+    this.ttlSeconds,
+  });
 
   factory WorkspaceChannelClass.fromJson(Map<String, dynamic> json) =>
       WorkspaceChannelClass(
         channelType: channelTypeValues.map[json["channelType"]]!,
         description: json["description"],
+        ttlSeconds: json["ttlSeconds"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "channelType": channelTypeValues.reverse[channelType],
     "description": description,
+    "ttlSeconds": ttlSeconds,
   });
 }
 
@@ -9265,6 +9274,8 @@ class WebChannelView {
   final ChannelType channelType;
   final String? description;
   final String name;
+  final DateTime? ttlDeadline;
+  final int? ttlSeconds;
 
   WebChannelView({
     required this.archived,
@@ -9272,6 +9283,8 @@ class WebChannelView {
     required this.channelType,
     this.description,
     required this.name,
+    this.ttlDeadline,
+    this.ttlSeconds,
   });
 
   factory WebChannelView.fromJson(Map<String, dynamic> json) => WebChannelView(
@@ -9280,6 +9293,10 @@ class WebChannelView {
     channelType: channelTypeValues.map[json["channelType"]]!,
     description: json["description"],
     name: json["name"],
+    ttlDeadline: json["ttlDeadline"] == null
+        ? null
+        : DateTime.parse(json["ttlDeadline"]),
+    ttlSeconds: json["ttlSeconds"],
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -9288,6 +9305,8 @@ class WebChannelView {
     "channelType": channelTypeValues.reverse[channelType],
     "description": description,
     "name": name,
+    "ttlDeadline": ttlDeadline?.toIso8601String(),
+    "ttlSeconds": ttlSeconds,
   });
 }
 
@@ -11934,17 +11953,26 @@ class WorkspaceChannelCreate {
   final ChannelType channelType;
   final String? description;
 
-  WorkspaceChannelCreate({required this.channelType, this.description});
+  ///原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
+  final int? ttlSeconds;
+
+  WorkspaceChannelCreate({
+    required this.channelType,
+    this.description,
+    this.ttlSeconds,
+  });
 
   factory WorkspaceChannelCreate.fromJson(Map<String, dynamic> json) =>
       WorkspaceChannelCreate(
         channelType: channelTypeValues.map[json["channelType"]]!,
         description: json["description"],
+        ttlSeconds: json["ttlSeconds"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "channelType": channelTypeValues.reverse[channelType],
     "description": description,
+    "ttlSeconds": ttlSeconds,
   });
 }
 

@@ -22,9 +22,9 @@ const rootEvent = event(rootId, "thread root", [["h", "workspace"]]);
 const reply = event(replyId, "selected reply", [["h", "workspace"], ["e", rootId, "", "root"], ["e", rootId, "", "reply"]]);
 let host: HTMLDivElement; let root: Root; let query: QueryClient;
 async function settle() { for (let index = 0; index < 8; index++) await act(async () => { await vi.advanceTimersByTimeAsync(10); }); }
-async function mount() {
+async function mount(replyTargetEventId?: string) {
   await act(async () => root.render(<QueryClientProvider client={query}><InboxThreadPane principalId="human" workspaceId="workspace" rootId={rootId} selectedEventId={replyId}
-    channelName="Admitted channel" members={[{ principalId: "human", displayName: "Member", pubkeys: [pubkey], state: WorkspaceMembershipState.Active }]} onOpen={vi.fn()} /></QueryClientProvider>));
+    replyTargetEventId={replyTargetEventId} channelName="Admitted channel" members={[{ principalId: "human", displayName: "Member", pubkeys: [pubkey], state: WorkspaceMembershipState.Active }]} onOpen={vi.fn()} /></QueryClientProvider>));
   await settle();
 }
 beforeEach(() => {
@@ -44,6 +44,13 @@ it("reads the true thread and preserves the original selected-reply parent when 
   await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
   expect(state.publish).toHaveBeenCalledWith("workspace", "actual reply", [], "same-intent", [], { messageType: "STREAM", parentEventId: rootId });
   expect(state.outcome).toBe("confirmed");
+});
+
+it("restores an explicit nested reply draft without retargeting it to its parent", async () => {
+  await mount(replyId);
+  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+  expect(state.query).toHaveBeenCalledWith("workspace", { messageType: "STREAM", parentEventId: rootId });
+  expect(state.publish).toHaveBeenCalledWith("workspace", "actual reply", [], "same-intent", [], { messageType: "STREAM", parentEventId: replyId });
 });
 
 it("does not report an unconfirmed receipt as success and removes detail on revoked admission", async () => {

@@ -1,4 +1,5 @@
 export * from "./DayDivider";
+export * from "./ComposerReplyBanner";
 export * from "./MessageActionBarSurface";
 export * from "./MessageHeader";
 export * from "./MessageRowSurface";

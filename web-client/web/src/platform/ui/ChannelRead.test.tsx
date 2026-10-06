@@ -17,7 +17,9 @@ const state = vi.hoisted(() => ({
   fetch: vi.fn(),
   mark: vi.fn(),
   notify: vi.fn(),
+  publish: vi.fn(),
   members: vi.fn(),
+  stream: vi.fn(),
   reason: (value: string) => value,
 }));
 vi.mock("@client-kit/platform/react/context", async (original) => ({
@@ -33,9 +35,10 @@ vi.mock("@/platform/bff-client", async () => ({
   },
   fetchUserState: () => state.fetch(),
   markRead: (request: ReadMarkRequest) => state.mark(request),
-  publishMessage: vi.fn(),
+  publishMessage: (...args: unknown[]) => state.publish(...args),
   uploadMedia: vi.fn(),
   openStream: (_workspace: string, receive: (frame: StreamFrame) => void) => {
+    state.stream(_workspace);
     state.receive = receive;
     return () => {};
   },
@@ -62,14 +65,17 @@ async function flush() {
       await vi.advanceTimersByTimeAsync(10);
     });
 }
-async function open() {
+async function renderChannel(props: { archived?: boolean; metadataPending?: boolean } = {}) {
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <TooltipProvider><ChannelPane workspaceId="workspace-a" myPrincipalId="human-a" /></TooltipProvider>
+        <TooltipProvider><ChannelPane workspaceId="workspace-a" myPrincipalId="human-a" {...props} /></TooltipProvider>
       </QueryClientProvider>,
     );
   });
+}
+async function open() {
+  await renderChannel();
   await act(async () => {
     state.receive!({ type: "snapshot", events: [event(10)] });
     state.receive!({ type: "live" });
@@ -84,13 +90,15 @@ function retry() {
   return button;
 }
 beforeEach(() => {
-  setLocale("en");
   vi.useFakeTimers();
   vi.clearAllMocks();
+  localStorage.clear();
+  setLocale("en");
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
   projection = { version: 3, readContexts: {}, workspacePreferences: {} };
   state.fetch.mockImplementation(async () => structuredClone(projection));
   state.members.mockResolvedValue([]);
+  state.publish.mockResolvedValue({ eventId: "published-event", operationId: "operation" });
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -156,6 +164,113 @@ it("mounts the original rich composer in a real channel DOM and removes it on re
   expect(host.querySelector('[aria-label="Toggle formatting"]')).not.toBeNull();
   await act(async () => state.receive!({ type: "closed", reason: "scope-revoked" }));
   expect(host.querySelector('[data-testid="message-composer"]')).toBeNull();
+});
+
+it("refreshes signed metadata only on closure and keeps archive transitions on the original stream lifecycle", async () => {
+  state.mark.mockResolvedValue({ version: 4 });
+  await open();
+  const invalidate = vi.spyOn(client, "invalidateQueries");
+  await act(async () => state.receive!({ type: "event", event: event(20) }));
+  await flush();
+  expect(invalidate.mock.calls.some(([options]) => options?.queryKey?.[1] === "channel-descriptor")).toBe(false);
+  expect(state.stream).toHaveBeenCalledTimes(1);
+  await act(async () => state.receive!({ type: "closed", reason: "restricted: channel access revoked" }));
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["platform", "channel-descriptor", "human-a", "workspace-a"] });
+  await renderChannel({ archived: true });
+  await flush();
+  expect(host.textContent).toContain("channel.archived");
+  expect(host.querySelector('[data-testid="message-input"]')?.getAttribute("contenteditable")).toBe("false");
+  expect(state.stream).toHaveBeenCalledTimes(1);
+  await renderChannel({ archived: false });
+  await flush();
+  expect(state.stream).toHaveBeenCalledTimes(2);
+});
+
+it("retains an UNKNOWN send key while native metadata is unavailable or archived", async () => {
+  state.mark.mockResolvedValue({ version: 4 });
+  state.publish.mockResolvedValue({ operationId: "unknown-operation" });
+  await open();
+  await act(async () => {
+    const input = host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+    const paragraph = document.createElement("p"); paragraph.textContent = "pending message";
+    input.replaceChildren(paragraph);
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "pending message" }));
+  });
+  await flush();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send-message"]')!.click());
+  await flush();
+  expect(state.publish).toHaveBeenCalledTimes(1);
+  const input = host.querySelector('[data-testid="message-input"]');
+  for (const props of [{ metadataPending: true }, { archived: true }]) {
+    await renderChannel(props);
+    await flush();
+    expect(host.querySelector('[data-testid="message-input"]')).toBe(input);
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="send-message"]')?.disabled).toBe(true);
+    expect(state.publish).toHaveBeenCalledTimes(1);
+  }
+  await renderChannel();
+  await flush();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send-message"]')!.click());
+  await flush();
+  expect(state.publish).toHaveBeenCalledTimes(2);
+  expect(state.publish.mock.calls[1]).toEqual(state.publish.mock.calls[0]);
+});
+
+it("the original Reply action sends to the exact event and cancellation restores the channel draft", async () => {
+  state.mark.mockRejectedValue(new BffError(403, "denied"));
+  await open();
+  const type = async (value: string) => {
+    await act(async () => {
+      const input = host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+      const paragraph = document.createElement("p"); paragraph.textContent = value;
+      input.replaceChildren(paragraph);
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
+    });
+    await flush();
+  };
+  await type("channel draft");
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-10"]')!.click());
+  await flush();
+  expect(host.querySelector('[data-testid="reply-target"]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).not.toContain("channel draft");
+  await type("actual reply");
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send-message"]')!.click());
+  await flush();
+  expect(state.publish).toHaveBeenCalledTimes(1);
+  expect(state.publish.mock.calls[0]).toEqual(["workspace-a", "actual reply", [], expect.any(String), [], { messageType: "STREAM", parentEventId: "event-10" }]);
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Cancel reply"]')!.click());
+  await flush();
+  expect(host.querySelector('[data-testid="reply-target"]')).toBeNull();
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("channel draft");
+});
+
+it("a reply without confirmed evidence stays UNKNOWN and keeps its original intent across target switches", async () => {
+  state.mark.mockRejectedValue(new BffError(403, "denied"));
+  state.publish.mockResolvedValue({ operationId: "operation" });
+  await open();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-10"]')!.click());
+  await flush();
+  await act(async () => {
+    const input = host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+    const paragraph = document.createElement("p"); paragraph.textContent = "retained reply";
+    input.replaceChildren(paragraph);
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "retained reply" }));
+  });
+  await flush();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send-message"]')!.click());
+  await flush();
+  expect(host.textContent).toContain("platform.sendUnknown");
+  const key = state.publish.mock.calls[0]?.[3];
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Cancel reply"]')!.click());
+  await flush();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-10"]')!.click());
+  await flush();
+  expect(state.publish).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("retained reply");
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send-message"]')!.click());
+  await flush();
+  expect(state.publish.mock.calls[1]?.[3]).toBe(key);
+  expect(state.publish.mock.calls[1]?.[5]).toEqual({ messageType: "STREAM", parentEventId: "event-10" });
 });
 
 it("renders real stream events through the original shared message row and groups adjacent authors", async () => {

@@ -2295,3 +2295,98 @@ Web 草稿页不是已部署浏览器验收，原附件预览完整细节及论�
 `kailo-visual-release-20261006.vlPvnU/C674-RESULTS.md`：设置布局与链接预览丰富偏好
 刷新保持通过，频道标题仍显示内部频道 slug（不是 workspace ID）、现有私聊 stream403 已报主线；没有为状态按钮
 重发 conversation.open，也没有把缺少 pending 意图的页面算成按钮业务验收。
+
+### 原消息 Reply 动作接线（REQ-24、DD-40/75/81）
+
+本批恢复 Web 原消息操作栏的 Reply 真实调用。横幅来自固定 Buzz
+`779af8886caae1317b4de962082429867ab61503`、完整路径
+`desktop/src/features/messages/ui/ComposerReplyEditBanner.tsx::ComposerReplyEditBanner`
+的 reply 分支，原布局／图标／正文预览／取消按钮保留，移入共用 messages 包并由
+Desktop 原 `ComposerReplyBanner` 和 Web 原富编辑器共同消费。原编辑分支没有伪接线。
+
+四步结论：权威由 REQ-24 原界面与既有 `web_transport::publish` 定义；影响为共享
+reply 横幅、Web ChannelPane 宿主、现有 Inbox 草稿目标解码及线程恢复，没有新 API、
+schema 或消息／已读权威。发送仍走原 `publishMessage` 的 STREAM 与 parentEventId，
+根／父事件及成员准入由 Core 回读验证，不接受前端自造 Nostr tags；仅回执同时含
+eventId 与 operationId 才清空编辑器，结果不明保留原草稿和幂等键。频道撤权、归档、
+元数据未确认、断线或当前目标不再可见时不提供新的回复发送。
+
+回复目标的草稿使用既有 identity＋origin 草稿库内的
+`thread:<workspace>:<root>:<parent>` 键，避免同一线程不同父消息重用一次 UNKNOWN
+意图；原 `thread:<workspace>:<root>` 键继续按原 Inbox 邻接回复语义读取。
+新键恢复时分开读取真实 root 线程与实际 parent，parent 未读到时禁止发布，跨 scope
+和非法 ID 不回退默认频道。切回频道编辑器恢复其原独立草稿，不混入回复正文。
+
+完整原消息菜单仍未恢复：固定上游 `MessageActionBar.tsx` 的 edit/delete/reaction
+确实存在，当前 BFF 尚无对应已闭合调用；本批不生成空操作，也不把现有共享菜单子集
+称为固定上游全量。原完整 ThreadPanel、消息子树已读与关注菜单仍须分别闭合，本批
+仅是原 Reply 发布动作及其草稿恢复，不把主时间线称为完整原线程面板。
+
+### 原临时频道创建与归档消费（2026-10-06，REQ-24、DD-80/81）
+
+四步结论：
+
+1. 权威仍是原 Relay。固定 Buzz `779af8886caae1317b4de962082429867ab61503`
+   的 `desktop/src/features/channels/ui/ChannelTypeSettings.tsx::ChannelTypeSettings`
+   创建布局与九个原期限选项迁入共享 `react/channel-type-settings.tsx`，Web/Desktop
+   的原创建对话框共用；默认长期频道不携带 TTL。期限经原 `workspace.create`
+   冻结参数进入 `IdentityClient::ensure_channel` 的 kind 9007 `ttl` 标签，仍回读
+   原签名 kind 39000 核对，重试同 ID 不把不同 TTL 当成原创建成功。
+2. 影响是两个可选契约字段集合、四侧生成类型、已有创建参数与频道描述读取，及
+   两个 Web 消息宿主的归档禁写；没有新表、迁移、计时器、Workflow 或状态权威。
+   `Workspace` 生命周期不变，Relay TTL 归档不伪造为 Workspace 暂停。
+3. 归档、元数据回读中或失败时禁止新发送；有旧描述时保留原编辑器实例和 UNKNOWN
+   意图，不把查询失败变成清空草稿。仅 CLOSED 触发签名元数据回查，不每条消息重订阅
+   SSE；解档后才沿原流生命周期重连。普通频道发送也核对 eventId 与 operationId，
+   不再把缺少确认回执当成成功；Reply 仍使用同样证据边界。
+4. 缺 TTL 保留永久频道语义；零、负数、超过原 i32 范围、孤立期限、损坏时间、未知
+   kind/type/archived、错误作者或签名均拒绝。UNKNOWN 创建锁住原期限与幂等键；
+   归档/回读失败期间保留同一次未确认发送，不能创建第二次意图。
+
+原时间格式与结束状态已按上述完整 commit 重新核验：
+
+- `crates/buzz-relay/src/handlers/side_effects.rs::emit_group_discovery_events`
+  从 `Option<DateTime<Utc>>` 用 `to_rfc3339()` 写 `ttl_deadline`，不是 Unix 秒。
+- `crates/buzz-db/src/store/channel.rs::create_channel`、`create_channel_with_id`
+  同一 INSERT 生成 TTL 和 deadline；`update_channel` 同时设置或同时清空。
+- 同文件 `reap_expired_ephemeral_channels` 只设置 archived_at，保留 TTL 与 deadline；
+  `unarchive_channel` 给仍有 TTL 的频道重新计算 deadline。没有新增 Core 回收器。
+- `migrations/0024_event_ttl_refresh_shared_lock.sql::refresh_channel_ttl_after_event_insert`
+  是原事件续期触发器；只更新活动临时频道 deadline，保留原 best-effort 报警语义。
+  本批没有改变原续期失败行为，真实 Relay 到期、重启与恢复演练仍未运行。
+
+契约兼容边界：新 `ttlSeconds`、`ttlDeadline` 是可选字段，当前四侧读取旧缺省输入不
+要求它们；旧创建没有 workspaceChannel 的路径仍按原 legacy intent 执行。
+原 `tools/check.sh::step_contract` 比较 contracts-v0.1.0 得到
+`PASS 相对 contracts-v0.1.0 无破坏性变更（242 个 schema，匹配 3 个历史 schema）`。
+这不等价于旧客户端全面接受新响应：使用旧 `additionalProperties:false` schema
+验证新 TTL 字段的客户端会拒绝，需要随本批四侧更新，不存在据此证明的滚动兼容窗口。
+Dart 的 DateTime 序列化把 `...00Z` 规范化为 `...00.000Z`；本批样例使用后者完成
+四侧等值往返，并未声称所有 RFC3339 文本可逐字往返，也未改写原 Relay 时间字符串。
+
+实际验证使用已有 `kailo-agent-receipt-xvkujx`，4 CPU／8 GiB cgroup，缓存复用；
+没有新建环境、安装依赖、运行 full、构建镜像或部署本批。日志均在 Data
+`codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`：
+
+- `tools/gen.sh` 四侧生成退出 0，输出已入工作树；原同源 i18n 生成含 TTL 与 Reply
+  词条。首轮 TTL 词条数字开头不满足既有生成器规则，已改为合法词条，未放宽生成器。
+- shared 源与 test tsc、Web/Native tsc 均退出 0。创建表单 6/6、原消息行 4/4；
+  Web ChannelRead 12、ChannelPane 4、InboxThreadPane 3、InboxDrafts 2，共 21/21。
+  首轮新按钮 import 错误与英文 fixture 清除 locale 的错误均已修正，原失败日志保留。
+- `SQLX_OFFLINE=true cargo test --offline --manifest-path core/Cargo.toml -p platform-core
+  --bin platform-core channel_` 为 5/5；`-p contracts --test roundtrip` 为 18/18。
+  TS 原 roundtrip 21/21，Go `./internal/contracts` 退出 0，Dart 原 roundtrip 17/17。
+  `channel-ttl-core-restored.log`、`channel-ttl-contracts-restored.log`、
+  `channel-ttl-dart-restored.log` 为最终结果。真实 Relay bridge 集成用例未运行，不能
+  用缺集成变量时的跳过冒充真实 TTL 创建验收。
+- SDK-only 删除创建 TTL 载荷，创建检查真实 2 fail；绕过 Core 正数校验，签名描述检查
+  真实 1 fail；去除归档/元数据禁写，Web 检查真实 2 fail；去掉 Reply 的 eventId
+  核对，UNKNOWN 回复检查真实 1 fail。对应 `channel-ttl-mutation.log`、
+  `channel-ttl-core-mutation.log`、`channel-archive-mutation.log`、
+  `channel-reply-mutation.log` 均非零退出；还原并逐文件 cmp 退出 0 后，
+  `channel-ttl-restored.log` 为 6/6，`channel-archive-restored.log` 与
+  `channel-reply-restored.log` 均为 ChannelRead 12/12，Core 同批恢复为 5/5。
+
+公开/私有产品可见性、完整原模板、频道设置 TTL 修改与原倒计时呈现仍是交付缺口，
+没有从 REQ-24 删除，也未放上不生效的控件。本批只恢复真实创建 TTL 与已归档状态的
+发送边界，不宣称频道全功能或生产就绪。

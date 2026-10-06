@@ -21,7 +21,7 @@ test("workspace creation preserves native channel kind and description", () => {
   ok(original.workspaceChannel);
   const reconstructed: ActionCommand = { actionKey: original.actionKey, idempotencyKey: original.idempotencyKey,
     name: original.name, slug: original.slug, workspaceChannel: {
-      channelType: original.workspaceChannel.channelType, description: original.workspaceChannel.description,
+      channelType: original.workspaceChannel.channelType, description: original.workspaceChannel.description, ttlSeconds: original.workspaceChannel.ttlSeconds,
     } };
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), original);
 });
@@ -317,7 +317,7 @@ test("forum query, cursor and native channel preserve each generated field and l
   const backCursor: WebMessageCursor = { createdAt: cursor.createdAt, eventId: cursor.eventId };
   deepStrictEqual(JSON.parse(JSON.stringify(backCursor)), cursor);
   const channel: WebChannelView = load("web-forum-channel.sample.json");
-  const backChannel: WebChannelView = { channelId: channel.channelId, channelType: channel.channelType, name: channel.name, description: channel.description, archived: channel.archived };
+  const backChannel: WebChannelView = { channelId: channel.channelId, channelType: channel.channelType, name: channel.name, description: channel.description, archived: channel.archived, ttlSeconds: channel.ttlSeconds, ttlDeadline: channel.ttlDeadline };
   deepStrictEqual(JSON.parse(JSON.stringify(backChannel)), channel);
   const query: WebMessageQuery = load("web-forum-query.sample.json");
   deepStrictEqual([query.before, query.beforeId], [cursor.createdAt, cursor.eventId]);

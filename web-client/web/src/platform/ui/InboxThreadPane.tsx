@@ -14,10 +14,11 @@ import { Button } from "@/shared/ui/button";
 import { Composer } from "./ChannelPane";
 import { inboxEvents } from "./inbox-events";
 
-export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEventId, channelName, members, onBack, onOpen, autoSendDraftKey }: {
+export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEventId, channelName, members, onBack, onOpen, autoSendDraftKey, replyTargetEventId }: {
   principalId: string; workspaceId: string; rootId: string; selectedEventId: string; channelName: string;
   members: WorkspaceMemberView[]; onBack?: () => void; onOpen: () => void;
   autoSendDraftKey?: string;
+  replyTargetEventId?: string;
 }) {
   const client = useBffClient(); const t = useT(); const locale = useLocale(); const cache = useQueryClient();
   const [anchor] = useState(selectedEventId);
@@ -50,7 +51,7 @@ export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEven
   const anchoredMessage = messages.find((message) => message.id === anchor);
   // Original Inbox replies beside the selected event unless an explicit row
   // reply target is chosen. Latch once; live feed updates cannot retarget it.
-  if (replyParent.current === null && anchoredMessage) replyParent.current = inboxThread(anchoredMessage.tags).parentId ?? anchor;
+  if (replyParent.current === null && anchoredMessage) replyParent.current = replyTargetEventId ?? inboxThread(anchoredMessage.tags).parentId ?? anchor;
   useEffect(() => {
     if (reached.current) return;
     const target = scroller.current?.querySelector(`[data-message-id="${anchor}"]`);
@@ -58,7 +59,7 @@ export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEven
     else if (thread.hasNextPage && !thread.isFetchingNextPage && !thread.isError) void thread.fetchNextPage();
   }, [anchor, messages.length, thread.hasNextPage, thread.isFetchingNextPage, thread.isError, thread.fetchNextPage]);
   const unavailable = denied || thread.isError || (thread.isSuccess && !messages.some((event) => event.id === rootId));
-  const canReply = !unavailable && thread.isSuccess && replyParent.current !== null && members.some((member) => member.principalId === principalId && member.state === WorkspaceMembershipState.Active);
+  const canReply = !unavailable && thread.isSuccess && replyParent.current !== null && messages.some((message) => message.id === replyParent.current) && members.some((member) => member.principalId === principalId && member.state === WorkspaceMembershipState.Active);
   return <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60" data-testid="home-inbox-detail">
     <InboxDetailHeader title={channelName} onBack={onBack} onOpen={onOpen} openLabel={t("inbox.open")} />
     <div ref={scroller} className="-mt-13 min-h-0 flex-1 overflow-y-auto overscroll-contain pt-13">
@@ -73,7 +74,7 @@ export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEven
         })}
       {!unavailable && thread.hasNextPage ? <Button disabled={thread.isFetchingNextPage} onClick={() => { void thread.fetchNextPage(); }}>{t("forum.more")}</Button> : null}
     </div>
-    <Composer workspaceId={workspaceId} draftIdentity={principalId} draftKey={`thread:${workspaceId}:${rootId}`} autoSendDraftKey={autoSendDraftKey} disabled={!canReply}
+    <Composer workspaceId={workspaceId} draftIdentity={principalId} draftKey={`thread:${workspaceId}:${rootId}${replyTargetEventId ? `:${replyTargetEventId}` : ""}`} autoSendDraftKey={autoSendDraftKey} disabled={!canReply}
       placeholder={t("inbox.reply")} onPublish={async (content, attachments, idempotencyKey, installations) => {
         if (!replyParent.current) throw new Error("Inbox reply parent is unavailable.");
         const receipt = await publishMessage(workspaceId, content, attachments, idempotencyKey, installations,

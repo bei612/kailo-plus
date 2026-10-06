@@ -2997,6 +2997,8 @@ type ResourceCreateClass struct {
 type WorkspaceChannelClass struct {
 	ChannelType ChannelType `json:"channelType"`
 	Description *string     `json:"description,omitempty"`
+	// 原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
+	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
 }
 
 // POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -4187,6 +4189,8 @@ type WebChannelView struct {
 	ChannelType ChannelType `json:"channelType"`
 	Description *string     `json:"description,omitempty"`
 	Name        string      `json:"name"`
+	TTLDeadline *time.Time  `json:"ttlDeadline,omitempty"`
+	TTLSeconds  *int64      `json:"ttlSeconds,omitempty"`
 }
 
 // 原 Buzz 线程分页的复合游标；下一请求以 before=createdAt、beforeId=eventId 原样提交，避免同秒回复丢失。
@@ -4849,6 +4853,8 @@ type WorkflowRef struct {
 type WorkspaceChannelCreate struct {
 	ChannelType ChannelType `json:"channelType"`
 	Description *string     `json:"description,omitempty"`
+	// 原 Buzz 临时频道的不活跃期限（秒）。省略为长期频道；Relay 原生消息活动续期，原生 reaper 到期归档，不表示 Workspace 暂停或删除。
+	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
 }
 
 // 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
