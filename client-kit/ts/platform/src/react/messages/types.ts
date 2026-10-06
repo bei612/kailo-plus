@@ -14,6 +14,7 @@ export type TimelineMessage = {
   author: string;
   avatarUrl?: string | null;
   role?: string;
+  isAgent?: boolean;
   time: string;
   body: string;
   parentId?: string | null;

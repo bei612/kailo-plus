@@ -4,6 +4,22 @@
 import '../contracts/contracts.dart';
 
 enum PlatformMessageKey {
+  threadTitle,
+  threadOpenTitle,
+  threadBack,
+  threadClosePanel,
+  threadResizePanel,
+  threadResizeHint,
+  threadResizeResetHint,
+  threadCollapseThread,
+  threadReplyTo,
+  threadNewMessageOne,
+  threadNewMessageOther,
+  threadJumpLatest,
+  threadLoadFailed,
+  threadLoadFailedHint,
+  threadEmpty,
+  threadEmptyHint,
   draftsEmpty,
   draftsSelect,
   draftsSelectHint,
@@ -1166,6 +1182,40 @@ enum PlatformMessageKey {
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
+  PlatformMessageKey.threadTitle: ('Thread', '线程'),
+  PlatformMessageKey.threadOpenTitle: ('Open {title}', '打开{title}'),
+  PlatformMessageKey.threadBack: ('Back to conversation', '返回会话'),
+  PlatformMessageKey.threadClosePanel: ('Close panel', '关闭面板'),
+  PlatformMessageKey.threadResizePanel: ('Resize panel', '调整面板宽度'),
+  PlatformMessageKey.threadResizeHint: ('Drag to resize.', '拖动调整宽度。'),
+  PlatformMessageKey.threadResizeResetHint: (
+    'Drag to resize. Double-click to reset width.',
+    '拖动调整宽度，双击恢复默认宽度。',
+  ),
+  PlatformMessageKey.threadCollapseThread: ('Collapse thread', '收起线程'),
+  PlatformMessageKey.threadReplyTo: (
+    'Reply in thread to {author}',
+    '在线程中回复{author}',
+  ),
+  PlatformMessageKey.threadNewMessageOne: (
+    '{count} new message',
+    '新增{count}条消息',
+  ),
+  PlatformMessageKey.threadNewMessageOther: (
+    '{count} new messages',
+    '新增{count}条消息',
+  ),
+  PlatformMessageKey.threadJumpLatest: ('Jump to latest', '跳到最新消息'),
+  PlatformMessageKey.threadLoadFailed: ('Couldn’t load replies', '无法加载回复'),
+  PlatformMessageKey.threadLoadFailedHint: (
+    'The thread history didn’t load. Check your connection and try again.',
+    '线程历史未能加载，请检查连接后重试。',
+  ),
+  PlatformMessageKey.threadEmpty: ('No replies in this branch yet', '此分支尚无回复'),
+  PlatformMessageKey.threadEmptyHint: (
+    'Reply in the thread to continue this branch.',
+    '在线程中回复以继续此分支。',
+  ),
   PlatformMessageKey.draftsEmpty: ('No drafts', '暂无草稿'),
   PlatformMessageKey.draftsSelect: ('Select a draft', '选择一份草稿'),
   PlatformMessageKey.draftsSelectHint: (

@@ -3,7 +3,7 @@
 // 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
 // signer——签名由 BFF 以本人身份代做。
 
-import { AgentTrigger, ReasonCode, WebMessageType, type AgentInstallationView, type ReadMarkRequest, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
+import { AgentTrigger, ReasonCode, type AgentInstallationView, type ReadMarkRequest, type ConversationView, type ConversationParticipant, type WorkspaceMemberView } from "@client-kit/contracts";
 import { MentionAutocomplete } from "@client-kit/platform/react/mention-autocomplete";
 import { ConversationPreparationPending, useConversationInvalidation } from "@client-kit/platform/react/new-message";
 import { useMentionSelection } from "@client-kit/platform/react/use-mention-selection";
@@ -37,6 +37,7 @@ import { buildMessageLink } from "@client-kit/platform/react/composer/features/m
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { Button } from "@/shared/ui/button";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
+import { ChannelThreadPane } from "./ChannelThreadPane";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
 import { useRichTextEditor, type LinkSelectionInfo } from "@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor";
@@ -251,6 +252,11 @@ export function ChannelPane({
   const channelId = events
     .find((e) => e.tags.some((tag) => tag[0] === "h"))
     ?.tags.find((tag) => tag[0] === "h")?.[1];
+  const copyMessageLink = channelId ? async (target: TimelineMessage) => {
+    const { rootId } = getThreadReference(target.tags ?? []);
+    try { await navigator.clipboard.writeText(buildMessageLink({ channelId, messageId: target.id, threadRootId: rootId })); toast.success(t("buzz.copiedLink")); }
+    catch { toast.error(t("buzz.copyFailed")); }
+  } : undefined;
   const lastReadIso = channelId ? userState.data?.readContexts[channelId] : undefined;
   const lastRead = lastReadIso ? Date.parse(lastReadIso) / 1_000 : 0;
   const muted = conversation
@@ -358,7 +364,8 @@ export function ChannelPane({
   }, [visible, muted, unreadFromOthers, notifications?.settings.homeBadgeEnabled]);
 
   return (
-    <div className="flex h-full flex-col gap-2">
+    <div className="relative flex h-full min-h-0 min-w-0 overflow-hidden">
+    <div className="flex min-w-0 flex-1 flex-col gap-2">
       <div className="text-xs text-muted-foreground" role="status">
         {status}
       </div>
@@ -388,11 +395,7 @@ export function ChannelPane({
               <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={targetMessageId === message.id}
                 renderActions={(ref) => <MessageActionBarSurface ref={ref} message={message} onCopyMessage={copyMessage}
                   onReply={!conversation && message.kind === 9 && live && !denied && !archived && !metadataPending ? setReplyTarget : undefined}
-                  onCopyLink={channelId ? async (target) => {
-                    const { rootId } = getThreadReference(target.tags ?? []);
-                    try { await navigator.clipboard.writeText(buildMessageLink({ channelId, messageId: target.id, threadRootId: rootId })); toast.success(t("buzz.copiedLink")); }
-                    catch { toast.error(t("buzz.copyFailed")); }
-                  } : undefined} />}
+                  onCopyLink={copyMessageLink} />}
                 renderBody={(className) => <div className={className}><MessageContent
                 content={message.body}
                 mediaTags={message.tags}
@@ -413,18 +416,14 @@ export function ChannelPane({
             onMediaUrl={(sha256) => mediaUrl(conversation.id, sha256, conversation.id)}
             onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
         : <>{archived ? <p role="status">{t("channel.archived")}</p> : null}<Composer
-            key={replyTarget?.id ?? workspaceId}
-            disabled={archived || metadataPending || Boolean(replyTarget && (!live || !events.some((event) => event.id === replyTarget.id)))}
-            workspaceId={workspaceId} draftIdentity={myPrincipalId}
-            draftKey={replyTarget ? `thread:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}:${replyTarget.id}` : workspaceId}
-            replyTarget={replyTarget} onCancelReply={() => setReplyTarget(null)}
-            autoSendDraftKey={replyTarget ? undefined : autoSendDraftKey} onOpenMessageLink={onOpenMessageLink}
-            onPublish={replyTarget ? async (content, attachments, key, installations) => {
-              const receipt = await publishMessage(workspaceId, content, attachments, key, installations,
-                { messageType: WebMessageType.Stream, parentEventId: replyTarget.id });
-              if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Reply has no confirmed receipt.");
-              return receipt;
-            } : undefined} /></>}
+            disabled={archived || metadataPending}
+            workspaceId={workspaceId} draftIdentity={myPrincipalId} draftKey={workspaceId}
+            autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink} /></>}
+    </div>
+    {!conversation && replyTarget ? <ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
+      workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
+      members={(members.data ?? []).filter((member): member is WorkspaceMemberView => "state" in member)} disabled={archived || metadataPending || denied || !live}
+      onClose={() => setReplyTarget(null)} onCopyMessage={copyMessage} onCopyLink={copyMessageLink} /> : null}
     </div>
   );
 }
@@ -443,11 +442,14 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", onCancel, autoSendDraftKey, replyTarget, onCancelReply }: {
+export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", onCancel, autoSendDraftKey, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange }: {
   surface?: "stream" | "forum";
   workspaceId?: string;
   onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[]) => Promise<unknown>;
   onCancel?: () => void;
+  containerClassName?: string;
+  layoutMode?: "standalone" | "dock";
+  onSendingChange?: (sending: boolean) => void;
   replyTarget?: { author: string; body: string; id: string } | null;
   onCancelReply?: () => void;
   onUpload?: (file: File) => Promise<MediaDescriptor>;
@@ -469,6 +471,8 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
   const [mentionInstallationIds, setMentionInstallationIds] = useState<string[]>([]);
   const [mentionPickerOpen, setMentionPickerOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  useEffect(() => { onSendingChange?.(sending); }, [sending, onSendingChange]);
+  useEffect(() => () => { onSendingChange?.(false); }, [onSendingChange]);
   const [dragging, setDragging] = useState(false);
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
@@ -737,6 +741,7 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
 
   const ComposerSurface = surface === "forum" ? ForumComposerSurface : MessageComposerSurface;
   return <ComposerSurface
+    containerClassName={containerClassName}
     header={<ComposerReplyBanner replyTarget={replyTarget} onCancelReply={sending ? undefined : onCancelReply} />}
     overlays={<>{linkEditor.card}{linkEditor.dialog}</>}
     formProps={{
@@ -754,7 +759,7 @@ export function Composer({ workspaceId, onPublish, onUpload, onMediaUrl, disable
         event.preventDefault(); linkEditor.focusCardFirstControl();
       }
     }}
-    toolbar={{ layoutMode: "standalone", composerDisabled: disabled || sending,
+    toolbar={{ layoutMode, composerDisabled: disabled || sending,
       extraActions: onCancel ? <Button type="button" variant="ghost" disabled={sending} onClick={onCancel}>{t("platform.cancel")}</Button> : undefined,
       editor: richText.editor, formattingDisabled: disabled || sending, isFormattingOpen,
       isSending: sending, isUploading: uploading > 0,

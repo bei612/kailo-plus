@@ -2390,3 +2390,79 @@ Dart 的 DateTime 序列化把 `...00Z` 规范化为 `...00.000Z`；本批样例
 公开/私有产品可见性、完整原模板、频道设置 TTL 修改与原倒计时呈现仍是交付缺口，
 没有从 REQ-24 删除，也未放上不生效的控件。本批只恢复真实创建 TTL 与已归档状态的
 发送边界，不宣称频道全功能或生产就绪。
+
+## 原线程侧栏共享恢复（2026-10-06，REQ-24 / DD-74 / DD-80）
+
+本增量以冻结树 `9d1e38eeff1e83d96321b014a63a16eb82ccfe20` 为比较基准，不以在线旧
+Web、已有安装包或该冻结树的 full 检查证明本增量部署完成。
+
+动手前四步与实际落点：
+
+1. 权威：沿 REQ-24 恢复原呈现，消息与父子关系仍由 Relay 签名事件决定；BFF 负责
+   浏览器本人身份及准入。原版呈现依据为 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/messages/ui/MessageThreadPanel.tsx::MessageThreadPanel`、
+   `desktop/src/features/messages/lib/threadPanel.ts::buildThreadPanelData`、
+   `desktop/src/shared/layout/AuxiliaryPanelShell.tsx::AuxiliaryPanel`。不恢复另一个
+   Relay signer、线程正文表或工作流执行器。
+2. 影响面：原布局、树与摘要、分支折叠、锚定滚动、宽度调整、加载/错误呈现提取到
+   `client-kit/ts/platform/src/react/messages/thread/`；Desktop 原文件改为共享消费，
+   `MessageThreadPanel` 宿主继续绑定原生发送、视频上下文及已有菜单。Web
+   `ChannelThreadPane` 实际消费同一 `ThreadPanelSurface`，频道主草稿保持挂载，
+   线程草稿继续按身份、频道、根消息、精确父消息隔离。Inbox 和频道线程共用
+   `useWorkspaceThread` 与既有 query key，不增加消息缓存权威。无 schema/API 或
+   数据库迁移；共享类型 `isAgent` 只保留原 UI 表达，不生成 Agent 身份。
+3. 副作用：发送仍调用原 `publishMessage`，只向 BFF 传真实 `parentEventId`；仅
+   `eventId` 与 `operationId` 同时存在才接受终态。UNKNOWN 草稿与幂等意图仍由
+   原 Composer 保存，关闭/重开线程不会自动重发；原频道 TTL/归档锁保留。提取
+   kinds 时保留 Kailo 已准入的事件集合与 DM 命令，不用新版上游订阅集合覆盖它。
+4. 异常：原错误卡不渲染成空线程；分页遍历既有 Relay forward 复合游标，重复或
+   倒退游标报错并停止发送；缺根消息、撤权、未完成分页、读取失败、断流、非活动
+   成员都不能发送。撤权移除正文投影，连接恢复后沿真实读取刷新；切换目标保留
+   各自草稿。UNKNOWN 不转换成失败或成功。空分支仅在读取成功后使用原空态。
+
+其他复用出处（均为上述完整 commit）：
+
+- `desktop/src/features/messages/ui/MessageThreadSummaryRow.tsx::MessageThreadSummaryRow`
+  与 `desktop/src/features/messages/ui/MessageThreadReplyState.tsx::ThreadReplyRegion`；
+- `desktop/src/features/messages/ui/useAnchoredScroll.ts::useAnchoredScroll`、
+  `desktop/src/features/messages/lib/timelineSnapshot.ts::selectThreadRepliesSurface`；
+- `desktop/src/shared/hooks/useThreadPanelWidth.ts::useThreadPanelWidth`、
+  `desktop/src/shared/hooks/escapeSurfaces.ts` 的原 Escape 所有权；Native 改为同源
+  re-export，避免独立 Escape 计数或两份面板状态。
+
+本批恢复的是原线程面板已具备真实宿主链的呈现与操作，不是固定上游的全部新功能。
+Web 消息编辑、删除、反应、关注/独立线程已读、原 huddle、DM 内线程，以及主消息
+时间线的全部原摘要交互仍须闭合各自真实接缝；没有放上不生效的按钮，也没有从
+REQ-24 删除这些功能。源码验收不代表新 Web/Windows 包已投递。
+
+本增量定向证据位于受限既有 SDK 对应 Data 目录
+`codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`：
+
+- shared 源与检查源码 TypeScript、Desktop TypeScript、Web TypeScript 均退出 0；
+  原线程树/锚定滚动/Escape/错误态 Node 检查 101/101，共享线程与消息行 6/6，
+  Web 线程/频道/Inbox 22/22。日志为 `thread-panel-focused.log`、
+  `thread-panel-hosts.log`、`thread-panel-channel-read.log`、`thread-panel-restored.log`。
+- SDK-only 将错误态强行当无错，真实检查得到「此分支尚无回复」而非「无法加载回复」，
+  1 fail；移除回复 eventId 核对，得到 confirmed 而非 unknown，1 fail；均为非零
+  退出。`thread-panel-mutation.log` 保留原输出，原字节还原且 cmp 退出 0 后，
+  `thread-panel-restored.log` 为共享 6/6 + Web 22/22、退出 0。
+- 第一轮 SDK 误同步了并行公开频道源码而未包含其新契约，报 WorkspaceVisibility
+  不存在；隔离恢复该非本批文件为冻结树后继续。原 DOM 夹具未提供 matchMedia、
+  scrollTo 与正确 realm 的 Event，也已局部补齐；分支单链应验证原 collapse rail
+  而非仅在后续兄弟分支出现的 continuation guide。所有原失败日志保留，不修改
+  产品来迁就检查，不引用这些失败轮为通过。
+- 线程面板的 sending 状态由原 Composer 回调投射，非固定 false；Native 原本
+  发送期间允许选择树中其他目标，Web 保持这一行为，但内部发送/取消控件仍使用
+  真实 sending，挂载变化不能清除 UNKNOWN 幂等意图。该最后局部修正单独执行
+  Web TypeScript 与同一组 22 项，结果记录在 `thread-panel-final-web.log`。
+
+本批没有新依赖安装、独立 SDK、全量检查、镜像构建或部署。16 个 thread.* 英中
+词条沿现有 catalog。合批时从 `f4f7094347aa36772218f00df93a104b18947f4f`
+单独导出并加入这 16 项，用原 `gen-platform-i18n.py` 生成并 `--check`，实际输出
+`PASS Mobile platform and reason catalogs match shared TS`；仅同步 TS catalog
+与 Dart platform_text，reason_text 未变，没有混入并行公开频道词条或契约。
+隔离产物为 Data 的 `codex-agent-receipt-regression-20261005.XvkUjX/thread-i18n.VJ7dFZ/`。
+原 `check-docs.sh` 经既有离线 npm cache 执行退出 0，日志为
+`thread-panel-docs-restored.log`；首次默认 npm cache 权限失败保留，不以改权限绕过。
+这只证明词条同源和本批源码检查，不是 Mobile 页面、镜像或设备验收。

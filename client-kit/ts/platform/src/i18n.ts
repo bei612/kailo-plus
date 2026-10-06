@@ -94,6 +94,22 @@ export function platformPluralForm(locale: PlatformLocale, count: number): "one"
 type Message = { readonly en: string; readonly "zh-CN": string };
 
 export const platformMessages = {
+  "thread.title": { en: "Thread", "zh-CN": "线程" },
+  "thread.openTitle": { en: "Open {title}", "zh-CN": "打开{title}" },
+  "thread.back": { en: "Back to conversation", "zh-CN": "返回会话" },
+  "thread.closePanel": { en: "Close panel", "zh-CN": "关闭面板" },
+  "thread.resizePanel": { en: "Resize panel", "zh-CN": "调整面板宽度" },
+  "thread.resizeHint": { en: "Drag to resize.", "zh-CN": "拖动调整宽度。" },
+  "thread.resizeResetHint": { en: "Drag to resize. Double-click to reset width.", "zh-CN": "拖动调整宽度，双击恢复默认宽度。" },
+  "thread.collapseThread": { en: "Collapse thread", "zh-CN": "收起线程" },
+  "thread.replyTo": { en: "Reply in thread to {author}", "zh-CN": "在线程中回复{author}" },
+  "thread.newMessage.one": { en: "{count} new message", "zh-CN": "新增{count}条消息" },
+  "thread.newMessage.other": { en: "{count} new messages", "zh-CN": "新增{count}条消息" },
+  "thread.jumpLatest": { en: "Jump to latest", "zh-CN": "跳到最新消息" },
+  "thread.loadFailed": { en: "Couldn’t load replies", "zh-CN": "无法加载回复" },
+  "thread.loadFailedHint": { en: "The thread history didn’t load. Check your connection and try again.", "zh-CN": "线程历史未能加载，请检查连接后重试。" },
+  "thread.empty": { en: "No replies in this branch yet", "zh-CN": "此分支尚无回复" },
+  "thread.emptyHint": { en: "Reply in the thread to continue this branch.", "zh-CN": "在线程中回复以继续此分支。" },
   "drafts.empty": { en: "No drafts", "zh-CN": "暂无草稿" },
   "drafts.select": { en: "Select a draft", "zh-CN": "选择一份草稿" },
   "drafts.selectHint": { en: "Pick a draft to preview it and choose what to do next.", "zh-CN": "选择草稿以预览、继续编辑或发送。" },

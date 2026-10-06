@@ -24,8 +24,13 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("@client-kit/platform/react/context", async (original) => ({
   ...await original<typeof import("@client-kit/platform/react/context")>(), useReasonText: () => state.reason,
+  useLocale: () => "en", useT: () => state.reason,
 }));
 vi.mock("./BrowserNotifications", () => ({ useBrowserNotifications: () => ({ notify: state.notify, settings: { homeBadgeEnabled: true } }) }));
+vi.mock("./useWorkspaceThread", () => ({ useWorkspaceThread: () => ({
+  messages: threadMessages, denied: false, interrupted: false, refresh: vi.fn(),
+  thread: {isSuccess: true, isPending: false, isError: false, hasNextPage: false, isFetchingNextPage: false, fetchNextPage: vi.fn(), refetch: vi.fn()},
+}) }));
 vi.mock("@/platform/bff-client", async () => ({
   BffError: (await import("@client-kit/platform/transport")).BffError,
   bff: {
@@ -58,6 +63,7 @@ const event = (seconds: number) => ({
   tags: [["h", "channel-a"]],
   content: "",
 });
+const threadMessages = [{...event(10), createdAt: 10}];
 async function flush() {
   // Exercise real React effects and Query's notification queue repeatedly.
   for (let i = 0; i < 20; i++)
@@ -94,6 +100,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   setLocale("en");
+  Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
+  Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
   projection = { version: 3, readContexts: {}, workspacePreferences: {} };
   state.fetch.mockImplementation(async () => structuredClone(projection));
@@ -218,56 +227,64 @@ it("retains an UNKNOWN send key while native metadata is unavailable or archived
 
 it("the original Reply action sends to the exact event and cancellation restores the channel draft", async () => {
   state.mark.mockRejectedValue(new BffError(403, "denied"));
+  state.members.mockResolvedValue([{principalId: "human-a", displayName: "Alice", pubkeys: ["mine"], state: "ACTIVE"}]);
   await open();
   const type = async (value: string) => {
     await act(async () => {
-      const input = host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+      const input = host.querySelector<HTMLElement>('[data-testid="message-thread-panel"] [data-testid="message-input"]')!;
       const paragraph = document.createElement("p"); paragraph.textContent = value;
       input.replaceChildren(paragraph);
       input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
     });
     await flush();
   };
-  await type("channel draft");
+  await act(async () => {
+    const input = host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+    const paragraph = document.createElement("p"); paragraph.textContent = "channel draft";
+    input.replaceChildren(paragraph);
+    input.dispatchEvent(new InputEvent("input", {bubbles: true, inputType: "insertText", data: "channel draft"}));
+  });
+  await flush();
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-10"]')!.click());
   await flush();
-  expect(host.querySelector('[data-testid="reply-target"]')).not.toBeNull();
-  expect(host.querySelector('[data-testid="message-input"]')?.textContent).not.toContain("channel draft");
+  expect(host.querySelector('[data-testid="message-thread-panel"]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="message-thread-panel"] [data-testid="message-input"]')?.textContent).not.toContain("channel draft");
   await type("actual reply");
-  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send-message"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="message-thread-panel"] [data-testid="send-message"]')!.click());
   await flush();
   expect(state.publish).toHaveBeenCalledTimes(1);
   expect(state.publish.mock.calls[0]).toEqual(["workspace-a", "actual reply", [], expect.any(String), [], { messageType: "STREAM", parentEventId: "event-10" }]);
-  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Cancel reply"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Close panel"]')!.click());
   await flush();
-  expect(host.querySelector('[data-testid="reply-target"]')).toBeNull();
+  expect(host.querySelector('[data-testid="message-thread-panel"]')).toBeNull();
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("channel draft");
 });
 
 it("a reply without confirmed evidence stays UNKNOWN and keeps its original intent across target switches", async () => {
   state.mark.mockRejectedValue(new BffError(403, "denied"));
   state.publish.mockResolvedValue({ operationId: "operation" });
+  state.members.mockResolvedValue([{principalId: "human-a", displayName: "Alice", pubkeys: ["mine"], state: "ACTIVE"}]);
   await open();
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-10"]')!.click());
   await flush();
   await act(async () => {
-    const input = host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+    const input = host.querySelector<HTMLElement>('[data-testid="message-thread-panel"] [data-testid="message-input"]')!;
     const paragraph = document.createElement("p"); paragraph.textContent = "retained reply";
     input.replaceChildren(paragraph);
     input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "retained reply" }));
   });
   await flush();
-  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send-message"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="message-thread-panel"] [data-testid="send-message"]')!.click());
   await flush();
   expect(host.textContent).toContain("platform.sendUnknown");
   const key = state.publish.mock.calls[0]?.[3];
-  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Cancel reply"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Close panel"]')!.click());
   await flush();
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-10"]')!.click());
   await flush();
   expect(state.publish).toHaveBeenCalledTimes(1);
-  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("retained reply");
-  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send-message"]')!.click());
+  expect(host.querySelector('[data-testid="message-thread-panel"] [data-testid="message-input"]')?.textContent).toBe("retained reply");
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="message-thread-panel"] [data-testid="send-message"]')!.click());
   await flush();
   expect(state.publish.mock.calls[1]?.[3]).toBe(key);
   expect(state.publish.mock.calls[1]?.[5]).toEqual({ messageType: "STREAM", parentEventId: "event-10" });

@@ -28,6 +28,7 @@ import assert from "node:assert/strict";
 import { after, afterEach, before, test } from "node:test";
 
 import { JSDOM } from "jsdom";
+import { setLocale } from "@client-kit/platform/i18n";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost",
@@ -37,6 +38,7 @@ before(() => {
   Object.assign(globalThis, {
     document: dom.window.document,
     HTMLElement: dom.window.HTMLElement,
+    Event: dom.window.Event,
     IS_REACT_ACT_ENVIRONMENT: true,
     window: dom.window,
   });
@@ -45,6 +47,7 @@ before(() => {
     addEventListener() {},
     removeEventListener() {},
   });
+  setLocale("en");
 });
 
 afterEach(async () => {
