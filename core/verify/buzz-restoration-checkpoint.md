@@ -231,3 +231,20 @@ SDK 首次生成缺 npm 缓存环境，实际退出 1（`EACCES mkdir /.npm`）�
 设计 push 首次被外层遗留 pre-push 错误调用 apps 全量检查、因缺 TMPDIR 拒绝；
 没有修改钩子或运行未受限构建。已通过文档检查的独立设计 commit 经同远端的
 apps Git 发送到设计分支，远端独立读回为上述 commit；没有混入实现提交。
+
+### 发布构建的契约输入修复
+
+冻结源码 `dc41f86ca6e56fdbc83f6d75d5051a16a7e7f4fe` 的原 `tools/release.sh`
+实际退出 1：Core 的 `conversations.rs::` 编译单元两处 `include_str!` 找不到
+`contracts/api/conversation_open_request.schema.json`。编译日志为
+`/volumes/data/kailo/tmp/buzz-restoration-release-20261006.QMJMtJ/core-worker-release.log`。
+这是发布上下文遗漏，不是该 JSON 契约或私聊准入失败。
+
+权威与影响面：按 ADR-06、工程规则 17 的固定来源要求，只把现有契约加入
+`tools/release.sh` 的 Git 归档、`.dockerignore` 的精确 allowlist 与
+`core/Dockerfile` 的 COPY。检索 Core 的全部 schema include 后确认该路径是
+本次遗漏；不扩大为整个仓库或秘密目录，不改契约内容、四侧类型及运行接口。
+副作用与边界：无数据迁移、身份／权限／额度或三端行为变化；缺少文件仍导致
+构建失败，不提供默认契约或绕过校验。只影响构建输入，无新增业务错误状态。
+`bash -n tools/release.sh` 与上述三个文件的 `git diff --check` 均退出 0。
+原构建重跑的结果须以实际进程终态为准，此记录不声明已构建或部署成功。
