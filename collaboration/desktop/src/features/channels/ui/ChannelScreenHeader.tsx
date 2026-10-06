@@ -1,4 +1,6 @@
 import { Copy } from "lucide-react";
+import { translate } from "@client-kit/platform/i18n";
+import { useDeviceLocale } from "@client-kit/platform/react/context";
 import type * as React from "react";
 import { toast } from "sonner";
 
@@ -24,6 +26,7 @@ export function ChannelScreenHeader({
   chromeWrapperRef,
 }: ChannelScreenHeaderProps) {
   const title = activeChannel.name;
+  const locale = useDeviceLocale();
   const trimmedDescription = getChannelDescription(activeChannel)?.trim() ?? "";
 
   async function handleCopyTitle() {
@@ -32,9 +35,9 @@ export function ChannelScreenHeader({
 
     try {
       await writeTextToClipboard(value);
-      toast.success("Channel name copied");
+      toast.success(translate(locale, "platform.profile.copied"));
     } catch {
-      toast.error("Failed to copy channel name");
+      toast.error(translate(locale, "platform.profile.copyFailed"));
     }
   }
 
@@ -68,11 +71,11 @@ export function ChannelScreenHeader({
                 {title}
               </h1>
               <Button
-                aria-label={`Copy channel name: ${title}`}
+                aria-label={`${translate(locale, "sidebar.copyName")}: ${title}`}
                 className="h-6 w-6 shrink-0 opacity-0 text-muted-foreground transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/title:opacity-100"
                 onClick={() => void handleCopyTitle()}
                 size="icon-xs"
-                title="Copy channel name"
+                title={translate(locale, "sidebar.copyName")}
                 type="button"
                 variant="ghost"
               >

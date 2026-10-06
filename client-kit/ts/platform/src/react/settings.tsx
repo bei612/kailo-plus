@@ -1,14 +1,34 @@
 // DD-53 / ADR-09: shared presentation only. Hosts retain their existing
 // preference stores, native notification permissions and keyboard handlers.
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { useDeviceLocale } from "./context";
 import {
   platformThemeModeKeys,
+  setLocale,
   translate,
   type PlatformLocale,
   type PlatformThemeMode,
 } from "../i18n";
 
 export type SettingsSection = "profile" | "appearance" | "notifications" | "shortcuts";
+
+export function LanguageSettings() {
+  const locale = useDeviceLocale();
+  const [failed, setFailed] = useState(false);
+  return <fieldset className="flex min-w-0 flex-col gap-2" data-testid="settings-language">
+    <legend className="mb-2 text-sm font-medium">{translate(locale, "platform.settings.language")}</legend>
+    <div className="flex flex-wrap gap-2">
+      {(["zh-CN", "en"] as const).map((language) => <label key={language}
+        className="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-md border border-input px-3 py-2 text-sm">
+        <input type="radio" name="interface-language" value={language} checked={locale === language}
+          onChange={() => { try { setLocale(language); setFailed(false); } catch { setFailed(true); } }} />
+        {translate(locale, language === "en" ? "platform.settings.languageEnglish" : "platform.settings.languageChinese")}
+      </label>)}
+    </div>
+    <p className="text-sm text-muted-foreground">{translate(locale, "platform.settings.deviceLanguage")}</p>
+    {failed ? <p role="alert">{translate(locale, "platform.settings.languageSaveFailed")}</p> : null}
+  </fieldset>;
+}
 export const settingsSectionKeys = {
   profile: "platform.settings.profile",
   appearance: "platform.settings.appearance",
@@ -211,7 +231,10 @@ export function SettingsPage({
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6" data-testid="settings-page">
       <SettingsNavigation locale={locale} section={section} onSelect={onSelect} />
-      <div data-testid={`settings-panel-${section}`}>{children}</div>
+      <div data-testid={`settings-panel-${section}`} className="flex flex-col gap-6">
+        {section === "appearance" ? <LanguageSettings /> : null}
+        {children}
+      </div>
     </div>
   );
 }

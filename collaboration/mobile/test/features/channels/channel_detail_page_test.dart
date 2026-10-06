@@ -2991,7 +2991,7 @@ void main() {
       tester.widget<GestureDetector>(copyAction).onTap!();
       await tester.pump();
       await tester.pump();
-      expect(find.text('Public key copied'), findsOneWidget);
+      expect(find.text('Copied to clipboard'), findsOneWidget);
       // The clipboard receives the full canonical npub — never the raw hex.
       expect(clipboardTexts, [
         'npub1kzcqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0euyv8',
@@ -3051,7 +3051,7 @@ void main() {
       await tester.tap(disabledCopyAction, warnIfMissed: false);
       await tester.pump();
       await tester.pump();
-      expect(find.text('Public key copied'), findsNothing);
+      expect(find.text('Copied to clipboard'), findsNothing);
       // The valid scenario's npub is still the only clipboard write.
       expect(clipboardTexts, hasLength(1));
 

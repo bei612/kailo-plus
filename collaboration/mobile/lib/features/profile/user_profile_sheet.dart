@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:client_kit/shared/platform/platform_text.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -33,6 +34,7 @@ class UserProfileSheet extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final locale = Localizations.localeOf(context).toLanguageTag();
     final pk = pubkey.toLowerCase();
 
     // Watch the cached profile.
@@ -148,7 +150,21 @@ class UserProfileSheet extends HookConsumerWidget {
 
                     BuzzActionTile(
                       icon: copied.value ? LucideIcons.check : LucideIcons.key,
-                      label: copied.value ? 'Copied' : 'Copy public key',
+                      label: copied.value
+                          ? platformText(
+                              PlatformMessageKey.platformProfileCopied,
+                              locale: locale,
+                            )
+                          : platformText(
+                              PlatformMessageKey.platformProfileCopyField,
+                              locale: locale,
+                              variables: {
+                                'field': platformText(
+                                  PlatformMessageKey.platformProfilePublicKey,
+                                  locale: locale,
+                                ).toLowerCase(),
+                              },
+                            ),
                       isEnabled: npub != null,
                       onTap: copyPublicKey,
                     ),
@@ -164,7 +180,10 @@ class UserProfileSheet extends HookConsumerWidget {
                       ),
                       const SizedBox(height: Grid.xxs),
                       Text(
-                        'About',
+                        platformText(
+                          PlatformMessageKey.platformProfileAbout,
+                          locale: locale,
+                        ),
                         style: context.textTheme.labelSmall?.copyWith(
                           color: context.colors.onSurfaceVariant,
                           fontWeight: FontWeight.w600,
@@ -217,7 +236,13 @@ void _showProfileCopyToast(BuildContext context) {
             children: [
               Icon(LucideIcons.check, size: 18, color: colors.onInverseSurface),
               const SizedBox(width: Grid.xxs),
-              Text('Public key copied', style: textStyle),
+              Text(
+                platformText(
+                  PlatformMessageKey.platformProfileCopied,
+                  locale: Localizations.localeOf(context).toLanguageTag(),
+                ),
+                style: textStyle,
+              ),
             ],
           ),
         ),

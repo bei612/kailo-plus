@@ -8,7 +8,6 @@ import { PlatformProvider } from "@client-kit/platform/react/context";
 import { InvitationRedeemPage } from "@client-kit/platform/react/invitations";
 import { useState } from "react";
 import { bff } from "@/platform/bff-client";
-import { getLocale } from "@/shared/i18n";
 
 function takeCredential(): string | null {
   const credential = window.location.hash.slice(1);
@@ -24,7 +23,7 @@ function takeCredential(): string | null {
 export function InvitePage() {
   const [credential] = useState(takeCredential);
   return (
-    <PlatformProvider client={bff} locale={getLocale()}>
+    <PlatformProvider client={bff}>
       <InvitationRedeemPage
         credential={credential}
         onContinue={() => window.location.assign(import.meta.env.BASE_URL)}

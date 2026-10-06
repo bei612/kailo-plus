@@ -1,10 +1,12 @@
 import { ThemeSettingsControls } from "@client-kit/platform/react/theme-settings-controls";
+import { useDeviceLocale } from "@client-kit/platform/react/context";
 import {
-  resolveLocale,
   translate,
+  type PlatformLocale,
 } from "@client-kit/platform/i18n";
 import {
   settingsSectionKeys,
+  LanguageSettings,
 } from "@client-kit/platform/react/settings";
 import {
   BellRing,
@@ -73,33 +75,34 @@ export type SettingsPanelProps = {
   onSetSoundForSlot: (slot: SoundSlot, name: SoundName) => void;
 };
 
-export const settingsSections: SettingsSectionDescriptor[] = [
-  { value: "profile", label: translate(resolveLocale(), settingsSectionKeys.profile), icon: UserRound },
+export const settingsSections = (locale: PlatformLocale): SettingsSectionDescriptor[] => [
+  { value: "profile", label: translate(locale, settingsSectionKeys.profile), icon: UserRound },
   {
     value: "appearance",
-    label: translate(resolveLocale(), settingsSectionKeys.appearance),
+    label: translate(locale, settingsSectionKeys.appearance),
     icon: MonitorCog,
   },
   {
     value: "notifications",
-    label: translate(resolveLocale(), settingsSectionKeys.notifications),
+    label: translate(locale, settingsSectionKeys.notifications),
     icon: BellRing,
   },
   {
     value: "shortcuts",
-    label: translate(resolveLocale(), settingsSectionKeys.shortcuts),
+    label: translate(locale, settingsSectionKeys.shortcuts),
     icon: Keyboard,
   },
 ];
 
 function ThemeSettingsCard() {
-  const locale = resolveLocale();
+  const locale = useDeviceLocale();
   const { displayName } = useNativeSession();
   const name = displayName ?? translate(locale, "platform.title");
   const appearance = useTheme();
   return <section className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-testid="settings-theme">
     <SettingsSectionHeader title={translate(locale, "platform.settings.appearance")} description={translate(locale, "platform.theme.appearanceDescription", { name })} />
     <SettingsOptionGroupList>
+      <LanguageSettings />
       <ThemeSettingsControls locale={locale} name={name} appearance={appearance}>
         <GlassBackgroundSetting />
         {isBuzzTheme(appearance.themeName) ? <ProminentActiveTabSetting locale={locale} prominentActiveTab={appearance.prominentActiveTab} setProminentActiveTab={appearance.setProminentActiveTab} /> : null}

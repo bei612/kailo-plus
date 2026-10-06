@@ -1,3 +1,4 @@
+import { useUiT } from "../context";
 // Extracted from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src; host authority remains outside this presentation module.
 import * as React from "react";
 
@@ -20,6 +21,7 @@ export function SidebarProfileCard({
   onSignOut,
   resolvedDisplayName,
 }: SidebarProfileCardProps) {
+  const translateUi = useUiT();
   const [profilePopoverOpen, setProfilePopoverOpen] = React.useState(false);
   const profileCardRef = React.useRef<HTMLDivElement | null>(null);
   const toggleProfilePopover = React.useCallback(
@@ -50,7 +52,7 @@ export function SidebarProfileCard({
     >
       <div className="flex min-w-0 items-center gap-3">
         <button
-          aria-label={`Open profile menu for ${resolvedDisplayName}`}
+          aria-label={translateUi("buzz.openProfileMenu", { name: resolvedDisplayName })}
           className="relative shrink-0 rounded-xl outline-hidden focus:outline-none focus-visible:outline-none"
           data-testid="sidebar-profile-avatar-button"
           onClick={(event) => {

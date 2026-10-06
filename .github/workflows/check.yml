@@ -46,7 +46,7 @@ jobs:
       BUILDX_BUILDER: kailo-check-${{ github.run_id }}-${{ github.run_attempt }}
       # Separately reviewed authority on design/buzz-feature-preservation-20261006, not a
       # second design copy under the code root. Checkout fetches full history.
-      DESIGN_COMMIT: 3553eba86e566455ece3547f9168fa4b6124b757
+      DESIGN_COMMIT: 769ebe9b7587ca385a7dd83c7eb91db8e9a64d4a
 
     steps:
       - uses: actions/checkout@v4

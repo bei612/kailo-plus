@@ -258,7 +258,10 @@ class _MessageStyleSystemMessageContent extends StatelessWidget {
                     username: messageUsernameLabel(
                       userCache[displayPubkey.toLowerCase()],
                     ),
-                    timestamp: formatMessageTime(createdAt),
+                    timestamp: formatMessageTime(
+                      createdAt,
+                      locale: Localizations.localeOf(context).toLanguageTag(),
+                    ),
                     nameColor: context.colors.onSurface,
                     metadataColor: context.colors.onSurfaceVariant,
                     nameStyle: systemMessageHeadingTextStyle,
@@ -492,9 +495,15 @@ class _ThreadSummaryRow extends ConsumerWidget {
                       TextSpan(
                         text: platformText(
                           PlatformMessageKey.chatTimeLastReply,
+                          locale: Localizations.localeOf(
+                            context,
+                          ).toLanguageTag(),
                           variables: {
                             'time': formatThreadSummaryLastReplyTime(
                               lastReplyAt,
+                              locale: Localizations.localeOf(
+                                context,
+                              ).toLanguageTag(),
                             ),
                           },
                         ),

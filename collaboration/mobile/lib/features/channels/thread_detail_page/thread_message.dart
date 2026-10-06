@@ -185,6 +185,9 @@ class _ThreadMessage extends HookConsumerWidget {
                                             ),
                                             timestamp: formatMessageTime(
                                               message.createdAt,
+                                              locale: Localizations.localeOf(
+                                                context,
+                                              ).toLanguageTag(),
                                             ),
                                             nameColor: context.colors.onSurface,
                                             metadataColor:

@@ -1,11 +1,11 @@
+import { translate } from "@client-kit/platform/i18n";
+import { useDeviceLocale } from "@client-kit/platform/react/context";
 import type {
   DesktopNotificationPermissionState,
   NotificationSettings,
 } from "@/features/notifications/hooks";
 import {
   RECOMMENDED_SOUND_BY_SLOT,
-  SLOT_DESCRIPTIONS,
-  SLOT_LABELS,
   SOUND_SLOTS,
   type SoundName,
   type SoundSlot,
@@ -43,6 +43,7 @@ export function NotificationSettingsCard({
   onSetNotifyWhileViewing: (enabled: boolean) => void;
   onSetSoundForSlot: (slot: SoundSlot, name: SoundName) => void;
 }) {
+  const locale = useDeviceLocale();
   const permissionBlocked =
     notificationPermission === "denied" ||
     notificationPermission === "unsupported";
@@ -55,22 +56,22 @@ export function NotificationSettingsCard({
   return (
     <section className="min-w-0" data-testid="settings-notifications">
       <SettingsSectionHeader
-        title="Notifications"
-        description="Desktop alerts are on by default. Fine-tune what gets through below."
+        title={translate(locale, "platform.settings.notifications")}
+        description={translate(locale, "platform.notifications.description")}
       />
 
       <span className="sr-only" data-testid="notifications-desktop-state">
         {notificationPermission === "unsupported"
-          ? "Unavailable"
+          ? translate(locale, "platform.notifications.unavailable")
           : notificationPermission === "denied"
-            ? "Blocked"
+            ? translate(locale, "platform.notifications.blocked")
             : notificationSettings.desktopEnabled
-              ? "On"
-              : "Off"}
+              ? translate(locale, "platform.notifications.on")
+              : translate(locale, "platform.notifications.off")}
       </span>
 
       <SettingsOptionGroupList>
-        <SettingsOptionGroup title="Desktop">
+        <SettingsOptionGroup title={translate(locale, "platform.notifications.desktop")}>
           <SettingsOptionRow>
             <div className="min-w-0">
               <label
@@ -78,16 +79,16 @@ export function NotificationSettingsCard({
                 htmlFor="desktop-alerts-switch"
               >
                 {isUpdatingDesktopNotifications
-                  ? "Requesting..."
-                  : "Desktop alerts"}
+                  ? translate(locale, "platform.notifications.requesting")
+                  : translate(locale, "platform.notifications.alerts")}
               </label>
               <p
                 className="text-sm font-normal text-muted-foreground/70"
                 data-settings-subcopy
               >
                 {notificationSettings.desktopEnabled
-                  ? "Native desktop alerts are enabled for the categories you have armed below."
-                  : "Request OS permission and surface new mentions or needs-action items outside the app."}
+                  ? translate(locale, "platform.notifications.enabledDescription")
+                  : translate(locale, "platform.notifications.requestDescription")}
               </p>
             </div>
             <Switch
@@ -107,13 +108,13 @@ export function NotificationSettingsCard({
                 className="text-sm font-medium"
                 htmlFor="notify-while-viewing-switch"
               >
-                Notify while viewing
+                {translate(locale, "platform.notifications.whileViewing")}
               </label>
               <p
                 className="text-sm font-normal text-muted-foreground/70"
                 data-settings-subcopy
               >
-                Also alert for new messages in the channel you have open.
+                {translate(locale, "platform.notifications.whileViewingDescription")}
               </p>
             </div>
             <Switch
@@ -133,20 +134,20 @@ export function NotificationSettingsCard({
 
         {notificationSettings.desktopEnabled ? (
           <>
-            <SettingsOptionGroup title="Sound">
+            <SettingsOptionGroup title={translate(locale, "platform.notifications.sound")}>
               <SettingsOptionRow>
                 <div className="min-w-0">
                   <label
                     className="text-sm font-medium"
                     htmlFor="notification-sound-switch"
                   >
-                    Sound
+                    {translate(locale, "platform.notifications.sound")}
                   </label>
                   <p
                     className="text-sm font-normal text-muted-foreground/70"
                     data-settings-subcopy
                   >
-                    Alert with a sound for the events below.
+                    {translate(locale, "platform.notifications.soundDescription")}
                   </p>
                 </div>
                 <Switch
@@ -161,20 +162,20 @@ export function NotificationSettingsCard({
             </SettingsOptionGroup>
 
             {anyAlertsOn ? (
-              <SettingsOptionGroup title="Alert sounds">
+              <SettingsOptionGroup title={translate(locale, "platform.notifications.alertSounds")}>
                 {SOUND_SLOTS.map((slot) => {
                   const alertsOn = notificationSettings.slotAlertsEnabled[slot];
                   return (
                     <SettingsOptionRow key={slot}>
                       <div className="min-w-0">
                         <span className="flex items-center gap-2 text-sm font-medium">
-                          {SLOT_LABELS[slot]}
+                          {translate(locale, slot === "mention" ? "platform.notifications.mention" : "platform.notifications.threadReply")}
                         </span>
                         <p
                           className="text-sm font-normal text-muted-foreground/70"
                           data-settings-subcopy
                         >
-                          {SLOT_DESCRIPTIONS[slot]}
+                          {translate(locale, slot === "mention" ? "platform.notifications.mentionDescription" : "platform.notifications.threadReplyDescription")}
                         </p>
                       </div>
                       <span className="flex items-center gap-3">
@@ -208,21 +209,20 @@ export function NotificationSettingsCard({
           </>
         ) : null}
 
-        <SettingsOptionGroup title="Badges">
+        <SettingsOptionGroup title={translate(locale, "platform.notifications.badges")}>
           <SettingsOptionRow>
             <div className="min-w-0">
               <label
                 className="text-sm font-medium"
                 htmlFor="home-badge-switch"
               >
-                Home badge
+                {translate(locale, "platform.notifications.homeBadge")}
               </label>
               <p
                 className="text-sm font-normal text-muted-foreground/70"
                 data-settings-subcopy
               >
-                Show a Home badge for mentions and needs-action items in the
-                sidebar.
+                {translate(locale, "platform.notifications.homeBadgeDescription")}
               </p>
             </div>
             <Switch
@@ -240,8 +240,8 @@ export function NotificationSettingsCard({
       {permissionBlocked && (
         <p className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {notificationPermission === "unsupported"
-            ? "Desktop notifications are not supported in this environment."
-            : "Desktop notifications are blocked. Enable them in your system settings."}
+            ? translate(locale, "platform.notifications.unsupported")
+            : translate(locale, "platform.notifications.denied")}
         </p>
       )}
 

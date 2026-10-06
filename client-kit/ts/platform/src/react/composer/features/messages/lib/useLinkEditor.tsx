@@ -1,3 +1,4 @@
+import { useUiT } from "../../../../context";
 import * as React from "react";
 import { Pencil, Unlink } from "lucide-react";
 
@@ -66,6 +67,7 @@ type LinkCardState = {
  * - `card`/`dialog` — render once inside the composer tree.
  */
 export function useLinkEditor(richText: UseRichTextEditorResult, handlers: Parameters<typeof openPopoverLink>[1]) {
+  const translateUi = useUiT();
   const { getLinkSelectionInfo, applyLink, removeLink } = richText;
   const [draft, setDraft] = React.useState<DraftState | null>(null);
   const [cardState, setCardState] = React.useState<LinkCardState | null>(null);
@@ -312,7 +314,7 @@ export function useLinkEditor(richText: UseRichTextEditorResult, handlers: Param
             </a>
             <div className="flex items-center justify-end gap-0.5">
               <Button
-                aria-label="Edit link"
+                aria-label={translateUi("buzz.editLink")}
                 onClick={editFromCard}
                 size="icon-xs"
                 type="button"
@@ -321,7 +323,7 @@ export function useLinkEditor(richText: UseRichTextEditorResult, handlers: Param
                 <Pencil />
               </Button>
               <Button
-                aria-label="Unlink"
+                aria-label={translateUi("buzz.unlink")}
                 onClick={removeFromCard}
                 size="icon-xs"
                 type="button"
@@ -346,7 +348,7 @@ export function useLinkEditor(richText: UseRichTextEditorResult, handlers: Param
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {draft?.isExistingLink ? "Edit link" : "Add link"}
+            {draft?.isExistingLink ? translateUi("buzz.editLink") : translateUi("buzz.addLink")}
           </DialogTitle>
         </DialogHeader>
         <form
@@ -360,11 +362,11 @@ export function useLinkEditor(richText: UseRichTextEditorResult, handlers: Param
             className="flex flex-col gap-1 text-sm font-medium"
             htmlFor={textId}
           >
-            Display text
+            {translateUi("buzz.displayText")}
             <Input
               id={textId}
               autoFocus={draft?.initialFocus === "text"}
-              placeholder="Text to display"
+              placeholder={translateUi("buzz.textToDisplay")}
               value={draft?.text ?? ""}
               onChange={(event) =>
                 setDraft((prev) =>
@@ -377,7 +379,7 @@ export function useLinkEditor(richText: UseRichTextEditorResult, handlers: Param
             className="flex flex-col gap-1 text-sm font-medium"
             htmlFor={urlId}
           >
-            URL
+            {translateUi("buzz.url")}
             <Input
               id={urlId}
               autoFocus={draft?.initialFocus === "url"}
@@ -393,17 +395,17 @@ export function useLinkEditor(richText: UseRichTextEditorResult, handlers: Param
           <div className="mt-2 flex items-center justify-between gap-2">
             {draft?.isExistingLink ? (
               <Button type="button" variant="destructive" onClick={remove}>
-                Remove
+                {translateUi("buzz.remove")}
               </Button>
             ) : (
               <span />
             )}
             <div className="flex items-center gap-2">
               <Button type="button" variant="ghost" onClick={close}>
-                Cancel
+                {translateUi("buzz.cancel")}
               </Button>
               <Button type="submit" disabled={!draft?.url.trim()}>
-                Save
+                {translateUi("buzz.save")}
               </Button>
             </div>
           </div>

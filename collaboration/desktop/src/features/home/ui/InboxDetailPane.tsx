@@ -1,9 +1,7 @@
+import { InboxEmptyDetail, InboxDetailHeader } from "@client-kit/platform/react/inbox-surface";
 import {
   AlertCircle,
-  ArrowLeft,
-  ExternalLink,
   LoaderCircle,
-  Mail,
 } from "lucide-react";
 import * as React from "react";
 
@@ -38,16 +36,7 @@ import { MessageComposer } from "@/features/messages/ui/MessageComposer";
 import { useAnchoredScroll } from "@/features/messages/ui/useAnchoredScroll";
 import { useComposerHeightPadding } from "@/features/messages/ui/useComposerHeightPadding";
 import type { UserProfileSummary } from "@/shared/api/types";
-import { TopChromeInsetHeader } from "@/shared/layout/TopChromeInsetHeader";
-import { cn } from "@/shared/lib/cn";
-import { Button } from "@/shared/ui/button";
 import { VideoReviewNavigationProvider } from "@/shared/ui/VideoReviewNavigation";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/shared/ui/tooltip";
 
 const EMPTY_CONTEXT_MESSAGES: InboxContextMessage[] = [];
 const EMPTY_REPLIES: InboxReply[] = [];
@@ -106,7 +95,6 @@ function InboxMessageDetailPane({
   canReply,
   disabledReplyReason,
   isSendingReply = false,
-  isSinglePanelView = false,
   hasThreadContextLoadError = false,
   isThreadContextLoading = false,
   item,
@@ -334,24 +322,7 @@ function InboxMessageDetailPane({
     conversationId,
   );
 
-  if (!item) {
-    return (
-      <section
-        className="flex min-h-0 min-w-0 items-center justify-center bg-background/60 px-6 py-10 pt-20 text-center"
-        data-testid="home-inbox-detail-empty"
-      >
-        <div className="max-w-sm">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <Mail className="h-6 w-6" />
-          </div>
-          <p className="mt-4 text-base font-semibold">Select a message</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Pick an inbox item to see the full message and reply to it.
-          </p>
-        </div>
-      </section>
-    );
-  }
+  if (!item) return <InboxEmptyDetail />;
 
   const replyTarget =
     displayMessages.find((message) => message.id === replyTargetId) ?? null;
@@ -398,92 +369,9 @@ function InboxMessageDetailPane({
       ref={detailPaneRef}
     >
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <TopChromeInsetHeader flush transparent>
-          <div className="px-5 py-2">
-            <div className="flex min-h-9 min-w-0 items-center justify-between gap-3">
-              <div
-                className={cn(
-                  "flex min-w-0 items-center",
-                  isSinglePanelView ? "gap-[4px]" : "gap-1",
-                )}
-              >
-                {onBack ? (
-                  <Button
-                    aria-label="Back to inbox list"
-                    className="rounded-full text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                    onClick={onBack}
-                    size="icon"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <ArrowLeft />
-                  </Button>
-                ) : null}
-                <div className="min-w-0">
-                  {contextChannelId ? (
-                    <h2 className="min-w-0">
-                      <button
-                        className="block min-w-0 max-w-full text-left text-sm font-semibold leading-5 tracking-tight text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        data-testid="home-inbox-context-title"
-                        onClick={() =>
-                          onOpenContext(
-                            contextChannelId,
-                            sourceEventId,
-                            contextThreadRootId,
-                          )
-                        }
-                        title={openContextLabel}
-                        type="button"
-                      >
-                        <span className="block min-w-0 translate-y-px truncate">
-                          {contextLabel}
-                        </span>
-                      </button>
-                    </h2>
-                  ) : (
-                    <h2
-                      className="min-w-0 text-sm font-semibold leading-5 tracking-tight text-foreground"
-                      title={item.fullTimestampLabel}
-                    >
-                      <span className="block min-w-0 translate-y-px truncate">
-                        {contextLabel}
-                      </span>
-                    </h2>
-                  )}
-                </div>
-              </div>
-
-              <TooltipProvider>
-                <div className="flex shrink-0 items-center gap-1">
-                  {contextChannelId ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          aria-label={openContextLabel}
-                          className="rounded-full text-muted-foreground"
-                          data-testid="home-inbox-open-context"
-                          onClick={() =>
-                            onOpenContext(
-                              contextChannelId,
-                              sourceEventId,
-                              contextThreadRootId,
-                            )
-                          }
-                          size="icon"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <ExternalLink />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{openContextLabel}</TooltipContent>
-                    </Tooltip>
-                  ) : null}
-                </div>
-              </TooltipProvider>
-            </div>
-          </div>
-        </TopChromeInsetHeader>
+        <InboxDetailHeader title={contextLabel} onBack={onBack} openLabel={openContextLabel}
+          fallbackTitle={item.fullTimestampLabel}
+          onOpen={contextChannelId ? () => onOpenContext(contextChannelId, sourceEventId, contextThreadRootId) : undefined} />
 
         <div
           aria-busy={isThreadContextLoading}

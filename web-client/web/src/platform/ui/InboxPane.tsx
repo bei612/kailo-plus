@@ -13,47 +13,25 @@ import {
 import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
 import { useBffClient, useLocale, useT } from "@client-kit/platform/react/context";
 import { InboxRow } from "@client-kit/platform/react/inbox-row";
+import { InboxLayout, InboxListHeader, InboxEmptyDetail, InboxRowActionButton, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
+import { useResizableInboxListWidth, INBOX_SINGLE_COLUMN_BREAKPOINT_PX, INBOX_COLUMN_MIN_WIDTH_PX } from "@client-kit/platform/react/use-resizable-inbox-list-width";
+import { UserAvatar } from "@client-kit/platform/react/messages";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@client-kit/platform/react/sidebar/context-menu";
+import { ExternalLink, MailOpen } from "lucide-react";
+import { InboxThreadPane } from "./InboxThreadPane";
 import { inboxReadContexts, useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { BuzzEvent } from "@/platform/bff-client";
+import { hex, inboxEvents, type Event } from "./inbox-events";
+export { inboxEvents } from "./inbox-events";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { Button } from "@/shared/ui/button";
 
-type Event = BuzzEvent & { createdAt: number; channelId: string; category: "mention" | "activity" };
 type Snapshot = {
   mentions: Event[];
   activity: Event[];
   workspaces: WorkspaceView[];
   members: Map<string, WorkspaceMemberView[]>;
 };
-const hex = /^[0-9a-f]{64}$/;
-
-/** The query is already scope-filtered by Core; mismatched/unverifiable data is never shown. */
-export function inboxEvents(raw: unknown, workspace: string): Event[] {
-  if (!Array.isArray(raw)) throw new Error("Invalid message page");
-  return raw.map((value: unknown) => {
-    const event = value as BuzzEvent;
-    if (
-      !event ||
-      !hex.test(event.id) ||
-      !hex.test(event.pubkey) ||
-      event.kind !== 9 ||
-      !Number.isSafeInteger(event.created_at) ||
-      event.created_at < 0 ||
-      !Number.isFinite(new Date(event.created_at * 1000).getTime()) ||
-      typeof event.content !== "string" ||
-      !Array.isArray(event.tags) ||
-      event.tags.some(
-        (tag) => !Array.isArray(tag) || tag.some((part) => typeof part !== "string"),
-      ) ||
-      event.tags.filter((tag) => tag[0] === "h").length !== 1 ||
-      !event.tags.some((tag) => tag[0] === "h" && tag[1] === workspace)
-    ) {
-      throw new Error("Unverifiable message scope");
-    }
-    return { ...event, createdAt: event.created_at, channelId: workspace, category: "activity" };
-  });
-}
 
 export function InboxPane({
   principalId,
@@ -68,8 +46,20 @@ export function InboxPane({
   const reads = useInboxState(client);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [failed, setFailed] = useState(false);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState<InboxFilter>("all");
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const container = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState<number | null>(null);
+  const resize = useResizableInboxListWidth();
+  useEffect(() => { setSelected(null); }, [principalId]);
+  useEffect(() => {
+    const node = container.current;
+    if (!node) return;
+    const observer = new ResizeObserver(([entry]) => { if (entry) setWidth(entry.contentRect.width); });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [snapshot !== null, reads.state !== null, failed, reads.failed, reads.unknown]);
   const generation = useRef(0);
   const load = useCallback(async () => {
     const epoch = ++generation.current;
@@ -201,87 +191,54 @@ export function InboxPane({
             (reads.readAt(inboxReply(item.tags) ? `msg:${item.id}` : item.channelId) ?? 0),
         ),
     );
-  return (
-    <section aria-label={t("inbox.title")} className="flex min-h-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-center gap-3 border-b border-border p-3">
-        <h1 className="font-semibold">{t("inbox.title")}</h1>
-        <select
-          aria-label={t("inbox.title")}
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-        >
-          {(["all", "mention", "thread"] as const).map((value) => (
-            <option key={value} value={value}>
-              {t(`inbox.${value}`)}
-            </option>
-          ))}
-        </select>
-        <label>
-          <input
-            type="checkbox"
-            checked={unreadOnly}
-            onChange={(event) => setUnreadOnly(event.target.checked)}
-          />{" "}
-          {t("inbox.unreadOnly")}
-        </label>
-        <Button onClick={refresh}>{t("platform.refresh")}</Button>
-        <p className="w-full text-xs text-muted-foreground">{t("inbox.scope")}</p>
-      </header>
-      <div className="min-h-0 flex-1 overflow-auto">
+  const chosen = rows.find((row) => row.scopeKey === selected);
+  const narrow = width !== null && width < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
+  const showList = !narrow || !chosen;
+  const showDetail = !narrow || Boolean(chosen);
+  const listWidth = width === null ? resize.inboxListWidthPx : Math.min(resize.inboxListWidthPx, Math.max(INBOX_COLUMN_MIN_WIDTH_PX, width - INBOX_COLUMN_MIN_WIDTH_PX));
+  const isRead = (row: typeof rows[number]) => row.items.every((event) => event.createdAt <= (reads.readAt(inboxReply(event.tags) ? `msg:${event.id}` : event.channelId) ?? 0));
+  return <InboxLayout containerRef={container} listWidth={listWidth} showList={showList} showDetail={showDetail}
+    onResize={resize.handleInboxListResizeStart} onReset={resize.canResetInboxListWidth ? resize.handleInboxListWidthReset : undefined}>
+    {showList ? <section aria-label={t("inbox.title")} className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/60 ${showDetail ? "after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:z-40 after:w-px after:bg-border/35 after:content-['']" : ""}`}>
+      <InboxListHeader filter={filter} onFilterChange={setFilter} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly}
+        unreadCount={visibleRows.filter((row) => !isRead(row)).length} pending={reads.pending}
+        onMarkAllRead={() => reads.write(inboxReadContexts(visibleRows.flatMap((row) => row.items), true))} />
+      <div className="-mt-13 min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pt-13" data-testid="home-inbox-list">
         {visibleRows.map((row) => {
           const item = row.item;
-          const member = snapshot.members
-            .get(item.channelId)
-            ?.find((candidate) => candidate.pubkeys.includes(item.pubkey));
+          const member = snapshot.members.get(item.channelId)?.find((candidate) => candidate.pubkeys.includes(item.pubkey));
           const sender = member?.displayName || truncatePubkey(item.pubkey);
-          const read = row.items.every(
-            (event) =>
-              event.createdAt <=
-              (reads.readAt(inboxReply(event.tags) ? `msg:${event.id}` : event.channelId) ?? 0),
-          );
-          return (
-            <InboxRow
-              key={row.scopeKey}
-              id={item.id}
-              selected={false}
-              read={read}
-              sender={sender}
+          const read = isRead(row);
+          const mark = () => reads.write(inboxReadContexts(row.items, !read));
+          return <ContextMenu key={row.scopeKey}><ContextMenuTrigger asChild><div>
+            <InboxRow id={item.id} selected={row.scopeKey === selected} read={read} sender={sender}
+              avatar={<UserAvatar avatarUrl={null} displayName={sender} size="sm" />}
               timestamp={relativeTime(locale, new Date(row.latestActivityAt * 1000).toISOString())}
-              unread={
-                row.unreadCount > 1 ? t("inbox.unreadCount", { count: row.unreadCount }) : null
-              }
+              unread={row.unreadCount > 1 ? t("inbox.unreadCount", { count: row.unreadCount }) : null}
               label={t(item.category === "mention" ? "inbox.mentionedIn" : "inbox.threadIn")}
-              channel={
-                snapshot.workspaces.find((workspace) => workspace.id === item.channelId)?.name ??
-                null
-              }
+              channel={snapshot.workspaces.find((workspace) => workspace.id === item.channelId)?.name ?? null}
               openLabel={t("inbox.openItem", { sender })}
-              onSelect={() => onOpen(item.channelId)}
-              preview={
-                <MessageContent
-                  content={item.content}
-                  workspaceId={item.channelId}
-                  mediaTags={item.tags}
-                />
-              }
-              actions={
-                <>
-                  <Button
-                    disabled={reads.pending}
-                    onClick={() => reads.write(inboxReadContexts(row.items, !read))}
-                  >
-                    {t(read ? "inbox.markUnread" : "inbox.markRead")}
-                  </Button>
-                  <Button onClick={() => onOpen(item.channelId)}>{t("inbox.open")}</Button>
-                </>
-              }
-            />
-          );
+              onSelect={() => { setSelected(row.scopeKey); if (!read) reads.write(inboxReadContexts(row.items, true)); }}
+              preview={<MessageContent content={item.content} workspaceId={item.channelId} mediaTags={item.tags} />}
+              actions={<>
+                <InboxRowActionButton disabled={reads.pending} label={t(read ? "inbox.markUnread" : "inbox.markRead")} onClick={mark}><MailOpen className="h-4 w-4" /></InboxRowActionButton>
+                <InboxRowActionButton label={t("inbox.open")} onClick={() => onOpen(item.channelId)}><ExternalLink className="h-4 w-4" /></InboxRowActionButton>
+              </>} />
+          </div></ContextMenuTrigger><ContextMenuContent>
+            <ContextMenuItem disabled={reads.pending} onSelect={mark}><MailOpen className="h-4 w-4" />{t(read ? "inbox.markUnread" : "inbox.markRead")}</ContextMenuItem>
+            <ContextMenuSeparator /><ContextMenuItem onSelect={() => onOpen(item.channelId)}><ExternalLink className="h-4 w-4" />{t("inbox.open")}</ContextMenuItem>
+          </ContextMenuContent></ContextMenu>;
         })}
-        {visibleRows.length === 0 ? (
-          <p className="p-6 text-muted-foreground">{t("inbox.empty")}</p>
-        ) : null}
+        {!visibleRows.length ? <div className="flex h-full min-h-64 items-center justify-center px-6 text-center"><div>
+          <p className="text-sm font-medium text-foreground">{t(unreadOnly ? "inbox.noUnread" : "inbox.noActivity")}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{t(unreadOnly ? "inbox.unreadEmptyHint" : "inbox.emptyHint")}</p>
+        </div></div> : null}
       </div>
-    </section>
-  );
+    </section> : null}
+    {showDetail ? chosen ? <InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}
+      workspaceId={chosen.item.channelId} rootId={chosen.conversationId} selectedEventId={chosen.item.id}
+      channelName={snapshot.workspaces.find((workspace) => workspace.id === chosen.item.channelId)?.name ?? ""}
+      members={snapshot.members.get(chosen.item.channelId) ?? []} onBack={narrow ? () => setSelected(null) : undefined}
+      onOpen={() => onOpen(chosen.item.channelId)} /> : <InboxEmptyDetail /> : null}
+  </InboxLayout>;
 }

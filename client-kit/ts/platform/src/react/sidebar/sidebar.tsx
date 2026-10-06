@@ -1,3 +1,4 @@
+import { useUiT } from "../context";
 // Extracted from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src; host authority remains outside this presentation module.
 import { SidebarGroup, SidebarGroupLabel, SidebarGroupContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton as SharedSidebarMenuButton } from "./primitives";
 import * as React from "react";
@@ -295,6 +296,7 @@ const Sidebar = React.forwardRef<
     },
     ref,
   ) => {
+    const translateUi = useUiT();
     const { isMobile, isResizing, state, openMobile, setOpenMobile } =
       useSidebar();
 
@@ -328,8 +330,8 @@ const Sidebar = React.forwardRef<
             side={side}
           >
             <SheetHeader className="sr-only">
-              <SheetTitle>Sidebar</SheetTitle>
-              <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+              <SheetTitle>{translateUi("buzz.sidebar")}</SheetTitle>
+              <SheetDescription>{translateUi("buzz.mobileSidebar")}</SheetDescription>
             </SheetHeader>
             <div className="flex h-full w-full flex-col">{children}</div>
           </SheetContent>
@@ -396,6 +398,7 @@ const SidebarTrigger = React.forwardRef<
   React.ElementRef<typeof Button>,
   React.ComponentProps<typeof Button>
 >(({ className, onClick, ...props }, ref) => {
+  const translateUi = useUiT();
   const { open, toggleSidebar } = useSidebar();
 
   return (
@@ -412,7 +415,7 @@ const SidebarTrigger = React.forwardRef<
       {...props}
     >
       <DrawerPanelIcon side={open ? "left" : "right"} />
-      <span className="sr-only">Toggle Sidebar</span>
+      <span className="sr-only">{translateUi("buzz.toggleSidebar")}</span>
     </Button>
   );
 });
@@ -441,6 +444,7 @@ const SidebarRail = React.forwardRef<
       state,
       onDefaultWidthHaptic,
     } = useSidebar();
+    const translateUi = useUiT();
     const resizeStateRef = React.useRef<{
       currentWidth: number;
       hasDragged: boolean;
@@ -475,7 +479,7 @@ const SidebarRail = React.forwardRef<
       <button
         ref={ref}
         data-sidebar="rail"
-        aria-label="Resize sidebar"
+        aria-label={translateUi("buzz.resizeSidebar")}
         tabIndex={-1}
         disabled={isRailDisabled || state !== "expanded"}
         onPointerCancel={(event) => {
@@ -548,7 +552,7 @@ const SidebarRail = React.forwardRef<
           onPointerUp?.(event);
           finishResize(event);
         }}
-        title="Drag to resize sidebar"
+        title={translateUi("buzz.dragSidebar")}
         className={cn(
           "absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex",
           "cursor-col-resize",

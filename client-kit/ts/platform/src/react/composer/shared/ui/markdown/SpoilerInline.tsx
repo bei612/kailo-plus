@@ -1,3 +1,4 @@
+import { useUiT } from "../../../../context";
 import * as React from "react";
 
 import { hasBlockMedia } from "../markdownMedia";
@@ -20,6 +21,7 @@ export function SpoilerInline({
   children?: React.ReactNode;
   interactive?: boolean;
 }) {
+  const translateUi = useUiT();
   const [revealed, setRevealed] = React.useState(false);
   const contentRef = React.useRef<HTMLElement | null>(null);
   const isBlock = block || hasBlockMedia(React.Children.toArray(children));
@@ -68,7 +70,7 @@ export function SpoilerInline({
   );
 
   const revealProps = {
-    "aria-label": revealed ? "Hide spoiler" : "Reveal spoiler",
+    "aria-label": revealed ? translateUi("buzz.hideSpoiler") : translateUi("buzz.revealSpoiler"),
     "aria-pressed": revealed,
     onClick: handleClick,
     onClickCapture: handleClickCapture,

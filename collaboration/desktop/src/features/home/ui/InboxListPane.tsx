@@ -1,6 +1,7 @@
-import { Ellipsis, ExternalLink, MailOpen } from "lucide-react";
+import { ExternalLink, MailOpen } from "lucide-react";
 import * as React from "react";
 import { InboxRow } from "@client-kit/platform/react/inbox-row";
+import { InboxListHeader, InboxRowActionButton } from "@client-kit/platform/react/inbox-surface";
 
 import {
   getInboxTypeLabel,
@@ -9,13 +10,11 @@ import {
 } from "@/features/home/lib/inbox";
 import { hasRenderedVideoAttachment } from "@/features/messages/lib/videoReviewContext";
 import { getThreadReference } from "@/features/messages/lib/threading";
-import { InboxFilterMenu } from "@/features/home/ui/InboxFilterMenu";
 import {
   DraftsPanel,
   type DraftViewItem,
 } from "@/features/messages/ui/DraftsPanel";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
-import { TopChromeInsetHeader } from "@/shared/layout/TopChromeInsetHeader";
 import { cn } from "@/shared/lib/cn";
 import {
   ContextMenu,
@@ -25,10 +24,6 @@ import {
   ContextMenuTrigger,
 } from "@/shared/ui/context-menu";
 import { VideoReviewCommentMarkdown } from "@/shared/ui/VideoReviewCommentMarkdown";
-import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
-import { Separator } from "@/shared/ui/separator";
-import { Switch } from "@client-kit/platform/react/switch";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { VirtualizedList } from "@/shared/ui/VirtualizedList";
 
@@ -46,8 +41,6 @@ const INBOX_UNREAD_EMPTY_STATE_TITLES: Record<InboxFilter, string> = {
   drafts: "No unread drafts",
 };
 
-const INBOX_HEADER_ICON_BUTTON_CLASS =
-  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring data-[state=open]:bg-muted/70 data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0";
 const INBOX_PANE_RIGHT_DIVIDER_CLASS =
   "after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:z-40 after:w-px after:bg-border/35 after:content-['']";
 
@@ -258,70 +251,9 @@ export function InboxListPane({
         showRightDivider && INBOX_PANE_RIGHT_DIVIDER_CLASS,
       )}
     >
-      <TopChromeInsetHeader flush transparent>
-        <div className="px-5 py-2">
-          <div className="flex min-h-9 w-full min-w-0 items-center justify-between gap-3">
-            <div className="order-2 ml-auto flex shrink-0 items-center justify-end">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    aria-label="Inbox options"
-                    className={cn(INBOX_HEADER_ICON_BUTTON_CLASS, "-mr-4")}
-                    data-testid="inbox-options-trigger"
-                    type="button"
-                  >
-                    <Ellipsis className="h-4 w-4" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-60 p-2">
-                  <div
-                    className={cn(
-                      "flex min-h-9 items-center justify-between gap-3 rounded-lg px-2 py-1.5",
-                      isDrafts && "opacity-50",
-                    )}
-                  >
-                    <label
-                      className="text-sm font-medium text-foreground"
-                      htmlFor="inbox-unread-only-switch"
-                    >
-                      Show unread only
-                    </label>
-                    <Switch
-                      checked={unreadOnly}
-                      className="shadow-none [&>span]:shadow-none"
-                      data-testid="inbox-unread-only-toggle"
-                      disabled={isDrafts}
-                      id="inbox-unread-only-switch"
-                      onCheckedChange={onUnreadOnlyChange}
-                    />
-                  </div>
-                  <Separator className="my-1 bg-muted" />
-                  <button
-                    className="flex min-h-9 w-full items-center rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50"
-                    disabled={unreadVisibleItemCount === 0}
-                    onClick={handleMarkAllRead}
-                    type="button"
-                  >
-                    <span>Mark all as read</span>
-                    {unreadVisibleItemCount > 0 ? (
-                      <span className="ml-auto text-xs text-muted-foreground">
-                        {unreadVisibleItemCount}
-                      </span>
-                    ) : null}
-                  </button>
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div className="order-1 flex shrink-0 items-center justify-start">
-              <InboxFilterMenu
-                activeDraftCount={activeDraftCount}
-                filter={filter}
-                onFilterChange={onFilterChange}
-              />
-            </div>
-          </div>
-        </div>
-      </TopChromeInsetHeader>
+      <InboxListHeader filter={filter} onFilterChange={onFilterChange} activeDraftCount={activeDraftCount}
+        unreadOnly={unreadOnly} onUnreadOnlyChange={onUnreadOnlyChange} unreadCount={unreadVisibleItemCount}
+        onMarkAllRead={handleMarkAllRead} />
 
       {isDrafts ? (
         <div
@@ -372,46 +304,5 @@ export function InboxListPane({
         </div>
       )}
     </section>
-  );
-}
-
-function InboxRowActionButton({
-  active = false,
-  children,
-  disabled = false,
-  label,
-  onClick,
-}: {
-  active?: boolean;
-  children: React.ReactNode;
-  disabled?: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          aria-label={label}
-          className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
-            active && "bg-blue-500/10 text-blue-500 hover:text-blue-500",
-          )}
-          disabled={disabled}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            if (disabled) {
-              return;
-            }
-            onClick();
-          }}
-          type="button"
-        >
-          {children}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
   );
 }

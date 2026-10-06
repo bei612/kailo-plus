@@ -1,3 +1,4 @@
+import { useUiT } from "../../../context";
 "use client";
 
 import * as React from "react";
@@ -72,7 +73,9 @@ const DialogContent = React.forwardRef<
       ...props
     },
     ref,
-  ) => (
+  ) => {
+    const translateUi = useUiT();
+    return (
     <DialogPortal>
       <DialogOverlay
         data-testid="dialog-overlay"
@@ -123,13 +126,13 @@ const DialogContent = React.forwardRef<
               )}
             >
               <X className="h-4 w-4" />
-              <span className="sr-only">Close</span>
+              <span className="sr-only">{translateUi("buzz.close")}</span>
             </DialogPrimitive.Close>
           ) : null}
         </DialogPrimitive.Content>
       </div>
     </DialogPortal>
-  ),
+  ); },
 );
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 

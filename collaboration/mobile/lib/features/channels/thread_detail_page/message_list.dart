@@ -112,7 +112,12 @@ class _ThreadMessageList extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           DayDivider(
-                            label: formatDayHeading(head.createdAt),
+                            label: formatDayHeading(
+                              head.createdAt,
+                              locale: Localizations.localeOf(
+                                context,
+                              ).toLanguageTag(),
+                            ),
                             dayTimestamp: head.createdAt,
                             stickyDayTimestamp: stickyDayTimestamp,
                           ),
@@ -205,7 +210,12 @@ class _ThreadMessageList extends StatelessWidget {
                         children: [
                           if (showDayDivider)
                             DayDivider(
-                              label: formatDayHeading(reply.createdAt),
+                              label: formatDayHeading(
+                                reply.createdAt,
+                                locale: Localizations.localeOf(
+                                  context,
+                                ).toLanguageTag(),
+                              ),
                               dayTimestamp: reply.createdAt,
                               stickyDayTimestamp: stickyDayTimestamp,
                             ),

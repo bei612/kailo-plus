@@ -3,6 +3,8 @@ import { emit } from "@tauri-apps/api/event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { NativeBootstrap } from "@client-kit/platform/react/NativeBootstrap";
+import { useDeviceLocale } from "@client-kit/platform/react/context";
+import { translate } from "@client-kit/platform/i18n";
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ConversationVisibilityProvider } from "@client-kit/platform/react/new-message";
 import { createConversationVisibility } from "@/features/platform/conversationVisibility";
@@ -26,8 +28,6 @@ import { hydrateChannelHeads } from "@/features/messages/lib/channelHeadCache";
 import { cn } from "@/shared/lib/cn";
 import { FlappingBee } from "@/shared/ui/buzz-logo/FlappingBee";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
-
-const LOADING_TEXT = "Starting…";
 
 // Minimum time the cold-boot splash stays on screen. A real boot resolves the
 // community in well under 100ms, and the native window setup plus first paint
@@ -91,6 +91,7 @@ function useBootSplashHold(): BootSplashPhase {
 // Cold boot gate: the theme-adaptive grainient background with a single
 // centered Buzz bee flying over it.
 function AppLoadingGate() {
+  const LOADING_TEXT = translate(useDeviceLocale(), "platform.loading");
   return (
     <div
       className="buzz-setup-loading-shell flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 py-10"
@@ -185,6 +186,8 @@ function CommunityApp({ devicePubkey }: { devicePubkey: string }) {
 }
 
 export function App() {
+  const locale = useDeviceLocale();
+  useEffect(() => { document.documentElement.lang = locale; }, [locale]);
   useReloadShortcut();
   useCloseWindowShortcut();
   useInitialRenderReady();

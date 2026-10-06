@@ -24,6 +24,40 @@ import {
 
 export type PlatformLocale = "en" | "zh-CN";
 
+export const defaultPlatformLocale: PlatformLocale = "zh-CN";
+export const platformLocaleStorageKey = "buzz-locale";
+const localeChanged = "buzz-locale-change";
+
+/** Device preference only: no tenant setting or second account preference store. */
+export function getLocale(): PlatformLocale {
+  if (typeof window === "undefined") return defaultPlatformLocale;
+  try {
+    const saved = window.localStorage.getItem(platformLocaleStorageKey);
+    return saved === "en" || saved === "zh-CN" ? saved : defaultPlatformLocale;
+  } catch { return defaultPlatformLocale; }
+}
+
+export function setLocale(locale: PlatformLocale): void {
+  if (locale !== "en" && locale !== "zh-CN") throw new Error("Unsupported locale");
+  window.localStorage.setItem(platformLocaleStorageKey, locale);
+  document.documentElement.lang = locale;
+  window.dispatchEvent(new Event(localeChanged));
+}
+
+export function subscribeLocale(listener: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const notify = () => { document.documentElement.lang = getLocale(); listener(); };
+  const storage = (event: StorageEvent) => {
+    if (event.key === platformLocaleStorageKey || event.key === null) notify();
+  };
+  window.addEventListener(localeChanged, notify);
+  window.addEventListener("storage", storage);
+  return () => {
+    window.removeEventListener(localeChanged, notify);
+    window.removeEventListener("storage", storage);
+  };
+}
+
 // 相对时间与复数的语义只有这一份；Dart 生成物从这里投影阈值和单数 locale。
 export const platformTimeSeconds = {
   minute: 60,
@@ -60,6 +94,195 @@ export function platformPluralForm(locale: PlatformLocale, count: number): "one"
 type Message = { readonly en: string; readonly "zh-CN": string };
 
 export const platformMessages = {
+  "inbox.options": { en: "Inbox options", "zh-CN": "收件箱选项" },
+  "inbox.markAllRead": { en: "Mark all as read", "zh-CN": "全部标为已读" },
+  "inbox.drafts": { en: "Drafts", "zh-CN": "草稿" },
+  "inbox.selectMessage": { en: "Select a message", "zh-CN": "选择一条消息" },
+  "inbox.selectMessageHint": { en: "Pick an inbox item to see the full message and reply to it.", "zh-CN": "选择收件箱条目以查看完整消息并回复。" },
+  "inbox.back": { en: "Back to inbox list", "zh-CN": "返回收件箱列表" },
+  "inbox.resize": { en: "Resize inbox list", "zh-CN": "调整收件箱列表宽度" },
+  "inbox.resizeHint": { en: "Drag to resize. Double-click to reset width.", "zh-CN": "拖动调整宽度，双击恢复默认。" },
+  "inbox.noActivity": { en: "No activity yet", "zh-CN": "暂无动态" },
+  "inbox.noUnread": { en: "No unread activity", "zh-CN": "暂无未读动态" },
+  "inbox.emptyHint": { en: "New activity will appear here.", "zh-CN": "新动态会显示在这里。" },
+  "inbox.unreadEmptyHint": { en: "Turn off Show unread only to see read activity.", "zh-CN": "关闭“仅显示未读”以查看已读动态。" },
+  "inbox.filterLabel": { en: "Filter inbox: {filter}", "zh-CN": "筛选收件箱：{filter}" },
+  "inbox.reply": { en: "Reply in thread", "zh-CN": "在线程中回复" },
+  "platform.notifications.mention": { en: "@Mentions", "zh-CN": "@提及" },
+  "platform.notifications.threadReply": { en: "Thread replies", "zh-CN": "线程回复" },
+  "platform.notifications.mentionDescription": { en: "When someone tags you in a channel.", "zh-CN": "有人在频道中提及你时。" },
+  "platform.notifications.threadReplyDescription": { en: "When someone replies in a thread you follow or posted in.", "zh-CN": "有人回复你关注或参与的线程时。" },
+  "platform.notifications.recommended": { en: "rec.", "zh-CN": "推荐" },
+  "platform.notifications.pause": { en: "Pause {sound}", "zh-CN": "暂停{sound}" },
+  "platform.notifications.preview": { en: "Preview {sound}", "zh-CN": "试听{sound}" },
+  "platform.appearance.linkPreviews": { en: "Link previews", "zh-CN": "链接预览" },
+  "platform.appearance.compact": { en: "Compact", "zh-CN": "紧凑" },
+  "platform.appearance.compactDescription": { en: "Small cards with a thumbnail", "zh-CN": "带缩略图的小卡片" },
+  "platform.appearance.rich": { en: "Rich", "zh-CN": "丰富" },
+  "platform.appearance.richDescription": { en: "Large previews with images and descriptions", "zh-CN": "带图片与说明的大预览" },
+  "platform.appearance.focus": { en: "Focus", "zh-CN": "聚焦" },
+  "platform.appearance.focusDescription": { en: "Threads open over the channel", "zh-CN": "在线程浮层中打开" },
+  "platform.appearance.split": { en: "Split", "zh-CN": "分栏" },
+  "platform.appearance.splitDescription": { en: "Threads open in a side panel next to the channel", "zh-CN": "在频道旁的侧面板中打开线程" },
+  "platform.appearance.threadLayout": { en: "Thread layout", "zh-CN": "线程布局" },
+  "platform.appearance.glassOpacity": { en: "Glass opacity", "zh-CN": "玻璃透明度" },
+  "platform.appearance.glassOpacityDescription": { en: "Lower values reveal more of the desktop blur.", "zh-CN": "数值越低，透出的桌面模糊背景越明显。" },
+  "platform.appearance.opacity": { en: "{value}% opacity", "zh-CN": "不透明度 {value}%" },
+  "platform.appearance.resetGlassOpacity": { en: "Reset glass opacity", "zh-CN": "重置玻璃透明度" },
+  "platform.appearance.glassBackground": { en: "Glass background", "zh-CN": "玻璃背景" },
+  "platform.appearance.glassDescription": { en: "Blur the desktop behind navigation while keeping content solid.", "zh-CN": "导航区域透出模糊桌面，内容区域保持实色。" },
+  "platform.appearance.glassMacOnly": { en: "Available in the macOS desktop app.", "zh-CN": "仅适用于 macOS 桌面应用。" },
+  "platform.appearance.sampleTitle": { en: "Product updates — a fresh look at conversations", "zh-CN": "产品更新——焕新的会话界面" },
+  "platform.appearance.sampleDescription": { en: "Highlights from this release: refreshed conversation layout, quicker link handling, and readability improvements.", "zh-CN": "本次更新：焕新会话布局、加快链接处理并提升可读性。" },
+  "dm.chooseRecipient": { en: "Choose a recipient to start a message", "zh-CN": "选择收件人以开始聊天" },
+  "dm.verifyPerson": { en: "Verify {name}", "zh-CN": "核验{name}的身份" },
+  "dm.messagePerson": { en: "Message {name}", "zh-CN": "发送消息给{name}" },
+  "dm.messagePeople": { en: "Message {count} people", "zh-CN": "向{count}人发送消息" },
+  "dm.to": { en: "To", "zh-CN": "收件人" },
+  "dm.toLabel": { en: "To:", "zh-CN": "收件人：" },
+  "dm.loadingPeople": { en: "Loading people", "zh-CN": "正在读取成员" },
+  "dm.empty": { en: "No people available to message.", "zh-CN": "没有可发消息的成员。" },
+  "dm.noMatch": { en: "No matching users.", "zh-CN": "没有匹配的用户。" },
+  "dm.opening": { en: "Opening…", "zh-CN": "正在打开…" },
+  "dm.limit": { en: "DMs support up to {count} people, including you.", "zh-CN": "私聊最多支持{count}人（包括你）。" },
+  "dm.checkStatus": { en: "Check status", "zh-CN": "查看状态" },
+  "dm.unavailable": { en: "Direct message is unavailable.", "zh-CN": "私聊不可用。" },
+  "dm.directoryUnavailable": { en: "Recipient directory is unavailable.", "zh-CN": "无法读取收件人目录。" },
+  "dm.listUnavailable": { en: "Conversation list is unavailable.", "zh-CN": "无法读取会话列表。" },
+  "dm.preparing": { en: "Opening direct message…", "zh-CN": "正在准备私聊…" },
+  "dm.chooseFirst": { en: "Choose at least one recipient first.", "zh-CN": "请先选择至少一位收件人。" },
+  "dm.unknown": { en: "The direct message outcome is not yet known.", "zh-CN": "私聊操作结果尚未确定。" },
+  "dm.denied": { en: "Direct message was not admitted.", "zh-CN": "私聊未获准。" },
+  "dm.visibilityUnavailable": { en: "Conversation visibility is unavailable.", "zh-CN": "无法确认会话的可见状态。" },
+  "dm.disabled": { en: "This direct message is disabled.", "zh-CN": "此私聊已停用。" },
+  "dm.preparationPending": { en: "Direct message is being prepared. Check its status and send again; your draft is retained.", "zh-CN": "私聊正在准备中，请查询状态后再次发送；草稿已保留。" },
+  "dm.retryUnknown": { en: "Outcome not yet known. Retry uses the same operation; your draft is retained.", "zh-CN": "操作结果尚未确定，重试将查证同一操作；草稿已保留。" },
+  "dm.addPerson": { en: "Add {name}", "zh-CN": "添加{name}" },
+  "dm.addedPerson": { en: "Already added {name}", "zh-CN": "已添加{name}" },
+  "dm.removePerson": { en: "Remove {name}", "zh-CN": "移除{name}" },
+  "platform.notifications.description": { en: "Desktop alerts are on by default. Fine-tune what gets through below.", "zh-CN": "桌面提醒默认开启，可在下方调整提醒内容。" },
+  "platform.notifications.unavailable": { en: "Unavailable", "zh-CN": "不可用" },
+  "platform.notifications.blocked": { en: "Blocked", "zh-CN": "已阻止" },
+  "platform.notifications.on": { en: "On", "zh-CN": "开" },
+  "platform.notifications.off": { en: "Off", "zh-CN": "关" },
+  "platform.notifications.desktop": { en: "Desktop", "zh-CN": "桌面" },
+  "platform.notifications.requesting": { en: "Requesting...", "zh-CN": "正在请求…" },
+  "platform.notifications.alerts": { en: "Desktop alerts", "zh-CN": "桌面提醒" },
+  "platform.notifications.enabledDescription": { en: "Native desktop alerts are enabled for the categories you have armed below.", "zh-CN": "已为下方启用的类别开启原生桌面提醒。" },
+  "platform.notifications.requestDescription": { en: "Request OS permission and surface new mentions or needs-action items outside the app.", "zh-CN": "请求系统权限，在应用外提醒新提及或待处理事项。" },
+  "platform.notifications.whileViewing": { en: "Notify while viewing", "zh-CN": "正在查看时也提醒" },
+  "platform.notifications.whileViewingDescription": { en: "Also alert for new messages in the channel you have open.", "zh-CN": "当前打开的频道有新消息时也提醒。" },
+  "platform.notifications.sound": { en: "Sound", "zh-CN": "声音" },
+  "platform.notifications.soundDescription": { en: "Alert with a sound for the events below.", "zh-CN": "为下列事件播放提示音。" },
+  "platform.notifications.alertSounds": { en: "Alert sounds", "zh-CN": "提示音" },
+  "platform.notifications.badges": { en: "Badges", "zh-CN": "角标" },
+  "platform.notifications.homeBadge": { en: "Home badge", "zh-CN": "首页角标" },
+  "platform.notifications.homeBadgeDescription": { en: "Show a Home badge for mentions and needs-action items in the sidebar.", "zh-CN": "在侧栏首页显示提及和待处理事项的角标。" },
+  "platform.notifications.unsupported": { en: "Desktop notifications are not supported in this environment.", "zh-CN": "当前环境不支持桌面通知。" },
+  "platform.notifications.denied": { en: "Desktop notifications are blocked. Enable them in your system settings.", "zh-CN": "桌面通知已被阻止，请在系统设置中启用。" },
+  "buzz.hideSpoiler": { en: "Hide spoiler", "zh-CN": "隐藏内容" },
+  "buzz.revealSpoiler": { en: "Reveal spoiler", "zh-CN": "显示隐藏内容" },
+  "buzz.removeSpoiler": { en: "Remove spoiler", "zh-CN": "取消隐藏" },
+  "buzz.markSpoiler": { en: "Mark as spoiler", "zh-CN": "标为隐藏内容" },
+  "buzz.voiceNote": { en: "Voice note", "zh-CN": "语音" },
+  "buzz.queuedAttachment": { en: "Queued attachment", "zh-CN": "待上传附件" },
+  "buzz.attachment": { en: "Attachment", "zh-CN": "附件" },
+  "buzz.enterUrl": { en: "Enter URL:", "zh-CN": "输入链接地址：" },
+  "buzz.linkText": { en: "Link text:", "zh-CN": "链接文本：" },
+  "buzz.drawingSaveFailed": { en: "Could not save the drawing. Please try again.", "zh-CN": "无法保存绘图，请重试。" },
+  "buzz.finishVoice": { en: "Finish voice note", "zh-CN": "完成录音" },
+  "buzz.sending": { en: "Sending", "zh-CN": "发送中" },
+  "buzz.sendMessage": { en: "Send message", "zh-CN": "发送消息" },
+  "buzz.collapseReplies": { en: "Collapse replies to this message", "zh-CN": "收起此消息的回复" },
+  "buzz.team": { en: "Team", "zh-CN": "团队" },
+  "buzz.agent": { en: "Agent", "zh-CN": "Agent" },
+  "buzz.close": { en: "Close", "zh-CN": "关闭" },
+  "buzz.profileMenu": { en: "Profile menu", "zh-CN": "个人菜单" },
+  "buzz.openProfileMenu": { en: "Open profile menu for {name}", "zh-CN": "打开{name}的个人菜单" },
+  "buzz.sidebar": { en: "Sidebar", "zh-CN": "侧栏" },
+  "buzz.toggleSidebar": { en: "Toggle Sidebar", "zh-CN": "切换侧栏" },
+  "buzz.resizeSidebar": { en: "Resize sidebar", "zh-CN": "调整侧栏宽度" },
+  "buzz.dragSidebar": { en: "Drag to resize sidebar", "zh-CN": "拖动调整侧栏宽度" },
+  "buzz.mobileSidebar": { en: "Displays the mobile sidebar.", "zh-CN": "显示移动侧栏。" },
+  "buzz.moreActions": { en: "More actions", "zh-CN": "更多操作" },
+  "buzz.markRead": { en: "Mark read", "zh-CN": "标为已读" },
+  "buzz.markUnread": { en: "Mark unread", "zh-CN": "标为未读" },
+  "buzz.followThread": { en: "Follow thread", "zh-CN": "关注线程" },
+  "buzz.unfollowThread": { en: "Unfollow thread", "zh-CN": "取消关注线程" },
+  "buzz.copyMessage": { en: "Copy message", "zh-CN": "复制消息" },
+  "buzz.copyLink": { en: "Copy link", "zh-CN": "复制链接" },
+  "buzz.reply": { en: "Reply", "zh-CN": "回复" },
+  "buzz.sendToChannel": { en: "Send to channel", "zh-CN": "发送到频道" },
+  "buzz.sentToChannel": { en: "Sent to channel", "zh-CN": "已发送到频道" },
+  "buzz.sendToChannelFailed": { en: "Couldn't send to channel", "zh-CN": "无法发送到频道" },
+  "buzz.copiedMessage": { en: "Message copied to clipboard", "zh-CN": "消息已复制" },
+  "buzz.copiedLink": { en: "Link copied to clipboard", "zh-CN": "链接已复制" },
+  "buzz.copyFailed": { en: "Failed to copy to clipboard", "zh-CN": "复制失败" },
+  "buzz.newMessages": { en: "New messages", "zh-CN": "新消息" },
+  "buzz.new": { en: "New", "zh-CN": "新消息" },
+  "buzz.publicKeyCopied": { en: "Public key copied to clipboard", "zh-CN": "公钥已复制" },
+  "buzz.copyPublicKey": { en: "Copy public key", "zh-CN": "复制公钥" },
+  "buzz.showPublicKey": { en: "Show full public key", "zh-CN": "显示完整公钥" },
+  "buzz.unavailable": { en: "Unavailable", "zh-CN": "不可用" },
+  "buzz.dropFiles": { en: "Drop files to upload", "zh-CN": "拖入文件以上传" },
+  "buzz.remove": { en: "Remove", "zh-CN": "移除" },
+  "buzz.removeAttachment": { en: "Remove attachment", "zh-CN": "移除附件" },
+  "buzz.removeVoice": { en: "Remove voice note", "zh-CN": "移除语音" },
+  "buzz.cancelUpload": { en: "Cancel upload", "zh-CN": "取消上传" },
+  "buzz.closeLightbox": { en: "Close lightbox", "zh-CN": "关闭图片预览" },
+  "buzz.revertImage": { en: "Revert to original", "zh-CN": "还原原图" },
+  "buzz.drawImage": { en: "Draw on image", "zh-CN": "在图片上绘制" },
+  "buzz.mention": { en: "Mention someone", "zh-CN": "提及成员" },
+  "buzz.bold": { en: "Bold", "zh-CN": "粗体" },
+  "buzz.italic": { en: "Italic", "zh-CN": "斜体" },
+  "buzz.strikethrough": { en: "Strikethrough", "zh-CN": "删除线" },
+  "buzz.code": { en: "Code", "zh-CN": "行内代码" },
+  "buzz.codeBlock": { en: "Code block", "zh-CN": "代码块" },
+  "buzz.link": { en: "Link", "zh-CN": "链接" },
+  "buzz.bulletList": { en: "Bullet list", "zh-CN": "无序列表" },
+  "buzz.orderedList": { en: "Ordered list", "zh-CN": "有序列表" },
+  "buzz.quote": { en: "Quote", "zh-CN": "引用" },
+  "buzz.spoiler": { en: "Spoiler", "zh-CN": "隐藏内容" },
+  "buzz.selectionFormatting": { en: "Selection formatting", "zh-CN": "选区格式" },
+  "buzz.toggleFormatting": { en: "Toggle formatting", "zh-CN": "切换格式工具" },
+  "buzz.formatting": { en: "Formatting", "zh-CN": "格式" },
+  "buzz.closeFormatting": { en: "Close formatting", "zh-CN": "关闭格式工具" },
+  "buzz.attachFile": { en: "Attach file", "zh-CN": "添加附件" },
+  "buzz.recordVoice": { en: "Record voice note", "zh-CN": "录制语音" },
+  "buzz.drawingCanvas": { en: "Drawing canvas", "zh-CN": "绘图画布" },
+  "buzz.strokeWidth": { en: "Stroke width", "zh-CN": "笔画粗细" },
+  "buzz.undoStroke": { en: "Undo last stroke", "zh-CN": "撤销上一笔" },
+  "buzz.redoStroke": { en: "Redo stroke", "zh-CN": "重做笔画" },
+  "buzz.undoShortcut": { en: "Undo (⌘Z)", "zh-CN": "撤销（⌘Z）" },
+  "buzz.redoShortcut": { en: "Redo (⇧⌘Z)", "zh-CN": "重做（⇧⌘Z）" },
+  "buzz.save": { en: "Save", "zh-CN": "保存" },
+  "buzz.saving": { en: "Saving...", "zh-CN": "保存中…" },
+  "buzz.saveChanges": { en: "Save changes", "zh-CN": "保存更改" },
+  "buzz.editLink": { en: "Edit link", "zh-CN": "编辑链接" },
+  "buzz.addLink": { en: "Add link", "zh-CN": "添加链接" },
+  "buzz.unlink": { en: "Unlink", "zh-CN": "移除链接" },
+  "buzz.displayText": { en: "Display text", "zh-CN": "显示文本" },
+  "buzz.textToDisplay": { en: "Text to display", "zh-CN": "要显示的文本" },
+  "buzz.url": { en: "URL", "zh-CN": "链接地址" },
+  "buzz.cancel": { en: "Cancel", "zh-CN": "取消" },
+  "buzz.penRed": { en: "Red pen", "zh-CN": "红色画笔" },
+  "buzz.penYellow": { en: "Yellow pen", "zh-CN": "黄色画笔" },
+  "buzz.penGreen": { en: "Green pen", "zh-CN": "绿色画笔" },
+  "buzz.penBlue": { en: "Blue pen", "zh-CN": "蓝色画笔" },
+  "buzz.penWhite": { en: "White pen", "zh-CN": "白色画笔" },
+  "buzz.penBlack": { en: "Black pen", "zh-CN": "黑色画笔" },
+  "buzz.forumUnavailable": { en: "Forum content could not be loaded.", "zh-CN": "无法读取论坛内容。" },
+  "buzz.forumRootUnavailable": { en: "Forum root is unavailable.", "zh-CN": "无法读取原帖。" },
+  "platform.profile.copyField": { en: "Copy {field}", "zh-CN": "复制{field}" },
+  "platform.profile.more": { en: "more", "zh-CN": "展开" },
+  "platform.profile.less": { en: "less", "zh-CN": "收起" },
+  "platform.profile.resize": { en: "Resize profile panel", "zh-CN": "调整资料面板大小" },
+  "platform.settings.sections": { en: "{group} settings sections", "zh-CN": "{group}设置分类" },
+  "platform.settings.language": { en: "Language", "zh-CN": "语言" },
+  "platform.settings.languageChinese": { en: "简体中文", "zh-CN": "简体中文" },
+  "platform.settings.languageEnglish": { en: "English", "zh-CN": "English" },
+  "platform.settings.deviceLanguage": { en: "Language is saved on this device. New devices default to Chinese.", "zh-CN": "语言保存在此设备，新设备默认使用中文。" },
+  "platform.settings.languageSaveFailed": { en: "Could not save the language preference. The previous language is unchanged.", "zh-CN": "无法保存语言偏好，已保留原语言。" },
   "forum.back": { en: "Back to posts", "zh-CN": "返回帖子" },
   "forum.start": { en: "Start a new post...", "zh-CN": "发起新帖子…" },
   "forum.archived": { en: "This forum is archived.", "zh-CN": "此论坛已归档。" },
@@ -1684,14 +1907,15 @@ export function enumLabel<V extends string>(
 }
 
 export function resolveLocale(languages?: readonly string[]): PlatformLocale {
-  const preferred =
-    languages ??
-    (typeof navigator === "undefined"
-      ? []
-      : navigator.languages.length
-        ? navigator.languages
-        : [navigator.language]);
-  return preferred[0]?.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
+  if (languages === undefined) return getLocale();
+  const preferred = languages[0]?.toLowerCase();
+  if (preferred?.startsWith("en")) return "en";
+  return defaultPlatformLocale;
+}
+
+/** Original host primitives share this catalog without requiring a second provider. */
+export function translateCurrent(key: PlatformMessageKey, variables: Record<string, string | number> = {}): string {
+  return translate(getLocale(), key, variables);
 }
 
 export function translate(

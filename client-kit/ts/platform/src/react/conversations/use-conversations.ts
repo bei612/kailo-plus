@@ -1,3 +1,4 @@
+import { translateCurrent as translateUi } from "../../i18n";
 import { useCallback, useDeferredValue, useEffect, useRef, useState, type UIEvent } from "react";
 import type { ActionCommand, ActionSubmission, ConversationParticipant, ConversationView } from "@client-kit/contracts";
 import { useBffClient } from "../context";
@@ -31,11 +32,11 @@ export function useConversationDirectory(currentPrincipalId: string) {
       if (!Array.isArray(page.items) || !Number.isSafeInteger(page.maxParticipants) ||
           page.maxParticipants < 2 || page.items.some((item) =>
             !item.principalId || !Array.isArray(item.pubkeys) || item.pubkeys.length === 0))
-        throw new TransportError("Recipient directory is unavailable.");
+        throw new TransportError(translateUi("dm.directoryUnavailable"));
       setItems((old) => [...new Map([...(cursor ? old : []), ...page.items].map((item) => [item.principalId, item])).values()]);
       setMaxParticipants(page.maxParticipants); setNextCursor(page.nextCursor);
     } catch (error) {
-      if (epoch === generation.current) setError(error instanceof Error ? error : new Error("Recipient directory is unavailable."));
+      if (epoch === generation.current) setError(error instanceof Error ? error : new Error(translateUi("dm.directoryUnavailable")));
     } finally {
       if (epoch === generation.current) { busy.current = false; setLoading(false); }
     }
@@ -76,7 +77,7 @@ export function useConversations() {
       let cursor: string | undefined;
       do {
         const page = await client.conversations(cursor);
-        if (!Array.isArray(page.items)) throw new TransportError("Conversation list is unavailable.");
+        if (!Array.isArray(page.items)) throw new TransportError(translateUi("dm.listUnavailable"));
         all.push(...page.items);
         cursor = page.nextCursor;
         if (cursor && seen.has(cursor)) throw new TransportError("Conversation cursor did not advance.");
@@ -85,7 +86,7 @@ export function useConversations() {
       if (epoch === generation.current) setItems(all);
       return all;
     } catch (error) {
-      if (epoch === generation.current) setError(error instanceof Error ? error : new Error("Conversation list is unavailable."));
+      if (epoch === generation.current) setError(error instanceof Error ? error : new Error(translateUi("dm.listUnavailable")));
       throw error;
     } finally { if (epoch === generation.current) setLoading(false); }
   }, [client]);
@@ -105,8 +106,8 @@ export function useConversationOpen(currentPrincipalId: string, recipients: Conv
   const [locked, setLocked] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const prepareConversation = async (): Promise<ConversationView> => {
-    if (inFlight.current) throw new ConversationPreparationPending("Opening direct message…");
-    if (!currentPrincipalId || recipients.length === 0) throw new Error("Choose at least one recipient first.");
+    if (inFlight.current) throw new ConversationPreparationPending(translateUi("dm.preparing"));
+    if (!currentPrincipalId || recipients.length === 0) throw new Error(translateUi("dm.chooseFirst"));
     inFlight.current = true; setBusy(true); setNotice(null);
     const ids = [currentPrincipalId, ...recipients.map((item) => item.principalId)].sort();
     intent.current ??= { command: { actionKey: "conversation.open", idempotencyKey: newIdempotencyKey(), conversationOpen: { participantPrincipalIds: ids } } };
@@ -115,11 +116,11 @@ export function useConversationOpen(currentPrincipalId: string, recipients: Conv
       if (!intent.current.receipt) {
         const receipt = await client.submitAction(intent.current.command);
         if (receipt.actionKey !== "conversation.open" || !receipt.operationId || !receipt.actionExecutionId)
-          throw new TransportError("The direct message outcome is not yet known.");
+          throw new TransportError(translateUi("dm.unknown"));
         intent.current.receipt = receipt;
         if (["DENIED", "EXPIRED", "REVOKED"].includes(receipt.gateState)) {
           intent.current = null; setLocked(false);
-          throw new Error(receipt.reason ?? "Direct message was not admitted.");
+          throw new Error(receipt.reason ?? translateUi("dm.denied"));
         }
       }
       const expected = intent.current.command.conversationOpen!.participantPrincipalIds;
@@ -130,7 +131,7 @@ export function useConversationOpen(currentPrincipalId: string, recipients: Conv
         const conversation = page.items.find((item) => item.participantPrincipalIds.length === expected.length &&
           item.participantPrincipalIds.every((id) => expected.includes(id)));
         if (conversation?.state === "ACTIVE") {
-          if (!visibility) throw new Error("Conversation visibility is unavailable.");
+          if (!visibility) throw new Error(translateUi("dm.visibilityUnavailable"));
           if (!reopen.current && (await visibility.read(conversation)).has(conversation.channelId))
             reopen.current = await visibility.prepare(conversation, false);
           if (reopen.current) {
@@ -140,16 +141,16 @@ export function useConversationOpen(currentPrincipalId: string, recipients: Conv
           invalidation?.changed();
           return conversation;
         }
-        if (conversation?.state === "DISABLED") throw new Error("This direct message is disabled.");
+        if (conversation?.state === "DISABLED") throw new Error(translateUi("dm.disabled"));
         cursor = page.nextCursor;
         if (cursor && seen.has(cursor)) throw new TransportError("Conversation cursor did not advance.");
         if (cursor) seen.add(cursor);
       } while (cursor);
-      const message = "Direct message is being prepared. Check its status and send again; your draft is retained.";
+      const message = translateUi("dm.preparationPending");
       setNotice(message); throw new ConversationPreparationPending(message);
     } catch (error) {
       if (!intent.current?.receipt && !isOutcomeUnknown(error)) { intent.current = null; setLocked(false); }
-      if (isOutcomeUnknown(error)) setNotice("Outcome not yet known. Retry uses the same operation; your draft is retained.");
+      if (isOutcomeUnknown(error)) setNotice(translateUi("dm.retryUnknown"));
       throw error;
     } finally { inFlight.current = false; setBusy(false); }
   };

@@ -1,5 +1,6 @@
 // Extracted from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src; host authority remains outside this presentation module.
-import { resolveLocale, translate } from "../../i18n";
+import { translate } from "../../i18n";
+import { useUiLocale } from "../context";
 import { PlatformNavigation, type PlatformNavigationSection as PlatformSection } from "../navigation";
 import { Bot, ClipboardCheck, History, Inbox, ListChecks, MonitorSmartphone, Users, Workflow, SquarePen } from "lucide-react";
 import { SidebarHeader, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem } from "./sidebar";
@@ -35,7 +36,7 @@ export function AppSidebarPrimaryMenu({
   selectedPlatformSection,
   selectedView,
 }: AppSidebarPrimaryMenuProps) {
-  const locale = resolveLocale();
+  const locale = useUiLocale();
   return (
     <SidebarHeader
       className="relative z-40 cursor-default select-none px-2 pb-0 pt-0"
@@ -64,11 +65,11 @@ export function AppSidebarPrimaryMenu({
               className="data-[active=true]:font-normal"
               isActive={selectedView === "home"}
               onClick={onSelectHome}
-              tooltip="Inbox"
+              tooltip={translate(locale, "inbox.title")}
               type="button"
             >
               <Inbox className="h-4 w-4" />
-              <SidebarMenuLabel>Inbox</SidebarMenuLabel>
+              <SidebarMenuLabel>{translate(locale, "inbox.title")}</SidebarMenuLabel>
             </SidebarMenuButton>
             {homeBadgeCount !== undefined && homeBadgeCount > 0 ? (
               <SidebarMenuBadge

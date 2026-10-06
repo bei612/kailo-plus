@@ -1,3 +1,4 @@
+import { useUiT } from "../context";
 // Extracted from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src; host authority remains outside this presentation module.
 import type * as React from "react";
 
@@ -33,6 +34,7 @@ export function ProfilePopover({
   triggerContainerRef,
   onSignOut,
 }: ProfilePopoverProps) {
+  const translateUi = useUiT();
   const settingsShortcutLabel = isMacPlatform() ? "⌘," : "Ctrl+,";
 
   return (
@@ -55,7 +57,7 @@ export function ProfilePopover({
           }
         }}
       >
-        <div aria-label="Profile menu" role="menu">
+        <div aria-label={translateUi("buzz.profileMenu")} role="menu">
           <div className="flex items-center gap-2 px-3 pt-2 pb-2">
             {avatar}
             <p className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight text-popover-foreground">
@@ -77,7 +79,7 @@ export function ProfilePopover({
             role="menuitem"
             type="button"
           >
-            <span className="flex-1">Settings</span>
+            <span className="flex-1">{translateUi("platform.settings.title")}</span>
             <kbd className="text-xs text-muted-foreground">
               {settingsShortcutLabel}
             </kbd>
@@ -92,7 +94,7 @@ export function ProfilePopover({
             role="menuitem"
             type="button"
           >
-            <span className="flex-1">Sign out</span>
+            <span className="flex-1">{translateUi("platform.signOut")}</span>
           </button>
         </div>
       </PopoverContent>

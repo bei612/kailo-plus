@@ -1,4 +1,6 @@
 import type { LucideIcon } from "lucide-react";
+import { translate, type PlatformLocale } from "@client-kit/platform/i18n";
+import { useDeviceLocale } from "@client-kit/platform/react/context";
 import { Fingerprint, UserRound } from "lucide-react";
 import type * as React from "react";
 
@@ -23,9 +25,11 @@ export type ProfileField = {
 export function buildPublicFields({
   profile,
   pubkey,
+  locale,
 }: {
   profile: Profile | undefined;
   pubkey: string;
+  locale: PlatformLocale;
 }): ProfileField[] {
   const npub = canonicalNpub(pubkey);
   const fields: ProfileField[] = [
@@ -42,7 +46,7 @@ export function buildPublicFields({
         />
       ),
       icon: Fingerprint,
-      label: "Public key",
+      label: translate(locale, "platform.profile.publicKey"),
       testId: "user-profile-public-key",
     },
   ];
@@ -73,6 +77,7 @@ export function ProfileFieldGroup({ fields }: { fields: ProfileField[] }) {
 }
 
 function ProfileFieldRow({ field }: { field: ProfileField }) {
+  const locale = useDeviceLocale();
   const Icon = field.icon;
   const { copied, copy } = useCopyFeedback({
     label: field.label,
@@ -108,11 +113,11 @@ function ProfileFieldRow({ field }: { field: ProfileField }) {
   if (field.copyValue) {
     return (
       <button
-        aria-label={`Copy ${field.label}`}
+        aria-label={translate(locale, "platform.profile.copyField", { field: field.label })}
         className="group flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         data-testid={field.testId}
         onClick={() => void copy()}
-        title={`Copy ${field.label}`}
+        title={translate(locale, "platform.profile.copyField", { field: field.label })}
         type="button"
       >
         {content}

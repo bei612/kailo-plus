@@ -17,16 +17,6 @@ export type SoundName = (typeof SOUND_NAMES)[number];
 export const SOUND_SLOTS = ["mention", "thread_reply"] as const;
 export type SoundSlot = (typeof SOUND_SLOTS)[number];
 
-export const SLOT_LABELS: Record<SoundSlot, string> = {
-  mention: "@Mentions",
-  thread_reply: "Thread replies",
-};
-
-export const SLOT_DESCRIPTIONS: Record<SoundSlot, string> = {
-  mention: "When someone tags you in a channel.",
-  thread_reply: "When someone replies in a thread you follow or posted in.",
-};
-
 export const RECOMMENDED_SOUND_BY_SLOT: Record<SoundSlot, SoundName> = {
   mention: "ping",
   thread_reply: "doop",

@@ -1,3 +1,4 @@
+import { useUiT } from "../../../../context";
 // Extracted from the pinned Buzz fork; original authority 779af8886caae1317b4de962082429867ab61503, desktop/src/features/messages/ui/FormattingToolbar.tsx.
 import * as React from "react";
 import { TextSelection } from "@tiptap/pm/state";
@@ -130,6 +131,7 @@ export const FormattingToolbar = React.memo(function FormattingToolbar({
   disabled = false,
   onLinkButton,
 }: FormattingToolbarProps) {
+  const translateUi = useUiT();
   const pendingSelectionRef = React.useRef<FormattingSelectionRange | null>(
     null,
   );
@@ -255,14 +257,14 @@ export const FormattingToolbar = React.memo(function FormattingToolbar({
     const hasSelection = from !== to;
 
     if (hasSelection) {
-      const url = window.prompt("Enter URL:");
+      const url = window.prompt(translateUi("buzz.enterUrl"));
       if (url) {
         editor.chain().focus().setLink({ href: url }).run();
       }
     } else {
-      const url = window.prompt("Enter URL:");
+      const url = window.prompt(translateUi("buzz.enterUrl"));
       if (url) {
-        const label = window.prompt("Link text:", url) || url;
+        const label = window.prompt(translateUi("buzz.linkText"), url) || url;
         editor.chain().focus().insertContent(`[${label}](${url})`).run();
       }
     }
@@ -321,66 +323,66 @@ export const FormattingToolbar = React.memo(function FormattingToolbar({
   const items = [
     {
       icon: Bold,
-      label: "Bold",
+      label: translateUi("buzz.bold"),
       shortcut: "⌘B",
       action: toggleBold,
       active: activeStates.bold,
     },
     {
       icon: Italic,
-      label: "Italic",
+      label: translateUi("buzz.italic"),
       shortcut: "⌘I",
       action: toggleItalic,
       active: activeStates.italic,
     },
     {
       icon: Strikethrough,
-      label: "Strikethrough",
+      label: translateUi("buzz.strikethrough"),
       shortcut: "⌘⇧X",
       action: toggleStrike,
       active: activeStates.strike,
     },
     {
       icon: Code,
-      label: "Code",
+      label: translateUi("buzz.code"),
       shortcut: "⌘E",
       action: toggleCode,
       active: activeStates.code,
     },
     {
       icon: SquareCode,
-      label: "Code block",
+      label: translateUi("buzz.codeBlock"),
       action: toggleCodeBlock,
       active: activeStates.codeBlock,
     },
     {
       icon: Link,
-      label: "Link",
+      label: translateUi("buzz.link"),
       shortcut: "⌘K",
       action: toggleLink,
       active: activeStates.link,
     },
     {
       icon: List,
-      label: "Bullet list",
+      label: translateUi("buzz.bulletList"),
       action: toggleBulletList,
       active: activeStates.bulletList,
     },
     {
       icon: ListOrdered,
-      label: "Ordered list",
+      label: translateUi("buzz.orderedList"),
       action: toggleOrderedList,
       active: activeStates.orderedList,
     },
     {
       icon: Quote,
-      label: "Quote",
+      label: translateUi("buzz.quote"),
       action: toggleBlockquote,
       active: activeStates.blockquote,
     },
     {
       icon: HatGlasses,
-      label: "Spoiler",
+      label: translateUi("buzz.spoiler"),
       action: toggleSpoiler,
       active: activeStates.spoiler,
     },

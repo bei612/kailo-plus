@@ -330,7 +330,10 @@ class _MessageList extends HookConsumerWidget {
           .toDouble();
       setStickyDateHeader(
         StickyDateHeaderState(
-          label: formatDayHeading(activeDayTimestamp),
+          label: formatDayHeading(
+            activeDayTimestamp,
+            locale: Localizations.localeOf(context).toLanguageTag(),
+          ),
           translateY: (translateY * 2).round() / 2,
         ),
         activeDayTimestamp: activeDayTimestamp,
@@ -829,7 +832,12 @@ class _MessageList extends HookConsumerWidget {
                       children: [
                         if (showDayDivider)
                           DayDivider(
-                            label: formatDayHeading(message.createdAt),
+                            label: formatDayHeading(
+                              message.createdAt,
+                              locale: Localizations.localeOf(
+                                context,
+                              ).toLanguageTag(),
+                            ),
                             dayTimestamp: message.createdAt,
                             stickyDayTimestamp: stickyDayTimestamp,
                           ),

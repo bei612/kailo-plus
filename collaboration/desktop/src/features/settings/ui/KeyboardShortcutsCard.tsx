@@ -1,4 +1,4 @@
-import { resolveLocale } from "@client-kit/platform/i18n";
+import { useDeviceLocale } from "@client-kit/platform/react/context";
 import {
   ShortcutSettings,
   shortcutText,
@@ -9,13 +9,14 @@ import {
 } from "@/shared/lib/keyboard-shortcuts";
 
 export function KeyboardShortcutsCard() {
+  const locale = useDeviceLocale();
   return (
     <ShortcutSettings
-      locale={resolveLocale()}
+      locale={locale}
       shortcuts={[...getShortcutsByCategory().values()]
         .flat()
         .flatMap((shortcut) => {
-          const text = shortcutText(resolveLocale(), shortcut.id);
+          const text = shortcutText(locale, shortcut.id);
           return text
             ? [{ id: shortcut.id, ...text, keys: getPlatformKeys(shortcut) }]
             : [];

@@ -115,7 +115,10 @@ class _ThreadStickyDateIndex {
         .toDouble();
     return _ThreadStickyDateUpdate(
       state: StickyDateHeaderState(
-        label: formatDayHeading(activeDayTimestamp),
+        label: formatDayHeading(
+          activeDayTimestamp,
+          locale: Localizations.localeOf(context).toLanguageTag(),
+        ),
         translateY: (translateY * 2).round() / 2,
       ),
       activeDayTimestamp: activeDayTimestamp,

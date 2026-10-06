@@ -1,5 +1,6 @@
 // Reused from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src; only identity/transport seams adapt to Kailo.
 import type { ConversationParticipant } from "@client-kit/contracts";
+import { useUiT } from "../context";
 import { Avatar, AvatarFallback } from "../profile/buzz/shared/ui/avatar";
 import { getInitials } from "../profile/buzz/shared/lib/initials";
 import { cn } from "../profile/buzz/shared/lib/cn";
@@ -76,6 +77,7 @@ export function NewMessageResultRow({
   user: ConversationParticipant;
 }) {
   const name = formatRecipientName(user);
+  const translateUi = useUiT();
 
   return (
     <div
@@ -83,7 +85,7 @@ export function NewMessageResultRow({
       data-keyboard-highlighted={isKeyboardHighlighted ? "true" : undefined}
     >
       <button
-        aria-label={`${isAlreadySelected ? "Already added" : "Add"} ${name}`}
+        aria-label={translateUi(isAlreadySelected ? "dm.addedPerson" : "dm.addPerson", { name })}
         aria-selected={isAlreadySelected || isKeyboardHighlighted}
         className={cn(
           "group/dm-result flex min-h-14 w-full cursor-pointer items-center gap-3 px-4 py-3.5 text-left transition-colors duration-150 ease-out hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",

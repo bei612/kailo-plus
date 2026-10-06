@@ -1,3 +1,4 @@
+import { useUiT } from "../context";
 import {
   BellOff,
   BellRing,
@@ -40,11 +41,11 @@ function MoreActionsMenu({
   isUnread,
   onCopyMessage,
 }: {
-  /** Channel UUID for the "Copy link" action. When null/undefined, the
+  /** Channel UUID for the Copy link action. When null/undefined, the
    *  Copy link entry is hidden (e.g. inbox preview rows that don't have it). */
   onCopyLink?: (message: TimelineMessage) => void;
   message: TimelineMessage;
-  /** Resolves the mention identities carried by "Copy message". */
+  /** Resolves the mention identities carried by Copy message. */
   onCopyMessage: (message: TimelineMessage) => void;
   onFollowThread?: (message: TimelineMessage) => void;
   onMarkUnread?: (message: TimelineMessage) => void;
@@ -56,6 +57,7 @@ function MoreActionsMenu({
   isFollowingThread?: boolean;
   isUnread?: boolean;
 }) {
+  const translateUi = useUiT();
   const hasCopyActions = !message.pending;
   // "Copy message" copies the Markdown body verbatim, so its plain flavor is
   // already readable anywhere. The HTML sidecar adds only identity, letting a
@@ -68,7 +70,7 @@ function MoreActionsMenu({
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label="More actions"
+              aria-label={translateUi("buzz.moreActions")}
               className={ACTION_BUTTON_CLASS}
               data-testid={`more-actions-${message.id}`}
               size="sm"
@@ -79,7 +81,7 @@ function MoreActionsMenu({
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
-        <TooltipContent>More actions</TooltipContent>
+        <TooltipContent>{translateUi("buzz.moreActions")}</TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="end" side="top" sideOffset={6}>
         {onMarkRead || onMarkUnread ? (
@@ -98,7 +100,7 @@ function MoreActionsMenu({
             ) : (
               <MailOpen className="h-4 w-4" />
             )}
-            {isUnread ? "Mark read" : "Mark unread"}
+            {isUnread ? translateUi("buzz.markRead") : translateUi("buzz.markUnread")}
           </DropdownMenuItem>
         ) : null}
 
@@ -117,7 +119,7 @@ function MoreActionsMenu({
             ) : (
               <BellRing className="h-4 w-4" />
             )}
-            {isFollowingThread ? "Unfollow thread" : "Follow thread"}
+            {isFollowingThread ? translateUi("buzz.unfollowThread") : translateUi("buzz.followThread")}
           </DropdownMenuItem>
         ) : null}
 
@@ -128,23 +130,23 @@ function MoreActionsMenu({
             }}
           >
             <Copy className="h-4 w-4" />
-            Copy message
+            {translateUi("buzz.copyMessage")}
           </DropdownMenuItem>
         ) : null}
 
         {onSendToChannel ? (
           <DropdownMenuItem
-            aria-label="Send to channel"
+            aria-label={translateUi("buzz.sendToChannel")}
             data-testid={`send-to-channel-${message.id}`}
             onClick={() => {
               void onSendToChannel(message)
-                .then(() => toast.success("Sent to channel"))
+                .then(() => toast.success(translateUi("buzz.sentToChannel")))
                 .catch((error) => {
                   console.error(
                     "Failed to send thread message to channel",
                     error,
                   );
-                  toast.error("Couldn't send to channel");
+                  toast.error(translateUi("buzz.sendToChannelFailed"));
                 });
             }}
           >
@@ -153,7 +155,7 @@ function MoreActionsMenu({
               className="h-4 w-4"
               data-testid="send-to-channel-icon"
             />
-            Send to channel
+            {translateUi("buzz.sendToChannel")}
           </DropdownMenuItem>
         ) : null}
 
@@ -165,7 +167,7 @@ function MoreActionsMenu({
             }}
           >
             <Link2 className="h-4 w-4" />
-            Copy link
+            {translateUi("buzz.copyLink")}
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>
@@ -187,7 +189,7 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
   isUnread,
   onCopyMessage,
 }: {
-  /** Channel UUID — required for the "Copy link" action; when omitted the
+  /** Channel UUID — required for the Copy link action; when omitted the
    *  action is hidden (callers like the home inbox that lack the context). */
   onCopyLink?: (message: TimelineMessage) => void;
   message: TimelineMessage;
@@ -204,10 +206,11 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
   /** Current read state of the clicked message, from the same predicate the
    *  unread badge uses. Drives the single mark-read/unread toggle label. */
   isUnread?: boolean;
-  /** Resolves the mention identities carried by "Copy message". */
+  /** Resolves the mention identities carried by Copy message. */
   onCopyMessage: (message: TimelineMessage) => void;
 }) {
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
+  const translateUi = useUiT();
   const hasReplyAction = Boolean(onReply);
 
   const hasMoreMenuActions =
@@ -240,7 +243,7 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  aria-label="Reply"
+                  aria-label={translateUi("buzz.reply")}
                   className={ACTION_BUTTON_CLASS}
                   data-testid={`reply-message-${message.id}`}
                   onClick={() => {
@@ -253,7 +256,7 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
                   <CornerUpLeft className={ACTION_ICON_CLASS} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Reply</TooltipContent>
+              <TooltipContent>{translateUi("buzz.reply")}</TooltipContent>
             </Tooltip>
           ) : null}
 
@@ -261,7 +264,7 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  aria-label="Copy link"
+                  aria-label={translateUi("buzz.copyLink")}
                   className={ACTION_BUTTON_CLASS}
                   data-testid={`copy-link-message-${message.id}`}
                   onClick={() => {
@@ -274,7 +277,7 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
                   <Link2 className={ACTION_ICON_CLASS} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Copy link</TooltipContent>
+              <TooltipContent>{translateUi("buzz.copyLink")}</TooltipContent>
             </Tooltip>
           ) : null}
 

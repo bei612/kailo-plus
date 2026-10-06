@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { act } from "react";
 import { ConversationDisplaySettings } from "../src/react/conversation-display-settings";
 import { ProminentActiveTabSetting } from "../src/react/prominent-active-tab-setting";
@@ -22,15 +22,70 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import {
   SettingsPage,
+  LanguageSettings,
   ShortcutSettings,
   ThemeModeControl,
   shortcutText,
   type SettingsSection,
 } from "../src/react/settings";
-import type { PlatformThemeMode } from "../src/i18n";
-import { button, click, render } from "./render";
+import { getLocale, setLocale, platformLocaleStorageKey, type PlatformThemeMode } from "../src/i18n";
+import { createBffClient } from "../src/client";
+import { PlatformProvider, useT, useUiT } from "../src/react/context";
+import { button, click, render, type } from "./render";
 
 describe("shared Buzz settings presentation", () => {
+  it("updates a memoized Buzz primitive and honors an explicit host locale", async () => {
+    localStorage.clear();
+    const client = createBffClient({ send: async () => { throw new Error("No server locale store"); } });
+    const Primitive = memo(function Primitive() { const t = useUiT(); return <output>{t("buzz.sendMessage")}</output>; });
+    const standalone = await render(<Primitive />);
+    const hosted = await render(<PlatformProvider client={client} locale="en"><Primitive /></PlatformProvider>);
+    expect(standalone.textContent).toBe("发送消息");
+    expect(hosted.textContent).toBe("Send message");
+    await act(async () => setLocale("en"));
+    expect(standalone.textContent).toBe("Send message");
+    await act(async () => setLocale("zh-CN"));
+    expect(standalone.textContent).toBe("发送消息");
+    expect(hosted.textContent).toBe("Send message");
+  });
+  it("defaults to Chinese and switches English without remounting an in-progress draft", async () => {
+    localStorage.clear();
+    const client = createBffClient({ send: async () => { throw new Error("No server locale store"); } });
+    function Draft() {
+      const [draft, setDraft] = useState("");
+      const t = useT();
+      return <><span>{t("buzz.sendMessage")}</span><input data-testid="draft" value={draft} onChange={(event) => setDraft(event.target.value)} /></>;
+    }
+    const host = await render(<PlatformProvider client={client}><LanguageSettings /><Draft /></PlatformProvider>);
+    expect(getLocale()).toBe("zh-CN");
+    expect(host.textContent).toContain("发送消息");
+    const draft = host.querySelector<HTMLInputElement>('[data-testid="draft"]')!;
+    await type(draft, "unfinished draft");
+    await click(host.querySelector<HTMLInputElement>('input[value="en"]')!);
+    expect(host.textContent).toContain("Send message");
+    expect(localStorage.getItem(platformLocaleStorageKey)).toBe("en");
+    expect(document.documentElement.lang).toBe("en");
+    expect(host.querySelector('[data-testid="draft"]')).toBe(draft);
+    expect(draft.value).toBe("unfinished draft");
+    await act(async () => {
+      localStorage.removeItem(platformLocaleStorageKey);
+      window.dispatchEvent(new StorageEvent("storage", { key: platformLocaleStorageKey }));
+    });
+    expect(host.textContent).toContain("发送消息");
+    expect(draft.value).toBe("unfinished draft");
+  });
+  it("preserves an explicit English choice when language persistence fails", async () => {
+    localStorage.clear();
+    setLocale("en");
+    const host = await render(<LanguageSettings />);
+    const denied = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("denied"); });
+    try {
+      await click(host.querySelector<HTMLInputElement>('input[value="zh-CN"]')!);
+      expect(getLocale()).toBe("en");
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain("previous language is unchanged");
+      expect(host.querySelector<HTMLInputElement>('input[value="en"]')!.checked).toBe(true);
+    } finally { denied.mockRestore(); }
+  });
   it("preserves the original high-contrast navigation preference across Buzz theme changes", async () => {
     localStorage.clear();
     let preference: ReturnType<typeof useProminentActiveTab>;

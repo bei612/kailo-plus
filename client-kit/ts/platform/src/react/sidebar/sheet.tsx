@@ -1,3 +1,4 @@
+import { useUiT } from "../context";
 // Extracted from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src; host authority remains outside this presentation module.
 "use client";
 
@@ -63,7 +64,9 @@ interface SheetContentProps
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = "right", className, children, ...props }, ref) => (
+>(({ side = "right", className, children, ...props }, ref) => {
+  const translateUi = useUiT();
+  return (
   <SheetPortal>
     <SheetOverlay />
     <SheetPrimitive.Content
@@ -73,12 +76,12 @@ const SheetContent = React.forwardRef<
     >
       <SheetPrimitive.Close className="absolute right-4 top-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
         <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
+        <span className="sr-only">{translateUi("buzz.close")}</span>
       </SheetPrimitive.Close>
       {children}
     </SheetPrimitive.Content>
   </SheetPortal>
-));
+); });
 SheetContent.displayName = SheetPrimitive.Content.displayName;
 
 const SheetHeader = ({

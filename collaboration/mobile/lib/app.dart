@@ -18,6 +18,7 @@ import 'shared/auth/auth.dart';
 import 'shared/deeplink/pending_deep_link_provider.dart';
 import 'shared/platform/platform_display_name.dart';
 import 'shared/platform/platform_link.dart';
+import 'shared/platform/platform_locale.dart';
 import 'shared/relay/relay.dart';
 import 'shared/theme/theme.dart';
 import 'shared/widgets/buzz_loading_indicator.dart';
@@ -94,6 +95,7 @@ class App extends HookConsumerWidget {
     });
 
     return MaterialApp(
+      locale: ref.watch(platformLocaleProvider),
       supportedLocales: const [Locale('en'), Locale('zh', 'CN')],
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,

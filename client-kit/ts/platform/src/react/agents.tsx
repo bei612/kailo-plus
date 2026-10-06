@@ -445,6 +445,7 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
   const [policyKey, setPolicyKey] = useState("");
   const [editorMode, setEditorMode] = useState<"form" | "yaml">("form");
   const [yamlText, setYamlText] = useState("");
+  const formDraftYaml = useRef("");
   const [editorError, setEditorError] = useState(false);
   const frozenResponse = useRef<{ operationId: string; actionExecutionId: string } | null>(null);
   const [versionId, setVersionId] = useState("");
@@ -543,8 +544,14 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
       // form draft into a different valid configuration.
       if (!policyAvailable || (trigger === TriggerKind.Schedule && !scheduleValid)
         || (trigger === TriggerKind.Mention && !executor)) { setEditorError(true); return; }
-      setYamlText(stringify(formContent)); setEditorMode(mode); setEditorError(false);
+      formDraftYaml.current = stringify(formContent);
+      setYamlText(formDraftYaml.current); setEditorMode(mode); setEditorError(false);
       return;
+    }
+    // Viewing an unchanged, incomplete draft must not trap the user in YAML.
+    // No conversion or admission occurs: retain the original form fields.
+    if (yamlText === formDraftYaml.current) {
+      setEditorMode(mode); setEditorError(false); return;
     }
     if (!contentUsable(yamlContent)) { setEditorError(true); return; }
     setTrigger(yamlContent.trigger.kind); setPrefix(yamlContent.trigger.textPrefix ?? "");
@@ -635,7 +642,7 @@ function AutomationAction({ workspaceId, edit, onReset, onLocked, onRecorded }: 
           <Button aria-pressed={editorMode === "form"} onClick={() => changeEditor("form")}>{t("agents.automation.form")}</Button>
           <Button aria-pressed={editorMode === "yaml"} onClick={() => changeEditor("yaml")}>{t("agents.automation.yaml")}</Button>
         </div>
-        {editorError || (editorMode === "yaml" && !contentAvailable) ? <Notice role="alert">{t("agents.automation.yamlInvalid")}</Notice> : null}
+        {editorError ? <Notice role="alert">{t("agents.automation.yamlInvalid")}</Notice> : null}
         {editorMode === "yaml" ? <WorkflowYamlEditor value={yamlText} onChange={(value) => { setYamlText(value); setEditorError(false); }} /> : <>
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.trigger")}
           <select value={trigger} onChange={(event) => {

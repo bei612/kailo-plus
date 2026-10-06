@@ -1,3 +1,4 @@
+import { useUiT } from "./context";
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/messages/ui/NewMessageScreen.tsx.
 // Original compose surface and keyboard interactions; BFF resolves people, hosts retain their real composer.
 import * as React from "react";
@@ -25,6 +26,7 @@ export function NewMessageScreen({currentPrincipalId, renderComposer}: {
   currentPrincipalId: string;
   renderComposer: (host: NewMessageComposerHost) => React.ReactNode;
 }) {
+  const translateUi = useUiT();
   const [isRecipientPickerOpen, setIsRecipientPickerOpen] = React.useState(true);
   const [highlightedRecipientPubkey, setHighlightedRecipientPubkey] = React.useState<string | null>(null);
   const [inspectedRecipientPubkey, setInspectedRecipientPubkey] = React.useState<string | null>(null);
@@ -136,10 +138,10 @@ export function NewMessageScreen({currentPrincipalId, renderComposer}: {
 
   const composerPlaceholder =
     selectedUsers.length === 0
-      ? "Choose a recipient to start a message"
+      ? translateUi("dm.chooseRecipient")
       : selectedUsers.length === 1
-        ? `Message ${formatRecipientName(selectedUsers[0]!)}`
-        : `Message ${selectedUsers.length} people`;
+        ? translateUi("dm.messagePerson", { name: formatRecipientName(selectedUsers[0]!) })
+        : translateUi("dm.messagePeople", { count: selectedUsers.length });
 
   return (
     <div
@@ -188,7 +190,7 @@ export function NewMessageScreen({currentPrincipalId, renderComposer}: {
                 ref={toFieldRef}
               >
                 <span className="shrink-0 text-base font-semibold tracking-tight">
-                  To:
+                  {translateUi("dm.toLabel")}
                 </span>
                 {selectedUsers.map((user) => (
                   <SelectedRecipientChip
@@ -219,7 +221,7 @@ export function NewMessageScreen({currentPrincipalId, renderComposer}: {
                   }
                   aria-controls="new-dm-results"
                   aria-expanded={showRecipientPicker}
-                  aria-label="To"
+                  aria-label={translateUi("dm.to")}
                   autoComplete="off"
                   autoCorrect="off"
                   className="h-7 min-w-32 flex-1 bg-transparent text-base outline-hidden placeholder:text-muted-foreground"
@@ -383,7 +385,7 @@ export function NewMessageScreen({currentPrincipalId, renderComposer}: {
                 ) : isDirectoryLoading || isSearchTransitionPending ? (
                   <div
                     aria-busy="true"
-                    aria-label="Loading people"
+                    aria-label={translateUi("dm.loadingPeople")}
                     className="space-y-3 px-4 py-3"
                     data-testid="new-dm-loading"
                     role="status"
@@ -404,8 +406,8 @@ export function NewMessageScreen({currentPrincipalId, renderComposer}: {
                     data-testid="new-dm-empty"
                   >
                     {deferredSearchQuery.length === 0
-                      ? "No people available to message."
-                      : "No matching users."}
+                      ? translateUi("dm.empty")
+                      : translateUi("dm.noMatch")}
                   </p>
                 )}
               </div>
@@ -417,7 +419,7 @@ export function NewMessageScreen({currentPrincipalId, renderComposer}: {
               className="shrink-0 pl-2 text-sm text-muted-foreground"
               data-testid="new-dm-opening"
             >
-              Opening…
+              {translateUi("dm.opening")}
             </span>
           ) : null}
         </div>
@@ -433,15 +435,15 @@ export function NewMessageScreen({currentPrincipalId, renderComposer}: {
           className="px-5 pb-2 text-sm text-muted-foreground"
           data-testid="new-dm-limit"
         >
-          DMs support up to {maxParticipants} people, including you.
+          {translateUi("dm.limit", { count: maxParticipants ?? 0 })}
         </p>
       ) : null}
       {searchError ? (
         <p className="px-5 pb-2 text-sm text-destructive">
-          {searchError.message}
+          {translateUi("dm.directoryUnavailable")}
         </p>
       ) : null}
-      {opening.notice ? <p className="px-5 pb-2 text-sm text-muted-foreground" role="status">{opening.notice}<button type="button" disabled={isPending || opening.locked} onClick={() => void opening.prepareConversation().then(() => setSubmitErrorMessage(null)).catch(() => undefined)}>Check status</button></p> : null}
+      {opening.notice ? <p className="px-5 pb-2 text-sm text-muted-foreground" role="status">{opening.notice}<button type="button" disabled={isPending || opening.locked} onClick={() => void opening.prepareConversation().then(() => setSubmitErrorMessage(null)).catch(() => undefined)}>{translateUi("dm.checkStatus")}</button></p> : null}
       {submitErrorMessage && !opening.notice ? (
         <p className="px-5 pb-2 text-sm text-destructive">
           {submitErrorMessage}
@@ -454,7 +456,7 @@ export function NewMessageScreen({currentPrincipalId, renderComposer}: {
         placeholder: composerPlaceholder,
         prepareConversation: async () => {
           try { return await opening.prepareConversation(); }
-          catch (error) { setSubmitErrorMessage(error instanceof Error ? error.message : "Direct message is unavailable."); throw error; }
+          catch (error) { setSubmitErrorMessage(error instanceof Error ? error.message : translateUi("dm.unavailable")); throw error; }
         },
       })}
       <div aria-hidden="true" className="min-h-8 bg-background px-5 pb-1.5" />

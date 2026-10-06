@@ -1,0 +1,150 @@
+{
+  "_comment": "Presentation semantics shared by Web and Desktop (client-kit/ts) and Mobile (client-kit/dart). Both test suites read this file; expected values are written by hand, not produced by either implementation.",
+  "calendarWeekdayBandDays": 7,
+  "timeSeconds": {
+    "minute": 60,
+    "hour": 3600,
+    "day": 86400,
+    "month": 2592000
+  },
+  "relativeTime": {
+    "now": "2026-09-25T14:00:00Z",
+    "cases": [
+      {
+        "offsetSeconds": 0,
+        "en": "now",
+        "zh-CN": "现在"
+      },
+      {
+        "offsetSeconds": -1,
+        "en": "1 second ago",
+        "zh-CN": "1 秒前"
+      },
+      {
+        "offsetSeconds": -59,
+        "en": "59 seconds ago",
+        "zh-CN": "59 秒前"
+      },
+      {
+        "offsetSeconds": -60,
+        "en": "1 minute ago",
+        "zh-CN": "1 分钟前"
+      },
+      {
+        "offsetSeconds": -90,
+        "en": "2 minutes ago",
+        "zh-CN": "2 分钟前"
+      },
+      {
+        "offsetSeconds": 120,
+        "en": "in 2 minutes",
+        "zh-CN": "2 分钟后"
+      },
+      {
+        "offsetSeconds": -3600,
+        "en": "1 hour ago",
+        "zh-CN": "1 小时前"
+      },
+      {
+        "offsetSeconds": -5400,
+        "en": "2 hours ago",
+        "zh-CN": "2 小时前"
+      },
+      {
+        "offsetSeconds": -86400,
+        "en": "yesterday",
+        "zh-CN": "昨天"
+      },
+      {
+        "offsetSeconds": 86400,
+        "en": "tomorrow",
+        "zh-CN": "明天"
+      },
+      {
+        "offsetSeconds": -172800,
+        "en": "2 days ago",
+        "zh-CN": "2 天前"
+      },
+      {
+        "offsetSeconds": -2592000,
+        "en": "last month",
+        "zh-CN": "上个月"
+      },
+      {
+        "offsetSeconds": 5184000,
+        "en": "in 2 months",
+        "zh-CN": "2 个月后"
+      }
+    ],
+    "invalid": {
+      "input": "not-a-time",
+      "en": "Time unavailable",
+      "zh-CN": "时间不可用"
+    }
+  },
+  "pluralOne": [
+    {
+      "locale": "en",
+      "count": 0,
+      "one": false
+    },
+    {
+      "locale": "en",
+      "count": 1,
+      "one": true
+    },
+    {
+      "locale": "en",
+      "count": 2,
+      "one": false
+    },
+    {
+      "locale": "zh-CN",
+      "count": 1,
+      "one": false
+    }
+  ],
+  "localeResolution": [
+    {
+      "input": "zh-CN",
+      "locale": "zh-CN"
+    },
+    {
+      "input": "zh_Hans_CN",
+      "locale": "zh-CN"
+    },
+    {
+      "input": "zh-TW",
+      "locale": "zh-CN"
+    },
+    {
+      "input": "ZH",
+      "locale": "zh-CN"
+    },
+    {
+      "input": "en-US",
+      "locale": "en"
+    },
+    {
+      "input": "fr-FR",
+      "locale": "zh-CN"
+    }
+  ],
+  "themeModes": [
+    {
+      "mode": "light",
+      "en": "Light",
+      "zh-CN": "浅色"
+    },
+    {
+      "mode": "dark",
+      "en": "Dark",
+      "zh-CN": "深色"
+    },
+    {
+      "mode": "system",
+      "en": "System",
+      "zh-CN": "跟随系统"
+    }
+  ]
+}

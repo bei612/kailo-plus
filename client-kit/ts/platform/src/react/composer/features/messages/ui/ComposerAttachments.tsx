@@ -1,3 +1,4 @@
+import { useUiT } from "../../../../context";
 // Extracted from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/messages/ui/ComposerAttachments.tsx.
 import * as React from "react";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
@@ -65,6 +66,7 @@ const COMPOSER_MEDIA_HOVER_ACTION_CLASS = cn(
 
 /** Dashed-border overlay shown when a file is dragged over the composer form. */
 export function DropZoneOverlay({ className }: { className?: string }) {
+  const translateUi = useUiT();
   return (
     <div
       data-testid="drop-zone-overlay"
@@ -78,7 +80,7 @@ export function DropZoneOverlay({ className }: { className?: string }) {
         data-testid="drop-zone-label"
       >
         <UploadCloud aria-hidden="true" className="size-4" />
-        <span>Drop files to upload</span>
+        <span>{translateUi("buzz.dropFiles")}</span>
       </span>
     </div>
   );
@@ -143,7 +145,8 @@ function ComposerSnapshotCard({
     attachment.filename?.toLowerCase().endsWith(".agent.png");
   const showThumb = isAgentPng && !thumbError;
   const SnapshotIcon = snapshotKind === "team" ? Users : Bot;
-  const fallbackLabel = snapshotKind === "team" ? "Team" : "Agent";
+  const translateUi = useUiT();
+  const fallbackLabel = snapshotKind === "team" ? translateUi("buzz.team") : translateUi("buzz.agent");
   const displayName =
     attachment.displayLabel?.trim() ||
     attachment.filename?.replace(/\.(?:agent|team)\.(?:png|json)$/i, "") ||
@@ -204,7 +207,7 @@ function ComposerSnapshotCard({
             className="border-0 bg-transparent text-muted-foreground/70 shadow-none hover:text-foreground hover:shadow-none focus-visible:bg-muted focus-visible:ring-0"
             data-testid={`composer-${snapshotKind}-snapshot-remove`}
             onClick={() => onRemove(attachment.url)}
-            title="Remove"
+            title={translateUi("buzz.remove")}
             type="button"
           >
             <X />
@@ -264,6 +267,7 @@ const MediaAttachmentItem = React.forwardRef<
   },
   ref,
 ) {
+  const translateUi = useUiT();
   const { resolveMediaUrl: rewriteRelayUrl, fetchMediaBytes } = useAttachmentHost();
   const [open, setOpen] = React.useState(false);
   const [mode, setMode] = React.useState<"view" | "edit">("view");
@@ -417,7 +421,7 @@ const MediaAttachmentItem = React.forwardRef<
               {mode === "view" ? (
                 <DialogPrimitive.Close
                   className="absolute inset-0 cursor-default"
-                  aria-label="Close lightbox"
+                  aria-label={translateUi("buzz.closeLightbox")}
                 />
               ) : null}
               {mode === "edit" && !isVideo ? (
@@ -479,7 +483,7 @@ const MediaAttachmentItem = React.forwardRef<
                           Revert
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>Revert to original</TooltipContent>
+                      <TooltipContent>{translateUi("buzz.revertImage")}</TooltipContent>
                     </Tooltip>
                   ) : null}
                   {onToggleSpoiler ? (
@@ -487,7 +491,7 @@ const MediaAttachmentItem = React.forwardRef<
                       <TooltipTrigger asChild>
                         <Toggle
                           aria-label={
-                            isSpoilered ? "Remove spoiler" : "Mark as spoiler"
+                            isSpoilered ? translateUi("buzz.removeSpoiler") : translateUi("buzz.markSpoiler")
                           }
                           className={cn(
                             LIGHTBOX_BUTTON_CLASS,
@@ -505,7 +509,7 @@ const MediaAttachmentItem = React.forwardRef<
                         </Toggle>
                       </TooltipTrigger>
                       <TooltipContent>
-                        {isSpoilered ? "Remove spoiler" : "Mark as spoiler"}
+                        {isSpoilered ? translateUi("buzz.removeSpoiler") : translateUi("buzz.markSpoiler")}
                       </TooltipContent>
                     </Tooltip>
                   ) : null}
@@ -519,15 +523,15 @@ const MediaAttachmentItem = React.forwardRef<
                           onClick={() => setMode("edit")}
                         >
                           <Pencil className="h-4 w-4" />
-                          <span className="sr-only">Draw on image</span>
+                          <span className="sr-only">{translateUi("buzz.drawImage")}</span>
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent>Draw on image</TooltipContent>
+                      <TooltipContent>{translateUi("buzz.drawImage")}</TooltipContent>
                     </Tooltip>
                   ) : null}
                   <DialogPrimitive.Close className={LIGHTBOX_BUTTON_CLASS}>
                     <X className="h-4 w-4" />
-                    <span className="sr-only">Close</span>
+                    <span className="sr-only">{translateUi("buzz.close")}</span>
                   </DialogPrimitive.Close>
                 </div>
               ) : null}
@@ -545,7 +549,7 @@ const MediaAttachmentItem = React.forwardRef<
               <X className="h-2.5 w-2.5" />
             </button>
           </TooltipTrigger>
-          <TooltipContent>Remove attachment</TooltipContent>
+          <TooltipContent>{translateUi("buzz.removeAttachment")}</TooltipContent>
         </Tooltip>
         {canEdit ? (
           <Tooltip disableHoverableContent>
@@ -557,17 +561,17 @@ const MediaAttachmentItem = React.forwardRef<
                 type="button"
               >
                 <LineSquiggle className="h-5 w-5" />
-                <span className="sr-only">Draw on image</span>
+                <span className="sr-only">{translateUi("buzz.drawImage")}</span>
               </button>
             </TooltipTrigger>
-            <TooltipContent>Draw on image</TooltipContent>
+            <TooltipContent>{translateUi("buzz.drawImage")}</TooltipContent>
           </Tooltip>
         ) : null}
         {isVideo && onToggleSpoiler ? (
           <Tooltip disableHoverableContent>
             <TooltipTrigger asChild>
               <button
-                aria-label={isSpoilered ? "Remove spoiler" : "Mark as spoiler"}
+                aria-label={isSpoilered ? translateUi("buzz.removeSpoiler") : translateUi("buzz.markSpoiler")}
                 aria-pressed={isSpoilered}
                 className={COMPOSER_MEDIA_HOVER_ACTION_CLASS}
                 data-testid="composer-video-spoiler"
@@ -578,7 +582,7 @@ const MediaAttachmentItem = React.forwardRef<
               </button>
             </TooltipTrigger>
             <TooltipContent>
-              {isSpoilered ? "Remove spoiler" : "Mark as spoiler"}
+              {isSpoilered ? translateUi("buzz.removeSpoiler") : translateUi("buzz.markSpoiler")}
             </TooltipContent>
           </Tooltip>
         ) : null}
@@ -609,6 +613,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
   onToggleSpoiler,
   spoileredUrls,
 }: ComposerAttachmentsProps) {
+  const translateUi = useUiT();
   if (attachments.length === 0 && queuedPreviews.length === 0 && !isUploading)
     return null;
 
@@ -660,7 +665,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
             }
 
             if (isAudio && AudioAttachment) {
-              const label = attachment.filename || "Voice note";
+              const label = attachment.filename || translateUi("buzz.voiceNote");
               return (
                 <motion.div
                   animate={{ opacity: 1, scale: 1 }}
@@ -680,7 +685,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                   <Tooltip disableHoverableContent>
                     <TooltipTrigger asChild>
                       <button
-                        aria-label="Remove voice note"
+                        aria-label={translateUi("buzz.removeVoice")}
                         className={COMPOSER_MEDIA_REMOVE_CLASS}
                         data-testid="remove-composer-voice-note"
                         onClick={() => onRemove(attachment.url)}
@@ -689,7 +694,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                         <X className="h-2.5 w-2.5" />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent>Remove attachment</TooltipContent>
+                    <TooltipContent>{translateUi("buzz.removeAttachment")}</TooltipContent>
                   </Tooltip>
                 </motion.div>
               );
@@ -721,7 +726,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                   <Tooltip disableHoverableContent>
                     <TooltipTrigger asChild>
                       <button
-                        aria-label="Remove attachment"
+                        aria-label={translateUi("buzz.removeAttachment")}
                         type="button"
                         onClick={() => onRemove(attachment.url)}
                         className={COMPOSER_MEDIA_REMOVE_CLASS}
@@ -729,7 +734,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                         <X className="h-2.5 w-2.5" />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent>Remove attachment</TooltipContent>
+                    <TooltipContent>{translateUi("buzz.removeAttachment")}</TooltipContent>
                   </Tooltip>
                 </motion.div>
               );
@@ -770,14 +775,14 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                 >
                   <AudioAttachment
                     composer
-                    filename={preview.filename ?? "Voice note"}
+                    filename={preview.filename ?? translateUi("buzz.voiceNote")}
                     href={preview.posterUrl}
                   />
                   {onRemoveQueued ? (
                     <Tooltip disableHoverableContent>
                       <TooltipTrigger asChild>
                         <button
-                          aria-label="Remove voice note"
+                          aria-label={translateUi("buzz.removeVoice")}
                           className={COMPOSER_MEDIA_REMOVE_CLASS}
                           data-testid="remove-composer-voice-note"
                           onClick={() => onRemoveQueued(preview.id)}
@@ -786,7 +791,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                           <X className="h-2.5 w-2.5" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent>Remove attachment</TooltipContent>
+                      <TooltipContent>{translateUi("buzz.removeAttachment")}</TooltipContent>
                     </Tooltip>
                   ) : null}
                 </motion.div>
@@ -811,7 +816,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                     <div className="h-full w-full overflow-hidden rounded-2xl border border-border/70 bg-muted">
                       {preview.posterUrl ? (
                         <img
-                          alt={preview.filename ?? "Queued attachment"}
+                          alt={preview.filename ?? translateUi("buzz.queuedAttachment")}
                           className="h-full w-full object-cover"
                           src={preview.posterUrl}
                         />
@@ -831,7 +836,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                   <div className="flex h-5 max-w-40 items-center gap-1 rounded border border-border/70 bg-muted px-1.5">
                     <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="truncate text-2xs text-muted-foreground">
-                      {preview.filename ?? "Attachment"}
+                      {preview.filename ?? translateUi("buzz.attachment")}
                     </span>
                   </div>
                 )}
@@ -839,7 +844,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                   <Tooltip disableHoverableContent>
                     <TooltipTrigger asChild>
                       <button
-                        aria-label="Remove attachment"
+                        aria-label={translateUi("buzz.removeAttachment")}
                         className={COMPOSER_MEDIA_REMOVE_CLASS}
                         onClick={() => onRemoveQueued(preview.id)}
                         type="button"
@@ -847,7 +852,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                         <X className="h-2.5 w-2.5" />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent>Remove attachment</TooltipContent>
+                    <TooltipContent>{translateUi("buzz.removeAttachment")}</TooltipContent>
                   </Tooltip>
                 ) : null}
                 {isVideo && onToggleQueuedSpoiler ? (
@@ -856,8 +861,8 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                       <button
                         aria-label={
                           preview.spoilered
-                            ? "Remove spoiler"
-                            : "Mark as spoiler"
+                            ? translateUi("buzz.removeSpoiler")
+                            : translateUi("buzz.markSpoiler")
                         }
                         aria-pressed={preview.spoilered}
                         className={COMPOSER_MEDIA_HOVER_ACTION_CLASS}
@@ -869,7 +874,7 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                       </button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      {preview.spoilered ? "Remove spoiler" : "Mark as spoiler"}
+                      {preview.spoilered ? translateUi("buzz.removeSpoiler") : translateUi("buzz.markSpoiler")}
                     </TooltipContent>
                   </Tooltip>
                 ) : null}
@@ -920,14 +925,14 @@ export const ComposerAttachments = React.memo(function ComposerAttachments({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          aria-label="Cancel upload"
+                          aria-label={translateUi("buzz.cancelUpload")}
                           onClick={() => onCancelUpload(preview.id)}
                           className="absolute -right-1 -top-1 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-background"
                         >
                           <X className="h-2.5 w-2.5" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent>Cancel upload</TooltipContent>
+                      <TooltipContent>{translateUi("buzz.cancelUpload")}</TooltipContent>
                     </Tooltip>
                   ) : null}
                 </div>

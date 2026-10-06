@@ -98,9 +98,15 @@ class _NestedThreadSummaryRow extends ConsumerWidget {
                       TextSpan(
                         text: platformText(
                           PlatformMessageKey.chatTimeLastReply,
+                          locale: Localizations.localeOf(
+                            context,
+                          ).toLanguageTag(),
                           variables: {
                             'time': formatThreadSummaryLastReplyTime(
                               lastReplyAt,
+                              locale: Localizations.localeOf(
+                                context,
+                              ).toLanguageTag(),
                             ),
                           },
                         ),

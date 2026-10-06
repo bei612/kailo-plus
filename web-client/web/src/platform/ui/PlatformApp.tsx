@@ -16,7 +16,7 @@ import {
   type ConversationView,
   ReasonCode,
 } from "@client-kit/contracts";
-import { PlatformProvider } from "@client-kit/platform/react/context";
+import { PlatformProvider, useDeviceLocale } from "@client-kit/platform/react/context";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
 import { ConversationList, ConversationVisibilityProvider, useConversations } from "@client-kit/platform/react/new-message";
@@ -66,6 +66,7 @@ type Tab = "channel" | "inbox" | "settings" | "new-message" | "conversation" | P
 
 /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
 export function PlatformApp() {
+  const locale = useDeviceLocale();
   const { isDark } = useTheme();
   const documentBinding = new URLSearchParams(window.location.search).get("protocolBinding");
   const [session, setSession] = useState<PlatformSessionView | null>(null);
@@ -97,7 +98,7 @@ export function PlatformApp() {
 
   if (notMember)
     return (
-      <PlatformProvider client={bff} locale={getLocale()}>
+      <PlatformProvider client={bff} locale={locale}>
         <div className="mx-auto flex w-full max-w-xl flex-col gap-4 p-6 text-sm">
           <strong>{t("platform.title")}</strong>
           <RedemptionProgress
@@ -110,7 +111,7 @@ export function PlatformApp() {
   if (error) return <Notice text={error} />;
   if (!session) return <Notice text={t("platform.loadingIdentity")} />;
   return (
-    <PlatformProvider client={bff} locale={getLocale()} documentTheme={isDark ? "DARK" : "LIGHT"}>
+    <PlatformProvider client={bff} locale={locale} documentTheme={isDark ? "DARK" : "LIGHT"}>
       {session.accessMode === PlatformSessionAccessMode.LifecycleRestricted ? (
         <LifecycleRestrictedView
           displayName={t("platform.title")}

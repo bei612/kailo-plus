@@ -1,4 +1,5 @@
-import { platformMessages } from "@client-kit/platform/i18n";
+import { platformMessages, getLocale } from "@client-kit/platform/i18n";
+export { getLocale, resolveLocale } from "@client-kit/platform/i18n";
 
 export type AppLocale = "en" | "zh-CN";
 
@@ -51,10 +52,7 @@ const messages = {
   "platform.mentionAgent": { en: "Mention Agent installation", "zh-CN": "提及 Agent 安装" },
   "platform.noMention": { en: "No mention", "zh-CN": "不提及" },
   "platform.moreMentionAgents": { en: "Load more installations", "zh-CN": "加载更多安装" },
-  "platform.mentionAgentsUnavailable": {
-    en: "Agent installations could not be loaded",
-    "zh-CN": "无法读取 Agent 安装",
-  },
+  "platform.mentionAgentsUnavailable": { en: "Agent installations could not be loaded", "zh-CN": "无法读取 Agent 安装" },
   "error.attachmentImagePrepare": {
     en: "We couldn't prepare this image for upload.",
     "zh-CN": "无法处理此图片以上传。",
@@ -67,24 +65,11 @@ const messages = {
 
 export type MessageKey = keyof typeof messages;
 
-export function resolveLocale(languages?: readonly string[]): AppLocale {
-  const preferred =
-    languages ??
-    (typeof navigator === "undefined"
-      ? ["en"]
-      : navigator.languages.length
-        ? navigator.languages
-        : [navigator.language]);
-  return preferred[0]?.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
-}
-
-export function getLocale(): AppLocale {
-  return resolveLocale();
-}
-
 export function t(key: MessageKey, variables: Record<string, string | number> = {}): string {
   if (key === "app.title" || key === "platform.title") {
-    const name = document.querySelector<HTMLMetaElement>('meta[name="platform-display-name"]')?.content.trim();
+    const name = document
+      .querySelector<HTMLMetaElement>('meta[name="platform-display-name"]')
+      ?.content.trim();
     if (!name) throw new Error("PLATFORM_DISPLAY_NAME is missing");
     return name;
   }

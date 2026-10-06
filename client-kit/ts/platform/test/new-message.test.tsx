@@ -1,5 +1,6 @@
 import { act } from "react";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "../src/i18n";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { NewMessageScreen, ConversationList, ConversationVisibilityProvider, hiddenConversationChannels, DM_VISIBILITY_KIND } from "../src/react/new-message";
@@ -12,6 +13,7 @@ import { button, click, render, settle } from "./render";
 
 const alice = { principalId: "alice", displayName: "Alice", pubkeys: ["a".repeat(64)] };
 const bob = { principalId: "bob", displayName: "Bob", pubkeys: ["b".repeat(64)] };
+beforeEach(() => setLocale("en"));
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
 });

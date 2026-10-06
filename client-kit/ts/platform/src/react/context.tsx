@@ -1,7 +1,7 @@
 // 平台页的宿主注入点：宿主给出 BFF 客户端（其传输决定了这是 Web 还是 Desktop）与
 // 当前语言。页面只从这里取依赖，不 import 任一宿主的模块。
 
-import { createContext, Fragment, type ReactNode, useCallback, useContext, useState } from "react";
+import { createContext, Fragment, type ReactNode, useCallback, useContext, useState, useSyncExternalStore } from "react";
 import type { BffClient } from "../client";
 import type { ReasonCode } from "@client-kit/contracts";
 import type { WriteFailure } from "../transport";
@@ -10,7 +10,9 @@ import {
   type PlatformLocale,
   type PlatformMessageKey,
   reasonMessages,
-  resolveLocale,
+  getLocale,
+  subscribeLocale,
+  defaultPlatformLocale,
   translate,
 } from "../i18n";
 
@@ -26,23 +28,28 @@ export function PlatformProvider({
   documentTheme,
 }: {
   client: BffClient;
-  /** 缺省按浏览器/系统语言 */
+  /** Device preference; absent preference defaults to Chinese. */
   locale?: PlatformLocale;
   children: ReactNode;
   openNativePage?: (bindingId: string) => Promise<void>;
   /** Only the Web host opts in. Desktop GAP-DSK-EDITOR-01 and Mobile stay closed. */
   documentTheme?: "LIGHT" | "DARK";
 }) {
+  const deviceLocale = useDeviceLocale();
   // A replacement client is a new authenticated transport scope. Reset its
   // consumers together: read snapshots, frozen writes and late receipts must
   // never migrate to another identity. Locale changes preserve the same scope.
   const [scope, setScope] = useState({ client, generation: 0 });
   if (scope.client !== client) setScope({ client, generation: scope.generation + 1 });
   return (
-    <PlatformContext.Provider value={{ client, locale: locale ?? resolveLocale(), openNativePage, documentTheme }}>
+    <PlatformContext.Provider value={{ client, locale: locale ?? deviceLocale, openNativePage, documentTheme }}>
       <Fragment key={scope.generation}>{children}</Fragment>
     </PlatformContext.Provider>
   );
+}
+
+export function useDeviceLocale(): PlatformLocale {
+  return useSyncExternalStore(subscribeLocale, getLocale, () => defaultPlatformLocale);
 }
 
 function usePlatform(): Platform {
@@ -67,6 +74,18 @@ export type Translate = (
   key: PlatformMessageKey,
   variables?: Record<string, string | number>,
 ) => string;
+
+/** Original Buzz primitives also render outside management pages. */
+export function useUiLocale(): PlatformLocale {
+  const platform = useContext(PlatformContext);
+  const deviceLocale = useDeviceLocale();
+  return platform?.locale ?? deviceLocale;
+}
+
+export function useUiT(): Translate {
+  const locale = useUiLocale();
+  return useCallback((key, variables) => translate(locale, key, variables), [locale]);
+}
 
 export function useT(): Translate {
   const locale = useLocale();

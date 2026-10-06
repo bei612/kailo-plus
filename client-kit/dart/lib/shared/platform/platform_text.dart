@@ -1,10 +1,198 @@
 // Generated from client-kit/ts/platform/src/i18n.ts by tools/gen-platform-i18n.py.
 // Do not edit. Message keys and translations have one TypeScript source.
-import 'dart:io' show Platform;
 
 import '../contracts/contracts.dart';
 
 enum PlatformMessageKey {
+  inboxOptions,
+  inboxMarkAllRead,
+  inboxDrafts,
+  inboxSelectMessage,
+  inboxSelectMessageHint,
+  inboxBack,
+  inboxResize,
+  inboxResizeHint,
+  inboxNoActivity,
+  inboxNoUnread,
+  inboxEmptyHint,
+  inboxUnreadEmptyHint,
+  inboxFilterLabel,
+  inboxReply,
+  platformNotificationsMention,
+  platformNotificationsThreadReply,
+  platformNotificationsMentionDescription,
+  platformNotificationsThreadReplyDescription,
+  platformNotificationsRecommended,
+  platformNotificationsPause,
+  platformNotificationsPreview,
+  platformAppearanceLinkPreviews,
+  platformAppearanceCompact,
+  platformAppearanceCompactDescription,
+  platformAppearanceRich,
+  platformAppearanceRichDescription,
+  platformAppearanceFocus,
+  platformAppearanceFocusDescription,
+  platformAppearanceSplit,
+  platformAppearanceSplitDescription,
+  platformAppearanceThreadLayout,
+  platformAppearanceGlassOpacity,
+  platformAppearanceGlassOpacityDescription,
+  platformAppearanceOpacity,
+  platformAppearanceResetGlassOpacity,
+  platformAppearanceGlassBackground,
+  platformAppearanceGlassDescription,
+  platformAppearanceGlassMacOnly,
+  platformAppearanceSampleTitle,
+  platformAppearanceSampleDescription,
+  dmChooseRecipient,
+  dmVerifyPerson,
+  dmMessagePerson,
+  dmMessagePeople,
+  dmTo,
+  dmToLabel,
+  dmLoadingPeople,
+  dmEmpty,
+  dmNoMatch,
+  dmOpening,
+  dmLimit,
+  dmCheckStatus,
+  dmUnavailable,
+  dmDirectoryUnavailable,
+  dmListUnavailable,
+  dmPreparing,
+  dmChooseFirst,
+  dmUnknown,
+  dmDenied,
+  dmVisibilityUnavailable,
+  dmDisabled,
+  dmPreparationPending,
+  dmRetryUnknown,
+  dmAddPerson,
+  dmAddedPerson,
+  dmRemovePerson,
+  platformNotificationsDescription,
+  platformNotificationsUnavailable,
+  platformNotificationsBlocked,
+  platformNotificationsOn,
+  platformNotificationsOff,
+  platformNotificationsDesktop,
+  platformNotificationsRequesting,
+  platformNotificationsAlerts,
+  platformNotificationsEnabledDescription,
+  platformNotificationsRequestDescription,
+  platformNotificationsWhileViewing,
+  platformNotificationsWhileViewingDescription,
+  platformNotificationsSound,
+  platformNotificationsSoundDescription,
+  platformNotificationsAlertSounds,
+  platformNotificationsBadges,
+  platformNotificationsHomeBadge,
+  platformNotificationsHomeBadgeDescription,
+  platformNotificationsUnsupported,
+  platformNotificationsDenied,
+  buzzHideSpoiler,
+  buzzRevealSpoiler,
+  buzzRemoveSpoiler,
+  buzzMarkSpoiler,
+  buzzVoiceNote,
+  buzzQueuedAttachment,
+  buzzAttachment,
+  buzzEnterUrl,
+  buzzLinkText,
+  buzzDrawingSaveFailed,
+  buzzFinishVoice,
+  buzzSending,
+  buzzSendMessage,
+  buzzCollapseReplies,
+  buzzTeam,
+  buzzAgent,
+  buzzClose,
+  buzzProfileMenu,
+  buzzOpenProfileMenu,
+  buzzSidebar,
+  buzzToggleSidebar,
+  buzzResizeSidebar,
+  buzzDragSidebar,
+  buzzMobileSidebar,
+  buzzMoreActions,
+  buzzMarkRead,
+  buzzMarkUnread,
+  buzzFollowThread,
+  buzzUnfollowThread,
+  buzzCopyMessage,
+  buzzCopyLink,
+  buzzReply,
+  buzzSendToChannel,
+  buzzSentToChannel,
+  buzzSendToChannelFailed,
+  buzzCopiedMessage,
+  buzzCopiedLink,
+  buzzCopyFailed,
+  buzzNewMessages,
+  buzzNew,
+  buzzPublicKeyCopied,
+  buzzCopyPublicKey,
+  buzzShowPublicKey,
+  buzzUnavailable,
+  buzzDropFiles,
+  buzzRemove,
+  buzzRemoveAttachment,
+  buzzRemoveVoice,
+  buzzCancelUpload,
+  buzzCloseLightbox,
+  buzzRevertImage,
+  buzzDrawImage,
+  buzzMention,
+  buzzBold,
+  buzzItalic,
+  buzzStrikethrough,
+  buzzCode,
+  buzzCodeBlock,
+  buzzLink,
+  buzzBulletList,
+  buzzOrderedList,
+  buzzQuote,
+  buzzSpoiler,
+  buzzSelectionFormatting,
+  buzzToggleFormatting,
+  buzzFormatting,
+  buzzCloseFormatting,
+  buzzAttachFile,
+  buzzRecordVoice,
+  buzzDrawingCanvas,
+  buzzStrokeWidth,
+  buzzUndoStroke,
+  buzzRedoStroke,
+  buzzUndoShortcut,
+  buzzRedoShortcut,
+  buzzSave,
+  buzzSaving,
+  buzzSaveChanges,
+  buzzEditLink,
+  buzzAddLink,
+  buzzUnlink,
+  buzzDisplayText,
+  buzzTextToDisplay,
+  buzzUrl,
+  buzzCancel,
+  buzzPenRed,
+  buzzPenYellow,
+  buzzPenGreen,
+  buzzPenBlue,
+  buzzPenWhite,
+  buzzPenBlack,
+  buzzForumUnavailable,
+  buzzForumRootUnavailable,
+  platformProfileCopyField,
+  platformProfileMore,
+  platformProfileLess,
+  platformProfileResize,
+  platformSettingsSections,
+  platformSettingsLanguage,
+  platformSettingsLanguageChinese,
+  platformSettingsLanguageEnglish,
+  platformSettingsDeviceLanguage,
+  platformSettingsLanguageSaveFailed,
   forumBack,
   forumStart,
   forumArchived,
@@ -927,6 +1115,363 @@ enum PlatformMessageKey {
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
+  PlatformMessageKey.inboxOptions: ('Inbox options', '收件箱选项'),
+  PlatformMessageKey.inboxMarkAllRead: ('Mark all as read', '全部标为已读'),
+  PlatformMessageKey.inboxDrafts: ('Drafts', '草稿'),
+  PlatformMessageKey.inboxSelectMessage: ('Select a message', '选择一条消息'),
+  PlatformMessageKey.inboxSelectMessageHint: (
+    'Pick an inbox item to see the full message and reply to it.',
+    '选择收件箱条目以查看完整消息并回复。',
+  ),
+  PlatformMessageKey.inboxBack: ('Back to inbox list', '返回收件箱列表'),
+  PlatformMessageKey.inboxResize: ('Resize inbox list', '调整收件箱列表宽度'),
+  PlatformMessageKey.inboxResizeHint: (
+    'Drag to resize. Double-click to reset width.',
+    '拖动调整宽度，双击恢复默认。',
+  ),
+  PlatformMessageKey.inboxNoActivity: ('No activity yet', '暂无动态'),
+  PlatformMessageKey.inboxNoUnread: ('No unread activity', '暂无未读动态'),
+  PlatformMessageKey.inboxEmptyHint: (
+    'New activity will appear here.',
+    '新动态会显示在这里。',
+  ),
+  PlatformMessageKey.inboxUnreadEmptyHint: (
+    'Turn off Show unread only to see read activity.',
+    '关闭“仅显示未读”以查看已读动态。',
+  ),
+  PlatformMessageKey.inboxFilterLabel: (
+    'Filter inbox: {filter}',
+    '筛选收件箱：{filter}',
+  ),
+  PlatformMessageKey.inboxReply: ('Reply in thread', '在线程中回复'),
+  PlatformMessageKey.platformNotificationsMention: ('@Mentions', '@提及'),
+  PlatformMessageKey.platformNotificationsThreadReply: (
+    'Thread replies',
+    '线程回复',
+  ),
+  PlatformMessageKey.platformNotificationsMentionDescription: (
+    'When someone tags you in a channel.',
+    '有人在频道中提及你时。',
+  ),
+  PlatformMessageKey.platformNotificationsThreadReplyDescription: (
+    'When someone replies in a thread you follow or posted in.',
+    '有人回复你关注或参与的线程时。',
+  ),
+  PlatformMessageKey.platformNotificationsRecommended: ('rec.', '推荐'),
+  PlatformMessageKey.platformNotificationsPause: ('Pause {sound}', '暂停{sound}'),
+  PlatformMessageKey.platformNotificationsPreview: (
+    'Preview {sound}',
+    '试听{sound}',
+  ),
+  PlatformMessageKey.platformAppearanceLinkPreviews: ('Link previews', '链接预览'),
+  PlatformMessageKey.platformAppearanceCompact: ('Compact', '紧凑'),
+  PlatformMessageKey.platformAppearanceCompactDescription: (
+    'Small cards with a thumbnail',
+    '带缩略图的小卡片',
+  ),
+  PlatformMessageKey.platformAppearanceRich: ('Rich', '丰富'),
+  PlatformMessageKey.platformAppearanceRichDescription: (
+    'Large previews with images and descriptions',
+    '带图片与说明的大预览',
+  ),
+  PlatformMessageKey.platformAppearanceFocus: ('Focus', '聚焦'),
+  PlatformMessageKey.platformAppearanceFocusDescription: (
+    'Threads open over the channel',
+    '在线程浮层中打开',
+  ),
+  PlatformMessageKey.platformAppearanceSplit: ('Split', '分栏'),
+  PlatformMessageKey.platformAppearanceSplitDescription: (
+    'Threads open in a side panel next to the channel',
+    '在频道旁的侧面板中打开线程',
+  ),
+  PlatformMessageKey.platformAppearanceThreadLayout: ('Thread layout', '线程布局'),
+  PlatformMessageKey.platformAppearanceGlassOpacity: ('Glass opacity', '玻璃透明度'),
+  PlatformMessageKey.platformAppearanceGlassOpacityDescription: (
+    'Lower values reveal more of the desktop blur.',
+    '数值越低，透出的桌面模糊背景越明显。',
+  ),
+  PlatformMessageKey.platformAppearanceOpacity: (
+    '{value}% opacity',
+    '不透明度 {value}%',
+  ),
+  PlatformMessageKey.platformAppearanceResetGlassOpacity: (
+    'Reset glass opacity',
+    '重置玻璃透明度',
+  ),
+  PlatformMessageKey.platformAppearanceGlassBackground: (
+    'Glass background',
+    '玻璃背景',
+  ),
+  PlatformMessageKey.platformAppearanceGlassDescription: (
+    'Blur the desktop behind navigation while keeping content solid.',
+    '导航区域透出模糊桌面，内容区域保持实色。',
+  ),
+  PlatformMessageKey.platformAppearanceGlassMacOnly: (
+    'Available in the macOS desktop app.',
+    '仅适用于 macOS 桌面应用。',
+  ),
+  PlatformMessageKey.platformAppearanceSampleTitle: (
+    'Product updates — a fresh look at conversations',
+    '产品更新——焕新的会话界面',
+  ),
+  PlatformMessageKey.platformAppearanceSampleDescription: (
+    'Highlights from this release: refreshed conversation layout, quicker link handling, and readability improvements.',
+    '本次更新：焕新会话布局、加快链接处理并提升可读性。',
+  ),
+  PlatformMessageKey.dmChooseRecipient: (
+    'Choose a recipient to start a message',
+    '选择收件人以开始聊天',
+  ),
+  PlatformMessageKey.dmVerifyPerson: ('Verify {name}', '核验{name}的身份'),
+  PlatformMessageKey.dmMessagePerson: ('Message {name}', '发送消息给{name}'),
+  PlatformMessageKey.dmMessagePeople: (
+    'Message {count} people',
+    '向{count}人发送消息',
+  ),
+  PlatformMessageKey.dmTo: ('To', '收件人'),
+  PlatformMessageKey.dmToLabel: ('To:', '收件人：'),
+  PlatformMessageKey.dmLoadingPeople: ('Loading people', '正在读取成员'),
+  PlatformMessageKey.dmEmpty: ('No people available to message.', '没有可发消息的成员。'),
+  PlatformMessageKey.dmNoMatch: ('No matching users.', '没有匹配的用户。'),
+  PlatformMessageKey.dmOpening: ('Opening…', '正在打开…'),
+  PlatformMessageKey.dmLimit: (
+    'DMs support up to {count} people, including you.',
+    '私聊最多支持{count}人（包括你）。',
+  ),
+  PlatformMessageKey.dmCheckStatus: ('Check status', '查看状态'),
+  PlatformMessageKey.dmUnavailable: (
+    'Direct message is unavailable.',
+    '私聊不可用。',
+  ),
+  PlatformMessageKey.dmDirectoryUnavailable: (
+    'Recipient directory is unavailable.',
+    '无法读取收件人目录。',
+  ),
+  PlatformMessageKey.dmListUnavailable: (
+    'Conversation list is unavailable.',
+    '无法读取会话列表。',
+  ),
+  PlatformMessageKey.dmPreparing: ('Opening direct message…', '正在准备私聊…'),
+  PlatformMessageKey.dmChooseFirst: (
+    'Choose at least one recipient first.',
+    '请先选择至少一位收件人。',
+  ),
+  PlatformMessageKey.dmUnknown: (
+    'The direct message outcome is not yet known.',
+    '私聊操作结果尚未确定。',
+  ),
+  PlatformMessageKey.dmDenied: ('Direct message was not admitted.', '私聊未获准。'),
+  PlatformMessageKey.dmVisibilityUnavailable: (
+    'Conversation visibility is unavailable.',
+    '无法确认会话的可见状态。',
+  ),
+  PlatformMessageKey.dmDisabled: (
+    'This direct message is disabled.',
+    '此私聊已停用。',
+  ),
+  PlatformMessageKey.dmPreparationPending: (
+    'Direct message is being prepared. Check its status and send again; your draft is retained.',
+    '私聊正在准备中，请查询状态后再次发送；草稿已保留。',
+  ),
+  PlatformMessageKey.dmRetryUnknown: (
+    'Outcome not yet known. Retry uses the same operation; your draft is retained.',
+    '操作结果尚未确定，重试将查证同一操作；草稿已保留。',
+  ),
+  PlatformMessageKey.dmAddPerson: ('Add {name}', '添加{name}'),
+  PlatformMessageKey.dmAddedPerson: ('Already added {name}', '已添加{name}'),
+  PlatformMessageKey.dmRemovePerson: ('Remove {name}', '移除{name}'),
+  PlatformMessageKey.platformNotificationsDescription: (
+    'Desktop alerts are on by default. Fine-tune what gets through below.',
+    '桌面提醒默认开启，可在下方调整提醒内容。',
+  ),
+  PlatformMessageKey.platformNotificationsUnavailable: ('Unavailable', '不可用'),
+  PlatformMessageKey.platformNotificationsBlocked: ('Blocked', '已阻止'),
+  PlatformMessageKey.platformNotificationsOn: ('On', '开'),
+  PlatformMessageKey.platformNotificationsOff: ('Off', '关'),
+  PlatformMessageKey.platformNotificationsDesktop: ('Desktop', '桌面'),
+  PlatformMessageKey.platformNotificationsRequesting: (
+    'Requesting...',
+    '正在请求…',
+  ),
+  PlatformMessageKey.platformNotificationsAlerts: ('Desktop alerts', '桌面提醒'),
+  PlatformMessageKey.platformNotificationsEnabledDescription: (
+    'Native desktop alerts are enabled for the categories you have armed below.',
+    '已为下方启用的类别开启原生桌面提醒。',
+  ),
+  PlatformMessageKey.platformNotificationsRequestDescription: (
+    'Request OS permission and surface new mentions or needs-action items outside the app.',
+    '请求系统权限，在应用外提醒新提及或待处理事项。',
+  ),
+  PlatformMessageKey.platformNotificationsWhileViewing: (
+    'Notify while viewing',
+    '正在查看时也提醒',
+  ),
+  PlatformMessageKey.platformNotificationsWhileViewingDescription: (
+    'Also alert for new messages in the channel you have open.',
+    '当前打开的频道有新消息时也提醒。',
+  ),
+  PlatformMessageKey.platformNotificationsSound: ('Sound', '声音'),
+  PlatformMessageKey.platformNotificationsSoundDescription: (
+    'Alert with a sound for the events below.',
+    '为下列事件播放提示音。',
+  ),
+  PlatformMessageKey.platformNotificationsAlertSounds: ('Alert sounds', '提示音'),
+  PlatformMessageKey.platformNotificationsBadges: ('Badges', '角标'),
+  PlatformMessageKey.platformNotificationsHomeBadge: ('Home badge', '首页角标'),
+  PlatformMessageKey.platformNotificationsHomeBadgeDescription: (
+    'Show a Home badge for mentions and needs-action items in the sidebar.',
+    '在侧栏首页显示提及和待处理事项的角标。',
+  ),
+  PlatformMessageKey.platformNotificationsUnsupported: (
+    'Desktop notifications are not supported in this environment.',
+    '当前环境不支持桌面通知。',
+  ),
+  PlatformMessageKey.platformNotificationsDenied: (
+    'Desktop notifications are blocked. Enable them in your system settings.',
+    '桌面通知已被阻止，请在系统设置中启用。',
+  ),
+  PlatformMessageKey.buzzHideSpoiler: ('Hide spoiler', '隐藏内容'),
+  PlatformMessageKey.buzzRevealSpoiler: ('Reveal spoiler', '显示隐藏内容'),
+  PlatformMessageKey.buzzRemoveSpoiler: ('Remove spoiler', '取消隐藏'),
+  PlatformMessageKey.buzzMarkSpoiler: ('Mark as spoiler', '标为隐藏内容'),
+  PlatformMessageKey.buzzVoiceNote: ('Voice note', '语音'),
+  PlatformMessageKey.buzzQueuedAttachment: ('Queued attachment', '待上传附件'),
+  PlatformMessageKey.buzzAttachment: ('Attachment', '附件'),
+  PlatformMessageKey.buzzEnterUrl: ('Enter URL:', '输入链接地址：'),
+  PlatformMessageKey.buzzLinkText: ('Link text:', '链接文本：'),
+  PlatformMessageKey.buzzDrawingSaveFailed: (
+    'Could not save the drawing. Please try again.',
+    '无法保存绘图，请重试。',
+  ),
+  PlatformMessageKey.buzzFinishVoice: ('Finish voice note', '完成录音'),
+  PlatformMessageKey.buzzSending: ('Sending', '发送中'),
+  PlatformMessageKey.buzzSendMessage: ('Send message', '发送消息'),
+  PlatformMessageKey.buzzCollapseReplies: (
+    'Collapse replies to this message',
+    '收起此消息的回复',
+  ),
+  PlatformMessageKey.buzzTeam: ('Team', '团队'),
+  PlatformMessageKey.buzzAgent: ('Agent', 'Agent'),
+  PlatformMessageKey.buzzClose: ('Close', '关闭'),
+  PlatformMessageKey.buzzProfileMenu: ('Profile menu', '个人菜单'),
+  PlatformMessageKey.buzzOpenProfileMenu: (
+    'Open profile menu for {name}',
+    '打开{name}的个人菜单',
+  ),
+  PlatformMessageKey.buzzSidebar: ('Sidebar', '侧栏'),
+  PlatformMessageKey.buzzToggleSidebar: ('Toggle Sidebar', '切换侧栏'),
+  PlatformMessageKey.buzzResizeSidebar: ('Resize sidebar', '调整侧栏宽度'),
+  PlatformMessageKey.buzzDragSidebar: ('Drag to resize sidebar', '拖动调整侧栏宽度'),
+  PlatformMessageKey.buzzMobileSidebar: (
+    'Displays the mobile sidebar.',
+    '显示移动侧栏。',
+  ),
+  PlatformMessageKey.buzzMoreActions: ('More actions', '更多操作'),
+  PlatformMessageKey.buzzMarkRead: ('Mark read', '标为已读'),
+  PlatformMessageKey.buzzMarkUnread: ('Mark unread', '标为未读'),
+  PlatformMessageKey.buzzFollowThread: ('Follow thread', '关注线程'),
+  PlatformMessageKey.buzzUnfollowThread: ('Unfollow thread', '取消关注线程'),
+  PlatformMessageKey.buzzCopyMessage: ('Copy message', '复制消息'),
+  PlatformMessageKey.buzzCopyLink: ('Copy link', '复制链接'),
+  PlatformMessageKey.buzzReply: ('Reply', '回复'),
+  PlatformMessageKey.buzzSendToChannel: ('Send to channel', '发送到频道'),
+  PlatformMessageKey.buzzSentToChannel: ('Sent to channel', '已发送到频道'),
+  PlatformMessageKey.buzzSendToChannelFailed: (
+    'Couldn\'t send to channel',
+    '无法发送到频道',
+  ),
+  PlatformMessageKey.buzzCopiedMessage: (
+    'Message copied to clipboard',
+    '消息已复制',
+  ),
+  PlatformMessageKey.buzzCopiedLink: ('Link copied to clipboard', '链接已复制'),
+  PlatformMessageKey.buzzCopyFailed: ('Failed to copy to clipboard', '复制失败'),
+  PlatformMessageKey.buzzNewMessages: ('New messages', '新消息'),
+  PlatformMessageKey.buzzNew: ('New', '新消息'),
+  PlatformMessageKey.buzzPublicKeyCopied: (
+    'Public key copied to clipboard',
+    '公钥已复制',
+  ),
+  PlatformMessageKey.buzzCopyPublicKey: ('Copy public key', '复制公钥'),
+  PlatformMessageKey.buzzShowPublicKey: ('Show full public key', '显示完整公钥'),
+  PlatformMessageKey.buzzUnavailable: ('Unavailable', '不可用'),
+  PlatformMessageKey.buzzDropFiles: ('Drop files to upload', '拖入文件以上传'),
+  PlatformMessageKey.buzzRemove: ('Remove', '移除'),
+  PlatformMessageKey.buzzRemoveAttachment: ('Remove attachment', '移除附件'),
+  PlatformMessageKey.buzzRemoveVoice: ('Remove voice note', '移除语音'),
+  PlatformMessageKey.buzzCancelUpload: ('Cancel upload', '取消上传'),
+  PlatformMessageKey.buzzCloseLightbox: ('Close lightbox', '关闭图片预览'),
+  PlatformMessageKey.buzzRevertImage: ('Revert to original', '还原原图'),
+  PlatformMessageKey.buzzDrawImage: ('Draw on image', '在图片上绘制'),
+  PlatformMessageKey.buzzMention: ('Mention someone', '提及成员'),
+  PlatformMessageKey.buzzBold: ('Bold', '粗体'),
+  PlatformMessageKey.buzzItalic: ('Italic', '斜体'),
+  PlatformMessageKey.buzzStrikethrough: ('Strikethrough', '删除线'),
+  PlatformMessageKey.buzzCode: ('Code', '行内代码'),
+  PlatformMessageKey.buzzCodeBlock: ('Code block', '代码块'),
+  PlatformMessageKey.buzzLink: ('Link', '链接'),
+  PlatformMessageKey.buzzBulletList: ('Bullet list', '无序列表'),
+  PlatformMessageKey.buzzOrderedList: ('Ordered list', '有序列表'),
+  PlatformMessageKey.buzzQuote: ('Quote', '引用'),
+  PlatformMessageKey.buzzSpoiler: ('Spoiler', '隐藏内容'),
+  PlatformMessageKey.buzzSelectionFormatting: ('Selection formatting', '选区格式'),
+  PlatformMessageKey.buzzToggleFormatting: ('Toggle formatting', '切换格式工具'),
+  PlatformMessageKey.buzzFormatting: ('Formatting', '格式'),
+  PlatformMessageKey.buzzCloseFormatting: ('Close formatting', '关闭格式工具'),
+  PlatformMessageKey.buzzAttachFile: ('Attach file', '添加附件'),
+  PlatformMessageKey.buzzRecordVoice: ('Record voice note', '录制语音'),
+  PlatformMessageKey.buzzDrawingCanvas: ('Drawing canvas', '绘图画布'),
+  PlatformMessageKey.buzzStrokeWidth: ('Stroke width', '笔画粗细'),
+  PlatformMessageKey.buzzUndoStroke: ('Undo last stroke', '撤销上一笔'),
+  PlatformMessageKey.buzzRedoStroke: ('Redo stroke', '重做笔画'),
+  PlatformMessageKey.buzzUndoShortcut: ('Undo (⌘Z)', '撤销（⌘Z）'),
+  PlatformMessageKey.buzzRedoShortcut: ('Redo (⇧⌘Z)', '重做（⇧⌘Z）'),
+  PlatformMessageKey.buzzSave: ('Save', '保存'),
+  PlatformMessageKey.buzzSaving: ('Saving...', '保存中…'),
+  PlatformMessageKey.buzzSaveChanges: ('Save changes', '保存更改'),
+  PlatformMessageKey.buzzEditLink: ('Edit link', '编辑链接'),
+  PlatformMessageKey.buzzAddLink: ('Add link', '添加链接'),
+  PlatformMessageKey.buzzUnlink: ('Unlink', '移除链接'),
+  PlatformMessageKey.buzzDisplayText: ('Display text', '显示文本'),
+  PlatformMessageKey.buzzTextToDisplay: ('Text to display', '要显示的文本'),
+  PlatformMessageKey.buzzUrl: ('URL', '链接地址'),
+  PlatformMessageKey.buzzCancel: ('Cancel', '取消'),
+  PlatformMessageKey.buzzPenRed: ('Red pen', '红色画笔'),
+  PlatformMessageKey.buzzPenYellow: ('Yellow pen', '黄色画笔'),
+  PlatformMessageKey.buzzPenGreen: ('Green pen', '绿色画笔'),
+  PlatformMessageKey.buzzPenBlue: ('Blue pen', '蓝色画笔'),
+  PlatformMessageKey.buzzPenWhite: ('White pen', '白色画笔'),
+  PlatformMessageKey.buzzPenBlack: ('Black pen', '黑色画笔'),
+  PlatformMessageKey.buzzForumUnavailable: (
+    'Forum content could not be loaded.',
+    '无法读取论坛内容。',
+  ),
+  PlatformMessageKey.buzzForumRootUnavailable: (
+    'Forum root is unavailable.',
+    '无法读取原帖。',
+  ),
+  PlatformMessageKey.platformProfileCopyField: ('Copy {field}', '复制{field}'),
+  PlatformMessageKey.platformProfileMore: ('more', '展开'),
+  PlatformMessageKey.platformProfileLess: ('less', '收起'),
+  PlatformMessageKey.platformProfileResize: (
+    'Resize profile panel',
+    '调整资料面板大小',
+  ),
+  PlatformMessageKey.platformSettingsSections: (
+    '{group} settings sections',
+    '{group}设置分类',
+  ),
+  PlatformMessageKey.platformSettingsLanguage: ('Language', '语言'),
+  PlatformMessageKey.platformSettingsLanguageChinese: ('简体中文', '简体中文'),
+  PlatformMessageKey.platformSettingsLanguageEnglish: ('English', 'English'),
+  PlatformMessageKey.platformSettingsDeviceLanguage: (
+    'Language is saved on this device. New devices default to Chinese.',
+    '语言保存在此设备，新设备默认使用中文。',
+  ),
+  PlatformMessageKey.platformSettingsLanguageSaveFailed: (
+    'Could not save the language preference. The previous language is unchanged.',
+    '无法保存语言偏好，已保留原语言。',
+  ),
   PlatformMessageKey.forumBack: ('Back to posts', '返回帖子'),
   PlatformMessageKey.forumStart: ('Start a new post...', '发起新帖子…'),
   PlatformMessageKey.forumArchived: ('This forum is archived.', '此论坛已归档。'),
@@ -3326,7 +3871,7 @@ String platformText(
   String? locale,
   Map<String, Object>? variables,
 }) {
-  final language = (locale ?? Platform.localeName).toLowerCase();
+  final language = platformLocale(locale: locale);
   final pair = _messages[key]!;
   final template = language.startsWith('zh') ? pair.$2 : pair.$1;
   return template.replaceAllMapped(
@@ -3336,7 +3881,7 @@ String platformText(
 }
 
 String platformApprovalStatusText(ApprovalStatus value, {String? locale}) {
-  final language = (locale ?? Platform.localeName).toLowerCase();
+  final language = platformLocale(locale: locale);
   if (language.startsWith('zh')) {
     return switch (value) {
       ApprovalStatus.REQUESTED => '已请求',
@@ -3365,7 +3910,7 @@ String platformTenantInvitationStatusText(
   TenantInvitationStatus value, {
   String? locale,
 }) {
-  final language = (locale ?? Platform.localeName).toLowerCase();
+  final language = platformLocale(locale: locale);
   if (language.startsWith('zh')) {
     return switch (value) {
       TenantInvitationStatus.ISSUED => '尚未使用',
@@ -3386,7 +3931,7 @@ String platformTenantMembershipStateText(
   TenantMembershipState value, {
   String? locale,
 }) {
-  final language = (locale ?? Platform.localeName).toLowerCase();
+  final language = platformLocale(locale: locale);
   if (language.startsWith('zh')) {
     return switch (value) {
       TenantMembershipState.INVITED => '待确认',
@@ -3411,7 +3956,7 @@ String platformWorkspaceMembershipStateText(
   WorkspaceMembershipState value, {
   String? locale,
 }) {
-  final language = (locale ?? Platform.localeName).toLowerCase();
+  final language = platformLocale(locale: locale);
   if (language.startsWith('zh')) {
     return switch (value) {
       WorkspaceMembershipState.PROVISIONING => '正在开通',
@@ -3434,7 +3979,7 @@ String platformBuzzIdentityStateText(
   BuzzIdentityState value, {
   String? locale,
 }) {
-  final language = (locale ?? Platform.localeName).toLowerCase();
+  final language = platformLocale(locale: locale);
   if (language.startsWith('zh')) {
     return switch (value) {
       BuzzIdentityState.PENDING_SECRET => '正在准备密钥',
@@ -3454,7 +3999,7 @@ String platformBuzzIdentityStateText(
 }
 
 String platformAuditEventTypeText(AuditEventType value, {String? locale}) {
-  final language = (locale ?? Platform.localeName).toLowerCase();
+  final language = platformLocale(locale: locale);
   if (language.startsWith('zh')) {
     return switch (value) {
       AuditEventType.AUTHENTICATION => '认证',
@@ -3484,7 +4029,7 @@ String platformAuditEventTypeText(AuditEventType value, {String? locale}) {
 }
 
 String platformApprovalDecisionText(ApprovalDecision value, {String? locale}) {
-  final language = (locale ?? Platform.localeName).toLowerCase();
+  final language = platformLocale(locale: locale);
   if (language.startsWith('zh')) {
     return switch (value) {
       ApprovalDecision.APPROVE => '批准',
@@ -3498,7 +4043,7 @@ String platformApprovalDecisionText(ApprovalDecision value, {String? locale}) {
 }
 
 String platformApprovalSelectorText(ApprovalSelector value, {String? locale}) {
-  final language = (locale ?? Platform.localeName).toLowerCase();
+  final language = platformLocale(locale: locale);
   if (language.startsWith('zh')) {
     return switch (value) {
       ApprovalSelector.TENANT_ADMIN => '组织管理员',
@@ -3523,9 +4068,7 @@ PlatformMessageKey platformThemeModeKey(PlatformThemeMode mode) =>
     };
 
 String _platformLanguage(String? locale) =>
-    (locale ?? Platform.localeName).toLowerCase().startsWith('zh')
-    ? 'zh-CN'
-    : 'en';
+    (locale ?? '').toLowerCase().startsWith('en') ? 'en' : 'zh-CN';
 
 /// The supported locale (`en` or `zh-CN`) a device locale resolves to.
 String platformLocale({String? locale}) => _platformLanguage(locale);

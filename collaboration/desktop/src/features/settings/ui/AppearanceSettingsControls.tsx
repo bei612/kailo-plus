@@ -1,4 +1,6 @@
 import * as React from "react";
+import { translate, type PlatformLocale } from "@client-kit/platform/i18n";
+import { useDeviceLocale } from "@client-kit/platform/react/context";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Eye } from "lucide-react";
 import {
@@ -27,20 +29,20 @@ import { SettingsOptionRow } from "./SettingsOptionGroup";
 import { SettingsSlider } from "./SettingsSlider";
 import { SegmentedControl } from "@client-kit/platform/react/segmented-control";
 
-const LINK_PREVIEW_STYLE_OPTIONS: {
+const linkPreviewStyleOptions = (locale: PlatformLocale): {
   value: LinkPreviewStyle;
   label: string;
   description: string;
-}[] = [
+}[] => [
   {
     value: "compact",
-    label: "Compact",
-    description: "Small cards with a thumbnail",
+    label: translate(locale, "platform.appearance.compact"),
+    description: translate(locale, "platform.appearance.compactDescription"),
   },
   {
     value: "rich",
-    label: "Rich",
-    description: "Large previews with images and descriptions",
+    label: translate(locale, "platform.appearance.rich"),
+    description: translate(locale, "platform.appearance.richDescription"),
   },
 ];
 
@@ -48,17 +50,16 @@ const LINK_PREVIEW_STYLE_OPTIONS: {
  * Static sample used by the settings preview card. The thumbnail is an inline
  * SVG data URL so the preview needs no network fetch or native image pipeline.
  */
-const LINK_PREVIEW_SAMPLE_BASE: Omit<ResolvedLinkPreview, "imageDataUrl"> = {
+const linkPreviewSampleBase = (locale: PlatformLocale): Omit<ResolvedLinkPreview, "imageDataUrl"> => ({
   kind: "generic-link",
   href: "https://example.com/product-updates",
   provider: "example.com",
-  title: "Product updates — a fresh look at conversations",
+  title: translate(locale, "platform.appearance.sampleTitle"),
   typeLabel: "link",
-  description:
-    "Highlights from this release: refreshed conversation layout, quicker link handling, and readability improvements.",
+  description: translate(locale, "platform.appearance.sampleDescription"),
   imageState: "image",
   imageDomain: "example.com",
-};
+});
 
 /**
  * Build the sample thumbnail as an SVG data URL from the Buzz gradient
@@ -95,13 +96,14 @@ function SampleImageLightbox({
 }
 
 function LinkPreviewSample({ style }: { style: LinkPreviewStyle }) {
+  const locale = useDeviceLocale();
   const { isDark } = useTheme();
   const preview = React.useMemo<ResolvedLinkPreview>(
     () => ({
-      ...LINK_PREVIEW_SAMPLE_BASE,
+      ...linkPreviewSampleBase(locale),
       imageDataUrl: buzzGradientSampleImage(isDark),
     }),
-    [isDark],
+    [isDark, locale],
   );
   return (
     <div className="px-4 py-3" data-testid="link-preview-sample">
@@ -113,7 +115,7 @@ function LinkPreviewSample({ style }: { style: LinkPreviewStyle }) {
       >
         <span className="absolute right-3.5 top-3 inline-flex items-center gap-1 text-2xs font-medium text-muted-foreground/55">
           <Eye aria-hidden="true" className="size-3" />
-          Preview
+          {translate(locale, "platform.settings.preview")}
         </span>
         <div className="p-4 pr-24">
           <LinkPreviewAttachmentPresentation
@@ -129,6 +131,8 @@ function LinkPreviewSample({ style }: { style: LinkPreviewStyle }) {
 }
 
 export function LinkPreviewStyleSetting() {
+  const locale = useDeviceLocale();
+  const LINK_PREVIEW_STYLE_OPTIONS = linkPreviewStyleOptions(locale);
   const style = useLinkPreviewStyle();
   const [previewStyle, setPreviewStyle] =
     React.useState<LinkPreviewStyle | null>(null);
@@ -142,7 +146,7 @@ export function LinkPreviewStyleSetting() {
     <div data-testid="link-preview-style-group">
       <SettingsOptionRow>
         <div className="min-w-0">
-          <p className="text-sm font-medium">Link previews</p>
+          <p className="text-sm font-medium">{translate(locale, "platform.appearance.linkPreviews")}</p>
           <p
             className="text-sm font-normal text-muted-foreground/70"
             data-settings-subcopy
@@ -152,7 +156,7 @@ export function LinkPreviewStyleSetting() {
         </div>
         <SegmentedControl
           size="compact"
-          legend="Link previews"
+          legend={translate(locale, "platform.appearance.linkPreviews")}
           onPreviewChange={setPreviewStyle}
           onValueChange={setLinkPreviewStyle}
           optionTestIdPrefix="link-preview-style"
@@ -166,25 +170,26 @@ export function LinkPreviewStyleSetting() {
   );
 }
 
-const THREAD_VIEW_MODE_OPTIONS: {
+const threadViewModeOptions = (locale: PlatformLocale): {
   value: ThreadViewMode;
   label: string;
   description: string;
-}[] = [
+}[] => [
   {
     value: "focus",
-    label: "Focus",
-    description: "Threads open over the channel",
+    label: translate(locale, "platform.appearance.focus"),
+    description: translate(locale, "platform.appearance.focusDescription"),
   },
   {
     value: "split",
-    label: "Split",
-    description: "Threads open in a side panel next to the channel",
+    label: translate(locale, "platform.appearance.split"),
+    description: translate(locale, "platform.appearance.splitDescription"),
   },
 ];
 
 /** Native window glass rows sit below theme and accent choices. */
 export function GlassBackgroundSetting() {
+  const locale = useDeviceLocale();
   const {
     glassBackground,
     glassBackgroundSupported,
@@ -200,25 +205,25 @@ export function GlassBackgroundSetting() {
   const opacityRow = (
     <SettingsOptionRow data-testid="glass-opacity-row">
       <div className="min-w-0">
-        <p className="text-sm font-medium">Glass opacity</p>
+        <p className="text-sm font-medium">{translate(locale, "platform.appearance.glassOpacity")}</p>
         <p
           className="text-sm font-normal text-muted-foreground/70"
           data-settings-subcopy
           id="glass-opacity-description"
         >
-          Lower values reveal more of the desktop blur.
+          {translate(locale, "platform.appearance.glassOpacityDescription")}
         </p>
       </div>
       <div className="flex w-64 shrink-0 items-center">
         <SettingsSlider
           ariaDescribedBy="glass-opacity-description"
-          ariaLabel="Glass opacity"
-          ariaValueText={`${glassOpacity}% opacity`}
+          ariaLabel={translate(locale, "platform.appearance.glassOpacity")}
+          ariaValueText={translate(locale, "platform.appearance.opacity", { value: glassOpacity })}
           max={GLASS_OPACITY_MAX}
           min={GLASS_OPACITY_MIN}
           onChange={setGlassOpacity}
           onReset={() => setGlassOpacity(DEFAULT_GLASS_OPACITY)}
-          resetLabel="Reset glass opacity"
+          resetLabel={translate(locale, "platform.appearance.resetGlassOpacity")}
           resetTestId="glass-opacity-reset"
           resetValue={DEFAULT_GLASS_OPACITY}
           testId="glass-opacity-slider"
@@ -236,15 +241,15 @@ export function GlassBackgroundSetting() {
             className="text-sm font-medium"
             htmlFor="glass-background-switch"
           >
-            Glass background
+            {translate(locale, "platform.appearance.glassBackground")}
           </label>
           <p
             className="text-sm font-normal text-muted-foreground/70"
             data-settings-subcopy
           >
             {glassBackgroundSupported
-              ? "Blur the desktop behind navigation while keeping content solid."
-              : "Available in the macOS desktop app."}
+              ? translate(locale, "platform.appearance.glassDescription")
+              : translate(locale, "platform.appearance.glassMacOnly")}
           </p>
         </div>
         <Switch
@@ -372,6 +377,7 @@ function ThreadLayoutDiagram({ mode }: { mode: ThreadViewMode }) {
 }
 
 function ThreadLayoutPreview({ mode }: { mode: ThreadViewMode }) {
+  const locale = useDeviceLocale();
   return (
     <div className="px-4 py-3" data-testid="thread-layout-preview">
       <div
@@ -381,7 +387,7 @@ function ThreadLayoutPreview({ mode }: { mode: ThreadViewMode }) {
       >
         <span className="absolute right-3.5 top-3 inline-flex items-center gap-1 text-2xs font-medium text-muted-foreground/55">
           <Eye aria-hidden="true" className="size-3" />
-          Preview
+          {translate(locale, "platform.settings.preview")}
         </span>
         <div className="p-4 pr-24">
           <ThreadLayoutDiagram mode={mode} />
@@ -392,6 +398,8 @@ function ThreadLayoutPreview({ mode }: { mode: ThreadViewMode }) {
 }
 
 export function ThreadLayoutSetting() {
+  const locale = useDeviceLocale();
+  const THREAD_VIEW_MODE_OPTIONS = threadViewModeOptions(locale);
   const threadViewMode = useThreadViewMode();
   const [previewMode, setPreviewMode] = React.useState<ThreadViewMode | null>(
     null,
@@ -405,7 +413,7 @@ export function ThreadLayoutSetting() {
     <div data-testid="thread-layout-group">
       <SettingsOptionRow>
         <div className="min-w-0">
-          <p className="text-sm font-medium">Thread layout</p>
+          <p className="text-sm font-medium">{translate(locale, "platform.appearance.threadLayout")}</p>
           <p
             className="text-sm font-normal text-muted-foreground/70"
             data-settings-subcopy
@@ -415,7 +423,7 @@ export function ThreadLayoutSetting() {
         </div>
         <SegmentedControl
           size="compact"
-          legend="Thread layout"
+          legend={translate(locale, "platform.appearance.threadLayout")}
           onPreviewChange={setPreviewMode}
           onValueChange={setThreadViewMode}
           optionTestIdPrefix="thread-layout"

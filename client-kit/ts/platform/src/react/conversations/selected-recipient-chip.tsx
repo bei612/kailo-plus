@@ -1,3 +1,4 @@
+import { useUiT } from "../context";
 // Reused from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src; only identity/transport seams adapt to Kailo.
 
 import { X } from "lucide-react";
@@ -40,10 +41,11 @@ export function SelectedRecipientChip({
   testIds?: SelectedRecipientChipTestIds;
   user: ConversationParticipant;
 }) {
+  const translateUi = useUiT();
   return (
     <div className="inline-flex h-7 max-w-56 items-center gap-1.5 rounded-full bg-muted px-1 pr-2.5 text-sm transition-colors hover:bg-muted/80">
       <button
-        aria-label={`Remove ${label}`}
+        aria-label={translateUi("dm.removePerson", { name: label })}
         className={cn(
           "group/remove-recipient relative h-5 w-5 shrink-0 rounded-full focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
         )}
@@ -98,7 +100,7 @@ export function SelectedRecipientChip({
             data-testid={testIds?.keyPopover}
             onOpenAutoFocus={(event) => event.preventDefault()}
           >
-            <p className="text-sm font-medium">Verify {label}</p>
+            <p className="text-sm font-medium">{translateUi("dm.verifyPerson", { name: label })}</p>
             {user.pubkeys.map((pubkey) => <PubKey key={pubkey} pubkey={pubkey} testId={testIds?.pubkey} variant="full" />)}
           </PopoverContent>
         </Popover>

@@ -1,5 +1,6 @@
 import * as React from "react";
 import { resolveLocale, translate } from "@client-kit/platform/i18n";
+import { useDeviceLocale } from "@client-kit/platform/react/context";
 import { getVersion } from "@tauri-apps/api/app";
 import { ArrowLeft } from "lucide-react";
 
@@ -33,13 +34,6 @@ type SettingsViewProps = SettingsPanelProps & {
   section: SettingsSection;
 };
 
-const settingsNavGroups = [
-  {
-    label: translate(resolveLocale(), "platform.settings.personal"),
-    sections: settingsSections,
-  },
-];
-
 function SettingsSectionButton({
   active,
   onSelect,
@@ -47,7 +41,7 @@ function SettingsSectionButton({
 }: {
   active: boolean;
   onSelect: (section: SettingsSection) => void;
-  section: (typeof settingsSections)[number];
+  section: ReturnType<typeof settingsSections>[number];
 }) {
   const Icon = section.icon;
 
@@ -90,6 +84,8 @@ export function SettingsView({
   onSetSoundForSlot,
   section,
 }: SettingsViewProps) {
+  const locale = useDeviceLocale();
+  const settingsNavGroups = [{ label: translate(locale, "platform.settings.personal"), sections: settingsSections(locale) }];
   const { isMobile, open: sidebarOpen, setOpen: setSidebarOpen } = useSidebar();
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [appVersion, setAppVersion] = React.useState<string | null>(null);
@@ -164,7 +160,7 @@ export function SettingsView({
             <SidebarGroup key={group.label}>
               <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
               <SidebarGroupContent>
-                <SidebarMenu aria-label={`${group.label} settings sections`}>
+                <SidebarMenu aria-label={translate(locale, "platform.settings.sections", { group: group.label })}>
                   {group.sections.map((entry) => (
                     <SettingsSectionButton
                       active={entry.value === section}

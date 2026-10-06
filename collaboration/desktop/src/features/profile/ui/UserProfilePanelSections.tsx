@@ -1,4 +1,6 @@
 import * as React from "react";
+import { translate } from "@client-kit/platform/i18n";
+import { useDeviceLocale } from "@client-kit/platform/react/context";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
@@ -18,9 +20,10 @@ export function ProfileSummaryView({
   profile: Profile | undefined;
   pubkey: string;
 }) {
+  const locale = useDeviceLocale();
   const fields = React.useMemo(
-    () => buildPublicFields({ profile, pubkey }),
-    [profile, pubkey],
+    () => buildPublicFields({ profile, pubkey, locale }),
+    [profile, pubkey, locale],
   );
 
   return (
@@ -57,6 +60,7 @@ export function ProfileSummaryView({
 }
 
 function ProfileHeroDescription({ about }: { about: string }) {
+  const locale = useDeviceLocale();
   const [expanded, setExpanded] = React.useState(false);
   const [isTruncated, setIsTruncated] = React.useState(false);
   const textRef = React.useRef<HTMLParagraphElement>(null);
@@ -110,7 +114,7 @@ function ProfileHeroDescription({ about }: { about: string }) {
           onClick={() => setExpanded(true)}
           type="button"
         >
-          more
+          {translate(locale, "platform.profile.more")}
           <ChevronDown className="h-4 w-4" />
         </button>
       ) : null}
@@ -121,7 +125,7 @@ function ProfileHeroDescription({ about }: { about: string }) {
           onClick={() => setExpanded(false)}
           type="button"
         >
-          less
+          {translate(locale, "platform.profile.less")}
           <ChevronUp className="h-4 w-4" />
         </button>
       ) : null}

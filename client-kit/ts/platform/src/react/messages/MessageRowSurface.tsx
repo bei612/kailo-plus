@@ -1,3 +1,4 @@
+import { useUiT } from "../context";
 import * as React from "react";
 import type { TimelineMessage } from "./types";
 import { getThreadReplyAvatarCenterRem, getThreadReplyAvatarCenterYRem, getThreadReplyDescendantRailStartYRem, getThreadReplyConnectorLayout, getThreadReplyIndentRem, threadReplyLength, THREAD_REPLY_LINE_WIDTH_REM } from "./threadTreeLayout";
@@ -68,6 +69,7 @@ export function MessageRowSurface({
     reference?: React.ReactNode;
     resolveMediaUrl?: (url: string) => string;
   }) {
+    const translateUi = useUiT();
     // Keep the transient send state with its timestamp rather than collapsing
     // it into a grouped message row with no header.
     const isDisplayedAsContinuation = isContinuation && !message.pending;
@@ -383,7 +385,7 @@ export function MessageRowSurface({
             {onCollapseDescendants ? (
               <button
                 aria-label={
-                  collapseDescendantsLabel ?? "Collapse replies to this message"
+                  collapseDescendantsLabel ?? translateUi("buzz.collapseReplies")
                 }
                 className="absolute bottom-0 z-20 w-5 -translate-x-1/2 cursor-pointer rounded-full p-0 focus-visible:outline-hidden"
                 data-thread-head-id={message.id}

@@ -1,14 +1,15 @@
+import { translateCurrent as translateUi } from "../../i18n";
+import { useUiT } from "../context";
 // Reused from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src; only identity/transport seams adapt to Kailo.
 import { Check, Copy } from "lucide-react";
 import * as React from "react";
 
 import { toast } from "sonner";
-const copyTextToClipboard = (value: string, success: string) => { void navigator.clipboard.writeText(value).then(() => toast.success(success), () => toast.error("Failed to copy to clipboard")); };
+const copyTextToClipboard = (value: string, success: string) => { void navigator.clipboard.writeText(value).then(() => toast.success(success), () => toast.error(translateUi("buzz.copyFailed"))); };
 import { cn } from "../profile/buzz/shared/lib/cn";
 import {
   canonicalNpub,
   truncateNpub,
-  UNAVAILABLE_KEY_LABEL,
 } from "./pubkey";
 import { Button } from "../profile/buzz/shared/ui/button";
 import {
@@ -41,6 +42,7 @@ type PubKeyProps = {
 };
 
 function CopyRow({ label, value }: { label: string; value: string }) {
+  const translateUi = useUiT();
   const [copied, setCopied] = React.useState(false);
   const resetTimer = React.useRef<number | undefined>(undefined);
   React.useEffect(() => () => window.clearTimeout(resetTimer.current), []);
@@ -54,9 +56,9 @@ function CopyRow({ label, value }: { label: string; value: string }) {
         <div className="break-all font-mono text-xs">{value}</div>
       </div>
       <Button
-        aria-label={`Copy ${label}`}
+        aria-label={translateUi("platform.profile.copyField", { field: label })}
         onClick={() => {
-          copyTextToClipboard(value, `${label} copied`);
+          copyTextToClipboard(value, translateUi("platform.profile.copied"));
           setCopied(true);
           window.clearTimeout(resetTimer.current);
           resetTimer.current = window.setTimeout(() => setCopied(false), 1500);
@@ -90,6 +92,7 @@ export function PubKey({
   className,
   testId,
 }: PubKeyProps) {
+  const translateUi = useUiT();
   const [open, setOpen] = React.useState(false);
   const hoverTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -134,13 +137,13 @@ export function PubKey({
         data-testid={testId}
       >
         <span className="break-all font-mono text-xs">
-          {npub ?? UNAVAILABLE_KEY_LABEL}
+          {npub ?? translateUi("buzz.unavailable")}
         </span>
         {npub ? (
           <Popover>
             <PopoverTrigger asChild>
               <Button
-                aria-label="Copy public key"
+                aria-label={translateUi("buzz.copyPublicKey")}
                 size="icon-xs"
                 type="button"
                 variant="ghost"
@@ -162,7 +165,7 @@ export function PubKey({
   if (npub === null) {
     return (
       <span className={cn("font-mono", className)} data-testid={testId}>
-        {UNAVAILABLE_KEY_LABEL}
+        {translateUi("buzz.unavailable")}
       </span>
     );
   }
@@ -179,7 +182,7 @@ export function PubKey({
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <button
-          aria-label="Show full public key"
+          aria-label={translateUi("buzz.showPublicKey")}
           className={cn(
             "cursor-pointer rounded font-mono hover:underline focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
             className,

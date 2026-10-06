@@ -1,3 +1,4 @@
+import { InboxLayout } from "@client-kit/platform/react/inbox-surface";
 import * as React from "react";
 import { RefreshCcw } from "lucide-react";
 
@@ -46,8 +47,6 @@ import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { useRelaySelfQuery } from "@/shared/api/relaySelf";
 import { sendChannelMessage } from "@/shared/api/tauri";
 import type { InboxFeed } from "@/shared/api/types";
-import { topChromeInset } from "@/shared/layout/chromeLayout";
-import { cn } from "@/shared/lib/cn";
 import { useElementWidth } from "@/shared/hooks/use-mobile";
 import { useThreadPanelWidth } from "@/shared/hooks/useThreadPanelWidth";
 import { AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@/shared/layout/AuxiliaryPanel";
@@ -513,36 +512,10 @@ export function HomeView({
   return (
     <ProfilePanelProvider onOpenProfilePanel={handleOpenProfilePanel}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div
-          className={cn(
-            "relative grid min-h-0 w-full flex-1",
-            isSinglePanelAuxiliaryView
-              ? "grid-cols-1"
-              : showListPane && showDetailPane && hasAuxiliaryPane
-                ? "grid-cols-[var(--home-inbox-list-width)_minmax(0,1fr)_var(--home-auxiliary-width)]"
-                : showListPane && showDetailPane
-                  ? "grid-cols-[var(--home-inbox-list-width)_minmax(0,1fr)]"
-                  : hasAuxiliaryPane
-                    ? "grid-cols-[minmax(0,1fr)_var(--home-auxiliary-width)]"
-                    : "grid-cols-1",
-          )}
-          data-testid="home-inbox"
-          ref={homeInboxRef}
-          style={
-            {
-              "--home-auxiliary-width": `${auxiliaryPaneWidthPx}px`,
-              "--home-inbox-list-width": `${effectiveInboxListWidthPx}px`,
-            } as React.CSSProperties
-          }
-        >
-          {showListPane || showDetailPane ? (
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-x-0 top-0 z-30 h-13 bg-background/80 backdrop-blur-md supports-backdrop-filter:bg-background/70 dark:bg-background/70 dark:backdrop-blur-xl dark:supports-backdrop-filter:bg-background/55"
-              data-testid="home-inbox-shared-header-backdrop"
-            />
-          ) : null}
-
+        <InboxLayout containerRef={homeInboxRef} listWidth={effectiveInboxListWidthPx}
+          auxiliaryWidth={auxiliaryPaneWidthPx} showList={showListPane} showDetail={showDetailPane}
+          hasAuxiliary={hasAuxiliaryPane} singleAuxiliary={isSinglePanelAuxiliaryView}
+          onResize={handleInboxListResizeStart} onReset={canResetInboxListWidth ? handleInboxListWidthReset : undefined}>
           {showListPane ? (
             <InboxListPane
               activeDraftCount={activeDraftCount}
@@ -582,28 +555,6 @@ export function HomeView({
             />
           ) : null}
 
-          <button
-            aria-label="Resize inbox list"
-            className={cn(
-              "group absolute bottom-0 z-40 w-3 -translate-x-1/2 cursor-col-resize",
-              topChromeInset.top,
-              showListPane && showDetailPane ? "block" : "hidden",
-            )}
-            data-testid="home-inbox-list-resize-handle"
-            onDoubleClick={
-              canResetInboxListWidth ? handleInboxListWidthReset : undefined
-            }
-            onPointerDown={handleInboxListResizeStart}
-            style={{ left: `${effectiveInboxListWidthPx}px` }}
-            title={
-              canResetInboxListWidth
-                ? "Drag to resize. Double-click to reset width."
-                : "Drag to resize."
-            }
-            type="button"
-          >
-            <span className="absolute bottom-0 left-1/2 top-0 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-border/80 group-focus-visible:bg-border/80" />
-          </button>
 
           {showDetailPane && detailMode === "messages" ? (
             <InboxDetailPane
@@ -730,7 +681,7 @@ export function HomeView({
               />
             </RightAuxiliaryPane>
           ) : null}
-        </div>
+        </InboxLayout>
       </div>
     </ProfilePanelProvider>
   );

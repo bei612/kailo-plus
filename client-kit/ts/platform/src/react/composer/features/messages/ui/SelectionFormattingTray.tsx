@@ -1,3 +1,4 @@
+import { useUiT } from "../../../../context";
 // Extracted from the pinned Buzz fork; original authority 779af8886caae1317b4de962082429867ab61503, desktop/src/features/messages/ui/SelectionFormattingTray.tsx.
 import * as React from "react";
 import { createPortal } from "react-dom";
@@ -115,6 +116,7 @@ export function SelectionFormattingTray({
   disabled = false,
   onLinkButton,
 }: SelectionFormattingTrayProps) {
+  const translateUi = useUiT();
   const [position, setPosition] = React.useState<TrayPosition | null>(null);
   const rafRef = React.useRef<number | null>(null);
   const suppressRightClickUpdatesRef = React.useRef(false);
@@ -255,7 +257,7 @@ export function SelectionFormattingTray({
       data-testid="selection-formatting-tray"
       onMouseDown={(event) => event.preventDefault()}
       role="toolbar"
-      aria-label="Selection formatting"
+      aria-label={translateUi("buzz.selectionFormatting")}
       style={{ left: position.left, top: position.top }}
     >
       <div className="max-w-full overflow-x-auto">

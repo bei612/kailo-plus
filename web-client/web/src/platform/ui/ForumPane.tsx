@@ -12,6 +12,7 @@ import { bff, openStream, publishMessage, type BuzzEvent } from "@/platform/bff-
 import { Composer } from "./ChannelPane";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { truncatePubkey } from "@/shared/lib/pubkey";
+import { t } from "@/shared/i18n";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 
 function eventsFrom(value: unknown): BuzzEvent[] {
@@ -82,7 +83,8 @@ export function ForumPane({ workspaceId, channelId, archived, myPrincipalId, onO
   const authors = new Map((members.data ?? []).flatMap((member) => member.pubkeys.map((pubkey) => [pubkey, member] as const)));
   const mentions = (members.data ?? []).flatMap((member) => member.pubkeys[0] ? [{ pubkey: member.pubkeys[0], name: member.displayName, isAgent: false }] : []);
   const selectedQuery = selectedPostId ? thread : posts;
-  const error = denied ?? members.error ?? selectedQuery.error ?? (selectedPostId && thread.isSuccess && !root ? "Forum root is unavailable." : null);
+  const error = denied || members.error || selectedQuery.error ? t("buzz.forumUnavailable")
+    : selectedPostId && thread.isSuccess && !root ? t("buzz.forumRootUnavailable") : null;
   return <ForumView channelId={channelId} isMember={isMember} archived={archived} selectedPostId={selectedPostId}
     targetEventId={targetEventId} onTargetReached={() => setTargetEventId(null)}
     onSelectPost={setSelectedPostId} posts={inChannel.filter((event) => event.kind === 45001).map((event) => ({ ...project(event), threadSummary: summaries.get(event.id) }))}

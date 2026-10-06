@@ -1847,3 +1847,169 @@ PG 恢复只有原 bridge。原始成功日志为上述日志目录的
 `forum-migration-roundtrip.log`。有新语义记录时的 down 保护未实测：
 隔离库没有可引用的 Principal，本批不为此创建业务身份或绕过外键；
 不能把空表往返声称为该保护路径已验收。
+
+## 原 Inbox 分栏与条目交互共享恢复（2026-10-06）
+
+实现后的四步结论：
+
+1. **权威**：REQ-24、DD-74/DD-75/DD-80 要求恢复 Buzz 原页面并由 Web/Desktop
+   共用呈现；DD-40 的 Core CollaborationUserState 继续唯一负责跨端已读。
+   固定上游 `779af8886caae1317b4de962082429867ab61503` 的
+   `buzz/desktop/src/features/home/ui/HomeView.tsx::HomeView`、
+   `buzz/desktop/src/features/home/ui/InboxListPane.tsx::InboxListPane`、
+   `buzz/desktop/src/features/home/ui/InboxFilterMenu.tsx::InboxFilterMenu`、
+   `buzz/desktop/src/features/home/ui/InboxDetailPane.tsx::InboxDetailPane` 与
+   `buzz/desktop/src/features/home/useResizableInboxListWidth.ts::useResizableInboxListWidth`
+   已重新读取，提取分栏、透明顶栏、拖动/重置宽度、筛选/选项菜单、条目按钮与详情空态。
+2. **影响面**：两个宿主实际消费 `inbox-surface` 与同一宽度 hook；Desktop
+   保留原详情线程树、资料弹窗、草稿和原生回复。Web 保留原聚合与 Core 已读 writer，
+   新详情只适配现有 `workspaceMessages`、SSE、`publishMessage`；线程复合游标使用
+   已生成契约。事件校验从 InboxPane 原样提取，原导出保留供已有调用者与检查使用。
+   无契约/迁移/后台实体变化；Mobile 不因本次共享提取增加组件宿主。
+3. **副作用**：列表点击改为打开详情；已读、未读、全部已读仍调用原 CAS writer。
+   宽度仅为原 sessionStorage 展示偏好，不是第二份消息/已读权威。Web 发回复使用
+   已有 Composer 意图与确认回执；缺 eventId/operationId 不清草稿并不显示成功。
+4. **异常**：原读取失败与 UNKNOWN 保持拒绝；撤权 SSE 清除详情缓存并停止回复。
+   重复点击不创建新消息状态，分页沿已有服务端游标；选中事件的默认回复 parent
+   按原版锁定为其 parentId 或本身，不随实时消息改变。空列表显示原空态；窄屏在列表
+   与详情间切换并可返回，移除 scope 后条目不保留。身份改变卸载旧详情查询。
+
+此批不等于完整 Inbox 等效：固定原版还包含 Project/Needs action/Agent activity/
+Reminder 分类，当前尚无已接通的对应 feed；Web 草稿目录、资料弹窗、完整线程折叠与
+逐消息回复目标/视频批注交互也未因本次分栏提取而恢复。已有 Desktop 能力没有删除。
+这些是明确剩余产品缺口，不以空入口、假数据或“非核心”解释为已交付。
+
+本批集中窄验由同一受限 SDK `kailo-agent-receipt-xvkujx` 执行（4 CPU / 8 GiB）：
+共享源/检查 TypeScript、Desktop TypeScript、Web TypeScript 均退出 0；共享
+`test/inbox-surface.test.tsx` 3/3，Web 原 `InboxPane.test.tsx` 4/4 与新增
+`InboxThreadPane.test.tsx` 2/2 实际通过。新增检查在实现之后产生。
+首次 Web 类型检查暴露提取后遗漏 `hex` 导入，已复用同一原校验表达式修复后通过；
+首次新线程检查遇到 Vitest worker 启动超时，该轮退出 1，不算产品验证；只重跑该文件
+后 2/2 通过，没有重复全量构建。日志目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`，
+文件为 `locale-inbox-final.log`、`locale-inbox-web-final.log`、`locale-inbox-restored.log`。
+
+SDK-only 删除条目操作按钮 `stopPropagation` 后第 3 项真实失败，恢复正式原字节
+`cmp` 退出 0，再跑 3/3 通过；对应 `inbox-propagation-mutation.log`。
+SDK-only 将线程确认回执判定改为 `if (false)` 后，无 eventId 的回执被错误当作
+confirmed，新线程检查真实失败（1 failed / 1 passed），对应
+`inbox-receipt-mutation.log`；随后原字节恢复 `cmp` 退出 0，2/2 复跑通过，
+日志 `inbox-receipt-restored.log`。正式代码未受变异修改。本子批没有启动 full、镜像
+构建或发布；三侧类型与行为检查不等同于新版真实页面截图或已部署验收。
+
+### 2026-10-06：中文默认与共享原版控件双语接线
+
+本批按最新用户要求纠正 DD-53、FrontendPresentationContext 的语言来源：
+没有设备选择时使用 `zh-CN`，保留显式 `en`；不再让浏览器英文覆盖默认中文。
+原版事实仍是 Buzz Web `a6766c482533d028582d0efcfd3740769f86217c` 的
+`web/src/shared/i18n/index.ts::resolveLocale/getLocale/t` 按浏览器首选语言解析，
+所以中文默认与设置切换明确记为 `SS-WEB-PRESENTATION` 适配，不冒称上游默认。
+控件沿用 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/ui/MessageComposerToolbar.tsx::MessageComposerToolbar`
+与 `desktop/src/features/messages/ui/ComposerAttachments.tsx::ComposerAttachments`，
+只将原文案接入同一 `platformMessages`，不删菜单、编辑器或附件能力。
+
+四步影响结论：
+
+1. 权威：用户最新中英要求优先于旧“无语言设置”限制；最小设计更改仅涉及
+   `.design/02/03/05/15/18` 的 locale 语义，不改工作流、权限和组件独立性。
+2. 影响：共用 TS `getLocale/setLocale/subscribeLocale` 与 `useUiLocale/useUiT`
+   被 Web/Desktop 实际消费；设置页复用原外观面，新增的语言输入仍只是设备偏好。
+   单一 catalog 经原生成器投影 Dart，没有新增后端字段或第二词条表。
+   `BROWSER_RESOLVED` 线协议值保留兼容，其宿主最终语言按修订 DD-53 解析。
+3. 副作用：切换只更新呈现，不 remount 已认证 scope、不清消息草稿、不触发
+   BFF 写动作；用户正文、资源名、URL、公钥与协议错误码保持原文。独立原生
+   页面保留自己的呈现；在线编辑仍是下一次 launch 映射，不重载未保存文档。
+4. 边界：空/未知设备值为中文；显式英文不被系统覆盖；持久化失败保留原语言
+   并显示同 catalog 错误。跨标签 storage 变化与 memo 化原控件均订阅同一来源，
+   显式 PlatformProvider locale 优先；Web 邀请页不再用一次性 locale prop
+   遮蔽订阅。Web 原 `main.tsx::initializeDocumentLanguage` 负责初始 lang，
+   后续选择更新同一属性。这是本地呈现失败，不伪造服务端六类业务错误或审计。
+
+在既有受限 SDK（4 CPU / 8 GiB）合批实际运行，而非本子任务另启构建：
+
+- shared `tsc --noEmit` 与 `tsc --noEmit -p tsconfig.test.json` 均退出 0。
+- `vitest run test/settings.test.tsx test/format.test.ts test/new-message.test.tsx
+  test/sidebar.test.tsx test/inbox-surface.test.tsx --pool=threads --maxWorkers=1`：
+  `Test Files 5 passed; Tests 39 passed`。其中语言设置 15 项含中文默认、英文保存、
+  持久化失败、切换不丢草稿，以及 memo 控件和显式宿主 locale 的真实交互。
+- SDK-only 将 `defaultPlatformLocale` 改成英文后，原默认语言用例实际失败：
+  `AssertionError: expected 'en' to be 'zh-CN'`，退出 1；按原字节还原并 cmp 0，
+  上述 39 项恢复通过。正式源码未保留变异。
+- 首轮 DM 两项失败是旧夹具隐式依赖默认英文；夹具现明确保存英文后再验证
+  原重试/UNKNOWN 行为。Web i18n 原 node 用例改为 jsdom 才能验证真实设备存储，
+  没有为让检查通过改回浏览器默认或改写产品行为。
+
+原件目录为 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`，
+对应 `locale-inbox-final.log` 与 `locale-mutation-shared.log`。该合批命令的后续
+Web 类型检查当时因 Inbox 提取遗漏 `hex` 报 TS2304、总退出 2；不能把 shared
+通过写成全批退出 0。最后 useUiLocale 接线及显式宿主优先级变异的补充证据、
+Web 恢复结果由下文另记。此处未运行 full、打包、部署或 Win11/Mobile 实机验收，
+也不据词条接线宣称原版全部页面与业务能力已恢复。
+
+### Native 语言入口与本批最终恢复证据
+
+本段是实现后记录。权威为用户要求的中文默认、英文可选与 REQ-24 原版功能保留；
+原控件核对固定 Buzz `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/settings/ui/NotificationSettingsCard.tsx::NotificationSettingsCard`、
+`desktop/src/features/settings/ui/AppearanceSettingsControls.tsx::GlassBackgroundSetting`、
+`desktop/src/features/profile/ui/UserProfilePanelSections.tsx::ProfileSummaryView`。
+保留其通知开关、声音试听、链接预览、玻璃效果、线程布局与资料行为，只替换可见
+文案来源和语言订阅。`SettingsPanels::settingsSections` 从模块初始化翻译改成
+按当前语言求值，原设置外观页接入同一 `LanguageSettings`，不是重写设置页。
+
+影响面为 Desktop 设置/资料/频道标题与启动文本、Mobile 设置/资料/频道日期、
+共享 TS 词条及其 Dart 投影。没有增加身份、资源、权限、工作流或计量权威。
+Desktop 不以 locale 作组件 key，不重建当前身份、频道或草稿。Mobile 复用
+原 `savedPrefsProvider` 存设备语言，`MaterialApp.locale` 订阅此偏好；未保存、
+空值、未知或错误类型偏好均默认中文，明确英文保持英文。保存失败显示错误而不
+宣布切换成功，写入期间同控件禁止重复提交，离开页面不迟到更新界面。
+日期格式化不再模块级锁定语言，每个原消息、日期分隔线、线程摘要和搜索结果
+调用传当前 `Localizations` 语言。业务正文、姓名、公钥、声音资源标识均不翻译。
+
+`tools/gen-platform-i18n.py` 保持 TS 为唯一词条来源，把 Dart 缺省系统语言改为
+中文规则；`reason_text.dart` 复用生成的 `platformLocale`。实际在既有受限 SDK
+（4 CPU / 8 GiB）运行生成、`--check` 与 `dart test test/platform_i18n_test.dart`：
+`PASS: Mobile platform and reason catalogs match the shared TypeScript source`，
+`+8: All tests passed!`，退出 0，记录 `locale-dart-restored.log`。首轮旧 fr-FR→英文
+断言与新默认规则冲突失败，已保留显式英文覆盖并改成中文期望，不回退产品规则。
+Dart SDK-only 把中文缺省改成英文，新增默认检查明确期望 zh-CN/实际 en，退出 1；
+正式生成物原字节还原并再生成检查、八项回归通过。生成物没有手改。
+
+最后 `locale-inbox-restored.log` 包含实际最新 `context.tsx::useUiLocale` 与
+`sidebar/app-sidebar-primary-menu.tsx`：shared 源码及 test tsc、Desktop tsc、Web
+tsc 全部退出 0；shared settings 15、format 7、DM 11、sidebar 3、Inbox 3 共
+39 项通过。Web 原 i18n 4 与 Inbox 4 在 `locale-inbox-web-final.log` 已通过，
+该次新 InboxThread worker 启动超时使总命令退出 1，没有执行其用例；仅重试该
+文件后，两项真实回归在最终恢复日志通过，最终合批退出 0。没有因此重建镜像。
+Desktop 原快捷键两项与新增原通知控件一项共 3 项通过，记录 `locale-inbox-final.log`。
+
+新增检查的 SDK-only 破坏验证及恢复：默认改英文使原通知控件中文检查退出 1
+（`locale-mutation-native.log`）；`useUiLocale` 忽略显式 Provider，使 memo 原控件
+检查报期望 `Send message`/实际 `发送消息`、退出 1（`locale-provider-mutation.log`）；
+Inbox 行动作去掉 `stopPropagation`，检查发现选择回调意外调用一次、退出 1
+（`inbox-propagation-mutation.log`）。上述全部从正式源码原字节还原、`cmp` 退出 0，
+39 项恢复通过。Workflow 按旧条件让未编辑 YAML 也显示错误，新增 untouched
+用例真失败退出 1（`workflow-mutation.log`），恢复原字节后原 YAML、未编辑草稿及
+不支持 YAML 共 9 项通过、215 项按选择器跳过（`locale-inbox-final.log`）。
+
+Mobile 的偏好持久化、错误偏好回落、日期语言切换检查已追加到现有测试路径，
+本 SDK 只有 Dart、没有 Flutter：15 个 Mobile 文件实际 `dart format` 解析通过，
+Flutter widget/频道测试及 Mobile 实机验证未运行，不能用纯 Dart 词条检查替代。
+本子批未执行 full、打包、部署、截图或提交；也不声称尚未逐页核验的原生界面已全译。
+
+### 主线收口：设计检查与 YAML 未编辑草稿
+
+中文默认设计已独立提交并 push 为 `769ebe9b7587ca385a7dd83c7eb91db8e9a64d4a`。
+原 `tools/check-docs.sh` 在同一受限 SDK 最终退出 0：276 引用、87 实体、115 DD、
+29 接缝、87 场景闭合，实施与设计 markdownlint 均为 0 issues。
+此前临时设计导出缺少相邻 apps 链接、未投递 npm 缓存分别失败；仅修正临时
+导出布局和使用已有 `/cache/npm`，未改检查规则或产品要求。
+原日志位于 Data 的 `codex-agent-receipt-regression-20261005.XvkUjX/locale-docs.LGYhdV/`，
+最终为 `check-docs-final.log`，先前失败日志保留。
+
+旧在线截图 17 暴露未填写 Workflow 草稿仅切换 YAML 就报错的问题。
+`AutomationAction` 现记住由原表单生成的 YAML；未修改时切回原表单，不把空草稿
+误判为转换失败。修改过的 YAML 仍走原结构校验，未知字段保留文本并拒绝转换；
+提交准入、执行器、权限与 UNKNOWN 行为不变。影响仅为共用 Web/Desktop 编辑器
+状态，无契约、迁移或后端权威变化。上文 9 项检查与真实破坏/还原覆盖该修复。

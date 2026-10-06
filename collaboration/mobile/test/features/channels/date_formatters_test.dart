@@ -1,10 +1,34 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:buzz/features/channels/date_formatters.dart';
+import 'package:buzz/features/channels/date_formatters.dart' as localized;
+import 'package:intl/date_symbol_data_local.dart';
+
+// Original English assertions remain explicit; the product default is Chinese.
+String formatDayHeading(int value, {DateTime? now}) =>
+    localized.formatDayHeading(value, now: now, locale: 'en');
+String formatThreadSummaryLastReplyTime(int value, {int? nowSeconds}) =>
+    localized.formatThreadSummaryLastReplyTime(
+      value,
+      nowSeconds: nowSeconds,
+      locale: 'en',
+    );
 
 /// Helper: build a unix-second timestamp from a local DateTime.
 int _ts(DateTime local) => local.millisecondsSinceEpoch ~/ 1000;
 
 void main() {
+  setUpAll(() => initializeDateFormatting());
+  test('switching the explicit device locale refreshes date labels', () {
+    final now = DateTime(2026, 4, 23, 14, 30);
+    final value = _ts(now);
+    expect(localized.formatDayHeading(value, now: now), '今天');
+    expect(localized.formatDayHeading(value, now: now, locale: 'en'), 'Today');
+    expect(localized.formatDayHeading(value, now: now, locale: 'zh-CN'), '今天');
+    expect(
+      localized.formatMessageTime(value, locale: 'zh-CN'),
+      isNot(localized.formatMessageTime(value, locale: 'en')),
+    );
+  });
   group('formatDayHeading', () {
     // Fix "now" so tests are deterministic.
     final now = DateTime(2026, 4, 23, 14, 30); // Apr 23 2026, 2:30 PM local

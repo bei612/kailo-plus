@@ -175,6 +175,9 @@ class _MessageBubble extends HookConsumerWidget {
                                           ),
                                           timestamp: formatMessageTime(
                                             message.createdAt,
+                                            locale: Localizations.localeOf(
+                                              context,
+                                            ).toLanguageTag(),
                                           ),
                                           nameColor: context.colors.onSurface,
                                           metadataColor:
@@ -279,7 +282,10 @@ Widget _messageTimestamp(BuildContext context, int createdAt, {Key? key}) {
     constraints: const BoxConstraints(maxWidth: Grid.xxl),
     child: Text(
       key: key,
-      formatMessageTime(createdAt),
+      formatMessageTime(
+        createdAt,
+        locale: Localizations.localeOf(context).toLanguageTag(),
+      ),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: messageTimestampTextStyle.copyWith(

@@ -758,7 +758,10 @@ class _MessageTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authorName = authorProfile?.label ?? shortPubkey(hit.pubkey);
-    final timeAgo = relativeTime(hit.createdAt);
+    final timeAgo = relativeTime(
+      hit.createdAt,
+      locale: Localizations.localeOf(context).toLanguageTag(),
+    );
     final channelName = hit.channelName?.trim().replaceFirst(RegExp(r'^#'), '');
     final hasChannelName = channelName != null && channelName.isNotEmpty;
     final profileMentionNames = {

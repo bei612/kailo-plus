@@ -211,8 +211,8 @@ export function ChannelPane({
     await (html && typeof ClipboardItem !== "undefined"
       ? navigator.clipboard.write([new ClipboardItem({ "text/plain": new Blob([message.body], { type: "text/plain" }), "text/html": new Blob([html], { type: "text/html" }) })])
       : navigator.clipboard.writeText(message.body));
-    toast.success("Message copied to clipboard");
-    } catch { toast.error("Failed to copy to clipboard"); }
+    toast.success(t("buzz.copiedMessage"));
+    } catch { toast.error(t("buzz.copyFailed")); }
   };
 
   // 已读：key 是该 Workspace 的 Channel ID，取自消息自身的 h 标签（.design/03）
@@ -340,8 +340,8 @@ export function ChannelPane({
                 renderActions={(ref) => <MessageActionBarSurface ref={ref} message={message} onCopyMessage={copyMessage}
                   onCopyLink={channelId ? async (target) => {
                     const { rootId } = getThreadReference(target.tags ?? []);
-                    try { await navigator.clipboard.writeText(buildMessageLink({ channelId, messageId: target.id, threadRootId: rootId })); toast.success("Link copied to clipboard"); }
-                    catch { toast.error("Failed to copy to clipboard"); }
+                    try { await navigator.clipboard.writeText(buildMessageLink({ channelId, messageId: target.id, threadRootId: rootId })); toast.success(t("buzz.copiedLink")); }
+                    catch { toast.error(t("buzz.copyFailed")); }
                   } : undefined} />}
                 renderBody={(className) => <div className={className}><MessageContent
                 content={message.body}

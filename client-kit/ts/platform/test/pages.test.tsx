@@ -502,6 +502,20 @@ describe("shared Automation schedule consumer", () => {
     expect(t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions")).toHaveLength(0);
   });
 
+  it("lets an untouched incomplete draft switch editors without an error or an admitted write", async () => {
+    const { section, t, field } = await setup(["TRIGGER_THREAD"]);
+    await click(button(section, "Workflow YAML"));
+    expect(section.querySelector('textarea[aria-label="Workflow YAML"]')).not.toBeNull();
+    expect(section.textContent).not.toContain("Your text has been kept");
+    expect(button(section, "Review request").disabled).toBe(true);
+    await act(async () => section.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    await click(button(section, "Form"));
+    expect(section.querySelector('textarea[aria-label="Workflow YAML"]')).toBeNull();
+    expect(field("Instruction template").querySelector("textarea")!.value).toBe("");
+    expect(section.textContent).not.toContain("Your text has been kept");
+    expect(t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions")).toHaveLength(0);
+  });
+
   it("roundtrips the original YAML editor into the same form and freezes structured UNKNOWN submission", async () => {
     const { section, t, field, fill } = await setup(["TRIGGER_THREAD"]);
     await fill("Instruction template", "Original");

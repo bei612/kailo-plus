@@ -1,4 +1,6 @@
 import { useUserProfileQuery } from "@/features/profile/hooks";
+import { translate } from "@client-kit/platform/i18n";
+import { useDeviceLocale } from "@client-kit/platform/react/context";
 import { ProfileSummaryView } from "@/features/profile/ui/UserProfilePanelSections";
 import { useEscapeKey } from "@/shared/hooks/useEscapeKey";
 import { useIsThreadPanelOverlay } from "@/shared/hooks/use-mobile";
@@ -38,6 +40,7 @@ export function UserProfilePanel({
   widthPx,
   transparentChrome = false,
 }: UserProfilePanelProps) {
+  const locale = useDeviceLocale();
   const isOverlay = useIsThreadPanelOverlay();
   const isSplitLayout = layout === "split";
   useEscapeKey(onClose, isOverlay || isSinglePanelView);
@@ -54,7 +57,7 @@ export function UserProfilePanel({
       onClose={onClose}
       onResetWidth={onResetWidth}
       onResizeStart={onResizeStart}
-      resizeHandleAriaLabel="Resize profile panel"
+      resizeHandleAriaLabel={translate(locale, "platform.profile.resize")}
       resizeHandleTestId="user-profile-resize-handle"
       splitPaneClamp={splitPaneClamp}
       testId="user-profile-panel"
@@ -67,7 +70,7 @@ export function UserProfilePanel({
           resizeBorder={!isSinglePanelView && !isOverlay && !isSplitLayout}
         >
           <AuxiliaryPanelHeaderGroup>
-            <AuxiliaryPanelHeaderTitleBlock title="Profile" />
+            <AuxiliaryPanelHeaderTitleBlock title={translate(locale, "platform.settings.profile")} />
           </AuxiliaryPanelHeaderGroup>
         </AuxiliaryPanelHeader>
       }

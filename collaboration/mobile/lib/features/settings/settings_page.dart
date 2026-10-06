@@ -9,6 +9,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../shared/clipboard_utils.dart';
 import '../../shared/platform/platform_link.dart';
+import '../../shared/platform/platform_locale.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/utils/string_utils.dart';
@@ -92,6 +93,7 @@ class SettingsPage extends HookConsumerWidget {
                 profileHeader,
                 const _OrganizationSection(),
                 const _AppearanceSection(),
+                const _LanguageSection(),
                 const _DeviceSection(),
                 const _SignOutSection(),
               ],
@@ -104,6 +106,54 @@ class SettingsPage extends HookConsumerWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _LanguageSection extends HookConsumerWidget {
+  const _LanguageSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    final selected = ref.watch(platformLocaleProvider);
+    final saving = useState(false);
+    final failed = useState(false);
+    return AppListCard(
+      label: platformText(
+        PlatformMessageKey.platformSettingsLanguage,
+        locale: locale,
+      ),
+      children: [
+        for (final choice in const [Locale('zh', 'CN'), Locale('en')])
+          AppListRow(
+            title: platformText(
+              choice.languageCode == 'en'
+                  ? PlatformMessageKey.platformSettingsLanguageEnglish
+                  : PlatformMessageKey.platformSettingsLanguageChinese,
+              locale: locale,
+            ),
+            trailing: selected == choice ? const Icon(LucideIcons.check) : null,
+            onTap: saving.value
+                ? null
+                : () async {
+                    saving.value = true;
+                    final success = await ref
+                        .read(platformLocaleProvider.notifier)
+                        .select(choice);
+                    if (!context.mounted) return;
+                    failed.value = !success;
+                    saving.value = false;
+                  },
+          ),
+        if (failed.value)
+          AppListRow(
+            title: platformText(
+              PlatformMessageKey.platformSettingsLanguageSaveFailed,
+              locale: locale,
+            ),
+          ),
+      ],
     );
   }
 }

@@ -6,12 +6,6 @@ import 'package:client_kit/shared/platform/platform_text.dart';
 // Re-export shortPubkey so existing callers continue to compile.
 export '../../shared/utils/string_utils.dart' show shortPubkey;
 
-final _weekdayFormat = DateFormat('EEEE', platformIntlLocale());
-final _monthDayFormat = DateFormat.MMMMd(platformIntlLocale());
-final _monthDayYearFormat = DateFormat.yMMMMd(platformIntlLocale());
-final _shortMonthDayFormat = DateFormat.MMMd(platformIntlLocale());
-final _messageTimeFormat = DateFormat.jm(platformIntlLocale());
-
 /// Label for a day divider: "Today", "Yesterday", "Monday",
 /// "Tuesday, March 31", or "March 31, 2025".
 ///
@@ -35,7 +29,13 @@ final _messageTimeFormat = DateFormat.jm(platformIntlLocale());
 /// "March 31st"), which the standard does ask for.
 ///
 /// [now] is exposed for testing; production callers should omit it.
-String formatDayHeading(int unixSeconds, {@visibleForTesting DateTime? now}) {
+String formatDayHeading(
+  int unixSeconds, {
+  String? locale,
+  @visibleForTesting DateTime? now,
+}) {
+  final intlLocale = platformIntlLocale(locale: locale);
+  final weekdayFormat = DateFormat('EEEE', intlLocale);
   final date = DateTime.fromMillisecondsSinceEpoch(
     unixSeconds * 1000,
     isUtc: true,
@@ -43,24 +43,27 @@ String formatDayHeading(int unixSeconds, {@visibleForTesting DateTime? now}) {
   now ??= DateTime.now();
   final dayDiff = _calendarDaysBetween(now, date);
 
-  if (dayDiff == 0) return platformText(PlatformMessageKey.chatTimeToday);
-  if (dayDiff == 1) return platformText(PlatformMessageKey.chatTimeYesterday);
+  if (dayDiff == 0)
+    return platformText(PlatformMessageKey.chatTimeToday, locale: locale);
+  if (dayDiff == 1)
+    return platformText(PlatformMessageKey.chatTimeYesterday, locale: locale);
   // Bounded below as well as above: a timestamp in the future (clock skew, or a
   // relay ahead of this device) must not be labelled with a weekday that reads
   // as the recent past.
   if (dayDiff > 1 && dayDiff < platformCalendarWeekdayBandDays) {
-    return _weekdayFormat.format(date);
+    return weekdayFormat.format(date);
   }
 
   return date.year == now.year
       ? platformText(
           PlatformMessageKey.chatTimeWeekdayDate,
+          locale: locale,
           variables: {
-            'weekday': _weekdayFormat.format(date),
-            'date': _monthDayFormat.format(date),
+            'weekday': weekdayFormat.format(date),
+            'date': DateFormat.MMMMd(intlLocale).format(date),
           },
         )
-      : _monthDayYearFormat.format(date);
+      : DateFormat.yMMMMd(intlLocale).format(date);
 }
 
 /// Whole calendar days from [date] to [now], in local time. Rounded rather than
@@ -86,12 +89,13 @@ bool isSameDay(int a, int b) {
 
 /// Returns a compact relative time string like "just now", "5m ago", "3h ago",
 /// "2d ago", or a short date for older timestamps.
-String relativeTime(int unixSeconds) {
+String relativeTime(int unixSeconds, {String? locale}) {
   return platformRelativeTime(
     DateTime.fromMillisecondsSinceEpoch(
       unixSeconds * 1000,
       isUtc: true,
     ).toIso8601String(),
+    locale: locale,
   );
 }
 
@@ -100,12 +104,15 @@ String relativeTime(int unixSeconds) {
 String formatThreadSummaryLastReplyTime(
   int unixSeconds, {
   @visibleForTesting int? nowSeconds,
+  String? locale,
 }) {
   nowSeconds ??= DateTime.now().millisecondsSinceEpoch ~/ 1000;
   var diff = nowSeconds - unixSeconds;
   if (diff < 0) diff = 0;
 
-  if (diff < 60) return platformText(PlatformMessageKey.chatTimeJustNow);
+  if (diff < platformTimeSecondsMinute) {
+    return platformText(PlatformMessageKey.chatTimeJustNow, locale: locale);
+  }
   if (diff < platformCalendarWeekdayBandDays * platformTimeSecondsDay) {
     return platformRelativeTime(
       DateTime.fromMillisecondsSinceEpoch(
@@ -113,6 +120,7 @@ String formatThreadSummaryLastReplyTime(
         isUtc: true,
       ).toIso8601String(),
       now: DateTime.fromMillisecondsSinceEpoch(nowSeconds * 1000),
+      locale: locale,
     );
   }
 
@@ -123,7 +131,10 @@ String formatThreadSummaryLastReplyTime(
   // No ordinal suffix, per the writing standard.
   return platformText(
     PlatformMessageKey.chatTimeOn,
-    variables: {'date': _shortMonthDayFormat.format(date)},
+    locale: locale,
+    variables: {
+      'date': DateFormat.MMMd(platformIntlLocale(locale: locale)).format(date),
+    },
   );
 }
 
@@ -134,10 +145,10 @@ String formatThreadSummaryLastReplyTime(
 /// bubble on a narrow screen with the day divider a short scroll away, so this
 /// is the compact side of that split — not an oversight. Change it only
 /// alongside a layout that has room for a date.
-String formatMessageTime(int unixSeconds) {
+String formatMessageTime(int unixSeconds, {String? locale}) {
   final date = DateTime.fromMillisecondsSinceEpoch(
     unixSeconds * 1000,
     isUtc: true,
   ).toLocal();
-  return _messageTimeFormat.format(date);
+  return DateFormat.jm(platformIntlLocale(locale: locale)).format(date);
 }
