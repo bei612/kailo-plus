@@ -4429,3 +4429,58 @@ Workspace 插入在 governance 的 WorkspaceCreate 分支；Worker create 分支
 ProvisionWorkspaceBuzz。现场首个 `kailo` Workspace 与本次新频道均各有一份原
 workspace.create ActionExecution，且冻结参数具有 `parameters.params` 对象。
 验证脚本中的直接 SQL 夹具不是 bootstrap 生产入口，不为夹具恢复空意图降级。
+
+### 长时间计量等待后的首次回复签名（2026-10-06）
+
+本批修复已有 `DD-47/48/65`、`.design/17` §12 异常合同和 `SF-BUZ-40` 的实际
+接缝缺陷，不变更领域、schema、状态或授权。原新 Invocation
+`3e7b57d0-b11e-4a69-8f81-184b09fc3612` 已 native completed，等待原用量事件
+`314ab896-17fc-5fa6-93f7-ecc0d4246f84` 约一小时半。计量原生修复投递后，该
+事件自动在 15:30:06 COMMITTED；但首次新回复使用旧 `completedAt` 签名，Relay
+15:30:07 返回 HTTP 400：`invalid: event timestamp too far from server time`。
+审计为 REJECTED、FAILED_REPLY_NOT_DELIVERED，Invocation 为 FAILED；保存的
+reply_event_id 只是意图引用，绝不将其称为用户已读到回复。
+
+修改前四项结论及本批范围：
+
+- 权威：Codex 原完成时间继续用于 native terminal 与用量证据；新 Relay 事件的
+  创建时间属于首次发布意图，不等于模型完成时间。固定上游
+  `779af8886caae1317b4de962082429867ab61503`，
+  `crates/buzz-relay/src/handlers/ingest.rs::ingest_event_inner` 的原时间漂移校验仍保留，
+  不放宽其 900 秒窗口。
+- 影响面：`agent_task::publish_reply` 复用新的内部 `sign_native_reply`，仅把
+  已验证的原生最终答案按首次签名时钟交给原 `IdentityClient::sign_channel_result_at`。
+  已检索两个生产调用方：模型回复此前误用 completedAt；POST_MESSAGE 已正确使用
+  首次意图时刻，不改其逻辑。Bridge 参数改称 created_at，不更改 wire 形状。
+  Web/Desktop/Mobile 仍读取同一 Relay 原生消息，无客户端特例或新的正文权威。
+- 副作用：签名后仍先在原事务持久化 event ID 与 DISPATCH 审计，再做 fresh Check
+  并外发；已存在 ID 的后续推进只查原 ID，不重新签名或重发。因此不会因当前时钟
+  随重试变化而生成重复回复。原 native completedAt 与计量时间不被回填或覆盖。
+- 边界：空答案、未知 phase、异步 questions、缺失或未来完成时间仍由原
+  native_reply 拒绝。BUZZ_EVENT 保留原 NIP-10 ancestry，SCHEDULE/MANUAL 保留
+  Invocation 引用；撤权、用量未知、Relay 结果未知仍按原拒绝／对账状态处理。
+  已明确 REJECTED 的历史 Invocation 不复活；原 UNKNOWN holder 不人工释放。
+
+实现后在既有 `kailo-agent-receipt-xvkujx`、UID 1000、4 CPU／8 GiB、Data 缓存
+中只同步三个相关源文件，保留同文件已存在的消息编辑增量。原窄命令：
+
+```sh
+SQLX_OFFLINE=true CARGO_TARGET_DIR=/cache/rust-target cargo test --offline --locked -j16 -p platform-core --bin platform-core agent_task::reply_tests -- --nocapture
+SQLX_OFFLINE=true CARGO_TARGET_DIR=/cache/rust-target cargo test --offline --locked -j16 -p collab-bridge --test bridge
+SQLX_OFFLINE=true CARGO_TARGET_DIR=/cache/rust-target cargo clippy --offline --locked -j16 -p platform-core --bin platform-core -p collab-bridge -- -D warnings
+```
+
+实际 Core 12/12、Bridge 8/8、Clippy 退出 0。新用例直接调用生产
+`sign_native_reply`，对三种来源检查签名时间处于实际调用区间、原完成时间不变、
+正文与原 ancestry 保持且同固定 created_at 可复核相同 Event ID。仅在 SDK 副本
+把签名时钟改回 `native_reply(turn).unwrap().1`，该用例实际退出 101：
+`assertion failed: event.created_at.as_secs() >= before`；恢复正式原字节并 cmp 0
+后 Core 12/12 再次通过。rustfmt 已回写三个文件，精确 diff 检查退出 0。
+
+首次格式化命令误用了不存在的 `tests/bridge.rs` 路径，退出 1；纠正为既有
+`crates/collab-bridge/tests/bridge.rs` 后通过，没有为此更改产品逻辑。
+原件在 Data 的 `metering-delivery-release-20261006.hZ7KbB/`：
+`reply-timestamp-narrow.log`、`reply-timestamp-mutation.log`、
+`reply-timestamp-restored.log`。本次没有 full 或新 Core 镜像构建／投递，旧
+已拒绝回复与三人两 Agent 主线不因此变为成功。计量及 Relay 的独立实际投递
+与旧私聊绑定自动 ACTIVE 记录在同目录 `receipt.md`，不混作本源码的线上验收。

@@ -126,7 +126,7 @@ fn channel_result_has_stable_invocation_reference_without_fake_thread() {
 }
 
 #[test]
-fn task_reply_id_is_fixed_by_native_time_body_and_thread_ancestry() {
+fn task_reply_id_is_fixed_by_prepared_time_body_and_thread_ancestry() {
     let keys = Keys::generate();
     let client = IdentityClient::new(
         Custody::Server,

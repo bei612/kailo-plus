@@ -2119,6 +2119,31 @@ fn reply_ancestry(invocation: &Invocation) -> Option<(&str, &str)> {
     ))
 }
 
+fn sign_native_reply(
+    client: &collab_bridge::bridge::IdentityClient,
+    invocation: &Invocation,
+    channel_id: &str,
+    turn: &Value,
+) -> Result<nostr::Event, crate::governance::Refusal> {
+    let unknown = || {
+        crate::governance::Refusal::Unavailable("Agent reply evidence cannot be verified".into())
+    };
+    let (text, _) = native_reply(turn).ok_or_else(unknown)?;
+    // Native completion remains the usage time, not a newly created Relay
+    // event's timestamp. Metering may settle much later. The caller persists
+    // this signed ID before dispatch; subsequent attempts only reconcile it.
+    client
+        .sign_channel_result_at(
+            channel_id,
+            text,
+            reply_ancestry(invocation),
+            matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
+                .then_some(invocation.id),
+            nostr::Timestamp::now().as_secs(),
+        )
+        .map_err(|_| unknown())
+}
+
 async fn publish_reply(
     state: &ServiceState,
     invocation: &Invocation,
@@ -2130,7 +2155,6 @@ async fn publish_reply(
     use collab_bridge::bridge::{Custody, Delivery, IdentityClient};
     use contracts::ReasonCode;
     let unknown = || Refusal::Unavailable("Agent reply evidence cannot be verified".into());
-    let (text, completed_at) = native_reply(turn).ok_or_else(unknown)?;
     let turn_id = turn.get("id").and_then(Value::as_str).ok_or_else(unknown)?;
     reply_activity_fence(state, invocation, activity).await?;
     crate::service_api::audit_gate(state)
@@ -2177,16 +2201,7 @@ async fn publish_reply(
     }
     let revision =
         crate::agent_invocation::fresh_reply(state, &mut tx, invocation.id, turn_id, None).await?;
-    let event = client
-        .sign_channel_result_at(
-            &binding.channel_id.to_string(),
-            text,
-            reply_ancestry(invocation),
-            matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
-                .then_some(invocation.id),
-            completed_at,
-        )
-        .map_err(|_| unknown())?;
+    let event = sign_native_reply(&client, invocation, &binding.channel_id.to_string(), turn)?;
     let event_id = event.id.to_hex();
     let admitted = client.admit().map_err(|_| unknown())?;
     let evidence = vec![
@@ -3018,7 +3033,7 @@ mod memory_context_tests {
 mod reply_tests {
     use super::{
         billed_outcome, definite_reply_refusal, native_reply, needs_native_interrupt,
-        result_channel, UnboundTurnHistory,
+        result_channel, sign_native_reply, Invocation, UnboundTurnHistory,
     };
     use serde_json::json;
     use uuid::Uuid;
@@ -3214,6 +3229,68 @@ mod reply_tests {
     }
 
     // 实现后的原生协议断言，无 Tenant/Installation/DB 或执行入口夹具。
+    #[test]
+    fn delayed_usage_does_not_backdate_first_native_reply() {
+        use collab_bridge::bridge::{Custody, IdentityClient};
+        let keys = nostr::Keys::generate();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            "http://unused.invalid",
+            "unused.platform.test",
+        )
+        .unwrap();
+        let mut invocation = Invocation {
+            id: uuid::Uuid::new_v4(),
+            tenant_id: uuid::Uuid::new_v4(),
+            workspace_id: uuid::Uuid::new_v4(),
+            root_event_id: "1".repeat(64),
+            source_event_id: "2".repeat(64),
+            source_kind: "BUZZ_EVENT".into(),
+            installation_resource_id: uuid::Uuid::new_v4(),
+            agent_version_asset_id: uuid::Uuid::new_v4(),
+            projection_generation: 1,
+            action_execution_id: uuid::Uuid::new_v4(),
+            workflow_id: uuid::Uuid::new_v4().to_string(),
+            runtime_thread_id: None,
+            runtime_turn_id: None,
+            native_status: Some("completed".into()),
+            reply_event_id: None,
+            status: "RUNNING".into(),
+            cancel_pending: false,
+            observation_cursor: None,
+            automation_action_kind: None,
+        };
+        let turn = json!({"status":"completed","itemsView":"full","error":null,
+            "startedAt":100,"completedAt":105,"items":[
+                {"type":"agentMessage","id":"answer","phase":"final_answer","text":"native answer"}]});
+        let channel = uuid::Uuid::new_v4().to_string();
+        for source in ["BUZZ_EVENT", "SCHEDULE", "MANUAL"] {
+            invocation.source_kind = source.into();
+            let before = nostr::Timestamp::now().as_secs();
+            let event = sign_native_reply(&client, &invocation, &channel, &turn).unwrap();
+            assert!(event.created_at.as_secs() >= before);
+            assert!(event.created_at <= nostr::Timestamp::now());
+            assert!(event.verify().is_ok());
+            assert_eq!(event.content, "native answer");
+            assert_eq!(native_reply(&turn), Some(("native answer", 105)));
+            let ancestry = (source == "BUZZ_EVENT").then_some((
+                invocation.root_event_id.as_str(),
+                invocation.source_event_id.as_str(),
+            ));
+            let frozen = client
+                .sign_channel_result_at(
+                    &channel,
+                    "native answer",
+                    ancestry,
+                    (source != "BUZZ_EVENT").then_some(invocation.id),
+                    event.created_at.as_secs(),
+                )
+                .unwrap();
+            assert_eq!(event.id, frozen.id);
+        }
+    }
+
     #[test]
     fn completed_reply_requires_full_final_and_native_completion_time() {
         let mut turn = json!({"status":"completed","itemsView":"full","error":null,

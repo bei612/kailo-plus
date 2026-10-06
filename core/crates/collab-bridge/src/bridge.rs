@@ -362,16 +362,16 @@ impl IdentityClient {
         self.sign(message_kind(message_type), content, &tags)
     }
 
-    /// 原 Task 的确定完成时间与 NIP-10 引用决定唯一 Reply ID；不取签名时钟。
+    /// 首次发布意图的固定创建时间与 NIP-10 引用决定唯一 Reply ID。
     /// 正文只留在调用请求内，Core 持久化该 ID 后才可以发送。
     pub fn sign_channel_reply_at(
         &self,
         channel_id: &str,
         content: &str,
         ancestry: (&str, &str),
-        completed_at: u64,
+        created_at: u64,
     ) -> Result<Event, OperatorError> {
-        self.sign_channel_result_at(channel_id, content, Some(ancestry), None, completed_at)
+        self.sign_channel_result_at(channel_id, content, Some(ancestry), None, created_at)
     }
 
     /// 同一原生 kind:9 builder；Schedule 结果没有虚构 NIP-10 ancestry。
@@ -381,7 +381,7 @@ impl IdentityClient {
         content: &str,
         ancestry: Option<(&str, &str)>,
         invocation: Option<uuid::Uuid>,
-        completed_at: u64,
+        created_at: u64,
     ) -> Result<Event, OperatorError> {
         let mut tags = vec![vec!["h".to_owned(), channel_id.to_owned()]];
         if ancestry.is_some() == invocation.is_some() {
@@ -420,7 +420,7 @@ impl IdentityClient {
             .map_err(|_| OperatorError::Sign("Reply tags are invalid".into()))?;
         EventBuilder::new(Kind::Custom(KIND_CHANNEL_MESSAGE), content)
             .tags(tags)
-            .custom_created_at(nostr::Timestamp::from(completed_at))
+            .custom_created_at(nostr::Timestamp::from(created_at))
             .sign_with_keys(&self.keys)
             .map_err(|_| OperatorError::Sign("Reply signing failed".into()))
     }
