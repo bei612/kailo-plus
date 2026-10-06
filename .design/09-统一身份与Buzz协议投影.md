@@ -53,6 +53,14 @@ ServicePrincipal 只承担机器调用和审计归因，不能成为 Resource/As
 
 ## 3. 消息写入与读取
 
+### 原版 Pulse 的 Community 边界
+
+REQ-24 的 Pulse 是当前 Community 的动态，沿用 Tenant→Community 映射，不是 Workspace 频道消息，也不是跨 Tenant 公共广场。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `.references/buzz/crates/buzz-relay/src/handlers/ingest.rs::is_global_only_kind` 将 kind 1 作为全局事件，即使携带 `h` tag 也不赋予 Channel scope；`.references/buzz/crates/buzz-db/src/store/event.rs::EventQuery::for_community` 则将查询限定在服务端解析的 Community。不得伪造 Workspace 归属、借用任意频道权限或省略 Community 隔离来恢复此功能。
+
+Pulse 复用本节协作数据面：当前 Tenant、TenantMembership、TenantBuzzBinding 与本人 BuzzIdentityBinding 必须有效；Web 经原 BFF 的 Tenant 上下文与 `tenant.discover` fresh authorization，由本人 SERVER identity 查询、签名和发布，Desktop/Mobile 仍用本机 CLIENT identity，Relay 依该 Community 的成员 roster 和事件 kind 执行准入。Tenant 撤权、暂停或投影不一致按既有撤权规则关闭读取、订阅和写入。Web 不接收任意 Relay filter；动态正文继续只归 Relay，Core 仅保留原发布意图摘要、事件引用和审计，结果不明沿既有发布对账处理，不另建动态存储或工作流引擎。
+
+恢复原 Pulse 页面、发布、回复及其原生交互，不得用频道列表替代；Projects 的项目、仓库与 Issue/PR 也不得用平台任务列表替代。动态所属 Community 不授予任一 Workspace、项目资源或工具的使用权，动态中的 mention 不自动建立 Agent 安装或执行授权；Agent、工具及管理动作继续经过各自既有准入。上述边界澄清既定原功能的 scope，不是其源码或运行验收完成声明。
+
 ### 原生私聊与多设备映射
 
 REQ-24、DD-77/80 的私聊使用 `03` 的 ConversationBuzzBinding。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `.references/buzz/crates/buzz-relay/src/handlers/command_executor.rs::handle_dm_open` 会把认证公钥加入参与者；`.references/buzz/crates/buzz-db/src/store/dm.rs::{open_dm,create_dm,compute_participant_hash}` 以公钥集合去重并建立 private DM。因此 CONTROL 不能直接冒充发起人调用原路径，否则成为私聊成员；也不能把设备公钥数当作人数。
