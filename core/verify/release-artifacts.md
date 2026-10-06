@@ -1042,3 +1042,21 @@ Automation POST_MESSAGE 的真实 COUNT 与终态也尚未据本批称通过。
 `75e0c20f86acc63b7bd30785bcfd8aebb091e18b72ec7feae7ee7e4fc374c5d2`。
 这是发布输入的窄验证，不是新镜像构建或完整检查通过声明；在途原 full 仍针对 d2f 树，
 这三个发布文件的增量与后续实际 release 必须分别保留证据，不把旧 full 记到新 recipe 上。
+
+### 2026-10-06 实际产物引用收口
+
+原 `89511` full 对 d2f 树实际退出 1：仅安全检查发现 Compose 的 Web/Gateway
+旧 digest 与已登记的真实产物不一致；编译、四侧契约、87 迁移、测试、回放、
+供应链 34 产物证据、上游来源及文档检查通过。实际 `.env` 预检明确 SKIP，
+并保留各端签名/设备与未发行独立组件的 NOTE。完整失败日志 SHA256 为
+`0d0c850dac766764dd3b0c814a596ca8773e642289590ee3039f3cd1500a2c2b`。
+
+原 release 从 b9 干净源码产出 Core `e967bb5257f70c241391ed5c60c5cb291c5d4036cf8900e2ca5009b254290a57`
+及 Worker `b33364d5871fa72f8de38e63ffc6cc4f9331d5e9801d8e1842b874b9e98853c8`；
+原两产物 proof 检查退出 0，registry push 与独立 manifest/body digest 读回一致。
+Compose 同步这两个实际产物，并将 Web 固定到 `6141e274ae8ca893d32318b1384e3d35a792c04eda88fe45d03b740c3814fd06`、
+Gateway 固定到 `442349136506fdb51f1feb5958a63c7d2cfda65cf194fa6e3774d3189c6dd420`。
+没有重编已有产品或改变运行配置；这些引用与 e014 的独立部署修复合并后重新执行
+原最终检查。原失败不抹除，不把镜像/配置通过记作业务上线验收。
+发布原件及独立读回在
+`/volumes/data/kailo/tmp/codex-component-runtime-integration-20261005.lciVUS/final-index-20261006.89t7vX/commit-source/release-input.md`。
