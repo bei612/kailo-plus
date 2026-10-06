@@ -72,5 +72,10 @@ secrets:
     file: ${CELLS_OIDC_CLIENT_SECRET_FILE:?existing controlled OIDC client secret required}
 
 networks:
-  cells-data: {internal: true}
-  cells-ui: {}
+  cells-data:
+    internal: true
+    ipam:
+      config: [{subnet: "${CELLS_DATA_SUBNET:?explicit independent data subnet required}"}]
+  cells-ui:
+    ipam:
+      config: [{subnet: "${CELLS_UI_SUBNET:?explicit independent UI subnet required}"}]

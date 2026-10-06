@@ -8,7 +8,7 @@
 # ── Stage: compile from source ───────────────────────────────────────
 FROM golang:1.26.8-alpine@sha256:8ac98ca534ac3f51e1f420a1dd2c15e74c75cfa0f23f3ad27eb5d7236c349a0c AS compile
 ARG TARGETARCH
-ARG VERSION=dev
+ARG CELLS_VERSION
 ARG GIT_REV=dev
 ARG BUILD_STAMP
 RUN apk add --no-cache git make
@@ -18,17 +18,18 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
     go build -mod=readonly -trimpath \
-      -ldflags "-X github.com/pydio/cells/v5/common.version=${VERSION} \
+      -ldflags "-X github.com/pydio/cells/v5/common.version=${CELLS_VERSION} \
                 -X github.com/pydio/cells/v5/common.BuildStamp=${BUILD_STAMP} \
                 -X github.com/pydio/cells/v5/common.BuildRevision=${GIT_REV}" \
-      -o /out/cells .
+      -o /out/cells . \
+    && /out/cells version
 
 # ── Stage: select binary source ──────────────────────────────────────
 FROM compile AS binary
 
 # ── Final runtime image ──────────────────────────────────────────────
 FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
-ARG VERSION
+ARG CELLS_VERSION
 ARG GIT_REV
 ARG BUILD_STAMP
 ARG TARGETARCH
@@ -39,7 +40,7 @@ LABEL org.opencontainers.image.title="Pydio Cells" \
       org.opencontainers.image.vendor="Pydio" \
       org.opencontainers.image.source="https://github.com/pydio/cells" \
       org.opencontainers.image.licenses="AGPL-3.0-only" \
-      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.version="${CELLS_VERSION}" \
       org.opencontainers.image.revision="${GIT_REV}" \
       org.opencontainers.image.created="${BUILD_STAMP}"
 
@@ -53,7 +54,7 @@ COPY --chmod=0755 ${DOCKER_ENTRYPOINT_SRC_DIR}/docker-entrypoint.sh /opt/pydio/b
 ENV PATH="/opt/pydio/bin:${PATH}"
 
 RUN printf 'Pydio Cells Home Docker Image\n  Alpine %s / arch %s\n  Version %s built on %s (rev %s)\n' \
-      "$(cat /etc/alpine-release)" "${TARGETARCH}" "${VERSION:-dev}" "${BUILD_STAMP:-unknown}" "${GIT_REV:-unknown}" \
+      "$(cat /etc/alpine-release)" "${TARGETARCH}" "${CELLS_VERSION}" "${BUILD_STAMP:-unknown}" "${GIT_REV:-unknown}" \
       > /opt/pydio/package.info
 
 VOLUME ["/var/cells"]

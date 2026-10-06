@@ -13,7 +13,7 @@ artifacts:
     build_context: file-storage
     build_dockerfile: file-storage/tools/docker/images/cells/buildx-dockerfile
     inputs: [file-storage/]
-    build_args: [VERSION, GIT_REV, BUILD_STAMP, DOCKER_ENTRYPOINT_SRC_DIR]
+    build_args: [CELLS_VERSION, GIT_REV, BUILD_STAMP, DOCKER_ENTRYPOINT_SRC_DIR]
     source_digest: none
     artifact_digest: none
     blocked: Native source fork is not yet built or deployed. The original Dockerfile now selects only the pinned Go 1.26.8 source-compile stage with the unchanged native lock and original entrypoint; an upstream download image is not an integrated artifact.

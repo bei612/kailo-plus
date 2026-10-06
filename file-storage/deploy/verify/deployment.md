@@ -100,3 +100,46 @@ OIDC 配置语义、超时、state/nonce/PKCE 与撤权。此刀没有外部请�
 同一生产变异和正确 pipefail 重跑得到上述真实 exit 1。没有修改产品迎合
 这些执行器错误。启动脚本 Bash/Python 只做既有运行输入与容器元数据检查，
 未编译、未运行宿主项目 SDK、未启动任何业务实例；整批 full 仍由联合批次执行。
+
+## 2026-10-06 首次真实原生投递与修正
+
+本批关联 DD-87/93 及 `07` 原生管理页面合同。实际用
+`572aa25d6afb485b092cc5160b2ea672233545c6` 的独立源码 clone 运行原
+`tools/build-upstream.sh file-storage-service`，不是原版下载镜像。
+构建前回读现有 builder 为 8 CPU / 16 GiB memory+swap，缓存实际位于
+`/volumes/data/kailo/buildkit-core-state`；Data 起始剩余约 22 GiB，未清缓存。
+固定 Go/Alpine 基础层与一部分 Go 模块首次补下载，随后源码编译并推送退出 0。
+首次镜像摘要为 `sha256:458ef5cf1d24f8712e1f661063f6dcc5d93e3f925d67514f9538cd8cdb6d6058`；
+下述启动失败意味着它不是可运行交付，不据此填写正式可用产物。
+
+首次原 launcher 的网络创建报 `all predefined address pools have been fully subnetted`。
+只读核对现有 Docker 网络与宿主路由后，为本独立组件配置两个不重叠的 IPv4
+子网；Compose 从 `CELLS_DATA_SUBNET` / `CELLS_UI_SUBNET` 读取，数据网络仍
+internal，不删除或共享其他项目网络。既有 `start.sh --check` 同时拒绝两个
+子网重叠。实现后将私有配置的 UI 子网改成数据子网，原检查退出 2；按原字节
+还原后检查退出 0。实际独立 PostgreSQL 启动 healthy，未写 Core 数据库。
+
+随后 Cells 原进程在 `common/config/sample.go::SampleConfig` 初始化 panic：
+通用构建入口把 `VERSION` 覆盖为 commit 前缀，而原
+`common/naming.go::Version` 调 `hashiversion.NewVersion` 要求语义版本。
+固定上游 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的 `Makefile::CELLS_VERSION`
+已提供原值来源 `DEV_VERSION`。因此 Dockerfile 和来源登记直接复用
+`CELLS_VERSION`，不改上游版本解析、不包默认回退、不修改通用构建工具；
+原编译 RUN 后实际执行 `/out/cells version`，避免再次把不可启动二进制当产物。
+仅停止失败的 Cells 容器，保留已创建的独立数据库。
+
+本批已有受控配置创建并回读组件专属 OIDC client，只允许自己的 callback、
+授权码与 PKCE S256；未开启 password grant、隐式流或 service account。
+已有租户的 ACTIVE human 身份只读查询后逐个向 IdP 回查，实际为 3 人。
+原生用户创建与 UUID 回查前，不生成 connector 用户映射，更不将三人映射到
+原生管理员。独立文件只保存本组件凭据，mode 0600，不复制平台管理凭据。
+
+影响仅为本组件构建参数、运行期网络配置和既有原生启动流程；无 Core schema、
+权限、工作流、额度或审计权威变更。旧实例若已有数据库与身份，入口仍保留原
+文件和数据库，不重装或重建。SSO、当前 scope、原生管理页及工具资源仍需真实
+回执，数据库 healthy 或容器创建不代表这些能力完成。
+
+原件位于 `/volumes/data/kailo/tmp/cells-native-release-20261006.WqLHxk/`：
+`build.log`、`deploy.log`（默认地址池失败）、`deploy-subnet.log`（原生启动失败）、
+`subnet-mutation.log`（退出 2）与 `subnet-restored.log`（退出 0）。
+本节记录的是首次实际失败及对应修正，修正后的镜像和登录不借用首次构建结果验收。
