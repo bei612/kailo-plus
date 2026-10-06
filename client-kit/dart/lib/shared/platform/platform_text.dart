@@ -488,6 +488,7 @@ enum PlatformMessageKey {
   platformTabMembers,
   platformTabPulse,
   pulseSections,
+  pulseMentionAmbiguous,
   pulseSearch,
   pulseEveryone,
   pulseFollowing,
@@ -2301,6 +2302,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.platformTabMembers: ('Members', '成员'),
   PlatformMessageKey.platformTabPulse: ('Pulse', '动态'),
   PlatformMessageKey.pulseSections: ('Pulse sections', '动态分类'),
+  PlatformMessageKey.pulseMentionAmbiguous: (
+    'The mention @{name} is ambiguous. Choose a recipient from the mention picker.',
+    '提及的 @{name} 有同名成员，请从提及列表选择具体身份。',
+  ),
   PlatformMessageKey.pulseSearch: ('Search Pulse', '搜索动态'),
   PlatformMessageKey.pulseEveryone: ('Everyone', '所有人'),
   PlatformMessageKey.pulseFollowing: ('Following', '关注'),

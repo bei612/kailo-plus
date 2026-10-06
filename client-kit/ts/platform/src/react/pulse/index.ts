@@ -3,7 +3,7 @@ export { PulseHostProvider } from "./host";
 export type { PulseHost, PulseEvent, PulseComposerProps } from "./host";
 export { PeopleMentionAutocomplete } from "./PeopleMentionAutocomplete";
 export type { MentionSuggestion } from "./PeopleMentionAutocomplete";
-export { extractMentionPubkeys, selectedMentionLabel, mentionMatchCandidates } from "./extractMentionPubkeys";
+export { extractMentionPubkeys, selectedMentionLabel, mentionMatchCandidates, AmbiguousMentionError } from "./extractMentionPubkeys";
 export { detectPrefixQuery } from "./detectPrefixQuery";
 export { mentionOccurrences } from "./mentionOccurrences";
 export type { MentionPubkeyCandidate } from "./extractMentionPubkeys";

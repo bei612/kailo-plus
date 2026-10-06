@@ -629,6 +629,7 @@ export const platformMessages = {
   "platform.tab.members": { en: "Members", "zh-CN": "成员" },
   "platform.tab.pulse": { en: "Pulse", "zh-CN": "动态" },
   "pulse.sections": { en: "Pulse sections", "zh-CN": "动态分类" },
+  "pulse.mentionAmbiguous": { en: "The mention @{name} is ambiguous. Choose a recipient from the mention picker.", "zh-CN": "提及的 @{name} 有同名成员，请从提及列表选择具体身份。" },
   "pulse.search": { en: "Search Pulse", "zh-CN": "搜索动态" },
   "pulse.everyone": { en: "Everyone", "zh-CN": "所有人" },
   "pulse.following": { en: "Following", "zh-CN": "关注" },

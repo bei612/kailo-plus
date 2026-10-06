@@ -1,5 +1,12 @@
 import { mentionOccurrences } from "./mentionOccurrences";
 
+export class AmbiguousMentionError extends Error {
+  constructor(readonly displayName:string) {
+    super("AMBIGUOUS_MENTION");
+    this.name="AmbiguousMentionError";
+  }
+}
+
 export type MentionPubkeyCandidate = {
   displayName: string | null;
   isMember: boolean;
@@ -112,9 +119,7 @@ export function extractMentionPubkeys(options: {
       ),
     );
     if (identities.size > 1) {
-      throw new Error(
-        `The mention @${winners[0]?.displayName} is ambiguous. Choose a recipient from the mention picker.`,
-      );
+      throw new AmbiguousMentionError(winners[0]!.displayName);
     }
     for (const match of winners) {
       if (match.pubkey) winningPubkeys.add(match.pubkey);

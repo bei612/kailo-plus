@@ -1,4 +1,4 @@
-export { extractMentionPubkeys, selectedMentionLabel, mentionMatchCandidates } from "./extractMentionPubkeys";
+export { extractMentionPubkeys, selectedMentionLabel, mentionMatchCandidates, AmbiguousMentionError } from "./extractMentionPubkeys";
 export type { MentionPubkeyCandidate } from "./extractMentionPubkeys";
 export { detectPrefixQuery } from "./detectPrefixQuery";
 export { mentionOccurrences } from "./mentionOccurrences";

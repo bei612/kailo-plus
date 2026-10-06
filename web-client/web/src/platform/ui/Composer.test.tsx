@@ -167,6 +167,17 @@ it("resolves a typed human mention only from the current projected directory",as
   expect(publish.mock.calls[0]?.[4]).toEqual([pubkey]);
 });
 
+it("maps ambiguous human names through the shared localized error without publishing",async()=>{
+  const publish=vi.fn();
+  const host=await render(<Composer draftIdentity="pulse-ambiguous" mentionPeople={[
+    {pubkey:"a".repeat(64),displayName:"Alex"},{pubkey:"b".repeat(64),displayName:"Alex"},
+  ]} onPublish={publish}/>);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!,"Hello @Alex");
+  await click(button(host,"platform.send"));await settle();
+  expect(publish).not.toHaveBeenCalled();
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe("pulse.mentionAmbiguous");
+});
+
 it("uses the original rich text toolbar and preserves a scoped UNKNOWN draft and idempotency key after remount", async () => {
   state.publish.mockRejectedValue(new TransportError("lost response"));
   let host = await render(<Composer workspaceId="workspace-a" draftIdentity="alice" draftKey="workspace-a" />);

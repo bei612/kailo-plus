@@ -2965,3 +2965,9 @@ CPU/内存压力及 Docker 限额。没有构建镜像或执行 full。
 状态/在线投影、关联频道、NIP-OA owner 与 Agent 运行管理仍需各自真实治理接线；
 未创建假入口或伪造 owner，不删除这些原交付需求。Pulse 原 feed 一次有界查询的
 行为未改成新搜索/分页产品；本批新增分页仅复用已有人员目录的 nextCursor。
+
+### Pulse 同名提及错误文案（2026-10-06，独立于作者资料后续批）
+
+比较基准 `07b48d405d18463de676be0547798f450e47f89e`。原同名识别仍拒绝歧义，异常只携带稳定类型及显示名；Web 与 Desktop 消费同一 `pulse.mentionAmbiguous` 中英键，未恢复英文异常直出、未改变身份选择或发布幂等。
+
+原 4 CPU / 8 GiB SDK 中运行 `tools/gen-platform-i18n.py`，生成既有 Dart 文案；shared、Desktop、Web 的 `tsc --noEmit` 均退出 0，Pulse 5 项通过。Web 现有 Composer 用例新增同名错误映射后 21 项通过。仅在私有验证副本将 catch 改回直接显示 error.message，实际用例失败（退出 1）：`expected 'AMBIGUOUS_MENTION' to be 'pulse.mentionAmbiguous'`；恢复原字节 cmp 0 后再验 21 项通过。验证运行期间 SDK 启动延迟曾无输出，未扩大限额或重启服务；最终原进程退出 0。没有运行 full、构建或部署，不借此证明三人两 Agent 或线上 Pulse 已完成。

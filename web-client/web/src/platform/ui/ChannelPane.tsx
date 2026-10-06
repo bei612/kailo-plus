@@ -1,4 +1,4 @@
-import { PeopleMentionAutocomplete, detectPrefixQuery, selectedMentionLabel, extractMentionPubkeys, type MentionSuggestion } from "@client-kit/platform/react/pulse";
+import { PeopleMentionAutocomplete, detectPrefixQuery, selectedMentionLabel, extractMentionPubkeys, AmbiguousMentionError, type MentionSuggestion } from "@client-kit/platform/react/pulse";
 // 频道（SS-WEB-RELAY、SS-WEB-01）：消息、附件、已读位置。
 //
 // 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
@@ -741,7 +741,7 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
       humanMentionPubkeys=extractMentionPubkeys({text:content,selectedMentions:humanBindings.current,
         memberCandidates:mentionPeople?.map(person=>({...person,isMember:true}))??[]});
       if(humanMentionPubkeys.some(pubkey=>!mentionPeople?.some(person=>person.pubkey===pubkey)))throw new Error(t("platform.loadFailed"));
-    } catch(error) {setProblem(error instanceof Error?error.message:t("platform.loadFailed"));return;}
+    } catch(error) {setProblem(error instanceof AmbiguousMentionError?t("pulse.mentionAmbiguous",{name:error.displayName}):t("platform.loadFailed"));return;}
     const signature = JSON.stringify([
       content,
       attachments.map((a) => {

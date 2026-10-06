@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useUiT } from "@client-kit/platform/react/context";
 import { useChannelMembersQuery } from "@/features/channels/hooks";
 import type { MentionSuggestion } from "@/features/messages/ui/MentionAutocomplete";
 import type { AutocompleteEdit } from "./useRichTextEditor";
@@ -14,6 +15,7 @@ import {
 import { useVerifyMentionIdentities } from "./useVerifyMentionIdentities";
 import {
   extractMentionPubkeys,
+  AmbiguousMentionError,
   selectedMentionLabel,
 } from "./extractMentionPubkeys";
 import { useDraftMentionRouting } from "./useDraftMentionRouting";
@@ -31,6 +33,7 @@ export function useMentions(
   profiles?: UserProfileLookup,
   people?: readonly MentionSuggestion[],
 ) {
+  const t=useUiT();
   const [mentionQuery, setMentionQuery] = React.useState<string | null>(null);
   const [mentionStartIndex, setMentionStartIndex] = React.useState(0);
   const [selectedMentionNames, setSelectedMentionNames] = React.useState<
@@ -258,16 +261,20 @@ export function useMentions(
     [setSelected],
   );
   const extractMentionPubkeysForCurrentMentions = React.useCallback(
-    (text: string, competingDisplayNames: readonly string[] = []): string[] =>
+    (text: string, competingDisplayNames: readonly string[] = []): string[] => {
       // Selections are intent, not cached authorization. Never discard a
       // selected key because a refresh removed it from the picker.
-      extractMentionPubkeys({
+      try { return extractMentionPubkeys({
         text,
         competingDisplayNames,
         selectedMentions: mentionMapRef.current,
         memberCandidates: mentionCandidates,
-      }),
-    [mentionCandidates],
+      }); } catch(error) {
+        if(error instanceof AmbiguousMentionError)throw new Error(t("pulse.mentionAmbiguous",{name:error.displayName}));
+        throw error;
+      }
+    },
+    [mentionCandidates,t],
   );
   const cancelMentionAutocomplete = React.useCallback(() => {
     autocompleteGenerationRef.current += 1;
