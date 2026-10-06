@@ -3,6 +3,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:client_kit/shared/platform/platform_text.dart';
+import 'package:client_kit/shared/platform/reason_text.dart';
 import '../../shared/platform/platform_views.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
@@ -56,5 +57,36 @@ class PlatformAuditPage extends ConsumerWidget {
 String _auditSubtitle(OwnAuditEntry entry, String locale) {
   final type = platformAuditEventTypeText(entry.eventType, locale: locale);
   final at = platformAbsoluteTime(entry.occurredAt, locale: locale);
-  return '$type · ${entry.decision} · ${entry.resultCode}\n$at';
+  final decisionKey = switch (entry.decision) {
+    'ALLOW' => PlatformMessageKey.platformAuditAllow,
+    'DENY' => PlatformMessageKey.platformAuditDeny,
+    'NONE' => PlatformMessageKey.platformAuditNoDecision,
+    _ => PlatformMessageKey.platformAuditUnknownDecision,
+  };
+  final decision = platformText(
+    decisionKey,
+    locale: locale,
+    variables: {'code': entry.decision},
+  );
+  final resultKey = switch (entry.resultCode) {
+    'NONE' => PlatformMessageKey.platformAuditNoResult,
+    'ACCEPTED' => PlatformMessageKey.platformAuditAccepted,
+    'DISPATCHED' => PlatformMessageKey.platformAuditDispatched,
+    'DELIVERED' => PlatformMessageKey.platformAuditDelivered,
+    'NOT_DELIVERED' => PlatformMessageKey.platformAuditNotDelivered,
+    'REJECTED' => PlatformMessageKey.platformAuditRejected,
+    'UNKNOWN' => PlatformMessageKey.platformAuditUnknownResult,
+    _ => null,
+  };
+  final reason = reasonCodeValues.map[entry.resultCode];
+  final result = resultKey != null
+      ? platformText(resultKey, locale: locale)
+      : reason != null
+      ? platformReasonText(reason, locale: locale)
+      : platformText(
+          PlatformMessageKey.platformAuditResultCode,
+          locale: locale,
+          variables: {'code': entry.resultCode},
+        );
+  return '$type · $decision · $result\n${entry.decision} · ${entry.resultCode}\n$at';
 }

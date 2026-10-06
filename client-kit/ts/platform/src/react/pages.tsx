@@ -10,7 +10,9 @@ import {
   BuzzIdentityState,
   type ClientKeyView,
   EvidenceSensitivity,
+  ReasonCode,
   type EvidenceView,
+  type OwnAuditEntry,
   WorkspaceMembershipState,
   type WorkspaceView,
 } from "@client-kit/contracts";
@@ -23,6 +25,8 @@ import {
   evidenceAuthorityMessages,
   evidenceKindMessages,
   evidenceUnavailableReasonMessages,
+  reasonMessages,
+  type PlatformMessageKey,
   workspaceMembershipStateMessages,
 } from "../i18n";
 import { BffError, type WriteFailure, writeFailure } from "../transport";
@@ -180,10 +184,7 @@ export function AuditPage() {
                     <Cell title={a.occurredAt}>{relativeTime(locale, a.occurredAt)}</Cell>
                     <Cell>{enumLabel(locale, auditEventTypeMessages, a.eventType)}</Cell>
                     <Cell>{a.actionKey}</Cell>
-                    <Cell>
-                      <Badge tone={a.decision === "ALLOW" ? "positive" : "negative"}>{a.decision}</Badge>{" "}
-                      {a.resultCode}
-                    </Cell>
+                    <Cell><AuditResult decision={a.decision} resultCode={a.resultCode} /></Cell>
                   </tr>
                 ))}
               </Table>
@@ -194,6 +195,34 @@ export function AuditPage() {
       <ScopedAudit />
     </div>
   );
+}
+
+// Audit strings are open-ended wire values, not a second outcome state machine.
+// Only recognized decisions carry positive/negative tone; NONE and future values stay neutral.
+function AuditResult({ decision, resultCode }: Pick<OwnAuditEntry, "decision" | "resultCode">) {
+  const t = useT();
+  const locale = useLocale();
+  const decisionKey = decision === "ALLOW" ? "platform.audit.allow"
+    : decision === "DENY" ? "platform.audit.deny"
+      : decision === "NONE" ? "platform.audit.noDecision" : "platform.audit.unknownDecision";
+  const resultKeys: Readonly<Record<string, PlatformMessageKey>> = {
+    NONE: "platform.audit.noResult", ACCEPTED: "platform.audit.accepted",
+    DISPATCHED: "platform.audit.dispatched", DELIVERED: "platform.audit.delivered",
+    NOT_DELIVERED: "platform.audit.notDelivered", REJECTED: "platform.audit.rejected",
+    UNKNOWN: "platform.audit.unknownResult",
+  };
+  const resultKey = Object.hasOwn(resultKeys, resultCode) ? resultKeys[resultCode] : undefined;
+  const result = resultKey ? t(resultKey)
+    : Object.hasOwn(reasonMessages, resultCode) ? enumLabel(locale, reasonMessages, resultCode as ReasonCode)
+      : t("platform.audit.resultCode", { code: resultCode });
+  return <>
+    <span title={decision} data-testid="audit-decision">
+      <Badge tone={decision === "ALLOW" ? "positive" : decision === "DENY" ? "negative" : "neutral"}>
+        {t(decisionKey, { code: decision })}
+      </Badge>
+    </span>{" "}
+    <span title={resultCode}>{result}</span>
+  </>;
 }
 
 const isForbidden = (error: unknown) => error instanceof BffError && error.status === 403;
@@ -325,10 +354,7 @@ function ScopedAudit() {
                 <Cell title={e.occurredAt}>{relativeTime(locale, e.occurredAt)}</Cell>
                 <Cell>{enumLabel(locale, auditEventTypeMessages, e.eventType)}</Cell>
                 <Cell>{e.actionKey}</Cell>
-                <Cell>
-                  <Badge tone={e.decision === "ALLOW" ? "positive" : "negative"}>{e.decision}</Badge>{" "}
-                  {e.resultCode}
-                </Cell>
+                <Cell><AuditResult decision={e.decision} resultCode={e.resultCode} /></Cell>
                 <Cell>
                   {e.workspaceId === undefined
                     ? t("platform.audit.scope.tenantLevel")

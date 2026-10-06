@@ -1055,7 +1055,13 @@ void main() {
     );
 
     expect(find.text('identity.client_key.register'), findsOneWidget);
-    expect(find.textContaining('Intent · ALLOW · ACCEPTED'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Intent · Admission allowed · Request accepted; completion not confirmed',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('ALLOW · ACCEPTED'), findsOneWidget);
   });
 
   testWidgets('members are listed per person with their key count', (
@@ -1111,7 +1117,35 @@ void main() {
     expect(find.textContaining('有效 · 登记于'), findsOneWidget);
   });
 
-  testWidgets('Chinese audit page translates its event type', (tester) async {
+  testWidgets(
+    'Chinese audit translates admission without claiming completion',
+    (tester) async {
+      await _pump(
+        tester,
+        const PlatformAuditPage(),
+        _bff({
+          'GET /api/v1/audit': (_) => jsonResponse([
+            {
+              'occurredAt': '2026-09-24T01:02:03Z',
+              'eventType': 'INTENT',
+              'actionKey': 'identity.client_key.register',
+              'decision': 'ALLOW',
+              'resultCode': 'ACCEPTED',
+            },
+          ]),
+        }),
+        locale: const Locale('zh', 'CN'),
+      );
+
+      expect(find.text('我的活动记录'), findsOneWidget);
+      expect(find.textContaining('意图 · 准入允许 · 请求已接受，尚未确认完成'), findsOneWidget);
+      expect(find.textContaining('ALLOW · ACCEPTED'), findsOneWidget);
+    },
+  );
+
+  testWidgets('audit preserves unknown results and unrecognized wire codes', (
+    tester,
+  ) async {
     await _pump(
       tester,
       const PlatformAuditPage(),
@@ -1121,16 +1155,27 @@ void main() {
             'occurredAt': '2026-09-24T01:02:03Z',
             'eventType': 'INTENT',
             'actionKey': 'identity.client_key.register',
-            'decision': 'ALLOW',
-            'resultCode': 'ACCEPTED',
+            'decision': 'NONE',
+            'resultCode': 'UNKNOWN',
+          },
+          {
+            'occurredAt': '2026-09-24T01:02:03Z',
+            'eventType': 'INTENT',
+            'actionKey': 'identity.client_key.register',
+            'decision': 'FUTURE_DECISION',
+            'resultCode': 'constructor',
           },
         ]),
       }),
       locale: const Locale('zh', 'CN'),
     );
 
-    expect(find.text('我的活动记录'), findsOneWidget);
-    expect(find.textContaining('意图 · ALLOW · ACCEPTED'), findsOneWidget);
+    expect(find.textContaining('无准入决定 · 结果不明'), findsOneWidget);
+    expect(
+      find.textContaining('未识别的决定：FUTURE_DECISION · 结果代码：constructor'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('NONE · UNKNOWN'), findsOneWidget);
   });
 
   testWidgets('Chinese member page translates state and counts', (

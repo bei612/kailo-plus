@@ -2204,6 +2204,39 @@ const ownEntry = () => ({
 const forbidden = { status: 403, body: { class: ErrorClass.Denied, reason: ReasonCode.PermissionDenied } };
 
 describe("AuditPage", () => {
+  it("keeps non-decisions and unknown wire values neutral instead of reporting rejection", async () => {
+    const entries = [
+      { ...ownEntry(), decision: "NONE", resultCode: "UNKNOWN" },
+      { ...ownEntry(), decision: "FUTURE_DECISION", resultCode: "constructor" },
+    ];
+    const host = await mount(transport((r) => r.path === "/api/v1/audit"
+      ? { status: 200, body: entries } : forbidden), <AuditPage />, "zh-CN");
+    await settle();
+    expect(host.textContent).toContain("无准入决定");
+    expect(host.textContent).toContain("结果不明");
+    expect(host.textContent).toContain("未识别的决定：FUTURE_DECISION");
+    expect(host.textContent).toContain("结果代码：constructor");
+    for (const decision of host.querySelectorAll("[data-testid=audit-decision] span")) {
+      expect(decision.className).toContain("text-muted-foreground");
+      expect(decision.className).not.toContain("bg-destructive");
+      expect(decision.className).not.toContain("bg-secondary");
+    }
+  });
+
+  it.each(["en", "zh-CN"] as const)("localizes admission and dispatch without claiming completion in %s", async (locale) => {
+    const host = await mount(transport((r) => r.path === "/api/v1/audit"
+      ? { status: 200, body: [{ ...ownEntry(), resultCode: "DISPATCHED" },
+        { ...ownEntry(), decision: "DENY", resultCode: ReasonCode.PermissionDenied }] }
+      : forbidden), <AuditPage />, locale);
+    await settle();
+    expect(host.textContent).toContain(locale === "en" ? "Admission allowed" : "准入允许");
+    expect(host.textContent).toContain(locale === "en" ? "Admission denied" : "准入拒绝");
+    expect(host.textContent).toContain(locale === "en" ? "Dispatched; completion not confirmed" : "已派发，尚未确认完成");
+    expect(host.querySelector('[title="ALLOW"]')).not.toBeNull();
+    expect(host.querySelector('[title="DISPATCHED"]')).not.toBeNull();
+    expect(host.querySelector('[title="PERMISSION_DENIED"]')?.textContent).not.toBe("PERMISSION_DENIED");
+  });
+
   it("列出本人的动作", async () => {
     const t = transport((r) => (r.path === "/api/v1/audit" ? { status: 200, body: [ownEntry()] } : forbidden));
     const host = await mount(t, <AuditPage />);

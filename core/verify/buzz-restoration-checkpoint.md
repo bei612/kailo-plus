@@ -1,5 +1,39 @@
 # Buzz 共享界面与受治理私聊：开发检查点
 
+## 2026-10-06 审计状态同源中英文与未知结果呈现
+
+实际页面截图 50 暴露了原审计页直接显示英文代码的问题；源码还把所有非
+`ALLOW` 的决定都显示成负面，包括 `NONE` 和未来未知值。按 REQ-24、DD-74/75
+和 `.design/03` §14，修复现有审计呈现，不新建审计或执行状态权威。
+
+变更前四步核对：
+
+1. 权威仍是 Core AuditEvent；`audit_event_page.schema.json` 的 decision/resultCode
+   是开放字符串，不能在 UI 发明新的封闭业务枚举。
+2. 影响面为共享 Web/Desktop 本人及 scope 审计表、原 Mobile 审计页和同源
+   TypeScript→Dart 文案。无 API/schema/数据库/Workflow 变更，无迁移或旧读路径。
+3. 只改已有 GET 的显示；不改变身份、scope、权限、投影、quota、审计写入或
+   外部副作用。原始代码保留；ACCEPTED/DISPATCHED 明确不是执行完成。
+4. NONE 和未知决定为中性；UNKNOWN 为结果不明，未识别结果以本地化前缀保留
+   原代码；已有 ReasonCode 使用原目录。空列表、分页、认证/拒绝/UNKNOWN
+   读失败继续沿原消费者，不将失败变成空数据或成功，不新增需收敛状态。
+
+实现后，在 a54c5910144b83fa3bccb6351ac14701e214162c 的隔离源码上验证：
+
+- 原共享包源及测试 TypeScript 检查退出 0；AuditPage 12 通过，216 非本项用例
+  明确未运行。首次局部导出缺两宿主 Tailwind 配置导致 ENOENT，补齐同 commit
+  文件后运行成功，没有修改测试绕过。
+- 将非 ALLOW 一律负面恢复为旧错误逻辑，实际 1 失败、11 通过；断言显示
+  `bg-destructive` 与预期中性不符。还原后再次 12 通过。
+- 原文案生成及 `--check` 退出 0，12 个键中英文同源。Mobile 使用本地既有
+  Flutter 3.41.7 镜像，4 CPU/8 GiB memory=swap、Data pub 缓存、network none，
+  `pub get --offline --enforce-lockfile` 通过；两文件 analyze 为
+  `No issues found!`；原页面审计筛选 3 tests passed。未下载 SDK 或重建镜像。
+
+原件位于 Data `codex-agent-receipt-regression-20261005.XvkUjX/audit-ui.HP8Ot0`；
+本项只证明源码和局部消费者，尚未发布新 Web/Windows/Mobile，也未对修复后的
+页面截图。完整检查仍以前述固定树退出 1 为准，不能用本节取代全量或产品验收。
+
 ## 2026-10-06 后续逐页复核与固定树完整检查
 
 共享回复／TTL 批 `66f2a415bbf39d0d8093d9907ffa9525a20d3e95` 与计量投递修复批
