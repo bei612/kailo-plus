@@ -24,6 +24,9 @@ func TestDefaultMCPEndpointToolsExcludesDestructive(t *testing.T) {
 		if def.Destructive {
 			t.Fatalf("default tool %q must not be destructive", name)
 		}
+		if name == MCPEndpointToolExportDocument {
+			t.Fatal("original-file export must be explicitly enabled")
+		}
 	}
 	if _, ok := LookupMCPEndpointTool(MCPEndpointToolDeleteDocument); !ok {
 		t.Fatal("delete_document must be in the catalog")
@@ -40,6 +43,7 @@ func TestMCPEndpointCapabilitiesForTools(t *testing.T) {
 		{"wiki only", []string{MCPEndpointToolWikiIndex}, []string{"retrieve"}},
 		{"ask", []string{MCPEndpointToolAsk}, []string{"retrieve", "chat", "read_agents"}},
 		{"ingest", []string{MCPEndpointToolAddDocument}, []string{"ingest"}},
+		{"export", []string{MCPEndpointToolExportDocument}, []string{"ingest"}},
 		{"none", nil, []string{}},
 	}
 	for _, tc := range cases {

@@ -24,6 +24,7 @@ const (
 	MCPEndpointToolGrepChunks         = "grep_chunks"
 	MCPEndpointToolListDocuments      = "list_documents"
 	MCPEndpointToolReadDocument       = "read_document"
+	MCPEndpointToolExportDocument     = "export_document"
 	MCPEndpointToolAsk                = "ask"
 	MCPEndpointToolWikiSearch         = "wiki_search"
 	MCPEndpointToolWikiReadPage       = "wiki_read_page"
@@ -58,6 +59,8 @@ var mcpEndpointToolCatalog = []MCPEndpointToolDefinition{
 	{Name: MCPEndpointToolAddDocument, Group: MCPEndpointToolGroupIngest, Destructive: true},
 	{Name: MCPEndpointToolUpdateDocument, Group: MCPEndpointToolGroupIngest, Destructive: true},
 	{Name: MCPEndpointToolDeleteDocument, Group: MCPEndpointToolGroupIngest, Destructive: true},
+	// Original file export uses the same Editor/ingest boundary as REST download.
+	{Name: MCPEndpointToolExportDocument, Group: MCPEndpointToolGroupIngest},
 }
 
 // MCPEndpointToolCatalog returns a copy of the ordered tool catalog.
@@ -78,11 +81,11 @@ func MCPEndpointToolGroups() []MCPEndpointToolGroup {
 }
 
 // DefaultMCPEndpointTools is the allowlist a new endpoint starts with: every
-// read-only tool, nothing that writes.
+// retrieval tool, nothing that writes or exports the original file.
 func DefaultMCPEndpointTools() []string {
 	out := make([]string, 0, len(mcpEndpointToolCatalog))
 	for _, def := range mcpEndpointToolCatalog {
-		if !def.Destructive {
+		if !def.Destructive && def.Name != MCPEndpointToolExportDocument {
 			out = append(out, def.Name)
 		}
 	}

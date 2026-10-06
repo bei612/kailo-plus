@@ -1017,3 +1017,84 @@ resource, session, default tenant or model key was introduced to make these
 checks pass. Native login/deployment are now verified; governed tools/resources,
 model execution, ApplicationBinding activation and complete three-service
 integration are not. No full check was rerun in this deployment-only follow-up.
+
+### Native prerequisites for the five-key knowledge adapter (2026-10-06)
+
+This source-only increment implements two concrete gaps required by `DD-108`
+and the knowledge contracts in `.design/07` §2.4; it is not an approved
+Remote Adapter or an enabled AgentGateway endpoint. The existing native MCP
+server remains the only MCP implementation. Its authenticated endpoint and
+native knowledge repository remain the credential and document authorities.
+
+The readonly upstream was rechecked at
+`2be7bd40631dda1dd485306038f07a62e9ee287e`:
+`internal/application/service/knowledge.go::GetKnowledgeFile`,
+`internal/handler/knowledge.go::DownloadKnowledgeFile`,
+`internal/application/service/knowledge_create.go::CreateKnowledgeFromManual`
+and `internal/mcpserver/tools_ingest.go::Server.handleAddDocument` resolve at
+that commit. The download already supports original file bytes and manual
+Markdown; the MCP catalog did not expose it. Manual creation already owns its
+row, metadata, processing task and status, but repeated MCP requests created
+different documents.
+
+The native `export_document` tool now consumes `GetKnowledgeFile` with the same
+Editor requirement as the original download. It requires explicit endpoint
+enablement; existing default tool lists do not acquire export access. It
+rechecks the endpoint scope, Editor access and precise original `UpdatedAt`
+after reading the original bytes. Concurrent revision changes, revoked access,
+missing originals and the existing native file-size policy fail before a
+successful result. The original native MCP settings have corresponding English
+and Chinese tool descriptions; no replacement UI or second MCP server was added.
+
+The existing `add_document` text path accepts an optional UUID idempotency key.
+The authenticated native tenant and endpoint plus this key determine the original
+document identity. `CreateKnowledgeFromManual` freezes an input digest inside
+the original document metadata, reuses an identical row and rejects a different
+KB or input under that identity. This server-only creation identity cannot be
+injected through the public REST JSON payload. Native edits preserve the frozen
+creation evidence; retrying the original request does not undo later edits.
+Concurrent inserts converge on the original primary key and do not enqueue a
+second task. Native soft deletion prevents recreation under the same key. URL
+ingestion with this new text-only key is refused before dispatch; the existing
+URL path without it is unchanged. Hard-purged documents and original native
+processing recovery are not newly certified by this increment. Pending native
+processing remains pending, not a successful platform operation.
+
+Impact and boundary: no Core document body, new database, migration, quota,
+workflow or registration authority is introduced. Existing callers without a
+creation key retain their original behavior. Desktop/Web continue to consume
+the original native service; Mobile hosting is not added. Tool allowlists and
+native scope checks run before document access. Missing terminal evidence must
+still become the platform's unknown/unavailable result in the forthcoming
+adapter consumer; these MCP responses alone are not ActionExecution terminal
+proof. The complete five-key HTTP adapter, conformance, release approval,
+binding/model projection and AgentGateway execution remain unaccepted.
+
+Implementation preceded the checks. In the existing native SDK
+`kailo-knowledge-native-check-wkkigg` (4 CPU / 8 GiB, original Go 1.26.8 and
+Data caches), the following command completed with exit 0:
+
+```sh
+GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off go test \
+  ./internal/types ./internal/mcpserver ./internal/application/service \
+  -run 'Test(DefaultMCPEndpointTools|MCPEndpointCapabilitiesForTools|ExportDocument|AddDocumentRetryKey|ManualCreation)' -count=1
+```
+
+Final output was `ok` for all three packages. The service case uses the existing
+SQLite repository fixture, including actual creation, duplicate reuse, changed
+input rejection, metadata-preserving edits and soft deletion. Private-SDK
+mutations removed the export revision comparison and weakened the stored input
+digest comparison: `TestExportDocumentUsesOriginalBytesAndEditorScope/changed`
+and `TestManualCreationReusesNativeIdentityAndPreservesOriginalInput` both
+actually failed, exit 1. Both SDK files were restored from formal source and
+compared byte-for-byte (`cmp` exit 0), then the three-package command passed
+again. No formal source was left mutated.
+
+Original logs are in
+`/volumes/data/kailo/tmp/knowledge-seed-handoff.UdwSmF/`:
+`knowledge-native-adapter-seams-verified.log`,
+`knowledge-native-adapter-seams-mutation.log` and
+`knowledge-native-adapter-seams-final.log`. Earlier logs retain the read-only
+SDK formatting failure and the corrected native repository not-found mapping;
+these failures were not erased. No frontend build, image build, full check,
+deployment, live document creation or model call ran for this increment.

@@ -1,0 +1,113 @@
+package mcpserver
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"io"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/stretchr/testify/require"
+)
+
+type exportKnowledgeService struct {
+	stubKnowledgeService
+	reads        int
+	fileReads    int
+	changeOnRead bool
+	body         string
+	createdIDs   []string
+}
+
+func (s *exportKnowledgeService) GetKnowledgeByIDOnly(ctx context.Context, id string) (*types.Knowledge, error) {
+	k, err := s.stubKnowledgeService.GetKnowledgeByIDOnly(ctx, id)
+	s.reads++
+	if err == nil && s.changeOnRead && s.reads > 1 {
+		changed := *k
+		changed.UpdatedAt = changed.UpdatedAt.Add(time.Second)
+		return &changed, nil
+	}
+	return k, err
+}
+
+func (s *exportKnowledgeService) GetKnowledgeFile(context.Context, string) (io.ReadCloser, string, error) {
+	s.fileReads++
+	return io.NopCloser(strings.NewReader(s.body)), "native.md", nil
+}
+
+func (s *exportKnowledgeService) CreateKnowledgeFromManual(_ context.Context, kb string, payload *types.ManualKnowledgePayload, _ string) (*types.Knowledge, error) {
+	s.createdIDs = append(s.createdIDs, payload.CreationID)
+	return &types.Knowledge{ID: payload.CreationID, KnowledgeBaseID: kb, ParseStatus: types.ParseStatusPending}, nil
+}
+
+func nativeToolRequest(t *testing.T, args map[string]any) mcp.CallToolRequest {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{"params": map[string]any{"arguments": args}})
+	require.NoError(t, err)
+	var request mcp.CallToolRequest
+	require.NoError(t, json.Unmarshal(body, &request))
+	return request
+}
+
+func TestExportDocumentUsesOriginalBytesAndEditorScope(t *testing.T) {
+	for _, scenario := range []string{"allowed", "read-only", "foreign", "changed"} {
+		t.Run(scenario, func(t *testing.T) {
+			kb := &types.KnowledgeBase{ID: "kb", TenantID: 1}
+			srv := newScopeTestServer(kb)
+			doc := &types.Knowledge{ID: "doc", TenantID: 1, KnowledgeBaseID: "kb", Type: types.KnowledgeTypeManual, UpdatedAt: time.Now()}
+			service := &exportKnowledgeService{stubKnowledgeService: stubKnowledgeService{docs: map[string]*types.Knowledge{"doc": doc}}, body: "# original bytes\n", changeOnRead: scenario == "changed"}
+			srv.knowledgeService = service
+			ep := &types.MCPEndpoint{ID: "ep", TenantID: 1, Tools: types.StringArray{types.MCPEndpointToolExportDocument}}
+			if scenario == "read-only" {
+				ep.Tools = types.StringArray{types.MCPEndpointToolReadDocument}
+			}
+			if scenario == "foreign" {
+				doc.TenantID = 2
+			}
+			result, err := srv.handleExportDocument(mcpCallContext(1, ep), nativeToolRequest(t, map[string]any{"knowledge_id": "doc"}))
+			require.NoError(t, err)
+			if scenario != "allowed" {
+				require.True(t, result.IsError)
+				require.Nil(t, result.StructuredContent)
+				if scenario != "changed" {
+					require.Zero(t, service.fileReads)
+				}
+				return
+			}
+			require.False(t, result.IsError)
+			data := result.StructuredContent.(map[string]any)
+			require.Equal(t, base64.StdEncoding.EncodeToString([]byte(service.body)), data["content_base64"])
+			require.Equal(t, "text/markdown", data["media_type"])
+			require.Equal(t, doc.UpdatedAt.UTC().Format(time.RFC3339Nano), data["native_revision"])
+		})
+	}
+}
+
+func TestAddDocumentRetryKeyUsesTheAuthenticatedNativeEndpoint(t *testing.T) {
+	srv := newScopeTestServer(&types.KnowledgeBase{ID: "kb", TenantID: 1})
+	service := &exportKnowledgeService{}
+	srv.knowledgeService = service
+	ep := &types.MCPEndpoint{ID: "ep", TenantID: 1, Tools: types.StringArray{types.MCPEndpointToolAddDocument}}
+	args := map[string]any{"knowledge_base_id": "kb", "title": "title", "content": "body", "idempotency_key": "366b0c6f-c070-40a1-ad6e-66b1a21aaf3c"}
+	for i := 0; i < 2; i++ {
+		result, err := srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
+		require.NoError(t, err)
+		require.False(t, result.IsError)
+	}
+	require.NotEmpty(t, service.createdIDs[0])
+	require.Equal(t, service.createdIDs[0], service.createdIDs[1])
+	ep.ID = "other-endpoint"
+	result, err := srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.NotEqual(t, service.createdIDs[0], service.createdIDs[2])
+	args["url"] = "https://example.invalid/document"
+	result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.Len(t, service.createdIDs, 3)
+}

@@ -277,6 +277,9 @@ type ManualKnowledgePayload struct {
 	TagIDs        []string                   `json:"tag_ids"`
 	Channel       string                     `json:"channel"`
 	ProcessConfig *KnowledgeProcessOverrides `json:"process_config,omitempty"`
+	// CreationID is set only by the authenticated native integration caller.
+	// It is not accepted from REST JSON and reuses the native document key.
+	CreationID string `json:"-"`
 }
 
 // KnowledgeSearchScope defines a (tenant_id, knowledge_base_id) scope for knowledge search (e.g. own KBs + shared KBs).
@@ -344,6 +347,10 @@ func (k *Knowledge) ManualMetadata() (*ManualKnowledgeMetadata, error) {
 // KnowledgeTransferMetadataKey is reserved for server-owned transfer recovery state.
 const KnowledgeTransferMetadataKey = "_knowledge_transfer"
 
+// ManualCreationDigestMetadataKey preserves the original input identity across
+// later edits. It is native ingestion metadata, never a platform execution log.
+const ManualCreationDigestMetadataKey = "_manual_creation_digest"
+
 // SetManualMetadata sets manual knowledge metadata onto the knowledge instance.
 func (k *Knowledge) SetManualMetadata(meta *ManualKnowledgeMetadata) error {
 	if meta == nil {
@@ -360,12 +367,16 @@ func (k *Knowledge) SetManualMetadata(meta *ManualKnowledgeMetadata) error {
 	if err != nil {
 		return err
 	}
-	if state, ok := old[KnowledgeTransferMetadataKey]; ok {
+	for _, key := range []string{KnowledgeTransferMetadataKey, ManualCreationDigestMetadataKey} {
+		state, ok := old[key]
+		if !ok {
+			continue
+		}
 		fields, err := jsonValue.Map()
 		if err != nil {
 			return err
 		}
-		fields[KnowledgeTransferMetadataKey] = state
+		fields[key] = state
 		jsonValue, err = json.Marshal(fields)
 		if err != nil {
 			return err

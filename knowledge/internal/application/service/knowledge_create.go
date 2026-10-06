@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/url"
@@ -10,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/application/repository"
 	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/infrastructure/chunker"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
@@ -781,8 +784,27 @@ func (s *knowledgeService) CreateKnowledgeFromManual(ctx context.Context,
 
 	fileName := ensureManualFileName(title)
 	meta := types.NewManualKnowledgeMetadata(cleanContent, status, 1)
+	creationDigest := ""
+	if payload.CreationID != "" {
+		if parsed, err := uuid.Parse(payload.CreationID); err != nil || parsed.String() != payload.CreationID {
+			return nil, werrors.NewBadRequestError("invalid native creation identity")
+		}
+		encoded, err := json.Marshal(struct {
+			Payload types.ManualKnowledgePayload
+			Channel string
+		}{*payload, channel})
+		if err != nil {
+			return nil, err
+		}
+		creationDigest = fmt.Sprintf("%x", sha256.Sum256(encoded))
+		prior, err := s.manualCreation(ctx, tenantID, kbID, payload.CreationID, creationDigest)
+		if err != nil || prior != nil {
+			return prior, err
+		}
+	}
 
 	knowledge := &types.Knowledge{
+		ID:               payload.CreationID,
 		TenantID:         tenantID,
 		KnowledgeBaseID:  kbID,
 		Type:             types.KnowledgeTypeManual,
@@ -802,6 +824,17 @@ func (s *knowledgeService) CreateKnowledgeFromManual(ctx context.Context,
 		logger.Errorf(ctx, "Failed to set manual metadata: %v", err)
 		return nil, err
 	}
+	if creationDigest != "" {
+		fields, err := knowledge.Metadata.Map()
+		if err != nil {
+			return nil, err
+		}
+		fields[types.ManualCreationDigestMetadataKey] = creationDigest
+		knowledge.Metadata, err = json.Marshal(fields)
+		if err != nil {
+			return nil, err
+		}
+	}
 	knowledge.EnsureManualDefaults()
 
 	if status == types.ManualKnowledgeStatusPublish {
@@ -815,6 +848,14 @@ func (s *knowledgeService) CreateKnowledgeFromManual(ctx context.Context,
 	}
 
 	if err := s.repo.CreateKnowledge(ctx, knowledge); err != nil {
+		// Concurrent calls share the native primary key. Re-read the winner;
+		// never enqueue processing twice or recreate an already-deleted row.
+		if creationDigest != "" {
+			prior, readErr := s.manualCreation(ctx, tenantID, kbID, payload.CreationID, creationDigest)
+			if readErr != nil || prior != nil {
+				return prior, readErr
+			}
+		}
 		logger.Errorf(ctx, "Failed to create manual knowledge record: %v", err)
 		return nil, err
 	}
@@ -858,6 +899,24 @@ func (s *knowledgeService) CreateKnowledgeFromManual(ctx context.Context,
 	}
 
 	return knowledge, nil
+}
+
+func (s *knowledgeService) manualCreation(ctx context.Context, tenantID uint64, kbID, id, digest string) (*types.Knowledge, error) {
+	prior, err := s.repo.GetKnowledgeByID(ctx, tenantID, id)
+	if errors.Is(err, repository.ErrKnowledgeNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if prior == nil {
+		return nil, werrors.NewInternalServerError("native creation evidence unavailable")
+	}
+	fields, err := prior.Metadata.Map()
+	if err != nil || prior.TenantID != tenantID || prior.KnowledgeBaseID != kbID || !prior.IsManual() || fields[types.ManualCreationDigestMetadataKey] != digest {
+		return nil, werrors.NewBadRequestError("native creation identity conflicts with its original input")
+	}
+	return prior, nil
 }
 
 // createKnowledgeFromPassageInternal consolidates the common logic for creating knowledge from passages.

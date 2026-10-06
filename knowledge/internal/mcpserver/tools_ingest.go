@@ -2,10 +2,12 @@ package mcpserver
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -18,6 +20,7 @@ func addDocumentTool() mcp.Tool {
 		mcp.WithString("title", mcp.Required(), mcp.Description("Document title")),
 		mcp.WithString("content", mcp.Description("Markdown content; required unless url is given")),
 		mcp.WithString("url", mcp.Description("Web page or file URL to import instead of content")),
+		mcp.WithString("idempotency_key", mcp.Description("Optional UUID for an exact text-document creation retry; cannot be used with URL import")),
 		mcp.WithBoolean("publish", mcp.Description("For text documents: publish immediately (default true) or keep "+
 			"as draft")),
 		mcp.WithReadOnlyHintAnnotation(false),
@@ -67,6 +70,14 @@ func (s *Server) handleAddDocument(ctx context.Context, req mcp.CallToolRequest)
 	}
 	content := req.GetString("content", "")
 	url := strings.TrimSpace(req.GetString("url", ""))
+	creationID := ""
+	if key := req.GetString("idempotency_key", ""); key != "" {
+		parsed, parseErr := uuid.Parse(key)
+		if parseErr != nil || parsed.String() != key || url != "" {
+			return mcp.NewToolResultError("idempotency_key must be a canonical UUID and is only supported for text documents"), nil
+		}
+		creationID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("mcp-document:%d:%s:%s", ep.TenantID, ep.ID, key))).String()
+	}
 	if strings.TrimSpace(content) == "" && url == "" {
 		return mcp.NewToolResultError("either content or url is required"), nil
 	}
@@ -90,10 +101,11 @@ func (s *Server) handleAddDocument(ctx context.Context, req mcp.CallToolRequest)
 		)
 	} else {
 		created, err = s.knowledgeService.CreateKnowledgeFromManual(ctx, kb.ID, &types.ManualKnowledgePayload{
-			Title:   title,
-			Content: content,
-			Status:  manualStatus(req.GetBool("publish", true)),
-			Channel: askChannel,
+			CreationID: creationID,
+			Title:      title,
+			Content:    content,
+			Status:     manualStatus(req.GetBool("publish", true)),
+			Channel:    askChannel,
 		}, askChannel)
 	}
 	if err != nil {

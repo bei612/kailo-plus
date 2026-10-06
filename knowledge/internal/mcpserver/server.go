@@ -205,6 +205,7 @@ func (s *Server) toolCatalog() []server.ServerTool {
 		{Tool: addDocumentTool(), Handler: s.handleAddDocument},
 		{Tool: updateDocumentTool(), Handler: s.handleUpdateDocument},
 		{Tool: deleteDocumentTool(), Handler: s.handleDeleteDocument},
+		{Tool: exportDocumentTool(), Handler: s.handleExportDocument},
 	}
 }
 

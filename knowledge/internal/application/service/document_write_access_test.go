@@ -18,6 +18,43 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestManualCreationReusesNativeIdentityAndPreservesOriginalInput(t *testing.T) {
+	f := newDocumentWriteFixture(t)
+	payload := &types.ManualKnowledgePayload{
+		CreationID: "366b0c6f-c070-40a1-ad6e-66b1a21aaf3c",
+		Title:      "native retry", Content: "original body", Status: types.ManualKnowledgeStatusDraft,
+	}
+	first, err := f.svc.CreateKnowledgeFromManual(f.ctx, "kb", payload, types.ChannelAPI)
+	require.NoError(t, err)
+	require.Equal(t, payload.CreationID, first.ID)
+	again, err := f.svc.CreateKnowledgeFromManual(f.ctx, "kb", payload, types.ChannelAPI)
+	require.NoError(t, err)
+	require.Equal(t, first.ID, again.ID)
+	var count int64
+	require.NoError(t, f.db.Model(&types.Knowledge{}).Where("id = ?", first.ID).Count(&count).Error)
+	require.EqualValues(t, 1, count)
+	changed := *payload
+	changed.Content = "different body"
+	_, err = f.svc.CreateKnowledgeFromManual(f.ctx, "kb", &changed, types.ChannelAPI)
+	require.Error(t, err)
+	_, err = f.svc.CreateKnowledgeFromManual(f.ctx, "other", payload, types.ChannelAPI)
+	require.Error(t, err)
+	// A later native edit must not replace the original ingestion identity.
+	require.NoError(t, first.SetManualMetadata(types.NewManualKnowledgeMetadata("edited body", types.ManualKnowledgeStatusDraft, 2)))
+	require.NoError(t, f.db.Model(&types.Knowledge{}).Where("id = ?", first.ID).Update("metadata", first.Metadata).Error)
+	again, err = f.svc.CreateKnowledgeFromManual(f.ctx, "kb", payload, types.ChannelAPI)
+	require.NoError(t, err)
+	meta, err := again.ManualMetadata()
+	require.NoError(t, err)
+	require.Equal(t, "edited body", meta.Content)
+	// Tombstones retain the primary key: retry cannot resurrect a deleted document.
+	require.NoError(t, f.repo.DeleteKnowledge(f.ctx, 7, first.ID))
+	_, err = f.svc.CreateKnowledgeFromManual(f.ctx, "kb", payload, types.ChannelAPI)
+	require.Error(t, err)
+	require.NoError(t, f.db.Model(&types.Knowledge{}).Where("id = ?", first.ID).Count(&count).Error)
+	require.Zero(t, count)
+}
+
 type documentKBLookup struct {
 	interfaces.KnowledgeBaseService
 	values map[string]*types.KnowledgeBase

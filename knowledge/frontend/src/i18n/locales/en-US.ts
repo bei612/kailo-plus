@@ -6791,6 +6791,8 @@ export default {
         list_documents: 'List documents',
         list_documentsDesc: 'Page through the documents of one knowledge base',
         read_document: 'Read document',
+        export_document: 'Export document',
+        export_documentDesc: 'Export original document bytes or Markdown with file-download permissions',
         read_documentDesc: 'Read a document\'s metadata and its chunks in order',
         ask: 'Ask',
         askDesc: 'Run the agent configured on this endpoint and return a cited answer; supports follow-up turns',
