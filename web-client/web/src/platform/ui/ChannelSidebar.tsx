@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import { bff } from "@/platform/bff-client";
 import { platformQueries } from "./queries";
 import { Button } from "@/shared/ui/button";
-import { inboxEvents } from "./InboxPane";
+import { inboxWindowEvents } from "./inbox-events";
 
 type Group = "starred" | "channels";
 
@@ -45,12 +45,12 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
     queryKey: ["platform", "sidebar-messages", principalId, ...joined.map((workspace) => workspace.id)],
     enabled: joined.length > 0,
     queryFn: async ({ signal }) => {
-      const pages = new Map<string, ReturnType<typeof inboxEvents>>();
+      const pages = new Map<string, ReturnType<typeof inboxWindowEvents>>();
       for (const workspace of joined) {
         signal.throwIfAborted();
         const page = await bff.workspaceMessages(workspace.id);
         signal.throwIfAborted();
-        pages.set(workspace.id, inboxEvents(page.events, workspace.id));
+        pages.set(workspace.id, inboxWindowEvents(page.events, workspace.id));
       }
       return pages;
     },

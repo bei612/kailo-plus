@@ -2812,3 +2812,39 @@ filename、把缩略图错误映射为原 blob，两次各真实失败 1 项，�
 本批未运行 full、镜像构建或部署浏览器验收。原任意多步骤、过滤器及完整原生
 步骤轨迹仍未由现有冻结执行合同提供，不能宣称 Workflows 全功能已恢复；
 这些仍是交付缺口，不删除原需求，不渲染不可执行的假配置。
+## 线上侧栏窗口辅助事件消费纠正（2026-10-06）
+
+实查已投递 Web `sha256:a2ce986c8375b368c43f05c7d9fb687d570219314222afa11db077af559106d8`：
+频道消息、用户状态、会话目录及可见性请求均 HTTP 200，但侧栏仍显示加载失败。
+原消息窗口包含 kind 9 与 Relay 签名 39005/39006；`ChannelSidebar` 与
+`InboxPane` 将全部事件交给仅接受消息行的 `inboxEvents`，使正常窗口必然报错。
+这不是私聊权限失败，也不是部署期间缺迁移的旧 503。
+
+四步结论：
+
+1. 权威为 REQ-24、DD-74/75/80；复用固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/messages/lib/channelWindowResponse.ts::parseChannelWindowResponse`
+   与 `desktop/src/shared/constants/kinds.ts::KIND_CHANNEL_WINDOW_BOUNDS`。
+   沿现有已提取的共享解析器分离消息行、摘要、边界，不另建消息或已读权威。
+2. 影响仅 Web Inbox/侧栏窗口消费与既有检查；线程的严格消息行解析保持原义。
+   Core `web_transport::verify_message_page` 仍核验签名、scope、Relay signer
+   及附属事件两跳 target 闭包。无契约、数据库、配置或身份变化。
+3. 摘要、边界、编辑、反应和删除附属事件不计为新消息。未知种类、坏形状、
+   显式跨频道或重复 scope 仍失败；原窗口边界缺失、重复或不匹配请求也失败。
+   原 NIP-09/NIP-25 可无 h 的 target-scoped 事件仍只来自 Core 已验证窗口，
+   客户端不补写 h、不赋予新权限、不接受浏览器直接提交的事件。
+4. 空窗口必须含原边界证据才投影为空；原请求取消、读取失败和权限撤销路径不变。
+   不发送写入、不重试外部副作用，不改变 UNKNOWN 呈现。
+
+此批未修改频道标题：真实 `/workspaces/:id/channel` 返回的旧 39000 名称就是
+内部 slug，侧栏 Workspace 名称与其不同。Header 正确消费 Relay 名称；旧数据
+须沿受治理元数据收敛处理，不能用前端覆盖伪装修好。此批未构建或部署，
+原完整菜单、频道元数据管理等未闭合能力仍是交付缺口。
+
+定向证据：既有受限 SDK 内 Web `tsc --noEmit` 退出 0；Inbox 8 项与真实
+侧栏 queryFn/呈现 5 项共 13/13 通过。将 SDK 窗口分离结果故意改回全部事件，
+真实失败 3 项；原字节恢复 `cmp` 退出 0 后 13/13 再次通过。首轮旧 SDK 的
+侧栏 fixture 尚未同步已提交的 `isMember` 字段，1 项失败；同步正式 fixture
+后恢复，未改产品准入迁就测试。日志位于 Data
+`header-sidebar-fix-20261006.q5aiVW/inbox-window-{final,mutation,post-mutation}.log`。

@@ -4,13 +4,13 @@ import { expect, it, vi } from "vitest";
 import type { ComponentProps, ReactNode } from "react";
 import { ChannelSidebar } from "./ChannelSidebar";
 
-const snapshot = vi.hoisted(() => ({ failed: false }));
+const snapshot = vi.hoisted(() => ({ failed: false, query: undefined as undefined | ((context: { signal: AbortSignal }) => Promise<Map<string, { id: string }[]>>), messages: vi.fn() }));
 vi.mock("@client-kit/platform/react/context", () => ({ useT: () => (key: string) => key }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ isSuccess: !snapshot.failed, isError: snapshot.failed, data: new Map([
+  useQuery: (options: { queryFn: typeof snapshot.query }) => { snapshot.query = options.queryFn; return ({ isSuccess: !snapshot.failed, isError: snapshot.failed, data: new Map([
     ["one", [{ id: "one-event", channelId: "one", createdAt: 30, tags: [] }]],
     ["two", [{ id: "two-event", channelId: "two", createdAt: 10, tags: [] }]],
-  ]) }),
+  ]) }); },
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 vi.mock("@client-kit/platform/react/sidebar/channel-group", () => ({
@@ -29,8 +29,7 @@ vi.mock("@client-kit/platform/react/sidebar/channel-context-menu", () => ({
 }));
 vi.mock("@client-kit/platform/react/sidebar/useChannelSortPreference", () => ({ useChannelSortPreference: () => ({ sortModeFor: () => "alpha", setSortModeFor: vi.fn() }) }));
 vi.mock("@client-kit/platform/react/sidebar/tooltip", () => ({ TooltipProvider: ({ children }: { children: ReactNode }) => children }));
-vi.mock("./InboxPane", () => ({ inboxEvents: vi.fn() }));
-vi.mock("@/platform/bff-client", () => ({ bff: {}, fetchUserState: vi.fn() }));
+vi.mock("@/platform/bff-client", () => ({ bff: { workspaceMessages: snapshot.messages }, fetchUserState: vi.fn() }));
 
 const reads: ComponentProps<typeof ChannelSidebar>["reads"] = {
   state: { version: 3, readContexts: {}, workspacePreferences: { one: { starred: true, muted: false } } },
@@ -69,4 +68,15 @@ it("keeps management-visible rows without unread markers or read commands for no
   expect(html).not.toContain('data-unread="true"');
   expect(html).not.toContain('data-read-enabled="true"');
   expect(html).toContain('data-star-enabled="true"');
+});
+it("loads the real sidebar activity query when Core returns original window metadata", async () => {
+  snapshot.messages.mockImplementation(async (workspace: string) => ({ events: [
+    { id: "a".repeat(64), pubkey: "b".repeat(64), kind: 9, created_at: 30, content: "message", tags: [["h", workspace]] },
+    { id: "c".repeat(64), pubkey: "d".repeat(64), kind: 39006, created_at: 31,
+      content: JSON.stringify({ has_more: false, next_cursor: null }), tags: [["h", workspace], ["d", `${workspace}:head`]] },
+  ] }));
+  markup();
+  const result = await snapshot.query!({ signal: new AbortController().signal });
+  expect(result.get("one")?.map((event) => event.id)).toEqual(["a".repeat(64)]);
+  expect(result.get("two")?.map((event) => event.id)).toEqual(["a".repeat(64)]);
 });

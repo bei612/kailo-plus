@@ -22,7 +22,7 @@ import { InboxThreadPane } from "./InboxThreadPane";
 import { InboxDrafts, useInboxDrafts } from "./InboxDrafts";
 import { inboxReadContexts, useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { hex, inboxEvents, type Event } from "./inbox-events";
+import { hex, inboxWindowEvents, type Event } from "./inbox-events";
 export { inboxEvents } from "./inbox-events";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { Button } from "@/shared/ui/button";
@@ -108,7 +108,7 @@ export function InboxPane({
         )
           throw new Error("Unverifiable own identity");
         const own = new Set(self.pubkeys);
-        const events = inboxEvents(
+        const events = inboxWindowEvents(
           (await client.workspaceMessages(workspace.id)).events,
           workspace.id,
         );

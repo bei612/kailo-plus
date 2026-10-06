@@ -35,7 +35,7 @@ runtime:
 release:
   artifacts:
     - name: core
-      digest: sha256:08c62ac1e4bdc857f3599b9ba40406a8d913ff530d69fed22df9c59b4a8c4802
+      digest: sha256:7430056c28a729da649f880a216453a412c21e3e41e1efbaeacbe66db508c9eb
     - name: worker
-      digest: sha256:6e0ed202debb887725a7ef890f22b5f889cde88aa98e7a2cf442acae01d6b1d7
+      digest: sha256:e47a94b9387da135ae2ce9eed034249d94b1e05f3603d95d22d66ef169637672
   gate: blocked_until_seams_closed

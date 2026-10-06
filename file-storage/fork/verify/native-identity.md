@@ -128,3 +128,95 @@ HTTP 200 或容器健康推断。页面本身为顶层独立原生窗口（`wind
 运行配置仍是受控 owner-only 文件，不入源码；原 helper 的固定源码及匹配来源清单
 保存在该目录的 `apps/`。本段不代表三服务完整接入、Web/Desktop 宿主入口、当前
 平台 Workspace scope、ApplicationBinding、MCP 工具、资源或平台工作流已经验收。
+
+## 2026-10-06 原生中文默认配置与个人语言切换
+
+本次仅修正原运行配置，不改源码、镜像、身份或业务权限。权威为固定 Cells
+`c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`common/utils/i18n/languages/i18n.go::AvailableLanguages`（简体中文为 `zh-cn`）、
+`common/service/frontend/bootconf.go::ComputeBootConf`、
+`idm/role/grpc/first-run.go::InitRoles` 与
+`common/utils/i18n/languages/i18n.go::UserLanguage`。全局默认进入原 boot config；
+原 ROOT_GROUP 默认语言进入用户角色继承，个人显式语言仍优先。没有新增语言权威。
+
+实际旧配置与根组语言 ACL 均为词库未登记的 `zh`，所以先前截图回退英文。
+原 `admin config set` 仅支持 services 三参数；首次把完整 frontend 路径传入被参数
+检查拒绝，退出 1，没有写入。随后通过原生管理员正常登录、原 Main Settings 页面
+选择“简体中文”并保存，精确读回 `frontend/plugin/core.pydio/DEFAULT_LANGUAGE=zh-cn`。
+原 ACL search 确认 ROOT_GROUP / PYDIO_REPO_SCOPE_ALL 仅有一条语言默认记录后，
+使用原 admin acl delete/create 替换该条，输出删除 1 条、创建成功；最终根组仍为
+9 条，原 8 条读写 ACL 保持不变，新语言值为 JSON 字符串 `"zh-cn"`。
+同一受控安装输入仅同步 `frontendDefaultLanguage=zh-cn`，避免新部署重新写入旧值；
+不重新安装、不清库、不修改凭据。旧语言值已记录，必要时可经同一管理入口恢复。
+
+三人正常刷新后的原 UUID、standard / false 均保持，`currentLanguage=zh-cn`；
+原主页、所有文件、书签、搜索及账户菜单实际为中文。`seam-verifier` 再从原“我的帐户”
+选择 English 并保存，原本人语言 ACL 读回 `en-us`，刷新仍为英文；再从原界面选
+简体中文并保存，刷新读回 `zh-cn`、原本人 UUID 未变。首次英文保存发生约一分钟
+等待后 `Could not store ACL / context canceled`，个人 ACL 回查未写入；按原页面重试
+后才成功，失败日志保留。因此不能将这次成功切换表述为无超时或全功能稳定验收。
+
+原件仍在本节前述 `cells-callback-release-20261006.bxGWHg/`：
+`locale-config-readback.log`、`locale-root-default-{delete,create,readback-final}.log`、
+`locale-user-save-failure.log`、`locale-peer-final.log`、
+`three-identities-chinese-final.log`。截图 `04-admin-native-chinese.png`、
+`05-peer-native-chinese.png`、`06-third-native-chinese.png`、`07-peer-native-english.png`、
+`08-peer-native-chinese-restored.png` 已逐张打开。原创建的 Personal Files / Common Files
+工作区名称属于现有业务数据，本次未改名；也未穷举原插件全部词条或所有管理页面。
+本次无 build、full、新增检查或第二套 UI，原 e2bd0ea9 产物保持不变。
+
+## 2026-10-06 独立实例凭据暴露处置与重新登录
+
+此前操作误把原 `admin config list` 的位置参数视为路径过滤，实际输出了完整原生
+配置；随后按文本行查单行安装 JSON 也暴露了其中凭据。第一次轮换后的对象比较
+又因原 config copy 将 `defaults/sites/0/TLSConfig: null` 规范化为缺省而失败，
+Node 断言打印对象，故第一次替代值不能视为安全完成。原失败输出没有删除。
+之后先修正输出边界并经主线复核：对象比较只取布尔结果；异常仅固定 stage；
+子进程标准输出和错误受控捕获，不显示配置、凭据或散列。再从真实规范化配置
+建立新的 owner-only 备份，完成第二次、最终完整轮换，精确读回一致。
+
+处置只涉及本独立实例的 PostgreSQL `cells` 角色密码、原本地运维用户
+`kailo-platform-admin` 密码、frontend session secureKey、personalTokens secureKey
+及原 OAuth global secret。三名 IdP 用户、OIDC connector、Vault 中的对象存储密钥、
+其他服务、业务数据及权限不变。对象存储配置中的 ApiSecret 是已有 Vault 引用而非
+实际密钥，不将引用字符串泄露错误扩大成无依据的对象存储轮换。密钥只在既有受控
+配置投递文件中，未写入源码；备份及维护输入目录为 0700，文件为 0600。
+
+原生运维路径为 masked `cells admin user set-pwd`、PostgreSQL masked `\password`、
+同一固定镜像原 `admin config copy`。Cells 短暂停止写入，独立数据库一直保留；
+配置替换后启动同一 e2bd0ea9 产物，没有镜像重建、清库或身份重建。
+受控数据库、运维密码、安装 JSON 与 OAuth JSON 文件同步更新，原生配置与全部
+mirror 的精确读回退出 0。原数据库角色权限不在本次变更范围。
+
+OAuth 不能仅替换 secret：固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf`
+的 `idm/oauth/provider.go::mapConfigValues`、`idm/oauth/dao-registry.go::KeyCipher`
+及 `idm/oauth/dao/sql/jwk.go::{addKey,GetKey,GetKeySet}` 将原 JWK 密文绑定此密钥。
+一次性维护程序直接复用已锁定 Hydra
+`v2.2.0-rc.3.0.20240122114848-c9f4b5f3fbd7` 的
+`driver/config/provider_fosite.go::DefaultProvider.GetGlobalSecret` 与
+`aead/aesgcm.go::AESGCM`；原 provider 按既定 HashStringSecret 派生，未自实现密码学。
+停止 Cells 期间，原唯一 JWK 行加锁、全行 CAS，仅更新密文。原/新解密字节完全相同，
+JSONWebKey.Valid、kid 与公钥保持，旧密钥解新密文失败；原主键、set、version、
+created_at 等元数据逐项保留，事务读回成功后 COMMIT。没有删除或生成替代 JWK，
+也没有保留暴露的旧 secret 作长期 fallback。
+
+迁移前原数据库 `IS JSON` 精确核对五类历史 session（总数 / 非 JSON）：
+accesses 8/0、refreshes 8/0、codes 5/0、oidcs 5/0、pkces 0/0，因此未另迁移
+不存在的历史加密 session；personal_tokens 原为 0。维护辅助程序第一次编译因
+原 JWK Thumbprint 的指针接收者用法失败，修正后同一受限 SDK 离线编译退出 0。
+
+最终真实验证：经原 `cells-db` 网络地址的新数据库密码登录成功，两代旧密码均
+报 password authentication failed；原 `/a/frontend/session` 对本地运维新密码
+返回 200 与真实 Token，两代旧密码均为 401。旧 frontend cookie 实际返回 401，
+无 Token。三名原用户随后从原登录页面重新走本人 IdP 登录，peer/third 回调观察为
+`/auth/kailo/callback` 303 → `/login/callback` 200；三人刷新后的 UUID 与本节前表
+完全一致，均 standard / false、`zh-cn`，独立顶层原生页面正常显示。三张加载完成
+截图逐张打开，未将较早的加载骨架截图算成功。保真重加密保留签名公钥，因此不
+宣称已签发 JWT 在其原生到期前全部撤销；本次证明的是泄露凭据替换、旧密码/旧
+frontend cookie 拒绝与正常新登录，不是三服务全业务或平台 binding/工具资源验收。
+
+非敏感回执为前述 bxGWHg 目录 `rotation-final-safe-receipt.log` 与
+`rotation-ready-{admin,peer,third}.png`。受控维护目录
+`/volumes/data/kailo/components/cells/credential-rotation-final-20261006.N4myf1/`
+保留恢复所需备份及原 JWK 事务诊断，内容不纳入 Git、不公开；初次暴露的维护记录
+也保留，没有以删日志掩盖事件。本次未运行 full、未构建镜像，文档检查交主线合批。

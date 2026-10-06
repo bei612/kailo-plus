@@ -659,3 +659,74 @@ Web/Desktop 新源码仍须原打包和实际部署/安装；Windows 签名与�
 Mobile 发布签名、三人双 Agent 稳定协作及三个可插拔服务全链尚未完成。Full 中
 实际部署 .env 预检跳过、未安装 gitleaks 的边界保留。此提交是阶段性开发交付，
 不是生产就绪声明。
+
+## 2026-10-06 19:13 UTC 新 Core／Worker／Web 投递与逐页实看
+
+本轮仅交付已经实现并提交的恢复批，不增加产品范围。关联 DD-74/75、
+SS-BUZ-GOVERNANCE、SS-WEB-PRESENTATION；固定源码
+4f5b2403fb71f6a50648768e5ae2c4b62cf25e0c，树
+3c330cfc9a7c478bc2e396fbf573e26018e1afc1。原 release.sh 与
+build-upstream.sh web-client 均退出 0，真实 registry HEAD 均 200 且摘要一致：
+
+| 服务 | 实际运行 image digest |
+| --- | --- |
+| Core | sha256:7430056c28a729da649f880a216453a412c21e3e41e1efbaeacbe66db508c9eb |
+| Worker | sha256:e47a94b9387da135ae2ce9eed034249d94b1e05f3603d95d22d66ef169637672 |
+| Web | sha256:a2ce986c8375b368c43f05c7d9fb687d570219314222afa11db077af559106d8 |
+
+构建及来源原件：
+/volumes/data/kailo/tmp/buzz-edit-workflow-release-20261006.CcjKZN/release-receipt.md。
+部署原件目录：
+/volumes/data/kailo/tmp/buzz-edit-workflow-deploy-20261006.n7ZeJ1/。
+原 start-core.sh --no-build 及指定 Worker、Relay、Web 的 Compose up 均退出 0。
+仅这四个容器重建；Relay 仍用 c5a484b74e75d24de8f65cab625aa76b3319434bf5d34ffca6821dd39ca5ca30，
+没有重建其他数据库或中间件。成员事件运行期清单在原 9、41010、41012 上加入
+已实现的 40003；仍由 Relay 验证本人编辑目标与频道归属，未开放 Pulse 1/7/5。
+
+投递存在一次顺序错误：新 Core 先于迁移启动，工作区读取实际报
+column w.visibility does not exist，并短暂返回 503。随后复用原初始化入口的
+migrate_core_database，仅执行前向迁移，退出 0：
+
+```text
+Applied 20261006200000/migrate workspace visibility (4.97833ms)
+Applied 20261006210000/migrate publish message edit (2.511978ms)
+Applied 20261006220000/migrate automation version name (1.508192ms)
+```
+
+只读复核 93 条、max=20261006220000、all_success=true；Core health 200。
+未重置数据库、重跑业务任务或修改权限／额度。该顺序失败保留；后续此类发布必须
+先按原入口完成向前兼容迁移，再投递消费新列的服务，不能把健康结果掩盖历史 503。
+
+实际 Playwright 截图 66–80 位于
+/volumes/data/kailo/tmp/kailo-visual-release-20261006.vlPvnU/，本轮逐张打开：
+频道、Workflows、Inbox、成员、Agent、任务、审批、审计、设备和四类设置，
+另有英文外观页。经正常 OIDC 表单登录，没有注入会话、mock 或隐藏错误节点。
+设置中文→英文→中文实际切换。首次设置脚本的 URL 全局不存在和通知标题重复
+导致定位报错，修正探针后继续截图，不把脚本失败算作业务通过。
+
+本轮明确不通过的产品结论：
+
+- 收件箱与侧栏实际显示“未能载入，结果不明”。HTTP 200 不等于消费成功；
+  原因是严格消息解码器把同窗口的合法 39005/39006 辅助事件当作 kind 9 消息。
+  消费端修复正在实施，本次已上线镜像不包含它。
+- 旧频道 Relay 元数据仍是 UUID slug，虽侧栏显示工作区名称，标题仍错误；
+  不用客户端覆盖标题伪装原生元数据已收敛。
+- Agent／成员页面仍有表单和表格式简化布局；Pulse、Projects、三个组件入口
+  仍缺失；Workflows 名称／运行详情的恢复不等于原版多步骤编辑全部交付。
+- 个人资料、外观、通知、快捷键可呈现，但未证明原版全部设置项及全部交互
+  等效；系统通知许可被浏览器阻止时实际提示，不绕过浏览器许可。
+- 英文切换与中文默认有真实页面证据；任务等仍有原始 action key，
+  不能声称全量文案覆盖。Windows 没有本批新包，Mobile 没有本批设备验收。
+- Agent 旧未知调用仍占用并行名额，另有 native completed 而最终回复未送达的
+  失败记录；新时间戳修复已随此 Core 投递，但未据此回写旧失败或释放未知占用。
+  三人双 Agent 持续稳定交互仍未验收。
+
+资源沿同一受限 BuildKit，8 CPU / 16 GiB 与 Data 缓存；本批各产品仅构建一次。
+部分基础层实际拉取，不能称全程离线。最新整批 full 仍是上一节退出 1；
+局部构建、迁移和页面访问不能替代完整退出门禁。
+
+安全处置事实：正常浏览器登录调用未带 CLI --raw，工具输出回显了一份测试
+管理员口令；已通过原 IdP 管理入口轮换，受控密码文件和 realm 导入记录同步，
+IdP 会话注销、新口令正常登录均实测。其他两名用户未改密；不在本记录存储秘密。
+Cells 的独立凭据暴露、两轮轮换和真实拒绝／三用户重登录边界，单独记录于
+file-storage/fork/verify/native-identity.md；不把保留原签名公钥等同所有 JWT 即刻撤销。
