@@ -6,6 +6,17 @@
 
 ## 当前使用与恢复范围（2026-10-06）
 
+- 后续实际逐页截图 `43`–`58` 已全部打开复核：频道、收件箱、成员、Agent、
+  工作流、任务、审批、审计、设备、四类设置、私聊、新私聊和创建频道弹窗。
+  当前 Web 仍为下面的 a59 版本，私聊实际断连，创建表单没有公开／私有和 TTL，
+  Agent／工作流管理页仍有简化布局，Pulse、Projects 和三组件入口没有恢复。
+  中文默认及英文切换已实测，但审计状态等文案覆盖不全。不能称 Web/Desktop
+  全功能等效；Windows 包没有更新，Mobile 也没有本批设备验收。
+  共享回复／TTL 批 `66f2a415bbf39d0d8093d9907ffa9525a20d3e95`、计量投递修复批
+  `a422b1b2e2d6b30f1f4f38831a612752ed453634` 已提交推送，尚未部署验收。
+  固定树 `9d1e38eeff1e83d96321b014a63a16eb82ccfe20` 的集中完整检查退出 1，
+  失败和跳过项见[恢复检查记录](core/verify/buzz-restoration-checkpoint.md)。
+
 - 14:07 UTC，Web 源码 `a59e2f50ae1c4f73a363816a1cece646b7116f83` 已通过原
   `tools/build-upstream.sh web-client` 构建并单服务部署，均退出 0；镜像为
   `4580ec22a409abcb31e3c3e4fdfbe40ab64c1ebde54fdcb2961a5409954303a6`，

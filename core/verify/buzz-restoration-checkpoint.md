@@ -1,5 +1,52 @@
 # Buzz 共享界面与受治理私聊：开发检查点
 
+## 2026-10-06 后续逐页复核与固定树完整检查
+
+共享回复／TTL 批 `66f2a415bbf39d0d8093d9907ffa9525a20d3e95` 与计量投递修复批
+`a422b1b2e2d6b30f1f4f38831a612752ed453634` 已提交并普通推送；远端分支
+`work/buzz-restoration-20261006` 独立读回 a422。相对已部署 Web 的 a59 提交，
+累计 58 文件 +963/-123，不等于 58 项功能验收。新线程侧栏、公开／私有频道与
+加入流程仍在开发，不包含在这两项提交或当前发布声明中。
+
+Playwright CLI 使用正常 OIDC 会话，在现有 Web a59 上重新截取并逐张打开
+`43-a59-channel-current.png` 至 `58-a59-create-channel-current.png`，原件目录为
+`/volumes/data/kailo/tmp/kailo-visual-release-20261006.vlPvnU/`。未 mock API，未
+创建新账号、频道或发送消息，未调用模型。实际结果：
+
+- 43–44：频道已有头像、时间、富编辑器和保留草稿，收件箱有列表与详情分栏；
+  旧验收频道标题仍为 UUID。
+- 45–51：成员、Agent、工作流、任务、审批、审计、设备均可达；部分管理页仍是
+  简化表单，审计仍显示英文状态码。新验收频道无 Agent 安装及自动化，不把
+  当前 scope 的空列表误称租户数据丢失或功能通过。
+- 52–55：资料、外观、通知、快捷键为当前可达设置页；通知权限被浏览器阻止，
+  不声称系统通知交付。设置四页不代表原版全部设置已恢复。
+- 56–58：私聊显示连接已断开且 stream 返回 403；新私聊可以选择另外两位真实
+  人类成员，创建频道仍只有名称／描述，没有公开／私有和 TTL。
+- Pulse、Projects、三组件入口尚不存在，不能为它们生成通过记录。本批截图
+  不覆盖尚缺的原版页面，也不是 Win11 或 Mobile 的实机验收。
+
+固定树 `9d1e38eeff1e83d96321b014a63a16eb82ccfe20` 原 `./tools/check.sh --full`
+在 4 CPU／8 GiB SDK、Data 缓存运行并退出 1。原日志为
+`/volumes/data/kailo/tmp/buzz-reply-ttl-batch.6VbSXD/tmp.UlywHVmoCi.check.log`。
+实际失败：
+
+1. Go `TestApplicationBindingProtocolRoundtrip/web-forum-channel.sample.json`：
+   输入时间的 `.000Z` 被 Go 序列化为 `Z`，字节形式不符。
+2. TypeScript 平台检查为 449 通过、1 失败：原版
+   `channel-type-settings.tsx` 的菜单 `minWidth` 布局被禁止自建主题的检查拦截。
+3. Relay、Desktop、Web 当前源码与已有产物来源摘要不同，需要真实产物，不能
+   修改摘要把旧产物记为新版本。
+
+Rust、Dart、静态检查、四侧生成同步、242 个 schema 与三份历史兼容、Temporal
+replay、文档六项、追溯记录及已有产物清单检查通过。数据库迁移／SQLx 和实际
+部署配置预检因没有对应输入跳过；gitleaks 未安装，只有原内置扫描结果。
+前两处已在工作树修正，尚待下一实现批集中复核，未据此改写本次退出码。
+
+本记录只同步 REQ-24、DD-39/75 的实际交付事实，不修改产品范围、状态机、
+契约、权限、额度或三端认证路径。未决私聊及计量副作用继续走原对账，不重发
+模型调用、不把 UNKNOWN 渲染为成功或失败。构建仍在使用网络下载部分依赖，
+没有宣称已完全离线；现有 Relay 与计量构建继续原进程，没有另起重复构建。
+
 ## 12:40：共享标题／设置／预览及状态查询批投递
 
 实现提交 `c674f5782ed918c63e691d94f60df7f3c37bb5ba` 已普通 push，远端独立读回
