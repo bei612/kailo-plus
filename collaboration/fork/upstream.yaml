@@ -1006,8 +1006,8 @@ artifacts:
     build_dockerfile: collaboration/Dockerfile
     inputs: [collaboration/]
     exclude: [collaboration/desktop/, collaboration/mobile/, collaboration/fork/packaging/]
-    source_digest: sha256:b07acb21d13d36dc7ea8f8a9870e7b7911328153a80e280662973850691e0fdb
-    artifact_digest: sha256:3ee0bfd3472f810ecec1503082ad8787ecb878d3b8efb39340d980c4662015bd
+    source_digest: sha256:962c5c935125cdd79f83f9c2af1d2bfa68ab78b09ad88c69f13a265b04c0bec7
+    artifact_digest: sha256:c5a484b74e75d24de8f65cab625aa76b3319434bf5d34ffca6821dd39ca5ca30
   # Windows x64 NSIS 测试安装包：官方 Tauri cargo-xwin 同主体交叉打包，不作为带签名正式发布。
   # artifact_digest 记安装包字节的 SHA-256（06 §2）。mobile/ 与 crates/buzz-relay/ 不是它的输入：
   # desktop/src-tauri 不在根 Cargo workspace 内，其 Cargo.lock 不含 buzz-relay；pnpm workspace

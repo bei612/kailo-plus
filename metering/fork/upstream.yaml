@@ -11,8 +11,8 @@ artifacts:
     build_context: metering
     build_dockerfile: metering/Dockerfile
     inputs: [metering/]
-    source_digest: sha256:ed9e0dd5081c05f5dd51544879df7292668a49e889b32d7d304b786106c939ea
-    artifact_digest: sha256:9881721605755f4f0ef95e340f2e8c43f05208d3d33876e3734f61d746ea6783
+    source_digest: sha256:5abbaba7e5a2f844750a0b098ad0091a9ec29a8ba058948db4b71261e7a5983e
+    artifact_digest: sha256:ed8f821f2a1ee510751a68fcb41d9a09cbeff66c693fdd7ad9fffea1b1ec6907
 source_facts: [SF-OMT-01, SF-OMT-02, SF-OMT-03, SF-OMT-04, SF-OMT-05, SF-OMT-06, SF-OMT-07, SF-OMT-08]
 source_seams: [SS-OMT-AUTH]
 compatibility_evidence: [metering/fork/verify/core-authentication.md]

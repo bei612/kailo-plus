@@ -238,7 +238,7 @@ services:
   # Relay 的 schema 由 buzz-admin migrate 显式建立，与 Temporal 同一形态：
   # 建库与启动分离，避免服务在缺表时反复崩溃重启。
   buzz-schema:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:3ee0bfd3472f810ecec1503082ad8787ecb878d3b8efb39340d980c4662015bd
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:c5a484b74e75d24de8f65cab625aa76b3319434bf5d34ffca6821dd39ca5ca30
     networks: [buzz-data]
     depends_on:
       buzz-db: { condition: service_healthy }
@@ -257,7 +257,7 @@ services:
   # 镜像是带 SS-BUZ-GOVERNANCE 改动的本仓库构建（collaboration/），不是上游
   # 发布镜像：上游的 NIP-29 权限比平台宽且无开关可收紧（SF-BUZ-37）。
   buzz-relay:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:3ee0bfd3472f810ecec1503082ad8787ecb878d3b8efb39340d980c4662015bd
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/collaboration-relay@sha256:c5a484b74e75d24de8f65cab625aa76b3319434bf5d34ffca6821dd39ca5ca30
     networks:
       component:
         aliases: ["${BUZZ_RELAY_HOST:?必须显式提供，禁止硬编码}"]
@@ -379,7 +379,7 @@ services:
       retries: 30
 
   openmeter:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/metering@sha256:9881721605755f4f0ef95e340f2e8c43f05208d3d33876e3734f61d746ea6783
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/metering@sha256:ed8f821f2a1ee510751a68fcb41d9a09cbeff66c693fdd7ad9fffea1b1ec6907
     networks:
       app:
         aliases: ["${OPENMETER_HOST:?必须显式提供，禁止硬编码}"]
@@ -467,7 +467,7 @@ services:
   # 同一镜像的真实原生消费者，把 Kafka 用量持久到 ClickHouse；零 meter 时不造事件。
   # 只接自己的数据网络，无 Core credential、共享网络或宿主发布端口。
   openmeter-sink-worker:
-    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/metering@sha256:9881721605755f4f0ef95e340f2e8c43f05208d3d33876e3734f61d746ea6783
+    image: ${REGISTRY_HOST:?必须显式提供，禁止硬编码}/metering@sha256:ed8f821f2a1ee510751a68fcb41d9a09cbeff66c693fdd7ad9fffea1b1ec6907
     networks: [openmeter-data]
     cpus: ${OPENMETER_SINK_CPUS:?必须显式提供本机运行预算}
     mem_limit: ${OPENMETER_SINK_MEMORY:?必须显式提供本机运行预算}

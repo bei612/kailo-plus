@@ -551,3 +551,47 @@ OOM退出，单服务恢复后仍存在精确事件入口去重claim而未存储
 本批只同步既有DD-74/75与SS-WEB-PRESENTATION的部署事实，无新契约、权限、
 租户默认值或业务状态；未决UNKNOWN保持原处理。全量检查仍以前节退出1为准，
 后续窄验和真实页面检查不替代 `tools/check.sh --full`。
+
+## 2026-10-06 15:28–15:55 UTC 实际投递和双人私聊
+
+计量源码 a422b1b2e2d6b30f1f4f38831a612752ed453634 经原构建入口退出 0，
+API/sink 限定替换为 ed8f821f2a1ee510751a68fcb41d9a09cbeff66c693fdd7ad9fffea1b1ec6907，
+registry HEAD 与运行容器摘要一致、healthy，其余 26 个容器不变。停止旧生产者后，
+独立核对 Kafka 精确事件缺失、消费 lag 0、原生事件 API 无记录、sink 去重键不存在，
+才原子删除入口 DB0 的一个空值永久去重键；没有删除账本或其他键。
+原 Core outbox 的 314ab896-17fc-5fa6-93f7-ecc0d4246f84 自动重试后于 15:30:06
+COMMITTED，原生事件 API 独立回读一条，入口与 sink 的键由原流程重建。
+没有重放模型或人工重新发送 CloudEvent。
+
+原 Agent Invocation 3e7b57d0-b11e-4a69-8f81-184b09fc3612 随后仍然 FAILED：
+首次回复错误使用旧 native completedAt 签名，被 Relay 拒绝时间漂移；已有 Event ID
+只是发布意图而非送达证据。修复 f3b9b868b5b17569391e654b79a89bc989d8cceb
+已提交推送，保留原计量时刻、首次发布持久化与后续只对账边界，尚未部署。
+不回滚失败状态，不解除 UNKNOWN holder，不宣称三人双 Agent 稳定协作完成。
+
+Relay 源码 a59e2f50ae1c4f73a363816a1cece646b7116f83 经原构建入口退出 0，
+产物 c5a484b74e75d24de8f65cab625aa76b3319434bf5d34ffca6821dd39ca5ca30
+已独立核对 registry 摘要并部署；15:38:56 启动、healthy。备份原库后由原
+buzz-schema 执行迁移，47/47 成功，仅新增原治理 DM 投影迁移。成员允许 kind
+随真实二开能力只启用 9、41010、41012，未启用尚未发布的消息编辑。
+Conversation 36667917-f326-4a36-86f2-e0b31a0ea4c8 自动收敛至 ACTIVE v3，
+没有手动重启任务或伪改绑定。原回执与备份在 Data 的
+metering-delivery-release-20261006.hZ7KbB/receipt.md 及该目录内。
+
+真实 Playwright 使用两个独立浏览器经原 OIDC 分别登录 bootstrap 与
+seam-verifier：前者发送 15:52 私聊标记，后者实际读到并于 15:55 回复，前者
+实时收到；后者刷新并重新进入同一私聊，两条消息仍在。没有 mock、共享会话
+或模型调用。截图 59–64 位于
+/volumes/data/kailo/tmp/kailo-visual-release-20261006.vlPvnU/，均已逐张打开：
+59 记录旧登录会话 431；60 私聊同步；61 发出消息；62 对方收到；63 双向回复；
+64 刷新后历史。历史私聊断连的结论只被这一具体路径的新证据更新，不外推全部功能。
+
+实际仍有两个失败：旧会话 SSE 自动重连堆积 OIDC 事务 Cookie 导致 HTTP 431；
+seam-verifier 刷新后默认验收频道 /channel 返回 503 DEPENDENCY_UNAVAILABLE，
+手动进入私聊正常。两项继续修复，不把错误页或结果不明称为通过。
+Web 仍为 a59 镜像，Windows 旧包未更新；新 Thread、公开频道及审计中英增量
+已提交但未部署。完整检查仍为既有退出 1，不以局部通过替代整批收口。
+
+本次只登记 DD-74/75、SS-BUZ-GOVERNANCE、SS-OMT-AUTH 已实际发生的投递，
+没有新 schema、权限或默认租户；唯一删除的精确缓存键已由原流程重建。源码摘要
+来自原构建 helper 的真实回执，四处 Compose pin 与两个既有来源记录同步。
