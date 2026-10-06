@@ -882,3 +882,138 @@ these source/manifest edits are held in the separate final Git index. Any later
 artifact must be recorded against its actual frozen input, never relabeled as
 this source revision without a matching build. Platform Web/Desktop/Gateway
 artifact requirements are unchanged.
+
+## Matching backend artifact — 2026-10-06
+
+The existing credential-delivery and native model consumers above were already
+implemented. This batch changes no application behavior: it builds the backend
+from clean Apps commit `a2f2316bbf008923681af99d67e512b94829581e`, against original
+WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`, using the unchanged
+`tools/build-upstream.sh knowledge-service` and native Dockerfile. Native UI and
+document-reader are not rebuilt or re-attested. Their `none` digests remain.
+
+Impact is limited to this backend artifact and its source receipt. Native DB,
+identity, original complete UI, model rows, Core authority, quotas, permissions,
+protocol/schema and the running independent deployment are unchanged. There is
+no temporary credential, model, binding, shared administrator identity or relaxed
+credential proof. Model delivery remains closed until its original frozen
+generation and native proof consumers can receive actual controlled inputs.
+
+The single original invocation completed with `BUILD_EXIT=0`, including image
+export, registry push and source-record update. Actual outputs:
+
+- Source digest: `sha256:2dbd78795c9ff1135e6e8d33e1d02a2d15ce7eb444dd2baf6bcaf8866b3cdc4e`.
+- Registry artifact: `127.0.0.1:55000/knowledge-service@sha256:5771d363eba6eb9b12c474ee40ecbdb8398137aa55a8be357ce832e496558d6c`.
+- Actual daemon image ID and registry RepoDigest both match that artifact digest.
+- Original AnyDoc step completed in `240.8s`, main Go build in `1540.1s`,
+  BrowserSkill step in `1076.9s`, and final OCI export in `112.7s`; these are
+  individual concurrent stage durations, not a sum or end-to-end duration.
+
+Execution used existing `kailo-core-data` BuildKit, actual 8 CPU / 16 GiB and
+equal memory+swap, with original cache at
+`/volumes/data/kailo/buildkit-core-state`. Available Data space initially measured
+about 16 GiB, briefly approached 3 GiB and was about 5.5 GiB after export.
+High I/O pressure slowed native layer installation. No cache was removed, no
+second build was started, and no Cargo parallelism or original feature was
+reduced. The root's separate failed full-check exit trap removed only its own
+reconstructible source copy and released space; this is not a cache-cleaning
+claim. Actual base layers, apt/pnpm/Cargo dependencies were downloaded, so this
+was not an offline/cache-only build. A transient original AnyDoc rsproxy TLS
+error was followed by that script's successful completion without restarting
+the build. The final Dockerfile warning was `RedundantTargetPlatform`.
+
+Original logs and bounded input facts are retained under
+`/volumes/data/kailo/tmp/knowledge-backend-release-20261006.o3OhTi/`:
+`build.log` (SHA256 `38f0dcd09b05196b22d0b82bd325b89597d843def56ed9922c0b35a3d926eb82`),
+`build-knowledge-service.S0ivEf.log`, and `input-facts.md`.
+
+Read-only inspection identified the actual running Compose directory as
+`codex-knowledge-edge-20261006.hk1xfO/runtime/knowledge/fork/deploy`; its `.env`
+has no `KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE`, `KNOWLEDGE_MODEL_CREDENTIAL_FILE`
+or `KNOWLEDGE_NATIVE_ADMIN_SESSION_FILE` entries. Filename-only inspection of
+the existing controlled `deploy/local/secrets/knowledge-native` directory found
+native application/OpenBao outputs, not those three model delivery objects.
+This is a bounded observation, not a claim that no matching authoritative
+object exists elsewhere. No credential content was printed or new native token
+requested. The native app was still running historical image
+`sha256:db4ec09f76ee61b403cc79cf56c131dbfb6810e473dc7fadb0fb21ff2f08a8c8`.
+
+No deployment or live model initialization was performed. The existing operator
+flow remains `provision.py model-reader` → original OpenBao Agent →
+`provision.py model-delivery`, followed by the original directory/projection
+readback. Build success is not native credential delivery, model inference,
+ApplicationBinding activation, resources/tools access, full UI or MCP acceptance.
+No full check or repeat application test run was performed in this artifact-only
+batch; the original implementation tests retain their earlier evidence boundary.
+
+### Subsequent single-service deployment and native login
+
+After the artifact-only receipt above, the same registered backend was actually
+deployed. This is a later result, not a reinterpretation of the earlier build.
+The original live directory was
+`/volumes/data/kailo/tmp/codex-knowledge-edge-20261006.hk1xfO/runtime/knowledge/fork/deploy`.
+Its `compose.yaml`, `start.sh` and `native_entrypoint.py` matched the fixed
+`a2f2316bbf008923681af99d67e512b94829581e` source byte-for-byte. The existing
+environment file was backed up owner-only in the receipt directory; only
+`KNOWLEDGE_APP_DIGEST` was changed to the registered `5771d363...` digest.
+No secret value, tenant identity, model configuration or permission was replaced.
+
+The existing `start.sh --platform-model /volumes/kailo/apps/deploy/local/.env`
+completed with `DEPLOY_EXIT=0` (session 69205; original `deploy.log` in the
+receipt directory above). It uses the original Compose app-only
+`up -d --no-build --pull never --wait --no-deps app` path. Actual container
+`kailo-knowledge-app-1` reads back the complete registered
+`sha256:5771d363eba6eb9b12c474ee40ecbdb8398137aa55a8be357ce832e496558d6c`
+image, `running=true`, `health=healthy`. Native PostgreSQL, Redis, frontend and
+document-reader containers were not recreated. No second build, Core/Worker
+restart, image pruning or shared-cache deletion was performed. These existing
+frontend/reader containers still do not constitute matching-source artifact
+acceptance for their current manifests.
+
+A fresh Playwright session followed the original Chinese login page's OIDC
+button to the existing Kailo IdP, used the existing ordinary bootstrap user's
+controlled credential and completed the normal callback to
+`/platform/knowledge-bases`. A normal authenticated `/api/v1/auth/me` read and
+a subsequent browser refresh/read returned HTTP 200 and the original native
+user `116a8d6b-c7cd-4abb-b6a4-1bd8589eda24`, tenant `10000`, active owner
+membership and `systemAdmin=false`. This is native service ownership, not a
+manufactured platform administrator or shared fallback identity. Browser tokens
+were not printed or persisted to delivery files. The final screenshot
+`native-sso-refreshed.png` was opened and inspected: it shows the original
+Chinese knowledge-base page, its original navigation and empty native data,
+without an onboarding overlay. Earlier `native-sso-knowledge.png` and
+`native-sso-ready.png` retain the actual onboarding states. This verifies one
+ordinary identity's native login and refresh, not all users or every UI action.
+
+The newly deployed original model credential subresource was exercised in its
+read-only verification mode for existing native model
+`54b825a1-e74a-4e56-b691-59d7c0b6fb57`: a request containing only a random
+verification nonce returned HTTP 200, nonce echo, `apiKeyConfigured=false` and
+no proof. No credential PUT payload or inference request was sent. The original
+MCP management GET returned HTTP 200 with zero existing endpoints; its original
+tool catalog GET returned HTTP 200 with 12 entries. Catalog presence is not
+an authorized MCP endpoint or successful AgentGateway tool execution.
+
+The remaining delivery prerequisite was checked at the actual authority, not
+inferred from missing files: an explicit read-only Core database transaction
+returned zero rows in each of `catalog.component_release`,
+`catalog.application_binding` and `projection.application_runtime`. Allowlisted
+inspection of live Core environment also found both
+`APPLICATION_ADAPTER_DIRECTORY_FILE` and
+`COMPONENT_CONFORMANCE_ENVIRONMENT_FILE` absent or empty. No application
+registration, approval, runtime generation or adapter directory was created by
+this deployment. Consequently there is no existing binding's frozen
+model-projection reader/nonce/serviceSecretRef to export into the three absent
+`KNOWLEDGE_MODEL_DELIVERY_INPUT_FILE`, `KNOWLEDGE_MODEL_CREDENTIAL_FILE` and
+`KNOWLEDGE_NATIVE_ADMIN_SESSION_FILE` inputs. Creating arbitrary files would
+not establish those authority facts. This is not evidence of a missing remote
+model-provider password, nor permission to reuse an unrelated credential.
+
+The next existing path remains native endpoint setup, original component
+registration/conformance/approval, controlled adapter-directory delivery and
+the original binding/model projection, followed by the native OpenBao delivery
+and credential proof described above. No fake release, binding, endpoint,
+resource, session, default tenant or model key was introduced to make these
+checks pass. Native login/deployment are now verified; governed tools/resources,
+model execution, ApplicationBinding activation and complete three-service
+integration are not. No full check was rerun in this deployment-only follow-up.
