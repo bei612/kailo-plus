@@ -135,6 +135,7 @@ pub(crate) async fn installation(
     tenant: Uuid,
     id: Uuid,
     lock: bool,
+    allow_draining: bool,
 ) -> Result<Option<Installation>, sqlx::Error> {
     sqlx::query_as(&format!(
         "select r.id,r.tenant_id,i.workspace_id,r.owner_principal_id,i.agent_principal_id,r.version
@@ -145,13 +146,15 @@ pub(crate) async fn installation(
          join identity.tenant_membership tm on tm.tenant_principal_id=owner.id and tm.tenant_id=r.tenant_id
          where r.id=$1 and r.tenant_id=$2 and r.type_key='agent.installation'
            and r.home_workspace_id=w.id and r.state='ACTIVE'
-           and r.projection_action_execution_id is null and w.state='ACTIVE'
+           and w.state='ACTIVE'
            and p.kind='AGENT' and p.status='ACTIVE'
            and owner.kind='HUMAN' and owner.status='ACTIVE' and tm.state='ACTIVE'
-           and i.state='ACTIVE' and i.active_projection_generation is not null{}",
+           and ((i.state='ACTIVE' and r.projection_action_execution_id is null)
+             or ($3 and i.state='DRAINING' and catalog.agent_generation_admitted(i.resource_id,i.pinned_version_asset_id,i.active_projection_generation)))
+           and i.active_projection_generation is not null{}",
         if lock { " for update of r,i,w,p,owner,tm" } else { "" }
     ))
-    .bind(id).bind(tenant).fetch_optional(conn).await
+    .bind(id).bind(tenant).bind(allow_draining).fetch_optional(conn).await
 }
 
 pub(crate) async fn projection_matches(
@@ -174,7 +177,7 @@ pub(super) async fn target(
     conn: &mut PgConnection,
     tenant: Uuid,
     def: &Definition,
-    _sem: Semantic,
+    sem: Semantic,
     params: &Params,
     frozen: Option<Uuid>,
     lock: bool,
@@ -195,12 +198,16 @@ pub(super) async fn target(
     let id = params
         .resource_id
         .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
-    let row = installation(conn, tenant, id, lock)
-        .await?
-        .filter(|r| {
-            Some(r.version) == params.resource_version && frozen.is_none_or(|id| id == r.id)
-        })
-        .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+    let row = installation(
+        conn,
+        tenant,
+        id,
+        lock,
+        sem == Semantic::AgentDelegationRevoke,
+    )
+    .await?
+    .filter(|r| Some(r.version) == params.resource_version && frozen.is_none_or(|id| id == r.id))
+    .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
     Ok(Target {
         id: row.id,
         version: row.version,
@@ -301,9 +308,15 @@ pub(super) async fn target_gate(
     let id = params
         .resource_id
         .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
-    let row = installation(conn, tenant, id, false)
-        .await?
-        .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+    let row = installation(
+        conn,
+        tenant,
+        id,
+        false,
+        sem == Semantic::AgentDelegationRevoke,
+    )
+    .await?
+    .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
     let grant_id = params
         .delegation_id
         .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;
@@ -748,9 +761,15 @@ pub(super) async fn prewrite(
     sem: Semantic,
     params: &Params,
 ) -> Result<(), Refusal> {
-    let row = installation(tx, ae.tenant_id, ae.target_id, true)
-        .await?
-        .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+    let row = installation(
+        tx,
+        ae.tenant_id,
+        ae.target_id,
+        true,
+        sem == Semantic::AgentDelegationRevoke,
+    )
+    .await?
+    .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
     let id = params
         .delegation_id
         .ok_or(Refusal::Precondition(ReasonCode::InvalidParameters))?;

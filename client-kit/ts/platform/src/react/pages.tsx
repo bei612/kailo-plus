@@ -15,7 +15,6 @@ import {
   ReasonCode,
   type EvidenceView,
   type OwnAuditEntry,
-  WorkspaceMembershipState,
   type WorkspaceView,
 } from "@client-kit/contracts";
 import { type ReactNode, useState } from "react";
@@ -29,7 +28,6 @@ import {
   evidenceUnavailableReasonMessages,
   reasonMessages,
   type PlatformMessageKey,
-  workspaceMembershipStateMessages,
 } from "../i18n";
 import { BffError, type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useLocale, useT } from "./context";
@@ -40,6 +38,10 @@ import { PlatformTenantManagement } from "./tenants";
 import { CapabilityContractsPanel } from "./capability-contracts";
 import { ComponentReleasesPanel } from "./component-releases";
 import { ApplicationBindingsPanel } from "./application-bindings";
+import { TenantInvitations } from "./invitations";
+import { MembersPane, type MemberIdentityRenderer } from "./members";
+import { SidebarGroup, SidebarGroupLabel, SidebarGroupContent, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "./sidebar/primitives";
+export { MembersPane, type MemberIdentityRenderer } from "./members";
 
 export { AgentDefinitionsPage } from "./agents";
 export { NativeApplicationEntries } from "./native-application-entries";
@@ -66,97 +68,83 @@ export function Resource<T>({
   return <>{children(state.data)}</>;
 }
 
-/** 一个 Workspace 的成员，按人聚合；每人列出全部 ACTIVE 的协议公钥（DD-77）。 */
-export function MembersPane({ workspaceId }: { workspaceId: string }) {
-  const client = useBffClient();
-  const t = useT();
-  const locale = useLocale();
-  const [state, reload] = useLoad(`members:${workspaceId}`, () => client.members(workspaceId));
-  return (
-    <Resource state={state} reload={reload}>
-      {(rows) =>
-        rows.length === 0 ? (
-          <Notice>{t("platform.members.none")}</Notice>
-        ) : (
-          <Table head={[t("platform.member"), t("platform.state"), t("platform.protocolIdentity")]}>
-            {rows.map((m) => (
-              <tr key={m.principalId}>
-                <Cell>{m.displayName}</Cell>
-                <Cell>
-                  <Badge
-                    tone={m.state === WorkspaceMembershipState.Active ? "positive" : "neutral"}
-                  >
-                    {enumLabel(locale, workspaceMembershipStateMessages, m.state)}
-                  </Badge>
-                </Cell>
-                <Cell mono>
-                  {m.pubkeys.length > 0 ? m.pubkeys.map(truncatePubkey).join(" · ") : "—"}
-                </Cell>
-              </tr>
-            ))}
-          </Table>
-        )
-      }
-    </Resource>
-  );
-}
-
 /**
  * 成员页的独立形态：自己取可进入的 Workspace 并提供选择。宿主已有 Workspace 选择
  * （Web 的平台页头部）时直接用 MembersPane。
  */
-export function WorkspaceMembersPage() {
+export function WorkspaceMembersPage({renderIdentity}:{renderIdentity?:MemberIdentityRenderer} = {}) {
   const client = useBffClient();
   const t = useT();
   const [state, reload] = useLoad("workspaces", client.workspaces);
   const [chosen, setChosen] = useState<string | null>(null);
   return (
-    <div className="flex flex-col gap-6">
+    <WorkspaceManagementPanels>
       <Resource state={state} reload={reload}>
       {(rows) => {
         if (rows.length === 0) return <Notice>{t("platform.noWorkspace")}</Notice>;
-        // 只认列表里的：列表已经排除了进不去的
-        const active = rows.find((w) => w.id === chosen)?.id ?? rows[0]?.id;
+        // Management-visible does not imply collaboration membership.
+        const readable = rows.filter((w) => w.isMember === true);
+        const active = readable.find((w) => w.id === chosen)?.id ?? readable[0]?.id;
+        if (!active) return <Notice>{t("platform.noWorkspace")}</Notice>;
         return (
           <div className="flex flex-col gap-3">
-            {rows.length > 1 ? (
+            {readable.length > 1 ? (
               <select
                 aria-label={t("platform.workspace")}
                 className="h-8 w-fit rounded-md border border-input bg-transparent px-2 text-sm"
                 value={active}
                 onChange={(e) => setChosen(e.target.value)}
               >
-                {rows.map((w) => (
+                {readable.map((w) => (
                   <option key={w.id} value={w.id}>
                     {w.name}
                   </option>
                 ))}
               </select>
             ) : (
-              <h2 className="text-sm font-medium">{rows[0]?.name}</h2>
+              <h2 className="text-sm font-medium">{readable[0]?.name}</h2>
             )}
-            {active ? <MembersPane key={active} workspaceId={active} /> : null}
+            {active ? <MembersPane key={active} workspaceId={active} renderIdentity={renderIdentity} /> : null}
           </div>
         );
       }}
       </Resource>
-      <WorkspaceManagementPanels />
-    </div>
+    </WorkspaceManagementPanels>
   );
 }
 
 /** Both hosts consume the same management panels without a second Workspace selector. */
-export function WorkspaceManagementPanels() {
-  return (
-    <>
-      <RoleManagement />
-      <LegacySecretRefManagement />
-      <PlatformTenantManagement />
-      <CapabilityContractsPanel />
-      <ComponentReleasesPanel />
-      <ApplicationBindingsPanel />
-    </>
-  );
+export function WorkspaceManagementPanels({children}:{children?:ReactNode}) {
+  const t=useT();
+  const sections = {
+    members: {label:"platform.tab.members",content:children},
+    invitations: {label:"invitations.title",content:<TenantInvitations/>},
+    roles: {label:"roles.title",content:<RoleManagement/>},
+    tenants: {label:"tenants.title",content:<PlatformTenantManagement/>},
+    secrets: {label:"secretRehome.title",content:<LegacySecretRefManagement/>},
+    capabilities: {label:"capabilities.title",content:<CapabilityContractsPanel/>},
+    components: {label:"components.title",content:<ComponentReleasesPanel/>},
+    bindings: {label:"bindings.title",content:<ApplicationBindingsPanel/>},
+  } satisfies Record<string,{label:PlatformMessageKey;content:ReactNode}>;
+  type Section = keyof typeof sections;
+  const [selected,setSelected]=useState<Section>("members");
+  const [visited,setVisited]=useState<Section[]>(["members"]);
+  return <div className="flex min-h-0 w-full flex-1 flex-col bg-sidebar sm:flex-row" data-testid="member-management-context">
+    <nav aria-label={t("platform.tab.members")} className="shrink-0 text-sidebar-foreground sm:w-(--sidebar-width)">
+      <SidebarGroup><SidebarGroupLabel>{t("platform.tab.members")}</SidebarGroupLabel><SidebarGroupContent><SidebarMenu>
+        {(Object.keys(sections) as Section[]).map(section=><SidebarMenuItem key={section}><SidebarMenuButton type="button"
+          aria-pressed={section===selected} isActive={section===selected} onClick={()=>{setSelected(section);setVisited(old=>old.includes(section)?old:[...old,section]);}}>
+          <span className="truncate">{t(sections[section].label)}</span>
+        </SidebarMenuButton></SidebarMenuItem>)}
+      </SidebarMenu></SidebarGroupContent></SidebarGroup>
+    </nav>
+    <div className="relative z-10 mb-2 ml-px mr-2 mt-px flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-background shadow-content-edge">
+      {/* Once opened, management intents stay mounted across navigation. UNKNOWN is not discarded. */}
+      {visited.map(section=><section key={section} hidden={section!==selected} className="min-h-0 flex-1 overflow-y-auto px-5 pb-12 pt-6 sm:px-6" data-management-section={section}>
+        <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col gap-4">{sections[section].content}</div>
+      </section>)}
+    </div>
+  </div>;
 }
 
 /**

@@ -967,6 +967,30 @@ impl Supervisor {
         Ok(())
     }
 
+    /// Upgrade drains before calling this; retries must not stop the already
+    /// initialized replacement. Reuse the same slot and advisory ownership.
+    pub(crate) async fn stop_before_generation(
+        &self,
+        installation: Uuid,
+        generation: i64,
+    ) -> Result<(), RuntimeError> {
+        let slot = self.processes.lock().await.get(&installation).cloned();
+        if let Some(slot) = slot {
+            let mut slot = slot.lock().await;
+            if let Some(process) = slot.as_mut() {
+                if process.generation == generation {
+                    return Ok(());
+                }
+                if process.retiring || process.generation > generation {
+                    return Err(RuntimeError::Unknown);
+                }
+                terminate(&mut process.child, self.timeout).await?;
+                *slot = None;
+            }
+        }
+        Ok(())
+    }
+
     /// DD-99：安装运行体退出、取得同一 ownership、精确删除状态后回读缺席。
     /// 只能用于已经冻结/删除方向的 Installation；不是通用文件删除入口。
     pub(crate) async fn retirement(
@@ -1057,10 +1081,16 @@ impl Supervisor {
                 let generation = process.generation;
                 let hash = process.config_hash.clone();
                 sqlx::query_scalar::<_, bool>("select exists(select 1 from catalog.agent_installation i
-                    join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
-                      and p.generation=i.active_projection_generation
-                    where i.resource_id=$1 and i.state='ACTIVE' and p.state='ACTIVE'
-                      and p.generation=$2 and p.config_hash=$3)")
+                    join catalog.resource r on r.id=i.resource_id
+                    join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id and p.generation=$2
+                    where i.resource_id=$1 and ((p.config_hash=$3
+                      and catalog.agent_generation_admitted(i.resource_id,p.agent_version_asset_id,p.generation)
+                      and (i.state='ACTIVE' or not catalog.agent_installation_drained(i.resource_id)))
+                    or (p.state='PENDING' and i.state in ('PROVISIONING','DRAINING')
+                      and exists(select 1 from admission.action_execution a where a.id=r.projection_action_execution_id
+                        and a.target_id=i.resource_id and a.gate_state='ALLOWED'
+                        and a.action_key in ('agent.installation.create','agent.installation.upgrade')
+                        and a.parameters->'params'->>'assetId'=p.agent_version_asset_id::text))))")
                     .bind(installation).bind(generation).bind(hash)
                     .fetch_one(&mut **process.ownership.lock().await).await.unwrap_or(false)
             } else {

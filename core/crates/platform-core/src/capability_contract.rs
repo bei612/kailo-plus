@@ -359,7 +359,16 @@ fn vectors(
                 let document: Value = serde_json::from_str(step[field].as_str().ok_or_else(bad)?)
                     .map_err(|_| bad())?;
                 let digest = operation[digest_field].as_str().ok_or_else(bad)?;
-                if !validators.get(digest).ok_or_else(bad)?.is_valid(&document) {
+                // This input is the actual typed result of an earlier native
+                // step, not its empty registration-time placeholder. Validate
+                // it against the fixed schema when authorizing the wire call.
+                let deferred_reference =
+                    field == "inputJson" && step.get("referenceFromStepKey").is_some();
+                if if deferred_reference {
+                    document != json!({})
+                } else {
+                    !validators.get(digest).ok_or_else(bad)?.is_valid(&document)
+                } {
                     return Err(bad());
                 }
                 // Insignificant JSON whitespace/key ordering is not a new suite.
@@ -846,6 +855,40 @@ pub async fn list(
 #[cfg(test)]
 mod registration_tests {
     use super::*;
+
+    #[test]
+    fn prior_native_reference_defers_only_the_empty_input_slot() {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/domain/content_reference.schema.json"
+        ))
+        .unwrap();
+        let empty = json!({"type":"object","additionalProperties":false});
+        let reference_digest = collab_bridge::limits::canonical_digest(&schema);
+        let empty_digest = collab_bridge::limits::canonical_digest(&empty);
+        let documents = BTreeMap::from([
+            (reference_digest.clone(), schema),
+            (empty_digest.clone(), empty),
+        ]);
+        let operations = vec![
+            json!({"contractKey":"records.create@v1","inputSchemaDigest":empty_digest,"outputSchemaDigest":empty_digest}),
+            json!({"contractKey":"records.read@v1","inputSchemaDigest":reference_digest,"outputSchemaDigest":empty_digest}),
+        ];
+        let resource = Uuid::new_v4();
+        let mut value = json!({"formatVersion":"V1","cases":[{"caseKey":"references","steps":[
+            {"stepKey":"create","contractKey":"records.create@v1","inputJson":"{}","expectedOutputJson":"{}","referenceResourceId":resource},
+            {"stepKey":"read","contractKey":"records.read@v1","inputJson":"{}","expectedOutputJson":"{}","referenceResourceId":resource,"referenceFromStepKey":"create"}
+        ]}]});
+        assert!(vectors(&value.to_string(), &operations, &documents).is_ok());
+        value["cases"][0]["steps"][1]["inputJson"] =
+            json!("{\"nativeObjectRef\":\"caller-selected\"}");
+        assert!(vectors(&value.to_string(), &operations, &documents).is_err());
+        value["cases"][0]["steps"][1]["inputJson"] = json!("{}");
+        value["cases"][0]["steps"][1]
+            .as_object_mut()
+            .unwrap()
+            .remove("referenceFromStepKey");
+        assert!(vectors(&value.to_string(), &operations, &documents).is_err());
+    }
 
     #[test]
     fn builtin_knowledge_has_all_five_fixed_permissions_and_reference_sequence() {

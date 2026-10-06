@@ -250,6 +250,9 @@
 //    platformToolView, err := UnmarshalPlatformToolView(bytes)
 //    bytes, err = platformToolView.Marshal()
 //
+//    projectsQueryRequest, err := UnmarshalProjectsQueryRequest(bytes)
+//    bytes, err = projectsQueryRequest.Marshal()
+//
 //    protocolSessionView, err := UnmarshalProtocolSessionView(bytes)
 //    bytes, err = protocolSessionView.Marshal()
 //
@@ -1389,6 +1392,16 @@ func UnmarshalPlatformToolView(data []byte) (PlatformToolView, error) {
 }
 
 func (r *PlatformToolView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProjectsQueryRequest(data []byte) (ProjectsQueryRequest, error) {
+	var r ProjectsQueryRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProjectsQueryRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -3222,18 +3235,20 @@ type InstallationElement struct {
 	// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
 	// 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
 	// 准入。缺失或空集合不支持 Schedule。
-	AutomationResultTargets []AutomationResultTarget         `json:"automationResultTargets,omitempty"`
-	ChannelBinding          *InstallationChannelBinding      `json:"channelBinding,omitempty"`
-	ExecutionPermission     *InstallationExecutionPermission `json:"executionPermission,omitempty"`
-	OwnerPrincipalID        string                           `json:"ownerPrincipalId"`
-	PinnedVersionAssetID    string                           `json:"pinnedVersionAssetId"`
-	Projection              *ProjectionClass                 `json:"projection,omitempty"`
-	ReadPermission          *InstallationReadPermission      `json:"readPermission,omitempty"`
-	ResourceID              string                           `json:"resourceId"`
-	ResourceState           ResourceState                    `json:"resourceState"`
-	ResourceVersion         int64                            `json:"resourceVersion"`
-	State                   AgentInstallationState           `json:"state"`
-	WorkspaceID             string                           `json:"workspaceId"`
+	AutomationResultTargets []AutomationResultTarget `json:"automationResultTargets,omitempty"`
+	// 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
+	CanUpgrade           *bool                            `json:"canUpgrade,omitempty"`
+	ChannelBinding       *InstallationChannelBinding      `json:"channelBinding,omitempty"`
+	ExecutionPermission  *InstallationExecutionPermission `json:"executionPermission,omitempty"`
+	OwnerPrincipalID     string                           `json:"ownerPrincipalId"`
+	PinnedVersionAssetID string                           `json:"pinnedVersionAssetId"`
+	Projection           *ProjectionClass                 `json:"projection,omitempty"`
+	ReadPermission       *InstallationReadPermission      `json:"readPermission,omitempty"`
+	ResourceID           string                           `json:"resourceId"`
+	ResourceState        ResourceState                    `json:"resourceState"`
+	ResourceVersion      int64                            `json:"resourceVersion"`
+	State                AgentInstallationState           `json:"state"`
+	WorkspaceID          string                           `json:"workspaceId"`
 }
 
 type InstallationChannelBinding struct {
@@ -3286,18 +3301,20 @@ type AgentInstallationView struct {
 	// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
 	// 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
 	// 准入。缺失或空集合不支持 Schedule。
-	AutomationResultTargets []AutomationResultTarget                  `json:"automationResultTargets,omitempty"`
-	ChannelBinding          *AgentInstallationViewChannelBinding      `json:"channelBinding,omitempty"`
-	ExecutionPermission     *AgentInstallationViewExecutionPermission `json:"executionPermission,omitempty"`
-	OwnerPrincipalID        string                                    `json:"ownerPrincipalId"`
-	PinnedVersionAssetID    string                                    `json:"pinnedVersionAssetId"`
-	Projection              *ProjectionClass                          `json:"projection,omitempty"`
-	ReadPermission          *AgentInstallationViewReadPermission      `json:"readPermission,omitempty"`
-	ResourceID              string                                    `json:"resourceId"`
-	ResourceState           ResourceState                             `json:"resourceState"`
-	ResourceVersion         int64                                     `json:"resourceVersion"`
-	State                   AgentInstallationState                    `json:"state"`
-	WorkspaceID             string                                    `json:"workspaceId"`
+	AutomationResultTargets []AutomationResultTarget `json:"automationResultTargets,omitempty"`
+	// 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
+	CanUpgrade           *bool                                     `json:"canUpgrade,omitempty"`
+	ChannelBinding       *AgentInstallationViewChannelBinding      `json:"channelBinding,omitempty"`
+	ExecutionPermission  *AgentInstallationViewExecutionPermission `json:"executionPermission,omitempty"`
+	OwnerPrincipalID     string                                    `json:"ownerPrincipalId"`
+	PinnedVersionAssetID string                                    `json:"pinnedVersionAssetId"`
+	Projection           *ProjectionClass                          `json:"projection,omitempty"`
+	ReadPermission       *AgentInstallationViewReadPermission      `json:"readPermission,omitempty"`
+	ResourceID           string                                    `json:"resourceId"`
+	ResourceState        ResourceState                             `json:"resourceState"`
+	ResourceVersion      int64                                     `json:"resourceVersion"`
+	State                AgentInstallationState                    `json:"state"`
+	WorkspaceID          string                                    `json:"workspaceId"`
 }
 
 type AgentInstallationViewChannelBinding struct {
@@ -4167,6 +4184,15 @@ type PlatformToolView struct {
 	Status           ToolStatus    `json:"status"`
 }
 
+// Original Buzz Community project/repository announcements and coordinate-scoped tombstones
+// only; no Git content or mutation authorization.
+type ProjectsQueryRequest struct {
+	Coordinates []string                 `json:"coordinates,omitempty"`
+	Since       *int64                   `json:"since,omitempty"`
+	Until       *int64                   `json:"until,omitempty"`
+	View        ProjectsQueryRequestView `json:"view"`
+}
+
 // 03/18: only the initiating HUMAN's fresh-authorized original Session facts. No PAT,
 // launch credential, native body or replacement revision is recoverable from this reader.
 type ProtocolSessionView struct {
@@ -4219,10 +4245,10 @@ type AttachmentElement struct {
 }
 
 type PulseQueryRequest struct {
-	Authors  []string `json:"authors,omitempty"`
-	Before   *int64   `json:"before,omitempty"`
-	EventIDS []string `json:"eventIds,omitempty"`
-	View     ViewEnum `json:"view"`
+	Authors  []string              `json:"authors,omitempty"`
+	Before   *int64                `json:"before,omitempty"`
+	EventIDS []string              `json:"eventIds,omitempty"`
+	View     PulseQueryRequestView `json:"view"`
 }
 
 // PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel
@@ -6480,6 +6506,14 @@ const (
 	StickyACTIVE       ToolStatus = "ACTIVE"
 )
 
+type ProjectsQueryRequestView string
+
+const (
+	Deletions    ProjectsQueryRequestView = "DELETIONS"
+	Projects     ProjectsQueryRequestView = "PROJECTS"
+	Repositories ProjectsQueryRequestView = "REPOSITORIES"
+)
+
 type ProtocolSessionViewState string
 
 const (
@@ -6505,15 +6539,15 @@ const (
 	Unlike Operation = "UNLIKE"
 )
 
-type ViewEnum string
+type PulseQueryRequestView string
 
 const (
-	Agents    ViewEnum = "AGENTS"
-	Contacts  ViewEnum = "CONTACTS"
-	Liked     ViewEnum = "LIKED"
-	Notes     ViewEnum = "NOTES"
-	Profiles  ViewEnum = "PROFILES"
-	Reactions ViewEnum = "REACTIONS"
+	Agents    PulseQueryRequestView = "AGENTS"
+	Contacts  PulseQueryRequestView = "CONTACTS"
+	Liked     PulseQueryRequestView = "LIKED"
+	Notes     PulseQueryRequestView = "NOTES"
+	Profiles  PulseQueryRequestView = "PROFILES"
+	Reactions PulseQueryRequestView = "REACTIONS"
 )
 
 type CreateActionKey string

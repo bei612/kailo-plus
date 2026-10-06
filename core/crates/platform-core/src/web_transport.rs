@@ -1796,6 +1796,91 @@ pub(crate) async fn community_limits(
     }
 }
 
+#[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
+struct MemberProfileIdentity {
+    membership_id: Uuid,
+    membership_version: i32,
+    tenant_membership_version: i32,
+    identity_pubkey: String,
+    identity_version: i32,
+}
+
+async fn member_profile_identity<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+    workspace_id: Uuid,
+    principal_id: Uuid,
+    pubkey: &str,
+) -> Result<MemberProfileIdentity, Response> {
+    sqlx::query_as::<_, MemberProfileIdentity>(
+        "select wm.id as membership_id, wm.version as membership_version, tm.version as tenant_membership_version,
+                bib.pubkey as identity_pubkey, bib.version as identity_version
+         from identity.workspace_membership wm
+         join identity.tenant_membership tm on tm.tenant_principal_id = wm.tenant_principal_id
+              and tm.state = 'ACTIVE'
+         join identity.principal p on p.id = tm.tenant_principal_id and p.tenant_id = tm.tenant_id
+              and p.status = 'ACTIVE' and p.kind = 'HUMAN'
+         join identity.human_identity hi on hi.id = tm.human_identity_id and hi.status = 'ACTIVE'
+         join identity.workspace w on w.id = wm.workspace_id and w.tenant_id = tm.tenant_id
+         join identity.buzz_identity_binding bib on bib.principal_id = wm.tenant_principal_id
+              and bib.tenant_id = tm.tenant_id and bib.state = 'ACTIVE' and bib.kind = 'HUMAN'
+         where wm.workspace_id = $1 and wm.tenant_principal_id = $2 and wm.state = 'ACTIVE'
+              and bib.pubkey = $3",
+    ).bind(workspace_id).bind(principal_id).bind(pubkey)
+     .fetch_optional(executor).await.map_err(|error| {
+         tracing::warn!(error = %error, "成员资料身份读取失败");
+         StatusCode::SERVICE_UNAVAILABLE.into_response()
+     })?.ok_or_else(|| StatusCode::FORBIDDEN.into_response())
+}
+
+/// The directory's exact ACTIVE member/key is the proof; no Pulse or message substitution.
+pub async fn member_profile(
+    State(state): State<BffState>,
+    Path((workspace_id, principal_id, pubkey)): Path<(Uuid, Uuid, String)>,
+    headers: HeaderMap,
+) -> Response {
+    async fn read(
+        state: &BffState,
+        headers: &HeaderMap,
+        workspace_id: Uuid,
+        principal_id: Uuid,
+        pubkey: String,
+    ) -> Result<Response, Response> {
+        if nostr::PublicKey::from_hex(&pubkey).is_err() {
+            return Err(StatusCode::BAD_REQUEST.into_response());
+        }
+        let ctx = resolve_execution_context(state, headers).await?;
+        let target = crate::user_state::ReadTarget::Workspace(workspace_id);
+        let before = target.admit(state, &ctx).await?;
+        let identity =
+            member_profile_identity(&state.pool, workspace_id, principal_id, &pubkey).await?;
+        let keys = actor_keys(state, &ctx).await?;
+        let client = community_client(state, &keys, before.community_host())?;
+        let profile = crate::web_profile::read_author(state, &client, &pubkey).await?;
+        let after = target.admit(state, &ctx).await?;
+        if !before.same_admission(&after)
+            || identity
+                != member_profile_identity(&state.pool, workspace_id, principal_id, &pubkey).await?
+            || keys.public_key() != actor_keys(state, &ctx).await?.public_key()
+        {
+            return Err(AdmissionFailure::BindingNotActive.into_response());
+        }
+        let mut view = crate::web_profile::view(pubkey, profile.as_ref(), before.community_host());
+        for path in view.avatar_media_paths.values_mut() {
+            if let Some(hash) = path.strip_prefix("/api/v1/profile/media/") {
+                *path = format!("/api/v1/workspaces/{workspace_id}/media/{hash}");
+            }
+        }
+        Ok((
+            [(axum::http::header::CACHE_CONTROL, "no-store")],
+            Json(view),
+        )
+            .into_response())
+    }
+    match read(&state, &headers, workspace_id, principal_id, pubkey).await {
+        Ok(response) | Err(response) => response,
+    }
+}
+
 /// Read a profile only for the author proven by an admitted signed message.
 pub async fn message_author_profile(
     State(state): State<BffState>,
@@ -2633,6 +2718,117 @@ fn relay_media_path(media_ref: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
+    async fn member_profile_requires_exact_active_member_identity() {
+        let pool = sqlx::PgPool::connect(&std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let tenant = Uuid::new_v4();
+        let workspace = Uuid::new_v4();
+        let principal = Uuid::new_v4();
+        let human = Uuid::new_v4();
+        let pubkey = nostr::Keys::generate().public_key().to_hex();
+        sqlx::raw_sql(&format!(r#"
+            INSERT INTO identity.tenant(id,slug,name,state)
+              VALUES('{tenant}','member-profile-{tenant}','Member profile fixture','ACTIVE');
+            INSERT INTO identity.workspace(id,tenant_id,slug,name,state)
+              VALUES('{workspace}','{tenant}','member-profile','Member profile fixture','ACTIVE');
+            INSERT INTO identity.human_identity(id,display_name,status)
+              VALUES('{human}','Member profile fixture','ACTIVE');
+            INSERT INTO identity.principal(id,tenant_id,kind,status)
+              VALUES('{principal}','{tenant}','HUMAN','ACTIVE');
+            INSERT INTO identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state)
+              VALUES(gen_random_uuid(),'{tenant}','{human}','{principal}','ACTIVE');
+            INSERT INTO identity.workspace_membership(id,workspace_id,tenant_principal_id,state)
+              VALUES(gen_random_uuid(),'{workspace}','{principal}','ACTIVE');
+            INSERT INTO identity.buzz_identity_binding(tenant_id,principal_id,pubkey,custody,kind,state)
+              VALUES('{tenant}','{principal}','{pubkey}','CLIENT','HUMAN','ACTIVE');
+        "#)).execute(&mut *tx).await.unwrap();
+        let before = member_profile_identity(&mut *tx, workspace, principal, &pubkey)
+            .await
+            .unwrap();
+        for (scope, person, key) in [
+            (Uuid::new_v4(), principal, pubkey.clone()),
+            (workspace, Uuid::new_v4(), pubkey.clone()),
+            (
+                workspace,
+                principal,
+                nostr::Keys::generate().public_key().to_hex(),
+            ),
+        ] {
+            assert_eq!(
+                member_profile_identity(&mut *tx, scope, person, &key)
+                    .await
+                    .unwrap_err()
+                    .status(),
+                StatusCode::FORBIDDEN
+            );
+        }
+        sqlx::query("update identity.buzz_identity_binding set version=version+1 where pubkey=$1")
+            .bind(&pubkey)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert_ne!(
+            before,
+            member_profile_identity(&mut *tx, workspace, principal, &pubkey)
+                .await
+                .unwrap()
+        );
+        // Each source of revocation must independently close the exact same read.
+        for (revoke, restore) in [
+            (
+                "update identity.workspace_membership set state='REVOKED' where tenant_principal_id=$1",
+                "update identity.workspace_membership set state='ACTIVE' where tenant_principal_id=$1",
+            ),
+            (
+                "update identity.tenant_membership set state='REVOKED' where tenant_principal_id=$1",
+                "update identity.tenant_membership set state='ACTIVE' where tenant_principal_id=$1",
+            ),
+            (
+                "update identity.buzz_identity_binding set state='REVOKED' where principal_id=$1",
+                "update identity.buzz_identity_binding set state='ACTIVE' where principal_id=$1",
+            ),
+            (
+                "update identity.principal set status='DISABLED' where id=$1",
+                "update identity.principal set status='ACTIVE' where id=$1",
+            ),
+        ] {
+            sqlx::query(revoke)
+                .bind(principal)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            assert_eq!(
+                member_profile_identity(&mut *tx, workspace, principal, &pubkey)
+                    .await
+                    .unwrap_err()
+                    .status(),
+                StatusCode::FORBIDDEN
+            );
+            sqlx::query(restore)
+                .bind(principal)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+        sqlx::query("update identity.human_identity set status='DISABLED' where id=$1")
+            .bind(human)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(
+            member_profile_identity(&mut *tx, workspace, principal, &pubkey)
+                .await
+                .unwrap_err()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        tx.rollback().await.unwrap();
+    }
 
     #[test]
     fn collaboration_membership_is_not_management_visibility() {

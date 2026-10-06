@@ -2057,6 +2057,10 @@ pub struct InstallationElement {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_result_targets: Option<Vec<AutomationResultTarget>>,
 
+    /// 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_upgrade: Option<bool>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_binding: Option<InstallationChannelBinding>,
 
@@ -2230,6 +2234,10 @@ pub struct AgentInstallationView {
     /// 准入。缺失或空集合不支持 Schedule。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_result_targets: Option<Vec<AutomationResultTarget>>,
+
+    /// 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_upgrade: Option<bool>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_binding: Option<AgentInstallationViewChannelBinding>,
@@ -4441,6 +4449,34 @@ pub struct PlatformToolView {
     pub status: ToolStatus,
 }
 
+/// Original Buzz Community project/repository announcements and coordinate-scoped tombstones
+/// only; no Git content or mutation authorization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectsQueryRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coordinates: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub since: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub until: Option<i64>,
+
+    pub view: ProjectsQueryRequestView,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ProjectsQueryRequestView {
+    #[serde(rename = "DELETIONS")]
+    Deletions,
+
+    #[serde(rename = "PROJECTS")]
+    Projects,
+
+    #[serde(rename = "REPOSITORIES")]
+    Repositories,
+}
+
 /// 03/18: only the initiating HUMAN's fresh-authorized original Session facts. No PAT,
 /// launch credential, native body or replacement revision is recoverable from this reader.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4594,11 +4630,11 @@ pub struct PulseQueryRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_ids: Option<Vec<String>>,
 
-    pub view: View,
+    pub view: PulseQueryRequestView,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum View {
+pub enum PulseQueryRequestView {
     #[serde(rename = "AGENTS")]
     Agents,
 

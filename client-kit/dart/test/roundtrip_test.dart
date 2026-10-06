@@ -9,6 +9,39 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('Installation upgrade permission keeps false and legacy absence', () {
+    final sample =
+        jsonDecode(
+              File(
+                '../../contracts/samples/agent-installation-upgrade.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    for (final permission in [true, false, null]) {
+      final value = Map<String, dynamic>.from(sample);
+      if (permission == null) {
+        value.remove('canUpgrade');
+      } else {
+        value['canUpgrade'] = permission;
+      }
+      expect(AgentInstallationView.fromJson(value).toJson(), value);
+    }
+  });
+  test('Projects query preserves scoped coordinates and optional window', () {
+    final sample =
+        jsonDecode(
+              File(
+                '../../contracts/samples/projects-query.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    for (final value in [
+      sample,
+      <String, dynamic>{'view': 'PROJECTS'},
+    ]) {
+      expect(ProjectsQueryRequest.fromJson(value).toJson(), value);
+    }
+  });
   test('seed and human registration keep separate evidence', () {
     final value =
         jsonDecode(

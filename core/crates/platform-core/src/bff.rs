@@ -312,6 +312,10 @@ pub fn router(state: BffState) -> Router {
             axum::routing::post(crate::pulse::query),
         )
         .exposed_route(
+            "/api/v1/projects/query",
+            axum::routing::post(crate::projects::query),
+        )
+        .exposed_route(
             "/api/v1/pulse/publish",
             axum::routing::post(crate::web_transport::publish_pulse),
         )
@@ -374,6 +378,10 @@ pub fn router(state: BffState) -> Router {
         .exposed_route(
             "/api/v1/workspaces/{workspace_id}/members",
             get(crate::platform_views::list_members),
+        )
+        .exposed_route(
+            "/api/v1/workspaces/{workspace_id}/members/{principal_id}/profiles/{pubkey}",
+            get(crate::web_transport::member_profile),
         )
         .exposed_route(
             "/api/v1/role-members",

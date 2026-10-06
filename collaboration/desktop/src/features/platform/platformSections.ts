@@ -17,6 +17,7 @@ export const PLATFORM_SECTION_LABEL: Record<
   PlatformMessageKey
 > = {
   pulse: "platform.tab.pulse",
+  projects: "platform.tab.projects",
   members: "platform.tab.members",
   agents: "platform.tab.agents",
   workflows: "platform.tab.workflows",

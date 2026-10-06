@@ -43,6 +43,7 @@ capabilities:
   - agent.memory.entry.patch
   - agent.memory.entry.remove
   - agent.installation.create
+  - agent.installation.upgrade
   - agent.delegation.grant
   - agent.delegation.revoke
   - llm_route.create
@@ -95,6 +96,13 @@ capabilities:
   tools: []
   workflow_kinds:
   - CONVERSATION_PROJECTION
+- id: collab.projects
+  exposure: end_user
+  routes:
+  - /api/v1/projects/query
+  actions: []
+  tools: []
+  workflow_kinds: []
 - id: collab.pulse
   exposure: end_user
   routes:
@@ -305,6 +313,7 @@ capabilities:
   - /api/v1/workspaces
   - /api/v1/discoverable-workspaces
   - /api/v1/workspaces/{workspace_id}/members
+  - /api/v1/workspaces/{workspace_id}/members/{principal_id}/profiles/{pubkey}
   - /api/v1/audit
   - /api/v1/profile
   - /api/v1/profile/media

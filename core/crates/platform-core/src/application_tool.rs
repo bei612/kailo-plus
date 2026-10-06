@@ -331,7 +331,7 @@ pub(crate) async fn fresh_execution(
         i.projection_generation,i.delegation_id,i.runtime_turn_id,i.action_execution_id parent_action_execution_id,
         installed.agent_principal_id from catalog.agent_invocation i
         join catalog.agent_installation installed on installed.resource_id=i.installation_resource_id
-          and installed.state='ACTIVE' and installed.workspace_id=i.workspace_id
+          and catalog.agent_generation_admitted(installed.resource_id,i.agent_version_asset_id,i.projection_generation) and installed.workspace_id=i.workspace_id
         join catalog.agent_session s on s.tenant_id=i.tenant_id and s.workspace_id=i.workspace_id
           and s.installation_resource_id=i.installation_resource_id and s.root_event_id=i.root_event_id
           and s.agent_version_asset_id=i.agent_version_asset_id and s.projection_generation=i.projection_generation
@@ -1673,6 +1673,7 @@ pub(crate) async fn scopes(
         context.tenant_id,
         context.installation_resource_id,
         false,
+        true,
     )
     .await?
     .ok_or_else(denied)?;

@@ -19,7 +19,7 @@
     {
       "contractKey": "knowledge.read@v1",
       "surface": "TOOL",
-      "inputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+      "inputSchemaDigest": "a795ef1b071eca01c488eafcc2b8044cf8c40abdf62e26df6a48d71210b5fbb9",
       "outputSchemaDigest": "54669b5e6a1bfebb4d15788d41b5cd5fb8e51fc2d982eb2383a42262c748c90a",
       "permission": "read",
       "targetType": "RESOURCE"
@@ -27,7 +27,7 @@
     {
       "contractKey": "knowledge.export@v1",
       "surface": "ACTION",
-      "inputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+      "inputSchemaDigest": "a795ef1b071eca01c488eafcc2b8044cf8c40abdf62e26df6a48d71210b5fbb9",
       "outputSchemaDigest": "0dcfbbb7adff43ba41c5824ab782b48bd87edef06064c3fb8faf88a7669f7c3e",
       "permission": "export",
       "targetType": "RESOURCE"
@@ -43,7 +43,7 @@
     {
       "contractKey": "knowledge.delete@v1",
       "surface": "ACTION",
-      "inputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+      "inputSchemaDigest": "a795ef1b071eca01c488eafcc2b8044cf8c40abdf62e26df6a48d71210b5fbb9",
       "outputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
       "permission": "delete",
       "targetType": "RESOURCE"
@@ -68,7 +68,8 @@
     "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[],\"properties\":{}}",
     "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"text\"],\"properties\":{\"text\":{\"type\":\"string\"}}}",
     "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"contentBase64\",\"mediaType\",\"filename\"],\"properties\":{\"contentBase64\":{\"type\":\"string\"},\"mediaType\":{\"type\":\"string\",\"minLength\":1},\"filename\":{\"type\":\"string\",\"minLength\":1}}}",
-    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"title\",\"text\"],\"properties\":{\"title\":{\"type\":\"string\",\"minLength\":1},\"text\":{\"type\":\"string\"}}}"
+    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"title\",\"text\"],\"properties\":{\"title\":{\"type\":\"string\",\"minLength\":1},\"text\":{\"type\":\"string\"}}}",
+    "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"domain/content_reference.schema.json\",\"title\":\"ContentReference\",\"description\":\"design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。\",\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"resourceId\",\"nativeObjectRef\",\"nativeRevision\",\"displayName\",\"mediaType\"],\"properties\":{\"resourceId\":{\"type\":\"string\",\"format\":\"uuid\"},\"assetId\":{\"type\":\"string\",\"format\":\"uuid\"},\"nativeObjectRef\":{\"type\":\"string\"},\"nativeRevision\":{\"type\":\"string\"},\"displayName\":{\"type\":\"string\"},\"mediaType\":{\"type\":\"string\"}}}"
   ],
   "testVectorsJson": "{\"formatVersion\":\"V1\",\"cases\":[{\"caseKey\":\"knowledge_roundtrip\",\"steps\":[{\"stepKey\":\"ingest\",\"contractKey\":\"knowledge.ingest@v1\",\"inputJson\":\"{\\\"title\\\":\\\"conformance\\\",\\\"text\\\":\\\"Kailo conformance knowledge marker\\\"}\",\"expectedOutputJson\":\"{}\",\"referenceResourceId\":\"b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196\"},{\"stepKey\":\"read\",\"contractKey\":\"knowledge.read@v1\",\"inputJson\":\"{}\",\"expectedOutputJson\":\"{\\\"text\\\":\\\"Kailo conformance knowledge marker\\\"}\",\"referenceResourceId\":\"b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196\",\"referenceFromStepKey\":\"ingest\"},{\"stepKey\":\"export\",\"contractKey\":\"knowledge.export@v1\",\"inputJson\":\"{}\",\"expectedOutputJson\":\"{\\\"contentBase64\\\":\\\"S2FpbG8gY29uZm9ybWFuY2Uga25vd2xlZGdlIG1hcmtlcg==\\\",\\\"mediaType\\\":\\\"text/markdown\\\",\\\"filename\\\":\\\"conformance.md\\\"}\",\"referenceResourceId\":\"b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196\",\"referenceFromStepKey\":\"ingest\"},{\"stepKey\":\"search\",\"contractKey\":\"knowledge.search@v1\",\"inputJson\":\"{\\\"query\\\":\\\"Kailo conformance knowledge marker\\\"}\",\"expectedOutputJson\":\"{\\\"matches\\\":[{\\\"text\\\":\\\"Kailo conformance knowledge marker\\\"}]}\"},{\"stepKey\":\"delete\",\"contractKey\":\"knowledge.delete@v1\",\"inputJson\":\"{}\",\"expectedOutputJson\":\"{}\",\"referenceResourceId\":\"b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196\",\"referenceFromStepKey\":\"ingest\"}]}]}"
 }

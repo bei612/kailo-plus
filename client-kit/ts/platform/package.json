@@ -8,6 +8,7 @@
     "profile-assets.ts"
   ],
   "exports": {
+    "./react/projects": "./src/react/projects/index.ts",
     "./react/pulse": "./src/react/pulse/index.ts",
     "./react/pulse/mentions": "./src/react/pulse/mentions.ts",
     "./react/thread": "./src/react/messages/thread/index.ts",

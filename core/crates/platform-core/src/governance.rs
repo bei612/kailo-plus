@@ -461,6 +461,7 @@ pub enum Semantic {
     AgentVersionPublish,
     AgentVersionRetire,
     AgentInstallationCreate,
+    AgentInstallationUpgrade,
     AgentInstallationExecuteGrant,
     AgentInstallationExecuteRevoke,
     ResourceGrantRead,
@@ -517,6 +518,7 @@ impl Semantic {
             "agent.version.publish" => Self::AgentVersionPublish,
             "agent.version.retire" => Self::AgentVersionRetire,
             "agent.installation.create" => Self::AgentInstallationCreate,
+            "agent.installation.upgrade" => Self::AgentInstallationUpgrade,
             "agent.installation.execute.grant" => Self::AgentInstallationExecuteGrant,
             "agent.installation.execute.revoke" => Self::AgentInstallationExecuteRevoke,
             "resource.grant_read" => Self::ResourceGrantRead,
@@ -631,6 +633,7 @@ impl Semantic {
                     | Self::AgentVersionPublish
                     | Self::AgentVersionRetire
                     | Self::AgentInstallationCreate
+                    | Self::AgentInstallationUpgrade
                     | Self::AgentInstallationExecuteRevoke
                     | Self::AgentDelegationGrant
                     | Self::AgentDelegationRevoke
@@ -677,6 +680,7 @@ impl Semantic {
                     | Self::AgentVersionPublish
                     | Self::AgentVersionRetire
                     | Self::AgentInstallationCreate
+                    | Self::AgentInstallationUpgrade
                     | Self::AgentDelegationGrant
                     | Self::AgentDelegationRevoke
             )
@@ -1175,6 +1179,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             | Semantic::AgentVersionPublish
             | Semantic::AgentVersionRetire
             | Semantic::AgentInstallationCreate
+            | Semantic::AgentInstallationUpgrade
             | Semantic::AgentInstallationExecuteGrant
             | Semantic::AgentInstallationExecuteRevoke
             | Semantic::ResourceGrantRead
@@ -1192,6 +1197,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             | Semantic::AgentVersionPublish
             | Semantic::AgentVersionRetire
             | Semantic::AgentInstallationCreate
+            | Semantic::AgentInstallationUpgrade
     ) && (p.asset_id.is_some() || p.asset_version.is_some() || p.agent_version_content.is_some())
     {
         return Err(bad());
@@ -1271,7 +1277,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
                     p.delegation_grant.is_none() && p.delegation_version.is_some_and(|v| v > 0)
                 }
         }
-        Semantic::AgentInstallationCreate => {
+        Semantic::AgentInstallationCreate | Semantic::AgentInstallationUpgrade => {
             p.workspace_id.is_some()
                 && p.principal_id.is_none()
                 && p.slug.is_none()
@@ -1593,7 +1599,7 @@ async fn resolve_target(
         Semantic::AgentDelegationGrant | Semantic::AgentDelegationRevoke => {
             delegation::target(conn, tenant, def, sem, p, frozen, lock).await
         }
-        Semantic::AgentInstallationCreate => {
+        Semantic::AgentInstallationCreate | Semantic::AgentInstallationUpgrade => {
             crate::agent_installation::target(conn, tenant, initiator, def, p, frozen, lock).await
         }
         Semantic::AgentVersionCreate
@@ -2300,7 +2306,10 @@ impl Governance {
         target: &Target,
     ) -> Result<Evaluation, Refusal> {
         let is_workspace_join = def.action_key == "workspace.join";
-        let is_installation_create = def.action_key == "agent.installation.create";
+        let is_installation_create = matches!(
+            def.action_key.as_str(),
+            "agent.installation.create" | "agent.installation.upgrade"
+        );
         let is_installation_permission = matches!(
             def.action_key.as_str(),
             installation_permission::GRANT
@@ -2480,17 +2489,24 @@ impl Governance {
                 } else if is_memory
                     || matches!(
                         def.action_key.as_str(),
-                        "agent.delegation.grant" | "agent.delegation.revoke"
+                        "agent.delegation.grant"
+                            | "agent.delegation.revoke"
+                            | "agent.installation.upgrade"
                     )
                 {
                     let mut conn = self.pool.acquire().await?;
-                    let row =
-                        delegation::installation(&mut conn, actor.tenant_id, target.id, false)
-                            .await?
-                            .filter(|row| {
-                                row.version == target.version
-                                    && Some(row.workspace_id) == target.workspace_id
-                            });
+                    let row = delegation::installation(
+                        &mut conn,
+                        actor.tenant_id,
+                        target.id,
+                        false,
+                        is_memory || def.action_key == "agent.delegation.revoke",
+                    )
+                    .await?
+                    .filter(|row| {
+                        row.version == target.version
+                            && Some(row.workspace_id) == target.workspace_id
+                    });
                     let Some(row) = row else {
                         return Ok(deny(
                             "DENY",
@@ -4564,6 +4580,7 @@ impl Governance {
                     | Semantic::AgentVersionPublish
                     | Semantic::AgentVersionRetire
                     | Semantic::AgentInstallationCreate
+                    | Semantic::AgentInstallationUpgrade
                     | Semantic::AgentDelegationGrant
                     | Semantic::AgentDelegationRevoke
             ))
@@ -4593,6 +4610,7 @@ impl Governance {
                     | Semantic::AgentVersionPublish
                     | Semantic::AgentVersionRetire
                     | Semantic::AgentInstallationCreate
+                    | Semantic::AgentInstallationUpgrade
                     | Semantic::AgentDelegationGrant
                     | Semantic::AgentDelegationRevoke
             ) {
@@ -4915,7 +4933,7 @@ impl Governance {
             Semantic::ComponentReleaseApprove => {
                 crate::component_release::approval::prewrite(self, tx, ae, params).await?
             }
-            Semantic::AgentInstallationCreate => {
+            Semantic::AgentInstallationCreate | Semantic::AgentInstallationUpgrade => {
                 crate::agent_installation::prewrite(self, tx, ae, params).await?
             }
             Semantic::WorkspaceCreate => {
@@ -6590,7 +6608,7 @@ impl Governance {
                 Semantic::ComponentReleaseApprove => {
                     crate::component_release::approval::start(&self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id).await
                 }
-                Semantic::AgentInstallationCreate => {
+                Semantic::AgentInstallationCreate | Semantic::AgentInstallationUpgrade => {
                     crate::agent_installation::start(
                         &self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id,
                     ).await

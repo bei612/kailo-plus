@@ -3247,3 +3247,161 @@ web_transport 27 项通过，原运行句柄 24108 退出 0；因此上文交接
   本批不伪填摘要或清空产物声明；后续集中构建后按实际产物更新。
 - 部署 `.env` 预检跳过，未安装 gitleaks，Windows/Mobile 发布和三组件绑定
   仍有各自未验收项。未改变真实运行数据、额度、权限或旧 UNKNOWN。
+
+## 2026-10-06 Pulse 缓存重入的原虚拟列表挂载修复
+
+实现前四步结论：
+
+1. 权威：REQ-24、DD-75 与既有 Pulse Community 边界不变。核验固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/shared/ui/VirtualizedList.tsx::VirtualizedList`；
+   保留原 TanStack 虚拟化、可变行高、浮动标题、滚动与卡片交互，不替换列表。
+2. 影响：仅共享 `forum/VirtualizedList.tsx` 的 DOM 挂载同步；实际调用方包括
+   `pulse/ui/PulseView.tsx::PulseView` 两种时间线以及原共享论坛消费者。
+   Web/Desktop 的 Pulse 使用同一主体；没有契约、Core、数据迁移或 Mobile 改动。
+3. 原因及副作用：缓存已有数据时，子列表的 layout effect 早于祖先滚动容器 ref
+   挂载；TanStack 当次读取 null，ref 写入不会触发 render，原无标题路径也没有
+   状态变化，因此一直没有可见行。改变窗口宽度引发的 render 才使它重新订阅。
+   现在只在整次 commit 后发现真实滚动元素变化时触发一次同步；不伪造尺寸，
+   不主动发 resize、不轮询、不重新取数据，也不改变消息/权限/已读权威。
+4. 边界：外部容器与列表同次首次挂载、切走再进入、内部自持滚动容器和浮动标题
+   均沿真实 DOM 与原订阅清理路径处理。元素未挂载时仍不测量；同元素后续
+   commit 不重复更新状态。此 UI 生命周期修复不改变原异常分类或 UNKNOWN。
+
+先实现后在既有受限 SDK 的独立 `message-edit.AGX058/apps` 快照验证。
+共享 source/test 两套 `tsc --noEmit` 均退出 0；
+`vitest run test/virtualized-list.test.tsx` 使用真实 TanStack hook，仅为
+jsdom 提供浏览器尺寸，三项通过：缓存首挂、缓存重入、内部容器与标题。
+私有快照删除新增同步调用后，前两项真实失败，分别得到空 article 列表和
+`expected length 2 but got 0`，退出 1；内部容器检查仍通过。
+恢复正式字节且 cmp 0 后，两套类型检查及三项用例再次退出 0。
+日志位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`：
+`pulse-virtualized.log`、`pulse-virtualized-mutation.log`、
+`pulse-virtualized-restored.log`。
+本批未 full、未构建、未部署；线上浏览器复验留待包含此源码的真实投递，
+不能将旧页面或 jsdom 结果称为新线上验收。
+
+### Projects 原生公告目录共源增量（2026-10-06）
+
+本批关联 REQ-24、DD-39、SS-BUZ-GOVERNANCE、SS-WEB-RELAY，比较基准为
+`89f69014d2682bda65bc5f1ee77c1fa7c9a29080`。只恢复真实 Projects 公告目录，
+不把 Workspace/Task 当作项目，也不把该增量记作完整 Projects 已交付。
+
+四步影响结论：
+
+1. 权威：沿 `.design/09` 既定 Community 读取边界，公告正文、替换事件与删除
+   仍在 Relay；Core 没有项目表或第二目录。固定上游
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `crates/buzz-relay/src/handlers/ingest.rs::is_global_only_kind` 与
+   `validate_project_envelope` 确认 30621、30617 是 Community-global 公告。
+   `crates/buzz-relay/src/api/git/binding.rs::resolve_repo_binding` 和
+   `crates/buzz-relay/src/api/git/transport.rs::authorize_git_read` 另行决定 Git
+   绑定与内容权限；公告中的仓库坐标不会授予内容、频道、工具或 Agent 权限。
+2. 影响：新增封闭的 ProjectsQueryRequest 与 BFF 只读路由，Web 复用当前
+   Tenant 的 `tenant.discover`、ACTIVE 身份/binding 和本人 SERVER 签名，
+   查询后重新准入并比较 signer；Desktop 仍用本机 CLIENT 直连原 Relay。
+   两端实际消费同一 ProjectsView、读模型、分页、卡片与详情元数据。新增可选
+   契约字段与四侧生成一并比对；联合生成含并行升级批的可选 `canUpgrade`，
+   不能把生成物脱离其 schema 单独交付。本批没有数据库、迁移、写动作或
+   Workflow 变更，也没有新编译期 schema 文件引用需追加发布 COPY。
+3. 副作用：查询不发公告、不调用 Git、不执行工具。保留原 owner/unlisted、
+   仓库归属、删除阈值与未解析坐标语义；未知仓库只显示不可读取引用，不能
+   伪造 owner 或零值 Git 统计。查询失败移除旧详情，不渲染为空列表成功。
+4. 边界：空目录正常展示；分页上限读取当前 Relay NIP-11，保留原秒级边界
+   补查，整秒仍饱和则拒绝截断。删除只按精确 30621/30617 坐标有界批查，
+   任一批失败拒绝整个结果。枚举中身份/binding/限额变化、退出 scope、非法
+   时间窗口均拒绝；不扩大 scope 或回退默认身份。切 scope 清理缓存，焦点
+   返回重新读取。移动端未增加 Projects 宿主入口。
+
+复用证据均对应上述完整上游 commit：
+`desktop/src/features/projects/projectModels.ts::buildProjectReadModels`、
+`desktop/src/features/projects/projectEnumeration.ts::enumerateProjectEvents`、
+`desktop/src/features/projects/lib/projectCollection.ts::absorbStandaloneProjectRepositories`、
+`desktop/src/features/projects/ui/ProjectCards.tsx::ProjectGridCard`、
+`desktop/src/features/projects/ui/ProjectEntityListRow.tsx::ProjectEntityListRow`、
+`desktop/src/features/projects/ui/ProjectDetailMeta.tsx::ProjectDetailMetaList`。
+保留公告名称/描述、真实仓库计数、原卡片与列表呈现、搜索、排序、布局切换及
+实际详情打开；原 Git 文件/Issues/PR、项目创建编辑删除、终端及关联写动作
+仍不在本批完成范围，完整原功能需求没有删减。
+
+验证使用原 `kailo-agent-receipt-xvkujx` SDK，实际 4 CPU/8 GiB 内存与 swap
+上限，缓存和日志在 Data 盘；执行前回读资源与并发，未开 full 或镜像构建。
+原 `tools/gen.sh` 四侧生成、同源文案及注册表生成最终退出 0；共享源码和
+测试 tsc、Web tsc、Desktop tsc 均退出 0。Projects 原实现后检查 8 项通过；
+Core Projects 3 项、Rust 契约往返 24 项通过，clippy `-D warnings` 退出 0。
+TS 契约 29 项、Dart 往返 24 项与 i18n 8 项、Go contracts 包通过，原文案
+`--check` 退出 0。
+
+反向验证：私有 SDK 放宽分页 signer 比较后，原“changed signing identity”
+用例真实 1 项失败、退出 1；原字节恢复 cmp 0 后 8 项通过。私有 SDK 将删除
+坐标 kind 校验改为任意非空 kind，重新编译后原坐标隔离用例真实 1 项失败、
+退出 101；源码原字节恢复 cmp 0 并重新编译，3 项再次通过。正式源码没有
+保留变异。日志目录为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/projects-directory.wiWDv3/`：
+`generation-restored.log`、`host-types.log`、`core.log`、
+`ui-mutation.log`、`core-mutation.log`、`core-restored.log`、
+`roundtrip-restored.log`。
+
+首次生成在四侧完成后因私有快照缺 i18n 输入失败；补齐输入后原入口通过。
+首轮共享测试 tsc 缺新增 Projects 图标夹具，补原夹具后通过；首轮 Web tsc
+因 SDK 的 file-package 仍为旧共享包而失败，同步同一冻结输入后两端通过。
+这些失败保留原日志，不改产品行为迁就工具。本批未 full、未提交/push、
+未构建/部署、未做新浏览器或 Windows 安装包验收；投递须先发布具有真实
+只读路由的 Core，再发布消费者。旧线上版本没有该入口不等于此源码已上线。
+
+随后原 `./tools/check-docs.sh ../.design` 实际七段全部通过、退出 0，
+同目录 `docs.log`；该轻量文档检查不改变上述未 full/未部署边界。
+
+## 2026-10-06 原成员浏览与受治理资料入口
+
+本批实现前四步结论：
+
+1. 权威为 REQ-24、DD-53、DD-75、DD-77：成员按现有 Principal 聚合真实协议公钥，
+   资料仍由原 Relay kind:0 管理；Web 本人 SERVER 代签、Desktop 本机 CLIENT 查询。
+   没有新成员目录、资料数据库、角色权威或正文副本。
+2. 影响为共享 MembersPane/WorkspaceMembersPage、两端既有成员路由、
+   原 BFF client/route/web_transport 与 platform.pages 追溯。现有 WebProfileView
+   不变，无迁移或四侧合同变化；新增四个中英词条由原入口同步 Dart。
+3. 副作用检查：目录某成员的公钥不能成为任意用户查询入口。新增读取先检查当前
+   Workspace 协作准入，再核验目标 HUMAN、HumanIdentity、TenantMembership、
+   WorkspaceMembership 和 BuzzIdentityBinding 均 ACTIVE，且公钥精确属于该成员；
+   读取原 kind:0 后验签，并复核 scope epoch、目标 membership/key version 与本人
+   signer。不得用 Pulse discover 或任意消息替代成员证明。
+4. 边界为零成员、搜索无匹配、读取失败、切频道、焦点刷新和执行中撤权。
+   失败时移除旧行/旧资料；错 scope/Principal/pubkey 与撤权返回拒绝，不伪造空成功。
+   各管理分类首次打开才挂载，随后隐藏但不卸载，保留原未决意图和幂等状态；
+   不把管理可见 Workspace 当可协作频道。原异常分类及 UNKNOWN 不变。
+
+核验固定 Buzz `779af8886caae1317b4de962082429867ab61503`：
+
+- `desktop/src/features/community-members/ui/CommunityMembersSettingsCard.tsx::RelayMemberRow`
+  与 `HoverMemberIdentity`：复用原成员行、搜索、头像/资料交互和原虚拟列表。
+- `desktop/src/features/settings/ui/SettingsView.tsx::SettingsView`：
+  复用原设置分类布局承接现有邀请、角色、组织、密钥、能力、组件和绑定管理，
+  不再进入成员页就堆叠全部表单，也未删除这些治理能力。
+- 头像与资料复用已抽取的原 ProfileAvatar、UserProfilePopover、ProfileSummaryView，
+  不另做精简资料卡。Desktop 通过原 UserProfilePopover 消费本机 CLIENT 通路；
+  Web 仅在 hover/open 后调用该 Workspace 的真实成员资料接口。
+
+实现后在既有 4 CPU/8 GiB SDK 集中窄验：共享源码/测试 tsc、Web/Desktop tsc
+退出 0；Members 四项、原 WorkspaceMembersPage 两项通过。JSDOM 只补原组件
+需要的 matchMedia/ResizeObserver/尺寸；真实 TanStack 虚拟化仍参与运行。
+Core 原 web_transport 范围 28 项（含真实隔离库事务用例）通过，clippy
+`-D warnings` 退出 0。原 gen-registry 退出 0，生成物只新增一个成员 profile route。
+
+反向验证：私有 SDK 将访问过的管理分类改为切走即卸载，真实 1 项失败、退出 1；
+原字节 cmp 0 恢复后四项通过。私有 SDK 放宽 SQL 精确公钥条件，重新编译后
+错公钥用例真实失败、退出 101；原字节 cmp 0 恢复并重新编译后该用例通过。
+正式源码无变异。日志位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/projects-directory.wiWDv3/`：
+`members-core.log`、`members-core-mutation.log`、`members-core-restored.log`、
+`members-ui-mutation.log`、`members-ui-final.log`、`members-final-restored.log`。
+首轮 JSDOM 缺 matchMedia 的两项失败及旧页夹具漏导入生命周期的 tsc 失败均保留，
+修的是既有检查环境，不放松产品权限或行为。
+
+本批只恢复已接通的频道成员浏览/资料与管理分类，不宣称原 Community 管理全功能：
+原 owner/admin 标识、加入日期和踢人/升降权行菜单仍须对应真实治理事实与动作，
+不能由 WorkspaceMemberView 缺失字段猜造。目录头像保留原 fallback，完整资料按需
+读取；未完成资料批量头像投影。本批未 full、未构建、未部署、未做线上或安装包
+验收；投递仍须 Core 新路由先于 Web 消费者。

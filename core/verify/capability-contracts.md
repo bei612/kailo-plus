@@ -224,3 +224,44 @@ AuditEvent 及 Catalog 事务安装一次。它不是在线管理员登记或组
 
 本批未执行产品镜像构建、部署、真实模型调用、五键业务套件或全量检查；现有
 WeKnora 后端已部署的事实与此源码批分开记录，不能把种子安装验证当成组件接通。
+
+## 原生引用进入能力实参（2026-10-06）
+
+权威：沿 DD-102/108 与 design03 ContentReference 单一引用语义，修正原种子
+读/导出/删除的空对象输入 schema 与 HUMAN ComponentActionInput 实际输入不一致。
+输入 schema 直接复用 `contracts/domain/content_reference.schema.json` 的完整文档，
+不新增类型，不把业务正文写入 Core/Temporal。种子尚未部署，本次不改已有 Catalog
+行、不修改历史迁移校验和，不生成 release/binding 或假原生对象标识。
+
+影响：原注册向量 `referenceFromStepKey` 仍只能指向同 case 更早的相同 Resource/
+Asset；注册时其 inputJson 必须是空对象占位，不能覆盖任意用户参数。实际派发时将
+前一步原生响应的 typed ContentReference 同时送入 inputJson 和原 typed 槽，按当前
+冻结契约的 inputSchemaDigest 重新验证后才签发令牌；最终报告按同一逻辑复算摘要。
+普通静态输入仍在注册时校验。本次只对齐 Web/Desktop HUMAN、Agent Tool 与独立
+adapter 所需的文档引用数据形状，不证明整个派发协议已相同；Mobile 不新增组件
+宿主页面。没有四侧 wire schema 或数据库变更。
+
+副作用及异常：缺失/跨 Resource/Asset/错误原生版本/非空覆盖输入、未知契约键和
+实际 schema 不匹配均沿原 PRECONDITION 拒绝；原生读取权限仍由已有双相 PEP 决定。
+重入使用原 idempotencyKey，UNKNOWN 对账仍只查询原执行，不重放 execute。注册时
+的延期校验不算真实套件成功，报告也不凭 resultJson 推断引用，不产生第二引用权威。
+
+实现后在既有 4 CPU/8 GiB SDK 跑原 component_release 与 capability_contract 模块：
+分别 10 项通过、2 项显式忽略，以及 10 项通过、1 项显式忽略。SDK 删除 inputJson
+物化语句后，原 probe 实参断言确实得到空对象而非引用，退出 101；已从正式字节还原。
+首次回拷保留旧 mtime，Cargo 没有重编译、仍执行变异产物，恢复检查失败；随后核对
+文件摘要、纠正本次三个 SDK 投递文件归属并更新时间，再重编译，保留全部原始输出。
+日志位于 Data 的 `codex-agent-receipt-regression-20261005.XvkUjX/`
+`profile-settings-ortsoo.DRR20F/typed-reference-input*.log`。
+
+范围未完成项：ingest 的原生预置文档引用、发布/索引终态与删除清理证据仍需独立
+adapter 原生消费者闭合。此处没有伪造 fixture native ID/revision，也不把整个五键
+套件、组件完整集成或部署记为通过；全量检查与真实发布另行记录。
+
+同批交叉复核又确认独立的既有派发缺口：`component_release::prewrite` 的套件请求
+仍是 `contractKey/inputJson`，而 `application_binding_native::Adapter::execute_prepared`
+实际生产请求是 `actionKey/arguments`；Worker 不转换这些字节。隔离签发器的请求
+摘要及身份字段也尚未等效于该生产消费者。因此本次 typed input 修正不能解除
+Remote Adapter 套件接通阻断，不能把隔离通过当作真实 read/export 通过；不会在
+Adapter 添加另一条只为套件通过的执行或鉴权路径。原生独立服务开发与平台协作
+主线继续，不因这一组件接缝停工。

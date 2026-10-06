@@ -70,12 +70,12 @@ async fn installation(
         join identity.tenant_membership tm on tm.tenant_principal_id=p.id and tm.tenant_id=t.id and tm.state='ACTIVE'
         where r.id=$1 and r.tenant_id=$2 and r.type_key='agent.installation'
           and r.application_binding_id is null and r.home_workspace_id=w.id and r.state='ACTIVE'
-          and i.state='ACTIVE' and i.active_projection_generation is not null
+          and i.state in ('ACTIVE','DRAINING') and i.active_projection_generation is not null
           and (r.projection_action_execution_id is null or exists (
             select 1 from admission.action_execution ae where ae.id=r.projection_action_execution_id
               and ae.tenant_id=r.tenant_id and ae.workspace_id=w.id and ae.target_id=r.id
               and ae.action_key in ('agent.installation.execute.grant','agent.installation.execute.revoke',
-                'resource.grant_read','resource.revoke_read')))
+                'resource.grant_read','resource.revoke_read','agent.installation.upgrade')))
         {}", if lock { "for update of r,i,w,a,p,tm" } else { "" }))
         .bind(id).bind(tenant).fetch_optional(conn).await
 }
@@ -154,12 +154,13 @@ pub(super) async fn target(
             .bind(tenant)
             .fetch_one(&mut *conn)
             .await?;
-            if key
-                != if is_read(&def.action_key) {
-                    READ_GRANT
-                } else {
-                    GRANT
-                }
+            if key != "agent.installation.upgrade"
+                && key
+                    != if is_read(&def.action_key) {
+                        READ_GRANT
+                    } else {
+                        GRANT
+                    }
             {
                 return Err(conflict());
             }
@@ -516,6 +517,17 @@ pub(super) async fn prewrite(
     if row.version != version || Some(row.workspace_id) != ae.workspace_id {
         return Err(conflict());
     }
+    let interrupted: Option<Uuid> = if let Some(pending) = row.projection_action_execution_id {
+        sqlx::query_scalar(
+            "select id from admission.action_execution where id=$1
+            and action_key='agent.installation.upgrade' and gate_state='ALLOWED'",
+        )
+        .bind(pending)
+        .fetch_optional(&mut **tx)
+        .await?
+    } else {
+        None
+    };
     let updated = sqlx::query(
         "update catalog.resource set version=version+1,projection_action_execution_id=$2
         where id=$1 and tenant_id=$3 and version=$4 returning version",
@@ -529,7 +541,8 @@ pub(super) async fn prewrite(
     let version: i32 = updated.ok_or_else(conflict)?.try_get("version")?;
     sqlx::query("update admission.action_execution set parameters=jsonb_set(parameters,'{permissionIntent}',$2),updated_at=now() where id=$1")
         .bind(ae.id).bind(json!({"resourceVersion":version,"agentPrincipalId":row.agent_principal_id,
-            "ownerPrincipalId":row.owner_principal_id})).execute(&mut **tx).await?;
+            "ownerPrincipalId":row.owner_principal_id,
+            "interruptedProjectionActionExecutionId":interrupted})).execute(&mut **tx).await?;
     if ae.action_key == REVOKE {
         // A subsequent grant never clears this immutable cancellation intent.
         // AgentTask retains native/Temporal/usage terminal authority.
@@ -645,8 +658,7 @@ pub(super) async fn dispatch(
         if first && matches!(error, Refusal::Denied(_) | Refusal::Conflict(_)) {
             sqlx::query("update admission.action_execution set dispatch_state='ABORTED',reason_code=$2,updated_at=now() where id=$1")
                 .bind(id).bind(super::wire(&error.reason())).execute(&mut *tx).await?;
-            sqlx::query("update catalog.resource set projection_action_execution_id=null where id=$1 and projection_action_execution_id=$2 and version=$3")
-                .bind(row.id).bind(id).bind(row.version).execute(&mut *tx).await?;
+            restore_projection_intent(&mut tx, &row, &ae).await?;
             audit(
                 &mut tx,
                 &ae,
@@ -750,18 +762,7 @@ pub(super) async fn dispatch(
         tx.commit().await?;
         return Err(unavailable());
     }
-    let updated = sqlx::query(
-        "update catalog.resource set projection_action_execution_id=null
-        where id=$1 and projection_action_execution_id=$2 and version=$3",
-    )
-    .bind(row.id)
-    .bind(id)
-    .bind(row.version)
-    .execute(&mut *tx)
-    .await?;
-    if updated.rows_affected() != 1 {
-        return Err(conflict());
-    }
+    restore_projection_intent(&mut tx, &row, &ae).await?;
     sqlx::query("update admission.action_execution set dispatch_state='DISPATCHED',reason_code=null,updated_at=now() where id=$1")
         .bind(id).execute(&mut *tx).await?;
     let mut evidence = zed_evidence(Some(&c.zed_token));
@@ -797,6 +798,51 @@ pub(super) async fn dispatch(
     tx.commit().await?;
     if ae.approval_workflow_id.is_some() {
         g.consume(ae.id).await;
+    }
+    Ok(())
+}
+
+async fn restore_projection_intent(
+    tx: &mut Transaction<'_, Postgres>,
+    row: &Installation,
+    ae: &Execution,
+) -> Result<(), Refusal> {
+    let previous = ae
+        .parameters
+        .as_ref()
+        .and_then(|p| p.get("permissionIntent"))
+        .and_then(|p| p.get("interruptedProjectionActionExecutionId"))
+        .filter(|v| !v.is_null())
+        .map(|v| {
+            v.as_str()
+                .and_then(|s| Uuid::parse_str(s).ok())
+                .ok_or_else(conflict)
+        })
+        .transpose()?;
+    // Only an already admitted upgrade can be resumed. Revocation never
+    // invents or clears that original action, nor rewrites its parameters.
+    if let Some(previous) = previous {
+        let valid: bool = sqlx::query_scalar("select exists(select 1 from admission.action_execution a
+            join catalog.agent_installation i on i.resource_id=a.target_id
+            where a.id=$1 and a.target_id=$2 and a.tenant_id=$3 and a.workspace_id=$4
+              and a.action_key='agent.installation.upgrade' and a.gate_state='ALLOWED' and i.state='DRAINING')")
+            .bind(previous).bind(row.id).bind(row.tenant_id).bind(row.workspace_id).fetch_one(&mut **tx).await?;
+        if !valid {
+            return Err(conflict());
+        }
+    }
+    let changed = sqlx::query(
+        "update catalog.resource set projection_action_execution_id=$4
+        where id=$1 and projection_action_execution_id=$2 and version=$3",
+    )
+    .bind(row.id)
+    .bind(ae.id)
+    .bind(row.version)
+    .bind(previous)
+    .execute(&mut **tx)
+    .await?;
+    if changed.rows_affected() != 1 {
+        return Err(conflict());
     }
     Ok(())
 }
@@ -863,8 +909,11 @@ async fn permission_view(
     "canGrant":can_manage && enabled[0] && row.projection_action_execution_id.is_none() && !requested,
     "canRevoke":can_manage && enabled[1] && match row.projection_action_execution_id {
         None => true,
-        Some(pending) => sqlx::query_scalar::<_, String>("select action_key from admission.action_execution where id=$1 and tenant_id=$2")
-            .bind(pending).bind(tenant).fetch_one(&mut *conn).await? == grant_key,
+        Some(pending) => {
+            let key = sqlx::query_scalar::<_, String>("select action_key from admission.action_execution where id=$1 and tenant_id=$2")
+                .bind(pending).bind(tenant).fetch_one(&mut *conn).await?;
+            key == grant_key || key == "agent.installation.upgrade"
+        },
     }});
     if let Some(pending) = row.projection_action_execution_id {
         result["pendingActionExecutionId"] = json!(pending);

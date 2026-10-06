@@ -94,6 +94,17 @@ export function VirtualizedList<T>({
     () => resolvedScrollRef.current,
     [resolvedScrollRef],
   );
+  const [committedScrollElement, setCommittedScrollElement] =
+    React.useState<HTMLElement | null>(null);
+  React.useEffect(() => {
+    // An external ancestor's ref attaches after this child's layout effects.
+    // Ref writes do not render: reconcile after the whole commit so TanStack
+    // can subscribe even when cached rows mount with their scroll container.
+    // Also cover a caller replacing the element behind the same ref object.
+    if (committedScrollElement !== resolvedScrollRef.current) {
+      setCommittedScrollElement(resolvedScrollRef.current);
+    }
+  });
 
   // When a sticky header (or any caller content) sits above the rows in the
   // same scroll container, the row spacer no longer starts at scrollTop 0.

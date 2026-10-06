@@ -315,7 +315,7 @@ const TURN_FACTS: &str = "select i.id invocation_id,a.operation_id,i.tenant_id,i
      and i.automation_resource_id is null and i.automation_version_asset_id is null))
  and s.status='ACTIVE' and s.runtime_thread_id=$2 and s.projection_generation=i.projection_generation
  and s.agent_version_asset_id=i.agent_version_asset_id
- and installation.state='ACTIVE' and installation.active_projection_generation=i.projection_generation
+ and catalog.agent_generation_admitted(installation.resource_id,i.agent_version_asset_id,i.projection_generation)
  and r.state='ACTIVE' and w.state='ACTIVE' and p.state='ACTIVE'
  and b.secret_status='ACTIVE' and b.native_key_id is not null and b.native_key_revision>0
  and principal.kind='SERVICE' and principal.status='ACTIVE' and o.status='ACTIVE'

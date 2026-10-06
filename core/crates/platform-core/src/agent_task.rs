@@ -58,7 +58,8 @@ const LOAD: &str =
       and v.automation_resource_id=i.automation_resource_id) automation_action_kind
     from catalog.agent_invocation i join catalog.agent_session s
       on s.workspace_id=i.workspace_id and s.root_event_id=i.root_event_id
-      and s.installation_resource_id=i.installation_resource_id where i.id=$1";
+      and s.installation_resource_id=i.installation_resource_id
+      and s.projection_generation=i.projection_generation and s.agent_version_asset_id=i.agent_version_asset_id where i.id=$1";
 
 pub(crate) async fn advance(
     State(state): State<ServiceState>,
@@ -460,8 +461,8 @@ async fn advance_accepted(
     if facts.tenant_id != invocation.tenant_id || facts.workspace_id != invocation.workspace_id {
         return StatusCode::CONFLICT.into_response();
     }
-    let session: (String, String) = match sqlx::query_as("select status,core_memory_state from catalog.agent_session where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3")
-        .bind(invocation.workspace_id).bind(&invocation.root_event_id).bind(invocation.installation_resource_id).fetch_one(&state.pool).await {
+    let session: (String, String) = match sqlx::query_as("select status,core_memory_state from catalog.agent_session where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3 and projection_generation=$4")
+        .bind(invocation.workspace_id).bind(&invocation.root_event_id).bind(invocation.installation_resource_id).bind(invocation.projection_generation).fetch_one(&state.pool).await {
         Ok(session) => session, Err(error) => return unavailable(error),
     };
     if session.0 != "PENDING" {
@@ -1220,7 +1221,8 @@ async fn record_turn_in_transaction(
         where i.id=$1 and i.action_execution_id=$4 and i.status in ('DISPATCHING','UNKNOWN')
           and i.runtime_turn_id is null and exists(select 1 from catalog.agent_session s
             where s.workspace_id=i.workspace_id and s.root_event_id=i.root_event_id
-              and s.installation_resource_id=i.installation_resource_id and s.runtime_thread_id=$5)")
+              and s.installation_resource_id=i.installation_resource_id and s.projection_generation=i.projection_generation
+              and s.agent_version_asset_id=i.agent_version_asset_id and s.runtime_thread_id=$5)")
         .bind(invocation.id).bind(turn).bind(status)
         .bind(ae.id).bind(thread).execute(&mut **tx).await?;
     if changed.rows_affected() != 1 {

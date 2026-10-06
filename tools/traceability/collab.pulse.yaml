@@ -28,5 +28,9 @@ runtime:
   actions: [pulse.publish]
   workflow_kinds: []
 release:
-  artifacts: []
+  artifacts:
+    - name: core
+      digest: sha256:e42e3deb0faf34fc3eec1b4daecb85d542cb94865ca2875946f9f926b67ed8cf
+    - name: web-client
+      digest: sha256:dd59cc60ec1c6c4fc9369c3a43e421185a57f1e75afadf1431dfb6aca58a2717
   gate: blocked_until_seams_closed

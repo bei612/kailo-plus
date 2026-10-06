@@ -281,11 +281,12 @@ pub(crate) async fn observe_birth(
         .fetch_optional(&state.pool).await.map_err(|_| RuntimeError::Unknown)?.ok_or(RuntimeError::Unknown)?;
     let status: (String, Option<String>) = sqlx::query_as(
         "select status,runtime_thread_id from catalog.agent_session
-        where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3",
+        where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3 and projection_generation=$4",
     )
     .bind(scope.workspace_id)
     .bind(&scope.root_event_id)
     .bind(scope.installation_resource_id)
+    .bind(scope.projection_generation)
     .fetch_one(&state.pool)
     .await
     .map_err(|_| RuntimeError::Unknown)?;
@@ -548,9 +549,9 @@ async fn lock_birth(
           and v.agent_version_asset_id=s.agent_version_asset_id and v.projection_generation=s.projection_generation
         join catalog.agent_installation i on i.resource_id=v.installation_resource_id
           and i.workspace_id=v.workspace_id and i.pinned_version_asset_id=v.agent_version_asset_id
-          and i.active_projection_generation=v.projection_generation and i.state='ACTIVE'
+          and catalog.agent_generation_admitted(i.resource_id,v.agent_version_asset_id,v.projection_generation)
         join catalog.resource r on r.id=i.resource_id and r.tenant_id=v.tenant_id
-          and r.home_workspace_id=v.workspace_id and r.state='ACTIVE' and r.projection_action_execution_id is null
+          and r.home_workspace_id=v.workspace_id and r.state='ACTIVE'
         join identity.principal owner on owner.id=r.owner_principal_id and owner.tenant_id=v.tenant_id
           and owner.kind='HUMAN' and owner.status='ACTIVE'
         join identity.tenant_membership om on om.tenant_principal_id=owner.id

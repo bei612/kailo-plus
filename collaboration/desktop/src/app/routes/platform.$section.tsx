@@ -5,7 +5,7 @@ import {
   TasksPage,
 } from "@client-kit/platform/react/governance";
 import { WorkflowsPage } from "@client-kit/platform/react/workflows";
-import { TenantInvitations } from "@client-kit/platform/react/invitations";
+import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import {
   AgentDefinitionsPage,
   AuditPage,
@@ -20,6 +20,7 @@ import {
 } from "@/features/platform/platformSections";
 import { useNativeSession } from "@/features/platform/activeCommunity";
 import { PulseScreen } from "@/features/platform/PulseScreen";
+import { ProjectsScreen } from "@/features/platform/ProjectsScreen";
 
 export const Route = createFileRoute("/platform/$section")({
   params: {
@@ -44,6 +45,7 @@ function PlatformRouteComponent() {
 function PlatformScreen({ section }: { section: PlatformSection }) {
   const session = useNativeSession();
   if (section === "pulse") return <PulseScreen />;
+  if (section === "projects") return <ProjectsScreen />;
   return (
     <div
       className="flex min-h-0 flex-1 flex-col overflow-auto px-6 pb-6 pt-14"
@@ -53,11 +55,8 @@ function PlatformScreen({ section }: { section: PlatformSection }) {
         {translate(resolveLocale(), PLATFORM_SECTION_LABEL[section])}
       </h1>
       {section === "members" ? (
-        // 邀请属于 Tenant：只对 admin 出现（由邀请列表的 403 决定）
-        <div className="flex flex-col gap-6">
-          <WorkspaceMembersPage />
-          <TenantInvitations />
-        </div>
+        <WorkspaceMembersPage renderIdentity={(pubkey,children,label)=><UserProfilePopover pubkey={pubkey}
+          triggerElement="span" triggerAriaLabel={label}>{children}</UserProfilePopover>}/>
       ) : section === "agents" ? (
         <AgentDefinitionsPage />
       ) : section === "workflows" ? (

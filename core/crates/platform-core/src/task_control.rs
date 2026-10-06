@@ -144,6 +144,7 @@ pub(super) async fn permission_resource(
                 actor.tenant_id,
                 original.target_id,
                 false,
+                true,
             )
             .await?
             .filter(|r| Some(r.workspace_id) == original.workspace_id);

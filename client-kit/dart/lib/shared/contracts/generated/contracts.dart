@@ -83,6 +83,7 @@
 //     final platformTenantPage = platformTenantPageFromJson(jsonString);
 //     final platformToolPage = platformToolPageFromJson(jsonString);
 //     final platformToolView = platformToolViewFromJson(jsonString);
+//     final projectsQueryRequest = projectsQueryRequestFromJson(jsonString);
 //     final protocolSessionView = protocolSessionViewFromJson(jsonString);
 //     final pulsePublishRequest = pulsePublishRequestFromJson(jsonString);
 //     final pulseQueryRequest = pulseQueryRequestFromJson(jsonString);
@@ -699,6 +700,12 @@ PlatformToolView platformToolViewFromJson(String str) =>
     PlatformToolView.fromJson(json.decode(str));
 
 String platformToolViewToJson(PlatformToolView data) =>
+    json.encode(data.toJson());
+
+ProjectsQueryRequest projectsQueryRequestFromJson(String str) =>
+    ProjectsQueryRequest.fromJson(json.decode(str));
+
+String projectsQueryRequestToJson(ProjectsQueryRequest data) =>
     json.encode(data.toJson());
 
 ProtocolSessionView protocolSessionViewFromJson(String str) =>
@@ -4784,6 +4791,9 @@ class InstallationElement {
   ///则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
   ///准入。缺失或空集合不支持 Schedule。
   final List<AutomationResultTarget>? automationResultTargets;
+
+  ///当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
+  final bool? canUpgrade;
   final InstallationChannelBinding? channelBinding;
   final InstallationExecutionPermission? executionPermission;
   final String ownerPrincipalId;
@@ -4802,6 +4812,7 @@ class InstallationElement {
     required this.agentPrincipalState,
     required this.agentResourceId,
     this.automationResultTargets,
+    this.canUpgrade,
     this.channelBinding,
     this.executionPermission,
     required this.ownerPrincipalId,
@@ -4829,6 +4840,7 @@ class InstallationElement {
                   (x) => automationResultTargetValues.map[x]!,
                 ),
               ),
+        canUpgrade: json["canUpgrade"],
         channelBinding: json["channelBinding"] == null
             ? null
             : InstallationChannelBinding.fromJson(json["channelBinding"]),
@@ -4865,6 +4877,7 @@ class InstallationElement {
               (x) => automationResultTargetValues.reverse[x],
             ),
           ),
+    "canUpgrade": canUpgrade,
     "channelBinding": channelBinding?.toJson(),
     "executionPermission": executionPermission?.toJson(),
     "ownerPrincipalId": ownerPrincipalId,
@@ -5090,6 +5103,9 @@ class AgentInstallationView {
   ///则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
   ///准入。缺失或空集合不支持 Schedule。
   final List<AutomationResultTarget>? automationResultTargets;
+
+  ///当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
+  final bool? canUpgrade;
   final AgentInstallationViewChannelBinding? channelBinding;
   final AgentInstallationViewExecutionPermission? executionPermission;
   final String ownerPrincipalId;
@@ -5108,6 +5124,7 @@ class AgentInstallationView {
     required this.agentPrincipalState,
     required this.agentResourceId,
     this.automationResultTargets,
+    this.canUpgrade,
     this.channelBinding,
     this.executionPermission,
     required this.ownerPrincipalId,
@@ -5136,6 +5153,7 @@ class AgentInstallationView {
               (x) => automationResultTargetValues.map[x]!,
             ),
           ),
+    canUpgrade: json["canUpgrade"],
     channelBinding: json["channelBinding"] == null
         ? null
         : AgentInstallationViewChannelBinding.fromJson(json["channelBinding"]),
@@ -5172,6 +5190,7 @@ class AgentInstallationView {
               (x) => automationResultTargetValues.reverse[x],
             ),
           ),
+    "canUpgrade": canUpgrade,
     "channelBinding": channelBinding?.toJson(),
     "executionPermission": executionPermission?.toJson(),
     "ownerPrincipalId": ownerPrincipalId,
@@ -8947,6 +8966,49 @@ class PlatformToolView {
   });
 }
 
+///Original Buzz Community project/repository announcements and coordinate-scoped tombstones
+///only; no Git content or mutation authorization.
+class ProjectsQueryRequest {
+  final List<String>? coordinates;
+  final int? since;
+  final int? until;
+  final ProjectsQueryRequestView view;
+
+  ProjectsQueryRequest({
+    this.coordinates,
+    this.since,
+    this.until,
+    required this.view,
+  });
+
+  factory ProjectsQueryRequest.fromJson(Map<String, dynamic> json) =>
+      ProjectsQueryRequest(
+        coordinates: json["coordinates"] == null
+            ? null
+            : List<String>.from(json["coordinates"]!.map((x) => x)),
+        since: json["since"],
+        until: json["until"],
+        view: projectsQueryRequestViewValues.map[json["view"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "coordinates": coordinates == null
+        ? null
+        : List<dynamic>.from(coordinates!.map((x) => x)),
+    "since": since,
+    "until": until,
+    "view": projectsQueryRequestViewValues.reverse[view],
+  });
+}
+
+enum ProjectsQueryRequestView { DELETIONS, PROJECTS, REPOSITORIES }
+
+final projectsQueryRequestViewValues = EnumValues({
+  "DELETIONS": ProjectsQueryRequestView.DELETIONS,
+  "PROJECTS": ProjectsQueryRequestView.PROJECTS,
+  "REPOSITORIES": ProjectsQueryRequestView.REPOSITORIES,
+});
+
 ///03/18: only the initiating HUMAN's fresh-authorized original Session facts. No PAT,
 ///launch credential, native body or replacement revision is recoverable from this reader.
 class ProtocolSessionView {
@@ -9187,7 +9249,7 @@ class PulseQueryRequest {
   final List<String>? authors;
   final int? before;
   final List<String>? eventIds;
-  final View view;
+  final PulseQueryRequestView view;
 
   PulseQueryRequest({
     this.authors,
@@ -9205,7 +9267,7 @@ class PulseQueryRequest {
         eventIds: json["eventIds"] == null
             ? null
             : List<String>.from(json["eventIds"]!.map((x) => x)),
-        view: viewValues.map[json["view"]]!,
+        view: pulseQueryRequestViewValues.map[json["view"]]!,
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -9216,19 +9278,26 @@ class PulseQueryRequest {
     "eventIds": eventIds == null
         ? null
         : List<dynamic>.from(eventIds!.map((x) => x)),
-    "view": viewValues.reverse[view],
+    "view": pulseQueryRequestViewValues.reverse[view],
   });
 }
 
-enum View { AGENTS, CONTACTS, LIKED, NOTES, PROFILES, REACTIONS }
+enum PulseQueryRequestView {
+  AGENTS,
+  CONTACTS,
+  LIKED,
+  NOTES,
+  PROFILES,
+  REACTIONS,
+}
 
-final viewValues = EnumValues({
-  "AGENTS": View.AGENTS,
-  "CONTACTS": View.CONTACTS,
-  "LIKED": View.LIKED,
-  "NOTES": View.NOTES,
-  "PROFILES": View.PROFILES,
-  "REACTIONS": View.REACTIONS,
+final pulseQueryRequestViewValues = EnumValues({
+  "AGENTS": PulseQueryRequestView.AGENTS,
+  "CONTACTS": PulseQueryRequestView.CONTACTS,
+  "LIKED": PulseQueryRequestView.LIKED,
+  "NOTES": PulseQueryRequestView.NOTES,
+  "PROFILES": PulseQueryRequestView.PROFILES,
+  "REACTIONS": PulseQueryRequestView.REACTIONS,
 });
 
 ///PUT /api/v1/user-state/read 的请求体（DD-40、03 §2）。contextKey 只接受调用方可读 Workspace 内的 Channel

@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { ChannelType, ErrorClass, ReasonCode, type ActionCommand } from "@client-kit/contracts";
 import { AgentMemoryEntryPageState, AgentMemoryReadViewState, type AgentMemoryEntryPage, type AgentMemoryReadView } from "@client-kit/contracts";
 import { act, useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { AgentDefinitionsPage, AuditPage, DevicesPage, WorkspaceMembersPage } from "../src/react/pages";
 import { PlatformProvider } from "../src/react/context";
@@ -332,7 +332,7 @@ describe("independent shared Workflows page", () => {
       const [section, setSection] = useState<"agents" | "workflows">("agents");
       return <><PlatformNavigation locale="en" selectedSection={section}
         onSelectSection={(next) => { if (next === "agents" || next === "workflows") setSection(next); }}
-        icons={{ pulse: null, members: null, agents: null, workflows: null, tasks: null, approvals: null, audit: null, devices: null }} />
+        icons={{ pulse: null, projects: null, members: null, agents: null, workflows: null, tasks: null, approvals: null, audit: null, devices: null }} />
         {section === "agents" ? <AgentDefinitionsPage /> : <WorkflowsPage />}</>;
     }
     const host = await mount(t, <Host />);
@@ -1216,6 +1216,43 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
   }
   const posts = (t: ReturnType<typeof routes>) => t.send.mock.calls.map(([r]) => r).filter((r) => r.path === "/api/v1/actions");
 
+  it("upgrades the actual Installation with its freshly read version and preserves an UNKNOWN command", async () => {
+    const current = { ...installation, canUpgrade: true, resourceVersion: 12 };
+    const published = { ...version, state: "PUBLISHED", canUpdate: false, canPublish: false };
+    const t = routes((r) => r.path.startsWith("/api/v1/agent-installations?")
+      ? { status: 200, body: { installations: [{ ...installation, canUpgrade: true }] } }
+      : r.path === `/api/v1/agent-installations/${installation.resourceId}` ? { status: 200, body: current }
+      : r.path.includes("/versions?") ? { status: 200, body: { agentResourceId: definition.resourceId,
+        resourceVersion: definition.resourceVersion, versions: [published, version], nextOffset: null } }
+      : r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.installation.upgrade", "UNKNOWN") } : undefined);
+    const host = await open(t);
+    await click(button(section(host, "agent-installations"), "View installation"));
+    await click(button(section(host, "agent-installations"), "Upgrade / roll back version"));
+    const action = section(host, "agent-installation-upgrade");
+    expect(action.querySelectorAll("option")).toHaveLength(2);
+    await change(action, "Published target version", version.assetId);
+    await click(button(action, "Review request"));
+    await click(button(action, "Request version change"));
+    const command = posts(t)[0]?.body;
+    expect(command).toEqual({ actionKey: "agent.installation.upgrade", idempotencyKey: expect.any(String),
+      workspaceId: installation.workspaceId, resourceId: installation.resourceId, resourceVersion: 12,
+      assetId: version.assetId, assetVersion: version.assetVersion });
+    expect(action.textContent).toContain("Outcome is not confirmed.");
+    expect([...action.querySelectorAll("button")].some((b) => b.textContent === "Cancel request")).toBe(false);
+    await click(button(action, "Re-check same request"));
+    expect(posts(t)).toHaveLength(2);
+    expect(posts(t)[1]?.body).toEqual(command);
+  });
+
+  it.each([undefined, false])("does not infer upgrade permission from an ACTIVE Installation (%j)", async (canUpgrade) => {
+    const t = routes((r) => r.path.startsWith("/api/v1/agent-installations?")
+      ? { status: 200, body: { installations: [{ ...installation, canUpgrade }] } } : undefined);
+    const host = await open(t);
+    await click(button(section(host, "agent-installations"), "View installation"));
+    expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Upgrade / roll back version")).toBe(false);
+    expect(posts(t)).toHaveLength(0);
+  });
+
   it("uses the original identity cards and creation entry without executing an Agent", async () => {
     const t = routes();
     const host = await mount(t, <AgentDefinitionsPage />);
@@ -1971,10 +2008,16 @@ describe("DevicesPage", () => {
 });
 
 describe("WorkspaceMembersPage", () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype,"offsetHeight","get").mockReturnValue(420);
+    vi.spyOn(HTMLElement.prototype,"offsetWidth","get").mockReturnValue(800);
+    vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockReturnValue(new DOMRect(0,0,800,420));
+  });
+  afterEach(() => vi.restoreAllMocks());
   it("取 Workspace 后按人列出成员与全部公钥", async () => {
     const t = transport((r) =>
       r.path === "/api/v1/workspaces"
-        ? { status: 200, body: [{ id: "w1", name: "Ops", slug: "ops" }] }
+        ? { status: 200, body: [{ id: "w1", name: "Ops", slug: "ops", isMember: true }] }
         : r.path.startsWith("/api/v1/role-workspaces")
           ? { status: 200, body: { workspaces: [{ id: "w1", name: "Ops", state: "ACTIVE" }] } }
         : r.path.startsWith("/api/v1/role-members")
@@ -1992,7 +2035,8 @@ describe("WorkspaceMembersPage", () => {
     expect(host.textContent).toContain("Ada");
     expect(host.textContent).toContain("Member");
     expect(host.textContent).not.toContain("ACTIVE");
-    expect(host.textContent).toContain("eeeeeeee…eeee · ffffffff…ffff");
+    expect(host.textContent).toContain("eeeeeeee…eeee");
+    expect(host.textContent).toContain("ffffffff…ffff");
   });
 
   it("没有可进入的 Workspace 就不画选择器", async () => {

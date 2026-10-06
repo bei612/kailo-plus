@@ -7,6 +7,29 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
+import type { AgentInstallationView } from "../src/generated/contracts.js";
+
+test("Installation upgrade permission keeps false and legacy absence", () => {
+  const sample: AgentInstallationView = JSON.parse(readFileSync(new URL("../../../../contracts/samples/agent-installation-upgrade.sample.json", import.meta.url), "utf8"));
+  for (const canUpgrade of [true,false,undefined]) {
+    const value = {...sample,canUpgrade};
+    const back:AgentInstallationView={resourceId:value.resourceId,workspaceId:value.workspaceId,
+      agentResourceId:value.agentResourceId,pinnedVersionAssetId:value.pinnedVersionAssetId,
+      agentPrincipalId:value.agentPrincipalId,ownerPrincipalId:value.ownerPrincipalId,
+      agentPrincipalState:value.agentPrincipalState,resourceVersion:value.resourceVersion,
+      resourceState:value.resourceState,state:value.state,canUpgrade:value.canUpgrade};
+    deepStrictEqual(JSON.parse(JSON.stringify(back)),JSON.parse(JSON.stringify(value)));
+  }
+});
+import type { ProjectsQueryRequest } from "../src/generated/contracts.js";
+
+test("Projects query preserves scoped coordinates and absent optional window", () => {
+  const sample: ProjectsQueryRequest = JSON.parse(readFileSync(new URL("../../../../contracts/samples/projects-query.sample.json", import.meta.url), "utf8"));
+  for (const value of [sample, {view:"PROJECTS"} as ProjectsQueryRequest]) {
+    const back:ProjectsQueryRequest={view:value.view,coordinates:value.coordinates,since:value.since,until:value.until};
+    deepStrictEqual(JSON.parse(JSON.stringify(back)),value);
+  }
+});
 import type { CapabilityContractPage } from "../src/generated/contracts.js";
 
 test("seed and human contract registration preserve separate evidence", () => {

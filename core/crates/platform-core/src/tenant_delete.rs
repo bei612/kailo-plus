@@ -177,7 +177,7 @@ pub(crate) async fn frozen_agent_inventory(
             select tenant_id,workspace_id,root_event_id,source_kind,installation_resource_id,
                    agent_version_asset_id,projection_generation
             from catalog.agent_session where tenant_id=$1
-            order by workspace_id,root_event_id,installation_resource_id for update) x),
+            order by workspace_id,root_event_id,installation_resource_id,projection_generation for update) x),
           'invocations', (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from (
             select id,tenant_id,workspace_id,root_event_id,source_event_id,source_kind,schedule_id,scheduled_at,installation_resource_id,
                    agent_version_asset_id,projection_generation,parent_invocation_id,

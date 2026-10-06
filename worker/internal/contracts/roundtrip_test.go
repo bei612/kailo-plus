@@ -14,6 +14,70 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestInstallationUpgradeRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "agent-installation-upgrade.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, permission := range []any{true, false, nil} {
+		var value map[string]any
+		if err := json.Unmarshal(raw, &value); err != nil {
+			t.Fatal(err)
+		}
+		if permission == nil {
+			delete(value, "canUpgrade")
+		} else {
+			value["canUpgrade"] = permission
+		}
+		input, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var typed generated.AgentInstallationView
+		if err := json.Unmarshal(input, &typed); err != nil {
+			t.Fatal(err)
+		}
+		back, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got map[string]any
+		if err := json.Unmarshal(back, &got); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(value, got) {
+			t.Fatal("Installation upgrade permission lost")
+		}
+	}
+}
+
+func TestProjectsQueryRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "projects-query.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range [][]byte{raw, []byte(`{"view":"PROJECTS"}`)} {
+		var typed generated.ProjectsQueryRequest
+		if err := json.Unmarshal(input, &typed); err != nil {
+			t.Fatal(err)
+		}
+		back, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var want, got any
+		if err := json.Unmarshal(input, &want); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(back, &got); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(want, got) {
+			t.Fatalf("Projects query lost fields")
+		}
+	}
+}
+
 func TestCapabilitySeedEvidenceRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "capability-seed-page.sample.json"))
 	if err != nil {

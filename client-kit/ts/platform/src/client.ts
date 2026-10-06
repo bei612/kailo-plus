@@ -77,6 +77,7 @@ export function createBffClient(transport: BffTransport) {
     transport,
     profile: () => get<WebProfileView>("/api/v1/profile"),
     messageAuthorProfile: (workspaceId: string, eventId: string) => get<WebProfileView>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/messages/${encodeURIComponent(eventId)}/author-profile`),
+    memberProfile: (workspaceId: string, principalId: string, pubkey: string) => get<WebProfileView>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(principalId)}/profiles/${encodeURIComponent(pubkey)}`),
     conversationMessageAuthorProfile: (conversationId: string, eventId: string) => get<WebProfileView>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(eventId)}/author-profile`),
     updateProfile: (body: WebProfileUpdateRequest) => call<{ eventId: string; operationId: string }>({ method: "PUT", path: "/api/v1/profile", body }),
 

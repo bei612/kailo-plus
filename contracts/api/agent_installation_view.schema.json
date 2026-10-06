@@ -17,6 +17,7 @@
     "resourceVersion": {"type": "integer", "minimum": 1},
     "resourceState": {"$ref": "../enums/resource_state.schema.json"},
     "state": {"$ref": "../enums/agent_installation_state.schema.json"},
+    "canUpgrade": {"type": "boolean", "description": "当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。"},
     "activeProjectionGeneration": {"type": "integer", "minimum": 1},
     "channelBinding": {
       "type": "object",

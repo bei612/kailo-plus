@@ -1515,8 +1515,10 @@ const RUN: &str = "select r.id resource_id,r.tenant_id,d.workspace_id,r.version 
       and a.type_key='automation.version' and a.projection_action_execution_id is null
       and owner.kind='HUMAN' and owner.status='ACTIVE' and tm.state='ACTIVE'
       and version_owner.kind='HUMAN' and version_owner.status='ACTIVE' and version_tm.state='ACTIVE'
-      and ir.type_key='agent.installation' and ir.state='ACTIVE' and ir.projection_action_execution_id is null
-      and i.state='ACTIVE' and agent.kind='AGENT' and agent.status='ACTIVE' and p.state='ACTIVE'";
+      and ir.type_key='agent.installation' and ir.state='ACTIVE'
+      and (($2::uuid is null and ir.projection_action_execution_id is null and i.state='ACTIVE')
+        or ($2::uuid is not null and catalog.agent_generation_admitted(i.resource_id,p.agent_version_asset_id,p.generation)))
+      and agent.kind='AGENT' and agent.status='ACTIVE' and p.state='ACTIVE'";
 
 async fn run(
     tx: &mut Transaction<'_, Postgres>,
@@ -2815,13 +2817,13 @@ async fn admit_source(
     sqlx::query("insert into catalog.agent_session
         (tenant_id,workspace_id,root_event_id,installation_resource_id,agent_version_asset_id,
          projection_generation,core_memory_state,status,source_kind) values($1,$2,$3,$4,$5,$6,'UNREADABLE','PENDING',$7)
-        on conflict(workspace_id,root_event_id,installation_resource_id) do nothing")
+        on conflict(workspace_id,root_event_id,installation_resource_id,projection_generation) do nothing")
         .bind(row.tenant_id).bind(row.workspace_id).bind(&root).bind(row.executor_installation_resource_id)
         .bind(row.agent_version_asset_id).bind(row.projection_generation).bind(source_kind).execute(&mut *tx).await?;
     let same: bool = sqlx::query_scalar(
         "select agent_version_asset_id=$4 and projection_generation=$5
         and status in ('PENDING','ACTIVE') from catalog.agent_session
-        where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3 for update",
+        where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3 and projection_generation=$5 for update",
     )
     .bind(row.workspace_id)
     .bind(&root)

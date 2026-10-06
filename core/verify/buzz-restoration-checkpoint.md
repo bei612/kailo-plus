@@ -1028,3 +1028,47 @@ RUNNING/native completed，均无回复引用。实际只读记录及原日志�
 但动作名仍为原始技术键；审批为加载完成的空队列；审计仍有 ALLOWED、EVALUATING
 等未翻译结果；设备只展示协议身份及撤销入口。本次没有执行审批、撤销或工作流
 写入，不使用加载中的审批截图作为验收。这些差距仍属于未完成项。
+
+## 2026-10-06 23:42 UTC 集中源码验证与发布边界
+
+相对 `b08e0a0578dc7777ecec108e24d248a8348a832b`，集中实现树
+`2a68468a17beb1654cad265ff26268360c2c9996` 为 75 文件、3922 行新增、373 行删除。
+包含 Projects 共源目录、成员原资料行及受权读取、Agent 安装升级/代际会话隔离、
+Pulse 虚拟列表首入及切回修复、能力输入的 typed reference 校验。各领域的权威、
+影响与边界记录分别在 web-surface、agent-definition、capability-contracts，
+不因本批合并新增需求或变更 `.design`。
+
+原 `./tools/check.sh --full` 在 8 CPU / 16 GiB、Cargo 16 的检查容器运行，
+源码与设计固定归档，数据库是独立演练库，不操作在线业务库。实际退出 1。
+日志 `/volumes/data/kailo/tmp/tmp.T1QBNrAP4L.check.log` 保留完整输出：
+
+- Rust/Go/TypeScript/Dart 静态检查与测试通过；Core 主模块 276 通过、34 忽略。
+  忽略的独立数据库/运行演练不记作通过，其余 crate/integration 结果见原日志。
+- 四侧生成同步，242 个 schema 的兼容比较通过（历史 tag 仅匹配 3 个 schema）。
+- 迁移前进、回退、再前进和 sqlx 离线元数据通过，44 个命名枚举约束一致。
+- Workflow replay、设计文档六项、安全静态检查与 runbook 检查通过。
+- 失败项一：17 条 Web 追溯仍引用旧产物、私聊 Core/Worker 旧凭证未归集，以及
+  Projects/Pulse 尚无 artifact 记录。既有发布记录只按实际镜像及原证明修正；
+  Projects 没有新产物不能记为已发布，且不能借改变 exposure 缩减应交付功能。
+- 失败项二：agent-runtime、desktop-client、knowledge-service、web-client 的
+  已构建 artifact 与最新 source digest 不同。未重建则保留此失败；不手改
+  source digest 冒充重建，不删除检查，不宣称新发布已完成。
+- 实际运行配置预检因检查快照不带秘密 `.env` 明确 SKIP；不能作为部署通过。
+
+原 23:08 批的 Core/Worker 四份 SBOM/provenance 从其固定提交发布目录归集至
+`dist/`，没有重新生成、改写或覆盖旧文件。Docker 再次读回 Core
+`e42e3deb0faf34fc3eec1b4daecb85d542cb94865ca2875946f9f926b67ed8cf`、Worker
+`9558629db918ca34f496d84295dfd3f558ce24af7b823e28a70ace94bda4c42b`、Web
+`dd59cc60ec1c6c4fc9369c3a43e421185a57f1e75afadf1431dfb6aca58a2717`，
+与原 10c839 发布证明一致。记录指向真实既有发布，不表示本批新增源码已经上线。
+追溯窄验日志 `tmp.muxGzbK60w.check.log` 中七条硬规则通过，但临时把尚未发布
+Projects exposure 改 none 导致能力注册表漂移；已撤销该改动，保留其原用户入口
+和发布凭证缺失状态，不以改注册表压掉失败。
+
+Playwright 沿原普通登录会话实际截图并逐张打开同一视觉目录的
+`148-current-channel.png`、`149-channel-pointer-content.png`、`150-profile.png`、
+`151-appearance.png`、`152-notifications.png`、`153-shortcuts.png`。最初把
+Pulse 悬停浅底误判为双选，随后实际 DOM 读回 data-active=false；移开鼠标背景
+消失、移回 hover=true，确认正常交互，没有为误判改代码。设置四页可见中文
+分组及中英切换入口；通知明确显示浏览器权限被阻止，不记作通知已送达。
+本批不修改浏览器权限，不称所有页面、子弹窗、英文状态和 Win11 交互已验收。

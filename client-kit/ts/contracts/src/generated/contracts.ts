@@ -1376,17 +1376,21 @@ export interface InstallationElement {
      * 准入。缺失或空集合不支持 Schedule。
      */
     automationResultTargets?: AutomationResultTarget[];
-    channelBinding?:          InstallationChannelBinding;
-    executionPermission?:     InstallationExecutionPermission;
-    ownerPrincipalId:         string;
-    pinnedVersionAssetId:     string;
-    projection?:              ProjectionClass;
-    readPermission?:          InstallationReadPermission;
-    resourceId:               string;
-    resourceState:            ResourceState;
-    resourceVersion:          number;
-    state:                    AgentInstallationState;
-    workspaceId:              string;
+    /**
+     * 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
+     */
+    canUpgrade?:          boolean;
+    channelBinding?:      InstallationChannelBinding;
+    executionPermission?: InstallationExecutionPermission;
+    ownerPrincipalId:     string;
+    pinnedVersionAssetId: string;
+    projection?:          ProjectionClass;
+    readPermission?:      InstallationReadPermission;
+    resourceId:           string;
+    resourceState:        ResourceState;
+    resourceVersion:      number;
+    state:                AgentInstallationState;
+    workspaceId:          string;
 }
 
 export enum AgentPrincipalState {
@@ -1480,17 +1484,21 @@ export interface AgentInstallationView {
      * 准入。缺失或空集合不支持 Schedule。
      */
     automationResultTargets?: AutomationResultTarget[];
-    channelBinding?:          AgentInstallationViewChannelBinding;
-    executionPermission?:     AgentInstallationViewExecutionPermission;
-    ownerPrincipalId:         string;
-    pinnedVersionAssetId:     string;
-    projection?:              ProjectionClass;
-    readPermission?:          AgentInstallationViewReadPermission;
-    resourceId:               string;
-    resourceState:            ResourceState;
-    resourceVersion:          number;
-    state:                    AgentInstallationState;
-    workspaceId:              string;
+    /**
+     * 当前 ACTIVE 安装可按原 manage 权限申请已发布目标版本；仍须原治理审批，不代表升级已经准入。旧服务缺省不显示入口。
+     */
+    canUpgrade?:          boolean;
+    channelBinding?:      AgentInstallationViewChannelBinding;
+    executionPermission?: AgentInstallationViewExecutionPermission;
+    ownerPrincipalId:     string;
+    pinnedVersionAssetId: string;
+    projection?:          ProjectionClass;
+    readPermission?:      AgentInstallationViewReadPermission;
+    resourceId:           string;
+    resourceState:        ResourceState;
+    resourceVersion:      number;
+    state:                AgentInstallationState;
+    workspaceId:          string;
 }
 
 export interface AgentInstallationViewChannelBinding {
@@ -2942,6 +2950,23 @@ export interface PlatformToolView {
 }
 
 /**
+ * Original Buzz Community project/repository announcements and coordinate-scoped tombstones
+ * only; no Git content or mutation authorization.
+ */
+export interface ProjectsQueryRequest {
+    coordinates?: string[];
+    since?:       number;
+    until?:       number;
+    view:         ProjectsQueryRequestView;
+}
+
+export enum ProjectsQueryRequestView {
+    Deletions = "DELETIONS",
+    Projects = "PROJECTS",
+    Repositories = "REPOSITORIES",
+}
+
+/**
  * 03/18: only the initiating HUMAN's fresh-authorized original Session facts. No PAT,
  * launch credential, native body or replacement revision is recoverable from this reader.
  */
@@ -3035,10 +3060,10 @@ export interface PulseQueryRequest {
     authors?:  string[];
     before?:   number;
     eventIds?: string[];
-    view:      View;
+    view:      PulseQueryRequestView;
 }
 
-export enum View {
+export enum PulseQueryRequestView {
     Agents = "AGENTS",
     Contacts = "CONTACTS",
     Liked = "LIKED",

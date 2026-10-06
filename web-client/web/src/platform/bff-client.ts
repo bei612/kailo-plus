@@ -17,6 +17,7 @@ import type {
   WebPublishMessageRequest,
   PulseQueryRequest,
   PulsePublishRequest,
+  ProjectsQueryRequest,
 } from "@client-kit/contracts";
 import { createBffClient } from "@client-kit/platform/client";
 import { hiddenConversationChannels, type ConversationVisibilityHost } from "@client-kit/platform/react/new-message";
@@ -40,6 +41,10 @@ const transport = createFetchTransport({
 });
 
 export const bff = createBffClient(transport);
+
+export async function queryProjects(request:ProjectsQueryRequest):Promise<import("@client-kit/platform/react/projects").ProjectsPage>{
+  return call({method:"POST",path:"/api/v1/projects/query",body:request});
+}
 
 export async function queryPulse(request: PulseQueryRequest): Promise<{events:BuzzEvent[];mediaPaths:Record<string,string>}> {
   const page = await call<{events: BuzzEvent[];mediaPaths:Record<string,string>}>({method: "POST", path: "/api/v1/pulse/query", body: request});

@@ -1134,8 +1134,114 @@ pub(crate) async fn retire(
         }
     }
     let gateway = Gateway::from_env()?;
+    let mut deleted = retire_credentials(state, tenant, route, &current, &gateway).await?;
+    let native = gateway.resources("llm.virtualModel").await?;
+    let matches: Vec<_> = native
+        .iter()
+        .filter(|r| r.get("id").and_then(Value::as_str) == Some(route.native_id.as_str()))
+        .collect();
+    if matches.len() > 1 {
+        return Err(unavailable());
+    }
+    if let Some(row) = matches.first() {
+        if row.get("revision").and_then(Value::as_i64) != Some(route.native_revision)
+            || digest(row.get("value").ok_or_else(unavailable)?)? != route.native_config_hash
+        {
+            return Err(conflict());
+        }
+        gateway.delete("llm.virtualModel", &route.native_id).await?;
+    }
+    if gateway
+        .resources("llm.virtualModel")
+        .await?
+        .iter()
+        .any(|r| r.get("id").and_then(Value::as_str) == Some(route.native_id.as_str()))
+    {
+        return Err(unavailable());
+    }
+    let effective = gateway.admin(&["api", "config", "effective"], None).await?;
+    if effective
+        .pointer("/llm/virtualModels")
+        .is_some_and(|models| {
+            models.as_array().is_none_or(|models| {
+                models.iter().any(|r| {
+                    r.get("name").and_then(Value::as_str) == Some(route.native_id.as_str())
+                })
+            })
+        })
+    {
+        return Err(unavailable());
+    }
+    deleted.push(NativeAbsence {
+        kind: "llm.virtualModel".into(),
+        id: route.native_id.clone(),
+        revision: route.native_revision,
+        absent: true,
+    });
+    Ok(deleted)
+}
+
+/// Only the old generation of an admitted, drained upgrade is retired here;
+/// the model route and other installations' credentials remain untouched.
+pub(crate) async fn retire_previous_generation(
+    state: &ServiceState,
+    installation: Uuid,
+    generation: i64,
+    action: Uuid,
+) -> Result<(), Refusal> {
+    let route: Option<(Uuid,Uuid,String,i32,i64,String,i64)> = sqlx::query_as("select r.tenant_id,mr.id,mr.native_id,mr.version,m.native_revision,m.native_config_hash,i.active_projection_generation
+        from catalog.agent_installation i join catalog.resource r on r.id=i.resource_id
+        join admission.action_execution a on a.id=r.projection_action_execution_id
+        join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id and p.generation=i.active_projection_generation
+        join catalog.resource mr on mr.id=p.model_route_resource_id and mr.tenant_id=r.tenant_id
+        join catalog.model_route m on m.resource_id=mr.id
+        where i.resource_id=$1 and i.state='DRAINING' and i.active_projection_generation<>$2
+          and a.id=$3 and a.action_key='agent.installation.upgrade' and a.gate_state='ALLOWED'
+          and catalog.agent_installation_drained(i.resource_id)")
+        .bind(installation).bind(generation).bind(action).fetch_optional(&state.pool).await?;
+    let (
+        tenant,
+        resource_id,
+        native_id,
+        resource_version,
+        native_revision,
+        native_config_hash,
+        old,
+    ) = route.ok_or_else(conflict)?;
+    let credentials: Vec<FrozenCredential> = sqlx::query_as(&FROZEN_CREDENTIALS.replace(
+        "where b.model_route_resource_id=$1", "where b.model_route_resource_id=$1 and b.installation_resource_id=$2 and b.projection_generation=$3"))
+        .bind(resource_id).bind(installation).bind(old).fetch_all(&state.pool).await?;
+    if credentials.len() != 1 {
+        return Err(unavailable());
+    }
+    let route = FrozenRoute {
+        resource_id,
+        native_id,
+        resource_version,
+        native_revision,
+        native_config_hash,
+        credentials,
+    };
+    retire_credentials(
+        state,
+        tenant,
+        &route,
+        &route.credentials,
+        &Gateway::from_env()?,
+    )
+    .await?;
+    Ok(())
+}
+
+async fn retire_credentials(
+    state: &ServiceState,
+    tenant: Uuid,
+    route: &FrozenRoute,
+    credentials: &[FrozenCredential],
+    gateway: &Gateway,
+) -> Result<Vec<NativeAbsence>, Refusal> {
     let mut deleted = Vec::new();
-    for credential in &current {
+    for credential in credentials {
         let busy: bool = sqlx::query_scalar(
             "select exists(select 1 from catalog.agent_invocation
             where installation_resource_id=$1 and projection_generation=$2
@@ -1258,49 +1364,6 @@ pub(crate) async fn retire(
             .bind(credential.installation_resource_id).bind(credential.projection_generation)
             .execute(&state.pool).await?;
     }
-    let native = gateway.resources("llm.virtualModel").await?;
-    let matches: Vec<_> = native
-        .iter()
-        .filter(|r| r.get("id").and_then(Value::as_str) == Some(route.native_id.as_str()))
-        .collect();
-    if matches.len() > 1 {
-        return Err(unavailable());
-    }
-    if let Some(row) = matches.first() {
-        if row.get("revision").and_then(Value::as_i64) != Some(route.native_revision)
-            || digest(row.get("value").ok_or_else(unavailable)?)? != route.native_config_hash
-        {
-            return Err(conflict());
-        }
-        gateway.delete("llm.virtualModel", &route.native_id).await?;
-    }
-    if gateway
-        .resources("llm.virtualModel")
-        .await?
-        .iter()
-        .any(|r| r.get("id").and_then(Value::as_str) == Some(route.native_id.as_str()))
-    {
-        return Err(unavailable());
-    }
-    let effective = gateway.admin(&["api", "config", "effective"], None).await?;
-    if effective
-        .pointer("/llm/virtualModels")
-        .is_some_and(|models| {
-            models.as_array().is_none_or(|models| {
-                models.iter().any(|r| {
-                    r.get("name").and_then(Value::as_str) == Some(route.native_id.as_str())
-                })
-            })
-        })
-    {
-        return Err(unavailable());
-    }
-    deleted.push(NativeAbsence {
-        kind: "llm.virtualModel".into(),
-        id: route.native_id.clone(),
-        revision: route.native_revision,
-        absent: true,
-    });
     Ok(deleted)
 }
 
@@ -1650,11 +1713,11 @@ pub(crate) async fn provision(
     installation_scope(state, installation, version, generation, Some(action)).await?;
     let (owner,initiator):(Uuid,Uuid)=sqlx::query_as("select r.owner_principal_id,ae.initiator_principal_id
         from catalog.resource r join admission.action_execution ae on ae.id=r.projection_action_execution_id
-        where r.id=$1 and r.tenant_id=$2 and r.home_workspace_id=$3 and r.state='PROVISIONING'
+        where r.id=$1 and r.tenant_id=$2 and r.home_workspace_id=$3 and r.state in ('PROVISIONING','ACTIVE')
           and ae.id=$4 and ae.tenant_id=r.tenant_id and ae.workspace_id=r.home_workspace_id
           and ae.target_id=r.id and ae.actor_principal_id=ae.initiator_principal_id
           and ae.gate_state='ALLOWED' and ae.dispatch_state='DISPATCHED'
-          and ae.action_key='agent.installation.create'
+          and ae.action_key in ('agent.installation.create','agent.installation.upgrade')
         for no key update of r")
         .bind(installation).bind(tenant).bind(workspace).bind(action)
         .fetch_optional(&mut *lifecycle).await?.ok_or_else(conflict)?;
@@ -2014,7 +2077,7 @@ async fn installation_scope(
         join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
           and p.generation=$3 and p.agent_version_asset_id=$2 and p.state in ('PENDING','ACTIVE')
         join catalog.agent_version v on v.asset_id=$2 and v.agent_resource_id=i.agent_resource_id
-          and v.state in ('PUBLISHED','RETIRED') and i.pinned_version_asset_id=v.asset_id
+          and v.state in ('PUBLISHED','RETIRED')
           and v.content->>'modelRouteResourceId'=p.model_route_resource_id::text
         join identity.tenant t on t.id=r.tenant_id and t.state='ACTIVE'
         join identity.workspace w on w.id=i.workspace_id and w.tenant_id=t.id and w.state='ACTIVE'
@@ -2025,11 +2088,13 @@ async fn installation_scope(
         left join catalog.action_definition definition on definition.action_key=projection.action_key
           and definition.version=projection.action_version
         where i.resource_id=$1 and r.home_workspace_id=w.id and r.type_key='agent.installation'
-          and i.state in ('PROVISIONING','ACTIVE') and r.state in ('PROVISIONING','ACTIVE')
-          and ((p.state='ACTIVE' and i.state='ACTIVE' and r.state='ACTIVE'
-              and i.active_projection_generation=p.generation and r.projection_action_execution_id is null
+          and i.state in ('PROVISIONING','ACTIVE','DRAINING') and r.state in ('PROVISIONING','ACTIVE')
+          and ((catalog.agent_generation_admitted(i.resource_id,v.asset_id,p.generation)
               and $4::uuid is null)
-            or (p.state='PENDING' and i.state='PROVISIONING' and r.state='PROVISIONING'
+            or (p.state='PENDING' and ((i.state='PROVISIONING' and r.state='PROVISIONING')
+                or (i.state='DRAINING' and r.state='ACTIVE' and catalog.agent_installation_drained(i.resource_id)))
+              and projection.action_key in ('agent.installation.create','agent.installation.upgrade')
+              and projection.parameters->'params'->>'assetId'=v.asset_id::text
               and projection.tenant_id=t.id and projection.workspace_id=w.id
               and projection.target_id=r.id and projection.gate_state='ALLOWED'
               and projection.dispatch_state='DISPATCHED'

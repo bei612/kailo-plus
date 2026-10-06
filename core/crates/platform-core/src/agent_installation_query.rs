@@ -34,6 +34,7 @@ struct InstallationRow {
     owner_principal_id: Uuid,
     resource_version: i32,
     resource_state: String,
+    projection_action_execution_id: Option<Uuid>,
     state: String,
     active_projection_generation: Option<i64>,
     channel_status: Option<String>,
@@ -51,7 +52,7 @@ struct InstallationRow {
 // CODEX_HOME、Memory 正文及内部 native endpoint 均不进入查询结果。
 const ROW: &str = "select i.resource_id,i.workspace_id,i.agent_resource_id,i.pinned_version_asset_id,
     i.agent_principal_id,a.status as agent_principal_state,r.owner_principal_id,
-    r.version as resource_version,r.state as resource_state,i.state,i.active_projection_generation,
+    r.version as resource_version,r.state as resource_state,r.projection_action_execution_id,i.state,i.active_projection_generation,
     cb.status as channel_status,cb.triggers as channel_triggers,wb.channel_id,
     p.generation as projection_generation,p.agent_version_asset_id as projection_version,
     p.runtime_profile_key,p.config_hash as projection_config_hash,p.state as projection_state,v.content version_content
@@ -104,6 +105,34 @@ async fn view(
     if !matches {
         return Err(Refusal::Unavailable("Installation Resource 投影未对账".into()).respond(None));
     }
+    let can_upgrade = if row.state == "ACTIVE"
+        && row.resource_state == "ACTIVE"
+        && row.projection_action_execution_id.is_none()
+        && crate::capability_registry::action_exposed("agent.installation.upgrade")
+        && crate::governance::active_definition(&state.pool, "agent.installation.upgrade")
+            .await
+            .map_err(crate::service_api::unavailable)?
+            .is_some()
+    {
+        let proof = state
+            .governance
+            .spicedb
+            .check(
+                "resource",
+                &row.resource_id.to_string(),
+                "manage",
+                &ctx.tenant_principal_id.to_string(),
+                Consistency::FullyConsistent,
+            )
+            .await
+            .map_err(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())?;
+        if proof.zed_token.is_empty() {
+            return Err(StatusCode::SERVICE_UNAVAILABLE.into_response());
+        }
+        proof.allowed
+    } else {
+        false
+    };
     let channel = match (row.channel_status, row.channel_triggers) {
         (Some(status), Some(triggers)) => Some(json!({
             "status": status, "triggers": triggers,
@@ -171,6 +200,7 @@ async fn view(
         "channelBinding": channel, "projection": projection, "executionPermission": permission,
         "readPermission": read_permission,
         "automationResultTargets": result_targets,
+        "canUpgrade": can_upgrade,
     }))
     .map_err(|_| {
         tracing::error!("Installation 查询事实不符合共享契约");

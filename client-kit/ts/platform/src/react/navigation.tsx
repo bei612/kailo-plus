@@ -8,6 +8,7 @@ import {
 /** The platform menu order, shared by both React hosts. */
 export const platformNavigationSections = [
   "pulse",
+  "projects",
   "members",
   "agents",
   "workflows",
@@ -22,6 +23,7 @@ export type PlatformNavigationSection =
 
 const sectionLabel: Record<PlatformNavigationSection, PlatformMessageKey> = {
   pulse: "platform.tab.pulse",
+  projects: "platform.tab.projects",
   members: "platform.tab.members",
   agents: "platform.tab.agents",
   workflows: "platform.tab.workflows",

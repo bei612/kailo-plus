@@ -1348,7 +1348,7 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
             })
             .transpose()?;
         if let Some(reference) = &source_reference {
-            request["contentReference"] = reference.clone();
+            apply_probe_reference(&mut request, reference)?;
         }
         let actual_operation = text(observation, "operation")?;
         if actual_operation == "reconcile"
@@ -1568,6 +1568,50 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
 
 /// Derive the exact request from the immutable plan and the fixed typed slot.
 /// There is no caller-supplied URL, method, JSON path or general-purpose patch.
+fn apply_probe_reference(request: &mut Value, reference: &Value) -> Result<(), Refusal> {
+    let placeholder: Value =
+        serde_json::from_str(text(request, "inputJson")?).map_err(|_| bad())?;
+    if placeholder != json!({}) {
+        return Err(bad());
+    }
+    request["inputJson"] = json!(collab_bridge::limits::canonical_json(reference));
+    request["contentReference"] = reference.clone();
+    Ok(())
+}
+
+fn validate_probe_input(
+    contracts: &[Value],
+    operation: &str,
+    request: &Value,
+) -> Result<(), Refusal> {
+    if operation != "execute" || request.get("contractKey").is_none() {
+        return Ok(());
+    }
+    let key = text(request, "contractKey")?;
+    let mut matches = contracts.iter().flat_map(|contract| {
+        contract["content"]["operationContracts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(move |operation| operation["contractKey"] == key)
+            .map(move |operation| (contract, operation))
+    });
+    let (contract, declared) = matches.next().ok_or_else(bad)?;
+    if matches.next().is_some() {
+        return Err(bad());
+    }
+    let documents: BTreeMap<String, Value> =
+        serde_json::from_value(contract["schemas"].clone()).map_err(|_| bad())?;
+    let schema = documents
+        .get(text(declared, "inputSchemaDigest")?)
+        .ok_or_else(bad)?;
+    let input: Value = serde_json::from_str(text(request, "inputJson")?).map_err(|_| bad())?;
+    if !crate::capability_contract::schema_validator(schema, &documents)?.is_valid(&input) {
+        return Err(bad());
+    }
+    Ok(())
+}
+
 fn probe_request(plan: &Value, input: &Value) -> Result<(Value, String, Value), Refusal> {
     let mut presented = input["plan"].clone();
     presented["runId"] = json!("");
@@ -1612,7 +1656,7 @@ fn probe_request(plan: &Value, input: &Value) -> Result<(Value, String, Value), 
         ] {
             text(reference, field)?;
         }
-        request["contentReference"] = reference.clone();
+        apply_probe_reference(&mut request, reference)?;
     } else if input.get("contentReference").is_some() {
         return Err(bad());
     }
@@ -1764,6 +1808,7 @@ pub(crate) async fn authorize_probe(
         let contracts=active_contracts(&mut tx,ae.tenant_id,&release).await?;
         let digests:Vec<_>=contracts.iter().map(collab_bridge::limits::canonical_digest).collect();
         if plan["contractDigests"] != json!(digests) { return Err(Refusal::Conflict(ReasonCode::TargetStateConflict)); }
+        validate_probe_input(&contracts,&operation,&request)?;
         let identity=crate::component_conformance_identity::load(&release.adapter_digest,text(&release.manifest["executionConnector"],"actionTokenAudience")?)?;
         if plan["identityDigest"] != collab_bridge::limits::canonical_digest(&identity) { return Err(Refusal::Conflict(ReasonCode::TargetStateConflict)); }
         let context=crate::component_conformance_identity::context(&identity,&step,&operation)?;
@@ -2638,6 +2683,10 @@ mod report_tests {
         plan["steps"][0]["referenceResourceId"] = json!(resource);
         plan["steps"][1]["referenceResourceId"] = json!(resource);
         plan["steps"][1]["referenceFromStepKey"] = plan["steps"][0]["stepKey"].clone();
+        let mut frozen: Value =
+            serde_json::from_str(plan["steps"][1]["requestJson"].as_str().unwrap()).unwrap();
+        frozen["inputJson"] = json!("{}");
+        plan["steps"][1]["requestJson"] = json!(frozen.to_string());
         let reference = json!({"resourceId":resource,"nativeObjectRef":"native-created-object",
             "nativeRevision":"immutable-revision","displayName":"fixture","mediaType":"text/plain"});
         let mut probe = json!({"plan":plan,"stepIndex":1,"contentReference":reference});
@@ -2645,6 +2694,10 @@ mod report_tests {
         let (_, operation, request) = probe_request(&plan, &probe).unwrap();
         assert_eq!(operation, "execute");
         assert_eq!(request["contentReference"], reference);
+        assert_eq!(
+            serde_json::from_str::<Value>(request["inputJson"].as_str().unwrap()).unwrap(),
+            reference
+        );
         let mut changed = probe.clone();
         changed["contentReference"]["resourceId"] = json!(Uuid::new_v4());
         assert!(probe_request(&plan, &changed).is_err());
@@ -2663,6 +2716,35 @@ mod report_tests {
         assert_eq!(
             request,
             json!({"idempotencyKey":plan["steps"][1]["idempotencyKey"]})
+        );
+    }
+
+    #[test]
+    fn materialized_reference_is_validated_against_the_exact_registered_input_schema() {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/domain/content_reference.schema.json"
+        ))
+        .unwrap();
+        let digest = collab_bridge::limits::canonical_digest(&schema);
+        let contracts = vec![json!({"content":{"operationContracts":[{
+            "contractKey":"knowledge.read@v1","inputSchemaDigest":digest
+        }]},"schemas":{(digest):schema}})];
+        let reference = json!({"resourceId":Uuid::new_v4(),"nativeObjectRef":"native-observed-document",
+            "nativeRevision":"native-observed-revision","displayName":"document","mediaType":"text/plain"});
+        let mut request = json!({"contractKey":"knowledge.read@v1","inputJson":"{}"});
+        assert!(validate_probe_input(&contracts, "execute", &request).is_err());
+        apply_probe_reference(&mut request, &reference).unwrap();
+        assert!(validate_probe_input(&contracts, "execute", &request).is_ok());
+        let mut incomplete = reference.clone();
+        incomplete.as_object_mut().unwrap().remove("nativeRevision");
+        request["inputJson"] = json!(incomplete.to_string());
+        assert!(validate_probe_input(&contracts, "execute", &request).is_err());
+        request["inputJson"] = json!(reference.to_string());
+        request["contractKey"] = json!("knowledge.export@v1");
+        assert!(validate_probe_input(&contracts, "execute", &request).is_err());
+        assert!(
+            apply_probe_reference(&mut request, &reference).is_err(),
+            "never discard explicit frozen input"
         );
     }
 
@@ -2741,11 +2823,11 @@ mod report_tests {
             step["referenceAssetId"] = reference["assetId"].clone();
             step["expectedResponseJson"] = json!("{}");
             let mut request = json!({"idempotencyKey":step["idempotencyKey"],"referenceResourceId":reference["resourceId"],
-                "referenceAssetId":reference["assetId"]});
+                "referenceAssetId":reference["assetId"],"inputJson":"{}"});
             step["requestJson"] = json!(request.to_string());
             if index == 1 {
                 step["referenceFromStepKey"] = json!("step_0");
-                request["contentReference"] = reference.clone();
+                apply_probe_reference(&mut request, &reference).unwrap();
             }
             let observation = &mut report["observations"][index];
             observation["caseKey"] = step["caseKey"].clone();

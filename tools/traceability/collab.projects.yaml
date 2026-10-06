@@ -1,0 +1,32 @@
+capability_id: collab.projects
+title: 原版 Projects 公告目录与 Community 本人读取
+stage: S1
+status: in_progress
+exposure: end_user
+design:
+  requirements: [V-REQ-24]
+  decisions: [DD-39]
+  facts: []
+  seams: [SS-BUZ-GOVERNANCE, SS-WEB-RELAY]
+  blockers: []
+  entities: [BuzzIdentityBinding, TenantBuzzBinding]
+validation:
+  scenarios: []
+  evidence:
+    - dimension: 安全边界
+      ref: web-client/fork/verify/web-surface.md
+    - dimension: 上游接缝
+      ref: web-client/fork/verify/web-surface.md
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/platform-core/src/projects.rs, client-kit/ts/platform/src/react/projects/ProjectsView.tsx, client-kit/ts/platform/src/react/projects/projectEnumeration.ts, web-client/web/src/platform/ui/ProjectsPane.tsx, collaboration/desktop/src/features/platform/ProjectsScreen.tsx]
+  surfaces: [web, desktop]
+  schemas: [contracts/api/projects_query_request.schema.json]
+  migrations: []
+runtime:
+  routes: ["/api/v1/projects/query"]
+  actions: []
+  workflow_kinds: []
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

@@ -4548,3 +4548,65 @@ Data `codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR
 `agent-dispatch-baseline.log`、`agent-holder-mutation-restored.log`、
 `agent-dispatch-mutation.log`。SDK I/O 等待如实包含在日志时长中，变异失败
 不是编译错误或缺配置导致的失败。
+
+## Installation 升级／回滚与跨代 Session（2026-10-06）
+
+权威与状态：按 `.design/03` §7、`17` §5–7、`19` §4 的既定不可变
+Version/generation 与单进程排空语义实现。设计澄清提交分别为
+`503357266dbf09e7f09b5705f7be8e5137ca25b4`、
+`ce36d906e7ef8f230e2adef4b3b40ad1643caefe`。只读核验的上游是
+Buzz `779af8886caae1317b4de962082429867ab61503`，
+`/volumes/kailo/.references/buzz/desktop/src/features/agents/lib/autoRestartPolicy.ts::decideAutoRestart`
+与同目录 `useAutoRestartPolicy.ts::useAutoRestartPolicy`：只在空闲时应用配置漂移，
+没有采用多个 generation 同时写同一个 CODEX_HOME。
+
+影响面：`agent.installation.upgrade` 复用原 ActionDefinition、审批、
+ComponentTaskWorkflow/AGENT_INSTALLATION、Resource projection intent 与
+Supervisor。目标只来自同 Definition 的精确 PUBLISHED Version；回滚也是
+选择已发布旧 Version 创建新 generation，不改旧 Version。共享 Agents 页面
+先读真实 `canUpgrade` 与最新 Resource version，再提交同一治理命令；
+Web/Desktop 共用页面，Mobile 消费同一兼容契约，未新增原生移动编辑页。
+`canUpgrade` 可选，旧响应缺省不生成升级按钮。Core 不新增业务正文存储。
+
+副作用：进入原 DRAINING 后停止新触发，旧 Invocation、模型关联、工具、
+memory 和撤权/取消读取仍固定旧 Version/generation。Session 主键与唯一
+Invocation FK 扩为 workspace/root/installation/generation；旧 Session 的
+thread/core-memory 引用和 Invocation 永不改代。同 root 的新触发进入新代
+Session。新代模型凭据独立，原 Gateway 删除/回读接缝确认旧代 key 退役；
+旧进程确证退出、新进程加载与权限回读通过后，才在原事务原子切 pointer、
+激活新投影并撤销旧投影/工具绑定。没有释放旧 UNKNOWN lease。
+
+边界与收敛：UNKNOWN Invocation、STARTING/UNKNOWN Session、任何未 RELEASED
+的容量 lease 均阻止排空。并发升级由原 Resource version/intent 拒绝；网络
+不明保留原 AE 和 generation，在原 Temporal/reconciler 重入。租户暂停、
+撤权、版本退役或投影变更继续 fresh 拒绝。已经接纳的升级取消请求不证明
+外部凭据已撤回，故继续对同一目标 generation 对账，并只返回实际终态，
+不伪报 CANCELED、不重放旧代。错误沿原六类 Refusal/UNKNOWN 分类，尚未
+闭合的外部效果不渲染成功。升级不解决历史丢失 thread 或绕过旧 UNKNOWN。
+
+迁移 `20261007030000` 必须先停止旧 Core/Worker writer，再前向执行并启动
+generation-aware writer；不允许旧三元 Session SQL 与新代写入混跑。原三元
+PK 确实收缩，全部历史行保留；存在同 root 多代数据时 down 显式拒绝，不能
+删历史满足降级。独立库 `agent_upgrade_generation_20261007` 已原 SQLx
+up/down/up 退出 0；没有迁移生产或共享原隔离库。首轮发现唯一约束的索引
+不能直接转 PK，已改为原生 unique index 再转 PK，并实跑恢复。
+
+验证使用原 4 CPU/8 GiB SDK 和唯一 Rust target，无镜像构建或发布。
+共享源码/测试 tsc 退出 0，Agent 管理垂直 64/64；私有快照移除 canUpgrade
+条件使两条权限缺省检查真实失败，原字节 cmp 0 后恢复 64/64。
+Core 原 effective-field 与新增真实数据库检查 2/2；独立库故意把 drained
+改为恒真，检查报 `uncertain native Session cannot drain` 退出 3，恢复原
+SQL 函数后 Core 两例通过。四侧往返 Rust 25/25、TS 30/30、Go 与 Dart
+新增升级兼容检查各 1/1；最终 Core clippy `-D warnings` 退出 0。初轮
+Rust 两个不存在的 ReasonCode/一个 sqlx 错误映射及最后冗余 closure 已修；
+夹具先被真实 owner/effective 约束拒绝，补齐合法夹具后通过，未放宽约束。
+旧 SDK 根依赖链接、TMPDIR 和 Dart 生成物同步缺项分别修正后才执行对应
+检查，不把未启动的检查算通过。
+
+日志为 Data
+`codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`
+下 `upgrade-ui.log`、`upgrade-ui-mutation.log`、`upgrade-ui-restored.log`、
+`upgrade-core-restored.log`、`upgrade-clippy-final.log`。本批没有运行 full，
+也没有真实升级审批到新 Native 进程的整链验收；新 Native 持久化源码与
+本批升级都不能冒称已部署。联合四侧生成还包含 Projects schema，必须
+与对应 Projects 候选一起合并后核对，不能单独发布缺 schema 的生成物。

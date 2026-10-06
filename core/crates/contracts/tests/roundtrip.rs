@@ -6,6 +6,37 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn installation_upgrade_permission_preserves_false_and_legacy_absence() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("agent-installation-upgrade.sample.json"))
+            .unwrap();
+    for permission in [Some(true), Some(false), None] {
+        let mut value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        if let Some(permission) = permission {
+            value["canUpgrade"] = permission.into();
+        } else {
+            value.as_object_mut().unwrap().remove("canUpgrade");
+        }
+        let typed: contracts::AgentInstallationView =
+            serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(typed).unwrap(), value);
+    }
+}
+
+#[test]
+fn projects_query_keeps_scoped_coordinates_and_optional_window() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("projects-query.sample.json")).unwrap();
+    for value in [
+        serde_json::from_str::<serde_json::Value>(&raw).unwrap(),
+        serde_json::json!({"view":"PROJECTS"}),
+    ] {
+        let typed: contracts::ProjectsQueryRequest = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(typed).unwrap(), value);
+    }
+}
+
+#[test]
 fn capability_seed_and_human_registration_keep_separate_evidence() {
     let raw = fs::read_to_string(sample_path().with_file_name("capability-seed-page.sample.json"))
         .unwrap();

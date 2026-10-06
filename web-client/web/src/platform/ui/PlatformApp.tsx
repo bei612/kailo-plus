@@ -29,7 +29,7 @@ import {
   TasksPage,
 } from "@client-kit/platform/react/governance";
 import { WorkflowsPage } from "@client-kit/platform/react/workflows";
-import { RedemptionProgress, TenantInvitations } from "@client-kit/platform/react/invitations";
+import { RedemptionProgress } from "@client-kit/platform/react/invitations";
 import {
   type PlatformNavigationSection,
 } from "@client-kit/platform/react/navigation";
@@ -58,6 +58,7 @@ import { InboxPane } from "@/platform/ui/InboxPane";
 import { SettingsPane } from "@/platform/ui/SettingsPane";
 import { NewMessagePage } from "./NewMessagePage";
 import { PulsePane } from "./PulsePane";
+import { ProjectsPane } from "./ProjectsPane";
 import { translate } from "@client-kit/platform/i18n";
 import { platformQueries } from "@/platform/ui/queries";
 import { getLocale, t } from "@/shared/i18n";
@@ -213,6 +214,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       conversation: translate(getLocale(), "sidebar.messages"),
       inbox: translate(getLocale(), "inbox.title"),
       pulse: translate(getLocale(), "platform.tab.pulse"),
+      projects: translate(getLocale(), "platform.tab.projects"),
       members: t("platform.tab.members"),
       agents: t("platform.tab.agents"),
       workflows: translate(getLocale(), "platform.tab.workflows"),
@@ -277,6 +279,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       <PulsePane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`} onStartDm={(pubkey)=>{
         setInitialRecipientPubkey(pubkey);setTab("new-message");
       }}/>
+    ) : tab === "projects" ? (
+      <ProjectsPane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`}/>
     ) : tab === "agents" ? (
       <AgentDefinitionsPage />
     ) : tab === "workflows" ? (
@@ -290,12 +294,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ) : tab === "devices" ? (
       <DevicesPage />
     ) : tab === "members" ? (
-      // 邀请属于 Tenant：只对 admin 出现（由邀请列表的 403 决定），不依赖 Workspace
-      <div className="flex flex-col gap-6">
-        {workspaceBody}
-        <WorkspaceManagementPanels />
-        <TenantInvitations />
-      </div>
+      <WorkspaceManagementPanels>{workspaceBody}</WorkspaceManagementPanels>
     ) : (
       workspaceBody
     );

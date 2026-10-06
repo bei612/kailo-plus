@@ -39,7 +39,7 @@ async fn authorized(
     ctx: &ExecutionContext,
     id: Uuid,
 ) -> Result<delegation::Installation, Response> {
-    let row = delegation::installation(conn, ctx.tenant_id, id, false)
+    let row = delegation::installation(conn, ctx.tenant_id, id, false, true)
         .await
         .map_err(crate::service_api::unavailable)?
         .ok_or_else(|| StatusCode::NOT_FOUND.into_response())?;
@@ -176,9 +176,13 @@ pub async fn list(
             Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
         }
     }
-    let can_grant = match exposed(&mut conn, "agent.delegation.grant").await {
+    let mut can_grant = match exposed(&mut conn, "agent.delegation.grant").await {
         Ok(value) => value,
         Err(error) => return error,
+    };
+    can_grant &= match delegation::installation(&mut conn, ctx.tenant_id, id, false, false).await {
+        Ok(row) => row.is_some(),
+        Err(error) => return crate::service_api::unavailable(error),
     };
     let can_revoke = match exposed(&mut conn, "agent.delegation.revoke").await {
         Ok(value) => value,
@@ -231,9 +235,13 @@ pub async fn targets(
         Ok(row) => row,
         Err(error) => return error,
     };
-    let can_grant = match exposed(&mut conn, "agent.delegation.grant").await {
+    let mut can_grant = match exposed(&mut conn, "agent.delegation.grant").await {
         Ok(value) => value,
         Err(error) => return error,
+    };
+    can_grant &= match delegation::installation(&mut conn, ctx.tenant_id, id, false, false).await {
+        Ok(row) => row.is_some(),
+        Err(error) => return crate::service_api::unavailable(error),
     };
     let mut scopes = Vec::new();
     let mut next = None;

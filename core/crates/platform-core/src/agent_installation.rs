@@ -25,6 +25,7 @@ use crate::{
 };
 
 const CREATE_ACTION: &str = "agent.installation.create";
+const UPGRADE_ACTION: &str = "agent.installation.upgrade";
 const KIND: &str = "AGENT_INSTALLATION";
 const EFFECTIVE_FIELDS: [&str; 7] = [
     "instructions",
@@ -47,12 +48,13 @@ pub(crate) async fn target(
     frozen: Option<Uuid>,
     lock: bool,
 ) -> Result<Target, Refusal> {
-    if def.action_key != CREATE_ACTION
+    let upgrading = def.action_key == UPGRADE_ACTION;
+    if !matches!(def.action_key.as_str(), CREATE_ACTION | UPGRADE_ACTION)
         || def.target_type != "RESOURCE"
         || def.tenant_rule != "SESSION_TENANT"
         || def.workspace_rule != "WORKSPACE_REQUIRED"
-        || def.permission_object_type != "workspace"
-        || def.permission != "create"
+        || def.permission_object_type != if upgrading { "resource" } else { "workspace" }
+        || def.permission != if upgrading { "manage" } else { "create" }
         || def.execution_mode != "TEMPORAL"
         || def.workflow_kind.as_deref() != Some(KIND)
         || !matches!(
@@ -63,8 +65,7 @@ pub(crate) async fn target(
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     let workspace = params.workspace_id.ok_or_else(invalid)?;
-    let parent = params.resource_id.ok_or_else(invalid)?;
-    let version = params.asset_id.ok_or_else(invalid)?;
+    let resource = params.resource_id.ok_or_else(invalid)?;
     let active: Option<bool> = sqlx::query_scalar(&format!(
         "select w.state='ACTIVE' and t.state='ACTIVE' from identity.workspace w
          join identity.tenant t on t.id=w.tenant_id where w.id=$1 and w.tenant_id=$2{}",
@@ -79,12 +80,41 @@ pub(crate) async fn target(
     {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
+    let installation: Option<(Uuid, i32)> = if upgrading {
+        sqlx::query_as(&format!(
+            "select i.agent_resource_id,r.version from catalog.agent_installation i
+            join catalog.resource r on r.id=i.resource_id where r.id=$1 and r.tenant_id=$2
+            and i.workspace_id=$3 and r.home_workspace_id=$3 and r.type_key='agent.installation'
+            and i.state='ACTIVE' and r.state='ACTIVE' and r.projection_action_execution_id is null
+            and i.pinned_version_asset_id<>$4{}",
+            if lock { " for update of r,i" } else { "" }
+        ))
+        .bind(resource)
+        .bind(tenant)
+        .bind(workspace)
+        .bind(params.asset_id)
+        .fetch_optional(&mut *conn)
+        .await?
+    } else {
+        None
+    };
+    if upgrading
+        && (installation.is_none()
+            || frozen.is_some_and(|id| id != resource)
+            || installation
+                .as_ref()
+                .is_some_and(|(_, v)| params.resource_version != Some(*v)))
+    {
+        return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+    }
+    let parent = installation.map_or(resource, |(parent, _)| parent);
+    let version = params.asset_id.ok_or_else(invalid)?;
     let definition = crate::agent_definition::resource(conn, tenant, parent, lock)
         .await?
         .filter(|r| {
             r.state == "ACTIVE"
                 && r.projection_action_execution_id.is_none()
-                && params.resource_version == Some(r.version)
+                && (upgrading || params.resource_version == Some(r.version))
         })
         .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
     let definition_active: bool = sqlx::query_scalar(
@@ -113,8 +143,12 @@ pub(crate) async fn target(
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
     Ok(Target {
-        id: frozen.unwrap_or_else(Uuid::new_v4),
-        version: 0,
+        id: if upgrading {
+            resource
+        } else {
+            frozen.unwrap_or_else(Uuid::new_v4)
+        },
+        version: installation.map_or(0, |(_, version)| version),
         workspace_id: Some(workspace),
     })
 }
@@ -160,15 +194,29 @@ pub(crate) async fn prewrite(
     ae: &Execution,
     params: &Params,
 ) -> Result<i32, Refusal> {
+    let upgrading = ae.action_key == UPGRADE_ACTION;
     let workspace = ae.workspace_id.ok_or_else(invalid)?;
-    let parent = params.resource_id.ok_or_else(invalid)?;
+    let resource = params.resource_id.ok_or_else(invalid)?;
+    let parent = if upgrading {
+        sqlx::query_scalar(
+            "select agent_resource_id from catalog.agent_installation
+            where resource_id=$1 and workspace_id=$2 and state='ACTIVE' for update",
+        )
+        .bind(resource)
+        .bind(workspace)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?
+    } else {
+        resource
+    };
     let version_id = params.asset_id.ok_or_else(invalid)?;
     check(
         gov,
         ae.initiator_principal_id,
-        "workspace",
-        workspace,
-        "create",
+        if upgrading { "resource" } else { "workspace" },
+        if upgrading { resource } else { workspace },
+        if upgrading { "manage" } else { "create" },
     )
     .await?;
     check(
@@ -255,6 +303,17 @@ pub(crate) async fn prewrite(
     if triggers.is_empty() {
         return Err(invalid());
     }
+    let generation: i64 = if upgrading {
+        sqlx::query_scalar(
+            "select coalesce(max(generation),0)+1 from catalog.agent_runtime_projection
+            where installation_resource_id=$1",
+        )
+        .bind(ae.target_id)
+        .fetch_one(&mut **tx)
+        .await?
+    } else {
+        1
+    };
     let mut fields = Vec::new();
     for key in EFFECTIVE_FIELDS {
         let value = requested.get(key).ok_or_else(invalid)?;
@@ -267,44 +326,65 @@ pub(crate) async fn prewrite(
     // Only a pending requested projection. Native model/permissions/runtime and
     // memory must still be proven by the existing readiness consumer.
     let projection = crate::agent_version::canonical(serde_json::json!({
-        "installationResourceId":ae.target_id,"generation":1,"agentVersionAssetId":version_id,
+        "installationResourceId":ae.target_id,"generation":generation,"agentVersionAssetId":version_id,
         "runtimeProfileKey":content.runtime_profile_key,"modelRouteResourceId":route,
         "gatewayResourceIds":[route],"skillRootRef":null,"effectiveFields":fields}));
     let hash = hex::encode(Sha256::digest(
         serde_json::to_vec(&projection).map_err(|_| invalid())?,
     ));
-    let principal = Uuid::new_v4();
-    sqlx::query(
+    let resource_version = if upgrading {
+        let changed: Option<i32> = sqlx::query_scalar(
+            "update catalog.resource set version=version+1,
+            projection_action_execution_id=$2 where id=$1 and tenant_id=$3 and state='ACTIVE'
+            and version=$4 and projection_action_execution_id is null returning version",
+        )
+        .bind(ae.target_id)
+        .bind(ae.id)
+        .bind(ae.tenant_id)
+        .bind(params.resource_version)
+        .fetch_optional(&mut **tx)
+        .await?;
+        let changed = changed.ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
+        sqlx::query("update catalog.agent_installation set state='DRAINING' where resource_id=$1")
+            .bind(ae.target_id)
+            .execute(&mut **tx)
+            .await?;
+        changed
+    } else {
+        let principal = Uuid::new_v4();
+        sqlx::query(
         "insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'AGENT','ACTIVE')",
     )
     .bind(principal)
     .bind(ae.tenant_id)
     .execute(&mut **tx)
     .await?;
-    sqlx::query("insert into catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,
+        sqlx::query("insert into catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,
         component_type_key,native_type,native_id,state,version,projection_action_execution_id)
         values($1,$2,'agent.installation',$3,$4,'core','agent.installation',$1::text,'PROVISIONING',1,$5)")
         .bind(ae.target_id).bind(ae.tenant_id).bind(workspace).bind(ae.initiator_principal_id)
         .bind(ae.id).execute(&mut **tx).await?;
-    sqlx::query(
-        "insert into catalog.agent_installation(resource_id,workspace_id,agent_resource_id,
+        sqlx::query(
+            "insert into catalog.agent_installation(resource_id,workspace_id,agent_resource_id,
         pinned_version_asset_id,agent_principal_id,runtime_isolation_ref,state)
         values($1,$2,$3,$4,$5,$1::text,'PROVISIONING')",
-    )
-    .bind(ae.target_id)
-    .bind(workspace)
-    .bind(parent)
-    .bind(version_id)
-    .bind(principal)
-    .execute(&mut **tx)
-    .await?;
-    sqlx::query("insert into catalog.channel_agent_binding(workspace_id,installation_resource_id,triggers,status)
+        )
+        .bind(ae.target_id)
+        .bind(workspace)
+        .bind(parent)
+        .bind(version_id)
+        .bind(principal)
+        .execute(&mut **tx)
+        .await?;
+        sqlx::query("insert into catalog.channel_agent_binding(workspace_id,installation_resource_id,triggers,status)
         values($1,$2,$3,'DISABLED')")
         .bind(workspace).bind(ae.target_id).bind(triggers).execute(&mut **tx).await?;
+        1
+    };
     sqlx::query(
         "insert into catalog.agent_runtime_projection(installation_resource_id,generation,
         agent_version_asset_id,runtime_profile_key,model_route_resource_id,gateway_resource_ids,
-        effective_fields,config_hash,state) values($1,1,$2,$3,$4,$5,$6,$7,'PENDING')",
+        effective_fields,config_hash,state) values($1,$8,$2,$3,$4,$5,$6,$7,'PENDING')",
     )
     .bind(ae.target_id)
     .bind(version_id)
@@ -313,6 +393,7 @@ pub(crate) async fn prewrite(
     .bind(vec![route])
     .bind(serde_json::Value::Array(fields))
     .bind(hash)
+    .bind(generation)
     .execute(&mut **tx)
     .await?;
     crate::agent_tool::install_bindings(
@@ -320,11 +401,11 @@ pub(crate) async fn prewrite(
         tx,
         ae,
         version_id,
-        1,
+        generation,
         &content.declared_tool_resource_ids,
     )
     .await?;
-    Ok(1)
+    Ok(resource_version)
 }
 
 #[derive(Serialize)]
@@ -339,21 +420,28 @@ pub(crate) async fn start(
     tenant: Uuid,
     workflow_id: &str,
 ) -> Result<crate::membership_lifecycle::LifecycleResponse, Response> {
-    let target: Option<(Uuid, Uuid, i64)> = sqlx::query_as("select i.resource_id,i.pinned_version_asset_id,p.generation
+    let target: Option<(Uuid, Uuid, i64, i32)> = sqlx::query_as("select i.resource_id,p.agent_version_asset_id,p.generation,
+        case when ae.action_key='agent.installation.create' then 1 else (ae.parameters->'params'->>'resourceVersion')::int+1 end
         from catalog.agent_installation i join catalog.resource r on r.id=i.resource_id
         join admission.action_execution ae on ae.id=r.projection_action_execution_id
         join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
-          and p.agent_version_asset_id=i.pinned_version_asset_id and p.state='PENDING'
+          and p.agent_version_asset_id::text=ae.parameters->'params'->>'assetId' and p.state='PENDING'
         where ae.id=$1 and ae.tenant_id=$2 and ae.target_id=i.resource_id and ae.workspace_id=i.workspace_id
-          and ae.action_key=$3 and ae.gate_state='ALLOWED' and ae.dispatch_state in ('NOT_DISPATCHED','UNKNOWN','DISPATCHED')
-          and i.state='PROVISIONING' and r.state='PROVISIONING' and r.tenant_id=ae.tenant_id
+          and ae.action_key=any($3) and ae.gate_state='ALLOWED' and ae.dispatch_state in ('NOT_DISPATCHED','UNKNOWN','DISPATCHED')
+          and ((i.state='PROVISIONING' and r.state='PROVISIONING' and ae.action_key='agent.installation.create')
+            or (i.state='DRAINING' and r.state='ACTIVE' and ae.action_key='agent.installation.upgrade')) and r.tenant_id=ae.tenant_id
           and ae.temporal_workflow_id=$4")
-        .bind(action).bind(tenant).bind(CREATE_ACTION).bind(workflow_id).fetch_optional(pool).await.map_err(unavailable)?;
-    let Some((installation, version, generation)) = target else {
+        .bind(action).bind(tenant).bind(vec![CREATE_ACTION,UPGRADE_ACTION]).bind(workflow_id).fetch_optional(pool).await.map_err(unavailable)?;
+    let Some((installation, version, generation, resource_version)) = target else {
         return Err(StatusCode::CONFLICT.into_response());
     };
-    let expected = crate::component_task::workflow_id(KIND, tenant, &installation.to_string(), 1);
-    if expected != workflow_id || generation != 1 {
+    let expected = crate::component_task::workflow_id(
+        KIND,
+        tenant,
+        &installation.to_string(),
+        resource_version,
+    );
+    if expected != workflow_id || generation <= 0 {
         return Err(StatusCode::CONFLICT.into_response());
     }
     let input = crate::component_task::ComponentTaskInput {
@@ -415,7 +503,7 @@ pub(crate) async fn advance(
     ) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
-    if input.projection_generation != 1 {
+    if input.projection_generation <= 0 {
         return StatusCode::CONFLICT.into_response();
     }
     let ae = match crate::governance::load_execution(&state.pool, action).await {
@@ -424,7 +512,7 @@ pub(crate) async fn advance(
         Err(error) => return unavailable(error),
     };
     if ae.target_id != id
-        || ae.action_key != CREATE_ACTION
+        || !matches!(ae.action_key.as_str(), CREATE_ACTION | UPGRADE_ACTION)
         || ae.temporal_workflow_id.as_deref() != Some(input.workflow_id.as_str())
     {
         return StatusCode::CONFLICT.into_response();
@@ -470,7 +558,7 @@ pub(crate) async fn advance(
     };
     if row.tenant_id != ae.tenant_id
         || Some(row.workspace_id) != ae.workspace_id
-        || row.pinned_version_asset_id != version
+        || (ae.action_key == CREATE_ACTION && row.pinned_version_asset_id != version)
     {
         return StatusCode::CONFLICT.into_response();
     }
@@ -500,7 +588,11 @@ pub(crate) async fn advance(
             return creation_result(id, TaskStatus::Completed, "NONE");
         }
     }
-    if input.cancel_requested {
+    // An admitted upgrade has a durable target projection and can already have
+    // external credentials. A cancellation request is not evidence those writes
+    // were undone. Keep reconciling this exact generation to its actual terminal
+    // result, rather than permanently parking it or restarting the old version.
+    if input.cancel_requested && ae.action_key == CREATE_ACTION {
         // Stop new admission immediately. Native key/model/roster retirement is
         // not proven by cancel accepted or by killing a child; remain UNKNOWN.
         let mut tx = match state.pool.begin().await {
@@ -536,7 +628,12 @@ pub(crate) async fn advance(
         }
         return creation_result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT");
     }
-    match create_projection(&state, id, action).await {
+    let prepared = if ae.action_key == UPGRADE_ACTION {
+        drain_upgrade(&state, id, action, version, input.projection_generation).await
+    } else {
+        create_projection(&state, id, action).await
+    };
+    match prepared {
         Ok(()) => {}
         Err(error) => {
             tracing::warn!(installation=%id,reason=?error.reason(),"Installation creation 对账未闭合");
@@ -559,6 +656,35 @@ fn creation_result(id: Uuid, status: TaskStatus, waiting: &str) -> Response {
         waiting_reason: waiting.into(),
     })
     .into_response()
+}
+
+async fn drain_upgrade(
+    state: &ServiceState,
+    installation: Uuid,
+    action: Uuid,
+    version: Uuid,
+    generation: i64,
+) -> Result<(), Refusal> {
+    let ready: bool = sqlx::query_scalar("select exists(select 1 from catalog.agent_installation i
+        join catalog.resource r on r.id=i.resource_id
+        join admission.action_execution a on a.id=r.projection_action_execution_id
+        join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
+        where i.resource_id=$1 and i.state='DRAINING' and r.state='ACTIVE'
+          and a.id=$2 and a.action_key='agent.installation.upgrade' and a.gate_state='ALLOWED'
+          and a.target_id=i.resource_id and a.tenant_id=r.tenant_id and a.workspace_id=i.workspace_id
+          and a.parameters->'params'->>'assetId'=$3::uuid::text and p.agent_version_asset_id=$3
+          and p.generation=$4 and p.state='PENDING' and catalog.agent_installation_drained(i.resource_id))")
+        .bind(installation).bind(action).bind(version).bind(generation).fetch_one(&state.pool).await?;
+    if !ready {
+        return Err(Refusal::Unavailable("Installation 旧代任务尚未排空".into()));
+    }
+    state
+        .agent_runtime
+        .as_ref()
+        .ok_or_else(|| Refusal::Unavailable("Installation runtime 尚未就绪".into()))?
+        .stop_before_generation(installation, generation)
+        .await
+        .map_err(|_| Refusal::Unavailable("Installation 旧运行体退出尚未查证".into()))
 }
 
 /// Reuses the already admitted immutable action and native identity primitive.
@@ -1053,7 +1179,7 @@ const READY_ROW: &str = "select r.tenant_id,i.workspace_id,r.owner_principal_id,
   join catalog.resource dr on dr.id=i.agent_resource_id and dr.tenant_id=t.id
     and dr.state='ACTIVE' and dr.projection_action_execution_id is null
   join catalog.agent_definition d on d.resource_id=dr.id and d.status='ACTIVE'
-  join catalog.agent_version v on v.asset_id=i.pinned_version_asset_id
+  join catalog.agent_version v on v.asset_id=$2
     and v.agent_resource_id=d.resource_id and v.state in ('PUBLISHED','RETIRED')
   join catalog.asset av on av.id=v.asset_id and av.tenant_id=t.id
     and av.state in ('PUBLISHED','RETIRED') and av.projection_action_execution_id is null
@@ -1072,12 +1198,12 @@ const READY_ROW: &str = "select r.tenant_id,i.workspace_id,r.owner_principal_id,
     and c.tenant_id=t.id and c.principal_id=tb.control_service_principal_id and c.kind='CONTROL'
     and c.custody='SERVER' and c.state='ACTIVE' and c.private_key_secret_status='ACTIVE'
   join projection.workspace_buzz_binding wb on wb.workspace_id=w.id and wb.state='ACTIVE'
-  where i.resource_id=$1 and i.pinned_version_asset_id=$2 and r.type_key='agent.installation'
+  where i.resource_id=$1 and r.type_key='agent.installation'
     and r.home_workspace_id=w.id
-    and ((not $4::boolean and i.state='ACTIVE' and r.state='ACTIVE'
-          and p.state='ACTIVE' and i.active_projection_generation=p.generation
-          and r.projection_action_execution_id is null)
-      or ($4::boolean and i.state='PROVISIONING' and r.state='PROVISIONING' and p.state='PENDING'
+    and ((not $4::boolean and catalog.agent_generation_admitted(i.resource_id,v.asset_id,p.generation))
+      or ($4::boolean and p.state='PENDING'
+          and ((i.state='PROVISIONING' and r.state='PROVISIONING')
+            or (i.state='DRAINING' and r.state='ACTIVE' and catalog.agent_installation_drained(i.resource_id)))
           and exists(select 1 from admission.action_execution ae
             join catalog.action_definition d on d.action_key=ae.action_key and d.version=ae.action_version
             join projection.workflow_ref f on f.action_execution_id=ae.id and f.tenant_id=t.id
@@ -1086,6 +1212,8 @@ const READY_ROW: &str = "select r.tenant_id,i.workspace_id,r.owner_principal_id,
               and f.projection_state='RUNNING' and f.run_id is not null
             where ae.id=r.projection_action_execution_id and ae.tenant_id=t.id
               and ae.workspace_id=w.id and ae.target_id=r.id and ae.gate_state='ALLOWED'
+              and ae.action_key in ('agent.installation.create','agent.installation.upgrade')
+              and ae.parameters->'params'->>'assetId'=v.asset_id::text
               and ae.dispatch_state in ('NOT_DISPATCHED','UNKNOWN','DISPATCHED')
               and d.execution_mode='TEMPORAL' and d.workflow_type='ComponentTaskWorkflow'
               and d.workflow_kind='AGENT_INSTALLATION' and d.capacity_policy='NONE'
@@ -1468,16 +1596,20 @@ pub(crate) async fn reconcile(
     };
     let healthy = runtime.healthy_installations().await;
     let pending: Vec<(Uuid, Uuid, i64, bool)> = sqlx::query_as(
-        "select i.resource_id,p.agent_version_asset_id,p.generation,i.state='PROVISIONING'
+        "select i.resource_id,p.agent_version_asset_id,p.generation,p.state='PENDING'
          from catalog.agent_installation i join catalog.resource r on r.id=i.resource_id
          join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
-           and p.agent_version_asset_id=i.pinned_version_asset_id
          join identity.tenant t on t.id=r.tenant_id and t.state='ACTIVE'
          join identity.workspace w on w.id=i.workspace_id and w.tenant_id=t.id and w.state='ACTIVE'
          left join admission.action_execution ae on ae.id=r.projection_action_execution_id
          where (i.state='PROVISIONING' and r.state='PROVISIONING' and p.state='PENDING'
                   and ae.gate_state='ALLOWED' and ae.dispatch_state in ('NOT_DISPATCHED','UNKNOWN','DISPATCHED'))
-           or (i.state='ACTIVE' and r.state='ACTIVE' and p.state='ACTIVE'
+           or (i.state='DRAINING' and r.state='ACTIVE' and p.state='PENDING'
+                  and ae.action_key='agent.installation.upgrade' and ae.gate_state='ALLOWED'
+                  and ae.parameters->'params'->>'assetId'=p.agent_version_asset_id::text
+                  and catalog.agent_installation_drained(i.resource_id))
+           or (catalog.agent_generation_admitted(i.resource_id,p.agent_version_asset_id,p.generation)
+                  and (i.state='ACTIVE' or not catalog.agent_installation_drained(i.resource_id))
                   and p.generation=i.active_projection_generation
                   and not i.resource_id=any($2::uuid[]))
          order by ae.updated_at nulls last,i.resource_id,p.generation limit $1",
@@ -1528,6 +1660,11 @@ async fn initialize(
     } else {
         None
     };
+    if let Some((ae, _, _)) = &admission {
+        if ae.action_key == UPGRADE_ACTION {
+            drain_upgrade(state, installation, ae.id, version, generation).await?;
+        }
+    }
     let model = if let Some((ae, _, _)) = &admission {
         crate::model_route::provision(state, installation, version, generation, ae.id).await?
     } else {
@@ -1565,6 +1702,12 @@ async fn initialize(
         .ensure(&state.pool, &projection, token.expose())
         .await
         .map_err(|_| Refusal::Unavailable("Agent runtime 原生初始化结果不明".into()))?;
+    if let Some((ae, _, _)) = &admission {
+        if ae.action_key == UPGRADE_ACTION {
+            crate::model_route::retire_previous_generation(state, installation, generation, ae.id)
+                .await?;
+        }
+    }
     let current = runtime_facts(state, installation, version, generation, provisioning).await?;
     if current.snapshot != facts.snapshot {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
@@ -1682,7 +1825,7 @@ async fn initialize(
     let changed = sqlx::query(
         "update catalog.resource r set state='ACTIVE',version=version+1,
             projection_action_execution_id=null where r.id=$1 and r.tenant_id=$2
-            and r.home_workspace_id=$3 and r.version=$4 and r.state='PROVISIONING'
+            and r.home_workspace_id=$3 and r.version=$4 and r.state in ('PROVISIONING','ACTIVE')
             and r.projection_action_execution_id=$5",
     )
     .bind(installation)
@@ -1710,8 +1853,9 @@ async fn initialize(
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
     let changed = sqlx::query(
-        "update catalog.agent_installation set state='ACTIVE',active_projection_generation=$2
-        where resource_id=$1 and state='PROVISIONING' and pinned_version_asset_id=$3",
+        "update catalog.agent_installation set state='ACTIVE',active_projection_generation=$2,pinned_version_asset_id=$3
+        where resource_id=$1 and ((state='PROVISIONING' and pinned_version_asset_id=$3)
+          or (state='DRAINING' and catalog.agent_installation_drained(resource_id)))",
     )
     .bind(installation)
     .bind(generation)
@@ -1721,12 +1865,36 @@ async fn initialize(
     if changed.rows_affected() != 1 {
         return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
     }
+    sqlx::query(
+        "update catalog.agent_runtime_projection set state='REVOKED'
+        where installation_resource_id=$1 and generation<>$2 and state='ACTIVE'",
+    )
+    .bind(installation)
+    .bind(generation)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "update catalog.tool_binding set status='REVOKED'
+        where installation_resource_id=$1 and projection_generation<>$2 and status<>'REVOKED'",
+    )
+    .bind(installation)
+    .bind(generation)
+    .execute(&mut *tx)
+    .await?;
     let changed = sqlx::query(
-        "update catalog.channel_agent_binding set status='ACTIVE'
-        where installation_resource_id=$1 and workspace_id=$2 and status='DISABLED'",
+        "update catalog.channel_agent_binding set status='ACTIVE',triggers=$3
+        where installation_resource_id=$1 and workspace_id=$2 and status in ('DISABLED','ACTIVE')",
     )
     .bind(installation)
     .bind(facts.workspace_id)
+    .bind(
+        facts
+            .content
+            .trigger_defaults
+            .iter()
+            .map(crate::governance::wire)
+            .collect::<Vec<_>>(),
+    )
     .execute(&mut *tx)
     .await?;
     if changed.rows_affected() != 1 {
@@ -1798,7 +1966,7 @@ async fn initialization_authorization(
         || ae.actor_principal_id != ae.initiator_principal_id
         || ae.action_key != def.action_key
         || ae.action_version != def.version
-        || def.action_key != CREATE_ACTION
+        || !matches!(def.action_key.as_str(), CREATE_ACTION | UPGRADE_ACTION)
     {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
@@ -1811,8 +1979,10 @@ async fn initialization_authorization(
         .ok_or_else(invalid)?;
     let version = params.asset_id.ok_or_else(invalid)?;
     let pinned: bool = sqlx::query_scalar(
-        "select exists(select 1 from catalog.agent_installation
-        where resource_id=$1 and pinned_version_asset_id=$2 and workspace_id=$3)",
+        "select exists(select 1 from catalog.agent_installation i
+        join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
+        where i.resource_id=$1 and p.agent_version_asset_id=$2 and i.workspace_id=$3
+          and p.state='PENDING')",
     )
     .bind(installation)
     .bind(version)
@@ -1880,6 +2050,73 @@ async fn initialization_authorization(
 #[cfg(test)]
 mod effective_field_tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
+    async fn upgrade_preserves_generation_sessions_and_blocks_unknown_drain() {
+        let pool = sqlx::PgPool::connect(&std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql(r#"DO $$
+        DECLARE
+          tenant uuid:=gen_random_uuid(); workspace uuid:=gen_random_uuid();
+          human uuid:=gen_random_uuid(); human_identity uuid:=gen_random_uuid(); agent uuid:=gen_random_uuid();
+          definition uuid:=gen_random_uuid(); installation uuid:=gen_random_uuid(); route uuid:=gen_random_uuid();
+          old_version uuid:=gen_random_uuid(); new_version uuid:=gen_random_uuid();
+          upgrade_action uuid:=gen_random_uuid(); invocation_action uuid:=gen_random_uuid(); invocation uuid:=gen_random_uuid();
+        BEGIN
+          INSERT INTO identity.tenant(id,slug,name,state) VALUES(tenant,tenant::text,'upgrade fixture','ACTIVE');
+          INSERT INTO identity.workspace(id,tenant_id,slug,name,state) VALUES(workspace,tenant,workspace::text,'upgrade fixture','ACTIVE');
+          INSERT INTO identity.principal(id,tenant_id,kind,status) VALUES(human,tenant,'HUMAN','ACTIVE'),(agent,tenant,'AGENT','ACTIVE');
+          INSERT INTO identity.human_identity(id,display_name,status) VALUES(human_identity,'upgrade fixture','ACTIVE');
+          INSERT INTO identity.tenant_membership(id,tenant_id,human_identity_id,tenant_principal_id,state) VALUES(gen_random_uuid(),tenant,human_identity,human,'ACTIVE');
+          INSERT INTO catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,component_type_key,native_id,state,version) VALUES
+            (definition,tenant,'agent.definition',NULL,human,'core',definition::text,'PROVISIONING',1),
+            (route,tenant,'llm_route',workspace,human,'core',route::text,'PROVISIONING',1),
+            (installation,tenant,'agent.installation',workspace,human,'core',installation::text,'PROVISIONING',1);
+          INSERT INTO catalog.agent_definition(resource_id,stable_slug,display_name,status) VALUES(definition,definition::text,'upgrade fixture','PROVISIONING');
+          INSERT INTO catalog.asset(id,tenant_id,resource_id,type_key,owner_principal_id,native_ref,state,version) VALUES
+            (old_version,tenant,definition,'agent.version',human,old_version::text,'DRAFT',1),
+            (new_version,tenant,definition,'agent.version',human,new_version::text,'DRAFT',1);
+          INSERT INTO catalog.agent_version(asset_id,agent_resource_id,ordinal,content,config_hash,state) VALUES
+            (old_version,definition,1,jsonb_build_object('runtimeProfileKey','fixture','modelRouteResourceId',route),repeat('a',64),'DRAFT'),
+            (new_version,definition,2,jsonb_build_object('runtimeProfileKey','fixture','modelRouteResourceId',route),repeat('b',64),'DRAFT');
+          INSERT INTO catalog.agent_installation(resource_id,workspace_id,agent_resource_id,pinned_version_asset_id,agent_principal_id,runtime_isolation_ref,state)
+            VALUES(installation,workspace,definition,old_version,agent,'fixture:'||installation,'PROVISIONING');
+          INSERT INTO catalog.agent_runtime_projection(installation_resource_id,generation,agent_version_asset_id,runtime_profile_key,model_route_resource_id,gateway_resource_ids,effective_fields,config_hash,state) VALUES
+            (installation,1,old_version,'fixture',route,ARRAY[route],jsonb_build_array(jsonb_build_object('fieldKey','runtimeProfileKey','requestedValueHash',repeat('a',64),'effectiveValueHash',repeat('a',64),'reasonCode',NULL)),repeat('a',64),'ACTIVE'),
+            (installation,2,new_version,'fixture',route,ARRAY[route],jsonb_build_array(jsonb_build_object('fieldKey','runtimeProfileKey','requestedValueHash',repeat('b',64),'effectiveValueHash',repeat('b',64),'reasonCode',NULL)),repeat('b',64),'PENDING');
+          UPDATE catalog.agent_installation SET state='ACTIVE',active_projection_generation=1 WHERE resource_id=installation;
+          UPDATE catalog.resource SET state='ACTIVE' WHERE id=installation;
+          INSERT INTO catalog.agent_session(tenant_id,workspace_id,root_event_id,installation_resource_id,agent_version_asset_id,projection_generation,runtime_thread_id,core_memory_state,status) VALUES
+            (tenant,workspace,repeat('a',64),installation,old_version,1,'old-thread','ABSENT','ACTIVE'),
+            (tenant,workspace,repeat('a',64),installation,new_version,2,NULL,'UNREADABLE','PENDING');
+          IF (SELECT count(*) FROM catalog.agent_session WHERE installation_resource_id=installation)<>2 THEN RAISE EXCEPTION 'same root must preserve both generation Sessions'; END IF;
+          INSERT INTO admission.action_execution(id,operation_id,tenant_id,workspace_id,action_key,action_version,initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id) VALUES
+            (upgrade_action,gen_random_uuid(),tenant,workspace,'agent.installation.upgrade',1,human,human,installation,repeat('a',64),'ALLOWED','DISPATCHED',gen_random_uuid()),
+            (invocation_action,gen_random_uuid(),tenant,workspace,'agent.invoke',1,human,human,installation,repeat('a',64),'ALLOWED','DISPATCHED',gen_random_uuid());
+          UPDATE catalog.resource SET projection_action_execution_id=upgrade_action WHERE id=installation;
+          UPDATE catalog.agent_installation SET state='DRAINING' WHERE resource_id=installation;
+          IF NOT catalog.agent_generation_admitted(installation,old_version,1) OR catalog.agent_generation_admitted(installation,new_version,2) THEN RAISE EXCEPTION 'drain admits only frozen current generation'; END IF;
+          IF NOT catalog.agent_installation_drained(installation) THEN RAISE EXCEPTION 'idle old generation can drain'; END IF;
+          UPDATE catalog.agent_session SET status='UNKNOWN' WHERE installation_resource_id=installation AND projection_generation=1;
+          IF catalog.agent_installation_drained(installation) THEN RAISE EXCEPTION 'uncertain native Session cannot drain'; END IF;
+          UPDATE catalog.agent_session SET status='ACTIVE' WHERE installation_resource_id=installation AND projection_generation=1;
+          INSERT INTO catalog.agent_invocation(id,tenant_id,workspace_id,root_event_id,source_event_id,installation_resource_id,agent_version_asset_id,projection_generation,action_execution_id,workflow_id,status)
+            VALUES(invocation,tenant,workspace,repeat('a',64),repeat('b',64),installation,old_version,1,invocation_action,'fixture:'||invocation,'UNKNOWN');
+          IF catalog.agent_installation_drained(installation) THEN RAISE EXCEPTION 'UNKNOWN invocation cannot drain'; END IF;
+          UPDATE catalog.agent_invocation SET status='FAILED' WHERE id=invocation;
+          IF NOT catalog.agent_installation_drained(installation) THEN RAISE EXCEPTION 'confirmed terminal invocation can drain'; END IF;
+          UPDATE catalog.agent_runtime_projection SET state='ACTIVE' WHERE installation_resource_id=installation AND generation=2;
+          UPDATE catalog.agent_installation SET state='ACTIVE',active_projection_generation=2,pinned_version_asset_id=new_version WHERE resource_id=installation;
+          UPDATE catalog.resource SET projection_action_execution_id=NULL WHERE id=installation;
+          IF catalog.agent_generation_admitted(installation,old_version,1) OR NOT catalog.agent_generation_admitted(installation,new_version,2) THEN RAISE EXCEPTION 'switched pointer must admit only new generation'; END IF;
+          IF NOT EXISTS(SELECT 1 FROM catalog.agent_session WHERE installation_resource_id=installation AND projection_generation=1 AND agent_version_asset_id=old_version AND runtime_thread_id='old-thread') THEN RAISE EXCEPTION 'historical native thread must remain unchanged'; END IF;
+          IF NOT EXISTS(SELECT 1 FROM catalog.agent_invocation WHERE id=invocation AND projection_generation=1 AND agent_version_asset_id=old_version) THEN RAISE EXCEPTION 'historical invocation must remain pinned'; END IF;
+        END $$;"#).execute(&mut *tx).await.unwrap();
+        tx.rollback().await.unwrap();
+    }
 
     #[test]
     fn partial_fields_converge_without_claiming_unimplemented_policy() {

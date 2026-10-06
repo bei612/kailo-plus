@@ -936,6 +936,7 @@ function validInstallation(row: AgentInstallationView): boolean {
     || !Number.isSafeInteger(row.resourceVersion) || row.resourceVersion <= 0
     || !Object.values(ResourceState).includes(row.resourceState)
     || !Object.values(AgentInstallationState).includes(row.state)
+    || (row.canUpgrade !== undefined && typeof row.canUpgrade !== "boolean")
     || (row.agentPrincipalState !== "ACTIVE" && row.agentPrincipalState !== "DISABLED")) return false;
   const channel = row.channelBinding;
   if (channel !== undefined && (!channel || !["ACTIVE", "DISABLED", "ERROR"].includes(channel.status)
@@ -968,6 +969,7 @@ function InstallationManagement({ versionRevision }: { versionRevision: number }
   const [revision, setRevision] = useState(0);
   const [delegationTarget, setDelegationTarget] = useState<AgentInstallationView | null>(null);
   const [permissionTarget, setPermissionTarget] = useState<AgentInstallationView | null>(null);
+  const [upgradeTarget, setUpgradeTarget] = useState<AgentInstallationView | null>(null);
   const value = state.status === "ok" ? state.data : null;
   const workspaces = value && Array.isArray(value) && value.every((w) => w && typeof w.id === "string" && !!w.id
     && typeof w.name === "string" && typeof w.slug === "string") && new Set(value.map((w) => w.id)).size === value.length ? value : null;
@@ -982,7 +984,7 @@ function InstallationManagement({ versionRevision }: { versionRevision: number }
       : <>
         <label className="flex flex-col gap-1 text-sm">{t("platform.workspace")}
           <select disabled={locked} className="h-8 rounded-md border border-input bg-background px-2" value={workspace.id}
-            onChange={(event) => { setSelected(event.target.value); setDelegationTarget(null); setPermissionTarget(null); }}>
+            onChange={(event) => { setSelected(event.target.value); setDelegationTarget(null); setPermissionTarget(null); setUpgradeTarget(null); }}>
             {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
         </label>
@@ -990,6 +992,9 @@ function InstallationManagement({ versionRevision }: { versionRevision: number }
     {/* 原意图留在 Workspace/列表之外，结果不明时不生成替代键。 */}
     <InstallationCreate workspaceId={workspace?.id} workspaceName={workspace?.name} sourceRevision={`${versionRevision}:${revision}`} locked={locked} onLocked={setLocked}
       onRecorded={() => setRevision((old) => old + 1)} />
+    {upgradeTarget ? <InstallationCreate key={`upgrade:${upgradeTarget.resourceId}`} upgrade={upgradeTarget}
+      workspaceId={upgradeTarget.workspaceId} workspaceName={workspace?.name} sourceRevision={`${versionRevision}:${revision}`}
+      locked={locked} onLocked={setLocked} onRecorded={() => setRevision((old) => old + 1)} /> : null}
     <InstallationDelegation installation={delegationTarget} locked={locked} onLocked={setLocked} onReset={() => setDelegationTarget(null)}
       onRecorded={() => setRevision((old) => old + 1)} />
     {permissionTarget ? <>
@@ -998,7 +1003,7 @@ function InstallationManagement({ versionRevision }: { versionRevision: number }
       {permissionTarget.readPermission ? <InstallationPermission key={`read:${permissionTarget.resourceId}:${permissionTarget.workspaceId}`} kind="read" installation={permissionTarget} locked={locked} onLocked={setLocked}
         onRecorded={() => setRevision((old) => old + 1)} /> : null}
     </> : null}
-    {workspace ? <InstallationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onPermission={setPermissionTarget} onManage={setDelegationTarget} /> : null}
+    {workspace ? <InstallationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onPermission={setPermissionTarget} onManage={setDelegationTarget} onUpgrade={setUpgradeTarget} /> : null}
   </section>;
 }
 
@@ -1012,7 +1017,7 @@ function validInstallationCandidate(row: AgentInstallationCandidate): boolean {
 }
 
 function matchingInstallationTask(task: TaskView, receipt: ActionSubmission, workspaceId: string): boolean {
-  return validDefinitionTask(task) && task.actionKey === "agent.installation.create"
+  return validDefinitionTask(task) && ["agent.installation.create", "agent.installation.upgrade"].includes(task.actionKey)
     && task.actionKey === receipt.actionKey && task.actionExecutionId === receipt.actionExecutionId
     && task.operationId === receipt.operationId && task.workspaceId === workspaceId
     && Number.isSafeInteger(task.actionVersion) && task.actionVersion > 0
@@ -1055,8 +1060,8 @@ function InstallationTaskReceipt({ receipt, workspaceId }: { receipt: ActionSubm
   </section>;
 }
 
-function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked, onLocked, onRecorded }: {
-  workspaceId?: string; workspaceName?: string; sourceRevision: string; locked: boolean; onLocked: (locked: boolean) => void; onRecorded: () => void;
+function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked, onLocked, onRecorded, upgrade }: {
+  workspaceId?: string; workspaceName?: string; sourceRevision: string; locked: boolean; onLocked: (locked: boolean) => void; onRecorded: () => void; upgrade?: AgentInstallationView;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -1071,9 +1076,24 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
   const [submissionScope, setSubmissionScope] = useState<{ workspaceId: string; client: typeof client } | null>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
+  const actionKey = upgrade ? "agent.installation.upgrade" : "agent.installation.create";
   const offset = offsets[index] ?? 0;
   const [sources, reloadSources] = useLoad(`installation-candidates:${workspaceId}:${offset}:${sourceRevision}`,
-    () => workspaceId ? client.agentInstallationCandidates(workspaceId, offset) : Promise.resolve(null));
+    async () => {
+      if (!workspaceId) return null;
+      if (!upgrade) return client.agentInstallationCandidates(workspaceId, offset);
+      const current = await client.agentInstallation(upgrade.resourceId);
+      if (!validInstallation(current) || current.resourceId !== upgrade.resourceId
+        || current.workspaceId !== workspaceId || current.agentResourceId !== upgrade.agentResourceId) throw new TransportError(t("platform.loadFailed"));
+      const page = await client.agentVersions(upgrade.agentResourceId, offset);
+      if (page.agentResourceId !== upgrade.agentResourceId || !Array.isArray(page.versions)
+        || !page.versions.every((version) => validVersion(version, upgrade.agentResourceId))) throw new TransportError(t("platform.loadFailed"));
+      return { workspaceId, canCreate: current.canUpgrade === true, nextOffset: page.nextOffset ?? undefined,
+        candidates: current.canUpgrade === true ? page.versions.filter((version) => version.state === AgentVersionState.Published && version.assetId !== current.pinnedVersionAssetId)
+          .map((version) => ({agentResourceId: upgrade.agentResourceId, agentVersionAssetId: version.assetId,
+            displayName: version.content.personaIdentity.displayName, resourceVersion: current.resourceVersion,
+            assetVersion: version.assetVersion, ordinal: version.ordinal})) : [] };
+    });
   const page = sources.status === "ok" && sources.data && sources.data.workspaceId === workspaceId
     && typeof sources.data.canCreate === "boolean" && Array.isArray(sources.data.candidates)
     && sources.data.candidates.every(validInstallationCandidate)
@@ -1084,7 +1104,7 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
   const candidate = page?.canCreate ? page.candidates.find((row) => row.agentVersionAssetId === selected) : undefined;
   const [tasks, reloadTasks] = useLoad("installation-actions-in-flight", client.tasks);
   const taskRows = tasks.status === "ok" && Array.isArray(tasks.data) && tasks.data.every(validDefinitionTask) ? tasks.data : null;
-  const pending = taskRows?.filter((task) => task.actionKey === "agent.installation.create"
+  const pending = taskRows?.filter((task) => task.actionKey === actionKey
     && (task.workspaceId === undefined || task.workspaceId === workspaceId) && taskPhase(task).tone === "neutral") ?? [];
   const requestBlocked = !taskRows || pending.length > 0;
   const unknown = failure?.kind === "unknown" || submission?.dispatchState === ActionDispatchState.Unknown
@@ -1093,8 +1113,8 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
   useEffect(() => { setSelected(""); setOffsets([0]); setIndex(0); }, [workspaceId]);
   const prepare = () => {
     if (intent || locked || busy || requestBlocked || !workspaceId || !workspaceName || !candidate) return;
-    setIntent({ command: { actionKey: "agent.installation.create", idempotencyKey: newIdempotencyKey(),
-      workspaceId, resourceId: candidate.agentResourceId, resourceVersion: candidate.resourceVersion,
+    setIntent({ command: { actionKey, idempotencyKey: newIdempotencyKey(),
+      workspaceId, resourceId: upgrade?.resourceId ?? candidate.agentResourceId, resourceVersion: candidate.resourceVersion,
       assetId: candidate.agentVersionAssetId, assetVersion: candidate.assetVersion }, name: candidate.displayName,
       workspace: workspaceName, ordinal: candidate.ordinal });
     setFailure(null); setSubmission(null); setSubmissionScope(null); onLocked(true);
@@ -1129,14 +1149,15 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
     } finally { inFlight.current = false; setBusy(false); reloadTasks(); }
   };
   if (!workspaceId && !intent) return null;
-  return <section className="flex flex-col gap-3 rounded-md border p-3" data-testid="agent-installation-create">
-    <h3 className="text-sm font-medium">{t("agents.installation.create")}</h3>
+  return <section className="flex flex-col gap-3 rounded-md border p-3" data-testid={upgrade ? "agent-installation-upgrade" : "agent-installation-create"}>
+    <h3 className="text-sm font-medium">{t(upgrade ? "agents.upgradeVersion" : "agents.installation.create")}</h3>
+    {upgrade ? <Notice>{t("agents.upgradeDrain")}</Notice> : null}
     {!intent ? <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
       {sources.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
         : !page ? <AgentReadFailure error={sources.status === "error" ? sources.error : undefined} onRetry={reloadSources} />
         : !page.canCreate ? <Notice>{t("agents.installation.createUnavailable")}</Notice>
         : page.candidates.length === 0 ? <Notice>{t("agents.installation.noPublished")}</Notice>
-        : <label className="flex flex-col gap-1 text-sm">{t("agents.installation.definition")}
+        : <label className="flex flex-col gap-1 text-sm">{t(upgrade ? "agents.upgradeTarget" : "agents.installation.definition")}
           <select disabled={locked} required value={selected} onChange={(event) => setSelected(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
             <option value="">{t("agents.automation.select")}</option>
             {page.candidates.map((row) => <option key={row.agentVersionAssetId} value={row.agentVersionAssetId}>{row.displayName} · {row.ordinal} · {row.agentVersionAssetId}</option>)}
@@ -1157,7 +1178,7 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
       <p>{t("agents.version.ordinal")}: {intent.ordinal}</p>
       <p className="text-muted-foreground">{t("agents.installation.notReady")}</p>
       <p className="text-muted-foreground">{t("agents.admission")}</p>
-      <div className="flex gap-2"><Button disabled={busy} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry") : t("agents.confirm")}</Button>
+      <div className="flex gap-2"><Button disabled={busy} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry") : t(upgrade ? "agents.upgradeSubmit" : "agents.confirm")}</Button>
         {!busy && !unknown ? <Button onClick={() => { setIntent(null); onLocked(false); }}>{t("agents.cancel")}</Button> : null}</div>
     </div>}
     {submission && submissionScope && submissionScope.workspaceId === workspaceId && submissionScope.client === client ? <>
@@ -1398,8 +1419,8 @@ function DelegationScope({ scope }: { scope: DelegationScopeParameters }) {
   </div>;
 }
 
-function InstallationList({ workspaceId, locked, onPermission, onManage }: {
-  workspaceId: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void;
+function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgrade }: {
+  workspaceId: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void; onUpgrade: (row: AgentInstallationView) => void;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -1428,7 +1449,7 @@ function InstallationList({ workspaceId, locked, onPermission, onManage }: {
           {pageIndex > 0 ? <Button disabled={locked} onClick={() => changePage(pageIndex - 1)}>{t("roles.previous")}</Button> : null}
           {next !== undefined ? <Button disabled={locked} onClick={() => { setOffsets((old) => [...old.slice(0, pageIndex + 1), next]); changePage(pageIndex + 1); }}>{t("roles.next")}</Button> : null}
         </div>
-        {selected ? <InstallationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked} onPermission={onPermission} onManage={onManage} /> : null}
+        {selected ? <InstallationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked} onPermission={onPermission} onManage={onManage} onUpgrade={onUpgrade} /> : null}
       </>}
   </div>;
 }
@@ -1458,8 +1479,8 @@ function InstallationIdentityCard({ row, locked, onOpen }: {
   </div>;
 }
 
-function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onManage }: {
-  resourceId: string; workspaceId: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void;
+function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onManage, onUpgrade }: {
+  resourceId: string; workspaceId: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void; onUpgrade: (row: AgentInstallationView) => void;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -1493,7 +1514,8 @@ function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onM
     {row.state === AgentInstallationState.Active && row.resourceState === ResourceState.Active
       ? <Button className="w-fit" disabled={locked} onClick={() => onManage(row)}>{t("agents.delegation.open")}</Button> : null}
     <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
-    {row.state === AgentInstallationState.Active ? <Button className="w-fit" disabled={locked} onClick={() => onPermission(row)}>{t("agents.execute.open")}</Button> : null}
+    {row.canUpgrade === true && row.state === AgentInstallationState.Active ? <Button className="w-fit" disabled={locked} onClick={() => onUpgrade(row)}>{t("agents.upgradeVersion")}</Button> : null}
+    {row.state === AgentInstallationState.Active || row.state === AgentInstallationState.Draining ? <Button className="w-fit" disabled={locked} onClick={() => onPermission(row)}>{t("agents.execute.open")}</Button> : null}
     {row.state === AgentInstallationState.Active ? <InstallationMemory resourceId={resourceId} workspaceId={workspaceId} installation={row} /> : null}
   </section>;
 }

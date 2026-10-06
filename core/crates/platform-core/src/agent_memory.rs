@@ -188,10 +188,9 @@ pub(crate) async fn read_core(
         "select v.installation_resource_id from catalog.agent_invocation v
          join catalog.agent_installation i on i.resource_id=v.installation_resource_id
            and i.workspace_id=v.workspace_id and i.pinned_version_asset_id=v.agent_version_asset_id
-           and i.active_projection_generation=v.projection_generation and i.state='ACTIVE'
+           and catalog.agent_generation_admitted(i.resource_id,v.agent_version_asset_id,v.projection_generation)
          join catalog.resource r on r.id=i.resource_id and r.tenant_id=v.tenant_id
            and r.home_workspace_id=v.workspace_id and r.state='ACTIVE'
-           and r.projection_action_execution_id is null
          join catalog.agent_runtime_projection p on p.installation_resource_id=i.resource_id
            and p.generation=v.projection_generation and p.agent_version_asset_id=v.agent_version_asset_id
            and p.state='ACTIVE'
@@ -263,7 +262,7 @@ async fn binding(
          join identity.principal cp on cp.id=c.principal_id and cp.tenant_id=t.id
            and cp.kind='SERVICE' and cp.status='ACTIVE'
          where i.resource_id=$1 and r.type_key='agent.installation' and r.home_workspace_id=w.id
-           and ((i.state='ACTIVE' and r.state='ACTIVE' and r.projection_action_execution_id is null)
+           and ((catalog.agent_generation_admitted(i.resource_id,i.pinned_version_asset_id,i.active_projection_generation))
              or ($2::boolean and i.state='PROVISIONING' and r.state='PROVISIONING'
                and exists(select 1 from admission.action_execution ae
                  join projection.workflow_ref f on f.action_execution_id=ae.id and f.tenant_id=t.id

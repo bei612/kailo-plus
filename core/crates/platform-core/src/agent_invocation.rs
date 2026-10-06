@@ -162,7 +162,10 @@ const INSTALLATION: &str = "select r.id,r.tenant_id,i.workspace_id,r.version,i.a
     join identity.buzz_identity_binding b on b.principal_id=a.id and b.tenant_id=t.id and b.kind='AGENT' and b.state='ACTIVE'
     join projection.workspace_buzz_binding wb on wb.workspace_id=w.id and wb.state='ACTIVE'
     where r.id=$1 and r.type_key='agent.installation' and r.home_workspace_id=w.id
-      and r.state='ACTIVE' and r.projection_action_execution_id is null and i.state='ACTIVE'";
+      and r.state='ACTIVE' and (($2::uuid is null and $3::bigint is null
+        and r.projection_action_execution_id is null and i.state='ACTIVE')
+        or ($2::uuid is not null and $3::bigint is not null
+          and catalog.agent_generation_admitted(i.resource_id,p.agent_version_asset_id,p.generation)))";
 
 impl Installation {
     fn scope(&self, human: Uuid) -> RuntimeScope {
@@ -649,7 +652,7 @@ async fn admit(
     let session_matches: Option<bool> = sqlx::query_scalar(
         "select agent_version_asset_id=$4 and projection_generation=$5
         and status in ('PENDING','ACTIVE') from catalog.agent_session
-        where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3 for update",
+        where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3 and projection_generation=$5 for update",
     )
     .bind(row.workspace_id)
     .bind(&root)
@@ -699,13 +702,13 @@ async fn admit(
     );
     sqlx::query("insert into catalog.agent_session
         (tenant_id,workspace_id,root_event_id,installation_resource_id,agent_version_asset_id,projection_generation,core_memory_state,status)
-        values($1,$2,$3,$4,$5,$6,'UNREADABLE','PENDING') on conflict(workspace_id,root_event_id,installation_resource_id) do nothing")
+        values($1,$2,$3,$4,$5,$6,'UNREADABLE','PENDING') on conflict(workspace_id,root_event_id,installation_resource_id,projection_generation) do nothing")
         .bind(row.tenant_id).bind(row.workspace_id).bind(&root).bind(row.id).bind(row.agent_version_asset_id)
         .bind(row.projection_generation).execute(&mut *tx).await?;
     let same: bool = sqlx::query_scalar(
         "select agent_version_asset_id=$4 and projection_generation=$5
         and status in ('PENDING','ACTIVE') from catalog.agent_session
-        where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3 for update",
+        where workspace_id=$1 and root_event_id=$2 and installation_resource_id=$3 and projection_generation=$5 for update",
     )
     .bind(row.workspace_id)
     .bind(&root)
