@@ -9,6 +9,24 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('seed and human registration keep separate evidence', () {
+    final value =
+        jsonDecode(
+              File(
+                '../../contracts/samples/capability-seed-page.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    for (final seeded in [true, false]) {
+      if (!seeded) {
+        final row = (value['contracts'] as List).first as Map<String, dynamic>;
+        row['registeredByActionExecutionId'] = row.remove(
+          'bootstrapActionExecutionId',
+        );
+      }
+      expect(CapabilityContractPage.fromJson(value).toJson(), value);
+    }
+  });
   test('component conformance keeps native references and legacy absence', () {
     final value =
         jsonDecode(

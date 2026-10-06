@@ -25,7 +25,8 @@ function validPage(page: CapabilityContractPage, offset: number): boolean {
     && page.contracts.every((row) => !!row && typeof row.categoryKey === "string" && !!row.categoryKey
       && Number.isSafeInteger(row.contractVersion) && row.contractVersion > 0
       && Object.values(CapabilityContractStatus).includes(row.status)
-      && typeof row.registeredByActionExecutionId === "string" && !!row.registeredByActionExecutionId
+      && ((typeof row.registeredByActionExecutionId === "string" && !!row.registeredByActionExecutionId && row.bootstrapActionExecutionId === undefined)
+        || (typeof row.bootstrapActionExecutionId === "string" && !!row.bootstrapActionExecutionId && row.registeredByActionExecutionId === undefined && row.status !== CapabilityContractStatus.Draft))
       && [row.schemaSetDigest, row.conformanceSuiteDigest].every((digest) => typeof digest === "string" && /^[a-f0-9]{64}$/.test(digest))
       && typeof row.canApprove === "boolean" && typeof row.canDeprecate === "boolean"
       && (!row.canApprove || row.status === CapabilityContractStatus.Draft)

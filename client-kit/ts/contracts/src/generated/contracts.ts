@@ -2238,14 +2238,18 @@ export interface CapabilityContractPage {
  * 受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
  */
 export interface ContractElement {
-    canApprove:                    boolean;
-    canDeprecate:                  boolean;
-    categoryKey:                   string;
-    conformanceSuiteDigest:        string;
-    contractVersion:               number;
-    registeredByActionExecutionId: string;
-    schemaSetDigest:               string;
-    status:                        CapabilityContractStatus;
+    /**
+     * PLATFORM_SEED 的部署引导证据；不冒充人为登记或批准。
+     */
+    bootstrapActionExecutionId?:    string;
+    canApprove:                     boolean;
+    canDeprecate:                   boolean;
+    categoryKey:                    string;
+    conformanceSuiteDigest:         string;
+    contractVersion:                number;
+    registeredByActionExecutionId?: string;
+    schemaSetDigest:                string;
+    status:                         CapabilityContractStatus;
 }
 
 export enum CapabilityContractStatus {
@@ -2259,14 +2263,18 @@ export enum CapabilityContractStatus {
  * 受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
  */
 export interface CapabilityContractView {
-    canApprove:                    boolean;
-    canDeprecate:                  boolean;
-    categoryKey:                   string;
-    conformanceSuiteDigest:        string;
-    contractVersion:               number;
-    registeredByActionExecutionId: string;
-    schemaSetDigest:               string;
-    status:                        CapabilityContractStatus;
+    /**
+     * PLATFORM_SEED 的部署引导证据；不冒充人为登记或批准。
+     */
+    bootstrapActionExecutionId?:    string;
+    canApprove:                     boolean;
+    canDeprecate:                   boolean;
+    categoryKey:                    string;
+    conformanceSuiteDigest:         string;
+    contractVersion:                number;
+    registeredByActionExecutionId?: string;
+    schemaSetDigest:                string;
+    status:                         CapabilityContractStatus;
 }
 
 /**

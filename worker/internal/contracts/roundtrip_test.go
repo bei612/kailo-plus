@@ -14,6 +14,43 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestCapabilitySeedEvidenceRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "capability-seed-page.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Fatal(err)
+	}
+	for _, seeded := range []bool{true, false} {
+		if !seeded {
+			row := value["contracts"].([]any)[0].(map[string]any)
+			row["registeredByActionExecutionId"] = row["bootstrapActionExecutionId"]
+			delete(row, "bootstrapActionExecutionId")
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var typed generated.CapabilityContractPage
+		if err := json.Unmarshal(encoded, &typed); err != nil {
+			t.Fatal(err)
+		}
+		back, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual map[string]any
+		if err := json.Unmarshal(back, &actual); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(actual, value) {
+			t.Fatal("seed and human evidence changed")
+		}
+	}
+}
+
 func TestComponentPeerConformanceRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "component-peer-conformance.sample.json"))
 	if err != nil {

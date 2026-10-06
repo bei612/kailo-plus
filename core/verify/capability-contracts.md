@@ -167,3 +167,60 @@ Core 拒绝自然语言数组、未知格式/字段、空 case/step、重复标�
 未运行本批 full、产品镜像/安装包构建、模型调用或实际组件套件；未写业务库、
 未部署。ComponentRelease register/approve/revoke 与 Cells/WeKnora/Wren 集成
 不因本批变为完成。
+
+## DD-108 知识库预置契约的真实引导（2026-10-06）
+
+本批补齐原 Catalog bootstrap 的实际消费者：编译固定
+`contracts/adapter/knowledge.v1/registration.json`，使用原登记校验器验证五个必选键、
+permission、JSON Schema 和有序机器向量，再沿原部署 Principal、ActionExecution、
+AuditEvent 及 Catalog 事务安装一次。它不是在线管理员登记或组件批准。
+
+四步影响结论：
+
+1. 权威为 DD-108、DD-88 与 `.design/07` §2.4。只安装 KNOWLEDGE v1；
+   FILE_STORAGE/DATA_QUERY 种子、WeKnora 五键 Remote Adapter、真实组件一致性运行、
+   release 审批和 binding/model projection 均不因此完成。
+2. 原 `platform_bootstrap::ensure` 在确认实际 Catalog/operator 后调用种子消费者；
+   同 tenant 行锁和同事务固定类别、版本、摘要与三条审计。种子的
+   `registeredByActionExecutionId`、人类批准引用保持缺省，独立
+   `bootstrapActionExecutionId` 指向真实部署 AE；不是用部署 AE 冒充人工登记。
+   原 Web/Desktop Catalog 共用生成 DTO，Mobile 没有新增管理入口。
+3. 重启只比较已有不可变内容，不重写状态；已弃用版本不会复活。已登记不同内容、
+   已有类别但缺少 v1、缺 Catalog/operator、错误来源均拒绝。在线登记仍 DRAFT，
+   仍需原另一管理员审批；没有新增网络 bootstrap 动作、审批绕行或业务正文副本。
+4. `20261007020000` 保留原运行时约束，新增来源互斥与部署 AE 关联约束；下行在
+   存在种子时拒绝丢弃不可变证据。空库可上下往返。新客户端继续读取旧人工登记
+   格式；旧客户端缺少种子来源语义，不能将新增种子响应宣称为全面向后兼容。
+   本批必须与共享客户端同批发布，旧客户端须升级后使用 Catalog 管理页；没有
+   给旧客户端伪造人工登记引用，也没有保留第二读路径。此前已发布的纯人工登记
+   行格式继续可读，但新增种子行不在旧客户端的兼容承诺内。
+
+实际验证使用既有 4 CPU / 8 GiB SDK 与独占隔离库
+`kailo-channel-agent-pg-h8mshl/knowledge_seed_20261006_s1`，没有连接业务数据库。
+原 `sqlx migrate run` → `revert` → `run` 均成功。原生产 bootstrap 的事务内验证
+覆盖重复启动仅一个 AE/三条审计、跨租户来源拒绝、原人工弃用后不复活；事务最终
+回滚，不遗留种子夹具。种子不是伪造 APPROVED release，也未解除原审批人分离。
+
+原始日志目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`。
+
+- `knowledge-seed-generate.log`：原 `tools/gen.sh` 四侧生成退出 0。
+- `knowledge-seed-roundtrip.log`：TS contracts `npm test`，28 项通过；后续 Dart
+  因未设置原缓存路径而失败。改为原 `/cache/pub` 后，
+  `knowledge-seed-roundtrip-restored.log` 中 Dart 23、Rust 23 通过，Go contracts 包退出 0。
+- `knowledge-seed-core-verified.log`：原 Core registration 10 项通过，包含真实隔离
+  数据库调用；随后 Clippy 报新增 tuple 复杂度，已改为实际 SQL row 结构。
+  `knowledge-seed-clippy-restored.log` 中 Clippy `-D warnings` 退出 0。
+- `knowledge-seed-ui-restored.log`：共享 Catalog 18 项通过，源码和测试 tsc 已通过。
+  首轮 Vitest 旧 CLI 参数不兼容的输出保留于 `knowledge-seed-ui.log`。
+- 实现后 SDK-only 将 search 的 consume 改为 read，实际权限映射断言失败，退出
+  101（`knowledge-seed-core-mutation.log`）；移除共享页面种子来源消费分支后，新
+  种子页面用例真实失败，退出 1（`knowledge-seed-ui-mutation.log`）。两处均从正式
+  源码逐字还原并 `cmp` 退出 0；`knowledge-seed-final-restored.log` 最终 Core
+  10/10、Clippy `-D warnings` 0、共享页面 18/18，命令总退出 0。
+- 原 `tools/check.sh` 的兼容比较段实际执行：相对 `contracts-v0.1.0`，242 个
+  schema 中匹配 3 个历史 schema，无破坏性变更；该旧 tag 不包含本次 Catalog
+  view，不能用此结果宣称旧客户端能够消费种子响应。
+
+本批未执行产品镜像构建、部署、真实模型调用、五键业务套件或全量检查；现有
+WeKnora 后端已部署的事实与此源码批分开记录，不能把种子安装验证当成组件接通。

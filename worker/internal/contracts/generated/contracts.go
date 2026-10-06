@@ -3742,24 +3742,28 @@ type CapabilityContractPage struct {
 
 // 受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
 type ContractElement struct {
+	// PLATFORM_SEED 的部署引导证据；不冒充人为登记或批准。
+	BootstrapActionExecutionID    *string                  `json:"bootstrapActionExecutionId,omitempty"`
 	CanApprove                    bool                     `json:"canApprove"`
 	CanDeprecate                  bool                     `json:"canDeprecate"`
 	CategoryKey                   string                   `json:"categoryKey"`
 	ConformanceSuiteDigest        string                   `json:"conformanceSuiteDigest"`
 	ContractVersion               int64                    `json:"contractVersion"`
-	RegisteredByActionExecutionID string                   `json:"registeredByActionExecutionId"`
+	RegisteredByActionExecutionID *string                  `json:"registeredByActionExecutionId,omitempty"`
 	SchemaSetDigest               string                   `json:"schemaSetDigest"`
 	Status                        CapabilityContractStatus `json:"status"`
 }
 
 // 受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
 type CapabilityContractView struct {
+	// PLATFORM_SEED 的部署引导证据；不冒充人为登记或批准。
+	BootstrapActionExecutionID    *string                  `json:"bootstrapActionExecutionId,omitempty"`
 	CanApprove                    bool                     `json:"canApprove"`
 	CanDeprecate                  bool                     `json:"canDeprecate"`
 	CategoryKey                   string                   `json:"categoryKey"`
 	ConformanceSuiteDigest        string                   `json:"conformanceSuiteDigest"`
 	ContractVersion               int64                    `json:"contractVersion"`
-	RegisteredByActionExecutionID string                   `json:"registeredByActionExecutionId"`
+	RegisteredByActionExecutionID *string                  `json:"registeredByActionExecutionId,omitempty"`
 	SchemaSetDigest               string                   `json:"schemaSetDigest"`
 	Status                        CapabilityContractStatus `json:"status"`
 }

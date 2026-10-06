@@ -35,6 +35,17 @@ function receipt(request: BffRequest, gateState = "ALLOWED", dispatchState = "DI
 }
 
 describe("shared Catalog capability contract management", () => {
+  it("shows a built-in seed without fabricating a human registration or approval", async () => {
+    const { registeredByActionExecutionId: _, ...seed } = activePage.contracts[0]!;
+    const t = transport(() => ({ status: 200, body: { ...activePage,
+      contracts: [{ ...seed, categoryKey: "knowledge", bootstrapActionExecutionId: "bootstrap-ae" }] } }));
+    const host = await mount(t);
+    expect(host.textContent).toContain("knowledge");
+    expect(host.textContent).toContain("Active contract");
+    expect([...host.querySelectorAll("button")].some((node) => node.textContent === "Request contract approval")).toBe(false);
+    expect(t.send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
+  });
+
   it("previews and freezes the actual registration document; does not invent caller scope or mark a component ready", async () => {
     const t = transport((request) => request.method === "POST" ? { status: 200, body: receipt(request) } : { status: 200, body: page });
     const host = await mount(t);

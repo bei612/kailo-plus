@@ -7131,28 +7131,32 @@ class CapabilityContractPage {
 
 ///受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
 class ContractElement {
+  ///PLATFORM_SEED 的部署引导证据；不冒充人为登记或批准。
+  final String? bootstrapActionExecutionId;
   final bool canApprove;
   final bool canDeprecate;
   final String categoryKey;
   final String conformanceSuiteDigest;
   final int contractVersion;
-  final String registeredByActionExecutionId;
+  final String? registeredByActionExecutionId;
   final String schemaSetDigest;
   final CapabilityContractStatus status;
 
   ContractElement({
+    this.bootstrapActionExecutionId,
     required this.canApprove,
     required this.canDeprecate,
     required this.categoryKey,
     required this.conformanceSuiteDigest,
     required this.contractVersion,
-    required this.registeredByActionExecutionId,
+    this.registeredByActionExecutionId,
     required this.schemaSetDigest,
     required this.status,
   });
 
   factory ContractElement.fromJson(Map<String, dynamic> json) =>
       ContractElement(
+        bootstrapActionExecutionId: json["bootstrapActionExecutionId"],
         canApprove: json["canApprove"],
         canDeprecate: json["canDeprecate"],
         categoryKey: json["categoryKey"],
@@ -7164,6 +7168,7 @@ class ContractElement {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "bootstrapActionExecutionId": bootstrapActionExecutionId,
     "canApprove": canApprove,
     "canDeprecate": canDeprecate,
     "categoryKey": categoryKey,
@@ -7186,28 +7191,32 @@ final capabilityContractStatusValues = EnumValues({
 
 ///受权 Catalog 元数据，不复制 schema/测试向量或业务正文，不证明 release/binding 可用。
 class CapabilityContractView {
+  ///PLATFORM_SEED 的部署引导证据；不冒充人为登记或批准。
+  final String? bootstrapActionExecutionId;
   final bool canApprove;
   final bool canDeprecate;
   final String categoryKey;
   final String conformanceSuiteDigest;
   final int contractVersion;
-  final String registeredByActionExecutionId;
+  final String? registeredByActionExecutionId;
   final String schemaSetDigest;
   final CapabilityContractStatus status;
 
   CapabilityContractView({
+    this.bootstrapActionExecutionId,
     required this.canApprove,
     required this.canDeprecate,
     required this.categoryKey,
     required this.conformanceSuiteDigest,
     required this.contractVersion,
-    required this.registeredByActionExecutionId,
+    this.registeredByActionExecutionId,
     required this.schemaSetDigest,
     required this.status,
   });
 
   factory CapabilityContractView.fromJson(Map<String, dynamic> json) =>
       CapabilityContractView(
+        bootstrapActionExecutionId: json["bootstrapActionExecutionId"],
         canApprove: json["canApprove"],
         canDeprecate: json["canDeprecate"],
         categoryKey: json["categoryKey"],
@@ -7219,6 +7228,7 @@ class CapabilityContractView {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "bootstrapActionExecutionId": bootstrapActionExecutionId,
     "canApprove": canApprove,
     "canDeprecate": canDeprecate,
     "categoryKey": categoryKey,

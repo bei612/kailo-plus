@@ -40,6 +40,7 @@ git archive --format=tar "$COMMIT" .dockerignore core worker \
   contracts/compatibility/action-submission-v1.json \
   contracts/compatibility/action-submission-v2.json \
   contracts/api/conversation_open_request.schema.json \
+  contracts/adapter/knowledge.v1/registration.json \
   contracts/api/agent_memory_entry_page.schema.json \
   contracts/api/agent_memory_entry_view.schema.json \
   contracts/api/agent_memory_read_view.schema.json \

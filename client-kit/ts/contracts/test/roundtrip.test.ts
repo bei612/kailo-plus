@@ -7,6 +7,24 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
+import type { CapabilityContractPage } from "../src/generated/contracts.js";
+
+test("seed and human contract registration preserve separate evidence", () => {
+  const value: CapabilityContractPage = JSON.parse(readFileSync(new URL("../../../../contracts/samples/capability-seed-page.sample.json", import.meta.url), "utf8"));
+  for (const seeded of [true, false]) {
+    const row = value.contracts[0]!;
+    if (!seeded) {
+      row.registeredByActionExecutionId = row.bootstrapActionExecutionId;
+      delete row.bootstrapActionExecutionId;
+    }
+    const back: CapabilityContractPage = { canRegister: value.canRegister,
+      contracts: value.contracts.map(c => ({ categoryKey: c.categoryKey, contractVersion: c.contractVersion,
+        status: c.status, schemaSetDigest: c.schemaSetDigest, conformanceSuiteDigest: c.conformanceSuiteDigest,
+        bootstrapActionExecutionId: c.bootstrapActionExecutionId, registeredByActionExecutionId: c.registeredByActionExecutionId,
+        canApprove: c.canApprove, canDeprecate: c.canDeprecate })) };
+    deepStrictEqual(JSON.parse(JSON.stringify(back)), value);
+  }
+});
 import type { ComponentProtocolPeerEnvironment } from "../src/generated/contracts.js";
 
 test("component conformance keeps native secret references and legacy absence", () => {

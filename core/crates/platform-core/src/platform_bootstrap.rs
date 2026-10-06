@@ -69,6 +69,18 @@ pub async fn ensure(
     cfg: &BootstrapConfig,
     http: &reqwest::Client,
 ) -> Result<Uuid, String> {
+    let tenant = ensure_operator(pool, secrets, audit, cfg, http).await?;
+    crate::capability_contract::ensure_builtin_knowledge(pool, tenant).await?;
+    Ok(tenant)
+}
+
+async fn ensure_operator(
+    pool: &PgPool,
+    secrets: &SecretStore,
+    audit: &secret_store::AuditObserver,
+    cfg: &BootstrapConfig,
+    http: &reqwest::Client,
+) -> Result<Uuid, String> {
     let stores = crate::platform_keys::Stores {
         pool,
         secrets,

@@ -1,0 +1,74 @@
+{
+  "categoryKey": "knowledge",
+  "contractVersion": 1,
+  "resourceTypeFamily": [
+    {
+      "typeKey": "knowledge.base",
+      "kind": "KNOWLEDGE_BASE"
+    }
+  ],
+  "operationContracts": [
+    {
+      "contractKey": "knowledge.search@v1",
+      "surface": "TOOL",
+      "inputSchemaDigest": "9c2fe9762111c1e93a19017a10e9403fb537083419ba45c46312aafe8b95aaab",
+      "outputSchemaDigest": "692de19b49da175310eaf91a4eaaf454a9a5e106fd150a64a682075fe63fd8a3",
+      "permission": "consume",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "knowledge.read@v1",
+      "surface": "TOOL",
+      "inputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+      "outputSchemaDigest": "54669b5e6a1bfebb4d15788d41b5cd5fb8e51fc2d982eb2383a42262c748c90a",
+      "permission": "read",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "knowledge.export@v1",
+      "surface": "ACTION",
+      "inputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+      "outputSchemaDigest": "0dcfbbb7adff43ba41c5824ab782b48bd87edef06064c3fb8faf88a7669f7c3e",
+      "permission": "export",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "knowledge.ingest@v1",
+      "surface": "ACTION",
+      "inputSchemaDigest": "525d4ef3c1e643a98e4af56f240bb1b0fa16ef74b1a69d1f9e2c8585776511a1",
+      "outputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+      "permission": "update",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "knowledge.delete@v1",
+      "surface": "ACTION",
+      "inputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+      "outputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+      "permission": "delete",
+      "targetType": "RESOURCE"
+    }
+  ],
+  "contentReferenceSemantics": {
+    "nativeObjectRefRule": "Opaque knowledge document identifier returned by the adapter in the typed ContentReference slot; never parsed from resultJson.",
+    "nativeRevisionRule": "Revision of the observed native document content. Read/export/delete consume the frozen typed reference and reject a different revision.",
+    "authorizationTargetRule": "The KnowledgeBase Resource in the admitted binding owns every document reference; no caller-supplied native tenant or knowledge-base override."
+  },
+  "requiredDeclarations": [
+    "CANCEL",
+    "OBSERVE",
+    "METER",
+    "TENANT_DELETE",
+    "READ_EDGE"
+  ],
+  "protocolSessionKinds": [],
+  "schemaDocuments": [
+    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"query\"],\"properties\":{\"query\":{\"type\":\"string\",\"minLength\":1}}}",
+    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"matches\"],\"properties\":{\"matches\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"text\"],\"properties\":{\"text\":{\"type\":\"string\"}}}}}}",
+    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[],\"properties\":{}}",
+    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"text\"],\"properties\":{\"text\":{\"type\":\"string\"}}}",
+    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"contentBase64\",\"mediaType\",\"filename\"],\"properties\":{\"contentBase64\":{\"type\":\"string\"},\"mediaType\":{\"type\":\"string\",\"minLength\":1},\"filename\":{\"type\":\"string\",\"minLength\":1}}}",
+    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"title\",\"text\"],\"properties\":{\"title\":{\"type\":\"string\",\"minLength\":1},\"text\":{\"type\":\"string\"}}}"
+  ],
+  "testVectorsJson": "{\"formatVersion\":\"V1\",\"cases\":[{\"caseKey\":\"knowledge_roundtrip\",\"steps\":[{\"stepKey\":\"ingest\",\"contractKey\":\"knowledge.ingest@v1\",\"inputJson\":\"{\\\"title\\\":\\\"conformance\\\",\\\"text\\\":\\\"Kailo conformance knowledge marker\\\"}\",\"expectedOutputJson\":\"{}\",\"referenceResourceId\":\"b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196\"},{\"stepKey\":\"read\",\"contractKey\":\"knowledge.read@v1\",\"inputJson\":\"{}\",\"expectedOutputJson\":\"{\\\"text\\\":\\\"Kailo conformance knowledge marker\\\"}\",\"referenceResourceId\":\"b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196\",\"referenceFromStepKey\":\"ingest\"},{\"stepKey\":\"export\",\"contractKey\":\"knowledge.export@v1\",\"inputJson\":\"{}\",\"expectedOutputJson\":\"{\\\"contentBase64\\\":\\\"S2FpbG8gY29uZm9ybWFuY2Uga25vd2xlZGdlIG1hcmtlcg==\\\",\\\"mediaType\\\":\\\"text/markdown\\\",\\\"filename\\\":\\\"conformance.md\\\"}\",\"referenceResourceId\":\"b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196\",\"referenceFromStepKey\":\"ingest\"},{\"stepKey\":\"search\",\"contractKey\":\"knowledge.search@v1\",\"inputJson\":\"{\\\"query\\\":\\\"Kailo conformance knowledge marker\\\"}\",\"expectedOutputJson\":\"{\\\"matches\\\":[{\\\"text\\\":\\\"Kailo conformance knowledge marker\\\"}]}\"},{\"stepKey\":\"delete\",\"contractKey\":\"knowledge.delete@v1\",\"inputJson\":\"{}\",\"expectedOutputJson\":\"{}\",\"referenceResourceId\":\"b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196\",\"referenceFromStepKey\":\"ingest\"}]}]}"
+}

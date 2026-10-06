@@ -3411,6 +3411,10 @@ pub struct CapabilityContractPage {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContractElement {
+    /// PLATFORM_SEED 的部署引导证据；不冒充人为登记或批准。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bootstrap_action_execution_id: Option<String>,
+
     pub can_approve: bool,
 
     pub can_deprecate: bool,
@@ -3421,7 +3425,8 @@ pub struct ContractElement {
 
     pub contract_version: i64,
 
-    pub registered_by_action_execution_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registered_by_action_execution_id: Option<String>,
 
     pub schema_set_digest: String,
 
@@ -3447,6 +3452,10 @@ pub enum CapabilityContractStatus {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CapabilityContractView {
+    /// PLATFORM_SEED 的部署引导证据；不冒充人为登记或批准。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bootstrap_action_execution_id: Option<String>,
+
     pub can_approve: bool,
 
     pub can_deprecate: bool,
@@ -3457,7 +3466,8 @@ pub struct CapabilityContractView {
 
     pub contract_version: i64,
 
-    pub registered_by_action_execution_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registered_by_action_execution_id: Option<String>,
 
     pub schema_set_digest: String,
 

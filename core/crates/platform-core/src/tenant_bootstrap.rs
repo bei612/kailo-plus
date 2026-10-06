@@ -167,7 +167,7 @@ pub(crate) async fn ensure_catalog(pool: &PgPool, slug: &str) -> Result<Uuid, St
     Ok(tenant)
 }
 
-async fn deployment_principal(
+pub(crate) async fn deployment_principal(
     tx: &mut Transaction<'_, Postgres>,
     catalog: Uuid,
 ) -> Result<Uuid, String> {

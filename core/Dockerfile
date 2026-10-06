@@ -20,6 +20,7 @@ COPY contracts/api/action_submission.schema.json /build/apps/contracts/api/actio
 COPY contracts/api/delegated_action_metadata_v1.schema.json /build/apps/contracts/api/delegated_action_metadata_v1.schema.json
 COPY contracts/compatibility/action-submission-v1.json contracts/compatibility/action-submission-v2.json /build/apps/contracts/compatibility/
 COPY contracts/api/conversation_open_request.schema.json /build/apps/contracts/api/conversation_open_request.schema.json
+COPY contracts/adapter/knowledge.v1/registration.json /build/apps/contracts/adapter/knowledge.v1/registration.json
 COPY contracts/api/agent_memory_entry_page.schema.json contracts/api/agent_memory_entry_view.schema.json contracts/api/agent_memory_read_view.schema.json /build/apps/contracts/api/
 COPY contracts/domain/agent_memory_entry_list_input.schema.json contracts/domain/agent_memory_entry_read_input.schema.json contracts/domain/application_model_gateway_config.schema.json /build/apps/contracts/domain/
 # 离线编译：镜像构建时没有数据库，用入库的 sqlx 查询快照做编译期 SQL 校验

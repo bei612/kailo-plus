@@ -24,6 +24,160 @@ use crate::{
 pub(crate) const REGISTER: &str = "capability_contract.register";
 pub(crate) const APPROVE: &str = "capability_contract.approve";
 pub(crate) const DEPRECATE: &str = "capability_contract.deprecate";
+// DD-108: this action is only written by the in-process deployment bootstrap.
+// It is deliberately absent from the network action registry and definitions.
+const BOOTSTRAP: &str = "capability_contract.bootstrap";
+
+fn builtin_knowledge() -> Result<Registration, Refusal> {
+    let raw = serde_json::from_str(include_str!(
+        "../../../../contracts/adapter/knowledge.v1/registration.json"
+    ))
+    .map_err(|_| bad())?;
+    registration(&raw)
+}
+
+/// Seed data is compiled into the same Core that validates Catalog content.
+/// A deployment may install the missing v1 once; it cannot reactivate a retired
+/// category, replace a registered contract, or approve a component release.
+pub(crate) async fn ensure_builtin_knowledge(
+    pool: &sqlx::PgPool,
+    tenant: Uuid,
+) -> Result<(), String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    bootstrap_knowledge(&mut tx, tenant).await?;
+    tx.commit().await.map_err(|e| e.to_string())
+}
+
+async fn bootstrap_knowledge(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant: Uuid,
+) -> Result<(), String> {
+    let seed = builtin_knowledge().map_err(|_| "built-in knowledge contract is invalid")?;
+    let catalog: Option<Uuid> = sqlx::query_scalar(
+        "select t.id from identity.tenant t where t.id=$1
+         and t.state in ('PROVISIONING','ACTIVE') and exists (
+           select 1 from identity.relay_operator_identity o
+           where o.catalog_tenant_id=t.id and o.state='ACTIVE') for update",
+    )
+    .bind(tenant)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    if catalog != Some(tenant) {
+        return Err("capability bootstrap requires the original Catalog deployment scope".into());
+    }
+    let id = target_id(tenant, &seed.category, seed.version);
+    let existing: Option<(Uuid, String, Value, Value, Value, String, String)> = sqlx::query_as(
+        "select catalog_tenant_id,origin,content,schema_documents,test_vectors,
+                schema_set_digest,conformance_suite_digest
+         from catalog.capability_contract where category_key=$1 and contract_version=$2",
+    )
+    .bind(&seed.category)
+    .bind(seed.version)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    if let Some((owner, origin, content, schemas, vectors, schema, suite)) = existing {
+        if owner != tenant
+            || origin != "PLATFORM_SEED"
+            || content != seed.content
+            || schemas != seed.schemas
+            || vectors != seed.vectors
+            || schema != seed.schema_digest
+            || suite != seed.suite_digest
+        {
+            return Err("built-in knowledge v1 conflicts with immutable Catalog content".into());
+        }
+        // Deliberately do not update state: later governance remains authoritative.
+        return Ok(());
+    }
+    let category_exists: bool = sqlx::query_scalar(
+        "select exists(select 1 from catalog.capability_category where category_key=$1)",
+    )
+    .bind(&seed.category)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    if category_exists {
+        return Err("built-in knowledge bootstrap is zero-to-one only".into());
+    }
+    let actor = crate::tenant_bootstrap::deployment_principal(tx, tenant).await?;
+    let ae = Uuid::new_v4();
+    let operation = Uuid::new_v4();
+    let parameters = json!({"categoryKey":seed.category,"contractVersion":seed.version,
+        "schemaSetDigest":seed.schema_digest,"conformanceSuiteDigest":seed.suite_digest});
+    let hash = collab_bridge::limits::canonical_digest(&parameters);
+    sqlx::query(
+        "insert into admission.action_execution
+          (id,operation_id,tenant_id,action_key,action_version,initiator_principal_id,
+           actor_principal_id,target_id,parameter_hash,parameters,gate_state,dispatch_state,correlation_id)
+         values($1,$2,$3,$4,1,$5,$5,$6,$7,$8,'ALLOWED','DISPATCHED',$2)",
+    )
+    .bind(ae).bind(operation).bind(tenant).bind(BOOTSTRAP).bind(actor).bind(id)
+    .bind(&hash).bind(parameters).execute(&mut **tx).await.map_err(|e| e.to_string())?;
+    sqlx::query(
+        "insert into catalog.capability_category
+          (category_key,catalog_tenant_id,type_key_namespace,origin,status,bootstrap_action_execution_id)
+         values($1,$2,$1,'PLATFORM_SEED','ACTIVE',$3)",
+    )
+    .bind(&seed.category).bind(tenant).bind(ae)
+    .execute(&mut **tx).await.map_err(|e| e.to_string())?;
+    sqlx::query(
+        "insert into catalog.capability_contract
+          (id,category_key,contract_version,catalog_tenant_id,content,schema_documents,test_vectors,
+           schema_set_digest,conformance_suite_digest,origin,bootstrap_action_execution_id,status)
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,'PLATFORM_SEED',$10,'ACTIVE')",
+    )
+    .bind(id)
+    .bind(&seed.category)
+    .bind(seed.version)
+    .bind(tenant)
+    .bind(seed.content)
+    .bind(seed.schemas)
+    .bind(seed.vectors)
+    .bind(seed.schema_digest)
+    .bind(seed.suite_digest)
+    .bind(ae)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    for (stage, event_type, result) in [
+        ("intent", "INTENT", "EVALUATING"),
+        ("decision", "DECISION", "ALLOWED"),
+        ("outcome", "OUTCOME", "SUCCEEDED"),
+    ] {
+        crate::audit::append(
+            tx,
+            crate::audit::AuditEntry {
+                event_key: format!("{operation}:{stage}"),
+                tenant_id: Some(tenant),
+                workspace_id: None,
+                operation_id: operation,
+                event_type,
+                human_identity_id: None,
+                initiator_principal_id: Some(actor),
+                actor_principal_id: Some(actor),
+                action_key: BOOTSTRAP,
+                action_version: 1,
+                component_type_key: "core",
+                target_type: Some("CAPABILITY_CONTRACT"),
+                target_id: Some(id),
+                parameter_hash: &hash,
+                decision: "ALLOW",
+                result_code: result,
+                result_exposure: "NONE",
+                evidence_refs: vec![crate::audit::Evidence::new(
+                    contracts::EvidenceKind::ActionExecutionId,
+                    ae,
+                )],
+                correlation_id: operation,
+            },
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
 
 fn bad() -> Refusal {
     Refusal::Precondition(ReasonCode::InvalidParameters)
@@ -628,6 +782,17 @@ pub struct PageQuery {
     offset: Option<i64>,
 }
 
+#[derive(sqlx::FromRow)]
+struct ContractRow {
+    category_key: String,
+    contract_version: i32,
+    status: String,
+    schema_set_digest: String,
+    conformance_suite_digest: String,
+    registered_by_action_execution_id: Option<Uuid>,
+    bootstrap_action_execution_id: Option<Uuid>,
+}
+
 pub async fn list(
     State(state): State<BffState>,
     Query(query): Query<PageQuery>,
@@ -655,17 +820,17 @@ pub async fn list(
         }
         let page=state.governance.cfg.role_member_page_limit;
         let limit=page.checked_add(1).ok_or_else(bad)?;
-        let mut rows:Vec<(String,i32,String,String,String,Uuid)>=sqlx::query_as("select category_key,contract_version,status,schema_set_digest,conformance_suite_digest,registered_by_action_execution_id
+        let mut rows:Vec<ContractRow>=sqlx::query_as("select category_key,contract_version,status,schema_set_digest,conformance_suite_digest,registered_by_action_execution_id,bootstrap_action_execution_id
             from catalog.capability_contract where catalog_tenant_id=$1 order by category_key,contract_version limit $2 offset $3")
             .bind(ctx.tenant_id).bind(limit).bind(offset).fetch_all(&mut *conn).await?;
         let more=rows.len() as i64>page;
         rows.truncate(page as usize);
         let mut views=Vec::new();
-        for (category,version,status,schema,suite,ae) in rows {
+        for row in rows {
             // Decode through the same generated DTO; unknown catalog enum never becomes ACTIVE.
-            let view:ContractElement=serde_json::from_value(json!({"categoryKey":category,"contractVersion":version,"status":status,
-                "schemaSetDigest":schema,"conformanceSuiteDigest":suite,"registeredByActionExecutionId":ae,
-                "canApprove":status=="DRAFT" && capabilities[APPROVE],"canDeprecate":status=="ACTIVE" && capabilities[DEPRECATE]})).map_err(|_|bad())?;
+            let view:ContractElement=serde_json::from_value(json!({"categoryKey":row.category_key,"contractVersion":row.contract_version,"status":row.status,
+                "schemaSetDigest":row.schema_set_digest,"conformanceSuiteDigest":row.conformance_suite_digest,"registeredByActionExecutionId":row.registered_by_action_execution_id,"bootstrapActionExecutionId":row.bootstrap_action_execution_id,
+                "canApprove":row.status=="DRAFT" && capabilities[APPROVE],"canDeprecate":row.status=="ACTIVE" && capabilities[DEPRECATE]})).map_err(|_|bad())?;
             views.push(view);
         }
         Ok::<_,Refusal>(CapabilityContractPage { contracts:views,can_register:capabilities[REGISTER],
@@ -681,6 +846,133 @@ pub async fn list(
 #[cfg(test)]
 mod registration_tests {
     use super::*;
+
+    #[test]
+    fn builtin_knowledge_has_all_five_fixed_permissions_and_reference_sequence() {
+        let raw: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/adapter/knowledge.v1/registration.json"
+        ))
+        .unwrap();
+        let typed: contracts::CapabilityContractRegistration =
+            serde_json::from_value(raw.clone()).unwrap();
+        assert_eq!(serde_json::to_value(typed).unwrap(), raw);
+        let documents: BTreeMap<_, _> = raw["schemaDocuments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|document| {
+                let value: Value = serde_json::from_str(document.as_str().unwrap()).unwrap();
+                jsonschema::meta::try_validate(&value).unwrap().unwrap();
+                (collab_bridge::limits::canonical_digest(&value), value)
+            })
+            .collect();
+        validate_schemas(&documents).expect("seed JSON schemas");
+        vectors(
+            raw["testVectorsJson"].as_str().unwrap(),
+            raw["operationContracts"].as_array().unwrap(),
+            &documents,
+        )
+        .expect("seed reference vectors");
+        let seed =
+            builtin_knowledge().expect("compiled seed passes the original registration validator");
+        assert_eq!(seed.category, "knowledge");
+        assert_eq!(seed.version, 1);
+        let keys: BTreeMap<_, _> = seed.content["operationContracts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|op| {
+                (
+                    op["contractKey"].as_str().unwrap(),
+                    op["permission"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            keys,
+            BTreeMap::from([
+                ("knowledge.search@v1", "consume"),
+                ("knowledge.read@v1", "read"),
+                ("knowledge.export@v1", "export"),
+                ("knowledge.ingest@v1", "update"),
+                ("knowledge.delete@v1", "delete"),
+            ])
+        );
+        let steps = seed.vectors["cases"][0]["steps"].as_array().unwrap();
+        assert_eq!(steps.first().unwrap()["stepKey"], "ingest");
+        assert_eq!(steps.last().unwrap()["stepKey"], "delete");
+        for step in steps
+            .iter()
+            .filter(|step| matches!(step["stepKey"].as_str(), Some("read" | "export" | "delete")))
+        {
+            assert_eq!(step["referenceFromStepKey"], "ingest");
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires isolated database with current migrations; transaction always rolled back"]
+    async fn builtin_knowledge_bootstrap_is_audited_idempotent_and_cannot_reactivate() {
+        let pool =
+            sqlx::PgPool::connect(&std::env::var("TEST_DATABASE_URL").expect("isolated database"))
+                .await
+                .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let tenant = Uuid::new_v4();
+        sqlx::query(
+            "insert into identity.tenant(id,slug,name,state) values($1,$2,'seed fixture','ACTIVE')",
+        )
+        .bind(tenant)
+        .bind(format!("seed-{}", tenant.simple()))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        sqlx::query("insert into identity.relay_operator_identity(catalog_tenant_id,pubkey,private_key_secret_ref,audience,relay_operator_api_origin,state,private_key_secret_version,private_key_secret_audience)
+            values($1,$2,'fixture-reference','fixture-audience','https://relay.invalid','ACTIVE',1,'fixture-service')")
+            .bind(tenant).bind(format!("{:0>64}", tenant.simple())).execute(&mut *tx).await.unwrap();
+        bootstrap_knowledge(&mut tx, tenant).await.unwrap();
+        bootstrap_knowledge(&mut tx, tenant).await.unwrap();
+        let row: (String, Option<Uuid>, Option<Uuid>, Option<Uuid>) = sqlx::query_as(
+            "select status,registered_by_action_execution_id,approved_by_action_execution_id,bootstrap_action_execution_id
+             from catalog.capability_contract where category_key='knowledge' and catalog_tenant_id=$1")
+            .bind(tenant).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(row.0, "ACTIVE");
+        assert!(row.1.is_none() && row.2.is_none() && row.3.is_some());
+        let (actions, audits): (i64, i64) = sqlx::query_as(
+            "select (select count(*) from admission.action_execution where tenant_id=$1 and action_key=$2),
+                    (select count(*) from audit.audit_event where tenant_id=$1 and action_key=$2)")
+            .bind(tenant).bind(BOOTSTRAP).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!((actions, audits), (1, 3));
+        let target = target_id(tenant, "knowledge", 1);
+        let accepted: bool = sqlx::query_scalar(
+            "select catalog.valid_capability_seed_bootstrap($1,$2,'knowledge',1,$3)",
+        )
+        .bind(row.3)
+        .bind(Uuid::new_v4())
+        .bind(target)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert!(!accepted);
+        let actor = Uuid::new_v4();
+        let deprecation = Uuid::new_v4();
+        sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
+            .bind(actor).bind(tenant).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
+            initiator_principal_id,actor_principal_id,target_id,parameter_hash,parameters,gate_state,dispatch_state,correlation_id)
+            values($1,$1,$2,'capability_contract.deprecate',1,$3,$3,$4,$5,'{\"targetVersion\":1}','ALLOWED','DISPATCHED',$1)")
+            .bind(deprecation).bind(tenant).bind(actor).bind(target).bind("a".repeat(64)).execute(&mut *tx).await.unwrap();
+        sqlx::query("update catalog.capability_contract set status='DEPRECATED',deprecated_by_action_execution_id=$1 where id=$2")
+            .bind(deprecation).bind(target).execute(&mut *tx).await.unwrap();
+        bootstrap_knowledge(&mut tx, tenant).await.unwrap();
+        let status: String =
+            sqlx::query_scalar("select status from catalog.capability_contract where id=$1")
+                .bind(target)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        assert_eq!(status, "DEPRECATED");
+        tx.rollback().await.unwrap();
+    }
 
     fn vector_input(input: Value, output: Value) -> Value {
         json!({"formatVersion":"V1","cases":[{"caseKey":"read_roundtrip","steps":[{

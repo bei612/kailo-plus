@@ -1,0 +1,13 @@
+{
+  "contracts": [{
+    "categoryKey": "knowledge",
+    "contractVersion": 1,
+    "status": "ACTIVE",
+    "schemaSetDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "conformanceSuiteDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "bootstrapActionExecutionId": "b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196",
+    "canApprove": false,
+    "canDeprecate": true
+  }],
+  "canRegister": true
+}

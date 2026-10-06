@@ -6,6 +6,23 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn capability_seed_and_human_registration_keep_separate_evidence() {
+    let raw = fs::read_to_string(sample_path().with_file_name("capability-seed-page.sample.json"))
+        .unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    for seeded in [true, false] {
+        if !seeded {
+            let row = value["contracts"][0].as_object_mut().unwrap();
+            let ae = row.remove("bootstrapActionExecutionId").unwrap();
+            row.insert("registeredByActionExecutionId".into(), ae);
+        }
+        let typed: contracts::CapabilityContractPage =
+            serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(typed).unwrap(), value);
+    }
+}
+
+#[test]
 fn component_peer_conformance_preserves_native_refs_and_legacy_absence() {
     let raw =
         fs::read_to_string(sample_path().with_file_name("component-peer-conformance.sample.json"))
