@@ -158,13 +158,32 @@ func (s Collector) Ingest(ctx context.Context, namespace string, ev event.Event)
 	}
 
 	span.AddEvent("publishing event to kafka topic")
-	err = s.Producer.Produce(msg, nil)
+	// A local enqueue is not durable delivery. Keep the report buffered so a
+	// report arriving after request cancellation cannot block the producer.
+	// Do not close this channel: librdkafka still owns a possible late report.
+	delivery := make(chan kafka.Event, 1)
+	err = s.Producer.Produce(msg, delivery)
 	if err != nil {
 		err = fmt.Errorf("producing kafka message: %w", err)
 		return err
 	}
 
-	return nil
+	select {
+	case report := <-delivery:
+		delivered, ok := report.(*kafka.Message)
+		if !ok {
+			err = fmt.Errorf("unexpected kafka delivery report: %T", report)
+			return err
+		}
+		if delivered.TopicPartition.Error != nil {
+			err = fmt.Errorf("delivering kafka message: %w", delivered.TopicPartition.Error)
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		err = fmt.Errorf("awaiting kafka delivery: %w", ctx.Err())
+		return err
+	}
 }
 
 // Close closes the underlying producer.

@@ -1196,3 +1196,83 @@ ignored；未安装 gitleaks，运行的是原内置扫描。格式、静态、�
 配置边界静态检查均通过，但不替代真实重复事件、用量/账单 commit、
 Agent 首轮、真实业务 E2E、签名或设备验收；本轮未构建镜像或变更服务。
 以下仅补本回执并跑原文档快路径，不为证据文字重跑 full。
+
+### 原生 ingress 投递回执与永久去重阻断（2026-10-06）
+
+本批关联 `DD-08`、`SF-OMT-02/03/04`、`V-SCN-44` 与 `.design/11` §4。
+先实际执行一条新的纯回复频道消息，同时提及两个原有 Agent；两个 Action 均为
+ALLOWED/DISPATCHED。其中一个被原 UNKNOWN Invocation 占用的安装并行度阻塞；
+另一个 native completed，但用量一直 ACCEPTED、没有 stored_at，因而没有最终回帖。
+没有重放模型、直接更新业务状态、扩大授权或修改额度。
+
+四项影响结论：
+
+- 权威：OpenMeter 原生存储仍是 committed usage 权威，Kafka delivery 只证明 broker
+  接收，不是 stored_at 或账单终态；Core 原 outbox 与不可变 CloudEvent 不变。
+- 影响：只改 `openmeter/ingest/dedupe.go::DeduplicatingCollector.Ingest` 与
+  `openmeter/ingest/kafkaingest/collector.go::Collector.Ingest`。调用链仍是
+  `app/common/openmeter_server.go::NewIngestCollector` 和原 Kafka collector；
+  不改 HTTP schema、配置、数据库或三端调用。三端统一等待原 Core 用量闭环。
+- 副作用：先 `CheckUnique`，原 collector 获得真实 broker delivery 后才 `Set`。
+  失败、取消或结果不明不提前记入口键；可能迟到的回执使用缓冲 channel，不能关闭
+  仍被 native producer 持有的 channel。网络重试保持同一事件，绝不重跑模型。
+- 并发/旧数据：并发首次投递可能都进入 Kafka；原 JSONSerializer 的非空 key 与
+  sink 的 `(namespace, source, id)` 一致，因此使用同一 partition 和已有 sink
+  同批/跨批去重，不新造锁、collector 或账本。原 sink 存储、offset、Redis 的崩溃
+  窗口没有因此消失，不宣称跨系统原子恰一次。旧提前记入的永久 ingress key
+  不会被新代码自动删除，必须按下述精确受控维护收敛，不保留假成功读路径。
+
+上游证据重新用 `git show` 核验固定
+`6d76d8a6fa90fbbab2d41035d31df2acec7ad3af`：
+`openmeter/ingest/dedupe.go::DeduplicatingCollector.Ingest` 先调用 IsUnique；
+`openmeter/dedupe/redisdedupe/redisdedupe.go::Deduplicator.IsUnique/setKey`
+执行 SET NX；`openmeter/ingest/kafkaingest/collector.go::Collector.Ingest`
+仅 Produce(msg,nil) 后返回。`app/config/ingest.go::KafkaConfiguration.CreateKafkaConfig`
+与 `app/common/kafka.go::NewKafkaProducer` 没有关闭 delivery reports；
+`openmeter/ingest/kafkaingest/serializer/json.go::JSONSerializer.SerializeKey`
+复用 `openmeter/dedupe/dedupe.go::Item.Key`；原 sink 的
+`openmeter/sink/sink.go::Sink.deduplicateAndResolveMeters/flush` 在存储前筛除
+同批与已处理身份，存储后才更新 sink 去重索引。
+
+运行事实：既有 Kafka 于 2026-10-05 18:53:29 UTC OOMKilled、exit 137。
+10-06 14:07:47 沿原 Compose 仅 `up -d --no-build --no-deps --pull never
+openmeter-kafka`，退出 0；原镜像、两个 named volumes、2 CPU/2 GiB 不变。
+Kafka 恢复 healthy，sink 自动恢复分区，CURRENT-OFFSET=LOG-END-OFFSET=27、LAG=0。
+原精确 UsageEvent `314ab896-17fc-5fa6-93f7-ecc0d4246f84` 的入口 Redis DB0
+EXISTS=1、TTL=-1，sink DB1 EXISTS=0；只读消费原 topic 唯一分区全部 27 条记录，
+该事件命中 0。最终 outbox 仍 ACCEPTED，不能把 Kafka healthy 写成计量完成。
+
+原生修复后的旧键收敛边界：部署新 API 时先终止旧 producer 形成在途 fence；再
+重新查证原 exact event 的 Kafka 全分区、原 stored_at 与 sink key，并确认 consumer
+已到末端。均无投递/存储记录才允许精确清除该一个 ingress 缓存键，由原 outbox
+重投同一冻结事件。证据缺失或不一致时保持 UNKNOWN；不清理整个 Redis、sink
+索引或业务账本。维护负责人为本次发布批次负责人，关闭条件为原事件 stored_at
+可核验及原任务回帖读回；本记录时尚未执行键删除或修复镜像投递。
+
+窄验在原限额 SDK `kailo-agent-receipt-xvkujx`、UID 1000、4 CPU/8 GiB 中使用
+已有 Go 1.27.1 与 `/cache/metering-go`；独立快照位于
+`/evidence/metering-delivery.irol5K/metering`。实现后原 ingest 测试补失败/超时不
+提前记键场景，Kafka 用例使用 librdkafka 自带 MockCluster，实际验证成功回执、
+broker 不可用时拒绝假成功、请求取消；同时运行原 sink 去重用例。命令：
+
+```sh
+go test -mod=readonly ./openmeter/ingest ./openmeter/ingest/kafkaingest ./openmeter/sink \
+  -run 'TestDeduplicatingCollector|TestCollectorRequiresBrokerDelivery|TestDeduplicateAndResolveMeters|TestParseMessageDoesNotCheckRedis' -count=1
+```
+
+最后恢复后退出 0：ingest 0.003s、kafkaingest 1.817s、sink 0.021s。
+私有快照中恢复原 IsUnique 提前记键及跳过 delivery 等待，两个包实际退出 1：
+失败/超时子例报 `unconfirmed delivery must not poison the ingress index`，Kafka
+子例报 `An error is expected but got nil`。原字节恢复 cmp 0 后重跑上述命令通过。
+gofmt 结果已同步正式四个 Go 文件，`git diff --check -- metering` 退出 0。
+
+边界如实保留：首次扩展的同一 producer 故障后重连子步骤发生 message timeout /
+context deadline，额外窄回归未通过；没有调产品超时来掩盖，也不声称同进程重连
+已验收。最终窄用例限于本修复的三种回执行为；失败原件一并保留。
+本批未运行 full、未构建修复镜像、未交付新 OpenMeter、未产生真实 Agent 最终
+回复；三 HUMAN 独立账号已读到同一新 HUMAN 事件，不等于 3 人 2 Agent 完成协作。
+原始记录在 Data 的 `buzz-dm-worker-release-20261006.85FUKC/`，包括
+`metering-delivery-tests.log`、`metering-delivery-tests-final.log`、
+`metering-delivery-tests-restored.log`、`metering-broker-recovery.log`（额外重连失败），
+`metering-delivery-mutation.log`（破坏失败）、`metering-delivery-restored-final.log`
+（恢复通过）、`kafka-recovery.log` 与 `deployment-receipt.md`。
