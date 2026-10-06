@@ -135,7 +135,7 @@ Buzz Persona 的 `skills` 当前未接执行（SF-BUZ-12），因此一期不声
 
 Codex Runtime Supervisor 是 Platform Core 内的受治理模块，不是新的权威服务。每个 active Installation 恰有一个受监督 app-server 进程：Core 先创建 Installation 专属 runtime 目录，以该绝对目录设置 `CODEX_HOME`，并把 `sqlite_home` 固定到同一目录内；目录、进程与 IPC endpoint 均不得由 Browser、Agent prompt 或组件 manifest 指定（SF-COD-15、SS-COD-RUNTIME）。
 
-Core 负责 spawn、存活探测、崩溃重启与排空。启动前写入 AgentVersion instructions、Gateway/MCP projection、skill root 和 OpenBao 解析后的进程环境；就绪条件是 app-server initialize 成功且 projection generation 与进程加载值一致。未就绪时 Installation 保持 `PROVISIONING` 或 `ERROR`，EffectiveField reason 固定 `RUNTIME_NOT_READY`，不得接受新 trigger。升级、撤权或停用先停止新 turn，以 `turn/interrupt` 中断已知在途 turn、以 `config/mcpServer/reload` 重建 MCP client；两者都不能抹除已经写入 rollout 的结果（SF-COD-14）。排空结束后 Core 终止进程并保留受治理的 durable thread state，直到对应 Installation 的保留规则允许删除。
+Core 负责 spawn、存活探测、崩溃重启与排空。启动前写入 AgentVersion instructions、Gateway/MCP projection、skill root 和 OpenBao 解析后的进程环境；就绪条件是 app-server initialize 成功且 projection generation 与进程加载值一致。未就绪时 Installation 保持 `PROVISIONING` 或 `ERROR`，EffectiveField reason 固定 `RUNTIME_NOT_READY`，不得接受新 trigger。配置升级或回滚按 §6 停止新触发，以 `DRAINING` 等待已开始 Invocation 在固定旧 generation 上自然结束；不能仅因升级发送 `turn/interrupt`，UNKNOWN 也不能算作排空完成。旧进程排空并终止后，才在同一 Installation 专属目录启动新 generation、完成对账并切换 pointer，不要求两份 app-server 并行运行。权限撤销或停用则立即停止新 turn，按撤权规则以 `turn/interrupt` 中断已知在途 turn、以 `config/mcpServer/reload` 重建 MCP client；两者都不能抹除已经写入 rollout 的结果（SF-COD-14）。进程终止后保留受治理的 durable thread state，直到对应 Installation 的保留规则允许删除。
 
 ## 6. 发布、安装、升级与回滚
 

@@ -61,6 +61,12 @@ Pulse 复用本节协作数据面：当前 Tenant、TenantMembership、TenantBuz
 
 恢复原 Pulse 页面、发布、回复及其原生交互，不得用频道列表替代；Projects 的项目、仓库与 Issue/PR 也不得用平台任务列表替代。动态所属 Community 不授予任一 Workspace、项目资源或工具的使用权，动态中的 mention 不自动建立 Agent 安装或执行授权；Agent、工具及管理动作继续经过各自既有准入。上述边界澄清既定原功能的 scope，不是其源码或运行验收完成声明。
 
+### 原版 Projects 的公告与内容边界
+
+Projects 目录沿用上述 Tenant→Community 协作数据面读取原生项目及仓库公告，不新增 Core 项目正文存储，也不以 Tasks 替代。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `.references/buzz/crates/buzz-relay/src/handlers/ingest.rs::is_global_only_kind` 将 `KIND_PROJECT` 与 `KIND_GIT_REPO_ANNOUNCEMENT` 作为 Community 全局事件；`validate_project_envelope` 的项目仓库引用不是权限授予。Web 仍经本人 SERVER identity 与 BFF 的有效 Tenant、成员、投影及 fresh `tenant.discover` 检查，原生端以本人 CLIENT identity 经 Relay 的 Community 准入；不接受客户端任意 Relay filter。
+
+目录可见不等于仓库内容可读，更不授予 Issue/PR、项目修改或 Agent 执行权限。固定上游 `.references/buzz/crates/buzz-relay/src/api/git/binding.rs::resolve_repo_binding` 与 `.references/buzz/crates/buzz-relay/src/api/git/transport.rs::authorize_git_read` 所确定的真实仓库绑定与内容授权必须保留；未解析或无权的引用不绕过授权获取内容。原生项目、仓库、Issue/PR 页面和交互仍全部在恢复范围，公告目录的阶段交付不等于完整 Projects 验收。
+
 ### 原生私聊与多设备映射
 
 REQ-24、DD-77/80 的私聊使用 `03` 的 ConversationBuzzBinding。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `.references/buzz/crates/buzz-relay/src/handlers/command_executor.rs::handle_dm_open` 会把认证公钥加入参与者；`.references/buzz/crates/buzz-db/src/store/dm.rs::{open_dm,create_dm,compute_participant_hash}` 以公钥集合去重并建立 private DM。因此 CONTROL 不能直接冒充发起人调用原路径，否则成为私聊成员；也不能把设备公钥数当作人数。
