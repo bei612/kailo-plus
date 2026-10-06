@@ -26,7 +26,7 @@ use uuid::Uuid;
 use crate::audit::{append, AuditEntry};
 use crate::service_api::ServiceState;
 use crate::tenant_lifecycle::{control_client, ProjectionDirection};
-use crate::web_transport::PUBLISH_ACTION;
+use crate::web_transport::{CONVERSATION_PUBLISH_ACTION, PUBLISH_ACTION};
 
 pub struct Config {
     pub interval: Duration,
@@ -86,8 +86,16 @@ pub fn spawn(state: ServiceState, meter: &Meter, cfg: Config) {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(cfg.interval);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // Scheduling cursor only; audit remains the publication authority. An
+        // unobservable replaceable profile must not starve later intents.
+        let mut profile_cursor = None;
         loop {
             tick.tick().await;
+            if let Err(e) =
+                crate::web_profile::reconcile(&state, cfg.batch, &mut profile_cursor).await
+            {
+                tracing::warn!(error = %e, "Profile publication reconciliation incomplete");
+            }
             if let Err(e) = pass(&state, &metrics, &cfg).await {
                 tracing::warn!(error = %e, "发布结果对账本轮未完成");
             }
@@ -103,24 +111,42 @@ struct Pending {
     initiator_principal_id: Option<Uuid>,
     actor_principal_id: Option<Uuid>,
     target_id: Option<Uuid>,
+    action_key: String,
+    target_type: Option<String>,
     evidence_refs: Vec<Evidence>,
     event_id: String,
     settled_window_passed: bool,
 }
 
+#[derive(sqlx::FromRow)]
+struct PendingRow {
+    operation_id: Uuid,
+    tenant_id: Uuid,
+    workspace_id: Option<Uuid>,
+    human_identity_id: Option<Uuid>,
+    initiator_principal_id: Option<Uuid>,
+    actor_principal_id: Option<Uuid>,
+    target_id: Option<Uuid>,
+    action_key: String,
+    target_type: Option<String>,
+    evidence_refs: serde_json::Value,
+    event_id: Option<String>,
+    settled: bool,
+}
+
 async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(), String> {
     let min_age = i64::try_from(cfg.interval.as_secs()).unwrap_or(i64::MAX);
     let settle = i64::try_from(cfg.settle.as_secs()).unwrap_or(i64::MAX);
-    let rows = sqlx::query!(
-        r#"select d.operation_id, d.tenant_id as "tenant_id!", d.workspace_id,
+    let rows = sqlx::query_as::<_, PendingRow>(
+        r#"select d.operation_id, d.tenant_id, d.workspace_id,
                   d.human_identity_id, d.initiator_principal_id, d.actor_principal_id,
-                  d.target_id, d.evidence_refs,
+                  d.target_id, d.action_key, d.target_type, d.evidence_refs,
                   (select e->>'value' from jsonb_array_elements(d.evidence_refs) e
-                    where e->>'kind' = 'BUZZ_EVENT_ID') as "event_id?",
-                  (d.occurred_at < now() - make_interval(secs => $3::bigint)) as "settled!"
+                    where e->>'kind' = 'BUZZ_EVENT_ID') as event_id,
+                  (d.occurred_at < now() - make_interval(secs => $3::bigint)) as settled
            from audit.audit_event d
            join identity.tenant t on t.id = d.tenant_id
-           where d.event_type = 'DISPATCH' and d.action_key = $1
+           where d.event_type = 'DISPATCH' and d.action_key = any($1)
              and d.occurred_at < now() - make_interval(secs => $4::bigint)
              and not exists (
                  select 1 from audit.audit_event o
@@ -128,11 +154,11 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
                    and o.event_type in ('OUTCOME', 'RECONCILIATION'))
            order by d.occurred_at
            limit $2"#,
-        PUBLISH_ACTION,
-        cfg.batch,
-        settle,
-        min_age,
     )
+    .bind([PUBLISH_ACTION, CONVERSATION_PUBLISH_ACTION].as_slice())
+    .bind(cfg.batch)
+    .bind(settle)
+    .bind(min_age)
     .fetch_all(&state.pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -168,6 +194,8 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
             initiator_principal_id: r.initiator_principal_id,
             actor_principal_id: r.actor_principal_id,
             target_id: r.target_id,
+            action_key: r.action_key,
+            target_type: r.target_type,
             evidence_refs,
             event_id,
             settled_window_passed: r.settled,
@@ -178,23 +206,23 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
             .add(1, &[KeyValue::new("outcome", outcome)]);
     }
 
-    let row = sqlx::query!(
-        r#"select count(*) as "n!",
-                  coalesce(extract(epoch from now() - min(d.occurred_at))::bigint, 0) as "age!"
+    let (n, age): (i64, i64) = sqlx::query_as(
+        r#"select count(*),
+                  coalesce(extract(epoch from now() - min(d.occurred_at))::bigint, 0)
            from audit.audit_event d
            join identity.tenant t on t.id = d.tenant_id
-           where d.event_type = 'DISPATCH' and d.action_key = $1
+           where d.event_type = 'DISPATCH' and d.action_key = any($1)
              and not exists (
                  select 1 from audit.audit_event o
                  where o.operation_id = d.operation_id
                    and o.event_type in ('OUTCOME', 'RECONCILIATION'))"#,
-        PUBLISH_ACTION,
     )
+    .bind([PUBLISH_ACTION, CONVERSATION_PUBLISH_ACTION].as_slice())
     .fetch_one(&state.pool)
     .await
     .map_err(|e| e.to_string())?;
-    metrics.unsettled.record(row.n.max(0) as u64, &[]);
-    metrics.oldest_age.record(row.age.max(0) as u64, &[]);
+    metrics.unsettled.record(n.max(0) as u64, &[]);
+    metrics.oldest_age.record(age.max(0) as u64, &[]);
 
     // 已有结论且超过保留期的幂等记录不再有用：同一个键再来，按新的发送意图处理
     let retention = i64::try_from(cfg.idempotency_retention.as_secs()).unwrap_or(i64::MAX);
@@ -213,19 +241,11 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
 }
 
 async fn settle_one(state: &ServiceState, p: &Pending) -> &'static str {
-    // 按 event id 查证是经 Relay 的读取：binding 须 ACTIVE，漂移期间留待下一轮
-    let Ok((control, _)) = control_client(state, p.tenant_id, ProjectionDirection::Establish).await
-    else {
-        return "CONTROL_UNREADABLE";
-    };
-    let result_code = match control.event_exists(&state.http, &p.event_id).await {
+    let result_code = match observe_delivery(state, p).await {
         Ok(true) => "ACCEPTED",
         Ok(false) if p.settled_window_passed => "NOT_DELIVERED",
         Ok(false) => return "PENDING",
-        Err(e) => {
-            tracing::info!(error = %e, "按 event id 查询 Relay 失败");
-            return "QUERY_FAILED";
-        }
+        Err(reason) => return reason,
     };
     let entry = AuditEntry {
         event_key: format!("message.publish:{}:reconciled", p.event_id),
@@ -236,10 +256,10 @@ async fn settle_one(state: &ServiceState, p: &Pending) -> &'static str {
         human_identity_id: p.human_identity_id,
         initiator_principal_id: p.initiator_principal_id,
         actor_principal_id: p.actor_principal_id,
-        action_key: PUBLISH_ACTION,
+        action_key: &p.action_key,
         action_version: 1,
         component_type_key: "buzz",
-        target_type: Some("CHANNEL"),
+        target_type: p.target_type.as_deref(),
         target_id: p.target_id,
         parameter_hash: "NONE",
         decision: "ALLOW",
@@ -261,4 +281,68 @@ async fn settle_one(state: &ServiceState, p: &Pending) -> &'static str {
             "WRITE_FAILED"
         }
     }
+}
+
+async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'static str> {
+    if p.action_key == PUBLISH_ACTION {
+        if p.target_type.as_deref() != Some("CHANNEL")
+            || p.workspace_id.is_none()
+            || p.target_id != p.workspace_id
+        {
+            return Err("EVIDENCE_MISSING");
+        }
+        let (control, _) = control_client(state, p.tenant_id, ProjectionDirection::Establish)
+            .await
+            .map_err(|_| "CONTROL_UNREADABLE")?;
+        return control
+            .event_exists(&state.http, &p.event_id)
+            .await
+            .map_err(|_| "QUERY_FAILED");
+    }
+    if p.action_key != CONVERSATION_PUBLISH_ACTION
+        || p.target_type.as_deref() != Some("CONVERSATION")
+        || p.workspace_id.is_some()
+    {
+        return Err("EVIDENCE_MISSING");
+    }
+    let (Some(conversation), Some(actor)) = (p.target_id, p.actor_principal_id) else {
+        return Err("EVIDENCE_MISSING");
+    };
+    // CONTROL never joins a private conversation. Query only with its original
+    // human actor's currently authorized SERVER identity; denial is not absence.
+    let before =
+        crate::conversations::admit_reconciliation(state, p.tenant_id, actor, conversation)
+            .await
+            .map_err(|_| "PARTICIPANT_UNREADABLE")?;
+    let keys =
+        crate::web_transport::server_actor_keys(&state.pool, &state.secrets, p.tenant_id, actor)
+            .await
+            .map_err(|_| "PARTICIPANT_UNREADABLE")?;
+    let client = collab_bridge::bridge::IdentityClient::new(
+        collab_bridge::bridge::Custody::Server,
+        &keys.secret_key().to_secret_hex(),
+        &state.relay_transport,
+        &before.community_host,
+    )
+    .map_err(|_| "PARTICIPANT_UNREADABLE")?;
+    let exists = client
+        .event_exists(&state.http, &p.event_id)
+        .await
+        .map_err(|_| "QUERY_FAILED")?;
+    let after = crate::conversations::admit_reconciliation(state, p.tenant_id, actor, conversation)
+        .await
+        .map_err(|_| "PARTICIPANT_UNREADABLE")?;
+    let current_keys =
+        crate::web_transport::server_actor_keys(&state.pool, &state.secrets, p.tenant_id, actor)
+            .await
+            .map_err(|_| "PARTICIPANT_UNREADABLE")?;
+    if before.binding_version != after.binding_version
+        || before.tenant_binding_version != after.tenant_binding_version
+        || before.channel_id != after.channel_id
+        || before.community_host != after.community_host
+        || keys.public_key() != current_keys.public_key()
+    {
+        return Err("PARTICIPANT_UNREADABLE");
+    }
+    Ok(exists)
 }

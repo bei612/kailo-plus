@@ -414,6 +414,7 @@ pub(crate) async fn exact_policy(pool: &PgPool, id: Uuid, version: i32) -> Resul
 /// 不为没有执行路径的定义放行。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Semantic {
+    ConversationOpen,
     WorkspaceCreate,
     /// Workspace 暂停与恢复（`.design/06` §7.3、DD-46）：从 Tenant scope 指向
     /// Workspace，准入落定即置 SUSPENDING/RESTORING，由 WORKSPACE_LIFECYCLE 收敛。
@@ -479,6 +480,7 @@ pub enum Semantic {
 impl Semantic {
     pub(crate) fn from_key(k: &str) -> Option<Self> {
         Some(match k {
+            "conversation.open" => Self::ConversationOpen,
             "workspace.create" => Self::WorkspaceCreate,
             "workspace.suspend" => Self::WorkspaceSuspend,
             "workspace.restore" => Self::WorkspaceRestore,
@@ -616,6 +618,7 @@ impl Semantic {
             || matches!(
                 self,
                 Self::TenantMemberRevoke
+                    | Self::ConversationOpen
                     | Self::TenantDelete
                     | Self::AgentDefinitionCreate
                     | Self::LlmRouteCreate
@@ -700,6 +703,7 @@ impl Semantic {
 /// 权威，不接收上游业务正文、凭据或 host environment。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Params {
+    pub conversation_open: Option<Value>,
     pub workspace_id: Option<Uuid>,
     /// 业务 Tenant 暂停与恢复的目标（DD-96）；其他语义一律为空
     pub tenant_id: Option<Uuid>,
@@ -733,6 +737,9 @@ pub struct Params {
 impl Params {
     pub(crate) fn to_json(&self) -> Value {
         let mut m = serde_json::Map::new();
+        if let Some(input) = &self.conversation_open {
+            m.insert("conversationOpen".into(), input.clone());
+        }
         if let Some(input) = &self.resource_create {
             m.insert("resourceCreate".into(), input.clone());
         }
@@ -828,6 +835,7 @@ impl Params {
         };
         let text = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_owned);
         Some(Self {
+            conversation_open: v.get("conversationOpen").cloned(),
             workspace_id: uuid("workspaceId"),
             tenant_id: uuid("tenantId"),
             principal_id: uuid("principalId"),
@@ -902,6 +910,12 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .map_err(|_| bad())
     };
     let p = Params {
+        conversation_open: cmd
+            .conversation_open
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|_| bad())?,
         resource_create: cmd
             .resource_create
             .as_ref()
@@ -985,6 +999,13 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .transpose()
             .map_err(|_| bad())?,
     };
+    if sem == Semantic::ConversationOpen {
+        crate::conversations::validate_params(&p)?;
+        return Ok(p);
+    }
+    if p.conversation_open.is_some() {
+        return Err(bad());
+    }
     if sem == Semantic::ResourceCreate {
         crate::resource_provision::validate_params(&p)?;
         return Ok(p);
@@ -1075,6 +1096,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         return Err(bad());
     }
     let ok = match sem {
+        Semantic::ConversationOpen => true, // validated above as a closed parameter object
         Semantic::ResourceGrantRead | Semantic::ResourceRevokeRead => {
             p.workspace_id.is_none()
                 && p.principal_id.is_some_and(|id| !id.is_nil())
@@ -1410,6 +1432,9 @@ async fn resolve_target(
 ) -> Result<Target, Refusal> {
     let for_update = if lock { " for update" } else { "" };
     match sem {
+        Semantic::ConversationOpen => {
+            crate::conversations::target(conn, tenant, initiator, def, p, frozen).await
+        }
         Semantic::ResourceCreate => {
             crate::resource_provision::target(conn, tenant, initiator, def, p, frozen, lock).await
         }
@@ -2959,6 +2984,7 @@ impl Governance {
             return Ok(None);
         }
         let params = Params {
+            conversation_open: None,
             workspace_id: None,
             tenant_id: None,
             principal_id: None,
@@ -3058,6 +3084,7 @@ impl Governance {
             return Ok(None);
         }
         let params = Params {
+            conversation_open: None,
             workspace_id: None,
             tenant_id: None,
             principal_id: None,
@@ -4717,6 +4744,7 @@ impl Governance {
                 version
             }
             Semantic::SecretRefRehome => 1,
+            Semantic::ConversationOpen => crate::conversations::prewrite(tx, ae, params).await?,
             Semantic::ApplicationBindingCreate | Semantic::ApplicationBindingDisable => {
                 crate::application_binding::prewrite(tx, ae, params).await?
             }
@@ -4730,7 +4758,7 @@ impl Governance {
                 crate::agent_installation::prewrite(self, tx, ae, params).await?
             }
             Semantic::WorkspaceCreate => {
-                sqlx::query_scalar(
+                let version = sqlx::query_scalar(
                     "insert into identity.workspace (id, tenant_id, slug, name, state)
                      values ($1, $2, $3, $4, 'PROVISIONING') returning version",
                 )
@@ -4739,7 +4767,24 @@ impl Governance {
                 .bind(&params.slug)
                 .bind(&params.name)
                 .fetch_one(&mut **tx)
-                .await?
+                .await?;
+                // CONTROL 代签创建 Channel，不是业务创建者。创建者的成员事实与
+                // Workspace 同事务落定，后续仍由同一条 Temporal 链查证投影。
+                sqlx::query(
+                    "insert into identity.workspace_membership
+                         (id, workspace_id, tenant_principal_id, state)
+                     select $1, $2, p.id, 'PROVISIONING' from identity.principal p
+                     join identity.tenant_membership tm on tm.tenant_principal_id = p.id
+                     where p.id = $3 and p.tenant_id = $4 and p.kind = 'HUMAN'
+                       and p.status = 'ACTIVE' and tm.tenant_id = $4 and tm.state = 'ACTIVE'",
+                )
+                .bind(Uuid::new_v4())
+                .bind(target.id)
+                .bind(ae.initiator_principal_id)
+                .bind(ae.tenant_id)
+                .execute(&mut **tx)
+                .await?;
+                version
             }
             // 先关门再收敛：SUSPENDING 即使该 Workspace scope fail closed，Workflow
             // 随后才 archive Channel（.design/06 §7.3）。条件更新只在状态与版本都未
@@ -6371,6 +6416,7 @@ impl Governance {
             Ok(())
         } else {
             let started = match sem {
+                Semantic::ConversationOpen => crate::conversations::start(&self.pool,&self.temporal,ae.id,ae.tenant_id,&workflow_id).await,
                 Semantic::ResourceCreate => crate::resource_provision::start(&self.pool,&self.temporal,ae.id,ae.tenant_id,&workflow_id).await,
                 Semantic::ApplicationBindingCreate | Semantic::ApplicationBindingDisable => {
                     crate::application_binding::start(&self.pool, &self.temporal, ae.id, ae.tenant_id, &workflow_id).await

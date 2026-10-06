@@ -71,6 +71,21 @@ capabilities:
   - workspace.message.publish
   tools: []
   workflow_kinds: []
+- id: collab.conversation
+  exposure: end_user
+  routes:
+  - /api/v1/conversations
+  - /api/v1/conversation-participants
+  - /api/v1/conversations/{conversation_id}/messages
+  - /api/v1/conversations/{conversation_id}/stream
+  - /api/v1/conversations/{conversation_id}/media
+  - /api/v1/conversations/{conversation_id}/media/{sha256}
+  actions:
+  - conversation.open
+  - conversation.message.publish
+  tools: []
+  workflow_kinds:
+  - CONVERSATION_PROJECTION
 - id: collab.user_state
   exposure: end_user
   routes:
@@ -268,7 +283,11 @@ capabilities:
   - /api/v1/workspaces
   - /api/v1/workspaces/{workspace_id}/members
   - /api/v1/audit
-  actions: []
+  - /api/v1/profile
+  - /api/v1/profile/media
+  - /api/v1/profile/media/{sha256}
+  actions:
+  - identity.profile.publish
   tools: []
   workflow_kinds: []
 - id: platform.session

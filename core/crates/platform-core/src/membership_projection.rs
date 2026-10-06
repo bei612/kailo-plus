@@ -162,6 +162,24 @@ pub async fn project_buzz_roster(
     // 任何一把都等于这台设备还能继续发言（DD-77）。任一未收敛即整体未收敛，
     // 已收敛的部分在重试时是幂等的。
     let mut outcome = Ok(());
+    if req.scope == MembershipScope::Tenant {
+        let principal: Result<Uuid, _> = sqlx::query_scalar("select tenant_principal_id from identity.tenant_membership where id=$1 and tenant_id=$2")
+            .bind(req.membership_id).bind(plan.tenant_id).fetch_one(&state.pool).await;
+        let principal = match principal {
+            Ok(id) => id,
+            Err(e) => return unavailable(e),
+        };
+        // Remove DM device keys before removing the Tenant relay membership.
+        // Restoration adds them only after those same keys exist in relay roster.
+        if req.presence == TargetPresence::Absent {
+            if let Err(e) =
+                crate::conversations::project_for_principal(&state, plan.tenant_id, principal, None)
+                    .await
+            {
+                return e;
+            }
+        }
+    }
     for pubkey in &plan.target_pubkeys {
         outcome = client.converge(&state.http, scope, pubkey, want).await;
         if outcome.is_err() {
@@ -183,6 +201,33 @@ pub async fn project_buzz_roster(
             if req.presence == TargetPresence::Present {
                 if let Err(r) = crate::service_api::audit_gate(&state).await {
                     return r;
+                }
+                // The SERVER identity cannot become active before its existing
+                // private conversations contain this same real key.
+                let incoming: Result<Vec<(Uuid, String)>, _> = sqlx::query_as(
+                    "select principal_id,pubkey from identity.buzz_identity_binding
+                     where tenant_id=$1 and pubkey=ANY($2) and kind='HUMAN'
+                       and custody='SERVER' and state='RECONCILING' order by principal_id,pubkey",
+                )
+                .bind(plan.tenant_id)
+                .bind(&plan.target_pubkeys)
+                .fetch_all(&state.pool)
+                .await;
+                let incoming = match incoming {
+                    Ok(keys) => keys,
+                    Err(e) => return unavailable(e),
+                };
+                for (principal, key) in incoming {
+                    if let Err(e) = crate::conversations::project_for_principal(
+                        &state,
+                        plan.tenant_id,
+                        principal,
+                        Some(&key),
+                    )
+                    .await
+                    {
+                        return e;
+                    }
                 }
             }
             let transition = match (req.presence, req.scope) {

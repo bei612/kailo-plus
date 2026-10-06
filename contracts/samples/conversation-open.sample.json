@@ -1,0 +1,7 @@
+{
+  "actionKey": "conversation.open",
+  "idempotencyKey": "conversation-fixture",
+  "conversationOpen": {
+    "participantPrincipalIds": ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"]
+  }
+}

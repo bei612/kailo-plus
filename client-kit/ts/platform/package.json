@@ -4,9 +4,13 @@
   "private": true,
   "type": "module",
   "files": [
-    "src"
+    "src",
+    "profile-assets.ts"
   ],
   "exports": {
+    "./react/new-message": "./src/react/new-message.tsx",
+    "./react/create-channel-dialog": "./src/react/create-channel-dialog.tsx",
+    "./react/profile-settings": "./src/react/profile-settings.tsx",
     "./keyboard-platform": "./src/keyboard-platform.ts",
     "./react/use-settings-shortcuts": "./src/react/use-settings-shortcuts.ts",
     "./react/protocol-document-bridge": "./src/react/protocol-document-bridge.tsx",
@@ -54,13 +58,28 @@
     "./theme/safe-storage": "./src/theme/safe-storage.ts",
     "./theme/theme-preview-frame": "./src/theme/theme-preview-frame.tsx",
     "./theme/use-theme-preview-vars": "./src/theme/use-theme-preview-vars.ts",
-    "./theme/color-contrast": "./src/theme/color-contrast.ts"
+    "./theme/color-contrast": "./src/theme/color-contrast.ts",
+    "./react/sidebar/context-menu": "./src/react/sidebar/context-menu.tsx",
+    "./react/sidebar/dropdown-menu": "./src/react/sidebar/dropdown-menu.tsx",
+    "./react/sidebar/tooltip": "./src/react/sidebar/tooltip.tsx",
+    "./react/sidebar/primitives": "./src/react/sidebar/primitives.tsx",
+    "./react/sidebar/channel-group": "./src/react/sidebar/channel-group.tsx",
+    "./react/sidebar/channel-row": "./src/react/sidebar/channel-row.tsx",
+    "./react/sidebar/channel-context-menu": "./src/react/sidebar/channel-context-menu.tsx",
+    "./react/sidebar/channel-sort": "./src/react/sidebar/channel-sort.ts",
+    "./react/sidebar/sidebarMenuHelpers": "./src/react/sidebar/sidebarMenuHelpers.tsx",
+    "./react/sidebar/sidebarSectionStyles": "./src/react/sidebar/sidebarSectionStyles.ts",
+    "./react/sidebar/channelSortPreference": "./src/react/sidebar/channelSortPreference.ts",
+    "./react/sidebar/useChannelSortPreference": "./src/react/sidebar/useChannelSortPreference.ts",
+    "./react/sidebar/normalizeRelayUrl": "./src/react/sidebar/normalizeRelayUrl.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "tsc --noEmit -p tsconfig.test.json && vitest run"
   },
   "peerDependencies": {
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-dialog": "^1.1.15",
     "yaml": "^2.8.3",
     "@radix-ui/react-switch": "^1.2.6",
     "tailwind-merge": "^3.5.0",
@@ -69,9 +88,26 @@
     "react": "^19.1.0",
     "shiki": "^4.0.2",
     "motion": "^12.38.0",
-    "lucide-react": "^1.0.0"
+    "lucide-react": "^1.0.0",
+    "@emoji-mart/data": "^1.2.1",
+    "@mediapipe/tasks-vision": "^0.10.35",
+    "@radix-ui/react-avatar": "^1.1.11",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-slot": "^1.2.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "emoji-mart": "^5.6.0",
+    "nostr-tools": "^2.23.3",
+    "sonner": "^2.0.7",
+    "upng-js": "^2.1.0",
+    "react-dom": "^19.1.0",
+    "@radix-ui/react-context-menu": "^2.2.16",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-tooltip": "^1.2.8"
   },
   "devDependencies": {
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-dialog": "^1.1.15",
     "yaml": "^2.8.3",
     "@radix-ui/react-switch": "^1.2.6",
     "tailwind-merge": "^3.5.0",
@@ -86,7 +122,21 @@
     "typescript": "^5.9.3",
     "vitest": "^4.0.18",
     "motion": "^12.38.0",
-    "lucide-react": "^1.0.0"
+    "lucide-react": "^1.0.0",
+    "@emoji-mart/data": "^1.2.1",
+    "@mediapipe/tasks-vision": "^0.10.35",
+    "@radix-ui/react-avatar": "^1.1.11",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-slot": "^1.2.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "emoji-mart": "^5.6.0",
+    "nostr-tools": "^2.23.3",
+    "sonner": "^2.0.7",
+    "upng-js": "^2.1.0",
+    "@radix-ui/react-context-menu": "^2.2.16",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-tooltip": "^1.2.8"
   },
   "peerDependenciesMeta": {
     "@types/react": {

@@ -6,7 +6,8 @@ exposure: end_user
 
 design:
   requirements: [V-REQ-01, V-REQ-03, V-REQ-17]
-  decisions: [DD-39, DD-53]
+  # DD-75's S0 identity custody is consumed here, owned by identity.client_keys.
+  decisions: [DD-39, DD-53, DD-80, DD-81]
   facts: [SF-DSK-04]
   seams: [SS-WEB-01, SS-WEB-PRESENTATION]
   blockers: []
@@ -22,13 +23,14 @@ validation:
 
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/platform_views.rs, client-kit/ts/platform, client-kit/dart/lib/shared/platform/platform_text.dart, web-client, collaboration/desktop/src/features/settings/ui]
+  paths: [core/crates/platform-core/src/platform_views.rs, core/crates/platform-core/src/web_profile.rs, core/crates/platform-core/src/publish_reconcile.rs, client-kit/ts/platform, client-kit/dart/lib/shared/platform/platform_text.dart, web-client, collaboration/desktop/src/features/settings/ui, collaboration/desktop/src/features/profile/hooks.ts, collaboration/desktop/src-tauri/src/commands/profile.rs]
   surfaces: [web, desktop]
-  schemas: [contracts/api/workspace.schema.json, contracts/api/workspace_member.schema.json, contracts/api/own_audit_entry.schema.json]
+  schemas: [contracts/api/workspace.schema.json, contracts/api/workspace_member.schema.json, contracts/api/own_audit_entry.schema.json, contracts/api/web_profile_view.schema.json, contracts/api/web_profile_update_request.schema.json]
   migrations: []
 
 runtime:
-  routes: ["/app/", "/api/v1/workspaces", "/api/v1/workspaces/{workspace_id}/members", "/api/v1/audit"]
+  routes: ["/app/", "/api/v1/workspaces", "/api/v1/workspaces/{workspace_id}/members", "/api/v1/audit", "/api/v1/profile", "/api/v1/profile/media", "/api/v1/profile/media/{sha256}"]
+  actions: [identity.profile.publish]
 
 release:
   artifacts:

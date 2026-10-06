@@ -497,6 +497,7 @@ impl Governance {
             workspace_id: None,
         };
         let params = Params {
+            conversation_open: None,
             workspace_id: None,
             tenant_id: None,
             principal_id: Some(principal),

@@ -38,6 +38,7 @@ mod client_keys;
 mod component_conformance_identity;
 mod component_release;
 mod component_task;
+mod conversations;
 mod delegation_query;
 mod external_human;
 mod gateway_usage;
@@ -80,6 +81,7 @@ mod tenant_bootstrap;
 mod tenant_delete;
 mod tenant_lifecycle;
 mod user_state;
+mod web_profile;
 mod web_transport;
 mod workflow_reconcile;
 

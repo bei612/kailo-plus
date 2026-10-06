@@ -575,6 +575,7 @@ export interface ActionCommand {
      */
     componentReleaseId?:           string;
     componentReleaseRegistration?: ComponentReleaseRegistrationClass;
+    conversationOpen?:             ConversationOpenClass;
     /**
      * 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
      */
@@ -920,6 +921,13 @@ export interface ComponentReleaseRegistrationClass {
     bindingConfigSchemaJson: string;
     manifestJson:            string;
     packageJson:             string;
+}
+
+/**
+ * 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
+ */
+export interface ConversationOpenClass {
+    participantPrincipalIds: string[];
 }
 
 /**
@@ -2127,6 +2135,7 @@ export enum WorkflowKind {
     ComponentBinding = "COMPONENT_BINDING",
     ComponentDisable = "COMPONENT_DISABLE",
     ComponentRelease = "COMPONENT_RELEASE",
+    ConversationProjection = "CONVERSATION_PROJECTION",
     MembershipProjection = "MEMBERSHIP_PROJECTION",
     MembershipRevocation = "MEMBERSHIP_REVOCATION",
     ProtocolSessionReconcile = "PROTOCOL_SESSION_RECONCILE",
@@ -2471,6 +2480,73 @@ export interface ComponentReleaseReceipt {
     componentReleaseId: string;
     planDigest:         string;
     status:             ComponentReleaseStatus;
+}
+
+/**
+ * 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
+ */
+export interface ConversationOpenRequest {
+    participantPrincipalIds: string[];
+}
+
+export interface ConversationPage {
+    items:       ItemElement[];
+    nextCursor?: string;
+}
+
+/**
+ * 已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
+ */
+export interface ItemElement {
+    channelId:               string;
+    id:                      string;
+    operationId:             string;
+    participantPrincipalIds: string[];
+    state:                   ItemState;
+    version:                 number;
+}
+
+export enum ItemState {
+    Active = "ACTIVE",
+    Disabled = "DISABLED",
+    Provisioning = "PROVISIONING",
+    Reconciling = "RECONCILING",
+}
+
+/**
+ * 同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
+ */
+export interface ConversationParticipant {
+    displayName: string;
+    principalId: string;
+    pubkeys:     string[];
+}
+
+export interface ConversationParticipantPage {
+    items:           ItemClass[];
+    maxParticipants: number;
+    nextCursor?:     string;
+}
+
+/**
+ * 同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
+ */
+export interface ItemClass {
+    displayName: string;
+    principalId: string;
+    pubkeys:     string[];
+}
+
+/**
+ * 已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
+ */
+export interface ConversationView {
+    channelId:               string;
+    id:                      string;
+    operationId:             string;
+    participantPrincipalIds: string[];
+    state:                   ItemState;
+    version:                 number;
 }
 
 /**
@@ -2982,6 +3058,42 @@ export enum TenantInvitationStatus {
  */
 export interface UserStateVersion {
     version: number;
+}
+
+/**
+ * Own Buzz kind:0 metadata. The authenticated host chooses the signer and Tenant; no raw
+ * event, author, relay URL or management tags are accepted. Omitted fields are preserved;
+ * empty strings explicitly clear a field.
+ */
+export interface WebProfileUpdateRequest {
+    about?:       string;
+    avatarUrl?:   string;
+    displayName?: string;
+    /**
+     * Read snapshot guard only. Core derives the signer from the active identity; a mismatch
+     * rejects without publication.
+     */
+    expectedPubkey: string;
+    idempotencyKey: string;
+    nip05Handle?:   string;
+}
+
+/**
+ * Current own profile read from Buzz, never a Core profile copy. An absent kind:0 is an
+ * empty profile, not a fabricated event.
+ */
+export interface WebProfileView {
+    about: null | string;
+    /**
+     * Same-origin BFF paths for exact media URLs on the current community. A read projection,
+     * never an upload or remote proxy authority.
+     */
+    avatarMediaPaths: { [key: string]: string };
+    avatarUrl:        null | string;
+    displayName:      null | string;
+    eventId:          null | string;
+    nip05Handle:      null | string;
+    pubkey:           string;
 }
 
 /**
@@ -4343,6 +4455,29 @@ export interface ComponentConformanceStepObservation {
      */
     resultDigest?: string;
     stepKey:       string;
+}
+
+export interface ConversationProjectionRequest {
+    runId:  string;
+    target: ConversationProjectionRequestTarget;
+}
+
+export interface ConversationProjectionRequestTarget {
+    actionExecutionId: string;
+    conversationId:    string;
+    workflowId:        string;
+}
+
+export interface ConversationProjectionResult {
+    conversationId: string;
+    status:         TaskStatus;
+    waitingReason:  string;
+}
+
+export interface ConversationProjectionTarget {
+    actionExecutionId: string;
+    conversationId:    string;
+    workflowId:        string;
 }
 
 /**

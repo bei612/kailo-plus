@@ -294,12 +294,137 @@ fn compute_definition_hash(json_str: &str) -> Vec<u8> {
     Sha256::digest(json_str.as_bytes()).to_vec()
 }
 
+fn governed_dm_projection(event: &Event) -> Result<buzz_db::dm::GovernedDmProjection, IngestError> {
+    let invalid = || IngestError::Rejected("invalid: governed DM projection tags".into());
+    if !event.content.is_empty() || event.tags.iter().any(|tag| tag.kind().to_string() == "d") {
+        return Err(invalid());
+    }
+    let one = |name: &str| -> Result<String, IngestError> {
+        let values: Vec<_> = event
+            .tags
+            .iter()
+            .filter(|t| t.kind().to_string() == name)
+            .collect();
+        match values.as_slice() {
+            [tag] if tag.as_slice().len() == 2 => {
+                tag.content().map(str::to_owned).ok_or_else(invalid)
+            }
+            _ => Err(invalid()),
+        }
+    };
+    let channel_id = one("h")?.parse().map_err(|_| invalid())?;
+    let generation = one("generation")?.parse().map_err(|_| invalid())?;
+    let created_by = decode_pubkey(&one("creator")?)?;
+    let mut principals = Vec::new();
+    let mut keys = Vec::new();
+    for tag in event.tags.iter() {
+        match tag.as_slice() {
+            [kind, id] if kind == "participant" => {
+                principals.push(id.parse::<Uuid>().map_err(|_| invalid())?)
+            }
+            [kind, key, id] if kind == "p" => keys.push((
+                id.parse::<Uuid>().map_err(|_| invalid())?,
+                decode_pubkey(key)?,
+            )),
+            values
+                if values
+                    .first()
+                    .is_some_and(|kind| kind == "participant" || kind == "p") =>
+            {
+                return Err(invalid())
+            }
+            _ => {}
+        }
+    }
+    principals.sort_unstable();
+    keys.sort_unstable();
+    Ok(buzz_db::dm::GovernedDmProjection {
+        channel_id,
+        principals,
+        generation,
+        keys,
+        created_by,
+    })
+}
+
+/// The platform projects original private DM storage without making its signer a participant.
+async fn handle_governed_dm_projection(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    event: &Event,
+    auth: &IngestAuth,
+) -> Result<IngestResult, IngestError> {
+    let projection = governed_dm_projection(event)?;
+    let control_key = auth.pubkey().to_bytes();
+    let mut tx = match persist_command_event(&state.db, tenant, event, Some(projection.channel_id))
+        .await?
+    {
+        PersistResult::Inserted(tx) => tx,
+        PersistResult::Duplicate => {
+            // A committed event may have crashed before subscription invalidation.
+            // Reapply only its exact generation, then finish those same side effects.
+            let mut tx = state
+                .db
+                .begin_event_write_transaction()
+                .await
+                .map_err(|e| IngestError::Internal(format!("error: DM replay transaction: {e}")))?;
+            buzz_deletion::store(&state.db)
+                .guard_transaction(&mut tx, tenant.community())
+                .await
+                .map_err(|e| {
+                    IngestError::Rejected(format!("restricted: community writes are fenced: {e}"))
+                })?;
+            tx
+        }
+    };
+    let all_keys =
+        buzz_db::dm::project_governed_dm(&mut tx, tenant.community(), &control_key, &projection)
+            .await
+            .map_err(|e| match e {
+                DbError::InvalidData(_) | DbError::AccessDenied(_) => {
+                    IngestError::Rejected(format!("restricted: {e}"))
+                }
+                _ => IngestError::Internal(format!("error: DM projection: {e}")),
+            })?;
+    tx.commit()
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: DM commit: {e}")))?;
+    for key in all_keys {
+        state.invalidate_membership(tenant, projection.channel_id, &key);
+        if !projection.keys.iter().any(|(_, active)| active == &key) {
+            super::side_effects::evict_live_channel_subscriptions(
+                tenant,
+                state,
+                projection.channel_id,
+                &key,
+            )
+            .await;
+        }
+    }
+    emit_group_discovery_events(tenant, state, projection.channel_id)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: DM discovery projection: {e}")))?;
+    Ok(IngestResult {
+        event_id: event.id.to_hex(),
+        accepted: true,
+        message: format!(
+            "response:{}",
+            serde_json::json!({
+                "channel_id": projection.channel_id.to_string(), "generation": projection.generation,
+            })
+        ),
+    })
+}
+
 async fn handle_dm_open(
     tenant: &TenantContext,
     state: &Arc<AppState>,
     event: &Event,
     auth: &IngestAuth,
 ) -> Result<IngestResult, IngestError> {
+    if super::governance::is_governed(state) {
+        return handle_governed_dm_projection(tenant, state, event, auth).await;
+    }
     let self_bytes = auth.pubkey().to_bytes().to_vec();
     let self_hex = hex::encode(&self_bytes);
 
@@ -434,6 +559,11 @@ async fn handle_dm_add_member(
     event: &Event,
     auth: &IngestAuth,
 ) -> Result<IngestResult, IngestError> {
+    if super::governance::is_governed(state) {
+        return Err(IngestError::Rejected(
+            "restricted: DM participant changes require platform admission".into(),
+        ));
+    }
     let self_bytes = auth.pubkey().to_bytes().to_vec();
 
     // 1. Extract target channel from `h` tag, new member pubkeys from `p` tags

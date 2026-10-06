@@ -4,6 +4,21 @@
 //! 没有把可选当必填、没有把未知枚举值吞掉。
 
 use std::{fs, path::PathBuf};
+
+#[test]
+fn conversation_roundtrip_preserves_participants_native_scope_and_frozen_workflow() {
+    fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(name: &str) {
+        let raw = fs::read_to_string(sample_path().with_file_name(name)).unwrap();
+        let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let typed: T = serde_json::from_str(&raw).unwrap();
+        assert_eq!(original, serde_json::to_value(typed).unwrap());
+    }
+    roundtrip::<contracts::ActionCommand>("conversation-open.sample.json");
+    roundtrip::<contracts::ConversationParticipantPage>("conversation-participants.sample.json");
+    roundtrip::<contracts::ConversationPage>("conversation-page.sample.json");
+    roundtrip::<contracts::ConversationProjectionRequest>("conversation-projection.sample.json");
+}
+
 #[test]
 fn application_model_roundtrip_preserves_route_identity_and_missing_correlation() {
     let raw =

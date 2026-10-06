@@ -307,6 +307,22 @@ pub fn router(state: BffState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .exposed_route("/api/v1/session", get(current_session))
+        .exposed_route(
+            "/api/v1/profile",
+            get(crate::web_profile::get).put(crate::web_profile::update),
+        )
+        .exposed_route(
+            "/api/v1/profile/media",
+            axum::routing::post(crate::web_profile::upload_avatar).layer(
+                axum::extract::DefaultBodyLimit::max(
+                    state.media_max_bytes.try_into().unwrap_or(usize::MAX),
+                ),
+            ),
+        )
+        .exposed_route(
+            "/api/v1/profile/media/{sha256}",
+            get(crate::web_profile::avatar),
+        )
         // 公开平台信息（DD-111）：不解析身份，三端据此显示部署的产品名
         .exposed_route("/api/v1/platform-info", get(crate::platform_info::get))
         // SS-WEB-RELAY：Browser 只发类型化语义命令，不发 raw event、不发任意 filter
@@ -444,6 +460,24 @@ pub fn router(state: BffState) -> Router {
         )
         // 原生端的 Community 连接事实（DD-75/78）；Web 拿不到
         .exposed_route("/api/v1/native/community", get(crate::native::community))
+        .exposed_route("/api/v1/conversations", get(crate::conversations::list))
+        .exposed_route(
+            "/api/v1/conversation-participants",
+            get(crate::conversations::participants),
+        )
+        .exposed_route(
+            "/api/v1/conversations/{conversation_id}/messages",
+            get(crate::web_transport::query_conversation_messages)
+                .post(crate::web_transport::publish_conversation_message),
+        )
+        .exposed_route(
+            "/api/v1/conversations/{conversation_id}/media",
+            axum::routing::post(crate::web_transport::upload_conversation_media),
+        )
+        .exposed_route(
+            "/api/v1/conversations/{conversation_id}/media/{sha256}",
+            get(crate::web_transport::fetch_conversation_media),
+        )
         .exposed_route("/api/v1/user-state", get(crate::user_state::get_user_state))
         .exposed_route(
             "/api/v1/user-state/workspaces/{workspace_id}",
@@ -461,6 +495,10 @@ pub fn router(state: BffState) -> Router {
         .exposed_route(
             "/api/v1/workspaces/{workspace_id}/stream",
             get(crate::stream::open_stream),
+        )
+        .exposed_route(
+            "/api/v1/conversations/{conversation_id}/stream",
+            get(crate::stream::open_conversation_stream),
         )
         .exposed_route(
             "/api/v1/user-state/read",

@@ -27,6 +27,10 @@ func TestApplicationBindingProtocolRoundtrip(t *testing.T) {
 		{"adapter-execution-references.sample.json", new([]generated.AdapterExecutionReference)},
 		{"resource-create.sample.json", new(generated.ActionCommand)},
 		{"resource-provision.sample.json", new(generated.ResourceProvisionAdvanceRequest)},
+		{"conversation-open.sample.json", new(generated.ActionCommand)},
+		{"conversation-participants.sample.json", new(generated.ConversationParticipantPage)},
+		{"conversation-page.sample.json", new(generated.ConversationPage)},
+		{"conversation-projection.sample.json", new(generated.ConversationProjectionRequest)},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", fixture.name))

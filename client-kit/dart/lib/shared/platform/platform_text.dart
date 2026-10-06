@@ -5,6 +5,24 @@ import 'dart:io' show Platform;
 import '../contracts/contracts.dart';
 
 enum PlatformMessageKey {
+  sidebarPreferenceUnknown,
+  sidebarStarred,
+  sidebarChannels,
+  sidebarSort,
+  sidebarRecent,
+  sidebarAlpha,
+  sidebarMoreActions,
+  sidebarMarkAllRead,
+  sidebarCopy,
+  sidebarCopyName,
+  sidebarCopyId,
+  sidebarCopiedName,
+  sidebarCopiedId,
+  sidebarMute,
+  sidebarUnmute,
+  sidebarStar,
+  sidebarUnstar,
+  sidebarUnread,
   documentReopen,
   documentAdmissionBoundary,
   documentReconcile,
@@ -130,6 +148,11 @@ enum PlatformMessageKey {
   platformWorkspace,
   platformWorkspaces,
   workspaceCreateTitle,
+  channelCreateTitle,
+  channelCreateDescription,
+  channelCreateSubmit,
+  channelCreateClose,
+  channelCreateUnavailable,
   workspaceCreateName,
   workspaceCreateSlug,
   workspaceCreateSlugHint,
@@ -537,6 +560,83 @@ enum PlatformMessageKey {
   platformSettingsOrganization,
   platformSettingsClose,
   platformSettingsTitle,
+  platformSettingsProfile,
+  platformProfileDescription,
+  platformProfileInfo,
+  platformProfileAvatar,
+  platformProfileAvatarUrl,
+  platformProfileExternalImage,
+  platformProfileBrowse,
+  platformProfileDrop,
+  platformProfileUploading,
+  platformProfileUploadFailed,
+  platformProfileImageTypes,
+  platformProfileDisplayName,
+  platformProfileAbout,
+  platformProfileEdit,
+  platformProfileDone,
+  platformProfileIdentity,
+  platformProfileIdentityDetails,
+  platformProfileCopy,
+  platformProfileCopied,
+  platformProfileCopyFailed,
+  platformProfileNotSet,
+  platformProfileAvatarAvatarType,
+  platformProfileAvatarImage,
+  platformProfileAvatarEmoji,
+  platformProfileAvatarAnimated,
+  platformProfileAvatarPicker,
+  platformProfileAvatarChooseCustom,
+  platformProfileAvatarChooseEmojiFirst,
+  platformProfileAvatarSavingAvatar,
+  platformProfileAvatarSave,
+  platformProfileAvatarSaving,
+  platformProfileAvatarUseIPhone,
+  platformProfileAvatarUseComputer,
+  platformProfileAvatarCameraRetry,
+  platformProfileAvatarRecord,
+  platformProfileAvatarYou,
+  platformProfileAvatarPosition,
+  platformProfileAvatarCircle,
+  platformProfileAvatarAdjustCircle,
+  platformProfileAvatarBackground,
+  platformProfileAvatarFrame,
+  platformProfileAvatarStillFrame,
+  platformProfileAvatarRetakeLabel,
+  platformProfileAvatarRetake,
+  platformProfileAvatarHue,
+  platformProfileAvatarStartCamera,
+  platformProfileAvatarProcessing,
+  platformProfileAvatarUploadAnimated,
+  platformProfileAvatarUseAvatar,
+  platformProfileAvatarStillHelp,
+  platformProfileAvatarLineUp,
+  platformProfileAvatarRecording,
+  platformProfileAvatarCutting,
+  platformProfileAvatarHover,
+  platformProfileAvatarModelUnavailable,
+  platformProfileAvatarPreviewPosition,
+  platformProfileAvatarUploadPending,
+  platformProfileAvatarSize,
+  platformProfileAvatarResetSize,
+  platformProfileAvatarOutlineDisable,
+  platformProfileAvatarOutlineEnable,
+  platformProfileAvatarOutlineOn,
+  platformProfileAvatarOutlineOff,
+  platformProfileAvatarChooseFrame,
+  platformProfileAvatarGeneratingFrames,
+  platformProfileAvatarChooseBackdrop,
+  platformProfileAvatarBackgroundColor,
+  platformProfileAvatarCameraSecureContext,
+  platformProfileAvatarCameraUnavailable,
+  platformProfileAvatarCameraPermission,
+  platformProfilePublicKey,
+  platformProfileNip05,
+  platformProfileSaving,
+  platformProfileSaved,
+  platformProfileUnknown,
+  platformProfileCheck,
+  platformProfileFailed,
   platformShortcutsQuickSearchLabel,
   platformShortcutsQuickSearchDescription,
   platformShortcutsOpenSettingsLabel,
@@ -804,6 +904,36 @@ enum PlatformMessageKey {
 }
 
 const _messages = <PlatformMessageKey, (String, String)>{
+  PlatformMessageKey.sidebarPreferenceUnknown: (
+    'This preference change is not confirmed. Recheck its state before making another change.',
+    '此偏好更改尚未确认，请重新查证后再更改。',
+  ),
+  PlatformMessageKey.sidebarStarred: ('Starred', '收藏'),
+  PlatformMessageKey.sidebarChannels: ('Channels', '频道'),
+  PlatformMessageKey.sidebarSort: ('Sort', '排序'),
+  PlatformMessageKey.sidebarRecent: ('Recent', '最近活动'),
+  PlatformMessageKey.sidebarAlpha: ('A–Z', '名称'),
+  PlatformMessageKey.sidebarMoreActions: (
+    'More actions for {section}',
+    '{section}的更多操作',
+  ),
+  PlatformMessageKey.sidebarMarkAllRead: ('Mark all as read', '全部标为已读'),
+  PlatformMessageKey.sidebarCopy: ('Copy', '复制'),
+  PlatformMessageKey.sidebarCopyName: ('Copy channel name', '复制频道名称'),
+  PlatformMessageKey.sidebarCopyId: ('Copy channel ID', '复制频道 ID'),
+  PlatformMessageKey.sidebarCopiedName: (
+    'Channel name copied to clipboard',
+    '已复制频道名称',
+  ),
+  PlatformMessageKey.sidebarCopiedId: (
+    'Channel ID copied to clipboard',
+    '已复制频道 ID',
+  ),
+  PlatformMessageKey.sidebarMute: ('Mute channel', '静音频道'),
+  PlatformMessageKey.sidebarUnmute: ('Unmute channel', '取消静音'),
+  PlatformMessageKey.sidebarStar: ('Star channel', '收藏频道'),
+  PlatformMessageKey.sidebarUnstar: ('Unstar channel', '取消收藏'),
+  PlatformMessageKey.sidebarUnread: ('unread', '未读'),
   PlatformMessageKey.documentReopen: (
     'Reopen with fresh access check',
     '重新校验权限并打开',
@@ -1127,6 +1257,17 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.platformWorkspace: ('Workspace', '工作区'),
   PlatformMessageKey.platformWorkspaces: ('Workspaces', '工作区'),
   PlatformMessageKey.workspaceCreateTitle: ('Create workspace', '创建工作区'),
+  PlatformMessageKey.channelCreateTitle: ('Create a new channel', '创建频道'),
+  PlatformMessageKey.channelCreateDescription: (
+    'Channels are real-time streams for team conversation.',
+    '频道用于团队实时交流。',
+  ),
+  PlatformMessageKey.channelCreateSubmit: ('Create channel', '创建频道'),
+  PlatformMessageKey.channelCreateClose: ('Close', '关闭'),
+  PlatformMessageKey.channelCreateUnavailable: (
+    'You do not have permission to create a channel.',
+    '你没有创建频道的权限。',
+  ),
   PlatformMessageKey.workspaceCreateName: ('Workspace name', '工作区名称'),
   PlatformMessageKey.workspaceCreateSlug: ('Workspace identifier', '工作区标识'),
   PlatformMessageKey.workspaceCreateSlugHint: (
@@ -2221,6 +2362,206 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.platformSettingsOrganization: ('Organization', '组织'),
   PlatformMessageKey.platformSettingsClose: ('Close settings', '关闭设置'),
   PlatformMessageKey.platformSettingsTitle: ('Settings', '设置'),
+  PlatformMessageKey.platformSettingsProfile: ('Profile', '个人资料'),
+  PlatformMessageKey.platformProfileDescription: (
+    'Your profile is visible to members of this community, not private to a workspace.',
+    '个人资料向当前社区成员公开，不是工作区私密资料。',
+  ),
+  PlatformMessageKey.platformProfileInfo: ('Profile info', '个人资料信息'),
+  PlatformMessageKey.platformProfileAvatar: ('Avatar', '头像'),
+  PlatformMessageKey.platformProfileAvatarUrl: ('Paste an image URL', '粘贴图片链接'),
+  PlatformMessageKey.platformProfileExternalImage: (
+    'This Web host does not load external image URLs. Upload the image here or choose an emoji to display it in Web; the original URL can still be saved without fetching that site.',
+    'Web 宿主不会加载外站图片链接。可在此上传图片或选择表情以便在 Web 显示；仍可保存原链接，但不会请求该网站。',
+  ),
+  PlatformMessageKey.platformProfileBrowse: ('Drop or browse', '拖入图片或浏览文件'),
+  PlatformMessageKey.platformProfileDrop: ('Drop image here', '将图片拖到这里'),
+  PlatformMessageKey.platformProfileUploading: ('Uploading…', '正在上传…'),
+  PlatformMessageKey.platformProfileUploadFailed: (
+    'Could not upload that avatar.',
+    '头像上传未成功。',
+  ),
+  PlatformMessageKey.platformProfileImageTypes: (
+    'Choose a PNG, JPG, GIF, or WebP image.',
+    '请选择 PNG、JPG、GIF 或 WebP 图片。',
+  ),
+  PlatformMessageKey.platformProfileDisplayName: ('Display name', '显示名称'),
+  PlatformMessageKey.platformProfileAbout: ('About', '简介'),
+  PlatformMessageKey.platformProfileEdit: ('Edit', '编辑'),
+  PlatformMessageKey.platformProfileDone: ('Done', '完成'),
+  PlatformMessageKey.platformProfileIdentity: ('Identity', '身份'),
+  PlatformMessageKey.platformProfileIdentityDetails: (
+    'Identity details',
+    '身份详情',
+  ),
+  PlatformMessageKey.platformProfileCopy: ('Copy', '复制'),
+  PlatformMessageKey.platformProfileCopied: ('Copied to clipboard', '已复制到剪贴板'),
+  PlatformMessageKey.platformProfileCopyFailed: (
+    'Could not copy to clipboard',
+    '未能复制到剪贴板',
+  ),
+  PlatformMessageKey.platformProfileNotSet: ('Not set', '未设置'),
+  PlatformMessageKey.platformProfileAvatarAvatarType: ('Avatar type', '头像类型'),
+  PlatformMessageKey.platformProfileAvatarImage: ('Image', '图片'),
+  PlatformMessageKey.platformProfileAvatarEmoji: ('Emoji', '表情'),
+  PlatformMessageKey.platformProfileAvatarAnimated: ('Animated', '动态头像'),
+  PlatformMessageKey.platformProfileAvatarPicker: (
+    'Avatar image picker',
+    '头像图片选择器',
+  ),
+  PlatformMessageKey.platformProfileAvatarChooseCustom: (
+    'Choose custom avatar color',
+    '选择自定义头像颜色',
+  ),
+  PlatformMessageKey.platformProfileAvatarChooseEmojiFirst: (
+    'Choose an emoji before custom avatar color',
+    '请先选择表情，再自定义头像颜色',
+  ),
+  PlatformMessageKey.platformProfileAvatarSavingAvatar: (
+    'Saving avatar',
+    '正在保存头像',
+  ),
+  PlatformMessageKey.platformProfileAvatarSave: ('Save', '保存'),
+  PlatformMessageKey.platformProfileAvatarSaving: ('Saving', '正在保存'),
+  PlatformMessageKey.platformProfileAvatarUseIPhone: (
+    'Use iPhone',
+    '使用 iPhone',
+  ),
+  PlatformMessageKey.platformProfileAvatarUseComputer: (
+    'Use this computer',
+    '使用本机摄像头',
+  ),
+  PlatformMessageKey.platformProfileAvatarCameraRetry: (
+    'Try camera again',
+    '重试摄像头',
+  ),
+  PlatformMessageKey.platformProfileAvatarRecord: (
+    'Capture {seconds} sec video',
+    '录制 {seconds} 秒视频',
+  ),
+  PlatformMessageKey.platformProfileAvatarYou: ('You', '人物'),
+  PlatformMessageKey.platformProfileAvatarPosition: (
+    'Position yourself',
+    '调整人物位置',
+  ),
+  PlatformMessageKey.platformProfileAvatarCircle: ('Circle', '圆形'),
+  PlatformMessageKey.platformProfileAvatarAdjustCircle: (
+    'Adjust the circle',
+    '调整圆形',
+  ),
+  PlatformMessageKey.platformProfileAvatarBackground: ('Background', '背景'),
+  PlatformMessageKey.platformProfileAvatarFrame: ('Frame', '封面'),
+  PlatformMessageKey.platformProfileAvatarStillFrame: ('Still frame', '静态封面'),
+  PlatformMessageKey.platformProfileAvatarRetakeLabel: (
+    'Retake the recording',
+    '重新录制',
+  ),
+  PlatformMessageKey.platformProfileAvatarRetake: ('Retake', '重录'),
+  PlatformMessageKey.platformProfileAvatarHue: (
+    'Choose custom avatar color hue',
+    '选择自定义头像色相',
+  ),
+  PlatformMessageKey.platformProfileAvatarStartCamera: (
+    'Starting camera',
+    '正在启动摄像头',
+  ),
+  PlatformMessageKey.platformProfileAvatarProcessing: (
+    'Processing recording',
+    '正在处理录像',
+  ),
+  PlatformMessageKey.platformProfileAvatarUploadAnimated: (
+    'Uploading animated avatar',
+    '正在上传动态头像',
+  ),
+  PlatformMessageKey.platformProfileAvatarUseAvatar: ('Use as avatar', '用作头像'),
+  PlatformMessageKey.platformProfileAvatarStillHelp: (
+    'Pick the still shown before hover.',
+    '选择悬停播放前显示的静态封面。',
+  ),
+  PlatformMessageKey.platformProfileAvatarLineUp: (
+    'Line up your shot.',
+    '调整好拍摄位置。',
+  ),
+  PlatformMessageKey.platformProfileAvatarRecording: (
+    'Recording... hold still-ish.',
+    '正在录制…请尽量保持稳定。',
+  ),
+  PlatformMessageKey.platformProfileAvatarCutting: (
+    'Cutting you out of the background...',
+    '正在分离人物与背景…',
+  ),
+  PlatformMessageKey.platformProfileAvatarHover: ('Hover to play', '悬停播放'),
+  PlatformMessageKey.platformProfileAvatarModelUnavailable: (
+    'Background removal model couldn\'t be loaded, so the background was kept. Retake while online to remove it.',
+    '未能加载背景分割模型，已保留原背景。模型可用后可重新录制。',
+  ),
+  PlatformMessageKey.platformProfileAvatarPreviewPosition: (
+    'Avatar preview — drag or use arrow keys to position',
+    '头像预览——拖动或使用方向键调整位置',
+  ),
+  PlatformMessageKey.platformProfileAvatarUploadPending: (
+    'Avatar upload pending',
+    '头像上传待确认',
+  ),
+  PlatformMessageKey.platformProfileAvatarSize: ('Avatar size', '头像大小'),
+  PlatformMessageKey.platformProfileAvatarResetSize: (
+    'Reset avatar size',
+    '重置头像大小',
+  ),
+  PlatformMessageKey.platformProfileAvatarOutlineDisable: (
+    'Turn outline off',
+    '关闭轮廓',
+  ),
+  PlatformMessageKey.platformProfileAvatarOutlineEnable: (
+    'Turn outline on',
+    '开启轮廓',
+  ),
+  PlatformMessageKey.platformProfileAvatarOutlineOn: ('Outline on', '轮廓已开启'),
+  PlatformMessageKey.platformProfileAvatarOutlineOff: ('Outline off', '轮廓已关闭'),
+  PlatformMessageKey.platformProfileAvatarChooseFrame: (
+    'Choose still frame',
+    '选择静态封面',
+  ),
+  PlatformMessageKey.platformProfileAvatarGeneratingFrames: (
+    'Generating frame thumbnails',
+    '正在生成帧缩略图',
+  ),
+  PlatformMessageKey.platformProfileAvatarChooseBackdrop: (
+    'Choose custom backdrop color',
+    '选择自定义背景颜色',
+  ),
+  PlatformMessageKey.platformProfileAvatarBackgroundColor: (
+    'Use {color} background',
+    '使用 {color} 背景',
+  ),
+  PlatformMessageKey.platformProfileAvatarCameraSecureContext: (
+    'Camera access requires HTTPS or a trusted local browser context. This address is not a secure context.',
+    '摄像头需要 HTTPS 或浏览器信任的本地环境；当前地址不是安全上下文。',
+  ),
+  PlatformMessageKey.platformProfileAvatarCameraUnavailable: (
+    'This browser or host does not provide camera access.',
+    '当前浏览器或宿主未提供摄像头访问能力。',
+  ),
+  PlatformMessageKey.platformProfileAvatarCameraPermission: (
+    'Could not access the camera. Check the browser and system camera permissions, then try again.',
+    '无法访问摄像头。请检查浏览器和系统摄像头权限后重试。',
+  ),
+  PlatformMessageKey.platformProfilePublicKey: ('Public key', '公钥'),
+  PlatformMessageKey.platformProfileNip05: ('Nostr address', 'Nostr 地址'),
+  PlatformMessageKey.platformProfileSaving: ('Saving…', '正在保存…'),
+  PlatformMessageKey.platformProfileSaved: (
+    'Saved and read back from the community.',
+    '已保存，并从社区读回确认。',
+  ),
+  PlatformMessageKey.platformProfileUnknown: (
+    'The save result is unknown. Check the original request; it will not be published again.',
+    '保存结果尚不明确。可以核对原请求，不会再次发布。',
+  ),
+  PlatformMessageKey.platformProfileCheck: ('Check save result', '核对保存结果'),
+  PlatformMessageKey.platformProfileFailed: (
+    'Profile could not be saved. Your edits have been kept.',
+    '个人资料未能保存，编辑内容已保留。',
+  ),
   PlatformMessageKey.platformShortcutsQuickSearchLabel: (
     'Quick search',
     '快速搜索',
@@ -3119,8 +3460,14 @@ String _platformLanguage(String? locale) =>
     ? 'zh-CN'
     : 'en';
 
+/// The supported locale (`en` or `zh-CN`) a device locale resolves to.
+String platformLocale({String? locale}) => _platformLanguage(locale);
+
 const platformCalendarWeekdayBandDays = 7;
+const platformTimeSecondsMinute = 60;
+const platformTimeSecondsHour = 3600;
 const platformTimeSecondsDay = 86400;
+const platformTimeSecondsMonth = 2592000;
 
 String platformIntlLocale({String? locale}) =>
     _platformLanguage(locale) == 'zh-CN' ? 'zh_CN' : 'en_US';
@@ -3172,18 +3519,18 @@ String platformRelativeTime(String rfc3339, {String? locale, DateTime? now}) {
   }
   var unit = 'second';
   var count = elapsed;
-  if (elapsed >= 2592000) {
+  if (elapsed >= platformTimeSecondsMonth) {
     unit = 'month';
-    count = (elapsed / 2592000).round();
-  } else if (elapsed >= 86400) {
+    count = (elapsed / platformTimeSecondsMonth).round();
+  } else if (elapsed >= platformTimeSecondsDay) {
     unit = 'day';
-    count = (elapsed / 86400).round();
-  } else if (elapsed >= 3600) {
+    count = (elapsed / platformTimeSecondsDay).round();
+  } else if (elapsed >= platformTimeSecondsHour) {
     unit = 'hour';
-    count = (elapsed / 3600).round();
-  } else if (elapsed >= 60) {
+    count = (elapsed / platformTimeSecondsHour).round();
+  } else if (elapsed >= platformTimeSecondsMinute) {
     unit = 'minute';
-    count = (elapsed / 60).round();
+    count = (elapsed / platformTimeSecondsMinute).round();
   }
   final direction = at.isAfter(current) ? 'future' : 'past';
   final form = count == 1 && _platformSpecialRelativeUnits.contains(unit)

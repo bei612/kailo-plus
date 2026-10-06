@@ -4,7 +4,7 @@
 //! 保留用户解密私钥，原来的 NIP-44 同步路走不通；原生端本地持钥、自己能解密，
 //! 但仍以 Core 为准，那是三端一致与可撤权的要求。
 //!
-//! 写入时校验键，读取时按当前 scope 过滤 Workspace 偏好与已读位置。
+//! 写入时校验键，读取时按当前 scope 过滤 Workspace 偏好与频道/私聊已读位置。
 //! 撤权不删除库中历史，也不改变状态版本；恢复成员关系后可继续使用原状态。
 //! msg/thread 的可读性由 Relay 以本人 SERVER 身份查证，不借用 CONTROL 或其他 HUMAN。
 //! CLIENT-only 身份缺少服务端事件查证凭据，不借用其他身份绕行。
@@ -120,11 +120,15 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
                 }
                 Err(e) => return e.into_response(),
             };
-            let visible_channels: std::collections::HashSet<Uuid> = channels
+            let mut visible_channels: std::collections::HashSet<Uuid> = channels
                 .into_iter()
                 .filter(|(_, workspace_id)| admitted.contains_key(workspace_id))
                 .map(|(channel_id, _)| channel_id)
                 .collect();
+            match visible_conversation_channels(&state, &ctx, &channel_ids).await {
+                Ok(channels) => visible_channels.extend(channels),
+                Err(response) => return response,
+            }
             (
                 StatusCode::OK,
                 Json(UserStateResponse {
@@ -400,11 +404,55 @@ async fn require_visible_channel(
         tracing::warn!(error = %e, "Channel 可见性查询失败");
         StatusCode::SERVICE_UNAVAILABLE.into_response()
     })?;
-    let workspace_id = workspace_id.ok_or_else(|| {
-        tracing::warn!(channel = %channel_id, "Channel 对该 Principal 不可见");
-        StatusCode::FORBIDDEN.into_response()
+    match workspace_id {
+        Some(workspace_id) => require_visible_workspace(state, ctx, workspace_id).await,
+        None => {
+            let conversations = visible_conversation_channels(state, ctx, &[channel_id]).await?;
+            if conversations.contains(&channel_id) {
+                Ok(())
+            } else {
+                Err(StatusCode::FORBIDDEN.into_response())
+            }
+        }
+    }
+}
+
+/// Read marks still use original Buzz channel IDs. Private channels use their
+/// participant binding, never Workspace membership or an administrator bypass.
+async fn visible_conversation_channels(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    channel_ids: &[Uuid],
+) -> Result<HashSet<Uuid>, Response> {
+    if channel_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
+        "select id, channel_id from projection.conversation_buzz_binding
+         where tenant_id=$1 and channel_id=any($2) and state='ACTIVE'
+           and $3=any(participant_principal_ids)",
+    )
+    .bind(ctx.tenant_id)
+    .bind(channel_ids)
+    .bind(ctx.tenant_principal_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|error| {
+        tracing::warn!(%error, "私聊已读范围查询失败");
+        user_state_unavailable()
     })?;
-    require_visible_workspace(state, ctx, workspace_id).await
+    let mut visible = HashSet::new();
+    for (id, channel_id) in rows {
+        match crate::conversations::admit(state, ctx, id).await {
+            Ok(scope) if scope.channel_id == channel_id.to_string() => {
+                visible.insert(channel_id);
+            }
+            Ok(_) => return Err(user_state_unavailable()),
+            Err(response) if response.status() == StatusCode::FORBIDDEN => {}
+            Err(response) => return Err(response),
+        }
+    }
+    Ok(visible)
 }
 
 /// 临时查证事件所属的可读 Workspace；事件正文不入 Core，也不返回给状态调用方。

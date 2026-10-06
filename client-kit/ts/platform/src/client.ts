@@ -6,6 +6,8 @@
 import type {
   ActionCommand,
   ActionSubmission,
+  ConversationPage,
+  ConversationParticipantPage,
   ApplicationBindingPage,
   ApplicationNativePage,
   AgentDefinitionPage,
@@ -52,6 +54,8 @@ import type {
   WorkspaceView,
   ReadMarkRequest,
   UserStateVersion,
+  WebProfileView,
+  WebProfileUpdateRequest,
 } from "@client-kit/contracts";
 import type { CollaborationUserState } from "./inbox";
 import { PlatformSessionAccessMode } from "@client-kit/contracts";
@@ -66,6 +70,8 @@ export function createBffClient(transport: BffTransport) {
 
   return {
     transport,
+    profile: () => get<WebProfileView>("/api/v1/profile"),
+    updateProfile: (body: WebProfileUpdateRequest) => call<{ eventId: string; operationId: string }>({ method: "PUT", path: "/api/v1/profile", body }),
 
     /** 部署的公开平台信息（DD-111）：界面上的产品名只取自这里，不写在客户端里。 */
     platformInfo: () => get<PlatformInfo>("/api/v1/platform-info"),
@@ -91,6 +97,8 @@ export function createBffClient(transport: BffTransport) {
 
     /** 我能进的 Workspace。列表已排除进不去的——列出一个点进去 403 的比不列更糟。 */
     workspaces: () => get<WorkspaceView[]>("/api/v1/workspaces"),
+    conversations: (cursor?: string) => get<ConversationPage>(`/api/v1/conversations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
+    conversationParticipants: (cursor?: string) => get<ConversationParticipantPage>(`/api/v1/conversation-participants${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
 
     /** Integration metadata only; credentials and native administration stay server-side. */
     applicationNativePage: (bindingId: string) => get<ApplicationNativePage>(`/api/v1/application-bindings/${encodeURIComponent(bindingId)}/native-page`),

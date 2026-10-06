@@ -1,4 +1,6 @@
-import { invokeTauri } from "@/shared/api/tauri";
+import { invokeTauri, TauriInvokeError } from "@/shared/api/tauri";
+import type { WebProfileUpdateRequest } from "@client-kit/contracts";
+import { TransportError } from "@client-kit/platform/transport";
 import type {
   Profile,
   UserProfileSummary,
@@ -73,6 +75,25 @@ function fromRawUserSearchResult(user: RawUserSearchResult): UserSearchResult {
 export async function getProfile(): Promise<Profile> {
   const profile = await invokeTauri<RawProfile>("get_profile");
   return fromRawProfile(profile);
+}
+
+export async function updateProfile(input: WebProfileUpdateRequest & {
+  expectedRelayUrl: string;
+  expectedSignerPubkey: string;
+}): Promise<Profile> {
+  try {
+    return fromRawProfile(await invokeTauri<RawProfile>("update_profile", { ...input }));
+  } catch (error) {
+    // A thrown transport/IPC string is not a native publication receipt. Only
+    // the original command's typed rejection can make this attempt definite.
+    if (error instanceof TauriInvokeError && typeof error.payload === "object" && error.payload !== null
+      && "code" in error.payload && error.payload.code === "PROFILE_UPDATE_REJECTED") throw error;
+    throw new TransportError("Profile publication result is unknown");
+  }
+}
+
+export async function uploadProfileAvatar(data: number[], expectedRelayUrl: string, expectedSignerPubkey: string): Promise<{ url: string; type: string }> {
+  return invokeTauri("upload_profile_avatar", { data, expectedRelayUrl, expectedSignerPubkey });
 }
 
 export async function getUserProfile(pubkey?: string): Promise<Profile> {

@@ -1,4 +1,6 @@
 import * as React from "react";
+import { ConversationPreparationPending } from "@client-kit/platform/react/new-message";
+import { isOutcomeUnknown } from "@client-kit/platform/transport";
 import { toast } from "sonner";
 import { claimDraftSend } from "@/features/messages/lib/useDrafts";
 import {
@@ -50,6 +52,7 @@ export function useMentionSendFlow({
     text: string;
     /** 结果不明不是失败：不以错误样式显示 */
     unknown: boolean;
+    pending?: boolean;
   } | null>(null);
   // Persistence identity is independent of the host component and destination
   // channel. A -> B -> A must not revive A's previous recovery.
@@ -65,6 +68,13 @@ export function useMentionSendFlow({
 
   const reportSendFailure = React.useCallback(
     (error: unknown, draftKey: string | null | undefined) => {
+      if (error instanceof ConversationPreparationPending || isOutcomeUnknown(error)) {
+        if (isMountedRef.current && draftKey === sourceOwnerRef.current.draftKey) {
+          setSendOutcome({ draftKey, text: error instanceof Error ? error.message : "Outcome not yet known.",
+            unknown: isOutcomeUnknown(error), pending: error instanceof ConversationPreparationPending });
+        }
+        return;
+      }
       const text = relayPublishFailureText(error);
       if (text === null) {
         toast.error(formatMessageSendError(error));
@@ -408,7 +418,7 @@ export function useMentionSendFlow({
   );
   const visibleSendOutcome =
     sendOutcome && sendOutcome.draftKey === effectiveDraftKey
-      ? { text: sendOutcome.text, unknown: sendOutcome.unknown }
+      ? { text: sendOutcome.text, unknown: sendOutcome.unknown, pending: sendOutcome.pending }
       : null;
   const clearSendOutcome = React.useCallback(() => setSendOutcome(null), []);
   return {

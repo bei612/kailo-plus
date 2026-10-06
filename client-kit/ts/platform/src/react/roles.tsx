@@ -99,11 +99,9 @@ export function RoleManagement() {
 }
 
 /** 沿用已登记的 workspace.create；受理回应不代表 Channel/权限投影已完成。 */
-function CreateWorkspace({ actionKey }: { actionKey?: CreateActionKey }) {
+export function useWorkspaceCreate(actionKey?: CreateActionKey) {
   const client = useBffClient();
   const t = useT();
-  const failureText = useFailureText();
-  const reasonText = useReasonText();
   const inFlight = useRef(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -120,9 +118,6 @@ function CreateWorkspace({ actionKey }: { actionKey?: CreateActionKey }) {
     ? openTasks.data.filter((task) => task.actionKey === CreateActionKey.WorkspaceCreate
       && taskPhase(task).tone === "neutral")
     : [];
-
-  if (!actionKey && !command && !submission && pendingCreates.length === 0 && openTasks.status !== "error")
-    return null;
 
   const submit = async () => {
     if (!actionKey || inFlight.current || (!command && (!name.trim() || !slug.trim()))) return;
@@ -157,12 +152,33 @@ function CreateWorkspace({ actionKey }: { actionKey?: CreateActionKey }) {
     }
   };
 
+  return { actionKey, name, setName, slug, setSlug, command, busy, failure, submission,
+    locked, openTasks, pendingCreates, reloadOpenTasks, submit };
+}
+
+/** The existing workspace.create command and UNKNOWN intent are shared by both hosts. */
+export type WorkspaceCreateState = ReturnType<typeof useWorkspaceCreate>;
+
+function CreateWorkspace({ actionKey }: { actionKey?: CreateActionKey }) {
+  const state = useWorkspaceCreate(actionKey);
+  if (!actionKey && !state.command && !state.submission && state.pendingCreates.length === 0 && state.openTasks.status !== "error")
+    return null;
+  return <WorkspaceCreateForm state={state} />;
+}
+
+/** Original creation intent renderer; the channel dialog changes presentation, not admission. */
+export function WorkspaceCreateForm({ state, channel = false }: { state: WorkspaceCreateState; channel?: boolean }) {
+  const t = useT();
+  const reasonText = useReasonText();
+  const failureText = useFailureText();
+  const { actionKey, name, setName, slug, setSlug, command, busy, failure, submission,
+    locked, openTasks, pendingCreates, reloadOpenTasks, submit } = state;
   return (
-    <form className="flex flex-col gap-3 rounded-md border p-3" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-      <h2 className="text-sm font-medium">{t("workspace.create.title")}</h2>
+    <form className={channel ? "space-y-5" : "flex flex-col gap-3 rounded-md border p-3"} data-testid={channel ? "create-channel-form" : undefined} onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+      {!channel ? <h2 className="text-sm font-medium">{t("workspace.create.title")}</h2> : null}
       <label className="flex flex-col gap-1 text-sm">
         {t("workspace.create.name")}
-        <input required disabled={locked} value={name} onChange={(event) => setName(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2 text-sm" />
+        <input required autoComplete="off" autoCapitalize="none" disabled={locked} data-testid={channel ? "create-channel-name" : undefined} value={name} onChange={(event) => setName(event.target.value)} className={channel ? "min-h-11 rounded-xl border border-input bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring" : "h-8 rounded-md border border-input bg-transparent px-2 text-sm"} />
       </label>
       <label className="flex flex-col gap-1 text-sm">
         {t("workspace.create.slug")}
@@ -175,8 +191,8 @@ function CreateWorkspace({ actionKey }: { actionKey?: CreateActionKey }) {
           {submission.reason ? <p>{reasonText(submission.reason)}</p> : null}
         </div>
       ) : null}
-        <Button type="submit" className="w-fit" disabled={!actionKey || busy || (!command && (!name.trim() || !slug.trim()))}>
-          {busy ? t("platform.loading") : command ? t("workspace.create.retry") : t("workspace.create.title")}
+        <Button type="submit" className={channel ? "ml-auto flex w-fit" : "w-fit"} data-testid={channel ? "create-channel-submit" : undefined} disabled={!actionKey || busy || (!command && (!name.trim() || !slug.trim()))}>
+          {busy ? t("platform.loading") : command ? t("workspace.create.retry") : channel ? t("channel.create.submit") : t("workspace.create.title")}
         </Button>
       {openTasks.status === "error" ? (
         <Notice role="alert">

@@ -1,0 +1,37 @@
+capability_id: collab.conversation
+title: 原生私聊的参与者身份投影与受治理消息接线
+stage: S1
+status: in_progress
+exposure: end_user
+
+design:
+  requirements: [V-REQ-24]
+  decisions: [DD-39, DD-80]
+  facts: []
+  seams: [SS-BUZ-GOVERNANCE, SS-WEB-RELAY]
+  blockers: []
+  entities: [ConversationBuzzBinding, BuzzIdentityBinding, ActionExecution, WorkflowRef]
+
+validation:
+  scenarios: []
+  evidence:
+    - dimension: 安全边界
+      ref: core/verify/conversation-projection.md
+    - dimension: 上游接缝
+      ref: core/verify/conversation-projection.md
+
+implementation:
+  owners: [team-platform]
+  paths: [core/crates/platform-core/src/conversations.rs, core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/publish_reconcile.rs, collaboration/crates/buzz-db/src/store/dm.rs, collaboration/crates/buzz-relay/src/handlers/command_executor.rs, worker/activities/conversation.go, worker/workflows/conversation.go]
+  surfaces: [web, desktop, mobile]
+  schemas: [contracts/api/conversation_open_request.schema.json, contracts/api/conversation_view.schema.json, contracts/api/conversation_page.schema.json, contracts/api/conversation_participant.schema.json, contracts/api/conversation_participant_page.schema.json, contracts/workflow/conversation_projection_target.schema.json, contracts/workflow/conversation_projection_request.schema.json, contracts/workflow/conversation_projection_result.schema.json]
+  migrations: [core/migrations/20261006080000_conversation_buzz_binding.up.sql, core/migrations/20261006080000_conversation_buzz_binding.down.sql, collaboration/migrations/0047_governed_dm_projection.sql]
+
+runtime:
+  routes: ["/api/v1/conversations", "/api/v1/conversation-participants", "/api/v1/conversations/{conversation_id}/messages", "/api/v1/conversations/{conversation_id}/stream", "/api/v1/conversations/{conversation_id}/media", "/api/v1/conversations/{conversation_id}/media/{sha256}"]
+  actions: [conversation.open, conversation.message.publish]
+  workflow_kinds: [CONVERSATION_PROJECTION]
+
+release:
+  artifacts: []
+  gate: blocked_until_seams_closed

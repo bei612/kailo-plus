@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_profile_update_request.schema.json",
+  "title": "WebProfileUpdateRequest",
+  "description": "Own Buzz kind:0 metadata. The authenticated host chooses the signer and Tenant; no raw event, author, relay URL or management tags are accepted. Omitted fields are preserved; empty strings explicitly clear a field.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["idempotencyKey", "expectedPubkey"],
+  "properties": {
+    "expectedPubkey": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Read snapshot guard only. Core derives the signer from the active identity; a mismatch rejects without publication." },
+    "idempotencyKey": { "type": "string", "format": "uuid" },
+    "displayName": { "type": "string" },
+    "avatarUrl": { "type": "string" },
+    "about": { "type": "string" },
+    "nip05Handle": { "type": "string" }
+  }
+}

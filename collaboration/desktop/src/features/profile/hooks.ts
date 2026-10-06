@@ -1,8 +1,11 @@
 import * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import type { WebProfileUpdateRequest } from "@client-kit/contracts";
+import { TransportError } from "@client-kit/platform/transport";
 
 import {
   getProfile,
+  updateProfile,
   searchUsers,
   getUserProfile,
   getUsersBatch,
@@ -32,6 +35,36 @@ import {
 import { useActiveCommunity } from "@/features/platform/activeCommunity";
 
 export const profileQueryKey = ["profile"] as const;
+
+/** Restored original native writer; cache only a canonical, same-scope receipt. */
+export function useUpdateProfileMutation() {
+  const community = useActiveCommunity();
+  const identity = useIdentityQuery();
+  const queryClient = useQueryClient();
+  const scope = `${community.relayUrl}:${identity.data?.pubkey ?? ""}`;
+  const live = React.useRef(scope);
+  live.current = scope;
+  React.useEffect(() => () => { live.current = ""; }, []);
+  return useMutation({
+    mutationFn: async (request: WebProfileUpdateRequest) => {
+      const pubkey = identity.data?.pubkey;
+      if (!pubkey) throw new Error("Profile identity unavailable");
+      if (request.expectedPubkey !== pubkey) throw new Error("Profile identity changed before save");
+      await queryClient.cancelQueries({ queryKey: profileQueryKey });
+      if (live.current !== scope) throw new Error("Profile identity changed before save");
+      const profile = await updateProfile({ ...request, expectedRelayUrl: community.relayUrl, expectedSignerPubkey: pubkey });
+      if (live.current !== scope || profile.pubkey !== pubkey) throw new TransportError("Profile identity changed before readback");
+      await queryClient.cancelQueries({ queryKey: profileQueryKey });
+      if (live.current !== scope) throw new TransportError("Profile identity changed before readback");
+      queryClient.setQueryData(profileQueryKey, profile);
+      void persistSelfProfile(community.relayUrl, pubkey, profile);
+      evictUsersBatchEntries(queryClient, [pubkey]);
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", pubkey] });
+      void queryClient.invalidateQueries({ queryKey: ["users-batch"] });
+      return profile;
+    },
+  });
+}
 
 /**
  * Persists a freshly-fetched profile to localStorage as the offline fallback.
@@ -229,6 +262,12 @@ export const USERS_BATCH_ENTRY_FRESH_MS = 10 * 60_000;
  * window.
  * Synchronous, so callers can evict before awaiting aggregate invalidations.
  */
+export function evictUsersBatchEntries(queryClient: QueryClient, pubkeys: string[]) {
+  for (const pubkey of pubkeys) {
+    queryClient.removeQueries({ queryKey: usersBatchEntryKey(pubkey.toLowerCase()), exact: true });
+  }
+}
+
 export function useUsersBatchQuery(
   pubkeys: string[],
   options?: {

@@ -114,6 +114,7 @@ export function useInboxState(client: BffClient) {
           if (current.current) setState(current.current);
         }
       });
+      return queue.current;
     },
     [client],
   );

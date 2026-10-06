@@ -69,6 +69,11 @@ export function useAppNavigation() {
     [commitNavigation],
   );
 
+  const goNewMessage = React.useCallback(
+    (behavior?: NavigationBehavior) => commitNavigation({ to: "/messages/new" }, behavior),
+    [commitNavigation],
+  );
+
   const goProfile = React.useCallback(
     (pubkey: string, behavior?: NavigationBehavior) =>
       commitNavigation(
@@ -196,6 +201,7 @@ export function useAppNavigation() {
     closeSettings,
     goChannel,
     goHome,
+    goNewMessage,
     goPlatform,
     goProfile,
     goSettings,

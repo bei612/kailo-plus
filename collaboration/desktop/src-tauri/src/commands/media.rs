@@ -386,6 +386,20 @@ async fn do_upload(
     progress: Option<(tauri::AppHandle, String)>,
     cancellation: Option<&CancellationToken>,
 ) -> Result<BlobDescriptor, String> {
+    let base_url = relay_api_base_url_with_override(state);
+    let keys = state.signing_keys()?;
+    do_upload_at(body, mime, state, progress, cancellation, &base_url, &keys).await
+}
+
+async fn do_upload_at(
+    body: Vec<u8>,
+    mime: &str,
+    state: &AppState,
+    progress: Option<(tauri::AppHandle, String)>,
+    cancellation: Option<&CancellationToken>,
+    base_url: &str,
+    keys: &Keys,
+) -> Result<BlobDescriptor, String> {
     let sha256 = hex::encode(Sha256::digest(&body));
 
     // Video uploads get a 1-hour auth window to survive slow connections;
@@ -396,11 +410,7 @@ async fn do_upload(
     } else {
         300
     };
-    let base_url = relay_api_base_url_with_override(state);
-    let auth_event = {
-        let keys = state.signing_keys()?;
-        sign_blossom_upload_auth(&keys, &sha256, expiry_secs, &base_url)?
-    };
+    let auth_event = sign_blossom_upload_auth(keys, &sha256, expiry_secs, base_url)?;
 
     let auth_header = format!(
         "Nostr {}",
@@ -587,6 +597,33 @@ pub async fn pick_and_upload_media(
     }
 
     Ok(descriptors)
+}
+
+/// Profile image upload reuses the original MIME/sanitizing/Blossom pipeline,
+/// but pins the caller's CLIENT identity before any file processing or await.
+#[tauri::command]
+pub async fn upload_profile_avatar(
+    data: Vec<u8>,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<BlobDescriptor, String> {
+    if expected_relay_url.trim().is_empty() || expected_signer_pubkey.trim().is_empty() {
+        return Err("profile identity scope missing; not sent".into());
+    }
+    let relay = relay_api_base_url_with_override(&state);
+    let keys = state.signing_keys()?;
+    crate::relay::assert_expected_relay_scope(Some(&expected_relay_url), &relay)?;
+    crate::relay::assert_expected_signer(
+        Some(&expected_signer_pubkey),
+        &keys.public_key().to_hex(),
+    )?;
+    let mime = detect_and_validate_mime(&data)?;
+    if !mime.starts_with("image/") {
+        return Err("avatar must be an image".into());
+    }
+    let body = sanitize_image_for_upload(data, &mime)?;
+    do_upload_at(body, &mime, &state, None, None, &relay, &keys).await
 }
 
 pub(super) async fn upload_media_bytes_inner(

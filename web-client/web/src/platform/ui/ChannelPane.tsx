@@ -3,8 +3,9 @@
 // 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
 // signer——签名由 BFF 以本人身份代做。
 
-import { AgentTrigger, ReasonCode, type AgentInstallationView, type ReadMarkRequest } from "@client-kit/contracts";
+import { AgentTrigger, ReasonCode, type AgentInstallationView, type ReadMarkRequest, type ConversationView, type ConversationParticipant } from "@client-kit/contracts";
 import { MentionAutocomplete } from "@client-kit/platform/react/mention-autocomplete";
+import { ConversationPreparationPending } from "@client-kit/platform/react/new-message";
 import { useMentionSelection } from "@client-kit/platform/react/use-mention-selection";
 import { useReasonText } from "@client-kit/platform/react/context";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
@@ -20,6 +21,8 @@ import {
   markRead,
   openStream,
   publishMessage,
+  publishConversationMessage,
+  uploadConversationMedia,
   type StreamFrame,
   uploadMedia,
 } from "@/platform/bff-client";
@@ -37,7 +40,7 @@ const toIso = (unix: number) => new Date(unix * 1_000).toISOString();
  * 帧翻成状态。状态只在收到 `live` 时显示为已同步；连接中断期间如实显示为
  * 重连中——结果不明不渲染成成功。
  */
-function useChannelStream(workspaceId: string) {
+function useChannelStream(workspaceId: string, conversationId?: string) {
   const reasonText = useReasonText();
   const [events, setEvents] = useState<BuzzEvent[]>([]);
   const [status, setStatus] = useState(t("platform.stream.connecting"));
@@ -95,12 +98,12 @@ function useChannelStream(workspaceId: string) {
           setStatus(t("platform.stream.ended"));
           break;
       }
-    });
+    }, conversationId);
     return () => {
       closed = true;
       stop();
     };
-  }, [workspaceId, reasonText]);
+  }, [workspaceId, conversationId, reasonText]);
 
   return { events, status, live, denied };
 }
@@ -119,14 +122,34 @@ function useVisible() {
 export function ChannelPane({
   workspaceId,
   myPrincipalId,
+  onReadStateChanged,
+  conversation,
 }: {
   workspaceId: string;
   myPrincipalId: string;
+  onReadStateChanged?: () => void | Promise<void>;
+  conversation?: ConversationView;
 }) {
   const queryClient = useQueryClient();
-  const { events, status, live, denied } = useChannelStream(workspaceId);
+  const { events, status, live, denied } = useChannelStream(workspaceId, conversation?.id);
   const visible = useVisible();
-  const members = useQuery(platformQueries.members(workspaceId));
+  const members = useQuery({
+    queryKey: ["platform", conversation ? "conversation-members" : "members", workspaceId],
+    queryFn: async () => {
+      if (!conversation) return bff.members(workspaceId);
+      const items: ConversationParticipant[] = [];
+      let cursor: string | undefined;
+      const seen = new Set<string>();
+      do {
+        const page = await bff.conversationParticipants(cursor);
+        items.push(...page.items.filter((item) => conversation.participantPrincipalIds.includes(item.principalId)));
+        cursor = page.nextCursor;
+        if (cursor && seen.has(cursor)) throw new TransportError("Recipient cursor did not advance.");
+        if (cursor) seen.add(cursor);
+      } while (cursor);
+      return items;
+    },
+  });
   const userState = useQuery(platformQueries.userState);
 
   // 作者按成员名显示。一个人可能有多把公钥（Web 与各台原生设备，DD-77），
@@ -188,8 +211,10 @@ export function ChannelPane({
     },
     // Readback is not permission to resend: only a higher CAS version fences
     // the old request. Never advance lastRead optimistically after an error.
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey }),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey });
+      await onReadStateChanged?.();
+    },
   });
   const readPending = read.isPending;
   const readMutate = read.mutate;
@@ -272,12 +297,17 @@ export function ChannelPane({
                 mediaTags={e.tags}
                 mentions={mentions}
                 workspaceId={workspaceId}
+                conversationId={conversation?.id}
               />
             </li>
           );
         })}
       </ul>
-      {denied ? null : <Composer workspaceId={workspaceId} />}
+      {denied ? null : conversation
+        ? <Composer disabled={conversation.state !== "ACTIVE"}
+            onPublish={(content, attachments, key) => publishConversationMessage(conversation.id, content, attachments, key)}
+            onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
+        : <Composer workspaceId={workspaceId} />}
     </div>
   );
 }
@@ -296,17 +326,25 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ workspaceId }: { workspaceId: string }) {
+export function Composer({ workspaceId, onPublish, onUpload, disabled = false, placeholder }: {
+  workspaceId?: string;
+  onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string) => Promise<unknown>;
+  onUpload?: (file: File) => Promise<MediaDescriptor>;
+  disabled?: boolean;
+  placeholder?: string;
+}) {
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<Pending[]>([]);
   const [uploading, setUploading] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
+  const [problemNeutral, setProblemNeutral] = useState(false);
   const [mentionInstallationIds, setMentionInstallationIds] = useState<string[]>([]);
   const [mentionPickerOpen, setMentionPickerOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const installations = useInfiniteQuery({
     queryKey: ["platform", "mention-installations", workspaceId],
-    queryFn: ({ pageParam }) => bff.agentInstallations(workspaceId, pageParam),
+    queryFn: ({ pageParam }) => bff.agentInstallations(workspaceId!, pageParam),
+    enabled: workspaceId !== undefined,
     initialPageParam: 0,
     getNextPageParam: (page) => page.nextOffset ?? undefined,
   });
@@ -347,12 +385,14 @@ export function Composer({ workspaceId }: { workspaceId: string }) {
       for (const file of Array.from(files ?? [])) {
         setUploading((n) => n + 1);
         try {
-          const descriptor = await uploadMedia(workspaceId, file);
+          if (!onUpload && !workspaceId) throw new Error("Message destination is unavailable.");
+          const descriptor = await (onUpload ? onUpload(file) : uploadMedia(workspaceId!, file));
           setPending((p) => [...p, { name: file.name, descriptor }]);
         } catch (e) {
+          setProblemNeutral(e instanceof ConversationPreparationPending || isOutcomeUnknown(e));
           // 413 是 BFF 侧先行设定的上界，是确定的拒绝；其余是结果不明
           setProblem(
-            e instanceof BffError && e.status === 413
+            e instanceof ConversationPreparationPending ? e.message : e instanceof BffError && e.status === 413
               ? t("platform.uploadTooLarge")
               : t("platform.uploadFailed"),
           );
@@ -361,14 +401,15 @@ export function Composer({ workspaceId }: { workspaceId: string }) {
         }
       }
     },
-    [workspaceId],
+    [workspaceId, onUpload],
   );
 
   const send = useCallback(() => {
-    if (sending || !mentionVerified) return;
+    if (sending || disabled || !mentionVerified) return;
     const content = draft.trim();
     if (!content && pending.length === 0) return;
     setProblem(null);
+    setProblemNeutral(false);
     const attachments = pending.map((p) => p.descriptor);
     // 不本地插入这条消息：它要等 Relay 接受并回传 event id 才算发出去。
     // 先渲染再等确认，会让一条被拒绝的消息看起来已经发出。草稿与附件也只在
@@ -383,7 +424,12 @@ export function Composer({ workspaceId }: { workspaceId: string }) {
     }
     const key = intent.current.key;
     setSending(true);
-    void publishMessage(workspaceId, content, attachments, key, mentionInstallationIds)
+    const publish = onPublish
+      ? onPublish(content, attachments, key)
+      : workspaceId
+        ? publishMessage(workspaceId, content, attachments, key, mentionInstallationIds)
+        : Promise.reject(new Error("Message destination is unavailable."));
+    void publish
       .then(() => {
         if (intent.current?.key === key) intent.current = null;
         setDraft((current) => (current.trim() === content ? "" : current));
@@ -391,7 +437,10 @@ export function Composer({ workspaceId }: { workspaceId: string }) {
         setMentionInstallationIds((current) => current.filter((id) => !mentionInstallationIds.includes(id)));
       })
       .catch((e: unknown) => {
-        if (isOutcomeUnknown(e)) {
+        setProblemNeutral(e instanceof ConversationPreparationPending || isOutcomeUnknown(e));
+        if (e instanceof ConversationPreparationPending) {
+          setProblem(e.message);
+        } else if (isOutcomeUnknown(e)) {
           // 结果不明（没有回应，或 BFF 明说 UNKNOWN）：可能已送达。不说成功也不说
           // 失败，草稿保留；若消息随后出现在频道里，它就已送达（06 §4、DD-81）
           setProblem(
@@ -407,11 +456,11 @@ export function Composer({ workspaceId }: { workspaceId: string }) {
         }
       })
       .finally(() => setSending(false));
-  }, [draft, pending, workspaceId, mentionInstallationIds, mentionVerified, sending]);
+  }, [draft, pending, workspaceId, mentionInstallationIds, mentionVerified, sending, disabled, onPublish]);
 
   return (
     <form className="flex flex-col gap-1" onSubmit={(event) => event.preventDefault()}>
-      <div className="relative flex flex-wrap items-center gap-2 text-xs">
+      {workspaceId !== undefined ? <div className="relative flex flex-wrap items-center gap-2 text-xs">
         <Button type="button" variant="ghost" data-mention-picker-trigger=""
         onKeyDown={(event) => {
           if (!mentionPickerOpen) return;
@@ -441,21 +490,15 @@ export function Composer({ workspaceId }: { workspaceId: string }) {
           renderSuggestion={(installation) => <span className="break-all">{installation.resourceId}</span>}
           onSelect={selectMention} onDismiss={() => setMentionPickerOpen(false)} />
         {installations.hasNextPage ? (
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={installations.isFetchingNextPage}
-            onClick={() => void installations.fetchNextPage()}
-          >
-            {t("platform.moreMentionAgents")}
-          </Button>
+          <Button type="button" variant="ghost" disabled={installations.isFetchingNextPage}
+            onClick={() => void installations.fetchNextPage()}>{t("platform.moreMentionAgents")}</Button>
         ) : null}
-      </div>
+      </div> : null}
       {installations.isError || !mentionVerified ? (
         <div role="alert">{t("platform.mentionAgentsUnavailable")}</div>
       ) : null}
       {problem ? (
-        <div className="text-xs text-destructive" role="alert">
+        <div className={problemNeutral ? "text-xs text-muted-foreground" : "text-xs text-destructive"} role={problemNeutral ? "status" : "alert"}>
           {problem}
         </div>
       ) : null}
@@ -489,6 +532,7 @@ export function Composer({ workspaceId }: { workspaceId: string }) {
           multiple
           hidden
           data-testid="attach-input"
+          disabled={disabled || sending}
           onChange={(e) => {
             void attach(e.target.files);
             e.target.value = "";
@@ -499,6 +543,7 @@ export function Composer({ workspaceId }: { workspaceId: string }) {
           variant="ghost"
           size="icon"
           aria-label={t("platform.attach")}
+          disabled={disabled || sending}
           onClick={() => picker.current?.click()}
         >
           <Paperclip />
@@ -506,17 +551,15 @@ export function Composer({ workspaceId }: { workspaceId: string }) {
         <Input
           data-testid="message-input"
           aria-label={t("platform.message")}
+          disabled={disabled}
+          placeholder={placeholder}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") send();
           }}
         />
-        <Button
-          type="button"
-          onClick={send}
-          disabled={uploading > 0 || sending || !mentionVerified}
-        >
+        <Button type="button" onClick={send} disabled={disabled || uploading > 0 || sending || !mentionVerified}>
           {t("platform.send")}
         </Button>
       </div>

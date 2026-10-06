@@ -1,4 +1,4 @@
-import { resolveLocale } from "@client-kit/platform/i18n";
+import { resolveLocale, translate } from "@client-kit/platform/i18n";
 import { PlatformNavigation } from "@client-kit/platform/react/navigation";
 import {
   Bot,
@@ -9,6 +9,7 @@ import {
   MonitorSmartphone,
   Users,
   Workflow,
+  SquarePen,
 } from "lucide-react";
 
 import { TopbarSearch } from "@/features/search/ui/TopbarSearch";
@@ -23,7 +24,7 @@ import {
 import { SidebarMenuLabel } from "@/shared/ui/sidebar-menu-label";
 import type { PlatformSection } from "@/features/platform/platformSections";
 
-type SidebarSelectedView = "home" | "channel" | "platform";
+type SidebarSelectedView = "home" | "channel" | "platform" | "new-message";
 
 const PLATFORM_SECTION_ICON = {
   members: <Users className="h-4 w-4" />,
@@ -47,6 +48,7 @@ type AppSidebarPinnedHeaderProps = {
 };
 
 type AppSidebarPrimaryMenuProps = {
+  onNewMessage: () => void;
   homeBadgeCount: number;
   onSelectHome: () => void;
   onSelectPlatformSection: (section: PlatformSection) => void;
@@ -86,6 +88,7 @@ export function AppSidebarPinnedHeader({
 }
 
 export function AppSidebarPrimaryMenu({
+  onNewMessage,
   homeBadgeCount,
   onSelectHome,
   onSelectPlatformSection,
@@ -108,6 +111,14 @@ export function AppSidebarPrimaryMenu({
           selectedView === "platform" ? selectedPlatformSection : null
         }
         firstRow={
+          <>
+          <SidebarMenuItem>
+            <SidebarMenuButton isActive={selectedView === "new-message"} onClick={onNewMessage}
+              tooltip={translate(locale, "sidebar.newMessage")} type="button" data-testid="sidebar-new-message">
+              <SquarePen className="h-4 w-4" />
+              <SidebarMenuLabel>{translate(locale, "sidebar.newMessage")}</SidebarMenuLabel>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               className="data-[active=true]:font-normal"
@@ -128,6 +139,7 @@ export function AppSidebarPrimaryMenu({
               </SidebarMenuBadge>
             ) : null}
           </SidebarMenuItem>
+          </>
         }
       />
     </SidebarHeader>

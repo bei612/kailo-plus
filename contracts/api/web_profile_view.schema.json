@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_profile_view.schema.json",
+  "title": "WebProfileView",
+  "description": "Current own profile read from Buzz, never a Core profile copy. An absent kind:0 is an empty profile, not a fabricated event.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pubkey", "eventId", "displayName", "avatarUrl", "about", "nip05Handle", "avatarMediaPaths"],
+  "properties": {
+    "avatarMediaPaths": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Same-origin BFF paths for exact media URLs on the current community. A read projection, never an upload or remote proxy authority." },
+    "pubkey": { "type": "string" },
+    "eventId": { "type": ["string", "null"] },
+    "displayName": { "type": ["string", "null"] },
+    "avatarUrl": { "type": ["string", "null"] },
+    "about": { "type": ["string", "null"] },
+    "nip05Handle": { "type": ["string", "null"] }
+  }
+}

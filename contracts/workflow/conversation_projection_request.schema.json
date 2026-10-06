@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"workflow/conversation_projection_request.schema.json","title":"ConversationProjectionRequest","type":"object","additionalProperties":false,"required":["target","runId"],"properties":{"target":{"$ref":"conversation_projection_target.schema.json"},"runId":{"type":"string"}}}

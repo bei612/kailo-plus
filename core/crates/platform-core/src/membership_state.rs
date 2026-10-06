@@ -94,14 +94,20 @@ pub async fn transition_membership(
     )
     .fetch_optional(&state.pool)
     .await;
-    let (wf_tenant, wf_operation) = match wf {
+    let (wf_tenant, wf_operation, workspace_creation) = match wf {
         Ok(Some(row))
             if matches!(
                 row.kind.as_deref(),
-                Some("MEMBERSHIP_PROJECTION") | Some("MEMBERSHIP_REVOCATION")
+                Some("MEMBERSHIP_PROJECTION")
+                    | Some("MEMBERSHIP_REVOCATION")
+                    | Some("WORKSPACE_LIFECYCLE")
             ) =>
         {
-            (row.tenant_id, row.operation_id)
+            (
+                row.tenant_id,
+                row.operation_id,
+                row.kind.as_deref() == Some("WORKSPACE_LIFECYCLE"),
+            )
         }
         Ok(_) => {
             tracing::warn!(
@@ -137,6 +143,45 @@ pub async fn transition_membership(
         Ok(t) => t,
         Err(e) => return unavailable(e),
     };
+    if workspace_creation {
+        if req.scope != MembershipScope::Workspace || req.to_state != "ACTIVE" {
+            return StatusCode::FORBIDDEN.into_response();
+        }
+        // 仅同一新建 Workspace 的原始 HUMAN 创建者可由 scope Workflow 收尾。
+        // 锁定来源事实，Tenant 撤权不能穿过校验把旧投影重新激活。
+        let creator: Result<Option<(Uuid, i32)>, _> = sqlx::query_as(
+            "select w.id, w.version from identity.workspace_membership wm
+             join identity.workspace w on w.id = wm.workspace_id
+             join admission.action_execution ae on ae.target_id = w.id
+               and ae.initiator_principal_id = wm.tenant_principal_id
+             join identity.tenant_membership tm on tm.tenant_principal_id = wm.tenant_principal_id
+               and tm.tenant_id = w.tenant_id
+             join identity.principal p on p.id = wm.tenant_principal_id
+             join identity.tenant t on t.id = w.tenant_id
+             where wm.id = $1 and wm.version = $2 and wm.state = 'PROVISIONING'
+               and w.tenant_id = $3 and w.state = 'PROVISIONING'
+               and ae.action_key = 'workspace.create' and ae.gate_state = 'ALLOWED'
+               and tm.state = 'ACTIVE' and p.status = 'ACTIVE' and p.kind = 'HUMAN'
+               and t.state = 'ACTIVE' for update of wm,w,tm,p,t",
+        )
+        .bind(req.membership_id)
+        .bind(req.from_version)
+        .bind(wf_tenant)
+        .fetch_optional(&mut *tx)
+        .await;
+        match creator {
+            Ok(Some((workspace, version)))
+                if req.workflow_id
+                    == crate::component_task::workflow_id(
+                        "WORKSPACE_LIFECYCLE",
+                        wf_tenant,
+                        &workspace.to_string(),
+                        version,
+                    ) => {}
+            Ok(_) => return StatusCode::CONFLICT.into_response(),
+            Err(e) => return unavailable(e),
+        }
+    }
     if matches!(req.scope, MembershipScope::Tenant) {
         // 创建/转入 owner 与此处共用同一 membership 行锁；ACTIVE 的读与写不留窗口。
         let locked: Result<Option<Uuid>, _> =

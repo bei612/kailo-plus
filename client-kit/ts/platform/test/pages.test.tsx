@@ -12,6 +12,7 @@ import { ToolManagement, validPlatformToolPage } from "../src/react/tools";
 import { WorkflowsPage, validAutomationRuns } from "../src/react/workflows";
 import { PlatformNavigation, platformNavigationSections } from "../src/react/navigation";
 import { LegacySecretRefManagement, RoleManagement, RoleMembers } from "../src/react/roles";
+import { CreateChannelDialog } from "../src/react/create-channel-dialog";
 import type { BffReply, BffRequest, BffTransport } from "../src/transport";
 import { TransportError } from "../src/transport";
 import { button, click, render, settle, type } from "./render";
@@ -34,6 +35,67 @@ const key = (pubkey: string, state = "ACTIVE") => ({
   pubkey,
   state,
   createdAt: new Date().toISOString(),
+});
+
+describe("shared original channel creation entry", () => {
+  const recorded = { status: 202, body: { operationId: "create-operation", actionExecutionId: "create-execution",
+    actionKey: "workspace.create", gateState: "ALLOWED", dispatchState: "DISPATCHED" } };
+  function routes(write: Route, allowed = true) {
+    return transport((request) => request.method === "POST" ? write(request)
+      : request.path.startsWith("/api/v1/role-workspaces") ? { status: 200, body: {
+        workspaces: [], ...(allowed ? { createActionKey: "workspace.create" } : {}),
+      } } : { status: 200, body: [] });
+  }
+  async function fill() {
+    const dialog = document.querySelector<HTMLElement>("[data-testid=create-channel-dialog]")!;
+    const inputs = dialog.querySelectorAll("input");
+    await type(inputs[0]!, "Release planning");
+    await type(inputs[1]!, "release-planning");
+    return dialog;
+  }
+  it("submits the existing governed command and reports acceptance, not channel readiness", async () => {
+    const t = routes(() => recorded);
+    await mount(t, <CreateChannelDialog open onOpenChange={() => {}} />);
+    const dialog = await fill();
+    await click(button(dialog, "Create channel"));
+    const writes = t.send.mock.calls.map(([request]) => request).filter((request) => request.method === "POST");
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ path: "/api/v1/actions", body: {
+      actionKey: "workspace.create", name: "Release planning", slug: "release-planning",
+    } });
+    expect(dialog.textContent).toContain("create-execution");
+    expect(dialog.textContent).not.toContain("Channel created");
+  });
+  it("keeps the original unknown command and blocks dismissing it until it is located", async () => {
+    let writes = 0;
+    const t = routes(() => ++writes === 1 ? { status: 503, body: {
+      class: ErrorClass.Unknown, reason: ReasonCode.DependencyUnavailable, operationId: "unknown-operation",
+    } } : recorded);
+    const close = vi.fn();
+    await mount(t, <CreateChannelDialog open onOpenChange={close} />);
+    const dialog = await fill();
+    await click(button(dialog, "Create channel"));
+    expect(dialog.querySelector<HTMLButtonElement>("button[aria-label=Close]")?.disabled).toBe(true);
+    expect([...dialog.querySelectorAll("input")].every((input) => input.disabled)).toBe(true);
+    const retry = dialog.querySelector<HTMLButtonElement>("[data-testid=create-channel-submit]")!;
+    await click(retry);
+    const commands = t.send.mock.calls.map(([request]) => request).filter((request) => request.method === "POST");
+    expect(commands).toHaveLength(2);
+    expect(commands[1]?.body).toEqual(commands[0]?.body);
+    expect(dialog.querySelector<HTMLButtonElement>("button[aria-label=Close]")?.disabled).toBe(false);
+    expect(close).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["en", "You do not have permission to create a channel.", "Create channel"],
+    ["zh-CN", "你没有创建频道的权限。", "创建频道"],
+  ] as const)("keeps the %s entry understandable without inventing a creation capability", async (locale, message, label) => {
+    const t = routes(() => recorded, false);
+    await mount(t, <CreateChannelDialog open onOpenChange={() => {}} />, locale);
+    const dialog = document.querySelector<HTMLElement>("[data-testid=create-channel-dialog]")!;
+    expect(dialog.textContent).toContain(message);
+    expect(button(dialog, label).disabled).toBe(true);
+    expect(t.send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
+  });
 });
 
 describe("shared governed platform Tool catalog", () => {

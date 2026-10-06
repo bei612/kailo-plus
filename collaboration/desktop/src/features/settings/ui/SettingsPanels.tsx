@@ -10,6 +10,7 @@ import {
   BellRing,
   Keyboard,
   MonitorCog,
+  UserRound,
   type LucideIcon,
 } from "lucide-react";
 import type {
@@ -33,12 +34,14 @@ import {
   SettingsOptionGroupList,
 } from "./SettingsOptionGroup";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
+import { ProfileSettingsCard } from "./ProfileSettingsCard";
 
-export type SettingsSection = "appearance" | "notifications" | "shortcuts";
+export type SettingsSection = "profile" | "appearance" | "notifications" | "shortcuts";
 
-export const DEFAULT_SETTINGS_SECTION: SettingsSection = "appearance";
+export const DEFAULT_SETTINGS_SECTION: SettingsSection = "profile";
 
 const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
+  "profile",
   "appearance",
   "notifications",
   "shortcuts",
@@ -71,6 +74,7 @@ export type SettingsPanelProps = {
 };
 
 export const settingsSections: SettingsSectionDescriptor[] = [
+  { value: "profile", label: translate(resolveLocale(), settingsSectionKeys.profile), icon: UserRound },
   {
     value: "appearance",
     label: translate(resolveLocale(), settingsSectionKeys.appearance),
@@ -114,6 +118,8 @@ export function renderSettingsSection(
   props: SettingsPanelProps,
 ): React.ReactNode {
   switch (section) {
+    case "profile":
+      return <ProfileSettingsCard />;
     case "notifications":
       return (
         <NotificationSettingsCard

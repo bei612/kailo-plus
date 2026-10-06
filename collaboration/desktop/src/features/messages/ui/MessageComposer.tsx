@@ -536,12 +536,12 @@ function MessageComposerImpl({
                 aria-live="polite"
                 className={cn(
                   "mb-2 rounded-lg px-3 py-2 text-xs",
-                  mentionSendFlow.sendOutcome.unknown
+                  mentionSendFlow.sendOutcome.unknown || mentionSendFlow.sendOutcome.pending
                     ? "bg-muted text-muted-foreground"
                     : "bg-destructive/10 text-destructive",
                 )}
                 data-outcome={
-                  mentionSendFlow.sendOutcome.unknown ? "unknown" : "not-sent"
+                  mentionSendFlow.sendOutcome.pending ? "pending" : mentionSendFlow.sendOutcome.unknown ? "unknown" : "not-sent"
                 }
                 data-testid="composer-send-outcome"
                 role="status"

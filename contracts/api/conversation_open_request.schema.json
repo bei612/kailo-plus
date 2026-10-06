@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/conversation_open_request.schema.json",
+  "title": "ConversationOpenRequest",
+  "description": "原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["participantPrincipalIds"],
+  "properties": {
+    "participantPrincipalIds": {
+      "type": "array", "minItems": 2, "maxItems": 9, "uniqueItems": true,
+      "items": {"type": "string", "format": "uuid"}
+    }
+  }
+}

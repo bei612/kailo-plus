@@ -10,6 +10,7 @@
     "idempotencyKey"
   ],
   "properties": {
+    "conversationOpen": {"$ref": "conversation_open_request.schema.json"},
     "componentAction": {"$ref": "../domain/component_action_input.schema.json"},
     "protocolSessionOpen":{"$ref":"../domain/protocol_session_open_input.schema.json","description":"Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN identity; no Agent or caller-selected native credentials."},
     "resourceCreate": {"$ref": "../domain/resource_create.schema.json"},

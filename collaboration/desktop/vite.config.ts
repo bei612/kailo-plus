@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
+import { profileAssets } from "../../client-kit/ts/platform/profile-assets.ts";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -8,6 +9,7 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => {
   return {
     plugins: [
+      profileAssets(import.meta.url),
       tanstackRouter({
         target: "react",
         routesDirectory: "./src/app/routes",

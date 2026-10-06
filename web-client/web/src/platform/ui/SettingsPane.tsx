@@ -11,19 +11,24 @@ import {
   ShortcutSettings,
   type SettingsSection,
 } from "@client-kit/platform/react/settings";
-import { setWorkspacePreference } from "@/platform/bff-client";
+import { setWorkspacePreference, uploadProfileAvatar } from "@/platform/bff-client";
 import { getLocale } from "@/shared/i18n";
 import { useTheme } from "@/shared/theme/ThemeProvider";
 import { Button } from "@/shared/ui/button";
 import { platformQueries } from "./queries";
+import { ProfileSettingsCard, ProfileAvatarControls, ProfileAvatarPreview } from "@client-kit/platform/react/profile-settings";
+import { useBffClient } from "@client-kit/platform/react/context";
+import { useLoad } from "@client-kit/platform/react/use-load";
+import { ReadFailure } from "@client-kit/platform/react/ui";
+import { TransportError } from "@client-kit/platform/transport";
 
 export function SettingsPane() {
   const locale = getLocale();
   const appearance = useTheme();
-  const [section, setSection] = useState<SettingsSection>("appearance");
+  const [section, setSection] = useState<SettingsSection>("profile");
   return (
     <SettingsPage locale={locale} section={section} onSelect={setSection}>
-      {section === "appearance" ? (
+      {section === "profile" ? <WebProfileSettings /> : section === "appearance" ? (
         <div className="flex flex-col gap-6">
           <ThemeSettingsControls locale={locale} name={translate(locale, "platform.title")} appearance={appearance}>
             {isBuzzTheme(appearance.themeName) ? <ProminentActiveTabSetting locale={locale} prominentActiveTab={appearance.prominentActiveTab} setProminentActiveTab={appearance.setProminentActiveTab} /> : null}
@@ -53,6 +58,52 @@ export function SettingsPane() {
       )}
     </SettingsPage>
   );
+}
+
+function WebProfileSettings() {
+  const client = useBffClient();
+  const { isDark } = useTheme();
+  const locale = getLocale();
+  const [loaded, reload] = useLoad("own-profile", () => client.profile());
+  const uploadedPaths = useRef<Record<string, string>>({});
+  if (loaded.status === "pending") return <p role="status">{translate(locale, "platform.loading")}</p>;
+  if (loaded.status === "error") return <ReadFailure error={loaded.error} onRetry={reload} />;
+  const profile = loaded.data;
+  const rewriteMediaUrl = (url: string) => {
+    const clean = url.split("?")[0]!;
+    const path = uploadedPaths.current[url] ?? profile.avatarMediaPaths[url] ?? uploadedPaths.current[clean] ?? profile.avatarMediaPaths[clean];
+    if (path) return path;
+    // Preserve local previews and original inline emoji. Never turn an
+    // arbitrary remote URL into a credentialed BFF fetch or relax Web CSP.
+    return url;
+  };
+  const upload = async (bytes: number[]) => {
+    const descriptor = await uploadProfileAvatar(bytes, profile.pubkey);
+    uploadedPaths.current[descriptor.url] = `/api/v1/profile/media/${descriptor.sha256}`;
+    return descriptor;
+  };
+  const externalImage = (url: string) => {
+    const poster = url.split("#buzz-anim=")[0]!;
+    if (!/^https?:\/\//i.test(poster) || rewriteMediaUrl(poster) !== poster) return false;
+    try { return new URL(poster).origin !== window.location.origin; } catch { return true; }
+  };
+  return <ProfileSettingsCard key={profile.pubkey} locale={locale} profile={profile}
+    onCopy={(value) => navigator.clipboard.writeText(value)}
+    avatarPreview={(actual) => <ProfileAvatarPreview locale={locale} avatarUrl={actual.avatarUrl} label={actual.displayName ?? actual.pubkey} upload={upload} rewriteMediaUrl={rewriteMediaUrl} />}
+    avatarEditor={(props) => <>
+      <ProfileAvatarControls {...props} label={profile.displayName ?? profile.pubkey} locale={locale} isDark={isDark} upload={upload} rewriteMediaUrl={rewriteMediaUrl} />
+      {externalImage(props.avatarUrl) ? <p role="status" className="mt-3 text-sm text-muted-foreground">{translate(locale, "platform.profile.externalImage")}</p> : null}
+    </>}
+    onSave={async (request) => {
+    const receipt = await client.updateProfile(request);
+    // A subsequent read failure does not undo the accepted publication.
+    const actual = await client.profile().catch(() => { throw new TransportError("Profile publication readback unavailable"); });
+    if (actual.pubkey !== profile.pubkey || actual.eventId !== receipt.eventId) {
+      throw new TransportError("Profile publication readback is not the original event");
+    }
+    Object.assign(uploadedPaths.current, actual.avatarMediaPaths);
+    return actual;
+  }} />;
 }
 
 export function WorkspaceNotifications() {

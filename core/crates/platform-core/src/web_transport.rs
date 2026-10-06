@@ -37,6 +37,59 @@ use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
 
 /// 消息发布的 action key。审计、对账与度量都按它找这一类动作。
 pub const PUBLISH_ACTION: &str = "workspace.message.publish";
+pub const CONVERSATION_PUBLISH_ACTION: &str = "conversation.message.publish";
+
+#[derive(Clone, Copy)]
+enum MessageTarget {
+    Workspace(Uuid),
+    Conversation(Uuid),
+}
+
+impl MessageTarget {
+    fn id(self) -> Uuid {
+        match self {
+            Self::Workspace(id) | Self::Conversation(id) => id,
+        }
+    }
+
+    fn workspace_id(self) -> Option<Uuid> {
+        match self {
+            Self::Workspace(id) => Some(id),
+            Self::Conversation(_) => None,
+        }
+    }
+
+    fn action(self) -> &'static str {
+        match self {
+            Self::Workspace(_) => PUBLISH_ACTION,
+            Self::Conversation(_) => CONVERSATION_PUBLISH_ACTION,
+        }
+    }
+
+    fn target_type(self) -> &'static str {
+        match self {
+            Self::Workspace(_) => "CHANNEL",
+            Self::Conversation(_) => "CONVERSATION",
+        }
+    }
+
+    async fn admit(
+        self,
+        state: &BffState,
+        ctx: &ExecutionContext,
+    ) -> Result<(String, String), Response> {
+        match self {
+            Self::Workspace(id) => {
+                let scope = admit_workspace(state, ctx, id).await?;
+                Ok((scope.channel_id, scope.community_host))
+            }
+            Self::Conversation(id) => {
+                let scope = crate::conversations::admit(state, ctx, id).await?;
+                Ok((scope.channel_id, scope.community_host))
+            }
+        }
+    }
+}
 
 type PublishRequest = contracts::WebPublishMessageRequest;
 
@@ -217,6 +270,30 @@ pub async fn publish_message(
     headers: HeaderMap,
     body: Result<Json<PublishRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
+    publish_message_for(state, MessageTarget::Workspace(workspace_id), headers, body).await
+}
+
+pub async fn publish_conversation_message(
+    State(state): State<BffState>,
+    Path(conversation_id): Path<Uuid>,
+    headers: HeaderMap,
+    body: Result<Json<PublishRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    publish_message_for(
+        state,
+        MessageTarget::Conversation(conversation_id),
+        headers,
+        body,
+    )
+    .await
+}
+
+async fn publish_message_for(
+    state: BffState,
+    target: MessageTarget,
+    headers: HeaderMap,
+    body: Result<Json<PublishRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
@@ -235,7 +312,7 @@ pub async fn publish_message(
         return StatusCode::BAD_REQUEST.into_response();
     };
 
-    let scope = match admit_workspace(&state, &ctx, workspace_id).await {
+    let (channel_id, community_host) = match target.admit(&state, &ctx).await {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -252,13 +329,14 @@ pub async fn publish_message(
         event_id: String,
         result: Option<String>,
         mention_installation_ids: Vec<Uuid>,
-        workspace_ids: Vec<Option<Uuid>>,
+        target_ids: Vec<Option<Uuid>>,
     }
     let previous = match sqlx::query_as::<_, PreviousPublish>(
         r#"select a.operation_id, a.event_id, a.mention_installation_ids,
-                  array(select r.workspace_id from audit.audit_event r
+                  array(select r.target_id from audit.audit_event r
                     where r.operation_id=a.operation_id and r.event_type='DISPATCH'
-                      and r.action_key='workspace.message.publish') as workspace_ids,
+                      and r.action_key=$3 and r.target_type=$4
+                      and r.workspace_id is not distinct from $5) as target_ids,
                   (select r.result_code from audit.audit_event r
                     where r.operation_id = a.operation_id
                       and r.event_type in ('OUTCOME', 'RECONCILIATION')
@@ -268,6 +346,9 @@ pub async fn publish_message(
     )
     .bind(ctx.tenant_principal_id)
     .bind(idempotency_key)
+    .bind(target.action())
+    .bind(target.target_type())
+    .bind(target.workspace_id())
     .fetch_optional(&state.pool)
     .await
     {
@@ -283,7 +364,7 @@ pub async fn publish_message(
         }
     };
     if let Some(p) = &previous {
-        if !publish_scope_matches(&p.workspace_ids, workspace_id)
+        if !publish_scope_matches(&p.target_ids, target.id())
             || !mention_intent_matches(&p.mention_installation_ids, &mention_ids)
         {
             return StatusCode::CONFLICT.into_response();
@@ -320,7 +401,14 @@ pub async fn publish_message(
         }
     }
 
-    let mentions = match resolve_mentions(&state, &ctx, workspace_id, &mention_ids).await {
+    // Installations belong to Workspaces. A private human conversation cannot
+    // borrow their authorization or trigger an Agent from another scope.
+    let mentions_result = match target {
+        MessageTarget::Workspace(id) => resolve_mentions(&state, &ctx, id, &mention_ids).await,
+        MessageTarget::Conversation(_) if mention_ids.is_empty() => Ok(Vec::new()),
+        MessageTarget::Conversation(_) => Err(StatusCode::BAD_REQUEST.into_response()),
+    };
+    let mentions = match mentions_result {
         Ok(keys) => keys,
         Err(response) => return response,
     };
@@ -329,7 +417,7 @@ pub async fn publish_message(
         Ok(k) => k,
         Err(r) => return r,
     };
-    let client = match identity_client(&state, &keys, &scope) {
+    let client = match community_client(&state, &keys, &community_host) {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -338,7 +426,7 @@ pub async fn publish_message(
     let attachments = req.attachments.unwrap_or_default();
     let mut media_tags = Vec::with_capacity(attachments.len());
     for a in &attachments {
-        let Some((line, tag)) = a.render(&scope.community_host) else {
+        let Some((line, tag)) = a.render(&community_host) else {
             return StatusCode::BAD_REQUEST.into_response();
         };
         content.push_str(&line);
@@ -364,7 +452,7 @@ pub async fn publish_message(
 
     // 运行期 NIP-11 与 binding 快照一致才发：对不上说明 Relay 的上界已变而 binding
     // 未重新查证，不能沿用旧快照继续写入（`.design/09`「BFF Relay 连接模型」）
-    if let Err(c) = relay_limits(&state, &scope).await {
+    if let Err(c) = community_limits(&state, &community_host).await {
         return c.into_response();
     }
 
@@ -377,35 +465,31 @@ pub async fn publish_message(
     // 先签名：event id 在签完时就确定。把它连同 actor、scope、operation 落进
     // DISPATCH 审计之后才发送——之后无论结果如何，这条消息动作都可关联
     // （Stage 1 退出门禁），结果不明时也有一个能去 Relay 查证的键（DD-81）。
-    let event = match client.sign_channel_message_mentions(
-        &scope.channel_id,
-        &content,
-        &media_tags,
-        &mentions,
-    ) {
-        Ok(e) => e,
-        Err(e) => {
-            tracing::warn!(error = %e, "签名失败");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
-        }
-    };
+    let event =
+        match client.sign_channel_message_mentions(&channel_id, &content, &media_tags, &mentions) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!(error = %e, "签名失败");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+        };
     let event_id = event.id.to_hex();
     let operation_id = Uuid::new_v4();
     let entry = |event_type: &'static str, event_key: String, result_code: &'static str| {
         AuditEntry {
             event_key,
             tenant_id: Some(ctx.tenant_id),
-            workspace_id: Some(workspace_id),
+            workspace_id: target.workspace_id(),
             operation_id,
             event_type,
             human_identity_id: Some(ctx.human_identity_id),
             initiator_principal_id: Some(ctx.tenant_principal_id),
             actor_principal_id: Some(ctx.tenant_principal_id),
-            action_key: PUBLISH_ACTION,
+            action_key: target.action(),
             action_version: 1,
             component_type_key: "buzz",
-            target_type: Some("CHANNEL"),
-            target_id: Some(workspace_id),
+            target_type: Some(target.target_type()),
+            target_id: Some(target.id()),
             // 正文不进审计。摘要也不进：它对正文可做字典攻击，而审计要的是
             // 「谁在哪里做了什么」，不是「说了什么」（`.design/03` §9）。
             parameter_hash: "NONE",
@@ -460,16 +544,18 @@ pub async fn publish_message(
         };
         if claimed == 0 {
             // 同一个键的另一次请求抢先了：那一次在发，这一次不发
-            let (frozen, workspaces): (Vec<Uuid>, Vec<Option<Uuid>>) = sqlx::query_as(
+            let (frozen, targets): (Vec<Uuid>, Vec<Option<Uuid>>) = sqlx::query_as(
                 "select a.mention_installation_ids,
-                    array(select r.workspace_id from audit.audit_event r
+                    array(select r.target_id from audit.audit_event r
                       where r.operation_id=a.operation_id and r.event_type='DISPATCH'
-                        and r.action_key='workspace.message.publish')
+                        and r.action_key=$3 and r.target_type=$4
+                        and r.workspace_id is not distinct from $5)
                  from admission.publish_attempt a
                  where a.tenant_principal_id=$1 and a.idempotency_key=$2")
                 .bind(ctx.tenant_principal_id).bind(idempotency_key)
+                .bind(target.action()).bind(target.target_type()).bind(target.workspace_id())
                 .fetch_one(&mut *tx).await?;
-            return Ok(if publish_scope_matches(&workspaces, workspace_id)
+            return Ok(if publish_scope_matches(&targets, target.id())
                 && mention_intent_matches(&frozen, &mention_ids) { Claim::Pending } else { Claim::TargetMismatch });
         }
         append(
@@ -578,13 +664,13 @@ pub async fn publish_message(
     }
 }
 
-async fn record(state: &BffState, entry: AuditEntry<'_>) -> Result<(), sqlx::Error> {
+pub(crate) async fn record(state: &BffState, entry: AuditEntry<'_>) -> Result<(), sqlx::Error> {
     let mut tx = state.pool.begin().await?;
     append(&mut tx, entry).await?;
     tx.commit().await
 }
 
-fn error_body(
+pub(crate) fn error_body(
     status: StatusCode,
     class: ErrorClass,
     reason: ReasonCode,
@@ -602,7 +688,7 @@ fn error_body(
 }
 
 /// `LIMIT` 类回应（`apps/06` §4）。Core 预算给出重置时刻时带 `Retry-After`。
-fn limit_response(
+pub(crate) fn limit_response(
     kind: LimitKind,
     retry_after: Option<u64>,
     operation_id: Option<Uuid>,
@@ -696,11 +782,20 @@ pub async fn relay_limits(
     state: &BffState,
     scope: &WorkspaceScope,
 ) -> Result<RelayLimits, RelayCheck> {
+    community_limits(state, &scope.community_host).await
+}
+
+/// Tenant-scoped collaboration (such as one's own kind:0) uses the same
+/// ACTIVE binding/NIP-11 check without inventing a Workspace or Channel.
+pub(crate) async fn community_limits(
+    state: &BffState,
+    community_host: &str,
+) -> Result<RelayLimits, RelayCheck> {
     let snapshot: Option<Option<String>> = sqlx::query_scalar(
         "select nip11_snapshot_digest from projection.tenant_buzz_binding
          where normalized_host = $1 and state = 'ACTIVE'",
     )
-    .bind(&scope.community_host)
+    .bind(community_host)
     .fetch_optional(&state.pool)
     .await
     .map_err(|e| {
@@ -709,17 +804,17 @@ pub async fn relay_limits(
     })?;
     let doc = state
         .relay_nip11
-        .get(&state.http, &scope.community_host)
+        .get(&state.http, community_host)
         .await
         .map_err(|e| {
-            tracing::warn!(error = %e, host = %scope.community_host, "运行期读取 NIP-11 失败");
+            tracing::warn!(error = %e, host = %community_host, "运行期读取 NIP-11 失败");
             RelayCheck::Nip11Unavailable
         })?;
     match snapshot.flatten() {
         Some(expected) if expected == doc.digest => Ok(doc.limits.clone()),
         Some(expected) => {
             tracing::warn!(
-                host = %scope.community_host,
+                host = %community_host,
                 expected = %expected,
                 observed = %doc.digest,
                 "运行期 NIP-11 与 binding 快照不一致"
@@ -740,11 +835,27 @@ pub async fn query_messages(
     Path(workspace_id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Response {
+    query_messages_for(state, MessageTarget::Workspace(workspace_id), headers).await
+}
+
+pub async fn query_conversation_messages(
+    State(state): State<BffState>,
+    Path(conversation_id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Response {
+    query_messages_for(state, MessageTarget::Conversation(conversation_id), headers).await
+}
+
+async fn query_messages_for(
+    state: BffState,
+    target: MessageTarget,
+    headers: HeaderMap,
+) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
-    let scope = match admit_workspace(&state, &ctx, workspace_id).await {
+    let (channel_id, community_host) = match target.admit(&state, &ctx).await {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -752,12 +863,12 @@ pub async fn query_messages(
         Ok(k) => k,
         Err(r) => return r,
     };
-    let client = match identity_client(&state, &keys, &scope) {
+    let client = match community_client(&state, &keys, &community_host) {
         Ok(c) => c,
         Err(r) => return r,
     };
 
-    let limits = match relay_limits(&state, &scope).await {
+    let limits = match community_limits(&state, &community_host).await {
         Ok(l) => l,
         Err(c) => return c.into_response(),
     };
@@ -767,7 +878,7 @@ pub async fn query_messages(
     // 上限不是平台该放行的值，登记值也不能超过 Relay 声明的上界（`.design/09`）。
     let filter = serde_json::json!({
         "kinds": [9],
-        "#h": [scope.channel_id],
+        "#h": [channel_id],
         "limit": page_limit(&state, &limits),
     });
     match client.query(&state.http, &[filter]).await {
@@ -1075,6 +1186,21 @@ pub async fn admit_workspace_scope(
 /// 与构造 HTTP 客户端分开：实时订阅要用同一把钥匙另建 NIP-42 WebSocket 会话
 /// （`.design/09` 第 4 步），两条路共用密钥取用与托管校验，不共用连接。
 pub async fn actor_keys(state: &BffState, ctx: &ExecutionContext) -> Result<nostr::Keys, Response> {
+    server_actor_keys(
+        &state.pool,
+        &state.secrets,
+        ctx.tenant_id,
+        ctx.tenant_principal_id,
+    )
+    .await
+}
+
+pub(crate) async fn server_actor_keys(
+    pool: &sqlx::PgPool,
+    secrets: &secret_store::SecretStore,
+    tenant_id: Uuid,
+    principal_id: Uuid,
+) -> Result<nostr::Keys, Response> {
     // 只取 Web 的那一把：一个人还可能有原生设备的 CLIENT 身份（DD-77），
     // 那些私钥不在 Core 手里，也就不在这里的候选之内。每人至多一条非 REVOKED
     // 的 SERVER binding，由库里的部分唯一索引保证。
@@ -1084,17 +1210,17 @@ pub async fn actor_keys(state: &BffState, ctx: &ExecutionContext) -> Result<nost
          from identity.buzz_identity_binding
          where tenant_id = $1 and principal_id = $2 and kind = 'HUMAN'
            and custody = 'SERVER' and state = 'ACTIVE'",
-        ctx.tenant_id,
-        ctx.tenant_principal_id,
+        tenant_id,
+        principal_id,
     )
-    .fetch_optional(&state.pool)
+    .fetch_optional(pool)
     .await
     .map_err(|e| {
         tracing::warn!(error = %e, "读 HUMAN binding 失败");
         StatusCode::SERVICE_UNAVAILABLE.into_response()
     })?
     .ok_or_else(|| {
-        tracing::warn!(principal = %ctx.tenant_principal_id, "没有 ACTIVE 的 Web（SERVER）Buzz 身份");
+        tracing::warn!(principal = %principal_id, "没有 ACTIVE 的 Web（SERVER）Buzz 身份");
         StatusCode::FORBIDDEN.into_response()
     })?;
 
@@ -1103,12 +1229,12 @@ pub async fn actor_keys(state: &BffState, ctx: &ExecutionContext) -> Result<nost
         version: row.private_key_secret_version.unwrap_or_default() as u32,
         audience: row.private_key_secret_audience.unwrap_or_default(),
     };
-    crate::server_identity::read_bound_keys(&state.secrets, &secret, &row.pubkey)
+    crate::server_identity::read_bound_keys(secrets, &secret, &row.pubkey)
         .await
         .map_err(|e| {
-        tracing::warn!(error = %e, principal = %ctx.tenant_principal_id, "HUMAN 私钥不匹配或不可用");
-        StatusCode::SERVICE_UNAVAILABLE.into_response()
-    })
+            tracing::warn!(error = %e, principal = %principal_id, "HUMAN 私钥不匹配或不可用");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        })
 }
 
 /// 用已取到的密钥构造 HTTP bridge 客户端。
@@ -1119,11 +1245,20 @@ pub fn identity_client(
     keys: &nostr::Keys,
     scope: &WorkspaceScope,
 ) -> Result<IdentityClient, Response> {
+    community_client(state, keys, &scope.community_host)
+}
+
+#[allow(clippy::result_large_err)]
+pub(crate) fn community_client(
+    state: &BffState,
+    keys: &nostr::Keys,
+    community_host: &str,
+) -> Result<IdentityClient, Response> {
     IdentityClient::new(
         Custody::Server,
         &keys.secret_key().to_secret_hex(),
         &state.relay_transport,
-        &scope.community_host,
+        community_host,
     )
     // BFF 发出的每次 HTTP bridge 调用都先过 Core 预算（`apps/07` §5）
     .map(|c| c.with_budget(std::sync::Arc::clone(&state.relay_budget)))
@@ -1143,6 +1278,30 @@ pub async fn upload_media(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
+    upload_media_for(state, MessageTarget::Workspace(workspace_id), headers, body).await
+}
+
+pub async fn upload_conversation_media(
+    State(state): State<BffState>,
+    Path(conversation_id): Path<Uuid>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    upload_media_for(
+        state,
+        MessageTarget::Conversation(conversation_id),
+        headers,
+        body,
+    )
+    .await
+}
+
+async fn upload_media_for(
+    state: BffState,
+    target: MessageTarget,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
@@ -1159,7 +1318,7 @@ pub async fn upload_media(
         .unwrap_or("application/octet-stream")
         .to_owned();
 
-    let scope = match admit_workspace(&state, &ctx, workspace_id).await {
+    let (.., community_host) = match target.admit(&state, &ctx).await {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1167,12 +1326,12 @@ pub async fn upload_media(
         Ok(k) => k,
         Err(r) => return r,
     };
-    let client = match identity_client(&state, &keys, &scope) {
+    let client = match community_client(&state, &keys, &community_host) {
         Ok(c) => c,
         Err(r) => return r,
     };
 
-    if let Err(c) = relay_limits(&state, &scope).await {
+    if let Err(c) = community_limits(&state, &community_host).await {
         return c.into_response();
     }
 
@@ -1194,6 +1353,35 @@ pub async fn fetch_media(
     Path((workspace_id, sha256)): Path<(Uuid, String)>,
     headers: HeaderMap,
 ) -> Response {
+    fetch_media_for(
+        state,
+        MessageTarget::Workspace(workspace_id),
+        sha256,
+        headers,
+    )
+    .await
+}
+
+pub async fn fetch_conversation_media(
+    State(state): State<BffState>,
+    Path((conversation_id, sha256)): Path<(Uuid, String)>,
+    headers: HeaderMap,
+) -> Response {
+    fetch_media_for(
+        state,
+        MessageTarget::Conversation(conversation_id),
+        sha256,
+        headers,
+    )
+    .await
+}
+
+async fn fetch_media_for(
+    state: BffState,
+    target: MessageTarget,
+    sha256: String,
+    headers: HeaderMap,
+) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
@@ -1202,7 +1390,7 @@ pub async fn fetch_media(
     if sha256.len() != 64 || !sha256.chars().all(|c| c.is_ascii_hexdigit()) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let scope = match admit_workspace(&state, &ctx, workspace_id).await {
+    let (.., community_host) = match target.admit(&state, &ctx).await {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1210,12 +1398,12 @@ pub async fn fetch_media(
         Ok(k) => k,
         Err(r) => return r,
     };
-    let client = match identity_client(&state, &keys, &scope) {
+    let client = match community_client(&state, &keys, &community_host) {
         Ok(c) => c,
         Err(r) => return r,
     };
 
-    if let Err(c) = relay_limits(&state, &scope).await {
+    if let Err(c) = community_limits(&state, &community_host).await {
         return c.into_response();
     }
 
@@ -1239,6 +1427,23 @@ pub async fn fetch_media(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn private_messages_keep_conversation_audit_scope() {
+        let id = Uuid::from_u128(1);
+        let dm = MessageTarget::Conversation(id);
+        let workspace = MessageTarget::Workspace(id);
+        assert_eq!(dm.id(), id);
+        assert_eq!(dm.workspace_id(), None);
+        assert_eq!(dm.target_type(), "CONVERSATION");
+        assert_eq!(dm.action(), CONVERSATION_PUBLISH_ACTION);
+        assert_eq!(workspace.workspace_id(), Some(id));
+        assert_eq!(workspace.target_type(), "CHANNEL");
+        assert_eq!(workspace.action(), PUBLISH_ACTION);
+        // Equal UUID bytes do not make the scopes or their audit actions equal.
+        assert_ne!(workspace.action(), dm.action());
+        assert_ne!(workspace.target_type(), dm.target_type());
+    }
 
     #[test]
     fn mention_intent_is_a_canonical_installation_set() {

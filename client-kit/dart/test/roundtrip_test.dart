@@ -9,6 +9,31 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'conversation references roundtrip without inventing optional cursor',
+    () {
+      final readers = <String, dynamic Function(Map<String, dynamic>)>{
+        'conversation-open.sample.json': (value) =>
+            ActionCommand.fromJson(value).toJson(),
+        'conversation-participants.sample.json': (value) =>
+            ConversationParticipantPage.fromJson(value).toJson(),
+        'conversation-page.sample.json': (value) =>
+            ConversationPage.fromJson(value).toJson(),
+        'conversation-projection.sample.json': (value) =>
+            ConversationProjectionRequest.fromJson(value).toJson(),
+      };
+      for (final entry in readers.entries) {
+        final original =
+            jsonDecode(
+                  File(
+                    '../../contracts/samples/${entry.key}',
+                  ).readAsStringSync(),
+                )
+                as Map<String, dynamic>;
+        expect(jsonDecode(jsonEncode(entry.value(original))), equals(original));
+      }
+    },
+  );
   test('application model preserves route references and absent correlation', () {
     final admission =
         jsonDecode(

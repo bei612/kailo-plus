@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation } from "@tanstack/react-router";
 import { deriveShellRoute, markAllReadSources } from "@/app/AppShell.helpers";
 import * as BuzzTheme from "@client-kit/platform/react/surfaces";
@@ -56,6 +57,7 @@ export function AppShell() {
   useWebviewScrollBoundaryLock();
   const activeCommunity = useActiveCommunity();
   const nativeSession = useNativeSession();
+  const platformSession = useQuery({ queryKey: ["platform", "session"], queryFn: () => nativeSession.client.session() });
   const [searchFocusRequest, setSearchFocusRequest] = React.useState(0);
   const [scopeSearchFocusRequest, setScopeSearchFocusRequest] =
     React.useState(0);
@@ -64,6 +66,7 @@ export function AppShell() {
   const {
     goChannel,
     goHome,
+    goNewMessage,
     goPlatform,
     goSettings,
     closeSettings,
@@ -412,6 +415,8 @@ export function AppShell() {
                 ) : (
                   <div className="relative flex min-h-0 flex-1 overflow-visible">
                     <AppSidebar
+                      currentPrincipalId={platformSession.data?.tenantPrincipalId}
+                      onNewMessage={() => void goNewMessage()}
                       activeCommunity={activeCommunity}
                       channels={sidebarChannels}
                       currentPubkey={identityQuery.data?.pubkey}

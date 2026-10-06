@@ -1,13 +1,133 @@
 use std::collections::HashMap;
 
+use sha2::{Digest, Sha256};
 use tauri::State;
 
 use crate::{
     app_state::AppState,
     models::{ProfileInfo, SearchUsersResponse, UsersBatchResponse},
     nostr_convert,
-    relay::query_relay,
+    relay::{
+        assert_expected_relay_scope, assert_expected_signer, query_relay, query_relay_at_with_keys,
+        relay_api_base_url_with_override, submit_signed_event_at_with_keys,
+    },
 };
+
+/// A received native-command error is different from losing the IPC response.
+/// Only this typed receipt can establish that the current attempt was rejected.
+#[derive(serde::Serialize)]
+pub struct ProfileUpdateError {
+    code: &'static str,
+}
+
+impl From<String> for ProfileUpdateError {
+    fn from(error: String) -> Self {
+        Self {
+            code: if error == "relay publish outcome unknown" {
+                "PROFILE_UPDATE_UNKNOWN"
+            } else {
+                "PROFILE_UPDATE_REJECTED"
+            },
+        }
+    }
+}
+
+impl From<&str> for ProfileUpdateError {
+    fn from(error: &str) -> Self {
+        error.to_owned().into()
+    }
+}
+
+/// Original Buzz metadata writer with the captured CLIENT signer/relay scope.
+/// The native Relay remains the profile authority, never Core or CONTROL.
+#[tauri::command]
+pub async fn update_profile(
+    idempotency_key: String,
+    display_name: Option<String>,
+    avatar_url: Option<String>,
+    about: Option<String>,
+    nip05_handle: Option<String>,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<ProfileInfo, ProfileUpdateError> {
+    let key = uuid::Uuid::parse_str(&idempotency_key)
+        .map_err(|_| "invalid profile intent".to_string())?;
+    if expected_relay_url.trim().is_empty() || expected_signer_pubkey.trim().is_empty() {
+        return Err("profile identity scope missing; not sent".into());
+    }
+    let relay = relay_api_base_url_with_override(&state);
+    let keys = state.signing_keys()?;
+    let author = keys.public_key().to_hex();
+    assert_expected_relay_scope(Some(&expected_relay_url), &relay)?;
+    assert_expected_signer(Some(&expected_signer_pubkey), &author)?;
+    let filter = serde_json::json!({"kinds":[0], "authors":[author], "limit":1});
+    let prior = query_relay_at_with_keys(&state, &relay, &[filter.clone()], &keys, None).await?;
+    if prior.len() > 1
+        || prior.iter().any(|event| {
+            event.pubkey != keys.public_key()
+                || event.kind != nostr::Kind::Metadata
+                || event.verify().is_err()
+        })
+    {
+        return Err("invalid own profile response; not sent".into());
+    }
+    let mut content = match prior.first() {
+        Some(event) => serde_json::from_str::<serde_json::Value>(&event.content)
+            .ok()
+            .and_then(|value| value.as_object().cloned())
+            .ok_or_else(|| "invalid own profile metadata; not sent".to_string())?,
+        None => serde_json::Map::new(),
+    };
+    let patch = serde_json::json!({"display_name":display_name,"picture":avatar_url,"about":about,"nip05":nip05_handle});
+    let fields = patch
+        .as_object()
+        .ok_or_else(|| "invalid profile update".to_string())?;
+    if fields.values().all(serde_json::Value::is_null) {
+        return Err("profile update is empty; not sent".into());
+    }
+    for (field, value) in fields {
+        if !value.is_null() {
+            content.insert(field.clone(), value.clone());
+        }
+    }
+    let created_at = nostr::Timestamp::now().as_secs().max(
+        prior
+            .first()
+            .map_or(0, |event| event.created_at.as_secs().saturating_add(1)),
+    );
+    let fresh = nostr::EventBuilder::new(
+        nostr::Kind::Metadata,
+        serde_json::Value::Object(content).to_string(),
+    )
+    .custom_created_at(nostr::Timestamp::from(created_at))
+    .sign_with_keys(&keys)
+    .map_err(|_| "profile signing failed".to_string())?;
+    let digest = format!("{:x}", Sha256::digest(patch.to_string().as_bytes()));
+    let prefix = format!("profile:{relay}:{author}:{key}:");
+    let (event, first) = super::messages::unconfirmed::claim_profile(&prefix, &digest, fresh)?;
+    if first {
+        // Never repeat this side effect after a lost acknowledgement.
+        if let Err(error) = submit_signed_event_at_with_keys(&event, &state, &relay, &keys).await {
+            if !super::messages::unconfirmed::outcome_unknown(&error) {
+                return Err(error.into());
+            }
+        }
+    }
+    let actual = query_relay_at_with_keys(&state, &relay, &[filter], &keys, None)
+        .await
+        .map_err(|_| "relay publish outcome unknown".to_string())?;
+    let Some(actual) = actual.first().filter(|actual| {
+        actual.id == event.id
+            && actual.pubkey == keys.public_key()
+            && actual.kind == nostr::Kind::Metadata
+            && actual.verify().is_ok()
+    }) else {
+        return Err("relay publish outcome unknown".into());
+    };
+    nostr_convert::profile_info_from_event(actual)
+        .map_err(|_| ProfileUpdateError::from("relay publish outcome unknown"))
+}
 
 #[tauri::command]
 pub async fn get_profile(state: State<'_, AppState>) -> Result<ProfileInfo, String> {

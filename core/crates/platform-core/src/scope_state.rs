@@ -127,6 +127,27 @@ pub async fn transition_scope(
         Ok(t) => t,
         Err(e) => return unavailable(e),
     };
+    if req.kind == ScopeKind::Workspace && req.to_state == "ACTIVE" {
+        // 新建链不能因旧 Worker 忽略 creator 输入，提前把未投影的频道报就绪。
+        // 恢复链不要求原创建者仍是成员；部署引导的旧 Workspace 无此成员事实。
+        let pending: Result<bool, _> = sqlx::query_scalar(
+            "select exists(select 1 from identity.workspace w
+             join identity.workspace_membership wm on wm.workspace_id = w.id
+             join admission.action_execution ae on ae.target_id = w.id
+               and ae.initiator_principal_id = wm.tenant_principal_id
+             where w.id = $1 and w.state = 'PROVISIONING'
+               and ae.action_key = 'workspace.create' and ae.gate_state = 'ALLOWED'
+               and wm.state <> 'ACTIVE')",
+        )
+        .bind(req.id)
+        .fetch_one(&mut *tx)
+        .await;
+        match pending {
+            Ok(false) => {}
+            Ok(true) => return StatusCode::CONFLICT.into_response(),
+            Err(e) => return unavailable(e),
+        }
+    }
     let updated = match req.kind {
         ScopeKind::Tenant => sqlx::query!(
             "update identity.tenant set state = $1, version = version + 1

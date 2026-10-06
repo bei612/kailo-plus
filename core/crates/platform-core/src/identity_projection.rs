@@ -282,6 +282,8 @@ async fn admit(
         }
     }
 
+    crate::conversations::project_for_principal(state, tenant_id, principal_id, Some(&req.pubkey))
+        .await?;
     crate::service_api::audit_gate(state).await?;
     // 置 ACTIVE 与「成员仍 ACTIVE」在同一句里判定，不给撤权留下两句之间的窗口。
     // 绑定版本随 binding 一起转 ACTIVE（`.design/03` SecretRef 状态机）；CLIENT 无引用。
@@ -328,6 +330,15 @@ async fn retire(
     req: &IdentityProjectionRequest,
     retire_operation: Option<(Uuid, &str)>,
 ) -> Result<String, Response> {
+    let principal: Uuid = sqlx::query_scalar(
+        "select principal_id from identity.buzz_identity_binding where pubkey=$1 and tenant_id=$2",
+    )
+    .bind(&req.pubkey)
+    .bind(tenant_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(unavailable)?;
+    crate::conversations::project_for_principal(state, tenant_id, principal, None).await?;
     // 不按 Workspace 状态筛：暂停中的 Channel 在清空之后已无该 pubkey，按缺席查证
     // 先读 roster 即成立、不发 9001，不会卡在已归档的 Channel 上（DD-97）
     let channels = sqlx::query_scalar!(

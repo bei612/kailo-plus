@@ -15,6 +15,27 @@ use std::sync::{LazyLock, Mutex};
 static UNCONFIRMED: LazyLock<Mutex<HashMap<String, nostr::Event>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// Keep the original signed profile intent in the existing native holder.
+/// Unlike immutable messages, replaceable metadata is observed, never re-sent.
+pub(crate) fn claim_profile(
+    prefix: &str,
+    payload_hash: &str,
+    fresh: nostr::Event,
+) -> Result<(nostr::Event, bool), String> {
+    let mut map = UNCONFIRMED
+        .lock()
+        .map_err(|_| "relay publish outcome unknown".to_string())?;
+    let key = format!("{prefix}{payload_hash}");
+    if let Some((found, event)) = map.iter().find(|(key, _)| key.starts_with(prefix)) {
+        if found != &key {
+            return Err("profile publication intent changed; not sent".into());
+        }
+        return Ok((event.clone(), false));
+    }
+    map.insert(key, fresh.clone());
+    Ok((fresh, true))
+}
+
 /// 同一 Relay、同一作者、同一 kind、正文与标签完全相同即视为同一条消息。
 pub(super) fn fingerprint(relay_base: &str, event: &nostr::Event) -> String {
     serde_json::json!([
@@ -86,7 +107,7 @@ pub(super) async fn submit_reusing_unconfirmed(
 
 /// 提交失败时请求是否可能已到达 Relay。错误串来自本 crate 的 `relay.rs`
 /// （`classify_request_error`、`relay_error_message`）与 `relay/submit.rs`。
-pub(super) fn outcome_unknown(error: &str) -> bool {
+pub(crate) fn outcome_unknown(error: &str) -> bool {
     if error == "relay publish outcome unknown" {
         return true;
     }

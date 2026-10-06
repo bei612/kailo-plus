@@ -31,6 +31,21 @@ const transport = createFetchTransport({
 
 export const bff = createBffClient(transport);
 
+export async function publishConversationMessage(conversationId: string, content: string,
+  attachments: readonly MediaDescriptor[], idempotencyKey: string): Promise<{ eventId: string; operationId: string }> {
+  const path = `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`;
+  return unwrap({ method: "POST", path }, await transport.exchange(path, {
+    method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ content, attachments: [...attachments], mentionInstallationIds: [] } satisfies WebPublishMessageRequest),
+  }));
+}
+export async function uploadConversationMedia(conversationId: string, file: File): Promise<MediaDescriptor> {
+  const path = `/api/v1/conversations/${encodeURIComponent(conversationId)}/media`;
+  return unwrap({ method: "POST", path }, await transport.exchange(path, {
+    method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file,
+  }));
+}
+
 async function call<T>(request: BffRequest): Promise<T> {
   return unwrap<T>(request, await transport.send(request));
 }
@@ -89,11 +104,7 @@ export async function publishMessage(
     await transport.exchange(path, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
-      body: JSON.stringify({
-        content,
-        attachments: [...attachments],
-        mentionInstallationIds,
-      } satisfies WebPublishMessageRequest),
+      body: JSON.stringify({ content, attachments: [...attachments], mentionInstallationIds } satisfies WebPublishMessageRequest),
     }),
   );
 }
@@ -130,9 +141,19 @@ export async function uploadMedia(workspaceId: string, file: File): Promise<Medi
   );
 }
 
+/** Own community profile media, with the same actor-signed Blossom consumer. */
+export async function uploadProfileAvatar(bytes: number[], expectedPubkey: string): Promise<MediaDescriptor> {
+  const path = "/api/v1/profile/media";
+  return unwrap({ method: "POST", path }, await transport.exchange(path, {
+    method: "POST", headers: { "Content-Type": "application/octet-stream", "X-Profile-Pubkey": expectedPubkey }, body: new Uint8Array(bytes),
+  }));
+}
+
 /** 取一份媒体的可渲染地址。它仍然经 BFF，不指向 Relay。 */
-export function mediaUrl(workspaceId: string, sha256: string): string {
-  return `/api/v1/workspaces/${workspaceId}/media/${sha256}`;
+export function mediaUrl(workspaceId: string, sha256: string, conversationId?: string): string {
+  return conversationId
+    ? `/api/v1/conversations/${encodeURIComponent(conversationId)}/media/${sha256}`
+    : `/api/v1/workspaces/${workspaceId}/media/${sha256}`;
 }
 
 /**
@@ -162,10 +183,10 @@ export type StreamFrame =
  * 重开即重取 snapshot。从未收到过间隔（第一次连接就失败）时不自定时长，
  * 如实显示已断开。
  *
- * session/scope/identity revoked 是确定的拒绝，关闭连接并停止重连。
- * 其余关闭原因（包括 readmission-unavailable）仍是结果不明，交给重连。
+ * `session-revoked`、`scope-revoked` 与 `identity-revoked` 是确定的拒绝，必须
+ * 主动停下；其余关闭原因（包括 `readmission-unavailable`）仍交给重连。
  */
-export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) => void): () => void {
+export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) => void, conversationId?: string): () => void {
   let source: EventSource | undefined;
   let retryMillis: number | undefined;
   let reopen: ReturnType<typeof setTimeout> | undefined;
@@ -175,7 +196,9 @@ export function openStream(workspaceId: string, onFrame: (frame: StreamFrame) =>
     if (stopped) return;
     clearTimeout(reopen);
     reopen = undefined;
-    const es = new EventSource(`/api/v1/workspaces/${workspaceId}/stream`);
+    const es = new EventSource(conversationId
+      ? `/api/v1/conversations/${encodeURIComponent(conversationId)}/stream`
+      : `/api/v1/workspaces/${workspaceId}/stream`);
     source = es;
     es.addEventListener("retry", (e) => {
       if (stopped || source !== es) return;

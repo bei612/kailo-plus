@@ -7,6 +7,25 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
+import type { ConversationParticipantPage, ConversationPage, ConversationProjectionRequest } from "../src/generated/contracts.js";
+
+test("conversation references keep real keys, native scope and frozen workflow", () => {
+  const load=(name:string)=>JSON.parse(readFileSync(new URL(`../../../../contracts/samples/${name}`,import.meta.url),"utf8"));
+  const command:ActionCommand=load("conversation-open.sample.json");
+  ok(command.conversationOpen);
+  const reconstructed:ActionCommand={actionKey:command.actionKey,idempotencyKey:command.idempotencyKey,
+    conversationOpen:{participantPrincipalIds:command.conversationOpen.participantPrincipalIds}};
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)),command);
+  const directory:ConversationParticipantPage=load("conversation-participants.sample.json");
+  const participantPage:ConversationParticipantPage={items:directory.items.map(row=>({principalId:row.principalId,displayName:row.displayName,pubkeys:row.pubkeys})),maxParticipants:directory.maxParticipants,nextCursor:directory.nextCursor};
+  deepStrictEqual(JSON.parse(JSON.stringify(participantPage)),directory);
+  const original:ConversationPage=load("conversation-page.sample.json");
+  const page:ConversationPage={items:original.items.map(row=>({id:row.id,channelId:row.channelId,participantPrincipalIds:row.participantPrincipalIds,state:row.state,version:row.version,operationId:row.operationId})),nextCursor:original.nextCursor};
+  deepStrictEqual(JSON.parse(JSON.stringify(page)),original);
+  const request:ConversationProjectionRequest=load("conversation-projection.sample.json");
+  const projected:ConversationProjectionRequest={target:{actionExecutionId:request.target.actionExecutionId,conversationId:request.target.conversationId,workflowId:request.target.workflowId},runId:request.runId};
+  deepStrictEqual(JSON.parse(JSON.stringify(projected)),request);
+});
 import type { AutomationRunPage, AutomationDetailView } from "../src/generated/contracts.js";
 import type { AutomationVersionContent } from "../src/generated/contracts.js";
 import type { ComponentConformanceStepObservation } from "../src/generated/contracts.js";

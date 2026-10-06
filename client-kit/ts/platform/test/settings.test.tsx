@@ -196,7 +196,7 @@ describe("shared Buzz settings presentation", () => {
       denied.mockRestore();
     }
   });
-  it("selects only the three existing sections without generating unsupported controls", async () => {
+  it("selects the original profile and existing sections without generating unsupported controls", async () => {
     function Host() {
       const [section, setSection] = useState<SettingsSection>("appearance");
       return (
@@ -215,7 +215,9 @@ describe("shared Buzz settings presentation", () => {
     expect(
       host.querySelector('[data-testid="settings-panel-shortcuts"]'),
     ).not.toBeNull();
-    expect(host.querySelectorAll("nav button")).toHaveLength(3);
+    await click(button(host, "个人资料"));
+    expect(host.querySelector('[data-testid="settings-panel-profile"]')?.textContent).toBe("profile");
+    expect(host.querySelectorAll("nav button")).toHaveLength(4);
     expect(host.textContent).not.toMatch(/provider|私钥|配对|语言/);
   });
   it("uses the host's live theme state and only changes its existing preference consumer", async () => {

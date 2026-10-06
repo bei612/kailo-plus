@@ -1,4 +1,7 @@
 import * as React from "react";
+import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
+import { ConversationList, useConversations } from "@client-kit/platform/react/new-message";
+import { translate, resolveLocale } from "@client-kit/platform/i18n";
 
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { sortChannelsForSidebar } from "@/features/sidebar/lib/channelSortPreference";
@@ -39,6 +42,7 @@ export function AppSidebar({
   activeCommunity,
   channels,
   currentPubkey,
+  currentPrincipalId,
   fallbackDisplayName,
   homeBadgeCount,
   onBackgroundClick,
@@ -56,6 +60,7 @@ export function AppSidebar({
   onMarkChannelRead,
   onMarkAllChannelsRead,
   onSelectHome,
+  onNewMessage,
   onSelectChannel,
   onOpenSearchResult,
   searchChannels,
@@ -70,6 +75,7 @@ export function AppSidebar({
   onStarChannel,
   onUnstarChannel,
 }: AppSidebarProps) {
+  const [isCreateChannelOpen, setCreateChannelOpen] = React.useState(false);
   const { open: sidebarOpen, openMobile } = useSidebar();
   const isMobile = useIsMobile();
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -238,6 +244,7 @@ export function AppSidebar({
               data-testid="sidebar-scroll-content"
             >
               <AppSidebarPrimaryMenu
+                onNewMessage={onNewMessage}
                 homeBadgeCount={homeBadgeCount}
                 onSelectHome={onSelectHome}
                 onSelectPlatformSection={onSelectPlatformSection}
@@ -245,6 +252,9 @@ export function AppSidebar({
                 selectedView={selectedView}
               />
 
+              {currentPrincipalId ? <DesktopConversations currentPrincipalId={currentPrincipalId}
+                selectedChannelId={selectedView === "channel" ? selectedChannelId : null}
+                onSelectChannel={onSelectChannel} onNewMessage={onNewMessage} /> : null}
               {isLoading ? (
                 <SidebarLoadingContent shape={sidebarLoadingShape} />
               ) : (
@@ -301,6 +311,8 @@ export function AppSidebar({
                     onToggleCollapsed={() => toggleCollapsedGroup("channels")}
                     selectedChannelId={selectedChannelId}
                     title="Channels"
+                    onCreateChannel={() => setCreateChannelOpen(true)}
+                    createChannelLabel={translate(resolveLocale(), "channel.create.title")}
                     unreadChannelIds={unreadChannelIds}
                     mutedChannelIds={mutedChannelIds}
                     onMuteChannel={onMuteChannel}
@@ -363,7 +375,20 @@ export function AppSidebar({
         </div>
       </div>
 
+      <CreateChannelDialog open={isCreateChannelOpen} onOpenChange={setCreateChannelOpen} />
       <SidebarRail />
     </Sidebar>
   );
+}
+
+function DesktopConversations({ currentPrincipalId, selectedChannelId, onSelectChannel, onNewMessage }: {
+  currentPrincipalId: string; selectedChannelId: string | null;
+  onSelectChannel: (id: string) => void; onNewMessage: () => void;
+}) {
+  const conversations = useConversations();
+  return <ConversationList currentPrincipalId={currentPrincipalId} items={conversations.items}
+    loading={conversations.loading} error={conversations.error}
+    selectedId={conversations.items.find((conversation) => conversation.channelId === selectedChannelId)?.id ?? null}
+    onSelect={(conversation) => onSelectChannel(conversation.channelId)} onNewMessage={onNewMessage}
+    onReload={() => { void conversations.reload().catch(() => undefined); }} />;
 }

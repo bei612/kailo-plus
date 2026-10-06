@@ -72,6 +72,9 @@ pub struct ScopeTarget {
     pub operation: Option<ScopeOperation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snapshot_id: Option<String>,
+    /// 新建 Workspace 的原始 HUMAN 创建者；旧 history 不带此字段。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub creator: Option<MembershipTarget>,
 }
 
 /// scope 生命周期 Workflow 执行的那一段状态机。调用方声明意图，Core 再核对实体
@@ -458,6 +461,43 @@ pub(crate) async fn launch_scope(
         Err(e) => return Err(unavailable(e)),
     }
 
+    // 从原始创建动作取创建者，重跑不能把当前操作者换成原始创建者。
+    // ACTIVE 表示上轮已查证成员投影，只剩 Workspace 收尾，不重复跃迁成员。
+    let creator = if matches!(req.kind, crate::scope_state::ScopeKind::Workspace)
+        && req.operation == ScopeOperation::Provision
+    {
+        let member: Option<(Uuid, i32, Uuid, String)> = sqlx::query_as(
+            "select wm.id, wm.version, wm.tenant_principal_id, wm.state
+             from identity.workspace_membership wm
+             join admission.action_execution ae on ae.target_id = wm.workspace_id
+               and ae.initiator_principal_id = wm.tenant_principal_id
+             where wm.workspace_id = $1 and ae.tenant_id = $2
+               and ae.action_key = 'workspace.create' and ae.gate_state = 'ALLOWED'",
+        )
+        .bind(req.id)
+        .bind(tenant_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(unavailable)?;
+        match member {
+            Some((id, version, principal, state)) if state == "PROVISIONING" => {
+                Some(MembershipTarget {
+                    scope: "WORKSPACE".to_owned(),
+                    membership_id: id.to_string(),
+                    membership_version: version,
+                    subject_principal_id: principal.to_string(),
+                    relation_object_id: req.id.to_string(),
+                    workspace_memberships: Vec::new(),
+                })
+            }
+            Some((_, _, _, state)) if state != "ACTIVE" => {
+                return Err(StatusCode::CONFLICT.into_response())
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
     let workflow_id = component_task::workflow_id(kind, tenant_id, &req.id.to_string(), version);
     let input = ComponentTaskInput {
         kind: kind.to_owned(),
@@ -473,6 +513,7 @@ pub(crate) async fn launch_scope(
                 },
                 operation: req.operation.input_field(),
                 snapshot_id,
+                creator,
             },
         },
     };
@@ -511,6 +552,7 @@ mod tests {
                     tenant_id: Some("t".to_owned()),
                     operation: operation.input_field(),
                     snapshot_id: None,
+                    creator: None,
                 },
             },
         })

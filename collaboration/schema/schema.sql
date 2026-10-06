@@ -99,10 +99,20 @@ CREATE TABLE channels (
     purpose_set_by  BYTEA,
     purpose_set_at  TIMESTAMPTZ,
     participant_hash BYTEA,
+    platform_dm_principals UUID[],
+    platform_dm_generation BIGINT,
+    platform_dm_digest BYTEA,
     ttl_seconds     INT,
     ttl_deadline    TIMESTAMPTZ,
     PRIMARY KEY (community_id, id),
-    CONSTRAINT chk_channels_id_not_nil CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)
+    CONSTRAINT chk_channels_id_not_nil CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CONSTRAINT channels_platform_dm_projection CHECK (
+        (platform_dm_principals IS NULL AND platform_dm_generation IS NULL AND platform_dm_digest IS NULL)
+        OR (platform_dm_principals IS NOT NULL AND platform_dm_generation IS NOT NULL AND platform_dm_digest IS NOT NULL
+            AND channel_type = 'dm' AND visibility = 'private'
+            AND cardinality(platform_dm_principals) BETWEEN 2 AND 9
+            AND platform_dm_generation > 0 AND octet_length(platform_dm_digest) = 32)
+    )
 );
 
 -- nip29 group id and DM participant hash are unique WITHIN a community, not globally.

@@ -852,6 +852,9 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub component_release_registration: Option<ComponentReleaseRegistrationClass>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation_open: Option<ConversationOpenClass>,
+
     /// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delegation_grant: Option<ParametersClass>,
@@ -1352,6 +1355,13 @@ pub struct ComponentReleaseRegistrationClass {
     pub manifest_json: String,
 
     pub package_json: String,
+}
+
+/// 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationOpenClass {
+    pub participant_principal_ids: Vec<String>,
 }
 
 /// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
@@ -3252,6 +3262,9 @@ pub enum WorkflowKind {
     #[serde(rename = "COMPONENT_RELEASE")]
     ComponentRelease,
 
+    #[serde(rename = "CONVERSATION_PROJECTION")]
+    ConversationProjection,
+
     #[serde(rename = "MEMBERSHIP_PROJECTION")]
     MembershipProjection,
 
@@ -3787,6 +3800,104 @@ pub struct ComponentReleaseReceipt {
     pub plan_digest: String,
 
     pub status: ComponentReleaseStatus,
+}
+
+/// 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationOpenRequest {
+    pub participant_principal_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationPage {
+    pub items: Vec<ItemElement>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+/// 已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemElement {
+    pub channel_id: String,
+
+    pub id: String,
+
+    pub operation_id: String,
+
+    pub participant_principal_ids: Vec<String>,
+
+    pub state: ItemState,
+
+    pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ItemState {
+    #[serde(rename = "ACTIVE")]
+    Active,
+
+    #[serde(rename = "DISABLED")]
+    Disabled,
+
+    #[serde(rename = "PROVISIONING")]
+    Provisioning,
+
+    #[serde(rename = "RECONCILING")]
+    Reconciling,
+}
+
+/// 同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationParticipant {
+    pub display_name: String,
+
+    pub principal_id: String,
+
+    pub pubkeys: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationParticipantPage {
+    pub items: Vec<ItemClass>,
+
+    pub max_participants: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+/// 同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemClass {
+    pub display_name: String,
+
+    pub principal_id: String,
+
+    pub pubkeys: Vec<String>,
+}
+
+/// 已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationView {
+    pub channel_id: String,
+
+    pub id: String,
+
+    pub operation_id: String,
+
+    pub participant_principal_ids: Vec<String>,
+
+    pub state: ItemState,
+
+    pub version: i64,
 }
 
 /// GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
@@ -4482,6 +4593,58 @@ pub enum TenantInvitationStatus {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UserStateVersion {
     pub version: i64,
+}
+
+/// Own Buzz kind:0 metadata. The authenticated host chooses the signer and Tenant; no raw
+/// event, author, relay URL or management tags are accepted. Omitted fields are preserved;
+/// empty strings explicitly clear a field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebProfileUpdateRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub about: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+
+    /// Read snapshot guard only. Core derives the signer from the active identity; a mismatch
+    /// rejects without publication.
+    pub expected_pubkey: String,
+
+    pub idempotency_key: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nip05_handle: Option<String>,
+}
+
+/// Current own profile read from Buzz, never a Core profile copy. An absent kind:0 is an
+/// empty profile, not a fabricated event.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebProfileView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub about: Option<String>,
+
+    /// Same-origin BFF paths for exact media URLs on the current community. A read projection,
+    /// never an upload or remote proxy authority.
+    pub avatar_media_paths: HashMap<String, String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nip05_handle: Option<String>,
+
+    pub pubkey: String,
 }
 
 /// Web HUMAN 的频道根消息语义输入；身份、Channel 与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或 signed
@@ -6382,6 +6545,44 @@ pub struct ComponentConformanceStepObservation {
     pub result_digest: Option<String>,
 
     pub step_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationProjectionRequest {
+    pub run_id: String,
+
+    pub target: ConversationProjectionRequestTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationProjectionRequestTarget {
+    pub action_execution_id: String,
+
+    pub conversation_id: String,
+
+    pub workflow_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationProjectionResult {
+    pub conversation_id: String,
+
+    pub status: TaskStatus,
+
+    pub waiting_reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationProjectionTarget {
+    pub action_execution_id: String,
+
+    pub conversation_id: String,
+
+    pub workflow_id: String,
 }
 
 /// FreshApprovalAdmission Activity 发往 Core service API 的请求（.design/06 §4）：active HUMAN、fresh

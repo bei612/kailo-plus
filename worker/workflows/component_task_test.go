@@ -3,6 +3,7 @@ package workflows
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +16,84 @@ import (
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
 )
+
+// 创建成功必须包括创建者的原有成员投影，不仅是 CONTROL 创建了空 Channel。
+func TestWorkspaceCreationProjectsCreatorBeforeReady(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		creator bool
+		refuse  string
+	}{
+		{name: "creator", creator: true},
+		{name: "old frozen input"},
+		{name: "roster rejected", creator: true, refuse: "roster"},
+		{name: "membership revoked", creator: true, refuse: "member"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			Configure(Retry{StartToClose: time.Second, ScheduleToClose: time.Second,
+				MaxAttempts: 1, InitialInterval: time.Second, MaxInterval: time.Second, RoundInterval: time.Minute})
+			var suite testsuite.WorkflowTestSuite
+			env := suite.NewTestWorkflowEnvironment()
+			env.RegisterWorkflowWithOptions(ComponentTask, workflow.RegisterOptions{Name: ComponentTaskKind})
+			var core *activities.CoreAPI
+			var spice *activities.SpiceDB
+			env.RegisterActivity(core)
+			env.RegisterActivity(spice)
+			var mu sync.Mutex
+			var steps []string
+			add := func(step string) error {
+				mu.Lock()
+				defer mu.Unlock()
+				steps = append(steps, step)
+				if step == test.refuse {
+					return temporal.NewNonRetryableApplicationError("projection refused", activities.ErrTypeRejected, nil)
+				}
+				return nil
+			}
+			env.OnActivity("ProjectTaskState", mock.Anything, mock.Anything).Return(nil)
+			env.OnActivity("Converge", mock.Anything, mock.Anything, activities.Present).Return(
+				func(_ context.Context, relation activities.Relationship, _ activities.Presence) error {
+					return add("relation:" + relation.Relation)
+				})
+			env.OnActivity("ProvisionWorkspaceBuzz", mock.Anything, mock.Anything).Return(
+				func(context.Context, activities.WorkspaceStepInput) error { return add("channel") })
+			env.OnActivity("ProjectBuzzRoster", mock.Anything, mock.MatchedBy(func(in activities.BuzzProjectionInput) bool {
+				return in.Scope == "WORKSPACE" && in.MembershipID == "wm" && in.MembershipVersion == 1 && in.Presence == "PRESENT"
+			})).Return(func(context.Context, activities.BuzzProjectionInput) error { return add("roster") })
+			env.OnActivity("TransitionMembership", mock.Anything, mock.MatchedBy(func(in activities.TransitionInput) bool {
+				return in.Scope == "WORKSPACE" && in.MembershipID == "wm" && in.FromVersion == 1 && in.ToState == "ACTIVE"
+			})).Return(func(context.Context, activities.TransitionInput) (activities.TransitionOutput, error) {
+				return activities.TransitionOutput{State: "ACTIVE", Version: 2}, add("member")
+			})
+			env.OnActivity("TransitionScope", mock.Anything, mock.Anything).Return(
+				func(context.Context, activities.ScopeTransitionInput) (activities.TransitionOutput, error) {
+					return activities.TransitionOutput{State: "ACTIVE", Version: 2}, add("workspace")
+				})
+			scope := &ScopeTarget{ID: "w", TenantID: "t", Version: 1}
+			if test.creator {
+				scope.Creator = &MembershipTarget{Scope: "WORKSPACE", MembershipID: "wm", MembershipVersion: 1,
+					SubjectPrincipalID: "p", RelationObjectID: "w"}
+			}
+			env.ExecuteWorkflow(ComponentTaskKind, ComponentTaskInput{Kind: generated.WorkspaceLifecycle, Scope: scope})
+			if (env.GetWorkflowError() != nil) != (test.refuse != "") {
+				t.Fatalf("unexpected workflow result: %v", env.GetWorkflowError())
+			}
+			want := []string{"relation:tenant", "channel"}
+			if test.creator {
+				want = append(want, "relation:member", "roster")
+				if test.refuse != "roster" {
+					want = append(want, "member")
+				}
+			}
+			if test.refuse == "" {
+				want = append(want, "workspace")
+			}
+			if !reflect.DeepEqual(steps, want) {
+				t.Fatalf("projection order = %v, want %v", steps, want)
+			}
+		})
+	}
+}
 
 // 取消请求只中止 Workflow；已经投递的外部投影不能被解释为已回滚。终态必须
 // 在脱离已取消的 Context 后由 ProjectTaskState 写回，Core 暂不可达时继续等待。

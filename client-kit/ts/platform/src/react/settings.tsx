@@ -8,8 +8,9 @@ import {
   type PlatformThemeMode,
 } from "../i18n";
 
-export type SettingsSection = "appearance" | "notifications" | "shortcuts";
+export type SettingsSection = "profile" | "appearance" | "notifications" | "shortcuts";
 export const settingsSectionKeys = {
+  profile: "platform.settings.profile",
   appearance: "platform.settings.appearance",
   notifications: "platform.settings.notifications",
   shortcuts: "platform.settings.shortcuts",

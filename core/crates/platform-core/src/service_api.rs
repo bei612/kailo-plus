@@ -65,6 +65,10 @@ pub struct ServiceState {
 pub fn router(state: ServiceState) -> Router {
     let worker = Router::new()
         .route(
+            "/service/v1/conversations/project",
+            post(crate::conversations::advance),
+        )
+        .route(
             "/service/v1/protocol-sessions/reconcile",
             post(crate::protocol_session::reconcile::advance),
         )

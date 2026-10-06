@@ -2064,6 +2064,7 @@ async fn finish(state: &ServiceState, deletion: &Delete) -> Result<(), sqlx::Err
         "update identity.buzz_identity_binding set state = 'REVOKED',private_key_secret_status = case when custody = 'SERVER' then 'REVOKED' else null end,version = version + 1 where tenant_id = $1 and (state <> 'REVOKED' or private_key_secret_status is distinct from case when custody = 'SERVER' then 'REVOKED' else null end)",
         "update projection.workspace_buzz_binding set state = 'DISABLED',version = version + 1 where workspace_id in (select id from identity.workspace where tenant_id = $1) and state <> 'DISABLED'",
         "update projection.tenant_buzz_binding set state = 'DISABLED',version = version + 1 where tenant_id = $1 and state <> 'DISABLED'",
+        "update projection.conversation_buzz_binding set state = 'DISABLED',version = version + 1 where tenant_id = $1 and state <> 'DISABLED'",
         "update identity.tenant_invitation set state = 'REVOKED',revoked_at = now(),version = version + 1 where tenant_id = $1 and state = 'ISSUED'",
     ] { sqlx::query(sql).bind(deletion.tenant_id).execute(&mut *tx).await?; }
     sqlx::query("update identity.tenant set state = 'DELETED',version = version + 1 where id = $1")

@@ -1,0 +1,10 @@
+{
+  "upstreamCommit": "779af8886caae1317b4de962082429867ab61503",
+  "upstreamPath": "desktop/src/features/profile/lib/animatedAvatarCapture.ts",
+  "upstreamSymbol": "SELFIE_SEGMENTER_MODEL_URL",
+  "url": "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite",
+  "file": "selfie_segmenter.tflite",
+  "sha256": "191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b",
+  "size": 249537,
+  "delivery": "Committed immutable bytes; existing Vite hosts emit same-origin assets. Builds never resolve the mutable upstream URL. WASM/loader come from the same installed and locked @mediapipe/tasks-vision package as its JavaScript API."
+}

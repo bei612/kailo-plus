@@ -35,9 +35,100 @@ use uuid::Uuid;
 
 use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
 use crate::web_transport::{
-    actor_keys, admit_workspace_scope, page_limit, relay_limits, AdmissionFailure,
-    WorkspaceAdmissionEpoch, WorkspaceScope,
+    actor_keys, admit_workspace_scope, community_client, community_limits, page_limit,
+    AdmissionFailure, WorkspaceAdmissionEpoch, WorkspaceScope,
 };
+
+#[derive(Clone, Copy)]
+enum StreamTarget {
+    Workspace(Uuid),
+    Conversation(Uuid),
+}
+
+enum StreamScope {
+    Workspace(WorkspaceScope),
+    Conversation(crate::conversations::ConversationScope),
+}
+
+impl StreamTarget {
+    async fn admit(
+        self,
+        state: &BffState,
+        ctx: &ExecutionContext,
+    ) -> Result<StreamScope, AdmissionFailure> {
+        match self {
+            Self::Workspace(id) => admit_workspace_scope(state, ctx, id)
+                .await
+                .map(StreamScope::Workspace),
+            Self::Conversation(id) => crate::conversations::admit(state, ctx, id)
+                .await
+                .map(StreamScope::Conversation)
+                .map_err(|response| match response.status() {
+                    axum::http::StatusCode::FORBIDDEN => AdmissionFailure::Denied,
+                    _ => AdmissionFailure::Unavailable,
+                }),
+        }
+    }
+}
+
+impl StreamScope {
+    fn channel_id(&self) -> &str {
+        match self {
+            Self::Workspace(scope) => &scope.channel_id,
+            Self::Conversation(scope) => &scope.channel_id,
+        }
+    }
+
+    fn community_host(&self) -> &str {
+        match self {
+            Self::Workspace(scope) => &scope.community_host,
+            Self::Conversation(scope) => &scope.community_host,
+        }
+    }
+
+    fn can_resume(&self) -> bool {
+        // Private admission includes a fresh permission check without an
+        // authorization epoch. Always refresh its snapshot.
+        matches!(
+            self,
+            Self::Workspace(WorkspaceScope {
+                admission_epoch: WorkspaceAdmissionEpoch::Membership { .. },
+                ..
+            })
+        )
+    }
+
+    fn same_admission(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Workspace(before), Self::Workspace(after)) => {
+                before.admission_epoch == after.admission_epoch
+                    && before.channel_id == after.channel_id
+                    && before.community_host == after.community_host
+            }
+            (Self::Conversation(before), Self::Conversation(after)) => before == after,
+            _ => false,
+        }
+    }
+
+    fn generation(&self, principal: &Uuid) -> String {
+        match self {
+            Self::Workspace(scope) => {
+                generation_of(principal, &scope.channel_id, &scope.admission_epoch)
+            }
+            Self::Conversation(scope) => {
+                let mut hash = Sha256::new();
+                hash.update(b"conversation\0");
+                hash.update(principal.as_bytes());
+                hash.update(scope.channel_id.as_bytes());
+                hash.update([0]);
+                hash.update(scope.community_host.as_bytes());
+                hash.update(scope.binding_version.to_be_bytes());
+                hash.update(scope.tenant_binding_version.to_be_bytes());
+                hex::encode(&hash.finalize()[..16])
+            }
+        }
+    }
+}
 
 /// 打开一条 Workspace 事件流。
 pub async fn open_stream(
@@ -45,17 +136,32 @@ pub async fn open_stream(
     Path(workspace_id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Response {
+    open_target_stream(state, StreamTarget::Workspace(workspace_id), headers).await
+}
+
+pub async fn open_conversation_stream(
+    State(state): State<BffState>,
+    Path(conversation_id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Response {
+    open_target_stream(state, StreamTarget::Conversation(conversation_id), headers).await
+}
+
+async fn open_target_stream(state: BffState, target: StreamTarget, headers: HeaderMap) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
     let retry = std::time::Duration::from_millis(state.stream_retry_millis);
-    let scope = match admit_workspace_scope(&state, &ctx, workspace_id).await {
+    let scope = match target.admit(&state, &ctx).await {
         Ok(s) => s,
         // binding 暂不是 ACTIVE（NIP-11 漂移重新查证中）是可恢复的：带内关闭并按
         // 间隔重连。非 200 会让浏览器永久停止重连，只留给确定的拒绝
         Err(AdmissionFailure::BindingNotActive) => {
             return closed_in_band(retry, "binding-not-active")
+        }
+        Err(AdmissionFailure::Unavailable) => {
+            return closed_in_band(retry, "readmission-unavailable")
         }
         Err(f) => return f.into_response(),
     };
@@ -67,30 +173,23 @@ pub async fn open_stream(
     // generation 由「谁 + 哪个 Channel + 哪次准入」共同决定。把 principal 放进去
     // 是必要的：同一个 Channel 上不同人看到的 scope 一样，但撤权只影响其中一个，
     // 而撤权必须让那个人的旧 generation 失效。
-    let generation = generation_of(
-        &ctx.tenant_principal_id,
-        &scope.channel_id,
-        &scope.admission_epoch,
-    );
+    let generation = scope.generation(&ctx.tenant_principal_id);
     // 上次拿到的 generation 由 EventSource 放在 Last-Event-ID 里带回。
     // 缺失或对不上都意味着要重新取 snapshot。管理者的准入只有 fresh Check，
     // 不能从生命周期版本推断管理授权未曾撤销再授予，不跳过完整 snapshot。
-    let resume = matches!(
-        &scope.admission_epoch,
-        WorkspaceAdmissionEpoch::Membership { .. }
-    ) && headers.get("last-event-id").and_then(|v| v.to_str().ok())
-        == Some(generation.as_str());
+    let resume = scope.can_resume()
+        && headers.get("last-event-id").and_then(|v| v.to_str().ok()) == Some(generation.as_str());
 
     // 运行期 NIP-11 与 binding 快照一致才开新流，且订阅与 snapshot 都按其上界预检
     // （`.design/09`「BFF Relay 连接模型」：对不上即关闭新 stream）
-    let limits = match relay_limits(&state, &scope).await {
+    let limits = match community_limits(&state, scope.community_host()).await {
         Ok(l) => l,
         Err(c) => return closed_in_band(retry, c.stream_reason()),
     };
 
     // snapshot 走 HTTP bridge，增量走 WS 订阅。两者用同一把钥匙、同一个
     // Community host，因此看到的 scope 是同一个。
-    let client = match crate::web_transport::identity_client(&state, &keys, &scope) {
+    let client = match community_client(&state, &keys, scope.community_host()) {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -104,7 +203,7 @@ pub async fn open_stream(
                 &state.http,
                 &[serde_json::json!({
                     "kinds": [9],
-                    "#h": [scope.channel_id],
+                    "#h": [scope.channel_id()],
                     "limit": page_limit(&state, &limits),
                 })],
             )
@@ -134,7 +233,7 @@ pub async fn open_stream(
     let signer = keys.public_key().to_hex();
     let session = SessionKey {
         session: ctx.session_id.to_string(),
-        community_host: scope.community_host.clone(),
+        community_host: scope.community_host().to_owned(),
         pubkey: signer.clone(),
     };
     let sub = match state
@@ -142,7 +241,7 @@ pub async fn open_stream(
         .subscribe(
             session,
             &keys,
-            vec![serde_json::json!({ "kinds": [9], "#h": [scope.channel_id] })],
+            vec![serde_json::json!({ "kinds": [9], "#h": [scope.channel_id()] })],
             &limits,
         )
         .await
@@ -160,22 +259,24 @@ pub async fn open_stream(
     };
 
     let every = std::time::Duration::from_secs(state.stream_readmit_seconds);
-    Sse::new(frames(
-        generation,
-        retry,
-        snapshot,
-        sub,
-        Readmission {
-            state,
-            ctx,
-            workspace_id,
-            scope,
-            signer,
-            every,
-        },
-    ))
-    .keep_alive(KeepAlive::default())
-    .into_response()
+    let readmit = Readmission {
+        state,
+        ctx,
+        target,
+        scope,
+        signer,
+        every,
+    };
+    // Snapshot and subscription establishment await external I/O. Recheck before
+    // exposing either, not only at the next periodic tick after delivery.
+    match readmit.check().await {
+        Ok(None) => {}
+        Ok(Some(reason)) => return closed_in_band(retry, reason),
+        Err(_) => return closed_in_band(retry, "readmission-unavailable"),
+    }
+    Sse::new(frames(generation, retry, snapshot, sub, readmit))
+        .keep_alive(KeepAlive::default())
+        .into_response()
 }
 
 /// 准入已过而上游（Relay）暂不可用、被限流或上界不成立时的回应。
@@ -205,8 +306,8 @@ fn closed_in_band(retry: std::time::Duration, reason: &'static str) -> Response 
 struct Readmission {
     state: BffState,
     ctx: ExecutionContext,
-    workspace_id: Uuid,
-    scope: WorkspaceScope,
+    target: StreamTarget,
+    scope: StreamScope,
     /// 订阅所用 NIP-42 会话的 pubkey。它不再是 ACTIVE 即关流：key revoke 的
     /// 「关已知连接」一步（`.design/09`），与会话撤销是两件事。
     signer: String,
@@ -222,7 +323,7 @@ impl Readmission {
         if !identity::session::is_live(&self.state.pool, self.ctx.session_id).await? {
             return Ok(Some("session-revoked"));
         }
-        let current = match admit_workspace_scope(&self.state, &self.ctx, self.workspace_id).await {
+        let current = match self.target.admit(&self.state, &self.ctx).await {
             Ok(scope) => scope,
             // TenantBuzzBinding 转 RECONCILING（DD-114(2)）：已建立的流在再准入时关闭，
             // 原因如实说明——这不是撤权，客户端按间隔重连，binding 回到 ACTIVE 即恢复
@@ -232,10 +333,7 @@ impl Readmission {
             }
             Err(AdmissionFailure::Denied) => return Ok(Some("scope-revoked")),
         };
-        if current.admission_epoch != self.scope.admission_epoch
-            || current.channel_id != self.scope.channel_id
-            || current.community_host != self.scope.community_host
-        {
+        if !self.scope.same_admission(&current) {
             return Ok(Some("scope-changed"));
         }
         let signer_active = sqlx::query_scalar!(
@@ -385,4 +483,43 @@ fn generation_of(
         }
     }
     hex::encode(&h.finalize()[..16])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn private_stream_fences_scope_and_always_refreshes_snapshot() {
+        let principal = Uuid::from_u128(1);
+        let scope = crate::conversations::ConversationScope {
+            channel_id: Uuid::from_u128(2).to_string(),
+            community_host: Uuid::from_u128(4).to_string(),
+            binding_version: 1,
+            tenant_binding_version: 1,
+        };
+        let original = StreamScope::Conversation(scope.clone());
+        assert!(!original.can_resume());
+        assert!(original.same_admission(&StreamScope::Conversation(scope.clone())));
+        assert_ne!(
+            original.generation(&principal),
+            original.generation(&Uuid::from_u128(3))
+        );
+        let mut changed = scope.clone();
+        changed.binding_version += 1;
+        let changed = StreamScope::Conversation(changed);
+        assert!(!original.same_admission(&changed));
+        assert_ne!(
+            original.generation(&principal),
+            changed.generation(&principal)
+        );
+        let mut changed = scope;
+        changed.tenant_binding_version += 1;
+        let changed = StreamScope::Conversation(changed);
+        assert!(!original.same_admission(&changed));
+        assert_ne!(
+            original.generation(&principal),
+            changed.generation(&principal)
+        );
+    }
 }

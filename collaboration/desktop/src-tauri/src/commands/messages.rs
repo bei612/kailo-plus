@@ -223,7 +223,7 @@ pub use event_batch::{get_event, get_events};
 mod thread_ref;
 use thread_ref::thread_ref;
 
-mod unconfirmed;
+pub(crate) mod unconfirmed;
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]

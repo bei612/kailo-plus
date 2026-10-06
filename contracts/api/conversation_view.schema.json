@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/conversation_view.schema.json",
+  "title": "ConversationView",
+  "description": "已认证参与者可见的原 Relay 私聊引用，不包含消息正文。",
+  "type": "object", "additionalProperties": false,
+  "required": ["id", "channelId", "participantPrincipalIds", "state", "version", "operationId"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid"},
+    "channelId": {"type": "string", "format": "uuid"},
+    "participantPrincipalIds": {"type": "array", "items": {"type": "string", "format": "uuid"}},
+    "state": {"type": "string", "enum": ["PROVISIONING", "RECONCILING", "ACTIVE", "DISABLED"]},
+    "version": {"type": "integer"},
+    "operationId": {"type": "string", "format": "uuid"}
+  }
+}

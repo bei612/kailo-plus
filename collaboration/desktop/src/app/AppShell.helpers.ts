@@ -7,7 +7,7 @@ import {
   type PlatformSection,
 } from "@/features/platform/platformSections";
 
-export type AppView = "home" | "channel" | "platform";
+export type AppView = "home" | "channel" | "platform" | "new-message";
 
 const WINDOW_DRAG_HANDLE_HEIGHT = 44;
 const TAURI_DRAG_REGION_ATTR = "data-tauri-drag-region";
@@ -217,6 +217,9 @@ export function deriveShellRoute(pathname: string): {
   selectedPlatformSection: PlatformSection | null;
   selectedView: AppView;
 } {
+  if (pathname === "/messages/new") {
+    return { selectedChannelId: null, selectedPlatformSection: null, selectedView: "new-message" };
+  }
   if (pathname.startsWith("/channels/")) {
     const [, , rawChannelId] = pathname.split("/");
     return {

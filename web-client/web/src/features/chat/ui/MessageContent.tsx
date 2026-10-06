@@ -45,6 +45,7 @@ type MarkdownRenderContextValue = {
   mediaByUrl: ReadonlyMap<string, ImetaMedia>;
   mentionsByName: ReadonlyMap<string, MessageMention>;
   workspaceId: string;
+  conversationId?: string;
 };
 
 const MarkdownRenderContext = createContext<MarkdownRenderContextValue | null>(null);
@@ -78,13 +79,15 @@ function BffMedia({
   media,
   alt,
   workspaceId,
+  conversationId,
 }: {
   media: ImetaMedia;
   alt?: string;
   workspaceId: string;
+  conversationId?: string;
 }) {
   const [failed, setFailed] = useState(false);
-  const src = mediaUrl(workspaceId, media.sha256);
+  const src = mediaUrl(workspaceId, media.sha256, conversationId);
   const dimensions = media.dimensions;
   const intrinsic = dimensions ?? DEFAULT_IMAGE_DIMENSIONS;
   const scale = dimensions
@@ -133,7 +136,7 @@ function BffMedia({
 }
 
 const MarkdownImage: NonNullable<Components["img"]> = ({ src, alt }) => {
-  const { mediaByUrl, workspaceId } = useMarkdownRenderContext();
+  const { mediaByUrl, workspaceId, conversationId } = useMarkdownRenderContext();
   const media = src ? mediaByUrl.get(src) : undefined;
   // 没有 imeta 背书的图片地址不加载：退回成一条普通链接
   if (!media) {
@@ -143,11 +146,11 @@ const MarkdownImage: NonNullable<Components["img"]> = ({ src, alt }) => {
       </a>
     );
   }
-  return <BffMedia media={media} alt={alt} workspaceId={workspaceId} />;
+  return <BffMedia media={media} alt={alt} workspaceId={workspaceId} conversationId={conversationId} />;
 };
 
 const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
-  const { mediaByUrl, workspaceId } = useMarkdownRenderContext();
+  const { mediaByUrl, workspaceId, conversationId } = useMarkdownRenderContext();
   const media = href ? mediaByUrl.get(href) : undefined;
   if (!media) {
     return (
@@ -158,7 +161,7 @@ const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
   }
   // 附件经 BFF 下载：同源，凭网关 cookie
   return (
-    <a href={mediaUrl(workspaceId, media.sha256)} download={String(children) || "attachment"}>
+    <a href={mediaUrl(workspaceId, media.sha256, conversationId)} download={String(children) || "attachment"}>
       <Download className="mr-1 inline h-3.5 w-3.5" />
       {children}
     </a>
@@ -239,11 +242,13 @@ function displayContent(content: string): string {
 export function MessageContent({
   content,
   workspaceId,
+  conversationId,
   mentions = [],
   mediaTags,
 }: {
   content: string;
   workspaceId: string;
+  conversationId?: string;
   mentions?: readonly MessageMention[];
   mediaTags?: readonly (readonly string[])[];
 }) {
@@ -254,7 +259,7 @@ export function MessageContent({
   const mediaByUrl = imetaMedia(mediaTags);
 
   return (
-    <MarkdownRenderContext.Provider value={{ mediaByUrl, mentionsByName, workspaceId }}>
+    <MarkdownRenderContext.Provider value={{ mediaByUrl, mentionsByName, workspaceId, conversationId }}>
       <MessageBody className={`${MESSAGE_BODY_CLASS_NAME} buzz-message-markdown`}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkBreaks, [remarkMentions, { mentionNames }]]}

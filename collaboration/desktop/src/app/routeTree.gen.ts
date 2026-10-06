@@ -8,6 +8,7 @@ import { Route as rootRouteImport } from "./routes/root";
 import { Route as settingsRouteImport } from "./routes/settings";
 import { Route as indexRouteImport } from "./routes/index";
 import { Route as platformDotsectionRouteImport } from "./routes/platform.$section";
+import { Route as messagesDotnewRouteImport } from "./routes/messages.new";
 import { Route as channelsDotchannelIdRouteImport } from "./routes/channels.$channelId";
 
 const settingsRoute = settingsRouteImport.update({
@@ -25,6 +26,11 @@ const platformDotsectionRoute = platformDotsectionRouteImport.update({
   path: "/platform/$section",
   getParentRoute: () => rootRouteImport,
 } as any);
+const messagesDotnewRoute = messagesDotnewRouteImport.update({
+  id: "/messages/new",
+  path: "/messages/new",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const channelsDotchannelIdRoute = channelsDotchannelIdRouteImport.update({
   id: "/channels/$channelId",
   path: "/channels/$channelId",
@@ -35,12 +41,14 @@ export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
   "/settings": typeof settingsRoute;
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
+  "/messages/new": typeof messagesDotnewRoute;
   "/platform/$section": typeof platformDotsectionRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof indexRoute;
   "/settings": typeof settingsRoute;
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
+  "/messages/new": typeof messagesDotnewRoute;
   "/platform/$section": typeof platformDotsectionRoute;
 }
 export interface FileRoutesById {
@@ -48,18 +56,30 @@ export interface FileRoutesById {
   "/": typeof indexRoute;
   "/settings": typeof settingsRoute;
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
+  "/messages/new": typeof messagesDotnewRoute;
   "/platform/$section": typeof platformDotsectionRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: "/" | "/settings" | "/channels/$channelId" | "/platform/$section";
+  fullPaths:
+    | "/"
+    | "/settings"
+    | "/channels/$channelId"
+    | "/messages/new"
+    | "/platform/$section";
   fileRoutesByTo: FileRoutesByTo;
-  to: "/" | "/settings" | "/channels/$channelId" | "/platform/$section";
+  to:
+    | "/"
+    | "/settings"
+    | "/channels/$channelId"
+    | "/messages/new"
+    | "/platform/$section";
   id:
     | "__root__"
     | "/"
     | "/settings"
     | "/channels/$channelId"
+    | "/messages/new"
     | "/platform/$section";
   fileRoutesById: FileRoutesById;
 }
@@ -67,6 +87,7 @@ export interface RootRouteChildren {
   indexRoute: typeof indexRoute;
   settingsRoute: typeof settingsRoute;
   channelsDotchannelIdRoute: typeof channelsDotchannelIdRoute;
+  messagesDotnewRoute: typeof messagesDotnewRoute;
   platformDotsectionRoute: typeof platformDotsectionRoute;
 }
 
@@ -93,6 +114,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof platformDotsectionRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/messages/new": {
+      id: "/messages/new";
+      path: "/messages/new";
+      fullPath: "/messages/new";
+      preLoaderRoute: typeof messagesDotnewRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/channels/$channelId": {
       id: "/channels/$channelId";
       path: "/channels/$channelId";
@@ -107,6 +135,7 @@ const rootRouteChildren: RootRouteChildren = {
   indexRoute: indexRoute,
   settingsRoute: settingsRoute,
   channelsDotchannelIdRoute: channelsDotchannelIdRoute,
+  messagesDotnewRoute: messagesDotnewRoute,
   platformDotsectionRoute: platformDotsectionRoute,
 };
 export const routeTree = rootRouteImport

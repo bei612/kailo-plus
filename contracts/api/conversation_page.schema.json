@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/conversation_page.schema.json",
+  "title": "ConversationPage",
+  "type": "object", "additionalProperties": false,
+  "required": ["items"],
+  "properties": {
+    "items": {"type": "array", "items": {"$ref": "conversation_view.schema.json"}},
+    "nextCursor": {"type": "string", "format": "uuid"}
+  }
+}

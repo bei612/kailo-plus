@@ -61,6 +61,184 @@ pub fn compute_participant_hash(pubkeys: &[&[u8]]) -> [u8; 32] {
 
 // -- DB functions -------------------------------------------------------------
 
+/// A Core-authorized mapping of immutable human participants to current device keys.
+/// This is projection metadata, not a second conversation or message store.
+pub struct GovernedDmProjection {
+    /// Core's stable native channel reference.
+    pub channel_id: Uuid,
+    /// Sorted immutable participant Principal references (not device keys).
+    pub principals: Vec<Uuid>,
+    /// Monotonic Core roster revision.
+    pub generation: i64,
+    /// Current Principal-to-key mapping, sorted by Principal then key.
+    pub keys: Vec<(Uuid, Vec<u8>)>,
+    /// Original human creator key; never the CONTROL signer.
+    pub created_by: Vec<u8>,
+}
+
+/// Apply a governed DM projection in the command event's transaction.
+///
+/// Channel identity is stable across key rotation. Old generations cannot add
+/// revoked keys back; equal generations must have exactly the same payload.
+/// Returns every historical key so replay can finish cache/subscription eviction
+/// even after a crash between commit and notification.
+pub async fn project_governed_dm(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    community_id: CommunityId,
+    control_key: &[u8],
+    projection: &GovernedDmProjection,
+) -> Result<Vec<Vec<u8>>> {
+    let invalid = || DbError::InvalidData("invalid governed DM projection".into());
+    let control_role: Option<String> = sqlx::query_scalar(
+        "SELECT role FROM relay_members WHERE community_id=$1 AND pubkey=$2 FOR SHARE",
+    )
+    .bind(community_id.as_uuid())
+    .bind(hex::encode(control_key))
+    .fetch_optional(&mut **tx)
+    .await?;
+    if control_role.as_deref() != Some("owner") {
+        return Err(DbError::AccessDenied(
+            "DM projection requires CONTROL owner".into(),
+        ));
+    }
+    if projection.channel_id.is_nil()
+        || !(2..=9).contains(&projection.principals.len())
+        || projection.principals.iter().any(Uuid::is_nil)
+        || projection.principals.windows(2).any(|p| p[0] >= p[1])
+        || projection.generation <= 0
+        || projection.created_by.len() != 32
+        || projection.created_by == control_key
+    {
+        return Err(invalid());
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    let mut digest = Sha256::new();
+    for principal in &projection.principals {
+        digest.update(principal.as_bytes());
+    }
+    digest.update(&projection.created_by);
+    for (principal, key) in &projection.keys {
+        if projection.principals.binary_search(principal).is_err()
+            || key.len() != 32
+            || key == control_key
+            || !seen.insert(key)
+        {
+            return Err(invalid());
+        }
+        digest.update(principal.as_bytes());
+        digest.update(key);
+        // Lock the source roster fact against concurrent relay-member removal.
+        let role: Option<String> = sqlx::query_scalar(
+            "SELECT role FROM relay_members WHERE community_id=$1 AND pubkey=$2 FOR SHARE",
+        )
+        .bind(community_id.as_uuid())
+        .bind(hex::encode(key))
+        .fetch_optional(&mut **tx)
+        .await?;
+        if role.as_deref() != Some("member") {
+            return Err(DbError::AccessDenied(
+                "DM key is not an active human relay member".into(),
+            ));
+        }
+    }
+    if projection.keys.windows(2).any(|p| p[0] >= p[1]) {
+        return Err(invalid());
+    }
+    let digest = digest.finalize().to_vec();
+    let name = if projection.principals.len() == 2 {
+        "DM".to_owned()
+    } else {
+        format!("Group DM ({})", projection.principals.len())
+    };
+    let inserted = sqlx::query(
+        "INSERT INTO channels (id,community_id,name,channel_type,visibility,created_by,
+          platform_dm_principals,platform_dm_generation,platform_dm_digest)
+         VALUES ($1,$2,$3,'dm','private',$4,$5,$6,$7)
+         ON CONFLICT (community_id,id) DO NOTHING",
+    )
+    .bind(projection.channel_id)
+    .bind(community_id.as_uuid())
+    .bind(name)
+    .bind(&projection.created_by)
+    .bind(&projection.principals)
+    .bind(projection.generation)
+    .bind(&digest)
+    .execute(&mut **tx)
+    .await?
+    .rows_affected()
+        == 1;
+    let row = sqlx::query(
+        "SELECT platform_dm_principals,platform_dm_generation,platform_dm_digest,
+                channel_type::text AS kind,visibility::text AS visibility,deleted_at
+         FROM channels WHERE community_id=$1 AND id=$2 FOR UPDATE",
+    )
+    .bind(community_id.as_uuid())
+    .bind(projection.channel_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    let principals: Option<Vec<Uuid>> = row.try_get("platform_dm_principals")?;
+    let generation: Option<i64> = row.try_get("platform_dm_generation")?;
+    let stored_digest: Option<Vec<u8>> = row.try_get("platform_dm_digest")?;
+    if principals.as_ref() != Some(&projection.principals)
+        || row.try_get::<String, _>("kind")? != "dm"
+        || row.try_get::<String, _>("visibility")? != "private"
+        || row
+            .try_get::<Option<DateTime<Utc>>, _>("deleted_at")?
+            .is_some()
+        || generation.is_none_or(|g| g > projection.generation)
+        || (generation == Some(projection.generation) && stored_digest.as_ref() != Some(&digest))
+    {
+        return Err(DbError::AccessDenied(
+            "DM projection reference or generation conflict".into(),
+        ));
+    }
+    if inserted || generation != Some(projection.generation) {
+        let active_keys: Vec<Vec<u8>> =
+            projection.keys.iter().map(|(_, key)| key.clone()).collect();
+        sqlx::query(
+            "UPDATE channel_members SET removed_at=now(),removed_by=$3
+             WHERE community_id=$1 AND channel_id=$2 AND removed_at IS NULL
+               AND NOT (pubkey=ANY($4::bytea[]))",
+        )
+        .bind(community_id.as_uuid())
+        .bind(projection.channel_id)
+        .bind(control_key)
+        .bind(&active_keys)
+        .execute(&mut **tx)
+        .await?;
+        for key in active_keys {
+            sqlx::query(
+                "INSERT INTO channel_members (community_id,channel_id,pubkey,role,invited_by)
+                 VALUES ($1,$2,$3,'member',$4)
+                 ON CONFLICT (community_id,channel_id,pubkey) DO UPDATE
+                 SET removed_at=NULL,removed_by=NULL,role='member'",
+            )
+            .bind(community_id.as_uuid())
+            .bind(projection.channel_id)
+            .bind(key)
+            .bind(&projection.created_by)
+            .execute(&mut **tx)
+            .await?;
+        }
+        sqlx::query(
+            "UPDATE channels SET platform_dm_generation=$3,platform_dm_digest=$4
+             WHERE community_id=$1 AND id=$2",
+        )
+        .bind(community_id.as_uuid())
+        .bind(projection.channel_id)
+        .bind(projection.generation)
+        .bind(digest)
+        .execute(&mut **tx)
+        .await?;
+    }
+    sqlx::query_scalar("SELECT pubkey FROM channel_members WHERE community_id=$1 AND channel_id=$2")
+        .bind(community_id.as_uuid())
+        .bind(projection.channel_id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(Into::into)
+}
+
 /// Find an existing DM by its participant hash.
 ///
 /// Returns `None` if no matching DM exists or if it has been deleted.
@@ -600,6 +778,100 @@ impl Db {
 }
 
 // -- Tests --------------------------------------------------------------------
+
+#[cfg(test)]
+mod postgres_tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn governed_dm_keeps_control_out_and_converges_rotated_keys() {
+        let pool = PgPool::connect(&crate::test_support::database_url())
+            .await
+            .unwrap();
+        let db = Db::from_pool(pool.clone());
+        let host = format!("dm-{}.invalid", Uuid::new_v4());
+        let community = db.ensure_configured_community(&host).await.unwrap().id;
+        let control = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let first = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let second = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let rotated = nostr::Keys::generate().public_key().to_bytes().to_vec();
+        let mut principals = vec![Uuid::new_v4(), Uuid::new_v4()];
+        principals.sort_unstable();
+        let mut tx = pool.begin().await.unwrap();
+        for (key, role) in [
+            (&control, "owner"),
+            (&first, "member"),
+            (&second, "member"),
+            (&rotated, "member"),
+        ] {
+            sqlx::query("insert into relay_members(community_id,pubkey,role) values($1,$2,$3)")
+                .bind(community.as_uuid())
+                .bind(hex::encode(key))
+                .bind(role)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+        let mut projection = GovernedDmProjection {
+            channel_id: Uuid::new_v4(),
+            principals: principals.clone(),
+            generation: 1,
+            keys: vec![
+                (principals[0], first.clone()),
+                (principals[1], second.clone()),
+            ],
+            created_by: first.clone(),
+        };
+        project_governed_dm(&mut tx, community, &control, &projection)
+            .await
+            .unwrap();
+        assert!(project_governed_dm(&mut tx, community, &first, &projection)
+            .await
+            .is_err());
+        let active = |channel| {
+            sqlx::query_scalar::<_,Vec<u8>>("select pubkey from channel_members where community_id=$1 and channel_id=$2 and removed_at is null order by pubkey").bind(community.as_uuid()).bind(channel)
+        };
+        let keys = active(projection.channel_id)
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(keys.len(), 2);
+        assert!(!keys.contains(&control));
+        projection.generation += 1;
+        projection.keys = vec![
+            (principals[0], rotated.clone()),
+            (principals[1], second.clone()),
+        ];
+        project_governed_dm(&mut tx, community, &control, &projection)
+            .await
+            .unwrap();
+        project_governed_dm(&mut tx, community, &control, &projection)
+            .await
+            .unwrap();
+        let keys = active(projection.channel_id)
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        assert!(!keys.contains(&first));
+        assert!(keys.contains(&rotated));
+        assert!(keys.contains(&second));
+        projection.generation -= 1;
+        assert!(
+            project_governed_dm(&mut tx, community, &control, &projection)
+                .await
+                .is_err()
+        );
+        projection.generation += 1;
+        projection.keys[0].1 = control.clone();
+        assert!(
+            project_governed_dm(&mut tx, community, &control, &projection)
+                .await
+                .is_err()
+        );
+        tx.rollback().await.unwrap();
+    }
+}
 
 #[cfg(test)]
 mod tests {

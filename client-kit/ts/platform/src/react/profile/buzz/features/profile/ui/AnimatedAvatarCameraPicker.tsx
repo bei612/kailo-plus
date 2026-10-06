@@ -1,0 +1,88 @@
+// Reused from Buzz 779af8886caae1317b4de962082429867ab61503; host transport is injected.
+import { useAvatarText } from "../../../../avatar-host";
+import { Smartphone, Webcam } from "lucide-react";
+
+import type { CameraSource } from "./AnimatedAvatarCapture.helpers";
+import { cn } from "../../../shared/lib/cn";
+
+type AnimatedAvatarCameraPickerProps = {
+  activeCameraSource: CameraSource | null;
+  computerDisabled: boolean;
+  disabled?: boolean;
+  iphoneDisabled: boolean;
+  onSelectSource: (source: CameraSource) => void;
+  stacked?: boolean;
+  testIdPrefix: string;
+};
+
+export function AnimatedAvatarCameraPicker({
+  activeCameraSource,
+  computerDisabled,
+  disabled = false,
+  iphoneDisabled,
+  onSelectSource,
+  stacked = false,
+  testIdPrefix,
+}: AnimatedAvatarCameraPickerProps) {
+  const t = useAvatarText();
+  return (
+    <div
+      className={cn(
+        "grid gap-3",
+        stacked ? "h-full grid-cols-1 grid-rows-2" : "grid-cols-2",
+      )}
+    >
+      {[
+        {
+          disabled: iphoneDisabled,
+          icon: Smartphone,
+          label: t("platform.profile.avatar.useIPhone"),
+          source: "iphone" as const,
+        },
+        {
+          disabled: computerDisabled,
+          icon: Webcam,
+          label: t("platform.profile.avatar.useComputer"),
+          source: "computer" as const,
+        },
+      ].map((option) => {
+        const Icon = option.icon;
+        const isSelected = activeCameraSource === option.source;
+        const isDisabled = disabled || option.disabled;
+        return (
+          <button
+            aria-pressed={isSelected}
+            className={cn(
+              "relative flex flex-col items-center justify-center gap-3 overflow-hidden rounded-xl border border-transparent bg-muted text-foreground transition-[background-color,border-color,color,opacity] duration-[250ms] ease-out hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              stacked ? "h-full min-h-0" : "h-[120px]",
+              isSelected &&
+                "border-primary bg-primary/10 text-primary ring-1 ring-primary/35 hover:bg-primary/10",
+              isDisabled && "cursor-not-allowed opacity-45 hover:bg-muted",
+            )}
+            data-testid={`${testIdPrefix}-animated-camera-${option.source}`}
+            disabled={isDisabled}
+            key={option.source}
+            onClick={() => onSelectSource(option.source)}
+            type="button"
+          >
+            <Icon
+              aria-hidden="true"
+              className={cn(
+                "h-5 w-5 text-foreground transition-colors duration-[250ms] ease-out",
+                isSelected && "text-primary",
+              )}
+            />
+            <span
+              className={cn(
+                "text-sm font-medium text-foreground transition-colors duration-[250ms] ease-out",
+                isSelected && "text-primary",
+              )}
+            >
+              {option.label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}

@@ -13,9 +13,12 @@
 import {
   PlatformSessionAccessMode,
   type PlatformSessionView,
+  type ConversationView,
   ReasonCode,
 } from "@client-kit/contracts";
 import { PlatformProvider } from "@client-kit/platform/react/context";
+import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
+import { ConversationList, useConversations } from "@client-kit/platform/react/new-message";
 import { useSettingsShortcuts } from "@client-kit/platform/react/use-settings-shortcuts";
 import { ProtocolDocumentBridge } from "@client-kit/platform/react/protocol-document-bridge";
 import {
@@ -37,9 +40,11 @@ import {
   WorkspaceManagementPanels,
 } from "@client-kit/platform/react/pages";
 import { ContentSurface, GradientLayer } from "@client-kit/platform/react/surfaces";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
+import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
+import { ChannelSidebar } from "./ChannelSidebar";
 import {
-  BellOff,
   Bot,
   ClipboardCheck,
   Hash,
@@ -47,7 +52,6 @@ import {
   History,
   ListChecks,
   MonitorSmartphone,
-  Star,
   Settings,
   Users,
   Workflow,
@@ -57,13 +61,14 @@ import { BffError, bff, setWorkspacePreference, signOut } from "@/platform/bff-c
 import { ChannelPane } from "@/platform/ui/ChannelPane";
 import { InboxPane } from "@/platform/ui/InboxPane";
 import { SettingsPane } from "@/platform/ui/SettingsPane";
+import { NewMessagePage } from "./NewMessagePage";
 import { translate } from "@client-kit/platform/i18n";
 import { platformQueries } from "@/platform/ui/queries";
 import { getLocale, t } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { useTheme } from "@/shared/theme/ThemeProvider";
 
-type Tab = "channel" | "inbox" | "settings" | PlatformNavigationSection;
+type Tab = "channel" | "inbox" | "settings" | "new-message" | "conversation" | PlatformNavigationSection;
 
 /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
 export function PlatformApp() {
@@ -140,14 +145,16 @@ function Notice({ text }: { text: string }) {
 }
 
 function SignedIn({ session }: { session: PlatformSessionView }) {
-  const queryClient = useQueryClient();
   const workspaces = useQuery(platformQueries.workspaces);
-  const userState = useQuery(platformQueries.userState);
+  const userState = useInboxState(bff);
+  const conversations = useConversations();
+  const [chosenConversation, setChosenConversation] = useState<ConversationView | null>(null);
   const [chosen, setChosen] = useState<string | null>(
     // 未选定 Workspace 时 Core 省略该字段（contracts 的可选字段一律缺省而非 null）
     session.currentWorkspaceId ?? null,
   );
   const [tab, setTab] = useState<Tab>("channel");
+  const [createChannelOpen, setCreateChannelOpen] = useState(false);
   const settingsReturnTab = useRef<Tab>("channel");
   useEffect(() => {
     if (tab !== "settings") settingsReturnTab.current = tab;
@@ -158,29 +165,29 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     onClose: useCallback(() => setTab(settingsReturnTab.current), []),
   });
 
-  // 收藏的排在前面；其余保持服务端顺序
-  const prefs = userState.data?.workspacePreferences ?? {};
-  const rows = [...(workspaces.data ?? [])].sort(
-    (a, b) => Number(prefs[b.id]?.starred ?? false) - Number(prefs[a.id]?.starred ?? false),
-  );
-  // 只认列表里的：列表已经排除了进不去的。会话里记着的 Workspace 若已不在
-  // 列表中（例如已被撤权），不能继续对着它发请求。
-  const active = rows.find((w) => w.id === chosen)?.id ?? rows[0]?.id ?? null;
-  const pref = active ? prefs[active] : undefined;
-
+  const rows = workspaces.isError ? [] : workspaces.data ?? [];
+  // Only use fresh admitted directory rows; a revoked previous selection cannot remain active.
+  const active = rows.find((workspace) => workspace.id === chosen)?.id ?? rows[0]?.id ?? null;
   const preference = useMutation({
-    mutationFn: (next: { starred: boolean; muted: boolean }) =>
-      // 版本不符即冲突（别的端先改了）；重新取状态后由用户再决定，不自动覆盖
-      setWorkspacePreference(active as string, { ...next, version: userState.data?.version ?? 0 }),
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey }),
+    mutationFn: async (next: { id: string; starred: boolean; muted: boolean; version: number }) => {
+      const result = await setWorkspacePreference(next.id, { starred: next.starred, muted: next.muted, version: next.version });
+      if (result.version !== next.version + 1) throw new TransportError("Invalid user-state CAS response");
+      return result;
+    },
+    onSettled: () => userState.refresh(),
   });
+  // A late request can still win its original CAS version. Only a newer authoritative
+  // version proves that intent can no longer mutate; do not start a different write meanwhile.
+  const preferenceUnknown = preference.isError && isOutcomeUnknown(preference.error)
+    && (!userState.state || userState.state.version <= (preference.variables?.version ?? -1));
 
   const onSignOut = useCallback(() => void signOut(), []);
 
   const tabLabel = (name: Tab) =>
     ({
       channel: t("platform.tab.channel"),
+      "new-message": translate(getLocale(), "sidebar.newMessage"),
+      conversation: translate(getLocale(), "sidebar.messages"),
       inbox: translate(getLocale(), "inbox.title"),
       members: t("platform.tab.members"),
       agents: t("platform.tab.agents"),
@@ -201,12 +208,21 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   ) : !active ? (
     <Notice text={t("platform.noWorkspace")} />
   ) : tab === "channel" ? (
-    <ChannelPane key={active} workspaceId={active} myPrincipalId={session.tenantPrincipalId} />
+    <ChannelPane key={active} workspaceId={active} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh} />
   ) : (
     <MembersPane key={active} workspaceId={active} />
   );
   const body =
-    tab === "settings" ? (
+    tab === "new-message" ? (
+      <NewMessagePage currentPrincipalId={session.tenantPrincipalId} onConversationOpened={(conversation) => {
+        setChosenConversation(conversation);
+        setTab("conversation");
+        void conversations.reload().catch(() => undefined);
+      }} />
+    ) : tab === "conversation" ? (
+      chosenConversation ? <ChannelPane key={chosenConversation.id} workspaceId={chosenConversation.id} conversation={chosenConversation}
+        myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh} /> : <Notice text={t("platform.loadFailed")} />
+    ) : tab === "settings" ? (
       <SettingsPane />
     ) : tab === "inbox" ? (
       <InboxPane
@@ -259,7 +275,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             <PlatformNavigation
               locale={getLocale()}
               selectedSection={
-                tab === "channel" || tab === "inbox" || tab === "settings" ? null : tab
+                tab === "channel" || tab === "inbox" || tab === "settings" || tab === "new-message" || tab === "conversation" ? null : tab
               }
               onSelectSection={setTab}
               icons={{
@@ -310,57 +326,21 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             />
           </nav>
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto px-3 py-2">
-            {/* 没有可进入的 Workspace 就不画选择器：一个空下拉框什么也选不了 */}
-            {rows.length > 0 ? (
-              <select
-                aria-label={t("platform.workspace")}
-                className="h-8 w-full min-w-0 rounded-md border border-input bg-transparent px-2"
-                value={active ?? ""}
-                onChange={(e) => setChosen(e.target.value || null)}
-              >
-                {rows.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {prefs[w.id]?.starred ? `★ ${w.name}` : w.name}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-            {active && userState.isSuccess ? (
-              <div className="flex items-center gap-1">
-                <Button
-                  aria-label={t("platform.star")}
-                  aria-pressed={pref?.starred ?? false}
-                  disabled={preference.isPending}
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                  onClick={() =>
-                    preference.mutate({
-                      starred: !(pref?.starred ?? false),
-                      muted: pref?.muted ?? false,
-                    })
-                  }
-                >
-                  <Star className={pref?.starred ? "fill-current" : undefined} />
-                </Button>
-                <Button
-                  aria-label={t("platform.mute")}
-                  aria-pressed={pref?.muted ?? false}
-                  disabled={preference.isPending}
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                  onClick={() =>
-                    preference.mutate({
-                      starred: pref?.starred ?? false,
-                      muted: !(pref?.muted ?? false),
-                    })
-                  }
-                >
-                  <BellOff className={pref?.muted ? undefined : "opacity-40"} />
-                </Button>
-              </div>
-            ) : null}
+            <ConversationList currentPrincipalId={session.tenantPrincipalId} items={conversations.items} loading={conversations.loading}
+              error={conversations.error} selectedId={tab === "conversation" ? chosenConversation?.id ?? null : null}
+              onNewMessage={() => setTab("new-message")} onReload={() => { void conversations.reload().catch(() => undefined); }}
+              onSelect={(conversation) => { setChosenConversation(conversation); setTab("conversation"); }} />
+            <ChannelSidebar principalId={session.tenantPrincipalId} workspaces={rows} selectedId={active} active={tab === "channel"}
+              reads={userState} preferencePending={preference.isPending || preferenceUnknown}
+              onSelect={(id) => { setChosen(id); setTab("channel"); }}
+              onCreate={() => setCreateChannelOpen(true)}
+              onSetPreference={(id, value) => {
+                if (userState.state) preference.mutate({ id, ...value, version: userState.state.version });
+              }} />
+            {preference.isError ? <p role="alert" className="px-4 text-sm">
+              {preferenceUnknown ? translate(getLocale(), "sidebar.preferenceUnknown") : t("platform.loadFailed")}
+              <Button size="sm" onClick={() => void userState.refresh()}>{t("platform.retry")}</Button>
+            </p> : null}
           </div>
           <div className="flex shrink-0 items-center gap-2 p-3">
             <span className="min-w-0 flex-1 truncate text-muted-foreground">
@@ -389,6 +369,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
           <main className="min-h-0 flex-1 overflow-auto p-4">{body}</main>
         </ContentSurface>
       </div>
+      <CreateChannelDialog open={createChannelOpen} onOpenChange={setCreateChannelOpen} />
     </div>
   );
 }

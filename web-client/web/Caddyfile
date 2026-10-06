@@ -13,8 +13,8 @@
 	# 只剩一种用途——被当作追踪像素或外带通道。
 	header {
 		-Server
-		Content-Security-Policy "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self' {$WEB_EDITOR_ORIGINS}; frame-ancestors 'none'; frame-src 'self' blob: {$NATIVE_PAGE_ORIGINS} {$WEB_EDITOR_ORIGINS}; img-src 'self' blob: data:; manifest-src 'self'; media-src 'self' blob:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
-		Permissions-Policy "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self' {$WEB_EDITOR_ORIGINS}; frame-ancestors 'none'; frame-src 'self' blob: {$NATIVE_PAGE_ORIGINS} {$WEB_EDITOR_ORIGINS}; img-src 'self' blob: data:; manifest-src 'self'; media-src 'self' blob:; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
+		Permissions-Policy "camera=(self), geolocation=(), microphone=(), payment=(), usb=()"
 		# 不能是 no-referrer：在该策略下浏览器把非 CORS POST 的 Origin 序列化为
 		# "null"，而网关 logout 要求 Origin 等于网关自身来源才放行（SF-AGW-21），
 		# 结果是「退出」永远被判 CSRF 失败。same-origin 对同源请求带上真实

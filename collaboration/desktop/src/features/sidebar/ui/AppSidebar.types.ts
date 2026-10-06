@@ -9,6 +9,7 @@ export type AppSidebarProps = {
   activeCommunity: Community;
   channels: Channel[];
   currentPubkey?: string;
+  currentPrincipalId?: string;
   fallbackDisplayName?: string;
   homeBadgeCount: number;
   isLoading: boolean;
@@ -16,7 +17,8 @@ export type AppSidebarProps = {
   relayConnectionCard: ReturnType<typeof useSidebarRelayConnectionCard>;
   errorMessage?: string;
   selectedChannelId: string | null;
-  selectedView: "home" | "channel" | "platform";
+  selectedView: "home" | "channel" | "platform" | "new-message";
+  onNewMessage: () => void;
   selectedPlatformSection: PlatformSection | null;
   unreadChannelIds: ReadonlySet<string>;
   highPriorityUnreadChannelIds: ReadonlySet<string>;

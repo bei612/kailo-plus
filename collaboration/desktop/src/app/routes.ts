@@ -6,5 +6,6 @@ export const routes = rootRoute("root.tsx", [
   index("index.tsx"),
   route("/settings", "settings.tsx"),
   route("/channels/$channelId", "channels.$channelId.tsx"),
+  route("/messages/new", "messages.new.tsx"),
   route("/platform/$section", "platform.$section.tsx"),
 ]);

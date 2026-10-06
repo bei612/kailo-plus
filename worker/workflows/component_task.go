@@ -67,6 +67,8 @@ type ScopeTarget struct {
 	Operation string `json:"operation,omitempty"`
 	// 删除准入冻结的快照；建立、暂停与恢复不写此字段。
 	SnapshotID string `json:"snapshotId,omitempty"`
+	// 仅新建链冻结；旧 history 缺省为 nil，不改变其命令序列。
+	Creator *MembershipTarget `json:"creator,omitempty"`
 }
 
 // ScopeTarget.Operation 的取值，与 Core 的 ScopeOperation 逐字相同。
@@ -96,6 +98,7 @@ type SecretRefRehomeTarget struct {
 
 // ComponentTaskInput 是 ComponentTaskWorkflow 的统一输入。
 type ComponentTaskInput struct {
+	Conversation         *generated.ConversationProjectionTarget         `json:"conversation,omitempty"`
 	Kind                 generated.WorkflowKind                          `json:"kind"`
 	Membership           *MembershipTarget                               `json:"membership,omitempty"`
 	Scope                *ScopeTarget                                    `json:"scope,omitempty"`
@@ -315,11 +318,13 @@ func (t *task) cancel() error {
 // 分支，那会让未实现的能力看起来像执行过了。
 func ComponentTask(ctx workflow.Context, in ComponentTaskInput) error {
 	if in.CancelPending && in.Kind != generated.AgentInstallation && in.Kind != generated.WorkflowKind("COMPONENT_RELEASE") &&
-		in.Kind != generated.WorkflowKind("COMPONENT_BINDING") && in.Kind != generated.WorkflowKind("COMPONENT_DISABLE") && in.Kind != generated.WorkflowKind("RESOURCE_PROVISION") && in.Kind != generated.WorkflowKind("COMPONENT_ACTION") && in.Kind != generated.WorkflowKind("PROTOCOL_SESSION_RECONCILE") && !(in.Kind == generated.TenantLifecycle &&
+		in.Kind != generated.WorkflowKind("COMPONENT_BINDING") && in.Kind != generated.WorkflowKind("COMPONENT_DISABLE") && in.Kind != generated.WorkflowKind("RESOURCE_PROVISION") && in.Kind != generated.WorkflowKind("COMPONENT_ACTION") && in.Kind != generated.WorkflowKind("PROTOCOL_SESSION_RECONCILE") && in.Kind != generated.WorkflowKind("CONVERSATION_PROJECTION") && !(in.Kind == generated.TenantLifecycle &&
 		in.Scope != nil && in.Scope.Operation == scopeOperationDelete) {
 		return newTask(ctx, in).cancel()
 	}
 	switch in.Kind {
+	case generated.WorkflowKind("CONVERSATION_PROJECTION"):
+		return conversationProjection(ctx, in)
 	case generated.WorkflowKind("PROTOCOL_SESSION_RECONCILE"):
 		return protocolSession(ctx, in)
 	case generated.WorkflowKind("COMPONENT_ACTION"):
@@ -415,6 +420,14 @@ func membershipLifecycle(
 		return t.fail(err)
 	}
 
+	if err := convergeMembership(ctx, t, m, want, terminal); err != nil {
+		return t.fail(err)
+	}
+	return t.complete()
+}
+
+// 新 Workspace 的创建者与独立成员动作共用投影顺序与终态接口。
+func convergeMembership(ctx workflow.Context, t *task, m *MembershipTarget, want activities.Presence, terminal string) error {
 	// 1. SpiceDB 关系：授权投影。Converge 内部以 FullyConsistent 读回查证。
 	relationObject := "tenant"
 	if m.Scope == "WORKSPACE" {
@@ -451,7 +464,7 @@ func membershipLifecycle(
 		if err := t.step(func(ao workflow.Context) workflow.Future {
 			return workflow.ExecuteActivity(ao, (*activities.SpiceDB).RevokeSubject, scope)
 		}, nil); err != nil {
-			return t.fail(err)
+			return err
 		}
 	} else if err := t.step(func(ao workflow.Context) workflow.Future {
 		return workflow.ExecuteActivity(ao, (*activities.SpiceDB).Converge,
@@ -463,7 +476,7 @@ func membershipLifecycle(
 				SubjectID:    m.SubjectPrincipalID,
 			}, want)
 	}, nil); err != nil {
-		return t.fail(err)
+		return err
 	}
 
 	// 1b. Tenant 撤权连带的 WorkspaceMembership：SpiceDB 关系已由上一步按主体
@@ -475,7 +488,7 @@ func membershipLifecycle(
 			workflow.DefaultVersion, 1) == 1 {
 		for _, wm := range m.WorkspaceMemberships {
 			if err := revokeWorkspaceMembership(ctx, t, wm); err != nil {
-				return t.fail(err)
+				return err
 			}
 		}
 	}
@@ -495,7 +508,7 @@ func membershipLifecycle(
 				Presence:          presence,
 			})
 	}, nil); err != nil {
-		return t.fail(err)
+		return err
 	}
 
 	// 3. 两个投影都已查证，才让 Core 跃迁成员状态。
@@ -510,12 +523,11 @@ func membershipLifecycle(
 				WorkflowID:   workflow.GetInfo(ctx).WorkflowExecution.ID,
 			})
 	}, &out); err != nil {
-		return t.fail(err)
+		return err
 	}
 	workflow.GetLogger(ctx).Info("成员状态已跃迁", "state", out.State, "version", out.Version)
 
-	// 终态投影失败就不算 terminal（06 §3.1）：工作台上看不到的完成不是完成。
-	return t.complete()
+	return nil
 }
 
 // revokeWorkspaceMembership 把 Tenant 撤权连带的一个 WorkspaceMembership 从 Channel
@@ -746,6 +758,16 @@ func workspaceLifecycle(ctx workflow.Context, in ComponentTaskInput) error {
 			})
 	}, nil); err != nil {
 		return t.fail(err)
+	}
+
+	if s.Creator != nil {
+		if s.Creator.Scope != "WORKSPACE" || s.Creator.RelationObjectID != s.ID {
+			return t.fail(temporal.NewNonRetryableApplicationError(
+				"Workspace 创建者不属于冻结的 Workspace", activities.ErrTypeRejected, nil))
+		}
+		if err := convergeMembership(ctx, t, s.Creator, activities.Present, "ACTIVE"); err != nil {
+			return t.fail(err)
+		}
 	}
 
 	var out activities.TransitionOutput

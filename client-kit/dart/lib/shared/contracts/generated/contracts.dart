@@ -63,6 +63,11 @@
 //     final componentReleaseApprovalReport = componentReleaseApprovalReportFromJson(jsonString);
 //     final componentReleasePage = componentReleasePageFromJson(jsonString);
 //     final componentReleaseReceipt = componentReleaseReceiptFromJson(jsonString);
+//     final conversationOpenRequest = conversationOpenRequestFromJson(jsonString);
+//     final conversationPage = conversationPageFromJson(jsonString);
+//     final conversationParticipant = conversationParticipantFromJson(jsonString);
+//     final conversationParticipantPage = conversationParticipantPageFromJson(jsonString);
+//     final conversationView = conversationViewFromJson(jsonString);
 //     final evidenceView = evidenceViewFromJson(jsonString);
 //     final invitationRedemptionView = invitationRedemptionViewFromJson(jsonString);
 //     final invitationRedemptionRequest = invitationRedemptionRequestFromJson(jsonString);
@@ -82,6 +87,8 @@
 //     final taskView = taskViewFromJson(jsonString);
 //     final tenantInvitationView = tenantInvitationViewFromJson(jsonString);
 //     final userStateVersion = userStateVersionFromJson(jsonString);
+//     final webProfileUpdateRequest = webProfileUpdateRequestFromJson(jsonString);
+//     final webProfileView = webProfileViewFromJson(jsonString);
 //     final webPublishMessageRequest = webPublishMessageRequestFromJson(jsonString);
 //     final workspaceView = workspaceViewFromJson(jsonString);
 //     final workspaceMemberView = workspaceMemberViewFromJson(jsonString);
@@ -151,6 +158,9 @@
 //     final componentConformancePlan = componentConformancePlanFromJson(jsonString);
 //     final componentConformanceProbe = componentConformanceProbeFromJson(jsonString);
 //     final componentConformanceStepObservation = componentConformanceStepObservationFromJson(jsonString);
+//     final conversationProjectionRequest = conversationProjectionRequestFromJson(jsonString);
+//     final conversationProjectionResult = conversationProjectionResultFromJson(jsonString);
+//     final conversationProjectionTarget = conversationProjectionTargetFromJson(jsonString);
 //     final freshApprovalAdmissionRequest = freshApprovalAdmissionRequestFromJson(jsonString);
 //     final freshApprovalAdmissionResult = freshApprovalAdmissionResultFromJson(jsonString);
 //     final protocolSessionReconcileRequest = protocolSessionReconcileRequestFromJson(jsonString);
@@ -559,6 +569,36 @@ ComponentReleaseReceipt componentReleaseReceiptFromJson(String str) =>
 String componentReleaseReceiptToJson(ComponentReleaseReceipt data) =>
     json.encode(data.toJson());
 
+ConversationOpenRequest conversationOpenRequestFromJson(String str) =>
+    ConversationOpenRequest.fromJson(json.decode(str));
+
+String conversationOpenRequestToJson(ConversationOpenRequest data) =>
+    json.encode(data.toJson());
+
+ConversationPage conversationPageFromJson(String str) =>
+    ConversationPage.fromJson(json.decode(str));
+
+String conversationPageToJson(ConversationPage data) =>
+    json.encode(data.toJson());
+
+ConversationParticipant conversationParticipantFromJson(String str) =>
+    ConversationParticipant.fromJson(json.decode(str));
+
+String conversationParticipantToJson(ConversationParticipant data) =>
+    json.encode(data.toJson());
+
+ConversationParticipantPage conversationParticipantPageFromJson(String str) =>
+    ConversationParticipantPage.fromJson(json.decode(str));
+
+String conversationParticipantPageToJson(ConversationParticipantPage data) =>
+    json.encode(data.toJson());
+
+ConversationView conversationViewFromJson(String str) =>
+    ConversationView.fromJson(json.decode(str));
+
+String conversationViewToJson(ConversationView data) =>
+    json.encode(data.toJson());
+
 EvidenceView evidenceViewFromJson(String str) =>
     EvidenceView.fromJson(json.decode(str));
 
@@ -666,6 +706,17 @@ UserStateVersion userStateVersionFromJson(String str) =>
 
 String userStateVersionToJson(UserStateVersion data) =>
     json.encode(data.toJson());
+
+WebProfileUpdateRequest webProfileUpdateRequestFromJson(String str) =>
+    WebProfileUpdateRequest.fromJson(json.decode(str));
+
+String webProfileUpdateRequestToJson(WebProfileUpdateRequest data) =>
+    json.encode(data.toJson());
+
+WebProfileView webProfileViewFromJson(String str) =>
+    WebProfileView.fromJson(json.decode(str));
+
+String webProfileViewToJson(WebProfileView data) => json.encode(data.toJson());
 
 WebPublishMessageRequest webPublishMessageRequestFromJson(String str) =>
     WebPublishMessageRequest.fromJson(json.decode(str));
@@ -1104,6 +1155,26 @@ ComponentConformanceStepObservation componentConformanceStepObservationFromJson(
 String componentConformanceStepObservationToJson(
   ComponentConformanceStepObservation data,
 ) => json.encode(data.toJson());
+
+ConversationProjectionRequest conversationProjectionRequestFromJson(
+  String str,
+) => ConversationProjectionRequest.fromJson(json.decode(str));
+
+String conversationProjectionRequestToJson(
+  ConversationProjectionRequest data,
+) => json.encode(data.toJson());
+
+ConversationProjectionResult conversationProjectionResultFromJson(String str) =>
+    ConversationProjectionResult.fromJson(json.decode(str));
+
+String conversationProjectionResultToJson(ConversationProjectionResult data) =>
+    json.encode(data.toJson());
+
+ConversationProjectionTarget conversationProjectionTargetFromJson(String str) =>
+    ConversationProjectionTarget.fromJson(json.decode(str));
+
+String conversationProjectionTargetToJson(ConversationProjectionTarget data) =>
+    json.encode(data.toJson());
 
 FreshApprovalAdmissionRequest freshApprovalAdmissionRequestFromJson(
   String str,
@@ -2566,6 +2637,7 @@ class ActionCommand {
   ///仅组件批准：已登记的不可变ComponentRelease标识。
   final String? componentReleaseId;
   final ComponentReleaseRegistrationClass? componentReleaseRegistration;
+  final ConversationOpenClass? conversationOpen;
 
   ///仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
   final ParametersClass? delegationGrant;
@@ -2642,6 +2714,7 @@ class ActionCommand {
     this.componentAction,
     this.componentReleaseId,
     this.componentReleaseRegistration,
+    this.conversationOpen,
     this.delegationGrant,
     this.delegationId,
     this.delegationVersion,
@@ -2701,6 +2774,9 @@ class ActionCommand {
         : ComponentReleaseRegistrationClass.fromJson(
             json["componentReleaseRegistration"],
           ),
+    conversationOpen: json["conversationOpen"] == null
+        ? null
+        : ConversationOpenClass.fromJson(json["conversationOpen"]),
     delegationGrant: json["delegationGrant"] == null
         ? null
         : ParametersClass.fromJson(json["delegationGrant"]),
@@ -2747,6 +2823,7 @@ class ActionCommand {
     "componentAction": componentAction?.toJson(),
     "componentReleaseId": componentReleaseId,
     "componentReleaseRegistration": componentReleaseRegistration?.toJson(),
+    "conversationOpen": conversationOpen?.toJson(),
     "delegationGrant": delegationGrant?.toJson(),
     "delegationId": delegationId,
     "delegationVersion": delegationVersion,
@@ -3546,6 +3623,26 @@ class ComponentReleaseRegistrationClass {
     "bindingConfigSchemaJson": bindingConfigSchemaJson,
     "manifestJson": manifestJson,
     "packageJson": packageJson,
+  });
+}
+
+///原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
+class ConversationOpenClass {
+  final List<String> participantPrincipalIds;
+
+  ConversationOpenClass({required this.participantPrincipalIds});
+
+  factory ConversationOpenClass.fromJson(Map<String, dynamic> json) =>
+      ConversationOpenClass(
+        participantPrincipalIds: List<String>.from(
+          json["participantPrincipalIds"].map((x) => x),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "participantPrincipalIds": List<dynamic>.from(
+      participantPrincipalIds.map((x) => x),
+    ),
   });
 }
 
@@ -6687,6 +6784,7 @@ enum WorkflowKind {
   COMPONENT_BINDING,
   COMPONENT_DISABLE,
   COMPONENT_RELEASE,
+  CONVERSATION_PROJECTION,
   MEMBERSHIP_PROJECTION,
   MEMBERSHIP_REVOCATION,
   PROTOCOL_SESSION_RECONCILE,
@@ -6703,6 +6801,7 @@ final workflowKindValues = EnumValues({
   "COMPONENT_BINDING": WorkflowKind.COMPONENT_BINDING,
   "COMPONENT_DISABLE": WorkflowKind.COMPONENT_DISABLE,
   "COMPONENT_RELEASE": WorkflowKind.COMPONENT_RELEASE,
+  "CONVERSATION_PROJECTION": WorkflowKind.CONVERSATION_PROJECTION,
   "MEMBERSHIP_PROJECTION": WorkflowKind.MEMBERSHIP_PROJECTION,
   "MEMBERSHIP_REVOCATION": WorkflowKind.MEMBERSHIP_REVOCATION,
   "PROTOCOL_SESSION_RECONCILE": WorkflowKind.PROTOCOL_SESSION_RECONCILE,
@@ -7629,6 +7728,216 @@ class ComponentReleaseReceipt {
     "componentReleaseId": componentReleaseId,
     "planDigest": planDigest,
     "status": componentReleaseStatusValues.reverse[status],
+  });
+}
+
+///原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
+class ConversationOpenRequest {
+  final List<String> participantPrincipalIds;
+
+  ConversationOpenRequest({required this.participantPrincipalIds});
+
+  factory ConversationOpenRequest.fromJson(Map<String, dynamic> json) =>
+      ConversationOpenRequest(
+        participantPrincipalIds: List<String>.from(
+          json["participantPrincipalIds"].map((x) => x),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "participantPrincipalIds": List<dynamic>.from(
+      participantPrincipalIds.map((x) => x),
+    ),
+  });
+}
+
+class ConversationPage {
+  final List<ItemElement> items;
+  final String? nextCursor;
+
+  ConversationPage({required this.items, this.nextCursor});
+
+  factory ConversationPage.fromJson(Map<String, dynamic> json) =>
+      ConversationPage(
+        items: List<ItemElement>.from(
+          json["items"].map((x) => ItemElement.fromJson(x)),
+        ),
+        nextCursor: json["nextCursor"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "items": List<dynamic>.from(items.map((x) => x.toJson())),
+    "nextCursor": nextCursor,
+  });
+}
+
+///已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
+class ItemElement {
+  final String channelId;
+  final String id;
+  final String operationId;
+  final List<String> participantPrincipalIds;
+  final ItemState state;
+  final int version;
+
+  ItemElement({
+    required this.channelId,
+    required this.id,
+    required this.operationId,
+    required this.participantPrincipalIds,
+    required this.state,
+    required this.version,
+  });
+
+  factory ItemElement.fromJson(Map<String, dynamic> json) => ItemElement(
+    channelId: json["channelId"],
+    id: json["id"],
+    operationId: json["operationId"],
+    participantPrincipalIds: List<String>.from(
+      json["participantPrincipalIds"].map((x) => x),
+    ),
+    state: itemStateValues.map[json["state"]]!,
+    version: json["version"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "channelId": channelId,
+    "id": id,
+    "operationId": operationId,
+    "participantPrincipalIds": List<dynamic>.from(
+      participantPrincipalIds.map((x) => x),
+    ),
+    "state": itemStateValues.reverse[state],
+    "version": version,
+  });
+}
+
+enum ItemState { ACTIVE, DISABLED, PROVISIONING, RECONCILING }
+
+final itemStateValues = EnumValues({
+  "ACTIVE": ItemState.ACTIVE,
+  "DISABLED": ItemState.DISABLED,
+  "PROVISIONING": ItemState.PROVISIONING,
+  "RECONCILING": ItemState.RECONCILING,
+});
+
+///同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
+class ConversationParticipant {
+  final String displayName;
+  final String principalId;
+  final List<String> pubkeys;
+
+  ConversationParticipant({
+    required this.displayName,
+    required this.principalId,
+    required this.pubkeys,
+  });
+
+  factory ConversationParticipant.fromJson(Map<String, dynamic> json) =>
+      ConversationParticipant(
+        displayName: json["displayName"],
+        principalId: json["principalId"],
+        pubkeys: List<String>.from(json["pubkeys"].map((x) => x)),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "displayName": displayName,
+    "principalId": principalId,
+    "pubkeys": List<dynamic>.from(pubkeys.map((x) => x)),
+  });
+}
+
+class ConversationParticipantPage {
+  final List<ItemClass> items;
+  final int maxParticipants;
+  final String? nextCursor;
+
+  ConversationParticipantPage({
+    required this.items,
+    required this.maxParticipants,
+    this.nextCursor,
+  });
+
+  factory ConversationParticipantPage.fromJson(Map<String, dynamic> json) =>
+      ConversationParticipantPage(
+        items: List<ItemClass>.from(
+          json["items"].map((x) => ItemClass.fromJson(x)),
+        ),
+        maxParticipants: json["maxParticipants"],
+        nextCursor: json["nextCursor"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "items": List<dynamic>.from(items.map((x) => x.toJson())),
+    "maxParticipants": maxParticipants,
+    "nextCursor": nextCursor,
+  });
+}
+
+///同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
+class ItemClass {
+  final String displayName;
+  final String principalId;
+  final List<String> pubkeys;
+
+  ItemClass({
+    required this.displayName,
+    required this.principalId,
+    required this.pubkeys,
+  });
+
+  factory ItemClass.fromJson(Map<String, dynamic> json) => ItemClass(
+    displayName: json["displayName"],
+    principalId: json["principalId"],
+    pubkeys: List<String>.from(json["pubkeys"].map((x) => x)),
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "displayName": displayName,
+    "principalId": principalId,
+    "pubkeys": List<dynamic>.from(pubkeys.map((x) => x)),
+  });
+}
+
+///已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
+class ConversationView {
+  final String channelId;
+  final String id;
+  final String operationId;
+  final List<String> participantPrincipalIds;
+  final ItemState state;
+  final int version;
+
+  ConversationView({
+    required this.channelId,
+    required this.id,
+    required this.operationId,
+    required this.participantPrincipalIds,
+    required this.state,
+    required this.version,
+  });
+
+  factory ConversationView.fromJson(Map<String, dynamic> json) =>
+      ConversationView(
+        channelId: json["channelId"],
+        id: json["id"],
+        operationId: json["operationId"],
+        participantPrincipalIds: List<String>.from(
+          json["participantPrincipalIds"].map((x) => x),
+        ),
+        state: itemStateValues.map[json["state"]]!,
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "channelId": channelId,
+    "id": id,
+    "operationId": operationId,
+    "participantPrincipalIds": List<dynamic>.from(
+      participantPrincipalIds.map((x) => x),
+    ),
+    "state": itemStateValues.reverse[state],
+    "version": version,
   });
 }
 
@@ -8792,6 +9101,98 @@ class UserStateVersion {
       UserStateVersion(version: json["version"]);
 
   Map<String, dynamic> toJson() => _stripNulls({"version": version});
+}
+
+///Own Buzz kind:0 metadata. The authenticated host chooses the signer and Tenant; no raw
+///event, author, relay URL or management tags are accepted. Omitted fields are preserved;
+///empty strings explicitly clear a field.
+class WebProfileUpdateRequest {
+  final String? about;
+  final String? avatarUrl;
+  final String? displayName;
+
+  ///Read snapshot guard only. Core derives the signer from the active identity; a mismatch
+  ///rejects without publication.
+  final String expectedPubkey;
+  final String idempotencyKey;
+  final String? nip05Handle;
+
+  WebProfileUpdateRequest({
+    this.about,
+    this.avatarUrl,
+    this.displayName,
+    required this.expectedPubkey,
+    required this.idempotencyKey,
+    this.nip05Handle,
+  });
+
+  factory WebProfileUpdateRequest.fromJson(Map<String, dynamic> json) =>
+      WebProfileUpdateRequest(
+        about: json["about"],
+        avatarUrl: json["avatarUrl"],
+        displayName: json["displayName"],
+        expectedPubkey: json["expectedPubkey"],
+        idempotencyKey: json["idempotencyKey"],
+        nip05Handle: json["nip05Handle"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "about": about,
+    "avatarUrl": avatarUrl,
+    "displayName": displayName,
+    "expectedPubkey": expectedPubkey,
+    "idempotencyKey": idempotencyKey,
+    "nip05Handle": nip05Handle,
+  });
+}
+
+///Current own profile read from Buzz, never a Core profile copy. An absent kind:0 is an
+///empty profile, not a fabricated event.
+class WebProfileView {
+  final String? about;
+
+  ///Same-origin BFF paths for exact media URLs on the current community. A read projection,
+  ///never an upload or remote proxy authority.
+  final Map<String, String> avatarMediaPaths;
+  final String? avatarUrl;
+  final String? displayName;
+  final String? eventId;
+  final String? nip05Handle;
+  final String pubkey;
+
+  WebProfileView({
+    required this.about,
+    required this.avatarMediaPaths,
+    required this.avatarUrl,
+    required this.displayName,
+    required this.eventId,
+    required this.nip05Handle,
+    required this.pubkey,
+  });
+
+  factory WebProfileView.fromJson(Map<String, dynamic> json) => WebProfileView(
+    about: json["about"],
+    avatarMediaPaths: Map.from(
+      json["avatarMediaPaths"],
+    ).map((k, v) => MapEntry<String, String>(k, v)),
+    avatarUrl: json["avatarUrl"],
+    displayName: json["displayName"],
+    eventId: json["eventId"],
+    nip05Handle: json["nip05Handle"],
+    pubkey: json["pubkey"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "about": about,
+    "avatarMediaPaths": Map.from(
+      avatarMediaPaths,
+    ).map((k, v) => MapEntry<String, dynamic>(k, v)),
+    "avatarUrl": avatarUrl,
+    "displayName": displayName,
+    "eventId": eventId,
+    "nip05Handle": nip05Handle,
+    "pubkey": pubkey,
+  });
 }
 
 ///Web HUMAN 的频道根消息语义输入；身份、Channel 与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或 signed
@@ -12990,6 +13391,98 @@ class ComponentConformanceStepObservation {
     "responseDigest": responseDigest,
     "resultDigest": resultDigest,
     "stepKey": stepKey,
+  });
+}
+
+class ConversationProjectionRequest {
+  final String runId;
+  final ConversationProjectionRequestTarget target;
+
+  ConversationProjectionRequest({required this.runId, required this.target});
+
+  factory ConversationProjectionRequest.fromJson(Map<String, dynamic> json) =>
+      ConversationProjectionRequest(
+        runId: json["runId"],
+        target: ConversationProjectionRequestTarget.fromJson(json["target"]),
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"runId": runId, "target": target.toJson()});
+}
+
+class ConversationProjectionRequestTarget {
+  final String actionExecutionId;
+  final String conversationId;
+  final String workflowId;
+
+  ConversationProjectionRequestTarget({
+    required this.actionExecutionId,
+    required this.conversationId,
+    required this.workflowId,
+  });
+
+  factory ConversationProjectionRequestTarget.fromJson(
+    Map<String, dynamic> json,
+  ) => ConversationProjectionRequestTarget(
+    actionExecutionId: json["actionExecutionId"],
+    conversationId: json["conversationId"],
+    workflowId: json["workflowId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "conversationId": conversationId,
+    "workflowId": workflowId,
+  });
+}
+
+class ConversationProjectionResult {
+  final String conversationId;
+  final TaskStatus status;
+  final String waitingReason;
+
+  ConversationProjectionResult({
+    required this.conversationId,
+    required this.status,
+    required this.waitingReason,
+  });
+
+  factory ConversationProjectionResult.fromJson(Map<String, dynamic> json) =>
+      ConversationProjectionResult(
+        conversationId: json["conversationId"],
+        status: taskStatusValues.map[json["status"]]!,
+        waitingReason: json["waitingReason"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "conversationId": conversationId,
+    "status": taskStatusValues.reverse[status],
+    "waitingReason": waitingReason,
+  });
+}
+
+class ConversationProjectionTarget {
+  final String actionExecutionId;
+  final String conversationId;
+  final String workflowId;
+
+  ConversationProjectionTarget({
+    required this.actionExecutionId,
+    required this.conversationId,
+    required this.workflowId,
+  });
+
+  factory ConversationProjectionTarget.fromJson(Map<String, dynamic> json) =>
+      ConversationProjectionTarget(
+        actionExecutionId: json["actionExecutionId"],
+        conversationId: json["conversationId"],
+        workflowId: json["workflowId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "conversationId": conversationId,
+    "workflowId": workflowId,
   });
 }
 

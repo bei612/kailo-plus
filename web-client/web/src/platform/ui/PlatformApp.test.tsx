@@ -57,6 +57,26 @@ vi.mock("@client-kit/platform/react/protocol-document-bridge", () => ({
     <div data-document-binding={bindingId} />
   ),
 }));
+vi.mock("@client-kit/platform/react/create-channel-dialog", () => ({
+  CreateChannelDialog: ({ open }: { open: boolean }) => (
+    <div data-testid="shared-create-channel-dialog" data-open={open} />
+  ),
+}));
+vi.mock("@client-kit/platform/react/new-message", () => ({
+  useConversations: () => ({ items: [], loading: false, error: null, reload: vi.fn() }),
+  ConversationList: () => <div data-testid="shared-conversation-list" />,
+}));
+vi.mock("./NewMessagePage", () => ({ NewMessagePage: () => null }));
+vi.mock("@client-kit/platform/react/use-inbox-state", () => ({
+  useInboxState: () => ({ state: { version: 0, workspacePreferences: {} }, refresh: vi.fn() }),
+}));
+vi.mock("@/platform/ui/ChannelSidebar", () => ({
+  ChannelSidebar: ({ selectedId, workspaces }: { selectedId: string; workspaces: { id: string }[] }) => (
+    <div data-testid="shared-channel-sidebar" data-selected={selectedId} data-channels={workspaces.length}>
+      <button data-testid="create-channel" />
+    </div>
+  ),
+}));
 vi.mock("@client-kit/platform/react/governance", () => ({
   LifecycleRestrictedView: () => <div data-testid="shared-lifecycle-restricted" />,
   TasksPage: () => null,
@@ -109,6 +129,10 @@ it("retains the host-selected Workspace and mounts all shared management panels 
   expect(markup).toContain('data-workspace="workspace-b"');
   expect(markup).not.toContain('data-workspace="workspace-a"');
   expect(markup).toContain('data-testid="sidebar-settings"');
+  expect(markup).toContain('data-testid="create-channel"');
+  expect(markup).toContain('data-testid="shared-channel-sidebar" data-selected="workspace-b" data-channels="2"');
+  expect(markup).not.toContain("<select");
+  expect(markup).toContain('data-testid="shared-create-channel-dialog" data-open="false"');
 });
 
 it("routes a native file menu through the normal platform session with the resolved Buzz theme", () => {

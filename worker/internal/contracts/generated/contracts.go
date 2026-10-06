@@ -190,6 +190,21 @@
 //    componentReleaseReceipt, err := UnmarshalComponentReleaseReceipt(bytes)
 //    bytes, err = componentReleaseReceipt.Marshal()
 //
+//    conversationOpenRequest, err := UnmarshalConversationOpenRequest(bytes)
+//    bytes, err = conversationOpenRequest.Marshal()
+//
+//    conversationPage, err := UnmarshalConversationPage(bytes)
+//    bytes, err = conversationPage.Marshal()
+//
+//    conversationParticipant, err := UnmarshalConversationParticipant(bytes)
+//    bytes, err = conversationParticipant.Marshal()
+//
+//    conversationParticipantPage, err := UnmarshalConversationParticipantPage(bytes)
+//    bytes, err = conversationParticipantPage.Marshal()
+//
+//    conversationView, err := UnmarshalConversationView(bytes)
+//    bytes, err = conversationView.Marshal()
+//
 //    evidenceView, err := UnmarshalEvidenceView(bytes)
 //    bytes, err = evidenceView.Marshal()
 //
@@ -246,6 +261,12 @@
 //
 //    userStateVersion, err := UnmarshalUserStateVersion(bytes)
 //    bytes, err = userStateVersion.Marshal()
+//
+//    webProfileUpdateRequest, err := UnmarshalWebProfileUpdateRequest(bytes)
+//    bytes, err = webProfileUpdateRequest.Marshal()
+//
+//    webProfileView, err := UnmarshalWebProfileView(bytes)
+//    bytes, err = webProfileView.Marshal()
 //
 //    webPublishMessageRequest, err := UnmarshalWebPublishMessageRequest(bytes)
 //    bytes, err = webPublishMessageRequest.Marshal()
@@ -453,6 +474,15 @@
 //
 //    componentConformanceStepObservation, err := UnmarshalComponentConformanceStepObservation(bytes)
 //    bytes, err = componentConformanceStepObservation.Marshal()
+//
+//    conversationProjectionRequest, err := UnmarshalConversationProjectionRequest(bytes)
+//    bytes, err = conversationProjectionRequest.Marshal()
+//
+//    conversationProjectionResult, err := UnmarshalConversationProjectionResult(bytes)
+//    bytes, err = conversationProjectionResult.Marshal()
+//
+//    conversationProjectionTarget, err := UnmarshalConversationProjectionTarget(bytes)
+//    bytes, err = conversationProjectionTarget.Marshal()
 //
 //    freshApprovalAdmissionRequest, err := UnmarshalFreshApprovalAdmissionRequest(bytes)
 //    bytes, err = freshApprovalAdmissionRequest.Marshal()
@@ -1123,6 +1153,56 @@ func (r *ComponentReleaseReceipt) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalConversationOpenRequest(data []byte) (ConversationOpenRequest, error) {
+	var r ConversationOpenRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ConversationOpenRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalConversationPage(data []byte) (ConversationPage, error) {
+	var r ConversationPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ConversationPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalConversationParticipant(data []byte) (ConversationParticipant, error) {
+	var r ConversationParticipant
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ConversationParticipant) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalConversationParticipantPage(data []byte) (ConversationParticipantPage, error) {
+	var r ConversationParticipantPage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ConversationParticipantPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalConversationView(data []byte) (ConversationView, error) {
+	var r ConversationView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ConversationView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalEvidenceView(data []byte) (EvidenceView, error) {
 	var r EvidenceView
 	err := json.Unmarshal(data, &r)
@@ -1310,6 +1390,26 @@ func UnmarshalUserStateVersion(data []byte) (UserStateVersion, error) {
 }
 
 func (r *UserStateVersion) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebProfileUpdateRequest(data []byte) (WebProfileUpdateRequest, error) {
+	var r WebProfileUpdateRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebProfileUpdateRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebProfileView(data []byte) (WebProfileView, error) {
+	var r WebProfileView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebProfileView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2003,6 +2103,36 @@ func (r *ComponentConformanceStepObservation) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalConversationProjectionRequest(data []byte) (ConversationProjectionRequest, error) {
+	var r ConversationProjectionRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ConversationProjectionRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalConversationProjectionResult(data []byte) (ConversationProjectionResult, error) {
+	var r ConversationProjectionResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ConversationProjectionResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalConversationProjectionTarget(data []byte) (ConversationProjectionTarget, error) {
+	var r ConversationProjectionTarget
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ConversationProjectionTarget) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalFreshApprovalAdmissionRequest(data []byte) (FreshApprovalAdmissionRequest, error) {
 	var r FreshApprovalAdmissionRequest
 	err := json.Unmarshal(data, &r)
@@ -2468,6 +2598,7 @@ type ActionCommand struct {
 	// 仅组件批准：已登记的不可变ComponentRelease标识。
 	ComponentReleaseID           *string                            `json:"componentReleaseId,omitempty"`
 	ComponentReleaseRegistration *ComponentReleaseRegistrationClass `json:"componentReleaseRegistration,omitempty"`
+	ConversationOpen             *ConversationOpenClass             `json:"conversationOpen,omitempty"`
 	// 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
 	DelegationGrant *DelegationGrantClass `json:"delegationGrant,omitempty"`
 	// 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
@@ -2675,6 +2806,11 @@ type ComponentReleaseRegistrationClass struct {
 	BindingConfigSchemaJSON string `json:"bindingConfigSchemaJson"`
 	ManifestJSON            string `json:"manifestJson"`
 	PackageJSON             string `json:"packageJson"`
+}
+
+// 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
+type ConversationOpenClass struct {
+	ParticipantPrincipalIDS []string `json:"participantPrincipalIds"`
 }
 
 // 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
@@ -3592,6 +3728,56 @@ type ComponentReleaseReceipt struct {
 	Status             ComponentReleaseStatus `json:"status"`
 }
 
+// 原生私聊的完整 HUMAN Principal 参与者集合，必须包含当前 HUMAN；不接受设备公钥、CONTROL 身份或 Workspace 冒名。
+type ConversationOpenRequest struct {
+	ParticipantPrincipalIDS []string `json:"participantPrincipalIds"`
+}
+
+type ConversationPage struct {
+	Items      []ItemElement `json:"items"`
+	NextCursor *string       `json:"nextCursor,omitempty"`
+}
+
+// 已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
+type ItemElement struct {
+	ChannelID               string    `json:"channelId"`
+	ID                      string    `json:"id"`
+	OperationID             string    `json:"operationId"`
+	ParticipantPrincipalIDS []string  `json:"participantPrincipalIds"`
+	State                   ItemState `json:"state"`
+	Version                 int64     `json:"version"`
+}
+
+// 同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
+type ConversationParticipant struct {
+	DisplayName string   `json:"displayName"`
+	PrincipalID string   `json:"principalId"`
+	Pubkeys     []string `json:"pubkeys"`
+}
+
+type ConversationParticipantPage struct {
+	Items           []ItemClass `json:"items"`
+	MaxParticipants int64       `json:"maxParticipants"`
+	NextCursor      *string     `json:"nextCursor,omitempty"`
+}
+
+// 同租户当前有效 HUMAN 及其已投影真实身份公钥，不伪造用户资料。
+type ItemClass struct {
+	DisplayName string   `json:"displayName"`
+	PrincipalID string   `json:"principalId"`
+	Pubkeys     []string `json:"pubkeys"`
+}
+
+// 已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
+type ConversationView struct {
+	ChannelID               string    `json:"channelId"`
+	ID                      string    `json:"id"`
+	OperationID             string    `json:"operationId"`
+	ParticipantPrincipalIDS []string  `json:"participantPrincipalIds"`
+	State                   ItemState `json:"state"`
+	Version                 int64     `json:"version"`
+}
+
 // GET /api/v1/audit/events/{id}/evidence/{index} 的回应。每次以事件 scope 的当前 audit permission fresh
 // 授权；每种证据另向其权威源查证原对象仍存在：明确不存在回 404（正文为 NOT_FOUND 的不可用视图），权威源不提供查证接口为 UNVERIFIABLE，权威源不可达回
 // 503。不可用时不回任何 ref 内容。
@@ -3873,6 +4059,34 @@ type TenantInvitationView struct {
 // /api/v1/user-state/workspaces/{workspaceId} 的 200 回应）。
 type UserStateVersion struct {
 	Version int64 `json:"version"`
+}
+
+// Own Buzz kind:0 metadata. The authenticated host chooses the signer and Tenant; no raw
+// event, author, relay URL or management tags are accepted. Omitted fields are preserved;
+// empty strings explicitly clear a field.
+type WebProfileUpdateRequest struct {
+	About       *string `json:"about,omitempty"`
+	AvatarURL   *string `json:"avatarUrl,omitempty"`
+	DisplayName *string `json:"displayName,omitempty"`
+	// Read snapshot guard only. Core derives the signer from the active identity; a mismatch
+	// rejects without publication.
+	ExpectedPubkey string  `json:"expectedPubkey"`
+	IdempotencyKey string  `json:"idempotencyKey"`
+	Nip05Handle    *string `json:"nip05Handle,omitempty"`
+}
+
+// Current own profile read from Buzz, never a Core profile copy. An absent kind:0 is an
+// empty profile, not a fabricated event.
+type WebProfileView struct {
+	About *string `json:"about"`
+	// Same-origin BFF paths for exact media URLs on the current community. A read projection,
+	// never an upload or remote proxy authority.
+	AvatarMediaPaths map[string]string `json:"avatarMediaPaths"`
+	AvatarURL        *string           `json:"avatarUrl"`
+	DisplayName      *string           `json:"displayName"`
+	EventID          *string           `json:"eventId"`
+	Nip05Handle      *string           `json:"nip05Handle"`
+	Pubkey           string            `json:"pubkey"`
 }
 
 // Web HUMAN 的频道根消息语义输入；身份、Channel 与 mention 公钥均由 BFF 在原 scope 中解析，不接受 raw tags 或 signed
@@ -4933,6 +5147,29 @@ type ComponentConformanceStepObservation struct {
 	StepKey      string  `json:"stepKey"`
 }
 
+type ConversationProjectionRequest struct {
+	RunID  string                              `json:"runId"`
+	Target ConversationProjectionRequestTarget `json:"target"`
+}
+
+type ConversationProjectionRequestTarget struct {
+	ActionExecutionID string `json:"actionExecutionId"`
+	ConversationID    string `json:"conversationId"`
+	WorkflowID        string `json:"workflowId"`
+}
+
+type ConversationProjectionResult struct {
+	ConversationID string     `json:"conversationId"`
+	Status         TaskStatus `json:"status"`
+	WaitingReason  string     `json:"waitingReason"`
+}
+
+type ConversationProjectionTarget struct {
+	ActionExecutionID string `json:"actionExecutionId"`
+	ConversationID    string `json:"conversationId"`
+	WorkflowID        string `json:"workflowId"`
+}
+
 // FreshApprovalAdmission Activity 发往 Core service API 的请求（.design/06 §4）：active HUMAN、fresh
 // 选择器 permission、owner 对账与职责分离由 Core 判定。
 type FreshApprovalAdmissionRequest struct {
@@ -5434,9 +5671,9 @@ const (
 type GrantState string
 
 const (
+	PurpleACTIVE  GrantState = "ACTIVE"
 	PurpleEXPIRED GrantState = "EXPIRED"
 	PurpleREVOKED GrantState = "REVOKED"
-	StateACTIVE   GrantState = "ACTIVE"
 	StateREVOKING GrantState = "REVOKING"
 )
 
@@ -5450,7 +5687,7 @@ const (
 type ChannelBindingStatus string
 
 const (
-	PurpleACTIVE   ChannelBindingStatus = "ACTIVE"
+	FluffyACTIVE   ChannelBindingStatus = "ACTIVE"
 	StatusDISABLED ChannelBindingStatus = "DISABLED"
 	StatusERROR    ChannelBindingStatus = "ERROR"
 )
@@ -5665,6 +5902,7 @@ const (
 	ComponentBinding         WorkflowKind = "COMPONENT_BINDING"
 	ComponentDisable         WorkflowKind = "COMPONENT_DISABLE"
 	ComponentRelease         WorkflowKind = "COMPONENT_RELEASE"
+	ConversationProjection   WorkflowKind = "CONVERSATION_PROJECTION"
 	MembershipProjection     WorkflowKind = "MEMBERSHIP_PROJECTION"
 	MembershipRevocation     WorkflowKind = "MEMBERSHIP_REVOCATION"
 	ProtocolSessionReconcile WorkflowKind = "PROTOCOL_SESSION_RECONCILE"
@@ -5687,11 +5925,11 @@ const (
 type BuzzIdentityState string
 
 const (
-	BuzzIdentityStateACTIVE   BuzzIdentityState = "ACTIVE"
-	BuzzIdentityStateREVOKED  BuzzIdentityState = "REVOKED"
-	BuzzIdentityStateREVOKING BuzzIdentityState = "REVOKING"
-	PendingSecret             BuzzIdentityState = "PENDING_SECRET"
-	Reconciling               BuzzIdentityState = "RECONCILING"
+	BuzzIdentityStateACTIVE      BuzzIdentityState = "ACTIVE"
+	BuzzIdentityStateRECONCILING BuzzIdentityState = "RECONCILING"
+	BuzzIdentityStateREVOKED     BuzzIdentityState = "REVOKED"
+	BuzzIdentityStateREVOKING    BuzzIdentityState = "REVOKING"
+	PendingSecret                BuzzIdentityState = "PENDING_SECRET"
 )
 
 // 原登记套件的真实操作种类；MCP 方法不属于 AdapterProtocolOperation，也不要求原生 peer 实现 Adapter API。
@@ -5755,6 +5993,15 @@ const (
 	ComponentReleaseStatusREVOKED  ComponentReleaseStatus = "REVOKED"
 	Registered                     ComponentReleaseStatus = "REGISTERED"
 	Rejected                       ComponentReleaseStatus = "REJECTED"
+)
+
+type ItemState string
+
+const (
+	StateDISABLED     ItemState = "DISABLED"
+	StatePROVISIONING ItemState = "PROVISIONING"
+	StateRECONCILING  ItemState = "RECONCILING"
+	TentacledACTIVE   ItemState = "ACTIVE"
 )
 
 // 解引用只显示不可用时的原因：原证据已不存在（HTTP 404）、敏感级别未获授权、存量种类不可识别、权威源无法按该 ID 查证其仍存在。
@@ -5829,8 +6076,8 @@ const (
 type ToolStatus string
 
 const (
-	FluffyACTIVE       ToolStatus = "ACTIVE"
 	StatusPROVISIONING ToolStatus = "PROVISIONING"
+	StickyACTIVE       ToolStatus = "ACTIVE"
 )
 
 type ProtocolSessionViewState string

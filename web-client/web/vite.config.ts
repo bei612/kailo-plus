@@ -1,11 +1,13 @@
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { profileAssets } from "../../client-kit/ts/platform/profile-assets.ts";
 
 // https://vite.dev/config/
 export default defineConfig({
   base: process.env.VITE_BASE_PATH || "/",
   plugins: [
+    profileAssets(import.meta.url),
     {
       name: "deployed-platform-build-info",
       apply: "build",

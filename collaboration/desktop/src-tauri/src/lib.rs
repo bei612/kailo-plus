@@ -9,7 +9,6 @@ mod egress_guard;
 mod events;
 mod identity_storage;
 mod initial_window;
-mod platform;
 mod link_preview_tags;
 mod linux_media;
 #[cfg(target_os = "macos")]
@@ -27,6 +26,7 @@ mod native_websocket;
 mod native_websocket_batch;
 mod nostr_convert;
 mod observed_unread;
+mod platform;
 mod relay;
 mod relay_admission;
 mod secret_store;
@@ -221,6 +221,8 @@ pub fn run() {
             get_identity,
             get_media_proxy_port,
             get_profile,
+            update_profile,
+            upload_profile_avatar,
             get_relay_http_url,
             get_relay_self,
             get_relay_ws_url,
