@@ -10,6 +10,7 @@
     "initializeResultJson":{"type":"string"},"listResultJson":{"type":"string"},
     "timeoutSeconds":{"type":"integer","minimum":1},"maxResponseBytes":{"type":"integer","minimum":1},
     "maxSteps":{"type":"integer","minimum":1},
-    "readOnlyTools":{"type":"array","items":{"type":"string"},"uniqueItems":true}
+    "readOnlyTools":{"type":"array","items":{"type":"string"},"uniqueItems":true},
+    "nativeCredentials":{"type":"array","description":"隔离原生MCP的既有版本化SecretRef与header映射；经原Core/OpenBao审计和Gateway文件投递，不含凭据值，不借用生产binding身份。","items":{"$ref":"application_adapter_directory.schema.json#/properties/protocolPeers/items/properties/bindings/items/properties/nativeCredentials/items"}}
   }
 }

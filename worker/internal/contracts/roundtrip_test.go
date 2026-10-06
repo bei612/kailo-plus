@@ -14,6 +14,41 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestComponentPeerConformanceRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "component-peer-conformance.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Fatal(err)
+	}
+	for _, include := range []bool{true, false} {
+		if !include {
+			delete(value, "nativeCredentials")
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var typed generated.ComponentProtocolPeerEnvironment
+		if err := json.Unmarshal(encoded, &typed); err != nil {
+			t.Fatal(err)
+		}
+		back, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual map[string]any
+		if err := json.Unmarshal(back, &actual); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(actual, value) {
+			t.Fatal("conformance native reference or legacy absence changed")
+		}
+	}
+}
+
 func TestPulseRoundtrip(t *testing.T) {
 	for name, target := range map[string]any{"pulse-publish.sample.json": &generated.PulsePublishRequest{}, "pulse-query.sample.json": &generated.PulseQueryRequest{}} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", name))
@@ -330,7 +365,7 @@ func TestCanaryRoundtripPreservesEveryField(t *testing.T) {
 }
 
 func TestWebPublishMessageRoundtrip(t *testing.T) {
-	for _, sample := range []string{"web-publish-mention.sample.json", "web-publish-content-only.sample.json", "web-message-edit.sample.json"} {
+	for _, sample := range []string{"web-publish-mention.sample.json", "web-publish-content-only.sample.json", "web-message-edit.sample.json", "web-message-delete.sample.json"} {
 		t.Run(sample, func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", sample))
 			if err != nil {

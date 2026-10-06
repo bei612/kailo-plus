@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { bff, openStream, type StreamFrame } from "./bff-client";
-import { PlatformSessionAccessMode } from "@client-kit/contracts";
+import { bff, deleteMessage, openStream, type StreamFrame } from "./bff-client";
+import { PlatformSessionAccessMode, WebMessageType } from "@client-kit/contracts";
 import { BffError, SessionEndedError } from "@client-kit/platform/transport";
 
 class Source extends EventTarget {
@@ -33,6 +33,18 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+it("freezes the deletion intent across calls without storing body or inventing a new event", async () => {
+  const fetcher = vi.fn().mockImplementation(async () => new Response(JSON.stringify({eventId:"receipt",operationId:"operation"}), {status:200,headers:{"Content-Type":"application/json"}}));
+  vi.stubGlobal("fetch",fetcher);
+  const target="d".repeat(64);
+  await deleteMessage("workspace",target,WebMessageType.ForumPost);
+  await deleteMessage("workspace",target,WebMessageType.ForumPost);
+  const first=fetcher.mock.calls[0]![1] as RequestInit, second=fetcher.mock.calls[1]![1] as RequestInit;
+  expect(String(fetcher.mock.calls[0]![0])).toContain("/workspaces/workspace/messages/delete");
+  expect(new Headers(first.headers).get("Idempotency-Key")).toBe(new Headers(second.headers).get("Idempotency-Key"));
+  expect(JSON.parse(first.body as string)).toEqual({content:"",attachments:[],mentionInstallationIds:[],messageType:"FORUM_POST",deleteEventId:target});
 });
 
 it.each(["session-revoked", "scope-revoked", "identity-revoked"])(

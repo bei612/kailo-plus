@@ -9,6 +9,19 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('component conformance keeps native references and legacy absence', () {
+    final value =
+        jsonDecode(
+              File(
+                '../../contracts/samples/component-peer-conformance.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    for (final include in [true, false]) {
+      if (!include) value.remove('nativeCredentials');
+      expect(ComponentProtocolPeerEnvironment.fromJson(value).toJson(), value);
+    }
+  });
   test('Pulse requests and optional native limit preserve original fields', () {
     final publish =
         jsonDecode(
@@ -315,6 +328,7 @@ void main() {
     'web-publish-mention.sample.json',
     'web-publish-content-only.sample.json',
     'web-message-edit.sample.json',
+    'web-message-delete.sample.json',
   ]) {
     test('WebPublishMessageRequest round-trip $sample', () {
       final original = jsonDecode(

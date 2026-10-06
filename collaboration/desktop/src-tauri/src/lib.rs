@@ -248,6 +248,7 @@ pub fn run() {
             search_users,
             send_channel_message,
             edit_message,
+            delete_message,
             set_window_vibrancy,
             show_native_notification,
             sign_event,

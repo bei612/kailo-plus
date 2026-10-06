@@ -202,3 +202,40 @@ release 签名、真实审批/Adapter/native 链及三组件接入仍不据此�
 全量终态后，私有 `component_step_jhct3k` 删除前读回 72 条迁移，最大版本
 `20261004017000`、失败 0、连接 0；精确 DROP 与不存在读回均退出 0。只清理
 该可重建验证库，未删除 PG 容器、其他数据库或业务数据。
+
+## 原生协议一致性执行的凭据投递（2026-10-06）
+
+本批修复 `PROTOCOL_PEER` 登记执行的实际缺口：原路由只声明 native MCP host，
+没有把该端点要求的凭据投递给 AgentGateway。不是把匿名请求或 Core JWT 当作
+原生凭据，也不据此把 WeKnora 的完整 KNOWLEDGE 参考实现改成 PROTOCOL_PEER。
+
+- 权威为 DD-70、DD-94 和本文件原登记链；`ComponentProtocolPeerEnvironment`
+  新增可选 `nativeCredentials`，直接引用既有 `ApplicationPeerCredentialDelivery`
+  Schema。沿用 manifest SecretRef、OpenBao 原审计读取、Gateway 受控文件投递，
+  不新增 secret store、绑定记录或浏览器凭据。
+- 影响为原登记 AE、不可变环境摘要与 peer 路由：按真实 Catalog Tenant 校验
+  locator、版本、audience、manifest 声明、header/prefix；原 binding 投递行为不变。
+  conformance 使用从原 AE 派生的独立投递命名空间，避免撞同 AE 的 binding 投递。
+  AE 必须仍为原 `component_release.register` 的 ALLOWED/DISPATCHED。
+- 缺声明、错 Tenant、零版本、未知 key、Cookie header、换行 prefix 均拒绝；
+  取密或审计不可观察不生成可用路由。没有 native secret 声明的旧环境可继续省略
+  新字段；声明了秘密却缺投递映射不能作为匿名回退。没有更改管理员审批或额度。
+- 在既有 4 CPU / 8 GiB SDK 上原生成入口退出 0；四侧原往返验证实际为 Rust 22、
+  TypeScript 27、Dart 22 项通过及 Go contracts 包退出 0。共享样例只含版本化引用，
+  每侧均核验新字段完整保留和旧格式缺省可读，不把该样例结果称为旧部署接入验收。
+  Core `credential_tests` 5 项通过；`component_release::report_tests` 9 通过、
+  1 个真实 wire 数据库演练 ignored；同批 `web_transport` 27 通过，Clippy
+  `--all-targets -- -D warnings` 退出 0。
+
+在 SDK 私有副本将 conformance 的真实 Tenant 改为固定夹具 Tenant 后，跨 Tenant
+负例实际失败（1 failed，退出 101）。随后以正式源原字节恢复，cmp 退出 0，
+credential 5 项重新全部通过。日志在
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`
+的 `forum-delete-core-mutation.log`、`forum-delete-core-route.log` 和
+`forum-delete-final-ui-contracts.log`；生成日志在同一 Data 父目录的
+`peer-conformance.aL7wGw/generate.log`。
+
+本批没有 full、产品构建、Core 部署或 live release/binding 批准；真实 Catalog
+目前仅核到一位 ACTIVE admin，原 self-approval DENY 未修改。原生 WeKnora MCP
+的 authenticated initialize、tools/list 和空知识库只读调用是 native API 连通事实，
+不等于五个知识契约通过一致性、模型投递或协作平台入口已启用。

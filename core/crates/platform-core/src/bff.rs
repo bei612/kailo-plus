@@ -346,6 +346,10 @@ pub fn router(state: BffState) -> Router {
             "/api/v1/workspaces/{workspace_id}/messages",
             get(crate::web_transport::query_messages).post(crate::web_transport::publish_message),
         )
+        .route(
+            "/api/v1/workspaces/{workspace_id}/messages/delete",
+            axum::routing::post(crate::web_transport::delete_message),
+        )
         .exposed_route(
             "/api/v1/workspaces/{workspace_id}/messages/{event_id}/author-profile",
             get(crate::web_transport::message_author_profile),

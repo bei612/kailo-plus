@@ -46,15 +46,21 @@ const approval = (over: Partial<ApprovalView> = {}): ApprovalView => ({
 
 type Route = (r: BffRequest) => BffReply | Promise<BffReply>;
 
-function mount(route: Route, ui: React.ReactNode) {
+function mount(route: Route, ui: React.ReactNode, locale: "en" | "zh-CN" = "en") {
   const send = vi.fn(async (r: BffRequest) => route(r));
-  return { send, host: render(<PlatformProvider client={createBffClient({ send })} locale="en">{ui}</PlatformProvider>) };
+  return { send, host: render(<PlatformProvider client={createBffClient({ send })} locale={locale}>{ui}</PlatformProvider>) };
 }
 
 const posts = (send: ReturnType<typeof vi.fn>) =>
   send.mock.calls.map(([r]) => r as BffRequest).filter((r) => r.method === "POST");
 
 describe("taskPhase", () => {
+  it("keeps future gate, dispatch and workflow values unknown", () => {
+    for (const over of [{ gateState: "FUTURE" }, { dispatchState: "FUTURE" }, { taskStatus: "FUTURE" }]) {
+      const value = JSON.parse(JSON.stringify({ ...task(), ...over }));
+      expect(taskPhase(value)).toEqual({ label: "tasks.status.unknown", tone: "neutral" });
+    }
+  });
   it("结果不明与投影落后不说成功也不说失败", () => {
     const unknown = taskPhase(task({ taskStatus: TaskStatus.Completed, workflowId: "w", observation: ReasonCode.ExternalResultUnknown }));
     expect(unknown).toEqual({ label: "tasks.status.unknown", tone: "neutral" });
@@ -88,6 +94,20 @@ describe("taskPhase", () => {
 });
 
 describe("TasksPage", () => {
+  it.each(["en", "zh-CN"] as const)("shows translated action and waiting condition with original codes in %s", async (locale) => {
+    const value = task({ actionKey: "agent.invoke", workflowId: "w", taskStatus: TaskStatus.Running,
+      waitingReason: "UNKNOWN_EXTERNAL_RESULT" });
+    const { host } = mount((r) => r.path === "/api/v1/tasks"
+      ? { status: 200, body: [value] } : { status: 200, body: value }, <TasksPage allowComponentActions={false} />, locale);
+    const el = await host;
+    await settle();
+    expect(el.textContent).toContain(locale === "en" ? "Run Agent" : "运行 Agent");
+    expect(el.querySelector("code")?.textContent).toBe("agent.invoke");
+    await click(el.querySelector<HTMLButtonElement>('button:has([title="agent.invoke"])')!);
+    expect(el.querySelector('[title="UNKNOWN_EXTERNAL_RESULT"]')?.textContent)
+      .toBe(locale === "en" ? "Outcome not known yet — waiting for reconciliation" : "结果尚不明确，等待对账");
+    expect(el.querySelector('[title="ALLOWED · DISPATCHED · RUNNING"]')).not.toBeNull();
+  });
   it("读不到不是「没有任务」", async () => {
     const { host } = mount(() => {
       throw new TransportError("down");
@@ -115,7 +135,7 @@ describe("TasksPage", () => {
     const el = await host;
     await settle();
     expect(el.textContent).toContain("Waiting for approval");
-    await click(button(el, "tenant.member.revoke"));
+    await click(button(el, "Remove organization membertenant.member.revoke"));
     expect(el.textContent).toContain("op-1");
     expect(el.textContent).toContain("Waiting for approval. (WAITING_APPROVAL)");
     expect(el.textContent).toContain("Organization admin: at least 1");
@@ -139,7 +159,7 @@ describe("TasksPage", () => {
     }, <TasksPage />);
     const el = await host;
     await settle();
-    await click(button(el, "tenant.member.revoke"));
+    await click(button(el, "Remove organization membertenant.member.revoke"));
     await click(button(el, "Withdraw request"));
     await click(button(el, "Confirm"));
     expect(el.textContent).toContain("The request is now: Withdrawn.");
@@ -155,7 +175,7 @@ describe("TasksPage", () => {
     }, <TasksPage />);
     const el = await host;
     await settle();
-    await click(button(el, "tenant.member.revoke"));
+    await click(button(el, "Remove organization membertenant.member.revoke"));
     expect(el.textContent).toContain("Status may be out of date");
     expect([...el.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Withdraw request");
   });
@@ -173,7 +193,7 @@ describe("TasksPage", () => {
     const el = await host;
     await settle();
     expect(el.textContent).not.toContain("Request cancellation");
-    await click(button(el, "tenant.member.revoke"));
+    await click(button(el, "Remove organization membertenant.member.revoke"));
     await click(button(el, "Request cancellation"));
     expect(posts(send)).toHaveLength(0);
     await click(button(el, "Confirm"));
@@ -207,7 +227,7 @@ describe("TasksPage", () => {
     }, <TasksPage />);
     const el = await host;
     await settle();
-    await click(button(el, "tenant.member.revoke"));
+    await click(button(el, "Remove organization membertenant.member.revoke"));
     await click(button(el, "Request cancellation"));
     await click(button(el, "Confirm"));
     expect(el.textContent).toContain("outcome is unknown");
@@ -261,7 +281,7 @@ describe("TasksPage", () => {
     const el = await host;
     await settle();
     expect(el.textContent).not.toContain("Run again");
-    await click(button(el, "tenant.member.revoke"));
+    await click(button(el, "Remove organization membertenant.member.revoke"));
     await click(button(el, "Run again"));
     expect(posts(send)).toHaveLength(0);
     await click(button(el, "Confirm"));

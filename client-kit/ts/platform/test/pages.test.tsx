@@ -2311,6 +2311,23 @@ const ownEntry = () => ({
 const forbidden = { status: 403, body: { class: ErrorClass.Denied, reason: ReasonCode.PermissionDenied } };
 
 describe("AuditPage", () => {
+  it.each(["en", "zh-CN"] as const)("translates real gate and cancellation result codes without implying completion in %s", async (locale) => {
+    const entries = ["ALLOWED", "EVALUATING", "CANCEL_REQUEST_ACCEPTED"].map((resultCode) =>
+      ({ ...ownEntry(), actionKey: "workspace.create", resultCode }));
+    entries.push({ ...ownEntry(), actionKey: "constructor", resultCode: "FUTURE_RESULT" });
+    const host = await mount(transport((r) => r.path === "/api/v1/audit"
+      ? { status: 200, body: entries } : forbidden), <AuditPage />, locale);
+    await settle();
+    expect(host.textContent).toContain(locale === "en" ? "Create channel" : "创建频道");
+    expect(host.querySelector("code")?.textContent).toBe("workspace.create");
+    expect(host.querySelector('[title="ALLOWED"]')?.textContent).toBe(locale === "en"
+      ? "Admission allowed; execution not confirmed" : "已获准，尚未确认执行");
+    expect(host.querySelector('[title="EVALUATING"]')?.textContent).toBe(locale === "en" ? "Being evaluated" : "正在判定");
+    expect(host.querySelector('[title="CANCEL_REQUEST_ACCEPTED"]')?.textContent).toBe(locale === "en"
+      ? "Cancellation request accepted; awaiting task outcome" : "取消请求已接收，等待任务终态");
+    expect(host.textContent).toContain(locale === "en" ? "Unrecognized action" : "未识别的动作");
+    expect(host.textContent).toContain("FUTURE_RESULT");
+  });
   it("keeps non-decisions and unknown wire values neutral instead of reporting rejection", async () => {
     const entries = [
       { ...ownEntry(), decision: "NONE", resultCode: "UNKNOWN" },

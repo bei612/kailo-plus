@@ -13,6 +13,19 @@ use uuid::Uuid;
 
 mod message_tags;
 
+/// Original NIP-09 author deletion; the channel tag delivers its overlay to
+/// channel subscribers. Administrator deletion (9005) is a separate action.
+pub fn build_delete_compat(
+    channel_id: Uuid,
+    target_event_id: EventId,
+) -> Result<EventBuilder, String> {
+    let tags = vec![
+        tag(vec!["h", &channel_id.to_string()])?,
+        tag(vec!["e", &target_event_id.to_hex()])?,
+    ];
+    Ok(EventBuilder::new(Kind::Custom(5), "").tags(tags))
+}
+
 use message_tags::{
     append_client_tags, append_sent_from_thread_tag, emoji_tags, imeta_tags, mention_reference_tags,
 };

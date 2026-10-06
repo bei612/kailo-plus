@@ -41,7 +41,7 @@ import { MessageComposerSurface } from "@client-kit/platform/react/composer/Mess
 import { ChannelThreadPane } from "./ChannelThreadPane";
 import { MessageAuthorIdentity, MessageAuthorProfile } from "./MessageAuthorProfile";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
-import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
+import { applyMessageEdits, sortMessages, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
 import { useRichTextEditor, type LinkSelectionInfo } from "@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor";
 import { useLinkEditor } from "@client-kit/platform/react/composer/features/messages/lib/useLinkEditor";
@@ -86,7 +86,7 @@ function useChannelStream(workspaceId: string, conversationId?: string, onLiveEv
         case "snapshot":
           ready = false;
           for (const event of frame.events) seen.current.add(event.id);
-          setEvents([...frame.events].sort((a, b) => a.created_at - b.created_at));
+          setEvents(sortMessages(frame.events));
           break;
         case "event":
           if (!seen.current.has(frame.event.id)) {
@@ -94,7 +94,7 @@ function useChannelStream(workspaceId: string, conversationId?: string, onLiveEv
             if (ready) receiveLive(frame.event);
           }
           setEvents((prev) =>
-            prev.some((e) => e.id === frame.event.id) ? prev : [...prev, frame.event],
+            prev.some((e) => e.id === frame.event.id) ? prev : sortMessages([...prev, frame.event]),
           );
           break;
         case "live":

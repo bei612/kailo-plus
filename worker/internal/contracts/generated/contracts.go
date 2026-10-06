@@ -4427,6 +4427,9 @@ type WebProfileView struct {
 type WebPublishMessageRequest struct {
 	Attachments []AttachmentElement `json:"attachments,omitempty"`
 	Content     string              `json:"content"`
+	// 删除本人原 Buzz 消息；BFF 回读当前 Channel 原事件核对本人签名身份，发原 kind 5。与
+	// editEventId、parentEventId、非空正文、附件及提及互斥；不授予 kind 9005 管理员删除权限。
+	DeleteEventID *string `json:"deleteEventId,omitempty"`
 	// 编辑原 Buzz 消息；BFF 回读同 Channel 原事件并核对本人签名身份，发原 kind 40003。与 parentEventId 互斥，缺省保持原新消息语义。
 	EditEventID *string `json:"editEventId,omitempty"`
 	// 用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
@@ -4601,7 +4604,7 @@ type ApplicationProtocolPeerBindingDelivery struct {
 	CredentialGeneration *int64 `json:"credentialGeneration,omitempty"`
 	IsolationMode        string `json:"isolationMode"`
 	// 原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
-	NativeCredentials []ApplicationPeerCredentialDelivery `json:"nativeCredentials,omitempty"`
+	NativeCredentials []BindingNativeCredential `json:"nativeCredentials,omitempty"`
 	// 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
 	NativeResources    []ApplicationNativeResourceDelivery `json:"nativeResources,omitempty"`
 	NativeScopeRef     string                              `json:"nativeScopeRef"`
@@ -4610,7 +4613,7 @@ type ApplicationProtocolPeerBindingDelivery struct {
 	WorkspaceID        *string                             `json:"workspaceId,omitempty"`
 }
 
-type ApplicationPeerCredentialDelivery struct {
+type BindingNativeCredential struct {
 	Audience  string `json:"audience"`
 	Header    string `json:"header"`
 	Locator   string `json:"locator"`
@@ -4828,14 +4831,25 @@ type ComponentConformanceIdentityContext struct {
 // 原 COMPONENT_CONFORMANCE_ENVIRONMENT_FILE 的 PROTOCOL_PEER 分支，仅隔离套件运行事实；readOnlyTools
 // 固定隔离实例实际上可安全执行的只读探针，不授予生产业务权限。
 type ComponentProtocolPeerEnvironment struct {
-	ArtifactDigest       string   `json:"artifactDigest"`
-	InitializeResultJSON string   `json:"initializeResultJson"`
-	ListResultJSON       string   `json:"listResultJson"`
-	MaxResponseBytes     int64    `json:"maxResponseBytes"`
-	MaxSteps             int64    `json:"maxSteps"`
-	MCPURL               string   `json:"mcpUrl"`
-	ReadOnlyTools        []string `json:"readOnlyTools"`
-	TimeoutSeconds       int64    `json:"timeoutSeconds"`
+	ArtifactDigest       string `json:"artifactDigest"`
+	InitializeResultJSON string `json:"initializeResultJson"`
+	ListResultJSON       string `json:"listResultJson"`
+	MaxResponseBytes     int64  `json:"maxResponseBytes"`
+	MaxSteps             int64  `json:"maxSteps"`
+	MCPURL               string `json:"mcpUrl"`
+	// 隔离原生MCP的既有版本化SecretRef与header映射；经原Core/OpenBao审计和Gateway文件投递，不含凭据值，不借用生产binding身份。
+	NativeCredentials []ComponentProtocolPeerEnvironmentNativeCredential `json:"nativeCredentials,omitempty"`
+	ReadOnlyTools     []string                                           `json:"readOnlyTools"`
+	TimeoutSeconds    int64                                              `json:"timeoutSeconds"`
+}
+
+type ComponentProtocolPeerEnvironmentNativeCredential struct {
+	Audience  string `json:"audience"`
+	Header    string `json:"header"`
+	Locator   string `json:"locator"`
+	Prefix    string `json:"prefix"`
+	SecretKey string `json:"secretKey"`
+	Version   int64  `json:"version"`
 }
 
 // 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。

@@ -36,6 +36,10 @@ const terminal: Record<TaskStatus, TaskPhase> = {
 };
 
 export function taskPhase(task: TaskView): TaskPhase {
+  if (!Object.values(ActionGateState).includes(task.gateState)
+    || !Object.values(ActionDispatchState).includes(task.dispatchState)
+    || (task.taskStatus !== undefined && !Object.values(TaskStatus).includes(task.taskStatus)))
+    return phase("tasks.status.unknown");
   if (task.observation === ReasonCode.ExternalResultUnknown) return phase("tasks.status.unknown");
   if (task.observation !== undefined) return phase("tasks.status.delayed");
   switch (task.gateState) {

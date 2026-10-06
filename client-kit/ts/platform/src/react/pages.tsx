@@ -5,6 +5,8 @@
 // 未启用的能力不在这里出现：不渲染一个点进去说「未启用」的入口。
 
 import {
+  ActionGateState,
+  ActionDispatchState,
   type AuditEventPage,
   type AuditEvidenceSlot,
   BuzzIdentityState,
@@ -31,7 +33,7 @@ import {
 } from "../i18n";
 import { BffError, type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useLocale, useT } from "./context";
-import { Badge, Button, Cell, Notice, Table } from "./ui";
+import { ActionLabel, Badge, Button, Cell, Notice, Table } from "./ui";
 import { type Loaded, useLoad } from "./use-load";
 import { LegacySecretRefManagement, RoleManagement } from "./roles";
 import { PlatformTenantManagement } from "./tenants";
@@ -184,7 +186,7 @@ export function AuditPage() {
                   <tr key={i}>
                     <Cell title={a.occurredAt}>{relativeTime(locale, a.occurredAt)}</Cell>
                     <Cell>{enumLabel(locale, auditEventTypeMessages, a.eventType)}</Cell>
-                    <Cell>{a.actionKey}</Cell>
+                    <Cell><ActionLabel actionKey={a.actionKey} /></Cell>
                     <Cell><AuditResult decision={a.decision} resultCode={a.resultCode} /></Cell>
                   </tr>
                 ))}
@@ -211,6 +213,16 @@ function AuditResult({ decision, resultCode }: Pick<OwnAuditEntry, "decision" | 
     DISPATCHED: "platform.audit.dispatched", DELIVERED: "platform.audit.delivered",
     NOT_DELIVERED: "platform.audit.notDelivered", REJECTED: "platform.audit.rejected",
     UNKNOWN: "platform.audit.unknownResult",
+    [ActionGateState.Allowed]: "tasks.status.allowed",
+    [ActionGateState.Evaluating]: "tasks.status.evaluating",
+    [ActionGateState.Waiting]: "tasks.status.waitingApproval",
+    [ActionGateState.Denied]: "tasks.status.denied",
+    [ActionGateState.Revoked]: "tasks.status.revoked",
+    [ActionGateState.Expired]: "tasks.status.expired",
+    [ActionDispatchState.NotDispatched]: "tasks.status.notStarted",
+    [ActionDispatchState.Aborted]: "tasks.status.aborted",
+    CANCEL_REQUEST_ACCEPTED: "tasks.status.cancelRequestAccepted",
+    RERUN_ACCEPTED: "tasks.status.rerunAccepted",
   };
   const resultKey = Object.hasOwn(resultKeys, resultCode) ? resultKeys[resultCode] : undefined;
   const result = resultKey ? t(resultKey)
@@ -354,7 +366,7 @@ function ScopedAudit() {
               <tr key={e.id}>
                 <Cell title={e.occurredAt}>{relativeTime(locale, e.occurredAt)}</Cell>
                 <Cell>{enumLabel(locale, auditEventTypeMessages, e.eventType)}</Cell>
-                <Cell>{e.actionKey}</Cell>
+                <Cell><ActionLabel actionKey={e.actionKey} /></Cell>
                 <Cell><AuditResult decision={e.decision} resultCode={e.resultCode} /></Cell>
                 <Cell>
                   {e.workspaceId === undefined

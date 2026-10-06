@@ -56,7 +56,18 @@ fn plan<'a>(
     {
         return Err(blocked());
     }
-    let tenant = uuid(binding, "tenantId")?;
+    credential_plan(uuid(binding, "tenantId")?, refs, declarations, mappings)
+}
+
+fn credential_plan<'a>(
+    tenant: Uuid,
+    refs: &'a [Value],
+    declarations: &[Value],
+    mappings: &'a [Value],
+) -> Result<Vec<Credential<'a>>, Refusal> {
+    if refs.len() != declarations.len() || refs.len() != mappings.len() {
+        return Err(blocked());
+    }
     let mut keys = BTreeSet::new();
     let mut headers = BTreeSet::new();
     let mut result = Vec::new();
@@ -159,6 +170,65 @@ fn plan<'a>(
     Ok(result)
 }
 
+fn conformance_plan<'a>(
+    tenant: Uuid,
+    manifest: &Value,
+    environment: &'a Value,
+) -> Result<Vec<Credential<'a>>, Refusal> {
+    let references = environment
+        .get("nativeCredentials")
+        .map(|value| value.as_array().map(Vec::as_slice).ok_or_else(invalid))
+        .transpose()?
+        .unwrap_or(&[]);
+    let declarations = manifest["secretSchema"].as_array().ok_or_else(invalid)?;
+    // Conformance has no ApplicationBinding yet. Its frozen deployment input
+    // supplies the same SecretRef/header mapping, scoped to the Catalog tenant.
+    credential_plan(tenant, references, declarations, references)
+}
+
+pub(crate) fn validate_conformance(
+    tenant: Uuid,
+    manifest: &Value,
+    environment: &Value,
+) -> Result<(), Refusal> {
+    let plan = conformance_plan(tenant, manifest, environment)?;
+    if !plan.is_empty() {
+        let reader = std::env::var("OPENBAO_SERVICE_IDENTITY").map_err(|_| blocked())?;
+        if reader.is_empty()
+            || plan
+                .iter()
+                .any(|credential| credential.reference.audience != reader)
+        {
+            return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) async fn prepare_conformance(
+    state: &ServiceState,
+    ae: &Execution,
+    manifest: &Value,
+    environment: &Value,
+) -> Result<Value, Refusal> {
+    if ae.action_key != crate::component_release::REGISTER
+        || ae.gate_state != "ALLOWED"
+        || ae.dispatch_state != "DISPATCHED"
+    {
+        return Err(conflict());
+    }
+    validate_conformance(ae.tenant_id, manifest, environment)?;
+    let plan = conformance_plan(ae.tenant_id, manifest, environment)?;
+    project_credentials(
+        state,
+        ae,
+        Uuid::new_v5(&ae.id, b"component-conformance-credential"),
+        1,
+        plan,
+    )
+    .await
+}
+
 fn projection_id(binding: Uuid, generation: i64, key: &str) -> Uuid {
     Uuid::new_v5(
         &binding,
@@ -245,6 +315,16 @@ pub(super) async fn prepare(
         return Err(blocked());
     };
     let plan = plan(binding, manifest, fact, generation)?;
+    project_credentials(state, ae, ae.target_id, generation, plan).await
+}
+
+async fn project_credentials(
+    state: &ServiceState,
+    ae: &Execution,
+    scope: Uuid,
+    generation: i64,
+    plan: Vec<Credential<'_>>,
+) -> Result<Value, Refusal> {
     let gateway = Gateway::from_env()?;
     let mut observations = Vec::new();
     for credential in plan {
@@ -277,7 +357,7 @@ pub(super) async fn prepare(
             }])
             .await
             .map_err(|_| unavailable())?;
-        let id = projection_id(ae.target_id, generation, credential.key);
+        let id = projection_id(scope, generation, credential.key);
         let hash = hex::encode(Sha256::digest(read.value.expose().as_bytes()));
         gateway
             .project_credential(
@@ -298,7 +378,7 @@ pub(super) async fn prepare(
     Ok(Value::Array(observations))
 }
 
-pub(super) fn backend_auth(observations: &Value) -> Result<Option<Value>, Refusal> {
+pub(crate) fn backend_auth(observations: &Value) -> Result<Option<Value>, Refusal> {
     let observations = observations.as_array().ok_or_else(invalid)?;
     if observations.is_empty() {
         return Ok(None);
@@ -483,6 +563,58 @@ mod credential_tests {
         mapping["prefix"] = json!("Bearer ");
         fact["nativeCredentials"] = json!([mapping]);
         (binding, manifest, fact)
+    }
+
+    #[test]
+    fn conformance_credentials_use_exact_declared_native_reference() {
+        let (binding, manifest, fact) = fixture();
+        let tenant = uuid(&binding, "tenantId").unwrap();
+        let environment = json!({"nativeCredentials":fact["nativeCredentials"]});
+        let credentials = conformance_plan(tenant, &manifest, &environment).unwrap();
+        assert_eq!(credentials.len(), 1);
+        assert_eq!(credentials[0].reference.version, 2);
+        assert_eq!(credentials[0].reference.audience, "core");
+        assert_eq!(credentials[0].header, "authorization");
+        assert_eq!(credentials[0].prefix, "Bearer ");
+        assert!(conformance_plan(tenant, &manifest, &json!({})).is_err());
+        assert!(conformance_plan(Uuid::from_u128(99), &manifest, &environment).is_err());
+        for (field, value) in [
+            ("version", json!(0)),
+            ("secretKey", json!("undeclared")),
+            ("header", json!("cookie")),
+            ("prefix", json!("Bearer \r\n")),
+        ] {
+            let mut wrong = environment.clone();
+            wrong["nativeCredentials"][0][field] = value;
+            assert!(
+                conformance_plan(tenant, &manifest, &wrong).is_err(),
+                "{field}"
+            );
+        }
+        // Old public peers remain readable only when their release declares
+        // no native secret. An authenticated peer never falls back to this.
+        assert!(
+            conformance_plan(tenant, &json!({"secretSchema":[]}), &json!({}))
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn conformance_uses_gateway_file_auth_and_distinct_projection_scope() {
+        let action = Uuid::from_u128(5);
+        let scope = Uuid::new_v5(&action, b"component-conformance-credential");
+        assert_ne!(
+            projection_id(scope, 1, "native_account"),
+            projection_id(action, 1, "native_account")
+        );
+        let observations = json!([{"file":"/fixture/native-credential","header":"authorization","prefix":"Bearer "}]);
+        let auth = backend_auth(&observations).unwrap().unwrap();
+        assert_eq!(
+            auth,
+            json!({"credentials":[{"location":{"header":{"name":"authorization","prefix":"Bearer "}},"key":{"file":"/fixture/native-credential"}}]})
+        );
+        assert!(backend_auth(&json!([{ "header":"authorization", "prefix":"Bearer " }])).is_err());
     }
 
     #[test]

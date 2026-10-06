@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { ForumView, type ForumViewProps } from "../src/react/forum/ForumView";
 import { button, click, render } from "./render";
+import { act } from "react";
+import { DeleteActionMenu } from "../src/react/forum/DeleteActionMenu";
+import { TransportError } from "../src/transport";
+import { setLocale } from "../src/i18n";
 
 const post = { eventId: "post", pubkey: "author", content: "Original post", createdAt: 1, tags: [] };
 const base: ForumViewProps = {
@@ -40,4 +44,48 @@ describe("original Forum presentation with real host adapters", () => {
     await click(button(host, "More")); expect(more).toHaveBeenCalledTimes(1);
     await click(button(host, "Back")); expect(back).toHaveBeenCalledWith(null);
   });
+});
+
+async function openDelete(reply: boolean, confirm: () => Promise<void>) {
+  setLocale("en");
+  const host = await render(<DeleteActionMenu reply={reply} onConfirm={confirm} />);
+  await act(async () => host.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", {key:"Enter",bubbles:true})));
+  await click(document.querySelector<HTMLElement>('[role="menuitem"]')!);
+  return document.querySelector<HTMLElement>('[role="alertdialog"]')!;
+}
+
+it("keeps the original deletion confirmation open until a confirmed result", async () => {
+  let resolve!: () => void;
+  const confirm = vi.fn(() => new Promise<void>((done) => { resolve = done; }));
+  const dialog = await openDelete(false, confirm);
+  await click(button(dialog, "Delete post"));
+  expect(button(dialog, "Deleting…").disabled).toBe(true);
+  expect(button(dialog, "Cancel").disabled).toBe(true);
+  expect(confirm).toHaveBeenCalledTimes(1);
+  await act(async () => resolve());
+  expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+});
+
+it("presents an unknown deletion neutrally and checks the same host intent", async () => {
+  const confirm = vi.fn().mockRejectedValueOnce(new TransportError("lost acknowledgement")).mockResolvedValue(undefined);
+  const dialog = await openDelete(true, confirm);
+  await click(button(dialog, "Delete reply"));
+  expect(dialog.querySelector('[role="status"]')?.textContent).toContain("Deletion outcome unknown");
+  expect(dialog.querySelector('[role="alert"]')).toBeNull();
+  await click(button(dialog, "Check deletion"));
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+});
+
+it("keeps a definite rejection visible without claiming content removal", async () => {
+  const dialog = await openDelete(false, vi.fn().mockRejectedValue(new Error("denied")));
+  await click(button(dialog, "Delete post"));
+  expect(dialog.querySelector('[role="alert"]')?.textContent).toContain("not been removed");
+  expect(button(dialog, "Delete post").disabled).toBe(false);
+});
+
+it("uses the same original delete control in Chinese", async () => {
+  setLocale("zh-CN");
+  const host = await render(<DeleteActionMenu reply onConfirm={async () => {}} />);
+  expect(host.querySelector("button")?.getAttribute("aria-label")).toBe("删除回复");
 });

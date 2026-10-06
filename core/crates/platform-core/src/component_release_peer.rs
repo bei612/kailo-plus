@@ -49,6 +49,11 @@ pub(super) async fn prewrite(
     contracts: &[Value],
 ) -> Result<i32, Refusal> {
     let env = environment(release)?;
+    crate::application_binding::credentials::validate_conformance(
+        ae.tenant_id,
+        &release.manifest,
+        &env,
+    )?;
     let mut steps = Vec::new();
     for (operation, expected) in [
         ("mcp_initialize", "initializeResultJson"),
@@ -212,7 +217,12 @@ pub(crate) async fn authorize(
     Ok(())
 }
 
-async fn route(state: &ServiceState, ae: &Execution, env: &Value) -> Result<reqwest::Url, Refusal> {
+async fn route(
+    state: &ServiceState,
+    ae: &Execution,
+    release: &Registration,
+    env: &Value,
+) -> Result<reqwest::Url, Refusal> {
     let signer = state.agent_tool_sessions.as_ref().ok_or_else(bad)?;
     let service = state.gateway_service_auth.as_ref().ok_or_else(bad)?;
     let mut url = signer.gateway_url().clone();
@@ -221,6 +231,17 @@ async fn route(state: &ServiceState, ae: &Execution, env: &Value) -> Result<reqw
         .pop_if_empty()
         .extend(["component-conformance", &ae.id.to_string()]);
     let id = target(ae.id);
+    let credentials = crate::application_binding::credentials::prepare_conformance(
+        state,
+        ae,
+        &release.manifest,
+        env,
+    )
+    .await?;
+    let mut native_target = json!({"name":id,"mcp":{"host":env["mcpUrl"]}});
+    if let Some(auth) = crate::application_binding::credentials::backend_auth(&credentials)? {
+        native_target["policies"] = json!({"backendAuth":auth});
+    }
     let value = json!({"name":id,"gateways":[signer.gateway_name()],"matches":[{"path":{"exact":url.path()}}],
         "policies":{"jwtAuth":state.auth.core_mcp_authentication().map_err(|_|bad())?,
         "mcpGuardrails":{"processors":[{"kind":"remote","host":service.ext_mcp_url().as_str(),
@@ -232,7 +253,7 @@ async fn route(state: &ServiceState, ae: &Execution, env: &Value) -> Result<reqw
                 "probeIndex":"has(mcpGuardrails.probeIndex) ? mcpGuardrails.probeIndex : ''",
                 "probeRun":"has(mcpGuardrails.probeRun) ? mcpGuardrails.probeRun : ''"}}]}},
         "backends":[{"mcp":{"statefulMode":"stateless","prefixMode":"conditional","failureMode":"failClosed",
-            "targets":[{"name":id,"mcp":{"host":env["mcpUrl"]}}]}}]});
+            "targets":[native_target]}}]});
     let gateway = crate::model_route::Gateway::from_env()?;
     gateway
         .admin(
@@ -276,7 +297,7 @@ pub(super) async fn run_probe(
         let def=crate::governance::exact_definition_for_execution(&state.pool,&ae).await?;
         crate::governance::audit(&mut tx,&ae,&def,&format!("mcp-probe:{index}:dispatch"),"DISPATCH","ALLOW","DISPATCH_RESULT_UNKNOWN",None,Vec::new()).await?;
         tx.commit().await?;
-        let url=route(state,&ae,&env).await?;
+        let url=route(state,&ae,&release,&env).await?;
         let seconds=env["timeoutSeconds"].as_u64().ok_or_else(bad)?;
         let limit=usize::try_from(env["maxResponseBytes"].as_u64().ok_or_else(bad)?).map_err(|_|bad())?;
         let raw=tokio::time::timeout(std::time::Duration::from_secs(seconds),async {

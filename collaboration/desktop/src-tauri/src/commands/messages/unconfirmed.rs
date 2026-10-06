@@ -15,10 +15,22 @@ use std::sync::{LazyLock, Mutex};
 static UNCONFIRMED: LazyLock<Mutex<HashMap<String, nostr::Event>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-/// An edit has one outstanding intent per original target. Claim before I/O;
-/// subsequent calls observe the same signed event rather than issuing another
-/// edit. This shares the existing native holder (not a second outbox).
-pub(super) fn claim_edit(key: &str, fresh: nostr::Event) -> Result<(nostr::Event, bool), String> {
+/// A deletion can remove its original target before its ACK arrives.
+pub(super) fn existing_mutation(key: &str) -> Result<Option<nostr::Event>, String> {
+    Ok(UNCONFIRMED
+        .lock()
+        .map_err(|_| "relay publish outcome unknown")?
+        .get(key)
+        .cloned())
+}
+
+/// A message mutation has one outstanding intent per original target. Claim
+/// before I/O; subsequent calls observe the same signed event. This shares the
+/// existing native holder (not a second outbox).
+pub(super) fn claim_mutation(
+    key: &str,
+    fresh: nostr::Event,
+) -> Result<(nostr::Event, bool), String> {
     let mut map = UNCONFIRMED
         .lock()
         .map_err(|_| "relay publish outcome unknown")?;
@@ -34,7 +46,7 @@ pub(super) fn claim_edit(key: &str, fresh: nostr::Event) -> Result<(nostr::Event
 
 /// Only a confirmed read/ACK or the first dispatch's definite rejection can
 /// retire the claimed intent. A late observation never clears a newer edit.
-pub(super) fn resolve_edit(key: &str, id: nostr::EventId) -> Result<(), String> {
+pub(super) fn resolve_mutation(key: &str, id: nostr::EventId) -> Result<(), String> {
     let mut map = UNCONFIRMED
         .lock()
         .map_err(|_| "relay publish outcome unknown")?;
@@ -162,6 +174,31 @@ mod tests {
     use super::*;
     use nostr::{EventBuilder, Keys, Kind, Tag};
 
+    #[test]
+    fn deletion_can_be_observed_after_its_original_target_disappears() {
+        let keys = Keys::generate();
+        let key = format!("delete-test:{}", keys.public_key());
+        let event = crate::events::build_delete_compat(
+            uuid::Uuid::new_v4(),
+            nostr::EventId::from_hex(
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            )
+            .unwrap(),
+        )
+        .unwrap()
+        .sign_with_keys(&keys)
+        .unwrap();
+        assert!(super::existing_mutation(&key).unwrap().is_none());
+        assert!(super::claim_mutation(&key, event.clone()).unwrap().1);
+        assert_eq!(
+            super::existing_mutation(&key).unwrap().unwrap().id,
+            event.id
+        );
+        assert!(!super::claim_mutation(&key, event.clone()).unwrap().1);
+        super::resolve_mutation(&key, event.id).unwrap();
+        assert!(super::existing_mutation(&key).unwrap().is_none());
+    }
+
     fn message(keys: &Keys, content: &str, created_at: u64) -> nostr::Event {
         EventBuilder::new(Kind::Custom(9), content)
             .tags(vec![Tag::parse(["h", "c1"]).unwrap()])
@@ -175,21 +212,21 @@ mod tests {
         let keys = Keys::generate();
         let key = format!("edit-test:{}", keys.public_key());
         let first = message(&keys, "first edit", 100);
-        let (claimed, dispatch) = super::claim_edit(&key, first.clone()).unwrap();
+        let (claimed, dispatch) = super::claim_mutation(&key, first.clone()).unwrap();
         assert!(dispatch);
         let (observed, dispatch) =
-            super::claim_edit(&key, message(&keys, "first edit", 101)).unwrap();
+            super::claim_mutation(&key, message(&keys, "first edit", 101)).unwrap();
         assert!(!dispatch);
         assert_eq!(observed.id, claimed.id);
         assert_eq!(
-            super::claim_edit(&key, message(&keys, "changed", 102)).unwrap_err(),
+            super::claim_mutation(&key, message(&keys, "changed", 102)).unwrap_err(),
             "relay publish outcome unknown"
         );
-        super::resolve_edit(&key, message(&keys, "unrelated", 103).id).unwrap();
-        assert!(super::claim_edit(&key, message(&keys, "changed", 104)).is_err());
-        super::resolve_edit(&key, first.id).unwrap();
+        super::resolve_mutation(&key, message(&keys, "unrelated", 103).id).unwrap();
+        assert!(super::claim_mutation(&key, message(&keys, "changed", 104)).is_err());
+        super::resolve_mutation(&key, first.id).unwrap();
         assert!(
-            super::claim_edit(&key, message(&keys, "next confirmed edit", 105))
+            super::claim_mutation(&key, message(&keys, "next confirmed edit", 105))
                 .unwrap()
                 .1
         );

@@ -1,4 +1,6 @@
 import type { RelayEvent } from "@/shared/api/types";
+import { sortMessages } from "@client-kit/platform/react/messages/messageOrder";
+export { dedupeMessagesById, sortMessages } from "@client-kit/platform/react/messages/messageOrder";
 
 export function channelMessagesKey(channelId: string) {
   return ["channel-messages", channelId] as const;
@@ -10,37 +12,6 @@ export function channelWindowKey(channelId: string) {
 
 export function threadRepliesKey(channelId: string, rootId: string) {
   return ["thread-replies", channelId, rootId] as const;
-}
-
-export function dedupeMessagesById(messages: RelayEvent[]) {
-  const seenIds = new Set<string>();
-  const deduped: RelayEvent[] = [];
-
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-
-    if (seenIds.has(message.id)) {
-      continue;
-    }
-
-    seenIds.add(message.id);
-    deduped.push(message);
-  }
-
-  return deduped.reverse();
-}
-
-export function sortMessages(messages: RelayEvent[]) {
-  return dedupeMessagesById(messages).sort((left, right) => {
-    if (left.created_at !== right.created_at) {
-      return left.created_at - right.created_at;
-    }
-    // Tiebreak same-second events on id so the merge order is deterministic.
-    // Without this, two events sharing a created_at can land in a different
-    // position depending on which REQ (history vs live-sub) delivered them
-    // first — reading as a "missing"/shuffled message at a fixed scroll offset.
-    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
-  });
 }
 
 export function normalizeTimelineMessages(messages: RelayEvent[]) {

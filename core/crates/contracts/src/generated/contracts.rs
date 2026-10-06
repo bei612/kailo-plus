@@ -5063,6 +5063,11 @@ pub struct WebPublishMessageRequest {
 
     pub content: String,
 
+    /// 删除本人原 Buzz 消息；BFF 回读当前 Channel 原事件核对本人签名身份，发原 kind 5。与
+    /// editEventId、parentEventId、非空正文、附件及提及互斥；不授予 kind 9005 管理员删除权限。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delete_event_id: Option<String>,
+
     /// 编辑原 Buzz 消息；BFF 回读同 Channel 原事件并核对本人签名身份，发原 kind 40003。与 parentEventId 互斥，缺省保持原新消息语义。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub edit_event_id: Option<String>,
@@ -5361,7 +5366,7 @@ pub struct ApplicationProtocolPeerBindingDelivery {
 
     /// 原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_credentials: Option<Vec<ApplicationPeerCredentialDelivery>>,
+    pub native_credentials: Option<Vec<BindingNativeCredential>>,
 
     /// 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -5379,7 +5384,7 @@ pub struct ApplicationProtocolPeerBindingDelivery {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ApplicationPeerCredentialDelivery {
+pub struct BindingNativeCredential {
     pub audience: String,
 
     pub header: String,
@@ -5793,9 +5798,29 @@ pub struct ComponentProtocolPeerEnvironment {
 
     pub mcp_url: String,
 
+    /// 隔离原生MCP的既有版本化SecretRef与header映射；经原Core/OpenBao审计和Gateway文件投递，不含凭据值，不借用生产binding身份。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_credentials: Option<Vec<ComponentProtocolPeerEnvironmentNativeCredential>>,
+
     pub read_only_tools: Vec<String>,
 
     pub timeout_seconds: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentProtocolPeerEnvironmentNativeCredential {
+    pub audience: String,
+
+    pub header: String,
+
+    pub locator: String,
+
+    pub prefix: String,
+
+    pub secret_key: String,
+
+    pub version: i64,
 }
 
 /// 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。

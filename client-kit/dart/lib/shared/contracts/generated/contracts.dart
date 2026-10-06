@@ -9978,6 +9978,10 @@ class WebPublishMessageRequest {
   final List<AttachmentElement>? attachments;
   final String content;
 
+  ///删除本人原 Buzz 消息；BFF 回读当前 Channel 原事件核对本人签名身份，发原 kind 5。与
+  ///editEventId、parentEventId、非空正文、附件及提及互斥；不授予 kind 9005 管理员删除权限。
+  final String? deleteEventId;
+
   ///编辑原 Buzz 消息；BFF 回读同 Channel 原事件并核对本人签名身份，发原 kind 40003。与 parentEventId 互斥，缺省保持原新消息语义。
   final String? editEventId;
 
@@ -9991,6 +9995,7 @@ class WebPublishMessageRequest {
   WebPublishMessageRequest({
     this.attachments,
     required this.content,
+    this.deleteEventId,
     this.editEventId,
     this.mentionInstallationIds,
     this.messageType,
@@ -10005,6 +10010,7 @@ class WebPublishMessageRequest {
                 json["attachments"]!.map((x) => AttachmentElement.fromJson(x)),
               ),
         content: json["content"],
+        deleteEventId: json["deleteEventId"],
         editEventId: json["editEventId"],
         mentionInstallationIds: json["mentionInstallationIds"] == null
             ? null
@@ -10020,6 +10026,7 @@ class WebPublishMessageRequest {
         ? null
         : List<dynamic>.from(attachments!.map((x) => x.toJson())),
     "content": content,
+    "deleteEventId": deleteEventId,
     "editEventId": editEventId,
     "mentionInstallationIds": mentionInstallationIds == null
         ? null
@@ -10672,7 +10679,7 @@ class ApplicationProtocolPeerBindingDelivery {
   final String isolationMode;
 
   ///原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
-  final List<ApplicationPeerCredentialDelivery>? nativeCredentials;
+  final List<BindingNativeCredential>? nativeCredentials;
 
   ///绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
   final List<ApplicationNativeResourceDelivery>? nativeResources;
@@ -10703,9 +10710,9 @@ class ApplicationProtocolPeerBindingDelivery {
     isolationMode: json["isolationMode"],
     nativeCredentials: json["nativeCredentials"] == null
         ? null
-        : List<ApplicationPeerCredentialDelivery>.from(
+        : List<BindingNativeCredential>.from(
             json["nativeCredentials"]!.map(
-              (x) => ApplicationPeerCredentialDelivery.fromJson(x),
+              (x) => BindingNativeCredential.fromJson(x),
             ),
           ),
     nativeResources: json["nativeResources"] == null
@@ -10739,7 +10746,7 @@ class ApplicationProtocolPeerBindingDelivery {
   });
 }
 
-class ApplicationPeerCredentialDelivery {
+class BindingNativeCredential {
   final String audience;
   final String header;
   final String locator;
@@ -10747,7 +10754,7 @@ class ApplicationPeerCredentialDelivery {
   final String secretKey;
   final int version;
 
-  ApplicationPeerCredentialDelivery({
+  BindingNativeCredential({
     required this.audience,
     required this.header,
     required this.locator,
@@ -10756,16 +10763,15 @@ class ApplicationPeerCredentialDelivery {
     required this.version,
   });
 
-  factory ApplicationPeerCredentialDelivery.fromJson(
-    Map<String, dynamic> json,
-  ) => ApplicationPeerCredentialDelivery(
-    audience: json["audience"],
-    header: json["header"],
-    locator: json["locator"],
-    prefix: json["prefix"],
-    secretKey: json["secretKey"],
-    version: json["version"],
-  );
+  factory BindingNativeCredential.fromJson(Map<String, dynamic> json) =>
+      BindingNativeCredential(
+        audience: json["audience"],
+        header: json["header"],
+        locator: json["locator"],
+        prefix: json["prefix"],
+        secretKey: json["secretKey"],
+        version: json["version"],
+      );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "audience": audience,
@@ -11650,6 +11656,10 @@ class ComponentProtocolPeerEnvironment {
   final int maxResponseBytes;
   final int maxSteps;
   final String mcpUrl;
+
+  ///隔离原生MCP的既有版本化SecretRef与header映射；经原Core/OpenBao审计和Gateway文件投递，不含凭据值，不借用生产binding身份。
+  final List<ComponentProtocolPeerEnvironmentNativeCredential>?
+  nativeCredentials;
   final List<String> readOnlyTools;
   final int timeoutSeconds;
 
@@ -11660,6 +11670,7 @@ class ComponentProtocolPeerEnvironment {
     required this.maxResponseBytes,
     required this.maxSteps,
     required this.mcpUrl,
+    this.nativeCredentials,
     required this.readOnlyTools,
     required this.timeoutSeconds,
   });
@@ -11673,6 +11684,14 @@ class ComponentProtocolPeerEnvironment {
     maxResponseBytes: json["maxResponseBytes"],
     maxSteps: json["maxSteps"],
     mcpUrl: json["mcpUrl"],
+    nativeCredentials: json["nativeCredentials"] == null
+        ? null
+        : List<ComponentProtocolPeerEnvironmentNativeCredential>.from(
+            json["nativeCredentials"]!.map(
+              (x) =>
+                  ComponentProtocolPeerEnvironmentNativeCredential.fromJson(x),
+            ),
+          ),
     readOnlyTools: List<String>.from(json["readOnlyTools"].map((x) => x)),
     timeoutSeconds: json["timeoutSeconds"],
   );
@@ -11684,8 +11703,49 @@ class ComponentProtocolPeerEnvironment {
     "maxResponseBytes": maxResponseBytes,
     "maxSteps": maxSteps,
     "mcpUrl": mcpUrl,
+    "nativeCredentials": nativeCredentials == null
+        ? null
+        : List<dynamic>.from(nativeCredentials!.map((x) => x.toJson())),
     "readOnlyTools": List<dynamic>.from(readOnlyTools.map((x) => x)),
     "timeoutSeconds": timeoutSeconds,
+  });
+}
+
+class ComponentProtocolPeerEnvironmentNativeCredential {
+  final String audience;
+  final String header;
+  final String locator;
+  final String prefix;
+  final String secretKey;
+  final int version;
+
+  ComponentProtocolPeerEnvironmentNativeCredential({
+    required this.audience,
+    required this.header,
+    required this.locator,
+    required this.prefix,
+    required this.secretKey,
+    required this.version,
+  });
+
+  factory ComponentProtocolPeerEnvironmentNativeCredential.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentProtocolPeerEnvironmentNativeCredential(
+    audience: json["audience"],
+    header: json["header"],
+    locator: json["locator"],
+    prefix: json["prefix"],
+    secretKey: json["secretKey"],
+    version: json["version"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "audience": audience,
+    "header": header,
+    "locator": locator,
+    "prefix": prefix,
+    "secretKey": secretKey,
+    "version": version,
   });
 }
 

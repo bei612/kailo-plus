@@ -115,6 +115,28 @@ impl MessageTarget {
 
 type PublishRequest = contracts::WebPublishMessageRequest;
 
+fn valid_deletion_request(request: &PublishRequest) -> bool {
+    request.delete_event_id.as_deref().is_none_or(|id| {
+        nostr::EventId::from_hex(id).is_ok_and(|parsed| parsed.to_hex() == id)
+            && request.parent_event_id.is_none()
+            && request.edit_event_id.is_none()
+            && request.content.is_empty()
+            && request.attachments.as_ref().is_none_or(Vec::is_empty)
+            && request
+                .mention_installation_ids
+                .as_ref()
+                .is_none_or(Vec::is_empty)
+    })
+}
+
+fn mutation_target_matches(
+    event: &nostr::Event,
+    author: nostr::PublicKey,
+    message_type: &contracts::WebMessageType,
+) -> bool {
+    event.pubkey == author && event.kind.as_u16() == message_kind(message_type)
+}
+
 trait RenderAttachment {
     fn render(&self, community_host: &str) -> Option<(String, Vec<String>)>;
 }
@@ -388,6 +410,29 @@ pub async fn publish_message(
     publish_message_for(state, MessageTarget::Workspace(workspace_id), headers, body).await
 }
 
+/// A distinct route prevents older Cores (which ignore unknown optional fields)
+/// from interpreting a deletion as an empty ordinary message during upgrades.
+pub async fn delete_message(
+    State(state): State<BffState>,
+    Path(workspace_id): Path<Uuid>,
+    headers: HeaderMap,
+    body: Result<Json<PublishRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Ok(Json(request)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    if request.delete_event_id.is_none() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    publish(
+        state,
+        MessageTarget::Workspace(workspace_id),
+        headers,
+        Publication::Message(request),
+    )
+    .await
+}
+
 pub async fn publish_conversation_message(
     State(state): State<BffState>,
     Path(conversation_id): Path<Uuid>,
@@ -454,6 +499,9 @@ async fn publish_message_for(
     let Ok(Json(req)) = body else {
         return StatusCode::BAD_REQUEST.into_response();
     };
+    if req.delete_event_id.is_some() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
     publish(state, target, headers, Publication::Message(req)).await
 }
 
@@ -1039,22 +1087,28 @@ async fn publish(
         Publication::Hide => CONVERSATION_HIDE_ACTION,
         Publication::Reopen => CONVERSATION_REOPEN_ACTION,
     };
-    let (message_type, parent_event_id, edit_event_id) = match &publication {
+    let (message_type, parent_event_id, edit_event_id, delete_event_id) = match &publication {
         Publication::Message(req) => (
             req.message_type
                 .clone()
                 .unwrap_or(contracts::WebMessageType::Stream),
             req.parent_event_id.clone(),
             req.edit_event_id.clone(),
+            req.delete_event_id.clone(),
         ),
         Publication::Pulse(req) => (
             contracts::WebMessageType::Stream,
             req.target_event_id.clone(),
             None,
+            None,
         ),
-        Publication::Hide | Publication::Reopen => (contracts::WebMessageType::Stream, None, None),
+        Publication::Hide | Publication::Reopen => {
+            (contracts::WebMessageType::Stream, None, None, None)
+        }
     };
-    if edit_event_id.is_none() && !valid_message_intent(&message_type, parent_event_id.as_deref())
+    if edit_event_id.is_none()
+        && delete_event_id.is_none()
+        && !valid_message_intent(&message_type, parent_event_id.as_deref())
         || edit_event_id.as_deref().is_some_and(|id| {
             nostr::EventId::from_hex(id).map_or(true, |parsed| parsed.to_hex() != id)
                 || parent_event_id.is_some()
@@ -1069,12 +1123,17 @@ async fn publish(
             Ok(kind) => i32::from(kind),
             Err(e) => return e,
         }
+    } else if delete_event_id.is_some() {
+        KIND_DELETION as i32
     } else if edit_event_id.is_some() {
         KIND_STREAM_MESSAGE_EDIT as i32
     } else {
         i32::from(message_kind(&message_type))
     };
     if let Publication::Message(request) = &publication {
+        if !valid_deletion_request(request) {
+            return StatusCode::BAD_REQUEST.into_response();
+        }
         if edit_event_id.is_some()
             && request.content.trim().is_empty()
             && request.attachments.as_ref().is_none_or(Vec::is_empty)
@@ -1117,9 +1176,10 @@ async fn publish(
         message_kind: i32,
         parent_event_id: Option<String>,
         edit_event_id: Option<String>,
+        delete_event_id: Option<String>,
     }
     let previous = match sqlx::query_as::<_, PreviousPublish>(
-        r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.message_kind, a.parent_event_id, a.edit_event_id,
+        r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id,
                   array(select r.target_id from audit.audit_event r
                     where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                       and r.action_key=$3 and r.target_type=$4
@@ -1156,6 +1216,7 @@ async fn publish(
             || p.message_kind != requested_kind
             || p.parent_event_id != parent_event_id
             || p.edit_event_id != edit_event_id
+            || p.delete_event_id != delete_event_id
         {
             return StatusCode::CONFLICT.into_response();
         }
@@ -1260,22 +1321,19 @@ async fn publish(
     // The browser selects a semantic target, never its author, channel or tags.
     // Read the original signed event through the already admitted actor, then
     // let Relay recheck native edit ownership at ingestion as well.
-    let edit_target = match edit_event_id.as_deref() {
+    let mutation_target = match edit_event_id.as_deref().or(delete_event_id.as_deref()) {
         Some(id) => {
             let event = match read_message_event(&state, &client, &channel_id, id).await {
                 Ok(event) => event,
                 Err(response) => return response,
             };
-            if event.pubkey != keys.public_key() {
+            if !mutation_target_matches(&event, keys.public_key(), &message_type) {
                 return error_body(
                     StatusCode::FORBIDDEN,
                     ErrorClass::Denied,
                     ReasonCode::PermissionDenied,
                     None,
                 );
-            }
-            if event.kind.as_u16() != message_kind(&message_type) {
-                return StatusCode::BAD_REQUEST.into_response();
             }
             Some(event)
         }
@@ -1326,8 +1384,26 @@ async fn publish(
     // DISPATCH 审计之后才发送——之后无论结果如何，这条消息动作都可关联
     // （Stage 1 退出门禁），结果不明时也有一个能去 Relay 查证的键（DD-81）。
     let signed = match publication {
-        Publication::Message(_) if edit_target.is_some() => client.sign_message_edit(
-            edit_target.as_ref().expect("edit target checked"),
+        Publication::Message(_) if delete_event_id.is_some() => {
+            let Some(target) = mutation_target.as_ref() else {
+                return error_body(
+                    StatusCode::BAD_REQUEST,
+                    ErrorClass::Precondition,
+                    ReasonCode::InvalidParameters,
+                    None,
+                );
+            };
+            client.sign(
+                KIND_DELETION as u16,
+                "",
+                &[
+                    vec!["h".into(), channel_id.clone()],
+                    vec!["e".into(), target.id.to_hex()],
+                ],
+            )
+        }
+        Publication::Message(_) if mutation_target.is_some() => client.sign_message_edit(
+            mutation_target.as_ref().expect("edit target checked"),
             &content,
             &media_tags,
             &mentions,
@@ -1415,8 +1491,8 @@ async fn publish(
             .rows_affected(),
             None => sqlx::query(
                 "insert into admission.publish_attempt
-                     (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id, edit_event_id)
-                 values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict do nothing"
+                     (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id, edit_event_id, delete_event_id)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9) on conflict do nothing"
             )
             .bind(ctx.tenant_principal_id)
             .bind(idempotency_key)
@@ -1426,6 +1502,7 @@ async fn publish(
             .bind(requested_kind)
             .bind(&parent_event_id)
             .bind(&edit_event_id)
+            .bind(&delete_event_id)
             .execute(&mut *tx)
             .await?
             .rows_affected(),
@@ -1438,10 +1515,11 @@ async fn publish(
                 message_kind: i32,
                 parent_event_id: Option<String>,
                 edit_event_id: Option<String>,
+                delete_event_id: Option<String>,
                 target_ids: Vec<Option<Uuid>>,
             }
             let frozen: ConcurrentPublish = sqlx::query_as(
-                "select a.mention_installation_ids, a.message_kind, a.parent_event_id, a.edit_event_id,
+                "select a.mention_installation_ids, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id,
                     array(select r.target_id from audit.audit_event r
                       where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                         and r.action_key=$3 and r.target_type=$4
@@ -1455,6 +1533,7 @@ async fn publish(
                 && mention_intent_matches(&frozen.mention_installation_ids, &mention_ids)
                 && frozen.message_kind == requested_kind && frozen.parent_event_id == parent_event_id
                 && frozen.edit_event_id == edit_event_id
+                && frozen.delete_event_id == delete_event_id
                 { Claim::Pending } else { Claim::TargetMismatch });
         }
         append(
@@ -3382,5 +3461,64 @@ mod tests {
         let file = media_attachment("application/pdf", "pdf", None, None);
         let (body, _) = file.render("relay.example").unwrap();
         assert_eq!(body, format!("\n[{}.pdf]({})", file.sha256, file.url));
+    }
+    #[test]
+    fn deletion_intent_has_one_target_and_no_publish_payload() {
+        let target = "a".repeat(64);
+        let valid =
+            serde_json::json!({"content":"", "deleteEventId":target, "messageType":"FORUM_POST"});
+        let request: super::PublishRequest = serde_json::from_value(valid.clone()).unwrap();
+        assert!(super::valid_deletion_request(&request));
+        for (field, value) in [
+            ("content", serde_json::json!("replacement")),
+            ("parentEventId", serde_json::json!("b".repeat(64))),
+            ("editEventId", serde_json::json!("b".repeat(64))),
+            ("deleteEventId", serde_json::json!("not-an-event")),
+            (
+                "mentionInstallationIds",
+                serde_json::json!([uuid::Uuid::new_v4()]),
+            ),
+        ] {
+            let mut invalid = valid.clone();
+            invalid[field] = value;
+            let request: super::PublishRequest = serde_json::from_value(invalid).unwrap();
+            assert!(
+                !super::valid_deletion_request(&request),
+                "must reject {field}"
+            );
+        }
+        let mut attachment: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../contracts/samples/web-message-edit.sample.json"
+        ))
+        .unwrap();
+        attachment.as_object_mut().unwrap().remove("editEventId");
+        attachment["deleteEventId"] = serde_json::json!("a".repeat(64));
+        attachment["content"] = serde_json::json!("");
+        assert!(!super::valid_deletion_request(
+            &serde_json::from_value(attachment).unwrap()
+        ));
+    }
+
+    #[test]
+    fn deletion_target_requires_the_actual_signer_and_original_kind() {
+        let keys = nostr::Keys::generate();
+        let event = nostr::EventBuilder::new(nostr::Kind::Custom(45001), "post")
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert!(super::mutation_target_matches(
+            &event,
+            keys.public_key(),
+            &contracts::WebMessageType::ForumPost
+        ));
+        assert!(!super::mutation_target_matches(
+            &event,
+            nostr::Keys::generate().public_key(),
+            &contracts::WebMessageType::ForumPost
+        ));
+        assert!(!super::mutation_target_matches(
+            &event,
+            keys.public_key(),
+            &contracts::WebMessageType::ForumComment
+        ));
     }
 }

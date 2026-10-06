@@ -441,18 +441,123 @@ pub async fn edit_message(
     )?;
     let fresh = builder.sign_with_keys(&keys).map_err(|e| e.to_string())?;
     let intent_key = format!("edit:{relay_base}:{}:{target_id}", keys.public_key());
-    let (event, first) = unconfirmed::claim_edit(&intent_key, fresh)?;
+    let (event, first) = unconfirmed::claim_mutation(&intent_key, fresh)?;
+    submit_message_mutation(
+        event,
+        first,
+        &intent_key,
+        &state,
+        &relay_base,
+        &keys,
+        channel,
+    )
+    .await
+}
+
+/// Original author deletion (kind 5), not administrator deletion (9005).
+#[tauri::command]
+pub async fn delete_message(
+    channel_id: String,
+    event_id: String,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    if expected_relay_url.trim().is_empty()
+        || nostr::PublicKey::from_hex(&expected_signer_pubkey).is_err()
+    {
+        return Err("deletion requires the captured community and signer".into());
+    }
+    let channel = uuid::Uuid::parse_str(&channel_id).map_err(|e| e.to_string())?;
+    let target_id = nostr::EventId::from_hex(&event_id).map_err(|e| e.to_string())?;
+    let relay_base = crate::relay::relay_api_base_url_with_override(&state);
+    let keys = state.signing_keys()?;
+    assert_expected_relay_scope(Some(&expected_relay_url), &relay_base)?;
+    assert_expected_signer(Some(&expected_signer_pubkey), &keys.public_key().to_hex())?;
+    let intent_key = format!(
+        "delete:{relay_base}:{}:{channel}:{target_id}",
+        keys.public_key()
+    );
+    let (event, first) = match unconfirmed::existing_mutation(&intent_key)? {
+        Some(event) => (event, false),
+        None => {
+            let targets = crate::relay::query_relay_at_with_keys(
+                &state, &relay_base,
+                &[serde_json::json!({"ids":[target_id.to_hex()],"kinds":[9,45001,45003],"#h":[channel.to_string()]})],
+                &keys, None,
+            ).await?;
+            let target = targets
+                .iter()
+                .find(|event| event.id == target_id)
+                .ok_or("deletion target unavailable")?;
+            target.verify().map_err(|e| e.to_string())?;
+            if target.pubkey != keys.public_key()
+                || !matches!(target.kind.as_u16(), 9 | 45001 | 45003)
+                || channel_id_from_tags(target).as_deref() != Some(channel_id.as_str())
+                || target
+                    .tags
+                    .iter()
+                    .filter(|tag| tag.as_slice().first().is_some_and(|key| key == "h"))
+                    .count()
+                    != 1
+            {
+                return Err("deletion target author or channel mismatch".into());
+            }
+            let fresh = events::build_delete_compat(channel, target_id)?
+                .sign_with_keys(&keys)
+                .map_err(|e| e.to_string())?;
+            unconfirmed::claim_mutation(&intent_key, fresh)?
+        }
+    };
+    submit_message_mutation(
+        event,
+        first,
+        &intent_key,
+        &state,
+        &relay_base,
+        &keys,
+        channel,
+    )
+    .await
+}
+
+async fn submit_message_mutation(
+    event: nostr::Event,
+    first: bool,
+    intent_key: &str,
+    state: &AppState,
+    relay_base: &str,
+    keys: &nostr::Keys,
+    channel: uuid::Uuid,
+) -> Result<serde_json::Value, String> {
+    let admitted = state.signing_keys().and_then(|current| {
+        assert_expected_relay_scope(
+            Some(relay_base),
+            &crate::relay::relay_api_base_url_with_override(state),
+        )?;
+        assert_expected_signer(
+            Some(&keys.public_key().to_hex()),
+            &current.public_key().to_hex(),
+        )
+    });
+    if let Err(error) = admitted {
+        if first {
+            // This claim has not left the process; no external ambiguity yet.
+            unconfirmed::resolve_mutation(intent_key, event.id)?;
+            return Err(error);
+        }
+        return Err("relay publish outcome unknown".into());
+    }
     if first {
-        match crate::relay::submit_signed_event_at_with_keys(&event, &state, &relay_base, &keys)
-            .await
+        match crate::relay::submit_signed_event_at_with_keys(&event, state, relay_base, keys).await
         {
             Ok(_) => {
-                unconfirmed::resolve_edit(&intent_key, event.id)?;
+                unconfirmed::resolve_mutation(intent_key, event.id)?;
                 return serde_json::to_value(event)
                     .map_err(|_| "relay publish outcome unknown".into());
             }
             Err(error) if !unconfirmed::outcome_unknown(&error) => {
-                unconfirmed::resolve_edit(&intent_key, event.id)?;
+                unconfirmed::resolve_mutation(intent_key, event.id)?;
                 return Err(error);
             }
             Err(_) => {}
@@ -461,15 +566,28 @@ pub async fn edit_message(
     // Lost ACK / remounted composer: query the original signed intent. An
     // absent event is unknown, never permission to dispatch a new edit.
     let observed = crate::relay::query_relay_at_with_keys(
-        &state, &relay_base,
-        &[serde_json::json!({"ids":[event.id.to_hex()],"kinds":[40003],"#h":[channel.to_string()]})],
-        &keys, None,
+        state, relay_base,
+        &[serde_json::json!({"ids":[event.id.to_hex()],"kinds":[event.kind.as_u16()],"#h":[channel.to_string()]})],
+        keys, None,
     ).await.map_err(|_| "relay publish outcome unknown".to_string())?;
     let actual = observed
         .iter()
         .find(|actual| actual.id == event.id && actual.verify().is_ok())
         .ok_or("relay publish outcome unknown")?;
-    unconfirmed::resolve_edit(&intent_key, event.id)?;
+    state
+        .signing_keys()
+        .and_then(|current| {
+            assert_expected_relay_scope(
+                Some(relay_base),
+                &crate::relay::relay_api_base_url_with_override(state),
+            )?;
+            assert_expected_signer(
+                Some(&keys.public_key().to_hex()),
+                &current.public_key().to_hex(),
+            )
+        })
+        .map_err(|_| "relay publish outcome unknown".to_string())?;
+    unconfirmed::resolve_mutation(intent_key, event.id)?;
     serde_json::to_value(actual).map_err(|_| "relay publish outcome unknown".into())
 }
 

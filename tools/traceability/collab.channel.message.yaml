@@ -33,10 +33,10 @@ implementation:
   paths: [core/crates/platform-core/src/web_transport.rs, core/crates/platform-core/src/stream.rs, core/crates/platform-core/src/publish_reconcile.rs, core/crates/collab-bridge, web-client, client-kit/ts/platform/src/react/mention-autocomplete.tsx, client-kit/ts/platform/src/react/use-mention-selection.ts, collaboration/desktop/src/features/messages/ui/MentionAutocomplete.tsx]
   surfaces: [web]
   schemas: [contracts/api/web_publish_message_request.schema.json, contracts/api/web_message_query.schema.json, contracts/api/web_message_cursor.schema.json, contracts/api/web_message_type.schema.json, contracts/api/web_channel_view.schema.json]
-  migrations: [core/migrations/20260923070000_audit_dispatch_index.up.sql, core/migrations/20261006190000_publish_message_ancestry.up.sql, core/migrations/20261006190000_publish_message_ancestry.down.sql, core/migrations/20261006210000_publish_message_edit.up.sql, core/migrations/20261006210000_publish_message_edit.down.sql]
+  migrations: [core/migrations/20260923070000_audit_dispatch_index.up.sql, core/migrations/20261006190000_publish_message_ancestry.up.sql, core/migrations/20261006190000_publish_message_ancestry.down.sql, core/migrations/20261006210000_publish_message_edit.up.sql, core/migrations/20261006210000_publish_message_edit.down.sql, core/migrations/20261007010000_publish_delete_target.up.sql, core/migrations/20261007010000_publish_delete_target.down.sql]
 
 runtime:
-  routes: ["/api/v1/workspaces/{workspace_id}/messages", "/api/v1/workspaces/{workspace_id}/stream", "/api/v1/workspaces/{workspace_id}/channel", "/api/v1/workspaces/{workspace_id}/messages/{event_id}/author-profile"]
+  routes: ["/api/v1/workspaces/{workspace_id}/messages", "/api/v1/workspaces/{workspace_id}/messages/delete", "/api/v1/workspaces/{workspace_id}/stream", "/api/v1/workspaces/{workspace_id}/channel", "/api/v1/workspaces/{workspace_id}/messages/{event_id}/author-profile"]
   actions: [workspace.message.publish]
 
 release:

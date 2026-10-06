@@ -7,6 +7,25 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
+import type { ComponentProtocolPeerEnvironment } from "../src/generated/contracts.js";
+
+test("component conformance keeps native secret references and legacy absence", () => {
+  const original: ComponentProtocolPeerEnvironment = JSON.parse(readFileSync(new URL("../../../../contracts/samples/component-peer-conformance.sample.json", import.meta.url), "utf8"));
+  for (const include of [true, false]) {
+    if (!include) delete original.nativeCredentials;
+    const reconstructed: ComponentProtocolPeerEnvironment = {
+      artifactDigest: original.artifactDigest, mcpUrl: original.mcpUrl,
+      timeoutSeconds: original.timeoutSeconds, maxResponseBytes: original.maxResponseBytes,
+      maxSteps: original.maxSteps, readOnlyTools: original.readOnlyTools,
+      initializeResultJson: original.initializeResultJson, listResultJson: original.listResultJson,
+      nativeCredentials: original.nativeCredentials?.map(ref => ({
+        secretKey: ref.secretKey, locator: ref.locator, version: ref.version,
+        audience: ref.audience, header: ref.header, prefix: ref.prefix,
+      })),
+    };
+    deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), original);
+  }
+});
 import type { DelegatedActionMetadataV1 } from "../src/generated/contracts.js";
 import type { DiscoverableWorkspacePage } from "../src/generated/contracts.js";
 import type { WorkspaceView } from "../src/generated/contracts.js";
@@ -333,7 +352,7 @@ test("canary round-trip 保留每个字段", () => {
   }
 });
 
-for (const sample of ["web-publish-mention.sample.json", "web-publish-content-only.sample.json", "web-forum-post.sample.json", "web-forum-comment.sample.json", "web-message-edit.sample.json"]) {
+for (const sample of ["web-publish-mention.sample.json", "web-publish-content-only.sample.json", "web-forum-post.sample.json", "web-forum-comment.sample.json", "web-message-edit.sample.json", "web-message-delete.sample.json"]) {
   test(`WebPublishMessageRequest round-trip ${sample}`, () => {
     const raw = readFileSync(new URL(`../../../../contracts/samples/${sample}`, import.meta.url), "utf8");
     const original: unknown = JSON.parse(raw);

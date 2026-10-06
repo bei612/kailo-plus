@@ -2,13 +2,14 @@
 // supplies the existing BFF transport, verified Relay-event projection and composer.
 import { WebMessageType, WorkspaceMembershipState, type WebMessageCursor } from "@client-kit/contracts";
 import { ForumView, useForumLabels, type ForumMessage } from "@client-kit/platform/react/forum/ForumView";
+import { DeleteActionMenu } from "@client-kit/platform/react/forum/DeleteActionMenu";
 import { parseChannelWindowResponse } from "@client-kit/platform/react/forum/channelWindowResponse";
 import { UserAvatar, MessageAuthorText } from "@client-kit/platform/react/messages";
 import { TransportError } from "@client-kit/platform/transport";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
-import { bff, openStream, publishMessage, type BuzzEvent } from "@/platform/bff-client";
+import { bff, deleteMessage, openStream, publishMessage, type BuzzEvent } from "@/platform/bff-client";
 import { Composer } from "./ChannelPane";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { truncatePubkey } from "@/shared/lib/pubkey";
@@ -72,6 +73,7 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
     });
   }, [workspaceId, queryClient, key, archived, myPrincipalId]);
   const members = useQuery({ queryKey: ["platform", "members", workspaceId], queryFn: () => bff.members(workspaceId), enabled: !denied });
+  const ownProfile = useQuery({ queryKey: ["platform", "edit-author", myPrincipalId], queryFn: () => bff.profile(), enabled: !denied });
   const isMember = !members.isError && (members.data ?? []).some((member) => member.principalId === myPrincipalId && member.state === WorkspaceMembershipState.Active);
   const posts = useInfiniteQuery({ queryKey: [...key, "posts"], initialPageParam: null as WebMessageCursor | null, enabled: !denied,
     queryFn: async ({ pageParam }) => {
@@ -112,6 +114,17 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
     post={root ? project(root) : undefined} replies={replies} loading={selectedQuery.isPending} error={error ? String(error) : null}
     hasMore={selectedQuery.hasNextPage} loadingMore={selectedQuery.isFetchingNextPage} onMore={() => { void selectedQuery.fetchNextPage(); }}
     onRetry={() => { void queryClient.invalidateQueries({ queryKey: key }); void members.refetch(); }} labels={labels} formatTime={relativeTime}
+    renderDelete={(message, reply) => !error && !interrupted && !metadataPending && isMember && !archived
+      && ownProfile.isSuccess && !ownProfile.isError && message.pubkey === ownProfile.data.pubkey
+      ? <DeleteActionMenu key={message.eventId} reply={reply} onConfirm={async () => {
+        const original = inChannel.find((event) => event.id === message.eventId);
+        if (!original) throw new Error("Deletion target unavailable");
+        const receipt = await deleteMessage(workspaceId, message.eventId,
+          original.kind === 45001 ? WebMessageType.ForumPost : original.kind === 45003 ? WebMessageType.ForumComment : WebMessageType.Stream);
+        if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Deletion has no confirmed receipt");
+        if (mounted.current && selectedPostId === message.eventId) setSelectedPostId(null);
+        void queryClient.invalidateQueries({ queryKey: key });
+      }} /> : null}
     renderAuthor={(message, large) => { const name = authors.get(message.pubkey)?.displayName ?? truncatePubkey(message.pubkey);
       const identity = <div className="flex items-center gap-2"><UserAvatar avatarUrl={null} displayName={name} size={large ? "md" : "sm"} /><MessageAuthorText>{name}</MessageAuthorText></div>;
       const target = {principalId:myPrincipalId,workspaceId,eventId:message.eventId,pubkey:message.pubkey};

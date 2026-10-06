@@ -12,6 +12,7 @@ export * from "./datetime";
 export * from "./emojiOnly";
 export * from "./icons";
 export * from "./messageGrouping";
+export * from "./messageOrder";
 export * from "./observeElementBlockSize";
 export * from "./sentFromThread";
 export * from "./threadTreeLayout";

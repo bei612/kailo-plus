@@ -1,0 +1,20 @@
+{
+  "artifactDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "mcpUrl": "https://component.example/mcp/fixture",
+  "timeoutSeconds": 30,
+  "maxResponseBytes": 4096,
+  "maxSteps": 3,
+  "readOnlyTools": ["list_records"],
+  "initializeResultJson": "{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"fixture\",\"version\":\"1.0.0\"}}",
+  "listResultJson": "{\"tools\":[]}",
+  "nativeCredentials": [
+    {
+      "secretKey": "native_account",
+      "locator": "tenants/00000000-0000-4000-8000-000000000001/kv/component-validation",
+      "version": 2,
+      "audience": "core",
+      "header": "authorization",
+      "prefix": "Bearer "
+    }
+  ]
+}

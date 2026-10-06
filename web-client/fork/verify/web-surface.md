@@ -3065,3 +3065,185 @@ Core 新作者证据反向验证：仅在同一 SDK 源码删去 `profile_event`
 还原后同一批 Web `tsc --noEmit` 及七文件 Vitest 实际退出 0，30 项通过：ForumPane 2、ChannelPane 5、ChannelThreadPane 4、InboxDrafts 2、InboxPane 9、InboxThreadPane 4、MessageAuthorProfile 4。原件为同目录 `forum-thread-restored.log`。
 
 本批未运行 full、未构建部署新 Web/Windows、没有新增实际浏览器截图。不能据此声称全站双语、全部原版资料功能、三组件原生业务或 Web/Desktop 等效已经完成；原完整检查退出 137 的失败边界仍保留。
+
+## 频道补帧时间顺序恢复（2026-10-06）
+
+基线 `95abbc4aed07dc14d99b6d4043c049357e22758d`。实际发布页面截图
+`/volumes/data/kailo/tmp/kailo-visual-release-20261006.vlPvnU/120-cc71-agent-reply.png`
+暴露今天的新消息之后出现昨天回复。源码定位为 Web `useChannelStream` 对 snapshot
+排序，却将之后收到的历史/实时帧直接 append；它也会使末项不再是最新消息，影响
+既有已读推进。不是 Relay 数据丢失或需要重新发送 Agent 消息。
+
+实现前四步结论：权威为 REQ-24、DD-75；复用固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/messages/lib/messageQueryKeys.ts::dedupeMessagesById/sortMessages`，
+提取到 shared messages，由原 Desktop query helper 重导出，Web snapshot 与增量
+实际调用。影响频道和 DM 共用的 ChannelPane、原桌面 timeline 合并、日期分隔及
+已读末项；不改消息字段、thread 关系、API、持久数据或 Mobile 原实现。没有新增
+副作用/权限入口、第二消息库或新的运行配置。空数组、重复帧、乱序补帧、同秒事件
+沿原版去重与 timestamp/id 稳定排序；撤权清空和 UNKNOWN 发送/已读规则不变，
+已有错误仍走原六类分类。该修正不改变原来线程分组语义。
+
+实现后同一限额 SDK：Web tsc 退出 0；ChannelRead 14、ChannelPane 5、
+ChannelThreadPane 4，共 23 项通过；桌面原 messageQueryKeys 4 项通过，Desktop
+tsc 退出 0。仅 SDK 恢复 append 旧逻辑，新真实 ChannelPane DOM 用例实际报
+`expected ['event-20-a', 'event-20-z', 'event-10'] to deeply equal
+['event-10', 'event-20-a', 'event-20-z']`，退出 1；原字节 cmp 0 还原后再次 23 项
+通过、退出 0。用例同时覆盖快照去重、同秒顺序、live 前后迟到帧和正确最新已读值。
+
+先前 SDK 安装副本未同步新 shared 导出时 tsc 退出 2；同步后原命令通过。直接
+Node 命令先报 package export/类型剥离错误，改用仓库既有 `test-loader.mjs` 后
+原 4 项通过，没有新建检查脚本或修改生产逻辑适配工具。本批未重新构建发布；
+上述线上截图是问题证据，不作为修复后的线上视觉验收。
+
+### Forum 作者删除：原菜单、真实发布与未知对账（2026-10-06）
+
+比较基线 `cc71bf7b10388e450a550bcf01a562b3c7527865`。关联 `REQ-24`、
+`DD-75`、`DD-81`，归属原 `collab.channel.message`；不是新工作流或聊天权威。
+
+四步影响结论：
+
+1. 权威与上游：固定 Buzz `779af8886caae1317b4de962082429867ab61503`，
+   `desktop/src/features/forum/ui/DeleteActionMenu.tsx::DeleteActionMenu`、
+   `desktop/src/features/forum/ui/DeleteConfirmDialog.tsx::DeleteConfirmDialog`、
+   `desktop/src-tauri/src/commands/messages.rs::delete_message`、
+   `desktop/src-tauri/src/events.rs::build_delete_compat`、
+   `crates/buzz-sdk/src/builders.rs::build_delete_compat` 均已重新读取。
+   该原流程发作者 `kind:5`、`h=channel/e=target`；
+   `crates/buzz-relay/src/handlers/side_effects.rs::validate_standard_deletion_event`
+   继续决定 Relay 作者权限，`kind:9005` 是独立管理员路径，本批未开放。
+2. 影响面：共享原菜单与 AlertDialog 默认样式由 Web ForumPane、Desktop ForumScreen
+   实际消费。Web 新明确 `/workspaces/{workspace_id}/messages/delete` 仍走同一
+   publish、本人 SERVER signer、DISPATCH、publish_attempt 与原对账；Native 使用
+   本人 CLIENT、原 builder、原签名投递与已有 UNCONFIRMED holder。生成请求增加
+   `deleteEventId`，原 attempt 增可空 `delete_event_id`，保存引用而非正文。
+   普通 `/messages` 拒绝删除输入。新端误连旧 Core 会得到缺路由拒绝，不会因旧
+   serde 忽略新字段而把删除误签成空帖子。旧请求、旧 writer 保持原格式。
+3. 副作用：Core 回读当前频道原事件、验签、核对当前签名作者和 kind，并在 I/O 后
+   再准入，才签原删除事件。本人其他绑定公钥不等于当前 SERVER/CLIENT；UI 不把
+   Principal 的所有公钥都当成当前可签作者。完整目标随幂等记录冻结，不能换目标。
+   Web 以目标签名摘要的 UUID 长度前缀作稳定不透明幂等键，碰撞由原完整目标比较
+   拒绝；不新增浏览器删除账本。Native 删除首次发出前 claim，同目标并发只观察
+   原签名事件；目标已消失也可从原 holder 查证该删除事件，不再签发。
+4. 边界与终结：禁止删除同时含编辑、回复父级、正文、附件或提及。确认弹层在
+   pending 时不关闭；UNKNOWN 用中性状态、同一意图查证，不显示成功或确定失败。
+   只有原肯定 ACK/回读证据才能更新列表，未知记录仍由原对账/保留机制处理。
+   归档、非成员、作者不符继续拒绝，签名身份或 scope 改变不开放旧意图。
+   Mobile 未增加组件宿主或其他入口。
+
+实现后验证均在原 4 CPU / 8 GiB SDK，未创建新工具链、未执行上游证据树。
+`tools/upstream_manifest.py status` 确认 Buzz HEAD 仍为固定基线；Temporal SDK
+证据树另有更新，本批未改变已选依赖。
+
+- 原 `tools/gen.sh` 四侧生成退出 0；共享来源的八条菜单/确认文案生成到 Dart。
+- 最终 shared 源码与 test tsc、Web/Desktop tsc 均退出 0；shared Forum 7 项、
+  Web ForumPane 4 项和原 BFF 11 项合计 15 项通过。
+- SDK 故意把 UNKNOWN 改为拒绝，真实 1 项失败/5 项跳过、退出 1；原字节还原
+  cmp 0 后通过。没有修改产品行为以迁就断言。
+- Core 作者检查删除后真实作者隔离测试失败；同批 peer 租户检查变异也失败，
+  两者各退出 101，原字节恢复 cmp 0。最终 Core web_transport 27 项、peer 凭据
+  5 项、component_release report 9 项通过/1 项需真实演练库而忽略；clippy
+  `-D warnings` 退出 0。peer 用例属于队友同时验证的独立增量，不计本批功能完成。
+- 四侧最终往返：Rust 22、TS 27、Dart 22、Go contracts 包通过；包含同批 peer
+  样例。删除自己的初次快照已单独验证 Rust 21、TS 26、Dart 21、Go 通过；
+  私有删除树保留删除 schema 对应的生成物，不夹带 peer schema。
+- 新隔离库 `forum_delete_20261006_rija8a` 完成全部 95 条向前迁移；末条原 SQLx
+  down/up 均退出 0。已有删除 attempt 时 down 明确拒绝，不能丢失对账目标。
+  不修改部署库或旧未知任务。
+
+保留失败事实：第一轮 Web typecheck 发现漏 package export，已补；第一轮 Core
+测试插入作用域错误编译 101，已修；新增 route 初次漏限定 routing::post 导致
+编译 101，已修。SQLx revert 首次误加不支持的 `-y` 退出 2，去掉参数后 down/up
+通过。Dart 首次未投递 PUB_CACHE 尝试 `/.pub-cache` 而失败，随后只复用已有
+`/cache/pub` 通过，没有网络安装。均不改写为首次通过。
+
+原件日志根目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`。
+主要文件：`forum-delete-gen.log`、`forum-delete-core-mutation.log`、
+`forum-delete-core-route.log`、`forum-delete-final-ui-contracts.log`、
+`forum-delete-route-final.log`、`forum-delete-ui-mutation.log`、
+`forum-delete-migrations.log`；早期失败分别保留在同名前缀的原日志中。
+
+状态：源码写入、上述定向验证完成；本批未 commit/push、未 full、未构建或部署。
+Native Rust IPC 未做完整编译（既有 SDK 缺 GTK/WebKit 开发依赖），仅 rustfmt
+解析和 Desktop TypeScript 通过；不得当作 Windows 实测。原三端端到端删除与
+断线重连尚未在部署环境验收。发布必须先迁移、再新 Core、投递原运行期 kind5
+成员清单，再交付 Web/Desktop；当前线上配置或旧产物不由本批冒充已就绪。
+
+提交复核补充：删除签名分支已把新增 `expect` 改成显式缺目标时返回
+`PRECONDITION/INVALID_PARAMETERS`，不引入 panic；此最后守卫调整未重新编译，
+以上 Core 计数对应调整前输入。私有候选的追溯输入经原 `tools/gen-registry.py`
+重新生成及 `--check` 均退出 0（23 条能力、20 个封闭 kind），生成结果与候选
+逐字 cmp 0，仅增加删除路由。共享 SDK 曾被后续批次更新，其原目录直接检查
+因输入不一致退出 1；随后检查使用从本候选提取的独立输入，不以混合快照作证。
+
+### Tasks / Audit 技术键的同源中英文呈现（2026-10-06）
+
+本增量相对已交删除候选 `ff3f798087a3a26f713873b94b86809eb73c9e88`；
+只改变共享 Task/Audit 呈现及原 TS→Dart 文案，不新增动作或权限。
+对应 `.design/06` §8、REQ-08、DD-36、DD-53。
+
+四步影响结论：
+
+1. 已核 `core/crates/platform-core/src/governance.rs::Definition` 与
+   `Semantic::from_key`、原 `TaskView` / `OwnAuditEntry` 合同：实际只有动作键，
+   没有已投递的本地化名称。译名只加入既有 `platformMessages`；其不登记、
+   启用或批准动作，也不成为第二份 ActionDefinition。
+2. 实际读者是共享 `react/governance.tsx` 的任务列表/详情及 `react/pages.tsx`
+   的本人/范围审计；两端继续同一 BFF 与组件。ActionLabel 保留可见原始键，
+   状态/等待原因保留 title 原码，未知扩展动作保留原键并显示未识别。
+   Dart 文案由原 `tools/gen-platform-i18n.py` 生成，未改生成器或业务合同。
+3. `ALLOWED` 只是准入获准，`CANCEL_REQUEST_ACCEPTED` 只是接收取消请求，
+   均不显示为任务完成。任务未来 gate/dispatch/taskStatus 枚举明确中性未知，
+   不再落入同步动作“已生效”；没有改变服务端状态或控制动作。
+4. 中英均使用既有语言上下文；`constructor` 等未知键不读原型属性，原码仍可
+   查证。下划线只编码为合规词条键，往返校验拒绝不同 wire key 别名；
+   原审批、BFF 失败、结果不明与刷新行为保留，不新加动作入口。
+
+实际验证在原受限 SDK（4 CPU / 8 GiB）：共享治理 24 项、审计 14 项通过，
+其他 226 项明确筛选跳过。私有 SDK 移除未知枚举守卫，并把取消请求接收故意
+译成“已完成”，原检查真实 3 项失败、退出 1；两个源码文件原字节恢复 cmp 0
+后 38 项再次通过。原同源生成/`--check` 退出 0，Dart 现有文案检查 8 项通过。
+
+失败边界：首次生成因动作键含下划线违反既有 Dart 词条规则退出 1，改合法
+词条键后通过，未放宽生成器；首轮 shared tsc 被另一批 messageOrder 的数组
+索引类型错误阻断，未据此修改本批行为。恢复验证的串行命令在 38 项通过后，
+因相对工具路径写错退出 2；随后只补原生成检查及 Dart 检查，实际退出 0。
+类型检查最后状态单独回报，不把前述 38 项当作全量或部署验收。
+
+随后根代理修正其共享 messageOrder 严格索引类型并授权同步这一个最终输入；
+本批 shared 源码 `tsc --noEmit` 与 `tsc -p tsconfig.test.json --noEmit` 串行
+退出 0，原件 `task-audit-types-final.log`。没有重跑 38 项或另开全量构建。
+
+日志仍位于原 `profile-settings-ortsoo.DRR20F/` Data 验证目录：
+`task-audit-localized.log`、`task-audit-localized-restored.log`、
+`task-audit-pages.log`、`task-audit-mutation.log`、`task-audit-final.log`、
+`task-audit-dart.log`。本增量未 full、未构建/部署、未做新浏览器截图或 Mobile
+设备检查；文案生成通过不表示 Mobile 消费页面新增或全站词条已完整覆盖。
+
+根代理最终复核补充：删除签名缺目标的显式守卫已在原受限 SDK 实际重新编译，
+web_transport 27 项通过，原运行句柄 24108 退出 0；因此上文交接时的“最后守卫
+未重新编译”已由此证据补足，不扩大为 Native IPC 或部署验收。共享排序模块移入
+严格 TypeScript 包后新增数组空位守卫；最终共享源码及测试类型检查均退出 0。
+
+### 本批集中完整检查的实际失败（2026-10-06）
+
+`./tools/check.sh --full` 对固定树
+`c75e61b84657dacf81159b94aec73d87b5e61396` 实际退出 1；日志为
+`/volumes/data/kailo/tmp/tmp.gSnEm0nF3U.check.log`。该输入早于上述 Task/Audit
+呈现与最终排序空位守卫，不把之后的窄验倒写为此完整检查通过。
+
+- 原 Rust fmt/clippy、Go vet/test、Dart analyze/test、四侧契约同步与兼容、
+  Workflow replay、文档、能力注册表、安全边界和供应链检查通过。
+- TypeScript 静态与验证步骤失败；共享排序数组索引已在后续输入修正，
+  上述两项共享 tsc 已实际通过，完整 TypeScript 步骤未重新运行。
+- 迁移与三个 Core 数据库用例失败，实际错误是
+  `database "forum_delete_20261006_rija8a" does not exist`。执行容器加入了
+  错误的隔离 PostgreSQL 网络；原演练库实际在 `kailo-channel-agent-pg-h8mshl`，
+  已独立只读确认 95 条迁移成功。此次错误不归因为迁移 SQL，也不记演练通过。
+  Core 该测试组实际为 267 通过、3 失败、31 忽略。
+- 发布追溯与上游 seam 仍失败：新 Web/Desktop 源码没有对应新产物，多个能力
+  仍引用旧 Web 摘要，Pulse 缺摘要，私聊历史 Core/Worker 摘要无对应 dist 产物。
+  本批不伪填摘要或清空产物声明；后续集中构建后按实际产物更新。
+- 部署 `.env` 预检跳过，未安装 gitleaks，Windows/Mobile 发布和三组件绑定
+  仍有各自未验收项。未改变真实运行数据、额度、权限或旧 UNKNOWN。

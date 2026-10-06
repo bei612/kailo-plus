@@ -3382,6 +3382,11 @@ export interface WebPublishMessageRequest {
     attachments?: AttachmentElement[];
     content:      string;
     /**
+     * 删除本人原 Buzz 消息；BFF 回读当前 Channel 原事件核对本人签名身份，发原 kind 5。与
+     * editEventId、parentEventId、非空正文、附件及提及互斥；不授予 kind 9005 管理员删除权限。
+     */
+    deleteEventId?: string;
+    /**
      * 编辑原 Buzz 消息；BFF 回读同 Channel 原事件并核对本人签名身份，发原 kind 40003。与 parentEventId 互斥，缺省保持原新消息语义。
      */
     editEventId?: string;
@@ -3605,7 +3610,7 @@ export interface ApplicationProtocolPeerBindingDelivery {
     /**
      * 原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
      */
-    nativeCredentials?: ApplicationPeerCredentialDelivery[];
+    nativeCredentials?: BindingNativeCredential[];
     /**
      * 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
      */
@@ -3616,7 +3621,7 @@ export interface ApplicationProtocolPeerBindingDelivery {
     workspaceId?:       string;
 }
 
-export interface ApplicationPeerCredentialDelivery {
+export interface BindingNativeCredential {
     audience:  string;
     header:    string;
     locator:   string;
@@ -3892,8 +3897,21 @@ export interface ComponentProtocolPeerEnvironment {
     maxResponseBytes:     number;
     maxSteps:             number;
     mcpUrl:               string;
-    readOnlyTools:        string[];
-    timeoutSeconds:       number;
+    /**
+     * 隔离原生MCP的既有版本化SecretRef与header映射；经原Core/OpenBao审计和Gateway文件投递，不含凭据值，不借用生产binding身份。
+     */
+    nativeCredentials?: ComponentProtocolPeerEnvironmentNativeCredential[];
+    readOnlyTools:      string[];
+    timeoutSeconds:     number;
+}
+
+export interface ComponentProtocolPeerEnvironmentNativeCredential {
+    audience:  string;
+    header:    string;
+    locator:   string;
+    prefix:    string;
+    secretKey: string;
+    version:   number;
 }
 
 /**

@@ -108,6 +108,28 @@ it("applies a live same-author edit to one existing row without counting or noti
   expect(host.querySelector('[data-event-id="event-11"]')).toBeNull();
   expect(state.notify).not.toHaveBeenCalled();
 });
+
+it("keeps snapshot and delayed history chronological, deduplicated and stable within one second", async () => {
+  await renderChannel();
+  const early = event(10);
+  const sameSecond = { ...event(20), id: "event-20-a" };
+  const latest = { ...event(20), id: "event-20-z" };
+  await act(async () => {
+    state.receive!({ type: "snapshot", events: [latest, sameSecond, latest] });
+    state.receive!({ type: "event", event: early });
+    state.receive!({ type: "event", event: sameSecond });
+    state.receive!({ type: "live" });
+  });
+  await flush();
+  expect([...host.querySelectorAll("[data-event-id]")].map((row) => row.getAttribute("data-event-id")))
+    .toEqual([early.id, sameSecond.id, latest.id]);
+  expect(state.mark.mock.calls[0]?.[0].lastReadAt).toBe(new Date(20_000).toISOString());
+  expect(state.notify).not.toHaveBeenCalled();
+  await act(async () => state.receive!({ type: "event", event: { ...event(15), id: "late-arrival" } }));
+  await flush();
+  expect([...host.querySelectorAll("[data-event-id]")].map((row) => row.getAttribute("data-event-id")))
+    .toEqual([early.id, "late-arrival", sameSecond.id, latest.id]);
+});
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();

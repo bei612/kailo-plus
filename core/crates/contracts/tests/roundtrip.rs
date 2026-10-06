@@ -6,6 +6,22 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn component_peer_conformance_preserves_native_refs_and_legacy_absence() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("component-peer-conformance.sample.json"))
+            .unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    for include in [true, false] {
+        if !include {
+            value.as_object_mut().unwrap().remove("nativeCredentials");
+        }
+        let typed: contracts::ComponentProtocolPeerEnvironment =
+            serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(typed).unwrap(), value);
+    }
+}
+
+#[test]
 fn workspace_membership_projection_preserves_true_false_and_unknown() {
     for member in [None, Some(false), Some(true)] {
         let mut value = serde_json::json!({
@@ -233,6 +249,7 @@ fn web_publish_message_roundtrip_preserves_mentions_and_legacy_absence() {
         "web-forum-post.sample.json",
         "web-forum-comment.sample.json",
         "web-message-edit.sample.json",
+        "web-message-delete.sample.json",
     ] {
         let raw = fs::read_to_string(sample_path().with_file_name(sample)).unwrap();
         let original: serde_json::Value = serde_json::from_str(&raw).unwrap();

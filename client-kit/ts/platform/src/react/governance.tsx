@@ -25,12 +25,14 @@ import {
   approvalSelectorMessages,
   approvalStatusMessages,
   enumLabel,
+  reasonMessages,
+  type PlatformMessageKey,
 } from "../i18n";
 import { type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./context";
 import { InvitationForApproval } from "./invitations";
 import { Resource } from "./pages";
-import { Badge, Button, Cell, Notice, Table, type Tone } from "./ui";
+import { ActionLabel, Badge, Button, Cell, Notice, Table, type Tone } from "./ui";
 import { useLoad } from "./use-load";
 import { ComponentActionsPanel } from "./component-actions";
 
@@ -111,6 +113,21 @@ function Mono({ children }: { children: string }) {
   return <span className="font-mono text-xs">{children}</span>;
 }
 
+function WaitingReason({ code }: { code: string }) {
+  const t = useT();
+  const reasonText = useReasonText();
+  const known: Readonly<Record<string, PlatformMessageKey>> = {
+    UNKNOWN_EXTERNAL_RESULT: "tasks.status.unknown",
+    CONVERGENCE_PENDING: "tasks.waiting.convergence",
+    PENDING_EXTERNAL: "tasks.waiting.external",
+    PROTOCOL_SESSION_OPEN: "tasks.waiting.protocolSession",
+    NONE: "platform.audit.noResult",
+  };
+  const key = Object.hasOwn(known, code) ? known[code] : undefined;
+  return <span title={code}>{key ? t(key) : Object.hasOwn(reasonMessages, code)
+    ? reasonText(code as ReasonCode) : t("tasks.waitingCode", { code })}</span>;
+}
+
 function Toolbar({ onBack, onRefresh }: { onBack?: () => void; onRefresh: () => void }) {
   const t = useT();
   return (
@@ -150,7 +167,9 @@ function Confirm({
 export function TaskStatusBadge({ task }: { task: TaskView }) {
   const t = useT();
   const phase = taskPhase(task);
-  return <Badge tone={phase.tone}>{t(phase.label)}</Badge>;
+  return <span title={[task.gateState, task.dispatchState, task.taskStatus, task.observation].filter(Boolean).join(" · ")}>
+    <Badge tone={phase.tone}>{t(phase.label)}</Badge>
+  </span>;
 }
 
 /** 本人发起的受治理动作与详情。 */
@@ -182,7 +201,7 @@ function TaskList({ onOpen }: { onOpen: (actionExecutionId: string) => void }) {
                     <When at={task.createdAt} />
                   </Cell>
                   <Cell>
-                    <OpenLink onClick={() => onOpen(task.actionExecutionId)}>{task.actionKey}</OpenLink>
+                    <OpenLink onClick={() => onOpen(task.actionExecutionId)}><ActionLabel actionKey={task.actionKey} /></OpenLink>
                   </Cell>
                   <Cell>
                     <TaskStatusBadge task={task} />
@@ -291,13 +310,13 @@ export function TaskDetail({
       <Resource state={state} reload={reload}>
         {(task) => (
           <div className="flex flex-col gap-4">
-            <h2 className="text-sm font-medium">{task.actionKey}</h2>
+            <h2 className="text-sm font-medium"><ActionLabel actionKey={task.actionKey} /></h2>
             <Facts
               rows={[
                 [t("platform.state"), <TaskStatusBadge key="s" task={task} />],
                 task.observation ? [t("tasks.reason"), reasonText(task.observation)] : undefined,
                 task.reason ? [t("tasks.reason"), reasonText(task.reason)] : undefined,
-                task.waitingReason ? [t("tasks.waitingReason"), task.waitingReason] : undefined,
+                task.waitingReason ? [t("tasks.waitingReason"), <WaitingReason key="waiting" code={task.waitingReason} />] : undefined,
                 [t("tasks.created"), <When key="c" at={task.createdAt} />],
                 [t("tasks.operation"), <Mono key="o">{task.operationId}</Mono>],
                 [t("tasks.execution"), <Mono key="e">{task.actionExecutionId}</Mono>],

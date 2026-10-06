@@ -11,9 +11,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { StreamFrame } from "../bff-client";
 import { ForumPane } from "./ForumPane";
 
-const api = vi.hoisted(() => ({members:vi.fn(), workspaceMessages:vi.fn(), messageAuthorProfile:vi.fn(),
+const api = vi.hoisted(() => ({members:vi.fn(), workspaceMessages:vi.fn(), messageAuthorProfile:vi.fn(), profile:vi.fn(), delete:vi.fn(),
   publish:vi.fn(), receive:null as null | ((frame: StreamFrame) => void)}));
-vi.mock("@/platform/bff-client", () => ({bff:api, publishMessage:api.publish,
+vi.mock("@/platform/bff-client", () => ({bff:api, publishMessage:api.publish, deleteMessage:api.delete,
   openStream: (_scope: string, receive: (frame: StreamFrame) => void) => {api.receive=receive;return () => {};}}));
 vi.mock("./ChannelPane", () => ({Composer: () => <textarea aria-label="Reply draft" />}));
 vi.mock("@/features/chat/ui/MessageContent", () => ({MessageContent: ({content}: {content:string}) => <p>{content}</p>}));
@@ -42,6 +42,7 @@ beforeEach(() => {
   vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
   vi.stubGlobal("ResizeObserver",class { observe() {} unobserve() {} disconnect() {} });
   api.members.mockResolvedValue([{principalId:"human",displayName:"Me",pubkeys:[self],state:"ACTIVE"},{principalId:"author",displayName:"Author",pubkeys:[author],state:"ACTIVE"}]);
+  api.profile.mockResolvedValue({pubkey:self});
   api.workspaceMessages.mockImplementation((_scope, query) => Promise.resolve({events:query.messageType===WebMessageType.ForumComment?[reply]:[post,bounds]}));
   api.messageAuthorProfile.mockResolvedValue({pubkey:author,eventId:"profile",displayName:"Verified author",about:"Forum author biography",avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}});
   cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
@@ -75,4 +76,26 @@ it("keeps the selected reply composer mounted while reading its author's profile
   expect(composer.value).toBe("Unsent forum reply");
   await mount("different-human");
   expect(host.textContent).not.toContain("Forum author biography");
+});
+
+it("offers deletion only for the actual SERVER signer and invokes the existing publish seam", async () => {
+  api.profile.mockResolvedValue({pubkey:author});
+  api.delete.mockResolvedValue({eventId:"f".repeat(64),operationId:"operation"});
+  await mount();
+  const trigger = await vi.waitFor(() => {
+    const node=host.querySelector<HTMLButtonElement>('[aria-label="Delete post"]');expect(node).not.toBeNull();return node!;
+  });
+  await act(async()=>trigger.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})));
+  await act(async()=>document.querySelector<HTMLElement>('[role="menuitem"]')!.click());
+  const confirm=[...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((node)=>node.textContent==="Delete post")!;
+  await act(async()=>confirm.click());
+  expect(api.delete).toHaveBeenCalledWith("workspace",postId,WebMessageType.ForumPost);
+  expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+});
+
+it("does not equate another bound pubkey with the active SERVER signer", async () => {
+  api.members.mockResolvedValue([{principalId:"human",displayName:"Me",pubkeys:[self,author],state:"ACTIVE"}]);
+  await mount();
+  expect(host.querySelector('[aria-label="Delete post"]')).toBeNull();
+  expect(api.delete).not.toHaveBeenCalled();
 });

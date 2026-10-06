@@ -3,6 +3,9 @@
 import * as React from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ForumView, useForumLabels, type ForumMessage } from "@client-kit/platform/react/forum/ForumView";
+import { DeleteActionMenu } from "@client-kit/platform/react/forum/DeleteActionMenu";
+import { TransportError } from "@client-kit/platform/transport";
+import { deleteMessage } from "@/shared/api/tauriMessages";
 import { relativeTime } from "@client-kit/platform/format";
 import { useLocale } from "@client-kit/platform/react/context";
 import { useActiveCommunity } from "@/features/platform/activeCommunity";
@@ -121,6 +124,19 @@ function ForumVisit({ channel, currentPubkey, targetMessageId, targetThreadRootI
       hasMore={selectedQuery.hasNextPage} loadingMore={selectedQuery.isFetchingNextPage}
       onMore={() => { void selectedQuery.fetchNextPage(); }} onRetry={() => { void queryClient.invalidateQueries({ queryKey: key }); }}
       labels={labels} formatTime={(time) => relativeTime(locale, new Date(time * 1000).toISOString())} onCopy={handleTimelineMentionCopy}
+      renderDelete={(message, reply) => currentPubkey && allEvents.some((event) => event.id === message.eventId && event.pubkey === currentPubkey) && channel.isMember && channel.archivedAt === null
+        ? <DeleteActionMenu key={message.eventId} reply={reply} onConfirm={async () => {
+          let receipt: RelayEvent;
+          try { receipt = await deleteMessage(channel.id, message.eventId, relayUrl, currentPubkey); }
+          catch (error) {
+            if (String(error).includes("relay publish outcome unknown")) throw new TransportError("Deletion outcome unknown");
+            throw error;
+          }
+          if (receipt.kind !== 5 || !receipt.tags.some((tag) => tag[0] === "e" && tag[1] === message.eventId))
+            throw new TransportError("Deletion receipt mismatch");
+          if (mounted.current && selectedPostId === message.eventId) setSelectedPostId(null);
+          void queryClient.invalidateQueries({ queryKey: key });
+        }} /> : null}
       renderAuthor={(message, large) => {
         const label = resolveUserLabel({ pubkey: message.pubkey, currentPubkey, profiles, preferResolvedSelfLabel: true });
         const author = profiles?.[message.pubkey.toLowerCase()];
