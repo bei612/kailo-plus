@@ -28,6 +28,8 @@ func TestApplicationBindingProtocolRoundtrip(t *testing.T) {
 		{"resource-create.sample.json", new(generated.ActionCommand)},
 		{"resource-provision.sample.json", new(generated.ResourceProvisionAdvanceRequest)},
 		{"conversation-open.sample.json", new(generated.ActionCommand)},
+		{"conversation-preference.sample.json", new(generated.ConversationPreferenceRequest)},
+		{"workspace-channel-create.sample.json", new(generated.ActionCommand)},
 		{"conversation-participants.sample.json", new(generated.ConversationParticipantPage)},
 		{"conversation-page.sample.json", new(generated.ConversationPage)},
 		{"conversation-projection.sample.json", new(generated.ConversationProjectionRequest)},

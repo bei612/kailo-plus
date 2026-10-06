@@ -67,6 +67,7 @@
 //     final conversationPage = conversationPageFromJson(jsonString);
 //     final conversationParticipant = conversationParticipantFromJson(jsonString);
 //     final conversationParticipantPage = conversationParticipantPageFromJson(jsonString);
+//     final conversationPreferenceRequest = conversationPreferenceRequestFromJson(jsonString);
 //     final conversationView = conversationViewFromJson(jsonString);
 //     final evidenceView = evidenceViewFromJson(jsonString);
 //     final invitationRedemptionView = invitationRedemptionViewFromJson(jsonString);
@@ -128,6 +129,7 @@
 //     final runtimeProfileDirectory = runtimeProfileDirectoryFromJson(jsonString);
 //     final taskStateReport = taskStateReportFromJson(jsonString);
 //     final workflowRef = workflowRefFromJson(jsonString);
+//     final workspaceChannelCreate = workspaceChannelCreateFromJson(jsonString);
 //     final affectedOwnerRef = affectedOwnerRefFromJson(jsonString);
 //     final agentInstallationAdvanceRequest = agentInstallationAdvanceRequestFromJson(jsonString);
 //     final agentInstallationAdvanceResult = agentInstallationAdvanceResultFromJson(jsonString);
@@ -593,6 +595,14 @@ ConversationParticipantPage conversationParticipantPageFromJson(String str) =>
 String conversationParticipantPageToJson(ConversationParticipantPage data) =>
     json.encode(data.toJson());
 
+ConversationPreferenceRequest conversationPreferenceRequestFromJson(
+  String str,
+) => ConversationPreferenceRequest.fromJson(json.decode(str));
+
+String conversationPreferenceRequestToJson(
+  ConversationPreferenceRequest data,
+) => json.encode(data.toJson());
+
 ConversationView conversationViewFromJson(String str) =>
     ConversationView.fromJson(json.decode(str));
 
@@ -956,6 +966,12 @@ WorkflowRef workflowRefFromJson(String str) =>
     WorkflowRef.fromJson(json.decode(str));
 
 String workflowRefToJson(WorkflowRef data) => json.encode(data.toJson());
+
+WorkspaceChannelCreate workspaceChannelCreateFromJson(String str) =>
+    WorkspaceChannelCreate.fromJson(json.decode(str));
+
+String workspaceChannelCreateToJson(WorkspaceChannelCreate data) =>
+    json.encode(data.toJson());
 
 AffectedOwnerRef affectedOwnerRefFromJson(String str) =>
     AffectedOwnerRef.fromJson(json.decode(str));
@@ -2696,6 +2712,7 @@ class ActionCommand {
 
   ///tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
   final String? tenantId;
+  final WorkspaceChannelClass? workspaceChannel;
 
   ///Workspace 内动作的执行 Workspace
   final String? workspaceId;
@@ -2734,6 +2751,7 @@ class ActionCommand {
     this.slug,
     this.sourceEventId,
     this.tenantId,
+    this.workspaceChannel,
     this.workspaceId,
   });
 
@@ -2806,6 +2824,9 @@ class ActionCommand {
     slug: json["slug"],
     sourceEventId: json["sourceEventId"],
     tenantId: json["tenantId"],
+    workspaceChannel: json["workspaceChannel"] == null
+        ? null
+        : WorkspaceChannelClass.fromJson(json["workspaceChannel"]),
     workspaceId: json["workspaceId"],
   );
 
@@ -2843,6 +2864,7 @@ class ActionCommand {
     "slug": slug,
     "sourceEventId": sourceEventId,
     "tenantId": tenantId,
+    "workspaceChannel": workspaceChannel?.toJson(),
     "workspaceId": workspaceId,
   });
 }
@@ -3960,6 +3982,32 @@ class ResourceCreateClass {
     "typeKey": typeKey,
   });
 }
+
+///workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
+class WorkspaceChannelClass {
+  final ChannelType channelType;
+  final String? description;
+
+  WorkspaceChannelClass({required this.channelType, this.description});
+
+  factory WorkspaceChannelClass.fromJson(Map<String, dynamic> json) =>
+      WorkspaceChannelClass(
+        channelType: channelTypeValues.map[json["channelType"]]!,
+        description: json["description"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "channelType": channelTypeValues.reverse[channelType],
+    "description": description,
+  });
+}
+
+enum ChannelType { FORUM, STREAM }
+
+final channelTypeValues = EnumValues({
+  "forum": ChannelType.FORUM,
+  "stream": ChannelType.STREAM,
+});
 
 ///POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
 ///必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
@@ -7899,6 +7947,30 @@ class ItemClass {
   });
 }
 
+///PUT /api/v1/user-state/conversations/{conversationId} 的请求体（DD-40）：参与者私聊的收藏与静音，复用同一
+///CollaborationUserState version CAS。隐藏状态不在此权威。
+class ConversationPreferenceRequest {
+  final bool muted;
+  final bool starred;
+  final int version;
+
+  ConversationPreferenceRequest({
+    required this.muted,
+    required this.starred,
+    required this.version,
+  });
+
+  factory ConversationPreferenceRequest.fromJson(Map<String, dynamic> json) =>
+      ConversationPreferenceRequest(
+        muted: json["muted"],
+        starred: json["starred"],
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"muted": muted, "starred": starred, "version": version});
+}
+
 ///已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
 class ConversationView {
   final String channelId;
@@ -11655,6 +11727,25 @@ class WorkflowRef {
     "runId": runId,
     "tenantId": tenantId,
     "workflowId": workflowId,
+  });
+}
+
+///workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
+class WorkspaceChannelCreate {
+  final ChannelType channelType;
+  final String? description;
+
+  WorkspaceChannelCreate({required this.channelType, this.description});
+
+  factory WorkspaceChannelCreate.fromJson(Map<String, dynamic> json) =>
+      WorkspaceChannelCreate(
+        channelType: channelTypeValues.map[json["channelType"]]!,
+        description: json["description"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "channelType": channelTypeValues.reverse[channelType],
+    "description": description,
   });
 }
 

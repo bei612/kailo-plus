@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { ErrorClass, ReasonCode } from "@client-kit/contracts";
+import { ChannelType, ErrorClass, ReasonCode, type ActionCommand } from "@client-kit/contracts";
 import { AgentMemoryEntryPageState, AgentMemoryReadViewState, type AgentMemoryEntryPage, type AgentMemoryReadView } from "@client-kit/contracts";
 import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -50,7 +50,7 @@ describe("shared original channel creation entry", () => {
     const dialog = document.querySelector<HTMLElement>("[data-testid=create-channel-dialog]")!;
     const inputs = dialog.querySelectorAll("input");
     await type(inputs[0]!, "Release planning");
-    await type(inputs[1]!, "release-planning");
+    expect(inputs).toHaveLength(1);
     return dialog;
   }
   it("submits the existing governed command and reports acceptance, not channel readiness", async () => {
@@ -61,10 +61,23 @@ describe("shared original channel creation entry", () => {
     const writes = t.send.mock.calls.map(([request]) => request).filter((request) => request.method === "POST");
     expect(writes).toHaveLength(1);
     expect(writes[0]).toMatchObject({ path: "/api/v1/actions", body: {
-      actionKey: "workspace.create", name: "Release planning", slug: "release-planning",
+      actionKey: "workspace.create", name: "Release planning",
+      workspaceChannel: { channelType: "stream" },
     } });
+    const intent = writes[0]?.body as ActionCommand;
+    expect(intent.slug).toBe(intent.idempotencyKey);
     expect(dialog.textContent).toContain("create-execution");
     expect(dialog.textContent).not.toContain("Channel created");
+  });
+  it("preserves the original forum context and description in the governed creation intent", async () => {
+    const t = routes(() => recorded);
+    await mount(t, <CreateChannelDialog open channelKind={ChannelType.Forum} onOpenChange={() => {}} />);
+    const dialog = await fill();
+    await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "  Architecture decisions  ");
+    await click(button(dialog, "Create channel"));
+    expect(t.send.mock.calls.find(([request]) => request.method === "POST")?.[0].body).toMatchObject({
+      workspaceChannel: { channelType: "forum", description: "Architecture decisions" },
+    });
   });
   it("keeps the original unknown command and blocks dismissing it until it is located", async () => {
     let writes = 0;
@@ -77,6 +90,7 @@ describe("shared original channel creation entry", () => {
     await click(button(dialog, "Create channel"));
     expect(dialog.querySelector<HTMLButtonElement>("button[aria-label=Close]")?.disabled).toBe(true);
     expect([...dialog.querySelectorAll("input")].every((input) => input.disabled)).toBe(true);
+    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")?.disabled).toBe(true);
     const retry = dialog.querySelector<HTMLButtonElement>("[data-testid=create-channel-submit]")!;
     await click(retry);
     const commands = t.send.mock.calls.map(([request]) => request).filter((request) => request.method === "POST");
@@ -2326,7 +2340,7 @@ describe("platform pages render only through the host theme", () => {
   const colorUtility =
     /(?:^|[\s"'`:])(bg|text|border|ring|outline|fill|stroke|divide|placeholder|from|via|to|accent|caret|decoration|shadow)-([a-z][a-z0-9-]*)(?:\/\d+)?/g;
 
-  it("uses no own theme, colour literal or dark variant", async () => {
+  it("uses no own theme or unverified colour expression", async () => {
     expect(sources.length).toBeGreaterThan(0);
     // DD-36/53: Buzz's native token colour is selected
     // by the host. Pin779af8886caae1317b4de962082429867ab61503,
@@ -2486,13 +2500,23 @@ describe("platform pages render only through the host theme", () => {
     }
     for (const { name, text } of sources) {
       // Remove just the verified JSX attribute, not its function or file.
-      const inspected = name === native.name
+      let inspected = name === native.name
         ? text.slice(0, nativeStyle.getStart(parsed)) + text.slice(nativeStyle.end)
         : name === inbox.name ? inspectedInbox
         : name === segmented.name ? inspectedSegmented
         : name === surface.name ? inspectedSurface
         : name === picker.name ? inspectedPicker
         : name === appearance.name ? inspectedAppearance : text;
+      if (name === "new-message.tsx") {
+        // Fixed Buzz NewMessageScreen uses the host's dark root, not another
+        // theme provider. Keep its original translucency and blur details.
+        const variants = inspected.match(/\bdark:[a-z0-9:/-]+/g);
+        expect(variants).toEqual([
+          "dark:bg-background/70", "dark:backdrop-blur-xl",
+          "dark:supports-backdrop-filter:bg-background/55",
+        ]);
+        for (const variant of variants ?? []) inspected = inspected.replace(variant, "");
+      }
       for (const pattern of [
         /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/,
         /\b(?:rgba?|hsla?|oklch|oklab|lab|lch|color-mix)\(/,
@@ -2525,6 +2549,7 @@ describe("platform pages render only through the host theme", () => {
         // Native Switch ring-offset utilities are width or a host colour,
         // not colours named "offset-2" / "offset-background".
         if (utility === "ring" && /^offset-\d+$/.test(token!)) continue;
+        if (utility === "ring" && token === "inset") continue;
         if (utility === "ring" && token!.startsWith("offset-")) {
           used.add(token!.slice("offset-".length));
           continue;

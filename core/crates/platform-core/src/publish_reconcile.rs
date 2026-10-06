@@ -26,7 +26,10 @@ use uuid::Uuid;
 use crate::audit::{append, AuditEntry};
 use crate::service_api::ServiceState;
 use crate::tenant_lifecycle::{control_client, ProjectionDirection};
-use crate::web_transport::{CONVERSATION_PUBLISH_ACTION, PUBLISH_ACTION};
+use crate::web_transport::{
+    CONVERSATION_HIDE_ACTION, CONVERSATION_PUBLISH_ACTION, CONVERSATION_REOPEN_ACTION,
+    PUBLISH_ACTION,
+};
 
 pub struct Config {
     pub interval: Duration,
@@ -155,7 +158,15 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
            order by d.occurred_at
            limit $2"#,
     )
-    .bind([PUBLISH_ACTION, CONVERSATION_PUBLISH_ACTION].as_slice())
+    .bind(
+        [
+            PUBLISH_ACTION,
+            CONVERSATION_PUBLISH_ACTION,
+            CONVERSATION_HIDE_ACTION,
+            CONVERSATION_REOPEN_ACTION,
+        ]
+        .as_slice(),
+    )
     .bind(cfg.batch)
     .bind(settle)
     .bind(min_age)
@@ -217,7 +228,15 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
                  where o.operation_id = d.operation_id
                    and o.event_type in ('OUTCOME', 'RECONCILIATION'))"#,
     )
-    .bind([PUBLISH_ACTION, CONVERSATION_PUBLISH_ACTION].as_slice())
+    .bind(
+        [
+            PUBLISH_ACTION,
+            CONVERSATION_PUBLISH_ACTION,
+            CONVERSATION_HIDE_ACTION,
+            CONVERSATION_REOPEN_ACTION,
+        ]
+        .as_slice(),
+    )
     .fetch_one(&state.pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -299,7 +318,12 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
             .await
             .map_err(|_| "QUERY_FAILED");
     }
-    if p.action_key != CONVERSATION_PUBLISH_ACTION
+    if ![
+        CONVERSATION_PUBLISH_ACTION,
+        CONVERSATION_HIDE_ACTION,
+        CONVERSATION_REOPEN_ACTION,
+    ]
+    .contains(&p.action_key.as_str())
         || p.target_type.as_deref() != Some("CONVERSATION")
         || p.workspace_id.is_some()
     {

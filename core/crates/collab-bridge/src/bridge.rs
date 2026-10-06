@@ -161,23 +161,82 @@ impl IdentityClient {
         http: &reqwest::Client,
         channel_id: &str,
         name: &str,
+        metadata: Option<&contracts::WorkspaceChannelCreate>,
     ) -> Result<(), OperatorError> {
         let tag = |k: &str, v: &str| vec![k.to_owned(), v.to_owned()];
-        let tags = [
+        let mut tags = vec![
             tag("h", channel_id),
             tag("name", name),
             tag("visibility", "private"),
         ];
+        if let Some(metadata) = metadata {
+            let kind = serde_json::to_value(&metadata.channel_type)
+                .map_err(|e| OperatorError::Sign(e.to_string()))?;
+            let kind = kind.as_str().ok_or_else(|| {
+                OperatorError::NotConverged("Channel type is not a string".into())
+            })?;
+            tags.push(tag("channel_type", kind));
+            if let Some(description) = metadata.description.as_deref() {
+                tags.push(tag("about", description));
+            }
+        }
         let accepted = self.publish(http, KIND_CHANNEL_CREATE, "", &tags).await?;
         let duplicate = accepted.get("accepted").and_then(|v| v.as_bool()) == Some(false)
             && accepted
                 .get("message")
                 .and_then(|v| v.as_str())
                 .is_some_and(|m| m.starts_with("duplicate: channel already exists"));
-        if duplicate {
-            return Ok(());
+        if !duplicate {
+            Self::accepted_event_id(&accepted)?;
         }
-        Self::accepted_event_id(&accepted).map(|_| ())
+        // Duplicate only proves the identifier exists. Read the signed native metadata;
+        // stale discovery remains retryable, never materializes a successful binding.
+        let Some(event) = self.channel_metadata(http, channel_id).await? else {
+            return Err(OperatorError::NotConverged(
+                "Channel metadata missing".into(),
+            ));
+        };
+        let one = |key: &str| -> Result<Option<String>, OperatorError> {
+            let mut values = event
+                .tags
+                .iter()
+                .filter(|t| t.as_slice().first().is_some_and(|v| v == key));
+            let value = values.next();
+            if values.next().is_some() || value.is_some_and(|v| v.as_slice().len() != 2) {
+                return Err(OperatorError::NotConverged(
+                    "Channel metadata tag malformed".into(),
+                ));
+            }
+            Ok(value.map(|v| v.as_slice()[1].clone()))
+        };
+        let expected_kind = metadata
+            .map(|m| serde_json::to_value(&m.channel_type))
+            .transpose()
+            .map_err(|e| OperatorError::Sign(e.to_string()))?
+            .unwrap_or_else(|| Value::String("stream".into()));
+        let description = metadata
+            .and_then(|m| m.description.as_deref())
+            .unwrap_or("");
+        if one("name")?.as_deref() != Some(buzz_core::channel::canonical_channel_name(name))
+            || one("t")?.as_deref() != expected_kind.as_str()
+            || one("about")?.as_deref().unwrap_or("") != description
+            || event
+                .tags
+                .iter()
+                .filter(|t| t.as_slice() == ["private"])
+                .count()
+                != 1
+            || event
+                .tags
+                .iter()
+                .any(|t| t.as_slice().first().is_some_and(|v| v == "public"))
+            || one("archived")?.is_some_and(|v| v != "false")
+        {
+            return Err(OperatorError::NotConverged(
+                "Channel metadata does not match creation intent".into(),
+            ));
+        }
+        Ok(())
     }
 
     /// 以该身份发布一条频道消息，返回 Relay 接受后的 event id。
@@ -643,6 +702,37 @@ impl IdentityClient {
         http: &reqwest::Client,
         channel_id: &str,
     ) -> Result<Option<bool>, OperatorError> {
+        let Some(event) = self.channel_metadata(http, channel_id).await? else {
+            return Ok(None);
+        };
+        let mut archived = None;
+        for tag in event.tags.iter() {
+            let parts = tag.as_slice();
+            if parts.first().map(String::as_str) == Some("archived") {
+                if archived.is_some() || parts.len() != 2 {
+                    return Err(OperatorError::NotConverged(
+                        "Channel discovery 的 archived 标签损坏或重复".into(),
+                    ));
+                }
+                archived = Some(match parts[1].as_str() {
+                    "true" => true,
+                    "false" => false,
+                    _ => {
+                        return Err(OperatorError::NotConverged(
+                            "Channel discovery 的 archived 状态未知".into(),
+                        ))
+                    }
+                });
+            }
+        }
+        Ok(Some(archived.unwrap_or(false)))
+    }
+
+    async fn channel_metadata(
+        &self,
+        http: &reqwest::Client,
+        channel_id: &str,
+    ) -> Result<Option<Event>, OperatorError> {
         let filter =
             serde_json::json!({ "kinds": [KIND_CHANNEL_METADATA], "#d": [channel_id], "limit": 1 });
         let page = self.query(http, &[filter]).await?;
@@ -662,35 +752,15 @@ impl IdentityClient {
             ));
         }
         let mut observed_channel = None;
-        let mut archived = None;
         for tag in event.tags.iter() {
             let parts = tag.as_slice();
-            match parts.first().map(String::as_str) {
-                Some("d") => {
-                    if observed_channel.is_some() || parts.len() != 2 {
-                        return Err(OperatorError::NotConverged(
-                            "Channel discovery 的 d 标签损坏或重复".into(),
-                        ));
-                    }
-                    observed_channel = parts.get(1);
+            if let Some("d") = parts.first().map(String::as_str) {
+                if observed_channel.is_some() || parts.len() != 2 {
+                    return Err(OperatorError::NotConverged(
+                        "Channel discovery 的 d 标签损坏或重复".into(),
+                    ));
                 }
-                Some("archived") => {
-                    if archived.is_some() || parts.len() != 2 {
-                        return Err(OperatorError::NotConverged(
-                            "Channel discovery 的 archived 标签损坏或重复".into(),
-                        ));
-                    }
-                    archived = Some(match parts[1].as_str() {
-                        "true" => true,
-                        "false" => false,
-                        _ => {
-                            return Err(OperatorError::NotConverged(
-                                "Channel discovery 的 archived 状态未知".into(),
-                            ));
-                        }
-                    });
-                }
-                _ => {}
+                observed_channel = parts.get(1);
             }
         }
         if observed_channel.map(String::as_str) != Some(channel_id) {
@@ -698,7 +768,7 @@ impl IdentityClient {
                 "Channel discovery 不属于请求的 Channel".into(),
             ));
         }
-        Ok(Some(archived.unwrap_or(false)))
+        Ok(Some(event))
     }
 
     /// 以该身份查询历史。filter 由调用方给出，BFF 不接受 Browser 提交的

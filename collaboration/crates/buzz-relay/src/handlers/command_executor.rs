@@ -92,12 +92,13 @@ enum PersistResult {
 /// If the event is a duplicate (ON CONFLICT DO NOTHING), the transaction is
 /// rolled back and `PersistResult::Duplicate` is returned — no mutations needed.
 ///
-/// NOTE: Domain mutations (open_dm, upsert_workflow, etc.) execute on the
+/// Governed DM projection and personal visibility mutate inside this transaction.
+/// Other domain mutations (open_dm, upsert_workflow, etc.) execute on the
 /// connection pool, NOT inside this transaction. The pattern is idempotent but
 /// not strictly atomic: if a mutation succeeds but commit fails, the mutation
 /// persists without the event record. On retry, the event INSERT succeeds
 /// (no conflict), and the mutation re-executes — which is safe for idempotent
-/// operations (open_dm, hide_dm, update_approval, upsert_workflow).
+/// operations (open_dm, update_approval, upsert_workflow).
 #[datastore_span(name = "persist_command_event", system = "postgresql")]
 async fn persist_command_event(
     db: &buzz_db::Db,
@@ -423,7 +424,11 @@ async fn handle_dm_open(
     auth: &IngestAuth,
 ) -> Result<IngestResult, IngestError> {
     if super::governance::is_governed(state) {
-        return handle_governed_dm_projection(tenant, state, event, auth).await;
+        return if extract_tag(event, "generation").is_some() {
+            handle_governed_dm_projection(tenant, state, event, auth).await
+        } else {
+            handle_dm_visibility(tenant, state, event, auth, false).await
+        };
     }
     let self_bytes = auth.pubkey().to_bytes().to_vec();
     let self_hex = hex::encode(&self_bytes);
@@ -701,7 +706,29 @@ async fn handle_dm_hide(
     event: &Event,
     auth: &IngestAuth,
 ) -> Result<IngestResult, IngestError> {
+    handle_dm_visibility(tenant, state, event, auth, true).await
+}
+
+async fn handle_dm_visibility(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    event: &Event,
+    auth: &IngestAuth,
+    hidden: bool,
+) -> Result<IngestResult, IngestError> {
     let self_bytes = auth.pubkey().to_bytes().to_vec();
+
+    if !event.content.is_empty()
+        || event.tags.len() != 1
+        || event
+            .tags
+            .iter()
+            .any(|tag| tag.as_slice().len() != 2 || tag.as_slice()[0] != "h")
+    {
+        return Err(IngestError::Rejected(
+            "invalid: personal DM visibility requires only an h tag".into(),
+        ));
+    }
 
     // 1. Extract channel from `h` tag
     let channel_id_str = extract_h_tag(event)
@@ -731,8 +758,15 @@ async fn handle_dm_hide(
     }
 
     // Persist the command event — returns open transaction
-    let tx = match persist_command_event(&state.db, tenant, event, None).await? {
+    let mut tx = match persist_command_event(&state.db, tenant, event, Some(channel_id)).await? {
         PersistResult::Duplicate => {
+            // The mutation and event already committed together; never replay the
+            // old hide after a newer reopen. Repair only the latest visibility snapshot.
+            publish_dm_visibility_snapshot(tenant, state, &self_bytes)
+                .await
+                .map_err(|e| {
+                    IngestError::Internal(format!("error: DM visibility snapshot: {e}"))
+                })?;
             return Ok(IngestResult {
                 event_id: event.id.to_hex(),
                 accepted: true,
@@ -742,23 +776,34 @@ async fn handle_dm_hide(
         PersistResult::Inserted(tx) => tx,
     };
 
-    // 4. Execute: hide_dm
-    state
-        .db
-        .hide_dm(tenant.community(), channel_id, &self_bytes)
+    // Native visibility and its exact command receipt commit atomically.
+    buzz_db::dm::set_dm_hidden(&mut tx, tenant.community(), channel_id, &self_bytes, hidden)
         .await
-        .map_err(|e| IngestError::Internal(format!("error: db hide_dm: {e}")))?;
+        .map_err(|e| IngestError::Internal(format!("error: db DM visibility: {e}")))?;
 
-    // Finalize the idempotency record after the separate mutation succeeds.
+    let snapshot = super::side_effects::dm_visibility_snapshot_in_transaction(
+        tenant,
+        state,
+        &mut tx,
+        &self_bytes,
+    )
+    .await
+    .map_err(|e| IngestError::Internal(format!("error: DM visibility snapshot: {e}")))?;
+
+    // No external success can precede this transaction's receipt.
     tx.commit()
         .await
         .map_err(|e| IngestError::Internal(format!("error: commit transaction: {e}")))?;
 
-    // 5. Side effect (post-commit, best-effort): refresh the caller's NIP-DV
-    // visibility snapshot so clients can filter this DM out of the sidebar.
-    if let Err(e) = publish_dm_visibility_snapshot(tenant, state, &self_bytes).await {
-        warn!("DM hide: visibility snapshot failed: {e}");
-    }
+    super::event::dispatch_persistent_event(
+        tenant,
+        state,
+        &snapshot,
+        KIND_DM_VISIBILITY,
+        &state.relay_keypair.public_key().to_hex(),
+        None,
+    )
+    .await;
 
     // 6. Return response
     Ok(IngestResult {

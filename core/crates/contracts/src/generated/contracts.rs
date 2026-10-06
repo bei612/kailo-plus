@@ -932,6 +932,9 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tenant_id: Option<String>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_channel: Option<WorkspaceChannelClass>,
+
     /// Workspace 内动作的执行 Workspace
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
@@ -1536,6 +1539,24 @@ pub struct ResourceCreateClass {
     pub native_type: String,
 
     pub type_key: String,
+}
+
+/// workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceChannelClass {
+    pub channel_type: ChannelType,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChannelType {
+    Forum,
+
+    Stream,
 }
 
 /// POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -3883,6 +3904,17 @@ pub struct ItemClass {
     pub pubkeys: Vec<String>,
 }
 
+/// PUT /api/v1/user-state/conversations/{conversationId} 的请求体（DD-40）：参与者私聊的收藏与静音，复用同一
+/// CollaborationUserState version CAS。隐藏状态不在此权威。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConversationPreferenceRequest {
+    pub muted: bool,
+
+    pub starred: bool,
+
+    pub version: i64,
+}
+
 /// 已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -5732,6 +5764,16 @@ pub struct WorkflowRef {
 
     /// 固定格式的业务 workflow ID
     pub workflow_id: String,
+}
+
+/// workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceChannelCreate {
+    pub channel_type: ChannelType,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。

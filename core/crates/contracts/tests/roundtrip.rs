@@ -6,6 +6,16 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn workspace_channel_roundtrip_keeps_native_metadata() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("workspace-channel-create.sample.json"))
+            .unwrap();
+    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: contracts::ActionCommand = serde_json::from_str(&raw).unwrap();
+    assert_eq!(original, serde_json::to_value(typed).unwrap());
+}
+
+#[test]
 fn conversation_roundtrip_preserves_participants_native_scope_and_frozen_workflow() {
     fn roundtrip<T: serde::de::DeserializeOwned + serde::Serialize>(name: &str) {
         let raw = fs::read_to_string(sample_path().with_file_name(name)).unwrap();
@@ -14,6 +24,7 @@ fn conversation_roundtrip_preserves_participants_native_scope_and_frozen_workflo
         assert_eq!(original, serde_json::to_value(typed).unwrap());
     }
     roundtrip::<contracts::ActionCommand>("conversation-open.sample.json");
+    roundtrip::<contracts::ConversationPreferenceRequest>("conversation-preference.sample.json");
     roundtrip::<contracts::ConversationParticipantPage>("conversation-participants.sample.json");
     roundtrip::<contracts::ConversationPage>("conversation-page.sample.json");
     roundtrip::<contracts::ConversationProjectionRequest>("conversation-projection.sample.json");

@@ -80,9 +80,14 @@ capabilities:
   - /api/v1/conversations/{conversation_id}/stream
   - /api/v1/conversations/{conversation_id}/media
   - /api/v1/conversations/{conversation_id}/media/{sha256}
+  - /api/v1/conversations/{conversation_id}/hide
+  - /api/v1/conversations/{conversation_id}/reopen
+  - /api/v1/conversations/{conversation_id}/visibility
   actions:
   - conversation.open
   - conversation.message.publish
+  - conversation.hide
+  - conversation.reopen
   tools: []
   workflow_kinds:
   - CONVERSATION_PROJECTION
@@ -91,6 +96,7 @@ capabilities:
   routes:
   - /api/v1/user-state
   - /api/v1/user-state/workspaces/{workspace_id}
+  - /api/v1/user-state/conversations/{conversation_id}
   - /api/v1/user-state/read
   actions: []
   tools: []

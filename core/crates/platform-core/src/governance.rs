@@ -703,6 +703,7 @@ impl Semantic {
 /// 权威，不接收上游业务正文、凭据或 host environment。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Params {
+    pub workspace_channel: Option<Value>,
     pub conversation_open: Option<Value>,
     pub workspace_id: Option<Uuid>,
     /// 业务 Tenant 暂停与恢复的目标（DD-96）；其他语义一律为空
@@ -737,6 +738,9 @@ pub struct Params {
 impl Params {
     pub(crate) fn to_json(&self) -> Value {
         let mut m = serde_json::Map::new();
+        if let Some(input) = &self.workspace_channel {
+            m.insert("workspaceChannel".into(), input.clone());
+        }
         if let Some(input) = &self.conversation_open {
             m.insert("conversationOpen".into(), input.clone());
         }
@@ -835,6 +839,7 @@ impl Params {
         };
         let text = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_owned);
         Some(Self {
+            workspace_channel: v.get("workspaceChannel").cloned(),
             conversation_open: v.get("conversationOpen").cloned(),
             workspace_id: uuid("workspaceId"),
             tenant_id: uuid("tenantId"),
@@ -898,8 +903,50 @@ pub(crate) fn valid_slug(s: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
+#[cfg(test)]
+mod workspace_channel_tests {
+    use super::*;
+
+    #[test]
+    fn channel_metadata_stays_in_the_original_idempotent_parameters() {
+        let command: contracts::ActionCommand = serde_json::from_str(include_str!(
+            "../../../../contracts/samples/workspace-channel-create.sample.json"
+        ))
+        .unwrap();
+        let parameters = parse_command(Semantic::WorkspaceCreate, &command).unwrap();
+        assert_eq!(
+            parameters.workspace_channel.as_ref().unwrap(),
+            &json!({
+                "channelType": "forum", "description": "Decisions and discussion threads",
+            })
+        );
+        assert_eq!(
+            Params::from_json(&parameters.to_json()).unwrap(),
+            parameters
+        );
+        assert!(parse_command(Semantic::WorkspaceRestore, &command).is_err());
+        let mut other = command.clone();
+        other.workspace_channel.as_mut().unwrap().description = Some("Changed intent".into());
+        assert_ne!(
+            parameters.to_json(),
+            parse_command(Semantic::WorkspaceCreate, &other)
+                .unwrap()
+                .to_json()
+        );
+        let mut legacy = command;
+        legacy.workspace_channel = None;
+        assert!(parse_command(Semantic::WorkspaceCreate, &legacy)
+            .unwrap()
+            .workspace_channel
+            .is_none());
+    }
+}
+
 fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params, Refusal> {
     let bad = || Refusal::Precondition(ReasonCode::InvalidParameters);
+    if cmd.workspace_channel.is_some() && sem != Semantic::WorkspaceCreate {
+        return Err(bad());
+    }
     if !sem.takes_explicit_confirmation() && cmd.explicit_confirmation.is_some() {
         return Err(bad());
     }
@@ -910,6 +957,12 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .map_err(|_| bad())
     };
     let p = Params {
+        workspace_channel: cmd
+            .workspace_channel
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|_| bad())?,
         conversation_open: cmd
             .conversation_open
             .as_ref()
@@ -2984,6 +3037,7 @@ impl Governance {
             return Ok(None);
         }
         let params = Params {
+            workspace_channel: None,
             conversation_open: None,
             workspace_id: None,
             tenant_id: None,
@@ -3084,6 +3138,7 @@ impl Governance {
             return Ok(None);
         }
         let params = Params {
+            workspace_channel: None,
             conversation_open: None,
             workspace_id: None,
             tenant_id: None,

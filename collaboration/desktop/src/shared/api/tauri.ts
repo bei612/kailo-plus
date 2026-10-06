@@ -277,20 +277,7 @@ export async function getThreadReplies(
   };
 }
 
-export type BlobDescriptor = {
-  url: string;
-  sha256: string;
-  size: number;
-  type: string;
-  uploaded: number;
-  dim?: string;
-  blurhash?: string;
-  thumb?: string;
-  duration?: number;
-  image?: string;
-  /** Original filename captured client-side. */
-  filename?: string;
-};
+export type BlobDescriptor = import("@client-kit/platform/react/composer/features/messages/lib/imetaMediaMarkdown").BlobDescriptor;
 
 export async function pickAndUploadMedia(
   progressId?: string,

@@ -1,7 +1,7 @@
 // DD-82：角色关系只从 BFF fresh 视图读取，授予/撤销仍经同一条 Governed Action。
 // Web 与 Desktop 共用；Mobile 只读成员视图，不装载本管理面。
 
-import { ActionDispatchState, ActionGateState, BindingKind, CreateActionKey, WorkspaceLifecycleActionKey, WorkspaceState, type ActionCommand, type ActionSubmission, type LegacySecretRefBinding, type RoleMemberView, type RoleWorkspaceView } from "@client-kit/contracts";
+import { ActionDispatchState, ActionGateState, BindingKind, ChannelType, CreateActionKey, WorkspaceLifecycleActionKey, WorkspaceState, type ActionCommand, type ActionSubmission, type LegacySecretRefBinding, type RoleMemberView, type RoleWorkspaceView } from "@client-kit/contracts";
 import { useRef, useState } from "react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { enumLabel, workspaceStateMessages } from "../i18n";
@@ -9,6 +9,8 @@ import { BffError, TransportError, type WriteFailure, writeFailure } from "../tr
 import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./context";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { useLoad } from "./use-load";
+import { Input } from "./composer/shared/ui/input";
+import { cn } from "./profile/buzz/shared/lib/cn";
 
 type Change = { key: string; principal: RoleMemberView; idempotencyKey: string };
 type Outcome =
@@ -99,12 +101,13 @@ export function RoleManagement() {
 }
 
 /** 沿用已登记的 workspace.create；受理回应不代表 Channel/权限投影已完成。 */
-export function useWorkspaceCreate(actionKey?: CreateActionKey) {
+export function useWorkspaceCreate(actionKey?: CreateActionKey, channelType?: ChannelType) {
   const client = useBffClient();
   const t = useT();
   const inFlight = useRef(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
+  const [description, setDescription] = useState("");
   const [command, setCommand] = useState<ActionCommand | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<WriteFailure | null>(null);
@@ -120,8 +123,12 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey) {
     : [];
 
   const submit = async () => {
-    if (!actionKey || inFlight.current || (!command && (!name.trim() || !slug.trim()))) return;
-    const intent = command ?? { actionKey, idempotencyKey: newIdempotencyKey(), name: name.trim(), slug: slug.trim() };
+    if (!actionKey || inFlight.current || (!command && (!name.trim() || (channelType === undefined && !slug.trim())))) return;
+    const idempotencyKey = command?.idempotencyKey ?? newIdempotencyKey();
+    // The original channel form has no infrastructure slug field. Use its existing
+    // stable creation intent key; management forms may still choose a readable slug.
+    const intent = command ?? { actionKey, idempotencyKey, name: name.trim(), slug: channelType === undefined ? slug.trim() : idempotencyKey,
+      workspaceChannel: { channelType: channelType ?? ChannelType.Stream, ...(description.trim() ? { description: description.trim() } : {}) } };
     inFlight.current = true;
     setCommand(intent);
     setBusy(true);
@@ -140,6 +147,7 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey) {
       setCommand(null);
       setName("");
       setSlug("");
+      setDescription("");
     } catch (error) {
       const failed = writeFailure(error);
       setFailure(failed);
@@ -152,7 +160,7 @@ export function useWorkspaceCreate(actionKey?: CreateActionKey) {
     }
   };
 
-  return { actionKey, name, setName, slug, setSlug, command, busy, failure, submission,
+  return { actionKey, name, setName, slug, setSlug, description, setDescription, channelType, command, busy, failure, submission,
     locked, openTasks, pendingCreates, reloadOpenTasks, submit };
 }
 
@@ -167,31 +175,49 @@ function CreateWorkspace({ actionKey }: { actionKey?: CreateActionKey }) {
 }
 
 /** Original creation intent renderer; the channel dialog changes presentation, not admission. */
+// Buzz 779af8886caae1317b4de962082429867ab61503:
+// desktop/src/features/channels/ui/channelFormStyles.ts.
+const CHANNEL_FORM_FIELD_SHELL_CLASS = "rounded-xl border border-input bg-muted/40 transition-colors duration-150 ease-out hover:border-muted-foreground/40 focus-within:border-muted-foreground/50";
+const CHANNEL_FORM_FIELD_CONTROL_CLASS = "border-0 bg-transparent text-foreground shadow-none outline-none ring-0 transition-colors duration-150 ease-out placeholder:text-muted-foreground/55 focus:bg-transparent focus:text-foreground focus:outline-hidden focus-visible:ring-0";
+
 export function WorkspaceCreateForm({ state, channel = false }: { state: WorkspaceCreateState; channel?: boolean }) {
   const t = useT();
   const reasonText = useReasonText();
   const failureText = useFailureText();
-  const { actionKey, name, setName, slug, setSlug, command, busy, failure, submission,
+  const { actionKey, name, setName, slug, setSlug, description, setDescription, command, busy, failure, submission,
     locked, openTasks, pendingCreates, reloadOpenTasks, submit } = state;
   return (
     <form className={channel ? "space-y-5" : "flex flex-col gap-3 rounded-md border p-3"} data-testid={channel ? "create-channel-form" : undefined} onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       {!channel ? <h2 className="text-sm font-medium">{t("workspace.create.title")}</h2> : null}
       <label className="flex flex-col gap-1 text-sm">
         {t("workspace.create.name")}
-        <input required autoComplete="off" autoCapitalize="none" disabled={locked} data-testid={channel ? "create-channel-name" : undefined} value={name} onChange={(event) => setName(event.target.value)} className={channel ? "min-h-11 rounded-xl border border-input bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring" : "h-8 rounded-md border border-input bg-transparent px-2 text-sm"} />
+        <div className={channel ? cn("flex min-h-11 items-center px-3", CHANNEL_FORM_FIELD_SHELL_CLASS) : undefined}>
+          <Input required autoComplete="off" disabled={locked} data-testid={channel ? "create-channel-name" : undefined} value={name} onChange={(event) => setName(event.target.value)} className={channel ? cn("h-8 px-0 py-0 leading-6", CHANNEL_FORM_FIELD_CONTROL_CLASS) : "h-8 rounded-md border border-input bg-transparent px-2 text-sm"} />
+        </div>
       </label>
-      <label className="flex flex-col gap-1 text-sm">
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium text-foreground" htmlFor="create-channel-description">
+          {t("channel.create.about")}<span className="ml-1 text-xs font-normal text-muted-foreground/50">{t("channel.create.optional")}</span>
+        </label>
+        <div className={CHANNEL_FORM_FIELD_SHELL_CLASS}>
+          <textarea autoCapitalize="none" autoCorrect="off" spellCheck={false}
+            className={cn("flex min-h-20 w-full rounded-lg border border-input/40 bg-background px-3 py-2 text-base transition-colors placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm", "min-h-20 resize-none px-3 py-3 leading-5", CHANNEL_FORM_FIELD_CONTROL_CLASS)}
+            data-testid="create-channel-description" id="create-channel-description" rows={2}
+            disabled={locked} value={description} onChange={(event) => setDescription(event.target.value)} />
+        </div>
+      </div>
+      {!channel ? <label className="flex flex-col gap-1 text-sm">
         {t("workspace.create.slug")}
         <input required disabled={locked} value={slug} onChange={(event) => setSlug(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2 text-sm" />
         <span className="text-xs text-muted-foreground">{t("workspace.create.slugHint")}</span>
-      </label>
+      </label> : null}
       {submission ? (
         <div role="status" className="break-words text-sm">
           <p>{t("workspace.create.recorded", { execution: submission.actionExecutionId, operation: submission.operationId, gate: submission.gateState, dispatch: submission.dispatchState })}</p>
           {submission.reason ? <p>{reasonText(submission.reason)}</p> : null}
         </div>
       ) : null}
-        <Button type="submit" className={channel ? "ml-auto flex w-fit" : "w-fit"} data-testid={channel ? "create-channel-submit" : undefined} disabled={!actionKey || busy || (!command && (!name.trim() || !slug.trim()))}>
+        <Button type="submit" className={channel ? "ml-auto flex w-fit" : "w-fit"} data-testid={channel ? "create-channel-submit" : undefined} disabled={!actionKey || busy || (!command && (!name.trim() || (!channel && !slug.trim())))}>
           {busy ? t("platform.loading") : command ? t("workspace.create.retry") : channel ? t("channel.create.submit") : t("workspace.create.title")}
         </Button>
       {openTasks.status === "error" ? (

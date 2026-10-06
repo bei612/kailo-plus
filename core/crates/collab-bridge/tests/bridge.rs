@@ -213,7 +213,7 @@ async fn publish_gate(http: &reqwest::Client, origin: &str, control: &Keys, host
     let channel_id = uuid::Uuid::new_v4().to_string();
     for _ in 0..2 {
         owner_client
-            .ensure_channel(http, &channel_id, "verify")
+            .ensure_channel(http, &channel_id, "verify", None)
             .await
             .expect("建立 Channel");
     }
@@ -227,6 +227,31 @@ async fn publish_gate(http: &reqwest::Client, origin: &str, control: &Keys, host
         roster.iter().filter(|e| e.pubkey == owner_hex).count(),
         1,
         "创建者应在 roster 上且只一次：{roster:?}"
+    );
+
+    let forum_id = uuid::Uuid::new_v4().to_string();
+    let metadata = contracts::WorkspaceChannelCreate {
+        channel_type: contracts::ChannelType::Forum,
+        description: Some("Architecture discussion".into()),
+    };
+    for _ in 0..2 {
+        owner_client
+            .ensure_channel(http, &forum_id, "Architecture", Some(&metadata))
+            .await
+            .expect("original forum metadata converges across duplicate creation");
+    }
+    let different = contracts::WorkspaceChannelCreate {
+        description: Some("Different intent".into()),
+        ..metadata
+    };
+    assert!(
+        matches!(
+            owner_client
+                .ensure_channel(http, &forum_id, "Architecture", Some(&different))
+                .await,
+            Err(OperatorError::NotConverged(_))
+        ),
+        "duplicate identifier must not mask mismatched native metadata"
     );
 
     let err = outsider_client
@@ -326,7 +351,7 @@ async fn governance_gate(http: &reqwest::Client, origin: &str, control: &Keys, h
     let other = uuid::Uuid::new_v4().to_string();
     for channel in [&mine, &other] {
         control_client
-            .ensure_channel(http, channel, "governed")
+            .ensure_channel(http, channel, "governed", None)
             .await
             .expect("owner 建 Channel");
     }
@@ -525,7 +550,7 @@ async fn roster_projection(http: &reqwest::Client, origin: &str, control: &Keys,
     // Channel roster：WorkspaceMembership 的执行投影（DD-41）
     let channel_id = uuid::Uuid::new_v4().to_string();
     control_client
-        .ensure_channel(http, &channel_id, "roster-verify")
+        .ensure_channel(http, &channel_id, "roster-verify", None)
         .await
         .expect("建立 Channel");
 
@@ -670,7 +695,7 @@ async fn session_reuse(http: &reqwest::Client, origin: &str, control: &Keys, hos
     .expect("构造客户端");
     let channel_id = uuid::Uuid::new_v4().to_string();
     owner
-        .ensure_channel(http, &channel_id, "session-reuse")
+        .ensure_channel(http, &channel_id, "session-reuse", None)
         .await
         .expect("建立 Channel");
 

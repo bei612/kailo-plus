@@ -10,7 +10,7 @@ import { useMentionSelection } from "@client-kit/platform/react/use-mention-sele
 import { useReasonText } from "@client-kit/platform/react/context";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Paperclip, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
 import {
@@ -31,7 +31,11 @@ import { t } from "@/shared/i18n";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { Button } from "@/shared/ui/button";
-import { Input } from "@/shared/ui/input";
+import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
+import { useRichTextEditor, type LinkSelectionInfo } from "@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor";
+import { useLinkEditor } from "@client-kit/platform/react/composer/features/messages/lib/useLinkEditor";
+import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
+import { initDraftStore, loadDraftEntry, saveDraftEntry, clearDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 
 const toIso = (unix: number) => new Date(unix * 1_000).toISOString();
 
@@ -124,14 +128,25 @@ export function ChannelPane({
   myPrincipalId,
   onReadStateChanged,
   conversation,
+  onOpenMessageLink,
+  targetMessageId,
 }: {
   workspaceId: string;
   myPrincipalId: string;
   onReadStateChanged?: () => void | Promise<void>;
   conversation?: ConversationView;
+  onOpenMessageLink?: (link: ParsedMessageLink) => void;
+  targetMessageId?: string;
 }) {
   const queryClient = useQueryClient();
   const { events, status, live, denied } = useChannelStream(workspaceId, conversation?.id);
+  const messageList = useRef<HTMLUListElement>(null);
+  const anchoredTarget = useRef<string | null>(null);
+  useEffect(() => {
+    if (!targetMessageId || anchoredTarget.current === targetMessageId) return;
+    const target = [...(messageList.current?.children ?? [])].find((item) => item.getAttribute("data-event-id") === targetMessageId);
+    if (target instanceof HTMLElement) { target.scrollIntoView({ block: "center" }); target.focus({ preventScroll: true }); anchoredTarget.current = targetMessageId; }
+  }, [targetMessageId, events]);
   const visible = useVisible();
   const members = useQuery({
     queryKey: ["platform", conversation ? "conversation-members" : "members", workspaceId],
@@ -273,7 +288,8 @@ export function ChannelPane({
         <Button disabled={readPending || readRechecking || !live || !visible}
           onClick={() => { void retryRead(); }}>{t("platform.retry")}</Button>
       </div> : null}
-      <ul className="min-h-0 flex-1 space-y-2 overflow-auto" aria-label={t("platform.tab.channel")}>
+      {targetMessageId && live && !events.some((event) => event.id === targetMessageId) ? <p role="status">{t("platform.linkMessageOutsideHistory")}</p> : null}
+      <ul ref={messageList} className="min-h-0 flex-1 space-y-2 overflow-auto" aria-label={t("platform.tab.channel")}>
         {events.map((e, i) => {
           const author = byPubkey.get(e.pubkey);
           const firstUnread =
@@ -282,7 +298,7 @@ export function ChannelPane({
             !mine.has(e.pubkey) &&
             !events.slice(0, i).some((p) => p.created_at > anchor && !mine.has(p.pubkey));
           return (
-            <li key={e.id}>
+            <li key={e.id} data-event-id={e.id} tabIndex={targetMessageId === e.id ? -1 : undefined} className={targetMessageId === e.id ? "rounded-lg ring-1 ring-ring" : undefined}>
               {firstUnread ? (
                 <div className="my-1 border-t border-primary text-xs text-primary">
                   {t("platform.newMessages")}
@@ -298,6 +314,7 @@ export function ChannelPane({
                 mentions={mentions}
                 workspaceId={workspaceId}
                 conversationId={conversation?.id}
+                onOpenMessageLink={onOpenMessageLink}
               />
             </li>
           );
@@ -305,14 +322,15 @@ export function ChannelPane({
       </ul>
       {denied ? null : conversation
         ? <Composer disabled={conversation.state !== "ACTIVE"}
+            draftIdentity={myPrincipalId} draftKey={conversation.id} onOpenMessageLink={onOpenMessageLink}
             onPublish={(content, attachments, key) => publishConversationMessage(conversation.id, content, attachments, key)}
             onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
-        : <Composer workspaceId={workspaceId} />}
+        : <Composer workspaceId={workspaceId} draftIdentity={myPrincipalId} draftKey={workspaceId} onOpenMessageLink={onOpenMessageLink} />}
     </div>
   );
 }
 
-type Pending = { name: string; descriptor: MediaDescriptor };
+type Pending = { name: string; descriptor: MediaDescriptor; receivedAt: number };
 
 /**
  * 一次发送意图的幂等键（UUID v4）。不用 crypto.randomUUID：它只在安全上下文中
@@ -326,14 +344,18 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ workspaceId, onPublish, onUpload, disabled = false, placeholder }: {
+export function Composer({ workspaceId, onPublish, onUpload, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey }: {
   workspaceId?: string;
   onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string) => Promise<unknown>;
   onUpload?: (file: File) => Promise<MediaDescriptor>;
   disabled?: boolean;
   placeholder?: string;
+  onOpenMessageLink?: (link: ParsedMessageLink) => void;
+  draftIdentity?: string;
+  draftKey?: string;
 }) {
   const [draft, setDraft] = useState("");
+  const [draftRevision, setDraftRevision] = useState(0);
   const [pending, setPending] = useState<Pending[]>([]);
   const [uploading, setUploading] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
@@ -379,16 +401,20 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
   // 当前发送意图：内容与附件不变时重发沿用同一个键——结果不明之后再点发送，
   // BFF 回答原操作的结论而不是再发一条（DD-81）。确定的结论之后换新键。
   const intent = useRef<{ key: string; signature: string } | null>(null);
+  const owner = useMemo(() => ({ active: true }), [workspaceId, draftIdentity, draftKey]);
+  useEffect(() => { owner.active = true; return () => { owner.active = false; }; }, [owner]);
 
   const attach = useCallback(
-    async (files: FileList | null) => {
+    async (files: FileList | readonly File[] | null) => {
       for (const file of Array.from(files ?? [])) {
+        if (!owner.active) return;
         setUploading((n) => n + 1);
         try {
           if (!onUpload && !workspaceId) throw new Error("Message destination is unavailable.");
           const descriptor = await (onUpload ? onUpload(file) : uploadMedia(workspaceId!, file));
-          setPending((p) => [...p, { name: file.name, descriptor }]);
+          if (owner.active) setPending((p) => [...p, { name: file.name, descriptor, receivedAt: Date.now() }]);
         } catch (e) {
+          if (!owner.active) return;
           setProblemNeutral(e instanceof ConversationPreparationPending || isOutcomeUnknown(e));
           // 413 是 BFF 侧先行设定的上界，是确定的拒绝；其余是结果不明
           setProblem(
@@ -397,16 +423,77 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
               : t("platform.uploadFailed"),
           );
         } finally {
-          setUploading((n) => n - 1);
+          if (owner.active) setUploading((n) => n - 1);
         }
       }
     },
-    [workspaceId, onUpload],
+    [workspaceId, onUpload, owner],
   );
 
+  const [isFormattingOpen, setIsFormattingOpen] = useState(false);
+  const sendRef = useRef<() => void>(() => {});
+  const editLinkRef = useRef<(info: LinkSelectionInfo) => void>(() => {});
+  const linkSelectionRef = useRef<(info: LinkSelectionInfo | null) => void>(() => {});
+  const linkShortcutRef = useRef<() => boolean>(() => false);
+  const autocompleteOpenRef = useRef(mentionPickerOpen);
+  autocompleteOpenRef.current = mentionPickerOpen;
+  const richText = useRichTextEditor({
+    placeholder: placeholder ?? t("platform.message"), editable: !disabled && !sending,
+    readClipboardText: () => navigator.clipboard.readText(),
+    onUpdate: ({ text }) => { setDraft(text); setDraftRevision((value) => value + 1); }, onSubmit: () => sendRef.current(),
+    isAutocompleteOpen: autocompleteOpenRef,
+    onEditLink: (info) => editLinkRef.current(info),
+    onLinkSelectionChange: (info) => linkSelectionRef.current(info),
+    onLinkShortcut: () => linkShortcutRef.current(),
+  });
+  const linkEditor = useLinkEditor(richText, {
+    openExternal: (url) => { window.open(url, "_blank", "noopener,noreferrer"); },
+    openMessageLink: (link) => { if (onOpenMessageLink) onOpenMessageLink(link); else setProblem(t("platform.linkOpenFromChannel")); },
+  });
+  editLinkRef.current = linkEditor.openFromClick;
+  linkSelectionRef.current = linkEditor.showFromCursor;
+  linkShortcutRef.current = linkEditor.openFromShortcut;
+  const draftReady = useRef(false);
+  const [loadedDraftOwner, setLoadedDraftOwner] = useState<typeof owner | null>(null);
+  useEffect(() => {
+    if (!richText.editor) return;
+    if (draftIdentity && draftKey) initDraftStore(draftIdentity, window.location.origin);
+    const saved = draftIdentity && draftKey ? loadDraftEntry(draftKey) : undefined;
+    richText.setContent(saved?.content ?? "");
+    setDraft(saved?.content ?? "");
+    setPending((saved?.pendingImeta ?? []).map(({ uploaded, filename, sha256, size, type, url }) => ({
+        name: filename ?? sha256, receivedAt: uploaded, descriptor: { sha256, size, type, url },
+    })));
+    intent.current = saved?.sendIntent ?? null;
+    setMentionInstallationIds(saved?.mentionInstallationIds ?? []);
+    setMentionPickerOpen(false);
+    setMentionSelectedIndex(0);
+    setSending(false);
+    setUploading(0);
+    setProblem(null);
+    setProblemNeutral(false);
+    draftReady.current = Boolean(draftIdentity && draftKey);
+    setLoadedDraftOwner(owner);
+    return () => { draftReady.current = false; };
+  }, [draftIdentity, draftKey, richText.editor, richText.setContent, owner, setMentionSelectedIndex]);
+  const persistDraft = useCallback((content: string, attachments: Pending[]) => {
+    if (!draftReady.current || !draftKey || !owner.active || loadedDraftOwner !== owner) return;
+    if (!content.trim() && attachments.length === 0) { clearDraftEntry(draftKey); return; }
+    const previous = loadDraftEntry(draftKey);
+    const timestamp = new Date().toISOString();
+    saveDraftEntry(draftKey, {
+      content, channelId: workspaceId ?? draftKey, selectionStart: content.length, selectionEnd: content.length,
+      createdAt: previous?.createdAt ?? timestamp, updatedAt: timestamp, status: "active",
+      pendingImeta: attachments.map(({ descriptor, name, receivedAt }) => ({ ...descriptor, filename: name, uploaded: receivedAt })),
+      spoileredAttachmentUrls: [], ...(intent.current ? { sendIntent: intent.current } : {}),
+      mentionInstallationIds,
+    });
+  }, [draftKey, workspaceId, owner, loadedDraftOwner, mentionInstallationIds]);
+  useEffect(() => { persistDraft(richText.getMarkdown(), pending); }, [draftRevision, pending, persistDraft, richText.getMarkdown]);
+
   const send = useCallback(() => {
-    if (sending || disabled || !mentionVerified) return;
-    const content = draft.trim();
+    if (sending || disabled || uploading > 0 || !mentionVerified) return;
+    const content = richText.getMarkdown().trim();
     if (!content && pending.length === 0) return;
     setProblem(null);
     setProblemNeutral(false);
@@ -423,6 +510,7 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
       intent.current = { key: newIntentKey(), signature };
     }
     const key = intent.current.key;
+    persistDraft(content, pending);
     setSending(true);
     const publish = onPublish
       ? onPublish(content, attachments, key)
@@ -431,12 +519,17 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
         : Promise.reject(new Error("Message destination is unavailable."));
     void publish
       .then(() => {
+        if (!owner.active) return;
         if (intent.current?.key === key) intent.current = null;
-        setDraft((current) => (current.trim() === content ? "" : current));
+        if (richText.getMarkdown().trim() === content) {
+          richText.setContent("");
+          setDraft("");
+        }
         setPending((current) => current.filter((p) => !attachments.includes(p.descriptor)));
         setMentionInstallationIds((current) => current.filter((id) => !mentionInstallationIds.includes(id)));
       })
       .catch((e: unknown) => {
+        if (!owner.active) return;
         setProblemNeutral(e instanceof ConversationPreparationPending || isOutcomeUnknown(e));
         if (e instanceof ConversationPreparationPending) {
           setProblem(e.message);
@@ -455,11 +548,35 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
           setProblem(t("platform.sendFailed"));
         }
       })
-      .finally(() => setSending(false));
-  }, [draft, pending, workspaceId, mentionInstallationIds, mentionVerified, sending, disabled, onPublish]);
+      .finally(() => { if (owner.active) setSending(false); });
+  }, [pending, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft]);
+  sendRef.current = send;
 
-  return (
-    <form className="flex flex-col gap-1" onSubmit={(event) => event.preventDefault()}>
+  return <MessageComposerSurface
+    overlays={<>{linkEditor.card}{linkEditor.dialog}</>}
+    formProps={{
+      onSubmit: (event) => { event.preventDefault(); send(); },
+      onPasteCapture: (event) => {
+        if (disabled || sending || !event.clipboardData.files.length) return;
+        event.preventDefault(); void attach(event.clipboardData.files);
+      },
+      onDragOver: (event) => { if (!disabled && !sending && event.dataTransfer.types.includes("Files")) event.preventDefault(); },
+      onDrop: (event) => { if (!disabled && !sending && event.dataTransfer.files.length) { event.preventDefault(); void attach(event.dataTransfer.files); } },
+    }}
+    onEditorKeyDown={(event) => {
+      if (event.key === "Tab" && !event.shiftKey && linkEditor.isCardOpen) {
+        event.preventDefault(); linkEditor.focusCardFirstControl();
+      }
+    }}
+    toolbar={{ layoutMode: "standalone", composerDisabled: disabled || sending,
+      editor: richText.editor, formattingDisabled: disabled || sending, isFormattingOpen,
+      isSending: sending, isUploading: uploading > 0,
+      onFormattingToggle: setIsFormattingOpen,
+      onLinkButton: linkEditor.openFromToolbar,
+      onOpenMentionPicker: workspaceId ? () => setMentionPickerOpen((open) => !open) : undefined,
+      onPaperclip: () => picker.current?.click(),
+      sendDisabled: disabled || sending || uploading > 0 || !mentionVerified || (!draft.trim() && pending.length === 0),
+    }}>
       {workspaceId !== undefined ? <div className="relative flex flex-wrap items-center gap-2 text-xs">
         <Button type="button" variant="ghost" data-mention-picker-trigger=""
         onKeyDown={(event) => {
@@ -524,11 +641,9 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
           ) : null}
         </ul>
       ) : null}
-      <div className="flex gap-2">
         <input
           ref={picker}
           type="file"
-          accept="image/*,video/*"
           multiple
           hidden
           data-testid="attach-input"
@@ -538,31 +653,5 @@ export function Composer({ workspaceId, onPublish, onUpload, disabled = false, p
             e.target.value = "";
           }}
         />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label={t("platform.attach")}
-          disabled={disabled || sending}
-          onClick={() => picker.current?.click()}
-        >
-          <Paperclip />
-        </Button>
-        <Input
-          data-testid="message-input"
-          aria-label={t("platform.message")}
-          disabled={disabled}
-          placeholder={placeholder}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") send();
-          }}
-        />
-        <Button type="button" onClick={send} disabled={disabled || uploading > 0 || sending || !mentionVerified}>
-          {t("platform.send")}
-        </Button>
-      </div>
-    </form>
-  );
+  </MessageComposerSurface>;
 }

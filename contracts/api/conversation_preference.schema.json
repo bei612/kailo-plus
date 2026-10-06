@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/conversation_preference.schema.json",
+  "title": "ConversationPreferenceRequest",
+  "description": "PUT /api/v1/user-state/conversations/{conversationId} 的请求体（DD-40）：参与者私聊的收藏与静音，复用同一 CollaborationUserState version CAS。隐藏状态不在此权威。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["starred", "muted", "version"],
+  "properties": {
+    "starred": { "type": "boolean" },
+    "muted": { "type": "boolean" },
+    "version": { "type": "integer" }
+  }
+}

@@ -17,6 +17,7 @@ import {
   ReasonCode,
 } from "@client-kit/contracts";
 import { PlatformProvider } from "@client-kit/platform/react/context";
+import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
 import { ConversationList, useConversations } from "@client-kit/platform/react/new-message";
 import { useSettingsShortcuts } from "@client-kit/platform/react/use-settings-shortcuts";
@@ -149,6 +150,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const userState = useInboxState(bff);
   const conversations = useConversations();
   const [chosenConversation, setChosenConversation] = useState<ConversationView | null>(null);
+  const [messageTarget, setMessageTarget] = useState<ParsedMessageLink | null>(null);
+  const [messageLinkProblem, setMessageLinkProblem] = useState<string | null>(null);
   const [chosen, setChosen] = useState<string | null>(
     // 未选定 Workspace 时 Core 省略该字段（contracts 的可选字段一律缺省而非 null）
     session.currentWorkspaceId ?? null,
@@ -168,6 +171,16 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const rows = workspaces.isError ? [] : workspaces.data ?? [];
   // Only use fresh admitted directory rows; a revoked previous selection cannot remain active.
   const active = rows.find((workspace) => workspace.id === chosen)?.id ?? rows[0]?.id ?? null;
+  const openMessageLink = (link: ParsedMessageLink) => {
+    if (!rows.some((workspace) => workspace.id === link.channelId)) {
+      setMessageLinkProblem(t("platform.linkChannelUnavailable"));
+      return;
+    }
+    setMessageLinkProblem(null);
+    setMessageTarget(link);
+    setChosen(link.channelId);
+    setTab("channel");
+  };
   const preference = useMutation({
     mutationFn: async (next: { id: string; starred: boolean; muted: boolean; version: number }) => {
       const result = await setWorkspacePreference(next.id, { starred: next.starred, muted: next.muted, version: next.version });
@@ -208,7 +221,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   ) : !active ? (
     <Notice text={t("platform.noWorkspace")} />
   ) : tab === "channel" ? (
-    <ChannelPane key={active} workspaceId={active} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh} />
+    <><p role="status">{messageLinkProblem}</p><ChannelPane key={active} workspaceId={active} myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh}
+      onOpenMessageLink={openMessageLink} targetMessageId={messageTarget?.channelId === active ? messageTarget.messageId : undefined} /></>
   ) : (
     <MembersPane key={active} workspaceId={active} />
   );
@@ -221,6 +235,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       }} />
     ) : tab === "conversation" ? (
       chosenConversation ? <ChannelPane key={chosenConversation.id} workspaceId={chosenConversation.id} conversation={chosenConversation}
+        onOpenMessageLink={openMessageLink}
         myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh} /> : <Notice text={t("platform.loadFailed")} />
     ) : tab === "settings" ? (
       <SettingsPane />

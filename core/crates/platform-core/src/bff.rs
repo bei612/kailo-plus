@@ -462,6 +462,18 @@ pub fn router(state: BffState) -> Router {
         .exposed_route("/api/v1/native/community", get(crate::native::community))
         .exposed_route("/api/v1/conversations", get(crate::conversations::list))
         .exposed_route(
+            "/api/v1/conversations/{conversation_id}/hide",
+            axum::routing::post(crate::web_transport::hide_conversation),
+        )
+        .exposed_route(
+            "/api/v1/conversations/{conversation_id}/reopen",
+            axum::routing::post(crate::web_transport::reopen_conversation),
+        )
+        .exposed_route(
+            "/api/v1/conversations/{conversation_id}/visibility",
+            get(crate::web_transport::conversation_visibility),
+        )
+        .exposed_route(
             "/api/v1/conversation-participants",
             get(crate::conversations::participants),
         )
@@ -482,6 +494,10 @@ pub fn router(state: BffState) -> Router {
         .exposed_route(
             "/api/v1/user-state/workspaces/{workspace_id}",
             axum::routing::put(crate::user_state::put_workspace_preference),
+        )
+        .exposed_route(
+            "/api/v1/user-state/conversations/{conversation_id}",
+            axum::routing::put(crate::user_state::put_conversation_preference),
         )
         // 媒体也经 BFF 代签读写（DD-39）；上界在 BFF 侧先行设定
         .exposed_route(

@@ -1,1 +1,1 @@
-export const MODAL_BACKDROP_BLUR_CLASS = "backdrop-blur-[5px]";
+export * from "@client-kit/platform/react/composer/shared/ui/modalBackdrop";

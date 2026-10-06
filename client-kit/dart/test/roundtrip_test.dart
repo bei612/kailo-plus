@@ -13,6 +13,10 @@ void main() {
     'conversation references roundtrip without inventing optional cursor',
     () {
       final readers = <String, dynamic Function(Map<String, dynamic>)>{
+        'conversation-preference.sample.json': (value) =>
+            ConversationPreferenceRequest.fromJson(value).toJson(),
+        'workspace-channel-create.sample.json': (value) =>
+            ActionCommand.fromJson(value).toJson(),
         'conversation-open.sample.json': (value) =>
             ActionCommand.fromJson(value).toJson(),
         'conversation-participants.sample.json': (value) =>

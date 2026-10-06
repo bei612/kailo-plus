@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/workspace_channel_create.schema.json",
+  "title": "WorkspaceChannelCreate",
+  "description": "workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["channelType"],
+  "properties": {
+    "channelType": {"type": "string", "enum": ["stream", "forum"]},
+    "description": {"type": "string"}
+  }
+}

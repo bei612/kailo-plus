@@ -15,7 +15,9 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use contracts::{ReadMarkRequest, UserStateVersion, WorkspacePreferenceRequest};
+use contracts::{
+    ConversationPreferenceRequest, ReadMarkRequest, UserStateVersion, WorkspacePreferenceRequest,
+};
 use nostr::EventId;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -27,8 +29,17 @@ use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
 #[serde(rename_all = "camelCase")]
 pub struct UserStateResponse {
     pub workspace_preferences: serde_json::Value,
+    pub conversation_preferences: serde_json::Value,
     pub read_contexts: serde_json::Value,
     pub version: i32,
+}
+
+#[derive(sqlx::FromRow)]
+struct UserStateRow {
+    workspace_preferences: serde_json::Value,
+    conversation_preferences: serde_json::Value,
+    read_contexts: serde_json::Value,
+    version: i32,
 }
 
 pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -> Response {
@@ -36,11 +47,11 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
         Ok(c) => c,
         Err(r) => return r,
     };
-    match sqlx::query!(
-        "select workspace_preferences, read_contexts, version
+    match sqlx::query_as::<_, UserStateRow>(
+        "select workspace_preferences, conversation_preferences, read_contexts, version
          from identity.collaboration_user_state where tenant_principal_id = $1",
-        ctx.tenant_principal_id
     )
+    .bind(ctx.tenant_principal_id)
     .fetch_optional(&state.pool)
     .await
     {
@@ -50,14 +61,16 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
             StatusCode::OK,
             Json(UserStateResponse {
                 workspace_preferences: serde_json::json!({}),
+                conversation_preferences: serde_json::json!({}),
                 read_contexts: serde_json::json!({}),
                 version: 0,
             }),
         )
             .into_response(),
         Ok(Some(row)) => {
-            let (Some(preferences), Some(contexts)) = (
+            let (Some(preferences), Some(conversation_preferences), Some(contexts)) = (
                 row.workspace_preferences.as_object(),
+                row.conversation_preferences.as_object(),
                 row.read_contexts.as_object(),
             ) else {
                 tracing::warn!("用户状态不符合数据库的对象形状约束");
@@ -79,8 +92,11 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
                 .keys()
                 .filter_map(|key| key.parse().ok())
                 .collect();
-            let channel_ids: Vec<Uuid> =
+            let mut channel_ids: Vec<Uuid> =
                 contexts.keys().filter_map(|key| key.parse().ok()).collect();
+            channel_ids.extend(readable_events.values().map(|(channel, _)| *channel));
+            channel_ids.sort_unstable();
+            channel_ids.dedup();
             let channels: Vec<(Uuid, Uuid)> = if channel_ids.is_empty() {
                 Vec::new()
             } else {
@@ -104,7 +120,6 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
             };
             // 只读过频道、未设置收藏/静音时，仍须查证该频道所属 Workspace。
             workspace_ids.extend(channels.iter().map(|(_, workspace_id)| *workspace_id));
-            workspace_ids.extend(readable_events.values().map(|(workspace, _)| *workspace));
             workspace_ids.sort_unstable();
             workspace_ids.dedup();
             let admitted = match crate::web_transport::workspace_admissions(
@@ -129,6 +144,19 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
                 Ok(channels) => visible_channels.extend(channels),
                 Err(response) => return response,
             }
+            let mut visible_preferences = serde_json::Map::new();
+            for (key, preference) in conversation_preferences {
+                let Ok(id) = key.parse::<Uuid>() else {
+                    return user_state_unavailable();
+                };
+                match crate::conversations::admit(&state, &ctx, id).await {
+                    Ok(_) => {
+                        visible_preferences.insert(key.clone(), preference.clone());
+                    }
+                    Err(response) if response.status() == StatusCode::FORBIDDEN => {}
+                    Err(response) => return response,
+                }
+            }
             (
                 StatusCode::OK,
                 Json(UserStateResponse {
@@ -142,6 +170,7 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
                             .map(|(key, value)| (key.clone(), value.clone()))
                             .collect(),
                     ),
+                    conversation_preferences: serde_json::Value::Object(visible_preferences),
                     read_contexts: serde_json::Value::Object(
                         contexts
                             .iter()
@@ -153,8 +182,8 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
                                     .or_else(|| key.strip_prefix("thread:"))
                                     .and_then(|id| EventId::from_hex(id).ok())
                                     .and_then(|id| readable_events.get(&id))
-                                    .is_some_and(|(workspace, is_root)| {
-                                        admitted.contains_key(workspace)
+                                    .is_some_and(|(channel, is_root)| {
+                                        visible_channels.contains(channel)
                                             && (!key.starts_with("thread:") || *is_root)
                                     })
                             })
@@ -171,6 +200,38 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
             user_state_unavailable()
         }
     }
+}
+
+/// Same version/CAS as Workspace preferences; only a current participant can write.
+pub async fn put_conversation_preference(
+    State(state): State<BffState>,
+    Path(conversation_id): Path<Uuid>,
+    headers: HeaderMap,
+    body: Result<Json<ConversationPreferenceRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(response) => return response,
+    };
+    let Ok(Json(request)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let Some(version) = stored_version(request.version) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    if let Err(response) = crate::conversations::admit(&state, &ctx, conversation_id).await {
+        return response;
+    }
+    upsert(
+        &state,
+        &ctx,
+        version,
+        "conversation_preferences",
+        &conversation_id.to_string(),
+        serde_json::json!({"starred": request.starred, "muted": request.muted}),
+        Stamp::UpdatedAt,
+    )
+    .await
 }
 
 /// 设置某个 Workspace 的收藏/静音。
@@ -252,14 +313,14 @@ pub async fn put_read_mark(
                 Ok(events) => events,
                 Err(r) => return r,
             };
-            let Some((workspace_id, is_root)) = readable.get(&event_id) else {
+            let Some((channel_id, is_root)) = readable.get(&event_id) else {
                 return StatusCode::FORBIDDEN.into_response();
             };
             if req.context_key.starts_with("thread:") && !is_root {
                 return StatusCode::FORBIDDEN.into_response();
             }
             // Relay 查询期间撤权后，旧可读结果不能成为这次写入的准入依据。
-            if let Err(r) = require_visible_workspace(&state, &ctx, *workspace_id).await {
+            if let Err(r) = require_visible_channel(&state, &ctx, *channel_id).await {
                 return r;
             }
         }
@@ -316,7 +377,7 @@ async fn upsert(
     value: serde_json::Value,
     stamp: Stamp,
 ) -> Response {
-    // 列名来自本模块的两个调用点，不来自请求；这里只在两个字面量之间选。
+    // 列名来自本模块的已定用户状态字段，不来自请求。
     // 时间戳用库时钟：多副本 Core 的进程时钟不保证一致（与 session 同一条规则）。
     let value_sql = match stamp {
         Stamp::None => "$3::jsonb",
@@ -455,7 +516,60 @@ async fn visible_conversation_channels(
     Ok(visible)
 }
 
-/// 临时查证事件所属的可读 Workspace；事件正文不入 Core，也不返回给状态调用方。
+#[derive(Clone, Copy)]
+enum ReadTarget {
+    Workspace(Uuid),
+    Conversation(Uuid),
+}
+
+enum ReadScope {
+    Workspace(crate::web_transport::WorkspaceScope),
+    Conversation(crate::conversations::ConversationScope),
+}
+
+impl ReadTarget {
+    async fn admit(self, state: &BffState, ctx: &ExecutionContext) -> Result<ReadScope, Response> {
+        match self {
+            Self::Workspace(id) => crate::web_transport::admit_workspace_scope(state, ctx, id)
+                .await
+                .map(ReadScope::Workspace)
+                .map_err(IntoResponse::into_response),
+            Self::Conversation(id) => crate::conversations::admit(state, ctx, id)
+                .await
+                .map(ReadScope::Conversation),
+        }
+    }
+}
+
+impl ReadScope {
+    fn channel_id(&self) -> &str {
+        match self {
+            Self::Workspace(scope) => &scope.channel_id,
+            Self::Conversation(scope) => &scope.channel_id,
+        }
+    }
+
+    fn community_host(&self) -> &str {
+        match self {
+            Self::Workspace(scope) => &scope.community_host,
+            Self::Conversation(scope) => &scope.community_host,
+        }
+    }
+
+    fn same_admission(&self, current: &Self) -> bool {
+        match (self, current) {
+            (Self::Workspace(before), Self::Workspace(after)) => {
+                before.channel_id == after.channel_id
+                    && before.community_host == after.community_host
+                    && before.admission_epoch == after.admission_epoch
+            }
+            (Self::Conversation(before), Self::Conversation(after)) => before == after,
+            _ => false,
+        }
+    }
+}
+
+/// 临时查证事件所属的可读原生 Channel（Workspace 或私聊）；正文不入 Core。
 /// Relay 自己执行 author-only、result-gated 与 Channel 可读策略，本侧不重写它们。
 async fn readable_event_ids(
     state: &BffState,
@@ -478,33 +592,44 @@ async fn readable_event_ids(
         tracing::warn!(error = %e, "事件可读性候选查询失败");
         user_state_unavailable()
     })?;
-    let admitted = web_transport::workspace_admissions(state, ctx, &workspace_ids)
-        .await
-        .map_err(IntoResponse::into_response)?;
-    if admitted.is_empty() {
+    let conversation_ids: Vec<Uuid> = sqlx::query_scalar(
+        "select id from projection.conversation_buzz_binding where tenant_id=$1
+         and state='ACTIVE' and $2=any(participant_principal_ids) order by id",
+    )
+    .bind(ctx.tenant_id)
+    .bind(ctx.tenant_principal_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::warn!(error = %e, "私聊事件可读性候选查询失败");
+        user_state_unavailable()
+    })?;
+    let targets: Vec<_> = workspace_ids
+        .into_iter()
+        .map(ReadTarget::Workspace)
+        .chain(conversation_ids.into_iter().map(ReadTarget::Conversation))
+        .collect();
+    if targets.is_empty() {
         return Ok(readable);
     }
     let keys = web_transport::actor_keys(state, ctx).await?;
-    for workspace_id in workspace_ids {
+    for target in targets {
         if readable.len() == requested.len() {
             break;
         }
-        if !admitted.contains_key(&workspace_id) {
-            continue;
-        }
-        let scope = match web_transport::admit_workspace_scope(state, ctx, workspace_id).await {
+        let scope = match target.admit(state, ctx).await {
             Ok(scope) => scope,
-            Err(AdmissionFailure::Denied) => continue,
-            Err(e) => return Err(e.into_response()),
+            Err(response) if response.status() == StatusCode::FORBIDDEN => continue,
+            Err(response) => return Err(response),
         };
-        let limits = web_transport::relay_limits(state, &scope)
+        let limits = web_transport::community_limits(state, scope.community_host())
             .await
             .map_err(IntoResponse::into_response)?;
         let page_size = usize::try_from(web_transport::page_limit(state, &limits))
             .ok()
             .filter(|size| *size > 0)
             .ok_or_else(user_state_unavailable)?;
-        let client = web_transport::identity_client(state, &keys, &scope)?;
+        let client = web_transport::community_client(state, &keys, scope.community_host())?;
         let mut remaining: Vec<EventId> = requested
             .iter()
             .filter(|id| !readable.contains_key(*id))
@@ -518,7 +643,7 @@ async fn readable_event_ids(
             let limit = i64::try_from(batch.len()).map_err(|_| user_state_unavailable())?;
             let filter = serde_json::json!({
                 "ids": ids,
-                "#h": [scope.channel_id],
+                "#h": [scope.channel_id()],
                 "limit": limit,
             });
             let result = client.query(&state.http, &[filter]).await.map_err(|e| {
@@ -540,7 +665,7 @@ async fn readable_event_ids(
                     .find(|tag| tag.first().is_some_and(|name| name == "h"))
                     .and_then(|tag| tag.get(1));
                 if !batch.contains(&event.id)
-                    || channel != Some(&scope.channel_id)
+                    || channel.map(String::as_str) != Some(scope.channel_id())
                     || event.verify().is_err()
                 {
                     tracing::warn!("Relay 可见性回应不符合请求 scope 或验签合同");
@@ -565,19 +690,23 @@ async fn readable_event_ids(
             }
         }
         // 不沿用外部读取之前的资格或 binding；查询期间撤权时丢弃该 scope 的结果。
-        let current = match web_transport::admit_workspace_scope(state, ctx, workspace_id).await {
+        let current = match target.admit(state, ctx).await {
             Ok(scope) => scope,
-            Err(AdmissionFailure::Denied) => continue,
-            Err(e) => return Err(e.into_response()),
+            Err(response) if response.status() == StatusCode::FORBIDDEN => continue,
+            Err(response) => return Err(response),
         };
-        if current.channel_id != scope.channel_id || current.community_host != scope.community_host
-        {
+        let current_keys = web_transport::actor_keys(state, ctx).await?;
+        if !scope.same_admission(&current) || keys.public_key() != current_keys.public_key() {
             return Err(AdmissionFailure::BindingNotActive.into_response());
         }
+        let channel_id = scope
+            .channel_id()
+            .parse::<Uuid>()
+            .map_err(|_| user_state_unavailable())?;
         readable.extend(
             observed
                 .into_iter()
-                .map(|(id, is_root)| (id, (workspace_id, is_root))),
+                .map(|(id, is_root)| (id, (channel_id, is_root))),
         );
     }
     Ok(readable)
@@ -593,4 +722,39 @@ fn user_state_unavailable() -> Response {
         }),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn private_read_evidence_is_fenced_by_both_bindings() {
+        let scope = crate::conversations::ConversationScope {
+            channel_id: Uuid::new_v4().to_string(),
+            community_host: "relay.invalid".into(),
+            binding_version: 1,
+            tenant_binding_version: 1,
+        };
+        let before = ReadScope::Conversation(scope.clone());
+        assert!(before.same_admission(&ReadScope::Conversation(scope.clone())));
+        let mut changed = scope.clone();
+        changed.binding_version += 1;
+        assert!(!before.same_admission(&ReadScope::Conversation(changed)));
+        let mut changed = scope.clone();
+        changed.tenant_binding_version += 1;
+        assert!(!before.same_admission(&ReadScope::Conversation(changed)));
+        let mut changed = scope.clone();
+        changed.channel_id = Uuid::new_v4().to_string();
+        assert!(!before.same_admission(&ReadScope::Conversation(changed)));
+        let workspace = ReadScope::Workspace(crate::web_transport::WorkspaceScope {
+            channel_id: scope.channel_id,
+            community_host: scope.community_host,
+            admission_epoch: crate::web_transport::WorkspaceAdmissionEpoch::WorkspaceManage {
+                tenant_version: 1,
+                workspace_version: 1,
+            },
+        });
+        assert!(!before.same_admission(&workspace));
+    }
 }

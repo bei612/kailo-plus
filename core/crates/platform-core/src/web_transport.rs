@@ -38,6 +38,14 @@ use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
 /// 消息发布的 action key。审计、对账与度量都按它找这一类动作。
 pub const PUBLISH_ACTION: &str = "workspace.message.publish";
 pub const CONVERSATION_PUBLISH_ACTION: &str = "conversation.message.publish";
+pub const CONVERSATION_HIDE_ACTION: &str = "conversation.hide";
+pub const CONVERSATION_REOPEN_ACTION: &str = "conversation.reopen";
+
+enum Publication {
+    Message(PublishRequest),
+    Hide,
+    Reopen,
+}
 
 #[derive(Clone, Copy)]
 enum MessageTarget {
@@ -294,12 +302,127 @@ async fn publish_message_for(
     headers: HeaderMap,
     body: Result<Json<PublishRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
+    let Ok(Json(req)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    publish(state, target, headers, Publication::Message(req)).await
+}
+
+pub async fn hide_conversation(
+    State(state): State<BffState>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Response {
+    publish(
+        state,
+        MessageTarget::Conversation(id),
+        headers,
+        Publication::Hide,
+    )
+    .await
+}
+
+pub async fn reopen_conversation(
+    State(state): State<BffState>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Response {
+    publish(
+        state,
+        MessageTarget::Conversation(id),
+        headers,
+        Publication::Reopen,
+    )
+    .await
+}
+
+/// Original NIP-DV snapshot for the current HUMAN, not a Core hidden-state copy.
+pub async fn conversation_visibility(
+    State(state): State<BffState>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(e) => return e,
+    };
+    let before = match crate::conversations::admit(&state, &ctx, id).await {
+        Ok(scope) => scope,
+        Err(e) => return e,
+    };
+    let keys = match actor_keys(&state, &ctx).await {
+        Ok(keys) => keys,
+        Err(e) => return e,
+    };
+    let client = match community_client(&state, &keys, &before.community_host) {
+        Ok(client) => client,
+        Err(e) => return e,
+    };
+    if let Err(e) = community_limits(&state, &before.community_host).await {
+        return e.into_response();
+    }
+    let author: Option<String> = match sqlx::query_scalar("select relay_self_pubkey from projection.tenant_buzz_binding where tenant_id=$1 and state='ACTIVE' and version=$2")
+        .bind(ctx.tenant_id).bind(before.tenant_binding_version).fetch_optional(&state.pool).await {
+        Ok(Some(author)) => author,
+        _ => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+    let Some(author) = author else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let viewer = keys.public_key().to_hex();
+    let events = match client.query(&state.http, &[serde_json::json!({"kinds":[30622],"authors":[author],"#p":[viewer],"#d":[viewer],"limit":1})]).await {
+        Ok(events) => events,
+        Err(e) => return relay_error_response(&e, None),
+    };
+    let parsed: Vec<nostr::Event> = match serde_json::from_value(events.clone()) {
+        Ok(events) => events,
+        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+    if parsed.len() > 1
+        || parsed.iter().any(|event| {
+            event.kind.as_u16() != 30622
+                || event.pubkey.to_hex() != author
+                || event.verify().is_err()
+                || !event
+                    .tags
+                    .iter()
+                    .any(|tag| tag.as_slice() == ["d", viewer.as_str()])
+                || !event
+                    .tags
+                    .iter()
+                    .any(|tag| tag.as_slice() == ["p", viewer.as_str()])
+        })
+    {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+    let after = match crate::conversations::admit(&state, &ctx, id).await {
+        Ok(scope) => scope,
+        Err(e) => return e,
+    };
+    let current = match actor_keys(&state, &ctx).await {
+        Ok(keys) => keys,
+        Err(e) => return e,
+    };
+    if before != after || keys.public_key() != current.public_key() {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+    Json(QueryResponse { events }).into_response()
+}
+
+async fn publish(
+    state: BffState,
+    target: MessageTarget,
+    headers: HeaderMap,
+    publication: Publication,
+) -> Response {
     let ctx = match resolve_execution_context(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
-    let Ok(Json(req)) = body else {
-        return StatusCode::BAD_REQUEST.into_response();
+    let action_key = match &publication {
+        Publication::Message(_) => target.action(),
+        Publication::Hide => CONVERSATION_HIDE_ACTION,
+        Publication::Reopen => CONVERSATION_REOPEN_ACTION,
     };
 
     // 幂等键由调用方为「这一次发送意图」生成，重发时带同一个键（DD-81）。
@@ -317,7 +440,10 @@ async fn publish_message_for(
         Err(r) => return r,
     };
 
-    let mention_ids = match mention_targets(req.mention_installation_ids.as_deref()) {
+    let mention_ids = match mention_targets(match &publication {
+        Publication::Message(req) => req.mention_installation_ids.as_deref(),
+        Publication::Hide | Publication::Reopen => None,
+    }) {
         Some(ids) => ids,
         None => return StatusCode::BAD_REQUEST.into_response(),
     };
@@ -346,7 +472,7 @@ async fn publish_message_for(
     )
     .bind(ctx.tenant_principal_id)
     .bind(idempotency_key)
-    .bind(target.action())
+    .bind(action_key)
     .bind(target.target_type())
     .bind(target.workspace_id())
     .fetch_optional(&state.pool)
@@ -422,15 +548,17 @@ async fn publish_message_for(
         Err(r) => return r,
     };
 
-    let mut content = req.content;
-    let attachments = req.attachments.unwrap_or_default();
-    let mut media_tags = Vec::with_capacity(attachments.len());
-    for a in &attachments {
-        let Some((line, tag)) = a.render(&community_host) else {
-            return StatusCode::BAD_REQUEST.into_response();
-        };
-        content.push_str(&line);
-        media_tags.push(tag);
+    let mut content = String::new();
+    let mut media_tags = Vec::new();
+    if let Publication::Message(req) = &publication {
+        content.push_str(&req.content);
+        for a in req.attachments.as_deref().unwrap_or_default() {
+            let Some((line, tag)) = a.render(&community_host) else {
+                return StatusCode::BAD_REQUEST.into_response();
+            };
+            content.push_str(&line);
+            media_tags.push(tag);
+        }
     }
 
     // 大小上界在发往 Relay 之前预检（`.design/09`：单 event content 不超过 256 KiB；
@@ -465,14 +593,21 @@ async fn publish_message_for(
     // 先签名：event id 在签完时就确定。把它连同 actor、scope、operation 落进
     // DISPATCH 审计之后才发送——之后无论结果如何，这条消息动作都可关联
     // （Stage 1 退出门禁），结果不明时也有一个能去 Relay 查证的键（DD-81）。
-    let event =
-        match client.sign_channel_message_mentions(&channel_id, &content, &media_tags, &mentions) {
-            Ok(e) => e,
-            Err(e) => {
-                tracing::warn!(error = %e, "签名失败");
-                return StatusCode::SERVICE_UNAVAILABLE.into_response();
-            }
-        };
+    let signed = match publication {
+        Publication::Message(_) => {
+            client.sign_channel_message_mentions(&channel_id, &content, &media_tags, &mentions)
+        }
+        // Original Buzz DM commands, never caller-selected raw kinds/tags.
+        Publication::Hide => client.sign(41012, "", &[vec!["h".into(), channel_id.clone()]]),
+        Publication::Reopen => client.sign(41010, "", &[vec!["h".into(), channel_id.clone()]]),
+    };
+    let event = match signed {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!(error = %e, "签名失败");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
     let event_id = event.id.to_hex();
     let operation_id = Uuid::new_v4();
     let entry = |event_type: &'static str, event_key: String, result_code: &'static str| {
@@ -485,7 +620,7 @@ async fn publish_message_for(
             human_identity_id: Some(ctx.human_identity_id),
             initiator_principal_id: Some(ctx.tenant_principal_id),
             actor_principal_id: Some(ctx.tenant_principal_id),
-            action_key: target.action(),
+            action_key,
             action_version: 1,
             component_type_key: "buzz",
             target_type: Some(target.target_type()),
@@ -553,7 +688,7 @@ async fn publish_message_for(
                  from admission.publish_attempt a
                  where a.tenant_principal_id=$1 and a.idempotency_key=$2")
                 .bind(ctx.tenant_principal_id).bind(idempotency_key)
-                .bind(target.action()).bind(target.target_type()).bind(target.workspace_id())
+                .bind(action_key).bind(target.target_type()).bind(target.workspace_id())
                 .fetch_one(&mut *tx).await?;
             return Ok(if publish_scope_matches(&targets, target.id())
                 && mention_intent_matches(&frozen, &mention_ids) { Claim::Pending } else { Claim::TargetMismatch });
@@ -778,13 +913,6 @@ impl IntoResponse for RelayCheck {
 ///
 /// binding 状态本身（进入 `RECONCILING`）由 Tenant 生命周期的查证负责；这里只保证
 /// 对不上时不再以旧上界发出新的订阅、查询与写入。
-pub async fn relay_limits(
-    state: &BffState,
-    scope: &WorkspaceScope,
-) -> Result<RelayLimits, RelayCheck> {
-    community_limits(state, &scope.community_host).await
-}
-
 /// Tenant-scoped collaboration (such as one's own kind:0) uses the same
 /// ACTIVE binding/NIP-11 check without inventing a Workspace or Channel.
 pub(crate) async fn community_limits(
@@ -1235,17 +1363,6 @@ pub(crate) async fn server_actor_keys(
             tracing::warn!(error = %e, principal = %principal_id, "HUMAN 私钥不匹配或不可用");
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         })
-}
-
-/// 用已取到的密钥构造 HTTP bridge 客户端。
-// Response 本身较大，但这条路径每请求只走一次，装箱换来的间接寻址不值当
-#[allow(clippy::result_large_err)]
-pub fn identity_client(
-    state: &BffState,
-    keys: &nostr::Keys,
-    scope: &WorkspaceScope,
-) -> Result<IdentityClient, Response> {
-    community_client(state, keys, &scope.community_host)
 }
 
 #[allow(clippy::result_large_err)]

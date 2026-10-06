@@ -195,7 +195,6 @@ remove_paths:
   - desktop/src/app/routes/agents.tsx
   - desktop/src/app/routes/channels.$channelId.posts.$postId.tsx
   - desktop/src/app/routes/lazyWorkflowsRouteScreen.ts
-  - desktop/src/app/routes/messages.new.tsx
   - desktop/src/app/routes/projects.$projectId.tsx
   - desktop/src/app/routes/projects.tsx
   - desktop/src/app/routes/pulse.tsx
@@ -540,7 +539,6 @@ remove_paths:
   - desktop/src/features/settings/ui/ModerationQueueCard.tsx
   - desktop/src/features/settings/ui/PreventSleepSettingsCard.tsx
   - desktop/src/features/settings/ui/PrivateKeyBackupRow.tsx
-  - desktop/src/features/settings/ui/ProfileSettingsCard.tsx
   - desktop/src/features/settings/ui/SendFeedbackController.tsx
   - desktop/src/features/settings/ui/SendFeedbackDialog.tsx
   - desktop/src/features/settings/ui/SignOutSection.tsx
@@ -982,7 +980,7 @@ remove_paths:
   - scripts/test-signed-canary-contract.sh
   - scripts/verify-desktop-release-merge.sh
 
-# Desktop 以 link: 依赖引用 client-kit/ts（BFF 客户端、平台页、原生登录引导与文案，ADR-09），传输是
+# Desktop 以 file: 副本依赖引用 client-kit/ts（BFF 客户端、平台页、原生登录引导与文案，ADR-09/18），传输是
 # 经 Tauri `platform_api` 的实现（native.ts）；Mobile 以 Flutter path: 依赖引用 client-kit/dart（契约
 # Dart 生成物与平台文案，ADR-02/03）。两者都在各自产物的 inputs 里，改了即要求重建。
 artifacts:

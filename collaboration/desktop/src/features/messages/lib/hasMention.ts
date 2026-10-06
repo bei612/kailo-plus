@@ -1,5 +1,1 @@
-export {
-  getMentionOffsets,
-  getMentionOffset,
-  hasMention,
-} from "@/shared/lib/mentionBoundaries";
+export * from "@client-kit/platform/react/composer/features/messages/lib/hasMention";

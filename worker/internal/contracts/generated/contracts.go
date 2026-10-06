@@ -202,6 +202,9 @@
 //    conversationParticipantPage, err := UnmarshalConversationParticipantPage(bytes)
 //    bytes, err = conversationParticipantPage.Marshal()
 //
+//    conversationPreferenceRequest, err := UnmarshalConversationPreferenceRequest(bytes)
+//    bytes, err = conversationPreferenceRequest.Marshal()
+//
 //    conversationView, err := UnmarshalConversationView(bytes)
 //    bytes, err = conversationView.Marshal()
 //
@@ -384,6 +387,9 @@
 //
 //    workflowRef, err := UnmarshalWorkflowRef(bytes)
 //    bytes, err = workflowRef.Marshal()
+//
+//    workspaceChannelCreate, err := UnmarshalWorkspaceChannelCreate(bytes)
+//    bytes, err = workspaceChannelCreate.Marshal()
 //
 //    affectedOwnerRef, err := UnmarshalAffectedOwnerRef(bytes)
 //    bytes, err = affectedOwnerRef.Marshal()
@@ -1193,6 +1199,16 @@ func (r *ConversationParticipantPage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalConversationPreferenceRequest(data []byte) (ConversationPreferenceRequest, error) {
+	var r ConversationPreferenceRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ConversationPreferenceRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalConversationView(data []byte) (ConversationView, error) {
 	var r ConversationView
 	err := json.Unmarshal(data, &r)
@@ -1800,6 +1816,16 @@ func UnmarshalWorkflowRef(data []byte) (WorkflowRef, error) {
 }
 
 func (r *WorkflowRef) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWorkspaceChannelCreate(data []byte) (WorkspaceChannelCreate, error) {
+	var r WorkspaceChannelCreate
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WorkspaceChannelCreate) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2638,7 +2664,8 @@ type ActionCommand struct {
 	// 仅 agent.invoke 人工分派：本人在该 Workspace Channel 已持久发布的消息 ID；Core 回读验签并与普通 mention 共用源事件幂等。
 	SourceEventID *string `json:"sourceEventId,omitempty"`
 	// tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
-	TenantID *string `json:"tenantId,omitempty"`
+	TenantID         *string                `json:"tenantId,omitempty"`
+	WorkspaceChannel *WorkspaceChannelClass `json:"workspaceChannel,omitempty"`
 	// Workspace 内动作的执行 Workspace
 	WorkspaceID *string `json:"workspaceId,omitempty"`
 }
@@ -2899,6 +2926,12 @@ type ResourceCreateClass struct {
 	NativeRef      string `json:"nativeRef"`
 	NativeType     string `json:"nativeType"`
 	TypeKey        string `json:"typeKey"`
+}
+
+// workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
+type WorkspaceChannelClass struct {
+	ChannelType ChannelType `json:"channelType"`
+	Description *string     `json:"description,omitempty"`
 }
 
 // POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
@@ -3766,6 +3799,14 @@ type ItemClass struct {
 	DisplayName string   `json:"displayName"`
 	PrincipalID string   `json:"principalId"`
 	Pubkeys     []string `json:"pubkeys"`
+}
+
+// PUT /api/v1/user-state/conversations/{conversationId} 的请求体（DD-40）：参与者私聊的收藏与静音，复用同一
+// CollaborationUserState version CAS。隐藏状态不在此权威。
+type ConversationPreferenceRequest struct {
+	Muted   bool  `json:"muted"`
+	Starred bool  `json:"starred"`
+	Version int64 `json:"version"`
 }
 
 // 已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
@@ -4695,6 +4736,12 @@ type WorkflowRef struct {
 	WorkflowID string `json:"workflowId"`
 }
 
+// workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
+type WorkspaceChannelCreate struct {
+	ChannelType ChannelType `json:"channelType"`
+	Description *string     `json:"description,omitempty"`
+}
+
 // 请求时从 Core owner 事实与已对账 SpiceDB owner relationship 冻结的受影响 owner（.design/03 §6）。
 type AffectedOwnerRef struct {
 	OwnerPrincipalID string `json:"ownerPrincipalId"`
@@ -5571,6 +5618,13 @@ type ExpectedHeadState string
 const (
 	ExpectedHeadStateABSENT ExpectedHeadState = "ABSENT"
 	ExpectedHeadStateFOUND  ExpectedHeadState = "FOUND"
+)
+
+type ChannelType string
+
+const (
+	Forum  ChannelType = "forum"
+	Stream ChannelType = "stream"
 )
 
 // ActionExecution 的派发状态（.design/03 §6）。UNKNOWN 是结果不明，既不是成功也不是失败——只有已登记的 native query/dedupe

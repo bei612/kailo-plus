@@ -7,11 +7,24 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
-import type { ConversationParticipantPage, ConversationPage, ConversationProjectionRequest } from "../src/generated/contracts.js";
+
+test("workspace creation preserves native channel kind and description", () => {
+  const original: ActionCommand = JSON.parse(readFileSync(new URL("../../../../contracts/samples/workspace-channel-create.sample.json", import.meta.url), "utf8"));
+  ok(original.workspaceChannel);
+  const reconstructed: ActionCommand = { actionKey: original.actionKey, idempotencyKey: original.idempotencyKey,
+    name: original.name, slug: original.slug, workspaceChannel: {
+      channelType: original.workspaceChannel.channelType, description: original.workspaceChannel.description,
+    } };
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), original);
+});
+import type { ConversationParticipantPage, ConversationPage, ConversationProjectionRequest, ConversationPreferenceRequest } from "../src/generated/contracts.js";
 
 test("conversation references keep real keys, native scope and frozen workflow", () => {
   const load=(name:string)=>JSON.parse(readFileSync(new URL(`../../../../contracts/samples/${name}`,import.meta.url),"utf8"));
   const command:ActionCommand=load("conversation-open.sample.json");
+  const preference:ConversationPreferenceRequest=load("conversation-preference.sample.json");
+  const updatedPreference:ConversationPreferenceRequest={starred:preference.starred,muted:preference.muted,version:preference.version};
+  deepStrictEqual(JSON.parse(JSON.stringify(updatedPreference)),preference);
   ok(command.conversationOpen);
   const reconstructed:ActionCommand={actionKey:command.actionKey,idempotencyKey:command.idempotencyKey,
     conversationOpen:{participantPrincipalIds:command.conversationOpen.participantPrincipalIds}};

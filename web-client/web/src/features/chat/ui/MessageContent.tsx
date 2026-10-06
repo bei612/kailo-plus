@@ -18,7 +18,8 @@ import {
 } from "@client-kit/platform/theme/theme-loader";
 import { Bot, Download, ImageOff } from "lucide-react";
 import { type ComponentProps, createContext, useContext, useState } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
+import { parseMessageLink, type ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkMentions from "@/features/chat/lib/remark-mentions";
@@ -46,6 +47,7 @@ type MarkdownRenderContextValue = {
   mentionsByName: ReadonlyMap<string, MessageMention>;
   workspaceId: string;
   conversationId?: string;
+  onOpenMessageLink?: (link: ParsedMessageLink) => void;
 };
 
 const MarkdownRenderContext = createContext<MarkdownRenderContextValue | null>(null);
@@ -150,7 +152,11 @@ const MarkdownImage: NonNullable<Components["img"]> = ({ src, alt }) => {
 };
 
 const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
-  const { mediaByUrl, workspaceId, conversationId } = useMarkdownRenderContext();
+  const { mediaByUrl, workspaceId, conversationId, onOpenMessageLink } = useMarkdownRenderContext();
+  const messageLink = href ? parseMessageLink(href) : null;
+  if (messageLink?.ok && onOpenMessageLink) {
+    return <a href={href} onClick={(event) => { event.preventDefault(); onOpenMessageLink(messageLink.value); }}>{children}</a>;
+  }
   const media = href ? mediaByUrl.get(href) : undefined;
   if (!media) {
     return (
@@ -245,12 +251,14 @@ export function MessageContent({
   conversationId,
   mentions = [],
   mediaTags,
+  onOpenMessageLink,
 }: {
   content: string;
   workspaceId: string;
   conversationId?: string;
   mentions?: readonly MessageMention[];
   mediaTags?: readonly (readonly string[])[];
+  onOpenMessageLink?: (link: ParsedMessageLink) => void;
 }) {
   const mentionsByName = new Map(
     mentions.map((mention) => [mention.name.trim().toLocaleLowerCase(), mention]),
@@ -259,9 +267,10 @@ export function MessageContent({
   const mediaByUrl = imetaMedia(mediaTags);
 
   return (
-    <MarkdownRenderContext.Provider value={{ mediaByUrl, mentionsByName, workspaceId, conversationId }}>
+    <MarkdownRenderContext.Provider value={{ mediaByUrl, mentionsByName, workspaceId, conversationId, onOpenMessageLink }}>
       <MessageBody className={`${MESSAGE_BODY_CLASS_NAME} buzz-message-markdown`}>
         <ReactMarkdown
+          urlTransform={(url) => parseMessageLink(url).ok ? url : defaultUrlTransform(url)}
           remarkPlugins={[remarkGfm, remarkBreaks, [remarkMentions, { mentionNames }]]}
           components={MARKDOWN_COMPONENTS}
         >

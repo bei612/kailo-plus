@@ -651,7 +651,8 @@ export interface ActionCommand {
     /**
      * tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
      */
-    tenantId?: string;
+    tenantId?:         string;
+    workspaceChannel?: WorkspaceChannelClass;
     /**
      * Workspace 内动作的执行 Workspace
      */
@@ -1062,6 +1063,19 @@ export interface ResourceCreateClass {
     nativeRef:      string;
     nativeType:     string;
     typeKey:        string;
+}
+
+/**
+ * workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
+ */
+export interface WorkspaceChannelClass {
+    channelType:  ChannelType;
+    description?: string;
+}
+
+export enum ChannelType {
+    Forum = "forum",
+    Stream = "stream",
 }
 
 /**
@@ -2538,6 +2552,16 @@ export interface ItemClass {
 }
 
 /**
+ * PUT /api/v1/user-state/conversations/{conversationId} 的请求体（DD-40）：参与者私聊的收藏与静音，复用同一
+ * CollaborationUserState version CAS。隐藏状态不在此权威。
+ */
+export interface ConversationPreferenceRequest {
+    muted:   boolean;
+    starred: boolean;
+    version: number;
+}
+
+/**
  * 已认证参与者可见的原 Relay 私聊引用，不包含消息正文。
  */
 export interface ConversationView {
@@ -3860,6 +3884,14 @@ export interface WorkflowRef {
      * 固定格式的业务 workflow ID
      */
     workflowId: string;
+}
+
+/**
+ * workspace.create 的 Buzz 原生频道元数据。只用于创建时向 Relay 物化，不建立第二份频道内容权威。缺省保留旧命令的 stream 行为。
+ */
+export interface WorkspaceChannelCreate {
+    channelType:  ChannelType;
+    description?: string;
 }
 
 /**

@@ -569,6 +569,57 @@ pub async fn open_dm(
 
 // -- Hide / unhide ------------------------------------------------------------
 
+/// Apply personal DM visibility in the command-event transaction. Membership is
+/// never changed, and neither a community owner nor another participant can set
+/// the caller's visibility. The same row remains the native NIP-DV authority.
+pub async fn set_dm_hidden(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    pubkey: &[u8],
+    hidden: bool,
+) -> Result<()> {
+    lock_dm_visibility(tx, community_id, pubkey).await?;
+    let changed = sqlx::query(
+        "UPDATE channel_members cm SET hidden_at = CASE WHEN $4 THEN NOW() ELSE NULL END
+         FROM channels c WHERE cm.community_id=$1 AND cm.channel_id=$2 AND cm.pubkey=$3
+           AND cm.removed_at IS NULL AND c.community_id=cm.community_id AND c.id=cm.channel_id
+           AND c.channel_type='dm' AND c.visibility='private'",
+    )
+    .bind(community_id.as_uuid())
+    .bind(channel_id)
+    .bind(pubkey)
+    .bind(hidden)
+    .execute(&mut **tx)
+    .await?
+    .rows_affected();
+    if changed != 1 {
+        return Err(DbError::NotFound(format!(
+            "no active private DM membership for {channel_id}"
+        )));
+    }
+    Ok(())
+}
+
+/// Serialize one viewer's visibility across DMs using the existing member row.
+pub async fn lock_dm_visibility(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    community_id: CommunityId,
+    pubkey: &[u8],
+) -> Result<()> {
+    let member = sqlx::query(
+        "select pubkey from relay_members where community_id=$1 and pubkey=$2 for update",
+    )
+    .bind(community_id.as_uuid())
+    .bind(hex::encode(pubkey))
+    .fetch_optional(&mut **tx)
+    .await?;
+    if member.is_none() {
+        return Err(DbError::NotFound("DM viewer membership missing".into()));
+    }
+    Ok(())
+}
+
 /// Hide a DM for a specific user by setting `hidden_at = NOW()`.
 ///
 /// The DM is not deleted — it can be restored by opening a new DM with the
@@ -631,8 +682,8 @@ pub async fn unhide_dm(
 /// Return the channel IDs of all DMs the given user currently has hidden
 /// (`hidden_at IS NOT NULL`) while still being an active member. Used to build
 /// the relay-signed NIP-DV visibility snapshot.
-pub async fn list_hidden_dms(
-    pool: &PgPool,
+pub async fn list_hidden_dms<'e>(
+    pool: impl sqlx::PgExecutor<'e>,
     community_id: CommunityId,
     pubkey: &[u8],
 ) -> Result<Vec<Uuid>> {
@@ -838,6 +889,24 @@ mod postgres_tests {
             .unwrap();
         assert_eq!(keys.len(), 2);
         assert!(!keys.contains(&control));
+        set_dm_hidden(&mut tx, community, projection.channel_id, &first, true)
+            .await
+            .unwrap();
+        let hidden = sqlx::query_scalar::<_, Vec<u8>>(
+            "select pubkey from channel_members where community_id=$1 and channel_id=$2 and hidden_at is not null",
+        ).bind(community.as_uuid()).bind(projection.channel_id).fetch_all(&mut *tx).await.unwrap();
+        assert_eq!(hidden, vec![first.clone()]);
+        assert!(
+            set_dm_hidden(&mut tx, community, projection.channel_id, &control, true)
+                .await
+                .is_err()
+        );
+        set_dm_hidden(&mut tx, community, projection.channel_id, &first, false)
+            .await
+            .unwrap();
+        let hidden: i64 = sqlx::query_scalar("select count(*) from channel_members where community_id=$1 and channel_id=$2 and hidden_at is not null")
+            .bind(community.as_uuid()).bind(projection.channel_id).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(hidden, 0);
         projection.generation += 1;
         projection.keys = vec![
             (principals[0], rotated.clone()),
@@ -854,6 +923,11 @@ mod postgres_tests {
             .await
             .unwrap();
         assert!(!keys.contains(&first));
+        assert!(
+            set_dm_hidden(&mut tx, community, projection.channel_id, &first, true)
+                .await
+                .is_err()
+        );
         assert!(keys.contains(&rotated));
         assert!(keys.contains(&second));
         projection.generation -= 1;

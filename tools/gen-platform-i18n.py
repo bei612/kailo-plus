@@ -288,8 +288,14 @@ def render_platform(
             "String _platformLanguage(String? locale) =>",
             "    (locale ?? Platform.localeName).toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';",
             "",
+            "/// The supported locale (`en` or `zh-CN`) a device locale resolves to.",
+            "String platformLocale({String? locale}) => _platformLanguage(locale);",
+            "",
             f"const platformCalendarWeekdayBandDays = {weekday_band_days};",
-            f"const platformTimeSecondsDay = {seconds['day']};",
+            *(
+                f"const platformTimeSeconds{unit.capitalize()} = {seconds[unit]};"
+                for unit in ("minute", "hour", "day", "month")
+            ),
             "",
             "String platformIntlLocale({String? locale}) =>",
             "    _platformLanguage(locale) == 'zh-CN' ? 'zh_CN' : 'en_US';",
@@ -345,9 +351,9 @@ def render_platform(
     for index, unit in enumerate(("month", "day", "hour", "minute")):
         lines.extend(
             [
-                f"  {'if' if index == 0 else 'else if'} (elapsed >= {seconds[unit]}) {{",
+                f"  {'if' if index == 0 else 'else if'} (elapsed >= platformTimeSeconds{unit.capitalize()}) {{",
                 f"    unit = '{unit}';",
-                f"    count = (elapsed / {seconds[unit]}).round();",
+                f"    count = (elapsed / platformTimeSeconds{unit.capitalize()}).round();",
                 "  }",
             ]
         )

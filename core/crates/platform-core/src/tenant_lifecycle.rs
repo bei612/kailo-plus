@@ -1447,8 +1447,48 @@ pub async fn provision_workspace_buzz(
     // 的回读收敛。
     let channel_uuid = req.workspace_id;
     let channel = channel_uuid.to_string();
+    // Creation inputs already belong to the original ActionExecution's idempotent
+    // parameters. Do not introduce a second channel metadata table or put the
+    // description in Temporal history. Legacy provisioned inputs have no metadata.
+    let intents: Vec<serde_json::Value> = match sqlx::query_scalar(
+        "select parameters from admission.action_execution
+         where target_id=$1 and tenant_id=$2 and action_key='workspace.create'",
+    )
+    .bind(req.workspace_id)
+    .bind(ws.tenant_id)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(intents) => intents,
+        Err(e) => return unavailable(e),
+    };
+    if intents.len() > 1 {
+        return StatusCode::CONFLICT.into_response();
+    }
+    let input = intents.first();
+    let metadata: Option<contracts::WorkspaceChannelCreate> = match input
+        .and_then(|v| v.get("workspaceChannel"))
+        .map(|v| serde_json::from_value(v.clone()))
+        .transpose()
+    {
+        Ok(metadata) => metadata,
+        Err(_) => return StatusCode::CONFLICT.into_response(),
+    };
+    // Old in-flight actions created the native name from slug. Preserve their
+    // original write intent across retries rather than relabeling an existing channel.
+    let name = if metadata.is_some() {
+        let Some(name) = input
+            .and_then(|v| v.get("name"))
+            .and_then(serde_json::Value::as_str)
+        else {
+            return StatusCode::CONFLICT.into_response();
+        };
+        name
+    } else {
+        &ws.slug
+    };
     if let Err(e) = control
-        .ensure_channel(&state.http, &channel, &ws.slug)
+        .ensure_channel(&state.http, &channel, name, metadata.as_ref())
         .await
     {
         tracing::warn!(error = %e, "建立 Channel 失败");

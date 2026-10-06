@@ -1,5 +1,5 @@
 import * as React from "react";
-import { EditorContent } from "@tiptap/react";
+import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
 import {
   useChannelLinks,
   type ChannelSuggestion,
@@ -33,7 +33,6 @@ import { ComposerReplyBanner } from "./ComposerReplyBanner";
 import { ComposerAttachments, DropZoneOverlay } from "./ComposerAttachments";
 import type { MentionSuggestion } from "./MentionAutocomplete";
 import { MessageComposerAutocompletes } from "./MessageComposerAutocompletes";
-import { ComposerDockToolbar } from "./ComposerDockToolbar";
 import { ComposerUploadProgressPill } from "./ComposerUploadProgressPill";
 import { useComposerVoiceNote } from "./useComposerVoiceNote";
 import { useMentionSendFlow } from "./useMentionSendFlow";
@@ -454,25 +453,15 @@ function MessageComposerImpl({
     (isContentEmpty &&
       media.pendingImeta.length === 0 &&
       media.queuedAttachments.length === 0);
-  const handleCaptureSelection = React.useCallback(() => {}, []);
   const handlePaperclipClick = React.useCallback(() => {
     if (!voiceNote.hasAttachmentRef.current) void media.handlePaperclip();
   }, [media.handlePaperclip, voiceNote.hasAttachmentRef]);
   const acceptsDrop = ownsDropZone && voiceNote.acceptsAttachment;
-  return (
-    <>
-      <footer
-        className={cn(
-          "relative z-10 shrink-0 bg-transparent px-4 pb-2 pt-0",
-          showTopBorder ? "border-t border-border/40 pt-3" : "",
-          containerClassName,
-        )}
-      >
-        <div
-          aria-hidden="true"
-          className="absolute inset-x-0 bottom-0 h-5 bg-transparent"
-        />
-        <div className="relative flex w-full flex-col gap-0">
+  return <MessageComposerSurface
+    submitLocked={isSubmitLocked}
+    containerClassName={containerClassName} showTopBorder={showTopBorder}
+    formRef={formRef} scrollRef={composerScrollRef} onEditorKeyDown={handleEditorKeyDown}
+    header={<>
           <ComposerReplyBanner
             replyTarget={replyTarget}
             onCancelReply={onCancelReply}
@@ -486,29 +475,25 @@ function MessageComposerImpl({
               percentage={backgroundUpload.percentage}
             />
           ) : null}
-          <form
-            className={cn(
-              "relative z-10 isolate rounded-2xl border border-border/50 bg-background/80 px-3 pb-2 pt-3 shadow-none supports-[backdrop-filter]:bg-background/70 dark:bg-background/70 dark:supports-[backdrop-filter]:bg-background/55 sm:px-4",
-              layoutMode === "standalone" &&
-                "backdrop-blur-md dark:backdrop-blur-xl",
-            )}
-            data-submit-locked={isSubmitLocked ? "true" : "false"}
-            data-testid="message-composer"
-            onDragEnter={acceptsDrop ? media.handleDragEnter : undefined}
-            onDragLeave={acceptsDrop ? media.handleDragLeave : undefined}
-            onDragOver={acceptsDrop ? media.handleDragOver : undefined}
-            onDrop={
-              acceptsDrop
-                ? (e) => {
-                    void media.handleDrop(e);
-                  }
-                : undefined
-            }
-            onSubmit={(event) => {
-              handleSubmit(event);
-            }}
-            ref={formRef}
-          >
+    </>}
+    overlays={<>{linkEditor.card}{linkEditor.dialog}</>}
+    formProps={{
+      onDragEnter: acceptsDrop ? media.handleDragEnter : undefined,
+      onDragLeave: acceptsDrop ? media.handleDragLeave : undefined,
+      onDragOver: acceptsDrop ? media.handleDragOver : undefined,
+      onDrop: acceptsDrop ? (event) => { void media.handleDrop(event); } : undefined,
+      onSubmit: handleSubmit,
+    }}
+    toolbar={{ layoutMode, composerDisabled, editor: richText.editor,
+      extraActions: toolbarExtraActions, formattingDisabled: composerDisabled,
+      isFormattingOpen, isSending: isSending || mentionSendFlow.isPreparingMentionSend,
+      isUploading: media.isUploading, isVoiceNoteProcessing: voiceNote.status !== "recording",
+      isVoiceNoteRecording: voiceNote.status !== "idle", hasVoiceNoteAttachment: voiceNote.hasAttachment,
+      voiceNoteRecorder: voiceNote.recorderElement,
+      onFormattingToggle: setIsFormattingOpen, onLinkButton: linkEditor.openFromToolbar,
+      onOpenMentionPicker: openMentionPicker, onPaperclip: handlePaperclipClick,
+      onFinishVoiceNote: () => void voiceNote.finish(), onVoiceNote: voiceNote.toggle, sendDisabled,
+    }}>
             {acceptsDrop && media.isDragOver && <DropZoneOverlay />}
             <MessageComposerAutocompletes
               channelLinks={channelLinks}
@@ -576,43 +561,6 @@ function MessageComposerImpl({
                 ) : null}
               </div>
             )}
-            {/* biome-ignore lint/a11y/noStaticElementInteractions: keydown handler bridges Tiptap editor to autocomplete and submit */}
-            <div
-              className="rich-text-composer relative max-h-32 overflow-y-auto"
-              data-testid="message-input-scroll"
-              ref={composerScrollRef}
-              onKeyDown={handleEditorKeyDown}
-            >
-              <EditorContent editor={richText.editor} />
-            </div>
-            <ComposerDockToolbar
-              layoutMode={layoutMode}
-              composerDisabled={composerDisabled}
-              editor={richText.editor}
-              extraActions={toolbarExtraActions}
-              formattingDisabled={composerDisabled}
-              isFormattingOpen={isFormattingOpen}
-              isSending={isSending || mentionSendFlow.isPreparingMentionSend}
-              isUploading={media.isUploading}
-              isVoiceNoteProcessing={voiceNote.status !== "recording"}
-              isVoiceNoteRecording={voiceNote.status !== "idle"}
-              hasVoiceNoteAttachment={voiceNote.hasAttachment}
-              voiceNoteRecorder={voiceNote.recorderElement}
-              onCaptureSelection={handleCaptureSelection}
-              onFormattingToggle={setIsFormattingOpen}
-              onLinkButton={linkEditor.openFromToolbar}
-              onOpenMentionPicker={openMentionPicker}
-              onPaperclip={handlePaperclipClick}
-              onFinishVoiceNote={() => void voiceNote.finish()}
-              onVoiceNote={voiceNote.toggle}
-              sendDisabled={sendDisabled}
-            />
-          </form>
-        </div>
-      </footer>
-      {linkEditor.card}
-      {linkEditor.dialog}
-    </>
-  );
+  </MessageComposerSurface>;
 }
 export const MessageComposer = React.memo(MessageComposerImpl);

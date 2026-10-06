@@ -1,5 +1,77 @@
 # 成员建立与撤权的端到端核验
 
+## 2026-10-06：频道创建原生元数据接回（源码与窄验）
+
+本节不是下方历史端到端验收的重跑，也不表示完整频道表单已经恢复。
+
+- 权威：REQ-24、DD-01/45/80；固定 Buzz
+  `779af8886caae1317b4de962082429867ab61503` 的
+  `desktop/src/features/sidebar/ui/CreateChannelFormFields.tsx::CreateChannelFormFields`、
+  `desktop/src/features/sidebar/lib/useCreateChannelForm.ts::useCreateChannelForm`、
+  `desktop/src/features/channels/ui/channelFormStyles.ts` 与
+  `crates/buzz-relay/src/handlers/side_effects.rs::handle_create_group`。
+  description 与 stream/forum 都是原生已有能力；临时频道到期是 archive，
+  原模板则包含 canvas/personas/teams，不是频道类型的别名。
+- 影响面：Web/Desktop 共用原 Input、字段样式与 description；频道入口不再要求
+  原版没有的 slug 输入，以既有创建意图幂等键提供稳定唯一 slug；管理页仍允许
+  自选可读 slug。四侧 `ActionCommand.workspaceChannel` 进入原 Params、参数散列
+  与 ActionExecution，既有 Workspace Lifecycle provision 从原动作读取它，再由
+  CONTROL 发布 9007。没有新建 metadata 数据表、Workflow kind 或正文存储。
+- 副作用：建立绑定前回读同一 Channel 的签名 39000，逐项比较原生名称、类型、
+  描述、private 与未归档状态。duplicate 只表示 ID 存在，不代表元数据一致；
+  缺失、重复/损坏标签、异 scope 或未收敛值均不登记成功绑定，仍走原重试/对账。
+  非 workspace.create 携带该参数被拒；创建者 membership 与现有投影顺序不变。
+- 边界：旧命令缺 workspaceChannel 时保留 stream 与 slug 原始意图，避免旧在途
+  创建重试时把旧 Channel 误判为新的 name；新命令用 name 显示名。空描述省略，
+  enum 只含 stream/forum，不能借创建表单产生 DM/workflow Channel。
+  UNKNOWN 仍保留整份原命令及幂等键，description 一并锁定；得到原 operation 后
+  才清空输入，HTTP 202 不渲染为频道就绪。没有引入新的生命周期状态或迁移。
+
+在既有受限 SDK（4 CPU、8 GiB memory/swap、uid 1000）中的独立执行副本
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/channel-metadata.xjOQiU`
+实际运行：
+
+```text
+bash tools/gen.sh
+OK dart / rs / ts / go；退出 0
+cargo clippy --offline --locked -j16 -p platform-core --bin platform-core -- -D warnings
+Finished dev profile；退出 0
+cargo test --offline --locked -j16 -p platform-core --bin platform-core workspace_channel_tests
+test result: ok. 1 passed; 0 failed
+cargo test --offline --locked -j16 -p contracts --test roundtrip
+test result: ok. 16 passed; 0 failed
+tsc --noEmit -p tsconfig.test.json && node --test --experimental-strip-types test/roundtrip.test.ts
+tests 17; pass 17; fail 0
+dart test test/roundtrip_test.dart
++17: All tests passed!
+go test ./internal/contracts
+ok apps/worker/internal/contracts
+cargo test --offline --locked -j16 -p collab-bridge --test bridge --no-run
+Finished test profile；测试可执行文件生成，退出 0
+```
+
+四侧同时覆盖本批私聊 preference 样例，不把共同生成物归为单人独占产物。
+仅在 SDK 的 TypeScript 往返重建中移除 description，实际 `pass 0; fail 1`，
+输出明确指出 description 丢失；恢复后 17 项重新通过。集中运行私聊读取 fence
+与 transport 的 1+7 项通过；把私聊 same_admission 暂改为恒真时实际 0/1 失败，
+逐字恢复后再次 1+7 通过。
+另在 SDK 的真实 `governance::parse_command` 中暂把 workspace_channel 置空，
+元数据断言实际退出 101（0 passed; 1 failed，Option::unwrap on None）；恢复正式
+源码后同一 workspace_channel_tests 再次退出 0（1 passed; 0 failed）。
+
+失败原文边界：第一次生成因 SDK `/.dart-tool` 无权限退出 255；仅把该容器的
+工具状态目录链接到现有 Data owned cache 后恢复，未修改 HOME 或安装新 SDK。
+生成副本初缺 i18n 输入、Core 副本初缺 Gateway proto 分别退出 1/101，补齐实际
+消费源码后再运行；首轮 Clippy 的 single_match 已重构为 if let，两个无调用旧
+transport wrapper 由对应实现者删去，不屏蔽 lint。
+
+本子任务没有开启 PLATFORM_INTEGRATION：新增真实 Relay forum/description
+及重复 ID 错元数据用例只完成编译，未以未执行的集成用例宣称协议验收。
+租户公开目录/治理加入、TTL 到期与 Core 收敛、完整原模板以及 Forum 页面入口
+均仍有缺口；本批不生成无效选项，不把缺口降为产品排除。共享页面交由同批
+前端集中验收；完整 check、设计独立提交、apps 提交/push 与部署由批次负责人
+分别记录，不能沿用上一批绿灯作为本批通过证据。
+
 对应 Stage 1 退出门禁：
 
 > 成员建立与撤权经 `MEMBERSHIP_PROJECTION`/`MEMBERSHIP_REVOCATION` 完成 SpiceDB

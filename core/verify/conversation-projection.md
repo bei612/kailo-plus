@@ -106,3 +106,70 @@ Dart 私有验证依赖通过 `dart pub get --offline` 从现有缓存恢复，�
 仍未由本批证明完整原版 DM 功能或上线可用：原生 channel 已读上下文已接参与者判定，
 `msg:`/`thread:` 已读上下文和 DM hide/unhide 的完整产品接线不在上述完成声明内；
 真实三端端到端与统一 `tools/check.sh --full` 由主线集中验收。
+
+## 后续批次：私聊已读、偏好与原生隐藏状态
+
+本节独立于上批冻结树 `92060f04713bace27686d7e2f6bfd35d066f2007` 的证据；
+不把后续实现或窄检查算作该树的全量验收。
+
+权威与影响面：DD-40 的同一 `CollaborationUserState`/版本 CAS 增加按真实
+Conversation binding ID 寻址的收藏、静音；`msg:`/`thread:` 读凭据查询同时走
+Workspace 与 Conversation 的原准入，使用当前 HUMAN SERVER 查询 Relay 原事件，
+查询后再次比较身份与两级 binding，不把私聊 ID 填进 Workspace。权限撤销不返回正文
+或残留读标记；依赖错误不当作空结果。新 JSON 列默认空对象，既有行可直接读取；
+旧读取方忽略新列，下迁移在有非空偏好时拒绝，避免抹掉真实用户设置。
+
+隐藏状态仍只有 Relay `channel_members.hidden_at` 和原 NIP-DV kind 30622；
+Core 不存第二份隐藏权威。Web 的 hide/reopen 是本人 SERVER 签署原 41012/41010，
+复用既有 publish attempt、审计和 UNKNOWN 对账；Native 仍本人 CLIENT 直连 Relay。
+新操作不能开建成员集合，仅允许当前参与者操作已有私聊；CONTROL 不是参与者。
+命令回执、hidden_at 和 relay-signed replaceable snapshot 同事务，按当前 viewer 的
+原成员行串行化，重投旧隐藏回执不覆盖之后的恢复。失败回滚整笔事务，提交后的
+通知中断可从原快照读取收敛，不创建新队列、工作流、偏好或聊天存储。
+
+只读上游定位：Buzz `779af8886caae1317b4de962082429867ab61503`，
+`/volumes/kailo/.references/buzz/crates/buzz-db/src/store/dm.rs` 的
+`open_dm`、`hide_dm`、`unhide_dm`、`list_hidden_dms`；
+`/volumes/kailo/.references/buzz/crates/buzz-relay/src/handlers/command_executor.rs`
+的 `handle_dm_open`、`handle_dm_hide`、`persist_command_event`；
+`/volumes/kailo/.references/buzz/crates/buzz-relay/src/handlers/side_effects.rs`
+的 `publish_dm_visibility_snapshot`。这些都是原功能接线，不是另一套私聊实现。
+
+当前批次实际窄验证（既有受限 SDK/本地固定 Rust 镜像，离线缓存，Cargo -j16）：
+
+```text
+cargo clippy --offline --locked -j16 -p platform-core --bin platform-core -- -D warnings
+exit 0
+cargo test --offline --locked -j16 -p platform-core --bin platform-core user_state::tests
+test result: ok. 1 passed; 0 failed
+cargo test --offline --locked -j16 -p platform-core --bin platform-core web_transport::tests
+test result: ok. 7 passed; 0 failed
+cargo check --offline --locked -j16 -p buzz-relay
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 47.48s
+cargo test --offline --locked -j16 -p buzz-db governed_dm_keeps_control_out_and_converges_rotated_keys -- --ignored --nocapture
+test result: ok. 1 passed; 0 failed
+```
+
+Core 命令由同批频道集成 agent 在共同 SDK 输入上集中运行，未另起重复 Core 构建。
+私有副本把 Conversation `same_admission` 强改为 true，实际 0 passed/1 failed；
+原样恢复后 1 passed，再运行发布检查 7 passed。四侧同源 preference 样例通过：
+Rust 16、TypeScript 17、Dart 17、Go contracts 包 PASS。registry 已按同批输入重新生成。
+新增偏好迁移在隔离 scope_verify 事务实际输出 `BEGIN / ALTER TABLE / DO /
+ALTER TABLE / ROLLBACK`，退出 0，应用数据库未改动。
+
+Relay 私有副本把 hidden_at 的 CASE 隐藏语义反转后，原实库检查实际输出
+`assertion left == right failed; left: []`，0 passed/1 failed、退出 101；
+恢复正式源码且 `cmp` 相同后，同一命令 1 passed/0 failed、退出 0。
+实库检查覆盖本人隐藏/恢复、CONTROL 拒绝以及撤销旧钥匙后拒绝操作；不冒称已验证
+真实客户端断线、同一用户跨设备显示或整个 BFF→Relay 网络链路。
+临时数据库 `dm_user_state_9dbnme` 只含本次生成的验证数据，验证后已删除；
+可由同一 desired schema 和原用例重建，scope_verify 与应用数据库未删除。
+
+相对上批冻结树，本节六个主要生产文件（Relay dm/command_executor/side_effects、
+Core user_state/web_transport/publish_reconcile）合计 +592/-154 行；额外包括
+新请求契约、偏好 up/down 迁移、旧 SQLx 查询缓存删除以及共编的路由、registry、
+四侧生成物和本文档。共享文件的频道 metadata 改动由同批频道证据单独解释。
+
+本节不声明已部署、完整原生客户端验收或通过本批全量门禁。部署仍需先发布上述
+Relay 接缝二进制，再通过既有 `BUZZ_MEMBER_EVENT_KINDS` 投递 41010/41012；仅改
+运行配置不能纠正旧二进制。第 07 章 §1 已登记运行期与编译期区别。

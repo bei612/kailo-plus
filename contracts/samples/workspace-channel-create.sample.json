@@ -1,0 +1,10 @@
+{
+  "actionKey": "workspace.create",
+  "idempotencyKey": "00000000-0000-4000-8000-000000000001",
+  "name": "Architecture discussions",
+  "slug": "architecture",
+  "workspaceChannel": {
+    "channelType": "forum",
+    "description": "Decisions and discussion threads"
+  }
+}

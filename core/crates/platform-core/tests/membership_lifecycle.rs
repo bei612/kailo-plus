@@ -343,7 +343,7 @@ async fn run(
     // Channel 由 CONTROL 身份在 Relay 上真实建立（DD-80）。
     let channel_uuid = Uuid::new_v4();
     reader
-        .ensure_channel(http, &channel_uuid.to_string(), "workspace-verify")
+        .ensure_channel(http, &channel_uuid.to_string(), "workspace-verify", None)
         .await
         .expect("建立 Channel");
 
