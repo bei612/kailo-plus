@@ -213,6 +213,7 @@ trigger（HUMAN 消息 / @提及 / Temporal Schedule / webhook）
 Workflows（工作流）是 Web/Desktop 左侧导航的独立平台核心页面，不是 Agents 页内的附属区域，也不以 Tasks、Approvals 或 Temporal UI 代替。两端使用同一 TypeScript 页面主体、Buzz 主题与 i18n；仅宿主导航接入不同，所有管理读写经 BFF。该入口不依赖任何业务能力 binding；页面可见不授予对象访问或执行权限。
 
 - 定义列表按当前授权 Workspace 查询 AutomationDefinition，展示 owner、状态、已固定版本与执行 Installation 引用；无定义显示真实空状态，鉴权失败、依赖不可用或投影落后不得显示成“没有工作流”。
+- 原版工作流名称按 `03` §7 的 AutomationVersion.name 读取和编辑；名称、触发条件与动作摘要来自同一个有权读取的版本。表单与 YAML 切换、编辑和复制均保留名称，不以 UUID 卡片或仅浏览器保存的别名代替原版命名功能。旧版本未命名是明确的兼容状态，不代表读取失败或无访问权。
 - 创建、版本查看与发布、启用、暂停、停用只消费 `05` §2.9 已登记的管理动作；已发布版本不可原地修改，编辑内容形成新版本，启用固定已发布版本。提交时由服务端重查权限、scope 和版本事实，不信任页面缓存。
 - 配置以 DD-107 的 AutomationVersion 为权威。表单与 YAML 必须覆盖同一组合同字段并可相互切换；编辑已发布内容形成新版本。解析失败、未知字段或未知枚举保留编辑内容并拒绝提交，不把无法表示的字段静默丢弃，不执行任意 YAML 指令或恢复 Buzz 原生 workflow 引擎。
 - 复制从有权读取的定义配置进入原创建过程，默认新 DRAFT、新 HUMAN owner；不复制 pin、启用状态、Schedule、webhook 密钥、委托授权、审批或运行历史。目标 Workspace、Installation 与 Delegation 均沿原准入重新查证；没有来源读取权或目标创建权则拒绝。
