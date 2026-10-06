@@ -1,5 +1,60 @@
 # Buzz 共享界面与受治理私聊：开发检查点
 
+## 2026-10-06 23:08 UTC 发布回执与真实动态发布修复
+
+Core、Worker、Web 已从固定源码 `10c839d34186d4b1e72a44f83c82d7c420949e7e`
+集中构建、推送并限定部署。原入口均退出 0，实际镜像为：
+
+- Core `sha256:e42e3deb0faf34fc3eec1b4daecb85d542cb94865ca2875946f9f926b67ed8cf`。
+- Worker `sha256:9558629db918ca34f496d84295dfd3f558ce24af7b823e28a70ace94bda4c42b`。
+- Web `sha256:dd59cc60ec1c6c4fc9369c3a43e421185a57f1e75afadf1431dfb6aca58a2717`；
+  浏览器 buildId 实读 `sha256:3c06bea4921e8b9c11994d6c6906612c013103daa365b48a4c4b4b9db2b667da`。
+
+构建与部署原日志位于
+`/volumes/data/kailo/tmp/buzz-forum-locale-release-20261006.255aFn/`。
+复用 Data 上受限 BuildKit 与依赖缓存；本次仍有基础层下载，不能称完全离线。
+Relay 保持原 binary，仅投递已实现的 Pulse 1/7/5 与 Forum 45001/45003 运行期开关；
+没有开启原生工作流引擎、管理员删除或投票。Windows/Mobile 未更新。
+
+真实浏览器发布动态首先返回 503，Core 原日志明确为
+`publish_attempt_message_kind_check` 拒绝 kind 1；同一旧约束也遗漏 kind 5/7。
+四步结论：权威为 REQ-24、DD-39/81 与设计09 Pulse Community 边界；读写影响面是
+原 `web_transport::publish`、`publish_reconcile` 和既有发布意图表，不改契约或
+正文权威；仅增补已接入 kind 的封闭枚举，原认证、作用域、作者、目标形状、审计
+与幂等全部保留。缺审计仍不发送，UNKNOWN 仍按原事件对账；新旧写入兼容，
+无新状态、额度或工作流。回退遇到新 kind 记录明确拒绝，绝不删除对账身份。
+
+直接补充 `20261007015000_publish_native_kinds`，不修改已执行迁移。
+原隔离库 up/down/up 通过；实际复制原表约束的事务检查接受 1/5/7 与原消息类型，
+拒绝 9005 和错误删除目标。撤回迁移后同一检查真实失败于旧 kind 约束，恢复后通过。
+随后沿原初始化迁移函数，以 2 CPU/2 GiB cgroup 投递，输出
+`Applied 20261007015000/migrate publish native kinds (2.858738ms)`，数据库实读
+`96|20261007015000|t`。首次调用因缺 TMPDIR 退出 2、未执行迁移；
+补上既有 Data 临时目录后成功。没有为这条 SQL 重编 Core/Worker/Web。
+
+原页面复验：发布、点赞、回复、取消赞四次均返回 200，事件引用依次为
+`0f8c4ad46d363cad4367cb7aecbbf31fb5b71f4733aa9075c9c29d2938ecc257`、
+`8c5fa62f927745a4bd3734203bb15337c6d54354db0569f0aca9cf7ac7713daa`、
+`8bd790184681b7a5def04b0be6892765b039334af7c174e64ad3c4c370e6b8d4`、
+`42d26177ec0a7ea50655c0bc9e831d7ffe877c0083e591c0828ae019f61a7c31`。
+已赞筛选读到原帖，回复显示原帖引用；只操作本次创建的开发验收内容，
+不重放旧 Agent UNKNOWN。该结果不代替 Forum 作者删除业务验收。
+
+Playwright 视觉目录沿用 `kailo-visual-release-20261006.vlPvnU`：
+134–142 为加载后的收件箱、动态、成员、Agent、工作流、任务、审批、审计、设备，
+143–145 为真实动态操作，均逐张打开。125–133 多为加载态、122 为重新登录页，
+不作为相应页面通过证据。成员/Agent 管理仍有长表单堆叠，工作流仍有重复刷新；
+完整原版交互、每个弹窗、双语全覆盖与 Web/Desktop 等效尚未验收。
+动态图145捕捉到动态高度更新前的重叠；下一帧测量后两卡片边界分别
+357–655、671–757，没有持续重叠。首入含数据的虚拟列表还出现过空白，
+窗口改变尺寸后显示，仍需定位，不将这一路体验判为完整通过。
+
+知识库合同种子源码已推送 `89f69014d2682bda65bc5f1ee77c1fa7c9a29080`，
+但不在本批镜像中；Projects、升级与原生知识库后续接缝仍是未部署增量。
+设计独立推送 `ce36d906e7ef8f230e2adef4b3b40ad1643caefe` 澄清同一协作根
+按安装代际冻结 Session，不复制或抹去历史。旧完整检查仍退出 1；
+这次真实页面和迁移证据不将其改记为通过，也不证明三人双 Agent 已稳定可用。
+
 ## 2026-10-06 22:38 UTC 批次提交与发布中状态
 
 相对 `95abbc4aed07dc14d99b6d4043c049357e22758d`，消息作者删除、原版共享
