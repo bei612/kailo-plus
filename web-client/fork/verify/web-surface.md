@@ -2013,3 +2013,55 @@ Flutter widget/频道测试及 Mobile 实机验证未运行，不能用纯 Dart 
 误判为转换失败。修改过的 YAML 仍走原结构校验，未知字段保留文本并拒绝转换；
 提交准入、执行器、权限与 UNKNOWN 行为不变。影响仅为共用 Web/Desktop 编辑器
 状态，无契约、迁移或后端权威变化。上文 9 项检查与真实破坏/还原覆盖该修复。
+
+### 原设置分组、快捷键与真实通知开关恢复（后续独立批）
+
+权威与范围：沿 REQ-24、DD-53 恢复原设置呈现，不把旧开发预览中
+“Web 只有 Enter/不生成浏览器通知”的阶段事实解释为永久功能裁剪。
+源码证据为只读 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/settings/ui/SettingsView.tsx`（`SettingsSectionButton`、
+`SettingsView`）、`desktop/src/features/settings/ui/KeyboardShortcutsCard.tsx`
+（`KeyCombo`、`KeyboardShortcutsCard`）和
+`desktop/src/features/settings/ui/SettingsSectionHeader.tsx`（`SettingsSectionHeader`）；
+完整路径与符号已由该提交 `git show` 核验。
+
+影响面：共享 `settings-surface.tsx` 提取原个人设置分组、图标、稳定宽度标签、
+内容卡片与滚动区、章节标题；Desktop `SettingsView` 删除相同重复呈现，保留
+原生侧栏容器、窗口顶部、版本读取与关闭事件。Web `SettingsPage` 使用同一组件，
+外观选项使用原 `SettingsOptionGroupList`、标题及偏好卡片。快捷键恢复原分类和
+逐键 `kbd`；Native 仍读取原完整键盘注册表，Web 只列出实际共享富编辑器与设置
+入口支持的八项命令（含换行、粗体、斜体、删除线、行内代码、链接），删除旧单行
+输入框描述。四个分类词条进入唯一 TS catalog 并由原工具生成 Dart 输出。
+
+副作用边界：Web 通知行改用原 `SettingsOptionRow` 与 `Switch`，仍只调用原
+Workspace preference CAS，不增加通知权威、浏览器后台服务、空回调或新 API。
+保留当前 version、starred 值及读取准入；开关点击后不乐观显示已静音。
+原 Profile 签名事件 readback 身份/事件核对原样保留，认证和授权没有变化。
+
+异常行为：空 Workspace 显示原空状态；目录或偏好读失败不展示默认未静音的开关；
+读取中/已有写入/不在目录内拒绝写入。丢回执仍回读原 CAS，不重放写入。原资料
+保存 UNKNOWN 保持同一意图并核对原签名事件，不能渲染为成功。未引入新状态、迁移、
+额度或工作流，沿用 `06` §4 的现有错误处理；本批不改变 Mobile 行为。
+
+隔离 SDK `kailo-agent-receipt-xvkujx`（4 CPU / 8 GiB）实际窄验：共享 source/test
+TypeScript 检查退出 0，设置 16 项通过；Desktop TypeScript 检查退出 0，原快捷键
+与通知 3 项通过；Web TypeScript 检查退出 0，设置 6 项及资料保存回读 4 项通过。
+原 `tools/gen-platform-i18n.py` 与 `--check` 退出 0。初次生成因未投递 Dart PATH
+失败；修正使用现有 SDK `/usr/lib/dart/bin` 后成功。Web 首轮出现函数闭合括号遗漏
+`TS1005`，已修正后重验。共享旧测试按 `textContent` 精确匹配把原隐藏加粗标签计入
+两次，改为原导航 testid 定位而保留原双标签呈现。资料测试仍存在 jsdom canvas
+未实现提示，不把该提示冒充真实头像画布验收。
+
+破坏检查只改 SDK 副本：将快捷键分类强制改成 Messages，新增分类检查实际失败
+（1 failed / 15 skipped）；将原 Switch 回调的 muted 参数强制改为 false，实际
+点击开关的 CAS 断言失败（1 failed / 5 skipped）。两处均从正式源按原字节还原，
+`cmp` 退出 0，恢复后共享 16 项、Web 10 项通过。
+
+日志目录：Data 下
+`codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`；
+`settings-surface-narrow.log`、`settings-surface-restored.log`、
+`settings-surface-final.log` 保留初次失败；`settings-profile-restored.log`、
+`settings-switch-restored.log` 是最终恢复通过，两个破坏日志分别为
+`settings-category-mutation.log`、`settings-switch-mutation.log`。
+本批未运行 full/build、未部署或重新发布。浏览器系统通知/声音、Web 链接预览与
+线程布局真实消费者、原设置其余栏目仍是恢复缺口，不能宣称全部设置已恢复。

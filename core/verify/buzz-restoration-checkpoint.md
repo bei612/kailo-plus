@@ -1,5 +1,20 @@
 # Buzz 共享界面与受治理私聊：开发检查点
 
+## 2026-10-06 11:58 后续投递与来源清单修正
+
+Core／Worker 源提交 `0d6b2833aa22151dfcd78851872a21a5f9e361d6` 的原 release
+退出 0，镜像均推送且 registry 摘要独立核对一致。原部署 wrapper 与 Worker
+启动退出 0，Core health 200，90 条迁移成功；其余 21 个容器不变。
+原始回执为 Data 的 `buzz-core-registry-release-20261006.aq2uA1/deployment-receipt.md`。
+随后仅投递已生成的共享 Web，逐页业务及视觉验收另记，不将服务健康当作功能通过。
+
+Relay 原构建入口在编译前退出 2：来源清单仍把已部分恢复的
+`desktop/src/features/forum` 登记为整块删除。现按真实上游差异改为仍缺少的子路径，
+同时登记已迁入共用包的主题路径及尚缺失的 ProfilePopover；未删除任何产品源码。
+原 `upstream_manifest.py diff collaboration --check` 输出清单与实际一致（965 项）、
+退出 0。数量是原路径缺失／迁移事实，不是功能完成度；REQ-24 的完整恢复范围不变。
+该修正只影响来源记录及构建输入校验，不改变认证、权限、状态、协议或副作用。
+
 2026-10-06。本记录对应第一批源码，不是部署、完整 Buzz 功能恢复或生产就绪声明。
 权威为 REQ-24、DD-39/40/53/75/80/81；设计已单独提交到
 `design/buzz-feature-preservation-20261006`，头为
@@ -235,7 +250,7 @@ apps Git 发送到设计分支，远端独立读回为上述 commit；没有混�
 ### 发布构建的契约输入修复
 
 冻结源码 `dc41f86ca6e56fdbc83f6d75d5051a16a7e7f4fe` 的原 `tools/release.sh`
-实际退出 1：Core 的 `conversations.rs::` 编译单元两处 `include_str!` 找不到
+实际退出 1：Core 的 `conversations.rs` 中 `participants` 与 `requested` 两处 `include_str!` 找不到
 `contracts/api/conversation_open_request.schema.json`。编译日志为
 `/volumes/data/kailo/tmp/buzz-restoration-release-20261006.QMJMtJ/core-worker-release.log`。
 这是发布上下文遗漏，不是该 JSON 契约或私聊准入失败。
@@ -248,3 +263,20 @@ apps Git 发送到设计分支，远端独立读回为上述 commit；没有混�
 构建失败，不提供默认契约或绕过校验。只影响构建输入，无新增业务错误状态。
 `bash -n tools/release.sh` 与上述三个文件的 `git diff --check` 均退出 0。
 原构建重跑的结果须以实际进程终态为准，此记录不声明已构建或部署成功。
+
+### 工作流草稿切换的实际界面修复
+
+本轮 Playwright 旧版截图
+`/volumes/data/kailo/tmp/kailo-visual-baseline-20261006.spZHHl/17-workflow-yaml.png`
+显示：空白表单仅切换到 YAML 就出现配置错误。原实现把提交所需的完整性
+`contentAvailable` 直接作为编辑期间的错误，且未改动的空草稿也无法切回表单。
+
+按 `.design/03` 自动化定义的表单／YAML 同源合同及 DD-106/107，只修改
+`AutomationAction` 的编辑状态：保存本次表单导出的 YAML，未改动时返回原
+表单字段；仅显式转换失败时呈现错误。修改过的 YAML 仍须通过原完整解析与
+可表示性校验，未知字段／枚举、无效执行者／策略均不丢弃或替换原文。
+Web/Desktop 共用此组件，Mobile 不新增页面；没有契约、持久数据或后端变更。
+提交的 `contentAvailable`、执行者、授权、审批与结果 UNKNOWN 处理保持不变；
+未完成草稿、撤权、策略失效仍不可提交。切换编辑器不会发送动作，无新增
+副作用或状态终结要求。定向交互检查在实现后加入，验证及变异结果另随实际
+输出记录；此处不把源码修复视为新版本浏览器验收。

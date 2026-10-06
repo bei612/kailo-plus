@@ -9,6 +9,10 @@ import { ProminentActiveTabSetting } from "@client-kit/platform/react/prominent-
 import {
   SettingsPage,
   ShortcutSettings,
+  SettingsSectionHeader,
+  LanguageSettings,
+  shortcutText,
+  type SettingsShortcut,
   type SettingsSection,
 } from "@client-kit/platform/react/settings";
 import { setWorkspacePreference, uploadProfileAvatar } from "@/platform/bff-client";
@@ -21,39 +25,52 @@ import { useBffClient } from "@client-kit/platform/react/context";
 import { useLoad } from "@client-kit/platform/react/use-load";
 import { ReadFailure } from "@client-kit/platform/react/ui";
 import { TransportError } from "@client-kit/platform/transport";
+import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from "@client-kit/platform/react/settings-option-group";
+import { Switch } from "@client-kit/platform/react/switch";
+import { useUiLocale } from "@client-kit/platform/react/context";
+
+function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] {
+  const mod = isMacPlatform() ? "⌘" : "Ctrl+";
+  const entries: Array<[string, string, SettingsShortcut["category"]]> = [
+    ["open-settings", `${mod},`, "Navigation"],
+    ["send-message", "Enter", "Messages"], ["new-line", "Shift+Enter", "Messages"],
+    ["format-bold", `${mod}B`, "Formatting"], ["format-italic", `${mod}I`, "Formatting"],
+    ["format-strikethrough", `${mod}${isMacPlatform() ? "⇧" : "Shift+"}X`, "Formatting"],
+    ["format-code", `${mod}E`, "Formatting"],
+    ["format-link", `${mod}K`, "Formatting"],
+  ];
+  return entries.flatMap(([id, keys, category]) => {
+    const text = shortcutText(locale, id);
+    return text ? [{ id, keys, category, ...text }] : [];
+  });
+}
+// The table describes the real shared Tiptap handlers, not new key bindings.
 
 export function SettingsPane() {
-  const locale = getLocale();
+  const locale = useUiLocale();
   const appearance = useTheme();
   const [section, setSection] = useState<SettingsSection>("profile");
   return (
     <SettingsPage locale={locale} section={section} onSelect={setSection}>
       {section === "profile" ? <WebProfileSettings /> : section === "appearance" ? (
-        <div className="flex flex-col gap-6">
+        <section className="flex min-h-0 flex-1 flex-col" data-testid="settings-theme">
+          <SettingsSectionHeader title={translate(locale, "platform.settings.appearance")} description={translate(locale, "platform.theme.appearanceDescription", { name: translate(locale, "platform.title") })} />
+          <SettingsOptionGroupList>
+          <LanguageSettings />
           <ThemeSettingsControls locale={locale} name={translate(locale, "platform.title")} appearance={appearance}>
             {isBuzzTheme(appearance.themeName) ? <ProminentActiveTabSetting locale={locale} prominentActiveTab={appearance.prominentActiveTab} setProminentActiveTab={appearance.setProminentActiveTab} /> : null}
           </ThemeSettingsControls>
-          <ConversationDisplaySettings locale={locale} />
-        </div>
+          <SettingsOptionGroup data-testid="appearance-preferences-card" title={translate(locale, "platform.settings.preferences")}>
+            <ConversationDisplaySettings locale={locale} />
+          </SettingsOptionGroup>
+          </SettingsOptionGroupList>
+        </section>
       ) : section === "notifications" ? (
         <WorkspaceNotifications />
       ) : (
         <ShortcutSettings
           locale={locale}
-          shortcuts={[
-            {
-              id: "open-settings",
-              label: translate(locale, "platform.shortcuts.open-settings.label"),
-              description: translate(locale, "platform.shortcuts.open-settings.description"),
-              keys: isMacPlatform() ? "⌘," : "Ctrl+,",
-            },
-            // The Web composer is a single-line Input, not Desktop's rich editor.
-            {
-              id: "send-message",
-              label: translate(locale, "platform.settings.sendShortcut"),
-              keys: "Enter",
-            },
-          ]}
+          shortcuts={webShortcuts(locale)}
         />
       )}
     </SettingsPage>
@@ -63,7 +80,7 @@ export function SettingsPane() {
 function WebProfileSettings() {
   const client = useBffClient();
   const { isDark } = useTheme();
-  const locale = getLocale();
+  const locale = useUiLocale();
   const [loaded, reload] = useLoad("own-profile", () => client.profile());
   const uploadedPaths = useRef<Record<string, string>>({});
   if (loaded.status === "pending") return <p role="status">{translate(locale, "platform.loading")}</p>;
@@ -107,7 +124,7 @@ function WebProfileSettings() {
 }
 
 export function WorkspaceNotifications() {
-  const locale = getLocale();
+  const locale = useUiLocale();
   const queryClient = useQueryClient();
   const workspaces = useQuery(platformQueries.workspaces);
   const userState = useQuery(platformQueries.userState);
@@ -146,15 +163,9 @@ export function WorkspaceNotifications() {
     if (ws.isSuccess && prefs.isSuccess) mutation.reset();
   }
   return (
-    <section className="flex flex-col gap-4" data-testid="workspace-notifications">
-      <div>
-        <h2 className="text-lg font-semibold">
-          {translate(locale, "platform.settings.workspaceNotifications")}
-        </h2>
-        <p className="mt-1 max-w-prose text-sm text-muted-foreground">
-          {translate(locale, "platform.settings.workspaceNotificationsDescription")}
-        </p>
-      </div>
+    <section className="min-w-0" data-testid="workspace-notifications">
+      <SettingsSectionHeader title={translate(locale, "platform.settings.notifications")}
+        description={translate(locale, "platform.settings.workspaceNotificationsDescription")} />
       {failed ? (
         <div role="status">
           <p>{translate(locale, "platform.loadFailed")}</p>
@@ -173,27 +184,24 @@ export function WorkspaceNotifications() {
         <p>{translate(locale, "platform.noWorkspace")}</p>
       ) : null}
       {ready ? (
-        <ul className="divide-y divide-border">
+        <SettingsOptionGroupList><SettingsOptionGroup title={translate(locale, "platform.settings.workspaceNotifications")}>
           {workspaces.data.map((workspace) => (
-            <li
+            <SettingsOptionRow
               key={workspace.id}
-              className="flex flex-wrap items-center justify-between gap-3 py-3"
             >
-              <span className="min-w-0 flex-1 break-words">{workspace.name}</span>
-              <label className="inline-flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
+              <div className="min-w-0 flex-1"><label htmlFor={`workspace-mute-${workspace.id}`} className="text-sm font-medium break-words">{workspace.name}</label>
+                <p className="text-sm font-normal text-muted-foreground/70" data-settings-subcopy>{translate(locale, "platform.settings.muted")}</p></div>
+                <Switch
+                  id={`workspace-mute-${workspace.id}`}
                   checked={userState.data.workspacePreferences[workspace.id]?.muted ?? false}
                   disabled={failed || mutation.isPending}
-                  onChange={(event) =>
-                    mutation.mutate({ id: workspace.id, muted: event.target.checked })
+                  onCheckedChange={(muted) =>
+                    mutation.mutate({ id: workspace.id, muted })
                   }
                 />
-                {translate(locale, "platform.settings.muted")}
-              </label>
-            </li>
+            </SettingsOptionRow>
           ))}
-        </ul>
+        </SettingsOptionGroup></SettingsOptionGroupList>
       ) : null}
     </section>
   );

@@ -2,19 +2,10 @@ import { ThemeSettingsControls } from "@client-kit/platform/react/theme-settings
 import { useDeviceLocale } from "@client-kit/platform/react/context";
 import {
   translate,
-  type PlatformLocale,
 } from "@client-kit/platform/i18n";
 import {
-  settingsSectionKeys,
   LanguageSettings,
 } from "@client-kit/platform/react/settings";
-import {
-  BellRing,
-  Keyboard,
-  MonitorCog,
-  UserRound,
-  type LucideIcon,
-} from "lucide-react";
 import type {
   DesktopNotificationPermissionState,
   NotificationSettings,
@@ -56,12 +47,6 @@ export function isSettingsSection(value: unknown): value is SettingsSection {
   );
 }
 
-export type SettingsSectionDescriptor = {
-  value: SettingsSection;
-  label: string;
-  icon: LucideIcon;
-};
-
 export type SettingsPanelProps = {
   isUpdatingDesktopNotifications: boolean;
   notificationErrorMessage: string | null;
@@ -74,25 +59,6 @@ export type SettingsPanelProps = {
   onSetAllSlotAlertsEnabled: (enabled: boolean) => void;
   onSetSoundForSlot: (slot: SoundSlot, name: SoundName) => void;
 };
-
-export const settingsSections = (locale: PlatformLocale): SettingsSectionDescriptor[] => [
-  { value: "profile", label: translate(locale, settingsSectionKeys.profile), icon: UserRound },
-  {
-    value: "appearance",
-    label: translate(locale, settingsSectionKeys.appearance),
-    icon: MonitorCog,
-  },
-  {
-    value: "notifications",
-    label: translate(locale, settingsSectionKeys.notifications),
-    icon: BellRing,
-  },
-  {
-    value: "shortcuts",
-    label: translate(locale, settingsSectionKeys.shortcuts),
-    icon: Keyboard,
-  },
-];
 
 function ThemeSettingsCard() {
   const locale = useDeviceLocale();

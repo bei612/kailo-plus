@@ -2,6 +2,9 @@
 // preference stores, native notification permissions and keyboard handlers.
 import { useState, type ReactNode } from "react";
 import { useDeviceLocale } from "./context";
+import { SettingsNavigation, SettingsContentSurface, SettingsSectionHeader, type SettingsSection } from "./settings-surface";
+import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from "./settings-option-group";
+export { SettingsNavigation, SettingsContentSurface, SettingsSectionHeader, settingsSectionKeys, type SettingsSection } from "./settings-surface";
 import {
   platformThemeModeKeys,
   setLocale,
@@ -9,8 +12,6 @@ import {
   type PlatformLocale,
   type PlatformThemeMode,
 } from "../i18n";
-
-export type SettingsSection = "profile" | "appearance" | "notifications" | "shortcuts";
 
 export function LanguageSettings() {
   const locale = useDeviceLocale();
@@ -29,43 +30,6 @@ export function LanguageSettings() {
     {failed ? <p role="alert">{translate(locale, "platform.settings.languageSaveFailed")}</p> : null}
   </fieldset>;
 }
-export const settingsSectionKeys = {
-  profile: "platform.settings.profile",
-  appearance: "platform.settings.appearance",
-  notifications: "platform.settings.notifications",
-  shortcuts: "platform.settings.shortcuts",
-} as const;
-
-export function SettingsNavigation({
-  locale,
-  section,
-  onSelect,
-  icons,
-}: {
-  locale: PlatformLocale;
-  section: SettingsSection;
-  onSelect: (section: SettingsSection) => void;
-  icons?: Partial<Record<SettingsSection, ReactNode>>;
-}) {
-  return (
-    <nav aria-label={translate(locale, "platform.settings.title")} className="flex flex-wrap gap-1">
-      {(Object.keys(settingsSectionKeys) as SettingsSection[]).map((value) => (
-        <button
-          key={value}
-          type="button"
-          data-testid={`settings-nav-${value}`}
-          aria-pressed={section === value}
-          onClick={() => onSelect(value)}
-          className={`inline-flex min-h-8 items-center gap-2 rounded-md px-3 py-2 text-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary ${section === value ? "bg-secondary text-secondary-foreground" : "text-foreground hover:bg-accent"}`}
-        >
-          {icons?.[value]}
-          {translate(locale, settingsSectionKeys[value])}
-        </button>
-      ))}
-    </nav>
-  );
-}
-
 export function ThemeModeControl({
   locale,
   value,
@@ -105,7 +69,7 @@ export function ThemeModeControl({
   );
 }
 
-export type SettingsShortcut = { id: string; label: string; description?: string; keys: string };
+export type SettingsShortcut = { id: string; label: string; description?: string; keys: string; category?: "Navigation" | "Messages" | "Formatting" | "Zoom" };
 
 const shortcutMessages = {
   "quick-search": [
@@ -190,29 +154,32 @@ export function ShortcutSettings({
   locale: PlatformLocale;
   shortcuts: readonly SettingsShortcut[];
 }) {
+  const categories = new Map<string, SettingsShortcut[]>();
+  for (const shortcut of shortcuts) {
+    const category = shortcut.category ?? "Messages";
+    categories.set(category, [...(categories.get(category) ?? []), shortcut]);
+  }
+  const categoryKeys = {
+    Navigation: "platform.shortcuts.categoryNavigation", Messages: "platform.shortcuts.categoryMessages",
+    Formatting: "platform.shortcuts.categoryFormatting", Zoom: "platform.shortcuts.categoryZoom",
+  } as const;
   return (
     <section className="min-w-0" data-testid="settings-shortcuts">
-      <h2 className="text-lg font-semibold">{translate(locale, "platform.settings.shortcuts")}</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {translate(locale, "platform.settings.shortcutsDescription")}
-      </p>
-      <dl className="mt-4 divide-y divide-border">
-        {shortcuts.map((shortcut) => (
-          <div key={shortcut.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-            <dt className="min-w-0 flex-1 text-sm">
-              <span className="font-medium">{shortcut.label}</span>
-              {shortcut.description ? (
-                <p className="text-muted-foreground">{shortcut.description}</p>
-              ) : null}
-            </dt>
-            <dd>
-              <kbd className="rounded border border-border bg-muted px-2 py-1 font-mono text-xs">
-                {shortcut.keys}
-              </kbd>
-            </dd>
-          </div>
-        ))}
-      </dl>
+      <SettingsSectionHeader title={translate(locale, "platform.settings.shortcuts")}
+        description={translate(locale, "platform.settings.shortcutsDescription")} />
+      <SettingsOptionGroupList>
+        {[...categories].map(([category, entries]) => <SettingsOptionGroup key={category}
+          title={translate(locale, categoryKeys[category as keyof typeof categoryKeys])}>
+          {entries.map((shortcut) => <SettingsOptionRow key={shortcut.id} className="min-h-12 px-3 py-2" data-shortcut={shortcut.id}>
+            <div className="min-w-0 flex-1"><span className="text-sm font-medium text-foreground">{shortcut.label}</span>
+              <span className="ml-2 text-muted-foreground/70" data-settings-subcopy>{shortcut.description}</span></div>
+            <span className="flex items-center gap-1" aria-label={shortcut.keys}>
+              {shortcut.keys.split(/(?<!\+)\+(?!\s*$)/).map((part) => part.trim()).filter(Boolean).map((part) =>
+                <kbd key={part} className="inline-flex h-6 min-w-6 items-center justify-center rounded border border-border/70 bg-muted/60 px-1.5 font-mono text-xs text-muted-foreground">{part}</kbd>)}
+            </span>
+          </SettingsOptionRow>)}
+        </SettingsOptionGroup>)}
+      </SettingsOptionGroupList>
     </section>
   );
 }
@@ -229,12 +196,11 @@ export function SettingsPage({
   children: ReactNode;
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6" data-testid="settings-page">
-      <SettingsNavigation locale={locale} section={section} onSelect={onSelect} />
-      <div data-testid={`settings-panel-${section}`} className="flex flex-col gap-6">
-        {section === "appearance" ? <LanguageSettings /> : null}
-        {children}
-      </div>
+    <div className="flex min-h-0 w-full flex-1 flex-col bg-sidebar sm:flex-row" data-testid="settings-page">
+      <nav aria-label={translate(locale, "platform.settings.title")} className="shrink-0 text-sidebar-foreground sm:w-[var(--sidebar-width)]">
+        <SettingsNavigation locale={locale} section={section} onSelect={onSelect} />
+      </nav>
+      <SettingsContentSurface section={section}>{children}</SettingsContentSurface>
     </div>
   );
 }

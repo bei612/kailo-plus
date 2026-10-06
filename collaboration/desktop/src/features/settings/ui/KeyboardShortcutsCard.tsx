@@ -18,7 +18,7 @@ export function KeyboardShortcutsCard() {
         .flatMap((shortcut) => {
           const text = shortcutText(locale, shortcut.id);
           return text
-            ? [{ id: shortcut.id, ...text, keys: getPlatformKeys(shortcut) }]
+            ? [{ id: shortcut.id, ...text, keys: getPlatformKeys(shortcut), category: shortcut.category }]
             : [];
         })}
     />

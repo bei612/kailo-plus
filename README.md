@@ -6,6 +6,16 @@
 
 ## 当前使用与恢复范围（2026-10-06）
 
+- 11:58 UTC，本批 Core／Worker 已实际投递，原发布与部署命令均退出 0。
+  Core 为 `e0a5e8103c86bdf60250ca6e7928257e194d72f70773e64ed7e7a3636116465f`，
+  Worker 为 `146c1dec681ff0f2dc1469f86cc4b2a0bf7f59d6875501c7a9ed831dac2c41f3`；
+  Core health 200、Worker 原队列启动、90 条迁移成功，其余 21 个容器未改变。
+  随后 Web `54928e5a5a16053ae750479c1a8a0ef6ff39d33323d24cff807aec4c8e7e3df2`
+  已投递，包含共享侧栏、富编辑器、Inbox 与中文默认增量，正在逐页浏览器验收。
+  原 Relay 仍未升级；旧 Agent 在途任务仍有中断请求及用量关联告警，不能据此
+  宣称完整私聊、论坛、稳定多人多 Agent、全部设置或原版体验已经验收。
+  Windows 包仍为下述旧包。原件见 Data 的
+  `buzz-core-registry-release-20261006.aq2uA1/deployment-receipt.md` 与 `web-deploy.log`。
 - 本批源码的界面语言默认中文，保留完整英文词条。语言入口位于“设置 → 外观 →
   语言”，选择“简体中文”或“English”后保存在当前设备，并即时更新界面；不会清空
   正在编辑的消息草稿，不修改账号、组织或权限。新设备或清除本地偏好后仍默认中文，

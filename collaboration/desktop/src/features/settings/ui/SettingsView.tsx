@@ -1,6 +1,7 @@
 import * as React from "react";
 import { resolveLocale, translate } from "@client-kit/platform/i18n";
 import { useDeviceLocale } from "@client-kit/platform/react/context";
+import { SettingsNavigation, SettingsContentSurface } from "@client-kit/platform/react/settings";
 import { getVersion } from "@tauri-apps/api/app";
 import { ArrowLeft } from "lucide-react";
 
@@ -10,9 +11,6 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -20,10 +18,8 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/shared/ui/sidebar";
-import { SidebarMenuLabel } from "@/shared/ui/sidebar-menu-label";
 import {
   renderSettingsSection,
-  settingsSections,
   type SettingsPanelProps,
   type SettingsSection,
 } from "./SettingsPanels";
@@ -33,41 +29,6 @@ type SettingsViewProps = SettingsPanelProps & {
   onSectionChange: (section: SettingsSection) => void;
   section: SettingsSection;
 };
-
-function SettingsSectionButton({
-  active,
-  onSelect,
-  section,
-}: {
-  active: boolean;
-  onSelect: (section: SettingsSection) => void;
-  section: ReturnType<typeof settingsSections>[number];
-}) {
-  const Icon = section.icon;
-
-  return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        aria-pressed={active}
-        data-testid={`settings-nav-${section.value}`}
-        isActive={active}
-        onClick={() => onSelect(section.value)}
-        tooltip={section.label}
-        type="button"
-      >
-        <Icon
-          className={cn(
-            "h-4 w-4 shrink-0 transition-colors",
-            active
-              ? "text-sidebar-active-foreground"
-              : "text-sidebar-foreground/70",
-          )}
-        />
-        <SidebarMenuLabel>{section.label}</SidebarMenuLabel>
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  );
-}
 
 export function SettingsView({
   isUpdatingDesktopNotifications,
@@ -85,7 +46,6 @@ export function SettingsView({
   section,
 }: SettingsViewProps) {
   const locale = useDeviceLocale();
-  const settingsNavGroups = [{ label: translate(locale, "platform.settings.personal"), sections: settingsSections(locale) }];
   const { isMobile, open: sidebarOpen, setOpen: setSidebarOpen } = useSidebar();
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [appVersion, setAppVersion] = React.useState<string | null>(null);
@@ -156,23 +116,7 @@ export function SettingsView({
         </SidebarHeader>
 
         <SidebarContent>
-          {settingsNavGroups.map((group) => (
-            <SidebarGroup key={group.label}>
-              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu aria-label={translate(locale, "platform.settings.sections", { group: group.label })}>
-                  {group.sections.map((entry) => (
-                    <SettingsSectionButton
-                      active={entry.value === section}
-                      key={entry.value}
-                      onSelect={onSectionChange}
-                      section={entry}
-                    />
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          ))}
+          <SettingsNavigation locale={locale} section={section} onSelect={onSectionChange} />
         </SidebarContent>
 
         <SidebarFooter>
@@ -205,19 +149,7 @@ export function SettingsView({
           data-tauri-drag-region
           data-testid="settings-top-chrome"
         />
-        <div
-          className="relative z-10 mb-2 ml-px mr-2 mt-px flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-background shadow-content-edge"
-          data-buzz-content-surface
-          data-testid="settings-content-surface"
-        >
-          <section
-            className="min-h-0 flex-1 overflow-y-auto px-5 pb-12 pt-6 sm:px-6"
-            data-testid="settings-content-scroll"
-          >
-            <div
-              className="mx-auto flex min-h-full w-full max-w-4xl flex-col gap-4"
-              data-testid={`settings-panel-${section}`}
-            >
+        <SettingsContentSurface section={section}>
               {renderSettingsSection(section, {
                 isUpdatingDesktopNotifications,
                 notificationErrorMessage,
@@ -230,9 +162,7 @@ export function SettingsView({
                 onSetAllSlotAlertsEnabled,
                 onSetSoundForSlot,
               })}
-            </div>
-          </section>
-        </div>
+        </SettingsContentSurface>
       </SidebarInset>
     </>
   );

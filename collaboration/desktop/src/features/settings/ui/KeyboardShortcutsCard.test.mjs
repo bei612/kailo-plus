@@ -13,9 +13,9 @@ for (const platform of ["Win32", "MacIntel"]) {
     });
     try {
       const markup = renderToStaticMarkup(createElement(KeyboardShortcutsCard));
-      assert.equal((markup.match(/<kbd /g) ?? []).length, KEYBOARD_SHORTCUTS.length);
+      assert.equal((markup.match(/data-shortcut=/g) ?? []).length, KEYBOARD_SHORTCUTS.length);
       for (const command of KEYBOARD_SHORTCUTS) {
-        assert.ok(markup.includes(platform === "Win32" ? command.keysWindows : command.keys));
+        assert.ok(markup.includes(`aria-label="${platform === "Win32" ? command.keysWindows : command.keys}"`));
       }
       assert.ok(markup.includes("快捷键"));
       assert.ok(markup.includes("粗体"));

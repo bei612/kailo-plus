@@ -4,10 +4,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { WebProfileUpdateRequest } from "@client-kit/contracts";
 import { SettingsPane } from "./SettingsPane";
+import { setLocale } from "@client-kit/platform/i18n";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn() }));
-vi.mock("@client-kit/platform/react/context", () => ({ useBffClient: () => ({ profile: state.read, updateProfile: state.write }) }));
+vi.mock("@client-kit/platform/react/context", async (original) => ({ ...await original<typeof import("@client-kit/platform/react/context")>(), useBffClient: () => ({ profile: state.read, updateProfile: state.write }) }));
 vi.mock("@/shared/i18n", () => ({ getLocale: () => "en" }));
 vi.mock("@/shared/theme/ThemeProvider", () => ({ useTheme: () => ({ themeName: "buzz", selectedThemeName: "buzz", isLoading: false, isDark: false, followSystem: true, accentColor: "neutral", hasPair: true, setTheme: vi.fn(), setAccentColor: vi.fn(), setFollowSystem: vi.fn(), applyAppearance: vi.fn(), prominentActiveTab: false, setProminentActiveTab: vi.fn() }) }));
 vi.mock("@/platform/bff-client", () => ({ bff: {}, fetchUserState: vi.fn(), setWorkspacePreference: vi.fn(), uploadProfileAvatar: vi.fn() }));
@@ -32,6 +33,7 @@ async function startSave() {
   await click('[data-testid="profile-metadata-edit"]');
 }
 beforeEach(() => {
+  setLocale("en");
   // jsdom omits these native browser APIs; keep the real avatar components.
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));

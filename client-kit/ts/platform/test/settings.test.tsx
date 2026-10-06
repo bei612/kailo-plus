@@ -261,18 +261,20 @@ describe("shared Buzz settings presentation", () => {
       );
     }
     const host = await render(<Host />);
-    await click(button(host, "通知"));
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-notifications"]')!);
     expect(
       host.querySelector('[data-testid="settings-panel-notifications"]')
         ?.textContent,
     ).toBe("notifications");
-    await click(button(host, "快捷键"));
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-shortcuts"]')!);
     expect(
       host.querySelector('[data-testid="settings-panel-shortcuts"]'),
     ).not.toBeNull();
-    await click(button(host, "个人资料"));
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-profile"]')!);
     expect(host.querySelector('[data-testid="settings-panel-profile"]')?.textContent).toBe("profile");
     expect(host.querySelectorAll("nav button")).toHaveLength(4);
+    expect(host.querySelector('[data-sidebar="menu-label"] [aria-hidden="true"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="settings-content-scroll"]')).not.toBeNull();
     expect(host.textContent).not.toMatch(/provider|私钥|配对|语言/);
   });
   it("uses the host's live theme state and only changes its existing preference consumer", async () => {
@@ -318,5 +320,14 @@ describe("shared Buzz settings presentation", () => {
     expect(host.textContent).not.toContain("Ctrl+K");
     expect(shortcutText("zh-CN", "format-bold")?.label).toBe("粗体");
     expect(shortcutText("en", "unregistered-command")).toBeNull();
+  });
+  it("retains the original shortcut categories and per-key presentation", async () => {
+    const host = await render(<ShortcutSettings locale="zh-CN" shortcuts={[
+      { id: "open-settings", keys: "Ctrl+,", category: "Navigation", ...shortcutText("zh-CN", "open-settings")! },
+      { id: "format-strikethrough", keys: "Ctrl+Shift+X", category: "Formatting", ...shortcutText("zh-CN", "format-strikethrough")! },
+    ]} />);
+    expect([...host.querySelectorAll("h2")].map((el) => el.textContent)).toEqual(["导航", "格式"]);
+    expect([...host.querySelectorAll('[data-shortcut="format-strikethrough"] kbd')].map((el) => el.textContent)).toEqual(["Ctrl", "Shift", "X"]);
+    expect(host.querySelectorAll('[data-slot="settings-section-card"]')).toHaveLength(2);
   });
 });

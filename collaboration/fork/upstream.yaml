@@ -15,11 +15,21 @@ evidence_commit: 779af8886caae1317b4de962082429867ab61503
 implementation_base_commit: 779af8886caae1317b4de962082429867ab61503
 base_divergence: none
 
-# 一期不交付而整块删除的上游代码（Desktop：Agent、Workflow、Huddle、Projects、DM、Terminal、
-# 发布链路与 sidecar 等，见 fork/verify/baseline-build.md 与 desktop-client.md；Mobile：Agent、
-# Workflow、Huddle、自建 Channel/DM、推送、年龄门禁等，见 mobile-client.md；REQ-21、V-SCN-65）。
+# 相对固定上游树当前缺失／已迁出的路径事实，不是裁减产品范围的授权。
+# REQ-24 要求恢复原版页面、布局、菜单、设置与交互，同时保留治理调用链。
+# 迁到 client-kit 的原实现由 Web/Desktop 共用；其余尚未恢复的路径仍是交付缺口，
+# 不得以本清单将 Agent、Workflow、Huddle、Projects、DM、Terminal 或设置排除出范围。
+# Mobile 的宿主边界仍按设计执行，不通过内嵌业务组件绕过。
 # 与实际一致由 `upstream_manifest.py diff collaboration --check` 核对。
 remove_paths:
+  # 原主题实现迁入 client-kit，由 Web/Desktop 共同消费；不是裁剪页面。
+  - desktop/src/app/BuzzThemeSurfaces.tsx
+  - desktop/src/shared/styles/globals/theme.css
+  - desktop/src/shared/styles/globals/typography.css
+  - desktop/src/shared/theme/adaptive-theme.ts
+  - desktop/src/shared/theme/theme-loader.ts
+  # 仍未恢复的原资料弹层继续列为交付缺口，不代表获得删除功能的授权。
+  - desktop/src/features/profile/ui/ProfilePopover.tsx
   - desktop/src/shared/ui/switch.tsx
   # Device typography preferences and their real control moved to the shared TypeScript package.
   - desktop/src/shared/lib/fontSizePreference.ts
@@ -310,7 +320,10 @@ remove_paths:
   - desktop/src/features/communities
   - desktop/src/features/community-members
   - desktop/src/features/custom-emoji
-  - desktop/src/features/forum
+  - desktop/src/features/forum/focusRefetchPolicy.test.mjs
+  - desktop/src/features/forum/hooks.ts
+  - desktop/src/features/forum/lib
+  - desktop/src/features/forum/ui
   - desktop/src/features/gifs
   - desktop/src/features/home/hiddenDmInboxAction.test.mjs
   - desktop/src/features/home/hiddenDmInboxAction.ts
