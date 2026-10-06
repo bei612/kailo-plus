@@ -207,6 +207,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
         automation::register_run(&governance).await?;
         agent_invocation::register(&governance).await?;
+        governance::task_control::register(&governance).await?;
         // 角色 relationship 以成员事实为准对账，并度量没有有效 admin 的 Tenant（DD-82）
         role_reconcile::spawn(
             std::sync::Arc::clone(&governance),

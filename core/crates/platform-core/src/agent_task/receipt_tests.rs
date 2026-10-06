@@ -74,6 +74,139 @@ async fn status(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, id: Uuid) -> Str
         .unwrap()
 }
 
+async fn invocation_without_birth(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant: Uuid,
+    session_status: &str,
+) -> Invocation {
+    let id = Uuid::new_v4();
+    let action = Uuid::new_v4();
+    let workflow = format!("receipt-cancel:{id}");
+    sqlx::query("insert into admission.action_execution
+        (id,operation_id,tenant_id,workspace_id,action_key,action_version,
+         initiator_principal_id,actor_principal_id,target_id,parameter_hash,
+         gate_state,dispatch_state,correlation_id,temporal_workflow_id)
+        select $2,gen_random_uuid(),a.tenant_id,a.workspace_id,a.action_key,a.action_version,
+         a.initiator_principal_id,a.actor_principal_id,a.target_id,a.parameter_hash,
+         a.gate_state,a.dispatch_state,gen_random_uuid(),$3
+        from admission.action_execution a join catalog.agent_invocation i on i.action_execution_id=a.id
+        where i.tenant_id=$1 and i.source_event_id=repeat('1',64)")
+        .bind(tenant).bind(action).bind(&workflow).execute(&mut **tx).await.unwrap();
+    sqlx::query(
+        "update catalog.agent_session set status=$2
+        where tenant_id=$1 and root_event_id=repeat('c',64) and runtime_thread_id is null",
+    )
+    .bind(tenant)
+    .bind(session_status)
+    .execute(&mut **tx)
+    .await
+    .unwrap();
+    sqlx::query("insert into catalog.agent_invocation
+        (id,tenant_id,workspace_id,root_event_id,source_event_id,installation_resource_id,
+         agent_version_asset_id,projection_generation,action_execution_id,workflow_id,status,cancel_pending)
+        select $2,s.tenant_id,s.workspace_id,s.root_event_id,repeat('e',64),s.installation_resource_id,
+          s.agent_version_asset_id,s.projection_generation,$3,$4,'CREATED',true
+        from catalog.agent_session s where s.tenant_id=$1 and s.root_event_id=repeat('c',64)")
+        .bind(tenant).bind(id).bind(action).bind(workflow).execute(&mut **tx).await.unwrap();
+    sqlx::query_as(LOAD)
+        .bind(id)
+        .fetch_one(&mut **tx)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
+async fn receipt_created_cancellation_does_not_require_a_birth_receipt() {
+    let (pool, _lock) = pool().await;
+    for session_status in ["STARTING", "UNKNOWN"] {
+        let mut tx = pool.begin().await.unwrap();
+        let tenant = fixture(&mut tx).await;
+        let mut row = invocation_without_birth(&mut tx, tenant, session_status).await;
+        assert!(row.runtime_thread_id.is_none());
+        let workspace = row.workspace_id;
+        row.workspace_id = Uuid::new_v4();
+        assert!(!cancel_before_dispatch_in_transaction(&pool, &mut tx, &row)
+            .await
+            .unwrap());
+        row.workspace_id = workspace;
+        assert!(cancel_before_dispatch_in_transaction(&pool, &mut tx, &row)
+            .await
+            .unwrap());
+        assert_eq!(status(&mut tx, row.id).await, "CANCELED");
+        let facts: (Option<String>, Option<String>, Option<String>) = sqlx::query_as(
+            "select runtime_turn_id,native_status,reply_event_id from catalog.agent_invocation where id=$1")
+            .bind(row.id).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(facts, (None, None, None));
+        let audit: Vec<String> =
+            sqlx::query_scalar("select result_code from audit.audit_event where tenant_id=$1")
+                .bind(tenant)
+                .fetch_all(&mut *tx)
+                .await
+                .unwrap();
+        assert_eq!(audit, ["CANCELED_BEFORE_MODEL_DISPATCH"]);
+        tx.rollback().await.unwrap();
+    }
+    cleanup_definition(&pool).await;
+}
+
+#[tokio::test]
+#[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
+async fn receipt_created_cancellation_rechecks_dispatch_and_trace_after_the_old_read() {
+    let (pool, _lock) = pool().await;
+    let mut tx = pool.begin().await.unwrap();
+    let tenant = fixture(&mut tx).await;
+    let row = invocation_without_birth(&mut tx, tenant, "UNKNOWN").await;
+    for dispatched in ["DISPATCHING", "UNKNOWN"] {
+        sqlx::query("update catalog.agent_invocation set status=$2 where id=$1")
+            .bind(row.id)
+            .bind(dispatched)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(!cancel_before_dispatch_in_transaction(&pool, &mut tx, &row)
+            .await
+            .unwrap());
+        assert_eq!(status(&mut tx, row.id).await, dispatched);
+    }
+    // A stale CREATED read may not erase independently committed trace evidence.
+    let traced = invocation(&mut tx, tenant).await;
+    sqlx::query("update admission.action_execution set temporal_workflow_id=$2 where id=$1")
+        .bind(traced.action_execution_id)
+        .bind(&traced.workflow_id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("update catalog.agent_invocation set cancel_pending=true where id=$1")
+        .bind(traced.id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("insert into projection.agent_model_trace(invocation_id,trace_id,span_id,operation_id,tenant_id,workspace_id,
+        gateway_principal_id,openmeter_customer_id,openmeter_namespace,subject_key,binding_version,meter_projection,invocation_meter_projection)
+        select i.id,replace(gen_random_uuid()::text,'-',''),repeat('a',16),a.operation_id,i.tenant_id,i.workspace_id,
+        b.gateway_principal_id,o.customer_id,o.namespace,o.subject_key_prefix||i.installation_resource_id,1,'[{\"key\":\"fixture\"}]',null
+        from catalog.agent_invocation i join admission.action_execution a on a.id=i.action_execution_id
+        join catalog.agent_model_binding b on b.installation_resource_id=i.installation_resource_id and b.projection_generation=i.projection_generation
+        join projection.openmeter_binding o on o.tenant_id=i.tenant_id where i.id=$1")
+        .bind(traced.id).execute(&mut *tx).await.unwrap();
+    assert!(
+        !cancel_before_dispatch_in_transaction(&pool, &mut tx, &traced)
+            .await
+            .unwrap()
+    );
+    assert_eq!(status(&mut tx, traced.id).await, "CREATED");
+    let audits: i64 =
+        sqlx::query_scalar("select count(*) from audit.audit_event where tenant_id=$1")
+            .bind(tenant)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    assert_eq!(audits, 0);
+    tx.rollback().await.unwrap();
+    cleanup_definition(&pool).await;
+}
+
 #[tokio::test]
 #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
 async fn receipt_not_sent_trace_scope_and_audit_are_checked_by_original_transaction() {

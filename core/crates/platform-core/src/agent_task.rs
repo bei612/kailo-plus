@@ -268,6 +268,18 @@ async fn advance_accepted(
         }
         invocation.cancel_pending = true;
     }
+    if invocation.cancel_pending && invocation.status == "CREATED" {
+        // CREATED 的旧读不能证明未派发：与 first_turn 共用 AE→Tenant→Invocation
+        // 锁序，重新查证无 turn/trace/usage 后才记取消，不伪造 native interrupted。
+        // 此证明不依赖 birth receipt 或仍 held；先收敛确定未派发的取消，
+        // 再由原 Capacity 释放确认结束 Activity，不能被未知 thread/start 挡住。
+        return match cancel_before_dispatch(&state, &invocation).await {
+            Ok(true) if holder.released => result(id, TaskStatus::Canceled, "NONE"),
+            Ok(true) => release_holder(&state, id, false, "CAPACITY_UNAVAILABLE").await,
+            Ok(false) => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+            Err(error) => unavailable(error),
+        };
+    }
     if invocation.runtime_thread_id.is_none() && state.agent_runtime.is_some() {
         let hash: Option<String> = match sqlx::query_scalar(
             "select config_hash from catalog.agent_runtime_projection
@@ -301,16 +313,6 @@ async fn advance_accepted(
         && matches!(invocation.status.as_str(), "DISPATCHING" | "UNKNOWN")
     {
         return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT");
-    }
-    if invocation.cancel_pending && invocation.status == "CREATED" {
-        // CREATED 的旧读不能证明未派发：与 first_turn 共用 AE→Tenant→Invocation
-        // 锁序，重新查证无 turn/trace/usage 后才记取消，不伪造 native interrupted。
-        return match cancel_before_dispatch(&state, &invocation).await {
-            Ok(true) if holder.released => result(id, TaskStatus::Canceled, "NONE"),
-            Ok(true) => release_holder(&state, id, false, "CAPACITY_UNAVAILABLE").await,
-            Ok(false) => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
-            Err(error) => unavailable(error),
-        };
     }
     let Some(runtime) = state.agent_runtime.as_ref() else {
         return result(id, TaskStatus::Running, "RUNTIME_UNAVAILABLE");
@@ -575,7 +577,19 @@ async fn cancel_before_dispatch(
     invocation: &Invocation,
 ) -> Result<bool, sqlx::Error> {
     let mut tx = state.pool.begin().await?;
-    let ae = crate::governance::lock_execution(&mut tx, invocation.action_execution_id).await?;
+    if !cancel_before_dispatch_in_transaction(&state.pool, &mut tx, invocation).await? {
+        return Ok(false);
+    }
+    tx.commit().await?;
+    Ok(true)
+}
+
+async fn cancel_before_dispatch_in_transaction(
+    pool: &sqlx::PgPool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    invocation: &Invocation,
+) -> Result<bool, sqlx::Error> {
+    let ae = crate::governance::lock_execution(tx, invocation.action_execution_id).await?;
     if ae.tenant_id != invocation.tenant_id
         || ae.workspace_id != Some(invocation.workspace_id)
         || ae.temporal_workflow_id.as_deref() != Some(invocation.workflow_id.as_str())
@@ -587,7 +601,7 @@ async fn cancel_before_dispatch(
     let tenant: Option<Uuid> =
         sqlx::query_scalar("select id from identity.tenant where id=$1 for no key update")
             .bind(ae.tenant_id)
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&mut **tx)
             .await?;
     if tenant != Some(invocation.tenant_id) {
         return Ok(false);
@@ -611,7 +625,7 @@ async fn cancel_before_dispatch(
     .bind(ae.operation_id)
     .bind(&ae.action_key)
     .bind(ae.action_version)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?;
     if undispatched != Some(true) {
         return Ok(false);
@@ -622,14 +636,14 @@ async fn cancel_before_dispatch(
            and native_status is null and reply_event_id is null",
     )
     .bind(invocation.id)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     if changed.rows_affected() != 1 {
         return Ok(false);
     }
-    turn_audit(
-        state,
-        &mut tx,
+    turn_audit_in_pool(
+        pool,
+        tx,
         &ae,
         invocation.id,
         (
@@ -647,7 +661,6 @@ async fn cancel_before_dispatch(
         ],
     )
     .await?;
-    tx.commit().await?;
     Ok(true)
 }
 

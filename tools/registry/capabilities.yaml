@@ -133,6 +133,8 @@ capabilities:
   - task.cancel.workspace.member.add.v1
   - task.cancel.workspace.member.revoke.v1
   - task.cancel.tenant.member.revoke.v1
+  - task.cancel.agent.invoke.v1
+  - task.cancel.automation.run.v1
   - task.rerun.workspace.create.v1
   - task.rerun.workspace.member.add.v1
   - task.rerun.workspace.member.revoke.v1

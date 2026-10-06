@@ -4042,3 +4042,110 @@ automationRuns 路径读取，独立 observe-task-57ad.log 与原库终态读回
 `07eb721b46adb573bc34b6c0ce2f50d5333b8c588e8964bd3514c0fc2129d263`。
 此处追加的是完成后的验证回执，不改变已验证源码；只走文档快路径。
 检查通过不代表部署完成，也不证明旧丢失回执已经恢复或新协作轮次通过。
+
+## 2026-10-05 未派发取消先于 Session birth 观察（独立增量）
+
+固定基准为 `20dbd472b8baa8ff775322c3c72e59f0c1f7933a`，只改
+`agent_task.rs`、原 `agent_task/receipt_tests.rs` 与本记录。没有新契约、
+迁移、配置、权限、取消 Action 或 Workflow；正式 release 工作树未改。
+
+### 四步影响与兼容性
+
+1. 沿设计 06 的取消收尾与 UNKNOWN 不重发规则，以及设计 17 的原生
+   运行边界。`observe_birth` 只观察原 start；STARTING/UNKNOWN 且原回执
+   不可得时会返回不明结果，不能猜 thread ID 或发第二次 start。
+2. 已证实的控制流缺陷是 `advance_accepted` 先做 birth 观察再调用已有
+   未派发取消；前者返回不明时，已满足条件的取消永远到不了原 writer。
+   现只把该块移至持久化 `cancel_pending` 之后、birth 观察之前。原
+   AE→Tenant→Invocation 锁序重新核对 CREATED、取消位与无 turn/native
+   status/reply/trace/同 Operation usage，旧读不作为未派发证明。
+3. 取消 writer 的事务体复用为 `cancel_before_dispatch_in_transaction`，
+   原入口仍只在成功后提交，失败仍回滚；POST_MESSAGE 的已有调用不改。
+   Session、native ID 与计量事实均不伪造。DISPATCHING/UNKNOWN 或有 trace
+   的执行不能走零派发取消；三端仍消费原 TaskStatus 与等待原因。
+4. 源码核对确认该 cleanup 不要求 `holder.held=true`：已 RELEASED 才直接
+   返回 CANCELED，否则调用原 `release_holder`/`Capacity::begin_release`。
+   后者再次核查无 turn/trace/Operation usage；已有匹配的持久 Activity
+   terminal_event_id 时可直接 RELEASED，否则仅 RELEASING，不归还 units。
+   释放尚未确认仍等待，不强制释放原 holder。
+
+### 实际定向验证与反例
+
+原 SDK `kailo-agent-receipt-xvkujx` 使用固定镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实查 4 CPU、8 GiB 内存及相同 memory+swap、UID 1000，Cargo 并行 16。
+执行输入仅由固定基准归档 Core、契约、原路径依赖及 proto/registry，再叠
+本批两源；`--offline --locked`、SQLX_OFFLINE 使用原 Data 缓存。Cargo.lock
+与基准逐字相同，SHA256 为
+`63fcc45ed95cf0a944bf27b86ee04836159773eee40bec0238e9f9ca23e43be7`。
+
+复用原隔离 `runtime_receipt_xvkujx`，82 条迁移、最高
+`20261005019000`，不是业务库。先执行原 `receipt_ -- --ignored --nocapture`，
+7/7 通过、退出 0（句柄 83161）；其中两项新增用例使用真实取消事务体与
+原 fixture，验证 STARTING/UNKNOWN 无 birth ID 可记未派发取消，以及旧
+CREATED 读面对新的 DISPATCHING/UNKNOWN/trace 必须拒绝。没有实际模型调用。
+
+仅在执行副本移除 writer 的 trace 排除判据后，原两项新增目标实际
+1 passed/1 failed、退出 101（21106）：更新被原数据库取消证据守卫以
+23514 拒绝，不能冒称已成功取消。apply_patch 逐字恢复后两源 cmp 0；
+同 7 项原目标全部通过，随后原 `clippy --all-targets -- -D warnings`
+通过，恢复组合退出 0（20899）。最终隔离库 Invocation、自有 Tenant 与
+fixture action definition 均为 0；没有删审计或绕过数据库约束。
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-agent-cancel-before-birth-20261005.Uvydm1/`。
+
+- `cancel-targeted.log` SHA256：
+  `d195ec57d1277ef0bdf053fd82040aaf8c150bf236973f3052e869d1ed038d64`。
+- `cancel-mutation.log` SHA256：
+  `4a5f8886aeb3504bcb411b471bf3309fba7233b1c037785a7ef5d4540bf549ea`。
+- `cancel-restored.log` SHA256：
+  `94710a2cb1c509fecb8cab11759f20dd9cad0cf3d5f80ad1c7e0d0d26e9f75bf`。
+
+覆盖边界：这些 PG 用例验证真实 writer，而非 `advance_accepted` 的整个
+HTTP→Temporal→Supervisor 控制流；将取消块移回 birth 后，writer 用例
+仍可能通过，顺序修正由固定源码差异复核。held=false 的释放合法性此次
+仅核对原消费者，没有联合 native Activity 实验。本批未跑 full、产品
+构建或部署，不证明两条旧 `cancel_pending=false` 任务已经恢复，不重放旧
+UNKNOWN。提交、发布及线上新取消验收由主线另行记录。
+
+## 2026-10-05 AgentTask 本人取消治理入口（独立取消批）
+
+基准 `20dbd472b8baa8ff775322c3c72e59f0c1f7933a`。依据 DD-84 与设计
+06 §8，复用已有任务详情、Action submit、取消意图及原 Temporal history
+消费；没有新增 Workflow、权限、委托、计量、迁移或 AgentTask rerun。
+
+1. 原 `control_original` 必须有 kind、`cancel_target` 固定 ComponentTask，
+   会拒绝合法 AgentTask。现仅对确切 `agent.invoke@1`、`automation.run@1`
+   的原 AgentTask 定义允许空 kind；其他既有组件控制保持原类型与 kind。
+2. 原 Resource 控制还会把控制目标 AE ID 当作 Resource。现从同 Tenant、
+   本人原 AE 解析真实 Installation/Automation，核验原生目录与授权投影，
+   再走原 fresh execute Check、Workspace 状态与成员准入。控制目录在原
+   两个动态定义登记之后创建，沿用源定义 scope/permission，不覆盖或复活旧行。
+3. WorkflowRef 必须匹配原 AE、Tenant、Workspace、Operation、type/kind，
+   原 run 必须属于 Temporal 返回的 first/current 链，才进入原取消派发。
+   先持久化 UNKNOWN 与 first run/control ID，再 RequestCancel 并核 history；
+   RPC 成功仍不等于原任务终态，不手工释放 Capacity，不重放原模型调用。
+4. 共享任务详情原 `cancelActionKey` 消费不改；未登记的 rerun 继续关闭。
+   本入口不读取第三方日志，不修改业务库或 runtime RPC 回执保存规则。
+
+实现后原 registry 生成及 `--check` 通过。固定原 4CPU/8GiB SDK、Cargo16，
+隔离 `runtime_receipt_xvkujx` 的 82 条迁移上执行
+`cargo test -p platform-core --bin platform-core task_control::tests -- --include-ignored --nocapture`：
+3/3 通过；其中原生产注册、control_original 与 cancel_projection 直接消费
+真实 PG 事务，覆盖幂等登记、两种动作、错人/租户/权限/Workspace/Operation/
+Workflow 与未开放 rerun。run-chain 检查另覆盖 CAN 和旧链拒绝。
+
+SDK 执行副本恢复旧 kind 守卫并移除 chain 比较后，原目标 1 passed/2 failed，
+退出 101；两源 apply_patch 逐字恢复、cmp 0 后，同 3 项与原
+`cargo clippy -p platform-core --all-targets -- -D warnings` 组合退出 0（16349）。
+原件在 `codex-agent-task-cancel-20261005.nqwoaX/`：`mutation.log` SHA256
+`7cdc51b9cffcb028cb619819f71517fe76b293ee74c4021c46631ad3898e0e13`；
+`final-targeted.log` SHA256
+`052670003e62a908bf90eaa1c47516fc925a0c2314459a55bf4a58b73703cd5f`。
+
+首次执行的镜像 PATH、Buzz 路径依赖和 ExtMcp proto 镜像输入遗漏分别产生
+127/1/101，原件保留；补原固定源输入后通过，没有安装替代工具或删除门禁。
+这些验证不包含真实 OIDC→BFF→Temporal cancel E2E，不证明旧两条 UNKNOWN
+已经收敛；22:16 只读快照仍是两条 UNKNOWN lease 占池 2/2。独立取消批
+此后与上节 before-birth 修复合并，再走集中 full 和发布，尚未部署。

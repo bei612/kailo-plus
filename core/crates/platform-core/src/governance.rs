@@ -58,6 +58,9 @@ pub(crate) mod delegation;
 #[path = "agent_installation_permission.rs"]
 pub(crate) mod installation_permission;
 
+#[path = "task_control.rs"]
+pub(crate) mod task_control;
+
 /// Worker 注册的审批 Workflow 类型名，两侧逐字相同。
 pub const APPROVAL_WORKFLOW_TYPE: &str = "ApprovalWorkflow";
 /// 审批 workflow ID 的类型段。它不是 ComponentTaskWorkflow 的 kind，只占
@@ -2036,7 +2039,9 @@ async fn control_original(
     };
     if control.action_key != expected
         || source.execution_mode != "TEMPORAL"
-        || source.workflow_kind.is_none()
+        || (source.workflow_kind.is_none()
+            && !(sem == Semantic::TaskCancel
+                && task_control::agent_source(conn, &original, &source).await?))
         || control.tenant_rule != source.tenant_rule
         || control.workspace_rule != source.workspace_rule
         || control.permission != source.permission
@@ -2137,6 +2142,7 @@ impl Governance {
                 | installation_permission::READ_REVOKE
         );
         let is_route_create = def.action_key == "llm_route.create";
+        let is_agent_cancel = task_control::is_agent_cancel(&def.action_key);
         let declared_workspace =
             def.workspace_rule == "DECLARED_WORKSPACE" && target.workspace_id.is_some();
         let permission_object_type = if declared_workspace {
@@ -2219,6 +2225,7 @@ impl Governance {
         if def.workspace_rule == "WORKSPACE_REQUIRED"
             || is_installation_permission
             || declared_workspace
+            || is_agent_cancel
             || def.action_key.starts_with("automation.")
             || matches!(
                 def.action_key.as_str(),
@@ -2259,7 +2266,9 @@ impl Governance {
                 }
             },
             "resource" => {
-                if def.action_key.starts_with("automation.") {
+                if is_agent_cancel {
+                    task_control::permission_resource(self, actor, def, target).await?
+                } else if def.action_key.starts_with("automation.") {
                     let mut conn = self.pool.acquire().await?;
                     let row = crate::automation::management_resource(
                         &mut conn,
@@ -2459,6 +2468,7 @@ impl Governance {
         //   不要求先加入 Workspace 的 Workspace admin。
         // 本切片 Workspace 动作检查的正是 workspace manage，Check 为假时不设例外。
         if (is_installation_permission
+            || is_agent_cancel
             || is_memory
             || is_route_create
             || is_installation_create
@@ -2475,6 +2485,7 @@ impl Governance {
         }
         if def.workspace_rule == "WORKSPACE_REQUIRED"
             || declared_workspace
+            || is_agent_cancel
             || def.action_key.starts_with("automation.")
             || matches!(
                 def.action_key.as_str(),
@@ -2493,6 +2504,7 @@ impl Governance {
                 && permission_object_type == "workspace"
                 && checked.allowed;
             if (is_memory
+                || is_agent_cancel
                 || is_route_create
                 || is_installation_create
                 || def.action_key.starts_with("automation.")
@@ -2541,6 +2553,7 @@ impl Governance {
                         .await
                         .map_err(|e| Refusal::Unavailable(e.to_string()))?;
                     if (is_memory
+                        || is_agent_cancel
                         || is_route_create
                         || is_installation_create
                         || def.action_key.starts_with("automation.")
@@ -5186,23 +5199,17 @@ impl Governance {
         }
         let workflow_id = original
             .temporal_workflow_id
+            .clone()
             .ok_or(Refusal::Conflict(ReasonCode::TargetStateConflict))?;
         if original.gate_state != "ALLOWED" {
             return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
         }
-        let ref_state: Option<String> = sqlx::query_scalar(
-            "select projection_state from projection.workflow_ref
-             where workflow_id = $1 and tenant_id = $2 and action_execution_id = $3
-               and workflow_type = $4 and kind = $5",
-        )
-        .bind(&workflow_id)
-        .bind(tenant)
-        .bind(original.id)
-        .bind(component_task::WORKFLOW_TYPE)
-        .bind(source.workflow_kind)
-        .fetch_optional(&mut *conn)
-        .await?;
-        if ref_state.as_deref() != Some("RUNNING") {
+        let Some((ref_state, reference_run)) =
+            task_control::cancel_projection(conn, &original, &source).await?
+        else {
+            return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
+        };
+        if ref_state != "RUNNING" {
             return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
         }
         let observed = self
@@ -5215,6 +5222,13 @@ impl Governance {
             return Err(Refusal::Unavailable(
                 "Temporal 未返回可固定的当前与首次 run ID".into(),
             ));
+        }
+        if !task_control::same_execution_chain(
+            reference_run.as_deref(),
+            &observed.run_id,
+            &observed.first_run_id,
+        ) {
+            return Err(Refusal::Conflict(ReasonCode::TargetStateConflict));
         }
         match observed.state {
             ObservedState::Open => Ok((workflow_id, observed.run_id, observed.first_run_id)),
