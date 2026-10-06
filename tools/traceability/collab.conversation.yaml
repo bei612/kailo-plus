@@ -33,5 +33,9 @@ runtime:
   workflow_kinds: [CONVERSATION_PROJECTION]
 
 release:
-  artifacts: []
+  artifacts:
+    - name: core
+      digest: sha256:d81d3c11d234ffd54323c3696517cb4ae3fa68e1cee9e8f48f499c8fa2166fdb
+    - name: worker
+      digest: sha256:e798bc9830e99094a5037f2958c47ec4df3c24d22cb7f466669e6997a0fa886d
   gate: blocked_until_seams_closed

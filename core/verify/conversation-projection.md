@@ -173,3 +173,105 @@ Core user_state/web_transport/publish_reconcile）合计 +592/-154 行；额外�
 本节不声明已部署、完整原生客户端验收或通过本批全量门禁。部署仍需先发布上述
 Relay 接缝二进制，再通过既有 `BUZZ_MEMBER_EVENT_KINDS` 投递 41010/41012；仅改
 运行配置不能纠正旧二进制。第 07 章 §1 已登记运行期与编译期区别。
+
+## 客户端批次：原私聊菜单、隐藏恢复与实际静音消费
+
+本批沿用 DD-40 的同一 CollaborationUserState CAS 以及 DD-80 的参与者会话绑定。
+Web/Desktop 共用原 `ChannelGroupSection`、`ChannelRow`、`ChannelContextMenuItems`，
+收藏/静音写已生成的 `ConversationPreferenceRequest`；不创建另一套菜单、偏好表
+或隐藏状态。影响链为原菜单 → Core 会话偏好 → 原通知/Inbox 计数消费者，以及
+原关闭按钮/重新选人 → 本人签署原 DM_HIDE/DM_OPEN → Relay 原 NIP-DV 快照。
+请求字段和持久化格式未增加，三端仍可读同一 Core CAS；Mobile 未生成组件宿主入口。
+
+Web hide/reopen 使用 BFF 本人 SERVER 签署，冻结同一 Idempotency-Key；Desktop
+使用既有本机 CLIENT 签名与 Relay publisher，冻结原事件，恢复不重开参与者集合。
+Native 快照同时验证 Relay 签名与本人 p/d 标签，身份/Community 切换清理宿主，
+迟到操作不能转到另一身份。失败不回退 localStorage 私聊偏好。UNKNOWN 保留原
+事件或请求、显示中性状态，不乐观隐藏，不导航；确定快照已隐藏当前会话才回
+原 Home/Inbox，隐藏其他会话不跳转。偏好丢回执先读取当前 Core CAS，版本推进
+只展示当前权威状态并解除旧请求，不以新版本覆盖另一端修改，也不伪称旧操作成功。
+
+Desktop 的原消息/线程通知和 Inbox badge 已消费 Core conversation ID → native
+channel ID 的静音映射；旧本地私聊静音不再参与决策或写入，普通频道行为不变。
+目录/偏好失败、缺失或刷新中不当成未静音，只有 ACTIVE 会话参与映射。保留原版
+mention/broadcast 优先于 channel mute 的规则，不擅自改变提醒语义。Web 的现有
+页面标题未读提醒改读 conversationPreferences，并随同一偏好变更重新读取。
+Web Inbox 当前只枚举 Workspace，尚无私聊 Inbox；未发现 Web OS Notification
+消费者，本批不声称这两项或完整原 DM 头像/未读展示已恢复。
+
+只读源码复核：Buzz `779af8886caae1317b4de962082429867ab61503`，
+`/volumes/kailo/.references/buzz/desktop/src/features/sidebar/ui/SidebarSection.tsx`
+的 `SidebarSection`；`/volumes/kailo/.references/buzz/desktop/src/features/sidebar/ui/ChannelContextMenu.tsx`
+的 `ChannelContextMenuItems`；`/volumes/kailo/.references/buzz/desktop/src/app/AppShell.tsx`
+的 `handleHideDm`；`/volumes/kailo/.references/buzz/desktop/src/features/notifications/lib/shouldNotify.ts`
+的 `shouldNotifyForEvent`。
+新接缝只改变授权数据来源和宿主发布方式，不复制消息正文或改变 Relay 内容权威。
+
+既有 4 CPU/8 GiB SDK 的实际集中检查：
+
+```text
+./node_modules/.bin/tsc --noEmit -p tsconfig.test.json
+exit 0
+./node_modules/.bin/vitest run test/new-message.test.tsx test/pages.test.tsx --pool=threads --maxWorkers=1 --no-file-parallelism
+test/new-message.test.tsx (11 tests)
+test/pages.test.tsx (223 tests)
+Test Files 2 passed (2)
+Tests 234 passed (234)
+exit 0
+```
+
+其中菜单真实点击检查 PUT 目标、CAS、静音图标、关闭及确定后导航；其余检查覆盖
+Core 静音取代旧本地值、UNKNOWN 冻结发布、偏好丢 ACK 的版本收敛、原选人键盘操作
+和隐藏会话恢复。SDK-only 删除 p/d viewer 校验后原用例真实报错
+`expected [Function] to throw an error`，1 failed/10 skipped、退出 1；恢复正式
+源且 cmp 退出 0 后，以上 234 项全部通过。初次正式用例 10 passed/1 failed 是
+期望遗漏原行附加 name 字段，已修正断言，仍核验完整 Conversation binding 字段。
+早期两个 worker 启动超时均是 no tests，不计入通过；一次使用 SDK 无 PATH 的
+pnpm 退出 127，随后直接用已安装 `.bin`，没有新安装工具或重复构建镜像。
+
+原始输出位于受控数据目录
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/dm-client-restored.log`
+与同目录 `dm-visibility-mutation.log`。同批前端 agent 已实际运行 Web 类型检查、
+五文件 33 项检查、Desktop 类型检查均通过；之后追加的 host 导航和失败缓存分支
+由后续合批类型检查覆盖，不能混称前一轮已验证这些增量。
+
+本批未启动全局构建、未打安装包、未部署、未替 root 提交共享工作树；尚不能据此
+声称真实 Web/BFF/Relay 网络隐藏恢复、原生通知弹窗或发布门禁已经验收。
+
+### 2026-10-06：投递前能力注册表遗漏与原入口拒绝
+
+本轮 Core/Worker 原发布输入固定为 `0c655f40e7711541eea49347b398886a37a0c4b7`。
+原 release 已构建并推送 Core `sha256:d81d3c11d234ffd54323c3696517cb4ae3fa68e1cee9e8f48f499c8fa2166fdb`
+与 Worker `sha256:e798bc9830e99094a5037f2958c47ec4df3c24d22cb7f466669e6997a0fa886d`，
+但投递前原 `start-core.sh --no-build` 的注册表检查拒绝，因此没有部署这两份镜像。
+该失败不是业务鉴权放宽的理由，也不能通过跳过原检查启动。
+
+固定 release clone 的 `.env/secrets/data` 安全链接到正式同一输入；两目标服务经
+原 Compose 解析后，除不执行的 build 路径外与 main 当前配置逐字段相同，现有
+容器环境值没有变化，OpenMeter secret 解析到同一真实文件。数据库只读返回
+`90|20261006190000|t`；未重复执行迁移。备份原件 `core-before-restoration.dump`
+为 682785 bytes、mode 600，没有输出其内容或连接串。
+
+第一次 clone 调用因缺设计目录，在取一次性 OpenBao 投递前报告
+`IndexError: list index out of range`；按原 CI 方法导出该 commit 固定设计
+`3553eba86e566455ece3547f9168fa4b6124b757` 后，第二次原命令仍退出 1：
+
+```text
+tools/registry/capabilities.yaml 与追溯记录不一致；先生成并入库，再构建
+```
+
+用同一固定 traceability、覆盖矩阵与原 `tools/gen-registry.py` 在隔离元数据
+副本生成后，差异明确只有 `collab.channel.message` 的既有路由
+`/api/v1/workspaces/{workspace_id}/channel` 漏入生成物；相对 `064cd615a` 的
+注册表同样仅新增这一行。不新增能力、权限、资源或后端入口。
+`core/crates/platform-core/src/capability_registry.rs::registry` 经 `include_str!`
+在编译期嵌入该表，所以仅改 Compose/部署文件不能让旧镜像补上路由。
+原生成输出已同步主树，原 `gen-registry.py --check` 实际返回
+`22 条能力，20 个封闭 workflow kind 参与校验`、退出 0；主线必须提交该真实输入
+并经原 release 重发，不能把已有镜像记为包含修复。
+
+原件位于 `/volumes/data/kailo/tmp/buzz-restoration-release-20261006.QMJMtJ/`：
+`core-deploy-fixed-clone.log`、`core-deploy-pinned-design.log` 与
+`registry-check.rMYr5Y/tools/registry/capabilities.yaml`。两次 start 均在获取
+wrapped secret、重建 Core 前退出；没有重启 Core、Worker 或其他服务，没有
+修改业务身份、容量、权限与数据。本段不声称新镜像健康或业务验收完成。

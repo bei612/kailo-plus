@@ -67,6 +67,7 @@ capabilities:
   routes:
   - /api/v1/workspaces/{workspace_id}/messages
   - /api/v1/workspaces/{workspace_id}/stream
+  - /api/v1/workspaces/{workspace_id}/channel
   actions:
   - workspace.message.publish
   tools: []
