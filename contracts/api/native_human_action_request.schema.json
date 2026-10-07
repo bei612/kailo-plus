@@ -8,7 +8,24 @@
   "properties":{
     "bindingId":{"type":"string","format":"uuid"},
     "command":{"$ref":"action_command.schema.json"},
-    "idempotencyKey":{"type":"string","format":"uuid"}
+    "idempotencyKey":{"type":"string","format":"uuid"},
+    "resolveResource":{
+      "title":"NativeHumanResourceQuery",
+      "description":"Read the already-registered exact native object for the verified HUMAN and action. This never creates a Resource or native object.",
+      "type":"object","additionalProperties":false,
+      "required":["actionKey","actionVersion","nativeType","nativeRef"],
+      "properties":{
+        "workspaceId":{"type":"string","format":"uuid"},
+        "actionKey":{"type":"string","minLength":1},
+        "actionVersion":{"type":"integer","minimum":1},
+        "nativeType":{"type":"string","minLength":1},
+        "nativeRef":{"type":"string","minLength":1}
+      }
+    }
   },
-  "oneOf":[{"required":["command"],"not":{"required":["idempotencyKey"]}},{"required":["idempotencyKey"],"not":{"required":["command"]}}]
+  "oneOf":[
+    {"required":["command"],"not":{"anyOf":[{"required":["idempotencyKey"]},{"required":["resolveResource"]}]}},
+    {"required":["idempotencyKey"],"not":{"anyOf":[{"required":["command"]},{"required":["resolveResource"]}]}},
+    {"required":["resolveResource"],"not":{"anyOf":[{"required":["command"]},{"required":["idempotencyKey"]}]}}
+  ]
 }

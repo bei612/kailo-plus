@@ -12,11 +12,11 @@ import { describe, expect, it, vi } from "vitest";
 import { InboxPane, inboxEvents } from "./InboxPane";
 import { inboxWindowEvents } from "./inbox-events";
 
-const api=vi.hoisted(()=>({workspaces:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),write:vi.fn(),privateChannels:[] as ConversationView[]}));
+const api=vi.hoisted(()=>({workspaces:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),write:vi.fn(),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
 const readAt=()=>null;
-vi.mock("@client-kit/platform/react/use-inbox-state",async(importOriginal)=>({...await importOriginal<typeof import("@client-kit/platform/react/use-inbox-state")>(),useInboxState:()=>({state:{},failed:false,unknown:false,pending:false,visibleChannels:new Set(["workspace-a",...api.privateChannels.map(item=>item.channelId)]),conversations:api.privateChannels,workspaceChannels:new Set(["workspace-a"]),readAt,write:api.write,refresh:vi.fn()})}));
-vi.mock("@/platform/bff-client",()=>({bff:api,openStream:()=>()=>{}}));
-vi.mock("./ChannelPane",()=>({Composer:()=>null,ChannelPane:()=>null}));
+vi.mock("@client-kit/platform/react/use-inbox-state",async(importOriginal)=>({...await importOriginal<typeof import("@client-kit/platform/react/use-inbox-state")>(),useInboxState:()=>({state:{},failed:api.readFailed,unknown:api.readUnknown,pending:false,visibleChannels:new Set(["workspace-a",...api.privateChannels.map(item=>item.channelId)]),conversations:api.privateChannels,workspaceChannels:new Set(["workspace-a"]),readAt,write:api.write,refresh:vi.fn()})}));
+vi.mock("@/platform/bff-client",async(importOriginal)=>({...await importOriginal<typeof import("@/platform/bff-client")>(),bff:api,openStream:()=>()=>{}}));
+vi.mock("./ChannelPane",async(importOriginal)=>({...await importOriginal<typeof import("./ChannelPane")>(),Composer:()=>null,ChannelPane:()=>null}));
 
 const event = {
   id: "a".repeat(64),
@@ -26,6 +26,60 @@ const event = {
   content: "message",
   tags: [["h", "workspace-a"]],
 };
+
+describe("Inbox uses the original shared HomeLoadingState at the real read boundary", () => {
+  it.each(["empty", "message", "failure", "read-failure", "unknown"] as const)(
+    "replaces the full original loading surface with %s, never a false loading terminal",
+    async (outcome) => {
+      (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+      setLocale("en"); localStorage.clear(); sessionStorage.clear();
+      vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+      vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+      const workspaces = outcome === "message" ? [{ id: "workspace-a", name: "Channel", isMember: true }] : [];
+      let finish!: (value: typeof workspaces) => void;
+      let fail!: (reason: Error) => void;
+      api.workspaces.mockReset().mockResolvedValue(workspaces).mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject; }));
+      api.privateChannels = []; api.conversations.mockResolvedValue({ items: [] });
+      api.readFailed = false; api.readUnknown = false;
+      const self = "c".repeat(64);
+      api.members.mockResolvedValue([{ principalId: "human", displayName: "Me", pubkeys: [self], state: "ACTIVE" }]);
+      api.agentInstallations.mockResolvedValue({ installations: [] });
+      api.workspaceMessages.mockResolvedValue({ events: [
+        { ...event, tags: [...event.tags, ["p", self]] },
+        { ...event, id: "d".repeat(64), kind: 39006, tags: [...event.tags, ["d", "workspace-a:head"]], content: JSON.stringify({ has_more: false, next_cursor: null }) },
+      ] });
+      const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+      const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+      const render = () => act(async () => root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={vi.fn()} /></TooltipProvider></QueryClientProvider></PlatformProvider>));
+      try {
+        await render();
+        const columns = host.querySelector('[class*="lg:grid-cols-"]');
+        expect(columns?.children).toHaveLength(2);
+        expect(columns?.children[0]?.querySelectorAll(".h-9.w-9.rounded-full")).toHaveLength(5);
+        expect(columns?.children[1]?.querySelectorAll("article")).toHaveLength(3);
+        expect(columns?.children[1]?.querySelector(".backdrop-blur-md")).not.toBeNull();
+        expect(host.querySelectorAll(".t-skel-bar").length).toBeGreaterThan(0);
+        expect(host.querySelector("input,textarea,button")).toBeNull();
+        if (outcome === "failure") await act(async () => fail(new Error("Directory unavailable")));
+        else if (outcome === "read-failure" || outcome === "unknown") {
+          api.readFailed = outcome === "read-failure"; api.readUnknown = outcome === "unknown";
+          await render();
+        } else await act(async () => finish(workspaces));
+        await vi.waitFor(() => expect(host.querySelector(".t-skel-bar")).toBeNull());
+        if (outcome === "message") expect(host.querySelector(`[data-testid="home-inbox-item-${event.id}"]`)).not.toBeNull();
+        else if (outcome === "empty") expect(host.querySelector('[data-testid="home-inbox"]')).not.toBeNull();
+        else {
+          expect(host.querySelector('[role="status"]')).not.toBeNull();
+          expect(host.querySelector("button")).not.toBeNull();
+          expect(host.querySelector('[data-testid="home-inbox"]')).toBeNull();
+        }
+      } finally {
+        await act(async () => root.unmount()); cache.clear(); host.remove();
+        api.readFailed = false; api.readUnknown = false; vi.unstubAllGlobals();
+      }
+    },
+  );
+});
 
 describe("Web Inbox's actual BFF page scope consumer", () => {
   it("retains only the exact admitted Workspace identity", () => {

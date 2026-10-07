@@ -88,6 +88,7 @@
 //     final nativeCommunityFacts = nativeCommunityFactsFromJson(jsonString);
 //     final nativeHumanActionRequest = nativeHumanActionRequestFromJson(jsonString);
 //     final nativeHumanActionResult = nativeHumanActionResultFromJson(jsonString);
+//     final nativeHumanResourceResult = nativeHumanResourceResultFromJson(jsonString);
 //     final ownAuditEntry = ownAuditEntryFromJson(jsonString);
 //     final platformInfo = platformInfoFromJson(jsonString);
 //     final platformTenantPage = platformTenantPageFromJson(jsonString);
@@ -747,6 +748,12 @@ NativeHumanActionResult nativeHumanActionResultFromJson(String str) =>
     NativeHumanActionResult.fromJson(json.decode(str));
 
 String nativeHumanActionResultToJson(NativeHumanActionResult data) =>
+    json.encode(data.toJson());
+
+NativeHumanResourceResult nativeHumanResourceResultFromJson(String str) =>
+    NativeHumanResourceResult.fromJson(json.decode(str));
+
+String nativeHumanResourceResultToJson(NativeHumanResourceResult data) =>
     json.encode(data.toJson());
 
 OwnAuditEntry ownAuditEntryFromJson(String str) =>
@@ -2048,11 +2055,15 @@ class AdapterExecutionReference {
 ///Core 的套件报告。
 class AdapterExecutionResponse {
   final ReferenceElement? contentReference;
+
+  ///来源 citation 的 typed 槽；与固定结果 schema 中 citations 逐项一致。它不是源正文读取证明，打开来源时重新授权。
+  final List<ReferenceElement>? contentReferences;
   final ExecutionClass execution;
   final String? resultJson;
 
   AdapterExecutionResponse({
     this.contentReference,
+    this.contentReferences,
     required this.execution,
     this.resultJson,
   });
@@ -2062,12 +2073,22 @@ class AdapterExecutionResponse {
         contentReference: json["contentReference"] == null
             ? null
             : ReferenceElement.fromJson(json["contentReference"]),
+        contentReferences: json["contentReferences"] == null
+            ? null
+            : List<ReferenceElement>.from(
+                json["contentReferences"]!.map(
+                  (x) => ReferenceElement.fromJson(x),
+                ),
+              ),
         execution: ExecutionClass.fromJson(json["execution"]),
         resultJson: json["resultJson"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "contentReference": contentReference?.toJson(),
+    "contentReferences": contentReferences == null
+        ? null
+        : List<dynamic>.from(contentReferences!.map((x) => x.toJson())),
     "execution": execution.toJson(),
     "resultJson": resultJson,
   });
@@ -9550,10 +9571,15 @@ class NativeHumanActionRequest {
   final CommandClass? command;
   final String? idempotencyKey;
 
+  ///Read the already-registered exact native object for the verified HUMAN and action. This
+  ///never creates a Resource or native object.
+  final NativeHumanResourceQuery? resolveResource;
+
   NativeHumanActionRequest({
     required this.bindingId,
     this.command,
     this.idempotencyKey,
+    this.resolveResource,
   });
 
   factory NativeHumanActionRequest.fromJson(Map<String, dynamic> json) =>
@@ -9563,12 +9589,16 @@ class NativeHumanActionRequest {
             ? null
             : CommandClass.fromJson(json["command"]),
         idempotencyKey: json["idempotencyKey"],
+        resolveResource: json["resolveResource"] == null
+            ? null
+            : NativeHumanResourceQuery.fromJson(json["resolveResource"]),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "bindingId": bindingId,
     "command": command?.toJson(),
     "idempotencyKey": idempotencyKey,
+    "resolveResource": resolveResource?.toJson(),
   });
 }
 
@@ -9850,6 +9880,41 @@ class CommandReceiverResource {
   Map<String, dynamic> toJson() => _stripNulls({"id": id, "version": version});
 }
 
+///Read the already-registered exact native object for the verified HUMAN and action. This
+///never creates a Resource or native object.
+class NativeHumanResourceQuery {
+  final String actionKey;
+  final int actionVersion;
+  final String nativeRef;
+  final String nativeType;
+  final String? workspaceId;
+
+  NativeHumanResourceQuery({
+    required this.actionKey,
+    required this.actionVersion,
+    required this.nativeRef,
+    required this.nativeType,
+    this.workspaceId,
+  });
+
+  factory NativeHumanResourceQuery.fromJson(Map<String, dynamic> json) =>
+      NativeHumanResourceQuery(
+        actionKey: json["actionKey"],
+        actionVersion: json["actionVersion"],
+        nativeRef: json["nativeRef"],
+        nativeType: json["nativeType"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "nativeRef": nativeRef,
+    "nativeType": nativeType,
+    "workspaceId": workspaceId,
+  });
+}
+
 ///Reference-only observation of the original HUMAN AE. Terminal status comes from original
 ///component-action audit after native/usage reconciliation, never from HTTP acceptance.
 class NativeHumanActionResult {
@@ -9949,6 +10014,59 @@ class SubmissionClass {
     "protocolSessionId": protocolSessionId,
     "reason": reasonCodeValues.reverse[reason],
     "workflowId": workflowId,
+  });
+}
+
+///Current already-registered native Resource selected under the original HUMAN action
+///permission. Metadata only, not an admission ticket; submission rechecks version, binding
+///and permission.
+class NativeHumanResourceResult {
+  final NativeHumanResourceSelection resource;
+
+  NativeHumanResourceResult({required this.resource});
+
+  factory NativeHumanResourceResult.fromJson(Map<String, dynamic> json) =>
+      NativeHumanResourceResult(
+        resource: NativeHumanResourceSelection.fromJson(json["resource"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({"resource": resource.toJson()});
+}
+
+class NativeHumanResourceSelection {
+  final String nativeInstanceRef;
+  final String nativeRef;
+  final String nativeScopeRef;
+  final String nativeType;
+  final String resourceId;
+  final int resourceVersion;
+
+  NativeHumanResourceSelection({
+    required this.nativeInstanceRef,
+    required this.nativeRef,
+    required this.nativeScopeRef,
+    required this.nativeType,
+    required this.resourceId,
+    required this.resourceVersion,
+  });
+
+  factory NativeHumanResourceSelection.fromJson(Map<String, dynamic> json) =>
+      NativeHumanResourceSelection(
+        nativeInstanceRef: json["nativeInstanceRef"],
+        nativeRef: json["nativeRef"],
+        nativeScopeRef: json["nativeScopeRef"],
+        nativeType: json["nativeType"],
+        resourceId: json["resourceId"],
+        resourceVersion: json["resourceVersion"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nativeInstanceRef": nativeInstanceRef,
+    "nativeRef": nativeRef,
+    "nativeScopeRef": nativeScopeRef,
+    "nativeType": nativeType,
+    "resourceId": resourceId,
+    "resourceVersion": resourceVersion,
   });
 }
 

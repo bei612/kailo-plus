@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./conversations/popover
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./sidebar/tooltip";
 import { Switch } from "./switch";
+export { HomeLoadingState } from "./home-loading-state";
 
 export type InboxFilter = "all" | "mention" | "thread" | "agent_activity" | "drafts";
 

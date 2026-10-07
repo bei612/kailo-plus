@@ -9,6 +9,12 @@
   "properties": {
     "execution": {"$ref": "execution_observation.schema.json"},
     "resultJson": {"type": "string"},
-    "contentReference": {"$ref": "../../domain/content_reference.schema.json"}
+    "contentReference": {"$ref": "../../domain/content_reference.schema.json"},
+    "contentReferences": {
+      "description": "来源 citation 的 typed 槽；与固定结果 schema 中 citations 逐项一致。它不是源正文读取证明，打开来源时重新授权。",
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "../../domain/content_reference.schema.json"}
+    }
   }
 }

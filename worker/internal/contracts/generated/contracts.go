@@ -265,6 +265,9 @@
 //    nativeHumanActionResult, err := UnmarshalNativeHumanActionResult(bytes)
 //    bytes, err = nativeHumanActionResult.Marshal()
 //
+//    nativeHumanResourceResult, err := UnmarshalNativeHumanResourceResult(bytes)
+//    bytes, err = nativeHumanResourceResult.Marshal()
+//
 //    ownAuditEntry, err := UnmarshalOwnAuditEntry(bytes)
 //    bytes, err = ownAuditEntry.Marshal()
 //
@@ -1487,6 +1490,16 @@ func UnmarshalNativeHumanActionResult(data []byte) (NativeHumanActionResult, err
 }
 
 func (r *NativeHumanActionResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalNativeHumanResourceResult(data []byte) (NativeHumanResourceResult, error) {
+	var r NativeHumanResourceResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *NativeHumanResourceResult) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2762,8 +2775,10 @@ type AdapterExecutionReference struct {
 // Core 的套件报告。
 type AdapterExecutionResponse struct {
 	ContentReference *ContentReferenceElement `json:"contentReference,omitempty"`
-	Execution        ExecutionClass           `json:"execution"`
-	ResultJSON       *string                  `json:"resultJson,omitempty"`
+	// 来源 citation 的 typed 槽；与固定结果 schema 中 citations 逐项一致。它不是源正文读取证明，打开来源时重新授权。
+	ContentReferences []ContentReferenceElement `json:"contentReferences,omitempty"`
+	Execution         ExecutionClass            `json:"execution"`
+	ResultJSON        *string                   `json:"resultJson,omitempty"`
 }
 
 // ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
@@ -4532,6 +4547,9 @@ type NativeHumanActionRequest struct {
 	BindingID      string        `json:"bindingId"`
 	Command        *CommandClass `json:"command,omitempty"`
 	IdempotencyKey *string       `json:"idempotencyKey,omitempty"`
+	// Read the already-registered exact native object for the verified HUMAN and action. This
+	// never creates a Resource or native object.
+	ResolveResource *NativeHumanResourceQuery `json:"resolveResource,omitempty"`
 }
 
 // POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
@@ -4615,6 +4633,16 @@ type CommandReceiverResource struct {
 	Version int64  `json:"version"`
 }
 
+// Read the already-registered exact native object for the verified HUMAN and action. This
+// never creates a Resource or native object.
+type NativeHumanResourceQuery struct {
+	ActionKey     string  `json:"actionKey"`
+	ActionVersion int64   `json:"actionVersion"`
+	NativeRef     string  `json:"nativeRef"`
+	NativeType    string  `json:"nativeType"`
+	WorkspaceID   *string `json:"workspaceId,omitempty"`
+}
+
 // Reference-only observation of the original HUMAN AE. Terminal status comes from original
 // component-action audit after native/usage reconciliation, never from HTTP acceptance.
 type NativeHumanActionResult struct {
@@ -4639,6 +4667,22 @@ type SubmissionClass struct {
 	ProtocolSessionID  *string                `json:"protocolSessionId,omitempty"`
 	Reason             *ReasonCode            `json:"reason,omitempty"`
 	WorkflowID         *string                `json:"workflowId,omitempty"`
+}
+
+// Current already-registered native Resource selected under the original HUMAN action
+// permission. Metadata only, not an admission ticket; submission rechecks version, binding
+// and permission.
+type NativeHumanResourceResult struct {
+	Resource NativeHumanResourceSelection `json:"resource"`
+}
+
+type NativeHumanResourceSelection struct {
+	NativeInstanceRef string `json:"nativeInstanceRef"`
+	NativeRef         string `json:"nativeRef"`
+	NativeScopeRef    string `json:"nativeScopeRef"`
+	NativeType        string `json:"nativeType"`
+	ResourceID        string `json:"resourceId"`
+	ResourceVersion   int64  `json:"resourceVersion"`
 }
 
 // GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。

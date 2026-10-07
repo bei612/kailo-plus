@@ -9,6 +9,31 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestAdapterCitationsRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile("../../../contracts/samples/adapter-citations.sample.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var typed []generated.AdapterExecutionResponse
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	back, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected, actual any
+	if err := json.Unmarshal(raw, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(back, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatal("typed citation or legacy absence changed")
+	}
+}
+
 func TestAdapterPepResourceRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile("../../../contracts/samples/adapter-pep-resource.sample.json")
 	if err != nil {

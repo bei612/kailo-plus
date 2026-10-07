@@ -27,8 +27,6 @@ export type NativeQueryDelivery = {
   responseMaxBytes: number;
   requestMaxBytes: number;
   humanAction?: {
-    resourceId: string;
-    resourceVersion: number;
     resultExposurePolicyId: string;
     resultExposurePolicyVersion: number;
   };
@@ -93,7 +91,9 @@ export async function loadQueryDelivery(): Promise<NativeQueryDelivery> {
   if (
     !value ||
     Array.isArray(value) ||
-    Object.keys(value).some((key) => ![...strings, ...numbers, 'humanAction'].includes(key)) ||
+    Object.keys(value).some(
+      (key) => ![...strings, ...numbers, 'humanAction'].includes(key),
+    ) ||
     strings.some(
       (key) =>
         typeof value[key] !== 'string' ||
@@ -115,10 +115,21 @@ export async function loadQueryDelivery(): Promise<NativeQueryDelivery> {
   }
   if (value.humanAction !== undefined) {
     const human = value.humanAction;
-    if (!human || Object.keys(human).sort().join(',') !== 'resourceId,resourceVersion,resultExposurePolicyId,resultExposurePolicyVersion' ||
-      !['resourceId', 'resultExposurePolicyId'].every((key) => typeof human[key] === 'string' &&
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(human[key])) ||
-      !['resourceVersion', 'resultExposurePolicyVersion'].every((key) => Number.isSafeInteger(human[key]) && human[key] > 0)) {
+    if (
+      !human ||
+      Object.keys(human).sort().join(',') !==
+        'resultExposurePolicyId,resultExposurePolicyVersion' ||
+      !['resultExposurePolicyId'].every(
+        (key) =>
+          typeof human[key] === 'string' &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+            human[key],
+          ),
+      ) ||
+      !['resultExposurePolicyVersion'].every(
+        (key) => Number.isSafeInteger(human[key]) && human[key] > 0,
+      )
+    ) {
       throw new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE');
     }
   }
@@ -258,7 +269,9 @@ export async function authorizeQuery(
     throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
   }
   const admitted = await bindingServiceCall(config, 'pep_check', {
-    bindingId: config.bindingId, actionToken: token, operation,
+    bindingId: config.bindingId,
+    actionToken: token,
+    operation,
     argumentsJson: canonical(argumentsValue),
   });
   if (
@@ -306,13 +319,20 @@ export async function bindingServiceCall(
   if (operation === 'human-action' && !humanToken) {
     throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
   }
-  return jsonResponse(config, url.toString(), {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${service.access_token}`,
-      'content-type': 'application/json',
-      ...(humanToken ? { 'x-kailo-native-human-token': humanToken } : {}),
+  return jsonResponse(
+    config,
+    url.toString(),
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${service.access_token}`,
+        'content-type': 'application/json',
+        ...(humanToken ? { 'x-kailo-native-human-token': humanToken } : {}),
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  }, operation === 'human-action' && body.command === undefined);
+    operation === 'human-action' &&
+      body.idempotencyKey !== undefined &&
+      body.command === undefined,
+  );
 }

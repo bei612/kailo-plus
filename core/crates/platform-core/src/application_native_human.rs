@@ -18,12 +18,13 @@ struct Binding {
     client_id: String,
     adapter_service_ref: String,
     native_instance_ref: String,
+    native_scope_ref: String,
     manifest: Value,
 }
 
 async fn binding(state: &ServiceState, id: Uuid) -> Result<Binding, Refusal> {
     sqlx::query_as("select b.tenant_id,b.active_projection_generation as generation,b.config_digest,
-        b.normalized_config->>'client_id' as client_id,b.adapter_service_ref,b.native_instance_ref,r.manifest
+        b.normalized_config->>'client_id' as client_id,b.adapter_service_ref,b.native_instance_ref,b.native_scope_ref,r.manifest
         from catalog.application_binding b join catalog.component_release r on r.id=b.component_release_id
         join identity.tenant t on t.id=b.tenant_id and t.state='ACTIVE'
         join identity.service_principal s on s.principal_id=b.service_principal_id
@@ -212,6 +213,14 @@ pub(crate) async fn handle(
         let token = header(&headers,"x-kailo-native-human-token")?;
         let actor = human(&state,&before,id,token).await?;
         if binding(&state,id).await? != before { return Err(denied()); }
+        if let Some(query) = raw.get("resolveResource") {
+            if raw.get("command").is_some() || raw.get("idempotencyKey").is_some() { return Err(invalid()); }
+            let resource = resolve_resource(&state,actor,id,&before,query).await?;
+            let after_actor = human(&state,&before,id,token).await?;
+            if binding(&state,id).await? != before || after_actor.principal_id != actor.principal_id
+                || after_actor.human_identity_id != actor.human_identity_id { return Err(denied()); }
+            return Ok(Some(serde_json::to_value(resource).map_err(|_| unavailable())?));
+        }
         let key = match (raw.get("command"),raw.get("idempotencyKey")) {
             (Some(command),None) => {
                 let command: ActionCommand = serde_json::from_value(command.clone()).map_err(|_| invalid())?;
@@ -249,13 +258,96 @@ pub(crate) async fn handle(
         if binding(&state,id).await? != before || after_actor.principal_id != actor.principal_id
             || after_actor.human_identity_id != actor.human_identity_id { return Err(denied()); }
         let response: contracts::NativeHumanActionResult=serde_json::from_value(output).map_err(|_| unavailable())?;
-        Ok(Some(response))
+        Ok(Some(serde_json::to_value(response).map_err(|_| unavailable())?))
     }.await;
     match result {
         Ok(Some(value)) => ([("cache-control", "no-store")], Json(value)).into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, [("cache-control", "no-store")]).into_response(),
         Err(error) => error.respond(None),
     }
+}
+
+async fn resource_facts(
+    conn: &mut PgConnection,
+    actor: Actor,
+    binding_id: Uuid,
+    current: &Binding,
+    query: &Value,
+) -> Result<Facts, Refusal> {
+    let text = |field: &str| {
+        query[field]
+            .as_str()
+            .filter(|value| !value.is_empty() && value.trim() == *value)
+            .ok_or_else(invalid)
+    };
+    let kind = text("nativeType")?;
+    let reference = text("nativeRef")?;
+    let action = text("actionKey")?;
+    let version = query["actionVersion"]
+        .as_i64()
+        .and_then(|v| i32::try_from(v).ok())
+        .filter(|v| *v > 0)
+        .ok_or_else(invalid)?;
+    let workspace = query.get("workspaceId").map(super::id).transpose()?;
+    // Two rows are enough to prove ambiguity; never select a first match or
+    // construct a new owner/mapping for an unregistered native object.
+    let rows: Vec<(Uuid,i32)> = sqlx::query_as("select r.id,r.version from catalog.resource r
+        join catalog.application_binding b on b.id=r.application_binding_id and b.tenant_id=r.tenant_id
+        join projection.application_runtime p on p.binding_id=b.id and p.generation=b.active_projection_generation
+          and p.component_release_id=b.component_release_id and p.state='ACTIVE'
+        where r.tenant_id=$1 and r.application_binding_id=$2 and r.native_type=$3 and r.native_id=$4
+          and r.state='ACTIVE' and r.projection_action_execution_id is null and b.state='ACTIVE'
+          and b.active_projection_generation=$5 and b.native_instance_ref=$6 and b.native_scope_ref=$7
+          and (r.home_workspace_id is null or r.home_workspace_id=$8)
+          and (b.workspace_id is null or b.workspace_id=$8)
+        order by r.id limit 2 for share of r,b,p")
+        .bind(actor.tenant_id).bind(binding_id).bind(kind).bind(reference).bind(current.generation)
+        .bind(&current.native_instance_ref).bind(&current.native_scope_ref).bind(workspace)
+        .fetch_all(&mut *conn).await?;
+    let [(resource, resource_version)] = rows.as_slice() else {
+        return Err(denied());
+    };
+    let target = Target {
+        id: *resource,
+        version: *resource_version,
+        workspace_id: workspace,
+    };
+    let admitted = facts(conn, actor.tenant_id, &target, action, version, "RESOURCE").await?;
+    if admitted.binding != binding_id || admitted.generation != current.generation {
+        return Err(denied());
+    }
+    Ok(admitted)
+}
+
+async fn resolve_resource(
+    state: &ServiceState,
+    actor: Actor,
+    binding_id: Uuid,
+    current: &Binding,
+    query: &Value,
+) -> Result<contracts::NativeHumanResourceResult, Refusal> {
+    let mut tx = state.pool.begin().await?;
+    let admitted = resource_facts(&mut tx, actor, binding_id, current, query).await?;
+    let evaluation = state
+        .governance
+        .evaluate(actor, &admitted.application.definition, &admitted.target)
+        .await?;
+    if !evaluation.allowed {
+        return Err(Refusal::Denied(
+            evaluation.reason.unwrap_or(ReasonCode::PermissionDenied),
+        ));
+    }
+    if [&current.native_instance_ref, &current.native_scope_ref]
+        .iter()
+        .any(|v| v.is_empty() || v.trim() != v.as_str())
+    {
+        return Err(blocked());
+    }
+    let result = serde_json::from_value(json!({"resource":{"resourceId":admitted.target.id,"resourceVersion":admitted.target.version,
+        "nativeType":query["nativeType"],"nativeRef":query["nativeRef"],"nativeInstanceRef":current.native_instance_ref,
+        "nativeScopeRef":current.native_scope_ref}})).map_err(|_| unavailable())?;
+    tx.commit().await?;
+    Ok(result)
 }
 
 async fn check_existing_binding(
@@ -286,6 +378,104 @@ mod tests {
     use super::*;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
     use ring::signature::KeyPair;
+
+    #[tokio::test]
+    #[ignore = "requires migrated isolated database"]
+    async fn native_resource_selection_uses_exact_registered_scope_and_original_action_facts() {
+        use sqlx::Connection;
+        let mut conn = PgConnection::connect(
+            &std::env::var("APPLICATION_EXECUTION_TEST_DATABASE_URL")
+                .expect("isolated database URL"),
+        )
+        .await
+        .unwrap();
+        let mut tx = conn.begin().await.unwrap();
+        let base = include_str!("../../../verify/application-execution-base.sql")
+            .replace("\nBEGIN;\n", "\n")
+            .replace("\nCOMMIT;\n", "\n");
+        sqlx::raw_sql(&base).execute(&mut *tx).await.unwrap();
+        let fixture=include_str!("../../../verify/application-execution-dispatch.sql")
+            .replace("'executionMode','PROTOCOL'","'executionMode','TEMPORAL'")
+            .replace("'workflowType','NONE'","'workflowType','ComponentTaskWorkflow'")
+            .replace("manifest:=jsonb_build_object('componentTypeKey',provider,", "manifest:=jsonb_build_object('executionConnector',jsonb_build_object('mode','REMOTE_ADAPTER'),'componentTypeKey',provider,")
+            .replace("'read','resource','PROTOCOL','NONE'","'read','resource','TEMPORAL','NONE'")
+            .replace("NULL,NULL,'NATIVE',NULL,action", "'ComponentTaskWorkflow','COMPONENT_ACTION','NATIVE',NULL,action")
+            .replace("'COMPONENT_BINDING',tenant,business_ae", "'COMPONENT_ACTION',tenant,business_ae");
+        sqlx::raw_sql(&fixture).execute(&mut *tx).await.unwrap();
+        let (action, binding_id): (Uuid, Uuid) =
+            sqlx::query_as("select child,binding from application_dispatch_fixture")
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        let (tenant,principal,resource):(Uuid,Uuid,Uuid)=sqlx::query_as("select tenant_id,initiator_principal_id,target_id from admission.action_execution where id=$1")
+            .bind(action).fetch_one(&mut *tx).await.unwrap();
+        let mut current:Binding=sqlx::query_as("select b.tenant_id,b.active_projection_generation as generation,b.config_digest,
+            coalesce(b.normalized_config->>'client_id','isolated-fixture-client') as client_id,b.adapter_service_ref,b.native_instance_ref,b.native_scope_ref,r.manifest
+            from catalog.application_binding b join catalog.component_release r on r.id=b.component_release_id where b.id=$1")
+            .bind(binding_id).fetch_one(&mut *tx).await.unwrap();
+        let (kind, reference): (String, String) =
+            sqlx::query_as("select native_type,native_id from catalog.resource where id=$1")
+                .bind(resource)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        let actor = Actor {
+            tenant_id: tenant,
+            principal_id: principal,
+            human_identity_id: None,
+        };
+        let query = json!({"actionKey":"isolated.lookup@v1","actionVersion":1,"nativeType":kind,"nativeRef":reference});
+        let found = resource_facts(&mut tx, actor, binding_id, &current, &query)
+            .await
+            .unwrap();
+        assert_eq!(found.target.id, resource);
+        assert_eq!(found.target.version, 2);
+        assert_eq!(found.application.definition.permission, "read");
+        for field in ["nativeType", "nativeRef", "actionKey"] {
+            let mut changed = query.clone();
+            changed[field] = json!("unregistered-native-object");
+            assert!(
+                resource_facts(&mut tx, actor, binding_id, &current, &changed)
+                    .await
+                    .is_err(),
+                "{field}"
+            );
+        }
+        let mut wrong_workspace = query.clone();
+        wrong_workspace["workspaceId"] = json!(Uuid::new_v4());
+        assert!(
+            resource_facts(&mut tx, actor, binding_id, &current, &wrong_workspace)
+                .await
+                .is_err()
+        );
+        assert!(resource_facts(
+            &mut tx,
+            Actor {
+                tenant_id: Uuid::new_v4(),
+                ..actor
+            },
+            binding_id,
+            &current,
+            &query
+        )
+        .await
+        .is_err());
+        assert!(
+            resource_facts(&mut tx, actor, Uuid::new_v4(), &current, &query)
+                .await
+                .is_err()
+        );
+        current.generation += 1;
+        assert!(resource_facts(&mut tx, actor, binding_id, &current, &query)
+            .await
+            .is_err());
+        current.generation -= 1;
+        current.native_scope_ref.push_str("-changed");
+        assert!(resource_facts(&mut tx, actor, binding_id, &current, &query)
+            .await
+            .is_err());
+        tx.rollback().await.unwrap();
+    }
 
     #[tokio::test]
     #[ignore = "requires the existing migrated isolated test database"]

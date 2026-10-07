@@ -230,6 +230,54 @@ async function recordCreationReceipt(value, observation, config, deadline, key) 
 }
 
 async function executeOperation(config, deadline, request, claims, token) {
+  if (claims.action_key === 'knowledge.search@v2') {
+    const args = request.arguments;
+    if (!exactKeys(args, ['target', 'input']) || !exactKeys(args.target, ['resourceId'])
+      || args.target.resourceId !== claims.target_id || !exactKeys(args.input, ['query'])
+      || !nonempty(args.input.query)) throw new Refused(400);
+    const found = await nativeTool(config, deadline, 'search_knowledge', {
+      query: args.input.query, knowledge_base_ids: [config.nativeKnowledgeBaseId],
+    });
+    if (found.query !== args.input.query || !Array.isArray(found.knowledge_base_ids)
+      || found.knowledge_base_ids.length !== 1 || found.knowledge_base_ids[0] !== config.nativeKnowledgeBaseId
+      || !Array.isArray(found.results) || !Number.isSafeInteger(found.count)
+      || found.count !== found.results.length) throw new Refused(503);
+    const documents = new Set();
+    const references = new Set();
+    const citations = [];
+    for (const hit of found.results) {
+      if (!object(hit) || !UUID.test(hit.knowledge_id)
+        || hit.knowledge_base_id !== config.nativeKnowledgeBaseId) throw new Refused(503);
+      if (documents.has(hit.knowledge_id)) continue;
+      documents.add(hit.knowledge_id);
+      const metadata = await nativeTool(config, deadline, 'read_document', {
+        knowledge_id: hit.knowledge_id, metadata_only: true,
+      });
+      if (metadata.document?.id !== hit.knowledge_id || metadata.knowledge_base?.id !== config.nativeKnowledgeBaseId
+        || metadata.document.parse_status !== 'completed' || !nonempty(metadata.document.native_revision)
+        || !Number.isFinite(Date.parse(metadata.document.native_revision)) || metadata.document.native_revision.startsWith('0001-')
+        || !Array.isArray(metadata.source_references) || metadata.source_references.length === 0) throw new Refused(503);
+      // Search content/snippets/CustomMetadata never become consume output.
+      // Provenance comes only from the guarded original document metadata.
+      for (const value of metadata.source_references) {
+        let reference;
+        try { reference = sourceReference({ target: args.target, input: value }, claims); }
+        catch { throw new Refused(503); }
+        const encoded = canonical(reference);
+        if (!references.has(encoded)) {
+          references.add(encoded);
+          citations.push(reference);
+        }
+      }
+    }
+    const at = new Date().toISOString();
+    const result = { execution: { idempotencyKey: request.idempotencyKey, nativeType: 'search_knowledge',
+      nativeId: config.nativeKnowledgeBaseId, nativeStatus: 'completed', platformStatus: 'SUCCEEDED',
+      cancelCapability: 'UNSUPPORTED', lastObservedAt: at, terminalAt: at },
+      resultJson: canonical({ citations }), ...(citations.length === 0 ? {} : { contentReferences: citations }) };
+    if (Buffer.byteLength(JSON.stringify(result), 'utf8') > config.maxBodyBytes) throw new Refused(503);
+    return result;
+  }
   if (nativeKnowledgeAction(claims.action_key)==='ingest') {
     const reference=sourceReference(request.arguments,claims);
     const source=await sourceFile(config,deadline,reference,request.idempotencyKey,claims);
@@ -318,7 +366,9 @@ export function createAdapter(rawConfig) {
       if (operation === 'execute' && (args.actionKey !== claims.action_key
         || (claims.agent_principal_id === undefined && (claims.idempotency_key !== args.idempotencyKey
           || !UUID.test(claims.external_execution_id))))) throw new Refused(401);
-      await freshPep(config, deadline, token, intent, claims, operation);
+      const admitted = await freshPep(config, deadline, token, intent, claims, operation);
+      const searching = operation === 'execute' && claims.action_key === 'knowledge.search@v2';
+      if (searching && admitted.targetResource?.nativeRef !== config.nativeKnowledgeBaseId) throw new Refused(403);
       let value;
       if (['observe','extract_usage'].includes(operation)) {
         if (nativeKnowledgeAction(claims.action_key)==='ingest' && args.nativeType==='add_document') {
@@ -345,7 +395,8 @@ export function createAdapter(rawConfig) {
           : await nativeRevision(config, deadline, args);
       }
       const current = await verifyKnowledgeToken(token, config, intent, operation);
-      await freshPep(config, deadline, token, intent, current, operation);
+      const disclosed = await freshPep(config, deadline, token, intent, current, operation);
+      if (searching && canonical(disclosed.targetResource) !== canonical(admitted.targetResource)) throw new Refused(403);
       response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       response.end(JSON.stringify(value));
     } catch (error) {

@@ -42,14 +42,24 @@ describe('native saved-view HUMAN query consumer', () => {
   const config = {
     bindingId: binding,
     projectId: 3,
+    nativeInstanceRef: 'native-fixture',
+    nativeScopeRef: '3',
     workspaceId: '02c405cd-786f-49fe-a460-0b94f98e014d',
     humanAction: {
-      resourceId: resource,
-      resourceVersion: 1,
       resultExposurePolicyId: 'f50e30ee-a9c6-4406-8620-7e45262f3145',
       resultExposurePolicyVersion: 1,
     },
   } as NativeQueryDelivery;
+  const resolution = {
+    resource: {
+      resourceId: resource,
+      resourceVersion: 4,
+      nativeType: 'view',
+      nativeRef: '7',
+      nativeInstanceRef: config.nativeInstanceRef,
+      nativeScopeRef: config.nativeScopeRef,
+    },
+  };
   const calls = jest.mocked(bindingServiceCall);
   let freeze: jest.Mock, history: jest.Mock, service: NativeHumanQuery;
   beforeEach(() => {
@@ -58,17 +68,35 @@ describe('native saved-view HUMAN query consumer', () => {
     history = jest.fn();
     service = new NativeHumanQuery(
       config,
-      { reference: freeze, modelReference: freeze } as unknown as NativeQueryService,
+      {
+        reference: freeze,
+        modelReference: freeze,
+      } as unknown as NativeQueryService,
       { findOneBy: history } as unknown as ApiHistoryRepository,
     );
   });
   it('submits only a saved reference through the original action and never treats dispatch as data', async () => {
-    calls.mockResolvedValueOnce(null).mockResolvedValueOnce(receipt);
+    calls
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(resolution)
+      .mockResolvedValueOnce(receipt);
     expect(await service.preview('verified-native-token', 7, 10, key)).toEqual(
       receipt,
     );
     expect(freeze).toHaveBeenCalledWith(resource, 7, 10);
-    const command = calls.mock.calls[1][2].command as any;
+    expect(calls.mock.calls[1][2]).toEqual({
+      bindingId: binding,
+      resolveResource: {
+        workspaceId: config.workspaceId,
+        actionKey: 'data_query.query@v1',
+        actionVersion: 1,
+        nativeType: 'view',
+        nativeRef: '7',
+      },
+    });
+    const command = calls.mock.calls[2][2].command as any;
+    expect(command.resourceId).toBe(resource);
+    expect(command.resourceVersion).toBe(4);
     expect(command.componentAction.inputReference).toEqual(reference);
     expect(command.idempotencyKey).toBe(key);
     expect(command.actionKey).toBe('data_query.query@v1');
@@ -82,6 +110,115 @@ describe('native saved-view HUMAN query consumer', () => {
     expect(calls).toHaveBeenCalledTimes(1);
     expect(freeze).not.toHaveBeenCalled();
     expect(history).not.toHaveBeenCalled();
+  });
+
+  it('selects different registered native objects without a configured global Resource and never reselects UNKNOWN', async () => {
+    const cases = [
+      { kind: 'view' as const, id: 7, resourceId: resource },
+      { kind: 'model' as const, id: 8, resourceId: binding },
+    ];
+    for (const item of cases) {
+      const frozen = {
+        ...reference,
+        resourceId: item.resourceId,
+        nativeObjectRef: JSON.stringify({
+          [item.kind === 'view' ? 'viewId' : 'modelId']: item.id,
+          limit: 10,
+        }),
+      };
+      const output = { ...receipt, inputReference: frozen };
+      freeze.mockResolvedValueOnce(frozen);
+      calls.mockReset();
+      calls
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          resource: {
+            ...resolution.resource,
+            resourceId: item.resourceId,
+            nativeType: item.kind,
+            nativeRef: String(item.id),
+          },
+        })
+        .mockResolvedValue(output);
+      expect(
+        await service.preview(
+          'verified-native-token',
+          item.id,
+          10,
+          item.resourceId,
+          item.kind,
+        ),
+      ).toEqual(output);
+      expect((calls.mock.calls[2][2].command as any).resourceId).toBe(
+        item.resourceId,
+      );
+      calls.mockClear();
+      expect(
+        await service.preview(
+          'verified-native-token',
+          item.id,
+          10,
+          item.resourceId,
+          item.kind,
+        ),
+      ).toEqual(output);
+      expect(calls).toHaveBeenCalledTimes(1);
+      expect(calls.mock.calls[0][2]).toEqual({
+        bindingId: binding,
+        idempotencyKey: item.resourceId,
+      });
+    }
+    expect(freeze).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    'missing',
+    'resourceId',
+    'resourceVersion',
+    'nativeType',
+    'nativeRef',
+    'nativeInstanceRef',
+    'nativeScopeRef',
+  ])(
+    'does not freeze or submit with %s invalid registered-resource facts',
+    async (field) => {
+      const changed =
+        field === 'missing'
+          ? null
+          : {
+              resource: {
+                ...resolution.resource,
+                [field]: field === 'resourceVersion' ? 0 : 'foreign-object',
+              },
+            };
+      calls.mockResolvedValueOnce(null).mockResolvedValueOnce(changed);
+      await expect(
+        service.preview('verified-native-token', 7, 10, key),
+      ).rejects.toThrow('QUERY_SCOPE_DENIED');
+      expect(calls).toHaveBeenCalledTimes(2);
+      expect(freeze).not.toHaveBeenCalled();
+    },
+  );
+
+  it('refuses forbidden resource resolution and a submission receipt for another resolved Resource', async () => {
+    calls
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'));
+    await expect(
+      service.preview('verified-native-token', 7, 10, key),
+    ).rejects.toThrow('QUERY_SCOPE_DENIED');
+    expect(freeze).not.toHaveBeenCalled();
+    calls.mockReset();
+    calls
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(resolution)
+      .mockResolvedValueOnce({
+        ...receipt,
+        inputReference: { ...reference, resourceId: binding },
+      });
+    await expect(
+      service.preview('verified-native-token', 7, 10, key),
+    ).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
   });
   it('does not submit after an unavailable or denied observation', async () => {
     calls.mockRejectedValue(new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'));
@@ -123,7 +260,7 @@ describe('native saved-view HUMAN query consumer', () => {
   it('rejects another saved view or resource instead of exposing the result', async () => {
     calls.mockResolvedValue({
       ...receipt,
-      inputReference: { ...reference, resourceId: binding },
+      inputReference: { ...reference, resourceId: 'invalid-reference' },
     });
     await expect(
       service.preview('verified-native-token', 7, 10, key),
@@ -150,17 +287,35 @@ describe('native saved-view HUMAN query consumer', () => {
   });
 
   it('admits the original model preview and reconciles its frozen model reference without issuing SQL', async () => {
-    const modelReference = { ...reference, nativeObjectRef: JSON.stringify({ modelId: 7, limit: 10 }) };
+    const modelReference = {
+      ...reference,
+      nativeObjectRef: JSON.stringify({ modelId: 7, limit: 10 }),
+    };
     const modelReceipt = { ...receipt, inputReference: modelReference };
     freeze.mockResolvedValue(modelReference);
-    calls.mockResolvedValueOnce(null).mockResolvedValue(modelReceipt);
-    expect(await service.preview('verified-native-token', 7, 10, key, 'model')).toEqual(modelReceipt);
+    calls
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        resource: { ...resolution.resource, nativeType: 'model' },
+      })
+      .mockResolvedValue(modelReceipt);
+    expect(
+      await service.preview('verified-native-token', 7, 10, key, 'model'),
+    ).toEqual(modelReceipt);
     expect(freeze).toHaveBeenCalledTimes(1);
-    expect((calls.mock.calls[1][2].command as any).componentAction.inputReference).toEqual(modelReference);
-    expect(await service.preview('verified-native-token', 7, 10, key, 'model')).toEqual(modelReceipt);
+    expect(
+      (calls.mock.calls[2][2].command as any).componentAction.inputReference,
+    ).toEqual(modelReference);
+    expect(
+      await service.preview('verified-native-token', 7, 10, key, 'model'),
+    ).toEqual(modelReceipt);
     expect(freeze).toHaveBeenCalledTimes(1);
-    await expect(service.preview('verified-native-token', 7, 10, key)).rejects.toThrow('QUERY_INTENT_CONFLICT');
-    await expect(service.preview('verified-native-token', 8, 10, key, 'model')).rejects.toThrow('QUERY_INTENT_CONFLICT');
+    await expect(
+      service.preview('verified-native-token', 7, 10, key),
+    ).rejects.toThrow('QUERY_INTENT_CONFLICT');
+    await expect(
+      service.preview('verified-native-token', 8, 10, key, 'model'),
+    ).rejects.toThrow('QUERY_INTENT_CONFLICT');
     expect(history).not.toHaveBeenCalled();
   });
 

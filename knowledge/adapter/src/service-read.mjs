@@ -12,7 +12,7 @@ export function sourceReference(args, claims) {
   if (!exactKeys(args,['target','input']) || !exactKeys(args.target,['resourceId'])
     || args.target.resourceId!==claims.target_id || !exactKeys(input,
       input?.assetId===undefined ? keys : [...keys,'assetId'])
-    || !UUID.test(input.resourceId) || !UUID.test(input.nativeObjectRef)
+    || !UUID.test(input.resourceId) || !nonempty(input.nativeObjectRef)
     || (input.assetId!==undefined && !UUID.test(input.assetId))
     || !['nativeRevision','displayName','mediaType'].every(key=>nonempty(input[key]))) throw new Refused(400);
   return input;

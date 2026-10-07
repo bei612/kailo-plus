@@ -65,13 +65,21 @@ test("native human action preserves controlled trust and nonterminal references"
     trust: import("../src/generated/contracts.js").ApplicationNativeHumanIdentity;
     request: import("../src/generated/contracts.js").NativeHumanActionRequest;
     result: import("../src/generated/contracts.js").NativeHumanActionResult;
+    resourceRequest: import("../src/generated/contracts.js").NativeHumanActionRequest;
+    resourceResult: import("../src/generated/contracts.js").NativeHumanResourceResult;
   } = JSON.parse(readFileSync(new URL("../../../../contracts/samples/native-human-action.sample.json", import.meta.url), "utf8"));
   const t=sample.trust, r=sample.request, o=sample.result;
   const trust: typeof t = {bindingId:t.bindingId,configDigest:t.configDigest,generation:t.generation,
     identityProviderId:t.identityProviderId,audience:t.audience,jwksFile:t.jwksFile,accessClaim:t.accessClaim,accessValue:t.accessValue};
   const request: typeof r = {bindingId:r.bindingId,idempotencyKey:r.idempotencyKey,command:r.command};
   const result: typeof o = {submission:o.submission,inputReference:o.inputReference,terminalStatus:o.terminalStatus,nativeType:o.nativeType,nativeId:o.nativeId};
-  deepStrictEqual(JSON.parse(JSON.stringify({trust,request,result})),sample);
+  const q=sample.resourceRequest.resolveResource!;
+  const resourceRequest:typeof sample.resourceRequest={bindingId:sample.resourceRequest.bindingId,
+    resolveResource:{workspaceId:q.workspaceId,actionKey:q.actionKey,actionVersion:q.actionVersion,nativeType:q.nativeType,nativeRef:q.nativeRef}};
+  const s=sample.resourceResult.resource;
+  const resourceResult:typeof sample.resourceResult={resource:{resourceId:s.resourceId,resourceVersion:s.resourceVersion,
+    nativeType:s.nativeType,nativeRef:s.nativeRef,nativeInstanceRef:s.nativeInstanceRef,nativeScopeRef:s.nativeScopeRef}};
+  deepStrictEqual(JSON.parse(JSON.stringify({trust,request,result,resourceRequest,resourceResult})),sample);
 });
 
 test("automation topic step preserves explicit empty topic", () => {

@@ -19,7 +19,7 @@ import { useBffClient, useLocale, useT } from "@client-kit/platform/react/contex
 import { loadInboxConversations, useHiddenDmInboxNavigation, useConversationVisibilityHost, type InboxNavigationTarget } from "@client-kit/platform/react/new-message";
 import { toast } from "sonner";
 import { InboxRow } from "@client-kit/platform/react/inbox-row";
-import { InboxLayout, InboxListHeader, InboxEmptyDetail, InboxEmptyList, InboxRowActionButton, InboxReopenStatus, useInboxDraftSelection, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
+import { HomeLoadingState, InboxLayout, InboxListHeader, InboxEmptyDetail, InboxEmptyList, InboxRowActionButton, InboxReopenStatus, useInboxDraftSelection, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
 import { useResizableInboxListWidth, INBOX_SINGLE_COLUMN_BREAKPOINT_PX, INBOX_COLUMN_MIN_WIDTH_PX } from "@client-kit/platform/react/use-resizable-inbox-list-width";
 import { UserAvatar } from "@client-kit/platform/react/messages";
 import { AUXILIARY_PANEL_DEFAULT_WIDTH_PX, AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@client-kit/platform/react/thread";
@@ -285,7 +285,7 @@ export function InboxPane({
         <Button onClick={refresh}>{t("platform.refresh")}</Button>
       </section>
     );
-  if (!snapshot || !reads.state) return <p role="status">{t("platform.loading")}</p>;
+  if (!snapshot || !reads.state) return <HomeLoadingState />;
   const chosen = visibleRows.find((row) => row.scopeKey === selected);
   const authorTarget = profileTarget?.principalId === principalId && reads.visibleChannels.has(profileTarget.workspaceId) &&
     (snapshot.workspaces.some((workspace) => workspace.id === profileTarget.workspaceId) || snapshot.conversations.some(item => item.channelId === profileTarget.workspaceId && item.id === profileTarget.conversationId)) ? profileTarget : null;

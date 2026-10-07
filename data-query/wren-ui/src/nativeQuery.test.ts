@@ -24,6 +24,7 @@ import { DataSourceName } from './apollo/server/types';
 import { PostHogTelemetry } from './apollo/server/telemetry/telemetry';
 import {
   digest,
+  loadQueryDelivery,
   NativeQueryDelivery,
 } from './apollo/server/services/nativeQueryAdmission';
 import handler, {
@@ -268,6 +269,40 @@ integration('original Wren query handler, SDK and native history', () => {
     engineFails = false;
     authorizedTarget = undefined;
     changeTargetAt = 0;
+  });
+
+  it('loads only the controlled result policy and rejects retired single-resource query delivery', async () => {
+    const humanAction = {
+      resultExposurePolicyId: randomUUID(),
+      resultExposurePolicyVersion: 1,
+    };
+    try {
+      writeFileSync(
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE,
+        JSON.stringify({ ...delivery, humanAction }),
+      );
+      expect((await loadQueryDelivery()).humanAction).toEqual(humanAction);
+      for (const retired of [
+        { resourceId: resource },
+        { resourceVersion: 1 },
+      ]) {
+        writeFileSync(
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE,
+          JSON.stringify({
+            ...delivery,
+            humanAction: { ...humanAction, ...retired },
+          }),
+        );
+        await expect(loadQueryDelivery()).rejects.toThrow(
+          'QUERY_ADMISSION_UNAVAILABLE',
+        );
+      }
+    } finally {
+      writeFileSync(
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE,
+        JSON.stringify(delivery),
+      );
+    }
   });
 
   afterAll(async () => {

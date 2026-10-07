@@ -825,3 +825,69 @@ Native Go 新 Connector 尚未编译，通用 conformance 对新增原生动作�
 `容器执行拒绝：必须由执行配置提供 TMPDIR`。未完成 full 门禁；没有部署新服务或
 生成安装包，不把窄验当作生产就绪。任意 SQL/describe、Asking/dashboard、全部原生
 对象登记与逐用户元数据授权仍有差距，Wren 单个引用预览的完成不等于整体 Wren 完成。
+
+## 2026-10-07 组件主线：真实对象选择与知识来源引用
+
+本批沿 DD-98、`.design/08` consume 边界及 `.design/13` §5，接通已有消费者，
+没有建立第二资源目录、知识检索引擎、权限或执行权威。
+
+1. 权威：Wren 在原 human-action 可信 SERVICE＋独立 HUMAN 链查询已登记的
+   native type/ref，复用原 ActionDefinition 的授权；Knowledge 沿原 MCP 检索及
+   内部来源 Metadata 给出 ContentReference。来源正文仍留在独立服务。
+2. 影响：Core `application_native_human`、`application_tool`、原 release wire 校验、
+   两份既有请求/响应协议和一个真实资源选择响应、四语言生成物，以及 Wren 和
+   Knowledge 原生消费者。无新路由、数据表或迁移；Web/Desktop 仍共用原页面。
+3. 副作用：有搜索命中却缺少可信来源时整次拒绝，不返回部分成功或 raw chunk。
+   Core 先核固定结果 schema 与 typed 槽逐项一致，再核来源 Resource/Asset 的同租户
+   归属；不要求 consume 用户预先具有源文件 read。点击引用仍走既有当前权限检查。
+   原 release 校验共用同一 typed 一致性逻辑，防止套件成功却在真实披露时失败。
+4. 边界：零命中为 `citations:[]` 并省略 typed 槽；非空 `contentReferences` 至少一项，
+   保持 Go 可选集合缺省与其他三侧一致。未知字段、nil UUID、缺失来源和错 Asset 拒绝。
+   来源停用不删除历史引用，不把 citation 当作可读证明。Wren 仅在原幂等键无执行时
+   解析资源，重试保持原冻结引用；不存在/歧义/撤权/换 generation 均不回退固定资源。
+
+兼容与发布：knowledge.v1 未改；未启用的 v2 搜索输出改为来源 citations，不能把
+旧摘要形状和新形状混用。Wren 受控 humanAction 配置去掉固定 resourceId/version，
+只保留结果策略；旧静态配置拒绝，须随对应二开产物同步投递。新响应字段缺省兼容
+旧值；消费新槽的 adapter、Core 与生成物同批启用。没有更改上游默认安全开关。
+
+实际结果（既有镜像、缓存与 4 CPU/8 GiB SDK）：
+
+- Core 工具窄检查 11 passed、1 个无关隔离库用例 ignored；v2 原注册检查 1 passed；
+  原 release wire 检查 1 passed。Core clippy `--bin platform-core -- -D warnings` 退出 0。
+- 源引用归属与原生资源选择两个 SQL 用例各 1 passed，显式执行 ignored 用例，
+  复用原 base/dispatch fixture，同一事务回滚；不是 HTTP/SpiceDB 端到端验收。
+- 私有副本故意跳过 typed 对照、来源 tenant 和原生 ref 三处，真实抓到工具披露、
+  release wire、跨租户来源、错 nativeRef 四个检查失败（各退出 101）；全部还原后
+  对应四项通过。没有修改正式源为绕过状态。
+- 引用线格式四侧各通过；私有 sample 注入额外凭据字段，Rust/Go/TS/Dart 分别
+  退出 101/1/1/1，还原后通过。原生资源选择四侧往返各通过，TS 类型退出 0。
+- Knowledge/Cells 182/182、Wren 92/92；共享原版 Inbox 加载面 19/19，故障注入
+  及恢复结果见各模块原回执。只有一位队友负责原版 diff 与截图，另两位负责组件。
+
+本批实际失败保留：生成首轮未投递 npm 缓存，`EACCES mkdir /.npm`；补原缓存投递后
+四侧生成成功。TS 首次误加未安装的 tsx import 报 `ERR_MODULE_NOT_FOUND`，改用
+镜像 Node 自带类型剥离后通过。Core 首次旧测试四处调用未加新参数而退出 101，
+同步实际调用方后通过。v2 output digest 最初没有用原 canonical 算法，Core 注册
+检查拒绝；纠正为 `293bd850007235b45b6ac39cff9b415101a2bb41a92a4914c0b86e3cd19ef4e6`
+后真实通过，不改注册校验来迁就错误摘要。
+
+未构建或部署新业务镜像，没有 Windows/Mobile 新包。完整三服务绑定、检索引用打开、
+模型/视图全对象登记、原生业务写动作与多用户端到端仍未完成；本批不称组件全功能
+完成或生产就绪。
+
+本批集中检查的实际终态：
+
+- 正式根目录投递 `TMPDIR`、`CHECK_CPUS=4`、`CHECK_MEMORY=8g`、
+  `CHECK_NETWORK=host` 与既有 `CHECK_CACHE_ROOT` 后执行 `./tools/check.sh --full`。
+  源码导出使 Data 可用空间从约 3.1 GiB 降到 305 MiB，尚未开始 SDK 编译即主动
+  终止本次 launcher，退出 **143**，原输出 `Terminated`。原 trap 回收本次导出，
+  可用空间恢复约 3.1 GiB；没有清理其他工程或共享缓存，没有重跑整份快照。
+- 文档首轮容器漏投递 npm 缓存，网络隔离下 `EAI_AGAIN registry.npmjs.org`，
+  退出 **1**。补齐既有缓存并启用 offline 后，原 `./tools/check-docs.sh` 退出 **0**：
+  277 个引用闭合、87 实体、115 DD、29 SS、87 场景及两份 markdownlint 均通过。
+- 既有可写 SDK 的原 `step_contract` 四侧生成同步通过，但没有 Git 历史，历史
+  比对 SKIP。随后对正式只读源码和真实 Git 历史执行同一原检查：相对
+  `contracts-v0.1.0` 的 282 个 schema、3 个历史 schema 兼容比对通过；该容器
+  的生成子步失败且没有附加诊断，故组合退出 **1**，不记整体通过。四侧生成物
+  已另与上述成功 SDK 的输入和产物逐一比较一致；不把两次部分成功写成 full 通过。

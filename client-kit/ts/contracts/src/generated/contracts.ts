@@ -241,8 +241,12 @@ export interface AdapterExecutionReference {
  */
 export interface AdapterExecutionResponse {
     contentReference?: ContentReferenceElement;
-    execution:         ExecutionClass;
-    resultJson?:       string;
+    /**
+     * 来源 citation 的 typed 槽；与固定结果 schema 中 citations 逐项一致。它不是源正文读取证明，打开来源时重新授权。
+     */
+    contentReferences?: ContentReferenceElement[];
+    execution:          ExecutionClass;
+    resultJson?:        string;
 }
 
 /**
@@ -3144,6 +3148,11 @@ export interface NativeHumanActionRequest {
     bindingId:       string;
     command?:        CommandClass;
     idempotencyKey?: string;
+    /**
+     * Read the already-registered exact native object for the verified HUMAN and action. This
+     * never creates a Resource or native object.
+     */
+    resolveResource?: NativeHumanResourceQuery;
 }
 
 /**
@@ -3288,6 +3297,18 @@ export interface CommandReceiverResource {
 }
 
 /**
+ * Read the already-registered exact native object for the verified HUMAN and action. This
+ * never creates a Resource or native object.
+ */
+export interface NativeHumanResourceQuery {
+    actionKey:     string;
+    actionVersion: number;
+    nativeRef:     string;
+    nativeType:    string;
+    workspaceId?:  string;
+}
+
+/**
  * Reference-only observation of the original HUMAN AE. Terminal status comes from original
  * component-action audit after native/usage reconciliation, never from HTTP acceptance.
  */
@@ -3315,6 +3336,24 @@ export interface SubmissionClass {
     protocolSessionId?:  string;
     reason?:             ReasonCode;
     workflowId?:         string;
+}
+
+/**
+ * Current already-registered native Resource selected under the original HUMAN action
+ * permission. Metadata only, not an admission ticket; submission rechecks version, binding
+ * and permission.
+ */
+export interface NativeHumanResourceResult {
+    resource: NativeHumanResourceSelection;
+}
+
+export interface NativeHumanResourceSelection {
+    nativeInstanceRef: string;
+    nativeRef:         string;
+    nativeScopeRef:    string;
+    nativeType:        string;
+    resourceId:        string;
+    resourceVersion:   number;
 }
 
 /**

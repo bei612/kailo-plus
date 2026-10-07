@@ -1904,7 +1904,10 @@ fn wire_digests(
             }
             let result: Value =
                 serde_json::from_str(raw.as_str().ok_or_else(bad)?).map_err(|_| bad())?;
+            crate::application_tool::citation_output(&response, &result)?;
             out["resultDigest"] = json!(collab_bridge::limits::canonical_digest(&result));
+        } else if response.get("contentReferences").is_some() {
+            return Err(bad());
         }
     }
     serde_json::from_value(out).map_err(|_| bad())
@@ -2439,6 +2442,18 @@ mod report_tests {
             std::fs::write(path,serde_json::to_vec(&json!({"requestJson":canonical,"responseJson":response.to_string(),"digests":actual,
                 "idempotencyKey":key,"expectedResponseJson":result})).unwrap()).unwrap();
         }
+        let mut citations = response.clone();
+        let reference = json!({"resourceId":Uuid::new_v4(), "nativeObjectRef":"native-source",
+            "nativeRevision":"source-revision", "displayName":"source", "mediaType":"text/plain"});
+        citations["contentReferences"] = json!([reference]);
+        citations["resultJson"] =
+            json!(json!({"citations":citations["contentReferences"]}).to_string());
+        assert!(wire_digests(&request, "execute", 200, &citations.to_string()).is_ok());
+        let mut missing = citations.clone();
+        missing.as_object_mut().unwrap().remove("contentReferences");
+        assert!(wire_digests(&request, "execute", 200, &missing.to_string()).is_err());
+        citations["contentReferences"][0]["nativeRevision"] = json!("different-source-revision");
+        assert!(wire_digests(&request, "execute", 200, &citations.to_string()).is_err());
         let mut changed = response;
         changed["execution"]["platformStatus"] = json!("RUNNING");
         assert!(wire_digests(&request, "execute", 200, &changed.to_string()).is_err());

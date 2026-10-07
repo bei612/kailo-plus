@@ -359,6 +359,10 @@ pub struct AdapterExecutionResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_reference: Option<ReferenceElement>,
 
+    /// 来源 citation 的 typed 槽；与固定结果 schema 中 citations 逐项一致。它不是源正文读取证明，打开来源时重新授权。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_references: Option<Vec<ReferenceElement>>,
+
     pub execution: ExecutionClass,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4697,6 +4701,11 @@ pub struct NativeHumanActionRequest {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub idempotency_key: Option<String>,
+
+    /// Read the already-registered exact native object for the verified HUMAN and action. This
+    /// never creates a Resource or native object.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolve_resource: Option<NativeHumanResourceQuery>,
 }
 
 /// POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
@@ -4855,6 +4864,23 @@ pub struct CommandReceiverResource {
     pub version: i64,
 }
 
+/// Read the already-registered exact native object for the verified HUMAN and action. This
+/// never creates a Resource or native object.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeHumanResourceQuery {
+    pub action_key: String,
+
+    pub action_version: i64,
+
+    pub native_ref: String,
+
+    pub native_type: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
 /// Reference-only observation of the original HUMAN AE. Terminal status comes from original
 /// component-action audit after native/usage reconciliation, never from HTTP acceptance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4906,6 +4932,30 @@ pub struct SubmissionClass {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workflow_id: Option<String>,
+}
+
+/// Current already-registered native Resource selected under the original HUMAN action
+/// permission. Metadata only, not an admission ticket; submission rechecks version, binding
+/// and permission.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NativeHumanResourceResult {
+    pub resource: NativeHumanResourceSelection,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeHumanResourceSelection {
+    pub native_instance_ref: String,
+
+    pub native_ref: String,
+
+    pub native_scope_ref: String,
+
+    pub native_type: String,
+
+    pub resource_id: String,
+
+    pub resource_version: i64,
 }
 
 /// GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。

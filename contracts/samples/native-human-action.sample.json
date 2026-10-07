@@ -13,6 +13,26 @@
     "bindingId": "3c0c015a-373a-4af1-8cbe-4a7e437bdbe1",
     "idempotencyKey": "49279014-2fbe-4893-b020-fa3b3920f1c9"
   },
+  "resourceRequest": {
+    "bindingId": "3c0c015a-373a-4af1-8cbe-4a7e437bdbe1",
+    "resolveResource": {
+      "workspaceId": "87c27723-e475-4e0b-a0e9-50e5d755fe63",
+      "actionKey": "data_query.query@v1",
+      "actionVersion": 1,
+      "nativeType": "model",
+      "nativeRef": "7"
+    }
+  },
+  "resourceResult": {
+    "resource": {
+      "resourceId": "09c6b43b-1edf-467d-8e81-e47a3f506c4f",
+      "resourceVersion": 4,
+      "nativeType": "model",
+      "nativeRef": "7",
+      "nativeInstanceRef": "fixture-dedicated-instance",
+      "nativeScopeRef": "3"
+    }
+  },
   "result": {
     "submission": {
       "operationId": "e75c0307-2614-4786-ac31-14e719f728a9",

@@ -1,0 +1,22 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"api/native_human_resource_result.schema.json",
+  "title":"NativeHumanResourceResult",
+  "description":"Current already-registered native Resource selected under the original HUMAN action permission. Metadata only, not an admission ticket; submission rechecks version, binding and permission.",
+  "type":"object","additionalProperties":false,"required":["resource"],
+  "properties":{
+    "resource":{
+      "title":"NativeHumanResourceSelection",
+      "type":"object","additionalProperties":false,
+      "required":["resourceId","resourceVersion","nativeType","nativeRef","nativeInstanceRef","nativeScopeRef"],
+      "properties":{
+        "resourceId":{"type":"string","format":"uuid"},
+        "resourceVersion":{"type":"integer","minimum":1},
+        "nativeType":{"type":"string","minLength":1},
+        "nativeRef":{"type":"string","minLength":1},
+        "nativeInstanceRef":{"type":"string","minLength":1},
+        "nativeScopeRef":{"type":"string","minLength":1}
+      }
+    }
+  }
+}

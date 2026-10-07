@@ -176,9 +176,11 @@ func TestNativeHumanActionRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	var sample struct {
-		Trust   generated.ApplicationNativeHumanIdentity `json:"trust"`
-		Request generated.NativeHumanActionRequest       `json:"request"`
-		Result  generated.NativeHumanActionResult        `json:"result"`
+		Trust           generated.ApplicationNativeHumanIdentity `json:"trust"`
+		Request         generated.NativeHumanActionRequest       `json:"request"`
+		Result          generated.NativeHumanActionResult        `json:"result"`
+		ResourceRequest generated.NativeHumanActionRequest       `json:"resourceRequest"`
+		ResourceResult  generated.NativeHumanResourceResult      `json:"resourceResult"`
 	}
 	if err := json.Unmarshal(raw, &sample); err != nil {
 		t.Fatal(err)

@@ -966,3 +966,87 @@ Logs: `pep-target-resource-execute.log` (candidate drift failure),
 `pep-target-resource-execute-final.log`,
 `pep-target-resource-object-mutation.log`, and
 `pep-target-resource-object-restored.log`, under the same evidence directory.
+
+## 2026-10-07 v2 native search citation consumer
+
+Authority: `.design/08` consume permits citations but not raw chunks, and
+`.design/13` §5 requires source references from guarded internal knowledge
+metadata; current source read is checked when opening a citation, not imposed
+on a KB consume result. Fixed WeKnora
+`2be7bd40631dda1dd485306038f07a62e9ee287e` symbols were rechecked:
+`internal/mcpserver/tools_retrieve.go::Server.handleSearchKnowledge`,
+`Server.handleReadDocument`, and
+`internal/agent/tools/search_knowledge.go::SearchKnowledgeTool.formatOutput`.
+The implementation uses that original MCP retrieval and the previous batch's
+metadata-only provenance consumer, not an independent retrieval engine or ask
+session/Agent route.
+
+The complete implemented path is `knowledge.search@v2` → current Core PEP
+target identity → `search_knowledge` for exactly the bound KB → one guarded
+`read_document(metadata_only=true)` per unique hit document → internal complete
+source references → typed `contentReferences` and identical
+`resultJson.citations` → final fresh PEP before disclosure. Raw `content`,
+snippets, FAQ answers and user `knowledge_metadata` are never output. Shared
+`freshPep` now returns its already-validated response to this actual consumer;
+search requires its native reference to equal the configured KB and unchanged
+target facts at final disclosure. Old responses without target facts remain
+usable by old operations but cannot authorize this new search path.
+
+Each result's KB/document ID, count and metadata revision/parse state is
+verified. Duplicate chunk hits read metadata once; repeated identical source
+references are deduplicated while multiple distinct legitimate sources remain.
+Zero hits return `{"citations":[]}` and omit the optional typed array. Missing,
+malformed or partial provenance, a foreign KB, changed target or revoked
+disclosure refuses the whole result. Existing request deadline/response-byte
+limits also bound the collected response, including both copies of citations.
+ContentReference native object IDs remain opaque; the shared source-reference
+validator no longer incorrectly requires Cells UUID syntax for that field.
+No source grant/download or source credentials are requested during search.
+
+The existing unapproved v2 registration now declares the real citation output,
+with digest
+`293bd850007235b45b6ac39cff9b415101a2bb41a92a4914c0b86e3cd19ef4e6`,
+referencing the existing ContentReference schema document. Its search vector
+expects the original ingestion source reference, not the old raw-text marker;
+v1 remains unchanged. Native read/ingest document reference semantics and search
+source citation semantics are explicitly distinguished. Protocol schema and
+Core typed disclosure verification are a coordinated main-agent change, not a
+second contract maintained by this adapter.
+
+After implementation, the existing 4 CPU / 8 GiB immutable Node SDK and bounded
+`knowledge-adapter.N8sx1m` candidate were reused. No compiler was running at
+start; free Data space was 3.1 GiB. No package installation or new snapshot was
+needed. Only this batch's five owned code/registration/test inputs were copied.
+
+```sh
+node --test knowledge/adapter/test/query-revision.test.mjs file-storage/adapter/test/query-revision.test.mjs
+```
+
+Final result: **182 passed, 0 failed**, exit **0**. This includes existing Cells
+consumers of the shared PEP function and the actual v2 search vector through
+the MCP SDK/HTTP fixture. Private fault injection of raw-chunk output and a
+missing KB-fact check failed **6** checks (69 passed); separately removing
+foreign-hit/provenance/output-size refusals failed **6** checks (72 passed).
+Both mutations were restored, all five inputs compare byte-identically, and
+the two-file command above passed again. `git diff --check` also passed.
+Logs in the evidence directory above are `knowledge-citations.log`,
+`knowledge-citations-mutation.log`, `knowledge-citations-restored.log`,
+`knowledge-citations-boundary-mutation.log` and `knowledge-citations-final.log`.
+
+This proves the adapter consumer against controlled original-MCP/PEP fixtures,
+not live source permissions, deployed indexing, Core database integration or
+full capability conformance. Search returns citations only, not a generated
+answer. No original ask/Agent execution, deployment, registration approval or
+partial release was enabled. Mandatory full native-sync/usage/lifecycle and
+cross-component production acceptance still govern release readiness; no
+claim of end-to-end production readiness follows from this passing batch.
+
+The main-agent Catalog registration check initially rejected this batch with
+`Precondition(InvalidParameters)`: the first search output digest was wrongly
+computed from insertion-order JSON instead of the existing canonical JSON
+algorithm. The digest above corrects that error; canonical hashing reproduced
+the unchanged input digest as a control. Both adapter files were rerun after
+the correction: **182 passed, 0 failed**, exit **0**, recorded in
+`knowledge-citations-canonical-restored.log`. This adapter rerun does not
+substitute for the main-agent Catalog registration check; its initial failure
+is not counted as passing evidence.

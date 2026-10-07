@@ -1767,3 +1767,115 @@ The original GraphQL generator read the actual local schema via its existing
 codegen configuration and exited 0. `git diff --check -- data-query` also exited
 0. Full platform check, browser screenshot, published image and deployment are
 not performed or claimed by this component slice.
+
+## Registered native model/view selection without a global Resource (2026-10-07)
+
+This slice supersedes the previous single-Resource `humanAction` selection,
+not the historical commands/results above. The original UI still selects its
+native model/view; Core resolves an existing platform reference rather than
+asking an operator to configure one global Resource for all native objects.
+
+### Authority, impact, side effects and boundaries
+
+1. Authority: DD-98 keeps `catalog.resource` as the existing native-reference
+   authorization directory. Wren's original model/view identifiers and business
+   data remain in its own database. The fixed original source remains
+   `c5f02a0391c87420dba78632dcd86073710deb72` in
+   `/volumes/kailo/.references/WrenAI-ui-0.32.2`, particularly
+   `wren-ui/src/apollo/server/resolvers/modelResolver.ts::ModelResolver` and
+   `wren-ui/src/apollo/server/services/queryService.ts::QueryService`. No new
+   frontend, directory, user table or resource-registration authority was added.
+2. Impact: the existing service-authenticated `/service/v1/adapter/human-action`
+   handler now accepts the mutually exclusive `resolveResource` request. The
+   original independently verified HUMAN identity is retained. Core joins the
+   exact active tenant/binding/runtime generation/native type/native reference,
+   applies the original resource action catalog and scope facts, then evaluates
+   the existing governance permission. The response carries the actual Resource
+   id/version and bound native instance/scope. Existing submit/observe response
+   shape is unchanged. Four generated languages and the existing native HUMAN
+   sample/roundtrip checks include the new request and separate result.
+3. Side effects: lookup does not create an AE, reserve quota, execute SQL or
+   register a native object. The original submission rechecks permission,
+   binding and Resource version and performs the existing governance chain.
+   The returned reference is not an admission ticket. Wren rejects absent or
+   mismatched id/version/type/ref/instance/scope before freezing or submitting.
+   HTTP 404 is nullable only for a genuine original-idempotency-key observation,
+   not for resource resolution.
+4. Boundaries: zero or ambiguous directory matches fail closed; the SQL reads
+   at most two rows to prove uniqueness, never chooses a first arbitrary match.
+   Tenant/workspace mismatch, paused or changed binding/runtime generation,
+   inactive resource, missing action and permission denial retain the existing
+   INVALID_ARGUMENT/PERMISSION_DENIED/TARGET_STATE_CONFLICT/UNAVAILABLE paths.
+   Concurrent changes are fenced again by original submission. Existing UNKNOWN
+   actions are observed before any lookup and retain the exact frozen Resource,
+   native object, limit and key even if directory mappings subsequently change.
+   No new persistent intermediate state or cleanup lifecycle is introduced.
+
+The controlled `humanAction` delivery now contains only
+`resultExposurePolicyId` and `resultExposurePolicyVersion`. The retired
+`resourceId`/`resourceVersion` keys are explicitly rejected rather than silently
+used as a fallback. Release coordination must update the existing controlled
+delivery with the new consumer; this is not a claim that an old running delivery
+is compatible. Historical AE observation needs no fresh Resource selection.
+
+### Implementation and real checks
+
+The actual original model/view preview resolver still calls
+`NativeHumanQuery.preview`; it observes the existing key, resolves only a new
+intent, freezes the original native reference, and submits the original command
+with the returned Resource version. Checks exercise two distinct registered
+objects/keys, exact output facts, denied lookup, wrong submission Resource, and
+UNKNOWN observation with no repeat resolution or native freeze. The existing
+native handler/history/SQL fixture suite remains included.
+
+Existing SDK `kailo-wren-query-sdk-itgs2n` retained its 4 CPU / 4 GiB cgroup and
+local dependencies/cache. No install, new tree, build or deploy was performed.
+
+```text
+./node_modules/.bin/jest --runInBand src/nativeHumanQuery.test.ts src/nativeQuery.test.ts src/nativeProjectScope.test.ts src/viewMetadata.test.ts
+Test Suites: 4 passed, 4 total
+Tests:       92 passed, 92 total
+Time:        20.825 s
+exit 0 (final restored run)
+
+./node_modules/.bin/tsc --noEmit
+no diagnostics; exit 0
+```
+
+Private mutation removed the Wren resolved `nativeRef` comparison. The existing
+invalid-facts group failed with 1 failed / 6 passed / 13 deliberately filtered
+cases, exit 1: the changed native object incorrectly reached the later receipt
+path. The comparison was restored; all four candidate source/test files matched
+the formal files (`cmp` exit 0), followed by the 92-case restored run above.
+Logs reside in the existing
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+`resource-selection-tests.log`, `resource-selection-types.log`,
+`resource-selection-mutation.log`, and `resource-selection-restored.log`.
+
+Core's new
+`application_native_human::tests::native_resource_selection_uses_exact_registered_scope_and_original_action_facts`
+uses the existing migrated isolated database: base and dispatch fixtures execute
+inside one outer transaction and roll back. Mainline actually ran it with
+`--ignored`: 1 passed. It rejects foreign type/ref/action, workspace, tenant,
+binding, runtime generation and native scope while retaining the original
+resource version and permission. Mainline owns the centralized Core/four-side
+verification and its logs; this component receipt does not claim a live
+SSO/SpiceDB/Temporal/engine/usage E2E from local handler fixtures.
+
+Mainline also removed the exact native-reference SQL condition in its private
+candidate and ran this same isolated test: it failed at the `nativeRef`
+assertion, exit 101. After restoring the condition, the test again reported
+1 passed. The check therefore detects cross-object lookup, not only valid
+fixture acceptance. The existing resource-limited SDK ran `rustfmt`, `gofmt`
+and `dart format` successfully; only the added native-human roundtrip snippets
+were transferred back, with a separate current-index patch so unrelated dirty
+tests are not included in this batch.
+
+### Explicit remaining delivery gaps
+
+Registered, authorized models/views can now select their own existing Resource;
+unregistered native objects still cannot execute. Native object creation to
+Resource registration, arbitrary SQL/describe, Asking/dashboard governance,
+per-user native metadata reads, full iframe deployment and browser acceptance
+remain separate open work. No original page or menu was removed/reordered, and
+no screenshot or production release is claimed for this source-only slice.

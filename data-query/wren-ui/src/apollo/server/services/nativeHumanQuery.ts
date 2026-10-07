@@ -68,14 +68,45 @@ export class NativeHumanQuery {
     // A retry first reads the original AE. It never freezes a changed view over
     // an existing key, or repeats the native SQL in this request handler.
     let receipt = await observe();
+    let selectedResource: string | undefined;
     if (!receipt) {
-      const reference = await (kind === 'model'
-        ? this.queries.modelReference.bind(this.queries)
-        : this.queries.reference.bind(this.queries))(
-        selection.resourceId,
-        viewId,
-        limit,
+      const resolved = await bindingServiceCall(
+        this.config,
+        'human-action',
+        {
+          bindingId: this.config.bindingId,
+          resolveResource: {
+            workspaceId: this.config.workspaceId,
+            actionKey: 'data_query.query@v1',
+            actionVersion: 1,
+            nativeType: kind,
+            nativeRef: String(viewId),
+          },
+        },
+        token,
       );
+      const resource = resolved?.resource;
+      if (
+        !resource ||
+        typeof resource.resourceId !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          resource.resourceId,
+        ) ||
+        !Number.isSafeInteger(resource.resourceVersion) ||
+        resource.resourceVersion <= 0 ||
+        resource.nativeType !== kind ||
+        resource.nativeRef !== String(viewId) ||
+        resource.nativeInstanceRef !== this.config.nativeInstanceRef ||
+        resource.nativeScopeRef !== this.config.nativeScopeRef
+      ) {
+        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      }
+      selectedResource = resource.resourceId;
+      const reference = await (
+        kind === 'model'
+          ? this.queries.modelReference.bind(this.queries)
+          : this.queries.reference.bind(this.queries)
+      )(resource.resourceId, viewId, limit);
       receipt = await bindingServiceCall(
         this.config,
         'human-action',
@@ -85,8 +116,8 @@ export class NativeHumanQuery {
             actionKey: 'data_query.query@v1',
             idempotencyKey: key,
             workspaceId: this.config.workspaceId,
-            resourceId: selection.resourceId,
-            resourceVersion: selection.resourceVersion,
+            resourceId: resource.resourceId,
+            resourceVersion: resource.resourceVersion,
             componentAction: {
               actionVersion: 1,
               inputReference: reference,
@@ -105,7 +136,12 @@ export class NativeHumanQuery {
         value.submission?.actionKey !== 'data_query.query@v1' ||
         typeof value.submission.actionExecutionId !== 'string' ||
         typeof value.submission.operationId !== 'string' ||
-        value.inputReference?.resourceId !== selection.resourceId
+        typeof value.inputReference?.resourceId !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          value.inputReference.resourceId,
+        ) ||
+        (selectedResource !== undefined &&
+          value.inputReference.resourceId !== selectedResource)
       ) {
         throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
       }
@@ -115,8 +151,13 @@ export class NativeHumanQuery {
       } catch {
         throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
       }
-      if (frozen[kind === 'model' ? 'modelId' : 'viewId'] !== viewId ||
-        (kind === 'model' ? 'viewId' : 'modelId') in frozen || frozen.limit !== limit)
+      if (!frozen || typeof frozen !== 'object' || Array.isArray(frozen))
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      if (
+        frozen[kind === 'model' ? 'modelId' : 'viewId'] !== viewId ||
+        (kind === 'model' ? 'viewId' : 'modelId') in frozen ||
+        frozen.limit !== limit
+      )
         throw new NativeQueryRefusal(409, 'QUERY_INTENT_CONFLICT');
     };
     check(receipt);

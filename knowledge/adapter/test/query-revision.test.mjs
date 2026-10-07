@@ -21,7 +21,7 @@ function reply(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-async function fixture(t, mode = 'ok', action, protocolOperation, contractStep) {
+async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, searchReference) {
   const directory = await mkdtemp(join(tmpdir(), 'knowledge-adapter-'));
   const ids = Array.from({ length: 10 }, () => randomUUID());
   const readOperation = randomUUID();
@@ -37,13 +37,15 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep) 
   const state = { peps: 0, native: 0, methods: [], grants: 0, downloads: 0, receipts: [] };
   const revision = '2026-10-06T23:00:00.123456789Z';
   const ingest=action==='knowledge.ingest@v1'||action==='knowledge.ingest@v2';
-  const reference = contractStep ? JSON.parse(contractStep.inputJson)
-    : { resourceId: ingest?ids[9]:ids[8], nativeObjectRef: ids[2], nativeRevision: revision,
-      displayName: 'native document', mediaType: 'text/markdown' };
-  if (contractStep) ids[8] = contractStep.referenceResourceId;
+  const search = action === 'knowledge.search@v2';
+  const reference = searchReference ?? (contractStep && !search ? JSON.parse(contractStep.inputJson)
+    : { resourceId: ingest || search ? ids[9]:ids[8], nativeObjectRef: ids[2], nativeRevision: revision,
+      displayName: 'native document', mediaType: 'text/markdown' });
+  if (contractStep?.referenceResourceId) ids[8] = contractStep.referenceResourceId;
   const operation = protocolOperation ?? (action ? 'execute' : 'query_revision');
   const intent = ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
-    : action ? { target: { resourceId: ids[8] }, input: reference } : args;
+    : action ? { target: { resourceId: ids[8] }, input: search
+      ? contractStep ? JSON.parse(contractStep.inputJson) : { query: 'search fixture' } : reference } : args;
   const bodyValue = ['observe','extract_usage'].includes(operation) ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
   const upstream = createServer(async (request, response) => {
     let raw = '';
@@ -86,7 +88,10 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep) 
       if ((mode === 'deny' && state.peps === 1) || (mode === 'revoke' && state.peps === 2)) return reply(response, 403, {});
       assert.equal(body.operation, operation);
       assert.deepEqual(JSON.parse(body.argumentsJson), intent);
-      return reply(response, 200, { actionExecutionId: ids[5], operationId: ids[6], authorizationMinZedToken: 'current' });
+      return reply(response, 200, { actionExecutionId: ids[5], operationId: ids[6], authorizationMinZedToken: 'current',
+        ...(search && mode !== 'missing-target' ? { targetResource: { resourceId: ids[8], nativeType: 'knowledge_base',
+          nativeRef: mode === 'wrong-target' || (mode === 'target-changed' && state.peps > 1) ? ids[9] : ids[1],
+          nativeInstanceRef: 'fixture-native', nativeScopeRef: 'fixture-scope' } } : {}) });
     }
     if (body.method === 'initialize') return reply(response, 200, { jsonrpc: '2.0', id: body.id,
       result: { protocolVersion: body.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'native-test', version: '1' } } });
@@ -95,6 +100,20 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep) 
     assert.ok(request.headers.authorization === `Bearer ${nativeSecret}`);
     assert.equal(body.method, 'tools/call');
     state.methods.push(body.params.name);
+    if (body.params.name === 'search_knowledge') {
+      assert.equal(search, true);
+      assert.deepEqual(body.params.arguments, { query: intent.input.query, knowledge_base_ids: [ids[1]] });
+      const hit = { knowledge_id: ids[2], knowledge_base_id: mode === 'foreign-search' ? ids[9] : ids[1],
+        content: 'RAW CHUNK MUST NOT LEAK', match_snippet: 'SNIPPET MUST NOT LEAK',
+        knowledge_metadata: { source_references: [{ resourceId: 'spoofed' }] } };
+      const results = mode === 'empty' ? [] : [hit,
+        mode === 'partial-search' ? { ...hit, knowledge_base_id: ids[9] } : hit];
+      return reply(response, 200, { jsonrpc: '2.0', id: body.id, result: { content: [],
+        ...(mode === 'search-error' ? { isError: true } : {}), structuredContent: {
+          query: intent.input.query, knowledge_base_ids: [ids[1]], count: mode === 'count-mismatch' ? 1 : results.length,
+          results: mode === 'missing-results' ? undefined : results,
+        } } });
+    }
     if (body.params.name==='add_document') {
       if (['observe','extract_usage'].includes(operation)) assert.deepEqual(body.params.arguments,{
         knowledge_base_id:ids[1],idempotency_key:args.idempotencyKey,observe_only:true});
@@ -139,6 +158,13 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep) 
         : mode === 'changed' && state.native > 1 ? '2026-10-06T23:00:00.123456790Z' : revision,
         parse_status: mode === 'pending' ? 'pending' : 'completed' },
       knowledge_base: { id: mode === 'foreign' ? ids[9] : ids[1] },
+      ...(search && mode !== 'missing-provenance' ? { source_references: mode === 'empty-provenance' ? []
+        : mode === 'bad-provenance' ? [{ ...reference, secret: 'must-not-be-accepted' }]
+          : mode === 'partial-provenance' ? [reference, { ...reference, resourceId: 'invalid' }]
+            : mode === 'provenance-overflow' ? Array.from({ length: 20 }, (_, index) => ({ ...reference,
+              nativeObjectRef: `opaque-source-${index}`, displayName: 'x'.repeat(500) }))
+          : mode === 'single-source' ? [reference]
+            : [reference, { ...reference, nativeObjectRef: 'opaque/source-object', displayName: 'other source' }, reference] } : {}),
     } } });
   });
   const origin = await listen(upstream);
@@ -190,6 +216,61 @@ test('knowledge v2 registered ingest vector reaches source grant, file transfer 
   assert.equal(state.grants, 1);
   assert.equal(state.downloads, 1);
   assert.deepEqual(state.methods, ['add_document']);
+});
+
+test('knowledge v2 search returns only real typed source citations through original MCP and current KB PEP', async t => {
+  const { state, reference, invoke } = await fixture(t, 'ok', 'knowledge.search@v2');
+  const response = await invoke();
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  const citations = [reference, { ...reference, nativeObjectRef: 'opaque/source-object', displayName: 'other source' }];
+  assert.deepEqual(JSON.parse(body.resultJson), { citations });
+  assert.deepEqual(body.contentReferences, citations);
+  assert.equal(body.execution.platformStatus, 'SUCCEEDED');
+  assert.equal(JSON.stringify(body).includes('MUST NOT LEAK'), false);
+  assert.equal(JSON.stringify(body).includes('spoofed'), false);
+  assert.deepEqual(state.methods, ['search_knowledge', 'read_document']);
+  assert.equal(state.peps, 2);
+  assert.equal(state.grants, 0);
+  assert.equal(state.downloads, 0);
+});
+
+test('knowledge v2 registered search vector uses citation output rather than raw text', async t => {
+  const registration = JSON.parse(await readFile(new URL('../../../contracts/adapter/knowledge.v2/registration.json', import.meta.url)));
+  const steps = JSON.parse(registration.testVectorsJson).cases.find(value => value.caseKey === 'knowledge_roundtrip').steps;
+  const search = steps.find(value => value.contractKey === 'knowledge.search@v2');
+  const { invoke } = await fixture(t, 'single-source', search.contractKey, undefined, search, JSON.parse(steps[0].inputJson));
+  const response = await invoke();
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(JSON.parse(body.resultJson), JSON.parse(search.expectedOutputJson));
+  assert.deepEqual(body.contentReferences, JSON.parse(search.expectedOutputJson).citations);
+});
+
+test('knowledge v2 search permits complete empty results but never missing provenance, wrong scope or revoked disclosure', async t => {
+  for (const mode of ['empty', 'deny', 'revoke', 'missing-target', 'wrong-target', 'target-changed',
+    'foreign-search', 'count-mismatch', 'missing-results', 'search-error', 'foreign',
+    'pending', 'no-revision', 'missing-provenance', 'empty-provenance', 'bad-provenance',
+    'partial-search', 'partial-provenance', 'provenance-overflow']) {
+    await t.test(mode, async nested => {
+      const { state, invoke } = await fixture(nested, mode, 'knowledge.search@v2');
+      const response = await invoke();
+      if (mode === 'empty') {
+        assert.equal(response.status, 200);
+        const body = await response.json();
+        assert.deepEqual(JSON.parse(body.resultJson), { citations: [] });
+        assert.equal(body.contentReferences, undefined);
+        assert.deepEqual(state.methods, ['search_knowledge']);
+      } else {
+        assert.notEqual(response.status, 200);
+        const body = await response.json();
+        assert.equal(body.resultJson, undefined);
+        assert.equal(body.contentReferences, undefined);
+        if (['deny', 'missing-target', 'wrong-target'].includes(mode)) assert.equal(state.native, 0);
+      }
+      assert.equal(state.grants, 0);
+    });
+  }
 });
 
 test('knowledge revision uses original MCP metadata and two fresh PEP decisions', async t => {

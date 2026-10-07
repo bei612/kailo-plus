@@ -178,4 +178,5 @@ export async function freshPep(config, deadline, token, args, claims, operation 
   if (!exactKeys(answer, keys)
     || answer.actionExecutionId !== claims.action_execution_id || answer.operationId !== claims.operation_id
     || !nonempty(answer.authorizationMinZedToken)) throw new Refused(503);
+  return answer;
 }

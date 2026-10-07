@@ -1598,3 +1598,54 @@ Native Node 旧检查不具备 window，去掉错误的浏览器 locale setter �
 截图左下资料显示名为空、状态展示 principal UUID 的实际现象已交主线核对，未越界改 Core。
 本批源码/窄验完成不等于部署完成；新未读控件的实际浏览器验收、三个二开业务 iframe、
 Windows 安装包与 Mobile 仍未由本轮证明。未复拍/打开的其余页面不计本轮视觉覆盖。
+
+### 2026-10-07：原 Inbox 完整加载面 Web/Desktop 共源恢复
+
+沿同一全树差异清单续核，确认 Native 的原 `HomeLoadingState` 完整保留，
+而 Web `InboxPane` 实际目录/消息/读状态未就绪分支只渲染一行 loading 文本。
+本批恢复该明确缺项，不将此五文件专项称为完整清单全量分类或原版 100% 验收。
+
+1. 权威：用户固定原版一致性与两端页面共源要求；`.design/09` 的 Web BFF/Native
+   本机身份边界不变。Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/home/ui/HomeLoadingState.tsx::HomeLoadingState` 为完整来源。
+2. 影响：原 116 行组件迁入 `client-kit/ts/platform/src/react/home-loading-state.tsx`，
+   经已有 `inbox-surface` 出口导出；Native 同名文件改 reexport，原
+   `desktop/src/features/home/ui/HomeView.tsx::HomeView` 调用不变；Web
+   `web-client/web/src/platform/ui/InboxPane.tsx::InboxPane` 的真实加载分支接入。
+   不改契约、API、数据存储、读状态或 Mobile，不增依赖和翻译来源。
+3. 副作用：Skeleton 无输入/发送动作，不制造消息或未读事实；原五行列表、三行详情、
+   响应式双栏与底部编辑区骨架原样保留。除来源注释和 Skeleton 导入路径外逐字节相同，
+   归一化原源码 SHA-256 为 `7ef5e9c4ebb8f0842ddd4645f4dfaa418ea5bfb932c182c63ac516db18fa6f3d`。
+4. 边界：加载结束进入原真实消息/零消息视图，失败与 read UNKNOWN 分支仍先于骨架，
+   不把拒绝或结果不明变成永远加载。原 aggregation generation、卸载和撤权校验未改。
+
+分类：原 `HomeLoadingState` 为原样保留后共享迁移；Web 一行加载文字为缺失已恢复；
+BFF/Native 两条凭据读取链仍是已授权治理差异。DM 未读/头像、原搜索/分组拖拽等上一节
+缺项未借此关闭，其他未分类路径仍未核实。
+
+原受限 SDK `kailo-agent-receipt-xvkujx`（4 CPU / 8 GiB）复用
+`profile-settings-ortsoo.DRR20F/apps`，开跑前主机可用内存 27095 MiB；未造快照/镜像或下载。
+Web `node_modules/.bin/tsc --noEmit` 退出 0；
+`node_modules/.bin/vitest run src/platform/ui/InboxPane.test.tsx` 最终 **19 passed**、退出 0。
+新增五项实际消费者覆盖 pending→空/消息/读取失败/读状态失败/UNKNOWN，并断言原完整骨架。
+SDK-only 将实际 Web 分支退回一行 loading，五项全部真实失败（5 failed/14 skipped，退出 1）；
+还原 `cmp` 退出 0 后再次完整 19 passed，类型检查 0。
+Native 原 `node --import ./test-loader.mjs --input-type=module` 实际导入同名原路径并
+`renderToStaticMarkup`，确认 Native 与共享组件引用相同、三行详情/原网格/编辑区均渲染，退出 0。
+初轮19项中旧 ChannelPane mock 丢失已有 `mentionPeopleFromMembers` 导出而失败；
+改为保留真实 exports 后 BFF mock 又缺 `fetchUserState`，同样保留实际 exports 后通过，
+未伪造 helper 或放宽产品。既有 React act 警告原样保留。
+
+日志仍在上一节 Data 目录：`inbox-loading-type-final.log`、`inbox-loading-consumer.log`、
+`inbox-loading-consumer-fixed.log`、`inbox-loading-consumer-final.log`、
+`inbox-loading-mutation.log`、`inbox-loading-restored.log`。没有执行全局检查、打包、发布或 Windows/Mobile 验收。
+
+真实 `playwright-cli -s=kailo-ui-status` 点击 Inbox 后会话过期，
+`.playwright-cli/inbox-loading-baseline-20261007.png` 实际为 Keycloak 登录页，已打开核实，
+不当作加载面验收。随后通过既有 VERIFY_USER 受控正常 SSO 重新登录，未打印凭据或注入 session。
+实际 Inbox 空列表、过滤菜单和“提及”选择截图均打开复核：
+`.playwright-cli/inbox-current-after-sso-20261007.png`、
+`.playwright-cli/inbox-filter-current-20261007.png`、
+`.playwright-cli/inbox-mention-empty-settled-20261007.png`。
+线上 build 仍为 `sha256:a484ceeba47f06e572461060c2b12353cd4646654d02fd45c04308558ebd7642`，
+不是本批源码；当前中文空态观察不能代替新加载组件部署后的逐页截图。本批源码与窄验完成，部署验收未完成。

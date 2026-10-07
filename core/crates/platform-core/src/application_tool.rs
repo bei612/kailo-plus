@@ -23,6 +23,7 @@ fn output_value(
     output: &Value,
     documents: &BTreeMap<String, Value>,
     verified_reference: Option<&Value>,
+    verified_citations: Option<&Value>,
 ) -> Result<Value, Refusal> {
     let value: Value = serde_json::from_str(raw["resultJson"].as_str().ok_or_else(invalid)?)
         .map_err(|_| invalid())?;
@@ -31,15 +32,154 @@ fn output_value(
     }
     // Only the exact typed slot verified by the native query may be exposed.
     // A reference inferred from resultJson or another envelope is not proof.
-    if raw.get("contentReference") != verified_reference {
+    if raw.get("contentReference") != verified_reference
+        || raw.get("contentReferences") != verified_citations
+    {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
+    citation_output(raw, &value)?;
     Ok(value)
+}
+
+// Shared with the existing release conformance consumer: a passing expected
+// result cannot conceal a missing or different typed citation slot.
+pub(crate) fn citation_output(raw: &Value, value: &Value) -> Result<(), Refusal> {
+    match raw.get("contentReferences") {
+        Some(citations) => {
+            let items = citations
+                .as_array()
+                .filter(|items| !items.is_empty())
+                .ok_or_else(invalid)?;
+            if raw.get("contentReference").is_some() || value.get("citations") != Some(citations) {
+                return Err(invalid());
+            }
+            for reference in items {
+                citation_identity(reference)?;
+            }
+        }
+        None if value
+            .get("citations")
+            .is_some_and(|value| value != &json!([])) =>
+        {
+            return Err(invalid())
+        }
+        None => {}
+    }
+    Ok(())
+}
+
+async fn verify_citations(
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    citations: &Value,
+) -> Result<(), Refusal> {
+    for reference in citations.as_array().ok_or_else(invalid)? {
+        let (resource, asset) = citation_identity(reference)?;
+        // A citation is metadata learned through the admitted KB, not a grant
+        // to read its source. Retired sources remain citeable but unavailable
+        // when opened. Only existing references in this tenant may be exposed.
+        let exists: bool = sqlx::query_scalar(
+            "select exists(select 1 from catalog.resource r
+             join catalog.application_binding b on b.id=r.application_binding_id
+               and b.tenant_id=r.tenant_id
+             where r.id=$1 and r.tenant_id=$2 and ($3::uuid is null or exists(
+               select 1 from catalog.asset a where a.id=$3 and a.resource_id=r.id
+                 and a.tenant_id=r.tenant_id and a.native_ref=$4)))",
+        )
+        .bind(resource)
+        .bind(tenant)
+        .bind(asset)
+        .bind(reference["nativeObjectRef"].as_str().ok_or_else(invalid)?)
+        .fetch_one(&mut *conn)
+        .await?;
+        if !exists {
+            return Err(denied());
+        }
+    }
+    Ok(())
+}
+
+fn citation_identity(reference: &Value) -> Result<(Uuid, Option<Uuid>), Refusal> {
+    let typed: contracts::ContentReference =
+        serde_json::from_value(reference.clone()).map_err(|_| invalid())?;
+    if serde_json::to_value(typed).map_err(|_| invalid())? != *reference {
+        return Err(invalid());
+    }
+    for field in [
+        "nativeObjectRef",
+        "nativeRevision",
+        "displayName",
+        "mediaType",
+    ] {
+        if reference[field]
+            .as_str()
+            .is_none_or(|value| value.trim().is_empty())
+        {
+            return Err(invalid());
+        }
+    }
+    let id = |value: &Value| -> Result<Uuid, Refusal> {
+        let raw = value.as_str().ok_or_else(invalid)?;
+        let id = Uuid::parse_str(raw).map_err(|_| invalid())?;
+        if id.is_nil() || id.to_string() != raw {
+            return Err(invalid());
+        }
+        Ok(id)
+    };
+    Ok((
+        id(&reference["resourceId"])?,
+        reference.get("assetId").map(id).transpose()?,
+    ))
 }
 
 #[cfg(test)]
 mod application_tool_tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires the existing migrated isolated database; all fixtures roll back"]
+    async fn citations_resolve_only_existing_source_ownership_in_the_execution_tenant() {
+        use sqlx::Connection;
+        let mut conn = PgConnection::connect(
+            &std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").expect("isolated database"),
+        )
+        .await
+        .unwrap();
+        let mut tx = conn.begin().await.unwrap();
+        let base = include_str!("../../../verify/application-execution-base.sql")
+            .replace("\nBEGIN;\n", "\n")
+            .replace("\nCOMMIT;", "\n");
+        sqlx::raw_sql(&base).execute(&mut *tx).await.unwrap();
+        sqlx::raw_sql(include_str!(
+            "../../../verify/application-execution-dispatch.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let (tenant, resource): (Uuid, Uuid) = sqlx::query_as(
+            "select a.tenant_id,a.target_id
+            from application_dispatch_fixture f join admission.action_execution a on a.id=f.child",
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        let references = json!([{"resourceId":resource,"nativeObjectRef":"native-source-child",
+            "nativeRevision":"recorded-revision","displayName":"source","mediaType":"text/plain"}]);
+        verify_citations(&mut tx, tenant, &references)
+            .await
+            .unwrap();
+        verify_citations(&mut tx, tenant, &json!([])).await.unwrap();
+        assert!(verify_citations(&mut tx, Uuid::new_v4(), &references)
+            .await
+            .is_err());
+        let mut invalid = references.clone();
+        invalid[0]["resourceId"] = json!(Uuid::new_v4());
+        assert!(verify_citations(&mut tx, tenant, &invalid).await.is_err());
+        invalid = references;
+        invalid[0]["assetId"] = json!(Uuid::new_v4());
+        assert!(verify_citations(&mut tx, tenant, &invalid).await.is_err());
+        tx.rollback().await.unwrap();
+    }
 
     #[tokio::test]
     #[ignore = "requires an isolated migrated application_tool_verify_* PostgreSQL database"]
@@ -115,7 +255,7 @@ mod application_tool_tests {
             "required":["answer"],"properties":{"answer":{"type":"string"}}});
         let envelope = json!({"execution":{"nativeId":"private-execution"},
             "resultJson":"{\n  \"answer\": \"allowed\"\n}"});
-        let value = output_value(&envelope, &schema, &BTreeMap::new(), None).unwrap();
+        let value = output_value(&envelope, &schema, &BTreeMap::new(), None, None).unwrap();
         assert_eq!(value, json!({"answer":"allowed"}));
         let wire = serde_json::to_value(rmcp::model::CallToolResult::structured(value)).unwrap();
         assert_eq!(wire["structuredContent"], json!({"answer":"allowed"}));
@@ -123,12 +263,87 @@ mod application_tool_tests {
         assert!(!wire.to_string().contains("resultJson"));
         let mut wrong = envelope.clone();
         wrong["resultJson"] = json!("{\"answer\":42}");
-        assert!(output_value(&wrong, &schema, &BTreeMap::new(), None).is_err());
+        assert!(output_value(&wrong, &schema, &BTreeMap::new(), None, None).is_err());
         wrong["resultJson"] = json!("{\"answer\":\"allowed\",\"extra\":\"denied\"}");
-        assert!(output_value(&wrong, &schema, &BTreeMap::new(), None).is_err());
+        assert!(output_value(&wrong, &schema, &BTreeMap::new(), None, None).is_err());
         wrong = envelope;
         wrong["contentReference"] = json!({"resourceId":Uuid::new_v4()});
-        assert!(output_value(&wrong, &schema, &BTreeMap::new(), None).is_err());
+        assert!(output_value(&wrong, &schema, &BTreeMap::new(), None, None).is_err());
+    }
+
+    #[test]
+    fn citations_require_exact_typed_provenance_without_exposing_native_envelope() {
+        let reference = json!({"resourceId":Uuid::from_u128(1),
+            "nativeObjectRef":"source-object", "nativeRevision":"source-revision",
+            "displayName":"Source document", "mediaType":"text/plain"});
+        let schema = json!({"type":"object","additionalProperties":false,
+            "required":["citations"],"properties":{"citations":{"type":"array"}}});
+        let mut second = reference.clone();
+        second["nativeObjectRef"] = json!("other-source-object");
+        for citations in [
+            json!([reference.clone()]),
+            json!([reference.clone(), second]),
+        ] {
+            let business = json!({"citations":citations});
+            let raw = json!({"execution":{"nativeId":"private-execution"},
+                "resultJson":business.to_string(), "contentReferences":citations});
+            assert_eq!(
+                output_value(
+                    &raw,
+                    &schema,
+                    &BTreeMap::new(),
+                    None,
+                    raw.get("contentReferences")
+                )
+                .unwrap(),
+                business
+            );
+            assert!(output_value(&raw, &schema, &BTreeMap::new(), None, None).is_err());
+            let mut missing = raw.clone();
+            missing.as_object_mut().unwrap().remove("contentReferences");
+            assert!(output_value(&missing, &schema, &BTreeMap::new(), None, None).is_err());
+            let mut forged = raw;
+            forged["resultJson"] =
+                json!(json!({"citations":[{"resourceId":Uuid::from_u128(2)}]}).to_string());
+            assert!(output_value(
+                &forged,
+                &schema,
+                &BTreeMap::new(),
+                None,
+                forged.get("contentReferences")
+            )
+            .is_err());
+        }
+        let empty = json!({"resultJson":"{\"citations\":[]}"});
+        assert_eq!(
+            output_value(&empty, &schema, &BTreeMap::new(), None, None).unwrap(),
+            json!({"citations":[]})
+        );
+        let typed_empty = json!({"resultJson":"{\"citations\":[]}","contentReferences":[]});
+        assert!(output_value(
+            &typed_empty,
+            &schema,
+            &BTreeMap::new(),
+            None,
+            typed_empty.get("contentReferences")
+        )
+        .is_err());
+        assert_eq!(
+            citation_identity(&reference).unwrap(),
+            (Uuid::from_u128(1), None)
+        );
+        for (field, value) in [
+            ("resourceId", json!(Uuid::nil())),
+            ("nativeObjectRef", json!("")),
+            ("nativeRevision", json!(" ")),
+            ("displayName", json!("")),
+            ("mediaType", json!("")),
+            ("untrustedCredential", json!("forbidden")),
+        ] {
+            let mut invalid = reference.clone();
+            invalid[field] = value;
+            assert!(citation_identity(&invalid).is_err(), "{field}");
+        }
     }
 
     #[test]
@@ -807,21 +1022,29 @@ mod revision_read_tests {
         require_current_revision(&frozen, &current).unwrap();
         let raw = json!({"execution":{"nativeId":"private"},"resultJson":"\"allowed\"","contentReference":frozen});
         let schema = json!({"type":"string"});
-        assert!(output_value(&raw, &schema, &BTreeMap::new(), None).is_err());
+        assert!(output_value(&raw, &schema, &BTreeMap::new(), None, None).is_err());
         assert_eq!(
-            output_value(&raw, &schema, &BTreeMap::new(), raw.get("contentReference")).unwrap(),
+            output_value(
+                &raw,
+                &schema,
+                &BTreeMap::new(),
+                raw.get("contentReference"),
+                None
+            )
+            .unwrap(),
             json!("allowed")
         );
         assert!(output_value(
             &raw,
             &json!({"type":"number"}),
             &BTreeMap::new(),
-            raw.get("contentReference")
+            raw.get("contentReference"),
+            None
         )
         .is_err());
         let mut other = frozen;
         other["nativeRevision"] = json!("unproven");
-        assert!(output_value(&raw, &schema, &BTreeMap::new(), Some(&other)).is_err());
+        assert!(output_value(&raw, &schema, &BTreeMap::new(), Some(&other), None).is_err());
     }
 }
 
@@ -1360,6 +1583,11 @@ pub(crate) async fn disclose(
     } else {
         None
     };
+    let citations = if connector == Connector::RemoteAdapter {
+        raw.and_then(|value| value.get("contentReferences"))
+    } else {
+        None
+    };
     if let Some(reference) = reference {
         verify_content_reference(state, &ae, reference).await?;
     }
@@ -1413,9 +1641,13 @@ pub(crate) async fn disclose(
     // not inferred from business output. Unsupported historical references are
     // still rejected; the original reference is never replaced with the head.
     let value = match connector {
-        Connector::RemoteAdapter => {
-            output_value(raw.ok_or_else(invalid)?, output, &documents, reference)?
-        }
+        Connector::RemoteAdapter => output_value(
+            raw.ok_or_else(invalid)?,
+            output,
+            &documents,
+            reference,
+            citations,
+        )?,
         Connector::ProtocolPeer => {
             let value = crate::application_binding::peer::result_value(result)?;
             if !crate::capability_contract::schema_validator(output, &documents)?.is_valid(&value) {
@@ -1424,6 +1656,9 @@ pub(crate) async fn disclose(
             value
         }
     };
+    if let Some(citations) = citations {
+        verify_citations(&mut tx, ae.tenant_id, citations).await?;
+    }
     let definition = crate::governance::exact_definition_for_execution(&state.pool, &ae).await?;
     crate::governance::audit(
         &mut tx,
