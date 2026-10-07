@@ -155,7 +155,7 @@ export interface IAskingService {
     data: { sql: string },
   ): Promise<ThreadResponse>;
   getResponsesWithThread(threadId: number): Promise<ThreadResponse[]>;
-  getResponse(responseId: number): Promise<ThreadResponse>;
+  getResponse(responseId: number, project?: Project): Promise<ThreadResponse>;
   generateThreadResponseBreakdown(
     threadResponseId: number,
     configurations: { language: string },
@@ -922,16 +922,26 @@ export class AskingService implements IAskingService {
     return this.threadResponseRepository.getResponsesWithThread(threadId);
   }
 
-  public async getResponse(responseId: number) {
-    return this.threadResponseRepository.findOneBy({ id: responseId });
+  public async getResponse(responseId: number, project?: Project) {
+    const response = await this.threadResponseRepository.findOneBy({
+      id: responseId,
+    });
+    if (!response) return null;
+    const currentProject =
+      project ?? (await this.projectService.getCurrentProject());
+    const thread = await this.threadRepository.findOneBy({
+      id: response.threadId,
+      projectId: currentProject.id,
+    });
+    return thread ? response : null;
   }
 
   public async previewData(responseId: number, limit?: number) {
-    const response = await this.getResponse(responseId);
+    const project = await this.projectService.getCurrentProject();
+    const response = await this.getResponse(responseId, project);
     if (!response) {
       throw new Error(`Thread response ${responseId} not found`);
     }
-    const project = await this.projectService.getCurrentProject();
     const deployment = await this.deployService.getLastDeployment(project.id);
     const mdl = deployment.manifest;
     const eventName = TelemetryEvent.HOME_PREVIEW_ANSWER;
@@ -967,11 +977,11 @@ export class AskingService implements IAskingService {
     stepIndex?: number,
     limit?: number,
   ): Promise<PreviewDataResponse> {
-    const response = await this.getResponse(responseId);
+    const project = await this.projectService.getCurrentProject();
+    const response = await this.getResponse(responseId, project);
     if (!response) {
       throw new Error(`Thread response ${responseId} not found`);
     }
-    const project = await this.projectService.getCurrentProject();
     const deployment = await this.deployService.getLastDeployment(project.id);
     const mdl = deployment.manifest;
     const steps = response?.breakdownDetail?.steps;

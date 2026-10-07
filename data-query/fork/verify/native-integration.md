@@ -1194,3 +1194,124 @@ Logs in `/volumes/data/kailo/tmp/gateway-locale-repair-20261007.iwRGvX/`:
 `wren-recommendation-initial.log`, `wren-recommendation-narrow.log`,
 `wren-recommendation-mutation.log`, `wren-recommendation-restored.log`.
 No full check, image build, deployment or live recommendation acceptance ran.
+
+## Bound native project and modeling references (2026-10-07)
+
+Authority: `.design/08` §6, `SS-WRN-IDENTITY` and
+`SS-WRN-GOVERNANCE`. Wren remains an independently stored and operated business
+system. This change makes its original native business consumers use the
+already-delivered binding project; it neither establishes a new permission
+authority nor claims that instance isolation provides user authorization.
+
+The pinned source is `.references/WrenAI-ui-0.32.2` commit
+`c5f02a0391c87420dba78632dcd86073710deb72`. Verified paths and symbols:
+
+- `wren-ui/src/apollo/server/repositories/projectRepository.ts`,
+  `ProjectRepository.getCurrentProject`: original first-row selection.
+- `wren-ui/src/apollo/server/resolvers/modelResolver.ts`,
+  `ModelResolver.getModel`, `getView`, `updateModelMetadata`,
+  `createCalculatedField`, `previewSql`, `createView`: original business
+  callers and supplied native IDs.
+- `wren-ui/src/apollo/server/services/modelService.ts`,
+  `ModelService.getCalculatedFieldByRelation`: lineage consists of relation
+  IDs followed by the input column ID, not only a terminal column.
+- `wren-ui/src/apollo/server/services/askingService.ts`,
+  `AskingService.getResponse`, `previewData`, `previewBreakdownData`: response
+  lookup and its actual query consumers.
+- `wren-ui/src/apollo/server/resolvers/dashboardResolver.ts`,
+  `DashboardResolver.createDashboardItem`: existing response-to-dashboard
+  consumer.
+
+The existing `tools/upstream_manifest.py status data-query` and full
+`diff data-query --stat` both exited 0 in a read-only SDK container. The pinned
+HEAD still matches the manifest. Baseline full-tree output was 965 changed
+files, 130606 insertions and 314 deletions; the expanded `wren-engine` upstream
+gitlink accounts for most of that tree, so this is not a count of missing UI
+pages. This batch's differences are authorized binding enforcement and its
+evidence; it changes no native page, layout, menu or GraphQL field. The full
+tree count is not evidence that all unrelated differences are classified or
+that the whole product is restored.
+
+Implementation impact and boundaries:
+
+1. `common.ts` supplies the existing `loadQueryDelivery().projectId` to the
+   actual `ProjectRepository` used by native services. A configured but empty,
+   invalid, unreadable or removed delivery does not select the first database
+   row. Missing bound projects are refused. An independently started native
+   instance without this binding configuration retains its original setup.
+2. Model/view read, edit, deletion and preview use the current project's ID.
+   Metadata checks all supplied column, nested-column, calculated-field and
+   relation IDs before its first write. Relation endpoints and every relation
+   in a calculated-field lineage must belong to that project. An MDL hash must
+   identify a deployment of that project. Original in-project implementations
+   continue to perform the operations; no second model store is created.
+3. `AskingService.getResponse` follows the real response-to-thread-to-project
+   ownership chain. Saved-view creation, native SQL and the two answer previews
+   reuse their already-selected project object. Dashboard creation also checks
+   that its current dashboard belongs to that object before reading a response
+   or querying data. Other direct `getResponse` consumers were checked:
+   `AskingResolver.getResponse` may return null; `streaming_answer.ts` already
+   rejects null before calling its native stream. Existing callers therefore do
+   not disclose a foreign response after this read returns null.
+4. The AI `previewSql` endpoint still supports its original explicit project
+   argument in independent mode. With controlled delivery present it uses the
+   verified current project object and rejects a foreign explicit ID. It does
+   not re-fetch a requested project after checking the binding. The existing
+   saved-view HUMAN Action, Gateway and PEP chain is unchanged.
+
+Missing IDs and foreign native references are refused through original native
+not-found errors (not a fabricated successful empty write). Delivery failure is
+an unavailable dependency, never an alternate scope. No business terminal
+state, retry, new Action, workflow, database column or platform contract is
+introduced. Existing native mutation atomicity/idempotency is not upgraded by
+these reference checks, and no new retry of native side effects is added.
+
+Remaining release boundary: this is project-binding enforcement, **not**
+complete instance-internal user/resource authorization or complete native
+governance. The original Asking thread mutation/list/recommendation paths,
+dashboard item-by-ID operations and other native business action admission
+still need their actual consumer-level `SS-WRN-IDENTITY` /
+`SS-WRN-GOVERNANCE` closure. A valid OIDC token or this project check cannot
+be used as evidence that those paths are ready for unrestricted multi-user
+release. Binding/generation changes across separate native service operations
+are not made transactionally atomic by this batch.
+
+Verification reused `kailo-wren-query-sdk-itgs2n` (4 CPU / 4 GiB, existing
+immutable SDK image, dependencies and `/volumes/data` cache). Before execution
+there was no competing compiler in that container, available host memory was
+27 GiB and its OOM flag was false. No dependency install or image build ran.
+
+```sh
+./node_modules/.bin/jest --runInBand src/nativeProjectScope.test.ts \
+  src/apollo/server/services/tests/projectRecommendation.test.ts
+./node_modules/.bin/tsc --noEmit
+```
+
+The initial resolver test fixture omitted native required metadata fields and
+failed TypeScript compilation; the next attempt expected properties without
+the original persisted display name and had 1 failure / 24 passes. Both logs
+are retained, not counted as successful verification. Corrected native
+expectations then produced 27 passes and TypeScript exit 0. Cross-review found
+the original nullable GraphQL `columnId` input; the guard now accepts null and
+omission, with two actual resolver cases instead of changing the schema.
+
+Four mutations in the private SDK removed bound-project selection, view scope,
+lineage-prefix validation, and nullable-input handling. They produced **5
+failed / 24 passed**, exit 1, including the real PostgreSQL first-row mismatch.
+All seven implementation/test inputs were restored from formal source and
+`cmp` returned 0 for each. The SQL test creates a fresh randomly named schema
+in the existing isolated fixture and removes only that schema; it does not
+touch a live Wren business project. In-project view read/edit/delete still use
+their original repository operations.
+
+Logs are under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+`native-project-scope-tests.log`, `native-project-scope-tests-corrected.log`,
+`native-project-scope-tests-final.log`, `native-project-scope-types.log`,
+`native-project-scope-mutation.log`, `native-project-scope-restored.log`, and
+`native-project-scope-types-restored.log`.
+Final restored result: **29 passed, 0 failed, 0 skipped**, two suites passed;
+the complete Wren `tsc --noEmit` then exited 0, combined session 82068 exit 0.
+This batch runs no full check, live browser/screenshot acceptance, image
+publication, deployment or desktop/mobile acceptance; none is inferred from
+these native backend checks.

@@ -197,7 +197,10 @@ export class ProjectRepository
 {
   private jsonTypeColumns = ['questions', 'questions_error', 'connection_info'];
 
-  constructor(knexPg: Knex) {
+  constructor(
+    knexPg: Knex,
+    private readonly boundProjectId?: () => Promise<number>,
+  ) {
     super({ knexPg, tableName: 'project' });
   }
 
@@ -219,6 +222,14 @@ export class ProjectRepository
   }
 
   public async getCurrentProject() {
+    if (this.boundProjectId) {
+      const id = await this.boundProjectId();
+      if (!Number.isSafeInteger(id) || id <= 0)
+        throw new Error('Bound project unavailable');
+      const project = await this.findOneBy({ id });
+      if (!project) throw new Error('Bound project unavailable');
+      return project;
+    }
     const projects = await this.findAll({
       order: 'id',
       limit: 1,

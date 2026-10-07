@@ -78,8 +78,12 @@ export class DashboardResolver {
     ctx: IContext,
   ): Promise<DashboardItem> {
     const { responseId, itemType } = args.data;
+    const project = await ctx.projectService.getCurrentProject();
     const dashboard = await ctx.dashboardService.getCurrentDashboard();
-    const response = await ctx.askingService.getResponse(responseId);
+    if (!dashboard || dashboard.projectId !== project.id) {
+      throw new Error('Dashboard not found.');
+    }
+    const response = await ctx.askingService.getResponse(responseId, project);
 
     if (!response) {
       throw new Error(`Thread response not found. responseId: ${responseId}`);
@@ -94,7 +98,6 @@ export class DashboardResolver {
     }
 
     // query with cache enabled
-    const project = await ctx.projectService.getCurrentProject();
     const deployment = await ctx.deployService.getLastDeployment(project.id);
     const mdl = deployment.manifest;
     await ctx.queryService.preview(response.sql, {

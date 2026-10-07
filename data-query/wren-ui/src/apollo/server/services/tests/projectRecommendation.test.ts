@@ -267,5 +267,27 @@ databaseTests(
         (await repository.findOneBy({ id: projectId })).questionsStatus,
       ).toBe(Status.FINISHED);
     });
+    it('native current-project follows its controlled binding instead of the first database row', async () => {
+      const id = projectId + 1;
+      await database('project').insert({
+        id,
+        type: 'DUCKDB',
+        display_name: randomUUID(),
+        catalog: 'wrenai',
+        schema: 'public',
+      });
+      const binding = jest.fn(async () => id);
+      const bound = new ProjectRepository(database, binding);
+      expect((await bound.getCurrentProject()).id).toBe(id);
+      expect((await repository.getCurrentProject()).id).toBe(projectId);
+      binding.mockRejectedValueOnce(new Error('delivery unavailable'));
+      await expect(bound.getCurrentProject()).rejects.toThrow(
+        'delivery unavailable',
+      );
+      await database('project').where({ id }).delete();
+      await expect(bound.getCurrentProject()).rejects.toThrow(
+        'Bound project unavailable',
+      );
+    });
   },
 );

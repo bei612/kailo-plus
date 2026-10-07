@@ -43,6 +43,7 @@ import {
   DashboardCacheBackgroundTracker,
 } from './apollo/server/backgrounds';
 import { SqlPairService } from './apollo/server/services/sqlPairService';
+import { loadQueryDelivery } from './apollo/server/services/nativeQueryAdmission';
 
 export const serverConfig = getConfig();
 
@@ -56,7 +57,15 @@ export const initComponents = () => {
   });
 
   // repositories
-  const projectRepository = new ProjectRepository(knex);
+  // A configured integration consumes the same controlled project selection as
+  // its Adapter. An unreadable/removed delivery never falls back to the first row.
+  // Independent native instances without a binding retain their original setup.
+  const projectRepository = new ProjectRepository(
+    knex,
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined
+      ? undefined
+      : async () => (await loadQueryDelivery()).projectId,
+  );
   const deployLogRepository = new DeployLogRepository(knex);
   const threadRepository = new ThreadRepository(knex);
   const threadResponseRepository = new ThreadResponseRepository(knex);
