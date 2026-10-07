@@ -635,7 +635,13 @@ pub(crate) async fn publish_project(
         Ok(ctx) => ctx,
         Err(response) => return response,
     };
-    publish(state, MessageTarget::Pulse(ctx.tenant_id), headers, Publication::Project(request)).await
+    publish(
+        state,
+        MessageTarget::Pulse(ctx.tenant_id),
+        headers,
+        Publication::Project(request),
+    )
+    .await
 }
 
 pub(crate) async fn upload_pulse_media(
@@ -1296,7 +1302,12 @@ async fn publish(
             None,
             None,
         ),
-        Publication::Project(req) => (contracts::WebMessageType::Stream, Some(req.target_event_id.clone()), None, None),
+        Publication::Project(req) => (
+            contracts::WebMessageType::Stream,
+            Some(req.target_event_id.clone()),
+            None,
+            None,
+        ),
         Publication::Hide | Publication::Reopen => {
             (contracts::WebMessageType::Stream, None, None, None)
         }
@@ -1563,7 +1574,9 @@ async fn publish(
             Ok(target) => target,
             Err(response) => return response,
         }
-    } else { None };
+    } else {
+        None
+    };
     if let Publication::Project(request) = &publication {
         if collab_bridge::projects::publication_builder(request, project_target.as_ref()).is_err() {
             return StatusCode::BAD_REQUEST.into_response();
@@ -1583,7 +1596,10 @@ async fn publish(
     } else {
         None
     };
-    let ancestry = match parent_event_id.as_deref().filter(|_| pulse_tags.is_none() && !matches!(&publication, Publication::Project(_))) {
+    let ancestry = match parent_event_id
+        .as_deref()
+        .filter(|_| pulse_tags.is_none() && !matches!(&publication, Publication::Project(_)))
+    {
         Some(parent) => {
             match resolve_message_parent(&state, &client, &channel_id, parent, &message_type).await
             {
@@ -3094,7 +3110,7 @@ mod tests {
             .sign_with_keys(&keys)
             .unwrap();
         assert!(super::own_reaction_source(
-            &[scoped.clone()],
+            std::slice::from_ref(&scoped),
             &scoped.id.to_hex(),
             &author,
             "channel"

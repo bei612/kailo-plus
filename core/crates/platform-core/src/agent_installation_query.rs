@@ -309,9 +309,7 @@ async fn read_view(
         Ok(None) => return Err(StatusCode::NOT_FOUND.into_response()),
         Err(e) => return Err(crate::service_api::unavailable(e)),
     };
-    if let Err(r) = scope(state, ctx, row.workspace_id).await {
-        return Err(r);
-    }
+    scope(state, ctx, row.workspace_id).await?;
     match state
         .governance
         .spicedb
@@ -370,10 +368,10 @@ fn validate_owned_inbox_agent(
     {
         return Err(StatusCode::FORBIDDEN);
     }
-    if !view
+    if view
         .agent_pubkey
         .as_deref()
-        .is_some_and(|key| nostr::PublicKey::from_hex(key).is_ok())
+        .is_none_or(|key| nostr::PublicKey::from_hex(key).is_err())
     {
         return Err(StatusCode::SERVICE_UNAVAILABLE);
     }
@@ -478,7 +476,8 @@ pub async fn candidates(
     {
         Ok(checked) if !checked.zed_token.is_empty() => checked,
         _ => {
-            return Refusal::Unavailable("安装来源权限缺原生 checked revision".into()).respond(None)
+            return Refusal::Unavailable("安装来源权限缺原生 checked revision".into())
+                .respond(None);
         }
     };
     let mut conn = match state.pool.acquire().await {
@@ -568,7 +567,7 @@ pub async fn candidates(
                 version
             }
             Ok(_) => {
-                return Refusal::Conflict(contracts::ReasonCode::TargetStateConflict).respond(None)
+                return Refusal::Conflict(contracts::ReasonCode::TargetStateConflict).respond(None);
             }
             Err(error) => return crate::service_api::unavailable(error),
         };

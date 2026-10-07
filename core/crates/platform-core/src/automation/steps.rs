@@ -165,8 +165,7 @@ pub(crate) fn message_sequence(steps: &Value) -> Result<Value, Refusal> {
                     && step["duration"]
                         .as_str()
                         .and_then(duration_seconds)
-                        .is_some() =>
-            {}
+                        .is_some() => {}
             Some("request_approval")
                 if messages == 0
                     && !approval_seen

@@ -307,7 +307,10 @@ async fn settle_one(state: &ServiceState, p: &Pending) -> &'static str {
 }
 
 async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'static str> {
-    if matches!(p.action_key.as_str(), crate::pulse::PUBLISH_ACTION | crate::projects::PUBLISH_ACTION) {
+    if matches!(
+        p.action_key.as_str(),
+        crate::pulse::PUBLISH_ACTION | crate::projects::PUBLISH_ACTION
+    ) {
         if p.target_type.as_deref() != Some("TENANT")
             || p.target_id != Some(p.tenant_id)
             || p.workspace_id.is_some()
