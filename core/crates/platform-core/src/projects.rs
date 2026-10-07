@@ -15,6 +15,64 @@ use axum::{
 };
 use serde_json::{json, Value};
 
+pub(crate) const PUBLISH_ACTION: &str = "projects.publish";
+
+// Native ReposWrite and coordinate ownership are enforced by the same Relay
+// ingest as CLIENT publications. Tenant discovery is only this BFF entrance.
+#[allow(clippy::result_large_err)]
+pub(crate) fn publication_kind(
+    request: &contracts::ProjectsPublishRequest,
+) -> Result<u16, Response> {
+    match serde_json::to_value(&request.operation)
+        .ok()
+        .as_ref()
+        .and_then(Value::as_str)
+    {
+        Some("DELETE") => Ok(5),
+        _ => Err(StatusCode::BAD_REQUEST.into_response()),
+    }
+}
+
+/// Select a real signed coordinate head, never an author supplied separately by
+/// the browser. Missing/stale head refuses before dispatch, not delete success.
+pub(crate) async fn publication_target(
+    state: &BffState,
+    client: &collab_bridge::bridge::IdentityClient,
+    request: &contracts::ProjectsPublishRequest,
+) -> Result<Option<nostr::Event>, Response> {
+    let id = request.target_event_id.as_str();
+    if nostr::EventId::from_hex(id).map_or(true, |parsed| parsed.to_hex() != id) {
+        return Err(StatusCode::BAD_REQUEST.into_response());
+    }
+    let value = client
+        .query(&state.http, &[json!({"ids":[id],"kinds":[30621,30617]})])
+        .await
+        .map_err(|error| relay_error_response(&error, None))?;
+    let events: Vec<nostr::Event> =
+        serde_json::from_value(value).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+    let [event] = events.as_slice() else {
+        return Err(StatusCode::NOT_FOUND.into_response());
+    };
+    if event.id.to_hex() != id
+        || !matches!(event.kind.as_u16(), 30621 | 30617)
+        || event.verify().is_err()
+    {
+        return Err(StatusCode::BAD_GATEWAY.into_response());
+    }
+    let slug = event
+        .tags
+        .identifier()
+        .ok_or_else(|| StatusCode::BAD_GATEWAY.into_response())?;
+    let value = client.query(&state.http, &[json!({"kinds":[event.kind.as_u16()],"authors":[event.pubkey.to_hex()],"#d":[slug],"limit":1})])
+        .await.map_err(|error| relay_error_response(&error, None))?;
+    let heads: Vec<nostr::Event> =
+        serde_json::from_value(value).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+    if heads.as_slice() != [event.clone()] {
+        return Err(StatusCode::CONFLICT.into_response());
+    }
+    Ok(Some(event.clone()))
+}
+
 // Keep the existing BFF HTTP refusal type; no second error wrapper.
 #[allow(clippy::result_large_err)]
 fn filter(request: &contracts::ProjectsQueryRequest, cap: i64) -> Result<(u16, Value), Response> {

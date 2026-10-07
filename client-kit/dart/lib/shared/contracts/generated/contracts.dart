@@ -93,6 +93,8 @@
 //     final platformTenantPage = platformTenantPageFromJson(jsonString);
 //     final platformToolPage = platformToolPageFromJson(jsonString);
 //     final platformToolView = platformToolViewFromJson(jsonString);
+//     final projectPreferenceRequest = projectPreferenceRequestFromJson(jsonString);
+//     final projectsPublishRequest = projectsPublishRequestFromJson(jsonString);
 //     final projectsQueryRequest = projectsQueryRequestFromJson(jsonString);
 //     final protocolSessionView = protocolSessionViewFromJson(jsonString);
 //     final pulsePublishRequest = pulsePublishRequestFromJson(jsonString);
@@ -773,6 +775,18 @@ PlatformToolView platformToolViewFromJson(String str) =>
     PlatformToolView.fromJson(json.decode(str));
 
 String platformToolViewToJson(PlatformToolView data) =>
+    json.encode(data.toJson());
+
+ProjectPreferenceRequest projectPreferenceRequestFromJson(String str) =>
+    ProjectPreferenceRequest.fromJson(json.decode(str));
+
+String projectPreferenceRequestToJson(ProjectPreferenceRequest data) =>
+    json.encode(data.toJson());
+
+ProjectsPublishRequest projectsPublishRequestFromJson(String str) =>
+    ProjectsPublishRequest.fromJson(json.decode(str));
+
+String projectsPublishRequestToJson(ProjectsPublishRequest data) =>
     json.encode(data.toJson());
 
 ProjectsQueryRequest projectsQueryRequestFromJson(String str) =>
@@ -10193,6 +10207,63 @@ class PlatformToolView {
     "status": toolStatusValues.reverse[status],
   });
 }
+
+///DD-40 original Projects Added/remove preference. Native coordinate only, not membership
+///or content permission. Uses the same CollaborationUserState version CAS.
+class ProjectPreferenceRequest {
+  final String projectAddress;
+  final bool selected;
+  final int version;
+
+  ProjectPreferenceRequest({
+    required this.projectAddress,
+    required this.selected,
+    required this.version,
+  });
+
+  factory ProjectPreferenceRequest.fromJson(Map<String, dynamic> json) =>
+      ProjectPreferenceRequest(
+        projectAddress: json["projectAddress"],
+        selected: json["selected"],
+        version: json["version"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "projectAddress": projectAddress,
+    "selected": selected,
+    "version": version,
+  });
+}
+
+///Typed original Community announcement mutation. Actor is the authenticated SERVER or
+///CLIENT signer, never supplied by this request. DELETE selects a real signed current
+///announcement; it does not delete its channel or repositories.
+class ProjectsPublishRequest {
+  final ProjectPublicationOperation operation;
+  final String targetEventId;
+
+  ProjectsPublishRequest({
+    required this.operation,
+    required this.targetEventId,
+  });
+
+  factory ProjectsPublishRequest.fromJson(Map<String, dynamic> json) =>
+      ProjectsPublishRequest(
+        operation: projectPublicationOperationValues.map[json["operation"]]!,
+        targetEventId: json["targetEventId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "operation": projectPublicationOperationValues.reverse[operation],
+    "targetEventId": targetEventId,
+  });
+}
+
+enum ProjectPublicationOperation { DELETE }
+
+final projectPublicationOperationValues = EnumValues({
+  "DELETE": ProjectPublicationOperation.DELETE,
+});
 
 ///Original Buzz Community project/repository announcements and coordinate-scoped tombstones
 ///only; no Git content or mutation authorization.

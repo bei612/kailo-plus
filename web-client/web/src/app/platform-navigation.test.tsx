@@ -14,12 +14,13 @@ vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
   const navigation = usePlatformNavigation();
   const [mount] = useState(() => ++state.mounts);
   return <div data-tab={navigation.tab} data-mount={mount} data-workspace={navigation.workspaceId}
-    data-conversation={navigation.conversationId} data-application={navigation.applicationBindingId}>
+    data-conversation={navigation.conversationId} data-application={navigation.applicationBindingId} data-project={navigation.projectId} data-message={navigation.messageTarget?.messageId}>
     <button onClick={() => { void navigation.openTab("audit", navigation.workspaceId); }}>audit</button>
     <button onClick={() => { void navigation.openTab("settings", navigation.workspaceId); }}>settings</button>
     <button onClick={() => { void navigation.openTab("agents", "workspace-b"); }}>agents</button>
     <button onClick={() => { void navigation.openTab("workflows", "workspace-b"); }}>workflows</button>
     <button onClick={() => { void navigation.openApplication("binding-a", "workspace-a"); }}>application</button>
+    <button onClick={() => { void navigation.openProject("signed-project"); }}>project</button>
   </div>;
 } }));
 
@@ -68,6 +69,12 @@ it("restores only a conversation reference and rejects unregistered page names",
   expect(node!.querySelector("[data-tab]")).toBeNull();
 });
 
+it("restores the selected hidden-DM Inbox message from the original conversation URL",async()=>{
+  await mount("/app/conversations/conversation-a?messageId=selected-message&threadRootId=thread-root");
+  expect(node!.querySelector("[data-tab]")?.getAttribute("data-conversation")).toBe("conversation-a");
+  expect(node!.querySelector("[data-tab]")?.getAttribute("data-message")).toBe("selected-message");
+});
+
 it("never stores identity, credentials or commands in navigation search", () => {
   const search = platformLocationSearch({ workspaceId: "workspace-a", tenantId: "other", token: "not-a-secret",
     command: { idempotencyKey: "not-an-intent" }, protocolBinding: "binding-a" });
@@ -76,6 +83,17 @@ it("never stores identity, credentials or commands in navigation search", () => 
   expect(search).not.toHaveProperty("tenantId");
   expect(search).not.toHaveProperty("token");
   expect(search).not.toHaveProperty("command");
+});
+
+it("opens the actual selected project through the existing route and restores it after reload",async()=>{
+  const router=await mount("/app/inbox");
+  await act(async()=>{[...node!.querySelectorAll("button")].find(button=>button.textContent==="project")!.click();});
+  expect(router.history.location.pathname).toBe("/app/projects");
+  expect(node!.querySelector("[data-project]")?.getAttribute("data-project")).toBe("signed-project");
+  const url=router.history.location.href;
+  await act(async()=>root!.unmount());root=undefined;node!.remove();
+  await mount(url);
+  expect(node!.querySelector("[data-project]")?.getAttribute("data-project")).toBe("signed-project");
 });
 
 it("routes the approved service binding in the same host and preserves its scope on reload", async () => {

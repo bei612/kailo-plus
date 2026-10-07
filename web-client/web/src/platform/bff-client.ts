@@ -18,6 +18,7 @@ import type {
   PulseQueryRequest,
   PulsePublishRequest,
   ProjectsQueryRequest,
+  ProjectsPublishRequest,
 } from "@client-kit/contracts";
 import { createBffClient } from "@client-kit/platform/client";
 import { hiddenConversationChannels, type ConversationVisibilityHost } from "@client-kit/platform/react/new-message";
@@ -56,6 +57,14 @@ export async function publishPulse(request: PulsePublishRequest, idempotencyKey:
   return unwrap({method:"POST",path}, await transport.exchange(path, {method:"POST",
     headers:{"Content-Type":"application/json","Idempotency-Key":idempotencyKey}, body:JSON.stringify(request)}));
 }
+export async function publishProject(request: ProjectsPublishRequest, idempotencyKey: string): Promise<{eventId:string;operationId:string}> {
+  const path="/api/v1/projects/publish";
+  const receipt=unwrap<{eventId:string;operationId:string}>({method:"POST",path},await transport.exchange(path,{
+    method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":idempotencyKey},body:JSON.stringify(request),
+  }));
+  if(!receipt?.eventId||!receipt.operationId)throw new TransportError("Project publication outcome unknown");
+  return receipt;
+}
 export async function publishMessageReaction(workspaceId: string, conversationId: string | undefined,
   request: PulsePublishRequest, idempotencyKey: string): Promise<{eventId:string;operationId:string}> {
   const path = conversationId
@@ -92,11 +101,11 @@ export const conversationVisibility: ConversationVisibilityHost = {
 };
 
 export async function publishConversationMessage(conversationId: string, content: string,
-  attachments: readonly MediaDescriptor[], idempotencyKey: string, editEventId?: string): Promise<{ eventId: string; operationId: string }> {
+  attachments: readonly MediaDescriptor[], idempotencyKey: string, editEventId?: string, parentEventId?: string): Promise<{ eventId: string; operationId: string }> {
   const path = `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`;
   return unwrap({ method: "POST", path }, await transport.exchange(path, {
     method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
-    body: JSON.stringify({ content, attachments: [...attachments], mentionInstallationIds: [], editEventId } satisfies WebPublishMessageRequest),
+    body: JSON.stringify({ content, attachments: [...attachments], mentionInstallationIds: [], editEventId, parentEventId } satisfies WebPublishMessageRequest),
   }));
 }
 export async function uploadConversationMedia(conversationId: string, file: File): Promise<MediaDescriptor> {

@@ -12,6 +12,7 @@ import type {
   ConversationPage,
   ConversationParticipantPage,
   ConversationPreferenceRequest,
+  ProjectPreferenceRequest,
   ApplicationBindingPage,
   ApplicationReadResourcePage,
   ApplicationReadResourceDirection,
@@ -130,6 +131,8 @@ export function createBffClient(transport: BffTransport) {
     },
 
     collaborationUserState: () => get<CollaborationUserState>("/api/v1/user-state"),
+    setProjectPreference: (body: ProjectPreferenceRequest) =>
+      call<UserStateVersion>({method:"PUT",path:"/api/v1/user-state/projects",body}),
     setConversationPreference: (id: string, body: ConversationPreferenceRequest) =>
       call<UserStateVersion>({ method: "PUT", path: `/api/v1/user-state/conversations/${encodeURIComponent(id)}`, body }),
     workspaceChannel: (workspaceId: string) => get<WebChannelView>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/channel`),

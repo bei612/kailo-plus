@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/project_preference.schema.json",
+  "title": "ProjectPreferenceRequest",
+  "description": "DD-40 original Projects Added/remove preference. Native coordinate only, not membership or content permission. Uses the same CollaborationUserState version CAS.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["projectAddress", "selected", "version"],
+  "properties": {
+    "projectAddress": {"type": "string", "pattern": "^(30621|30617):[0-9a-f]{64}:.+$"},
+    "selected": {"type": "boolean"},
+    "version": {"type": "integer", "minimum": 0}
+  }
+}

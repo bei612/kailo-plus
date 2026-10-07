@@ -316,6 +316,10 @@ pub fn router(state: BffState) -> Router {
             axum::routing::post(crate::projects::query),
         )
         .exposed_route(
+            "/api/v1/projects/publish",
+            axum::routing::post(crate::web_transport::publish_project),
+        )
+        .exposed_route(
             "/api/v1/pulse/publish",
             axum::routing::post(crate::web_transport::publish_pulse),
         )
@@ -551,6 +555,10 @@ pub fn router(state: BffState) -> Router {
             get(crate::web_transport::fetch_conversation_media),
         )
         .exposed_route("/api/v1/user-state", get(crate::user_state::get_user_state))
+        .exposed_route(
+            "/api/v1/user-state/projects",
+            axum::routing::put(crate::user_state::put_project_preference),
+        )
         .exposed_route(
             "/api/v1/user-state/workspaces/{workspace_id}",
             axum::routing::put(crate::user_state::put_workspace_preference),

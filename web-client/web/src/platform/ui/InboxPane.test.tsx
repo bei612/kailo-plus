@@ -6,13 +6,15 @@ import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { setLocale } from "@client-kit/platform/i18n";
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import type { BffClient } from "@client-kit/platform/client";
+import type { ConversationView } from "@client-kit/contracts";
+import { ConversationVisibilityProvider } from "@client-kit/platform/react/new-message";
 import { describe, expect, it, vi } from "vitest";
 import { InboxPane, inboxEvents } from "./InboxPane";
 import { inboxWindowEvents } from "./inbox-events";
 
-const api=vi.hoisted(()=>({workspaces:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),messageAuthorProfile:vi.fn(),write:vi.fn()}));
+const api=vi.hoisted(()=>({workspaces:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),write:vi.fn(),privateChannels:[] as ConversationView[]}));
 const readAt=()=>null;
-vi.mock("@client-kit/platform/react/use-inbox-state",()=>({inboxReadContexts:()=>[],useInboxState:()=>({state:{},failed:false,unknown:false,pending:false,visibleChannels:new Set(["workspace-a"]),readAt,write:api.write,refresh:vi.fn()})}));
+vi.mock("@client-kit/platform/react/use-inbox-state",()=>({inboxReadContexts:()=>[],useInboxState:()=>({state:{},failed:false,unknown:false,pending:false,visibleChannels:new Set(["workspace-a",...api.privateChannels.map(item=>item.channelId)]),conversations:api.privateChannels,workspaceChannels:new Set(["workspace-a"]),readAt,write:api.write,refresh:vi.fn()})}));
 vi.mock("@/platform/bff-client",()=>({bff:api,openStream:()=>()=>{}}));
 vi.mock("./ChannelPane",()=>({Composer:()=>null,ChannelPane:()=>null}));
 
@@ -157,4 +159,52 @@ it("loads owned Agent activity through the admitted author query, never foreign 
     await vi.waitFor(()=>expect(host.textContent).not.toContain("Real owned Agent result"));
     expect(host.querySelector('[role="status"]')).not.toBeNull();
   } finally {await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();}
+});
+
+it("does not continue the old aggregation after an awaited private page outlives its Inbox",async()=>{
+  (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
+  vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
+  vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
+  const conversation={id:"existing-dm",channelId:"native-dm",participantPrincipalIds:["human","peer"],state:"ACTIVE",version:1,operationId:"op"} as ConversationView;
+  api.privateChannels=[conversation];api.workspaces.mockReset().mockResolvedValue([]);
+  api.conversations.mockResolvedValue({items:[conversation]});
+  api.conversationParticipants.mockResolvedValue({items:[{principalId:"human",displayName:"Me",pubkeys:["c".repeat(64)]}]});
+  let finish!:(page:{events:unknown[]})=>void;
+  api.conversationMessages.mockReset().mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+  const host=document.createElement("div");document.body.append(host);const root=createRoot(host);
+  const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});let mounted=true;
+  try{
+    await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><ConversationVisibilityProvider value={{read:async()=>new Set(),prepare:async()=>async()=>{}}}><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={vi.fn()}/></TooltipProvider></QueryClientProvider></ConversationVisibilityProvider></PlatformProvider>));
+    await vi.waitFor(()=>expect(api.conversationMessages).toHaveBeenCalledOnce());
+    await act(async()=>root.unmount());mounted=false;
+    await act(async()=>finish({events:[{...event,id:"e".repeat(64),kind:39006,tags:[["h","native-dm"],["d","native-dm:head"]],content:JSON.stringify({has_more:false,next_cursor:null})}]}));
+    expect(api.workspaces).toHaveBeenCalledOnce();
+  }finally{if(mounted)await act(async()=>root.unmount());cache.clear();host.remove();api.privateChannels=[];api.conversations.mockResolvedValue({items:[]});vi.unstubAllGlobals();}
+});
+
+it("shows an admitted hidden DM mention and reopens that existing binding before message navigation",async()=>{
+  (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
+  setLocale("en");
+  vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
+  vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
+  const self="c".repeat(64),channel="native-dm";
+  const conversation={id:"existing-dm",channelId:channel,participantPrincipalIds:["human","peer"],state:"ACTIVE",version:1,operationId:"op"} as ConversationView;
+  api.privateChannels=[conversation];api.workspaces.mockResolvedValue([]);
+  api.conversations.mockResolvedValue({items:[conversation]});
+  api.conversationParticipants.mockResolvedValue({items:[{principalId:"human",displayName:"Me",pubkeys:[self]},{principalId:"peer",displayName:"Peer",pubkeys:[event.pubkey]}]});
+  api.conversationMessages.mockResolvedValue({events:[{...event,content:"Existing hidden conversation",tags:[["h",channel],["p",self]]},{...event,id:"e".repeat(64),kind:39006,tags:[["h",channel],["d",`${channel}:head`]],content:JSON.stringify({has_more:false,next_cursor:null})}]});
+  let finish!:()=>void; const receipt=new Promise<void>(resolve=>{finish=resolve;});
+  const publish=vi.fn(()=>receipt),prepare=vi.fn(async()=>publish),open=vi.fn();
+  const host=document.createElement("div");document.body.append(host);const root=createRoot(host);
+  const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+  try{
+    await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><ConversationVisibilityProvider value={{read:async()=>new Set([channel]),prepare}}><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={open}/></TooltipProvider></QueryClientProvider></ConversationVisibilityProvider></PlatformProvider>));
+    await vi.waitFor(()=>expect(host.textContent).toContain("Existing hidden conversation"));
+    const trigger=host.querySelector<HTMLButtonElement>('button[aria-label="Open in channel"]');expect(trigger).not.toBeNull();
+    await act(async()=>trigger!.click());
+    expect(open).not.toHaveBeenCalled();expect(prepare).toHaveBeenCalledWith(conversation,false);
+    await act(async()=>finish());
+    await vi.waitFor(()=>expect(open).toHaveBeenCalledWith(channel,{channelId:channel,messageId:event.id,threadRootId:null,conversation}));
+    expect(publish).toHaveBeenCalledOnce();
+  }finally{await act(async()=>root.unmount());cache.clear();host.remove();api.privateChannels=[];api.conversations.mockResolvedValue({items:[]});vi.unstubAllGlobals();}
 });

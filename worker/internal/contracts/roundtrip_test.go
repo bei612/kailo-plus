@@ -14,6 +14,56 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestProjectPreferenceRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "project-preference.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var typed []generated.ProjectPreferenceRequest
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	back, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected, actual any
+	if err := json.Unmarshal(raw, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(back, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatal("Project preference CAS changed")
+	}
+}
+
+func TestProjectsPublicationRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "projects-publication.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var typed []generated.ProjectsPublishRequest
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	back, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected, actual any
+	if err := json.Unmarshal(raw, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(back, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatal("Projects metadata or exact head changed")
+	}
+}
+
 func TestInboxAgentRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "inbox-agent.sample.json"))
 	if err != nil {

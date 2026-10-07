@@ -4,6 +4,8 @@ import { RefreshCcw } from "lucide-react";
 
 import { inboxReply } from "@client-kit/platform/inbox";
 import { useT } from "@client-kit/platform/react/context";
+import { useHiddenDmInboxNavigation } from "@client-kit/platform/react/new-message";
+import { toast } from "sonner";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { RightAuxiliaryPane } from "@/features/channels/ui/RightAuxiliaryPane";
 import {
@@ -155,17 +157,19 @@ export function HomeView({
     handleInboxListWidthReset,
     inboxListWidthPx,
   } = useResizableInboxListWidth();
-  const coreReads = useInboxState(useNativeSession().client);
+  const nativeSession = useNativeSession();
+  const coreReads = useInboxState(nativeSession.client);
+  const hiddenDm = useHiddenDmInboxNavigation({ scopeKey: `${nativeSession.facts.relayUrl}:${nativeSession.devicePubkey}`,
+    conversations: coreReads.conversations,
+    onOpenContext: ({ channelId, messageId, threadRootId }) => onOpenContext(channelId, messageId, threadRootId), onError: message => toast.error(message) });
   const admittedChannelIds = React.useMemo(
     () =>
       new Set(
-        [...availableChannelIds].filter((id) =>
-          coreReads.visibleChannels.has(id),
-        ),
+        [...coreReads.visibleChannels].filter((id) => availableChannelIds.has(id) || coreReads.conversations.some(item => item.channelId === id)),
       ),
-    [availableChannelIds, coreReads.visibleChannels],
+    [availableChannelIds, coreReads.visibleChannels, coreReads.conversations],
   );
-  const ownedAgents = useOwnedAgentActivity(admittedChannelIds, Boolean(coreReads.state) && !coreReads.failed && !coreReads.unknown);
+  const ownedAgents = useOwnedAgentActivity(coreReads.workspaceChannels, Boolean(coreReads.state) && !coreReads.failed && !coreReads.unknown);
   const admittedFeed = React.useMemo(
     () =>
       feed && coreReads.state
@@ -367,9 +371,9 @@ export function HomeView({
       const channelId = item.item.channelId;
       if (!channelId) return;
       const thread = getThreadReference(item.item.tags);
-      onOpenContext(channelId, item.item.id, thread.rootId);
+      void hiddenDm.openContext({ channelId, messageId: item.item.id, threadRootId: thread.rootId });
     },
-    [onOpenContext],
+    [hiddenDm.openContext],
   );
   const unreadBoundaryEventId = React.useMemo(() => {
     if (!selectedItem) return null;
@@ -495,7 +499,7 @@ export function HomeView({
 
   const { canReply, disabledReplyReason } = getHomeMessageCapabilities(
     selectedItem,
-    admittedChannelIds,
+    new Set([...availableChannelIds].filter(id => coreReads.visibleChannels.has(id))),
   );
   const detailMode = isDrafts || selectedDraftItem ? "drafts" : "messages";
   const {
@@ -537,6 +541,9 @@ export function HomeView({
               onMarkRead={markItemRead}
               onMarkUnread={markItemUnread}
               onOpenDirect={handleOpenItem}
+              isReopenPending={hiddenDm.isReopenPending}
+              isReopenErrored={hiddenDm.isReopenErrored}
+              isReopenUnknown={hiddenDm.isReopenUnknown}
               onSelect={(itemId) => {
                 const item = findInboxItemByEventId(inboxItems, itemId);
                 setUnreadBoundary(
@@ -568,6 +575,7 @@ export function HomeView({
           {showDetailPane && detailMode === "messages" ? (
             <InboxDetailPane
               canReply={canReply}
+              canOpenContext={!selectedItem?.item.channelId || !hiddenDm.isReopenPending(selectedItem.item.channelId)}
               currentPubkey={currentPubkey}
               onToggleReaction={canReply && !threadContext.hasLoadError && !threadContext.isLoading && selectedChannel?.isMember && selectedChannel.archivedAt === null ? onToggleReaction : undefined}
               contextChannelName={selectedChannel?.name ?? null}
@@ -589,7 +597,7 @@ export function HomeView({
                     }
                   : undefined
               }
-              onOpenContext={onOpenContext}
+              onOpenContext={(channelId, messageId, threadRootId) => { void hiddenDm.openContext({ channelId, messageId, threadRootId }); }}
               onSendReply={async ({
                 content,
                 mediaTags,

@@ -2,15 +2,22 @@
 // desktop/src/features/projects/projectEnumeration.ts::enumerateProjectEvents.
 // Host adapts only the typed query. Original second-boundary drain and tombstone
 // fold are retained; page size comes from this Relay, not a frontend constant.
-import type { ProjectsQueryRequest } from "@client-kit/contracts";
+import type { ProjectsQueryRequest, ProjectsPublishRequest } from "@client-kit/contracts";
 import type { PulseEvent } from "../pulse/host";
 import { buildProjectReadModels } from "./projectModels";
 import { absorbStandaloneProjectRepositories } from "./lib/projectCollection";
 
 export type ProjectsPage = {events: PulseEvent[]; limit: number; pubkey: string; bindingVersion?: number};
-export type ProjectsHost = {scopeKey: string; query: (request: ProjectsQueryRequest)=>Promise<ProjectsPage>};
+export type ProjectsHost = {scopeKey: string; query: (request: ProjectsQueryRequest)=>Promise<ProjectsPage>;
+  publish?: (request: ProjectsPublishRequest, idempotencyKey: string, observeOnly?: boolean,
+    observation?:{eventId?:string;onPrepared:(eventId:string)=>void})=>Promise<{eventId:string}>;
+  completePublication?: (idempotencyKey:string,eventId:string)=>void};
 
 export async function loadProjects(host: ProjectsHost, signal: AbortSignal) {
+  return (await loadProjectDirectory(host,signal)).projects;
+}
+
+export async function loadProjectDirectory(host: ProjectsHost, signal: AbortSignal) {
   const first = await host.query({view:"PROJECTS" as ProjectsQueryRequest["view"]});
   signal.throwIfAborted();
   if (!Number.isSafeInteger(first.limit) || first.limit <= 0 || !/^[0-9a-f]{64}$/.test(first.pubkey)) throw new Error("Invalid project scope");
@@ -52,6 +59,7 @@ export async function loadProjects(host: ProjectsHost, signal: AbortSignal) {
     deletionEvents.push(...await enumerate("DELETIONS" as ProjectsQueryRequest["view"],coordinates.slice(index,index+first.limit)));
   }
   signal.throwIfAborted();
-  return absorbStandaloneProjectRepositories(buildProjectReadModels({projectEvents,repositoryEvents,deletionEvents,viewerPubkey:first.pubkey}))
-    .sort((a,b)=>b.createdAt-a.createdAt);
+  return {viewerPubkey:first.pubkey,projectEvents,repositoryEvents,
+    projects:absorbStandaloneProjectRepositories(buildProjectReadModels({projectEvents,repositoryEvents,deletionEvents,viewerPubkey:first.pubkey}))
+    .sort((a,b)=>b.createdAt-a.createdAt)};
 }

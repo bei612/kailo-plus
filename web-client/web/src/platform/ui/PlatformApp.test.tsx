@@ -2,6 +2,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 import { PlatformApp } from "./PlatformApp";
+// This SSR shell fixture isolates data-owning hosts. The actual original
+// project region and governed membership are mounted in shared Projects tests.
+vi.mock("./SidebarProjects",()=>({SidebarProjects:()=>null}));
 
 const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: "", memberA: true, memberB: true, tab: "members", workspaceId: null as string | null, channelEnabled: false }));
 vi.mock("@/app/platform-navigation", () => ({

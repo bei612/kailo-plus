@@ -5071,6 +5071,35 @@ pub struct PlatformToolView {
     pub status: ToolStatus,
 }
 
+/// DD-40 original Projects Added/remove preference. Native coordinate only, not membership
+/// or content permission. Uses the same CollaborationUserState version CAS.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectPreferenceRequest {
+    pub project_address: String,
+
+    pub selected: bool,
+
+    pub version: i64,
+}
+
+/// Typed original Community announcement mutation. Actor is the authenticated SERVER or
+/// CLIENT signer, never supplied by this request. DELETE selects a real signed current
+/// announcement; it does not delete its channel or repositories.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectsPublishRequest {
+    pub operation: ProjectPublicationOperation,
+
+    pub target_event_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ProjectPublicationOperation {
+    #[serde(rename = "DELETE")]
+    Delete,
+}
+
 /// Original Buzz Community project/repository announcements and coordinate-scoped tombstones
 /// only; no Git content or mutation authorization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

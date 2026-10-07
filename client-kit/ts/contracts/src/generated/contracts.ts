@@ -3425,6 +3425,30 @@ export interface PlatformToolView {
 }
 
 /**
+ * DD-40 original Projects Added/remove preference. Native coordinate only, not membership
+ * or content permission. Uses the same CollaborationUserState version CAS.
+ */
+export interface ProjectPreferenceRequest {
+    projectAddress: string;
+    selected:       boolean;
+    version:        number;
+}
+
+/**
+ * Typed original Community announcement mutation. Actor is the authenticated SERVER or
+ * CLIENT signer, never supplied by this request. DELETE selects a real signed current
+ * announcement; it does not delete its channel or repositories.
+ */
+export interface ProjectsPublishRequest {
+    operation:     ProjectPublicationOperation;
+    targetEventId: string;
+}
+
+export enum ProjectPublicationOperation {
+    Delete = "DELETE",
+}
+
+/**
  * Original Buzz Community project/repository announcements and coordinate-scoped tombstones
  * only; no Git content or mutation authorization.
  */

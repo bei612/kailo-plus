@@ -684,6 +684,17 @@ impl IdentityClient {
             .map_err(|e| OperatorError::Sign(format!("sign: {e}")))
     }
 
+    /// Original project builders; no arbitrary kind/tags or caller-owned key.
+    pub fn sign_project(
+        &self,
+        request: &contracts::ProjectsPublishRequest,
+        target: Option<&Event>,
+    ) -> Result<Event, OperatorError> {
+        crate::projects::publication_builder(request, target)?
+            .sign_with_keys(&self.keys)
+            .map_err(|error| OperatorError::Sign(error.to_string()))
+    }
+
     async fn send(&self, http: &reqwest::Client, event: &Event) -> Result<Value, OperatorError> {
         let admitted = self.admit()?;
         self.send_admitted(http, event, admitted).await

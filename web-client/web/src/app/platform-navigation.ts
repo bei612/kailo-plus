@@ -12,7 +12,7 @@ export function isPlatformSection(value: string): value is PlatformSection {
 // URL contains only navigation references. It never stores sessions, identities,
 // cached membership, native credentials, commands, or an unfinished write intent.
 export function platformLocationSearch(search: Record<string, unknown>): {
-  workspaceId?: string; protocolBinding?: string; messageId?: string; threadRootId?: string;
+  workspaceId?: string; protocolBinding?: string; messageId?: string; threadRootId?: string; projectId?: string;
 } {
   const reference = (key: string) => typeof search[key] === "string" && search[key].trim() ? search[key] : undefined;
   return {
@@ -20,6 +20,7 @@ export function platformLocationSearch(search: Record<string, unknown>): {
     protocolBinding: reference("protocolBinding"),
     messageId: reference("messageId"),
     threadRootId: reference("threadRootId"),
+    projectId: reference("projectId"),
   };
 }
 
@@ -35,14 +36,16 @@ export function usePlatformNavigation() {
     workspaceId: params.channelId ?? search.workspaceId ?? null,
     conversationId: params.conversationId ?? null,
     applicationBindingId: params.bindingId ?? null,
-    messageTarget: params.channelId && search.messageId ? {
-      channelId: params.channelId, messageId: search.messageId, threadRootId: search.threadRootId ?? null,
+    projectId: tab === "projects" ? search.projectId ?? null : null,
+    openProject: (projectId: string | null) => navigate({to:"/$section",params:{section:"projects"},search:{projectId:projectId??undefined}}),
+    messageTarget: (params.channelId || params.conversationId) && search.messageId ? {
+      channelId: (params.channelId ?? params.conversationId)!, messageId: search.messageId, threadRootId: search.threadRootId ?? null,
     } : null,
     openChannel: (channelId: string, target?: ParsedMessageLink) => navigate({
       to: "/channels/$channelId", params: { channelId },
       search: target ? { messageId: target.messageId, threadRootId: target.threadRootId ?? undefined } : {},
     }),
-    openConversation: (conversationId: string) => navigate({ to: "/conversations/$conversationId", params: { conversationId }, search: {} }),
+    openConversation: (conversationId: string, target?: {messageId:string;threadRootId?:string|null}) => navigate({ to: "/conversations/$conversationId", params: { conversationId }, search: target ? {messageId:target.messageId,threadRootId:target.threadRootId ?? undefined} : {} }),
     openApplication: (bindingId: string, workspaceId?: string) => navigate({ to: "/applications/$bindingId", params: { bindingId }, search: { workspaceId } }),
     openTab: (next: Exclude<PlatformTab, "conversation" | "application">, workspaceId?: string | null) => {
       if (next === "channel") return workspaceId

@@ -49,6 +49,7 @@ enum Publication {
     Message(PublishRequest),
     Pulse(contracts::PulsePublishRequest),
     Reaction(contracts::PulsePublishRequest),
+    Project(contracts::ProjectsPublishRequest),
     Hide,
     Reopen,
 }
@@ -623,6 +624,18 @@ pub(crate) async fn publish_pulse(
         Publication::Pulse(request),
     )
     .await
+}
+
+pub(crate) async fn publish_project(
+    State(state): State<BffState>,
+    headers: HeaderMap,
+    Json(request): Json<contracts::ProjectsPublishRequest>,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(ctx) => ctx,
+        Err(response) => return response,
+    };
+    publish(state, MessageTarget::Pulse(ctx.tenant_id), headers, Publication::Project(request)).await
 }
 
 pub(crate) async fn upload_pulse_media(
@@ -1266,6 +1279,7 @@ async fn publish(
         }
         Publication::Hide => CONVERSATION_HIDE_ACTION,
         Publication::Reopen => CONVERSATION_REOPEN_ACTION,
+        Publication::Project(_) => crate::projects::PUBLISH_ACTION,
     };
     let (message_type, parent_event_id, edit_event_id, delete_event_id) = match &publication {
         Publication::Message(req) => (
@@ -1282,6 +1296,7 @@ async fn publish(
             None,
             None,
         ),
+        Publication::Project(req) => (contracts::WebMessageType::Stream, Some(req.target_event_id.clone()), None, None),
         Publication::Hide | Publication::Reopen => {
             (contracts::WebMessageType::Stream, None, None, None)
         }
@@ -1298,7 +1313,12 @@ async fn publish(
     {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let requested_kind = if let Publication::Reaction(req) = &publication {
+    let requested_kind = if let Publication::Project(req) = &publication {
+        match crate::projects::publication_kind(req) {
+            Ok(kind) => i32::from(kind),
+            Err(response) => return response,
+        }
+    } else if let Publication::Reaction(req) = &publication {
         match reaction_kind(req) {
             Ok(kind) => i32::from(kind),
             Err(response) => return response,
@@ -1347,6 +1367,7 @@ async fn publish(
         Publication::Hide
         | Publication::Reopen
         | Publication::Pulse(_)
+        | Publication::Project(_)
         | Publication::Reaction(_) => None,
     }) {
         Some(ids) => ids,
@@ -1472,7 +1493,7 @@ async fn publish(
         Publication::Pulse(req) | Publication::Reaction(req) => {
             Some((&req.content, req.attachments.as_deref()))
         }
-        Publication::Hide | Publication::Reopen => None,
+        Publication::Hide | Publication::Reopen | Publication::Project(_) => None,
     };
     if let Some((text, attachments)) = message {
         content.push_str(text);
@@ -1537,6 +1558,18 @@ async fn publish(
         None => None,
     };
 
+    let project_target = if let Publication::Project(request) = &publication {
+        match crate::projects::publication_target(&state, &client, request).await {
+            Ok(target) => target,
+            Err(response) => return response,
+        }
+    } else { None };
+    if let Publication::Project(request) = &publication {
+        if collab_bridge::projects::publication_builder(request, project_target.as_ref()).is_err() {
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+    }
+
     let pulse_tags = if let Publication::Reaction(req) = &publication {
         match reaction_tags(&state, &ctx, &client, &channel_id, &community_host, req).await {
             Ok(tags) => Some(tags),
@@ -1550,7 +1583,7 @@ async fn publish(
     } else {
         None
     };
-    let ancestry = match parent_event_id.as_deref().filter(|_| pulse_tags.is_none()) {
+    let ancestry = match parent_event_id.as_deref().filter(|_| pulse_tags.is_none() && !matches!(&publication, Publication::Project(_))) {
         Some(parent) => {
             match resolve_message_parent(&state, &client, &channel_id, parent, &message_type).await
             {
@@ -1631,6 +1664,7 @@ async fn publish(
             &content,
             pulse_tags.as_deref().unwrap_or_default(),
         ),
+        Publication::Project(request) => client.sign_project(&request, project_target.as_ref()),
         // Original Buzz DM commands, never caller-selected raw kinds/tags.
         Publication::Hide => client.sign(41012, "", &[vec!["h".into(), channel_id.clone()]]),
         Publication::Reopen => client.sign(41010, "", &[vec!["h".into(), channel_id.clone()]]),

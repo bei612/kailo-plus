@@ -244,3 +244,70 @@ test("a terminal session refuses before signing: definitely not sent", async () 
   assert.ok(outcome.error instanceof RelayPublishNotSentError);
   assert.equal(publishedEvents().length, 0);
 });
+
+test("a replaceable project intent only observes UNKNOWN and never republishes an older head", async () => {
+  reset();
+  const client = connectedClient();
+  const relay = "wss://projects.test";
+  client.ensureConnected = async () => { client.relayUrl = relay; };
+  const event = {id:"a".repeat(64),pubkey:"b".repeat(64),kind:5,created_at:1,tags:[["a",`30621:${"b".repeat(64)}:garden`]],content:"",sig:"c".repeat(128)};
+  let signed=0,published=0;
+  const create=async()=>{signed++;return event;};
+  client.publishEvent=async()=>{published++;throw new RelayPublishUnknownError(event.id,"lost ACK");};
+  await assert.rejects(client.publishProjectIntent("one",relay,create),RelayPublishUnknownError);
+  client.fetchEvents=async()=>[];
+  await assert.rejects(client.publishProjectIntent("one",relay,create,true),RelayPublishUnknownError);
+  client.fetchEvents=async()=>{throw new Error("revoked");};
+  await assert.rejects(client.publishProjectIntent("one",relay,create,true),RelayPublishUnknownError);
+  assert.equal(signed,1);assert.equal(published,1);
+  client.fetchEvents=async()=>[event];
+  assert.equal((await client.publishProjectIntent("one",relay,create,true)).id,event.id);
+  assert.equal(signed,1);assert.equal(published,1);
+});
+
+test("a missing project intent after identity switch cannot be replaced by a fresh signature", async () => {
+  reset();
+  const client=connectedClient();let signed=0;
+  client.ensureConnected=async()=>{client.relayUrl="wss://projects.test";};
+  await assert.rejects(client.publishProjectIntent("unknown","wss://projects.test",async()=>{signed++;throw new Error("must not sign");},true),RelayPublishUnknownError);
+  await assert.rejects(client.publishProjectIntent("new","wss://other-projects.test",async()=>{signed++;throw new Error("must not sign");}),RelayPublishNotSentError);
+  assert.equal(signed,0);
+});
+
+test("project ACK retains its original intent until scoped readback is explicitly complete", async () => {
+  reset();const client=connectedClient();const relay="wss://projects.test";
+  client.ensureConnected=async()=>{client.relayUrl=relay;};
+  const event={id:"a".repeat(64),pubkey:"b".repeat(64),kind:5,created_at:1,tags:[],content:"",sig:"c".repeat(128)};
+  let prepared,published=0,signed=0;
+  client.publishEvent=async()=>{assert.equal(prepared,event.id);published++;};
+  const create=async()=>{signed++;return event;};
+  await client.publishProjectIntent("ack",relay,create,false,{onPrepared:id=>{prepared=id;}});
+  client.fetchEvents=async()=>[event];
+  await client.publishProjectIntent("ack",relay,create,true);
+  client.completeProjectIntent("ack",relay,"wrong-id");
+  await client.publishProjectIntent("ack",relay,create,true);
+  assert.equal(signed,1);assert.equal(published,1);
+  client.completeProjectIntent("ack",relay,event.id);
+  await assert.rejects(client.publishProjectIntent("ack",relay,create,true),RelayPublishUnknownError);
+});
+
+test("a restarted project intent observes its persisted exact event ID without signing or publishing", async () => {
+  reset();const client=connectedClient();const relay="wss://projects.test";
+  client.ensureConnected=async()=>{client.relayUrl=relay;};
+  const event={id:"a".repeat(64),pubkey:"b".repeat(64),kind:5,created_at:1,tags:[],content:"",sig:"c".repeat(128)};
+  const create=async()=>{assert.fail("must not sign after restart");};
+  client.publishEvent=async()=>assert.fail("must not republish after restart");
+  const observation={eventId:event.id,onPrepared:()=>assert.fail("must not prepare again")};
+  client.fetchEvents=async query=>{assert.deepEqual(query,{ids:[event.id],kinds:[5],limit:1});return [];};
+  await assert.rejects(client.publishProjectIntent("restart",relay,create,true,observation),RelayPublishUnknownError);
+  client.fetchEvents=async()=>[event];
+  assert.equal((await client.publishProjectIntent("restart",relay,create,true,observation)).id,event.id);
+});
+
+test("failure to persist a prepared project reference prevents external publication", async () => {
+  reset();const client=connectedClient();client.ensureConnected=async()=>{client.relayUrl="wss://projects.test";};
+  let published=0;client.publishEvent=async()=>{published++;};
+  await assert.rejects(client.publishProjectIntent("durable","wss://projects.test",async()=>({id:"a".repeat(64)}),false,{onPrepared:()=>{throw new Error("storage full");}}),RelayPublishNotSentError);
+  assert.equal(published,0);
+  assert.equal(client.unconfirmedEvents.size,0);
+});

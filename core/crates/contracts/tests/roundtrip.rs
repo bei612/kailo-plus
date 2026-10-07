@@ -6,6 +6,30 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn project_preference_preserves_coordinate_selection_and_shared_version() {
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("project-preference.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let typed: Vec<contracts::ProjectPreferenceRequest> =
+        serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(serde_json::to_value(typed).unwrap(), value);
+}
+
+#[test]
+fn projects_publication_preserves_native_metadata_and_exact_head_reference() {
+    let value: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("projects-publication.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let typed: Vec<contracts::ProjectsPublishRequest> =
+        serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(serde_json::to_value(typed).unwrap(), value);
+}
+
+#[test]
 fn inbox_agent_identity_and_author_query_preserve_legacy_absence() {
     let sample: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("inbox-agent.sample.json")).unwrap(),

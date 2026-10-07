@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { getLocale, setLocale } from "../src/i18n";
-import { InboxDetailHeader, InboxEmptyDetail, InboxLayout, InboxListHeader, InboxRowActionButton } from "../src/react/inbox-surface";
+import { InboxDetailHeader, InboxEmptyDetail, InboxLayout, InboxListHeader, InboxRowActionButton, InboxReopenStatus } from "../src/react/inbox-surface";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { click, render, settle } from "./render";
 
@@ -10,6 +10,12 @@ beforeEach(() => { previousLocale = getLocale(); setLocale("en"); });
 afterEach(() => act(() => setLocale(previousLocale)));
 
 describe("original shared Inbox presentation", () => {
+  it("keeps original reopen retry separate from row selection and does not label UNKNOWN a failure",async()=>{
+    const retry=vi.fn(),select=vi.fn();
+    const host=await render(<div onClick={select}><InboxReopenStatus id="dm" pending={false} error unknown onRetry={retry}/></div>);
+    expect(host.querySelector('[role="status"]')?.className).toContain("text-muted-foreground");
+    await click(host.querySelector("button")!);expect(retry).toHaveBeenCalledOnce();expect(select).not.toHaveBeenCalled();
+  });
   it("retains both list/detail slots, original header backdrop and resettable resize handle", async () => {
     const reset = vi.fn();
     const host = await render(<InboxLayout listWidth={365} showList showDetail onResize={vi.fn()} onReset={reset}>

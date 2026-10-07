@@ -626,6 +626,68 @@ export class RelayClient {
     );
   }
 
+  /** Projects are replaceable: observe the original publication, never replay
+   * an older head after UNKNOWN. Use the existing session-owned intent holder. */
+  async publishProjectIntent(
+    key: string,
+    expectedRelayUrl: string,
+    create: () => Promise<RelayEvent>,
+    observeOnly = false,
+    observation?: {eventId?: string; onPrepared: (eventId: string) => void},
+  ): Promise<RelayEvent> {
+    const epoch = this.sessionEpoch;
+    const fingerprint = JSON.stringify(["project", expectedRelayUrl, key]);
+    let previous = this.unconfirmedEvents.get(fingerprint);
+    const unknown = () => new RelayPublishUnknownError(previous?.id ?? observation?.eventId ?? "", "Project publication outcome unknown");
+    if (observeOnly && !previous && !observation?.eventId) throw unknown();
+    await this.ensureConnected().catch((error) => {
+      if (previous || observeOnly) throw unknown();
+      throw new RelayPublishNotSentError(String(error));
+    });
+    const current = () => epoch === this.sessionEpoch && this.relayUrl !== null
+      && new URL(this.relayUrl).href === new URL(expectedRelayUrl).href;
+    if (!current()) {
+      if (previous || observeOnly) throw unknown();
+      throw new RelayPublishNotSentError("Project community changed.");
+    }
+    if (previous || observeOnly) {
+      const originalId = previous?.id ?? observation?.eventId;
+      if (!originalId || !/^[0-9a-f]{64}$/.test(originalId)) throw unknown();
+      const observed = await this.fetchEvents({ids:[originalId],kinds:[5],limit:1}).catch(() => {throw unknown();});
+      const original = observed.find(event => event.id === originalId && event.kind === 5 && (!previous || event.pubkey === previous.pubkey));
+      if (!current() || !original) throw unknown();
+      return original;
+    }
+    const event = await create();
+    if (!current()) throw new RelayPublishNotSentError("Project community changed.");
+    try {
+      observation?.onPrepared(event.id);
+    } catch {
+      // No EVENT has left this process and no uncertain holder exists yet.
+      throw new RelayPublishNotSentError("Project publication intent could not be persisted.");
+    }
+    this.unconfirmedEvents.set(fingerprint,event);
+    previous = event;
+    try {
+      await this.publishEvent(event,"Project publication outcome unknown","Project publication rejected");
+    } catch (error) {
+      if (!(error instanceof RelayPublishRejectedError) && !(error instanceof RelayPublishNotSentError)) throw unknown();
+      if (epoch === this.sessionEpoch) this.unconfirmedEvents.delete(fingerprint);
+      throw error;
+    }
+    if (!current()) throw unknown();
+    return event;
+  }
+
+  /** Drop this session's original signed intent only after the caller has
+   * durably recorded its ACK and completed the scoped directory readback. */
+  completeProjectIntent(key: string, expectedRelayUrl: string, eventId: string): void {
+    const fingerprint = JSON.stringify(["project", expectedRelayUrl, key]);
+    if (this.unconfirmedEvents.get(fingerprint)?.id === eventId) {
+      this.unconfirmedEvents.delete(fingerprint);
+    }
+  }
+
   private async handleWsMessage(message: unknown, generation: number) {
     if (generation !== this.connectionGeneration) return;
     this.stallWatchdog.recordInbound();

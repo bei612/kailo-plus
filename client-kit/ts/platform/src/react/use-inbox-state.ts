@@ -1,4 +1,5 @@
-import type { ReadMarkRequest } from "@client-kit/contracts";
+import type { ReadMarkRequest, ConversationView } from "@client-kit/contracts";
+import { loadInboxConversations } from "./conversations/hidden-dm-inbox-action";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BffClient } from "../client";
 import {
@@ -16,6 +17,8 @@ export function useInboxState(client: BffClient) {
   const [failed, setFailed] = useState(false);
   const [unknown, setUnknown] = useState(false);
   const [pending, setPending] = useState(false);
+  const [conversations, setConversations] = useState<ConversationView[]>([]);
+  const [workspaceChannels, setWorkspaceChannels] = useState<ReadonlySet<string>>(new Set());
   const [visibleChannels, setVisibleChannels] = useState<ReadonlySet<string>>(
     new Set(),
   );
@@ -29,15 +32,19 @@ export function useInboxState(client: BffClient) {
     current.current = null;
     setState(null);
     setVisibleChannels(new Set());
+    setConversations([]); setWorkspaceChannels(new Set());
     setFailed(false);
     setUnknown(intent.current !== null);
     try {
       const workspaces = await client.workspaces();
+      if (generation !== epoch.current) return;
       if (
         !Array.isArray(workspaces) ||
         workspaces.some((workspace) => typeof workspace.id !== "string")
       )
         throw new Error("Invalid Workspace directory");
+      const privateChannels = await loadInboxConversations(client, () => generation === epoch.current);
+      if (generation !== epoch.current) return;
       const next = checkedUserState(await client.collaborationUserState());
       if (generation !== epoch.current) return;
       // A higher CAS version proves the old request can no longer write. A
@@ -48,7 +55,9 @@ export function useInboxState(client: BffClient) {
       }
       current.current = next;
       setState(next);
-      setVisibleChannels(new Set(workspaces.filter((workspace) => workspace.isMember === true).map((workspace) => workspace.id)));
+      const workspaceIds = workspaces.filter((workspace) => workspace.isMember === true).map((workspace) => workspace.id);
+      setWorkspaceChannels(new Set(workspaceIds)); setConversations(privateChannels);
+      setVisibleChannels(new Set([...workspaceIds, ...privateChannels.map(item => item.channelId)]));
     } catch {
       if (generation === epoch.current) setFailed(true);
     }
@@ -134,6 +143,8 @@ export function useInboxState(client: BffClient) {
     write,
     readAt,
     visibleChannels,
+    workspaceChannels,
+    conversations,
   };
 }
 

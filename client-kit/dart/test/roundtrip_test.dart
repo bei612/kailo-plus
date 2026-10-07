@@ -9,6 +9,40 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('Project preference preserves original coordinate and shared CAS', () {
+    final sample =
+        jsonDecode(
+              File(
+                '../../contracts/samples/project-preference.sample.json',
+              ).readAsStringSync(),
+            )
+            as List;
+    expect(
+      sample
+          .map((row) => ProjectPreferenceRequest.fromJson(row).toJson())
+          .toList(),
+      sample,
+    );
+  });
+
+  test(
+    'Projects publication preserves native metadata and exact head reference',
+    () {
+      final sample =
+          jsonDecode(
+                File(
+                  '../../contracts/samples/projects-publication.sample.json',
+                ).readAsStringSync(),
+              )
+              as List;
+      expect(
+        sample
+            .map((row) => ProjectsPublishRequest.fromJson(row).toJson())
+            .toList(),
+        sample,
+      );
+    },
+  );
   test('Inbox Agent identity and author query preserve legacy absence', () {
     for (final present in [true, false]) {
       final sample = jsonDecode(

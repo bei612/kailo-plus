@@ -5690,3 +5690,261 @@ SDK: existing kailo-agent-receipt-xvkujx, 4 CPU/8 GiB, no concurrent Node at
 preflight; Data150MiB. No install, Cargo, image/full build or real Relay access.
 This verifies mounted consumer cancellation and signed-event handling, not
 live authorization/desktop device or Core linked runtime tests.
+
+### 原隐藏私聊 Inbox 重开与消息定位（2026-10-07，REQ-24）
+
+1. **事实与来源**：以 main `52747b1d49e5c8ad6420a6c39555171f0c155ccb` 比较；固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/home/{hiddenDmInboxAction,useHiddenDmInboxNavigation}.ts`、`ui/InboxListPane.tsx` 原流程是重开已有私聊后定位选中消息，含 pending/error/retry。当前缺口不只是按钮：原 Native feed 的隐藏 DM 被 Workspace-only read 集合过滤；Web Inbox 没有实际 Conversation 消息/线程消费者。设计 `03-领域模型与权限模型.md` Conversation 约束保持原 Relay hidden_at/NIP-DV 为唯一隐藏权威；参与者集合不变，不创建另一会话。
+2. **影响与边界**：抽取同一原 pending/error/retry 与导航主体；双端通过既有 BFF Conversation 目录和原签名 visibility host 重开。read 集合允许 ACTIVE Conversation native channel，Agent 查询仍只取 Workspace。Web 复用既有 admitted Conversation message/thread/SSE/media/reaction 路径，传原 parentEventId，不伪造 Workspace membership；隐藏详情保持只读直到重开。导航 URL 仅保留会话及选中消息引用，没有凭据或写命令。无新 schema、端点、注册表或隐藏状态权威。
+3. **实现与异常**：共享每页目录查询前后检查当前 scope；身份切换/卸载后不发送下一页旧 cursor，不迟到导航。UNKNOWN 保留同一 publisher closure/原幂等键，不调用 conversation.open/create；已确认发布后导航失败只重试导航，不再次发布。Native 返回实际路由 Promise；Web 同一路由恢复消息定位。原失败状态保留；UNKNOWN 用中性原提示，不宣称重开失败或成功。仅新增同源 inbox.reopening/reopenFailed 两词条及原工具生成 Dart 对应项。
+4. **实现后证据**：既有 4 CPU/8 GiB `kailo-agent-receipt-xvkujx`，`/evidence/message-edit.AGX058/apps`，未安装依赖、未 build/full。shared `tsc --noEmit` 和 test tsconfig 均 0；既有 `new-message/inbox/inbox-surface` 三文件 38/38。Web tsc 0；InboxPane 12、InboxThreadPane 8、导航 9、ChannelSidebar 5 共 34 项通过。SDK-only 移除 `intent.confirmed` 护栏，真实 mounted 导航失败重试用例观察到 publish 2 次而非 1 次，退出 1；正式原字节 cmp 0 恢复后 new-message 全 18 通过。该破坏没有进入正式源。
+
+原输出位于 `/volumes/data/kailo/tmp/inbox-hidden-dm.OEBLBs/`：`node-final.log`（shared 38 通过，Web 旧 ChannelSidebar fixture 缺返回 shape 退出 2）、`node-host-restored.log`（Web tsc 0、上述 34 通过，额外 PlatformApp 旧 SSR fixture 因并行 SidebarProjects 缺 mock 出现 7 失败）、`confirmed-mutation.log`（1 真失败）、`node-native-restored.log`（18 恢复通过，Native 类型检查因并行 Projects 快照缺 projectsTransport/completeProjectIntent 两诊断退出 2）。ChannelSidebar fixture 仅补实际新增返回字段；SidebarProjects fixture 由其 owner 单独修复、另批核验。
+
+Native wrapper 首次执行报缓存 `.bin/tsc` 相对路径缺模块，已改为直接调用同一现有 `node node_modules/typescript/bin/tsc`，不安装工具。Native 最后完整 Projects 输入类型及原 helper/mounted 用例由集中验证 owner 后续回执补充；本段不把未执行当通过。当前仅源码/限定检查证据，没有部署、真实 SSO 双人隐藏 DM 或 Windows 图形验收。Web 消费仍沿现有 Inbox window 取数，不宣称全历史 feed 完整性；其他原 Inbox 分类不在本批。
+
+最后源码复核补了统一末轮 epoch guard：私聊消息页迟到返回后，不再继续用当前 Cookie 发出旧聚合的 Workspace 重查。原 InboxPane 文件新增真实挂载/卸载的延迟页用例；集中复验该文件 13/13，PlatformApp 旧 SidebarProjects fixture 修复后 10/10（`/volumes/data/kailo/tmp/sidebar-projects-20261007.0PJI8t/ui-restored.log`）。Native 当前完整联合输入随后实际命中 Projects 新 `relayClientSession.ts:656` 缺 `RelaySubscriptionFilter.kinds`，由对应 owner 处理；尚不据此宣称 Native types 通过。此前私有 index 的零上下文选择插入偏移在完整 blob 复核时已纠正，以有上下文的原差异重新选入；正式产品源码未受该候选组装问题影响。
+## 2026-10-07 Projects 原版删除纵向（源码候选，未交付运行）
+
+基线 52747b1d49e5c8ad6420a6c39555171f0c155ccb；设计 f5841d82255f03dde3b0f959b20f777a7a37955f。本批仅收口实际删除消费者，不提交未消费的 PROJECT/REPOSITORY 写分支，未引入迁移或项目正文数据库。
+
+四步影响结论：
+
+1. 权威：REQ-24、DD-39/45/75/81及设计09 Projects段。discover只作入口，不授写权；本人有效SERVER/CLIENT和Relay原ReposWrite/真实坐标作者或不可变NIP-OA owner事实决定写授权。固定Buzz 779af8886caae1317b4de962082429867ab61503 的 crates/buzz-auth/src/lib.rs::AuthService::verify_auth_event、crates/buzz-relay/src/api/bridge.rs::submit_event_authed、crates/buzz-relay/src/handlers/ingest.rs::required_scope_for_kind、crates/buzz-relay/src/handlers/side_effects.rs::validate_standard_deletion_event 已核验。
+2. 模型：30621项目/30617仓库公告仍归Relay；Core只复用publish_attempt/audit的意图、事件引用和结果，不造Project正文权威、伪Workspace或可编辑owner授权。同一HUMAN的两个设备key不自动成为同一坐标作者。
+3. 影响链：共享ProjectsView/ProjectsHost→Web原BFF本人SERVER签名或Native原relayClientSession/CLIENT签名→既有预算/审计/Relay/对账；typed DELETE只收真实targetEventId，不允许传author/raw tags/kind。新增四侧生成请求、原registry实际route/action，原kind5已在现迁移封闭集合，不需数据库扩展。
+4. 缺口修正：原目录无可调用删除通路。按固定源码 desktop/src/features/projects/projectDeletion.ts::deleteProject 与 desktop/src/features/sidebar/ui/SidebarProjectsSection.tsx 原确认布局、精确坐标tombstone、签名前当前head查证/删除后读回接线。删除不连带删除频道、仓库或Git内容；并发新head保留。desktop/src/features/projects/ui/ProjectSectionHeader.tsx::ProjectSectionHeader 原组件移入共享并由真实详情消费。
+
+终结机制：首次明确拒绝可结束该意图；ACCEPTED后原目录证实消失才关闭确认并移除选择。UNKNOWN后403、观察失败或身份切换仍保持原key。Native复用原unconfirmedEvents holder，查询原event而不重发旧replaceable head；进程或身份切换后holder丢失继续未知，不重签。Core查不到已被替换/清理的原事件不能证明未投递，原对账保持UNKNOWN并保留原度量/运维入口。本批不宣称冷启动未决操作自动终结。
+
+实测容器 kailo-agent-receipt-xvkujx，原4CPU/8GiB；仅已有profile-settings-ortsoo.DRR20F/apps与缓存，无新镜像、下载、Cargo、Go、full或部署。Data预检最低168MiB。原始日志均在 /volumes/data/kailo/tmp/projects-write.XEti2m/：
+
+- delete-gen.log：收窄DELETE后原 tools/gen.sh 四侧生成退出0；明确新增枚举title ProjectPublicationOperation，未重命名原公开Operation。完整输入保留已合Inbox字段。原Dart词条由root统一生成，候选只新增本批7词条。
+- delete-final.log：严格TS仅Projects用例及真实依赖图检查退出0，shared Projects 11/11；保留原测试act警告。projects-mutation.log去掉previouslyUnknown保护实际1 failed/10 skipped、退出1；原字节cmp0还原后projects-restored.log与delete-final.log均11/11。
+- native-intent.log及native-restored.log：原 node --import ./test-loader.mjs --experimental-strip-types --test src/shared/api/relayClientUnconfirmedResend.test.mjs，8/8通过。native-mutation.log去掉observeOnly无原intent拒绝分支，实际1 failed（触发must not sign）；原字节cmp0还原后8/8。不是Native Rust编译或浏览器验收。
+- delete-ts-roundtrip.log：原TS合同test types退出0，Projects过滤命中新增删除/已有query共2通过。Rust/Go/Dart追加的同一样例往返仍未执行。
+- 整包types未通过：ui-baseline.log旧快照缺bindings.openIndependent；ui-restored-input.log缺useNativeAuthenticationHost；同步正式shared后types-coherent.log缺virtua；复用原patched virtua后types-dependencies-restored.log为React双份声明LegacyRef/UNDEFINED_VOID_ONLY名义类型冲突，退出2。未修改产品绕过，未声称双宿主整包tsc通过。
+- 原 tools/gen-registry.py 在同步正式追溯后退出0（24能力/20封闭kind），生成差异仅projects.publish实际route/action，保留reaction与read-resources。两份owned Projects Rust模块仅rustfmt退出0，非编译证明。
+
+交付边界：源码写入，以上定向证据成立；Core/bridge新builder用例及窄编译、原审计到Relay签名的实际删除、独立候选完整生成比对、四侧全部往返/双宿主types仍未验。本批没有修改运行allowlist/额度/审批，没有提交或部署。完整创建表单的治理home-channel、Template/Team/Persona前置及真实创建/修改UI、NIP-OA Agent owner菜单仍是原需求后续范围，不用简化表单或假按钮代替，也不扩大Git内容权限。
+
+### 2026-10-07 Projects DELETE 后端与线格式核验
+
+固定输入为 `5265167886e4e9f4f84679276df3ea288298dd5c`，基于
+`52747b1d49e5c8ad6420a6c39555171f0c155ccb`；本段只覆盖该树的后端与契约，
+不覆盖随后侧栏入口、Added 偏好或删除意图恢复的修改。
+只读上游仍为 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/projects/projectDeletion.ts::deleteProject`；签名复用
+`crates/buzz-sdk/src/builders.rs::build_delete_addressable`，并保留 Kailo
+本人身份、原动作准入、持久发布意图与 Relay 原坐标所有权检查。
+
+既有受限 SDK `kailo-agent-receipt-xvkujx` 实读 4 CPU／8 GiB，执行 UID 1000，
+复用 `/cache` 依赖与编译缓存，Cargo `-j 16 --offline`，未安装依赖或重建镜像。
+运行前无其他编译进程，内存 pressure 为 0；删除经核实不再使用的旧验证目录
+7.7 GiB 可重建 debug 产物后，Data 可用 7.9 GiB，源码与证据未删除。
+
+实际命令与结果：
+
+- `cargo check --offline -j 16 -p platform-core --bins --tests`：退出 0，
+  2 分 35 秒；这是编译，不是 Core 运行时或数据库验证。
+- `cargo test --offline -j 16 -p collab-bridge projects::`：1 项通过。
+  在隔离输入中移除目标 event ID 一致性检查后，该项实际失败、退出 101；
+  原字节恢复并与固定树 `cmp` 退出 0 后，该项重新通过。
+- `cargo test --offline -j 16 --manifest-path core/Cargo.toml -p contracts --test roundtrip`：42 项通过。
+- Worker `go test ./internal/contracts`：退出 0；TypeScript 契约 `npm run test`：
+  47 项通过；Dart `dart test test/roundtrip_test.dart`：42 项通过。
+
+原始日志位于 `/volumes/data/kailo/tmp/projects-write.XEti2m/` 的
+`root-core-check-2.log`、`root-project-bridge.log`、
+`root-project-bridge-mutation.log`、`root-project-bridge-restored.log`、
+`root-contract-roundtrips.log` 与 `root-contract-roundtrips-restored.log`。
+首次 login shell 重置 Cargo PATH 退出 127；首次 Go 未指定已有缓存路径而
+尝试写 `/.cache` 退出 1。保留失败日志，纠正容器调用环境后复验，未更改
+业务逻辑迁就环境。未执行 full、真实项目删除、部署或 Windows/Mobile 验收。
+
+### 2026-10-07 Projects Added 偏好迁移核验
+
+设计独立提交并普通推送为 `8f42e091b8ac7801e192573eaf67e2ddc201415a`。
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/projects/lib/projectSidebarMembershipSync.ts::ProjectSidebarMembershipSyncManager`
+和 `desktop/src/features/projects/lib/projectSidebarMembership.ts::{addProjectToSidebar,removeProjectFromSidebar,selectedProjectAddressesFromStore}`
+仍是原交互来源；DD-40 明确将其状态放入现有 CollaborationUserState，而不是恢复
+localStorage／NIP-44 第二权威。原文档检查退出 0；首次缺 npm 缓存投递退出 1，
+原件保留在 `/volumes/data/kailo/tmp/project-sidebar-state.R4nKBS/root-design-docs*.log`。
+
+新迁移 `20261007170000_project_preferences` 在既有独立验证 PostgreSQL
+`kailo-buzz-full-pg-uOp8YM` 内实际执行；容器实读 2 CPU／2 GiB。
+确认旧验证库 `workflow_topic_20261007` 无连接、12 MB 后，仅克隆到新建
+`project_preferences_r4nkbs`，没有改动旧验证库或业务数据库。实际使用原数据库
+Tenant/Principal 外键模型写入一条临时偏好夹具，不是新建可登录的人类账户。
+
+原迁移 forward → 空偏好 backward → forward 均退出 0，默认值保持 `{}`。
+将偏好写为数组时原对象约束拒绝；在这个私有库故意移除新约束后，同一检查真实
+报 `array was accepted: object constraint ineffective`、psql 退出 3。
+恢复原约束后检查通过。写入一条非空偏好后运行原 backward，实际报
+`project preferences exist; rollback would discard user state`、退出 3；
+随后查询仍有 1 条非空偏好，未丢失用户状态。
+三个窄验输入保留在上述证据目录 `migration-*.sql`。
+这只证明该迁移及拒绝有损回退，不证明全链迁移、真实用户授权、CAS 并发或部署。
+
+### 2026-10-07 Projects 原 Added 状态与删除恢复接线
+
+四步影响结论：先核固定 Buzz `779af8886caae1317b4de962082429867ab61503`
+的 `desktop/src/features/sidebar/ui/SidebarProjectsSection.tsx` 原行菜单与
+`desktop/src/features/projects/projectDeletion.ts::deleteProject`，以及上节
+两个 membership 模块；原 Added 是个人选择而非权限。再核 DD-40、03 用户状态
+和 09 的 Projects 边界，设计 `8f42e091b8ac7801e192573eaf67e2ddc201415a`
+明确只扩同一 CollaborationUserState。影响范围为原侧栏两宿主、共享选择 hook、
+原 user-state CAS 和新增原生坐标请求，不增加项目正文表或另一份偏好存储。
+实现后检验按本节后续回执记录，不以接口存在或共享迁移声称完整 Projects 已交付。
+
+新增 `PUT /api/v1/user-state/projects` 仅使用当前 HUMAN 的原 version CAS；
+新增选择经本人 SERVER 当前 Community 读取签名公告，检查真实坐标、unlisted
+作者边界及前后 binding/本人 key；移除允许清理原来已删除的坐标引用。
+侧栏仍与实际可读目录求交，Added 不授予项目写入、频道或 Git 内容权限。
+旧响应缺少 projectPreferences 时客户端不假设空白可写；原四侧新增请求仍
+保留既有类型与可选字段，未另立手写响应权威。查询失败隐藏旧投影，切换真实
+Tenant/Principal/session 或 Native Community/key 时丢弃旧异步结果。
+UNKNOWN 只能显式重查同一 CAS，后一次拒绝不将首次未决写入改判失败。
+
+删除入口已纠正回原侧栏行菜单／悬浮按钮；确认弹窗在菜单关闭子树之外，
+不保留先前新增的详情 header trash。Native 在原签名后、外部 EVENT 发送前
+将 eventId 引用写入同一 sessionStorage intent；持久化失败明确 NotSent，
+不留下原 unconfirmedEvents holder。收到 ACK 后将 acceptedEventId 写入同一
+intent，再做新鲜目录读回；读回失败后重挂载只读，不再发布。未收到 ACK 的
+重启场景按原 eventId 经本人 Relay 观察，查不到仍 UNKNOWN，绝不重新签名。
+原 holder 仅在目录读回闭合时释放，不增加第二 map、事件正文库或重试队列。
+
+一次原 `tools/gen.sh` 联合四侧生成退出 0，输出含 Projects DELETE、Added 与
+当前其他已冻结词条；随后候选只择 Projects 七词条及侧栏十四词条，剥除并行
+Inbox 的两词条，再原 `gen-platform-i18n.py` 生成及 `--check` 退出 0。
+原 `gen-registry.py` 退出 0，新增差异仅原 user-state 下的 Projects PUT 路由。
+日志为 `project-sidebar-state.R4nKBS/{joint-generate,selected-catalog,registry}.log`。
+Added Core 原 user_state::tests 已由 root 在固定 67f79a7020eb19b186250e2ba10de3a87d4c3bf3
+实际执行 2 项通过、退出 0（句柄 99171）；联合 UI/Native 结果见下节。
+四侧 Added 新样例由 owner 独立收尾；不声称真实项目删除或部署。
+
+## 2026-10-07 原项目侧栏呈现与真实导航恢复
+
+本节对应 REQ-24、DD-40、DD-75/80 与 `.design/06` §9.1。
+固定上游为 `779af8886caae1317b4de962082429867ab61503`，实际执行原
+`tools/upstream_manifest.py status` 退出 0；Buzz 证据仍是该 commit。
+
+1. 既定权威和原差异：原 `desktop/src/features/sidebar/ui/AppSidebarPinnedHeader.tsx`
+   的 `AppSidebarPrimaryMenu` 在 Header 后消费 `SidebarProjectsSection`，
+   当前两端共享主菜单此前没有该调用。原 Added 并非“所有可见项目”，其
+   `projectSidebarMembershipSync` 是用户选入偏好。平台按 DD-40 只使用
+   CollaborationUserState；不复制 kind:30078 或另建本地成员权威。
+2. 真实实现：恢复原 `SidebarProjectsSection` 的分区、折叠、Added/Owned
+   筛选、原排序菜单、原图标、子频道展开、浏览选择列表和移除入口。
+   复用固定原 `listSidebarProjects`、`projectRelatedChannels` 与
+   `ProjectBrowserDialog` browse 分支；两端继续调用既有 ProjectsHost/
+   loadProjectDirectory，使用既有签名公告、删除折叠、binding/identity
+   校验，不新建目录。偏好读写由同批 owner 提供唯一用户状态 hook。
+3. 影响和异常：Web 继续只调 BFF；Native 继续原 CLIENT Relay 读取与
+   BFF 用户偏好。真实路由只保存 projectId 引用，不保存身份、权限或意图。
+   项目页受控选中引用再次在真实目录解析；失权/失败不保留旧项目详情。
+   子频道仅与宿主已准入频道交集。旧 scope 的枚举可取消；Add 的迟到完成
+   不导航到已离开的 scope。偏好 UNKNOWN 不伪造成功或先导航。
+   旧 Core 缺省 projectPreferences 时 Added 不伪造空成功，hook 封闭写入并
+   显示重查错误；因此完整 Added 体验要求同批 Core/迁移先行，不能只部署 UI。
+4. 实施后验收：原现有 Projects 与导航测试追加实际挂载断言；既有
+   kailo-agent-receipt-xvkujx 实读 4 CPU/8 GiB、无并发 Node，复用原依赖。
+   不运行 build/Cargo/full，不安装、不提交或部署；这不是整个原 Projects
+   模块已恢复。具体实际结果如下。
+
+本节日志均位于 `/volumes/data/kailo/tmp/sidebar-projects-20261007.0PJI8t/`。
+`ui-baseline.log` 保留 shared source tsc 通过后 test tsc 的未用 `vi` 失败；
+只移除该测试未用 import 后，`ui-restored.log` 中 test tsc 退出 0，原
+`vitest run test/projects.test.tsx test/project-sidebar-state.test.tsx test/sidebar-shell.test.tsx --maxWorkers=1`
+实际 Projects21、Added5、Sidebar6 共 32 项通过；Web 原 PlatformApp10 与
+InboxPane13 共 23 项通过。Web 整体 tsc 已由同批 Inbox owner 在联合输入通过，
+本轮没有重复该命令。PlatformApp 旧 SSR fixture 补 SidebarProjects mock，
+没有改变生产授权或导航。
+
+Native 首次错误 `.bin/tsc` 链接退出 1，保留在 `ui-restored.log`；随后使用
+此前成功的 `../../web-client/web/node_modules/.bin/tsc --noEmit`，实际发现
+原 DELETE 观察 filter 缺必填 `kinds`，保留 `native-restored.log` 退出 2。
+owner 修为原种类 `kinds:[5]` 并核对观察结果 kind5，不放宽过滤类型；
+`native-final.log` 中 Native tsc 退出 0，原 `node --import ./test-loader.mjs --experimental-strip-types --test`
+执行 inboxViewHelpers、useOwnedAgentActivity 与 relayClientUnconfirmedResend
+三现有文件，17 项 Inbox 与 11 项原发布 holder 共 28 项通过。
+
+SDK-only 三处 Projects 负向分别移除迟到 Add 导航 fence、重发已 ACK 删除、
+清除重查仍未决的 CAS；`ui-mutation.log` 实际 3 failed/23 passed，退出 1，
+逐项抓到旧 scope 导航、第二次 publish 与 UNKNOWN 意图丢失。并行 Inbox
+owner 指定的末次 await 后 epoch fence 负向实际 1 failed/12 passed、退出 1，
+抓到卸载后再次调用 workspaces。四份产品源恢复正式字节并逐一 `cmp` 退出 0，
+`ui-mutation-restored.log` 中 Projects26 与 Inbox13 再次全部通过、退出 0。
+日志保留 React 异步 act 警告；未把这些 Node 检查外推为真实 Relay 删除、
+浏览器截图、Desktop Rust、部署或全量检查通过。Inbox 源不进入 Projects 候选。
+
+原版剩余差异：创建项目的原 CreateProjectFormContent 尚无本批受治理
+写入消费者，故不提供假创建按钮；跨端 project share-link 的原打开消费者
+尚未贯通，未加假 Copy link。Git/终端/工作项及项目其他管理动作不在本批。
+浏览列表不使用“搜索或创建”承诺尚不可执行的创建行为。删除由既有真实
+Projects DELETE 同批消费者接回原 row 菜单/hover 位置，不在详情标题自造按钮。
+这些缺口不能用“侧栏全量恢复”或源码通过替代实际功能和上线验收。
+
+### 2026-10-07 Projects Added 四侧线格式补充回执
+
+输入为联合候选 `c8ccae7de6898e3b5c11496b7e9de079740d2d69` 的生成类型、
+`project-preference.sample.json` 和新增四侧往返用例；四份用例从 main
+`52747b1d49e5c8ad6420a6c39555171f0c155ccb` 保留既有 Avatar 等全部用例后，
+只追加 DELETE 与 Added，不携带正式工作树历史删测。Rust、Go、Dart 验证副本
+由各原 formatter 格式化，未改变断言或合同。真实执行仍用原 SDK
+`kailo-agent-receipt-xvkujx`，4 CPU／8 GiB；开始时无其他工具链进程，
+memory PSI avg10/60 为 0，Data 6.4 GiB。未运行 Core、full 或镜像构建。
+
+命令与结果：
+
+- `cargo test --offline --locked -j16 --manifest-path core/Cargo.toml -p contracts --test roundtrip project_preference_preserves`：退出 0，1 passed／42 filtered，23.66 秒。
+- Worker `go test ./internal/contracts -run '^TestProjectPreferenceRoundtrip$' -count=1`：退出 0。
+- TS `tsc --noEmit -p tsconfig.test.json` 后 `node --test --experimental-strip-types --test-name-pattern='Project preference' test/roundtrip.test.ts`：退出 0，1 passed。
+- Dart 在既有 `PUB_CACHE=/cache/pub` 下 `dart test test/roundtrip_test.dart --name 'Project preference'`：退出 0，1 passed。
+
+首轮 Rust／Go／TS 已通过，Dart 因未投递 PUB_CACHE 尝试创建 `/.pub-cache`
+而 Permission denied，整串退出 1；接着误用当前 Dart test 不支持的 `--no-pub`
+退出 64。这两次失败日志保留，没有安装依赖或修改业务迁就环境。按原已存在
+缓存路径运行原命令后才记录上述 Dart 通过。
+
+故意破坏仅在 SDK 副本，将生成的 ProjectPreferenceRequest.toJson 中
+`selected` 输出翻为 `!selected`。同一用例真实失败，1 failed、退出 1，
+期望 true／false，实际 false／true；未改变样例或测试断言。随后恢复候选
+生成物，原字节 cmp 退出 0，重跑同一用例 1 passed、退出 0。
+实际日志均在 `/volumes/data/kailo/tmp/project-sidebar-state.R4nKBS/`：
+`added-contracts.log`、`added-dart-restored.log`（参数失败）、
+`added-dart-baseline.log`、`added-dart-mutation.log`、`added-dart-final.log`。
+此回执补齐 Added 新合同，不把前一轮 DELETE 四侧计数重复充当新字段证据。
+Core 的原坐标与已有私聊 fence 两项另已在 root 固定 `67f79a7020eb19b186250e2ba10de3a87d4c3bf3`
+输入实际通过，日志 `root-user-state-tests.log`；随后只作原 rustfmt 格式变化。
+仍未执行真实用户授权／原生项目删除／新增偏好部署，不扩大为生产就绪结论。
+
+### 2026-10-07 Projects／Inbox 合并边界
+
+以同一 main `52747b1d49e5c8ad6420a6c39555171f0c155ccb` 为基底，将
+Projects `c8ccae7de6898e3b5c11496b7e9de079740d2d69` 与 Inbox
+`95a75faab7314731af8fd3889708d8d920040053` 三方合并为输入树
+`80549e78551b36e39a37241eec3a0cbdd154e8d9`。两份导航冲突同时保留原
+projectId 选择和 conversation 消息定位；同一回执文件按两批事实保留，
+没有丢弃另一批功能。共享词条及生成 Dart 的自动合并逐段核对，保留全部
+23 个新增中英词条，没有选入其他未提交修改。
+
+上文 Inbox 当时尚未完成的 Native 尾项，现由同批侧栏集中验证补齐：
+`native-final.log` 的 Native 类型退出 0、Inbox 17 项及发布 holder 11 项通过。
+末次 await 后 epoch 的真实破坏退出 1，恢复原字节后 Inbox 13 项重新通过；
+日志位置见原侧栏一节。这不改变未部署、未截图、未验收 Windows 的边界。
+
+合并后的原导航用例实际 9 项通过，包括项目选择和隐藏私聊消息定位；
+`gen-platform-i18n.py --check` 退出 0，原 `check-docs.sh` 退出 0：277 个
+引用闭合、87 实体／115 DD／29 SS 归属齐全、87 场景已处置、markdownlint
+0 issues。命令在既有 4 CPU／8 GiB SDK 中复用缓存执行，没有重新构建。
+原输出为 `/volumes/data/kailo/tmp/projects-inbox-main.9ToJ9n/merge-checks.log`。
+四侧三份往返用例取上述实际检查副本的 formatter 输出，复核仅排版变化，
+保留既有 Avatar 等全部断言；不取正式工作树里的旧删测差异。
+
+最后契约专项在固定 `80549e78551b36e39a37241eec3a0cbdd154e8d9` 合同输入
+调用原 `tools/check.sh` 的 `step_contract`，退出 0：原 `gen.sh --check`
+确认四侧生成一致；对真实 `contracts-v0.1.0` 比较 281 个 schema、匹配 3 个
+历史 schema，无破坏性变更。复用既有快照 Git 历史和独立 index；并未把缺失
+历史基线记成 SKIP。只加载原函数执行，未运行 wrapper 的依赖安装阶段或 full。
+原输出为 `/volumes/data/kailo/tmp/project-sidebar-state.R4nKBS/added-compatibility.log`。

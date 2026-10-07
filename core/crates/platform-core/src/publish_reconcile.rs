@@ -162,6 +162,7 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
         [
             PUBLISH_ACTION,
             crate::pulse::PUBLISH_ACTION,
+            crate::projects::PUBLISH_ACTION,
             CONVERSATION_PUBLISH_ACTION,
             CONVERSATION_HIDE_ACTION,
             CONVERSATION_REOPEN_ACTION,
@@ -233,6 +234,7 @@ async fn pass(state: &ServiceState, metrics: &Metrics, cfg: &Config) -> Result<(
         [
             PUBLISH_ACTION,
             crate::pulse::PUBLISH_ACTION,
+            crate::projects::PUBLISH_ACTION,
             CONVERSATION_PUBLISH_ACTION,
             CONVERSATION_HIDE_ACTION,
             CONVERSATION_REOPEN_ACTION,
@@ -305,7 +307,7 @@ async fn settle_one(state: &ServiceState, p: &Pending) -> &'static str {
 }
 
 async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'static str> {
-    if p.action_key == crate::pulse::PUBLISH_ACTION {
+    if matches!(p.action_key.as_str(), crate::pulse::PUBLISH_ACTION | crate::projects::PUBLISH_ACTION) {
         if p.target_type.as_deref() != Some("TENANT")
             || p.target_id != Some(p.tenant_id)
             || p.workspace_id.is_some()
@@ -348,6 +350,12 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
         .map_err(|_| "ACTOR_UNREADABLE")?;
         if before != after || keys.public_key() != current.public_key() {
             return Err("ACTOR_UNREADABLE");
+        }
+        // Parameterized replaceable announcements can disappear after a newer
+        // head or an accepted coordinate tombstone. An absent event is not
+        // proof the original mutation was never delivered, even after expiry.
+        if p.action_key == crate::projects::PUBLISH_ACTION && !exists {
+            return Err("PROJECT_EVENT_UNOBSERVABLE");
         }
         return Ok(exists);
     }

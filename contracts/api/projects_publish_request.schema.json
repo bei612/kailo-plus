@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/projects_publish_request.schema.json",
+  "title": "ProjectsPublishRequest",
+  "description": "Typed original Community announcement mutation. Actor is the authenticated SERVER or CLIENT signer, never supplied by this request. DELETE selects a real signed current announcement; it does not delete its channel or repositories.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operation", "targetEventId"],
+  "properties": {
+    "operation": {"title": "ProjectPublicationOperation", "type": "string", "enum": ["DELETE"]},
+    "targetEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

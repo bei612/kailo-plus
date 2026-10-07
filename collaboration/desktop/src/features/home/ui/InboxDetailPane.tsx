@@ -72,6 +72,7 @@ type InboxDetailPaneProps = {
    */
   latchedDefaultParentId?: string | null;
   onBack?: () => void;
+  canOpenContext?: boolean;
   onOpenContext: (
     channelId: string,
     messageId: string,
@@ -110,6 +111,7 @@ function InboxMessageDetailPane({
   unreadBoundaryEventId = null,
   latchedDefaultParentId = null,
   onBack,
+  canOpenContext = true,
   onOpenContext,
   onSendReply,
 }: InboxDetailPaneProps) {
@@ -375,7 +377,7 @@ function InboxMessageDetailPane({
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <InboxDetailHeader title={contextLabel} onBack={onBack} openLabel={openContextLabel}
           fallbackTitle={item.fullTimestampLabel}
-          onOpen={contextChannelId ? () => onOpenContext(contextChannelId, sourceEventId, contextThreadRootId) : undefined} />
+          onOpen={contextChannelId && canOpenContext ? () => onOpenContext(contextChannelId, sourceEventId, contextThreadRootId) : undefined} />
 
         <div
           aria-busy={isThreadContextLoading}

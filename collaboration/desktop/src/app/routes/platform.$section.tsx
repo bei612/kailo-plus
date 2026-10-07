@@ -23,9 +23,10 @@ import { ProjectsScreen } from "@/features/platform/ProjectsScreen";
 import { AgentDefinitionsPane } from "@/features/platform/AgentDefinitionsPane";
 
 export const Route = createFileRoute("/platform/$section")({
-  validateSearch: (search: Record<string, unknown>): { workspaceId?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { workspaceId?: string; projectId?: string } => ({
     workspaceId: typeof search.workspaceId === "string" && search.workspaceId.trim()
       ? search.workspaceId : undefined,
+    projectId: typeof search.projectId === "string" && search.projectId.trim() ? search.projectId : undefined,
   }),
   params: {
     parse: ({ section }) => {
@@ -43,18 +44,20 @@ export const Route = createFileRoute("/platform/$section")({
  */
 function PlatformRouteComponent() {
   const { section } = Route.useParams();
-  const { workspaceId } = Route.useSearch();
+  const { workspaceId, projectId } = Route.useSearch();
   const navigate = Route.useNavigate();
-  return <PlatformScreen section={section} workspaceId={workspaceId}
+  return <PlatformScreen section={section} workspaceId={workspaceId} projectId={projectId}
+    onProjectChange={(id)=>{void navigate({search:{projectId:id??undefined}});}}
     onWorkspaceChange={(selected) => { void navigate({ search: { workspaceId: selected } }); }} />;
 }
 
-function PlatformScreen({ section, workspaceId, onWorkspaceChange }: {
+function PlatformScreen({ section, workspaceId, onWorkspaceChange, projectId, onProjectChange }: {
   section: PlatformSection; workspaceId?: string; onWorkspaceChange: (workspaceId: string) => void;
+  projectId?:string;onProjectChange:(id:string|null)=>void;
 }) {
   const session = useNativeSession();
   if (section === "pulse") return <PulseScreen />;
-  if (section === "projects") return <ProjectsScreen />;
+  if (section === "projects") return <ProjectsScreen selectedProjectId={projectId??null} onSelectedProjectChange={onProjectChange}/>;
   return (
     <div
       className="flex min-h-0 flex-1 flex-col overflow-auto px-6 pb-6 pt-14"

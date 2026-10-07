@@ -3,18 +3,22 @@ import {
   WorkspaceMembershipState,
   type WorkspaceMemberView,
   type WorkspaceView,
+  type ConversationView, type ConversationParticipant,
 } from "@client-kit/contracts";
 import {
   aggregateInbox,
   inboxConversation,
   inboxReply,
+  inboxThread,
   matchesInbox,
   loadOwnedAgentIdentities,
 } from "@client-kit/platform/inbox";
 import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
 import { useBffClient, useLocale, useT } from "@client-kit/platform/react/context";
+import { loadInboxConversations, useHiddenDmInboxNavigation, useConversationVisibilityHost, type InboxNavigationTarget } from "@client-kit/platform/react/new-message";
+import { toast } from "sonner";
 import { InboxRow } from "@client-kit/platform/react/inbox-row";
-import { InboxLayout, InboxListHeader, InboxEmptyDetail, InboxRowActionButton, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
+import { InboxLayout, InboxListHeader, InboxEmptyDetail, InboxRowActionButton, InboxReopenStatus, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
 import { useResizableInboxListWidth, INBOX_SINGLE_COLUMN_BREAKPOINT_PX, INBOX_COLUMN_MIN_WIDTH_PX } from "@client-kit/platform/react/use-resizable-inbox-list-width";
 import { UserAvatar } from "@client-kit/platform/react/messages";
 import { AUXILIARY_PANEL_DEFAULT_WIDTH_PX, AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@client-kit/platform/react/thread";
@@ -36,6 +40,9 @@ type Snapshot = {
   workspaces: WorkspaceView[];
   members: Map<string, WorkspaceMemberView[]>;
   agentPubkeys: Set<string>;
+  conversations: ConversationView[];
+  people: ConversationParticipant[];
+  hiddenDm: ReadonlySet<string>;
 };
 
 export function InboxPane({
@@ -45,7 +52,7 @@ export function InboxPane({
   onStartDm,
 }: {
   principalId: string;
-  onOpen: (workspaceId: string) => void;
+  onOpen: (channelId: string, target?: InboxNavigationTarget) => void | Promise<void>;
   onUnreadCount?: (count: number | null) => void;
   onStartDm?: (pubkey: string) => void;
 }) {
@@ -53,6 +60,9 @@ export function InboxPane({
   const t = useT();
   const locale = useLocale();
   const reads = useInboxState(client);
+  const visibility = useConversationVisibilityHost();
+  const hiddenDm = useHiddenDmInboxNavigation({ scopeKey: principalId, conversations: reads.conversations,
+    onOpenContext: target => onOpen(target.channelId, target), onError: message => toast.error(message) });
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState<InboxFilter>("all");
@@ -89,7 +99,23 @@ export function InboxPane({
       )
         throw new Error("Invalid Workspace directory");
       const joined = workspaces.filter((workspace) => workspace.isMember === true);
-      const next: Snapshot = { mentions: [], activity: [], workspaces: joined, members: new Map(), agentPubkeys: new Set() };
+      const conversations = await loadInboxConversations(client, () => epoch === generation.current);
+      if (epoch !== generation.current) return;
+      const people: ConversationParticipant[] = [];
+      if (conversations.length) {
+        let cursor: string | undefined; const seen = new Set<string>();
+        do {
+          const page = await client.conversationParticipants(cursor);
+          if (epoch !== generation.current) return;
+          if (!Array.isArray(page.items)) throw new Error("Invalid Conversation participants");
+          people.push(...page.items); cursor = page.nextCursor;
+          if (cursor && seen.has(cursor)) throw new Error("Participant cursor did not advance");
+          if (cursor) seen.add(cursor);
+        } while (cursor);
+      }
+      if (conversations.length && !visibility) throw new Error("Conversation visibility unavailable");
+      const hiddenDm = conversations[0] ? await visibility!.read(conversations[0]) : new Set<string>();
+      const next: Snapshot = { mentions: [], activity: [], workspaces: joined, members: new Map(), agentPubkeys: new Set(), conversations, people, hiddenDm };
       // One HTTP read at a time. No browser Relay filter, signer or unbounded SSE fan-out.
       for (const workspace of joined) {
         if (epoch !== generation.current) return;
@@ -154,8 +180,26 @@ export function InboxPane({
         }
         next.members.set(workspace.id, members);
       }
+      for (const conversation of conversations) {
+        if (epoch !== generation.current) return;
+        if (!conversation.participantPrincipalIds.includes(principalId)) throw new Error("Conversation participant changed");
+        const self = people.find(person => person.principalId === principalId);
+        if (!self?.pubkeys.length || self.pubkeys.some(key => !hex.test(key))) throw new Error("Unverifiable Conversation identity");
+        const own = new Set(self.pubkeys);
+        const events = inboxWindowEvents((await client.conversationMessages(conversation.id)).events, conversation.channelId);
+        // Same original mention/participated-thread interest, including hidden
+        // DM channels. Sidebar hidden_at is not loss of read participation.
+        const mentioned = (event: Event) => event.tags.some(tag => tag[0] === "p" && own.has(tag[1]));
+        const roots = new Set(events.filter(event => own.has(event.pubkey) || mentioned(event)).map(inboxConversation));
+        next.mentions.push(...events.filter(event => !own.has(event.pubkey) && mentioned(event)).map(event => ({...event,category:"mention" as const})));
+        next.activity.push(...events.filter(event => !own.has(event.pubkey) && inboxReply(event.tags) && roots.has(inboxConversation(event))));
+      }
       // A scope removed during aggregation cannot survive as a cached row.
+      if (epoch !== generation.current) return;
       const visible = new Set((await client.workspaces()).filter((workspace) => workspace.isMember === true).map((workspace) => workspace.id));
+      const currentConversations = await loadInboxConversations(client, () => epoch === generation.current);
+      next.conversations = next.conversations.filter(item => currentConversations.some(current => current.id === item.id && current.channelId === item.channelId && current.participantPrincipalIds.includes(principalId)));
+      next.conversations.forEach(item => visible.add(item.channelId));
       next.mentions = next.mentions.filter((event) => visible.has(event.channelId));
       next.activity = next.activity.filter((event) => visible.has(event.channelId));
       next.workspaces = next.workspaces.filter((workspace) => visible.has(workspace.id));
@@ -163,7 +207,7 @@ export function InboxPane({
     } catch {
       if (epoch === generation.current) setFailed(true);
     }
-  }, [client, principalId]);
+  }, [client, principalId, visibility]);
   useEffect(() => {
     void load();
     const refresh = () => {
@@ -223,7 +267,8 @@ export function InboxPane({
     );
   const chosen = rows.find((row) => row.scopeKey === selected);
   const authorTarget = profileTarget?.principalId === principalId && reads.visibleChannels.has(profileTarget.workspaceId) &&
-    snapshot.workspaces.some((workspace) => workspace.id === profileTarget.workspaceId) ? profileTarget : null;
+    (snapshot.workspaces.some((workspace) => workspace.id === profileTarget.workspaceId) || snapshot.conversations.some(item => item.channelId === profileTarget.workspaceId && item.id === profileTarget.conversationId)) ? profileTarget : null;
+  const openItem = (event: Event) => { void hiddenDm.openContext({channelId:event.channelId,messageId:event.id,threadRootId:inboxThread(event.tags).rootId}); };
   const singleAuxiliary = Boolean(authorTarget) && width !== null && width < AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX;
   const narrow = width !== null && width < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
   const hasSelection = filter === "drafts" ? drafts.entries.some((entry) => entry.key === selectedDraft) : Boolean(chosen);
@@ -249,11 +294,12 @@ export function InboxPane({
       <div className="-mt-13 min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pt-13" data-testid="home-inbox-list">
         {visibleRows.map((row) => {
           const item = row.item;
-          const member = snapshot.members.get(item.channelId)?.find((candidate) => candidate.pubkeys.includes(item.pubkey));
+          const conversation = snapshot.conversations.find(value => value.channelId === item.channelId);
+          const member = (conversation ? snapshot.people.filter(person => conversation.participantPrincipalIds.includes(person.principalId)) : snapshot.members.get(item.channelId))?.find((candidate) => candidate.pubkeys.includes(item.pubkey));
           const sender = member?.displayName || truncatePubkey(item.pubkey);
           const read = isRead(row);
           const mark = () => reads.write(inboxReadContexts(row.items, !read));
-          const target = {principalId,workspaceId:item.channelId,eventId:item.id,pubkey:item.pubkey};
+          const target = {principalId,workspaceId:item.channelId,eventId:item.id,pubkey:item.pubkey,...(conversation ? {conversationId:conversation.id} : {})};
           return <ContextMenu key={row.scopeKey}><ContextMenuTrigger asChild><div>
             <InboxRow id={item.id} selected={row.scopeKey === selected} read={read}
               sender={<MessageAuthorIdentity target={target} triggerElement="span" triggerClassName="min-w-0 max-w-full" onOpen={() => setProfileTarget(target)}><span className="block max-w-full truncate rounded text-sm font-semibold leading-4 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">{sender}</span></MessageAuthorIdentity>}
@@ -264,14 +310,14 @@ export function InboxPane({
               channel={snapshot.workspaces.find((workspace) => workspace.id === item.channelId)?.name ?? null}
               openLabel={t("inbox.openItem", { sender })}
               onSelect={() => { setProfileTarget(null);setSelected(row.scopeKey); if (!read) reads.write(inboxReadContexts(row.items, true)); }}
-              preview={<MessageContent content={item.content} workspaceId={item.channelId} mediaTags={item.tags} />}
+              preview={<><MessageContent content={item.content} workspaceId={item.channelId} conversationId={conversation?.id} mediaTags={item.tags} /><InboxReopenStatus id={item.id} pending={hiddenDm.isReopenPending(item.channelId)} error={hiddenDm.isReopenErrored(item.channelId)} unknown={hiddenDm.isReopenUnknown(item.channelId)} onRetry={()=>openItem(item)}/></>}
               actions={<>
                 <InboxRowActionButton disabled={reads.pending} label={t(read ? "inbox.markUnread" : "inbox.markRead")} onClick={mark}><MailOpen className="h-4 w-4" /></InboxRowActionButton>
-                <InboxRowActionButton label={t("inbox.open")} onClick={() => onOpen(item.channelId)}><ExternalLink className="h-4 w-4" /></InboxRowActionButton>
+                <InboxRowActionButton disabled={hiddenDm.isReopenPending(item.channelId)} label={t(hiddenDm.isReopenPending(item.channelId) ? "inbox.reopening" : "inbox.open")} onClick={() => openItem(item)}><ExternalLink className="h-4 w-4" /></InboxRowActionButton>
               </>} />
           </div></ContextMenuTrigger><ContextMenuContent>
             <ContextMenuItem disabled={reads.pending} onSelect={mark}><MailOpen className="h-4 w-4" />{t(read ? "inbox.markUnread" : "inbox.markRead")}</ContextMenuItem>
-            <ContextMenuSeparator /><ContextMenuItem onSelect={() => onOpen(item.channelId)}><ExternalLink className="h-4 w-4" />{t("inbox.open")}</ContextMenuItem>
+            <ContextMenuSeparator /><ContextMenuItem disabled={hiddenDm.isReopenPending(item.channelId)} onSelect={() => openItem(item)}><ExternalLink className="h-4 w-4" />{t("inbox.open")}</ContextMenuItem>
           </ContextMenuContent></ContextMenu>;
         })}
         {!visibleRows.length ? <div className="flex h-full min-h-64 items-center justify-center px-6 text-center"><div>
@@ -282,10 +328,12 @@ export function InboxPane({
     </section> : null}
     {chosen && (showDetail || singleAuxiliary) ? <div className={singleAuxiliary ? "hidden" : "contents"}><InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}
       workspaceId={chosen.item.channelId} rootId={chosen.conversationId} selectedEventId={chosen.item.id}
+      conversation={snapshot.conversations.find(item => item.channelId === chosen.item.channelId)}
+      canInteract={!snapshot.hiddenDm.has(chosen.item.channelId)}
       onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeAuthorScope}
-      channelName={snapshot.workspaces.find((workspace) => workspace.id === chosen.item.channelId)?.name ?? ""}
-      members={snapshot.members.get(chosen.item.channelId) ?? []} onBack={narrow ? () => setSelected(null) : undefined}
-      onOpen={() => onOpen(chosen.item.channelId)} /></div> : showDetail ? <InboxEmptyDetail /> : null}
+      channelName={snapshot.workspaces.find((workspace) => workspace.id === chosen.item.channelId)?.name ?? snapshot.people.filter(person => person.principalId !== principalId && snapshot.conversations.find(item => item.channelId === chosen.item.channelId)?.participantPrincipalIds.includes(person.principalId)).map(person=>person.displayName).join(", ")}
+      members={snapshot.members.get(chosen.item.channelId) ?? snapshot.people.filter(person => snapshot.conversations.find(item => item.channelId === chosen.item.channelId)?.participantPrincipalIds.includes(person.principalId))} onBack={narrow ? () => setSelected(null) : undefined}
+      onOpen={hiddenDm.isReopenPending(chosen.item.channelId) ? undefined : () => openItem(chosen.item)} /></div> : showDetail ? <InboxEmptyDetail /> : null}
     {authorTarget ? <MessageAuthorProfile key={`${principalId}:${authorTarget.workspaceId}:${authorTarget.eventId}`}
       target={authorTarget} onClose={() => setProfileTarget(null)} onWidthChange={setProfileWidth} isSinglePanelView={singleAuxiliary}
       onStartDm={snapshot.members.get(authorTarget.workspaceId)?.some((member) => member.principalId === principalId && member.pubkeys.includes(authorTarget.pubkey)) ? undefined : onStartDm} /> : null}

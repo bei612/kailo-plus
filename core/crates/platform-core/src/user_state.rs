@@ -16,7 +16,8 @@ use axum::{
     Json,
 };
 use contracts::{
-    ConversationPreferenceRequest, ReadMarkRequest, UserStateVersion, WorkspacePreferenceRequest,
+    ConversationPreferenceRequest, ProjectPreferenceRequest, ReadMarkRequest, UserStateVersion,
+    WorkspacePreferenceRequest,
 };
 use nostr::EventId;
 use serde::Serialize;
@@ -30,6 +31,7 @@ use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
 pub struct UserStateResponse {
     pub workspace_preferences: serde_json::Value,
     pub conversation_preferences: serde_json::Value,
+    pub project_preferences: serde_json::Value,
     pub read_contexts: serde_json::Value,
     pub version: i32,
 }
@@ -38,6 +40,7 @@ pub struct UserStateResponse {
 struct UserStateRow {
     workspace_preferences: serde_json::Value,
     conversation_preferences: serde_json::Value,
+    project_preferences: serde_json::Value,
     read_contexts: serde_json::Value,
     version: i32,
 }
@@ -48,7 +51,7 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
         Err(r) => return r,
     };
     match sqlx::query_as::<_, UserStateRow>(
-        "select workspace_preferences, conversation_preferences, read_contexts, version
+        "select workspace_preferences, conversation_preferences, project_preferences, read_contexts, version
          from identity.collaboration_user_state where tenant_principal_id = $1",
     )
     .bind(ctx.tenant_principal_id)
@@ -62,12 +65,31 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
             Json(UserStateResponse {
                 workspace_preferences: serde_json::json!({}),
                 conversation_preferences: serde_json::json!({}),
+                project_preferences: serde_json::json!({}),
                 read_contexts: serde_json::json!({}),
                 version: 0,
             }),
         )
             .into_response(),
         Ok(Some(row)) => {
+            let Some(project_preferences)=row.project_preferences.as_object() else {
+                return user_state_unavailable();
+            };
+            if project_preferences.iter().any(|(key,value)| project_coordinate(key).is_none() || value.get("selected").and_then(serde_json::Value::as_bool).is_none()) {
+                return user_state_unavailable();
+            }
+            // References remain personal state, not a project directory. Hide
+            // them when this Community is no longer discoverable; the actual
+            // sidebar also intersects the fresh original announcement query.
+            let project_preferences=if project_preferences.is_empty() {
+                serde_json::json!({})
+            } else {
+                match crate::pulse::admit(&state,&ctx).await {
+                    Ok(_)=>row.project_preferences.clone(),
+                    Err(response) if response.status()==StatusCode::FORBIDDEN=>serde_json::json!({}),
+                    Err(response)=>return response,
+                }
+            };
             let (Some(preferences), Some(conversation_preferences), Some(contexts)) = (
                 row.workspace_preferences.as_object(),
                 row.conversation_preferences.as_object(),
@@ -175,6 +197,7 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
                             .collect(),
                     ),
                     conversation_preferences: serde_json::Value::Object(visible_preferences),
+                    project_preferences,
                     read_contexts: serde_json::Value::Object(
                         contexts
                             .iter()
@@ -204,6 +227,116 @@ pub async fn get_user_state(State(state): State<BffState>, headers: HeaderMap) -
             user_state_unavailable()
         }
     }
+}
+
+fn project_coordinate(value: &str) -> Option<(u16, String, String)> {
+    let mut parts = value.splitn(3, ':');
+    let kind = match parts.next()? {
+        "30621" => 30621,
+        "30617" => 30617,
+        _ => return None,
+    };
+    let author = parts.next()?;
+    let parsed = nostr::PublicKey::from_hex(author).ok()?;
+    if parsed.to_hex() != author {
+        return None;
+    }
+    let slug = parts.next()?;
+    if slug.is_empty() {
+        return None;
+    }
+    Some((kind, author.to_owned(), slug.to_owned()))
+}
+
+/// Added/remove is the original preference, never a project permission grant.
+pub async fn put_project_preference(
+    State(state): State<BffState>,
+    headers: HeaderMap,
+    body: Result<Json<ProjectPreferenceRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let Ok(Json(request)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let Some(version) = stored_version(request.version).filter(|version| *version >= 0) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let Some((kind, author, slug)) = project_coordinate(&request.project_address) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let before = match crate::pulse::admit(&state, &ctx).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let keys = match crate::web_transport::actor_keys(&state, &ctx).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    if request.selected {
+        let client =
+            match crate::web_transport::community_client(&state, &keys, &before.community_host) {
+                Ok(value) => value,
+                Err(response) => return response,
+            };
+        let rows = match client
+            .query(
+                &state.http,
+                &[serde_json::json!({"kinds":[kind],"authors":[author],"#d":[slug],"limit":1})],
+            )
+            .await
+        {
+            Ok(rows) => rows,
+            Err(error) => return crate::web_transport::relay_error_response(&error, None),
+        };
+        let events: Vec<nostr::Event> = match serde_json::from_value(rows) {
+            Ok(value) => value,
+            Err(_) => return user_state_unavailable(),
+        };
+        let [event] = events.as_slice() else {
+            return StatusCode::NOT_FOUND.into_response();
+        };
+        if event.kind.as_u16() != kind
+            || event.pubkey.to_hex() != author
+            || event.tags.identifier() != Some(slug.as_str())
+            || event.verify().is_err()
+        {
+            return user_state_unavailable();
+        }
+        if event.tags.iter().any(|tag| {
+            tag.as_slice()
+                .first()
+                .is_some_and(|v| v == "buzz-visibility")
+                && tag.as_slice().get(1).is_some_and(|v| v == "unlisted")
+        }) && event.pubkey != keys.public_key()
+        {
+            return StatusCode::FORBIDDEN.into_response();
+        }
+    }
+    // Removing a now-deleted reference is permitted; no fake surviving head.
+    let after = match crate::pulse::admit(&state, &ctx).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let current_keys = match crate::web_transport::actor_keys(&state, &ctx).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    if before != after || keys.public_key() != current_keys.public_key() {
+        return user_state_unavailable();
+    }
+    upsert(
+        &state,
+        &ctx,
+        version,
+        "project_preferences",
+        &request.project_address,
+        serde_json::json!({"selected":request.selected}),
+        Stamp::UpdatedAt,
+    )
+    .await
 }
 
 /// Same version/CAS as Workspace preferences; only a current participant can write.
@@ -742,6 +875,25 @@ fn user_state_unavailable() -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn added_projects_accept_only_original_coordinates_not_authority_aliases() {
+        let author = nostr::Keys::generate().public_key().to_hex();
+        for kind in [30621, 30617] {
+            assert_eq!(
+                project_coordinate(&format!("{kind}:{author}:garden:one")),
+                Some((kind, author.clone(), "garden:one".into()))
+            );
+        }
+        for value in [
+            format!("30078:{author}:garden"),
+            format!("30621:{author}:"),
+            format!("30621:{}:garden", author.to_uppercase()),
+            "workspace:123".into(),
+        ] {
+            assert!(project_coordinate(&value).is_none(), "{value}");
+        }
+    }
 
     #[test]
     fn private_read_evidence_is_fenced_by_both_bindings() {

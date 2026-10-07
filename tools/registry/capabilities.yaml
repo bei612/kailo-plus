@@ -102,7 +102,9 @@ capabilities:
   exposure: end_user
   routes:
   - /api/v1/projects/query
-  actions: []
+  - /api/v1/projects/publish
+  actions:
+  - projects.publish
   tools: []
   workflow_kinds: []
 - id: collab.pulse
@@ -122,6 +124,7 @@ capabilities:
   - /api/v1/user-state
   - /api/v1/user-state/workspaces/{workspace_id}
   - /api/v1/user-state/conversations/{conversation_id}
+  - /api/v1/user-state/projects
   - /api/v1/user-state/read
   actions: []
   tools: []

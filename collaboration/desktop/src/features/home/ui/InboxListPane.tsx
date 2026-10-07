@@ -1,7 +1,7 @@
 import { ExternalLink, MailOpen } from "lucide-react";
 import * as React from "react";
 import { InboxRow } from "@client-kit/platform/react/inbox-row";
-import { InboxListHeader, InboxRowActionButton } from "@client-kit/platform/react/inbox-surface";
+import { InboxListHeader, InboxRowActionButton, InboxReopenStatus } from "@client-kit/platform/react/inbox-surface";
 import { useT } from "@client-kit/platform/react/context";
 
 import {
@@ -91,6 +91,9 @@ type InboxListPaneProps = {
   selectedDraftKey: string | null;
   showRightDivider?: boolean;
   unreadOnly: boolean;
+  isReopenPending?: (channelId: string) => boolean;
+  isReopenErrored?: (channelId: string) => boolean;
+  isReopenUnknown?: (channelId: string) => boolean;
 };
 
 export function InboxListPane({
@@ -111,6 +114,9 @@ export function InboxListPane({
   selectedDraftKey,
   showRightDivider = false,
   unreadOnly,
+  isReopenPending,
+  isReopenErrored,
+  isReopenUnknown,
 }: InboxListPaneProps) {
   const t = useT();
   const isDrafts = filter === "drafts";
@@ -131,8 +137,9 @@ export function InboxListPane({
   const renderItem = (item: InboxItem) => {
     const isSelected = item.conversationId === selectedConversationId;
     const isDone = doneSet.has(item.id);
-    const canOpen = Boolean(item.item.channelId);
-    const openLabel = canOpen ? "Open in channel" : "No channel link";
+    const isReopening = Boolean(item.item.channelId && isReopenPending?.(item.item.channelId));
+    const canOpen = Boolean(item.item.channelId) && !isReopening;
+    const openLabel = isReopening ? t("inbox.reopening") : canOpen ? "Open in channel" : "No channel link";
     const typeLabel = getInboxTypeLabel(item);
     const videoReviewCommentRootId = getInboxVideoReviewCommentRootId(item);
     const row = (
@@ -177,13 +184,13 @@ export function InboxListPane({
           </UserProfilePopover>
         }
         preview={
-          <VideoReviewCommentMarkdown
+          <><VideoReviewCommentMarkdown
             className="inbox-preview-markdown text-inherit"
             content={item.preview}
             interactive={false}
             mentionNames={item.mentionNames}
             videoReviewCommentRootId={videoReviewCommentRootId}
-          />
+          /><InboxReopenStatus id={item.id} pending={isReopening} error={Boolean(item.item.channelId && isReopenErrored?.(item.item.channelId))} unknown={Boolean(item.item.channelId && isReopenUnknown?.(item.item.channelId))} onRetry={() => onOpenDirect(item)}/></>
         }
         actions={
           <>

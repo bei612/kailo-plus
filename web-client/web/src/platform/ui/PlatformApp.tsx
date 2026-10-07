@@ -57,6 +57,7 @@ import { AgentDefinitionsPane } from "./AgentDefinitionsPane";
 import { NewMessagePage } from "./NewMessagePage";
 import { PulsePane } from "./PulsePane";
 import { ProjectsPane } from "./ProjectsPane";
+import { SidebarProjects } from "./SidebarProjects";
 import { translate } from "@client-kit/platform/i18n";
 import { platformQueries } from "@/platform/ui/queries";
 import { getLocale, t } from "@/shared/i18n";
@@ -265,6 +266,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       }} />
     ) : tab === "conversation" ? (
       chosenConversation ? <ChannelPane key={chosenConversation.id} workspaceId={chosenConversation.id} conversation={chosenConversation}
+        targetMessageId={messageTarget?.channelId === chosenConversation.id ? messageTarget.messageId : undefined}
         onStartDm={(pubkey)=>{setInitialRecipientPubkey(pubkey);setTab("new-message");}}
         onOpenMessageLink={openMessageLink}
         myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh} /> : <Notice text={t(conversations.loading ? "platform.loadingWorkspaces" : "platform.loadFailed")} />
@@ -275,8 +277,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         principalId={session.tenantPrincipalId}
         onStartDm={(pubkey)=>{setInitialRecipientPubkey(pubkey);setTab("new-message");}}
         onUnreadCount={setInboxUnreadCount}
-        onOpen={(workspaceId) => {
-          void navigation.openChannel(workspaceId);
+        onOpen={async (channelId, target) => {
+          if (target?.conversation) {
+            await navigation.openConversation(target.conversation.id, target);
+          } else await navigation.openChannel(channelId, target ? {channelId,messageId:target.messageId,threadRootId:target.threadRootId ?? null} : undefined);
         }}
       />
     ) : tab === "pulse" ? (
@@ -284,7 +288,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         setInitialRecipientPubkey(pubkey);setTab("new-message");
       }}/>
     ) : tab === "projects" ? (
-      <ProjectsPane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`}/>
+      <ProjectsPane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`}
+        selectedProjectId={navigation.projectId} onSelectedProjectChange={id=>{void navigation.openProject(id);}}/>
     ) : tab === "agents" ? (
       <AgentDefinitionsPane key={`${session.tenantId}:${session.tenantPrincipalId}`} workspaceId={chosen ?? active ?? undefined}
         onWorkspaceChange={(workspaceId) => { void navigation.openTab("agents", workspaceId); }} />
@@ -325,6 +330,11 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               <AppSidebarPrimaryMenu onNewMessage={() => {setInitialRecipientPubkey(undefined);setTab("new-message");}} onSelectHome={() => setTab("inbox")}
                 homeBadgeCount={notificationSettings?.settings.homeBadgeEnabled && inboxUnreadCount !== null ? inboxUnreadCount : undefined}
                 onSelectPlatformSection={setTab}
+                projectsOverviewActive={!navigation.projectId}
+                projectsSection={<SidebarProjects scopeKey={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`}
+                  channels={rows.filter(workspace=>workspace.isMember===true).map(workspace=>({id:workspace.id,name:workspace.name,visibility:workspace.visibility?.toLowerCase()}))}
+                  selectedProjectId={navigation.projectId} selectedChannelId={tab==="channel"?active:null}
+                  onSelectProject={id=>{void navigation.openProject(id);}} onSelectChannel={id=>{void navigation.openChannel(id);}}/>}
                 selectedPlatformSection={tab === "channel" || tab === "inbox" || tab === "settings" || tab === "new-message" || tab === "conversation" || tab === "application" ? null : tab}
                 selectedView={tab === "inbox" ? "home" : tab === "new-message" ? "new-message" : tab === "channel" || tab === "conversation" || tab === "settings" ? "channel" : "platform"} />
             <NativeApplicationEntries scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`}

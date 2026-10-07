@@ -1,5 +1,5 @@
 capability_id: collab.user_state
-title: 收藏、静音与已读由 Core CollaborationUserState 统一承载
+title: 收藏、静音、Projects Added 与已读由 Core CollaborationUserState 统一承载
 stage: S1
 status: shipped
 exposure: end_user
@@ -26,11 +26,11 @@ implementation:
   owners: [team-platform]
   paths: [core/crates/platform-core/src/user_state.rs, web-client, client-kit/ts/platform/src/inbox.ts, client-kit/ts/platform/src/react/inbox-row.tsx, client-kit/ts/platform/src/react/use-inbox-state.ts, client-kit/ts/platform/test/inbox.test.tsx, collaboration/desktop/src/features/home/lib/inbox.ts, collaboration/desktop/src/features/home/lib/inboxViewHelpers.ts, collaboration/desktop/src/features/home/ui/HomeView.tsx, collaboration/desktop/src/features/home/ui/InboxListPane.tsx]
   surfaces: [web, desktop]
-  schemas: [contracts/api/read_mark.schema.json, contracts/api/workspace_preference.schema.json, contracts/api/conversation_preference.schema.json, contracts/api/user_state_version.schema.json]
-  migrations: [core/migrations/20260923020000_collaboration_user_state.up.sql, core/migrations/20261006180000_conversation_preferences.up.sql]
+  schemas: [contracts/api/read_mark.schema.json, contracts/api/workspace_preference.schema.json, contracts/api/conversation_preference.schema.json, contracts/api/project_preference.schema.json, contracts/api/user_state_version.schema.json]
+  migrations: [core/migrations/20260923020000_collaboration_user_state.up.sql, core/migrations/20261006180000_conversation_preferences.up.sql, core/migrations/20261007170000_project_preferences.up.sql]
 
 runtime:
-  routes: ["/api/v1/user-state", "/api/v1/user-state/workspaces/{workspace_id}", "/api/v1/user-state/conversations/{conversation_id}", "/api/v1/user-state/read"]
+  routes: ["/api/v1/user-state", "/api/v1/user-state/workspaces/{workspace_id}", "/api/v1/user-state/conversations/{conversation_id}", "/api/v1/user-state/projects", "/api/v1/user-state/read"]
 
 release:
   artifacts:

@@ -10,8 +10,10 @@ import { formatRecipientName, useConversationDirectory, useConversationOpen } fr
 export { useConversations, useConversationDirectory } from "./conversations/use-conversations";
 export { ConversationPreparationPending } from "./conversations/use-conversations";
 export { ConversationList } from "./conversations/conversation-list";
-export { ConversationVisibilityProvider, useConversationInvalidation, type ConversationVisibilityHost } from "./conversations/use-conversation-state";
+export { ConversationVisibilityProvider, useConversationInvalidation, useConversationVisibilityHost, type ConversationVisibilityHost } from "./conversations/use-conversation-state";
 export { DM_VISIBILITY_KIND, hiddenConversationChannels } from "./conversations/visibility";
+export { useHiddenDmInboxNavigation, type InboxNavigationTarget } from "./conversations/use-hidden-dm-inbox-navigation";
+export { loadInboxConversations } from "./conversations/hidden-dm-inbox-action";
 export type NewMessageComposerHost = {
   disabled: boolean;
   isSending: boolean;

@@ -2,7 +2,7 @@
 // desktop/src/features/home/ui/{HomeView,InboxListPane,InboxFilterMenu,InboxDetailPane}.tsx.
 // Presentation only. Each host retains its real message/read/transport authority.
 import * as React from "react";
-import { ArrowLeft, ChevronDown, Ellipsis, ExternalLink, Mail } from "lucide-react";
+import { ArrowLeft, ChevronDown, Ellipsis, ExternalLink, Mail, LoaderCircle, AlertCircle } from "lucide-react";
 import { useUiT } from "./context";
 import { cn } from "./profile/buzz/shared/lib/cn";
 import { Popover, PopoverContent, PopoverTrigger } from "./conversations/popover";
@@ -11,6 +11,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./sidebar/tooltip";
 import { Switch } from "./switch";
 
 export type InboxFilter = "all" | "mention" | "thread" | "agent_activity" | "drafts";
+/** Original InboxListPane reopen status/retry; UNKNOWN is not a failed effect. */
+export function InboxReopenStatus({id,pending,error,unknown,onRetry}: {id:string;pending:boolean;error:boolean;unknown?:boolean;onRetry:()=>void}) {
+  const t=useUiT();
+  if(!pending && !error)return null;
+  return <div aria-live="polite" className={cn("mt-1 flex items-center gap-1 text-2xs font-medium",error&&!unknown?"text-destructive":"text-muted-foreground")} data-testid={`home-inbox-reopen-status-${id}`} role="status">
+    {pending?<><LoaderCircle className="h-3 w-3 shrink-0 animate-spin"/>{t("inbox.reopening")}</>:<><AlertCircle className="h-3 w-3 shrink-0"/>{t(unknown?"dm.retryUnknown":"inbox.reopenFailed")}<button className="ml-0.5 rounded font-semibold underline underline-offset-2 hover:no-underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring" data-testid={`home-inbox-reopen-retry-${id}`} onClick={event=>{event.stopPropagation();onRetry();}} type="button">{t("platform.retry")}</button></>}
+  </div>;
+}
 const iconButton = "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring data-[state=open]:bg-muted/70 data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0";
 
 export function InboxFilterMenu({ filter, onFilterChange, activeDraftCount }: {

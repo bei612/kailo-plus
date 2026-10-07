@@ -132,6 +132,7 @@ function Reader() {
       <span>{reads.state ? `v${reads.state.version}` : "no-state"}</span>
       <span>{reads.unknown ? "UNKNOWN" : "known"}</span>
       <span>{reads.pending ? "pending" : "idle"}</span>
+      <output>{JSON.stringify({visible:[...reads.visibleChannels],workspaces:[...reads.workspaceChannels]})}</output>
       <button
         type="button"
         onClick={() => reads.write([{ key: "scope-a", seconds: 20 }])}
@@ -146,12 +147,20 @@ function Reader() {
 }
 
 describe("actual shared Core state consumer", () => {
+  it("admits hidden DM channels by the participant directory without treating them as Workspaces and clears revoked entries",async()=>{
+    let active=true;
+    const client=createBffClient({send:async request=>({status:200,body:request.path==="/api/v1/workspaces"?[workspace]:request.path==="/api/v1/conversations"?{items:active?[{id:"dm",channelId:"native-dm",participantPrincipalIds:["self","peer"],state:"ACTIVE"}]:[]}:state()})});
+    const host=await render(<PlatformProvider client={client}><Reader/></PlatformProvider>);
+    expect(JSON.parse(host.querySelector("output")!.textContent!)).toEqual({visible:["scope-a","native-dm"],workspaces:["scope-a"]});
+    active=false;await click(button(host,"Recheck"));
+    expect(JSON.parse(host.querySelector("output")!.textContent!)).toEqual({visible:["scope-a"],workspaces:["scope-a"]});
+  });
   it("sends exact Core version and only renders confirmed state", async () => {
     const send = vi.fn(
       async (request: BffRequest): Promise<BffReply> => ({
         status: 200,
         body:
-          request.path === "/api/v1/workspaces"
+          request.path === "/api/v1/conversations" ? {items:[]} : request.path === "/api/v1/workspaces"
             ? [workspace]
             : request.method === "PUT"
               ? { version: 1 }
@@ -180,7 +189,7 @@ describe("actual shared Core state consumer", () => {
       if (request.method === "PUT") throw new TransportError("lost ACK");
       return {
         status: 200,
-        body: request.path === "/api/v1/workspaces" ? [workspace] : state(),
+        body: request.path === "/api/v1/conversations" ? {items:[]} : request.path === "/api/v1/workspaces" ? [workspace] : state(),
       };
     });
     const host = await render(
@@ -208,7 +217,7 @@ describe("actual shared Core state consumer", () => {
       }
       return {
         status: 200,
-        body: request.path === "/api/v1/workspaces" ? [workspace] : state(version),
+        body: request.path === "/api/v1/conversations" ? {items:[]} : request.path === "/api/v1/workspaces" ? [workspace] : state(version),
       };
     });
     const host = await render(
@@ -245,7 +254,7 @@ describe("actual shared Core state consumer", () => {
     let finish!: (reply: BffReply) => void;
     const first = createBffClient({
       send: async (request) =>
-        request.path === "/api/v1/workspaces"
+        request.path === "/api/v1/conversations" ? {status:200,body:{items:[]}} : request.path === "/api/v1/workspaces"
           ? { status: 200, body: [workspace] }
           : new Promise((resolve) => {
               finish = resolve;
@@ -254,7 +263,7 @@ describe("actual shared Core state consumer", () => {
     const second = createBffClient({
       send: async (request) => ({
         status: 200,
-        body: request.path === "/api/v1/workspaces" ? [] : state(7),
+        body: request.path === "/api/v1/conversations" ? {items:[]} : request.path === "/api/v1/workspaces" ? [] : state(7),
       }),
     });
     function Host() {
@@ -286,7 +295,7 @@ describe("actual shared Core state consumer", () => {
           : {
               status: 200,
               body:
-                request.path === "/api/v1/workspaces" ? [workspace] : state(3),
+                request.path === "/api/v1/conversations" ? {items:[]} : request.path === "/api/v1/workspaces" ? [workspace] : state(3),
             },
     });
     const host = await render(

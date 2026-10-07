@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useState } from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "../src/i18n";
 import { createBffClient } from "../src/client";
@@ -10,12 +10,80 @@ import { finalizeEvent, generateSecretKey } from "nostr-tools/pure";
 import { ItemState, type ConversationView } from "@client-kit/contracts";
 import { TransportError, type BffRequest } from "../src/transport";
 import { button, click, render, settle } from "./render";
+import { reopenHiddenInboxConversation, type HiddenDmInboxIntent } from "../src/react/conversations/hidden-dm-inbox-action";
+import { useHiddenDmInboxNavigation } from "../src/react/conversations/use-hidden-dm-inbox-navigation";
 
 const alice = { principalId: "alice", displayName: "Alice", pubkeys: ["a".repeat(64)] };
 const bob = { principalId: "bob", displayName: "Bob", pubkeys: ["b".repeat(64)] };
 beforeEach(() => setLocale("en"));
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
+});
+
+describe("original hidden DM Inbox navigation", () => {
+  const conversation: ConversationView = {id:"existing-dm",channelId:"native-dm",participantPrincipalIds:["alice","bob"],state:ItemState.Active,operationId:"op",version:1};
+  it("reopens the exact binding, retains the same uncertain publication, and never creates a DM",async()=>{
+    const send=vi.fn(async(_request:BffRequest)=>({status:200,body:{items:[conversation]}}));
+    const client=createBffClient({send}); const intent:HiddenDmInboxIntent={};
+    const publish=vi.fn().mockRejectedValueOnce(new TransportError("lost receipt")).mockResolvedValue(undefined);
+    const host={read:vi.fn(async()=>new Set([conversation.channelId])),prepare:vi.fn(async()=>publish)};
+    await expect(reopenHiddenInboxConversation({conversation,client,host,intent,isCurrent:()=>true})).rejects.toThrow("lost receipt");
+    expect(intent.publish).toBe(publish);
+    expect(await reopenHiddenInboxConversation({conversation,client,host,intent,isCurrent:()=>true})).toEqual(conversation);
+    expect(host.prepare).toHaveBeenCalledTimes(1); expect(publish).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls.every(call => (call[0] as BffRequest | undefined)?.method === "GET")).toBe(true);
+    await reopenHiddenInboxConversation({conversation,client,host,intent,isCurrent:()=>true});
+    expect(publish).toHaveBeenCalledTimes(2);
+  });
+  it("observes an already reopened conversation without replay and rejects changed or revoked binding",async()=>{
+    let items=[conversation]; const client=createBffClient({send:async()=>({status:200,body:{items}})});
+    const publish=vi.fn(); const intent:HiddenDmInboxIntent={publish,unknown:true};
+    const host={read:async()=>new Set<string>(),prepare:vi.fn(async()=>publish)};
+    expect(await reopenHiddenInboxConversation({conversation,client,host,intent,isCurrent:()=>true})).toEqual(conversation);
+    expect(publish).not.toHaveBeenCalled(); expect(intent.publish).toBeUndefined();
+    items=[{...conversation,channelId:"different"}];
+    await expect(reopenHiddenInboxConversation({conversation,client,host,intent,isCurrent:()=>true})).rejects.toThrow("admission");
+    items=[];
+    await expect(reopenHiddenInboxConversation({conversation,client,host,intent,isCurrent:()=>true})).rejects.toThrow("admission");
+    expect(host.prepare).not.toHaveBeenCalled();
+  });
+  it("fences scope change while the original directory or signer is preparing",async()=>{
+    let current=true;
+    const send=vi.fn(async()=>{current=false;return {status:200,body:{items:[conversation],nextCursor:"old-identity-cursor"}};});
+    const client=createBffClient({send});
+    const host={read:vi.fn(async()=>new Set([conversation.channelId])),prepare:vi.fn(async()=>vi.fn())};
+    expect(await reopenHiddenInboxConversation({conversation,client,host,intent:{},isCurrent:()=>current})).toBeNull();
+    expect(host.read).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(1);
+    current=true;
+    const fresh=createBffClient({send:async()=>({status:200,body:{items:[conversation]}})});
+    const publish=vi.fn(); host.prepare=vi.fn(async()=>{current=false;return publish;});
+    expect(await reopenHiddenInboxConversation({conversation,client:fresh,host,intent:{},isCurrent:()=>current})).toBeNull();
+    expect(publish).not.toHaveBeenCalled();
+  });
+  it("mounts the original pending guard and navigates to the selected message only after confirmed reopen",async()=>{
+    let done!:()=>void; const publication=new Promise<void>(resolve=>{done=resolve;});
+    const publish=vi.fn(()=>publication); const prepare=vi.fn(async()=>publish); const open=vi.fn().mockRejectedValueOnce(new Error("navigation interrupted")).mockResolvedValue(undefined);
+    const client=createBffClient({send:async()=>({status:200,body:{items:[conversation]}})});
+    function InboxOpen(){const dm=useHiddenDmInboxNavigation({scopeKey:"alice",conversations:[conversation],onOpenContext:open,onError:vi.fn()});return <button disabled={dm.isReopenPending("native-dm")} onClick={()=>void dm.openContext({channelId:"native-dm",messageId:"selected",threadRootId:"root"})}>Open original</button>;}
+    const host=await render(<PlatformProvider client={client}><ConversationVisibilityProvider value={{read:async()=>new Set(["native-dm"]),prepare}}><InboxOpen/></ConversationVisibilityProvider></PlatformProvider>);
+    await click(button(host,"Open original")); await settle();
+    expect(button(host,"Open original").disabled).toBe(true); expect(open).not.toHaveBeenCalled();
+    await act(async()=>done());await settle();
+    expect(open).toHaveBeenCalledWith({channelId:"native-dm",messageId:"selected",threadRootId:"root",conversation});
+    expect(prepare).toHaveBeenCalledTimes(1);
+    await click(button(host,"Open original"));await settle();
+    expect(open).toHaveBeenCalledTimes(2);expect(publish).toHaveBeenCalledTimes(1);
+  });
+  it("does not navigate on a late receipt after the mounted Inbox changes identity",async()=>{
+    let done!:()=>void;const pending=new Promise<void>(resolve=>{done=resolve;});const open=vi.fn();
+    const client=createBffClient({send:async()=>({status:200,body:{items:[conversation]}})});
+    function InboxOpen(){const [scope,setScope]=useState("alice");const dm=useHiddenDmInboxNavigation({scopeKey:scope,conversations:[conversation],onOpenContext:open,onError:vi.fn()});return <><button onClick={()=>void dm.openContext({channelId:"native-dm",messageId:"selected"})}>Open original</button><button onClick={()=>setScope("new-identity")}>Switch</button></>;}
+    const host=await render(<PlatformProvider client={client}><ConversationVisibilityProvider value={{read:async()=>new Set(["native-dm"]),prepare:async()=>()=>pending}}><InboxOpen/></ConversationVisibilityProvider></PlatformProvider>);
+    await click(button(host,"Open original"));await settle();
+    await click(button(host,"Switch"));await act(async()=>done());await settle();
+    expect(open).not.toHaveBeenCalled();
+  });
 });
 
 describe("private conversation user state", () => {

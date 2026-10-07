@@ -1,4 +1,6 @@
 import * as React from "react";
+import {useSearch} from "@tanstack/react-router";
+import {SidebarProjects} from "./SidebarProjects";
 import { AppSidebarFrame } from "@client-kit/platform/react/sidebar/app-sidebar-frame";
 import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
 import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
@@ -78,6 +80,7 @@ export function AppSidebar({
   onStarChannel,
   onUnstarChannel,
 }: AppSidebarProps) {
+  const projectSearch=useSearch({strict:false});
   const [isCreateChannelOpen, setCreateChannelOpen] = React.useState(false);
   const queryClient = useQueryClient();
   const { open: sidebarOpen, openMobile } = useSidebar();
@@ -223,6 +226,8 @@ export function AppSidebar({
                 onSelectHome={onSelectHome}
                 onSelectPlatformSection={onSelectPlatformSection}
                 selectedPlatformSection={selectedPlatformSection}
+                projectsOverviewActive={!projectSearch.projectId}
+                projectsSection={<SidebarProjects channels={channels} selectedChannelId={selectedView==="channel"?selectedChannelId:null} onSelectChannel={onSelectChannel}/>}
                 selectedView={selectedView}
               />
 

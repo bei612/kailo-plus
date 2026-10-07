@@ -166,6 +166,7 @@ export type CollaborationUserState = {
     { starred: boolean; muted: boolean; updatedAt?: string }
   >;
   conversationPreferences?: Record<string, { starred: boolean; muted: boolean; updatedAt?: string }>;
+  projectPreferences?: Record<string, {selected:boolean;updatedAt:string}>;
   readContexts: Record<string, string>;
   version: number;
 };
@@ -183,6 +184,7 @@ export function checkedUserState(
     !value.workspacePreferences ||
     typeof value.workspacePreferences !== "object" ||
     Array.isArray(value.workspacePreferences) ||
+    (value.projectPreferences!==undefined&&(!value.projectPreferences||typeof value.projectPreferences!=="object"||Array.isArray(value.projectPreferences)||Object.entries(value.projectPreferences).some(([address,entry])=>!/^(30621|30617):[0-9a-f]{64}:.+$/.test(address)||!entry||typeof entry.selected!=="boolean"||typeof entry.updatedAt!=="string"||!Number.isFinite(Date.parse(entry.updatedAt))))) ||
     (value.conversationPreferences !== undefined &&
       (!value.conversationPreferences || typeof value.conversationPreferences !== "object" ||
        Array.isArray(value.conversationPreferences) || Object.values(value.conversationPreferences).some(

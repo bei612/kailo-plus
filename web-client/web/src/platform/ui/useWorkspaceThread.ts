@@ -8,19 +8,20 @@ import { applyMessageEdits } from "@client-kit/platform/react/messages";
 
 // Both Inbox and the channel thread consume the same admitted query/cache;
 // signed events stay in Relay, and this is only a disposable client projection.
-export function useWorkspaceThread(principalId: string, workspaceId: string, rootId: string) {
+export function useWorkspaceThread(principalId: string, workspaceId: string, rootId: string, conversationId?: string) {
   const client = useBffClient();
   const cache = useQueryClient();
   const [denied, setDenied] = useState(false);
   const [interrupted, setInterrupted] = useState(false);
-  const key = useMemo(() => ["platform", "inbox-thread", principalId, workspaceId, rootId], [principalId, workspaceId, rootId]);
+  const key = useMemo(() => ["platform", "inbox-thread", principalId, workspaceId, rootId, conversationId ?? null], [principalId, workspaceId, rootId, conversationId]);
   const thread = useInfiniteQuery({
     queryKey: key, enabled: !denied, initialPageParam: null as WebMessageCursor | null,
     queryFn: async ({ pageParam }) => {
-      const page = await client.workspaceMessages(workspaceId, {
+      const query = {
         messageType: WebMessageType.Stream, parentEventId: rootId,
         ...(pageParam ? { before: pageParam.createdAt, beforeId: pageParam.eventId } : {}),
-      });
+      };
+      const page = await (conversationId ? client.conversationMessages(conversationId, query) : client.workspaceMessages(workspaceId, query));
       if (!Array.isArray(page.events)) throw new Error("Invalid thread page");
       const cursor = page.nextCursor;
       if (cursor && pageParam && (cursor.createdAt < pageParam.createdAt ||
@@ -45,7 +46,7 @@ export function useWorkspaceThread(principalId: string, workspaceId: string, roo
         setDenied(true); cache.removeQueries({queryKey: key});
       }
     }
-  }), [workspaceId, cache, key]);
+  }, conversationId), [workspaceId, conversationId, cache, key]);
   const messages = useMemo(() => {
     const deleted = new Set(thread.data?.pages.flatMap((page) => [...page.deleted]));
     const messages = [...new Map(thread.data?.pages.flatMap((page) => page.events).filter((event) => !deleted.has(event.id)).map((event) => [event.id, event])).values()]

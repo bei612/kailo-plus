@@ -8,6 +8,19 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
+test("Project preference preserves original coordinate and shared CAS", () => {
+  const sample: import("../src/generated/contracts.js").ProjectPreferenceRequest[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/project-preference.sample.json",import.meta.url),"utf8"));
+  const actual: typeof sample = sample.map(row=>({projectAddress:row.projectAddress,selected:row.selected,version:row.version}));
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)),sample);
+});
+
+test("Projects publication preserves native metadata and exact head reference", () => {
+  const sample: import("../src/generated/contracts.js").ProjectsPublishRequest[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/projects-publication.sample.json",import.meta.url),"utf8"));
+  const actual: typeof sample = sample.map(row=>({operation:row.operation,targetEventId:row.targetEventId}));
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)),sample);
+});
+
+
 test("Inbox Agent identity and author query preserve legacy absence", () => {
   const sample: {query: import("../src/generated/contracts.js").WebMessageQuery; installation: import("../src/generated/contracts.js").AgentInstallationView} = JSON.parse(readFileSync(new URL("../../../../contracts/samples/inbox-agent.sample.json",import.meta.url),"utf8"));
   for (const present of [true,false]) {

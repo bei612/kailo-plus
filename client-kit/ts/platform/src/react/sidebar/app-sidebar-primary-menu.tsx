@@ -5,6 +5,7 @@ import { PlatformNavigation, type PlatformNavigationSection as PlatformSection }
 import { Activity, Folders, Bot, ClipboardCheck, History, Inbox, ListChecks, MonitorSmartphone, Users, Workflow, SquarePen } from "lucide-react";
 import { SidebarHeader, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem } from "./sidebar";
 import { SidebarMenuLabel } from "./sidebar-menu-label";
+import type { ReactNode } from "react";
 type SidebarSelectedView = "home" | "channel" | "platform" | "new-message";
 
 const PLATFORM_SECTION_ICON = {
@@ -27,6 +28,8 @@ type AppSidebarPrimaryMenuProps = {
   onSelectPlatformSection: (section: PlatformSection) => void;
   selectedPlatformSection: PlatformSection | null;
   selectedView: SidebarSelectedView;
+  projectsSection?: ReactNode;
+  projectsOverviewActive?: boolean;
 };
 
 
@@ -37,10 +40,12 @@ export function AppSidebarPrimaryMenu({
   onSelectPlatformSection,
   selectedPlatformSection,
   selectedView,
+  projectsSection,
+  projectsOverviewActive = true,
 }: AppSidebarPrimaryMenuProps) {
   const locale = useUiLocale();
   return (
-    <SidebarHeader
+    <><SidebarHeader
       className="relative z-40 cursor-default select-none px-2 pb-0 pt-0"
       data-tauri-drag-region
       data-testid="sidebar-primary-menu"
@@ -51,7 +56,7 @@ export function AppSidebarPrimaryMenu({
         locale={locale}
         onSelectSection={onSelectPlatformSection}
         selectedSection={
-          selectedView === "platform" ? selectedPlatformSection : null
+          selectedView === "platform" && (selectedPlatformSection !== "projects" || projectsOverviewActive) ? selectedPlatformSection : null
         }
         firstRow={
           <>
@@ -85,6 +90,6 @@ export function AppSidebarPrimaryMenu({
           </>
         }
       />
-    </SidebarHeader>
+    </SidebarHeader>{projectsSection}</>
   );
 }

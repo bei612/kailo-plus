@@ -280,6 +280,12 @@
 //    platformToolView, err := UnmarshalPlatformToolView(bytes)
 //    bytes, err = platformToolView.Marshal()
 //
+//    projectPreferenceRequest, err := UnmarshalProjectPreferenceRequest(bytes)
+//    bytes, err = projectPreferenceRequest.Marshal()
+//
+//    projectsPublishRequest, err := UnmarshalProjectsPublishRequest(bytes)
+//    bytes, err = projectsPublishRequest.Marshal()
+//
 //    projectsQueryRequest, err := UnmarshalProjectsQueryRequest(bytes)
 //    bytes, err = projectsQueryRequest.Marshal()
 //
@@ -1531,6 +1537,26 @@ func UnmarshalPlatformToolView(data []byte) (PlatformToolView, error) {
 }
 
 func (r *PlatformToolView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProjectPreferenceRequest(data []byte) (ProjectPreferenceRequest, error) {
+	var r ProjectPreferenceRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProjectPreferenceRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalProjectsPublishRequest(data []byte) (ProjectsPublishRequest, error) {
+	var r ProjectsPublishRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ProjectsPublishRequest) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4671,6 +4697,22 @@ type PlatformToolView struct {
 	Status           ToolStatus    `json:"status"`
 }
 
+// DD-40 original Projects Added/remove preference. Native coordinate only, not membership
+// or content permission. Uses the same CollaborationUserState version CAS.
+type ProjectPreferenceRequest struct {
+	ProjectAddress string `json:"projectAddress"`
+	Selected       bool   `json:"selected"`
+	Version        int64  `json:"version"`
+}
+
+// Typed original Community announcement mutation. Actor is the authenticated SERVER or
+// CLIENT signer, never supplied by this request. DELETE selects a real signed current
+// announcement; it does not delete its channel or repositories.
+type ProjectsPublishRequest struct {
+	Operation     ProjectPublicationOperation `json:"operation"`
+	TargetEventID string                      `json:"targetEventId"`
+}
+
 // Original Buzz Community project/repository announcements and coordinate-scoped tombstones
 // only; no Git content or mutation authorization.
 type ProjectsQueryRequest struct {
@@ -7103,6 +7145,12 @@ type ToolStatus string
 const (
 	StatusPROVISIONING ToolStatus = "PROVISIONING"
 	StickyACTIVE       ToolStatus = "ACTIVE"
+)
+
+type ProjectPublicationOperation string
+
+const (
+	ProjectPublicationOperationDELETE ProjectPublicationOperation = "DELETE"
 )
 
 type ProjectsQueryRequestView string

@@ -8,23 +8,27 @@ import { useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { ProjectGridCard } from "./ProjectCards";
 import { ProjectDetailMetaList, ProjectDetailMetaRow } from "./ProjectDetailMeta";
-import { loadProjects, type ProjectsHost } from "./projectEnumeration";
+import { ProjectSectionHeader } from "./ProjectSectionHeader";
+import { loadProjectDirectory, type ProjectsHost } from "./projectEnumeration";
 import type { Project } from "./projectModels";
 
-export function ProjectsView({host}:{host:ProjectsHost}) {
-  return <ProjectDirectory key={host.scopeKey} host={host}/>;
+type ProjectsViewProps={host:ProjectsHost;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null)=>void};
+export function ProjectsView(props:ProjectsViewProps) {
+  return <ProjectDirectory key={props.host.scopeKey} {...props}/>;
 }
 
-function ProjectDirectory({host}:{host:ProjectsHost}) {
+function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange}:ProjectsViewProps) {
   const t=useUiT(); const cache=useQueryClient();
   const [search,setSearch]=useState("");
   const [view,setView]=useState<"grid"|"list">("grid");
   const [sort,setSort]=useState<"created"|"name">("created");
-  const [selected,setSelected]=useState<string|null>(null);
-  const query=useQuery({queryKey:["projects",host.scopeKey],queryFn:({signal})=>loadProjects(host,signal),retry:false,refetchOnWindowFocus:"always"});
+  const [localSelected,setLocalSelected]=useState<string|null>(null);
+  const selected=selectedProjectId===undefined?localSelected:selectedProjectId;
+  const setSelected=(id:string|null)=>{setLocalSelected(id);onSelectedProjectChange?.(id);};
+  const query=useQuery({queryKey:["projects",host.scopeKey],queryFn:({signal})=>loadProjectDirectory(host,signal),retry:false,refetchOnWindowFocus:"always"});
   useEffect(()=>()=>{void cache.cancelQueries({queryKey:["projects",host.scopeKey]});cache.removeQueries({queryKey:["projects",host.scopeKey]});},[cache,host.scopeKey]);
   // A failed fresh read must not keep a previously accessible announcement open.
-  const projects=query.isSuccess&&!query.isFetching?query.data:[];
+  const projects=query.isSuccess&&!query.isFetching?query.data.projects:[];
   const active=projects.find(project=>project.id===selected);
   const searchText=search.trim().toLowerCase();
   const visible=projects.filter(project=>[project.name,project.description,...project.repositories.flatMap(repo=>[repo.name,repo.description])]
@@ -43,13 +47,12 @@ function ProjectDirectory({host}:{host:ProjectsHost}) {
           </select></label>
         <Button variant="ghost" size="icon" aria-label={t("platform.retry")} onClick={()=>void query.refetch()} disabled={query.isFetching}><RefreshCw className="h-4 w-4"/></Button>
       </div>
-      <header className="mb-2 flex min-h-12 flex-wrap items-center gap-2 rounded-md bg-muted/40 px-4 py-2">
-        <div className="flex min-w-0 flex-1 items-center gap-3"><Folders className="h-4 w-4 shrink-0 text-muted-foreground"/><h2 className="min-w-0 truncate text-sm font-semibold">{t("platform.tab.projects")}</h2></div>
+      <ProjectSectionHeader className="mb-2 rounded-md bg-muted/40" icon={Folders} title={t("platform.tab.projects")} trailing={
         <fieldset className="flex items-center rounded-lg bg-muted/30 p-0.5"><legend className="sr-only">{t("projects.layout")}</legend>
           <Button aria-label={t("projects.grid")} aria-pressed={view==="grid"} className="h-7 w-7 px-0" size="sm" variant={view==="grid"?"secondary":"ghost"} onClick={()=>setView("grid")}><LayoutGrid className="h-3.5 w-3.5"/></Button>
           <Button aria-label={t("projects.list")} aria-pressed={view==="list"} className="h-7 w-7 px-0" size="sm" variant={view==="list"?"secondary":"ghost"} onClick={()=>setView("list")}><List className="h-3.5 w-3.5"/></Button>
         </fieldset>
-      </header>
+      } />
       {query.isError?<p role="alert">{t("platform.loadFailed")}</p>:query.isFetching||query.isPending?<p role="status">{t("platform.loading")}</p>:visible.length===0?
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 py-16 text-center"><Folders className="h-10 w-10 text-muted-foreground/40"/><div className="space-y-1"><p className="text-sm font-medium">{t(searchText?"projects.noMatch":"projects.empty")}</p><p className="text-sm text-muted-foreground">{t("projects.emptyHint")}</p></div></div>:
         <section className={view==="grid"?"grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3":"flex flex-col"}>
@@ -61,7 +64,8 @@ function ProjectDirectory({host}:{host:ProjectsHost}) {
         </section>}
     </div>
     {active?<aside className="flex w-96 max-w-full shrink-0 flex-col overflow-auto border-l border-border bg-background" aria-label={t("projects.announcement")}>
-      <header className="flex items-center gap-2 px-6 py-4"><h2 className="min-w-0 flex-1 break-words text-lg font-semibold">{active.name}</h2><Button variant="ghost" size="icon" aria-label={t("projects.close")} onClick={()=>setSelected(null)}><X className="h-4 w-4"/></Button></header>
+      <header className="flex items-center gap-2 px-6 py-4"><h2 className="min-w-0 flex-1 break-words text-lg font-semibold">{active.name}</h2>
+        <Button variant="ghost" size="icon" aria-label={t("projects.close")} onClick={()=>setSelected(null)}><X className="h-4 w-4"/></Button></header>
       <p className="whitespace-pre-wrap break-words px-6 text-sm text-muted-foreground">{active.description}</p>
       <ProjectDetailMetaList><ProjectDetailMetaRow label={t("projects.owner")}><code className="break-all text-xs">{active.owner}</code></ProjectDetailMetaRow><ProjectDetailMetaRow label={t("projects.address")}><code className="break-all text-xs">{active.projectAddress}</code></ProjectDetailMetaRow></ProjectDetailMetaList>
       <div className="space-y-3 px-6 pb-6"><h3 className="text-sm font-semibold">{t("projects.repositories")}</h3>
