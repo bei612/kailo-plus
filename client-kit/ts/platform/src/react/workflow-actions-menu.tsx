@@ -9,6 +9,7 @@ import { useT } from "./context";
 type WorkflowActionsMenuProps = {
   isEnabled: boolean;
   disabled?: boolean;
+  showEnabledToggle?: boolean;
   onDelete?: () => void;
   onDuplicate?: () => void;
   onEdit?: () => void;
@@ -17,7 +18,7 @@ type WorkflowActionsMenuProps = {
 };
 
 export function WorkflowActionsMenu({ isEnabled, disabled = false, onDelete,
-  onDuplicate, onEdit, onToggleEnabled, onTrigger }: WorkflowActionsMenuProps) {
+  onDuplicate, onEdit, onToggleEnabled, onTrigger, showEnabledToggle = true }: WorkflowActionsMenuProps) {
   const t = useT();
   if (!onDelete && !onDuplicate && !onEdit && !onToggleEnabled && !onTrigger) return null;
   return <DropdownMenu>
@@ -33,7 +34,7 @@ export function WorkflowActionsMenu({ isEnabled, disabled = false, onDelete,
         <Pencil className="mr-2 h-4 w-4" />{t("workflows.edit")}</DropdownMenuItem> : null}
       {onDuplicate ? <DropdownMenuItem disabled={disabled} onClick={onDuplicate}>
         <Copy className="mr-2 h-4 w-4" />{t("agents.automation.copy")}</DropdownMenuItem> : null}
-      {onToggleEnabled ? <DropdownMenuCheckboxItem checked={isEnabled}
+      {showEnabledToggle && onToggleEnabled ? <DropdownMenuCheckboxItem checked={isEnabled}
         className="gap-2 pl-2 [&>span:first-child]:hidden" disabled={disabled}
         onCheckedChange={(checked) => { if (checked !== isEnabled) onToggleEnabled(); }}
         onSelect={(event) => event.preventDefault()}>

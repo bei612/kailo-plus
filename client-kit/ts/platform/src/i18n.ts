@@ -893,6 +893,8 @@ export const platformMessages = {
   "workflows.history": { en: "My run history", "zh-CN": "我的运行历史" },
   "workflows.name": { en: "Workflow name", "zh-CN": "工作流名称" },
   "workflows.actions": { en: "Workflow actions", "zh-CN": "工作流操作" },
+  "workflows.enableWorkflow": { en: "Enable workflow", "zh-CN": "启用工作流" },
+  "workflows.disableWorkflow": { en: "Disable workflow", "zh-CN": "停用工作流" },
   "workflows.edit": { en: "Edit", "zh-CN": "编辑" },
   "workflows.unnamed": { en: "Untitled workflow", "zh-CN": "未命名工作流" },
   "workflows.editName": { en: "Edit workflow name", "zh-CN": "编辑工作流名称" },

@@ -378,8 +378,8 @@ describe("original workflow action menu with governed consumers", () => {
     expect(menu.textContent).toContain("编辑");
     expect(menu.textContent).toContain("复制为新草稿");
     expect(menu.textContent).toContain("运行一次");
-    expect(menu.querySelector('[role="menuitemcheckbox"]')?.getAttribute("aria-checked")).toBe("true");
-    expect(menu.querySelector('[data-testid="workflow-enabled-switch-visual"]')).not.toBeNull();
+    expect(host.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
+    expect(menu.querySelector('[role="menuitemcheckbox"]')).toBeNull();
     expect(writes(send)).toHaveLength(0);
   });
 
@@ -420,16 +420,18 @@ describe("original workflow action menu with governed consumers", () => {
     expect(command).not.toHaveProperty("assetId");
   });
 
-  it.each([["Run once", "automation.run"], ["Enable", "automation.disable"], ["Delete", "automation.delete"]])(
+  it.each([["Run once", "automation.run"], ["Disable workflow", "automation.disable"], ["Delete", "automation.delete"]])(
     "routes %s through the existing confirmed action without optimistic state", async (label, actionKey) => {
       const { host, send } = await setup();
-      await chooseAction(host, label);
+      if (label === "Disable workflow") await click(host.querySelector<HTMLButtonElement>('[role="switch"]')!);
+      else await chooseAction(host, label);
       const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
       expect(writes(send)).toHaveLength(0);
       await click(button(dialog, "Review request"));
       await click(button(dialog, "Submit governed request"));
       expect(writes(send)[0]).toMatchObject({ actionKey, resourceId: "workflow", resourceVersion: 2 });
       expect(host.querySelector('[data-testid="workflow-card-workflow"]')?.textContent).toContain("Enabled");
+      expect(host.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
     });
 
   it("does not expose ungranted management or run commands", async () => {
@@ -437,6 +439,7 @@ describe("original workflow action menu with governed consumers", () => {
       ? { status: 200, body: { ...detail, canManage: false, canRun: false } } : undefined);
     const menu = await openMenu(host);
     expect([...menu.querySelectorAll('[role^="menuitem"]')].map((item) => item.textContent)).toEqual(["Copy as new draft"]);
+    expect(host.querySelector<HTMLButtonElement>('[role="switch"]')?.disabled).toBe(true);
   });
 
   it("enables only through explicit published-version and delegation selection", async () => {
@@ -445,7 +448,7 @@ describe("original workflow action menu with governed consumers", () => {
       ? { status: 200, body: { automations: [paused], canCreate: true, availableApprovalPolicies: [] } }
       : request.path.startsWith("/api/v1/automations/workflow?")
         ? { status: 200, body: { ...detail, automation: paused, canRun: false } } : undefined);
-    await chooseAction(host, "Enable");
+    await click(host.querySelector<HTMLButtonElement>('[role="switch"]')!);
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
     expect(button(dialog, "Review request").disabled).toBe(true);
     const fields = dialog.querySelectorAll("select");
@@ -455,7 +458,50 @@ describe("original workflow action menu with governed consumers", () => {
     await click(button(dialog, "Submit governed request"));
     expect(writes(send)[0]).toMatchObject({ actionKey: "automation.enable", assetId: "version-old", assetVersion: 1,
       delegationId: "grant", delegationVersion: 1, resourceId: "workflow", resourceVersion: 2 });
-    expect(host.querySelector('[data-testid="workflow-card-workflow"]')?.textContent).toContain("Paused");
+    const state = host.querySelector<HTMLElement>('[data-testid="workflow-card-state"]')!;
+    expect(state.textContent).toBe("Paused");
+    // The open confirmation intentionally aria-hides its background, not its visual layout.
+    expect(state.closest('.sr-only, [hidden]')).toBeNull();
+    expect(host.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("restores the original card switch, not a duplicate enabled menu command", async () => {
+    const { host } = await setup(undefined, "zh-CN");
+    const toggle = host.querySelector('[role="switch"]')!;
+    expect(toggle.getAttribute("aria-label")).toBe("停用工作流");
+    const menu = await openMenu(host, "工作流操作");
+    expect(menu.querySelector('[role="menuitemcheckbox"]')).toBeNull();
+  });
+
+  it("rechecks permission before the card switch opens a governed disable request", async () => {
+    let revoked = false;
+    const { host, send } = await setup((request) => request.path.startsWith("/api/v1/automations/workflow?")
+      ? { status: 200, body: { ...detail, canManage: !revoked } } : undefined);
+    revoked = true;
+    await click(host.querySelector<HTMLButtonElement>('[role="switch"]')!);
+    expect(document.querySelector('[data-testid="workflow-editor-dialog"]')).toBeNull();
+    expect(writes(send)).toHaveLength(0);
+    expect(host.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("renders the actual ordered steps in the original three-tile stack", async () => {
+    const content = { formatVersion: 3, name: "Ordered steps", trigger: { kind: "CHANNEL_MESSAGE" },
+      resultTarget: "TRIGGER_THREAD", steps: [
+        { id: "step_1", action: "delay", duration: "1s" },
+        { id: "step_2", action: "request_approval", message: "Approve", approvalPolicy: { id: "11111111-1111-4111-8111-111111111111", version: 1 } },
+        { id: "step_3", action: "send_message", text: "first" },
+        { id: "step_4", action: "send_message", text: "second" },
+      ] };
+    const { host } = await setup((request) => request.path.startsWith("/api/v1/automations/workflow?")
+      ? { status: 200, body: { ...detail, versions: [{ ...detail.versions[0], content }] } } : undefined);
+    const stack = host.querySelector('[data-testid="workflow-card-action-stack"]')!;
+    expect(stack).not.toBeNull();
+    expect(stack.children).toHaveLength(3);
+    expect(stack.className).toContain("w-12");
+    expect(stack.children[2]?.className).toContain("bg-sky-500");
+    expect(stack.children[2]?.querySelector(".lucide-timer")).not.toBeNull();
+    expect(stack.children[1]?.querySelector(".lucide-circle-check-big")).not.toBeNull();
+    expect(stack.children[0]?.querySelector(".lucide-message-square")).not.toBeNull();
   });
 
   it("drops a late menu read after the user changes Workspace", async () => {

@@ -53,6 +53,7 @@ import { WorkflowTriggerConditions } from "./workflow-trigger-conditions";
 import type { ParsedConditionExpression } from "./workflow-condition-expression";
 import { WorkflowTemplateTextarea } from "./workflow-template-textarea";
 import { WorkflowActionsMenu } from "./workflow-actions-menu";
+import { WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions";
 import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
 import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
@@ -394,6 +395,7 @@ function AutomationCard({ row, workspaceName, locked, onView, onEdit }: {
   const [state, reload] = useLoad(`automation-card:${row.resourceId}:${row.resourceVersion}`,
     () => client.automation(row.resourceId, 0, 0));
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
+  const [triggerAnimationSequence, setTriggerAnimationSequence] = useState(0);
   const [opening, setOpening] = useState(false);
   const [openError, setOpenError] = useState<unknown>();
   const openRequest = useRef(0);
@@ -447,18 +449,21 @@ function AutomationCard({ row, workspaceName, locked, onView, onEdit }: {
             ? "border-emerald-400/30 bg-emerald-600 text-white" : "border-blue-400/30 bg-blue-600 text-white"}`}>
             {!content ? <Zap className="h-5 w-5" /> : content.trigger.kind === TriggerKind.Schedule ? <CalendarClock className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
           </span>
-          {content ? <><ArrowRight className="h-4 w-4 text-muted-foreground/60" /><span className="flex h-9 w-9 items-center justify-center rounded-xl border border-blue-300/30 bg-blue-600 text-white shadow-xs">
-            {workflowAction(content)?.kind !== ActionKind.AgentTurn ? <MessageSquare className="h-5 w-5" /> : <Zap className="h-5 w-5" />}</span></> : null}
+          {content ? <><ArrowRight className="h-4 w-4 text-muted-foreground/60" />
+            <WorkflowActionTileStack content={content} animationSequence={triggerAnimationSequence} /></> : null}
         </div>
-        <div className="pointer-events-auto flex items-center gap-1">
-          <Badge tone="neutral">{t(automationLabels[row.state])}</Badge>
+        <div className="pointer-events-auto flex items-center gap-1.5">
+          <WorkflowStatusToggle enabled={row.state === AutomationState.Enabled}
+            disabled={locked || opening || !detail?.canManage || (row.state !== AutomationState.Enabled && !canEnable)}
+            onToggle={() => { void openAction(row.state === AutomationState.Enabled ? "disable" : "enable"); }} />
           {detail ? <WorkflowActionsMenu isEnabled={row.state === AutomationState.Enabled} disabled={locked || opening}
+            showEnabledToggle={false}
             onEdit={detail.canManage && content ? () => { void openAction("publish_version"); } : undefined}
             onDuplicate={content ? () => { void openAction("copy"); } : undefined}
             onDelete={detail.canManage ? () => { void openAction("delete"); } : undefined}
-            onTrigger={detail.canRun === true && row.state === AutomationState.Enabled ? () => { void openAction("run"); } : undefined}
-            onToggleEnabled={detail.canManage && (row.state === AutomationState.Enabled || canEnable)
-              ? () => { void openAction(row.state === AutomationState.Enabled ? "disable" : "enable"); } : undefined} /> : null}
+            onTrigger={detail.canRun === true && row.state === AutomationState.Enabled ? () => {
+              setTriggerAnimationSequence((sequence) => sequence + 1); void openAction("run");
+            } : undefined} /> : null}
         </div>
       </div>
       {opening ? <p role="status" className="mt-2 text-sm text-muted-foreground">{t("platform.loading")}</p> : null}
@@ -478,6 +483,7 @@ function AutomationCard({ row, workspaceName, locked, onView, onEdit }: {
           </label>
         </> : <p className="mt-4 text-sm text-muted-foreground">{t("agents.automation.noVersion")}</p>}
       <dl className="mt-3 space-y-2 text-2xs text-muted-foreground">
+        <div><dt>{t("platform.state")}</dt><dd data-testid="workflow-card-state">{t(automationLabels[row.state])}</dd></div>
         <div><dt>{t("agents.automation.executor")}</dt><dd className="break-all font-mono">{row.executorInstallationResourceId}</dd></div>
         <div><dt>{t("agents.owner")}</dt><dd className="break-all font-mono">{row.ownerPrincipalId}</dd></div>
         <div><dt>{t("agents.automation.pinned")}</dt><dd className="break-all font-mono">{row.pinnedVersionAssetId ?? "—"}</dd></div>

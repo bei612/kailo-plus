@@ -44,3 +44,18 @@
 - 步骤编号恢复并 cmp 退出 0 后，`prior-message-output-safe-id-restored.log` 为 7 passed；Projects 私有输入也恢复后再运行共享类型检查，`prior-message-output-type-restored-final.log` 退出 0。新增三个 i18n 词条的 Dart 同源生成由主线与同批其他词条集中完成，不把此处 TypeScript 通过视为生成已完成。
 
 未运行真实 Temporal/Relay/数据库端到端协作、浏览器截图、Windows/Mobile 或全量检查，不据以上局部结果声称全 Workflows 恢复或已发布。
+
+## 原卡片启停与步骤栈恢复（2026-10-07）
+
+1. 权威与差异：按固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的完整 `desktop/src/features/workflows` 文件清单定位共享迁移；本批实际逐行恢复的是 `desktop/src/features/workflows/ui/WorkflowCard.tsx::StatusToggle/ActionTile/ActionTileStack`、`desktop/src/features/workflows/ui/workflowDefinition.ts::getWorkflowActionTiles` 与 `desktop/src/features/workflows/ui/WorkflowActionsMenu.tsx::WorkflowActionsMenu`。此前卡片把原 Switch 删为 Badge、把所有原生步骤都画为消息图标，属于缺失需恢复；现在迁入共享 `workflow-card-actions.tsx`，原尺寸、颜色、前三步反向叠层、reduced-motion 与运行意图动画保留。此记录不把文件清单检索等同于整个 Workflows 已逐行归类或完全恢复。
+2. 影响面：有权读取的同一 AutomationVersionContent → 原动作栈；卡片 Switch → `AutomationCard.openAction` fresh detail/版本/权限复核 → `AutomationAction` 原显式版本与委托选择/确认 → BFF `automation.enable/disable` → 既有 `automation.rs::management_prewrite/management_dispatch` 与 Temporal 管理链。没有新执行器、合同、状态、迁移、权限或服务端修改；继承的 temporal 文件不属于本批。原 menu `showEnabledToggle=false` 消除卡片重复开关，不删除详情的既有管理操作。
+3. 副作用与授权差异：只读图标不触发动作，运行动画表示用户意图而非成功；开关不乐观翻转，不直接写原版本地定义。保留设计 `06` §9.1 要求的 owner/pin/executor/版本等治理元数据，真实 PAUSED/DISABLED/DRAFT 状态也在该区可见，不以一个关闭开关混淆。原 top-right 只恢复原 Switch 与 menu；这些元数据及显式治理确认是明确接入差异，不宣称整卡与官方无差异。回应图片沿现有已鉴权 customEmoji/mediaPaths 消费，不从原始 Relay URL 绕过身份或读未授权正文。
+4. 边界：读取失败、无管理权、缺发布版本或有效委托时不能开启；启停前重新读取，撤权/版本变化拒绝打开提交。请求进行中锁定入口，Workspace/版本切换丢弃迟到读取；服务端重验、审批、quota、幂等与在途终态机制不变。UNKNOWN 返回仍保留原状态和待查证操作，既不成功也不失败。未知动作合同仍 fail closed，未开放 send_dm/call_webhook，也未伪造运行轨迹。Web/Desktop 共用此实现；Mobile 没有新增宿主页面，两个中英 aria 词条按原生成器同步 Dart。
+
+验证使用既有 `/evidence/message-edit.AGX058/apps` 受限 SDK（4 CPU/8 GiB），执行前无并发编译、宿主可用内存 31 GiB、Data 空闲 3.3 GiB；不新建快照、不编 Rust、不下载。日志目录同上，命令为原 `tools/gen-platform-i18n.py` / `--check`、共享 `tsc --noEmit -p tsconfig.test.json`、`vitest run test/workflow-actions.test.tsx test/workflow-template.test.tsx`。
+
+- 首轮 `card-toggle-final.log`：生成与 check/type 均通过，29 passed/1 failed；失败是旧断言仍查询 menuitemcheckbox（`expected undefined to be 'true'`）。已按固定原卡片 Switch 位置改断言，`card-toggle-restored.log` 37 passed。
+- 私有 `workflow-card-actions.tsx` 故意断开开关回调、把前三步改为四步，`card-toggle-mutation.log` 27 passed/3 failed，退出 1；确认启停真实消费者与原叠层上限能抓到破坏。恢复正式字节并 cmp 后，`card-toggle-final-restored.log` check/type 退出 0、37 passed。
+- 可见状态复核最初把模态框对背景的 `aria-hidden` 误当成视觉隐藏，`card-toggle-visible-state.log` 36 passed/1 failed（`expected <div data-aria-hidden="true" …> to be null`）；改为检查视觉隐藏 `.sr-only/[hidden]`，不放宽产品语义。私有输入把真实状态改为 sr-only，`card-state-mutation.log` 1 failed/29 skipped，退出 1。还原后 `card-final.log` 最终 type 退出 0、37 passed，退出 0；六个产品/检查输入与正式文件 cmp 全部退出 0，`git diff --check` 退出 0。
+
+本批没有浏览器截图、真实 Temporal/Relay/数据库启停、Windows/Mobile 设备或全量检查；不据 jsdom 操作与类型通过声称发布、全量 diff 完成或生产验收。
