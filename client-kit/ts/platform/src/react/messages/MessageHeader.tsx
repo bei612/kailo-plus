@@ -51,3 +51,8 @@ export function MessageAuthorText({
     </Component>
   );
 }
+
+// Fixed upstream MessageHeader.tsx metadata separator.
+export function MessageMetaSeparator() {
+  return <span aria-hidden="true" className="text-xs text-muted-foreground/40">·</span>;
+}

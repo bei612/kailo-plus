@@ -2,6 +2,7 @@
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 
 import { COMPOSER_MESSAGE_LINK_NODE_NAME } from "./composerMessageLinkNode";
+import { CUSTOM_EMOJI_NODE_NAME } from "./customEmojiNode";
 
 /**
  * Plain-text projection of a ProseMirror document.
@@ -189,7 +190,17 @@ export function buildPlainTextProjection(
       return false;
     }
 
-    // Other inline leaf nodes (none today) — skip silently.
+    // Original custom-emoji atom projects to its full literal shortcode.
+    if (node.type.name === CUSTOM_EMOJI_NODE_NAME) {
+      const projected = `:${node.attrs.shortcode}:`;
+      segments.push({ kind: "atom", pmFrom: pos, pmTo: pos + 1,
+        textFrom: cursorText, textTo: cursorText + projected.length });
+      textParts.push(projected);
+      cursorText += projected.length;
+      return false;
+    }
+
+    // Other inline leaf nodes — skip silently.
     return true;
   });
 

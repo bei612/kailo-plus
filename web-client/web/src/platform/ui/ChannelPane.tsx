@@ -6,13 +6,13 @@ import { PeopleMentionAutocomplete, detectPrefixQuery, selectedMentionLabel, ext
 
 import { AgentTrigger, ReasonCode, type AgentInstallationView, type ReadMarkRequest, type ConversationView, type ConversationParticipant, type WorkspaceMemberView } from "@client-kit/contracts";
 import { MentionAutocomplete } from "@client-kit/platform/react/mention-autocomplete";
+import { useBffCustomEmojiPalette } from "@client-kit/platform/react/custom-emoji";
 import { ConversationPreparationPending, useConversationInvalidation } from "@client-kit/platform/react/new-message";
 import { useMentionSelection } from "@client-kit/platform/react/use-mention-selection";
-import { useReasonText } from "@client-kit/platform/react/context";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
 import { useBrowserNotifications } from "./BrowserNotifications";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
 import {
@@ -21,11 +21,9 @@ import {
   type BuzzEvent,
   type MediaDescriptor,
   markRead,
-  openStream,
   publishMessage,
   publishConversationMessage,
   uploadConversationMedia,
-  type StreamFrame,
   uploadMedia,
   mediaUrl,
 } from "@/platform/bff-client";
@@ -40,13 +38,19 @@ import { Button } from "@/shared/ui/button";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
 import { ChannelThreadPane } from "./ChannelThreadPane";
 import { ChannelTimelineRows } from "./ChannelTimelineRows";
+import { useChannelWindow } from "./useChannelWindow";
+import { CHANNEL_TIMELINE_CONTENT_KINDS, isConversationalUnreadKind } from "@client-kit/platform/react/thread/kinds";
+import { MessageThreadSummaryRow } from "@client-kit/platform/react/thread";
+import { SystemMessageRowSurface } from "@client-kit/platform/react/messages/system";
+import { MemberHover, MemberProfilePanel } from "@client-kit/platform/react/members";
+import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
 import { MessageTimelineSurface, type MessageTimelineHandle } from "@client-kit/platform/react/messages/timeline/MessageTimelineSurface";
 import { FocusThreadDrawer } from "@client-kit/platform/react/thread/FocusThreadDrawer";
 import { useThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
 import { useIsThreadPanelOverlay } from "@client-kit/platform/react/thread";
 import { MessageAuthorIdentity, MessageAuthorProfile } from "./MessageAuthorProfile";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
-import { applyMessageEdits, sortMessages, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
+import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
 import { useRichTextEditor, type LinkSelectionInfo } from "@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor";
 import { useLinkEditor } from "@client-kit/platform/react/composer/features/messages/lib/useLinkEditor";
@@ -58,98 +62,6 @@ import type { ImetaMedia } from "@client-kit/platform/react/composer/features/me
 
 const toIso = (unix: number) => new Date(unix * 1_000).toISOString();
 
-/**
- * 断线、续流与重连间隔都由 SSE 协议与服务端决定（见 openStream），这里只把
- * 帧翻成状态。状态只在收到 `live` 时显示为已同步；连接中断期间如实显示为
- * 重连中——结果不明不渲染成成功。
- */
-function useChannelStream(workspaceId: string, conversationId?: string, onLiveEvent?: (event: BuzzEvent) => void, onClosed?: () => void, archived = false) {
-  const reasonText = useReasonText();
-  const [events, setEvents] = useState<BuzzEvent[]>([]);
-  const [status, setStatus] = useState(t("platform.stream.connecting"));
-  const [live, setLive] = useState(false);
-  const [denied, setDenied] = useState(false);
-  const seen = useRef(new Set<string>());
-  const receiveLive = useEffectEvent((event: BuzzEvent) => onLiveEvent?.(event));
-  const refreshMetadata = useEffectEvent(() => onClosed?.());
-
-  useEffect(() => {
-    if (archived) {
-      setLive(false);
-      setStatus(t("channel.archived"));
-      return;
-    }
-    let closed = false;
-    let ready = false;
-    setEvents([]);
-    setLive(false);
-    setDenied(false);
-    setStatus(t("platform.stream.connecting"));
-    const stop = openStream(workspaceId, (frame: StreamFrame) => {
-      if (closed) return;
-      switch (frame.type) {
-        case "snapshot":
-          ready = false;
-          for (const event of frame.events) seen.current.add(event.id);
-          setEvents(sortMessages(frame.events));
-          break;
-        case "event":
-          if (!seen.current.has(frame.event.id)) {
-            seen.current.add(frame.event.id);
-            if (ready) receiveLive(frame.event);
-          }
-          setEvents((prev) =>
-            prev.some((e) => e.id === frame.event.id) ? prev : sortMessages([...prev, frame.event]),
-          );
-          break;
-        case "live":
-          ready = true;
-          setLive(true);
-          setStatus(t("platform.stream.synced"));
-          break;
-        case "closed":
-          ready = false;
-          refreshMetadata();
-          setLive(false);
-          if (
-            frame.reason === "session-revoked" ||
-            frame.reason === "scope-revoked" ||
-            frame.reason === "identity-revoked"
-          ) {
-            closed = true;
-            setDenied(true);
-            setEvents([]);
-            setStatus(
-              reasonText(
-                frame.reason === "session-revoked"
-                  ? ReasonCode.SessionNotActive
-                  : ReasonCode.PermissionDenied,
-              ),
-            );
-          } else {
-            setStatus(`${t("platform.stream.reconnecting")}（${frame.reason}）`);
-          }
-          break;
-        case "interrupted":
-          ready = false;
-          setLive(false);
-          setStatus(t("platform.stream.reconnecting"));
-          break;
-        case "ended":
-          ready = false;
-          setLive(false);
-          setStatus(t("platform.stream.ended"));
-          break;
-      }
-    }, conversationId);
-    return () => {
-      closed = true;
-      stop();
-    };
-  }, [workspaceId, conversationId, reasonText, archived]);
-
-  return { events, status, live, denied };
-}
 
 /** 页面是否在前台。已读只在用户真的看得见时推进。 */
 function useVisible() {
@@ -165,6 +77,7 @@ function useVisible() {
 export function ChannelPane({
   workspaceId,
   channelName,
+  channelId: admittedChannelId,
   myPrincipalId,
   onReadStateChanged,
   conversation,
@@ -178,6 +91,7 @@ export function ChannelPane({
 }: {
   workspaceId: string;
   channelName?: string;
+  channelId?: string;
   myPrincipalId: string;
   onReadStateChanged?: () => void | Promise<void>;
   conversation?: ConversationView;
@@ -194,10 +108,14 @@ export function ChannelPane({
   const threadOverlay = useIsThreadPanelOverlay();
   const focusThread = threadViewMode === "focus" && !threadOverlay;
   const notifications = useBrowserNotifications();
-  const { events: rawEvents, status, live, denied } = useChannelStream(workspaceId, conversation?.id, (event) => receiveNotification(event), () => {
+  const window = useChannelWindow({ workspaceId, conversationId: conversation?.id, principalId: myPrincipalId, channelId: conversation?.channelId ?? admittedChannelId, onLiveEvent: (event) => receiveNotification(event), onClosed: () => {
     if (!conversation) void queryClient.invalidateQueries({ queryKey: ["platform", "channel-descriptor", myPrincipalId, workspaceId] });
-  }, archived);
-  const events = useMemo(() => applyMessageEdits(rawEvents.filter((event) => event.kind === 9), rawEvents), [rawEvents]);
+  }, archived });
+  const { events: rawEvents, status, live, denied } = window;
+  const events = useMemo(() => {
+    const deleted = new Set(rawEvents.filter(event => event.kind === 5 || event.kind === 9005).flatMap(event => event.tags.filter(tag => tag[0] === "e").map(tag => tag[1])));
+    return applyMessageEdits(rawEvents.filter(event => (CHANNEL_TIMELINE_CONTENT_KINDS as readonly number[]).includes(event.kind) && !deleted.has(event.id)), rawEvents.filter(event => !deleted.has(event.id)));
+  }, [rawEvents]);
   const ownProfile = useQuery({ queryKey: ["platform", "edit-author", myPrincipalId], queryFn: () => bff.profile() });
   const [editTarget, setEditTarget] = useState<TimelineMessage | null>(null);
   const [composerBusy, setComposerBusy] = useState(false);
@@ -209,8 +127,10 @@ export function ChannelPane({
   }, []);
   const [replyTarget, setReplyTarget] = useState<TimelineMessage | null>(null);
   const [profileTarget, setProfileTarget] = useState<TimelineMessage | null>(null);
+  const [systemProfileTarget, setSystemProfileTarget] = useState<{workspaceId:string;principalId:string;pubkey:string} | null>(null);
   const closeProfile = useCallback(() => setProfileTarget(null), []);
   useEffect(() => { setProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied, live]);
+  useEffect(() => { setSystemProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied, live]);
   const visible = useVisible();
   const members = useQuery({
     queryKey: ["platform", conversation ? "conversation-members" : "members", workspaceId],
@@ -258,10 +178,21 @@ export function ChannelPane({
     id: event.id, createdAt: event.created_at, pubkey: event.pubkey,
     signerPubkey: event.pubkey, author: byPubkey.get(event.pubkey)?.displayName ?? truncatePubkey(event.pubkey),
     body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0,
+    ...getThreadReference(event.tags),
   })), [events, byPubkey]);
+  const profiles = useMemo(() => Object.fromEntries([...byPubkey].map(([pubkey, member]) => [pubkey, {displayName:member.displayName, avatarUrl:null, nip05Handle:null, ownerPubkey:null}])), [byPubkey]);
+  const SystemProfilePopover = useCallback(({pubkey, children, triggerAriaLabel}: {pubkey:string;children:ReactNode;triggerAriaLabel?:string}) => {
+    const member = byPubkey.get(pubkey);
+    if (conversation || !live || denied || !member || !("state" in member) || member.state !== "ACTIVE") return <>{children}</>;
+    const target = {workspaceId, principalId:member.principalId, pubkey};
+    return <UserProfilePopoverSurface pubkey={pubkey} triggerElement="span" triggerAriaLabel={triggerAriaLabel ?? t("platform.settings.profile")}
+      onOpenProfile={() => {setProfileTarget(null);setSystemProfileTarget(target);}}
+      renderBody={props=><MemberHover {...props} target={target}/>}>{children}</UserProfilePopoverSurface>;
+  }, [byPubkey, conversation, live, denied, workspaceId]);
+  const selectedSystemMember = systemProfileTarget ? byPubkey.get(systemProfileTarget.pubkey) : undefined;
   useEffect(() => {
     if (!restoreEditEventId || restoredEdit.current || !ownProfile.isSuccess) return;
-    const message = timelineMessages.find((item) => item.id === restoreEditEventId && item.signerPubkey === ownProfile.data.pubkey);
+    const message = timelineMessages.find((item) => item.id === restoreEditEventId && item.kind === 9 && item.signerPubkey === ownProfile.data.pubkey);
     if (message) { restoredEdit.current = true; setEditTarget(message); }
   }, [restoreEditEventId, timelineMessages, ownProfile.isSuccess, ownProfile.data]);
   const copyMessage = async (message: TimelineMessage) => {
@@ -277,7 +208,7 @@ export function ChannelPane({
   };
 
   // 已读：key 是该 Workspace 的 Channel ID，取自消息自身的 h 标签（.design/03）
-  const channelId = events
+  const channelId = conversation?.channelId ?? admittedChannelId ?? events
     .find((e) => e.tags.some((tag) => tag[0] === "h"))
     ?.tags.find((tag) => tag[0] === "h")?.[1];
   const copyMessageLink = channelId ? async (target: TimelineMessage) => {
@@ -293,7 +224,7 @@ export function ChannelPane({
   const receiveNotification = useEffectEvent((event: BuzzEvent) => {
     // No notification from unresolved identity/preferences or stale admission.
     // This path only receives new frames after the actual BFF live fence.
-    if (event.kind !== 9 || denied || !members.isSuccess || members.isFetching || !userState.isSuccess || userState.isFetching || userState.isError ||
+    if ((event.kind !== 9 && event.kind !== 40002) || denied || !members.isSuccess || members.isFetching || !userState.isSuccess || userState.isFetching || userState.isError ||
       mine.size === 0 || mine.has(event.pubkey)) return;
     const mentioned = event.tags.some((tag) => tag[0] === "p" && mine.has(tag[1] ?? ""));
     const thread = getThreadReference(event.tags);
@@ -316,9 +247,9 @@ export function ChannelPane({
   }, [anchor, userState.isSuccess, live, lastRead]);
 
   const unreadFromOthers = events.filter(
-    (e) => e.created_at > lastRead && !mine.has(e.pubkey),
+    (e) => isConversationalUnreadKind(e.kind) && e.created_at > lastRead && !mine.has(e.pubkey),
   ).length;
-  const newest = events[events.length - 1];
+  const newest = events.filter(event => isConversationalUnreadKind(event.kind)).at(-1);
 
   const attemptedRead = useRef<ReadMarkRequest | null>(null);
   const [readRechecking, setReadRechecking] = useState(false);
@@ -408,13 +339,26 @@ export function ChannelPane({
         channelId={`${myPrincipalId}:${conversation?.id ?? workspaceId}`}
         channelName={channelName}
         messages={timelineMessages}
-        isLoading={!live && timelineMessages.length === 0}
+        authoritativeRowIds={window.authoritativeRowIds}
+        threadSummaries={window.threadSummaries}
+        profiles={profiles}
+        fetchOlder={window.fetchOlder}
+        isFetchingOlder={window.isFetchingOlder}
+        hasOlderMessages={window.hasOlderMessages}
+        historyExhausted={window.historyExhausted}
+        isError={window.error}
+        onRetry={window.retry}
+        isLoading={!window.error && !live && timelineMessages.length === 0}
         targetMessageId={targetMessageId}
         hasComposerOverlay={false}
-        firstUnreadMessageId={anchor === null ? null : timelineMessages.find(message => message.createdAt > anchor && !mine.has(message.pubkey ?? ""))?.id ?? null}
+        firstUnreadMessageId={anchor === null ? null : timelineMessages.find(message => isConversationalUnreadKind(message.kind) && message.createdAt > anchor && !mine.has(message.pubkey ?? ""))?.id ?? null}
         unreadCount={unreadFromOthers}
         renderList={props => <ChannelTimelineRows {...props} renderItem={(item, highlightedMessageId) => {
           const entries = item.kind === "system-group" ? item.entries : [item.entry];
+          if (entries[0]?.message.kind === 40099) return <div className="flex flex-col gap-1 pb-2.5" data-event-id={entries[0].message.id}>
+            <SystemMessageRowSurface message={entries[0].message} groupedMessages={entries.map(entry=>entry.message)}
+              currentPubkey={ownProfile.data?.pubkey} profiles={profiles} ProfilePopover={SystemProfilePopover}/>
+          </div>;
           return entries.map(entry => {
             const message = entry.message;
             const isContinuation = item.kind === "message" && item.isContinuation;
@@ -426,7 +370,7 @@ export function ChannelPane({
                   onOpen={() => setProfileTarget(message)}>{node}</MessageAuthorIdentity> : undefined}
                 renderActions={(ref) => <MessageActionBarSurface ref={ref} message={message} onCopyMessage={copyMessage}
                   onEdit={message.kind === 9 && live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && message.signerPubkey === ownProfile.data.pubkey ? setEditTarget : undefined}
-                  onReply={!conversation && message.kind === 9 && live && !denied && !archived && !metadataPending ? (target)=>{setProfileTarget(null);setReplyTarget(target);} : undefined}
+                  onReply={!conversation && (message.kind === 9 || message.kind === 40002) && live && !denied && !archived && !metadataPending ? (target)=>{setProfileTarget(null);setSystemProfileTarget(null);setReplyTarget(target);} : undefined}
                   onCopyLink={copyMessageLink} />}
                 renderBody={(className) => <div className={className}><MessageContent
                 content={message.body}
@@ -436,6 +380,8 @@ export function ChannelPane({
                 conversationId={conversation?.id}
                 onOpenMessageLink={onOpenMessageLink}
               /></div>} />
+              {entry.summary && !conversation ? <MessageThreadSummaryRow message={message} summary={entry.summary}
+                onOpenThread={(target) => { setProfileTarget(null); setReplyTarget(target); }} /> : null}
             </div>;
           });
         }} />}
@@ -469,10 +415,12 @@ export function ChannelPane({
             autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink} /></>}
       </div>
     </div>
+    {systemProfileTarget && systemProfileTarget.workspaceId === workspaceId && selectedSystemMember?.principalId === systemProfileTarget.principalId && "state" in selectedSystemMember && selectedSystemMember.state === "ACTIVE" && live && !denied && !conversation ? <MemberProfilePanel key={`${myPrincipalId}:${systemProfileTarget.workspaceId}:${systemProfileTarget.pubkey}`}
+      target={systemProfileTarget} onClose={()=>setSystemProfileTarget(null)}/> : null}
     {profileTarget?.pubkey && live && !denied ? <MessageAuthorProfile key={`${myPrincipalId}:${workspaceId}:${profileTarget.id}`}
       target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:profileTarget.id,pubkey:profileTarget.pubkey}}
       onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}
-    {!conversation && replyTarget ? <div className={profileTarget ? "hidden" : "contents"}><FocusThreadDrawer active={focusThread && !profileTarget} channelName={channelName} onClose={() => setReplyTarget(null)}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
+    {!conversation && replyTarget ? <div className={profileTarget || systemProfileTarget ? "hidden" : "contents"}><FocusThreadDrawer active={focusThread && !profileTarget && !systemProfileTarget} channelName={channelName} onClose={() => setReplyTarget(null)}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
       channelName={channelName}
       isFocusMode={focusThread}
       workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
@@ -525,6 +473,8 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
   /** Original Inbox sends only after its explicit confirmation, using this editor's existing intent. */
   autoSendDraftKey?: string;
 }) {
+  const customEmoji = useBffCustomEmojiPalette(bff);
+  const [confirmedSendRevision, setConfirmedSendRevision] = useState(0);
   const [humanQuery, setHumanQuery] = useState<{query:string;startIndex:number;cursor:number}|null>(null);
   const humanBindings = useRef(new Map<string,string>());
   const [humanNames,setHumanNames] = useState<string[]>([]);
@@ -672,7 +622,9 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
   autocompleteOpenRef.current = mentionPickerOpen || humanSuggestions.length > 0;
   const richText = useRichTextEditor({
     placeholder: placeholder ?? t("platform.message"), editable: !disabled && !sending,
+    restoreFocusOnEnable: () => !compact || Boolean(draft.trim() || pending.length || problem),
     readClipboardText: () => navigator.clipboard.readText(),
+    customEmoji,
     mentionNames:humanNames,
     getMentionIdentities:()=>[...humanBindings.current].map(([label,pubkey])=>({label,pubkey})),
     onUpdate: ({ text, cursor }) => {
@@ -814,6 +766,7 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
         setMentionInstallationIds((current) => current.filter((id) => !mentionInstallationIds.includes(id)));
         if (editTarget && draftKey) clearDraftEntry(draftKey);
         onConfirmed?.();
+        setConfirmedSendRevision((revision) => revision + 1);
       })
       .catch((e: unknown) => {
         if (!owner.active) return;
@@ -857,7 +810,7 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
 
   const ComposerSurface = surface === "forum" ? ForumComposerSurface : MessageComposerSurface;
   return <ComposerSurface
-    {...(surface === "forum" ? { compact,
+    {...(surface === "forum" ? { compact, confirmedSendRevision,
       hasComposerContent: Boolean(draft.trim() || pending.length || problem || dragging),
       autocompleteOpen: humanSuggestions.length > 0 || mentionPickerOpen,
     } : {})}
@@ -885,7 +838,7 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
         event.preventDefault(); linkEditor.focusCardFirstControl();
       }
     }}
-    toolbar={{ layoutMode, composerDisabled: disabled || sending,
+    toolbar={{ layoutMode, composerDisabled: disabled || sending, customEmoji,
       extraActions: onCancel ? <Button type="button" variant="ghost" disabled={sending} onClick={onCancel}>{t("platform.cancel")}</Button> : undefined,
       editor: richText.editor, formattingDisabled: disabled || sending, isFormattingOpen,
       isSending: sending, isUploading: uploading > 0,

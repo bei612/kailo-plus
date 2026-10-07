@@ -39,14 +39,14 @@ function useMemberProfile(target: MemberTarget) {
     },retry:false,staleTime:0});
 }
 
-function MemberHover({target,...props}:ProfilePopoverBodyProps&{target:MemberTarget}) {
+export function MemberHover({target,...props}:ProfilePopoverBodyProps&{target:MemberTarget}) {
   const t=useT(); const query=useMemberProfile(target);
   const profile=query.isSuccess&&!query.isFetching?query.data:undefined;
   return <UserProfilePopoverBody {...props} profile={profile} mediaUrl={(url)=>profile?.avatarMediaPaths[url]??url}
     status={!profile?<p role={query.isError?"alert":"status"}>{t(query.isError?"platform.loadFailed":"platform.loading")}</p>:undefined}/>;
 }
 
-function MemberProfilePanel({target,onClose}:{target:MemberTarget;onClose:()=>void}) {
+export function MemberProfilePanel({target,onClose}:{target:MemberTarget;onClose:()=>void}) {
   const t=useT();const query=useMemberProfile(target);const width=useThreadPanelWidth();
   useEscapeKey(onClose,true);
   const profile=query.isSuccess&&!query.isFetching?query.data:undefined;

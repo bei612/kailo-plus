@@ -48,12 +48,17 @@ export function inlineChipLeadingEnd(label: string): number {
 /** Allows a long chip to fragment into separately decorated line boxes. */
 export const WRAPPING_INLINE_CHIP_CLASSES = "wrapping-inline-chip";
 
-export type InlineChipIconKind = "human" | "channel" | "message";
+export type InlineChipIconKind = "agent" | "human" | "channel" | "message" | "repo" | "project" | "pr" | "issue";
 
 const INLINE_CHIP_ICON_KIND_CLASSES: Record<InlineChipIconKind, string> = {
+  agent: "inline-chip-icon-agent agent-mention-highlight",
   human: "inline-chip-icon-human human-mention-highlight",
   channel: "inline-chip-icon-channel",
   message: "inline-chip-icon-message",
+  repo: "inline-chip-icon-repo",
+  project: "inline-chip-icon-project",
+  pr: "inline-chip-icon-pr",
+  issue: "inline-chip-icon-issue",
 };
 
 /** Shared icon-box contract for React chips and ProseMirror decorations. */

@@ -6,6 +6,8 @@ import type { ChannelIntro } from "./ChannelIntroBlock";
 import type { TimelineVirtualizerApi } from "./VirtualizedTimelineRows";
 type UserProfileLookup = Record<string, import("../../pulse/host").UserProfileSummary>;
 export type MessageTimelineProps = {
+  /** Actual rows admitted by the Relay window, including orphan replies. */
+  authoritativeRowIds?: ReadonlySet<string>;
   channelId?: string | null;
   channelIntro?: ChannelIntro | null;
   channelName?: string;
@@ -73,6 +75,7 @@ export type MessageTimelineProps = {
 };
 
 export type TimelineMessageListProps = {
+  authoritativeRowIds?: ReadonlySet<string>;
   channelId?: string | null;
   channelName?: string;
   currentPubkey?: string;

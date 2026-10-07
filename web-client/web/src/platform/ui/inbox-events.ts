@@ -5,6 +5,7 @@ import {
   KIND_CHANNEL_THREAD_SUMMARY,
   KIND_CHANNEL_WINDOW_BOUNDS,
   KIND_DELETION,
+  CHANNEL_TIMELINE_CONTENT_KINDS,
 } from "@client-kit/platform/react/thread/kinds";
 export type Event = BuzzEvent & { createdAt: number; channelId: string; category: "mention" | "activity" };
 export const hex = /^[0-9a-f]{64}$/;
@@ -23,7 +24,7 @@ export function inboxWindowEvents(raw: unknown, workspace: string): Event[] {
     7, // NIP-25 reaction, returned by the governed Core window auxiliary closure.
   ]);
   for (const event of events) {
-    if (!event || (event.kind !== 9 && !metadataKinds.has(event.kind))) {
+    if (!event || (!(CHANNEL_TIMELINE_CONTENT_KINDS as readonly number[]).includes(event.kind) && !metadataKinds.has(event.kind))) {
       throw new Error("Unverifiable message kind");
     }
     // Reuse the row shape/scope guard, including for non-rendered metadata.
@@ -33,11 +34,11 @@ export function inboxWindowEvents(raw: unknown, workspace: string): Event[] {
     validateInboxEvent(event, workspace, targetScoped);
   }
   const window = parseChannelWindowResponse(events, workspace, null);
-  return inboxEvents(window.rows.map((row) => row.event), workspace);
+  return window.rows.flatMap(({event}) => event.kind === 9 || event.kind === 40002 ? inboxEvents([event], workspace, event.kind) : []);
 }
 
 /** The query is already scope-filtered by Core; mismatched/unverifiable data is never shown. */
-export function inboxEvents(raw: unknown, workspace: string, kind: 9 | 40003 = 9): Event[] {
+export function inboxEvents(raw: unknown, workspace: string, kind: 9 | 40002 | 40003 = 9): Event[] {
   if (!Array.isArray(raw)) throw new Error("Invalid message page");
   return raw.map((value: unknown) => {
     const event = value as BuzzEvent;

@@ -12,16 +12,17 @@ type ForumComposerSurfaceProps = React.ComponentProps<typeof MessageComposerSurf
   compact?: boolean;
   hasComposerContent?: boolean;
   autocompleteOpen?: boolean;
+  confirmedSendRevision?: number;
 };
 
 export function ForumComposerSurface({ toolbar, children, header, overlays, containerClassName,
   formRef, scrollRef, onEditorKeyDown, formProps, submitLocked = false,
-  compact = false, hasComposerContent = false, autocompleteOpen = false,
+  compact = false, hasComposerContent = false, autocompleteOpen = false, confirmedSendRevision = 0,
 }: ForumComposerSurfaceProps) {
   const [expanded, setExpanded] = React.useState(!compact);
   const toolbarInteraction = React.useRef(false);
   const blurTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const wasSending = React.useRef(toolbar.isSending);
+  const lastConfirmedSend = React.useRef(confirmedSendRevision);
   const hasDraft = hasComposerContent || toolbar.isUploading || toolbar.isSending || submitLocked;
   const collapsed = compact && !expanded && !hasDraft && !toolbar.isFormattingOpen && !autocompleteOpen;
   const wasExpanded = React.useRef(expanded);
@@ -29,14 +30,18 @@ export function ForumComposerSurface({ toolbar, children, header, overlays, cont
     const previouslyExpanded = wasExpanded.current;
     wasExpanded.current = expanded;
     if (compact && expanded && !previouslyExpanded) {
-      const frame = requestAnimationFrame(() => toolbar.editor?.commands.focus());
+      // Tiptap's focus command schedules another frame. Focus the view in this
+      // owned frame so a confirmation can cancel it before the form collapses.
+      const frame = requestAnimationFrame(() => toolbar.editor?.view.focus());
       return () => cancelAnimationFrame(frame);
     }
-  }, [compact, expanded, toolbar.editor]);
+  }, [compact, expanded, toolbar.editor, confirmedSendRevision]);
   React.useEffect(() => {
-    if (compact && wasSending.current && !toolbar.isSending && !hasDraft) setExpanded(false);
-    wasSending.current = toolbar.isSending;
-  }, [compact, toolbar.isSending, hasDraft]);
+    if (lastConfirmedSend.current === confirmedSendRevision) return;
+    if (toolbar.isSending || submitLocked) return;
+    lastConfirmedSend.current = confirmedSendRevision;
+    if (compact && !hasDraft) setExpanded(false);
+  }, [compact, confirmedSendRevision, toolbar.isSending, submitLocked, hasDraft]);
   React.useEffect(() => () => clearTimeout(blurTimer.current), []);
   return <>
     <form {...formProps} ref={formRef} data-testid="forum-composer" data-submit-locked={submitLocked ? "true" : "false"}

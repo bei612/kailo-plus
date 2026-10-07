@@ -46,6 +46,8 @@ import { SpoilerMark } from "./spoilerMark";
 import { createComposerLinkPasteHandler } from "./composerMessageLinkNode";
 import type { ComposerMessageLinkChannel } from "./useComposerMessageLinks";
 import { useComposerMessageLinks } from "./useComposerMessageLinks";
+import { useComposerCustomEmoji } from "./useComposerCustomEmoji";
+import type { CustomEmoji } from "../../../../custom-emoji/emoji";
 
 /**
  * Plain-text edit descriptor returned by autocomplete hooks
@@ -67,9 +69,12 @@ export type RichTextEditorOptions = {
   placeholder?: string;
   onUpdate?: (info: ReturnType<typeof buildPreviewUpdate>) => void;
   editable?: boolean;
+  /** Compact hosts keep focus for retained drafts, not an acknowledged empty form. */
+  restoreFocusOnEnable?: () => boolean;
   mentionNames?: string[];
   channelNames?: string[];
   messageLinkChannels?: readonly ComposerMessageLinkChannel[];
+  customEmoji?: CustomEmoji[];
   /**
    * `label → pubkey` pairs the composer currently knows. Copy/cut writes them
    * into the clipboard's HTML flavor so a draft moved between channels keeps
@@ -119,9 +124,11 @@ export function useRichTextEditor({
   placeholder,
   onUpdate,
   editable = true,
+  restoreFocusOnEnable,
   mentionNames,
   channelNames,
   messageLinkChannels,
+  customEmoji,
   getMentionIdentities,
   onSubmit,
   isAutocompleteOpen,
@@ -130,6 +137,8 @@ export function useRichTextEditor({
   onLinkShortcut,
 }: RichTextEditorOptions) {
   const readClipboardTextRef = React.useRef(readClipboardText);
+  const restoreFocusOnEnableRef = React.useRef(restoreFocusOnEnable);
+  restoreFocusOnEnableRef.current = restoreFocusOnEnable;
   readClipboardTextRef.current = readClipboardText;
   const onUpdateRef = React.useRef(onUpdate);
   onUpdateRef.current = onUpdate;
@@ -150,6 +159,7 @@ export function useRichTextEditor({
   placeholderRef.current = placeholder;
 
   const messageLinkWiring = useComposerMessageLinks(messageLinkChannels);
+  const customEmojiWiring = useComposerCustomEmoji(customEmoji);
 
   const editor = useEditor(
     {
@@ -299,6 +309,7 @@ export function useRichTextEditor({
         // Lets a pasted mention's identity check, which can outlive the paste,
         // tell the text it inserted from whatever the user typed next.
         PastedMentionOccurrencesExtension,
+        customEmojiWiring.extension,
         messageLinkWiring.extension,
         Placeholder.configure({
           placeholder: () => placeholderRef.current ?? "Write a message…",
@@ -506,7 +517,7 @@ export function useRichTextEditor({
       // the existing selection rather than jumping to the end).
       if (hadFocusBeforeDisableRef.current) {
         hadFocusBeforeDisableRef.current = false;
-        editor.commands.focus();
+        if (restoreFocusOnEnableRef.current?.() ?? true) editor.commands.focus();
       }
     }
   }, [editor, editable]);
@@ -531,6 +542,10 @@ export function useRichTextEditor({
     if (!editor) return;
     messageLinkWiring.syncChannelNames(editor);
   }, [editor, messageLinkWiring.syncChannelNames]);
+
+  React.useEffect(() => {
+    if (editor) customEmojiWiring.syncEmojiSrc(editor);
+  }, [editor, customEmojiWiring.syncEmojiSrc]);
 
   const getMarkdown = React.useCallback((): string => {
     if (!editor) return "";

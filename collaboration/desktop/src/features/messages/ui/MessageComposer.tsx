@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useCustomEmojiPalette } from "../lib/useCustomEmojiPalette";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
 import { imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
@@ -86,6 +87,7 @@ function MessageComposerImpl({
     syncContentRefFromEditorRef,
   } = useComposerContentState();
   const [previewContent, setPreviewContent] = React.useState("");
+  const customEmoji = useCustomEmojiPalette();
   const {
     previewList: composerLinkPreviews,
     getLiveCandidates: getLiveLinkPreviewCandidates,
@@ -197,8 +199,10 @@ function MessageComposerImpl({
       ? `Reply to ${replyTarget.author} in #${channelName}`
       : `Message #${channelName}`);
   const richText = useRichTextEditor({
+    customEmoji,
     placeholder: computedPlaceholder,
     editable: !composerDisabled,
+    restoreFocusOnEnable: () => !compact || Boolean(contentRef.current.trim() || media.pendingImetaRef.current.length || media.queuedAttachmentsRef.current.length),
     mentionNames: mentions.knownNames,
     channelNames: channelLinks.knownChannelNames,
     messageLinkChannels: channelLinks.channels,
@@ -484,7 +488,7 @@ function MessageComposerImpl({
   const acceptsDrop = ownsDropZone && voiceNote.acceptsAttachment;
   const ComposerSurface = surface === "forum" ? ForumComposerSurface : MessageComposerSurface;
   return <ComposerSurface
-    {...(surface === "forum" ? { compact,
+    {...(surface === "forum" ? { compact, confirmedSendRevision: mentionSendFlow.confirmedSendRevision,
       hasComposerContent: !isContentEmpty || media.pendingImeta.length > 0 || media.queuedAttachments.length > 0 ||
         media.uploadState.status === "error" || Boolean(mentionSendFlow.sendOutcome) || media.isDragOver,
       autocompleteOpen: mentions.isMentionOpen || channelLinks.isChannelOpen || emojiAutocomplete.isEmojiAutocompleteOpen,
@@ -519,7 +523,7 @@ function MessageComposerImpl({
       onDrop: acceptsDrop ? (event) => { void media.handleDrop(event); } : undefined,
       onSubmit: handleSubmit,
     }}
-    toolbar={{ layoutMode, composerDisabled, editor: richText.editor,
+    toolbar={{ layoutMode, composerDisabled, editor: richText.editor, customEmoji,
       extraActions: toolbarExtraActions, formattingDisabled: composerDisabled,
       isFormattingOpen, isSending: isSending || mentionSendFlow.isPreparingMentionSend,
       isUploading: media.isUploading, isVoiceNoteProcessing: voiceNote.status !== "recording",

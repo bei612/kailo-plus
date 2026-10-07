@@ -25,7 +25,7 @@ use axum::{
 use collab_bridge::bridge::{
     message_kind, parse_thread_markers, Custody, Delivery, IdentityClient, CHANNEL_TIMELINE_KINDS,
     KIND_DELETION, KIND_NIP29_DELETE_EVENT, KIND_REACTION, KIND_STREAM_MESSAGE_EDIT,
-    KIND_SYSTEM_MESSAGE, KIND_THREAD_SUMMARY, KIND_WINDOW_BOUNDS,
+    KIND_STREAM_MESSAGE_V2, KIND_SYSTEM_MESSAGE, KIND_THREAD_SUMMARY, KIND_WINDOW_BOUNDS,
 };
 use collab_bridge::limits::RelayLimits;
 use collab_bridge::operator::{LimitKind, OperatorError};
@@ -643,7 +643,13 @@ fn channel_message_event(
         contracts::WebMessageType::ForumComment,
     ]
     .into_iter()
-    .find(|kind| message_kind(kind) == event.kind.as_u16());
+    .find(|kind| message_kind(kind) == event.kind.as_u16())
+    // The original Relay thread store includes V2 stream rows. This is a read
+    // alias only: publication and mutation targeting retain their write kinds.
+    .or_else(|| {
+        (u32::from(event.kind.as_u16()) == KIND_STREAM_MESSAGE_V2)
+            .then_some(contracts::WebMessageType::Stream)
+    });
     let ancestry = parse_thread_markers(&event.tags).resolve();
     let valid_kind_and_ancestry = message_type.as_ref().is_some_and(|kind| {
         valid_message_intent(kind, ancestry.as_ref().map(|(_, parent)| parent.as_str()))
@@ -905,12 +911,7 @@ pub(crate) fn verify_message_page(
             }
             let matches = match root {
                 Some(root) => {
-                    [
-                        contracts::WebMessageType::Stream,
-                        contracts::WebMessageType::ForumComment,
-                    ]
-                    .iter()
-                    .any(|kind| message_kind(kind) == event.kind.as_u16())
+                    thread_message_kinds().contains(&event.kind.as_u16())
                         && parse_thread_markers(&event.tags)
                             .resolve()
                             .is_some_and(|(id, _)| id == root)
@@ -2006,6 +2007,15 @@ async fn message_author_profile_for(
         .into_response()
 }
 
+/// Read-only native thread kinds, shared by the query and receipt validation.
+fn thread_message_kinds() -> [u16; 3] {
+    [
+        message_kind(&contracts::WebMessageType::Stream),
+        KIND_STREAM_MESSAGE_V2 as u16,
+        message_kind(&contracts::WebMessageType::ForumComment),
+    ]
+}
+
 /// History filters are constructed by Core, never arbitrary browser filters (DD-39).
 pub(crate) fn channel_window_filter(
     channel: &str,
@@ -2139,10 +2149,7 @@ async fn query_messages_for(
         }
         root_event = Some(root);
         cap = cap.min(i64::from(collab_bridge::bridge::BRIDGE_THREAD_MAX_LIMIT));
-        filter["kinds"] = serde_json::json!([
-            message_kind(&contracts::WebMessageType::Stream),
-            message_kind(&contracts::WebMessageType::ForumComment)
-        ]);
+        filter["kinds"] = serde_json::json!(thread_message_kinds());
         filter["#e"] = serde_json::json!([root_id]);
         filter["depth_limit"] = collab_bridge::bridge::DEFAULT_THREAD_DEPTH_LIMIT.into();
         filter["include_aux"] = true.into();
@@ -3323,6 +3330,104 @@ mod tests {
             serde_json::json!({"has_more":true,"next_cursor":{"created_at":row.created_at.as_secs(),"id":unrelated}}).to_string(),
             vec![vec!["h","channel"],vec!["d","channel:head"]], &relay);
         assert!(check(vec![row, bad_cursor]).is_err());
+    }
+
+    #[test]
+    fn stream_v2_read_evidence_preserves_scope_signature_and_write_kind() {
+        let keys = nostr::Keys::generate();
+        let sign = |tags| {
+            nostr::EventBuilder::new(nostr::Kind::Custom(KIND_STREAM_MESSAGE_V2 as u16), "V2")
+                .tags(tags)
+                .sign_with_keys(&keys)
+                .unwrap()
+        };
+        let tag = || nostr::Tag::parse(["h", "channel"]).unwrap();
+        let event = sign(vec![tag()]);
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(
+            channel_message_event(value.clone(), "channel").unwrap().id,
+            event.id
+        );
+        assert!(channel_message_event(value.clone(), "foreign").is_err());
+        let mut tampered = value;
+        tampered["content"] = "tampered".into();
+        assert!(channel_message_event(tampered, "channel").is_err());
+        for tags in [vec![], vec![tag(), tag()]] {
+            assert!(channel_message_event(serde_json::json!(sign(tags)), "channel").is_err());
+        }
+        assert_eq!(message_kind(&contracts::WebMessageType::Stream), 9);
+        assert!(!mutation_target_matches(
+            &event,
+            keys.public_key(),
+            &contracts::WebMessageType::Stream
+        ));
+    }
+
+    #[test]
+    fn stream_v2_thread_page_preserves_ancestry_aux_and_composite_cursor() {
+        let keys = nostr::Keys::generate();
+        let root = "a".repeat(64);
+        let sign = |kind, content, mut tags: Vec<nostr::Tag>| {
+            tags.push(nostr::Tag::parse(["h", "channel"]).unwrap());
+            nostr::EventBuilder::new(nostr::Kind::Custom(kind), content)
+                .tags(tags)
+                .custom_created_at(nostr::Timestamp::from_secs(1))
+                .sign_with_keys(&keys)
+                .unwrap()
+        };
+        let parent = || nostr::Tag::parse(["e", root.as_str(), "", "reply"]).unwrap();
+        let mut rows = vec![
+            sign(KIND_STREAM_MESSAGE_V2 as u16, "V2 reply", vec![parent()]),
+            sign(
+                message_kind(&contracts::WebMessageType::Stream),
+                "reply",
+                vec![parent()],
+            ),
+        ];
+        rows.sort_by_key(|event| event.id);
+        let reaction = sign(
+            KIND_REACTION as u16,
+            "+",
+            vec![nostr::Tag::parse(["e", rows[0].id.to_hex().as_str()]).unwrap()],
+        );
+        let check = |events, cursor| {
+            verify_message_page(
+                events,
+                "channel",
+                &contracts::WebMessageType::Stream,
+                Some(root.as_str()),
+                cursor,
+                None,
+                1,
+            )
+        };
+        let (page, cursor) = check(vec![rows[0].clone(), reaction], None).unwrap();
+        assert_eq!(page.len(), 2);
+        let cursor = cursor.unwrap();
+        assert_eq!(cursor.event_id, rows[0].id.to_hex());
+        assert!(check(vec![rows[1].clone()], Some(&cursor)).is_ok());
+        assert!(check(vec![rows[0].clone()], Some(&cursor)).is_err());
+        assert!(check(Vec::new(), Some(&cursor)).unwrap().1.is_none());
+        let wrong_root = "b".repeat(64);
+        for event in [
+            sign(KIND_STREAM_MESSAGE_V2 as u16, "not a reply", vec![]),
+            sign(
+                KIND_STREAM_MESSAGE_V2 as u16,
+                "foreign root",
+                vec![nostr::Tag::parse(["e", wrong_root.as_str(), "", "reply"]).unwrap()],
+            ),
+            sign(
+                KIND_SYSTEM_MESSAGE as u16,
+                "not a thread row",
+                vec![parent()],
+            ),
+        ] {
+            assert!(check(vec![event], None).is_err());
+        }
+        assert_eq!(
+            thread_message_kinds(),
+            [9, KIND_STREAM_MESSAGE_V2 as u16, 45003]
+        );
     }
 
     #[test]

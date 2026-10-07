@@ -1,3 +1,12 @@
+// Original Buzz message projection, not a platform identity or reaction authority.
+export type TimelineReaction = {
+  emoji: string;
+  emojiUrl?: string;
+  count: number;
+  reactedByCurrentUser?: boolean;
+  users: Array<{ pubkey: string; displayName: string; avatarUrl: string | null }>;
+};
+
 export type TimelineMessage = {
   id: string;
   /** Stable local key used to avoid remounting optimistic rows on send ack. */
@@ -15,6 +24,9 @@ export type TimelineMessage = {
   avatarUrl?: string | null;
   role?: string;
   isAgent?: boolean;
+  ownerPubkey?: string | null;
+  ownerLabel?: string | null;
+  reactions?: TimelineReaction[];
   time: string;
   body: string;
   parentId?: string | null;

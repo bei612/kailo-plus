@@ -59,6 +59,13 @@ it("uses the admitted thread query, original panel and exact selected parent whe
   expect(state.publish).toHaveBeenCalledWith("workspace", "reply", [], "original-intent", [], {messageType: "STREAM", parentEventId: replyId});
   expect(state.outcome).toBe("confirmed");
 });
+it("retains V2 roots and replies in the same admitted original thread projection", async () => {
+  state.query.mockResolvedValue({events:[{...rootEvent,kind:40002},{...reply,kind:40002}]});
+  await mount();
+  expect(host.querySelector('[data-testid="message-thread-panel"]')).not.toBeNull();
+  expect(host.textContent).toContain("Root body");expect(host.textContent).toContain("Nested body");
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="host-send"]')?.disabled).toBe(false);
+});
 it("requires confirmed receipt and removes thread content on revoked admission", async () => {
   state.publish.mockResolvedValue({operationId: "operation"});
   await mount();

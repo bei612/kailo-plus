@@ -140,6 +140,13 @@ export function createBffClient(transport: BffTransport) {
       }
       return get<{ events: unknown; nextCursor?: WebMessageCursor }>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/messages${query.size ? `?${query}` : ""}`);
     },
+    conversationMessages: (conversationId: string, options?: WebMessageQuery) => {
+      const query = new URLSearchParams();
+      for (const [name, value] of Object.entries(options ?? {})) {
+        if (value !== undefined) query.set(name, String(value));
+      }
+      return get<{ events: unknown; nextCursor?: WebMessageCursor }>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages${query.size ? `?${query}` : ""}`);
+    },
     markRead: (body: ReadMarkRequest) =>
       call<UserStateVersion>({ method: "PUT", path: "/api/v1/user-state/read", body }),
 

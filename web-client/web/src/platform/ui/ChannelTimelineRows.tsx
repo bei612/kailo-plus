@@ -10,7 +10,7 @@ import { UnreadDivider } from "@client-kit/platform/react/messages";
 export function ChannelTimelineRows({ renderItem, ...props }: TimelineMessageListProps & {
   renderItem: (item: Exclude<TimelineNonDayItem, { kind: "unread-divider" }>, highlightedMessageId?: string | null) => ReactNode;
 }) {
-  const entries = useMemo(() => buildMainTimelineEntries(props.messages), [props.messages]);
+  const entries = useMemo(() => props.mainEntries ?? buildMainTimelineEntries(props.messages, undefined, props.threadSummaries, props.profiles, props.authoritativeRowIds), [props.mainEntries, props.messages, props.threadSummaries, props.profiles, props.authoritativeRowIds]);
   const dayGroups = useMemo(() => buildTimelineDayGroups(buildTimelineItems(entries, props.firstUnreadMessageId ?? null).items), [entries, props.firstUnreadMessageId]);
   return <VirtualizedTimelineRows
     dayGroups={dayGroups}

@@ -1,10 +1,14 @@
+// Upstream Buzz 779af8886caae1317b4de962082429867ab61503: desktop/src/features/messages/ui/SystemMessageAvatars.tsx
 import {
   resolveUserLabel,
   type UserProfileLookup,
-} from "@/features/profile/lib/identity";
-import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
-import { cn } from "@/shared/lib/cn";
-import { UserAvatar } from "@/shared/ui/UserAvatar";
+} from "./identity";
+import { UserProfilePopover } from "./host";
+import { cn } from "../../profile/buzz/shared/lib/cn";
+import { normalizePubkey } from "../../conversations/pubkey";
+import { UserAvatar } from "./host";
+
+import { useUiT } from "../../context";
 
 const MAX_MEMBERSHIP_AVATARS = 5;
 
@@ -16,17 +20,37 @@ function resolveAvatarUrl(
   return profiles[pubkey.toLowerCase()]?.avatarUrl ?? null;
 }
 
+function isKnownAgentPubkey(
+  pubkey: string | undefined,
+  profiles: UserProfileLookup | undefined,
+  personaLookup?: Map<string, string>,
+  agentPubkeys?: ReadonlySet<string>,
+) {
+  if (!pubkey) return false;
+  const normalizedPubkey = normalizePubkey(pubkey);
+  return (
+    agentPubkeys?.has(normalizedPubkey) === true ||
+    profiles?.[normalizedPubkey]?.isAgent === true ||
+    personaLookup?.has(normalizedPubkey) === true
+  );
+}
+
 export function SystemMessageAvatar({
   actorPubkey,
+  agentPubkeys,
   currentPubkey,
+  personaLookup,
   profiles,
   targetPubkey,
 }: {
   actorPubkey: string | undefined;
+  agentPubkeys?: ReadonlySet<string>;
   currentPubkey: string | undefined;
+  personaLookup?: Map<string, string>;
   profiles: UserProfileLookup | undefined;
   targetPubkey: string | undefined;
 }) {
+  const t = useUiT();
   const hasActorAndTarget =
     actorPubkey && targetPubkey && actorPubkey !== targetPubkey;
   const actorLabel = actorPubkey
@@ -35,24 +59,40 @@ export function SystemMessageAvatar({
         currentPubkey,
         profiles,
         preferResolvedSelfLabel: true,
+        t,
       })
-    : "Someone";
+    : t("messages.system.someone");
   const singlePubkey = actorPubkey ?? targetPubkey;
 
   if (!hasActorAndTarget) {
+    const isSingleAgent = isKnownAgentPubkey(
+      singlePubkey,
+      profiles,
+      personaLookup,
+      agentPubkeys,
+    );
     const avatar = (
       <UserAvatar
+        accent={isSingleAgent}
         avatarUrl={resolveAvatarUrl(singlePubkey, profiles)}
         className="!h-9 !w-9 shrink-0 text-2xs"
         displayName={actorLabel}
+        shape={isSingleAgent ? "squircle" : "circle"}
         testId="system-message-avatar"
       />
     );
     if (singlePubkey) {
       return (
-        <UserProfilePopover pubkey={singlePubkey}>
+        <UserProfilePopover
+          botIdenticonValue={isSingleAgent ? actorLabel : undefined}
+          pubkey={singlePubkey}
+          role={isSingleAgent ? "bot" : undefined}
+        >
           <button
-            className="shrink-0 rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            className={cn(
+              "shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+              isSingleAgent ? "rounded-[30%]" : "rounded-full",
+            )}
             data-testid="system-message-avatar"
             type="button"
           >
@@ -64,33 +104,57 @@ export function SystemMessageAvatar({
     return avatar;
   }
 
+  const isActorAgent = isKnownAgentPubkey(
+    actorPubkey,
+    profiles,
+    personaLookup,
+    agentPubkeys,
+  );
   const targetLabel = resolveUserLabel({
     pubkey: targetPubkey,
     currentPubkey,
     profiles,
     preferResolvedSelfLabel: true,
+        t,
   });
+  const isTargetAgent = isKnownAgentPubkey(
+    targetPubkey,
+    profiles,
+    personaLookup,
+    agentPubkeys,
+  );
   const dualAvatar = (
     <div
       className="relative h-9 w-9 shrink-0"
       data-testid="system-message-avatar"
     >
       <UserAvatar
+        accent={isActorAgent}
         avatarUrl={resolveAvatarUrl(actorPubkey, profiles)}
         className="!h-7 !w-7 border-2 border-background text-2xs"
         displayName={actorLabel}
+        shape={isActorAgent ? "squircle" : "circle"}
       />
       <UserAvatar
+        accent={isTargetAgent}
         avatarUrl={resolveAvatarUrl(targetPubkey, profiles)}
         className="!absolute !bottom-0 !right-0 !h-7 !w-7 border-2 border-background text-2xs"
         displayName={targetLabel}
+        shape={isTargetAgent ? "squircle" : "circle"}
       />
     </div>
   );
   return (
-    <UserProfilePopover pubkey={actorPubkey}>
+    <UserProfilePopover
+      botIdenticonValue={isActorAgent ? actorLabel : undefined}
+      pubkey={actorPubkey}
+      role={isActorAgent ? "bot" : undefined}
+    >
       <button
-        className="shrink-0 rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+        className={cn(
+          "shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+          isActorAgent ? "rounded-[30%]" : "rounded-full",
+        )}
         type="button"
       >
         {dualAvatar}
@@ -100,29 +164,41 @@ export function SystemMessageAvatar({
 }
 
 export function MembershipAvatarStack({
+  agentPubkeys,
   currentPubkey,
+  personaLookup,
   profiles,
   pubkeys,
 }: {
+  agentPubkeys?: ReadonlySet<string>;
   currentPubkey: string | undefined;
+  personaLookup?: Map<string, string>;
   profiles: UserProfileLookup | undefined;
   pubkeys: readonly string[];
 }) {
+  const t = useUiT();
   const visiblePubkeys = pubkeys.slice(0, MAX_MEMBERSHIP_AVATARS);
   if (visiblePubkeys.length === 0) return null;
   return (
     <div
-      aria-label={`${visiblePubkeys.length} channel member${visiblePubkeys.length === 1 ? "" : "s"}`}
+      aria-label={t(visiblePubkeys.length === 1 ? "messages.system.memberOne" : "messages.system.memberMany", { count: visiblePubkeys.length })}
       className="relative z-10 flex shrink-0 items-center justify-center"
       data-testid="system-message-avatar-stack"
       role="img"
     >
       {visiblePubkeys.map((pubkey, index) => {
+        const isAgent = isKnownAgentPubkey(
+          pubkey,
+          profiles,
+          personaLookup,
+          agentPubkeys,
+        );
         const label = resolveUserLabel({
           pubkey,
           currentPubkey,
           profiles,
           preferResolvedSelfLabel: true,
+        t,
         });
         return (
           <div
@@ -133,12 +209,14 @@ export function MembershipAvatarStack({
           >
             <span className="block">
               <UserAvatar
+                accent={isAgent}
                 avatarUrl={resolveAvatarUrl(pubkey, profiles)}
                 className={cn(
                   "h-6 w-6 text-2xs",
                   index < visiblePubkeys.length - 1 && "ring-2 ring-background",
                 )}
                 displayName={label}
+                shape={isAgent ? "squircle" : "circle"}
                 size="sm"
               />
             </span>

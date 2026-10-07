@@ -83,6 +83,12 @@ describe("Inbox and sidebar consume the original governed Relay window", () => {
     const reaction = { ...event, id: "f".repeat(64), kind: 7, tags: [["e", event.id]] };
     expect(inboxWindowEvents([event, edit, reaction, bounds], "workspace-a").map((row) => row.id)).toEqual([event.id]);
   });
+  it("retains V2 activity while excluding verified system rows from unread messages", () => {
+    const v2={...event,kind:40002};
+    const system={...event,id:"f".repeat(64),kind:40099,content:JSON.stringify({type:"channel_created"})};
+    expect(inboxWindowEvents([v2,system,bounds],"workspace-a").map(row=>row.id)).toEqual([event.id]);
+    expect(()=>inboxWindowEvents([v2,{...system,tags:[["h","workspace-b"]]},bounds],"workspace-a")).toThrow();
+  });
   it("still rejects unknown kinds and foreign scope even when they would not render", () => {
     expect(() => inboxWindowEvents([event, { ...summary, kind: 1 }, bounds], "workspace-a")).toThrow();
     expect(() => inboxWindowEvents([event, { ...summary, tags: [["h", "workspace-b"]] }, bounds], "workspace-a")).toThrow();

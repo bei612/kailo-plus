@@ -10,6 +10,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../../../../sidebar/too
 import { ComposerMentionButton, ComposerSendButton } from "./ComposerControls";
 import { FormattingToolbar } from "./FormattingToolbar";
 import { SelectionFormattingTray } from "./SelectionFormattingTray";
+import { ComposerEmojiPicker } from "./ComposerEmojiPicker";
+import type { CustomEmoji } from "../../../../custom-emoji/emoji";
+import { CUSTOM_EMOJI_NODE_NAME } from "../lib/customEmojiNode";
+
+const NO_CUSTOM_EMOJI: CustomEmoji[] = [];
 
 /** Spring for enter/exit of button groups — all fire simultaneously. */
 const presenceSpring = {
@@ -28,6 +33,7 @@ const ingressControlVariants = {
 export const MessageComposerToolbar = React.memo(
   function MessageComposerToolbar({
     composerDisabled,
+    customEmoji = NO_CUSTOM_EMOJI,
     editor,
     extraActions,
     formattingDisabled,
@@ -47,6 +53,7 @@ export const MessageComposerToolbar = React.memo(
     sendDisabled,
   }: {
     composerDisabled: boolean;
+    customEmoji?: CustomEmoji[];
     editor: Editor | null;
     extraActions?: React.ReactNode;
     formattingDisabled: boolean;
@@ -67,6 +74,22 @@ export const MessageComposerToolbar = React.memo(
   }) {
     const translateUi = useUiT();
     const shouldReduceMotion = useReducedMotion();
+    const [isEmojiPickerOpen, setIsEmojiPickerOpen] = React.useState(false);
+    React.useEffect(() => {
+      if (isFormattingOpen || composerDisabled) setIsEmojiPickerOpen(false);
+    }, [isFormattingOpen, composerDisabled]);
+    const insertEmoji = React.useCallback((emoji: string) => {
+      if (!editor || composerDisabled) return;
+      const shortcode = /^:([^:\s]+):$/.exec(emoji)?.[1]?.toLowerCase();
+      const known = customEmoji.find((entry) => entry.shortcode.toLowerCase() === shortcode);
+      if (known) {
+        editor.chain().focus().insertContent({ type: CUSTOM_EMOJI_NODE_NAME,
+          attrs: { shortcode: known.shortcode, src: known.url } }).insertContent(" ").run();
+      } else {
+        editor.chain().focus().insertContent(emoji).run();
+      }
+      setIsEmojiPickerOpen(false);
+    }, [editor, composerDisabled, customEmoji]);
 
     return (
       <div
@@ -216,6 +239,9 @@ export const MessageComposerToolbar = React.memo(
                   </TooltipTrigger>
                   <TooltipContent>{translateUi("buzz.attachFile")}</TooltipContent>
                 </Tooltip>
+                <ComposerEmojiPicker disabled={composerDisabled} customEmoji={customEmoji}
+                  open={isEmojiPickerOpen} onOpenChange={setIsEmojiPickerOpen}
+                  onEmojiSelect={insertEmoji} onClose={() => { editor?.commands.focus(); }} />
                 {onVoiceNote ? (
                   <Tooltip disableHoverableContent>
                     <TooltipTrigger asChild>

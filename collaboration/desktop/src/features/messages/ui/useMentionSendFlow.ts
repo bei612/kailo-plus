@@ -44,6 +44,7 @@ export function useMentionSendFlow({
   setSpoileredAttachmentUrls,
 }: UseMentionSendFlowOptions) {
   const [isMentionSendPending, setIsMentionSendPending] = React.useState(false);
+  const [confirmedSendRevision, setConfirmedSendRevision] = React.useState(0);
   // Relay 没有接受发送时留在 composer 上的确定状态（被拒、限流、未发出、结果
   // 不明）。一闪而过的 toast 在用户离开窗口时就等于没有提示，常驻 toast 又会
   // 盖住发送按钮，所以放在 composer 里；按草稿键记，只在同一草稿上显示。
@@ -243,6 +244,7 @@ export function useMentionSendFlow({
             draft.preparedLinkPreviews != null,
           );
           if (signal?.aborted || isSendCancelled()) return;
+          if (ownsComposer()) setConfirmedSendRevision((revision) => revision + 1);
           if (
             draft.sentDraftKey &&
             draft.sourceOwner.getComposerRevision() ===
@@ -422,6 +424,7 @@ export function useMentionSendFlow({
       : null;
   const clearSendOutcome = React.useCallback(() => setSendOutcome(null), []);
   return {
+    confirmedSendRevision,
     isPreparingMentionSend: isMentionSendPending,
     sendMessageWithMentionFlow,
     sendOutcome: visibleSendOutcome,

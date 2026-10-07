@@ -451,6 +451,7 @@ export function buildMainTimelineEntries(
   unreadReplyIds: ReadonlySet<string> = new Set(),
   relaySummaries: ReadonlyMap<string, ChannelWindowThreadSummary> = new Map(),
   profiles?: UserProfileLookup,
+  authoritativeRowIds?: ReadonlySet<string>,
 ): MainTimelineEntry[] {
   const { descendantStatsByMessageId } = buildThreadPanelIndex(
     messages,
@@ -460,7 +461,7 @@ export function buildMainTimelineEntries(
   return messages
     .filter(
       (message) =>
-        message.parentId == null || isBroadcastReply(message.tags ?? []),
+        authoritativeRowIds?.has(message.id) || message.parentId == null || isBroadcastReply(message.tags ?? []),
     )
     .map((message) => {
       const relaySummary = relaySummaries.get(message.id);

@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
   reason: (reason: string) => reason,
   members: { isSuccess: true, data: [] },
   userState: { isSuccess: true, data: { version: 0, readContexts: {}, workspacePreferences: {} } },
+  emoji: { isSuccess: true, data: { events: [] } },
   infinite: { data: { pages: [] }, isSuccess: true },
   queryClient: { invalidateQueries: vi.fn() },
   mutation: { isPending: false, mutate: vi.fn() },
@@ -29,7 +30,7 @@ vi.mock("@client-kit/platform/react/context", async (original) => ({
   useReasonText: () => state.reason,
 }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: (options: { queryKey: string[] }) => options.queryKey.includes("members") ? state.members : state.userState,
+  useQuery: (options: { queryKey: string[] }) => options.queryKey.includes("members") ? state.members : options.queryKey.includes("custom-emoji") ? state.emoji : state.userState,
   useInfiniteQuery: () => state.infinite,
   useQueryClient: () => state.queryClient,
   useMutation: () => state.mutation,
@@ -92,7 +93,7 @@ beforeEach(async () => {
   state.stop.mockClear();
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-  await act(async () => { root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" myPrincipalId="human-a" /></TooltipProvider>); });
+  await act(async () => { root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" /></TooltipProvider>); });
   await act(async () => {
   state.receive!({
     type: "snapshot",
@@ -105,6 +106,7 @@ beforeEach(async () => {
         tags: [],
         content: "existing message",
       },
+      { id: "bounds", pubkey: "relay", kind: 39006, created_at: 1, tags: [["d", "channel-a:head"]], content: JSON.stringify({has_more:false,next_cursor:null}) },
     ],
   });
   state.receive!({ type: "live" });

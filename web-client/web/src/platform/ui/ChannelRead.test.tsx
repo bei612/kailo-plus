@@ -66,6 +66,10 @@ const event = (seconds: number) => ({
   content: "",
 });
 const threadMessages = [{...event(10), createdAt: 10}];
+const windowEvents = (events: ReturnType<typeof event>[]) => [...events, {
+  ...event(0), id: "bounds", kind: 39006, tags: [["d", "channel-a:head"]],
+  content: JSON.stringify({ has_more: false, next_cursor: null }),
+}];
 async function flush() {
   // Exercise real React effects and Query's notification queue repeatedly.
   for (let i = 0; i < 20; i++)
@@ -77,7 +81,7 @@ async function renderChannel(props: { archived?: boolean; metadataPending?: bool
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <TooltipProvider><ChannelPane workspaceId="workspace-a" channelName="Original channel" myPrincipalId="human-a" {...props} /></TooltipProvider>
+        <TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" channelName="Original channel" myPrincipalId="human-a" {...props} /></TooltipProvider>
       </QueryClientProvider>,
     );
   });
@@ -85,7 +89,7 @@ async function renderChannel(props: { archived?: boolean; metadataPending?: bool
 async function open() {
   await renderChannel();
   await act(async () => {
-    state.receive!({ type: "snapshot", events: [event(10)] });
+    state.receive!({ type: "snapshot", events: windowEvents([event(10)]) });
     state.receive!({ type: "live" });
   });
   await flush();
@@ -110,26 +114,72 @@ it("applies a live same-author edit to one existing row without counting or noti
   expect(state.notify).not.toHaveBeenCalled();
 });
 
+it("renders admitted V2 and orphan window rows but does not promote a live thread reply", async () => {
+  await renderChannel();
+  const orphan = {...event(10), kind:40002, tags:[["h","channel-a"],["e","missing","","root"],["e","missing","","reply"]]};
+  await act(async()=>{
+    state.receive!({type:"snapshot",events:windowEvents([orphan])});
+    state.receive!({type:"live"});
+  });
+  await flush();
+  expect(host.querySelector('[data-event-id="event-10"]')).not.toBeNull();
+  await act(async()=>state.receive!({type:"event",event:{...orphan,id:"new-thread-reply",created_at:20}}));
+  await flush();
+  expect(host.querySelector('[data-event-id="new-thread-reply"]')).toBeNull();
+  await act(async()=>state.receive!({type:"event",event:{...event(30),kind:40002}}));
+  await flush();
+  expect(host.querySelector('[data-event-id="event-30"]')).not.toBeNull();
+  await act(async()=>state.receive!({type:"event",event:{...event(40),kind:9005,tags:[["e","event-10"]]}}));
+  await flush();
+  expect(host.querySelector('[data-event-id="event-10"]')).toBeNull();
+  expect(host.querySelector('[data-event-id="event-30"]')).not.toBeNull();
+});
+
+it("renders original system membership rows without advancing conversational read state", async () => {
+  state.mark.mockResolvedValue({version:4});
+  await open();
+  const originalRead = state.mark.mock.calls[0]?.[0];
+  const actor = "a".repeat(64);
+  await act(async()=>state.receive!({type:"event",event:{...event(20),kind:40099,content:JSON.stringify({type:"member_joined",actor,target:actor})}}));
+  await flush();
+  expect(host.querySelector('[data-testid="system-message-row"]')?.textContent).toContain("joined the channel");
+  expect(host.querySelectorAll('[data-testid="message-row"]')).toHaveLength(1);
+  expect(state.mark).toHaveBeenCalledTimes(1);
+  expect(originalRead.lastReadAt).toBe(new Date(10_000).toISOString());
+  expect(state.notify).not.toHaveBeenCalled();
+});
+
+it("renders the original live summary and opens its real admitted thread", async () => {
+  await open();
+  await act(async()=>state.receive!({type:"event",event:{...event(20),kind:39005,tags:[["e","event-10"]],content:JSON.stringify({reply_count:2,descendant_count:2,last_reply_at:20,participants:[]})}}));
+  await flush();
+  const summary = host.querySelector<HTMLElement>('[data-testid="message-thread-summary"]');
+  expect(summary?.textContent).toContain("2 replies");
+  await act(async()=>summary!.click());
+  await flush();
+  expect(host.querySelector('[data-testid="message-thread-panel"]')).not.toBeNull();
+});
+
 it("keeps snapshot and delayed history chronological, deduplicated and stable within one second", async () => {
   await renderChannel();
   const early = event(10);
   const sameSecond = { ...event(20), id: "event-20-a" };
   const latest = { ...event(20), id: "event-20-z" };
   await act(async () => {
-    state.receive!({ type: "snapshot", events: [latest, sameSecond, latest] });
+    state.receive!({ type: "snapshot", events: windowEvents([sameSecond, latest, early]) });
     state.receive!({ type: "event", event: early });
     state.receive!({ type: "event", event: sameSecond });
     state.receive!({ type: "live" });
   });
   await flush();
   expect([...host.querySelectorAll("[data-event-id]")].map((row) => row.getAttribute("data-event-id")))
-    .toEqual([early.id, sameSecond.id, latest.id]);
+    .toEqual([early.id, latest.id, sameSecond.id]);
   expect(state.mark.mock.calls[0]?.[0].lastReadAt).toBe(new Date(20_000).toISOString());
   expect(state.notify).not.toHaveBeenCalled();
   await act(async () => state.receive!({ type: "event", event: { ...event(15), id: "late-arrival" } }));
   await flush();
   expect([...host.querySelectorAll("[data-event-id]")].map((row) => row.getAttribute("data-event-id")))
-    .toEqual([early.id, "late-arrival", sameSecond.id, latest.id]);
+    .toEqual([early.id, "late-arrival", latest.id, sameSecond.id]);
 });
 beforeEach(() => {
   // Virtua ignores ResizeObserver samples from display:none/detached rows.
@@ -196,7 +246,7 @@ it("notifies only a new admitted live mention, never a snapshot, duplicate, disc
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
   await open();
   const mention = (seconds: number) => ({ ...event(seconds), tags: [["h", "channel-a"], ["p", "mine"]] });
-  await act(async () => { state.receive!({ type: "snapshot", events: [mention(20)] }); state.receive!({ type: "live" }); });
+  await act(async () => { state.receive!({ type: "snapshot", events: windowEvents([mention(20)]) }); state.receive!({ type: "live" }); });
   expect(state.notify).not.toHaveBeenCalled();
   await act(async () => state.receive!({ type: "event", event: mention(30) }));
   expect(state.notify).toHaveBeenCalledTimes(1);
@@ -398,13 +448,13 @@ it("renders real stream events through the original shared message row and group
   expect(host.querySelectorAll('[data-testid="message-avatar"]')).toHaveLength(1);
   expect(host.querySelectorAll('[data-testid="message-author"]')).toHaveLength(1);
   expect(host.querySelectorAll('[data-testid="message-timestamp"]')).toHaveLength(2);
-  // A bounded snapshot does not prove the beginning of its oldest day.
-  expect(host.querySelectorAll('[data-testid="message-timeline-day-divider"]')).toHaveLength(0);
+  // The signed window explicitly proves exhaustion, including its first day.
+  expect(host.querySelectorAll('[data-testid="message-timeline-day-divider"]')).toHaveLength(1);
   expect(host.querySelector('[data-testid="copy-link-message-event-20"]')).not.toBeNull();
   await act(async () => state.receive!({ type: "event", event: event(90_000) }));
   await flush();
   expect(host.querySelectorAll('[data-testid="message-row"]')).toHaveLength(3);
-  expect(host.querySelectorAll('[data-testid="message-timeline-day-divider"]')).toHaveLength(1);
+  expect(host.querySelectorAll('[data-testid="message-timeline-day-divider"]')).toHaveLength(2);
   await act(async () => state.receive!({ type: "closed", reason: "scope-revoked" }));
   await flush();
   expect(host.querySelectorAll('[data-testid="message-row"]')).toHaveLength(0);

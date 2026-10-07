@@ -27,7 +27,7 @@ export function useWorkspaceThread(principalId: string, workspaceId: string, roo
           (cursor.createdAt === pageParam.createdAt && cursor.eventId <= pageParam.eventId))) {
         throw new Error("Thread cursor did not advance");
       }
-      const events = inboxEvents(page.events.filter((event) => event && typeof event === "object" && "kind" in event && event.kind === 9), workspaceId);
+      const events = page.events.flatMap((event) => event && typeof event === "object" && "kind" in event && (event.kind === 9 || event.kind === 40002) ? inboxEvents([event], workspaceId, event.kind) : []);
       const edits = inboxEvents(page.events.filter((event) => event && typeof event === "object" && "kind" in event && event.kind === 40003), workspaceId, 40003);
       const deleted = new Set(page.events.flatMap((event) => event && typeof event === "object" && "kind" in event && (event.kind === 5 || event.kind === 9005) && "tags" in event && Array.isArray(event.tags)
         ? event.tags.filter((tag: string[]) => tag[0] === "e").map((tag: string[]) => tag[1]) : []));

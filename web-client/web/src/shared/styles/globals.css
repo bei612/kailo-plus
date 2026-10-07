@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "@client-kit/platform/theme.css";
 @import "@client-kit/platform/typography.css";
+@import "@client-kit/platform/react/messages/markdown.css";
 @import "@client-kit/platform/react/composer/prosemirror.css";
 @import "@client-kit/platform/react/composer/composer.css";
 @import "@client-kit/platform/react/composer/spoilers.css";

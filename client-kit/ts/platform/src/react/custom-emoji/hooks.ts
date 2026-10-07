@@ -15,7 +15,7 @@ export type CustomEmojiHost = {
   rewriteRelayUrl: (url: string) => string;
 };
 
-function eventsFromView(view: WebCustomEmojiView): RelayEvent[] {
+export function eventsFromView(view: WebCustomEmojiView): RelayEvent[] {
   if (!/^[0-9a-f]{64}$/.test(view.pubkey)) throw new TransportError("Emoji identity unavailable");
   return view.events.map((value) => {
     const event = value as unknown as RelayEvent;
@@ -60,6 +60,7 @@ export function useEmojiSettings(host: CustomEmojiHost) {
       if (actual.pubkey !== request.expectedPubkey || !events.some((event) => event.pubkey === request.expectedPubkey && event.id === result.eventId)
         || live.current !== host.scope) throw new TransportError("Emoji publication result unknown");
       queryClient.setQueryData(queryKey, { view: actual, events });
+      void queryClient.invalidateQueries({ queryKey: ["custom-emoji"] });
       intent.current = null;
       setUnknown(false);
       return shortcode;

@@ -82,7 +82,7 @@ vi.mock("@tanstack/react-query", () => ({
     fetchNextPage: state.more,
   }),
   useMutation: vi.fn(),
-  useQuery: vi.fn(),
+  useQuery: vi.fn(() => ({ data: undefined, isError: false })),
   useQueryClient: vi.fn(),
 }));
 vi.mock("@/platform/bff-client", () => ({
@@ -181,6 +181,27 @@ it("collapses the original compact form only after confirmed publication clears 
   await click(button(host,"platform.send"));await settle();
   expect(publish).toHaveBeenCalledTimes(1);
   expect(host.querySelector<HTMLElement>('[data-testid="forum-composer"]')!.dataset.compactCollapsed).toBe("true");
+});
+
+it.each(["confirmed", "rejected"])("keeps a pending compact send open until its actual %s outcome", async (outcome) => {
+  let resolve!: (value: {eventId: string}) => void;
+  let reject!: (error: Error) => void;
+  const publication = new Promise<{eventId: string}>((yes, no) => { resolve = yes; reject = no; });
+  const publish = vi.fn(() => publication);
+  const host = await render(<Composer surface="forum" compact draftIdentity={`pulse-${outcome}-deferred`} onPublish={publish}/>);
+  await act(async () => host.querySelector<HTMLElement>('[data-testid="message-input"]')!.focus());
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "Pending note");
+  await click(button(host, "platform.send"));
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(host.querySelector<HTMLElement>('[data-testid="forum-composer"]')!.dataset.compactCollapsed).toBe("false");
+  await act(async () => { if (outcome === "confirmed") resolve({eventId:"confirmed"}); else reject(new Error("Rejected")); });
+  await settle();
+  if (outcome === "confirmed") {
+    expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("");
+    expect(host.querySelector('[role="status"]')?.textContent).toBeUndefined();
+  }
+  expect(host.querySelector<HTMLElement>('[data-testid="forum-composer"]')!.dataset.compactCollapsed).toBe(outcome === "confirmed" ? "true" : "false");
+  if (outcome === "rejected") expect(host.querySelector('[data-testid="message-input"]')?.textContent).toContain("Pending note");
 });
 
 it("publishes the explicit human picker identity and retains it with the same UNKNOWN intent", async () => {
