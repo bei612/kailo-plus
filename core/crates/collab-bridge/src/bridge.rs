@@ -57,7 +57,10 @@ fn reaction_matches(event: &Event, id: &str, author: &str, source: &str, emoji: 
         && event.pubkey.to_hex() == author
         && u32::from(event.kind.as_u16()) == KIND_REACTION
         && event.verify().is_ok()
-        && event.content == emoji
+        // The persisted dispatch event ID and verified signature freeze the
+        // expanded bytes. Never reload mutable source content on reconciliation.
+        && valid_reaction(&event.content)
+        && (emoji.contains("{{") || event.content == emoji)
         && event.tags.len() == 1
         && event
             .tags
@@ -70,7 +73,11 @@ fn topic_matches(event: &Event, id: &str, author: &str, channel: Uuid, topic: &s
     event.id.to_hex() == id
         && event.pubkey.to_hex() == author
         && event.verify().is_ok()
-        && buzz_core::channel::topic_change(event) == Some((channel, topic))
+        && buzz_core::channel::topic_change(event).is_some_and(|(actual_channel, actual_topic)| {
+            // Event ID covers content as well as tags; the original template
+            // itself is not the expanded value. Empty topics still clear it.
+            actual_channel == channel && (topic.contains("{{") || actual_topic == topic)
+        })
 }
 
 pub fn message_kind(message_type: &contracts::WebMessageType) -> u16 {
@@ -1404,9 +1411,51 @@ mod mention_tests {
                 topic
             ));
             assert!(!topic_matches(&event, &id, &author, channel, "other"));
+            assert!(topic_matches(
+                &event,
+                &id,
+                &author,
+                channel,
+                "{{trigger.text}}"
+            ));
+            assert!(!topic_matches(
+                &event,
+                &id,
+                &author,
+                Uuid::new_v4(),
+                "{{trigger.text}}"
+            ));
+            let unrelated = client
+                .sign_channel_topic_at(channel, "unrelated", 106)
+                .unwrap();
+            assert!(!topic_matches(
+                &unrelated,
+                &id,
+                &author,
+                channel,
+                "{{trigger.text}}"
+            ));
             let mut forged = event.clone();
             forged.content = "forged".into();
             assert!(!topic_matches(&forged, &id, &author, channel, topic));
+            assert!(!topic_matches(
+                &forged,
+                &id,
+                &author,
+                channel,
+                "{{trigger.text}}"
+            ));
+            // Keep the original JSON id/signature but substitute another valid
+            // topic's tags; the receipt must recompute the event hash.
+            let mut forged_topic = event.clone();
+            forged_topic.tags = unrelated.tags.clone();
+            assert!(!topic_matches(
+                &forged_topic,
+                &id,
+                &author,
+                channel,
+                "{{trigger.text}}"
+            ));
         }
     }
 
@@ -1456,6 +1505,28 @@ mod mention_tests {
         let id = event.id.to_hex();
         let author = keys.public_key().to_hex();
         assert!(reaction_matches(&event, &id, &author, &source, "👍"));
+        assert!(reaction_matches(
+            &event,
+            &id,
+            &author,
+            &source,
+            "{{trigger.text}}"
+        ));
+        assert!(!reaction_matches(
+            &event,
+            &id,
+            &author,
+            &"b".repeat(64),
+            "{{trigger.text}}"
+        ));
+        let unrelated = client.sign_reaction_at(&source, "👎", 106).unwrap();
+        assert!(!reaction_matches(
+            &unrelated,
+            &id,
+            &author,
+            &source,
+            "{{trigger.text}}"
+        ));
         assert!(!reaction_matches(
             &event,
             &id,
@@ -1474,6 +1545,13 @@ mod mention_tests {
         let mut forged = event.clone();
         forged.content = "👎".into();
         assert!(!reaction_matches(&forged, &id, &author, &source, "👎"));
+        assert!(!reaction_matches(
+            &forged,
+            &id,
+            &author,
+            &source,
+            "{{trigger.text}}"
+        ));
     }
 
     #[test]

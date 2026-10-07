@@ -122,15 +122,16 @@ async fn finish_partial(
 /// Read template input only after the ordinary automation/source admission.
 /// The signed output event ID freezes the expanded bytes before dispatch;
 /// recovery observes that event and never expands or sends it a second time.
-async fn message_template(
+async fn native_template(
     state: &ServiceState,
     invocation: &Invocation,
     channel: Uuid,
     template: &str,
     expected_author: Option<&str>,
+    action_kind: &str,
 ) -> Result<String, Refusal> {
     if !template.contains("{{") {
-        return Ok(template.to_owned());
+        return render_native_content(template, &Default::default(), action_kind);
     }
     let mut context = collab_bridge::workflow_template::TriggerContext {
         channel_id: channel.to_string(),
@@ -176,12 +177,13 @@ async fn message_template(
         "MANUAL" => {}
         _ => return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)),
     }
-    render_message_content(template, &context)
+    render_native_content(template, &context, action_kind)
 }
 
-fn render_message_content(
+fn render_native_content(
     template: &str,
     context: &collab_bridge::workflow_template::TriggerContext,
+    action_kind: &str,
 ) -> Result<String, Refusal> {
     let content = collab_bridge::workflow_template::resolve_template(
         template,
@@ -189,7 +191,13 @@ fn render_message_content(
         &std::collections::HashMap::new(),
     )
     .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
-    if content.trim().is_empty() {
+    let valid = match action_kind {
+        "SET_CHANNEL_TOPIC_STEPS" => true,
+        "ADD_REACTION_STEPS" => collab_bridge::bridge::valid_reaction(&content),
+        "POST_MESSAGE" | "POST_MESSAGE_STEPS" => !content.trim().is_empty(),
+        _ => false,
+    };
+    if !valid {
         return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
     }
     Ok(content)
@@ -467,56 +475,55 @@ async fn publish(
     let created_at = DateTime::from_timestamp(Utc::now().timestamp(), 0).ok_or_else(unknown)?;
     let intent = current_meter(state, &mut tx, invocation, created_at).await?;
     let timestamp = u64::try_from(created_at.timestamp()).map_err(|_| unknown())?;
+    let action_kind = action["kind"].as_str().ok_or_else(unknown)?;
+    let source_author = ae
+        .parameters
+        .as_ref()
+        .and_then(|parameters| parameters["sourcePubkey"].as_str());
+    let template = match action_kind {
+        "ADD_REACTION_STEPS" => &action["emoji"],
+        "SET_CHANNEL_TOPIC_STEPS" => &action["topic"],
+        "POST_MESSAGE" | "POST_MESSAGE_STEPS" => {
+            sequence_step.map_or(&action["template"], |step| &step["text"])
+        }
+        _ => return Err(unknown()),
+    };
+    let content = native_template(
+        state,
+        invocation,
+        binding.channel_id,
+        template.as_str().ok_or_else(unknown)?,
+        source_author,
+        action_kind,
+    )
+    .await?;
     let event = if action["kind"] == "ADD_REACTION_STEPS" {
         if invocation.source_kind != "BUZZ_EVENT" {
             return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
         }
-        client.sign_reaction_at(
-            &invocation.source_event_id,
-            action["emoji"].as_str().ok_or_else(unknown)?,
-            timestamp,
-        )
+        client.sign_reaction_at(&invocation.source_event_id, &content, timestamp)
     } else if action["kind"] == "SET_CHANNEL_TOPIC_STEPS" {
-        client.sign_channel_topic_at(
-            binding.channel_id,
-            action["topic"].as_str().ok_or_else(unknown)?,
+        client.sign_channel_topic_at(binding.channel_id, &content, timestamp)
+    } else if let Some(step) = sequence_step {
+        client.sign_workflow_step_result_at(
+            &binding.channel_id.to_string(),
+            &content,
+            reply_ancestry(invocation),
+            Uuid::new_v5(
+                &invocation.id,
+                step["id"].as_str().ok_or_else(unknown)?.as_bytes(),
+            ),
             timestamp,
         )
     } else {
-        let content = message_template(
-            state,
-            invocation,
-            binding.channel_id,
-            sequence_step
-                .map_or(&action["template"], |step| &step["text"])
-                .as_str()
-                .ok_or_else(unknown)?,
-            ae.parameters
-                .as_ref()
-                .and_then(|parameters| parameters["sourcePubkey"].as_str()),
+        client.sign_channel_result_at(
+            &binding.channel_id.to_string(),
+            &content,
+            reply_ancestry(invocation),
+            matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
+                .then_some(invocation.id),
+            timestamp,
         )
-        .await?;
-        if let Some(step) = sequence_step {
-            client.sign_workflow_step_result_at(
-                &binding.channel_id.to_string(),
-                &content,
-                reply_ancestry(invocation),
-                Uuid::new_v5(
-                    &invocation.id,
-                    step["id"].as_str().ok_or_else(unknown)?.as_bytes(),
-                ),
-                timestamp,
-            )
-        } else {
-            client.sign_channel_result_at(
-                &binding.channel_id.to_string(),
-                &content,
-                reply_ancestry(invocation),
-                matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
-                    .then_some(invocation.id),
-                timestamp,
-            )
-        }
     }
     .map_err(|_| unknown())?;
     let event_id = event.id.to_hex();
@@ -787,14 +794,15 @@ mod post_message_tests {
             ..Default::default()
         };
         assert_eq!(
-            render_message_content(
+            render_native_content(
                 "{{trigger.author}}: {{trigger.text | truncate(4)}} / {{trigger.message_id}} @ {{trigger.timestamp}}",
                 &context,
+                "POST_MESSAGE",
             ).unwrap(),
             "author-reference: 发布检查 / source-reference @ 1791352800",
         );
         assert_eq!(
-            render_message_content("{{trigger.channel_id}}", &context).unwrap(),
+            render_native_content("{{trigger.channel_id}}", &context, "POST_MESSAGE").unwrap(),
             context.channel_id,
         );
     }
@@ -807,11 +815,11 @@ mod post_message_tests {
             ..Default::default()
         };
         assert_eq!(
-            render_message_content("{{trigger.text}}", &context).unwrap(),
+            render_native_content("{{trigger.text}}", &context, "POST_MESSAGE").unwrap(),
             "{{trigger.author}}"
         );
         assert_eq!(
-            render_message_content("literal {{unknown.key}}", &context).unwrap(),
+            render_native_content("literal {{unknown.key}}", &context, "POST_MESSAGE").unwrap(),
             "literal {{unknown.key}}"
         );
     }
@@ -825,14 +833,63 @@ mod post_message_tests {
             "{{trigger.text | unsupported}}",
         ] {
             assert!(matches!(
-                render_message_content(template, &context),
+                render_native_content(template, &context, "POST_MESSAGE"),
                 Err(Refusal::Precondition(ReasonCode::InvalidParameters))
             ));
         }
         assert_eq!(
-            render_message_content("unchanged literal", &context).unwrap(),
+            render_native_content("unchanged literal", &context, "POST_MESSAGE").unwrap(),
             "unchanged literal"
         );
+    }
+
+    #[test]
+    fn native_topic_and_reaction_expand_original_buzz_trigger_templates() {
+        let context = collab_bridge::workflow_template::TriggerContext {
+            text: "👍".into(),
+            author: "发布负责人".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            render_native_content(
+                "{{trigger.author}}: {{trigger.text}}",
+                &context,
+                "SET_CHANNEL_TOPIC_STEPS"
+            )
+            .unwrap(),
+            "发布负责人: 👍"
+        );
+        assert_eq!(
+            render_native_content("{{trigger.text}}", &context, "ADD_REACTION_STEPS").unwrap(),
+            "👍"
+        );
+        let empty = collab_bridge::workflow_template::TriggerContext::default();
+        assert_eq!(
+            render_native_content("{{trigger.text}}", &empty, "SET_CHANNEL_TOPIC_STEPS").unwrap(),
+            ""
+        );
+        assert_eq!(
+            render_native_content("", &empty, "SET_CHANNEL_TOPIC_STEPS").unwrap(),
+            ""
+        );
+        for kind in ["SET_CHANNEL_TOPIC_STEPS", "ADD_REACTION_STEPS"] {
+            assert!(
+                render_native_content("{{trigger.text | unsupported}}", &context, kind).is_err()
+            );
+        }
+        assert!(render_native_content("{{trigger.text}}", &empty, "ADD_REACTION_STEPS").is_err());
+        let mut too_long = context.clone();
+        // Derive the boundary from the same contract as the production signer.
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../../../contracts/domain/automation_step.schema.json"
+        ))
+        .unwrap();
+        too_long.text =
+            "👍".repeat(schema["properties"]["emoji"]["maxLength"].as_u64().unwrap() as usize + 1);
+        assert!(
+            render_native_content("{{trigger.text}}", &too_long, "ADD_REACTION_STEPS").is_err()
+        );
+        assert!(render_native_content("literal", &context, "UNKNOWN").is_err());
     }
 
     #[test]
