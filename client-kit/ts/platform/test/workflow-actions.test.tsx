@@ -456,6 +456,97 @@ describe("original workflow action menu with governed consumers", () => {
     expect(writes(send)).toHaveLength(0);
   });
 
+  it("closes an unchanged editor after a form/YAML round trip without a discard prompt", async () => {
+    const { host, send } = await setup();
+    await chooseAction(host, "Edit");
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await click(button(dialog, "Workflow YAML"));
+    await click(button(dialog, "Form"));
+    const unload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(false);
+    await click(dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!);
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(document.querySelector('[data-testid="workflow-editor-dialog"]')).toBeNull();
+    expect(writes(send)).toHaveLength(0);
+  });
+
+  it("keeps a dirty form intact until explicit discard, then reopens its immutable source", async () => {
+    const { host, send } = await setup();
+    await chooseAction(host, "Edit");
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "Unsaved draft");
+    const unload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+    await click(dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!);
+    let prompt = document.querySelector<HTMLElement>('[role="alertdialog"]')!;
+    expect(prompt.textContent).toContain("Your unsaved workflow changes will be lost.");
+    await click(button(prompt, "Keep editing"));
+    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Unsaved draft");
+    await click(dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!);
+    prompt = document.querySelector<HTMLElement>('[role="alertdialog"]')!;
+    await click(button(prompt, "Discard changes"));
+    expect(document.querySelector('[data-testid="workflow-editor-dialog"]')).toBeNull();
+    const afterDiscard = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(afterDiscard);
+    expect(afterDiscard.defaultPrevented).toBe(false);
+    await chooseAction(host, "Edit");
+    expect(document.querySelector<HTMLTextAreaElement>('[data-testid="workflow-editor-dialog"] textarea')!.value).toBe("Latest instructions");
+    expect(writes(send)).toHaveLength(0);
+  });
+
+  it("protects invalid raw YAML on Escape and exposes the original confirmation in Chinese", async () => {
+    const { host, send } = await setup(undefined, "zh-CN");
+    const menu = await openMenu(host, "工作流操作");
+    await click([...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === "编辑")!);
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await click(button(dialog, "工作流 YAML"));
+    await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "steps: [broken");
+    await act(async () => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
+    await settle();
+    const prompt = document.querySelector<HTMLElement>('[role="alertdialog"]')!;
+    expect(prompt.textContent).toContain("放弃更改？");
+    await click(button(prompt, "继续编辑"));
+    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("steps: [broken");
+    expect(writes(send)).toHaveLength(0);
+  });
+
+  it("discards a new draft instead of silently reusing it when Create opens again", async () => {
+    const { host, send } = await setup();
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "Discarded create draft");
+    await click(dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!);
+    await click(button(document.querySelector<HTMLElement>('[role="alertdialog"]')!, "Discard changes"));
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
+    const reopened = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    expect(reopened.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
+    await click(reopened.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!);
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(writes(send)).toHaveLength(0);
+  });
+
+  it("never offers discard for a confirmed UNKNOWN action and retains its retry identity", async () => {
+    const { host, send } = await setup();
+    await chooseAction(host, "Edit");
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "New confirmed content");
+    await click(button(dialog, "Review request"));
+    await click(button(dialog, "Submit governed request"));
+    expect(dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.disabled).toBe(true);
+    await act(async () => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
+    await settle();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(document.querySelector('[data-testid="workflow-editor-dialog"]')).not.toBeNull();
+    const unload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+    await click(button(dialog, "Re-check same request"));
+    expect(writes(send)).toHaveLength(2);
+    expect(writes(send)[1]).toEqual(writes(send)[0]);
+  });
+
   it("edits the selected immutable version through form/YAML and retains UNKNOWN intent", async () => {
     const { host, send } = await setup();
     await select(host.querySelector<HTMLSelectElement>('[data-testid="workflow-card-workflow"] select')!, "version-old");

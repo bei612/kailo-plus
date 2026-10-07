@@ -18,6 +18,8 @@ import {
 import { PlatformProvider, useDeviceLocale } from "@client-kit/platform/react/context";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
+import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
+import { useChannelNavigationShortcuts } from "@client-kit/platform/react/use-channel-navigation-shortcuts";
 import { ConversationList, ConversationVisibilityProvider, useConversations } from "@client-kit/platform/react/new-message";
 import { conversationVisibility } from "../bff-client";
 import { useSettingsShortcuts } from "@client-kit/platform/react/use-settings-shortcuts";
@@ -160,6 +162,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   if(tab==="settings")settingsVisited.current=true;
   const [initialRecipientPubkey, setInitialRecipientPubkey] = useState<string>();
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
+  const [newChannelOpen, setNewChannelOpen] = useState(false);
   const [channelActivity, setChannelActivity] = useState<ReadonlyMap<string, string | null>>(() => new Map());
   const rows = workspaces.isError ? [] : workspaces.data ?? [];
   // Only use fresh admitted directory rows; a revoked previous selection cannot remain active.
@@ -179,6 +182,12 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     };
   }, [tab, active, navigation]);
   useTextScaleShortcuts();
+  useChannelNavigationShortcuts({
+    disabled: tab === "settings",
+    onBrowseChannels: () => setCreateChannelOpen(true),
+    onCreateChannel: () => setNewChannelOpen(true),
+    onNewMessage: () => { setInitialRecipientPubkey(undefined); setTab("new-message"); },
+  });
   useSettingsShortcuts({
     open: tab === "settings",
     onOpenSettings: () => setTab("settings"),
@@ -326,9 +335,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             <AppSidebarFrame active={tab !== "settings"} aria-label={t("platform.title")}
               footer={<SidebarMenu><SidebarMenuItem><WebSidebarProfileCard session={session} settingsOpen={tab === "settings"}
                 onOpenSettings={() => setTab("settings")} onSignOut={onSignOut} /></SidebarMenuItem></SidebarMenu>}
-              dialogs={<ChannelBrowser key={session.tenantPrincipalId} open={createChannelOpen} onOpenChange={setCreateChannelOpen}
+              dialogs={<><CreateChannelDialog key={`create:${session.tenantPrincipalId}`} open={newChannelOpen} onOpenChange={setNewChannelOpen} />
+                <ChannelBrowser key={session.tenantPrincipalId} open={createChannelOpen} onOpenChange={setCreateChannelOpen}
                 lastMessageAtByChannelId={channelActivity}
-                onSelect={async (workspace) => { await workspaces.refetch(); await navigation.openChannel(workspace.id); }} />}>
+                onSelect={async (workspace) => { await workspaces.refetch(); await navigation.openChannel(workspace.id); }} /></>}>
               <AppSidebarPrimaryMenu onNewMessage={() => {setInitialRecipientPubkey(undefined);setTab("new-message");}} onSelectHome={() => setTab("inbox")}
                 homeBadgeCount={notificationSettings?.settings.homeBadgeEnabled && inboxUnreadCount !== null ? inboxUnreadCount : undefined}
                 onSelectPlatformSection={setTab}

@@ -51,6 +51,9 @@ const shortcutMessages = {
     "platform.shortcuts.find-in-channel.description",
   ],
   "go-home": ["platform.shortcuts.go-home.label", "platform.shortcuts.go-home.description"],
+  "browse-channels": ["platform.shortcuts.browse-channels.label", "platform.shortcuts.browse-channels.description"],
+  "browse-dms": ["platform.shortcuts.browse-dms.label", "platform.shortcuts.browse-dms.description"],
+  "new-channel": ["platform.shortcuts.new-channel.label", "platform.shortcuts.new-channel.description"],
   "toggle-sidebar": [
     "platform.shortcuts.toggle-sidebar.label",
     "platform.shortcuts.toggle-sidebar.description",

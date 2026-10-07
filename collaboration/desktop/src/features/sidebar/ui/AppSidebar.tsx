@@ -4,6 +4,8 @@ import {SidebarProjects} from "./SidebarProjects";
 import { AppSidebarFrame } from "@client-kit/platform/react/sidebar/app-sidebar-frame";
 import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
 import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
+import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
+import { useChannelNavigationShortcuts } from "@client-kit/platform/react/use-channel-navigation-shortcuts";
 import { useQueryClient } from "@tanstack/react-query";
 import { channelsQueryKey, workspaceVisibilityQueryKey } from "@/features/channels/hooks";
 import { ConversationList, useConversations } from "@client-kit/platform/react/new-message";
@@ -82,6 +84,13 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const projectSearch=useSearch({strict:false});
   const [isCreateChannelOpen, setCreateChannelOpen] = React.useState(false);
+  const [isNewChannelOpen, setNewChannelOpen] = React.useState(false);
+  useChannelNavigationShortcuts({
+    disabled: !currentPrincipalId,
+    onBrowseChannels: () => setCreateChannelOpen(true),
+    onCreateChannel: () => setNewChannelOpen(true),
+    onNewMessage,
+  });
   const queryClient = useQueryClient();
   const { open: sidebarOpen, openMobile } = useSidebar();
   const isMobile = useIsMobile();
@@ -217,9 +226,10 @@ export function AppSidebar({
                 />
               </SidebarMenuItem>
             </SidebarMenu></>}
-      dialogs={<ChannelBrowser key={currentPrincipalId} open={isCreateChannelOpen} onOpenChange={setCreateChannelOpen}
+      dialogs={<><CreateChannelDialog key={`create:${currentPrincipalId}`} open={isNewChannelOpen} onOpenChange={setNewChannelOpen} />
+        <ChannelBrowser key={currentPrincipalId} open={isCreateChannelOpen} onOpenChange={setCreateChannelOpen}
         lastMessageAtByChannelId={new Map(channels.map((channel) => [channel.id, channel.lastMessageAt]))}
-        onSelect={async (workspace) => { await Promise.all([queryClient.invalidateQueries({ queryKey: channelsQueryKey }), queryClient.invalidateQueries({ queryKey: workspaceVisibilityQueryKey })]); onSelectChannel(workspace.channel.channelId); }} />}>
+        onSelect={async (workspace) => { await Promise.all([queryClient.invalidateQueries({ queryKey: channelsQueryKey }), queryClient.invalidateQueries({ queryKey: workspaceVisibilityQueryKey })]); onSelectChannel(workspace.channel.channelId); }} /></>}>
               <AppSidebarPrimaryMenu
                 onNewMessage={onNewMessage}
                 homeBadgeCount={homeBadgeCount}

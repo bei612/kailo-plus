@@ -103,6 +103,7 @@
     "./react/profile-settings": "./src/react/profile-settings.tsx",
     "./keyboard-platform": "./src/keyboard-platform.ts",
     "./react/use-settings-shortcuts": "./src/react/use-settings-shortcuts.ts",
+    "./react/use-channel-navigation-shortcuts": "./src/react/use-channel-navigation-shortcuts.ts",
     "./react/native-application-page": "./src/react/native-application-page.tsx",
     "./react/protocol-document-bridge": "./src/react/protocol-document-bridge.tsx",
     "./theme/prominent-active-tab": "./src/theme/prominent-active-tab.ts",

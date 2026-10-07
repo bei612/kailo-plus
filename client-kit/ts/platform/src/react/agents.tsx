@@ -53,6 +53,7 @@ import { WorkflowTriggerConditions } from "./workflow-trigger-conditions";
 import type { ParsedConditionExpression } from "./workflow-condition-expression";
 import { WorkflowTemplateTextarea } from "./workflow-template-textarea";
 import { WorkflowActionsMenu } from "./workflow-actions-menu";
+import { WorkflowDiscardDialog } from "./workflow-discard-dialog";
 import { WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions";
 import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
@@ -677,6 +678,9 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   const [editorMode, setEditorMode] = useState<"form" | "yaml">("form");
   const [yamlText, setYamlText] = useState("");
   const formDraftYaml = useRef("");
+  const [draftEpoch, setDraftEpoch] = useState(0);
+  const [initialDraft, setInitialDraft] = useState<{ form: string; yaml: string } | null>(null);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const [editorError, setEditorError] = useState(false);
   const frozenResponse = useRef<{ operationId: string; actionExecutionId: string } | null>(null);
   const [versionId, setVersionId] = useState("");
@@ -763,6 +767,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     || submission?.gateState === ActionGateState.Evaluating
     || (submission?.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.NotDispatched);
   useEffect(() => {
+    if (!open || intent) return;
     const content = edit && (edit.action === "copy" || edit.action === "publish_version")
       ? edit.content ?? edit.detail.versions[0]?.content : edit?.detail.versions[0]?.content;
     setName(content?.name ?? "");
@@ -784,7 +789,30 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     const cronNeedsYaml = content?.trigger.scheduleSpec?.cron !== undefined
       && content.trigger.scheduleSpec.cron.trim().split(/\s+/).length !== 5;
     setEditorMode(cronNeedsYaml ? "yaml" : "form"); setYamlText(cronNeedsYaml ? stringify(content) : ""); setEditorError(false);
-  }, [edit, workspaceId]);
+    formDraftYaml.current = "";
+    setInitialDraft(null); setDraftEpoch((epoch) => epoch + 1); setDiscardOpen(false);
+  }, [edit, workspaceId, open]);
+  // Original WorkflowDialog dirty comparison, applied to the existing typed form
+  // and raw YAML. Capture after its initialization batch, not async admission data.
+  const formSnapshot = JSON.stringify({ name, executorId, trigger, prefix, filter, conditionDrafts,
+    interval, offsetSeconds, scheduleMode, intervalTagged, cron, catchupWindowSeconds,
+    template, steps, stepsFormat, actionKind, policyKey });
+  useEffect(() => {
+    setInitialDraft({ form: formSnapshot, yaml: yamlText });
+  }, [draftEpoch]);
+  const dirty = open && contentAction && initialDraft !== null && (formSnapshot !== initialDraft.form
+    || (editorMode === "yaml" && yamlText !== (formDraftYaml.current || initialDraft.yaml)));
+  useEffect(() => {
+    if (!dirty && !intent && !busy) return;
+    const preventUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", preventUnload);
+    return () => window.removeEventListener("beforeunload", preventUnload);
+  }, [dirty, intent, busy]);
+  const requestClose = () => {
+    if (intent || busy) return;
+    if (dirty) setDiscardOpen(true);
+    else onClose();
+  };
   useEffect(() => { setExecutorIndex(0); setExecutorOffsets([0]); }, [workspaceId]);
   const changeEditor = (mode: "form" | "yaml") => {
     if (mode === editorMode) return;
@@ -873,7 +901,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   // Scope 尚未读成真实 Workspace 时不制造空执行器/未知创建表单；已冻结的写意图仍保留。
   if (!workspaceId && !intent) return null;
   return <>
-    <Dialog open={open || !!intent} onOpenChange={(next) => { if (!next && !intent && !busy) onClose(); }}>
+    <Dialog open={open || !!intent} onOpenChange={(next) => { if (!next) requestClose(); }}>
     <DialogContent className="flex h-[88vh] max-h-[88vh] w-[calc(100vw-2rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0"
       showCloseButton={false} data-testid="workflow-editor-dialog"
       onEscapeKeyDown={(event) => { if (intent || busy) event.preventDefault(); }}
@@ -888,7 +916,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
             try { nameDocument.set("name", next); setYamlText(nameDocument.toString()); setEditorError(false); return true; }
             catch { return false; }
           }} /> : null}</div>
-      <Button disabled={!!intent || busy} aria-label={t("buzz.close")} className="h-8 w-8 text-muted-foreground" onClick={onClose}><X aria-hidden className="h-4 w-4" /></Button>
+      <Button disabled={!!intent || busy} aria-label={t("buzz.close")} className="h-8 w-8 text-muted-foreground" onClick={requestClose}><X aria-hidden className="h-4 w-4" /></Button>
     </DialogHeader>
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-4 pt-2">
     {!intent ? <form className="flex min-h-full flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
@@ -1089,6 +1117,8 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     </div>
     </DialogContent>
     </Dialog>
+    <WorkflowDiscardDialog open={discardOpen && open && !intent && !busy} onOpenChange={setDiscardOpen}
+      onDiscard={() => { if (!intent && !busy) { setDiscardOpen(false); onClose(); } }} />
     {!open && !intent && submission ? <p role="status" className="break-words text-sm">{t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}</p> : null}
   </>;
 }

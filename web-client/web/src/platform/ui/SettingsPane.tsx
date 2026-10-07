@@ -26,6 +26,9 @@ import { CustomEmojiSettingsCard, pickEmojiImage } from "@client-kit/platform/re
 function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] {
   const mod = isMacPlatform() ? "⌘" : "Ctrl+";
   const entries: Array<[string, string, SettingsShortcut["category"]]> = [
+    ["browse-channels", isMacPlatform() ? "⇧⌘O" : "Shift+Ctrl+O", "Navigation"],
+    ["browse-dms", isMacPlatform() ? "⇧⌘K" : "Shift+Ctrl+K", "Navigation"],
+    ["new-channel", isMacPlatform() ? "⇧⌘N" : "Shift+Ctrl+N", "Navigation"],
     ["open-settings", `${mod},`, "Navigation"],
     ["send-message", "Enter", "Messages"], ["new-line", "Shift+Enter", "Messages"],
     ["close-dialog", "Escape", "Messages"],

@@ -72,3 +72,16 @@
 最终 `remove-step-final.log` 的共享 `tsc --noEmit -p tsconfig.test.json` 与 `vitest run test/workflow-actions.test.tsx test/workflow-template.test.tsx` 均退出 0，40 passed（33 actions + 7 template）；产品/检查输入与正式文件 cmp、`git diff --check` 均退出 0。
 
 此批只交付删除→空/部分草稿→重新添加→表单/YAML→治理请求的消费者恢复；没有真实 Temporal/Relay、数据库、Playwright 页面截图、Windows/Mobile 或发布验证。完整上游模块仍有未恢复项，不能称完整还原。
+
+## 原未保存变更确认恢复（2026-10-07）
+
+1. 权威：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/workflows/ui/WorkflowDialog.tsx::WorkflowDialog/handleOpenChange/closeDialog` 提供 dirty 判别、Keep editing/Discard changes 确认与 beforeunload 提醒。原共享 AutomationAction 的 X/Escape 无条件关闭，遗漏真实未保存交互。本批直接迁入该确认，使用 `desktop/src/shared/ui/alert-dialog.tsx::AlertDialogContent/AlertDialogHeader/AlertDialogFooter/AlertDialogTitle/AlertDialogDescription` 的原默认面板、布局和已共享 modal motion/backdrop；未迁入无调用方的 textured API。
+2. 影响：同一 AutomationAction 的初始化后的 typed form/raw YAML 草稿 → dirty 判断 → 原确认 → 保留或明确丢弃。创建窗口再次打开也执行原初始化，避免同一 edit=null 时复用已被丢弃的草稿；未改变冻结版本、发布动作、BFF、Core/Worker、Temporal、合同、数据库或执行权限。初始比较在原字段初始化批次后建立，不把异步读取到的审批/Installation 元数据当作用户修改；只切换表单/YAML而不改内容不弹确认。未完成/非法 YAML 原文同样受保护。
+3. 副作用：Keep editing 不关闭、不写入；Discard changes 只关闭未确认草稿，下次从原可读版本重新初始化。已有 intent/busy/UNKNOWN 始终不能通过该确认丢弃，仍按同一 idempotencyKey 重查；确认/提交后的状态恢复沿既有权威。dirty 或已冻结请求注册 beforeunload，让浏览器按自身规则提示；干净关闭/明确丢弃后解除。没有新增持久草稿正文、第二工作流或账本。
+4. 边界：本批覆盖同源弹窗 X/Escape、继续编辑、明确丢弃、创建重开与 beforeunload handler；没有声称补齐原 TanStack 路由 blocker、Web/Desktop 全局菜单跳转或 Windows 原生关窗确认。两宿主路由接缝仍须分别验收，浏览器是否展示 beforeunload 提示取决于其策略与用户激活；jsdom event.defaultPrevented 不等于真实浏览器截图证据。原四个文案中英同源，Dart 生成与同批快捷操作词条一并完成，不混写 settings 实现。
+
+既有 SDK 4 CPU/8 GiB，开始前无编译，宿主 available 32 GiB、Data 3.3 GiB；不下载、不建快照、不编 Rust。`discard-initial.log` 原 i18n 生成/check 通过，type 退出 2：私有快照旧 `settings.tsx:68` 仍引用已删除 `platform.settings.deviceAppearance`。经 settings 负责人确认，将其正式 settings.tsx 同步到验证输入，不修改产品迁就旧词条；`discard-consumer.log` 44 passed。追加创建重开场景后，私有输入故意绕过 requestClose 的 dirty 确认，`discard-mutation.log` 35 passed/3 failed，退出 1；正式输入未破坏，恢复后 cmp 退出 0。
+
+`discard-final.log` 的生成 check 通过，type 退出 2，原文 `Module '"./settings"' has no exported member 'ThemeModeControl'`（旧 theme-settings-controls/settings.test 两处，另一个旧回调隐式 any）。经 settings 负责人确认，仅同步其正式 theme-settings-controls.tsx、settings.test.tsx、appearance-settings.tsx 对应输入，不更改产品或另建快照。最终 `discard-restored-final.log` 的 `python3 tools/gen-platform-i18n.py --check`、`tsc --noEmit -p tsconfig.test.json`、`vitest run test/workflow-actions.test.tsx test/workflow-template.test.tsx` 均退出 0，45 passed（38 actions + 7 template）。本批产品与测试输入恢复到正式字节，本批路径 `git diff --check` 退出 0；全工作区检查另报告 4 个非本批 emoji/messages 文件的 EOF 空行，不混入此批修复。Dart 包含本批 4 个确认词条和同批 settings 6 个快捷操作词条，统一生成而非手写第二翻译源。
+
+未运行真实浏览器页面截图、Windows/Mobile 或发布验收，不据此宣称全量 Workflows 或全部导航保护已恢复。
