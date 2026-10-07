@@ -87,7 +87,7 @@ export function AnimatedAvatarCapture({
   stackCameraOptions = false,
 }: AnimatedAvatarCaptureProps) {
   const t = useAvatarText();
-  const { uploadMediaBytes, rewriteMediaUrl } = useAvatarHost();
+  const { uploadMediaBytes, rewriteMediaUrl, locale } = useAvatarHost();
   const [phase, setPhase] = React.useState<CapturePhase>("idle");
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [cameraDevices, setCameraDevices] = React.useState<
@@ -353,7 +353,7 @@ export function AnimatedAvatarCapture({
             setSelectedCameraSource(null);
             setSelectedCameraId(null);
             setErrorMessage(
-              "Could not find an iPhone camera. Make sure Continuity Camera is available, then try again.",
+              t("platform.profile.avatar.iphoneUnavailable"),
             );
             setPhase("idle");
             return;
@@ -476,14 +476,14 @@ export function AnimatedAvatarCapture({
         return;
       }
       setErrorMessage(
-        error instanceof Error ? error.message : "Recording failed. Try again.",
+        error instanceof Error ? error.message : t("platform.profile.avatar.recordingFailed"),
       );
       releaseCamera();
       setPhase("idle");
     } finally {
       recordAbortRef.current = null;
     }
-  }, [phase, releaseBitmaps, releaseCamera, selectedCameraSource]);
+  }, [phase, releaseBitmaps, releaseCamera, selectedCameraSource, t]);
 
   const retake = React.useCallback(() => {
     setRecording(null);
@@ -513,7 +513,7 @@ export function AnimatedAvatarCapture({
       const composed = composeAvatarFrames(bitmaps, composition);
       const posterFrame = composed[posterIndex] ?? composed[0];
       if (!posterFrame) {
-        throw new Error("No frames were recorded.");
+        throw new Error(t("platform.profile.avatar.noFrames"));
       }
       const animationBytes = encodeAvatarAnimation(composed);
       const posterBytes = await renderAvatarPosterPng(posterFrame);
@@ -525,24 +525,24 @@ export function AnimatedAvatarCapture({
         !animationUpload.type.startsWith("image/") ||
         !posterUpload.type.startsWith("image/")
       ) {
-        setErrorMessage("The relay rejected the recording. Try again.");
+        setErrorMessage(t("platform.profile.avatar.recordingRejected"));
         return false;
       }
       onApply(
-        presentAnimatedAvatar(posterUpload, animationUpload, posterBytes, rewriteMediaUrl),
+        presentAnimatedAvatar(posterUpload, animationUpload, posterBytes, rewriteMediaUrl, locale),
       );
       return true;
     } catch (error) {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Could not upload the animated avatar.",
+          : t("platform.profile.avatar.animatedUploadFailed"),
       );
       return false;
     } finally {
       setIsSaving(false);
     }
-  }, [bitmaps, composition, isSaving, onApply, posterIndex, uploadMediaBytes, rewriteMediaUrl]);
+  }, [bitmaps, composition, isSaving, onApply, posterIndex, uploadMediaBytes, rewriteMediaUrl, locale, t]);
 
   // Hand the host's Done button the current apply function whenever a
   // recording is ready to upload.

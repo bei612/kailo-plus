@@ -1162,6 +1162,13 @@ enum PlatformMessageKey {
   platformProfileInfo,
   platformProfileAvatar,
   platformProfileAvatarEdit,
+  platformProfileAvatarUploadIncomplete,
+  platformProfileAvatarDefaultShowing,
+  platformProfileAvatarIphoneUnavailable,
+  platformProfileAvatarRecordingFailed,
+  platformProfileAvatarNoFrames,
+  platformProfileAvatarRecordingRejected,
+  platformProfileAvatarAnimatedUploadFailed,
   platformProfileIdentityReadOnly,
   platformProfileAvatarUrl,
   platformProfileExternalImage,
@@ -4272,6 +4279,34 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.platformProfileInfo: ('Profile info', '个人资料信息'),
   PlatformMessageKey.platformProfileAvatar: ('Avatar', '头像'),
   PlatformMessageKey.platformProfileAvatarEdit: ('Edit profile photo', '编辑头像'),
+  PlatformMessageKey.platformProfileAvatarUploadIncomplete: (
+    'Avatar couldn’t finish uploading',
+    '头像未能完成上传',
+  ),
+  PlatformMessageKey.platformProfileAvatarDefaultShowing: (
+    'Your default avatar is showing instead.',
+    '现显示默认头像。',
+  ),
+  PlatformMessageKey.platformProfileAvatarIphoneUnavailable: (
+    'Could not find an iPhone camera. Make sure Continuity Camera is available, then try again.',
+    '未找到 iPhone 摄像头。请确认连续互通相机可用后重试。',
+  ),
+  PlatformMessageKey.platformProfileAvatarRecordingFailed: (
+    'Recording failed. Try again.',
+    '录制失败，请重试。',
+  ),
+  PlatformMessageKey.platformProfileAvatarNoFrames: (
+    'No frames were recorded.',
+    '未录制到画面。',
+  ),
+  PlatformMessageKey.platformProfileAvatarRecordingRejected: (
+    'The relay rejected the recording. Try again.',
+    'Relay 拒绝了录制内容，请重试。',
+  ),
+  PlatformMessageKey.platformProfileAvatarAnimatedUploadFailed: (
+    'Could not upload the animated avatar.',
+    '无法上传动态头像。',
+  ),
   PlatformMessageKey.platformProfileIdentityReadOnly: (
     'Your public key and NIP-05 handle are read-only here.',
     '此处仅展示你的公钥与 NIP-05 标识。',

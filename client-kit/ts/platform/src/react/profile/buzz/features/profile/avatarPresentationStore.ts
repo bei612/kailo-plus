@@ -1,6 +1,7 @@
 // Reused from Buzz 779af8886caae1317b4de962082429867ab61503; host transport is injected.
 import * as React from "react";
 import { toast } from "sonner";
+import { translate, type PlatformLocale } from "../../../../../i18n";
 
 import {
   buildAnimatedAvatarUrl,
@@ -20,6 +21,7 @@ type AvatarPresentationEntry = {
   localPreviewUrl: string | null;
   remoteUrl: string;
   rewriteMediaUrl: (url: string) => string;
+  locale: PlatformLocale;
   snapshot: AvatarPresentation;
 };
 
@@ -152,17 +154,17 @@ async function verifyPresentation(
     state: "failed",
   };
   emitChange();
-  toast.error("Avatar couldn’t finish uploading", {
+  toast.error(translate(entry.locale, "platform.profile.avatar.uploadIncomplete"), {
     action: {
-      label: "Retry",
+      label: translate(entry.locale, "platform.retry"),
       onClick: () => retryAvatarPresentation(entry.remoteUrl),
     },
-    description: "Your default avatar is showing instead.",
+    description: translate(entry.locale, "platform.profile.avatar.defaultShowing"),
     id: toastId(entry.remoteUrl),
   });
 }
 
-export function beginAvatarPresentation(remoteUrl: string, image: Blob, rewriteMediaUrl: (url: string) => string): void {
+export function beginAvatarPresentation(remoteUrl: string, image: Blob, rewriteMediaUrl: (url: string) => string, locale: PlatformLocale): void {
   const existing = presentations.get(remoteUrl);
   if (existing) {
     toast.dismiss(toastId(remoteUrl));
@@ -175,6 +177,7 @@ export function beginAvatarPresentation(remoteUrl: string, image: Blob, rewriteM
     localPreviewUrl,
     remoteUrl,
     rewriteMediaUrl,
+    locale,
     snapshot: { displayUrl: localPreviewUrl, state: "pending" },
   };
   presentations.set(remoteUrl, entry);

@@ -1,5 +1,7 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { Toaster, toast } from "sonner";
+import { beginAvatarPresentation, getAvatarPresentation, resetAvatarPresentations } from "../src/react/profile/buzz/features/profile/avatarPresentationStore";
 import { AvatarHostProvider } from "../src/react/profile/avatar-host";
 import { useAvatarUpload } from "../src/react/profile/buzz/features/profile/useAvatarUpload";
 import { ProfileAvatar } from "../src/react/profile/buzz/features/profile/ui/ProfileAvatar";
@@ -24,6 +26,56 @@ async function select(host: HTMLElement) {
 }
 
 describe("original avatar upload consumes its captured host uploader", () => {
+  it.each([
+    ["zh-CN", "头像未能完成上传", "现显示默认头像。", "重试"],
+    ["en", "Avatar couldn’t finish uploading", "Your default avatar is showing instead.", "Try again"],
+  ] as const)("renders the original failed presentation and real retry in %s", async (locale, title, description, retryLabel) => {
+    vi.useFakeTimers();
+    const create = Object.getOwnPropertyDescriptor(URL, "createObjectURL");
+    const revoke = Object.getOwnPropertyDescriptor(URL, "revokeObjectURL");
+    const revoked = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: () => "blob:original-avatar" });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revoked });
+    let available = false;
+    const probes: string[] = [];
+    vi.stubGlobal("Image", class {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      referrerPolicy = "";
+      set src(url: string) {
+        probes.push(url);
+        Promise.resolve().then(() => available ? this.onload?.() : this.onerror?.());
+      }
+    });
+    const url = "https://community.example/media/original.png";
+    try {
+      const host = await render(<Toaster />);
+      await act(async () => {
+        beginAvatarPresentation(url, new Blob(["avatar"]), (value) => `/authorized/${encodeURIComponent(value)}`, locale);
+        await vi.advanceTimersByTimeAsync(5_300);
+      });
+      expect(getAvatarPresentation(url)?.state).toBe("failed");
+      expect(host.textContent).toContain(title);
+      expect(host.textContent).toContain(description);
+      const retry = [...host.querySelectorAll("button")].find((button) => button.textContent === retryLabel);
+      expect(retry).toBeDefined();
+      expect(probes).toHaveLength(4);
+      available = true;
+      await act(async () => { retry!.click(); await vi.advanceTimersByTimeAsync(1); });
+      expect(getAvatarPresentation(url)?.state).toBe("ready");
+      expect(probes).toHaveLength(5);
+      expect(probes.every((probe) => probe.startsWith("/authorized/"))).toBe(true);
+      expect(revoked).toHaveBeenCalledExactlyOnceWith("blob:original-avatar");
+    } finally {
+      await act(async () => { resetAvatarPresentations(); toast.dismiss(); });
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      if (create) Object.defineProperty(URL, "createObjectURL", create); else Reflect.deleteProperty(URL, "createObjectURL");
+      if (revoke) Object.defineProperty(URL, "revokeObjectURL", revoke); else Reflect.deleteProperty(URL, "revokeObjectURL");
+    }
+  });
+
   it("keeps original animated styling and empty-identity fallback with a read-only host", async () => {
     const rewrite = vi.fn((url: string) => `/governed-media/${encodeURIComponent(url)}`);
     const host = await render(<AvatarHostProvider value={{ locale: "zh-CN", rewriteMediaUrl: rewrite }}>

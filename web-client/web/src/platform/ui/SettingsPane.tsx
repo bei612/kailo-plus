@@ -1,6 +1,6 @@
 import { AppearanceSettings } from "@client-kit/platform/react/appearance-settings";
 import { isMacPlatform } from "@client-kit/platform/keyboard-platform";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { translate } from "@client-kit/platform/i18n";
 import {
@@ -100,6 +100,17 @@ function WebProfileSettings() {
   const locale = useUiLocale();
   const [loaded, reload] = useLoad("own-profile", () => client.profile());
   const uploadedPaths = useRef<Record<string, string>>({});
+  // SettingsPane is keyed by the authenticated tenant/principal/session in
+  // PlatformApp. A completed old upload must not enter the shared presentation
+  // store, nor may an old save start a readback using the next session cookie.
+  const owner = useRef(true);
+  useEffect(() => {
+    owner.current = true;
+    return () => { owner.current = false; };
+  }, []);
+  const requireCurrentOwner = () => {
+    if (!owner.current) throw new TransportError("Profile view no longer active");
+  };
   if (loaded.status === "pending") return <p role="status">{translate(locale, "platform.loading")}</p>;
   if (loaded.status === "error") return <ReadFailure error={loaded.error} onRetry={reload} />;
   const profile = loaded.data;
@@ -112,7 +123,9 @@ function WebProfileSettings() {
     return url;
   };
   const upload = async (bytes: number[]) => {
+    requireCurrentOwner();
     const descriptor = await uploadProfileAvatar(bytes, profile.pubkey);
+    requireCurrentOwner();
     uploadedPaths.current[descriptor.url] = `/api/v1/profile/media/${descriptor.sha256}`;
     return descriptor;
   };
@@ -129,9 +142,12 @@ function WebProfileSettings() {
       {externalImage(props.avatarUrl) ? <p role="status" className="mt-3 text-sm text-muted-foreground">{translate(locale, "platform.profile.externalImage")}</p> : null}
     </>}
     onSave={async (request) => {
+    requireCurrentOwner();
     const receipt = await client.updateProfile(request);
+    requireCurrentOwner();
     // A subsequent read failure does not undo the accepted publication.
     const actual = await client.profile().catch(() => { throw new TransportError("Profile publication readback unavailable"); });
+    requireCurrentOwner();
     if (actual.pubkey !== profile.pubkey || actual.eventId !== receipt.eventId) {
       throw new TransportError("Profile publication readback is not the original event");
     }

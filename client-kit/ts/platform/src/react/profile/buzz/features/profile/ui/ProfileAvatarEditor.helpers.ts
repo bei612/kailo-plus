@@ -39,7 +39,7 @@ export function useUploadPreviewLifecycle({
   onSuccess: (uploadedUrl: string) => void;
   showFallback: (file: File) => void;
 }) {
-  const { rewriteMediaUrl } = useAvatarHost();
+  const { rewriteMediaUrl, locale } = useAvatarHost();
   const pendingFileRef = React.useRef<File | null>(null);
 
   return {
@@ -53,7 +53,7 @@ export function useUploadPreviewLifecycle({
     },
     onUploadSuccess: (uploadedUrl: string) => {
       const pendingFile = pendingFileRef.current;
-      if (pendingFile) beginAvatarPresentation(uploadedUrl, pendingFile, rewriteMediaUrl);
+      if (pendingFile) beginAvatarPresentation(uploadedUrl, pendingFile, rewriteMediaUrl, locale);
       onSuccess(uploadedUrl);
     },
   };

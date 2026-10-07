@@ -10,6 +10,7 @@ import {
 import { beginAvatarPresentation } from "../avatarPresentationStore";
 import { AVATAR_COLORS } from "./ProfileAvatarEditor.utils";
 import { buildAnimatedAvatarUrl } from "../../../shared/lib/animatedAvatar";
+import type { PlatformLocale } from "../../../../../../i18n";
 
 export type CapturePhase =
   | "idle"
@@ -42,12 +43,14 @@ export function presentAnimatedAvatar(
   animation: { url: string },
   posterBytes: Uint8Array,
   rewriteMediaUrl: (url: string) => string,
+  locale: PlatformLocale,
 ): string {
   const avatarUrl = buildAnimatedAvatarUrl(poster.url, animation.url);
   beginAvatarPresentation(
     avatarUrl,
     new Blob([Uint8Array.from(posterBytes).buffer], { type: "image/png" }),
     rewriteMediaUrl,
+    locale,
   );
   return avatarUrl;
 }

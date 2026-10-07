@@ -5510,3 +5510,77 @@ SDK-only 去掉 Message 点击消费使 2 项失败；去掉 Native 查询作用
 `./tools/check-docs.sh ../.design` 退出 0，277 引用、87 实体、115 DD、29 SS、
 87 场景及实施/设计 markdownlint 通过。原输出位于
 `/volumes/data/kailo/tmp/profile-sidebar-union.1VOSR5/check-docs.log`。
+
+### 原头像上传预览生命周期与双语失败提示
+
+关联 REQ-08、REQ-24、DD-53、DD-75、设计09本人资料和媒体准入。
+
+1. 权威与原版：固定 Buzz `779af8886caae1317b4de962082429867ab61503`
+   `desktop/src/features/settings/ui/ProfileSettingsCard.tsx`、
+   `desktop/src/features/profile/ui/ProfileAvatarEditor.tsx`、
+   `AnimatedAvatarCapture.tsx` 和 `features/profile/avatarPresentationStore.ts`。
+   已有共享主体保留原独立头像编辑、裁剪、图片/表情/动态模式及原预览探测重试；
+   本批没有新增页面、布局、上传器或第二资料权威。
+2. 调用面：Web `SettingsPane::WebProfileSettings` 仍调用原
+   `uploadProfileAvatar` 与 `updateProfile`，签名事件精确读回才保存。
+   原共享图片上传和动态头像均把现有 AvatarHost locale 传给 presentation store；
+   Desktop 同消费该共享主体。未改变 API、签名、媒体白名单或权限。
+3. 真实异常：PlatformApp 原本已按 tenant/principal/session key 重挂 SettingsPane，
+   因而不是 uploadedPaths 跨会话共享。缺口是旧异步上传完成仍能调用原组件
+   success callback 进入模块级 presentation store；旧保存回执到达仍会用当前
+   cookie 发起读回。本批在原宿主上传/保存及读回前后检查所属组件仍挂载；
+   不把过期结果当保存成功，不重新发布。原失败 toast/Retry 和动态录制 fallback
+   改同源中英词条，探测重试仍仅检查原远端头像，不重传或重签。
+4. 实现后验证：原 receipt SDK（4 CPU/8 GiB）共享 source/test 类型、Web/Native
+   类型退出 0；原 profile-upload 5 项和 Web ProfileSettings 7 项通过。
+   SDK-only 强制英文失败标题使中文例真实失败；移除原宿主所属检查使两个迟到
+   用例真实失败（旧头像多创建一次 Blob 预览，旧保存多发一次新会话读回）。
+   两文件按正式字节还原、cmp 0 后 12 项及上述类型再通过，终态 0。
+   首轮英文标签夹具错写 Retry（原词条为 Try again），以及旧 Web 夹具未包含
+   原设置壳需要的 SidebarProvider，均修正夹具；未改变产品语义或弱化断言。
+   jsdom 原组件 canvas getContext 未实现警告保留，不能据此声称裁剪像素验收。
+   日志目录 `profile-avatar-lifetime.Tmzdu2`：`shared.log`、`web.log` 保留首轮
+   失败，`restored.log` 为初次 12 项通过，`mutation.log` 为 1+2 真失败，
+   `final.log` 为原字节还原后的 12 项与类型检查退出 0。
+
+边界：原 SignOutSection 同时包含私钥备份与本机身份/数据删除，不能把平台
+logout 假映射为这一动作；该完整原生功能本批未恢复。上传/录制底层返回的
+Error.message 仍是原错误呈现，不声称任意服务端错误都已有翻译。
+未构建、未部署，未证明摄像头硬件或真实上传发布端到端通过。
+
+
+### 2026-10-07 固定 main 个人资料批次的真实浏览器预览
+
+本条是已提交代码的实现后证据，不是部署或全功能还原声明。输入为
+`221db200e749022ab5d7da49853657f517db4954`，原来源登记工具输出
+`sha256:55fa35c32d0a2ad37a2852fca048695032645ea659bffc8bbcc3994838e22a07`。
+复用已有 receipt SDK 的 4 CPU/8 GiB 限额、本地依赖与缓存；唯一生产前端构建
+`npm run build`（tsc 与 Vite）退出 0，3811 modules，Vite 14.21 秒。
+保留大于 500 kB chunk 警告，没有下载依赖或重建基础镜像。
+
+playwright-cli 使用既有真实 SSO 用户；仅将候选静态 assets/build-info 投递到
+原浏览器会话，文档、SSO、BFF、SSE 和媒体接口均请求实际服务，未模拟业务响应、
+关闭 CSP 或绕过登录。build-info 与上述 digest 一致，session 返回 200。
+最初的过期 OIDC transaction 登录失败，以及预览脚本使用不可用 URL 全局导致
+的错误均保留；重新发起原登录并纠正静态投递脚本后才执行以下操作。
+
+实际截图并逐张打开复核：频道、原 HUMAN 资料、中英资料切换、新私聊接收人页、
+原设置资料，以及 Inbox、Pulse、Projects、成员、Agents、Workflows、任务、
+审批、审计、设备，共 15 张。Message 方块真实导航到原新私聊页并解析接收人，
+没有发送测试消息或创建空私聊；英语通过原设置切换，结束恢复中文。
+十个主菜单截图只覆盖本次真实数据或空态，不代表所有子页面、弹窗或业务动作。
+截图与构建日志保留在
+`/volumes/data/kailo/tmp/profile-sidebar-union.1VOSR5/`：
+`channel-zh.png`、`profile-zh.png`、`profile-en.png`、
+`new-message-zh.png`、`settings-profile-zh.png`，其余以菜单名加
+`-zh.png` 命名，构建日志 `web-production-build.log`。
+
+发现的差距没有作为通过：Projects 仍无完整创建交互；Agents/Workflows 仍展示
+原版外的执行器与版本事实，完整原页面及条件编辑不能视为等效；原设置仍缺分区；
+云盘、知识库、问数入口此次没有显示。原线上 Core 的
+`/api/v1/custom-emoji` 返回 404，控制台不是零错误。
+当前截图只能证明这一固定源码候选的实际呈现与上述操作，不证明头像真实上传、
+工作流执行、组件嵌入或多人多 Agent 稳定性通过。
+
+本批没有镜像发布、服务替换、Windows/Mobile 打包，也没有运行 full。
+在线服务仍是旧部署，不能把本条浏览器静态候选称为新版本已上线。
