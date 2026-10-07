@@ -83,6 +83,25 @@ func setupTaskQueueTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestTaskPendingOps_DocumentObservationKeepsTenantAndFailureEvidence(t *testing.T) {
+	db := setupTaskQueueTestDB(t)
+	repo := NewTaskPendingOpsRepository(db)
+	for _, tenant := range []uint64{1, 2} {
+		require.NoError(t, repo.Enqueue(context.Background(), &types.TaskPendingOp{TenantID: tenant, TaskType: "wiki", Scope: "knowledge_base", ScopeID: "kb", Op: "retract", DedupKey: "doc"}))
+		require.NoError(t, db.Create(&types.TaskDeadLetter{TenantID: tenant, TaskType: "wiki", Scope: "knowledge_base", ScopeID: "kb", RelatedID: "doc", Payload: json.RawMessage(`{}`)}).Error)
+	}
+	pending, failed, err := repo.UnresolvedDocumentOps(context.Background(), 1, "wiki", "knowledge_base", "kb", "doc")
+	require.NoError(t, err)
+	require.EqualValues(t, 1, pending)
+	require.EqualValues(t, 1, failed)
+	pending, failed, err = repo.UnresolvedDocumentOps(context.Background(), 1, "wiki", "knowledge_base", "other", "doc")
+	require.NoError(t, err)
+	require.Zero(t, pending)
+	require.Zero(t, failed)
+	_, _, err = repo.UnresolvedDocumentOps(context.Background(), 0, "wiki", "knowledge_base", "kb", "doc")
+	require.Error(t, err)
+}
+
 func makePendingOp(taskType, scope, scopeID, op, dedup string, payload []byte) *types.TaskPendingOp {
 	return &types.TaskPendingOp{
 		TenantID: 1,

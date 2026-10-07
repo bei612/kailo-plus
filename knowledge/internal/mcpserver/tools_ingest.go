@@ -42,9 +42,12 @@ func updateDocumentTool() mcp.Tool {
 
 func deleteDocumentTool() mcp.Tool {
 	return mcp.NewTool(types.MCPEndpointToolDeleteDocument,
-		mcp.WithDescription("Permanently delete a document and its index data from its knowledge base."),
-		mcp.WithString("knowledge_id", mcp.Required(), mcp.Description("Document id")),
+		mcp.WithDescription("Delete a document and its index data. An idempotency key selects durable conditional deletion using the native cleanup task; observe_only reads that same task without submitting another deletion. Acknowledgements and missing terminal evidence do not prove cleanup completed."),
+		mcp.WithString("knowledge_id", mcp.Description("Document id; required when starting deletion")),
 		mcp.WithString("expected_revision", mcp.Description("When provided, delete only this exact native_revision returned by read_document; concurrent edits refuse the deletion.")),
+		mcp.WithString("idempotency_key", mcp.Description("Canonical UUID for a retained native conditional deletion task; requires expected_revision and knowledge_base_id.")),
+		mcp.WithString("knowledge_base_id", mcp.Description("Exact admitted knowledge base for durable deletion or observation.")),
+		mcp.WithBoolean("observe_only", mcp.Description("Read only the existing idempotency_key task; never starts or repeats deletion.")),
 		mcp.WithDestructiveHintAnnotation(true),
 	)
 }
@@ -165,8 +168,50 @@ func (s *Server) handleDeleteDocument(ctx context.Context, req mcp.CallToolReque
 	if err != nil {
 		return mcp.NewToolResultError("unauthorized"), nil
 	}
-	knowledgeID, err := req.RequireString("knowledge_id")
-	if err != nil {
+	knowledgeID := req.GetString("knowledge_id", "")
+	if _, supplied := req.GetArguments()["idempotency_key"]; supplied {
+		observe := false
+		if value, exists := req.GetArguments()["observe_only"]; exists {
+			var ok bool
+			observe, ok = value.(bool)
+			if !ok {
+				return mcp.NewToolResultError("observe_only must be boolean"), nil
+			}
+		}
+		key, err := req.RequireString("idempotency_key")
+		parsed, parseErr := uuid.Parse(key)
+		revision := req.GetString("expected_revision", "")
+		kbID, kbErr := req.RequireString("knowledge_base_id")
+		if err != nil || parseErr != nil || parsed == uuid.Nil || parsed.String() != key || (!observe && (revision == "" || knowledgeID == "")) || kbErr != nil {
+			return mcp.NewToolResultError("durable deletion requires exact key, base and revision"), nil
+		}
+		kbs, err := s.selectKnowledgeBases(ctx, ep, []string{kbID})
+		if err != nil || len(kbs) != 1 || kbs[0].ID != kbID {
+			return mcp.NewToolResultError("knowledge base is outside this endpoint"), nil
+		}
+		ctx, err = s.scopedKBContext(ctx, kbs[0], types.OrgRoleEditor)
+		if err != nil {
+			return mcp.NewToolResultError("knowledge base write scope unavailable"), nil
+		}
+		if err := access.RequireKBWrite(ctx, kbs[0]); err != nil {
+			return mcp.NewToolResultError("knowledge base write denied"), nil
+		}
+		taskID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("mcp-delete:%d:%s:%s", ep.TenantID, ep.ID, key))).String()
+		var result map[string]any
+		if observe {
+			result, err = s.knowledgeService.ObserveKnowledgeDeleteTask(ctx, kbID, knowledgeID, revision, taskID)
+		} else {
+			result, err = s.knowledgeService.StartKnowledgeDeleteTask(ctx, kbID, knowledgeID, revision, taskID)
+		}
+		if err != nil {
+			return mcp.NewToolResultError("native deletion state is unavailable"), nil
+		}
+		return jsonResult(result)
+	}
+	if _, supplied := req.GetArguments()["observe_only"]; supplied {
+		return mcp.NewToolResultError("observe_only requires idempotency_key"), nil
+	}
+	if knowledgeID == "" {
 		return mcp.NewToolResultError("knowledge_id is required"), nil
 	}
 	existing, kb, err := s.knowledgeInScope(ctx, ep, knowledgeID)

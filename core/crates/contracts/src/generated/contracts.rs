@@ -1113,7 +1113,8 @@ pub struct ApplicationBindingCreateSecretRef {
 
 /// 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
 ///
-/// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
+/// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
+/// 配置或凭据。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationVersionContentClass {
@@ -1191,16 +1192,36 @@ pub enum AutomationTriggerKind {
     Schedule,
 }
 
-/// Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
-/// SKIP，不另实现 cron。
+/// Temporal 原生 Schedule：显式 interval 或 Buzz UTC cron，二者互斥。catchupWindow 不小于原生的 10 秒，Overlap
+/// 固定 SKIP。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduleSpecClass {
     pub catchup_window_seconds: i64,
 
-    pub every_seconds: i64,
+    /// 原 Buzz UTC cron：表单五字段，YAML 六字段包含秒、七字段增加年份；匹配由 Temporal 原生日历执行，不建立本地定时器。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cron: Option<String>,
 
-    pub offset_seconds: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub every_seconds: Option<i64>,
+
+    /// 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ScheduleSpecKind>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset_seconds: Option<i64>,
+}
+
+/// 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ScheduleSpecKind {
+    #[serde(rename = "CRON")]
+    Cron,
+
+    #[serde(rename = "INTERVAL")]
+    Interval,
 }
 
 /// 仅 capability_contract.approve/deprecate：固定已登记版本。
@@ -5548,19 +5569,30 @@ pub struct AutomationApprovalPolicyRef {
     pub version: i64,
 }
 
-/// Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
-/// SKIP，不另实现 cron。
+/// Temporal 原生 Schedule：显式 interval 或 Buzz UTC cron，二者互斥。catchupWindow 不小于原生的 10 秒，Overlap
+/// 固定 SKIP。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationScheduleSpec {
     pub catchup_window_seconds: i64,
 
-    pub every_seconds: i64,
+    /// 原 Buzz UTC cron：表单五字段，YAML 六字段包含秒、七字段增加年份；匹配由 Temporal 原生日历执行，不建立本地定时器。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cron: Option<String>,
 
-    pub offset_seconds: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub every_seconds: Option<i64>,
+
+    /// 旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ScheduleSpecKind>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset_seconds: Option<i64>,
 }
 
-/// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
+/// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
+/// 配置或凭据。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationVersionContent {

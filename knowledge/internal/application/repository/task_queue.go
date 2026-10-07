@@ -23,6 +23,19 @@ func NewTaskPendingOpsRepository(db *gorm.DB) interfaces.TaskPendingOpsRepositor
 	return &taskPendingOpsRepository{db: db}
 }
 
+func (r *taskPendingOpsRepository) UnresolvedDocumentOps(ctx context.Context, tenantID uint64, taskType, scope, scopeID, documentID string) (pending, failed int64, err error) {
+	if tenantID == 0 || taskType == "" || scope == "" || scopeID == "" || documentID == "" {
+		return 0, 0, errors.New("document cleanup scope is required")
+	}
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&types.TaskPendingOp{}).Where("tenant_id = ? AND task_type = ? AND scope = ? AND scope_id = ? AND dedup_key = ?", tenantID, taskType, scope, scopeID, documentID).Count(&pending).Error; err != nil {
+			return err
+		}
+		return tx.Model(&types.TaskDeadLetter{}).Where("tenant_id = ? AND task_type = ? AND scope = ? AND scope_id = ? AND related_id = ?", tenantID, taskType, scope, scopeID, documentID).Count(&failed).Error
+	})
+	return
+}
+
 // Enqueue inserts a single op. Callers must populate TenantID/TaskType/
 // Scope/ScopeID/Op (Payload optional). ID, FailCount default to zero;
 // EnqueuedAt is filled with the DB-side default if left zero.

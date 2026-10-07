@@ -23,6 +23,44 @@ type exportKnowledgeService struct {
 	createdIDs       []string
 	deletedRevisions []string
 	plainDeletes     int
+	deleteTaskStarts []string
+	deleteTaskReads  []string
+}
+
+func (s *exportKnowledgeService) StartKnowledgeDeleteTask(_ context.Context, kb, id, revision, key string) (map[string]any, error) {
+	s.deleteTaskStarts = append(s.deleteTaskStarts, key)
+	return map[string]any{"task_id": key, "state": "RUNNING"}, nil
+}
+
+func (s *exportKnowledgeService) ObserveKnowledgeDeleteTask(_ context.Context, kb, id, revision, key string) (map[string]any, error) {
+	s.deleteTaskReads = append(s.deleteTaskReads, key)
+	return map[string]any{"task_id": key, "state": "UNKNOWN"}, nil
+}
+
+func TestDeleteDocumentDurableObservationDoesNotRequireOrResubmitDeletedRow(t *testing.T) {
+	srv := newScopeTestServer(&types.KnowledgeBase{ID: "kb", TenantID: 1})
+	service := &exportKnowledgeService{}
+	srv.knowledgeService = service
+	ep := &types.MCPEndpoint{ID: "ep", TenantID: 1, Tools: types.StringArray{types.MCPEndpointToolDeleteDocument}}
+	args := map[string]any{"knowledge_base_id": "kb", "knowledge_id": "doc", "expected_revision": "revision", "idempotency_key": "366b0c6f-c070-40a1-ad6e-66b1a21aaf3c"}
+	result, err := srv.handleDeleteDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.Len(t, service.deleteTaskStarts, 1)
+	delete(args, "knowledge_id")
+	delete(args, "expected_revision")
+	args["observe_only"] = true
+	result, err = srv.handleDeleteDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.Equal(t, service.deleteTaskStarts, service.deleteTaskReads)
+	require.Len(t, service.deleteTaskStarts, 1)
+	require.Zero(t, service.plainDeletes)
+	args["knowledge_base_id"] = "foreign"
+	result, err = srv.handleDeleteDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.Len(t, service.deleteTaskReads, 1)
 }
 
 func (s *exportKnowledgeService) DeleteKnowledgeAtRevision(_ context.Context, _ string, revision string) error {

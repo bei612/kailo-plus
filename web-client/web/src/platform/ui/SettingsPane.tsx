@@ -14,6 +14,8 @@ import {
   shortcutText,
   type SettingsShortcut,
   type SettingsSection,
+  CommunityInvitationSettings,
+  useInvitationSettingsState,
 } from "@client-kit/platform/react/settings";
 import { setWorkspacePreference, uploadProfileAvatar } from "@/platform/bff-client";
 import { getLocale } from "@/shared/i18n";
@@ -52,8 +54,10 @@ export function SettingsPane() {
   const locale = useUiLocale();
   const appearance = useTheme();
   const [section, setSection] = useState<SettingsSection>("profile");
+  const invitations=useInvitationSettingsState();
   return (
-    <SettingsPage locale={locale} section={section} onSelect={setSection}>
+    <SettingsPage locale={locale} section={section} onSelect={setSection} invitationAccess={invitations.access} onRetryInvitations={invitations.reload}>
+      <CommunityInvitationSettings active={section==="community-members"} onAccessChange={invitations.onAccessChange}/>
       {section === "profile" ? <WebProfileSettings /> : section === "appearance" ? (
         <section className="flex min-h-0 flex-1 flex-col" data-testid="settings-theme">
           <SettingsSectionHeader title={translate(locale, "platform.settings.appearance")} description={translate(locale, "platform.theme.appearanceDescription", { name: translate(locale, "platform.title") })} />
@@ -70,12 +74,12 @@ export function SettingsPane() {
         </section>
       ) : section === "notifications" ? (
         <><BrowserNotificationSettings /><WorkspaceNotifications /></>
-      ) : (
+      ) : section==="shortcuts" ? (
         <ShortcutSettings
           locale={locale}
           shortcuts={webShortcuts(locale)}
         />
-      )}
+      ) : null}
     </SettingsPage>
   );
 }

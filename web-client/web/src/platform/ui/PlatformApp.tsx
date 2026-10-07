@@ -157,6 +157,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const [messageLinkProblem, setMessageLinkProblem] = useState<string | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("channel");
+  const settingsVisited=useRef(false);
+  if(tab==="settings")settingsVisited.current=true;
   const [initialRecipientPubkey, setInitialRecipientPubkey] = useState<string>();
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
   const [channelActivity, setChannelActivity] = useState<ReadonlyMap<string, string | null>>(() => new Map());
@@ -264,7 +266,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         onOpenMessageLink={openMessageLink}
         myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh} /> : <Notice text={t("platform.loadFailed")} />
     ) : tab === "settings" ? (
-      <SettingsPane />
+      null
     ) : tab === "inbox" ? (
       <InboxPane
         principalId={session.tenantPrincipalId}
@@ -350,7 +352,12 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               }} /> : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
             {tabLabel(tab)}
           </header>}
-          <main className="min-h-0 flex-1 overflow-auto p-4">{body}</main>
+          <main className="min-h-0 flex-1 overflow-auto p-4">
+            {settingsVisited.current?<div hidden={tab!=="settings"} style={tab==="settings"?undefined:{display:"none"}}>
+              <SettingsPane key={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`}/>
+            </div>:null}
+            {body}
+          </main>
         </ContentSurface>
           </div>
         </SidebarProvider>

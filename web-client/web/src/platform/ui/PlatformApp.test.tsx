@@ -94,7 +94,8 @@ vi.mock("@client-kit/platform/react/governance", () => ({
   ApprovalsPage: () => null,
 }));
 vi.mock("@client-kit/platform/react/pages", () => ({
-  WorkspaceManagementPanels: () => <div data-testid="shared-management-panels" />,
+  NativeApplicationEntries: () => null,
+  WorkspaceManagementPanels: ({ children }: { children: React.ReactNode }) => <div data-testid="shared-management-panels">{children}</div>,
   MembersPane: ({ workspaceId }: { workspaceId: string }) => (
     <div data-testid="workspace-members" data-workspace={workspaceId} />
   ),
@@ -142,10 +143,9 @@ it("uses the native shared restricted view without mounting ordinary workspace m
   expect(markup).not.toContain('data-testid="sidebar-settings"');
   expect(markup).not.toContain('data-testid="workspace-members"');
 });
-it("retains the host-selected Workspace and mounts all shared management panels plus invitations", () => {
+it("retains the host-selected Workspace and mounts shared member management", () => {
   const markup = renderToStaticMarkup(<PlatformApp />);
   expect(markup).toContain('data-testid="shared-management-panels"');
-  expect(markup).toContain('data-testid="tenant-invitations"');
   expect(markup).toContain('data-workspace="workspace-b"');
   expect(markup).not.toContain('data-workspace="workspace-a"');
   expect(markup).toContain('data-testid="sidebar-settings"');

@@ -2,28 +2,38 @@
 // desktop/src/features/settings/ui/{SettingsView,SettingsSectionHeader}.tsx
 // desktop/src/shared/ui/{PageHeader,sidebar-menu-label}.tsx
 import type { ReactNode } from "react";
-import { BellRing, Keyboard, MonitorCog, UserRound } from "lucide-react";
+import { BellRing, Keyboard, MonitorCog, UserRound, Ticket, LoaderCircle } from "lucide-react";
 import { translate, type PlatformLocale } from "../i18n";
+import { BffError } from "../transport";
+import type { Loaded } from "./use-load";
+import { ReadFailure } from "./ui";
 import { SidebarGroup, SidebarGroupLabel, SidebarGroupContent, SidebarMenu,
   SidebarMenuButton, SidebarMenuItem } from "./sidebar/primitives";
 
-export type SettingsSection = "profile" | "appearance" | "notifications" | "shortcuts";
+export type SettingsSection = "profile" | "appearance" | "notifications" | "shortcuts" | "community-members";
 export const settingsSectionKeys = {
   profile: "platform.settings.profile", appearance: "platform.settings.appearance",
   notifications: "platform.settings.notifications", shortcuts: "platform.settings.shortcuts",
+  "community-members": "invitations.title",
 } as const;
-const icons = { profile: UserRound, appearance: MonitorCog, notifications: BellRing, shortcuts: Keyboard };
+const icons = { profile: UserRound, appearance: MonitorCog, notifications: BellRing, shortcuts: Keyboard, "community-members": Ticket };
 
-export function SettingsNavigation({ locale, section, onSelect, icons: suppliedIcons, sidebarState = "expanded", isMobile = false }: {
+export function SettingsNavigation({ locale, section, onSelect, icons: suppliedIcons, sidebarState = "expanded", isMobile = false, invitationAccess, onRetryInvitations }: {
   locale: PlatformLocale; section: SettingsSection; onSelect: (section: SettingsSection) => void;
   icons?: Partial<Record<SettingsSection, ReactNode>>;
   sidebarState?: "expanded" | "collapsed"; isMobile?: boolean;
+  invitationAccess?:Loaded<boolean>;
+  onRetryInvitations?:()=>void;
 }) {
-  const group = translate(locale, "platform.settings.personal");
-  return <SidebarGroup>
+  const groups:Array<{label:string;sections:SettingsSection[]}>= [{label:translate(locale,"platform.settings.personal"),sections:["profile","appearance","notifications","shortcuts"]}];
+  if(invitationAccess?.status==="ok")groups.push({label:translate(locale,"platform.settings.communities"),sections:["community-members"]});
+  return <>
+    {invitationAccess?.status==="pending"?<div className="mx-3 flex items-center gap-2 rounded-md border border-sidebar-border px-3 py-2 text-xs text-sidebar-foreground/70" data-testid="community-access-loading"><LoaderCircle className="h-3.5 w-3.5 animate-spin"/>{translate(locale,"platform.loading")}</div>:null}
+    {invitationAccess?.status==="error"&&onRetryInvitations&&!(invitationAccess.error instanceof BffError&&invitationAccess.error.status===403)?<div className="mx-3" data-testid="community-access-error"><ReadFailure error={invitationAccess.error} onRetry={onRetryInvitations}/></div>:null}
+    {groups.map(({label:group,sections})=><SidebarGroup key={group}>
     <SidebarGroupLabel>{group}</SidebarGroupLabel>
     <SidebarGroupContent><SidebarMenu aria-label={translate(locale, "platform.settings.sections", { group })}>
-      {(Object.keys(settingsSectionKeys) as SettingsSection[]).map((value) => {
+      {sections.map((value) => {
         const Icon = icons[value];
         const label = translate(locale, settingsSectionKeys[value]);
         return <SidebarMenuItem key={value}><SidebarMenuButton aria-pressed={section === value}
@@ -37,7 +47,8 @@ export function SettingsNavigation({ locale, section, onSelect, icons: suppliedI
         </SidebarMenuButton></SidebarMenuItem>;
       })}
     </SidebarMenu></SidebarGroupContent>
-  </SidebarGroup>;
+  </SidebarGroup>)}
+  </>;
 }
 
 export function SettingsContentSurface({ section, children }: { section: SettingsSection; children: ReactNode }) {

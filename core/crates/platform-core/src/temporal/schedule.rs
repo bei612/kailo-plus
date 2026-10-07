@@ -14,41 +14,79 @@ use temporalio_common::protos::temporal::api::{
     },
 };
 
+pub(crate) fn automation_schedule_spec(
+    value: &Value,
+) -> Result<(ScheduleSpec, i64), TemporalError> {
+    let invalid = || TemporalError::Encode("Schedule spec 不成立".into());
+    let object = value.as_object().ok_or_else(invalid)?;
+    let catchup = value["catchupWindowSeconds"]
+        .as_i64()
+        .filter(|v| *v >= 10)
+        .ok_or_else(invalid)?;
+    if value["kind"] == "CRON" {
+        if object.len() != 3 {
+            return Err(invalid());
+        }
+        let cron = object.get("cron").ok_or_else(invalid)?;
+        return Ok((
+            ScheduleSpec {
+                structured_calendar: vec![super::schedule_calendar::calendar(
+                    cron.as_str().ok_or_else(invalid)?,
+                )?],
+                ..Default::default()
+            },
+            catchup,
+        ));
+    }
+    if object
+        .get("kind")
+        .is_some_and(|kind| kind.as_str() != Some("INTERVAL"))
+    {
+        return Err(invalid());
+    }
+    if object.len() != if object.contains_key("kind") { 4 } else { 3 } {
+        return Err(invalid());
+    }
+    let every = value["everySeconds"]
+        .as_i64()
+        .filter(|v| *v > 0)
+        .ok_or_else(invalid)?;
+    let offset = value["offsetSeconds"]
+        .as_i64()
+        .filter(|v| *v >= 0 && *v < every)
+        .ok_or_else(invalid)?;
+    Ok((
+        ScheduleSpec {
+            interval: vec![IntervalSpec {
+                interval: Some(
+                    std::time::Duration::from_secs(every as u64)
+                        .try_into()
+                        .map_err(|_| invalid())?,
+                ),
+                phase: Some(
+                    std::time::Duration::from_secs(offset as u64)
+                        .try_into()
+                        .map_err(|_| invalid())?,
+                ),
+            }],
+            ..Default::default()
+        },
+        catchup,
+    ))
+}
+
 impl TemporalClient {
     pub(crate) fn automation_schedule(
         &self,
         workflow_id: &str,
         input: &impl serde::Serialize,
         scope: (&str, &str),
-        interval: (i64, i64, i64),
+        schedule: (ScheduleSpec, i64),
         paused: bool,
     ) -> Result<Schedule, TemporalError> {
-        let (every, offset, catchup) = interval;
-        if every <= 0 || offset < 0 || offset >= every || catchup < 10 {
-            return Err(TemporalError::Encode("Schedule interval 不成立".into()));
-        }
+        let (spec, catchup) = schedule;
         Ok(Schedule {
-            spec: Some(ScheduleSpec {
-                interval: vec![IntervalSpec {
-                    interval: Some(
-                        std::time::Duration::from_secs(every as u64)
-                            .try_into()
-                            .map_err(|_| {
-                                TemporalError::Encode(
-                                    "Schedule interval 超出 native duration".into(),
-                                )
-                            })?,
-                    ),
-                    phase: Some(
-                        std::time::Duration::from_secs(offset as u64)
-                            .try_into()
-                            .map_err(|_| {
-                                TemporalError::Encode("Schedule offset 超出 native duration".into())
-                            })?,
-                    ),
-                }],
-                ..Default::default()
-            }),
+            spec: Some(spec),
             action: Some(schedule_action(
                 &self.task_queue,
                 workflow_id,

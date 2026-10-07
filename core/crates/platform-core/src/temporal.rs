@@ -30,6 +30,8 @@ use temporalio_common::protos::utilities::decode_status_detail;
 use crate::oidc::TokenSource;
 
 mod schedule;
+mod schedule_calendar;
+pub(crate) use schedule::automation_schedule_spec;
 
 /// 调用方标识。它出现在 Temporal 的 history 与 task 归属里，用来分辨
 /// 「谁启动的」——Core 与 Worker 必须不同，否则运维面看不出区别。

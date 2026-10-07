@@ -5,6 +5,7 @@ import {
 } from "@client-kit/platform/i18n";
 import {
   LanguageSettings,
+  type SettingsSection,
 } from "@client-kit/platform/react/settings";
 import type {
   DesktopNotificationPermissionState,
@@ -29,7 +30,7 @@ import {
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
 import { ProfileSettingsCard } from "./ProfileSettingsCard";
 
-export type SettingsSection = "profile" | "appearance" | "notifications" | "shortcuts";
+export type { SettingsSection } from "@client-kit/platform/react/settings";
 
 export const DEFAULT_SETTINGS_SECTION: SettingsSection = "profile";
 
@@ -38,6 +39,7 @@ const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
   "appearance",
   "notifications",
   "shortcuts",
+  "community-members",
 ];
 
 export function isSettingsSection(value: unknown): value is SettingsSection {
@@ -87,6 +89,8 @@ export function renderSettingsSection(
   props: SettingsPanelProps,
 ): React.ReactNode {
   switch (section) {
+    case "community-members":
+      return null; // The shared invitation controller stays mounted in SettingsView.
     case "profile":
       return <ProfileSettingsCard />;
     case "notifications":

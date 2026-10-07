@@ -24,6 +24,9 @@ import (
 //     lock. This is what lets the wiki pipeline drop its exclusive per-KB
 //     batch lock and spread one KB's backlog across the whole worker pool.
 type TaskPendingOpsRepository interface {
+	// UnresolvedDocumentOps counts this exact document's pending work and durable failures.
+	// A missing queue item by itself is not evidence of successful cleanup.
+	UnresolvedDocumentOps(ctx context.Context, tenantID uint64, taskType, scope, scopeID, documentID string) (pending, failed int64, err error)
 	// Enqueue inserts a single op. The caller fills in TenantID, TaskType,
 	// Scope, ScopeID, Op, DedupKey, Payload; ID, FailCount, EnqueuedAt
 	// are server-side defaults.

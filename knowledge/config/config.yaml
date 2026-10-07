@@ -42,6 +42,9 @@ conversation:
 
 # Knowledge base configuration
 knowledge_base:
+  # Original Asynq completed-result retention for conditional MCP deletion.
+  # Expired/missing evidence is UNKNOWN; observers never enqueue another task.
+  delete_receipt_retention: 168h
   chunk_size: 512
   chunk_overlap: 50
   split_markers: ["\n\n", "\n", "。"]

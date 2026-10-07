@@ -5,10 +5,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { WebProfileUpdateRequest } from "@client-kit/contracts";
 import { SettingsPane } from "./SettingsPane";
 import { setLocale } from "@client-kit/platform/i18n";
+import { PlatformProvider } from "@client-kit/platform/react/context";
+import { createBffClient } from "@client-kit/platform/client";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn() }));
-vi.mock("@client-kit/platform/react/context", async (original) => ({ ...await original<typeof import("@client-kit/platform/react/context")>(), useBffClient: () => ({ profile: state.read, updateProfile: state.write }) }));
+vi.mock("@client-kit/platform/react/context", async (original) => ({ ...await original<typeof import("@client-kit/platform/react/context")>(), useBffClient: () => ({ invitations: async()=>[], profile: state.read, updateProfile: state.write }) }));
 vi.mock("@/shared/i18n", () => ({ getLocale: () => "en" }));
 vi.mock("@/shared/theme/ThemeProvider", () => ({ useTheme: () => ({ themeName: "buzz", selectedThemeName: "buzz", isLoading: false, isDark: false, followSystem: true, accentColor: "neutral", hasPair: true, setTheme: vi.fn(), setAccentColor: vi.fn(), setFollowSystem: vi.fn(), applyAppearance: vi.fn(), prominentActiveTab: false, setProminentActiveTab: vi.fn() }) }));
 vi.mock("@/platform/bff-client", () => ({ bff: {}, fetchUserState: vi.fn(), setWorkspacePreference: vi.fn(), uploadProfileAvatar: vi.fn() }));
@@ -22,7 +24,8 @@ async function click(selector: string) {
   await act(async () => target!.click());
 }
 async function startSave() {
-  await act(async () => root.render(<SettingsPane />));
+  const client=createBffClient({send:async()=>({status:200,body:[]})});
+  await act(async () => root.render(<PlatformProvider client={client} locale="en"><SettingsPane /></PlatformProvider>));
   await click('[data-testid="settings-nav-profile"]');
   await click('[data-testid="profile-metadata-edit"]');
   const input = host.querySelector<HTMLInputElement>("#profile-display-name")!;

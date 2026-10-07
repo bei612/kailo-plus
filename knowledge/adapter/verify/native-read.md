@@ -156,3 +156,133 @@ fallback. Raw logs next to the prior adapter logs are
 `native-delete-revision.log`, `native-delete-revision-mutation.log`, and
 `native-delete-revision-restored.log`. No image build, full check, deployment or
 live deletion ran.
+
+## Retained native conditional deletion task (2026-10-07)
+
+This increment follows DD-94/98/108 and SF-WEK-14. It adds the real
+`knowledge.delete@v1` execute/observe consumer, not another native lifecycle or
+Core deletion table. Upstream commit remains
+`2be7bd40631dda1dd485306038f07a62e9ee287e`; the exact original seams are
+`WeKnora/internal/handler/knowledge.go::KnowledgeHandler.enqueueKnowledgeListDelete`,
+`WeKnora/internal/application/service/knowledge_clone_move.go::knowledgeService.enqueueMovedKnowledgeProcessing`,
+`WeKnora/internal/router/task_inspector.go::asynqTaskInspector.GetRuntimeTask`, and
+`WeKnora/internal/application/service/knowledge_delete.go::knowledgeService.ProcessKnowledgeListDelete`.
+The first already dispatches Asynq maintenance work; the second already uses
+stable TaskID and retained results, and the inspector reads that same original
+queue. No new queue engine, generic executor or operation database is added.
+
+The native MCP `delete_document` consumes the existing admitted KB and precise
+document revision plus a stable idempotency key. It reuses original editor/write
+authorization, native deletion planning and repository CAS. The task payload
+pins tenant, KB, document, revision and its original initiator. A duplicate key
+reads the retained task; observation never calls enqueue, and does not need a
+document row that a completed deletion has already removed. A mismatched scope,
+malformed receipt or expired/missing task refuses instead of inferring success.
+The result lives in the original Asynq ResultWriter and is written only after
+conditional cleanup has no observed failure. Redelivery with that exact receipt
+does not repeat cleanup; without one, the original revision CAS prevents a
+partially executed deletion from being replayed. Cleanup failure skips automatic
+write retries and remains UNKNOWN for reconciliation, not fabricated FAILED.
+
+Source review caught and fixed queued Wiki-state drift: KB settings can change
+after admission. The receipt now obtains its Wiki flag from the actual deletion
+plan used by the original CAS/cleanup, not an admission-time payload flag. The
+obsolete payload flag was removed. Independent conditional deletion and the
+task share that same implementation. An implementation-after native regression
+enables Wiki after enqueue, requires the retained receipt to say Wiki, and
+requires UNKNOWN while no retract success receipt exists; this new Go case is
+initially remained unexecuted because native compilation stopped on disk limits;
+its later actual execution is recorded below.
+
+Independent original native callers that omit the conditional/idempotency
+arguments keep their native best-effort semantics. Conditional callers now also
+retain Wiki-reference, tag, file/image and storage-accounting failures that were
+previously only logged. In particular, a row removed before a later cleanup
+failure is not a terminal receipt, and a missing row on a conditional retry is
+not success. The configured `knowledge_base.delete_receipt_retention` supplies
+the original queue retention; expiry loses the evidence and stays UNKNOWN.
+This is an additive native task payload/configuration change, with no new
+platform schema, migration, business-body copy or generated client model.
+
+Wiki-enabled deletion is deliberately **not certified complete** by this
+increment. Original `task_pending_ops` removes successful retract work and
+original dead letters can be removed by operators, so zero rows in both is not
+durable terminal evidence. The observer reads those existing scoped repositories:
+pending retract remains RUNNING, failure or absence of a durable success remains
+UNKNOWN. A Wiki success receipt from the original retract consumer is still a
+real remaining integration gap; no second timer/store or absence-as-success
+shortcut is introduced. Non-Wiki cleanup can return SUCCEEDED only with the
+matching retained native receipt and its actual completion time.
+
+Adapter execute and observe both verify the original token/wire hash and fresh
+Core PEP before and after native access. Only the existing configured native KB,
+server and credential are used. The observer takes the Core's existing
+ExternalExecution reference and stable key; it does not re-run the execute path.
+The normal typed input remains the full ContentReference. Queue acknowledgements,
+unknown states, foreign scope, missing timestamps and post-call revocation cannot
+produce an asserted completed operation.
+
+Actual adapter verification reused the existing limited SDK and installed
+dependencies, without build/install/full/deploy:
+
+```sh
+node --test test/query-revision.test.mjs
+```
+
+Result: 29 tests passed, zero failed, exit 0. Removing the private SDK's actual
+completion-time guard made `execute/no-terminal` and `observe/no-terminal`
+incorrectly return 200; both assertions failed, exit 1. The formal source was
+copied back, byte comparison returned 0, and all 29 tests passed again. An initial
+name filter selected no relevant subtest and is not counted as a mutation check.
+Raw logs are
+`/volumes/data/kailo/tmp/conformance-wire-handoff.dWWJpy/adapter-delete-task.log`,
+`adapter-delete-task-mutation.log`, and `adapter-delete-task-restored.log`.
+After the native Wiki-plan correction, the unchanged adapter suite was actually
+re-run once against the same installed SDK: 29 passed, zero failed, exit 0;
+`adapter-delete-task-plan-restored.log` records that run. It does not replace
+the unexecuted Go regression for the native plan change.
+
+Native service/repository/MCP checks were started in the existing 4 CPU / 8 GiB
+Go SDK using its existing Data caches. At 543 MiB Data free space, the owned Go
+and three linker processes were explicitly paused, then terminated after parent
+coordination as the disk continued filling. The original session exited 143
+with `Terminated`; no shared cache was removed. All four owned processes ended.
+The original Go command left its 162 MiB temporary work directory. After explicit
+authorization and verifying no Go/link process remained, only that exact
+container directory (`/tmp/go-build3807056773`) was removed; it is regenerable
+compiler output, not source or shared cache. This interrupted check is **not
+counted as passed**.
+The later MCP/repository fixtures and result-writer guard also need that same
+batch's final narrow validation. No image, release approval, active binding,
+live deletion, Wiki completion or deployment is claimed here.
+
+### Native plan verification after resource release
+
+After the unrelated release build ended, the same native SDK was rechecked:
+4 CPU / 8 GiB cgroup, no existing build process in that container, 4.4 GiB Data
+free and approximately 28 GiB memory available. IO pressure was still high.
+Only the existing three packages ran with existing caches and no download:
+
+```sh
+GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off go test \
+  ./internal/application/service ./internal/application/repository ./internal/mcpserver \
+  -run 'Test(ConditionalDelete|DeleteKnowledgeAtRevision|DeleteDocument|TaskPendingOps)' -count=1
+```
+
+The actual command exited 0: service `6.349s`, repository `1.021s`, MCP
+`1.004s`. This includes the retained original Asynq task, missing-row and
+cleanup-failure cases, Wiki enabled after enqueue, same-key observation,
+cross-scope refusal and tenant-scoped pending/dead-letter evidence. In the
+private SDK only, disabling strict cleanup and fixing the executed Wiki flag
+to false caused four real failures: task cleanup failure, Wiki state drift,
+original-file failure and storage-accounting failure. The mutation command
+exited 1. The exact formal source was restored with `cmp` exit 0; the same
+three-package command then exited 0 again: service `6.275s`, repository
+`0.524s`, MCP `0.535s`. No mutation remains.
+
+Raw logs are under `/volumes/data/kailo/tmp/knowledge-delete-task.nRNryc/`:
+`native-delete-plan.log`, `native-delete-plan-mutation.log`, and
+`native-delete-plan-restored.log`. The earlier exit-143 interruption remains
+historical evidence, not a passing run. These are native seam checks, not a
+full check, image build, live deletion, approved release or deployed binding.
+The Wiki terminal-evidence limitation above is unchanged.

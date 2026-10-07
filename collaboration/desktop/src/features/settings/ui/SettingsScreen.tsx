@@ -5,6 +5,7 @@ import type { SettingsSection } from "@/features/settings/ui/SettingsPanels";
 import { SettingsView } from "@/features/settings/ui/SettingsView";
 
 type SettingsScreenProps = {
+  active: boolean;
   isUpdatingDesktopNotifications: boolean;
   notificationErrorMessage: string | null;
   notificationPermission: DesktopNotificationPermissionState;
@@ -21,6 +22,7 @@ type SettingsScreenProps = {
 };
 
 export function SettingsScreen({
+  active,
   isUpdatingDesktopNotifications,
   notificationErrorMessage,
   notificationPermission,
@@ -37,6 +39,7 @@ export function SettingsScreen({
 }: SettingsScreenProps) {
   return (
     <SettingsView
+      active={active}
       isUpdatingDesktopNotifications={isUpdatingDesktopNotifications}
       notificationErrorMessage={notificationErrorMessage}
       notificationPermission={notificationPermission}

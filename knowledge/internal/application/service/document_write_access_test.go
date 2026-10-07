@@ -224,6 +224,7 @@ func (r *documentGraphSpy) DelGraph(context.Context, []types.NameSpace) error {
 type documentTenantSpy struct {
 	interfaces.TenantRepository
 	adjustments []int64
+	err         error
 }
 
 func (r *documentTenantSpy) GetTenantByID(_ context.Context, id uint64) (*types.Tenant, error) {
@@ -232,13 +233,14 @@ func (r *documentTenantSpy) GetTenantByID(_ context.Context, id uint64) (*types.
 
 func (r *documentTenantSpy) AdjustStorageUsed(_ context.Context, _ uint64, delta int64) error {
 	r.adjustments = append(r.adjustments, delta)
-	return nil
+	return r.err
 }
 
 type documentFileSpy struct {
 	interfaces.FileService
 	deleted      []string
 	beforeDelete func()
+	err          error
 }
 
 func (r *documentFileSpy) DeleteFile(_ context.Context, path string) error {
@@ -246,7 +248,7 @@ func (r *documentFileSpy) DeleteFile(_ context.Context, path string) error {
 		r.beforeDelete()
 	}
 	r.deleted = append(r.deleted, path)
-	return nil
+	return r.err
 }
 
 type documentWriteFixture struct {

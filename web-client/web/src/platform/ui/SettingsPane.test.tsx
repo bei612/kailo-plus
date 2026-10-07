@@ -5,12 +5,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsPane, WorkspaceNotifications } from "./SettingsPane";
 import { setLocale } from "@client-kit/platform/i18n";
+import { PlatformProvider } from "@client-kit/platform/react/context";
+import { createBffClient } from "@client-kit/platform/client";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock("@client-kit/platform/react/context", async (original) => ({
   ...await original<typeof import("@client-kit/platform/react/context")>(),
-  useBffClient: () => ({ profile: async () => ({ pubkey: "a".repeat(64), eventId: null, displayName: null, about: null, avatarUrl: null, nip05Handle: null, avatarMediaPaths: {} }) }),
+  useBffClient: () => ({ invitations: async () => [], profile: async () => ({ pubkey: "a".repeat(64), eventId: null, displayName: null, about: null, avatarUrl: null, nip05Handle: null, avatarMediaPaths: {} }) }),
 }));
 
 const state = vi.hoisted(() => ({
@@ -72,7 +74,8 @@ describe("Web settings existing user-state CAS consumer", () => {
     document.body.append(host);
     const root = createRoot(host);
     try {
-      await act(async () => root.render(<SettingsPane />));
+      const client=createBffClient({send:async()=>({status:200,body:[]})});
+      await act(async () => root.render(<PlatformProvider client={client} locale="en"><SettingsPane /></PlatformProvider>));
       expect(host.querySelector('[data-testid="settings-profile"]')).not.toBeNull();
       const appearance = host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-appearance"]');
       expect(appearance).not.toBeNull();

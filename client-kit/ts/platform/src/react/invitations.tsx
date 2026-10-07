@@ -17,7 +17,7 @@ import {
   TenantInvitationStatus,
   type TenantInvitationView,
 } from "@client-kit/contracts";
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { relativeTime } from "../format";
 import { newIdempotencyKey, redemptionPhase } from "../governance";
 import {
@@ -30,7 +30,7 @@ import { BffError, TransportError, type WriteFailure, writeFailure } from "../tr
 import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./context";
 import { Resource } from "./pages";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
-import { useLoad } from "./use-load";
+import { useLoad, type Loaded } from "./use-load";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./composer/shared/ui/dialog";
 
 /** BFF 以 403 回答：调用方没有这项权限。这是确定的「不给入口」，不是读取失败。 */
@@ -59,7 +59,7 @@ type IssueOutcome =
   | { kind: "failed"; failure: WriteFailure };
 
 /** 成员页上的邀请一节。非 admin（列表 403）时整节不渲染。 */
-export function TenantInvitations({dialog=false}:{dialog?:boolean} = {}) {
+export function TenantInvitations({dialog=false,onAccessChange}:{dialog?:boolean;onAccessChange?:(state:Loaded<boolean>,reload:()=>void)=>void} = {}) {
   const client = useBffClient();
   const t = useT();
   const locale = useLocale();
@@ -76,6 +76,15 @@ export function TenantInvitations({dialog=false}:{dialog?:boolean} = {}) {
   const issueReceipt=useRef<ActionSubmission|null>(null);
   const withdrawReceipt=useRef<ActionSubmission|null>(null);
   const inFlight=useRef(false);
+  const readStatus=state.status;
+  const readError=state.status==="error"?state.error:undefined;
+  useEffect(()=>{
+    onAccessChange?.(readStatus==="ok"?{status:"ok",data:true}:readStatus==="error"?{status:"error",error:readError}:{status:"pending"},reload);
+  },[readStatus,readError,onAccessChange,reload]);
+  useEffect(()=>{
+    window.addEventListener("focus",reload);
+    return ()=>window.removeEventListener("focus",reload);
+  },[reload]);
 
   // 第一次得到 BFF 的回答之前不画任何东西：非 admin 不该看到这一节闪一下再消失。
   // 重读期间保持已有的画面（签发出的链接还要留在屏幕上）。

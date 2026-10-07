@@ -449,6 +449,9 @@ type KnowledgeListDeletePayload struct {
 	KnowledgeIDs    []string      `json:"knowledge_ids"`
 	Initiator       TaskInitiator `json:"initiator,omitempty"`
 	KnowledgeBaseID string        `json:"knowledge_base_id,omitempty"`
+	// Conditional MCP tasks retain the admitted revision and their stable native queue identity.
+	ExpectedRevision string `json:"expected_revision,omitempty"`
+	TaskID           string `json:"task_id,omitempty"`
 }
 
 // KnowledgeListReparsePayload represents the batch knowledge reparse task payload

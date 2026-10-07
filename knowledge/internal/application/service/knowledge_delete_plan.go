@@ -72,12 +72,15 @@ func deleteReferencedKnowledge(
 }
 
 type knowledgeDeletePlan struct {
-	ctx       context.Context
-	ids       []string
-	knowledge []*types.Knowledge
-	kbs       map[string]*types.KnowledgeBase
-	files     map[string]interfaces.FileService
-	imageInfo []interfaces.ChunkImageInfo
+	ctx context.Context
+	// Conditional callers require every observed cleanup failure to remain
+	// visible; the independent native UI retains its original best-effort mode.
+	strictCleanup bool
+	ids           []string
+	knowledge     []*types.Knowledge
+	kbs           map[string]*types.KnowledgeBase
+	files         map[string]interfaces.FileService
+	imageInfo     []interfaces.ChunkImageInfo
 }
 
 func (s *knowledgeService) planKnowledgeDelete(ctx context.Context, ids []string) (*knowledgeDeletePlan, error) {

@@ -11,6 +11,7 @@ import {
   RuntimeProfileKind,
   ActionKind,
   AutomationState,
+  ScheduleSpecKind,
   AutomationResultTarget as ResultTarget,
   AutomationTriggerKind as TriggerKind,
   ReasonCode,
@@ -52,6 +53,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
 import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
 import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
+import { CronExpressionInput } from "./cron-expression-input";
+import { cronExpressionError, cronYamlError } from "./cron-expression";
 
 // Original UnifiedAgentsSection grid at Buzz 779af8886caae1317b4de962082429867ab61503.
 const IDENTITY_CARD_GRID_CLASS = "w-full grid-cols-1 [@container(min-width:21rem)]:grid-cols-2 [@container(min-width:32rem)]:grid-cols-3 [@container(min-width:43rem)]:grid-cols-4 [@container(min-width:54rem)]:grid-cols-5 grid gap-3";
@@ -173,12 +176,15 @@ function validAutomation(row: AutomationView): boolean {
     && (row.state !== AutomationState.Enabled || (!!row.pinnedVersionAssetId && !!row.delegationId));
 }
 
-function validSchedule(spec: AutomationVersionView["content"]["trigger"]["scheduleSpec"]): boolean {
-  // Same explicit interval accepted by Core: Temporal's native catch-up minimum is 10 seconds.
-  return !!spec && Object.keys(spec).length === 3
-    && Number.isSafeInteger(spec.everySeconds) && spec.everySeconds > 0
-    && Number.isSafeInteger(spec.offsetSeconds) && spec.offsetSeconds >= 0 && spec.offsetSeconds < spec.everySeconds
-    && Number.isSafeInteger(spec.catchupWindowSeconds) && spec.catchupWindowSeconds >= 10;
+function validSchedule(spec: unknown): spec is NonNullable<AutomationVersionContent["trigger"]["scheduleSpec"]> {
+  if (!objectFields(spec, ["everySeconds", "offsetSeconds", "catchupWindowSeconds", "cron", "kind"])
+    || typeof spec.catchupWindowSeconds !== "number" || !Number.isSafeInteger(spec.catchupWindowSeconds) || spec.catchupWindowSeconds < 10) return false;
+  if (spec.kind === "CRON") return Object.keys(spec).length === 3
+    && typeof spec.cron === "string" && !cronYamlError(spec.cron);
+  return (spec.kind === undefined || spec.kind === "INTERVAL")
+    && Object.keys(spec).length === (spec.kind === undefined ? 3 : 4) && typeof spec.everySeconds === "number"
+    && typeof spec.offsetSeconds === "number" && Number.isSafeInteger(spec.everySeconds) && spec.everySeconds > 0
+    && Number.isSafeInteger(spec.offsetSeconds) && spec.offsetSeconds >= 0 && spec.offsetSeconds < spec.everySeconds;
 }
 
 function validAutomationVersion(row: AutomationVersionView, parent: AutomationView): boolean {
@@ -218,11 +224,7 @@ function validAutomationContent(value: unknown): value is AutomationVersionConte
       && validApprovalPolicy({ id: content.approvalPolicy.id, version: content.approvalPolicy.version })))
     && (trigger.kind === TriggerKind.Schedule
       ? content.resultTarget === ResultTarget.Channel && trigger.textPrefix === undefined
-        && objectFields(trigger.scheduleSpec, ["everySeconds", "offsetSeconds", "catchupWindowSeconds"])
-        && typeof trigger.scheduleSpec.everySeconds === "number" && typeof trigger.scheduleSpec.offsetSeconds === "number"
-        && typeof trigger.scheduleSpec.catchupWindowSeconds === "number"
-        && validSchedule({ everySeconds: trigger.scheduleSpec.everySeconds, offsetSeconds: trigger.scheduleSpec.offsetSeconds,
-          catchupWindowSeconds: trigger.scheduleSpec.catchupWindowSeconds })
+        && validSchedule(trigger.scheduleSpec)
       : (trigger.kind === TriggerKind.ChannelMessage || trigger.kind === TriggerKind.Mention)
         && content.resultTarget === ResultTarget.TriggerThread && trigger.scheduleSpec === undefined);
 }
@@ -616,6 +618,9 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   const [prefix, setPrefix] = useState("");
   const [everySeconds, setEverySeconds] = useState("");
   const [offsetSeconds, setOffsetSeconds] = useState("");
+  const [scheduleMode, setScheduleMode] = useState<"interval" | "cron">("interval");
+  const [intervalTagged, setIntervalTagged] = useState(false);
+  const [cron, setCron] = useState("");
   const [catchupWindowSeconds, setCatchupWindowSeconds] = useState("");
   const [template, setTemplate] = useState("");
   const [actionKind, setActionKind] = useState(ActionKind.AgentTurn);
@@ -675,10 +680,11 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   const version = versions.find((row) => row.assetId === versionId);
   const grant = grants.find((row) => row.delegationId === grantId);
   const contentAction = creating || edit.action === "publish_version";
-  const scheduleSpec = { everySeconds: Number(everySeconds), offsetSeconds: Number(offsetSeconds),
-    catchupWindowSeconds: Number(catchupWindowSeconds) };
-  const scheduleValid = [everySeconds, offsetSeconds, catchupWindowSeconds].every((value) => /^\d+$/.test(value))
-    && validSchedule(scheduleSpec);
+  const scheduleSpec = { ...(scheduleMode === "cron" ? { cron, kind: ScheduleSpecKind.Cron } : {
+    ...(intervalTagged ? { kind: ScheduleSpecKind.Interval } : {}),
+    everySeconds: Number(everySeconds), offsetSeconds: Number(offsetSeconds) }), catchupWindowSeconds: Number(catchupWindowSeconds) };
+  const scheduleValid = (scheduleMode === "cron" ? [catchupWindowSeconds] : [everySeconds, offsetSeconds, catchupWindowSeconds]).every((value) => /^\d+$/.test(value))
+    && validSchedule(scheduleSpec) && (scheduleMode !== "cron" || !cronExpressionError(cron));
   const formContent: AutomationVersionContent = {
     ...(name !== "" ? { name } : {}),
     trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : prefix ? { textPrefix: prefix } : {}),
@@ -710,14 +716,19 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
       ? edit.content ?? edit.detail.versions[0]?.content : edit?.detail.versions[0]?.content;
     setName(content?.name ?? "");
     setTrigger(content?.trigger.kind ?? TriggerKind.ChannelMessage); setPrefix(content?.trigger.textPrefix ?? "");
-    setEverySeconds(content?.trigger.scheduleSpec?.everySeconds.toString() ?? "");
-    setOffsetSeconds(content?.trigger.scheduleSpec?.offsetSeconds.toString() ?? "");
+    setScheduleMode(content?.trigger.scheduleSpec?.cron === undefined ? "interval" : "cron");
+    setIntervalTagged(content?.trigger.scheduleSpec?.kind === ScheduleSpecKind.Interval);
+    setCron(content?.trigger.scheduleSpec?.cron ?? "");
+    setEverySeconds(content?.trigger.scheduleSpec?.everySeconds?.toString() ?? "");
+    setOffsetSeconds(content?.trigger.scheduleSpec?.offsetSeconds?.toString() ?? "");
     setCatchupWindowSeconds(content?.trigger.scheduleSpec?.catchupWindowSeconds.toString() ?? "");
     setTemplate(content?.action.template ?? "");
     setActionKind(content?.action.kind ?? ActionKind.AgentTurn);
     setPolicyKey(content?.approvalPolicy ? `${content.approvalPolicy.id}:${content.approvalPolicy.version}` : "");
     setVersionId(""); setGrantId(""); setExecutorId("");
-    setEditorMode("form"); setYamlText(""); setEditorError(false);
+    const cronNeedsYaml = content?.trigger.scheduleSpec?.cron !== undefined
+      && content.trigger.scheduleSpec.cron.trim().split(/\s+/).length !== 5;
+    setEditorMode(cronNeedsYaml ? "yaml" : "form"); setYamlText(cronNeedsYaml ? stringify(content) : ""); setEditorError(false);
   }, [edit, workspaceId]);
   useEffect(() => { setExecutorIndex(0); setExecutorOffsets([0]); }, [workspaceId]);
   const changeEditor = (mode: "form" | "yaml") => {
@@ -736,11 +747,15 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     if (yamlText === formDraftYaml.current) {
       setEditorMode(mode); setEditorError(false); return;
     }
-    if (!contentUsable(yamlContent)) { setEditorError(true); return; }
+    if (!contentUsable(yamlContent) || (yamlContent.trigger.scheduleSpec?.cron !== undefined
+      && cronExpressionError(yamlContent.trigger.scheduleSpec.cron))) { setEditorError(true); return; }
     setName(yamlContent.name ?? "");
     setTrigger(yamlContent.trigger.kind); setPrefix(yamlContent.trigger.textPrefix ?? "");
-    setEverySeconds(yamlContent.trigger.scheduleSpec?.everySeconds.toString() ?? "");
-    setOffsetSeconds(yamlContent.trigger.scheduleSpec?.offsetSeconds.toString() ?? "");
+    setScheduleMode(yamlContent.trigger.scheduleSpec?.cron === undefined ? "interval" : "cron");
+    setIntervalTagged(yamlContent.trigger.scheduleSpec?.kind === ScheduleSpecKind.Interval);
+    setCron(yamlContent.trigger.scheduleSpec?.cron ?? "");
+    setEverySeconds(yamlContent.trigger.scheduleSpec?.everySeconds?.toString() ?? "");
+    setOffsetSeconds(yamlContent.trigger.scheduleSpec?.offsetSeconds?.toString() ?? "");
     setCatchupWindowSeconds(yamlContent.trigger.scheduleSpec?.catchupWindowSeconds.toString() ?? "");
     setTemplate(yamlContent.action.template); setActionKind(yamlContent.action.kind);
     setPolicyKey(yamlContent.approvalPolicy ? `${yamlContent.approvalPolicy.id}:${yamlContent.approvalPolicy.version}` : "");
@@ -852,16 +867,24 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
           </select>
         </label>
         {trigger === TriggerKind.Schedule ? <>
+          <label className="flex flex-col gap-1 text-sm">{t("workflows.schedule.mode")}
+            <select value={scheduleMode} onChange={(event) => { if (event.target.value === "interval" || event.target.value === "cron") setScheduleMode(event.target.value); }} className="h-8 rounded-md border border-input bg-background px-2">
+              <option value="interval">{t("agents.automation.everySeconds")}</option>
+              <option value="cron">{t("workflows.cron.expression")}</option>
+            </select>
+          </label>
+          {scheduleMode === "cron" ? <CronExpressionInput value={cron} onChange={setCron} /> : <>
           <label className="flex flex-col gap-1 text-sm">{t("agents.automation.everySeconds")}
             <input required inputMode="numeric" value={everySeconds} onChange={(event) => setEverySeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
           </label>
           <label className="flex flex-col gap-1 text-sm">{t("agents.automation.offsetSeconds")}
             <input required inputMode="numeric" value={offsetSeconds} onChange={(event) => setOffsetSeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
           </label>
+          </>}
           <label className="flex flex-col gap-1 text-sm">{t("agents.automation.catchupWindowSeconds")}
             <input required inputMode="numeric" value={catchupWindowSeconds} onChange={(event) => setCatchupWindowSeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
           </label>
-          <p className="text-sm text-muted-foreground">{t("agents.automation.scheduleRules")}</p>
+          <p className="text-sm text-muted-foreground">{t(scheduleMode === "cron" ? "workflows.cron.rules" : "agents.automation.scheduleRules")}</p>
         </> : <label className="flex flex-col gap-1 text-sm">{t("agents.automation.prefix")}
           <input value={prefix} onChange={(event) => setPrefix(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
         </label>}

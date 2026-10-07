@@ -3281,7 +3281,8 @@ class ApplicationBindingCreateSecretRef {
 
 ///仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
 ///
-///REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
+///REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
+///配置或凭据。
 class AutomationVersionContentClass {
   final ContentAction action;
   final ApprovalPolicyElement? approvalPolicy;
@@ -3401,32 +3402,54 @@ final automationTriggerKindValues = EnumValues({
   "SCHEDULE": AutomationTriggerKind.SCHEDULE,
 });
 
-///Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
-///SKIP，不另实现 cron。
+///Temporal 原生 Schedule：显式 interval 或 Buzz UTC cron，二者互斥。catchupWindow 不小于原生的 10 秒，Overlap
+///固定 SKIP。
 class ScheduleSpecClass {
   final int catchupWindowSeconds;
-  final int everySeconds;
-  final int offsetSeconds;
+
+  ///原 Buzz UTC cron：表单五字段，YAML 六字段包含秒、七字段增加年份；匹配由 Temporal 原生日历执行，不建立本地定时器。
+  final String? cron;
+  final int? everySeconds;
+
+  ///旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
+  final ScheduleSpecKind? kind;
+  final int? offsetSeconds;
 
   ScheduleSpecClass({
     required this.catchupWindowSeconds,
-    required this.everySeconds,
-    required this.offsetSeconds,
+    this.cron,
+    this.everySeconds,
+    this.kind,
+    this.offsetSeconds,
   });
 
   factory ScheduleSpecClass.fromJson(Map<String, dynamic> json) =>
       ScheduleSpecClass(
         catchupWindowSeconds: json["catchupWindowSeconds"],
+        cron: json["cron"],
         everySeconds: json["everySeconds"],
+        kind: json["kind"] == null
+            ? null
+            : scheduleSpecKindValues.map[json["kind"]]!,
         offsetSeconds: json["offsetSeconds"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "catchupWindowSeconds": catchupWindowSeconds,
+    "cron": cron,
     "everySeconds": everySeconds,
+    "kind": scheduleSpecKindValues.reverse[kind],
     "offsetSeconds": offsetSeconds,
   });
 }
+
+///旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
+enum ScheduleSpecKind { CRON, INTERVAL }
+
+final scheduleSpecKindValues = EnumValues({
+  "CRON": ScheduleSpecKind.CRON,
+  "INTERVAL": ScheduleSpecKind.INTERVAL,
+});
 
 ///仅 capability_contract.approve/deprecate：固定已登记版本。
 ///
@@ -11105,34 +11128,49 @@ class AutomationApprovalPolicyRef {
   Map<String, dynamic> toJson() => _stripNulls({"id": id, "version": version});
 }
 
-///Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定
-///SKIP，不另实现 cron。
+///Temporal 原生 Schedule：显式 interval 或 Buzz UTC cron，二者互斥。catchupWindow 不小于原生的 10 秒，Overlap
+///固定 SKIP。
 class AutomationScheduleSpec {
   final int catchupWindowSeconds;
-  final int everySeconds;
-  final int offsetSeconds;
+
+  ///原 Buzz UTC cron：表单五字段，YAML 六字段包含秒、七字段增加年份；匹配由 Temporal 原生日历执行，不建立本地定时器。
+  final String? cron;
+  final int? everySeconds;
+
+  ///旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。
+  final ScheduleSpecKind? kind;
+  final int? offsetSeconds;
 
   AutomationScheduleSpec({
     required this.catchupWindowSeconds,
-    required this.everySeconds,
-    required this.offsetSeconds,
+    this.cron,
+    this.everySeconds,
+    this.kind,
+    this.offsetSeconds,
   });
 
   factory AutomationScheduleSpec.fromJson(Map<String, dynamic> json) =>
       AutomationScheduleSpec(
         catchupWindowSeconds: json["catchupWindowSeconds"],
+        cron: json["cron"],
         everySeconds: json["everySeconds"],
+        kind: json["kind"] == null
+            ? null
+            : scheduleSpecKindValues.map[json["kind"]]!,
         offsetSeconds: json["offsetSeconds"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "catchupWindowSeconds": catchupWindowSeconds,
+    "cron": cron,
     "everySeconds": everySeconds,
+    "kind": scheduleSpecKindValues.reverse[kind],
     "offsetSeconds": offsetSeconds,
   });
 }
 
-///REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval，不含消息正文、provider 配置或凭据。
+///REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
+///配置或凭据。
 class AutomationVersionContent {
   final AutomationVersionContentAction action;
   final ApprovalPolicyElement? approvalPolicy;

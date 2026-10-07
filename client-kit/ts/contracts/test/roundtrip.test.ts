@@ -305,6 +305,19 @@ test("component observations preserve references, UNKNOWN and absent evidence", 
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), original);
 });
 
+test("automation cron round-trip preserves exact spec and legacy interval", () => {
+  const original: unknown = JSON.parse(readFileSync(new URL("../../../../contracts/samples/automation-cron.sample.json", import.meta.url), "utf8"));
+  const typed = original as AutomationVersionContent[];
+  const reconstructed = typed.map((row): AutomationVersionContent => ({
+    trigger: { kind: row.trigger.kind, scheduleSpec: row.trigger.scheduleSpec && {
+      kind: row.trigger.scheduleSpec.kind, cron: row.trigger.scheduleSpec.cron,
+      everySeconds: row.trigger.scheduleSpec.everySeconds, offsetSeconds: row.trigger.scheduleSpec.offsetSeconds,
+      catchupWindowSeconds: row.trigger.scheduleSpec.catchupWindowSeconds,
+    } }, action: { kind: row.action.kind, template: row.action.template }, resultTarget: row.resultTarget,
+  }));
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), original);
+});
+
 test("automation POST_MESSAGE round-trip preserves action and native schedule", () => {
   const raw = readFileSync(new URL("../../../../contracts/samples/automation-post-message.sample.json", import.meta.url), "utf8");
   const original: unknown = JSON.parse(raw);

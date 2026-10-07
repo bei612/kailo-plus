@@ -2,11 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "domain/automation_schedule_spec.schema.json",
   "title": "AutomationScheduleSpec",
-  "description": "Temporal IntervalSpec 的显式秒数；offset 小于 every，catchupWindow 不小于原生的 10 秒。Overlap 固定 SKIP，不另实现 cron。",
+  "description": "Temporal 原生 Schedule：显式 interval 或 Buzz UTC cron，二者互斥。catchupWindow 不小于原生的 10 秒，Overlap 固定 SKIP。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["everySeconds", "offsetSeconds", "catchupWindowSeconds"],
+  "required": ["catchupWindowSeconds"],
   "properties": {
+    "kind": {"type": "string", "enum": ["INTERVAL", "CRON"], "description": "旧 interval 缺省保持原格式及摘要；cron 必须显式 CRON。互斥及必需字段由领域消费者验证。"},
+    "cron": {"type": "string", "minLength": 1, "description": "原 Buzz UTC cron：表单五字段，YAML 六字段包含秒、七字段增加年份；匹配由 Temporal 原生日历执行，不建立本地定时器。"},
     "everySeconds": {"type": "integer", "minimum": 1},
     "offsetSeconds": {"type": "integer", "minimum": 0},
     "catchupWindowSeconds": {"type": "integer", "minimum": 10}

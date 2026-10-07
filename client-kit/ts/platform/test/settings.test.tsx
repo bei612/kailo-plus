@@ -27,14 +27,76 @@ import {
   ThemeModeControl,
   shortcutText,
   type SettingsSection,
+  CommunityInvitationSettings,
+  useInvitationSettingsState,
 } from "../src/react/settings";
 import { getLocale, setLocale, platformLocaleStorageKey, type PlatformThemeMode } from "../src/i18n";
 import { createBffClient } from "../src/client";
 import { PlatformProvider, useT, useUiT } from "../src/react/context";
-import { button, click, render, type } from "./render";
+import { button, click, render, settle, type } from "./render";
+import type { BffRequest } from "../src/transport";
 import { parseLinkPreviewSnapshots, parseLinkPreviewTextSnapshots, LinkPreviewAttachmentPresentation, LinkPreviewStyleSetting, setLinkPreviewStyle, useLinkPreviewStyle } from "../src/react/link-preview";
 
 describe("shared Buzz settings presentation", () => {
+  it("restores original Communities invitations from one authorized read and preserves its uncertain intent",async()=>{
+    let refused=false;let attempts=0;
+    const send=vi.fn(async(request:BffRequest)=>{
+      if(request.method==="GET")return refused?{status:403,body:{}}:{status:200,body:[]};
+      attempts++;
+      return attempts===1?{status:202,body:{actionKey:"tenant.member.invite",actionExecutionId:"ae",operationId:"op",gateState:"ALLOWED",dispatchState:"UNKNOWN"}}:{status:403,body:{}};
+    });
+    const client=createBffClient({send});
+    const nextSend=vi.fn(async()=>({status:200,body:[]}));
+    const nextClient=createBffClient({send:nextSend});
+    function Settings(){
+      const [section,setSection]=useState<SettingsSection>("profile");
+      const invitations=useInvitationSettingsState();
+      return <SettingsPage locale="en" section={section} onSelect={setSection} invitationAccess={invitations.access} onRetryInvitations={invitations.reload}>
+        <CommunityInvitationSettings active={section==="community-members"} onAccessChange={invitations.onAccessChange}/>
+      </SettingsPage>;
+    }
+    function Scope(){
+      const [changed,setChanged]=useState(false);
+      return <><button onClick={()=>setChanged(true)}>Switch session</button><PlatformProvider client={changed?nextClient:client} locale="en"><Settings/></PlatformProvider></>;
+    }
+    const host=await render(<Scope/>);await settle();
+    expect(send).toHaveBeenCalledTimes(1);expect(send).toHaveBeenCalledWith({method:"GET",path:"/api/v1/invitations"});
+    expect(host.textContent).toContain("Communities");
+    await click(host.querySelector<HTMLElement>('[data-testid="settings-nav-community-members"]')!);
+    const panel=host.querySelector<HTMLElement>('[data-testid="settings-community-invitations"]')!;
+    await type(panel.querySelector('input[name="inviteeLabel"]')!,"Ada");await click(button(panel,"Create invitation link"));
+    expect(panel.textContent).toContain("op");
+    await click(host.querySelector<HTMLElement>('[data-testid="settings-nav-profile"]')!);expect(panel.hidden).toBe(true);
+    await click(host.querySelector<HTMLElement>('[data-testid="settings-nav-community-members"]')!);expect(panel.hidden).toBe(false);
+    expect(panel.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!.value).toBe("Ada");
+    refused=true;await act(async()=>window.dispatchEvent(new Event("focus")));await settle();
+    expect(host.querySelector('[data-testid="settings-nav-community-members"]')).toBeNull();
+    refused=false;await act(async()=>window.dispatchEvent(new Event("focus")));await settle();
+    await click(button(panel,"Try again"));
+    const writes=send.mock.calls.filter(([r])=>r.method==="POST").map(([r])=>r.body);
+    expect(writes).toHaveLength(2);expect(writes[1]).toEqual(writes[0]);
+    expect(panel.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!.disabled).toBe(true);
+    const previousCalls=send.mock.calls.length;
+    await click(button(host,"Switch session"));
+    expect(panel.isConnected).toBe(false);
+    expect(host.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!.value).toBe("");
+    await act(async()=>window.dispatchEvent(new Event("focus")));await settle();
+    expect(send).toHaveBeenCalledTimes(previousCalls);expect(nextSend).toHaveBeenCalledTimes(2);
+  });
+  it("never offers invitations for an unconfirmed read and retries the same page read",async()=>{
+    let failed=true;const send=vi.fn(async()=>failed?{status:503,body:{}}:{status:200,body:[]});
+    function Settings(){
+      const state=useInvitationSettingsState();
+      return <SettingsPage locale="en" section="profile" onSelect={()=>{}} invitationAccess={state.access} onRetryInvitations={state.reload}>
+        <CommunityInvitationSettings active={false} onAccessChange={state.onAccessChange}/>
+      </SettingsPage>;
+    }
+    const host=await render(<PlatformProvider client={createBffClient({send})} locale="en"><Settings/></PlatformProvider>);await settle();
+    expect(host.querySelector('[data-testid="settings-nav-community-members"]')).toBeNull();
+    const notice=host.querySelector<HTMLElement>('[data-testid="community-access-error"]')!;expect(notice).not.toBeNull();
+    failed=false;await click(button(notice,"Try again"));
+    expect(host.querySelector('[data-testid="settings-nav-community-members"]')).not.toBeNull();expect(send).toHaveBeenCalledTimes(2);
+  });
   it("applies the original link-preview setting to a real mounted message card", async () => {
     const href = "https://example.com/product";
     const snapshot = ["link-preview", "snapshot", "1", href, "Product", "Example", "Full description", "", "", "", ""];

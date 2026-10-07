@@ -1,0 +1,5 @@
+[
+  {"trigger":{"kind":"SCHEDULE","scheduleSpec":{"kind":"CRON","cron":"0 9 * * MON-FRI","catchupWindowSeconds":60}},"action":{"kind":"POST_MESSAGE","template":"Daily report"},"resultTarget":"CHANNEL"},
+  {"trigger":{"kind":"SCHEDULE","scheduleSpec":{"kind":"CRON","cron":"15 0 9 * * * 2027","catchupWindowSeconds":60}},"action":{"kind":"AGENT_TURN","template":"Annual report"},"resultTarget":"CHANNEL"},
+  {"trigger":{"kind":"SCHEDULE","scheduleSpec":{"everySeconds":300,"offsetSeconds":0,"catchupWindowSeconds":60}},"action":{"kind":"POST_MESSAGE","template":"Interval report"},"resultTarget":"CHANNEL"}
+]

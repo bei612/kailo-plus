@@ -540,6 +540,10 @@ type wikiPendingRepoForCleanupTest struct {
 	incrCtxErr    error
 }
 
+func (r *wikiPendingRepoForCleanupTest) UnresolvedDocumentOps(context.Context, uint64, string, string, string, string) (int64, int64, error) {
+	return 0, 0, errors.New("document observation is not part of this wiki fixture")
+}
+
 func (r *wikiPendingRepoForCleanupTest) Enqueue(context.Context, *types.TaskPendingOp) error {
 	return nil
 }

@@ -73,9 +73,9 @@ type resourceReleaser struct {
 // orphaned blob that a later delete can still reclaim; the cost of guessing
 // wrong the other way is an image vanishing from a conversation or document
 // that nobody deleted.
-func (r *resourceReleaser) deletable(ctx context.Context, ref string) bool {
+func (r *resourceReleaser) deletable(ctx context.Context, ref string) (bool, error) {
 	if r == nil || r.catalog == nil {
-		return true
+		return true, nil
 	}
 	remaining := int64(-1)
 	for _, ownerID := range r.ownerIDs {
@@ -83,7 +83,7 @@ func (r *resourceReleaser) deletable(ctx context.Context, ref string) bool {
 		if err != nil {
 			logger.Warnf(ctx, "Failed to release resource %s from %s %s: %v",
 				ref, r.ownerType, ownerID, err)
-			return false
+			return false, err
 		}
 		if count >= 0 {
 			remaining = count
@@ -91,7 +91,7 @@ func (r *resourceReleaser) deletable(ctx context.Context, ref string) bool {
 	}
 	// -1 means the reference is not a catalog handle: no claims to account
 	// for, so fall back to deleting it as before.
-	return remaining <= 0
+	return remaining <= 0, nil
 }
 
 // deleteExtractedImages deletes all extracted image files from storage.
@@ -104,20 +104,28 @@ func deleteExtractedImages(
 	fileSvc interfaces.FileService,
 	releaser *resourceReleaser,
 	imageURLs []string,
-) {
+) error {
 	if len(imageURLs) == 0 {
-		return
+		return nil
 	}
+	var cleanupErr error
 	logger.Infof(ctx, "Deleting %d extracted images", len(imageURLs))
 	for _, url := range imageURLs {
-		if !releaser.deletable(ctx, url) {
+		allowed, err := releaser.deletable(ctx, url)
+		if err != nil {
+			cleanupErr = errors.Join(cleanupErr, err)
+			continue
+		}
+		if !allowed {
 			logger.Infof(ctx, "Keeping extracted image %s: another owner may still reference it", url)
 			continue
 		}
 		if err := fileSvc.DeleteFile(ctx, url); err != nil {
 			logger.Errorf(ctx, "Failed to delete extracted image %s: %v", url, err)
+			cleanupErr = errors.Join(cleanupErr, err)
 		}
 	}
+	return cleanupErr
 }
 
 // DeleteKnowledge deletes a knowledge entry and all related resources
@@ -134,18 +142,27 @@ func (s *knowledgeService) DeleteKnowledge(ctx context.Context, id string) error
 // that read and this plan. executeKnowledgeDelete fences this exact plan before
 // touching indexes, chunks, or files.
 func (s *knowledgeService) DeleteKnowledgeAtRevision(ctx context.Context, id, revision string) error {
+	_, err := s.deleteKnowledgeAtRevision(ctx, id, revision)
+	return err
+}
+
+// Both the independent native caller and retained task execute this same plan.
+// The returned Wiki flag belongs to that execution, not earlier queue admission.
+func (s *knowledgeService) deleteKnowledgeAtRevision(ctx context.Context, id, revision string) (bool, error) {
 	if revision == "" {
-		return apperrors.NewBadRequestError("native revision is required")
+		return false, apperrors.NewBadRequestError("native revision is required")
 	}
 	plan, err := s.planKnowledgeDelete(ctx, []string{id})
 	if err != nil {
-		return err
+		return false, err
 	}
 	if len(plan.knowledge) != 1 || plan.knowledge[0].UpdatedAt.IsZero() ||
 		plan.knowledge[0].UpdatedAt.UTC().Format(time.RFC3339Nano) != revision {
-		return apperrors.NewConflictError("native revision changed")
+		return false, apperrors.NewConflictError("native revision changed")
 	}
-	return s.executeKnowledgeDelete(plan, true)
+	plan.strictCleanup = true
+	wikiEnabled := plan.kbs[plan.knowledge[0].KnowledgeBaseID].IsWikiEnabled()
+	return wikiEnabled, s.executeKnowledgeDelete(plan, true)
 }
 
 // cleanupWikiOnKnowledgeDelete handles wiki pages when a source document is deleted.
@@ -168,10 +185,15 @@ func (s *knowledgeService) DeleteKnowledgeAtRevision(ctx context.Context, id, re
 //     created them). The retract handler re-queries ListPagesBySourceRef at
 //     run time, so even with an empty PageSlugs it will do the right thing —
 //     and at worst it's a cheap no-op.
-func (s *knowledgeService) cleanupWikiOnKnowledgeDelete(ctx context.Context, knowledge *types.Knowledge) {
-	if err := s.cleanupWikiReferences(ctx, knowledge, s.wikiChunkRefsForKnowledge(ctx, knowledge)); err != nil {
+func (s *knowledgeService) cleanupWikiOnKnowledgeDelete(ctx context.Context, knowledge *types.Knowledge) error {
+	refs, err := s.wikiChunkRefsForKnowledge(ctx, knowledge)
+	if err == nil {
+		err = s.cleanupWikiReferences(ctx, knowledge, refs)
+	}
+	if err != nil {
 		logger.Warnf(ctx, "wiki cleanup failed: %v", err)
 	}
+	return err
 }
 
 func (s *knowledgeService) cleanupWikiReferences(
@@ -291,14 +313,14 @@ func (s *knowledgeService) cleanupWikiReferences(
 	return cleanupErr
 }
 
-func (s *knowledgeService) wikiChunkRefsForKnowledge(ctx context.Context, knowledge *types.Knowledge) map[string]bool {
+func (s *knowledgeService) wikiChunkRefsForKnowledge(ctx context.Context, knowledge *types.Knowledge) (map[string]bool, error) {
 	if knowledge == nil || s.chunkRepo == nil {
-		return nil
+		return nil, fmt.Errorf("wiki cleanup source unavailable")
 	}
 	chunks, err := s.chunkRepo.ListAllChunksByKnowledgeID(ctx, knowledge.TenantID, knowledge.ID)
 	if err != nil {
 		logger.Warnf(ctx, "wiki cleanup: failed to list chunks for knowledge %s: %v", knowledge.ID, err)
-		return nil
+		return nil, err
 	}
 	refs := make(map[string]bool, len(chunks))
 	for _, chunk := range chunks {
@@ -307,7 +329,7 @@ func (s *knowledgeService) wikiChunkRefsForKnowledge(ctx context.Context, knowle
 		}
 		refs[chunk.ID] = true
 	}
-	return refs
+	return refs, nil
 }
 
 // scrubWikiPendingIngest removes queued WikiOpIngest entries for a knowledge
@@ -448,6 +470,7 @@ func (s *knowledgeService) executeKnowledgeDelete(plan *knowledgeDeletePlan, sin
 		return nil
 	}
 	ctx, ids, knowledgeList := plan.ctx, plan.ids, plan.knowledge
+	var cleanupErr error
 	knowledgeBases, kbFileServices := plan.kbs, plan.files
 	tenantInfo, _ := types.TenantInfoFromContext(ctx)
 
@@ -541,7 +564,7 @@ func (s *knowledgeService) executeKnowledgeDelete(plan *knowledgeDeletePlan, sin
 	for _, knowledge := range knowledgeList {
 		kb := knowledgeBases[knowledge.KnowledgeBaseID]
 		if kb != nil && kb.IsWikiEnabled() {
-			s.cleanupWikiOnKnowledgeDelete(ctx, knowledge)
+			cleanupErr = errors.Join(cleanupErr, s.cleanupWikiOnKnowledgeDelete(ctx, knowledge))
 		}
 	}
 
@@ -573,10 +596,17 @@ func (s *knowledgeService) executeKnowledgeDelete(plan *knowledgeDeletePlan, sin
 	if err := wg.Wait(); err != nil {
 		return err
 	}
+	if plan.strictCleanup && cleanupErr != nil {
+		return cleanupErr
+	}
 	for _, knowledgeID := range ids {
 		if err := s.repo.DeleteKnowledgeTagRelations(ctx, knowledgeID); err != nil {
 			logger.Warnf(ctx, "Failed to delete tag relations for knowledge %s: %v", knowledgeID, err)
+			cleanupErr = errors.Join(cleanupErr, err)
 		}
+	}
+	if plan.strictCleanup && cleanupErr != nil {
+		return cleanupErr
 	}
 	// 6. Delete the knowledge rows FIRST, then drop their physical files. See
 	// Deferring file removal until the rows are
@@ -593,6 +623,7 @@ func (s *knowledgeService) executeKnowledgeDelete(plan *knowledgeDeletePlan, sin
 			fSvc := kbFileServices[knowledge.KnowledgeBaseID]
 			if err := fSvc.DeleteFile(ctx, knowledge.FilePath); err != nil {
 				logger.GetLogger(ctx).WithField("error", err).Errorf("DeleteKnowledge delete file failed")
+				cleanupErr = errors.Join(cleanupErr, err)
 			}
 		}
 		storageAdjust -= knowledge.StorageSize
@@ -602,13 +633,18 @@ func (s *knowledgeService) executeKnowledgeDelete(plan *knowledgeDeletePlan, sin
 		fSvc := kbFileServices[kbID]
 		if fSvc == nil {
 			logger.Warnf(ctx, "No file service for KB %s, skipping %d image deletions", kbID, len(urls))
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("image cleanup storage unavailable"))
 			continue
 		}
-		deleteExtractedImages(ctx, fSvc, knowledgeResourceOwners(s.resourceCatalog, kbKnowledgeIDs[kbID]...), urls)
+		cleanupErr = errors.Join(cleanupErr, deleteExtractedImages(ctx, fSvc, knowledgeResourceOwners(s.resourceCatalog, kbKnowledgeIDs[kbID]...), urls))
 	}
 	// TenantInfo can be shared by concurrent cleanup branches; update only storage accounting in the repository.
 	if err := s.tenantRepo.AdjustStorageUsed(ctx, tenantInfo.ID, storageAdjust); err != nil {
 		logger.GetLogger(ctx).WithField("error", err).Errorf("DeleteKnowledge update tenant storage used failed")
+		cleanupErr = errors.Join(cleanupErr, err)
+	}
+	if plan.strictCleanup && cleanupErr != nil {
+		return cleanupErr
 	}
 	byKB := make(map[string][]*types.Knowledge)
 	for i := range knowledgeList {
@@ -770,6 +806,43 @@ func (s *knowledgeService) ProcessKnowledgeListDelete(ctx context.Context, t *as
 		bindings[id] = kbID
 	}
 	ctx = withKnowledgeCleanup(ctx, payload.TenantID, bindings)
+	if payload.ExpectedRevision != "" || payload.TaskID != "" {
+		if len(ids) != 1 || !validDeleteTaskCoordinates(kbID, ids[0], payload.ExpectedRevision, payload.TaskID) || taskID != payload.TaskID || s.redisClient == nil {
+			return fmt.Errorf("invalid conditional deletion task: %w", asynq.SkipRetry)
+		}
+		// Redis recovery may redeliver after ResultWriter committed but before
+		// Asynq recorded completion. Only this task's existing receipt closes it.
+		info, err := asynq.NewInspectorFromRedisClient(s.redisClient).GetTaskInfo(types.QueueMaintenance, taskID)
+		if err != nil {
+			return fmt.Errorf("conditional deletion observation unavailable: %w", asynq.SkipRetry)
+		}
+		if len(info.Result) != 0 {
+			var receipt knowledgeDeleteReceipt
+			if json.Unmarshal(info.Result, &receipt) != nil || receipt.TaskID != taskID || receipt.TenantID != payload.TenantID || receipt.KnowledgeBaseID != kbID || receipt.KnowledgeID != ids[0] || receipt.Revision != payload.ExpectedRevision || receipt.CleanedAt.IsZero() {
+				return fmt.Errorf("conditional deletion receipt mismatch: %w", asynq.SkipRetry)
+			}
+			return nil
+		}
+		wikiEnabled, err := s.deleteKnowledgeAtRevision(ctx, ids[0], payload.ExpectedRevision)
+		if err != nil {
+			// Partial cleanup is retained as UNKNOWN. Re-running a document write
+			// merely because a transport or cleanup operation failed is unsafe.
+			return fmt.Errorf("conditional deletion lacks terminal evidence: %w", asynq.SkipRetry)
+		}
+		receipt := knowledgeDeleteReceipt{TaskID: taskID, TenantID: payload.TenantID, KnowledgeBaseID: kbID, KnowledgeID: ids[0], Revision: payload.ExpectedRevision, WikiEnabled: wikiEnabled, CleanedAt: time.Now().UTC()}
+		raw, err := json.Marshal(receipt)
+		if err != nil {
+			return fmt.Errorf("conditional deletion receipt unavailable: %w", asynq.SkipRetry)
+		}
+		writer := t.ResultWriter()
+		if writer == nil {
+			return fmt.Errorf("conditional deletion has no durable result writer: %w", asynq.SkipRetry)
+		}
+		if n, err := writer.Write(raw); err != nil || n != len(raw) {
+			return fmt.Errorf("conditional deletion receipt was not persisted: %w", asynq.SkipRetry)
+		}
+		return nil
+	}
 	if err := s.DeleteKnowledgeList(ctx, ids); err != nil {
 		var appErr *apperrors.AppError
 		if errors.As(err, &appErr) && (appErr.HTTPCode == 403 || appErr.HTTPCode == 400 || appErr.HTTPCode == 409) {

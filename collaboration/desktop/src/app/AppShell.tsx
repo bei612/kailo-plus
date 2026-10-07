@@ -52,8 +52,11 @@ import { RelayConnectionOverlay } from "@/app/RelayConnectionOverlay";
 import { useSidebarRelayConnectionCard } from "@/features/sidebar/ui/useSidebarRelayConnectionCard";
 import { AppProfilePanelProvider } from "@/app/AppProfilePanelProvider";
 import { LazySettingsScreen } from "@/app/LazySettingsScreen";
+import { useT } from "@client-kit/platform/react/context";
+import { ReadFailure } from "@client-kit/platform/react/ui";
 
 export function AppShell() {
+  const t=useT();
   useWebviewZoomShortcuts();
   useTauriWindowDrag();
   useWebviewScrollBoundaryLock();
@@ -83,6 +86,8 @@ export function AppShell() {
     );
   // Settings lives in history so back returns to the previous app entry.
   const settingsOpen = location.pathname === "/settings";
+  const settingsVisited=React.useRef(false);
+  if(settingsOpen)settingsVisited.current=true;
   const locationSearchSection = (location.search as { section?: unknown })
     .section;
   const settingsSection: SettingsSection = isSettingsSection(
@@ -403,10 +408,15 @@ export function AppShell() {
                     onGoForward={goForward}
                   />
                 ) : null}
-                {settingsOpen ? (
-                  <div className="flex min-h-0 flex-1 overflow-hidden">
+                {settingsOpen&&!platformSession.data?<div className="p-4">
+                  {platformSession.isError?<ReadFailure error={platformSession.error} onRetry={()=>void platformSession.refetch()}/>:<p role="status">{t("platform.loading")}</p>}
+                </div>:null}
+                {settingsVisited.current&&platformSession.data ? (
+                  <div className="flex min-h-0 flex-1 overflow-hidden" hidden={!settingsOpen} style={settingsOpen?undefined:{display:"none"}}
+                    key={`${platformSession.data.tenantId}:${platformSession.data.tenantPrincipalId}:${platformSession.data.platformSessionId}`}>
                     <React.Suspense fallback={null}>
                       <LazySettingsScreen
+                        active={settingsOpen}
                         isUpdatingDesktopNotifications={
                           notificationSettings.isUpdatingDesktopEnabled
                         }
@@ -437,7 +447,8 @@ export function AppShell() {
                       />
                     </React.Suspense>
                   </div>
-                ) : (
+                ) : null}
+                {!settingsOpen ? (
                   <div className="relative flex min-h-0 flex-1 overflow-visible">
                     <AppSidebar
                       currentPrincipalId={platformSession.data?.tenantPrincipalId}
@@ -496,7 +507,7 @@ export function AppShell() {
                       errorMessage={channelsErrorMessage}
                     />
                   </div>
-                )}
+                ) : null}
               </AppProfilePanelProvider>
             </SidebarProvider>
           </div>

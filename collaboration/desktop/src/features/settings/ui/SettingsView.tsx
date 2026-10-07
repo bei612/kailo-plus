@@ -1,7 +1,7 @@
 import * as React from "react";
 import { resolveLocale, translate } from "@client-kit/platform/i18n";
 import { useDeviceLocale } from "@client-kit/platform/react/context";
-import { SettingsNavigation, SettingsContentSurface } from "@client-kit/platform/react/settings";
+import { SettingsNavigation, SettingsContentSurface, CommunityInvitationSettings, useInvitationSettingsState } from "@client-kit/platform/react/settings";
 import { getVersion } from "@tauri-apps/api/app";
 import { ArrowLeft } from "lucide-react";
 
@@ -25,12 +25,14 @@ import {
 } from "./SettingsPanels";
 
 type SettingsViewProps = SettingsPanelProps & {
+  active: boolean;
   onClose: () => void;
   onSectionChange: (section: SettingsSection) => void;
   section: SettingsSection;
 };
 
 export function SettingsView({
+  active,
   isUpdatingDesktopNotifications,
   notificationErrorMessage,
   notificationPermission,
@@ -46,6 +48,7 @@ export function SettingsView({
   section,
 }: SettingsViewProps) {
   const locale = useDeviceLocale();
+  const invitations=useInvitationSettingsState();
   const { isMobile, open: sidebarOpen, setOpen: setSidebarOpen } = useSidebar();
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [appVersion, setAppVersion] = React.useState<string | null>(null);
@@ -60,12 +63,13 @@ export function SettingsView({
   }, []);
 
   React.useEffect(() => {
-    if (!isMobile && !sidebarOpen) {
+    if (active && !isMobile && !sidebarOpen) {
       setSidebarOpen(true);
     }
-  }, [isMobile, setSidebarOpen, sidebarOpen]);
+  }, [active, isMobile, setSidebarOpen, sidebarOpen]);
 
   React.useEffect(() => {
+    if(!active)return;
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape" && !event.defaultPrevented) {
         event.preventDefault();
@@ -75,11 +79,11 @@ export function SettingsView({
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [active,onClose]);
 
   return (
     <>
-      <Sidebar
+      {active?<Sidebar
         className="!border-r-0"
         collapsible="offcanvas"
         data-testid="settings-sidebar"
@@ -116,7 +120,7 @@ export function SettingsView({
         </SidebarHeader>
 
         <SidebarContent>
-          <SettingsNavigation locale={locale} section={section} onSelect={onSectionChange} sidebarState={sidebarOpen ? "expanded" : "collapsed"} isMobile={isMobile} />
+          <SettingsNavigation locale={locale} section={section} onSelect={onSectionChange} sidebarState={sidebarOpen ? "expanded" : "collapsed"} isMobile={isMobile} invitationAccess={invitations.access} onRetryInvitations={invitations.reload} />
         </SidebarContent>
 
         <SidebarFooter>
@@ -130,7 +134,7 @@ export function SettingsView({
             </p>
           ) : null}
         </SidebarFooter>
-      </Sidebar>
+      </Sidebar>:null}
 
       <SidebarInset
         className={cn(
@@ -150,7 +154,8 @@ export function SettingsView({
           data-testid="settings-top-chrome"
         />
         <SettingsContentSurface section={section}>
-              {renderSettingsSection(section, {
+              <CommunityInvitationSettings active={section==="community-members"} onAccessChange={invitations.onAccessChange}/>
+              {active?renderSettingsSection(section, {
                 isUpdatingDesktopNotifications,
                 notificationErrorMessage,
                 notificationPermission,
@@ -161,7 +166,7 @@ export function SettingsView({
                 onSetNotifyWhileViewing,
                 onSetAllSlotAlertsEnabled,
                 onSetSoundForSlot,
-              })}
+              }):null}
         </SettingsContentSurface>
       </SidebarInset>
     </>

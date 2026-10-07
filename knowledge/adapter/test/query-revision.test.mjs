@@ -21,7 +21,7 @@ function reply(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-async function fixture(t, mode = 'ok', action) {
+async function fixture(t, mode = 'ok', action, protocolOperation) {
   const directory = await mkdtemp(join(tmpdir(), 'knowledge-adapter-'));
   const ids = Array.from({ length: 10 }, () => randomUUID());
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
@@ -37,9 +37,10 @@ async function fixture(t, mode = 'ok', action) {
   const revision = '2026-10-06T23:00:00.123456789Z';
   const reference = { resourceId: ids[8], nativeObjectRef: ids[2], nativeRevision: revision,
     displayName: 'native document', mediaType: 'text/markdown' };
-  const intent = action ? { target: { resourceId: ids[8] }, input: reference } : args;
-  const bodyValue = action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
-  const operation = action ? 'execute' : 'query_revision';
+  const operation = protocolOperation ?? (action ? 'execute' : 'query_revision');
+  const intent = operation === 'observe' ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:'delete_document'}
+    : action ? { target: { resourceId: ids[8] }, input: reference } : args;
+  const bodyValue = operation === 'observe' ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
   const upstream = createServer(async (request, response) => {
     let raw = '';
     for await (const chunk of request) raw += chunk;
@@ -60,6 +61,17 @@ async function fixture(t, mode = 'ok', action) {
     assert.ok(request.headers.authorization === `Bearer ${nativeSecret}`);
     assert.equal(body.method, 'tools/call');
     state.methods.push(body.params.name);
+    if (body.params.name === 'delete_document') {
+      assert.deepEqual(body.params.arguments, operation === 'observe'
+        ? {knowledge_base_id:ids[1],idempotency_key:args.idempotencyKey,observe_only:true}
+        : {knowledge_base_id:ids[1],knowledge_id:ids[2],expected_revision:revision,idempotency_key:args.idempotencyKey});
+      const value = mode === 'ack-only' ? {deleted:true} : {
+        task_id:ids[9],knowledge_id:ids[2],knowledge_base_id:mode === 'foreign' ? ids[0] : ids[1],
+        native_revision:revision,state:mode === 'queued' ? 'RUNNING' : mode === 'unknown' ? 'UNKNOWN' : 'SUCCEEDED',
+      };
+      if (value.state === 'SUCCEEDED' && mode !== 'no-terminal') value.completed_at = new Date(Date.now()-1000).toISOString();
+      return reply(response,200,{jsonrpc:'2.0',id:body.id,result:{content:[],structuredContent:value}});
+    }
     if (body.params.name === 'export_document') {
       assert.deepEqual(body.params.arguments, { knowledge_id: ids[2] });
       return reply(response, 200, { jsonrpc: '2.0', id: body.id, result: { content: [], structuredContent: {
@@ -103,7 +115,7 @@ async function fixture(t, mode = 'ok', action) {
     operation_id: ids[6], action_execution_id: ids[5], target_id: ids[8], target_type: 'RESOURCE',
     action_key: action ?? 'knowledge.read@v1', action_definition_version: 1, authorization_min_zed_token: 'original',
     result_exposure_policy_id: randomUUID(), result_exposure_policy_version: 1,
-    normalized_parameter_hash: createHash('sha256').update(canonical(action ? intent : { operation, arguments: args })).digest('hex') };
+    normalized_parameter_hash: createHash('sha256').update(canonical(operation === 'execute' ? intent : { operation, arguments: intent })).digest('hex') };
   if (action) { claims.idempotency_key = args.idempotencyKey; claims.external_execution_id = randomUUID(); }
   if (mode === 'foreign-token') claims.tenant_id = ids[9];
   const header = Buffer.from(JSON.stringify({ alg: 'ES256', kid: 'test', typ: 'JWT' })).toString('base64url');
@@ -123,6 +135,27 @@ test('knowledge revision uses original MCP metadata and two fresh PEP decisions'
   assert.deepEqual(await response.json(), { nativeObjectRef: args.nativeObjectRef, nativeRevision: revision });
   assert.equal(state.peps, 2);
   assert.deepEqual(state.methods, ['read_document']);
+});
+
+test('conditional delete and observation require retained native terminal evidence',async t=>{
+  for(const operation of ['execute','observe']) for(const mode of ['ok','queued','unknown','ack-only','no-terminal','foreign','revoke']) {
+    await t.test(`${operation}/${mode}`,async nested=>{
+      const {state,invoke}=await fixture(nested,mode,'knowledge.delete@v1',operation);
+      const response=await invoke();
+      const body=await response.json();
+      if(['ack-only','no-terminal','foreign','revoke'].includes(mode)) {
+        assert.notEqual(response.status,200);
+        assert.equal(body.execution,undefined);
+      } else {
+        assert.equal(response.status,200);
+        const observation=operation==='execute'?body.execution:body;
+        assert.equal(observation.platformStatus,mode==='ok'?'SUCCEEDED':mode==='queued'?'RUNNING':'UNKNOWN');
+        assert.equal(observation.terminalAt !== undefined,mode==='ok');
+        if(operation==='execute') assert.equal(body.resultJson,mode==='ok'?'{}':undefined);
+      }
+      assert.deepEqual(state.methods,['delete_document']);
+    });
+  }
 });
 
 test('actual read/export consume the signed typed reference and native content', async t => {

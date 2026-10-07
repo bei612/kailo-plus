@@ -18,16 +18,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /src
 COPY . .
 WORKDIR /src/codex-rs
+ARG CARGO_BUILD_JOBS
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --locked -p codex-app-server --bin codex-app-server
+    --mount=type=cache,target=/src/codex-rs/target,sharing=locked \
+    cargo build --release --locked --jobs "${CARGO_BUILD_JOBS:?build parallelism is required}" \
+      -p codex-app-server --bin codex-app-server \
+    && install -D target/release/codex-app-server /out/codex-app-server
 
 FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 liblzma5 \
     && rm -rf /var/lib/apt/lists/*
 # 以非 root 运行：app-server 只经 stdio 受 Core 控制，不需要任何特权
 RUN useradd --system --uid 10001 --no-create-home platform
-COPY --from=builder /src/codex-rs/target/release/codex-app-server /usr/local/bin/codex-app-server
+COPY --from=builder /out/codex-app-server /usr/local/bin/codex-app-server
 # 管理员强制约束与 system 配置层（Codex 固定从 /etc/codex 读取）
 COPY fork/runtime-config/requirements.toml /etc/codex/requirements.toml
 COPY fork/runtime-config/config.toml /etc/codex/config.toml

@@ -169,6 +169,9 @@ type ServerConfig struct {
 
 // KnowledgeBaseConfig 知识库配置
 type KnowledgeBaseConfig struct {
+	// DeleteReceiptRetention bounds the original queue's completed-result retention.
+	// Zero leaves durable MCP deletion unavailable; it never selects an in-memory fallback.
+	DeleteReceiptRetention time.Duration          `yaml:"delete_receipt_retention" json:"delete_receipt_retention"`
 	ChunkSize              int                    `yaml:"chunk_size"       json:"chunk_size"`
 	ChunkOverlap           int                    `yaml:"chunk_overlap"    json:"chunk_overlap"`
 	SplitMarkers           []string               `yaml:"split_markers"    json:"split_markers"`

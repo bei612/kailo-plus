@@ -104,6 +104,8 @@ type KnowledgeService interface {
 	// DeleteKnowledgeAtRevision admits only the exact native document revision.
 	// The existing deletion CAS fences concurrent edits before any cleanup.
 	DeleteKnowledgeAtRevision(ctx context.Context, id, revision string) error
+	StartKnowledgeDeleteTask(ctx context.Context, kbID, id, revision, taskID string) (map[string]any, error)
+	ObserveKnowledgeDeleteTask(ctx context.Context, kbID, id, revision, taskID string) (map[string]any, error)
 	// DeleteKnowledgeList requires an explicit write grant for every affected KB.
 	// It validates the complete selection before changing any deletion state.
 	DeleteKnowledgeList(ctx context.Context, ids []string) error

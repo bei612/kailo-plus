@@ -3609,3 +3609,115 @@ operationId、已知时同一 actionExecutionId 的有效回执才能解除。EV
 `member-actions-unknown-mutation.log`、`member-actions-unknown-restored.log`。
 未重复四侧生成、full、构建、部署；两端完整类型检查由合批执行，当前窄验
 仅证明共享消费逻辑。原测试仍有 React act 提示，不当作新增业务失败。
+
+### Workflows 原 Cron 到既有 Temporal Schedule（2026-10-07）
+
+本批在原 SCHEDULE 消费链增加 Cron，不建立本地时钟或第二执行权威。
+Web/Desktop 共同使用原五格 Cron 输入、粘贴与键盘移动交互；原 interval
+输入保留。六字段（含秒）与七字段（含年份）仅通过原 YAML 编辑，不能无损
+转五格时保留 YAML 并明确拒绝切换，不能截断。当前仍不是 Workflows 全功能。
+
+实现前四步结论：
+
+1. 权威：DD-107、03 §7、05 §2.9 的既有 SCHEDULE、AgentTaskWorkflow 与审批
+   链不变。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/workflows/ui/CronExpressionInput.tsx::CronExpressionInput`、
+   `cronExpression.ts::validateCronFields` 与
+   `crates/buzz-workflow/src/schema.rs::normalize_cron/validate_cron` 为原交互和
+   5/6/7 字段依据。后者使用 Cargo.lock 固定的 cron 0.16；其
+   `src/time_unit/days_of_week.rs::DaysOfWeek` 为 1=周日、7=周六，不能按
+   Temporal 数字星期直接解释。原 UI 的 0–7 提示在这里纠正为真实执行语义。
+2. 影响面：只扩既有 AutomationScheduleSpec 的可选 kind/cron，旧三字段
+   interval 内容与摘要不变；Core 管理写入、详情读取和原 Schedule 建立/恢复
+   统一调用同一个 spec 转换；Worker 原 ScheduleTaskInput、首次准入、审批、
+   AgentTask 和运行历史均未另开分支。四侧类型由原生成入口产出。
+3. 副作用：复用 Temporal `d94e34a1ebba5410a2e7d07119a76896909591aa` 的
+   `service/worker/scheduler/calendar.go::makeRange/parseValue` 字段转换与
+   `service/worker/scheduler/spec.go::CleanSpec` 默认值规则，直接投递原生
+   StructuredCalendarSpec；星期只从原 1–7 映射至原生 0–6，不实现日期求值。
+   原 exact-ID Describe、ScheduleSpec 严格相等、UNKNOWN 同 intent 对账均保留。
+4. 边界：Cron 与 interval 字段互斥，未知 kind、空值、非法范围/步长与不可表达
+   值均拒绝，不退回 interval。使用 UTC，显式年份按原生 2000–2100 边界；
+   本批接原表单的星号/数字/列表/范围/步长及固定 cron 0.16 的
+   `MONTH_MAP` / `DAY_OF_WEEK_MAP` 精确别名：三字母、完整月份/星期名、
+   `Tues` / `Thurs`；前端校验与 Temporal 字段转换一致，不接受任意截断。
+   `?` 或其它特殊语法仍未覆盖。Catch-up 与 SKIP 原策略不改。
+
+验证：受限既有 SDK 独立 message-edit.AGX058 快照，共享 source/test tsc 均 0，
+调度消费 54/54 通过，菜单/历史 14/14 通过。SDK-only 放宽 Cron 字段互斥，
+新增混合 YAML 用例真实失败 1 项；原字节恢复 cmp 0 后 54/54 再通过。
+原 gen.sh --check 四侧和 Dart 同源文案均 PASS；TS 往返 33/33、Dart 往返
+28/28 通过。原兼容比较相对 contracts-v0.1.0 无破坏性变更，266 个 schema、
+匹配 3 个历史 schema。首次 Vitest forks 启动超时，0 项执行；改用既有 threads
+单 worker 后得到上述真实结果。一次 gen --check 调用遗漏 Rust/Go PATH
+导致格式差异，补齐既有工具 PATH 后同步检查通过，没有改生成物迁就检查。
+
+日志位于既有 `message-edit.AGX058`：`workflow-cron-ui-restored.log`、
+`workflow-cron-ui-mutation.log`、`workflow-cron-ui-retry.log`、
+`workflow-cron-contracts-restored.log`、`workflow-cron-dart.log`。
+本批没有 full/build/deploy；因 Data 剩余空间不足，Core 与 Go 编译/往返暂未执行。
+未获已核验的隔离 Temporal namespace，真实 Create/Describe exact、触发日期、
+运行历史端到端尚未验收；不能拿纯转换断言替代。发布必须先 Core 后客户端，
+旧 Core 不接受新的 Cron 形状。多步骤及其条件/超时/Delay 仍为后续真实恢复项。
+
+## 2026-10-07：原设置 Communities / Invites 的共享接线
+
+权威为 REQ-24、DD-53 与既有 DD-83 邀请管理。只读上游
+`/volumes/kailo/.references/buzz` 固定
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/settings/ui/SettingsPanels.tsx::SettingsSection`、
+`renderSettingsSection` 及同目录 `SettingsView.tsx::settingsNavGroups`
+证明原 Communities 分组内有 `community-members` / Invites 的 Ticket 入口。
+本批复用已恢复的 Sidebar、设置布局和原 `TenantInvitations`，不另造页面、
+身份、权限目录或邀请写接口；没有恢复不存在真实消费者的 hosted-communities。
+
+影响面为共享设置导航与邀请页面的同一次读取、Web SettingsPane / PlatformApp、
+Desktop SettingsPanels / SettingsView / SettingsScreen / AppShell。入口只在原
+`/api/v1/invitations` 成功读取后出现，403 隐藏；读取失败显示原错误与重试，
+不伪装为空列表。窗口重新获得焦点复用原 reload，没有新增轮询或第二权限请求。
+新增分组名称只加入既有 TS / Dart 同源中英词条；Mobile 无组件宿主改动。
+
+副作用保持原 `/api/v1/actions` 准入、审批、回执及 UNKNOWN 幂等意图。
+设置页关闭、切换设置分类或读取 403 不清空邀请 hook。Web / Desktop 均以
+真实 tenantId、tenantPrincipalId、platformSessionId 为设置实例 key；换会话
+替换实例，退出由既有认证宿主卸载。Desktop 原 NativeBootstrap 配置变化先
+回到 loading 并卸载子树，ActiveCommunityProvider 仍按 relayUrl / devicePubkey
+隔离；读取故障不能作为旧未决动作已失败的证据。隐藏设置不处理 Escape、不强制
+展开应用侧栏，不渲染原响应式侧栏 portal；无初始会话时显示真实读取状态。
+
+实现后窄验：共享源码与测试 TypeScript 检查退出 0，原 Members 8 项与
+Invitations 14 项通过；新增设置用例所在 worker 启动超时，整条命令退出 1，
+不计为新增设置验收。Web TypeScript 检查退出 0，随后 SettingsPane、
+ProfileSettings、PlatformApp 三个测试 worker 均启动超时，0 tests，退出 1。
+随后只执行 Desktop TypeScript 检查，退出 0；包含隐藏设置副作用和初始会话
+读取状态修正，没有安装依赖或另起项目构建。
+没有提高超时、改产品规避错误、安装依赖或重跑 full。两宿主保留各自锁定依赖树，
+消费同一份本批共享源码副本，不通过跨树软链接混用 React 类型。
+
+原日志位于 Data 证据目录
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/projects-directory.wiWDv3/`：
+`settings-invitations-shared.log`、`settings-invitations-hosts.log`、
+`settings-invitations-desktop.log`。
+新增设置正反行为检查尚未取得实际结果，不能以已有 22 项替代；本批没有构建、
+部署或浏览器验收，不声明线上设置入口已恢复。
+
+### 同批资源恢复后的实际行为回执
+
+没有换 SDK、安装依赖或提高超时。原设置文件独立运行实际 20 项通过，退出 0
+（`settings-invitations-behavior-restored.log`）。随后 SDK 私有源码同时故意把
+导航的成功读取判断改成任意读取状态，并给邀请控制器增加随 active 变化的 key：
+新增两项用例分别真实失败，退出 1（`settings-invitations-behavior-mutation.log`）。
+两文件从正式输入原字节恢复、cmp 0 后，设置全部 20 项再次通过；后续命令因
+工作目录层数误写而未运行 Web，整条命令退出 1，如实保留
+`settings-invitations-behavior-final.log`，不称该组合命令全通过。
+
+Web 初轮实际 12 项通过、4 项失败：PlatformApp 旧测试 mock 缺少已恢复的
+NativeApplicationEntries，且管理面 mock 未透传真实 children；原邀请已经由
+共享 MembersPane 持有，宿主不再另挂第二邀请页。仅修对应原夹具，不改变产品。
+另一个外观用例触发原 5 秒超时，没有增加超时。修正后以准确目录运行原三个
+Web 文件，SettingsPane 6、PlatformApp 6、ProfileSettings 4，共 16 项通过，
+退出 0（`settings-invitations-web-final.log`）。Canvas 的 jsdom 提示仍保留，
+未为消除此提示安装包或修改头像产品行为。
+
+本批最终窄验边界为三处 TypeScript 检查、共享设置 20 项、原邀请/成员 22 项、
+Web 16 项及上述真实负向/还原；没有 full、产物构建、部署或浏览器验收。

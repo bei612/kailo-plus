@@ -325,6 +325,28 @@ void main() {
     );
   });
   test(
+    'automation cron round-trip preserves exact spec and legacy interval',
+    () {
+      final original =
+          jsonDecode(
+                File(
+                  '../../contracts/samples/automation-cron.sample.json',
+                ).readAsStringSync(),
+              )
+              as List<dynamic>;
+      final typed = original
+          .map(
+            (row) =>
+                AutomationVersionContent.fromJson(row as Map<String, dynamic>),
+          )
+          .toList();
+      expect(
+        jsonDecode(jsonEncode(typed.map((row) => row.toJson()).toList())),
+        equals(original),
+      );
+    },
+  );
+  test(
     'automation POST_MESSAGE round-trip preserves action and native schedule',
     () {
       final original = jsonDecode(

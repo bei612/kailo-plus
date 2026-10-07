@@ -8,34 +8,16 @@ use axum::{
 };
 use contracts::AutomationScheduleAdmitRequest;
 
-pub(crate) fn interval(spec: &Value) -> Result<(i64, i64, i64), Refusal> {
-    let obj = spec.as_object().ok_or_else(invalid_management)?;
-    if obj.len() != 3
-        || obj.keys().any(|k| {
-            !matches!(
-                k.as_str(),
-                "everySeconds" | "offsetSeconds" | "catchupWindowSeconds"
-            )
-        })
-    {
-        return Err(invalid_management());
-    }
-    let every = spec["everySeconds"]
-        .as_i64()
-        .ok_or_else(invalid_management)?;
-    let offset = spec["offsetSeconds"]
-        .as_i64()
-        .ok_or_else(invalid_management)?;
-    let catchup = spec["catchupWindowSeconds"]
-        .as_i64()
-        .ok_or_else(invalid_management)?;
-    // Temporal d94e34a1… service/worker/scheduler/workflow.go:
-    // defaultTweakables.MinCatchupWindow / scheduler.getCatchupWindow clamp to 10s.
-    // 拒绝低于原生规范化下界的输入，不能把另一有效窗口冒称已按请求投递。
-    if every <= 0 || offset < 0 || offset >= every || catchup < 10 {
-        return Err(invalid_management());
-    }
-    Ok((every, offset, catchup))
+pub(crate) fn spec(
+    value: &Value,
+) -> Result<
+    (
+        temporalio_common::protos::temporal::api::schedule::v1::ScheduleSpec,
+        i64,
+    ),
+    Refusal,
+> {
+    crate::temporal::automation_schedule_spec(value).map_err(|_| invalid_management())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -161,7 +143,7 @@ pub(crate) async fn converge_scope_schedules(
                         &base(&origin),
                         &input(&native_id, &origin),
                         (&origin.tenant.to_string(), &origin.workspace.to_string()),
-                        interval(spec).map_err(|_| {
+                        self::spec(spec).map_err(|_| {
                             sqlx::Error::Protocol("Schedule lifecycle spec 损坏".into())
                         })?,
                         false,
@@ -380,7 +362,7 @@ pub(super) async fn dispatch(
                         &base(&origin),
                         &input(native_id, &origin),
                         (&origin.tenant.to_string(), &origin.workspace.to_string()),
-                        interval(&intent["spec"])?,
+                        spec(&intent["spec"])?,
                         false,
                     )
                     .map_err(|_| invalid_management())?,

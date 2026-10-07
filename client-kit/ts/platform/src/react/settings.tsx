@@ -1,10 +1,12 @@
 // DD-53 / ADR-09: shared presentation only. Hosts retain their existing
 // preference stores, native notification permissions and keyboard handlers.
-import { useState, type ReactNode } from "react";
-import { useDeviceLocale } from "./context";
+import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useDeviceLocale, useUiLocale } from "./context";
 import { SettingsNavigation, SettingsContentSurface, SettingsSectionHeader, type SettingsSection } from "./settings-surface";
 import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from "./settings-option-group";
 import { TooltipProvider } from "./sidebar/tooltip";
+import { TenantInvitations } from "./invitations";
+import type { Loaded } from "./use-load";
 export { SettingsNavigation, SettingsContentSurface, SettingsSectionHeader, settingsSectionKeys, type SettingsSection } from "./settings-surface";
 import {
   platformThemeModeKeys,
@@ -191,18 +193,40 @@ export function SettingsPage({
   section,
   onSelect,
   children,
+  invitationAccess,
+  onRetryInvitations,
 }: {
   locale: PlatformLocale;
   section: SettingsSection;
   onSelect: (section: SettingsSection) => void;
   children: ReactNode;
+  invitationAccess?:Loaded<boolean>;
+  onRetryInvitations?:()=>void;
 }) {
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col bg-sidebar sm:flex-row" data-testid="settings-page">
       <nav aria-label={translate(locale, "platform.settings.title")} className="shrink-0 text-sidebar-foreground sm:w-(--sidebar-width)">
-        <TooltipProvider><SettingsNavigation locale={locale} section={section} onSelect={onSelect} /></TooltipProvider>
+        <TooltipProvider><SettingsNavigation locale={locale} section={section} onSelect={onSelect} invitationAccess={invitationAccess} onRetryInvitations={onRetryInvitations} /></TooltipProvider>
       </nav>
       <SettingsContentSurface section={section}>{children}</SettingsContentSurface>
     </div>
   );
+}
+
+/** Kept mounted across section changes: an uncertain invitation is still the same action. */
+export function CommunityInvitationSettings({active,onAccessChange}:{active:boolean;onAccessChange:(state:Loaded<boolean>,reload:()=>void)=>void}) {
+  const locale=useUiLocale();
+  return <section hidden={!active} data-testid="settings-community-invitations">
+    <SettingsSectionHeader title={translate(locale,"invitations.title")} description={translate(locale,"invitations.explain")}/>
+    <TenantInvitations onAccessChange={onAccessChange}/>
+  </section>;
+}
+
+/** Navigation consumes the invitation page's actual read, not a second permission query. */
+export function useInvitationSettingsState() {
+  const [access,setAccess]=useState<Loaded<boolean>>({status:"pending"});
+  const refresh=useRef<(()=>void)|null>(null);
+  const onAccessChange=useCallback((state:Loaded<boolean>,reload:()=>void)=>{refresh.current=reload;setAccess(state);},[]);
+  const reload=useCallback(()=>refresh.current?.(),[]);
+  return {access,onAccessChange,reload};
 }

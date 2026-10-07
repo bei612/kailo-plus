@@ -571,6 +571,69 @@ describe("shared Automation schedule consumer", () => {
     await settle();
   };
 
+  it("submits original cron fields and preserves six/seven-field YAML without truncation", async () => {
+    const { section, t, choose, fill } = await setup(["CHANNEL"]);
+    await choose("Trigger", "SCHEDULE");
+    await choose("Schedule type", "cron");
+    const values = ["0", "9", "*", "*", "MON-FRI"];
+    for (const [index, label] of ["Minute", "Hour", "Day", "Month", "Weekday"].entries()) {
+      await type(section.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!, values[index]!);
+    }
+    await fill("Catch-up window (seconds)", "60");
+    await fill("Instruction template", "Calendar report");
+    await click(button(section, "Workflow YAML"));
+    const yaml = section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!;
+    expect(yaml.value).toContain("kind: CRON");
+    expect(yaml.value).toContain("0 9 * * MON-FRI");
+    const exact = yaml.value.replace("0 9 * * MON-FRI", "15 0 9 * * MON-FRI 2027");
+    await writeYaml(section, exact);
+    await click(button(section, "Form"));
+    expect(yaml.value).toBe(exact);
+    expect(section.querySelector('textarea[aria-label="Workflow YAML"]')).toBe(yaml);
+    await click(button(section, "Review request"));
+    await click(button(section, "Submit governed request"));
+    await click(button(section, "Re-check same request"));
+    const posts = t.send.mock.calls.map(([request]) => request).filter((request) => request.method === "POST");
+    expect(posts).toHaveLength(2);
+    expect(posts[1]?.body).toEqual(posts[0]?.body);
+    expect(posts[0]?.body).toMatchObject({ actionKey: "automation.create", automationVersionContent: {
+      trigger: { kind: "SCHEDULE", scheduleSpec: { kind: "CRON", cron: "15 0 9 * * MON-FRI 2027", catchupWindowSeconds: 60 } },
+      resultTarget: "CHANNEL",
+    } });
+  });
+
+  it("rejects mixed cron/interval YAML without falling back to interval", async () => {
+    const { section, t, choose, fill } = await setup(["CHANNEL"]);
+    await choose("Trigger", "SCHEDULE");
+    await fill("Interval (seconds)", "300");
+    await fill("Offset (seconds)", "0");
+    await fill("Catch-up window (seconds)", "60");
+    await fill("Instruction template", "Report");
+    await click(button(section, "Workflow YAML"));
+    const yaml = section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!;
+    await writeYaml(section, yaml.value.replace("scheduleSpec:", "scheduleSpec:\n    kind: CRON\n    cron: '0 9 * * *'"));
+    expect(button(section, "Review request").disabled).toBe(true);
+    await click(button(section, "Form"));
+    expect(section.querySelector('textarea[aria-label="Workflow YAML"]')).toBe(yaml);
+    expect(t.send.mock.calls.every(([request]) => request.method !== "POST")).toBe(true);
+  });
+
+  it("uses the original runtime weekday ordinals instead of silently changing execution dates", async () => {
+    const { section, choose, fill } = await setup(["CHANNEL"]);
+    await choose("Trigger", "SCHEDULE");
+    await choose("Schedule type", "cron");
+    for (const [label, value] of [["Minute", "0"], ["Hour", "9"], ["Day", "*"], ["Month", "*"], ["Weekday", "0"]]) {
+      await type(section.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!, value!);
+    }
+    await fill("Catch-up window (seconds)", "60");
+    await fill("Instruction template", "Calendar report");
+    expect(button(section, "Review request").disabled).toBe(true);
+    await type(section.querySelector<HTMLInputElement>('input[aria-label="Weekday"]')!, "1-7");
+    expect(button(section, "Review request").disabled).toBe(false);
+    await type(section.querySelector<HTMLInputElement>('input[aria-label="Weekday"]')!, "MON-SUN");
+    expect(button(section, "Review request").disabled).toBe(true);
+  });
+
   it("restores the create card and original dialog while preserving an unsubmitted draft on close", async () => {
     const { section, t, field, fill } = await setup(["TRIGGER_THREAD"]);
     expect(section.querySelector('[role="dialog"][data-testid="workflow-editor-dialog"]')).not.toBeNull();
