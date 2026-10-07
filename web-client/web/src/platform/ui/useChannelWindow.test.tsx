@@ -5,6 +5,7 @@ import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import type { BuzzEvent, StreamFrame } from "@/platform/bff-client";
 import { buildMainTimelineEntries } from "@client-kit/platform/react/thread/threadPanel";
 import { getThreadReference } from "@client-kit/platform/react/messages/threading";
+import { BffError } from "@client-kit/platform/transport";
 import { useChannelWindow } from "./useChannelWindow";
 
 const state = vi.hoisted(() => ({ streams: [] as ((frame: StreamFrame) => void)[], query: vi.fn(), conversation: vi.fn(), reason: (value: string) => value }));
@@ -109,9 +110,63 @@ it("cannot start another page in the same event turn after interruption before R
 });
 it("keeps already admitted history when the channel becomes archived, without admitting new frames",async()=>{
   await head([event("a")]);
+  state.query.mockResolvedValue({events:[event("a"),bounds()]});
   await act(async()=>root.render(<Probe archived/>));
   expect(current.events.map(event=>event.id)).toEqual(["a"]);
   await send({type:"event",event:event("after-archive",20)});
   expect(current.events.map(event=>event.id)).toEqual(["a"]);
   expect(current.live).toBe(false);
+});
+
+it("cold-opens archived history through the admitted query and pages without a live/write grant",async()=>{
+  state.query.mockResolvedValueOnce({events:[event("root",10,40002),summary(2,20),bounds("head",{created_at:10,id:"root"})]});
+  await act(async()=>root.render(<Probe archived/>));
+  expect(state.query).toHaveBeenCalledWith("workspace");
+  expect(state.streams).toHaveLength(1); // only the original non-archived mount
+  expect(current.events.map(row=>row.id)).toEqual(["root"]);
+  expect(current.threadSummaries.get("root")?.replyCount).toBe(2);
+  expect(current.live).toBe(false); expect(current.isLoading).toBe(false);
+  state.query.mockResolvedValueOnce({events:[event("older",9),bounds("10:root")]});
+  await act(async()=>current.fetchOlder());
+  expect(state.query).toHaveBeenLastCalledWith("workspace",{before:10,beforeId:"root"});
+  expect(current.events.map(row=>row.id)).toEqual(["older","root"]);
+  expect(current.historyExhausted).toBe(true); expect(current.status).toBe("channel.archived");
+  expect(current.live).toBe(false);
+});
+it("finishes a signed empty archive and leaves malformed head bounds retryable",async()=>{
+  state.query.mockResolvedValueOnce({events:[bounds("wrong-channel")]});
+  await act(async()=>root.render(<Probe archived/>));
+  expect(current.error).toBe(true); expect(current.historyExhausted).toBe(false);
+  state.query.mockResolvedValueOnce({events:[bounds()]});
+  await act(async()=>current.retry());
+  expect(current.error).toBe(false); expect(current.isLoading).toBe(false);
+  expect(current.historyExhausted).toBe(true); expect(current.events).toEqual([]);
+  expect(current.live).toBe(false); expect(state.streams).toHaveLength(1);
+});
+it.each(["scope","unarchive","retry"])("fences late archived head reads after %s",async(change)=>{
+  let resolve!: (value:unknown)=>void;
+  state.query.mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+  await act(async()=>root.render(<Probe archived/>));
+  if(change==="scope") {
+    state.query.mockResolvedValueOnce({events:[event("new-scope"),bounds()]});
+    await act(async()=>root.render(<Probe archived scope="other"/>));
+  } else if(change==="unarchive") {
+    await act(async()=>root.render(<Probe/>)); await head([event("new-live")]);
+  } else {
+    state.query.mockResolvedValueOnce({events:[event("refreshed"),bounds()]});
+    await act(async()=>current.retry());
+  }
+  await act(async()=>resolve({events:[event("late-private"),bounds()]}));
+  expect(current.events.map(row=>row.id)).toEqual([change==="scope"?"new-scope":change==="unarchive"?"new-live":"refreshed"]);
+});
+it("drops archived history on fresh pagination refusal and only readmits through retry",async()=>{
+  state.query.mockResolvedValueOnce({events:[event("root"),bounds("head",{created_at:10,id:"root"})]});
+  await act(async()=>root.render(<Probe archived/>));
+  state.query.mockRejectedValueOnce(new BffError(403,"scope revoked"));
+  await act(async()=>current.fetchOlder());
+  expect(current.events).toEqual([]); expect(current.error).toBe(true);
+  await act(async()=>current.fetchOlder()); expect(state.query).toHaveBeenCalledTimes(2);
+  state.query.mockResolvedValueOnce({events:[event("readmitted"),bounds()]});
+  await act(async()=>current.retry());
+  expect(current.events.map(row=>row.id)).toEqual(["readmitted"]);expect(current.live).toBe(false);
 });

@@ -348,7 +348,7 @@ export function ChannelPane({
         historyExhausted={window.historyExhausted}
         isError={window.error}
         onRetry={window.retry}
-        isLoading={!window.error && !live && timelineMessages.length === 0}
+        isLoading={window.isLoading && timelineMessages.length === 0}
         targetMessageId={targetMessageId}
         hasComposerOverlay={false}
         firstUnreadMessageId={anchor === null ? null : timelineMessages.find(message => isConversationalUnreadKind(message.kind) && message.createdAt > anchor && !mine.has(message.pubkey ?? ""))?.id ?? null}

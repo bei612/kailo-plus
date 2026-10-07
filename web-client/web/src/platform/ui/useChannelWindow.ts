@@ -1,4 +1,5 @@
 import { ReasonCode } from "@client-kit/contracts";
+import { BffError } from "@client-kit/platform/transport";
 import { useReasonText } from "@client-kit/platform/react/context";
 import { parseChannelWindowResponse, parseLiveThreadSummary } from "@client-kit/platform/react/forum/channelWindowResponse";
 import { getThreadReference, isBroadcastReply } from "@client-kit/platform/react/messages/threading";
@@ -12,7 +13,8 @@ const rows: ReadonlySet<number> = new Set(CHANNEL_TIMELINE_CONTENT_KINDS);
 const auxiliary: ReadonlySet<number> = new Set(CHANNEL_AUX_EVENT_KINDS);
 
 // Host of Buzz's original channelWindowStore: SSE supplies the authoritative
-// head; the existing admitted BFF query continues its exact composite cursor.
+// head; archived channels read that same head through the admitted BFF query.
+// The existing query continues its exact composite cursor in either case.
 // No separate history, summary or unread authority is introduced here.
 export function useChannelWindow({ workspaceId, conversationId, principalId, channelId, archived = false, onLiveEvent, onClosed }: {
   workspaceId: string; conversationId?: string; principalId: string; channelId?: string;
@@ -43,9 +45,32 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
     current.fetching = false;
     setLive(false); setDenied(false); setError(false); setFetching(false);
     setStatus(t(archived ? "channel.archived" : "platform.stream.connecting"));
-    // Original archived transition stops the subscription without deleting
-    // already admitted visible history. The scope fence still clears old scopes.
-    if (archived) return () => { current.active = false; };
+    // Buzz keeps archived channel history readable, but never enables writes.
+    // Retain already visible rows while refreshing through the same fresh BFF
+    // admission as every older page. This is not a live/subscription grant.
+    if (archived) {
+      const generation = current.generation;
+      if (channelId) void (async () => {
+        try {
+          const page = await (conversationId ? bff.conversationMessages(conversationId) : bff.workspaceMessages(workspaceId));
+          if (closed || !current.active || state.current !== current || current.generation !== generation) return;
+          if (!Array.isArray(page.events)) throw new Error("Invalid channel window");
+          const parsed = parseChannelWindowResponse(page.events as BuzzEvent[], channelId, null);
+          current.store = replaceNewestChannelWindow(current.store, parsed);
+          current.ready = true;
+          setProjection({ scope, store: current.store });
+        } catch (cause) {
+          if (closed || !current.active || state.current !== current || current.generation !== generation) return;
+          // Never retain an old window after a fresh scope/binding refusal.
+          if (cause instanceof BffError) {
+            current.store = emptyChannelWindowStore();
+            setProjection({ scope, store: current.store });
+          }
+          setError(true); setStatus(t("platform.loadFailed"));
+        }
+      })();
+      return () => { closed = true; current.active = false; current.generation += 1; };
+    }
     current.store = empty;
     setProjection({ scope, store: empty });
     if (!channelId) return () => { current.active = false; };
@@ -126,7 +151,7 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
   const fetchOlder = useCallback(async () => {
     const current = state.current;
     const cursor = current.store.pages.at(-1)?.nextCursor;
-    if (!channelId || !live || !current.ready || !current.active || current.fetching || !cursor) return;
+    if (!channelId || (!archived && !live) || !current.ready || !current.active || current.fetching || !cursor) return;
     const generation = current.generation;
     current.fetching = true; setFetching(true);
     try {
@@ -136,17 +161,25 @@ export function useChannelWindow({ workspaceId, conversationId, principalId, cha
       if (!Array.isArray(page.events)) throw new Error("Invalid channel window");
       const parsed = parseChannelWindowResponse(page.events as BuzzEvent[], channelId, cursor);
       const next = appendOlderChannelWindow(current.store, parsed);
-      current.store = next; setProjection({ scope, store: next }); setError(false); setStatus(t("platform.stream.synced"));
-    } catch {
-      if (current.active && state.current === current && current.generation === generation) { setError(true); setStatus(t("platform.loadFailed")); }
+      current.store = next; setProjection({ scope, store: next }); setError(false); setStatus(t(archived ? "channel.archived" : "platform.stream.synced"));
+    } catch (cause) {
+      if (current.active && state.current === current && current.generation === generation) {
+        if (archived && cause instanceof BffError) {
+          current.ready = false;
+          current.store = emptyChannelWindowStore();
+          setProjection({ scope, store: current.store });
+        }
+        setError(true); setStatus(t("platform.loadFailed"));
+      }
     } finally {
       if (current.active && state.current === current && current.generation === generation) { current.fetching = false; setFetching(false); }
     }
-  }, [scope, workspaceId, conversationId, channelId, live]);
+  }, [scope, workspaceId, conversationId, channelId, archived, live]);
   const events = useMemo(() => flattenChannelWindowEvents(store), [store]);
   const threadSummaries = useMemo(() => channelWindowThreadSummaries(store), [store]);
   const authoritativeRowIds = useMemo(() => new Set(store.pages.flatMap(page => page.rows.map(row => row.event.id))), [store]);
   return { events, threadSummaries, authoritativeRowIds, status, live, denied, error,
+    isLoading: !error && !live && store.pages.length === 0,
     fetchOlder, isFetchingOlder: fetching, hasOlderMessages: channelWindowHasMore(store),
     historyExhausted: channelWindowHistoryExhausted(store), retry: () => setRetry(value => value + 1) };
 }

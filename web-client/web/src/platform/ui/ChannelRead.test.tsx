@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
   publish: vi.fn(),
   members: vi.fn(),
   stream: vi.fn(),
+  history: vi.fn(),
   reason: (value: string) => value,
 }));
 vi.mock("@client-kit/platform/react/context", async (original) => ({
@@ -39,6 +40,7 @@ vi.mock("@/platform/bff-client", async () => ({
     workspaces: async () => [],
     agentInstallations: async () => ({ installations: [] }),
     profile: async () => ({pubkey:"mine"}),
+    workspaceMessages: (...args: unknown[]) => state.history(...args),
   },
   fetchUserState: () => state.fetch(),
   markRead: (request: ReadMarkRequest) => state.mark(request),
@@ -224,6 +226,7 @@ beforeEach(() => {
   projection = { version: 3, readContexts: {}, workspacePreferences: {} };
   state.fetch.mockImplementation(async () => structuredClone(projection));
   state.members.mockResolvedValue([]);
+  state.history.mockResolvedValue({events:windowEvents([event(10)])});
   state.publish.mockResolvedValue({ eventId: "published-event", operationId: "operation" });
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -312,6 +315,24 @@ it("refreshes signed metadata only on closure and keeps archive transitions on t
   await renderChannel({ archived: false });
   await flush();
   expect(state.stream).toHaveBeenCalledTimes(2);
+});
+
+it("cold-opens archived rows with the original timeline while all composer writes remain disabled",async()=>{
+  await renderChannel({archived:true});await flush();
+  expect(state.history).toHaveBeenCalledWith("workspace-a");
+  expect(host.querySelector('[data-event-id="event-10"]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="message-input"]')?.getAttribute("contenteditable")).toBe("false");
+  expect(host.querySelector('[data-testid="reply-message-event-10"]')).toBeNull();
+  expect(state.stream).not.toHaveBeenCalled();expect(state.publish).not.toHaveBeenCalled();
+  expect(state.mark).not.toHaveBeenCalled();expect(state.notify).not.toHaveBeenCalled();
+});
+
+it("renders the original empty archive state rather than an endless loading skeleton",async()=>{
+  state.history.mockResolvedValue({events:windowEvents([])});
+  await renderChannel({archived:true});await flush();
+  expect(host.querySelector('[data-testid="message-empty"]')).not.toBeNull();
+  expect(host.textContent).toContain("channel.archived");
+  expect(state.stream).not.toHaveBeenCalled();expect(state.publish).not.toHaveBeenCalled();
 });
 
 it("retains an UNKNOWN send key while native metadata is unavailable or archived", async () => {

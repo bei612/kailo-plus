@@ -92,3 +92,35 @@
 真实宿主写入闭环也不能仅凭共享组件已存在而记为完成。本批不声明“100% 还原”。
 Data 当前仅约 1.3 GiB 余量，不启动全仓复制与全量发布构建；没有删除共享缓存或
 其他项目数据来腾空间。前次 full 的失败结果不被这次定向检查覆盖。
+
+### 冷开归档频道历史：原读取窗口恢复（2026-10-07）
+
+基准 `23dc25b60b1e059a0a73d6434f42c83bb2ab14e5`；本批仅四个 Web
+宿主/检查文件，不改 Core、契约、权限、归档写入或 reaction 区域。
+
+1. 既定权威与源码：REQ-24、SF-BUZ-44 规定 Channel 归档仍可查询历史。
+   固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/messages/hooks.ts::useChannelWindowQuery` 不因
+   archived 禁用读窗口；`desktop/src/features/channels/ui/ChannelPane.tsx`
+   的 `isComposerDisabled`、`onOpenThread` 则保留归档禁写。
+   这不同于 `.design/03` §2/§4 的 Workspace SUSPENDED：后者拒绝普通
+   读写，不能因为本次修复放宽。
+2. 调用与根因：原 `useChannelWindow` 在 archived 时提前 return，冷开
+   不发 SSE、也不请求历史，分页又依赖 live，产生空白/无限骨架。
+   Core `web_transport::query_messages_for` 已使用原
+   `ReadTarget::admit` 在读前、读后复查实际成员、Workspace、Tenant、
+   会话、身份及 binding；原 Relay REQ 保留归档可读，后端无需修改。
+3. 实现与异常：归档只走既有 workspaceMessages/conversationMessages
+   GET，复用原 channelWindowResponse、39005/39006 与 store，继续
+   精确复合游标；不把读取成功当作 live，不开写入口/通知/已读写入。
+   切 scope、解归档、重试与卸载隔离迟到头页；fresh BFF 拒绝清掉旧窗口；
+   网络/无效 bounds 显示原错误重试，不伪造空历史或已耗尽。
+   ChannelPane 只替换原时间线 loading prop，使签名空窗口显示原空态。
+4. 事后验证：既有受限 SDK 4 CPU/8 GiB、无并发工具链，执行 Web tsc
+   退出 0，useChannelWindow 20 与 ChannelRead 19 合计 39 项通过。
+   SDK-only 禁掉 archived GET 后两个 cold-open 用例真实失败（exit 1）；
+   原字节 cmp0 还原后同 39 项再次通过（exit 0）。保留原日志
+   `/volumes/data/kailo/tmp/timeline-shared.SEF8hh/channel-archive-final.log`、
+   `channel-archive-mutation.log`、`channel-archive-restored.log`。
+   本批未构建、未部署、未进行真实 Relay 归档对象浏览器验收；
+   单元/DOM 窄验不冒充线上完整业务通过。
