@@ -724,6 +724,7 @@ pub struct Params {
     pub explicit_confirmation: Option<bool>,
     pub resource_id: Option<Uuid>,
     pub resource_version: Option<i32>,
+    pub receiver_resource: Option<Value>,
     pub asset_id: Option<Uuid>,
     pub asset_version: Option<i32>,
     pub agent_version_content: Option<contracts::ContentClass>,
@@ -797,6 +798,9 @@ impl Params {
         if let Some(version) = self.resource_version {
             m.insert("resourceVersion".into(), json!(version));
         }
+        if let Some(receiver) = &self.receiver_resource {
+            m.insert("receiverResource".into(), receiver.clone());
+        }
         if let Some(id) = self.asset_id {
             m.insert("assetId".into(), json!(id));
         }
@@ -866,6 +870,7 @@ impl Params {
             original_action_execution_id: uuid("originalActionExecutionId"),
             explicit_confirmation: v.get("explicitConfirmation").and_then(Value::as_bool),
             resource_id: uuid("resourceId"),
+            receiver_resource: v.get("receiverResource").cloned(),
             resource_version: v
                 .get("resourceVersion")
                 .and_then(Value::as_i64)
@@ -1064,6 +1069,12 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         original_action_execution_id: uuid(&cmd.original_action_execution_id)?,
         explicit_confirmation: cmd.explicit_confirmation,
         resource_id: uuid(&cmd.resource_id)?,
+        receiver_resource: cmd
+            .receiver_resource
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|_| bad())?,
         resource_version: cmd
             .resource_version
             .map(|n| i32::try_from(n).map_err(|_| bad()))
@@ -1114,6 +1125,14 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
             .transpose()
             .map_err(|_| bad())?,
     };
+    if p.receiver_resource.is_some()
+        && !matches!(
+            sem,
+            Semantic::ResourceGrantRead | Semantic::ResourceRevokeRead
+        )
+    {
+        return Err(bad());
+    }
     if sem == Semantic::ConversationOpen {
         crate::conversations::validate_params(&p)?;
         return Ok(p);
@@ -1216,6 +1235,7 @@ fn parse_command(sem: Semantic, cmd: &contracts::ActionCommand) -> Result<Params
         Semantic::ConversationOpen => true, // validated above as a closed parameter object
         Semantic::ResourceGrantRead | Semantic::ResourceRevokeRead => {
             p.workspace_id.is_none()
+                && installation_permission::valid_receiver_reference(p.receiver_resource.as_ref())
                 && p.principal_id.is_some_and(|id| !id.is_nil())
                 && p.slug.is_none()
                 && p.name.is_none()
@@ -2483,6 +2503,7 @@ impl Governance {
                         &mut conn,
                         actor.tenant_id,
                         target,
+                        &def.action_key,
                     )
                     .await?;
                     target.id
@@ -3168,6 +3189,7 @@ impl Governance {
             explicit_confirmation: None,
             resource_id: None,
             resource_version: None,
+            receiver_resource: None,
             asset_id: None,
             asset_version: None,
             agent_version_content: None,
@@ -3271,6 +3293,7 @@ impl Governance {
             resource_id: None,
             resource_version: None,
             asset_id: None,
+            receiver_resource: None,
             asset_version: None,
             agent_version_content: None,
             delegation_id: None,
@@ -6854,10 +6877,9 @@ impl Governance {
             {
                 return Err((Refusal::Conflict(ReasonCode::TargetStateConflict), op));
             }
-            let owner =
-                installation_permission::owner_ref(self, &mut tx, ae.tenant_id, ae.target_id)
-                    .await
-                    .map_err(|e| (e, op))?;
+            let owner = installation_permission::owner_ref(self, &mut tx, ae)
+                .await
+                .map_err(|e| (e, op))?;
             if Some(owner.target_version) != ae.frozen_target_version().map(i64::from) {
                 return Err((Refusal::Conflict(ReasonCode::TargetStateConflict), op));
             }

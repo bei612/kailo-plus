@@ -14,6 +14,41 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestServiceReadPermissionRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "resource-service-read-permission.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, service := range []bool{true, false} {
+		var expected map[string]any
+		if err := json.Unmarshal(raw, &expected); err != nil {
+			t.Fatal(err)
+		}
+		if !service {
+			delete(expected, "receiverResource")
+		}
+		wire, err := json.Marshal(expected)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var typed generated.ActionCommand
+		if err := json.Unmarshal(wire, &typed); err != nil {
+			t.Fatal(err)
+		}
+		back, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual map[string]any
+		if err := json.Unmarshal(back, &actual); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(expected, actual) {
+			t.Fatal("receiver Resource reference or legacy absence changed")
+		}
+	}
+}
+
 func TestConformanceIdentityRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "component-conformance-identity.sample.json"))
 	if err != nil {

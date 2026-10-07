@@ -510,6 +510,7 @@ impl Governance {
             explicit_confirmation: None,
             resource_id: None,
             resource_version: None,
+            receiver_resource: None,
             asset_id: None,
             asset_version: None,
             agent_version_content: None,

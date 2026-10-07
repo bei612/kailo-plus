@@ -2823,7 +2823,10 @@ type ActionCommand struct {
 	// Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
 	// identity; no Agent or caller-selected native credentials.
 	ProtocolSessionOpen *ProtocolSessionOpenClass `json:"protocolSessionOpen,omitempty"`
-	ResourceCreate      *ResourceCreateClass      `json:"resourceCreate,omitempty"`
+	// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
+	// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+	ReceiverResource *ReceiverResource    `json:"receiverResource,omitempty"`
+	ResourceCreate   *ResourceCreateClass `json:"resourceCreate,omitempty"`
 	// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
 	ResourceID *string `json:"resourceId,omitempty"`
 	// 调用方实际读取的 Resource 版本；与当前事实不同即 CONFLICT
@@ -3109,6 +3112,13 @@ type ProtocolSessionOpenClass struct {
 	ProjectionGeneration int64                 `json:"projectionGeneration"`
 	Reference            ContentReferenceClass `json:"reference"`
 	Theme                Theme                 `json:"theme"`
+}
+
+// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
+// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+type ReceiverResource struct {
+	ID      string `json:"id"`
+	Version int64  `json:"version"`
 }
 
 type ResourceCreateClass struct {

@@ -631,7 +631,12 @@ export interface ActionCommand {
      * identity; no Agent or caller-selected native credentials.
      */
     protocolSessionOpen?: ProtocolSessionOpenClass;
-    resourceCreate?:      ResourceCreateClass;
+    /**
+     * 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
+     * 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+     */
+    receiverResource?: ReceiverResource;
+    resourceCreate?:   ResourceCreateClass;
     /**
      * Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
      */
@@ -1104,6 +1109,15 @@ export interface ProtocolSessionOpenClass {
     projectionGeneration: number;
     reference:            ContentReferenceClass;
     theme:                Theme;
+}
+
+/**
+ * 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
+ * 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+ */
+export interface ReceiverResource {
+    id:      string;
+    version: number;
 }
 
 export interface ResourceCreateClass {

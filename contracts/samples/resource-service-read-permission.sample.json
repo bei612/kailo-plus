@@ -1,0 +1,11 @@
+{
+  "actionKey": "resource.grant_read",
+  "idempotencyKey": "065fbb5a-6ba3-45fc-a5a0-30d15f2da625",
+  "resourceId": "228e3385-9aba-4f27-824f-de04ab4bb3ad",
+  "resourceVersion": 3,
+  "principalId": "bdb91953-6ad9-4849-8e8e-e290818c04bd",
+  "receiverResource": {
+    "id": "574e1ca0-dc80-493f-9b76-a8ac5d3c6aa6",
+    "version": 7
+  }
+}

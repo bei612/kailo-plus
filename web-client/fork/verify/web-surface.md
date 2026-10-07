@@ -3899,3 +3899,58 @@ SDK 私有宿主副本只断开原 ProfileAvatarEditor 的 modeTabsContainer 投
 没有新的线上截图或 Windows 安装包验证，也不称原设置全部功能已完成。
 原 Native 私钥备份和账户退出的完整布局不在本切片；未删除其交付要求，
 Web 不得因复用页面而获得本机私钥能力。
+
+### 2026-10-07：SERVICE 读取授权复用原 Resource 权限链
+
+本批基准为 `ec8ae806d3461499fc8bbe5c506b64c9ee4e2b78`。这是实现后的
+变更回执，不是新执行引擎或预写规格；不更改接收方导入状态、内容正文或 native 凭据。
+
+四步结论：
+
+- 权威：`.design/07` §8.2、DD-89 已规定 source Resource 的 `reader` 授予接收方
+  binding 唯一 SERVICE，并要求来源 `share`、接收资源 `update` 和原 owner Approval。
+  复用既有 `resource.grant_read/revoke_read`、原 AE/Approval 和 SpiceDB；不另建授权表。
+  上游证据是 SpiceDB `f7620a59fb61d4b523b02d5c98d7f13dc1f19dce` 的
+  `internal/services/v1/relationships.go::permissionServer.WriteRelationships`。
+- 影响面：ActionCommand 增加可选闭集 `receiverResource {id, version}`，原 Params
+  将它纳入持久化和 parameter hash。未传字段时，原 AGENT 自身 reader 行为及
+  `agentPrincipalId` 投影意图不变。实际接收 binding、generation、release、SERVICE
+  身份由 Resource 目录读取并冻结到同一 AE，不接受调用方指定绑定、租户或密钥。
+  原 `governance_api::parse_action_command` 复用已有结构回写校验，拒绝被生成类型
+  静默丢弃的多余字段和显式 null。四侧类型由原 `tools/gen.sh` 独立一致生成；无新迁移。
+- 副作用：来源和接收方必须同 Tenant，Workspace receiver 只读同 home Workspace
+  或 Tenant 来源；两端 active release/runtime、读边声明、资源版本和身份均复核。
+  原 source Resource 投影 fence、审批、fresh 权限检查和单次派发保留，UNKNOWN
+  只观察原 SpiceDB 结果，不重发 Touch/Delete、不凭无结果释放 fence。撤销只取消
+  同来源与同接收主体的待决 grant，不能悄悄覆盖另一接收方的投影。
+- 异常：空引用、nil UUID、未知字段、非正或超 i32 版本拒绝；变化的版本、binding、
+  generation、owner 或投影冲突拒绝；目录/权限不可核验不降级。源和接收 Resource
+  恰为同一对象时，仅本 AE prewrite 的版本加一可在派发阶段重入，审批原引用不被改写。
+  原六类拒绝、权限和 UNKNOWN 对账沿原 Refusal/AE 路径，不新增成功或失败枚举。
+
+实际证据：原受限 SDK `kailo-agent-receipt-xvkujx`（4 CPU/8 GiB）、既有
+`/cache/rust-target`、Cargo `-j16`。`tools/gen.sh` 与 `--check` 均退出 0；四侧新
+receiverResource/旧字段缺省往返各 1 项通过，TS 同时执行原 test tsconfig 类型检查。
+原 `check.sh` 的合同兼容代码原样执行，得到
+`PASS 相对 contracts-v0.1.0 无破坏性变更（267 个 schema，匹配 3 个历史 schema）`。
+第一次 Core 命令误用文件名作为 filter，输出 `0 passed; 326 filtered out`，不作为验收。
+改用实际 `governance::installation_permission::approval_tests` 后 5 通过、1 ignored；
+原始请求 parser 1 通过。ignored SQL 项另在已授权隔离库 `workflow_steps_hhwev1`
+（100 个迁移、0 个 Resource）显式执行，1 通过；它证明真实查询可解析且缺资源拒绝，
+不是完整业务授予的正向证据，没有创建任何业务对象或写入权限。
+
+在 SDK-only 删除 receiverResource 的 Params 持久化，以及原始入口闭集校验，
+真实得到 `1 passed; 2 failed; 1 ignored`、退出 101。两文件恢复原字节并 `cmp` 退出 0
+后，原模块 5 项、parser 1 项重新通过；`cargo clippy --offline --locked -j16
+-p platform-core --bin platform-core -- -D warnings` 最终退出 0。正式源码没有施加负向变异。
+日志在
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`
+的 `service-permission-{gen,gen-check,core,core-final,contracts,mutation,restored}.log`；
+兼容结果及独立 SQL 回执在
+`/volumes/data/kailo/tmp/service-permission-20261007.BBCYOq/`。
+
+边界：没有执行 live 授予/撤销、真实 owner Approval→SpiceDB→来源 PEP 全链或部署。
+本批接通 HUMAN 发起的 SERVICE reader 授权，仍不把原 HUMAN 管理动作自动开放给
+Agent；Agent 发起的 Delegation/ToolBinding 交集、接收方自主增量拉取与其 UI
+仍须各自真实接通。接收方停止后 reader 扫除由既有 binding 生命周期负责，本批不冒称
+验证了该清理。现有 UNKNOWN 若无可核验外部结果仍保留未知，不能靠本补丁认定成功。

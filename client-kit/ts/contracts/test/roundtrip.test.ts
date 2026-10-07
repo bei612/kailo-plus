@@ -7,6 +7,22 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
+import type { ActionCommand as ServiceReadPermissionCommand } from "../src/generated/contracts.js";
+
+test("service read permission preserves receiver and legacy absence", () => {
+  const sample: ServiceReadPermissionCommand = JSON.parse(readFileSync(new URL(
+    "../../../../contracts/samples/resource-service-read-permission.sample.json", import.meta.url), "utf8"));
+  for (const service of [true, false]) {
+    const value = {...sample};
+    if (!service) delete value.receiverResource;
+    const back: ServiceReadPermissionCommand = {
+      actionKey:value.actionKey, idempotencyKey:value.idempotencyKey,
+      resourceId:value.resourceId, resourceVersion:value.resourceVersion, principalId:value.principalId,
+      receiverResource:value.receiverResource && {id:value.receiverResource.id,version:value.receiverResource.version},
+    };
+    deepStrictEqual(JSON.parse(JSON.stringify(back)), value);
+  }
+});
 import type { ComponentConformanceIdentity } from "../src/generated/contracts.js";
 
 test("conformance identity preserves isolated authorization and execution", () => {

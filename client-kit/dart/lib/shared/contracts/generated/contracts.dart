@@ -2785,6 +2785,10 @@ class ActionCommand {
   ///Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
   ///identity; no Agent or caller-selected native credentials.
   final ProtocolSessionOpenClass? protocolSessionOpen;
+
+  ///仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
+  ///核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+  final ReceiverResource? receiverResource;
   final ResourceCreateClass? resourceCreate;
 
   ///Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
@@ -2837,6 +2841,7 @@ class ActionCommand {
     this.originalActionExecutionId,
     this.principalId,
     this.protocolSessionOpen,
+    this.receiverResource,
     this.resourceCreate,
     this.resourceId,
     this.resourceVersion,
@@ -2909,6 +2914,9 @@ class ActionCommand {
     protocolSessionOpen: json["protocolSessionOpen"] == null
         ? null
         : ProtocolSessionOpenClass.fromJson(json["protocolSessionOpen"]),
+    receiverResource: json["receiverResource"] == null
+        ? null
+        : ReceiverResource.fromJson(json["receiverResource"]),
     resourceCreate: json["resourceCreate"] == null
         ? null
         : ResourceCreateClass.fromJson(json["resourceCreate"]),
@@ -2954,6 +2962,7 @@ class ActionCommand {
     "originalActionExecutionId": originalActionExecutionId,
     "principalId": principalId,
     "protocolSessionOpen": protocolSessionOpen?.toJson(),
+    "receiverResource": receiverResource?.toJson(),
     "resourceCreate": resourceCreate?.toJson(),
     "resourceId": resourceId,
     "resourceVersion": resourceVersion,
@@ -4135,6 +4144,20 @@ class ProtocolSessionOpenClass {
     "reference": reference.toJson(),
     "theme": themeValues.reverse[theme],
   });
+}
+
+///仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
+///核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+class ReceiverResource {
+  final String id;
+  final int version;
+
+  ReceiverResource({required this.id, required this.version});
+
+  factory ReceiverResource.fromJson(Map<String, dynamic> json) =>
+      ReceiverResource(id: json["id"], version: json["version"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"id": id, "version": version});
 }
 
 class ResourceCreateClass {

@@ -909,6 +909,11 @@ pub struct ActionCommand {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol_session_open: Option<ProtocolSessionOpenClass>,
 
+    /// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
+    /// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receiver_resource: Option<ReceiverResource>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_create: Option<ResourceCreateClass>,
 
@@ -1589,6 +1594,15 @@ pub struct ProtocolSessionOpenClass {
     pub reference: ReferenceClass,
 
     pub theme: Theme,
+}
+
+/// 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
+/// 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReceiverResource {
+    pub id: String,
+
+    pub version: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

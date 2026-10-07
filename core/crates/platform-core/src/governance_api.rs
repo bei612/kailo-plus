@@ -108,7 +108,7 @@ fn parse_action_command(value: Value) -> Result<ActionCommand, Refusal> {
     if value.get("actionKey").and_then(Value::as_str) == Some(crate::automation::ACTION) {
         crate::automation::manual::validate_command(&value)?;
     }
-    if value.get("componentAction").is_some() {
+    if value.get("componentAction").is_some() || value.get("receiverResource").is_some() {
         let parsed: ActionCommand = serde_json::from_value(value.clone())
             .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
         if serde_json::to_value(&parsed).ok().as_ref() != Some(&value) {
@@ -137,6 +137,25 @@ fn parse_action_command(value: Value) -> Result<ActionCommand, Refusal> {
 mod action_command_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn service_receiver_parser_does_not_erase_credentials_or_null_reference() {
+        let raw = json!({"actionKey":"resource.grant_read","idempotencyKey":Uuid::new_v4(),
+            "resourceId":Uuid::new_v4(),"resourceVersion":1,"principalId":Uuid::new_v4(),
+            "receiverResource":{"id":Uuid::new_v4(),"version":1}});
+        assert!(parse_action_command(raw.clone()).is_ok());
+        let mut legacy = raw.clone();
+        legacy.as_object_mut().unwrap().remove("receiverResource");
+        assert!(parse_action_command(legacy).is_ok());
+        for field in ["secret", "bindingId", "tenantId"] {
+            let mut invalid = raw.clone();
+            invalid["receiverResource"][field] = json!("caller-selected");
+            assert!(parse_action_command(invalid).is_err(), "{field}");
+        }
+        let mut invalid = raw;
+        invalid["receiverResource"] = Value::Null;
+        assert!(parse_action_command(invalid).is_err());
+    }
 
     #[test]
     fn component_command_parser_does_not_erase_unknown_body_or_null_fields() {

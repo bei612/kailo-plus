@@ -6,6 +6,23 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn service_read_permission_preserves_receiver_and_legacy_absence() {
+    let raw = fs::read_to_string(
+        sample_path().with_file_name("resource-service-read-permission.sample.json"),
+    )
+    .unwrap();
+    let sample: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    for service in [true, false] {
+        let mut value = sample.clone();
+        if !service {
+            value.as_object_mut().unwrap().remove("receiverResource");
+        }
+        let typed: contracts::ActionCommand = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(typed).unwrap(), value);
+    }
+}
+
+#[test]
 fn conformance_identity_preserves_isolated_authorization_and_execution() {
     let raw = fs::read_to_string(
         sample_path().with_file_name("component-conformance-identity.sample.json"),

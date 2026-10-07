@@ -9,6 +9,14 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('service read permission preserves receiver and legacy absence', () {
+    final sample = jsonDecode(File('../../contracts/samples/resource-service-read-permission.sample.json').readAsStringSync()) as Map<String,dynamic>;
+    for (final service in [true, false]) {
+      final value = Map<String,dynamic>.from(sample);
+      if (!service) value.remove('receiverResource');
+      expect(ActionCommand.fromJson(value).toJson(), value);
+    }
+  });
   test('conformance identity preserves isolated authorization and execution', () {
     final sample =
         jsonDecode(
