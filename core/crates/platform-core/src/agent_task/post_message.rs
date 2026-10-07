@@ -23,6 +23,82 @@ fn unknown() -> Refusal {
     Refusal::Unavailable("Template publication evidence unavailable".into())
 }
 
+/// Read template input only after the ordinary automation/source admission.
+/// The signed output event ID freezes the expanded bytes before dispatch;
+/// recovery observes that event and never expands or sends it a second time.
+async fn message_template(
+    state: &ServiceState,
+    invocation: &Invocation,
+    channel: Uuid,
+    template: &str,
+    expected_author: Option<&str>,
+) -> Result<String, Refusal> {
+    if !template.contains("{{") {
+        return Ok(template.to_owned());
+    }
+    let mut context = collab_bridge::workflow_template::TriggerContext {
+        channel_id: channel.to_string(),
+        ..Default::default()
+    };
+    match invocation.source_kind.as_str() {
+        "BUZZ_EVENT" => {
+            let expected_author =
+                expected_author.ok_or(Refusal::Denied(ReasonCode::ScopeGuardFailed))?;
+            let (control, _) = crate::tenant_lifecycle::control_client(
+                state,
+                invocation.tenant_id,
+                crate::tenant_lifecycle::ProjectionDirection::Establish,
+            )
+            .await
+            .map_err(|_| unknown())?;
+            let source = control
+                .source_message(
+                    &state.http,
+                    &invocation.source_event_id,
+                    &channel.to_string(),
+                    &invocation.root_event_id,
+                )
+                .await
+                .map_err(|_| unknown())?;
+            if source.author != expected_author {
+                return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
+            }
+            context.text = source.content;
+            context.author = source.author;
+            context.timestamp = source.timestamp.to_string();
+            context.message_id = invocation.source_event_id.clone();
+            context.is_reply = invocation.source_event_id != invocation.root_event_id;
+        }
+        "SCHEDULE" => {
+            // The existing admission checked this frozen nominal timestamp.
+            context.timestamp = DateTime::parse_from_rfc3339(&invocation.source_event_id)
+                .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?
+                .timestamp()
+                .to_string();
+        }
+        // A governed manual run has no fabricated Relay author or message.
+        "MANUAL" => {}
+        _ => return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)),
+    }
+    render_message_content(template, &context)
+}
+
+fn render_message_content(
+    template: &str,
+    context: &collab_bridge::workflow_template::TriggerContext,
+) -> Result<String, Refusal> {
+    let content = collab_bridge::workflow_template::resolve_template(
+        template,
+        context,
+        &std::collections::HashMap::new(),
+    )
+    .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
+    if content.trim().is_empty() {
+        return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
+    }
+    Ok(content)
+}
+
 pub(super) async fn activity_fence(
     state: &ServiceState,
     invocation: &Invocation,
@@ -281,9 +357,19 @@ async fn publish(
             timestamp,
         )
     } else {
+        let content = message_template(
+            state,
+            invocation,
+            binding.channel_id,
+            action["template"].as_str().ok_or_else(unknown)?,
+            ae.parameters
+                .as_ref()
+                .and_then(|parameters| parameters["sourcePubkey"].as_str()),
+        )
+        .await?;
         client.sign_channel_result_at(
             &binding.channel_id.to_string(),
-            action["template"].as_str().ok_or_else(unknown)?,
+            &content,
             reply_ancestry(invocation),
             matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
                 .then_some(invocation.id),
@@ -525,6 +611,65 @@ async fn finish(
 #[cfg(test)]
 mod post_message_tests {
     use super::*;
+
+    #[test]
+    fn native_message_expands_original_buzz_trigger_variables() {
+        let context = collab_bridge::workflow_template::TriggerContext {
+            text: "发布检查通过".into(),
+            author: "author-reference".into(),
+            channel_id: Uuid::new_v4().to_string(),
+            timestamp: "1791352800".into(),
+            message_id: "source-reference".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            render_message_content(
+                "{{trigger.author}}: {{trigger.text | truncate(4)}} / {{trigger.message_id}} @ {{trigger.timestamp}}",
+                &context,
+            ).unwrap(),
+            "author-reference: 发布检查 / source-reference @ 1791352800",
+        );
+        assert_eq!(
+            render_message_content("{{trigger.channel_id}}", &context).unwrap(),
+            context.channel_id,
+        );
+    }
+
+    #[test]
+    fn native_message_keeps_source_text_untrusted_and_nonrecursive() {
+        let context = collab_bridge::workflow_template::TriggerContext {
+            text: "{{trigger.author}}".into(),
+            author: "must-not-be-expanded".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            render_message_content("{{trigger.text}}", &context).unwrap(),
+            "{{trigger.author}}"
+        );
+        assert_eq!(
+            render_message_content("literal {{unknown.key}}", &context).unwrap(),
+            "literal {{unknown.key}}"
+        );
+    }
+
+    #[test]
+    fn native_message_refuses_invalid_filter_and_empty_expansion() {
+        let context = collab_bridge::workflow_template::TriggerContext::default();
+        for template in [
+            "{{trigger.text}}",
+            "{{trigger.text | truncate(no)}}",
+            "{{trigger.text | unsupported}}",
+        ] {
+            assert!(matches!(
+                render_message_content(template, &context),
+                Err(Refusal::Precondition(ReasonCode::InvalidParameters))
+            ));
+        }
+        assert_eq!(
+            render_message_content("unchanged literal", &context).unwrap(),
+            "unchanged literal"
+        );
+    }
 
     #[test]
     fn frozen_intent_contains_only_exact_native_meter_metadata() {

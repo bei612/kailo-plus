@@ -15,6 +15,17 @@ test("automation topic step preserves explicit empty topic", () => {
   deepStrictEqual(JSON.parse(JSON.stringify(actual)), sample);
 });
 
+test("read receipts preserve native precision roles and quantities", () => {
+  const sample: import("../src/generated/contracts.js").AdapterReadReceipt[] = JSON.parse(readFileSync(new URL(
+    "../../../../contracts/samples/adapter-read-receipts.sample.json", import.meta.url), "utf8"));
+  const actual: import("../src/generated/contracts.js").AdapterReadReceipt[] = sample.map(value => ({
+    bindingId:value.bindingId,operationId:value.operationId,role:value.role,idempotencyKey:value.idempotencyKey,
+    nativeObjectRef:value.nativeObjectRef,nativeRevision:value.nativeRevision,contentSha256:value.contentSha256,
+    contentBytes:value.contentBytes,completedAt:value.completedAt,measurements:value.measurements.map(item=>({meterKey:item.meterKey,quantity:item.quantity})),
+  }));
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)),sample);
+});
+
 test("automation reaction step preserves original emoji", () => {
   const sample: import("../src/generated/contracts.js").AutomationStep = JSON.parse(readFileSync(new URL(
     "../../../../contracts/samples/automation-reaction-step.sample.json", import.meta.url), "utf8"));
@@ -36,16 +47,6 @@ test("application read resources preserve metadata and legacy entry absence", ()
     const binding:ApplicationBindingView={...sample.binding,hasReadReceiver:available};
     deepStrictEqual(JSON.parse(JSON.stringify(binding)).hasReadReceiver,available);
   }
-});
-test("read receipts preserve native precision roles and quantities", () => {
-  const sample: import("../src/generated/contracts.js").AdapterReadReceipt[] = JSON.parse(readFileSync(new URL(
-    "../../../../contracts/samples/adapter-read-receipts.sample.json", import.meta.url), "utf8"));
-  const actual: import("../src/generated/contracts.js").AdapterReadReceipt[] = sample.map(value => ({
-    bindingId:value.bindingId,operationId:value.operationId,role:value.role,idempotencyKey:value.idempotencyKey,
-    nativeObjectRef:value.nativeObjectRef,nativeRevision:value.nativeRevision,contentSha256:value.contentSha256,
-    contentBytes:value.contentBytes,completedAt:value.completedAt,measurements:value.measurements.map(item=>({meterKey:item.meterKey,quantity:item.quantity})),
-  }));
-  deepStrictEqual(JSON.parse(JSON.stringify(actual)),sample);
 });
 import type { ActionCommand as ServiceReadPermissionCommand } from "../src/generated/contracts.js";
 
@@ -75,6 +76,27 @@ test("automation approval step preserves policy and immutable view reference", (
   deepStrictEqual(JSON.parse(JSON.stringify({step,view})),sample);
 });
 import type { AdapterReadGrantRequest, AdapterReadGrantResponse } from "../src/generated/contracts.js";
+
+test("native sync grant preserves own admission and read-only terminal outcomes", () => {
+  const request: AdapterReadGrantRequest = JSON.parse(readFileSync(new URL("../../../../contracts/samples/adapter-native-read-grant-request.sample.json",import.meta.url),"utf8"));
+  const native=request.nativeBatch!;
+  const back: AdapterReadGrantRequest={receiverBindingId:request.receiverBindingId,sourceResourceId:request.sourceResourceId,
+    actionKey:request.actionKey,actionVersion:request.actionVersion,idempotencyKey:request.idempotencyKey,inputJson:request.inputJson,
+    nativeBatch:{receiverResourceId:native.receiverResourceId,importConfigRef:native.importConfigRef,batchId:native.batchId,
+      actionKey:native.actionKey,actionVersion:native.actionVersion}};
+  deepStrictEqual(JSON.parse(JSON.stringify(back)),request);
+  const responses: AdapterReadGrantResponse[]=JSON.parse(readFileSync(new URL("../../../../contracts/samples/adapter-native-read-grant-responses.sample.json",import.meta.url),"utf8"));
+  const actual: AdapterReadGrantResponse[]=responses.map(r=>({actionExecutionId:r.actionExecutionId,operationId:r.operationId,
+    sourceBindingId:r.sourceBindingId,endpoint:r.endpoint,actionToken:r.actionToken,expiresAt:r.expiresAt,argumentsJson:r.argumentsJson,
+    outcome:r.outcome,receiverReceipt:r.receiverReceipt,receiverWrite:r.receiverWrite&&{
+      actionExecutionId:r.receiverWrite.actionExecutionId,actionToken:r.receiverWrite.actionToken,
+      expiresAt:r.receiverWrite.expiresAt,argumentsJson:r.receiverWrite.argumentsJson}}));
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)),responses);
+  const listing: import("../src/generated/contracts.js").FileStorageListOutput=JSON.parse(readFileSync(new URL("../../../../contracts/samples/file-storage-list-output.sample.json",import.meta.url),"utf8"));
+  const listed: import("../src/generated/contracts.js").FileStorageListOutput={resourceId:listing.resourceId,nativeObjectRef:listing.nativeObjectRef,
+    nativeRevision:listing.nativeRevision,listingDigest:listing.listingDigest,operationId:listing.operationId,items:listing.items};
+  deepStrictEqual(JSON.parse(JSON.stringify(listed)),listing);
+});
 
 test("receiver read grant preserves distinct source and receiver provenance", () => {
   const request: AdapterReadGrantRequest = JSON.parse(readFileSync(new URL("../../../../contracts/samples/adapter-read-grant-request.sample.json", import.meta.url), "utf8"));

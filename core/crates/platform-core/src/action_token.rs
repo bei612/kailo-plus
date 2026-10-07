@@ -292,7 +292,10 @@ pub(crate) async fn issue_service_read(
     audience: &str,
     zed: &str,
 ) -> Result<String, Refusal> {
-    if !crate::application_binding::read_grant::is_service(ae) || zed.is_empty() {
+    if !(crate::application_binding::read_grant::is_service(ae)
+        || crate::application_binding::read_grant::native_receiver::is_receiver(ae))
+        || zed.is_empty()
+    {
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
     let parameters = ae.parameters.as_ref().ok_or_else(invalid)?;

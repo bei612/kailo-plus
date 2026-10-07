@@ -126,6 +126,7 @@ pub struct MemoryEntry {
 pub struct SourceMessage {
     pub author: String,
     pub content: String,
+    pub timestamp: u64,
 }
 
 impl IdentityClient {
@@ -177,6 +178,7 @@ impl IdentityClient {
         Ok(SourceMessage {
             author: event.pubkey.to_hex(),
             content: event.content,
+            timestamp: event.created_at.as_secs(),
         })
     }
 }

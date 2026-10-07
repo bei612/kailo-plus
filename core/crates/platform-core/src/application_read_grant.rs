@@ -16,6 +16,9 @@ const KIND: &str = "SERVICE_READ";
 #[path = "application_read_receipt.rs"]
 pub(crate) mod receipt;
 
+#[path = "application_read_receiver.rs"]
+pub(crate) mod native_receiver;
+
 #[derive(sqlx::FromRow)]
 struct Receiver {
     tenant: Uuid,
@@ -248,6 +251,15 @@ pub(crate) fn is_service(ae: &Execution) -> bool {
             .is_some_and(|parameters| parameters["componentActionKind"] == KIND)
 }
 
+fn native_batch(raw: &Value) -> Result<Option<&Value>, Refusal> {
+    let batch = raw.get("nativeBatch");
+    let legacy = raw.get("receiverActionExecutionId").is_some();
+    if batch.is_some() == legacy || legacy != raw.get("receiverArgumentsJson").is_some() {
+        return Err(invalid());
+    }
+    Ok(batch)
+}
+
 /// The original governance reconciler owns the deadline. An expired bearer
 /// cannot prove whether the receiver obtained bytes; quarantine the existing
 /// execution as UNKNOWN, never retry the read or assert a terminal outcome.
@@ -293,6 +305,7 @@ pub(crate) async fn reconcile_expired(state: &ServiceState, batch: i64) -> Resul
             vec![],
         )
         .await?;
+        native_receiver::settle(&mut tx, &ae, false).await?;
     }
     tx.commit().await?;
     // Metering unavailability must not prevent deadline quarantine.
@@ -309,13 +322,15 @@ pub(crate) async fn request(
         let parsed: contracts::AdapterReadGrantRequest=serde_json::from_value(raw.clone()).map_err(|_|invalid())?;
         if serde_json::to_value(parsed).map_err(|_|invalid())? != raw { return Err(invalid()); }
         let binding=uuid(&raw,"receiverBindingId")?;
-        let receiver_execution=uuid(&raw,"receiverActionExecutionId")?;
+        let native_batch=native_batch(&raw)?;
+        let receiver_execution=raw.get("receiverActionExecutionId").map(|_|uuid(&raw,"receiverActionExecutionId")).transpose()?;
         let target=uuid(&raw,"sourceResourceId")?;
         let key=uuid(&raw,"idempotencyKey")?;
         let action=text(&raw,"actionKey")?;
         let version=raw["actionVersion"].as_i64().and_then(|value|i32::try_from(value).ok()).filter(|value|*value>0).ok_or_else(invalid)?;
         let input: Value=serde_json::from_str(text(&raw,"inputJson")?).map_err(|_|invalid())?;
-        let receiver_arguments: Value=serde_json::from_str(text(&raw,"receiverArgumentsJson")?).map_err(|_|invalid())?;
+        let receiver_arguments: Option<Value>=raw.get("receiverArgumentsJson")
+            .map(|_|serde_json::from_str(text(&raw,"receiverArgumentsJson")?).map_err(|_|invalid())).transpose()?;
         let mut authorization=headers.get_all(axum::http::header::AUTHORIZATION).iter();
         let header=authorization.next().and_then(|value|value.to_str().ok()).ok_or_else(invalid)?;
         if authorization.next().is_some() { return Err(invalid()); }
@@ -330,13 +345,13 @@ pub(crate) async fn request(
         // The admitted receiver is provenance, not an AE parent: a SERVICE
         // batch must not impersonate the receiver's HUMAN/AGENT actor. DD-89
         // creates its own root Operation under the original AE authority.
-        let (receiver_operation, parent_target, parent_hash): (Uuid,Uuid,String)=sqlx::query_as("select operation_id,target_id,parameters->>'toolParameterHash'
+        let parent: Option<(Uuid,Uuid,String)>=if let Some(receiver_execution)=receiver_execution { Some(sqlx::query_as("select operation_id,target_id,parameters->>'toolParameterHash'
             from admission.action_execution where id=$1 and tenant_id=$2
             and ($3::uuid is null or workspace_id=$3) and component_binding_kind='APPLICATION'
             and component_binding_id=$4 and component_projection_generation=$5
             and gate_state='ALLOWED' and dispatch_state='DISPATCHED' for update")
             .bind(receiver_execution).bind(initial.tenant).bind(initial.workspace).bind(binding)
-            .bind(initial.generation).fetch_optional(&mut *tx).await?.ok_or_else(denied)?;
+            .bind(initial.generation).fetch_optional(&mut *tx).await?.ok_or_else(denied)?) } else { None };
         let previous: Option<Uuid>=sqlx::query_scalar("select id from admission.action_execution
             where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3")
             .bind(initial.tenant).bind(initial.principal).bind(key).fetch_optional(&mut *tx).await?;
@@ -348,15 +363,24 @@ pub(crate) async fn request(
         let receiver=receiver(&mut tx,binding).await?;
         if receiver.principal!=initial.principal || receiver.client!=initial.client
             || receiver.tenant!=initial.tenant || receiver.generation!=initial.generation { return Err(denied()); }
-        if collab_bridge::limits::canonical_digest(&receiver_arguments)!=parent_hash
-            || receiver_arguments["target"]["resourceId"]!=json!(parent_target)
-            || receiver_arguments["input"]!=input || input["resourceId"]!=json!(target) { return Err(denied()); }
+        if input["resourceId"]!=json!(target) { return Err(denied()); }
+        if let Some((_,parent_target,parent_hash))=&parent {
+            let args=receiver_arguments.as_ref().ok_or_else(invalid)?;
+            if collab_bridge::limits::canonical_digest(args)!=*parent_hash
+                || args["target"]["resourceId"]!=json!(parent_target) || args["input"]!=input { return Err(denied()); }
+        }
+        let native=if let Some(batch)=native_batch {
+            Some(native_receiver::resolve(&mut tx,&receiver,binding,batch).await?)
+        } else { None };
         let source=source(&mut tx,&receiver,target,action,version).await?;
         let arguments=json!({"targetType":"RESOURCE","targetId":target,"input":input,
             "authorizationTargetNativeRef":source.native_ref});
         let digest=collab_bridge::limits::canonical_digest(&arguments);
-        let command=collab_bridge::limits::canonical_digest(&json!({"receiverBindingId":binding,"receiverActionExecutionId":receiver_execution,
-            "sourceResourceId":target,"actionKey":action,"actionVersion":version,"argumentHash":digest}));
+        let mut command_value=json!({"receiverBindingId":binding,
+            "sourceResourceId":target,"actionKey":action,"actionVersion":version,"argumentHash":digest});
+        if let Some(batch)=native_batch { command_value["nativeBatch"]=batch.clone(); }
+        else { command_value["receiverActionExecutionId"]=json!(receiver_execution); }
+        let command=collab_bridge::limits::canonical_digest(&command_value);
         let documents=crate::application_tool::schemas(&mut tx,source.binding,action).await?;
         let schema=documents.get(text(&source.application.declaration,"inputSchemaDigest")?).ok_or_else(blocked)?;
         if !crate::capability_contract::schema_validator(schema,&documents)?.is_valid(&arguments["input"]) { return Err(invalid()); }
@@ -371,13 +395,27 @@ pub(crate) async fn request(
             let operation=Uuid::new_v4();
             let source_billing=receipt::billing(&state,&mut tx,receiver.tenant,source.binding,
                 source.generation,target,&source.application).await?;
-            let receiver_billing=receipt::receiver_billing(&mut tx,receiver_execution,key,binding,
-                receiver.generation,parent_target).await?;
-            let parameters=json!({"componentActionKind":KIND,"commandDigest":command,"toolParameterHash":digest,
+            let receiver_execution=receiver_execution.unwrap_or_else(Uuid::new_v4);
+            let receiver_operation=parent.as_ref().map_or(operation,|p|p.0);
+            let receiver_billing=if let Some(native)=&native {
+                receipt::billing(&state,&mut tx,receiver.tenant,binding,receiver.generation,
+                    native.resource,&native.application).await?
+            } else {
+                receipt::receiver_billing(&mut tx,receiver_execution,key,binding,
+                    receiver.generation,parent.as_ref().ok_or_else(invalid)?.1).await?
+            };
+            let mut parameters=json!({"componentActionKind":KIND,"commandDigest":command,"toolParameterHash":digest,
                 "receiverBindingId":binding,"receiverActionExecutionId":receiver_execution,
                 "receiverOperationId":receiver_operation,
                 "receiverGeneration":receiver.generation,"targetVersion":source.version,"idempotencyKey":key,
+                "readMode":if source.application.definition.permission=="discover" {"DISCOVER"} else {"READ"},
+                "readNativeRoot":source.native_ref,
                 "readReference":input,"readBilling":{"SOURCE":source_billing,"RECEIVER":receiver_billing}});
+            if let Some(native)=&native {
+                parameters["nativeBatch"]=native_batch.cloned().ok_or_else(invalid)?;
+                parameters["receiverTargetVersion"]=json!(native.version);
+                parameters["receiverDefinitionId"]=json!(native.application.definition_id);
+            }
             let inserted=sqlx::query("insert into admission.action_execution
                 (id,operation_id,tenant_id,workspace_id,action_key,action_version,initiator_principal_id,actor_principal_id,
                  target_id,parameter_hash,parameters,idempotency_key,gate_state,dispatch_state,correlation_id,
@@ -400,6 +438,16 @@ pub(crate) async fn request(
             .bind(source.application.definition_id).fetch_one(&mut *tx).await?;
         if !attached || ae.parameters.as_ref().is_none_or(|p|p["receiverGeneration"]!=receiver.generation
             || p["targetVersion"]!=source.version) { return Err(denied()); }
+        if let Some(native)=&native {
+            if ae.parameters.as_ref().is_none_or(|p|p["receiverTargetVersion"]!=native.version
+                || p["receiverDefinitionId"]!=json!(native.application.definition_id)) { return Err(denied()); }
+        }
+        if let Some(native)=&native {
+            if let Some(observed)=native_receiver::observation(&state,&mut tx,&ae,&receiver,native,&source).await? {
+                tx.commit().await?;
+                return serde_json::from_value::<contracts::AdapterReadGrantResponse>(observed).map_err(|_|invalid());
+            }
+        }
         let fresh=evaluate(&state,&receiver,&source,target).await?;
         crate::governance::record_decision(&mut tx,&crate::governance::DecisionSubject {
             action_execution_id:id,operation_id:ae.operation_id,tenant_id:ae.tenant_id,workspace_id:ae.workspace_id,
@@ -428,13 +476,19 @@ pub(crate) async fn request(
         // The event key records this token's stable jti; no bearer is retained.
         crate::governance::audit(&mut tx,&ae,&source.application.definition,&format!("read-token:{}",text(&claims,"jti")?),
             "DECISION","ALLOW","READ_TOKEN_ISSUED",None,vec![]).await?;
+        let receiver_write=if let Some(native)=&native {
+            Some(native_receiver::admit(&state,&mut tx,&ae,&receiver,binding,native,
+                native_batch.ok_or_else(invalid)?).await?)
+        } else { None };
         let endpoint=reqwest::Url::parse(text(&source.adapter.value,"baseUrl")?).map_err(|_|blocked())?
             .join("platform-adapter/v1/execute").map_err(|_|blocked())?.to_string();
         tx.commit().await?;
-        let response: contracts::AdapterReadGrantResponse=serde_json::from_value(json!({"actionExecutionId":id,
+        let mut response=json!({"actionExecutionId":id,
             "operationId":ae.operation_id,"sourceBindingId":source.binding,"endpoint":endpoint,"actionToken":token,
             "expiresAt":claims["exp"],"argumentsJson":collab_bridge::limits::canonical_json(&json!({
-                "actionKey":action,"idempotencyKey":key,"arguments":arguments}))})).map_err(|_|invalid())?;
+                "actionKey":action,"idempotencyKey":key,"arguments":arguments}))});
+        if let Some(write)=receiver_write { response["receiverWrite"]=write; }
+        let response: contracts::AdapterReadGrantResponse=serde_json::from_value(response).map_err(|_|invalid())?;
         Ok::<_,Refusal>(response)
     }.await;
     match result {
@@ -514,7 +568,7 @@ fn validate_claims(
     arguments: &Value,
 ) -> Result<(), Refusal> {
     let p = ae.parameters.as_ref().ok_or_else(invalid)?;
-    if !is_service(ae)
+    if !(is_service(ae) || native_receiver::is_receiver(ae))
         || operation != "execute"
         || ae.gate_state != "ALLOWED"
         || ae.dispatch_state != "DISPATCHED"
@@ -556,6 +610,29 @@ fn validate_claims(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_sync_does_not_borrow_or_mix_a_human_parent() {
+        let native = json!({"nativeBatch":{"receiverResourceId":Uuid::new_v4(),
+            "importConfigRef":Uuid::new_v4(),"batchId":Uuid::new_v4(),
+            "actionKey":"knowledge.sync_apply@v2","actionVersion":1}});
+        assert!(native_batch(&native).unwrap().is_some());
+        let legacy =
+            json!({"receiverActionExecutionId":Uuid::new_v4(),"receiverArgumentsJson":"{}"});
+        assert!(native_batch(&legacy).unwrap().is_none());
+        for invalid in [
+            json!({}),
+            json!({"receiverArgumentsJson":"{}"}),
+            json!({"receiverActionExecutionId":Uuid::new_v4()}),
+            json!({"nativeBatch":native["nativeBatch"],"receiverArgumentsJson":"{}"}),
+            json!({"nativeBatch":native["nativeBatch"],"receiverActionExecutionId":Uuid::new_v4(),"receiverArgumentsJson":"{}"}),
+        ] {
+            assert!(
+                native_batch(&invalid).is_err(),
+                "mixed or incomplete admission: {invalid}"
+            );
+        }
+    }
 
     #[tokio::test]
     #[ignore = "requires migrated isolated APPLICATION_EXECUTION_TEST_DATABASE_URL"]

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/file_storage.v1/list_input.schema.json",
+  "title": "FileStorageListInput",
+  "description": "DD-89: list the source Resource through its bound native root; the client cannot supply another root or native credential.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"}
+  }
+}

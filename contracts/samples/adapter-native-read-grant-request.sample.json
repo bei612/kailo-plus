@@ -1,0 +1,15 @@
+{
+  "receiverBindingId": "10000000-0000-4000-8000-000000000001",
+  "sourceResourceId": "20000000-0000-4000-8000-000000000001",
+  "actionKey": "file_storage.list@v1",
+  "actionVersion": 1,
+  "idempotencyKey": "10000000-0000-4000-8000-000000000004",
+  "inputJson": "{\"resourceId\":\"20000000-0000-4000-8000-000000000001\"}",
+  "nativeBatch": {
+    "receiverResourceId": "10000000-0000-4000-8000-000000000007",
+    "importConfigRef": "10000000-0000-4000-8000-000000000008",
+    "batchId": "10000000-0000-4000-8000-000000000009",
+    "actionKey": "knowledge.sync_apply@v2",
+    "actionVersion": 1
+  }
+}

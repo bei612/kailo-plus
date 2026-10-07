@@ -36,10 +36,11 @@ async function fixture(t, mode = 'ok', action, protocolOperation) {
   const args = { nativeObjectRef: ids[2], idempotencyKey: ids[3], authorizationTargetNativeRef: ids[1] };
   const state = { peps: 0, native: 0, methods: [], grants: 0, downloads: 0, receipts: [] };
   const revision = '2026-10-06T23:00:00.123456789Z';
-  const reference = { resourceId: action==='knowledge.ingest@v1'?ids[9]:ids[8], nativeObjectRef: ids[2], nativeRevision: revision,
+  const ingest=action==='knowledge.ingest@v1'||action==='knowledge.ingest@v2';
+  const reference = { resourceId: ingest?ids[9]:ids[8], nativeObjectRef: ids[2], nativeRevision: revision,
     displayName: 'native document', mediaType: 'text/markdown' };
   const operation = protocolOperation ?? (action ? 'execute' : 'query_revision');
-  const intent = ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:action==='knowledge.ingest@v1'?'add_document':'delete_document'}
+  const intent = ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
     : action ? { target: { resourceId: ids[8] }, input: reference } : args;
   const bodyValue = ['observe','extract_usage'].includes(operation) ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
   const upstream = createServer(async (request, response) => {
@@ -79,6 +80,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation) {
     }
     if (request.url === '/service/v1/adapter/pep_check') {
       state.peps++;
+      assert.equal(JSON.parse(Buffer.from(body.actionToken.split('.')[1],'base64url')).action_key,action??'knowledge.read@v1');
       if ((mode === 'deny' && state.peps === 1) || (mode === 'revoke' && state.peps === 2)) return reply(response, 403, {});
       assert.equal(body.operation, operation);
       assert.deepEqual(JSON.parse(body.argumentsJson), intent);
@@ -144,7 +146,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation) {
     corePepUrl: `${origin}/service/v1/adapter/pep_check`, oidcTokenUrl: `${origin}/token`,
     oidcClientId: 'binding-client', oidcClientSecretFile: oidcSecretFile,
     timeoutMs: 3000, maxBodyBytes: 16384, listenHost: '127.0.0.1', listenPort: 1 };
-  if (action==='knowledge.ingest@v1') config.readEdge={sourceActionVersion:1,
+  if (ingest) config.readEdge={sourceActionVersion:1,
     usageMeasurements:[{meterKey:'native_import_count',quantitySource:'COUNT'},{meterKey:'native_import_bytes',quantitySource:'CONTENT_BYTES'}]};
   const adapter = createAdapter(config);
   const endpoint = await listen(adapter);
@@ -269,6 +271,24 @@ test('actual read/export consume the signed typed reference and native content',
         : { contentBase64: Buffer.from('native bytes').toString('base64'), mediaType: 'text/markdown', filename: 'native.md' });
     });
   }
+});
+
+test('knowledge v2 keeps every original native action and does not rewrite the signed action key',async t=>{
+  for (const operation of ['read','export','ingest','delete']) {
+    await t.test(operation,async nested=>{
+      const {invoke,state}=await fixture(nested,'ok',`knowledge.${operation}@v2`);
+      const answer=await invoke();
+      assert.equal(answer.status,200);
+      assert.equal((await answer.json()).execution.platformStatus,'SUCCEEDED');
+      assert.ok(state.native>0);
+      assert.ok(state.peps>0);
+    });
+  }
+  await t.test('unknown version remains denied',async nested=>{
+    const {invoke,state}=await fixture(nested,'ok','knowledge.read@v3');
+    assert.equal((await invoke()).status,401);
+    assert.equal(state.native,0);
+  });
 });
 
 test('native pending, later revision and permission loss never yield a terminal read', async t => {

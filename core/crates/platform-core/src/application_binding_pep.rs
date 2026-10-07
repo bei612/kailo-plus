@@ -67,6 +67,12 @@ pub(crate) async fn check(
         })?;
         let claims=crate::action_token::verify(text(&raw,"actionToken")?,&audience)?;
         let mut tx=state.pool.begin().await?;
+        // Native receiver writes share the read root's lock order with receipt
+        // settlement and repeated grant admission: root, child, then binding.
+        let parent:Option<Uuid>=sqlx::query_scalar("select parent_action_execution_id from admission.action_execution
+            where id=$1 and parameters->>'componentActionKind'='SERVICE_READ_RECEIVER'")
+            .bind(uuid(&claims,"action_execution_id")?).fetch_optional(&mut *tx).await?.flatten();
+        if let Some(parent)=parent { crate::governance::lock_execution(&mut tx,parent).await?; }
         let ae=crate::governance::lock_execution(&mut tx,uuid(&claims,"action_execution_id")?).await?;
         // Original root/AE before binding lock order: disable uses this same
         // order. Re-read after token verification so a revoked/rekeyed identity
@@ -83,9 +89,16 @@ pub(crate) async fn check(
         if current.as_ref()!=Some(&(tenant,workspace,client,audience.clone(),status.clone(),lifecycle)) {
             return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
         }
-        let def=crate::governance::exact_definition_for_execution(&state.pool,&ae).await?;
         let operation=text(&raw,"operation")?;
         let arguments:Value=serde_json::from_str(text(&raw,"argumentsJson")?).map_err(|_|invalid())?;
+        if super::read_grant::native_receiver::is_receiver(&ae) {
+            if status!="ACTIVE" || raw.get("contentReference").is_some() { return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)); }
+            let revision=super::read_grant::native_receiver::authorize(&state,&mut tx,&ae,binding,&claims,operation,&arguments).await?;
+            tx.commit().await?;
+            let response:contracts::AdapterPepCheckResponse=serde_json::from_value(json!({"actionExecutionId":ae.id,
+                "operationId":ae.operation_id,"authorizationMinZedToken":revision})).map_err(|_|invalid())?;
+            return Ok(response);
+        }
         if super::read_grant::is_service(&ae) {
             if status!="ACTIVE" || raw.get("contentReference").is_some() { return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)); }
             let revision=super::read_grant::authorize(&state,&ae,binding,&claims,operation,&arguments).await?;
@@ -94,6 +107,7 @@ pub(crate) async fn check(
                 "operationId":ae.operation_id,"authorizationMinZedToken":revision})).map_err(|_|invalid())?;
             return Ok(response);
         }
+        let def=crate::governance::exact_definition_for_execution(&state.pool,&ae).await?;
         let management=crate::action_token::management_operation(&ae.action_key,&status,operation);
         if def.execution_mode=="PROTOCOL" {
             let observing=matches!(operation,"observe"|"cancel")

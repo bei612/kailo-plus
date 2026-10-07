@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/file_storage.v1/list_output.schema.json",
+  "title": "FileStorageListOutput",
+  "description": "DD-89: complete native listing is transported only between components, not persisted by Core. Its canonical item digest is the native listing revision, never a fabricated file VersionId.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "nativeObjectRef", "nativeRevision", "items", "listingDigest", "operationId"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "nativeObjectRef": {"type": "string", "minLength": 1},
+    "nativeRevision": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "items": {"type": "array", "items": {"$ref": "../../domain/content_reference.schema.json"}},
+    "listingDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "operationId": {"type": "string", "format": "uuid"}
+  }
+}

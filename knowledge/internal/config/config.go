@@ -33,12 +33,41 @@ type Config struct {
 	PromptTemplates *PromptTemplatesConfig `yaml:"prompt_templates" json:"prompt_templates"`
 	IM              *IMConfig              `yaml:"im"               json:"im"`
 	Agent           *AgentConfig           `yaml:"agent"            json:"agent"`
+	// FileStorageSync is controlled binding delivery, not user data-source
+	// credentials. Native connectors never receive Cells credentials.
+	FileStorageSync *FileStorageSyncConfig `yaml:"file_storage_sync" json:"file_storage_sync"`
 	// FrontendBaseURL is the externally-visible origin of the SPA, used
 	// to compose absolute share-link URLs. Empty falls back to a host-
 	// relative URL ("/register?token=…") which the SPA then resolves
 	// against window.location.origin — fine for typical single-origin
 	// deployments. Sourced from FRONTEND_BASE_URL env at startup.
 	FrontendBaseURL string `yaml:"frontend_base_url" json:"frontend_base_url"`
+}
+
+// FileStorageSyncConfig reuses the binding's existing OIDC service identity and
+// Core read-grant/PEP endpoints. Native tenant/KB mapping comes from the same
+// controlled projection as the component Adapter, never from a sync payload.
+type FileStorageSyncConfig struct {
+	CorePepURL            string `yaml:"core_pep_url" json:"core_pep_url"`
+	OIDCTokenURL          string `yaml:"oidc_token_url" json:"oidc_token_url"`
+	OIDCClientID          string `yaml:"oidc_client_id" json:"oidc_client_id"`
+	OIDCClientSecretFile  string `yaml:"oidc_client_secret_file" json:"oidc_client_secret_file"`
+	BindingID             string `yaml:"binding_id" json:"binding_id"`
+	ReceiverResourceID    string `yaml:"receiver_resource_id" json:"receiver_resource_id"`
+	NativeTenantID        uint64 `yaml:"native_tenant_id" json:"native_tenant_id"`
+	NativeKnowledgeBaseID string `yaml:"native_knowledge_base_id" json:"native_knowledge_base_id"`
+	TimeoutMS             int64  `yaml:"timeout_ms" json:"timeout_ms"`
+	MaxBodyBytes          int64  `yaml:"max_body_bytes" json:"max_body_bytes"`
+	ListActionVersion     int64  `yaml:"list_action_version" json:"list_action_version"`
+	ReadActionVersion     int64  `yaml:"read_action_version" json:"read_action_version"`
+	ApplyActionKey        string `yaml:"apply_action_key" json:"apply_action_key"`
+	ApplyActionVersion    int64  `yaml:"apply_action_version" json:"apply_action_version"`
+	RetireActionKey       string `yaml:"retire_action_key" json:"retire_action_key"`
+	RetireActionVersion   int64  `yaml:"retire_action_version" json:"retire_action_version"`
+	UsageMeasurements     []struct {
+		MeterKey       string `yaml:"meter_key" json:"meter_key"`
+		QuantitySource string `yaml:"quantity_source" json:"quantity_source"`
+	} `yaml:"usage_measurements" json:"usage_measurements"`
 }
 
 // AgentConfig represents the global agent settings.

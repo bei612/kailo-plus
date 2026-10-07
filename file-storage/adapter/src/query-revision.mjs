@@ -7,6 +7,7 @@ import { createServer } from 'node:http';
 import { documentConfiguration, launchDocument } from './document-launch.mjs';
 import { documentLifecycle } from './document-lifecycle.mjs';
 import { readConfiguration, readFile } from './service-read.mjs';
+import { listFiles } from './service-list.mjs';
 
 // The fixed Cells REST v2 read seam and original DOCUMENT PAT launch share this
 // binding adapter. Neither implies release activation or tool registration.
@@ -236,6 +237,14 @@ export function createAdapter(rawConfig) {
       if (request.url === '/platform-adapter/v1/execute') {
         let body;
         try { body=JSON.parse(raw); } catch { throw new Refused(400); }
+        if (body?.actionKey === 'file_storage.list@v1') {
+          const listing=await listFiles(config,deadline,raw,request.headers['idempotency-key'],request.headers.authorization.slice(7));
+          response.writeHead(200,{'content-type':'application/json','cache-control':'no-store'});
+          // Keep the embedded item bytes identical to the SOURCE receipt's
+          // canonical digest so native receivers need not reimplement JCS.
+          response.end(canonical(listing));
+          return;
+        }
         if (body?.actionKey === 'file_storage.read@v1') {
           const file=await readFile(config,deadline,raw,request.headers['idempotency-key'],request.headers.authorization.slice(7));
           response.writeHead(200,{'content-type':'application/octet-stream','cache-control':'no-store',

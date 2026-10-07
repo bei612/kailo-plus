@@ -9,6 +9,12 @@ import { sourceReference, sourceFile } from './service-read.mjs';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const QUERY_PATH = '/platform-adapter/v1/query_revision';
 
+// Both immutable capability contracts use the same original native consumer.
+// Keep the signed key/version intact through PEP, hashing and observations.
+function nativeKnowledgeAction(key) {
+  return /^knowledge\.(search|read|export|ingest|delete)@v[12]$/.exec(key)?.[1];
+}
+
 export function configuration(value) {
   const required = ['bindingId', 'tenantId', 'nativeKnowledgeBaseId', 'nativeMcpUrl',
     'nativeMcpBearerFile', 'actionTokenIssuer', 'actionTokenAudience', 'actionTokenJwksFile',
@@ -49,8 +55,7 @@ export async function verifyKnowledgeToken(token, config, args, operation = 'que
     || (config.workspaceId !== undefined && claims.workspace_id !== config.workspaceId)
     || (claims.workspace_id !== undefined && !UUID.test(claims.workspace_id))
     || claims.target_type !== 'RESOURCE'
-    || !['knowledge.search@v1', 'knowledge.read@v1', 'knowledge.export@v1',
-      'knowledge.ingest@v1', 'knowledge.delete@v1'].includes(claims.action_key)
+    || nativeKnowledgeAction(claims.action_key) === undefined
     || !Number.isSafeInteger(claims.action_definition_version) || claims.action_definition_version <= 0
     || !Number.isSafeInteger(claims.result_exposure_policy_version) || claims.result_exposure_policy_version <= 0
     || !nonempty(claims.authorization_min_zed_token)
@@ -225,7 +230,7 @@ async function recordCreationReceipt(value, observation, config, deadline, key) 
 }
 
 async function executeOperation(config, deadline, request, claims, token) {
-  if (claims.action_key==='knowledge.ingest@v1') {
+  if (nativeKnowledgeAction(claims.action_key)==='ingest') {
     const reference=sourceReference(request.arguments,claims);
     const source=await sourceFile(config,deadline,reference,request.idempotencyKey,claims);
     // Source read authorization does not substitute for receiver write authority.
@@ -240,7 +245,7 @@ async function executeOperation(config, deadline, request, claims, token) {
     await recordCreationReceipt(value,observed,config,deadline,request.idempotencyKey);
     return observed;
   }
-  if (claims.action_key === 'knowledge.delete@v1') {
+  if (nativeKnowledgeAction(claims.action_key) === 'delete') {
     const reference = referenceInput(request.arguments,claims);
     const value = await nativeTool(config,deadline,'delete_document',{
       knowledge_base_id:config.nativeKnowledgeBaseId,knowledge_id:reference.nativeObjectRef,
@@ -249,18 +254,18 @@ async function executeOperation(config, deadline, request, claims, token) {
     const execution = deletionObservation(value,config,request.idempotencyKey,reference);
     return execution.platformStatus === 'SUCCEEDED' ? {execution,resultJson:'{}'} : {execution};
   }
-  if (!['knowledge.read@v1', 'knowledge.export@v1'].includes(claims.action_key)) throw new Refused(404);
+  if (!['read', 'export'].includes(nativeKnowledgeAction(claims.action_key))) throw new Refused(404);
   const reference = referenceInput(request.arguments, claims);
   const document = await originalDocument(config, deadline, reference);
   // No HTTP receipt can turn pending/failed native parsing into a successful
   // full-text read. Export is independent of indexing and uses original bytes.
   let result;
   let nativeType;
-  if (claims.action_key === 'knowledge.read@v1') {
+  if (nativeKnowledgeAction(claims.action_key) === 'read') {
     if (document.parse_status !== 'completed') throw new Refused(503);
     result = await readText(config, deadline, reference);
     nativeType = 'read_document';
-  } else if (claims.action_key === 'knowledge.export@v1') {
+  } else if (nativeKnowledgeAction(claims.action_key) === 'export') {
     const exported = await nativeTool(config, deadline, 'export_document', { knowledge_id: reference.nativeObjectRef });
     if (exported.knowledge_id !== reference.nativeObjectRef
       || exported.knowledge_base_id !== config.nativeKnowledgeBaseId
@@ -316,7 +321,7 @@ export function createAdapter(rawConfig) {
       await freshPep(config, deadline, token, intent, claims, operation);
       let value;
       if (['observe','extract_usage'].includes(operation)) {
-        if (claims.action_key==='knowledge.ingest@v1' && args.nativeType==='add_document') {
+        if (nativeKnowledgeAction(claims.action_key)==='ingest' && args.nativeType==='add_document') {
           const native=await nativeTool(config,deadline,'add_document',{
             knowledge_base_id:config.nativeKnowledgeBaseId,idempotency_key:args.idempotencyKey,observe_only:true,
           });
@@ -329,7 +334,7 @@ export function createAdapter(rawConfig) {
               .map(entry=>({...entry,occurredAt:observed.execution.terminalAt})),
           };
           if (operation==='extract_usage' && observed.execution.platformStatus!=='SUCCEEDED') throw new Refused(503);
-        } else if (operation==='observe' && claims.action_key==='knowledge.delete@v1' && args.nativeType==='delete_document') {
+        } else if (operation==='observe' && nativeKnowledgeAction(claims.action_key)==='delete' && args.nativeType==='delete_document') {
           value = deletionObservation(await nativeTool(config,deadline,'delete_document',{
             knowledge_base_id:config.nativeKnowledgeBaseId,idempotency_key:args.idempotencyKey,observe_only:true,
           }),config,args.idempotencyKey);

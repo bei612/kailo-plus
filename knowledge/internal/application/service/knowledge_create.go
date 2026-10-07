@@ -32,7 +32,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	return s.createKnowledgeFromFile(ctx, kbID, file, metadata, enableMultimodel, customFileName, tagIDs, channel, processOverrides, "")
 }
 
-func (s *knowledgeService) CreateKnowledgeFromFileAtID(ctx context.Context, kbID, filename string, data []byte, metadata map[string]string, creationID string) (*types.Knowledge, error) {
+func (s *knowledgeService) CreateKnowledgeFromFileAtID(ctx context.Context, kbID, filename string, data []byte, metadata map[string]string, creationID string, tagIDs []string, channel string) (*types.Knowledge, error) {
 	id, err := uuid.Parse(creationID)
 	if err != nil || id == uuid.Nil || id.String() != creationID {
 		return nil, werrors.NewBadRequestError("invalid native file creation identity")
@@ -41,7 +41,7 @@ func (s *knowledgeService) CreateKnowledgeFromFileAtID(ctx context.Context, kbID
 	if err != nil {
 		return nil, err
 	}
-	return s.createKnowledgeFromFile(ctx, kbID, file, metadata, nil, file.Filename, nil, "mcp", nil, creationID)
+	return s.createKnowledgeFromFile(ctx, kbID, file, metadata, nil, file.Filename, tagIDs, channel, nil, creationID)
 }
 
 const fileCreationDigestMetadataKey = "kailo_file_creation_digest"
@@ -130,10 +130,18 @@ func (s *knowledgeService) createKnowledgeFromFile(ctx context.Context, kbID str
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
 	creationDigest := ""
 	if creationID != "" {
+		// Preserve existing MCP creation digests while binding the native
+		// Connector's actual tag/channel options to its durable creation ID.
+		digestChannel := defaultChannel(channel)
+		if digestChannel == "mcp" {
+			digestChannel = ""
+		}
 		encoded, err := json.Marshal(struct {
 			KB, Hash, Name string
 			Metadata       map[string]string
-		}{kbID, hash, fileName, metadata})
+			Tags           []string `json:"Tags,omitempty"`
+			Channel        string   `json:"Channel,omitempty"`
+		}{kbID, hash, fileName, metadata, tagIDs, digestChannel})
 		if err != nil {
 			return nil, err
 		}

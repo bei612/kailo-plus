@@ -6,6 +6,36 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn native_sync_grant_preserves_own_admission_and_read_only_terminal_outcomes() {
+    let raw = fs::read_to_string(
+        sample_path().with_file_name("adapter-native-read-grant-request.sample.json"),
+    )
+    .unwrap();
+    let typed: contracts::AdapterReadGrantRequest = serde_json::from_str(&raw).unwrap();
+    assert_eq!(
+        serde_json::to_value(typed).unwrap(),
+        serde_json::from_str::<serde_json::Value>(&raw).unwrap()
+    );
+    let raw = fs::read_to_string(
+        sample_path().with_file_name("adapter-native-read-grant-responses.sample.json"),
+    )
+    .unwrap();
+    let typed: Vec<contracts::AdapterReadGrantResponse> = serde_json::from_str(&raw).unwrap();
+    assert_eq!(
+        serde_json::to_value(typed).unwrap(),
+        serde_json::from_str::<serde_json::Value>(&raw).unwrap()
+    );
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("file-storage-list-output.sample.json"))
+            .unwrap();
+    let typed: contracts::FileStorageListOutput = serde_json::from_str(&raw).unwrap();
+    assert_eq!(
+        serde_json::to_value(typed).unwrap(),
+        serde_json::from_str::<serde_json::Value>(&raw).unwrap()
+    );
+}
+
+#[test]
 fn automation_topic_step_preserves_explicit_empty_topic() {
     let sample: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("automation-topic-step.sample.json"))
@@ -14,6 +44,17 @@ fn automation_topic_step_preserves_explicit_empty_topic() {
     .unwrap();
     let step: contracts::AutomationStep = serde_json::from_value(sample.clone()).unwrap();
     assert_eq!(serde_json::to_value(step).unwrap(), sample);
+}
+
+#[test]
+fn read_receipts_preserve_native_precision_roles_and_quantities() {
+    let raw = fs::read_to_string(sample_path().with_file_name("adapter-read-receipts.sample.json"))
+        .unwrap();
+    let typed: Vec<contracts::AdapterReadReceipt> = serde_json::from_str(&raw).unwrap();
+    assert_eq!(
+        serde_json::to_value(typed).unwrap(),
+        serde_json::from_str::<serde_json::Value>(&raw).unwrap()
+    );
 }
 
 #[test]
@@ -47,17 +88,6 @@ fn application_read_resources_preserve_metadata_and_legacy_entry_absence() {
             serde_json::from_value(value.clone()).unwrap();
         assert_eq!(serde_json::to_value(binding).unwrap(), value);
     }
-}
-
-#[test]
-fn read_receipts_preserve_native_precision_roles_and_quantities() {
-    let raw = fs::read_to_string(sample_path().with_file_name("adapter-read-receipts.sample.json"))
-        .unwrap();
-    let typed: Vec<contracts::AdapterReadReceipt> = serde_json::from_str(&raw).unwrap();
-    assert_eq!(
-        serde_json::to_value(typed).unwrap(),
-        serde_json::from_str::<serde_json::Value>(&raw).unwrap()
-    );
 }
 
 #[test]

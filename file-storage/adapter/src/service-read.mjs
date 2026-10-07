@@ -15,13 +15,14 @@ export function readConfiguration(value) {
   return Object.freeze({ ...value, downloadOrigin: url.origin });
 }
 
-async function claimsForRead(config, token, args) {
+export async function claimsForRead(config, token, args, actionKey = 'file_storage.read@v1') {
   const claims = await verifiedClaims(token, config);
   for (const key of ['jti','tenant_id','actor_principal_id','operation_id','action_execution_id','target_id']) {
     if (!UUID.test(claims[key])) throw new Refused(401);
   }
   if (claims.tenant_id !== config.tenantId || claims.target_type !== 'RESOURCE'
-    || claims.action_key !== 'file_storage.read@v1'
+    || claims.action_key !== actionKey
+    || (config.workspaceId !== undefined && claims.workspace_id !== config.workspaceId)
     || (claims.workspace_id !== undefined && !UUID.test(claims.workspace_id))
     || !Number.isSafeInteger(claims.action_definition_version) || claims.action_definition_version <= 0
     || !nonempty(claims.authorization_min_zed_token)

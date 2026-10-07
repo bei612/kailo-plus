@@ -7,6 +7,15 @@
 //    applicationModelAdmission, err := UnmarshalApplicationModelAdmission(bytes)
 //    bytes, err = applicationModelAdmission.Marshal()
 //
+//    fileStorageListInput, err := UnmarshalFileStorageListInput(bytes)
+//    bytes, err = fileStorageListInput.Marshal()
+//
+//    fileStorageListOutput, err := UnmarshalFileStorageListOutput(bytes)
+//    bytes, err = fileStorageListOutput.Marshal()
+//
+//    knowledgeSyncInput, err := UnmarshalKnowledgeSyncInput(bytes)
+//    bytes, err = knowledgeSyncInput.Marshal()
+//
 //    adapterBindingObservation, err := UnmarshalAdapterBindingObservation(bytes)
 //    bytes, err = adapterBindingObservation.Marshal()
 //
@@ -600,6 +609,36 @@ func UnmarshalApplicationModelAdmission(data []byte) (ApplicationModelAdmission,
 }
 
 func (r *ApplicationModelAdmission) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFileStorageListInput(data []byte) (FileStorageListInput, error) {
+	var r FileStorageListInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FileStorageListInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFileStorageListOutput(data []byte) (FileStorageListOutput, error) {
+	var r FileStorageListOutput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FileStorageListOutput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalKnowledgeSyncInput(data []byte) (KnowledgeSyncInput, error) {
+	var r KnowledgeSyncInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *KnowledgeSyncInput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2553,6 +2592,43 @@ type ApplicationModelAdmission struct {
 	Traceparent        string `json:"traceparent"`
 }
 
+// DD-89: list the source Resource through its bound native root; the client cannot supply
+// another root or native credential.
+type FileStorageListInput struct {
+	ResourceID string `json:"resourceId"`
+}
+
+// DD-89: complete native listing is transported only between components, not persisted by
+// Core. Its canonical item digest is the native listing revision, never a fabricated file
+// VersionId.
+type FileStorageListOutput struct {
+	Items           []ContentReferenceElement `json:"items"`
+	ListingDigest   string                    `json:"listingDigest"`
+	NativeObjectRef string                    `json:"nativeObjectRef"`
+	NativeRevision  string                    `json:"nativeRevision"`
+	OperationID     string                    `json:"operationId"`
+	ResourceID      string                    `json:"resourceId"`
+}
+
+// design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
+type ContentReferenceElement struct {
+	AssetID         *string `json:"assetId,omitempty"`
+	DisplayName     string  `json:"displayName"`
+	MediaType       string  `json:"mediaType"`
+	NativeObjectRef string  `json:"nativeObjectRef"`
+	NativeRevision  string  `json:"nativeRevision"`
+	ResourceID      string  `json:"resourceId"`
+}
+
+// Metadata-only input of the receiver native synchronization admission. Core injects the
+// read execution reference and native receiver root.
+type KnowledgeSyncInput struct {
+	BatchID                     string `json:"batchId"`
+	ImportConfigRef             string `json:"importConfigRef"`
+	SourceReadActionExecutionID string `json:"sourceReadActionExecutionId"`
+	SourceResourceID            string `json:"sourceResourceId"`
+}
+
 // 07§5/6.2：validate_binding 的非正文观察。精确原生scope/实例、隔离与配置引用摘要，不是用户声明的通过布尔值。
 type AdapterBindingObservation struct {
 	ArtifactDigest    string                    `json:"artifactDigest"`
@@ -2607,19 +2683,9 @@ type AdapterExecutionReference struct {
 // ADR-12 执行响应分离原生任务观察与能力结果。HTTP 接收不是终态；resultJson 只在原生 SUCCEEDED 且符合固定结果 schema 时消费。它不进入
 // Core 的套件报告。
 type AdapterExecutionResponse struct {
-	ContentReference *ContentReferenceClass `json:"contentReference,omitempty"`
-	Execution        ExecutionClass         `json:"execution"`
-	ResultJSON       *string                `json:"resultJson,omitempty"`
-}
-
-// design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
-type ContentReferenceClass struct {
-	AssetID         *string `json:"assetId,omitempty"`
-	DisplayName     string  `json:"displayName"`
-	MediaType       string  `json:"mediaType"`
-	NativeObjectRef string  `json:"nativeObjectRef"`
-	NativeRevision  string  `json:"nativeRevision"`
-	ResourceID      string  `json:"resourceId"`
+	ContentReference *ContentReferenceElement `json:"contentReference,omitempty"`
+	Execution        ExecutionClass           `json:"execution"`
+	ResultJSON       *string                  `json:"resultJson,omitempty"`
 }
 
 // ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
@@ -2654,11 +2720,11 @@ type AdapterExecutionUsageMeasurement struct {
 // ADR-12
 // adapter入站fresh校验。ActionToken只瞬时校验、不入history或审计正文；参数由原ActionToken摘要绑定，binding由受认证client精确匹配。
 type AdapterPepCheckRequest struct {
-	ActionToken      string                 `json:"actionToken"`
-	ArgumentsJSON    string                 `json:"argumentsJson"`
-	BindingID        string                 `json:"bindingId"`
-	ContentReference *ContentReferenceClass `json:"contentReference,omitempty"`
-	Operation        string                 `json:"operation"`
+	ActionToken      string                   `json:"actionToken"`
+	ArgumentsJSON    string                   `json:"argumentsJson"`
+	BindingID        string                   `json:"bindingId"`
+	ContentReference *ContentReferenceElement `json:"contentReference,omitempty"`
+	Operation        string                   `json:"operation"`
 }
 
 // 只在原动作和精确binding仍被fresh授权时返回当前授权revision；不是可复用的新授权票据。
@@ -2692,14 +2758,14 @@ type WriteObservationClass struct {
 // native object create. All fields are frozen Core facts and the whole body is covered by
 // ActionToken.
 type AdapterProtocolSessionLaunchRequest struct {
-	AdmittedMode                 TedMode               `json:"admittedMode"`
-	AuthorizationTargetNativeRef string                `json:"authorizationTargetNativeRef"`
-	ExpiresAt                    string                `json:"expiresAt"`
-	IdempotencyKey               string                `json:"idempotencyKey"`
-	Locale                       Locale                `json:"locale"`
-	ProtocolSessionID            string                `json:"protocolSessionId"`
-	Reference                    ContentReferenceClass `json:"reference"`
-	Theme                        Theme                 `json:"theme"`
+	AdmittedMode                 TedMode                 `json:"admittedMode"`
+	AuthorizationTargetNativeRef string                  `json:"authorizationTargetNativeRef"`
+	ExpiresAt                    string                  `json:"expiresAt"`
+	IdempotencyKey               string                  `json:"idempotencyKey"`
+	Locale                       Locale                  `json:"locale"`
+	ProtocolSessionID            string                  `json:"protocolSessionId"`
+	Reference                    ContentReferenceElement `json:"reference"`
+	Theme                        Theme                   `json:"theme"`
 }
 
 // 18: the original native PAT reference plus transient launch descriptor. This value occurs
@@ -2831,26 +2897,49 @@ type AdapterQueryRevisionResponse struct {
 // read batch. Input is checked against the approved source action schema; Core retains its
 // digest, not the returned business content.
 type AdapterReadGrantRequest struct {
-	ActionKey                 string `json:"actionKey"`
-	ActionVersion             int64  `json:"actionVersion"`
-	IdempotencyKey            string `json:"idempotencyKey"`
-	InputJSON                 string `json:"inputJson"`
-	ReceiverActionExecutionID string `json:"receiverActionExecutionId"`
-	ReceiverArgumentsJSON     string `json:"receiverArgumentsJson"`
-	ReceiverBindingID         string `json:"receiverBindingId"`
-	SourceResourceID          string `json:"sourceResourceId"`
+	ActionKey      string `json:"actionKey"`
+	ActionVersion  int64  `json:"actionVersion"`
+	IdempotencyKey string `json:"idempotencyKey"`
+	InputJSON      string `json:"inputJson"`
+	// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
+	// exactly one mode, freezes these references, and resolves the receiver from its
+	// authenticated binding.
+	NativeBatch               *NativeBatch `json:"nativeBatch,omitempty"`
+	ReceiverActionExecutionID *string      `json:"receiverActionExecutionId,omitempty"`
+	ReceiverArgumentsJSON     *string      `json:"receiverArgumentsJson,omitempty"`
+	ReceiverBindingID         string       `json:"receiverBindingId"`
+	SourceResourceID          string       `json:"sourceResourceId"`
+}
+
+// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
+// exactly one mode, freezes these references, and resolves the receiver from its
+// authenticated binding.
+type NativeBatch struct {
+	ActionKey          string `json:"actionKey"`
+	ActionVersion      int64  `json:"actionVersion"`
+	BatchID            string `json:"batchId"`
+	ImportConfigRef    string `json:"importConfigRef"`
+	ReceiverResourceID string `json:"receiverResourceId"`
 }
 
 // DD-89: short-lived source Adapter authorization, not native credentials or proof that the
 // batch finished. The endpoint is resolved from the existing controlled adapter directory.
 type AdapterReadGrantResponse struct {
-	ActionExecutionID string `json:"actionExecutionId"`
-	ActionToken       string `json:"actionToken"`
-	ArgumentsJSON     string `json:"argumentsJson"`
-	Endpoint          string `json:"endpoint"`
-	ExpiresAt         int64  `json:"expiresAt"`
-	OperationID       string `json:"operationId"`
-	SourceBindingID   string `json:"sourceBindingId"`
+	ActionExecutionID string  `json:"actionExecutionId"`
+	ActionToken       *string `json:"actionToken,omitempty"`
+	ArgumentsJSON     *string `json:"argumentsJson,omitempty"`
+	Endpoint          *string `json:"endpoint,omitempty"`
+	ExpiresAt         *int64  `json:"expiresAt,omitempty"`
+	OperationID       string  `json:"operationId"`
+	// Native retry observation. COMPLETED requires both immutable receipts and committed usage;
+	// UNKNOWN/PENDING carry no renewed authorization.
+	Outcome         *OutcomeEnum        `json:"outcome,omitempty"`
+	ReceiverReceipt *AdapterReadReceipt `json:"receiverReceipt,omitempty"`
+	// Separate governed receiver action in the same read Operation. The native importer must
+	// perform the existing authenticated PEP check with this token immediately before its
+	// write; issuance is not completion.
+	ReceiverWrite   *ReceiverWrite `json:"receiverWrite,omitempty"`
+	SourceBindingID string         `json:"sourceBindingId"`
 }
 
 // DD-89: authenticated native source-read or completed receiver-import metadata for one
@@ -2873,6 +2962,16 @@ type AdapterReadReceipt struct {
 type AdapterReadReceiptMeasurement struct {
 	MeterKey string `json:"meterKey"`
 	Quantity int64  `json:"quantity"`
+}
+
+// Separate governed receiver action in the same read Operation. The native importer must
+// perform the existing authenticated PEP check with this token immediately before its
+// write; issuance is not completion.
+type ReceiverWrite struct {
+	ActionExecutionID string `json:"actionExecutionId"`
+	ActionToken       string `json:"actionToken"`
+	ArgumentsJSON     string `json:"argumentsJson"`
+	ExpiresAt         int64  `json:"expiresAt"`
 }
 
 // DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
@@ -3138,10 +3237,10 @@ type CapabilityContractRegistrationResourceTypeFamily struct {
 // Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
 // Core/Temporal。
 type ComponentActionClass struct {
-	ActionVersion               int64                 `json:"actionVersion"`
-	InputReference              ContentReferenceClass `json:"inputReference"`
-	ResultExposurePolicyID      string                `json:"resultExposurePolicyId"`
-	ResultExposurePolicyVersion int64                 `json:"resultExposurePolicyVersion"`
+	ActionVersion               int64                   `json:"actionVersion"`
+	InputReference              ContentReferenceElement `json:"inputReference"`
+	ResultExposurePolicyID      string                  `json:"resultExposurePolicyId"`
+	ResultExposurePolicyVersion int64                   `json:"resultExposurePolicyVersion"`
 }
 
 // 组件登记只提交实际 manifest、包清单与 binding config schema；不接收 suite 通过声明、报告或候选执行地址。Core 解析并冻结内容，原
@@ -3232,9 +3331,9 @@ type ProtocolSessionOpenClass struct {
 	ApplicationBindingID string `json:"applicationBindingId"`
 	Locale               Locale `json:"locale"`
 	// Exact approved projection selected by the native menu; never latest.
-	ProjectionGeneration int64                 `json:"projectionGeneration"`
-	Reference            ContentReferenceClass `json:"reference"`
-	Theme                Theme                 `json:"theme"`
+	ProjectionGeneration int64                   `json:"projectionGeneration"`
+	Reference            ContentReferenceElement `json:"reference"`
+	Theme                Theme                   `json:"theme"`
 }
 
 // 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
@@ -4036,8 +4135,8 @@ type ComponentConformanceWireObservation struct {
 // 原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
 // history 承接，不建立另一执行账本。
 type ProbeClass struct {
-	ContentReference *ContentReferenceClass `json:"contentReference,omitempty"`
-	Plan             PlanClass              `json:"plan"`
+	ContentReference *ContentReferenceElement `json:"contentReference,omitempty"`
+	Plan             PlanClass                `json:"plan"`
 	// 只查询同一步冻结幂等键；不再发送原 execute/CREATE。
 	Reconcile *bool `json:"reconcile,omitempty"`
 	StepIndex int64 `json:"stepIndex"`
@@ -4411,7 +4510,7 @@ type ProtocolSessionView struct {
 	LaunchLocale           Locale                   `json:"launchLocale"`
 	LaunchTheme            Theme                    `json:"launchTheme"`
 	ProtocolSessionID      string                   `json:"protocolSessionId"`
-	Reference              ContentReferenceClass    `json:"reference"`
+	Reference              ContentReferenceElement  `json:"reference"`
 	ResultRevision         *string                  `json:"resultRevision,omitempty"`
 	State                  ProtocolSessionViewState `json:"state"`
 	TenantID               string                   `json:"tenantId"`
@@ -5045,10 +5144,10 @@ type CapabilityContractRegistrationResourceTypeFamilyClass struct {
 // Kailo HUMAN 通过原 ActionCommand 调用确切 APPLICATION 能力动作。参数是组件原生持久内容引用，不把 SQL、提示或结果正文写入
 // Core/Temporal。
 type ComponentActionInput struct {
-	ActionVersion               int64                 `json:"actionVersion"`
-	InputReference              ContentReferenceClass `json:"inputReference"`
-	ResultExposurePolicyID      string                `json:"resultExposurePolicyId"`
-	ResultExposurePolicyVersion int64                 `json:"resultExposurePolicyVersion"`
+	ActionVersion               int64                   `json:"actionVersion"`
+	InputReference              ContentReferenceElement `json:"inputReference"`
+	ResultExposurePolicyID      string                  `json:"resultExposurePolicyId"`
+	ResultExposurePolicyVersion int64                   `json:"resultExposurePolicyVersion"`
 }
 
 // 07§8A 的隔离环境投递配置，不是 Catalog/binding 权威。由运维配置精确绑定已装载候选 artifact；逐次短期模拟 token 仅由 Core
@@ -5220,7 +5319,7 @@ type NativeDocumentSelection struct {
 	ActionVersion   int64                            `json:"actionVersion"`
 	BindingID       string                           `json:"bindingId"`
 	Generation      int64                            `json:"generation"`
-	Reference       ContentReferenceClass            `json:"reference"`
+	Reference       ContentReferenceElement          `json:"reference"`
 	ResourceVersion int64                            `json:"resourceVersion"`
 	WorkspaceID     string                           `json:"workspaceId"`
 }
@@ -5248,9 +5347,9 @@ type ProtocolSessionOpenInput struct {
 	ApplicationBindingID string `json:"applicationBindingId"`
 	Locale               Locale `json:"locale"`
 	// Exact approved projection selected by the native menu; never latest.
-	ProjectionGeneration int64                 `json:"projectionGeneration"`
-	Reference            ContentReferenceClass `json:"reference"`
-	Theme                Theme                 `json:"theme"`
+	ProjectionGeneration int64                   `json:"projectionGeneration"`
+	Reference            ContentReferenceElement `json:"reference"`
+	Theme                Theme                   `json:"theme"`
 }
 
 type ResourceCreate struct {
@@ -5702,7 +5801,7 @@ type ComponentConformanceObservation struct {
 
 type ObservationElement struct {
 	CaseKey                string                        `json:"caseKey"`
-	ContentReference       *ContentReferenceClass        `json:"contentReference,omitempty"`
+	ContentReference       *ContentReferenceElement      `json:"contentReference,omitempty"`
 	ErrorClass             *ErrorClass                   `json:"errorClass,omitempty"`
 	HTTPStatus             int64                         `json:"httpStatus"`
 	MCPResultKind          *MCPResultKind                `json:"mcpResultKind,omitempty"`
@@ -5764,8 +5863,8 @@ type ComponentConformancePlanStep struct {
 // 原 ComponentTaskWorkflow 的单个线协议 Activity 输入。步骤来自 Core 冻结计划；调度、尝试次数与 UNKNOWN 对账只由原 Temporal
 // history 承接，不建立另一执行账本。
 type ComponentConformanceProbe struct {
-	ContentReference *ContentReferenceClass `json:"contentReference,omitempty"`
-	Plan             PlanClass              `json:"plan"`
+	ContentReference *ContentReferenceElement `json:"contentReference,omitempty"`
+	Plan             PlanClass                `json:"plan"`
 	// 只查询同一步冻结幂等键；不再发送原 execute/CREATE。
 	Reconcile *bool `json:"reconcile,omitempty"`
 	StepIndex int64 `json:"stepIndex"`
@@ -5773,7 +5872,7 @@ type ComponentConformanceProbe struct {
 
 type ComponentConformanceStepObservation struct {
 	CaseKey                string                        `json:"caseKey"`
-	ContentReference       *ContentReferenceClass        `json:"contentReference,omitempty"`
+	ContentReference       *ContentReferenceElement      `json:"contentReference,omitempty"`
 	ErrorClass             *ErrorClass                   `json:"errorClass,omitempty"`
 	HTTPStatus             int64                         `json:"httpStatus"`
 	MCPResultKind          *MCPResultKind                `json:"mcpResultKind,omitempty"`
@@ -6083,6 +6182,16 @@ const (
 	PurpleUNKNOWN  ProtocolWriteReceiptState = "UNKNOWN"
 )
 
+// Native retry observation. COMPLETED requires both immutable receipts and committed usage;
+// UNKNOWN/PENDING carry no renewed authorization.
+type OutcomeEnum string
+
+const (
+	OutcomeCOMPLETED OutcomeEnum = "COMPLETED"
+	OutcomePENDING   OutcomeEnum = "PENDING"
+	OutcomeUNKNOWN   OutcomeEnum = "UNKNOWN"
+)
+
 type ApplicationReadResourceDirection string
 
 const (
@@ -6382,8 +6491,8 @@ type AgentRuntimeProjectionState string
 const (
 	AgentRuntimeProjectionStateACTIVE  AgentRuntimeProjectionState = "ACTIVE"
 	AgentRuntimeProjectionStateERROR   AgentRuntimeProjectionState = "ERROR"
+	AgentRuntimeProjectionStatePENDING AgentRuntimeProjectionState = "PENDING"
 	AgentRuntimeProjectionStateREVOKED AgentRuntimeProjectionState = "REVOKED"
-	Pending                            AgentRuntimeProjectionState = "PENDING"
 )
 
 // 03 §7、17 §6 的 Installation 状态；ACTIVE 要求实际投影与运行查证闭合。
@@ -6567,12 +6676,12 @@ const (
 type TaskStatus string
 
 const (
-	Canceled          TaskStatus = "CANCELED"
-	Completed         TaskStatus = "COMPLETED"
-	TaskStatusFAILED  TaskStatus = "FAILED"
-	TaskStatusRUNNING TaskStatus = "RUNNING"
-	Terminated        TaskStatus = "TERMINATED"
-	TimedOut          TaskStatus = "TIMED_OUT"
+	Canceled            TaskStatus = "CANCELED"
+	TaskStatusCOMPLETED TaskStatus = "COMPLETED"
+	TaskStatusFAILED    TaskStatus = "FAILED"
+	TaskStatusRUNNING   TaskStatus = "RUNNING"
+	Terminated          TaskStatus = "TERMINATED"
+	TimedOut            TaskStatus = "TIMED_OUT"
 )
 
 // ComponentTaskWorkflow 的封闭 kind 列表。权威定义见 .design/06-Temporal任务工作台.md；新增 kind

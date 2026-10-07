@@ -5,11 +5,23 @@
   "description": "DD-89: receiver binding authenticates as its own ServicePrincipal for one source-resource read batch. Input is checked against the approved source action schema; Core retains its digest, not the returned business content.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["receiverBindingId", "receiverActionExecutionId", "receiverArgumentsJson", "sourceResourceId", "actionKey", "actionVersion", "idempotencyKey", "inputJson"],
+  "required": ["receiverBindingId", "sourceResourceId", "actionKey", "actionVersion", "idempotencyKey", "inputJson"],
   "properties": {
     "receiverBindingId": {"type": "string", "format": "uuid"},
     "receiverActionExecutionId": {"type": "string", "format": "uuid"},
     "receiverArgumentsJson": {"type": "string"},
+    "nativeBatch": {
+      "type": "object", "additionalProperties": false,
+      "description": "Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires exactly one mode, freezes these references, and resolves the receiver from its authenticated binding.",
+      "required": ["receiverResourceId", "importConfigRef", "batchId", "actionKey", "actionVersion"],
+      "properties": {
+        "receiverResourceId": {"type": "string", "format": "uuid"},
+        "importConfigRef": {"type": "string", "format": "uuid"},
+        "batchId": {"type": "string", "format": "uuid"},
+        "actionKey": {"type": "string", "minLength": 1},
+        "actionVersion": {"type": "integer", "minimum": 1}
+      }
+    },
     "sourceResourceId": {"type": "string", "format": "uuid"},
     "actionKey": {"type": "string", "minLength": 1},
     "actionVersion": {"type": "integer", "minimum": 1},

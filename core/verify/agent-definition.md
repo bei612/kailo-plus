@@ -4610,3 +4610,46 @@ Rust 两个不存在的 ReasonCode/一个 sqlx 错误映射及最后冗余 closu
 也没有真实升级审批到新 Native 进程的整链验收；新 Native 持久化源码与
 本批升级都不能冒称已部署。联合四侧生成还包含 Projects schema，必须
 与对应 Projects 候选一起合并后核对，不能单独发布缺 schema 的生成物。
+
+### 2026-10-07 原工作流消息模板接回治理发送链
+
+1. 权威：REQ-24、设计 06 §9.1。固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `crates/buzz-workflow/src/executor.rs::TriggerContext`、`resolve_template`
+   是本批原实现来源。仅把纯解析逻辑移至现有 buzz-core；原 executor 保留
+   公开函数和原 WorkflowError 映射，不启动第二个工作流引擎。
+2. 影响面：Core 原 POST_MESSAGE 消费同一个解析器；原 source_message
+   返回已验签 Relay 事件的 timestamp，未增加数据库正文、契约或历史格式。
+   Web/Desktop/Mobile 不增加各自的模板实现，原管理面和协作面身份规则不变。
+3. 副作用：先执行原 fresh_channel_action，再核对源事件 ID、签名、频道、
+   线程和冻结作者。只在原 CREATED 无 reply_event_id 路径展开；签名事件 ID
+   随原持久化意图冻结。已有事件和 UNKNOWN 只对账，不重新展开或重发。
+   消息正文不写入 Core 表、审计或 Temporal history。
+4. 边界：缺源或读取不可用仍保留 UNKNOWN；身份不符拒绝。无效 filter 和
+   展开后空正文在派发前返回既有 InvalidParameters。未知变量和未闭合表达式
+   保持上游字面量行为，源文本不递归展开。定时取冻结触发时间，手动运行不
+   捏造 Relay 作者。Core 尚无实际 step_outputs 输入，不能声明多步骤输出
+   模板已贯通；reaction/topic/AGENT_TURN 本批没有新增模板消费者。
+
+固定六文件产品树 `8a8cf55586cd051286643981bfb31033a8965572`，相对
+`2e2341c1b97efe3a807b71607b6dd65f6f8ee1cb` 为 +421/-176。
+既有 4 CPU/8 GiB SDK、Cargo 16、离线缓存中，纯解析器 3 项通过。
+SDK 副本故意跳过替换后 3 项全部失败、退出 101；恢复固定 Git 字节并 cmp
+一致后 3 项再通过。Core 命令没有限定 binary，连带链接原集成测试，出现
+`No space left on device (os error 28)` 和 linker bus error，最终退出 101；
+Core 新增断言没有执行，不将其计为通过。不重复本批 full/clippy/镜像发布。
+
+日志目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-template.q8tO2t/`，
+`buzz-core.log`、`mutation.log`、`restored.log`、`core.log`。
+此次未完成的两个 incremental working 目录已保留至
+`/tmp/kailo-template-failed-incremental.xSS28M/`，不删除共享完整缓存或业务数据。
+本批不是完整 Workflows、真实频道模板发布或生产就绪的验收结论。
+
+随后原 `tools/check-docs.sh` 在相同固定 SDK 镜像、4 CPU/8 GiB、离线缓存、
+正式工作树只读挂载下退出 0，实施与设计 markdownlint 均为 0 issues。
+首次误在不完整 SDK 源码副本执行时，缺文档链接和 npm cache 权限导致退出 1；
+没有修改产品或文档规则迁就该输入错误。完整日志分别为
+`/tmp/kailo-restoration-commit.TIH3SG/docs.log` 与
+`/tmp/kailo-restoration-commit.TIH3SG/docs-working-tree.log`。
+本记录是文档检查，不是 Core 编译或全量门禁通过。

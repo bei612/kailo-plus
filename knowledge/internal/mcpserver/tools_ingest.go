@@ -159,7 +159,7 @@ func (s *Server) handleAddDocument(ctx context.Context, req mcp.CallToolRequest)
 				metadata["source_asset_id"] = fields["assetId"]
 			}
 		}
-		created, err = s.knowledgeService.CreateKnowledgeFromFileAtID(ctx, kb.ID, filename, data, metadata, creationID)
+		created, err = s.knowledgeService.CreateKnowledgeFromFileAtID(ctx, kb.ID, filename, data, metadata, creationID, nil, "mcp")
 	} else if url != "" {
 		created, err = s.knowledgeService.CreateKnowledgeFromURL(
 			ctx, kb.ID, url, "", "", nil, title, nil, askChannel, nil,

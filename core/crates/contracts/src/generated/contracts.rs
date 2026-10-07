@@ -154,6 +154,65 @@ pub struct ApplicationModelAdmission {
     pub traceparent: String,
 }
 
+/// DD-89: list the source Resource through its bound native root; the client cannot supply
+/// another root or native credential.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStorageListInput {
+    pub resource_id: String,
+}
+
+/// DD-89: complete native listing is transported only between components, not persisted by
+/// Core. Its canonical item digest is the native listing revision, never a fabricated file
+/// VersionId.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStorageListOutput {
+    pub items: Vec<ReferenceElement>,
+
+    pub listing_digest: String,
+
+    pub native_object_ref: String,
+
+    pub native_revision: String,
+
+    pub operation_id: String,
+
+    pub resource_id: String,
+}
+
+/// design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceElement {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset_id: Option<String>,
+
+    pub display_name: String,
+
+    pub media_type: String,
+
+    pub native_object_ref: String,
+
+    pub native_revision: String,
+
+    pub resource_id: String,
+}
+
+/// Metadata-only input of the receiver native synchronization admission. Core injects the
+/// read execution reference and native receiver root.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeSyncInput {
+    pub batch_id: String,
+
+    pub import_config_ref: String,
+
+    pub source_read_action_execution_id: String,
+
+    pub source_resource_id: String,
+}
+
 /// 07§5/6.2：validate_binding 的非正文观察。精确原生scope/实例、隔离与配置引用摘要，不是用户声明的通过布尔值。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -298,30 +357,12 @@ pub struct AdapterExecutionReference {
 #[serde(rename_all = "camelCase")]
 pub struct AdapterExecutionResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ReferenceClass>,
+    pub content_reference: Option<ReferenceElement>,
 
     pub execution: ExecutionClass,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_json: Option<String>,
-}
-
-/// design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReferenceClass {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub asset_id: Option<String>,
-
-    pub display_name: String,
-
-    pub media_type: String,
-
-    pub native_object_ref: String,
-
-    pub native_revision: String,
-
-    pub resource_id: String,
 }
 
 /// ADR-12 execute/observe/cancel/reconcile 的原生观察。字段取自 design03 ExternalExecution；nativeId
@@ -388,7 +429,7 @@ pub struct AdapterPepCheckRequest {
     pub binding_id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ReferenceClass>,
+    pub content_reference: Option<ReferenceElement>,
 
     pub operation: String,
 }
@@ -474,7 +515,7 @@ pub struct AdapterProtocolSessionLaunchRequest {
 
     pub protocol_session_id: String,
 
-    pub reference: ReferenceClass,
+    pub reference: ReferenceElement,
 
     pub theme: Theme,
 }
@@ -790,13 +831,38 @@ pub struct AdapterReadGrantRequest {
 
     pub input_json: String,
 
-    pub receiver_action_execution_id: String,
+    /// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
+    /// exactly one mode, freezes these references, and resolves the receiver from its
+    /// authenticated binding.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_batch: Option<NativeBatch>,
 
-    pub receiver_arguments_json: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receiver_action_execution_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receiver_arguments_json: Option<String>,
 
     pub receiver_binding_id: String,
 
     pub source_resource_id: String,
+}
+
+/// Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
+/// exactly one mode, freezes these references, and resolves the receiver from its
+/// authenticated binding.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeBatch {
+    pub action_key: String,
+
+    pub action_version: i64,
+
+    pub batch_id: String,
+
+    pub import_config_ref: String,
+
+    pub receiver_resource_id: String,
 }
 
 /// DD-89: short-lived source Adapter authorization, not native credentials or proof that the
@@ -806,17 +872,49 @@ pub struct AdapterReadGrantRequest {
 pub struct AdapterReadGrantResponse {
     pub action_execution_id: String,
 
-    pub action_token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_token: Option<String>,
 
-    pub arguments_json: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arguments_json: Option<String>,
 
-    pub endpoint: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
 
-    pub expires_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<i64>,
 
     pub operation_id: String,
 
+    /// Native retry observation. COMPLETED requires both immutable receipts and committed usage;
+    /// UNKNOWN/PENDING carry no renewed authorization.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<Outcome>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receiver_receipt: Option<AdapterReadReceipt>,
+
+    /// Separate governed receiver action in the same read Operation. The native importer must
+    /// perform the existing authenticated PEP check with this token immediately before its
+    /// write; issuance is not completion.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receiver_write: Option<ReceiverWrite>,
+
     pub source_binding_id: String,
+}
+
+/// Native retry observation. COMPLETED requires both immutable receipts and committed usage;
+/// UNKNOWN/PENDING carry no renewed authorization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Outcome {
+    #[serde(rename = "COMPLETED")]
+    Completed,
+
+    #[serde(rename = "PENDING")]
+    Pending,
+
+    #[serde(rename = "UNKNOWN")]
+    Unknown,
 }
 
 /// DD-89: authenticated native source-read or completed receiver-import metadata for one
@@ -862,6 +960,21 @@ pub enum ApplicationReadResourceDirection {
 
     #[serde(rename = "SOURCE")]
     Source,
+}
+
+/// Separate governed receiver action in the same read Operation. The native importer must
+/// perform the existing authenticated PEP check with this token immediately before its
+/// write; issuance is not completion.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReceiverWrite {
+    pub action_execution_id: String,
+
+    pub action_token: String,
+
+    pub arguments_json: String,
+
+    pub expires_at: i64,
 }
 
 /// DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
@@ -1003,7 +1116,7 @@ pub struct ActionCommand {
     pub receiver_resource: Option<ReceiverResource>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub resource_create: Option<ResourceCreateClass>,
+    pub resource_create: Option<ReferenceClass>,
 
     /// Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1526,7 +1639,7 @@ pub struct CapabilityContractRegistrationResourceTypeFamily {
 pub struct ComponentActionClass {
     pub action_version: i64,
 
-    pub input_reference: ReferenceClass,
+    pub input_reference: ReferenceElement,
 
     pub result_exposure_policy_id: String,
 
@@ -1707,7 +1820,7 @@ pub struct ProtocolSessionOpenClass {
     /// Exact approved projection selected by the native menu; never latest.
     pub projection_generation: i64,
 
-    pub reference: ReferenceClass,
+    pub reference: ReferenceElement,
 
     pub theme: Theme,
 }
@@ -1723,7 +1836,7 @@ pub struct ReceiverResource {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ResourceCreateClass {
+pub struct ReferenceClass {
     pub evidence_digest: String,
 
     pub evidence_ref: String,
@@ -3875,7 +3988,7 @@ pub struct ComponentConformanceWireObservation {
 #[serde(rename_all = "camelCase")]
 pub struct ProbeClass {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ReferenceClass>,
+    pub content_reference: Option<ReferenceElement>,
 
     pub plan: PlanClass,
 
@@ -4763,7 +4876,7 @@ pub struct ProtocolSessionView {
 
     pub protocol_session_id: String,
 
-    pub reference: ReferenceClass,
+    pub reference: ReferenceElement,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_revision: Option<String>,
@@ -6038,7 +6151,7 @@ pub struct CapabilityContractRegistrationResourceTypeFamilyClass {
 pub struct ComponentActionInput {
     pub action_version: i64,
 
-    pub input_reference: ReferenceClass,
+    pub input_reference: ReferenceElement,
 
     pub result_exposure_policy_id: String,
 
@@ -6367,7 +6480,7 @@ pub struct NativeDocumentSelection {
 
     pub generation: i64,
 
-    pub reference: ReferenceClass,
+    pub reference: ReferenceElement,
 
     pub resource_version: i64,
 
@@ -6425,7 +6538,7 @@ pub struct ProtocolSessionOpenInput {
     /// Exact approved projection selected by the native menu; never latest.
     pub projection_generation: i64,
 
-    pub reference: ReferenceClass,
+    pub reference: ReferenceElement,
 
     pub theme: Theme,
 }
@@ -7213,7 +7326,7 @@ pub struct ObservationElement {
     pub case_key: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ReferenceClass>,
+    pub content_reference: Option<ReferenceElement>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_class: Option<ErrorClass>,
@@ -7332,7 +7445,7 @@ pub struct ComponentConformancePlanStep {
 #[serde(rename_all = "camelCase")]
 pub struct ComponentConformanceProbe {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ReferenceClass>,
+    pub content_reference: Option<ReferenceElement>,
 
     pub plan: PlanClass,
 
@@ -7349,7 +7462,7 @@ pub struct ComponentConformanceStepObservation {
     pub case_key: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_reference: Option<ReferenceClass>,
+    pub content_reference: Option<ReferenceElement>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_class: Option<ErrorClass>,
@@ -7573,7 +7686,7 @@ pub struct ResourceProvisionAdvanceRequestTarget {
 
     pub projection_generation: i64,
 
-    pub reference: ResourceCreateClass,
+    pub reference: ReferenceClass,
 
     pub resource_id: String,
 
@@ -7609,7 +7722,7 @@ pub struct ResourceProvisionTarget {
 
     pub projection_generation: i64,
 
-    pub reference: ResourceCreateClass,
+    pub reference: ReferenceClass,
 
     pub resource_id: String,
 

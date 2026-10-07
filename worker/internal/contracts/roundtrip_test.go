@@ -39,6 +39,31 @@ func TestAutomationTopicStepRoundtrip(t *testing.T) {
 	}
 }
 
+func TestReadReceiptsPreserveNativePrecision(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "adapter-read-receipts.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var typed []generated.AdapterReadReceipt
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before, after any
+	if err := json.Unmarshal(raw, &before); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, &after); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("native receipt metadata changed")
+	}
+}
+
 func TestAutomationReactionStepRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "automation-reaction-step.sample.json"))
 	if err != nil {
@@ -101,31 +126,6 @@ func TestApplicationReadResourcesRoundtrip(t *testing.T) {
 	}
 	if _, ok := old["hasReadReceiver"]; ok {
 		t.Fatal("legacy response gained availability")
-	}
-}
-
-func TestReadReceiptsPreserveNativePrecision(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "adapter-read-receipts.sample.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var typed []generated.AdapterReadReceipt
-	if err := json.Unmarshal(raw, &typed); err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := json.Marshal(typed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var before, after any
-	if err := json.Unmarshal(raw, &before); err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(encoded, &after); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(before, after) {
-		t.Fatal("native receipt metadata changed")
 	}
 }
 
@@ -198,6 +198,9 @@ func TestReceiverReadGrantRoundtrip(t *testing.T) {
 		typed any
 	}{
 		{"adapter-read-grant-request.sample.json", &generated.AdapterReadGrantRequest{}},
+		{"adapter-native-read-grant-request.sample.json", &generated.AdapterReadGrantRequest{}},
+		{"adapter-native-read-grant-responses.sample.json", &[]generated.AdapterReadGrantResponse{}},
+		{"file-storage-list-output.sample.json", &generated.FileStorageListOutput{}},
 		{"adapter-read-grant-response.sample.json", &generated.AdapterReadGrantResponse{}},
 	} {
 		t.Run(sample.name, func(t *testing.T) {

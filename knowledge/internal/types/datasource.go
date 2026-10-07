@@ -311,6 +311,9 @@ type Resource struct {
 
 // FetchedItem represents a single document/content item fetched from external source
 type FetchedItem struct {
+	// NativeCreationID is populated only by the in-process governed file-storage
+	// connector. It is not a user payload or a new external-ID authority.
+	NativeCreationID string `json:"-"`
 	// Unique ID in the external system
 	ExternalID string `json:"external_id"`
 

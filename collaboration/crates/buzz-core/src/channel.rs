@@ -41,6 +41,37 @@ pub fn topic_change(event: &nostr::Event) -> Option<(uuid::Uuid, &str)> {
     Some((channel?, topic?))
 }
 
+/// Original kind:40099 payload for a pure topic command. The command reference
+/// belongs in an `e`/`mention` tag, not a thread-parent tag or a second ledger.
+pub fn topic_notification_content(command: &nostr::Event) -> Option<serde_json::Value> {
+    let (_, topic) = topic_change(command)?;
+    Some(serde_json::json!({
+        "type": "topic_changed", "actor": command.pubkey.to_hex(), "topic": topic,
+    }))
+}
+
+/// Validate the exact native notification paired with an accepted command.
+/// The Relay supplies its own signer; this verifies the immutable association.
+pub fn topic_notification_matches(command: &nostr::Event, notice: &nostr::Event) -> bool {
+    let Some((channel, _)) = topic_change(command) else {
+        return false;
+    };
+    crate::kind::event_kind_u32(notice) == crate::kind::KIND_SYSTEM_MESSAGE
+        && notice.created_at == command.created_at
+        && notice.verify().is_ok()
+        && serde_json::from_str::<serde_json::Value>(&notice.content).ok()
+            == topic_notification_content(command)
+        && notice.tags.len() == 2
+        && notice
+            .tags
+            .iter()
+            .any(|tag| tag.as_slice() == ["h", &channel.to_string()])
+        && notice
+            .tags
+            .iter()
+            .any(|tag| tag.as_slice() == ["e", &command.id.to_hex(), "", "mention"])
+}
+
 /// Whether a channel is publicly visible or invite-only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChannelVisibility {

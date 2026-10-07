@@ -1519,13 +1519,35 @@ pub async fn insert_event_with_thread_metadata(
     channel_id: Option<Uuid>,
     thread_meta: Option<ThreadMetadataParams<'_>>,
 ) -> Result<(StoredEvent, bool)> {
+    insert_event_with_topic_notification(pool, community_id, event, channel_id, thread_meta, None)
+        .await
+}
+
+async fn insert_event_with_topic_notification(
+    pool: &PgPool,
+    community_id: CommunityId,
+    event: &Event,
+    channel_id: Option<Uuid>,
+    thread_meta: Option<ThreadMetadataParams<'_>>,
+    notification: Option<&Event>,
+) -> Result<(StoredEvent, bool)> {
+    let topic_change = buzz_core::channel::topic_change(event);
+    match (topic_change, notification) {
+        (Some(_), Some(notice))
+            if buzz_core::channel::topic_notification_matches(event, notice) => {}
+        (None, None) => {}
+        _ => {
+            return Err(DbError::InvalidData(
+                "topic requires its exact durable system notification".into(),
+            ))
+        }
+    }
     let connection = crate::observability::acquire_writer(
         pool,
         crate::observability::WriterOperation::EventWrite,
     )
     .await?;
     let mut tx = sqlx::Transaction::begin(connection, None).await?;
-    let topic_change = buzz_core::channel::topic_change(event);
     if let Some((topic_channel, _)) = topic_change {
         if channel_id != Some(topic_channel) || thread_meta.is_some() {
             return Err(DbError::AccessDenied(
@@ -1578,6 +1600,12 @@ pub async fn insert_event_with_thread_metadata(
             .bind(topic_channel)
             .execute(&mut *tx)
             .await?;
+            if let Some(notice) = notification {
+                // The normal event insert participates in this transaction:
+                // a notification failure also rolls back command and topic.
+                insert_event_in_transaction(&mut tx, community_id, notice, Some(topic_channel))
+                    .await?;
+            }
         }
     }
     tx.commit().await?;
@@ -1585,6 +1613,27 @@ pub async fn insert_event_with_thread_metadata(
 }
 
 impl Db {
+    /// Commit a pure topic command, its Channel value and Relay-signed native
+    /// system notification together, without a separate delivery authority.
+    pub async fn insert_topic_event(
+        &self,
+        community_id: CommunityId,
+        command: &Event,
+        notification: &Event,
+    ) -> Result<(StoredEvent, bool)> {
+        let (channel, _) = buzz_core::channel::topic_change(command)
+            .ok_or_else(|| DbError::InvalidData("not a pure topic command".into()))?;
+        insert_event_with_topic_notification(
+            &self.pool,
+            community_id,
+            command,
+            Some(channel),
+            None,
+            Some(notification),
+        )
+        .await
+    }
+
     /// Inserts an event. Returns `(StoredEvent, was_inserted)` — `false` on duplicate.
     #[datastore_span(name = "insert_event", system = "postgresql")]
     pub async fn insert_event(
@@ -2210,6 +2259,8 @@ mod postgres_tests {
         let community = CommunityId::from_uuid(community_id);
         let channel = make_test_channel(&pool, community_id, None).await;
         let keys = Keys::generate();
+        let relay_keys = Keys::generate();
+        let db = Db::from_pool(pool.clone());
         sqlx::query("INSERT INTO channel_members(community_id,channel_id,pubkey,role) VALUES($1,$2,$3,'member')")
             .bind(community_id).bind(channel).bind(keys.public_key().to_bytes().as_slice())
             .execute(&pool).await.unwrap();
@@ -2222,9 +2273,30 @@ mod postgres_tests {
                 .sign_with_keys(&keys)
                 .unwrap()
         };
+        let notice = |command: &Event| {
+            EventBuilder::new(
+                Kind::Custom(buzz_core::kind::KIND_SYSTEM_MESSAGE as u16),
+                buzz_core::channel::topic_notification_content(command)
+                    .unwrap()
+                    .to_string(),
+            )
+            .tags([
+                Tag::parse(["h", &channel.to_string()]).unwrap(),
+                Tag::parse(["e", &command.id.to_hex(), "", "mention"]).unwrap(),
+            ])
+            .custom_created_at(command.created_at)
+            .sign_with_keys(&relay_keys)
+            .unwrap()
+        };
         let first = command("First");
         assert!(
             insert_event_with_thread_metadata(&pool, community, &first, Some(channel), None)
+                .await
+                .is_err(),
+            "the legacy insert cannot accept a topic without its notification"
+        );
+        assert!(
+            db.insert_topic_event(community, &first, &notice(&first))
                 .await
                 .unwrap()
                 .1
@@ -2239,13 +2311,13 @@ mod postgres_tests {
         assert_eq!(current, "First");
         let clear = command("");
         assert!(
-            insert_event_with_thread_metadata(&pool, community, &clear, Some(channel), None)
+            db.insert_topic_event(community, &clear, &notice(&clear))
                 .await
                 .unwrap()
                 .1
         );
         assert!(
-            !insert_event_with_thread_metadata(&pool, community, &first, Some(channel), None)
+            !db.insert_topic_event(community, &first, &notice(&first))
                 .await
                 .unwrap()
                 .1
@@ -2261,14 +2333,72 @@ mod postgres_tests {
             current, "",
             "re-observing the older event must not overwrite a later topic"
         );
+        let notices: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM events WHERE community_id=$1 AND channel_id=$2 AND kind=40099",
+        )
+        .bind(community_id)
+        .bind(channel)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            notices, 2,
+            "duplicates cannot create another system notification"
+        );
+
+        // Fail specifically at the notification insert, after command/topic
+        // writes, then verify the entire original transaction rolled back.
+        let suffix = Uuid::new_v4().simple().to_string();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "CREATE FUNCTION reject_topic_notice_{suffix}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected notification failure'; END $$"
+        ))).execute(&pool).await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "CREATE TRIGGER reject_topic_notice_{suffix} BEFORE INSERT ON events FOR EACH ROW WHEN (NEW.kind=40099 AND NEW.channel_id='{channel}'::uuid) EXECUTE FUNCTION reject_topic_notice_{suffix}()"
+        ))).execute(&pool).await.unwrap();
+        let failed = command("Notification insert must roll back");
+        let failure = db
+            .insert_topic_event(community, &failed, &notice(&failed))
+            .await;
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP TRIGGER reject_topic_notice_{suffix} ON events"
+        )))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP FUNCTION reject_topic_notice_{suffix}()"
+        )))
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(failure.is_err());
+        let stored: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM events WHERE community_id=$1 AND id=$2)",
+        )
+        .bind(community_id)
+        .bind(failed.id.as_bytes().as_slice())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(
+            !stored,
+            "notification failure cannot leave an accepted command"
+        );
+        let current: String =
+            sqlx::query_scalar("SELECT topic FROM channels WHERE community_id=$1 AND id=$2")
+                .bind(community_id)
+                .bind(channel)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(current, "", "notification failure cannot apply a topic");
         sqlx::query("UPDATE channel_members SET removed_at=now() WHERE community_id=$1 AND channel_id=$2 AND pubkey=$3")
             .bind(community_id).bind(channel).bind(keys.public_key().to_bytes().as_slice()).execute(&pool).await.unwrap();
         let refused = command("Removed member");
-        assert!(
-            insert_event_with_thread_metadata(&pool, community, &refused, Some(channel), None)
-                .await
-                .is_err()
-        );
+        assert!(db
+            .insert_topic_event(community, &refused, &notice(&refused))
+            .await
+            .is_err());
         let stored: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM events WHERE community_id=$1 AND id=$2)",
         )

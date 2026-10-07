@@ -6,6 +6,17 @@
 
 ## 当前使用与恢复范围（2026-10-06）
 
+- 2026-10-07 本批继续恢复原工作流消息模板，并接入 Cells→WeKnora 原生同步的
+  SERVICE 读写授权与连接器。纯模板解析 3 项通过，故意破坏后 3 项失败、
+  还原后通过；Core 跨组件授权 7 项、隔离 SQL 2 项和注册 1 项通过。
+  原生连接器首轮 Go 4 项通过，后续标签/channel 修正尚未复验；container
+  检查缺 sqlite3.h 失败。模板 Core 检查因磁盘不足退出 101，没有通过。
+  本批未发布；线上入口和 Windows 包未更新，不能据此认为组件已全面集成。
+  使用工作流时，不能把尚未贯通的步骤输出模板或完整多步骤动作当作已交付。
+  详情见 [模板证据](core/verify/agent-definition.md)、
+  [原生同步准入](core/verify/application-binding.md)和
+  [组件同步记录](knowledge/adapter/verify/native-read.md)。
+
 - 2026-10-07 Agent / Workflows 工作区选择接回两端原路由：刷新和历史导航
   保留所选工作区，失效引用不切换到其他工作区。共享 pages 263 项通过，
   故意恢复旧逻辑后 4 项真实失败，还原后通过；Web 路由与宿主页 15 项、

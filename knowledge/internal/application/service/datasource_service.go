@@ -669,6 +669,13 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 	// Surface the KB's multimodal/VLM state to the connector so it only extracts
 	// embedded images for OCR when the KB can actually ingest them (never persisted).
 	config.MultimodalEnabled = kb.IsMultimodalEnabled()
+	if ds.Type == fileStorageConnectorType {
+		if syncLog == nil || syncLog.ID != payload.SyncLogID || syncLog.DataSourceID != ds.ID || syncLog.TenantID != ds.TenantID {
+			return fmt.Errorf("native file-storage sync identity is unavailable")
+		}
+		ctx = context.WithValue(ctx, fileStorageRunKey{}, fileStorageRun{dataSourceID: ds.ID,
+			syncLogID: syncLog.ID, knowledgeBaseID: ds.KnowledgeBaseID, tenantID: ds.TenantID, syncDeletions: ds.SyncDeletions})
+	}
 
 	// Streaming path: connectors that support it interleave fetch→ingest→
 	// checkpoint so a large sync bounds memory and resumes after a timeout
@@ -1317,6 +1324,9 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 			return false, fmt.Errorf("look up source revision before ingestion: %w", err)
 		}
 		if existing != nil {
+			if ds.Type == fileStorageConnectorType {
+				return true, s.finishFileStorageIngest(ctx, ds, item, existing)
+			}
 			if existing.ID == "" || existing.UpdatedAt.IsZero() {
 				return false, fmt.Errorf("previous source revision is unavailable")
 			}
@@ -1336,17 +1346,25 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 		if err != nil {
 			return isUpdate, fmt.Errorf("build file header: %w", err)
 		}
-		created, err := s.knowledgeService.CreateKnowledgeFromFile(
-			ctx,
-			ds.KnowledgeBaseID,
-			fh,
-			metadata,
-			nil,           // use KB default for multimodal
-			item.FileName, // customFileName — must include extension for file-type validation
-			tagIDs,        // auto-tag from data source
-			channel,
-			nil,
-		)
+		var created *types.Knowledge
+		if ds.Type == fileStorageConnectorType {
+			if !fileStorageUUID(item.NativeCreationID) {
+				return isUpdate, fmt.Errorf("native file creation identity is unavailable")
+			}
+			created, err = s.knowledgeService.CreateKnowledgeFromFileAtID(ctx, ds.KnowledgeBaseID, item.FileName, item.Content, metadata, item.NativeCreationID, tagIDs, channel)
+		} else {
+			created, err = s.knowledgeService.CreateKnowledgeFromFile(
+				ctx,
+				ds.KnowledgeBaseID,
+				fh,
+				metadata,
+				nil,           // use KB default for multimodal
+				item.FileName, // customFileName — must include extension for file-type validation
+				tagIDs,        // auto-tag from data source
+				channel,
+				nil,
+			)
+		}
 		if err != nil {
 			var dupErr *types.DuplicateKnowledgeError
 			if errors.As(err, &dupErr) {

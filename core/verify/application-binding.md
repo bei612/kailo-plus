@@ -727,3 +727,49 @@ OIDC discovery，以及旧运行环境缺新增 BFF 两非密字段，均保留�
 `native-complete-restored.log` SHA256
 `30b214deb6985d939861f68d0a9030e21a70be6dc8180cfe440641736228e5ee`。
 本次没有启停 Gateway，没有模型推理或 Tool 业务请求；解析成功不代表业务授权通过。
+
+### 2026-10-07 原生 SERVICE 同步读批次与接收写准入
+
+1. 权威与实际调用方：沿 DD-89、设计 07 §8.2、13 §4.4，保留原
+   `application_read_grant::request`、ActionExecution、Operation、SpiceDB、
+   Quota 与双边 receipt。WeKnora 原 DataSourceService.ProcessSync 的
+   `fileStorageConnector::FetchStream/retire` 消费 `nativeBatch`；DataSource.ID
+   与 SyncLog.ID 只作外部关联。每次列表或文件读取各有稳定 key 和原 Operation，
+   Core 不聚合目录、不保存列表正文、不运行第二套同步流程。
+2. 影响面：在已有读 AE 下持久化独立 SERVICE 接收写 AE，同一 Operation、
+   同一实际 binding 主体，但使用接收方获准的 SYNC ActionDefinition 和独立
+   ActionToken。接收资源、native root、版本、generation 与参数摘要全部从
+   Core 目录冻结，调用方不能指定任意原生 KB。旧显式 HUMAN/AGENT ingest
+   调用方仍沿原模式；两模式互斥。`knowledge.v2` 保留原五能力并增加有实际
+   native 消费者的 apply/retire 声明；历史 v1 不改。四侧契约同步新增原生模式、
+   列表引用与只读终态观察；旧模式成功响应仍保留原全部字段。生成器因复用
+   ContentReference 重命名生成的内部类名，未手写替代类型。
+3. 副作用与异常：SOURCE listing receipt 必须绑定 Core 冻结 native root 和
+   实际列表摘要，不伪造文件 VersionId。接收方每次写前走原 PEP，重新核当前
+   receiver.update/delete、租户/作用域、Quota 和 SOURCE receipt；票据签发
+   不是执行完成。重访已有批次时，只读返回 PENDING、UNKNOWN 或 COMPLETED，
+   不更新票据、不重发写入；COMPLETED 要求双边 receipt 及既有用量结算终态。
+   过期仍由原读批次对账器收敛，接收子 AE 同事务进入 UNKNOWN，不释放未知
+   结果。迁移 `20261007100000` 扩展既有冻结/父子/receipt 约束；有原生接收
+   历史时 down 明确拒绝，不能删除历史以回滚。
+4. 实际证据：既有 4 CPU/8 GiB SDK、Cargo `-j16`，Core 原读批次过滤检查
+   7 PASS/2 ignored；随后在独立 `service_native_batch_6cmb1h` 数据库实际
+   执行两项 ignored SQL 检查，2 PASS。原 sqlx 向前应用 105 项迁移，再对
+   本迁移 down/up 均退出 0。原 capability 注册校验 1 PASS；Rust 往返
+   37 PASS、TypeScript 42 PASS、Dart 37 PASS、Go 原往返退出 0。
+   原 `tools/gen.sh` 与 `--check` 均退出 0。仅在 SDK 副本破坏 UNKNOWN
+   分支，真实失败退出 101（None 不等于 UNKNOWN）；原字节 cmp 0 还原，
+   再编译原过滤检查 7 PASS。Rust 2021、Go、Dart 使用既有工具格式化。
+
+执行记录位于既有
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`：
+`service-native-core.log`、`service-native-sql-contracts.log`、
+`service-native-mutation.log`、`service-native-restored.log`。
+首次 tmpfs 直接执行 gen 及 Go 测试二进制因 noexec 失败，改用 bash 执行原
+生成器、Go 使用原可执行临时目录后通过，未改变产品代码迁就执行环境。
+
+这些结果不是 SERVICE 端到端验收：隔离 SQL 检查证明现有查询与 receipt
+护栏，不证明真实获批 v2 release 的 SOURCE→native parse/delete→计量全过程。
+本批未注册/批准新 release、未更新在线 seed、未部署、未调用真实同步批次；
+Native Go 新 Connector 尚未编译，通用 conformance 对新增原生动作尚未闭合。
+未运行 full；共享 clippy 留给主线程同批模板消费者合并验证，不冒称已通过。

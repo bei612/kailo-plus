@@ -135,7 +135,7 @@ func (s *exportKnowledgeService) CreateKnowledgeFromManual(_ context.Context, kb
 	return &types.Knowledge{ID: payload.CreationID, KnowledgeBaseID: kb, ParseStatus: types.ParseStatusPending}, nil
 }
 
-func (s *exportKnowledgeService) CreateKnowledgeFromFileAtID(_ context.Context, kb, filename string, data []byte, metadata map[string]string, creationID string) (*types.Knowledge, error) {
+func (s *exportKnowledgeService) CreateKnowledgeFromFileAtID(_ context.Context, kb, filename string, data []byte, metadata map[string]string, creationID string, _ []string, _ string) (*types.Knowledge, error) {
 	s.createdIDs = append(s.createdIDs, creationID)
 	encoded, err := json.Marshal(metadata)
 	if err != nil {

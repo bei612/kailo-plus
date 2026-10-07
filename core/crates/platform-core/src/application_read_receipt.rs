@@ -108,8 +108,16 @@ fn validate(ae: &Execution, raw: &Value, now: DateTime<Utc>) -> Result<(), Refus
     }
     let at = timestamp(raw)?;
     if role == "SOURCE" {
-        if raw["nativeObjectRef"] != p["readReference"]["nativeObjectRef"]
-            || raw["nativeRevision"] != p["readReference"]["nativeRevision"]
+        // Listing has no file VersionId before execution. Its immutable native
+        // revision is the canonical listing digest, over the Core-bound root.
+        let source_matches = if p["readMode"] == "DISCOVER" {
+            raw["nativeObjectRef"] == p["readNativeRoot"]
+                && raw["nativeRevision"] == raw["contentSha256"]
+        } else {
+            raw["nativeObjectRef"] == p["readReference"]["nativeObjectRef"]
+                && raw["nativeRevision"] == p["readReference"]["nativeRevision"]
+        };
+        if !source_matches
             || p["readToken"]["iat"]
                 .as_i64()
                 .is_none_or(|iat| at.timestamp() < iat)
@@ -453,6 +461,7 @@ pub(super) async fn reconcile(state: &ServiceState, batch: i64) -> Result<(), Re
         .await?;
         sqlx::query("update admission.action_execution set dispatch_state='DISPATCHED',reason_code=null,updated_at=now() where id=$1")
             .bind(id).execute(&mut *tx).await?;
+        native_receiver::settle(&mut tx, &ae, true).await?;
         tx.commit().await?;
     }
     Ok(())
@@ -580,6 +589,29 @@ UPDATE read_binding_fixture SET state='DISABLED';
         let mut expired = ae;
         expired.parameters.as_mut().unwrap()["readToken"]["exp"] = json!(now.timestamp());
         assert!(validate(&expired, &receipt, now).is_err());
+    }
+
+    #[test]
+    fn source_listing_receipt_uses_exact_root_and_actual_listing_digest() {
+        let (mut ae, mut receipt, now) = fixture();
+        let p = ae.parameters.as_mut().unwrap();
+        p["readMode"] = json!("DISCOVER");
+        p["readNativeRoot"] = json!("authorized-directory");
+        p["readReference"] = json!({"resourceId":ae.target_id});
+        receipt["nativeObjectRef"] = p["readNativeRoot"].clone();
+        receipt["nativeRevision"] = receipt["contentSha256"].clone();
+        assert!(validate(&ae, &receipt, now).is_ok());
+        let mut other = receipt.clone();
+        other["nativeObjectRef"] = json!("outside-directory");
+        assert!(validate(&ae, &other, now).is_err());
+        other = receipt.clone();
+        other["nativeRevision"] = json!("b".repeat(64));
+        assert!(validate(&ae, &other, now).is_err());
+        ae.parameters.as_mut().unwrap()["readMode"] = json!("READ");
+        assert!(
+            validate(&ae, &receipt, now).is_err(),
+            "file reads still require exact frozen VersionId"
+        );
     }
 
     #[test]

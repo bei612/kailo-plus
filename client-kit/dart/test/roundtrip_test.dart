@@ -9,6 +9,36 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'native sync grant preserves own admission and read-only terminal outcomes',
+    () {
+      final request = jsonDecode(
+        File(
+          '../../contracts/samples/adapter-native-read-grant-request.sample.json',
+        ).readAsStringSync(),
+      );
+      expect(AdapterReadGrantRequest.fromJson(request).toJson(), request);
+      final responses =
+          jsonDecode(
+                File(
+                  '../../contracts/samples/adapter-native-read-grant-responses.sample.json',
+                ).readAsStringSync(),
+              )
+              as List<dynamic>;
+      expect(
+        responses
+            .map((v) => AdapterReadGrantResponse.fromJson(v).toJson())
+            .toList(),
+        responses,
+      );
+      final listing = jsonDecode(
+        File(
+          '../../contracts/samples/file-storage-list-output.sample.json',
+        ).readAsStringSync(),
+      );
+      expect(FileStorageListOutput.fromJson(listing).toJson(), listing);
+    },
+  );
   test('automation topic step preserves explicit empty topic', () {
     final sample = jsonDecode(
       File(
@@ -16,6 +46,21 @@ void main() {
       ).readAsStringSync(),
     );
     expect(AutomationStep.fromJson(sample).toJson(), sample);
+  });
+  test('read receipts preserve native precision roles and quantities', () {
+    final sample =
+        jsonDecode(
+              File(
+                '../../contracts/samples/adapter-read-receipts.sample.json',
+              ).readAsStringSync(),
+            )
+            as List<dynamic>;
+    expect(
+      sample
+          .map((value) => AdapterReadReceipt.fromJson(value).toJson())
+          .toList(),
+      sample,
+    );
   });
   test('automation reaction step preserves original emoji', () {
     final sample = jsonDecode(
@@ -50,21 +95,6 @@ void main() {
       }
     },
   );
-  test('read receipts preserve native precision roles and quantities', () {
-    final sample =
-        jsonDecode(
-              File(
-                '../../contracts/samples/adapter-read-receipts.sample.json',
-              ).readAsStringSync(),
-            )
-            as List<dynamic>;
-    expect(
-      sample
-          .map((value) => AdapterReadReceipt.fromJson(value).toJson())
-          .toList(),
-      sample,
-    );
-  });
   test('service read permission preserves receiver and legacy absence', () {
     final sample =
         jsonDecode(

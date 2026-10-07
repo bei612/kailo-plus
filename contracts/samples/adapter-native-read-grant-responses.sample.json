@@ -1,0 +1,52 @@
+[
+  {
+    "actionExecutionId": "10000000-0000-4000-8000-000000000005",
+    "operationId": "10000000-0000-4000-8000-000000000006",
+    "sourceBindingId": "20000000-0000-4000-8000-000000000002",
+    "endpoint": "https://source-adapter.example.invalid/platform-adapter/v1/execute",
+    "actionToken": "non-authorizing-serialization-fixture",
+    "expiresAt": 1800000000,
+    "argumentsJson": "{\"actionKey\":\"file_storage.list@v1\",\"arguments\":{\"authorizationTargetNativeRef\":\"20000000-0000-4000-8000-000000000004\",\"input\":{\"resourceId\":\"20000000-0000-4000-8000-000000000001\"},\"targetId\":\"20000000-0000-4000-8000-000000000001\",\"targetType\":\"RESOURCE\"},\"idempotencyKey\":\"10000000-0000-4000-8000-000000000004\"}",
+    "receiverWrite": {
+      "actionExecutionId": "10000000-0000-4000-8000-000000000010",
+      "actionToken": "non-authorizing-receiver-serialization-fixture",
+      "expiresAt": 1800000000,
+      "argumentsJson": "{\"targetType\":\"RESOURCE\",\"targetId\":\"10000000-0000-4000-8000-000000000007\",\"authorizationTargetNativeRef\":\"30000000-0000-4000-8000-000000000001\",\"input\":{\"sourceResourceId\":\"20000000-0000-4000-8000-000000000001\",\"importConfigRef\":\"10000000-0000-4000-8000-000000000008\",\"batchId\":\"10000000-0000-4000-8000-000000000009\",\"sourceReadActionExecutionId\":\"10000000-0000-4000-8000-000000000005\"}}"
+    }
+  },
+  {
+    "actionExecutionId": "10000000-0000-4000-8000-000000000005",
+    "operationId": "10000000-0000-4000-8000-000000000006",
+    "sourceBindingId": "20000000-0000-4000-8000-000000000002",
+    "outcome": "COMPLETED",
+    "receiverReceipt": {
+      "bindingId": "69e65e88-20fc-46cf-ab70-cec5f8d864c4",
+      "operationId": "10000000-0000-4000-8000-000000000006",
+      "role": "RECEIVER",
+      "idempotencyKey": "10000000-0000-4000-8000-000000000004",
+      "nativeObjectRef": "native-import",
+      "nativeRevision": "2026-10-07T01:02:04.123456789Z",
+      "contentSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "contentBytes": 7,
+      "completedAt": "2026-10-07T01:02:04.123456789Z",
+      "measurements": [
+        {
+          "meterKey": "native_import_count",
+          "quantity": 1
+        }
+      ]
+    }
+  },
+  {
+    "actionExecutionId": "10000000-0000-4000-8000-000000000005",
+    "operationId": "10000000-0000-4000-8000-000000000006",
+    "sourceBindingId": "20000000-0000-4000-8000-000000000002",
+    "outcome": "UNKNOWN"
+  },
+  {
+    "actionExecutionId": "10000000-0000-4000-8000-000000000005",
+    "operationId": "10000000-0000-4000-8000-000000000006",
+    "sourceBindingId": "20000000-0000-4000-8000-000000000002",
+    "outcome": "PENDING"
+  }
+]

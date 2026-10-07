@@ -3,7 +3,10 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http/httptest"
@@ -23,6 +26,41 @@ type createKnowledgeFileRepoStub struct {
 	createErr        error
 	createdKnowledge *types.Knowledge
 	updateErr        error
+	assignedTags     []string
+}
+
+func (r *createKnowledgeFileRepoStub) SetKnowledgeTags(_ context.Context, _ string, ids []string) error {
+	r.assignedTags = append([]string(nil), ids...)
+	return nil
+}
+
+type createKnowledgeFileTagStub struct {
+	interfaces.KnowledgeTagRepository
+}
+
+func (*createKnowledgeFileTagStub) GetByIDs(_ context.Context, _ uint64, ids []string) ([]*types.KnowledgeTag, error) {
+	result := make([]*types.KnowledgeTag, 0, len(ids))
+	for _, id := range ids {
+		result = append(result, &types.KnowledgeTag{ID: id, KnowledgeBaseID: "kb-1"})
+	}
+	return result, nil
+}
+
+func TestCreateKnowledgeFromFileAtIDKeepsDataSourceTagsAndChannel(t *testing.T) {
+	repo := &createKnowledgeFileRepoStub{}
+	svc := &knowledgeService{repo: repo, fileSvc: &createKnowledgeFileServiceStub{}, task: &createKnowledgeTaskEnqueuerStub{},
+		tagRepo: &createKnowledgeFileTagStub{}, kbService: &createKnowledgeFileKBServiceStub{kb: &types.KnowledgeBase{ID: "kb-1"}}}
+	ctx := newCreateKnowledgeFileContext()
+	id := "7263e13f-4153-4bb0-a91e-0a21490cf3a9"
+	created, err := svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("body"), nil, id, []string{"source-tag"}, fileStorageConnectorType)
+	require.NoError(t, err)
+	require.Equal(t, fileStorageConnectorType, created.Channel)
+	require.Equal(t, []string{"source-tag"}, repo.assignedTags)
+	_, err = svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("body"), nil, id, []string{"different-tag"}, fileStorageConnectorType)
+	require.Error(t, err)
+	_, err = svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("body"), nil, id, []string{"source-tag"}, "mcp")
+	require.Error(t, err)
+	require.Equal(t, 1, repo.createCalls)
 }
 
 func (r *createKnowledgeFileRepoStub) CheckKnowledgeExists(
@@ -128,14 +166,24 @@ func TestCreateKnowledgeFromFileAtIDRetainsNativeIntentAcrossLostReceipts(t *tes
 			svc := &knowledgeService{repo: repo, fileSvc: storage, task: queue,
 				kbService: &createKnowledgeFileKBServiceStub{kb: &types.KnowledgeBase{ID: "kb-1"}}}
 			ctx := newCreateKnowledgeFileContext()
-			_, err := svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("original"), nil, id)
+			_, err := svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("original"), nil, id, nil, "mcp")
 			if stage == "ok" {
 				require.NoError(t, err)
 			} else {
 				require.Error(t, err)
 			}
-			prior, err := svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("original"), nil, id)
+			prior, err := svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("original"), nil, id, nil, "mcp")
 			require.NoError(t, err)
+			// The pre-Connector representation had exactly these four fields.
+			// Omitted new options must still read its stored durable intent.
+			legacy, marshalErr := json.Marshal(struct {
+				KB, Hash, Name string
+				Metadata       map[string]string
+			}{"kb-1", prior.FileHash, "doc.txt", nil})
+			require.NoError(t, marshalErr)
+			require.Equal(t, fmt.Sprintf("%x", sha256.Sum256(legacy)), prior.GetMetadata()[fileCreationDigestMetadataKey])
+			_, err = svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("original"), nil, id, nil, "")
+			require.Error(t, err) // Native empty channel means web, not MCP.
 			require.Equal(t, id, prior.ID)
 			require.NotEqual(t, types.ParseStatusCompleted, prior.ParseStatus)
 			require.Equal(t, 1, storage.saveCalls)
@@ -146,7 +194,7 @@ func TestCreateKnowledgeFromFileAtIDRetainsNativeIntentAcrossLostReceipts(t *tes
 			} else {
 				require.Zero(t, queue.calls)
 			}
-			_, err = svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("replacement"), nil, id)
+			_, err = svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("replacement"), nil, id, nil, "mcp")
 			require.Error(t, err)
 			require.Equal(t, 1, storage.saveCalls)
 		})

@@ -952,6 +952,44 @@ mod registration_tests {
         }
     }
 
+    #[test]
+    fn native_sync_contract_preserves_all_existing_knowledge_operations() {
+        let raw: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/adapter/knowledge.v2/registration.json"
+        ))
+        .unwrap();
+        let registered = registration(&raw).expect("v2 uses the existing Catalog validator");
+        assert_eq!(registered.version, 2);
+        let operations: BTreeMap<_, _> = registered.content["operationContracts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|op| {
+                (
+                    op["contractKey"].as_str().unwrap(),
+                    op["permission"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            operations,
+            BTreeMap::from([
+                ("knowledge.search@v2", "consume"),
+                ("knowledge.read@v2", "read"),
+                ("knowledge.export@v2", "export"),
+                ("knowledge.ingest@v2", "update"),
+                ("knowledge.delete@v2", "delete"),
+                ("knowledge.sync_apply@v2", "update"),
+                ("knowledge.sync_retire@v2", "delete"),
+            ])
+        );
+        assert_eq!(
+            builtin_knowledge().unwrap().version,
+            1,
+            "published v1 bootstrap is unchanged"
+        );
+    }
+
     #[tokio::test]
     #[ignore = "requires isolated database with current migrations; transaction always rolled back"]
     async fn builtin_knowledge_bootstrap_is_audited_idempotent_and_cannot_reactivate() {

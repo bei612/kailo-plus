@@ -1,0 +1,92 @@
+{
+  "categoryKey": "knowledge",
+  "contractVersion": 2,
+  "resourceTypeFamily": [
+    {
+      "typeKey": "knowledge.base",
+      "kind": "KNOWLEDGE_BASE"
+    }
+  ],
+  "operationContracts": [
+    {
+      "contractKey": "knowledge.search@v2",
+      "surface": "TOOL",
+      "inputSchemaDigest": "9c2fe9762111c1e93a19017a10e9403fb537083419ba45c46312aafe8b95aaab",
+      "outputSchemaDigest": "692de19b49da175310eaf91a4eaaf454a9a5e106fd150a64a682075fe63fd8a3",
+      "permission": "consume",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "knowledge.read@v2",
+      "surface": "TOOL",
+      "inputSchemaDigest": "a795ef1b071eca01c488eafcc2b8044cf8c40abdf62e26df6a48d71210b5fbb9",
+      "outputSchemaDigest": "54669b5e6a1bfebb4d15788d41b5cd5fb8e51fc2d982eb2383a42262c748c90a",
+      "permission": "read",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "knowledge.export@v2",
+      "surface": "ACTION",
+      "inputSchemaDigest": "a795ef1b071eca01c488eafcc2b8044cf8c40abdf62e26df6a48d71210b5fbb9",
+      "outputSchemaDigest": "0dcfbbb7adff43ba41c5824ab782b48bd87edef06064c3fb8faf88a7669f7c3e",
+      "permission": "export",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "knowledge.ingest@v2",
+      "surface": "ACTION",
+      "inputSchemaDigest": "525d4ef3c1e643a98e4af56f240bb1b0fa16ef74b1a69d1f9e2c8585776511a1",
+      "outputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+      "permission": "update",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "knowledge.delete@v2",
+      "surface": "ACTION",
+      "inputSchemaDigest": "a795ef1b071eca01c488eafcc2b8044cf8c40abdf62e26df6a48d71210b5fbb9",
+      "outputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+      "permission": "delete",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "knowledge.sync_apply@v2",
+      "surface": "ACTION",
+      "inputSchemaDigest": "39da2cbd89a808375860923bd136f52b65787c2074d41f8777d20bc22906fbf1",
+      "outputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+      "permission": "update",
+      "targetType": "RESOURCE"
+    },
+    {
+      "contractKey": "knowledge.sync_retire@v2",
+      "surface": "ACTION",
+      "inputSchemaDigest": "39da2cbd89a808375860923bd136f52b65787c2074d41f8777d20bc22906fbf1",
+      "outputSchemaDigest": "d746974fa9afd5e951f76f9af38954b0ad7f436f2120dc974da65e5ee39f856f",
+      "permission": "delete",
+      "targetType": "RESOURCE"
+    }
+  ],
+  "contentReferenceSemantics": {
+    "nativeObjectRefRule": "Opaque knowledge document identifier returned by the adapter in the typed ContentReference slot; never parsed from resultJson.",
+    "nativeRevisionRule": "Revision of the observed native document content. Read/export/delete consume the frozen typed reference and reject a different revision.",
+    "authorizationTargetRule": "The KnowledgeBase Resource in the admitted binding owns every document reference; no caller-supplied native tenant or knowledge-base override."
+  },
+  "requiredDeclarations": [
+    "CANCEL",
+    "OBSERVE",
+    "METER",
+    "TENANT_DELETE",
+    "READ_EDGE"
+  ],
+  "protocolSessionKinds": [],
+  "schemaDocuments": [
+    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"query\"],\"properties\":{\"query\":{\"type\":\"string\",\"minLength\":1}}}",
+    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"matches\"],\"properties\":{\"matches\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"text\"],\"properties\":{\"text\":{\"type\":\"string\"}}}}}}",
+    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[],\"properties\":{}}",
+    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"text\"],\"properties\":{\"text\":{\"type\":\"string\"}}}",
+    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"contentBase64\",\"mediaType\",\"filename\"],\"properties\":{\"contentBase64\":{\"type\":\"string\"},\"mediaType\":{\"type\":\"string\",\"minLength\":1},\"filename\":{\"type\":\"string\",\"minLength\":1}}}",
+    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"title\",\"text\"],\"properties\":{\"title\":{\"type\":\"string\",\"minLength\":1},\"text\":{\"type\":\"string\"}}}",
+    "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"domain/content_reference.schema.json\",\"title\":\"ContentReference\",\"description\":\"design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。\",\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"resourceId\",\"nativeObjectRef\",\"nativeRevision\",\"displayName\",\"mediaType\"],\"properties\":{\"resourceId\":{\"type\":\"string\",\"format\":\"uuid\"},\"assetId\":{\"type\":\"string\",\"format\":\"uuid\"},\"nativeObjectRef\":{\"type\":\"string\"},\"nativeRevision\":{\"type\":\"string\"},\"displayName\":{\"type\":\"string\"},\"mediaType\":{\"type\":\"string\"}}}",
+    "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"sourceResourceId\",\"importConfigRef\",\"batchId\",\"sourceReadActionExecutionId\"],\"properties\":{\"sourceResourceId\":{\"type\":\"string\",\"format\":\"uuid\"},\"importConfigRef\":{\"type\":\"string\",\"format\":\"uuid\"},\"batchId\":{\"type\":\"string\",\"format\":\"uuid\"},\"sourceReadActionExecutionId\":{\"type\":\"string\",\"format\":\"uuid\"}}}"
+  ],
+  "testVectorsJson": "{\"formatVersion\":\"V1\",\"cases\":[{\"caseKey\":\"knowledge_roundtrip\",\"steps\":[{\"stepKey\":\"ingest\",\"contractKey\":\"knowledge.ingest@v2\",\"inputJson\":\"{\\\"title\\\":\\\"conformance\\\",\\\"text\\\":\\\"Kailo conformance knowledge marker\\\"}\",\"expectedOutputJson\":\"{}\",\"referenceResourceId\":\"b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196\"},{\"stepKey\":\"read\",\"contractKey\":\"knowledge.read@v2\",\"inputJson\":\"{}\",\"expectedOutputJson\":\"{\\\"text\\\":\\\"Kailo conformance knowledge marker\\\"}\",\"referenceResourceId\":\"b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196\",\"referenceFromStepKey\":\"ingest\"},{\"stepKey\":\"export\",\"contractKey\":\"knowledge.export@v2\",\"inputJson\":\"{}\",\"expectedOutputJson\":\"{\\\"contentBase64\\\":\\\"S2FpbG8gY29uZm9ybWFuY2Uga25vd2xlZGdlIG1hcmtlcg==\\\",\\\"mediaType\\\":\\\"text/markdown\\\",\\\"filename\\\":\\\"conformance.md\\\"}\",\"referenceResourceId\":\"b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196\",\"referenceFromStepKey\":\"ingest\"},{\"stepKey\":\"search\",\"contractKey\":\"knowledge.search@v2\",\"inputJson\":\"{\\\"query\\\":\\\"Kailo conformance knowledge marker\\\"}\",\"expectedOutputJson\":\"{\\\"matches\\\":[{\\\"text\\\":\\\"Kailo conformance knowledge marker\\\"}]}\"},{\"stepKey\":\"delete\",\"contractKey\":\"knowledge.delete@v2\",\"inputJson\":\"{}\",\"expectedOutputJson\":\"{}\",\"referenceResourceId\":\"b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196\",\"referenceFromStepKey\":\"ingest\"}]},{\"caseKey\":\"knowledge_native_sync\",\"steps\":[{\"stepKey\":\"sync_apply\",\"contractKey\":\"knowledge.sync_apply@v2\",\"inputJson\":\"{\\\"sourceResourceId\\\":\\\"69f2e97d-8661-5d14-b511-2a9601655df0\\\",\\\"importConfigRef\\\":\\\"f8fc4181-9a87-515f-ac0c-fd5d468dabd1\\\",\\\"batchId\\\":\\\"766b56ae-3644-5ab4-a88b-47fe67c10cc2\\\",\\\"sourceReadActionExecutionId\\\":\\\"2d0d7428-af93-5c3f-9089-bfa27fb5582c\\\"}\",\"expectedOutputJson\":\"{}\",\"referenceResourceId\":\"b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196\"},{\"stepKey\":\"sync_retire\",\"contractKey\":\"knowledge.sync_retire@v2\",\"inputJson\":\"{\\\"sourceResourceId\\\":\\\"69f2e97d-8661-5d14-b511-2a9601655df0\\\",\\\"importConfigRef\\\":\\\"f8fc4181-9a87-515f-ac0c-fd5d468dabd1\\\",\\\"batchId\\\":\\\"766b56ae-3644-5ab4-a88b-47fe67c10cc2\\\",\\\"sourceReadActionExecutionId\\\":\\\"69f7f8bc-62c7-5857-ac2c-d9841725cf11\\\"}\",\"expectedOutputJson\":\"{}\",\"referenceResourceId\":\"b8a0cbdc-b6ba-5b0b-a287-b1e5a3e2e196\"}]}]}"
+}

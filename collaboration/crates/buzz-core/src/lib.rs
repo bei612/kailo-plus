@@ -44,6 +44,8 @@ pub mod relay;
 pub mod tenant;
 /// Schnorr signature and event ID verification.
 pub mod verification;
+/// Original pure workflow template expansion, without an execution engine.
+pub mod workflow_template;
 
 pub use error::VerificationError;
 pub use event::StoredEvent;

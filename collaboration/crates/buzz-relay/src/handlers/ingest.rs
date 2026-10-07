@@ -3180,16 +3180,27 @@ async fn ingest_event_inner(
             .map_err(|e| IngestError::Internal(format!("error: {e}")))?
     } else {
         let thread_params = thread_meta.as_ref().map(|m| m.as_params());
-        match state
-            .db
-            .insert_event_with_thread_metadata(
-                tenant.community(),
-                &event,
-                channel_id,
-                thread_params,
-            )
-            .await
-        {
+        let insertion = if buzz_core::channel::topic_change(&event).is_some() {
+            let notification =
+                super::side_effects::topic_system_message(&event, &state.relay_keypair).map_err(
+                    |error| IngestError::Internal(format!("error: topic notification: {error}")),
+                )?;
+            state
+                .db
+                .insert_topic_event(tenant.community(), &event, &notification)
+                .await
+        } else {
+            state
+                .db
+                .insert_event_with_thread_metadata(
+                    tenant.community(),
+                    &event,
+                    channel_id,
+                    thread_params,
+                )
+                .await
+        };
+        match insertion {
             Ok(result) => result,
             Err(e) => {
                 // Compensate: if we pre-created a channel for kind:9007,

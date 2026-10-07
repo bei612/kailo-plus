@@ -153,6 +153,18 @@ async function setup(t, changes = {}) {
     }
     assert.equal(request.headers.authorization, `Bearer ${nativeSecret}`);
     state.nativeReads.push(request.url);
+    if (changes.serviceList && request.url === `/v2/n/node/${ids[2]}?Flags=WithMetaDefaults`) {
+      return reply(response,200,changes.root ?? {...root,FolderMeta:[{Namespace:'ChildrenCount',Value:1}]});
+    }
+    if (changes.serviceList && request.url === `/v2/n/node/${ids[3]}?Flags=WithMetaDefaults`) {
+      return reply(response,200,changes.target ?? {...target,ContentType:'text/plain'});
+    }
+    if (changes.serviceList && request.url === '/v2/n/nodes') {
+      let body=''; for await (const chunk of request) body+=chunk;
+      assert.deepEqual(JSON.parse(body),{Scope:{Root:{Uuid:ids[2]},Recursive:false},Offset:0,Limit:0,Flags:['WithMetaDefaults']});
+      state.listings=(state.listings??0)+1;
+      return reply(response,changes.listStatus??200,changes.listResponse ?? {Nodes:[changes.target ?? {...target,ContentType:'text/plain'}]});
+    }
     if (request.url === '/v2/auth/token/document') {
       assert.equal(request.method, 'POST');
       let body = '';
@@ -178,7 +190,9 @@ async function setup(t, changes = {}) {
       for await (const chunk of request) body += chunk;
       state.queries.push(JSON.parse(body));
       if (changes.redirect) { response.writeHead(302, { location: '/redirect-target' }); return response.end(); }
-      return reply(response, changes.nativeStatus ?? 200, changes.versions ?? (changes.serviceRead
+      return reply(response, changes.nativeStatus ?? 200, changes.versions ?? (changes.serviceList
+        ? {Versions:[{VersionId:changes.changeDuringList && state.listings>1?'changed-version':'frozen-version',IsHead:true}]}
+        : changes.serviceRead
         ? {Versions:[{VersionId:'frozen-version',Size:'4',PreSignedGET:{Url:`${origin}/native-bytes?versionId=frozen-version`}}]}
         : versions));
     }
@@ -191,7 +205,7 @@ async function setup(t, changes = {}) {
     corePepUrl: `${origin}/service/v1/adapter/pep_check`, oidcTokenUrl: `${origin}/oidc/token`, oidcClientId: 'binding-client',
     oidcClientSecretFile: join(directory, 'oidc-credential'), timeoutMs: 3000, maxBodyBytes: 65536, listenHost: '127.0.0.1', listenPort: 1,
     ...(changes.documentLaunch ? { documentLaunch: { cellsPublicOrigin: origin, documentServerOrigin: origin } } : {}),
-    ...(changes.serviceRead ? {readEdge:{downloadOrigin:origin,
+    ...(changes.serviceRead || changes.serviceList ? {readEdge:{downloadOrigin:origin,
       ...(changes.usageMeasurements ? {usageMeasurements:changes.usageMeasurements}:{})}} : {}) };
   const adapter = createAdapter(config);
   const adapterOrigin = await listen(adapter);
@@ -212,7 +226,7 @@ async function setup(t, changes = {}) {
       ...(changes.human ? { actor_principal_id: ids[9], agent_principal_id: undefined,
         action_key: 'file_storage.open_edit@v1', delegation_id: undefined, delegation_version: undefined,
         result_exposure_policy_id: undefined, result_exposure_policy_version: undefined } : {}),
-      ...(changes.serviceRead ? {action_key:'file_storage.read@v1',agent_principal_id:undefined,
+      ...(changes.serviceRead || changes.serviceList ? {action_key:changes.serviceList?'file_storage.list@v1':'file_storage.read@v1',agent_principal_id:undefined,
         initiating_human_principal_id:undefined,delegation_id:undefined,delegation_version:undefined,
         result_exposure_policy_id:undefined,result_exposure_policy_version:undefined,idempotency_key:ids[7],
         normalized_parameter_hash:createHash('sha256').update(canonical(requestArguments)).digest('hex')} : {}), ...change };
@@ -273,6 +287,47 @@ test('source bytes require the exact persisted receipt acknowledgment and actual
       assert.equal(result.status,Object.keys(change).length?503:200);
       assert.deepEqual(item.state.receipts[0].measurements,[{meterKey:'native_read_count',quantity:1},{meterKey:'native_read_bytes',quantity:4}]);
       if (result.status!==200) assert.deepEqual(await result.json(),{error:'adapter request refused'});
+    });
+  }
+});
+
+test('SERVICE directory discovery uses counted complete native listings and exact version heads', async (t) => {
+  const argumentsValue={targetType:'RESOURCE',targetId:ids[10],authorizationTargetNativeRef:ids[2],input:{resourceId:ids[10]}};
+  const request={actionKey:'file_storage.list@v1',idempotencyKey:ids[7],arguments:argumentsValue};
+  const fixture=await setup(t,{operation:'execute',arguments:argumentsValue,serviceList:true});
+  const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request)});
+  assert.equal(response.status,200);
+  const raw=await response.text();
+  const result=JSON.parse(raw);
+  assert.equal(raw,canonical(result));
+  assert.deepEqual(result.items,[{resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version',displayName:'file.txt',mediaType:'text/plain'}]);
+  const encoded=canonical(result.items);
+  assert.equal(result.listingDigest,createHash('sha256').update(encoded).digest('hex'));
+  assert.equal(fixture.state.listings,2);
+  assert.equal(fixture.state.peps,2);
+  assert.equal(fixture.state.receipts.length,1);
+  assert.equal(fixture.state.receipts[0].nativeObjectRef,ids[2]);
+  assert.equal(fixture.state.receipts[0].nativeRevision,result.listingDigest);
+  assert.equal(fixture.state.receipts[0].contentBytes,Buffer.byteLength(encoded));
+  assert.equal(JSON.stringify(result).includes('PreSigned'),false);
+});
+
+test('SERVICE directory discovery cannot report partial, hidden, changed or unauthorized items as a deletion set', async (t) => {
+  const argumentsValue={targetType:'RESOURCE',targetId:ids[10],authorizationTargetNativeRef:ids[2],input:{resourceId:ids[10]}};
+  const request={actionKey:'file_storage.list@v1',idempotencyKey:ids[7],arguments:argumentsValue};
+  for (const changes of [
+    {listStatus:503}, {listResponse:{Nodes:[]}}, {changeDuringList:true},
+    {target:{Uuid:ids[3],Type:'LEAF',Path:'other/root/secret.txt',ContentType:'text/plain'}},
+    {target:{Uuid:ids[3],Type:'LEAF',Path:'documents/root/file.txt',ContentType:'text/plain',Mode:'NodeWriteOnly'}},
+    {versions:{Versions:[{VersionId:'unknown-head'}]}},
+    {pep:(state,response)=>state.peps===1 ? reply(response,200,{actionExecutionId:ids[7],operationId:ids[6],authorizationMinZedToken:'fresh'}) : reply(response,403,{})},
+  ]) {
+    await t.test(Object.keys(changes)[0],async nested=>{
+      const fixture=await setup(nested,{operation:'execute',arguments:argumentsValue,serviceList:true,...changes});
+      const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request)});
+      assert.notEqual(response.status,200);
+      assert.deepEqual(await response.json(),{error:'adapter request refused'});
+      assert.equal(fixture.state.receipts.length,0);
     });
   }
 });

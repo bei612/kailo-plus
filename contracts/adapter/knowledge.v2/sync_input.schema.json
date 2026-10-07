@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/knowledge.v2/sync_input.schema.json",
+  "title": "KnowledgeSyncInput",
+  "description": "Metadata-only input of the receiver native synchronization admission. Core injects the read execution reference and native receiver root.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sourceResourceId",
+    "importConfigRef",
+    "batchId",
+    "sourceReadActionExecutionId"
+  ],
+  "properties": {
+    "sourceResourceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "importConfigRef": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "batchId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "sourceReadActionExecutionId": {
+      "type": "string",
+      "format": "uuid"
+    }
+  }
+}

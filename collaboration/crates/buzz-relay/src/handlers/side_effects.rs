@@ -727,6 +727,28 @@ pub async fn emit_system_message(
     Ok(())
 }
 
+/// Deterministic native notification: retrying the same command yields the same
+/// event ID; distinct commands cannot collide even within the same second.
+pub(super) fn topic_system_message(
+    command: &Event,
+    relay_keys: &nostr::Keys,
+) -> anyhow::Result<Event> {
+    let (channel, _) = buzz_core::channel::topic_change(command)
+        .ok_or_else(|| anyhow::anyhow!("not a pure topic command"))?;
+    let content = buzz_core::channel::topic_notification_content(command)
+        .ok_or_else(|| anyhow::anyhow!("missing topic notification content"))?;
+    Ok(EventBuilder::new(
+        Kind::Custom(buzz_core::kind::KIND_SYSTEM_MESSAGE as u16),
+        content.to_string(),
+    )
+    .tags([
+        Tag::parse(["h", &channel.to_string()])?,
+        Tag::parse(["e", &command.id.to_hex(), "", "mention"])?,
+    ])
+    .custom_created_at(command.created_at)
+    .sign_with_keys(relay_keys)?)
+}
+
 /// Sign and fan out a fresh relay-signed `kind:39005` thread-summary overlay
 /// for `root_id` after a thread mutation (reply insert or threaded delete).
 ///
@@ -1477,22 +1499,34 @@ async fn handle_edit_metadata(
                     // Pure topic commands already committed the topic and
                     // event atomically. Reapplying here could overwrite a
                     // newer accepted command after this transaction completed.
-                    if buzz_core::channel::topic_change(event).is_none() {
+                    if buzz_core::channel::topic_change(event).is_some() {
+                        // Already durably stored with the accepted topic command.
+                        // Only fanout is postcommit; never sign with `now` or
+                        // insert a second, potentially duplicate notification.
+                        let notice = topic_system_message(event, &state.relay_keypair)?;
+                        if let Err(error) = state
+                            .pubsub
+                            .publish_event(tenant, EventTopic::Channel(channel_id), &notice)
+                            .await
+                        {
+                            warn!(%channel_id, %error, "topic notification fan-out failed; persisted event remains readable");
+                        }
+                    } else {
                         state
                             .db
                             .set_topic(tenant.community(), channel_id, val, &actor_bytes)
                             .await?;
+                        emit_system_message(
+                            tenant,
+                            state,
+                            channel_id,
+                            serde_json::json!({
+                                "type": "topic_changed", "actor": actor_hex, "topic": val
+                            }),
+                            chrono::Utc::now(),
+                        )
+                        .await?;
                     }
-                    emit_system_message(
-                        tenant,
-                        state,
-                        channel_id,
-                        serde_json::json!({
-                            "type": "topic_changed", "actor": actor_hex, "topic": val
-                        }),
-                        chrono::Utc::now(),
-                    )
-                    .await?;
                 }
                 "purpose" => {
                     state
@@ -3671,6 +3705,59 @@ pub async fn publish_nipia_unarchived(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn topic_notification_keeps_original_payload_and_binds_one_command() {
+        let actor = nostr::Keys::generate();
+        let another_actor = nostr::Keys::generate();
+        let relay = nostr::Keys::generate();
+        let channel = Uuid::new_v4();
+        let command = |keys: &nostr::Keys, topic: &str| {
+            EventBuilder::new(
+                Kind::Custom(buzz_core::kind::KIND_NIP29_EDIT_METADATA as u16),
+                "",
+            )
+            .tags([
+                Tag::parse(["h", &channel.to_string()]).unwrap(),
+                Tag::parse(["topic", topic]).unwrap(),
+            ])
+            .custom_created_at(nostr::Timestamp::from(1))
+            .sign_with_keys(keys)
+            .unwrap()
+        };
+        for value in ["Release notes", ""] {
+            let source = command(&actor, value);
+            let notification = topic_system_message(&source, &relay).unwrap();
+            assert_eq!(
+                notification.id,
+                topic_system_message(&source, &relay).unwrap().id
+            );
+            assert_eq!(notification.pubkey, relay.public_key());
+            assert!(buzz_core::channel::topic_notification_matches(
+                &source,
+                &notification
+            ));
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&notification.content).unwrap(),
+                serde_json::json!({"type":"topic_changed","actor":actor.public_key().to_hex(),"topic":value})
+            );
+            let other = command(&another_actor, value);
+            assert_ne!(
+                notification.id,
+                topic_system_message(&other, &relay).unwrap().id,
+                "same-second, same-value commands have distinct notifications"
+            );
+            assert!(!buzz_core::channel::topic_notification_matches(
+                &other,
+                &notification
+            ));
+            let mut forged = notification.clone();
+            forged.content = "{}".into();
+            assert!(!buzz_core::channel::topic_notification_matches(
+                &source, &forged
+            ));
+        }
+    }
 
     #[test]
     fn nip43_reconciliation_compatibility_alias_is_preserved() {

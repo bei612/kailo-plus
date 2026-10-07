@@ -1763,10 +1763,19 @@ func registerIMService(imService *imPkg.Service, cleaner interfaces.ResourceClea
 // initConnectorRegistry creates and populates the connector registry with all available connectors.
 // Aggregates registration errors via errors.Join so a misconfigured or duplicated connector fails
 // container initialization loudly instead of silently disabling the feature at runtime.
-func initConnectorRegistry() (*datasource.ConnectorRegistry, error) {
+func initConnectorRegistry(cfg *config.Config, knowledgeService interfaces.KnowledgeService) (*datasource.ConnectorRegistry, error) {
 	registry := datasource.NewConnectorRegistry()
 
 	var errs error
+	if cfg != nil && cfg.FileStorageSync != nil {
+		connector, err := service.NewFileStorageConnector(cfg.FileStorageSync, knowledgeService)
+		if err != nil {
+			return nil, err
+		}
+		if err := registry.Register(connector); err != nil {
+			return nil, err
+		}
+	}
 	if err := registry.Register(wiki.NewConnector(core.RegionFeishu)); err != nil {
 		errs = errors.Join(errs, fmt.Errorf("register feishu connector: %w", err))
 	}

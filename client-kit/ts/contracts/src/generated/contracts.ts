@@ -109,6 +109,51 @@ export interface ApplicationModelAdmission {
 }
 
 /**
+ * DD-89: list the source Resource through its bound native root; the client cannot supply
+ * another root or native credential.
+ */
+export interface FileStorageListInput {
+    resourceId: string;
+}
+
+/**
+ * DD-89: complete native listing is transported only between components, not persisted by
+ * Core. Its canonical item digest is the native listing revision, never a fabricated file
+ * VersionId.
+ */
+export interface FileStorageListOutput {
+    items:           ContentReferenceElement[];
+    listingDigest:   string;
+    nativeObjectRef: string;
+    nativeRevision:  string;
+    operationId:     string;
+    resourceId:      string;
+}
+
+/**
+ * design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
+ */
+export interface ContentReferenceElement {
+    assetId?:        string;
+    displayName:     string;
+    mediaType:       string;
+    nativeObjectRef: string;
+    nativeRevision:  string;
+    resourceId:      string;
+}
+
+/**
+ * Metadata-only input of the receiver native synchronization admission. Core injects the
+ * read execution reference and native receiver root.
+ */
+export interface KnowledgeSyncInput {
+    batchId:                     string;
+    importConfigRef:             string;
+    sourceReadActionExecutionId: string;
+    sourceResourceId:            string;
+}
+
+/**
  * 07§5/6.2：validate_binding 的非正文观察。精确原生scope/实例、隔离与配置引用摘要，不是用户声明的通过布尔值。
  */
 export interface AdapterBindingObservation {
@@ -195,21 +240,9 @@ export interface AdapterExecutionReference {
  * Core 的套件报告。
  */
 export interface AdapterExecutionResponse {
-    contentReference?: ContentReferenceClass;
+    contentReference?: ContentReferenceElement;
     execution:         ExecutionClass;
     resultJson?:       string;
-}
-
-/**
- * design03 的唯一内容引用线格式；不是业务正文。Adapter typed 槽是传递引用的唯一来源，resultJson 不用于识别或重建引用。
- */
-export interface ContentReferenceClass {
-    assetId?:        string;
-    displayName:     string;
-    mediaType:       string;
-    nativeObjectRef: string;
-    nativeRevision:  string;
-    resourceId:      string;
 }
 
 /**
@@ -253,7 +286,7 @@ export interface AdapterPepCheckRequest {
     actionToken:       string;
     argumentsJson:     string;
     bindingId:         string;
-    contentReference?: ContentReferenceClass;
+    contentReference?: ContentReferenceElement;
     operation:         string;
 }
 
@@ -310,7 +343,7 @@ export interface AdapterProtocolSessionLaunchRequest {
     idempotencyKey:               string;
     locale:                       Locale;
     protocolSessionId:            string;
-    reference:                    ContentReferenceClass;
+    reference:                    ContentReferenceElement;
     theme:                        Theme;
 }
 
@@ -526,14 +559,33 @@ export interface AdapterQueryRevisionResponse {
  * digest, not the returned business content.
  */
 export interface AdapterReadGrantRequest {
-    actionKey:                 string;
-    actionVersion:             number;
-    idempotencyKey:            string;
-    inputJson:                 string;
-    receiverActionExecutionId: string;
-    receiverArgumentsJson:     string;
-    receiverBindingId:         string;
-    sourceResourceId:          string;
+    actionKey:      string;
+    actionVersion:  number;
+    idempotencyKey: string;
+    inputJson:      string;
+    /**
+     * Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
+     * exactly one mode, freezes these references, and resolves the receiver from its
+     * authenticated binding.
+     */
+    nativeBatch?:               NativeBatch;
+    receiverActionExecutionId?: string;
+    receiverArgumentsJson?:     string;
+    receiverBindingId:          string;
+    sourceResourceId:           string;
+}
+
+/**
+ * Native SERVICE importer provenance instead of a HUMAN/AGENT execution. Core requires
+ * exactly one mode, freezes these references, and resolves the receiver from its
+ * authenticated binding.
+ */
+export interface NativeBatch {
+    actionKey:          string;
+    actionVersion:      number;
+    batchId:            string;
+    importConfigRef:    string;
+    receiverResourceId: string;
 }
 
 /**
@@ -542,12 +594,34 @@ export interface AdapterReadGrantRequest {
  */
 export interface AdapterReadGrantResponse {
     actionExecutionId: string;
-    actionToken:       string;
-    argumentsJson:     string;
-    endpoint:          string;
-    expiresAt:         number;
+    actionToken?:      string;
+    argumentsJson?:    string;
+    endpoint?:         string;
+    expiresAt?:        number;
     operationId:       string;
-    sourceBindingId:   string;
+    /**
+     * Native retry observation. COMPLETED requires both immutable receipts and committed usage;
+     * UNKNOWN/PENDING carry no renewed authorization.
+     */
+    outcome?:         Outcome;
+    receiverReceipt?: AdapterReadReceipt;
+    /**
+     * Separate governed receiver action in the same read Operation. The native importer must
+     * perform the existing authenticated PEP check with this token immediately before its
+     * write; issuance is not completion.
+     */
+    receiverWrite?:  ReceiverWrite;
+    sourceBindingId: string;
+}
+
+/**
+ * Native retry observation. COMPLETED requires both immutable receipts and committed usage;
+ * UNKNOWN/PENDING carry no renewed authorization.
+ */
+export enum Outcome {
+    Completed = "COMPLETED",
+    Pending = "PENDING",
+    Unknown = "UNKNOWN",
 }
 
 /**
@@ -579,6 +653,18 @@ export interface AdapterReadReceiptMeasurement {
 export enum ApplicationReadResourceDirection {
     Receiver = "RECEIVER",
     Source = "SOURCE",
+}
+
+/**
+ * Separate governed receiver action in the same read Operation. The native importer must
+ * perform the existing authenticated PEP check with this token immediately before its
+ * write; issuance is not completion.
+ */
+export interface ReceiverWrite {
+    actionExecutionId: string;
+    actionToken:       string;
+    argumentsJson:     string;
+    expiresAt:         number;
 }
 
 /**
@@ -1043,7 +1129,7 @@ export interface CapabilityContractRegistrationResourceTypeFamily {
  */
 export interface ComponentActionClass {
     actionVersion:               number;
-    inputReference:              ContentReferenceClass;
+    inputReference:              ContentReferenceElement;
     resultExposurePolicyId:      string;
     resultExposurePolicyVersion: number;
 }
@@ -1187,7 +1273,7 @@ export interface ProtocolSessionOpenClass {
      * Exact approved projection selected by the native menu; never latest.
      */
     projectionGeneration: number;
-    reference:            ContentReferenceClass;
+    reference:            ContentReferenceElement;
     theme:                Theme;
 }
 
@@ -2564,7 +2650,7 @@ export interface ComponentConformanceWireObservation {
  * history 承接，不建立另一执行账本。
  */
 export interface ProbeClass {
-    contentReference?: ContentReferenceClass;
+    contentReference?: ContentReferenceElement;
     plan:              PlanClass;
     /**
      * 只查询同一步冻结幂等键；不再发送原 execute/CREATE。
@@ -3165,7 +3251,7 @@ export interface ProtocolSessionView {
     launchLocale:           Locale;
     launchTheme:            Theme;
     protocolSessionId:      string;
-    reference:              ContentReferenceClass;
+    reference:              ContentReferenceElement;
     resultRevision?:        string;
     state:                  ProtocolSessionViewState;
     tenantId:               string;
@@ -4084,7 +4170,7 @@ export interface CapabilityContractRegistrationResourceTypeFamilyClass {
  */
 export interface ComponentActionInput {
     actionVersion:               number;
-    inputReference:              ContentReferenceClass;
+    inputReference:              ContentReferenceElement;
     resultExposurePolicyId:      string;
     resultExposurePolicyVersion: number;
 }
@@ -4310,7 +4396,7 @@ export interface NativeDocumentSelection {
     actionVersion:   number;
     bindingId:       string;
     generation:      number;
-    reference:       ContentReferenceClass;
+    reference:       ContentReferenceElement;
     resourceVersion: number;
     workspaceId:     string;
 }
@@ -4352,7 +4438,7 @@ export interface ProtocolSessionOpenInput {
      * Exact approved projection selected by the native menu; never latest.
      */
     projectionGeneration: number;
-    reference:            ContentReferenceClass;
+    reference:            ContentReferenceElement;
     theme:                Theme;
 }
 
@@ -4954,7 +5040,7 @@ export interface ComponentConformanceObservation {
 
 export interface ObservationElement {
     caseKey:                 string;
-    contentReference?:       ContentReferenceClass;
+    contentReference?:       ContentReferenceElement;
     errorClass?:             ErrorClass;
     httpStatus:              number;
     mcpResultKind?:          MCPResultKind;
@@ -5032,7 +5118,7 @@ export interface ComponentConformancePlanStep {
  * history 承接，不建立另一执行账本。
  */
 export interface ComponentConformanceProbe {
-    contentReference?: ContentReferenceClass;
+    contentReference?: ContentReferenceElement;
     plan:              PlanClass;
     /**
      * 只查询同一步冻结幂等键；不再发送原 execute/CREATE。
@@ -5043,7 +5129,7 @@ export interface ComponentConformanceProbe {
 
 export interface ComponentConformanceStepObservation {
     caseKey:                 string;
-    contentReference?:       ContentReferenceClass;
+    contentReference?:       ContentReferenceElement;
     errorClass?:             ErrorClass;
     httpStatus:              number;
     mcpResultKind?:          MCPResultKind;

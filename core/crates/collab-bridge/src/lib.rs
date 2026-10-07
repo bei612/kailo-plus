@@ -8,4 +8,4 @@ pub mod memory;
 pub use memory::write as memory_write;
 pub mod operator;
 pub mod stream;
-pub use buzz_core::{kind, nip10};
+pub use buzz_core::{kind, nip10, workflow_template};

@@ -605,3 +605,118 @@ repository checks, exit 0, including original processing-override validation.
 See `connector-image-baseline.log`, `connector-image-mutation.log` and
 `connector-image-restored.log` in the same log directory. This supersedes the
 41-case result for the corrected ten-file candidate, not for a new deployment.
+
+## Controlled Cells discovery and native Connector consumer
+
+This subsequent source increment implements the existing DD-89 and design13
+§4.4 boundary, not a new synchronization engine. Source evidence was rechecked
+at Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf`,
+`data/source/index/grpc/handler.go` (`TreeServer.ListNodes`, native child counts),
+and WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/datasource/connector.go` (`StreamHandler`) and
+`internal/application/service/datasource_service.go` (`streamingFetch`,
+`streamSyncHandler.Emit`, `DataSourceService.ingestItem`). Native source,
+knowledge bodies, reference groups and cursor remain in their original services.
+
+The impact is Cells' existing Adapter execute/read protocol, WeKnora's original
+Connector registry and streaming consumer, and the separately implemented Core
+SERVICE source/receiver grant and receipt contracts. No Web/Desktop/Mobile
+entry, release, binding, model configuration or deployment is created here.
+Existing knowledge v1 keys remain immutable. The Adapter accepts the original
+five knowledge operations under v2 without rewriting the signed action key;
+native dispatch alone shares their existing implementation. The new v2 receiver
+actions are consumed by the native Connector, not represented by fake generic
+Adapter execute successes.
+
+Cells enumeration uses its own service credential, the governed native root,
+native child counts and immutable head version references. Incomplete, filtered,
+duplicate, recycled, draft or changed observations fail closed. Two equal full
+traversals are required; this is an observed consistency check, not a claim that
+Cells offers an atomic directory snapshot. The canonical reference array hash
+and size become the SOURCE receipt. Bodies are read only under separate scoped
+read grants; the receiving service bearer is never forwarded to Cells.
+
+The native Connector consumes delivered binding configuration and existing
+DataSource/SyncLog identities. It groups references by the native file hash and
+file type, creates new knowledge through the existing stable-ID native creation
+path, waits for READY, then updates provenance using the existing metadata CAS.
+It authorizes each receiver write separately. Retirement records the original
+conditional delete task intent in the native cursor before submission and
+observes that task on retry; it never calls HardDelete as a substitute for a
+terminal deletion receipt. New content is ready before old content retires.
+
+Repeated grants branch on COMPLETED/PENDING/UNKNOWN before accessing any token.
+COMPLETED reuses the original receiver evidence without another write; PENDING
+and UNKNOWN do not issue a replacement write. A receipt HTTP acknowledgement is
+not treated as committed usage: the same grant's read-only observation must
+confirm COMPLETED before committing the desired cursor. The saved native
+directory observation is separate from that cursor's previous desired baseline.
+Timeout, revoke, partial write, unfinished parse, lost receipt, missing delete
+task or unknown enum therefore cannot be turned into success by this consumer.
+
+Implementation preceded the checks. In the existing 4-CPU/8-GiB SDK's small
+tmpfs, the actual command was:
+
+```sh
+node --test file-storage/adapter/test/query-revision.test.mjs knowledge/adapter/test/query-revision.test.mjs
+```
+
+It passed 117 checks, zero failures, exit 0. The first combined run passed 115
+and failed two v2-ingest checks because the fixture enabled read-edge delivery
+only for v1; that fixture was corrected without changing product semantics.
+Private mutations removed the second-list equality check and rejected v2 keys
+respectively. Both produced real failed assertions, exit 1. Original bytes were
+restored; Cells' 62 checks and the combined 117 passed, and the restored v2
+target passed six checks. Logs in the existing `read-receipts-20261007` directory:
+`cells-discovery-final.log`, `cells-discovery-mutation.log`,
+`cells-knowledge-discovery-restored.log` (the initial failure),
+`cells-knowledge-discovery-final.log`, `knowledge-v2-mutation.log`, and
+`knowledge-v2-restored.log`.
+
+The first native Go run checked the complete 4,106-blob knowledge input against
+the frozen source tree and copied only its 11 differing files (344,469 bytes)
+into the existing SDK. With its original caches, 4-CPU/8-GiB cgroup and offline
+module settings, `go test ./internal/application/service -run TestFileStorage
+-count=1 -v` compiled and passed all four new checks. The subsequent original
+registry check in `./internal/container` failed while compiling the existing
+sqlite-vec dependency: `fatal error: sqlite3.h: No such file or directory`.
+The combined command exited 1; no dependency was installed. The exact output is
+`cells-connector-native.log` in the same directory. Earlier native Go results
+above do not cover this consumer.
+
+Cross-review then found that the stable-ID file creation wrapper discarded the
+original DataSource auto-tags and channel. The existing wrapper now accepts and
+forwards those options into the same native creation implementation; KB default
+multimodal and processing options remain unchanged. MCP explicitly retains its
+old no-tag/mcp options, including the original creation-digest representation.
+Non-default tags/channel are frozen in that same digest, so retrying an ID with
+changed options is refused. The original interface, MCP caller and test double
+are updated together, with a post-implementation tag/channel persistence check.
+These subsequent Go changes are formatted but not yet compiled: the first four
+passing checks do not establish their verification. Data free space fell to
+316 MiB after the first command; no second compilation was started then.
+The final source review also binds an empty channel to native `web` before
+digesting it; it cannot share MCP's omitted-channel representation. The existing
+lost-receipt check now compares against the original four-field MCP digest.
+
+That review found a late-delete reconciliation omission: an already saved native
+task was still gated on a fresh write token before observation. PENDING/UNKNOWN
+now carry only the original operation observation; source calls and receiver
+PEP cannot use them as new authorization. A saved retirement intent observes
+only its original task and can submit that task's genuine terminal evidence
+through the original receipt endpoint. A new retirement still requires fresh
+PEP, exact native ownership and revision, and persisted intent before enqueue.
+Missing/unknown tasks do not become successful deletion. The new regression
+covers SUCCEEDED/RUNNING/UNKNOWN and no second task submission, but it and the
+final channel-digest assertions have not been compiled or run in this batch.
+Documentation/full checks, images, live configuration and cross-service import
+were not run for this increment. The new knowledge v2 contract file is not an
+approved ComponentRelease or ActionDeclaration: actual release registration,
+conformance and approved receiver definitions remain prerequisites, not passing
+claims. Existing manual/cross-import native duplicates are still rejected;
+reference sharing implemented here is within one import configuration. Removing
+a source Resource from that configuration does not authorize deleting its old
+knowledge without a complete authorized observation. Old connectors' original
+IsDeleted/stale-subtree consumers are unchanged and are not claimed to have
+this Connector's conditional-retirement guarantees. No partial automatic Cells
+picker or replacement native UI is exposed.

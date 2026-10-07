@@ -13,6 +13,7 @@ use std::collections::HashMap;
 
 use buzz_core::tenant::CommunityId;
 use evalexpr::HashMapContext;
+#[cfg(test)]
 use nostr::ToBech32;
 use serde_json::Value as JsonValue;
 use tracing::{debug, info, warn};
@@ -22,186 +23,16 @@ use crate::error::WorkflowError;
 use crate::schema::{ActionDef, Step, WorkflowDef};
 use crate::WorkflowEngine;
 
-/// Data extracted from the triggering event, passed to every step.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct TriggerContext {
-    /// Message content (message_posted trigger).
-    pub text: String,
-    /// Pubkey of the event author (hex string).
-    pub author: String,
-    /// Channel UUID as string.
-    pub channel_id: String,
-    /// Unix timestamp of the triggering event (as string for template use).
-    pub timestamp: String,
-    /// Emoji name (reaction_added trigger).
-    pub emoji: String,
-    /// Event ID of the triggering message (hex string).
-    pub message_id: String,
-    /// True when the triggering event is itself a threaded reply (carries a
-    /// NIP-10 `reply`/`root` marker e-tag). Lets a `message_posted` filter
-    /// select only top-level messages via `trigger_is_reply == false`.
-    pub is_reply: bool,
-    /// Arbitrary webhook body fields (webhook trigger).
-    pub webhook_fields: HashMap<String, String>,
-}
+pub use buzz_core::workflow_template::TriggerContext;
 
-impl TriggerContext {
-    /// Look up a trigger field by name.
-    ///
-    /// Returns `Some(&str)` for known fields; for webhook triggers, also
-    /// checks `webhook_fields`. Returns `None` for unknown names.
-    pub fn get_field(&self, name: &str) -> Option<&str> {
-        match name {
-            "text" => Some(&self.text),
-            "author" => Some(&self.author),
-            "channel_id" => Some(&self.channel_id),
-            "timestamp" => Some(&self.timestamp),
-            "emoji" => Some(&self.emoji),
-            "message_id" => Some(&self.message_id),
-            other => self.webhook_fields.get(other).map(|s| s.as_str()),
-        }
-    }
-}
-
-/// Resolve `{{trigger.X}}` and `{{steps.ID.output.X}}` placeholders in a string.
-///
-/// Supports filters:
-/// - `| truncate(N)` — truncate to N characters
-/// - `| npub` — encode a hex pubkey as its full bech32 `npub` (non-pubkey
-///   values pass through unchanged); `truncate_pubkey` is a legacy alias
-///
-/// Unknown `{{keys}}` are left as literal text (no error, no substitution).
+/// Resolve templates using Buzz's shared, side-effect-free implementation.
 pub fn resolve_template(
     template: &str,
     trigger_ctx: &TriggerContext,
     step_outputs: &HashMap<String, JsonValue>,
 ) -> Result<String, WorkflowError> {
-    if !template.contains("{{") {
-        return Ok(template.to_owned());
-    }
-
-    let mut result = String::with_capacity(template.len());
-    let mut remaining = template;
-
-    while let Some(start) = remaining.find("{{") {
-        result.push_str(&remaining[..start]);
-        remaining = &remaining[start + 2..];
-
-        let end = match remaining.find("}}") {
-            Some(e) => e,
-            None => {
-                // Unclosed `{{` — emit literally and stop.
-                result.push_str("{{");
-                result.push_str(remaining);
-                return Ok(result);
-            }
-        };
-
-        let expr = remaining[..end].trim();
-        remaining = &remaining[end + 2..];
-
-        // Split on `|` to extract filters.
-        let mut parts = expr.splitn(2, '|');
-        let var_path = parts.next().unwrap_or("").trim();
-        let filter = parts.next().map(|s| s.trim());
-
-        let raw_value = resolve_variable(var_path, trigger_ctx, step_outputs);
-
-        let value = match (raw_value, filter) {
-            (Some(v), Some(f)) => apply_filter(v, f)?,
-            (Some(v), None) => v,
-            (None, _) => {
-                // Unknown variable — emit the original `{{expr}}` literally.
-                result.push_str("{{");
-                result.push_str(expr);
-                result.push_str("}}");
-                continue;
-            }
-        };
-
-        result.push_str(&value);
-    }
-
-    result.push_str(remaining);
-    Ok(result)
-}
-
-/// Resolve a single variable path to its string value.
-fn resolve_variable(
-    path: &str,
-    trigger_ctx: &TriggerContext,
-    step_outputs: &HashMap<String, JsonValue>,
-) -> Option<String> {
-    if let Some(field) = path.strip_prefix("trigger.") {
-        return trigger_ctx.get_field(field).map(|s| s.to_owned());
-    }
-
-    // Pattern: `steps.STEP_ID.output.FIELD`
-    if let Some(rest) = path.strip_prefix("steps.") {
-        let mut parts = rest.splitn(3, '.');
-        let step_id = parts.next()?;
-        let middle = parts.next()?; // must be "output"
-        let field = parts.next()?;
-
-        if middle != "output" {
-            return None;
-        }
-
-        let output = step_outputs.get(step_id)?;
-        return json_get_str(output, field);
-    }
-
-    None
-}
-
-/// Navigate a JSON value by a single key and return it as a string.
-fn json_get_str(value: &JsonValue, key: &str) -> Option<String> {
-    match value {
-        JsonValue::Object(map) => {
-            let v = map.get(key)?;
-            Some(json_to_string(v))
-        }
-        _ => None,
-    }
-}
-
-/// Convert a JSON value to a plain string for template substitution.
-fn json_to_string(v: &JsonValue) -> String {
-    match v {
-        JsonValue::String(s) => s.clone(),
-        JsonValue::Bool(b) => b.to_string(),
-        JsonValue::Number(n) => n.to_string(),
-        JsonValue::Null => String::new(),
-        other => other.to_string(),
-    }
-}
-
-/// Apply a filter expression to a resolved value.
-fn apply_filter(value: String, filter: &str) -> Result<String, WorkflowError> {
-    let filter = filter.trim();
-
-    if let Some(inner) = filter
-        .strip_prefix("truncate(")
-        .and_then(|s| s.strip_suffix(')'))
-    {
-        let n: usize = inner.trim().parse().map_err(|_| {
-            WorkflowError::TemplateError(format!("truncate() requires a number, got: {inner}"))
-        })?;
-        let truncated: String = value.chars().take(n).collect();
-        return Ok(truncated);
-    }
-
-    // `npub` (alias `truncate_pubkey`): full bech32 npub — truncated prefixes are grindable.
-    if filter == "npub" || filter == "truncate_pubkey" {
-        if let Ok(pk) = nostr::PublicKey::from_hex(&value) {
-            return Ok(pk.to_bech32().unwrap_or(value));
-        }
-        return Ok(value);
-    }
-
-    Err(WorkflowError::TemplateError(format!(
-        "unknown filter: {filter}"
-    )))
+    buzz_core::workflow_template::resolve_template(template, trigger_ctx, step_outputs)
+        .map_err(|error| WorkflowError::TemplateError(error.0))
 }
 
 /// Build an `evalexpr::HashMapContext` from trigger context and step outputs.

@@ -5,14 +5,27 @@
   "description": "DD-89: short-lived source Adapter authorization, not native credentials or proof that the batch finished. The endpoint is resolved from the existing controlled adapter directory.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["actionExecutionId", "operationId", "sourceBindingId", "endpoint", "actionToken", "expiresAt", "argumentsJson"],
+  "required": ["actionExecutionId", "operationId", "sourceBindingId"],
   "properties": {
     "actionExecutionId": {"type": "string", "format": "uuid"},
     "operationId": {"type": "string", "format": "uuid"},
     "sourceBindingId": {"type": "string", "format": "uuid"},
+    "outcome": {"type": "string", "enum": ["PENDING", "UNKNOWN", "COMPLETED"], "description": "Native retry observation. COMPLETED requires both immutable receipts and committed usage; UNKNOWN/PENDING carry no renewed authorization."},
+    "receiverReceipt": {"$ref": "read_receipt.schema.json"},
     "endpoint": {"type": "string", "format": "uri"},
     "actionToken": {"type": "string", "minLength": 1},
     "expiresAt": {"type": "integer", "minimum": 1},
-    "argumentsJson": {"type": "string"}
+    "argumentsJson": {"type": "string"},
+    "receiverWrite": {
+      "type": "object", "additionalProperties": false,
+      "description": "Separate governed receiver action in the same read Operation. The native importer must perform the existing authenticated PEP check with this token immediately before its write; issuance is not completion.",
+      "required": ["actionExecutionId", "actionToken", "expiresAt", "argumentsJson"],
+      "properties": {
+        "actionExecutionId": {"type": "string", "format": "uuid"},
+        "actionToken": {"type": "string", "minLength": 1},
+        "expiresAt": {"type": "integer", "minimum": 1},
+        "argumentsJson": {"type": "string"}
+      }
+    }
   }
 }

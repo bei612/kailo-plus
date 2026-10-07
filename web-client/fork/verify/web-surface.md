@@ -4362,3 +4362,52 @@ pages 263 项通过；SDK-only 恢复旧选择逻辑后，4 项全部真实失�
 文件 `shared.log`、`mutation.log`、`restored.log`、`hosts.log`、
 `hosts-restored-input.log`。本批不重复磁盘不足的 full；此前 full 主动停止
 退出 137 的结果保留，不计为通过，也不据本批宣布官方全功能或双端等效。
+
+### 2026-10-07 — 纯主题系统通知同事务（独立增量，PG 专项通过）
+
+基线 `2e2341c1b97efe3a807b71607b6dd65f6f8ee1cb`；不包含另一个未验的
+39000 收敛候选，也未修改 bridge 终态、原 TaskWorkflow 或其他业务组件。
+这里不是新增名为 `system_prompt` 的动作，而是既有 `set_topic` 的原生
+`topic_changed` 系统消息。四步影响如下：
+
+1. 权威为 `.design/09` §3 的纯主题同事务及通知收敛要求，设计提交
+   `7e3514843ac6a2687e54c14c37fc9bc63da79ad5`。固定上游 Buzz
+   `779af8886caae1317b4de962082429867ab61503`，
+   `crates/buzz-relay/src/handlers/side_effects.rs::{handle_edit_metadata,emit_system_message}`
+   在命令接受之后以当前时间签发 40099；通知落库失败不撤销命令，重试也不能稳定
+   对应同一通知。原 `relay_admin_outbox` 强绑 moderation report/action，不能将
+   普通主题命令伪装成管理动作来复用。
+2. 复用原 `buzz-db::event::insert_event_in_transaction`，新增实际调用的
+   `Db::insert_topic_event` 入口，与普通 thread 入口共用原事务实现；topic 命令、
+   Channel 值、Relay 签名的 40099 一起提交。只有纯 topic 进入此通路，原混合管理
+   标签仍走原管理授权/实现。Web SERVER、原生 CLIENT、工作流 AGENT 都经现有
+   Relay ingest；通知 signer 来自该 Relay 自身 key，不是 CONTROL 或业务 actor。
+3. 共用 `buzz-core::channel` 的原 `type/actor/topic` 正文与关联校验，40099 保留
+   原 h 标签，增加原生 `e`/`mention` 源命令引用（不是线程父引用）；时间取原命令的
+   不可变签名时间。同一命令重试保持事件 ID，不同命令即使同秒/同值也不会碰撞。
+   缺少或关联不匹配的通知拒绝进入事务。通知插入失败整笔回滚，接受后的原副作用
+   路径仅 fanout 已持久内容，不再按当前时间创建第二条通知。
+4. 重复命令不重新更新 Channel 或插入通知；空 topic 仍是清空，撤权仍由原锁内成员
+   判定拒绝。事务成功但广播失败时消息仍可原历史查询读回，不以广播成功为终态。
+   桥接仍核验原签名命令、actor、Channel、topic 接受事实，不将提示消息提升为新的
+   终态条件。旧 40099 无源命令关联，仅缺少新关联不能证明旧通知未投递，因此不自动
+   回填旧提示，不重放历史已接受命令，不把既有成功改为 UNKNOWN。
+
+事后用例扩充原 DB 的
+`topic_event_and_value_commit_together_and_duplicate_cannot_reapply`：旧无通知入口
+拒绝纯 topic、两次不同命令只有两条提示、相同命令重复不增量、在 40099 插入处注入
+数据库异常后命令与主题全部回滚，撤权继续拒绝。原 Relay 测试模块增加
+`topic_notification_keeps_original_payload_and_binds_one_command`，检查原内容、真实
+Relay signer、稳定 ID、同秒不同命令、关联错配及篡改签名拒绝。
+
+实际状态：实现后 rustfmt 完成，精确源码 `git diff --check` 退出 0。
+初次 Data 仅余约 384 MiB，按资源约束未编译；主线程释放自己已结束的重复源码后，
+核验 Available 约 30 GiB、Data 2.4 GiB，复用原 4 CPU / 8 GiB Rust 1.95 容器、
+原 target 与隔离 `relay_topic_20261007` 数据库。原
+`cargo test --offline --locked -j16 -p buzz-db --lib topic_event_and_value_commit_together_and_duplicate_cannot_reapply -- --ignored --test-threads=1`
+退出 0：1 passed，含真实 40099 插入异常及事务回滚，未改业务库。
+日志：`/volumes/data/kailo/tmp/topic-notification-20261007.prT0bA/db-positive.log`。
+随后将编译窗口交回 Core，尚未执行 Relay 检查及源码故意破坏/还原，不能将该 PG
+专项当作全部验收通过。未部署；原生 UI 40099 JSON 解析保留额外标签兼容，不重写页面。
+Core 窗口结束后 Data 仅余约 317 MiB，未启动下一编译；源码复核另将新增 Relay
+测试里的 kind 常量改为完整模块路径，避免依赖不存在的导入。该测试声明仍需编译核验。
