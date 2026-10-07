@@ -3721,3 +3721,53 @@ Web 文件，SettingsPane 6、PlatformApp 6、ProfileSettings 4，共 16 项通�
 
 本批最终窄验边界为三处 TypeScript 检查、共享设置 20 项、原邀请/成员 22 项、
 Web 16 项及上述真实负向/还原；没有 full、产物构建、部署或浏览器验收。
+
+## 2026-10-07：原线程布局设置共源与 Web 实际消费
+
+REQ-24 / DD-53 的原设置恢复继续消费只读 Buzz
+`779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/settings/ui/AppearanceSettingsControls.tsx::ThreadLayoutSetting`、
+`desktop/src/features/channels/lib/threadViewModePreference.ts::useThreadViewMode`
+与 `desktop/src/features/channels/ui/FocusThreadDrawer.tsx::FocusThreadDrawer`。
+三个实际源码移入共享 TS，Desktop 原路径改为导出或注入实际主题；原设备键
+`buzz.channels.threadViewMode`、默认 split、SVG 预览与原面板呈现保持同一实现，
+没有新偏好存储、合同、权限或后端写接口。
+
+影响面是两端外观设置、原桌面线程及 Web ChannelPane / ChannelThreadPane。
+Web 现有面板此前固定 `isFocusMode: false`，本批真正消费原设备选择，而非
+只增加设置按钮。窄屏仍消费原 auxiliary overlay 判据，不引入另一断点。
+切换 focus / split 使用相同组件位置和回复子树，不重建原未决回复意图；
+打开作者资料隐藏线程时不让隐藏线程处理 Escape 或夺回资料面板焦点。
+原成员、scope、流撤权和发布回执判断完全沿既有调用，不借设置获得读取权限。
+空或非法设备偏好维持上游 split 行为，持久化拒绝保留原内存选择；这些 UI
+偏好不替代业务准入。消息、回复正文与用量权威未改变。
+
+实现后首次 shared tsc 指出提取后的 cn 路径和严格数组索引问题，精确修正后
+共享源码/测试 tsc 与 Web tsc 通过，共享 settings 21 项通过。Web 外观用例
+触发原 5 秒超时，其余 5 项通过；ChannelThreadPane 的 worker 启动超时，
+该串行命令退出 1，不将它计为两端行为全通过。日志为同 Data 目录中的
+`thread-layout-shared.log`、`thread-layout-restored.log`。
+
+SDK 私有副本断开原控件 `onValueChange` 后，新实际消费者用例真实失败：
+预期 focus、实际 split，退出 1（`thread-layout-mutation.log`）。从正式源
+原字节还原并 cmp 0 后，该用例通过（`thread-layout-final.log`）。未改变
+测试超时、安装依赖或运行 full / 镜像构建；此阶段不声明已部署。
+
+随后同一串行命令的 Desktop tsc 退出 0，Web ChannelRead 在 worker 启动前
+60 秒超时、零用例执行，整体退出 1；不能将它计为 Web UNKNOWN 行为通过。
+交叉复核确认 inactive drawer 内层 flex 会影响原分栏宽度，现三层包装均为
+contents，保持回复子树而不增加布局盒；focus 消费原 getThreadPanelLayout
+的单面板宽度，split 继续原拖拽宽度。频道返回文案来自 PlatformApp 与
+InboxDrafts 已有准入查询的 channel.data.name，不新增目录查询或假名称。
+对应原 ChannelRead 用例已补实际拖拽、focus/split 宽度、真实频道名和同一
+UNKNOWN 输入节点/幂等键断言。该最后增量的验证单独记录，不借前轮通过。
+
+最后精确输入同步到原受限 SDK；两宿主各自的已锁定依赖树消费本批共享源码
+副本，没有重装或改变依赖链接。串行 shared `tsc --noEmit`、shared
+`tsc --noEmit -p tsconfig.test.json`、Web `tsc --noEmit`、Desktop
+`tsc --noEmit` 全部完成，组合命令退出 0（session 49329；成功无诊断，
+`thread-layout-reviewed-types.log` 为空）。此时未再次启动 Web worker；
+最终宽度/拖拽/UNKNOWN Web 行为用例仍未验收，不用静态检查替代。
+日志绝对目录为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/projects-directory.wiWDv3/`。
+源码和上述证据仅供合并，未构建、发布或部署，不代表原设置全功能完成。

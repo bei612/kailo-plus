@@ -32,6 +32,7 @@ import { Switch } from "@client-kit/platform/react/switch";
 import { useUiLocale } from "@client-kit/platform/react/context";
 import { LinkPreviewStyleSetting } from "@client-kit/platform/react/link-preview";
 import { BrowserNotificationSettings } from "./BrowserNotifications";
+import { ThreadLayoutSetting } from "@client-kit/platform/react/thread-layout-settings";
 
 function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] {
   const mod = isMacPlatform() ? "⌘" : "Ctrl+";
@@ -69,6 +70,7 @@ export function SettingsPane() {
           <SettingsOptionGroup data-testid="appearance-preferences-card" title={translate(locale, "platform.settings.preferences")}>
             <ConversationDisplaySettings locale={locale} />
             <LinkPreviewStyleSetting isDark={appearance.isDark} />
+            <ThreadLayoutSetting isDark={appearance.isDark} />
           </SettingsOptionGroup>
           </SettingsOptionGroupList>
         </section>

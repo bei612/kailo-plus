@@ -39,6 +39,9 @@ import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/f
 import { Button } from "@/shared/ui/button";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
 import { ChannelThreadPane } from "./ChannelThreadPane";
+import { FocusThreadDrawer } from "@client-kit/platform/react/thread/FocusThreadDrawer";
+import { useThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
+import { useIsThreadPanelOverlay } from "@client-kit/platform/react/thread";
 import { MessageAuthorIdentity, MessageAuthorProfile } from "./MessageAuthorProfile";
 import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
 import { applyMessageEdits, sortMessages, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
@@ -159,6 +162,7 @@ function useVisible() {
 
 export function ChannelPane({
   workspaceId,
+  channelName,
   myPrincipalId,
   onReadStateChanged,
   conversation,
@@ -171,6 +175,7 @@ export function ChannelPane({
   onStartDm,
 }: {
   workspaceId: string;
+  channelName?: string;
   myPrincipalId: string;
   onReadStateChanged?: () => void | Promise<void>;
   conversation?: ConversationView;
@@ -183,6 +188,9 @@ export function ChannelPane({
   onStartDm?: (pubkey: string) => void;
 }) {
   const queryClient = useQueryClient();
+  const threadViewMode = useThreadViewMode();
+  const threadOverlay = useIsThreadPanelOverlay();
+  const focusThread = threadViewMode === "focus" && !threadOverlay;
   const notifications = useBrowserNotifications();
   const { events: rawEvents, status, live, denied } = useChannelStream(workspaceId, conversation?.id, (event) => receiveNotification(event), () => {
     if (!conversation) void queryClient.invalidateQueries({ queryKey: ["platform", "channel-descriptor", myPrincipalId, workspaceId] });
@@ -465,11 +473,13 @@ export function ChannelPane({
     {profileTarget?.pubkey && live && !denied ? <MessageAuthorProfile key={`${myPrincipalId}:${workspaceId}:${profileTarget.id}`}
       target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:profileTarget.id,pubkey:profileTarget.pubkey}}
       onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}
-    {!conversation && replyTarget ? <div className={profileTarget ? "hidden" : "contents"}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
+    {!conversation && replyTarget ? <div className={profileTarget ? "hidden" : "contents"}><FocusThreadDrawer active={focusThread && !profileTarget} channelName={channelName} onClose={() => setReplyTarget(null)}><ChannelThreadPane key={`${myPrincipalId}:${workspaceId}:${getThreadReference(replyTarget.tags ?? []).rootId ?? replyTarget.id}`}
+      channelName={channelName}
+      isFocusMode={focusThread}
       workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
       onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeProfile}
       members={(members.data ?? []).filter((member): member is WorkspaceMemberView => "state" in member)} disabled={archived || metadataPending || denied || !live}
-      onClose={() => setReplyTarget(null)} onCopyMessage={copyMessage} onCopyLink={copyMessageLink} /></div> : null}
+      onClose={() => setReplyTarget(null)} onCopyMessage={copyMessage} onCopyLink={copyMessageLink} /></FocusThreadDrawer></div> : null}
     </div>
   );
 }

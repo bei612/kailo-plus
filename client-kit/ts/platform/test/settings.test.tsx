@@ -35,9 +35,35 @@ import { createBffClient } from "../src/client";
 import { PlatformProvider, useT, useUiT } from "../src/react/context";
 import { button, click, render, settle, type } from "./render";
 import type { BffRequest } from "../src/transport";
+import { ThreadLayoutSetting } from "../src/react/thread-layout-settings";
+import { FocusThreadDrawer } from "../src/react/messages/thread/FocusThreadDrawer";
+import { getThreadViewMode, setThreadViewMode, useThreadViewMode } from "../src/react/messages/thread/threadViewModePreference";
 import { parseLinkPreviewSnapshots, parseLinkPreviewTextSnapshots, LinkPreviewAttachmentPresentation, LinkPreviewStyleSetting, setLinkPreviewStyle, useLinkPreviewStyle } from "../src/react/link-preview";
 
 describe("shared Buzz settings presentation", () => {
+  it("applies the original thread layout to a mounted consumer without losing its reply intent", async () => {
+    setLocale("en"); setThreadViewMode("split");
+    const close=vi.fn();
+    function Host(){
+      const mode=useThreadViewMode();
+      return <><ThreadLayoutSetting isDark={false}/><FocusThreadDrawer active={mode==="focus"} channelName="general" onClose={close}>
+        <input aria-label="Reply draft" defaultValue="uncertain reply"/>
+      </FocusThreadDrawer></>;
+    }
+    const host=await render(<Host/>);
+    const reply=host.querySelector<HTMLInputElement>('input[aria-label="Reply draft"]')!;
+    await click(host.querySelector<HTMLElement>('[data-testid="thread-layout-focus"]')!);
+    expect(getThreadViewMode()).toBe("focus");
+    expect(localStorage.getItem("buzz.channels.threadViewMode")).toBe("focus");
+    expect(host.querySelector('[data-testid="focus-thread-drawer"]')).not.toBeNull();
+    expect(host.querySelector('input[aria-label="Reply draft"]')).toBe(reply);
+    await click(host.querySelector<HTMLElement>('[data-testid="thread-layout-split"]')!);
+    expect(getThreadViewMode()).toBe("split");
+    expect(host.querySelector('[data-testid="focus-thread-drawer"]')).toBeNull();
+    expect(reply.value).toBe("uncertain reply"); expect(reply.isConnected).toBe(true);
+    await act(async()=>window.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape"})));
+    expect(close).not.toHaveBeenCalled();
+  });
   it("restores original Communities invitations from one authorized read and preserves its uncertain intent",async()=>{
     let refused=false;let attempts=0;
     const send=vi.fn(async(request:BffRequest)=>{

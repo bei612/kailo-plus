@@ -100,6 +100,6 @@ function DraftEditor({ principalId, item, destination, members, autoSend, onBack
     {destination.kind === "conversation" ? <ChannelPane workspaceId={destination.conversation.id} conversation={destination.conversation} myPrincipalId={principalId} autoSendDraftKey={autoSendDraftKey} restoreEditEventId={target.editEventId} />
       : channel.data?.channelType === ChannelType.Forum ? <ForumPane workspaceId={entry.draft.channelId} channelId={channel.data.channelId} archived={channel.data.archived} myPrincipalId={principalId} onStartDm={onStartDm}
           restoreDraftKey={entry.key} autoSendDraftKey={autoSendDraftKey} />
-        : <ChannelPane workspaceId={entry.draft.channelId} myPrincipalId={principalId} autoSendDraftKey={autoSendDraftKey} restoreEditEventId={target.editEventId} />}
+        : <ChannelPane workspaceId={entry.draft.channelId} channelName={channel.data?.name} myPrincipalId={principalId} autoSendDraftKey={autoSendDraftKey} restoreEditEventId={target.editEventId} />}
   </section>;
 }

@@ -10,6 +10,7 @@ import type { StreamFrame, UserState } from "../bff-client";
 import { ChannelPane } from "./ChannelPane";
 import { platformQueries } from "./queries";
 import { setLocale } from "@client-kit/platform/i18n";
+import { setThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({
@@ -76,7 +77,7 @@ async function renderChannel(props: { archived?: boolean; metadataPending?: bool
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <TooltipProvider><ChannelPane workspaceId="workspace-a" myPrincipalId="human-a" {...props} /></TooltipProvider>
+        <TooltipProvider><ChannelPane workspaceId="workspace-a" channelName="Original channel" myPrincipalId="human-a" {...props} /></TooltipProvider>
       </QueryClientProvider>,
     );
   });
@@ -134,6 +135,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
   localStorage.clear();
+  setThreadViewMode("split");
   setLocale("en");
   Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
@@ -313,6 +315,33 @@ it("a reply without confirmed evidence stays UNKNOWN and keeps its original inte
   await flush();
   expect(host.textContent).toContain("platform.sendUnknown");
   const key = state.publish.mock.calls[0]?.[3];
+  const originalInput=host.querySelector('[data-testid="message-thread-panel"] [data-testid="message-input"]');
+  const originalPanel=host.querySelector<HTMLElement>('[data-testid="message-thread-panel"]')!;
+  const beforeResize=originalPanel.style.width;
+  const resizeHandle=originalPanel.querySelector<HTMLButtonElement>('[aria-label="Resize panel"]')!;
+  expect(resizeHandle).not.toBeNull();
+  await act(async()=>{
+    resizeHandle.dispatchEvent(new MouseEvent("pointerdown",{bubbles:true,clientX:500}));
+    window.dispatchEvent(new MouseEvent("pointermove",{clientX:450}));
+    window.dispatchEvent(new MouseEvent("pointerup"));
+  });
+  expect(originalPanel.style.width).not.toBe(beforeResize);
+  expect(document.body.style.cursor).not.toBe("col-resize");
+  const originalWidth=originalPanel.style.width;
+  const panelParent=originalPanel.parentElement!;
+  expect(panelParent.className).toBe("contents");
+  await act(async()=>setThreadViewMode("focus")); await flush();
+  expect(host.querySelector('[data-testid="focus-thread-drawer"]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="focus-thread-drawer-scrim"]')?.getAttribute("aria-label")).toContain("Original channel");
+  expect(originalPanel.style.width).toBe("100%");
+  expect(host.querySelector('[data-testid="message-thread-panel"] [data-testid="message-input"]')).toBe(originalInput);
+  expect(host.textContent).toContain("platform.sendUnknown");
+  await act(async()=>setThreadViewMode("split")); await flush();
+  expect(host.querySelector('[data-testid="focus-thread-drawer"]')).toBeNull();
+  expect(originalPanel.style.width).toBe(originalWidth);
+  expect(panelParent.className).toBe("contents");
+  expect(host.querySelector('[data-testid="message-thread-panel"] [data-testid="message-input"]')).toBe(originalInput);
+  expect(state.publish).toHaveBeenCalledTimes(1);
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Close panel"]')!.click());
   await flush();
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-10"]')!.click());

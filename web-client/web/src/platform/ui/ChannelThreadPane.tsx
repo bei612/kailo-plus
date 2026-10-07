@@ -10,13 +10,16 @@ import { publishMessage } from "@/platform/bff-client";
 import { Composer } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { MessageAuthorIdentity } from "./MessageAuthorProfile";
+import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPanelLayout";
 
-export function ChannelThreadPane({ workspaceId, principalId, selected, members, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable }: {
+export function ChannelThreadPane({ workspaceId, principalId, selected, members, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "" }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: WorkspaceMemberView[];
   disabled: boolean; onClose: () => void; onCopyMessage: (message: TimelineMessage) => void;
   onCopyLink?: (message: TimelineMessage) => void;
   onOpenAuthor?: (message: TimelineMessage) => void;
   onAuthorScopeUnavailable?: () => void;
+  isFocusMode?: boolean;
+  channelName?: string;
 }) {
   const t = useT(); const locale = useLocale();
   const rootId = getThreadReference(selected.tags ?? []).rootId ?? selected.id;
@@ -60,16 +63,16 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, members,
   const canReply = !disabled && !unavailable && !interrupted && !loading &&
     rows.some((row) => row.id === replyId) &&
     members.some((member) => member.principalId === principalId && member.state === WorkspaceMembershipState.Active);
-  const panelLayout = {isFocusMode: false, onClose, widthPx: width.widthPx,
+  const panelLayout = {...getThreadPanelLayout({isFocusDrawer:isFocusMode,isSinglePanelView:false,useSplitAuxiliaryPane:false}), onClose, widthPx: width.widthPx,
     onResizeStart: width.onResizeStart, onResetWidth: width.onResetWidth, canResetWidth: width.canReset};
   if (denied || !data.threadHead) {
     if (!unavailable) return <MessageThreadPanelSkeleton {...panelLayout} />;
     return <AuxiliaryPanel {...panelLayout}
-      header={<MessageThreadPanelHeader isFocusMode={false} isSinglePanelView={false} onClose={onClose} />}>
+      header={<MessageThreadPanelHeader isFocusMode={isFocusMode} isSinglePanelView={panelLayout.isSinglePanelView ?? false} onClose={onClose} />}>
       <ThreadRepliesErrorCard onRetry={denied ? undefined : () => {void thread.refetch();}} />
     </AuxiliaryPanel>;
   }
-  return <ThreadPanelSurface {...panelLayout} channelId={workspaceId} channelName=""
+  return <ThreadPanelSurface {...panelLayout} channelId={workspaceId} channelName={channelName}
     disabled={!canReply} isSending={isSending} threadHead={data.threadHead} threadReplies={data.visibleReplies}
     replyTargetMessage={data.replyTargetMessage} scrollTargetId={scrollTargetId}
     onScrollTargetResolved={() => setScrollTargetId(null)} onCancelReply={() => setReplyId(rootId)}
