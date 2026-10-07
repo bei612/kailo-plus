@@ -1,4 +1,4 @@
-import type { TimelineMessage } from "@/features/messages/types";
+import type { TimelineMessage, TimelineReaction } from "@/features/messages/types";
 
 /**
  * Value-equality helpers for `MessageRow`'s memo comparator.
@@ -27,6 +27,39 @@ export function tagsEqual(
     if (tagA.length !== tagB.length) return false;
     for (let j = 0; j < tagA.length; j += 1) {
       if (tagA[j] !== tagB[j]) return false;
+    }
+  }
+  return true;
+}
+
+export function reactionsEqual(
+  a: TimelineReaction[] | undefined,
+  b: TimelineReaction[] | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const left = a[i];
+    const right = b[i];
+    if (
+      left.emoji !== right.emoji ||
+      left.emojiUrl !== right.emojiUrl ||
+      left.count !== right.count ||
+      left.reactedByCurrentUser !== right.reactedByCurrentUser ||
+      left.users.length !== right.users.length
+    ) {
+      return false;
+    }
+    for (let j = 0; j < left.users.length; j += 1) {
+      const userA = left.users[j];
+      const userB = right.users[j];
+      if (
+        userA.pubkey !== userB.pubkey ||
+        userA.displayName !== userB.displayName ||
+        userA.avatarUrl !== userB.avatarUrl
+      ) {
+        return false;
+      }
     }
   }
   return true;

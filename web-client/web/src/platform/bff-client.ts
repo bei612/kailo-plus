@@ -56,6 +56,17 @@ export async function publishPulse(request: PulsePublishRequest, idempotencyKey:
   return unwrap({method:"POST",path}, await transport.exchange(path, {method:"POST",
     headers:{"Content-Type":"application/json","Idempotency-Key":idempotencyKey}, body:JSON.stringify(request)}));
 }
+export async function publishMessageReaction(workspaceId: string, conversationId: string | undefined,
+  request: PulsePublishRequest, idempotencyKey: string): Promise<{eventId:string;operationId:string}> {
+  const path = conversationId
+    ? `/api/v1/conversations/${encodeURIComponent(conversationId)}/reactions`
+    : `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/reactions`;
+  const receipt = unwrap<{eventId:string;operationId:string}>({method:"POST",path}, await transport.exchange(path, {
+    method:"POST", headers:{"Content-Type":"application/json","Idempotency-Key":idempotencyKey}, body:JSON.stringify(request),
+  }));
+  if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Reaction has no confirmed receipt.");
+  return receipt;
+}
 export async function uploadPulseMedia(file: File): Promise<MediaDescriptor> {
   const path = "/api/v1/pulse/media";
   return unwrap({method:"POST",path}, await transport.exchange(path, {method:"POST",

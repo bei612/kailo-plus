@@ -1,5 +1,6 @@
 import type { ChannelMember, RelayEvent } from "@/shared/api/types";
 import { applyMessageEdits } from "@client-kit/platform/react/messages/messageEdits";
+import { buildMessageReactions } from "@client-kit/platform/react/messages/buildMessageReactions";
 
 import type { TimelineMessage } from "@/features/messages/types";
 import { getThreadReference } from "@/features/messages/lib/threading";
@@ -121,6 +122,9 @@ export function formatTimelineMessages(
   // on every live message; the map is computed once per distinct roster.
   const roleByPubkey = members ? channelRoleMap(members) : EMPTY_ROLE_MAP;
   const deletedEventIds = getDeletedEventIds(events);
+  const reactions = buildMessageReactions(events, currentPubkey, profiles, event => resolveEventAuthorPubkey({
+    event, preferActorTag: true, relaySelfPubkey, requireChannelTagForPTags: true,
+  }));
   const visibleEvents = applyMessageEdits(events.filter(
     (event) => isTimelineContentEvent(event) && !deletedEventIds.has(event.id),
   ), events.filter((event) => !deletedEventIds.has(event.id)));
@@ -195,6 +199,7 @@ export function formatTimelineMessages(
       pending: event.pending,
       kind: event.kind,
       tags: event.tags,
+      reactions: reactions.get(event.id),
     };
   });
 }

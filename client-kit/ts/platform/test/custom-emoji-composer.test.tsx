@@ -15,8 +15,9 @@ import { render, click, button, settle } from "./render";
 
 vi.mock("../src/react/profile/buzz/shared/ui/emoji-picker", () => ({ default: (props: {
   custom?: Array<{ emojis: Array<{ id: string }> }>;
+  i18n?: {search: string; pick: string; categories: {frequent: string}};
   onEmojiSelect: (value: {native?: string; id?: string}) => void;
-}) => <div><button onClick={() => props.onEmojiSelect({native:"😀"})}>standard</button>
+}) => <div><output data-testid="picker-local-dictionary">{props.i18n ? [props.i18n.search, props.i18n.pick, props.i18n.categories.frequent].join("|") : "REMOTE_DICTIONARY"}</output><button onClick={() => props.onEmojiSelect({native:"😀"})}>standard</button>
   {props.custom?.[0]?.emojis.map((emoji) => <button key={emoji.id} onClick={() => props.onEmojiSelect({id:emoji.id})}>{emoji.id}</button>)}
 </div> }));
 vi.mock("../src/react/custom-emoji/emojiMartPrewarm", () => ({emojiMartData:{}}));
@@ -41,6 +42,14 @@ describe("original custom emoji composer consumers", () => {
     await click(button(host,"standard"));
     await click(button(host,"party"));
     expect(onSelect.mock.calls).toEqual([["😀"],[":party:"]]);
+  });
+
+  it("supplies the fixed package dictionaries locally in both languages without a CDN fallback", async () => {
+    setLocale("zh-CN");
+    const host = await render(<EmojiPicker customEmoji={custom} onSelect={vi.fn()}/>);
+    expect(host.querySelector('[data-testid="picker-local-dictionary"]')?.textContent).toBe("搜索|选择一个表情…|最近使用");
+    await act(async () => { setLocale("en"); });
+    expect(host.querySelector('[data-testid="picker-local-dictionary"]')?.textContent).toBe("Search|Pick an emoji…|Frequently used");
   });
 
   it("inserts the original selectable image atom and retains Markdown and cursor projection", async () => {

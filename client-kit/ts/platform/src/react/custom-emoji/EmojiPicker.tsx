@@ -1,6 +1,8 @@
 // Original Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/custom-emoji/ui/EmojiPicker.tsx
 import Picker from "../profile/buzz/shared/ui/emoji-picker";
 import * as React from "react";
+import english from "@emoji-mart/data/i18n/en.json";
+import chinese from "@emoji-mart/data/i18n/zh.json";
 
 import { buildCustomEmojiCategory } from "./emojiMartCategory";
 import type { CustomEmoji } from "./emoji";
@@ -114,6 +116,7 @@ export const EmojiPicker = React.memo(function EmojiPicker({
         autoFocus={autoFocus}
         custom={custom}
         locale={locale === "zh-CN" ? "zh" : "en"}
+        i18n={locale === "zh-CN" ? chinese : english}
         data={emojiMartData}
         maxFrequentRows={2}
         onEmojiSelect={(emoji: { native?: string; id?: string }) => {

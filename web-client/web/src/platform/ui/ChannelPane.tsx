@@ -39,6 +39,7 @@ import { MessageComposerSurface } from "@client-kit/platform/react/composer/Mess
 import { ChannelThreadPane } from "./ChannelThreadPane";
 import { ChannelTimelineRows } from "./ChannelTimelineRows";
 import { useChannelWindow } from "./useChannelWindow";
+import { useMessageReactions } from "./useMessageReactions";
 import { CHANNEL_TIMELINE_CONTENT_KINDS, isConversationalUnreadKind } from "@client-kit/platform/react/thread/kinds";
 import { MessageThreadSummaryRow } from "@client-kit/platform/react/thread";
 import { SystemMessageRowSurface } from "@client-kit/platform/react/messages/system";
@@ -112,6 +113,8 @@ export function ChannelPane({
     if (!conversation) void queryClient.invalidateQueries({ queryKey: ["platform", "channel-descriptor", myPrincipalId, workspaceId] });
   }, archived });
   const { events: rawEvents, status, live, denied } = window;
+  const messageReactions = useMessageReactions({principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,
+    events:rawEvents,available:live && !denied && !archived && !metadataPending});
   const events = useMemo(() => {
     const deleted = new Set(rawEvents.filter(event => event.kind === 5 || event.kind === 9005).flatMap(event => event.tags.filter(tag => tag[0] === "e").map(tag => tag[1])));
     return applyMessageEdits(rawEvents.filter(event => (CHANNEL_TIMELINE_CONTENT_KINDS as readonly number[]).includes(event.kind) && !deleted.has(event.id)), rawEvents.filter(event => !deleted.has(event.id)));
@@ -177,9 +180,9 @@ export function ChannelPane({
   const timelineMessages = useMemo<TimelineMessage[]>(() => events.map((event) => ({
     id: event.id, createdAt: event.created_at, pubkey: event.pubkey,
     signerPubkey: event.pubkey, author: byPubkey.get(event.pubkey)?.displayName ?? truncatePubkey(event.pubkey),
-    body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0,
+    body: event.content, tags: event.tags, kind: event.kind, time: "", depth: 0, reactions:messageReactions.reactions.get(event.id),
     ...getThreadReference(event.tags),
-  })), [events, byPubkey]);
+  })), [events, byPubkey, messageReactions.reactions]);
   const profiles = useMemo(() => Object.fromEntries([...byPubkey].map(([pubkey, member]) => [pubkey, {displayName:member.displayName, avatarUrl:null, nip05Handle:null, ownerPubkey:null}])), [byPubkey]);
   const SystemProfilePopover = useCallback(({pubkey, children, triggerAriaLabel}: {pubkey:string;children:ReactNode;triggerAriaLabel?:string}) => {
     const member = byPubkey.get(pubkey);
@@ -357,6 +360,8 @@ export function ChannelPane({
           const entries = item.kind === "system-group" ? item.entries : [item.entry];
           if (entries[0]?.message.kind === 40099) return <div className="flex flex-col gap-1 pb-2.5" data-event-id={entries[0].message.id}>
             <SystemMessageRowSurface message={entries[0].message} groupedMessages={entries.map(entry=>entry.message)}
+              onToggleReaction={messageReactions.onToggleReaction} customEmoji={messageReactions.customEmoji}
+              reactionScope={messageReactions.reactionScope} resolveMediaUrl={messageReactions.resolveMediaUrl}
               currentPubkey={ownProfile.data?.pubkey} profiles={profiles} ProfilePopover={SystemProfilePopover}/>
           </div>;
           return entries.map(entry => {
@@ -365,10 +370,12 @@ export function ChannelPane({
             const followedByContinuation = item.kind === "message" && item.isFollowedByContinuation;
             return <div key={message.id} data-event-id={message.id} className={`flex flex-col gap-1 ${followedByContinuation ? "pb-0" : "pb-2.5"}`}>
               <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={highlightedMessageId === message.id}
+                onToggleReaction={messageReactions.onToggleReaction} customEmoji={messageReactions.customEmoji}
+                reactionScope={messageReactions.reactionScope} resolveMediaUrl={messageReactions.resolveMediaUrl}
                 renderIdentity={message.pubkey && live && !denied ? (node) => <MessageAuthorIdentity
                   target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:message.id,pubkey:message.pubkey!}}
                   onOpen={() => setProfileTarget(message)}>{node}</MessageAuthorIdentity> : undefined}
-                renderActions={(ref) => <MessageActionBarSurface ref={ref} message={message} onCopyMessage={copyMessage}
+                renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={message} onCopyMessage={copyMessage}
                   onEdit={message.kind === 9 && live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && message.signerPubkey === ownProfile.data.pubkey ? setEditTarget : undefined}
                   onReply={!conversation && (message.kind === 9 || message.kind === 40002) && live && !denied && !archived && !metadataPending ? (target)=>{setProfileTarget(null);setSystemProfileTarget(null);setReplyTarget(target);} : undefined}
                   onCopyLink={copyMessageLink} />}

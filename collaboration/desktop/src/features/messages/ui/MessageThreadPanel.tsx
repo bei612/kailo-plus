@@ -21,6 +21,7 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   onClose: () => void;
   onMarkUnread?: (message: TimelineMessage) => void;
   onMarkRead?: (message: TimelineMessage) => void;
+  onToggleReaction?: (message: TimelineMessage, emoji: string, remove: boolean) => Promise<void>;
   onExpandReplies: (message: TimelineMessage) => void;
   onScrollTargetResolved: () => void;
   onScrollTargetSettled?: (messageId: string) => void;
@@ -84,6 +85,7 @@ export function MessageThreadPanel(props: MessageThreadPanelProps) {
         onFollowThread={row.message.id === props.threadHead?.id && props.onFollowThread ? () => props.onFollowThread?.() : undefined}
         onUnfollowThread={row.message.id === props.threadHead?.id && props.onUnfollowThread ? () => props.onUnfollowThread?.() : undefined}
         onMarkRead={props.onMarkRead} onMarkUnread={props.onMarkUnread}
+        onToggleReaction={props.disabled ? undefined : props.onToggleReaction}
         onSendToChannel={row.message.id !== props.threadHead?.id ? stableSendToChannel : undefined}
         videoReviewCommentRootId={props.videoReviewPresentation?.commentRootIdsByMessageId.get(row.message.id)}
         videoReviewContext={props.videoReviewPresentation?.contextsByMessageId.get(row.message.id)}

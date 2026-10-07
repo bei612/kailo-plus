@@ -3,7 +3,7 @@ import { useBffClient } from "@client-kit/platform/react/context";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { openStream } from "@/platform/bff-client";
-import { inboxEvents } from "./inbox-events";
+import { inboxEvents, inboxReactionEvents } from "./inbox-events";
 import { applyMessageEdits } from "@client-kit/platform/react/messages";
 
 // Both Inbox and the channel thread consume the same admitted query/cache;
@@ -31,7 +31,7 @@ export function useWorkspaceThread(principalId: string, workspaceId: string, roo
       const edits = inboxEvents(page.events.filter((event) => event && typeof event === "object" && "kind" in event && event.kind === 40003), workspaceId, 40003);
       const deleted = new Set(page.events.flatMap((event) => event && typeof event === "object" && "kind" in event && (event.kind === 5 || event.kind === 9005) && "tags" in event && Array.isArray(event.tags)
         ? event.tags.filter((tag: string[]) => tag[0] === "e").map((tag: string[]) => tag[1]) : []));
-      return { events, edits, deleted, nextCursor: cursor };
+      return { events, edits, deleted, reactions:inboxReactionEvents(page.events,workspaceId), nextCursor: cursor };
     },
     getNextPageParam: (page) => page.nextCursor,
   });
@@ -52,5 +52,6 @@ export function useWorkspaceThread(principalId: string, workspaceId: string, roo
       .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
     return applyMessageEdits(messages, thread.data?.pages.flatMap((page) => page.edits ?? []).filter((event) => !deleted.has(event.id)) ?? []);
   }, [thread.data]);
-  return { thread, messages, denied, interrupted, refresh: () => cache.invalidateQueries({queryKey: key}) };
+  const reactionEvents = useMemo(()=>thread.data?.pages.flatMap(page=>[...page.events,...page.reactions]) ?? [],[thread.data]);
+  return { thread, messages, reactionEvents, denied, interrupted, refresh: () => cache.invalidateQueries({queryKey: key}) };
 }

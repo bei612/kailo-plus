@@ -10,14 +10,15 @@ import type { StreamFrame } from "../bff-client";
 import { ChannelThreadPane } from "./ChannelThreadPane";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({query: vi.fn(), publish: vi.fn(), profile: vi.fn(), openAuthor: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
+const state = vi.hoisted(() => ({query: vi.fn(), publish: vi.fn(), reaction:vi.fn(), profile: vi.fn(), openAuthor: vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: ""}));
 vi.mock("@client-kit/platform/react/context", async (original) => ({
   ...await original<typeof import("@client-kit/platform/react/context")>(),
   useBffClient: () => ({workspaceMessages: state.query}), useLocale: () => "en", useT: () => (key: string) => key,
 }));
 vi.mock("@/features/chat/ui/MessageContent", () => ({MessageContent: ({content}: {content: string}) => <p>{content}</p>}));
 vi.mock("@/platform/bff-client", () => ({
-  bff: {messageAuthorProfile: (...args: unknown[]) => state.profile(...args)},
+  bff: {profile:async()=>({pubkey:"c".repeat(64)}),customEmoji:async()=>({events:[],mediaPaths:{}}),messageAuthorProfile: (...args: unknown[]) => state.profile(...args)},
+  publishMessageReaction:(...args:unknown[])=>state.reaction(...args),
   publishMessage: (...args: unknown[]) => state.publish(...args),
   openStream: (_scope: string, receive: (frame: StreamFrame) => void) => {state.receive = receive; return () => {};},
 }));
@@ -45,6 +46,7 @@ beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollTo", {configurable: true, value: vi.fn()});
   state.query.mockResolvedValue({events: [rootEvent, reply]});
   state.publish.mockResolvedValue({eventId: "d".repeat(64), operationId: "operation"});
+  state.reaction.mockResolvedValue({eventId:"d".repeat(64),operationId:"operation"});
   state.profile.mockResolvedValue({pubkey:author,eventId:"profile",displayName:"Verified author",about:null,avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}});
   query = new QueryClient({defaultOptions: {queries: {retry: false}}});
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
@@ -65,6 +67,15 @@ it("retains V2 roots and replies in the same admitted original thread projection
   expect(host.querySelector('[data-testid="message-thread-panel"]')).not.toBeNull();
   expect(host.textContent).toContain("Root body");expect(host.textContent).toContain("Nested body");
   expect(host.querySelector<HTMLButtonElement>('[data-testid="host-send"]')?.disabled).toBe(false);
+});
+it("renders thread auxiliary reactions and removes the actual own reaction through the admitted route",async()=>{
+  const reactionId="e".repeat(64);
+  state.query.mockResolvedValue({events:[rootEvent,reply,{...reply,id:reactionId,kind:7,content:"👍",tags:[["e",replyId]]}]});
+  await mount();
+  const pill=[...host.querySelectorAll<HTMLButtonElement>('button[aria-label]')].find(button=>button.getAttribute("aria-label")==="Toggle 👍 reaction");
+  expect(pill).toBeDefined();
+  await act(async()=>pill!.click());await settle();
+  expect(state.reaction).toHaveBeenCalledWith("workspace",undefined,{operation:"UNLIKE",content:"",targetEventId:reactionId},expect.any(String));
 });
 it("requires confirmed receipt and removes thread content on revoked admission", async () => {
   state.publish.mockResolvedValue({operationId: "operation"});

@@ -22,6 +22,7 @@ const state = vi.hoisted(() => ({
   members: vi.fn(),
   stream: vi.fn(),
   history: vi.fn(),
+  reaction: vi.fn(),
   reason: (value: string) => value,
 }));
 vi.mock("@client-kit/platform/react/context", async (original) => ({
@@ -40,11 +41,13 @@ vi.mock("@/platform/bff-client", async () => ({
     workspaces: async () => [],
     agentInstallations: async () => ({ installations: [] }),
     profile: async () => ({pubkey:"mine"}),
+    customEmoji: async () => ({events:[],mediaPaths:{}}),
     workspaceMessages: (...args: unknown[]) => state.history(...args),
   },
   fetchUserState: () => state.fetch(),
   markRead: (request: ReadMarkRequest) => state.mark(request),
   publishMessage: (...args: unknown[]) => state.publish(...args),
+  publishMessageReaction:(...args:unknown[])=>state.reaction(...args),
   uploadMedia: vi.fn(),
   openStream: (_workspace: string, receive: (frame: StreamFrame) => void) => {
     state.stream(_workspace);
@@ -151,6 +154,18 @@ it("renders original system membership rows without advancing conversational rea
   expect(state.notify).not.toHaveBeenCalled();
 });
 
+it("renders live reaction auxiliaries on the original channel row and removes their real event ID",async()=>{
+  await renderChannel();
+  const message={...event(10),id:"a".repeat(64)};
+  const reaction={...event(11),id:"b".repeat(64),kind:7,pubkey:"mine",content:"👍",tags:[["e",message.id]]};
+  await act(async()=>{state.receive!({type:"snapshot",events:windowEvents([message,reaction])});state.receive!({type:"live"});});
+  await flush();
+  const pill=[...host.querySelectorAll<HTMLButtonElement>('button[aria-label]')].find(button=>button.getAttribute("aria-label")==="Toggle 👍 reaction");
+  expect(pill).toBeDefined();
+  await act(async()=>pill!.click());await flush();
+  expect(state.reaction).toHaveBeenCalledWith("workspace-a",undefined,{operation:"UNLIKE",content:"",targetEventId:reaction.id},expect.any(String));
+});
+
 it("renders the original live summary and opens its real admitted thread", async () => {
   await open();
   await act(async()=>state.receive!({type:"event",event:{...event(20),kind:39005,tags:[["e","event-10"]],content:JSON.stringify({reply_count:2,descendant_count:2,last_reply_at:20,participants:[]})}}));
@@ -228,6 +243,7 @@ beforeEach(() => {
   state.members.mockResolvedValue([]);
   state.history.mockResolvedValue({events:windowEvents([event(10)])});
   state.publish.mockResolvedValue({ eventId: "published-event", operationId: "operation" });
+  state.reaction.mockResolvedValue({eventId:"reaction",operationId:"operation"});
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

@@ -11,6 +11,7 @@ import { MessageThreadSummaryRow } from "./MessageThreadSummaryRow";
 import { SystemMessageRow } from "./SystemMessageRow";
 
 type SystemRowProps = {
+  onToggleReaction?: React.ComponentProps<typeof MessageRow>["onToggleReaction"];
   currentPubkey?: string;
   entries?: MainTimelineEntry[];
   entry?: MainTimelineEntry;
@@ -19,6 +20,7 @@ type SystemRowProps = {
 };
 
 export function SystemRow({
+  onToggleReaction,
   currentPubkey,
   entries,
   entry,
@@ -36,6 +38,7 @@ export function SystemRow({
   return (
     <div className="flex flex-col gap-1 pb-2.5">
       <SystemMessageRow
+        onToggleReaction={onToggleReaction}
         groupedMessages={groupedMessages}
         message={firstEntry.message}
         currentPubkey={currentPubkey}
@@ -47,6 +50,8 @@ export function SystemRow({
 }
 
 type MessageRowItemProps = {
+  currentPubkey?: string;
+  onToggleReaction?: React.ComponentProps<typeof MessageRow>["onToggleReaction"];
   channelId?: string | null;
   entry: MainTimelineEntry;
   followThreadById?: (rootId: string) => void;
@@ -73,6 +78,8 @@ type MessageRowItemProps = {
 };
 
 export function MessageRowItem({
+  currentPubkey,
+  onToggleReaction,
   channelId,
   entry,
   followThreadById,
@@ -110,6 +117,8 @@ export function MessageRowItem({
         )}
       >
         <MessageRow
+          currentPubkey={currentPubkey}
+          onToggleReaction={onToggleReaction}
           channelId={channelId}
           highlighted={false}
           hoverBackground={false}
@@ -164,6 +173,8 @@ export function MessageRowItem({
       )}
     >
       <MessageRow
+        currentPubkey={currentPubkey}
+        onToggleReaction={onToggleReaction}
         channelId={channelId}
         highlighted={message.id === highlightedMessageId || isSearchActive}
         isContinuation={isContinuation}

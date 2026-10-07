@@ -11,6 +11,7 @@ import { Composer } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { MessageAuthorIdentity } from "./MessageAuthorProfile";
 import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPanelLayout";
+import { useMessageReactions } from "./useMessageReactions";
 
 export function ChannelThreadPane({ workspaceId, principalId, selected, members, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "" }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: WorkspaceMemberView[];
@@ -23,7 +24,9 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, members,
 }) {
   const t = useT(); const locale = useLocale();
   const rootId = getThreadReference(selected.tags ?? []).rootId ?? selected.id;
-  const {thread, messages, denied, interrupted, refresh} = useWorkspaceThread(principalId, workspaceId, rootId);
+  const {thread, messages, reactionEvents, denied, interrupted, refresh} = useWorkspaceThread(principalId, workspaceId, rootId);
+  const messageReactions = useMessageReactions({principalId,workspaceId,events:reactionEvents ?? messages,
+    available:!disabled && !denied && !interrupted && thread.isSuccess && !thread.isError,refresh});
   const [replyId, setReplyId] = useState(selected.id);
   const [isSending, setIsSending] = useState(false);
   const [scrollTargetId, setScrollTargetId] = useState<string | null>(selected.id);
@@ -40,9 +43,9 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, members,
     const edge = getThreadReference(event.tags);
     return {id: event.id, pubkey: event.pubkey, kind: event.kind, createdAt: event.createdAt,
       author: members.find((member) => member.pubkeys.includes(event.pubkey))?.displayName || truncatePubkey(event.pubkey),
-      body: event.content, tags: event.tags, rootId: edge.rootId, parentId: edge.parentId, depth: 0,
+      body: event.content, tags: event.tags, rootId: edge.rootId, parentId: edge.parentId, depth: 0, reactions:messageReactions.reactions.get(event.id),
       time: relativeTime(locale, new Date(event.createdAt * 1000).toISOString())};
-  }), [messages, members, locale]);
+  }), [messages, members, locale, messageReactions.reactions]);
   useEffect(() => {
     if (expandedTarget.current === selected.id || !rows.some((row) => row.id === selected.id)) return;
     const ancestors = new Set<string>();
@@ -81,11 +84,13 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, members,
     threadRepliesPending={loading} threadRepliesError={unavailable}
     onRetryThreadReplies={denied ? undefined : () => {void thread.refetch();}}
     renderRow={(row) => <MessageRowSurface {...row} layoutVariant="thread-reply"
+      onToggleReaction={messageReactions.onToggleReaction} customEmoji={messageReactions.customEmoji}
+      reactionScope={messageReactions.reactionScope} resolveMediaUrl={messageReactions.resolveMediaUrl}
       renderIdentity={row.message.pubkey && onOpenAuthor && !unavailable && !interrupted ? (node) => <MessageAuthorIdentity
         target={{principalId,workspaceId,eventId:row.message.id,pubkey:row.message.pubkey!}}
         onOpen={() => onOpenAuthor(row.message)}>{node}</MessageAuthorIdentity> : undefined}
       renderBody={(className) => <div className={className}><MessageContent workspaceId={workspaceId} content={row.message.body} mediaTags={row.message.tags} /></div>}
-      renderActions={(ref) => <MessageActionBarSurface ref={ref} message={row.message} onCopyMessage={onCopyMessage}
+      renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={row.message} onCopyMessage={onCopyMessage}
         onCopyLink={onCopyLink}
         onReply={canReply ? (message) => setReplyId(message.id) : undefined} />} />}
     renderComposer={(composer) => <Composer key={replyId} workspaceId={workspaceId} draftIdentity={principalId}

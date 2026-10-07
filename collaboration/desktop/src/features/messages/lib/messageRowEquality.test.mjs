@@ -5,7 +5,22 @@ import {
   depthGuideActionsEqual,
   numberArrayEqual,
   tagsEqual,
+  reactionsEqual,
 } from "./messageRowEquality.ts";
+
+test("reaction memo observes count, own state, image and user identity changes", () => {
+  const reactions = [{ emoji: ":wave:", emojiUrl: "media", count: 1, reactedByCurrentUser: true,
+    users: [{ pubkey: "actor", displayName: "Alice", avatarUrl: "avatar" }] }];
+  assert.equal(reactionsEqual(reactions, structuredClone(reactions)), true);
+  for (const [field, value] of [["count", 2], ["reactedByCurrentUser", false], ["emojiUrl", "other"]]) {
+    const changed = structuredClone(reactions);
+    changed[0][field] = value;
+    assert.equal(reactionsEqual(reactions, changed), false);
+  }
+  const changed = structuredClone(reactions);
+  changed[0].users[0].pubkey = "other";
+  assert.equal(reactionsEqual(reactions, changed), false);
+});
 
 // These helpers exist so MessageRow's memo holds when arrays are rebuilt
 // with fresh identities but unchanged values (every ingest/refetch does

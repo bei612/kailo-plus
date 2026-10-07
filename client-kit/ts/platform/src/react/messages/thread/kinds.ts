@@ -2,6 +2,7 @@
 // The huddle kind is a parsing constant from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/shared/constants/kinds.ts; it does not enable a route or subscription.
 export const KIND_HUDDLE_STARTED = 48100;
 export const KIND_DELETION = 5;
+export const KIND_REACTION = 7;
 export const KIND_STREAM_MESSAGE = 9;
 // Buzz-native deletion. The relay soft-deletes the target and emits a
 // kind:40099 system message. Treated as a deletion marker alongside kind:5.
@@ -48,6 +49,7 @@ export const CHANNEL_EVENT_KINDS = [
 // reference over the loaded message ids, so a late deletion for a visible old
 // message still applies.
 export const CHANNEL_AUX_EVENT_KINDS = [
+  KIND_REACTION,
   KIND_STREAM_MESSAGE_EDIT,
   KIND_DELETION, // 5 — NIP-09 event deletions
   KIND_NIP29_DELETE_EVENT, // 9005 — NIP-29 / Buzz-native deletions

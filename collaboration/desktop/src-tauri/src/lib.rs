@@ -251,6 +251,8 @@ pub fn run() {
             send_channel_message,
             edit_message,
             delete_message,
+            add_reaction,
+            remove_reaction,
             set_window_vibrancy,
             show_native_notification,
             sign_event,

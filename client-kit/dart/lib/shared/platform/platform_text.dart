@@ -43,6 +43,8 @@ enum PlatformMessageKey {
   messagesSystemTopicChanged,
   messagesSystemPurposeChanged,
   messagesReactionsAdd,
+  messagesReactionsOpen,
+  messagesReactionsWith,
   messagesReactionsReact,
   messagesReactionsToggle,
   messagesReactionsPeople,
@@ -1665,6 +1667,11 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '将宗旨改为“{value}”',
   ),
   PlatformMessageKey.messagesReactionsAdd: ('Add reaction', '添加回应'),
+  PlatformMessageKey.messagesReactionsOpen: ('Open reactions', '打开回应表情'),
+  PlatformMessageKey.messagesReactionsWith: (
+    'React with {emoji}',
+    '使用 {emoji} 回应',
+  ),
   PlatformMessageKey.messagesReactionsReact: ('React', '回应'),
   PlatformMessageKey.messagesReactionsToggle: (
     'Toggle {emoji} reaction',

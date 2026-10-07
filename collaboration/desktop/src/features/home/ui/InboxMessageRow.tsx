@@ -1,4 +1,8 @@
 import * as React from "react";
+import { MessageReactions, useReactionHandler, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { useCustomEmojiPalette } from "@/features/messages/lib/useCustomEmojiPalette";
+import { useActiveCommunity } from "@/features/platform/activeCommunity";
+import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 
 import type { InboxContextMessage } from "@/features/home/lib/inbox";
 import { toTimelineMessage } from "@/features/home/lib/inboxViewHelpers";
@@ -21,6 +25,8 @@ export type InboxDisplayMessage = InboxContextMessage & {
 
 type InboxMessageRowProps = {
   canReply: boolean;
+  currentPubkey?: string;
+  onToggleReaction?: (message: TimelineMessage, emoji: string, remove: boolean) => Promise<void>;
   /** Channel UUID for "Copy link" — passed straight through to MessageActionBar. */
   channelId?: string | null;
   isContinuation?: boolean;
@@ -37,6 +43,8 @@ type InboxMessageRowProps = {
 
 export function InboxMessageRow({
   canReply,
+  currentPubkey,
+  onToggleReaction,
   channelId = null,
   isContinuation = false,
   isFirst = false,
@@ -56,6 +64,13 @@ export function InboxMessageRow({
     () => (message.tags ? parseImetaTags(message.tags) : undefined),
     [message.tags],
   );
+  const customEmoji = useCustomEmojiPalette();
+  const community = useActiveCommunity();
+  const reactionScope = currentPubkey ? JSON.stringify([community.id, currentPubkey]) : null;
+  const [badgeBurstEmoji, setBadgeBurstEmoji] = React.useState<string | null>(null);
+  const { reactions, canToggle: canToggleReactions, pending: reactionPending,
+    errorMessage: reactionErrorMessage, select: handleReactionSelect } =
+    useReactionHandler(timelineMessage, onToggleReaction, customEmoji);
   const hoverTimestampLabel = formatTimeWithoutDayPeriod(
     message.timeLabel ?? message.fullTimestampLabel,
   );
@@ -102,7 +117,7 @@ export function InboxMessageRow({
             : "home-inbox-context-message"
         }
       >
-        {canReply ? (
+        {canReply || canToggleReactions ? (
           <div
             className={cn(
               "absolute right-2 top-1 z-10",
@@ -112,7 +127,14 @@ export function InboxMessageRow({
             <MessageActionBar
               channelId={channelId}
               message={timelineMessage}
-              onReply={() => onSelectReplyTarget(message)}
+              onReply={canReply ? () => onSelectReplyTarget(message) : undefined}
+              onReactionSelect={canToggleReactions && !reactionPending ? handleReactionSelect : undefined}
+              onReactionBadgeBurstRequest={reactionPending ? undefined : setBadgeBurstEmoji}
+              reactionErrorMessage={reactionErrorMessage}
+              reactions={reactions}
+              customEmoji={customEmoji}
+              reactionScope={reactionScope}
+              resolveMediaUrl={rewriteRelayUrl}
               profiles={profiles}
             />
           </div>
@@ -189,6 +211,19 @@ export function InboxMessageRow({
               videoReviewCommentRootId={videoReviewCommentRootId}
               videoReviewContext={videoReviewContext}
             />
+            <MessageReactions
+              canToggle={canToggleReactions}
+              messageId={message.id}
+              onSelect={(emoji) => { void handleReactionSelect(emoji).catch(() => undefined); }}
+              burstEmojiOnRender={badgeBurstEmoji}
+              onBurstEmojiRendered={(emoji) => setBadgeBurstEmoji(current => current === emoji ? null : current)}
+              pending={reactionPending}
+              reactions={reactions}
+              customEmoji={customEmoji}
+              reactionScope={reactionScope}
+              resolveMediaUrl={rewriteRelayUrl}
+            />
+            {reactionErrorMessage ? <p className="mt-1.5 text-xs text-muted-foreground" role="status">{reactionErrorMessage}</p> : null}
           </div>
         </div>
       </article>

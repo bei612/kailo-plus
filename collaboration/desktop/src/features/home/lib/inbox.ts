@@ -16,6 +16,7 @@ import type {
 import { formatItemTimestamp } from "@/shared/lib/datetime";
 import { resolveMentionProps } from "@/shared/lib/resolveMentionNames";
 import { aggregateInbox, inboxConversation } from "@client-kit/platform/inbox";
+import type { TimelineMessage } from "@/features/messages/types";
 
 export type InboxFilter = "all" | "mention" | "thread" | "drafts";
 
@@ -63,6 +64,8 @@ export type InboxReply = {
   tags?: string[][];
   /** Clock time only, for the hover gutter on continuation rows. */
   timeLabel?: string;
+  reactions?: TimelineMessage["reactions"];
+  pending?: TimelineMessage["pending"];
 };
 
 export type InboxContextMessage = InboxReply & {

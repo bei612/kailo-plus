@@ -15,6 +15,7 @@ import { Button } from "@/shared/ui/button";
 import { Composer } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { MessageAuthorIdentity, type MessageAuthor } from "./MessageAuthorProfile";
+import { useMessageReactions } from "./useMessageReactions";
 
 export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEventId, channelName, members, onBack, onOpen, autoSendDraftKey, replyTargetEventId, onOpenAuthor, onAuthorScopeUnavailable }: {
   principalId: string; workspaceId: string; rootId: string; selectedEventId: string; channelName: string;
@@ -32,7 +33,9 @@ export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEven
   const [unresolved, setUnresolved] = useState(false);
   const publication = useRef<{ key: string; parent: string; unknown: boolean } | null>(null);
   const composerContainer = useRef<HTMLDivElement>(null);
-  const { thread, messages, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, rootId);
+  const { thread, messages, reactionEvents, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, rootId);
+  const messageReactions = useMessageReactions({principalId,workspaceId,events:reactionEvents ?? messages,
+    available:!denied && !interrupted && thread.isSuccess && !thread.isError,refresh});
   const scroller = useRef<HTMLDivElement>(null);
   const reached = useRef(false);
   const anchoredMessage = messages.find((message) => message.id === anchor);
@@ -78,13 +81,15 @@ export function InboxThreadPane({ principalId, workspaceId, rootId, selectedEven
           const edge = inboxThread(event.tags);
           const message: TimelineMessage = { id:event.id, author, pubkey:event.pubkey, createdAt:event.createdAt,
             body:event.content, time:relativeTime(locale,new Date(event.createdAt*1000).toISOString()),
-            depth:0, tags:event.tags, rootId:edge.rootId, parentId:edge.parentId };
+            depth:0, tags:event.tags, rootId:edge.rootId, parentId:edge.parentId,kind:event.kind,reactions:messageReactions.reactions.get(event.id) };
           return <div key={event.id} data-message-id={event.id}><MessageRowSurface highlighted={event.id === anchor}
+            onToggleReaction={messageReactions.onToggleReaction} customEmoji={messageReactions.customEmoji}
+            reactionScope={messageReactions.reactionScope} resolveMediaUrl={messageReactions.resolveMediaUrl}
             renderIdentity={onOpenAuthor && !interrupted ? (node) => <MessageAuthorIdentity
               target={{principalId,workspaceId,eventId:event.id,pubkey:event.pubkey}}
               onOpen={() => onOpenAuthor({principalId,workspaceId,eventId:event.id,pubkey:event.pubkey})}>{node}</MessageAuthorIdentity> : undefined}
             message={message}
-            renderActions={!interrupted ? (ref) => <MessageActionBarSurface ref={ref} message={message} onCopyMessage={copyMessage}
+            renderActions={!interrupted ? (ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={message} onCopyMessage={copyMessage}
               onReply={canReply && !sending && !unresolved ? (target) => selectReply(target.id) : undefined} /> : undefined}
             renderBody={(className) => <div className={className}><MessageContent workspaceId={workspaceId} content={event.content} mediaTags={event.tags} /></div>} /></div>;
         })}

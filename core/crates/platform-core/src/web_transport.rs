@@ -48,6 +48,7 @@ pub const CONVERSATION_REOPEN_ACTION: &str = "conversation.reopen";
 enum Publication {
     Message(PublishRequest),
     Pulse(contracts::PulsePublishRequest),
+    Reaction(contracts::PulsePublishRequest),
     Hide,
     Reopen,
 }
@@ -114,6 +115,164 @@ impl MessageTarget {
 }
 
 type PublishRequest = contracts::WebPublishMessageRequest;
+
+// Reuse the existing typed semantic publication contract, not Pulse's
+// Community admission. A channel reaction must prove its actual message scope.
+#[allow(clippy::result_large_err)]
+fn reaction_kind(request: &contracts::PulsePublishRequest) -> Result<u16, Response> {
+    if request
+        .target_event_id
+        .as_deref()
+        .is_none_or(|id| nostr::EventId::from_hex(id).map_or(true, |parsed| parsed.to_hex() != id))
+        || request
+            .attachments
+            .as_ref()
+            .is_some_and(|items| !items.is_empty())
+        || request
+            .mentions
+            .as_ref()
+            .is_some_and(|items| !items.is_empty())
+    {
+        return Err(StatusCode::BAD_REQUEST.into_response());
+    }
+    match serde_json::to_value(&request.operation)
+        .ok()
+        .as_ref()
+        .and_then(|value| value.as_str())
+    {
+        Some("LIKE")
+            if collab_bridge::bridge::valid_reaction(&request.content)
+                && request.content.trim() == request.content =>
+        {
+            Ok(KIND_REACTION as u16)
+        }
+        Some("UNLIKE") if request.content.is_empty() => Ok(KIND_DELETION as u16),
+        _ => Err(StatusCode::BAD_REQUEST.into_response()),
+    }
+}
+
+pub(crate) async fn react_to_message(
+    State(state): State<BffState>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(request): Json<contracts::PulsePublishRequest>,
+) -> Response {
+    publish(
+        state,
+        MessageTarget::Workspace(id),
+        headers,
+        Publication::Reaction(request),
+    )
+    .await
+}
+
+pub(crate) async fn react_to_conversation_message(
+    State(state): State<BffState>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(request): Json<contracts::PulsePublishRequest>,
+) -> Response {
+    publish(
+        state,
+        MessageTarget::Conversation(id),
+        headers,
+        Publication::Reaction(request),
+    )
+    .await
+}
+
+async fn reaction_tags(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    client: &IdentityClient,
+    channel: &str,
+    host: &str,
+    request: &contracts::PulsePublishRequest,
+) -> Result<Vec<Vec<String>>, Response> {
+    let kind = reaction_kind(request)?;
+    let id = request
+        .target_event_id
+        .as_deref()
+        .ok_or_else(|| StatusCode::BAD_REQUEST.into_response())?;
+    if kind == KIND_DELETION as u16 {
+        let page = client
+            .query(
+                &state.http,
+                &[serde_json::json!({
+                    "ids":[id],"kinds":[KIND_REACTION],"authors":[client.pubkey_hex()],"limit":1
+                })],
+            )
+            .await
+            .map_err(|error| relay_error_response(&error, None))?;
+        let events: Vec<nostr::Event> =
+            serde_json::from_value(page).map_err(|_| invalid_message_evidence())?;
+        let message = own_reaction_source(&events, id, &client.pubkey_hex(), channel)
+            .ok_or_else(|| StatusCode::FORBIDDEN.into_response())?;
+        read_reaction_message(state, ctx, client, channel, host, message).await?;
+    } else {
+        read_reaction_message(state, ctx, client, channel, host, id).await?;
+    }
+    Ok(vec![vec!["e".into(), id.into()]])
+}
+
+async fn read_reaction_message(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    client: &IdentityClient,
+    channel: &str,
+    host: &str,
+    id: &str,
+) -> Result<(), Response> {
+    let page = client
+        .query(
+            &state.http,
+            &[serde_json::json!({"ids":[id],"#h":[channel],"limit":1})],
+        )
+        .await
+        .map_err(|error| relay_error_response(&error, None))?;
+    let rows: Vec<nostr::Event> =
+        serde_json::from_value(page).map_err(|_| invalid_message_evidence())?;
+    let [event] = rows.as_slice() else {
+        return Err(StatusCode::NOT_FOUND.into_response());
+    };
+    if event.id.to_hex() != id
+        || event.verify().is_err()
+        || single_event_tag(event, "h") != Some(channel)
+    {
+        return Err(invalid_message_evidence());
+    }
+    if u32::from(event.kind.as_u16()) == KIND_SYSTEM_MESSAGE {
+        let author = window_author(state, ctx, host).await?;
+        if event.pubkey.to_hex() != author.1 {
+            return Err(invalid_message_evidence());
+        }
+    } else {
+        channel_message_event(serde_json::json!(event), channel)?;
+    }
+    Ok(())
+}
+
+fn own_reaction_source<'a>(
+    events: &'a [nostr::Event],
+    id: &str,
+    author: &str,
+    channel: &str,
+) -> Option<&'a str> {
+    let [event] = events else { return None };
+    if event.id.to_hex() != id
+        || event.pubkey.to_hex() != author
+        || event.kind.as_u16() != KIND_REACTION as u16
+        || event.verify().is_err()
+        || event
+            .tags
+            .iter()
+            .any(|tag| tag.as_slice().first().is_some_and(|name| name == "h"))
+            && single_event_tag(event, "h") != Some(channel)
+    {
+        return None;
+    }
+    single_event_tag(event, "e")
+}
 
 fn valid_deletion_request(request: &PublishRequest) -> bool {
     request.delete_event_id.as_deref().is_none_or(|id| {
@@ -1102,7 +1261,9 @@ async fn publish(
         Err(r) => return r,
     };
     let action_key = match &publication {
-        Publication::Message(_) | Publication::Pulse(_) => target.action(),
+        Publication::Message(_) | Publication::Pulse(_) | Publication::Reaction(_) => {
+            target.action()
+        }
         Publication::Hide => CONVERSATION_HIDE_ACTION,
         Publication::Reopen => CONVERSATION_REOPEN_ACTION,
     };
@@ -1115,7 +1276,7 @@ async fn publish(
             req.edit_event_id.clone(),
             req.delete_event_id.clone(),
         ),
-        Publication::Pulse(req) => (
+        Publication::Pulse(req) | Publication::Reaction(req) => (
             contracts::WebMessageType::Stream,
             req.target_event_id.clone(),
             None,
@@ -1137,7 +1298,12 @@ async fn publish(
     {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let requested_kind = if let Publication::Pulse(req) = &publication {
+    let requested_kind = if let Publication::Reaction(req) = &publication {
+        match reaction_kind(req) {
+            Ok(kind) => i32::from(kind),
+            Err(response) => return response,
+        }
+    } else if let Publication::Pulse(req) = &publication {
         match crate::pulse::publication_kind(req) {
             Ok(kind) => i32::from(kind),
             Err(e) => return e,
@@ -1178,7 +1344,10 @@ async fn publish(
 
     let mention_ids = match mention_targets(match &publication {
         Publication::Message(req) => req.mention_installation_ids.as_deref(),
-        Publication::Hide | Publication::Reopen | Publication::Pulse(_) => None,
+        Publication::Hide
+        | Publication::Reopen
+        | Publication::Pulse(_)
+        | Publication::Reaction(_) => None,
     }) {
         Some(ids) => ids,
         None => return StatusCode::BAD_REQUEST.into_response(),
@@ -1300,7 +1469,9 @@ async fn publish(
     let mut media_tags = Vec::new();
     let message = match &publication {
         Publication::Message(req) => Some((&req.content, req.attachments.as_deref())),
-        Publication::Pulse(req) => Some((&req.content, req.attachments.as_deref())),
+        Publication::Pulse(req) | Publication::Reaction(req) => {
+            Some((&req.content, req.attachments.as_deref()))
+        }
         Publication::Hide | Publication::Reopen => None,
     };
     if let Some((text, attachments)) = message {
@@ -1366,7 +1537,12 @@ async fn publish(
         None => None,
     };
 
-    let pulse_tags = if let Publication::Pulse(req) = &publication {
+    let pulse_tags = if let Publication::Reaction(req) = &publication {
+        match reaction_tags(&state, &ctx, &client, &channel_id, &community_host, req).await {
+            Ok(tags) => Some(tags),
+            Err(response) => return response,
+        }
+    } else if let Publication::Pulse(req) = &publication {
         match crate::pulse::publication_tags(&state, &client, req, &media_tags).await {
             Ok(tags) => Some(tags),
             Err(e) => return e,
@@ -1443,6 +1619,12 @@ async fn publish(
             ancestry
                 .as_ref()
                 .map(|(root, parent)| (root.as_str(), parent.as_str())),
+        ),
+        Publication::Reaction(_) => client.sign_message_reaction(
+            parent_event_id.as_deref().unwrap_or_default(),
+            &content,
+            requested_kind == KIND_DELETION as i32,
+            &media_tags,
         ),
         Publication::Pulse(_) => client.sign(
             requested_kind as u16,
@@ -2775,6 +2957,82 @@ fn relay_media_path(media_ref: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reaction_semantics_reuse_typed_contract_without_allowing_notes_or_body_fields() {
+        let parse =
+            |value| serde_json::from_value::<contracts::PulsePublishRequest>(value).unwrap();
+        let id = "a".repeat(64);
+        assert_eq!(
+            super::reaction_kind(&parse(
+                serde_json::json!({"operation":"LIKE","content":"👍","targetEventId":id})
+            ))
+            .unwrap(),
+            7
+        );
+        assert_eq!(
+            super::reaction_kind(&parse(
+                serde_json::json!({"operation":"UNLIKE","content":"","targetEventId":id})
+            ))
+            .unwrap(),
+            5
+        );
+        for value in [
+            serde_json::json!({"operation":"NOTE","content":"text","targetEventId":id}),
+            serde_json::json!({"operation":"LIKE","content":"","targetEventId":id}),
+            serde_json::json!({"operation":"LIKE","content":" 👍","targetEventId":id}),
+            serde_json::json!({"operation":"UNLIKE","content":"👍","targetEventId":id}),
+            serde_json::json!({"operation":"LIKE","content":"👍"}),
+            serde_json::json!({"operation":"LIKE","content":"👍","targetEventId":id,"mentions":[id]}),
+        ] {
+            assert!(super::reaction_kind(&parse(value)).is_err());
+        }
+    }
+
+    #[test]
+    fn reaction_removal_requires_exact_own_signed_reference_before_scope_read() {
+        let keys = nostr::Keys::generate();
+        let source = nostr::EventId::from_hex(&"a".repeat(64)).unwrap();
+        let event = nostr::EventBuilder::new(nostr::Kind::Reaction, "👍")
+            .tags([nostr::Tag::event(source)])
+            .sign_with_keys(&keys)
+            .unwrap();
+        let rows = vec![event.clone()];
+        let id = event.id.to_hex();
+        let author = keys.public_key().to_hex();
+        assert_eq!(
+            super::own_reaction_source(&rows, &id, &author, "channel"),
+            Some(source.to_hex().as_str())
+        );
+        assert!(super::own_reaction_source(
+            &rows,
+            &id,
+            &nostr::Keys::generate().public_key().to_hex(),
+            "channel"
+        )
+        .is_none());
+        assert!(super::own_reaction_source(&rows, &"b".repeat(64), &author, "channel").is_none());
+        let scoped = nostr::EventBuilder::new(nostr::Kind::Reaction, "👍")
+            .tags([
+                nostr::Tag::event(source),
+                nostr::Tag::parse(["h", "foreign"]).unwrap(),
+            ])
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert!(super::own_reaction_source(
+            &[scoped.clone()],
+            &scoped.id.to_hex(),
+            &author,
+            "channel"
+        )
+        .is_none());
+        let mut forged = event.clone();
+        forged.content = "changed".into();
+        assert!(super::own_reaction_source(&[forged], &id, &author, "channel").is_none());
+        assert!(
+            super::own_reaction_source(&[event.clone(), event], &id, &author, "channel").is_none()
+        );
+    }
+
     use super::*;
 
     #[tokio::test]

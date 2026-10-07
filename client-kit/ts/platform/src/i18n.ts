@@ -133,6 +133,8 @@ export const platformMessages = {
   "messages.system.topicChanged": {en:"changed the topic to “{value}”","zh-CN":"将话题改为“{value}”"},
   "messages.system.purposeChanged": {en:"changed the purpose to “{value}”","zh-CN":"将宗旨改为“{value}”"},
   "messages.reactions.add": {en:"Add reaction","zh-CN":"添加回应"},
+  "messages.reactions.open": {en:"Open reactions","zh-CN":"打开回应表情"},
+  "messages.reactions.with": {en:"React with {emoji}","zh-CN":"使用 {emoji} 回应"},
   "messages.reactions.react": {en:"React","zh-CN":"回应"},
   "messages.reactions.toggle": {en:"Toggle {emoji} reaction","zh-CN":"切换 {emoji} 回应"},
   "messages.reactions.people": {en:"{count} people","zh-CN":"{count}人"},

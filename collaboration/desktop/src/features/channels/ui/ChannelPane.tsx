@@ -2,6 +2,7 @@ import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useActiveCommunity } from "@/features/platform/activeCommunity";
 import { editMessage } from "@/shared/api/tauriMessages";
+import { useToggleReactionMutation } from "@/features/messages/hooks";
 import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
 import type { TimelineMessage } from "@/features/messages/types";
 import { AnimatePresence } from "motion/react";
@@ -100,6 +101,9 @@ export const ChannelPane = React.memo(function ChannelPane({
 }: ChannelPaneProps) {
   const timelineScrollRef = React.useRef<HTMLDivElement>(null);
   const community = useActiveCommunity();
+  const toggleReaction = useToggleReactionMutation(activeChannel, currentPubkey);
+  const handleToggleReaction = React.useCallback((message: TimelineMessage, emoji: string, remove: boolean) =>
+    toggleReaction.mutateAsync({eventId: message.id, emoji, remove}), [toggleReaction.mutateAsync]);
   const queryClient = useQueryClient();
   const [editTarget, setEditTarget] = React.useState<TimelineMessage | null>(null);
   const [editing, setEditing] = React.useState(false);
@@ -356,6 +360,7 @@ export const ChannelPane = React.memo(function ChannelPane({
               onMarkRead={onMarkRead}
               onReply={timelineReplyHandler}
               onEdit={isComposerDisabled || editing ? undefined : setEditTarget}
+              onToggleReaction={isComposerDisabled ? undefined : handleToggleReaction}
               onOpenThread={onOpenThread}
               channelName={activeChannel.name}
               isSendingVideoReviewComment={isSending}
@@ -444,6 +449,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                 onFollowThread={onFollowThread}
                 onMarkUnread={onMarkUnread}
                 onMarkRead={onMarkRead}
+                onToggleReaction={isComposerDisabled ? undefined : handleToggleReaction}
                 onExpandReplies={onExpandThreadReplies}
                 onSelectReplyTarget={onSelectThreadReplyTarget}
                 onSend={onSendThreadReply}

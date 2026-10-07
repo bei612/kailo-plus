@@ -69,3 +69,13 @@ function validateInboxEvent(event: BuzzEvent, workspace: string, targetScoped = 
     throw new Error("Unverifiable message scope");
   }
 }
+
+/** Thread auxiliary events use the same admitted target closure as windows. */
+export function inboxReactionEvents(raw: unknown[], workspace: string): BuzzEvent[] {
+  return raw.flatMap(value => {
+    if (!value || typeof value !== "object" || !("kind" in value) || ![7,5,9005].includes(Number(value.kind))) return [];
+    const event = value as BuzzEvent;
+    validateInboxEvent(event,workspace,[7,5].includes(event.kind) && Array.isArray(event.tags) && !event.tags.some(tag=>tag[0]==="h"));
+    return [event];
+  });
+}

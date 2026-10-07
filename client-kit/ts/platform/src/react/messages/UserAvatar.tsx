@@ -34,7 +34,7 @@ function fallbackColorClass(displayName: string) {
 }
 
 export type UserAvatarProps = {
-  resolveMediaUrl?: (url: string) => string;
+  resolveMediaUrl?: (url: string) => string | undefined;
   avatarUrl: string | null;
   displayName: string;
   /**

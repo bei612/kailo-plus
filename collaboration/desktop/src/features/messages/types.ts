@@ -1,1 +1,1 @@
-export { type TimelineMessage } from "@client-kit/platform/react/messages/types";
+export { type TimelineMessage, type TimelineReaction } from "@client-kit/platform/react/messages/types";

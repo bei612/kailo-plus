@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import {
   type QueryClient,
   useMutation,
@@ -41,6 +41,10 @@ import { buildSentFromThreadTag } from "@/features/messages/lib/sentFromThread";
 import { relayClient, setVisibleChannel } from "@/shared/api/relayClient";
 import { channelsQueryKey } from "@/features/channels/hooks";
 import { sendChannelMessage } from "@/shared/api/tauri";
+import { addReaction, removeReaction } from "@/shared/api/tauriMessages";
+import { useActiveCommunity } from "@/features/platform/activeCommunity";
+import { classifyRelayPublishFailure } from "@/shared/api/relayPublishOutcome";
+import { TransportError } from "@client-kit/platform/transport";
 import { getChannelWindowEvents } from "@/shared/api/channelWindow";
 import type { Channel, Identity, RelayEvent } from "@/shared/api/types";
 import {
@@ -453,6 +457,45 @@ export function useChannelSubscription(channel: Channel | null) {
       }
     };
   }, [channelId, channelType]);
+}
+
+export function useToggleReactionMutation(channel: Channel | null, currentPubkey?: string) {
+  const queryClient = useQueryClient();
+  const community = useActiveCommunity();
+  const scope = JSON.stringify([community.relayUrl, currentPubkey, channel?.id, channel?.isMember, channel?.archivedAt]);
+  const active = useRef({ scope, generation: 0, mounted: true });
+  if (active.current.scope !== scope) active.current = { scope, generation: active.current.generation + 1, mounted: true };
+  useEffect(() => {
+    active.current.mounted = true;
+    return () => { active.current.mounted = false; active.current.generation += 1; };
+  }, []);
+  return useMutation<void, Error, {eventId: string; emoji: string; remove: boolean}>({
+    retry: false,
+    mutationFn: async ({eventId, emoji, remove}) => {
+      if (!active.current.mounted || active.current.scope !== scope || !channel?.isMember || channel.archivedAt !== null || !currentPubkey) {
+        throw new Error("Reaction scope is not available.");
+      }
+      const relayUrl = community.relayUrl;
+      const signer = currentPubkey;
+      const channelId = channel.id;
+      const generation = active.current.generation;
+      try {
+        const receipt = await (remove ? removeReaction : addReaction)(channelId,eventId,emoji,relayUrl,signer);
+        if (!active.current.mounted || active.current.generation !== generation || !receipt.id || receipt.pubkey !== signer || receipt.kind !== (remove ? 5 : 7)) {
+          throw new TransportError("relay publish outcome unknown");
+        }
+        // Original signed Relay state remains the sole message authority.
+        void queryClient.invalidateQueries({queryKey: channelMessagesKey(channelId)});
+        void queryClient.invalidateQueries({queryKey: ["thread-replies", channelId]});
+        void queryClient.invalidateQueries({queryKey: ["inbox-reactions", channelId]});
+      } catch (error) {
+        if (classifyRelayPublishFailure(error)?.kind === "outcomeUnknown") {
+          throw new TransportError("relay publish outcome unknown");
+        }
+        throw error;
+      }
+    },
+  });
 }
 
 export function useSendMessageMutation(

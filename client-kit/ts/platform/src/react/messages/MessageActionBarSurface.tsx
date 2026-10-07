@@ -9,11 +9,18 @@ import {
   MailCheck,
   MailOpen,
   Pencil,
+  SmilePlus,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
-import type { TimelineMessage } from "./types";
+import type { TimelineMessage, TimelineReaction } from "./types";
+import { EmojiPicker } from "../custom-emoji/EmojiPicker";
+import { reactionEmojiUrl, type CustomEmoji } from "../custom-emoji/emoji";
+import { recordQuickReactionEmoji, useQuickReactionEmojis } from "./reactions/useQuickReactionEmojis";
+import { emojiDisplayName } from "./reactions/emojiName";
+import { isPositiveEmojiParticle } from "../profile/buzz/shared/ui/EmojiBurstProvider";
+import { Popover, PopoverContent, PopoverTrigger } from "../conversations/popover";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { HashArrowIn } from "./icons";
@@ -27,6 +34,23 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../sidebar/tooltip";
 
 const ACTION_BUTTON_CLASS = "h-8 w-8 rounded-full p-0";
 const ACTION_ICON_CLASS = "!h-4 !w-4";
+
+function QuickReactionButton({customEmojiUrl, emoji, onSelect, resolveMediaUrl}: {
+  customEmojiUrl?: string; emoji: string; onSelect: (emoji: string) => void;
+  resolveMediaUrl?: (url: string) => string | undefined;
+}) {
+  const t = useUiT();
+  const displayName = emojiDisplayName(emoji);
+  const mediaUrl = customEmojiUrl ? resolveMediaUrl?.(customEmojiUrl) : null;
+  return <Tooltip><TooltipTrigger asChild>
+    <button aria-label={t("messages.reactions.with", {emoji: displayName})}
+      className="flex h-8 w-8 items-center justify-center rounded-full text-base leading-none text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+      onClick={() => onSelect(emoji)} title={displayName} type="button">
+      {mediaUrl ? <img alt={emoji} className="h-5 w-5 object-contain" draggable={false} src={mediaUrl} />
+        : <span aria-hidden="true" className="translate-y-px">{emoji}</span>}
+    </button>
+  </TooltipTrigger><TooltipContent>{displayName}</TooltipContent></Tooltip>;
+}
 
 function MoreActionsMenu({
   onCopyLink,
@@ -203,6 +227,8 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
   isUnread,
   onCopyMessage,
   onEdit,
+  onReactionSelect, onReactionBadgeBurstRequest, reactionErrorMessage = null,
+  reactions = [], customEmoji = [], reactionScope = null, resolveMediaUrl,
 }: {
   /** Channel UUID — required for the Copy link action; when omitted the
    *  action is hidden (callers like the home inbox that lack the context). */
@@ -224,10 +250,31 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
   /** Resolves the mention identities carried by Copy message. */
   onCopyMessage: (message: TimelineMessage) => void;
   onEdit?: (message: TimelineMessage) => void;
+  onReactionSelect?: (emoji: string) => Promise<void>;
+  onReactionBadgeBurstRequest?: (emoji: string) => void;
+  reactionErrorMessage?: string | null;
+  reactions?: TimelineReaction[];
+  customEmoji?: CustomEmoji[];
+  reactionScope?: string | null;
+  resolveMediaUrl?: (url: string) => string | undefined;
 }) {
+  const [isReactionPickerOpen, setIsReactionPickerOpen] = React.useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
   const translateUi = useUiT();
   const hasReplyAction = Boolean(onReply);
+  const hasReactionAction = Boolean(onReactionSelect);
+  const quickReactionEmojis = useQuickReactionEmojis(3, customEmoji, reactionScope);
+  const quickReactionItems = React.useMemo(() => quickReactionEmojis
+    .map(emoji => ({emoji, customEmojiUrl: reactionEmojiUrl(emoji, customEmoji)}))
+    .filter(item => !(item.emoji.startsWith(":") && item.emoji.endsWith(":")) || item.customEmojiUrl), [customEmoji, quickReactionEmojis]);
+  const handleReactionSelection = React.useCallback((emoji: string, closePicker = false) => {
+    if (!onReactionSelect) return;
+    if (!reactions.some(reaction => reaction.emoji === emoji && reaction.reactedByCurrentUser) && isPositiveEmojiParticle(emoji)) {
+      onReactionBadgeBurstRequest?.(emoji);
+    }
+    void onReactionSelect(emoji).then(() => recordQuickReactionEmoji(emoji, reactionScope))
+      .catch(() => {}).finally(() => { if (closePicker) setIsReactionPickerOpen(false); });
+  }, [onReactionSelect, reactions, onReactionBadgeBurstRequest, reactionScope]);
 
   const hasMoreMenuActions =
     Boolean(onEdit) ||
@@ -238,7 +285,7 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
     Boolean(onSendToChannel) ||
     !message.pending;
 
-  if (!hasReplyAction && !hasMoreMenuActions) {
+  if (!hasReplyAction && !hasReactionAction && !hasMoreMenuActions) {
     return null;
   }
 
@@ -249,13 +296,30 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
         "opacity-100 sm:pointer-events-none sm:opacity-0",
         "sm:group-hover/message:pointer-events-auto sm:group-hover/message:opacity-100",
         "sm:group-focus-within/message:pointer-events-auto sm:group-focus-within/message:opacity-100",
-        isDropdownOpen ? "sm:pointer-events-auto sm:opacity-100" : "",
+        isReactionPickerOpen || isDropdownOpen ? "sm:pointer-events-auto sm:opacity-100" : "",
       )}
       data-testid={`message-action-bar-${message.id}`}
       ref={ref}
     >
       <div className="overflow-hidden rounded-full border border-border/70 bg-background/95 shadow-xs backdrop-blur-sm supports-[backdrop-filter]:bg-background/85">
         <div className="flex items-center gap-0.5 p-1">
+          {hasReactionAction && quickReactionItems.length > 0 ? <div className="hidden items-center gap-0.5 sm:flex">
+            {quickReactionItems.map(({customEmojiUrl, emoji}) => <QuickReactionButton key={emoji}
+              customEmojiUrl={customEmojiUrl} emoji={emoji} onSelect={handleReactionSelection} resolveMediaUrl={resolveMediaUrl} />)}
+          </div> : null}
+          {hasReactionAction ? <Popover onOpenChange={setIsReactionPickerOpen} open={isReactionPickerOpen}>
+            <Tooltip><TooltipTrigger asChild><PopoverTrigger asChild>
+              <Button aria-label={translateUi("messages.reactions.open")} className={ACTION_BUTTON_CLASS}
+                data-testid={`react-message-${message.id}`} size="sm" type="button" variant={isReactionPickerOpen ? "secondary" : "ghost"}>
+                <SmilePlus className={ACTION_ICON_CLASS} />
+              </Button>
+            </PopoverTrigger></TooltipTrigger><TooltipContent>{translateUi("messages.reactions.react")}</TooltipContent></Tooltip>
+            <PopoverContent align="end" className="w-auto p-0 rounded-2xl overflow-hidden border-0 bg-transparent shadow-none" side="top" sideOffset={10}>
+              {reactionErrorMessage ? <div className="px-3 pt-3 pb-0"><p className="text-xs text-muted-foreground">{reactionErrorMessage}</p></div> : null}
+              <EmojiPicker autoFocus customEmoji={customEmoji} onSelect={value => handleReactionSelection(value, true)} />
+            </PopoverContent>
+          </Popover> : null}
+          {hasReactionAction && quickReactionItems.length > 0 ? <div aria-hidden="true" className="mx-0.5 hidden h-4 w-px bg-border/70 sm:block" data-testid="message-action-divider" /> : null}
           {hasReplyAction ? (
             <Tooltip>
               <TooltipTrigger asChild>

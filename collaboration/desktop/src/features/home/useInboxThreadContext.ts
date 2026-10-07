@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { isInboxThreadContextEvent } from "@/features/home/lib/inboxViewHelpers";
 import { relayEventFromFeedItem } from "@/features/home/lib/inbox";
@@ -7,6 +8,7 @@ import { relayClient } from "@/shared/api/relayClient";
 import { getEventById } from "@/shared/api/tauri";
 import type { FeedItem, RelayEvent } from "@/shared/api/types";
 import { HOME_MENTION_EVENT_KINDS } from "@/shared/constants/kinds";
+import { AUX_BACKFILL_CHUNK_SIZE, buildChannelReactionAuxFilter, buildChannelAuxDeletionFilter } from "@/shared/api/relayChannelFilters";
 
 type InboxThreadContextResult = {
   events: RelayEvent[];
@@ -222,9 +224,33 @@ export function useInboxThreadContext(
     selectedThreadRootId,
   ]);
 
+  // Original Inbox reactions are hydrated by visible context ids, not the
+  // channel head. Kailo keeps the admitted #h on both hops; Relay derives the
+  // reaction/deletion channel_id from its signed target.
+  const contextEventIdsKey = React.useMemo(() => events.map(event => event.id).sort().join(","), [events]);
+  const reactions = useQuery({
+    queryKey: ["inbox-reactions", selectedChannelId, contextEventIdsKey],
+    enabled: Boolean(selectedChannelId && contextEventIdsKey),
+    queryFn: async ({ signal }) => {
+      if (!selectedChannelId || !contextEventIdsKey) return [];
+      const fetchAux = async (ids: string[], filter: typeof buildChannelReactionAuxFilter) => {
+        const result: RelayEvent[] = [];
+        for (let offset = 0; offset < ids.length; offset += AUX_BACKFILL_CHUNK_SIZE) {
+          signal.throwIfAborted();
+          result.push(...await relayClient.fetchEvents(filter(selectedChannelId, ids.slice(offset, offset + AUX_BACKFILL_CHUNK_SIZE))));
+        }
+        signal.throwIfAborted();
+        return result;
+      };
+      const reactionEvents = await fetchAux(contextEventIdsKey.split(","), buildChannelReactionAuxFilter);
+      const deletions = await fetchAux(reactionEvents.map(event => event.id), buildChannelAuxDeletionFilter);
+      return [...reactionEvents, ...deletions];
+    },
+  });
+  const projectedEvents = React.useMemo(() => dedupeEvents([...events, ...(!reactions.isError ? reactions.data ?? [] : [])]), [events, reactions.data, reactions.isError]);
   return {
-    events,
-    hasLoadError,
-    isLoading,
+    events: projectedEvents,
+    hasLoadError: hasLoadError || reactions.isError,
+    isLoading: isLoading || reactions.isFetching,
   };
 }

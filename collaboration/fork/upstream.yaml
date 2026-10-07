@@ -323,12 +323,13 @@ remove_paths:
   - desktop/src/features/chat
   - desktop/src/features/communities
   - desktop/src/features/community-members
-  - desktop/src/features/custom-emoji/emojiMartCategory.ts
-  - desktop/src/features/custom-emoji/focusRefetchPolicy.test.mjs
-  - desktop/src/features/custom-emoji/hooks.ts
-  - desktop/src/features/custom-emoji/ui/EmojiPicker.tsx
-  - desktop/src/features/custom-emoji/ui/emojiMartPrewarm.test.mjs
-  - desktop/src/features/custom-emoji/ui/emojiMartPrewarm.ts
+  # Original emoji UI is consumed from client-kit; record the now-whole moved directory.
+  - desktop/src/features/custom-emoji
+  # Original avatars moved with the shared SystemMessageRow.
+  - desktop/src/features/messages/ui/SystemMessageAvatars.tsx
+  # Missing original profile subdivisions remain restoration work, not an approved scope cut.
+  - desktop/src/features/profile/ui/UserProfilePanelFields.tsx
+  - desktop/src/features/profile/ui/UserProfilePanelSections.tsx
   - desktop/src/features/forum/focusRefetchPolicy.test.mjs
   - desktop/src/features/forum/hooks.ts
   - desktop/src/features/forum/lib
@@ -641,7 +642,6 @@ remove_paths:
   - desktop/src/shared/api/readOnlyRelayClient.ts
   - desktop/src/shared/api/readOnlyRelayClientPublishRejection.test.mjs
   - desktop/src/shared/api/relayChannelFilters.test.mjs
-  - desktop/src/shared/api/relayChannelFilters.ts
   - desktop/src/shared/api/relayMembers.test.mjs
   - desktop/src/shared/api/relayMembers.ts
   - desktop/src/shared/api/social.ts

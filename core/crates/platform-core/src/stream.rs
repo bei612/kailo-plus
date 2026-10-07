@@ -88,6 +88,7 @@ impl StreamScope {
         kinds.extend([
             collab_bridge::bridge::KIND_STREAM_MESSAGE_EDIT as u16,
             collab_bridge::bridge::KIND_DELETION as u16,
+            collab_bridge::bridge::KIND_REACTION as u16,
             collab_bridge::bridge::KIND_NIP29_DELETE_EVENT as u16,
             collab_bridge::bridge::KIND_THREAD_SUMMARY as u16,
         ]);
@@ -365,6 +366,52 @@ struct Readmission {
 }
 
 impl Readmission {
+    // Native 7/5 events need not carry h: the Relay stores their derived
+    // channel. Re-read the exact accepted event through the same HUMAN and
+    // explicit channel filter, then re-admit before exposing the auxiliary.
+    async fn target_scoped_auxiliary(&self, value: &serde_json::Value) -> bool {
+        let Ok(event) = serde_json::from_value::<nostr::Event>(value.clone()) else {
+            return false;
+        };
+        if ![
+            collab_bridge::bridge::KIND_REACTION,
+            collab_bridge::bridge::KIND_DELETION,
+        ]
+        .contains(&u32::from(event.kind.as_u16()))
+            || event.verify().is_err()
+            || event
+                .tags
+                .iter()
+                .any(|tag| tag.as_slice().first().is_some_and(|name| name == "h"))
+        {
+            return false;
+        }
+        let Ok(keys) = actor_keys(&self.state, &self.ctx).await else {
+            return false;
+        };
+        if keys.public_key().to_hex() != self.signer {
+            return false;
+        }
+        let Ok(client) = community_client(&self.state, &keys, self.scope.community_host()) else {
+            return false;
+        };
+        let Ok(page) = client
+            .query(
+                &self.state.http,
+                &[serde_json::json!({
+                    "ids":[event.id.to_hex()], "#h":[self.scope.channel_id()], "limit":1
+                })],
+            )
+            .await
+        else {
+            return false;
+        };
+        let Ok(events) = serde_json::from_value::<Vec<nostr::Event>>(page) else {
+            return false;
+        };
+        exact_auxiliary_receipt(&events, &event) && matches!(self.check().await, Ok(None))
+    }
+
     /// `Ok(Some(reason))` 是该关流的原因；`Ok(None)` 是仍然准入。
     async fn check(&self) -> Result<Option<&'static str>, sqlx::Error> {
         // `session-revoked` 的含义是「此会话确定不可继续，客户端必须停止重连」：会话被撤销
@@ -409,6 +456,10 @@ impl Readmission {
         .await?;
         Ok((!signer_active).then_some("identity-revoked"))
     }
+}
+
+fn exact_auxiliary_receipt(events: &[nostr::Event], expected: &nostr::Event) -> bool {
+    matches!(events, [event] if event == expected && event.verify().is_ok())
 }
 
 /// 把 snapshot 与订阅帧拼成一条 SSE 流。
@@ -472,7 +523,8 @@ fn frames(
             };
             match frame {
                 Frame::Event(ev) => {
-                    if !valid_live_event(&ev, readmit.scope.channel_id(), &readmit.relay_author.1, &readmit.scope.message_kinds()) {
+                    if !valid_live_event(&ev, readmit.scope.channel_id(), &readmit.relay_author.1, &readmit.scope.message_kinds())
+                        && !readmit.target_scoped_auxiliary(&ev).await {
                         yield Ok(Event::default().event("closed").data("upstream-unavailable"));
                         break;
                     }
@@ -578,6 +630,35 @@ fn generation_of(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn native_reaction_requires_exact_scoped_readback_not_merely_valid_signature() {
+        let keys = nostr::Keys::generate();
+        let event = nostr::EventBuilder::new(nostr::Kind::Reaction, "👍")
+            .tags([nostr::Tag::event(
+                nostr::EventId::from_hex(&"a".repeat(64)).unwrap(),
+            )])
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert!(!super::valid_live_event(
+            &serde_json::json!(event),
+            "channel",
+            "relay",
+            &[7]
+        ));
+        assert!(super::exact_auxiliary_receipt(
+            std::slice::from_ref(&event),
+            &event
+        ));
+        assert!(!super::exact_auxiliary_receipt(&[], &event));
+        assert!(!super::exact_auxiliary_receipt(
+            &[event.clone(), event.clone()],
+            &event
+        ));
+        let mut forged = event.clone();
+        forged.content = "changed".into();
+        assert!(!super::exact_auxiliary_receipt(&[forged], &event));
+    }
+
     use super::*;
 
     #[test]
@@ -636,11 +717,11 @@ mod tests {
         });
         assert_eq!(
             workspace.message_kinds(),
-            vec![5, 9, 9005, 39005, 40002, 40003, 40099, 45001, 45003]
+            vec![5, 7, 9, 9005, 39005, 40002, 40003, 40099, 45001, 45003]
         );
         assert_eq!(
             conversation.message_kinds(),
-            vec![5, 9, 9005, 39005, 40002, 40003, 40099]
+            vec![5, 7, 9, 9005, 39005, 40002, 40003, 40099]
         );
         assert!(!workspace.same_admission(&conversation));
     }

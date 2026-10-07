@@ -43,6 +43,8 @@ const EMPTY_REPLIES: InboxReply[] = [];
 
 type InboxDetailPaneProps = {
   canReply: boolean;
+  currentPubkey?: string;
+  onToggleReaction?: (message: TimelineMessage, emoji: string, remove: boolean) => Promise<void>;
   disabledReplyReason?: string | null;
   isSendingReply?: boolean;
   isSinglePanelView?: boolean;
@@ -93,6 +95,8 @@ export function InboxDetailPane(props: InboxDetailPaneProps) {
 
 function InboxMessageDetailPane({
   canReply,
+  currentPubkey,
+  onToggleReaction,
   disabledReplyReason,
   isSendingReply = false,
   hasThreadContextLoadError = false,
@@ -423,6 +427,8 @@ function InboxMessageDetailPane({
               return (
                 <InboxMessageRow
                   canReply={canReply}
+                  currentPubkey={currentPubkey}
+                  onToggleReaction={onToggleReaction}
                   channelId={item.item.channelId}
                   isContinuation={isContinuation}
                   isFirst={index === 0}

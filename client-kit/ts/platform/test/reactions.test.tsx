@@ -7,6 +7,10 @@ import { TransportError } from "../src/transport";
 import type { TimelineMessage } from "../src/react/messages/types";
 import { MessageReactions } from "../src/react/messages/reactions/MessageReactions";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
+import { buildMessageReactions } from "../src/react/messages/reactions/buildMessageReactions";
+import { MessageRowSurface } from "../src/react/messages/MessageRowSurface";
+import { MessageActionBarSurface } from "../src/react/messages/MessageActionBarSurface";
+import type { RelayEvent } from "../src/react/forum/channelWindowResponse";
 
 import {
   applyOptimisticReaction,
@@ -33,6 +37,62 @@ function pill(emoji: string, count: number, reactedByCurrentUser = false) {
       : [{ pubkey: "bbb", displayName: "Alice", avatarUrl: null }],
   };
 }
+
+test("original formatter groups actors, ignores deleted events and preserves chronological pills", () => {
+  const target = "a".repeat(64), me = "b".repeat(64), other = "c".repeat(64);
+  const event = (id: string, pubkey: string, content: string, created_at: number): RelayEvent =>
+    ({id:id.repeat(64),pubkey,content,created_at,kind:7,tags:[["e",target]]});
+  const first = event("d",me,"🎉",10), duplicate = event("e",me,"🎉",20);
+  const latest = event("f",other,"👍",30), removed = event("1",other,"❤️",5);
+  const deletion: RelayEvent = {...event("2",other,"",40),kind:5,tags:[["e",removed.id]]};
+  const events = [latest,duplicate,deletion,removed,first];
+  const result = buildMessageReactions(events,me).get(target);
+  expect(result?.map(reaction => [reaction.emoji,reaction.count,reaction.reactedByCurrentUser])).toEqual([
+    ["🎉",1,true],["👍",1,false],
+  ]);
+  expect(buildMessageReactions([...events].reverse(),me).get(target)).toEqual(result);
+  expect(buildMessageReactions([...events,{...deletion,tags:[["e",target]]}],me).has(target)).toBe(false);
+});
+
+test("reaction actor tags cannot impersonate the current signer and custom URL matches its shortcode", () => {
+  const target = "a".repeat(64), me = "b".repeat(64), other = "c".repeat(64);
+  const event: RelayEvent = {id:"d".repeat(64),pubkey:other,created_at:1,kind:7,content:":shipit:",
+    tags:[["e","invalid"],["e",target],["actor",me],["emoji","wrong","https://invalid.test"],["emoji","shipit","https://relay.test/shipit.png"]]};
+  const reaction = buildMessageReactions([event],me).get(target)?.[0];
+  expect(reaction?.reactedByCurrentUser).toBe(false);
+  expect(reaction?.users[0]?.pubkey).toBe(other);
+  expect(reaction?.emojiUrl).toBe("https://relay.test/shipit.png");
+});
+
+test("actual shared message row exposes original quick reactions and routes toggles to its host", async () => {
+  const publish = vi.fn().mockResolvedValue(undefined);
+  const message: TimelineMessage = {id:"row",createdAt:1,author:"Alice",time:"",body:"hello",depth:0,reactions:[pill("👍",1)]};
+  const host = await render(<TooltipProvider><MessageRowSurface message={message}
+    onToggleReaction={publish} reactionScope="row-host" renderBody={() => <p>hello</p>}
+    renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} message={message} {...reactions} onCopyMessage={() => {}} />}
+  /></TooltipProvider>);
+  expect(host.querySelector('[data-testid="react-message-row"]')).not.toBeNull();
+  const quick = host.querySelector<HTMLButtonElement>('button[title=":+1:"]') ??
+    [...host.querySelectorAll<HTMLButtonElement>('button[title]')].find(button => button.textContent === "👍");
+  expect(quick).toBeDefined();
+  await act(async () => quick?.click());
+  expect(publish).toHaveBeenCalledWith(message,"👍",false);
+  expect(host.querySelector('[data-testid="message-action-divider"]')).not.toBeNull();
+});
+
+test("actual row keeps UNKNOWN neutral and cannot submit again through a different quick reaction", async () => {
+  const publish = vi.fn().mockRejectedValue(new TransportError("uncertain"));
+  const message: TimelineMessage = {id:"unknown-row",createdAt:1,author:"Alice",time:"",body:"hello",depth:0};
+  const host = await render(<TooltipProvider><MessageRowSurface message={message} onToggleReaction={publish}
+    renderBody={() => <p>hello</p>}
+    renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} message={message} {...reactions} onCopyMessage={() => {}} />}
+  /></TooltipProvider>);
+  const quick = host.querySelector<HTMLButtonElement>('button[title]');
+  await act(async () => quick?.click());
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('[data-testid="react-message-unknown-row"]')).toBeNull();
+  expect(host.querySelector('[role="status"]')).not.toBeNull();
+});
 
 test("applyOptimisticReaction: adding new emoji appends to end, preserving prior order", () => {
   // Formatter emits [🎉 (count=3), 👍 (count=1)] — chronological, not count-ranked.

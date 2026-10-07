@@ -18,6 +18,17 @@ const RELAY_SECRET = new Uint8Array(32).fill(3);
 const RELAY_PUBKEY = getPublicKey(RELAY_SECRET);
 const CHANNEL_ID = "36411e44-0e2d-4cfe-bd6e-567eb169db9f";
 
+test("original reactions reach Native message rows without trusting actor impersonation", () => {
+  const message = streamMessage();
+  const reaction = streamMessage({id:"b".repeat(64),pubkey:PUBKEY_B,kind:7,content:"👍",
+    tags:[["e",message.id],["actor",PUBKEY_A]]});
+  const rows = formatTimelineMessages([message,reaction],PUBKEY_A,null);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].reactions[0].count,1);
+  assert.equal(rows[0].reactions[0].reactedByCurrentUser,false);
+  assert.equal(rows[0].reactions[0].users[0].pubkey,PUBKEY_B);
+});
+
 function streamMessage(overrides = {}) {
   return {
     id: HEX64_A,

@@ -6,6 +6,17 @@
 
 ## 当前使用与恢复范围（2026-10-06）
 
+- 2026-10-07 原版回应恢复增量：频道/私聊、系统行与线程接回原回应条、快捷表情和
+  选择器，Web 继续经 BFF，Desktop 继续本人本机签名；结果不明保留原发送意图。
+  原表情选择器改用已锁定依赖内的中英词库，不再因访问公网词库被 CSP 拒绝。
+  固定候选的中英文频道/表情四张浏览器截图已打开复核，但不覆盖新的回应联合批。
+  全量官方 Buzz 差异已生成，设置、Inbox 筛选、侧栏和工作流仍有明确缺口；
+  不把共享迁移或定向检查当作全部原版功能恢复。
+  本批尚未部署、未更新 Windows/Mobile 包；线上自定义表情目录仍有真实 404，
+  当前使用入口不能据源码增量视作已更新。证据见
+  [原回应与共享呈现](collaboration/fork/verify/shared-system-messages.md)及
+  [完整原版差异清点](core/verify/buzz-restoration-checkpoint.md)。
+
 - 2026-10-07 组件完整页面回归主内容区：Web/Desktop 复用同一侧栏和右侧 iframe，
   按 ApplicationBinding 配置发现入口，不把 Cells、WeKnora、Wren 菜单写死。
   组件上架/下架沿原 release/binding 生命周期，不删除独立服务及其业务数据。

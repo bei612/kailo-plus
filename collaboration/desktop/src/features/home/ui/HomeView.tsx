@@ -36,7 +36,7 @@ import { getHomeMessageCapabilities } from "@/features/home/lib/homeMessageCapab
 import { HomeLoadingState } from "@/features/home/ui/HomeLoadingState";
 import { InboxDetailPane } from "@/features/home/ui/InboxDetailPane";
 import { InboxListPane } from "@/features/home/ui/InboxListPane";
-import { useChannelMessagesQuery } from "@/features/messages/hooks";
+import { useChannelMessagesQuery, useToggleReactionMutation } from "@/features/messages/hooks";
 import { collectMessageMentionPubkeys } from "@/features/messages/lib/formatTimelineMessages";
 import { formatTime } from "@/features/messages/lib/dateFormatters";
 import { splitOutgoingTags } from "@/features/messages/lib/imetaMediaMarkdown";
@@ -233,6 +233,10 @@ export function HomeView({
     homeInboxWidthPx < AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX;
 
   const channelMessagesQuery = useChannelMessagesQuery(selectedChannel);
+  const toggleReaction = useToggleReactionMutation(selectedChannel, currentPubkey);
+  const onToggleReaction = React.useCallback(async (message: { id: string }, emoji: string, remove: boolean) => {
+    await toggleReaction.mutateAsync({ eventId: message.id, emoji, remove });
+  }, [toggleReaction.mutateAsync]);
   const channelMessages = channelMessagesQuery.data;
   const threadContext = useInboxThreadContext(
     threadContextFeedItem,
@@ -559,6 +563,8 @@ export function HomeView({
           {showDetailPane && detailMode === "messages" ? (
             <InboxDetailPane
               canReply={canReply}
+              currentPubkey={currentPubkey}
+              onToggleReaction={canReply && !threadContext.hasLoadError && !threadContext.isLoading && selectedChannel?.isMember && selectedChannel.archivedAt === null ? onToggleReaction : undefined}
               contextChannelName={selectedChannel?.name ?? null}
               disabledReplyReason={disabledReplyReason}
               isSendingReply={isSendingReply}

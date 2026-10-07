@@ -38,6 +38,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
   onMarkRead,
   onReply,
   onEdit,
+  onToggleReaction,
   onOpenThread,
   isSendingVideoReviewComment = false,
   onSendVideoReviewComment,
@@ -104,6 +105,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
         case "system":
           return (
             <SystemRow
+              onToggleReaction={onToggleReaction}
               currentPubkey={currentPubkey}
               entry={item.entry}
               footer={messageFooters?.[item.entry.message.id] ?? null}
@@ -113,6 +115,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
         case "system-group":
           return (
             <SystemRow
+              onToggleReaction={onToggleReaction}
               currentPubkey={currentPubkey}
               entries={item.entries}
               footer={item.entries.map(
@@ -124,6 +127,8 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
         case "message":
           return (
             <MessageRowItem
+              currentPubkey={currentPubkey}
+              onToggleReaction={onToggleReaction}
               channelId={channelId}
               entry={item.entry}
               followThreadById={followThreadById}
@@ -166,6 +171,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
       onMarkRead,
       onMarkUnread,
       onReply,
+      onToggleReaction,
   onEdit,
       onOpenThread,
       profiles,

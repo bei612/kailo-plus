@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { bff, deleteMessage, openStream, type StreamFrame } from "./bff-client";
-import { PlatformSessionAccessMode, WebMessageType } from "@client-kit/contracts";
-import { BffError, SessionEndedError } from "@client-kit/platform/transport";
+import { bff, deleteMessage, openStream, publishMessageReaction, type StreamFrame } from "./bff-client";
+import { PlatformSessionAccessMode, WebMessageType, type PulsePublishRequest } from "@client-kit/contracts";
+import { BffError, SessionEndedError, TransportError } from "@client-kit/platform/transport";
 
 class Source extends EventTarget {
   static CLOSED = 2;
@@ -45,6 +45,20 @@ it("freezes the deletion intent across calls without storing body or inventing a
   expect(String(fetcher.mock.calls[0]![0])).toContain("/workspaces/workspace/messages/delete");
   expect(new Headers(first.headers).get("Idempotency-Key")).toBe(new Headers(second.headers).get("Idempotency-Key"));
   expect(JSON.parse(first.body as string)).toEqual({content:"",attachments:[],mentionInstallationIds:[],messageType:"FORUM_POST",deleteEventId:target});
+});
+
+it("routes scoped reactions with the frozen key and requires a confirmed publication receipt",async()=>{
+  const fetcher=vi.fn().mockImplementation(async()=>new Response(JSON.stringify({eventId:"e".repeat(64),operationId:"operation"}),{status:200,headers:{"Content-Type":"application/json"}}));
+  vi.stubGlobal("fetch",fetcher);
+  const request={operation:"LIKE",content:"👍",targetEventId:"a".repeat(64)} as PulsePublishRequest;
+  await publishMessageReaction("workspace",undefined,request,"same-key");
+  expect(String(fetcher.mock.calls[0]![0])).toContain("/workspaces/workspace/reactions");
+  expect(new Headers((fetcher.mock.calls[0]![1] as RequestInit).headers).get("Idempotency-Key")).toBe("same-key");
+  await publishMessageReaction("unused","conversation",request,"same-key");
+  expect(String(fetcher.mock.calls[1]![0])).toContain("/conversations/conversation/reactions");
+  expect(JSON.parse((fetcher.mock.calls[1]![1] as RequestInit).body as string)).toEqual(request);
+  fetcher.mockResolvedValueOnce(new Response(JSON.stringify({operationId:"operation"}),{status:200,headers:{"Content-Type":"application/json"}}));
+  await expect(publishMessageReaction("workspace",undefined,request,"same-key")).rejects.toBeInstanceOf(TransportError);
 });
 
 it.each(["session-revoked", "scope-revoked", "identity-revoked"])(

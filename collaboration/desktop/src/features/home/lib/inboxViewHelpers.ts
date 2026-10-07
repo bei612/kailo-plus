@@ -154,6 +154,8 @@ export function toInboxContextMessage(
     mentionPubkeysByName,
     tags: message.tags,
     timeLabel: message.time,
+    reactions: message.reactions,
+    pending: message.pending,
   };
 }
 
@@ -177,5 +179,7 @@ export function toTimelineMessage(
     rootId: message.rootId ?? threadReference.rootId,
     tags: message.tags,
     time: message.timeLabel ?? message.fullTimestampLabel,
+    reactions: message.reactions,
+    pending: message.pending,
   };
 }

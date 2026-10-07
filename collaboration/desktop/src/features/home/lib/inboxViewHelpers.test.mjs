@@ -7,7 +7,26 @@ import {
   isInboxThreadContextEvent,
   matchesInboxAllView,
   matchesInboxFilter,
+  toInboxContextMessage,
+  toTimelineMessage,
 } from "./inboxViewHelpers.ts";
+
+test("Inbox preserves original reaction projection and pending send admission through both conversions", () => {
+  const message = {
+    id: "event", pubkey: "actor", author: "Alice", body: "Hello", createdAt: 1,
+    depth: 0, time: "00:00", pending: true,
+    reactions: [{ emoji: "😀", count: 1, reactedByCurrentUser: true,
+      users: [{ pubkey: "actor", displayName: "Alice" }] }],
+  };
+  const context = toInboxContextMessage(message, {
+    eventById: new Map(), fallbackAuthorPubkey: "actor", profiles: undefined, selectedItemId: "event",
+  });
+  assert.deepEqual(context.reactions, message.reactions);
+  assert.equal(context.pending, true);
+  const restored = toTimelineMessage(context);
+  assert.deepEqual(restored.reactions, message.reactions);
+  assert.equal(restored.pending, true);
+});
 
 test("hasInboxThreadContext finds replies in the grouped row or loaded context", () => {
   const root = { tags: [["h", "channel"]] };

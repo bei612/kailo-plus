@@ -1,5 +1,7 @@
 import * as React from "react";
-import { depthGuideActionsEqual, numberArrayEqual, tagsEqual } from "@/features/messages/lib/messageRowEquality";
+import { depthGuideActionsEqual, numberArrayEqual, tagsEqual, reactionsEqual } from "@/features/messages/lib/messageRowEquality";
+import { useCustomEmojiPalette } from "../lib/useCustomEmojiPalette";
+import { useActiveCommunity } from "@/features/platform/activeCommunity";
 import { assertCanSendMessageToChannel, canSendMessageToChannel } from "@/features/messages/lib/canSendToChannel";
 import type { TimelineMessage } from "@/features/messages/types";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
@@ -49,6 +51,7 @@ type MessageRowProps = {
     onMarkRead?: (message: TimelineMessage) => void;
     onReply?: (message: TimelineMessage) => void;
     onEdit?: (message: TimelineMessage) => void;
+    onToggleReaction?: (message: TimelineMessage, emoji: string, remove: boolean) => Promise<void>;
     onSendToChannel?: (message: TimelineMessage) => Promise<void>;
     onUnfollowThread?: (message: TimelineMessage) => void;
     onEntranceComplete?: (messageId: string) => void;
@@ -62,13 +65,16 @@ type MessageRowProps = {
 export const MessageRow = React.memo(function MessageRow(props: MessageRowProps) {
  const {message,channelId,currentPubkey,profiles,searchQuery,videoReviewCommentRootId,videoReviewContext,onSendToChannel} = props;
  const { nonDmChannelNames: channelNames } = useChannelNavigation();
+ const customEmoji = useCustomEmojiPalette();
+ const community = useActiveCommunity();
  const { mentionNames, mentionPubkeysByName } = React.useMemo(() => resolveMentionProps(message.tags, profiles, message.body), [profiles,message.tags,message.body]);
  const imetaByUrl = React.useMemo(() => message.tags ? parseImetaTags(message.tags) : undefined,[message.tags]);
  const handleSendToChannel = React.useCallback(async(target:TimelineMessage)=>{assertCanSendMessageToChannel(target,currentPubkey);await onSendToChannel?.(target);},[currentPubkey,onSendToChannel]);
- return <MessageRowSurface {...props} resolveMediaUrl={rewriteRelayUrl}
+ return <MessageRowSurface {...props} resolveMediaUrl={rewriteRelayUrl} customEmoji={customEmoji}
+ reactionScope={currentPubkey ? JSON.stringify([community.id,currentPubkey]) : null}
  renderIdentity={message.pubkey ? (node,kind)=>kind === "author" ? <MessageAuthorIdentity pubkey={message.pubkey}>{node}</MessageAuthorIdentity> : <UserProfilePopover pubkey={message.pubkey!}><button className="flex shrink-0 items-start rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring" type="button">{node}</button></UserProfilePopover> : undefined}
  renderBody={(className)=><VideoReviewCommentMarkdown channelNames={channelNames} className={className} content={message.body} messageId={message.id} linkPreviewsSuppressed={hasLinkPreviewSuppression(message.tags)} linkPreviewTags={message.tags} imetaByUrl={imetaByUrl} mentionNames={mentionNames} mentionPubkeysByName={mentionPubkeysByName} searchQuery={searchQuery} videoReviewCommentRootId={videoReviewCommentRootId} videoReviewContext={videoReviewContext}/>}
- renderActions={(ref)=><MessageActionBar {...props} ref={ref} onEdit={message.kind === 9 && message.signerPubkey === currentPubkey && !message.pending ? props.onEdit : undefined} onSendToChannel={onSendToChannel && canSendMessageToChannel(message,currentPubkey) ? handleSendToChannel : undefined}/>}
+ renderActions={(ref,reactions)=><MessageActionBar {...props} {...reactions} ref={ref} onEdit={message.kind === 9 && message.signerPubkey === currentPubkey && !message.pending ? props.onEdit : undefined} onSendToChannel={onSendToChannel && canSendMessageToChannel(message,currentPubkey) ? handleSendToChannel : undefined}/>}
  reference={<SentFromThreadLine channelId={channelId} tags={message.tags}/>} />;
 },
   (prev, next) =>
@@ -89,6 +95,8 @@ export const MessageRow = React.memo(function MessageRow(props: MessageRowProps)
     // checks made every row re-render on every streamed event in an open
     // thread (see messageRowEquality.ts).
     tagsEqual(prev.message.tags, next.message.tags) &&
+    reactionsEqual(prev.message.reactions, next.message.reactions) &&
+    prev.onToggleReaction === next.onToggleReaction &&
     prev.message.role === next.message.role &&
     prev.currentPubkey === next.currentPubkey &&
     depthGuideActionsEqual(

@@ -8,6 +8,12 @@ import { isEmojiOnlyMessage } from "./emojiOnly";
 import { UserAvatar } from "./UserAvatar";
 import { MessageHeaderRow, MessageAuthorText } from "./MessageHeader";
 import { MessageTimestamp } from "./MessageTimestamp";
+import { MessageReactions } from "./reactions/MessageReactions";
+import { useReactionHandler } from "./reactions/useReactionHandler";
+import type { CustomEmoji } from "../custom-emoji/emoji";
+import type { MessageActionBarSurface } from "./MessageActionBarSurface";
+type ReactionActionProps = Pick<React.ComponentProps<typeof MessageActionBarSurface>,
+  "reactions" | "onReactionSelect" | "onReactionBadgeBurstRequest" | "reactionErrorMessage" | "customEmoji" | "reactionScope" | "resolveMediaUrl">;
 export type ThreadDepthGuideAction = {
   active?: boolean;
   depth: number;
@@ -36,6 +42,7 @@ export function MessageRowSurface({
     playEntrance = false,
     showDepthGuides = true,
     renderBody, renderIdentity, renderActions, reference, resolveMediaUrl,
+    onToggleReaction, customEmoji = [], reactionScope,
   }: {
     collapseDepthGuideActions?: ReadonlyArray<ThreadDepthGuideAction>;
     connectDescendants?: boolean;
@@ -65,11 +72,16 @@ export function MessageRowSurface({
     showDepthGuides?: boolean;
     renderBody: (className: string) => React.ReactNode;
     renderIdentity?: (node: React.ReactNode, kind: "avatar" | "author") => React.ReactNode;
-    renderActions?: (ref: React.RefCallback<HTMLElement>) => React.ReactNode;
+    renderActions?: (ref: React.RefCallback<HTMLElement>, reactions: ReactionActionProps) => React.ReactNode;
+    onToggleReaction?: (message: TimelineMessage, emoji: string, remove: boolean) => Promise<void>;
+    customEmoji?: CustomEmoji[];
+    reactionScope?: string | null;
     reference?: React.ReactNode;
-    resolveMediaUrl?: (url: string) => string;
+    resolveMediaUrl?: (url: string) => string | undefined;
   }) {
     const translateUi = useUiT();
+    const [badgeBurstEmoji, setBadgeBurstEmoji] = React.useState<string | null>(null);
+    const reaction = useReactionHandler(message, onToggleReaction, customEmoji);
     // Keep the transient send state with its timestamp rather than collapsing
     // it into a grouped message row with no header.
     const isDisplayedAsContinuation = isContinuation && !message.pending;
@@ -216,7 +228,13 @@ export function MessageRowSurface({
             : "sm:top-1 sm:translate-y-0",
         )}
       >
-        {renderActions?.(actionRailMeasureRef)}
+        {renderActions?.(actionRailMeasureRef, {
+          reactions: reaction.reactions,
+          onReactionSelect: reaction.canToggle && !reaction.pending ? reaction.select : undefined,
+          onReactionBadgeBurstRequest: setBadgeBurstEmoji,
+          reactionErrorMessage: reaction.errorMessage,
+          customEmoji, reactionScope, resolveMediaUrl,
+        })}
       </div>
     );
 
@@ -260,6 +278,15 @@ export function MessageRowSurface({
         {reference}
         {bodyNode}
         {continuationMetadataNode}
+        <MessageReactions
+          messageId={message.id} reactions={reaction.reactions}
+          canToggle={reaction.canToggle} pending={reaction.pending}
+          onSelect={(emoji) => { void reaction.select(emoji).catch(() => {}); }}
+          burstEmojiOnRender={badgeBurstEmoji}
+          onBurstEmojiRendered={(emoji) => setBadgeBurstEmoji(current => current === emoji ? null : current)}
+          customEmoji={customEmoji} reactionScope={reactionScope} resolveMediaUrl={resolveMediaUrl}
+        />
+        {reaction.errorMessage ? <p className="mt-1.5 text-xs text-muted-foreground" role="status">{reaction.errorMessage}</p> : null}
       </>
     );
 

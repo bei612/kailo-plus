@@ -3,6 +3,16 @@ import type { RawSendChannelMessageResult } from "@/shared/api/tauriMessageTypes
 import type { SendChannelMessageResult } from "@/shared/api/types";
 import type { RelayEvent } from "@/shared/api/types";
 
+export async function addReaction(channelId: string, eventId: string, emoji: string,
+  expectedRelayUrl: string, expectedSignerPubkey: string): Promise<RelayEvent> {
+  return invokeTauri<RelayEvent>("add_reaction", {channelId, eventId, emoji, expectedRelayUrl, expectedSignerPubkey});
+}
+
+export async function removeReaction(channelId: string, eventId: string, emoji: string,
+  expectedRelayUrl: string, expectedSignerPubkey: string): Promise<RelayEvent> {
+  return invokeTauri<RelayEvent>("remove_reaction", {channelId, eventId, emoji, expectedRelayUrl, expectedSignerPubkey});
+}
+
 export async function deleteMessage(channelId: string, eventId: string,
   expectedRelayUrl: string, expectedSignerPubkey: string): Promise<RelayEvent> {
   return invokeTauri<RelayEvent>("delete_message", { channelId, eventId, expectedRelayUrl, expectedSignerPubkey });

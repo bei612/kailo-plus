@@ -526,6 +526,143 @@ pub async fn delete_message(
     .await
 }
 
+#[tauri::command]
+pub async fn add_reaction(
+    channel_id: String,
+    event_id: String,
+    emoji: String,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    change_reaction(
+        channel_id,
+        event_id,
+        emoji,
+        false,
+        expected_relay_url,
+        expected_signer_pubkey,
+        state,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn remove_reaction(
+    channel_id: String,
+    event_id: String,
+    emoji: String,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    change_reaction(
+        channel_id,
+        event_id,
+        emoji,
+        true,
+        expected_relay_url,
+        expected_signer_pubkey,
+        state,
+    )
+    .await
+}
+
+async fn change_reaction(
+    channel_id: String,
+    event_id: String,
+    emoji: String,
+    remove: bool,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    if expected_relay_url.trim().is_empty()
+        || emoji.trim().is_empty()
+        || nostr::PublicKey::from_hex(&expected_signer_pubkey).is_err()
+    {
+        return Err("reaction requires the captured community and signer".into());
+    }
+    let channel = uuid::Uuid::parse_str(&channel_id).map_err(|error| error.to_string())?;
+    let target = nostr::EventId::from_hex(&event_id).map_err(|error| error.to_string())?;
+    let relay = crate::relay::relay_api_base_url_with_override(&state);
+    let keys = state.signing_keys()?;
+    assert_expected_relay_scope(Some(&expected_relay_url), &relay)?;
+    assert_expected_signer(Some(&expected_signer_pubkey), &keys.public_key().to_hex())?;
+    let emoji = emoji.trim();
+    let intent = format!(
+        "reaction:{relay}:{}:{channel}:{target}:{emoji}",
+        keys.public_key()
+    );
+    let (event, first) = match unconfirmed::existing_mutation(&intent)? {
+        Some(event) => {
+            if (event.kind.as_u16() == 5) != remove {
+                return Err("relay publish outcome unknown".into());
+            }
+            (event, false)
+        }
+        None => {
+            let rows = crate::relay::query_relay_at_with_keys(&state, &relay,
+                &[serde_json::json!({"ids":[target.to_hex()],"kinds":[9,40002,40099,45001,45003],"#h":[channel.to_string()]})], &keys, None).await?;
+            let message = rows
+                .iter()
+                .find(|row| row.id == target)
+                .ok_or("reaction target unavailable")?;
+            message.verify().map_err(|error| error.to_string())?;
+            if !matches!(message.kind.as_u16(), 9 | 40002 | 40099 | 45001 | 45003) {
+                return Err("reaction target kind mismatch".into());
+            }
+            if message.kind.as_u16() == 40099 {
+                let relay_author = super::relay_self::fetch_relay_self_at(
+                    &state,
+                    &crate::relay::relay_ws_url_with_override(&state),
+                )
+                .await?;
+                if relay_author.as_deref() != Some(message.pubkey.to_hex().as_str()) {
+                    return Err("reaction system target author mismatch".into());
+                }
+            }
+            if channel_id_from_tags(message).as_deref() != Some(channel_id.as_str())
+                || message
+                    .tags
+                    .iter()
+                    .filter(|tag| tag.as_slice().first().is_some_and(|name| name == "h"))
+                    .count()
+                    != 1
+            {
+                return Err("reaction target channel mismatch".into());
+            }
+            let builder = if remove {
+                // Original remove_reaction selects the actor's accepted event,
+                // never another author's reaction or a caller-supplied event.
+                let reactions = crate::relay::query_relay_at_with_keys(&state, &relay,
+                    &[serde_json::json!({"kinds":[7],"#e":[target.to_hex()],"#h":[channel.to_string()],"authors":[keys.public_key().to_hex()]})], &keys, None).await?;
+                let reaction = reactions.iter().find(|event| event.kind.as_u16() == 7
+                    && event.pubkey == keys.public_key() && event.content.trim() == emoji
+                    && event.verify().is_ok()
+                    && event.tags.iter().filter(|tag| tag.as_slice().first().is_some_and(|name| name == "e")).count() == 1
+                    && event.tags.iter().any(|tag| tag.as_slice().first().is_some_and(|name| name == "e")
+                        && tag.as_slice().get(1) == Some(&target.to_hex())))
+                    .ok_or("could not find your reaction event for this emoji")?;
+                buzz_sdk_pkg::build_remove_reaction(reaction.id)
+            } else {
+                let tags = super::custom_emoji::message_tags(&state, &relay, &keys, emoji).await?;
+                match tags.as_slice() {
+                    [] => buzz_sdk_pkg::build_reaction(target, emoji),
+                    [tag] if tag.len() == 3 && tag[0] == "emoji" && emoji == format!(":{}:", tag[1]) =>
+                        buzz_sdk_pkg::build_custom_emoji_reaction(target, &tag[1], &tag[2]),
+                    _ => return Err("reaction emoji evidence is invalid".into()),
+                }
+            }.map_err(|error| error.to_string())?;
+            let fresh = builder
+                .sign_with_keys(&keys)
+                .map_err(|error| error.to_string())?;
+            unconfirmed::claim_mutation(&intent, fresh)?
+        }
+    };
+    submit_message_mutation(event, first, &intent, &state, &relay, &keys, channel).await
+}
+
 async fn submit_message_mutation(
     event: nostr::Event,
     first: bool,

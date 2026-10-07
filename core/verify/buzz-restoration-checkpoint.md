@@ -1424,3 +1424,89 @@ Core 读取相关 14 项通过/3 ignored、安装权限 5 项通过/1 ignored、
 Data 剩余空间不足时没有强行启动该大包链接，也没有清理共享缓存或其他任务。
 真实注册 binding、完整跨组件终态/计量、自动同步、三人双 Agent 稳定协作与
 Win11/Mobile、全页面中英文仍未验收，最近一次完整检查退出 1 的记录不变。
+
+
+### 2026-10-07 固定 Buzz 全树差异清点（非逐项功能验收）
+
+本轮固定上游为 `779af8886caae1317b4de962082429867ab61503`，
+当前 apps HEAD 为 `2012d3a2de4e976f82ceed628da8844731eae07d`。
+比较对象为清点时整个 collaboration 工作树，包含并行未提交的恢复内容，
+不是 HEAD 的部署证明。client-kit 不在上游 diff 的树内，另查实际共享消费者。
+
+先完整读取 `tools/upstream_manifest.py::upstream_repo/_Index/diff`：
+复用已有 `/home/ubuntu/.cache/platform/upstream/buzz.git` 对象缓存与临时 index，
+固定 commit 已可解析，未 fetch、未修改或运行 .references 内容，未复制全树。
+在 apps 根运行以下原入口；输出目录为
+`/volumes/data/kailo/tmp/buzz-full-ui-inventory.cb0PyC/`：
+
+- `python3 tools/upstream_manifest.py diff collaboration` → `collaboration.patch`，退出 0。
+- 同命令加 `--name-status` → `name-status.log`、加 `--stat` → `stat.log`，均退出 0。
+- 同命令加 `--check` → `remove-check.log`，退出 1。
+- `git apply --numstat collaboration.patch` 的完整输出为 `numstat.log`；
+  这里只解析原 diff，不向工作树应用补丁。
+
+完整清单而非目录抽样：3278 个变更路径，D=2428、M=753、A=92、R=5，
+33927 行增加、740638 行删除。删除中 desktop/src=1570、
+desktop/src-tauri=433、mobile/lib=166；其余为构建、资源、测试等路径。
+`deleted-paths.log` 逐行列出全部 2428 个删除路径；
+`modified-ui-paths.tsv` 列出全部 543 个已修改原 UI 源码路径及原/现行数，
+范围为 desktop/src 的 TS/TSX/JS/MJS/CSS（含同目录测试与辅助模块）
+以及 mobile/lib Dart；其中 499 个缩短，44 个未缩短。
+216 个文件发现共享包引用，但这不是完整迁移或等价验收结论。
+五个重命名（含原/新路径与相似度）完整保留在 name-status.log，不算删除。
+原补丁 SHA-256 为
+`adc78ac00a06c4a80f4b09622c5b9c42b1c252ea3cff952d0f42cfb3a1323176`。
+
+**已核共享消费者，不应误判为简单删除：**
+
+- 原 `desktop/src/shared/ui/sidebar.tsx` 1010→7 行是共享出口；
+  当前 AppSidebar 实际调用 client-kit 的 AppSidebarFrame/PrimaryMenu，
+  Web PlatformApp 也消费同主体。不是“只剩七行侧栏”。
+- 原 MessageTimeline 918→15、SystemMessageRow 965→16、
+  ComposerAttachments 935→9：当前 Native 包装实际导入共享
+  MessageTimelineSurface/SystemMessageRowSurface/ComposerAttachments；
+  Web ChannelPane 同样有实际调用。完整功能仍须结合宿主验证，不仅看行数。
+- 原 ProfileSettingsCard 868→27 调用共享 ProfileSettingsCard，
+  仍使用本机资料 writer；共享 Settings/Appearance 与 Web 是实际消费者。
+- Workflows 的 DurationField、StepCard、TemplateTextarea、ActionsMenu、
+  RunTrace、CronExpressionInput 已找到共享模块及 agents.tsx/workflows.tsx
+  实际调用；删除整个原 workflows 路径不能解释为这些功能均丢失，
+  也不能因此宣称原全部触发条件、Webhook 编辑等都已恢复。
+
+**最确定的剩余缺口，供下一批直接恢复；不是擅自排除需求：**
+
+1. 设置：固定上游 `desktop/src/features/settings/ui/SettingsPanels.tsx::SettingsSection`
+   有 16 类；现宿主仅 profile/appearance/notifications/shortcuts/community-members/custom-emoji。
+   voice、experimental、agents、channel-templates、compute、hosted-communities、
+   moderation、local-archive、mobile、updates 十类无当前设置分支。
+   对应原卡片和原 IPC 是否可在治理边界直接接回须逐条实施，不自动恢复被禁执行器。
+2. Inbox：原 `desktop/src/features/home/ui/InboxFilterMenu.tsx::INBOX_FILTER_OPTIONS`
+   八类，现共享 inbox-surface 仅 all/mention/thread/drafts。
+   project、needs_action、agent_activity、reminders 四类缺真实消费者；
+   ProjectInboxDetail/ProjectInboxDetailPane、useHomePersonalInbox、
+   useHiddenDmInboxNavigation 等删除路径未找到同名生产接线。
+3. 侧栏：原 `AppSidebarPinnedHeader.tsx::AppSidebarPrimaryMenu` 末尾调用
+   SidebarProjectsSection；现共享主菜单无此调用。
+   ChannelSectionDialogs、SidebarDnd、CommunityRail 原路径删除且生产检索无消费者。
+   已共享 ChannelGroupSection 只证明组呈现存在，不证明自定义分组/拖拽/社区轨完整。
+4. Workflows：原 WorkflowTriggerConditions、WorkflowMessageTextConditionEditor、
+   WorkflowAuthorPicker、WorkflowWebhookHeadersEditor、WorkflowWebhookSecretDialog
+   路径删除，当前三侧生产检索没有对应消费者；现 supportedSteps 仍按真正执行集合拒绝
+   不支持字段，不能把这些原交互算作已恢复，亦不能为显示按钮恢复第二执行权威。
+5. 频道：时间线、系统行、附件与线程已定位共享主体，但 Huddle/Terminal、
+   提醒等原模块仍大量删除；本轮未逐项证明其治理消费者可用。
+   回应与归档冷读正在独立恢复批，不能用本清点覆盖其尚未部署的边界。
+6. Mobile：166 个 lib 删除路径覆盖原 Forum、Pulse、资料编辑、反应、邀请、
+   通知/push 等；本次仅全量列出，尚未逐条分类或运行验收，不能宣称三端已完整。
+
+remove_paths 检查失败的具体登记漂移：当前整块 custom-emoji 目录及
+SystemMessageAvatars.tsx、UserProfilePanelFields.tsx、UserProfilePanelSections.tsx
+删除未按当前形态登记，旧六条 custom-emoji 子项不再是整块边界。
+这不是据此删除需求或修改源码的授权。本任务只追加证据，
+没有改功能、来源记录、构建/检查工具或声明全量门禁通过。
+未逐条分类的其余路径明确保留为未核实；完整差异生成成功不等于逐项 UI/行为验收。
+
+主线程随后按真实共享迁移与剩余缺项修正原 remove_paths 登记；同一原入口
+`python3 tools/upstream_manifest.py diff collaboration --check` 复跑退出 0，
+输出为同目录 `remove-check-restored.log`。只表示删除登记现已一致，不表示
+ProfileFields/Sections 等原功能已恢复；未修改产物摘要，未构建或部署。

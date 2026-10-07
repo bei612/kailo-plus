@@ -5417,3 +5417,48 @@ CustomEmoji 发布增量。没有改 ChannelPane 或共用时间线，也没有�
 `core-window.log`、`core-range.log`、`core-mutation.log`、`core-restored.log`。
 未运行 full、真实浏览器/Relay 联调、
 镜像构建或部署；不得把服务端专项通过当作前端已消费或上线验收。
+
+### 2026-10-07 原回应发布与实时投影接线
+
+本批以 `2012d3a2de4e976f82ceed628da8844731eae07d` 为集成基准。
+四步影响结论如下，未新建回应数据库、Action 或模型执行权威：
+
+1. 权威：REQ-24、DD-39/75/81 及固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src-tauri/src/commands/messages.rs::add_reaction/remove_reaction`、
+   `crates/buzz-sdk/src/builders.rs::build_reaction/build_custom_emoji_reaction/build_remove_reaction`。
+   复用原 kind:7 / kind:5 与真实 NIP-30 palette；Web 本人 SERVER 代签，
+   Desktop 本机 CLIENT 签名直连 Relay，不复用 Pulse 的 Tenant 准入绕频道权限。
+2. 影响：原 PulsePublishRequest 的 LIKE/UNLIKE 语义经两条明确 scoped 路由进入
+   `web_transport::publish`；NOTE、附带 mentions/附件、空 LIKE、非空 UNLIKE 拒绝。
+   LIKE 指向实际可读消息，UNLIKE 指向本人签名回应并反查原消息 scope；
+   40099 另核真实 Relay 作者，不能冒充普通消息。
+   原 publish_attempt、DISPATCH/outcome、publish_reconcile 保持唯一发布事实链，
+   不存 emoji 正文或其摘要。现有 20261007015000 已允许 5/7，无迁移、无契约变更。
+   两路由追溯已由原 `tools/gen-registry.py` 生成，退出 0。
+3. 副作用：原签名事件 ID 在发送前冻结；UNKNOWN 只观察原意图，不重复分派。
+   Native 恢复原 add/remove IPC，并接现有 unconfirmed/submit_message_mutation，
+   缓存按原 Relay、本人 key、Channel、消息、emoji 隔离；未确认时相反操作拒绝。
+   无调用者 URL/作者/raw tags，custom emoji URL 仅来自已验证的原 palette。
+4. 边界：原窗口/线程已返回真实 7/5 辅助事件；SSE 原缺 kind:7 且要求 h，
+   现补 7 订阅。原 `crates/buzz-core/src/filter.rs::filter_match_one` 对无 h 的
+   7/5 使用 StoredEvent.channel_id；Core 以同 HUMAN 精确 ID + Channel 再读同一
+   签名事件并后置再准入后才投递。空/多条/篡改/越 scope 不作为成功回执。
+   撤权、失联、预算不足及并发意图继续原拒绝/UNKNOWN/额度分类，不新增轮询器。
+
+沿既有 e4 SDK 4 CPU/8 GiB、Cargo `-j16`、`/cache/rust-target` 窄验。
+首轮新增夹具 EventId 参数少借用，编译退出 101；修正后 web_transport 32 passed、
+1 ignored，stream 原全集断言缺新增 7 导致 1 failed；更新该原断言后 stream 4 passed，
+bridge reaction_receipt 1 passed，Core clippy `-D warnings` 退出 0。
+SDK-only 同时放开空 emoji、本人作者约束、空 scoped 回读，实际 3 failed/2 passed、
+退出 101；原字节 cmp 0 还原后 web_transport 32 passed/1 ignored、stream 4 passed。
+另把 remove builder 故意替换成 add builder，真实断言得到 kind 7 而期望 5，退出 101；
+原字节还原后原桥接用例再次通过。首失败、变异和还原日志均保留。
+
+日志目录为 `/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/workspace-creator.eqWSX8/`：
+`reactions-core.log`、`reactions-corrected.log`、`reactions-baseline.log`、
+`reactions-mutation.log`、`reactions-restored.log`、`reactions-builder-mutation.log`、
+`reactions-builder-restored.log`。Native Rust 新源码已 rustfmt 解析；该 SDK 的
+`pkg-config --exists gtk+-3.0 webkit2gtk-4.1` 退出 1，未运行完整 Native 编译。
+本批未执行 full、镜像构建、部署或真实浏览器跨用户回应验收，宿主接线由并行批交付；
+不能将这些源码/窄验事实称为线上回应完整恢复。

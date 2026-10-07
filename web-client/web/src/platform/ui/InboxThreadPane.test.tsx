@@ -12,11 +12,11 @@ import type { StreamFrame } from "../bff-client";
 import { InboxThreadPane } from "./InboxThreadPane";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({ query: vi.fn(), publish: vi.fn(), openAuthor:vi.fn(), unavailable:vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: "", error: null as unknown }));
+const state = vi.hoisted(() => ({ query: vi.fn(), publish: vi.fn(), reaction:vi.fn(), openAuthor:vi.fn(), unavailable:vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: "", error: null as unknown }));
 vi.mock("@client-kit/platform/react/context", async (original) => ({ ...await original<typeof import("@client-kit/platform/react/context")>(), useBffClient: () => ({ workspaceMessages: state.query }), useLocale: () => "en", useT: () => (key: string) => key }));
 vi.mock("@client-kit/platform/react/inbox-surface", () => ({ InboxDetailHeader: ({ title }: {title: string}) => <header>{title}</header> }));
 vi.mock("@/features/chat/ui/MessageContent", () => ({ MessageContent: ({content}: {content:string}) => <p>{content}</p> }));
-vi.mock("@/platform/bff-client", () => ({ publishMessage: (...args: unknown[]) => state.publish(...args), openStream: (_scope: string, receive: (frame: StreamFrame) => void) => { state.receive = receive; return () => {}; } }));
+vi.mock("@/platform/bff-client", () => ({ bff:{profile:async()=>({pubkey:"c".repeat(64)}),customEmoji:async()=>({events:[],mediaPaths:{}})},publishMessageReaction:(...args:unknown[])=>state.reaction(...args),publishMessage: (...args: unknown[]) => state.publish(...args), openStream: (_scope: string, receive: (frame: StreamFrame) => void) => { state.receive = receive; return () => {}; } }));
 vi.mock("./ChannelPane", () => ({ Composer: ({ disabled, onPublish, replyTarget, onCancelReply, draftKey }: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: []) => Promise<unknown>; replyTarget?: {id:string;body:string}; onCancelReply?:()=>void; draftKey?:string}) => <div data-testid="inbox-composer" data-draft-key={draftKey}>
   {replyTarget ? <div data-testid="reply-preview">{replyTarget.body}{onCancelReply ? <button data-testid="cancel-reply" onClick={onCancelReply}>cancel reply</button> : null}</div> : null}
   <button data-testid="inbox-send" disabled={disabled} onClick={async () => { try { await onPublish("actual reply", [], "same-intent", []); state.outcome = "confirmed"; } catch (error) { state.error = error; state.outcome = "unknown"; } }}>send</button>
@@ -35,10 +35,11 @@ async function mount(replyTargetEventId?: string) {
 }
 beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks(); state.outcome = ""; state.error = null;
-  setLocale("en");
+  localStorage.clear(); setLocale("en");
   Object.defineProperty(window, "matchMedia", {configurable:true,value:()=>({matches:false,addEventListener(){},removeEventListener(){}})});
   state.query.mockResolvedValue({ events: [rootEvent, reply] });
   state.publish.mockResolvedValue({ eventId: "d".repeat(64), operationId: "operation" });
+  state.reaction.mockResolvedValue({eventId:"d".repeat(64),operationId:"operation"});
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
   query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
@@ -52,6 +53,16 @@ it("reads the true thread and preserves the original selected-reply parent when 
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
   expect(state.publish).toHaveBeenCalledWith("workspace", "actual reply", [], "same-intent", [], { messageType: "STREAM", parentEventId: rootId });
   expect(state.outcome).toBe("confirmed");
+});
+
+it("renders the original Inbox reaction pill and removes only the own signed reaction",async()=>{
+  const reactionId="e".repeat(64);
+  state.query.mockResolvedValue({events:[rootEvent,reply,{...reply,id:reactionId,kind:7,content:"👍",tags:[["e",replyId]]}]});
+  await mount();
+  const pill=[...host.querySelectorAll<HTMLButtonElement>('button[aria-label]')].find(button=>button.getAttribute("aria-label")==="Toggle 👍 reaction");
+  expect(pill).toBeDefined();
+  await act(async()=>pill!.click());await settle();
+  expect(state.reaction).toHaveBeenCalledWith("workspace",undefined,{operation:"UNLIKE",content:"",targetEventId:reactionId},expect.any(String));
 });
 
 it("restores an explicit nested reply draft without retargeting it to its parent", async () => {

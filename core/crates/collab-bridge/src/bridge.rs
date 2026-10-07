@@ -560,6 +560,44 @@ impl IdentityClient {
             .map_err(|_| OperatorError::Sign("Reaction signing failed".into()))
     }
 
+    /// Original native NIP-25/NIP-09 builders. The caller has already proved
+    /// target scope/ownership; custom emoji tags come from the Relay palette.
+    pub fn sign_message_reaction(
+        &self,
+        target: &str,
+        content: &str,
+        remove: bool,
+        emoji_tags: &[Vec<String>],
+    ) -> Result<Event, OperatorError> {
+        let target = nostr::EventId::from_hex(target)
+            .map_err(|_| OperatorError::Sign("Reaction source is invalid".into()))?;
+        let builder = if remove && content.is_empty() && emoji_tags.is_empty() {
+            buzz_sdk::build_remove_reaction(target)
+        } else if !remove && valid_reaction(content) {
+            match emoji_tags {
+                [] => buzz_sdk::build_reaction(target, content),
+                [tag]
+                    if tag.len() == 3
+                        && tag[0] == "emoji"
+                        && content == format!(":{}:", tag[1]) =>
+                {
+                    buzz_sdk::build_custom_emoji_reaction(target, &tag[1], &tag[2])
+                }
+                _ => {
+                    return Err(OperatorError::Sign(
+                        "Reaction emoji evidence is invalid".into(),
+                    ))
+                }
+            }
+        } else {
+            return Err(OperatorError::Sign("Reaction content is invalid".into()));
+        };
+        builder
+            .map_err(|_| OperatorError::Sign("Reaction builder refused".into()))?
+            .sign_with_keys(&self.keys)
+            .map_err(|_| OperatorError::Sign("Reaction signing failed".into()))
+    }
+
     /// Positive native proof only; missing or unreadable events never prove failure.
     pub async fn reaction_exists(
         &self,
@@ -1372,6 +1410,37 @@ mod mention_tests {
         )
         .unwrap();
         let source = "a".repeat(64);
+        let native = client
+            .sign_message_reaction(&source, "👍", false, &[])
+            .unwrap();
+        assert!(native.verify().is_ok());
+        assert_eq!(native.kind.as_u16(), 7);
+        assert_eq!(native.tags.len(), 1);
+        let removed = client
+            .sign_message_reaction(&native.id.to_hex(), "", true, &[])
+            .unwrap();
+        assert!(removed.verify().is_ok());
+        assert_eq!(removed.kind.as_u16(), 5);
+        assert_eq!(
+            removed.tags.iter().next().unwrap().as_slice(),
+            &["e", &native.id.to_hex()]
+        );
+        let emoji = vec![
+            "emoji".into(),
+            "wave".into(),
+            "https://media.example.test/wave.png".into(),
+        ];
+        let custom = client
+            .sign_message_reaction(&source, ":wave:", false, std::slice::from_ref(&emoji))
+            .unwrap();
+        assert!(custom.verify().is_ok());
+        assert_eq!(custom.tags.len(), 2);
+        assert!(client
+            .sign_message_reaction(&source, ":other:", false, &[emoji])
+            .is_err());
+        assert!(client
+            .sign_message_reaction(&source, "👍", true, &[])
+            .is_err());
         let event = client.sign_reaction_at(&source, "👍", 105).unwrap();
         let id = event.id.to_hex();
         let author = keys.public_key().to_hex();
