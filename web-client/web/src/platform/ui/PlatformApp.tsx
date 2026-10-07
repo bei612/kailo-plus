@@ -45,6 +45,7 @@ import { ChannelSidebar } from "./ChannelSidebar";
 import { SidebarProvider, SidebarTrigger, SidebarMenu, SidebarMenuItem } from "@client-kit/platform/react/sidebar/sidebar";
 import { AppSidebarFrame } from "@client-kit/platform/react/sidebar/app-sidebar-frame";
 import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
+import { NativeApplicationPage } from "@client-kit/platform/react/native-application-page";
 import { AppSidebarPrimaryMenu } from "@client-kit/platform/react/sidebar/app-sidebar-primary-menu";
 import { WebSidebarProfileCard } from "./SidebarProfileCard";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -166,12 +167,13 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ?? rows.find((workspace) => workspace.isMember === true)
     ?? rows[0];
   const active = activeRow?.id ?? null;
-  const setTab = (next: Exclude<PlatformTab, "conversation">) => { void navigation.openTab(next, active); };
+  const setTab = (next: Exclude<PlatformTab, "conversation" | "application">) => { void navigation.openTab(next, active); };
   const settingsReturn = useRef<() => void>(() => { void navigation.openTab("channel"); });
   useEffect(() => {
     if (tab !== "settings") settingsReturn.current = () => {
       if (tab === "conversation" && navigation.conversationId) void navigation.openConversation(navigation.conversationId);
-      else if (tab !== "conversation") void navigation.openTab(tab, active);
+      else if (tab === "application" && navigation.applicationBindingId) void navigation.openApplication(navigation.applicationBindingId, active ?? undefined);
+      else if (tab !== "conversation" && tab !== "application") void navigation.openTab(tab, active);
     };
   }, [tab, active, navigation]);
   useSettingsShortcuts({
@@ -223,6 +225,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       devices: t("platform.tab.devices"),
       audit: t("platform.tab.audit"),
       settings: translate(getLocale(), "platform.settings.title"),
+      application: translate(getLocale(), "bindings.nativeTitle"),
     })[name];
 
   // 任务、审批、审计与设备都是「我自己的」，属于 Tenant 而不属于某个 Workspace，
@@ -252,7 +255,9 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     <MembersPane key={active} workspaceId={active} />
   );
   const body =
-    tab === "new-message" ? (
+    tab === "application" && navigation.applicationBindingId ? (
+      <NativeApplicationPage key={`${session.tenantPrincipalId}:${navigation.applicationBindingId}`} bindingId={navigation.applicationBindingId} onBack={() => setTab("inbox")} />
+    ) : tab === "new-message" ? (
       <NewMessagePage currentPrincipalId={session.tenantPrincipalId} initialRecipientPubkey={initialRecipientPubkey} onConversationOpened={async (conversation) => {
         await conversations.reload();
         await navigation.openConversation(conversation.id);
@@ -318,10 +323,12 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               <AppSidebarPrimaryMenu onNewMessage={() => {setInitialRecipientPubkey(undefined);setTab("new-message");}} onSelectHome={() => setTab("inbox")}
                 homeBadgeCount={notificationSettings?.settings.homeBadgeEnabled && inboxUnreadCount !== null ? inboxUnreadCount : undefined}
                 onSelectPlatformSection={setTab}
-                selectedPlatformSection={tab === "channel" || tab === "inbox" || tab === "settings" || tab === "new-message" || tab === "conversation" ? null : tab}
+                selectedPlatformSection={tab === "channel" || tab === "inbox" || tab === "settings" || tab === "new-message" || tab === "conversation" || tab === "application" ? null : tab}
                 selectedView={tab === "inbox" ? "home" : tab === "new-message" ? "new-message" : tab === "channel" || tab === "conversation" || tab === "settings" ? "channel" : "platform"} />
             <NativeApplicationEntries scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`}
-              workspace={tab === "channel" && activeRow?.isMember === true ? activeRow : undefined} />
+              selectedId={navigation.applicationBindingId}
+              onSelect={(binding) => { void navigation.openApplication(binding.bindingId, binding.workspaceId); }}
+              workspace={(tab === "channel" || tab === "application") && activeRow?.isMember === true ? activeRow : undefined} />
             <ConversationList currentPrincipalId={session.tenantPrincipalId} items={conversations.items} loading={conversations.loading}
               error={conversations.error} selectedId={tab === "conversation" ? chosenConversation?.id ?? null : null}
               onNewMessage={() => {setInitialRecipientPubkey(undefined);setTab("new-message");}} onReload={() => { void conversations.reload().catch(() => undefined); }}
@@ -350,7 +357,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               }} /> : <header className="flex h-12 shrink-0 items-center border-b px-4 font-semibold">
             {tabLabel(tab)}
           </header>}
-          <main className="min-h-0 flex-1 overflow-auto p-4">
+          <main className={tab === "application" ? "flex min-h-0 flex-1 flex-col overflow-hidden p-4" : "min-h-0 flex-1 overflow-auto p-4"}>
             {settingsVisited.current?<div hidden={tab!=="settings"} style={tab==="settings"?undefined:{display:"none"}}>
               <SettingsPane key={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`} onClose={() => settingsReturn.current()}/>
             </div>:null}

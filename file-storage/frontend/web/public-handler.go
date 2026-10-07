@@ -221,8 +221,9 @@ func (h *PublicHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf8")
-	for hK, hV := range config.Get(r.Context(), "frontend", "secureHeaders").StringMap() {
-		w.Header().Set(hK, hV)
+	if err := nativeSecureHeaders(w, config.Get(r.Context(), "frontend", "secureHeaders").StringMap()); err != nil {
+		http.Error(w, "Native frontend security configuration is unavailable", http.StatusServiceUnavailable)
+		return
 	}
 	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		out := gzip.NewWriter(w)

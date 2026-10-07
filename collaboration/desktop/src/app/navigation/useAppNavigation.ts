@@ -165,6 +165,13 @@ export function useAppNavigation() {
     [commitNavigation],
   );
 
+  const goApplication = React.useCallback(
+    (bindingId: string, workspaceId?: string) => commitNavigation({
+      to: "/applications/$bindingId", params: { bindingId }, search: { workspaceId },
+    }),
+    [commitNavigation],
+  );
+
   const closeSettings = React.useCallback(() => {
     if (canGoBack) {
       router.history.back();
@@ -203,6 +210,7 @@ export function useAppNavigation() {
     goHome,
     goNewMessage,
     goPlatform,
+    goApplication,
     goProfile,
     goSettings,
     openSearchHit,

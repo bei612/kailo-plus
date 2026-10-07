@@ -217,6 +217,9 @@ export function deriveShellRoute(pathname: string): {
   selectedPlatformSection: PlatformSection | null;
   selectedView: AppView;
 } {
+  if (pathname.startsWith("/applications/")) {
+    return { selectedChannelId: null, selectedPlatformSection: null, selectedView: "platform" };
+  }
   if (pathname === "/messages/new") {
     return { selectedChannelId: null, selectedPlatformSection: null, selectedView: "new-message" };
   }

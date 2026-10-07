@@ -18,6 +18,7 @@ services:
       APP_PORT: "8080"
       APP_SCHEME: http
       KNOWLEDGE_NATIVE_ORIGIN: ${KNOWLEDGE_NATIVE_ORIGIN:?native frontend origin required}
+      KAILO_FRAME_ANCESTORS: ${KAILO_FRAME_ANCESTORS:-}
     volumes:
       - ./frontend_entrypoint.sh:/opt/kailo-knowledge/frontend_entrypoint.sh:ro
       - ./render_proxy.awk:/opt/kailo-knowledge/render_proxy.awk:ro

@@ -81,7 +81,7 @@ pub(crate) async fn platform_sign_out(
     state: State<'_, AppState>,
     session: State<'_, NativeSession>,
 ) -> Result<SignOutReport, String> {
-    super::native_page::close_all(&app);
+    super::native_auth::close_all(&app);
     match require_config(&app) {
         Ok(cfg) => {
             let report = session.end_session(&state.http_client, &cfg).await?;

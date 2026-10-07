@@ -14,11 +14,12 @@ vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
   const navigation = usePlatformNavigation();
   const [mount] = useState(() => ++state.mounts);
   return <div data-tab={navigation.tab} data-mount={mount} data-workspace={navigation.workspaceId}
-    data-conversation={navigation.conversationId}>
+    data-conversation={navigation.conversationId} data-application={navigation.applicationBindingId}>
     <button onClick={() => { void navigation.openTab("audit", navigation.workspaceId); }}>audit</button>
     <button onClick={() => { void navigation.openTab("settings", navigation.workspaceId); }}>settings</button>
     <button onClick={() => { void navigation.openTab("agents", "workspace-b"); }}>agents</button>
     <button onClick={() => { void navigation.openTab("workflows", "workspace-b"); }}>workflows</button>
+    <button onClick={() => { void navigation.openApplication("binding-a", "workspace-a"); }}>application</button>
   </div>;
 } }));
 
@@ -75,6 +76,22 @@ it("never stores identity, credentials or commands in navigation search", () => 
   expect(search).not.toHaveProperty("tenantId");
   expect(search).not.toHaveProperty("token");
   expect(search).not.toHaveProperty("command");
+});
+
+it("routes the approved service binding in the same host and preserves its scope on reload", async () => {
+  const router = await mount("/app/inbox");
+  const mountId = node!.querySelector("[data-tab]")?.getAttribute("data-mount");
+  await act(async () => { [...node!.querySelectorAll("button")].find((button) => button.textContent === "application")!.click(); });
+  expect(router.history.location.pathname).toBe("/app/applications/binding-a");
+  expect(node!.querySelector("[data-tab]")?.getAttribute("data-tab")).toBe("application");
+  expect(node!.querySelector("[data-tab]")?.getAttribute("data-mount")).toBe(mountId);
+  const url = router.history.location.href;
+  await act(async () => { router.history.back(); await router.load(); });
+  expect(node!.querySelector("[data-tab]")?.getAttribute("data-tab")).toBe("inbox");
+  await act(async () => root!.unmount()); root = undefined; node!.remove();
+  await mount(url);
+  expect(node!.querySelector("[data-tab]")?.getAttribute("data-application")).toBe("binding-a");
+  expect(node!.querySelector("[data-tab]")?.getAttribute("data-workspace")).toBe("workspace-a");
 });
 
 it.each(["agents", "workflows"])("keeps the %s workspace selection in the original URL across reload and history", async (section) => {

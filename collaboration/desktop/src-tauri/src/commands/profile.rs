@@ -103,7 +103,7 @@ pub async fn update_profile(
     .custom_created_at(nostr::Timestamp::from(created_at))
     .sign_with_keys(&keys)
     .map_err(|_| "profile signing failed".to_string())?;
-    let digest = format!("{:x}", Sha256::digest(patch.to_string().as_bytes()));
+    let digest = hex::encode(Sha256::digest(patch.to_string().as_bytes()));
     let prefix = format!("profile:{relay}:{author}:{key}:");
     let (event, first) = super::messages::unconfirmed::claim_profile(&prefix, &digest, fresh)?;
     if first {

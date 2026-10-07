@@ -6,6 +6,15 @@
 
 ## 当前使用与恢复范围（2026-10-06）
 
+- 2026-10-07 组件完整页面回归主内容区：Web/Desktop 复用同一侧栏和右侧 iframe，
+  按 ApplicationBinding 配置发现入口，不把 Cells、WeKnora、Wren 菜单写死。
+  组件上架/下架沿原 release/binding 生命周期，不删除独立服务及其业务数据。
+  三服务嵌入来源配置已接入原响应头；共享28项、Web16项、Wren47项和Cells
+  头部2项专项通过，WeKnora真实Nginx头部正反检查通过。该批尚未部署，
+  Windows包未更新，HTTP Desktop跨站Cookie及完整业务登录仍未验收；
+  不以页面挂载或专项通过声称三组件全部可用。详见
+  [页面与边界证据](web-client/fork/verify/web-surface.md)。
+
 - 2026-10-07 原版共享前端恢复批：工作流模板变量选择和表单/YAML互转、
   Inbox 回复指定消息、通知设置真实试听及 Agent 固定底部操作栏已接入原组件。
   共享 pages 263 项、工作流交互 11 项、模板 5 项、通知 5 项、Inbox 6 项通过；

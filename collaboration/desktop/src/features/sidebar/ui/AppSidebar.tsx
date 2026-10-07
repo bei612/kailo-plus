@@ -67,6 +67,9 @@ export function AppSidebar({
   searchFocusRequests,
   onSelectSettings,
   onSelectPlatformSection,
+  onSelectApplication,
+  selectedApplicationBindingId,
+  applicationWorkspaceId,
   onSignOut,
   mutedChannelIds,
   onMuteChannel,
@@ -262,7 +265,8 @@ export function AppSidebar({
               />
 
               {currentPrincipalId ? <NativeApplicationEntries scopeKey={`${activeCommunity.id}:${currentPrincipalId}`}
-                workspace={selectedView === "channel" ? channels.find((channel) => channel.id === selectedChannelId && channel.channelType !== "dm") : undefined} /> : null}
+                selectedId={selectedApplicationBindingId} onSelect={onSelectApplication}
+                workspace={channels.find((channel) => channel.channelType !== "dm" && channel.id === (selectedApplicationBindingId ? applicationWorkspaceId : selectedView === "channel" ? selectedChannelId : undefined))} /> : null}
               {currentPrincipalId ? <DesktopConversations currentPrincipalId={currentPrincipalId}
                 selectedChannelId={selectedView === "channel" ? selectedChannelId : null}
                 onSelectChannel={onSelectChannel} onNewMessage={onNewMessage} onCloseSelected={onSelectHome} /> : null}

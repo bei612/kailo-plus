@@ -156,10 +156,12 @@ describe("desktop-invoke", () => {
     await host.setConfig(config);
     await expect(host.registerDevice()).resolves.toEqual({ status: 202, body: undefined });
     await host.cancelSignIn();
+    await host.authenticateNativePage("binding-fixture");
     expect(invoke.mock.calls).toEqual([
       ["platform_set_config", { config }],
       ["platform_register_device", undefined],
       ["platform_cancel_sign_in", undefined],
+      ["platform_authenticate_native_page", { bindingId: "binding-fixture" }],
     ]);
   });
 });

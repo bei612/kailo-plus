@@ -220,3 +220,43 @@ frontend cookie 拒绝与正常新登录，不是三服务全业务或平台 bin
 `/volumes/data/kailo/components/cells/credential-rotation-final-20261006.N4myf1/`
 保留恢复所需备份及原 JWK 事务诊断，内容不纳入 Git、不公开；初次暴露的维护记录
 也保留，没有以删日志掩盖事件。本次未运行 full、未构建镜像，文档检查交主线合批。
+
+### 2026-10-07 原生完整页面的受限嵌入来源
+
+本批按用户要求恢复完整原生页面在 Kailo 内容区嵌入，不复制或精简 Cells UI。
+四步影响结论：权威为当前原生页面宿主要求及设计 07 §4.6；接缝为原
+IndexHandler/PublicHandler 的 `frontend.secureHeaders` 和原 OIDC 登录按钮。
+状态仍由 Cells、原 OIDC/PKCE 与 Kailo binding 各自负责，没有新增业务状态或身份权威。
+只有运行期显式 `KAILO_FRAME_ANCESTORS` 可以扩大父来源，空值逐字保留原 CSP/XFO；
+非法来源 fail closed，嵌入不授予用户、数据或操作权限。
+
+固定上游 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`cells/frontend/web/index-handler.go::IndexHandler.ServeHTTP`、
+`cells/frontend/web/public-handler.go::PublicHandler.ServeHTTP` 原头部入口复用同一 helper。
+保留原 CSP 其它指令与所有其它 secureHeaders；只有显式来源配置才移除冲突的
+X-Frame-Options，改由精确 frame-ancestors 控制。允许显式 http/https/tauri
+父 origin，拒绝通配、用户信息、路径、查询、片段、注入及无效端口。
+原登录按钮只在 iframe 中使用独立认证窗口；原 href、PKCE、state、nonce、
+回调和用户映射未改。Compose 与原 start 入口投递并检查同名运行期配置。
+
+在既有 `kailo-cells-native-check-lftow7`（UID 1000、4 CPU/8 GiB）运行：
+`GOPROXY=off go test frontend/web/kailo-frame.go frontend/web/kailo-frame_test.go -v`
+得到 2 PASS、退出 0。仅 SDK 将 self 改成通配后两例均真实失败、退出 1；
+从正式源码恢复并 cmp 0 后重跑 2 PASS、退出 0。日志位于
+`/volumes/data/kailo/tmp/gateway-locale-repair-20261007.iwRGvX/`
+的 `cells-frame.log`、`cells-frame-mutation.log`、`cells-frame-restored.log`。
+这是原头部 helper 的专项证据，不是整个 Cells 编译、浏览器或部署验收。
+
+随后交叉复核发现空配置会将原 `frame-ancestors 'none'` 替换成 self，已纠正：
+空值或仅空白直接保留原 secureHeaders，不新增或替换 CSP，不删除 XFO。
+在同一 SDK 补入原 CSP none、DENY、nosniff 逐字保留和无 CSP 原策略的断言后，
+2 PASS、退出 0；删除空值 early return 的真实破坏使默认策略例失败、退出 1；
+原字节 cmp 0 还原后 2 PASS、退出 0。最终日志为同目录
+`cells-frame-preserve.log`、`cells-frame-preserve-mutation.log`、
+`cells-frame-preserve-restored.log`，早一轮结果不替代本次修正后的证据。
+
+剩余边界：未构建/部署本批，未验证新的 iframe 首次登录。
+Cells 原生会话的 Strict 与 OIDC 事务的 Lax Cookie 未弱化；同站点不同端口
+不等于 Desktop tauri 父来源下的跨站 iframe。后者仍需真实可用的安全 Cookie
+交付方案，认证弹窗本身不能证明 iframe 已取得会话。此限制不以重复登录、
+共享身份、复制 Cookie 或放宽 CSRF 绕过。

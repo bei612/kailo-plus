@@ -44,6 +44,7 @@ services:
       CELLS_NO_TLS: ${CELLS_NO_TLS:?explicit native TLS choice required}
       CELLS_HEALTH_URL: ${CELLS_HEALTH_URL:?required}
       CELLS_OAUTH_CONNECTORS: ${CELLS_OAUTH_CONNECTORS:?native connector configuration required}
+      KAILO_FRAME_ANCESTORS: ${KAILO_FRAME_ANCESTORS:-}
       CELLS_OAUTH_SECRET_FILE: /run/secrets/cells_oauth_secret
     secrets: [cells_install, cells_oidc_client_secret, cells_oauth_secret]
     volumes:

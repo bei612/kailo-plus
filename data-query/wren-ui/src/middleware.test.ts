@@ -3,13 +3,14 @@ import { AddressInfo } from 'net';
 import { randomUUID } from 'crypto';
 import { exportJWK, generateKeyPair, JWTPayload, SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
-import { middleware } from './middleware';
+import { middleware, nativeFrameAncestors } from './middleware';
 
 describe('native instance identity boundary', () => {
   let server: Server;
   let keys: Awaited<ReturnType<typeof generateKeyPair>>;
   let settings: Record<string, string>;
   const originalConfig = process.env.WREN_NATIVE_IDENTITY_JSON;
+  const originalAncestors = process.env.KAILO_FRAME_ANCESTORS;
 
   beforeAll(async () => {
     keys = await generateKeyPair('RS256');
@@ -38,9 +39,12 @@ describe('native instance identity boundary', () => {
 
   beforeEach(() => {
     process.env.WREN_NATIVE_IDENTITY_JSON = JSON.stringify(settings);
+    delete process.env.KAILO_FRAME_ANCESTORS;
   });
 
   afterAll(async () => {
+    if (originalAncestors === undefined) delete process.env.KAILO_FRAME_ANCESTORS;
+    else process.env.KAILO_FRAME_ANCESTORS = originalAncestors;
     if (originalConfig === undefined)
       delete process.env.WREN_NATIVE_IDENTITY_JSON;
     else process.env.WREN_NATIVE_IDENTITY_JSON = originalConfig;
@@ -156,6 +160,31 @@ describe('native instance identity boundary', () => {
     expect((await middleware(request('/', `Bearer ${forged}`))).status).toBe(
       401,
     );
+  });
+
+  it('allows only explicit embedding origins without changing native authentication or CSRF', async () => {
+    expect(nativeFrameAncestors(undefined)).toBe("frame-ancestors 'self'");
+    expect(nativeFrameAncestors('tauri://localhost')).toBe("frame-ancestors 'self' tauri://localhost");
+    process.env.KAILO_FRAME_ANCESTORS = 'https://kailo.example.invalid';
+    const bearer = `Bearer ${await token()}`;
+    const admitted = await middleware(request('/', bearer));
+    expect(admitted.headers.get('content-security-policy')).toBe(
+      "frame-ancestors 'self' https://kailo.example.invalid",
+    );
+    expect((await middleware(request('/'))).status).toBe(401);
+    expect((await middleware(request('/api/graphql', bearer, {
+      method: 'POST', headers: { origin: 'https://kailo.example.invalid' },
+    }))).status).toBe(403);
+    process.env.KAILO_FRAME_ANCESTORS = '*';
+    expect((await middleware(request('/', bearer))).status).toBe(503);
+  });
+
+  it.each(['*', 'https://*.invalid', 'https://host.invalid/path',
+    'https://user@host.invalid', 'https://host.invalid?query',
+    'https://host.invalid#fragment', 'data:text/html,test',
+    'https://host.invalid;default-src *', 'https://host.invalid:0',
+    'https://host.invalid:65536', 'tauri://localhost:', 'tauri://'])('rejects unsafe frame ancestor %s', (origin) => {
+    expect(() => nativeFrameAncestors(origin)).toThrow();
   });
 
   it.each([undefined, 'https://untrusted.invalid', 'null'])(

@@ -73,6 +73,7 @@ export function AppShell() {
     goHome,
     goNewMessage,
     goPlatform,
+    goApplication,
     goSettings,
     closeSettings,
     openSearchHit,
@@ -86,6 +87,8 @@ export function AppShell() {
     );
   // Settings lives in history so back returns to the previous app entry.
   const settingsOpen = location.pathname === "/settings";
+  const selectedApplicationBindingId = location.pathname.startsWith("/applications/") ? location.pathname.split("/")[2] : undefined;
+  const applicationWorkspaceId = typeof location.search.workspaceId === "string" ? location.search.workspaceId : undefined;
   const settingsVisited=React.useRef(false);
   if(settingsOpen)settingsVisited.current=true;
   const locationSearchSection = (location.search as { section?: unknown })
@@ -487,6 +490,9 @@ export function AppShell() {
                       selectedChannelId={selectedChannelId}
                       selectedView={selectedView}
                       selectedPlatformSection={selectedPlatformSection}
+                      selectedApplicationBindingId={selectedApplicationBindingId}
+                      applicationWorkspaceId={applicationWorkspaceId}
+                      onSelectApplication={(binding) => { void goApplication(binding.bindingId, binding.workspaceId); }}
                       unreadChannelIds={unreadChannelIds}
                       highPriorityUnreadChannelIds={
                         highPriorityUnreadChannelIds

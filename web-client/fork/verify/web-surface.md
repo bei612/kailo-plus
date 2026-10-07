@@ -4626,3 +4626,128 @@ React Ref类型不一致（两项TS2322）；改为真实file依赖布局的同�
 `native.log` 是私有快照缺原collaboration依赖根链接导致tsc未启动，补既有链接
 后通过。未改产品源码迁就检查、未安装新依赖。本批没有full、镜像、部署或实机
 截图验收，尚未恢复的其余设置仍是交付缺口。
+
+### 独立服务原生页面回到两端主内容区
+
+权威为用户最新的 iframe 决定及已独立推送的设计
+`b4f7d1971c95ffaae61d90e7c6dd8c4bb69e3f47` / `07` §4.6；
+REQ-24/DD-75/DD-87 的共享主体、独立服务数据与身份边界不变。不是重写三套业务
+页面。复用历史已存在的 NativeApplicationPage iframe 呈现
+（apps `6112fdb6dfbdee9897a34e374988e6d79f37406c` 同路径），通过原共享
+SidebarMenuButton 和两端 TanStack Router 挂到右侧主内容区。
+
+影响面：原 ApplicationBinding discovery/native-page GET 仍是目录与入口权威；
+菜单仅列有 nativePage 的 ACTIVE binding，按既有能力类别显示云盘/知识库/问数。
+路由仅保存 bindingId/workspaceId，不复制业务正文、token、权限或原生配置。
+分页、组织/工作区发现、回退和刷新使用原调用。Web/Desktop 都消费共享页面，
+原业务弹窗、独立业务窗口及 platform_open_native_page IPC 已删除；ONLYOFFICE
+路径不改。没有新依赖、契约或状态权威。
+
+副作用/异常：BFF 返回的 binding、projectionGeneration、URL 与 allowedOrigins
+继续严格核对；错误、撤权、跨 scope 迟到响应不挂载页面。普通 focus 只重查准入，
+同一 descriptor 不重建 iframe；用户显式刷新、认证返回或投影变化才刷新。
+sandbox 保留原生脚本/表单/下载以及用户认证 popup，不允许顶层导航；referrer
+不发送。既有 UNKNOWN 操作没有被重新发起，普通页面读取不修改治理状态。
+
+Desktop 认证采用单独的薄 IPC：只接受 main 调用和 bindingId，重新读取 BFF
+descriptor，冻结 NativeSession generation；远端窗口没有 main IPC capability。
+认证窗口导航仅接受批准业务 origins，加上现有 PlatformConfig.oidc_issuer 的
+认证 origin；不把 IdP 加入业务 descriptor/iframe 来源集合。没有新建登录协议。
+窗口关闭只触发重新读取/刷新，不表示登录成功；退出登录关闭认证窗口，迟到
+完成不改变新 scope。API 核对来源是当前锁定 Tauri 2.11.5 的
+`src/webview/webview_window.rs::WebviewWindow::on_window_event`、
+`WebviewWindowBuilder::on_navigation/on_new_window` 与 `src/app.rs::WindowEvent`。
+
+2026-10-07 源码候选：base `da5fec03a1ebe16b9efa028c3c19ea608d992814`，tree
+`ef00332c16add1b50dd1d85e098c13b123d50251`，29 文件 +467/-294；不包含主线程
+CSP、三服务 headers/部署配置，也不包含队友 workflows.steps.addMessage。
+同源 Dart 由原 gen-platform-i18n.py 生成且 --check PASS；两端 routeTree 由原
+TanStack Generator 生成，没有手写生成类型。正式 catalog 保留队友词条并已生成
+联合 Dart，候选单独剥离该未归属增量并再次生成核对，没有覆盖队友源码。
+
+执行使用既有 kailo-agent-receipt-xvkujx，实际 CPU4/内存8GiB，复用原缓存与小型
+tmpfs 输入；没有安装、下载、新镜像、full 或 Cargo。实际结果：
+
+- shared tsc 源码和 tests 均退出0；application-bindings 20/20、transport 8/8。
+- Web tsc 退出0；PlatformApp 9/9、platform-navigation 7/7（含同宿主服务导航、
+  scope/刷新/历史回退）通过。
+- Desktop tsc 退出0。认证 Rust 仅 rustfmt 解析/格式化通过，**没有编译或实机验收**。
+- SDK-only 把普通 focus 改为总是重建 iframe：两个保存原 DOM 的检查真实失败，
+  2 failed/18 passed、退出1；按正式源还原，SHA256
+  `6935017802daf466012dd137d6d029c22f440615710e1a2aaa6473377c0275ba`
+  一致，恢复20/20、退出0。没有保留产品变异。
+
+原日志已保存至 `/volumes/data/kailo/tmp/native-frame-20261007.LNpgQG/`：
+native-frame-shared.log、native-frame-web-restored.log、
+native-frame-desktop-restored.log、native-frame-transport.log、
+native-frame-mutation.log、native-frame-restored.log。首轮 Web/Desktop 日志也保留：
+是私有 file 依赖副本尚未同步新 catalog/props 导致 TS2345/TS2322/TS7006，精确
+同步同源文件后恢复，没有退改产品接口。两端路由生成第一次 Desktop 包解析入口
+未找到 router-generator，改用该宿主已锁定1.167.9实际缓存后生成成功，未安装工具。
+
+未验收边界：本批未部署、未真实浏览器登录、未 Win11 构建；当前 HTTP Desktop
+跨站环境的 Cells Strict/Wren Lax cookie 不能靠认证弹窗解决，仍阻断原生 frame
+实际会话。三服务完整 release/binding/工具资源和业务验收不由这些组件检查证明。
+服务端 CSP/cookie/投递由各真实消费者继续收口，不关闭授权边界冒充可用。
+
+### 本批后续 Desktop 认证 Rust 实际检查
+
+本节补充前述 iframe 候选在当时尚未编译的边界。固定输入
+`ef00332c16add1b50dd1d85e098c13b123d50251` 的完整 Desktop Rust crate 及实际
+buzz-core/sdk/ws-client/media 依赖共4.3MiB，没有混用旧宿主源码或修改原候选。
+
+预检：通用10ad SDK 缺 GTK3/WebKit4.1，未假称可编译；已有本机镜像
+`local/kailo-desktop-native-ack:3d8c0c11285f`（image 1c6241ba0295）实含 GTK3.24.41、
+WebKit2.52.6 和 Rust1.95.0。使用网络关闭的临时检查容器，CPU4/内存8GiB，
+Cargo保持-j16；复用 `/volumes/data/kailo/cache/desktop-e2e-target`，不争用
+队友Core target，无下载、安装、镜像构建、打包或依赖降级。
+
+实际命令：在该镜像 `/work/collaboration/desktop/src-tauri` 运行
+`cargo +1.95.0 check --lib --locked --offline -j16`，
+`CARGO_TARGET_DIR=/target` 指向上述原缓存。第一次工具调用因镜像没有默认
+toolchain退出1，显式使用已有1.95.0后进入编译；第一次完整调用在原build.rs
+生成权限文件时因私有输入挂载只读失败101，改为仅私有输入可写后继续。
+随后真实桌面库检查抓到既有 `commands/profile.rs:106` 的 E0277：
+sha2 0.11 的 digest Array 不实现 LowerHex。按现有hex依赖改为
+`hex::encode(Sha256::digest(...))`，保持同一SHA256字节的小写十六进制、原幂等
+摘要与UNKNOWN保留语义，不增加函数/配置/依赖或重复执行路径。
+
+该唯一必要修复相对 ef00332 的候选是
+`bc501352c9ab3d0a7ff146e8cb92b3589e3808c3`，1文件+1/-1，diff-check通过。
+热检查最终退出0，原输出：
+
+```
+Checking buzz-desktop v0.5.23 (/work/collaboration/desktop/src-tauri)
+warning: `buzz-desktop` (lib) generated 2 warnings
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.97s
+```
+
+两项warning是既有 events.rs 的 build_message/build_message_with_client_tags
+未使用，不是本次认证代码诊断，没有为消警告扩大删代码范围。native_auth及
+profile实际检查输入与正式文件SHA分别一致：
+`e8ecd695f65ae10ae61b0f7cd6595a6e4e5aae9915760ad8ac7cf2279a664315`、
+`c03436e604a17deaebd5ebf668e2611fd6346253dea03c0062bb6f8616a2cf25`。
+
+调用链复核：命令只给main，fresh BFF检查binding后才打开；会话generation在
+导航前、build之后、关闭回执后检查。sign_out沿原close_all销毁认证窗口，原
+end_session移出access并前移generation；Web共享页以独立scope generation拒绝
+迟到认证完成。构建与Destroyed监听注册之间已关闭的窗口由原manager不存在
+事实收口，不永久等待；非200/非法descriptor/窗口失败均返回错误，关闭只表示
+可以重新读取页面、不表示认证成功。IdP仅从原PlatformConfig.oidc_issuer加入
+认证窗口导航集合，不扩大业务iframe来源/权限或给远端IPC。
+
+所有原始输出保留在 `/volumes/data/kailo/tmp/native-frame-20261007.LNpgQG/`：
+native-auth-rust-check.log（toolchain）、native-auth-rust-check-toolchain.log
+（只读输入）、native-auth-rust-check-final.log（真实E0277）、
+native-auth-rust-check-restored.log（最终0）。未删除失败记录或共享缓存。
+检查结束Data约349MiB，所有本批编译容器已退出，不再启动打包/冷构建。
+
+这只是Linux桌面库真实编译，不是Win11包、GTK实机窗口、三服务认证或跨站
+Cookie验收。前述HTTP Desktop Cookie阻断和真实binding/业务场景未验边界不变。
+
+本批合并保留了后续 Cells OAuth secret 配置和原核验章节，只接入新的 framing
+差异，没有覆盖旧基线。共享路由、三组件原生头部、宿主 CSP 以及操作说明在同一批
+提交，未混入 Wren HUMAN Query 或多消息 Workflow 的在途实现。
+合并后的原 check-docs.sh 与外层 GOAL.md markdownlint 实际退出0：七段 PASS、
+GOAL 0 issues。该增量没有运行 full；在 Data 剩余约349MiB时没有再启动打包或
+冷构建。完整 full、真实部署与每页浏览器截图仍需后续批次实际通过，不记为本批完成。

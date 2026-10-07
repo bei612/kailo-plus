@@ -16,7 +16,7 @@ import {
   translate,
 } from "../i18n";
 
-type Platform = { client: BffClient; locale: PlatformLocale; openNativePage?: (bindingId: string) => Promise<void>; documentTheme?: "LIGHT" | "DARK" };
+type Platform = { client: BffClient; locale: PlatformLocale; authenticateNativePage?: (bindingId: string) => Promise<void>; documentTheme?: "LIGHT" | "DARK" };
 
 const PlatformContext = createContext<Platform | null>(null);
 
@@ -24,14 +24,14 @@ export function PlatformProvider({
   client,
   locale,
   children,
-  openNativePage,
+  authenticateNativePage,
   documentTheme,
 }: {
   client: BffClient;
   /** Device preference; absent preference defaults to Chinese. */
   locale?: PlatformLocale;
   children: ReactNode;
-  openNativePage?: (bindingId: string) => Promise<void>;
+  authenticateNativePage?: (bindingId: string) => Promise<void>;
   /** Only the Web host opts in. Desktop GAP-DSK-EDITOR-01 and Mobile stay closed. */
   documentTheme?: "LIGHT" | "DARK";
 }) {
@@ -42,7 +42,7 @@ export function PlatformProvider({
   const [scope, setScope] = useState({ client, generation: 0 });
   if (scope.client !== client) setScope({ client, generation: scope.generation + 1 });
   return (
-    <PlatformContext.Provider value={{ client, locale: locale ?? deviceLocale, openNativePage, documentTheme }}>
+    <PlatformContext.Provider value={{ client, locale: locale ?? deviceLocale, authenticateNativePage, documentTheme }}>
       <Fragment key={scope.generation}>{children}</Fragment>
     </PlatformContext.Provider>
   );
@@ -62,7 +62,7 @@ export function useBffClient(): BffClient {
   return usePlatform().client;
 }
 
-export function useNativePageHost() { return usePlatform().openNativePage; }
+export function useNativeAuthenticationHost() { return usePlatform().authenticateNativePage; }
 
 export function useDocumentTheme() { return usePlatform().documentTheme; }
 

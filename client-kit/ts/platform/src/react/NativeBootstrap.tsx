@@ -388,7 +388,7 @@ export function NativeBootstrap({
   );
 
   return (
-    <PlatformProvider client={client} locale={locale} openNativePage={host.openNativePage}>
+    <PlatformProvider client={client} locale={locale} authenticateNativePage={host.authenticateNativePage}>
       {step.kind === "restricted" ? (
         <LifecycleRestrictedView displayName={displayName} onSignOut={() => void signOut()} />
       ) : session ? (

@@ -306,6 +306,8 @@ let LoginPasswordDialog = createReactClass({
                 {nativeLogin && <FlatButton
                     label={nativeLogin.label}
                     href={nativeLogin.href}
+                    target={window.self !== window.top ? '_blank' : undefined}
+                    rel="noopener noreferrer"
                     disabled={this.state.loading}
                     fullWidth={true}
                     primary={true}

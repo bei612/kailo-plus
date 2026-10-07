@@ -1,4 +1,5 @@
 import type { Community } from "@/features/platform/activeCommunity";
+import type { ApplicationBindingView } from "@client-kit/contracts";
 import type { PlatformSection } from "@/features/platform/platformSections";
 import type { useSidebarRelayConnectionCard } from "@/features/sidebar/ui/useSidebarRelayConnectionCard";
 import type { Channel, Profile, SearchHit } from "@/shared/api/types";
@@ -37,6 +38,9 @@ export type AppSidebarProps = {
   searchFocusRequests: readonly [global: number, channel: number];
   onSelectSettings: () => void;
   onSelectPlatformSection: (section: PlatformSection) => void;
+  onSelectApplication: (binding: ApplicationBindingView) => void;
+  selectedApplicationBindingId?: string;
+  applicationWorkspaceId?: string;
   onSignOut: () => void;
   onBackgroundClick?: () => void;
   mutedChannelIds?: ReadonlySet<string>;

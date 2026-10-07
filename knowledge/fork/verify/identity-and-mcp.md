@@ -1098,3 +1098,46 @@ Original logs are in
 SDK formatting failure and the corrected native repository not-found mapping;
 these failures were not erased. No frontend build, image build, full check,
 deployment, live document creation or model call ran for this increment.
+
+## Native frontend frame ancestors (2026-10-07)
+
+Authority: DD-87 and design `07` §4.6 at separately committed design
+`b4f7d1971c95ffaae61d90e7c6dd8c4bb69e3f47`. The complete adapted native SPA
+is displayed in Kailo's main content pane; its API authentication, native
+authorization, database and MCP authority remain unchanged. This is a header
+and deployment seam, not a replacement knowledge UI or a new identity system.
+
+The existing frontend entrypoint consumes runtime `KAILO_FRAME_ANCESTORS`, a
+space-separated exact HTTP(S)/Tauri origin list. It rejects credentials, paths,
+wildcards, CSP injection and invalid ports before generating configuration.
+Only the frame-ancestor policy and conflicting X-Frame-Options are changed;
+empty configuration retains SAMEORIGIN and `frame-ancestors 'self'`. The original
+nginx server, SPA fallback and static asset locations consume the same values;
+the separate native embed-chat route keeps its original behavior. No schema,
+business state, token transfer or second authorization authority was added.
+
+Actual post-implementation validation mounted the new entrypoint/template into
+the existing frontend image
+`sha256:fe86075f63f92527715144b079141447b87005e8697ea5b353d736d4915bc0f4`,
+with no network and a 1 CPU / 512 MiB cgroup. The test parent origins were
+`http://kailo.example.test:58090` and `http://tauri.localhost` (fixtures, not
+deployment defaults). `wget -S -O /dev/null http://127.0.0.1/` returned 200 and
+the exact configured frame-ancestors, without X-Frame-Options; existing other
+headers remained. A separate empty-config container returned 200, SAMEORIGIN
+and self-only CSP. `https://host.example.test;script-src *` and port 65536 each
+exited 78 with `Invalid KAILO_FRAME_ANCESTORS origin` / `port`, respectively.
+Both running verification containers were stopped after the checks.
+
+Failures are not omitted: the first direct-entrypoint container could not start
+because the mounted source script is not executable (the image normally chmods
+it); the verification invocation was corrected to `/bin/sh`. A later Tauri
+scheme probe mistakenly invoked the startup entrypoint inside the already
+running container; the second nginx process failed to bind its occupied port.
+That exit 1 is not counted as a successful Tauri scheme HTTP check. No product
+source workaround or authentication relaxation was introduced for either issue.
+
+These are actual nginx/header checks, not a new image build, deployment,
+browser screenshot, cross-site cookie or signed Windows acceptance. Desktop
+native sessions and all complete component business flows remain unverified by
+this increment. Web/Desktop host frame-src and shared content routing must ship
+with the service configuration; adding a parent origin alone grants no access.

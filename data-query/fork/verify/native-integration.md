@@ -845,3 +845,43 @@ in the same restored SDK (`wren-dedicated-types.log`, no diagnostics).
 Upstream `status data-query` reports no newer reference commit. No live login,
 ApplicationBinding activation, release approval, model call or deployed
 question-to-SQL flow is proved by this isolated source verification.
+
+## 2026-10-07 Exact native frame ancestors
+
+Four-step impact: the latest native-page host requirement changes framing, not
+Wren's dedicated-instance identity authority. The existing Next middleware and
+Compose delivery are the only production seams here. Original JWT verification,
+signed instance grant, unsafe-method Origin checks and machine-route exemptions
+remain unchanged; no business state, user registry or audit authority is added.
+Empty configuration keeps self, malformed origins fail closed with 503, and
+framing permission never grants API access. Runtime `KAILO_FRAME_ANCESTORS`
+accepts explicit HTTP(S)/tauri parent origins, rejecting wildcard, credentials,
+paths, queries, fragments, invalid ports and header injection.
+
+Existing SDK `kailo-wren-query-sdk-itgs2n` (UID 1000, 4 CPU/4 GiB) ran
+`node node_modules/jest/bin/jest.js --runInBand src/middleware.test.ts`:
+47 passed, exit 0. The cases include exact CSP, native tauri parent, absent JWT,
+foreign unsafe-method Origin and invalid configuration. SDK-only replacement of
+the response policy with `frame-ancestors *` made the selected check fail (1
+failed, exit 1). Original bytes restored with cmp 0; all 47 then passed, exit 0.
+Logs: `/volumes/data/kailo/tmp/gateway-locale-repair-20261007.iwRGvX/`
+`wren-frame-final.log`, `wren-frame-mutation.log`, `wren-frame-restored.log`.
+No dependencies were installed and no image, full check or deployment was run.
+
+This does not prove cross-site cookie delivery or first iframe login. Existing
+Gateway Lax cookies are unchanged. A popup can complete the original OIDC flow
+but does not by itself make cookies available in a cross-site iframe; Desktop
+tauri/LAN HTTP remains an explicit unaccepted boundary, not a reason to weaken
+SameSite, JWT or CSRF checks.
+
+Identity follow-up is also distinct from framing: pinned upstream
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`WrenAI-ui-0.32.2/wren-ui/src/pages/api/graphql.ts::bootstrapServer` supplies
+service-only context, and
+`WrenAI-ui-0.32.2/wren-ui/src/apollo/server/repositories/projectRepository.ts::ProjectRepository.getCurrentProject`
+selects the first project. Current middleware checks the dedicated instance
+grant but does not yet give native GraphQL Query/Deploy/Asking an authorized
+business actor. Existing `nativeQueryAdmission.ts::authorizeQuery` serves the
+ActionToken plus SERVICE PEP path; a HUMAN OIDC subject cannot be treated as an
+admin or substituted for that token. This batch claims neither that missing
+native HUMAN admission integration nor full business identity isolation.

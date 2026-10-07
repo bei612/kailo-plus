@@ -155,6 +155,7 @@ services:
       - ${WREN_UI_SECRET_ENV_FILE:?component-only native DB credential delivery is required}
     environment:
       WREN_NATIVE_IDENTITY_JSON: ${WREN_NATIVE_IDENTITY_JSON:?native identity configuration is required}
+      KAILO_FRAME_ANCESTORS: ${KAILO_FRAME_ANCESTORS:-}
       WREN_ENCRYPTION_PASSWORD_FILE: /run/wren-native/encryption-password
       WREN_ENCRYPTION_SALT_FILE: /run/wren-native/encryption-salt
       DB_TYPE: ${WREN_DB_TYPE:?native database backend is required}

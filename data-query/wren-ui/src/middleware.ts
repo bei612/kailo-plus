@@ -78,7 +78,32 @@ function denied(status: number, code: string) {
   );
 }
 
+// Runtime deployment input, not a build-time Next substitution or a browser
+// supplied origin. Embedding never changes the native identity/CSRF policy.
+export function nativeFrameAncestors(raw: string | undefined): string {
+  const origins = raw?.trim().split(/\s+/).filter(Boolean) ?? [];
+  for (const origin of origins) {
+    const parsed = new URL(origin);
+    if (
+      !['http:', 'https:', 'tauri:'].includes(parsed.protocol) ||
+      !parsed.hostname ||
+      origin !== `${parsed.protocol}//${parsed.host}` ||
+      (parsed.port !== '' && Number(parsed.port) === 0) ||
+      /[*;'"\\]/.test(origin)
+    ) {
+      throw new Error('Invalid native frame ancestor');
+    }
+  }
+  return `frame-ancestors 'self'${origins.length ? ` ${origins.join(' ')}` : ''}`;
+}
+
 export async function middleware(request: NextRequest) {
+  let ancestors: string;
+  try {
+    ancestors = nativeFrameAncestors(process.env.KAILO_FRAME_ANCESTORS);
+  } catch {
+    return denied(503, 'NATIVE_FRAME_CONFIGURATION_UNAVAILABLE');
+  }
   // Exact machine routes authenticate in their original Node handler: Gateway
   // service JWT for MCP; ActionToken + fresh Core PEP for lifecycle/observation.
   // No other native page/API is exempt from the dedicated browser identity.
@@ -152,6 +177,7 @@ export async function middleware(request: NextRequest) {
   headers.delete('cookie');
   const response = NextResponse.next({ request: { headers } });
   response.headers.set('Cache-Control', 'private, no-store');
+  response.headers.set('Content-Security-Policy', ancestors);
   return response;
 }
 

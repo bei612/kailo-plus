@@ -9,6 +9,7 @@ import { Route as platformRouteImport } from "./routes/platform";
 import { Route as inviteRouteImport } from "./routes/invite";
 import { Route as indexRouteImport } from "./routes/index";
 import { Route as sectionRouteImport } from "./routes/section";
+import { Route as applicationsDotbindingIdRouteImport } from "./routes/applications.$bindingId";
 import { Route as channelsDotchannelIdRouteImport } from "./routes/channels.$channelId";
 import { Route as conversationsDotconversationIdRouteImport } from "./routes/conversations.$conversationId";
 import { Route as messagesDotnewRouteImport } from "./routes/messages.new";
@@ -32,6 +33,12 @@ const sectionRoute = sectionRouteImport.update({
   path: "/$section",
   getParentRoute: () => platformRoute,
 } as any);
+const applicationsDotbindingIdRoute =
+  applicationsDotbindingIdRouteImport.update({
+    id: "/applications/$bindingId",
+    path: "/applications/$bindingId",
+    getParentRoute: () => platformRoute,
+  } as any);
 const channelsDotchannelIdRoute = channelsDotchannelIdRouteImport.update({
   id: "/channels/$channelId",
   path: "/channels/$channelId",
@@ -53,6 +60,7 @@ export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
   "/invite": typeof inviteRoute;
   "/$section": typeof sectionRoute;
+  "/applications/$bindingId": typeof applicationsDotbindingIdRoute;
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
   "/conversations/$conversationId": typeof conversationsDotconversationIdRoute;
   "/messages/new": typeof messagesDotnewRoute;
@@ -61,6 +69,7 @@ export interface FileRoutesByTo {
   "/invite": typeof inviteRoute;
   "/": typeof indexRoute;
   "/$section": typeof sectionRoute;
+  "/applications/$bindingId": typeof applicationsDotbindingIdRoute;
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
   "/conversations/$conversationId": typeof conversationsDotconversationIdRoute;
   "/messages/new": typeof messagesDotnewRoute;
@@ -71,6 +80,7 @@ export interface FileRoutesById {
   "/invite": typeof inviteRoute;
   "/_platform/": typeof indexRoute;
   "/_platform/$section": typeof sectionRoute;
+  "/_platform/applications/$bindingId": typeof applicationsDotbindingIdRoute;
   "/_platform/channels/$channelId": typeof channelsDotchannelIdRoute;
   "/_platform/conversations/$conversationId": typeof conversationsDotconversationIdRoute;
   "/_platform/messages/new": typeof messagesDotnewRoute;
@@ -81,6 +91,7 @@ export interface FileRouteTypes {
     | "/"
     | "/invite"
     | "/$section"
+    | "/applications/$bindingId"
     | "/channels/$channelId"
     | "/conversations/$conversationId"
     | "/messages/new";
@@ -89,6 +100,7 @@ export interface FileRouteTypes {
     | "/invite"
     | "/"
     | "/$section"
+    | "/applications/$bindingId"
     | "/channels/$channelId"
     | "/conversations/$conversationId"
     | "/messages/new";
@@ -98,6 +110,7 @@ export interface FileRouteTypes {
     | "/invite"
     | "/_platform/"
     | "/_platform/$section"
+    | "/_platform/applications/$bindingId"
     | "/_platform/channels/$channelId"
     | "/_platform/conversations/$conversationId"
     | "/_platform/messages/new";
@@ -138,6 +151,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof sectionRouteImport;
       parentRoute: typeof platformRoute;
     };
+    "/_platform/applications/$bindingId": {
+      id: "/_platform/applications/$bindingId";
+      path: "/applications/$bindingId";
+      fullPath: "/applications/$bindingId";
+      preLoaderRoute: typeof applicationsDotbindingIdRouteImport;
+      parentRoute: typeof platformRoute;
+    };
     "/_platform/channels/$channelId": {
       id: "/_platform/channels/$channelId";
       path: "/channels/$channelId";
@@ -165,6 +185,7 @@ declare module "@tanstack/react-router" {
 interface platformRouteChildren {
   indexRoute: typeof indexRoute;
   sectionRoute: typeof sectionRoute;
+  applicationsDotbindingIdRoute: typeof applicationsDotbindingIdRoute;
   channelsDotchannelIdRoute: typeof channelsDotchannelIdRoute;
   conversationsDotconversationIdRoute: typeof conversationsDotconversationIdRoute;
   messagesDotnewRoute: typeof messagesDotnewRoute;
@@ -173,6 +194,7 @@ interface platformRouteChildren {
 const platformRouteChildren: platformRouteChildren = {
   indexRoute: indexRoute,
   sectionRoute: sectionRoute,
+  applicationsDotbindingIdRoute: applicationsDotbindingIdRoute,
   channelsDotchannelIdRoute: channelsDotchannelIdRoute,
   conversationsDotconversationIdRoute: conversationsDotconversationIdRoute,
   messagesDotnewRoute: messagesDotnewRoute,

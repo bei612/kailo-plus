@@ -13,8 +13,8 @@
 pub(crate) mod api;
 pub(crate) mod commands;
 pub(crate) mod config;
+pub(crate) mod native_auth;
 pub(crate) mod oidc;
-pub(crate) mod native_page;
 
 #[cfg(test)]
 mod e2e;

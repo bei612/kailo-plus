@@ -65,6 +65,9 @@ try:
     require(env['CELLS_NO_TLS'] in ('0', '1'), 'explicit native TLS choice required')
     require(int(env['CELLS_START_TIMEOUT_SECONDS']) > 0, 'positive deployment wait deadline required')
     origin = urlsplit(env['CELLS_EXTERNAL'])
+    for ancestor in env.get('KAILO_FRAME_ANCESTORS', '').split():
+        parent = urlsplit(ancestor)
+        require(parent.scheme in ('http', 'https', 'tauri') and parent.hostname and not parent.netloc.endswith(':') and not parent.username and not parent.password and not parent.path and not parent.query and not parent.fragment and not any(c in ancestor for c in "*;'\"\\") and ancestor == parent.scheme + '://' + parent.netloc and (parent.port is None or 0 < parent.port <= 65535), 'frame ancestors must be explicit HTTP(S) or native host origins')
     require(origin.scheme == ('http' if env['CELLS_NO_TLS'] == '1' else 'https') and origin.hostname and not origin.username and not origin.password and not origin.query and not origin.fragment and origin.path in ('', '/'), 'external origin must match explicit native TLS choice')
     ipaddress.ip_address(env['CELLS_PUBLIC_ADDRESS'])
     for key in ('CELLS_PUBLIC_PORT', 'CELLS_CONTAINER_PORT', 'CELLS_DB_PORT'):

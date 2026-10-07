@@ -129,8 +129,9 @@ func (h *IndexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	tplConf = FilterTplConf(ctx, tplConf, "")
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	for hK, hV := range config.Get(ctx, "frontend", "secureHeaders").StringMap() {
-		w.Header().Set(hK, hV)
+	if err := nativeSecureHeaders(w, config.Get(ctx, "frontend", "secureHeaders").StringMap()); err != nil {
+		http.Error(w, "Native frontend security configuration is unavailable", http.StatusServiceUnavailable)
+		return
 	}
 
 	var tpl *template.Template

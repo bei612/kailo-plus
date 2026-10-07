@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApplicationNativePage } from "@client-kit/contracts";
-import { useBffClient, useNativePageHost, useT } from "./context";
+import { useBffClient, useNativeAuthenticationHost, useT } from "./context";
 import { Button, Notice, ReadFailure } from "./ui";
-import { useLoad } from "./use-load";
 
 export function validNativePage(page: ApplicationNativePage, bindingId: string): boolean {
   try {
@@ -20,38 +19,81 @@ export function validNativePage(page: ApplicationNativePage, bindingId: string):
   } catch { return false; }
 }
 
-/** Shared entry and state; only the isolated native window is host-specific. */
+/** The independent service owns its complete page and session in both hosts. */
 export function NativeApplicationPage({ bindingId, onBack }: { bindingId: string; onBack: () => void }) {
   const client = useBffClient();
-  const nativeHost = useNativePageHost();
+  const authenticateNative = useNativeAuthenticationHost();
   const t = useT();
-  const [state, reload] = useLoad(`native-application:${bindingId}`, () => client.applicationNativePage(bindingId));
-  const [opening, setOpening] = useState(false);
+  const [approved, setApproved] = useState<ApplicationNativePage | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [frameRevision, setFrameRevision] = useState(0);
   const [error, setError] = useState<unknown>();
+  const [authenticationError, setAuthenticationError] = useState<unknown>();
+  const [authenticationPending, setAuthenticationPending] = useState(false);
+  const epoch = useRef(0);
+  const scope = useRef(0);
+  const authenticating = useRef(false);
+  const reload = useCallback(async (refreshFrame: boolean) => {
+    const request = ++epoch.current;
+    setLoading(true);
+    try {
+      const actual = await client.applicationNativePage(bindingId);
+      if (request !== epoch.current) return;
+      if (!validNativePage(actual, bindingId)) throw new Error("Invalid approved service page");
+      setApproved(actual);
+      setError(undefined);
+      if (refreshFrame) setFrameRevision((revision) => revision + 1);
+    } catch (failure) {
+      if (request !== epoch.current) return;
+      setApproved(null);
+      setError(failure);
+    } finally {
+      if (request === epoch.current) setLoading(false);
+    }
+  }, [bindingId, client]);
   useEffect(() => {
-    // Returning to the platform rechecks access, without inventing a polling
-    // interval or treating the independent service's login as our session.
-    window.addEventListener("focus", reload);
-    return () => window.removeEventListener("focus", reload);
+    ++scope.current;
+    setAuthenticationPending(false);
+    setAuthenticationError(undefined);
+    authenticating.current = false;
+    setApproved(null);
+    void reload(false);
+    // A focus check revalidates admission without remounting an unchanged
+    // native page and losing its unsaved work. Failure removes it immediately.
+    const recheck = () => {
+      const refreshFrame = authenticating.current;
+      authenticating.current = false;
+      void reload(refreshFrame);
+    };
+    window.addEventListener("focus", recheck);
+    return () => { ++scope.current; ++epoch.current; window.removeEventListener("focus", recheck); };
   }, [reload]);
-  const page = state.status === "ok" && validNativePage(state.data, bindingId) ? state.data : null;
-  return <section className="flex min-h-0 flex-1 flex-col gap-3">
+  const page = approved && validNativePage(approved, bindingId) ? approved : null;
+  return <section className="flex h-full min-h-0 flex-1 flex-col gap-3" data-testid="native-application-page">
     <div className="flex flex-wrap items-center gap-2"><Button onClick={onBack}>{t("platform.back")}</Button>
-      <Button onClick={reload}>{t("platform.refresh")}</Button>
-      {page && !nativeHost ? <a href={page.url} target="_blank" rel="noopener noreferrer"
-        referrerPolicy="no-referrer"
-        className="text-sm text-foreground underline underline-offset-4 hover:text-muted-foreground">
-        {t("bindings.openIndependent")}
-      </a> : null}</div>
+      <Button disabled={loading} onClick={() => { void reload(true); }}>{t("platform.refresh")}</Button>
+      {page ? <Button disabled={loading || authenticationPending} onClick={() => {
+        if (authenticateNative) {
+          const request = scope.current;
+          setAuthenticationPending(true); setAuthenticationError(undefined);
+          void authenticateNative(bindingId).then(() => {
+            if (request === scope.current) void reload(true);
+          }, (failure) => { if (request === scope.current) setAuthenticationError(failure); })
+            .finally(() => { if (request === scope.current) setAuthenticationPending(false); });
+          return;
+        }
+        authenticating.current = true;
+        // Explicit authentication only. The complete service remains mounted
+        // here; no platform token, selected native URL or service secret is sent.
+        window.open(page.url, "_blank", "popup,noopener,noreferrer");
+      }}>{t("bindings.signInNative")}</Button> : null}</div>
+    {authenticationError ? <ReadFailure error={authenticationError} onRetry={() => setAuthenticationError(undefined)} /> : null}
     <p className="text-sm text-muted-foreground">{t("bindings.nativeBoundary")}</p>
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-      : !page ? <ReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
-      : nativeHost ? <Button disabled={opening} onClick={() => {
-        setOpening(true); setError(undefined);
-        // Native host receives the binding ID, never a browser-selected URL.
-        void nativeHost(bindingId).catch(setError).finally(() => setOpening(false));
-      }}>{t("bindings.openNative")}</Button>
-      : null}
-    {error ? <ReadFailure error={error} onRetry={() => setError(undefined)} /> : null}
+    {page ? <iframe key={`${page.bindingId}:${page.projectionGeneration}:${page.url}:${frameRevision}`}
+      className="min-h-0 w-full flex-1 border-0" title={t("bindings.nativeTitle")}
+      src={page.url} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox"
+      referrerPolicy="no-referrer" />
+      : loading ? <Notice role="status">{t("platform.loading")}</Notice>
+      : <ReadFailure error={error} onRetry={() => { void reload(true); }} />}
   </section>;
 }

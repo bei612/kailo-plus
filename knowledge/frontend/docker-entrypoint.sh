@@ -1,5 +1,35 @@
 #!/bin/sh
 
+# The complete native SPA may be hosted in Kailo's content pane. Its own
+# authentication and API authorization are unchanged; only named parent origins
+# may frame it. Empty configuration retains the original same-origin policy.
+NATIVE_FRAME_CSP="frame-ancestors 'self'"
+NATIVE_FRAME_OPTIONS=SAMEORIGIN
+set -f
+for frame_origin in ${KAILO_FRAME_ANCESTORS:-}; do
+  case "$frame_origin" in
+    https://*|http://*|tauri://*) frame_authority=${frame_origin#*://} ;;
+    *) echo 'Invalid KAILO_FRAME_ANCESTORS origin' >&2; exit 78 ;;
+  esac
+  if ! printf '%s\n' "$frame_authority" |
+    grep -Eq '^([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?|\[[0-9A-Fa-f:]+\])(:[0-9]+)?$'; then
+    echo 'Invalid KAILO_FRAME_ANCESTORS origin' >&2
+    exit 78
+  fi
+  case "$frame_authority" in
+    *\]:*|[!\[]*:*) frame_port=${frame_authority##*:} ;;
+    *) frame_port= ;;
+  esac
+  if [ -n "$frame_port" ] && ! { [ "$frame_port" -gt 0 ] && [ "$frame_port" -le 65535 ]; } 2>/dev/null; then
+    echo 'Invalid KAILO_FRAME_ANCESTORS port' >&2
+    exit 78
+  fi
+  NATIVE_FRAME_CSP="$NATIVE_FRAME_CSP $frame_origin"
+  NATIVE_FRAME_OPTIONS=
+done
+set +f
+export NATIVE_FRAME_CSP NATIVE_FRAME_OPTIONS
+
 # Only emit whitelisted locale tags to avoid config.js injection from env values.
 RUNTIME_DEFAULT_LOCALE=""
 case "${DEFAULT_LOCALE:-}" in
@@ -33,7 +63,7 @@ export MAX_SKILL_BUNDLE_SIZE=${SKILL_MB}M
 export APP_HOST=${APP_HOST:-app}
 export APP_PORT=${APP_PORT:-8080}
 export APP_SCHEME=${APP_SCHEME:-http}
-envsubst '${MAX_FILE_SIZE} ${MAX_SKILL_BUNDLE_SIZE} ${APP_HOST} ${APP_PORT} ${APP_SCHEME}' \
+envsubst '${MAX_FILE_SIZE} ${MAX_SKILL_BUNDLE_SIZE} ${APP_HOST} ${APP_PORT} ${APP_SCHEME} ${NATIVE_FRAME_CSP} ${NATIVE_FRAME_OPTIONS}' \
   < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf
 
 # 启动 nginx

@@ -3,7 +3,7 @@ import { platformNavigationSections, type PlatformNavigationSection } from "@cli
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 
 export type PlatformSection = PlatformNavigationSection | "inbox" | "settings";
-export type PlatformTab = PlatformSection | "channel" | "conversation" | "new-message";
+export type PlatformTab = PlatformSection | "channel" | "conversation" | "new-message" | "application";
 
 export function isPlatformSection(value: string): value is PlatformSection {
   return value === "inbox" || value === "settings" || platformNavigationSections.some((section) => section === value);
@@ -29,11 +29,12 @@ export function usePlatformNavigation() {
   const search = useSearch({ from: "/_platform" });
   const newMessage = useRouterState({ select: (state) => state.matches.some((match) => match.routeId === "/_platform/messages/new") });
   const tab: PlatformTab = params.channelId ? "channel" : params.conversationId ? "conversation"
-    : newMessage ? "new-message" : params.section ?? "channel";
+    : params.bindingId ? "application" : newMessage ? "new-message" : params.section ?? "channel";
   return {
     tab,
     workspaceId: params.channelId ?? search.workspaceId ?? null,
     conversationId: params.conversationId ?? null,
+    applicationBindingId: params.bindingId ?? null,
     messageTarget: params.channelId && search.messageId ? {
       channelId: params.channelId, messageId: search.messageId, threadRootId: search.threadRootId ?? null,
     } : null,
@@ -42,7 +43,8 @@ export function usePlatformNavigation() {
       search: target ? { messageId: target.messageId, threadRootId: target.threadRootId ?? undefined } : {},
     }),
     openConversation: (conversationId: string) => navigate({ to: "/conversations/$conversationId", params: { conversationId }, search: {} }),
-    openTab: (next: Exclude<PlatformTab, "conversation">, workspaceId?: string | null) => {
+    openApplication: (bindingId: string, workspaceId?: string) => navigate({ to: "/applications/$bindingId", params: { bindingId }, search: { workspaceId } }),
+    openTab: (next: Exclude<PlatformTab, "conversation" | "application">, workspaceId?: string | null) => {
       if (next === "channel") return workspaceId
         ? navigate({ to: "/channels/$channelId", params: { channelId: workspaceId }, search: {} })
         : navigate({ to: "/", search: {} });
