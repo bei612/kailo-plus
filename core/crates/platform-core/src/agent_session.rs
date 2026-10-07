@@ -426,7 +426,7 @@ const MEMORY_PHASE_FACTS: &str =
                   join admission.action_execution ae on ae.id=prior.action_execution_id
                   where av.asset_id=prior.automation_version_asset_id
                     and av.automation_resource_id=prior.automation_resource_id
-                    and av.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS')
+                    and av.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS','ADD_REACTION_STEPS')
                     and ae.action_key='automation.run' and ae.tenant_id=prior.tenant_id
                     and ae.workspace_id=prior.workspace_id
                     and ae.target_id=prior.automation_resource_id))

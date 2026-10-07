@@ -4011,3 +4011,144 @@ SDK 故意破坏审批步骤位置与双策略拒绝：原检查 23 通过/2 失
 `core-mutation.log`、`core-mutation-restored.log`。
 复用既有 4 CPU/8 GiB SDK、Data 缓存和 Cargo `-j16`，无 full/build/deploy。
 没有声称线上审批与消息终态贯通，也没有把显式 ignored 的数据库场景计为通过。
+
+## 2026-10-07：原版工作流 add_reaction 接线
+
+此增量基于审批冻结树 `ff14c0961914055412b1da5248a288e708ac2871`，不是该审批树的重写。
+关联 REQ-23、REQ-24、DD-107 与设计 06 原七动作恢复范围；本批新增的是原表情回应，
+没有将原七动作降成单动作产品，也没有恢复 Buzz 自带执行引擎。
+
+实施前四步结论：
+
+1. 权威：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `crates/buzz-workflow/src/schema.rs::ActionDef::AddReaction` 明确回应实际触发消息；
+   `desktop/src/features/workflows/ui/WorkflowStepCard.tsx::WorkflowStepCard` 保留原 Emoji
+   输入。实际事件直接使用 `crates/buzz-sdk/src/builders.rs::build_reaction`，原 kind 7
+   只有一个 e 标签；`crates/buzz-relay/src/handlers/ingest.rs::derive_reaction_channel`
+   从该目标查 Channel，不另造 h/p 标签。旧 executor 的共享 token/X-Pubkey 回退没有接回。
+2. 影响：AutomationStep 增加 add_reaction/emoji，版本正文及摘要仍不可变；内部
+   ADD_REACTION_STEPS 明确区分旧消息 kind，旧 Core 不会误执行。四侧按同一选定合同生成。
+   原 AgentTask、冻结事件 ID、REPLY_INTENT、UsageEvent/automation.run COUNT 是同一链，
+   不创建模型回合、模型用量或 CapacityLease。新 70000 迁移仅扩原约束/原触发器动作集合；
+   保留旧 writer，存在反应版本时 down 明确停止而不是重解释历史。
+3. 副作用：仍先原动作准入/委托/审批，发布前持久化原 intent/CAS，再做原新鲜 scope/
+   identity/binding/计量关联核验。缺凭据、缺源、撤权或版本漂移不允许发布；查到原事件也
+   不直接完成，必须原 COUNT 计量提交。结果不明只查同一事件，不重放或清账本。
+4. 边界：空 emoji、超过契约与原 builder 字符边界、额外目标字段、未知步骤均拒绝。
+   Schedule/手动没有真实触发消息，不创建伪目标；管理验证、canRun 和运行准入一致。
+   原 Delay/策略审批可以在反应前，UNKNOWN 不前进。签名回执须精确匹配原事件 ID、
+   AGENT author、源 e 引用、emoji 和签名；并发仍只有原 CAS 胜者可投递。
+   超时/缺证据保留 UNKNOWN，确定拒绝才失败，沿既有六类错误和用量收敛处理。
+
+Web/Desktop 共用原表单/YAML/StepCard、列表及详情，不另写第二前端。Mobile 本批只有
+同源生成合同/文案，没有宣称 Mobile 编辑器验收。新增纯 buzz-sdk 路径依赖只锁入一个
+现有源码包；Core Dockerfile、构建 allowlist、原 release archive 同步包含该源码与
+编译读取的 AutomationStep schema，没有构建时补丁或新下载。
+
+实际验证（原 4 CPU/8 GiB SDK，Cargo 16；未运行 full/build/deploy）：
+
+- 原 tools/gen.sh 退出 0；shared 源与测试 tsc 均 0，Web/Desktop tsc 均 0。
+- Workflow/Automation 86 项通过；SDK 移除反应识别后新用例 1 项真实失败，恢复字节
+  cmp 0 后 86 项再次通过，包含表单/YAML及 UNKNOWN 重查同一个意图。
+- TS、Dart、Go 和 Rust 的新 reaction 合同往返各 1 项通过。共享正式生成物仍含其他
+  队友在途合同，本候选使用 ff14 加本 schema 的独立一致生成物，不覆盖联合产物。
+- Core automation 27 项通过、5 个要求独立业务夹具的场景显式 ignored；原 builder
+  签名与精确回执 2 项通过；platform-core/collab-bridge all-targets clippy -D warnings 0。
+  SDK 去掉 emoji 精确回执比较及 Schedule 拒绝，各自新用例真实失败 101；两源文件
+  cmp 0 恢复后重新编译，bridge 2 项、Core 反应 2 项再次通过，最终 clippy 0。
+- 独立 PostgreSQL 容器 kailo-buzz-full-pg-uOp8YM 内新库 workflow_reaction_d86wxe：
+  从空库应用选定输入 101 个 up，70000 down/up 均 0。读取实际生产 CHECK 表达式到临时
+  形状表，原消息/反应正例通过，Schedule 反应与缺 emoji 拒绝，事务回滚；这不是完整
+  权限或实际 Relay/Temporal 联调。没有迁移业务库或修改线上数据。
+
+真实早期失败保留：最初复制的旧隔离库没有 catalog，首个迁移尝试报 schema 不存在；
+随后在本次新空库执行全部原迁移。TS 往返通过后首次 Dart 命令工作目录错误，修正既有
+目录后 Dart/Go 通过。首次临时 SQL 证据命令引号错误，修正原命令后检查通过。
+
+日志根 `/volumes/data/kailo/tmp/workflow-reaction-20261007.d86wXE/`：
+`generate.log`、`lock.log`、`shared.log`、`reaction-ui.log`、`ui-mutation.log`、
+`ui-hosts-restored.log`、`roundtrip.log`、`roundtrip-restored.log`、`core.log`、
+`core-mutation.log`、`core-restored.log`、`migrations.log`、`migrations-restored.log`、
+`action-constraint.log`、`action-constraint-restored.log`。
+Core 窄验另保留根线程已验容量 mapper 和 eb62 的两处 lint 修正作为集成输入；候选没有
+夺取这些改动的提交归属，也不回退它们。生产源码写入与窄验完成，未提交/推送/部署；
+尚未验证真实触发→Relay 反应→计量提交的线上闭环，其他原动作/多副作用执行仍是缺口。
+
+### 2026-10-07：截图 174 的 Workflows 重复层级修复（源码批）
+
+权威与上游：REQ-24、设计 `06` §9.1 要求共用原版界面且保留 Temporal
+治理。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/workflows/ui/WorkflowsView.tsx::WorkflowsView/CreateWorkflowCard`
+只有一处页面刷新，成功空列表展示原创建卡；
+`desktop/src/shared/ui/PageHeader.tsx::PageHeader` 明定每页一个标题。
+截图 174 的重复源是共享页标题叠加两宿主已有标题，以及目录和列表各自的刷新。
+
+影响面：仅共享 `WorkflowsPage`、`AutomationManagement/AutomationList`
+及现有双语词条；Web `PlatformApp` 与 Desktop `PlatformScreen` 继续消费同一页面。
+保留宿主标题，沿原布局将说明和图标刷新放在同一行；工作区选择仍来自原 BFF
+目录。唯一刷新重新读取目录与当前工作流，不产生管理写入。原创建卡、版本卡、
+表单/YAML、运行历史、审批与执行入口均保留，不恢复 Buzz 自带执行器。
+
+副作用与边界：`AutomationAction` 留在稳定父层，未决意图不因目录刷新卸载，
+原 locked 仍阻止切工作区及刷新。目录失败即撤下旧列表，列表失败仍为
+`AgentReadFailure` 而非空态。仅成功读取且无创建权限的空列表显示
+“此工作区暂无工作流”；有创建权限时沿上游仅显示原创建卡，不另加技术化空态。
+切工作区仍由原 key 隔离，旧异步回应由原 `useLoad` 丢弃。
+
+实现后已补原 `pages.test.tsx` 的中英文单标题/单刷新、目录与列表均重读、
+不发生写请求检查，并更新既有成功空列表/拒绝读取断言。
+在既有 4 CPU/8 GiB SDK，以 `e3a5b5b6eda9c13485c1bcf41fb9969f3fd8a4d1`
+加本批精确增量为输入，保留该基线全部主题检查修正，不混 reaction 增量。
+原 `gen-platform-i18n.py` 与 `--check` 退出 0；共享 source/test 两套 tsc、
+Workflows/Automation/主题过滤用例 89 passed / 163 skipped，退出 0。
+首轮 tsc 报按钮 import 路径不存在；修为已存在的原版共享按钮，不新增组件或依赖。
+SDK-only 把重复标题加回后，中英文两项都失败，2 failed / 250 skipped、退出 1；
+恢复与正式 `workflows.tsx` 逐字 cmp 0 后，2 passed / 250 skipped、退出 0。
+同次最终 Web/Desktop tsc 均退出 0。日志在
+`/volumes/data/kailo/tmp/workflow-layout-20261007.jMhHhH/`：
+`shared.log`（首轮 import 失败及生成通过）、`shared-restored.log`、
+`mutation.log`、`restored-hosts.log`。限定路径 `git diff --check` 退出 0。
+本批未构建、部署或声称截图中的线上页面已经更新。
+
+### 2026-10-07：截图 175 的 Agent 原版页面层级与单刷新
+
+权威为 REQ-24 与既有 AgentDefinition/Version/Installation 的治理边界。
+固定 Buzz `779af8886caae1317b4de962082429867ab61503`，
+`desktop/src/features/agents/ui/AgentsView.tsx::AgentsView` 使用 PageHeader
+及 “Set up and manage your agents.”；同目录
+`UnifiedAgentsSection.tsx::UnifiedAgentsSection` 在已成功读取后直接显示原创建卡。
+本批不将原 Agent 执行器、凭据或注册权威带回 Kailo。
+
+影响面限定共享 `AgentDefinitionsPage`、
+`InstallationManagement/InstallationList`、对应原弹层和同源中英文词条。
+Web/Desktop 仍实际消费同一组件；Mobile 使用的 `agents.none` 原 key 保留。
+页面只保留一个原版图标刷新，同时重读定义、原工作区目录与安装列表；
+安装/升级候选通过原 sourceRevision 一起重新读取。
+原创建卡、详情、安装、升级、委托和权限管理入口没有删除。
+
+治理说明不再堆在页面上，而在定义编辑、安装创建及安装详情原弹层保留。
+安装空页文案明确为“此页暂无可显示的 Agent”，不会把带下一页的授权空扫描
+说成工作区不存在 Agent。失败仍沿原 ReadFailure，不渲染为空。
+
+副作用与异常：刷新只发 GET，不增加授权或运行语义；
+InstallationManagement 不因页面刷新重挂，原未知动作保留其幂等键与版本。
+当前安装锁同步到页面刷新按钮，未决请求不能通过全页刷新卸载其详情或另建请求；
+关闭原管理弹层的限制和原 scope key 保持。切换目录后的旧请求仍由 useLoad 丢弃。
+原定义“就绪”记录与真实运行健康不混同，未把只读对象改标为“可配置”。
+
+在同一 4 CPU/8 GiB SDK，以已验 Workflows 树
+`7cff77717b17ca5d36635790f5d577207caee468` 加本批精确增量验证，
+未混 reaction、并行 SERVICE UI、根新增 actions.* 文案。
+共享 source/test 两套 tsc 退出 0，原 pages 全套 254 项通过。
+首轮 253 pass / 1 fail 是既有用例仍查找已合并的安装区域文本刷新，
+改为实际全页图标入口，并显式验证原安装候选刷新仍成立。
+SDK-only 删除父按钮 installationLocked 守卫后，UNKNOWN 升级用例真实失败，
+1 failed / 253 skipped、退出 1。原文件字节恢复 cmp 0 后，
+中英单刷新、候选刷新及 UNKNOWN 共 4 项通过。
+原 gen-platform-i18n.py 与 --check 退出 0，未删除 Mobile 已有词条键。
+同次最终 Web/Desktop 两套 tsc 均退出 0（原命令终态 0）。
+
+日志位于 `/volumes/data/kailo/tmp/agent-layout-20261007.FV9jax/`：
+`shared.log`、`shared-restored.log`、`mutation.log`、
+`restored-hosts.log`。未运行 Cargo、full、镜像构建或部署；
+线上截图仍是旧版本，不用本批源码检查替代浏览器和安装包验收。

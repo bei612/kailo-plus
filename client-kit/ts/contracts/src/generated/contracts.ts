@@ -861,13 +861,18 @@ export interface StepElement {
      */
     approvalPolicy?: ApprovalPolicyElement;
     duration?:       string;
-    id:              string;
-    message?:        string;
-    name?:           string;
-    text?:           string;
+    /**
+     * 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
+     */
+    emoji?:   string;
+    id:       string;
+    message?: string;
+    name?:    string;
+    text?:    string;
 }
 
 export enum ActionEnum {
+    AddReaction = "add_reaction",
     Delay = "delay",
     RequestApproval = "request_approval",
     SendMessage = "send_message",
@@ -3879,10 +3884,14 @@ export interface AutomationStep {
      */
     approvalPolicy?: ApprovalPolicyElement;
     duration?:       string;
-    id:              string;
-    message?:        string;
-    name?:           string;
-    text?:           string;
+    /**
+     * 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
+     */
+    emoji?:   string;
+    id:       string;
+    message?: string;
+    name?:    string;
+    text?:    string;
 }
 
 /**

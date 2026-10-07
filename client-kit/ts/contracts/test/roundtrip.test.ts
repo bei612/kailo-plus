@@ -7,6 +7,13 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
+
+test("automation reaction step preserves original emoji", () => {
+  const sample: import("../src/generated/contracts.js").AutomationStep = JSON.parse(readFileSync(new URL(
+    "../../../../contracts/samples/automation-reaction-step.sample.json", import.meta.url), "utf8"));
+  const actual: import("../src/generated/contracts.js").AutomationStep = {id:sample.id,action:sample.action,emoji:sample.emoji};
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)), sample);
+});
 import type { ActionCommand as ServiceReadPermissionCommand } from "../src/generated/contracts.js";
 
 test("service read permission preserves receiver and legacy absence", () => {

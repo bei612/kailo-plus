@@ -15,6 +15,8 @@ COPY core/.sqlx ./.sqlx
 COPY model-gateway/crates/protos/proto/ext_mcp.proto /build/apps/model-gateway/crates/protos/proto/ext_mcp.proto
 COPY collaboration/Cargo.toml /build/apps/collaboration/Cargo.toml
 COPY collaboration/crates/buzz-core /build/apps/collaboration/crates/buzz-core
+COPY collaboration/crates/buzz-sdk /build/apps/collaboration/crates/buzz-sdk
+COPY contracts/domain/automation_step.schema.json /build/apps/contracts/domain/automation_step.schema.json
 COPY tools/registry/capabilities.yaml /build/apps/tools/registry/capabilities.yaml
 COPY contracts/api/action_submission.schema.json /build/apps/contracts/api/action_submission.schema.json
 COPY contracts/api/delegated_action_metadata_v1.schema.json /build/apps/contracts/api/delegated_action_metadata_v1.schema.json

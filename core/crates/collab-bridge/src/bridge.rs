@@ -39,6 +39,32 @@ const KIND_CHANNEL_CREATE: u16 = 9007;
 const KIND_CHANNEL_EDIT_METADATA: u16 = 9002;
 const KIND_CHANNEL_METADATA: u16 = 39000;
 
+/// Contract mirrors the pinned SDK's character bound; no client-specific limit.
+pub fn valid_reaction(emoji: &str) -> bool {
+    let schema: Result<Value, _> = serde_json::from_str(include_str!(
+        "../../../../contracts/domain/automation_step.schema.json"
+    ));
+    !emoji.trim().is_empty()
+        && schema
+            .ok()
+            .and_then(|schema| schema["properties"]["emoji"]["maxLength"].as_u64())
+            .is_some_and(|maximum| emoji.chars().count() as u64 <= maximum)
+}
+
+fn reaction_matches(event: &Event, id: &str, author: &str, source: &str, emoji: &str) -> bool {
+    event.id.to_hex() == id
+        && event.pubkey.to_hex() == author
+        && u32::from(event.kind.as_u16()) == KIND_REACTION
+        && event.verify().is_ok()
+        && event.content == emoji
+        && event.tags.len() == 1
+        && event
+            .tags
+            .iter()
+            .next()
+            .is_some_and(|tag| tag.as_slice() == ["e", source])
+}
+
 pub fn message_kind(message_type: &contracts::WebMessageType) -> u16 {
     match message_type {
         contracts::WebMessageType::Stream => buzz_core::kind::KIND_STREAM_MESSAGE as u16,
@@ -475,6 +501,45 @@ impl IdentityClient {
             .map_err(|_| OperatorError::Sign("Reply signing failed".into()))
     }
 
+    /// Original SDK kind:7 builder. Relay derives Channel from the real e target.
+    pub fn sign_reaction_at(
+        &self,
+        target: &str,
+        emoji: &str,
+        created_at: u64,
+    ) -> Result<Event, OperatorError> {
+        if !valid_reaction(emoji) {
+            return Err(OperatorError::Sign("Reaction content is invalid".into()));
+        }
+        let target = nostr::EventId::from_hex(target)
+            .map_err(|_| OperatorError::Sign("Reaction source is invalid".into()))?;
+        buzz_sdk::build_reaction(target, emoji)
+            .map_err(|_| OperatorError::Sign("Reaction builder refused".into()))?
+            .custom_created_at(nostr::Timestamp::from(created_at))
+            .sign_with_keys(&self.keys)
+            .map_err(|_| OperatorError::Sign("Reaction signing failed".into()))
+    }
+
+    /// Positive native proof only; missing or unreadable events never prove failure.
+    pub async fn reaction_exists(
+        &self,
+        http: &reqwest::Client,
+        event_id: &str,
+        author: &str,
+        source: &str,
+        emoji: &str,
+    ) -> Result<bool, OperatorError> {
+        let page = self
+            .query(http, &[serde_json::json!({"ids":[event_id]})])
+            .await?;
+        let events: Vec<Event> = serde_json::from_value(page)
+            .map_err(|_| OperatorError::NotConverged("Reaction query is invalid".into()))?;
+        let [event] = events.as_slice() else {
+            return Ok(false);
+        };
+        Ok(reaction_matches(event, event_id, author, source, emoji))
+    }
+
     /// 以该身份签名并发布一条事件，返回 Relay 的原始回应。
     ///
     /// 回应里 `accepted` 为 false 不是传输错误——那是 Relay 的判定，由调用方
@@ -839,7 +904,7 @@ impl IdentityClient {
                     _ => {
                         return Err(OperatorError::NotConverged(
                             "Channel discovery 的 archived 状态未知".into(),
-                        ));
+                        ))
                     }
                 });
             }
@@ -1150,6 +1215,41 @@ const BLOSSOM_AUTH_TTL_SECS: u64 = 600;
 #[cfg(test)]
 mod mention_tests {
     use super::*;
+
+    #[test]
+    fn reaction_receipt_requires_exact_source_emoji_author_and_signature() {
+        let keys = Keys::generate();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            "http://unused.invalid",
+            "unused.platform.test",
+        )
+        .unwrap();
+        let source = "a".repeat(64);
+        let event = client.sign_reaction_at(&source, "👍", 105).unwrap();
+        let id = event.id.to_hex();
+        let author = keys.public_key().to_hex();
+        assert!(reaction_matches(&event, &id, &author, &source, "👍"));
+        assert!(!reaction_matches(
+            &event,
+            &id,
+            &author,
+            &"b".repeat(64),
+            "👍"
+        ));
+        assert!(!reaction_matches(&event, &id, &author, &source, "👎"));
+        assert!(!reaction_matches(
+            &event,
+            &id,
+            &Keys::generate().public_key().to_hex(),
+            &source,
+            "👍"
+        ));
+        let mut forged = event.clone();
+        forged.content = "👎".into();
+        assert!(!reaction_matches(&forged, &id, &author, &source, "👎"));
+    }
 
     #[test]
     fn edits_keep_original_scope_identity_and_notify_only_new_mentions() {

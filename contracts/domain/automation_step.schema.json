@@ -9,7 +9,8 @@
   "properties": {
     "id": {"type": "string", "minLength": 1},
     "name": {"type": "string", "minLength": 1},
-    "action": {"type": "string", "enum": ["delay", "request_approval", "send_message"]},
+    "action": {"type": "string", "enum": ["delay", "request_approval", "send_message", "add_reaction"]},
+    "emoji": {"type": "string", "minLength": 1, "maxLength": 64, "description": "原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。"},
     "duration": {"type": "string", "minLength": 1},
     "approvalPolicy": {"$ref": "automation_approval_policy_ref.schema.json", "description": "request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。"},
     "message": {"type": "string", "minLength": 1},

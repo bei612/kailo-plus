@@ -3521,6 +3521,9 @@ class StepElement {
   ///request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
   final ApprovalPolicyElement? approvalPolicy;
   final String? duration;
+
+  ///原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
+  final String? emoji;
   final String id;
   final String? message;
   final String? name;
@@ -3530,6 +3533,7 @@ class StepElement {
     required this.action,
     this.approvalPolicy,
     this.duration,
+    this.emoji,
     required this.id,
     this.message,
     this.name,
@@ -3542,6 +3546,7 @@ class StepElement {
         ? null
         : ApprovalPolicyElement.fromJson(json["approvalPolicy"]),
     duration: json["duration"],
+    emoji: json["emoji"],
     id: json["id"],
     message: json["message"],
     name: json["name"],
@@ -3552,6 +3557,7 @@ class StepElement {
     "action": actionEnumValues.reverse[action],
     "approvalPolicy": approvalPolicy?.toJson(),
     "duration": duration,
+    "emoji": emoji,
     "id": id,
     "message": message,
     "name": name,
@@ -3559,9 +3565,10 @@ class StepElement {
   });
 }
 
-enum ActionEnum { DELAY, REQUEST_APPROVAL, SEND_MESSAGE }
+enum ActionEnum { ADD_REACTION, DELAY, REQUEST_APPROVAL, SEND_MESSAGE }
 
 final actionEnumValues = EnumValues({
+  "add_reaction": ActionEnum.ADD_REACTION,
   "delay": ActionEnum.DELAY,
   "request_approval": ActionEnum.REQUEST_APPROVAL,
   "send_message": ActionEnum.SEND_MESSAGE,
@@ -11459,6 +11466,9 @@ class AutomationStep {
   ///request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
   final ApprovalPolicyElement? approvalPolicy;
   final String? duration;
+
+  ///原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
+  final String? emoji;
   final String id;
   final String? message;
   final String? name;
@@ -11468,6 +11478,7 @@ class AutomationStep {
     required this.action,
     this.approvalPolicy,
     this.duration,
+    this.emoji,
     required this.id,
     this.message,
     this.name,
@@ -11480,6 +11491,7 @@ class AutomationStep {
         ? null
         : ApprovalPolicyElement.fromJson(json["approvalPolicy"]),
     duration: json["duration"],
+    emoji: json["emoji"],
     id: json["id"],
     message: json["message"],
     name: json["name"],
@@ -11490,6 +11502,7 @@ class AutomationStep {
     "action": actionEnumValues.reverse[action],
     "approvalPolicy": approvalPolicy?.toJson(),
     "duration": duration,
+    "emoji": emoji,
     "id": id,
     "message": message,
     "name": name,

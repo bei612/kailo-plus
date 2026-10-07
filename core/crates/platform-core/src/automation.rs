@@ -311,7 +311,8 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
         }
         Some("SCHEDULE")
             if !trigger.contains_key("textPrefix")
-                && !trigger.contains_key("mentionPrincipalId") =>
+                && !trigger.contains_key("mentionPrincipalId")
+                && native_action["kind"] != "ADD_REACTION_STEPS" =>
         {
             let spec = trigger.get("scheduleSpec").ok_or_else(invalid_management)?;
             schedule::spec(spec)?;
@@ -630,7 +631,7 @@ async fn management_installation(
           and version_owner.kind='HUMAN' and version_owner.status='ACTIVE' and version_tm.state='ACTIVE'
         for update of r,i,v,a,p,agent,owner,tm,version_owner,version_tm")
         .bind(installation).bind(tenant).bind(workspace)
-        .bind(content.pointer("/action/kind").and_then(Value::as_str).is_some_and(steps::is_message_kind))
+        .bind(content.pointer("/action/kind").and_then(Value::as_str).is_some_and(steps::is_native_kind))
         .fetch_optional(&mut **tx).await?;
     let Some((agent, requested)) = actual else {
         return Err(Refusal::Precondition(ReasonCode::BindingNotActive));
@@ -664,7 +665,7 @@ async fn management_installation(
     if content
         .pointer("/action/kind")
         .and_then(Value::as_str)
-        .is_some_and(crate::automation::steps::is_message_kind)
+        .is_some_and(crate::automation::steps::is_native_kind)
     {
         Ok(())
     } else {
@@ -1751,7 +1752,7 @@ async fn fresh(
         .action
         .get("kind")
         .and_then(Value::as_str)
-        .is_some_and(crate::automation::steps::is_message_kind)
+        .is_some_and(crate::automation::steps::is_native_kind)
     {
         effective.meters.retain(|meter| meter == "automation.run");
     }
@@ -1795,7 +1796,7 @@ const FROZEN_INVOCATION_SQL: &str = "select i.automation_resource_id,i.automatio
            and (($6 and not $5 and $3::text is null and i.status in ('CREATED','DISPATCHING','UNKNOWN')
                  and i.runtime_turn_id is null and i.native_status is null and i.reply_event_id is not distinct from $4::text
                  and exists(select 1 from catalog.automation_version v where v.asset_id=i.automation_version_asset_id
-                   and v.automation_resource_id=i.automation_resource_id and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS')))
+                   and v.automation_resource_id=i.automation_resource_id and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS','ADD_REACTION_STEPS')))
              or (not $6 and not $5 and $3::text is null and $4::text is null and i.status in ('CREATED','DISPATCHING') and i.runtime_turn_id is null)
              or (not $5 and $3::text is not null and i.status in ('RUNNING','UNKNOWN')
                and i.native_status='completed' and i.runtime_turn_id=$3 and i.reply_event_id is not distinct from $4::text)
@@ -2021,7 +2022,7 @@ async fn fresh_executor(
 ) -> Result<(), Refusal> {
     match row.action.get("kind").and_then(Value::as_str) {
         Some("AGENT_TURN") => fresh_runtime(state, tx, &runtime_scope(row)).await,
-        Some("POST_MESSAGE" | "POST_MESSAGE_STEPS") => {
+        Some("POST_MESSAGE" | "POST_MESSAGE_STEPS" | "ADD_REACTION_STEPS") => {
             post_message::fresh(state, tx, &runtime_scope(row)).await
         }
         _ => Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
@@ -2030,12 +2031,12 @@ async fn fresh_executor(
 
 /// Called only by the original AgentTask Activity's template branch. The same
 /// immutable Automation/Delegation/source checks are repeated before publish.
-pub(crate) async fn fresh_post_message(
+pub(crate) async fn fresh_channel_action(
     state: &ServiceState,
     tx: &mut Transaction<'_, Postgres>,
     invocation: Uuid,
     expected_reply: Option<&str>,
-) -> Result<(String, post_message::MessageBinding, String), Refusal> {
+) -> Result<(Value, post_message::MessageBinding, String), Refusal> {
     let revision =
         recheck_invocation(state, tx, invocation, None, expected_reply, false, true).await?;
     let resource: Uuid = sqlx::query_scalar(
@@ -2049,19 +2050,15 @@ pub(crate) async fn fresh_post_message(
         .action
         .get("kind")
         .and_then(Value::as_str)
-        .is_some_and(crate::automation::steps::is_message_kind)
+        .is_some_and(crate::automation::steps::is_native_kind)
     {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     let binding = post_message::binding(tx, &runtime_scope(&row)).await?;
-    let template = row
-        .action
-        .get("template")
-        .and_then(Value::as_str)
-        .filter(|text| !text.trim().is_empty())
-        .ok_or_else(invalid_management)?
-        .to_owned();
-    Ok((template, binding, revision))
+    if !steps::supported(&row.action) {
+        return Err(invalid_management());
+    }
+    Ok((row.action, binding, revision))
 }
 
 pub(crate) async fn fresh_runtime(
@@ -2355,7 +2352,7 @@ struct Cursor {
 fn relay_trigger_supported(action: &Value, trigger: &Value) -> bool {
     matches!(
         action.get("kind").and_then(Value::as_str),
-        Some("AGENT_TURN" | "POST_MESSAGE" | "POST_MESSAGE_STEPS")
+        Some("AGENT_TURN" | "POST_MESSAGE" | "POST_MESSAGE_STEPS" | "ADD_REACTION_STEPS")
     ) && matches!(
         trigger.get("kind").and_then(Value::as_str),
         Some("CHANNEL_MESSAGE" | "MENTION")
@@ -2680,7 +2677,7 @@ async fn admit_source(
         .action
         .get("kind")
         .and_then(Value::as_str)
-        .is_some_and(crate::automation::steps::is_message_kind)
+        .is_some_and(crate::automation::steps::is_native_kind)
     {
         Ok(None)
     } else {
@@ -2703,6 +2700,10 @@ async fn admit_source(
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
     let row = run(&mut tx, snapshot.resource_id, None).await?;
+    if row.action["kind"] == "ADD_REACTION_STEPS" && !matches!(&origin, AdmissionSource::Relay(..))
+    {
+        return Err(invalid_management());
+    }
     if row.resource_version != snapshot.resource_version
         || row.automation_version_asset_id != snapshot.automation_version_asset_id
         || row.agent_version_asset_id != snapshot.agent_version_asset_id

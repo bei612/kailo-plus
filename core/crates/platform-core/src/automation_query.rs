@@ -562,10 +562,11 @@ struct AutomationRow {
     pinned_version_state: Option<String>,
     pinned_asset_state: Option<String>,
     pinned_projection: Option<Uuid>,
+    pinned_action: Option<Value>,
 }
 const ROW:&str="select r.id resource_id,d.workspace_id,r.owner_principal_id,r.version resource_version,
     r.state resource_state,d.state,d.executor_installation_resource_id,d.pinned_version_asset_id,d.delegation_id,
-    pin.state pinned_version_state,asset.state pinned_asset_state,asset.projection_action_execution_id pinned_projection
+    pin.state pinned_version_state,asset.state pinned_asset_state,asset.projection_action_execution_id pinned_projection,pin.action pinned_action
     from catalog.resource r join catalog.automation_definition d on d.resource_id=r.id
     join catalog.resource_type_definition kind on kind.type_key=r.type_key and kind.status='ACTIVE'
       and kind.tenant_delete_action_key='tenant.delete'
@@ -1082,6 +1083,10 @@ pub async fn get(
         && row.pinned_asset_state.as_deref() == Some("PUBLISHED")
         && row.pinned_projection.is_none()
         && row.delegation_id.is_some()
+        && row
+            .pinned_action
+            .as_ref()
+            .is_some_and(|action| action["kind"] != "ADD_REACTION_STEPS")
     {
         match crate::automation::manual::available(&state.governance).await {
             Ok(true) => {

@@ -8,6 +8,21 @@ use governance::{Params, Semantic};
 use serde_json::json;
 use uuid::Uuid;
 
+#[test]
+fn reaction_requires_real_message_trigger_and_keeps_emoji_in_immutable_version() {
+    let mut value = json!({"formatVersion":2,"trigger":{"kind":"CHANNEL_MESSAGE"},
+        "resultTarget":"TRIGGER_THREAD","steps":[{"id":"reaction","action":"add_reaction","emoji":"👍"}]});
+    let normalized = management_content(&value).unwrap();
+    assert_eq!(normalized["action"]["kind"], "ADD_REACTION_STEPS");
+    assert_eq!(normalized["action"]["emoji"], "👍");
+    value["trigger"] = json!({"kind":"SCHEDULE","scheduleSpec":{"everySeconds":60,"offsetSeconds":0,"catchupWindowSeconds":60}});
+    value["resultTarget"] = json!("CHANNEL");
+    assert!(
+        management_content(&value).is_err(),
+        "timer is not a message target"
+    );
+}
+
 #[tokio::test]
 #[ignore = "requires an isolated migrated schedule_dispatch_verify_* PostgreSQL database"]
 async fn schedule_intent_keeps_the_original_admission_dispatchable() {

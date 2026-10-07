@@ -580,6 +580,7 @@ enum PlatformMessageKey {
   workflowsProgress,
   workflowsUsage,
   workflowsStepApproval,
+  agentsDescription,
   agentsNone,
   agentsMemoryTitle,
   agentsMemoryReadOnly,
@@ -825,6 +826,9 @@ enum PlatformMessageKey {
   workflowsStepsReference,
   workflowsStepsAddDelay,
   workflowsStepsAddApproval,
+  workflowsStepsAddReaction,
+  workflowsStepsEmoji,
+  workflowsStepsReactionTarget,
   workflowsStepsApprovalPolicyHint,
   workflowsStepsWaiting,
   workflowsCronYear,
@@ -1208,7 +1212,11 @@ enum PlatformMessageKey {
   actionsWorkspaceRestore,
   actionsWorkspaceMessagePublish,
   actionsConversationOpen,
+  actionsConversationHide,
+  actionsConversationReopen,
   actionsConversationMessagePublish,
+  actionsPulsePublish,
+  actionsIdentityProfilePublish,
   actionsTenantSuspend,
   actionsTenantRestore,
   actionsTenantDelete,
@@ -2624,9 +2632,13 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.workflowsProgress: ('Progress', '进度'),
   PlatformMessageKey.workflowsUsage: ('Usage references', '用量引用'),
   PlatformMessageKey.workflowsStepApproval: ('Step approval', '步骤审批'),
+  PlatformMessageKey.agentsDescription: (
+    'Set up and manage your agents.',
+    '设置和管理你的 Agent。',
+  ),
   PlatformMessageKey.agentsNone: (
-    'No definitions visible on this page.',
-    '本页没有可见的定义。',
+    'No agents to show on this page.',
+    '此页暂无可显示的 Agent。',
   ),
   PlatformMessageKey.agentsMemoryTitle: ('Agent memory', 'Agent 记忆'),
   PlatformMessageKey.agentsMemoryReadOnly: (
@@ -2936,8 +2948,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '声明的运行配置',
   ),
   PlatformMessageKey.agentsInstallationTitle: (
-    'Workspace installations',
-    '工作区安装',
+    'Workspace agents',
+    '工作区中的 Agent',
   ),
   PlatformMessageKey.agentsInstallationReadOnly: (
     'Read-only installation records. An active record or projection is not proof that a process is currently healthy or that an invocation is authorized.',
@@ -3083,8 +3095,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.agentsDelegationStateRevoked: ('Revoked', '已撤销'),
   PlatformMessageKey.agentsDelegationStateExpired: ('Expired', '已到期'),
   PlatformMessageKey.agentsInstallationNone: (
-    'No installations you may read on this page.',
-    '本页没有你可读取的安装。',
+    'No agents to show on this page.',
+    '此页暂无可显示的 Agent。',
   ),
   PlatformMessageKey.agentsInstallationNoWorkspace: (
     'No active workspace is available to this identity.',
@@ -3213,12 +3225,12 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.agentsVersionHash: ('Configuration hash', '配置摘要'),
   PlatformMessageKey.agentsAutomationTitle: ('Automations', '自动化'),
   PlatformMessageKey.agentsAutomationScope: (
-    'Manage immutable versions, owner-requested runs and governed state.',
-    '管理不可变版本、负责人单次运行与受治理状态。',
+    'Automations that keep your community moving.',
+    '让社区协作自动运转。',
   ),
   PlatformMessageKey.agentsAutomationNone: (
-    'No readable, materialized automation in this workspace',
-    '该工作区没有可读取且已物化的自动化',
+    'No workflows in this workspace yet.',
+    '此工作区暂无工作流。',
   ),
   PlatformMessageKey.agentsAutomationStateDraft: ('Draft', '草稿'),
   PlatformMessageKey.agentsAutomationStateEnabled: ('Enabled', '已启用'),
@@ -3303,6 +3315,12 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.workflowsStepsAddApproval: (
     'Add approval request',
     '添加审批请求',
+  ),
+  PlatformMessageKey.workflowsStepsAddReaction: ('Add reaction', '添加表情回应'),
+  PlatformMessageKey.workflowsStepsEmoji: ('Emoji', '表情'),
+  PlatformMessageKey.workflowsStepsReactionTarget: (
+    'React to the actual message that triggered this workflow.',
+    '回应实际触发此工作流的消息。',
   ),
   PlatformMessageKey.workflowsStepsApprovalPolicyHint: (
     'Approvers and the deadline come from the selected policy version, not a free-form name or role.',
@@ -4284,9 +4302,22 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Open direct conversation',
     '打开私聊',
   ),
+  PlatformMessageKey.actionsConversationHide: (
+    'Close direct conversation',
+    '关闭私聊',
+  ),
+  PlatformMessageKey.actionsConversationReopen: (
+    'Reopen direct conversation',
+    '重新打开私聊',
+  ),
   PlatformMessageKey.actionsConversationMessagePublish: (
     'Publish direct message',
     '发布私聊消息',
+  ),
+  PlatformMessageKey.actionsPulsePublish: ('Publish note', '发布动态'),
+  PlatformMessageKey.actionsIdentityProfilePublish: (
+    'Update profile',
+    '更新个人资料',
   ),
   PlatformMessageKey.actionsTenantSuspend: ('Suspend organization', '暂停组织'),
   PlatformMessageKey.actionsTenantRestore: ('Restore organization', '恢复组织'),

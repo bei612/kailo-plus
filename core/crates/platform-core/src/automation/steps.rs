@@ -1,4 +1,4 @@
-//! REQ-23/24: ordered Delay / pinned approval -> send_message, executed by AgentTask.
+//! REQ-23/24: ordered Delay / pinned approval -> native action, executed by AgentTask.
 //! This is version validation/projection, not a scheduler or a step executor.
 use serde_json::{json, Value};
 
@@ -73,12 +73,22 @@ pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
             return Err(invalid_management());
         }
         if index + 1 == steps.len() {
-            if !fields(step, &["id", "name", "action", "text"])
-                || step["action"] != "send_message"
-                || step["text"]
-                    .as_str()
-                    .is_none_or(|text| text.trim().is_empty())
-            {
+            let valid = match step["action"].as_str() {
+                Some("send_message") => {
+                    fields(step, &["id", "name", "action", "text"])
+                        && step["text"]
+                            .as_str()
+                            .is_some_and(|text| !text.trim().is_empty())
+                }
+                Some("add_reaction") => {
+                    fields(step, &["id", "name", "action", "emoji"])
+                        && step["emoji"]
+                            .as_str()
+                            .is_some_and(collab_bridge::bridge::valid_reaction)
+                }
+                _ => false,
+            };
+            if !valid {
                 return Err(invalid_management());
             }
         } else {
@@ -106,14 +116,19 @@ pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
     }
     // Same immutable version owns this exact projection and the original steps.
     // Old Core rejects this kind instead of silently skipping the ordered delays.
-    Ok(
-        json!({"kind":"POST_MESSAGE_STEPS", "template":steps.last().ok_or_else(invalid_management)?["text"],
-        "stepsVersion":2,"steps":steps}),
-    )
+    let last = steps.last().ok_or_else(invalid_management)?;
+    Ok(if last["action"] == "add_reaction" {
+        json!({"kind":"ADD_REACTION_STEPS","emoji":last["emoji"],"stepsVersion":2,"steps":steps})
+    } else {
+        json!({"kind":"POST_MESSAGE_STEPS","template":last["text"],"stepsVersion":2,"steps":steps})
+    })
 }
 
-pub(crate) fn is_message_kind(kind: &str) -> bool {
-    matches!(kind, "POST_MESSAGE" | "POST_MESSAGE_STEPS")
+pub(crate) fn is_native_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "POST_MESSAGE" | "POST_MESSAGE_STEPS" | "ADD_REACTION_STEPS"
+    )
 }
 
 /// Only one policy-backed gate is currently executable. The immutable step is
@@ -197,6 +212,25 @@ pub(crate) fn delays(native_action: &Value) -> Result<Vec<(String, i64)>, Refusa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reaction_preserves_native_action_without_fabricating_message_text() {
+        let steps = json!([{"id":"wait","action":"delay","duration":"1s"},
+            {"id":"react","action":"add_reaction","emoji":"👍"}]);
+        let projected = action(&steps).unwrap();
+        assert_eq!(projected["kind"], "ADD_REACTION_STEPS");
+        assert_eq!(projected["emoji"], "👍");
+        assert!(projected.get("template").is_none());
+        assert!(supported(&projected));
+        assert_eq!(delays(&projected).unwrap(), vec![("wait".into(), 1)]);
+        for invalid in [
+            json!([{"id":"react","action":"add_reaction","emoji":""}]),
+            json!([{"id":"react","action":"add_reaction","emoji":"👍","target":"invented"}]),
+            json!([{"id":"react","action":"add_reaction","emoji":"👍"},{"id":"message","action":"send_message","text":"second effect"}]),
+        ] {
+            assert!(action(&invalid).is_err());
+        }
+    }
 
     #[test]
     fn approval_preserves_policy_message_and_timer_order_without_copying_an_executor() {

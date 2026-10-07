@@ -13,6 +13,42 @@ use futures_util::FutureExt;
 use nostr::Keys;
 use std::panic::AssertUnwindSafe;
 
+#[test]
+fn workflow_reaction_uses_original_builder_and_stable_signed_event() {
+    let keys = Keys::generate();
+    let client = IdentityClient::new(
+        Custody::Server,
+        &keys.secret_key().to_secret_hex(),
+        "http://unused.invalid",
+        "unused.platform.test",
+    )
+    .unwrap();
+    let target = "a".repeat(64);
+    let event = client.sign_reaction_at(&target, "👍", 105).unwrap();
+    let original = buzz_sdk::build_reaction(nostr::EventId::from_hex(&target).unwrap(), "👍")
+        .unwrap()
+        .custom_created_at(nostr::Timestamp::from(105))
+        .sign_with_keys(&keys)
+        .unwrap();
+    assert_eq!(event.id, original.id);
+    assert_eq!(event.tags, original.tags);
+    assert_eq!(event.content, original.content);
+    assert_eq!(
+        u32::from(event.kind.as_u16()),
+        collab_bridge::bridge::KIND_REACTION
+    );
+    assert!(event.verify().is_ok());
+    assert_eq!(event.tags.len(), 1);
+    assert_eq!(
+        event.tags.iter().next().unwrap().as_slice(),
+        &["e", &target]
+    );
+    assert!(client
+        .sign_reaction_at("manual:invalid", "👍", 105)
+        .is_err());
+    assert!(client.sign_reaction_at(&target, " ", 105).is_err());
+}
+
 /// 集成核验要显式开启（`PLATFORM_INTEGRATION=1`）：这些变量名与产品侧同名，
 /// source 过 `.env` 的 shell 会让本该跳过的用例拿着网内地址去连。
 fn env() -> Option<(String, String, String)> {

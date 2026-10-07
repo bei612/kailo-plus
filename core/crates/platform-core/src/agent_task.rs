@@ -180,7 +180,7 @@ async fn advance_accepted(
     let pending_delay = if invocation
         .automation_action_kind
         .as_deref()
-        .is_some_and(crate::automation::steps::is_message_kind)
+        .is_some_and(crate::automation::steps::is_native_kind)
         && invocation.status == "CREATED"
     {
         let action: Value = match sqlx::query_scalar("select v.action from catalog.agent_invocation i join catalog.automation_version v on v.asset_id=i.automation_version_asset_id and v.automation_resource_id=i.automation_resource_id where i.id=$1")
@@ -277,7 +277,7 @@ async fn advance_accepted(
     if invocation
         .automation_action_kind
         .as_deref()
-        .is_some_and(crate::automation::steps::is_message_kind)
+        .is_some_and(crate::automation::steps::is_native_kind)
     {
         if let Some((step, seconds)) = pending_delay {
             return (StatusCode::OK, Json(serde_json::json!({"invocationId":id,"status":"RUNNING",
@@ -709,7 +709,7 @@ async fn cancel_before_dispatch_in_transaction(
             if invocation
                 .automation_action_kind
                 .as_deref()
-                .is_some_and(crate::automation::steps::is_message_kind)
+                .is_some_and(crate::automation::steps::is_native_kind)
             {
                 "CANCELED_BEFORE_MESSAGE_DISPATCH"
             } else {
@@ -2505,6 +2505,7 @@ struct ReplyIntent {
     agent_pubkey: String,
     channel_id: Uuid,
     delivery_outcome: Option<String>,
+    frozen_action: Option<Value>,
 }
 
 // Readback only: revoked identities/projections may still have an in-flight
@@ -2513,8 +2514,11 @@ struct ReplyIntent {
 const REPLY_INTENT: &str = "select d.id as dispatch_audit_id,d.operation_id,d.human_identity_id,
     d.initiator_principal_id,d.actor_principal_id,d.action_key,d.action_version,
     d.component_type_key,d.target_type,d.target_id,d.parameter_hash,d.result_exposure,
-    d.correlation_id,d.evidence_refs,b.pubkey as agent_pubkey,wb.channel_id,o.result_code as delivery_outcome
+    d.correlation_id,d.evidence_refs,b.pubkey as agent_pubkey,wb.channel_id,o.result_code as delivery_outcome,
+    version.action as frozen_action
   from catalog.agent_invocation i
+  left join catalog.automation_version version on version.asset_id=i.automation_version_asset_id
+    and version.automation_resource_id=i.automation_resource_id
   join admission.action_execution ae on ae.id=i.action_execution_id
     and ae.tenant_id=i.tenant_id and ae.workspace_id=i.workspace_id
   join catalog.agent_installation a on a.resource_id=i.installation_resource_id
@@ -2551,7 +2555,7 @@ const REPLY_INTENT: &str = "select d.id as dispatch_audit_id,d.operation_id,d.hu
     and ((i.native_status='completed' and $3::text is not null)
       or ($3::text is null and i.native_status is null and i.post_message_intent is not null
         and exists(select 1 from catalog.automation_version v where v.asset_id=i.automation_version_asset_id
-          and v.automation_resource_id=i.automation_resource_id and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS'))))
+          and v.automation_resource_id=i.automation_resource_id and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS','ADD_REACTION_STEPS'))))
     and i.status in ('DISPATCHING','RUNNING','UNKNOWN')";
 
 /// Consume only an existing stable Reply intent. There is no publisher or
@@ -2599,17 +2603,46 @@ async fn reconcile_reply(
     else {
         return Ok(None);
     };
-    let observed = control
-        .channel_result_exists(
-            &state.http,
-            event_id,
-            &intent.agent_pubkey,
-            &intent.channel_id.to_string(),
-            reply_ancestry(invocation),
-            matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
-                .then_some(invocation.id),
-        )
-        .await;
+    let observed = if intent
+        .frozen_action
+        .as_ref()
+        .is_some_and(|action| action["kind"] == "ADD_REACTION_STEPS")
+    {
+        let Some(action) = intent
+            .frozen_action
+            .as_ref()
+            .filter(|action| crate::automation::steps::supported(action))
+        else {
+            return Ok(None);
+        };
+        let Some(emoji) = action["emoji"]
+            .as_str()
+            .filter(|_| invocation.source_kind == "BUZZ_EVENT")
+        else {
+            return Ok(None);
+        };
+        control
+            .reaction_exists(
+                &state.http,
+                event_id,
+                &intent.agent_pubkey,
+                &invocation.source_event_id,
+                emoji,
+            )
+            .await
+    } else {
+        control
+            .channel_result_exists(
+                &state.http,
+                event_id,
+                &intent.agent_pubkey,
+                &intent.channel_id.to_string(),
+                reply_ancestry(invocation),
+                matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
+                    .then_some(invocation.id),
+            )
+            .await
+    };
     if !matches!(observed, Ok(true)) {
         // Native errors may include protocol bodies; don't copy them to logs.
         return Ok(None);

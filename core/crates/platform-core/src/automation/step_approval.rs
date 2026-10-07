@@ -292,7 +292,7 @@ pub(crate) async fn gate(
         }
     }
     let message_only = match action["kind"].as_str() {
-        Some("POST_MESSAGE" | "POST_MESSAGE_STEPS") => true,
+        Some("POST_MESSAGE" | "POST_MESSAGE_STEPS" | "ADD_REACTION_STEPS") => true,
         Some("AGENT_TURN") => false,
         _ => return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
     };

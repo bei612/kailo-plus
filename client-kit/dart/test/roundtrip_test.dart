@@ -9,6 +9,10 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('automation reaction step preserves original emoji', () {
+    final sample = jsonDecode(File('../../contracts/samples/automation-reaction-step.sample.json').readAsStringSync());
+    expect(AutomationStep.fromJson(sample).toJson(), sample);
+  });
   test('service read permission preserves receiver and legacy absence', () {
     final sample =
         jsonDecode(

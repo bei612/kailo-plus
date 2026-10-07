@@ -3013,10 +3013,12 @@ type StepElement struct {
 	// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
 	ApprovalPolicy *ApprovalPolicyElement `json:"approvalPolicy,omitempty"`
 	Duration       *string                `json:"duration,omitempty"`
-	ID             string                 `json:"id"`
-	Message        *string                `json:"message,omitempty"`
-	Name           *string                `json:"name,omitempty"`
-	Text           *string                `json:"text,omitempty"`
+	// 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
+	Emoji   *string `json:"emoji,omitempty"`
+	ID      string  `json:"id"`
+	Message *string `json:"message,omitempty"`
+	Name    *string `json:"name,omitempty"`
+	Text    *string `json:"text,omitempty"`
 }
 
 type AutomationVersionContentTrigger struct {
@@ -4862,10 +4864,12 @@ type AutomationStep struct {
 	// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
 	ApprovalPolicy *ApprovalPolicyElement `json:"approvalPolicy,omitempty"`
 	Duration       *string                `json:"duration,omitempty"`
-	ID             string                 `json:"id"`
-	Message        *string                `json:"message,omitempty"`
-	Name           *string                `json:"name,omitempty"`
-	Text           *string                `json:"text,omitempty"`
+	// 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
+	Emoji   *string `json:"emoji,omitempty"`
+	ID      string  `json:"id"`
+	Message *string `json:"message,omitempty"`
+	Name    *string `json:"name,omitempty"`
+	Text    *string `json:"text,omitempty"`
 }
 
 // REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
@@ -6064,6 +6068,7 @@ const (
 type ActionEnum string
 
 const (
+	AddReaction     ActionEnum = "add_reaction"
 	Delay           ActionEnum = "delay"
 	RequestApproval ActionEnum = "request_approval"
 	SendMessage     ActionEnum = "send_message"

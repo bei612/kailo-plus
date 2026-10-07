@@ -1239,6 +1239,10 @@ pub struct StepElement {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<String>,
 
+    /// 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
+
     pub id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1254,6 +1258,9 @@ pub struct StepElement {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ActionEnum {
+    #[serde(rename = "add_reaction")]
+    AddReaction,
+
     Delay,
 
     #[serde(rename = "request_approval")]
@@ -5740,6 +5747,10 @@ pub struct AutomationStep {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<String>,
+
+    /// 原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
 
     pub id: String,
 

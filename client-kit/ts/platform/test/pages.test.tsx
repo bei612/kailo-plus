@@ -353,17 +353,37 @@ describe("independent shared Workflows page", () => {
       expect(source).toContain("<WorkflowsPage />");
     }
   });
+  it.each(["en", "zh-CN"] as const)("keeps the original create-card empty state and one refresh under the host title (%s)", async (locale) => {
+    const title = locale === "en" ? "Workflows" : "工作流";
+    const refresh = locale === "en" ? "Refresh" : "刷新";
+    const t = routes((request) => request.path.startsWith("/api/v1/automations?")
+      ? { status: 200, body: { automations: [], canCreate: true } } : undefined);
+    const host = await mount(t, <><h1>{title}</h1><WorkflowsPage /></>, locale);
+    expect(Array.from(host.querySelectorAll("h1,h2")).filter((node) => node.textContent === title)).toHaveLength(1);
+    expect(host.querySelector("[data-testid=new-workflow-card]")).not.toBeNull();
+    expect(host.textContent).not.toContain(locale === "en" ? "No workflows" : "暂无工作流");
+    expect(host.textContent).toContain(locale === "en" ? "Automations that keep your community moving." : "让社区协作自动运转。");
+    const refreshButtons = host.querySelectorAll<HTMLButtonElement>(`button[aria-label="${refresh}"]`);
+    expect(refreshButtons).toHaveLength(1);
+    const reads = (path: string) => t.send.mock.calls.filter(([request]) => request.path.startsWith(path)).length;
+    const directoryReads = reads("/api/v1/workspaces");
+    const definitionReads = reads("/api/v1/automations?");
+    await click(refreshButtons[0]!);
+    expect(reads("/api/v1/workspaces")).toBeGreaterThan(directoryReads);
+    expect(reads("/api/v1/automations?")).toBeGreaterThan(definitionReads);
+    expect(t.send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
+  });
   it.each([403, 503])("does not represent definition read failure (%s) as an empty page", async (status) => {
     const host = await mount(routes((request) => request.path.startsWith("/api/v1/automations?")
       ? { status, body: undefined } : undefined), <WorkflowsPage />);
-    expect(host.textContent).not.toContain("No readable, materialized automation");
+    expect(host.textContent).not.toContain("No workflows in this workspace yet.");
     expect(host.querySelector("[data-testid=workflow-runs]")).toBeNull();
     expect(host.querySelector("[role=alert], [role=status]")).not.toBeNull();
   });
   it("renders a real empty definition page only after a successful read", async () => {
     const host = await mount(routes((request) => request.path.startsWith("/api/v1/automations?")
       ? { status: 200, body: { automations: [], canCreate: false } } : undefined), <WorkflowsPage />);
-    expect(host.textContent).toContain("No readable, materialized automation");
+    expect(host.textContent).toContain("No workflows in this workspace yet.");
   });
   it("reuses Task state and detail, retaining UNKNOWN even with a completed projection", async () => {
     const { history, t } = await openHistory();
@@ -595,6 +615,28 @@ describe("shared Automation schedule consumer", () => {
       {id:expect.any(String),action:"send_message",text:"After the delay"},
     ]}});
     expect((writes[0] as {automationVersionContent:Record<string,unknown>}).automationVersionContent).not.toHaveProperty("action");
+  });
+
+  it("preserves original reaction form and YAML through the same UNKNOWN intent", async () => {
+    const {section, t, choose} = await setup(["TRIGGER_THREAD"]);
+    await choose("Action", "add_reaction");
+    await type(section.querySelector<HTMLInputElement>("#wf-step-0-emoji")!, "👍");
+    await click(button(section, "Add delay"));
+    await type(section.querySelector<HTMLInputElement>("#wf-step-0-duration")!, "1s");
+    await click(button(section, "Workflow YAML"));
+    const yaml = section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!.value;
+    expect(yaml).toContain("action: add_reaction");
+    expect(yaml).not.toContain("action: send_message");
+    await click(button(section, "Form"));
+    expect(section.querySelector<HTMLInputElement>("#wf-step-1-emoji")!.value).toBe("👍");
+    await click(button(section, "Review request"));
+    await click(button(section, "Submit governed request"));
+    await click(button(section, "Re-check same request"));
+    const writes = t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions").map(([r]) => r.body);
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).toEqual(writes[0]);
+    expect(writes[0]).toMatchObject({automationVersionContent:{formatVersion:2,steps:[
+      {action:"delay",duration:"1s"},{action:"add_reaction",emoji:"👍"}]}});
   });
 
   it("preserves an explicit approval step through YAML and UNKNOWN without inventing an approver", async () => {
@@ -1417,6 +1459,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       assetId: version.assetId, assetVersion: version.assetVersion });
     expect(action.textContent).toContain("Outcome is not confirmed.");
     expect([...action.querySelectorAll("button")].some((b) => b.textContent === "Cancel request")).toBe(false);
+    expect(host.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')?.disabled).toBe(true);
     await click(button(action, "Re-check same request"));
     expect(posts(t)).toHaveLength(2);
     expect(posts(t)[1]?.body).toEqual(command);
@@ -1651,7 +1694,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect((await openInstallDialog(host)).textContent).toContain("No authorized published Agent version on this page.");
     await click(button(host.querySelector('[role="dialog"]') as HTMLElement, "Close"));
     available = true;
-    await click(button(installed, "Refresh"));
+    await click(host.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')!);
     expect((await openInstallDialog(host)).querySelector(`option[value="${installation.pinnedVersionAssetId}"]`)).toBeTruthy();
     expect(installed.querySelector("select")?.value).toBe(installation.workspaceId);
     expect(posts(t)).toHaveLength(0);
@@ -2536,6 +2579,23 @@ const ownEntry = () => ({
 const forbidden = { status: 403, body: { class: ErrorClass.Denied, reason: ReasonCode.PermissionDenied } };
 
 describe("AuditPage", () => {
+  it.each(["en", "zh-CN"] as const)("labels restored collaboration actions without changing their wire keys in %s", async (locale) => {
+    const labels = [
+      ["pulse.publish", "Publish note", "发布动态"],
+      ["identity.profile.publish", "Update profile", "更新个人资料"],
+      ["conversation.hide", "Close direct conversation", "关闭私聊"],
+      ["conversation.reopen", "Reopen direct conversation", "重新打开私聊"],
+    ];
+    const entries = labels.map(([actionKey]) => ({ ...ownEntry(), actionKey }));
+    const host = await mount(transport((r) => r.path === "/api/v1/audit"
+      ? { status: 200, body: entries } : forbidden), <AuditPage />, locale);
+    await settle();
+    for (const [actionKey, en, zh] of labels) {
+      const action = host.querySelector(`[title="${actionKey}"]`);
+      expect(action?.querySelector("span")?.textContent).toBe(locale === "en" ? en : zh);
+      expect(action?.querySelector("code")?.textContent).toBe(actionKey);
+    }
+  });
   it.each(["en", "zh-CN"] as const)("translates real gate and cancellation result codes without implying completion in %s", async (locale) => {
     const entries = ["ALLOWED", "EVALUATING", "CANCEL_REQUEST_ACCEPTED"].map((resultCode) =>
       ({ ...ownEntry(), actionKey: "workspace.create", resultCode }));
@@ -3243,6 +3303,27 @@ describe("AgentDefinitionsPage read outcomes", () => {
     currentPublishedVersionAssetId: "asset-1",
   };
 
+  it.each(["en", "zh-CN"] as const)("uses the original Agent introduction and one page refresh for both readers (%s)", async (locale) => {
+    const t = transport((r) => r.path === "/api/v1/agent-definitions" ? { status: 200, body: { definitions: [] } }
+      : r.path === "/api/v1/workspaces" ? { status: 200, body: [{ id: "workspace-one", name: "Workspace", slug: "workspace" }] }
+      : r.path.startsWith("/api/v1/agent-installations?") ? { status: 200, body: { installations: [] } }
+      : { status: 200, body: [] });
+    const host = await mount(t, <AgentDefinitionsPage />, locale);
+    expect(host.textContent).toContain(locale === "en" ? "Set up and manage your agents." : "设置和管理你的 Agent。");
+    expect(host.textContent).not.toContain(locale === "en" ? "Manage stable definitions" : "此处管理稳定定义");
+    expect(host.querySelector("[data-testid=new-agent-card]")).not.toBeNull();
+    const buttons = [...host.querySelectorAll<HTMLButtonElement>("button")].filter((node) =>
+      (node.getAttribute("aria-label") ?? node.textContent) === (locale === "en" ? "Refresh" : "刷新"));
+    expect(buttons).toHaveLength(1);
+    const reads = (path: string) => t.send.mock.calls.filter(([r]) => r.path.startsWith(path)).length;
+    const before = [reads("/api/v1/agent-definitions"), reads("/api/v1/workspaces"), reads("/api/v1/agent-installations?")];
+    await click(buttons[0]!);
+    for (const [index, path] of ["/api/v1/agent-definitions", "/api/v1/workspaces", "/api/v1/agent-installations?"].entries()) {
+      expect(reads(path)).toBeGreaterThan(before[index]!);
+    }
+    expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
+  });
+
   it.each([
     { status: 403, label: "Not allowed" },
     { status: 404, label: "Not available here" },
@@ -3253,13 +3334,13 @@ describe("AgentDefinitionsPage read outcomes", () => {
     await settle();
     expect(host.querySelector("[role=alert]")?.textContent).toContain(label);
     expect(host.textContent).not.toContain("result is unknown");
-    expect(host.textContent).not.toContain("No definitions visible");
+    expect(host.querySelector("[data-testid=new-agent-card]")).toBeNull();
     expect(host.textContent).not.toContain("PERMISSION_DENIED");
     expect(host.textContent).not.toContain("TARGET_NOT_FOUND");
 
     reply = { status: 200, body: { definitions: [] } };
     await click(button(host, "Try again"));
-    expect(host.textContent).toContain("No definitions visible on this page.");
+    expect(host.querySelector("[data-testid=new-agent-card]")).not.toBeNull();
     expect(t.send.mock.calls.filter(([r]) => r.path === "/api/v1/agent-definitions")).toHaveLength(2);
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
   });
@@ -3368,7 +3449,7 @@ describe("AgentDefinitionsPage installation read-only facts", () => {
     expect(detail.textContent).toContain("Mention · Manual assignment");
     expect(detail.textContent).toContain("SERVER_CODEX");
     expect(detail.textContent).toContain("a".repeat(64));
-    expect(section.textContent).toContain("do not prove runtime health or authorize an invocation");
+    expect(detail.textContent).toContain("do not prove runtime health or authorize an invocation");
     expect(section.textContent).not.toMatch(/private-prompt|private-secret-ref|\/private\/runtime\/root/);
     const controls = [...section.querySelectorAll("button")].map((b) => b.textContent);
     for (const label of ["Install", "Run", "Create session", "Disable"]) {
@@ -3387,7 +3468,7 @@ describe("AgentDefinitionsPage installation read-only facts", () => {
     const host = await mount(t, <AgentDefinitionsPage />);
     await settle();
     const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
-    expect(section.textContent).toContain("No installations you may read on this page.");
+    expect(section.textContent).toContain("No agents to show on this page.");
     await click(button(section, "Next page"));
     expect(section.textContent).toContain("pinned-asset-1");
     expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-installations?workspaceId=workspace-1&offset=9" });
@@ -3407,7 +3488,7 @@ describe("AgentDefinitionsPage installation read-only facts", () => {
     await settle();
     const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
     expect(section.querySelector("[role=status]")?.textContent).toContain("result is unknown");
-    expect(section.textContent).not.toContain("No installations you may read");
+    expect(section.textContent).not.toContain("No agents to show on this page.");
     expect(section.textContent).not.toContain("pinned-asset-1");
     expect([...section.querySelectorAll("button")].some((b) => b.textContent === "View installation")).toBe(false);
   });
@@ -3423,7 +3504,7 @@ describe("AgentDefinitionsPage installation read-only facts", () => {
     await settle();
     const section = host.querySelector("[data-testid=agent-installations]") as HTMLElement;
     expect(section.textContent).toContain(label);
-    expect(section.textContent).not.toContain("No installations you may read");
+    expect(section.textContent).not.toContain("No agents to show on this page.");
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
   });
 

@@ -38,7 +38,7 @@ import {
 } from "@client-kit/contracts";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { parseDocument, stringify } from "yaml";
-import { ArrowRight, CalendarClock, Check, Code, MessageSquare, Pencil, Plus, X, Zap } from "lucide-react";
+import { ArrowRight, CalendarClock, Check, Code, MessageSquare, Pencil, Plus, RefreshCw, X, Zap } from "lucide-react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { relativeTime } from "../format";
 import type { PlatformMessageKey } from "../i18n";
@@ -50,6 +50,7 @@ import { InstallationMemory } from "./memory";
 import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
 import { WorkflowActionsMenu } from "./workflow-actions-menu";
+import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
 import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
 import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
@@ -57,7 +58,7 @@ import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
 import { CronExpressionInput } from "./cron-expression-input";
 import { cronExpressionError, cronYamlError } from "./cron-expression";
 import type { AutomationStep } from "@client-kit/contracts";
-import { supportedSteps, validApprovalPolicy, workflowApprovalPolicy, workflowAction, WorkflowStepCard } from "./workflow-steps";
+import { supportedSteps, validApprovalPolicy, workflowApprovalPolicy, workflowAction, WorkflowStepCard, type WorkflowActionKind } from "./workflow-steps";
 
 // Original UnifiedAgentsSection grid at Buzz 779af8886caae1317b4de962082429867ab61503.
 const IDENTITY_CARD_GRID_CLASS = "w-full grid-cols-1 [@container(min-width:21rem)]:grid-cols-2 [@container(min-width:32rem)]:grid-cols-3 [@container(min-width:43rem)]:grid-cols-4 [@container(min-width:54rem)]:grid-cols-5 grid gap-3";
@@ -98,6 +99,8 @@ export function AgentDefinitionsPage() {
   const [versionEdit, setVersionEdit] = useState<VersionEdit | null>(null);
   const [versionLocked, setVersionLocked] = useState(false);
   const [versionRevision, setVersionRevision] = useState(0);
+  const [installationLocked, setInstallationLocked] = useState(false);
+  const [refreshRevision, setRefreshRevision] = useState(0);
   const blocked = locked || versionLocked;
   const data = state.status === "ok" ? state.data : null;
   const page = data && Array.isArray(data.definitions) && data.definitions.every(validDefinition)
@@ -107,16 +110,21 @@ export function AgentDefinitionsPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8 [container-type:inline-size]" data-testid="agent-definitions">
-      <p className="text-sm text-muted-foreground">{t("agents.definitionOnly")}</p>
+      <div className="flex min-w-0 items-start justify-between gap-4">
+        <p className="text-base font-normal text-muted-foreground">{t("agents.description")}</p>
+        <WorkflowButton className="shrink-0" size="icon" variant="ghost" aria-label={t("platform.refresh")}
+          disabled={blocked || installationLocked || state.status === "pending"}
+          onClick={() => { reload(); setRefreshRevision((value) => value + 1); }}>
+          <RefreshCw aria-hidden className={`h-4 w-4 ${state.status === "pending" ? "animate-spin" : ""}`} />
+        </WorkflowButton>
+      </div>
       {/* 写意图不随列表/详情刷新或翻页卸载；未知结果保留冻结版本与原幂等键。 */}
       <VersionAction edit={versionEdit} onReset={() => setVersionEdit(null)} onLocked={setVersionLocked}
         onRecorded={() => { setVersionRevision((value) => value + 1); reload(); }} />
       <section className="flex flex-col gap-3">
-        <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
         {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
           : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
           : <>
-            {page.definitions.length === 0 ? <Notice>{t("agents.none")}</Notice> : null}
               <div className={IDENTITY_CARD_GRID_CLASS} data-testid="agents-library-personas">
                 <CreateIdentityCard ariaLabel={t("agents.create")} label={t("agents.create")}
                   dataTestId="new-agent-card" disabled={blocked || edit !== null || versionEdit !== null}
@@ -152,7 +160,7 @@ export function AgentDefinitionsPage() {
       <AgentManagementDialog open={toolsOpen} title={t("agents.tools.title")} onClose={() => setToolsOpen(false)}>
         <ToolManagement />
       </AgentManagementDialog>
-      <InstallationManagement versionRevision={versionRevision} />
+      <InstallationManagement versionRevision={versionRevision} refreshRevision={refreshRevision} onLockedChange={setInstallationLocked} />
     </div>
   );
 }
@@ -214,6 +222,7 @@ function validAutomationContent(value: unknown): value is AutomationVersionConte
       || (value.action.kind !== ActionKind.AgentTurn && value.action.kind !== ActionKind.PostMessage)
       || typeof value.action.template !== "string" || !value.action.template.trim()) return false;
   if (Array.isArray(value.steps) && value.steps.some((step) => step.action === "request_approval") && value.approvalPolicy !== undefined) return false;
+  if (Array.isArray(value.steps) && value.steps.some((step) => step.action === "add_reaction") && value.trigger.kind === TriggerKind.Schedule) return false;
   // The generated contract remains the data model; this is the existing form's
   // accepted subset, also used for authorized read and YAML input.
   const content = value;
@@ -281,17 +290,25 @@ export function AutomationManagement({ renderRunHistory }: {
     && typeof w.name === "string" && typeof w.slug === "string") && new Set(data.map((w) => w.id)).size === data.length ? data : null;
   const workspace = workspaces?.find((w) => w.id === selected) ?? workspaces?.[0];
   return <section className="mx-auto w-full max-w-6xl space-y-8 [container-type:inline-size]" data-testid="agent-automations">
-    <p className="text-sm text-muted-foreground">{t("agents.automation.scope")}</p>
-    <Button className="w-fit" disabled={locked} onClick={reload}>{t("platform.refresh")}</Button>
+    {/* Buzz WorkflowsView has one trailing refresh. The host supplies the page title. */}
+    <div className="flex min-w-0 items-start justify-between gap-4">
+      <div className="min-w-0 space-y-3">
+        <p className="text-base font-normal text-muted-foreground">{t("agents.automation.scope")}</p>
+        {workspace ? <label className="flex flex-wrap items-center gap-2 text-sm">{t("platform.workspace")}
+          <select className="h-8 min-w-0 max-w-full rounded-md border border-input bg-background px-2" disabled={locked} value={workspace.id}
+            onChange={(event) => { setSelected(event.target.value); setEdit(null); setEditorOpen(false); }}>
+            {workspaces?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+        </label> : null}
+      </div>
+      <WorkflowButton className="shrink-0" size="icon" variant="ghost" aria-label={t("platform.refresh")}
+        disabled={locked || state.status === "pending"} onClick={() => { reload(); setRevision((old) => old + 1); }}>
+        <RefreshCw aria-hidden className={`h-4 w-4 ${state.status === "pending" ? "animate-spin" : ""}`} />
+      </WorkflowButton>
+    </div>
     {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
       : !workspaces ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
-      : !workspace ? <Notice>{t("platform.noWorkspace")}</Notice>
-      : <label className="flex flex-col gap-1 text-sm">{t("platform.workspace")}
-        <select className="h-8 rounded-md border border-input bg-background px-2" disabled={locked} value={workspace.id}
-          onChange={(event) => { setSelected(event.target.value); setEdit(null); setEditorOpen(false); }}>
-          {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-        </select>
-      </label>}
+      : !workspace ? <Notice>{t("platform.noWorkspace")}</Notice> : null}
     {/* 未知写意图不随 Workspace、列表或详情重载卸载。 */}
     <AutomationAction workspaceId={workspace?.id} edit={edit} open={editorOpen} onClose={() => setEditorOpen(false)}
       onReset={() => { setEdit(null); setEditorOpen(false); }} onLocked={setLocked}
@@ -320,7 +337,6 @@ function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, 
     && (data.nextOffset === undefined || (Number.isSafeInteger(data.nextOffset) && data.nextOffset > offset)) ? data : null;
   const next = page?.nextOffset;
   return <div className="flex flex-col gap-3">
-    <Button className="w-fit" disabled={locked} onClick={() => { setSelected(null); reload(); }}>{t("platform.refresh")}</Button>
     {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
       : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
       : <>
@@ -333,7 +349,7 @@ function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, 
           {page.automations.map((row) => <AutomationCard key={row.resourceId} row={row} workspaceName={workspaceName}
             locked={locked} onView={() => setSelected(row.resourceId)} onEdit={onEdit} />)}
         </div>
-        {page.automations.length === 0 ? <Notice>{t("agents.automation.none")}</Notice> : null}
+        {page.automations.length === 0 && !page.canCreate ? <Notice>{t("agents.automation.none")}</Notice> : null}
         <div className="flex gap-2">
           {index > 0 ? <Button disabled={locked} onClick={() => { setSelected(null); setIndex(index - 1); }}>{t("roles.previous")}</Button> : null}
           {next !== undefined ? <Button disabled={locked} onClick={() => {
@@ -410,7 +426,7 @@ function AutomationCard({ row, workspaceName, locked, onView, onEdit }: {
             {!content ? <Zap className="h-5 w-5" /> : content.trigger.kind === TriggerKind.Schedule ? <CalendarClock className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
           </span>
           {content ? <><ArrowRight className="h-4 w-4 text-muted-foreground/60" /><span className="flex h-9 w-9 items-center justify-center rounded-xl border border-blue-300/30 bg-blue-600 text-white shadow-xs">
-            {workflowAction(content)?.kind === ActionKind.PostMessage ? <MessageSquare className="h-5 w-5" /> : <Zap className="h-5 w-5" />}</span></> : null}
+            {workflowAction(content)?.kind !== ActionKind.AgentTurn ? <MessageSquare className="h-5 w-5" /> : <Zap className="h-5 w-5" />}</span></> : null}
         </div>
         <div className="pointer-events-auto flex items-center gap-1">
           <Badge tone="neutral">{t(automationLabels[row.state])}</Badge>
@@ -429,7 +445,7 @@ function AutomationCard({ row, workspaceName, locked, onView, onEdit }: {
       {state.status === "pending" ? <p role="status" className="mt-4 text-sm text-muted-foreground">{t("platform.loading")}</p>
         : !detail ? <div className="pointer-events-auto mt-4"><AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} /></div>
         : content ? <>
-          <p className="mt-4 text-xs font-medium text-muted-foreground">{triggerLabel} · {t(workflowAction(content)?.kind === ActionKind.PostMessage ? "agents.automation.postMessage" : "agents.automation.agentTurn")}</p>
+          <p className="mt-4 text-xs font-medium text-muted-foreground">{triggerLabel} · {t(workflowAction(content)?.kind === ActionEnum.AddReaction ? "workflows.steps.addReaction" : workflowAction(content)?.kind === ActionKind.PostMessage ? "agents.automation.postMessage" : "agents.automation.agentTurn")}</p>
           <h3 className="mt-2 line-clamp-4 break-words text-xl font-bold leading-tight tracking-tight" data-testid="workflow-card-semantic-label">{content.name ?? t("workflows.unnamed")}</h3>
           <p className="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-xs text-muted-foreground">{workflowAction(content)?.template}</p>
           <label className="pointer-events-auto mt-2 flex min-w-0 flex-col gap-1 text-2xs text-muted-foreground">{t("agents.version.assetVersion")}
@@ -540,7 +556,7 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
           </Cell>
           <Cell><span className="whitespace-pre-wrap">{workflowAction(version.content)?.template}</span>
             {version.content.steps ? <ol className="mt-2 space-y-1 text-xs text-muted-foreground">{version.content.steps.map((step) =>
-              <li key={step.id}>{step.name ?? step.id} · {step.action === "delay" ? `${t("workflows.steps.duration")}: ${step.duration}` : step.action === "request_approval" ? t("agents.automation.approvalPolicy") : t("workflows.steps.message")}</li>)}</ol> : null}
+              <li key={step.id}>{step.name ?? step.id} · {step.action === "delay" ? `${t("workflows.steps.duration")}: ${step.duration}` : step.action === "request_approval" ? t("agents.automation.approvalPolicy") : step.action === "add_reaction" ? `${t("workflows.steps.addReaction")}: ${step.emoji}` : t("workflows.steps.message")}</li>)}</ol> : null}
           </Cell>
           <Cell><Button disabled={locked || copying} onClick={() => { void copy(version.assetId); }}>{t("agents.automation.copy")}</Button></Cell>
         </tr>)}
@@ -625,7 +641,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   const [catchupWindowSeconds, setCatchupWindowSeconds] = useState("");
   const [template, setTemplate] = useState("");
   const [steps, setSteps] = useState<AutomationStep[]>([]);
-  const [actionKind, setActionKind] = useState(ActionKind.AgentTurn);
+  const [actionKind, setActionKind] = useState<WorkflowActionKind>(ActionKind.AgentTurn);
   const [policyKey, setPolicyKey] = useState("");
   const [editorMode, setEditorMode] = useState<"form" | "yaml">("form");
   const [yamlText, setYamlText] = useState("");
@@ -691,7 +707,8 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     ...(name !== "" ? { name } : {}),
     trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : prefix ? { textPrefix: prefix } : {}),
       ...(trigger === TriggerKind.Mention && executor ? { mentionPrincipalId: executor.agentPrincipalId } : {}) },
-    ...(steps.length ? {formatVersion: 2, steps} : {action: { kind: actionKind, template }}),
+    ...(steps.length ? {formatVersion: 2, steps} : actionKind === ActionEnum.AddReaction
+      ? {formatVersion: 2, steps: []} : {action: { kind: actionKind, template }}),
     ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}),
     resultTarget: trigger === TriggerKind.Schedule ? ResultTarget.Channel : ResultTarget.TriggerThread,
   };
@@ -895,23 +912,28 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.action")}
           <select value={actionKind} disabled={steps.length > 0} onChange={(event) => {
             if (event.target.value === ActionKind.AgentTurn || event.target.value === ActionKind.PostMessage) setActionKind(event.target.value);
+            if (event.target.value === ActionEnum.AddReaction) {
+              setActionKind(ActionEnum.AddReaction);
+              setSteps([{id: crypto.randomUUID(), action: ActionEnum.AddReaction, emoji: ""}]);
+            }
           }} className="h-8 rounded-md border border-input bg-background px-2">
             <option value={ActionKind.AgentTurn}>{t("agents.automation.agentTurn")}</option>
             <option value={ActionKind.PostMessage}>{t("agents.automation.postMessage")}</option>
+            <option value={ActionEnum.AddReaction} disabled={trigger === TriggerKind.Schedule}>{t("workflows.steps.addReaction")}</option>
           </select>
         </label>
         {steps.length ? <div className="space-y-3">{steps.map((step, index) => <WorkflowStepCard key={index} index={index} step={step} policies={policies}
-          onUpdate={(next) => { setSteps((old) => old.map((value, position) => position === index ? next : value)); if (index === steps.length - 1) setTemplate(next.text ?? ""); }}
+          onUpdate={(next) => { setSteps((old) => old.map((value, position) => position === index ? next : value)); if (index === steps.length - 1) setTemplate(next.text ?? next.emoji ?? ""); }}
           onRemove={index < steps.length - 1 ? () => setSteps((old) => old.filter((_, position) => position !== index)) : undefined} />)}</div>
         : <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
           <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />
         </label>}
-        {actionKind === ActionKind.PostMessage ? <Button onClick={() => setSteps((old) => {
+        {actionKind !== ActionKind.AgentTurn ? <Button onClick={() => setSteps((old) => {
           const delay: AutomationStep = { id: crypto.randomUUID(), action: ActionEnum.Delay, duration: "" };
           return old.length ? [...old.slice(0, -1), delay, old[old.length - 1]!] : [delay,
             { id: crypto.randomUUID(), action: ActionEnum.SendMessage, text: template }];
         })}>{t("workflows.steps.addDelay")}</Button> : null}
-        {actionKind === ActionKind.PostMessage && !!policies?.length && !steps.some((step) => step.action === ActionEnum.RequestApproval) ? <Button onClick={() => {
+        {actionKind !== ActionKind.AgentTurn && !!policies?.length && !steps.some((step) => step.action === ActionEnum.RequestApproval) ? <Button onClick={() => {
           const approval: AutomationStep = { id: crypto.randomUUID(), action: ActionEnum.RequestApproval, message: "",
             ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}) };
           setSteps((old) => old.length ? [...old.slice(0, -1), approval, old[old.length - 1]!] : [approval,
@@ -1056,10 +1078,12 @@ function validInstallation(row: AgentInstallationView): boolean {
     && row.activeProjectionGeneration !== undefined && projection?.state === AgentRuntimeProjectionState.Active);
 }
 
-function InstallationManagement({ versionRevision }: { versionRevision: number }) {
+function InstallationManagement({ versionRevision, refreshRevision, onLockedChange }: {
+  versionRevision: number; refreshRevision: number; onLockedChange: (locked: boolean) => void;
+}) {
   const client = useBffClient();
   const t = useT();
-  const [state, reload] = useLoad("agent-installation-workspaces", client.workspaces);
+  const [state, reload] = useLoad(`agent-installation-workspaces:${refreshRevision}`, client.workspaces);
   const [selected, setSelected] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -1068,20 +1092,19 @@ function InstallationManagement({ versionRevision }: { versionRevision: number }
   const [permissionTarget, setPermissionTarget] = useState<AgentInstallationView | null>(null);
   const [upgradeTarget, setUpgradeTarget] = useState<AgentInstallationView | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  useEffect(() => { onLockedChange(locked); }, [locked, onLockedChange]);
   const value = state.status === "ok" ? state.data : null;
   const workspaces = value && Array.isArray(value) && value.every((w) => w && typeof w.id === "string" && !!w.id
     && typeof w.name === "string" && typeof w.slug === "string") && new Set(value.map((w) => w.id)).size === value.length ? value : null;
   const workspace = workspaces?.find((w) => w.id === selected) ?? workspaces?.[0];
   return <section className="flex flex-col gap-3" data-testid="agent-installations">
     <h2 className="font-medium">{t("agents.installation.title")}</h2>
-    <p className="text-sm text-muted-foreground">{t("agents.installation.management")}</p>
-    <Button className="w-fit" disabled={locked} onClick={() => { reload(); setRevision((value) => value + 1); }}>{t("platform.refresh")}</Button>
     {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
       : !workspaces ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
       : !workspace ? <Notice>{t("agents.installation.noWorkspace")}</Notice>
       : <>
-        <label className="flex flex-col gap-1 text-sm">{t("platform.workspace")}
-          <select disabled={locked} className="h-8 rounded-md border border-input bg-background px-2" value={workspace.id}
+        <label className="flex flex-wrap items-center gap-2 text-sm">{t("platform.workspace")}
+          <select disabled={locked} className="h-8 min-w-0 max-w-full rounded-md border border-input bg-background px-2" value={workspace.id}
             onChange={(event) => { setSelected(event.target.value); setDelegationTarget(null); setDelegationOpen(false); setPermissionTarget(null); setUpgradeTarget(null); }}>
             {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
@@ -1089,10 +1112,10 @@ function InstallationManagement({ versionRevision }: { versionRevision: number }
       </>}
     {/* 原意图留在 Workspace/列表之外，结果不明时不生成替代键。 */}
     <Button className="w-fit" disabled={locked || !workspace} onClick={() => setCreateOpen(true)}>{t("agents.installation.create")}</Button>
-    <InstallationCreate open={createOpen} onClose={() => setCreateOpen(false)} workspaceId={workspace?.id} workspaceName={workspace?.name} sourceRevision={`${versionRevision}:${revision}`} locked={locked} onLocked={setLocked}
+    <InstallationCreate open={createOpen} onClose={() => setCreateOpen(false)} workspaceId={workspace?.id} workspaceName={workspace?.name} sourceRevision={`${versionRevision}:${revision}:${refreshRevision}`} locked={locked} onLocked={setLocked}
       onRecorded={() => setRevision((old) => old + 1)} />
     {upgradeTarget ? <InstallationCreate key={`upgrade:${upgradeTarget.resourceId}`} upgrade={upgradeTarget} open onClose={() => setUpgradeTarget(null)}
-      workspaceId={upgradeTarget.workspaceId} workspaceName={workspace?.name} sourceRevision={`${versionRevision}:${revision}`}
+      workspaceId={upgradeTarget.workspaceId} workspaceName={workspace?.name} sourceRevision={`${versionRevision}:${revision}:${refreshRevision}`}
       locked={locked} onLocked={setLocked} onRecorded={() => setRevision((old) => old + 1)} /> : null}
     <AgentManagementDialog open={delegationOpen} title={t("agents.delegation.title")} locked={locked} onClose={() => { setDelegationOpen(false); setDelegationTarget(null); }}>
       <InstallationDelegation installation={delegationTarget} locked={locked} onLocked={setLocked} onReset={() => setDelegationTarget(null)}
@@ -1258,6 +1281,7 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
     locked={busy || intent !== null} onClose={onClose}>
   <section className="flex flex-col gap-3" data-testid={upgrade ? "agent-installation-upgrade" : "agent-installation-create"}>
     <h3 className="text-sm font-medium">{t(upgrade ? "agents.upgradeVersion" : "agents.installation.create")}</h3>
+    <p className="text-sm text-muted-foreground">{t("agents.installation.management")}</p>
     {upgrade ? <Notice>{t("agents.upgradeDrain")}</Notice> : null}
     {!intent ? <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
       {sources.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
@@ -1544,7 +1568,6 @@ function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgra
   const next = page?.nextOffset;
   const changePage = (index: number) => { setSelected(null); setPageIndex(index); };
   return <div className="flex flex-col gap-3">
-    <Button className="w-fit" disabled={locked} onClick={() => { setSelected(null); reload(); }}>{t("platform.refresh")}</Button>
     {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
       : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={() => { setSelected(null); reload(); }} />
       : <>
@@ -1605,6 +1628,7 @@ function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onM
   if (state.status === "pending") return <Notice role="status">{t("platform.loading")}</Notice>;
   if (!row) return <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
   return <section className="flex flex-col gap-2 border-t pt-3" data-testid="agent-installation-detail">
+    <p className="text-sm text-muted-foreground">{t("agents.installation.management")}</p>
     <h3 className="text-sm font-medium">{t("agents.installation.id")}: <span className="break-all font-mono">{row.resourceId}</span></h3>
     <Badge tone="neutral">{t(installationLabels[row.state])}</Badge>
     <p className="text-sm">{t(resourceLabels[row.resourceState])} · {t("agents.resourceVersion")}: {row.resourceVersion}</p>
@@ -2226,6 +2250,7 @@ function DefinitionAction({ edit, externalBlocked = false, onReset, onLocked, on
     locked={busy || intent !== null} onClose={() => { setSubmission(null); setFailure(null); onClose(); }}>
   <section className="flex flex-col gap-3" data-testid="agent-definition-editor">
     <h2 className="text-sm font-medium">{t(title)}</h2>
+    <p className="text-sm text-muted-foreground">{t("agents.definitionOnly")}</p>
     {!intent ? <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
       {edit ? <p className="break-words text-sm">{edit.target.displayName} · {t("agents.resourceVersion")}: {edit.target.resourceVersion}</p> : null}
       {edit?.owner ? <label className="flex flex-col gap-1 text-sm">{t("agents.newOwner")}

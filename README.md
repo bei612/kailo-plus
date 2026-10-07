@@ -1688,3 +1688,13 @@ AgentDefinition 与 Tenant 删除公开入口仍关闭；AgentVersion、Installa
 Core 原打包遗漏编译期实际消费的 `contracts/api/action_submission.schema.json`：现有 `.dockerignore`、`core/Dockerfile` 和 `tools/release.sh` 已补齐同一文件的上下文、COPY 与归档输入，不修改合同正文或治理行为。Runtime 五项配置仍走原 `start-core.sh`，全缺省关闭、半份和畸形拒绝；没有生成默认 profile 或宣称 Installation ACTIVE。四步影响结论及原失败见 [Agent 记录](core/verify/agent-definition.md)。
 
 本次原库 50 条迁移、末条回退再前进、SQLx、44 枚举约束和原范围验证通过；实际部署 `.env` 预检仍 SKIP，三项显式演练 ignored，未安装 gitleaks。Win11 unsigned 包仍未安装运行或业务验收，Mobile 签名仍阻断。本回执是私有候选检查，不是 release、提交、部署或业务验收；本节追加后仅运行原文档快路径，不重复 full。
+
+### 2026-10-07 共享页面恢复批状态
+
+Workflows 的 reaction 动作、原版页面标题与刷新布局、Agent 页面布局和审计
+动作双语文案已进入集成批；Web/Desktop 使用同一份共享 TypeScript，Mobile
+文案仍由同源目录生成。当前线上不是该批，不将源码检查通过当作页面已发布。
+联合契约、兼容和共享页面结果、故意破坏检查对象后的失败及还原结果，见
+[恢复检查点](core/verify/buzz-restoration-checkpoint.md)。最近一次完整检查仍
+退出 1，三人双 Agent 稳定协作、组件真实联调、Win11/Mobile 与全部页面双语
+视觉验收未完成。访问时以已部署版本为准，不用历史章节推断当前功能完成度。

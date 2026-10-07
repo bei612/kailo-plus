@@ -405,6 +405,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "buzz-sdk"
+version = "0.1.0"
+dependencies = [
+ "buzz-core",
+ "nostr",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
 name = "bytecount"
 version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -536,6 +548,7 @@ version = "0.0.0"
 dependencies = [
  "base64 0.22.1",
  "buzz-core",
+ "buzz-sdk",
  "contracts",
  "futures-util",
  "hex",

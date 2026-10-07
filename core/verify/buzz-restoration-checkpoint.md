@@ -1335,3 +1335,43 @@ SDK 单独把头像颜色改为字面量、将 Web sidebar-border 改指另一�
 既有完整检查的文档六项通过仍只对应 tree 216e3793；本段新增记录没有新的
 文档快路径成功回执。所有源码、原始失败与截图保留；没有清理共享缓存、
 数据库、镜像或其他任务目录。发布仍受上述真实失败与验收缺口约束。
+
+## 2026-10-07 工作流 reaction、共享页面与审计文案集成
+
+本批以 `e3a5b5b6eda9c13485c1bcf41fb9969f3fd8a4d1` 为底，合入真实
+Buzz reaction 执行链、Workflows 与 Agent 原版布局恢复。相应上游固定版本、
+路径、符号及实现后正反验证在 [Web 面记录](../../../web-client/fork/verify/web-surface.md)。
+没有恢复未经治理的执行器，没有新建 Web 页面主体或第二工作流权威。
+
+审计标签修复的四步结论：权威为既有动作 `conversation.hide`、
+`conversation.reopen`、`pulse.publish`、`identity.profile.publish`，不新增动作；
+Core 写入既有 wire key，共享 `ActionLabel` 读取同源双语词条，Web/Desktop
+及生成的 Dart 文案一致，旧数据无需迁移；只修正显示，不变更授权、派发、
+业务状态、额度和审计正文；空审计保持原空态，未知扩展仍用原未识别标签，
+不伪造成已知动作或成功，原 wire key 保留供核验。
+
+集成 tree `99fd668ddfee2a9ba59ae28650c1bc173beb175f` 的结果：
+
+- 四侧生成与平台文案生成退出 0；TypeScript 往返 38 项、Dart 33 项、Go
+  原契约包退出 0。联合命令首次在已通过 TS 后因错误相对目录退出 1，
+  改为 SDK 绝对目录后 Dart/Go 实际退出 0，没有改业务代码迁就环境。
+- 原 contract 子步骤退出 0，270 份 schema 与四侧生成同步，匹配 3 份历史
+  schema 无破坏性变化；旧 tag 覆盖窄，不扩大为全部历史业务兼容。
+- 共享源码和用例类型检查退出 0，原 pages 文件 255 项通过。首轮错误读取
+  SDK 邻接旧契约包导致类型失败；只修正此私有快照的依赖链接，原失败保留。
+- 审计标签实现后两语言 2 项通过。仅在 SDK 删去 `pulse.publish` 词条，
+  两项真实失败、退出 1；逐字还原后两项通过、退出 0。
+- reaction 的 Core 自动化 27 项、桥接 2 项、Rust 往返 1 项、clippy 与隔离库
+  迁移验证由其冻结候选执行；不能将独立候选结果冒充这棵联合树的全量运行。
+
+原始日志位于 `/volumes/data/kailo/tmp/workflow-reaction-integrated-20261007.8H6gmb/`，
+包括 `contracts.log`、`contracts-dart-go-restored.log`、`compatibility.log`、
+`shared-integrated.log`、`shared-integrated-restored.log`、`action-labels-negative.log`
+与 `action-labels-restored.log`。随后 Agent 页面增量干净三方合入为
+`16eebeace56b7c209255181c29112e32e7f71dc9`，未覆盖上述标签与 reaction。
+
+本批没有构建或部署。线上仍是 `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b`。
+Playwright 真实会话已补拍并实际查看 `176-live-46-audit-action-label.png`、
+`177-live-46-audit-loaded.png`：首次导航主体仍为频道，再点审计后显示审计；
+可见旧版“发布动态”动作仍显示未识别。不能把本批源码验收记作线上视觉通过。
+完整检查最近一次仍退出 1，发布摘要与真实验收缺口保持原记录；不是生产收口。

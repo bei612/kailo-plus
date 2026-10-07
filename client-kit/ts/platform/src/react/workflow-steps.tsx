@@ -3,7 +3,7 @@
 // The original card/detail affordances; only the actually executed actions enter its model.
 import { ChevronRight, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { ActionKind, type AutomationStep, type AutomationVersionContent } from "@client-kit/contracts";
+import { ActionEnum, ActionKind, type AutomationStep, type AutomationVersionContent } from "@client-kit/contracts";
 import { Button } from "./profile/buzz/shared/ui/button";
 import { Input } from "./composer/shared/ui/input";
 import { useT } from "./context";
@@ -33,8 +33,11 @@ export function supportedSteps(value: unknown): value is AutomationStep[] {
     if (typeof row.id !== "string" || !row.id.trim() || ids.has(row.id)
       || (row.name !== undefined && (typeof row.name !== "string" || !row.name.trim()))) return false;
     ids.add(row.id);
-    if (index === value.length - 1) return Object.keys(row).every((key) => ["id", "name", "action", "text"].includes(key))
-      && row.action === "send_message" && typeof row.text === "string" && !!row.text.trim();
+    if (index === value.length - 1) return row.action === "add_reaction"
+      ? Object.keys(row).every((key) => ["id", "name", "action", "emoji"].includes(key))
+        && typeof row.emoji === "string" && !!row.emoji.trim()
+      : Object.keys(row).every((key) => ["id", "name", "action", "text"].includes(key))
+        && row.action === "send_message" && typeof row.text === "string" && !!row.text.trim();
     if (row.action === "request_approval") {
       if (approval) return false;
       approval = true;
@@ -47,9 +50,12 @@ export function supportedSteps(value: unknown): value is AutomationStep[] {
   });
 }
 
-export function workflowAction(content: AutomationVersionContent) {
+export type WorkflowActionKind = ActionKind | ActionEnum.AddReaction;
+export function workflowAction(content: AutomationVersionContent): {kind: WorkflowActionKind; template: string} | undefined {
   return content.formatVersion === 2
-    ? { kind: ActionKind.PostMessage, template: content.steps?.at(-1)?.text ?? "" }
+    ? content.steps?.at(-1)?.action === ActionEnum.AddReaction
+      ? {kind: ActionEnum.AddReaction, template: content.steps.at(-1)?.emoji ?? ""}
+      : { kind: ActionKind.PostMessage, template: content.steps?.at(-1)?.text ?? "" }
     : content.action;
 }
 
@@ -91,6 +97,11 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies }: 
               onChange={(event) => onUpdate({ ...step, message: event.target.value })} />
           </label>
         </div>
+        : step.action === "add_reaction" ? <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-emoji`}>
+          {t("workflows.steps.emoji")}<Input autoCapitalize="off" id={`${prefix}-emoji`} value={step.emoji ?? ""}
+            onChange={(event) => onUpdate({ ...step, emoji: event.target.value })} />
+          <span className="block font-normal">{t("workflows.steps.reactionTarget")}</span>
+        </label>
         : <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-text`}>
           {t("workflows.steps.message")}<textarea id={`${prefix}-text`} value={step.text ?? ""}
             onChange={(event) => onUpdate({ ...step, text: event.target.value })}

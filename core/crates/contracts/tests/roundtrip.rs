@@ -6,6 +6,17 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn automation_reaction_step_preserves_original_emoji() {
+    let sample: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("automation-reaction-step.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let step: contracts::AutomationStep = serde_json::from_value(sample.clone()).unwrap();
+    assert_eq!(serde_json::to_value(step).unwrap(), sample);
+}
+
+#[test]
 fn service_read_permission_preserves_receiver_and_legacy_absence() {
     let raw = fs::read_to_string(
         sample_path().with_file_name("resource-service-read-permission.sample.json"),

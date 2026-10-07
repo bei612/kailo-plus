@@ -222,8 +222,8 @@ async fn publish(
         .bind(invocation.tenant_id)
         .fetch_one(&mut *tx)
         .await?;
-    let (text, binding, revision) =
-        crate::automation::fresh_post_message(state, &mut tx, invocation.id, None).await?;
+    let (action, binding, revision) =
+        crate::automation::fresh_channel_action(state, &mut tx, invocation.id, None).await?;
     if binding.agent_locator
         != state.secrets.tenant_locator(
             invocation.tenant_id,
@@ -264,16 +264,27 @@ async fn publish(
     }
     let created_at = DateTime::from_timestamp(Utc::now().timestamp(), 0).ok_or_else(unknown)?;
     let intent = current_meter(state, &mut tx, invocation, created_at).await?;
-    let event = client
-        .sign_channel_result_at(
+    let timestamp = u64::try_from(created_at.timestamp()).map_err(|_| unknown())?;
+    let event = if action["kind"] == "ADD_REACTION_STEPS" {
+        if invocation.source_kind != "BUZZ_EVENT" {
+            return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
+        }
+        client.sign_reaction_at(
+            &invocation.source_event_id,
+            action["emoji"].as_str().ok_or_else(unknown)?,
+            timestamp,
+        )
+    } else {
+        client.sign_channel_result_at(
             &binding.channel_id.to_string(),
-            &text,
+            action["template"].as_str().ok_or_else(unknown)?,
             reply_ancestry(invocation),
             matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
                 .then_some(invocation.id),
-            u64::try_from(created_at.timestamp()).map_err(|_| unknown())?,
+            timestamp,
         )
-        .map_err(|_| unknown())?;
+    }
+    .map_err(|_| unknown())?;
     let event_id = event.id.to_hex();
     let admitted = client.admit().map_err(|_| unknown())?;
     let metadata = serde_json::to_value(&intent).map_err(|_| unknown())?;
@@ -319,14 +330,14 @@ async fn publish(
         if current_meter(state, &mut guard, invocation, created_at).await? != intent {
             return Err(unknown());
         }
-        let (current_text, current_binding, _) = crate::automation::fresh_post_message(
+        let (current_action, current_binding, _) = crate::automation::fresh_channel_action(
             state,
             &mut guard,
             invocation.id,
             Some(&event_id),
         )
         .await?;
-        if current_binding != binding || current_text != text {
+        if current_binding != binding || current_action != action {
             return Err(unknown());
         }
         Ok::<_, Refusal>(guard)
