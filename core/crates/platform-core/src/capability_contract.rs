@@ -988,6 +988,47 @@ mod registration_tests {
             1,
             "published v1 bootstrap is unchanged"
         );
+        let reference_schema: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/domain/content_reference.schema.json"
+        ))
+        .unwrap();
+        let reference_digest = collab_bridge::limits::canonical_digest(&reference_schema);
+        for operation in registered.content["operationContracts"].as_array().unwrap() {
+            if matches!(
+                operation["contractKey"].as_str(),
+                Some(
+                    "knowledge.ingest@v2"
+                        | "knowledge.read@v2"
+                        | "knowledge.export@v2"
+                        | "knowledge.delete@v2"
+                )
+            ) {
+                assert_eq!(operation["inputSchemaDigest"], reference_digest);
+            }
+        }
+        let steps = registered.vectors["cases"][0]["steps"].as_array().unwrap();
+        let source: Value = serde_json::from_str(steps[0]["inputJson"].as_str().unwrap()).unwrap();
+        let reference: contracts::ContentReference =
+            serde_json::from_value(source.clone()).unwrap();
+        assert_eq!(serde_json::to_value(reference).unwrap(), source);
+        assert_ne!(source["resourceId"], steps[0]["referenceResourceId"]);
+        for step in steps
+            .iter()
+            .filter(|step| matches!(step["stepKey"].as_str(), Some("read" | "export" | "delete")))
+        {
+            assert_eq!(step["referenceFromStepKey"], "ingest");
+            assert_eq!(step["referenceResourceId"], steps[0]["referenceResourceId"]);
+        }
+        let mut legacy = raw.clone();
+        let mut vectors: Value =
+            serde_json::from_str(legacy["testVectorsJson"].as_str().unwrap()).unwrap();
+        vectors["cases"][0]["steps"][0]["inputJson"] =
+            json!(r#"{"title":"conformance","text":"body"}"#);
+        legacy["testVectorsJson"] = json!(vectors.to_string());
+        assert!(
+            registration(&legacy).is_err(),
+            "Core must not admit document bodies as ingest parameters"
+        );
     }
 
     #[tokio::test]

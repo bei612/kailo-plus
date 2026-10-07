@@ -6,7 +6,9 @@ import { FocusScope } from "@radix-ui/react-focus-scope";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { ActionEnum, AutomationTriggerKind, type AutomationStep, type AutomationVersionContent } from "@client-kit/contracts";
-import { useT } from "./context";
+import { useT, type Translate } from "./context";
+import { ActionEmoji } from "./workflow-card-actions";
+import { formatDurationSecondsVerbose, parseDurationSeconds } from "./workflow-duration";
 import { Button } from "./profile/buzz/shared/ui/button";
 import { cn } from "./profile/buzz/shared/lib/cn";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
@@ -27,8 +29,37 @@ const inspectorContentVariants = {
   exit: (direction: number) => ({ opacity: 0, y: direction < 0 ? -12 : 12 }),
 };
 
-function WorkflowNode({ description, disabled, icon, title, number, selected, terminal, onSelect, onRemove, actions, onAddAfter }: {
-  description: string; disabled?: boolean; icon?: ReactNode; title: string; number?: number;
+// Original desktop/src/features/workflows/ui/workflowStepDescription.ts::workflowStepDescription.
+// Only existing admitted actions have a consumer; channel/approver identities are not invented.
+const MAX_DETAIL_LENGTH = 42;
+function workflowStepDescription(step: AutomationStep, actionLabel: string, t: Translate): string {
+  const compact = (value: string) => {
+    const normalized = value.trim().replaceAll(/\s+/g, " ");
+    return normalized.length > MAX_DETAIL_LENGTH ? `${normalized.slice(0, MAX_DETAIL_LENGTH - 3)}...` : normalized;
+  };
+  const quoted = (value: string | undefined) => value?.trim() ? `“${compact(value)}”` : null;
+  let detail: string | null = null;
+  switch (step.action) {
+    case ActionEnum.Delay: {
+      const duration = step.duration?.trim();
+      if (duration) {
+        const seconds = parseDurationSeconds(duration);
+        detail = compact(seconds === null ? duration : formatDurationSecondsVerbose(seconds, t));
+      }
+      break;
+    }
+    case ActionEnum.SendMessage: detail = quoted(step.text); break;
+    case ActionEnum.RequestApproval: detail = quoted(step.message); break;
+    case ActionEnum.AddReaction: detail = step.emoji?.trim() || null; break;
+    case ActionEnum.SetChannelTopic: detail = quoted(step.topic); break;
+  }
+  const name = step.name?.trim();
+  return name && detail ? `${name} · ${detail}` : name || detail || actionLabel;
+}
+
+function WorkflowNode({ description, label, disabled, icon, title, number, showTitle = true, subtitle, selected, terminal, onSelect, onRemove, actions, onAddAfter }: {
+  description: string; label: string; disabled?: boolean; icon?: ReactNode; title: string; number?: number;
+  showTitle?: boolean; subtitle?: string;
   selected: boolean; terminal: boolean; onSelect: () => void; onRemove?: () => void;
   actions: DraftAction[]; onAddAfter: (action: DraftAction) => void;
 }) {
@@ -36,7 +67,7 @@ function WorkflowNode({ description, disabled, icon, title, number, selected, te
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   return <li className="flex flex-col items-center">
     <div className="group relative isolate w-full after:absolute after:left-full after:top-0 after:z-0 after:h-full after:w-12 after:content-['']">
-      <button aria-label={`${title}: ${description}`} aria-pressed={selected}
+      <button aria-label={label} aria-pressed={selected}
         className={cn("relative z-20 flex w-full items-center gap-3 text-left transition-colors",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
           "rounded-full bg-muted/25 p-3 outline outline-2 outline-offset-4 outline-muted-foreground/0",
@@ -47,7 +78,8 @@ function WorkflowNode({ description, disabled, icon, title, number, selected, te
           "data-[selected=true]:bg-foreground/15 data-[selected=true]:text-foreground", number !== undefined && "text-sm font-semibold")}
           data-selected={selected} data-testid="workflow-node-icon">{number ?? icon}</span>
         <span className="min-w-0 flex-1">
-          {number === undefined ? <span className="block text-2xs font-semibold uppercase tracking-wide text-muted-foreground/70">{title}</span> : null}
+          {showTitle ? <span className="block text-2xs font-semibold uppercase tracking-wide text-muted-foreground/70">{title}</span> : null}
+          {subtitle ? <span className="block truncate text-2xs font-semibold uppercase tracking-wide text-muted-foreground/70">{subtitle}</span> : null}
           <span className="block truncate text-sm font-semibold text-foreground">{description}</span>
         </span>
       </button>
@@ -155,15 +187,23 @@ export function WorkflowFormCanvas({ steps, onStepsChange, trigger, triggerField
     <div className="flex min-h-0 flex-1 flex-col"><div className="relative isolate flex min-h-0 flex-1">
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5"><div className="mx-auto w-full max-w-sm">
         <ol aria-label={t("workflows.sequence")}>
-          <WorkflowNode title={t("agents.automation.trigger")} description={triggerLabel} disabled={disabled}
+          <WorkflowNode title={t("agents.automation.trigger")} description={triggerLabel} label={`${t("agents.automation.trigger")}: ${triggerLabel}`} disabled={disabled}
             icon={trigger === AutomationTriggerKind.Schedule ? <CalendarClock className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
             selected={selectedNode?.type === "trigger"} terminal={steps.length === 0} onSelect={() => selectNode({type: "trigger"})}
             actions={actionsAt(0)} onAddAfter={action => insertStep(0, action)} />
-          {steps.map((step, index) => <WorkflowNode key={step.id} title={t("workflows.steps.number", {number: index + 1})}
-            number={index + 1} description={step.name?.trim() || actionLabel(step)} disabled={disabled}
+          {steps.map((step, index) => {
+            const label = actionLabel(step);
+            const description = workflowStepDescription(step, label, t);
+            const emoji = step.action === ActionEnum.AddReaction ? step.emoji?.trim() : undefined;
+            const title = t("workflows.steps.number", {number: index + 1});
+            return <WorkflowNode key={step.id} title={title} label={`${title}: ${description}`}
+            number={emoji ? undefined : index + 1} icon={emoji ? <ActionEmoji value={emoji} /> : undefined}
+            description={emoji ? label : description} showTitle={false}
+            subtitle={!emoji && description !== label ? label : undefined} disabled={disabled}
             selected={selectedNode?.type === "step" && selectedNode.stepId === step.id} terminal={index === steps.length - 1}
             onSelect={() => selectNode({type: "step", stepId: step.id})} onRemove={() => removeStep(index)}
-            actions={actionsAt(index + 1)} onAddAfter={action => insertStep(index + 1, action)} />)}
+            actions={actionsAt(index + 1)} onAddAfter={action => insertStep(index + 1, action)} />;
+          })}
         </ol>
       </div></div>
       <AnimatePresence>

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { NewMessageScreen } from "@client-kit/platform/react/new-message";
 import { useUiT } from "@client-kit/platform/react/context";
 import { mediaUrl, publishConversationMessage, uploadConversationMedia } from "../bff-client";
-import { Composer } from "./ChannelPane";
+import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 
 export function NewMessagePage({ currentPrincipalId, onConversationOpened, initialRecipientPubkey }: {
   currentPrincipalId: string;
@@ -25,6 +25,7 @@ export function NewMessagePage({ currentPrincipalId, onConversationOpened, initi
   };
   return <><NewMessageScreen key={currentPrincipalId} currentPrincipalId={currentPrincipalId} initialRecipientPubkey={initialRecipientPubkey} renderComposer={(host) =>
     <Composer disabled={host.disabled} placeholder={host.placeholder}
+      mentionPeople={mentionPeopleFromMembers(host.recipients)}
       onMediaUrl={(sha256) => {
         const url = scope.media.get(sha256);
         if (!url) throw new Error(t("dm.attachmentUnavailable"));
@@ -38,10 +39,10 @@ export function NewMessagePage({ currentPrincipalId, onConversationOpened, initi
         scope.media.set(descriptor.sha256, mediaUrl(conversation.id, descriptor.sha256, conversation.id));
         return descriptor;
       }}
-      onPublish={async (content, attachments, key) => {
+      onPublish={async (content, attachments, key, _mentionInstallationIds, mentionPubkeys = []) => {
         const conversation = await host.prepareConversation();
         if (!scope.active) throw new Error(t("dm.viewInactive"));
-        const receipt = await publishConversationMessage(conversation.id, content, attachments, key);
+        const receipt = await publishConversationMessage(conversation.id, content, attachments, key, undefined, undefined, mentionPubkeys);
         // The publish receipt is final even if navigation fails. Do not reject
         // it into the composer's retry path or carry it across identity changes.
         await openConfirmed(conversation);

@@ -122,7 +122,12 @@ vi.mock("@client-kit/platform/react/invitations", () => ({
   RedemptionProgress: () => null,
 }));
 vi.mock("@/platform/ui/ChannelPane", () => ({ ChannelPane: () => null }));
-vi.mock("@/platform/ui/InboxPane", () => ({ InboxPane: () => null }));
+vi.mock("@/platform/ui/InboxPane", async () => {
+  const { InboxLayout, InboxEmptyDetail } = await import("@client-kit/platform/react/inbox-surface");
+  return {InboxPane: () => <InboxLayout listWidth={320} showList showDetail onResize={() => {}}>
+    <section data-testid="inbox-list-consumer" /><InboxEmptyDetail />
+  </InboxLayout>};
+});
 vi.mock("@/platform/ui/SettingsPane", () => ({ SettingsPane: ({ active }: { active: boolean }) => <div data-testid="settings-host" data-active={active} /> }));
 vi.mock("./BrowserNotifications", () => ({
   BrowserNotificationsProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -169,6 +174,22 @@ it("mounts the original settings page beside rather than inside the ordinary con
   expect(settings.closest('[data-testid="app-sidebar-layer"]')).not.toBeNull();
   expect(host.querySelector('[data-testid="app-top-chrome"]')?.className).toContain("absolute inset-x-0 top-0");
   expect(host.querySelector('[data-testid="app-sidebar"]')?.closest("[hidden]")).not.toBeNull();
+});
+it("mounts the original Inbox grid and both panes in its viewport host without adding a second scrolling or padded container", () => {
+  state.tab = "inbox";
+  const host = document.createElement("div");
+  host.innerHTML = renderToStaticMarkup(<PlatformApp />);
+  const inbox = host.querySelector('[data-testid="home-inbox"]')!;
+  const viewport = inbox.parentElement!;
+  expect(viewport.tagName).toBe("MAIN");
+  expect(viewport.classList.contains("flex")).toBe(true);
+  expect(viewport.classList.contains("overflow-hidden")).toBe(true);
+  expect(viewport.classList.contains("p-4")).toBe(false);
+  expect(inbox.querySelector('[data-testid="inbox-list-consumer"]')).not.toBeNull();
+  expect(inbox.querySelector('[data-testid="home-inbox-detail-empty"]')).not.toBeNull();
+  expect(inbox.querySelector('[data-testid="home-inbox-list-resize-handle"]')).not.toBeNull();
+  expect(viewport.closest('[data-buzz-content-surface]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="settings-host"]')).toBeNull();
 });
 it("retains the host-selected Workspace and mounts shared member management", () => {
   const markup = renderToStaticMarkup(<PlatformApp />);

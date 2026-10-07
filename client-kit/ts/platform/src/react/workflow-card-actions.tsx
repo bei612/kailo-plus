@@ -33,7 +33,7 @@ export function WorkflowStatusToggle({ disabled, enabled, onToggle }: {
 }
 
 // Original StatusEmoji rendering, resolved only through the existing admitted media reader.
-function ActionEmoji({ value }: { value: string }) {
+export function ActionEmoji({ value }: { value: string }) {
   const palette = useBffCustomEmojiPalette(useBffClient());
   const image = reactionEmojiUrl(value, palette);
   return image ? <img alt="" src={image} draggable={false}

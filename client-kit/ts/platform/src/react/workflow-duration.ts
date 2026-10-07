@@ -1,5 +1,6 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503:
 // desktop/src/features/workflows/ui/workflowDuration.ts. Original duration control.
+import type { Translate } from "./context";
 const DURATION_PARTS_PATTERN =
   /^\s*(?:(\d+)\s*w)?\s*(?:(\d+)\s*d)?\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?\s*$/i;
 
@@ -56,6 +57,24 @@ export function formatDurationSeconds(totalSeconds: number): string {
   if (minutes > 0) parts.push(`${minutes}m`);
   if (seconds > 0) parts.push(`${seconds}s`);
 
+  return parts.join(" ");
+}
+
+/** Original summary formatter; only unit copy uses the shared bilingual authority. */
+export function formatDurationSecondsVerbose(totalSeconds: number, t: Translate): string {
+  if (!Number.isSafeInteger(totalSeconds) || totalSeconds < 0) return "";
+  if (totalSeconds === 0) return t("workflows.duration.seconds", { count: 0 });
+  const weeks = Math.floor(totalSeconds / SECONDS_PER_WEEK);
+  const days = Math.floor((totalSeconds % SECONDS_PER_WEEK) / SECONDS_PER_DAY);
+  const hours = Math.floor((totalSeconds % SECONDS_PER_DAY) / SECONDS_PER_HOUR);
+  const minutes = Math.floor((totalSeconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
+  const seconds = totalSeconds % SECONDS_PER_MINUTE;
+  const parts: string[] = [];
+  if (weeks > 0) parts.push(t(weeks === 1 ? "workflows.duration.week" : "workflows.duration.weeks", { count: weeks }));
+  if (days > 0) parts.push(t(days === 1 ? "workflows.duration.day" : "workflows.duration.days", { count: days }));
+  if (hours > 0) parts.push(t(hours === 1 ? "workflows.duration.hour" : "workflows.duration.hours", { count: hours }));
+  if (minutes > 0) parts.push(t(minutes === 1 ? "workflows.duration.minute" : "workflows.duration.minutes", { count: minutes }));
+  if (seconds > 0) parts.push(t(seconds === 1 ? "workflows.duration.second" : "workflows.duration.seconds", { count: seconds }));
   return parts.join(" ");
 }
 

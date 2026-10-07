@@ -210,7 +210,10 @@ async fn validate_reference_and_policy(
         if parent != Some(resource) || reference["assetId"] != json!(f.target.id) {
             return Err(denied());
         }
-    } else if f.application.definition.action_key == "knowledge.ingest@v1" {
+    } else if matches!(
+        f.application.definition.action_key.as_str(),
+        "knowledge.ingest@v1" | "knowledge.ingest@v2"
+    ) {
         // An import targets the receiver knowledge base, while its typed
         // reference identifies the source. Neither ID can substitute for the
         // other's authority. The SERVICE read batch checks its grant afresh.
@@ -296,7 +299,10 @@ fn normalized(cmd: &ActionCommand) -> Result<FrozenCommand, Refusal> {
         .filter(|v| *v > 0)
         .ok_or_else(invalid)?;
     if (kind == "RESOURCE"
-        && cmd.action_key != "knowledge.ingest@v1"
+        && !matches!(
+            cmd.action_key.as_str(),
+            "knowledge.ingest@v1" | "knowledge.ingest@v2"
+        )
         && (reference["resourceId"] != json!(target) || reference.get("assetId").is_some()))
         || (kind == "ASSET" && reference["assetId"] != json!(target))
     {
@@ -1023,14 +1029,22 @@ mod tests {
     #[test]
     fn ingest_freezes_source_reference_without_replacing_receiver_target() {
         let mut raw = command();
-        raw["actionKey"] = json!("knowledge.ingest@v1");
         let source = Uuid::new_v4();
         raw["componentAction"]["inputReference"]["resourceId"] = json!(source);
-        let frozen = normalized(&serde_json::from_value(raw.clone()).unwrap()).unwrap();
-        assert_eq!(frozen.arguments["target"]["resourceId"], raw["resourceId"]);
-        assert_eq!(frozen.arguments["input"]["resourceId"], json!(source));
-        raw["actionKey"] = json!("knowledge.read@v1");
-        assert!(normalized(&serde_json::from_value(raw).unwrap()).is_err());
+        for action in ["knowledge.ingest@v1", "knowledge.ingest@v2"] {
+            raw["actionKey"] = json!(action);
+            let frozen = normalized(&serde_json::from_value(raw.clone()).unwrap()).unwrap();
+            assert_eq!(frozen.arguments["target"]["resourceId"], raw["resourceId"]);
+            assert_eq!(frozen.arguments["input"]["resourceId"], json!(source));
+        }
+        for action in [
+            "knowledge.read@v1",
+            "knowledge.read@v2",
+            "knowledge.ingest@v3",
+        ] {
+            raw["actionKey"] = json!(action);
+            assert!(normalized(&serde_json::from_value(raw.clone()).unwrap()).is_err());
+        }
     }
 
     #[tokio::test]

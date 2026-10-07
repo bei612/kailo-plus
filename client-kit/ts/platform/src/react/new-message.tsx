@@ -2,7 +2,7 @@ import { useUiT } from "./context";
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/messages/ui/NewMessageScreen.tsx.
 // Original compose surface and keyboard interactions; BFF resolves people, hosts retain their real composer.
 import * as React from "react";
-import type { ConversationView } from "@client-kit/contracts";
+import type { ConversationParticipant, ConversationView } from "@client-kit/contracts";
 import { SelectedRecipientChip } from "./conversations/selected-recipient-chip";
 import { Popover, PopoverAnchor, PopoverContent } from "./conversations/popover";
 import { NewMessageResultRow } from "./conversations/new-message-result-row";
@@ -18,6 +18,7 @@ export type NewMessageComposerHost = {
   disabled: boolean;
   isSending: boolean;
   placeholder: string;
+  recipients: readonly ConversationParticipant[];
   prepareConversation: () => Promise<ConversationView>;
 };
 function Skeleton({className}: {className: string}) { return <div className={`animate-pulse rounded-md bg-primary/10 ${className}`} />; }
@@ -467,6 +468,7 @@ export function NewMessageScreen({currentPrincipalId, renderComposer, initialRec
         disabled: isPending || selectedUsers.length === 0,
         isSending: isPending,
         placeholder: composerPlaceholder,
+        recipients: selectedUsers,
         prepareConversation: async () => {
           try { return await opening.prepareConversation(); }
           catch (error) { setSubmitErrorMessage(error instanceof Error ? error.message : translateUi("dm.unavailable")); throw error; }

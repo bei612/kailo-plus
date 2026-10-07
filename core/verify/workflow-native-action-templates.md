@@ -157,3 +157,18 @@ FocusScope 是原检查器实际调用依赖。上游 `desktop/package.json` 为
 - `canvas-pages-consumers.log` 为 59 passed/1 failed，暴露上述 footer 直接关闭；修正后 `canvas-joint-final.log` 共享 tsc 与五文件 73 项通过，旧 pages fixture 仍直接关闭已选择 executor 的草稿，59 passed/1 failed。将该 fixture 改为实际弃稿确认，不绕过 guard；`canvas-pages-final.log` 的 `vitest run test/pages.test.tsx -t "shared Automation schedule consumer"` 退出 0，60 passed/206 skipped（其他 describe 本轮明确未跑）。该测试文件原有非 Workflows 主题场景脏差异不归本批，交付独立 `canvas-pages-owned.patch`，不整文件暂存。
 
 本批没有实际浏览器截图、Windows/Mobile 设备验收、部署/安装包或全量门禁执行。源码写入及 jsdom 消费者证据不等于画布已发布或全模块原版一致。中英源词条及 Dart 同源生成由主线集中收口。
+
+## 原画布配置摘要与表情节点恢复（2026-10-07）
+
+1. 权威：REQ-24、`.design/06-Temporal任务工作台.md` §9.1 要求名称、条件、动作摘要来自同一个授权版本。重新核对固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的完整 67 文件 workflows 目录及 `desktop/src/features/workflows/ui/WorkflowFormBuilder.tsx::WorkflowNode/WorkflowFormBuilder`、`desktop/src/features/workflows/ui/workflowStepDescription.ts::workflowStepDescription/configuredStepDetail`、`desktop/src/features/workflows/ui/workflowDuration.ts::formatDurationSecondsVerbose`。本批将此前仅 name/actionLabel 的节点补回原配置摘要、动作副标题及表情图标，不重设计卡片。
+2. 影响：同一 `WorkflowFormCanvas.steps` → 原摘要规则 → 原 WorkflowNode 的 label/description/subtitle/icon；检查器修改立即反映在同一草稿摘要。发送消息/主题/审批使用原 Unicode 引号及空白归一，延时调用原 parser 和 verbose formatter，保留官方 MAX_DETAIL_LENGTH=42 的显示截断；截断只影响呈现，提交内容与 name 不改写。原反应节点用真实 emoji 代替编号，正文仍为原动作标签，可访问 label 保留名称/emoji。只导出并复用原共享 `workflow-card-actions.tsx::ActionEmoji`，不复制自定义表情读缓存或远端图片访问逻辑。
+3. 副作用：不改 AutomationVersion、ActionCommand、Core/Temporal、quota、审批或 UNKNOWN 终态；没有新增写请求。自定义表情仍必须经过既有 BFF 有签名的目录读取和 admitted mediaPaths，缺映射只显示 shortcode，不直接请求源 URL。正文仍由 React 转义，不因摘要包含 HTML 而执行。未给当前合同没有的 channel/approver 身份拼造标签，也未开放 DM/webhook 执行。
+4. 边界：空值使用原动作名，非法时长保留原始编辑摘要而不伪造有效时长；有名称加 detail 时沿原 `name · detail`，没有配置时不增加重复 subtitle。中文/英文 duration 单复数来自同一 i18n 源；触发条件作者头像、排程富摘要与原 URL pane 深链仍未闭合，当前 Canvas 只接收到 trigger kind，本批不编造其余数据。
+
+差异分类：已有节点主体为共享迁移；本批五动作摘要/原副标题 class/emoji 位置为原缺失恢复；类型及本地化、媒体映射沿授权治理适配；七动作中的未闭合执行与上述 trigger/深链仍是剩余差距。不增加节点状态或把名称/配置展示称为运行成功。
+
+验证继续复用 4 CPU/8 GiB 的既有 SDK，开始时无其他编译、宿主 available 31 GiB、Data 3.3 GiB；没有新快照、安装/下载或 Rust/镜像。原日志目录 `workflow-native-template.s3JDP1`：`summary-initial.log` 的 shared `tsc --noEmit -p tsconfig.test.json` 与五个原工作流检查文件退出 0、83 passed；随后补真实签名 custom emoji 的映射允许/拒绝消费者。`summary-mutation.log` 在私有 Canvas 将摘要退回 actionLabel 并强制反应使用编号，真实 12 failed/10 passed、退出 1。正式源码未改坏，恢复后 cmp 退出 0。
+
+`summary-restored-final.log` 的共享类型检查退出 0，85 项中 84 passed/1 failed：新增映射正向用例只等待 Promise，未等待 React Query 的 scheduled notification；修正该检查等待真实通知任务，不改产品。`summary-media-final.log` 的 `vitest run test/workflow-form-canvas.test.tsx` 退出 0，22 passed；其余四文件 63 项在前一轮通过，没有为检查等待改动重跑整批。四个实现/检查输入最终 cmp 及限定 diff whitespace 检查均退出 0。本批正式修改范围为三个工作流生产模块、一份原 Canvas 检查及本回执；源时长十词条由主线合入并统一生成 Dart，不占有其他共享脏文件。
+
+未运行完整门禁、未部署、未做浏览器全页面截图或 Windows/Mobile 设备验收；不以本批摘要已恢复声明整个原版体验一致。

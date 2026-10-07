@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,7 +21,7 @@ function reply(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-async function fixture(t, mode = 'ok', action, protocolOperation) {
+async function fixture(t, mode = 'ok', action, protocolOperation, contractStep) {
   const directory = await mkdtemp(join(tmpdir(), 'knowledge-adapter-'));
   const ids = Array.from({ length: 10 }, () => randomUUID());
   const readOperation = randomUUID();
@@ -37,8 +37,10 @@ async function fixture(t, mode = 'ok', action, protocolOperation) {
   const state = { peps: 0, native: 0, methods: [], grants: 0, downloads: 0, receipts: [] };
   const revision = '2026-10-06T23:00:00.123456789Z';
   const ingest=action==='knowledge.ingest@v1'||action==='knowledge.ingest@v2';
-  const reference = { resourceId: ingest?ids[9]:ids[8], nativeObjectRef: ids[2], nativeRevision: revision,
-    displayName: 'native document', mediaType: 'text/markdown' };
+  const reference = contractStep ? JSON.parse(contractStep.inputJson)
+    : { resourceId: ingest?ids[9]:ids[8], nativeObjectRef: ids[2], nativeRevision: revision,
+      displayName: 'native document', mediaType: 'text/markdown' };
+  if (contractStep) ids[8] = contractStep.referenceResourceId;
   const operation = protocolOperation ?? (action ? 'execute' : 'query_revision');
   const intent = ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
     : action ? { target: { resourceId: ids[8] }, input: reference } : args;
@@ -173,6 +175,22 @@ async function fixture(t, mode = 'ok', action, protocolOperation) {
     body: canonical(bodyValue),
   }) };
 }
+
+test('knowledge v2 registered ingest vector reaches source grant, file transfer and original MCP upload', async t => {
+  const registration = JSON.parse(await readFile(new URL('../../../contracts/adapter/knowledge.v2/registration.json', import.meta.url)));
+  const vectors = JSON.parse(registration.testVectorsJson);
+  const step = vectors.cases.find(value => value.caseKey === 'knowledge_roundtrip').steps[0];
+  const { state, reference, invoke } = await fixture(t, 'ok', step.contractKey, undefined, step);
+  assert.notEqual(reference.resourceId, step.referenceResourceId);
+  const response = await invoke();
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.execution.platformStatus, 'SUCCEEDED');
+  assert.equal(result.contentReference.resourceId, step.referenceResourceId);
+  assert.equal(state.grants, 1);
+  assert.equal(state.downloads, 1);
+  assert.deepEqual(state.methods, ['add_document']);
+});
 
 test('knowledge revision uses original MCP metadata and two fresh PEP decisions', async t => {
   const { state, args, revision, invoke } = await fixture(t);

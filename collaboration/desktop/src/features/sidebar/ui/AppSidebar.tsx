@@ -163,7 +163,7 @@ export function AppSidebar({
   const resolvedDisplayName =
     profile?.displayName?.trim() ||
     fallbackDisplayName?.trim() ||
-    "Current identity";
+    ""; // The shared profile card supplies the original, localized empty-name fallback.
 
   return (
     <AppSidebarFrame onClick={(event) => {

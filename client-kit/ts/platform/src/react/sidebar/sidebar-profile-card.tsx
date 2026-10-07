@@ -19,9 +19,10 @@ export function SidebarProfileCard({
   popoverAvatar,
   onOpenSettings,
   onSignOut,
-  resolvedDisplayName,
+  resolvedDisplayName: requestedDisplayName,
 }: SidebarProfileCardProps) {
   const translateUi = useUiT();
+  const resolvedDisplayName = requestedDisplayName.trim() || translateUi("buzz.currentIdentity");
   const [profilePopoverOpen, setProfilePopoverOpen] = React.useState(false);
   const profileCardRef = React.useRef<HTMLDivElement | null>(null);
   const toggleProfilePopover = React.useCallback(

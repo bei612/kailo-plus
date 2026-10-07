@@ -218,7 +218,7 @@ function setup({unknown = false, active = true, maxParticipants = 9, hidden = fa
   return {transport, onReady, visibility, activate: () => { ready = true; }, mount: () => render(
     <PlatformProvider client={createBffClient(transport)} locale="en">
       <ConversationVisibilityProvider value={visibility}>
-      <NewMessageScreen currentPrincipalId="alice" renderComposer={(host) => <button disabled={host.disabled}
+      <NewMessageScreen currentPrincipalId="alice" renderComposer={(host) => <button disabled={host.disabled} data-recipients={JSON.stringify(host.recipients)}
         onClick={() => void host.prepareConversation().then(onReady).catch(() => undefined)}>Send retained draft</button>} />
       </ConversationVisibilityProvider>
     </PlatformProvider>)};
@@ -244,9 +244,11 @@ describe("shared original new-message surface", () => {
     await keyboard(input, "Enter");
     expect(host.querySelector("[data-testid=new-dm-selected-bob]")).not.toBeNull();
     expect(button(host, "Send retained draft").disabled).toBe(false);
+    expect(JSON.parse(button(host, "Send retained draft").dataset.recipients!)).toEqual([bob]);
     await keyboard(input, "Backspace");
     expect(host.querySelector("[data-testid=new-dm-selected-bob]")).toBeNull();
     expect(button(host, "Send retained draft").disabled).toBe(true);
+    expect(JSON.parse(button(host, "Send retained draft").dataset.recipients!)).toEqual([]);
   });
   it("opens the governed human set and returns only actual ACTIVE native channel evidence", async () => {
     const {mount, transport, onReady} = setup();

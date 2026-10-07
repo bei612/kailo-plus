@@ -720,3 +720,100 @@ knowledge without a complete authorized observation. Old connectors' original
 IsDeleted/stale-subtree consumers are unchanged and are not claimed to have
 this Connector's conditional-retirement guarantees. No partial automatic Cells
 picker or replacement native UI is exposed.
+
+## Unreleased v2 ingest contract reaches the existing source-read consumer (2026-10-07)
+
+Authority: `.design/07` §2.4 / DD-88, DD-102 and DD-108 require immutable
+registered versions, typed content references and governed registration. The
+original `capability_contract::builtin_knowledge` embeds **v1**, and
+`bootstrap_knowledge` refuses different content for an existing Catalog row.
+That published seed is unchanged. The v2 source was introduced in
+`15041483cef67661527ef53f62be95cba3d4ae47`; its receipt above explicitly did not
+approve or register a release. Source/migration/deployment reference inspection
+found no v2 bootstrap. This change does not mutate a live Catalog row. If a
+separately operated Catalog has already registered the old v2 bytes, its existing
+immutable-version conflict must remain a refusal; these bytes cannot replace
+that version in place.
+
+Impact and root cause: `knowledge.ingest@v2` still declared `{title,text}` while
+the existing `sourceReference` / `sourceFile` consumer accepts a complete
+`ContentReference` and downloads source bytes using the existing SERVICE read
+grant. Core's `application_action::normalized` and
+`validate_reference_and_policy` only recognized the v1 ingest key; v2 rejected
+the legitimate different source Resource before reaching that existing reader.
+The v2 ingest declaration now uses the already supplied ContentReference schema
+digest `a795ef1b071eca01c488eafcc2b8044cf8c40abdf62e26df6a48d71210b5fbb9`.
+Its first vector carries a source fixture reference, keeps the original KB as
+the admitted target and retains the later read/export/delete reference links.
+The unused body schema is removed from **v2 only**. Correction to the early
+receipt's schema diagnosis: read/export/delete already used this full-reference
+digest; their `{}` vectors are intentional deferred `referenceFromStepKey`
+slots, not empty runtime input schemas. They were not changed.
+
+The same existing Core ingest path now accepts the exact v2 key, not arbitrary
+future versions. It continues to validate receiver binding/generation and
+SOURCE/RECEIVER declarations, active source Resource/Asset and workspace scope,
+then requires the existing result-exposure policy. The subsequent SERVICE read
+grant still performs original actor/resource authorization, reservation and
+audit. No body enters Core parameters, no shared credential or new task/index
+authority is introduced. All callers and writers remain the existing
+ComponentAction, ApplicationBinding, approved release and typed-suite pipeline;
+no client menu or release is enabled by this change.
+
+Boundaries: schema/unknown fields and absent references fail closed; same-target
+read actions and unknown `knowledge.ingest@v3` cannot borrow the source exception.
+Original idempotency intent, timeout/UNKNOWN observation and native parse states
+are unchanged, with no added retry or state to retire. Existing read-edge PEP,
+hash/length receipts and revision checks still guard the actual transfer. The
+fixed fixture reference is isolated suite data, not a production file locator;
+a real suite environment must provision its matching source file/version and
+the marker bytes expected by the existing read/export steps. No production
+resource is inferred from these fixture UUIDs.
+
+Upstream reuse was rechecked at WeKnora
+`2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/mcpserver/tools_ingest.go::Server.handleAddDocument`. The actual
+consumer remains the existing MCP SDK and modified native file-ingest route;
+this batch does not replace native parsing or retrieval. Cells remains pinned
+at `c57f02f4962835447df694c63bd0fd8c22bd7baf`.
+
+Implementation preceded verification. Existing immutable SDK
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+was reused with 4 CPU / 8 GiB limits after checking no active Cargo compiler;
+Data free space was 3.3 GiB before and 3.2 GiB afterwards. Only bounded existing
+source inputs were synchronized; no install, new tree snapshot or image build.
+
+```sh
+node --test knowledge/adapter/test/query-revision.test.mjs
+cargo test --locked --offline -j16 -p platform-core --bin platform-core capability_contract::registration_tests -- --nocapture
+cargo test --locked --offline -j16 -p platform-core --bin platform-core application_action::tests -- --nocapture
+cargo clippy --locked --offline -j16 -p platform-core --bin platform-core -- -D warnings
+```
+
+Final results: HTTP **56 passed, 0 failed**; registration **11 passed, 0 failed,
+1 ignored**; action **2 passed, 0 failed, 1 ignored**; clippy exit **0**. The two
+ignored DB tests were not run and are not evidence of runtime registration or
+authorization. The HTTP case uses the actual registered ingest input through
+the real adapter and MCP SDK with controlled Core/source/native HTTP fixtures;
+it is not a deployed Cells→WeKnora E2E run or full seven-operation conformance.
+Private restoration of the old v2 registration caused HTTP **400 != 200** and
+the Core digest assertion to fail; privately removing v2 from normalization
+caused the actual command to fail. Each negative case failed once as intended.
+Formal bytes were restored, timestamps refreshed for Cargo and all checks above
+rerun successfully; compared source/candidate files are byte-identical.
+
+Logs are under
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/`:
+`knowledge-adapter.N8sx1m/knowledge-v2-contract-http{,-mutation,-restored}.log`
+and `profile-settings-ortsoo.DRR20F/knowledge-v2-contract-{core-restored,action-restored,core-mutation,action-mutation,clippy}.log`.
+Initial `knowledge-v2-contract-core.log` records the rejected `--lib` invocation
+(this package is a binary); `knowledge-v2-contract-core-bin.log` records the
+incorrect filter that ran zero tests. Neither is counted as passing evidence.
+
+No JSON Schema/type shape changed: `tools/gen.sh` reads `*.schema.json`, not
+registration data, and four generated type files were neither changed nor
+regenerated. No migration, compatibility-window rewrite, full gate, browser
+acceptance, image, registration, approval or deployment was run for this batch.
+Mandatory `knowledge.search` adapter execution and full native-sync release
+conformance remain separate unaccepted gaps; fixing ingest does not make v2
+eligible for partial release or prove complete integration.

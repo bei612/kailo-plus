@@ -16,6 +16,19 @@ beforeAll(() => {
 beforeEach(() => setLocale("en"));
 
 describe("shared original sidebar shell", () => {
+  it.each(["en", "zh-CN"] as const)("retains the original empty-identity fallback in %s", async (locale) => {
+    setLocale(locale);
+    const expected = locale === "zh-CN" ? "当前身份" : "Current identity";
+    const host = await render(<SidebarProfileCard communityLabel="Actual community" resolvedDisplayName="   "
+      avatar={<span>avatar host</span>} popoverAvatar={<span>popover avatar host</span>}
+      onOpenSettings={vi.fn()} onSignOut={vi.fn()} />);
+    expect(host.querySelector('[data-testid="sidebar-profile-name"]')?.textContent).toBe(expected);
+    const trigger = host.querySelector<HTMLButtonElement>('[data-testid="sidebar-profile-avatar-button"]')!;
+    expect(trigger.getAttribute("aria-label")).toContain(expected);
+    await click(trigger);
+    await settle();
+    expect(document.querySelector('[data-testid="profile-popover"]')?.textContent).toContain(expected);
+  });
   it.each([false, true])("retains original wheel boundaries and cleans up with host ref=%s", async (externalRef) => {
     const scrollRef = createRef<HTMLDivElement>();
     function Host() {

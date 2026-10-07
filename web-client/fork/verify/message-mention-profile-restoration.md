@@ -374,3 +374,158 @@ CLIENT custody 约束，以及复制还原时旧 mtime 复用了变异二进制�
 `./node_modules/.bin/tsc --noEmit` 最终均退出 0；Web 首轮已如实发现安装副本
 仍是旧契约，更新为本批实际生成物后复验，不以修改调用类型掩盖字段缺失。
 日志为 `read-receipts-20261007/mentions-{web,native}-typecheck-final.log`。
+
+## 新私聊首条消息：人类提及消费者补齐（2026-10-07）
+
+基于 main `26c549528`，固定官方 `779af8886caae1317b4de962082429867ab61503`
+的完整相关模块核对：`desktop/src/features/messages/ui/NewMessageScreen.tsx::NewMessageScreen`
+实际将 `MessageComposer` 的 `mentionPubkeys` 交给 `sendFirstMessage`；
+`desktop/src/features/messages/ui/MessageComposer.tsx::MessageComposer` 真实调用
+`desktop/src/features/messages/lib/useMentions.ts::useMentions`，并由原提及发送链消费。
+这不是新加私聊产品能力。当前 Web `NewMessagePage` 的原 Composer 缺候选输入，
+且发布回调未接人类公钥参数，本批接回这两处实际断点。
+
+四步结论及差异分类：
+
+1. 权威与状态：REQ-24、DD-39/75/77、SS-WEB-RELAY 的原版恢复及 BFF 边界不变；
+   上批已完成的人类提及合同与准入是当前真实消费者，不新增 schema 或发布权威。
+2. 影响：原样保留已迁移的收件人选择、chips、布局、原 Composer 提及按钮及编辑器；
+   共享迁移沿 `NewMessageComposerHost.recipients` 直接传递现有 `selectedUsers`，Web
+   调既有 `mentionPeopleFromMembers`，没有第二次目录查询或新的用户列表。
+   Desktop 接受 host 的附加属性但继续其原 `MessageComposer` 及本机签名；Mobile 未改。
+   host 是进程内 TypeScript 调用，无存储字段变更、旧数据迁移或四侧协议生成。
+3. 副作用：已授权治理差异为 Web 候选只来自本次已选人类收件人，发布仍先
+   `prepareConversation` 取得实际 ACTIVE 会话，再由既有 BFF/Core 重验参与人与公钥；
+   不沿上游全局搜索把会话外身份直接加入私聊，不恢复浏览器 Relay 私钥。
+   发布回调原样透传 Composer 冻结的人类公钥和幂等键，不重新按显示名推导。
+4. 边界：空收件人沿原 disabled，收件人数上限、分页、重复选择沿原目录与准入；
+   UNKNOWN 保留既有 Composer 意图，目录改名不能换 pubkey/key，原目标消失不静默
+   删除提及后重发。会话准入后卸载或认证身份变化仍阻止发布；已接受后的导航失败
+   仍只重试导航。DENIED/PRECONDITION、UNKNOWN 等沿原六类错误与既有展示，不新建状态。
+
+实施后使用原 4 CPU / 8 GiB SDK，未安装依赖、未新建候选树或镜像：
+
+- Web 原 `vitest run src/platform/ui/NewMessagePage.test.tsx`：最终 8 passed，退出 0。
+  新检查实际挂载原 Composer 并点击人类提及按钮、选择 Bob、发送；验证 UNKNOWN 后
+  同名新身份出现且原身份改名仍复用原整份发布参数，原目标消失则不再次准入/发布。
+  会话准备为受控替身；新增第 8 项继续使用真实 `publishConversationMessage` 序列化到
+  fetch 边界，核对 HTTP JSON 中仅有 `mentionPubkeys`，没有 `editEventId` 或 `parentEventId`。
+  这不是在线私聊通知验收；原 5 项导航/身份/卸载检查保留。
+- 共享原 `vitest run test/new-message.test.tsx`：18 passed，退出 0。
+  原真实 `NewMessageScreen` 键盘选择/移除用例同时验证交给 host 的完整收件人数据，
+  不用只验证静态按钮存在代替数据消费者。
+- 交叉复核纠正：首版错误地把公钥传入 BFF 第 5 个参数（实际是编辑目标），旧 mock
+  也按同样错误位置断言，所以此前 7 passed 不能证明协议链正确。已改为第 7 个参数，
+  第 5/6 个参数保留 undefined，并以真实 HTTP 序列化补证，不用变更 BFF 签名迁就调用。
+  私有恢复该错位后，新 8 项中 2 failed（包含真实 HTTP JSON 断言）；原 host 收件人
+  改为空数组的共享反例仍为 18 项中 1 failed。均精确还原后复验，候选不遗留故障改动。
+- 首两次 Web 运行断言虽 7 passed，但分别因旧模块 mock 缺异常导出、jsdom 缺 Range
+  几何及 BffError 导出而退出 1，未算通过；补全检查环境后才得到上述无未处理错误结果。
+  初版日志在原候选父目录的 `new-dm-{human,host}-{positive,mutation,restored}.log`；
+  纠正后的协议证据为 `new-dm-http-{corrected,mutation}.log` 及联合恢复日志，
+  不能把初版 mock 通过或初版漏参变异当作最终实际协议消费证据。
+
+未新增翻译或独立页面。本批没有类型全检、浏览器截图、Windows/Mobile、full 或部署验收，
+由主线集中验证与发布。新私聊原先没有跨路由持久化未决首条消息，本批不改该生命周期，
+不把同挂载重试宣称跨卸载恢复；原全局人类/Agent 发现与全部新私聊能力仍须独立比对，
+没有据本批消费者接通宣称全量原版一致。
+
+## Inbox 原版视口承载恢复（2026-10-07）
+
+已实际打开 `.playwright-cli/current-inbox.png` 问题截图：左右栏只延伸到顶部局部，
+主体仍留大量空白。固定 `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/app/AppShellChannelSurface.tsx::AppShellChannelSurface`、
+`desktop/src/app/BuzzThemeSurfaces.tsx::ContentSurface` 及
+`desktop/src/features/home/ui/HomeView.tsx::HomeView` 完整相关布局对比确认：
+原内容面及 HomeView 以 `flex min-h-0 flex-1 flex-col overflow-hidden` 逐层传递
+剩余视口高度，再交给 Inbox grid。现有 Desktop 仍保留这条链，共享 InboxLayout
+也保留原 grid/flex-1；Web 额外插入的普通 block `main` 使后者没有 flex 高度分配。
+
+四步结论：
+
+1. 由固定原版呈现与 REQ-24/SS-WEB-RELAY 的共享迁移决定；这是 Web 宿主遗漏，
+   不是增加页面设计或改变 Inbox 分组/列表规则。
+2. 只改 `PlatformApp` 的 Inbox main 承载为原 flex/min-height/overflow 链，移除该
+   层额外 p-4；共享 Inbox、列表内部滚动、线程正文、resize 与窄屏选择算法不改。
+   application iframe 的原 flex 分支、频道及管理页的既有滚动分支保持逐字不变；
+   设置面仍是普通内容面的同级挂载，隐藏行为不改。无合同或持久化影响。
+3. 无网络、权限、执行或业务副作用；外层不再作为 Inbox 的第二个纵向滚动容器。
+   原 pane 的 min-h-0 和各自 overflow 继续约束其正文，未增加固定高度/业务阈值。
+4. 空态仍由原 InboxEmptyDetail 呈现，窄屏仍由现有容器观察与单栏选择控制；
+   设置切换及 iframe 不继承本次 Inbox 专属类。没有新增失败或 UNKNOWN 处理。
+
+已有 `PlatformApp.test.tsx` 使用真实共享 InboxLayout/InboxEmptyDetail 检查宿主、
+两 pane 与 resize 消费者，保留原权限/成员/设置隔离检查。11 passed，退出 0；
+私有恢复旧 block main 后 1 failed，精确还原并与新私聊真实协议消费者联合复验
+19 passed，退出 0。日志为原候选父目录的 `inbox-viewport-{positive,mutation}.log`
+及 `new-dm-inbox-viewport-restored.log`。jsdom 无排版引擎，这些检查不证明实际像素
+高度或滚动表现；旧截图仅为修复前证据，尚未部署新源码，实际候选视觉复核由主线
+单独记录，不把临时 DOM 样式实验冒充生产验收。
+
+主线用 playwright-cli 在旧部署页面进行可恢复的候选 DOM 实验并还原原 class：
+1440×1000 下 main 高 903px、旧 Inbox 高 308px，应用本次候选 class 后 Inbox
+高 903px；900×700 下 main 与 Inbox 均高 603px，均没有横向溢出。
+`.playwright-cli/inbox-candidate-dom-preview.png` 与
+`.playwright-cli/inbox-candidate-dom-preview-narrow.png` 已打开复核，宽屏原两栏、
+窄屏原单栏保留。此证据确认 flex 高度断点与候选样式效果，不覆盖长消息滚动、
+新版 JavaScript、安装包或生产部署验收；没有把旧页面临时样式当作已发布修复。
+
+## 同批真实页面复核与个人姓名恢复（2026-10-07）
+
+本次使用 playwright-cli 经真实 SSO 登录现有 seam-verifier，未注入模拟 session。
+实际页面报告的 buildId 为
+`sha256:a484ceeba47f06e572461060c2b12353cd4646654d02fd45c04308558ebd7642`，
+reportedAt 为 `2026-10-07T18:25:13.928Z`。这是旧部署，不是本批候选。
+已分别截图并打开复核频道、Workflows、Pulse、Projects、Agents、Tasks、审批、
+审计、设备、Inbox、新消息、成员，以及设置的个人资料、外观、通知、快捷键、
+自定义表情、邀请，共 18 个页面/设置状态。图片位于当前工作区
+`.playwright-cli/current-*.png`；不提交同目录浏览器会话材料。
+
+这些截图证明当前主页面已加载主题和布局，不证明原版全量一致：Inbox 高度断链
+如上；个人姓名为空；Projects 是无项目空态；当前用户未显示三个业务组件菜单；
+通知页报告浏览器权限被禁止。没有实际保存头像、创建项目、执行工作流或完成
+组件业务，也没有以这些 Web 截图代替 Windows/Mobile 或完整交互验收。
+
+姓名问题直接核对固定官方 `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/sidebar/ui/AppSidebar.tsx::AppSidebar`：原 displayName
+先取 profile，再取宿主 fallback，最后为 `Current identity`。Web 迁移丢失最后
+一级，导致姓名与头像按钮可访问名称均为空。本批恢复到两端共用 SidebarProfileCard，
+原英文与默认中文从既有 i18n 生成到 Dart，不新增个人资料或身份权威。
+
+四步结论：REQ-24、DD-74/75 的共源恢复；仅影响共享卡片、popover 和头像 label，
+Desktop 仍保留 profile/宿主姓名的原优先级；不写数据库、凭据、权限或展示用假身份；
+空串、全空白、目录无姓名以及中英文切换均使用原有最终兜底。无 API/schema 变更，
+无迁移或新状态，原认证失败仍按原边界拒绝，不因展示兜底放宽授权。
+
+原受限 SDK `vitest run test/sidebar-shell.test.tsx` 最终 8 passed；私有移除
+最终兜底后 2 failed / 6 passed，精确恢复后 8 passed，退出 0。日志为
+`read-receipts-20261007/sidebar-empty-name-{mutation,restored}.log`。生成器运行成功，
+本批 11 个词条（姓名及原工作流时长单位）同步到 Dart；未修改独立翻译权威。
+
+本轮再次运行原 `tools/upstream_manifest.py status collaboration` 与全树 `diff
+collaboration`：固定官方 commit 未变；完整差异文件
+`read-receipts-20261007/collaboration-full-2646.patch` 包含 3307 个变化路径，
+35406 行增加、744002 行删除。这是当时完整工作树与上游的差异，不是本批 diff，
+包含迁到 client-kit 的原文件及继承的未提交工作；删除量不能直接视为缺失量。
+每项共享迁移仍须查真实消费者，全部差异的四类归属与逐页面实证尚未完成，
+本批不得据该统计声称全量恢复或生产就绪。
+
+集中收口：同步本批正式输入及 Web/Desktop 实际安装的共享包副本后，共享平台、
+Web、Desktop 三处 `tsc --noEmit` 均退出 0；日志
+`read-receipts-20261007/restoration-three-tsc-restored.log`。首轮候选缺入库版本
+`@radix-ui/react-focus-scope@1.2.0` 的包链接而报 TS2307，复用已有锁定缓存恢复
+链接后复验，未下载依赖或修改产品来规避。`gen-platform-i18n.py --check` 输出
+`PASS: Mobile platform and reason catalogs match the shared TypeScript source`。
+
+`./tools/check-docs.sh` 在受限 SDK 内对同步的当前实施文档及设计正文退出 0：
+277 个引用闭合、87 实体/115 DD/29 SS 全部归属、87 场景中 86 映射/1 排除、
+markdownlint 0 issues，最终 `全部通过。`。日志为
+`read-receipts-20261007/restoration-docs-cache-final.log`。前一轮候选同步命令的
+设计文件 glob 位置错误，纠正后检查又发现 npm 默认缓存 `/.npm` 不可写；
+最终明确复用已挂载 `/cache/npm` 并设离线模式后通过，没有改动共享缓存权限。
+
+本批未再次运行全量 `./tools/check.sh --full`，不能记为通过。原宿主入口会
+另导出完整源码树，HEAD 跟踪正文约 2.35 GiB，而规定使用的数据盘只余约
+3.2 GiB，额外快照与全语言安装/编译空间尚未具备；不占满共享盘或删他人文件。
+上述专项检查复用已有受限候选，不冒充完整门禁。未构建发布镜像、部署新版本
+或发布安装包；本批没有改变设计语义，因此没有 `.design` 变更或新设计提交。
