@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +14,16 @@ import { npubEncode } from "nostr-tools/nip19";
 
 const copyFeedback = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast: copyFeedback }));
+
+vi.mock("@client-kit/platform/react/custom-emoji", async (original) => ({
+  ...await original<typeof import("@client-kit/platform/react/custom-emoji")>(),
+  // Exercise the real settings host's mount lifetime; the real write controller
+  // and UNKNOWN/refusal behavior are covered by custom-emoji.test.tsx.
+  CustomEmojiSettingsCard: () => {
+    const [pending, setPending] = useState(false);
+    return <button data-testid="emoji-pending-probe" onClick={() => setPending(true)}>{pending ? "UNKNOWN" : "empty"}</button>;
+  },
+}));
 
 vi.mock("@client-kit/platform/react/context", async (original) => ({
   ...await original<typeof import("@client-kit/platform/react/context")>(),
@@ -72,6 +82,36 @@ beforeEach(() => {
   state.preferences.isFetching = false;
 });
 describe("Web settings existing user-state CAS consumer", () => {
+  it("keeps a visited emoji controller through category switches but not authenticated scope replacement", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const client = createBffClient({ send: async () => ({ status: 200, body: [] }) });
+    const page = (scope: string) => <PlatformProvider client={client} locale="en"><SidebarProvider><SettingsPane key={scope} /></SidebarProvider></PlatformProvider>;
+    try {
+      await act(async () => root.render(page("tenant:principal:session-1")));
+      expect(host.querySelector('[data-testid="emoji-pending-probe"]')).toBeNull();
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-custom-emoji"]')!.click());
+      const pending = host.querySelector<HTMLButtonElement>('[data-testid="emoji-pending-probe"]')!;
+      await act(async () => pending.click());
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-appearance"]')!.click());
+      expect(host.querySelector('[data-testid="emoji-pending-probe"]')).toBe(pending);
+      expect(pending.closest("[hidden]")).not.toBeNull();
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-custom-emoji"]')!.click());
+      expect(pending.textContent).toBe("UNKNOWN");
+      expect(pending.closest("[hidden]")).toBeNull();
+      await act(async () => root.render(page("tenant:principal:session-2")));
+      expect(host.contains(pending)).toBe(false);
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-custom-emoji"]')!.click());
+      expect(host.querySelector('[data-testid="emoji-pending-probe"]')?.textContent).toBe("empty");
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      vi.unstubAllGlobals();
+    }
+  });
   it.each(["en", "zh-CN"] as const)("copies the original public identity on HTTP and reports real refusal in %s", async (locale) => {
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));

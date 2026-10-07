@@ -1,4 +1,4 @@
-import { act, StrictMode } from "react";
+import { act, StrictMode, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -131,6 +131,60 @@ describe("original NIP-30 custom emoji", () => {
     await click(button(element, "Save emoji"));
     expect(element.querySelector<HTMLInputElement>("input")!.value).toBe("party");
     expect(button(element, "Clear").disabled).toBe(true);
+  });
+
+  it("keeps the same UNKNOWN intent after a later denied observation", async () => {
+    const { host, publish } = fixture();
+    const element = await mount(host);
+    publish.mockRejectedValueOnce(new TransportError("lost receipt"));
+    publish.mockRejectedValueOnce(new BffError(403, "access revoked"));
+    await click(button(element, "Upload image"));
+    await click(button(element, "Save emoji"));
+    await click(button(element, "Save emoji"));
+    expect(button(element, "Clear").disabled).toBe(true);
+    expect(element.querySelector<HTMLInputElement>("input")!.disabled).toBe(true);
+    await click(button(element, "Save emoji"));
+    expect(publish).toHaveBeenCalledTimes(3);
+    expect(publish.mock.calls[1]![0]).toEqual(publish.mock.calls[0]![0]);
+    expect(publish.mock.calls[2]![0]).toEqual(publish.mock.calls[0]![0]);
+  });
+
+  it("locks publication synchronously before a second same-frame call", async () => {
+    const { host, publish } = fixture();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let settings: ReturnType<typeof useEmojiSettings> | undefined;
+    function Probe() { settings = useEmojiSettings(host); return null; }
+    await render(<QueryClientProvider client={client}><Probe /></QueryClientProvider>);
+    await flush();
+    await act(async () => {
+      const first = settings!.removeEmoji.mutateAsync("own");
+      const second = settings!.removeEmoji.mutateAsync("own");
+      await expect(second).rejects.toBeInstanceOf(TransportError);
+      await expect(first).resolves.toBe("own");
+    });
+    expect(publish).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retain a previous scope's late upload in the next settings card", async () => {
+    const old = fixture();
+    const next = fixture();
+    next.host.scope = "other-community:same-author";
+    let finishUpload!: (blobs: Array<{url: string; filename: string; type: string}>) => void;
+    old.host.pickAndUploadMedia = () => new Promise((resolve) => { finishUpload = resolve; });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Shell() {
+      const [host, setHost] = useState(old.host);
+      return <><button onClick={() => setHost(next.host)}>Switch scope</button><CustomEmojiSettingsCard host={host} /></>;
+    }
+    const element = await render(<QueryClientProvider client={client}><Shell /></QueryClientProvider>);
+    await flush();
+    await click(button(element, "Upload image"));
+    await click(button(element, "Switch scope"));
+    await flush();
+    await act(async () => finishUpload([{url: uploaded, filename: "old-upload.png", type: "image/png"}]));
+    expect(element.querySelector<HTMLInputElement>("input")!.value).toBe("");
+    expect(button(element, "Save emoji").disabled).toBe(true);
+    expect(next.publish).not.toHaveBeenCalled();
   });
 
   it("uses original inline shortcode transformation without rewriting code or links", () => {

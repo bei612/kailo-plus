@@ -23,8 +23,17 @@ import { isOutcomeUnknown } from "../../transport";
  * deterministic winner (see `unionCustomEmoji`).
  */
 export function CustomEmojiSettingsCard({ host }: { host: CustomEmojiHost }) {
+  return <ScopedCustomEmojiSettingsCard key={host.scope} host={host} />;
+}
+
+function ScopedCustomEmojiSettingsCard({ host }: { host: CustomEmojiHost }) {
   const t = useUiT();
-  const { query, own, community, setEmoji, removeEmoji, unknown } = useEmojiSettings(host);
+  const { query, own, community, setEmoji, removeEmoji, unknown, pendingIntent } = useEmojiSettings(host);
+  const current = React.useRef(true);
+  React.useEffect(() => {
+    current.current = true;
+    return () => { current.current = false; };
+  }, []);
   const ownLoading = query.isPending;
   const communityLoading = query.isPending;
   const { pickAndUploadMedia, rewriteRelayUrl } = host;
@@ -45,12 +54,14 @@ export function CustomEmojiSettingsCard({ host }: { host: CustomEmojiHost }) {
     pendingUpload !== null &&
     normalized !== null &&
     !isUploading &&
+    (!unknown || pendingIntent?.imageUrl !== undefined) &&
     !setEmoji.isPending;
 
   const handleUpload = React.useCallback(async () => {
     setIsUploading(true);
     try {
       const blobs = await pickAndUploadMedia();
+      if (!current.current) return;
       const blob = blobs[0];
       if (!blob?.url) {
         return;
@@ -67,11 +78,12 @@ export function CustomEmojiSettingsCard({ host }: { host: CustomEmojiHost }) {
         setName(suggested);
       }
     } catch (error) {
+      if (!current.current) return;
       toast.error(
         t("customEmoji.uploadFailed"),
       );
     } finally {
-      setIsUploading(false);
+      if (current.current) setIsUploading(false);
     }
   }, [name, t, pickAndUploadMedia]);
 
@@ -82,10 +94,12 @@ export function CustomEmojiSettingsCard({ host }: { host: CustomEmojiHost }) {
         shortcode: normalized,
         url: pendingUpload.url,
       });
+      if (!current.current) return;
       setName("");
       setPendingUpload(null);
       toast.success(t("customEmoji.added", {name: stored}));
     } catch (error) {
+      if (!current.current) return;
       toast.error(
         t(isOutcomeUnknown(error) ? "platform.audit.unknownResult" : "customEmoji.addFailed"),
       );
@@ -101,8 +115,10 @@ export function CustomEmojiSettingsCard({ host }: { host: CustomEmojiHost }) {
     async (shortcode: string) => {
       try {
         await removeEmoji.mutateAsync(shortcode);
+        if (!current.current) return;
         toast.success(t("customEmoji.removed", {name: shortcode}));
       } catch (error) {
+        if (!current.current) return;
         toast.error(
           t(isOutcomeUnknown(error) ? "platform.audit.unknownResult" : "customEmoji.removeFailed"),
         );
@@ -292,7 +308,7 @@ export function CustomEmojiSettingsCard({ host }: { host: CustomEmojiHost }) {
                     size="icon"
                     variant="ghost"
                     onClick={() => void handleRemove(e.shortcode)}
-                    disabled={removeEmoji.isPending}
+                    disabled={removeEmoji.isPending || (unknown && (pendingIntent?.shortcode !== e.shortcode || pendingIntent.imageUrl !== undefined))}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

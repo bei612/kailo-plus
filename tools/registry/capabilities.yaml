@@ -324,8 +324,10 @@ capabilities:
   - /api/v1/profile
   - /api/v1/profile/media
   - /api/v1/profile/media/{sha256}
+  - /api/v1/custom-emoji
   actions:
   - identity.profile.publish
+  - identity.custom_emoji.publish
   tools: []
   workflow_kinds: []
 - id: platform.session

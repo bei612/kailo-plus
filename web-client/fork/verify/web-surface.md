@@ -6077,3 +6077,57 @@ Mobile、三个业务组件、全量原版一致性或生产门禁，也没有�
 `profile-before-copy.png`、`profile-copy-success.png`、`profile-real-paste.png`、
 `inbox-preview.png`、`inbox-filter-preview.png`。
 本节是私有静态预览及真实后端观察，不是已部署产品、安装包或完整交付回执。
+
+### 2026-10-07 原自定义表情 UNKNOWN 与设置 scope 收口
+
+1. 权威及原实现：REQ-24、DD-39/75/80；固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/shared/api/customEmoji.ts::{fetchOwnEmoji,publishOwnSet,setCustomEmoji,removeCustomEmoji}`、
+   `desktop/src/features/custom-emoji/{hooks.ts,ui/CustomEmojiSettingsCard.tsx}`。
+   原本人 `30030 + buzz:custom-emoji` 替换集及只读 Community union 保持，
+   不恢复旧 Relay-owned 9037 注册表，不把他人图片集变为可管理对象。
+2. 实际影响：既有共享 hook 首次 UNKNOWN 后重查403会清意图，同帧调用也只靠
+   React state 互斥；两宿主切设置分类会卸载该控制器。现保持同一意图直到
+   确认原 event 读回，同步 ref 互斥；原卡片按 scope 隔离，迟到上传不落入新卡片。
+   Web/Native 首次访问后保持该分类挂载，原 Tenant/Principal/session 宿主 key
+   及 Native Relay/device key 变化仍卸载旧控制器。无后台常驻新轮询、第二状态存储。
+3. 原接缝修正：Core GET 在 Relay 读取后复核原 session、Tenant、Principal、
+   当前 SERVER key 与 Community host；Native GET/写前及读回核同一 CLIENT scope。
+   已可能发布或原 pending 的后置失权保持 UNKNOWN，不把它改成确定失败。
+   不改原签名、发布意图、审计、Relay 准入、终态及 palette 冲突规则。
+4. 证据边界：基准 `ac309291c64827197d0bbbe4802aafcefff15651`；原 Core/Native
+   模块在 HEAD 与 `972a1efe1` 字节相同，现场原 dirty 为排版回退，另两共享文件
+   只有末尾空行。未撤销现场 dirty；候选只从已提交原排版增加上述功能 hunk。
+   新增共享 UNKNOWN→403、同帧双调用、迟到上传跨 scope 三项及 Web 分类生命周期
+   检查。固定源码树 `e9cb9d38f08d0471c7dbe45ffd62ecc1744616ff` 在原 SDK
+   `kailo-agent-receipt-xvkujx`（4 CPU / 8 GiB）执行共享源及 test、Web、Native
+   四处 `tsc --noEmit` 均退出0；共享原表情12项与 Web SettingsPane 9项通过。
+   首次类型检查失败真实保留：旧快照把共享 virtua 指向另一 React 类型版本、
+   两宿主合同副本过时及6个候选已无的源码残留。只复用现成匹配依赖、同步该
+   固定树的合同并可恢复移出残留后通过，没有更改产品 timeline 或放宽检查。
+   SDK-only 删除 UNKNOWN 保留、同帧互斥、分类保留挂载三处守卫，实际共享2项
+   和 Web 1项断言失败（分别退出1）；恢复候选原字节后共享12/Web9再次通过。
+   原始输出位于 `/volumes/data/kailo/tmp/custom-emoji-scope-20261007.3o81Ot/`：
+   `node-baseline.log`、`node-behavior.log` 保留首次诊断，
+   `node-types-restored.log`、`node-mutation.log`、`node-mutation-restored.log`
+   分别记录类型/行为恢复、真实负向和最终还原。
+   随后仅同一 SDK/热缓存 `/cache/rust-target`，固定该候选的 Core、contracts、
+   registry 及 Buzz crates 输入，`SQLX_OFFLINE=true cargo check --offline --locked
+   -j16 -p platform-core --bins --tests` 退出0（`core-check.log`）。这不是运行
+   Rust 业务测试或新 fresh 守卫的端到端证明。Native `current_scope` 已逐个核对
+   原 relay scope/signer helper、`AppState::signing_keys` 和 `ProfileUpdateError`
+   映射：原 pending 与发布后读回失权保持 `PROFILE_UPDATE_UNKNOWN`，不清意图。
+   Native Rust 本批未编译；全量、浏览器端到端及部署本批未验，
+   不能以界面/局部专项代替线上接口可用或原生安装包验收。
+
+随后真实部署 ac309 批次仍复现 `GET /api/v1/custom-emoji` 为 404。原因是
+`bff.rs::ExposedRoute::exposed_route` 按生成目录筛选，而已实现的表情路径及
+`identity.custom_emoji.publish` 漏登于原 `platform.pages` 追溯。补回该既有
+能力的 routes/actions 后，沿原 `tools/gen-registry.py` 生成；不新增能力、
+绕过准入或改变身份/签名/读回终态，不改变契约和数据库。
+原生成器及 `--check` 均退出0。既有 Core capability_registry 单元检查补两条
+实际消费者断言，受限 SDK 原 Cargo 运行1项通过；在独立 SDK 副本删除这两项
+登记，真实断言 `route_exposed("/api/v1/custom-emoji")` 失败、退出101，恢复
+相同字节后1项再次通过（8.72秒）。日志位于同一 Data 目录：
+`registry-check.log`、`registry-negative.log`、`registry-restored.log`。
+这项修复尚未构建部署，线上404尚未解除；不把源码单元通过写成线上表情可用。

@@ -1,6 +1,6 @@
 import { AppearanceSettings } from "@client-kit/platform/react/appearance-settings";
 import { isMacPlatform } from "@client-kit/platform/keyboard-platform";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { translate } from "@client-kit/platform/i18n";
 import {
@@ -51,13 +51,16 @@ export function SettingsPane({ active = true, onClose }: { active?: boolean; onC
   const locale = useUiLocale();
   const appearance = useTheme();
   const [section, setSection] = useState<SettingsSection>("profile");
+  const [emojiVisited, setEmojiVisited] = useState(false);
+  useEffect(() => { if (section === "custom-emoji") setEmojiVisited(true); }, [section]);
   const invitations=useInvitationSettingsState();
   return (
     <SettingsPage active={active} locale={locale} section={section} onSelect={setSection} onClose={onClose} invitationAccess={invitations.access} onRetryInvitations={invitations.reload}>
       <CommunityInvitationSettings active={section==="community-members"} onAccessChange={invitations.onAccessChange}/>
+      {(emojiVisited || section === "custom-emoji") && <div hidden={section !== "custom-emoji"}><WebCustomEmojiSettings /></div>}
       {section === "profile" ? <WebProfileSettings /> : section === "appearance" ? (
         <AppearanceSettings name={translate(locale, "platform.title")} appearance={appearance} />
-      ) : section === "custom-emoji" ? <WebCustomEmojiSettings /> : section === "notifications" ? (
+      ) : section === "notifications" ? (
         <><BrowserNotificationSettings /><WorkspaceNotifications /></>
       ) : section==="shortcuts" ? (
         <ShortcutSettings
@@ -71,22 +74,33 @@ export function SettingsPane({ active = true, onClose }: { active?: boolean; onC
 
 function WebCustomEmojiSettings() {
   const client = useBffClient();
+  // The authenticated SettingsPane is keyed by tenant/principal/session; do not
+  // reuse a previous session's React Query entry merely because its pubkey matches.
+  const instance = useId();
+  const current = useRef(true);
+  useEffect(() => { current.current = true; return () => { current.current = false; }; }, []);
   const [profile, reload] = useLoad("custom-emoji-identity", () => client.profile());
   const paths = useRef<Record<string, string>>({});
   const t = useUiLocale();
   if (profile.status === "pending") return <p role="status">{translate(t, "platform.loading")}</p>;
   if (profile.status === "error") return <ReadFailure error={profile.error} onRetry={reload} />;
   const pubkey = profile.data.pubkey;
-  return <CustomEmojiSettingsCard key={pubkey} host={{ scope: pubkey,
+  return <CustomEmojiSettingsCard key={pubkey} host={{ scope: `custom-emoji-settings:${instance}:${pubkey}`,
     read: async () => {
+      if (!current.current) throw new TransportError("Emoji view no longer active");
       const view = await client.customEmoji();
-      if (view.pubkey !== pubkey) throw new TransportError("Emoji identity changed");
+      if (!current.current || view.pubkey !== pubkey) throw new TransportError("Emoji identity changed");
       paths.current = { ...paths.current, ...view.mediaPaths };
       return view;
     },
-    publish: (request) => client.updateCustomEmoji(request),
+    publish: (request) => {
+      if (!current.current) throw new TransportError("Emoji view no longer active");
+      return client.updateCustomEmoji(request);
+    },
     pickAndUploadMedia: () => pickEmojiImage(async (bytes) => {
+      if (!current.current) throw new TransportError("Emoji view no longer active");
       const descriptor = await uploadProfileAvatar(bytes, pubkey);
+      if (!current.current) throw new TransportError("Emoji view no longer active");
       paths.current[descriptor.url] = `/api/v1/profile/media/${descriptor.sha256}`;
       return { url: descriptor.url, type: descriptor.type };
     }),

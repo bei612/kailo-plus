@@ -61,6 +61,8 @@ mod tests {
     fn generated_registry_closes_unreleased_user_entries() {
         assert!(route_exposed("/api/v1/session"));
         assert!(route_exposed("/api/v1/platform-info"));
+        assert!(route_exposed("/api/v1/custom-emoji"));
+        assert!(action_exposed("identity.custom_emoji.publish"));
         assert!(action_exposed("workspace.create"));
         assert!(action_exposed("workspace.suspend"));
         assert!(action_exposed("workspace.restore"));

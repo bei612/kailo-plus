@@ -13,6 +13,11 @@ use buzz_sdk_pkg::{
 use sha2::{Digest, Sha256};
 use tauri::State;
 
+fn current_scope(state: &AppState, relay: &str, author: &str) -> Result<(), String> {
+    assert_expected_relay_scope(Some(relay), &relay_api_base_url_with_override(state))?;
+    assert_expected_signer(Some(author), &state.signing_keys()?.public_key().to_hex())
+}
+
 fn verify(events: &[nostr::Event], author: Option<&str>) -> Result<(), String> {
     if author.is_some() && events.len() > 1 {
         return Err("invalid own emoji set".into());
@@ -74,6 +79,7 @@ pub async fn get_custom_emoji(
     verify(&own, Some(&author))?;
     rows.retain(|event| event.pubkey.to_hex() != author);
     rows.extend(own);
+    current_scope(&state, &relay, &author)?;
     Ok(serde_json::json!({"pubkey":author,"events":rows,"mediaPaths":{}}))
 }
 
@@ -113,6 +119,7 @@ pub async fn update_custom_emoji(
         })?;
     if let Some(pending) = pending {
         verify(&rows, Some(&author)).map_err(|_| "relay publish outcome unknown")?;
+        current_scope(&state, &relay, &author).map_err(|_| "relay publish outcome unknown")?;
         return if rows.first().is_some_and(|actual| actual.id == pending.id) {
             Ok(serde_json::json!({"eventId":pending.id.to_hex()}))
         } else {
@@ -153,6 +160,7 @@ pub async fn update_custom_emoji(
         .custom_created_at(nostr::Timestamp::from(created))
         .sign_with_keys(&keys)
         .map_err(|_| "emoji signing failed")?;
+    current_scope(&state, &relay, &author)?;
     let (event, first) = super::messages::unconfirmed::claim_profile(&prefix, &digest, fresh)?;
     if first {
         if let Err(error) = submit_signed_event_at_with_keys(&event, &state, &relay, &keys).await {
@@ -165,6 +173,7 @@ pub async fn update_custom_emoji(
         .await
         .map_err(|_| "relay publish outcome unknown")?;
     verify(&actual, Some(&author)).map_err(|_| "relay publish outcome unknown")?;
+    current_scope(&state, &relay, &author).map_err(|_| "relay publish outcome unknown")?;
     if actual.first().is_none_or(|actual| actual.id != event.id) {
         return Err("relay publish outcome unknown".into());
     }

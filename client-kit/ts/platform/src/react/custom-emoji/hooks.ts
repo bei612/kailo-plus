@@ -43,12 +43,16 @@ export function useEmojiSettings(host: CustomEmojiHost) {
   }, refetchOnWindowFocus: false });
   const [busy, setBusy] = useState(false);
   const [unknown, setUnknown] = useState(false);
+  // React state does not lock two calls made before the next render.
+  const operation = useRef({ busy: false, unknown: false });
   const intent = useRef<WebCustomEmojiMutation | null>(null);
   const mutate = async (shortcode: string, url?: string) => {
-    if (!query.data || query.isError || busy) throw new TransportError("Emoji identity unavailable");
+    if (!query.data || query.isError || operation.current.busy || live.current !== host.scope) throw new TransportError("Emoji identity unavailable");
     const request = intent.current ?? { idempotencyKey: newIdempotencyKey(), expectedPubkey: query.data.view.pubkey, shortcode, ...(url ? { imageUrl: url } : {}) };
     if (request.shortcode !== shortcode || request.imageUrl !== url) throw new TransportError("Emoji publication result unknown");
     intent.current = request;
+    operation.current.busy = true;
+    const wasUnknown = operation.current.unknown;
     setBusy(true);
     let acknowledged = false;
     try {
@@ -62,22 +66,26 @@ export function useEmojiSettings(host: CustomEmojiHost) {
       queryClient.setQueryData(queryKey, { view: actual, events });
       void queryClient.invalidateQueries({ queryKey: ["custom-emoji"] });
       intent.current = null;
+      operation.current.unknown = false;
       setUnknown(false);
       return shortcode;
     } catch (error) {
       if (live.current === host.scope) {
-        if (acknowledged || isOutcomeUnknown(error)) setUnknown(true);
-        else { intent.current = null; setUnknown(false); }
+        if (acknowledged || wasUnknown || isOutcomeUnknown(error)) {
+          operation.current.unknown = true;
+          setUnknown(true);
+        } else { intent.current = null; setUnknown(false); }
       }
-      if (acknowledged) throw new TransportError("Emoji publication result unknown");
+      if (acknowledged || wasUnknown) throw new TransportError("Emoji publication result unknown");
       throw error;
     } finally {
+      operation.current.busy = false;
       if (live.current === host.scope) setBusy(false);
     }
   };
   const own = useMemo(() => customEmojiFromEvent(query.data?.events.find((event) => event.pubkey === query.data?.view.pubkey) ?? null), [query.data]);
   const community = useMemo(() => unionCustomEmoji(query.data?.events ?? []), [query.data]);
-  return { query, own, community, busy, unknown,
+  return { query, own, community, busy, unknown, pendingIntent: intent.current,
     setEmoji: { isPending: busy, mutateAsync: ({ shortcode, url }: { shortcode: string; url: string }) => mutate(shortcode, url) },
     removeEmoji: { isPending: busy, mutateAsync: (shortcode: string) => mutate(shortcode) },
   };

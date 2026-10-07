@@ -29,8 +29,8 @@ implementation:
   migrations: []
 
 runtime:
-  routes: ["/app/", "/api/v1/workspaces", "/api/v1/discoverable-workspaces", "/api/v1/workspaces/{workspace_id}/members", "/api/v1/workspaces/{workspace_id}/members/{principal_id}/profiles/{pubkey}", "/api/v1/audit", "/api/v1/profile", "/api/v1/profile/media", "/api/v1/profile/media/{sha256}"]
-  actions: [identity.profile.publish]
+  routes: ["/app/", "/api/v1/workspaces", "/api/v1/discoverable-workspaces", "/api/v1/workspaces/{workspace_id}/members", "/api/v1/workspaces/{workspace_id}/members/{principal_id}/profiles/{pubkey}", "/api/v1/audit", "/api/v1/profile", "/api/v1/profile/media", "/api/v1/profile/media/{sha256}", "/api/v1/custom-emoji"]
+  actions: [identity.profile.publish, identity.custom_emoji.publish]
 
 release:
   artifacts:

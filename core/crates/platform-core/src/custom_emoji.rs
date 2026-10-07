@@ -124,6 +124,25 @@ pub(crate) async fn get(State(state): State<BffState>, headers: HeaderMap) -> Re
             }
         }
     }
+    // A slow Relay query must not return the previous identity/community's data
+    // after the browser session or its active SERVER projection has changed.
+    let fresh = match resolve_execution_context(&state, &headers).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    if fresh.session_id != ctx.session_id
+        || fresh.tenant_id != ctx.tenant_id
+        || fresh.tenant_principal_id != ctx.tenant_principal_id
+    {
+        return StatusCode::CONFLICT.into_response();
+    }
+    let (fresh_client, fresh_host) = match web_profile::client(&state, &fresh).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    if fresh_host != host || fresh_client.pubkey_hex() != author {
+        return StatusCode::CONFLICT.into_response();
+    }
     (
         [(axum::http::header::CACHE_CONTROL, "no-store")],
         Json(json!({

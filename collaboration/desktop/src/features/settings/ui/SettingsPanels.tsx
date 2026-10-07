@@ -17,7 +17,6 @@ import { performDefaultHaptic } from "@/shared/lib/haptics";
 import { KeyboardShortcutsCard } from "./KeyboardShortcutsCard";
 import { NotificationSettingsCard } from "./NotificationSettingsCard";
 import { ProfileSettingsCard } from "./ProfileSettingsCard";
-import { CustomEmojiSettingsCard } from "./CustomEmojiSettingsCard";
 
 export type { SettingsSection } from "@client-kit/platform/react/settings";
 
@@ -70,7 +69,7 @@ export function renderSettingsSection(
     case "profile":
       return <ProfileSettingsCard />;
     case "custom-emoji":
-      return <CustomEmojiSettingsCard />;
+      return null; // SettingsView keeps the scoped UNKNOWN publication intent mounted.
     case "notifications":
       return (
         <NotificationSettingsCard
