@@ -6,6 +6,18 @@
 
 ## 当前使用与恢复范围（2026-10-06）
 
+- 2026-10-07 01:38 UTC：固定源码 `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b`
+  的 Core、Worker、Web 已集中构建、推送镜像并实际部署；Core health 200、Web
+  healthy。停止旧 Core/Worker writer 并备份后，三条迁移全部通过，业务库现为
+  99 条成功迁移。此批包含 Projects、成员/Agent 管理增量、Cron 日历与
+  Communities/Invites 设置，以及新的原生 Codex 会话持久化运行时。
+  入口仍为 `http://192.168.0.193:58090/app/`。新版本频道、Projects、成员、Agent、
+  工作流已用 playwright-cli 截图并打开查看；Projects 当前是空列表，不算项目
+  创建/操作验收。Agent、Workflows 页面仍有原版体验差距和重复刷新，不能称全量等效。
+  线程布局 `7aa8a4d` 已源码推送但不在本批镜像，多步骤工作流和新个人资料布局
+  也不在本批镜像；三组件完整绑定、三人双 Agent 稳定协作、Windows/Mobile 新包
+  及完整门禁退出 0 仍未交付。下面较早状态按时点保留，不作为最新部署结论。
+
 - 2026-10-07 后续集中批：原 Cron 输入接入 Temporal 原生日历，保持旧 interval
   内容和摘要；设置 Communities / Invites 接入两宿主同一实现；知识库删除
   回执读取实际执行计划，不将排队或 Wiki 索引结果不明当作完成。设置共享

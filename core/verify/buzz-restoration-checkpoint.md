@@ -1127,3 +1127,70 @@ BEFORE；没有豁免字段或降低正文保护。独立数据库 up/down/up、
 本批没有新的逐页截图。已有 148–153 的真实截图对应上一在线版本，不用于
 验收本批源码。原生运行时镜像构建仍在执行，Data 空间紧张时停止新增重构建，
 保留共享缓存与原在途进程；其余源码开发及本批提交不等待构建结束。
+
+## 2026-10-07：共享线程布局提交与固定批发布进展
+
+原线程偏好、focus drawer 和外观控件已按 REQ-24 / DD-53 从原 Buzz 实现
+移入共享 TypeScript，Desktop 原路径消费共享导出，Web 接上真实面板消费者。
+提交 `7aa8a4d0348fbe224900043957e974e898040257` 已推送并从远端回读一致；
+相对 `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b` 是 16 文件、693 行新增、
+550 行删除，删除的是被共享实现替代的副本，不是删掉线程功能。
+最终共享源码、共享测试、Web、Desktop 四处 TypeScript 检查退出 0。
+原设置消费者断开回调后真实失败，按原字节恢复后通过；最终 Web 拖拽宽度与
+UNKNOWN 子树行为用例此前遭 worker 启动超时，仍未验收。精确记录与原日志
+目录在 `web-client/fork/verify/web-surface.md`，不以类型检查替代视觉和业务验收。
+
+当前发布输入仍固定为父提交 `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b`，
+没有在构建途中夹入线程布局或下一批多步骤、组件导入修改。Web 原构建入口
+退出 0，source digest 为
+`d923beaf529b24163c3945e3e72a6f66932fba3d61f28d74623bfc3aaf6a27f4`，
+镜像为 `sha256:8ef88085fb05f7e208c54a51e23b4b2804438ec8bd962e3446ad9c7db64676ab`。
+Core release 编译、镜像导出、SBOM 与 provenance 已完成并推送镜像
+`sha256:1209f3ece3ed68ea4de7bb0fed53349d458dab2b27eeb7e69db5a89c91ed6626`；
+同一 release 进程继续构建 Worker。两项原日志分别是 Data 下的
+`tmp/build-web-client.dpLo0g.log` 和 `tmp/release-core.7DmeOL.log`。
+这些是产物事实，不代表已部署或全量通过；构建确有基础层网络下载，不能声称
+全离线。没有重复启动该批构建。当前线上仍为旧 `10c839d` 批。
+
+Playwright 真实截图 `155-live-10c-channel.png`、
+`157-live-10c-workflows-selected.png`、`158-live-10c-workflow-editor.png`
+均已打开查看，目录为
+`/volumes/data/kailo/tmp/kailo-visual-release-20261006.vlPvnU/`。
+截图 156 一度误把侧栏 hover 当作选中；回读工作流 `data-active=false`，
+按稳定 test id 点击后为 true、正文标题为工作流、控制台错误与警告均 0，
+没有为该误判修改导航源码。旧工作流仍有重复刷新、大片空白和动作范围不足，
+旧频道还存在原名称写成 UUID 的历史数据；没有伪造展示名或借截图称全功能。
+本节不覆盖全页面、全部中英状态、Windows 或 Mobile；原完整检查退出 1 的
+事实未改变。下一步验收必须针对实际换版后的产物重新进行。
+
+### 同批随后实际部署（2026-10-07 01:38 UTC）
+
+上节仍在执行的原 `tools/release.sh` 现已退出 0，Worker 镜像为
+`sha256:bd8d5386f0afca7491470cf7cf7daeddf1729fec2f67ada98173ebffee1321f6`，
+日志 `tmp/release-worker.kH2ta2.log`。Core/Worker 的 SBOM 与 provenance 已由
+原入口生成；三镜像 registry 摘要与实际 Compose 容器镜像读回一致。发布源
+仍为固定 `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b`，不是后续脏工作树。
+
+投递前停止旧 Core/Worker writer；原迁移入口在受限 4 CPU、8 GiB SDK 内
+实际执行，退出 0：
+
+```text
+Applied 20261007020000/migrate capability knowledge seed (8.968072ms)
+Applied 20261007030000/migrate agent installation upgrade (19.12872ms)
+Applied 20261007040000/migrate action definition generated guard (1.631812ms)
+```
+
+原库回读为 99 条成功迁移，最新版本 `20261007040000`。停 writer 后的备份
+位于 Data 的 `tmp/pre-release-46fcd1a.WwFUiU/core-writers-stopped.dump`，
+SHA256 为 `4a6bf6ea4b5e6540f2ccfbbde1bf2c4759545b103acbc8cf60fae8deba66374c`，
+不清库、不混入下一批 050 迁移。原 `start-core.sh --no-build` 使用新的一次性
+OpenBao wrapping 启动 Core；随后仅替换 Worker/Web，两步均退出 0。
+实际 Core `/healthz` 返回 200，Worker running、Web healthy；其他服务未重建。
+
+同一正常 OIDC 会话刷新后，实际截图并打开查看 `159-live-46-channel.png`、
+`160-live-46-projects.png`、`161-live-46-members.png`、`162-live-46-agents.png`、
+`163-live-46-workflows.png`，仍在上述 Playwright 目录。Projects 搜索/排序/
+网格列表控件及成员资料列表可见；当前项目为空，不能当成项目操作验收。
+Agent 与 Workflows 仍有重复刷新、技术性提示及布局差距，工作流范围也未完整。
+本次不将容器健康、截图或已发布 Cron 当作原版全功能、中英全覆盖、多人双 Agent
+稳定协作或三组件完整集成的验收。Windows/Mobile 包未更新，完整检查仍无新 0。
