@@ -45,6 +45,28 @@ export function useAppShellDesktopNotifications({
 }) {
   const resolveSenderName = useNotificationSenderName();
 
+  const handleDmNotification = React.useEffectEvent(
+    (event: RelayEvent, channel: Channel) => {
+      if (!notificationSettings.desktopEnabled || !notificationSettings.slotAlertsEnabled.dm) return;
+      const channelName = channel.name?.trim() || null;
+      const { title, body } = formatMessageNotification({
+        source: "dm",
+        senderName: resolveSenderName(event.pubkey),
+        channelName,
+        content: event.content,
+      });
+      void sendDesktopNotification({
+        title,
+        body,
+        target: buildEventNotificationTarget(event, { id: channel.id, name: channelName }),
+      }).then((didSend) => {
+        if (!didSend) return;
+        playNotificationSound(resolveSlotSound(notificationSettings, "dm"));
+        void requestDockBounce();
+      });
+    },
+  );
+
   const handleChannelNotification = React.useEffectEvent(
     (_channelId: string, event: RelayEvent) => {
       if (!shouldBounceForChannelNotification(event.tags)) return;
@@ -146,6 +168,7 @@ export function useAppShellDesktopNotifications({
   }, []);
 
   return {
+    handleDmNotification,
     handleChannelNotification,
     handleThreadReplyDesktopNotification,
   };

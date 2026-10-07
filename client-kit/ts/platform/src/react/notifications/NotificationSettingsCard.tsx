@@ -171,13 +171,13 @@ export function NotificationSettingsCard({
                     <SettingsOptionRow key={slot}>
                       <div className="min-w-0">
                         <span className="flex items-center gap-2 text-sm font-medium">
-                          {translate(locale, slot === "mention" ? "platform.notifications.mention" : "platform.notifications.threadReply")}
+                          {translate(locale, slot === "dm" ? "platform.notifications.dm" : slot === "mention" ? "platform.notifications.mention" : "platform.notifications.threadReply")}
                         </span>
                         <p
                           className="text-sm font-normal text-muted-foreground/70"
                           data-settings-subcopy
                         >
-                          {translate(locale, slot === "mention" ? "platform.notifications.mentionDescription" : "platform.notifications.threadReplyDescription")}
+                          {translate(locale, slot === "dm" ? "platform.notifications.dmDescription" : slot === "mention" ? "platform.notifications.mentionDescription" : "platform.notifications.threadReplyDescription")}
                         </p>
                       </div>
                       <span className="flex items-center gap-3">

@@ -3,10 +3,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "../src/i18n";
 import { useNotificationSettings, NotificationSettingsCard, SoundPicker, type SoundName, type NotificationHost } from "../src/react/notifications";
 import { render, click } from "./render";
+import { formatMessageNotification } from "../src/react/notifications/notificationFormat";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("shared original notification settings", () => {
+  it("restores the original DM sender and neutral fallback copy without channel formatting", () => {
+    setLocale("en");
+    expect(formatMessageNotification({ source: "dm", senderName: " Alice ", channelName: "private", content: " hi " }))
+      .toEqual({ title: "Alice", body: "hi" });
+    expect(formatMessageNotification({ source: "dm", channelName: "private", content: "" }))
+      .toEqual({ title: "private", body: "New message" });
+    setLocale("zh-CN");
+    expect(formatMessageNotification({ source: "dm", content: "" })).toEqual({ title: "私信", body: "新消息" });
+  });
   it("requests permission only from the control and restores granular sound slots", async () => {
     localStorage.clear();
     const permission: NotificationHost = { getPermission: vi.fn(async () => "default" as const), requestPermission: vi.fn(async () => "granted" as const) };
@@ -25,10 +35,13 @@ describe("shared original notification settings", () => {
     await click(view.querySelector<HTMLButtonElement>('[data-testid="notifications-desktop-toggle"]')!);
     expect(permission.requestPermission).toHaveBeenCalledTimes(1);
     expect(actual.settings.desktopEnabled).toBe(true);
+    expect(view.querySelector('[data-testid="notifications-alerts-enabled-dm"]')).not.toBeNull();
+    await click(view.querySelector<HTMLButtonElement>('[data-testid="notifications-alerts-enabled-dm"]')!);
     await act(async () => { actual.setSlotAlertsEnabled("thread_reply", false); });
     await act(async () => { actual.setAllSlotAlertsEnabled(false); });
     await act(async () => { actual.setAllSlotAlertsEnabled(true); });
-    expect(actual.settings.slotAlertsEnabled).toEqual({ mention: true, thread_reply: false });
+    expect(actual.settings.slotAlertsEnabled).toEqual({ dm: false, mention: true, thread_reply: false });
+    expect(JSON.parse(localStorage.getItem("buzz-notification-settings.v2:actor")!).slotAlertsEnabled.dm).toBe(false);
     expect(JSON.parse(localStorage.getItem("buzz-notification-settings.v2:actor")!).slotAlertsEnabled.thread_reply).toBe(false);
   });
   it("does not persist an old identity's settings or delayed permission into the next identity", async () => {

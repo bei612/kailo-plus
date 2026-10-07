@@ -34,6 +34,7 @@ export type UseLiveChannelUpdatesOptions = {
    * the user is currently viewing (normally suppressed).
    */
   notifyForActiveChannel?: boolean;
+  onDmMessage?: (event: RelayEvent, channel: Channel) => void;
   onLiveMention?: () => void;
   /**
    * Fired for live "new content" events in a member channel authored by
@@ -153,6 +154,15 @@ export function useLiveChannelUpdates(
     () => new Set(channels.map((channel) => channel.id)),
     [channels],
   );
+  const dmChannelMap = React.useMemo(
+    () => new Map(channels.filter((channel) => channel.channelType === "dm").map((channel) => [channel.id, channel])),
+    [channels],
+  );
+  const dmSubscriptionStartedAtRef = React.useRef(0);
+  React.useEffect(() => {
+    void normalizedCurrentPubkey;
+    dmSubscriptionStartedAtRef.current = 0;
+  }, [normalizedCurrentPubkey]);
 
   // Effect deps use primitive keys so refetches that produce new refs with
   // identical contents don't churn subscriptions. The Set/array memos are
@@ -222,6 +232,16 @@ export function useLiveChannelUpdates(
       );
     const isThreadedReply = isThreadReply(event.tags);
 
+    // Original DM notification consumer. The governed mute projection also
+    // suppresses notifications while conversation authorization is unresolved.
+    const dmChannel = dmChannelMap.get(channelId);
+    if (dmChannel && isExternalTriggerEvent && normalizedCurrentPubkey.length > 0 &&
+      isFirstNotificationDelivery && event.created_at >= dmSubscriptionStartedAtRef.current &&
+      !options.mutedChannelIds?.has(channelId) &&
+      (channelId !== activeChannelId || options.notifyForActiveChannel)) {
+      options.onDmMessage?.(event, dmChannel);
+    }
+
     if (isExternalTriggerEvent && isFirstNotificationDelivery) {
       const shouldNotify = shouldNotifyForEvent(
         event,
@@ -248,7 +268,7 @@ export function useLiveChannelUpdates(
       }
 
       if (shouldNotify && isThreadedReply) {
-        if (channelId !== activeChannelId || options.notifyForActiveChannel) {
+        if (!dmChannel && (channelId !== activeChannelId || options.notifyForActiveChannel)) {
           options.onThreadReplyDesktopNotification?.(channelId, event);
         }
       }
@@ -273,6 +293,7 @@ export function useLiveChannelUpdates(
   React.useEffect(() => {
     return relayClient.subscribeToReconnects(() => {
       void queryClient.invalidateQueries({ queryKey: channelsQueryKey });
+      dmSubscriptionStartedAtRef.current = Math.floor(Date.now() / 1000);
     });
   }, [queryClient]);
 
@@ -286,6 +307,9 @@ export function useLiveChannelUpdates(
     const syncSubs = async (): Promise<boolean> => {
       const activeSubs = liveSubsRef.current;
       const targetIds = new Set(channelIdsKey ? channelIdsKey.split(",") : []);
+      if (targetIds.size > 0) {
+        dmSubscriptionStartedAtRef.current = Math.floor(Date.now() / 1000);
+      }
 
       for (const [channelId, dispose] of activeSubs) {
         if (!targetIds.has(channelId)) {

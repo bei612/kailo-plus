@@ -2,19 +2,21 @@
 // desktop/src/features/projects/createProject.ts::createProject sequence.
 // DD-80 substitutes the existing workspace.create action for createChannel;
 // the two announcement writes retain native kinds and one durable intent each.
-import { ChannelType, CreateActionKey, ProjectPublicationOperation, TaskStatus, WorkspaceVisibility, type ActionCommand, type ActionSubmission, type ProjectsPublishRequest } from "@client-kit/contracts";
+import { ChannelType, CreateActionKey, ProjectPublicationOperation, TaskStatus, WorkspaceVisibility, type ActionCommand, type ActionSubmission, type ProjectsPublishRequest, type AgentInstallationCandidate } from "@client-kit/contracts";
 import type { BffClient } from "../../client";
 import { newIdempotencyKey, taskPhase } from "../../governance";
 import { BffError, TransportError } from "../../transport";
 import { getEventHash } from "nostr-tools/pure";
 import { buildProjectBootstrapTemplates, conflictingListedProject, projectDtagFromName, type ProjectListingVisibility } from "./projectCreation";
 import { loadProjectDirectory, type ProjectsHost } from "./projectEnumeration";
+import { installProjectAgent, validProjectAgent, ProjectAgentFailed, ProjectAgentPending, type ProjectAgentIntent } from "./projectAgent";
 
 export type CreateProjectInput = {
   name: string;
   description?: string;
   channelVisibility: WorkspaceVisibility;
   projectVisibility: ProjectListingVisibility;
+  agent?: AgentInstallationCandidate;
 };
 type PublicationIntent = { key: string; attempted?: boolean; eventId?: string; acceptedEventId?: string };
 export type ProjectCreationIntent = {
@@ -26,6 +28,7 @@ export type ProjectCreationIntent = {
   workspaceId?: string;
   project: PublicationIntent;
   repository: PublicationIntent;
+  agent?: ProjectAgentIntent;
 };
 
 export class ProjectCreationPending extends Error {}
@@ -40,7 +43,8 @@ export async function prepareProjectCreation(host: ProjectsHost, input: CreatePr
   const name = input.name.trim();
   const dtag = projectDtagFromName(name);
   if (!name || !dtag || !Object.values(WorkspaceVisibility).includes(input.channelVisibility)
-    || !["listed", "unlisted"].includes(input.projectVisibility)) throw new Error("Invalid project input");
+    || !["listed", "unlisted"].includes(input.projectVisibility)
+    || input.agent !== undefined && !validProjectAgent(input.agent)) throw new Error("Invalid project input");
   const directory = await loadProjectDirectory(host, new AbortController().signal);
   if (directory.projects.some(project => project.owner === directory.viewerPubkey && project.dtag === dtag)
     || conflictingListedProject(directory.projects, { dtag, name, ownerPubkey: directory.viewerPubkey }))
@@ -55,12 +59,13 @@ export async function prepareProjectCreation(host: ProjectsHost, input: CreatePr
       workspaceVisibility: input.channelVisibility,
       workspaceChannel: { channelType: ChannelType.Stream, ...(normalized.description ? { description: normalized.description } : {}) } },
     project: { key: newIdempotencyKey() }, repository: { key: newIdempotencyKey() },
+    ...(input.agent ? { agent: { key: newIdempotencyKey() } } : {}),
   };
 }
 
 /** Caller persists before any side effect. Pending/rejected receipts never mean complete. */
 export async function resumeProjectCreation(
-  client: Pick<BffClient, "submitAction" | "task" | "workspaces">,
+  client: Pick<BffClient, "submitAction" | "task" | "workspaces" | "agentInstallationCandidates" | "agentInstallation">,
   host: ProjectsHost,
   intent: ProjectCreationIntent,
   save: (intent: ProjectCreationIntent) => void,
@@ -149,5 +154,13 @@ export async function resumeProjectCreation(
     throw new ProjectCreationPending("Project publication is awaiting confirmation");
   host.completePublication?.(intent.project.key, intent.project.acceptedEventId!);
   host.completePublication?.(intent.repository.key, intent.repository.acceptedEventId!);
+  if (intent.input.agent) {
+    if (!intent.agent) throw new TransportError("Project Agent recovery intent unavailable");
+    try { await installProjectAgent(client, intent.workspaceId, intent.input.agent, intent.agent, () => save(intent)); }
+    catch (error) {
+      if (error instanceof ProjectAgentFailed || error instanceof ProjectAgentPending) throw error;
+      throw new ProjectAgentPending("Project created; original Agent installation awaits authorized confirmation");
+    }
+  }
   return project;
 }

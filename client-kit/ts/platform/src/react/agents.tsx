@@ -70,7 +70,7 @@ import { defaultScheduleTrigger } from "./workflow-schedule";
 import { formatDurationSeconds, parseDurationSeconds } from "./workflow-duration";
 import { cronExpressionError, cronYamlError } from "./cron-expression";
 import type { AutomationStep } from "@client-kit/contracts";
-import { supportedSteps, validApprovalPolicy, workflowApprovalPolicy, workflowAction, WorkflowStepCard, type WorkflowActionKind } from "./workflow-steps";
+import { supportedSteps, validApprovalPolicy, workflowApprovalPolicy, workflowAction, WorkflowStepCard, nextStepId, type WorkflowActionKind } from "./workflow-steps";
 
 // Original UnifiedAgentsSection grid at Buzz 779af8886caae1317b4de962082429867ab61503.
 const IDENTITY_CARD_GRID_CLASS = "w-full grid-cols-1 [@container(min-width:21rem)]:grid-cols-2 [@container(min-width:32rem)]:grid-cols-3 [@container(min-width:43rem)]:grid-cols-4 [@container(min-width:54rem)]:grid-cols-5 grid gap-3";
@@ -954,11 +954,11 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
             if (event.target.value === ActionKind.AgentTurn || event.target.value === ActionKind.PostMessage) setActionKind(event.target.value);
             if (event.target.value === ActionEnum.AddReaction) {
               setActionKind(ActionEnum.AddReaction);
-              setSteps([{id: newIdempotencyKey(), action: ActionEnum.AddReaction, emoji: ""}]);
+              setSteps([{id: nextStepId([]), action: ActionEnum.AddReaction, emoji: ""}]);
             }
             if (event.target.value === ActionEnum.SetChannelTopic) {
               setActionKind(ActionEnum.SetChannelTopic);
-              setSteps([{id: newIdempotencyKey(), action: ActionEnum.SetChannelTopic, topic: ""}]);
+              setSteps([{id: nextStepId([]), action: ActionEnum.SetChannelTopic, topic: ""}]);
             }
           }} className="h-8 rounded-md border border-input bg-background px-2">
             <option value={ActionKind.AgentTurn}>{t("agents.automation.agentTurn")}</option>
@@ -967,7 +967,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
             <option value={ActionEnum.SetChannelTopic}>{t("workflows.steps.setTopic")}</option>
           </select>
         </label>
-        {steps.length ? <div className="space-y-3">{steps.map((step, index) => <WorkflowStepCard key={index} index={index} step={step} policies={policies} trigger={trigger}
+        {steps.length ? <div className="space-y-3">{steps.map((step, index) => <WorkflowStepCard key={index} index={index} step={step} policies={policies} trigger={trigger} previousSteps={steps.slice(0, index)}
           onUpdate={(next) => { setSteps((old) => old.map((value, position) => position === index ? next : value)); if (index === steps.length - 1) setTemplate(next.text ?? next.emoji ?? next.topic ?? ""); }}
           onRemove={index < steps.length - 1 ? () => setSteps((old) => old.filter((_, position) => position !== index)) : undefined} />)}</div>
         : <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
@@ -976,20 +976,22 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
             : <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />}
         </label>}
         {actionKind !== ActionKind.AgentTurn ? <Button onClick={() => setSteps((old) => {
-          const delay: AutomationStep = { id: newIdempotencyKey(), action: ActionEnum.Delay, duration: "" };
+          const delay: AutomationStep = { id: nextStepId(old), action: ActionEnum.Delay, duration: "" };
           return old.length ? [...old.slice(0, -1), delay, old[old.length - 1]!] : [delay,
-            { id: newIdempotencyKey(), action: ActionEnum.SendMessage, text: template }];
+            { id: nextStepId([delay]), action: ActionEnum.SendMessage, text: template }];
         })}>{t("workflows.steps.addDelay")}</Button> : null}
         {actionKind === ActionKind.PostMessage ? <Button onClick={() => {
           setStepsFormat(3);
-          setSteps((old) => [...(old.length ? old : [{id: newIdempotencyKey(), action: ActionEnum.SendMessage, text: template}]),
-            {id: newIdempotencyKey(), action: ActionEnum.SendMessage, text: ""}]);
+          setSteps((old) => {
+            const previous = old.length ? old : [{id: nextStepId([]), action: ActionEnum.SendMessage, text: template}];
+            return [...previous, {id: nextStepId(previous), action: ActionEnum.SendMessage, text: ""}];
+          });
         }}>{t("workflows.steps.addMessage")}</Button> : null}
         {actionKind !== ActionKind.AgentTurn && !!policies?.length && !steps.some((step) => step.action === ActionEnum.RequestApproval) ? <Button onClick={() => {
-          const approval: AutomationStep = { id: newIdempotencyKey(), action: ActionEnum.RequestApproval, message: "",
+          const approval: AutomationStep = { id: nextStepId(steps), action: ActionEnum.RequestApproval, message: "",
             ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}) };
           setSteps((old) => {
-            if (!old.length) return [approval, { id: newIdempotencyKey(), action: ActionEnum.SendMessage, text: template }];
+            if (!old.length) return [approval, { id: nextStepId([approval]), action: ActionEnum.SendMessage, text: template }];
             const firstEffect = old.findIndex((step) => step.action !== ActionEnum.Delay);
             return [...old.slice(0, firstEffect), approval, ...old.slice(firstEffect)];
           });

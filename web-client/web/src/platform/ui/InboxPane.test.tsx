@@ -14,7 +14,7 @@ import { inboxWindowEvents } from "./inbox-events";
 
 const api=vi.hoisted(()=>({workspaces:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),write:vi.fn(),privateChannels:[] as ConversationView[]}));
 const readAt=()=>null;
-vi.mock("@client-kit/platform/react/use-inbox-state",()=>({inboxReadContexts:()=>[],useInboxState:()=>({state:{},failed:false,unknown:false,pending:false,visibleChannels:new Set(["workspace-a",...api.privateChannels.map(item=>item.channelId)]),conversations:api.privateChannels,workspaceChannels:new Set(["workspace-a"]),readAt,write:api.write,refresh:vi.fn()})}));
+vi.mock("@client-kit/platform/react/use-inbox-state",async(importOriginal)=>({...await importOriginal<typeof import("@client-kit/platform/react/use-inbox-state")>(),useInboxState:()=>({state:{},failed:false,unknown:false,pending:false,visibleChannels:new Set(["workspace-a",...api.privateChannels.map(item=>item.channelId)]),conversations:api.privateChannels,workspaceChannels:new Set(["workspace-a"]),readAt,write:api.write,refresh:vi.fn()})}));
 vi.mock("@/platform/bff-client",()=>({bff:api,openStream:()=>()=>{}}));
 vi.mock("./ChannelPane",()=>({Composer:()=>null,ChannelPane:()=>null}));
 
@@ -194,7 +194,7 @@ it("does not continue the old aggregation after an awaited private page outlives
   }finally{if(mounted)await act(async()=>root.unmount());cache.clear();host.remove();api.privateChannels=[];api.conversations.mockResolvedValue({items:[]});vi.unstubAllGlobals();}
 });
 
-it("shows an admitted hidden DM mention and reopens that existing binding before message navigation",async()=>{
+it.each([true,false])("groups admitted hidden DMs (mention=%s), marks their channel and reopens the existing binding",async(mention)=>{
   (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
   setLocale("en");
   vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
@@ -204,7 +204,8 @@ it("shows an admitted hidden DM mention and reopens that existing binding before
   api.privateChannels=[conversation];api.workspaces.mockResolvedValue([]);
   api.conversations.mockResolvedValue({items:[conversation]});
   api.conversationParticipants.mockResolvedValue({items:[{principalId:"human",displayName:"Me",pubkeys:[self]},{principalId:"peer",displayName:"Peer",pubkeys:[event.pubkey]}]});
-  api.conversationMessages.mockResolvedValue({events:[{...event,content:"Existing hidden conversation",tags:[["h",channel],["p",self]]},{...event,id:"e".repeat(64),kind:39006,tags:[["h",channel],["d",`${channel}:head`]],content:JSON.stringify({has_more:false,next_cursor:null})}]});
+  api.write.mockClear();
+  api.conversationMessages.mockResolvedValue({events:[{...event,content:"Existing hidden conversation",tags:[["h",channel],...(mention?[["p",self]]:[])]},{...event,id:"f".repeat(64),created_at:2,content:"Another incoming message",tags:[["h",channel]]},{...event,id:"e".repeat(64),kind:39006,tags:[["h",channel],["d",`${channel}:head`]],content:JSON.stringify({has_more:false,next_cursor:null})}]});
   let finish!:()=>void; const receipt=new Promise<void>(resolve=>{finish=resolve;});
   const publish=vi.fn(()=>receipt),prepare=vi.fn(async()=>publish),open=vi.fn();
   const host=document.createElement("div");document.body.append(host);const root=createRoot(host);
@@ -212,6 +213,11 @@ it("shows an admitted hidden DM mention and reopens that existing binding before
   try{
     await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><ConversationVisibilityProvider value={{read:async()=>new Set([channel]),prepare}}><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={open}/></TooltipProvider></QueryClientProvider></ConversationVisibilityProvider></PlatformProvider>));
     await vi.waitFor(()=>expect(host.textContent).toContain("Existing hidden conversation"));
+    expect(host.querySelectorAll('[data-testid="home-inbox-list"] [data-testid^="home-inbox-item-"]')).toHaveLength(1);
+    expect(host.textContent).toContain("DM from Peer");
+    const mark=host.querySelector<HTMLButtonElement>('button[aria-label="Mark as read"]');expect(mark).not.toBeNull();
+    await act(async()=>mark!.click());
+    expect(api.write).toHaveBeenCalledWith([{key:channel,seconds:2}]);
     const trigger=host.querySelector<HTMLButtonElement>('button[aria-label="Open in channel"]');expect(trigger).not.toBeNull();
     await act(async()=>trigger!.click());
     expect(open).not.toHaveBeenCalled();expect(prepare).toHaveBeenCalledWith(conversation,false);

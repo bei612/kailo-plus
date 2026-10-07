@@ -7,6 +7,7 @@ import type { StreamFrame } from "../bff-client";
 import { ChannelPane } from "./ChannelPane";
 import { setLocale } from "@client-kit/platform/i18n";
 import type { TimelineMessage } from "@client-kit/platform/react/messages";
+import { ItemState } from "@client-kit/contracts";
 
 // Isolate the stream lifecycle from the rich editor. Original Tiptap is mounted
 // by Composer/ChannelRead tests; the channel and original message rows mount here.
@@ -18,8 +19,9 @@ const state = vi.hoisted(() => ({
   receive: null as null | ((frame: StreamFrame) => void),
   stop: vi.fn(),
   reason: (reason: string) => reason,
-  members: { isSuccess: true, data: [] },
-  userState: { isSuccess: true, data: { version: 0, readContexts: {}, workspacePreferences: {} } },
+  members: { isSuccess: true, data: [] as { principalId: string; pubkeys: string[]; displayName: string }[] },
+  userState: { isSuccess: true, data: { version: 0, readContexts: {}, workspacePreferences: {}, conversationPreferences: {} as Record<string, {muted: boolean}> } },
+  notify: vi.fn(),
   emoji: { isSuccess: true, data: { events: [] } },
   infinite: { data: { pages: [] }, isSuccess: true },
   queryClient: { invalidateQueries: vi.fn() },
@@ -30,11 +32,12 @@ vi.mock("@client-kit/platform/react/context", async (original) => ({
   useReasonText: () => state.reason,
 }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: (options: { queryKey: string[] }) => options.queryKey.includes("members") ? state.members : options.queryKey.includes("custom-emoji") ? state.emoji : state.userState,
+  useQuery: (options: { queryKey: string[] }) => options.queryKey.some(key => key === "members" || key === "conversation-members") ? state.members : options.queryKey.includes("custom-emoji") ? state.emoji : state.userState,
   useInfiniteQuery: () => state.infinite,
   useQueryClient: () => state.queryClient,
   useMutation: () => state.mutation,
 }));
+vi.mock("./BrowserNotifications", () => ({ useBrowserNotifications: () => ({notify: state.notify, settings: {homeBadgeEnabled: true}}) }));
 vi.mock("@/platform/bff-client", () => ({
   bff: { members: vi.fn(), workspaces: vi.fn() },
   BffError: class extends Error {},
@@ -91,6 +94,9 @@ beforeEach(async () => {
   });
   setLocale("en");
   state.stop.mockClear();
+  state.notify.mockClear();
+  state.members.data = [];
+  state.userState.data.conversationPreferences = {};
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   await act(async () => { root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" /></TooltipProvider>); });
@@ -111,6 +117,31 @@ beforeEach(async () => {
   });
   state.receive!({ type: "live" });
   });
+});
+
+it("routes ordinary live DM messages through the DM slot while honoring self, mute and revocation", async () => {
+  const conversation = { id: "dm", channelId: "channel-a", state: ItemState.Active, participantPrincipalIds: ["human-a", "human-b"], operationId: "op", version: 1 };
+  state.members.data = [{ principalId: "human-a", pubkeys: ["own"], displayName: "Me" }, { principalId: "human-b", pubkeys: ["peer"], displayName: "Alice" }];
+  const mountDm = async () => act(async () => { root.render(<TooltipProvider><ChannelPane workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" conversation={conversation} /></TooltipProvider>); });
+  await mountDm();
+  await act(async () => {
+    state.receive!({type: "snapshot", events: [{id: "dm-bounds", pubkey: "relay", kind: 39006, created_at: 1, tags: [["d", "channel-a:head"]], content: JSON.stringify({has_more: false, next_cursor: null})}]});
+    state.receive!({type: "live"});
+  });
+  const send = async (id: string, pubkey = "peer") => act(async () => {
+    state.receive!({ type: "event", event: {id, pubkey, kind: 9, created_at: 2, tags: [], content: "DM content"} });
+  });
+  await send("dm-message");
+  expect(state.notify).toHaveBeenCalledWith(expect.objectContaining({ eventId: "dm-message", title: "Alice", body: "DM content", slot: "dm" }));
+  await send("self", "own");
+  expect(state.notify).toHaveBeenCalledTimes(1);
+  state.userState.data.conversationPreferences = {dm: {muted: true}};
+  await mountDm();
+  await send("muted");
+  expect(state.notify).toHaveBeenCalledTimes(1);
+  await act(async () => { state.receive!({type: "closed", reason: "scope-revoked"}); });
+  await send("revoked");
+  expect(state.notify).toHaveBeenCalledTimes(1);
 });
 
 it.each(["session-revoked", "scope-revoked", "identity-revoked"])(

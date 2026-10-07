@@ -354,6 +354,34 @@ test("one failed setup does not abort other channel streams and retries only tha
   }
 });
 
+test("original DM alerts honor membership, Core mute, self, history and delivery deduplication", async () => {
+  const alerts = [];
+  const replies = [];
+  const dm = [{ ...channels(1)[0], channelType: "dm" }];
+  const options = { onDmMessage: (event) => alerts.push(event.id), onThreadReplyDesktopNotification: () => replies.push("reply") };
+  const h = await mount(dm, options);
+  try {
+    const sub = h.subscriptions[0];
+    await h.deliver(sub, message("live"));
+    await h.deliver(sub, message("live"));
+    await h.deliver(sub, message("self", { pubkey: VIEWER }));
+    await h.deliver(sub, message("history", { created_at: 1 }));
+    await h.deliver(sub, message("reaction", { kind: 7 }));
+    assert.deepEqual(alerts, ["live"]);
+    h.rerender(dm, { ...options, mutedChannelIds: new Set(["channel-0"]) });
+    await h.settle();
+    await h.deliver(sub, message("muted"));
+    assert.deepEqual(alerts, ["live"]);
+    h.rerender([], options);
+    await h.settle();
+    await h.deliver(sub, message("revoked"));
+    assert.deepEqual(alerts, ["live"]);
+    assert.deepEqual(replies, []);
+  } finally {
+    h.restore();
+  }
+});
+
 test("unmount disposes both established and pending channel streams", async () => {
   let release;
   const h = await mount(channels(2), { onLiveMention() {} }, async (sub) => {

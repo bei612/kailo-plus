@@ -75,7 +75,7 @@ export type InboxContextMessage = InboxReply & {
   mentionPubkeysByName?: Record<string, string>;
 };
 
-type InboxChannel = Pick<Channel, "id" | "name">;
+type InboxChannel = Pick<Channel, "id" | "name" | "channelType">;
 
 const fullTimeFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -118,7 +118,7 @@ function resolveItemChannel(
   const channel = item.channelId ? channelById.get(item.channelId) : undefined;
   const name = item.channelName?.trim() || channel?.name.trim() || null;
 
-  return { name };
+  return { name, type: item.channelType ?? channel?.channelType };
 }
 
 function resolveGroupChannel(
@@ -138,6 +138,10 @@ function resolveGroupChannel(
 
 export function getInboxTypeLabel(item: InboxItem): InboxTypeLabel {
   const channelName = item.channelLabel;
+
+  if (item.item.channelType === "dm") {
+    return { text: item.senderLabel ? `DM from ${item.senderLabel}` : "DM", channelLabel: null };
+  }
 
   const primaryCategory = item.item.category;
   if (primaryCategory === "mention") {
@@ -177,13 +181,15 @@ export function formatInboxTypeLabel(item: InboxItem) {
 export function getInboxConversationId(
   tags: string[][],
   eventId: string,
+  channelId?: string | null,
+  channelType?: string,
 ): string {
-  return inboxConversation({ tags, id: eventId });
+  return inboxConversation({ tags, id: eventId, channelId, channelType });
 }
 
 /** Returns the stable conversation identity for a complete Inbox feed item. */
 export function getInboxItemConversationId(item: FeedItem) {
-  return getInboxConversationId(item.tags, item.id);
+  return getInboxConversationId(item.tags, item.id, item.channelId, item.channelType);
 }
 
 /** Finds the Inbox row containing an event, including grouped events. */
@@ -226,12 +232,14 @@ export function buildInboxItems({
   feed,
   getMessageReadAt,
   getThreadReadAt,
+  getChannelReadAt,
   profiles,
 }: {
   channels?: InboxChannel[];
   currentPubkey?: string;
   feed?: InboxFeed;
   getMessageReadAt?: (messageId: string) => number | null;
+  getChannelReadAt?: (channelId: string) => number | null;
   getThreadReadAt?: (
     rootId: string,
     channelId?: string | null,
@@ -246,7 +254,16 @@ export function buildInboxItems({
     (channels ?? []).map((channel) => [channel.id, channel]),
   );
 
-  return aggregateInbox(feed, getMessageReadAt, getThreadReadAt).map(
+  const withChannelType = (items: FeedItem[]) => items.map(item => ({
+    ...item,
+    channelType: item.channelType ?? (item.channelId ? channelById.get(item.channelId)?.channelType : undefined),
+  }));
+  return aggregateInbox(
+    { mentions: withChannelType(feed.mentions), activity: withChannelType(feed.activity) },
+    getMessageReadAt,
+    getThreadReadAt,
+    getChannelReadAt,
+  ).map(
     (group) => {
       const { conversationId, item } = group;
       const groupChannel = resolveGroupChannel(item, group.items, channelById);
@@ -268,6 +285,7 @@ export function buildInboxItems({
       const displayItem: FeedItem = {
         ...item,
         channelName: channelLabel ?? item.channelName,
+        channelType: item.channelType ?? groupChannel.type,
       };
       const categoryLabel = categoryLabelFor(categories[0] ?? item.category);
 

@@ -6,7 +6,7 @@ import type {PulseEvent} from "../src/react/pulse/host";
 import {buildProjectReadModels} from "../src/react/projects/projectModels";
 import {render,button,click} from "./render";
 import {ProjectDeleteAction} from "../src/react/projects/ProjectDeleteAction";
-import {BffError,TransportError} from "../src/transport";
+import {BffError,TransportError,type BffTransport} from "../src/transport";
 import {SidebarProjectsSection,type SidebarProjectMembership} from "../src/react/sidebar/SidebarProjectsSection";
 import {SidebarProvider} from "../src/react/sidebar/sidebar";
 import {AppSidebarPrimaryMenu} from "../src/react/sidebar/app-sidebar-primary-menu";
@@ -21,6 +21,7 @@ import {buildProjectBootstrapTemplates} from "../src/react/projects/projectCreat
 import {useCreateProject} from "../src/react/projects/useCreateProject";
 import {CreateProjectFormContent} from "../src/react/projects/CreateProjectFormContent";
 import {Dialog} from "../src/react/composer/shared/ui/dialog";
+import {loadProjectAgents,ProjectAgentPending,ProjectAgentFailed} from "../src/react/projects/projectAgent";
 
 const owner="a".repeat(64),other="b".repeat(64);
 function project(name="Real project",id="p",time=10):PulseEvent{return {id,pubkey:owner,kind:30621,created_at:time,content:"",tags:[["d",id],["name",name],["description","Signed announcement"],["a",`30617:${other}:missing`]]};}
@@ -35,7 +36,7 @@ async function creationFixture(){
   const workspaceId="12345678-1234-4234-8234-123456789012",executionId="22345678-1234-4234-8234-123456789012",operationId="32345678-1234-4234-8234-123456789012";
   const task={actionExecutionId:executionId,operationId,actionKey:CreateActionKey.WorkspaceCreate,targetId:workspaceId,taskStatus:"COMPLETED",gateState:"ALLOWED",dispatchState:"DISPATCHED",workflowId:"workflow"};
   let member=true;
-  const send=vi.fn(async(request:{method:string;path:string;body?:unknown})=>({status:200,body:request.method==="POST"?{actionExecutionId:executionId,operationId,actionKey:CreateActionKey.WorkspaceCreate}
+  const send=vi.fn<BffTransport["send"]>(async request=>({status:200,body:request.method==="POST"?{actionExecutionId:executionId,operationId,actionKey:CreateActionKey.WorkspaceCreate}
     :request.path==="/api/v1/workspaces"?[{id:workspaceId,slug:intent.channel.slug,name:intent.input.name,isMember:member}]:task}));
   const client=createBffClient({send});
   const publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(request,_key,_observe,observation)=>{
@@ -52,6 +53,104 @@ const deleteTrigger=({onOpen,pending}:{onOpen:()=>void;pending:boolean})=><butto
 beforeEach(()=>{setLocale("en");sessionStorage.clear();});
 
 describe("governed original project creation",()=>{
+  const selectedAgent={agentResourceId:"42345678-1234-4234-8234-123456789012",agentVersionAssetId:"52345678-1234-4234-8234-123456789012",displayName:"Original persona",ordinal:3,resourceVersion:2,assetVersion:4};
+  async function agentFixture(){
+    const f=await creationFixture();f.intent.input.agent=selectedAgent;f.intent.agent={key:"62345678-1234-4234-8234-123456789012"};
+    const agentTask={...f.task,actionExecutionId:"72345678-1234-4234-8234-123456789012",operationId:"82345678-1234-4234-8234-123456789012",
+      actionKey:"agent.installation.create",workspaceId:f.task.targetId,targetId:"92345678-1234-4234-8234-123456789012",workflowKind:"AGENT_INSTALLATION",workflowId:"agent-workflow"};
+    const installation={resourceId:agentTask.targetId,workspaceId:f.task.targetId,agentResourceId:selectedAgent.agentResourceId,pinnedVersionAssetId:selectedAgent.agentVersionAssetId,
+      state:"ACTIVE",resourceState:"ACTIVE",agentPrincipalId:"separate-agent",agentPrincipalState:"ACTIVE",activeProjectionGeneration:2,
+      projection:{generation:2,agentVersionAssetId:selectedAgent.agentVersionAssetId,state:"ACTIVE"},channelBinding:{status:"ACTIVE",channelId:"actual-relay-channel"}};
+    const candidates={workspaceId:f.task.targetId,canCreate:true,candidates:[selectedAgent]};
+    f.send.mockImplementation(async request=>{
+      if(request.path.includes("installation-candidates"))return {status:200,body:candidates};
+      if(request.path.includes("agent-installations"))return {status:200,body:installation};
+      if(request.path==="/api/v1/workspaces")return {status:200,body:[{id:f.task.targetId,slug:f.intent.channel.slug,name:creationInput.name,isMember:true}]};
+      if(request.method==="POST")return {status:200,body:(request.body as {actionKey:string}).actionKey==="agent.installation.create"?agentTask:f.task};
+      return {status:200,body:request.path.endsWith(agentTask.actionExecutionId)?agentTask:f.task};
+    });
+    return {...f,agentTask,installation,candidates};
+  }
+  it("pins the selected persona version and waits for the real installation without replaying project publication",async()=>{
+    const f=await agentFixture();f.agentTask.taskStatus="RUNNING";
+    await expect(resumeProjectCreation(f.client,f.h,f.intent,vi.fn())).rejects.toBeInstanceOf(ProjectAgentPending);
+    expect(f.publish).toHaveBeenCalledTimes(2);expect(f.intent.agent?.submission?.actionExecutionId).toBe(f.agentTask.actionExecutionId);
+    f.agentTask.taskStatus="COMPLETED";
+    const result=await resumeProjectCreation(f.client,f.h,f.intent,vi.fn());expect(result.name).toBe(creationInput.name);
+    expect(f.publish).toHaveBeenCalledTimes(2);
+    const commands=f.send.mock.calls.filter(([r])=>r.method==="POST").map(([r])=>r.body);
+    expect(commands).toHaveLength(2);expect(commands[1]).toMatchObject({actionKey:"agent.installation.create",workspaceId:f.task.targetId,
+      assetId:selectedAgent.agentVersionAssetId,assetVersion:selectedAgent.assetVersion,idempotencyKey:f.intent.agent?.key});
+  });
+  it.each(["version","generation","scope","channel"])("does not finish an installation with mismatched %s projection",async field=>{
+    const f=await agentFixture();
+    if(field==="version")f.installation.pinnedVersionAssetId="substituted-version";
+    if(field==="generation")f.installation.activeProjectionGeneration++;
+    if(field==="scope")f.installation.workspaceId="another-workspace";
+    if(field==="channel")f.installation.channelBinding.status="DISABLED";
+    await expect(resumeProjectCreation(f.client,f.h,f.intent,vi.fn())).rejects.toBeInstanceOf(ProjectAgentPending);
+    expect(f.intent.agent?.submission).toBeDefined();expect(f.publish).toHaveBeenCalledTimes(2);
+  });
+  it("does not silently select a newer published version or discard the already created project",async()=>{
+    const f=await agentFixture();f.candidates.candidates=[{...selectedAgent,agentVersionAssetId:"replacement"}];
+    await expect(resumeProjectCreation(f.client,f.h,f.intent,vi.fn())).rejects.toBeInstanceOf(ProjectAgentFailed);
+    expect(f.intent.project.acceptedEventId).toBeDefined();expect(f.intent.agent?.command).toBeUndefined();
+    expect(f.send.mock.calls.filter(([r])=>r.method==="POST")).toHaveLength(1);
+  });
+  it("retains an already created project when the selected asset version becomes stale",async()=>{
+    const f=await agentFixture();f.candidates.candidates=[{...selectedAgent,assetVersion:selectedAgent.assetVersion+1}];
+    await expect(resumeProjectCreation(f.client,f.h,f.intent,vi.fn())).rejects.toBeInstanceOf(ProjectAgentFailed);
+    await expect(resumeProjectCreation(f.client,f.h,f.intent,vi.fn())).rejects.toBeInstanceOf(ProjectAgentFailed);
+    expect(f.publish).toHaveBeenCalledTimes(2);expect(f.send.mock.calls.filter(([r])=>r.method==="POST")).toHaveLength(1);
+  });
+  it.each(["observation","dispatch"])("keeps an UNKNOWN %s pending even when a negative task projection is present",async source=>{
+    const f=await agentFixture();f.agentTask.gateState="DENIED";f.agentTask.taskStatus="FAILED";
+    if(source==="observation")Object.assign(f.agentTask,{observation:"EXTERNAL_RESULT_UNKNOWN"});
+    else f.agentTask.dispatchState="UNKNOWN";
+    await expect(resumeProjectCreation(f.client,f.h,f.intent,vi.fn())).rejects.toBeInstanceOf(ProjectAgentPending);
+    expect(f.intent.agent?.submission).toBeDefined();
+  });
+  it("recovers a lost installation ACK using its unchanged command and idempotency key",async()=>{
+    const f=await agentFixture();const send=f.send.getMockImplementation()!;let lost=true;
+    f.send.mockImplementation(async request=>{if(request.method==="POST"&&(request.body as {actionKey:string}).actionKey==="agent.installation.create"&&lost){lost=false;throw new Error("lost ACK");}return send(request);});
+    await expect(resumeProjectCreation(f.client,f.h,f.intent,vi.fn())).rejects.toBeInstanceOf(ProjectAgentPending);
+    await resumeProjectCreation(f.client,f.h,f.intent,vi.fn());
+    const commands=f.send.mock.calls.filter(([r])=>r.method==="POST"&&(r.body as {actionKey:string}).actionKey==="agent.installation.create");
+    expect(commands).toHaveLength(2);expect(commands[0]![0].body).toEqual(commands[1]![0].body);expect(f.publish).toHaveBeenCalledTimes(2);
+  });
+  it("loads the original Persona identity from the exact current published asset, not a second local registry",async()=>{
+    const send=vi.fn(async(request:{path:string})=>({status:200,body:request.path.includes("agent-versions")?
+      {assetId:selectedAgent.agentVersionAssetId,agentResourceId:selectedAgent.agentResourceId,state:"PUBLISHED",assetVersion:4,ordinal:3,content:{personaIdentity:{displayName:"Original persona"}}}
+      :{definitions:[{resourceId:selectedAgent.agentResourceId,status:"ACTIVE",resourceState:"ACTIVE",resourceVersion:2,currentPublishedVersionAssetId:selectedAgent.agentVersionAssetId}]}}));
+    const client=createBffClient({send});expect(await loadProjectAgents(client)).toEqual([selectedAgent]);
+    expect(send.mock.calls[1]![0].path).toContain(selectedAgent.agentVersionAssetId);
+  });
+  it("retains the original Coding agent row after Project list and shows the frozen exact version",async()=>{
+    await render(<PlatformProvider client={bff}><Dialog open><CreateProjectFormContent active frozen={{...creationInput,agent:selectedAgent}}
+      isCreating={false} onBack={vi.fn()} onCreate={vi.fn()} onCreated={vi.fn()}/></Dialog></PlatformProvider>);
+    const listing=document.querySelector('[data-testid="create-project-listing"]')!;
+    const agent=document.querySelector<HTMLButtonElement>('[data-testid="create-project-agent"]')!;
+    expect(listing.compareDocumentPosition(agent)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(agent.textContent).toContain("Original persona · v3");expect(agent.disabled).toBe(true);
+    expect(agent.className).toContain("max-w-[60%]");expect(agent.parentElement?.className).toContain("rounded-xl");
+  });
+  it("submits the exact published Persona selected in the original dropdown",async()=>{
+    const client=createBffClient({send:async request=>({status:200,body:request.path.includes("agent-versions")?
+      {assetId:selectedAgent.agentVersionAssetId,agentResourceId:selectedAgent.agentResourceId,state:"PUBLISHED",assetVersion:4,ordinal:3,content:{personaIdentity:{displayName:"Original persona"}}}
+      :{definitions:[{resourceId:selectedAgent.agentResourceId,status:"ACTIVE",resourceState:"ACTIVE",resourceVersion:2,currentPublishedVersionAssetId:selectedAgent.agentVersionAssetId}]}})});
+    const create=vi.fn().mockResolvedValue(undefined);
+    await render(<PlatformProvider client={client}><Dialog open><CreateProjectFormContent active initialName="With agent" isCreating={false}
+      onBack={vi.fn()} onCreate={create} onCreated={vi.fn()}/></Dialog></PlatformProvider>);
+    const selector=document.querySelector<HTMLButtonElement>('[data-testid="create-project-agent"]')!;
+    await vi.waitFor(()=>expect(selector.disabled).toBe(false));
+    await vi.waitFor(()=>expect(document.activeElement).toBe(document.querySelector('[data-testid="create-project-name"]')));
+    await act(async()=>{selector.focus();selector.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));});
+    await vi.waitFor(()=>expect(document.querySelector(`[data-testid="create-project-agent-option-${selectedAgent.agentVersionAssetId}"]`)).not.toBeNull());
+    const option=document.querySelector<HTMLElement>(`[data-testid="create-project-agent-option-${selectedAgent.agentVersionAssetId}"]`)!;
+    expect(option).not.toBeNull();await click(option);
+    await click(document.querySelector<HTMLButtonElement>('[data-testid="create-project-submit"]')!);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({agent:selectedAgent}));
+  });
   it("uses one channel action and two original verified announcements in the same workspace",async()=>{
     const f=await creationFixture();const save=vi.fn();
     const result=await resumeProjectCreation(f.client,f.h,f.intent,save);

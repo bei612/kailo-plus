@@ -1,11 +1,11 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/ui/CreateProjectFormContent.tsx and
 // CreateProjectFormSettings.tsx: shared original field/layout and listing controls.
-// Template/team/persona consumers are separately recorded restoration gaps.
+// Template/team consumers remain separately recorded restoration gaps.
 import { ArrowLeft, ChevronDown } from "lucide-react";
 import * as React from "react";
-import { WorkspaceVisibility } from "@client-kit/contracts";
-import { useUiT } from "../context";
+import { WorkspaceVisibility, type AgentInstallationCandidate } from "@client-kit/contracts";
+import { useBffClient, useUiT } from "../context";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { ChooserDialogContent } from "../composer/shared/ui/chooser-dialog-content";
@@ -15,6 +15,7 @@ import { ChannelPermissionsSettings } from "../channel-permissions-settings";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "../sidebar/dropdown-menu";
 import { ProjectCreationPending, type CreateProjectInput } from "./createProject";
 import { isOutcomeUnknown } from "../../transport";
+import { loadProjectAgents, ProjectAgentFailed, ProjectAgentPending } from "./projectAgent";
 
 const CREATE_FIELD_SHELL_CLASS = "rounded-xl border border-input bg-muted/40 transition-colors duration-150 ease-out hover:border-muted-foreground/40 focus-within:border-muted-foreground/50";
 const CREATE_FIELD_CONTROL_CLASS = "border-0 bg-transparent text-muted-foreground/55 shadow-none outline-none ring-0 transition-colors duration-150 ease-out placeholder:text-muted-foreground/55 focus:bg-transparent focus:text-foreground focus:outline-hidden focus-visible:ring-0";
@@ -25,6 +26,11 @@ export function CreateProjectFormContent({ active, initialName = "", isCreating,
   onBack: () => void; onCreate: (input: CreateProjectInput) => Promise<void>; onCreated: () => void;
 }) {
   const t = useUiT();
+  const client = useBffClient();
+  const [agents, setAgents] = React.useState<AgentInstallationCandidate[]>([]);
+  const [agent, setAgent] = React.useState<AgentInstallationCandidate>();
+  const [agentLoading, setAgentLoading] = React.useState(false);
+  const [agentLoadFailed, setAgentLoadFailed] = React.useState(false);
   const [name, setName] = React.useState(initialName);
   const [description, setDescription] = React.useState("");
   const [channelVisibility, setChannelVisibility] = React.useState(WorkspaceVisibility.Open);
@@ -34,13 +40,24 @@ export function CreateProjectFormContent({ active, initialName = "", isCreating,
   const nameInputRef = React.useRef<HTMLInputElement>(null);
   const locked = isCreating || completed || frozen !== undefined;
   React.useEffect(() => {
+    let current = true;
+    setAgent(undefined); setAgents([]); setAgentLoadFailed(false);
+    if (!active || frozen) return;
+    setAgentLoading(true);
+    void loadProjectAgents(client).then(rows => { if (current) setAgents(rows); }, () => { if (current) setAgentLoadFailed(true); })
+      .finally(() => { if (current) setAgentLoading(false); });
+    return () => { current = false; };
+  }, [active, client, frozen]);
+  React.useEffect(() => {
     if (!active) return;
     setName(initialName); setDescription(""); setErrorMessage(null);
     const timer = globalThis.setTimeout(() => nameInputRef.current?.focus(), 50);
     return () => globalThis.clearTimeout(timer);
   }, [active, initialName]);
-  const input = frozen ?? { name, description: description.trim() || undefined, channelVisibility, projectVisibility };
+  const input = frozen ?? { name, description: description.trim() || undefined, channelVisibility, projectVisibility, ...(agent ? { agent } : {}) };
   const listingLabel = t(input.projectVisibility === "unlisted" ? "projects.unlisted" : "projects.listed");
+  const agentLabel = input.agent ? t("projects.create.agentVersion", { name: input.agent.displayName, version: input.agent.ordinal }) : t("projects.create.agentNone");
+  const agentDisabled = locked || agentLoading || agentLoadFailed;
   return <ChooserDialogContent className="max-w-lg" contentClassName="pt-3" data-testid="create-project-dialog"
     headerSubtitle={t("projects.create.description")}
     footer={<div className="flex w-full items-center justify-end gap-3"><Button data-testid="create-project-submit"
@@ -58,8 +75,9 @@ export function CreateProjectFormContent({ active, initialName = "", isCreating,
         setCompleted(true);
         // Closing/navigation is not another creation attempt if it throws.
         try { onCreated(); } catch { setErrorMessage(t("projects.create.navigationFailed")); }
-      }, error => setErrorMessage(t(error instanceof ProjectCreationPending || isOutcomeUnknown(error)
-        ? "projects.create.unconfirmed" : "projects.create.failed")));
+      }, error => setErrorMessage(t(error instanceof ProjectAgentPending ? "projects.create.agentPending"
+        : error instanceof ProjectAgentFailed ? "projects.create.agentFailed"
+        : error instanceof ProjectCreationPending || isOutcomeUnknown(error) ? "projects.create.unconfirmed" : "projects.create.failed")));
     }}>
       <div className="space-y-1.5"><label className="text-sm font-medium text-foreground" htmlFor="create-project-name">{t("projects.name")}</label>
         <div className={cn("flex min-h-11 items-center px-3", CREATE_FIELD_SHELL_CLASS)}><Input autoCapitalize="none" autoComplete="off" autoCorrect="off"
@@ -88,6 +106,25 @@ export function CreateProjectFormContent({ active, initialName = "", isCreating,
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <div className={cn("flex min-h-12 items-center justify-between gap-4 rounded-xl border border-input bg-background px-3 py-3", agentDisabled && "opacity-50")}>
+        <span className="text-sm font-medium text-foreground">{t("projects.create.agent")}</span>
+        <DropdownMenu modal={false}><DropdownMenuTrigger asChild>
+          <Button aria-label={`${t("projects.create.agent")}: ${agentLabel}`}
+            className="-mr-2.5 ml-auto h-9 min-w-0 max-w-[60%] justify-end px-2.5 text-right text-sm font-medium text-foreground hover:bg-muted/50"
+            data-testid="create-project-agent" disabled={agentDisabled} type="button" variant="ghost">
+            <span className="truncate text-right">{agentLoading ? t("platform.loading") : agentLabel}</span>
+            <ChevronDown className="size-4 shrink-0 text-muted-foreground/70" />
+          </Button>
+        </DropdownMenuTrigger><DropdownMenuContent align="end" onCloseAutoFocus={event => event.preventDefault()} style={{ minWidth: "var(--radix-dropdown-menu-trigger-width)" }}>
+          <DropdownMenuRadioGroup onValueChange={value => setAgent(agents.find(row => row.agentVersionAssetId === value))} value={input.agent?.agentVersionAssetId ?? "__none__"}>
+            <DropdownMenuRadioItem data-testid="create-project-agent-option-none" value="__none__">{t("projects.create.agentNone")}</DropdownMenuRadioItem>
+            {agents.map(row => <DropdownMenuRadioItem data-testid={`create-project-agent-option-${row.agentVersionAssetId}`} key={row.agentVersionAssetId} value={row.agentVersionAssetId}>
+              {t("projects.create.agentVersion", { name: row.displayName, version: row.ordinal })}
+            </DropdownMenuRadioItem>)}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent></DropdownMenu>
+      </div>
+      {agentLoadFailed ? <p role="status" className="text-sm text-destructive">{t("projects.create.agentLoadFailed")}</p> : null}
       {errorMessage ? <p role="status" className="text-sm text-destructive">{errorMessage}</p> : null}
     </form>
   </ChooserDialogContent>;

@@ -157,7 +157,7 @@ export function InboxListPane({
             </span>
           ) : null
         }
-        label={typeLabel.text}
+        label={item.item.channelType === "dm" ? t("inbox.dmFrom", { sender: item.senderLabel }) : typeLabel.text}
         channel={typeLabel.channelLabel}
         avatar={
           <UserProfilePopover

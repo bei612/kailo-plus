@@ -58,6 +58,18 @@ test("mention rows use the channel list when feed channelName is blank", () => {
   });
 });
 
+test("DM rows use directory type, merge roots and select the earliest unread message", () => {
+  const events = [1, 2, 3].map(index => item({ id: `dm-${index}`, category: "activity", createdAt: index,
+    channelId: DM_CHANNEL_ID, tags: [["h", DM_CHANNEL_ID], ...(index === 3 ? [["e", "dm-1", "", "reply"]] : [])] }));
+  const rows = buildInboxItems({ channels, feed: feedWith({ activity: events }), getChannelReadAt: () => 1, getMessageReadAt: () => 100 });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].conversationId, `dm:${DM_CHANNEL_ID}`);
+  assert.equal(rows[0].id, "dm-2");
+  assert.equal(rows[0].unreadCount, 2);
+  assert.equal(getInboxTypeLabel(rows[0]).channelLabel, null);
+  assert.match(getInboxTypeLabel(rows[0]).text, /^DM from /);
+});
+
 test("thread activity rows use the channel list when feed channelName is blank", () => {
   const [inboxItem] = buildInboxItems({
     channels,

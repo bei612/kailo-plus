@@ -163,7 +163,7 @@ export function AppShell() {
         : null,
     [channels, selectedChannelId],
   );
-  const { handleChannelNotification, handleThreadReplyDesktopNotification } =
+  const { handleDmNotification, handleChannelNotification, handleThreadReplyDesktopNotification } =
     useAppShellDesktopNotifications({
       channels,
       goChannel,
@@ -206,6 +206,7 @@ export function AppShell() {
     mutedChannelIds,
     notifyForActiveChannel: notificationSettings.settings.notifyWhileViewing,
     onChannelMessage: handleChannelNotification,
+    onDmMessage: handleDmNotification,
     onLiveMention: refetchHomeFeedFromLiveSignal,
     onThreadReplyDesktopNotification: handleThreadReplyDesktopNotification,
     followedRootIds,

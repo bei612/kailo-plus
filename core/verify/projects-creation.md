@@ -74,3 +74,68 @@ Core 读取已有请求契约作为公告元数据长度来源，保持上游 UT
 文件有 EOF 空行；本批选定代码路径检查退出 0，未混入这些无关修改。
 `check.sh --full` 本批未执行；Data 实际仅余约 3.4 GiB，未再复制完整源码树和
 启动全局编译去消耗不足的缓存空间。窄验证、文档通过不改记为全量通过。
+
+## 原版 Coding agent 选择与真实安装（后续批次）
+
+2026-10-07。继续固定 Buzz `779af8886caae1317b4de962082429867ab61503`，
+`desktop/src/features/projects/ui/CreateProjectFormSettings.tsx::CreateProjectFormSettings`
+的 Coding agent 行以及 `desktop/src/features/projects/createProject.ts::createProject`
+在 project/repository 完成后调用 `addRequestedAgents` 的实际顺序。
+
+动手前影响与边界核对：
+
+- 权威：`.design/17-Agent管理平面设计.md` §2、§6、§8。Persona 不另建注册表，
+  AgentDefinition/Version/Installation 与既有 `agent.installation.create` 才是平台权威。
+  原 `personas[].displayName` 映射到已发布 Version 的 `content.personaIdentity.displayName`；
+  原 `agentPersonaId` 映射到明确选中的 `agentVersionAssetId`，展示该固定 ordinal；
+  原本机 `createChannelManagedAgents` 调用改为已有 BFF Action + Temporal 安装。
+- 影响面：共源 CreateProjectFormContent、创建恢复 helper、useCreateProject 的 scope
+  生命周期，以及已有 agentDefinitions/agentVersion/agentInstallationCandidates/
+  agentInstallation 查询。未增加 Core 实体、契约字段、Agent 注册表或 Workflow。
+  原 Settings 行的位置（Project list 后）、Dropdown、类名、None 与选项交互保留；
+  版本标示和治理失败中文/英文状态属于上述授权差异。Web/Desktop 同一调用方。
+- 副作用：先实际确认原 project + default repository，再申请安装。选择项不是授权；
+  新 home 生效后重新读取该 Workspace 有权安装的候选，只匹配选定的固定 Version，
+  不自动转向更新版本。Core 原动作继续执行权限、审批、额度及审计，客户端不代授权限。
+- 异常：零候选允许原 None；目录失败不编造 Persona。分页不前进/重复定义拒绝。
+  安装参数和 key 在发送前保存，ACK 丢失只向 Core 恢复原 command/key；已收到回执
+  只读原 task。未终态、回执不可读、scope/version/generation 不符不显示成功。
+  终态拒绝与安装尚未确认分别展示，均保留已建项目恢复记录，不重建 home 或公告。
+  Installation 终态沿既有 Agent 管理/Temporal 收敛和处置入口，不新加状态机或超时配置。
+  页面离开/scope 更换后 scoped client 不继续发动作；现有无 Agent 的恢复记录兼容。
+
+安装完成同时要求同 ActionExecution/operation/Workspace、Temporal AGENT_INSTALLATION
+COMPLETED、实际 Installation 固定 Version/ACTIVE、其 active generation 与 ACTIVE
+projection 一致，并有 ACTIVE Channel binding。Channel ID 是查询的投影事实，
+不把 `channelId === workspaceId` 引入新授权限制。当前 home 创建执行器
+`core/crates/platform-core/src/tenant_lifecycle.rs::provision_workspace_buzz` 使用 Workspace ID
+创建 Channel，既有绑定则复用原值；此事实不扩大为所有历史绑定的契约。
+
+受限验证仍使用同一 4 CPU / 8 GiB SDK 与私有 `message-edit.AGX058/apps`，未构建镜像，
+未运行 `.references` 内容。日志在前述 XvkUjX evidence 根目录：
+
+- `projects-agent-type.log`：首次 test tsc 退出 2，fixture 的 send mock 被推断为只接受
+  Workspace 回应；改用既有 BffTransport send 类型后，`projects-agent-type-final.log`
+  退出 0。不是修改正式契约或屏蔽类型错误。
+- `projects-agent-test.log`：41 passed / 1 failed；SDK 中 SidebarProjectsSection 仍为上一批
+  前的旧副本，缺少正式已提交的导航失败反馈。同步当前正式消费者后，
+  `projects-agent-restored.log` 为 42 passed，退出 0。
+- `projects-agent-mutation.log`：在私有实际被调用的 projectAgent.ts 去掉 generation
+  对应关系检查，41 passed / 1 failed，退出 1；恢复后与正式文件 `cmp` 退出 0。
+  本批新增证据覆盖原 Coding agent 行位置/冻结版本、真实安装等待、版本撤回不替换、
+  scope/version/generation/channel 不符、丢 ACK 同 key 恢复及不重复原项目公告。
+  `projects-agent-final.log` 恢复后为 42 passed，退出 0；保留原日志中的 React act 警告。
+- 交叉复核后新增 stale assetVersion 不重建、UNKNOWN observation/dispatch 不能渲染失败，
+  以及真实原 Dropdown 选择提交；`projects-agent-reviewed-type.log` test tsc 退出 0。
+  `projects-agent-reviewed-test.log` 首次 45 passed / 1 failed：隔离交互没有等原名称框
+  autofocus，就打开菜单，焦点转移使菜单关闭；等待真实初始焦点后再操作，不改生产逻辑，
+  `projects-agent-reviewed-restored.log` 为 46 passed，退出 0。
+  合并主动破坏 generation 核对、UNKNOWN 保留、Dropdown onValueChange 三处实际调用，
+  `projects-agent-reviewed-mutation.log` 为 43 passed / 3 failed，退出 1；逐处恢复，
+  四个正式 Projects 源文件与 SDK `cmp` 全部退出 0，
+  `projects-agent-reviewed-final.log` 为 46 passed，退出 0。
+
+这些是实际共享消费者的隔离执行证据，不是在线服务、浏览器截图、Windows 或 Mobile
+安装验收。本批未运行全量构建/部署；提交与发布由主线统一收口。原 Team 和 Template
+仍依赖上游本机配置消费者，尚未接入平台既有治理，未以假选项冒充恢复；Coding agent
+这一个真实链完成不能证明整个 Projects 已 100% 还原。

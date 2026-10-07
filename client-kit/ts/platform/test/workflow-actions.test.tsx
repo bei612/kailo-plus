@@ -302,10 +302,10 @@ describe("original workflow action menu with governed consumers", () => {
       await click(button(dialog, "Workflow YAML"));
       const yaml = dialog.querySelector<HTMLTextAreaElement>("textarea")!.value;
       expect(yaml).toContain(`action: ${action}`);
-      const ids = [...yaml.matchAll(/\bid: ([0-9a-f-]{36})/g)].map((match) => match[1]!);
+      const ids = [...yaml.matchAll(/\bid: (step_\d+)/g)].map((match) => match[1]!);
       expect(ids).toHaveLength(action === "delay" || action === "request_approval" ? 2 : 1);
       expect(new Set(ids).size).toBe(ids.length);
-      for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      for (const id of ids) expect(id).toMatch(/^step_\d+$/);
       expect(writes(send)).toHaveLength(0);
     },
   );
@@ -320,6 +320,12 @@ describe("original workflow action menu with governed consumers", () => {
     await click(button(dialog, "Add message"));
     const messages = dialog.querySelectorAll<HTMLTextAreaElement>("textarea");
     expect(messages).toHaveLength(2);
+    await type(messages[1]!, "{{steps.");
+    const priorOutputs = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+    expect(priorOutputs).toHaveLength(2);
+    expect(priorOutputs.every((option) => option.textContent?.includes("steps.step_1.output."))).toBe(true);
+    await click(priorOutputs.find((option) => option.textContent?.includes("event_id"))!);
+    expect(messages[1]!.value).toBe("{{steps.step_1.output.event_id}}");
     await type(messages[1]!, "Second {{trigger.text}}");
     await click(button(dialog, "Add delay"));
     await type(dialog.querySelector<HTMLInputElement>("#wf-step-1-duration")!, "1m");

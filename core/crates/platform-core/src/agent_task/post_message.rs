@@ -7,6 +7,7 @@ use collab_bridge::bridge::{Custody, Delivery, IdentityClient};
 use contracts::ReasonCode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -129,9 +130,10 @@ async fn native_template(
     template: &str,
     expected_author: Option<&str>,
     action_kind: &str,
+    step_outputs: &HashMap<String, Value>,
 ) -> Result<String, Refusal> {
     if !template.contains("{{") {
-        return render_native_content(template, &Default::default(), action_kind);
+        return render_native_content(template, &Default::default(), action_kind, step_outputs);
     }
     let mut context = collab_bridge::workflow_template::TriggerContext {
         channel_id: channel.to_string(),
@@ -177,20 +179,18 @@ async fn native_template(
         "MANUAL" => {}
         _ => return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)),
     }
-    render_native_content(template, &context, action_kind)
+    render_native_content(template, &context, action_kind, step_outputs)
 }
 
 fn render_native_content(
     template: &str,
     context: &collab_bridge::workflow_template::TriggerContext,
     action_kind: &str,
+    step_outputs: &HashMap<String, Value>,
 ) -> Result<String, Refusal> {
-    let content = collab_bridge::workflow_template::resolve_template(
-        template,
-        context,
-        &std::collections::HashMap::new(),
-    )
-    .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
+    let content =
+        collab_bridge::workflow_template::resolve_template(template, context, step_outputs)
+            .map_err(|_| Refusal::Precondition(ReasonCode::InvalidParameters))?;
     let valid = match action_kind {
         "SET_CHANNEL_TOPIC_STEPS" => true,
         "ADD_REACTION_STEPS" => collab_bridge::bridge::valid_reaction(&content),
@@ -201,6 +201,29 @@ fn render_native_content(
         return Err(Refusal::Precondition(ReasonCode::InvalidParameters));
     }
     Ok(content)
+}
+
+/// Original SendMessage output: only earlier, positively reconciled events of
+/// this immutable Invocation. No output body or second execution log is stored.
+fn prior_message_outputs(
+    action: &Value,
+    events: &[String],
+    accepted: bool,
+) -> Result<HashMap<String, Value>, Refusal> {
+    if !accepted {
+        return Err(unknown());
+    }
+    events
+        .iter()
+        .enumerate()
+        .map(|(ordinal, event)| {
+            let step = crate::automation::steps::message_step(action, ordinal)?;
+            Ok((
+                step["id"].as_str().ok_or_else(unknown)?.to_owned(),
+                json!({"sent":true,"event_id":event}),
+            ))
+        })
+        .collect()
 }
 
 pub(super) async fn activity_fence(
@@ -415,8 +438,11 @@ async fn publish(
     let (action, binding, revision) =
         crate::automation::fresh_channel_action(state, &mut tx, invocation.id, None).await?;
     let sequence = crate::automation::steps::is_sequence(&action);
-    let sequence_events: Vec<String> = sqlx::query_scalar(
-        "select automation_step_event_ids from catalog.agent_invocation where id=$1",
+    let (sequence_events, previous_accepted): (Vec<String>, bool) = sqlx::query_as(
+        "select automation_step_event_ids,
+         not exists(select 1 from unnest(automation_step_event_ids) e
+          where not catalog.automation_step_accepted(i.id,e))
+         from catalog.agent_invocation i where i.id=$1",
     )
     .bind(invocation.id)
     .fetch_one(&mut *tx)
@@ -434,6 +460,7 @@ async fn publish(
     };
     let final_effect = !sequence
         || crate::automation::steps::message_step(&action, sequence_events.len() + 1).is_err();
+    let step_outputs = prior_message_outputs(&action, &sequence_events, previous_accepted)?;
     if binding.agent_locator
         != state.secrets.tenant_locator(
             invocation.tenant_id,
@@ -495,6 +522,7 @@ async fn publish(
         template.as_str().ok_or_else(unknown)?,
         source_author,
         action_kind,
+        &step_outputs,
     )
     .await?;
     let event = if action["kind"] == "ADD_REACTION_STEPS" {
@@ -798,11 +826,18 @@ mod post_message_tests {
                 "{{trigger.author}}: {{trigger.text | truncate(4)}} / {{trigger.message_id}} @ {{trigger.timestamp}}",
                 &context,
                 "POST_MESSAGE",
+                &HashMap::new(),
             ).unwrap(),
             "author-reference: 发布检查 / source-reference @ 1791352800",
         );
         assert_eq!(
-            render_native_content("{{trigger.channel_id}}", &context, "POST_MESSAGE").unwrap(),
+            render_native_content(
+                "{{trigger.channel_id}}",
+                &context,
+                "POST_MESSAGE",
+                &HashMap::new()
+            )
+            .unwrap(),
             context.channel_id,
         );
     }
@@ -815,11 +850,23 @@ mod post_message_tests {
             ..Default::default()
         };
         assert_eq!(
-            render_native_content("{{trigger.text}}", &context, "POST_MESSAGE").unwrap(),
+            render_native_content(
+                "{{trigger.text}}",
+                &context,
+                "POST_MESSAGE",
+                &HashMap::new()
+            )
+            .unwrap(),
             "{{trigger.author}}"
         );
         assert_eq!(
-            render_native_content("literal {{unknown.key}}", &context, "POST_MESSAGE").unwrap(),
+            render_native_content(
+                "literal {{unknown.key}}",
+                &context,
+                "POST_MESSAGE",
+                &HashMap::new()
+            )
+            .unwrap(),
             "literal {{unknown.key}}"
         );
     }
@@ -833,12 +880,18 @@ mod post_message_tests {
             "{{trigger.text | unsupported}}",
         ] {
             assert!(matches!(
-                render_native_content(template, &context, "POST_MESSAGE"),
+                render_native_content(template, &context, "POST_MESSAGE", &HashMap::new()),
                 Err(Refusal::Precondition(ReasonCode::InvalidParameters))
             ));
         }
         assert_eq!(
-            render_native_content("unchanged literal", &context, "POST_MESSAGE").unwrap(),
+            render_native_content(
+                "unchanged literal",
+                &context,
+                "POST_MESSAGE",
+                &HashMap::new()
+            )
+            .unwrap(),
             "unchanged literal"
         );
     }
@@ -854,30 +907,53 @@ mod post_message_tests {
             render_native_content(
                 "{{trigger.author}}: {{trigger.text}}",
                 &context,
-                "SET_CHANNEL_TOPIC_STEPS"
+                "SET_CHANNEL_TOPIC_STEPS",
+                &HashMap::new(),
             )
             .unwrap(),
             "发布负责人: 👍"
         );
         assert_eq!(
-            render_native_content("{{trigger.text}}", &context, "ADD_REACTION_STEPS").unwrap(),
+            render_native_content(
+                "{{trigger.text}}",
+                &context,
+                "ADD_REACTION_STEPS",
+                &HashMap::new()
+            )
+            .unwrap(),
             "👍"
         );
         let empty = collab_bridge::workflow_template::TriggerContext::default();
         assert_eq!(
-            render_native_content("{{trigger.text}}", &empty, "SET_CHANNEL_TOPIC_STEPS").unwrap(),
+            render_native_content(
+                "{{trigger.text}}",
+                &empty,
+                "SET_CHANNEL_TOPIC_STEPS",
+                &HashMap::new()
+            )
+            .unwrap(),
             ""
         );
         assert_eq!(
-            render_native_content("", &empty, "SET_CHANNEL_TOPIC_STEPS").unwrap(),
+            render_native_content("", &empty, "SET_CHANNEL_TOPIC_STEPS", &HashMap::new()).unwrap(),
             ""
         );
         for kind in ["SET_CHANNEL_TOPIC_STEPS", "ADD_REACTION_STEPS"] {
-            assert!(
-                render_native_content("{{trigger.text | unsupported}}", &context, kind).is_err()
-            );
+            assert!(render_native_content(
+                "{{trigger.text | unsupported}}",
+                &context,
+                kind,
+                &HashMap::new()
+            )
+            .is_err());
         }
-        assert!(render_native_content("{{trigger.text}}", &empty, "ADD_REACTION_STEPS").is_err());
+        assert!(render_native_content(
+            "{{trigger.text}}",
+            &empty,
+            "ADD_REACTION_STEPS",
+            &HashMap::new()
+        )
+        .is_err());
         let mut too_long = context.clone();
         // Derive the boundary from the same contract as the production signer.
         let schema: Value = serde_json::from_str(include_str!(
@@ -886,10 +962,47 @@ mod post_message_tests {
         .unwrap();
         too_long.text =
             "👍".repeat(schema["properties"]["emoji"]["maxLength"].as_u64().unwrap() as usize + 1);
-        assert!(
-            render_native_content("{{trigger.text}}", &too_long, "ADD_REACTION_STEPS").is_err()
-        );
-        assert!(render_native_content("literal", &context, "UNKNOWN").is_err());
+        assert!(render_native_content(
+            "{{trigger.text}}",
+            &too_long,
+            "ADD_REACTION_STEPS",
+            &HashMap::new()
+        )
+        .is_err());
+        assert!(render_native_content("literal", &context, "UNKNOWN", &HashMap::new()).is_err());
+    }
+
+    #[test]
+    fn prior_message_outputs_use_only_reconciled_native_sequence_references() {
+        let action = crate::automation::steps::message_sequence(&json!([
+            {"id":"first","action":"send_message","text":"first"},
+            {"id":"pause","action":"delay","duration":"1s"},
+            {"id":"second","action":"send_message","text":"{{steps.first.output.event_id}}"},
+            {"id":"last","action":"send_message","text":"{{steps.second.output.sent}}"}
+        ]))
+        .unwrap();
+        let events = vec!["a".repeat(64), "b".repeat(64)];
+        assert!(prior_message_outputs(&action, &events, false).is_err());
+        assert!(prior_message_outputs(&action, &[], true)
+            .unwrap()
+            .is_empty());
+        let outputs = prior_message_outputs(&action, &events, true).unwrap();
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs["first"], json!({"sent":true,"event_id":events[0]}));
+        assert_eq!(outputs["second"], json!({"sent":true,"event_id":events[1]}));
+        assert!(!outputs.contains_key("pause"));
+        assert!(!outputs.contains_key("last"));
+        assert_eq!(render_native_content(
+            "{{steps.first.output.sent}}/{{steps.first.output.event_id}}/{{steps.second.output.event_id | truncate(4)}}/{{steps.last.output.sent}}",
+            &Default::default(), "POST_MESSAGE_STEPS", &outputs,
+        ).unwrap(), format!("true/{}/bbbb/{{{{steps.last.output.sent}}}}", events[0]));
+        assert!(prior_message_outputs(&action, &vec!["a".repeat(64); 4], true).is_err());
+        assert!(prior_message_outputs(
+            &json!({"kind":"POST_MESSAGE","template":"plain"}),
+            &events,
+            true
+        )
+        .is_err());
     }
 
     #[test]

@@ -4,6 +4,7 @@ import { TransportError } from "../../transport";
 import { useBffClient, useUiT } from "../context";
 import { prepareProjectCreation, resumeProjectCreation, ProjectCreationRejected, type CreateProjectInput, type ProjectCreationIntent } from "./createProject";
 import type { ProjectsHost } from "./projectEnumeration";
+import { validProjectAgent } from "./projectAgent";
 
 /** Local recovery references are not authorization or a second project store. */
 function readIntent(key: string): ProjectCreationIntent | null {
@@ -16,6 +17,8 @@ function readIntent(key: string): ProjectCreationIntent | null {
     || (value.input.description !== undefined && typeof value.input.description !== "string")
     || !Object.values(WorkspaceVisibility).includes(value.input.channelVisibility)
     || !["listed", "unlisted"].includes(value.input.projectVisibility)
+    || (value.input.agent !== undefined && (!validProjectAgent(value.input.agent) || !value.agent || !uuid.test(value.agent.key)))
+    || (value.input.agent === undefined && value.agent !== undefined)
     || !eventId.test(value.owner) || value.channel?.actionKey !== CreateActionKey.WorkspaceCreate
     || !uuid.test(value.channel.idempotencyKey) || value.channel.slug !== value.channel.idempotencyKey
     || value.channel.name !== value.input.name || value.channel.workspaceVisibility !== value.input.channelVisibility
@@ -66,6 +69,8 @@ export function useCreateProject(host: ProjectsHost) {
         submitAction: async (...args: Parameters<typeof client.submitAction>) => { check(); const value = await client.submitAction(...args); check(); return value; },
         task: async (...args: Parameters<typeof client.task>) => { check(); const value = await client.task(...args); check(); return value; },
         workspaces: async () => { check(); const value = await client.workspaces(); check(); return value; },
+        agentInstallationCandidates: async (...args: Parameters<typeof client.agentInstallationCandidates>) => { check(); const value = await client.agentInstallationCandidates(...args); check(); return value; },
+        agentInstallation: async (...args: Parameters<typeof client.agentInstallation>) => { check(); const value = await client.agentInstallation(...args); check(); return value; },
       };
       let project;
       try { project = await resumeProjectCreation(scopedClient, scopedHost, current, save); }

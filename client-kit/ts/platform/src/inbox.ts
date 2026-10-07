@@ -53,6 +53,7 @@ export type InboxEvent = {
   tags: string[][];
   createdAt: number;
   channelId: string | null;
+  channelType?: string;
   category: "mention" | "activity";
 };
 
@@ -79,14 +80,19 @@ export function inboxReply(tags: string[][]) {
   );
 }
 
-export function inboxConversation(item: Pick<InboxEvent, "id" | "tags">) {
+export function inboxConversation(
+  item: Pick<InboxEvent, "id" | "tags"> & Partial<Pick<InboxEvent, "channelId" | "channelType">>,
+) {
+  // Original getInboxConversationId: a DM is one conversation, not one row
+  // per NIP-10 root. Hosts derive the type from the admitted directory.
+  if (item.channelType === "dm" && item.channelId) return `dm:${item.channelId}`;
   const thread = inboxThread(item.tags);
   return thread.rootId ?? thread.parentId ?? item.id;
 }
 
 /** Same event/root IDs in another admitted scope must never merge conversations. */
 export function inboxScopeKey(
-  item: Pick<InboxEvent, "id" | "tags" | "channelId">,
+  item: Pick<InboxEvent, "id" | "tags" | "channelId" | "channelType">,
 ) {
   return `${item.channelId ?? ""}:${inboxConversation(item)}`;
 }
@@ -95,6 +101,7 @@ export function aggregateInbox<T extends InboxEvent>(
   feed: { mentions: readonly T[]; activity: readonly T[] },
   getMessageReadAt?: (id: string) => number | null,
   getThreadReadAt?: (root: string, channel?: string | null) => number | null,
+  getChannelReadAt?: (channel: string) => number | null,
 ) {
   const groups = new Map<string, T[]>();
   for (const [category, items] of [
@@ -117,11 +124,14 @@ export function aggregateInbox<T extends InboxEvent>(
       const latest = items.reduce((left, right) =>
         right.createdAt > left.createdAt ? right : left,
       );
-      const readAt = getThreadReadAt?.(conversationId, latest.channelId);
+      const directMessage = latest.channelType === "dm" && latest.channelId !== null;
+      const readAt = directMessage
+        ? getChannelReadAt?.(latest.channelId!)
+        : getThreadReadAt?.(conversationId, latest.channelId);
       const unread = items
         .filter((item) => {
-          if (!inboxReply(item.tags)) return false;
-          const mark = getMessageReadAt ? getMessageReadAt(item.id) : readAt;
+          if (!directMessage && !inboxReply(item.tags)) return false;
+          const mark = directMessage ? readAt : getMessageReadAt ? getMessageReadAt(item.id) : readAt;
           return mark !== undefined && item.createdAt > (mark ?? 0);
         })
         .sort((left, right) => left.createdAt - right.createdAt);
@@ -140,11 +150,16 @@ export function aggregateInbox<T extends InboxEvent>(
     .sort((a, b) => b.latestActivityAt - a.latestActivityAt);
 }
 
+/** Original DM read position is its channel, including threaded messages. */
+export function inboxReadContext(item: Pick<InboxEvent, "id" | "tags" | "channelId" | "channelType">) {
+  return item.channelType !== "dm" && inboxReply(item.tags) ? `msg:${item.id}` : item.channelId;
+}
+
 export function matchesInbox(
   item: {
     categories: readonly string[];
-    groupItems: readonly (Pick<InboxEvent, "tags"> & { pubkey?: string })[];
-    item?: { pubkey?: string };
+    groupItems: readonly (Pick<InboxEvent, "tags" | "channelType"> & { pubkey?: string })[];
+    item?: { pubkey?: string; channelType?: string };
   },
   filter: string,
   ownedAgentPubkeys?: ReadonlySet<string>,
@@ -153,7 +168,7 @@ export function matchesInbox(
   const representative = item.item ?? item.groupItems.at(-1);
   const ownedAgent = representative?.pubkey && ownedAgentPubkeys?.has(representative.pubkey.toLowerCase()) === true;
   if (filter === "agent_activity") return Boolean(ownedAgent);
-  if (filter === "all") return item.categories.includes("mention") || thread || Boolean(ownedAgent);
+  if (filter === "all") return representative?.channelType === "dm" || item.categories.includes("mention") || thread || Boolean(ownedAgent);
   if (filter === "thread") return thread;
   return item.categories.includes(filter);
 }

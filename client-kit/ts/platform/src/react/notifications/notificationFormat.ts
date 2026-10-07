@@ -30,7 +30,7 @@ export function formatNotificationTitle(opts: {
     : opts.prefix;
 }
 
-export type MessageNotificationSource = "mention" | "thread_reply";
+export type MessageNotificationSource = "dm" | "mention" | "thread_reply";
 
 /**
  * Canonical copy for every message-shaped desktop notification (home-feed
@@ -54,8 +54,12 @@ export function formatMessageNotification(opts: {
   const channelName = opts.channelName?.trim() || null;
   const body = truncateNotificationBody(
     content,
-    translate(getLocale(), source === "mention" ? "platform.notifications.mentionFallback" : "platform.notifications.replyFallback"),
+    translate(getLocale(), source === "dm" ? "platform.notifications.dmFallback" : source === "mention" ? "platform.notifications.mentionFallback" : "platform.notifications.replyFallback"),
   );
+
+  if (source === "dm") {
+    return { title: senderName ?? channelName ?? translate(getLocale(), "platform.notifications.dmTitle"), body };
+  }
 
   const channelLabel = channelName ? `#${channelName}` : null;
   const prefix =

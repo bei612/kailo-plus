@@ -2,7 +2,7 @@ import { InboxLayout } from "@client-kit/platform/react/inbox-surface";
 import * as React from "react";
 import { RefreshCcw } from "lucide-react";
 
-import { inboxReply } from "@client-kit/platform/inbox";
+import { inboxReadContext } from "@client-kit/platform/inbox";
 import { useT } from "@client-kit/platform/react/context";
 import { useHiddenDmInboxNavigation } from "@client-kit/platform/react/new-message";
 import { toast } from "sonner";
@@ -177,14 +177,14 @@ export function HomeView({
             mentions: feed.mentions.filter(
               (item) =>
                 item.channelId && coreReads.visibleChannels.has(item.channelId),
-            ),
+            ).map(item => ({...item, channelType: coreReads.conversations.some(conversation => conversation.channelId === item.channelId) ? "dm" : undefined})),
             activity: [...feed.activity, ...(ownedAgents.data?.activity ?? [])].filter(
               (item) =>
                 item.channelId && coreReads.visibleChannels.has(item.channelId),
-            ),
+            ).map(item => ({...item, channelType: coreReads.conversations.some(conversation => conversation.channelId === item.channelId) ? "dm" : undefined})),
           }
         : undefined,
-    [feed, coreReads.state, coreReads.visibleChannels, ownedAgents.data],
+    [feed, coreReads.state, coreReads.visibleChannels, coreReads.conversations, ownedAgents.data],
   );
   const getMessageReadAt = React.useCallback(
     (id: string) => coreReads.readAt(`msg:${id}`),
@@ -274,6 +274,7 @@ export function HomeView({
         feed: admittedFeed,
         getMessageReadAt,
         getThreadReadAt,
+        getChannelReadAt: coreReads.readAt,
         profiles: feedProfiles,
       }),
     [
@@ -283,6 +284,7 @@ export function HomeView({
       feedProfiles,
       getMessageReadAt,
       getThreadReadAt,
+      coreReads.readAt,
       readStateVersion,
       coreReads.state,
       coreReads.visibleChannels,
@@ -297,9 +299,7 @@ export function HomeView({
               (event) =>
                 event.createdAt <=
                 (coreReads.readAt(
-                  inboxReply(event.tags)
-                    ? `msg:${event.id}`
-                    : (event.channelId ?? ""),
+                  inboxReadContext(event) ?? "",
                 ) ?? 0),
             ),
           )

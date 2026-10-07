@@ -33,6 +33,21 @@ const state = (version = 0) => ({
 const workspace = { id: "scope-a", name: "A", slug: "a", isMember: true };
 
 describe("shared upstream Inbox aggregation", () => {
+  it("groups a DM by its admitted channel across roots and reads every item through that channel", () => {
+    const first = { ...event("first", "private", 10), channelType: "dm", category: "activity" as const };
+    const second = { ...first, id: "second", createdAt: 20 };
+    const reply = { ...first, id: "reply", createdAt: 30, tags: [["e", "first", "", "reply"]] };
+    const other = { ...first, id: "other", channelId: "other-private" };
+    const rows = aggregateInbox({ mentions: [], activity: [first, second, reply, other] }, () => 100, () => 100, () => 10);
+    const row = rows.find(item => item.conversationId === "dm:private")!;
+    expect(rows).toHaveLength(2);
+    expect(row.items.map(item => item.id)).toEqual(["first", "second", "reply"]);
+    expect(row.item.id).toBe("second");
+    expect(row.unreadCount).toBe(2);
+    expect(matchesInbox({ ...row, groupItems: row.items }, "all")).toBe(true);
+    expect(inboxReadContexts(row.items, true)).toEqual([{ key: "private", seconds: 30 }]);
+    expect(inboxReadContexts(row.items, false)).toEqual([{ key: "private", seconds: 9 }]);
+  });
   it("uses the representative's actual owned Agent identity, not labels or arbitrary traffic", () => {
     const pubkey = "a".repeat(64);
     const row = { categories: ["activity"], groupItems: [{ ...event("old"), pubkey }], item: { pubkey: "b".repeat(64) } };

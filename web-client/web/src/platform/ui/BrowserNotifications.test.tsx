@@ -56,6 +56,18 @@ it("uses actual permission, original slot settings, silent notification and sele
   deliveries[0]?.onclick?.();
   expect(open).not.toHaveBeenCalled();
 });
+it("delivers DMs through the original independently persisted slot", async () => {
+  await mount();
+  const message = { eventId: "dm", title: "Alice", body: "hello", slot: "dm" as const, onOpen: vi.fn() };
+  current!.notify(message);
+  current!.notify(message);
+  expect(deliveries).toHaveLength(1);
+  await act(async () => { current!.setSlotAlertsEnabled("dm", false); });
+  current!.notify({ ...message, eventId: "muted-dm" });
+  expect(deliveries).toHaveLength(1);
+  current!.notify({ ...message, eventId: "mention", slot: "mention" });
+  expect(deliveries).toHaveLength(2);
+});
 it("does not alert while visible by default or when permission is no longer granted", async () => {
   await mount();
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });

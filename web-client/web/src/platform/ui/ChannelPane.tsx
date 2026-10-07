@@ -14,6 +14,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { X } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
 import { useBrowserNotifications } from "./BrowserNotifications";
+import { formatMessageNotification } from "@client-kit/platform/react/notifications";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
 import {
   BffError,
@@ -235,9 +236,10 @@ export function ChannelPane({
       (prior.id === thread.rootId || getThreadReference(prior.tags).rootId === thread.rootId));
     // Original mention precedence and thread-participation semantics. Ordinary
     // channel activity is not falsely promoted into a desktop alert.
-    if (!mentioned && (muted || !participated || !thread.parentId)) return;
-    notifications?.notify({ eventId: event.id, title: byPubkey.get(event.pubkey)?.displayName ?? t("platform.title"),
-      body: event.content, slot: mentioned ? "mention" : "thread_reply",
+    if (conversation ? muted : !mentioned && (muted || !participated || !thread.parentId)) return;
+    const slot = conversation ? "dm" : mentioned ? "mention" : "thread_reply";
+    const notification = formatMessageNotification({ source: slot, senderName: byPubkey.get(event.pubkey)?.displayName, content: event.content });
+    notifications?.notify({ eventId: event.id, ...notification, slot,
       onOpen: () => { const target = document.querySelector(`[data-event-id="${event.id}"]`); if (target instanceof HTMLElement) { target.scrollIntoView({ block: "center" }); target.focus({ preventScroll: true }); } },
     });
   });

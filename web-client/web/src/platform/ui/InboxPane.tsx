@@ -9,6 +9,7 @@ import {
   aggregateInbox,
   inboxConversation,
   inboxReply,
+  inboxReadContext,
   inboxThread,
   matchesInbox,
   loadOwnedAgentIdentities,
@@ -187,13 +188,12 @@ export function InboxPane({
         const self = people.find(person => person.principalId === principalId);
         if (!self?.pubkeys.length || self.pubkeys.some(key => !hex.test(key))) throw new Error("Unverifiable Conversation identity");
         const own = new Set(self.pubkeys);
-        const events = inboxWindowEvents((await client.conversationMessages(conversation.id)).events, conversation.channelId);
-        // Same original mention/participated-thread interest, including hidden
-        // DM channels. Sidebar hidden_at is not loss of read participation.
+        const events = inboxWindowEvents((await client.conversationMessages(conversation.id)).events, conversation.channelId).map(event => ({...event, channelType: "dm"}));
+        // Original Inbox includes ordinary incoming DMs, not only mentions or
+        // replies. Sidebar hidden_at is not loss of read participation.
         const mentioned = (event: Event) => event.tags.some(tag => tag[0] === "p" && own.has(tag[1]));
-        const roots = new Set(events.filter(event => own.has(event.pubkey) || mentioned(event)).map(inboxConversation));
         next.mentions.push(...events.filter(event => !own.has(event.pubkey) && mentioned(event)).map(event => ({...event,category:"mention" as const})));
-        next.activity.push(...events.filter(event => !own.has(event.pubkey) && inboxReply(event.tags) && roots.has(inboxConversation(event))));
+        next.activity.push(...events.filter(event => !own.has(event.pubkey)));
       }
       // A scope removed during aggregation cannot survive as a cached row.
       if (epoch !== generation.current) return;
@@ -234,6 +234,7 @@ export function InboxPane({
             },
             (id) => reads.readAt(`msg:${id}`),
             (root) => reads.readAt(`thread:${root}`),
+            reads.readAt,
           )
         : [],
     [snapshot, reads.readAt, reads.visibleChannels],
@@ -244,7 +245,7 @@ export function InboxPane({
   };
   useEffect(() => {
     onUnreadCount?.(failed || reads.failed || reads.unknown || !snapshot || !reads.state ? null : rows.filter((row) =>
-      row.items.some((event) => event.createdAt > (reads.readAt(inboxReply(event.tags) ? `msg:${event.id}` : event.channelId) ?? 0))).length);
+      row.items.some((event) => event.createdAt > (reads.readAt(inboxReadContext(event)!) ?? 0))).length);
   }, [onUnreadCount, failed, reads.failed, reads.unknown, snapshot, reads.state, rows, reads.readAt]);
   useEffect(() => () => onUnreadCount?.(null), [onUnreadCount]);
   const visibleRows = rows
@@ -255,7 +256,7 @@ export function InboxPane({
         row.items.some(
           (item) =>
             item.createdAt >
-            (reads.readAt(inboxReply(item.tags) ? `msg:${item.id}` : item.channelId) ?? 0),
+            (reads.readAt(inboxReadContext(item)!) ?? 0),
         ),
     );
   const narrow = width !== null && width < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
@@ -292,7 +293,7 @@ export function InboxPane({
   const showList = !singleAuxiliary && (!narrow || !hasSelection);
   const showDetail = !singleAuxiliary && (!narrow || hasSelection);
   const listWidth = width === null ? resize.inboxListWidthPx : Math.min(resize.inboxListWidthPx, Math.max(INBOX_COLUMN_MIN_WIDTH_PX, width - INBOX_COLUMN_MIN_WIDTH_PX));
-  const isRead = (row: typeof rows[number]) => row.items.every((event) => event.createdAt <= (reads.readAt(inboxReply(event.tags) ? `msg:${event.id}` : event.channelId) ?? 0));
+  const isRead = (row: typeof rows[number]) => row.items.every((event) => event.createdAt <= (reads.readAt(inboxReadContext(event)!) ?? 0));
   const header = <InboxListHeader filter={filter} onFilterChange={(next) => {setProfileTarget(null);setFilter(next);}} activeDraftCount={drafts.entries.length} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly}
     unreadCount={visibleRows.filter((row) => !isRead(row)).length} pending={reads.pending}
     onMarkAllRead={() => reads.write(inboxReadContexts(visibleRows.flatMap((row) => row.items), true))} />;
@@ -323,7 +324,7 @@ export function InboxPane({
               avatar={<MessageAuthorIdentity target={target} onOpen={() => setProfileTarget(target)}><UserAvatar avatarUrl={null} displayName={sender} size="sm" /></MessageAuthorIdentity>}
               timestamp={relativeTime(locale, new Date(row.latestActivityAt * 1000).toISOString())}
               unread={row.unreadCount > 1 ? t("inbox.unreadCount", { count: row.unreadCount }) : null}
-              label={t(item.category === "mention" ? "inbox.mentionedIn" : "inbox.threadIn")}
+              label={item.channelType === "dm" ? t("inbox.dmFrom", { sender }) : t(item.category === "mention" ? "inbox.mentionedIn" : "inbox.threadIn")}
               channel={snapshot.workspaces.find((workspace) => workspace.id === item.channelId)?.name ?? null}
               openLabel={t("inbox.openItem", { sender })}
               onSelect={() => { setProfileTarget(null);setSelected(row.scopeKey); if (!read) reads.write(inboxReadContexts(row.items, true)); }}
@@ -344,7 +345,7 @@ export function InboxPane({
       </div>
     </section> : null}
     {chosen && (showDetail || singleAuxiliary) ? <div className={singleAuxiliary ? "hidden" : "contents"}><InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}
-      workspaceId={chosen.item.channelId} rootId={chosen.conversationId} selectedEventId={chosen.item.id}
+      workspaceId={chosen.item.channelId} rootId={inboxThread(chosen.item.tags).rootId ?? chosen.item.id} selectedEventId={chosen.item.id}
       conversation={snapshot.conversations.find(item => item.channelId === chosen.item.channelId)}
       canInteract={!snapshot.hiddenDm.has(chosen.item.channelId)}
       onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeAuthorScope}

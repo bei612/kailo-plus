@@ -2,7 +2,7 @@
 // desktop/src/features/workflows/ui/WorkflowTemplateTextarea.tsx::WorkflowTemplateTextarea.
 // Only variables with an existing Core template consumer are offered.
 import * as React from "react";
-import type { AutomationTriggerKind as TriggerKind } from "@client-kit/contracts";
+import type { AutomationTriggerKind as TriggerKind, AutomationStep } from "@client-kit/contracts";
 import { useT } from "./context";
 
 import { cn } from "./profile/buzz/shared/lib/cn";
@@ -23,11 +23,13 @@ export function WorkflowTemplateTextarea({
   disabled,
   onValueChange,
   triggerType,
+  previousSteps,
   value,
   ...props
 }: Omit<React.ComponentProps<typeof Textarea>, "onChange" | "value"> & {
   onValueChange: (value: string) => void;
   triggerType: TriggerKind;
+  previousSteps?: AutomationStep[];
   value: string;
 }) {
   const t = useT();
@@ -38,8 +40,8 @@ export function WorkflowTemplateTextarea({
   const [token, setToken] = React.useState<ActiveTemplateToken | null>(null);
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const variables = React.useMemo(
-    () => workflowTemplateVariables(triggerType),
-    [triggerType],
+    () => workflowTemplateVariables(triggerType, previousSteps),
+    [triggerType, previousSteps],
   );
   const suggestions = React.useMemo(() => {
     if (!token) return [];

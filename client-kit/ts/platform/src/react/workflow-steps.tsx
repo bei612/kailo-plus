@@ -12,6 +12,23 @@ import { WorkflowDurationField } from "./workflow-duration-field";
 import { parseDurationSeconds } from "./workflow-duration";
 import { WorkflowTemplateTextarea } from "./workflow-template-textarea";
 
+// Original workflowFormTypes.ts::nextStepId. Step references are not request IDs.
+const STEP_ID_PATTERN = /^step_(\d+)$/;
+export function nextStepId(existingSteps: AutomationStep[]): string {
+  const existingIds = new Set(existingSteps.map((s) => s.id));
+  let maxN = 0;
+  for (const id of existingIds) {
+    const match = STEP_ID_PATTERN.exec(id);
+    const ordinal = match ? Number(match[1]) : NaN;
+    if (Number.isSafeInteger(ordinal)) maxN = Math.max(maxN, ordinal);
+  }
+  // Preserve normal original IDs without looping forever on a user-authored
+  // suffix whose numeric representation no longer increments.
+  let n = Number.isSafeInteger(maxN + 1) ? maxN + 1 : 1;
+  while (existingIds.has(`step_${n}`)) n++;
+  return `step_${n}`;
+}
+
 export function validApprovalPolicy(value: unknown): value is NonNullable<AutomationVersionContent["approvalPolicy"]> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const row = value as Record<string, unknown>;
@@ -71,10 +88,11 @@ export function workflowAction(content: AutomationVersionContent): {kind: Workfl
     : content.action;
 }
 
-export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, trigger }: {
+export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, trigger, previousSteps }: {
   step: AutomationStep; index: number; onUpdate: (step: AutomationStep) => void; onRemove?: () => void;
   policies?: NonNullable<AutomationVersionContent["approvalPolicy"]>[] | null;
   trigger: TriggerKind;
+  previousSteps?: AutomationStep[];
 }) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
@@ -122,7 +140,7 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, tr
         </label>
         : <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-text`}>
           {t("workflows.steps.message")}<WorkflowTemplateTextarea id={`${prefix}-text`} value={step.text ?? ""}
-            triggerType={trigger} onValueChange={(text) => onUpdate({ ...step, text })}
+            triggerType={trigger} previousSteps={previousSteps} onValueChange={(text) => onUpdate({ ...step, text })}
             className="min-h-[60px] w-full resize-y rounded-md border border-input bg-transparent p-2 text-xs" />
         </label>}
     </section>

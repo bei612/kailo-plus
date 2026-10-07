@@ -7,7 +7,7 @@ import {
   type CollaborationUserState,
   type InboxEvent,
   inboxReadAt,
-  inboxReply,
+  inboxReadContext,
 } from "../inbox";
 import { isOutcomeUnknown, TransportError } from "../transport";
 
@@ -151,7 +151,7 @@ export function useInboxState(client: BffClient) {
 export function inboxReadContexts(items: readonly InboxEvent[], read: boolean) {
   const contexts = new Map<string, number>();
   for (const item of items) {
-    const key = inboxReply(item.tags) ? `msg:${item.id}` : item.channelId;
+    const key = inboxReadContext(item);
     if (!key) continue;
     // Core accepts an explicit earlier position too: unread is a real CAS
     // update, never a second client-owned override or an invented endpoint.

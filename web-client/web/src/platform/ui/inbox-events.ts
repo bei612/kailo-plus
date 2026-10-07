@@ -7,7 +7,7 @@ import {
   KIND_DELETION,
   CHANNEL_TIMELINE_CONTENT_KINDS,
 } from "@client-kit/platform/react/thread/kinds";
-export type Event = BuzzEvent & { createdAt: number; channelId: string; category: "mention" | "activity" };
+export type Event = BuzzEvent & { createdAt: number; channelId: string; channelType?: string; category: "mention" | "activity" };
 export const hex = /^[0-9a-f]{64}$/;
 
 /** Original Relay window rows, not its signed summaries/bounds or action overlays.
