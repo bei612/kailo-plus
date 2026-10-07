@@ -1,10 +1,9 @@
-import { ThemeSettingsControls } from "@client-kit/platform/react/theme-settings-controls";
+import { AppearanceSettings } from "@client-kit/platform/react/appearance-settings";
 import { useDeviceLocale } from "@client-kit/platform/react/context";
 import {
   translate,
 } from "@client-kit/platform/i18n";
 import {
-  LanguageSettings,
   type SettingsSection,
 } from "@client-kit/platform/react/settings";
 import type {
@@ -12,22 +11,11 @@ import type {
   NotificationSettings,
 } from "@/features/notifications/hooks";
 import type { SoundName, SoundSlot } from "@/features/notifications/lib/sound";
-import { useNativeSession } from "@/features/platform/activeCommunity";
-import { isBuzzTheme, useTheme } from "@/shared/theme/ThemeProvider";
-import {
-  GlassBackgroundSetting,
-  LinkPreviewStyleSetting,
-  ThreadLayoutSetting,
-} from "./AppearanceSettingsControls";
-import { ProminentActiveTabSetting } from "@client-kit/platform/react/prominent-active-tab-setting";
+import { useTheme } from "@/shared/theme/ThemeProvider";
+import { isLinuxPlatform } from "@/shared/lib/platform";
+import { performDefaultHaptic } from "@/shared/lib/haptics";
 import { KeyboardShortcutsCard } from "./KeyboardShortcutsCard";
-import { ConversationDisplaySettings } from "@client-kit/platform/react/conversation-display-settings";
 import { NotificationSettingsCard } from "./NotificationSettingsCard";
-import {
-  SettingsOptionGroup,
-  SettingsOptionGroupList,
-} from "./SettingsOptionGroup";
-import { SettingsSectionHeader } from "./SettingsSectionHeader";
 import { ProfileSettingsCard } from "./ProfileSettingsCard";
 
 export type { SettingsSection } from "@client-kit/platform/react/settings";
@@ -64,24 +52,10 @@ export type SettingsPanelProps = {
 
 function ThemeSettingsCard() {
   const locale = useDeviceLocale();
-  const { displayName } = useNativeSession();
-  const name = displayName ?? translate(locale, "platform.title");
+  const name = translate(locale, "platform.title");
   const appearance = useTheme();
-  return <section className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-testid="settings-theme">
-    <SettingsSectionHeader title={translate(locale, "platform.settings.appearance")} description={translate(locale, "platform.theme.appearanceDescription", { name })} />
-    <SettingsOptionGroupList>
-      <LanguageSettings />
-      <ThemeSettingsControls locale={locale} name={name} appearance={appearance}>
-        <GlassBackgroundSetting />
-        {isBuzzTheme(appearance.themeName) ? <ProminentActiveTabSetting locale={locale} prominentActiveTab={appearance.prominentActiveTab} setProminentActiveTab={appearance.setProminentActiveTab} /> : null}
-      </ThemeSettingsControls>
-      <SettingsOptionGroup data-testid="appearance-preferences-card" title={translate(locale, "platform.settings.preferences")}>
-        <ConversationDisplaySettings locale={locale} />
-        <LinkPreviewStyleSetting />
-        <ThreadLayoutSetting />
-      </SettingsOptionGroup>
-    </SettingsOptionGroupList>
-  </section>;
+  return <AppearanceSettings name={name} appearance={appearance} glass={appearance}
+    hideGlass={isLinuxPlatform()} performDefaultHaptic={performDefaultHaptic} />;
 }
 
 export function renderSettingsSection(

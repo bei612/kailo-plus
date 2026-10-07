@@ -1,0 +1,149 @@
+import { ApiHistoryRepository } from '../repositories/apiHistoryRepository';
+import { NativeQueryService } from './nativeQueryService';
+import {
+  bindingServiceCall,
+  canonical,
+  digest,
+  NativeQueryDelivery,
+  NativeQueryRefusal,
+} from './nativeQueryAdmission';
+
+export function nativePreviewScope(
+  config: NativeQueryDelivery,
+  identityScope: string | undefined,
+): string {
+  if (!identityScope || !/^[a-f0-9]{64}$/.test(identityScope)) {
+    throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+  }
+  // Stable across credential rotation: do not abandon this person's UNKNOWN.
+  // This is not authorization; the original Core admission still runs per call.
+  return digest([
+    identityScope,
+    config.bindingId,
+    config.nativeInstanceRef,
+    config.nativeScopeRef,
+  ]);
+}
+
+// Request-scoped consumer: the token is neither cached nor written to native history.
+export class NativeHumanQuery {
+  constructor(
+    private readonly config: NativeQueryDelivery,
+    private readonly queries: NativeQueryService,
+    private readonly history: ApiHistoryRepository,
+  ) {}
+
+  async preview(
+    token: string | undefined,
+    viewId: number,
+    limit: number,
+    key: string,
+  ) {
+    const selection = this.config.humanAction;
+    if (!token || !selection)
+      throw new NativeQueryRefusal(503, 'NATIVE_HUMAN_ADMISSION_UNAVAILABLE');
+    if (
+      !Number.isSafeInteger(viewId) ||
+      viewId <= 0 ||
+      !Number.isSafeInteger(limit) ||
+      limit <= 0 ||
+      typeof key !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        key,
+      )
+    ) {
+      throw new NativeQueryRefusal(400, 'INVALID_QUERY_PARAMETERS');
+    }
+    const observe = () =>
+      bindingServiceCall(
+        this.config,
+        'human-action',
+        {
+          bindingId: this.config.bindingId,
+          idempotencyKey: key,
+        },
+        token,
+      );
+    // A retry first reads the original AE. It never freezes a changed view over
+    // an existing key, or repeats the native SQL in this request handler.
+    let receipt = await observe();
+    if (!receipt) {
+      const reference = await this.queries.reference(
+        selection.resourceId,
+        viewId,
+        limit,
+      );
+      receipt = await bindingServiceCall(
+        this.config,
+        'human-action',
+        {
+          bindingId: this.config.bindingId,
+          command: {
+            actionKey: 'data_query.query@v1',
+            idempotencyKey: key,
+            workspaceId: this.config.workspaceId,
+            resourceId: selection.resourceId,
+            resourceVersion: selection.resourceVersion,
+            componentAction: {
+              actionVersion: 1,
+              inputReference: reference,
+              resultExposurePolicyId: selection.resultExposurePolicyId,
+              resultExposurePolicyVersion:
+                selection.resultExposurePolicyVersion,
+            },
+          },
+        },
+        token,
+      );
+    }
+    const check = (value: any) => {
+      if (
+        !value ||
+        value.submission?.actionKey !== 'data_query.query@v1' ||
+        typeof value.submission.actionExecutionId !== 'string' ||
+        typeof value.submission.operationId !== 'string' ||
+        value.inputReference?.resourceId !== selection.resourceId
+      ) {
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      }
+      let frozen: any;
+      try {
+        frozen = JSON.parse(value.inputReference.nativeObjectRef);
+      } catch {
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      }
+      if (frozen.viewId !== viewId || frozen.limit !== limit)
+        throw new NativeQueryRefusal(409, 'QUERY_INTENT_CONFLICT');
+    };
+    check(receipt);
+    if (receipt.terminalStatus !== 'COMPLETED') return receipt;
+    if (
+      receipt.nativeType !== 'wren.api_history' ||
+      typeof receipt.nativeId !== 'string'
+    ) {
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    }
+    const record = await this.history.findOneBy({
+      id: receipt.nativeId,
+      projectId: this.config.projectId,
+      governanceBindingId: this.config.bindingId,
+      governanceActionExecutionId: receipt.submission.actionExecutionId,
+      governanceOperationId: receipt.submission.operationId,
+      governanceState: 'SUCCEEDED',
+    });
+    if (
+      !record?.responsePayload ||
+      !Array.isArray(record.responsePayload.columns) ||
+      !Array.isArray(record.responsePayload.data)
+    ) {
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    }
+    // Reading native rows does not confer permission. Re-admit immediately
+    // before disclosure, including revocation/config generation changes.
+    const after = await observe();
+    check(after);
+    if (canonical(after) !== canonical(receipt))
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    return { ...receipt, data: record.responsePayload };
+  }
+}

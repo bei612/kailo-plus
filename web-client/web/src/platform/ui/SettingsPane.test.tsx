@@ -93,6 +93,8 @@ describe("Web settings existing user-state CAS consumer", () => {
       expect(markup).toContain('data-testid="font-size-larger"');
       expect(markup).toContain('data-testid="conversation-density-spacious"');
       expect(markup).toContain('data-testid="thread-layout-control"');
+      expect(host.querySelector<HTMLButtonElement>('[data-testid="glass-background-toggle"]')!.disabled).toBe(true);
+      expect(host.querySelector('[data-testid="glass-background-row"]')?.textContent).toContain("Available in the macOS desktop app.");
       expect(markup).not.toMatch(/private.key|provider.credential|pairing/i);
       expect(host.querySelector('[data-sidebar="group"]')).not.toBeNull();
       expect(host.querySelector('[data-testid="settings-content-surface"]')).not.toBeNull();

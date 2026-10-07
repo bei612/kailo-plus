@@ -1,16 +1,12 @@
-import { ThemeSettingsControls } from "@client-kit/platform/react/theme-settings-controls";
-import { isBuzzTheme } from "@client-kit/platform/theme/use-appearance";
+import { AppearanceSettings } from "@client-kit/platform/react/appearance-settings";
 import { isMacPlatform } from "@client-kit/platform/keyboard-platform";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { translate } from "@client-kit/platform/i18n";
-import { ConversationDisplaySettings } from "@client-kit/platform/react/conversation-display-settings";
-import { ProminentActiveTabSetting } from "@client-kit/platform/react/prominent-active-tab-setting";
 import {
   SettingsPage,
   ShortcutSettings,
   SettingsSectionHeader,
-  LanguageSettings,
   shortcutText,
   type SettingsShortcut,
   type SettingsSection,
@@ -30,9 +26,7 @@ import { TransportError } from "@client-kit/platform/transport";
 import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from "@client-kit/platform/react/settings-option-group";
 import { Switch } from "@client-kit/platform/react/switch";
 import { useUiLocale } from "@client-kit/platform/react/context";
-import { LinkPreviewStyleSetting } from "@client-kit/platform/react/link-preview";
 import { BrowserNotificationSettings } from "./BrowserNotifications";
-import { ThreadLayoutSetting } from "@client-kit/platform/react/thread-layout-settings";
 
 function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] {
   const mod = isMacPlatform() ? "⌘" : "Ctrl+";
@@ -61,20 +55,7 @@ export function SettingsPane({ active = true, onClose }: { active?: boolean; onC
     <SettingsPage active={active} locale={locale} section={section} onSelect={setSection} onClose={onClose} invitationAccess={invitations.access} onRetryInvitations={invitations.reload}>
       <CommunityInvitationSettings active={section==="community-members"} onAccessChange={invitations.onAccessChange}/>
       {section === "profile" ? <WebProfileSettings /> : section === "appearance" ? (
-        <section className="flex min-h-0 flex-1 flex-col" data-testid="settings-theme">
-          <SettingsSectionHeader title={translate(locale, "platform.settings.appearance")} description={translate(locale, "platform.theme.appearanceDescription", { name: translate(locale, "platform.title") })} />
-          <SettingsOptionGroupList>
-          <LanguageSettings />
-          <ThemeSettingsControls locale={locale} name={translate(locale, "platform.title")} appearance={appearance}>
-            {isBuzzTheme(appearance.themeName) ? <ProminentActiveTabSetting locale={locale} prominentActiveTab={appearance.prominentActiveTab} setProminentActiveTab={appearance.setProminentActiveTab} /> : null}
-          </ThemeSettingsControls>
-          <SettingsOptionGroup data-testid="appearance-preferences-card" title={translate(locale, "platform.settings.preferences")}>
-            <ConversationDisplaySettings locale={locale} />
-            <LinkPreviewStyleSetting isDark={appearance.isDark} />
-            <ThreadLayoutSetting isDark={appearance.isDark} />
-          </SettingsOptionGroup>
-          </SettingsOptionGroupList>
-        </section>
+        <AppearanceSettings name={translate(locale, "platform.title")} appearance={appearance} />
       ) : section === "notifications" ? (
         <><BrowserNotificationSettings /><WorkspaceNotifications /></>
       ) : section==="shortcuts" ? (

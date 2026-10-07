@@ -18,6 +18,10 @@ export enum DeployStatusEnum {
 }
 
 export interface IDeployLogRepository extends IBasicRepository<Deploy> {
+  beginDeployment(
+    data: Partial<Deploy>,
+    force: boolean,
+  ): Promise<{ deploy: Deploy; created: boolean }>;
   findLastProjectDeployLog(projectId: number): Promise<Deploy | null>;
   findInProgressProjectDeployLog(projectId: number): Promise<Deploy | null>;
 }
@@ -28,6 +32,42 @@ export class DeployLogRepository
 {
   constructor(knexPg: Knex) {
     super({ knexPg, tableName: 'deploy_log' });
+  }
+
+  public async beginDeployment(data: Partial<Deploy>, force: boolean) {
+    // Lock the existing project, not a process-local flag. Commit the original
+    // deploy_log before HTTP; a concurrent/force request must observe its intent.
+    // SQLite's write serialization rejects an overlapping snapshot upgrade.
+    return this.knex.transaction(async (tx) => {
+      const project = await tx('project')
+        .where({ id: data.projectId })
+        .first()
+        .forUpdate();
+      if (!project) throw new Error('Project not found');
+      const pending = await tx(this.tableName)
+        .where({
+          project_id: data.projectId,
+          status: DeployStatusEnum.IN_PROGRESS,
+        })
+        .orderBy('id', 'desc')
+        .first();
+      if (pending)
+        return { deploy: this.transformFromDBData(pending), created: false };
+      if (!force) {
+        const last = await tx(this.tableName)
+          .where({
+            project_id: data.projectId,
+            status: DeployStatusEnum.SUCCESS,
+          })
+          .orderBy('id', 'desc')
+          .first();
+        if (last?.hash === data.hash) {
+          return { deploy: this.transformFromDBData(last), created: false };
+        }
+      }
+      const deploy = await this.createOne(data, { tx });
+      return { deploy, created: true };
+    });
   }
 
   public async findLastProjectDeployLog(projectId: number) {

@@ -12,6 +12,7 @@
     "assetVersion": {"type": "integer"},
     "ownerPrincipalId": {"type": "string", "format": "uuid"},
     "content": {"$ref": "../domain/agent_version_content.schema.json"},
+    "avatarMediaPaths": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Exact avatar URLs belonging to this authorized Version's current Tenant Community mapped to the existing same-origin profile media reader. Read projection only; not content, a credential, or an arbitrary remote proxy."},
     "configHash": {"type": "string"},
     "state": {"$ref": "../enums/agent_version_state.schema.json"},
     "canUpdate": {"type": "boolean", "description": "当前 HUMAN 对此 exact DRAFT 的已登记 update 动作及 fresh Asset update 资格；缺字段不允许编辑，提交时仍重验。"},

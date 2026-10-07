@@ -1,5 +1,48 @@
 import { ProjectLanguage } from '@/apollo/client/graphql/__types__';
 
+// Native UI locale is separate from ProjectLanguage (the AI's answer language).
+// Only the existing governed preview controls consume these messages.
+export const getQueryPreviewText = (locale?: string) =>
+  locale === 'en'
+    ? {
+        preview: 'Preview data',
+        check: 'Check query',
+        storageError:
+          'Cannot retain the query identifier; nothing was submitted.',
+        scopeError:
+          'The current query identity could not be verified. Nothing was submitted.',
+        pending:
+          'The original query is pending; check again without running it twice.',
+        ended: 'The original query ended without a successful result.',
+        denied: 'Query execution was not authorized.',
+        referenceTitle: 'Kailo governed query reference',
+        referenceDescription:
+          'Select this existing view and a row limit. Export only a frozen native reference; submit it from Kailo under your own platform session and approvals. No query runs here.',
+        resourceId: 'Kailo resource ID',
+        rowLimit: 'Query row limit',
+        exportReference: 'Export reference',
+        frozenReference: 'Frozen query reference',
+        referenceError:
+          'The native reference could not be verified. Nothing was executed.',
+      }
+    : {
+        preview: '预览数据',
+        check: '检查原查询',
+        storageError: '无法保存查询标识，未发起查询。',
+        scopeError: '无法核验当前查询身份，未发起查询。',
+        pending: '原查询尚未完成；再次检查不会重复执行。',
+        ended: '原查询已结束，未返回成功结果。',
+        denied: '查询未获准执行。',
+        referenceTitle: 'Kailo 受治理查询引用',
+        referenceDescription:
+          '选择现有视图及行数上限，仅导出固定的原生引用；随后在 Kailo 中以自己的身份提交并完成所需审批。此处不执行查询。',
+        resourceId: 'Kailo 资源 ID',
+        rowLimit: '查询行数上限',
+        exportReference: '导出引用',
+        frozenReference: '固定的查询引用',
+        referenceError: '无法核验原生引用，未执行任何查询。',
+      };
+
 export const getLanguageText = (language: ProjectLanguage) =>
   ({
     [ProjectLanguage.EN]: 'English',

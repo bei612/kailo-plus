@@ -1,6 +1,8 @@
+// Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/profile/ui/AnimatedAvatarControls.tsx::AvatarFramingSlider.
+// Same original slider; only native haptics and translation are host seams.
 import * as React from "react";
-
-import { performDefaultHaptic } from "@/shared/lib/haptics";
+import { cn } from "./profile/buzz/shared/lib/cn";
+import { useUiT } from "./context";
 
 const SLIDER_TICK_STEP = 10;
 
@@ -56,25 +58,38 @@ function findCrossedSliderTick(
   );
 }
 
-type SettingsSliderProps = {
+export type SettingsSliderProps = {
+  performDefaultHaptic?: () => void;
   ariaDescribedBy?: string;
-  ariaLabel: string;
-  ariaValueText: string;
+  ariaLabel?: string;
+  ariaValueText?: string;
+  compact?: boolean;
+  disabled?: boolean;
+  handleAlwaysVisible?: boolean;
+  helpText?: string | null;
+  helpTestId?: string;
   max: number;
   min: number;
   onChange: (value: number) => void;
   onReset: () => void;
   resetValue: number;
-  resetLabel: string;
+  resetLabel?: string;
   resetTestId: string;
   testId: string;
+  tipText?: string | null;
   value: number;
 };
 
 export function SettingsSlider({
+  performDefaultHaptic,
   ariaDescribedBy,
   ariaLabel,
   ariaValueText,
+  compact = false,
+  disabled = false,
+  handleAlwaysVisible = false,
+  helpText = null,
+  helpTestId,
   max,
   min,
   onChange,
@@ -83,8 +98,11 @@ export function SettingsSlider({
   resetLabel,
   resetTestId,
   testId,
+  tipText = null,
   value,
 }: SettingsSliderProps) {
+  const t = useUiT();
+  const effectiveResetLabel = resetLabel ?? t("platform.profile.avatar.resetSize");
   const sliderRef = React.useRef<HTMLDivElement | null>(null);
   const activePointerRef = React.useRef<number | null>(null);
   const valueRef = React.useRef(value);
@@ -94,6 +112,7 @@ export function SettingsSlider({
   const [isInteracting, setIsInteracting] = React.useState(false);
   const fill = percentFromSliderValue(value, min, max);
   const isActive = isHovered || isFocused || isInteracting;
+  const tipId = React.useId();
   const ticks = React.useMemo(
     () => buildAnchoredSliderTicks(min, max, resetValue),
     [max, min, resetValue],
@@ -115,12 +134,12 @@ export function SettingsSlider({
       onChange(clampedValue);
       if (crossedTick !== null && crossedTick !== lastHapticTickRef.current) {
         lastHapticTickRef.current = crossedTick;
-        performDefaultHaptic();
+        performDefaultHaptic?.();
       } else if (crossedTick === null) {
         lastHapticTickRef.current = null;
       }
     },
-    [max, min, onChange, ticks],
+    [max, min, onChange, performDefaultHaptic, ticks],
   );
 
   const commitPointerValue = React.useCallback(
@@ -149,20 +168,26 @@ export function SettingsSlider({
   const resetTickStyle = {
     left: `${percentFromSliderValue(resetValue, min, max)}%`,
   };
-  return (
+  const sliderControl = (
     <div className="buzz-avatar-framing-slider-wrapper">
       <div
-        aria-label={ariaLabel}
-        aria-describedby={ariaDescribedBy}
+        aria-label={ariaLabel ?? t("platform.profile.avatar.size")}
+        aria-describedby={tipText ? tipId : ariaDescribedBy}
         aria-valuemax={max}
         aria-valuemin={min}
         aria-valuenow={value}
         aria-valuetext={ariaValueText}
-        className="buzz-avatar-framing-slider buzz-avatar-framing-slider--compact"
+        className={cn(
+          "buzz-avatar-framing-slider",
+          compact && "buzz-avatar-framing-slider--compact",
+        )}
         data-active={isActive ? "true" : undefined}
-        data-handle-visible="true"
+        data-handle-visible={handleAlwaysVisible ? "true" : undefined}
         data-testid={testId}
         onKeyDown={(event) => {
+          if (disabled) {
+            return;
+          }
           const step = event.shiftKey ? 10 : 1;
           if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
             event.preventDefault();
@@ -189,6 +214,9 @@ export function SettingsSlider({
           }
         }}
         onPointerDown={(event) => {
+          if (disabled) {
+            return;
+          }
           event.preventDefault();
           event.currentTarget.setPointerCapture(event.pointerId);
           activePointerRef.current = event.pointerId;
@@ -214,7 +242,7 @@ export function SettingsSlider({
             "--buzz-avatar-framing-slider-fill": `${fill}%`,
           } as React.CSSProperties
         }
-        tabIndex={0}
+        tabIndex={disabled ? -1 : 0}
       >
         <div className="buzz-avatar-framing-slider-hashmarks">
           {ticks.map((tick) => (
@@ -232,21 +260,45 @@ export function SettingsSlider({
         <div aria-hidden="true" className="buzz-avatar-framing-slider-handle" />
       </div>
       <button
-        aria-label={resetLabel}
+        aria-label={effectiveResetLabel}
         className="buzz-avatar-framing-slider-hashmark"
         data-reset="true"
         data-testid={resetTestId}
+        disabled={disabled}
         onClick={(event) => {
           event.preventDefault();
           valueRef.current = resetValue;
           lastHapticTickRef.current = resetValue;
-          performDefaultHaptic();
+          performDefaultHaptic?.();
           onReset();
         }}
         style={resetTickStyle}
-        title={resetLabel}
+        title={effectiveResetLabel}
         type="button"
       />
+      {tipText ? (
+        <p
+          className="buzz-avatar-framing-slider-tip"
+          data-visible={isActive ? "true" : undefined}
+          id={tipId}
+        >
+          {tipText}
+        </p>
+      ) : null}
     </div>
+  );
+
+  return helpText ? (
+    <div className="grid gap-2">
+      {sliderControl}
+      <p
+        className="px-1 text-center text-sm text-muted-foreground"
+        data-testid={helpTestId}
+      >
+        {helpText}
+      </p>
+    </div>
+  ) : (
+    sliderControl
   );
 }

@@ -133,6 +133,7 @@ export async function middleware(request: NextRequest) {
   const token = authorization?.match(/^Bearer ([^\s,]+)$/i)?.[1];
   if (!token) return denied(401, 'NATIVE_AUTHENTICATION_REQUIRED');
 
+  let identityScope: string;
   try {
     const { payload } = await jwtVerify(token, configured.keys, {
       issuer: configured.issuer,
@@ -149,6 +150,25 @@ export async function middleware(request: NextRequest) {
         access.every((entry) => typeof entry === 'string') &&
         access.includes(configured.accessValue));
     if (!permitted) return denied(403, 'NATIVE_INSTANCE_ACCESS_DENIED');
+    // A non-authorizing browser storage partition, derived only after signature
+    // and native-instance verification. Never expose the token or raw subject.
+    identityScope = Array.from(
+      new Uint8Array(
+        await crypto.subtle.digest(
+          'SHA-256',
+          new TextEncoder().encode(
+            JSON.stringify([
+              configured.issuer,
+              payload.sub,
+              configured.audience,
+              configured.accessValue,
+            ]),
+          ),
+        ),
+      ),
+    )
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('');
   } catch (error) {
     if (
       error instanceof errors.JWTExpired ||
@@ -175,6 +195,15 @@ export async function middleware(request: NextRequest) {
   const headers = new Headers(request.headers);
   headers.delete('authorization');
   headers.delete('cookie');
+  headers.delete('x-kailo-native-human-token');
+  headers.delete('x-kailo-native-identity-scope');
+  if (['/api/graphql', '/api/config'].includes(request.nextUrl.pathname)) {
+    headers.set('x-kailo-native-identity-scope', identityScope);
+  }
+  // Private Next hop only; Core independently verifies this original signed
+  // token. Never synthesize a trusted subject/issuer from browser headers.
+  if (request.nextUrl.pathname === '/api/graphql')
+    headers.set('x-kailo-native-human-token', token);
   const response = NextResponse.next({ request: { headers } });
   response.headers.set('Cache-Control', 'private, no-store');
   response.headers.set('Content-Security-Policy', ancestors);

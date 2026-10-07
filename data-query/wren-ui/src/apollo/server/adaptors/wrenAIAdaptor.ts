@@ -51,6 +51,10 @@ const getAIServiceError = (error: any) => {
 
 export interface IWrenAIAdaptor {
   deploy(deployData: DeployData): Promise<WrenAIDeployResponse>;
+  observeDeploy(
+    hash: string,
+    executionId: string,
+  ): Promise<WrenAIDeployResponse>;
   delete(projectId: number): Promise<void>;
 
   /**
@@ -333,36 +337,30 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
   }
 
   public async deploy(deployData: DeployData): Promise<WrenAIDeployResponse> {
-    const { manifest, hash } = deployData;
+    const { manifest, hash, executionId } = deployData;
     try {
       const res = await axios.post(
         `${this.wrenAIBaseEndpoint}/v1/semantics-preparations`,
         {
           mdl: JSON.stringify(manifest),
           id: hash,
+          execution_id: executionId,
         },
       );
       const deployId = res.data.id;
+      if (deployId !== hash || res.data.execution_id !== executionId) {
+        return { status: WrenAIDeployStatusEnum.IN_PROGRESS };
+      }
       logger.debug(
         `Wren AI: Deploying wren AI, hash: ${hash}, deployId: ${deployId}`,
       );
-      const deploySuccess = await this.waitDeployFinished(deployId);
-      if (deploySuccess) {
-        logger.debug(`Wren AI: Deploy wren AI success, hash: ${hash}`);
-        return { status: WrenAIDeployStatusEnum.SUCCESS };
-      } else {
-        return {
-          status: WrenAIDeployStatusEnum.FAILED,
-          error: `Wren AI: Deploy wren AI failed or timeout, hash: ${hash}`,
-        };
-      }
+      return await this.waitDeployFinished(deployId, executionId);
     } catch (err: any) {
       logger.debug(
         `Got error when deploying to wren AI, hash: ${hash}. Error: ${err.message}`,
       );
       return {
-        status: WrenAIDeployStatusEnum.FAILED,
-        error: `Wren AI Error: deployment hash:${hash}, ${err.message}`,
+        status: WrenAIDeployStatusEnum.IN_PROGRESS,
       };
     }
   }
@@ -769,47 +767,54 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
     };
   }
 
-  private async waitDeployFinished(deployId: string): Promise<boolean> {
-    let deploySuccess = false;
+  private async waitDeployFinished(
+    deployId: string,
+    executionId: string,
+  ): Promise<WrenAIDeployResponse> {
     // timeout after 30 seconds
     for (let waitTime = 1; waitTime <= 7; waitTime++) {
-      try {
-        const status = await this.getDeployStatus(deployId);
-        logger.debug(`Wren AI: Deploy status: ${status}`);
-        if (status === WrenAISystemStatus.FINISHED) {
-          deploySuccess = true;
-          break;
-        } else if (status === WrenAISystemStatus.FAILED) {
-          break;
-        } else if (status === WrenAISystemStatus.INDEXING) {
-          // do nothing
-        } else {
-          logger.debug(`Wren AI: Unknown Wren AI deploy status: ${status}`);
-          return;
-        }
-      } catch (err: any) {
-        throw err;
-      }
+      const result = await this.observeDeploy(deployId, executionId);
+      if (result.status !== WrenAIDeployStatusEnum.IN_PROGRESS) return result;
       await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
     }
-    return deploySuccess;
+    return { status: WrenAIDeployStatusEnum.IN_PROGRESS };
   }
 
-  private async getDeployStatus(deployId: string): Promise<WrenAISystemStatus> {
+  public async observeDeploy(
+    deployId: string,
+    executionId: string,
+  ): Promise<WrenAIDeployResponse> {
     try {
       const res = await axios.get(
         `${this.wrenAIBaseEndpoint}/v1/semantics-preparations/${deployId}/status`,
       );
-      if (res.data.error) {
-        // passing AI response error string to catch block
-        throw new Error(res.data.error);
+      // A previous attempt with the same manifest hash is not this execution.
+      // Old peers lacking this reference cannot supply terminal evidence.
+      if (res.data?.execution_id !== executionId) {
+        return { status: WrenAIDeployStatusEnum.IN_PROGRESS };
       }
-      return res.data?.status.toUpperCase() as WrenAISystemStatus;
+      switch (res.data?.status?.toUpperCase()) {
+        case WrenAISystemStatus.FINISHED:
+          return res.data.error
+            ? { status: WrenAIDeployStatusEnum.IN_PROGRESS }
+            : { status: WrenAIDeployStatusEnum.SUCCESS };
+        case WrenAISystemStatus.FAILED:
+          return {
+            status: WrenAIDeployStatusEnum.FAILED,
+            error:
+              typeof res.data.error?.message === 'string'
+                ? res.data.error.message
+                : undefined,
+          };
+        default:
+          return { status: WrenAIDeployStatusEnum.IN_PROGRESS };
+      }
     } catch (err: any) {
       logger.debug(
         `Got error in API /v1/semantics-preparations/${deployId}/status: ${err.message}`,
       );
-      throw err;
+      // Missing/expired native status and transport failures prove no outcome.
+      return { status: WrenAIDeployStatusEnum.IN_PROGRESS };
     }
   }
 

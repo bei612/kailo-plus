@@ -60,6 +60,26 @@ pub(crate) struct Adapter {
 }
 
 impl Adapter {
+    pub(crate) fn native_human_identity(
+        &self,
+        binding: Uuid,
+        generation: i64,
+        config_digest: &str,
+    ) -> Result<Value, Refusal> {
+        let rows: Vec<_> = self.value["nativeHumanIdentities"]
+            .as_array()
+            .ok_or_else(blocked)?
+            .iter()
+            .filter(|row| row["bindingId"] == json!(binding))
+            .collect();
+        let [row] = rows.as_slice() else {
+            return Err(blocked());
+        };
+        if row["generation"] != generation || row["configDigest"] != config_digest {
+            return Err(blocked());
+        }
+        Ok((*row).clone())
+    }
     /// Same controlled reader registration as binding secrets. These are only
     /// delivery facts: the model lifecycle still verifies the native proof and
     /// the original OpenBao request/response audit pair before activation.

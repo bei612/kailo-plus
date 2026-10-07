@@ -1,0 +1,14 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"api/native_human_action_request.schema.json",
+  "title":"NativeHumanActionRequest",
+  "description":"Binding SERVICE plus independently verified native HUMAN token. Submit an existing ActionCommand or observe the same user's idempotency key. Tokens stay in transport, not this document.",
+  "type":"object", "additionalProperties":false,
+  "required":["bindingId"],
+  "properties":{
+    "bindingId":{"type":"string","format":"uuid"},
+    "command":{"$ref":"action_command.schema.json"},
+    "idempotencyKey":{"type":"string","format":"uuid"}
+  },
+  "oneOf":[{"required":["command"],"not":{"required":["idempotencyKey"]}},{"required":["idempotencyKey"],"not":{"required":["command"]}}]
+}

@@ -6,6 +6,41 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn agent_version_avatar_projection_preserves_exact_map_and_legacy_absence() {
+    let mut sample: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("agent-version-view.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    for include in [true, false] {
+        if !include {
+            sample.as_object_mut().unwrap().remove("avatarMediaPaths");
+        }
+        let typed: contracts::AgentVersionView = serde_json::from_value(sample.clone()).unwrap();
+        assert_eq!(typed.avatar_media_paths.is_some(), include);
+        assert_eq!(serde_json::to_value(typed).unwrap(), sample);
+    }
+}
+
+#[test]
+fn native_human_action_preserves_trust_and_nonterminal_reference_only_receipt() {
+    let sample: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("native-human-action.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let trust: contracts::ApplicationNativeHumanIdentity =
+        serde_json::from_value(sample["trust"].clone()).unwrap();
+    let request: contracts::NativeHumanActionRequest =
+        serde_json::from_value(sample["request"].clone()).unwrap();
+    let result: contracts::NativeHumanActionResult =
+        serde_json::from_value(sample["result"].clone()).unwrap();
+    assert_eq!(serde_json::to_value(trust).unwrap(), sample["trust"]);
+    assert_eq!(serde_json::to_value(request).unwrap(), sample["request"]);
+    assert_eq!(serde_json::to_value(result).unwrap(), sample["result"]);
+}
+
+#[test]
 fn native_sync_grant_preserves_own_admission_and_read_only_terminal_outcomes() {
     let raw = fs::read_to_string(
         sample_path().with_file_name("adapter-native-read-grant-request.sample.json"),

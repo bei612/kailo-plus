@@ -125,7 +125,15 @@ const bootstrapServer = async () => {
       return defaultApolloErrorHandler(error);
     },
     introspection: process.env.NODE_ENV !== 'production',
-    context: (): IContext => ({
+    context: ({ req }): IContext => ({
+      nativeIdentityScope:
+        typeof req.headers['x-kailo-native-identity-scope'] === 'string'
+          ? req.headers['x-kailo-native-identity-scope']
+          : undefined,
+      nativeHumanToken:
+        typeof req.headers['x-kailo-native-human-token'] === 'string'
+          ? req.headers['x-kailo-native-human-token']
+          : undefined,
       config: serverConfig,
       telemetry,
       // adaptor

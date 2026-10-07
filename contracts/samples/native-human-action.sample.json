@@ -1,0 +1,32 @@
+{
+  "trust": {
+    "bindingId": "3c0c015a-373a-4af1-8cbe-4a7e437bdbe1",
+    "configDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "generation": 2,
+    "identityProviderId": "c75ca942-217b-4a96-a487-416e893630ab",
+    "audience": "fixture-native-browser",
+    "jwksFile": "/fixture/public-keys.json",
+    "accessClaim": "native_instances",
+    "accessValue": "fixture-dedicated-instance"
+  },
+  "request": {
+    "bindingId": "3c0c015a-373a-4af1-8cbe-4a7e437bdbe1",
+    "idempotencyKey": "49279014-2fbe-4893-b020-fa3b3920f1c9"
+  },
+  "result": {
+    "submission": {
+      "operationId": "e75c0307-2614-4786-ac31-14e719f728a9",
+      "actionExecutionId": "736d7562-5678-4d27-9c82-4e6ea165837f",
+      "actionKey": "data_query.query@v1",
+      "gateState": "ALLOWED",
+      "dispatchState": "DISPATCHED"
+    },
+    "inputReference": {
+      "resourceId": "09c6b43b-1edf-467d-8e81-e47a3f506c4f",
+      "nativeObjectRef": "{\"viewId\":1,\"limit\":10}",
+      "nativeRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "displayName": "Saved view fixture",
+      "mediaType": "application/json"
+    }
+  }
+}

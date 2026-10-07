@@ -85,6 +85,21 @@ def _optional_fields(block):
     # 可空 List 的缺省不是空集合。quicktype 在两侧写 ? []，会给旧输入
     # 伪造字段；按同一类的 nullable 声明改为 null，再由 _stripNulls 省略。
     lists = set(re.findall(r"^\s*final List<[^;]+>\? (\w+);", block, flags=re.M))
+    # 可选 Map 同样必须保留缺省。quicktype 在两侧强制解引用 Map，
+    # 导致旧响应省略可选映射时崩溃；只处理本类明确声明 nullable 的字段。
+    maps = set(re.findall(r"^\s*final Map<[^;]+>\? (\w+);", block, flags=re.M))
+    block = re.sub(
+        r'(\w+): (Map.from\(json\["([^"]+)"\]!\))',
+        lambda m: '%s: json["%s"] == null ? null : %s' % (m.group(1), m.group(3), m.group(2))
+        if m.group(1) in maps else m.group(0),
+        block,
+    )
+    block = re.sub(
+        r'("[^"]+": )(Map.from\((\w+)!\))',
+        lambda m: m.group(1) + m.group(3) + ' == null ? null : ' + m.group(2)
+        if m.group(3) in maps else m.group(0),
+        block,
+    )
     block = re.sub(
         r'(\w+): (json\["[^"]+"\] == null \? )\[\]( : List<)',
         lambda m: m.group(1) + ": " + m.group(2) + "null" + m.group(3)

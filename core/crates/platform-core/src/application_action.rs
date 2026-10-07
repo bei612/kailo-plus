@@ -12,6 +12,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 pub(crate) const KIND: &str = "COMPONENT_ACTION";
+#[path = "application_native_human.rs"]
+pub(crate) mod native_human;
 fn invalid() -> Refusal {
     Refusal::Precondition(ReasonCode::InvalidParameters)
 }
@@ -337,7 +339,18 @@ pub(crate) async fn submit(
     if ctx.access_mode != contracts::PlatformSessionAccessMode::Full {
         return Err((denied(), None));
     }
-    match submit_inner(state, ctx, cmd).await {
+    match submit_inner(
+        &state.governance,
+        Actor {
+            tenant_id: ctx.tenant_id,
+            principal_id: ctx.tenant_principal_id,
+            human_identity_id: Some(ctx.human_identity_id),
+        },
+        cmd,
+        None,
+    )
+    .await
+    {
         Ok(result) => Ok(result),
         Err(error) => {
             let operation = sqlx::query_scalar(
@@ -357,7 +370,7 @@ pub(crate) async fn submit(
 }
 
 async fn replay(
-    state: &BffState,
+    state: &Governance,
     action: Uuid,
     key: &str,
     digest: &str,
@@ -375,21 +388,19 @@ async fn replay(
         return Err(Refusal::Conflict(ReasonCode::IdempotencyKeyReused));
     }
     if ae.gate_state == "ALLOWED" {
-        start(&state.governance, &ae).await?;
+        start(state, &ae).await?;
     } else if ae.gate_state == "WAITING" {
-        state.governance.ensure_approval_started(ae.id).await;
+        state.ensure_approval_started(ae.id).await;
     } else if ae.gate_state == "EVALUATING" {
         let def = crate::governance::exact_definition_for_execution(&state.pool, &ae).await?;
         if def.confirmation_mode != "APPROVAL" {
             return Err(unavailable());
         }
-        let mut evaluation = fresh_execution(&state.governance, &ae).await?;
+        let mut evaluation = fresh_execution(state, &ae).await?;
         state
-            .governance
             .check_quota(ae.tenant_id, &def, &mut evaluation)
             .await?;
         return state
-            .governance
             .request_approval(
                 Actor {
                     tenant_id: ae.tenant_id,
@@ -409,10 +420,11 @@ async fn replay(
     Ok((StatusCode::ACCEPTED, ae.submission()))
 }
 
-async fn submit_inner(
-    state: &BffState,
-    ctx: &ExecutionContext,
+pub(super) async fn submit_inner(
+    state: &Governance,
+    actor: Actor,
     cmd: &ActionCommand,
+    required_binding: Option<(Uuid, i64)>,
 ) -> Result<(StatusCode, ActionSubmission), Refusal> {
     let FrozenCommand {
         raw,
@@ -426,23 +438,32 @@ async fn submit_inner(
     } = normalized(cmd)?;
     let request_digest = collab_bridge::limits::canonical_digest(&raw);
     let existing:Option<Uuid>=sqlx::query_scalar("select id from admission.action_execution where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3")
-        .bind(ctx.tenant_id).bind(ctx.tenant_principal_id).bind(key).fetch_optional(&state.pool).await?;
+        .bind(actor.tenant_id).bind(actor.principal_id).bind(key).fetch_optional(&state.pool).await?;
     if let Some(id) = existing {
         return replay(state, id, &cmd.action_key, &request_digest).await;
     }
     let mut tx = state.pool.begin().await?;
-    if !crate::roles::lock_tenant(&mut tx, ctx.tenant_id).await? {
+    if !crate::roles::lock_tenant(&mut tx, actor.tenant_id).await? {
         return Err(denied());
     }
+    if let Some((binding, _)) = required_binding {
+        // Native browser retries can survive a login change. Serialize this check
+        // with the original tenant admission transaction, before creating an AE.
+        let foreign: bool = sqlx::query_scalar("select exists(select 1 from admission.action_execution where component_binding_id=$1 and idempotency_key=$2 and initiator_principal_id<>$3)")
+            .bind(binding).bind(key).bind(actor.principal_id).fetch_one(&mut *tx).await?;
+        if foreign {
+            return Err(denied());
+        }
+    }
     let existing:Option<Uuid>=sqlx::query_scalar("select id from admission.action_execution where tenant_id=$1 and initiator_principal_id=$2 and idempotency_key=$3")
-        .bind(ctx.tenant_id).bind(ctx.tenant_principal_id).bind(key).fetch_optional(&mut *tx).await?;
+        .bind(actor.tenant_id).bind(actor.principal_id).bind(key).fetch_optional(&mut *tx).await?;
     if let Some(existing) = existing {
         tx.rollback().await?;
         return replay(state, existing, &cmd.action_key, &request_digest).await;
     }
     let f = facts(
         &mut tx,
-        ctx.tenant_id,
+        actor.tenant_id,
         &Target {
             id: target,
             version,
@@ -453,6 +474,9 @@ async fn submit_inner(
         kind,
     )
     .await?;
+    if required_binding.is_some_and(|expected| expected != (f.binding, f.generation)) {
+        return Err(denied());
+    }
     let def = &f.application.definition;
     let documents = crate::application_tool::schemas(&mut tx, f.binding, &cmd.action_key).await?;
     let digest = f.application.declaration["inputSchemaDigest"]
@@ -473,26 +497,20 @@ async fn submit_inner(
         .ok_or_else(invalid)?;
     validate_reference_and_policy(
         &mut tx,
-        ctx.tenant_id,
+        actor.tenant_id,
         &f,
         &arguments["input"],
         policy,
         policy_version,
     )
     .await?;
-    let actor = Actor {
-        tenant_id: ctx.tenant_id,
-        principal_id: ctx.tenant_principal_id,
-        human_identity_id: Some(ctx.human_identity_id),
-    };
-    let mut evaluation = state.governance.evaluate(actor, def, &f.target).await?;
+    let mut evaluation = state.evaluate(actor, def, &f.target).await?;
     state
-        .governance
-        .check_quota(ctx.tenant_id, def, &mut evaluation)
+        .check_quota(actor.tenant_id, def, &mut evaluation)
         .await?;
     let ae_id = Uuid::new_v4();
     let operation = Uuid::new_v4();
-    let wf = crate::component_task::workflow_id(KIND, ctx.tenant_id, &ae_id.to_string(), 1);
+    let wf = crate::component_task::workflow_id(KIND, actor.tenant_id, &ae_id.to_string(), 1);
     let parameters = json!({"componentActionKind":KIND,"commandDigest":request_digest,"inputArguments":arguments,
         "toolParameterHash":collab_bridge::limits::canonical_digest(&arguments),"targetType":kind,"targetVersion":version,
         "bindingVersion":f.binding_version,"resultExposurePolicyId":policy,"resultExposurePolicyVersion":policy_version});
@@ -504,8 +522,8 @@ async fn submit_inner(
          target_id,parameter_hash,parameters,idempotency_key,gate_state,dispatch_state,correlation_id,
          action_definition_id,component_binding_kind,component_binding_id,component_release_id,component_projection_generation,temporal_workflow_id)
         values($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,'EVALUATING','NOT_DISPATCHED',$2,$12,'APPLICATION',$13,$14,$15,$16)")
-        .bind(ae_id).bind(operation).bind(ctx.tenant_id).bind(workspace).bind(&def.action_key).bind(def.version)
-        .bind(ctx.tenant_principal_id).bind(target).bind(hash).bind(parameters).bind(key)
+        .bind(ae_id).bind(operation).bind(actor.tenant_id).bind(workspace).bind(&def.action_key).bind(def.version)
+        .bind(actor.principal_id).bind(target).bind(hash).bind(parameters).bind(key)
         .bind(f.application.definition_id).bind(f.binding).bind(f.application.component_release_id).bind(f.generation).bind(&wf)
         .execute(&mut *tx).await?;
     let ae = crate::governance::lock_execution(&mut tx, ae_id).await?;
@@ -556,13 +574,12 @@ async fn submit_inner(
     tx.commit().await?;
     if evaluation.allowed && def.confirmation_mode == "APPROVAL" {
         return state
-            .governance
             .request_approval(actor, &ae, def, &evaluation)
             .await
             .map_err(|(e, _)| e);
     }
     if evaluation.allowed {
-        start(&state.governance, &ae).await?;
+        start(state, &ae).await?;
     }
     let ae = crate::governance::load_execution(&state.pool, ae_id)
         .await?

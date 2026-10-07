@@ -1,6 +1,12 @@
-import { act } from "react";
+import { act, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ThemeSettingsControls } from "../src/react/theme-settings-controls";
+import { AppearanceSettings } from "../src/react/appearance-settings";
+import { GlassBackgroundSetting } from "../src/react/glass-background-setting";
+import { AvatarFramingSlider } from "../src/react/profile/buzz/features/profile/ui/AnimatedAvatarControls";
+import { AvatarHostProvider } from "../src/react/profile/avatar-host";
+import { DEFAULT_GLASS_OPACITY, GLASS_OPACITY_MAX, GLASS_OPACITY_MIN } from "../src/theme/glass-preference";
+import { setLocale } from "../src/i18n";
 import {
   migrateWebThemePreference,
   useAppearance,
@@ -27,6 +33,81 @@ beforeEach(() => {
 });
 
 describe("original Buzz appearance in both hosts", () => {
+  it("renders the complete original Appearance composition and its unsupported native control in Web", async () => {
+    setLocale("en");
+    function Host() {
+      const appearance = useAppearance();
+      return <AppearanceSettings name="Kailo" appearance={appearance} />;
+    }
+    const host = await render(<Host />);
+    expect(host.querySelector('[data-testid="settings-theme"]')?.className).toContain("overflow-y-auto");
+    const theme = host.querySelector('[data-testid="appearance-theme-card"]')!;
+    expect(theme.querySelector('[data-testid="theme-style-trigger"]')).not.toBeNull();
+    expect(theme.querySelector('[data-testid="glass-background-row"]')?.textContent).toContain("Available in the macOS desktop app.");
+    const glass = theme.querySelector<HTMLButtonElement>('[data-testid="glass-background-toggle"]')!;
+    expect(glass.disabled).toBe(true);
+    await click(glass);
+    expect(host.querySelector('[data-testid="glass-opacity-row"]')).toBeNull();
+    const preferences = host.querySelector('[data-testid="appearance-preferences-card"]')!;
+    expect(preferences.querySelector('[data-testid="conversation-display-group"]')).not.toBeNull();
+    expect(preferences.querySelector('[data-testid="link-preview-style-control"]')).not.toBeNull();
+    expect(preferences.querySelector('[data-testid="thread-layout-control"]')).not.toBeNull();
+    await act(async () => setLocale("zh-CN"));
+    expect(theme.querySelector('[data-testid="glass-background-row"]')?.textContent).toContain("仅适用于 macOS 桌面应用。");
+    expect(glass.disabled).toBe(true);
+  });
+
+  it("uses the original compact slider callbacks, bounds, reset and haptics for native glass", async () => {
+    setLocale("en");
+    const haptic = vi.fn();
+    const setOpacity = vi.fn();
+    const setEnabled = vi.fn();
+    function Host() {
+      const [enabled, updateEnabled] = useState(false);
+      const [opacity, updateOpacity] = useState(DEFAULT_GLASS_OPACITY);
+      return <GlassBackgroundSetting performDefaultHaptic={haptic} glass={{
+        glassBackgroundSupported: true, glassBackground: enabled, glassOpacity: opacity,
+        setGlassBackground: value => { setEnabled(value); updateEnabled(value); },
+        setGlassOpacity: value => { setOpacity(value); updateOpacity(value); },
+      }} />;
+    }
+    const host = await render(<Host />);
+    expect(host.querySelector('[data-testid="glass-opacity-slider"]')).toBeNull();
+    await click(host.querySelector<HTMLElement>('[data-testid="glass-background-toggle"]')!);
+    expect(setEnabled).toHaveBeenLastCalledWith(true);
+    const slider = host.querySelector<HTMLElement>('[data-testid="glass-opacity-slider"]')!;
+    expect(slider.className).toContain("buzz-avatar-framing-slider--compact");
+    expect(slider.getAttribute("data-handle-visible")).toBe("true");
+    await act(async () => slider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true })));
+    expect(setOpacity).toHaveBeenLastCalledWith(DEFAULT_GLASS_OPACITY + 10);
+    expect(haptic).toHaveBeenCalledOnce();
+    await act(async () => slider.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })));
+    expect(slider.getAttribute("aria-valuenow")).toBe(String(GLASS_OPACITY_MIN));
+    await act(async () => slider.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })));
+    expect(slider.getAttribute("aria-valuenow")).toBe(String(GLASS_OPACITY_MAX));
+    await click(host.querySelector<HTMLElement>('[data-testid="glass-opacity-reset"]')!);
+    expect(setOpacity).toHaveBeenLastCalledWith(DEFAULT_GLASS_OPACITY);
+    expect(slider.getAttribute("aria-valuenow")).toBe(String(DEFAULT_GLASS_OPACITY));
+    await click(host.querySelector<HTMLElement>('[data-testid="glass-background-toggle"]')!);
+    expect(setEnabled).toHaveBeenLastCalledWith(false);
+  });
+
+  it("retains the original Linux exclusion and avatar slider host instead of creating a second slider", async () => {
+    const hidden = await render(<GlassBackgroundSetting hidden />);
+    expect(hidden.querySelector('[data-testid="glass-background-row"]')).toBeNull();
+    const haptic = vi.fn();
+    const change = vi.fn();
+    const host = await render(<AvatarHostProvider value={{ locale: "en", performDefaultHaptic: haptic,
+      rewriteMediaUrl: value => value, uploadMediaBytes: vi.fn() }}>
+      <AvatarFramingSlider max={100} min={0} value={50} resetValue={50} onChange={change}
+        onReset={vi.fn()} resetTestId="avatar-reset" testId="avatar-slider" />
+    </AvatarHostProvider>);
+    const slider = host.querySelector<HTMLElement>('[data-testid="avatar-slider"]')!;
+    expect(slider.getAttribute("aria-label")).toBe("Avatar size");
+    await act(async () => slider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true })));
+    expect(change).toHaveBeenCalledWith(60);
+    expect(haptic).toHaveBeenCalledOnce();
+  });
   it("selects real paired themes and accents through the shared original controls", async () => {
     let appearance!: Appearance;
     function Host() {

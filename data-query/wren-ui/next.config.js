@@ -12,6 +12,11 @@ const resolveAlias = {
 /** @type {import('next').NextConfig} */
 const nextConfig = withLess({
   output: 'standalone',
+  i18n: {
+    locales: ['zh-CN', 'en'],
+    defaultLocale: 'zh-CN',
+    localeDetection: false,
+  },
   staticPageGenerationTimeout: 1000,
   compiler: {
     // Enables the styled-components SWC transform

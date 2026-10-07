@@ -4938,3 +4938,157 @@ pages 只取 Agent describe 的交互差异，保留基准原主题检查，不�
 16/16 与 Desktop tsc 均退出0（原句柄82181）；日志为
 `combined-web-check.log`、`combined-hosts-restored.log`、`combined-hosts-final.log`、
 `combined-hosts-package-check.log`，前三个失败不作为通过证据。
+
+### 原 Appearance 完整分区共享消费（2026-10-07）
+
+1. 权威与来源：按 `.design/01-产品边界与术语.md` REQ-24 恢复原分区，不新增设置。
+   固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/settings/ui/SettingsPanels.tsx::ThemeSettingsCard`、
+   `desktop/src/features/settings/ui/AppearanceSettingsControls.tsx::GlassBackgroundSetting`、
+   `desktop/src/features/profile/ui/AnimatedAvatarControls.tsx::AvatarFramingSlider`
+   是本次共享主体来源；原生玻璃效果仍由
+   `desktop/src/shared/theme/ThemeProvider.tsx::ThemeProvider` 消费。
+2. 影响面：Web SettingsPane 与 Native ThemeSettingsCard 共同消费完整 AppearanceSettings；
+   原主题、活动标签、消息显示、预览和线程布局沿已有真实存储与消费者，语言控制保留既有授权适配。
+   原头像与玻璃透明度共用同一原 AvatarFramingSlider 主体，删除旧 Native 重复控件。
+   ThemeProvider 只共用原玻璃类型与封闭上下界，原生 vibrancy、持久化与竞态处理不变。
+   不新增契约、迁移、目录权威或依赖，也没有新增文案目录。
+3. 副作用：Web 没有原生玻璃 API，呈现原非 macOS 禁用开关与中英文说明，不传假 setter；
+   Native 保留实际支持能力、haptic 与 Linux 原隐藏规则。滑块保留原键盘、指针捕获、重置、
+   compact 与 handleAlwaysVisible 交互；共享头像公开接口保持不变。
+4. 边界：原设置草稿和 UNKNOWN 挂载边界未改；玻璃支持由实际宿主事实决定，不因开关展示
+   伪称原生能力可用。原主题检查只精确验证并剥离该滑块三个已核原版 style 表达式，
+   不放宽其他任意颜色或 style。没有把普通退出等同原私钥擦除。
+
+既有 SDK `kailo-agent-receipt-xvkujx` 的 `/dev/shm/settings-return.nexyAQ`
+（4 CPU / 8 GiB，原依赖）完成本批，无安装、构建、Cargo 或 full。
+命令为 `/usr/local/bin/node node_modules/typescript/bin/tsc --noEmit`，共享测试类型另加
+`-p tsconfig.test.json`；共享源码/测试、Web、Desktop 类型均退出0。
+Vitest 使用 `node node_modules/vitest/vitest.mjs run … --pool=threads --maxWorkers=1`：
+
+- 共享 `test/theme-appearance.test.tsx` 10 项与既有 `test/profile-settings.test.tsx` 10 项，20/20 通过。
+  Profile 的已冻结 HTTP 修复只作为回归输入，本批没有再改该文件。
+- Web `src/platform/ui/SettingsPane.test.tsx` 6/6 通过。
+- 原 `test/pages.test.tsx -t 'own theme|semantic colours'` 2 项通过、261 项明确跳过；
+  没有以此声称整个页面测试文件通过。
+- SDK 故意把 Shift 步长改为1、把滑块原 CSS 变量键改为 `color`，实际3项失败、退出1：
+  玻璃回调期望75却为66，头像期望60却为51，原样 style 断言拒绝变更。
+  正式原字节还原 cmp0 后20项及主题2项再次通过，退出0；12个候选源码/测试输入逐字节相同。
+
+日志位于 `/volumes/data/kailo/tmp/appearance-original-20261007.QMf3ad/`：
+`appearance-original-shared.log`、`appearance-original-web.log`、`appearance-original-native.log`、
+`appearance-original-style.log`、`appearance-original-mutation.log`、`appearance-original-restored.log`。
+Native tsc 无 stdout，日志为空但实际进程退出0。
+
+本批只完成原 Appearance 分区的共享实现与上述定向验证；未运行 macOS 原生玻璃效果、
+Win11 包或浏览器实机验收，未构建、未部署。原16分区中仍只有5分区接通，前段列出的
+11分区仍属恢复范围，不能将本批描述为完整设置全部交付。
+
+### 同批契约与 Core 交叉复核（2026-10-07）
+
+合并基准为 `419016af72a5743e468872798c277db4aa4a0a5d`，只选择原 Appearance、
+Agent 头像读投影与 Wren HUMAN/原生 Deploy 的候选增量，不覆盖其他未提交工作。
+四侧统一生成保留上批 formatVersion 3 消息序列；可选 avatarMediaPaths 只是
+已授权 Version 的当前 Community 精确媒体读投影，非 secret 或任意 URL 代理。
+Wren 原生 HUMAN 准入仍复用既有身份映射、ActionExecution、Temporal、审批与额度，
+Deploy 仍由原生 deploy_log 持有意图与终态，缺失证据不重发、不当作失败。
+
+ADR-03 契约实际往返发现 quicktype 的 Dart 后端对可选 Map 缺省强制解引用；
+旧响应没有 avatarMediaPaths 时真实报 `Null check operator used on a null value`。
+沿原 `tools/gen.sh::_optional_fields` 对已声明 nullable 的 Map 增加读写缺省处理，
+不手改生成类型，不影响必填 Map，不把缺省伪造为空映射。相同样例同时检查
+字段存在与旧响应缺省，四侧语义一致；原版本内容与 configHash 均未修改。
+
+已有 `kailo-agent-receipt-xvkujx`（4 CPU / 8 GiB），本地依赖与缓存、offline npx，
+Cargo 保持 `-j16`。在私有冻结 SDK 上实际运行：
+
+- `cargo check --offline -j16 -p platform-core`：退出0。
+- `cargo test --offline -j16 -p contracts --test roundtrip`：39通过。
+- `go test ./internal/contracts`：退出0。
+- `npm test`（既有 TS contracts 包）：44通过，包含测试类型检查。
+- `dart test test/roundtrip_test.dart`：39通过。
+- 原 `tools/check.sh::step_contract`：四侧生成同步；相对原
+  `contracts-v0.1.0` 的277个schema、3个历史匹配无破坏性变更，退出0。
+  标签从正式仓库生成bundle并在私有SDK导入，未伪造基线；仅直接调用既有步骤，
+  不声称执行全量入口或依赖安装。最终日志 `contracts-compat-final.log`。
+- SDK 中故意从 TS 序列化结果删除头像映射，真实断言失败、进程退出1；
+  原字节恢复 `cmp` 退出0，上述四侧检查再次通过。
+
+初次私有最小导出遗漏 Cargo workspace 的 Buzz 依赖，再次遗漏 Core 原 ExtMcp proto，
+均退出101；补齐同一冻结树的原输入后通过，未改产品构建规则绕过。
+这些失败及 Dart 首次失败全部保留于
+`/volumes/data/kailo/tmp/native-human-integration.sUGZYG/`：`contracts-check.log`、
+`contracts-roundtrip.log`、`contracts-map-restored.log`、`avatar-map-mutation.log`、
+`combined-core-contracts.log`、`combined-core-contracts-restored.log`。
+这是源码与协议交叉验证，不是全量门禁、页面截图、Windows/Mobile 安装或部署验收。
+
+### 2026-10-07 原 Agent 头像／身份模块与两宿主真实传输
+
+本批不是新画头像表单。完整移植固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/agents/ui/AgentCreationPreview.tsx::AgentCreationPreview`、
+`AgentCreationPreview.utils.ts::isAvatarFileDrag`、
+`AgentDescriptionField.tsx::AgentIdentityFields`；简介三个纯函数来自
+`desktop/src/features/agents/lib/agentDescription.ts` 的
+`MAX_AGENT_DESCRIPTION_CHARS`、`agentDescriptionCharacterCount`、`clampAgentDescription`。
+表单双栏来自同 commit 的
+`desktop/src/features/agents/ui/AgentDefinitionDialog.tsx::AgentDefinitionDialog`。
+原上传、拖放、图片 URL、清除、表情、颜色与自定义 HSV 控件保留；只适配已共享依赖、
+两端媒体 Host 与中英词条，不增加头像上传服务、Agent 注册表或直连模型配置。
+
+四步影响结论：
+
+1. 权威：REQ-24、DD-53、`.design/03` §7 的 Definition／不可变 Version／Installation
+   继续适用。编辑写入仍为既有 `agent.version.create/update`，发布、审批、权限、额度、
+   历史版本 hash、安装固定版本均未改。原 Advanced 的 sessionPolicy、respondTo、env、
+   namePool 等尚无对应真实消费者；本批没有制造可见但无效的选项，不称完整 Agent 恢复。
+2. 影响面：同一个 `VersionAction` 消费原 `AgentCreationPreview`／`AgentIdentityFields`，
+   Web/Desktop 的 `AgentDefinitionsPane` 仅注入各自既有 `uploadProfileAvatar`。
+   Web 上传头仍冻结本人 pubkey，Desktop 仍冻结 Community／signer。
+   `AgentVersionView.avatarMediaPaths` 是可选的读投影；Core 原 `agent_version::read`
+   完成 Asset／父 Resource 投影、fresh read 和内容 hash 校验后，按 ACTIVE Tenant
+   Community 复用 `web_profile::avatar_media_paths`。无映射即省略字段，不迁移历史内容。
+   已安装 Agent 卡片消费其真实固定版本头像；Definition 没有借用另一版本的身份。
+3. 副作用：上传只写原 Blossom blob，不发布本人 profile、不直接改 Agent 身份；只有
+   原 Action 写入版本引用。上传期间锁 Review／关闭，结果不明仍保留原冻结命令。
+   Web 只将服务端授权映射及本次受认证上传回执映射为同源媒体路径，不从任意 URL
+   拼认证代理。Native 不使用 Web 的 BFF 映射。Web Host 在真实 Tenant＋Principal
+   key 变化时整体卸载，上传映射不跨身份留存；没有全局缓存或第二语言权威。
+4. 异常：本人 profile 读取失败时，当前两宿主整个 Agent 页封闭并提供原重读动作，
+   不制造上传身份；这是当前 Host 的实际依赖。原上传 hook 拒绝非图片 MIME，旧版本
+   头像读投影缺省不伪造可信代理。简介载入与修改其他字段不截断历史字节；只有用户
+   真正编辑简介时，按原 280 Unicode scalar 规则截取并显示原计数器。
+
+实现后的实际检查使用既有 4 CPU／8 GiB receipt SDK、原依赖，无安装或新构建：
+
+- 共享源码／测试 `tsc --noEmit` 均退出 0；
+  `vitest run test/agent-library-dialogs.test.tsx test/pages.test.tsx -t Agent --maxWorkers=1`
+  实际 114 passed，160 skipped（筛选跳过不能算通过）。
+- Web `tsc --noEmit`、Desktop 同原 tsconfig 的 `tsc --noEmit` 均退出 0。
+  Web 头像 Host 3 项及现有 PlatformApp 导航 10 项通过，覆盖授权映射、真实上传头、
+  身份拒绝、scope 重挂丢弃缓存与原路由参数。宿主 SSR fixture 只将 Agent 页的模拟
+  移到新增 Host 边界，头像真实消费者由独立 Host 用例检查。
+- SDK 私有副本去掉简介 clamp 与上传等待保护，两个对应检查都真实失败，exit 1；
+  正式原字节复制还原并 `cmp` 退出 0 后，四项定向检查重新通过。
+  首轮缺 `@emoji-mart/react` 时复用已存在的原 Emoji Mart wrapper，没有安装另一套。
+  首轮 Desktop 本地 `.bin/tsc` 指向已不存在的旧路径，改调用同 SDK 既有共享 TypeScript
+  可执行物检查原 Desktop tsconfig；没有改产品配置消除诊断。
+
+日志位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`：
+`agent-identity-shared.log`、`agent-identity-final-rest.log`、
+`agent-identity-mutation.log`、`agent-identity-restored.log`。
+`agent-identity-final.log` 记录 Web 2 项通过后 Desktop 可执行路径失败，不能当全链通过。
+Core／四侧合同由主线程在同批联合检查，结果随主线程回执；这里不重复全量检查。
+本批未构建、部署或更新 Windows/Mobile 包，未执行新版真实浏览器头像保存验收；
+不能据源码专项声称全量原版页面等效或生产就绪。
+
+合并后再以同一冻结输入交叉运行共享与宿主检查：共享源码/测试类型、Web 类型、
+Desktop 原 tsconfig 类型均退出0；共享 pages 265、settings 23、profile 10、
+Agent dialogs 9、appearance 10，共317项全部通过，Web三个宿主文件19项全部通过。
+日志为 `native-human-integration.sUGZYG/combined-ui.log`。此轮没有筛选跳过；
+jsdom 的 scrollTo 未实现及 reduced-motion 提示保留，不当作浏览器视觉验收。
+私有SDK同步时 `cp` 因契约包本来指向同一文件退出1，核对同一文件后跳过冗余复制；
+只同步实际独立宿主包，没有改产品解析配置。原已迁入共享实现的两份Native控件仅在
+SDK中恢复性移到 `/evidence/combined-ui-old-controls.*`，正式候选按原迁移记录删除。
+未运行本批 `tools/check.sh --full`，没有发布镜像、安装包或新版页面截图。

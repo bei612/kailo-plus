@@ -31,7 +31,6 @@ import { WorkflowsPage } from "@client-kit/platform/react/workflows";
 import { RedemptionProgress } from "@client-kit/platform/react/invitations";
 import { usePlatformNavigation, type PlatformTab } from "@/app/platform-navigation";
 import {
-  AgentDefinitionsPage,
   AuditPage,
   DevicesPage,
   MembersPane,
@@ -54,6 +53,7 @@ import { ChannelPane } from "@/platform/ui/ChannelPane";
 import { ForumPane } from "@/platform/ui/ForumPane";
 import { InboxPane } from "@/platform/ui/InboxPane";
 import { SettingsPane } from "@/platform/ui/SettingsPane";
+import { AgentDefinitionsPane } from "./AgentDefinitionsPane";
 import { NewMessagePage } from "./NewMessagePage";
 import { PulsePane } from "./PulsePane";
 import { ProjectsPane } from "./ProjectsPane";
@@ -285,7 +285,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ) : tab === "projects" ? (
       <ProjectsPane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`}/>
     ) : tab === "agents" ? (
-      <AgentDefinitionsPage workspaceId={chosen ?? active ?? undefined}
+      <AgentDefinitionsPane key={`${session.tenantId}:${session.tenantPrincipalId}`} workspaceId={chosen ?? active ?? undefined}
         onWorkspaceChange={(workspaceId) => { void navigation.openTab("agents", workspaceId); }} />
     ) : tab === "workflows" ? (
       <WorkflowsPage workspaceId={chosen ?? active ?? undefined}

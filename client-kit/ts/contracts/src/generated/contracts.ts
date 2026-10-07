@@ -782,7 +782,7 @@ export interface ActionCommand {
      * 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
      * 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
      */
-    receiverResource?: ReceiverResource;
+    receiverResource?: ActionCommandReceiverResource;
     resourceCreate?:   ResourceCreateClass;
     /**
      * Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
@@ -1281,7 +1281,7 @@ export interface ProtocolSessionOpenClass {
  * 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
  * 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
  */
-export interface ReceiverResource {
+export interface ActionCommandReceiverResource {
     id:      string;
     version: number;
 }
@@ -1888,6 +1888,12 @@ export interface VersionElement {
     assetId:         string;
     assetVersion:    number;
     /**
+     * Exact avatar URLs belonging to this authorized Version's current Tenant Community mapped
+     * to the existing same-origin profile media reader. Read projection only; not content, a
+     * credential, or an arbitrary remote proxy.
+     */
+    avatarMediaPaths?: { [key: string]: string };
+    /**
      * 当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage
      * 资格；缺字段不允许发布，不证明已安装或可运行。
      */
@@ -1932,6 +1938,12 @@ export interface AgentVersionView {
     agentResourceId: string;
     assetId:         string;
     assetVersion:    number;
+    /**
+     * Exact avatar URLs belonging to this authorized Version's current Tenant Community mapped
+     * to the existing same-origin profile media reader. Read projection only; not content, a
+     * credential, or an arbitrary remote proxy.
+     */
+    avatarMediaPaths?: { [key: string]: string };
     /**
      * 当前 HUMAN 对此 exact DRAFT 的已登记 EXPLICIT publish 动作及 fresh Asset manage
      * 资格；缺字段不允许发布，不证明已安装或可运行。
@@ -3094,6 +3106,188 @@ export interface NativeCommunityFacts {
 }
 
 /**
+ * Binding SERVICE plus independently verified native HUMAN token. Submit an existing
+ * ActionCommand or observe the same user's idempotency key. Tokens stay in transport, not
+ * this document.
+ */
+export interface NativeHumanActionRequest {
+    bindingId:       string;
+    command?:        CommandClass;
+    idempotencyKey?: string;
+}
+
+/**
+ * POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
+ * actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
+ */
+export interface CommandClass {
+    actionKey: string;
+    /**
+     * 仅 AgentVersion 草稿创建/编辑可携带；publish 只选择已有版本，不替换内容。
+     */
+    agentVersionContent?:       AgentVersionContentClass;
+    applicationBindingCreate?:  ApplicationBindingCreateClass;
+    applicationBindingId?:      string;
+    applicationBindingVersion?: number;
+    /**
+     * AgentVersion 管理动作的目标 Asset；Core 核对父 Resource、Tenant、owner、版本与投影。
+     */
+    assetId?: string;
+    /**
+     * 调用方实际读取的 Asset 版本；旧版本不能改写新的草稿或发布事实。
+     */
+    assetVersion?: number;
+    /**
+     * 仅 automation.create / automation.publish_version：Core 自有版本内容；publish 产生新的不可变版本，不改写旧版本。
+     */
+    automationVersionContent?: AutomationVersionContentClass;
+    /**
+     * 仅 capability_contract.approve/deprecate：固定已登记版本。
+     */
+    capabilityContractRef?: CapabilityContractRefClass;
+    /**
+     * 仅 capability_contract.register：真实 schema 与测试向量内容。
+     */
+    capabilityContractRegistration?: CapabilityContractRegistrationClass;
+    componentAction?:                ComponentActionClass;
+    /**
+     * 仅组件批准：已登记的不可变ComponentRelease标识。
+     */
+    componentReleaseId?:           string;
+    componentReleaseRegistration?: ComponentReleaseRegistrationClass;
+    conversationOpen?:             ConversationOpenClass;
+    /**
+     * 仅 agent.delegation.grant：明确有效期、次数、确切动作与目标和最大结果暴露；不允许隐式通配。
+     */
+    delegationGrant?: DelegationGrantClass;
+    /**
+     * 显式 Delegation 管理的稳定 Grant ID；授予者提供新 ID，撤销引用实际已有 ID。
+     */
+    delegationId?: string;
+    /**
+     * 仅 revoke：调用方实际读取的 Grant 版本。
+     */
+    delegationVersion?: number;
+    /**
+     * 仅 automation.create：同一 Workspace 的确切 AgentInstallation Resource，不从名称或当前默认配置推断。
+     */
+    executorInstallationResourceId?: string;
+    /**
+     * EXPLICIT 动作或 HUMAN owner 的一次手动 automation.run，由用户在当前目标详情上确认后设为 true；其他动作不得携带。手动运行只提交
+     * resourceId/resourceVersion/workspaceId 与同一幂等键，不选择 Grant、Agent、来源或结果位置。
+     */
+    explicitConfirmation?: boolean;
+    /**
+     * 调用方幂等键。同一发起者以同一键重发时回答原 operation；参数不同即 IDEMPOTENCY_KEY_REUSED
+     */
+    idempotencyKey: string;
+    /**
+     * tenant.member.invite.revoke 的目标邀请
+     */
+    invitationId?: string;
+    /**
+     * 仅 llm_route.create：确切原生 Provider/Model 与受控 provider SecretRef；不接收 URL 或 key 正文。
+     */
+    llmRouteCreate?: LlmRouteCreateClass;
+    /**
+     * 仅 HUMAN agent.memory.core.replace / entry.set / entry.patch / entry.remove 的瞬态 native
+     * 输入；其他命令禁止携带。
+     */
+    memoryWrite?: MemoryWriteClass;
+    /**
+     * workspace.create 或 AgentDefinition 创建/更新的显示名；tenant.member.invite 的被邀请人称呼（只作展示）
+     */
+    name?: string;
+    /**
+     * 任务控制只接收原 ActionExecution ID；原 Workflow、target 与 scope 由 Core 解析
+     */
+    originalActionExecutionId?: string;
+    /**
+     * 成员动作的目标 Principal；resource.transfer_owner 的新 owner
+     */
+    principalId?: string;
+    /**
+     * Only file_storage.open_view@v1/open_edit@v1, exact target version and the existing HUMAN
+     * identity; no Agent or caller-selected native credentials.
+     */
+    protocolSessionOpen?: ProtocolSessionOpenClass;
+    /**
+     * 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
+     * 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+     */
+    receiverResource?: CommandReceiverResource;
+    resourceCreate?:   ResourceCreateClass;
+    /**
+     * Resource 管理动作的目标；Core 重新核对同 Tenant、scope、owner 和投影
+     */
+    resourceId?: string;
+    /**
+     * 调用方实际读取的 Resource 版本；与当前事实不同即 CONFLICT
+     */
+    resourceVersion?: number;
+    /**
+     * workspace.create 或 agent.definition.create 的稳定 slug
+     */
+    slug?: string;
+    /**
+     * 仅 agent.invoke 人工分派：本人在该 Workspace Channel 已持久发布的消息 ID；Core 回读验签并与普通 mention 共用源事件幂等。
+     */
+    sourceEventId?: string;
+    /**
+     * tenant.suspend / tenant.restore 的目标业务 Tenant；执行 Tenant 仍是会话 Tenant（Platform Catalog）
+     */
+    tenantId?:         string;
+    workspaceChannel?: WorkspaceChannelClass;
+    /**
+     * Workspace 内动作的执行 Workspace
+     */
+    workspaceId?: string;
+    /**
+     * 仅 workspace.create 使用；省略保持旧命令的 private 可见性。
+     */
+    workspaceVisibility?: WorkspaceVisibility;
+}
+
+/**
+ * 仅 resource.grant_read/revoke_read 的 SERVICE 接收方 Resource；Core 从其真实 ApplicationBinding
+ * 核对唯一 ServicePrincipal、scope 与读边能力，不接受调用方指定绑定或凭据。省略保留原 AGENT 自身读取授权命令。
+ */
+export interface CommandReceiverResource {
+    id:      string;
+    version: number;
+}
+
+/**
+ * Reference-only observation of the original HUMAN AE. Terminal status comes from original
+ * component-action audit after native/usage reconciliation, never from HTTP acceptance.
+ */
+export interface NativeHumanActionResult {
+    inputReference:  ContentReferenceElement;
+    nativeId?:       string;
+    nativeType?:     string;
+    submission:      SubmissionClass;
+    terminalStatus?: TaskStatus;
+}
+
+/**
+ * POST /api/v1/actions 的回应：本次 operation 的门禁与调度状态。gateState=WAITING 时 approvalWorkflowId
+ * 必有；DENIED 时 reason 必有。invitation 只在 tenant.member.invite 的首次回应中出现，同一幂等键的重放不再给出（DD-83）。
+ */
+export interface SubmissionClass {
+    actionExecutionId:   string;
+    actionKey:           string;
+    approvalWorkflowId?: string;
+    dispatchState:       ActionDispatchState;
+    documentLaunch?:     LaunchDescriptorClass;
+    gateState:           ActionGateState;
+    invitation?:         InvitationClass;
+    operationId:         string;
+    protocolSessionId?:  string;
+    reason?:             ReasonCode;
+    workflowId?:         string;
+}
+
+/**
  * GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。
  */
 export interface OwnAuditEntry {
@@ -3870,9 +4064,13 @@ export interface ApplicationAdapterDelivery {
     maxResponseBytes:           number;
     mcpUrl?:                    string;
     modelCredentialDeliveries?: ApplicationModelCredentialDelivery[];
-    nativeInstanceRef:          string;
-    secretReaders:              AdapterSecretReader[];
-    timeoutSeconds:             number;
+    /**
+     * 受控原生浏览器信任投递；不授业务权限，不由请求提供issuer/subject/key URL。
+     */
+    nativeHumanIdentities?: ApplicationNativeHumanIdentity[];
+    nativeInstanceRef:      string;
+    secretReaders:          AdapterSecretReader[];
+    timeoutSeconds:         number;
 }
 
 /**
@@ -3896,6 +4094,17 @@ export interface ApplicationModelServiceSecretRef {
     audience: string;
     locator:  string;
     version:  number;
+}
+
+export interface ApplicationNativeHumanIdentity {
+    accessClaim:        string;
+    accessValue:        string;
+    audience:           string;
+    bindingId:          string;
+    configDigest:       string;
+    generation:         number;
+    identityProviderId: string;
+    jwksFile:           string;
 }
 
 export interface AdapterSecretReader {

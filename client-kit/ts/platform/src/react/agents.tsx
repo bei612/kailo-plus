@@ -59,6 +59,9 @@ import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
 import { PersonaDropdownField } from "./agent-library/PersonaDropdownField";
 import { PERSONA_FIELD_CONTROL_CLASS, PERSONA_FIELD_SHELL_CLASS } from "./agent-library/agentConfigOptions";
 import { Textarea as AgentTextarea } from "./profile/buzz/shared/ui/textarea";
+import { AgentCreationPreview } from "./agent-library/AgentCreationPreview";
+import { AgentIdentityFields } from "./agent-library/AgentDescriptionField";
+import { AvatarHostProvider, type AvatarHost } from "./profile/avatar-host";
 import { CronExpressionInput } from "./cron-expression-input";
 import { cronExpressionError, cronYamlError } from "./cron-expression";
 import type { AutomationStep } from "@client-kit/contracts";
@@ -93,7 +96,9 @@ export type WorkspaceNavigation = {
   onWorkspaceChange?: (workspaceId: string) => void;
 };
 
-export function AgentDefinitionsPage(navigation: WorkspaceNavigation = {}) {
+type AgentAvatarHost = (version?: AgentVersionView) => AvatarHost;
+
+export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarHost?: AgentAvatarHost } = {}) {
   const client = useBffClient();
   const t = useT();
   const [offsets, setOffsets] = useState<number[]>([0]);
@@ -128,7 +133,7 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation = {}) {
         </WorkflowButton>
       </div>
       {/* 写意图不随列表/详情刷新或翻页卸载；未知结果保留冻结版本与原幂等键。 */}
-      <VersionAction edit={versionEdit} onReset={() => setVersionEdit(null)} onLocked={setVersionLocked}
+      <VersionAction edit={versionEdit} avatarHost={navigation.avatarHost} onReset={() => setVersionEdit(null)} onLocked={setVersionLocked}
         onRecorded={() => { setVersionRevision((value) => value + 1); reload(); }} />
       <section className="flex flex-col gap-3">
         {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
@@ -1106,8 +1111,9 @@ function validInstallation(row: AgentInstallationView): boolean {
     && row.activeProjectionGeneration !== undefined && projection?.state === AgentRuntimeProjectionState.Active);
 }
 
-function InstallationManagement({ versionRevision, refreshRevision, onLockedChange, workspaceId, onWorkspaceChange }: WorkspaceNavigation & {
+function InstallationManagement({ versionRevision, refreshRevision, onLockedChange, workspaceId, onWorkspaceChange, avatarHost }: WorkspaceNavigation & {
   versionRevision: number; refreshRevision: number; onLockedChange: (locked: boolean) => void;
+  avatarHost?: AgentAvatarHost;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -1157,7 +1163,7 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
         onRecorded={() => setRevision((old) => old + 1)} /> : null}
     </> : null}
     </AgentManagementDialog>
-    {workspace ? <InstallationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onLocked={setLocked}
+    {workspace ? <InstallationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onLocked={setLocked} avatarHost={avatarHost}
       onPermission={setPermissionTarget} onManage={setDelegationTarget} onUpgrade={setUpgradeTarget} /> : null}
   </section>;
 }
@@ -1578,9 +1584,10 @@ function DelegationScope({ scope }: { scope: DelegationScopeParameters }) {
   </div>;
 }
 
-function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgrade, onLocked }: {
+function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgrade, onLocked, avatarHost }: {
   workspaceId: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void; onUpgrade: (row: AgentInstallationView) => void;
   onLocked: (locked: boolean) => void;
+  avatarHost?: AgentAvatarHost;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -1601,7 +1608,7 @@ function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgra
       : <>
         {page.installations.length === 0 ? <Notice>{t("agents.installation.none")}</Notice>
           : <div className={IDENTITY_CARD_GRID_CLASS}>
-            {page.installations.map((row) => <InstallationIdentityCard key={row.resourceId} row={row}
+            {page.installations.map((row) => <InstallationIdentityCard key={row.resourceId} row={row} avatarHost={avatarHost}
               locked={locked} onOpen={() => setSelected(row.resourceId)} />)}
           </div>}
         <div className="flex gap-2">
@@ -1619,8 +1626,9 @@ function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgra
   </div>;
 }
 
-function InstallationIdentityCard({ row, locked, onOpen }: {
+function InstallationIdentityCard({ row, locked, onOpen, avatarHost }: {
   row: AgentInstallationView; locked: boolean; onOpen: () => void;
+  avatarHost?: AgentAvatarHost;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -1631,12 +1639,14 @@ function InstallationIdentityCard({ row, locked, onOpen }: {
   const candidate = state.status === "ok" ? state.data : null;
   const version = candidate && validVersion(candidate, row.agentResourceId)
     && candidate.assetId === row.pinnedVersionAssetId ? candidate : null;
-  return <div className="flex min-w-0 flex-col gap-2">
-    <AgentIdentityCard dataTestId={`agent-installation-${row.resourceId}`}
+  const card = <AgentIdentityCard dataTestId={`agent-installation-${row.resourceId}`}
       label={version?.content.personaIdentity.displayName ?? t("agents.installation.id")}
       subtitle={version?.content.personaIdentity.description ?? row.resourceId}
+      avatarUrl={avatarHost ? version?.content.personaIdentity.avatarUrl : undefined}
       ariaLabel={t("agents.installation.open")} disabled={locked} onClick={onOpen}
-      statusBadge={<Badge tone="neutral">{t(installationLabels[row.state])}</Badge>} />
+      statusBadge={<Badge tone="neutral">{t(installationLabels[row.state])}</Badge>} />;
+  return <div className="flex min-w-0 flex-col gap-2">
+    {avatarHost && version ? <AvatarHostProvider value={avatarHost(version)}>{card}</AvatarHostProvider> : card}
     <p className="break-all text-xs text-muted-foreground">{t("agents.installation.version")}: {row.pinnedVersionAssetId}</p>
     <p className="break-all text-xs text-muted-foreground">{t("agents.installation.principal")}: {row.agentPrincipalId}</p>
     {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
@@ -1970,8 +1980,9 @@ function VersionDirectory({ definition, locked, onEdit }: {
   </section>;
 }
 
-function VersionAction({ edit, onReset, onLocked, onRecorded }: {
+function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
   edit: VersionEdit | null; onReset: () => void; onLocked: (locked: boolean) => void; onRecorded: () => void;
+  avatarHost?: AgentAvatarHost;
 }) {
   const formId = useId();
   const client = useBffClient();
@@ -1983,6 +1994,7 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
   const [routeId, setRouteId] = useState("");
   const [name, setName] = useState("");
   const [avatar, setAvatar] = useState("");
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
   const [reply, setReply] = useState("");
@@ -2052,7 +2064,7 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
   const supported = (!sourceContent || sourceContent.skillVersionAssetIds.length === 0)
     && (toolIds.length === 0 || (!!toolPages && toolIds.every((id) => availableTools.some((tool) => tool.resourceId === id))));
   const integer = (value: string) => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
-  const valid = retiring ? permitted : permitted && supported && !!profile && !!route && !!contract && !!name.trim() && !!instructions.trim()
+  const valid = retiring ? permitted : !avatarUploading && permitted && supported && !!profile && !!route && !!contract && !!name.trim() && !!instructions.trim()
     && contract.replyPolicies.includes(reply) && capabilities.every((key) => contract.capabilityRequirements.includes(key))
     && integer(parallelism) && Number(parallelism) <= contract.maxParallelism
     && integer(idle) && Number(idle) <= contract.maxIdleTimeoutSeconds
@@ -2101,15 +2113,19 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
       }
     } finally { inFlight.current = false; setBusy(false); reloadTasks(); }
   };
+  useEffect(() => {
+    if (avatarUploading) onLocked(true);
+    else if (!intent && !busy) onLocked(false);
+  }, [avatarUploading, intent, busy, onLocked]);
   if (!edit && !intent && !submission && !failure) return null;
   return <AgentManagementDialog open title={t(edit || intent ? title : "agents.version.history")}
-    dataTestId="agent-version-action" locked={busy || intent !== null}
+    dataTestId="agent-version-action" locked={busy || intent !== null || avatarUploading}
     onClose={() => { setSubmission(null); setFailure(null); onReset(); }}
     footer={intent ? <div className="flex w-full flex-wrap justify-end gap-2">
       {!busy && !unknown ? <Button onClick={() => { setIntent(null); onLocked(false); }}>{t("agents.cancel")}</Button> : null}
       <Button disabled={busy} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry") : t("agents.confirm")}</Button>
     </div> : edit && (retiring || source) ? <div className="flex w-full flex-wrap justify-end gap-2">
-      <Button onClick={onReset}>{t("agents.cancel")}</Button>
+      <Button disabled={avatarUploading} onClick={onReset}>{t("agents.cancel")}</Button>
       {retiring ? <Button disabled={requestBlocked || !valid} onClick={prepare}>{t("agents.review")}</Button>
         : <Button type="submit" form={formId} disabled={requestBlocked || !valid}>{t("agents.review")}</Button>}
     </div> : undefined}>
@@ -2141,12 +2157,16 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
     </> : edit ? <>
       {configuration.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
         : !source ? <AgentReadFailure error={configuration.status === "error" ? configuration.error : undefined} onRetry={reloadConfiguration} />
-        : <form id={formId} className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
+        : <form id={formId} className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
+          {avatarHost ? <AvatarHostProvider value={avatarHost(edit.version)}><AgentCreationPreview avatarUrl={avatar || null} label={name.trim() || t("agents.identity.name")}
+            assetLabel={t("platform.profile.avatar")} disabled={publishing || !permitted || avatarUploading || (sourceContent?.skillVersionAssetIds.length ?? 0) > 0}
+            onSelectAvatar={setAvatar} onClearAvatar={() => setAvatar("")} onUploadPendingChange={setAvatarUploading} />
+          </AvatarHostProvider> : null}
+          <div className="space-y-5">
           {!permitted || !supported ? <Notice>{t("agents.version.createUnavailable")}</Notice> : null}
           <fieldset disabled={publishing || !permitted || (sourceContent?.skillVersionAssetIds.length ?? 0) > 0} className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-sm">{t("agents.name")}<input required value={name} onChange={(event) => setName(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
-            <label className="flex flex-col gap-1 text-sm">{t("agents.version.avatar")}<input value={avatar} onChange={(event) => setAvatar(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
-            <label className="flex flex-col gap-1 text-sm">{t("agents.version.description")}<textarea value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-16 rounded-md border border-input bg-background p-2" /></label>
+            <AgentIdentityFields displayName={name} onDisplayNameChange={setName} description={description}
+              onDescriptionChange={setDescription} disabled={publishing || !permitted || (sourceContent?.skillVersionAssetIds.length ?? 0) > 0} />
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-instructions`}>{t("agents.version.instructions")}</label>
               <div className={PERSONA_FIELD_SHELL_CLASS}>
@@ -2211,6 +2231,7 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
           </fieldset>
           <div className="flex gap-2">{index > 0 ? <Button onClick={() => setIndex(index - 1)}>{t("roles.previous")}</Button> : null}
             {source.nextOffset != null ? <Button onClick={() => { setOffsets((values) => [...values.slice(0, index + 1), source.nextOffset!]); setIndex(index + 1); }}>{t("roles.next")}</Button> : null}</div>
+          </div>
         </form>}
     </> : null}
     {submission ? <p role="status" className="break-words text-sm">{unknown ? t("agents.unknown", { operation: submission.operationId }) : t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}{submission.reason ? ` ${reasonText(submission.reason)}` : ""}</p> : null}

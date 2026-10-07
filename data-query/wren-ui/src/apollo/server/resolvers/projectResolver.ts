@@ -36,6 +36,7 @@ import DataSourceSchemaDetector, {
 } from '@server/managers/dataSourceSchemaDetector';
 import { encryptConnectionInfo } from '../dataSource';
 import { TelemetryEvent } from '../telemetry/telemetry';
+import { DeployStatusEnum } from '../repositories/deployLogRepository';
 
 const logger = getLogger('DataSourceResolver');
 logger.level = 'debug';
@@ -638,7 +639,10 @@ export class ProjectResolver {
     const deployRes = await ctx.deployService.deploy(manifest, project.id);
 
     // only generating for user's data source
-    if (project.sampleDataset === null) {
+    if (
+      project.sampleDataset === null &&
+      deployRes.status === DeployStatusEnum.SUCCESS
+    ) {
       await ctx.projectService.generateProjectRecommendationQuestions();
     }
     return deployRes;

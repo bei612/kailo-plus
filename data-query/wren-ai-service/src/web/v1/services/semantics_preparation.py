@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Literal, Optional
 
 from cachetools import TTLCache
+from fastapi import HTTPException
 from langfuse.decorators import observe
 from pydantic import AliasChoices, BaseModel, Field
 
@@ -19,12 +20,14 @@ class SemanticsPreparationRequest(BaseRequest):
     # don't recommend to use id as a field name, but it's used in the API spec
     # so we need to support as a choice, and will remove it in the future
     mdl_hash: str = Field(validation_alias=AliasChoices("mdl_hash", "id"))
+    execution_id: Optional[str] = None
 
 
 class SemanticsPreparationResponse(BaseModel):
     # don't recommend to use id as a field name, but it's used in the API spec
     # so we need to support as a choice, and will remove it in the future
     mdl_hash: str = Field(serialization_alias="id")
+    execution_id: Optional[str] = None
 
 
 # GET /v1/semantics-preparations/{mdl_hash}/status
@@ -40,6 +43,7 @@ class SemanticsPreparationStatusResponse(BaseModel):
         message: str
 
     status: Literal["indexing", "finished", "failed"]
+    execution_id: Optional[str] = None
     error: Optional[SemanticsPreparationError] = None
 
 
@@ -95,6 +99,7 @@ class SemanticsPreparationService:
                 prepare_semantics_request.mdl_hash
             ] = SemanticsPreparationStatusResponse(
                 status="finished",
+                execution_id=prepare_semantics_request.execution_id,
             )
         except Exception as e:
             logger.exception(f"Failed to prepare semantics: {e}")
@@ -103,6 +108,7 @@ class SemanticsPreparationService:
                 prepare_semantics_request.mdl_hash
             ] = SemanticsPreparationStatusResponse(
                 status="failed",
+                execution_id=prepare_semantics_request.execution_id,
                 error=SemanticsPreparationStatusResponse.SemanticsPreparationError(
                     code="OTHERS",
                     message=f"Failed to prepare semantics: {e}",
@@ -125,13 +131,8 @@ class SemanticsPreparationService:
             logger.exception(
                 f"id is not found for SemanticsPreparation: {prepare_semantics_status_request.mdl_hash}"
             )
-            return SemanticsPreparationStatusResponse(
-                status="failed",
-                error=SemanticsPreparationStatusResponse.SemanticsPreparationError(
-                    code="OTHERS",
-                    message="{prepare_semantics_status_request.id} is not found",
-                ),
-            )
+            # Cache expiry/restart is absence of evidence, not indexing failure.
+            raise HTTPException(status_code=404, detail="Deployment status unavailable")
 
         return result
 

@@ -1697,7 +1697,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(configurationPickers).toHaveLength(5);
     expect([...configurationPickers].every((field) => field.textContent === "Choose a verified record")).toBe(true);
     expect(action.querySelectorAll("select")).toHaveLength(0);
-    await change(action, "Display name", "New governed draft");
+    await change(action, "Agent name", "New governed draft");
     await change(action, "Instructions", "New exact instructions");
     await change(action, "Requested runtime profile", profile.key);
     await change(action, "Requested model route", route.resourceId);
@@ -1736,6 +1736,55 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       assetVersion: version.assetVersion, agentVersionContent: { ...content, instructions: "Edited exact draft" } });
     expect(section(host, "agent-installations").textContent).toContain(installation.pinnedVersionAssetId);
     expect(posts(t)).toHaveLength(1);
+  });
+
+  it("preserves a historical description byte-for-byte when only instructions change", async () => {
+    const description = "😀".repeat(300);
+    const historical = { ...content, personaIdentity: { ...content.personaIdentity, description } };
+    const t = routes((r) => r.path.includes("/versions?") ? { status: 200, body: {
+      agentResourceId: definition.resourceId, resourceVersion: definition.resourceVersion,
+      versions: [{ ...version, content: historical }], nextOffset: null,
+    } } : r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.version.update") } : undefined);
+    const host = await open(t);
+    await click(button(section(host, "agent-version-directory"), "Edit draft"));
+    const action = section(host, "agent-version-action");
+    expect(action.querySelector<HTMLInputElement>("#persona-description")!.value).toBe(description);
+    await change(action, "Instructions", "Only instructions changed");
+    await click(button(action, "Review request"));
+    await click(button(action, "Submit governed request"));
+    expect(posts(t)[0]?.body).toMatchObject({ agentVersionContent: { personaIdentity: historical.personaIdentity } });
+  });
+
+  it("keeps the original avatar upload pending before freezing the exact Version command", async () => {
+    let complete!: (value: { url: string; type: string }) => void;
+    const upload = vi.fn(() => new Promise<{ url: string; type: string }>((resolve) => { complete = resolve; }));
+    const t = routes((r) => r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.version.update") } : undefined);
+    const host = await mount(t, <AgentDefinitionsPage avatarHost={() => ({ locale: "en", uploadMediaBytes: upload,
+      rewriteMediaUrl: (url) => url, performDefaultHaptic: () => {} })} />);
+    await settle();
+    await click(button(host, "View definition"));
+    await click(button(section(host, "agent-version-directory"), "Edit draft"));
+    const action = section(host, "agent-version-action");
+    const file = new File([new Uint8Array([137, 80, 78, 71])], "avatar.png", { type: "image/png" });
+    Object.defineProperty(file, "arrayBuffer", { value: async () => new Uint8Array([137, 80, 78, 71]).buffer });
+    const input = action.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    await settle();
+    expect(button(action, "Review request").disabled).toBe(true);
+    expect(button(action, "Cancel request").disabled).toBe(true);
+    expect(action.querySelector('[aria-label="Close"]')).toBeNull();
+    expect(posts(t)).toHaveLength(0);
+    await act(async () => complete({ url: "https://community.example/media/avatar.png", type: "image/png" }));
+    await settle();
+    expect(button(action, "Review request").disabled).toBe(false);
+    await click(button(action, "Review request"));
+    await click(button(action, "Submit governed request"));
+    expect(posts(t)[0]?.body).toMatchObject({ agentVersionContent: { personaIdentity: {
+      displayName: content.personaIdentity.displayName, avatarUrl: "https://community.example/media/avatar.png",
+    } } });
+    expect(upload).toHaveBeenCalledExactlyOnceWith([137, 80, 78, 71]);
+    expect(t.send.mock.calls.every(([request]) => request.method !== "POST" || request.path === "/api/v1/actions")).toBe(true);
   });
 
   it("publishes an immutable exact draft with Explicit Confirmation and no replacement content", async () => {
@@ -3225,6 +3274,27 @@ describe("platform pages render only through the host theme", () => {
         const nativeWidth = 'style={{ minWidth: "var(--radix-dropdown-menu-trigger-width)" }}';
         expect(inspected.split(nativeWidth)).toHaveLength(2);
         inspected = inspected.replace(nativeWidth, "");
+      }
+      if (name === "settings-slider.tsx") {
+        // Buzz 779af8886caae1317b4de962082429867ab61503,
+        // desktop/src/features/profile/ui/AnimatedAvatarControls.tsx::AvatarFramingSlider.
+        // The original fill/tick/reset positions are geometry, not a new theme.
+        const slider = ts.createSourceFile(name, inspected, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+        const positions: import("typescript").JsxAttribute[] = [];
+        const visitSlider = (node: import("typescript").Node) => {
+          if (ts.isJsxAttribute(node) && node.name.getText(slider) === "style") positions.push(node);
+          ts.forEachChild(node, visitSlider);
+        };
+        visitSlider(slider);
+        expect(positions.map((node) => node.getText(slider).replace(/\s+/g, ""))).toEqual([
+          'style={{"--buzz-avatar-framing-slider-fill":`${fill}%`,}asReact.CSSProperties}',
+          'style={{left:`${percentFromSliderValue(tick,min,max)}%`,}}',
+          'style={resetTickStyle}',
+        ]);
+        expect(inspected).toContain('left: `${percentFromSliderValue(resetValue, min, max)}%`');
+        for (const node of positions.sort((a, b) => b.getStart(slider) - a.getStart(slider))) {
+          inspected = inspected.slice(0, node.getStart(slider)) + inspected.slice(node.end);
+        }
       }
       if (name === "channel-permissions-settings.tsx") {
         // Buzz 779af8886caae1317b4de962082429867ab61503

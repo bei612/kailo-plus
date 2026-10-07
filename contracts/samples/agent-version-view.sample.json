@@ -1,0 +1,24 @@
+{
+  "assetId": "00000000-0000-4000-8000-000000000001",
+  "agentResourceId": "00000000-0000-4000-8000-000000000002",
+  "ordinal": 1,
+  "assetVersion": 1,
+  "ownerPrincipalId": "00000000-0000-4000-8000-000000000003",
+  "content": {
+    "personaIdentity": {"displayName": "Avatar round-trip", "avatarUrl": "https://relay.example/media/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"},
+    "instructions": "Contract serialization fixture",
+    "runtimeProfileKey": "fixture-profile",
+    "modelRouteResourceId": "00000000-0000-4000-8000-000000000004",
+    "skillVersionAssetIds": [],
+    "declaredToolResourceIds": [],
+    "capabilityRequirements": [],
+    "triggerDefaults": [],
+    "replyPolicy": "fixture-reply",
+    "parallelism": 1,
+    "turnLimits": {"idleTimeoutSeconds": 1, "maxTurnDurationSeconds": 2},
+    "memoryPolicy": {"coreWrite": "HUMAN_ONLY", "coldWrite": "DISABLED"}
+  },
+  "avatarMediaPaths": {"https://relay.example/media/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png": "/api/v1/profile/media/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  "configHash": "fixture-hash",
+  "state": "DRAFT"
+}

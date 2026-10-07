@@ -704,6 +704,24 @@ pub(crate) async fn read(
     if !self::content(&content).is_ok_and(|(_, hash)| hash == v.config_hash) {
         return Err(Refusal::Unavailable("AgentVersion config_hash 不一致".into()).respond(None));
     }
+    // Project only this authorized Version's exact avatar and its Tenant's
+    // current Community. No SERVER key is needed by this management reader:
+    // Desktop retains CLIENT custody and its original native media transport.
+    let avatar_media_paths = if let Some(picture) = content.persona_identity.avatar_url.as_deref() {
+        let host: Option<String> = sqlx::query_scalar(
+            "select b.normalized_host from projection.tenant_buzz_binding b
+             join identity.tenant t on t.id=b.tenant_id and t.state='ACTIVE'
+             where b.tenant_id=$1 and b.state='ACTIVE'",
+        )
+        .bind(ctx.tenant_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(crate::service_api::unavailable)?;
+        host.map(|host| crate::web_profile::avatar_media_paths(Some(picture), &host))
+            .filter(|paths| !paths.is_empty())
+    } else {
+        None
+    };
     let state = match v.state.as_str() {
         "DRAFT" => contracts::AgentVersionState::Draft,
         "PUBLISHED" => contracts::AgentVersionState::Published,
@@ -717,6 +735,7 @@ pub(crate) async fn read(
         asset_version: i64::from(v.version),
         owner_principal_id: v.owner_principal_id.to_string(),
         content,
+        avatar_media_paths,
         config_hash: v.config_hash,
         state,
         can_update: Some(can_update),

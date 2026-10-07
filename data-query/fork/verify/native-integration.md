@@ -885,3 +885,221 @@ business actor. Existing `nativeQueryAdmission.ts::authorizeQuery` serves the
 ActionToken plus SERVICE PEP path; a HUMAN OIDC subject cannot be treated as an
 admin or substituted for that token. This batch claims neither that missing
 native HUMAN admission integration nor full business identity isolation.
+
+## Saved-view native HUMAN Query consumer, 2026-10-07
+
+The next code slice addresses that specific saved-view Query gap, not Deploy,
+Asking, arbitrary SQL previews or complete multi-user Wren isolation. Wren stays
+DEDICATED_INSTANCE with its own database and QueryService. The fixed upstream
+`c5f02a0391c87420dba78632dcd86073710deb72` was checked using `git grep`:
+`WrenAI-ui-0.32.2/wren-ui/src/components/pages/modeling/metadata/ViewMetadata.tsx::ViewMetadata`,
+`WrenAI-ui-0.32.2/wren-ui/src/apollo/server/resolvers/modelResolver.ts::ModelResolver.previewViewData`
+and `WrenAI-ui-0.32.2/wren-ui/src/apollo/server/services/queryService.ts::QueryService`.
+
+The original preview button/mutation now consumes NativeHumanQuery, retaining
+the original saved view and QueryService execution through the existing
+NativeQueryService. Middleware removes caller-supplied identity forwarding
+headers and forwards only the independently verified native JWT on the private
+GraphQL hop. Core verifies that JWT again using the operator-controlled binding
+directory and existing IdentityProvider, not a caller-supplied issuer/JWKS/sub.
+The binding SERVICE credential is only transport identity. No native admin role
+is inferred from JWT subject and no second user or audit table is created.
+
+The controlled query delivery optionally selects an existing Resource version
+and ResultExposurePolicy version in `humanAction`. Missing delivery closes this
+query action. ViewMetadata retains only an opaque retry key in sessionStorage;
+failure to persist it prevents submission. The original saved-view reference
+is frozen once and submitted via the original HUMAN application action. Reload
+and retry observe that AE first; unknown or denied observation keeps the same
+intent. Terminal status is accepted only from Core's reconciled terminal audit.
+Native results come from the original api_history with exact project, binding,
+AE, operation and SUCCEEDED state, then Core is checked again before disclosure.
+Neither query SQL nor rows are copied to Core. A changed selected view cannot
+render the preceding view's receipt. The existing explicit reference-export
+interaction remains available.
+
+Actual checks used the existing `kailo-wren-query-sdk-itgs2n` (4 CPU/4 GiB), with
+no installation/build. Original GraphQL codegen read the real local schema and
+generated only the optional PreviewViewDataInput idempotencyKey change. The
+first shell invocation had an escaping SyntaxError; the corrected invocation
+exited 0. Existing middleware, native query and new HUMAN consumer tests passed
+67/67. TypeScript check exited 0. Removing the post-history Core recheck in the
+private execution copy caused 1 failed/5 passed (exit 1); original bytes were
+restored with cmp 0 before the 67-case final run. This consumer test mocks the
+Core HTTP boundary; its success is not a production SSO→approval→SQL→usage E2E.
+
+Logs under
+`/volumes/data/kailo/tmp/gateway-locale-repair-20261007.iwRGvX/`:
+`wren-human-codegen.log`, `wren-human-initial.log`, `wren-human-restored.log`,
+`wren-human-mutation.log`, `wren-human-final.log`, `wren-human-types-final.log`.
+Deploying this slice still requires the actual approved binding/resource/policy,
+native identity trust projection and original credentials. Browser SSO cookie
+delivery inside the iframe remains a separate acceptance boundary. No running
+configuration, image or business record was changed here.
+
+## Native Deploy terminal evidence, 2026-10-07
+
+This independent increment is based on the frozen HUMAN-query tree
+`e9d6256bb6f0bb9ebcccde744d959c028397f522`. It does not implement Asking model
+admission, a new platform Deploy Action, or immutable version publication.
+The original pages, layout, controls and GraphQL response states are unchanged.
+
+Four-step impact review:
+
+- Authority: `.design/08` §6, `SS-WRN-GOVERNANCE`, `SF-WRN-08/09` retain the
+  original native modeling workflow; `data_query.publish_version@v1` remains
+  unavailable. Wren owns its mutable deployment and `deploy_log`; Core gains no
+  model content or alternative executor. Reference commit
+  `c5f02a0391c87420dba78632dcd86073710deb72` in
+  `WrenAI-ui-0.32.2/wren-ui/src/apollo/server/services/deployService.ts::DeployService.deploy`,
+  `wren-ui/src/apollo/server/repositories/deployLogRepository.ts::findLastProjectDeployLog`,
+  `wren-ui/src/apollo/server/adaptors/wrenAIAdaptor.ts::waitDeployFinished`, and
+  `wren-ai-service/src/web/v1/services/semantics_preparation.py::get_prepare_semantics_status`.
+  The initial suspicion about cached successful hashes was incorrect:
+  `findLastProjectDeployLog` already selects only `SUCCESS`. That behavior stays.
+- Writers/readers: both explicit and onboarding Deploy callers retain the same
+  service. Its existing project row is locked while checking the original pending
+  log and committing a new log; HTTP follows commit. Concurrent and forced calls
+  observe the same pending log instead of dispatching again. Existing
+  `ModelResolver.checkModelSync` polling observes native status, persists a proven
+  terminal result, then reads the updated successful deployment. No new timer,
+  outbox, database, migration or platform contract is introduced.
+- Side effects: AI request/status response optionally carry `execution_id`, the
+  existing native `deploy_log.id`, while manifest hash stays unchanged. This
+  prevents a previous forced attempt with the same hash supplying the new
+  attempt's result. Only matching `finished`/`failed` evidence is terminal.
+  Original recommendation generation follows confirmed success, never a pending
+  or failed Deploy. Automatic recommendation generation after a later read-only
+  reconciliation is not added or claimed restored by this batch.
+- Exceptions: dispatch disconnect, unknown enum, foreign/absent execution
+  reference, response contradiction, timeout and terminal-persistence failure
+  retain the original `IN_PROGRESS` log (`UNKNOWN`, not success/failure). Native
+  cache expiry/restart returns HTTP 404 instead of fabricated indexing failure.
+  The existing bounded initial polling window is unchanged; subsequent original
+  page polling only observes. Missing terminal evidence is not expired/replayed;
+  it needs native operator evidence before any recovery. Authentication,
+  permissions, quota and approvals are not bypassed or redefined. Before-intent
+  database errors still reject; project contention is a `CONFLICT`. Other error
+  classes and application admission remain outside this native-terminal slice.
+
+Compatibility/release boundary: deploy the matching AI service before the new UI
+writer. Old peers without execution references cannot complete new attempts.
+Old in-progress logs without such evidence remain unresolved, and previously
+misclassified `FAILED` timeout logs require operational review; this batch does
+not rewrite/replay that history. Mixed old/new UI writers are not covered by the
+new project-lock proof. Existing successful hashes and native MDL references are
+preserved. SQLite concurrency is not verified; the actual transaction test uses
+PostgreSQL, matching this deployment's database.
+
+Implementation-first checks used existing `kailo-wren-query-sdk-itgs2n`, UID 1000,
+4 CPU / 4 GiB, existing dependencies and no install. Data free was 3.2 GiB,
+memory pressure avg10 was zero; no Cargo/build task ran. Final commands:
+
+```sh
+./node_modules/.bin/jest --runInBand \
+  src/apollo/server/services/tests/deployService.test.ts \
+  src/apollo/server/adaptors/tests/wrenAIAdaptor.test.ts \
+  -t 'DeployService|original deployment transaction|deployment terminal evidence'
+./node_modules/.bin/tsc --noEmit
+python3 -B native-deployment/tests/pytest/services/test_deployment_evidence.py
+```
+
+Final result: Jest 15 passed / 4 out-of-scope skipped, TypeScript exit 0,
+Python 1 passed, combined exit 0. PostgreSQL uses the existing isolated test URL
+and a newly created random schema with the original two native table migrations;
+the test removes only that schema. Concurrent first/force requests committed one
+intent; known failure permits a new attempt, successful same hash avoids another
+dispatch. Native Python control-flow checks execute production functions with
+framework/cache/pipeline boundaries substituted; they do not verify installed
+FastAPI/Pydantic wire serialization or a live AI deployment.
+
+Failures retained: the SDK's original Jest typings lack `runAllTimersAsync`
+(fixed only the new fixture); an initial reused SQL fixture had a pre-existing
+explicit-ID/sequence collision (moved this test into its own schema, no sequence
+repair); two original recommendation tests mismatch original URL/body behavior
+and remain out of scope, not silently marked passed. SDK-only mutations disabled
+the execution fence and mapped unknown enums to failure: two actual assertions
+failed, exit 1. Returning fabricated native `failed` on cache miss caused the
+Python assertion to fail, exit 1. All mutated files restored byte-for-byte
+(`cmp` exit 0); final 15 + 1 checks and TypeScript passed again.
+
+Logs under `/volumes/data/kailo/tmp/gateway-locale-repair-20261007.iwRGvX/`:
+`wren-deployment-initial.log`, `wren-deployment-restored.log`,
+`wren-deployment-final.log`, `wren-deployment-mutation.log`,
+`wren-deployment-native-mutation.log`, `wren-deployment-mutation-restored.log`.
+No image, full check, deployment, online approval/quota acceptance or complete
+Deploy/Asking governance is claimed by these results.
+
+## Native saved-view preview language and identity partition, 2026-10-07
+
+This increment corrects the HUMAN preview consumer, without changing the native
+page layout, query execution authority or the Deploy candidate above.
+
+Four-step impact review:
+
+- Authority: `SS-WRN-IDENTITY` and `SS-WRN-GOVERNANCE` keep the verified HUMAN
+  and current binding authoritative; the user-required Chinese default and
+  selectable English replace simultaneous bilingual notices. The existing
+  Next locale mechanism supplies `zh-CN` by default and the explicit `en` route.
+  Wren's existing `ProjectLanguage` still controls AI answer language, not UI
+  authorization or this UI locale. Only the preview/governance guidance is
+  localized here; other original native Wren text is not claimed translated.
+- Writers/readers: middleware verifies the original JWT and instance entitlement,
+  strips forged private headers, then derives a non-authorizing opaque partition.
+  The existing `/api/config` combines it with the controlled native binding and
+  returns no token, issuer or raw subject. ViewMetadata uses that partition plus
+  the view ID for its original sessionStorage retry key. The actual GraphQL
+  resolver recomputes it before calling NativeHumanQuery, closing an identity
+  change between configuration read and submission. Original Core admission,
+  current config generation, result-history correlation and post-read permission
+  recheck remain unchanged. No user registry, epoch, permission or audit store is
+  introduced.
+- Side effects: another HUMAN receives a different retry partition, while the
+  first HUMAN's UNKNOWN key remains available on return. Credential rotation
+  does not change that partition. Only a matching scope and actual corresponding
+  terminal receipt release its key; a later 403 or transport failure does not.
+  The original Preview button, Alert and PreviewData presentation remain in
+  place. No SQL content or credentials enter browser persistence.
+- Exceptions: unavailable configuration, malformed partition, storage failure
+  and superseded/unmounted preparation refuse a new submission. Focus and
+  visibility refresh clear stale displayed scope before rereading; results are
+  also fenced by the original view ID. A forged or prior-person GraphQL scope
+  is refused before any Core/native query call. These are PRECONDITION or
+  REJECTED preparation outcomes, not terminal evidence about a previous UNKNOWN
+  operation. No background polling or global cookie/storage deletion is added.
+
+Compatibility: the new optional GraphQL `idempotencyScope` is generated by the
+original codegen entry. The governed native resolver requires it; old HUMAN
+preview clients fail closed. The preceding HUMAN candidate has not been deployed,
+so there is no claimed production migration of its unscoped preview keys. This
+increment does not adopt or delete an old unscoped key on behalf of another user.
+
+Implementation preceded checks. The existing `kailo-wren-query-sdk-itgs2n`
+container (4 CPU / 4 GiB, UID 1000) had no active child process; Data had 2.8 GiB
+available. Original dependencies were reused without install, Cargo, image or
+full build. Original GraphQL codegen exited 0. Final commands:
+
+```sh
+./node_modules/.bin/jest --runInBand src/middleware.test.ts \
+  src/nativeHumanQuery.test.ts src/viewMetadata.test.ts
+./node_modules/.bin/tsc --noEmit
+```
+
+Final result: 3 suites, **62 passed**, TypeScript exit 0, combined exit 0
+(session 20746). Real local JWKS signatures cover forged header rejection and
+the English Next route. The original ViewMetadata component is executed with
+React SSR; its presentation children and network/storage boundaries are isolated.
+Actual click callbacks cover first-person UNKNOWN, refused observation, a second
+person's distinct key and return to the original key. This is not a browser SSO,
+cross-site-cookie or deployed billing acceptance result.
+
+SDK-only mutations removed the user partition from the key and disabled the
+resolver partition comparison. Both checks actually failed (2 failed, exit 1):
+the second user reused the first key, and the forged-scope call entered the native
+query path instead of refusing at the identity guard. Both files were restored
+from formal source with `cmp` exit 0 before the final 62-pass run. The initial
+61-pass run predates the English-route test and is not substituted for the final
+input. Logs under
+`/volumes/data/kailo/tmp/gateway-locale-repair-20261007.iwRGvX/`:
+`wren-preview-scope-initial.log`, `wren-preview-scope-format.log`,
+`wren-preview-scope-mutation.log`, `wren-preview-scope-restored.log`.

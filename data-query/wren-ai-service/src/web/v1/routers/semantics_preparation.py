@@ -29,6 +29,7 @@ async def prepare_semantics(
         prepare_semantics_request.mdl_hash
     ] = SemanticsPreparationStatusResponse(
         status="indexing",
+        execution_id=prepare_semantics_request.execution_id,
     )
 
     background_tasks.add_task(
@@ -36,7 +37,10 @@ async def prepare_semantics(
         prepare_semantics_request,
         service_metadata=asdict(service_metadata),
     )
-    return SemanticsPreparationResponse(mdl_hash=prepare_semantics_request.mdl_hash)
+    return SemanticsPreparationResponse(
+        mdl_hash=prepare_semantics_request.mdl_hash,
+        execution_id=prepare_semantics_request.execution_id,
+    )
 
 
 @router.get("/semantics-preparations/{mdl_hash}/status")

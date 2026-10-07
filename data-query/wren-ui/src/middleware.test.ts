@@ -43,7 +43,8 @@ describe('native instance identity boundary', () => {
   });
 
   afterAll(async () => {
-    if (originalAncestors === undefined) delete process.env.KAILO_FRAME_ANCESTORS;
+    if (originalAncestors === undefined)
+      delete process.env.KAILO_FRAME_ANCESTORS;
     else process.env.KAILO_FRAME_ANCESTORS = originalAncestors;
     if (originalConfig === undefined)
       delete process.env.WREN_NATIVE_IDENTITY_JSON;
@@ -96,10 +97,15 @@ describe('native instance identity boundary', () => {
   });
 
   it('verifies signed entitlement through a real JWKS endpoint and strips credentials', async () => {
+    const signed = await token();
     const response = await middleware(
-      request('/api/graphql', `Bearer ${await token()}`, {
+      request('/api/graphql', `Bearer ${signed}`, {
         method: 'POST',
-        headers: { origin: settings.publicOrigin, cookie: 'native=synthetic' },
+        headers: {
+          origin: settings.publicOrigin,
+          cookie: 'native=synthetic',
+          'x-kailo-native-human-token': 'forged',
+        },
       }),
     );
     expect(response.headers.get('x-middleware-next')).toBe('1');
@@ -107,7 +113,80 @@ describe('native instance identity boundary', () => {
       response.headers.get('x-middleware-request-authorization'),
     ).toBeNull();
     expect(response.headers.get('x-middleware-request-cookie')).toBeNull();
+    expect(
+      response.headers.get('x-middleware-request-x-kailo-native-human-token'),
+    ).toBe(signed);
     expect(response.headers.get('cache-control')).toContain('no-store');
+  });
+
+  it('does not forward the HUMAN token to unrelated native routes', async () => {
+    const response = await middleware(
+      request('/', `Bearer ${await token()}`, {
+        headers: { 'x-kailo-native-human-token': 'forged' },
+      }),
+    );
+    expect(response.headers.get('x-middleware-next')).toBe('1');
+    expect(
+      response.headers.get('x-middleware-request-x-kailo-native-human-token'),
+    ).toBeNull();
+  });
+
+  it('partitions browser intent only from verified subject and instance, never a supplied scope', async () => {
+    const read = async (subject: string) => {
+      const response = await middleware(
+        request('/api/config', `Bearer ${await token({ sub: subject })}`, {
+          headers: { 'x-kailo-native-identity-scope': 'f'.repeat(64) },
+        }),
+      );
+      expect(response.status).toBe(200);
+      const scope = response.headers.get(
+        'x-middleware-request-x-kailo-native-identity-scope',
+      );
+      expect(scope).toMatch(/^[a-f0-9]{64}$/);
+      expect(scope).not.toBe('f'.repeat(64));
+      return scope;
+    };
+    const first = await read('person-one');
+    expect(await read('person-one')).toBe(first);
+    expect(await read('person-two')).not.toBe(first);
+    expect(
+      (
+        await middleware(
+          request('/api/config', undefined, {
+            headers: { 'x-kailo-native-identity-scope': first },
+          }),
+        )
+      ).status,
+    ).toBe(401);
+    const unrelated = await middleware(
+      request('/', `Bearer ${await token()}`, {
+        headers: { 'x-kailo-native-identity-scope': first },
+      }),
+    );
+    expect(
+      unrelated.headers.get(
+        'x-middleware-request-x-kailo-native-identity-scope',
+      ),
+    ).toBeNull();
+  });
+
+  it('keeps the native identity guard and private propagation on an English Next route', async () => {
+    const signed = await token();
+    const localized = new NextRequest(
+      `${settings.publicOrigin}/en/api/graphql`,
+      {
+        nextConfig: {
+          i18n: { locales: ['zh-CN', 'en'], defaultLocale: 'zh-CN' },
+        },
+        headers: { authorization: `Bearer ${signed}` },
+      },
+    );
+    expect(localized.nextUrl.locale).toBe('en');
+    const response = await middleware(localized);
+    expect(response.status).toBe(200);
+    expect(
+      response.headers.get('x-middleware-request-x-kailo-native-human-token'),
+    ).toBe(signed);
   });
 
   it.each([
@@ -164,7 +243,9 @@ describe('native instance identity boundary', () => {
 
   it('allows only explicit embedding origins without changing native authentication or CSRF', async () => {
     expect(nativeFrameAncestors(undefined)).toBe("frame-ancestors 'self'");
-    expect(nativeFrameAncestors('tauri://localhost')).toBe("frame-ancestors 'self' tauri://localhost");
+    expect(nativeFrameAncestors('tauri://localhost')).toBe(
+      "frame-ancestors 'self' tauri://localhost",
+    );
     process.env.KAILO_FRAME_ANCESTORS = 'https://kailo.example.invalid';
     const bearer = `Bearer ${await token()}`;
     const admitted = await middleware(request('/', bearer));
@@ -172,18 +253,34 @@ describe('native instance identity boundary', () => {
       "frame-ancestors 'self' https://kailo.example.invalid",
     );
     expect((await middleware(request('/'))).status).toBe(401);
-    expect((await middleware(request('/api/graphql', bearer, {
-      method: 'POST', headers: { origin: 'https://kailo.example.invalid' },
-    }))).status).toBe(403);
+    expect(
+      (
+        await middleware(
+          request('/api/graphql', bearer, {
+            method: 'POST',
+            headers: { origin: 'https://kailo.example.invalid' },
+          }),
+        )
+      ).status,
+    ).toBe(403);
     process.env.KAILO_FRAME_ANCESTORS = '*';
     expect((await middleware(request('/', bearer))).status).toBe(503);
   });
 
-  it.each(['*', 'https://*.invalid', 'https://host.invalid/path',
-    'https://user@host.invalid', 'https://host.invalid?query',
-    'https://host.invalid#fragment', 'data:text/html,test',
-    'https://host.invalid;default-src *', 'https://host.invalid:0',
-    'https://host.invalid:65536', 'tauri://localhost:', 'tauri://'])('rejects unsafe frame ancestor %s', (origin) => {
+  it.each([
+    '*',
+    'https://*.invalid',
+    'https://host.invalid/path',
+    'https://user@host.invalid',
+    'https://host.invalid?query',
+    'https://host.invalid#fragment',
+    'data:text/html,test',
+    'https://host.invalid;default-src *',
+    'https://host.invalid:0',
+    'https://host.invalid:65536',
+    'tauri://localhost:',
+    'tauri://',
+  ])('rejects unsafe frame ancestor %s', (origin) => {
     expect(() => nativeFrameAncestors(origin)).toThrow();
   });
 

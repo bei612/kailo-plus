@@ -136,3 +136,73 @@ datasource write was performed by this implementation slice. Real approved
 release/binding/resource/policy facts and a live HUMAN Task/native usage end to
 end remain separate acceptance requirements; fixture success cannot activate
 an unverified binding.
+
+## Native saved-view HUMAN admission, 2026-10-07
+
+This incremental slice uses `edac76e72bc8c1283ea85640d1c00112b44a1c1e` as its
+code base. It implements the existing SS-WRN-IDENTITY/SS-WRN-GOVERNANCE and
+DD-12 dedicated-instance boundary; it does not introduce component users,
+permissions, approvals, metering or a second action executor.
+
+Four-step impact record:
+
+1. The controlled ApplicationAdapterDirectory now optionally delivers
+   `nativeHumanIdentities`, each fenced by binding ID, config digest and active
+   projection generation, referencing an existing IdentityProvider. Its audience,
+   public JWKS file and instance entitlement are operator facts, never request
+   arguments. Issuer comes from the ACTIVE provider. SERVICE transport and the
+   native HUMAN JWT must both validate independently.
+2. `application_native_human::handle` maps the signed subject through the existing
+   ExternalIdentity/HumanIdentity and exact binding-Tenant membership. It does
+   not use or change the default-Tenant resolver and does not invent a
+   PlatformSession. BFF and native requests share the refactored
+   `application_action::submit_inner`, including its ActionDefinition, Resource,
+   ResultExposurePolicy, approval, quota, AE/audit and ComponentTaskWorkflow.
+   The new route is SERVICE transport, not a new browser endpoint. Four generated
+   languages preserve the optional directory field and reference-only request
+   and result contracts; old directories remain readable but cannot enable this
+   native HUMAN path without explicit trust delivery. No migration is required.
+3. Browser refresh reuses an opaque idempotency key. Native retries first observe
+   the same HUMAN AE, do not refreeze an already accepted view or rerun SQL, and
+   do not convert denial of observation into evidence of a failed side effect.
+   The original tenant admission lock fences a concurrent different HUMAN using
+   that key. No SQL, token, cookie or result body is added to Core, history or
+   business contracts. Only the original reconciled terminal audit can produce
+   terminalStatus; HTTP acceptance and DISPATCHED remain nonterminal.
+4. Missing/duplicate headers, unknown provider/subject, foreign Tenant, revoked
+   membership, disabled identity/Principal/provider, paused Tenant, wrong
+   audience/issuer/instance, expired/future token and binding-generation drift
+   fail closed. Rechecks occur before response disclosure. Wren also re-admits
+   after reading its own matching native history. Unknown completion retains the
+   original key; changing a view cannot replace its immutable reference.
+
+Actual narrow evidence, not deployment acceptance:
+
+- Original `tools/gen.sh` exited 0 in existing `kailo-agent-receipt-xvkujx`
+  (4 CPU/8 GiB). New Rust/TypeScript/Go/Dart roundtrip each passed, including
+  absence of terminal status in a merely dispatched receipt.
+- Core native HUMAN tests: 3 passed, including a real transaction in the existing
+  isolated test database, rolled back. One subject had two active Tenant
+  memberships; exact binding Tenant selected the right HUMAN Principal, and
+  each identity/membership/Tenant revocation was rejected. This is not a live
+  datasource or approval/usage E2E. The earlier common-action unit run was
+  4 passed/1 explicitly ignored original fixture-dependent case.
+- `cargo clippy --offline --locked -j16 -p platform-core --bin platform-core --
+  -D warnings` exited 0. Original failures remain: stale SDK Buzz input caused
+  E0432; synchronizing the exact base and refreshing its source mtime corrected
+  it. The initial new connection borrow produced E0308; using the actual acquired
+  connection fixed that source error without relaxing checks.
+- SDK-only removal of the instance entitlement guard caused the real JWT test
+  to fail on `missing instance` (0 passed/1 failed, exit 101); the production
+  file was restored byte-for-byte (cmp 0). Final targeted rerun passed all 3
+  native HUMAN tests, including the rolled-back `component_runtime_lcivus`
+  transaction, and clippy again exited 0.
+
+Logs are under
+`/volumes/data/kailo/tmp/gateway-locale-repair-20261007.iwRGvX/`:
+`native-human-gen.log`, `native-human-core-initial.log`,
+`native-human-core-restored.log`, `native-human-core-synchronized.log`,
+`native-human-core-final.log`, `native-human-core-sql-restored.log`,
+`native-human-roundtrips.log`, `native-human-core-mutation.log` and
+`native-human-core-mutation-restored.log`. No full/build/deployment, real
+resource mutation, quota top-up or native query replay was performed.

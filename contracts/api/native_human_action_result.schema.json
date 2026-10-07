@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"api/native_human_action_result.schema.json",
+  "title":"NativeHumanActionResult",
+  "description":"Reference-only observation of the original HUMAN AE. Terminal status comes from original component-action audit after native/usage reconciliation, never from HTTP acceptance.",
+  "type":"object","additionalProperties":false,
+  "required":["submission","inputReference"],
+  "properties":{
+    "submission":{"$ref":"action_submission.schema.json"},
+    "inputReference":{"$ref":"../domain/content_reference.schema.json"},
+    "terminalStatus":{"$ref":"../enums/task_status.schema.json"},
+    "nativeType":{"type":"string"},
+    "nativeId":{"type":"string"}
+  }
+}

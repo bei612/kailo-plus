@@ -14,6 +14,7 @@ export interface WrenAIError {
 }
 
 export enum WrenAIDeployStatusEnum {
+  IN_PROGRESS = 'IN_PROGRESS',
   SUCCESS = 'SUCCESS',
   FAILED = 'FAILED',
 }
@@ -51,6 +52,7 @@ export enum WrenAILanguage {
 export interface DeployData {
   manifest: Manifest;
   hash: string;
+  executionId: string;
 }
 
 // ask

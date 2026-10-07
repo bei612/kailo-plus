@@ -103,9 +103,11 @@ vi.mock("@client-kit/platform/react/pages", () => ({
   MembersPane: ({ workspaceId }: { workspaceId: string }) => (
     <div data-testid="workspace-members" data-workspace={workspaceId} />
   ),
-  AgentDefinitionsPage: ({ workspaceId }: { workspaceId?: string }) => <div data-testid="agents-scope" data-workspace={workspaceId} />,
   AuditPage: () => null,
   DevicesPage: () => null,
+}));
+vi.mock("./AgentDefinitionsPane", () => ({
+  AgentDefinitionsPane: ({ workspaceId }: { workspaceId?: string }) => <div data-testid="agents-scope" data-workspace={workspaceId} />,
 }));
 vi.mock("@client-kit/platform/react/workflows", () => ({
   WorkflowsPage: ({ workspaceId }: { workspaceId?: string }) => <div data-testid="workflows-scope" data-workspace={workspaceId} />,

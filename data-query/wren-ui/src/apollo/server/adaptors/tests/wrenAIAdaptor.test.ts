@@ -33,6 +33,107 @@ describe('WrenAIAdaptor', () => {
     jest.clearAllMocks();
   });
 
+  describe('deployment terminal evidence', () => {
+    const hash = 'manifest-fixture';
+    const executionId = 'native-log-fixture';
+
+    it('sends the persisted attempt and accepts only its terminal response', async () => {
+      mockedAxios.post.mockResolvedValueOnce({
+        data: { id: hash, execution_id: executionId },
+      });
+      mockedAxios.get.mockResolvedValueOnce({
+        data: { status: 'finished', execution_id: executionId },
+      });
+      expect(
+        await adaptor.deploy({ manifest: sampleManifest, hash, executionId }),
+      ).toEqual({ status: 'SUCCESS' });
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        `${baseEndpoint}/v1/semantics-preparations`,
+        {
+          mdl: JSON.stringify(sampleManifest),
+          id: hash,
+          execution_id: executionId,
+        },
+      );
+    });
+
+    it('does not turn a dispatch disconnect or foreign acknowledgement into failure or success', async () => {
+      mockedAxios.post.mockRejectedValueOnce(new Error('connection closed'));
+      expect(
+        await adaptor.deploy({ manifest: sampleManifest, hash, executionId }),
+      ).toEqual({ status: 'IN_PROGRESS' });
+      mockedAxios.post.mockResolvedValueOnce({
+        data: { id: hash, execution_id: 'previous-log' },
+      });
+      expect(
+        await adaptor.deploy({ manifest: sampleManifest, hash, executionId }),
+      ).toEqual({ status: 'IN_PROGRESS' });
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+    });
+
+    it('keeps missing, foreign, expired, malformed and unknown states unresolved', async () => {
+      for (const data of [
+        { status: 'finished' },
+        { status: 'failed', execution_id: 'old-log' },
+        { status: 'indexing', execution_id: executionId },
+        { status: 'future', execution_id: executionId },
+        { status: 200, execution_id: executionId },
+        {
+          status: 'finished',
+          execution_id: executionId,
+          error: { message: 'contradiction' },
+        },
+      ]) {
+        mockedAxios.get.mockResolvedValueOnce({ data });
+        expect(await adaptor.observeDeploy(hash, executionId)).toEqual({
+          status: 'IN_PROGRESS',
+        });
+      }
+      mockedAxios.get.mockRejectedValueOnce({ response: { status: 404 } });
+      expect(await adaptor.observeDeploy(hash, executionId)).toEqual({
+        status: 'IN_PROGRESS',
+      });
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('retains pending after the original bounded polling window', async () => {
+      const timer = jest
+        .spyOn(global, 'setTimeout')
+        .mockImplementation((callback) => {
+          callback();
+          return undefined;
+        });
+      try {
+        mockedAxios.post.mockResolvedValueOnce({
+          data: { id: hash, execution_id: executionId },
+        });
+        mockedAxios.get.mockResolvedValue({
+          data: { status: 'indexing', execution_id: executionId },
+        });
+        expect(
+          await adaptor.deploy({ manifest: sampleManifest, hash, executionId }),
+        ).toEqual({ status: 'IN_PROGRESS' });
+        expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+      } finally {
+        timer.mockRestore();
+      }
+    });
+
+    it('accepts actual failed indexing only for the same attempt', async () => {
+      mockedAxios.get.mockResolvedValueOnce({
+        data: {
+          status: 'failed',
+          execution_id: executionId,
+          error: { code: 'OTHERS', message: 'indexing failed' },
+        },
+      });
+      expect(await adaptor.observeDeploy(hash, executionId)).toEqual({
+        status: 'FAILED',
+        error: 'indexing failed',
+      });
+    });
+  });
+
   describe('generateRecommendationQuestions', () => {
     const mockInput: RecommendationQuestionsInput = {
       manifest: sampleManifest,

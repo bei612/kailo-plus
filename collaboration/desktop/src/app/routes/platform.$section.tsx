@@ -7,7 +7,6 @@ import {
 import { WorkflowsPage } from "@client-kit/platform/react/workflows";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import {
-  AgentDefinitionsPage,
   AuditPage,
   DevicesPage,
   WorkspaceMembersPage,
@@ -21,6 +20,7 @@ import {
 import { useNativeSession } from "@/features/platform/activeCommunity";
 import { PulseScreen } from "@/features/platform/PulseScreen";
 import { ProjectsScreen } from "@/features/platform/ProjectsScreen";
+import { AgentDefinitionsPane } from "@/features/platform/AgentDefinitionsPane";
 
 export const Route = createFileRoute("/platform/$section")({
   validateSearch: (search: Record<string, unknown>): { workspaceId?: string } => ({
@@ -67,7 +67,7 @@ function PlatformScreen({ section, workspaceId, onWorkspaceChange }: {
         <WorkspaceMembersPage renderIdentity={(pubkey,children,label)=><UserProfilePopover pubkey={pubkey}
           triggerElement="span" triggerAriaLabel={label}>{children}</UserProfilePopover>}/>
       ) : section === "agents" ? (
-        <AgentDefinitionsPage workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} />
+        <AgentDefinitionsPane workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} />
       ) : section === "workflows" ? (
         <WorkflowsPage workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} />
       ) : section === "tasks" ? (

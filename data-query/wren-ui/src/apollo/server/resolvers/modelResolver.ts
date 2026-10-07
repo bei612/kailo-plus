@@ -15,6 +15,7 @@ import {
 } from '../types';
 import { getLogger, transformInvalidColumnName } from '@server/utils';
 import { DeployResponse } from '../services/deployService';
+import { DeployStatusEnum } from '../repositories/deployLogRepository';
 import { safeFormatSQL } from '@server/utils/sqlFormat';
 import { isEmpty, isNil } from 'lodash';
 import { replaceAllowableSyntax, validateDisplayName } from '../utils/regex';
@@ -28,6 +29,16 @@ import {
 } from '../utils/model';
 import { CompactTable, PreviewDataResponse } from '@server/services';
 import { TelemetryEvent } from '../telemetry/telemetry';
+import {
+  NativeHumanQuery,
+  nativePreviewScope,
+} from '../services/nativeHumanQuery';
+import { NativeQueryService } from '../services/nativeQueryService';
+import {
+  loadQueryDelivery,
+  NativeQueryRefusal,
+} from '../services/nativeQueryAdmission';
+import { DEFAULT_PREVIEW_LIMIT } from '../services/queryService';
 
 const logger = getLogger('ModelResolver');
 logger.level = 'debug';
@@ -203,13 +214,13 @@ export class ModelResolver {
     const { id } = await ctx.projectService.getCurrentProject();
     const { manifest } = await ctx.mdlService.makeCurrentModelMDL();
     const currentHash = ctx.deployService.createMDLHash(manifest, id);
-    const lastDeploy = await ctx.deployService.getLastDeployment(id);
-    const lastDeployHash = lastDeploy?.hash;
     const inProgressDeployment =
       await ctx.deployService.getInProgressDeployment(id);
     if (inProgressDeployment) {
       return { status: SyncStatusEnum.IN_PROGRESS };
     }
+    const lastDeploy = await ctx.deployService.getLastDeployment(id);
+    const lastDeployHash = lastDeploy?.hash;
     return currentHash == lastDeployHash
       ? { status: SyncStatusEnum.SYNCRONIZED }
       : { status: SyncStatusEnum.UNSYNCRONIZED };
@@ -236,7 +247,10 @@ export class ModelResolver {
     );
 
     // only generating for user's data source
-    if (project.sampleDataset === null) {
+    if (
+      project.sampleDataset === null &&
+      deployRes.status === DeployStatusEnum.SUCCESS
+    ) {
       await ctx.projectService.generateProjectRecommendationQuestions();
     }
     return deployRes;
@@ -913,21 +927,32 @@ export class ModelResolver {
   }
 
   public async previewViewData(_root: any, args: any, ctx: IContext) {
-    const { id: viewId, limit } = args.where;
-    const view = await ctx.viewRepository.findOneBy({ id: viewId });
-    if (!view) {
-      throw new Error('View not found');
+    const { id: viewId, limit, idempotencyKey, idempotencyScope } = args.where;
+    const config = await loadQueryDelivery();
+    const previewScope = nativePreviewScope(config, ctx.nativeIdentityScope);
+    if (idempotencyScope !== previewScope) {
+      throw new NativeQueryRefusal(409, 'QUERY_IDENTITY_CHANGED');
     }
-    const { manifest } = await ctx.mdlService.makeCurrentModelMDL();
-    const project = await ctx.projectService.getCurrentProject();
-
-    const data = (await ctx.queryService.preview(view.statement, {
-      project,
-      limit,
-      manifest,
-      modelingOnly: false,
-    })) as PreviewDataResponse;
-    return data;
+    const { components } = await import('@/common');
+    const native = new NativeQueryService(
+      config,
+      ctx.projectRepository,
+      ctx.deployRepository,
+      components.apiHistoryRepository,
+      ctx.queryService,
+      ctx.viewRepository,
+    );
+    const receipt = await new NativeHumanQuery(
+      config,
+      native,
+      components.apiHistoryRepository,
+    ).preview(
+      ctx.nativeHumanToken,
+      viewId,
+      limit ?? DEFAULT_PREVIEW_LIMIT,
+      idempotencyKey,
+    );
+    return { ...receipt, previewScope };
   }
 
   // Notice: this is used by AI service.

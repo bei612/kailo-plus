@@ -15,6 +15,20 @@
         "actionTokenAudience": {"type": "string"}, "timeoutSeconds": {"type": "integer"},
         "maxResponseBytes": {"type": "integer"},
         "modelCredentialDeliveries": {"$ref":"#/$defs/modelCredentialDeliveries"},
+        "nativeHumanIdentities": {"type":"array", "description":"受控原生浏览器信任投递；不授业务权限，不由请求提供issuer/subject/key URL。", "items":{
+          "title":"ApplicationNativeHumanIdentity", "type":"object", "additionalProperties":false,
+          "required":["bindingId","configDigest","generation","identityProviderId","audience","jwksFile","accessClaim","accessValue"],
+          "properties":{
+            "bindingId":{"type":"string","format":"uuid"},
+            "configDigest":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+            "generation":{"type":"integer","minimum":1},
+            "identityProviderId":{"type":"string","format":"uuid"},
+            "audience":{"type":"string","minLength":1},
+            "jwksFile":{"type":"string","minLength":1},
+            "accessClaim":{"type":"string","minLength":1},
+            "accessValue":{"type":"string","minLength":1}
+          }
+        }},
         "secretReaders": {"type": "array", "items": {
           "title": "ApplicationSecretReader", "type": "object", "additionalProperties": false,
           "required": ["servicePrincipalId", "roleName", "audience"],

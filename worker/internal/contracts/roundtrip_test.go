@@ -14,6 +14,73 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestAgentVersionAvatarProjectionRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "agent-version-view.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sample map[string]any
+	if err := json.Unmarshal(raw, &sample); err != nil {
+		t.Fatal(err)
+	}
+	for _, include := range []bool{true, false} {
+		if !include {
+			delete(sample, "avatarMediaPaths")
+		}
+		input, err := json.Marshal(sample)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var typed generated.AgentVersionView
+		if err := json.Unmarshal(input, &typed); err != nil {
+			t.Fatal(err)
+		}
+		if (typed.AvatarMediaPaths != nil) != include {
+			t.Fatal("avatar projection presence changed")
+		}
+		encoded, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var back map[string]any
+		if err := json.Unmarshal(encoded, &back); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(sample, back) {
+			t.Fatalf("avatar roundtrip changed fields: %s", encoded)
+		}
+	}
+}
+
+func TestNativeHumanActionRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "native-human-action.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sample struct {
+		Trust   generated.ApplicationNativeHumanIdentity `json:"trust"`
+		Request generated.NativeHumanActionRequest       `json:"request"`
+		Result  generated.NativeHumanActionResult        `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &sample); err != nil {
+		t.Fatal(err)
+	}
+	back, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual, expected any
+	if err := json.Unmarshal(raw, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(back, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatalf("roundtrip mismatch: %s", back)
+	}
+}
+
 func TestAutomationTopicStepRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "automation-topic-step.sample.json"))
 	if err != nil {

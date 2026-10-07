@@ -211,6 +211,10 @@ pub fn router(state: ServiceState) -> Router {
             post(crate::application_binding::pep::check),
         )
         .route(
+            "/service/v1/adapter/human-action",
+            post(crate::application_action::native_human::handle),
+        )
+        .route(
             "/service/v1/adapter/request_read_grant",
             post(crate::application_binding::read_grant::request),
         )

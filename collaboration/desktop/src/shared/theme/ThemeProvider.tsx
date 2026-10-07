@@ -6,17 +6,12 @@ import { isMacPlatform } from "@/shared/lib/platform";
 import { getStorageItem } from "@/shared/lib/safeStorage";
 import { useAppearance, type Appearance } from "@client-kit/platform/theme/use-appearance";
 import type { SyntaxThemeName } from "@client-kit/platform/theme/theme-loader";
+import { DEFAULT_GLASS_OPACITY, GLASS_OPACITY_MAX, GLASS_OPACITY_MIN, type GlassAppearance } from "@client-kit/platform/theme/glass-preference";
 export { ACCENT_COLORS, ACCENT_STORAGE_KEY, NEUTRAL_ACCENT, THEME_STORAGE_KEY, isBuzzTheme } from "@client-kit/platform/theme/use-appearance";
 export const GLASS_BACKGROUND_STORAGE_KEY = "buzz-glass-background";
 export const GLASS_OPACITY_STORAGE_KEY = "buzz-glass-opacity";
-export const GLASS_OPACITY_MIN = 30;
-export const GLASS_OPACITY_MAX = 90;
-export const DEFAULT_GLASS_OPACITY = 65;
 const GLASS_VIBRANCY_MATERIAL = "sidebar";
-type ThemeContextValue = Appearance & {
-  glassBackground: boolean; glassOpacity: number; glassBackgroundSupported: boolean;
-  setGlassBackground: (enabled: boolean) => void; setGlassOpacity: (opacity: number) => void;
-};
+type ThemeContextValue = Appearance & GlassAppearance;
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 /**
  * Toggle the transparent CSS surfaces that reveal native macOS vibrancy behind

@@ -8,6 +8,34 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
+test("AgentVersionView preserves exact avatar map and legacy absence", () => {
+  const sample: import("../src/generated/contracts.js").AgentVersionView = JSON.parse(readFileSync(
+    new URL("../../../../contracts/samples/agent-version-view.sample.json", import.meta.url), "utf8"));
+  for (const include of [true, false]) {
+    if (!include) delete sample.avatarMediaPaths;
+    const back: typeof sample = {
+      assetId:sample.assetId, agentResourceId:sample.agentResourceId, ordinal:sample.ordinal,
+      assetVersion:sample.assetVersion, ownerPrincipalId:sample.ownerPrincipalId, content:sample.content,
+      avatarMediaPaths:sample.avatarMediaPaths, configHash:sample.configHash, state:sample.state,
+    };
+    deepStrictEqual(JSON.parse(JSON.stringify(back)), sample);
+  }
+});
+
+test("native human action preserves controlled trust and nonterminal references", () => {
+  const sample: {
+    trust: import("../src/generated/contracts.js").ApplicationNativeHumanIdentity;
+    request: import("../src/generated/contracts.js").NativeHumanActionRequest;
+    result: import("../src/generated/contracts.js").NativeHumanActionResult;
+  } = JSON.parse(readFileSync(new URL("../../../../contracts/samples/native-human-action.sample.json", import.meta.url), "utf8"));
+  const t=sample.trust, r=sample.request, o=sample.result;
+  const trust: typeof t = {bindingId:t.bindingId,configDigest:t.configDigest,generation:t.generation,
+    identityProviderId:t.identityProviderId,audience:t.audience,jwksFile:t.jwksFile,accessClaim:t.accessClaim,accessValue:t.accessValue};
+  const request: typeof r = {bindingId:r.bindingId,idempotencyKey:r.idempotencyKey,command:r.command};
+  const result: typeof o = {submission:o.submission,inputReference:o.inputReference,terminalStatus:o.terminalStatus,nativeType:o.nativeType,nativeId:o.nativeId};
+  deepStrictEqual(JSON.parse(JSON.stringify({trust,request,result})),sample);
+});
+
 test("automation topic step preserves explicit empty topic", () => {
   const sample: import("../src/generated/contracts.js").AutomationStep = JSON.parse(readFileSync(new URL(
     "../../../../contracts/samples/automation-topic-step.sample.json", import.meta.url), "utf8"));

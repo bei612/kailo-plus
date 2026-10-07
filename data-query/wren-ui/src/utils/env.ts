@@ -6,6 +6,7 @@ const env = {
 export default env;
 
 export type UserConfig = {
+  queryScope?: string;
   isTelemetryEnabled: boolean;
   telemetryKey: string;
   telemetryHost: string;
@@ -14,7 +15,12 @@ export type UserConfig = {
 
 // Get the user configuration
 export const getUserConfig = async (): Promise<UserConfig> => {
-  const config = await fetch('/api/config').then((res) => res.json());
+  const response = await fetch('/api/config', {
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('Native configuration unavailable');
+  const config = await response.json();
   const decodedTelemetryKey = Buffer.from(
     config.telemetryKey,
     'base64',

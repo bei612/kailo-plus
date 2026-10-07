@@ -9,6 +9,43 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('AgentVersionView preserves exact avatar map and legacy absence', () {
+    final sample =
+        jsonDecode(
+              File(
+                '../../contracts/samples/agent-version-view.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    for (final include in [true, false]) {
+      if (!include) sample.remove('avatarMediaPaths');
+      final typed = AgentVersionView.fromJson(sample);
+      expect(typed.avatarMediaPaths != null, include);
+      expect(jsonDecode(jsonEncode(typed.toJson())), sample);
+    }
+  });
+  test(
+    'native human action preserves controlled trust and nonterminal references',
+    () {
+      final sample = jsonDecode(
+        File(
+          '../../contracts/samples/native-human-action.sample.json',
+        ).readAsStringSync(),
+      );
+      expect(
+        ApplicationNativeHumanIdentity.fromJson(sample['trust']).toJson(),
+        sample['trust'],
+      );
+      expect(
+        NativeHumanActionRequest.fromJson(sample['request']).toJson(),
+        sample['request'],
+      );
+      expect(
+        NativeHumanActionResult.fromJson(sample['result']).toJson(),
+        sample['result'],
+      );
+    },
+  );
   test(
     'native sync grant preserves own admission and read-only terminal outcomes',
     () {
@@ -496,17 +533,18 @@ void main() {
     },
   );
   test('ordered automation steps preserve IDs and duration', () {
-    for (final name in ['automation-steps.sample.json', 'automation-message-sequence.sample.json']) {
-    final original = jsonDecode(
-      File(
-        '../../contracts/samples/$name',
-      ).readAsStringSync(),
-    );
-    final typed = AutomationVersionContent.fromJson(
-      original as Map<String, dynamic>,
-    );
-    expect(typed.action, isNull);
-    expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
+    for (final name in [
+      'automation-steps.sample.json',
+      'automation-message-sequence.sample.json',
+    ]) {
+      final original = jsonDecode(
+        File('../../contracts/samples/$name').readAsStringSync(),
+      );
+      final typed = AutomationVersionContent.fromJson(
+        original as Map<String, dynamic>,
+      );
+      expect(typed.action, isNull);
+      expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
     }
   });
   test(

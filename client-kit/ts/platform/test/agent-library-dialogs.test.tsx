@@ -1,14 +1,88 @@
-import { act } from "react";
+import { act, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { AgentDefinitionsPage } from "../src/react/agents";
 import { PlatformProvider } from "../src/react/context";
 import { PersonaDropdownField } from "../src/react/agent-library/PersonaDropdownField";
+import { AgentCreationPreview } from "../src/react/agent-library/AgentCreationPreview";
+import { AgentIdentityFields } from "../src/react/agent-library/AgentDescriptionField";
+import { AvatarHostProvider, type AvatarHost } from "../src/react/profile/avatar-host";
 import type { BffReply, BffRequest } from "../src/transport";
 import { button, click, render, settle, type } from "./render";
 
 const definition = { resourceId: "definition", displayName: "Library Agent", stableSlug: "library-agent",
   ownerPrincipalId: "owner", resourceVersion: 1, resourceState: "ACTIVE", status: "ACTIVE" };
+
+describe("original Agent identity and avatar module", () => {
+  beforeEach(() => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+  const client = createBffClient({ send: async () => ({ status: 503, body: undefined }) });
+  function Avatar({ host, changed, pending }: { host: AvatarHost; changed: (url: string) => void; pending: (value: boolean) => void }) {
+    const [avatar, setAvatar] = useState("");
+    return <PlatformProvider client={client} locale={host.locale}><AvatarHostProvider value={host}>
+      <AgentCreationPreview label="Agent" assetLabel={host.locale === "zh-CN" ? "头像" : "avatar"} avatarUrl={avatar || null}
+        onSelectAvatar={(url) => { setAvatar(url); changed(url); }} onClearAvatar={() => { setAvatar(""); changed(""); }}
+        onUploadPendingChange={pending} />
+    </AvatarHostProvider></PlatformProvider>;
+  }
+
+  it("retains the original URL picker and clear action with translated labels and no profile write", async () => {
+    const upload = vi.fn(); const changed = vi.fn(); const pending = vi.fn();
+    const host = await render(<Avatar host={{ locale: "zh-CN", uploadMediaBytes: upload,
+      rewriteMediaUrl: (url) => url, performDefaultHaptic: () => {} }} changed={changed} pending={pending} />);
+    await click(host.querySelector<HTMLButtonElement>('button[aria-label="添加头像"]')!);
+    const picker = document.querySelector<HTMLElement>('fieldset[aria-label="头像选择器"]')!;
+    expect(picker).not.toBeNull();
+    const input = picker.querySelector<HTMLInputElement>('input[type="url"]')!;
+    await type(input, "https://community.example/media/actual.png");
+    await click(button(picker, "应用"));
+    expect(changed).toHaveBeenLastCalledWith("https://community.example/media/actual.png");
+    expect(upload).not.toHaveBeenCalled();
+    await click(host.querySelector<HTMLButtonElement>('button[aria-label="编辑头像"]')!);
+    await click(button(document.querySelector<HTMLElement>('fieldset[aria-label="头像选择器"]')!, "移除头像"));
+    expect(changed).toHaveBeenLastCalledWith("");
+  });
+
+  it("uploads real image bytes through the host and exposes pending until completion", async () => {
+    let complete!: (value: { url: string; type: string }) => void;
+    const upload = vi.fn(() => new Promise<{ url: string; type: string }>((resolve) => { complete = resolve; }));
+    const changed = vi.fn(); const pending = vi.fn();
+    const host = await render(<Avatar host={{ locale: "en", uploadMediaBytes: upload,
+      rewriteMediaUrl: (url) => url, performDefaultHaptic: () => {} }} changed={changed} pending={pending} />);
+    const file = new File([new Uint8Array([137, 80, 78, 71])], "agent.png", { type: "image/png" });
+    Object.defineProperty(file, "arrayBuffer", { value: async () => new Uint8Array([137, 80, 78, 71]).buffer });
+    const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    await settle();
+    expect(upload).toHaveBeenCalledExactlyOnceWith([137, 80, 78, 71]);
+    expect(pending).toHaveBeenLastCalledWith(true);
+    expect(changed).not.toHaveBeenCalled();
+    await act(async () => complete({ url: "https://community.example/media/image.png", type: "image/png" }));
+    expect(pending).toHaveBeenLastCalledWith(false);
+    expect(changed).toHaveBeenCalledExactlyOnceWith("https://community.example/media/image.png");
+  });
+
+  it("uses the original Unicode edit limit without mutating a loaded historical value", async () => {
+    const description = "😀".repeat(300); const changed = vi.fn(); const named = vi.fn();
+    const host = await render(<PlatformProvider client={client} locale="en">
+      <AgentIdentityFields displayName="Agent" description={description} onDisplayNameChange={named}
+        onDescriptionChange={changed} disabled={false} />
+    </PlatformProvider>);
+    const input = host.querySelector<HTMLInputElement>("#persona-description")!;
+    expect(input.value).toBe(description);
+    expect(changed).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("300/280");
+    await type(host.querySelector<HTMLInputElement>("#persona-display-name")!, "Different name");
+    expect(named).toHaveBeenCalledWith("Different name");
+    expect(changed).not.toHaveBeenCalled();
+    await type(input, `${description}x`);
+    expect(changed).toHaveBeenCalledExactlyOnceWith("😀".repeat(280));
+  });
+});
 
 describe("original Agent configuration picker", () => {
   beforeEach(() => {

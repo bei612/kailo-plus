@@ -68,47 +68,48 @@ export class DeployService implements IDeployService {
   }
 
   public async getInProgressDeployment(projectId) {
-    return await this.deployLogRepository.findInProgressProjectDeployLog(
-      projectId,
-    );
+    const deploy =
+      await this.deployLogRepository.findInProgressProjectDeployLog(projectId);
+    if (!deploy) return null;
+    const result = await this.observe(deploy);
+    return result.status === DeployStatusEnum.IN_PROGRESS ? deploy : null;
   }
 
   public async deploy(manifest, projectId, force = false) {
     const eventName = TelemetryEvent.MODELING_DEPLOY_MDL;
-    try {
-      // generate hash of manifest
-      const hash = this.createMDLHash(manifest, projectId);
-      logger.debug(`Deploying model, hash: ${hash}`);
-
-      if (!force) {
-        // check if the model current deployment
-        const lastDeploy =
-          await this.deployLogRepository.findLastProjectDeployLog(projectId);
-        if (lastDeploy && lastDeploy.hash === hash) {
-          logger.log(`Model has been deployed, hash: ${hash}`);
-          return { status: DeployStatusEnum.SUCCESS };
-        }
-      }
-      const deployData = {
+    const hash = this.createMDLHash(manifest, projectId);
+    const { deploy, created } = await this.deployLogRepository.beginDeployment(
+      {
         manifest,
         hash,
         projectId,
         status: DeployStatusEnum.IN_PROGRESS,
-      } as Deploy;
-      const deploy = await this.deployLogRepository.createOne(deployData);
+      },
+      force,
+    );
+    if (!created) {
+      if (deploy.status === DeployStatusEnum.SUCCESS) {
+        return { status: DeployStatusEnum.SUCCESS };
+      }
+      const result = await this.observe(deploy);
+      // Observing another manifest is not deploying the requested one.
+      return deploy.hash === hash
+        ? result
+        : { status: DeployStatusEnum.IN_PROGRESS };
+    }
+    try {
+      logger.debug(`Deploying model, hash: ${hash}`);
 
       // deploy to AI-service
       const { status: aiStatus, error: aiError } =
         await this.wrenAIAdaptor.deploy({
           manifest,
           hash,
+          executionId: String(deploy.id),
         });
 
-      // update deploy status
-      const status =
-        aiStatus === WrenAIDeployStatusEnum.SUCCESS
-          ? DeployStatusEnum.SUCCESS
-          : DeployStatusEnum.FAILED;
+      const status = this.nativeStatus(aiStatus);
+      if (status === DeployStatusEnum.IN_PROGRESS) return { status };
       await this.deployLogRepository.updateOne(deploy.id, {
         status,
         error: aiError,
@@ -128,13 +129,39 @@ export class DeployService implements IDeployService {
       return { status, error: aiError };
     } catch (err: any) {
       logger.error(`Error deploying model: ${err.message}`);
-      this.telemetry.sendEvent(
-        eventName,
-        { mdl: manifest, error: err.message },
-        err.extensions?.service,
-        false,
+      // HTTP or persistence failure after the durable intent is not a terminal
+      // deployment failure. Original modelSync polling observes this same log.
+      return { status: DeployStatusEnum.IN_PROGRESS };
+    }
+  }
+
+  private nativeStatus(status: WrenAIDeployStatusEnum): DeployStatusEnum {
+    switch (status) {
+      case WrenAIDeployStatusEnum.SUCCESS:
+        return DeployStatusEnum.SUCCESS;
+      case WrenAIDeployStatusEnum.FAILED:
+        return DeployStatusEnum.FAILED;
+      default:
+        return DeployStatusEnum.IN_PROGRESS;
+    }
+  }
+
+  private async observe(deploy: Deploy): Promise<DeployResponse> {
+    try {
+      const result = await this.wrenAIAdaptor.observeDeploy(
+        deploy.hash,
+        String(deploy.id),
       );
-      return { status: DeployStatusEnum.FAILED, error: err.message };
+      const status = this.nativeStatus(result.status);
+      if (status !== DeployStatusEnum.IN_PROGRESS) {
+        await this.deployLogRepository.updateOne(deploy.id, {
+          status,
+          error: result.error,
+        });
+      }
+      return { status, error: result.error };
+    } catch {
+      return { status: DeployStatusEnum.IN_PROGRESS };
     }
   }
 

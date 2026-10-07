@@ -435,7 +435,9 @@ export const typeDefs = gql`
   }
 
   input PreviewViewDataInput {
+    idempotencyScope: String
     id: Int!
+    idempotencyKey: String
     # It will return default 500 rows if not specified limit
     # refer: DEFAULT_PREVIEW_LIMIT
     limit: Int

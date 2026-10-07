@@ -40,6 +40,8 @@ import {
 import { ISqlPairService } from '../services/sqlPairService';
 
 export interface IContext {
+  nativeHumanToken?: string;
+  nativeIdentityScope?: string;
   config: IConfig;
   // telemetry
   telemetry: ITelemetry;
