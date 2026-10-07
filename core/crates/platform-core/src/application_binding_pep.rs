@@ -86,6 +86,14 @@ pub(crate) async fn check(
         let def=crate::governance::exact_definition_for_execution(&state.pool,&ae).await?;
         let operation=text(&raw,"operation")?;
         let arguments:Value=serde_json::from_str(text(&raw,"argumentsJson")?).map_err(|_|invalid())?;
+        if super::read_grant::is_service(&ae) {
+            if status!="ACTIVE" || raw.get("contentReference").is_some() { return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)); }
+            let revision=super::read_grant::authorize(&state,&ae,binding,&claims,operation,&arguments).await?;
+            tx.commit().await?;
+            let response:contracts::AdapterPepCheckResponse=serde_json::from_value(json!({"actionExecutionId":ae.id,
+                "operationId":ae.operation_id,"authorizationMinZedToken":revision})).map_err(|_|invalid())?;
+            return Ok(response);
+        }
         let management=crate::action_token::management_operation(&ae.action_key,&status,operation);
         if def.execution_mode=="PROTOCOL" {
             let observing=matches!(operation,"observe"|"cancel")

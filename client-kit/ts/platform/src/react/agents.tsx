@@ -57,7 +57,7 @@ import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
 import { CronExpressionInput } from "./cron-expression-input";
 import { cronExpressionError, cronYamlError } from "./cron-expression";
 import type { AutomationStep } from "@client-kit/contracts";
-import { supportedSteps, workflowAction, WorkflowStepCard } from "./workflow-steps";
+import { supportedSteps, validApprovalPolicy, workflowApprovalPolicy, workflowAction, WorkflowStepCard } from "./workflow-steps";
 
 // Original UnifiedAgentsSection grid at Buzz 779af8886caae1317b4de962082429867ab61503.
 const IDENTITY_CARD_GRID_CLASS = "w-full grid-cols-1 [@container(min-width:21rem)]:grid-cols-2 [@container(min-width:32rem)]:grid-cols-3 [@container(min-width:43rem)]:grid-cols-4 [@container(min-width:54rem)]:grid-cols-5 grid gap-3";
@@ -213,6 +213,7 @@ function validAutomationContent(value: unknown): value is AutomationVersionConte
     : value.formatVersion !== undefined || value.steps !== undefined || !objectFields(value.action, ["kind", "template"])
       || (value.action.kind !== ActionKind.AgentTurn && value.action.kind !== ActionKind.PostMessage)
       || typeof value.action.template !== "string" || !value.action.template.trim()) return false;
+  if (Array.isArray(value.steps) && value.steps.some((step) => step.action === "request_approval") && value.approvalPolicy !== undefined) return false;
   // The generated contract remains the data model; this is the existing form's
   // accepted subset, also used for authorized read and YAML input.
   const content = value;
@@ -239,12 +240,6 @@ function automationFromYaml(text: string): AutomationVersionContent | null {
     const content: unknown = document.toJS();
     return validAutomationContent(content) ? content : null;
   } catch { return null; }
-}
-
-function validApprovalPolicy(value: AutomationVersionView["content"]["approvalPolicy"]): boolean {
-  return !!value && Object.keys(value).length === 2
-    && typeof value.id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.id)
-    && Number.isSafeInteger(value.version) && value.version > 0;
 }
 
 function validAutomationDetail(value: AutomationDetailView, resource: string, workspace: string): boolean {
@@ -539,13 +534,13 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
               <p>{t("agents.automation.catchupWindowSeconds")}: {version.content.trigger.scheduleSpec.catchupWindowSeconds}</p>
             </> : null}
             <p>{t("agents.automation.resultTarget")}: {t(version.content.resultTarget === ResultTarget.Channel ? "agents.automation.channel" : "agents.automation.thread")}</p>
-            <p>{t("agents.automation.approvalPolicy")}: {version.content.approvalPolicy
-              ? `${version.content.approvalPolicy.id} · ${version.content.approvalPolicy.version}`
+            <p>{t("agents.automation.approvalPolicy")}: {workflowApprovalPolicy(version.content)
+              ? `${workflowApprovalPolicy(version.content)?.id} · ${workflowApprovalPolicy(version.content)?.version}`
               : t("agents.automation.noApproval")}</p>
           </Cell>
           <Cell><span className="whitespace-pre-wrap">{workflowAction(version.content)?.template}</span>
             {version.content.steps ? <ol className="mt-2 space-y-1 text-xs text-muted-foreground">{version.content.steps.map((step) =>
-              <li key={step.id}>{step.name ?? step.id} · {step.action === "delay" ? `${t("workflows.steps.duration")}: ${step.duration}` : t("workflows.steps.message")}</li>)}</ol> : null}
+              <li key={step.id}>{step.name ?? step.id} · {step.action === "delay" ? `${t("workflows.steps.duration")}: ${step.duration}` : step.action === "request_approval" ? t("agents.automation.approvalPolicy") : t("workflows.steps.message")}</li>)}</ol> : null}
           </Cell>
           <Cell><Button disabled={locked || copying} onClick={() => { void copy(version.assetId); }}>{t("agents.automation.copy")}</Button></Cell>
         </tr>)}
@@ -709,8 +704,8 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     && validAutomationContent(value)
     && (value.trigger.kind !== TriggerKind.Mention || value.trigger.mentionPrincipalId === executor?.agentPrincipalId)
     && (value.trigger.kind !== TriggerKind.Schedule || scheduleSupported)
-    && (value.approvalPolicy === undefined || policies?.some((policy) => policy.id === value.approvalPolicy?.id
-      && policy.version === value.approvalPolicy.version) === true);
+    && (workflowApprovalPolicy(value) === undefined || policies?.some((policy) => policy.id === workflowApprovalPolicy(value)?.id
+      && policy.version === workflowApprovalPolicy(value)?.version) === true);
   const contentAvailable = contentUsable(content) && (editorMode === "yaml"
     || (policyAvailable && (trigger !== TriggerKind.Schedule || scheduleValid)));
   const enableAvailable = !!version && !!grant
@@ -905,7 +900,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
             <option value={ActionKind.PostMessage}>{t("agents.automation.postMessage")}</option>
           </select>
         </label>
-        {steps.length ? <div className="space-y-3">{steps.map((step, index) => <WorkflowStepCard key={index} index={index} step={step}
+        {steps.length ? <div className="space-y-3">{steps.map((step, index) => <WorkflowStepCard key={index} index={index} step={step} policies={policies}
           onUpdate={(next) => { setSteps((old) => old.map((value, position) => position === index ? next : value)); if (index === steps.length - 1) setTemplate(next.text ?? ""); }}
           onRemove={index < steps.length - 1 ? () => setSteps((old) => old.filter((_, position) => position !== index)) : undefined} />)}</div>
         : <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
@@ -916,7 +911,14 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
           return old.length ? [...old.slice(0, -1), delay, old[old.length - 1]!] : [delay,
             { id: crypto.randomUUID(), action: ActionEnum.SendMessage, text: template }];
         })}>{t("workflows.steps.addDelay")}</Button> : null}
-        {policies?.length || policyKey ? <label className="flex flex-col gap-1 text-sm">{t("agents.automation.approvalPolicy")}
+        {actionKind === ActionKind.PostMessage && !!policies?.length && !steps.some((step) => step.action === ActionEnum.RequestApproval) ? <Button onClick={() => {
+          const approval: AutomationStep = { id: crypto.randomUUID(), action: ActionEnum.RequestApproval, message: "",
+            ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}) };
+          setSteps((old) => old.length ? [...old.slice(0, -1), approval, old[old.length - 1]!] : [approval,
+            { id: crypto.randomUUID(), action: ActionEnum.SendMessage, text: template }]);
+          setPolicyKey("");
+        }}>{t("workflows.steps.addApproval")}</Button> : null}
+        {!steps.some((step) => step.action === ActionEnum.RequestApproval) && (policies?.length || policyKey) ? <label className="flex flex-col gap-1 text-sm">{t("agents.automation.approvalPolicy")}
           <select value={policyKey} disabled={!policies} onChange={(event) => {
             if (event.target.value === "" || policies?.some((row) => `${row.id}:${row.version}` === event.target.value))
               setPolicyKey(event.target.value);
@@ -971,8 +973,8 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
         </> : null}
         {intent.automationVersionContent.trigger.textPrefix ? <p className="break-words">{t("agents.automation.prefix")}: {intent.automationVersionContent.trigger.textPrefix}</p> : null}
         <p className="whitespace-pre-wrap">{workflowAction(intent.automationVersionContent)?.template}</p>
-        <p>{t("agents.automation.approvalPolicy")}: {intent.automationVersionContent.approvalPolicy
-          ? `${intent.automationVersionContent.approvalPolicy.id} · ${intent.automationVersionContent.approvalPolicy.version}`
+        <p>{t("agents.automation.approvalPolicy")}: {workflowApprovalPolicy(intent.automationVersionContent)
+          ? `${workflowApprovalPolicy(intent.automationVersionContent)?.id} · ${workflowApprovalPolicy(intent.automationVersionContent)?.version}`
           : t("agents.automation.noApproval")}</p>
         <p>{t("agents.automation.resultTarget")}: {t(intent.automationVersionContent.resultTarget === ResultTarget.Channel ? "agents.automation.channel" : "agents.automation.thread")}</p>
       </> : null}

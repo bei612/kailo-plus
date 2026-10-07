@@ -11,6 +11,9 @@ import (
 
 // KnowledgeService defines the interface for knowledge services.
 type KnowledgeService interface {
+	// CreateKnowledgeFromFileAtID retains a native creation intent before storage
+	// side effects. Replays observe the same row and never upload or enqueue twice.
+	CreateKnowledgeFromFileAtID(ctx context.Context, kbID, filename string, data []byte, metadata map[string]string, creationID string) (*types.Knowledge, error)
 	// CreateKnowledgeFromFile creates knowledge from a file.
 	// channel identifies the ingestion channel (e.g. "web", "api", "wechat"); empty defaults to "web".
 	CreateKnowledgeFromFile(

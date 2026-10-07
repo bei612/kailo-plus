@@ -558,6 +558,11 @@ function ApprovalPanel({
             <div className="flex flex-col gap-4">
               {role === "approver" ? <h2 className="text-sm font-medium">{a.actionKey}</h2> : null}
               {role === "approver" ? <InvitationForApproval workflowId={a.workflowId} /> : null}
+              {a.automationStep ? <section className="space-y-2">
+                <h3 className="text-sm font-medium">{a.automationStep.name ?? a.automationStep.id}</h3>
+                <p className="whitespace-pre-wrap break-words">{a.automationStep.message}</p>
+                <p className="text-xs text-muted-foreground">{t("tasks.target")}: <Mono>{a.automationStep.versionAssetId}</Mono></p>
+              </section> : null}
               <Facts
                 rows={[
                   [t("approvals.status"), <ApprovalStatusBadge key="s" approval={a} />],

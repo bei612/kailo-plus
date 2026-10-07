@@ -178,8 +178,18 @@ async fn sign_claims(
 async fn sign_claims_before(
     state: &ServiceState,
     audience: &str,
+    claims: Value,
+    deadline: Option<i64>,
+) -> Result<String, Refusal> {
+    sign_claims_frozen_before(state, audience, claims, deadline, None).await
+}
+
+async fn sign_claims_frozen_before(
+    state: &ServiceState,
+    audience: &str,
     mut claims: Value,
     deadline: Option<i64>,
+    frozen: Option<&Value>,
 ) -> Result<String, Refusal> {
     let config = delivery()?;
     let issuer = text(&config, "issuer")?;
@@ -222,10 +232,24 @@ async fn sign_claims_before(
     if expires <= now {
         return Err(Refusal::Denied(ReasonCode::PermissionDenied));
     }
-    claims["jti"] = json!(Uuid::new_v4());
+    let (jti, issued, expires) = if let Some(stamp) = frozen {
+        let jti = Uuid::parse_str(text(stamp, "jti")?).map_err(|_| invalid())?;
+        if jti.is_nil() {
+            return Err(invalid());
+        }
+        let issued = stamp["iat"].as_i64().ok_or_else(invalid)?;
+        let expires = stamp["exp"].as_i64().ok_or_else(invalid)?;
+        if issued > now || issued >= expires || expires <= now {
+            return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+        }
+        (jti, issued, expires)
+    } else {
+        (Uuid::new_v4(), now, expires)
+    };
+    claims["jti"] = json!(jti);
     claims["iss"] = json!(issuer);
     claims["aud"] = json!(audience);
-    claims["iat"] = json!(now);
+    claims["iat"] = json!(issued);
     claims["exp"] = json!(expires);
     let kid = version.to_string();
     let mut header = Header::new(Algorithm::ES256);
@@ -257,6 +281,30 @@ async fn sign_claims_before(
         return Err(invalid());
     }
     Ok(token)
+}
+
+/// DD-89 SERVICE reads retain the original batch's token identity and expiry
+/// on retry. They neither borrow a human identity nor create an Agent delegation.
+pub(crate) async fn issue_service_read(
+    state: &ServiceState,
+    ae: &crate::governance::Execution,
+    definition: &crate::governance::Definition,
+    audience: &str,
+    zed: &str,
+) -> Result<String, Refusal> {
+    if !crate::application_binding::read_grant::is_service(ae) || zed.is_empty() {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
+    let parameters = ae.parameters.as_ref().ok_or_else(invalid)?;
+    let mut claims = json!({"tenant_id":ae.tenant_id,"actor_principal_id":ae.actor_principal_id,
+        "operation_id":ae.operation_id,"action_execution_id":ae.id,"target_type":definition.target_type,
+        "target_id":ae.target_id,"action_key":ae.action_key,"action_definition_version":ae.action_version,
+        "authorization_min_zed_token":zed,"normalized_parameter_hash":parameters["toolParameterHash"],
+        "idempotency_key":parameters["idempotencyKey"]});
+    if let Some(workspace) = ae.workspace_id {
+        claims["workspace_id"] = json!(workspace);
+    }
+    sign_claims_frozen_before(state, audience, claims, None, parameters.get("readToken")).await
 }
 
 /// Business claims are issued only for the frozen original child and envelope.

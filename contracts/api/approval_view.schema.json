@@ -18,6 +18,7 @@
     "roleRequirements"
   ],
   "properties": {
+    "automationStep": {"$ref": "automation_approval_step_view.schema.json"},
     "workflowId": {
       "type": "string"
     },

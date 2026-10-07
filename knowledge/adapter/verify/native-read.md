@@ -286,3 +286,122 @@ Raw logs are under `/volumes/data/kailo/tmp/knowledge-delete-task.nRNryc/`:
 historical evidence, not a passing run. These are native seam checks, not a
 full check, image build, live deletion, approved release or deployed binding.
 The Wiki terminal-evidence limitation above is unchanged.
+
+### Receiver read batch and original single-file import
+
+This increment implements DD-89 / component standard §8.2 for an already
+governed `knowledge.ingest` call. It does not register an incomplete binding or
+claim that an automatic Cells data-source synchronization is available.
+
+The authority is the existing SERVICE principal, Resource permission,
+ActionExecution, quota decision and audit. The receiver's admitted ingest is
+provenance, not a HUMAN execution parent: the source read creates its own root
+SERVICE ActionExecution and operation. The existing parent-context constraint
+correctly rejects borrowing a HUMAN's actor/operation. Migration
+`20261007060000_service_read_scope` extends the original definition-freeze
+function only for this authenticated receiver/source relationship; it adds no
+table, workflow, body store or permission authority. A Tenant-level receiver
+can read an explicitly granted Workspace resource. Other scope rules remain
+unchanged. Receiver generation, source definition/release/generation and source
+resource version are frozen; retries retain the same read token stamp and do
+not renew an expired token.
+
+The affected path is the original receiver adapter → Core
+`/service/v1/adapter/request_read_grant` → source adapter → native Cells
+versioned bytes → original WeKnora `add_document` and parse queue. The source
+checks its actual authorized root/UUID/version and trusted download origin,
+then exact length and SHA-256; a second current PEP check precedes disclosure.
+The receiver checks its own write permission again before importing. The
+source operation is carried in the binary receipt and retained in the native
+Knowledge metadata. Core receives references/hashes only, not file bytes.
+
+Pinned source facts were rechecked: Cells
+`c57f02f4962835447df694c63bd0fd8c22bd7baf`,
+`common/proto/rest/cellsapi-rest-v2.proto::{NodeVersionsRequest,NodeService.Lookup,NodeService.GetByUuid}`;
+WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/application/service/knowledge_create.go::(*knowledgeService).CreateKnowledgeFromFile`.
+The source adapter consumes the original version history and its version-bound
+presigned URL internally. It does not return native credentials or that URL
+to the receiver. The original native Knowledge row and queue remain import
+authority. The added fixed-ID creation consumer persists its native intent
+before storage access; same-key observation reads that row and never repeats
+upload or enqueue. Different input under the same ID is rejected. Missing
+receipts, pending/failed native work, lost storage or DB acknowledgements,
+revocation and unmatched read-operation receipts do not become success.
+
+Implementation-after narrow checks in the existing limited SDK:
+
+- Cells adapter: 49 passed. Removing the second PEP check in the private
+  copy caused the expected call-count assertion to fail; exact restoration
+  (`cmp` exit 0) restored all 49 passing checks.
+- WeKnora adapter: final 42 passed, including independent read-operation
+  correlation, corrupted bytes, native receipt mismatch and receiver
+  revocation. An earlier private SHA-256 guard mutation caused two actual
+  failures; restoring the original bytes restored its then-39-case suite.
+- Native Go: the existing service and MCP packages ran only
+  `TestCreateKnowledgeFromFileAtID|TestAddDocumentFileObservation` with cached
+  dependencies and `GOPROXY=off`, exit 0. Removing the pre-storage native
+  intent in the private copy caused all three lost-receipt subcases to fail.
+  Exact restoration and a final run passed both packages (`0.492s`, `0.496s`).
+- Original four-side generation exited 0. The joint input also contains the
+  separately owned SERVICE permission and Workflow approval additions; it
+  must be generated/checked again against the final integrated schema tree.
+  TypeScript typecheck plus 35 roundtrips and Dart 30 roundtrips passed.
+  Removing the generated receiver-arguments field in the private TypeScript
+  copy caused TS2353/TS2339 (exit 2), then exact restoration passed again.
+  The Go receiver-grant roundtrip passed (exit 0).
+
+Raw logs are in
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/`:
+`service-read-cells-{baseline,mutation,restored}.log`,
+`service-read-knowledge-final-root-operation.log`,
+`service-read-knowledge-{mutation,restored}.log`,
+`service-read-native-{intent-mutation,restored}.log`,
+`service-read-edge-contract-{mutation,ts-restored}.log`, and
+`service-read-edge-go-contract.log`.
+
+Migration DDL was exercised only in the independent empty
+`read_edge_scope_f3g7s9` database cloned from the existing verification DB:
+`BEGIN; up; down; up; ROLLBACK`, exit 0. This proves SQL definition parsing,
+not SQLx version bookkeeping, live admission or a positive registered-binding
+integration. No production database or binding was changed.
+
+The Core batch then passed the two read-grant checks and the two original
+application-action checks (including source-reference ingest); the pre-existing
+application-action live fixture remains explicitly ignored. Rust roundtrip
+passed 32/32 and `cargo clippy --offline -p platform-core --bin platform-core
+-- -D warnings` exited 0. Compilation used the separately frozen seven approval
+consumer files to match the joint generated optional approval view; they are
+not owned changes in this increment. Earlier private-snapshot failures were
+missing original Buzz/Gateway build inputs, a stale cached generated contract,
+and two absent joint sample files. They were corrected by supplying their exact
+source inputs, not changing product code or weakening checks.
+
+Removing the read-operation match in the private SDK caused
+`service_claims_never_borrow_human_or_agent_authority_or_another_batch` to fail
+on `operation_id` (exit 101). Exact formal source restoration (`cmp` exit 0)
+restored both Core groups, two passing checks each. Their logs are
+`service-read-edge-core-joint.log`,
+`service-read-edge-core-contract-clippy.log`,
+`service-read-edge-core-mutation.log` and
+`service-read-edge-core-mutation-restored.log` in the same log directory.
+
+The actual SQL query check was also run explicitly, not counted from an
+ignored test: `service_read_queries_reject_absent_scope_with_valid_sql`,
+one passed, exit 0. The first SDK connection could not cross the isolated
+Docker networks and its identified test process was terminated. Only the
+empty verification schema was subsequently copied to a new, separately named
+database in the SDK's existing isolated PostgreSQL instance; no business rows
+were copied. The same migration function was installed there, and absent
+receiver/source queries produced the intended denial rather than SQL errors.
+Logs: `service-read-edge-sql-schema-transfer.log`,
+`service-read-edge-sql-up.log`, `service-read-edge-sql-query-restored.log`.
+This still does not prove positive registered-binding admission or SQLx
+migration bookkeeping.
+
+Not accepted by this increment: automatic enumeration/cursors/hash groups,
+ready-new-before-delete synchronization, the native data-source configuration
+UI, live source/receiver conformance and binding, completed cross-service
+usage reconciliation, images or deployment. The original automatic
+data-source delete-before-create behavior is not silently claimed fixed by
+the single-file consumer. No entry for those unfinished paths is added.

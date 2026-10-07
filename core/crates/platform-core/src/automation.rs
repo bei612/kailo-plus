@@ -331,7 +331,23 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
                 }
         })
         .ok_or_else(invalid_management)?;
-    let (policy, version) = match value.get("approvalPolicy") {
+    let step_policy = steps::approval(&native_action).map(|step| &step["approvalPolicy"]);
+    if step_policy.is_some() && value.get("approvalPolicy").is_some() {
+        return Err(invalid_management());
+    }
+    let (policy, version) = policy_reference(step_policy.or_else(|| value.get("approvalPolicy")))?;
+    Ok(version_content(
+        native_trigger,
+        native_action,
+        policy,
+        version,
+        result,
+        name,
+    ))
+}
+
+fn policy_reference(value: Option<&Value>) -> Result<(Option<Uuid>, Option<i32>), Refusal> {
+    Ok(match value {
         None => (None, None),
         Some(raw) => {
             let object = raw
@@ -350,15 +366,7 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
                 .ok_or_else(invalid_management)?;
             (Some(id), Some(version))
         }
-    };
-    Ok(version_content(
-        native_trigger,
-        native_action,
-        policy,
-        version,
-        result,
-        name,
-    ))
+    })
 }
 
 pub(crate) fn version_content(

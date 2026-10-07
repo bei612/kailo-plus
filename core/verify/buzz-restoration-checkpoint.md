@@ -1245,3 +1245,93 @@ generic；后续实际 DOM 可进入任务，不为该探针错误修改导航�
 该检查覆盖已调用的错误响应映射，不替代 PostgreSQL 并发分配、真实 Temporal
 history 或新部署的端到端验收。未新建镜像、未修改线上旧 UNKNOWN，没有新的
 `check.sh --full` 退出 0。
+
+### 审批步骤与独立组件读取导入合批（2026-10-07）
+
+本批基准为 `f2afb73c86e263d6a0e3d4c027dce8b26af3adb4`，保留已入库的
+SERVICE 资源授权及容量等待修正；合并审批候选
+`ff14c0961914055412b1da5248a288e708ac2871` 与读取导入候选
+`b2d1dafe140b2ae892447c35f8193cf7503efac1`，不夹带下一批授权页面、表情
+工作流动作或读取终态收敛实现。权威、四步影响、上游 commit/path/symbol 及
+各模块正反验证分别见 `web-client/fork/verify/web-surface.md` 的审批步骤记录
+与 `knowledge/adapter/verify/native-read.md` 的 Receiver read batch 记录。
+
+共享文件通过私有 index 合并，原正式工作树及其他队友未提交内容未覆盖。
+四侧往返文件保留 SERVICE 权限、审批步骤、receiver read grant 三组消费者；
+生成代码没有将文本合并成功当成正确性证明，而是从最终联合 schema 使用
+原 `tools/gen.sh` 重新生成。沿原生成器的 Mobile 文案仍与共享 TypeScript
+同源，没有新增一份 Web 或 Desktop 页面实现。
+
+既有 4 CPU/8 GiB SDK、Data 缓存与 Cargo `-j16` 下实际执行：
+
+- 原四侧生成及 `gen.sh --check` 均退出 0；中英文 Mobile 文案同步检查通过。
+- TypeScript 类型检查及往返 37 项通过，Dart 往返 32 项通过，Go 原契约包
+  退出 0，Rust 往返 32 项通过；联合命令 session 37397 最终退出 0。
+- 原 `tools/check.sh` 的 contract 子步骤实际退出 0：四侧生成同步，270 份
+  schema 相对 `contracts-v0.1.0` 无破坏性变更，匹配 3 份历史 schema。
+  该旧 tag 的覆盖很窄，不将此结果扩称全部历史业务兼容或生产验收。
+- 第一次独立容器 contract 子步骤的生成同步退出失败，历史兼容部分通过；
+  缺少生成器诊断，不能据此断言业务生成代码有错。第二次按照原检查入口
+  投递可写 HOME/XDG/Data 缓存，启动前回读 cgroup 4 CPU/8 GiB 与运行 UID，
+  同一 schema 与生成字节下整个子步骤通过，session 57818 最终退出 0。
+
+原始联合日志在
+`/volumes/data/kailo/tmp/combined-import-approval-20261007.ULg0qp/`：
+`combined-contracts.log`、`combined-compatibility.log` 与
+`combined-compatibility-restored.log`。SDK 仅做原工具格式化；没有修改权限
+或产品代码来迁就执行环境。实现后的变异与逐字还原证据沿上述两个模块记录。
+
+本批是源码集成，不是发布或入口开放。新 SERVICE_READ 的终态、用量和过期
+对账消费者尚未闭合，组件 binding 未注册，不将令牌发放当成读取/导入成功。
+自动 Connector、完整工作流七动作、三人双 Agent 稳定协作、Windows/Mobile
+及全页面双语视觉验收仍未完成；本批未构建镜像或部署，完整检查尚无新退出 0。
+线上仍为固定 `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b` 的 Core/Worker/Web。
+正常浏览器会话刷新后频道再次显示已同步，实际截图并查看
+`168-live-46-channel-current.png`，位于原 Playwright 目录；不把该频道截图
+当成所有页面或双端已与上游等效。
+
+该候选 tree `216e3793ef2e26c17ea40b43fdffdb98709b567c` 随后实际运行一次
+原 `tools/check.sh --full`，session 83127 最终退出 **1**，原始输出保存于
+`/volumes/data/kailo/tmp/tmp.yhqa10gcNh.check.log`。Core 主程序 296 项通过、
+38 项隔离数据库用例 ignored；其余 Cargo、Go、Dart、Workflow replay 通过。
+未投递 DATABASE_URL，实际迁移演练明确 SKIP；不将迁移文件成对称作数据库演练。
+完整入口使用只读正式 Git index，报告 242 份 schema/3 历史匹配；上面的独立
+contract 子步骤使用私有候选 index，报告 270 份/3 历史匹配，两者枚举范围
+不同，不将完整入口的计数当成私有候选新增 schema 的覆盖证明。
+
+本次失败中的源码静态项原因为测试模块后仍声明函数、已全字段初始化仍使用
+Default，以及两个文件格式。只移动 `list_own_audit` 声明位置、删除测试中的
+冗余初始化并格式化，不修改鉴权、SQL、Workflow、状态或错误分类。
+修正后 SDK 内 workspace/all-targets `cargo clippy -- -D warnings` 退出 0
+（session 4035），四个涉及文件的 `rustfmt --check` 退出 0。
+
+共享 TS 原命令诊断为 549/551 通过，两项主题检查失败。
+对应恢复的原样源码为 Buzz `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/settings/ui/ProfileSettingsCard.tsx::ProfileSettingsCard`、
+`desktop/src/features/settings/ui/AppearanceSettingsControls.tsx::ThreadLayoutDiagram`、
+`desktop/src/features/workflows/ui/WorkflowDurationField.tsx::WorkflowDurationField`。
+原检查误把属性过渡、头像内容颜色、宿主变量 SVG 与进度宽度当作第二主题，
+且漏登记两端已有的 sidebar-border 映射。修正原检查的精确表达式识别，
+没有删改产品样式、动画或开设通用颜色豁免；同时要求两个宿主的实际映射。
+SDK 单独把头像颜色改为字面量、将 Web sidebar-border 改指另一变量，原两项
+检查实际都失败（session 95690，exit 1）；还原后两文件与固定 tree 逐字 cmp 0，
+原 pages 文件全部 250 项通过（session 90981，exit 0）。
+原始诊断和正反结果位于同一合批日志目录，不覆盖完整检查的失败记录。
+
+完整检查其余失败是尚未重新发布的 Web/Desktop/Cells/WeKnora 产物源码摘要
+及追溯摘要不一致，Projects 缺发布摘要；保留真实阻断，不改摘要冒充新构建。
+本批没有发布构建或部署，没有生产就绪声明。
+
+已部署 `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b` 实际补拍并查看
+`169-live-46-tasks.png` 至 `175-live-46-agents.png`：首次任务切换截图仍是
+频道，复查 170 已正常显示任务；171 审批空态、172 审计、173 设备、174
+工作流、175 Agent 均为真实登录会话，不注入假数据或替代认证。
+174 仍有重复标题/刷新，175 仍有技术化说明及多个刷新；172 显示部分
+未识别动作，不能声称 i18n 或视觉细节完全恢复。这些照片只证明所拍页面，
+不证明全部页面、所有状态或 Windows 端同等体验。
+
+后续仅文档快路径 session 32367 在导出源码期间遇到 Data 可用空间不足，
+已向本次导出的 git/tar 子进程发送 TERM，未进入编译，不把该快路径算通过。
+既有完整检查的文档六项通过仍只对应 tree 216e3793；本段新增记录没有新的
+文档快路径成功回执。所有源码、原始失败与截图保留；没有清理共享缓存、
+数据库、镜像或其他任务目录。发布仍受上述真实失败与验收缺口约束。

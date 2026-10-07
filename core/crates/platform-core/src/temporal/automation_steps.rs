@@ -225,7 +225,6 @@ mod tests {
                 TimerFiredEventAttributes {
                     started_event_id: id,
                     timer_id: format!("timer-{id}"),
-                    ..Default::default()
                 },
             )),
             ..Default::default()

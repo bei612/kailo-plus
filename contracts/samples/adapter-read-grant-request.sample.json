@@ -1,0 +1,10 @@
+{
+  "receiverBindingId": "10000000-0000-4000-8000-000000000001",
+  "receiverActionExecutionId": "10000000-0000-4000-8000-000000000002",
+  "receiverArgumentsJson": "{\"input\":{\"displayName\":\"manual.txt\",\"mediaType\":\"text/plain\",\"nativeObjectRef\":\"20000000-0000-4000-8000-000000000003\",\"nativeRevision\":\"revision-one\",\"resourceId\":\"20000000-0000-4000-8000-000000000001\"},\"target\":{\"resourceId\":\"10000000-0000-4000-8000-000000000003\"}}",
+  "sourceResourceId": "20000000-0000-4000-8000-000000000001",
+  "actionKey": "file_storage.read@v1",
+  "actionVersion": 1,
+  "idempotencyKey": "10000000-0000-4000-8000-000000000004",
+  "inputJson": "{\"displayName\":\"manual.txt\",\"mediaType\":\"text/plain\",\"nativeObjectRef\":\"20000000-0000-4000-8000-000000000003\",\"nativeRevision\":\"revision-one\",\"resourceId\":\"20000000-0000-4000-8000-000000000001\"}"
+}

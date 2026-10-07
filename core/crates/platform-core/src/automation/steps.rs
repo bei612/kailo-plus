@@ -1,4 +1,4 @@
-//! REQ-23/24: original ordered Delay -> send_message slice, executed by AgentTask.
+//! REQ-23/24: ordered Delay / pinned approval -> send_message, executed by AgentTask.
 //! This is version validation/projection, not a scheduler or a step executor.
 use serde_json::{json, Value};
 
@@ -58,6 +58,7 @@ pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
         .filter(|steps| !steps.is_empty())
         .ok_or_else(invalid_management)?;
     let mut ids = std::collections::HashSet::new();
+    let mut has_approval = false;
     for (index, step) in steps.iter().enumerate() {
         let id = step
             .get("id")
@@ -80,14 +81,27 @@ pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
             {
                 return Err(invalid_management());
             }
-        } else if !fields(step, &["id", "name", "action", "duration"])
-            || step["action"] != "delay"
-            || step["duration"]
-                .as_str()
-                .and_then(duration_seconds)
-                .is_none()
-        {
-            return Err(invalid_management());
+        } else {
+            match step["action"].as_str() {
+                Some("delay")
+                    if fields(step, &["id", "name", "action", "duration"])
+                        && step["duration"]
+                            .as_str()
+                            .and_then(duration_seconds)
+                            .is_some() => {}
+                Some("request_approval")
+                    if !has_approval
+                        && fields(step, &["id", "name", "action", "approvalPolicy", "message"])
+                        && step["message"]
+                            .as_str()
+                            .is_some_and(|text| !text.trim().is_empty())
+                        && super::policy_reference(Some(&step["approvalPolicy"]))
+                            .is_ok_and(|(id, version)| id.is_some() && version.is_some()) =>
+                {
+                    has_approval = true;
+                }
+                _ => return Err(invalid_management()),
+            }
         }
     }
     // Same immutable version owns this exact projection and the original steps.
@@ -100,6 +114,24 @@ pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
 
 pub(crate) fn is_message_kind(kind: &str) -> bool {
     matches!(kind, "POST_MESSAGE" | "POST_MESSAGE_STEPS")
+}
+
+/// Only one policy-backed gate is currently executable. The immutable step is
+/// the source; the existing version columns remain its policy projection.
+pub(crate) fn approval(native_action: &Value) -> Option<&Value> {
+    native_action
+        .get("steps")?
+        .as_array()?
+        .iter()
+        .find(|step| step["action"] == "request_approval")
+}
+
+pub(crate) fn delays_before_approval(native_action: &Value) -> Option<usize> {
+    native_action
+        .get("steps")?
+        .as_array()?
+        .iter()
+        .position(|step| step["action"] == "request_approval")
 }
 
 pub(crate) fn supported(action_value: &Value) -> bool {
@@ -146,6 +178,7 @@ pub(crate) fn delays(native_action: &Value) -> Result<Vec<(String, i64)>, Refusa
     steps
         .iter()
         .take(steps.len() - 1)
+        .filter(|step| step["action"] == "delay")
         .map(|step| {
             Ok((
                 step["id"]
@@ -164,6 +197,50 @@ pub(crate) fn delays(native_action: &Value) -> Result<Vec<(String, i64)>, Refusa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn approval_preserves_policy_message_and_timer_order_without_copying_an_executor() {
+        let steps = json!([
+            {"id":"before","action":"delay","duration":"1s"},
+            {"id":"approval","name":"Review","action":"request_approval",
+             "approvalPolicy":{"id":"00000000-0000-4000-8000-000000000001","version":2},"message":"Review this reply"},
+            {"id":"after","action":"delay","duration":"2s"},
+            {"id":"reply","action":"send_message","text":"Approved reply"}
+        ]);
+        let projected = action(&steps).unwrap();
+        assert!(supported(&projected));
+        assert_eq!(delays_before_approval(&projected), Some(1));
+        assert_eq!(approval(&projected), Some(&steps[1]));
+        assert_eq!(
+            delays(&projected).unwrap(),
+            vec![("before".into(), 1), ("after".into(), 2)]
+        );
+        let mut exposed = json!({});
+        expose(&mut exposed, &projected).unwrap();
+        assert_eq!(exposed["steps"], steps);
+        for field in ["from", "timeout", "timeout_secs", "if"] {
+            let mut invalid = steps.clone();
+            invalid[1][field] = json!("unbound");
+            assert!(action(&invalid).is_err(), "{field}");
+        }
+        for replacement in [
+            json!(null),
+            json!({"id":"00000000-0000-4000-8000-000000000001"}),
+            json!({"id":"00000000-0000-0000-0000-000000000000","version":2}),
+            json!({"id":"00000000-0000-4000-8000-000000000001","version":0}),
+        ] {
+            let mut invalid = steps.clone();
+            invalid[1]["approvalPolicy"] = replacement;
+            assert!(action(&invalid).is_err());
+        }
+        let mut duplicate = steps.clone();
+        duplicate[2] = steps[1].clone();
+        duplicate[2]["id"] = json!("another-approval");
+        assert!(action(&duplicate).is_err());
+        let mut empty_message = steps;
+        empty_message[1]["message"] = json!(" ");
+        assert!(action(&empty_message).is_err());
+    }
 
     #[test]
     fn original_order_and_ids_survive_the_existing_immutable_version_projection() {

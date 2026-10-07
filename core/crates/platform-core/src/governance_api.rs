@@ -24,7 +24,7 @@ use contracts::{
     ApprovalDecisionUpdate, ApprovalSelector, ApprovalStateReport, ApprovalView,
     FreshApprovalAdmissionRequest, ReasonCode, TaskView,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::bff::{resolve_lifecycle_execution_context, BffState, ExecutionContext};
@@ -643,13 +643,16 @@ struct ApprovalRow {
     role_requirements: Value,
     self_approval: String,
     ref_state: String,
+    automation_version_asset_id: Option<Uuid>,
+    automation_action: Option<Value>,
 }
 
 const APPROVAL_QUERY: &str = "
     select ap.workflow_id, ae.id as action_execution_id, ae.action_key, d.target_type, ae.target_id,
            ae.workspace_id, ae.tenant_id, ae.initiator_principal_id, ap.status, ap.decisions,
            ap.expires_at, ap.consume_deadline, ap.reason_code, pol.role_requirements,
-           pol.self_approval, w.projection_state as ref_state
+           pol.self_approval, w.projection_state as ref_state,
+           av.asset_id as automation_version_asset_id, av.action as automation_action
     from projection.approval_projection ap
     join admission.action_execution ae on ae.id = ap.action_execution_id
     join projection.workflow_ref w on w.workflow_id = ap.workflow_id
@@ -673,6 +676,25 @@ impl ApprovalRow {
     }
 
     fn view(self) -> Option<ApprovalView> {
+        let automation_step = match (&self.automation_action, self.automation_version_asset_id) {
+            (Some(action), Some(version)) => {
+                if !crate::automation::steps::supported(action) {
+                    return None;
+                }
+                match crate::automation::steps::approval(action) {
+                    Some(step) => {
+                        let mut view = json!({"versionAssetId":version,"id":step["id"],"message":step["message"]});
+                        if let Some(name) = step.get("name") {
+                            view["name"] = name.clone();
+                        }
+                        Some(serde_json::from_value(view).ok()?)
+                    }
+                    None => None,
+                }
+            }
+            (None, None) => None,
+            _ => return None,
+        };
         let terminal_ref = self.ref_state == "TERMINAL";
         let open = matches!(self.status.as_str(), "REQUESTED" | "WAITING" | "APPROVED");
         let observation = if self.ref_state == "UNKNOWN" {
@@ -698,6 +720,7 @@ impl ApprovalRow {
             role_requirements: serde_json::from_value(self.role_requirements).ok()?,
             reason: self.reason_code.as_deref().and_then(parse),
             observation,
+            automation_step,
         })
     }
 }

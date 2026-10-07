@@ -34,8 +34,8 @@ pub(crate) async fn child_policy(
     if !is_child(ae) {
         return Ok(None);
     }
-    let reference: Option<(Uuid,i32)> = sqlx::query_as(
-        "select v.approval_policy_id,v.approval_policy_version
+    let reference: Option<(Uuid,i32,Value)> = sqlx::query_as(
+        "select v.approval_policy_id,v.approval_policy_version,v.action
          from admission.action_execution c join admission.action_execution p on p.id=c.parent_action_execution_id
          join catalog.agent_invocation i on i.action_execution_id=p.id
          join catalog.automation_version v on v.asset_id=i.automation_version_asset_id
@@ -48,7 +48,18 @@ pub(crate) async fn child_policy(
            and c.parameters->'automationStepApproval'->>'policyId'=ap.id::text
            and c.parameters->'automationStepApproval'->>'policyVersion'=ap.version::text")
         .bind(ae.id).fetch_optional(&g.pool).await?;
-    let (id, version) = reference.ok_or_else(unknown)?;
+    let (id, version, action) = reference.ok_or_else(unknown)?;
+    let expected = steps::approval(&action).and_then(|step| step["id"].as_str());
+    if !steps::supported(&action)
+        || ae
+            .parameters
+            .as_ref()
+            .and_then(|parameters| parameters.pointer("/automationStepApproval/stepId"))
+            .and_then(Value::as_str)
+            != expected
+    {
+        return Err(unknown());
+    }
     Ok(Some(governance::exact_policy(&g.pool, id, version).await?))
 }
 
@@ -247,7 +258,7 @@ struct GateFacts {
     tenant_id: Uuid,
     approval_policy_id: Option<Uuid>,
     approval_policy_version: Option<i32>,
-    action_kind: Option<String>,
+    action: Option<Value>,
 }
 
 /// Called by the authenticated current AgentTask Activity, before Capacity,
@@ -260,7 +271,7 @@ pub(crate) async fn gate(
     let g = &state.governance;
     let mut tx = state.pool.begin().await?;
     let facts:Option<GateFacts>=sqlx::query_as(
-        "select i.action_execution_id,i.tenant_id,v.approval_policy_id,v.approval_policy_version,v.action->>'kind' action_kind
+        "select i.action_execution_id,i.tenant_id,v.approval_policy_id,v.approval_policy_version,v.action
          from catalog.agent_invocation i left join catalog.automation_version v
            on v.asset_id=i.automation_version_asset_id and v.automation_resource_id=i.automation_resource_id
          where i.id=$1") .bind(invocation).fetch_optional(&mut *tx).await?;
@@ -269,9 +280,18 @@ pub(crate) async fn gate(
         tenant_id: tenant,
         approval_policy_id: policy_id,
         approval_policy_version: policy_version,
-        action_kind: action,
+        action,
     } = facts.ok_or_else(unknown)?;
-    let message_only = match action.as_deref() {
+    let action = action.ok_or_else(unknown)?;
+    if !steps::supported(&action) {
+        return Err(unknown());
+    }
+    if let Some(step) = steps::approval(&action) {
+        if policy_reference(Some(&step["approvalPolicy"]))? != (policy_id, policy_version) {
+            return Err(unknown());
+        }
+    }
+    let message_only = match action["kind"].as_str() {
         Some("POST_MESSAGE" | "POST_MESSAGE_STEPS") => true,
         Some("AGENT_TURN") => false,
         _ => return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
@@ -324,6 +344,9 @@ pub(crate) async fn gate(
         parameters["targetVersion"] = json!(resource.version);
         parameters["automationStepApproval"] = json!({"invocationId":invocation,"policyId":pid,
             "policyVersion":pver,"affectedOwnerRefs":refs});
+        if let Some(step) = steps::approval(&action) {
+            parameters["automationStepApproval"]["stepId"] = step["id"].clone();
+        }
         sqlx::query("insert into admission.action_execution(id,parent_action_execution_id,operation_id,tenant_id,
             workspace_id,action_key,action_version,initiator_principal_id,actor_principal_id,target_id,
             parameter_hash,parameters,approval_workflow_id,approval_expires_at,gate_state,dispatch_state,reason_code,correlation_id)

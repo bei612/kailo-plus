@@ -9,8 +9,10 @@
   "properties": {
     "id": {"type": "string", "minLength": 1},
     "name": {"type": "string", "minLength": 1},
-    "action": {"type": "string", "enum": ["delay", "send_message"]},
+    "action": {"type": "string", "enum": ["delay", "request_approval", "send_message"]},
     "duration": {"type": "string", "minLength": 1},
+    "approvalPolicy": {"$ref": "automation_approval_policy_ref.schema.json", "description": "request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。"},
+    "message": {"type": "string", "minLength": 1},
     "text": {"type": "string", "minLength": 1}
   }
 }

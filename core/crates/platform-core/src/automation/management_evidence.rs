@@ -388,6 +388,26 @@ fn step_approval_reference_is_explicit_and_changes_the_frozen_version_hash() {
 }
 
 #[test]
+fn ordered_approval_uses_the_same_pinned_policy_and_rejects_a_second_header_policy() {
+    let policy = json!({"id":Uuid::new_v4(),"version":2});
+    let mut content = json!({"trigger":{"kind":"CHANNEL_MESSAGE"},"resultTarget":"TRIGGER_THREAD",
+        "formatVersion":2,"steps":[
+            {"id":"review","action":"request_approval","approvalPolicy":policy,"message":"Review reply"},
+            {"id":"reply","action":"send_message","text":"Approved"}]});
+    let frozen = management_content(&content).unwrap();
+    assert_eq!(frozen["approvalPolicyId"], policy["id"]);
+    assert_eq!(frozen["approvalPolicyVersion"], policy["version"]);
+    assert_eq!(frozen["action"]["steps"], content["steps"]);
+    content["steps"][0]["message"] = json!("A different review");
+    assert_ne!(
+        collab_bridge::limits::canonical_digest(&frozen),
+        collab_bridge::limits::canonical_digest(&management_content(&content).unwrap())
+    );
+    content["approvalPolicy"] = policy;
+    assert!(management_content(&content).is_err());
+}
+
+#[test]
 fn six_management_commands_require_their_exact_fields() {
     let workspace = Uuid::new_v4();
     let installation = Uuid::new_v4();

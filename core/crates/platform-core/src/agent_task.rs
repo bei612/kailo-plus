@@ -168,11 +168,64 @@ async fn advance_accepted(
             );
         }
     }
-    if invocation.automation_action_kind.is_some() && invocation.status == "CREATED" {
-        let cancel = match post_message::activity_fence(&state, &invocation, &input, true).await {
-            Ok(native) => native || input.cancel_requested || invocation.cancel_pending,
+    let automation_cancel =
+        if invocation.automation_action_kind.is_some() && invocation.status == "CREATED" {
+            match post_message::activity_fence(&state, &invocation, &input, true).await {
+                Ok(native) => native || input.cancel_requested || invocation.cancel_pending,
+                Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+            }
+        } else {
+            false
+        };
+    let pending_delay = if invocation
+        .automation_action_kind
+        .as_deref()
+        .is_some_and(crate::automation::steps::is_message_kind)
+        && invocation.status == "CREATED"
+    {
+        let action: Value = match sqlx::query_scalar("select v.action from catalog.agent_invocation i join catalog.automation_version v on v.asset_id=i.automation_version_asset_id and v.automation_resource_id=i.automation_resource_id where i.id=$1")
+            .bind(id).fetch_one(&state.pool).await { Ok(action) => action, Err(error) => return unavailable(error) };
+        let delays = match crate::automation::steps::delays(&action) {
+            Ok(delays) => delays,
             Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
         };
+        if delays.is_empty() || automation_cancel {
+            None
+        } else {
+            let completed = match state
+                .temporal
+                .automation_delay_progress(
+                    &invocation.workflow_id,
+                    &observed.first_run_id,
+                    &input.run_id,
+                    &input.activity_id,
+                    &input.invocation_id,
+                    &delays,
+                )
+                .await
+            {
+                Ok(completed) => completed,
+                Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+            };
+            let next = delays.get(completed).cloned();
+            // A policy-backed step starts only after the earlier original
+            // timers fired. Legacy version-level approval still precedes all timers.
+            if crate::automation::steps::delays_before_approval(&action)
+                .is_some_and(|before| completed < before)
+            {
+                return match next {
+                    Some((step, seconds)) => (StatusCode::OK, Json(serde_json::json!({"invocationId":id,"status":"RUNNING",
+                        "waitingReason":"WAITING_TIMER","finishActivity":true,"delayStep":{"id":step,"seconds":seconds}}))).into_response(),
+                    None => result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+                };
+            }
+            next
+        }
+    } else {
+        None
+    };
+    if invocation.automation_action_kind.is_some() && invocation.status == "CREATED" {
+        let cancel = automation_cancel;
         match crate::automation::step_approval::gate(&state, id, cancel).await {
             Ok(crate::automation::step_approval::Gate::Ready) => (),
             Ok(crate::automation::step_approval::Gate::Waiting { workflow_id, input }) => {
@@ -226,34 +279,9 @@ async fn advance_accepted(
         .as_deref()
         .is_some_and(crate::automation::steps::is_message_kind)
     {
-        if invocation.status == "CREATED" {
-            let action: Value = match sqlx::query_scalar("select v.action from catalog.agent_invocation i join catalog.automation_version v on v.asset_id=i.automation_version_asset_id and v.automation_resource_id=i.automation_resource_id where i.id=$1")
-                .bind(id).fetch_one(&state.pool).await { Ok(action) => action, Err(error) => return unavailable(error) };
-            let delays = match crate::automation::steps::delays(&action) {
-                Ok(delays) => delays,
-                Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
-            };
-            if !delays.is_empty() && !input.cancel_requested && !invocation.cancel_pending {
-                let completed = match state
-                    .temporal
-                    .automation_delay_progress(
-                        &invocation.workflow_id,
-                        &observed.first_run_id,
-                        &input.run_id,
-                        &input.activity_id,
-                        &input.invocation_id,
-                        &delays,
-                    )
-                    .await
-                {
-                    Ok(completed) => completed,
-                    Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
-                };
-                if let Some((step, seconds)) = delays.get(completed) {
-                    return (StatusCode::OK, Json(serde_json::json!({"invocationId":id,"status":"RUNNING",
-                        "waitingReason":"WAITING_TIMER","finishActivity":true,"delayStep":{"id":step,"seconds":seconds}}))).into_response();
-                }
-            }
+        if let Some((step, seconds)) = pending_delay {
+            return (StatusCode::OK, Json(serde_json::json!({"invocationId":id,"status":"RUNNING",
+                "waitingReason":"WAITING_TIMER","finishActivity":true,"delayStep":{"id":step,"seconds":seconds}}))).into_response();
         }
         return post_message::advance(&state, &invocation, &input).await;
     }

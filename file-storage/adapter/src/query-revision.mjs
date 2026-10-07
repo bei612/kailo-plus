@@ -6,6 +6,7 @@ export { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
 import { createServer } from 'node:http';
 import { documentConfiguration, launchDocument } from './document-launch.mjs';
 import { documentLifecycle } from './document-lifecycle.mjs';
+import { readConfiguration, readFile } from './service-read.mjs';
 
 // The fixed Cells REST v2 read seam and original DOCUMENT PAT launch share this
 // binding adapter. Neither implies release activation or tool registration.
@@ -24,7 +25,7 @@ export function configuration(value) {
     'actionTokenJwksFile', 'corePepUrl', 'oidcTokenUrl', 'oidcClientId',
     'oidcClientSecretFile', 'timeoutMs', 'maxBodyBytes', 'listenHost', 'listenPort'];
   if (!object(value) || required.some((key) => !Object.hasOwn(value, key))
-    || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch'].includes(key))) throw new Refused(503);
+    || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch', 'readEdge'].includes(key))) throw new Refused(503);
   for (const key of ['bindingId', 'tenantId', 'nativeWorkspaceId', 'nativeRootRef']) {
     if (!UUID.test(value[key])) throw new Refused(503);
   }
@@ -42,7 +43,7 @@ export function configuration(value) {
   for (const key of ['cellsBearerFile', 'actionTokenJwksFile', 'oidcClientSecretFile']) {
     if (!value[key].startsWith('/')) throw new Refused(503);
   }
-  return Object.freeze({ ...value, ...(value.documentLaunch === undefined ? {}
+  return Object.freeze({ ...value, ...(value.readEdge === undefined ? {} : {readEdge:readConfiguration(value.readEdge)}), ...(value.documentLaunch === undefined ? {}
     : { documentLaunch: documentConfiguration(value.documentLaunch) }) });
 }
 
@@ -233,6 +234,17 @@ export function createAdapter(rawConfig) {
         return;
       }
       if (request.url === '/platform-adapter/v1/execute') {
+        let body;
+        try { body=JSON.parse(raw); } catch { throw new Refused(400); }
+        if (body?.actionKey === 'file_storage.read@v1') {
+          const file=await readFile(config,deadline,raw,request.headers['idempotency-key'],request.headers.authorization.slice(7));
+          response.writeHead(200,{'content-type':'application/octet-stream','cache-control':'no-store',
+            'content-length':String(file.bytes.length),'x-kailo-native-object-ref':file.nativeObjectRef,
+            'x-kailo-native-revision':file.nativeRevision,'x-kailo-content-sha256':file.sha256,
+            'x-kailo-operation-id':file.operationId});
+          response.end(file.bytes);
+          return;
+        }
         const value = await launchDocument(config, deadline, raw, request.headers['idempotency-key'],
           request.headers.authorization.slice(7));
         response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });

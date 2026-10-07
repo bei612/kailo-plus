@@ -23,6 +23,40 @@ fn service_read_permission_preserves_receiver_and_legacy_absence() {
 }
 
 #[test]
+fn automation_approval_step_preserves_policy_and_immutable_view_reference() {
+    let sample: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("automation-approval-step.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let step: contracts::AutomationStep = serde_json::from_value(sample["step"].clone()).unwrap();
+    assert_eq!(serde_json::to_value(step).unwrap(), sample["step"]);
+    let view: contracts::AutomationApprovalStepView =
+        serde_json::from_value(sample["view"].clone()).unwrap();
+    assert_eq!(serde_json::to_value(view).unwrap(), sample["view"]);
+}
+
+#[test]
+fn receiver_read_grant_preserves_distinct_source_and_receiver_provenance() {
+    let request =
+        fs::read_to_string(sample_path().with_file_name("adapter-read-grant-request.sample.json"))
+            .unwrap();
+    let response =
+        fs::read_to_string(sample_path().with_file_name("adapter-read-grant-response.sample.json"))
+            .unwrap();
+    let typed: contracts::AdapterReadGrantRequest = serde_json::from_str(&request).unwrap();
+    assert_eq!(
+        serde_json::to_value(typed).unwrap(),
+        serde_json::from_str::<serde_json::Value>(&request).unwrap()
+    );
+    let typed: contracts::AdapterReadGrantResponse = serde_json::from_str(&response).unwrap();
+    assert_eq!(
+        serde_json::to_value(typed).unwrap(),
+        serde_json::from_str::<serde_json::Value>(&response).unwrap()
+    );
+}
+
+#[test]
 fn conformance_identity_preserves_isolated_authorization_and_execution() {
     let raw = fs::read_to_string(
         sample_path().with_file_name("component-conformance-identity.sample.json"),

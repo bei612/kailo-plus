@@ -38,6 +38,10 @@ export function fixedUrl(value) {
 }
 
 export async function boundedBody(stream, limit) {
+  return new TextDecoder('utf-8', { fatal: true }).decode(await boundedBytes(stream, limit));
+}
+
+export async function boundedBytes(stream, limit) {
   const chunks = [];
   let length = 0;
   for await (const chunk of stream) {
@@ -46,7 +50,7 @@ export async function boundedBody(stream, limit) {
     if (length > limit) throw new Refused(503);
     chunks.push(bytes);
   }
-  return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
+  return Buffer.concat(chunks);
 }
 
 function decodePart(part) {
@@ -112,7 +116,7 @@ export async function jsonFetch(config, deadline, url, options) {
   } catch { throw new Refused(503); }
 }
 
-export async function freshPep(config, deadline, token, args, claims, operation = 'query_revision') {
+export async function serviceBearer(config, deadline) {
   const clientSecret = await secret(config.oidcClientSecretFile);
   const oidc = await jsonFetch(config, deadline, config.oidcTokenUrl, {
     method: 'POST',
@@ -122,9 +126,14 @@ export async function freshPep(config, deadline, token, args, claims, operation 
   });
   if (!object(oidc) || !nonempty(oidc.access_token) || /[\r\n]/.test(oidc.access_token)
     || oidc.token_type?.toLowerCase() !== 'bearer') throw new Refused(503);
+  return oidc.access_token;
+}
+
+export async function freshPep(config, deadline, token, args, claims, operation = 'query_revision') {
+  const bearer = await serviceBearer(config, deadline);
   const answer = await jsonFetch(config, deadline, config.corePepUrl, {
     method: 'POST',
-    headers: { authorization: `Bearer ${oidc.access_token}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${bearer}`, 'content-type': 'application/json' },
     body: JSON.stringify({ bindingId: config.bindingId, actionToken: token,
       operation, argumentsJson: canonical(args) }),
   });

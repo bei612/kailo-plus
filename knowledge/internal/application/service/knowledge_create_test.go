@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/hibiken/asynq"
@@ -21,6 +22,7 @@ type createKnowledgeFileRepoStub struct {
 	createCalls      int
 	createErr        error
 	createdKnowledge *types.Knowledge
+	updateErr        error
 }
 
 func (r *createKnowledgeFileRepoStub) CheckKnowledgeExists(
@@ -37,6 +39,20 @@ func (r *createKnowledgeFileRepoStub) CreateKnowledge(ctx context.Context, knowl
 	copied := *knowledge
 	r.createdKnowledge = &copied
 	return r.createErr
+}
+
+func (r *createKnowledgeFileRepoStub) GetKnowledgeByID(_ context.Context, tenant uint64, id string) (*types.Knowledge, error) {
+	if r.createdKnowledge == nil || r.createdKnowledge.ID != id || r.createdKnowledge.TenantID != tenant {
+		return nil, repository.ErrKnowledgeNotFound
+	}
+	copy := *r.createdKnowledge
+	return &copy, nil
+}
+
+func (r *createKnowledgeFileRepoStub) UpdateKnowledge(_ context.Context, knowledge *types.Knowledge) error {
+	copy := *knowledge
+	r.createdKnowledge = &copy
+	return r.updateErr
 }
 
 // GetKnowledgeTags is invoked by setAndAttachKnowledgeTags after create even
@@ -67,6 +83,7 @@ type createKnowledgeFileServiceStub struct {
 	savedWithKnowledgeID string
 	deleteCalls          int
 	deletedPath          string
+	beforeSave           func()
 }
 
 func (s *createKnowledgeFileServiceStub) CheckConnectivity(ctx context.Context) error {
@@ -79,12 +96,61 @@ func (s *createKnowledgeFileServiceStub) SaveFile(
 	tenantID uint64,
 	knowledgeID string,
 ) (string, error) {
+	if s.beforeSave != nil {
+		s.beforeSave()
+	}
 	s.saveCalls++
 	s.savedWithKnowledgeID = knowledgeID
 	if s.saveErr != nil {
 		return "", s.saveErr
 	}
 	return "stored/" + knowledgeID, nil
+}
+
+func TestCreateKnowledgeFromFileAtIDRetainsNativeIntentAcrossLostReceipts(t *testing.T) {
+	for _, stage := range []string{"ok", "storage-unknown", "database-ack-lost"} {
+		t.Run(stage, func(t *testing.T) {
+			repo := &createKnowledgeFileRepoStub{}
+			storage := &createKnowledgeFileServiceStub{}
+			queue := &createKnowledgeTaskEnqueuerStub{}
+			id := "366b0c6f-c070-40a1-ad6e-66b1a21aaf3c"
+			storage.beforeSave = func() {
+				require.NotNil(t, repo.createdKnowledge)
+				require.Equal(t, id, repo.createdKnowledge.ID)
+				require.Equal(t, types.ParseStatusPending, repo.createdKnowledge.ParseStatus)
+			}
+			if stage == "storage-unknown" {
+				storage.saveErr = errors.New("unknown storage receipt")
+			}
+			if stage == "database-ack-lost" {
+				repo.updateErr = errors.New("unknown database receipt")
+			}
+			svc := &knowledgeService{repo: repo, fileSvc: storage, task: queue,
+				kbService: &createKnowledgeFileKBServiceStub{kb: &types.KnowledgeBase{ID: "kb-1"}}}
+			ctx := newCreateKnowledgeFileContext()
+			_, err := svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("original"), nil, id)
+			if stage == "ok" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+			prior, err := svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("original"), nil, id)
+			require.NoError(t, err)
+			require.Equal(t, id, prior.ID)
+			require.NotEqual(t, types.ParseStatusCompleted, prior.ParseStatus)
+			require.Equal(t, 1, storage.saveCalls)
+			require.Zero(t, storage.deleteCalls)
+			require.Equal(t, 1, repo.createCalls)
+			if stage == "ok" {
+				require.Equal(t, 1, queue.calls)
+			} else {
+				require.Zero(t, queue.calls)
+			}
+			_, err = svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("replacement"), nil, id)
+			require.Error(t, err)
+			require.Equal(t, 1, storage.saveCalls)
+		})
+	}
 }
 
 func (s *createKnowledgeFileServiceStub) SaveBytes(

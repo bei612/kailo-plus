@@ -10,12 +10,53 @@ import 'package:test/test.dart';
 
 void main() {
   test('service read permission preserves receiver and legacy absence', () {
-    final sample = jsonDecode(File('../../contracts/samples/resource-service-read-permission.sample.json').readAsStringSync()) as Map<String,dynamic>;
+    final sample =
+        jsonDecode(
+              File(
+                '../../contracts/samples/resource-service-read-permission.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
     for (final service in [true, false]) {
-      final value = Map<String,dynamic>.from(sample);
+      final value = Map<String, dynamic>.from(sample);
       if (!service) value.remove('receiverResource');
       expect(ActionCommand.fromJson(value).toJson(), value);
     }
+  });
+  test(
+    'automation approval step preserves policy and immutable view reference',
+    () {
+      final sample =
+          jsonDecode(
+                File(
+                  '../../contracts/samples/automation-approval-step.sample.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      expect(AutomationStep.fromJson(sample['step']).toJson(), sample['step']);
+      expect(
+        AutomationApprovalStepView.fromJson(sample['view']).toJson(),
+        sample['view'],
+      );
+    },
+  );
+  test('receiver read grant preserves distinct source and receiver provenance', () {
+    final request =
+        jsonDecode(
+              File(
+                '../../contracts/samples/adapter-read-grant-request.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final response =
+        jsonDecode(
+              File(
+                '../../contracts/samples/adapter-read-grant-response.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    expect(AdapterReadGrantRequest.fromJson(request).toJson(), request);
+    expect(AdapterReadGrantResponse.fromJson(response).toJson(), response);
   });
   test('conformance identity preserves isolated authorization and execution', () {
     final sample =
@@ -368,15 +409,18 @@ void main() {
       expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
     },
   );
-  test(
-    'ordered automation steps preserve IDs and duration',
-    () {
-      final original = jsonDecode(File('../../contracts/samples/automation-steps.sample.json').readAsStringSync());
-      final typed = AutomationVersionContent.fromJson(original as Map<String,dynamic>);
-      expect(typed.action, isNull);
-      expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
-    },
-  );
+  test('ordered automation steps preserve IDs and duration', () {
+    final original = jsonDecode(
+      File(
+        '../../contracts/samples/automation-steps.sample.json',
+      ).readAsStringSync(),
+    );
+    final typed = AutomationVersionContent.fromJson(
+      original as Map<String, dynamic>,
+    );
+    expect(typed.action, isNull);
+    expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
+  });
   test(
     'component release approval preserves deployment subject and NONE host API',
     () {

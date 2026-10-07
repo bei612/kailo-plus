@@ -914,10 +914,12 @@ async fn versions(
         if let Some(name) = content.get("name") {
             exposed_content["name"] = name.clone();
         }
-        if let (Some(id), Some(version)) =
-            (version.approval_policy_id, version.approval_policy_version)
-        {
-            exposed_content["approvalPolicy"] = json!({"id":id,"version":version});
+        if crate::automation::steps::approval(&content["action"]).is_none() {
+            if let (Some(id), Some(version)) =
+                (version.approval_policy_id, version.approval_policy_version)
+            {
+                exposed_content["approvalPolicy"] = json!({"id":id,"version":version});
+            }
         }
         let value = serde_json::from_value(
             json!({"assetId":version.asset_id,"automationResourceId":row.resource_id,

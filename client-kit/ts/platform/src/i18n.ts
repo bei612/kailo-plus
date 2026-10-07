@@ -965,6 +965,8 @@ export const platformMessages = {
   "workflows.steps.id": { en: "ID", "zh-CN": "标识" },
   "workflows.steps.reference": { en: "The step ID identifies this step in the workflow history.", "zh-CN": "步骤标识用于在工作流历史中定位此步骤。" },
   "workflows.steps.addDelay": { en: "Add delay", "zh-CN": "添加延时" },
+  "workflows.steps.addApproval": { en: "Add approval request", "zh-CN": "添加审批请求" },
+  "workflows.steps.approvalPolicyHint": { en: "Approvers and the deadline come from the selected policy version, not a free-form name or role.", "zh-CN": "审批人与时限由所选策略版本决定，不根据自由填写的姓名或角色推断。" },
   "workflows.steps.waiting": { en: "Waiting for the workflow timer", "zh-CN": "等待工作流定时器" },
   "workflows.cron.year": { en: "Year", "zh-CN": "年份" },
   "workflows.cron.yamlFields": { en: "Cron YAML requires 5, 6, or 7 fields. Six fields begin with seconds; seven add the year.", "zh-CN": "Cron YAML 需要五、六或七个字段。六字段以秒开头，七字段增加年份。" },

@@ -46,8 +46,15 @@ fn value(text: &str, min: i32, max: i32, field: Field) -> Result<i32, TemporalEr
     };
     let text = text.to_ascii_lowercase();
     // Exact aliases from Buzz's pinned cron 0.16 MONTH_MAP/DAY_OF_WEEK_MAP.
-    let named = names.iter().position(|name| *name == text || (text.len() == 3 && name.starts_with(&text))
-        || (matches!(field, Field::Weekday) && ((text == "tues" && *name == "tuesday") || (text == "thurs" && *name == "thursday"))))
+    let named = names
+        .iter()
+        .position(|name| {
+            *name == text
+                || (text.len() == 3 && name.starts_with(&text))
+                || (matches!(field, Field::Weekday)
+                    && ((text == "tues" && *name == "tuesday")
+                        || (text == "thurs" && *name == "thursday")))
+        })
         .map(|index| index as i32 + 1);
     let parsed = match named {
         Some(value) => value,
@@ -188,8 +195,14 @@ mod tests {
         assert!(five.year.is_empty());
         assert_eq!(five, calendar("0 5,9 */2 * JAN,MAR MON-FRI").unwrap());
         assert_eq!(five, calendar("0 5,9 */2 * JAN,MAR MON-FRI *").unwrap());
-        assert_eq!(five, calendar("0 5,9 */2 * January,March Monday-Friday *").unwrap());
-        assert_eq!(calendar("0 9 * * TUES-THURS").unwrap(), calendar("0 9 * * TUE-THU").unwrap());
+        assert_eq!(
+            five,
+            calendar("0 5,9 */2 * January,March Monday-Friday *").unwrap()
+        );
+        assert_eq!(
+            calendar("0 9 * * TUES-THURS").unwrap(),
+            calendar("0 9 * * TUE-THU").unwrap()
+        );
         let seconds = calendar("15 5 9 * * * 2027").unwrap();
         assert_eq!(seconds.second[0].start, 15);
         assert_eq!(seconds.year[0].start, 2027);

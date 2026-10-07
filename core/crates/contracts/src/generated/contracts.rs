@@ -776,6 +776,49 @@ pub struct AdapterQueryRevisionResponse {
     pub protocol_session_id: Option<String>,
 }
 
+/// DD-89: receiver binding authenticates as its own ServicePrincipal for one source-resource
+/// read batch. Input is checked against the approved source action schema; Core retains its
+/// digest, not the returned business content.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterReadGrantRequest {
+    pub action_key: String,
+
+    pub action_version: i64,
+
+    pub idempotency_key: String,
+
+    pub input_json: String,
+
+    pub receiver_action_execution_id: String,
+
+    pub receiver_arguments_json: String,
+
+    pub receiver_binding_id: String,
+
+    pub source_resource_id: String,
+}
+
+/// DD-89: short-lived source Adapter authorization, not native credentials or proof that the
+/// batch finished. The endpoint is resolved from the existing controlled adapter directory.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterReadGrantResponse {
+    pub action_execution_id: String,
+
+    pub action_token: String,
+
+    pub arguments_json: String,
+
+    pub endpoint: String,
+
+    pub expires_at: i64,
+
+    pub operation_id: String,
+
+    pub source_binding_id: String,
+}
+
 /// DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1139,7 +1182,8 @@ pub struct AutomationVersionContentClass {
 
     pub result_target: AutomationResultTarget,
 
-    /// 不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+    /// 不可与旧 action 混用；支持有序 Delay、一个引用既有策略的 request_approval，最后发送一条消息。步骤审批不可同时声明版本级
+    /// approvalPolicy；此切片不是原多副作用的产品上限。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub steps: Option<Vec<StepElement>>,
 
@@ -1164,6 +1208,8 @@ pub enum ActionKind {
 }
 
 /// DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
+///
+/// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ApprovalPolicyElement {
     pub id: String,
@@ -1182,13 +1228,21 @@ pub enum AutomationResultTarget {
 
 /// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StepElement {
     pub action: ActionEnum,
+
+    /// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_policy: Option<ApprovalPolicyElement>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<String>,
 
     pub id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -1201,6 +1255,9 @@ pub struct StepElement {
 #[serde(rename_all = "snake_case")]
 pub enum ActionEnum {
     Delay,
+
+    #[serde(rename = "request_approval")]
+    RequestApproval,
 
     #[serde(rename = "send_message")]
     SendMessage,
@@ -2803,6 +2860,9 @@ pub struct ApprovalView {
 
     pub action_key: String,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automation_step: Option<AutomationStepClass>,
+
     /// RFC3339，UTC
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consume_deadline: Option<String>,
@@ -2832,6 +2892,20 @@ pub struct ApprovalView {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
+}
+
+/// 有权读取的审批所绑定不可变 AutomationVersion 中的步骤展示，不是另一审批或内容权威。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationStepClass {
+    pub id: String,
+
+    pub message: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    pub version_asset_id: String,
 }
 
 /// 一条已形成的不可变决定。只有经 FreshApprovalAdmission 通过的 Update 才形成决定；decidedAt 取 workflow.Now()。
@@ -3115,6 +3189,20 @@ pub enum EvidenceSensitivity {
 
     #[serde(rename = "SUMMARY")]
     Summary,
+}
+
+/// 有权读取的审批所绑定不可变 AutomationVersion 中的步骤展示，不是另一审批或内容权威。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationApprovalStepView {
+    pub id: String,
+
+    pub message: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    pub version_asset_id: String,
 }
 
 /// 实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
@@ -5642,13 +5730,21 @@ pub struct AutomationScheduleSpec {
 
 /// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AutomationStep {
     pub action: ActionEnum,
+
+    /// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_policy: Option<ApprovalPolicyElement>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<String>,
 
     pub id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -5678,7 +5774,8 @@ pub struct AutomationVersionContent {
 
     pub result_target: AutomationResultTarget,
 
-    /// 不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+    /// 不可与旧 action 混用；支持有序 Delay、一个引用既有策略的 request_approval，最后发送一条消息。步骤审批不可同时声明版本级
+    /// approvalPolicy；此切片不是原多副作用的产品上限。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub steps: Option<Vec<StepElement>>,
 

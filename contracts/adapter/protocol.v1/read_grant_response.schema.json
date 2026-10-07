@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/protocol.v1/read_grant_response.schema.json",
+  "title": "AdapterReadGrantResponse",
+  "description": "DD-89: short-lived source Adapter authorization, not native credentials or proof that the batch finished. The endpoint is resolved from the existing controlled adapter directory.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actionExecutionId", "operationId", "sourceBindingId", "endpoint", "actionToken", "expiresAt", "argumentsJson"],
+  "properties": {
+    "actionExecutionId": {"type": "string", "format": "uuid"},
+    "operationId": {"type": "string", "format": "uuid"},
+    "sourceBindingId": {"type": "string", "format": "uuid"},
+    "endpoint": {"type": "string", "format": "uri"},
+    "actionToken": {"type": "string", "minLength": 1},
+    "expiresAt": {"type": "integer", "minimum": 1},
+    "argumentsJson": {"type": "string"}
+  }
+}

@@ -597,6 +597,61 @@ describe("shared Automation schedule consumer", () => {
     expect((writes[0] as {automationVersionContent:Record<string,unknown>}).automationVersionContent).not.toHaveProperty("action");
   });
 
+  it("preserves an explicit approval step through YAML and UNKNOWN without inventing an approver", async () => {
+    const policy = {id: "00000000-0000-4000-8000-000000000001", version: 2};
+    const {section, t, choose, fill} = await setup(["TRIGGER_THREAD"], undefined, undefined, undefined, [policy]);
+    await choose("Action", "POST_MESSAGE");
+    await fill("Instruction template", "Only after approval");
+    await click(button(section, "Add approval request"));
+    expect(button(section, "Review request").disabled).toBe(true);
+    const selector = section.querySelector<HTMLSelectElement>("#wf-step-0-policy")!;
+    expect(selector.value).toBe("");
+    await act(async () => { selector.value = `${policy.id}:${policy.version}`; selector.dispatchEvent(new Event("change", {bubbles:true})); });
+    await type(section.querySelector<HTMLInputElement>("#wf-step-0-message")!, "Please review the reply");
+    await click(button(section, "Workflow YAML"));
+    const yaml = section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!.value;
+    expect(yaml).toContain("action: request_approval");
+    expect(yaml).toContain("message: Please review the reply");
+    expect(yaml).not.toContain("from:");
+    await click(button(section, "Form"));
+    expect(section.querySelector<HTMLSelectElement>("#wf-step-0-policy")!.value).toBe(`${policy.id}:${policy.version}`);
+    await click(button(section, "Review request"));
+    expect(section.textContent).toContain(`${policy.id} · ${policy.version}`);
+    await click(button(section, "Submit governed request"));
+    await click(button(section, "Re-check same request"));
+    const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions").map(([request]) => request.body);
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).toEqual(writes[0]);
+    expect(writes[0]).toMatchObject({automationVersionContent:{formatVersion:2,steps:[
+      {action:"request_approval",approvalPolicy:policy,message:"Please review the reply"},
+      {action:"send_message",text:"Only after approval"},
+    ]}});
+    expect((writes[0] as {automationVersionContent:Record<string,unknown>}).automationVersionContent).not.toHaveProperty("approvalPolicy");
+  });
+
+  it("rejects unbound or duplicate approval YAML while keeping the original text editable", async () => {
+    const policy = {id:"00000000-0000-4000-8000-000000000001",version:2};
+    const {section} = await setup(["TRIGGER_THREAD"], undefined, undefined, undefined, [policy]);
+    await click(button(section, "Workflow YAML"));
+    const request = {trigger:{kind:"CHANNEL_MESSAGE"},resultTarget:"TRIGGER_THREAD",formatVersion:2,steps:[
+      {id:"review",action:"request_approval",approvalPolicy:policy,message:"Review"},
+      {id:"reply",action:"send_message",text:"Approved"},
+    ]};
+    await writeYaml(section, JSON.stringify(request));
+    expect(button(section, "Review request").disabled).toBe(false);
+    for (const invalid of [
+      {...request,approvalPolicy:policy},
+      {...request,steps:[{...request.steps[0],from:"owner"},request.steps[1]]},
+      {...request,steps:[{...request.steps[0],approvalPolicy:{...policy,version:3}},request.steps[1]]},
+      {...request,steps:[request.steps[0],{...request.steps[0],id:"second"},request.steps[1]]},
+    ]) {
+      const raw = JSON.stringify(invalid);
+      await writeYaml(section, raw);
+      expect(button(section, "Review request").disabled).toBe(true);
+      expect(section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!.value).toBe(raw);
+    }
+  });
+
   it("removing a delay preserves the message step identity and rejects unsupported conditions", async () => {
     const { section, choose, fill } = await setup(["TRIGGER_THREAD"]);
     await choose("Action", "POST_MESSAGE");
@@ -2792,7 +2847,7 @@ describe("platform pages render only through the host theme", () => {
   const semanticColors = [
     "accent", "accent-foreground", "background", "border", "card", "destructive", "destructive-foreground",
     "foreground", "input", "muted", "muted-foreground", "primary", "primary-foreground", "ring", "secondary", "secondary-foreground", "popover-foreground",
-    "sidebar-foreground",
+    "sidebar-foreground", "sidebar-border",
     "sidebar-ring", "sidebar-accent", "sidebar-accent-foreground", "sidebar-active", "sidebar-active-foreground",
   ];
   const neutral = new Set(["transparent", "current", "inherit"]);
@@ -2968,6 +3023,41 @@ describe("platform pages render only through the host theme", () => {
         : name === surface.name ? inspectedSurface
         : name === picker.name ? inspectedPicker
         : name === appearance.name ? inspectedAppearance : text;
+      if (name === "thread-layout-settings.tsx") {
+        // Same Buzz pin, AppearanceSettingsControls.tsx::ThreadLayoutDiagram:
+        // these exact SVG fills use the host variables, including native fallbacks.
+        for (const expression of [
+          '"var(--buzz-gradient-dark-top, #4a4616)"',
+          '"var(--buzz-gradient-light-top, #e6e6b6)"',
+          '"var(--buzz-gradient-dark-bottom, #0a1423)"',
+          '"var(--buzz-gradient-light-bottom, #c4d0da)"',
+          '"hsl(var(--muted))"',
+          '"hsl(var(--background))"',
+          '"hsl(var(--foreground) / 0.24)"',
+          '"hsl(var(--foreground) / 0.14)"',
+        ]) {
+          expect(inspected.split(expression)).toHaveLength(2);
+          inspected = inspected.replace(expression, '""');
+        }
+      }
+      if (name === "workflow-duration-field.tsx") {
+        // Native delay slider width is layout, not a colour or theme override.
+        const progressWidth = 'style={{ width: `${progress}%` }}';
+        expect(inspected.split(progressWidth)).toHaveLength(2);
+        inspected = inspected.replace(progressWidth, "");
+      }
+      if (name === "profile-settings.tsx") {
+        // Buzz 779af8886caae1317b4de962082429867ab61503,
+        // desktop/src/features/settings/ui/ProfileSettingsCard.tsx::ProfileSettingsCard.
+        // The avatar colour is user content; the transition lists properties,
+        // not a literal colour or a second theme. Pin both exact expressions.
+        const avatarStyle = /style=\{\{\s*backgroundColor: emojiAvatarPreview\.color,\s*\}\}/g;
+        expect(inspected.match(avatarStyle)).toHaveLength(1);
+        inspected = inspected.replace(avatarStyle, "");
+        const transition = "transition-[color,transform]";
+        expect(inspected.split(transition)).toHaveLength(2);
+        inspected = inspected.replace(transition, "transition-colors");
+      }
       if (name === "channel-type-settings.tsx") {
         // Fixed Buzz ChannelTypeSettings sizes the TTL menu to its trigger.
         // This exact native layout attribute does not create another theme.
@@ -3135,6 +3225,7 @@ describe("platform pages render only through the host theme", () => {
       for (const config of hosts) expect(config).toContain(`var(--${token})`);
     }
     for (const config of hosts) {
+      expect(config).toContain('border: "hsl(var(--sidebar-border))"');
       expect(config).toContain('"conversation-body": "var(--conversation-body-gap)"');
       expect(config).toContain('"conversation-row": "var(--conversation-row-padding-block)"');
       expect(config).toContain('"message-author": "var(--conversation-author-line-height)"');

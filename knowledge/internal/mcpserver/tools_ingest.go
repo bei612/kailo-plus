@@ -2,6 +2,8 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -13,14 +15,19 @@ import (
 
 func addDocumentTool() mcp.Tool {
 	return mcp.NewTool(types.MCPEndpointToolAddDocument,
-		mcp.WithDescription("Add a document to a knowledge base from Markdown text or from a URL. Text documents "+
-			"are stored as editable Markdown pages; URLs are fetched and parsed asynchronously. Returns the new "+
-			"document id."),
+		mcp.WithDescription("Add a document to a knowledge base from Markdown text, original file bytes, or a URL. "+
+			"Text documents are editable Markdown pages; files and URLs use the native asynchronous parser. "+
+			"An idempotency key freezes text/file creation; observe_only reads that native creation without repeating it."),
 		mcp.WithString("knowledge_base_id", mcp.Required(), mcp.Description("Knowledge base id or exact name")),
-		mcp.WithString("title", mcp.Required(), mcp.Description("Document title")),
+		mcp.WithString("title", mcp.Description("Document title; required when creating")),
 		mcp.WithString("content", mcp.Description("Markdown content; required unless url is given")),
 		mcp.WithString("url", mcp.Description("Web page or file URL to import instead of content")),
-		mcp.WithString("idempotency_key", mcp.Description("Optional UUID for an exact text-document creation retry; cannot be used with URL import")),
+		mcp.WithString("file_base64", mcp.Description("Original file bytes; requires filename and idempotency_key, mutually exclusive with content/url")),
+		mcp.WithString("filename", mcp.Description("Original file name including extension")),
+		mcp.WithString("source_reference_json", mcp.Description("ContentReference of the governed source file; citation metadata only")),
+		mcp.WithString("read_operation_id", mcp.Description("Core-issued SERVICE read batch Operation for source file provenance; required with source_reference_json")),
+		mcp.WithString("idempotency_key", mcp.Description("UUID for an exact text or file creation retry; cannot be used with URL import")),
+		mcp.WithBoolean("observe_only", mcp.Description("Read the original idempotency_key creation without uploading or enqueuing again")),
 		mcp.WithBoolean("publish", mcp.Description("For text documents: publish immediately (default true) or keep "+
 			"as draft")),
 		mcp.WithReadOnlyHintAnnotation(false),
@@ -68,22 +75,38 @@ func (s *Server) handleAddDocument(ctx context.Context, req mcp.CallToolRequest)
 	if err != nil {
 		return mcp.NewToolResultError("knowledge_base_id is required"), nil
 	}
+	observe := false
+	if value, exists := req.GetArguments()["observe_only"]; exists {
+		var ok bool
+		observe, ok = value.(bool)
+		if !ok {
+			return mcp.NewToolResultError("observe_only must be boolean"), nil
+		}
+	}
 	title := strings.TrimSpace(req.GetString("title", ""))
-	if title == "" {
+	if title == "" && !observe {
 		return mcp.NewToolResultError("title is required"), nil
 	}
 	content := req.GetString("content", "")
 	url := strings.TrimSpace(req.GetString("url", ""))
+	fileBase64 := req.GetString("file_base64", "")
+	filename := req.GetString("filename", "")
+	if fileBase64 != "" && (content != "" || url != "" || filename == "" || req.GetString("idempotency_key", "") == "") {
+		return mcp.NewToolResultError("file import requires filename and idempotency_key and cannot include content or url"), nil
+	}
 	creationID := ""
 	if key := req.GetString("idempotency_key", ""); key != "" {
 		parsed, parseErr := uuid.Parse(key)
-		if parseErr != nil || parsed.String() != key || url != "" {
-			return mcp.NewToolResultError("idempotency_key must be a canonical UUID and is only supported for text documents"), nil
+		if parseErr != nil || parsed == uuid.Nil || parsed.String() != key || url != "" {
+			return mcp.NewToolResultError("idempotency_key must be a nonzero canonical UUID and is supported for text or file documents"), nil
 		}
 		creationID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("mcp-document:%d:%s:%s", ep.TenantID, ep.ID, key))).String()
 	}
-	if strings.TrimSpace(content) == "" && url == "" {
-		return mcp.NewToolResultError("either content or url is required"), nil
+	if observe && (creationID == "" || content != "" || url != "" || fileBase64 != "") {
+		return mcp.NewToolResultError("observation requires the original idempotency_key and cannot contain content"), nil
+	}
+	if !observe && strings.TrimSpace(content) == "" && url == "" && fileBase64 == "" {
+		return mcp.NewToolResultError("content, url, or file_base64 is required"), nil
 	}
 	kbs, err := s.selectKnowledgeBases(ctx, ep, []string{selector})
 	if err != nil {
@@ -99,7 +122,43 @@ func (s *Server) handleAddDocument(ctx context.Context, req mcp.CallToolRequest)
 	}
 
 	var created *types.Knowledge
-	if url != "" {
+	if observe {
+		created, err = s.knowledgeService.GetKnowledgeByID(ctx, creationID)
+		if err != nil || created == nil || created.TenantID != kb.TenantID || created.KnowledgeBaseID != kb.ID {
+			return mcp.NewToolResultError("native creation evidence unavailable"), nil
+		}
+	} else if fileBase64 != "" {
+		data, decodeErr := base64.StdEncoding.DecodeString(fileBase64)
+		if decodeErr != nil || base64.StdEncoding.EncodeToString(data) != fileBase64 {
+			return mcp.NewToolResultError("file_base64 must be canonical base64"), nil
+		}
+		metadata := map[string]string{}
+		if reference := req.GetString("source_reference_json", ""); reference != "" {
+			operation := req.GetString("read_operation_id", "")
+			parsed, parseErr := uuid.Parse(operation)
+			if parseErr != nil || parsed == uuid.Nil || parsed.String() != operation {
+				return mcp.NewToolResultError("source file requires its canonical read_operation_id"), nil
+			}
+			var fields map[string]string
+			if json.Unmarshal([]byte(reference), &fields) != nil {
+				return mcp.NewToolResultError("invalid source reference"), nil
+			}
+			for _, required := range []string{"resourceId", "nativeObjectRef", "nativeRevision", "displayName", "mediaType"} {
+				if fields[required] == "" {
+					return mcp.NewToolResultError("incomplete source reference"), nil
+				}
+			}
+			metadata["source_resource_id"] = fields["resourceId"]
+			metadata["source_read_operation_id"] = operation
+			metadata["source_native_object_ref"] = fields["nativeObjectRef"]
+			metadata["source_native_revision"] = fields["nativeRevision"]
+			metadata["source_media_type"] = fields["mediaType"]
+			if fields["assetId"] != "" {
+				metadata["source_asset_id"] = fields["assetId"]
+			}
+		}
+		created, err = s.knowledgeService.CreateKnowledgeFromFileAtID(ctx, kb.ID, filename, data, metadata, creationID)
+	} else if url != "" {
 		created, err = s.knowledgeService.CreateKnowledgeFromURL(
 			ctx, kb.ID, url, "", "", nil, title, nil, askChannel, nil,
 		)
@@ -115,12 +174,21 @@ func (s *Server) handleAddDocument(ctx context.Context, req mcp.CallToolRequest)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("failed to add document", err), nil
 	}
-	return jsonResult(map[string]any{
+	result := map[string]any{
 		"knowledge_base_id": kb.ID,
 		"document":          summarizeKnowledge(created),
 		"note": "Indexing runs asynchronously; the document becomes searchable once parse_status is " +
 			"completed.",
-	})
+	}
+	if metadata, metadataErr := created.Metadata.Map(); metadataErr == nil {
+		if operation, ok := metadata["source_read_operation_id"].(string); ok && operation != "" {
+			result["read_operation_id"] = operation
+		}
+		if mediaType, ok := metadata["source_media_type"].(string); ok && mediaType != "" {
+			result["media_type"] = mediaType
+		}
+	}
+	return jsonResult(result)
 }
 
 func (s *Server) handleUpdateDocument(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

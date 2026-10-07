@@ -521,6 +521,36 @@ export interface AdapterQueryRevisionResponse {
 }
 
 /**
+ * DD-89: receiver binding authenticates as its own ServicePrincipal for one source-resource
+ * read batch. Input is checked against the approved source action schema; Core retains its
+ * digest, not the returned business content.
+ */
+export interface AdapterReadGrantRequest {
+    actionKey:                 string;
+    actionVersion:             number;
+    idempotencyKey:            string;
+    inputJson:                 string;
+    receiverActionExecutionId: string;
+    receiverArgumentsJson:     string;
+    receiverBindingId:         string;
+    sourceResourceId:          string;
+}
+
+/**
+ * DD-89: short-lived source Adapter authorization, not native credentials or proof that the
+ * batch finished. The endpoint is resolved from the existing controlled adapter directory.
+ */
+export interface AdapterReadGrantResponse {
+    actionExecutionId: string;
+    actionToken:       string;
+    argumentsJson:     string;
+    endpoint:          string;
+    expiresAt:         number;
+    operationId:       string;
+    sourceBindingId:   string;
+}
+
+/**
  * DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
  */
 export interface AdapterScopeObservation {
@@ -789,7 +819,8 @@ export interface AutomationVersionContentClass {
     name?:        string;
     resultTarget: AutomationResultTarget;
     /**
-     * 不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+     * 不可与旧 action 混用；支持有序 Delay、一个引用既有策略的 request_approval，最后发送一条消息。步骤审批不可同时声明版本级
+     * approvalPolicy；此切片不是原多副作用的产品上限。
      */
     steps?:  StepElement[];
     trigger: AutomationVersionContentTrigger;
@@ -807,6 +838,8 @@ export enum ActionKind {
 
 /**
  * DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
+ *
+ * request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
  */
 export interface ApprovalPolicyElement {
     id:      string;
@@ -822,15 +855,21 @@ export enum AutomationResultTarget {
  * 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
  */
 export interface StepElement {
-    action:    ActionEnum;
-    duration?: string;
-    id:        string;
-    name?:     string;
-    text?:     string;
+    action: ActionEnum;
+    /**
+     * request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
+     */
+    approvalPolicy?: ApprovalPolicyElement;
+    duration?:       string;
+    id:              string;
+    message?:        string;
+    name?:           string;
+    text?:           string;
 }
 
 export enum ActionEnum {
     Delay = "delay",
+    RequestApproval = "request_approval",
     SendMessage = "send_message",
 }
 
@@ -1865,6 +1904,7 @@ export enum ApprovalDecision {
 export interface ApprovalView {
     actionExecutionId: string;
     actionKey:         string;
+    automationStep?:   AutomationStepClass;
     /**
      * RFC3339，UTC
      */
@@ -1883,6 +1923,16 @@ export interface ApprovalView {
     targetType:           string;
     workflowId:           string;
     workspaceId?:         string;
+}
+
+/**
+ * 有权读取的审批所绑定不可变 AutomationVersion 中的步骤展示，不是另一审批或内容权威。
+ */
+export interface AutomationStepClass {
+    id:             string;
+    message:        string;
+    name?:          string;
+    versionAssetId: string;
 }
 
 /**
@@ -2049,6 +2099,16 @@ export enum EvidenceKind {
 export enum EvidenceSensitivity {
     Restricted = "RESTRICTED",
     Summary = "SUMMARY",
+}
+
+/**
+ * 有权读取的审批所绑定不可变 AutomationVersion 中的步骤展示，不是另一审批或内容权威。
+ */
+export interface AutomationApprovalStepView {
+    id:             string;
+    message:        string;
+    name?:          string;
+    versionAssetId: string;
 }
 
 /**
@@ -3813,11 +3873,16 @@ export interface AutomationScheduleSpec {
  * 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
  */
 export interface AutomationStep {
-    action:    ActionEnum;
-    duration?: string;
-    id:        string;
-    name?:     string;
-    text?:     string;
+    action: ActionEnum;
+    /**
+     * request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
+     */
+    approvalPolicy?: ApprovalPolicyElement;
+    duration?:       string;
+    id:              string;
+    message?:        string;
+    name?:           string;
+    text?:           string;
 }
 
 /**
@@ -3837,7 +3902,8 @@ export interface AutomationVersionContent {
     name?:        string;
     resultTarget: AutomationResultTarget;
     /**
-     * 不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+     * 不可与旧 action 混用；支持有序 Delay、一个引用既有策略的 request_approval，最后发送一条消息。步骤审批不可同时声明版本级
+     * approvalPolicy；此切片不是原多副作用的产品上限。
      */
     steps?:  StepElement[];
     trigger: AutomationVersionContentTriggerClass;

@@ -21,6 +21,8 @@
 //     final protocolWriteReceipt = protocolWriteReceiptFromJson(jsonString);
 //     final adapterQueryRevisionRequest = adapterQueryRevisionRequestFromJson(jsonString);
 //     final adapterQueryRevisionResponse = adapterQueryRevisionResponseFromJson(jsonString);
+//     final adapterReadGrantRequest = adapterReadGrantRequestFromJson(jsonString);
+//     final adapterReadGrantResponse = adapterReadGrantResponseFromJson(jsonString);
 //     final adapterScopeObservation = adapterScopeObservationFromJson(jsonString);
 //     final actionCommand = actionCommandFromJson(jsonString);
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
@@ -46,6 +48,7 @@
 //     final approvalDecisionRequest = approvalDecisionRequestFromJson(jsonString);
 //     final approvalView = approvalViewFromJson(jsonString);
 //     final auditEventPage = auditEventPageFromJson(jsonString);
+//     final automationApprovalStepView = automationApprovalStepViewFromJson(jsonString);
 //     final automationDelegationView = automationDelegationViewFromJson(jsonString);
 //     final automationDetailView = automationDetailViewFromJson(jsonString);
 //     final automationPage = automationPageFromJson(jsonString);
@@ -324,6 +327,18 @@ AdapterQueryRevisionResponse adapterQueryRevisionResponseFromJson(String str) =>
 String adapterQueryRevisionResponseToJson(AdapterQueryRevisionResponse data) =>
     json.encode(data.toJson());
 
+AdapterReadGrantRequest adapterReadGrantRequestFromJson(String str) =>
+    AdapterReadGrantRequest.fromJson(json.decode(str));
+
+String adapterReadGrantRequestToJson(AdapterReadGrantRequest data) =>
+    json.encode(data.toJson());
+
+AdapterReadGrantResponse adapterReadGrantResponseFromJson(String str) =>
+    AdapterReadGrantResponse.fromJson(json.decode(str));
+
+String adapterReadGrantResponseToJson(AdapterReadGrantResponse data) =>
+    json.encode(data.toJson());
+
 AdapterScopeObservation adapterScopeObservationFromJson(String str) =>
     AdapterScopeObservation.fromJson(json.decode(str));
 
@@ -476,6 +491,12 @@ AuditEventPage auditEventPageFromJson(String str) =>
     AuditEventPage.fromJson(json.decode(str));
 
 String auditEventPageToJson(AuditEventPage data) => json.encode(data.toJson());
+
+AutomationApprovalStepView automationApprovalStepViewFromJson(String str) =>
+    AutomationApprovalStepView.fromJson(json.decode(str));
+
+String automationApprovalStepViewToJson(AutomationApprovalStepView data) =>
+    json.encode(data.toJson());
 
 AutomationDelegationView automationDelegationViewFromJson(String str) =>
     AutomationDelegationView.fromJson(json.decode(str));
@@ -2674,6 +2695,97 @@ class AdapterQueryRevisionResponse {
   });
 }
 
+///DD-89: receiver binding authenticates as its own ServicePrincipal for one source-resource
+///read batch. Input is checked against the approved source action schema; Core retains its
+///digest, not the returned business content.
+class AdapterReadGrantRequest {
+  final String actionKey;
+  final int actionVersion;
+  final String idempotencyKey;
+  final String inputJson;
+  final String receiverActionExecutionId;
+  final String receiverArgumentsJson;
+  final String receiverBindingId;
+  final String sourceResourceId;
+
+  AdapterReadGrantRequest({
+    required this.actionKey,
+    required this.actionVersion,
+    required this.idempotencyKey,
+    required this.inputJson,
+    required this.receiverActionExecutionId,
+    required this.receiverArgumentsJson,
+    required this.receiverBindingId,
+    required this.sourceResourceId,
+  });
+
+  factory AdapterReadGrantRequest.fromJson(Map<String, dynamic> json) =>
+      AdapterReadGrantRequest(
+        actionKey: json["actionKey"],
+        actionVersion: json["actionVersion"],
+        idempotencyKey: json["idempotencyKey"],
+        inputJson: json["inputJson"],
+        receiverActionExecutionId: json["receiverActionExecutionId"],
+        receiverArgumentsJson: json["receiverArgumentsJson"],
+        receiverBindingId: json["receiverBindingId"],
+        sourceResourceId: json["sourceResourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionKey": actionKey,
+    "actionVersion": actionVersion,
+    "idempotencyKey": idempotencyKey,
+    "inputJson": inputJson,
+    "receiverActionExecutionId": receiverActionExecutionId,
+    "receiverArgumentsJson": receiverArgumentsJson,
+    "receiverBindingId": receiverBindingId,
+    "sourceResourceId": sourceResourceId,
+  });
+}
+
+///DD-89: short-lived source Adapter authorization, not native credentials or proof that the
+///batch finished. The endpoint is resolved from the existing controlled adapter directory.
+class AdapterReadGrantResponse {
+  final String actionExecutionId;
+  final String actionToken;
+  final String argumentsJson;
+  final String endpoint;
+  final int expiresAt;
+  final String operationId;
+  final String sourceBindingId;
+
+  AdapterReadGrantResponse({
+    required this.actionExecutionId,
+    required this.actionToken,
+    required this.argumentsJson,
+    required this.endpoint,
+    required this.expiresAt,
+    required this.operationId,
+    required this.sourceBindingId,
+  });
+
+  factory AdapterReadGrantResponse.fromJson(Map<String, dynamic> json) =>
+      AdapterReadGrantResponse(
+        actionExecutionId: json["actionExecutionId"],
+        actionToken: json["actionToken"],
+        argumentsJson: json["argumentsJson"],
+        endpoint: json["endpoint"],
+        expiresAt: json["expiresAt"],
+        operationId: json["operationId"],
+        sourceBindingId: json["sourceBindingId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "actionExecutionId": actionExecutionId,
+    "actionToken": actionToken,
+    "argumentsJson": argumentsJson,
+    "endpoint": endpoint,
+    "expiresAt": expiresAt,
+    "operationId": operationId,
+    "sourceBindingId": sourceBindingId,
+  });
+}
+
 ///DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
 class AdapterScopeObservation {
   final String? nativeRef;
@@ -3309,7 +3421,8 @@ class AutomationVersionContentClass {
   final String? name;
   final AutomationResultTarget resultTarget;
 
-  ///不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+  ///不可与旧 action 混用；支持有序 Delay、一个引用既有策略的 request_approval，最后发送一条消息。步骤审批不可同时声明版本级
+  ///approvalPolicy；此切片不是原多副作用的产品上限。
   final List<StepElement>? steps;
   final ContentTrigger trigger;
 
@@ -3380,6 +3493,8 @@ final actionKindValues = EnumValues({
 });
 
 ///DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
+///
+///request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
 class ApprovalPolicyElement {
   final String id;
   final int version;
@@ -3402,40 +3517,53 @@ final automationResultTargetValues = EnumValues({
 ///原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
 class StepElement {
   final ActionEnum action;
+
+  ///request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
+  final ApprovalPolicyElement? approvalPolicy;
   final String? duration;
   final String id;
+  final String? message;
   final String? name;
   final String? text;
 
   StepElement({
     required this.action,
+    this.approvalPolicy,
     this.duration,
     required this.id,
+    this.message,
     this.name,
     this.text,
   });
 
   factory StepElement.fromJson(Map<String, dynamic> json) => StepElement(
     action: actionEnumValues.map[json["action"]]!,
+    approvalPolicy: json["approvalPolicy"] == null
+        ? null
+        : ApprovalPolicyElement.fromJson(json["approvalPolicy"]),
     duration: json["duration"],
     id: json["id"],
+    message: json["message"],
     name: json["name"],
     text: json["text"],
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "action": actionEnumValues.reverse[action],
+    "approvalPolicy": approvalPolicy?.toJson(),
     "duration": duration,
     "id": id,
+    "message": message,
     "name": name,
     "text": text,
   });
 }
 
-enum ActionEnum { DELAY, SEND_MESSAGE }
+enum ActionEnum { DELAY, REQUEST_APPROVAL, SEND_MESSAGE }
 
 final actionEnumValues = EnumValues({
   "delay": ActionEnum.DELAY,
+  "request_approval": ActionEnum.REQUEST_APPROVAL,
   "send_message": ActionEnum.SEND_MESSAGE,
 });
 
@@ -6201,6 +6329,7 @@ final approvalDecisionValues = EnumValues({
 class ApprovalView {
   final String actionExecutionId;
   final String actionKey;
+  final AutomationStepClass? automationStep;
 
   ///RFC3339，UTC
   final String? consumeDeadline;
@@ -6221,6 +6350,7 @@ class ApprovalView {
   ApprovalView({
     required this.actionExecutionId,
     required this.actionKey,
+    this.automationStep,
     this.consumeDeadline,
     required this.decisions,
     required this.expiresAt,
@@ -6238,6 +6368,9 @@ class ApprovalView {
   factory ApprovalView.fromJson(Map<String, dynamic> json) => ApprovalView(
     actionExecutionId: json["actionExecutionId"],
     actionKey: json["actionKey"],
+    automationStep: json["automationStep"] == null
+        ? null
+        : AutomationStepClass.fromJson(json["automationStep"]),
     consumeDeadline: json["consumeDeadline"],
     decisions: List<DecisionElement>.from(
       json["decisions"].map((x) => DecisionElement.fromJson(x)),
@@ -6263,6 +6396,7 @@ class ApprovalView {
   Map<String, dynamic> toJson() => _stripNulls({
     "actionExecutionId": actionExecutionId,
     "actionKey": actionKey,
+    "automationStep": automationStep?.toJson(),
     "consumeDeadline": consumeDeadline,
     "decisions": List<dynamic>.from(decisions.map((x) => x.toJson())),
     "expiresAt": expiresAt,
@@ -6277,6 +6411,36 @@ class ApprovalView {
     "targetType": targetType,
     "workflowId": workflowId,
     "workspaceId": workspaceId,
+  });
+}
+
+///有权读取的审批所绑定不可变 AutomationVersion 中的步骤展示，不是另一审批或内容权威。
+class AutomationStepClass {
+  final String id;
+  final String message;
+  final String? name;
+  final String versionAssetId;
+
+  AutomationStepClass({
+    required this.id,
+    required this.message,
+    this.name,
+    required this.versionAssetId,
+  });
+
+  factory AutomationStepClass.fromJson(Map<String, dynamic> json) =>
+      AutomationStepClass(
+        id: json["id"],
+        message: json["message"],
+        name: json["name"],
+        versionAssetId: json["versionAssetId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "id": id,
+    "message": message,
+    "name": name,
+    "versionAssetId": versionAssetId,
   });
 }
 
@@ -6610,6 +6774,36 @@ final evidenceSensitivityValues = EnumValues({
   "RESTRICTED": EvidenceSensitivity.RESTRICTED,
   "SUMMARY": EvidenceSensitivity.SUMMARY,
 });
+
+///有权读取的审批所绑定不可变 AutomationVersion 中的步骤展示，不是另一审批或内容权威。
+class AutomationApprovalStepView {
+  final String id;
+  final String message;
+  final String? name;
+  final String versionAssetId;
+
+  AutomationApprovalStepView({
+    required this.id,
+    required this.message,
+    this.name,
+    required this.versionAssetId,
+  });
+
+  factory AutomationApprovalStepView.fromJson(Map<String, dynamic> json) =>
+      AutomationApprovalStepView(
+        id: json["id"],
+        message: json["message"],
+        name: json["name"],
+        versionAssetId: json["versionAssetId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "id": id,
+    "message": message,
+    "name": name,
+    "versionAssetId": versionAssetId,
+  });
+}
 
 ///实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
 class AutomationDelegationView {
@@ -11261,31 +11455,43 @@ class AutomationScheduleSpec {
 ///原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
 class AutomationStep {
   final ActionEnum action;
+
+  ///request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
+  final ApprovalPolicyElement? approvalPolicy;
   final String? duration;
   final String id;
+  final String? message;
   final String? name;
   final String? text;
 
   AutomationStep({
     required this.action,
+    this.approvalPolicy,
     this.duration,
     required this.id,
+    this.message,
     this.name,
     this.text,
   });
 
   factory AutomationStep.fromJson(Map<String, dynamic> json) => AutomationStep(
     action: actionEnumValues.map[json["action"]]!,
+    approvalPolicy: json["approvalPolicy"] == null
+        ? null
+        : ApprovalPolicyElement.fromJson(json["approvalPolicy"]),
     duration: json["duration"],
     id: json["id"],
+    message: json["message"],
     name: json["name"],
     text: json["text"],
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "action": actionEnumValues.reverse[action],
+    "approvalPolicy": approvalPolicy?.toJson(),
     "duration": duration,
     "id": id,
+    "message": message,
     "name": name,
     "text": text,
   });
@@ -11304,7 +11510,8 @@ class AutomationVersionContent {
   final String? name;
   final AutomationResultTarget resultTarget;
 
-  ///不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+  ///不可与旧 action 混用；支持有序 Delay、一个引用既有策略的 request_approval，最后发送一条消息。步骤审批不可同时声明版本级
+  ///approvalPolicy；此切片不是原多副作用的产品上限。
   final List<StepElement>? steps;
   final AutomationVersionContentTrigger trigger;
 

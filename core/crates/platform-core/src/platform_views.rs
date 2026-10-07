@@ -915,6 +915,66 @@ async fn active_member_removal_actions<'e>(
     Ok(keys.into_iter().collect())
 }
 
+/// 基础审计页：**只看自己的动作**。
+///
+/// Tenant/Workspace 聚合与错误 evidence 需要目标 `audit` permission
+/// （`.design/03` §14），而那要 Core 侧的 fresh SpiceDB Check——属于 Stage 2。
+/// 这里不写一个恒为真的权限判断冒充它：能看的范围收窄到调用方自己，
+/// 那是无需额外判定就成立的最小集合。
+pub async fn list_own_audit(State(state): State<BffState>, headers: HeaderMap) -> Response {
+    let ctx = match resolve_execution_context(&state, &headers).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    match sqlx::query_as::<
+        _,
+        (
+            chrono::DateTime<chrono::Utc>,
+            String,
+            String,
+            String,
+            String,
+            Option<Uuid>,
+        ),
+    >(
+        "select occurred_at, event_type, action_key, decision, result_code, workspace_id
+         from audit.audit_event
+         where tenant_id = $1 and actor_principal_id = $2
+         order by occurred_at desc
+         limit $3",
+    )
+    .bind(ctx.tenant_id)
+    .bind(ctx.tenant_principal_id)
+    .bind(state.message_page_limit)
+    .fetch_all(&state.pool)
+    .await
+    {
+        Ok(rows) => {
+            let mut entries = Vec::with_capacity(rows.len());
+            for (occurred_at, event_type, action_key, decision, result_code, workspace_id) in rows {
+                let event_type = match db_enum("audit_event.event_type", &event_type) {
+                    Ok(t) => t,
+                    Err(r) => return r,
+                };
+                entries.push(OwnAuditEntry {
+                    occurred_at: occurred_at.to_rfc3339(),
+                    event_type,
+                    action_key,
+                    decision,
+                    result_code,
+                    // Tenant 级动作没有 Workspace：缺省，不写 null
+                    workspace_id: workspace_id.map(|w| w.to_string()),
+                });
+            }
+            (StatusCode::OK, Json(entries)).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "列审计失败");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
+}
+
 #[cfg(test)]
 mod member_action_tests {
     use super::*;
@@ -1072,65 +1132,5 @@ mod member_action_tests {
         assert!(retired.contains("workspace.member.revoke"));
         assert!(!retired.contains("tenant.member.revoke"));
         tx.rollback().await.unwrap();
-    }
-}
-
-/// 基础审计页：**只看自己的动作**。
-///
-/// Tenant/Workspace 聚合与错误 evidence 需要目标 `audit` permission
-/// （`.design/03` §14），而那要 Core 侧的 fresh SpiceDB Check——属于 Stage 2。
-/// 这里不写一个恒为真的权限判断冒充它：能看的范围收窄到调用方自己，
-/// 那是无需额外判定就成立的最小集合。
-pub async fn list_own_audit(State(state): State<BffState>, headers: HeaderMap) -> Response {
-    let ctx = match resolve_execution_context(&state, &headers).await {
-        Ok(c) => c,
-        Err(r) => return r,
-    };
-    match sqlx::query_as::<
-        _,
-        (
-            chrono::DateTime<chrono::Utc>,
-            String,
-            String,
-            String,
-            String,
-            Option<Uuid>,
-        ),
-    >(
-        "select occurred_at, event_type, action_key, decision, result_code, workspace_id
-         from audit.audit_event
-         where tenant_id = $1 and actor_principal_id = $2
-         order by occurred_at desc
-         limit $3",
-    )
-    .bind(ctx.tenant_id)
-    .bind(ctx.tenant_principal_id)
-    .bind(state.message_page_limit)
-    .fetch_all(&state.pool)
-    .await
-    {
-        Ok(rows) => {
-            let mut entries = Vec::with_capacity(rows.len());
-            for (occurred_at, event_type, action_key, decision, result_code, workspace_id) in rows {
-                let event_type = match db_enum("audit_event.event_type", &event_type) {
-                    Ok(t) => t,
-                    Err(r) => return r,
-                };
-                entries.push(OwnAuditEntry {
-                    occurred_at: occurred_at.to_rfc3339(),
-                    event_type,
-                    action_key,
-                    decision,
-                    result_code,
-                    // Tenant 级动作没有 Workspace：缺省，不写 null
-                    workspace_id: workspace_id.map(|w| w.to_string()),
-                });
-            }
-            (StatusCode::OK, Json(entries)).into_response()
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "列审计失败");
-            StatusCode::SERVICE_UNAVAILABLE.into_response()
-        }
     }
 }

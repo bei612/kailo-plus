@@ -11,9 +11,22 @@ import { cn } from "./profile/buzz/shared/lib/cn";
 import { WorkflowDurationField } from "./workflow-duration-field";
 import { parseDurationSeconds } from "./workflow-duration";
 
+export function validApprovalPolicy(value: unknown): value is NonNullable<AutomationVersionContent["approvalPolicy"]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return Object.keys(row).length === 2
+    && typeof row.id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(row.id)
+    && typeof row.version === "number" && Number.isSafeInteger(row.version) && row.version > 0;
+}
+
+export function workflowApprovalPolicy(content: AutomationVersionContent) {
+  return content.steps?.find((step) => step.action === "request_approval")?.approvalPolicy ?? content.approvalPolicy;
+}
+
 export function supportedSteps(value: unknown): value is AutomationStep[] {
   if (!Array.isArray(value) || value.length < 1) return false;
   const ids = new Set<string>();
+  let approval = false;
   return value.every((step: unknown, index) => {
     if (!step || typeof step !== "object" || Array.isArray(step)) return false;
     const row = step as Record<string, unknown>;
@@ -22,6 +35,12 @@ export function supportedSteps(value: unknown): value is AutomationStep[] {
     ids.add(row.id);
     if (index === value.length - 1) return Object.keys(row).every((key) => ["id", "name", "action", "text"].includes(key))
       && row.action === "send_message" && typeof row.text === "string" && !!row.text.trim();
+    if (row.action === "request_approval") {
+      if (approval) return false;
+      approval = true;
+      return Object.keys(row).every((key) => ["id", "name", "action", "approvalPolicy", "message"].includes(key))
+        && validApprovalPolicy(row.approvalPolicy) && typeof row.message === "string" && !!row.message.trim();
+    }
     return Object.keys(row).every((key) => ["id", "name", "action", "duration"].includes(key))
       && row.action === "delay" && typeof row.duration === "string"
       && parseDurationSeconds(row.duration) !== null && parseDurationSeconds(row.duration)! <= 9223372036;
@@ -34,8 +53,9 @@ export function workflowAction(content: AutomationVersionContent) {
     : content.action;
 }
 
-export function WorkflowStepCard({ step, index, onUpdate, onRemove }: {
+export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies }: {
   step: AutomationStep; index: number; onUpdate: (step: AutomationStep) => void; onRemove?: () => void;
+  policies?: NonNullable<AutomationVersionContent["approvalPolicy"]>[] | null;
 }) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
@@ -50,6 +70,27 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove }: {
     <section className="space-y-4 pb-5">
       {step.action === "delay" ? <WorkflowDurationField id={`${prefix}-duration`} value={step.duration ?? ""}
         onChange={(duration) => onUpdate({ ...step, duration })} />
+        : step.action === "request_approval" ? <div className="space-y-2">
+          <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-policy`}>
+            {t("agents.automation.approvalPolicy")}
+            <select id={`${prefix}-policy`} className="h-8 w-full rounded-md border border-input bg-background px-2"
+              value={step.approvalPolicy ? `${step.approvalPolicy.id}:${step.approvalPolicy.version}` : ""}
+              disabled={!policies} onChange={(event) => {
+                const policy = policies?.find((row) => `${row.id}:${row.version}` === event.target.value);
+                if (policy) onUpdate({ ...step, approvalPolicy: { id: policy.id, version: policy.version } });
+              }}>
+              <option value="">{t("agents.automation.select")}</option>
+              {step.approvalPolicy && !policies?.some((row) => row.id === step.approvalPolicy?.id && row.version === step.approvalPolicy.version)
+                ? <option disabled value={`${step.approvalPolicy.id}:${step.approvalPolicy.version}`}>{step.approvalPolicy.id} · {step.approvalPolicy.version}</option> : null}
+              {policies?.map((row) => <option key={`${row.id}:${row.version}`} value={`${row.id}:${row.version}`}>{row.id} · {row.version}</option>)}
+            </select>
+          </label>
+          <p className="text-xs text-muted-foreground">{t("workflows.steps.approvalPolicyHint")}</p>
+          <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-message`}>
+            {t("workflows.steps.message")}<Input id={`${prefix}-message`} value={step.message ?? ""}
+              onChange={(event) => onUpdate({ ...step, message: event.target.value })} />
+          </label>
+        </div>
         : <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-text`}>
           {t("workflows.steps.message")}<textarea id={`${prefix}-text`} value={step.text ?? ""}
             onChange={(event) => onUpdate({ ...step, text: event.target.value })}

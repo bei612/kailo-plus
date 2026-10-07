@@ -49,6 +49,68 @@ func TestServiceReadPermissionRoundtrip(t *testing.T) {
 	}
 }
 
+func TestAutomationApprovalStepRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "automation-approval-step.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sample struct {
+		Step generated.AutomationStep             `json:"step"`
+		View generated.AutomationApprovalStepView `json:"view"`
+	}
+	if err := json.Unmarshal(raw, &sample); err != nil {
+		t.Fatal(err)
+	}
+	back, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected, actual any
+	if err := json.Unmarshal(raw, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(back, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(expected, actual) {
+		t.Fatal("approval step lost policy or immutable reference")
+	}
+}
+
+func TestReceiverReadGrantRoundtrip(t *testing.T) {
+	for _, sample := range []struct {
+		name  string
+		typed any
+	}{
+		{"adapter-read-grant-request.sample.json", &generated.AdapterReadGrantRequest{}},
+		{"adapter-read-grant-response.sample.json", &generated.AdapterReadGrantResponse{}},
+	} {
+		t.Run(sample.name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", sample.name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(raw, sample.typed); err != nil {
+				t.Fatal(err)
+			}
+			back, err := json.Marshal(sample.typed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var expected, actual any
+			if err := json.Unmarshal(raw, &expected); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(back, &actual); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(expected, actual) {
+				t.Fatal("receiver read grant lost source or receiver provenance")
+			}
+		})
+	}
+}
+
 func TestConformanceIdentityRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "component-conformance-identity.sample.json"))
 	if err != nil {

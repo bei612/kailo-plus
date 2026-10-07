@@ -64,6 +64,12 @@
 //    adapterQueryRevisionResponse, err := UnmarshalAdapterQueryRevisionResponse(bytes)
 //    bytes, err = adapterQueryRevisionResponse.Marshal()
 //
+//    adapterReadGrantRequest, err := UnmarshalAdapterReadGrantRequest(bytes)
+//    bytes, err = adapterReadGrantRequest.Marshal()
+//
+//    adapterReadGrantResponse, err := UnmarshalAdapterReadGrantResponse(bytes)
+//    bytes, err = adapterReadGrantResponse.Marshal()
+//
 //    adapterScopeObservation, err := UnmarshalAdapterScopeObservation(bytes)
 //    bytes, err = adapterScopeObservation.Marshal()
 //
@@ -138,6 +144,9 @@
 //
 //    auditEventPage, err := UnmarshalAuditEventPage(bytes)
 //    bytes, err = auditEventPage.Marshal()
+//
+//    automationApprovalStepView, err := UnmarshalAutomationApprovalStepView(bytes)
+//    bytes, err = automationApprovalStepView.Marshal()
 //
 //    automationDelegationView, err := UnmarshalAutomationDelegationView(bytes)
 //    bytes, err = automationDelegationView.Marshal()
@@ -778,6 +787,26 @@ func (r *AdapterQueryRevisionResponse) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAdapterReadGrantRequest(data []byte) (AdapterReadGrantRequest, error) {
+	var r AdapterReadGrantRequest
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterReadGrantRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAdapterReadGrantResponse(data []byte) (AdapterReadGrantResponse, error) {
+	var r AdapterReadGrantResponse
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterReadGrantResponse) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAdapterScopeObservation(data []byte) (AdapterScopeObservation, error) {
 	var r AdapterScopeObservation
 	err := json.Unmarshal(data, &r)
@@ -1025,6 +1054,16 @@ func UnmarshalAuditEventPage(data []byte) (AuditEventPage, error) {
 }
 
 func (r *AuditEventPage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalAutomationApprovalStepView(data []byte) (AutomationApprovalStepView, error) {
+	var r AutomationApprovalStepView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationApprovalStepView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2762,6 +2801,32 @@ type AdapterQueryRevisionResponse struct {
 	ProtocolSessionID *string `json:"protocolSessionId,omitempty"`
 }
 
+// DD-89: receiver binding authenticates as its own ServicePrincipal for one source-resource
+// read batch. Input is checked against the approved source action schema; Core retains its
+// digest, not the returned business content.
+type AdapterReadGrantRequest struct {
+	ActionKey                 string `json:"actionKey"`
+	ActionVersion             int64  `json:"actionVersion"`
+	IdempotencyKey            string `json:"idempotencyKey"`
+	InputJSON                 string `json:"inputJson"`
+	ReceiverActionExecutionID string `json:"receiverActionExecutionId"`
+	ReceiverArgumentsJSON     string `json:"receiverArgumentsJson"`
+	ReceiverBindingID         string `json:"receiverBindingId"`
+	SourceResourceID          string `json:"sourceResourceId"`
+}
+
+// DD-89: short-lived source Adapter authorization, not native credentials or proof that the
+// batch finished. The endpoint is resolved from the existing controlled adapter directory.
+type AdapterReadGrantResponse struct {
+	ActionExecutionID string `json:"actionExecutionId"`
+	ActionToken       string `json:"actionToken"`
+	ArgumentsJSON     string `json:"argumentsJson"`
+	Endpoint          string `json:"endpoint"`
+	ExpiresAt         int64  `json:"expiresAt"`
+	OperationID       string `json:"operationId"`
+	SourceBindingID   string `json:"sourceBindingId"`
+}
+
 // DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
 type AdapterScopeObservation struct {
 	NativeRef           *string           `json:"nativeRef,omitempty"`
@@ -2923,7 +2988,8 @@ type AutomationVersionContentClass struct {
 	// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
 	Name         *string                `json:"name,omitempty"`
 	ResultTarget AutomationResultTarget `json:"resultTarget"`
-	// 不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+	// 不可与旧 action 混用；支持有序 Delay、一个引用既有策略的 request_approval，最后发送一条消息。步骤审批不可同时声明版本级
+	// approvalPolicy；此切片不是原多副作用的产品上限。
 	Steps   []StepElement                   `json:"steps,omitempty"`
 	Trigger AutomationVersionContentTrigger `json:"trigger"`
 }
@@ -2934,6 +3000,8 @@ type AutomationVersionContentAction struct {
 }
 
 // DD-107 同 Tenant automation.run 的显式已登记审批策略；版本精确冻结，不授予审批权限。
+//
+// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
 type ApprovalPolicyElement struct {
 	ID      string `json:"id"`
 	Version int64  `json:"version"`
@@ -2941,11 +3009,14 @@ type ApprovalPolicyElement struct {
 
 // 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
 type StepElement struct {
-	Action   ActionEnum `json:"action"`
-	Duration *string    `json:"duration,omitempty"`
-	ID       string     `json:"id"`
-	Name     *string    `json:"name,omitempty"`
-	Text     *string    `json:"text,omitempty"`
+	Action ActionEnum `json:"action"`
+	// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
+	ApprovalPolicy *ApprovalPolicyElement `json:"approvalPolicy,omitempty"`
+	Duration       *string                `json:"duration,omitempty"`
+	ID             string                 `json:"id"`
+	Message        *string                `json:"message,omitempty"`
+	Name           *string                `json:"name,omitempty"`
+	Text           *string                `json:"text,omitempty"`
 }
 
 type AutomationVersionContentTrigger struct {
@@ -3578,8 +3649,9 @@ type ApprovalDecisionRequest struct {
 // GET /api/v1/approvals（待我审批）与 /api/v1/approvals/{workflowId} 的元素。状态只来自 Temporal history
 // 的投影。
 type ApprovalView struct {
-	ActionExecutionID string `json:"actionExecutionId"`
-	ActionKey         string `json:"actionKey"`
+	ActionExecutionID string               `json:"actionExecutionId"`
+	ActionKey         string               `json:"actionKey"`
+	AutomationStep    *AutomationStepClass `json:"automationStep,omitempty"`
 	// RFC3339，UTC
 	ConsumeDeadline *string           `json:"consumeDeadline,omitempty"`
 	Decisions       []DecisionElement `json:"decisions"`
@@ -3594,6 +3666,14 @@ type ApprovalView struct {
 	TargetType           string                   `json:"targetType"`
 	WorkflowID           string                   `json:"workflowId"`
 	WorkspaceID          *string                  `json:"workspaceId,omitempty"`
+}
+
+// 有权读取的审批所绑定不可变 AutomationVersion 中的步骤展示，不是另一审批或内容权威。
+type AutomationStepClass struct {
+	ID             string  `json:"id"`
+	Message        string  `json:"message"`
+	Name           *string `json:"name,omitempty"`
+	VersionAssetID string  `json:"versionAssetId"`
 }
 
 // 一条已形成的不可变决定。只有经 FreshApprovalAdmission 通过的 Update 才形成决定；decidedAt 取 workflow.Now()。
@@ -3642,6 +3722,14 @@ type AuditEvidenceSlot struct {
 	// 存量种类不可识别时缺省
 	Kind        *EvidenceKind        `json:"kind,omitempty"`
 	Sensitivity *EvidenceSensitivity `json:"sensitivity,omitempty"`
+}
+
+// 有权读取的审批所绑定不可变 AutomationVersion 中的步骤展示，不是另一审批或内容权威。
+type AutomationApprovalStepView struct {
+	ID             string  `json:"id"`
+	Message        string  `json:"message"`
+	Name           *string `json:"name,omitempty"`
+	VersionAssetID string  `json:"versionAssetId"`
 }
 
 // 实际 ACTIVE Grant 对该 Automation/run 的引用；不暴露 Secret、授予新权限或查询额度。
@@ -4770,11 +4858,14 @@ type AutomationScheduleSpec struct {
 
 // 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
 type AutomationStep struct {
-	Action   ActionEnum `json:"action"`
-	Duration *string    `json:"duration,omitempty"`
-	ID       string     `json:"id"`
-	Name     *string    `json:"name,omitempty"`
-	Text     *string    `json:"text,omitempty"`
+	Action ActionEnum `json:"action"`
+	// request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。
+	ApprovalPolicy *ApprovalPolicyElement `json:"approvalPolicy,omitempty"`
+	Duration       *string                `json:"duration,omitempty"`
+	ID             string                 `json:"id"`
+	Message        *string                `json:"message,omitempty"`
+	Name           *string                `json:"name,omitempty"`
+	Text           *string                `json:"text,omitempty"`
 }
 
 // REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
@@ -4787,7 +4878,8 @@ type AutomationVersionContent struct {
 	// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
 	Name         *string                `json:"name,omitempty"`
 	ResultTarget AutomationResultTarget `json:"resultTarget"`
-	// 不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+	// 不可与旧 action 混用；支持有序 Delay、一个引用既有策略的 request_approval，最后发送一条消息。步骤审批不可同时声明版本级
+	// approvalPolicy；此切片不是原多副作用的产品上限。
 	Steps   []StepElement                        `json:"steps,omitempty"`
 	Trigger AutomationVersionContentTriggerClass `json:"trigger"`
 }
@@ -5972,8 +6064,9 @@ const (
 type ActionEnum string
 
 const (
-	Delay       ActionEnum = "delay"
-	SendMessage ActionEnum = "send_message"
+	Delay           ActionEnum = "delay"
+	RequestApproval ActionEnum = "request_approval"
+	SendMessage     ActionEnum = "send_message"
 )
 
 type AutomationTriggerKind string

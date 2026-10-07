@@ -24,6 +24,7 @@ function reply(response, status, value) {
 async function fixture(t, mode = 'ok', action, protocolOperation) {
   const directory = await mkdtemp(join(tmpdir(), 'knowledge-adapter-'));
   const ids = Array.from({ length: 10 }, () => randomUUID());
+  const readOperation = randomUUID();
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const jwks = join(directory, 'jwks');
   const nativeSecretFile = join(directory, 'native');
@@ -33,12 +34,12 @@ async function fixture(t, mode = 'ok', action, protocolOperation) {
   await writeFile(nativeSecretFile, nativeSecret, { mode: 0o600 });
   await writeFile(oidcSecretFile, randomUUID(), { mode: 0o600 });
   const args = { nativeObjectRef: ids[2], idempotencyKey: ids[3], authorizationTargetNativeRef: ids[1] };
-  const state = { peps: 0, native: 0, methods: [] };
+  const state = { peps: 0, native: 0, methods: [], grants: 0, downloads: 0 };
   const revision = '2026-10-06T23:00:00.123456789Z';
-  const reference = { resourceId: ids[8], nativeObjectRef: ids[2], nativeRevision: revision,
+  const reference = { resourceId: action==='knowledge.ingest@v1'?ids[9]:ids[8], nativeObjectRef: ids[2], nativeRevision: revision,
     displayName: 'native document', mediaType: 'text/markdown' };
   const operation = protocolOperation ?? (action ? 'execute' : 'query_revision');
-  const intent = operation === 'observe' ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:'delete_document'}
+  const intent = operation === 'observe' ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:action==='knowledge.ingest@v1'?'add_document':'delete_document'}
     : action ? { target: { resourceId: ids[8] }, input: reference } : args;
   const bodyValue = operation === 'observe' ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
   const upstream = createServer(async (request, response) => {
@@ -47,6 +48,27 @@ async function fixture(t, mode = 'ok', action, protocolOperation) {
     if (request.method === 'GET') return reply(response, 405, {});
     if (request.url === '/token') return reply(response, 200, { access_token: randomUUID(), token_type: 'bearer' });
     const body = JSON.parse(raw);
+    if (request.url==='/service/v1/adapter/request_read_grant') {
+      state.grants++;
+      assert.notEqual(request.headers.authorization,`Bearer ${nativeSecret}`);
+      assert.deepEqual(body,{receiverBindingId:ids[0],receiverActionExecutionId:ids[5],sourceResourceId:reference.resourceId,
+        receiverArgumentsJson:canonical({target:{resourceId:ids[8]},input:reference}),
+        actionKey:'file_storage.read@v1',actionVersion:1,idempotencyKey:args.idempotencyKey,inputJson:canonical(reference)});
+      return reply(response,200,{actionExecutionId:randomUUID(),sourceBindingId:randomUUID(),operationId:readOperation,
+        endpoint:`${origin}${mode==='prefixed'?'/registered-prefix':''}/platform-adapter/v1/execute`,actionToken:'source-only',expiresAt:Math.floor(Date.now()/1000)+60,
+        argumentsJson:canonical({actionKey:'file_storage.read@v1',idempotencyKey:args.idempotencyKey,
+          arguments:{targetType:'RESOURCE',targetId:reference.resourceId,input:reference,authorizationTargetNativeRef:ids[2]}})});
+    }
+    if (['/platform-adapter/v1/execute','/registered-prefix/platform-adapter/v1/execute'].includes(request.url)) {
+      state.downloads++;
+      assert.equal(request.headers.authorization,'Bearer source-only');
+      const bytes=Buffer.from([0,255,1,254]);
+      response.writeHead(200,{'content-type':'application/octet-stream','content-length':String(bytes.length),
+        'x-kailo-native-object-ref':reference.nativeObjectRef,'x-kailo-native-revision':reference.nativeRevision,
+        'x-kailo-content-sha256':mode==='corrupt'?'bad':createHash('sha256').update(bytes).digest('hex'),
+        'x-kailo-operation-id':mode==='foreign-operation'?ids[6]:readOperation});
+      return response.end(bytes);
+    }
     if (request.url === '/service/v1/adapter/pep_check') {
       state.peps++;
       if ((mode === 'deny' && state.peps === 1) || (mode === 'revoke' && state.peps === 2)) return reply(response, 403, {});
@@ -61,6 +83,16 @@ async function fixture(t, mode = 'ok', action, protocolOperation) {
     assert.ok(request.headers.authorization === `Bearer ${nativeSecret}`);
     assert.equal(body.method, 'tools/call');
     state.methods.push(body.params.name);
+    if (body.params.name==='add_document') {
+      if (operation==='observe') assert.deepEqual(body.params.arguments,{
+        knowledge_base_id:ids[1],idempotency_key:args.idempotencyKey,observe_only:true});
+      else assert.deepEqual(body.params.arguments,{knowledge_base_id:ids[1],idempotency_key:args.idempotencyKey,
+        title:reference.displayName,filename:reference.displayName,file_base64:Buffer.from([0,255,1,254]).toString('base64'),
+        source_reference_json:canonical(reference),read_operation_id:readOperation});
+      return reply(response,200,{jsonrpc:'2.0',id:body.id,result:{content:[],structuredContent:{knowledge_base_id:ids[1],
+        media_type:reference.mediaType,read_operation_id:mode==='native-operation'?ids[6]:readOperation,document:{id:ids[2],file_name:reference.displayName,native_revision:revision,
+          parse_status:mode==='queued'?'pending':mode==='unknown'?'failed':'completed'}}}});
+    }
     if (body.params.name === 'delete_document') {
       assert.deepEqual(body.params.arguments, operation === 'observe'
         ? {knowledge_base_id:ids[1],idempotency_key:args.idempotencyKey,observe_only:true}
@@ -102,6 +134,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation) {
     corePepUrl: `${origin}/service/v1/adapter/pep_check`, oidcTokenUrl: `${origin}/token`,
     oidcClientId: 'binding-client', oidcClientSecretFile: oidcSecretFile,
     timeoutMs: 3000, maxBodyBytes: 16384, listenHost: '127.0.0.1', listenPort: 1 };
+  if (action==='knowledge.ingest@v1') config.readEdge={sourceActionVersion:1};
   const adapter = createAdapter(config);
   const endpoint = await listen(adapter);
   t.after(async () => {
@@ -135,6 +168,39 @@ test('knowledge revision uses original MCP metadata and two fresh PEP decisions'
   assert.deepEqual(await response.json(), { nativeObjectRef: args.nativeObjectRef, nativeRevision: revision });
   assert.equal(state.peps, 2);
   assert.deepEqual(state.methods, ['read_document']);
+});
+
+test('service file import preserves its distinct read batch operation, binary bytes and read-only native observation',async t=>{
+  for (const operation of ['execute','observe']) for (const mode of ['ok','queued','unknown','corrupt','revoke','foreign-operation','native-operation']) {
+    if (operation==='observe' && ['corrupt','foreign-operation','native-operation'].includes(mode)) continue;
+    await t.test(`${operation}/${mode}`,async nested=>{
+      const {state,invoke,reference}=await fixture(nested,mode,'knowledge.ingest@v1',operation);
+      const response=await invoke();
+      const result=await response.json();
+      if (['corrupt','revoke','foreign-operation','native-operation'].includes(mode)) {
+        assert.notEqual(response.status,200);
+        if (operation==='execute') assert.equal(state.native,mode==='native-operation'?1:0);
+      } else {
+        assert.equal(response.status,200);
+        const observed=operation==='execute'?result.execution:result;
+        assert.equal(observed.platformStatus,mode==='ok'?'SUCCEEDED':mode==='queued'?'RUNNING':'UNKNOWN');
+        assert.equal(observed.terminalAt!==undefined,mode==='ok');
+        if (operation==='execute' && mode==='ok') assert.notEqual(result.contentReference.resourceId,reference.resourceId);
+      }
+      assert.equal(state.grants,operation==='execute'?1:0);
+      assert.equal(state.downloads,operation==='execute'?1:0);
+      assert.deepEqual(state.methods,operation==='execute' && ['corrupt','revoke','foreign-operation'].includes(mode)?[]:['add_document']);
+    });
+  }
+});
+
+test('source endpoint retains its Core-controlled reverse proxy path',async t=>{
+  const {state,invoke}=await fixture(t,'prefixed','knowledge.ingest@v1','execute');
+  const response=await invoke();
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).execution.platformStatus,'SUCCEEDED');
+  assert.equal(state.downloads,1);
+  assert.deepEqual(state.methods,['add_document']);
 });
 
 test('conditional delete and observation require retained native terminal evidence',async t=>{

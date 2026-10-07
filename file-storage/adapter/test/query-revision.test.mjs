@@ -135,6 +135,13 @@ async function setup(t, changes = {}) {
       state.redirectReads += 1;
       return reply(response, 200, versions);
     }
+    if (request.url === '/native-bytes?versionId=frozen-version' && changes.serviceRead) {
+      assert.equal(request.headers.authorization, undefined);
+      state.downloads = (state.downloads ?? 0) + 1;
+      response.writeHead(200, {'content-type':'application/octet-stream'});
+      response.end(Buffer.from([0,255,1,254]));
+      return;
+    }
     assert.equal(request.headers.authorization, `Bearer ${nativeSecret}`);
     state.nativeReads.push(request.url);
     if (request.url === '/v2/auth/token/document') {
@@ -162,7 +169,9 @@ async function setup(t, changes = {}) {
       for await (const chunk of request) body += chunk;
       state.queries.push(JSON.parse(body));
       if (changes.redirect) { response.writeHead(302, { location: '/redirect-target' }); return response.end(); }
-      return reply(response, changes.nativeStatus ?? 200, changes.versions ?? versions);
+      return reply(response, changes.nativeStatus ?? 200, changes.versions ?? (changes.serviceRead
+        ? {Versions:[{VersionId:'frozen-version',Size:'4',PreSignedGET:{Url:`${origin}/native-bytes?versionId=frozen-version`}}]}
+        : versions));
     }
     return reply(response, 404, {});
   });
@@ -172,7 +181,8 @@ async function setup(t, changes = {}) {
     actionTokenIssuer: `${origin}/issuer`, actionTokenAudience: 'file-storage-private-adapter', actionTokenJwksFile: jwksFile,
     corePepUrl: `${origin}/service/v1/adapter/pep_check`, oidcTokenUrl: `${origin}/oidc/token`, oidcClientId: 'binding-client',
     oidcClientSecretFile: join(directory, 'oidc-credential'), timeoutMs: 3000, maxBodyBytes: 65536, listenHost: '127.0.0.1', listenPort: 1,
-    ...(changes.documentLaunch ? { documentLaunch: { cellsPublicOrigin: origin, documentServerOrigin: origin } } : {}) };
+    ...(changes.documentLaunch ? { documentLaunch: { cellsPublicOrigin: origin, documentServerOrigin: origin } } : {}),
+    ...(changes.serviceRead ? {readEdge:{downloadOrigin:origin}} : {}) };
   const adapter = createAdapter(config);
   const adapterOrigin = await listen(adapter);
   t.after(async () => {
@@ -191,7 +201,11 @@ async function setup(t, changes = {}) {
         .update(canonical({ operation, arguments: requestArguments })).digest('hex'),
       ...(changes.human ? { actor_principal_id: ids[9], agent_principal_id: undefined,
         action_key: 'file_storage.open_edit@v1', delegation_id: undefined, delegation_version: undefined,
-        result_exposure_policy_id: undefined, result_exposure_policy_version: undefined } : {}), ...change };
+        result_exposure_policy_id: undefined, result_exposure_policy_version: undefined } : {}),
+      ...(changes.serviceRead ? {action_key:'file_storage.read@v1',agent_principal_id:undefined,
+        initiating_human_principal_id:undefined,delegation_id:undefined,delegation_version:undefined,
+        result_exposure_policy_id:undefined,result_exposure_policy_version:undefined,idempotency_key:ids[7],
+        normalized_parameter_hash:createHash('sha256').update(canonical(requestArguments)).digest('hex')} : {}), ...change };
     const encodedHeader = Buffer.from(JSON.stringify({ alg: 'ES256', kid: 'test-current', typ: 'JWT' })).toString('base64url');
     const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
     const signature = sign('sha256', Buffer.from(`${encodedHeader}.${payload}`), { key, dsaEncoding: 'ieee-p1363' }).toString('base64url');
@@ -205,6 +219,31 @@ async function setup(t, changes = {}) {
   }
   return { state, token, invoke, target };
 }
+
+test('SERVICE source read returns exact binary version only after both fresh permission checks', async (t) => {
+  const argumentsValue={targetType:'RESOURCE',targetId:ids[10],authorizationTargetNativeRef:ids[2],
+    input:{resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version',displayName:'file.bin',mediaType:'application/octet-stream'}};
+  const request={actionKey:'file_storage.read@v1',idempotencyKey:ids[7],arguments:argumentsValue};
+  const fixture=await setup(t,{operation:'execute',arguments:argumentsValue,serviceRead:true});
+  const result=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request)});
+  assert.equal(result.status,200);
+  assert.deepEqual(Buffer.from(await result.arrayBuffer()),Buffer.from([0,255,1,254]));
+  assert.equal(result.headers.get('x-kailo-native-revision'),'frozen-version');
+  assert.equal(result.headers.get('x-kailo-content-sha256'),createHash('sha256').update(Buffer.from([0,255,1,254])).digest('hex'));
+  assert.equal(fixture.state.peps,2);
+  assert.equal(fixture.state.downloads,1);
+  assert.equal(result.headers.get('location'),null);
+  const denied=await setup(t,{operation:'execute',arguments:argumentsValue,serviceRead:true,
+    pep:(state,response)=>reply(response,state.peps===2?403:200,{actionExecutionId:ids[7],operationId:ids[6],authorizationMinZedToken:'fresh'})});
+  const revoked=await denied.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request)});
+  assert.equal(revoked.status,503);
+  assert.deepEqual(await revoked.json(),{error:'adapter request refused'});
+  assert.equal(denied.state.downloads,1);
+  for (const change of [{initiating_human_principal_id:ids[9]},{idempotency_key:ids[8]},{tenant_id:ids[8]}]) {
+    const refused=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request),token:fixture.token(change)});
+    assert.equal(refused.status,401);
+  }
+});
 
 test('HTTP protocol reaches fixed native UUID + NodeVersions and discloses only actual head VersionId', async (t) => {
   const { state, invoke } = await setup(t);

@@ -1,0 +1,15 @@
+{
+  "step": {
+    "id": "review-reply",
+    "name": "Review reply",
+    "action": "request_approval",
+    "approvalPolicy": {"id": "00000000-0000-4000-8000-000000000001", "version": 2},
+    "message": "Review this reply before publication"
+  },
+  "view": {
+    "versionAssetId": "00000000-0000-4000-8000-000000000002",
+    "id": "review-reply",
+    "name": "Review reply",
+    "message": "Review this reply before publication"
+  }
+}

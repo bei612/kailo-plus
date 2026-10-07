@@ -23,6 +23,31 @@ test("service read permission preserves receiver and legacy absence", () => {
     deepStrictEqual(JSON.parse(JSON.stringify(back)), value);
   }
 });
+import type { AutomationStep, AutomationApprovalStepView } from "../src/generated/contracts.js";
+
+test("automation approval step preserves policy and immutable view reference", () => {
+  const sample: {step: AutomationStep; view: AutomationApprovalStepView} = JSON.parse(readFileSync(
+    new URL("../../../../contracts/samples/automation-approval-step.sample.json", import.meta.url), "utf8"));
+  const step: AutomationStep = {id:sample.step.id, name:sample.step.name, action:sample.step.action,
+    approvalPolicy:sample.step.approvalPolicy, message:sample.step.message};
+  const view: AutomationApprovalStepView = {id:sample.view.id,name:sample.view.name,
+    versionAssetId:sample.view.versionAssetId,message:sample.view.message};
+  deepStrictEqual(JSON.parse(JSON.stringify({step,view})),sample);
+});
+import type { AdapterReadGrantRequest, AdapterReadGrantResponse } from "../src/generated/contracts.js";
+
+test("receiver read grant preserves distinct source and receiver provenance", () => {
+  const request: AdapterReadGrantRequest = JSON.parse(readFileSync(new URL("../../../../contracts/samples/adapter-read-grant-request.sample.json", import.meta.url), "utf8"));
+  const back: AdapterReadGrantRequest = {receiverBindingId:request.receiverBindingId,receiverActionExecutionId:request.receiverActionExecutionId,
+    receiverArgumentsJson:request.receiverArgumentsJson,sourceResourceId:request.sourceResourceId,actionKey:request.actionKey,
+    actionVersion:request.actionVersion,idempotencyKey:request.idempotencyKey,inputJson:request.inputJson};
+  deepStrictEqual(JSON.parse(JSON.stringify(back)),request);
+  const response: AdapterReadGrantResponse = JSON.parse(readFileSync(new URL("../../../../contracts/samples/adapter-read-grant-response.sample.json", import.meta.url), "utf8"));
+  const reply: AdapterReadGrantResponse = {actionExecutionId:response.actionExecutionId,operationId:response.operationId,
+    sourceBindingId:response.sourceBindingId,endpoint:response.endpoint,actionToken:response.actionToken,
+    expiresAt:response.expiresAt,argumentsJson:response.argumentsJson};
+  deepStrictEqual(JSON.parse(JSON.stringify(reply)),response);
+});
 import type { ComponentConformanceIdentity } from "../src/generated/contracts.js";
 
 test("conformance identity preserves isolated authorization and execution", () => {

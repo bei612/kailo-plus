@@ -133,6 +133,71 @@ func (s *exportKnowledgeService) CreateKnowledgeFromManual(_ context.Context, kb
 	return &types.Knowledge{ID: payload.CreationID, KnowledgeBaseID: kb, ParseStatus: types.ParseStatusPending}, nil
 }
 
+func (s *exportKnowledgeService) CreateKnowledgeFromFileAtID(_ context.Context, kb, filename string, data []byte, metadata map[string]string, creationID string) (*types.Knowledge, error) {
+	s.createdIDs = append(s.createdIDs, creationID)
+	encoded, err := json.Marshal(metadata)
+	if err != nil {
+		return nil, err
+	}
+	if s.docs == nil {
+		s.docs = map[string]*types.Knowledge{}
+	}
+	document := &types.Knowledge{ID: creationID, TenantID: 1, KnowledgeBaseID: kb, FileName: filename,
+		FileSize: int64(len(data)), Type: "file", Metadata: types.JSON(encoded), ParseStatus: types.ParseStatusPending}
+	s.docs[creationID] = document
+	return document, nil
+}
+
+func (s *exportKnowledgeService) GetKnowledgeByID(ctx context.Context, id string) (*types.Knowledge, error) {
+	return s.stubKnowledgeService.GetKnowledgeByIDOnly(ctx, id)
+}
+
+func TestAddDocumentFileObservationNeverRepeatsNativeCreation(t *testing.T) {
+	srv := newScopeTestServer(&types.KnowledgeBase{ID: "kb", TenantID: 1})
+	service := &exportKnowledgeService{}
+	srv.knowledgeService = service
+	ep := &types.MCPEndpoint{ID: "ep", TenantID: 1, Tools: types.StringArray{types.MCPEndpointToolAddDocument}}
+	key := "366b0c6f-c070-40a1-ad6e-66b1a21aaf3c"
+	readOperation := "6570487f-c171-45f4-9163-fd6b794d1984"
+	reference := map[string]string{"resourceId": "e6653c7a-e555-423a-af39-c60a4848f955",
+		"nativeObjectRef": "ac80e0be-3cfc-4abd-baf0-88920506a44d", "nativeRevision": "version-1",
+		"displayName": "source.txt", "mediaType": "text/plain"}
+	encoded, err := json.Marshal(reference)
+	require.NoError(t, err)
+	args := map[string]any{
+		"knowledge_base_id": "kb", "title": "source.txt", "filename": "source.txt", "file_base64": "AP8B/g==",
+		"source_reference_json": string(encoded), "idempotency_key": key}
+	result, err := srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.Empty(t, service.createdIDs)
+	args["read_operation_id"] = readOperation
+	result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.Len(t, service.createdIDs, 1)
+	document := service.docs[service.createdIDs[0]]
+	require.Equal(t, int64(4), document.FileSize)
+	for _, state := range []string{types.ParseStatusPending, types.ParseStatusFailed, types.ParseStatusCompleted} {
+		document.ParseStatus = state
+		result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, map[string]any{
+			"knowledge_base_id": "kb", "idempotency_key": key, "observe_only": true}))
+		require.NoError(t, err)
+		require.False(t, result.IsError)
+		require.Len(t, service.createdIDs, 1)
+		value := result.StructuredContent.(map[string]any)
+		require.Equal(t, "text/plain", value["media_type"])
+		require.Equal(t, readOperation, value["read_operation_id"])
+		require.Equal(t, state, value["document"].(documentSummary).ParseStatus)
+	}
+	ep.ID = "other-endpoint"
+	result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, map[string]any{
+		"knowledge_base_id": "kb", "idempotency_key": key, "observe_only": true}))
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	require.Len(t, service.createdIDs, 1)
+}
+
 func nativeToolRequest(t *testing.T, args map[string]any) mcp.CallToolRequest {
 	t.Helper()
 	body, err := json.Marshal(map[string]any{"params": map[string]any{"arguments": args}})

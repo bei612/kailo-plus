@@ -24,6 +24,8 @@ pub(crate) mod pep;
 mod projection;
 #[path = "application_binding_read.rs"]
 pub(crate) mod read;
+#[path = "application_read_grant.rs"]
+pub(crate) mod read_grant;
 
 pub(crate) const CREATE: &str = "application_binding.create";
 pub(crate) const DISABLE: &str = "application_binding.disable";

@@ -3954,3 +3954,60 @@ receiverResource/旧字段缺省往返各 1 项通过，TS 同时执行原 test 
 Agent；Agent 发起的 Delegation/ToolBinding 交集、接收方自主增量拉取与其 UI
 仍须各自真实接通。接收方停止后 reader 扫除由既有 binding 生命周期负责，本批不冒称
 验证了该清理。现有 UNKNOWN 若无可核验外部结果仍保留未知，不能靠本补丁认定成功。
+
+## 2026-10-07：原审批步骤接入同一版本策略与 AgentTask
+
+比较基准为 `ec8ae806d3461499fc8bbe5c506b64c9ee4e2b78`。本批是原
+Workflows 的 `request_approval` 实现增量，不是新审批服务，也不把源码写入称为已部署。
+权威是 `REQ-23/24`、`DD-107`、`.design/03` §7 与 `.design/06` §9/9.1。
+上游固定 `779af8886caae1317b4de962082429867ab61503` 的
+`crates/buzz-workflow/src/schema.rs::ActionDef::RequestApproval` 与
+`desktop/src/features/workflows/ui/WorkflowStepCard.tsx::WorkflowStepCard`
+已用 `git show` 核验。继续复用既有共享步骤卡片、原 Form/YAML、详情和两个实际宿主。
+
+四步影响结论：
+
+1. 原审批人自由 `from` 不是 Kailo 身份或角色权威。本实现显式选择当前可用的
+   `ApprovalPolicy` 精确 ID/version；它仍不是人名，审批人、阈值和时限完全来自同版本策略。
+   请求说明保存在同一不可变 AutomationVersion 的步骤中，修改说明同样改变版本 hash；
+   子 AE 仅新增 stepId 引用，不另存一份说明或决策。没有放开自由 timeout/from。
+2. 本批四份 schema 变更加生成四侧；ApprovalView 可选 automationStep 是授权查询从
+   同一版本读取的展示投影。原普通版本与头部 approvalPolicy 继续可读，历史 hash 不改写；
+   显式步骤与头部策略同时存在会拒绝。无数据库迁移、新路由、新 Workflow kind 或新队列。
+3. 同 AgentTask 在原 Temporal history 确认前缀 Delay 已触发后启动原 ApprovalWorkflow；
+   没有真实 CONSUMED 证据就不执行后缀 Delay/消息。旧头部审批仍先于所有 Delay。
+   原 fresh permission、撤权、额度、Capacity、审计、消息意图/回执与失败收敛链保持不变。
+4. 缺策略版本、空说明、重复审批、未知动作、未支持的 from/timeout/条件均拒绝。
+   取消/拒绝/到期沿原终态；history/审批结果不明保持 UNKNOWN，不盲重放。
+   Form/YAML/复制读取同一字段；UNKNOWN 保存同一个命令与幂等键。
+
+本切片支持 Delay、一次策略审批、末条 send_message 的顺序组合；这不是产品七动作上限。
+原 send_dm、set_channel_topic、add_reaction、call_webhook、多次副作用/审批、条件和模板
+完整能力仍不在本次验收范围，也没有生成假执行入口或恢复 Buzz 自带执行器。
+
+验证输入是上述基准加本批精确路径。正式工作树的 SERVICE/read-edge 联合生成物未被
+本批私有生成覆盖；私有 SDK 用原 tools/gen.sh 重新生成与本批 schema 匹配的四侧，退出 0。
+shared 源与测试 tsc 均 0，原工作流消费者 58 项与审批页 11 项共 69 项通过；
+两个宿主 tsc 均 0。TS/Dart/Go 的新审批步骤与不可变详情引用往返各 1 项通过。
+SDK 故意使 workflowApprovalPolicy 忽略步骤引用后，新用例真实失败 1 项；原字节
+cmp 0 还原后原 57 项通过，追加非法 YAML 场景后的最终同组结果为上述 69 项。
+
+真实失败没有省略：首次 SDK 缺两个已入库 duration 文件导致 TS2307，补精确基准输入后通过；
+初次 Dart 未投递已有 PUB_CACHE、私有 gen 未投递 npm_config_cache 时分别权限拒绝，
+投递既有 Data 缓存后原入口通过，未安装或修改产品来迁就环境。
+Core 首轮漏导 json 宏编译 101，修正后 automation 25 通过/5 显式 ignored；
+随后 clippy 抓到多余 unit 表达式，已删除而未添加 lint 豁免。
+最终 Core 联验额外包含根线程的容量响应 mapper/事后用例两文件增量，这部分不归本候选；
+审批 25 通过/5 显式 ignored、该 mapper 1 通过、Rust 新合同往返 1 通过，
+clippy `-Dwarnings` 退出 0，联合命令 session 13785 最终退出 0。
+SDK 故意破坏审批步骤位置与双策略拒绝：原检查 23 通过/2 失败、退出 101；
+同时将根 mapper 的 finish_activity 置 false：原检查 0 通过/1 失败、退出 101。
+三文件恢复后各自 cmp 0，重新编译并得到上述最终恢复结果；没有拿旧二进制证明变异。
+
+日志位于 `/volumes/data/kailo/tmp/workflow-approval-20261007.fZc73u/`：
+`selected-generate-shared-restored.log`、`shared-mutation.log`、
+`shared-contracts-restored.log`、`approval-contracts.log`、
+`selected-contracts-hosts.log`、`selected-hosts-restored.log`、`core.log`、`core-restored.log`、
+`core-mutation.log`、`core-mutation-restored.log`。
+复用既有 4 CPU/8 GiB SDK、Data 缓存和 Cargo `-j16`，无 full/build/deploy。
+没有声称线上审批与消息终态贯通，也没有把显式 ignored 的数据库场景计为通过。

@@ -8,7 +8,7 @@
   "required": ["trigger", "resultTarget"],
   "properties": {
     "formatVersion": {"type": "integer", "enum": [2], "description": "有序 steps 形态为 2，旧单 action 格式缺省保持原摘要。"},
-    "steps": {"type": "array", "minItems": 1, "items": {"$ref": "automation_step.schema.json"}, "description": "不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。"},
+    "steps": {"type": "array", "minItems": 1, "items": {"$ref": "automation_step.schema.json"}, "description": "不可与旧 action 混用；支持有序 Delay、一个引用既有策略的 request_approval，最后发送一条消息。步骤审批不可同时声明版本级 approvalPolicy；此切片不是原多副作用的产品上限。"},
     "name": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。"},
     "approvalPolicy":{"$ref":"automation_approval_policy_ref.schema.json"},
     "trigger": {

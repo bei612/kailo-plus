@@ -6,6 +6,15 @@
 
 ## 当前使用与恢复范围（2026-10-06）
 
+- 2026-10-07 后续源码集成：原工作流策略审批步骤与 Cells→WeKnora 单文件
+  读取导入合批，保留已推送的 SERVICE 资源授权及容量等待修复。四侧重新生成、
+  同步和历史契约兼容检查通过；TS 37、Dart 32、Rust 32 项往返及 Go 契约包
+  通过。源码集成不代表部署：读取批次终态/用量收敛、自动同步和三组件完整
+  binding 仍未闭合，未注册未完成入口。完整工作流七动作、三人双 Agent 稳定
+  协作、全页面中英及 Windows/Mobile 验收仍未交付。实际失败、恢复与证据边界
+  见[本批记录](core/verify/buzz-restoration-checkpoint.md)。线上版本仍为下述
+  `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b`，不能用本批源码替代安装包或线上验收。
+
 - 2026-10-07 01:38 UTC：固定源码 `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b`
   的 Core、Worker、Web 已集中构建、推送镜像并实际部署；Core health 200、Web
   healthy。停止旧 Core/Worker writer 并备份后，三条迁移全部通过，业务库现为

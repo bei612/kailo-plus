@@ -824,6 +824,8 @@ enum PlatformMessageKey {
   workflowsStepsId,
   workflowsStepsReference,
   workflowsStepsAddDelay,
+  workflowsStepsAddApproval,
+  workflowsStepsApprovalPolicyHint,
   workflowsStepsWaiting,
   workflowsCronYear,
   workflowsCronYamlFields,
@@ -3298,6 +3300,14 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '步骤标识用于在工作流历史中定位此步骤。',
   ),
   PlatformMessageKey.workflowsStepsAddDelay: ('Add delay', '添加延时'),
+  PlatformMessageKey.workflowsStepsAddApproval: (
+    'Add approval request',
+    '添加审批请求',
+  ),
+  PlatformMessageKey.workflowsStepsApprovalPolicyHint: (
+    'Approvers and the deadline come from the selected policy version, not a free-form name or role.',
+    '审批人与时限由所选策略版本决定，不根据自由填写的姓名或角色推断。',
+  ),
   PlatformMessageKey.workflowsStepsWaiting: (
     'Waiting for the workflow timer',
     '等待工作流定时器',

@@ -29,6 +29,45 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	kbID string, file *multipart.FileHeader, metadata map[string]string, enableMultimodel *bool, customFileName string, tagIDs []string, channel string,
 	processOverrides *types.KnowledgeProcessOverrides,
 ) (*types.Knowledge, error) {
+	return s.createKnowledgeFromFile(ctx, kbID, file, metadata, enableMultimodel, customFileName, tagIDs, channel, processOverrides, "")
+}
+
+func (s *knowledgeService) CreateKnowledgeFromFileAtID(ctx context.Context, kbID, filename string, data []byte, metadata map[string]string, creationID string) (*types.Knowledge, error) {
+	id, err := uuid.Parse(creationID)
+	if err != nil || id == uuid.Nil || id.String() != creationID {
+		return nil, werrors.NewBadRequestError("invalid native file creation identity")
+	}
+	file, err := bytesToFileHeader(data, filename)
+	if err != nil {
+		return nil, err
+	}
+	return s.createKnowledgeFromFile(ctx, kbID, file, metadata, nil, file.Filename, nil, "mcp", nil, creationID)
+}
+
+const fileCreationDigestMetadataKey = "kailo_file_creation_digest"
+
+func (s *knowledgeService) fileCreation(ctx context.Context, tenantID uint64, kbID, id, digest string) (*types.Knowledge, error) {
+	prior, err := s.repo.GetKnowledgeByID(ctx, tenantID, id)
+	if errors.Is(err, repository.ErrKnowledgeNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if prior == nil {
+		return nil, werrors.NewInternalServerError("native file creation evidence unavailable")
+	}
+	fields, err := prior.Metadata.Map()
+	if err != nil || prior.TenantID != tenantID || prior.KnowledgeBaseID != kbID || prior.Type != "file" || fields[fileCreationDigestMetadataKey] != digest {
+		return nil, werrors.NewBadRequestError("native file creation identity conflicts with its original input")
+	}
+	return prior, nil
+}
+
+func (s *knowledgeService) createKnowledgeFromFile(ctx context.Context, kbID string, file *multipart.FileHeader,
+	metadata map[string]string, enableMultimodel *bool, customFileName string, tagIDs []string, channel string,
+	processOverrides *types.KnowledgeProcessOverrides, creationID string,
+) (*types.Knowledge, error) {
 	logger.Info(ctx, "Start creating knowledge from file")
 
 	// Use custom filename if provided, otherwise use original filename. Folder
@@ -89,6 +128,27 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 
 	// Check if file already exists
 	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
+	creationDigest := ""
+	if creationID != "" {
+		encoded, err := json.Marshal(struct {
+			KB, Hash, Name string
+			Metadata       map[string]string
+		}{kbID, hash, fileName, metadata})
+		if err != nil {
+			return nil, err
+		}
+		creationDigest = fmt.Sprintf("%x", sha256.Sum256(encoded))
+		prior, err := s.fileCreation(ctx, tenantID, kbID, creationID, creationDigest)
+		if err != nil || prior != nil {
+			return prior, err
+		}
+		copied := make(map[string]string, len(metadata)+1)
+		for key, value := range metadata {
+			copied[key] = value
+		}
+		copied[fileCreationDigestMetadataKey] = creationDigest
+		metadata = copied
+	}
 	logger.Infof(ctx, "Checking if file exists, tenant ID: %d", tenantID)
 	checkParams := &types.KnowledgeCheckParams{
 		Type:     "file",
@@ -181,10 +241,25 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 		EmbeddingModelID: kb.EmbeddingModelID,
 		Metadata:         metadataJSON,
 	}
+	if creationID != "" {
+		knowledge.ID = creationID
+	}
 
 	if processOverrides != nil {
 		if err := knowledge.SetProcessOverrides(processOverrides); err != nil {
 			logger.Errorf(ctx, "Failed to set process overrides: %v", err)
+			return nil, err
+		}
+	}
+	if creationID != "" {
+		// Native Knowledge is the durable intent, not a second importer table.
+		// A crash leaves this same pending/failed row for native observation and
+		// owner cleanup; an absent receipt never triggers a second upload.
+		if err := s.repo.CreateKnowledge(ctx, knowledge); err != nil {
+			prior, readErr := s.fileCreation(ctx, tenantID, kbID, creationID, creationDigest)
+			if readErr != nil || prior != nil {
+				return prior, readErr
+			}
 			return nil, err
 		}
 	}
@@ -195,14 +270,32 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 	filePath, err := fileSvc.SaveFile(ctx, file, knowledge.TenantID, knowledge.ID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to save file, knowledge ID: %s, error: %v", knowledge.ID, err)
+		if creationID != "" {
+			knowledge.ParseStatus = "failed"
+			knowledge.ErrorMessage = "Native file storage result requires reconciliation"
+			if updateErr := s.repo.UpdateKnowledge(ctx, knowledge); updateErr != nil {
+				return nil, updateErr
+			}
+		}
 		return nil, err
 	}
 	knowledge.FilePath = filePath
 
 	// Save knowledge record to database after the file is safely stored.
 	logger.Info(ctx, "Saving knowledge record to database")
-	if err := s.repo.CreateKnowledge(ctx, knowledge); err != nil {
+	var persistErr error
+	if creationID == "" {
+		persistErr = s.repo.CreateKnowledge(ctx, knowledge)
+	} else {
+		persistErr = s.repo.UpdateKnowledge(ctx, knowledge)
+	}
+	if err := persistErr; err != nil {
 		logger.Errorf(ctx, "Failed to create knowledge record, ID: %s, error: %v", knowledge.ID, err)
+		if creationID != "" {
+			// Preserve the original resource-catalog owner binding for repair;
+			// deleting here could destroy a write whose DB ACK was merely lost.
+			return nil, err
+		}
 		if deleteErr := fileSvc.DeleteFile(ctx, filePath); deleteErr != nil {
 			logger.Errorf(ctx, "Failed to delete saved file after knowledge creation failed, path: %s, error: %v", filePath, deleteErr)
 		}

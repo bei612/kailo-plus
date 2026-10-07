@@ -1,0 +1,9 @@
+{
+  "actionExecutionId": "10000000-0000-4000-8000-000000000005",
+  "operationId": "10000000-0000-4000-8000-000000000006",
+  "sourceBindingId": "20000000-0000-4000-8000-000000000002",
+  "endpoint": "https://source-adapter.example.invalid/platform-adapter/v1/execute",
+  "actionToken": "non-authorizing-serialization-fixture",
+  "expiresAt": 1800000000,
+  "argumentsJson": "{\"actionKey\":\"file_storage.read@v1\",\"arguments\":{\"authorizationTargetNativeRef\":\"20000000-0000-4000-8000-000000000004\",\"input\":{\"displayName\":\"manual.txt\",\"mediaType\":\"text/plain\",\"nativeObjectRef\":\"20000000-0000-4000-8000-000000000003\",\"nativeRevision\":\"revision-one\",\"resourceId\":\"20000000-0000-4000-8000-000000000001\"},\"targetId\":\"20000000-0000-4000-8000-000000000001\",\"targetType\":\"RESOURCE\"},\"idempotencyKey\":\"10000000-0000-4000-8000-000000000004\"}"
+}

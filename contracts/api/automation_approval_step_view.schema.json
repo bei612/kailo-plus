@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/automation_approval_step_view.schema.json",
+  "title": "AutomationApprovalStepView",
+  "description": "有权读取的审批所绑定不可变 AutomationVersion 中的步骤展示，不是另一审批或内容权威。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["versionAssetId", "id", "message"],
+  "properties": {
+    "versionAssetId": {"type": "string", "format": "uuid"},
+    "id": {"type": "string", "minLength": 1},
+    "name": {"type": "string", "minLength": 1},
+    "message": {"type": "string", "minLength": 1}
+  }
+}

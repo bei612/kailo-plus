@@ -210,6 +210,10 @@ pub fn router(state: ServiceState) -> Router {
             "/service/v1/adapter/pep_check",
             post(crate::application_binding::pep::check),
         )
+        .route(
+            "/service/v1/adapter/request_read_grant",
+            post(crate::application_binding::read_grant::request),
+        )
         .with_state(state.clone());
     match (
         state.gateway_service_auth.clone(),

@@ -313,6 +313,19 @@ describe("ApprovalsPage", () => {
     return { el, send: m.send };
   };
 
+  it("shows the immutable approval step request without changing UNKNOWN decision semantics", async () => {
+    const step = {versionAssetId:"version-reference",id:"review-reply",name:"Review reply",message:"Review <b>this reply</b> before publication"};
+    const {el, send} = await openFirst(() => ({status:200,body:approval({
+      automationStep:step,observation:ReasonCode.ExternalResultUnknown,
+    })}));
+    expect(el.textContent).toContain(step.name);
+    expect(el.textContent).toContain(step.message);
+    expect(el.textContent).toContain(step.versionAssetId);
+    expect(el.querySelector("b")).toBeNull();
+    expect([...el.querySelectorAll("button")].some((node) => node.textContent === "Approve" && !node.disabled)).toBe(false);
+    expect(posts(send)).toHaveLength(0);
+  });
+
   it.each([
     ["waiting", approval()],
     ["terminal", approval({ status: ApprovalStatus.Consumed })],
