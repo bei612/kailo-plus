@@ -15,7 +15,7 @@ export function WebSidebarProfileCard({ session, onOpenSettings, onSignOut, sett
     enabled: !settingsOpen,
   });
   const actual = profile.isSuccess ? profile.data : undefined;
-  const displayName = actual?.displayName ?? session.displayName;
+  const displayName = actual?.displayName?.trim() || session.displayName;
   const rewriteMediaUrl = (url: string) => actual?.avatarMediaPaths[url]
     ?? actual?.avatarMediaPaths[url.split("?")[0]!] ?? url;
   const avatar = (testId?: string) => <ProfileAvatarPreview avatarUrl={actual?.avatarUrl ?? null}

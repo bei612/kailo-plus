@@ -1,75 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "@client-kit/platform/theme.css";
-@import "@client-kit/platform/typography.css";
-@import "@client-kit/platform/react/messages/markdown.css";
-@import "@client-kit/platform/react/composer/prosemirror.css";
-@import "@client-kit/platform/react/composer/composer.css";
-@import "@client-kit/platform/react/composer/spoilers.css";
+@import "@client-kit/platform/styles.css";
+
 @config "../../../tailwind.config.js";
-/* 共用平台包放在被忽略的目录里，Tailwind 不自动扫描，显式登记（ADR-09） */
+/* The shared package is ignored by Tailwind automatic discovery (ADR-09). */
 @source "../../../node_modules/@client-kit/platform/src";
-
-@layer base {
-  button:disabled,
-  input:disabled,
-  textarea:disabled,
-  select:disabled {
-    cursor: not-allowed;
-  }
-
-  :focus-visible {
-    outline: 2px solid hsl(var(--ring) / 55%);
-    outline-offset: 2px;
-  }
-}
-
-.buzz-message-markdown code:not(pre code) {
-  border-radius: 0.25rem;
-  background: hsl(var(--foreground) / 8%);
-  padding: 0.1rem 0.3rem;
-  font-size: 0.86em;
-}
-
-.buzz-message-markdown a {
-  color: hsl(var(--primary));
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.buzz-message-markdown img {
-  max-height: 16rem;
-  max-width: min(100%, 24rem);
-  border-radius: 0.375rem;
-  object-fit: contain;
-}
-
-.buzz-message-mention {
-  box-sizing: border-box;
-  display: inline-flex;
-  min-height: 1.2rem;
-  align-items: center;
-  gap: 0.2rem;
-  padding: 0.1rem 0.35rem;
-  border-radius: 0.3rem;
-  background: hsl(var(--foreground) / 8%);
-  color: hsl(var(--foreground) / 88%);
-  font-size: inherit;
-  font-weight: 600;
-  line-height: 1;
-  vertical-align: baseline;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-}
-
-.buzz-message-mention-icon {
-  width: 0.8rem;
-  height: 0.8rem;
-  flex: none;
-}
-
-.buzz-message-mention-prefix {
-  display: inline-block;
-  line-height: 1;
-  transform: translateY(-0.08em);
-}

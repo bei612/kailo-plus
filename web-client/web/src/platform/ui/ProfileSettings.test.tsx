@@ -2,7 +2,9 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { WebProfileUpdateRequest } from "@client-kit/contracts";
+import { PlatformSessionAccessMode, type PlatformSessionView, type WebProfileUpdateRequest } from "@client-kit/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { WebSidebarProfileCard } from "./SidebarProfileCard";
 import { SettingsPane } from "./SettingsPane";
 import { setLocale } from "@client-kit/platform/i18n";
 import { PlatformProvider } from "@client-kit/platform/react/context";
@@ -14,7 +16,7 @@ const state = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), upload: vi.fn()
 vi.mock("@client-kit/platform/react/context", async (original) => ({ ...await original<typeof import("@client-kit/platform/react/context")>(), useBffClient: () => ({ invitations: async()=>[], profile: state.read, updateProfile: state.write }) }));
 vi.mock("@/shared/i18n", () => ({ getLocale: () => "en" }));
 vi.mock("@/shared/theme/ThemeProvider", () => ({ useTheme: () => ({ themeName: "buzz", selectedThemeName: "buzz", isLoading: false, isDark: false, followSystem: true, accentColor: "neutral", hasPair: true, setTheme: vi.fn(), setAccentColor: vi.fn(), setFollowSystem: vi.fn(), applyAppearance: vi.fn(), prominentActiveTab: false, setProminentActiveTab: vi.fn() }) }));
-vi.mock("@/platform/bff-client", () => ({ bff: {}, fetchUserState: vi.fn(), setWorkspacePreference: vi.fn(), uploadProfileAvatar: state.upload }));
+vi.mock("@/platform/bff-client", () => ({ bff: { profile: (...args: unknown[]) => state.read(...args) }, fetchUserState: vi.fn(), setWorkspacePreference: vi.fn(), uploadProfileAvatar: state.upload }));
 
 const profile = { pubkey: "a".repeat(64), eventId: "1".repeat(64), displayName: "Before", about: "Original", avatarUrl: null, nip05Handle: null, avatarMediaPaths: {} };
 let root: Root;
@@ -119,6 +121,28 @@ it("opens the original avatar controls independently and keeps the actual mode t
   expect(host.querySelector('[data-testid="profile-avatar-mode-tabs-slot"]')?.textContent).toContain("Emoji");
   expect(host.querySelector('[data-testid="profile-avatar-editor-shell"]')).not.toBeNull();
   expect(state.write).not.toHaveBeenCalled();
+});
+
+it.each(["", "   ", "  Profile name  "])("uses the original display-name fallback for profile name %j", async (displayName) => {
+  state.read.mockResolvedValue({ ...profile, displayName });
+  const session: PlatformSessionView = {
+    accessMode: PlatformSessionAccessMode.Full, displayName: "Signed-in human",
+    humanIdentityId: "human", platformSessionId: "session", tenantId: "tenant",
+    tenantMembershipId: "membership", tenantPrincipalId: "principal",
+  };
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  try {
+    await act(async () => root.render(<QueryClientProvider client={queryClient}><PlatformProvider client={client} locale="en">
+      <WebSidebarProfileCard session={session} settingsOpen={false} onOpenSettings={vi.fn()} onSignOut={vi.fn()} />
+    </PlatformProvider></QueryClientProvider>));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    const expected = displayName.trim() || session.displayName;
+    expect(host.querySelector('[data-testid="sidebar-profile-name"]')?.textContent).toBe(expected);
+    expect(host.querySelector('[data-testid="sidebar-profile-avatar-button"]')?.getAttribute("aria-label")).toContain(expected);
+    expect(state.write).not.toHaveBeenCalled();
+  } finally {
+    queryClient.clear();
+  }
 });
 
 it.each(["different event", "different signer", "read error"])("does not turn an accepted PUT plus %s into saved", async (failure) => {

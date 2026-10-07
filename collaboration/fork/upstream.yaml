@@ -26,6 +26,22 @@ remove_paths:
   - desktop/src/app/BuzzThemeSurfaces.tsx
   - desktop/src/shared/styles/globals/theme.css
   - desktop/src/shared/styles/globals/typography.css
+  # Original global CSS moved verbatim into client-kit/styles, shared by both hosts.
+  - desktop/src/shared/styles/globals/scrollbars.css
+  - desktop/src/shared/styles/globals/motion.css
+  - desktop/src/shared/styles/globals/animations.css
+  - desktop/src/shared/styles/globals/skeleton.css
+  - desktop/src/shared/styles/globals/components.css
+  - desktop/src/shared/styles/globals/utilities.css
+  - desktop/src/shared/styles/globals/media-controls.css
+  - desktop/src/shared/styles/globals/avatar-framing.css
+  - desktop/src/shared/styles/globals/image-lightbox.css
+  - desktop/src/shared/styles/globals/video-review.css
+  - desktop/src/shared/styles/globals/progress.css
+  # Former one-line aliases now resolve through the same shared styles.css entry.
+  - desktop/src/shared/styles/globals/composer.css
+  - desktop/src/shared/styles/globals/markdown.css
+  - desktop/src/shared/styles/globals/spoilers.css
   - desktop/src/shared/theme/adaptive-theme.ts
   - desktop/src/shared/theme/theme-loader.ts
   # 仍未恢复的原资料弹层继续列为交付缺口，不代表获得删除功能的授权。

@@ -1,5 +1,14 @@
 # 本人头像运行配置修复与浏览器实测（2026-10-07）
 
+## Web 显示名原版回退恢复
+
+1. 权威：同一固定 Buzz commit 的 `desktop/src/features/sidebar/ui/AppSidebar.tsx::AppSidebar` 使用 `profile?.displayName?.trim() || fallbackDisplayName?.trim()`。本轮实际截图 `16-emoji-before-style-restore.png` 中左下角姓名空白；Playwright 读取请求 251 的 profile 响应确认 `displayName:""`，不是头像上传失败。Web 的 `??` 只处理 null，误将合法的空昵称覆盖已认证会话中的显示名。
+2. 影响：`WebSidebarProfileCard` 恢复原 trim/非空回退，保留现有受信 Session 显示名来源，继续复用两端共享 SidebarProfileCard/头像/弹层。资料读取仍按 session/principal 隔离；不写回昵称，不修改账号、授权、契约、数据库或 Mobile。
+3. 副作用：这是显示名，不是认证回退；不会凭昵称授予权限、替换 principal 或回退默认租户。原 profile 失败时仍不暴露其旧头像，昵称可显示当前认证 Session 已知的本人名称。
+4. 边界：空字符串、全空白与有前后空白的有效昵称分别恢复原行为；真实 shared 侧栏文本及头像按钮可访问名称同时验证，零资料写入。原上传、保存事件读回和会话切换检查不删除。
+
+实现后在既有 4 CPU/8 GiB SDK 执行 `vitest run src/platform/ui/ProfileSettings.test.tsx`：10 passed、退出 0。私有验证输入把 trim/非空回退故意改回 `??`，执行相同文件 `-t 'original display-name fallback'`：3 failed / 7 skipped、退出 1；首个原文 `expected '' to be 'Signed-in human'`。apply_patch 还原后完整文件再跑 10 passed、退出 0。jsdom 仍报告既有 `HTMLCanvasElement.getContext` 不支持警告，未以此声称真实 Canvas/Windows 验收。本修复尚未部署；线上截图证明修复前问题，不冒充修复后截图。
+
 ## 权威、影响与边界
 
 1. 权威：`.design/09` §3、DD-39/75/80/81 与 SS-WEB-RELAY。本人资料使用原生 kind 0，由本人签署；Web 经 BFF SERVER 身份，原生端本机身份直连。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `crates/buzz-relay/src/handlers/ingest.rs::ingest_event_inner` 是原发布链；本仓库 `collaboration/crates/buzz-relay/src/handlers/governance.rs::check_event_kind` 额外消费运行配置的成员事件列表。

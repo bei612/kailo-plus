@@ -69,9 +69,12 @@ describe("MessageContent", () => {
     expect(html.match(/data-mention=""/g)).toHaveLength(2);
     expect(html).toContain(`data-mention-pubkey="${PERSON}"`);
     expect(html).toContain(`data-mention-pubkey="${AGENT}"`);
-    expect(html).toContain('buzz-message-mention-prefix">@</span>Alex');
+    expect(html).toContain('data-mention-label="Alex"');
+    expect(html).toContain('inline-chip-icon-human');
+    expect(html).toContain('wrapping-inline-chip');
     expect(html).toContain('data-mention-agent="true"');
-    expect(html).toContain("buzz-message-mention-icon");
+    expect(html).toContain("inline-chip-icon-agent");
+    expect(html).not.toContain("buzz-message-mention");
     expect(html).toContain("<br/>");
   });
 

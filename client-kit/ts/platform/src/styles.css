@@ -1,0 +1,21 @@
+@import "./styles/scrollbars.css";
+@import "./styles/motion.css";
+@import "./styles/animations.css";
+@import "./react/composer/prosemirror.css";
+@import "./react/composer/composer.css";
+@import "./react/messages/markdown.css";
+@import "./theme.css";
+@import "./typography.css";
+@import "./styles/skeleton.css";
+@import "./react/composer/spoilers.css";
+@import "./styles/components.css";
+@import "./styles/utilities.css";
+@import "./styles/media-controls.css";
+@import "./styles/avatar-framing.css";
+@import "./styles/image-lightbox.css";
+@import "./styles/video-review.css";
+@import "./styles/progress.css";
+
+/* Original Buzz 779af8886caae1317b4de962082429867ab61503 globals.css.
+ * Keep explicit app theme and pointer hover behavior identical in both hosts. */
+@custom-variant hover (&:hover);

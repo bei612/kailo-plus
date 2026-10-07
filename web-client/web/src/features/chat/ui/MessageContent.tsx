@@ -16,7 +16,10 @@ import {
 import {
   resolveShikiThemeName,
 } from "@client-kit/platform/theme/theme-loader";
-import { Bot, Download, ImageOff } from "lucide-react";
+import { Download, ImageOff } from "lucide-react";
+import { InlineChip } from "@client-kit/platform/react/messages/system/InlineChip";
+import { inlineChipIconClasses, inlineChipLeadingEnd, WRAPPING_INLINE_CHIP_CLASSES } from "@client-kit/platform/react/composer/shared/ui/mentionChip";
+import { formatMentionDisplayLabel } from "@client-kit/platform/react/composer/shared/lib/mentionDisplay";
 import { type ComponentProps, createContext, useContext, useState } from "react";
 import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import { parseMessageLink, type ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
@@ -198,20 +201,26 @@ function MarkdownMention({ children }: { children?: React.ReactNode }) {
   const label = text.replace(/^@/, "");
   const mention = mentionsByName.get(label.trim().toLocaleLowerCase());
   if (!mention) return <>{children}</>;
+  const icon = mention.isAgent ? "agent" : "human";
+  const displayLabel = formatMentionDisplayLabel(label, mention.pubkey);
+  const leadingEnd = inlineChipLeadingEnd(displayLabel);
   return (
-    <span
-      className="buzz-message-mention"
+    <InlineChip
+      className={`${WRAPPING_INLINE_CHIP_CLASSES}${mention.isAgent ? " agent-mention-highlight" : ""}`}
+      icon={icon}
       data-mention=""
       data-mention-agent={mention.isAgent || undefined}
+      data-mention-kind={icon}
+      data-mention-label={label}
       data-mention-pubkey={mention.pubkey}
+      title={label}
+      aria-label={label}
     >
-      {mention.isAgent ? (
-        <Bot aria-hidden="true" className="buzz-message-mention-icon" />
-      ) : (
-        <span className="buzz-message-mention-prefix">@</span>
-      )}
-      {label}
-    </span>
+      <span className={`inline-chip-leading-fragment ${inlineChipIconClasses(icon)}`}>
+        {displayLabel.slice(0, leadingEnd)}
+      </span>
+      {displayLabel.slice(leadingEnd)}
+    </InlineChip>
   );
 }
 
@@ -295,7 +304,7 @@ export function MessageContent({
 
   return (
     <MarkdownRenderContext.Provider value={{ mediaByUrl, mentionsByName, resolveMediaUrl, onOpenMessageLink }}>
-      <MessageBody className={`${MESSAGE_BODY_CLASS_NAME} buzz-message-markdown`}>
+      <MessageBody className={MESSAGE_BODY_CLASS_NAME}>
         <ReactMarkdown
           urlTransform={(url) => parseMessageLink(url).ok ? url : defaultUrlTransform(url)}
           remarkPlugins={[remarkGfm, remarkBreaks, remarkSpoilers, [remarkMentions, { mentionNames }], [remarkCustomEmoji, {customEmoji: customEmojiFromTags(mediaTags ?? [])}]]}

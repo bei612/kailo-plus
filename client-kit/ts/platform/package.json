@@ -8,6 +8,8 @@
     "profile-assets.ts"
   ],
   "exports": {
+    "./tailwind.config": "./src/tailwind.config.js",
+    "./styles.css": "./src/styles.css",
     "./react/messages/markdown.css": "./src/react/messages/markdown.css",
     "./react/members": "./src/react/members.tsx",
     "./react/messages/system": "./src/react/messages/system/SystemMessageRow.tsx",

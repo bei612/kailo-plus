@@ -124,3 +124,33 @@
   opacity: 1;
   transform: translate(-50%, -50%) scaleX(1);
 }
+
+.buzz-avatar-framing-slider-tip {
+  position: relative;
+  z-index: 10;
+  margin: 8px auto 0;
+  width: 100%;
+  max-width: none;
+  color: hsl(var(--muted-foreground) / 0.72);
+  font-size: calc(var(--buzz-type-rem) * 0.875);
+  line-height: calc(var(--buzz-type-rem) * 1.25);
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease;
+}
+
+.buzz-avatar-framing-slider-tip[data-visible="true"] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .buzz-avatar-framing-slider-tip {
+    transform: none;
+    transition: opacity 150ms ease;
+  }
+}
