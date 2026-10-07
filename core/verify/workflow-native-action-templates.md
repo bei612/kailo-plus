@@ -59,3 +59,16 @@
 - 可见状态复核最初把模态框对背景的 `aria-hidden` 误当成视觉隐藏，`card-toggle-visible-state.log` 36 passed/1 failed（`expected <div data-aria-hidden="true" …> to be null`）；改为检查视觉隐藏 `.sr-only/[hidden]`，不放宽产品语义。私有输入把真实状态改为 sr-only，`card-state-mutation.log` 1 failed/29 skipped，退出 1。还原后 `card-final.log` 最终 type 退出 0、37 passed，退出 0；六个产品/检查输入与正式文件 cmp 全部退出 0，`git diff --check` 退出 0。
 
 本批没有浏览器截图、真实 Temporal/Relay/数据库启停、Windows/Mobile 设备或全量检查；不据 jsdom 操作与类型通过声称发布、全量 diff 完成或生产验收。
+
+## 原末步与唯一步骤删除恢复（2026-10-07）
+
+1. 权威：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/workflows/ui/WorkflowFormBuilder.tsx::removeStep` 对任一步执行 filter 删除，`desktop/src/features/workflows/ui/WorkflowStepCard.tsx::WorkflowStepCard` 提供原删除控件。共享表单却只给非末步传入 onRemove，使末步/唯一副作用无法删除；该限制不是 Temporal 治理要求。本批补齐该实际编辑链，不增按钮样式、不扩大动作合同。
+2. 影响：共享 AutomationAction 的 steps 草稿 → 原删除 → 表单/YAML 同一内容 → 原 `automation.publish_version` → 不变的 Core `automation.rs::management_content` / `automation/steps.rs::supported` → 原冻结版本及 Temporal 执行。删除会同步现存末步的模板或清空，避免 steps 为空后 legacy action 分支重新使用被删副作用的缓存文本。未删除步骤保持原顺序和 ID，不重编号或重写模板引用；旧已发布版本/配置 digest 不变，修改仍生成新版本。
+3. 副作用：删除是未提交草稿变化，不立即取消运行、发事件或清除历史。删空/尾部仅延时等不完整配置可以暂存于当前编辑器并原样往返 YAML，但不能通过内容校验/Review 发布；用户显式输入或添加新的有效动作后，才沿原确认与治理链提交。已确认/UNKNOWN 操作仍冻结，不因编辑草稿重发。权限、scope、绑定、审批、quota 与结果对账没有新旁路或权威副本。
+4. 边界：单消息、多个消息及中间延时、唯一回应/主题均可删除；删除后切换为另一已准入动作不保留旧正文。顺序与末步限制继续由现有 shared supportedSteps 与 Core 校验：format 2 的前置延时/审批加末个消息/回应/主题，format 3 的有序多消息/延时及首个副作用前审批；不将删除能力说成七动作任意混排、逐步骤超时或全量原 FormBuilder 恢复。未知/未来步骤引用沿原模板解析语义，不因删除自动映射到其他步骤。三端合同未改，Web/Desktop 继续同一表单，Mobile 无新增页面。
+
+验证在既有 SDK 4 CPU/8 GiB 中运行，开始前无并发编译、宿主 available 23 GiB、Data 3.3 GiB，不创建快照、不编 Rust、不改 i18n。沿上述日志目录：`remove-step-initial.log` type 退出 0、39 passed/1 failed，原文 `No QueryClient set, use QueryClientProvider to set one`；新增回应卡片场景使最小测试宿主首次读取表情缓存。核实 Web `web-client/web/src/main.tsx` 与 Desktop `collaboration/desktop/src/app/App.tsx` 实际均提供 QueryClientProvider 后，仅将测试宿主接入同一 Provider，不给产品添加另一缓存。`remove-step-consumer.log` 40 passed，退出 0。私有输入故意不在删空时清空模板，`remove-step-mutation.log` 30 passed/3 failed，退出 1，证明旧副作用复活会被三个实际编辑场景捕获；正式源码未破坏，还原并 cmp 退出 0。
+
+最终 `remove-step-final.log` 的共享 `tsc --noEmit -p tsconfig.test.json` 与 `vitest run test/workflow-actions.test.tsx test/workflow-template.test.tsx` 均退出 0，40 passed（33 actions + 7 template）；产品/检查输入与正式文件 cmp、`git diff --check` 均退出 0。
+
+此批只交付删除→空/部分草稿→重新添加→表单/YAML→治理请求的消费者恢复；没有真实 Temporal/Relay、数据库、Playwright 页面截图、Windows/Mobile 或发布验证。完整上游模块仍有未恢复项，不能称完整还原。

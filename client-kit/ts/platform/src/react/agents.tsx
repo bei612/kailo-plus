@@ -975,7 +975,17 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
         </label>
         {steps.length ? <div className="space-y-3">{steps.map((step, index) => <WorkflowStepCard key={index} index={index} step={step} policies={policies} trigger={trigger} previousSteps={steps.slice(0, index)}
           onUpdate={(next) => { setSteps((old) => old.map((value, position) => position === index ? next : value)); if (index === steps.length - 1) setTemplate(next.text ?? next.emoji ?? next.topic ?? ""); }}
-          onRemove={index < steps.length - 1 ? () => setSteps((old) => old.filter((_, position) => position !== index)) : undefined} />)}</div>
+          onRemove={() => {
+            // Buzz 779af8886caae1317b4de962082429867ab61503:
+            // desktop/src/features/workflows/ui/WorkflowFormBuilder.tsx::removeStep
+            // also removes the final/only step.
+            // Clear the legacy action draft too: removing all steps must not resurrect
+            // the deleted terminal effect when formContent uses its legacy representation.
+            const remaining = steps.filter((_, position) => position !== index);
+            setSteps(remaining);
+            const terminal = remaining.at(-1);
+            setTemplate(terminal?.text ?? terminal?.emoji ?? terminal?.topic ?? "");
+          }} />)}</div>
         : <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
           {actionKind === ActionKind.PostMessage
             ? <WorkflowTemplateTextarea required value={template} onValueChange={setTemplate} triggerType={trigger} className="min-h-24 rounded-md border border-input bg-transparent p-2" />

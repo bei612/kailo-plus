@@ -1,4 +1,5 @@
 import { act, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
@@ -64,9 +65,10 @@ async function setup(override?: (request: BffRequest) => BffReply | Promise<BffR
     } };
     return { status: 503, body: undefined };
   });
-  const host = await render(<PlatformProvider client={createBffClient({ send })} locale={locale}>
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const host = await render(<QueryClientProvider client={cache}><PlatformProvider client={createBffClient({ send })} locale={locale}>
     <AutomationManagement />
-  </PlatformProvider>);
+  </PlatformProvider></QueryClientProvider>);
   await settle();
   return { host, send };
 }
@@ -370,6 +372,77 @@ describe("original workflow action menu with governed consumers", () => {
     expect(commands).toHaveLength(1);
     expect(commands[0]).toMatchObject({ actionKey: "automation.publish_version", resourceId: "workflow",
       automationVersionContent: { action: { kind: "POST_MESSAGE", template: "Message: {{trigger.text}}" } } });
+  });
+
+  it("removes terminal and sole message steps without resurrecting the old effect across form/YAML", async () => {
+    const content = { formatVersion: 3, name: "Delete steps", trigger: { kind: "CHANNEL_MESSAGE" },
+      resultTarget: "TRIGGER_THREAD", steps: [
+        { id: "step_8", action: "send_message", text: "Keep until explicitly removed" },
+        { id: "step_9", action: "delay", duration: "1s" },
+        { id: "step_10", action: "send_message", text: "Deleted terminal effect" },
+      ] };
+    const { host, send } = await setup((request) => request.path.startsWith("/api/v1/automations/workflow?")
+      ? { status: 200, body: { ...detail, versions: [{ ...detail.versions[0], content }] } } : undefined);
+    await chooseAction(host, "Edit");
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    const removals = () => dialog.querySelectorAll<HTMLButtonElement>('button[aria-label="Remove step"]');
+    expect(removals()).toHaveLength(3);
+    await click(removals()[2]!);
+    expect(button(dialog, "Review request").disabled).toBe(true); // A trailing delay is not a fabricated effect.
+    await click(button(dialog, "Workflow YAML"));
+    const yaml = dialog.querySelector<HTMLTextAreaElement>("textarea")!;
+    expect(yaml.value).toContain("id: step_8");
+    expect(yaml.value).toContain("id: step_9");
+    expect(yaml.value).not.toContain("Deleted terminal effect");
+    await click(button(dialog, "Form"));
+    await click(removals()[1]!);
+    expect(button(dialog, "Review request").disabled).toBe(false);
+    await click(removals()[0]!);
+    expect(removals()).toHaveLength(0);
+    expect(button(dialog, "Review request").disabled).toBe(true);
+    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
+    await click(button(dialog, "Workflow YAML"));
+    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).not.toContain("Keep until explicitly removed");
+    await click(button(dialog, "Form"));
+    await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "Replacement message");
+    await click(button(dialog, "Review request"));
+    await click(button(dialog, "Submit governed request"));
+    expect(writes(send)).toHaveLength(1);
+    expect(writes(send)[0]).toMatchObject({ actionKey: "automation.publish_version", resourceVersion: 2,
+      automationVersionContent: { action: { kind: "POST_MESSAGE", template: "Replacement message" } } });
+    expect(JSON.stringify(writes(send)[0])).not.toContain("Deleted terminal effect");
+  });
+
+  it.each([
+    { action: "add_reaction", emoji: "👍" },
+    { action: "set_channel_topic", topic: "Old topic" },
+  ])("removes the only $action step and permits a different admitted replacement", async (effect) => {
+    const content = { formatVersion: 2, name: "Replace effect", trigger: { kind: "CHANNEL_MESSAGE" },
+      resultTarget: "TRIGGER_THREAD", steps: [{ id: "original_step", ...effect }] };
+    const { host, send } = await setup((request) => request.path.startsWith("/api/v1/automations/workflow?")
+      ? { status: 200, body: { ...detail, versions: [{ ...detail.versions[0], content }] } } : undefined);
+    await chooseAction(host, "Edit");
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await click(dialog.querySelector<HTMLButtonElement>('button[aria-label="Remove step"]')!);
+    expect(button(dialog, "Review request").disabled).toBe(true);
+    const action = [...dialog.querySelectorAll("label")].find((label) => label.textContent?.startsWith("Action"))!.querySelector("select")!;
+    expect(action.disabled).toBe(false);
+    await select(action, "POST_MESSAGE");
+    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
+    await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "New effect");
+    await click(button(dialog, "Add message"));
+    await type(dialog.querySelectorAll<HTMLTextAreaElement>("textarea")[1]!, "Next effect");
+    await click(button(dialog, "Workflow YAML"));
+    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).not.toContain(effect.action);
+    await click(button(dialog, "Form"));
+    await click(button(dialog, "Review request"));
+    await click(button(dialog, "Submit governed request"));
+    expect(writes(send)[0]).toMatchObject({ actionKey: "automation.publish_version",
+      automationVersionContent: { formatVersion: 3, steps: [
+        { id: "step_1", action: "send_message", text: "New effect" },
+        { id: "step_2", action: "send_message", text: "Next effect" },
+      ] } });
+    expect(JSON.stringify(writes(send)[0])).not.toContain("original_step");
   });
 
   it("retains original menu and switch visual with Chinese labels", async () => {
