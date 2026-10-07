@@ -1,4 +1,5 @@
-// Original Buzz public profile presentation; Pulse host supplies real Community data.
+// Buzz 779af8886caae1317b4de962082429867ab61503 UserProfilePanelSections:
+// public HUMAN summary/hero; admitted hosts provide data and real actions.
 import * as React from "react";
 import { translate } from "@client-kit/platform/i18n";
 import { useUiLocale } from "@client-kit/platform/react/context";
@@ -12,6 +13,9 @@ import {
 } from "./ProfileFields";
 import type { UserProfileSummary as Profile } from "./host";
 import { cn } from "../profile/buzz/shared/lib/cn";
+import { MaskedAvatarBadgeFrame, STATUS_DOT_MASK_CURVE } from "../messages/thread/MaskedAvatarBadgeFrame";
+import { ProfilePrimaryActions } from "./UserProfilePrimaryActions";
+import { ProfileTabContentTransition } from "./ProfileTabContentTransition";
 
 export function ProfileSummaryView({
   displayName,
@@ -19,12 +23,16 @@ export function ProfileSummaryView({
   pubkey,
   copy,
   mediaUrl,
+  onMessage,
+  messagePending,
 }: {
   displayName: string;
   profile: Pick<Profile, "displayName" | "avatarUrl" | "about" | "nip05Handle"> | undefined;
   pubkey: string;
   copy: (value: string) => Promise<void>;
   mediaUrl: (url: string) => string;
+  onMessage?:()=>void;
+  messagePending?:boolean;
 }) {
   const locale = useUiLocale();
   const fields = React.useMemo(
@@ -33,36 +41,50 @@ export function ProfileSummaryView({
   );
 
   return (
-    <div className="flex flex-col gap-6 pt-2">
-      <div className="flex flex-col items-center gap-3 text-center">
-        <AvatarHostProvider value={{ locale, rewriteMediaUrl: mediaUrl }}>
-          <ProfileAvatar
-            avatarUrl={profile?.avatarUrl ?? null}
-            className="h-20 w-20 text-xl"
-            iconClassName="h-8 w-8"
-            label={displayName}
-            testId="user-profile-avatar"
-          />
-        </AvatarHostProvider>
+    <div className="flex flex-col gap-6 pt-4" data-testid="user-profile-summary-scroll-layout">
+      <div>
+        <div className="flex flex-col items-center gap-3 text-center">
+          <AvatarHostProvider value={{ locale, rewriteMediaUrl: mediaUrl }}>
+            <MaskedAvatarBadgeFrame className="h-20 w-20" shape="circle" size={80}
+              badgeBox={{bottom:0,height:24,right:0,width:24}} curve={STATUS_DOT_MASK_CURVE} cutout={{cx:68,cy:68,r:15}}>
+              <ProfileAvatar
+                avatarUrl={profile?.avatarUrl ?? null}
+                className="h-full w-full text-xl"
+                iconClassName="h-8 w-8"
+                label={displayName}
+                plain
+                shape="circle"
+                testId="user-profile-avatar"
+              />
+            </MaskedAvatarBadgeFrame>
+          </AvatarHostProvider>
 
-        <div className="flex flex-col items-center gap-1">
-          <h3
-            className="flex max-w-full items-center justify-center gap-2 text-xl font-semibold tracking-tight"
-            data-testid="user-profile-name-row"
-          >
-            <span className="truncate">{displayName}</span>
-          </h3>
+          <div className="flex flex-col items-center gap-1">
+            <h3
+              className="flex max-w-full items-center justify-center gap-2 text-xl font-semibold tracking-tight"
+              data-testid="user-profile-name-row"
+            >
+              <span className="truncate">{displayName}</span>
+            </h3>
 
-          {profile?.about?.trim() ? (
-            <ProfileHeroDescription
-              about={profile.about.trim()}
-              key={profile.about.trim()}
-            />
-          ) : null}
+            {profile?.about?.trim() ? (
+              <ProfileHeroDescription
+                about={profile.about.trim()}
+                key={profile.about.trim()}
+              />
+            ) : null}
+            {profile?.nip05Handle ? <p className="text-sm text-muted-foreground">{profile.nip05Handle}</p> : null}
+          </div>
         </div>
       </div>
-
-      <ProfileFieldGroup fields={fields} copy={copy} />
+      <ProfilePrimaryActions onMessage={onMessage} messagePending={messagePending}/>
+      <section className="space-y-3">
+        <ProfileTabContentTransition activeTab="info" tabs={["info"]}>
+          <div className="space-y-4" data-testid="user-profile-info-sections">
+            <ProfileFieldGroup fields={fields} copy={copy} title={translate(locale,"platform.profile.panelInfo")} testId="user-profile-info-section"/>
+          </div>
+        </ProfileTabContentTransition>
+      </section>
     </div>
   );
 }

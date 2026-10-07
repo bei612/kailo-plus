@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { MessageCircle } from "lucide-react";
 import { useUiT } from "../context";
 import { AuxiliaryPanel, AuxiliaryPanelBody, AuxiliaryPanelHeader, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock } from "../messages/thread/auxiliary";
 import { useThreadPanelWidth } from "../messages/thread/useThreadPanelWidth";
@@ -23,12 +22,8 @@ export function ProfilePanel({pubkey,onClose}:{pubkey:string;onClose:()=>void}) 
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6" data-testid="user-profile-scroll-body">
       {profile.isPending?<p role="status">{t("platform.loading")}</p>:profile.isError?
         <div role="alert">{t("platform.loadFailed")}<Button variant="ghost" onClick={()=>void profile.refetch()}>{t("platform.retry")}</Button></div>:
-        <ProfileSummaryView displayName={profile.data?.displayName??truncateNpub(pubkey)} profile={profile.data} pubkey={pubkey} copy={host.copy} mediaUrl={host.mediaUrl}/>}
-      {pubkey!==host.pubkey?<div className="mt-6 flex items-center justify-center gap-2">
-        <Button disabled={opening} onClick={async()=>{setOpening(true);setProblem(null);try{await host.startDm(pubkey);onClose();}catch(error){setProblem(error instanceof Error?error.message:t("platform.loadFailed"));}finally{setOpening(false);}}}>
-          <MessageCircle className="h-4 w-4"/>{t("pulse.startDm")}
-        </Button>
-      </div>:null}
+        <ProfileSummaryView displayName={profile.data?.displayName??truncateNpub(pubkey)} profile={profile.data} pubkey={pubkey} copy={host.copy} mediaUrl={host.mediaUrl}
+          messagePending={opening} onMessage={pubkey!==host.pubkey?async()=>{setOpening(true);setProblem(null);try{await host.startDm(pubkey);onClose();}catch(error){setProblem(error instanceof Error?error.message:t("platform.loadFailed"));}finally{setOpening(false);}}:undefined}/>}
       {problem?<p role="alert">{problem}</p>:null}
     </AuxiliaryPanelBody>
   </AuxiliaryPanel>;

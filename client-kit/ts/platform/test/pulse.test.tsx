@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "../src/i18n";
 import { PulseHostProvider, usePulseHost, usePulsePublisher, type PulseHost } from "../src/react/pulse/host";
@@ -45,13 +46,37 @@ describe("original Pulse governed consumers",()=>{
     expect(query).toHaveBeenCalledWith({view:"PROFILES",authors:[author]});
     expect(ui.textContent).toContain("Actual author");
     expect(ui.textContent).toContain("author@example.org");
+    const summary=ui.querySelector('[data-testid="user-profile-summary-scroll-layout"]')!;
+    expect(summary.className).toBe("flex flex-col gap-6 pt-4");
+    expect(summary.querySelector('[data-testid="user-profile-info-section"] h2')?.textContent).toBe("Info");
+    const actions=summary.querySelector('[data-testid="user-profile-primary-actions"]')!;
+    expect(actions.className).toBe("grid grid-flow-col auto-cols-fr gap-2");
+    expect([...summary.children].indexOf(actions)).toBe(1);
+    expect(summary.querySelector('[data-testid="user-profile-name-row"]')?.parentElement?.querySelector(':scope > p.text-sm')?.textContent).toBe("author@example.org");
     await click(ui.querySelector('[data-testid="user-profile-public-key"]') as HTMLButtonElement);
     expect(copy).toHaveBeenCalledWith(canonicalNpub(author));
     await click(ui.querySelector('[data-testid="user-profile-nip05"]') as HTMLButtonElement);
     expect(copy).toHaveBeenCalledWith("author@example.org");
-    await click(button(ui,"Start direct message"));
+    await click(button(ui,"Message"));
     expect(startDm).toHaveBeenCalledWith(author);
     expect(ui.querySelector('[data-testid="user-profile-panel"]')).toBeNull();
+  });
+
+  it("keeps the original pending message tile and preserves the admitted panel on failure",async()=>{
+    let reject!: (error:Error)=>void;
+    const startDm=vi.fn(()=>new Promise<void>((_resolve,fail)=>{reject=fail;}));
+    function Open(){const host=usePulseHost();return <button onClick={()=>host.openProfile?.(author)}>Open author</button>;}
+    const query:PulseHost["query"]=async()=>[{id:eventId,pubkey:author,created_at:1,kind:0,tags:[],content:JSON.stringify({display_name:"Author"})}];
+    const ui=await render(wrap(host({startDm,query}),<Open/>));
+    await click(button(ui,"Open author"));
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="user-profile-message"]')).not.toBeNull());
+    await click(ui.querySelector('[data-testid="user-profile-message"]') as HTMLButtonElement);
+    expect(ui.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')?.disabled).toBe(true);
+    expect(ui.querySelector('[data-testid="user-profile-message"]')?.getAttribute("aria-busy")).toBe("true");
+    await act(async()=>reject(new TransportError("Unconfirmed original request")));
+    await vi.waitFor(()=>expect(ui.querySelector('[role="alert"]')?.textContent).toContain("Unconfirmed original request"));
+    expect(ui.querySelector('[data-testid="user-profile-panel"]')).not.toBeNull();
+    expect(startDm).toHaveBeenCalledTimes(1);
   });
 
   it("retains two explicit same-name selections without rebinding the first recipient",()=>{

@@ -252,7 +252,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       onStartDm={(pubkey)=>{setInitialRecipientPubkey(pubkey);setTab("new-message");}}
       onOpenMessageLink={openMessageLink} targetMessageId={messageTarget?.channelId === active ? messageTarget.messageId : undefined} /></> : <Notice text={t("platform.loadFailed")} />
   ) : (
-    <MembersPane key={active} workspaceId={active} />
+    <MembersPane key={active} workspaceId={active} currentPrincipalId={session.tenantPrincipalId}
+      onStartDm={(pubkey)=>{setInitialRecipientPubkey(pubkey);setTab("new-message");}} />
   );
   const body =
     tab === "application" && navigation.applicationBindingId ? (

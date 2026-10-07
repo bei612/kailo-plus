@@ -252,6 +252,11 @@ enum PlatformMessageKey {
   dmAddPerson,
   dmAddedPerson,
   dmRemovePerson,
+  dmViewInactive,
+  dmSynchronizing,
+  dmAttachmentUnavailable,
+  dmSentNavigationFailed,
+  dmOpenConversation,
   platformNotificationsDescription,
   platformNotificationsUnavailable,
   platformNotificationsBlocked,
@@ -373,6 +378,8 @@ enum PlatformMessageKey {
   buzzForumUnavailable,
   buzzForumRootUnavailable,
   platformProfileCopyField,
+  platformProfilePanelInfo,
+  platformProfileMessage,
   platformProfileMore,
   platformProfileLess,
   platformProfileResize,
@@ -2155,6 +2162,23 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.dmAddPerson: ('Add {name}', '添加{name}'),
   PlatformMessageKey.dmAddedPerson: ('Already added {name}', '已添加{name}'),
   PlatformMessageKey.dmRemovePerson: ('Remove {name}', '移除{name}'),
+  PlatformMessageKey.dmViewInactive: (
+    'Conversation view is no longer active.',
+    '当前会话页面已不再有效。',
+  ),
+  PlatformMessageKey.dmSynchronizing: (
+    'The direct message is still synchronizing. Your draft is retained.',
+    '私聊仍在同步，草稿已保留。',
+  ),
+  PlatformMessageKey.dmAttachmentUnavailable: (
+    'Attachment was not uploaded in this conversation view.',
+    '附件并非在当前会话页面上传。',
+  ),
+  PlatformMessageKey.dmSentNavigationFailed: (
+    'Message sent. The conversation could not be opened.',
+    '消息已发送，但未能打开会话。',
+  ),
+  PlatformMessageKey.dmOpenConversation: ('Open conversation', '打开会话'),
   PlatformMessageKey.platformNotificationsDescription: (
     'Desktop alerts are on by default. Fine-tune what gets through below.',
     '桌面提醒默认开启，可在下方调整提醒内容。',
@@ -2339,6 +2363,8 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '无法读取原帖。',
   ),
   PlatformMessageKey.platformProfileCopyField: ('Copy {field}', '复制{field}'),
+  PlatformMessageKey.platformProfilePanelInfo: ('Info', '信息'),
+  PlatformMessageKey.platformProfileMessage: ('Message', '发消息'),
   PlatformMessageKey.platformProfileMore: ('more', '展开'),
   PlatformMessageKey.platformProfileLess: ('less', '收起'),
   PlatformMessageKey.platformProfileResize: (

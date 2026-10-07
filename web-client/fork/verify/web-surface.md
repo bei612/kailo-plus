@@ -5462,3 +5462,51 @@ SDK-only 同时放开空 emoji、本人作者约束、空 scoped 回读，实际
 `pkg-config --exists gtk+-3.0 webkit2gtk-4.1` 退出 1，未运行完整 Native 编译。
 本批未执行 full、镜像构建、部署或真实浏览器跨用户回应验收，宿主接线由并行批交付；
 不能将这些源码/窄验事实称为线上回应完整恢复。
+
+### 2026-10-07 原资料面板、私聊反馈与共享侧栏增量
+
+依据 REQ-24、DD-53、DD-74/75/80，固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/profile/ui/UserProfilePanelSections.tsx`、
+`UserProfilePanelTabs.tsx::ProfileInfoTabContent`、
+`UserProfilePrimaryActions.tsx::ProfileActionTile` 和
+`desktop/src/features/sidebar/ui/AppSidebar.tsx::AppSidebar`。
+本批恢复 HUMAN 资料原 Hero、Info 分区、分区过渡与 Message 方块位置，
+不在原摘要外继续绘制替代按钮；共享主体供 Pulse、Web 消息作者、成员、
+Desktop 原资料面板消费。未新增资料、消息或授权权威。
+
+影响及副作用：Message 沿已有受治理的新私聊路由，不在资料面板直发
+conversation.open。Web 成员按当前 Principal 排除本人，系统行沿原本人公钥
+判断；Native 使用 Community/设备查询作用域，资料成功且公钥匹配才显示。
+切换作用域后的旧读取和旧导航完成不能覆盖新面板；失败保留原重试。
+共享侧栏移入原滚轮边缘处理，Native 删掉重复监听，两宿主保留各自路由及
+原滚动 ref。无滚动范围及越界滚动阻止穿透，横滚和范围内滚动保持原行为。
+
+两条资料词条及五条私聊反馈沿原 TS 权威生成 Dart，中英同源；消息已确认但
+导航失败仍保留原发送回执，只重试导航，不把它变成再次发送。无 API/schema、
+Workflow、数据库、计费、权限或网络安全开关变化。
+
+实现后在原 SDK `kailo-agent-receipt-xvkujx`（4 CPU/8 GiB）集中验证：共享
+source/test、Web、Native TypeScript 均退出 0；Pulse 8、成员 9、侧栏 6、
+Web 资料 5、Web 新私聊 5 项通过。Native 原 node loader 挂载真实资料组件、
+IPC 边界和 TanStack 路由，3 项通过；不是 Windows 安装包验收。
+SDK-only 去掉 Message 点击消费使 2 项失败；去掉 Native 查询作用域使
+1 项失败；将私聊反馈改回硬编码英文使中文用例 1 项失败；去掉侧栏边缘处理
+使 2 项失败。各自原字节恢复并 cmp 0 后对应专项再次通过。
+
+首轮 Pulse 选择器及 Native jsdom 夹具失败已保留并修正；侧栏早期快照缺少
+已有词条的类型失败已由上述联合输入 types 0 取代，不修改产品绕过错误。
+日志在 `/volumes/data/kailo/tmp/profile-public-panels.nIgkMV/` 的
+`profile-hosts-complete.log`、`profile-hosts-mutation-restored.log`、
+`native-scope-mutation.log`、`new-message-locale-mutation.log`，以及
+`/volumes/data/kailo/tmp/buzz-full-ui-inventory.cb0PyC/sidebar-wheel-final.log`。
+
+原 Agent 资料的 runtime/owner/status/channels/memories 投影、Follow/Wave
+真实动作仍有缺口；未将无消费者的按钮伪装为恢复。此批未执行 full、构建、
+部署或新浏览器截图，Windows/Mobile 包未更新；不声明原资料全功能恢复。
+
+24 文件联合候选相对 `0f2f11198f3b4a550490f4330884895345b15512`
+的实现后检查：原 `tools/gen-platform-i18n.py --check` 退出 0，
+`./tools/check-docs.sh ../.design` 退出 0，277 引用、87 实体、115 DD、29 SS、
+87 场景及实施/设计 markdownlint 通过。原输出位于
+`/volumes/data/kailo/tmp/profile-sidebar-union.1VOSR5/check-docs.log`。

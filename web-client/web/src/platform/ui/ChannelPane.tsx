@@ -423,7 +423,7 @@ export function ChannelPane({
       </div>
     </div>
     {systemProfileTarget && systemProfileTarget.workspaceId === workspaceId && selectedSystemMember?.principalId === systemProfileTarget.principalId && "state" in selectedSystemMember && selectedSystemMember.state === "ACTIVE" && live && !denied && !conversation ? <MemberProfilePanel key={`${myPrincipalId}:${systemProfileTarget.workspaceId}:${systemProfileTarget.pubkey}`}
-      target={systemProfileTarget} onClose={()=>setSystemProfileTarget(null)}/> : null}
+      target={systemProfileTarget} onClose={()=>setSystemProfileTarget(null)} onStartDm={mine.has(systemProfileTarget.pubkey)?undefined:onStartDm}/> : null}
     {profileTarget?.pubkey && live && !denied ? <MessageAuthorProfile key={`${myPrincipalId}:${workspaceId}:${profileTarget.id}`}
       target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:profileTarget.id,pubkey:profileTarget.pubkey}}
       onClose={()=>setProfileTarget(null)} onStartDm={mine.has(profileTarget.pubkey)?undefined:onStartDm}/> : null}

@@ -1,4 +1,5 @@
-// Original Buzz public profile presentation; Pulse host supplies real Community data.
+// Buzz 779af8886caae1317b4de962082429867ab61503 UserProfilePanelFields:
+// public identity rows; host-supplied clipboard and locale retain the same layout.
 import type { LucideIcon } from "lucide-react";
 import { translate, type PlatformLocale } from "@client-kit/platform/i18n";
 import { useUiLocale } from "@client-kit/platform/react/context";
@@ -65,9 +66,9 @@ export function buildPublicFields({
   return fields;
 }
 
-export function ProfileFieldGroup({ fields, copy }: { fields: ProfileField[]; copy: (value: string) => Promise<void> }) {
+export function ProfileFieldGroup({ fields, copy, title, testId }: { fields: ProfileField[]; copy: (value: string) => Promise<void>; title?:string; testId?:string }) {
   return (
-    <PanelSectionGroup>
+    <PanelSectionGroup title={title} testId={testId}>
       <div className="divide-y divide-border/55">
         {fields.map((field) => (
           <ProfileFieldRow field={field} copyText={copy} key={field.testId} />

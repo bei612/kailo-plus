@@ -46,7 +46,7 @@ export function MemberHover({target,...props}:ProfilePopoverBodyProps&{target:Me
     status={!profile?<p role={query.isError?"alert":"status"}>{t(query.isError?"platform.loadFailed":"platform.loading")}</p>:undefined}/>;
 }
 
-export function MemberProfilePanel({target,onClose}:{target:MemberTarget;onClose:()=>void}) {
+export function MemberProfilePanel({target,onClose,onStartDm}:{target:MemberTarget;onClose:()=>void;onStartDm?:(pubkey:string)=>void}) {
   const t=useT();const query=useMemberProfile(target);const width=useThreadPanelWidth();
   useEscapeKey(onClose,true);
   const profile=query.isSuccess&&!query.isFetching?query.data:undefined;
@@ -58,7 +58,8 @@ export function MemberProfilePanel({target,onClose}:{target:MemberTarget;onClose
     </AuxiliaryPanelHeaderGroup></AuxiliaryPanelHeader>}>
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6">
       {profile?<ProfileSummaryView profile={profile} displayName={profile.displayName??truncatePubkey(profile.pubkey)}
-        pubkey={profile.pubkey} copy={(value)=>navigator.clipboard.writeText(value)} mediaUrl={(url)=>profile.avatarMediaPaths[url]??url}/>
+        pubkey={profile.pubkey} copy={(value)=>navigator.clipboard.writeText(value)} mediaUrl={(url)=>profile.avatarMediaPaths[url]??url}
+        onMessage={onStartDm?()=>onStartDm(profile.pubkey):undefined}/>
         :query.isError?<ReadFailure error={query.error} onRetry={()=>void query.refetch()}/>:<p role="status">{t("platform.loading")}</p>}
     </AuxiliaryPanelBody>
   </AuxiliaryPanel>;
@@ -66,7 +67,7 @@ export function MemberProfilePanel({target,onClose}:{target:MemberTarget;onClose
 
 /** The original row keeps its name/key hover and avatar/profile affordance.
  * No role, presence or created date is inferred from missing directory facts. */
-export function MembersPane({workspaceId,renderIdentity}: {workspaceId:string;renderIdentity?:MemberIdentityRenderer}) {
+export function MembersPane({workspaceId,renderIdentity,onStartDm,currentPrincipalId}: {workspaceId:string;renderIdentity?:MemberIdentityRenderer;onStartDm?:(pubkey:string)=>void;currentPrincipalId?:string}) {
   const client=useBffClient();const t=useT();const locale=useLocale();
   const [state,reload]=useLoad(`members:${workspaceId}`,()=>client.members(workspaceId));
   const [roles,reloadRoles]=useLoad(`member-actions:${workspaceId}`,async()=>{
@@ -153,6 +154,6 @@ export function MembersPane({workspaceId,renderIdentity}: {workspaceId:string;re
         </div>
       </SettingsOptionGroup>
     </section>
-    {active?<MemberProfilePanel key={`${active.principalId}:${active.pubkey}`} target={active} onClose={()=>setSelected(null)}/>:null}
+    {active?<MemberProfilePanel key={`${active.principalId}:${active.pubkey}`} target={active} onClose={()=>setSelected(null)} onStartDm={active.principalId===currentPrincipalId?undefined:onStartDm}/>:null}
   </div></AvatarHostProvider>;
 }

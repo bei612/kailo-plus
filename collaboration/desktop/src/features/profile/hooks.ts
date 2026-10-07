@@ -222,11 +222,14 @@ export function useSelfProfileCache(): SelfProfileCache | null {
   return cache;
 }
 
-export function useUserProfileQuery(pubkey?: string) {
+export function useUserProfileQuery(pubkey?: string, sessionScope?: string) {
   return useQuery({
     enabled: typeof pubkey === "string" && pubkey.length > 0,
-    queryKey: ["user-profile", pubkey?.toLowerCase() ?? ""],
+    queryKey: sessionScope === undefined
+      ? ["user-profile", pubkey?.toLowerCase() ?? ""]
+      : ["user-profile", pubkey?.toLowerCase() ?? "", sessionScope],
     queryFn: () => getUserProfile(pubkey),
+    refetchOnMount: sessionScope === undefined ? undefined : "always",
     staleTime: 60_000,
   });
 }

@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, createRef, useState } from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "../src/i18n";
 import { SidebarProvider, SidebarTrigger } from "../src/react/sidebar/sidebar";
@@ -16,6 +16,46 @@ beforeAll(() => {
 beforeEach(() => setLocale("en"));
 
 describe("shared original sidebar shell", () => {
+  it.each([false, true])("retains original wheel boundaries and cleans up with host ref=%s", async (externalRef) => {
+    const scrollRef = createRef<HTMLDivElement>();
+    function Host() {
+      const [mounted, setMounted] = useState(true);
+      return <SidebarProvider><button onClick={() => setMounted(false)}>Unmount sidebar</button>
+        {mounted ? <AppSidebarFrame footer={null} scrollRef={externalRef ? scrollRef : undefined}>
+          <span>Channels</span>
+        </AppSidebarFrame> : null}
+      </SidebarProvider>;
+    }
+    const host = await render(<Host />);
+    const content = host.querySelector<HTMLDivElement>("[data-sidebar=content]")!;
+    if (externalRef) expect(scrollRef.current).toBe(content);
+    Object.defineProperties(content, {
+      scrollHeight: { configurable: true, value: 500 },
+      clientHeight: { configurable: true, value: 100 },
+    });
+    const parentWheel = vi.fn();
+    host.addEventListener("wheel", parentWheel);
+    function wheel(deltaY: number) {
+      const event = new WheelEvent("wheel", { deltaY, deltaX: 10, bubbles: true, cancelable: true });
+      content.dispatchEvent(event);
+      return event.defaultPrevented;
+    }
+    content.scrollTop = 0;
+    expect(wheel(-1)).toBe(true);
+    expect(parentWheel).not.toHaveBeenCalled();
+    content.scrollTop = 399.5;
+    expect(wheel(1)).toBe(true);
+    expect(content.scrollTop).toBe(400);
+    content.scrollTop = 200;
+    expect(wheel(1)).toBe(false);
+    expect(wheel(-1)).toBe(false);
+    expect(wheel(0)).toBe(false);
+    Object.defineProperty(content, "scrollHeight", { value: 100 });
+    expect(wheel(1)).toBe(true);
+    await click([...host.querySelectorAll("button")].find((item) => item.textContent === "Unmount sidebar")!);
+    expect(wheel(1)).toBe(false);
+    if (externalRef) expect(scrollRef.current).toBeNull();
+  });
   it("keeps the Chinese Inbox label connected to the same host action", async () => {
     setLocale("zh-CN");
     const home = vi.fn();

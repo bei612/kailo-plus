@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { NewMessagePage } from "./NewMessagePage";
 import type { ConversationView } from "@client-kit/contracts";
+import { setLocale } from "@client-kit/platform/i18n";
 
 const state = vi.hoisted(() => ({ prepare: vi.fn(), publish: vi.fn(), submit: null as null | (() => Promise<unknown>) }));
 vi.mock("@client-kit/platform/react/new-message", () => ({
@@ -23,6 +24,7 @@ let host: HTMLDivElement;
 const conversation = {id: "conversation", channelId: "native-channel", state: "ACTIVE", participantPrincipalIds: ["alice", "bob"], operationId: "operation", version: 1};
 const receipt = {eventId: "accepted-event", operationId: "operation"};
 beforeEach(() => {
+  setLocale("en");
   state.prepare.mockReset().mockResolvedValue(conversation);
   state.publish.mockReset().mockResolvedValue(receipt);
   host = document.createElement("div"); document.body.append(host);
@@ -32,16 +34,21 @@ afterEach(() => { if (root) act(() => root!.unmount()); root = null; host.remove
 async function mount(principal: string, open: (conversation: ConversationView) => void | Promise<void>) {
   await act(async () => { root!.render(<NewMessagePage currentPrincipalId={principal} onConversationOpened={open} />); });
 }
-it("keeps the accepted publish receipt when navigation fails; retry only opens the conversation", async () => {
+it.each([
+  ["en", "Message sent. The conversation could not be opened.", "Open conversation"],
+  ["zh-CN", "消息已发送，但未能打开会话。", "打开会话"],
+] as const)("keeps the accepted publish receipt and localized navigation feedback in %s; retry only opens the conversation", async (locale, message, button) => {
+  setLocale(locale);
   const open = vi.fn().mockRejectedValueOnce(new Error("navigation unavailable")).mockResolvedValue(undefined);
   await mount("alice", open);
   await act(async () => { expect(await state.submit!()).toEqual(receipt); });
-  expect(host.textContent).toContain("Message sent.");
+  expect(host.textContent).toContain(message);
+  expect(host.querySelector("button")!.textContent).toBe(button);
   expect(state.publish).toHaveBeenCalledOnce();
   await act(async () => { host.querySelector("button")!.click(); });
   expect(open).toHaveBeenCalledTimes(2);
   expect(state.publish).toHaveBeenCalledOnce();
-  expect(host.textContent).not.toContain("could not be opened");
+  expect(host.textContent).not.toContain(message);
 });
 it("does not navigate a new identity after an old confirmed send completes", async () => {
   let complete!: (value: typeof receipt) => void;

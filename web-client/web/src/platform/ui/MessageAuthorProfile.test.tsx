@@ -41,8 +41,24 @@ it("opens the actual message author, uses the private scope and passes the verif
   await vi.waitFor(()=>expect(host.textContent).toContain("Original biography"));
   expect(api.conversationMessageAuthorProfile).toHaveBeenCalledWith("private",eventId);
   expect(api.messageAuthorProfile).not.toHaveBeenCalled();
-  await act(async()=>[...host.querySelectorAll("button")].find(button=>button.textContent?.includes("Start direct message"))!.click());
+  const message=host.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')!;
+  expect(message.getAttribute("aria-label")).toBe("Message");
+  expect(message.className).toContain("min-h-20");
+  expect(host.querySelector('[data-testid="user-profile-info-section"] h2')?.textContent).toBe("Info");
+  await act(async()=>message.click());
   expect(start).toHaveBeenCalledWith(author);
+});
+
+it("uses the same original public sections in Chinese without offering unsupported actions",async()=>{
+  setLocale("zh-CN");api.messageAuthorProfile.mockResolvedValue(profile());
+  await render(<MessageAuthorProfile target={target} onClose={()=>{}} onStartDm={()=>{}}/>);
+  await vi.waitFor(()=>expect(host.querySelector('[data-testid="user-profile-info-section"]')).not.toBeNull());
+  expect(host.querySelector('[data-testid="user-profile-info-section"] h2')?.textContent).toBe("信息");
+  expect(host.querySelector('[data-testid="user-profile-message"]')?.getAttribute("aria-label")).toBe("发消息");
+  expect(host.querySelector('[data-testid="user-profile-public-key"]')?.getAttribute("aria-label")).toBe("复制公钥");
+  expect(host.querySelector('[data-testid="user-profile-huddle"]')).toBeNull();
+  expect(host.querySelector('[data-testid="user-profile-wave"]')).toBeNull();
+  expect(host.querySelector('[data-testid="user-profile-agent-primary-action"]')).toBeNull();
 });
 
 it("does not expose another author's profile when a response mismatches the signed message",async()=>{

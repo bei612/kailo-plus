@@ -33,7 +33,8 @@ function mount(route:(request:BffRequest)=>BffReply, ui:React.ReactNode) {
 
 describe("original member browsing with governed identity",()=>{
   it("keeps all real keys, searches, and lazily opens only the selected member profile",async()=>{
-    const m=mount(browse,<MembersPane workspaceId="workspace"/>);
+    const startDm=vi.fn();
+    const m=mount(browse,<MembersPane workspaceId="workspace" onStartDm={startDm}/>);
     const host=await m.render();await settle();
     expect(m.send.mock.calls.filter(([request])=>request.path.includes("/profiles/"))).toHaveLength(0);
     expect(host.querySelectorAll('[data-testid="member-person"]')).toHaveLength(1);
@@ -45,6 +46,8 @@ describe("original member browsing with governed identity",()=>{
     await vi.waitFor(()=>expect(host.textContent).toContain("Original profile"));
     expect(m.send).toHaveBeenCalledWith({method:"GET",path:`/api/v1/workspaces/workspace/members/person/profiles/${second}`});
     expect(m.send.mock.calls.every(([request])=>!request.path.includes("pulse")&&!request.path.includes("author-profile"))).toBe(true);
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')!);
+    expect(startDm).toHaveBeenCalledExactlyOnceWith(second);
   });
   it("fresh read failure removes both member rows and an open profile",async()=>{
     let refused=false;
@@ -56,6 +59,15 @@ describe("original member browsing with governed identity",()=>{
     expect(host.querySelector('[data-testid="member-profile-panel"]')).toBeNull();
     expect(host.querySelector('[data-testid="member-person"]')).toBeNull();
     expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  });
+  it("does not offer the original Message tile for the current principal's own key",async()=>{
+    const startDm=vi.fn();
+    const m=mount(browse,<MembersPane workspaceId="workspace" currentPrincipalId="person" onStartDm={startDm}/>);
+    const host=await m.render();await settle();
+    await click(host.querySelector<HTMLElement>(`span[title="${second}"] [role="button"]`)!);
+    await vi.waitFor(()=>expect(host.textContent).toContain("Original profile"));
+    expect(host.querySelector('[data-testid="user-profile-message"]')).toBeNull();
+    expect(startDm).not.toHaveBeenCalled();
   });
   it("retains the native identity host instead of replacing it with SERVER profile transport",async()=>{
     const native=vi.fn();const m=mount(browse,<MembersPane workspaceId="workspace"

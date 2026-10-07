@@ -1,4 +1,6 @@
 import { useUserProfileQuery } from "@/features/profile/hooks";
+import { useNativeSession } from "@/features/platform/activeCommunity";
+import { useNavigate } from "@tanstack/react-router";
 import { translate } from "@client-kit/platform/i18n";
 import { useDeviceLocale } from "@client-kit/platform/react/context";
 import { ProfileSummaryView } from "@client-kit/platform/react/pulse";
@@ -14,7 +16,8 @@ import {
   AuxiliaryPanelHeaderTitleBlock,
 } from "@/shared/layout/AuxiliaryPanel";
 import { truncateNpub } from "@/shared/lib/pubkey";
-import type * as React from "react";
+import * as React from "react";
+import { Button } from "@/shared/ui/button";
 
 export type UserProfilePanelProps = {
   canResetWidth?: boolean;
@@ -29,7 +32,7 @@ export type UserProfilePanelProps = {
   transparentChrome?: boolean;
 };
 
-/** Read-only profile of a community member: avatar, name, about, identifiers. */
+/** Original public fields and Message action through the governed new-message route. */
 export function UserProfilePanel({
   canResetWidth,
   isSinglePanelView = false,
@@ -43,12 +46,40 @@ export function UserProfilePanel({
   transparentChrome = false,
 }: UserProfilePanelProps) {
   const locale = useDeviceLocale();
+  const session = useNativeSession();
+  const navigate = useNavigate();
+  const scope = `${session.facts.communityHost}:${session.devicePubkey}`;
+  const owner = React.useMemo(() => ({ active: true }), [session, pubkey]);
+  const currentOwner = React.useRef(owner);
+  currentOwner.current = owner;
+  const [opening, setOpening] = React.useState(false);
+  const [openFailed, setOpenFailed] = React.useState(false);
+  React.useEffect(() => {
+    owner.active = true;
+    setOpening(false);
+    setOpenFailed(false);
+    return () => { owner.active = false; };
+  }, [owner]);
   const isOverlay = useIsThreadPanelOverlay();
   const isSplitLayout = layout === "split";
   useEscapeKey(onClose, isOverlay || isSinglePanelView);
-  const profileQuery = useUserProfileQuery(pubkey);
-  const profile = profileQuery.data;
+  const profileQuery = useUserProfileQuery(pubkey, scope);
+  const profile = profileQuery.isSuccess && !profileQuery.isFetching && profileQuery.data.pubkey === pubkey
+    ? profileQuery.data : undefined;
   const displayName = profile?.displayName ?? truncateNpub(pubkey);
+  async function openMessage() {
+    if (!profile || opening || !owner.active || currentOwner.current !== owner) return;
+    setOpening(true);
+    setOpenFailed(false);
+    try {
+      await navigate({ to: "/messages/new", search: { pubkey: profile.pubkey } });
+      if (owner.active && currentOwner.current === owner) onClose();
+    } catch {
+      if (owner.active && currentOwner.current === owner) setOpenFailed(true);
+    } finally {
+      if (owner.active && currentOwner.current === owner) setOpening(false);
+    }
+  }
 
   return (
     <AuxiliaryPanel
@@ -81,13 +112,19 @@ export function UserProfilePanel({
         className="overflow-y-auto px-4 pb-6"
         data-testid="user-profile-scroll-body"
       >
-        <ProfileSummaryView
+        {profile ? <ProfileSummaryView
           displayName={displayName}
           profile={profile}
           pubkey={pubkey}
           copy={writeTextToClipboard}
           mediaUrl={rewriteRelayUrl}
-        />
+          messagePending={opening}
+          onMessage={pubkey !== session.devicePubkey ? () => { void openMessage(); } : undefined}
+        /> : profileQuery.isError || (profileQuery.isSuccess && !profileQuery.isFetching) ?
+          <div role="alert"><p>{translate(locale, "platform.loadFailed")}</p>
+            <Button onClick={() => { void profileQuery.refetch(); }}>{translate(locale, "platform.retry")}</Button>
+          </div> : <p role="status">{translate(locale, "platform.loading")}</p>}
+        {openFailed ? <p role="alert">{translate(locale, "platform.loadFailed")}</p> : null}
       </AuxiliaryPanelBody>
     </AuxiliaryPanel>
   );

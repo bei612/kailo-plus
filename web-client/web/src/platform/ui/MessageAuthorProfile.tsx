@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { MessageCircle } from "lucide-react";
 import { useLayoutEffect, type ReactNode } from "react";
 import { ProfileSummaryView, UserProfilePopoverSurface, UserProfilePopoverBody, type ProfilePopoverBodyProps } from "@client-kit/platform/react/pulse";
 import { AuxiliaryPanel, AuxiliaryPanelBody, AuxiliaryPanelHeader, AuxiliaryPanelHeaderGroup, AuxiliaryPanelHeaderTitleBlock, useThreadPanelWidth } from "@client-kit/platform/react/thread";
@@ -76,10 +75,9 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
       <AuxiliaryPanelHeaderGroup><AuxiliaryPanelHeaderTitleBlock title={t("platform.settings.profile")}/></AuxiliaryPanelHeaderGroup>
     </AuxiliaryPanelHeader>}>
     <AuxiliaryPanelBody className="overflow-y-auto px-4 pb-6" data-testid="user-profile-scroll-body">
-      {data?<><ProfileSummaryView displayName={data.displayName??truncatePubkey(data.pubkey)}
-        profile={data} pubkey={data.pubkey} copy={copy} mediaUrl={(url)=>data.avatarMediaPaths[url]??url}/>
-        {onStartDm?<div className="mt-6 flex items-center justify-center gap-2"><Button onClick={()=>onStartDm(data.pubkey)}>
-          <MessageCircle className="h-4 w-4"/>{t("pulse.startDm")}</Button></div>:null}</>
+      {data?<ProfileSummaryView displayName={data.displayName??truncatePubkey(data.pubkey)}
+        profile={data} pubkey={data.pubkey} copy={copy} mediaUrl={(url)=>data.avatarMediaPaths[url]??url}
+        onMessage={onStartDm?()=>onStartDm(data.pubkey):undefined}/>
         :query.isError?<div role="alert">{t("platform.loadFailed")}<Button variant="ghost" onClick={()=>void query.refetch()}>{t("platform.retry")}</Button></div>
         :<p role="status">{t("platform.loading")}</p>}
     </AuxiliaryPanelBody>
