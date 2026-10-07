@@ -67,6 +67,12 @@ Projects 目录沿用上述 Tenant→Community 协作数据面读取原生项目
 
 目录可见不等于仓库内容可读，更不授予 Issue/PR、项目修改或 Agent 执行权限。固定上游 `.references/buzz/crates/buzz-relay/src/api/git/binding.rs::resolve_repo_binding` 与 `.references/buzz/crates/buzz-relay/src/api/git/transport.rs::authorize_git_read` 所确定的真实仓库绑定与内容授权必须保留；未解析或无权的引用不绕过授权获取内容。原生项目、仓库、Issue/PR 页面和交互仍全部在恢复范围，公告目录的阶段交付不等于完整 Projects 验收。
 
+Projects 公告写入是既有协作数据面，不把目录的 `tenant.discover` 变成写授权。SOURCE_FACT（Buzz `779af8886caae1317b4de962082429867ab61503`）：`.references/buzz/crates/buzz-auth/src/lib.rs::AuthService::verify_auth_event` 的 NIP-42 验签结果与 `.references/buzz/crates/buzz-relay/src/api/bridge.rs::submit_event_authed` 的已验 NIP-98 actor 均使用 `Scope::all_known()`；`.references/buzz/crates/buzz-relay/src/handlers/ingest.rs::required_scope_for_kind` 对 30621/30617 要求 `ReposWrite`，`ingest_event_inner` 同时核验事件签名、认证公钥与事件作者相等，以及原 Community 准入。项目替换仍以原 `(kind, pubkey, d)` 坐标归属，不增加 Core Project 正文权威。
+
+DERIVED_DESIGN（REQ-24、DD-39/45/75/81，承接上述源码事实）：Web 的有效 Tenant、ACTIVE HUMAN 成员与身份投影、fresh scope 检查只建立 BFF 入口，随后使用本人 SERVER 签名与 Relay 原生 `ReposWrite`/坐标 owner 授权；Native 使用本人 CLIENT 签名走同一原生准入。不得将同一 Human 的不同设备公钥视为同一坐标 owner，不得伪造 NIP-OA 或把 CONTROL 改为业务作者。原受信 NIP-OA owner 关系只按 Relay 已验事实消费，不能由 UI、请求体或可编辑 profile 声明替代；既定 `allow_nip_oa_auth=false` 的成员投影门禁不因此放开。只开放本功能实际支持的项目公告事件，其余管理 kind 保持既有 CONTROL 边界；项目 home Channel 的创建、成员与 Agent 安装仍走各自原治理链，不伪造 Workspace 或借公告引用授予权限。
+
+SOURCE_FACT（同一 Buzz commit）：`.references/buzz/crates/buzz-relay/src/handlers/side_effects.rs::validate_standard_deletion_event` 对 kind 5 的目标坐标作者执行本人或真实 agent-owner 校验；`handle_a_tag_deletion` 只删除该坐标时间边界内的版本。`.references/buzz/desktop/src/features/projects/projectDeletion.ts::deleteProject` 读取真实最新 head、构造坐标删除并回读，保留并发更新后的新版本，不连带删除 home Channel 或仓库。该原语义完整保留；Core 只存发布意图、签名事件引用和审计，未知结果按同一意图对账，不能换键重发或根据空目录冒称项目删除成功。Git 内容读取、Issue/PR 与工具授权不因公告写入扩张。
+
 ### 原生私聊与多设备映射
 
 REQ-24、DD-77/80 的私聊使用 `03` 的 ConversationBuzzBinding。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `.references/buzz/crates/buzz-relay/src/handlers/command_executor.rs::handle_dm_open` 会把认证公钥加入参与者；`.references/buzz/crates/buzz-db/src/store/dm.rs::{open_dm,create_dm,compute_participant_hash}` 以公钥集合去重并建立 private DM。因此 CONTROL 不能直接冒充发起人调用原路径，否则成为私聊成员；也不能把设备公钥数当作人数。
