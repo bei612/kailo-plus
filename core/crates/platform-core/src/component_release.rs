@@ -1231,6 +1231,19 @@ pub(crate) async fn prewrite(
             "actionTokenAudience",
         )?,
     )?;
+    for step in &mut steps {
+        if step["operation"] != "execute" {
+            continue;
+        }
+        let request: Value = serde_json::from_str(text(step, "requestJson")?).map_err(|_| bad())?;
+        if request.get("contractKey").is_some() {
+            let context =
+                crate::component_conformance_identity::context(&identity, step, "execute")?;
+            step["requestJson"] = json!(collab_bridge::limits::canonical_json(
+                &production_probe_execute(&request, context)?,
+            ));
+        }
+    }
     crate::component_conformance_identity::check_plan(&identity, &steps)?;
     let identity_digest = collab_bridge::limits::canonical_digest(&identity);
     let suite_digest = collab_bridge::limits::canonical_digest(
@@ -1569,14 +1582,34 @@ fn verify_report(plan: &Value, report: &Value) -> Result<(), Refusal> {
 /// Derive the exact request from the immutable plan and the fixed typed slot.
 /// There is no caller-supplied URL, method, JSON path or general-purpose patch.
 fn apply_probe_reference(request: &mut Value, reference: &Value) -> Result<(), Refusal> {
-    let placeholder: Value =
-        serde_json::from_str(text(request, "inputJson")?).map_err(|_| bad())?;
-    if placeholder != json!({}) {
+    if request["arguments"]["input"] != json!({}) {
         return Err(bad());
     }
-    request["inputJson"] = json!(collab_bridge::limits::canonical_json(reference));
-    request["contentReference"] = reference.clone();
+    request["arguments"]["input"] = reference.clone();
     Ok(())
+}
+
+// The vector is input data, not another execute protocol. Target selection is
+// frozen from the isolated identity delivery before signing or wire dispatch.
+fn production_probe_execute(request: &Value, context: &Value) -> Result<Value, Refusal> {
+    let key = text(request, "contractKey")?;
+    if context["actionKey"] != key {
+        return Err(bad());
+    }
+    let target_field = match text(context, "targetType")? {
+        "RESOURCE" => "resourceId",
+        "ASSET" => "assetId",
+        _ => return Err(bad()),
+    };
+    let target = Uuid::parse_str(text(context, "targetId")?).map_err(|_| bad())?;
+    if target.is_nil() {
+        return Err(bad());
+    }
+    let input: Value = serde_json::from_str(text(request, "inputJson")?).map_err(|_| bad())?;
+    Ok(
+        json!({"idempotencyKey":text(request,"idempotencyKey")?,"actionKey":key,
+        "arguments":{"target":{(target_field):target},"input":input}}),
+    )
 }
 
 fn validate_probe_input(
@@ -1584,10 +1617,10 @@ fn validate_probe_input(
     operation: &str,
     request: &Value,
 ) -> Result<(), Refusal> {
-    if operation != "execute" || request.get("contractKey").is_none() {
+    if operation != "execute" || request.get("actionKey").is_none() {
         return Ok(());
     }
-    let key = text(request, "contractKey")?;
+    let key = text(request, "actionKey")?;
     let mut matches = contracts.iter().flat_map(|contract| {
         contract["content"]["operationContracts"]
             .as_array()
@@ -1605,8 +1638,8 @@ fn validate_probe_input(
     let schema = documents
         .get(text(declared, "inputSchemaDigest")?)
         .ok_or_else(bad)?;
-    let input: Value = serde_json::from_str(text(request, "inputJson")?).map_err(|_| bad())?;
-    if !crate::capability_contract::schema_validator(schema, &documents)?.is_valid(&input) {
+    let input = request["arguments"].get("input").ok_or_else(bad)?;
+    if !crate::capability_contract::schema_validator(schema, &documents)?.is_valid(input) {
         return Err(bad());
     }
     Ok(())
@@ -1808,7 +1841,9 @@ pub(crate) async fn authorize_probe(
         let contracts=active_contracts(&mut tx,ae.tenant_id,&release).await?;
         let digests:Vec<_>=contracts.iter().map(collab_bridge::limits::canonical_digest).collect();
         if plan["contractDigests"] != json!(digests) { return Err(Refusal::Conflict(ReasonCode::TargetStateConflict)); }
-        validate_probe_input(&contracts,&operation,&request)?;
+        if step.get("contractKey").is_some() {
+            validate_probe_input(&contracts,&operation,&request)?;
+        }
         let identity=crate::component_conformance_identity::load(&release.adapter_digest,text(&release.manifest["executionConnector"],"actionTokenAudience")?)?;
         if plan["identityDigest"] != collab_bridge::limits::canonical_digest(&identity) { return Err(Refusal::Conflict(ReasonCode::TargetStateConflict)); }
         let context=crate::component_conformance_identity::context(&identity,&step,&operation)?;
@@ -2685,7 +2720,7 @@ mod report_tests {
         plan["steps"][1]["referenceFromStepKey"] = plan["steps"][0]["stepKey"].clone();
         let mut frozen: Value =
             serde_json::from_str(plan["steps"][1]["requestJson"].as_str().unwrap()).unwrap();
-        frozen["inputJson"] = json!("{}");
+        frozen["arguments"] = json!({"target":{"resourceId":resource},"input":{}});
         plan["steps"][1]["requestJson"] = json!(frozen.to_string());
         let reference = json!({"resourceId":resource,"nativeObjectRef":"native-created-object",
             "nativeRevision":"immutable-revision","displayName":"fixture","mediaType":"text/plain"});
@@ -2693,11 +2728,9 @@ mod report_tests {
         probe["plan"]["runId"] = json!(Uuid::new_v4());
         let (_, operation, request) = probe_request(&plan, &probe).unwrap();
         assert_eq!(operation, "execute");
-        assert_eq!(request["contentReference"], reference);
-        assert_eq!(
-            serde_json::from_str::<Value>(request["inputJson"].as_str().unwrap()).unwrap(),
-            reference
-        );
+        assert_eq!(request["arguments"]["input"], reference);
+        assert!(request.get("contentReference").is_none());
+        assert!(request.get("inputJson").is_none());
         let mut changed = probe.clone();
         changed["contentReference"]["resourceId"] = json!(Uuid::new_v4());
         assert!(probe_request(&plan, &changed).is_err());
@@ -2720,6 +2753,31 @@ mod report_tests {
     }
 
     #[test]
+    fn capability_vectors_freeze_the_production_execute_envelope() {
+        let resource = Uuid::new_v4();
+        let request = json!({"idempotencyKey":Uuid::new_v4(),"contractKey":"knowledge.read@v1",
+            "referenceResourceId":resource,"inputJson":"{}"});
+        let context =
+            json!({"actionKey":"knowledge.read@v1","targetType":"RESOURCE","targetId":resource});
+        let actual = production_probe_execute(&request, &context).unwrap();
+        assert_eq!(
+            actual,
+            json!({"idempotencyKey":request["idempotencyKey"],"actionKey":"knowledge.read@v1",
+            "arguments":{"target":{"resourceId":resource},"input":{}}})
+        );
+        assert_eq!(
+            crate::application_tool::target(&actual["arguments"]).unwrap(),
+            ("RESOURCE", resource)
+        );
+        let mut changed = context.clone();
+        changed["actionKey"] = json!("knowledge.delete@v1");
+        assert!(production_probe_execute(&request, &changed).is_err());
+        changed = context.clone();
+        changed["targetType"] = json!("TENANT");
+        assert!(production_probe_execute(&request, &changed).is_err());
+    }
+
+    #[test]
     fn materialized_reference_is_validated_against_the_exact_registered_input_schema() {
         let schema: Value = serde_json::from_str(include_str!(
             "../../../../contracts/domain/content_reference.schema.json"
@@ -2731,16 +2789,16 @@ mod report_tests {
         }]},"schemas":{(digest):schema}})];
         let reference = json!({"resourceId":Uuid::new_v4(),"nativeObjectRef":"native-observed-document",
             "nativeRevision":"native-observed-revision","displayName":"document","mediaType":"text/plain"});
-        let mut request = json!({"contractKey":"knowledge.read@v1","inputJson":"{}"});
+        let mut request = json!({"actionKey":"knowledge.read@v1","arguments":{"input":{}}});
         assert!(validate_probe_input(&contracts, "execute", &request).is_err());
         apply_probe_reference(&mut request, &reference).unwrap();
         assert!(validate_probe_input(&contracts, "execute", &request).is_ok());
         let mut incomplete = reference.clone();
         incomplete.as_object_mut().unwrap().remove("nativeRevision");
-        request["inputJson"] = json!(incomplete.to_string());
+        request["arguments"]["input"] = incomplete;
         assert!(validate_probe_input(&contracts, "execute", &request).is_err());
-        request["inputJson"] = json!(reference.to_string());
-        request["contractKey"] = json!("knowledge.export@v1");
+        request["arguments"]["input"] = reference.clone();
+        request["actionKey"] = json!("knowledge.export@v1");
         assert!(validate_probe_input(&contracts, "execute", &request).is_err());
         assert!(
             apply_probe_reference(&mut request, &reference).is_err(),
@@ -2822,8 +2880,8 @@ mod report_tests {
             step["referenceResourceId"] = reference["resourceId"].clone();
             step["referenceAssetId"] = reference["assetId"].clone();
             step["expectedResponseJson"] = json!("{}");
-            let mut request = json!({"idempotencyKey":step["idempotencyKey"],"referenceResourceId":reference["resourceId"],
-                "referenceAssetId":reference["assetId"],"inputJson":"{}"});
+            let mut request = json!({"idempotencyKey":step["idempotencyKey"],"actionKey":"records.read@v1",
+                "arguments":{"target":{"assetId":reference["assetId"]},"input":{}}});
             step["requestJson"] = json!(request.to_string());
             if index == 1 {
                 step["referenceFromStepKey"] = json!("step_0");

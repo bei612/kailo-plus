@@ -337,3 +337,34 @@ Core/Temporal，也不能自造 Relay 正文路径。NONE 管理结果不向浏�
   用例事务回滚，结束确认其它连接0后仅删除此库，原生读回不存在0。
   未运行迁移、业务库写入、模型调用、full、产品构建或部署；没有
   四侧契约变动，文档快检查交主线合批。
+
+## 2026-10-07：ActionDefinition 生成列与退役状态的原触发器修复
+
+- 权威与根因：DD-88 保留版本正文不可变、状态可退役。原
+  `20261005014000_application_catalog.up.sql::catalog.guard_version` 比较
+  `to_jsonb(NEW)-'status'` 全部字段；`platform_action_key` 是存储生成列，
+  BEFORE UPDATE 时尚未计算，因此仅更新状态也被错误判成正文变更。
+  原函数、DDL 以及隔离库的实际生成列/触发器均已核对，不是权限拒绝。
+- 影响面：新 up 仅把 action_definition 的 UPDATE 守卫移到 AFTER UPDATE，
+  DELETE 保持 BEFORE 及同一个 guard_version；没有排除生成列或任何正文
+  字段，没有改变 API、四侧合同、目录权威或 ActionExecution 引用。
+  AFTER 抛错仍回滚整条语句/事务；旧正文、历史引用与所有调用者格式不变。
+- 边界与副作用：ACTIVE→RETIRED→ACTIVE 不改正文；正文修改仍为 SQLSTATE
+  23001，已引用删除仍为原 23001/ActionExecution 错误，不变成 FK 错误或
+  fail-open。未引入新状态、自动重放或清理服务。down 恢复原触发器时序，
+  也恢复退役缺陷，回滚后不得声称目录退役恢复可用。
+- 实现后原 `platform_views::member_action_tests` 增加一个隔离 SQL 用例。
+  通过既有 SDK 的 `AGENT_INVOKE_TEST_DATABASE_URL` 使用一次性测试实例
+  `component_runtime_lcivus`，全部 DDL、Tenant/Principal/ActionExecution
+  夹具都在外层事务回滚；不改业务库、迁移账本或已有目录内容。
+  用例实际执行 up/down/up、两次状态更新和全行比对、正文变更失败后的
+  savepoint 全部回滚、真实冻结 ActionExecution 引用的删除拒绝。
+- 受限原 SDK（4 CPU、8 GiB memory/swap）中执行
+  `cargo test --offline --locked -j16 -p platform-core --bin platform-core generated_catalog_guard_roundtrip -- --ignored --test-threads=1`
+  实际 1 passed，退出 0。SDK-only 将 up 的 AFTER UPDATE 改为 BEFORE
+  UPDATE，原用例在首次状态更新以 23001 失败，退出 101；原字节还原 cmp 0
+  后重新编译同一输入，1 passed，退出 0。正式文件未保留变异。
+  日志在既有 `projects-directory.wiWDv3` 目录：
+  `catalog-generated-guard.log`、`catalog-generated-guard-mutation.log`、
+  `catalog-generated-guard-restored.log`。rustfmt 已执行；未运行 full、
+  产品构建、部署或生产迁移，发布时仍须由原迁移入口应用这两个迁移文件。

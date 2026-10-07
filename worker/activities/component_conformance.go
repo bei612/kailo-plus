@@ -517,16 +517,8 @@ func (c *CoreAPI) RunComponentConformanceStep(ctx context.Context, input generat
 			!validContentReference(generated.ContentReference(*input.ContentReference), *step.ReferenceResourceID, step.ReferenceAssetID) {
 			return generated.ComponentConformanceStepObservation{}, temporal.NewNonRetryableApplicationError("引用不在冻结授权目标", ErrTypeRejected, nil)
 		}
-		var request map[string]any
-		if decodeConformanceJSON([]byte(step.RequestJSON), &request) != nil {
-			return generated.ComponentConformanceStepObservation{}, temporal.NewNonRetryableApplicationError("引用请求不可解析", ErrTypeRejected, nil)
-		}
-		request["contentReference"] = input.ContentReference
-		encoded, err := json.Marshal(request)
-		if err != nil {
-			return generated.ComponentConformanceStepObservation{}, err
-		}
-		step.RequestJSON = string(encoded)
+		// Core alone materializes this typed reference into the production
+		// arguments.input slot and returns the exact canonical wire below.
 	} else if input.ContentReference != nil {
 		return generated.ComponentConformanceStepObservation{}, temporal.NewNonRetryableApplicationError("步骤未授权外部引用", ErrTypeRejected, nil)
 	}

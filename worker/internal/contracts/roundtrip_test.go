@@ -14,6 +14,71 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestConformanceIdentityRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "component-conformance-identity.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var typed generated.ComponentConformanceIdentity
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	back, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected, actual any
+	if err := json.Unmarshal(raw, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(back, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(expected, actual) {
+		t.Fatal("isolated conformance identity lost fields")
+	}
+}
+
+func TestMemberRemovalPermissionsRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "member-action-availability.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, permission := range []any{true, false, nil} {
+		var value map[string]any
+		if err := json.Unmarshal(raw, &value); err != nil {
+			t.Fatal(err)
+		}
+		row := value["members"].([]any)[0].(map[string]any)
+		for _, key := range []string{"canRemoveFromWorkspace", "canRemoveFromTenant"} {
+			if permission == nil {
+				delete(row, key)
+			} else {
+				row[key] = permission
+			}
+		}
+		input, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var typed generated.RoleMemberPage
+		if err := json.Unmarshal(input, &typed); err != nil {
+			t.Fatal(err)
+		}
+		back, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got map[string]any
+		if err := json.Unmarshal(back, &got); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(value, got) {
+			t.Fatal("Member removal permissions lost")
+		}
+	}
+}
+
 func TestInstallationUpgradeRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "agent-installation-upgrade.sample.json"))
 	if err != nil {

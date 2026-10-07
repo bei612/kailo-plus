@@ -3099,8 +3099,18 @@ export interface RoleMemberPage {
 }
 
 export interface RoleMemberView {
-    canGrantTenantAdmin:     boolean;
-    canGrantWorkspaceAdmin:  boolean;
+    canGrantTenantAdmin:    boolean;
+    canGrantWorkspaceAdmin: boolean;
+    /**
+     * 当前 Tenant manage 与 tenant.member.revoke 目录均有效，且不是最后有效 Tenant admin；提交仍走原审批与重新准入，省略或 false
+     * 不显示动作。
+     */
+    canRemoveFromTenant?: boolean;
+    /**
+     * 当前 Workspace manage 与 workspace.member.revoke 目录均有效，目标存在可撤 WorkspaceMembership；省略或 false
+     * 不显示动作，提交仍重新准入。
+     */
+    canRemoveFromWorkspace?: boolean;
     canRevokeTenantAdmin:    boolean;
     canRevokeWorkspaceAdmin: boolean;
     displayName:             string;
@@ -3889,10 +3899,18 @@ export interface ComponentConformanceIdentity {
 }
 
 export interface ComponentConformanceIdentityContext {
-    actionDefinitionVersion:     number;
-    actionKey:                   string;
-    actorPrincipalId:            string;
-    caseKey:                     string;
+    actionDefinitionVersion: number;
+    actionKey:               string;
+    actorPrincipalId:        string;
+    /**
+     * 隔离环境PEP的实际模拟授权revision，不得指向生产SpiceDB事实。
+     */
+    authorizationMinZedToken: string;
+    caseKey:                  string;
+    /**
+     * execute场景必填的隔离native执行引用；不在生产库创建ExternalExecution。
+     */
+    externalExecutionId?:        string;
     operation:                   AdapterProtocolOperation;
     resultExposurePolicyId:      string;
     resultExposurePolicyVersion: number;

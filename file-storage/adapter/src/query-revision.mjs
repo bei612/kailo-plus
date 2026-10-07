@@ -1,5 +1,8 @@
-import { createHash, createPublicKey, verify } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
+  verifiedClaims, secret, jsonFetch, freshPep } from '../../../client-kit/adapter/protocol.mjs';
+export { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
+  secret, jsonFetch, freshPep } from '../../../client-kit/adapter/protocol.mjs';
 import { createServer } from 'node:http';
 import { documentConfiguration, launchDocument } from './document-launch.mjs';
 import { documentLifecycle } from './document-lifecycle.mjs';
@@ -8,46 +11,11 @@ import { documentLifecycle } from './document-lifecycle.mjs';
 // binding adapter. Neither implies release activation or tool registration.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const QUERY_PATH = '/platform-adapter/v1/query_revision';
-const HEADER_KEYS = ['alg', 'kid', 'typ'];
-
-export class Refused extends Error {
-  constructor(status) {
-    super('adapter request refused');
-    this.status = status;
-  }
-}
-
-export function object(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-export function nonempty(value) {
-  return typeof value === 'string' && value.length > 0 && value === value.trim();
-}
-
-export function exactKeys(value, keys) {
-  return object(value) && Object.keys(value).length === keys.length
-    && keys.every((key) => Object.hasOwn(value, key));
-}
-
-export function canonical(value) {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-  if (object(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
-  return JSON.stringify(value);
-}
 
 export function queryDigest(argumentsValue) {
   // The original collab_bridge::limits::canonical_json rule; query fields are
   // strings, so number / cross-language floating point conversion is absent.
   return createHash('sha256').update(canonical({ operation: 'query_revision', arguments: argumentsValue })).digest('hex');
-}
-
-export function fixedUrl(value) {
-  let url;
-  try { url = new URL(value); } catch { throw new Refused(503); }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password
-    || url.search || url.hash) throw new Refused(503);
-  return url;
 }
 
 export function configuration(value) {
@@ -78,18 +46,6 @@ export function configuration(value) {
     : { documentLaunch: documentConfiguration(value.documentLaunch) }) });
 }
 
-export async function boundedBody(stream, limit) {
-  const chunks = [];
-  let length = 0;
-  for await (const chunk of stream) {
-    const bytes = Buffer.from(chunk);
-    length += bytes.length;
-    if (length > limit) throw new Refused(503);
-    chunks.push(bytes);
-  }
-  return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
-}
-
 function requestValue(raw, key) {
   let value;
   try { value = JSON.parse(raw); } catch { throw new Refused(400); }
@@ -106,38 +62,9 @@ function requestValue(raw, key) {
   return value;
 }
 
-function decodePart(part) {
-  if (!/^[A-Za-z0-9_-]+$/.test(part)) throw new Refused(401);
-  const bytes = Buffer.from(part, 'base64url');
-  if (bytes.toString('base64url') !== part) throw new Refused(401);
-  return bytes;
-}
-
 export async function verifyToken(token, config, args, operation = 'query_revision') {
   try {
-    const parts = token.split('.');
-    if (parts.length !== 3) throw new Refused(401);
-    const header = JSON.parse(decodePart(parts[0]).toString('utf8'));
-    const claims = JSON.parse(decodePart(parts[1]).toString('utf8'));
-    if (!exactKeys(header, HEADER_KEYS) || header.alg !== 'ES256' || header.typ !== 'JWT' || !nonempty(header.kid)) throw new Refused(401);
-    const jwks = JSON.parse(await readFile(config.actionTokenJwksFile, 'utf8'));
-    if (!object(jwks) || !Array.isArray(jwks.keys)) throw new Refused(503);
-    const matches = jwks.keys.filter((key) => object(key) && key.kid === header.kid);
-    if (matches.length !== 1) throw new Refused(401);
-    const key = matches[0];
-    if (key.kty !== 'EC' || key.crv !== 'P-256' || key.d !== undefined
-      || (key.alg !== undefined && key.alg !== 'ES256')
-      || (key.use !== undefined && key.use !== 'sig')
-      || (key.key_ops !== undefined && (!Array.isArray(key.key_ops) || key.key_ops.length !== 1 || key.key_ops[0] !== 'verify'))) throw new Refused(401);
-    const publicKey = createPublicKey({ key, format: 'jwk' });
-    const signature = decodePart(parts[2]);
-    if (signature.length !== 64 || !verify('sha256', Buffer.from(`${parts[0]}.${parts[1]}`),
-      { key: publicKey, dsaEncoding: 'ieee-p1363' }, signature)) throw new Refused(401);
-    const now = Math.floor(Date.now() / 1000);
-    if (!object(claims) || claims.iss !== config.actionTokenIssuer || claims.aud !== config.actionTokenAudience
-      || !Number.isSafeInteger(claims.iat) || !Number.isSafeInteger(claims.exp)
-      || claims.iat > now || claims.exp <= now || claims.exp <= claims.iat
-      || (claims.nbf !== undefined && (!Number.isSafeInteger(claims.nbf) || claims.nbf > now))) throw new Refused(401);
+    const claims = await verifiedClaims(token, config);
     for (const key of ['jti', 'tenant_id', 'actor_principal_id',
       'initiating_human_principal_id', 'operation_id', 'action_execution_id', 'target_id']) {
       if (!UUID.test(claims[key])) throw new Refused(401);
@@ -171,48 +98,6 @@ export async function verifyToken(token, config, args, operation = 'query_revisi
     if (error instanceof Refused) throw error;
     throw new Refused(401);
   }
-}
-
-export async function secret(path) {
-  try {
-    const value = (await readFile(path, 'utf8')).trim();
-    if (!value || /[\r\n]/.test(value)) throw new Refused(503);
-    return value;
-  } catch { throw new Refused(503); }
-}
-
-export async function jsonFetch(config, deadline, url, options) {
-  const remaining = deadline - Date.now();
-  if (remaining <= 0) throw new Refused(503);
-  try {
-    const response = await fetch(url, { ...options, redirect: 'manual', signal: AbortSignal.timeout(remaining) });
-    if (!response.ok || !response.body || !response.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
-      await response.body?.cancel();
-      throw new Refused(503);
-    }
-    return JSON.parse(await boundedBody(response.body, config.maxBodyBytes));
-  } catch { throw new Refused(503); }
-}
-
-export async function freshPep(config, deadline, token, args, claims, operation = 'query_revision') {
-  const clientSecret = await secret(config.oidcClientSecretFile);
-  const oidc = await jsonFetch(config, deadline, config.oidcTokenUrl, {
-    method: 'POST',
-    headers: { authorization: `Basic ${Buffer.from(`${encodeURIComponent(config.oidcClientId)}:${encodeURIComponent(clientSecret)}`).toString('base64')}`,
-      'content-type': 'application/x-www-form-urlencoded' },
-    body: 'grant_type=client_credentials',
-  });
-  if (!object(oidc) || !nonempty(oidc.access_token) || /[\r\n]/.test(oidc.access_token)
-    || oidc.token_type?.toLowerCase() !== 'bearer') throw new Refused(503);
-  const answer = await jsonFetch(config, deadline, config.corePepUrl, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${oidc.access_token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ bindingId: config.bindingId, actionToken: token,
-      operation, argumentsJson: canonical(args) }),
-  });
-  if (!exactKeys(answer, ['actionExecutionId', 'operationId', 'authorizationMinZedToken'])
-    || answer.actionExecutionId !== claims.action_execution_id || answer.operationId !== claims.operation_id
-    || !nonempty(answer.authorizationMinZedToken)) throw new Refused(503);
 }
 
 function nativePath(value) {

@@ -16,11 +16,62 @@ import (
 
 type exportKnowledgeService struct {
 	stubKnowledgeService
-	reads        int
-	fileReads    int
-	changeOnRead bool
-	body         string
-	createdIDs   []string
+	reads            int
+	fileReads        int
+	changeOnRead     bool
+	body             string
+	createdIDs       []string
+	deletedRevisions []string
+	plainDeletes     int
+}
+
+func (s *exportKnowledgeService) DeleteKnowledgeAtRevision(_ context.Context, _ string, revision string) error {
+	s.deletedRevisions = append(s.deletedRevisions, revision)
+	return nil
+}
+
+func (s *exportKnowledgeService) DeleteKnowledge(context.Context, string) error {
+	s.plainDeletes++
+	return nil
+}
+
+func TestDeleteDocumentPassesTheNativeRevisionWithoutFallback(t *testing.T) {
+	for _, scenario := range []string{"current", "empty", "invalid", "absent", "foreign"} {
+		t.Run(scenario, func(t *testing.T) {
+			srv := newScopeTestServer(&types.KnowledgeBase{ID: "kb", TenantID: 1})
+			doc := &types.Knowledge{ID: "doc", TenantID: 1, KnowledgeBaseID: "kb", UpdatedAt: time.Now()}
+			service := &exportKnowledgeService{stubKnowledgeService: stubKnowledgeService{docs: map[string]*types.Knowledge{"doc": doc}}}
+			srv.knowledgeService = service
+			ep := &types.MCPEndpoint{ID: "ep", TenantID: 1, Tools: types.StringArray{types.MCPEndpointToolDeleteDocument}}
+			revision := doc.UpdatedAt.UTC().Format(time.RFC3339Nano)
+			args := map[string]any{"knowledge_id": "doc", "expected_revision": revision}
+			switch scenario {
+			case "empty":
+				args["expected_revision"] = ""
+			case "invalid":
+				args["expected_revision"] = true
+			case "absent":
+				delete(args, "expected_revision")
+			case "foreign":
+				doc.TenantID = 2
+			}
+			result, err := srv.handleDeleteDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
+			require.NoError(t, err)
+			if scenario == "current" {
+				require.False(t, result.IsError)
+				require.Equal(t, []string{revision}, service.deletedRevisions)
+				require.Zero(t, service.plainDeletes)
+			} else if scenario == "absent" {
+				require.False(t, result.IsError)
+				require.Empty(t, service.deletedRevisions)
+				require.Equal(t, 1, service.plainDeletes)
+			} else {
+				require.True(t, result.IsError)
+				require.Empty(t, service.deletedRevisions)
+				require.Zero(t, service.plainDeletes)
+			}
+		})
+	}
 }
 
 func (s *exportKnowledgeService) GetKnowledgeByIDOnly(ctx context.Context, id string) (*types.Knowledge, error) {

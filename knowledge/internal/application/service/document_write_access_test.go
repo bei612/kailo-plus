@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/application/repository"
@@ -82,7 +83,54 @@ func (r documentKBRepo) GetKnowledgeBaseByID(ctx context.Context, id string) (*t
 
 type documentKnowledgeSpy struct {
 	interfaces.KnowledgeRepository
-	writes int
+	writes           int
+	beforeCheckpoint func()
+}
+
+func (r *documentKnowledgeSpy) UpdateKnowledgeForTransfer(ctx context.Context, before, after *types.Knowledge) error {
+	if r.beforeCheckpoint != nil {
+		r.beforeCheckpoint()
+	}
+	return r.KnowledgeRepository.UpdateKnowledgeForTransfer(ctx, before, after)
+}
+
+func TestDeleteKnowledgeAtRevisionUsesOriginalDeletionCAS(t *testing.T) {
+	for _, scenario := range []string{"current", "stale", "empty", "concurrent edit"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newDocumentWriteFixture(t)
+			row, err := f.repo.GetKnowledgeByID(f.ctx, 7, "doc")
+			require.NoError(t, err)
+			revision := row.UpdatedAt.UTC().Format(time.RFC3339Nano)
+			switch scenario {
+			case "stale":
+				revision = row.UpdatedAt.Add(-time.Second).UTC().Format(time.RFC3339Nano)
+			case "empty":
+				revision = ""
+			case "concurrent edit":
+				f.repo.beforeCheckpoint = func() {
+					require.NoError(t, f.db.Model(&types.Knowledge{}).Where("id = ?", "doc").Updates(map[string]any{
+						"title": "concurrent content", "updated_at": row.UpdatedAt.Add(time.Second),
+					}).Error)
+				}
+			}
+			err = f.svc.DeleteKnowledgeAtRevision(f.ctx, "doc", revision)
+			if scenario == "current" {
+				require.NoError(t, err)
+				_, err = f.repo.GetKnowledgeByID(f.ctx, 7, "doc")
+				require.ErrorIs(t, err, repository.ErrKnowledgeNotFound)
+				require.Positive(t, f.graph.calls)
+				return
+			}
+			require.Error(t, err)
+			f.requireNoWrites(t)
+			remaining, err := f.repo.GetKnowledgeByID(f.ctx, 7, "doc")
+			require.NoError(t, err)
+			require.Equal(t, row.ParseStatus, remaining.ParseStatus)
+			if scenario == "concurrent edit" {
+				require.Equal(t, "concurrent content", remaining.Title)
+			}
+		})
+	}
 }
 
 func (r *documentKnowledgeSpy) UpdateKnowledge(ctx context.Context, k *types.Knowledge) error {

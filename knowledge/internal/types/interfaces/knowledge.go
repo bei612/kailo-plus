@@ -101,6 +101,9 @@ type KnowledgeService interface {
 	RenameKnowledgeFolder(ctx context.Context, kbID string, from string, to string) (int64, error)
 	// DeleteKnowledge deletes knowledge by ID.
 	DeleteKnowledge(ctx context.Context, id string) error
+	// DeleteKnowledgeAtRevision admits only the exact native document revision.
+	// The existing deletion CAS fences concurrent edits before any cleanup.
+	DeleteKnowledgeAtRevision(ctx context.Context, id, revision string) error
 	// DeleteKnowledgeList requires an explicit write grant for every affected KB.
 	// It validates the complete selection before changing any deletion state.
 	DeleteKnowledgeList(ctx context.Context, ids []string) error

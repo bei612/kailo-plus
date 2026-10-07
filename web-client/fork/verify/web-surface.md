@@ -3405,3 +3405,207 @@ Core 原 web_transport 范围 28 项（含真实隔离库事务用例）通过�
 不能由 WorkspaceMemberView 缺失字段猜造。目录头像保留原 fallback，完整资料按需
 读取；未完成资料批量头像投影。本批未 full、未构建、未部署、未做线上或安装包
 验收；投递仍须 Core 新路由先于 Web 消费者。
+
+## 2026-10-06 原 Workflows 卡片动作菜单与选定版本编辑
+
+实现前四步结论：
+
+1. 权威：REQ-24、DD-107、`.design/03` §7 的 AutomationVersion、复制和
+   运行语义。只读核验 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/workflows/ui/WorkflowActionsMenu.tsx::WorkflowActionsMenu`
+   与 `desktop/src/features/workflows/ui/WorkflowDialog.tsx::WorkflowDialog`。
+   复用原 DropdownMenu、图标、启用复选项和可视开关，不重新设计菜单。
+2. 影响：共享 `AutomationCard` 接同一个 `AutomationAction`，由 Web/Desktop
+   现有 WorkflowsPage 消费；新增原菜单组件，没有宿主第二套实现。
+   卡片所选不可变版本明确传入编辑/复制；表单和 YAML 仍读写同一已定义合同。
+   不改 Core、数据库、Action schema、Workflow 类型或公开管理 API。
+3. 副作用：菜单打开动作前沿原授权读取刷新详情，校验 scope、资源版本、
+   canManage/canRun；没有读取证据不打开写表单。编辑只发布新版本，复制只携带
+   配置、不复制 source Resource/Asset/pin/Delegation 或历史。菜单启停、删除和
+   单次运行仍经过原确认与 `submitAction`，不发原生 Relay 控制事件。
+4. 边界：无权限动作不渲染；启用仍显式选择已发布版本与未过期委托。
+   切 Workspace、版本、身份或进入已冻结请求后，迟到读取不能打开旧表单。
+   读取失败显示原可重试的拒绝/中性未知状态，不当作空结果成功；
+   请求 UNKNOWN 继续锁定原 intent，重查同一幂等键，不提前切卡片状态。
+
+原执行接缝仍为
+`core/crates/platform-core/src/governance.rs::Semantic::from_key` 的现有
+`automation.publish_version/enable/disable/delete` 解析及
+`core/crates/platform-core/src/automation.rs::ACTION` 的 `automation.run`；
+本批没有重写 Temporal。暂停等既有详情动作原样保留。
+
+使用现有受限 SDK 独立 `message-edit.AGX058/apps`：
+共享 source/test 两套 tsc 退出 0；原 Automation/Workflows 78 项加新增菜单
+10 项共 88 项通过，其余 165 项按明确 filter 跳过。
+新检查实际覆盖中文原菜单、选定旧版本 form/YAML、复制边界、
+显式版本/委托启用、单次运行/停用/删除治理消费、UNKNOWN 同键、撤权和迟到读取。
+SDK-only 删除 fresh canManage 检查后，撤权用例真实失败，1 failed / 9 passed、
+退出 1；按正式字节恢复 cmp 0 后，两套 tsc 与 88 项再次退出 0。
+首轮失败是新检查误把原中性 ReadFailure 当 alert，以及英文断言拼写不符；
+只修夹具，未改变产品失败语义。唯一词条源新增两条菜单文案，
+原 `gen-platform-i18n.py` 生成和 `--check` 均退出 0；
+独立候选不夹带并行 Members 词条。
+
+日志位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`：
+`workflow-menu.log`、`workflow-menu-final.log`、
+`workflow-menu-mutation.log`、`workflow-menu-restored-final.log`。
+本批未 full/build/deploy，未做新线上浏览器或 Windows 包验收。
+原多步骤可视编排、Webhook、cron 和原完整条件/步骤编辑仍有既定合同与消费者
+缺口；没有用空按钮伪造支持，也不把这组已接通交互称为 Workflows 全功能完成。
+
+## 2026-10-06 Workflows 原运行轨迹卡片与真实任务引用
+
+实现前四步结论：
+
+1. 权威：`.design/06` §9、§9.1 要求运行历史复用原 ActionExecution、
+   WorkflowRef 和 TaskProjection；`AutomationRunView` 目前只有真实父任务、
+   可选步骤审批子任务、进度与用量引用。核验 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的完整路径
+   `desktop/src/features/workflows/ui/WorkflowRunTrace.tsx::WorkflowRunTrace`，
+   复用其运行轨迹卡片和状态行布局；不把父任务冒称任意原生步骤数组。
+2. 影响：共享 WorkflowsPage 的展开运行详情接同一 WorkflowRunTrace，
+   两宿主继续消费该页；WaitingReason 仅导出原 Tasks 已有翻译映射复用。
+   没有新合同字段、存储、端点、任务类型或词条。原 usage 引用保留，
+   不把空引用解释为零消费或结算完成。
+3. 副作用：每张卡片仅打开其真实 actionExecutionId，原 TaskDetail 和
+   Approvals 继续 fresh 授权读取；本呈现本身没有写请求。
+   状态徽标与图标都经既有 taskPhase，不引入第二套执行状态判断。
+4. 边界：UNKNOWN 和 PROJECTION_DELAYED 优先于旧 COMPLETED/FAILED。
+   缺审批引用不推断无需审批；没有开始/结束时间或输出证据就不生成耗时、
+   输出或任意步骤。等待原因沿原中英文映射，未知 code 保留为明确代码，
+   不改门禁、执行准入、幂等或迟到读取规则。
+
+定向验证在原受限 SDK 的独立 `message-edit.AGX058/apps` 完成：
+共享 source/test 两套 tsc 退出 0；现有 Workflows/Automation 80 项、
+原动作菜单 10 项、新轨迹 4 项共 94 项通过，163 项非本范围用例按 filter 跳过。
+SDK-only 去掉徽标输入的 observation 后，两项未知/滞后用例真实失败，
+输出分别出现错误 Completed 和 Failed，2 failed / 2 passed、退出 1。
+按正式字节恢复 cmp 0 后，4 项再次通过、退出 0。
+
+日志同 `message-edit.AGX058/` 下 `workflow-trace.log`、
+`workflow-trace-mutation.log`、`workflow-trace-restored.log`。
+本批不改前一动作菜单冻结候选，未 full/build/deploy 或新浏览器验收。
+任意多步骤配置、完整触发条件与原 executionTrace 仍没有当前合同和
+Temporal 消费者；本批恢复的是已有执行与审批引用的原卡片呈现和详情交互，
+不是这些缺口已经完成。
+
+### 2026-10-06 原成员行角色／移除菜单与邀请弹窗
+
+依据 REQ-24、DD-82/83，复用固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`.references/buzz/desktop/src/features/community-members/ui/CommunityMembersSettingsCard.tsx::{RelayMemberRow,HoverMemberIdentity}`
+原 MoreHorizontal、DropdownMenu、破坏性项分隔与禁用表现，以及
+`.references/buzz/desktop/src/features/community-members/ui/CommunityInviteDialog.tsx::CommunityInviteDialog`
+原 Dialog 壳与尺寸。两宿主消费同一 MembersPane，不启用原 Relay 管理写旁路。
+
+四步影响结论：
+
+1. 权威仍是 Core 成员事实、SpiceDB 角色及原 ActionDefinition/ApprovalPolicy；
+   workspace/tenant admin grant/revoke、member.revoke 与 tenant.member.invite
+   继续提交原 /actions。租户移除仍走原审批和 owner 转移，不以菜单点击当作终态。
+2. 改动面仅原 role-members 只读投影、共享成员/角色/邀请消费与同源文案。
+   RoleMemberPage 增加两个可选布尔字段，四侧重新生成；旧响应缺省时不显示移除，
+   真/假/缺省往返验证覆盖。没有迁移、第二用户目录或新管理动作。
+3. 移除可用性单独核对当前 manage、对应 ACTIVE 动作、原目标类型/Workflow、
+   目标成员与租户 ACTIVE 审批策略；不借用 canGrantRole。本人不显示移除，
+   最后有效租户管理员保持原保护；提交时仍重新准入。
+4. 角色分页只有完整、无重复成员/游标才展示菜单；读取失败移除动作而保留明确
+   读取状态。原共享变更控制器保存命令与幂等键，UNKNOWN 不当成功/失败，
+   同意图重试沿原键；邀请弹窗关闭/重开不丢失未决请求或首次返回的链接。
+   重入由现有 in-flight 状态拒绝，既有查询焦点重读与 scope 隔离不变。
+
+实际窄验（原受限 SDK，4 CPU／8 GiB，缓存位于 Data；未开 full 或镜像构建）：
+shared source/test、Web、Desktop tsc 均退出 0；Members 8/8、Invitations 9/9、
+原 RoleMembers/WorkspaceMembersPage 6/6 通过。SDK-only 将邀请重试换成新幂等键，
+真实 1 failed、退出 1；按正式字节恢复 cmp 0 后，17/17 再次通过。
+四侧 roundtrip Rust/TypeScript/Dart 各 27/27、Go 合同包通过；新旧移除字段与
+同批 canUpgrade/conformance 字段均保留。Core 成员 SQL 1/1、合批 identity 3/3、
+report_tests 11/11（另 1 项真实 wire/DB 检查显式 ignored）、clippy -D warnings 退出 0。
+SDK-only 移除审批 ACTIVE 条件与篡改 conformance 参数摘要分别命中真实断言，
+各退出 101；两源文件恢复 cmp 0 并重新编译后，成员 SQL 1/1、identity 3/3、
+report_tests 11/11（另 1 ignored）再次通过，整条恢复命令退出 0。
+
+保留失败事实：首轮引用了不存在的 shared Button 路径，改为已经复用的原
+profile/buzz/shared/ui/button；新游标断言误将原中性 ReadFailure 当 alert，
+只修检查断言。旧 SDK 残留 schema 漏 canUpgrade 被契约用例抓获；
+从正式完整 schema 联合生成后通过，未删除升级字段迁就缓存。
+隔离 SQL 还发现已有 catalog.guard_version 的 BEFORE UPDATE 比较包含生成列
+platform_action_key，导致仅退役 ActionDefinition 也报 23001；已单独反馈，
+本批不关闭触发器、不改线上目录。成员投影的审批退役验证在事务内完成并回滚。
+
+日志目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/projects-directory.wiWDv3/`。
+主要日志为 member-actions-js-final.log、member-actions-host-types.log、
+member-actions-mutation.log、member-actions-mutation-restored.log、
+member-actions-roundtrip-final.log、member-actions-core-final.log、
+member-actions-core-mutation.log、conformance-core-mutation.log、
+member-actions-core-mutation-restored.log。
+本批恢复原成员行菜单与受治理邀请链接弹窗，不冒称 Community 管理全功能：
+原直接添加公钥及用户自选 Relay 邀请 TTL 不等于 Kailo 组织准入，未用原绕行接口
+补齐；原用户全资料批量头像、加入日期仍未作推断。本批未提交、构建、部署或
+实机浏览器验收；投递需 Core 两字段先于两端菜单，旧 Core 不显示移除入口。
+
+## Agent Library 原管理弹窗与真实版本引用恢复（2026-10-07）
+
+本批按 REQ-24、DD-53、设计 17 §8 与 03 §7 恢复现有 Agent
+管理交互，不新增注册表、权限或执行入口。
+固定上游 Buzz `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/agents/ui/AgentsView.tsx::AgentsView` 使用卡片与独立管理弹窗；
+`desktop/src/features/agents/ui/AgentDefinitionDialogShell.tsx::AgentDefinitionDialogShell`
+和 `desktop/src/shared/ui/chooser-dialog-content.tsx::ChooserDialogContent`
+提供本批复用的宽度、滚动区域、标题与内容间距。
+
+影响面是两宿主已共同消费的 `AgentDefinitionsPage`，不改 Web/Desktop
+路由或再造一份页面。定义、新建/转移、版本、安装/升级、委托、权限和
+平台工具仍使用原 BFF 消费者；从一直堆叠在卡片下改成原弹窗。
+未提交定义草稿在关闭后保留，打开工具弹窗才读取现有只读目录。
+版本详情显示原合同中的 Skill 版本引用、Tool 资源引用及 capability
+要求，不能将声明列表当成已授予权限。
+
+副作用检查：状态不明的写请求仍冻结同一幂等命令；定义写入 UNKNOWN
+后的查询拒绝不得释放原意图，后续返回必须关联原 actionExecutionId
+和 operationId。Memory 原编辑锁向安装详情弹窗和列表传递，未决时
+关闭、Escape、切 Workspace 和刷新卸载都不得丢失原消费者。
+本批没有复制业务正文到 Core，也没有改变版本不可变性、配额或授权。
+
+边界覆盖保留原 403/503/空目录、权限收紧、过期身份响应、候选刷新、
+升级准入、UNKNOWN 重查与原 Memory 写入检查。原夹具改为从实际入口
+打开真实 Radix portal，而非依赖旧内联 DOM 或点击模态遮罩后的控件。
+首轮失败来自这些旧夹具位置假设；最后一个迟到 Task 用例改为确认整个
+页面不残留旧 operation，而不是要求身份切换后仍保留安装弹窗。
+
+实际验证：shared 源码和测试 TypeScript 检查均退出 0；
+`vitest run test/pages.test.tsx test/agent-library-dialogs.test.tsx -t 'Agent|Installation'`
+定向 116 项通过（另 131 项未运行）。首次负向误改了其它既有写入函数，
+未命中新用例并返回 0，已还原；随后精确移除 DefinitionAction 的
+UNKNOWN 重查保护，真实出现 1 failed / 3 passed、退出 1，
+断言为拒绝重查后 Escape 错误关闭弹窗。正式字节恢复 cmp 0 后，
+以精选候选词条和测试重新检查，不将首轮无效负向作为证据。
+
+日志在 `message-edit.AGX058/agent-library-final-restored.log`、
+`agent-library-definition-mutation.log`、`agent-library-selected-restored.log`。
+精选 Skill 标签经原 `gen-platform-i18n.py` 和 `--check` 同源生成，
+没有夹入并行 Members 词条或测试改动。
+本批未运行 full、构建、部署或新浏览器验收。
+Skill 发布/选择没有现成目录写消费者，仍明确未恢复；本批仅呈现真实引用，
+不宣称完整上游 Agent 导入、Team 与所有配置页面已经完成。
+
+### 2026-10-07 成员邀请与管理命令的未知结果保护
+
+关联 DD-83、REQ-24 与原 ActionSubmission 终态语义。交叉复核确认原重查
+catch 将后续 403 当作原写入失败，会解除未决意图并允许新键。现邀请签发、
+撤回及共用成员角色/移除控制器均保留原 UNKNOWN、命令和幂等键；只有同一
+operationId、已知时同一 actionExecutionId 的有效回执才能解除。EVALUATING
+及 ALLOWED/NOT_DISPATCHED 不渲染签发完成或无链接成功；未知枚举仍拒绝。
+没有新增契约、写接口、权限或工作流。原 Dialog 关闭仅卸载内容，意图 hook
+在外层；列表 403 返回空呈现而不清空 hook，不能据读取拒绝推断原副作用失败。
+
+实现后定向 shared 源/测试 tsc 均退出 0；Members 8 项、Invitations 14 项
+共 22 项通过，含未知 HTTP 回应、重查 403、异操作回执、最终原回执、弹窗
+关闭与原键保留。SDK 单次将签发 catch 的 `!wasUnknown` 改为 `true`，四个
+未决签发用例实际失败，退出 1；原字节恢复 cmp 0 后上述 22 项通过，退出 0。
+日志位于既有 `projects-directory.wiWDv3` 证据目录：
+`member-actions-unknown-mutation.log`、`member-actions-unknown-restored.log`。
+未重复四侧生成、full、构建、部署；两端完整类型检查由合批执行，当前窄验
+仅证明共享消费逻辑。原测试仍有 React act 提示，不当作新增业务失败。

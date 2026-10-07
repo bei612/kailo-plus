@@ -47,9 +47,11 @@ import { useLoad } from "./use-load";
 import { InstallationMemory } from "./memory";
 import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
+import { WorkflowActionsMenu } from "./workflow-actions-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
 import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
 import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
+import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
 
 // Original UnifiedAgentsSection grid at Buzz 779af8886caae1317b4de962082429867ab61503.
 const IDENTITY_CARD_GRID_CLASS = "w-full grid-cols-1 [@container(min-width:21rem)]:grid-cols-2 [@container(min-width:32rem)]:grid-cols-3 [@container(min-width:43rem)]:grid-cols-4 [@container(min-width:54rem)]:grid-cols-5 grid gap-3";
@@ -84,6 +86,7 @@ export function AgentDefinitionsPage() {
   const [state, reload] = useLoad(`agent-definitions:${offset}`, () => client.agentDefinitions(offset));
   const [selected, setSelected] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [edit, setEdit] = useState<{ target: AgentDefinitionView; owner: boolean } | null>(null);
   const [locked, setLocked] = useState(false);
   const [versionEdit, setVersionEdit] = useState<VersionEdit | null>(null);
@@ -129,15 +132,20 @@ export function AgentDefinitionsPage() {
             </div>
           </>}
       </section>
-      {/* Keep the governed intent mounted when the original creation card closes. */}
-      <div hidden={!createOpen && edit === null} data-testid="agent-definition-editor">
-        <DefinitionAction edit={edit} externalBlocked={versionEdit !== null || versionLocked} onReset={() => setEdit(null)} onLocked={setLocked}
-          onRecorded={() => { setSelected(null); reload(); }} />
-        <Button disabled={blocked} onClick={() => { setCreateOpen(false); setEdit(null); }}>{t("platform.cancel")}</Button>
-      </div>
-      {selected ? <DefinitionDetail key={`${selected}:${versionRevision}`} resourceId={selected} locked={blocked || versionEdit !== null}
-        onEdit={(target, owner) => setEdit({ target, owner })} onVersionEdit={setVersionEdit} /> : null}
-      <ToolManagement />
+      {/* The action hook stays mounted when its presentation closes. UNKNOWN cannot close it. */}
+      <DefinitionAction edit={edit} open={createOpen || edit !== null} onClose={() => { setCreateOpen(false); setEdit(null); }}
+        externalBlocked={versionEdit !== null || versionLocked} onReset={() => setEdit(null)} onLocked={setLocked}
+        onRecorded={() => { setSelected(null); reload(); }} />
+      <AgentManagementDialog open={selected !== null}
+        title={t("agents.open")} locked={blocked} onClose={() => setSelected(null)}>
+        {selected ? <DefinitionDetail key={`${selected}:${versionRevision}`} resourceId={selected} locked={blocked || versionEdit !== null}
+          onEdit={(target, owner) => { setSelected(null); setEdit({ target, owner }); }}
+          onVersionEdit={(next) => { setSelected(null); setVersionEdit(next); }} /> : null}
+      </AgentManagementDialog>
+      <Button className="w-fit" disabled={blocked} onClick={() => setToolsOpen(true)}>{t("agents.tools.title")}</Button>
+      <AgentManagementDialog open={toolsOpen} title={t("agents.tools.title")} onClose={() => setToolsOpen(false)}>
+        <ToolManagement />
+      </AgentManagementDialog>
       <InstallationManagement versionRevision={versionRevision} />
     </div>
   );
@@ -253,7 +261,8 @@ function validAutomationDetail(value: AutomationDetailView, resource: string, wo
     && new Set(value.delegations.map((row) => row.delegationId)).size === value.delegations.length;
 }
 
-type AutomationEdit = { detail: AutomationDetailView; action: "publish_version" | "enable" | "pause" | "disable" | "delete" | "run" }
+type AutomationEdit = { detail: AutomationDetailView; action: "enable" | "pause" | "disable" | "delete" | "run" }
+  | { detail: AutomationDetailView; action: "publish_version"; content?: AutomationVersionView["content"] }
   | { detail: AutomationDetailView; action: "copy"; content: AutomationVersionView["content"] };
 
 export function AutomationManagement({ renderRunHistory }: {
@@ -322,7 +331,7 @@ function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, 
             className="group relative flex min-h-60 w-full min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border/80 bg-transparent text-muted-foreground shadow-xs transition-colors hover:border-border hover:bg-muted/70 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             data-testid="new-workflow-card" onClick={onCreate}><Plus aria-hidden className="h-7 w-7 transition-colors" /></button> : null}
           {page.automations.map((row) => <AutomationCard key={row.resourceId} row={row} workspaceName={workspaceName}
-            locked={locked} onView={() => setSelected(row.resourceId)} />)}
+            locked={locked} onView={() => setSelected(row.resourceId)} onEdit={onEdit} />)}
         </div>
         {page.automations.length === 0 ? <Notice>{t("agents.automation.none")}</Notice> : null}
         <div className="flex gap-2">
@@ -338,14 +347,23 @@ function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, 
 }
 
 /** Original WorkflowCard semantic content, read through the existing Asset-authorized reader. */
-function AutomationCard({ row, workspaceName, locked, onView }: {
+function AutomationCard({ row, workspaceName, locked, onView, onEdit }: {
   row: AutomationView; workspaceName: string; locked: boolean; onView: () => void;
+  onEdit: (edit: AutomationEdit) => void;
 }) {
   const client = useBffClient();
   const t = useT();
   const [state, reload] = useLoad(`automation-card:${row.resourceId}:${row.resourceVersion}`,
     () => client.automation(row.resourceId, 0, 0));
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [openError, setOpenError] = useState<unknown>();
+  const openRequest = useRef(0);
+  useEffect(() => {
+    openRequest.current += 1;
+    setOpening(false); setOpenError(undefined);
+    return () => { openRequest.current += 1; };
+  }, [client, row.resourceId, row.resourceVersion, row.workspaceId, selectedVersion, locked]);
   const value = state.status === "ok" ? state.data : null;
   const detail = value && validAutomationDetail(value, row.resourceId, row.workspaceId)
     && value.automation.resourceVersion === row.resourceVersion ? value : null;
@@ -354,6 +372,29 @@ function AutomationCard({ row, workspaceName, locked, onView }: {
   const version = detail?.versions.find((version) => version.assetId === (selectedVersion ?? row.pinnedVersionAssetId))
     ?? detail?.versions[0];
   const content = version?.content;
+  const openAction = async (action: AutomationEdit["action"]) => {
+    if (locked || opening || !detail) return;
+    const request = ++openRequest.current;
+    setOpening(true); setOpenError(undefined);
+    try {
+      const fresh = await client.automation(row.resourceId, 0, 0);
+      if (request !== openRequest.current) return;
+      if (!validAutomationDetail(fresh, row.resourceId, row.workspaceId)
+        || fresh.automation.resourceVersion !== row.resourceVersion
+        || (action === "run" ? fresh.canRun !== true || fresh.automation.state !== AutomationState.Enabled
+          : action !== "copy" && !fresh.canManage)) throw new TransportError(t("platform.loadFailed"));
+      if (action === "copy" || action === "publish_version") {
+        const selected = fresh.versions.find((candidate) => candidate.assetId === version?.assetId);
+        if (!selected) throw new TransportError(t("platform.loadFailed"));
+        onEdit({ detail: fresh, action, content: selected.content });
+      } else {
+        onEdit({ detail: fresh, action });
+      }
+    } catch (error) { if (request === openRequest.current) setOpenError(error); }
+    finally { if (request === openRequest.current) setOpening(false); }
+  };
+  const canEnable = !!detail?.versions.some((candidate) => candidate.state === AgentVersionState.Published)
+    && !!detail?.delegations.some((grant) => new Date(grant.expiresAt).getTime() > Date.now());
   const triggerLabel = content ? t(content.trigger.kind === TriggerKind.Schedule ? "agents.automation.schedule"
     : content.trigger.kind === TriggerKind.Mention ? "agents.installation.trigger.mention" : "agents.automation.channelMessage") : null;
   return <div data-testid={`workflow-card-${row.resourceId}`}
@@ -371,8 +412,20 @@ function AutomationCard({ row, workspaceName, locked, onView }: {
           {content ? <><ArrowRight className="h-4 w-4 text-muted-foreground/60" /><span className="flex h-9 w-9 items-center justify-center rounded-xl border border-blue-300/30 bg-blue-600 text-white shadow-xs">
             {content.action.kind === ActionKind.PostMessage ? <MessageSquare className="h-5 w-5" /> : <Zap className="h-5 w-5" />}</span></> : null}
         </div>
-        <Badge tone="neutral">{t(automationLabels[row.state])}</Badge>
+        <div className="pointer-events-auto flex items-center gap-1">
+          <Badge tone="neutral">{t(automationLabels[row.state])}</Badge>
+          {detail ? <WorkflowActionsMenu isEnabled={row.state === AutomationState.Enabled} disabled={locked || opening}
+            onEdit={detail.canManage && content ? () => { void openAction("publish_version"); } : undefined}
+            onDuplicate={content ? () => { void openAction("copy"); } : undefined}
+            onDelete={detail.canManage ? () => { void openAction("delete"); } : undefined}
+            onTrigger={detail.canRun === true && row.state === AutomationState.Enabled ? () => { void openAction("run"); } : undefined}
+            onToggleEnabled={detail.canManage && (row.state === AutomationState.Enabled || canEnable)
+              ? () => { void openAction(row.state === AutomationState.Enabled ? "disable" : "enable"); } : undefined} /> : null}
+        </div>
       </div>
+      {opening ? <p role="status" className="mt-2 text-sm text-muted-foreground">{t("platform.loading")}</p> : null}
+      {openError ? <div className="pointer-events-auto mt-2"><AgentReadFailure error={openError}
+        onRetry={() => { setOpenError(undefined); reload(); }} /></div> : null}
       {state.status === "pending" ? <p role="status" className="mt-4 text-sm text-muted-foreground">{t("platform.loading")}</p>
         : !detail ? <div className="pointer-events-auto mt-4"><AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} /></div>
         : content ? <>
@@ -653,7 +706,8 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     || submission?.gateState === ActionGateState.Evaluating
     || (submission?.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.NotDispatched);
   useEffect(() => {
-    const content = edit?.action === "copy" ? edit.content : edit?.detail.versions[0]?.content;
+    const content = edit && (edit.action === "copy" || edit.action === "publish_version")
+      ? edit.content ?? edit.detail.versions[0]?.content : edit?.detail.versions[0]?.content;
     setName(content?.name ?? "");
     setTrigger(content?.trigger.kind ?? TriggerKind.ChannelMessage); setPrefix(content?.trigger.textPrefix ?? "");
     setEverySeconds(content?.trigger.scheduleSpec?.everySeconds.toString() ?? "");
@@ -968,8 +1022,10 @@ function InstallationManagement({ versionRevision }: { versionRevision: number }
   const [locked, setLocked] = useState(false);
   const [revision, setRevision] = useState(0);
   const [delegationTarget, setDelegationTarget] = useState<AgentInstallationView | null>(null);
+  const [delegationOpen, setDelegationOpen] = useState(false);
   const [permissionTarget, setPermissionTarget] = useState<AgentInstallationView | null>(null);
   const [upgradeTarget, setUpgradeTarget] = useState<AgentInstallationView | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const value = state.status === "ok" ? state.data : null;
   const workspaces = value && Array.isArray(value) && value.every((w) => w && typeof w.id === "string" && !!w.id
     && typeof w.name === "string" && typeof w.slug === "string") && new Set(value.map((w) => w.id)).size === value.length ? value : null;
@@ -984,26 +1040,32 @@ function InstallationManagement({ versionRevision }: { versionRevision: number }
       : <>
         <label className="flex flex-col gap-1 text-sm">{t("platform.workspace")}
           <select disabled={locked} className="h-8 rounded-md border border-input bg-background px-2" value={workspace.id}
-            onChange={(event) => { setSelected(event.target.value); setDelegationTarget(null); setPermissionTarget(null); setUpgradeTarget(null); }}>
+            onChange={(event) => { setSelected(event.target.value); setDelegationTarget(null); setDelegationOpen(false); setPermissionTarget(null); setUpgradeTarget(null); }}>
             {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
         </label>
       </>}
     {/* 原意图留在 Workspace/列表之外，结果不明时不生成替代键。 */}
-    <InstallationCreate workspaceId={workspace?.id} workspaceName={workspace?.name} sourceRevision={`${versionRevision}:${revision}`} locked={locked} onLocked={setLocked}
+    <Button className="w-fit" disabled={locked || !workspace} onClick={() => setCreateOpen(true)}>{t("agents.installation.create")}</Button>
+    <InstallationCreate open={createOpen} onClose={() => setCreateOpen(false)} workspaceId={workspace?.id} workspaceName={workspace?.name} sourceRevision={`${versionRevision}:${revision}`} locked={locked} onLocked={setLocked}
       onRecorded={() => setRevision((old) => old + 1)} />
-    {upgradeTarget ? <InstallationCreate key={`upgrade:${upgradeTarget.resourceId}`} upgrade={upgradeTarget}
+    {upgradeTarget ? <InstallationCreate key={`upgrade:${upgradeTarget.resourceId}`} upgrade={upgradeTarget} open onClose={() => setUpgradeTarget(null)}
       workspaceId={upgradeTarget.workspaceId} workspaceName={workspace?.name} sourceRevision={`${versionRevision}:${revision}`}
       locked={locked} onLocked={setLocked} onRecorded={() => setRevision((old) => old + 1)} /> : null}
-    <InstallationDelegation installation={delegationTarget} locked={locked} onLocked={setLocked} onReset={() => setDelegationTarget(null)}
-      onRecorded={() => setRevision((old) => old + 1)} />
+    <AgentManagementDialog open={delegationOpen} title={t("agents.delegation.title")} locked={locked} onClose={() => { setDelegationOpen(false); setDelegationTarget(null); }}>
+      <InstallationDelegation installation={delegationTarget} locked={locked} onLocked={setLocked} onReset={() => setDelegationTarget(null)}
+        onRecorded={() => setRevision((old) => old + 1)} />
+    </AgentManagementDialog>
+    <AgentManagementDialog open={permissionTarget !== null} title={t("agents.execute.open")} locked={locked} onClose={() => setPermissionTarget(null)}>
     {permissionTarget ? <>
       <InstallationPermission key={`execute:${permissionTarget.resourceId}:${permissionTarget.workspaceId}`} kind="execute" installation={permissionTarget} locked={locked} onLocked={setLocked}
         onRecorded={() => setRevision((old) => old + 1)} />
       {permissionTarget.readPermission ? <InstallationPermission key={`read:${permissionTarget.resourceId}:${permissionTarget.workspaceId}`} kind="read" installation={permissionTarget} locked={locked} onLocked={setLocked}
         onRecorded={() => setRevision((old) => old + 1)} /> : null}
     </> : null}
-    {workspace ? <InstallationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onPermission={setPermissionTarget} onManage={setDelegationTarget} onUpgrade={setUpgradeTarget} /> : null}
+    </AgentManagementDialog>
+    {workspace ? <InstallationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onLocked={setLocked}
+      onPermission={setPermissionTarget} onManage={(row) => { setDelegationTarget(row); setDelegationOpen(true); }} onUpgrade={setUpgradeTarget} /> : null}
   </section>;
 }
 
@@ -1060,8 +1122,9 @@ function InstallationTaskReceipt({ receipt, workspaceId }: { receipt: ActionSubm
   </section>;
 }
 
-function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked, onLocked, onRecorded, upgrade }: {
+function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked, onLocked, onRecorded, upgrade, open, onClose }: {
   workspaceId?: string; workspaceName?: string; sourceRevision: string; locked: boolean; onLocked: (locked: boolean) => void; onRecorded: () => void; upgrade?: AgentInstallationView;
+  open: boolean; onClose: () => void;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -1149,7 +1212,9 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
     } finally { inFlight.current = false; setBusy(false); reloadTasks(); }
   };
   if (!workspaceId && !intent) return null;
-  return <section className="flex flex-col gap-3 rounded-md border p-3" data-testid={upgrade ? "agent-installation-upgrade" : "agent-installation-create"}>
+  return <AgentManagementDialog open={open || intent !== null} title={t(upgrade ? "agents.upgradeVersion" : "agents.installation.create")}
+    locked={busy || intent !== null} onClose={onClose}>
+  <section className="flex flex-col gap-3" data-testid={upgrade ? "agent-installation-upgrade" : "agent-installation-create"}>
     <h3 className="text-sm font-medium">{t(upgrade ? "agents.upgradeVersion" : "agents.installation.create")}</h3>
     {upgrade ? <Notice>{t("agents.upgradeDrain")}</Notice> : null}
     {!intent ? <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
@@ -1192,7 +1257,7 @@ function InstallationCreate({ workspaceId, workspaceName, sourceRevision, locked
     {!taskRows ? <Notice role="status">{t("agents.inFlightUnavailable")}<Button onClick={reloadTasks}>{t("platform.retry")}</Button></Notice>
       : pending.length ? <div role="status" className="flex flex-col gap-1 text-sm">{pending.map((task) => <p key={task.actionExecutionId}>{t(taskPhase(task).label)} · {task.operationId}</p>)}
         <Button className="w-fit" onClick={reloadTasks}>{t("platform.refresh")}</Button></div> : null}
-  </section>;
+  </section></AgentManagementDialog>;
 }
 
 function scopeKey(scope: DelegationScopeParameters): string {
@@ -1419,8 +1484,9 @@ function DelegationScope({ scope }: { scope: DelegationScopeParameters }) {
   </div>;
 }
 
-function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgrade }: {
+function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgrade, onLocked }: {
   workspaceId: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void; onUpgrade: (row: AgentInstallationView) => void;
+  onLocked: (locked: boolean) => void;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -1449,7 +1515,13 @@ function InstallationList({ workspaceId, locked, onPermission, onManage, onUpgra
           {pageIndex > 0 ? <Button disabled={locked} onClick={() => changePage(pageIndex - 1)}>{t("roles.previous")}</Button> : null}
           {next !== undefined ? <Button disabled={locked} onClick={() => { setOffsets((old) => [...old.slice(0, pageIndex + 1), next]); changePage(pageIndex + 1); }}>{t("roles.next")}</Button> : null}
         </div>
-        {selected ? <InstallationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked} onPermission={onPermission} onManage={onManage} onUpgrade={onUpgrade} /> : null}
+        <AgentManagementDialog open={selected !== null} title={t("agents.installation.open")}
+          locked={locked} onClose={() => setSelected(null)}>
+          {selected ? <InstallationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked} onLocked={onLocked}
+            onPermission={(row) => { setSelected(null); onPermission(row); }}
+            onManage={(row) => { setSelected(null); onManage(row); }}
+            onUpgrade={(row) => { setSelected(null); onUpgrade(row); }} /> : null}
+        </AgentManagementDialog>
       </>}
   </div>;
 }
@@ -1479,8 +1551,9 @@ function InstallationIdentityCard({ row, locked, onOpen }: {
   </div>;
 }
 
-function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onManage, onUpgrade }: {
+function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onManage, onUpgrade, onLocked }: {
   resourceId: string; workspaceId: string; locked: boolean; onPermission: (row: AgentInstallationView) => void; onManage: (row: AgentInstallationView) => void; onUpgrade: (row: AgentInstallationView) => void;
+  onLocked: (locked: boolean) => void;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -1513,10 +1586,10 @@ function InstallationDetail({ resourceId, workspaceId, locked, onPermission, onM
     </> : <p role="status" className="text-sm">{t("agents.installation.notRecorded")}</p>}
     {row.state === AgentInstallationState.Active && row.resourceState === ResourceState.Active
       ? <Button className="w-fit" disabled={locked} onClick={() => onManage(row)}>{t("agents.delegation.open")}</Button> : null}
-    <Button className="w-fit" onClick={reload}>{t("platform.refresh")}</Button>
+    <Button className="w-fit" disabled={locked} onClick={reload}>{t("platform.refresh")}</Button>
     {row.canUpgrade === true && row.state === AgentInstallationState.Active ? <Button className="w-fit" disabled={locked} onClick={() => onUpgrade(row)}>{t("agents.upgradeVersion")}</Button> : null}
     {row.state === AgentInstallationState.Active || row.state === AgentInstallationState.Draining ? <Button className="w-fit" disabled={locked} onClick={() => onPermission(row)}>{t("agents.execute.open")}</Button> : null}
-    {row.state === AgentInstallationState.Active ? <InstallationMemory resourceId={resourceId} workspaceId={workspaceId} installation={row} /> : null}
+    {row.state === AgentInstallationState.Active ? <InstallationMemory resourceId={resourceId} workspaceId={workspaceId} installation={row} onLocked={onLocked} /> : null}
   </section>;
 }
 
@@ -1631,7 +1704,7 @@ function DefinitionDetail({ resourceId, locked, onEdit, onVersionEdit }: {
   const row = state.status === "ok" && validDefinition(state.data) && state.data.resourceId === resourceId ? state.data : null;
   if (!row) return <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
   return (
-    <section className="flex flex-col gap-3 rounded-md border p-3">
+    <section className="flex flex-col gap-3" data-testid="agent-definition-detail">
       <h2 className="font-medium">{row.displayName}</h2>
       <p className="break-words text-sm">{t("agents.slug")}: {row.stableSlug}</p>
       <p className="break-words text-sm">{t("agents.owner")}: {row.ownerPrincipalId}</p>
@@ -1785,6 +1858,9 @@ function VersionDirectory({ definition, locked, onEdit }: {
             <p className="break-words text-sm">{t("agents.owner")}: {version.ownerPrincipalId}</p>
             <p className="break-words text-sm">{t("agents.version.runtimeProfile")}: {version.content.runtimeProfileKey} · {t("agents.version.modelRoute")}: {version.content.modelRouteResourceId}</p>
             <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {version.configHash}</p>
+            <p className="break-words text-sm">{t("agents.version.skillReferences")}: {version.content.skillVersionAssetIds.join(", ") || "—"}</p>
+            <p className="break-words text-sm">{t("agents.tools.selected")}: {version.content.declaredToolResourceIds.join(", ") || "—"}</p>
+            <p className="break-words text-sm">{t("agents.version.capabilities")}: {version.content.capabilityRequirements.join(", ") || "—"}</p>
             <details><summary className="cursor-pointer text-sm">{t("agents.version.instructions")}</summary>
               <pre className="whitespace-pre-wrap break-words text-sm">{version.content.instructions}</pre></details>
             {version.state === AgentVersionState.Draft && source && source.routes.length > 0 ? <div className="flex flex-wrap gap-2">
@@ -1931,7 +2007,9 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
     } finally { inFlight.current = false; setBusy(false); reloadTasks(); }
   };
   if (!edit && !intent && !submission && !failure) return null;
-  return <section className="flex flex-col gap-3 rounded-md border p-3" data-testid="agent-version-action">
+  return <AgentManagementDialog open title={t(edit || intent ? title : "agents.version.history")}
+    locked={busy || intent !== null} onClose={() => { setSubmission(null); setFailure(null); onReset(); }}>
+  <section className="flex flex-col gap-3" data-testid="agent-version-action">
     <h2 className="font-medium">{t(edit || intent ? title : "agents.version.history")}</h2>
     {edit ? <p className="break-words text-sm">{edit.definition.displayName} · {edit.definition.resourceId} · {t("agents.resourceVersion")}: {edit.definition.resourceVersion}</p> : null}
     <p className="text-sm text-muted-foreground">{t("agents.version.boundary")}</p>
@@ -2020,12 +2098,13 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
     {failure ? <p role={failure.kind === "unknown" ? "status" : "alert"} className="text-sm">{failure.kind === "unknown" ? t("agents.unknown", { operation: failure.operationId ?? submission?.operationId ?? "—" }) : t("roles.rejected", { reason: failureText(failure) })}</p> : null}
     {!taskRows ? <Notice role="status">{t("agents.inFlightUnavailable")}<Button onClick={reloadTasks}>{t("platform.refresh")}</Button></Notice>
       : pending.length > 0 ? <div role="status" className="flex flex-col gap-1 text-sm"><p>{t("agents.version.inFlight")}</p>{pending.map((task) => <p key={task.actionExecutionId}>{t(taskPhase(task).label)} · {task.operationId}</p>)}<Button className="w-fit" onClick={reloadTasks}>{t("platform.refresh")}</Button></div> : null}
-  </section>;
+  </section></AgentManagementDialog>;
 }
 
-function DefinitionAction({ edit, externalBlocked = false, onReset, onLocked, onRecorded }: {
+function DefinitionAction({ edit, externalBlocked = false, onReset, onLocked, onRecorded, open, onClose }: {
   edit: { target: AgentDefinitionView; owner: boolean } | null;
   externalBlocked?: boolean;
+  open: boolean; onClose: () => void;
   onReset: () => void; onLocked: (locked: boolean) => void; onRecorded: () => void;
 }) {
   const client = useBffClient();
@@ -2074,7 +2153,8 @@ function DefinitionAction({ edit, externalBlocked = false, onReset, onLocked, on
   };
   const submit = async () => {
     if (!intent || inFlight.current) return;
-    inFlight.current = true; setBusy(true); setFailure(null); setSubmission(null);
+    inFlight.current = true; setBusy(true);
+    if (!unknown) { setFailure(null); setSubmission(null); }
     try {
       const result = await client.submitAction(intent.command);
       if (!result || result.actionKey !== intent.command.actionKey
@@ -2083,21 +2163,26 @@ function DefinitionAction({ edit, externalBlocked = false, onReset, onLocked, on
         || !Object.values(ActionGateState).includes(result.gateState)
         || !Object.values(ActionDispatchState).includes(result.dispatchState)
         || (result.reason !== undefined && !Object.values(ReasonCode).includes(result.reason))
+        || (submission && (result.actionExecutionId !== submission.actionExecutionId || result.operationId !== submission.operationId))
         || (result.gateState === ActionGateState.Waiting && !result.approvalWorkflowId)
         || (result.gateState === ActionGateState.Denied && !result.reason))
         throw new TransportError(t("platform.loadFailed"));
-      setSubmission(result);
+      setFailure(null); setSubmission(result);
       if (result.dispatchState !== ActionDispatchState.Unknown && result.gateState !== ActionGateState.Evaluating
         && !(result.gateState === ActionGateState.Allowed && result.dispatchState === ActionDispatchState.NotDispatched)) {
         setIntent(null); onLocked(false); onReset(); setName(""); setSlug(""); setOwner(""); onRecorded();
       }
     } catch (error) {
-      const failed = writeFailure(error); setFailure(failed);
-      if (failed.kind !== "unknown") { setIntent(null); onLocked(false); }
+      if (!unknown) {
+        const failed = writeFailure(error); setFailure(failed);
+        if (failed.kind !== "unknown") { setIntent(null); onLocked(false); }
+      }
     } finally { inFlight.current = false; setBusy(false); reloadTasks(); }
   };
 
-  return <section className="flex flex-col gap-3 rounded-md border p-3">
+  return <AgentManagementDialog open={open || intent !== null || submission !== null || failure !== null} title={t(title)}
+    locked={busy || intent !== null} onClose={() => { setSubmission(null); setFailure(null); onClose(); }}>
+  <section className="flex flex-col gap-3" data-testid="agent-definition-editor">
     <h2 className="text-sm font-medium">{t(title)}</h2>
     {!intent ? <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
       {edit ? <p className="break-words text-sm">{edit.target.displayName} · {t("agents.resourceVersion")}: {edit.target.resourceVersion}</p> : null}
@@ -2138,5 +2223,5 @@ function DefinitionAction({ edit, externalBlocked = false, onReset, onLocked, on
         {pending.map((task) => <p className="break-words" key={task.actionExecutionId}>{t(taskPhase(task).label)} · {task.operationId}</p>)}
         <Button className="w-fit" onClick={reloadTasks}>{t("platform.refresh")}</Button>
       </div> : null}
-  </section>;
+  </section></AgentManagementDialog>;
 }

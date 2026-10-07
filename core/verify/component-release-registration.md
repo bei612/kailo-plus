@@ -239,3 +239,60 @@ credential 5 项重新全部通过。日志在
 目前仅核到一位 ACTIVE admin，原 self-approval DENY 未修改。原生 WeKnora MCP
 的 authenticated initialize、tools/list 和空知识库只读调用是 native API 连通事实，
 不等于五个知识契约通过一致性、模型投递或协作平台入口已启用。
+
+## 隔离套件复用生产 Adapter 报文与参数绑定（2026-10-06）
+
+原能力向量的 `contractKey/inputJson` 是套件输入，不是生产 Remote Adapter 的
+`actionKey/arguments` 报文。此前直接发送向量，且将 execute 参数散列为
+`{operation,arguments:整个请求}`，与生产 NativeConnector 的消费方式不一致。
+本批按 DD-102、`.design/07` §8A 和 ADR-12/19 修正原执行接缝，没有新建执行器。
+
+- 权威和影响：Core 在原登记计划冻结阶段把能力向量转换成生产
+  `{idempotencyKey,actionKey,arguments:{target,input}}`；target 来自受控隔离上下文。
+  前序真实 typed reference 只填 `arguments.input`，并按原能力 Schema 再验证。
+  Worker 继续发送 Core 返回的 canonical 原字节，删除原先重复追加影子字段的路径。
+- 认证和副作用：execute 复用生产 `arguments` hash、HUMAN initiating actor、授权
+  revision、native execution 引用与幂等键字段；其他协议操作保留原 operation 域分离。
+  独立 issuer/audience/OpenBao 用途/JWKS、真实 Catalog scope 碰撞拒绝及每次 fresh
+  管理授权均保留。模拟执行引用不落生产 ExternalExecution，生产 PEP 不接受这些
+  隔离凭据；没有为候选组件创建 ACTIVE binding、审批或真实业务权限。
+- 边界：错 action/target、nil 幂等键、旧 execute 线格式、缺模拟授权 revision、
+  缺 execute 模拟引用、试图覆盖非空向量 input 均拒绝；UNKNOWN 的同键观察、撤权、
+  暂停、过期、上下文漂移与原生终态证据检查沿原生命周期，不重复 execute。
+- 兼容：`ComponentConformanceIdentity.contexts` 新增必填
+  `authorizationMinZedToken`；execute 还要求 `externalExecutionId`。旧隔离投递必须
+  重新提供这两个真实模拟环境引用和生产形状的 execute 向量，不能静默生成默认值。
+  已冻结计划的 identity 摘要发生变化即拒绝，不在运行中改写原计划。新增样例证明
+  四侧字段往返，不证明旧隔离配置透明兼容；原历史兼容检查只比顶层字段，不能据此
+  宣称该嵌套 required 变更无破坏。生产客户端业务请求与实体 Schema 没有因此变化。
+
+在原 4 CPU / 8 GiB SDK 的独立 `conformance-wire.kT1a34/apps` 中执行原
+`tools/gen.sh` 退出 0，四侧生成包含同批 Members 两个可选布尔字段和既有
+`AgentInstallationView.canUpgrade`。TypeScript `tsc --noEmit -p tsconfig.test.json`
+退出 0，原 Node roundtrip 输出 `tests 32 / pass 32 / fail 0`，Dart roundtrip
+`27: All tests passed!`；Go 原 contracts、activities 的
+`Test(ConformanceIdentity|ComponentConformance)` 两包退出 0。
+首轮生成因私有快照漏原 i18n 生成脚本退出 1、首轮 Node 因缺现有依赖链接失败；
+补齐原输入后复跑通过，未修改产品依赖或测试断言迁就失败。
+原 `tools/gen.sh --check` 随后实际输出四侧同步和同源 Mobile 文案 PASS，退出 0。
+
+同一既有 SDK 与 Members 变更合批执行 Core 窄验：
+`component_conformance_identity::tests` 3 passed，
+`component_release::report_tests` 11 passed / 1 ignored（需真实 Go wire 与隔离库的
+旧演练本次未执行），Rust 原 contracts roundtrip 27 passed，
+`cargo clippy -p platform-core --all-targets -- -D warnings` 退出 0。
+首次新测试把 `reference` 移动后再借用，编译报 E0382；只修正测试的 clone，
+不改产品行为或缩小断言。随后上述合批全部通过。
+
+在 SDK 私有副本把 execute hash 恢复成旧 `{operation,arguments:整个请求}`，
+新生产参数绑定用例实际 1 failed、退出 101；恢复正式原字节后 identity 3 项、
+report 11 项通过，原 ignored 边界不变。原件在同一 Data 父目录的
+`projects-directory.wiWDv3/member-actions-core-final.log`、
+`conformance-core-mutation.log`、`member-actions-core-mutation-restored.log`。
+
+上述原件位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/conformance-wire.kT1a34/`：
+`generate.log`、`generate-restored.log`、`roundtrip-worker.log`、
+`roundtrip-worker-restored.log`。本批没有 full、镜像构建、部署、live 套件登记或
+五键业务验收；完整隔离 native fixture、独立模拟 PEP 和实际五键消费者仍须真实
+投递与执行，不能把本次报文一致性修复当作它们已经可用。

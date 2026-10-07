@@ -16,6 +16,39 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func TestReadDocumentMetadataRetainsPreciseNativeRevisionWithoutChunks(t *testing.T) {
+	stamp := time.Date(2026, 10, 6, 23, 0, 0, 123456789, time.UTC)
+	kb := &types.KnowledgeBase{ID: "kb", TenantID: 1, UpdatedAt: stamp}
+	srv := newScopeTestServer(kb)
+	document := &types.Knowledge{ID: "doc", TenantID: 1, KnowledgeBaseID: kb.ID, UpdatedAt: stamp}
+	// No chunk service is supplied: metadata-only must not enter the original
+	// chunk reader or obtain document bytes/model results to answer a revision.
+	srv.knowledgeService = &stubKnowledgeService{docs: map[string]*types.Knowledge{"doc": document}}
+	ep := &types.MCPEndpoint{ID: "ep", TenantID: 1, Tools: types.StringArray{types.MCPEndpointToolReadDocument}}
+	result, err := srv.handleReadDocument(mcpCallContext(1, ep), nativeToolRequest(t,
+		map[string]any{"knowledge_id": "doc", "metadata_only": true}))
+	if err != nil || result.IsError {
+		t.Fatal("native metadata read failed")
+	}
+	data, ok := result.StructuredContent.(map[string]any)
+	if !ok || len(data) != 2 {
+		t.Fatal("metadata response contains unexpected data")
+	}
+	got, ok := data["document"].(documentSummary)
+	if !ok || got.NativeRevision != stamp.Format(time.RFC3339Nano) {
+		t.Fatal("native revision precision lost")
+	}
+	if summarizeKnowledgeBase(kb).NativeRevision != got.NativeRevision {
+		t.Fatal("knowledge-base revision precision lost")
+	}
+	document.TenantID = 2
+	result, err = srv.handleReadDocument(mcpCallContext(1, ep), nativeToolRequest(t,
+		map[string]any{"knowledge_id": "doc", "metadata_only": true}))
+	if err != nil || !result.IsError || result.StructuredContent != nil {
+		t.Fatal("metadata path crossed the native scope")
+	}
+}
+
 // recordingEndpointRepo captures last_used touches so the guard's background
 // write can be asserted (and never dereferences a nil repository).
 type recordingEndpointRepo struct {

@@ -1,0 +1,15 @@
+{
+  "members": [{
+    "principalId": "00000000-0000-4000-8000-000000000002",
+    "displayName": "Member",
+    "tenantAdmin": false,
+    "workspaceAdmin": false,
+    "canGrantTenantAdmin": true,
+    "canRevokeTenantAdmin": false,
+    "canGrantWorkspaceAdmin": true,
+    "canRevokeWorkspaceAdmin": false,
+    "canRemoveFromWorkspace": true,
+    "canRemoveFromTenant": false,
+    "lastTenantAdmin": false
+  }]
+}

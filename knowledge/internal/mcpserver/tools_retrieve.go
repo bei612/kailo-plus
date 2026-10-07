@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/Tencent/WeKnora/internal/agent/tools"
@@ -82,16 +83,18 @@ func readDocumentTool() mcp.Tool {
 		mcp.WithNumber("offset", mcp.Description("Chunk offset to start from, default 0")),
 		mcp.WithNumber("limit", mcp.Description("Number of chunks to return, default 20, max 100")),
 		mcp.WithString("query", mcp.Description("Optional case-insensitive phrase to find inside the document")),
+		mcp.WithBoolean("metadata_only", mcp.Description("Return the scoped native document metadata without reading chunks.")),
 		mcp.WithReadOnlyHintAnnotation(true),
 	)
 }
 
 type knowledgeBaseSummary struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Description  string   `json:"description,omitempty"`
-	Type         string   `json:"type"`
-	Capabilities []string `json:"capabilities"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description,omitempty"`
+	Type           string   `json:"type"`
+	Capabilities   []string `json:"capabilities"`
+	NativeRevision string   `json:"native_revision"`
 }
 
 func summarizeKnowledgeBase(kb *types.KnowledgeBase) knowledgeBaseSummary {
@@ -106,11 +109,12 @@ func summarizeKnowledgeBase(kb *types.KnowledgeBase) knowledgeBaseSummary {
 		caps = append(caps, "wiki")
 	}
 	return knowledgeBaseSummary{
-		ID:           kb.ID,
-		Name:         kb.Name,
-		Description:  kb.Description,
-		Type:         kb.Type,
-		Capabilities: caps,
+		ID:             kb.ID,
+		Name:           kb.Name,
+		Description:    kb.Description,
+		Type:           kb.Type,
+		Capabilities:   caps,
+		NativeRevision: kb.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
 }
 
@@ -244,28 +248,30 @@ func grepPatternAndTerms(query string) (*regexp.Regexp, string) {
 }
 
 type documentSummary struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	FileName    string `json:"file_name,omitempty"`
-	FileType    string `json:"file_type,omitempty"`
-	Source      string `json:"source,omitempty"`
-	ParseStatus string `json:"parse_status"`
-	Description string `json:"description,omitempty"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	ID             string `json:"id"`
+	Title          string `json:"title"`
+	FileName       string `json:"file_name,omitempty"`
+	FileType       string `json:"file_type,omitempty"`
+	Source         string `json:"source,omitempty"`
+	ParseStatus    string `json:"parse_status"`
+	Description    string `json:"description,omitempty"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
+	NativeRevision string `json:"native_revision"`
 }
 
 func summarizeKnowledge(k *types.Knowledge) documentSummary {
 	return documentSummary{
-		ID:          k.ID,
-		Title:       k.Title,
-		FileName:    k.FileName,
-		FileType:    k.FileType,
-		Source:      k.Source,
-		ParseStatus: k.ParseStatus,
-		Description: k.Description,
-		CreatedAt:   k.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:   k.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ID:             k.ID,
+		Title:          k.Title,
+		FileName:       k.FileName,
+		FileType:       k.FileType,
+		Source:         k.Source,
+		ParseStatus:    k.ParseStatus,
+		Description:    k.Description,
+		CreatedAt:      k.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:      k.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		NativeRevision: k.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
 }
 
@@ -338,6 +344,13 @@ func (s *Server) handleReadDocument(ctx context.Context, req mcp.CallToolRequest
 	ctx, err = s.scopedKBContext(ctx, kb, types.OrgRoleViewer)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if req.GetBool("metadata_only", false) {
+		if k.UpdatedAt.IsZero() {
+			return mcp.NewToolResultError("native revision is unavailable"), nil
+		}
+		return jsonResult(map[string]any{"document": summarizeKnowledge(k),
+			"knowledge_base": map[string]any{"id": kb.ID, "name": kb.Name}})
 	}
 	limit := req.GetInt("limit", defaultChunkLimit)
 	if limit < 1 {

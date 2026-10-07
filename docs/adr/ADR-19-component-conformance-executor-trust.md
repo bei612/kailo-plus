@@ -24,8 +24,13 @@ JSON 数据，不是 shell、脚本、表达式或由用户上传的可执行物
 当前 run 与计划，再用 OpenBao `platform/` 下独立 KV v2 版本的 ES256 私钥
 签名；该版本同时必须带 `COMPONENT_CONFORMANCE` 用途，公钥须已存在于 Agent
 投递的 JWKS 文件，`kid` 是 KV 版本。Worker 仅在 Activity 内存使用返回 token，
-不保存到 Temporal history；不再支持静态 token 文件。请求规范化 hash 覆盖
-`{operation, arguments}`，其中 arguments 包含完整实际 ContentReference。
+不保存到 Temporal history；不再支持静态 token 文件。能力 execute 与生产
+APPLICATION 路径使用同一 `{idempotencyKey, actionKey, arguments:{target,input}}`
+报文和 `arguments` 参数 hash；其余协议操作保留 `{operation, arguments}` 的域分离。
+前序实际 ContentReference 仅填入 `arguments.input`，不另加测试专用报文字段。
+隔离配置同时投递模拟 PEP 的授权 revision 与 execute 的模拟 native 执行引用，
+以生产 HUMAN claims 的相同字段编码；这些引用不在生产库创建实体，也不能被生产
+PEP 认可。独立 issuer/audience/JWKS 与真实 scope 碰撞拒绝继续生效。
 
 `.design/03` §8 的结构化摘要继续由既有 Core `canonical_digest` 唯一解释。
 Core 返回它实际散列的 canonical requestJson，Worker 发出这些原字节，不以 Go

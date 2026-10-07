@@ -1,0 +1,26 @@
+{
+  "artifactDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "issuer": "https://isolated.example.invalid",
+  "audience": "isolated-adapter",
+  "tokenSeconds": 30,
+  "secretLocator": "platform/kv/conformance-fixture",
+  "secretVersion": 1,
+  "secretAudience": "core-conformance",
+  "privateKeyField": "privateKey",
+  "jwksFile": "/fixture/isolated-jwks.json",
+  "contexts": [{
+    "caseKey": "knowledge:1:roundtrip",
+    "stepKey": "read",
+    "operation": "execute",
+    "tenantId": "aee490d7-c4d3-4b1e-b080-332279be47dd",
+    "actorPrincipalId": "e32bed07-f7e2-4a9c-81eb-707253647921",
+    "authorizationMinZedToken": "isolated-permission-revision",
+    "externalExecutionId": "af27716b-99d0-4a8f-a088-5011e2950635",
+    "actionKey": "knowledge.read@v1",
+    "actionDefinitionVersion": 1,
+    "targetType": "RESOURCE",
+    "targetId": "ef850458-a919-4d74-af23-b3e1bcb61238",
+    "resultExposurePolicyId": "109d3c36-50fd-4bb7-b51a-b97b0361b19f",
+    "resultExposurePolicyVersion": 1
+  }]
+}

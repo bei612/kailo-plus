@@ -72,6 +72,47 @@ describe("newIdempotencyKey / redemptionPhase", () => {
 });
 
 describe("TenantInvitations", () => {
+  it.each([
+    ["ALLOWED", "UNKNOWN"], ["EVALUATING", "NOT_DISPATCHED"], ["ALLOWED", "NOT_DISPATCHED"],
+    ["HTTP_UNKNOWN", "no receipt"],
+  ])("keeps %s/%s issuance frozen after a retry refusal or unrelated receipt", async (gateState,dispatchState) => {
+    let attempts=0;
+    const {send,host}=mount(request=>{
+      if(request.method==="GET")return {status:200,body:[]};
+      attempts++;
+      if(attempts===1&&gateState==="HTTP_UNKNOWN")return {status:503,body:{class:ErrorClass.Unknown,reason:ReasonCode.DependencyUnavailable,operationId:"op-frozen"}};
+      if(attempts===2)return denied;
+      return {status:200,body:{actionKey:"tenant.member.invite",actionExecutionId:"ae-frozen",operationId:attempts===3?"other":"op-frozen",
+        gateState:attempts===1?gateState:"ALLOWED",dispatchState:attempts===1?dispatchState:"DISPATCHED",
+        invitation:attempts>1?{invitationId:"inv-1",link:LINK,expiresAt:invitation().expiresAt}:undefined}};
+    },<TenantInvitations/>);
+    const el=await host;await settle();await type(el.querySelector('input[name=inviteeLabel]')!,"Grace");
+    await click(button(el,"Create invitation link"));
+    for(let retry=0;retry<3;retry++) {
+      expect((el.querySelector('input[name=inviteeLabel]') as HTMLInputElement).disabled).toBe(true);
+      expect(el.querySelector('[data-testid=issued-invitation]')).toBeNull();
+      expect(el.textContent).toContain("op-frozen");
+      await click(button(el,"Try again"));
+    }
+    expect(el.querySelector('[data-testid=issued-invitation]')).not.toBeNull();
+    const commands=send.mock.calls.filter(([request])=>request.method==="POST").map(([request])=>request.body);
+    expect(commands).toHaveLength(4);for(const command of commands)expect(command).toEqual(commands[0]);
+  });
+
+  it("keeps an uncertain withdrawal after retry refusal until its own receipt arrives",async()=>{
+    let attempts=0;const {send,host}=mount(request=>{
+      if(request.method==="GET")return {status:200,body:[invitation()]};
+      attempts++;if(attempts===2)return denied;
+      return {status:200,body:{actionKey:"tenant.member.invite.revoke",actionExecutionId:"ae-revoke",operationId:"op-revoke",
+        gateState:"ALLOWED",dispatchState:attempts===1?"UNKNOWN":"DISPATCHED"}};
+    },<TenantInvitations/>);
+    const el=await host;await settle();await click(button(el,"Withdraw"));await click(button(el,"Confirm"));
+    await click(button(el,"Confirm"));expect(el.textContent).toContain("op-revoke");
+    expect([...el.querySelectorAll('button')].some(b=>b.textContent==="Cancel")).toBe(false);
+    await click(button(el,"Confirm"));expect(el.querySelector('[role=group]')).toBeNull();
+    const commands=send.mock.calls.filter(([request])=>request.method==="POST").map(([request])=>request.body);
+    expect(commands).toHaveLength(3);for(const command of commands)expect(command).toEqual(commands[0]);
+  });
   it("BFF 回 403（不是 admin）：整节不渲染", async () => {
     const { host } = mount(() => denied, <TenantInvitations />);
     const el = await host;

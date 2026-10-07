@@ -7,6 +7,33 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
+import type { ComponentConformanceIdentity } from "../src/generated/contracts.js";
+
+test("conformance identity preserves isolated authorization and execution", () => {
+  const sample: ComponentConformanceIdentity = JSON.parse(readFileSync(new URL("../../../../contracts/samples/component-conformance-identity.sample.json",import.meta.url),"utf8"));
+  const back: ComponentConformanceIdentity = {...sample,contexts:sample.contexts.map(c=>({
+    caseKey:c.caseKey,stepKey:c.stepKey,operation:c.operation,tenantId:c.tenantId,
+    actorPrincipalId:c.actorPrincipalId,authorizationMinZedToken:c.authorizationMinZedToken,
+    externalExecutionId:c.externalExecutionId,actionKey:c.actionKey,actionDefinitionVersion:c.actionDefinitionVersion,
+    targetType:c.targetType,targetId:c.targetId,resultExposurePolicyId:c.resultExposurePolicyId,
+    resultExposurePolicyVersion:c.resultExposurePolicyVersion,
+  }))};
+  deepStrictEqual(JSON.parse(JSON.stringify(back)),sample);
+});
+import type { RoleMemberPage } from "../src/generated/contracts.js";
+
+test("member removal permissions preserve true false and legacy absence", () => {
+  const sample: RoleMemberPage = JSON.parse(readFileSync(new URL("../../../../contracts/samples/member-action-availability.sample.json", import.meta.url), "utf8"));
+  for (const permission of [true, false, undefined]) {
+    const value: RoleMemberPage = {members:sample.members.map(row=>({...row,canRemoveFromWorkspace:permission,canRemoveFromTenant:permission}))};
+    const back: RoleMemberPage = {members:value.members.map(row=>({principalId:row.principalId,displayName:row.displayName,
+      tenantAdmin:row.tenantAdmin,workspaceAdmin:row.workspaceAdmin,canGrantTenantAdmin:row.canGrantTenantAdmin,
+      canRevokeTenantAdmin:row.canRevokeTenantAdmin,canGrantWorkspaceAdmin:row.canGrantWorkspaceAdmin,
+      canRevokeWorkspaceAdmin:row.canRevokeWorkspaceAdmin,lastTenantAdmin:row.lastTenantAdmin,
+      canRemoveFromWorkspace:row.canRemoveFromWorkspace,canRemoveFromTenant:row.canRemoveFromTenant}))};
+    deepStrictEqual(JSON.parse(JSON.stringify(back)),JSON.parse(JSON.stringify(value)));
+  }
+});
 import type { AgentInstallationView } from "../src/generated/contracts.js";
 
 test("Installation upgrade permission keeps false and legacy absence", () => {

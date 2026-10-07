@@ -4270,8 +4270,14 @@ type RoleMemberPage struct {
 }
 
 type RoleMemberView struct {
-	CanGrantTenantAdmin     bool   `json:"canGrantTenantAdmin"`
-	CanGrantWorkspaceAdmin  bool   `json:"canGrantWorkspaceAdmin"`
+	CanGrantTenantAdmin    bool `json:"canGrantTenantAdmin"`
+	CanGrantWorkspaceAdmin bool `json:"canGrantWorkspaceAdmin"`
+	// 当前 Tenant manage 与 tenant.member.revoke 目录均有效，且不是最后有效 Tenant admin；提交仍走原审批与重新准入，省略或 false
+	// 不显示动作。
+	CanRemoveFromTenant *bool `json:"canRemoveFromTenant,omitempty"`
+	// 当前 Workspace manage 与 workspace.member.revoke 目录均有效，目标存在可撤 WorkspaceMembership；省略或 false
+	// 不显示动作，提交仍重新准入。
+	CanRemoveFromWorkspace  *bool  `json:"canRemoveFromWorkspace,omitempty"`
 	CanRevokeTenantAdmin    bool   `json:"canRevokeTenantAdmin"`
 	CanRevokeWorkspaceAdmin bool   `json:"canRevokeWorkspaceAdmin"`
 	DisplayName             string `json:"displayName"`
@@ -4844,10 +4850,14 @@ type ComponentConformanceIdentity struct {
 }
 
 type ComponentConformanceIdentityContext struct {
-	ActionDefinitionVersion     int64                    `json:"actionDefinitionVersion"`
-	ActionKey                   string                   `json:"actionKey"`
-	ActorPrincipalID            string                   `json:"actorPrincipalId"`
-	CaseKey                     string                   `json:"caseKey"`
+	ActionDefinitionVersion int64  `json:"actionDefinitionVersion"`
+	ActionKey               string `json:"actionKey"`
+	ActorPrincipalID        string `json:"actorPrincipalId"`
+	// 隔离环境PEP的实际模拟授权revision，不得指向生产SpiceDB事实。
+	AuthorizationMinZedToken string `json:"authorizationMinZedToken"`
+	CaseKey                  string `json:"caseKey"`
+	// execute场景必填的隔离native执行引用；不在生产库创建ExternalExecution。
+	ExternalExecutionID         *string                  `json:"externalExecutionId,omitempty"`
 	Operation                   AdapterProtocolOperation `json:"operation"`
 	ResultExposurePolicyID      string                   `json:"resultExposurePolicyId"`
 	ResultExposurePolicyVersion int64                    `json:"resultExposurePolicyVersion"`

@@ -113,7 +113,7 @@ function Mono({ children }: { children: string }) {
   return <span className="font-mono text-xs">{children}</span>;
 }
 
-function WaitingReason({ code }: { code: string }) {
+export function WaitingReason({ code }: { code: string }) {
   const t = useT();
   const reasonText = useReasonText();
   const known: Readonly<Record<string, PlatformMessageKey>> = {

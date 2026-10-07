@@ -14,7 +14,8 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { relativeTime } from "../format";
 import { AutomationManagement } from "./agents";
 import { useBffClient, useLocale, useT } from "./context";
-import { TaskDetail, TaskStatusBadge } from "./governance";
+import { TaskDetail, TaskStatusBadge, WaitingReason } from "./governance";
+import { WorkflowRunTrace } from "./workflow-run-trace";
 import { Button, Notice, ReadFailure } from "./ui";
 import { useLoad } from "./use-load";
 
@@ -203,7 +204,7 @@ function AutomationRunHistory({
 																{run.progress ? <span>{t("workflows.progress")}: {run.progress}</span> : null}
 																{run.stepApprovalTask ? <TaskStatusBadge task={run.stepApprovalTask} /> : null}
 															</div>
-															{run.task.waitingReason ? <p className="mt-2 break-words pl-6 text-xs text-muted-foreground">{run.task.waitingReason}</p> : null}
+															{run.task.waitingReason ? <p className="mt-2 break-words pl-6 text-xs text-muted-foreground"><WaitingReason code={run.task.waitingReason} /></p> : null}
 														</div>
 													</div>
 												</button>
@@ -212,14 +213,11 @@ function AutomationRunHistory({
 														<div className="mb-3 flex items-center gap-2 text-2xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
 															<span>{t("tasks.execution")}</span>
 														</div>
-														<dl className="space-y-3 text-xs">
+														<WorkflowRunTrace run={run} onOpen={setOpen} />
+														<dl className="mt-3 space-y-3 text-xs">
 															<div><dt className="text-muted-foreground">{t("workflows.usage")}</dt>
 																<dd className="mt-1 break-all font-mono">{run.usageEventIds.join(", ") || "—"}</dd></div>
 														</dl>
-														<div className="mt-3 flex flex-wrap gap-2">
-															<Button onClick={() => setOpen(id)}>{t("tasks.execution")}</Button>
-															{run.stepApprovalTask ? <Button onClick={() => setOpen(run.stepApprovalTask!.actionExecutionId)}>{t("workflows.stepApproval")}</Button> : null}
-														</div>
 													</div>
 												) : null}
 											</div>

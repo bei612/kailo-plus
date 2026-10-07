@@ -20,13 +20,15 @@
       "items": {
         "title": "ComponentConformanceIdentityContext",
         "type": "object", "additionalProperties": false,
-        "required": ["caseKey", "stepKey", "operation", "tenantId", "actorPrincipalId", "actionKey", "actionDefinitionVersion", "targetType", "resultExposurePolicyId", "resultExposurePolicyVersion"],
+        "required": ["caseKey", "stepKey", "operation", "tenantId", "actorPrincipalId", "actionKey", "actionDefinitionVersion", "targetType", "resultExposurePolicyId", "resultExposurePolicyVersion", "authorizationMinZedToken"],
         "properties": {
           "caseKey": {"type": "string"}, "stepKey": {"type": "string"},
           "operation": {"$ref": "../enums/adapter_protocol_operation.schema.json"},
           "tenantId": {"type": "string", "format": "uuid"},
           "workspaceId": {"type": "string", "format": "uuid"},
           "actorPrincipalId": {"type": "string", "format": "uuid"},
+          "authorizationMinZedToken": {"type": "string", "description": "隔离环境PEP的实际模拟授权revision，不得指向生产SpiceDB事实。"},
+          "externalExecutionId": {"type": "string", "format": "uuid", "description": "execute场景必填的隔离native执行引用；不在生产库创建ExternalExecution。"},
           "actionKey": {"type": "string"},
           "actionDefinitionVersion": {"type": "integer", "minimum": 1},
           "targetType": {"type": "string"},

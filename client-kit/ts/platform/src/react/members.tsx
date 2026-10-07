@@ -1,14 +1,14 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503:
 // desktop/src/features/community-members/ui/CommunityMembersSettingsCard.tsx
 // RelayMemberRow / HoverMemberIdentity. Platform membership remains Principal-based.
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
-import { WorkspaceMembershipState, type WorkspaceMemberView } from "@client-kit/contracts";
+import { MoreHorizontal, Search, Shield } from "lucide-react";
+import { WorkspaceMembershipState, type WorkspaceMemberView, type RoleMemberView } from "@client-kit/contracts";
 import { useBffClient, useLocale, useT } from "./context";
 import { enumLabel, workspaceMembershipStateMessages } from "../i18n";
 import { truncatePubkey } from "../format";
-import { TransportError } from "../transport";
+import { BffError, TransportError } from "../transport";
 import { useLoad } from "./use-load";
 import { ReadFailure } from "./ui";
 import { SettingsOptionGroup } from "./settings-option-group";
@@ -21,6 +21,10 @@ import { AuxiliaryPanel, AuxiliaryPanelBody, AuxiliaryPanelHeader, AuxiliaryPane
 import { useThreadPanelWidth } from "./messages/thread/useThreadPanelWidth";
 import { useEscapeKey } from "./messages/thread/useEscapeKey";
 import { VirtualizedList } from "./forum/VirtualizedList";
+import { MemberActionFeedback, useMemberAction, validRoleMemberPage } from "./roles";
+import { TenantInvitations } from "./invitations";
+import { Button } from "./profile/buzz/shared/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./sidebar/dropdown-menu";
 
 type MemberTarget = {workspaceId: string; principalId: string; pubkey: string};
 export type MemberIdentityRenderer = (pubkey: string, children: ReactNode, label: string) => ReactNode;
@@ -65,8 +69,23 @@ function MemberProfilePanel({target,onClose}:{target:MemberTarget;onClose:()=>vo
 export function MembersPane({workspaceId,renderIdentity}: {workspaceId:string;renderIdentity?:MemberIdentityRenderer}) {
   const client=useBffClient();const t=useT();const locale=useLocale();
   const [state,reload]=useLoad(`members:${workspaceId}`,()=>client.members(workspaceId));
+  const [roles,reloadRoles]=useLoad(`member-actions:${workspaceId}`,async()=>{
+    const members=new Map<string,RoleMemberView>();const cursors=new Set<string>();let cursor:string|undefined;
+    do {
+      const page=await client.roleMembers(workspaceId,cursor);
+      if(!validRoleMemberPage(page))throw new TransportError("Invalid member action projection");
+      for(const member of page.members){
+        if(members.has(member.principalId))throw new TransportError("Repeated member action identity");
+        members.set(member.principalId,member);
+      }
+      cursor=page.nextCursor;
+      if(cursor){if(cursors.has(cursor))throw new TransportError("Repeated member action cursor");cursors.add(cursor);}
+    }while(cursor);
+    return members;
+  });
+  const action=useMemberAction(()=>{reload();reloadRoles();});
   const [search,setSearch]=useState("");const [selected,setSelected]=useState<MemberTarget|null>(null);
-  useEffect(()=>{window.addEventListener("focus",reload);return()=>window.removeEventListener("focus",reload);},[reload]);
+  useEffect(()=>{const refresh=()=>{reload();reloadRoles();};window.addEventListener("focus",refresh);return()=>window.removeEventListener("focus",refresh);},[reload,reloadRoles]);
   const rows=state.status==="ok"?state.data:[];
   const filter=search.trim().toLowerCase();
   const filtered=rows.filter(member=>member.displayName.toLowerCase().includes(filter)||member.pubkeys.some(key=>key.includes(filter)));
@@ -79,9 +98,36 @@ export function MembersPane({workspaceId,renderIdentity}: {workspaceId:string;re
     return <UserProfilePopoverSurface pubkey={pubkey} triggerElement="span" triggerAriaLabel={label}
       onOpenProfile={()=>setSelected(target)} renderBody={(props)=><MemberHover {...props} target={target}/>}>{children}</UserProfilePopoverSurface>;
   }
+  function management(member:WorkspaceMemberView) {
+    const role=roles.status==="ok"?roles.data.get(member.principalId):undefined;
+    if(!role)return null;
+    const options=[
+      [role.canGrantTenantAdmin,"tenant.admin.grant","actions.tenant.admin.grant"],
+      [role.canRevokeTenantAdmin,"tenant.admin.revoke","actions.tenant.admin.revoke"],
+      [role.canGrantWorkspaceAdmin,"workspace.admin.grant","actions.workspace.admin.grant"],
+      [role.canRevokeWorkspaceAdmin,"workspace.admin.revoke","actions.workspace.admin.revoke"],
+      [role.canRemoveFromWorkspace,"workspace.member.revoke","actions.workspace.member.revoke"],
+      [role.canRemoveFromTenant,"tenant.member.revoke","actions.tenant.member.revoke"],
+    ] as const;
+    const allowed=options.filter(([enabled])=>enabled===true);
+    if(!allowed.length)return null;
+    const firstRemove=allowed.findIndex(([,key])=>key.endsWith("member.revoke"));
+    return <DropdownMenu modal={false}><DropdownMenuTrigger asChild>
+      <Button aria-label={t("members.actions",{name:member.displayName})} disabled={action.busy||action.confirming!==null||action.submittedFor===member.principalId} size="icon" variant="ghost">
+        <MoreHorizontal className="h-4 w-4"/>
+      </Button></DropdownMenuTrigger><DropdownMenuContent align="end">
+      {allowed.map(([,key,label],index)=><Fragment key={key}>
+        {index===firstRemove&&index>0?<DropdownMenuSeparator/>:null}
+        <DropdownMenuItem className={key.endsWith("member.revoke")?"text-destructive focus:text-destructive":undefined}
+          onSelect={()=>action.choose(key,member,t(label),workspaceId)}>{t(label)}</DropdownMenuItem>
+      </Fragment>)}
+    </DropdownMenuContent></DropdownMenu>;
+  }
   return <AvatarHostProvider value={{locale,rewriteMediaUrl:(url)=>url}}><div className="flex min-h-0 min-w-0 flex-1" data-testid="workspace-members">
     <section className="min-w-0 flex-1">
-      <SettingsSectionHeader title={t("platform.tab.members")} description={t("members.description")}/>
+      <SettingsSectionHeader title={t("platform.tab.members")} description={t("members.description")} action={<TenantInvitations dialog/>}/>
+      <MemberActionFeedback action={action}/>
+      {roles.status==="error"&&!(roles.error instanceof BffError&&roles.error.status===403)?<ReadFailure error={roles.error} onRetry={reloadRoles}/>:null}
       <SettingsOptionGroup title={<>{t("platform.tab.members")}{state.status==="ok"?<span className="ml-1.5 font-normal">{rows.length}</span>:null}</>}>
         <div className="space-y-3 p-4 sm:p-5">
           <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/>
@@ -98,10 +144,11 @@ export function MembersPane({workspaceId,renderIdentity}: {workspaceId:string;re
                   <span className="col-start-1 row-start-1 max-w-40 truncate opacity-100 blur-0 transition-[max-width,opacity,filter] duration-[250ms] ease-in-out group-hover/member:max-w-0 group-hover/member:opacity-0 group-hover/member:blur-[2px] group-focus-within/member:max-w-0 group-focus-within/member:opacity-0 motion-reduce:transition-none">{member.displayName}</span>
                   <span className="col-start-1 row-start-1 max-w-0 truncate font-mono text-2xs opacity-0 blur-0 transition-[max-width,opacity,filter] duration-[250ms] ease-in-out group-hover/member:max-w-40 group-hover/member:opacity-100 group-focus-within/member:max-w-40 group-focus-within/member:opacity-100 motion-reduce:transition-none">{member.pubkeys[0]?truncatePubkey(member.pubkeys[0]):member.displayName}</span>
                 </span>
+                {roles.status==="ok"&&roles.data.get(member.principalId)?.workspaceAdmin?<Shield className="h-4 w-4 text-blue-500" aria-label={t("roles.workspace")}/>:null}
               </div><div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground/70" data-settings-subcopy>
                 <span>{enumLabel(locale,workspaceMembershipStateMessages,member.state)}</span>
                 {member.pubkeys.map(pubkey=><span key={pubkey} title={pubkey}>{identity(member,pubkey,<code>{truncatePubkey(pubkey)}</code>)}</span>)}
-              </div></div>
+              </div></div>{management(member)}
             </div>}/>}
         </div>
       </SettingsOptionGroup>

@@ -1072,3 +1072,58 @@ Pulse 悬停浅底误判为双选，随后实际 DOM 读回 data-active=false；
 消失、移回 hover=true，确认正常交互，没有为误判改代码。设置四页可见中文
 分组及中英切换入口；通知明确显示浏览器权限被阻止，不记作通知已送达。
 本批不修改浏览器权限，不称所有页面、子弹窗、英文状态和 Win11 交互已验收。
+
+## 2026-10-07 工作流、成员及组件接缝集中源码批
+
+相对 `c9b7634fdb822558e0d00ffaf6f56bb7df9ee609`，实现树
+`ac0c889e2cb73b763c16eeb0d2ce8fa842a7f352` 为 56 文件、4179 行新增、395 行删除，
+不包含本节及 README 的结果记录。源码写入与发布分开记账：本批没有新部署、
+Windows/Mobile 包，也没有新的全量检查退出 0。
+
+权威与影响复核：REQ-23/24、DD-107、V-SCN-83 要求恢复原 Buzz 工作流交互，
+不是把原工作流缩成单动作；固定 Buzz `779af8886caae1317b4de962082429867ab61503`
+的 `crates/buzz-workflow/src/schema.rs::{WorkflowDef,Step,ActionDef,normalize_cron}`
+确有多步骤及七种动作。设计提交 `86df37823219b4a1cdf094178379cbe929d8e412`
+修正此前范围矛盾，旧单动作格式仅保留为已有版本兼容说明；本批菜单和步骤轨迹
+不冒充已实现全部动作与触发。执行权威仍为 Temporal，未恢复 Relay 独立执行器。
+
+本批实际实现：原工作流操作菜单、真实运行步骤轨迹、原 Agent 管理弹窗；成员
+操作可用性由服务端事实投影，写入仍重新鉴权。成员／邀请页后续读取 403 不再
+清掉已有 UNKNOWN；运行中、尚未派发及不匹配的 Operation/ActionExecution
+不会误判终结。两端消费同一 TypeScript 主体，Mobile 未新增组件宿主。
+
+组件身份与执行证据仍依既有接缝及 ADR-19；本批更新生产请求形状、哈希和授权
+版本关联，不能借验证专用形状或共享身份放行。契约四语言生成及序列化证据在
+`component-release-registration.md`。WeKnora 原生读取、导出和条件删除经过
+Adapter／原 MCP 接缝；正文不复制到 Core，任务入队不代表业务完成，尚无终态
+回执的删除继续待对账。下一个 Native 清理回执批不在本树内。
+
+ActionDefinition 不可变保护的原 BEFORE UPDATE 在存储生成列求值前比较字段，
+造成合法状态变更被误拒绝。前向迁移将 UPDATE 校验移到 AFTER，DELETE 仍在
+BEFORE；没有豁免字段或降低正文保护。独立数据库 up/down/up、合法状态更新、
+正文改写与已引用删除拒绝均实际验证；把 AFTER 改回 BEFORE 后原用例真实失败，
+恢复后通过。该迁移尚未投递在线库。细节在 `governed-action.md`。
+
+集中前端证据在 Data 的
+`codex-agent-receipt-regression-20261005.XvkUjX/combined-ui.2YbUtf/`：
+
+- 源码与测试 TypeScript 检查退出 0；依赖离线命中 293 项、下载 0。
+- 首轮 529 项通过、两项失败及一套件加载失败：临时快照漏导出 presentation
+  fixture、原管理员蓝色徽标被通用颜色检查误拒绝，以及主题用例并发超时。
+- 补齐真实 fixture；徽标检查仅允许原版精确标签，不改原版颜色、不豁免其它
+  字面颜色。固定 Buzz 同提交的
+  `desktop/src/features/community-members/ui/CommunityMembersSettingsCard.tsx::RelayMemberRow`
+  确为 `text-blue-500`。临时改为 blue-600 后检查实际失败，恢复源文件且 cmp 一致。
+- 最后一次 `vitest run --maxWorkers=4` 实际 38 文件、538 项通过，18.25 秒，
+  没有延长主题用例超时。日志 `combined-ui-restored.log`、`member-badge-mutation.log`。
+- 双宿主额外 TypeScript 检查因临时依赖路径缺少 tsc 退出 127，不能记通过；
+  共享包检查通过不能替代此项或真实 Windows 运行验收。
+
+原 `tools/check-docs.sh` 对固定实现树 `1c7bbdffd1c7898eafe957ed30cd061daf0b501c`
+及上述设计 pin 实跑退出 0，七项全通过，日志
+`/volumes/data/kailo/tmp/tmp.7pDlsOVrOZ.check.log`。该树与本树差别是随后已单独
+验证的 ActionDefinition 迁移及证据，不能将该结果夸大为本树全量检查通过。
+
+本批没有新的逐页截图。已有 148–153 的真实截图对应上一在线版本，不用于
+验收本批源码。原生运行时镜像构建仍在执行，Data 空间紧张时停止新增重构建，
+保留共享缓存与原在途进程；其余源码开发及本批提交不等待构建结束。

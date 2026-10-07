@@ -8,6 +8,9 @@
 // 兑换时凭据只进请求体。宿主负责从 URL fragment 取出凭据并立即清掉 fragment。
 
 import {
+  type ActionCommand,
+  ActionDispatchState,
+  ActionGateState,
   type ActionSubmission,
   type InvitationRedemptionView,
   type IssuedInvitation,
@@ -23,11 +26,12 @@ import {
   invitationStatusMessages,
   tenantMembershipStateMessages,
 } from "../i18n";
-import { BffError, type WriteFailure, writeFailure } from "../transport";
+import { BffError, TransportError, type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useLocale, useReasonText, useT } from "./context";
 import { Resource } from "./pages";
 import { Badge, Button, Cell, Notice, Table } from "./ui";
 import { useLoad } from "./use-load";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./composer/shared/ui/dialog";
 
 /** BFF 以 403 回答：调用方没有这项权限。这是确定的「不给入口」，不是读取失败。 */
 function forbidden(error: unknown): boolean {
@@ -35,6 +39,15 @@ function forbidden(error: unknown): boolean {
 }
 
 const inputClass = "h-8 rounded-md border border-input bg-transparent px-2 text-sm";
+
+function invitationReceipt(result:ActionSubmission,command:ActionCommand,previous:ActionSubmission|null) {
+  if(!result||result.actionKey!==command.actionKey||!result.actionExecutionId||!result.operationId
+    ||(previous&&(result.operationId!==previous.operationId||result.actionExecutionId!==previous.actionExecutionId))
+    ||!Object.values(ActionGateState).includes(result.gateState)||!Object.values(ActionDispatchState).includes(result.dispatchState))
+    throw new TransportError("Invitation receipt is not confirmed");
+  return result.dispatchState!==ActionDispatchState.Unknown&&result.gateState!==ActionGateState.Evaluating
+    &&!(result.gateState===ActionGateState.Allowed&&result.dispatchState===ActionDispatchState.NotDispatched);
+}
 
 // ---------------------------------------------------------------------------
 // admin：签发、列表、撤回
@@ -46,7 +59,7 @@ type IssueOutcome =
   | { kind: "failed"; failure: WriteFailure };
 
 /** 成员页上的邀请一节。非 admin（列表 403）时整节不渲染。 */
-export function TenantInvitations() {
+export function TenantInvitations({dialog=false}:{dialog?:boolean} = {}) {
   const client = useBffClient();
   const t = useT();
   const locale = useLocale();
@@ -57,6 +70,12 @@ export function TenantInvitations() {
   const [issued, setIssued] = useState<IssueOutcome | null>(null);
   const [confirming, setConfirming] = useState<TenantInvitationView | null>(null);
   const [withdrawFailure, setWithdrawFailure] = useState<WriteFailure | null>(null);
+  const [open,setOpen]=useState(false);
+  const [issueIntent,setIssueIntent]=useState<ActionCommand|null>(null);
+  const [withdrawIntent,setWithdrawIntent]=useState<ActionCommand|null>(null);
+  const issueReceipt=useRef<ActionSubmission|null>(null);
+  const withdrawReceipt=useRef<ActionSubmission|null>(null);
+  const inFlight=useRef(false);
 
   // 第一次得到 BFF 的回答之前不画任何东西：非 admin 不该看到这一节闪一下再消失。
   // 重读期间保持已有的画面（签发出的链接还要留在屏幕上）。
@@ -68,47 +87,66 @@ export function TenantInvitations() {
   const issue = async (e: FormEvent) => {
     e.preventDefault();
     const name = label.trim();
-    if (!name) return;
+    if ((!issueIntent&&!name)||inFlight.current||withdrawIntent) return;
+    const wasUnknown=issued?.kind==="failed"&&issued.failure.kind==="unknown";
+    const priorOperation=issued?.kind==="failed"&&issued.failure.kind==="unknown"?issued.failure.operationId:undefined;
+    const command=issueIntent??{actionKey:"tenant.member.invite",idempotencyKey:newIdempotencyKey(),name};
+    setIssueIntent(command);inFlight.current=true;
     setBusy(true);
-    setIssued(null);
+    if(!wasUnknown)setIssued(null);
     try {
-      const r: ActionSubmission = await client.submitAction({
-        actionKey: "tenant.member.invite",
-        idempotencyKey: newIdempotencyKey(),
-        name,
-      });
+      const r: ActionSubmission = await client.submitAction(command);
+      if(priorOperation&&r?.operationId!==priorOperation)throw new TransportError("Invitation operation changed");
+      const confirmed=invitationReceipt(r,command,issueReceipt.current);
+      issueReceipt.current=r;
+      if(!confirmed){setIssued({kind:"failed",failure:{kind:"unknown",operationId:r.operationId}});return;}
       // 链接只在首次回应里出现；没有即不再有第二来源
       setIssued(r.invitation ? { kind: "issued", label: name, invitation: r.invitation } : { kind: "noLink" });
       setLabel("");
+      setIssueIntent(null);
+      issueReceipt.current=null;
     } catch (err) {
-      setIssued({ kind: "failed", failure: writeFailure(err) });
+      if(!wasUnknown){
+        const failure=writeFailure(err);setIssued({ kind: "failed", failure });
+        if(failure.kind!=="unknown"){setIssueIntent(null);issueReceipt.current=null;}
+      }
     } finally {
+      inFlight.current=false;
       setBusy(false);
       reload();
     }
   };
 
   const withdraw = async (inv: TenantInvitationView) => {
-    setConfirming(null);
+    if(inFlight.current||issueIntent)return;
+    const wasUnknown=withdrawFailure?.kind==="unknown";
+    const priorOperation=withdrawFailure?.kind==="unknown"?withdrawFailure.operationId:undefined;
+    const command=withdrawIntent??{actionKey:"tenant.member.invite.revoke",idempotencyKey:newIdempotencyKey(),invitationId:inv.invitationId};
+    setWithdrawIntent(command);inFlight.current=true;
     setBusy(true);
-    setWithdrawFailure(null);
+    if(!wasUnknown)setWithdrawFailure(null);
     try {
-      await client.submitAction({
-        actionKey: "tenant.member.invite.revoke",
-        idempotencyKey: newIdempotencyKey(),
-        invitationId: inv.invitationId,
-      });
+      const receipt=await client.submitAction(command);
+      if(priorOperation&&receipt?.operationId!==priorOperation)throw new TransportError("Withdrawal operation changed");
+      const confirmed=invitationReceipt(receipt,command,withdrawReceipt.current);
+      withdrawReceipt.current=receipt;
+      if(!confirmed){setWithdrawFailure({kind:"unknown",operationId:receipt.operationId});return;}
+      setWithdrawIntent(null);setConfirming(null);setWithdrawFailure(null);withdrawReceipt.current=null;
     } catch (err) {
-      setWithdrawFailure(writeFailure(err));
+      if(!wasUnknown){
+        const failure=writeFailure(err);setWithdrawFailure(failure);
+        if(failure.kind!=="unknown"){setWithdrawIntent(null);setConfirming(null);withdrawReceipt.current=null;}
+      }
     } finally {
+      inFlight.current=false;
       setBusy(false);
       reload();
     }
   };
 
-  return (
+  const content = (
     <section className="flex flex-col gap-3" data-testid="tenant-invitations">
-      <h2 className="text-sm font-medium">{t("invitations.title")}</h2>
+      {!dialog?<h2 className="text-sm font-medium">{t("invitations.title")}</h2>:null}
       {answered.current ? (
         <>
           <p className="text-xs text-muted-foreground">{t("invitations.explain")}</p>
@@ -119,12 +157,13 @@ export function TenantInvitations() {
                 className={inputClass}
                 name="inviteeLabel"
                 required
+                disabled={busy||issueIntent!==null||withdrawIntent!==null}
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
               />
             </label>
-            <Button disabled={busy || !label.trim()} type="submit">
-              {t("invitations.issue")}
+            <Button disabled={busy || withdrawIntent!==null || (!issueIntent&&!label.trim())} type="submit">
+              {t(issueIntent?"platform.retry":"invitations.issue")}
             </Button>
           </form>
           <p className="text-xs text-muted-foreground">{t("invitations.inviteeHint")}</p>
@@ -142,8 +181,8 @@ export function TenantInvitations() {
         <div className="flex flex-col gap-2 rounded-md border p-3" role="group">
           <p>{t("invitations.confirmWithdraw", { label: confirming.inviteeLabel })}</p>
           <div className="flex gap-2">
-            <Button onClick={() => void withdraw(confirming)}>{t("platform.confirm")}</Button>
-            <Button onClick={() => setConfirming(null)}>{t("platform.cancel")}</Button>
+            <Button disabled={busy} onClick={() => void withdraw(confirming)}>{t("platform.confirm")}</Button>
+            {withdrawIntent?null:<Button disabled={busy} onClick={() => setConfirming(null)}>{t("platform.cancel")}</Button>}
           </div>
         </div>
       ) : null}
@@ -185,7 +224,7 @@ export function TenantInvitations() {
                   </Cell>
                   <Cell>
                     {inv.status === TenantInvitationStatus.Issued ? (
-                      <Button disabled={busy} onClick={() => setConfirming(inv)}>
+                      <Button disabled={busy||issueIntent!==null||withdrawIntent!==null} onClick={() => setConfirming(inv)}>
                         {t("invitations.withdraw")}
                       </Button>
                     ) : null}
@@ -198,6 +237,15 @@ export function TenantInvitations() {
       </Resource>
     </section>
   );
+  if(!dialog)return content;
+  return <>
+    <Button onClick={()=>setOpen(true)}>{t("actions.tenant.member.invite")}</Button>
+    <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto" data-testid="community-invite-dialog">
+      <DialogHeader><DialogTitle>{t("actions.tenant.member.invite")}</DialogTitle>
+        <DialogDescription>{t("invitations.explain")}</DialogDescription></DialogHeader>
+      {content}
+    </DialogContent></Dialog>
+  </>;
 }
 
 function IssuedNotice({ outcome }: { outcome: IssueOutcome }) {

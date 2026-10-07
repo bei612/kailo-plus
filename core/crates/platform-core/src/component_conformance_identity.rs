@@ -75,7 +75,7 @@ fn validate(value: &Value, artifact: &str, production_audience: &str) -> Result<
                 return Err(refused());
             }
         }
-        for field in ["workspaceId", "targetId"] {
+        for field in ["workspaceId", "targetId", "externalExecutionId"] {
             if context.get(field).is_some()
                 && Uuid::parse_str(nonempty(context, field)?)
                     .map_err(|_| refused())?
@@ -90,6 +90,10 @@ fn validate(value: &Value, artifact: &str, production_audience: &str) -> Result<
             }
         }
         nonempty(context, "actionKey")?;
+        nonempty(context, "authorizationMinZedToken")?;
+        if context["operation"] == "execute" {
+            nonempty(context, "externalExecutionId")?;
+        }
         if !matches!(
             nonempty(context, "targetType")?,
             "TENANT" | "WORKSPACE" | "RESOURCE" | "ASSET"
@@ -135,6 +139,9 @@ pub(crate) fn check_plan(identity: &Value, steps: &[Value]) -> Result<(), Refusa
     for (index, step) in steps.iter().enumerate() {
         let operation = nonempty(step, "operation")?;
         let principal = context(identity, step, operation)?;
+        let request: Value =
+            serde_json::from_str(nonempty(step, "requestJson")?).map_err(|_| refused())?;
+        parameter_hash(principal, operation, &request)?;
         if nonempty(step, "stepKey")?.starts_with("permission-denied:") {
             let previous = steps
                 .get(index.checked_sub(1).ok_or_else(refused)?)
@@ -155,6 +162,7 @@ pub(crate) fn check_plan(identity: &Value, steps: &[Value]) -> Result<(), Refusa
                 "targetId",
                 "resultExposurePolicyId",
                 "resultExposurePolicyVersion",
+                "externalExecutionId",
             ] {
                 if principal.get(field) != original.get(field) {
                     return Err(refused());
@@ -166,6 +174,59 @@ pub(crate) fn check_plan(identity: &Value, steps: &[Value]) -> Result<(), Refusa
         }
     }
     Ok(())
+}
+
+// Same parameter binding as production APPLICATION execute. Non-execution
+// protocol operations retain ADR-12's operation+arguments domain separation.
+fn parameter_hash(context: &Value, operation: &str, parameters: &Value) -> Result<String, Refusal> {
+    if operation != "execute" {
+        return Ok(collab_bridge::limits::canonical_digest(
+            &json!({"operation":operation,"arguments":parameters}),
+        ));
+    }
+    let envelope = parameters.as_object().ok_or_else(refused)?;
+    if envelope.len() != 3 || parameters["actionKey"] != context["actionKey"] {
+        return Err(refused());
+    }
+    let key = Uuid::parse_str(nonempty(parameters, "idempotencyKey")?).map_err(|_| refused())?;
+    if key.is_nil() {
+        return Err(refused());
+    }
+    let (kind, target) = crate::application_tool::target(&parameters["arguments"])?;
+    if context["targetType"] != kind || context["targetId"] != target.to_string() {
+        return Err(refused());
+    }
+    Ok(collab_bridge::limits::canonical_digest(
+        &parameters["arguments"],
+    ))
+}
+
+fn contextual_claims(
+    context: &Value,
+    action: Uuid,
+    operation: Uuid,
+    protocol_operation: &str,
+    parameters: &Value,
+) -> Result<Value, Refusal> {
+    let mut claims = json!({"tenant_id":context["tenantId"],"actor_principal_id":context["actorPrincipalId"],
+        "initiating_human_principal_id":context["actorPrincipalId"],
+        "operation_id":operation,"action_execution_id":action,
+        "action_key":context["actionKey"],"action_definition_version":context["actionDefinitionVersion"],
+        "target_type":context["targetType"],
+        "normalized_parameter_hash":parameter_hash(context,protocol_operation,parameters)?,
+        "authorization_min_zed_token":nonempty(context,"authorizationMinZedToken")?,
+        "result_exposure_policy_id":context["resultExposurePolicyId"],
+        "result_exposure_policy_version":context["resultExposurePolicyVersion"]});
+    for (source, destination) in [("workspaceId", "workspace_id"), ("targetId", "target_id")] {
+        if let Some(value) = context.get(source) {
+            claims[destination] = value.clone();
+        }
+    }
+    if protocol_operation == "execute" {
+        claims["external_execution_id"] = json!(nonempty(context, "externalExecutionId")?);
+        claims["idempotency_key"] = parameters["idempotencyKey"].clone();
+    }
+    Ok(claims)
 }
 
 /// Only Core reads the dedicated versioned private key. Publication is checked
@@ -219,18 +280,15 @@ pub(crate) async fn sign(
     let duration = i64::try_from(identity["tokenSeconds"].as_u64().ok_or_else(refused)?)
         .map_err(|_| refused())?;
     let expiry = now.checked_add(duration).ok_or_else(refused)?;
-    let mut claims = json!({"jti":Uuid::new_v4(),"iss":issuer,"aud":audience,"iat":now,"exp":expiry,
-        "tenant_id":context["tenantId"],"actor_principal_id":context["actorPrincipalId"],
-        "operation_id":operation,"action_execution_id":action,
-        "action_key":context["actionKey"],"action_definition_version":context["actionDefinitionVersion"],
-        "target_type":context["targetType"],
-        "normalized_parameter_hash":collab_bridge::limits::canonical_digest(&json!({"operation":protocol_operation,"arguments":parameters})),
-        "result_exposure_policy_id":context["resultExposurePolicyId"],
-        "result_exposure_policy_version":context["resultExposurePolicyVersion"]});
-    for (source, destination) in [("workspaceId", "workspace_id"), ("targetId", "target_id")] {
-        if let Some(value) = context.get(source) {
-            claims[destination] = value.clone();
-        }
+    let mut claims = contextual_claims(context, action, operation, protocol_operation, parameters)?;
+    for (field, value) in [
+        ("jti", json!(Uuid::new_v4())),
+        ("iss", json!(issuer)),
+        ("aud", json!(audience)),
+        ("iat", json!(now)),
+        ("exp", json!(expiry)),
+    ] {
+        claims[field] = value;
     }
     let kid = version.to_string();
     let mut header = Header::new(Algorithm::ES256);
@@ -276,6 +334,7 @@ mod tests {
             "secretAudience":"core-only","privateKeyField":"privateKey","jwksFile":"/fixture/jwks.json",
             "contexts":[{"caseKey":"roundtrip","stepKey":"consume","operation":"execute",
                 "tenantId":Uuid::new_v4(),"actorPrincipalId":Uuid::new_v4(),"actionKey":"document.read",
+                "authorizationMinZedToken":"isolated-pep-revision","externalExecutionId":Uuid::new_v4(),
                 "actionDefinitionVersion":1,"targetType":"RESOURCE","targetId":Uuid::new_v4(),
                 "resultExposurePolicyId":Uuid::new_v4(),"resultExposurePolicyVersion":1}]})
     }
@@ -319,5 +378,64 @@ mod tests {
         step["referenceResourceId"] = value["contexts"][0]["targetId"].clone();
         step["contractKey"] = json!("document.export");
         assert!(context(&value, &step, "execute").is_err());
+    }
+
+    #[test]
+    fn capability_execute_matches_production_claims_and_parameter_binding() {
+        let value = identity();
+        let context = &value["contexts"][0];
+        let input = json!({"resourceId":context["targetId"],"nativeObjectRef":"native-document",
+            "nativeRevision":"original-version","displayName":"document","mediaType":"text/plain"});
+        let request = json!({"idempotencyKey":Uuid::new_v4(),"actionKey":context["actionKey"],
+            "arguments":{"target":{"resourceId":context["targetId"]},"input":input}});
+        let claims =
+            contextual_claims(context, Uuid::new_v4(), Uuid::new_v4(), "execute", &request)
+                .unwrap();
+        assert_eq!(
+            claims["normalized_parameter_hash"],
+            collab_bridge::limits::canonical_digest(&request["arguments"])
+        );
+        assert_eq!(
+            claims["initiating_human_principal_id"],
+            context["actorPrincipalId"]
+        );
+        assert_eq!(
+            claims["external_execution_id"],
+            context["externalExecutionId"]
+        );
+        assert_eq!(claims["idempotency_key"], request["idempotencyKey"]);
+        assert_eq!(
+            claims["authorization_min_zed_token"],
+            context["authorizationMinZedToken"]
+        );
+        assert!(claims.get("agent_principal_id").is_none());
+        assert!(claims.get("delegation_id").is_none());
+        let mut wrong = request.clone();
+        wrong["arguments"]["target"]["resourceId"] = json!(Uuid::new_v4());
+        assert!(parameter_hash(context, "execute", &wrong).is_err());
+        wrong = request.clone();
+        wrong["actionKey"] = json!("different.action");
+        assert!(parameter_hash(context, "execute", &wrong).is_err());
+        let old_wire = json!({"idempotencyKey":request["idempotencyKey"],"contractKey":context["actionKey"],"inputJson":input.to_string()});
+        assert!(parameter_hash(context, "execute", &old_wire).is_err());
+        let mut missing_revision = context.clone();
+        missing_revision
+            .as_object_mut()
+            .unwrap()
+            .remove("authorizationMinZedToken");
+        assert!(contextual_claims(
+            &missing_revision,
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "execute",
+            &request
+        )
+        .is_err());
+        assert_eq!(
+            parameter_hash(context, "query_revision", &input).unwrap(),
+            collab_bridge::limits::canonical_digest(
+                &json!({"operation":"query_revision","arguments":input})
+            )
+        );
     }
 }

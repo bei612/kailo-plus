@@ -52,8 +52,8 @@ export function validMemoryEntries(value: AgentMemoryEntryPage, installation: st
   });
 }
 
-export function InstallationMemory({ resourceId, workspaceId, installation }: {
-  resourceId: string; workspaceId: string; installation?: AgentInstallationView;
+export function InstallationMemory({ resourceId, workspaceId, installation, onLocked }: {
+  resourceId: string; workspaceId: string; installation?: AgentInstallationView; onLocked?: (locked: boolean) => void;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -65,7 +65,7 @@ export function InstallationMemory({ resourceId, workspaceId, installation }: {
       {t(open ? "agents.memory.close" : "agents.memory.open")}
     </Button>
     {open ? <MemoryContents key={`${workspaceId}:${resourceId}`} resourceId={resourceId} workspaceId={workspaceId}
-      installation={installation} onLocked={setLocked} /> : null}
+      installation={installation} onLocked={(next) => { setLocked(next); onLocked?.(next); }} /> : null}
   </section>;
 }
 

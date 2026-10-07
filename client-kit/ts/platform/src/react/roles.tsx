@@ -1,7 +1,7 @@
 // DD-82：角色关系只从 BFF fresh 视图读取，授予/撤销仍经同一条 Governed Action。
 // Web 与 Desktop 共用；Mobile 只读成员视图，不装载本管理面。
 
-import { ActionDispatchState, ActionGateState, BindingKind, ChannelType, CreateActionKey, WorkspaceLifecycleActionKey, WorkspaceState, type ActionCommand, type ActionSubmission, type LegacySecretRefBinding, type RoleMemberView, type RoleWorkspaceView } from "@client-kit/contracts";
+import { ActionDispatchState, ActionGateState, BindingKind, ChannelType, CreateActionKey, WorkspaceLifecycleActionKey, WorkspaceState, type ActionCommand, type ActionSubmission, type LegacySecretRefBinding, type RoleMemberPage, type RoleMemberView, type RoleWorkspaceView } from "@client-kit/contracts";
 import { useRef, useState } from "react";
 import { newIdempotencyKey, taskPhase } from "../governance";
 import { enumLabel, workspaceStateMessages } from "../i18n";
@@ -15,7 +15,7 @@ import { ChannelTypeSettings, DEFAULT_EPHEMERAL_TTL_SECONDS } from "./channel-ty
 import { WorkspaceVisibility } from "@client-kit/contracts";
 import { ChannelPermissionsSettings } from "./channel-permissions-settings";
 
-type Change = { key: string; principal: RoleMemberView; idempotencyKey: string };
+type Change = { command: ActionCommand; principal: Pick<RoleMemberView,"principalId"|"displayName">; label: string };
 type Outcome =
   | { kind: "submitted"; action: string; execution: string }
   | { kind: "failed"; failure: WriteFailure };
@@ -373,95 +373,123 @@ function WorkspaceLifecycle({ target, onRecorded }: { target?: RoleWorkspaceView
   );
 }
 
-export function RoleMembers({ workspaceId }: { workspaceId?: string }) {
+/** Original role submission state, shared by the table and native member-row menu. */
+export function useMemberAction(onRecorded:()=>void) {
   const client = useBffClient();
   const t = useT();
-  const failureText = useFailureText();
-  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
-  const [pageIndex, setPageIndex] = useState(0);
-  const cursor = cursors[pageIndex];
-  const [state, reload] = useLoad(`role-members:${workspaceId ?? "tenant"}:${cursor ?? "first"}`, () =>
-    client.roleMembers(workspaceId, cursor),
-  );
+  const inFlight=useRef(false);
+  const receipt=useRef<ActionSubmission|null>(null);
   const [confirming, setConfirming] = useState<Change | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [submittedFor, setSubmittedFor] = useState<string | null>(null);
-
-  // 没有管理权限时服务端回 403，整节不出现；其他读失败必须展示为结果不明。
-  if (state.status === "error" && state.error instanceof BffError && state.error.status === 403)
-    return null;
-  if (state.status === "pending") return null;
-
   const submit = async () => {
-    if (!confirming || busy) return;
-    const { key, principal, idempotencyKey } = confirming;
+    if (!confirming || inFlight.current) return;
+    const wasUnknown=outcome?.kind==="failed"&&outcome.failure.kind==="unknown";
+    const priorOperation=outcome?.kind==="failed"&&outcome.failure.kind==="unknown"?outcome.failure.operationId:undefined;
+    const { command, principal } = confirming;
+    inFlight.current=true;
     setBusy(true);
-    setOutcome(null);
+    if(!wasUnknown)setOutcome(null);
     try {
-      const result = await client.submitAction({
-        actionKey: key,
-        idempotencyKey,
-        principalId: principal.principalId,
-        ...(key.startsWith("workspace.") ? { workspaceId } : {}),
-      });
+      const result = await client.submitAction(command);
+      if (!result || result.actionKey!==command.actionKey || !result.actionExecutionId || !result.operationId
+        || (priorOperation&&result.operationId!==priorOperation)
+        || (receipt.current&&(result.operationId!==receipt.current.operationId||result.actionExecutionId!==receipt.current.actionExecutionId))
+        || !Object.values(ActionGateState).includes(result.gateState) || !Object.values(ActionDispatchState).includes(result.dispatchState))
+        throw new TransportError(t("platform.loadFailed"));
+      receipt.current=result;
+      if(result.dispatchState===ActionDispatchState.Unknown||result.gateState===ActionGateState.Evaluating
+        ||(result.gateState===ActionGateState.Allowed&&result.dispatchState===ActionDispatchState.NotDispatched)) {
+        setOutcome({kind:"failed",failure:{kind:"unknown",operationId:result.operationId}});
+        return;
+      }
       setSubmittedFor(principal.principalId);
-      setOutcome({ kind: "submitted", action: key, execution: result.actionExecutionId });
+      setOutcome({ kind: "submitted", action: confirming.label, execution: result.actionExecutionId });
       setConfirming(null);
+      receipt.current=null;
     } catch (error) {
-      const failure = writeFailure(error);
-      setOutcome({ kind: "failed", failure });
-      // 回应丢失时保留原意图与键；只有确定拒绝才能放弃这次意图。
-      if (failure.kind !== "unknown") setConfirming(null);
+      // Later admission refusal says nothing about the original uncertain write.
+      if(!wasUnknown){
+        const failure = writeFailure(error);
+        setOutcome({ kind: "failed", failure });
+        if (failure.kind !== "unknown") {setConfirming(null);receipt.current=null;}
+      }
     } finally {
+      inFlight.current=false;
       setBusy(false);
-      reload();
+      onRecorded();
     }
   };
+  return {confirming,busy,outcome,submittedFor,submit,
+    refresh:()=>{setSubmittedFor(null);onRecorded();},
+    cancel:()=>{if(!busy&&!(outcome?.kind==="failed"&&outcome.failure.kind==="unknown"))setConfirming(null);},
+    choose:(key:string,principal:Change["principal"],label:string,workspaceId?:string)=>{
+      if(busy||confirming)return;
+      receipt.current=null;
+      setOutcome(null);
+      setConfirming({principal,label,command:{actionKey:key,principalId:principal.principalId,idempotencyKey:newIdempotencyKey(),
+        ...(key.startsWith("workspace.")?{workspaceId}: {})}});
+    }};
+}
+
+export function MemberActionFeedback({action}:{action:ReturnType<typeof useMemberAction>}) {
+  const t=useT();const failureText=useFailureText();const {outcome,confirming,busy}=action;
+  return <>
+    {outcome?.kind==="submitted"?<Button className="w-fit" onClick={action.refresh}>{t("platform.refresh")}</Button>:null}
+    {outcome?<p role="alert">{outcome.kind==="submitted"
+      ?t("roles.submitted",{action:outcome.action,execution:outcome.execution})
+      :outcome.failure.kind==="unknown"?t("roles.unknown",{operation:outcome.failure.operationId??"—"})
+      :t("members.rejected",{reason:failureText(outcome.failure)})}</p>:null}
+    {confirming?<div className="flex flex-col gap-2 rounded-md border p-3" role="group">
+      <p>{t("roles.confirm",{action:confirming.label,member:confirming.principal.displayName})}</p>
+      <code className="text-xs text-muted-foreground">{confirming.command.actionKey}</code>
+      <div className="flex gap-2"><Button disabled={busy} onClick={()=>void action.submit()}>{t("platform.confirm")}</Button>
+        {outcome?.kind==="failed"&&outcome.failure.kind==="unknown"?null:<Button disabled={busy} onClick={action.cancel}>{t("platform.cancel")}</Button>}
+      </div>
+    </div>:null}
+  </>;
+}
+
+export function validRoleMemberPage(page:RoleMemberPage):boolean {
+  return !!page&&Array.isArray(page.members)&&page.members.every(m=>m&&typeof m.principalId==="string"
+    &&typeof m.displayName==="string"&&typeof m.tenantAdmin==="boolean"&&typeof m.workspaceAdmin==="boolean"
+    &&typeof m.lastTenantAdmin==="boolean"&&typeof m.canGrantTenantAdmin==="boolean"&&typeof m.canRevokeTenantAdmin==="boolean"
+    &&typeof m.canGrantWorkspaceAdmin==="boolean"&&typeof m.canRevokeWorkspaceAdmin==="boolean"
+    &&(m.canRemoveFromWorkspace===undefined||typeof m.canRemoveFromWorkspace==="boolean")
+    &&(m.canRemoveFromTenant===undefined||typeof m.canRemoveFromTenant==="boolean"))
+    &&(page.nextCursor===undefined||typeof page.nextCursor==="string"&&page.nextCursor.length>0);
+}
+
+export function RoleMembers({ workspaceId }: { workspaceId?: string }) {
+  const client = useBffClient();const t = useT();
+  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
+  const [pageIndex, setPageIndex] = useState(0);const cursor = cursors[pageIndex];
+  const [state, reload] = useLoad(`role-members:${workspaceId ?? "tenant"}:${cursor ?? "first"}`, () => client.roleMembers(workspaceId, cursor));
+  const action=useMemberAction(reload);
+  const {busy,confirming,submittedFor}=action;
+  if(state.status==="error"&&state.error instanceof BffError&&state.error.status===403)return null;
+  if(state.status==="pending")return null;
 
   const button = (member: RoleMemberView, key: string, label: string) => (
     <Button
       disabled={busy || confirming !== null || submittedFor === member.principalId}
-      onClick={() => setConfirming({ key, principal: member, idempotencyKey: newIdempotencyKey() })}
+      onClick={() => action.choose(key,member,`${label} ${t(key.startsWith("workspace.")?"roles.workspace":"roles.tenant")}`,workspaceId)}
     >
       {label}
     </Button>
   );
   const page = state.status === "ok" ? state.data : null;
-  if (page && (!Array.isArray(page.members)
-    || !page.members.every((m) => m && typeof m.principalId === "string"
-      && typeof m.displayName === "string" && typeof m.tenantAdmin === "boolean"
-      && typeof m.workspaceAdmin === "boolean" && typeof m.lastTenantAdmin === "boolean"
-      && typeof m.canGrantTenantAdmin === "boolean" && typeof m.canRevokeTenantAdmin === "boolean"
-      && typeof m.canGrantWorkspaceAdmin === "boolean" && typeof m.canRevokeWorkspaceAdmin === "boolean")))
+  if (page && !validRoleMemberPage(page))
     return <Notice role="alert">{t("platform.loadFailed")}</Notice>;
 
   return (
     <section className="flex flex-col gap-3" data-testid="role-members">
       <h2 className="text-sm font-medium">{t("roles.title")}</h2>
-      <Button className="w-fit" onClick={() => { setSubmittedFor(null); reload(); }}>
+      <Button className="w-fit" onClick={action.refresh}>
         {t("platform.refresh")}
       </Button>
-      {outcome ? (
-        <p role="alert">
-          {outcome.kind === "submitted"
-            ? t("roles.submitted", { action: outcome.action, execution: outcome.execution })
-            : outcome.failure.kind === "unknown"
-              ? t("roles.unknown", { operation: outcome.failure.operationId ?? "—" })
-              : t("roles.rejected", { reason: failureText(outcome.failure) })}
-        </p>
-      ) : null}
-      {confirming ? (
-        <div className="flex flex-col gap-2 rounded-md border p-3" role="group">
-          <p>{t("roles.confirm", { action: confirming.key, member: confirming.principal.displayName })}</p>
-          <div className="flex gap-2">
-            <Button disabled={busy} onClick={() => void submit()}>{t("platform.confirm")}</Button>
-            {outcome?.kind === "failed" && outcome.failure.kind === "unknown" ? null : (
-              <Button onClick={() => setConfirming(null)}>{t("platform.cancel")}</Button>
-            )}
-          </div>
-        </div>
-      ) : null}
+      <MemberActionFeedback action={action}/>
       {state.status === "error" ? (
         <Notice role="alert">
           {t("platform.loadFailed")}

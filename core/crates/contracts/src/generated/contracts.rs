@@ -4687,6 +4687,16 @@ pub struct RoleMemberView {
 
     pub can_grant_workspace_admin: bool,
 
+    /// 当前 Tenant manage 与 tenant.member.revoke 目录均有效，且不是最后有效 Tenant admin；提交仍走原审批与重新准入，省略或 false
+    /// 不显示动作。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_remove_from_tenant: Option<bool>,
+
+    /// 当前 Workspace manage 与 workspace.member.revoke 目录均有效，目标存在可撤 WorkspaceMembership；省略或 false
+    /// 不显示动作，提交仍重新准入。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_remove_from_workspace: Option<bool>,
+
     pub can_revoke_tenant_admin: bool,
 
     pub can_revoke_workspace_admin: bool,
@@ -5776,7 +5786,14 @@ pub struct ComponentConformanceIdentityContext {
 
     pub actor_principal_id: String,
 
+    /// 隔离环境PEP的实际模拟授权revision，不得指向生产SpiceDB事实。
+    pub authorization_min_zed_token: String,
+
     pub case_key: String,
+
+    /// execute场景必填的隔离native执行引用；不在生产库创建ExternalExecution。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_execution_id: Option<String>,
 
     pub operation: AdapterProtocolOperation,
 

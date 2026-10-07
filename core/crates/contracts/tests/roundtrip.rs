@@ -6,6 +6,37 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn conformance_identity_preserves_isolated_authorization_and_execution() {
+    let raw = fs::read_to_string(
+        sample_path().with_file_name("component-conformance-identity.sample.json"),
+    )
+    .unwrap();
+    let expected: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let typed: contracts::ComponentConformanceIdentity = serde_json::from_str(&raw).unwrap();
+    assert_eq!(serde_json::to_value(typed).unwrap(), expected);
+}
+
+#[test]
+fn member_removal_permissions_preserve_true_false_and_legacy_absence() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("member-action-availability.sample.json"))
+            .unwrap();
+    for permission in [Some(true), Some(false), None] {
+        let mut value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let row = value["members"][0].as_object_mut().unwrap();
+        for key in ["canRemoveFromWorkspace", "canRemoveFromTenant"] {
+            if let Some(permission) = permission {
+                row.insert(key.into(), permission.into());
+            } else {
+                row.remove(key);
+            }
+        }
+        let typed: contracts::RoleMemberPage = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(typed).unwrap(), value);
+    }
+}
+
+#[test]
 fn installation_upgrade_permission_preserves_false_and_legacy_absence() {
     let raw =
         fs::read_to_string(sample_path().with_file_name("agent-installation-upgrade.sample.json"))

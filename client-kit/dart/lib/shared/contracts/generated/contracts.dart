@@ -9356,6 +9356,14 @@ class RoleMemberPage {
 class RoleMemberView {
   final bool canGrantTenantAdmin;
   final bool canGrantWorkspaceAdmin;
+
+  ///当前 Tenant manage 与 tenant.member.revoke 目录均有效，且不是最后有效 Tenant admin；提交仍走原审批与重新准入，省略或 false
+  ///不显示动作。
+  final bool? canRemoveFromTenant;
+
+  ///当前 Workspace manage 与 workspace.member.revoke 目录均有效，目标存在可撤 WorkspaceMembership；省略或 false
+  ///不显示动作，提交仍重新准入。
+  final bool? canRemoveFromWorkspace;
   final bool canRevokeTenantAdmin;
   final bool canRevokeWorkspaceAdmin;
   final String displayName;
@@ -9371,6 +9379,8 @@ class RoleMemberView {
   RoleMemberView({
     required this.canGrantTenantAdmin,
     required this.canGrantWorkspaceAdmin,
+    this.canRemoveFromTenant,
+    this.canRemoveFromWorkspace,
     required this.canRevokeTenantAdmin,
     required this.canRevokeWorkspaceAdmin,
     required this.displayName,
@@ -9383,6 +9393,8 @@ class RoleMemberView {
   factory RoleMemberView.fromJson(Map<String, dynamic> json) => RoleMemberView(
     canGrantTenantAdmin: json["canGrantTenantAdmin"],
     canGrantWorkspaceAdmin: json["canGrantWorkspaceAdmin"],
+    canRemoveFromTenant: json["canRemoveFromTenant"],
+    canRemoveFromWorkspace: json["canRemoveFromWorkspace"],
     canRevokeTenantAdmin: json["canRevokeTenantAdmin"],
     canRevokeWorkspaceAdmin: json["canRevokeWorkspaceAdmin"],
     displayName: json["displayName"],
@@ -9395,6 +9407,8 @@ class RoleMemberView {
   Map<String, dynamic> toJson() => _stripNulls({
     "canGrantTenantAdmin": canGrantTenantAdmin,
     "canGrantWorkspaceAdmin": canGrantWorkspaceAdmin,
+    "canRemoveFromTenant": canRemoveFromTenant,
+    "canRemoveFromWorkspace": canRemoveFromWorkspace,
     "canRevokeTenantAdmin": canRevokeTenantAdmin,
     "canRevokeWorkspaceAdmin": canRevokeWorkspaceAdmin,
     "displayName": displayName,
@@ -11641,7 +11655,13 @@ class ComponentConformanceIdentityContext {
   final int actionDefinitionVersion;
   final String actionKey;
   final String actorPrincipalId;
+
+  ///隔离环境PEP的实际模拟授权revision，不得指向生产SpiceDB事实。
+  final String authorizationMinZedToken;
   final String caseKey;
+
+  ///execute场景必填的隔离native执行引用；不在生产库创建ExternalExecution。
+  final String? externalExecutionId;
   final AdapterProtocolOperation operation;
   final String resultExposurePolicyId;
   final int resultExposurePolicyVersion;
@@ -11655,7 +11675,9 @@ class ComponentConformanceIdentityContext {
     required this.actionDefinitionVersion,
     required this.actionKey,
     required this.actorPrincipalId,
+    required this.authorizationMinZedToken,
     required this.caseKey,
+    this.externalExecutionId,
     required this.operation,
     required this.resultExposurePolicyId,
     required this.resultExposurePolicyVersion,
@@ -11672,7 +11694,9 @@ class ComponentConformanceIdentityContext {
     actionDefinitionVersion: json["actionDefinitionVersion"],
     actionKey: json["actionKey"],
     actorPrincipalId: json["actorPrincipalId"],
+    authorizationMinZedToken: json["authorizationMinZedToken"],
     caseKey: json["caseKey"],
+    externalExecutionId: json["externalExecutionId"],
     operation: adapterProtocolOperationValues.map[json["operation"]]!,
     resultExposurePolicyId: json["resultExposurePolicyId"],
     resultExposurePolicyVersion: json["resultExposurePolicyVersion"],
@@ -11687,7 +11711,9 @@ class ComponentConformanceIdentityContext {
     "actionDefinitionVersion": actionDefinitionVersion,
     "actionKey": actionKey,
     "actorPrincipalId": actorPrincipalId,
+    "authorizationMinZedToken": authorizationMinZedToken,
     "caseKey": caseKey,
+    "externalExecutionId": externalExecutionId,
     "operation": adapterProtocolOperationValues.reverse[operation],
     "resultExposurePolicyId": resultExposurePolicyId,
     "resultExposurePolicyVersion": resultExposurePolicyVersion,

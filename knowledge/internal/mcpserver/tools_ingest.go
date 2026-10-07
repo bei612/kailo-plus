@@ -44,6 +44,7 @@ func deleteDocumentTool() mcp.Tool {
 	return mcp.NewTool(types.MCPEndpointToolDeleteDocument,
 		mcp.WithDescription("Permanently delete a document and its index data from its knowledge base."),
 		mcp.WithString("knowledge_id", mcp.Required(), mcp.Description("Document id")),
+		mcp.WithString("expected_revision", mcp.Description("When provided, delete only this exact native_revision returned by read_document; concurrent edits refuse the deletion.")),
 		mcp.WithDestructiveHintAnnotation(true),
 	)
 }
@@ -176,7 +177,16 @@ func (s *Server) handleDeleteDocument(ctx context.Context, req mcp.CallToolReque
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	if err := s.knowledgeService.DeleteKnowledge(ctx, existing.ID); err != nil {
+	if revision, supplied := req.GetArguments()["expected_revision"]; supplied {
+		value, ok := revision.(string)
+		if !ok || value == "" {
+			return mcp.NewToolResultError("expected_revision must be a nonempty native revision"), nil
+		}
+		err = s.knowledgeService.DeleteKnowledgeAtRevision(ctx, existing.ID, value)
+	} else {
+		err = s.knowledgeService.DeleteKnowledge(ctx, existing.ID)
+	}
+	if err != nil {
 		return mcp.NewToolResultErrorFromErr("failed to delete document", err), nil
 	}
 	return jsonResult(map[string]any{

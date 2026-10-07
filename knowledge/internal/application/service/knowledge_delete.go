@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
@@ -124,6 +125,25 @@ func (s *knowledgeService) DeleteKnowledge(ctx context.Context, id string) error
 	plan, err := s.planKnowledgeDelete(ctx, []string{id})
 	if err != nil {
 		return err
+	}
+	return s.executeKnowledgeDelete(plan, true)
+}
+
+// DeleteKnowledgeAtRevision reuses the original deletion admission and CAS.
+// Checking the MCP metadata alone is insufficient: an edit may arrive between
+// that read and this plan. executeKnowledgeDelete fences this exact plan before
+// touching indexes, chunks, or files.
+func (s *knowledgeService) DeleteKnowledgeAtRevision(ctx context.Context, id, revision string) error {
+	if revision == "" {
+		return apperrors.NewBadRequestError("native revision is required")
+	}
+	plan, err := s.planKnowledgeDelete(ctx, []string{id})
+	if err != nil {
+		return err
+	}
+	if len(plan.knowledge) != 1 || plan.knowledge[0].UpdatedAt.IsZero() ||
+		plan.knowledge[0].UpdatedAt.UTC().Format(time.RFC3339Nano) != revision {
+		return apperrors.NewConflictError("native revision changed")
 	}
 	return s.executeKnowledgeDelete(plan, true)
 }

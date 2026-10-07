@@ -702,19 +702,22 @@ pub async fn list_role_members(
     let Some(fetch_limit) = page.checked_add(1) else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
-    let mut rows: Vec<(Uuid, String)> = match sqlx::query_as(
-        "select p.id, hi.display_name
+    let mut rows: Vec<(Uuid, String, bool)> = match sqlx::query_as(
+        "select p.id, hi.display_name,
+           exists(select 1 from identity.workspace_membership wm
+             where wm.workspace_id=$4 and wm.tenant_principal_id=p.id and wm.state in ('ACTIVE','ERROR'))
          from identity.principal p
          join identity.tenant_membership tm on tm.tenant_principal_id = p.id
          join identity.human_identity hi on hi.id = tm.human_identity_id
          where p.tenant_id = $1 and p.kind = 'HUMAN' and p.status = 'ACTIVE'
-           and tm.tenant_id = $1 and tm.state = 'ACTIVE'
+           and tm.tenant_id = $1 and tm.state = 'ACTIVE' and hi.status = 'ACTIVE'
            and ($2::uuid is null or p.id > $2)
          order by p.id limit $3",
     )
     .bind(ctx.tenant_id)
     .bind(query.cursor)
     .bind(fetch_limit)
+    .bind(query.workspace_id)
     .fetch_all(&state.pool)
     .await
     {
@@ -833,9 +836,16 @@ pub async fn list_role_members(
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
+    let removal_actions = match active_member_removal_actions(&state.pool).await {
+        Ok(keys) => keys,
+        Err(error) => {
+            tracing::warn!(%error,"读取成员撤权 ActionDefinition 失败");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
     let members = rows
         .into_iter()
-        .map(|(principal_id, display_name)| {
+        .map(|(principal_id, display_name, removable_workspace_member)| {
             let tenant_admin = tenant_admins.contains(&principal_id);
             let workspace_admin = workspace_admins.contains(&principal_id);
             let last_tenant_admin =
@@ -859,6 +869,20 @@ pub async fn list_role_members(
                     && workspace_admin
                     && enabled.contains("workspace.admin.revoke"),
                 last_tenant_admin,
+                can_remove_from_workspace: Some(
+                    workspace_manage
+                        && removable_workspace_member
+                        && principal_id != ctx.tenant_principal_id
+                        && removal_actions.contains("workspace.member.revoke")
+                        && crate::capability_registry::action_exposed("workspace.member.revoke"),
+                ),
+                can_remove_from_tenant: Some(
+                    tenant_manage
+                        && !last_tenant_admin
+                        && principal_id != ctx.tenant_principal_id
+                        && removal_actions.contains("tenant.member.revoke")
+                        && crate::capability_registry::action_exposed("tenant.member.revoke"),
+                ),
             }
         })
         .collect();
@@ -870,6 +894,185 @@ pub async fn list_role_members(
         }),
     )
         .into_response()
+}
+
+async fn active_member_removal_actions<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+) -> Result<HashSet<String>, sqlx::Error> {
+    let keys:Vec<String>=sqlx::query_scalar(
+        "select ad.action_key from catalog.action_definition ad
+         where ad.status='ACTIVE' and ad.component_type_key='core' and ad.permission='manage'
+           and ad.tenant_rule='SESSION_TENANT' and ad.execution_mode='TEMPORAL'
+           and ad.workflow_type='ComponentTaskWorkflow' and ad.workflow_kind='MEMBERSHIP_REVOCATION'
+           and ((ad.action_key='workspace.member.revoke' and ad.target_type='WORKSPACE_MEMBERSHIP'
+             and ad.permission_object_type='workspace' and ad.workspace_rule='WORKSPACE_REQUIRED')
+           or (ad.action_key='tenant.member.revoke' and ad.target_type='TENANT_MEMBERSHIP'
+             and ad.permission_object_type='tenant' and ad.workspace_rule='TENANT_ONLY'
+             and ad.confirmation_mode='APPROVAL' and exists(select 1 from catalog.approval_policy ap
+               where ap.id=ad.approval_policy_id and ap.version=ad.approval_policy_version
+                 and ap.status='ACTIVE' and ap.action_key=ad.action_key and ap.target_type=ad.target_type)))",
+    ).fetch_all(executor).await?;
+    Ok(keys.into_iter().collect())
+}
+
+#[cfg(test)]
+mod member_action_tests {
+    use super::*;
+    #[tokio::test]
+    #[ignore = "requires disposable migrated AGENT_INVOKE_TEST_DATABASE_URL; rolls back DDL and fixture"]
+    async fn generated_catalog_guard_roundtrip_keeps_status_mutable_and_evidence_immutable() {
+        use sqlx::Acquire;
+        const UP: &str = include_str!(
+            "../../../migrations/20261007040000_action_definition_generated_guard.up.sql"
+        );
+        const DOWN: &str = include_str!(
+            "../../../migrations/20261007040000_action_definition_generated_guard.down.sql"
+        );
+        let pool = sqlx::PgPool::connect(&std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let definition: Uuid = sqlx::query_scalar("select id from catalog.action_definition where action_key='workspace.create' and status='ACTIVE' and component_release_id is null")
+            .fetch_one(&mut *tx).await.unwrap();
+        let before: serde_json::Value =
+            sqlx::query_scalar("select to_jsonb(d) from catalog.action_definition d where id=$1")
+                .bind(definition)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        sqlx::raw_sql(UP).execute(&mut *tx).await.unwrap();
+        for status in ["RETIRED", "ACTIVE"] {
+            assert_eq!(
+                sqlx::query("update catalog.action_definition set status=$2 where id=$1")
+                    .bind(definition)
+                    .bind(status)
+                    .execute(&mut *tx)
+                    .await
+                    .unwrap()
+                    .rows_affected(),
+                1
+            );
+            let actual: serde_json::Value = sqlx::query_scalar(
+                "select to_jsonb(d) from catalog.action_definition d where id=$1",
+            )
+            .bind(definition)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+            let mut expected = before.clone();
+            expected["status"] = status.into();
+            assert_eq!(actual, expected);
+        }
+        sqlx::raw_sql(DOWN).execute(&mut *tx).await.unwrap();
+        let mut save = tx.begin().await.unwrap();
+        let error =
+            sqlx::query("update catalog.action_definition set status='RETIRED' where id=$1")
+                .bind(definition)
+                .execute(&mut *save)
+                .await
+                .unwrap_err();
+        assert_eq!(
+            error.as_database_error().and_then(|e| e.code()).as_deref(),
+            Some("23001")
+        );
+        save.rollback().await.unwrap();
+        sqlx::raw_sql(UP).execute(&mut *tx).await.unwrap();
+        let mut save = tx.begin().await.unwrap();
+        sqlx::query("update catalog.action_definition set status='RETIRED' where id=$1")
+            .bind(definition)
+            .execute(&mut *save)
+            .await
+            .unwrap();
+        let error =
+            sqlx::query("update catalog.action_definition set permission='read' where id=$1")
+                .bind(definition)
+                .execute(&mut *save)
+                .await
+                .unwrap_err();
+        assert_eq!(
+            error.as_database_error().and_then(|e| e.code()).as_deref(),
+            Some("23001")
+        );
+        save.rollback().await.unwrap();
+        let actual: serde_json::Value =
+            sqlx::query_scalar("select to_jsonb(d) from catalog.action_definition d where id=$1")
+                .bind(definition)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        assert_eq!(
+            actual, before,
+            "failed content update must roll back the whole savepoint, including status"
+        );
+
+        let tenant = Uuid::new_v4();
+        let actor = Uuid::new_v4();
+        let action = Uuid::new_v4();
+        sqlx::query("insert into identity.tenant(id,slug,name,state) values($1,$2,$2,'ACTIVE')")
+            .bind(tenant)
+            .bind(tenant.to_string())
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("insert into identity.principal(id,tenant_id,kind,status) values($1,$2,'HUMAN','ACTIVE')")
+            .bind(actor).bind(tenant).execute(&mut *tx).await.unwrap();
+        sqlx::query("insert into admission.action_execution(id,operation_id,tenant_id,action_key,action_version,
+            initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id)
+            select $1,$2,$3,action_key,version,$4,$4,$5,$6,'EVALUATING','NOT_DISPATCHED',$7 from catalog.action_definition where id=$8")
+            .bind(action).bind(Uuid::new_v4()).bind(tenant).bind(actor).bind(Uuid::new_v4())
+            .bind(collab_bridge::limits::canonical_digest(&serde_json::json!({}))).bind(Uuid::new_v4()).bind(definition)
+            .execute(&mut *tx).await.unwrap();
+        let referenced: Uuid = sqlx::query_scalar(
+            "select action_definition_id from admission.action_execution where id=$1",
+        )
+        .bind(action)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(referenced, definition);
+        let mut save = tx.begin().await.unwrap();
+        let error = sqlx::query("delete from catalog.action_definition where id=$1")
+            .bind(definition)
+            .execute(&mut *save)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.as_database_error().and_then(|e| e.code()).as_deref(),
+            Some("23001")
+        );
+        assert!(error
+            .as_database_error()
+            .unwrap()
+            .message()
+            .contains("ActionExecution"));
+        save.rollback().await.unwrap();
+        let actual: serde_json::Value =
+            sqlx::query_scalar("select to_jsonb(d) from catalog.action_definition d where id=$1")
+                .bind(definition)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        assert_eq!(actual, before);
+        tx.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires AGENT_INVOKE_TEST_DATABASE_URL pointing at a disposable migrated database"]
+    async fn member_removal_view_requires_its_original_action_and_active_approval_policy() {
+        let pool = sqlx::PgPool::connect(&std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let active = active_member_removal_actions(&mut *tx).await.unwrap();
+        assert!(active.contains("workspace.member.revoke"));
+        assert!(active.contains("tenant.member.revoke"));
+        sqlx::query("update catalog.approval_policy set status='RETIRED' where action_key='tenant.member.revoke' and status='ACTIVE'")
+            .execute(&mut *tx).await.unwrap();
+        let retired = active_member_removal_actions(&mut *tx).await.unwrap();
+        assert!(retired.contains("workspace.member.revoke"));
+        assert!(!retired.contains("tenant.member.revoke"));
+        tx.rollback().await.unwrap();
+    }
 }
 
 /// 基础审计页：**只看自己的动作**。

@@ -1,0 +1,11 @@
+{
+  "name": "knowledge-adapter",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "dependencies": { "@modelcontextprotocol/sdk": "1.26.0" },
+  "scripts": {
+    "start": "node src/main.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}

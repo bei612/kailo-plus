@@ -9,6 +9,37 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('conformance identity preserves isolated authorization and execution', () {
+    final sample =
+        jsonDecode(
+              File(
+                '../../contracts/samples/component-conformance-identity.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    expect(ComponentConformanceIdentity.fromJson(sample).toJson(), sample);
+  });
+  test('member removal permissions preserve true false and legacy absence', () {
+    final sample =
+        jsonDecode(
+              File(
+                '../../contracts/samples/member-action-availability.sample.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    for (final permission in [true, false, null]) {
+      final value = jsonDecode(jsonEncode(sample)) as Map<String, dynamic>;
+      final row = (value['members'] as List).first as Map<String, dynamic>;
+      for (final key in ['canRemoveFromWorkspace', 'canRemoveFromTenant']) {
+        if (permission == null) {
+          row.remove(key);
+        } else {
+          row[key] = permission;
+        }
+      }
+      expect(RoleMemberPage.fromJson(value).toJson(), value);
+    }
+  });
   test('Installation upgrade permission keeps false and legacy absence', () {
     final sample =
         jsonDecode(

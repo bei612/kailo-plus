@@ -5,6 +5,8 @@ import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { MembersPane, WorkspaceManagementPanels } from "../src/react/pages";
 import type { BffRequest, BffReply } from "../src/transport";
+import { TransportError } from "../src/transport";
+import { TenantInvitations } from "../src/react/invitations";
 import { render, click, button, type, settle } from "./render";
 
 beforeEach(()=>{
@@ -19,6 +21,10 @@ afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks();});
 const first="e".repeat(64),second="f".repeat(64);
 const member={principalId:"person",displayName:"Ada",state:"ACTIVE",pubkeys:[first,second]};
 const profile={pubkey:second,displayName:"Relay Ada",about:"Original profile",avatarUrl:null,avatarMediaPaths:{}};
+function browse(request:BffRequest):BffReply {
+  return request.path.includes("role-members")||request.path.includes("invitations")?{status:403,body:{}}:
+    {status:200,body:request.path.endsWith("/members")?[member]:profile};
+}
 function mount(route:(request:BffRequest)=>BffReply, ui:React.ReactNode) {
   const send=vi.fn(async(request:BffRequest)=>route(request));
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
@@ -27,9 +33,9 @@ function mount(route:(request:BffRequest)=>BffReply, ui:React.ReactNode) {
 
 describe("original member browsing with governed identity",()=>{
   it("keeps all real keys, searches, and lazily opens only the selected member profile",async()=>{
-    const m=mount(request=>({status:200,body:request.path.endsWith("/members")?[member]:profile}),<MembersPane workspaceId="workspace"/>);
+    const m=mount(browse,<MembersPane workspaceId="workspace"/>);
     const host=await m.render();await settle();
-    expect(m.send).toHaveBeenCalledTimes(1);
+    expect(m.send.mock.calls.filter(([request])=>request.path.includes("/profiles/"))).toHaveLength(0);
     expect(host.querySelectorAll('[data-testid="member-person"]')).toHaveLength(1);
     expect(host.textContent).toContain("eeeeeeee…eeee");expect(host.textContent).toContain("ffffffff…ffff");
     await type(host.querySelector('input')!,"missing");expect(host.textContent).toContain("No members match");
@@ -42,7 +48,7 @@ describe("original member browsing with governed identity",()=>{
   });
   it("fresh read failure removes both member rows and an open profile",async()=>{
     let refused=false;
-    const m=mount(request=>refused?{status:403,body:{}}:{status:200,body:request.path.endsWith("/members")?[member]:profile},<MembersPane workspaceId="workspace"/>);
+    const m=mount(request=>refused?{status:403,body:{}}:browse(request),<MembersPane workspaceId="workspace"/>);
     const host=await m.render();await settle();
     await click(host.querySelector<HTMLElement>(`span[title="${second}"] [role="button"]`)!);
     await vi.waitFor(()=>expect(host.querySelector('[data-testid="member-profile-panel"]')).not.toBeNull());
@@ -52,11 +58,11 @@ describe("original member browsing with governed identity",()=>{
     expect(host.querySelector('[role="alert"]')).not.toBeNull();
   });
   it("retains the native identity host instead of replacing it with SERVER profile transport",async()=>{
-    const native=vi.fn();const m=mount(()=>({status:200,body:[member]}),<MembersPane workspaceId="workspace"
+    const native=vi.fn();const m=mount(browse,<MembersPane workspaceId="workspace"
       renderIdentity={(pubkey,children,label)=><button aria-label={label} onClick={()=>native(pubkey)}>{children}</button>}/>);
     const host=await m.render();await settle();
     await click(host.querySelector<HTMLButtonElement>(`span[title="${second}"] button`)!);
-    expect(native).toHaveBeenCalledWith(second);expect(m.send).toHaveBeenCalledTimes(1);
+    expect(native).toHaveBeenCalledWith(second);expect(m.send.mock.calls.some(([request])=>request.path.includes("/profiles/"))).toBe(false);
   });
   it("does not fetch all management forms on entry or unmount a visited context on navigation",async()=>{
     const m=mount(()=>({status:200,body:{workspaces:[]}}),<WorkspaceManagementPanels><p>Directory</p></WorkspaceManagementPanels>);
@@ -67,5 +73,65 @@ describe("original member browsing with governed identity",()=>{
     await click(button(host,"Members"));
     expect(host.querySelector('[data-testid="role-management"]')).toBe(original);
     expect(original?.closest('section')?.hidden).toBe(true);
+  });
+});
+
+const role={principalId:member.principalId,displayName:member.displayName,tenantAdmin:false,workspaceAdmin:false,
+  canGrantTenantAdmin:false,canRevokeTenantAdmin:false,canGrantWorkspaceAdmin:true,canRevokeWorkspaceAdmin:false,
+  canRemoveFromWorkspace:true,canRemoveFromTenant:false,lastTenantAdmin:false};
+async function memberMenu(host:HTMLElement) {
+  const trigger=host.querySelector<HTMLButtonElement>('button[aria-label="Actions for Ada"]')!;
+  expect(trigger).not.toBeNull();
+  await act(async()=>trigger.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})));
+  await settle();return document.querySelector<HTMLElement>('[role="menu"]')!;
+}
+async function chooseMember(host:HTMLElement,label:string) {
+  const menu=await memberMenu(host);
+  const item=[...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(node=>node.textContent===label)!;
+  expect(item).toBeDefined();await click(item);
+}
+describe("original member actions through the same governance entry",()=>{
+  it("uses exact server flags and the original command scope, not role-derived removal",async()=>{
+    const m=mount(request=>request.method==="POST"?{status:202,body:{actionKey:"workspace.admin.grant",actionExecutionId:"ae",operationId:"op",gateState:"ALLOWED",dispatchState:"DISPATCHED"}}:
+      request.path.includes("role-members")?{status:200,body:{members:[{...role,canRemoveFromWorkspace:undefined}]}}:browse(request),<MembersPane workspaceId="workspace"/>);
+    const host=await m.render();await settle();
+    const menu=await memberMenu(host);expect(menu.textContent).not.toContain("Remove channel member");
+    await click([...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(node=>node.textContent==="Grant channel administrator")!);
+    expect(m.send.mock.calls.some(([request])=>request.method==="POST")).toBe(false);
+    await click(button(host,"Confirm"));
+    expect(m.send).toHaveBeenCalledWith(expect.objectContaining({method:"POST",path:"/api/v1/actions",body:expect.objectContaining({actionKey:"workspace.admin.grant",principalId:"person",workspaceId:"workspace"})}));
+    expect(host.textContent).toContain("Check Tasks for its final result");
+  });
+  it("keeps an uncertain removal intent and key across fresh reads",async()=>{
+    let attempts=0;
+    const m=mount(request=>request.method==="POST"?(++attempts===2?{status:403,body:{}}:{status:202,body:{actionKey:"workspace.member.revoke",actionExecutionId:"ae",operationId:"op",gateState:"ALLOWED",dispatchState:"UNKNOWN"}}):
+      request.path.includes("role-members")?{status:200,body:{members:[role]}}:browse(request),<MembersPane workspaceId="workspace"/>);
+    const host=await m.render();await settle();await chooseMember(host,"Remove channel member");
+    await click(button(host,"Confirm"));expect(host.textContent).toContain("accepted is unknown");
+    expect([...host.querySelectorAll('button')].some(node=>node.textContent==="Cancel")).toBe(false);
+    await click(button(host,"Confirm"));
+    expect(host.textContent).toContain("accepted is unknown");
+    expect([...host.querySelectorAll('button')].some(node=>node.textContent==="Cancel")).toBe(false);
+    await click(button(host,"Confirm"));
+    const commands=m.send.mock.calls.filter(([request])=>request.method==="POST").map(([request])=>request.body);
+    expect(commands).toHaveLength(3);for(const command of commands)expect(command).toEqual(commands[0]);
+  });
+  it("rejects repeated role cursors without retaining an actionable partial page",async()=>{
+    let n=0;const m=mount(request=>request.path.includes("role-members")?{status:200,body:{members:[{...role,principalId:`person-${n++}`}],nextCursor:"repeat"}}:browse(request),<MembersPane workspaceId="workspace"/>);
+    const host=await m.render();await settle();
+    expect(host.querySelector('button[aria-label="Actions for Ada"]')).toBeNull();
+    expect(host.textContent).toContain("result is unknown");
+    expect(n).toBe(2);
+  });
+  it("retains an unknown invitation across the original dialog closing and retries only its original key",async()=>{
+    const m=mount(request=>{if(request.method==="POST")throw new TransportError("response lost");return {status:200,body:[]};},<TenantInvitations dialog/>);
+    const host=await m.render();await settle();await click(button(host,"Invite organization member"));
+    await type(document.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!,"Ada");
+    await act(async()=>document.querySelector('form')!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));await settle();
+    await click(button(document.body,"Close"));await click(button(host,"Invite organization member"));
+    expect(document.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!.value).toBe("Ada");
+    await act(async()=>document.querySelector('form')!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));await settle();
+    const commands=m.send.mock.calls.filter(([request])=>request.method==="POST").map(([request])=>request.body);
+    expect(commands).toHaveLength(2);expect(commands[1]).toEqual(commands[0]);
   });
 });
