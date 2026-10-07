@@ -106,6 +106,9 @@ describe("Inbox and sidebar consume the original governed Relay window", () => {
 
 it("opens the Inbox row's actual author without marking it read and clears the panel on identity change",async()=>{
   (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
+  const scrollDescriptor=Object.getOwnPropertyDescriptor(Element.prototype,"scrollIntoView");
+  const scrollIntoView=vi.fn();
+  Object.defineProperty(Element.prototype,"scrollIntoView",{configurable:true,value:scrollIntoView});
   setLocale("en"); localStorage.clear(); sessionStorage.clear();
   vi.stubGlobal("ResizeObserver",class{constructor(private callback:ResizeObserverCallback){} observe(){this.callback([{contentRect:{width:1400}} as ResizeObserverEntry],this as unknown as ResizeObserver);} unobserve(){} disconnect(){}});
   vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
@@ -122,6 +125,9 @@ it("opens the Inbox row's actual author without marking it read and clears the p
   try{
     await render("human");
     await vi.waitFor(()=>expect(host.querySelector(`[data-testid="home-inbox-item-${event.id}"]`)).not.toBeNull());
+    await vi.waitFor(()=>expect(host.querySelector(`[data-testid="home-inbox-item-${event.id}"]`)?.getAttribute("aria-current")).toBe("true"));
+    expect(host.querySelector('[data-testid="home-inbox-detail"]')).not.toBeNull();
+    await vi.waitFor(()=>expect(scrollIntoView).toHaveBeenCalledWith({block:"center"}));
     expect(api.messageAuthorProfile).not.toHaveBeenCalled();
     const trigger=host.querySelector<HTMLElement>(`[data-testid="home-inbox-item-${event.id}"] [role="button"][aria-label="Profile"]`)!;
     await act(async()=>trigger.click());
@@ -129,9 +135,15 @@ it("opens the Inbox row's actual author without marking it read and clears the p
     expect(api.messageAuthorProfile).toHaveBeenCalledWith("workspace-a",event.id);
     expect(api.write).not.toHaveBeenCalled();
     expect(host.querySelector('[data-testid="home-inbox"]')?.className).toContain("var(--home-auxiliary-width)");
+    await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="inbox-filter-trigger"]')!.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})));
+    const threads=[...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find(item=>item.textContent==="Threads");
+    expect(threads).toBeDefined();
+    await act(async()=>threads!.click());
+    expect(host.querySelector('[data-testid="home-inbox-detail"]')).toBeNull();
+    expect(host.querySelector('[data-testid="home-inbox-detail-empty"]')).not.toBeNull();
     await render("other-human");
     expect(host.textContent).not.toContain("Scoped biography");
-  }finally{await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();}
+  }finally{await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();if(scrollDescriptor)Object.defineProperty(Element.prototype,"scrollIntoView",scrollDescriptor);else Reflect.deleteProperty(Element.prototype,"scrollIntoView");}
 });
 
 it("loads owned Agent activity through the admitted author query, never foreign installations or fabricated mentions",async()=>{

@@ -27,6 +27,7 @@ import { ExternalLink, MailOpen } from "lucide-react";
 import { InboxThreadPane } from "./InboxThreadPane";
 import { InboxDrafts, useInboxDrafts } from "./InboxDrafts";
 import { inboxReadContexts, useInboxState } from "@client-kit/platform/react/use-inbox-state";
+import { useHomeInboxAutoSelection } from "@client-kit/platform/react/use-inbox-auto-selection";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hex, inboxEvents, inboxWindowEvents, type Event } from "./inbox-events";
 export { inboxEvents } from "./inbox-events";
@@ -246,6 +247,34 @@ export function InboxPane({
       row.items.some((event) => event.createdAt > (reads.readAt(inboxReply(event.tags) ? `msg:${event.id}` : event.channelId) ?? 0))).length);
   }, [onUnreadCount, failed, reads.failed, reads.unknown, snapshot, reads.state, rows, reads.readAt]);
   useEffect(() => () => onUnreadCount?.(null), [onUnreadCount]);
+  const visibleRows = rows
+    .filter((row) => matchesInbox({ categories: row.categories, groupItems: row.items, item: row.item }, filter, snapshot?.agentPubkeys))
+    .filter(
+      (row) =>
+        !unreadOnly || row.scopeKey === selected ||
+        row.items.some(
+          (item) =>
+            item.createdAt >
+            (reads.readAt(inboxReply(item.tags) ? `msg:${item.id}` : item.channelId) ?? 0),
+        ),
+    );
+  const narrow = width !== null && width < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
+  // The original selection hook receives the admitted scope key as its stable
+  // identity; equal Relay root IDs in different channels must not share a pane.
+  const selectionItems = useMemo(() => visibleRows.map(row => ({ id: row.scopeKey, conversationId: row.scopeKey })), [visibleRows]);
+  useHomeInboxAutoSelection({
+    coldResolutionPending: false,
+    filteredItems: selectionItems,
+    hasFeed: Boolean(snapshot && reads.state),
+    hasPersonalSelection: filter === "drafts" && selectedDraft !== null,
+    homeInboxWidthPx: width ?? 0,
+    isLoading: failed || reads.failed || reads.unknown || !snapshot || !reads.state,
+    isMessagesMode: filter !== "drafts",
+    isNarrowHomeViewport: narrow,
+    selectedConversationId: selected,
+    setAutoSelectedEventId: setSelected,
+    urlSelectedItemId: null,
+  });
   if (failed || reads.failed || reads.unknown)
     return (
       <section role="status">
@@ -254,23 +283,11 @@ export function InboxPane({
       </section>
     );
   if (!snapshot || !reads.state) return <p role="status">{t("platform.loading")}</p>;
-  const visibleRows = rows
-    .filter((row) => matchesInbox({ categories: row.categories, groupItems: row.items, item: row.item }, filter, snapshot.agentPubkeys))
-    .filter(
-      (row) =>
-        !unreadOnly ||
-        row.items.some(
-          (item) =>
-            item.createdAt >
-            (reads.readAt(inboxReply(item.tags) ? `msg:${item.id}` : item.channelId) ?? 0),
-        ),
-    );
-  const chosen = rows.find((row) => row.scopeKey === selected);
+  const chosen = visibleRows.find((row) => row.scopeKey === selected);
   const authorTarget = profileTarget?.principalId === principalId && reads.visibleChannels.has(profileTarget.workspaceId) &&
     (snapshot.workspaces.some((workspace) => workspace.id === profileTarget.workspaceId) || snapshot.conversations.some(item => item.channelId === profileTarget.workspaceId && item.id === profileTarget.conversationId)) ? profileTarget : null;
   const openItem = (event: Event) => { void hiddenDm.openContext({channelId:event.channelId,messageId:event.id,threadRootId:inboxThread(event.tags).rootId}); };
   const singleAuxiliary = Boolean(authorTarget) && width !== null && width < AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX;
-  const narrow = width !== null && width < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
   const hasSelection = filter === "drafts" ? drafts.entries.some((entry) => entry.key === selectedDraft) : Boolean(chosen);
   const showList = !singleAuxiliary && (!narrow || !hasSelection);
   const showDetail = !singleAuxiliary && (!narrow || hasSelection);
