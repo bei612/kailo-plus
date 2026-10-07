@@ -590,11 +590,11 @@ describe("shared Automation schedule consumer", () => {
   };
 
   it("freezes explicit native interval and channel target, preserving the same UNKNOWN request", async () => {
-    const { section, t, field, choose, fill } = await setup(["CHANNEL"]);
+    const { section, t, choose, fill } = await setup(["CHANNEL"]);
     await choose("Trigger", "SCHEDULE");
-    expect(field("Interval (seconds)").querySelector("input")!.value).toBe("");
+    expect(section.querySelector<HTMLInputElement>('#wf-trigger-time')!.value).toBe("09:00");
     expect(button(section, "Review request").disabled).toBe(true);
-    await fill("Interval (seconds)", "300");
+    await click(section.querySelector<HTMLInputElement>('input[value="every_15_minutes"]')!);
     await fill("Offset (seconds)", "0");
     await fill("Catch-up window (seconds)", "60");
     await fill("Instruction template", "Report workspace progress");
@@ -607,7 +607,7 @@ describe("shared Automation schedule consumer", () => {
     expect(writes[1]).toEqual(writes[0]);
     expect(writes[0]).toEqual({ actionKey: "automation.create", idempotencyKey: expect.any(String), explicitConfirmation: true,
       workspaceId: installation.workspaceId, executorInstallationResourceId: installation.resourceId,
-      automationVersionContent: { trigger: { kind: "SCHEDULE", scheduleSpec: { everySeconds: 300, offsetSeconds: 0, catchupWindowSeconds: 60 } },
+      automationVersionContent: { trigger: { kind: "SCHEDULE", scheduleSpec: { everySeconds: 900, offsetSeconds: 0, catchupWindowSeconds: 60 } },
         action: { kind: "AGENT_TURN", template: "Report workspace progress" }, resultTarget: "CHANNEL" } });
   });
 
@@ -767,7 +767,7 @@ describe("shared Automation schedule consumer", () => {
   it("submits original cron fields and preserves six/seven-field YAML without truncation", async () => {
     const { section, t, choose, fill } = await setup(["CHANNEL"]);
     await choose("Trigger", "SCHEDULE");
-    await choose("Schedule type", "cron");
+    await click(section.querySelector<HTMLInputElement>('input[value="custom_cron"]')!);
     const values = ["0", "9", "*", "*", "MON-FRI"];
     for (const [index, label] of ["Minute", "Hour", "Day", "Month", "Weekday"].entries()) {
       await type(section.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!, values[index]!);
@@ -798,7 +798,7 @@ describe("shared Automation schedule consumer", () => {
   it("rejects mixed cron/interval YAML without falling back to interval", async () => {
     const { section, t, choose, fill } = await setup(["CHANNEL"]);
     await choose("Trigger", "SCHEDULE");
-    await fill("Interval (seconds)", "300");
+    await click(section.querySelector<HTMLInputElement>('input[value="every_15_minutes"]')!);
     await fill("Offset (seconds)", "0");
     await fill("Catch-up window (seconds)", "60");
     await fill("Instruction template", "Report");
@@ -814,7 +814,7 @@ describe("shared Automation schedule consumer", () => {
   it("uses the original runtime weekday ordinals instead of silently changing execution dates", async () => {
     const { section, choose, fill } = await setup(["CHANNEL"]);
     await choose("Trigger", "SCHEDULE");
-    await choose("Schedule type", "cron");
+    await click(section.querySelector<HTMLInputElement>('input[value="custom_cron"]')!);
     for (const [label, value] of [["Minute", "0"], ["Hour", "9"], ["Day", "*"], ["Month", "*"], ["Weekday", "0"]]) {
       await type(section.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!, value!);
     }
@@ -1109,7 +1109,8 @@ describe("shared Automation schedule consumer", () => {
   it("cannot submit a retained Schedule after selecting an executor without channel replies", async () => {
     const { section, t, choose, fill } = await setup(["CHANNEL"]);
     await choose("Trigger", "SCHEDULE");
-    await fill("Interval (seconds)", "300"); await fill("Offset (seconds)", "0"); await fill("Catch-up window (seconds)", "60");
+    await click(section.querySelector<HTMLInputElement>('input[value="every_15_minutes"]')!);
+    await fill("Offset (seconds)", "0"); await fill("Catch-up window (seconds)", "60");
     await fill("Instruction template", "Report");
     await choose("Executor installation", "thread-only");
     expect(button(section, "Review request").disabled).toBe(true);
@@ -1121,9 +1122,11 @@ describe("shared Automation schedule consumer", () => {
 
   it.each([["0", "0", "10"], ["300", "300", "10"], ["300", "0", "9"], ["300", "", "10"], ["1.5", "0", "10"]])(
     "rejects invalid or implicit interval values %j/%j/%j", async (every, offset, catchup) => {
-      const { section, choose, fill } = await setup(["CHANNEL"]);
-      await choose("Trigger", "SCHEDULE");
-      await fill("Interval (seconds)", every); await fill("Offset (seconds)", offset); await fill("Catch-up window (seconds)", catchup);
+      const { section, fill } = await setup(["CHANNEL"], scheduleContent);
+      await click(button(section, "View definition"));
+      await click(button(section, "Publish a new version"));
+      await type(section.querySelector<HTMLInputElement>('#wf-trigger-interval')!, every);
+      await fill("Offset (seconds)", offset); await fill("Catch-up window (seconds)", catchup);
       await fill("Instruction template", "Report");
       expect(button(section, "Review request").disabled).toBe(true);
     },
@@ -1131,10 +1134,15 @@ describe("shared Automation schedule consumer", () => {
 
   it("keeps the existing MENTION trigger and thread result without schedule fields", async () => {
     const { section, t, choose, fill } = await setup(["TRIGGER_THREAD"]);
-    await choose("Trigger", "MENTION"); await fill("Optional text prefix", "help"); await fill("Instruction template", "Reply");
+    await choose("Trigger", "MENTION");
+    await act(async () => [...section.querySelectorAll<HTMLElement>('[role="tab"]')].find((node) => node.textContent === "Advanced")!
+      .dispatchEvent(new KeyboardEvent("keydown", {key:"Enter",bubbles:true})));
+    await settle();
+    await type(section.querySelector<HTMLInputElement>('input[aria-label="Advanced expression"]')!, 'str_starts_with(trigger_text, "help")');
+    await fill("Instruction template", "Reply");
     await click(button(section, "Review request")); await click(button(section, "Submit governed request"));
     expect(t.send.mock.calls.find(([r]) => r.path === "/api/v1/actions")![0].body).toMatchObject({
-      automationVersionContent: { trigger: { kind: "MENTION", textPrefix: "help", mentionPrincipalId: installation.agentPrincipalId },
+      automationVersionContent: { trigger: { kind: "MENTION", filter: 'str_starts_with(trigger_text, "help")', mentionPrincipalId: installation.agentPrincipalId },
         action: { kind: "AGENT_TURN", template: "Reply" }, resultTarget: "TRIGGER_THREAD" },
     });
     const content = (t.send.mock.calls.find(([r]) => r.path === "/api/v1/actions")![0].body as { automationVersionContent: { trigger: object } }).automationVersionContent;

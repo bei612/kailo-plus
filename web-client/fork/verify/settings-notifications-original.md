@@ -45,8 +45,9 @@ BrowserNotificationsProvider 验证只剩原卡片且不主动请求权限。
 
 同步删除 `i18n.ts` 中仅供旧入口使用的 `workspaceNotifications` 与
 `workspaceNotificationsDescription` 及 `muted` 三条中英文词条。已与工作流并行批协调，
-仅删除这三行，不覆盖其他词条；全工程精确 key 检索结果为零，包括已有 Dart
-生成物，无该键可删除。其他未被删除入口使用的词条保留。
+仅删除这三行，不覆盖其他词条；点号形式的 key 检索结果为零，但这不足以证明
+Dart 生成枚举已同步。随后按原生成路径确认 Dart 仍有对应 camelCase 枚举与文案，
+其删除随同一发布批的词条生成收口；其他未被删除入口使用的词条保留。
 
 ## 实际验证
 

@@ -4,6 +4,8 @@ import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { AutomationManagement } from "../src/react/agents";
 import { WorkflowTriggerConditions } from "../src/react/workflow-trigger-conditions";
+import { WorkflowScheduleFields } from "../src/react/workflow-schedule-fields";
+import { scheduleFormFromTrigger, scheduleTriggerFromForm, type TriggerConfig } from "../src/react/workflow-schedule";
 import { useWorkflowAuthorDirectory } from "../src/react/workflow-author-directory";
 import { npubEncode } from "nostr-tools/nip19";
 import { buildConditionExpressions, parseConditionExpressions, CONDITION_OPERATORS, type ParsedConditionExpression } from "../src/react/workflow-condition-expression";
@@ -88,6 +90,74 @@ async function select(select: HTMLSelectElement, value: string) {
 }
 const writes = (send: ReturnType<typeof vi.fn>) => send.mock.calls.map(([request]) => request as BffRequest)
   .filter((request) => request.method === "POST").map((request) => request.body);
+
+describe("original schedule fields with existing native UTC contract", () => {
+  async function scheduleEditor(initial: TriggerConfig, locale: "en" | "zh-CN" = "en") {
+    function Editor() {
+      const [trigger, update] = useState(initial);
+      return <><WorkflowScheduleFields trigger={trigger} onUpdate={update} /><output>{JSON.stringify(trigger)}</output></>;
+    }
+    return render(<PlatformProvider client={createBffClient({send: async () => ({status:503,body:undefined})})} locale={locale}><Editor /></PlatformProvider>);
+  }
+  const value = (host: HTMLElement): TriggerConfig => JSON.parse(host.querySelector("output")!.textContent!);
+
+  it("retains the seven original frequency cards and native interval values", async () => {
+    const host = await scheduleEditor({on:"schedule",cron:"0 9 * * *"});
+    expect(host.querySelectorAll('input[name="wf-trigger-frequency"]')).toHaveLength(7);
+    for (const [frequency, interval] of [["every_15_minutes", "15m"], ["every_30_minutes", "30m"], ["hourly", "1h"]]) {
+      await click(host.querySelector<HTMLInputElement>(`input[value="${frequency}"]`)!);
+      expect(value(host)).toEqual({on:"schedule",interval});
+    }
+    await click(host.querySelector<HTMLInputElement>('input[value="custom_cron"]')!);
+    expect(value(host)).toEqual({on:"schedule",cron:"0 * * * *"});
+    expect(host.querySelectorAll('input[name="wf-trigger-frequency"]:checked')).toHaveLength(1);
+    expect(host.querySelector<HTMLInputElement>('input[value="custom_cron"]')!.checked).toBe(true);
+  });
+
+  it("maps visible Sunday and Saturday once to the existing runtime ordinals", async () => {
+    const host = await scheduleEditor({on:"schedule",cron:"0 9 * * 2"});
+    expect(host.querySelector<HTMLInputElement>('input[aria-label="Monday"]')!.checked).toBe(true);
+    await click(host.querySelector<HTMLInputElement>('input[aria-label="Sunday"]')!);
+    await click(host.querySelector<HTMLInputElement>('input[aria-label="Monday"]')!);
+    expect(value(host).cron).toBe("0 9 * * 1");
+    await click(host.querySelector<HTMLInputElement>('input[aria-label="Sunday"]')!);
+    expect(value(host).cron).toBe("0 9 * * 1"); // Last weekday cannot be removed.
+    await click(host.querySelector<HTMLInputElement>('input[aria-label="Saturday"]')!);
+    expect(value(host).cron).toBe("0 9 * * 1,7");
+    await click(host.querySelector<HTMLInputElement>('input[aria-label="Sunday"]')!);
+    expect(value(host).cron).toBe("0 9 * * 7");
+    await type(host.querySelector<HTMLInputElement>('#wf-trigger-time')!, "23:45");
+    expect(value(host).cron).toBe("45 23 * * 7");
+  });
+
+  it("restores monthly date controls and the original short-month warning", async () => {
+    const host = await scheduleEditor({on:"schedule",cron:"0 9 * * *"});
+    await click(host.querySelector<HTMLInputElement>('input[value="monthly"]')!);
+    await select(host.querySelector<HTMLSelectElement>('#wf-trigger-month-day')!, "31");
+    expect(host.querySelector('[role="status"]')!.textContent).toContain("This schedule won’t run in some months.");
+    expect(value(host).cron).toBe("0 9 31 * *");
+    await select(host.querySelector<HTMLSelectElement>('#wf-trigger-month-day')!, "28");
+    expect(host.querySelector('[role="status"]')).toBeNull();
+  });
+
+  it("keeps legacy interval editing and localizes the complete original control", async () => {
+    const host = await scheduleEditor({on:"schedule",interval:"5m"}, "zh-CN");
+    expect(host.textContent).toContain("已有间隔");
+    await type(host.querySelector<HTMLInputElement>('#wf-trigger-interval')!, "1h 2s");
+    expect(value(host).interval).toBe("1h 2s");
+    await click(host.querySelector<HTMLInputElement>('input[value="weekly"]')!);
+    expect(host.textContent).toContain("运行时间（UTC）");
+    expect(host.querySelector<HTMLInputElement>('input[aria-label="星期日"]')).not.toBeNull();
+    expect(host.textContent).not.toContain("Repeat on");
+  });
+
+  it("round-trips existing cron and intervals without rewriting unsupported form shapes", () => {
+    for (const trigger of [{on:"schedule",cron:"0 9 * * 1,7"}, {on:"schedule",cron:"0 9 * * MON-FRI"},
+      {on:"schedule",cron:"15 0 9 * * MON-FRI 2027"}, {on:"schedule",interval:"1h 2s"}] satisfies TriggerConfig[]) {
+      expect(scheduleTriggerFromForm(scheduleFormFromTrigger(trigger))).toEqual(trigger);
+    }
+  });
+});
 
 describe("original workflow action menu with governed consumers", () => {
   it("selects original author filters from the authorized directory, paginates and accepts npub", async () => {

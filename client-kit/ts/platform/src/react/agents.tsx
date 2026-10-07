@@ -65,7 +65,9 @@ import { AgentCreationPreview } from "./agent-library/AgentCreationPreview";
 import { AgentIdentityFields } from "./agent-library/AgentDescriptionField";
 import { AgentDefinitionAdvanced, AgentParallelismField } from "./agent-library/AgentDefinitionAdvanced";
 import { AvatarHostProvider, type AvatarHost } from "./profile/avatar-host";
-import { CronExpressionInput } from "./cron-expression-input";
+import { WorkflowScheduleFields } from "./workflow-schedule-fields";
+import { defaultScheduleTrigger } from "./workflow-schedule";
+import { formatDurationSeconds, parseDurationSeconds } from "./workflow-duration";
 import { cronExpressionError, cronYamlError } from "./cron-expression";
 import type { AutomationStep } from "@client-kit/contracts";
 import { supportedSteps, validApprovalPolicy, workflowApprovalPolicy, workflowAction, WorkflowStepCard, type WorkflowActionKind } from "./workflow-steps";
@@ -655,7 +657,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   const [prefix, setPrefix] = useState("");
   const [filter, setFilter] = useState("");
   const [conditionDrafts, setConditionDrafts] = useState<ParsedConditionExpression[] | null>(null);
-  const [everySeconds, setEverySeconds] = useState("");
+  const [interval, setInterval] = useState("");
   const [offsetSeconds, setOffsetSeconds] = useState("");
   const [scheduleMode, setScheduleMode] = useState<"interval" | "cron">("interval");
   const [intervalTagged, setIntervalTagged] = useState(false);
@@ -723,8 +725,8 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   const contentAction = creating || edit.action === "publish_version";
   const scheduleSpec = { ...(scheduleMode === "cron" ? { cron, kind: ScheduleSpecKind.Cron } : {
     ...(intervalTagged ? { kind: ScheduleSpecKind.Interval } : {}),
-    everySeconds: Number(everySeconds), offsetSeconds: Number(offsetSeconds) }), catchupWindowSeconds: Number(catchupWindowSeconds) };
-  const scheduleValid = (scheduleMode === "cron" ? [catchupWindowSeconds] : [everySeconds, offsetSeconds, catchupWindowSeconds]).every((value) => /^\d+$/.test(value))
+    everySeconds: parseDurationSeconds(interval) ?? 0, offsetSeconds: Number(offsetSeconds) }), catchupWindowSeconds: Number(catchupWindowSeconds) };
+  const scheduleValid = (scheduleMode === "cron" ? [catchupWindowSeconds] : [offsetSeconds, catchupWindowSeconds]).every((value) => /^\d+$/.test(value))
     && validSchedule(scheduleSpec) && (scheduleMode !== "cron" || !cronExpressionError(cron));
   const formContent: AutomationVersionContent = {
     ...(name !== "" ? { name } : {}),
@@ -764,7 +766,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     setScheduleMode(content?.trigger.scheduleSpec?.cron === undefined ? "interval" : "cron");
     setIntervalTagged(content?.trigger.scheduleSpec?.kind === ScheduleSpecKind.Interval);
     setCron(content?.trigger.scheduleSpec?.cron ?? "");
-    setEverySeconds(content?.trigger.scheduleSpec?.everySeconds?.toString() ?? "");
+    setInterval(content?.trigger.scheduleSpec?.everySeconds === undefined ? "" : formatDurationSeconds(content.trigger.scheduleSpec.everySeconds));
     setOffsetSeconds(content?.trigger.scheduleSpec?.offsetSeconds?.toString() ?? "");
     setCatchupWindowSeconds(content?.trigger.scheduleSpec?.catchupWindowSeconds.toString() ?? "");
     setSteps(content?.steps ?? []);
@@ -803,7 +805,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     setScheduleMode(yamlContent.trigger.scheduleSpec?.cron === undefined ? "interval" : "cron");
     setIntervalTagged(yamlContent.trigger.scheduleSpec?.kind === ScheduleSpecKind.Interval);
     setCron(yamlContent.trigger.scheduleSpec?.cron ?? "");
-    setEverySeconds(yamlContent.trigger.scheduleSpec?.everySeconds?.toString() ?? "");
+    setInterval(yamlContent.trigger.scheduleSpec?.everySeconds === undefined ? "" : formatDurationSeconds(yamlContent.trigger.scheduleSpec.everySeconds));
     setOffsetSeconds(yamlContent.trigger.scheduleSpec?.offsetSeconds?.toString() ?? "");
     setCatchupWindowSeconds(yamlContent.trigger.scheduleSpec?.catchupWindowSeconds.toString() ?? "");
     setSteps(yamlContent.steps ?? []);
@@ -911,27 +913,30 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
           <select value={trigger} onChange={(event) => {
             const value = [TriggerKind.ChannelMessage, TriggerKind.Mention, ...(scheduleSupported ? [TriggerKind.Schedule] : [])]
               .find((candidate) => candidate === event.target.value);
-            if (value) setTrigger(value);
+            if (value) {
+              setTrigger(value);
+              if (value === TriggerKind.Schedule && !interval && !cron) {
+                setScheduleMode("cron"); setCron(defaultScheduleTrigger().cron ?? "");
+              }
+            }
           }} className="h-8 rounded-md border border-input bg-background px-2">
             <option value={TriggerKind.ChannelMessage}>{t("agents.automation.channelMessage")}</option><option value={TriggerKind.Mention}>{t("agents.installation.trigger.mention")}</option>
             {scheduleSupported || trigger === TriggerKind.Schedule ? <option value={TriggerKind.Schedule} disabled={!scheduleSupported}>{t("agents.automation.schedule")}</option> : null}
           </select>
         </label>
         {trigger === TriggerKind.Schedule ? <>
-          <label className="flex flex-col gap-1 text-sm">{t("workflows.schedule.mode")}
-            <select value={scheduleMode} onChange={(event) => { if (event.target.value === "interval" || event.target.value === "cron") setScheduleMode(event.target.value); }} className="h-8 rounded-md border border-input bg-background px-2">
-              <option value="interval">{t("agents.automation.everySeconds")}</option>
-              <option value="cron">{t("workflows.cron.expression")}</option>
-            </select>
-          </label>
-          {scheduleMode === "cron" ? <CronExpressionInput value={cron} onChange={setCron} /> : <>
-          <label className="flex flex-col gap-1 text-sm">{t("agents.automation.everySeconds")}
-            <input required inputMode="numeric" value={everySeconds} onChange={(event) => setEverySeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
-          </label>
+          <WorkflowScheduleFields disabled={busy || !!intent || unknown}
+            trigger={{ on: "schedule", ...(scheduleMode === "cron" ? { cron } : { interval }) }}
+            onUpdate={(next) => {
+              setScheduleMode(next.cron === undefined ? "interval" : "cron");
+              setCron(next.cron ?? ""); setInterval(next.interval ?? "");
+              if (offsetSeconds === "") setOffsetSeconds("0");
+            }} />
+          {scheduleMode === "interval" ? <>
           <label className="flex flex-col gap-1 text-sm">{t("agents.automation.offsetSeconds")}
             <input required inputMode="numeric" value={offsetSeconds} onChange={(event) => setOffsetSeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
           </label>
-          </>}
+          </> : null}
           <label className="flex flex-col gap-1 text-sm">{t("agents.automation.catchupWindowSeconds")}
             <input required inputMode="numeric" value={catchupWindowSeconds} onChange={(event) => setCatchupWindowSeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
           </label>
