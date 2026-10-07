@@ -6002,3 +6002,78 @@ section，当前共享 `settings-surface.tsx` 保留 6 个；本批不是另外 
 | updates | `UpdateChecker`、原 updater | 当前安装包更新链未接，不能直接更新为官方 Buzz 包 |
 
 上述恢复范围不因本批复制修复而缩减；本批没有新增无调用方页面或假动作。
+
+### 2026-10-07 原设置可见分区回退恢复
+
+- 依据与原源码：`REQ-08`、`DD-53`、设计 06 §9.1；固定 Buzz
+  `779af8886caae1317b4de962082429867ab61503` 的
+  `desktop/src/features/settings/ui/SettingsView.tsx::SettingsView`
+  在当前 section 不再可见时，通过原 `onSectionChange` 选第一个可见 section。
+  当前共享 `SettingsViewSurface` 遗漏这一消费，邀请准入明确返回 403 后
+  导航消失却仍停在空邀请页。
+- 影响与实现：只修改共享 `settings-surface.tsx` 及其原 `settings.test.tsx`。
+  当前 Personal 组已有五个真实入口，提取其同一数组供导航及回退读取，选择
+  实际首项 Profile，不硬编码另一份顺序。Web/Desktop 仍用原共享设置壳与
+  原宿主 `onSelect`；不改复制、上传、Host、路由、i18n、合同或权限权威。
+- 异常保持：只在设置可见、当前选 Invites 且原 BFF 确定 403 时回退；
+  pending/503 不被解释为撤权。原 `CommunityInvitationSettings` 保持挂载，
+  UNKNOWN 的命令、幂等键与输入没有清除；恢复准入后重开仍用原命令查询结果。
+- 实际验证：既有 4 CPU / 8 GiB SDK，预检无工具链并发、Data 可用 6.3 GiB，
+  shared source/test 类型检查退出 0。首轮 22 pass / 1 fail：旧壳断言仍写四项，
+  但此前已恢复 CustomEmoji，当前实际五项；改为精确五个既有入口顺序后 23 项
+  通过。SDK-only 删除回退调用，原 mounted 邀请用例真实退出 1
+  （首个入口 aria-pressed=false），22 项因定向过滤跳过；原字节 cmp 0 还原后
+  23 项再次通过。新断言同时核实 503 留原页、403 回退、恢复准入后原 UNKNOWN
+  输入与同一命令不丢失。
+
+日志位于 `/volumes/data/kailo/tmp/settings-visible-20261007.OQWtEy/` 的
+`baseline.log`、`baseline-corrected.log`、`mutation.log`、`restored.log`。
+本批未构建、部署或浏览器复验，不覆盖其余原设置缺页；没有新增无消费者页面。
+
+### 2026-10-07 Projects／Inbox／复制合批 Web 构建与浏览器边界
+
+固定输入为 `30d97146800dfe0a4780cb8ac1cfc14ad01b401e`（包含已推送的
+`845dc5e6ad10170420824945deae94e9aff44394` Projects／Inbox 批）。
+原 manifest helper 给出源码摘要
+`sha256:e57399f937ec44b91f88f1e20078d71576e655fc29fe921867bbc10f54cbe3d2`；
+临时快照真实输入的 mode/blob/path 与该提交逐项 diff 0，依赖缓存不进入源码摘要。
+原受限 SDK 4 CPU / 8 GiB，构建前只有 sleep、内存可用约 30 GiB、
+Data 可用 6.4 GiB。复用已有本地依赖，没有安装依赖、拉镜像或放宽资源限额。
+
+原 `npm run build` 首次在类型阶段退出 2：缓存的本地 file dependency
+`@client-kit/platform` 仍为旧复制包。第二次解包层级错误，原错误仍然存在；
+修正快照中的依赖投递，与固定提交的共享源逐字 diff 0 后同命令退出 0：
+`3822 modules transformed`、`built in 18.94s`。保留大 chunk 告警，未调整
+阈值掩盖；旧缓存目录移到私有证据目录保留，未删除生产数据或其他项目缓存。
+这次最终构建不包含随后独立的设置撤权回退修复。
+
+使用 playwright-cli 在既有真实 HTTP origin/SSO 会话中仅替换静态 JS/CSS
+及 build-info 为本次构建；API、授权、Cookie、SSE、业务响应均未 mock。
+首次会话过期重新按原 SSO 登录。频道、Projects 菜单、个人设置、Inbox 空态及
+筛选菜单截图均已实际打开复核；真实设置页在 `isSecureContext=false` 且
+Clipboard API 不存在时，点击复制公钥、Ctrl+V 粘贴与显示的 npub 完全一致。
+临时草稿恢复原值，未调用资料保存。原身份详情先折叠导致一次等待超时；
+展开原折叠控件后成功。Inbox 筛选实际是菜单按钮，错误地等 tab 的超时不算通过。
+
+未通过范围保持明确：当前在线 Core 未更新，真实 `/api/v1/user-state` 为 200，
+仅含 workspacePreferences、conversationPreferences、readContexts、version，
+无 projectPreferences，新侧栏保持不可写并显示加载失败；不能据菜单出现称为
+Added 功能可用。诊断曾误查不存在的 `/api/v1/collaboration/user-state` 返回404，
+随后以上述源码实际路径复核，不把该错误路径作为产品失败依据。
+原 `/api/v1/custom-emoji` 在线仍404。Inbox 当前无适用活动条目，不声明隐藏私聊
+重开、详情回复或持久状态已通过真实端到端。未覆盖全部页面、英文截图、Windows、
+Mobile、三个业务组件、全量原版一致性或生产门禁，也没有运行本批 full。
+
+复制提交本地 main 为 `30d97146800dfe0a4780cb8ac1cfc14ad01b401e`；
+截至本记录时普通 push 三次均被 GitHub `Internal Server Error` 拒绝，
+远端 main 回读仍为 `845dc5e6ad10170420824945deae94e9aff44394`。
+未 force push、改远端历史或另开分支绕行。原文档检查首次错误设计目录退出2，
+改为同快照真实 `../.design` 后退出0；未改产品或放宽门禁。
+
+原日志及本批截图位于 `/volumes/data/kailo/tmp/profile-copy-20261007.qUvDIT/`：
+`combined-web-build.log`、`combined-web-build-restored.log`、
+`combined-web-build-final.log`、`docs.log`、`docs-restored.log`、
+`combined-preview.js`、`channel-preview.png`、`projects-menu-preview.png`、
+`profile-before-copy.png`、`profile-copy-success.png`、`profile-real-paste.png`、
+`inbox-preview.png`、`inbox-filter-preview.png`。
+本节是私有静态预览及真实后端观察，不是已部署产品、安装包或完整交付回执。

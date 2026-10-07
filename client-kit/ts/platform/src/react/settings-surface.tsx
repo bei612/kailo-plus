@@ -21,6 +21,7 @@ export const settingsSectionKeys = {
   "custom-emoji": "customEmoji.title",
 } as const;
 const icons = { profile: UserRound, appearance: MonitorCog, notifications: BellRing, shortcuts: Keyboard, "community-members": Ticket, "custom-emoji": Smile };
+const personalSettingsSections: SettingsSection[] = ["profile", "appearance", "notifications", "shortcuts", "custom-emoji"];
 
 export function SettingsBackButton({ locale, onClose, sidebarState = "expanded", isMobile = false }: {
   locale: PlatformLocale; onClose: () => void;
@@ -42,7 +43,7 @@ export function SettingsNavigation({ locale, section, onSelect, icons: suppliedI
   invitationAccess?:Loaded<boolean>;
   onRetryInvitations?:()=>void;
 }) {
-  const groups:Array<{label:string;sections:SettingsSection[]}>= [{label:translate(locale,"platform.settings.personal"),sections:["profile","appearance","notifications","shortcuts","custom-emoji"]}];
+  const groups:Array<{label:string;sections:SettingsSection[]}>= [{label:translate(locale,"platform.settings.personal"),sections:personalSettingsSections}];
   if(invitationAccess?.status==="ok")groups.push({label:translate(locale,"platform.settings.communities"),sections:["community-members"]});
   return <>
     {invitationAccess?.status==="pending"?<div className="mx-3 flex items-center gap-2 rounded-md border border-sidebar-border px-3 py-2 text-xs text-sidebar-foreground/70" data-testid="community-access-loading"><LoaderCircle className="h-3.5 w-3.5 animate-spin"/>{translate(locale,"platform.loading")}</div>:null}
@@ -94,6 +95,16 @@ export function SettingsViewSurface({ locale, section, onSelect, onClose, childr
   useEffect(() => {
     if (active && !isMobile && !sidebarOpen) setSidebarOpen(true);
   }, [active, isMobile, setSidebarOpen, sidebarOpen]);
+  useEffect(() => {
+    // Original SettingsView follows the first visible section when access to
+    // the current section disappears. Only a confirmed refusal moves away
+    // from this governed section; pending/unknown reads retain its surface.
+    // The invitation child remains mounted, preserving its unresolved intent.
+    if (active && section === "community-members" && invitationAccess?.status === "error"
+      && invitationAccess.error instanceof BffError && invitationAccess.error.status === 403) {
+      onSelect(personalSettingsSections[0]!);
+    }
+  }, [active, section, invitationAccess, onSelect]);
 
   return <>
     {active ? <Sidebar className="!border-r-0" collapsible="offcanvas" data-testid="settings-sidebar" variant="sidebar">

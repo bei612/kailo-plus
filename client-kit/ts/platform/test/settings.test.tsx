@@ -125,9 +125,9 @@ describe("shared Buzz settings presentation", () => {
     expect(close).not.toHaveBeenCalled();
   });
   it("restores original Communities invitations from one authorized read and preserves its uncertain intent",async()=>{
-    let refused=false;let attempts=0;
+    let refused=false;let unavailable=false;let attempts=0;
     const send=vi.fn(async(request:BffRequest)=>{
-      if(request.method==="GET")return refused?{status:403,body:{}}:{status:200,body:[]};
+      if(request.method==="GET")return refused?{status:403,body:{}}:unavailable?{status:503,body:{}}:{status:200,body:[]};
       attempts++;
       return attempts===1?{status:202,body:{actionKey:"tenant.member.invite",actionExecutionId:"ae",operationId:"op",gateState:"ALLOWED",dispatchState:"UNKNOWN"}}:{status:403,body:{}};
     });
@@ -155,9 +155,21 @@ describe("shared Buzz settings presentation", () => {
     await click(host.querySelector<HTMLElement>('[data-testid="settings-nav-profile"]')!);expect(panel.hidden).toBe(true);
     await click(host.querySelector<HTMLElement>('[data-testid="settings-nav-community-members"]')!);expect(panel.hidden).toBe(false);
     expect(panel.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!.value).toBe("Ada");
+    unavailable=true;await act(async()=>window.dispatchEvent(new Event("focus")));await settle();
+    expect(host.querySelector('[data-testid="settings-panel-community-members"]')).not.toBeNull();
+    expect(panel.hidden).toBe(false);
+    expect(panel.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!.value).toBe("Ada");
+    unavailable=false;
     refused=true;await act(async()=>window.dispatchEvent(new Event("focus")));await settle();
     expect(host.querySelector('[data-testid="settings-nav-community-members"]')).toBeNull();
+    const firstVisible=host.querySelector<HTMLButtonElement>('[data-testid^="settings-nav-"]')!;
+    expect(firstVisible.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelector('[data-testid="settings-panel-profile"]')).not.toBeNull();
+    expect(panel.hidden).toBe(true);
     refused=false;await act(async()=>window.dispatchEvent(new Event("focus")));await settle();
+    await click(host.querySelector<HTMLElement>('[data-testid="settings-nav-community-members"]')!);
+    expect(panel.hidden).toBe(false);
+    expect(panel.querySelector<HTMLInputElement>('input[name="inviteeLabel"]')!.value).toBe("Ada");
     await click(button(panel,"Try again"));
     const writes=send.mock.calls.filter(([r])=>r.method==="POST").map(([r])=>r.body);
     expect(writes).toHaveLength(2);expect(writes[1]).toEqual(writes[0]);
@@ -453,7 +465,9 @@ describe("shared Buzz settings presentation", () => {
     ).not.toBeNull();
     await click(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-profile"]')!);
     expect(host.querySelector('[data-testid="settings-panel-profile"]')?.textContent).toBe("profile");
-    expect(host.querySelectorAll('[data-testid^="settings-nav-"]')).toHaveLength(4);
+    expect([...host.querySelectorAll('[data-testid^="settings-nav-"]')].map(node => node.getAttribute("data-testid"))).toEqual([
+      "settings-nav-profile", "settings-nav-appearance", "settings-nav-notifications", "settings-nav-shortcuts", "settings-nav-custom-emoji",
+    ]);
     expect(host.querySelector('[data-sidebar="menu-label"] [aria-hidden="true"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="settings-content-scroll"]')).not.toBeNull();
     expect(host.textContent).not.toMatch(/provider|私钥|配对|语言/);
