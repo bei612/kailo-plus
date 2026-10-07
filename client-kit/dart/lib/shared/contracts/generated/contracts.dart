@@ -115,6 +115,7 @@
 //     final applicationModelGatewayConfig = applicationModelGatewayConfigFromJson(jsonString);
 //     final automationApprovalPolicyRef = automationApprovalPolicyRefFromJson(jsonString);
 //     final automationScheduleSpec = automationScheduleSpecFromJson(jsonString);
+//     final automationStep = automationStepFromJson(jsonString);
 //     final automationVersionContent = automationVersionContentFromJson(jsonString);
 //     final capabilityConformanceVectors = capabilityConformanceVectorsFromJson(jsonString);
 //     final capabilityContractRef = capabilityContractRefFromJson(jsonString);
@@ -889,6 +890,11 @@ AutomationScheduleSpec automationScheduleSpecFromJson(String str) =>
 
 String automationScheduleSpecToJson(AutomationScheduleSpec data) =>
     json.encode(data.toJson());
+
+AutomationStep automationStepFromJson(String str) =>
+    AutomationStep.fromJson(json.decode(str));
+
+String automationStepToJson(AutomationStep data) => json.encode(data.toJson());
 
 AutomationVersionContent automationVersionContentFromJson(String str) =>
     AutomationVersionContent.fromJson(json.decode(str));
@@ -3284,38 +3290,58 @@ class ApplicationBindingCreateSecretRef {
 ///REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
 ///配置或凭据。
 class AutomationVersionContentClass {
-  final ContentAction action;
+  final ContentAction? action;
   final ApprovalPolicyElement? approvalPolicy;
+
+  ///有序 steps 形态为 2，旧单 action 格式缺省保持原摘要。
+  final int? formatVersion;
 
   ///原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
   final String? name;
   final AutomationResultTarget resultTarget;
+
+  ///不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+  final List<StepElement>? steps;
   final ContentTrigger trigger;
 
   AutomationVersionContentClass({
-    required this.action,
+    this.action,
     this.approvalPolicy,
+    this.formatVersion,
     this.name,
     required this.resultTarget,
+    this.steps,
     required this.trigger,
   });
 
   factory AutomationVersionContentClass.fromJson(Map<String, dynamic> json) =>
       AutomationVersionContentClass(
-        action: ContentAction.fromJson(json["action"]),
+        action: json["action"] == null
+            ? null
+            : ContentAction.fromJson(json["action"]),
         approvalPolicy: json["approvalPolicy"] == null
             ? null
             : ApprovalPolicyElement.fromJson(json["approvalPolicy"]),
+        formatVersion: json["formatVersion"],
         name: json["name"],
         resultTarget: automationResultTargetValues.map[json["resultTarget"]]!,
+        steps: json["steps"] == null
+            ? null
+            : List<StepElement>.from(
+                json["steps"]!.map((x) => StepElement.fromJson(x)),
+              ),
         trigger: ContentTrigger.fromJson(json["trigger"]),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
-    "action": action.toJson(),
+    "action": action?.toJson(),
     "approvalPolicy": approvalPolicy?.toJson(),
+    "formatVersion": formatVersion,
     "name": name,
     "resultTarget": automationResultTargetValues.reverse[resultTarget],
+    "steps": steps == null
+        ? null
+        : List<dynamic>.from(steps!.map((x) => x.toJson())),
     "trigger": trigger.toJson(),
   });
 }
@@ -3362,6 +3388,46 @@ enum AutomationResultTarget { CHANNEL, TRIGGER_THREAD }
 final automationResultTargetValues = EnumValues({
   "CHANNEL": AutomationResultTarget.CHANNEL,
   "TRIGGER_THREAD": AutomationResultTarget.TRIGGER_THREAD,
+});
+
+///原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+class StepElement {
+  final ActionEnum action;
+  final String? duration;
+  final String id;
+  final String? name;
+  final String? text;
+
+  StepElement({
+    required this.action,
+    this.duration,
+    required this.id,
+    this.name,
+    this.text,
+  });
+
+  factory StepElement.fromJson(Map<String, dynamic> json) => StepElement(
+    action: actionEnumValues.map[json["action"]]!,
+    duration: json["duration"],
+    id: json["id"],
+    name: json["name"],
+    text: json["text"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "action": actionEnumValues.reverse[action],
+    "duration": duration,
+    "id": id,
+    "name": name,
+    "text": text,
+  });
+}
+
+enum ActionEnum { DELAY, SEND_MESSAGE }
+
+final actionEnumValues = EnumValues({
+  "delay": ActionEnum.DELAY,
+  "send_message": ActionEnum.SEND_MESSAGE,
 });
 
 class ContentTrigger {
@@ -11169,41 +11235,94 @@ class AutomationScheduleSpec {
   });
 }
 
+///原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+class AutomationStep {
+  final ActionEnum action;
+  final String? duration;
+  final String id;
+  final String? name;
+  final String? text;
+
+  AutomationStep({
+    required this.action,
+    this.duration,
+    required this.id,
+    this.name,
+    this.text,
+  });
+
+  factory AutomationStep.fromJson(Map<String, dynamic> json) => AutomationStep(
+    action: actionEnumValues.map[json["action"]]!,
+    duration: json["duration"],
+    id: json["id"],
+    name: json["name"],
+    text: json["text"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "action": actionEnumValues.reverse[action],
+    "duration": duration,
+    "id": id,
+    "name": name,
+    "text": text,
+  });
+}
+
 ///REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
 ///配置或凭据。
 class AutomationVersionContent {
-  final AutomationVersionContentAction action;
+  final AutomationVersionContentAction? action;
   final ApprovalPolicyElement? approvalPolicy;
+
+  ///有序 steps 形态为 2，旧单 action 格式缺省保持原摘要。
+  final int? formatVersion;
 
   ///原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
   final String? name;
   final AutomationResultTarget resultTarget;
+
+  ///不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+  final List<StepElement>? steps;
   final AutomationVersionContentTrigger trigger;
 
   AutomationVersionContent({
-    required this.action,
+    this.action,
     this.approvalPolicy,
+    this.formatVersion,
     this.name,
     required this.resultTarget,
+    this.steps,
     required this.trigger,
   });
 
   factory AutomationVersionContent.fromJson(Map<String, dynamic> json) =>
       AutomationVersionContent(
-        action: AutomationVersionContentAction.fromJson(json["action"]),
+        action: json["action"] == null
+            ? null
+            : AutomationVersionContentAction.fromJson(json["action"]),
         approvalPolicy: json["approvalPolicy"] == null
             ? null
             : ApprovalPolicyElement.fromJson(json["approvalPolicy"]),
+        formatVersion: json["formatVersion"],
         name: json["name"],
         resultTarget: automationResultTargetValues.map[json["resultTarget"]]!,
+        steps: json["steps"] == null
+            ? null
+            : List<StepElement>.from(
+                json["steps"]!.map((x) => StepElement.fromJson(x)),
+              ),
         trigger: AutomationVersionContentTrigger.fromJson(json["trigger"]),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
-    "action": action.toJson(),
+    "action": action?.toJson(),
     "approvalPolicy": approvalPolicy?.toJson(),
+    "formatVersion": formatVersion,
     "name": name,
     "resultTarget": automationResultTargetValues.reverse[resultTarget],
+    "steps": steps == null
+        ? null
+        : List<dynamic>.from(steps!.map((x) => x.toJson())),
     "trigger": trigger.toJson(),
   });
 }
@@ -12868,6 +12987,9 @@ class AgentTaskAdvanceResult {
   final ApprovalInputClass? approvalInput;
   final String? approvalWorkflowId;
 
+  ///同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。
+  final DelayStep? delayStep;
+
   ///已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。
   final bool finishActivity;
   final String invocationId;
@@ -12877,6 +12999,7 @@ class AgentTaskAdvanceResult {
   AgentTaskAdvanceResult({
     this.approvalInput,
     this.approvalWorkflowId,
+    this.delayStep,
     required this.finishActivity,
     required this.invocationId,
     required this.status,
@@ -12889,6 +13012,9 @@ class AgentTaskAdvanceResult {
             ? null
             : ApprovalInputClass.fromJson(json["approvalInput"]),
         approvalWorkflowId: json["approvalWorkflowId"],
+        delayStep: json["delayStep"] == null
+            ? null
+            : DelayStep.fromJson(json["delayStep"]),
         finishActivity: json["finishActivity"],
         invocationId: json["invocationId"],
         status: taskStatusValues.map[json["status"]]!,
@@ -12898,6 +13024,7 @@ class AgentTaskAdvanceResult {
   Map<String, dynamic> toJson() => _stripNulls({
     "approvalInput": approvalInput?.toJson(),
     "approvalWorkflowId": approvalWorkflowId,
+    "delayStep": delayStep?.toJson(),
     "finishActivity": finishActivity,
     "invocationId": invocationId,
     "status": taskStatusValues.reverse[status],
@@ -13134,6 +13261,19 @@ final approvalSelfApprovalValues = EnumValues({
   "ALLOW": ApprovalSelfApproval.ALLOW,
   "DENY": ApprovalSelfApproval.DENY,
 });
+
+///同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。
+class DelayStep {
+  final String id;
+  final int seconds;
+
+  DelayStep({required this.id, required this.seconds});
+
+  factory DelayStep.fromJson(Map<String, dynamic> json) =>
+      DelayStep(id: json["id"], seconds: json["seconds"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"id": id, "seconds": seconds});
+}
 
 ///DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
 class AgentTaskWorkflowInput {

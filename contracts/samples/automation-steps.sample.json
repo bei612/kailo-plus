@@ -1,0 +1,10 @@
+{
+  "name": "Delayed channel reply",
+  "formatVersion": 2,
+  "trigger": {"kind": "CHANNEL_MESSAGE"},
+  "steps": [
+    {"id": "wait", "name": "Delay", "action": "delay", "duration": "1m 2s"},
+    {"id": "reply", "name": "Reply", "action": "send_message", "text": "Finished waiting"}
+  ],
+  "resultTarget": "TRIGGER_THREAD"
+}

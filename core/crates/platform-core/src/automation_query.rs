@@ -909,6 +909,8 @@ async fn versions(
             trigger["scheduleSpec"] = value.clone();
         }
         let mut exposed_content = json!({"trigger":trigger,"action":content["action"],"resultTarget":content["resultTarget"]});
+        crate::automation::steps::expose(&mut exposed_content, &content["action"])
+            .map_err(|error| error.respond(None))?;
         if let Some(name) = content.get("name") {
             exposed_content["name"] = name.clone();
         }
@@ -929,18 +931,7 @@ async fn versions(
     Ok((values, next))
 }
 fn version_action_supported(value: &Value) -> bool {
-    let Some(action) = value.as_object() else {
-        return false;
-    };
-    action
-        .keys()
-        .all(|key| matches!(key.as_str(), "kind" | "template"))
-        && serde_json::from_value::<contracts::ContentAction>(value.clone()).is_ok_and(|action| {
-            matches!(
-                action.kind,
-                contracts::ActionKind::AgentTurn | contracts::ActionKind::PostMessage
-            ) && !action.template.trim().is_empty()
-        })
+    crate::automation::steps::supported(value)
 }
 
 #[derive(FromRow)]

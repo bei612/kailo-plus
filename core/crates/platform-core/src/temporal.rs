@@ -29,6 +29,7 @@ use temporalio_common::protos::utilities::decode_status_detail;
 
 use crate::oidc::TokenSource;
 
+mod automation_steps;
 mod schedule;
 mod schedule_calendar;
 pub(crate) use schedule::automation_schedule_spec;

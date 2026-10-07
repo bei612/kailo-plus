@@ -180,6 +180,27 @@ func agentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error 
 			// 后续 Activity 只观察同一 Invocation，不由 Worker 再占 units。
 			// 任何终态都先落投影；ACK 不明时继续对账，不返回假 terminal。
 			if projected := project(loop, status, reason); projected == nil {
+				if err == nil && out.DelayStep != nil {
+					// Original ordered Delay: a native durable Timer, not an Activity
+					// sleep. Core reads this exact TimerFired before the next effect.
+					// Cancellation stops the timer; the next Activity drains the same
+					// Invocation instead of proceeding to the message step.
+					if status != generated.TaskStatusRUNNING || reason != "WAITING_TIMER" ||
+						!out.FinishActivity || out.DelayStep.ID == "" || out.DelayStep.Seconds <= 0 ||
+						out.DelayStep.Seconds > math.MaxInt64/int64(time.Second) {
+						return temporal.NewNonRetryableApplicationError("Delay input invalid", activities.ErrTypeUnknownExternalResult, nil)
+					}
+					_ = workflow.NewTimerWithOptions(ctx, time.Duration(out.DelayStep.Seconds)*time.Second,
+						workflow.TimerOptions{Summary: "automation-delay:" + in.InvocationID + ":" + out.DelayStep.ID}).Get(ctx, nil)
+					// Preserve cancellation before a native continuation; the next
+					// run must drain, not restart the unfinished Delay or its effect.
+					in.CancelPending = in.CancelPending || ctx.Err() != nil
+					if workflow.GetInfo(loop).GetContinueAsNewSuggested() {
+						in.EventBase += int64(workflow.GetInfo(loop).GetCurrentHistoryLength())
+						return workflow.NewContinueAsNewError(loop, AgentTaskKind, in)
+					}
+					continue
+				}
 				if status != generated.TaskStatusRUNNING {
 					switch status {
 					case generated.Completed:

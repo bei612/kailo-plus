@@ -21,6 +21,7 @@ pub(crate) mod manual;
 pub(crate) mod post_message;
 mod schedule;
 pub(crate) mod step_approval;
+pub(crate) mod steps;
 mod webhook_secret;
 pub(crate) use manual::submit_manual;
 pub(crate) use schedule::admit_schedule;
@@ -243,7 +244,13 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
     if object.keys().any(|key| {
         !matches!(
             key.as_str(),
-            "name" | "trigger" | "action" | "resultTarget" | "approvalPolicy"
+            "name"
+                | "trigger"
+                | "action"
+                | "resultTarget"
+                | "approvalPolicy"
+                | "formatVersion"
+                | "steps"
         )
     }) {
         return Err(invalid_management());
@@ -261,26 +268,24 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
         .get("trigger")
         .and_then(Value::as_object)
         .ok_or_else(invalid_management)?;
-    let action = value
-        .get("action")
-        .and_then(Value::as_object)
-        .ok_or_else(invalid_management)?;
+    let native_action = match value.get("formatVersion") {
+        None if value.get("steps").is_none() && value["action"].get("stepsVersion").is_none() => {
+            value
+                .get("action")
+                .cloned()
+                .ok_or_else(invalid_management)?
+        }
+        Some(version) if version == 2 && value.get("action").is_none() => {
+            steps::action(&value["steps"])?
+        }
+        _ => return Err(invalid_management()),
+    };
     if trigger.keys().any(|key| {
         !matches!(
             key.as_str(),
             "kind" | "textPrefix" | "mentionPrincipalId" | "scheduleSpec"
         )
-    }) || action
-        .keys()
-        .any(|key| !matches!(key.as_str(), "kind" | "template"))
-        || !matches!(
-            action.get("kind").and_then(Value::as_str),
-            Some("AGENT_TURN" | "POST_MESSAGE")
-        )
-        || action
-            .get("template")
-            .and_then(Value::as_str)
-            .is_none_or(|text| text.trim().is_empty())
+    }) || !steps::supported(&native_action)
     {
         return Err(invalid_management());
     }
@@ -348,7 +353,7 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
     };
     Ok(version_content(
         native_trigger,
-        json!(action),
+        native_action,
         policy,
         version,
         result,
@@ -617,7 +622,7 @@ async fn management_installation(
           and version_owner.kind='HUMAN' and version_owner.status='ACTIVE' and version_tm.state='ACTIVE'
         for update of r,i,v,a,p,agent,owner,tm,version_owner,version_tm")
         .bind(installation).bind(tenant).bind(workspace)
-        .bind(content.pointer("/action/kind").and_then(Value::as_str)==Some("POST_MESSAGE"))
+        .bind(content.pointer("/action/kind").and_then(Value::as_str).is_some_and(steps::is_message_kind))
         .fetch_optional(&mut **tx).await?;
     let Some((agent, requested)) = actual else {
         return Err(Refusal::Precondition(ReasonCode::BindingNotActive));
@@ -648,7 +653,11 @@ async fn management_installation(
     // Validate the registered AgentVersion policy, without using the ordinary
     // Agent's output location to override the frozen Automation/source contract.
     crate::agent_version::reply_to_channel(&requested)?;
-    if content.pointer("/action/kind").and_then(Value::as_str) == Some("POST_MESSAGE") {
+    if content
+        .pointer("/action/kind")
+        .and_then(Value::as_str)
+        .is_some_and(crate::automation::steps::is_message_kind)
+    {
         Ok(())
     } else {
         crate::agent_version::validate_references(g, tx, tenant, human, &requested).await
@@ -1595,14 +1604,7 @@ async fn fresh(
 ) -> Result<String, Refusal> {
     // Policy selection is immutable version metadata; the child gate runs in
     // AgentTask before Capacity or the first external business side effect.
-    if !matches!(
-        row.action.get("kind").and_then(Value::as_str),
-        Some("AGENT_TURN" | "POST_MESSAGE")
-    ) || row
-        .action
-        .get("template")
-        .and_then(Value::as_str)
-        .is_none_or(|s| s.trim().is_empty())
+    if !steps::supported(&row.action)
         || !matches!(
             row.trigger.get("kind").and_then(Value::as_str),
             Some("CHANNEL_MESSAGE" | "MENTION" | "SCHEDULE")
@@ -1737,7 +1739,12 @@ async fn fresh(
     // DD-107: the registered meter set is the maximum for this Action. A
     // template publication does not request or consume model capacity/quota.
     let mut effective = def.clone();
-    if row.action.get("kind").and_then(Value::as_str) == Some("POST_MESSAGE") {
+    if row
+        .action
+        .get("kind")
+        .and_then(Value::as_str)
+        .is_some_and(crate::automation::steps::is_message_kind)
+    {
         effective.meters.retain(|meter| meter == "automation.run");
     }
     g.check_automation_quota(row.tenant_id, &effective).await?;
@@ -1780,7 +1787,7 @@ const FROZEN_INVOCATION_SQL: &str = "select i.automation_resource_id,i.automatio
            and (($6 and not $5 and $3::text is null and i.status in ('CREATED','DISPATCHING','UNKNOWN')
                  and i.runtime_turn_id is null and i.native_status is null and i.reply_event_id is not distinct from $4::text
                  and exists(select 1 from catalog.automation_version v where v.asset_id=i.automation_version_asset_id
-                   and v.automation_resource_id=i.automation_resource_id and v.action->>'kind'='POST_MESSAGE'))
+                   and v.automation_resource_id=i.automation_resource_id and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS')))
              or (not $6 and not $5 and $3::text is null and $4::text is null and i.status in ('CREATED','DISPATCHING') and i.runtime_turn_id is null)
              or (not $5 and $3::text is not null and i.status in ('RUNNING','UNKNOWN')
                and i.native_status='completed' and i.runtime_turn_id=$3 and i.reply_event_id is not distinct from $4::text)
@@ -2006,7 +2013,9 @@ async fn fresh_executor(
 ) -> Result<(), Refusal> {
     match row.action.get("kind").and_then(Value::as_str) {
         Some("AGENT_TURN") => fresh_runtime(state, tx, &runtime_scope(row)).await,
-        Some("POST_MESSAGE") => post_message::fresh(state, tx, &runtime_scope(row)).await,
+        Some("POST_MESSAGE" | "POST_MESSAGE_STEPS") => {
+            post_message::fresh(state, tx, &runtime_scope(row)).await
+        }
         _ => Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
     }
 }
@@ -2028,7 +2037,12 @@ pub(crate) async fn fresh_post_message(
     .fetch_one(&mut **tx)
     .await?;
     let row = run(tx, resource, Some(invocation)).await?;
-    if row.action.get("kind").and_then(Value::as_str) != Some("POST_MESSAGE") {
+    if !row
+        .action
+        .get("kind")
+        .and_then(Value::as_str)
+        .is_some_and(crate::automation::steps::is_message_kind)
+    {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     let binding = post_message::binding(tx, &runtime_scope(&row)).await?;
@@ -2333,7 +2347,7 @@ struct Cursor {
 fn relay_trigger_supported(action: &Value, trigger: &Value) -> bool {
     matches!(
         action.get("kind").and_then(Value::as_str),
-        Some("AGENT_TURN" | "POST_MESSAGE")
+        Some("AGENT_TURN" | "POST_MESSAGE" | "POST_MESSAGE_STEPS")
     ) && matches!(
         trigger.get("kind").and_then(Value::as_str),
         Some("CHANNEL_MESSAGE" | "MENTION")
@@ -2654,7 +2668,12 @@ async fn admit_source(
         }
         return Ok(id);
     }
-    let ready = if snapshot.action.get("kind").and_then(Value::as_str) == Some("POST_MESSAGE") {
+    let ready = if snapshot
+        .action
+        .get("kind")
+        .and_then(Value::as_str)
+        .is_some_and(crate::automation::steps::is_message_kind)
+    {
         Ok(None)
     } else {
         crate::agent_installation::admit_runtime(

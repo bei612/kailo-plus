@@ -571,6 +571,51 @@ describe("shared Automation schedule consumer", () => {
     await settle();
   };
 
+  it("preserves ordered Delay and message through form/YAML and the same UNKNOWN intent", async () => {
+    const { section, t, choose, fill } = await setup(["TRIGGER_THREAD"]);
+    await choose("Action", "POST_MESSAGE");
+    await fill("Instruction template", "After the delay");
+    await click(button(section, "Add delay"));
+    await type(section.querySelector<HTMLInputElement>('#wf-step-0-duration')!, "1m 2s");
+    await click(button(section, "Workflow YAML"));
+    const yaml = section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!;
+    expect(yaml.value).toContain("formatVersion: 2");
+    expect(yaml.value).toContain("action: delay");
+    expect(yaml.value).toContain("action: send_message");
+    await click(button(section, "Form"));
+    expect(section.querySelector<HTMLInputElement>('input[id="wf-step-0-duration"]')!.value).toBe("1m 2s");
+    await click(button(section, "Review request"));
+    await click(button(section, "Submit governed request"));
+    await click(button(section, "Re-check same request"));
+    const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions").map(([request]) => request.body);
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).toEqual(writes[0]);
+    expect(writes[0]).toMatchObject({automationVersionContent: {formatVersion: 2, steps: [
+      {id:expect.any(String),action:"delay",duration:"1m 2s"},
+      {id:expect.any(String),action:"send_message",text:"After the delay"},
+    ]}});
+    expect((writes[0] as {automationVersionContent:Record<string,unknown>}).automationVersionContent).not.toHaveProperty("action");
+  });
+
+  it("removing a delay preserves the message step identity and rejects unsupported conditions", async () => {
+    const { section, choose, fill } = await setup(["TRIGGER_THREAD"]);
+    await choose("Action", "POST_MESSAGE");
+    await fill("Instruction template", "Retained");
+    await click(button(section, "Add delay"));
+    await type(section.querySelector<HTMLInputElement>('#wf-step-0-duration')!, "1s");
+    await click(button(section, "Workflow YAML"));
+    const first = section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!.value;
+    await click(button(section, "Form"));
+    await click(section.querySelector<HTMLButtonElement>('button[aria-label="Remove step"]')!);
+    await click(button(section, "Workflow YAML"));
+    const after = section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!.value;
+    expect(after).toContain("formatVersion: 2");
+    expect(after).not.toContain("action: delay");
+    expect(first).toContain(after.slice(after.indexOf("steps:" ) + "steps:".length).trim());
+    await writeYaml(section, after.replace("action: send_message", "action: send_message\n    if: true"));
+    expect(button(section, "Review request").disabled).toBe(true);
+  });
+
   it("submits original cron fields and preserves six/seven-field YAML without truncation", async () => {
     const { section, t, choose, fill } = await setup(["CHANNEL"]);
     await choose("Trigger", "SCHEDULE");
@@ -631,6 +676,13 @@ describe("shared Automation schedule consumer", () => {
     await type(section.querySelector<HTMLInputElement>('input[aria-label="Weekday"]')!, "1-7");
     expect(button(section, "Review request").disabled).toBe(false);
     await type(section.querySelector<HTMLInputElement>('input[aria-label="Weekday"]')!, "MON-SUN");
+    expect(button(section, "Review request").disabled).toBe(true);
+    await type(section.querySelector<HTMLInputElement>('input[aria-label="Month"]')!, "January-March");
+    for (const name of ["Monday-Friday", "Tues-Thurs"]) {
+      await type(section.querySelector<HTMLInputElement>('input[aria-label="Weekday"]')!, name);
+      expect(button(section, "Review request").disabled).toBe(false);
+    }
+    await type(section.querySelector<HTMLInputElement>('input[aria-label="Month"]')!, "Januar");
     expect(button(section, "Review request").disabled).toBe(true);
   });
 

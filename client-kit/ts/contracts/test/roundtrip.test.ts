@@ -313,7 +313,7 @@ test("automation cron round-trip preserves exact spec and legacy interval", () =
       kind: row.trigger.scheduleSpec.kind, cron: row.trigger.scheduleSpec.cron,
       everySeconds: row.trigger.scheduleSpec.everySeconds, offsetSeconds: row.trigger.scheduleSpec.offsetSeconds,
       catchupWindowSeconds: row.trigger.scheduleSpec.catchupWindowSeconds,
-    } }, action: { kind: row.action.kind, template: row.action.template }, resultTarget: row.resultTarget,
+    } }, action: { kind: row.action!.kind, template: row.action!.template }, resultTarget: row.resultTarget,
   }));
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), original);
 });
@@ -322,7 +322,7 @@ test("automation POST_MESSAGE round-trip preserves action and native schedule", 
   const raw = readFileSync(new URL("../../../../contracts/samples/automation-post-message.sample.json", import.meta.url), "utf8");
   const original: unknown = JSON.parse(raw);
   const typed: AutomationVersionContent = JSON.parse(raw);
-  ok(typed.action.kind === "POST_MESSAGE");
+  ok(typed.action?.kind === "POST_MESSAGE");
   const reconstructed: AutomationVersionContent = {
     ...(typed.name !== undefined ? { name: typed.name } : {}),
     trigger: { kind: typed.trigger.kind, scheduleSpec: typed.trigger.scheduleSpec && {
@@ -333,6 +333,15 @@ test("automation POST_MESSAGE round-trip preserves action and native schedule", 
     ...(typed.approvalPolicy ? { approvalPolicy: { id: typed.approvalPolicy.id, version: typed.approvalPolicy.version } } : {}),
   };
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)), original);
+});
+
+test("ordered automation steps retain IDs, duration, names and version discriminator", () => {
+  const original = JSON.parse(readFileSync(new URL("../../../../contracts/samples/automation-steps.sample.json", import.meta.url), "utf8"));
+  const typed: AutomationVersionContent = original;
+  ok(typed.formatVersion === 2 && typed.steps && typed.action === undefined);
+  const reconstructed: AutomationVersionContent = {name:typed.name,formatVersion:typed.formatVersion,trigger:typed.trigger,
+    steps:typed.steps.map((step) => ({id:step.id,name:step.name,action:step.action,duration:step.duration,text:step.text})),resultTarget:typed.resultTarget};
+  deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)),original);
 });
 
 test("component release approval preserves deployment subject and NONE host API", () => {

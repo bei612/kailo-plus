@@ -346,6 +346,9 @@
 //    automationScheduleSpec, err := UnmarshalAutomationScheduleSpec(bytes)
 //    bytes, err = automationScheduleSpec.Marshal()
 //
+//    automationStep, err := UnmarshalAutomationStep(bytes)
+//    bytes, err = automationStep.Marshal()
+//
 //    automationVersionContent, err := UnmarshalAutomationVersionContent(bytes)
 //    bytes, err = automationVersionContent.Marshal()
 //
@@ -1715,6 +1718,16 @@ func (r *AutomationScheduleSpec) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAutomationStep(data []byte) (AutomationStep, error) {
+	var r AutomationStep
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AutomationStep) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAutomationVersionContent(data []byte) (AutomationVersionContent, error) {
 	var r AutomationVersionContent
 	err := json.Unmarshal(data, &r)
@@ -2900,12 +2913,16 @@ type ApplicationBindingCreateSecretRef struct {
 // REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
 // 配置或凭据。
 type AutomationVersionContentClass struct {
-	Action         AutomationVersionContentAction `json:"action"`
-	ApprovalPolicy *ApprovalPolicyElement         `json:"approvalPolicy,omitempty"`
+	Action         *AutomationVersionContentAction `json:"action,omitempty"`
+	ApprovalPolicy *ApprovalPolicyElement          `json:"approvalPolicy,omitempty"`
+	// 有序 steps 形态为 2，旧单 action 格式缺省保持原摘要。
+	FormatVersion *int64 `json:"formatVersion,omitempty"`
 	// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
-	Name         *string                         `json:"name,omitempty"`
-	ResultTarget AutomationResultTarget          `json:"resultTarget"`
-	Trigger      AutomationVersionContentTrigger `json:"trigger"`
+	Name         *string                `json:"name,omitempty"`
+	ResultTarget AutomationResultTarget `json:"resultTarget"`
+	// 不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+	Steps   []StepElement                   `json:"steps,omitempty"`
+	Trigger AutomationVersionContentTrigger `json:"trigger"`
 }
 
 type AutomationVersionContentAction struct {
@@ -2917,6 +2934,15 @@ type AutomationVersionContentAction struct {
 type ApprovalPolicyElement struct {
 	ID      string `json:"id"`
 	Version int64  `json:"version"`
+}
+
+// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+type StepElement struct {
+	Action   ActionEnum `json:"action"`
+	Duration *string    `json:"duration,omitempty"`
+	ID       string     `json:"id"`
+	Name     *string    `json:"name,omitempty"`
+	Text     *string    `json:"text,omitempty"`
 }
 
 type AutomationVersionContentTrigger struct {
@@ -4732,15 +4758,28 @@ type AutomationScheduleSpec struct {
 	OffsetSeconds *int64            `json:"offsetSeconds,omitempty"`
 }
 
+// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+type AutomationStep struct {
+	Action   ActionEnum `json:"action"`
+	Duration *string    `json:"duration,omitempty"`
+	ID       string     `json:"id"`
+	Name     *string    `json:"name,omitempty"`
+	Text     *string    `json:"text,omitempty"`
+}
+
 // REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
 // 配置或凭据。
 type AutomationVersionContent struct {
-	Action         AutomationVersionContentActionClass `json:"action"`
-	ApprovalPolicy *ApprovalPolicyElement              `json:"approvalPolicy,omitempty"`
+	Action         *AutomationVersionContentActionClass `json:"action,omitempty"`
+	ApprovalPolicy *ApprovalPolicyElement               `json:"approvalPolicy,omitempty"`
+	// 有序 steps 形态为 2，旧单 action 格式缺省保持原摘要。
+	FormatVersion *int64 `json:"formatVersion,omitempty"`
 	// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
-	Name         *string                              `json:"name,omitempty"`
-	ResultTarget AutomationResultTarget               `json:"resultTarget"`
-	Trigger      AutomationVersionContentTriggerClass `json:"trigger"`
+	Name         *string                `json:"name,omitempty"`
+	ResultTarget AutomationResultTarget `json:"resultTarget"`
+	// 不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+	Steps   []StepElement                        `json:"steps,omitempty"`
+	Trigger AutomationVersionContentTriggerClass `json:"trigger"`
 }
 
 type AutomationVersionContentActionClass struct {
@@ -5158,6 +5197,8 @@ type AgentTaskAdvanceRequest struct {
 type AgentTaskAdvanceResult struct {
 	ApprovalInput      *ApprovalInputClass `json:"approvalInput,omitempty"`
 	ApprovalWorkflowID *string             `json:"approvalWorkflowId,omitempty"`
+	// 同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。
+	DelayStep *DelayStep `json:"delayStep,omitempty"`
 	// 已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。
 	FinishActivity bool       `json:"finishActivity"`
 	InvocationID   string     `json:"invocationId"`
@@ -5221,6 +5262,12 @@ type ResumeClass struct {
 type RefusalElement struct {
 	ApproverPrincipalID string     `json:"approverPrincipalId"`
 	Reason              ReasonCode `json:"reason"`
+}
+
+// 同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。
+type DelayStep struct {
+	ID      string `json:"id"`
+	Seconds int64  `json:"seconds"`
 }
 
 // DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。
@@ -5910,6 +5957,13 @@ type AutomationResultTarget string
 const (
 	Channel       AutomationResultTarget = "CHANNEL"
 	TriggerThread AutomationResultTarget = "TRIGGER_THREAD"
+)
+
+type ActionEnum string
+
+const (
+	Delay       ActionEnum = "delay"
+	SendMessage ActionEnum = "send_message"
 )
 
 type AutomationTriggerKind string

@@ -5,8 +5,10 @@
   "description": "REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider 配置或凭据。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["trigger", "action", "resultTarget"],
+  "required": ["trigger", "resultTarget"],
   "properties": {
+    "formatVersion": {"type": "integer", "enum": [2], "description": "有序 steps 形态为 2，旧单 action 格式缺省保持原摘要。"},
+    "steps": {"type": "array", "minItems": 1, "items": {"$ref": "automation_step.schema.json"}, "description": "不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。"},
     "name": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。"},
     "approvalPolicy":{"$ref":"automation_approval_policy_ref.schema.json"},
     "trigger": {

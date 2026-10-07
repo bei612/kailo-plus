@@ -1118,16 +1118,25 @@ pub struct ApplicationBindingCreateSecretRef {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationVersionContentClass {
-    pub action: ContentAction,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<ContentAction>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<ApprovalPolicyElement>,
+
+    /// 有序 steps 形态为 2，旧单 action 格式缺省保持原摘要。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format_version: Option<i64>,
 
     /// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 
     pub result_target: AutomationResultTarget,
+
+    /// 不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub steps: Option<Vec<StepElement>>,
 
     pub trigger: ContentTrigger,
 }
@@ -1164,6 +1173,32 @@ pub enum AutomationResultTarget {
 
     #[serde(rename = "TRIGGER_THREAD")]
     TriggerThread,
+}
+
+/// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StepElement {
+    pub action: ActionEnum,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration: Option<String>,
+
+    pub id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionEnum {
+    Delay,
+
+    #[serde(rename = "send_message")]
+    SendMessage,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5591,21 +5626,47 @@ pub struct AutomationScheduleSpec {
     pub offset_seconds: Option<i64>,
 }
 
+/// 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AutomationStep {
+    pub action: ActionEnum,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration: Option<String>,
+
+    pub id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
 /// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
 /// 配置或凭据。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationVersionContent {
-    pub action: AutomationVersionContentAction,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<AutomationVersionContentAction>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<ApprovalPolicyElement>,
+
+    /// 有序 steps 形态为 2，旧单 action 格式缺省保持原摘要。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format_version: Option<i64>,
 
     /// 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 
     pub result_target: AutomationResultTarget,
+
+    /// 不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub steps: Option<Vec<StepElement>>,
 
     pub trigger: AutomationVersionContentTrigger,
 }
@@ -6361,6 +6422,10 @@ pub struct AgentTaskAdvanceResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval_workflow_id: Option<String>,
 
+    /// 同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delay_step: Option<DelayStep>,
+
     /// 已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。
     pub finish_activity: bool,
 
@@ -6491,6 +6556,14 @@ pub enum ApprovalSelfApproval {
 
     #[serde(rename = "DENY")]
     Deny,
+}
+
+/// 同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DelayStep {
+    pub id: String,
+
+    pub seconds: i64,
 }
 
 /// DD-47/48：固定 AgentInvocation 与版本/投影引用；不携带 prompt、token 或原生正文。

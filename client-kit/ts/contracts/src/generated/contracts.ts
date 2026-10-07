@@ -772,14 +772,22 @@ export interface ApplicationBindingCreateSecretRef {
  * 配置或凭据。
  */
 export interface AutomationVersionContentClass {
-    action:          AutomationVersionContentAction;
+    action?:         AutomationVersionContentAction;
     approvalPolicy?: ApprovalPolicyElement;
+    /**
+     * 有序 steps 形态为 2，旧单 action 格式缺省保持原摘要。
+     */
+    formatVersion?: number;
     /**
      * 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
      */
     name?:        string;
     resultTarget: AutomationResultTarget;
-    trigger:      AutomationVersionContentTrigger;
+    /**
+     * 不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+     */
+    steps?:  StepElement[];
+    trigger: AutomationVersionContentTrigger;
 }
 
 export interface AutomationVersionContentAction {
@@ -803,6 +811,22 @@ export interface ApprovalPolicyElement {
 export enum AutomationResultTarget {
     Channel = "CHANNEL",
     TriggerThread = "TRIGGER_THREAD",
+}
+
+/**
+ * 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+ */
+export interface StepElement {
+    action:    ActionEnum;
+    duration?: string;
+    id:        string;
+    name?:     string;
+    text?:     string;
+}
+
+export enum ActionEnum {
+    Delay = "delay",
+    SendMessage = "send_message",
 }
 
 export interface AutomationVersionContentTrigger {
@@ -3772,18 +3796,37 @@ export interface AutomationScheduleSpec {
 }
 
 /**
+ * 原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。
+ */
+export interface AutomationStep {
+    action:    ActionEnum;
+    duration?: string;
+    id:        string;
+    name?:     string;
+    text?:     string;
+}
+
+/**
  * REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
  * 配置或凭据。
  */
 export interface AutomationVersionContent {
-    action:          AutomationVersionContentActionClass;
+    action?:         AutomationVersionContentActionClass;
     approvalPolicy?: ApprovalPolicyElement;
+    /**
+     * 有序 steps 形态为 2，旧单 action 格式缺省保持原摘要。
+     */
+    formatVersion?: number;
     /**
      * 原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
      */
     name?:        string;
     resultTarget: AutomationResultTarget;
-    trigger:      AutomationVersionContentTriggerClass;
+    /**
+     * 不可与旧 action 混用；当前真实消费者支持有序 Delay 后发送一条消息。此切片不是原多副作用的产品上限。
+     */
+    steps?:  StepElement[];
+    trigger: AutomationVersionContentTriggerClass;
 }
 
 export interface AutomationVersionContentActionClass {
@@ -4317,6 +4360,10 @@ export interface AgentTaskAdvanceResult {
     approvalInput?:      ApprovalInputClass;
     approvalWorkflowId?: string;
     /**
+     * 同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。
+     */
+    delayStep?: DelayStep;
+    /**
      * 已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。
      */
     finishActivity: boolean;
@@ -4418,6 +4465,14 @@ export interface RefusalElement {
 export enum ApprovalSelfApproval {
     Allow = "ALLOW",
     Deny = "DENY",
+}
+
+/**
+ * 同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。
+ */
+export interface DelayStep {
+    id:      string;
+    seconds: number;
 }
 
 /**

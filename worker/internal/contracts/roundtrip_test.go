@@ -523,6 +523,35 @@ func TestAutomationCronRoundtrip(t *testing.T) {
 	}
 }
 
+func TestAutomationStepsRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "automation-steps.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original any
+	if err := json.Unmarshal(raw, &original); err != nil {
+		t.Fatal(err)
+	}
+	var typed generated.AutomationVersionContent
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	if typed.Action != nil {
+		t.Fatal("ordered version cannot silently become a legacy action")
+	}
+	encoded, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back any
+	if err := json.Unmarshal(encoded, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(original, back) {
+		t.Fatal("ordered steps changed during serialization")
+	}
+}
+
 func TestCanaryRoundtripPreservesEveryField(t *testing.T) {
 	// 相对本包定位样例，不依赖调用时的工作目录
 	path := filepath.Join("..", "..", "..", "contracts", "samples", "canary.sample.json")

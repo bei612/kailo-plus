@@ -21,7 +21,7 @@ export function ProfileSettingsCard() {
   const upload = (bytes: number[]) => uploadProfileAvatar(bytes, community.relayUrl, profile.data.pubkey);
   return <SharedProfileSettingsCard key={`${community.relayUrl}:${profile.data.pubkey}`} locale={locale} profile={profile.data}
     onCopy={writeTextToClipboard}
-    avatarPreview={(actual) => <ProfileAvatarPreview locale={locale} avatarUrl={actual.avatarUrl} label={actual.displayName ?? actual.pubkey} upload={upload} rewriteMediaUrl={rewriteRelayUrl} />}
+    avatarPreview={(actual) => <ProfileAvatarPreview locale={locale} avatarUrl={actual.avatarUrl} label={actual.displayName ?? actual.pubkey} upload={upload} rewriteMediaUrl={rewriteRelayUrl} className="h-full w-full rounded-full text-5xl" iconClassName="h-14 w-14" testId="profile-avatar-preview" />}
     avatarEditor={(props) => <ProfileAvatarControls {...props} label={profile.data.displayName ?? profile.data.pubkey} locale={locale} isDark={isDark} upload={upload} rewriteMediaUrl={rewriteRelayUrl} performDefaultHaptic={performDefaultHaptic} />}
     onSave={(request) => mutation.mutateAsync(request)} />;
 }

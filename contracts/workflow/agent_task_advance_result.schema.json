@@ -12,6 +12,9 @@
     "waitingReason": { "type": "string" },
     "finishActivity": { "type": "boolean", "description": "已查证安全停止此 Activity；不等于 Invocation 成功或 Capacity 已释放。" },
     "approvalWorkflowId": {"type":"string","minLength":1},
-    "approvalInput": {"$ref":"approval_input.schema.json"}
+    "approvalInput": {"$ref":"approval_input.schema.json"},
+    "delayStep": {"type":"object", "additionalProperties":false, "required":["id","seconds"], "properties": {
+      "id":{"type":"string","minLength":1}, "seconds":{"type":"integer","minimum":1}
+    }, "description":"同不可变自动化版本的下一 Delay；Core 须读回原 execution chain 的 TimerFired 才允许后续副作用。"}
   }
 }

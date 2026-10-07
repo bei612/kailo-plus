@@ -221,7 +221,40 @@ async fn advance_accepted(
             }
         }
     }
-    if invocation.automation_action_kind.as_deref() == Some("POST_MESSAGE") {
+    if invocation
+        .automation_action_kind
+        .as_deref()
+        .is_some_and(crate::automation::steps::is_message_kind)
+    {
+        if invocation.status == "CREATED" {
+            let action: Value = match sqlx::query_scalar("select v.action from catalog.agent_invocation i join catalog.automation_version v on v.asset_id=i.automation_version_asset_id and v.automation_resource_id=i.automation_resource_id where i.id=$1")
+                .bind(id).fetch_one(&state.pool).await { Ok(action) => action, Err(error) => return unavailable(error) };
+            let delays = match crate::automation::steps::delays(&action) {
+                Ok(delays) => delays,
+                Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+            };
+            if !delays.is_empty() && !input.cancel_requested && !invocation.cancel_pending {
+                let completed = match state
+                    .temporal
+                    .automation_delay_progress(
+                        &invocation.workflow_id,
+                        &observed.first_run_id,
+                        &input.run_id,
+                        &input.activity_id,
+                        &input.invocation_id,
+                        &delays,
+                    )
+                    .await
+                {
+                    Ok(completed) => completed,
+                    Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+                };
+                if let Some((step, seconds)) = delays.get(completed) {
+                    return (StatusCode::OK, Json(serde_json::json!({"invocationId":id,"status":"RUNNING",
+                        "waitingReason":"WAITING_TIMER","finishActivity":true,"delayStep":{"id":step,"seconds":seconds}}))).into_response();
+                }
+            }
+        }
         return post_message::advance(&state, &invocation, &input).await;
     }
     let holder = match state
@@ -654,7 +687,11 @@ async fn cancel_before_dispatch_in_transaction(
         (
             "canceled-before-dispatch",
             "OUTCOME",
-            if invocation.automation_action_kind.as_deref() == Some("POST_MESSAGE") {
+            if invocation
+                .automation_action_kind
+                .as_deref()
+                .is_some_and(crate::automation::steps::is_message_kind)
+            {
                 "CANCELED_BEFORE_MESSAGE_DISPATCH"
             } else {
                 "CANCELED_BEFORE_MODEL_DISPATCH"
@@ -2495,7 +2532,7 @@ const REPLY_INTENT: &str = "select d.id as dispatch_audit_id,d.operation_id,d.hu
     and ((i.native_status='completed' and $3::text is not null)
       or ($3::text is null and i.native_status is null and i.post_message_intent is not null
         and exists(select 1 from catalog.automation_version v where v.asset_id=i.automation_version_asset_id
-          and v.automation_resource_id=i.automation_resource_id and v.action->>'kind'='POST_MESSAGE')))
+          and v.automation_resource_id=i.automation_resource_id and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS'))))
     and i.status in ('DISPATCHING','RUNNING','UNKNOWN')";
 
 /// Consume only an existing stable Reply intent. There is no publisher or
@@ -2899,6 +2936,7 @@ async fn release_holder(state: &ServiceState, id: Uuid, released: bool, waiting:
             finish_activity,
             approval_workflow_id: None,
             approval_input: None,
+            delay_step: None,
         }),
     )
         .into_response()
@@ -2918,6 +2956,7 @@ fn result(id: Uuid, status: TaskStatus, waiting: &str) -> Response {
             finish_activity,
             approval_workflow_id: None,
             approval_input: None,
+            delay_step: None,
         }),
     )
         .into_response()

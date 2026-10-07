@@ -98,6 +98,11 @@ func (c *CoreAPI) advanceAgentTaskOnce(ctx context.Context, in generated.AgentTa
 			!out.FinishActivity || out.WaitingReason != "WAITING_APPROVAL")) {
 		return out, temporal.NewNonRetryableApplicationError("AgentTask step approval reference is incomplete", ErrTypeUnknownExternalResult, nil)
 	}
+	if out.DelayStep != nil && (out.Status != generated.TaskStatusRUNNING || !out.FinishActivity ||
+		out.WaitingReason != "WAITING_TIMER" || out.ApprovalInput != nil || out.DelayStep.ID == "" ||
+		out.DelayStep.Seconds <= 0 || out.DelayStep.Seconds > math.MaxInt64/int64(time.Second)) {
+		return out, temporal.NewNonRetryableApplicationError("AgentTask Delay reference is incomplete", ErrTypeUnknownExternalResult, nil)
+	}
 	switch out.Status {
 	case generated.TaskStatusRUNNING, generated.Completed, generated.TaskStatusFAILED, generated.Canceled:
 		return out, nil

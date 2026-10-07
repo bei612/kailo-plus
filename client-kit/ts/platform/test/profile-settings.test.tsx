@@ -2,7 +2,7 @@ import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { npubEncode } from "nostr-tools/nip19";
 import type { WebProfileUpdateRequest } from "@client-kit/contracts";
-import { ProfileSettingsCard, type ProfilePresentation } from "../src/react/profile-settings";
+import { ProfileSettingsCard, type ProfilePresentation, type ProfileAvatarEditorBinding } from "../src/react/profile-settings";
 import { TransportError } from "../src/transport";
 import { button, click, render, settle, type } from "./render";
 
@@ -15,6 +15,50 @@ async function edit(host: HTMLElement, name: string) {
 }
 
 describe("original profile settings through canonical host callbacks", () => {
+  it("opens the original independent avatar editor without opening metadata and passes both original portal targets", async () => {
+    let editor!: ProfileAvatarEditorBinding;
+    const onSave = vi.fn(async () => profile);
+    const host = await render(<ProfileSettingsCard locale="en" profile={profile} onCopy={clipboard} onSave={onSave}
+      avatarEditor={(binding) => { editor = binding; return <button type="button" onClick={binding.onDone}>Finish avatar</button>; }} />);
+    expect(host.querySelector('[data-testid="profile-avatar-clip-frame"]')!.classList.contains("h-48")).toBe(true);
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="profile-avatar-edit"]')!);
+    await act(async () => { await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())); });
+    expect(host.querySelector("#profile-display-name")).toBeNull();
+    expect(editor.animatedPreviewContainer).toBe(host.querySelector('[data-testid="profile-avatar-animated-preview-slot"]'));
+    expect(editor.modeTabsContainer).toBe(host.querySelector('[data-testid="profile-avatar-mode-tabs-slot"]'));
+    expect(editor.modeTabsContainer).not.toBeNull();
+    expect(host.querySelector('[data-testid="profile-readonly-content"]')!.hasAttribute("inert")).toBe(true);
+    await click(button(host, "Finish avatar"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-testid="profile-readonly-content"]')!.hasAttribute("inert")).toBe(false);
+  });
+
+  it("preserves the avatar draft and exact intent through unknown and rejected readback until canonical completion", async () => {
+    let editor!: ProfileAvatarEditorBinding;
+    const avatarUrl = "https://media.example/avatar.png";
+    const onSave = vi.fn<(request: WebProfileUpdateRequest) => Promise<ProfilePresentation>>()
+      .mockRejectedValueOnce(new TransportError("publication response lost"))
+      .mockRejectedValueOnce(new Error("observation denied"))
+      .mockResolvedValue({ ...profile, avatarUrl });
+    const host = await render(<ProfileSettingsCard locale="en" profile={profile} onCopy={clipboard} onSave={onSave}
+      avatarEditor={(binding) => { editor = binding; return <button type="button" disabled={binding.disabled} onClick={binding.onDone}>Finish avatar</button>; }} />);
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="profile-avatar-edit"]')!);
+    await act(async () => { await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())); });
+    await act(async () => editor.onChange(avatarUrl));
+    await click(button(host, "Finish avatar"));
+    const first = onSave.mock.calls[0]![0];
+    expect(first).toMatchObject({ avatarUrl, expectedPubkey: profile.pubkey, displayName: profile.displayName });
+    expect(editor.disabled).toBe(true);
+    expect(editor.avatarUrl).toBe(avatarUrl);
+    await click(button(host, "Check save result"));
+    expect(editor.disabled).toBe(true);
+    expect(host.textContent).toContain("The save result is unknown");
+    await click(button(host, "Check save result"));
+    expect(onSave.mock.calls.every(([request]) => request === first)).toBe(true);
+    expect(host.textContent).toContain("Saved and read back");
+    expect(host.querySelector('[data-testid="profile-readonly-content"]')!.hasAttribute("inert")).toBe(false);
+  });
+
   it("does not claim save success or close the editor before the canonical readback", async () => {
     let finish!: (value: ProfilePresentation) => void;
     const onSave = vi.fn((_request: WebProfileUpdateRequest) => new Promise<ProfilePresentation>((resolve) => { finish = resolve; }));

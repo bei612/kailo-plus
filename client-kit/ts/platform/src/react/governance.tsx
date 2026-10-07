@@ -119,6 +119,7 @@ export function WaitingReason({ code }: { code: string }) {
   const known: Readonly<Record<string, PlatformMessageKey>> = {
     UNKNOWN_EXTERNAL_RESULT: "tasks.status.unknown",
     CONVERGENCE_PENDING: "tasks.waiting.convergence",
+    WAITING_TIMER: "workflows.steps.waiting",
     PENDING_EXTERNAL: "tasks.waiting.external",
     PROTOCOL_SESSION_OPEN: "tasks.waiting.protocolSession",
     NONE: "platform.audit.noResult",

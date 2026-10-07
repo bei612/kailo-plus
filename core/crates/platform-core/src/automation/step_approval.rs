@@ -272,7 +272,7 @@ pub(crate) async fn gate(
         action_kind: action,
     } = facts.ok_or_else(unknown)?;
     let message_only = match action.as_deref() {
-        Some("POST_MESSAGE") => true,
+        Some("POST_MESSAGE" | "POST_MESSAGE_STEPS") => true,
         Some("AGENT_TURN") => false,
         _ => return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
     };

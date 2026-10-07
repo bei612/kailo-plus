@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain/automation_step.schema.json",
+  "title": "AutomationStep",
+  "description": "原 Buzz 有序步骤的已接通动作；步骤执行和延时仍归 Temporal。其它原动作不由此宣称已实现。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "action"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "name": {"type": "string", "minLength": 1},
+    "action": {"type": "string", "enum": ["delay", "send_message"]},
+    "duration": {"type": "string", "minLength": 1},
+    "text": {"type": "string", "minLength": 1}
+  }
+}

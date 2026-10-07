@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -48,6 +49,100 @@ func finishTaskMock(env *testsuite.TestWorkflowEnvironment, check func(generated
 			}
 			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: status, WaitingReason: "NONE", FinishActivity: true}, nil
 		})
+}
+
+func TestAgentTaskOrderedDelayUsesDurableTimerBeforeNextAdvance(t *testing.T) {
+	env, in, _ := scheduleTaskTest(t)
+	env.OnActivity("ProjectAgentTaskState", mock.Anything, mock.Anything).Return(nil)
+	started := env.Now()
+	advances := 0
+	env.OnActivity("AdvanceAgentTask", mock.Anything, mock.Anything).Return(
+		func(_ context.Context, actual generated.AgentTaskWorkflowInput) (generated.AgentTaskAdvanceResult, error) {
+			advances++
+			if actual != in {
+				t.Fatal("Delay changed original Invocation")
+			}
+			if advances == 1 {
+				return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID,
+					Status: generated.TaskStatusRUNNING, WaitingReason: "WAITING_TIMER", FinishActivity: true,
+					DelayStep: &generated.DelayStep{ID: "wait", Seconds: 62}}, nil
+			}
+			if env.Now().Sub(started) < 62*time.Second {
+				t.Fatal("message step advanced before native Delay")
+			}
+			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.Completed, WaitingReason: "NONE", FinishActivity: true}, nil
+		})
+	raw, _ := json.Marshal(in)
+	env.ExecuteWorkflow(AgentTaskKind, json.RawMessage(raw))
+	if err := env.GetWorkflowError(); err != nil || advances != 2 {
+		t.Fatalf("Delay did not finish through original workflow: advances=%d error=%v", advances, err)
+	}
+}
+
+func TestAgentTaskCancelDuringOrderedDelayDrainsWithoutPublishing(t *testing.T) {
+	env, in, _ := scheduleTaskTest(t)
+	env.OnActivity("ProjectAgentTaskState", mock.Anything, mock.Anything).Return(nil)
+	advances := 0
+	env.OnActivity("AdvanceAgentTask", mock.Anything, mock.Anything).Return(
+		func(_ context.Context, actual generated.AgentTaskWorkflowInput) (generated.AgentTaskAdvanceResult, error) {
+			advances++
+			if advances == 1 {
+				return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID,
+					Status: generated.TaskStatusRUNNING, WaitingReason: "WAITING_TIMER", FinishActivity: true,
+					DelayStep: &generated.DelayStep{ID: "wait", Seconds: 62}}, nil
+			}
+			if !actual.CancelPending {
+				t.Fatal("canceled Delay proceeded to a side effect")
+			}
+			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.Canceled, WaitingReason: "NONE", FinishActivity: true}, nil
+		})
+	env.RegisterDelayedCallback(env.CancelWorkflow, 10*time.Second)
+	raw, _ := json.Marshal(in)
+	env.ExecuteWorkflow(AgentTaskKind, json.RawMessage(raw))
+	if !temporal.IsCanceledError(env.GetWorkflowError()) || advances != 2 {
+		t.Fatalf("Delay cancellation must drain original invocation: advances=%d error=%v", advances, env.GetWorkflowError())
+	}
+}
+
+func TestAgentTaskOrderedDelayPreservesOriginalContinuationAndCancelCheckpoint(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		t.Run(fmt.Sprint(canceled), func(t *testing.T) {
+			env, in, _ := scheduleTaskTest(t)
+			in.EventBase = 11
+			const historyLength = 7
+			env.SetCurrentHistoryLength(historyLength)
+			env.OnActivity("ProjectAgentTaskState", mock.Anything, mock.Anything).Return(nil)
+			env.OnActivity("AdvanceAgentTask", mock.Anything, mock.Anything).Return(generated.AgentTaskAdvanceResult{
+				InvocationID: in.InvocationID, Status: generated.TaskStatusRUNNING, WaitingReason: "WAITING_TIMER", FinishActivity: true,
+				DelayStep: &generated.DelayStep{ID: "wait", Seconds: 62},
+			}, nil).Once()
+			env.RegisterDelayedCallback(func() {
+				env.SetContinueAsNewSuggested(true)
+				if canceled {
+					env.CancelWorkflow()
+				}
+			}, 10*time.Second)
+			raw, _ := json.Marshal(in)
+			env.ExecuteWorkflow(AgentTaskKind, json.RawMessage(raw))
+			var next *workflow.ContinueAsNewError
+			if !errors.As(env.GetWorkflowError(), &next) {
+				t.Fatalf("Delay skipped original continuation: %v", env.GetWorkflowError())
+			}
+			var resumed generated.AgentTaskWorkflowInput
+			if err := converter.GetDefaultDataConverter().FromPayloads(next.Input, &resumed); err != nil {
+				t.Fatal(err)
+			}
+			if resumed.EventBase != in.EventBase+historyLength {
+				t.Fatal("Delay continuation lost cumulative history position")
+			}
+			resumed.EventBase = in.EventBase
+			in.CancelPending = canceled
+			if resumed != in || next.WorkflowType.Name != AgentTaskKind {
+				t.Fatal("Delay continuation lost invocation/cancel checkpoint")
+			}
+			env.AssertExpectations(t)
+		})
+	}
 }
 
 func TestAgentTaskScheduleUnknownRoundsDoNotAbandonCommittedAdmission(t *testing.T) {

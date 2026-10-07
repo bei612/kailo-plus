@@ -57,6 +57,18 @@ it("the real Web settings branch requires the exact signed event readback after 
   expect(host.textContent).toContain("Saved and read back");
 });
 
+it("opens the original avatar controls independently and keeps the actual mode tabs in the profile header", async () => {
+  const client = createBffClient({ send: async () => ({ status: 200, body: [] }) });
+  await act(async () => root.render(<PlatformProvider client={client} locale="en"><SettingsPane /></PlatformProvider>));
+  await click('[data-testid="settings-nav-profile"]');
+  await click('[data-testid="profile-avatar-edit"]');
+  await act(async () => { await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())); });
+  expect(host.querySelector("#profile-display-name")).toBeNull();
+  expect(host.querySelector('[data-testid="profile-avatar-mode-tabs-slot"]')?.textContent).toContain("Emoji");
+  expect(host.querySelector('[data-testid="profile-avatar-editor-shell"]')).not.toBeNull();
+  expect(state.write).not.toHaveBeenCalled();
+});
+
 it.each(["different event", "different signer", "read error"])("does not turn an accepted PUT plus %s into saved", async (failure) => {
   state.read.mockResolvedValueOnce(profile);
   if (failure === "read error") state.read.mockRejectedValue(new Error("private response detail"));

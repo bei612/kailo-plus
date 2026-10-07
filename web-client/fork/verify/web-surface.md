@@ -3771,3 +3771,131 @@ UNKNOWN 输入节点/幂等键断言。该最后增量的验证单独记录，�
 日志绝对目录为
 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/projects-directory.wiWDv3/`。
 源码和上述证据仅供合并，未构建、发布或部署，不代表原设置全功能完成。
+
+### 2026-10-07 原有序 Delay → 消息步骤纵向接线（尚未运行期验收）
+
+1. 权威与上游：REQ-23/24、DD-107、03 §7 与 05 §2.9 已恢复原多步骤
+   产品范围；旧单 action 仅是历史格式，不是产品上限。固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `crates/buzz-workflow/src/schema.rs::Step/ActionDef`、
+   `desktop/src/features/workflows/ui/WorkflowStepCard.tsx::WorkflowStepCard`、
+   `WorkflowDurationField.tsx::WorkflowDurationField`、
+   `workflowDuration.ts::parseDurationSeconds` 是本批原卡片详情、时长输入与
+   滑块复用来源。未增加本地调度器；固定 Temporal Go SDK
+   `626130f1fd9de50cfd90b884a3fb796504f22dc1` 的
+   `internal/workflow.go::NewTimerWithOptions/TimerOptions` 提供持久 Timer。
+2. 影响面：原不可变 AutomationVersion 采用显式 formatVersion=2 与 steps，
+   保留步骤顺序、ID、名称、精确 duration 与末条消息；旧 action 不补字段、不重算
+   摘要。表单与 YAML、复制、版本详情、UNKNOWN 同键请求仍消费同一版本。
+   原 AgentTaskWorkflow / AdvanceAgentTask 增加可选 Delay 引用；原 TaskProjection
+   的 WAITING_TIMER 仍由已有历史/任务页显示，不另存步骤或计时权威。
+   Web/Desktop 复用共享组件；本批没有移动端新增编辑入口。
+3. 副作用与兼容：持久 action 用 POST_MESSAGE_STEPS，避免旧 Core 忽略步骤直接
+   发消息；新 Core 沿原 publication / quota / usage / Capacity-NONE 检查处理。
+   迁移 20261007050000 只扩原 action 约束与三份原 trigger，不增加表或后台通道。
+   旧行与旧 writer 格式保持有效，新格式由旧 Core 拒绝；旧 Worker 不识别 Delay
+   不会得到 TimerFired，因此不能越过步骤。发布需迁移、新 Core/Worker 再新 Web；
+   回滚发现新格式不可变版本时停止，不能删历史或压平版本。
+4. 异常与边界：Core 只认可原 execution chain、当前 Activity 之前的完整 history
+   中同 Invocation/step 的 TimerStarted、精确 duration 与 TimerFired；缺页、循环、
+   不连续或不可读返回 UNKNOWN。取消 Timer 不是完成，下一轮继续同 Invocation 的
+   原取消收尾。零时长按原配置为无副作用步骤。唤醒后仍经原 activity fence、同 AE、
+   tenant 锁、fresh_post_message、当前用量/密钥/binding；发出前再查一次，既有
+   reply intent CAS 与原事件/计量终态证据不变。缺少终态不能重发或显示完成。
+   原生 Timer 返回后同样执行原 ContinueAsNew 检查并累计 eventBase，不能因 Delay
+   分支直接 continue 而跳过历史续跑；续跑前保存 cancelPending，取消后下一轮只
+   收尾原 Invocation，不将取消 Timer 当作允许派发消息的依据。
+
+实际写入后的验证：原受限 SDK（4 CPU / 8 GiB）中四侧原生成退出 0；共享源码与
+测试 TypeScript 检查退出 0；原调度 54 项加新增步骤 2 项共 56 项通过。
+TypeScript 契约往返 34 项、Dart 往返 29 项通过。首次两新增用例分别因旧测试 helper
+假定 label 内含 input、按文本查图标按钮失败；只修夹具为实际 input ID / aria-label，
+未改产品绕过。SDK 私有副本放宽步骤字段以允许未实现 if，并移除 Cron 全名解析，
+两条断言真实失败退出 1；原字节恢复 cmp 0 后首次 worker 启动超时，0 tests、退出 1，
+随后仅两受破坏用例复跑 2/2 通过。未提高超时或重跑 full。
+
+日志目录仍为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`：
+`workflow-steps-gen.log`、`workflow-steps-ui-final.log`、`workflow-steps-mutation.log`、
+`workflow-steps-restored.log`、`workflow-steps-restored-retry.log`。
+原 `tools/gen.sh --check` 四侧及同源 i18n 同步检查实际退出 0，日志为
+`workflow-steps-gen-check.log`。首次隔离迁移目标 full-pg 中仅创建本批空库，
+原 sqlx 连接超时退出 1，未执行迁移；空库保留。随后经任务负责人确认原 SDK
+共享的独立 PostgreSQL namespace，仅新建同名本批隔离库继续原迁移入口，
+不修改原网络、其他库或生产数据库。后一次原 sqlx 实际退出 0：100 条成功，
+末条 20261007050000 前进、回退、再前进均通过；automation_version 为 0 行，
+这不是带业务数据的回滚或端到端运行验收。原输出摘要在私有交接目录
+`/volumes/data/kailo/tmp/workflow-steps-20261007.Hhwev1/migration-receipt.txt`。
+
+后端同一受限 SDK 实际完成：Core 步骤校验 3 项、Temporal Timer 证明 2 项、Rust
+契约往返 29 项通过，原命令退出 0。仅在 SDK 放宽不可变 action 投影相等判断和
+TimerFired 的 started-event/timer-id 匹配后，两项真实失败退出 101；两个文件按原
+字节恢复 cmp 0，合并 5 项复跑通过。日志为 `workflow-steps-core.log`、
+`workflow-steps-core-mutation.log`、`workflow-steps-core-restored.log`。
+
+Worker 原 testsuite 的持久计时、取消后收尾、成功/取消后的续跑检查实际通过：
+3 个顶层用例，其中续跑含两个子例；Go 契约 20 个顶层往返用例通过。首跑新增续跑
+夹具遗漏 mock 的第二个 nil 返回值，原 Activity mock 因此失败；修夹具后才记通过。
+续跑用原 SDK SetCurrentHistoryLength(7)，初始 eventBase=11，明确断言继续运行输入
+为 18，并核对固定 Invocation 引用和 cancelPending。私有副本删掉累加后两个续跑
+子例真实失败退出 1，原字节恢复 cmp 0 后上述 3 项和子例全部通过。
+日志为 `workflow-steps-worker.log`、`workflow-steps-worker-checkpoint.log`、
+`workflow-steps-worker-mutation.log`、`workflow-steps-worker-restored.log`。
+窄 clippy 首次因时长上限手写范围比较而退出 101；按同一闭区间语义改用
+RangeInclusive::contains 后，`-D warnings` 与上述 5 项复跑均退出 0，日志为
+`workflow-steps-clippy.log`、`workflow-steps-core-final.log`。Go 三个变更文件
+gofmt 与两新增 Rust 模块 edition 2021 格式检查退出 0。
+未提供独立 Temporal namespace，本批未执行真实
+Temporal 服务上的运行、取消、重启与消息终态验收；不将 testsuite、原 Cron 验收或
+数据库空库迁移冒充这些业务证据。
+本批没有构建、提交、部署或浏览器验收，不声称 Workflows 全功能恢复；原条件、每步骤
+timeout、其它动作、多副作用编排与原模板变量补全仍需真实消费者，未生成假按钮。
+
+## 2026-10-07 原版资料布局与独立头像编辑
+
+实施前四步结论：
+
+1. 权威为 REQ-24、DD-53 与既有资料签名/读回合同。只读核验固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/settings/ui/ProfileSettingsCard.tsx::ProfileSettingsCard`、
+   `desktop/src/features/profile/ui/ProfileAvatarEditor.tsx::ProfileAvatarEditor`、
+   `desktop/src/shared/ui/textarea.tsx::Textarea`。不是重新设计资料页。
+2. 影响面是共享 ProfileSettingsCard、原 ProfileAvatarControls 和两宿主的头像
+   preview 属性。复用已有 MaskedAvatarBadgeFrame、Input、ProfileAvatarEditor；
+   补回原 Textarea 的实际调用。恢复原 192px 头像、编辑角标、独立头像编辑、
+   模式 tabs/动态预览 portal、滚动还原、动画及只读资料/身份 disclosure。
+   两端仍消费同一个 TypeScript 主体，没有 Core、合同、数据库或迁移变化。
+3. 副作用仍交原 onSave：Web 本人 SERVER 经 BFF，Desktop 本机 CLIENT。
+   只在原签名事件读回后更新已保存值；响应丢失或身份不符保持 UNKNOWN，
+   继续同一个冻结请求，后续观察被拒绝不能解除原意图。没有另写保存服务、
+   复制头像存储或把 SERVER 私钥出口放入 Web。既有清空字段语义保留，
+   不恢复上游忽略空值的旧限制。
+4. 无修改点“完成”不产生写请求；上传中和 UNKNOWN 禁止换载荷，未确认保存
+   不关闭头像编辑器。真实身份 key 切换仍由原宿主卸载，迟到结果不写入新身份；
+   权限、暂时故障与结果不明仍沿原六类错误处理。Mobile 没有新增页面，
+   仅两条文案经原生成入口同步 Dart，默认中文/显式英文规则不变。
+
+本批静态与行为输入固定在 `7aa8a4d0348fbe224900043957e974e898040257`
+加本节对应 Profile 增量，未夹带并行 Workflow steps 合同/实现。初次 SDK
+使用旧 agents.tsx 配新生成合同，tsc 报 everySeconds/offsetSeconds 可选，退出 2；
+随后按冻结候选重新同步真实 Cron 基线，未改业务代码来规避诊断。
+
+原受限 SDK 的 `gen-platform-i18n.py --check` 退出 0；共享 source/test tsc
+与 Profile 8 项、Web tsc 与真实 SettingsPane Profile 5 项、Desktop tsc
+全部通过，串行组合命令 session 37566 明确退出 0。
+Web jsdom 明确提示缺少 Canvas getContext，不代表动画录制/图片编码已在浏览器
+验收；没有安装 Canvas 包或用假实现宣称通过。
+
+SDK 私有宿主副本只断开原 ProfileAvatarEditor 的 modeTabsContainer 投递，
+新真实 Web 入口用例实际失败：期望 Emoji、原模式栏槽实际为空，1 failed /
+4 skipped，退出 1（`profile-original-mutation.log`）。没有改测试期望或
+产品默认行为；从冻结共享源码恢复宿主副本并逐字 cmp 0。
+还原后真实 Web Profile 5/5 再次通过，session 52953 退出 0，
+日志为 `profile-original-restored.log`；正式源码始终未施加该破坏。
+
+日志绝对目录为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/projects-directory.wiWDv3/`，
+候选正向输出在 `profile-original-selected.log`。本批没有 full/build/deploy，
+没有新的线上截图或 Windows 安装包验证，也不称原设置全部功能已完成。
+原 Native 私钥备份和账户退出的完整布局不在本切片；未删除其交付要求，
+Web 不得因复用页面而获得本机私钥能力。

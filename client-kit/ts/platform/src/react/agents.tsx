@@ -10,6 +10,7 @@ import {
   AgentMemoryColdWrite,
   RuntimeProfileKind,
   ActionKind,
+  ActionEnum,
   AutomationState,
   ScheduleSpecKind,
   AutomationResultTarget as ResultTarget,
@@ -55,6 +56,8 @@ import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
 import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
 import { CronExpressionInput } from "./cron-expression-input";
 import { cronExpressionError, cronYamlError } from "./cron-expression";
+import type { AutomationStep } from "@client-kit/contracts";
+import { supportedSteps, workflowAction, WorkflowStepCard } from "./workflow-steps";
 
 // Original UnifiedAgentsSection grid at Buzz 779af8886caae1317b4de962082429867ab61503.
 const IDENTITY_CARD_GRID_CLASS = "w-full grid-cols-1 [@container(min-width:21rem)]:grid-cols-2 [@container(min-width:32rem)]:grid-cols-3 [@container(min-width:43rem)]:grid-cols-4 [@container(min-width:54rem)]:grid-cols-5 grid gap-3";
@@ -204,21 +207,21 @@ function objectFields(value: unknown, keys: string[]): value is Record<string, u
 }
 
 function validAutomationContent(value: unknown): value is AutomationVersionContent {
-  if (!objectFields(value, ["name", "trigger", "action", "resultTarget", "approvalPolicy"])
-    || !objectFields(value.trigger, ["kind", "textPrefix", "mentionPrincipalId", "scheduleSpec"])
-    || !objectFields(value.action, ["kind", "template"])) return false;
+  if (!objectFields(value, ["name", "trigger", "action", "resultTarget", "approvalPolicy", "formatVersion", "steps"])
+    || !objectFields(value.trigger, ["kind", "textPrefix", "mentionPrincipalId", "scheduleSpec"])) return false;
+  if (value.formatVersion === 2 ? value.action !== undefined || !supportedSteps(value.steps)
+    : value.formatVersion !== undefined || value.steps !== undefined || !objectFields(value.action, ["kind", "template"])
+      || (value.action.kind !== ActionKind.AgentTurn && value.action.kind !== ActionKind.PostMessage)
+      || typeof value.action.template !== "string" || !value.action.template.trim()) return false;
   // The generated contract remains the data model; this is the existing form's
   // accepted subset, also used for authorized read and YAML input.
   const content = value;
   const trigger = value.trigger;
-  const action = value.action;
   return (value.name === undefined || (typeof value.name === "string" && !!value.name.trim()))
     && (trigger.textPrefix === undefined || (typeof trigger.textPrefix === "string" && !!trigger.textPrefix))
     && (trigger.kind === TriggerKind.Mention
       ? typeof trigger.mentionPrincipalId === "string" && !!trigger.mentionPrincipalId
       : trigger.mentionPrincipalId === undefined)
-    && (action.kind === ActionKind.AgentTurn || action.kind === ActionKind.PostMessage)
-    && typeof action.template === "string" && !!action.template.trim()
     && (content.approvalPolicy === undefined || (objectFields(content.approvalPolicy, ["id", "version"])
       && typeof content.approvalPolicy.id === "string" && typeof content.approvalPolicy.version === "number"
       && validApprovalPolicy({ id: content.approvalPolicy.id, version: content.approvalPolicy.version })))
@@ -412,7 +415,7 @@ function AutomationCard({ row, workspaceName, locked, onView, onEdit }: {
             {!content ? <Zap className="h-5 w-5" /> : content.trigger.kind === TriggerKind.Schedule ? <CalendarClock className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
           </span>
           {content ? <><ArrowRight className="h-4 w-4 text-muted-foreground/60" /><span className="flex h-9 w-9 items-center justify-center rounded-xl border border-blue-300/30 bg-blue-600 text-white shadow-xs">
-            {content.action.kind === ActionKind.PostMessage ? <MessageSquare className="h-5 w-5" /> : <Zap className="h-5 w-5" />}</span></> : null}
+            {workflowAction(content)?.kind === ActionKind.PostMessage ? <MessageSquare className="h-5 w-5" /> : <Zap className="h-5 w-5" />}</span></> : null}
         </div>
         <div className="pointer-events-auto flex items-center gap-1">
           <Badge tone="neutral">{t(automationLabels[row.state])}</Badge>
@@ -431,9 +434,9 @@ function AutomationCard({ row, workspaceName, locked, onView, onEdit }: {
       {state.status === "pending" ? <p role="status" className="mt-4 text-sm text-muted-foreground">{t("platform.loading")}</p>
         : !detail ? <div className="pointer-events-auto mt-4"><AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} /></div>
         : content ? <>
-          <p className="mt-4 text-xs font-medium text-muted-foreground">{triggerLabel} · {t(content.action.kind === ActionKind.PostMessage ? "agents.automation.postMessage" : "agents.automation.agentTurn")}</p>
+          <p className="mt-4 text-xs font-medium text-muted-foreground">{triggerLabel} · {t(workflowAction(content)?.kind === ActionKind.PostMessage ? "agents.automation.postMessage" : "agents.automation.agentTurn")}</p>
           <h3 className="mt-2 line-clamp-4 break-words text-xl font-bold leading-tight tracking-tight" data-testid="workflow-card-semantic-label">{content.name ?? t("workflows.unnamed")}</h3>
-          <p className="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-xs text-muted-foreground">{content.action.template}</p>
+          <p className="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-xs text-muted-foreground">{workflowAction(content)?.template}</p>
           <label className="pointer-events-auto mt-2 flex min-w-0 flex-col gap-1 text-2xs text-muted-foreground">{t("agents.version.assetVersion")}
             <select className="h-8 min-w-0 rounded-md border border-input bg-background px-2" disabled={locked} value={version!.assetId}
               onChange={(event) => setSelectedVersion(event.target.value)}>
@@ -540,7 +543,10 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
               ? `${version.content.approvalPolicy.id} · ${version.content.approvalPolicy.version}`
               : t("agents.automation.noApproval")}</p>
           </Cell>
-          <Cell><span className="whitespace-pre-wrap">{version.content.action.template}</span></Cell>
+          <Cell><span className="whitespace-pre-wrap">{workflowAction(version.content)?.template}</span>
+            {version.content.steps ? <ol className="mt-2 space-y-1 text-xs text-muted-foreground">{version.content.steps.map((step) =>
+              <li key={step.id}>{step.name ?? step.id} · {step.action === "delay" ? `${t("workflows.steps.duration")}: ${step.duration}` : t("workflows.steps.message")}</li>)}</ol> : null}
+          </Cell>
           <Cell><Button disabled={locked || copying} onClick={() => { void copy(version.assetId); }}>{t("agents.automation.copy")}</Button></Cell>
         </tr>)}
       </Table>}
@@ -623,6 +629,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   const [cron, setCron] = useState("");
   const [catchupWindowSeconds, setCatchupWindowSeconds] = useState("");
   const [template, setTemplate] = useState("");
+  const [steps, setSteps] = useState<AutomationStep[]>([]);
   const [actionKind, setActionKind] = useState(ActionKind.AgentTurn);
   const [policyKey, setPolicyKey] = useState("");
   const [editorMode, setEditorMode] = useState<"form" | "yaml">("form");
@@ -689,7 +696,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     ...(name !== "" ? { name } : {}),
     trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : prefix ? { textPrefix: prefix } : {}),
       ...(trigger === TriggerKind.Mention && executor ? { mentionPrincipalId: executor.agentPrincipalId } : {}) },
-    action: { kind: actionKind, template },
+    ...(steps.length ? {formatVersion: 2, steps} : {action: { kind: actionKind, template }}),
     ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}),
     resultTarget: trigger === TriggerKind.Schedule ? ResultTarget.Channel : ResultTarget.TriggerThread,
   };
@@ -722,8 +729,9 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     setEverySeconds(content?.trigger.scheduleSpec?.everySeconds?.toString() ?? "");
     setOffsetSeconds(content?.trigger.scheduleSpec?.offsetSeconds?.toString() ?? "");
     setCatchupWindowSeconds(content?.trigger.scheduleSpec?.catchupWindowSeconds.toString() ?? "");
-    setTemplate(content?.action.template ?? "");
-    setActionKind(content?.action.kind ?? ActionKind.AgentTurn);
+    setSteps(content?.steps ?? []);
+    setTemplate(content ? workflowAction(content)?.template ?? "" : "");
+    setActionKind(content ? workflowAction(content)?.kind ?? ActionKind.AgentTurn : ActionKind.AgentTurn);
     setPolicyKey(content?.approvalPolicy ? `${content.approvalPolicy.id}:${content.approvalPolicy.version}` : "");
     setVersionId(""); setGrantId(""); setExecutorId("");
     const cronNeedsYaml = content?.trigger.scheduleSpec?.cron !== undefined
@@ -757,7 +765,8 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     setEverySeconds(yamlContent.trigger.scheduleSpec?.everySeconds?.toString() ?? "");
     setOffsetSeconds(yamlContent.trigger.scheduleSpec?.offsetSeconds?.toString() ?? "");
     setCatchupWindowSeconds(yamlContent.trigger.scheduleSpec?.catchupWindowSeconds.toString() ?? "");
-    setTemplate(yamlContent.action.template); setActionKind(yamlContent.action.kind);
+    setSteps(yamlContent.steps ?? []);
+    setTemplate(workflowAction(yamlContent)?.template ?? ""); setActionKind(workflowAction(yamlContent)?.kind ?? ActionKind.AgentTurn);
     setPolicyKey(yamlContent.approvalPolicy ? `${yamlContent.approvalPolicy.id}:${yamlContent.approvalPolicy.version}` : "");
     setEditorMode(mode); setEditorError(false);
   };
@@ -889,16 +898,24 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
           <input value={prefix} onChange={(event) => setPrefix(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
         </label>}
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.action")}
-          <select value={actionKind} onChange={(event) => {
+          <select value={actionKind} disabled={steps.length > 0} onChange={(event) => {
             if (event.target.value === ActionKind.AgentTurn || event.target.value === ActionKind.PostMessage) setActionKind(event.target.value);
           }} className="h-8 rounded-md border border-input bg-background px-2">
             <option value={ActionKind.AgentTurn}>{t("agents.automation.agentTurn")}</option>
             <option value={ActionKind.PostMessage}>{t("agents.automation.postMessage")}</option>
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
+        {steps.length ? <div className="space-y-3">{steps.map((step, index) => <WorkflowStepCard key={index} index={index} step={step}
+          onUpdate={(next) => { setSteps((old) => old.map((value, position) => position === index ? next : value)); if (index === steps.length - 1) setTemplate(next.text ?? ""); }}
+          onRemove={index < steps.length - 1 ? () => setSteps((old) => old.filter((_, position) => position !== index)) : undefined} />)}</div>
+        : <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
           <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />
-        </label>
+        </label>}
+        {actionKind === ActionKind.PostMessage ? <Button onClick={() => setSteps((old) => {
+          const delay: AutomationStep = { id: crypto.randomUUID(), action: ActionEnum.Delay, duration: "" };
+          return old.length ? [...old.slice(0, -1), delay, old[old.length - 1]!] : [delay,
+            { id: crypto.randomUUID(), action: ActionEnum.SendMessage, text: template }];
+        })}>{t("workflows.steps.addDelay")}</Button> : null}
         {policies?.length || policyKey ? <label className="flex flex-col gap-1 text-sm">{t("agents.automation.approvalPolicy")}
           <select value={policyKey} disabled={!policies} onChange={(event) => {
             if (event.target.value === "" || policies?.some((row) => `${row.id}:${row.version}` === event.target.value))
@@ -953,7 +970,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
           <p>{t("agents.automation.catchupWindowSeconds")}: {intent.automationVersionContent.trigger.scheduleSpec.catchupWindowSeconds}</p>
         </> : null}
         {intent.automationVersionContent.trigger.textPrefix ? <p className="break-words">{t("agents.automation.prefix")}: {intent.automationVersionContent.trigger.textPrefix}</p> : null}
-        <p className="whitespace-pre-wrap">{intent.automationVersionContent.action.template}</p>
+        <p className="whitespace-pre-wrap">{workflowAction(intent.automationVersionContent)?.template}</p>
         <p>{t("agents.automation.approvalPolicy")}: {intent.automationVersionContent.approvalPolicy
           ? `${intent.automationVersionContent.approvalPolicy.id} · ${intent.automationVersionContent.approvalPolicy.version}`
           : t("agents.automation.noApproval")}</p>
