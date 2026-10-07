@@ -5948,3 +5948,57 @@ projectId 选择和 conversation 消息定位；同一回执文件按两批事�
 历史 schema，无破坏性变更。复用既有快照 Git 历史和独立 index；并未把缺失
 历史基线记成 SKIP。只加载原函数执行，未运行 wrapper 的依赖安装阶段或 full。
 原输出为 `/volumes/data/kailo/tmp/project-sidebar-state.R4nKBS/added-compatibility.log`。
+
+### 2026-10-07 原个人设置复制交互与 HTTP 宿主接缝
+
+- 权威与原版：依 `REQ-08`、`DD-53` 和设计 06 §9.1 恢复已有交互；固定
+  Buzz `779af8886caae1317b4de962082429867ab61503` 的
+  `desktop/src/features/settings/ui/ProfileSettingsCard.tsx::IdentityRow`
+  使用原复制按钮、`title` 与 `toast.success`，Native 调用
+  `desktop/src/shared/lib/clipboard.ts::writeTextToClipboard`。
+- 影响与实际调用方：共享 `profile-settings.tsx` 保留原按钮布局及可访问名，
+  恢复原 toast 成功呈现，失败使用既有中英词条；Web `SettingsPane` 的 `onCopy`
+  在 Clipboard API 可用时仍调用该 API。HTTP 不提供此 API 时，原点击手势内
+  同步选择临时只读文本框并调用浏览器 `execCommand("copy")`；结束立即移除，
+  恢复焦点和选区。Native 仍复用原 Tauri clipboard helper，两端已有 Toaster。
+  只复制原界面已经显示的 canonical npub 或 NIP-05，不新增身份、权限、存储、
+  接口、依赖或词条，不触上传/保存链。
+- 异常与边界：Clipboard API 被拒绝时不改走另一 API；浏览器 copy 返回 false
+  或抛错均显示失败，不能显示成功。共享调用捕获同步抛错及 Promise 拒绝，
+  不显示异常正文。不更改 CSP、安全上下文或权限，不开放私钥复制。
+- 事后验证：受限既有 SDK 保持 4 CPU / 8 GiB，执行前无 Node/Cargo，Data
+  可用 6.4 GiB。shared source/test、Web、Native TypeScript 均退出 0；
+  原资料 12 项、Web 设置 8 项通过（包含中英 HTTP/拒绝/清理/原 API 分支）。
+  SDK-only 将共享失败伪报成功，实际 2 fail / 10 pass；将 HTTP false 忽略，
+  实际 2 fail / 6 pass，两个测试命令均退出 1。两源原字节 cmp 0 还原后，
+  12 + 8 项再次通过，最终 Native 类型退出 0；未运行 full/build。
+
+浏览器证据仅为 HTTP 浏览器机制，不冒充新版部署 UI：独立
+`profile-copy-http` 会话在真实 HTTP origin 的临时专用探针执行宿主函数体
+（与 SettingsPane 函数体逐字 diff 0），`isSecureContext=false` 且
+`navigator.clipboard.writeText` 不存在。真实点击后 Ctrl+V 得到完整公开中文
+测试标记，焦点恢复、临时节点清理均为 true；没有授予权限或读取已有剪贴板。
+截图已打开复核，route 已撤、页面退回 about:blank。生产设置页仍待合批构建后
+实际验收，不宣称已部署。证据目录
+`/volumes/data/kailo/tmp/profile-copy-20261007.qUvDIT/` 包含
+`ui-baseline.log`、`ui-mutation.log`、`ui-restored.log`、`http-browser.js`、
+`http-browser.log` 与 `http-copy-paste.png`。
+
+原设置全量差异仍未完成：固定 `SettingsPanels.tsx::SettingsSection` 有 16 个
+section，当前共享 `settings-surface.tsx` 保留 6 个；本批不是另外 10 页恢复。
+以下列原入口与当前未接消费者，不把删除的底层能力称为上游不支持：
+
+| 原 section | 固定原入口／依赖 | 当前缺口 |
+| --- | --- | --- |
+| voice | `VoiceSettingsCard`、TTS registry/huddle 原命令 | 当前宿主未提供原语音消费者 |
+| experimental | `ExperimentalFeaturesCard`、`desktopFeatures` | 原开关对应运行消费者尚未恢复 |
+| agents | `AgentsSettingsPanel`、原 personas/teams/harness | 现治理 Agents 页面不等于原设置模块 |
+| channel-templates | `ChannelTemplatesSettingsCard`、原 templates/storage | Team/Template/Canvas 权威映射尚缺，未放空选项 |
+| compute | `MeshComputeSettingsCard` | 原 mesh compute 运行链未恢复 |
+| hosted-communities | `HostedCommunitiesSettingsCard` | 原本机服务创建链未接现治理入口 |
+| moderation | `ModerationQueueCard` | 原审核队列读写消费者未接 |
+| local-archive | `LocalArchiveSettingsCard` | 原归档运行链未恢复 |
+| mobile | `MobilePairingCard` | 原设备配对/身份转移不等同当前设备列表 |
+| updates | `UpdateChecker`、原 updater | 当前安装包更新链未接，不能直接更新为官方 Buzz 包 |
+
+上述恢复范围不因本批复制修复而缩减；本批没有新增无调用方页面或假动作。

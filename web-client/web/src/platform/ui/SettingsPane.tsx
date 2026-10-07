@@ -135,7 +135,38 @@ function WebProfileSettings() {
     try { return new URL(poster).origin !== window.location.origin; } catch { return true; }
   };
   return <ProfileSettingsCard key={profile.pubkey} locale={locale} profile={profile}
-    onCopy={(value) => navigator.clipboard.writeText(value)}
+    onCopy={async (value) => {
+      if (typeof navigator.clipboard?.writeText === "function") {
+        // A denied modern request stays denied; do not retry via another API.
+        await navigator.clipboard.writeText(value);
+        return;
+      }
+      // HTTP hosts have no Clipboard API. Keep this browser-native fallback
+      // synchronous inside the original click gesture, without changing CSP,
+      // permissions or identity. A false return is not a successful copy.
+      const previousFocus = document.activeElement;
+      const selection = window.getSelection();
+      const ranges = selection ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange()) : [];
+      const field = document.createElement("textarea");
+      field.value = value;
+      field.readOnly = true;
+      field.tabIndex = -1;
+      field.setAttribute("aria-hidden", "true");
+      field.style.cssText = "position:fixed;inset:0;opacity:0;pointer-events:none";
+      document.body.append(field);
+      try {
+        field.focus({ preventScroll: true });
+        field.select();
+        if (!document.execCommand("copy")) throw new Error("Clipboard copy was refused");
+      } finally {
+        field.remove();
+        if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
+        if (selection) {
+          selection.removeAllRanges();
+          ranges.forEach(range => selection.addRange(range));
+        }
+      }
+    }}
     avatarPreview={(actual) => <ProfileAvatarPreview locale={locale} avatarUrl={actual.avatarUrl} label={actual.displayName ?? actual.pubkey} upload={upload} rewriteMediaUrl={rewriteMediaUrl} className="h-full w-full rounded-full text-5xl" iconClassName="h-14 w-14" testId="profile-avatar-preview" />}
     avatarEditor={(props) => <>
       <ProfileAvatarControls {...props} label={profile.displayName ?? profile.pubkey} locale={locale} isDark={isDark} upload={upload} rewriteMediaUrl={rewriteMediaUrl} />

@@ -8,8 +8,12 @@ import { setLocale } from "@client-kit/platform/i18n";
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import { createBffClient } from "@client-kit/platform/client";
 import { SidebarProvider } from "@client-kit/platform/react/sidebar/sidebar";
+import { npubEncode } from "nostr-tools/nip19";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const copyFeedback = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock("sonner", () => ({ toast: copyFeedback }));
 
 vi.mock("@client-kit/platform/react/context", async (original) => ({
   ...await original<typeof import("@client-kit/platform/react/context")>(),
@@ -68,6 +72,74 @@ beforeEach(() => {
   state.preferences.isFetching = false;
 });
 describe("Web settings existing user-state CAS consumer", () => {
+  it.each(["en", "zh-CN"] as const)("copies the original public identity on HTTP and reports real refusal in %s", async (locale) => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));
+    const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    const commandDescriptor = Object.getOwnPropertyDescriptor(document, "execCommand");
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+    const copy = vi.fn(() => {
+      const field = document.activeElement as HTMLTextAreaElement;
+      expect(field.tagName).toBe("TEXTAREA");
+      expect(field.value).toBe(npubEncode("a".repeat(64)));
+      expect(field.selectionStart).toBe(0);
+      expect(field.selectionEnd).toBe(field.value.length);
+      return true;
+    });
+    Object.defineProperty(document, "execCommand", { configurable: true, value: copy });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    copyFeedback.success.mockReset();
+    copyFeedback.error.mockReset();
+    try {
+      const client = createBffClient({ send: async () => ({ status: 200, body: [] }) });
+      await act(async () => root.render(<PlatformProvider client={client} locale={locale}><SidebarProvider><SettingsPane /></SidebarProvider></PlatformProvider>));
+      const button = host.querySelector<HTMLButtonElement>('[data-testid="copy-profile-pubkey"]')!;
+      button.focus();
+      const textareas = document.querySelectorAll("textarea").length;
+      await act(async () => button.click());
+      expect(copy).toHaveBeenCalledExactlyOnceWith("copy");
+      expect(copyFeedback.success).toHaveBeenCalledExactlyOnceWith(locale === "en" ? "Copied to clipboard" : "已复制到剪贴板");
+      expect(copyFeedback.error).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(button);
+      expect(document.querySelectorAll("textarea")).toHaveLength(textareas);
+
+      copy.mockReturnValueOnce(false);
+      await act(async () => button.click());
+      expect(copyFeedback.error).toHaveBeenLastCalledWith(locale === "en" ? "Could not copy to clipboard" : "未能复制到剪贴板");
+      expect(copyFeedback.success).toHaveBeenCalledTimes(1);
+      expect(document.querySelectorAll("textarea")).toHaveLength(textareas);
+
+      copy.mockImplementationOnce(() => { throw new Error("private browser detail"); });
+      await act(async () => button.click());
+      expect(copyFeedback.error).toHaveBeenCalledTimes(2);
+      expect(copyFeedback.success).toHaveBeenCalledTimes(1);
+      expect(document.activeElement).toBe(button);
+      expect(document.querySelectorAll("textarea")).toHaveLength(textareas);
+
+      const writeText = vi.fn().mockRejectedValue(new Error("permission denied"));
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+      await act(async () => button.click());
+      expect(writeText).toHaveBeenCalledExactlyOnceWith(npubEncode("a".repeat(64)));
+      expect(copy).toHaveBeenCalledTimes(3);
+      expect(copyFeedback.error).toHaveBeenCalledTimes(3);
+      expect(copyFeedback.success).toHaveBeenCalledTimes(1);
+      writeText.mockResolvedValueOnce(undefined);
+      await act(async () => button.click());
+      expect(copyFeedback.success).toHaveBeenCalledTimes(2);
+      expect(copy).toHaveBeenCalledTimes(3);
+      expect(host.textContent).not.toContain("private browser detail");
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      if (clipboardDescriptor) Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
+      else Reflect.deleteProperty(navigator, "clipboard");
+      if (commandDescriptor) Object.defineProperty(document, "execCommand", commandDescriptor);
+      else Reflect.deleteProperty(document, "execCommand");
+      vi.unstubAllGlobals();
+    }
+  });
   it("opens original Profile first and retains the same Buzz appearance controls", async () => {
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));

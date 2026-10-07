@@ -4,7 +4,7 @@
 import { Check, ChevronDown, Copy, Pencil } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import * as React from "react";
-import { useState } from "react";
+import { toast } from "sonner";
 import { npubEncode } from "nostr-tools/nip19";
 import type { WebProfileUpdateRequest, WebProfileView } from "@client-kit/contracts";
 import { translate, type PlatformLocale } from "../i18n";
@@ -43,16 +43,24 @@ function IdentityRow({ locale, label, value, testId, onCopy }: {
   locale: PlatformLocale; label: string; value: string | null; testId: string;
   onCopy: (value: string) => Promise<void>;
 }) {
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   return <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3">
     <div className="min-w-0 space-y-1"><p className="text-sm font-medium">{label}</p>
       <p className="min-w-0 truncate text-sm text-muted-foreground" data-testid={testId} title={value ?? undefined}>{value || t("platform.profile.notSet")}</p>
-      {copyState !== "idle" ? <p role="status" className="text-sm text-muted-foreground">{t(copyState === "copied" ? "platform.profile.copied" : "platform.profile.copyFailed")}</p> : null}
     </div>
     {value ? <button type="button" aria-label={`${t("platform.profile.copy")} ${label}`} data-testid={`copy-${testId}`}
       className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      onClick={() => void onCopy(value).then(() => setCopyState("copied"), () => setCopyState("failed"))}>
+      title={`${t("platform.profile.copy")} ${label}`}
+      onClick={async () => {
+        try {
+          await onCopy(value);
+          toast.success(t("platform.profile.copied"));
+        } catch {
+          // The host can throw synchronously when the browser clipboard API
+          // is absent (HTTP). Keep the original feedback, never fake a copy.
+          toast.error(t("platform.profile.copyFailed"));
+        }
+      }}>
       <Copy aria-hidden className="h-4 w-4 shrink-0" />{t("platform.profile.copy")}
     </button> : null}
   </div>;

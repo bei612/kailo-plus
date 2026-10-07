@@ -7,6 +7,9 @@ import { TransportError } from "../src/transport";
 import { emojiAvatarDataUrl, DEFAULT_EMOJI_AVATAR_COLOR } from "../src/react/profile/buzz/features/profile/ui/ProfileAvatarEditor.utils";
 import { button, click, render, settle, type } from "./render";
 
+const copyFeedback = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock("sonner", () => ({ toast: copyFeedback }));
+
 const profile: ProfilePresentation = { pubkey: "a".repeat(64), displayName: "Original", about: "Before", avatarUrl: null, nip05Handle: "me@community.example" };
 const clipboard = vi.fn(async (_value: string) => {});
 
@@ -16,6 +19,29 @@ async function edit(host: HTMLElement, name: string) {
 }
 
 describe("original profile settings through canonical host callbacks", () => {
+  it.each(["en", "zh-CN"] as const)("keeps original clipboard feedback for synchronous and asynchronous failures (%s)", async (locale) => {
+    copyFeedback.success.mockClear();
+    copyFeedback.error.mockClear();
+    let failure: "synchronous" | "asynchronous" | null = "synchronous";
+    const copy = vi.fn((): Promise<void> => {
+      if (failure === "synchronous") throw new TypeError("private native detail");
+      return failure === "asynchronous" ? Promise.reject(new Error("private native detail")) : Promise.resolve();
+    });
+    const host = await render(<ProfileSettingsCard locale={locale} profile={profile} onCopy={copy} onSave={async () => profile} />);
+    const control = host.querySelector<HTMLButtonElement>('[data-testid="copy-profile-pubkey"]')!;
+    expect(control.title).toBe(control.getAttribute("aria-label"));
+    await click(control);
+    expect(copyFeedback.error).toHaveBeenLastCalledWith(locale === "en" ? "Could not copy to clipboard" : "未能复制到剪贴板");
+    expect(copyFeedback.success).not.toHaveBeenCalled();
+    failure = "asynchronous";
+    await click(control);
+    expect(copyFeedback.error).toHaveBeenCalledTimes(2);
+    failure = null;
+    await click(control);
+    expect(copyFeedback.success).toHaveBeenLastCalledWith(locale === "en" ? "Copied to clipboard" : "已复制到剪贴板");
+    expect(copy).toHaveBeenCalledTimes(3);
+    expect(host.textContent).not.toContain("private native detail");
+  });
   it("saves the emoji avatar on HTTP without randomUUID and closes only after canonical readback", async () => {
     const getRandomValues = crypto.getRandomValues.bind(crypto);
     vi.stubGlobal("isSecureContext", false);
