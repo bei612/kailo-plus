@@ -15,7 +15,7 @@ export function useProjectsHost(){
     if(!limit||!Number.isSafeInteger(limit)||limit<1)return null;
     const check=()=>{if(!scope.active)throw new Error("Project identity changed");};
     const scopeKey=`${session.facts.communityHost}:${session.devicePubkey}`;
-    return {scopeKey,publish:createProjectsPublisher(scopeKey,session.facts.relayUrl,session.devicePubkey,()=>scope.active),
+    return {scopeKey,publish:createProjectsPublisher(scopeKey,session.facts.relayUrl,session.devicePubkey,()=>scope.active,session.client),
       completePublication:(key,eventId)=>{check();relayClient.completeProjectIntent(`${scopeKey}:${key}`,session.facts.relayUrl,eventId);},query:async request=>{
       check();const kind=request.view==="PROJECTS"?30621:request.view==="REPOSITORIES"?30617:request.view==="DELETIONS"?5:null;
       if(kind===null||kind===5&&!request.coordinates?.length)throw new Error("Invalid project query");

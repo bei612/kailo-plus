@@ -298,7 +298,7 @@ test("a restarted project intent observes its persisted exact event ID without s
   const create=async()=>{assert.fail("must not sign after restart");};
   client.publishEvent=async()=>assert.fail("must not republish after restart");
   const observation={eventId:event.id,onPrepared:()=>assert.fail("must not prepare again")};
-  client.fetchEvents=async query=>{assert.deepEqual(query,{ids:[event.id],kinds:[5],limit:1});return [];};
+  client.fetchEvents=async query=>{assert.deepEqual(query,{ids:[event.id],kinds:[5,30621,30617],limit:1});return [];};
   await assert.rejects(client.publishProjectIntent("restart",relay,create,true,observation),RelayPublishUnknownError);
   client.fetchEvents=async()=>[event];
   assert.equal((await client.publishProjectIntent("restart",relay,create,true,observation)).id,event.id);
@@ -310,4 +310,26 @@ test("failure to persist a prepared project reference prevents external publicat
   await assert.rejects(client.publishProjectIntent("durable","wss://projects.test",async()=>({id:"a".repeat(64)}),false,{onPrepared:()=>{throw new Error("storage full");}}),RelayPublishNotSentError);
   assert.equal(published,0);
   assert.equal(client.unconfirmedEvents.size,0);
+});
+
+test("project and default repository creation recover exact IDs without a second signature", async () => {
+  for(const kind of [30621,30617]) {
+    reset();const client=connectedClient();const relay="wss://projects.test";
+    client.ensureConnected=async()=>{client.relayUrl=relay;};
+    const event={id:"a".repeat(64),pubkey:"b".repeat(64),kind,created_at:1,tags:[["d","garden"]],content:"",sig:"c".repeat(128)};
+    let signed=0,published=0;
+    const create=async()=>{signed++;return event;};
+    client.publishEvent=async()=>{published++;throw new RelayPublishUnknownError(event.id,"lost ACK");};
+    await assert.rejects(client.publishProjectIntent("create",relay,create),RelayPublishUnknownError);
+    client.fetchEvents=async()=>[{...event,kind:5}];
+    await assert.rejects(client.publishProjectIntent("create",relay,create,true),RelayPublishUnknownError);
+    client.fetchEvents=async()=>[{...event,pubkey:"d".repeat(64)}];
+    await assert.rejects(client.publishProjectIntent("create",relay,create,true),RelayPublishUnknownError);
+    client.fetchEvents=async()=>[event];
+    assert.equal((await client.publishProjectIntent("create",relay,create,true)).kind,kind);
+    assert.equal(signed,1);assert.equal(published,1);
+    client.completeProjectIntent("create",relay,event.id);
+    assert.equal((await client.publishProjectIntent("create",relay,create,true,{eventId:event.id,onPrepared:()=>assert.fail("must not prepare again")})).kind,kind);
+    assert.equal(signed,1);assert.equal(published,1);
+  }
 });

@@ -336,7 +336,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 projectsSection={<SidebarProjects scopeKey={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`}
                   channels={rows.filter(workspace=>workspace.isMember===true).map(workspace=>({id:workspace.id,name:workspace.name,visibility:workspace.visibility?.toLowerCase()}))}
                   selectedProjectId={navigation.projectId} selectedChannelId={tab==="channel"?active:null}
-                  onSelectProject={id=>{void navigation.openProject(id);}} onSelectChannel={id=>{void navigation.openChannel(id);}}/>}
+                  onSelectProject={id=>navigation.openProject(id)} onSelectChannel={id=>{void navigation.openChannel(id);}}/>}
                 selectedPlatformSection={tab === "channel" || tab === "inbox" || tab === "settings" || tab === "new-message" || tab === "conversation" || tab === "application" ? null : tab}
                 selectedView={tab === "inbox" ? "home" : tab === "new-message" ? "new-message" : tab === "channel" || tab === "conversation" || tab === "settings" ? "channel" : "platform"} />
             <NativeApplicationEntries scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`}

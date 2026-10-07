@@ -23,14 +23,8 @@ pub(crate) const PUBLISH_ACTION: &str = "projects.publish";
 pub(crate) fn publication_kind(
     request: &contracts::ProjectsPublishRequest,
 ) -> Result<u16, Response> {
-    match serde_json::to_value(&request.operation)
-        .ok()
-        .as_ref()
-        .and_then(Value::as_str)
-    {
-        Some("DELETE") => Ok(5),
-        _ => Err(StatusCode::BAD_REQUEST.into_response()),
-    }
+    collab_bridge::projects::publication_kind(request)
+        .map_err(|_| StatusCode::BAD_REQUEST.into_response())
 }
 
 /// Select a real signed coordinate head, never an author supplied separately by
@@ -40,7 +34,31 @@ pub(crate) async fn publication_target(
     client: &collab_bridge::bridge::IdentityClient,
     request: &contracts::ProjectsPublishRequest,
 ) -> Result<Option<nostr::Event>, Response> {
-    let id = request.target_event_id.as_str();
+    let kind = publication_kind(request)?;
+    if kind != 5 {
+        let slug = collab_bridge::projects::project_dtag(
+            request.name.as_deref().unwrap_or_default().trim(),
+        );
+        let rows = client
+            .query(
+                &state.http,
+                &[json!({"kinds":[kind],"authors":[client.pubkey_hex()],"#d":[slug],"limit":1})],
+            )
+            .await
+            .map_err(|error| relay_error_response(&error, None))?;
+        let events: Vec<nostr::Event> =
+            serde_json::from_value(rows).map_err(|_| StatusCode::BAD_GATEWAY.into_response())?;
+        if !events.is_empty() {
+            // CREATE is not an implicit edit of a current coordinate. Retries
+            // already dispatched return the original publish_attempt above.
+            return Err(StatusCode::CONFLICT.into_response());
+        }
+        return Ok(None);
+    }
+    let id = request
+        .target_event_id
+        .as_deref()
+        .ok_or_else(|| StatusCode::BAD_REQUEST.into_response())?;
     if nostr::EventId::from_hex(id).map_or(true, |parsed| parsed.to_hex() != id) {
         return Err(StatusCode::BAD_REQUEST.into_response());
     }

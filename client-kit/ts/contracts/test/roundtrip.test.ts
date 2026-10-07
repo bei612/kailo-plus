@@ -16,7 +16,7 @@ test("Project preference preserves original coordinate and shared CAS", () => {
 
 test("Projects publication preserves native metadata and exact head reference", () => {
   const sample: import("../src/generated/contracts.js").ProjectsPublishRequest[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/projects-publication.sample.json",import.meta.url),"utf8"));
-  const actual: typeof sample = sample.map(row=>({operation:row.operation,targetEventId:row.targetEventId}));
+  const actual: typeof sample = sample.map(row=>({operation:row.operation,targetEventId:row.targetEventId,workspaceId:row.workspaceId,name:row.name,description:row.description,visibility:row.visibility}));
   deepStrictEqual(JSON.parse(JSON.stringify(actual)),sample);
 });
 

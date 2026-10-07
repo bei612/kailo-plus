@@ -16,6 +16,7 @@
 !contracts/domain/automation_step.schema.json
 !tools/registry/capabilities.yaml
 !contracts/api/action_submission.schema.json
+!contracts/api/projects_publish_request.schema.json
 !contracts/api/delegated_action_metadata_v1.schema.json
 !contracts/compatibility/action-submission-v1.json
 !contracts/compatibility/action-submission-v2.json

@@ -12,13 +12,120 @@ import {SidebarProvider} from "../src/react/sidebar/sidebar";
 import {AppSidebarPrimaryMenu} from "../src/react/sidebar/app-sidebar-primary-menu";
 import {listSidebarProjects,writeSidebarProjectsFilter} from "../src/react/sidebar/listSidebarProjects";
 import {act,useState} from "react";
+import {PlatformProvider} from "../src/react/context";
+import {createBffClient} from "../src/client";
+import {CreateActionKey, ErrorClass, WorkspaceVisibility} from "@client-kit/contracts";
+import {getEventHash} from "nostr-tools/pure";
+import {prepareProjectCreation,resumeProjectCreation,ProjectCreationPending,ProjectCreationRejected} from "../src/react/projects/createProject";
+import {buildProjectBootstrapTemplates} from "../src/react/projects/projectCreation";
+import {useCreateProject} from "../src/react/projects/useCreateProject";
+import {CreateProjectFormContent} from "../src/react/projects/CreateProjectFormContent";
+import {Dialog} from "../src/react/composer/shared/ui/dialog";
 
 const owner="a".repeat(64),other="b".repeat(64);
 function project(name="Real project",id="p",time=10):PulseEvent{return {id,pubkey:owner,kind:30621,created_at:time,content:"",tags:[["d",id],["name",name],["description","Signed announcement"],["a",`30617:${other}:missing`]]};}
 function host(rows:PulseEvent[]=[project()]):ProjectsHost{return {scopeKey:"tenant:owner",query:async req=>({events:req.view==="PROJECTS"?rows:[],pubkey:owner,limit:3})};}
 const signal=()=>new AbortController().signal;
+const bff=createBffClient({send:async()=>({status:200,body:{workspaces:[]}})});
+const creationInput={name:"Real creation",description:"Original description",channelVisibility:WorkspaceVisibility.Open,projectVisibility:"listed" as const};
+async function creationFixture(){
+  const rows:PulseEvent[]=[];
+  const h:ProjectsHost={scopeKey:"creation-scope",query:async request=>({pubkey:owner,limit:20,events:rows.filter(event=>event.kind===(request.view==="PROJECTS"?30621:request.view==="REPOSITORIES"?30617:5))})};
+  const intent=await prepareProjectCreation(h,creationInput);
+  const workspaceId="12345678-1234-4234-8234-123456789012",executionId="22345678-1234-4234-8234-123456789012",operationId="32345678-1234-4234-8234-123456789012";
+  const task={actionExecutionId:executionId,operationId,actionKey:CreateActionKey.WorkspaceCreate,targetId:workspaceId,taskStatus:"COMPLETED",gateState:"ALLOWED",dispatchState:"DISPATCHED",workflowId:"workflow"};
+  let member=true;
+  const send=vi.fn(async(request:{method:string;path:string;body?:unknown})=>({status:200,body:request.method==="POST"?{actionExecutionId:executionId,operationId,actionKey:CreateActionKey.WorkspaceCreate}
+    :request.path==="/api/v1/workspaces"?[{id:workspaceId,slug:intent.channel.slug,name:intent.input.name,isMember:member}]:task}));
+  const client=createBffClient({send});
+  const publish=vi.fn<NonNullable<ProjectsHost["publish"]>>(async(request,_key,_observe,observation)=>{
+    const templates=buildProjectBootstrapTemplates({...intent.input,ownerPubkey:owner,projectChannelId:workspaceId});
+    const template=request.operation==="CREATE_PROJECT"?templates.project:templates.repository;
+    const unsigned={...template,pubkey:owner,created_at:10};
+    const event={...unsigned,id:getEventHash(unsigned)};
+    observation?.onPrepared(event.id);rows.push(event);return {eventId:event.id};
+  });
+  h.publish=publish;h.completePublication=vi.fn();
+  return {h,intent,client,publish,rows,task,send,revoke:()=>{member=false;}};
+}
 const deleteTrigger=({onOpen,pending}:{onOpen:()=>void;pending:boolean})=><button aria-label="Delete project" disabled={pending} onClick={onOpen}>Open deletion</button>;
 beforeEach(()=>{setLocale("en");sessionStorage.clear();});
+
+describe("governed original project creation",()=>{
+  it("uses one channel action and two original verified announcements in the same workspace",async()=>{
+    const f=await creationFixture();const save=vi.fn();
+    const result=await resumeProjectCreation(f.client,f.h,f.intent,save);
+    expect(result.name).toBe(creationInput.name);expect(result.repositories).toHaveLength(1);
+    expect(f.publish.mock.calls.map(call=>call[0].operation)).toEqual(["CREATE_PROJECT","CREATE_REPOSITORY"]);
+    expect(f.publish.mock.calls.every(call=>call[0].workspaceId===f.task.targetId)).toBe(true);
+    await resumeProjectCreation(f.client,f.h,f.intent,save);
+    expect(f.send.mock.calls.filter(call=>call[0].method==="POST")).toHaveLength(1);expect(f.publish).toHaveBeenCalledTimes(2);
+  });
+  it("keeps an unknown original publication across later refused observation without a new key",async()=>{
+    const f=await creationFixture();f.publish.mockRejectedValueOnce(new TransportError("lost ACK"))
+      .mockRejectedValueOnce(new BffError(403,"revoked",{class:ErrorClass.Denied}));
+    await expect(resumeProjectCreation(f.client,f.h,f.intent,vi.fn())).rejects.toThrow("lost ACK");
+    await expect(resumeProjectCreation(f.client,f.h,f.intent,vi.fn())).rejects.toBeInstanceOf(ProjectCreationPending);
+    expect(f.publish.mock.calls[1]?.slice(0,3)).toEqual([f.publish.mock.calls[0]![0],f.intent.project.key,true]);
+    expect(f.intent.project.attempted).toBe(true);
+  });
+  it("allows only an explicitly unsent first publication to retry without observe-only",async()=>{
+    const f=await creationFixture();const unsent=new Error("scope expired before send");unsent.name="RelayPublishNotSentError";
+    f.publish.mockRejectedValueOnce(unsent);
+    await expect(resumeProjectCreation(f.client,f.h,f.intent,vi.fn())).rejects.toThrow("before send");
+    expect(f.intent.project.attempted).toBe(false);
+    await resumeProjectCreation(f.client,f.h,f.intent,vi.fn());expect(f.publish.mock.calls[1]?.[2]).toBe(false);
+  });
+  it("stops before repository publication if channel membership is revoked after the first announcement",async()=>{
+    const f=await creationFixture();const publish=f.h.publish!;f.h.publish=async(...args)=>{const value=await publish(...args);f.revoke();return value;};
+    await expect(resumeProjectCreation(f.client,f.h,f.intent,vi.fn())).rejects.toBeInstanceOf(ProjectCreationPending);
+    expect(f.publish).toHaveBeenCalledTimes(1);expect(f.h.completePublication).not.toHaveBeenCalled();
+  });
+  it.each(["content","id","workspace"])("does not complete a mismatched final %s readback",async field=>{
+    const f=await creationFixture();const publish=f.h.publish!;f.h.publish=async(...args)=>{
+      const value=await publish(...args);
+      if(f.rows.length===2){const event=f.rows[0]!;if(field==="content")event.content="substituted";
+        else if(field==="id")event.created_at++;else event.tags=event.tags.map(tag=>tag[0]==="buzz-channel"?["buzz-channel","42345678-1234-4234-8234-123456789012"]:tag);}
+      return value;
+    };
+    await expect(resumeProjectCreation(f.client,f.h,f.intent,vi.fn())).rejects.toBeInstanceOf(ProjectCreationPending);
+    expect(f.h.completePublication).not.toHaveBeenCalled();
+  });
+  it("distinguishes a terminal rejected channel task from an unconfirmed task",async()=>{
+    const f=await creationFixture();f.task.gateState="DENIED";
+    await expect(resumeProjectCreation(f.client,f.h,f.intent,vi.fn())).rejects.toBeInstanceOf(ProjectCreationRejected);
+    expect(f.publish).not.toHaveBeenCalled();
+  });
+  it("does not start the next publication after the creation hook unmounts",async()=>{
+    const f=await creationFixture();let release!:(value:{eventId:string})=>void;
+    f.publish.mockImplementationOnce(async()=>new Promise(resolve=>{release=resolve;}));
+    const failed=vi.fn();
+    function Form(){const creation=useCreateProject(f.h);return <button onClick={()=>{void creation.create(creationInput).catch(failed);}}>Create actual project</button>;}
+    function Host(){const [visible,setVisible]=useState(true);return <><button onClick={()=>setVisible(false)}>Leave creation</button>{visible?<Form/>:null}</>;}
+    // Keep the channel slug fixture tied to the hook's newly prepared intent.
+    f.send.mockImplementation(async request=>{
+      if(request.method==="POST"){const body=request.body as {slug:string};f.intent.channel.slug=body.slug;return {status:200,body:{actionExecutionId:f.task.actionExecutionId,operationId:f.task.operationId,actionKey:CreateActionKey.WorkspaceCreate}};}
+      return {status:200,body:request.path==="/api/v1/workspaces"?[{id:f.task.targetId,slug:f.intent.channel.slug,name:creationInput.name,isMember:true}]:f.task};
+    });
+    const ui=await render(<PlatformProvider client={f.client}><Host/></PlatformProvider>);
+    await click(button(ui,"Create actual project"));await vi.waitFor(()=>expect(f.publish).toHaveBeenCalledOnce());
+    await click(button(ui,"Leave creation"));await act(async()=>release({eventId:"c".repeat(64)}));
+    expect(f.publish).toHaveBeenCalledOnce();expect(failed).toHaveBeenCalled();expect(sessionStorage.length).toBe(1);
+  });
+  it("does not call a deterministic form rejection an unknown result",async()=>{
+    const create=vi.fn().mockRejectedValue(new Error("invalid name"));
+    await render(<PlatformProvider client={bff}><Dialog open><CreateProjectFormContent active initialName="Valid" isCreating={false} onBack={vi.fn()} onCreate={create} onCreated={vi.fn()}/></Dialog></PlatformProvider>);
+    await click(document.querySelector<HTMLButtonElement>('[data-testid="create-project-submit"]')!);
+    expect(document.body.textContent).toContain("Creation was rejected");expect(document.body.textContent).not.toContain("Creation is not confirmed");
+  });
+  it("does not permit another create when confirmed creation is followed by a failed close/navigation",async()=>{
+    const create=vi.fn().mockResolvedValue(undefined);
+    await render(<PlatformProvider client={bff}><Dialog open><CreateProjectFormContent active initialName="Valid" isCreating={false} onBack={vi.fn()} onCreate={create} onCreated={()=>{throw new Error("navigation failed");}}/></Dialog></PlatformProvider>);
+    const submit=document.querySelector<HTMLButtonElement>('[data-testid="create-project-submit"]')!;
+    await click(submit);expect(submit.disabled).toBe(true);expect(document.body.textContent).toContain("Project created, but");
+    await click(submit);expect(create).toHaveBeenCalledOnce();
+  });
+});
 
 describe("original SidebarProjectsSection governed hosts",()=>{
   beforeEach(()=>Object.defineProperty(window,"matchMedia",{configurable:true,value:vi.fn(()=>({matches:false,addEventListener:vi.fn(),removeEventListener:vi.fn()}))}));
@@ -34,9 +141,9 @@ describe("original SidebarProjectsSection governed hosts",()=>{
   async function sidebar(h=host(),m=membership(),onSelectProject=vi.fn(),onSelectChannel=vi.fn()){
     writeSidebarProjectsFilter("added",h.scopeKey);
     const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
-    const ui=await render(<QueryClientProvider client={cache}><SidebarProvider><SidebarProjectsSection host={h} membership={m}
+    const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={cache}><SidebarProvider><SidebarProjectsSection host={h} membership={m}
       channels={[{id:childId,name:"Real channel",visibility:"private"}]} selectedProjectId={null} selectedChannelId={null}
-      onSelectProject={onSelectProject} onSelectChannel={onSelectChannel}/></SidebarProvider></QueryClientProvider>);
+      onSelectProject={onSelectProject} onSelectChannel={onSelectChannel}/></SidebarProvider></QueryClientProvider></PlatformProvider>);
     return {ui,cache};
   }
   it("keeps Added distinct from Owned and preserves original ordering without local membership",()=>{
@@ -63,10 +170,18 @@ describe("original SidebarProjectsSection governed hosts",()=>{
     await vi.waitFor(()=>expect(ui.querySelector('[role="alert"]')).not.toBeNull());
     expect(ui.querySelector('[data-testid="sidebar-project-p"]')).toBeNull();
   });
+  it("consumes a rejected asynchronous project navigation without claiming a creation failed",async()=>{
+    const navigate=vi.fn().mockRejectedValue(new Error("router unavailable"));
+    const {ui}=await sidebar(host(),membership(),navigate);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="sidebar-project-p"]')).not.toBeNull());
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="sidebar-project-p"]')!);
+    expect(ui.querySelector('[role="alert"]')).not.toBeNull();expect(navigate).toHaveBeenCalledOnce();
+    expect(ui.textContent).not.toContain("Project created");expect(ui.textContent).not.toContain("Creation is not confirmed");
+  });
   it("uses the actual controlled project route and clears it on the original detail close",async()=>{
     const h=host();const cache=new QueryClient();const changed=vi.fn();
     function Host(){const [selected,setSelected]=useState<string|null>(`30621:${owner}:p`);return <ProjectsView host={h} selectedProjectId={selected} onSelectedProjectChange={id=>{changed(id);setSelected(id);}}/>;}
-    const ui=await render(<QueryClientProvider client={cache}><Host/></QueryClientProvider>);
+    const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={cache}><Host/></QueryClientProvider></PlatformProvider>);
     await vi.waitFor(()=>expect(ui.querySelector("aside")).not.toBeNull());
     await click(ui.querySelector<HTMLButtonElement>('button[aria-label="Close project announcement"]')!);
     expect(changed).toHaveBeenCalledWith(null);expect(ui.querySelector("aside")).toBeNull();
@@ -93,7 +208,7 @@ describe("original SidebarProjectsSection governed hosts",()=>{
     const navigate=vi.fn(),h=host();const cache=new QueryClient();
     function Host(){const [active,setActive]=useState(true);return <><button onClick={()=>setActive(false)}>Leave scope</button>
       {active?<SidebarProvider><SidebarProjectsSection host={h} membership={m} channels={[]} onSelectProject={navigate} onSelectChannel={vi.fn()}/></SidebarProvider>:null}</>;}
-    const ui=await render(<QueryClientProvider client={cache}><Host/></QueryClientProvider>);
+    const ui=await render(<PlatformProvider client={bff}><QueryClientProvider client={cache}><Host/></QueryClientProvider></PlatformProvider>);
     await vi.waitFor(()=>expect(ui.querySelector<HTMLButtonElement>('[data-testid="sidebar-projects-create"]')?.disabled).toBe(false));
     await click(ui.querySelector<HTMLButtonElement>('[data-testid="sidebar-projects-create"]')!);
     await click(document.querySelector<HTMLButtonElement>('[data-testid="project-browser-result-p"]')!);

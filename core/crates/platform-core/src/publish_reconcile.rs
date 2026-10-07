@@ -311,10 +311,14 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
         p.action_key.as_str(),
         crate::pulse::PUBLISH_ACTION | crate::projects::PUBLISH_ACTION
     ) {
-        if p.target_type.as_deref() != Some("TENANT")
-            || p.target_id != Some(p.tenant_id)
-            || p.workspace_id.is_some()
-        {
+        let community_scope = p.target_type.as_deref() == Some("TENANT")
+            && p.target_id == Some(p.tenant_id)
+            && p.workspace_id.is_none();
+        let project_home_scope = p.action_key == crate::projects::PUBLISH_ACTION
+            && p.target_type.as_deref() == Some("CHANNEL")
+            && p.workspace_id.is_some()
+            && p.target_id == p.workspace_id;
+        if !community_scope && !project_home_scope {
             return Err("EVIDENCE_MISSING");
         }
         let actor = p.actor_principal_id.ok_or("EVIDENCE_MISSING")?;
@@ -336,10 +340,45 @@ async fn observe_delivery(state: &ServiceState, p: &Pending) -> Result<bool, &'s
             &before.community_host,
         )
         .map_err(|_| "ACTOR_UNREADABLE")?;
-        let exists = client
-            .event_exists(&state.http, &p.event_id)
+        let exists = if p.action_key == crate::projects::PUBLISH_ACTION {
+            // The original DISPATCH, actor and immutable event reference must
+            // select the same publication attempt before trusting its kind.
+            let kind: i32 = sqlx::query_scalar(
+                "select message_kind from admission.publish_attempt
+                 where operation_id=$1 and event_id=$2 and tenant_principal_id=$3",
+            )
+            .bind(p.operation_id)
+            .bind(&p.event_id)
+            .bind(actor)
+            .fetch_optional(&state.pool)
             .await
-            .map_err(|_| "QUERY_FAILED")?;
+            .map_err(|_| "EVIDENCE_UNREADABLE")?
+            .ok_or("EVIDENCE_MISSING")?;
+            if (community_scope && kind != 5)
+                || (project_home_scope && !matches!(kind, 30617 | 30621))
+            {
+                return Err("EVIDENCE_MISSING");
+            }
+            let page = client
+                .query(
+                    &state.http,
+                    &[serde_json::json!({"ids":[p.event_id], "kinds":[kind]})],
+                )
+                .await
+                .map_err(|_| "QUERY_FAILED")?;
+            collab_bridge::projects::publication_observed(
+                page,
+                &p.event_id,
+                &keys.public_key().to_hex(),
+                kind,
+            )
+            .map_err(|_| "EVIDENCE_INVALID")?
+        } else {
+            client
+                .event_exists(&state.http, &p.event_id)
+                .await
+                .map_err(|_| "QUERY_FAILED")?
+        };
         let after = crate::pulse::admit_actor(state, p.tenant_id, actor)
             .await
             .map_err(|_| "ACTOR_UNREADABLE")?;

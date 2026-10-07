@@ -4709,11 +4709,16 @@ type ProjectPreferenceRequest struct {
 }
 
 // Typed original Community announcement mutation. Actor is the authenticated SERVER or
-// CLIENT signer, never supplied by this request. DELETE selects a real signed current
-// announcement; it does not delete its channel or repositories.
+// CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
+// admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
+// signed current announcement; it does not delete its channel or repositories.
 type ProjectsPublishRequest struct {
+	Description   *string                     `json:"description,omitempty"`
+	Name          *string                     `json:"name,omitempty"`
 	Operation     ProjectPublicationOperation `json:"operation"`
-	TargetEventID string                      `json:"targetEventId"`
+	TargetEventID *string                     `json:"targetEventId,omitempty"`
+	Visibility    *ProjectListingVisibility   `json:"visibility,omitempty"`
+	WorkspaceID   *string                     `json:"workspaceId,omitempty"`
 }
 
 // Original Buzz Community project/repository announcements and coordinate-scoped tombstones
@@ -7156,7 +7161,16 @@ const (
 type ProjectPublicationOperation string
 
 const (
+	CreateProject                     ProjectPublicationOperation = "CREATE_PROJECT"
+	CreateRepository                  ProjectPublicationOperation = "CREATE_REPOSITORY"
 	ProjectPublicationOperationDELETE ProjectPublicationOperation = "DELETE"
+)
+
+type ProjectListingVisibility string
+
+const (
+	Listed   ProjectListingVisibility = "listed"
+	Unlisted ProjectListingVisibility = "unlisted"
 )
 
 type ProjectsQueryRequestView string

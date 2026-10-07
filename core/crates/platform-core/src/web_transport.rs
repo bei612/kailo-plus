@@ -635,13 +635,19 @@ pub(crate) async fn publish_project(
         Ok(ctx) => ctx,
         Err(response) => return response,
     };
-    publish(
-        state,
-        MessageTarget::Pulse(ctx.tenant_id),
-        headers,
-        Publication::Project(request),
-    )
-    .await
+    let target = match crate::projects::publication_kind(&request) {
+        Ok(5) => MessageTarget::Pulse(ctx.tenant_id),
+        Ok(_) => match request
+            .workspace_id
+            .as_deref()
+            .and_then(|id| id.parse::<Uuid>().ok())
+        {
+            Some(id) => MessageTarget::Workspace(id),
+            None => return StatusCode::BAD_REQUEST.into_response(),
+        },
+        Err(response) => return response,
+    };
+    publish(state, target, headers, Publication::Project(request)).await
 }
 
 pub(crate) async fn upload_pulse_media(
@@ -1304,7 +1310,7 @@ async fn publish(
         ),
         Publication::Project(req) => (
             contracts::WebMessageType::Stream,
-            Some(req.target_event_id.clone()),
+            req.target_event_id.clone(),
             None,
             None,
         ),
@@ -1578,7 +1584,14 @@ async fn publish(
         None
     };
     if let Publication::Project(request) = &publication {
-        if collab_bridge::projects::publication_builder(request, project_target.as_ref()).is_err() {
+        if collab_bridge::projects::publication_builder(
+            request,
+            project_target.as_ref(),
+            matches!(target, MessageTarget::Workspace(_)).then_some(channel_id.as_str()),
+            &keys.public_key().to_hex(),
+        )
+        .is_err()
+        {
             return StatusCode::BAD_REQUEST.into_response();
         }
     }
@@ -1680,7 +1693,11 @@ async fn publish(
             &content,
             pulse_tags.as_deref().unwrap_or_default(),
         ),
-        Publication::Project(request) => client.sign_project(&request, project_target.as_ref()),
+        Publication::Project(request) => client.sign_project(
+            &request,
+            project_target.as_ref(),
+            matches!(target, MessageTarget::Workspace(_)).then_some(channel_id.as_str()),
+        ),
         // Original Buzz DM commands, never caller-selected raw kinds/tags.
         Publication::Hide => client.sign(41012, "", &[vec!["h".into(), channel_id.clone()]]),
         Publication::Reopen => client.sign(41010, "", &[vec!["h".into(), channel_id.clone()]]),

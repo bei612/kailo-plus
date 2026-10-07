@@ -10242,33 +10242,61 @@ class ProjectPreferenceRequest {
 }
 
 ///Typed original Community announcement mutation. Actor is the authenticated SERVER or
-///CLIENT signer, never supplied by this request. DELETE selects a real signed current
-///announcement; it does not delete its channel or repositories.
+///CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
+///admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
+///signed current announcement; it does not delete its channel or repositories.
 class ProjectsPublishRequest {
+  final String? description;
+  final String? name;
   final ProjectPublicationOperation operation;
-  final String targetEventId;
+  final String? targetEventId;
+  final ProjectListingVisibility? visibility;
+  final String? workspaceId;
 
   ProjectsPublishRequest({
+    this.description,
+    this.name,
     required this.operation,
-    required this.targetEventId,
+    this.targetEventId,
+    this.visibility,
+    this.workspaceId,
   });
 
   factory ProjectsPublishRequest.fromJson(Map<String, dynamic> json) =>
       ProjectsPublishRequest(
+        description: json["description"],
+        name: json["name"],
         operation: projectPublicationOperationValues.map[json["operation"]]!,
         targetEventId: json["targetEventId"],
+        visibility: json["visibility"] == null
+            ? null
+            : projectListingVisibilityValues.map[json["visibility"]]!,
+        workspaceId: json["workspaceId"],
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "description": description,
+    "name": name,
     "operation": projectPublicationOperationValues.reverse[operation],
     "targetEventId": targetEventId,
+    "visibility": projectListingVisibilityValues.reverse[visibility],
+    "workspaceId": workspaceId,
   });
 }
 
-enum ProjectPublicationOperation { DELETE }
+enum ProjectPublicationOperation { CREATE_PROJECT, CREATE_REPOSITORY, DELETE }
 
 final projectPublicationOperationValues = EnumValues({
+  "CREATE_PROJECT": ProjectPublicationOperation.CREATE_PROJECT,
+  "CREATE_REPOSITORY": ProjectPublicationOperation.CREATE_REPOSITORY,
   "DELETE": ProjectPublicationOperation.DELETE,
+});
+
+enum ProjectListingVisibility { LISTED, UNLISTED }
+
+final projectListingVisibilityValues = EnumValues({
+  "listed": ProjectListingVisibility.LISTED,
+  "unlisted": ProjectListingVisibility.UNLISTED,
 });
 
 ///Original Buzz Community project/repository announcements and coordinate-scoped tombstones

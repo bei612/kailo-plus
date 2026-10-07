@@ -1,5 +1,5 @@
 capability_id: collab.projects
-title: 原版 Projects 公告目录与本人签名删除
+title: 原版 Projects 公告目录、创建与本人签名删除
 stage: S1
 status: in_progress
 exposure: end_user
@@ -17,12 +17,14 @@ validation:
       ref: web-client/fork/verify/web-surface.md
     - dimension: 上游接缝
       ref: web-client/fork/verify/web-surface.md
+    - dimension: 安全边界
+      ref: core/verify/projects-creation.md
 implementation:
   owners: [team-platform]
-  paths: [core/crates/platform-core/src/projects.rs, client-kit/ts/platform/src/react/projects/ProjectsView.tsx, client-kit/ts/platform/src/react/projects/projectEnumeration.ts, web-client/web/src/platform/ui/ProjectsPane.tsx, collaboration/desktop/src/features/platform/ProjectsScreen.tsx]
+  paths: [core/crates/platform-core/src/projects.rs, core/crates/collab-bridge/src/projects.rs, client-kit/ts/platform/src/react/projects/ProjectsView.tsx, client-kit/ts/platform/src/react/projects/projectEnumeration.ts, client-kit/ts/platform/src/react/projects/projectCreation.ts, client-kit/ts/platform/src/react/projects/createProject.ts, client-kit/ts/platform/src/react/projects/useCreateProject.ts, client-kit/ts/platform/src/react/projects/CreateProjectFormContent.tsx, web-client/web/src/platform/ui/ProjectsPane.tsx, collaboration/desktop/src/features/platform/ProjectsScreen.tsx, collaboration/desktop/src/features/platform/projectsTransport.ts]
   surfaces: [web, desktop]
   schemas: [contracts/api/projects_query_request.schema.json, contracts/api/projects_publish_request.schema.json]
-  migrations: []
+  migrations: [core/migrations/20261007190000_publish_project_kinds.up.sql, core/migrations/20261007190000_publish_project_kinds.down.sql]
 runtime:
   routes: ["/api/v1/projects/query", "/api/v1/projects/publish"]
   actions: [projects.publish]

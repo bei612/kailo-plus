@@ -37,6 +37,7 @@ git archive --format=tar "$COMMIT" .dockerignore core worker \
   contracts/domain/automation_step.schema.json \
   model-gateway/crates/protos/proto/ext_mcp.proto \
   contracts/api/action_submission.schema.json \
+  contracts/api/projects_publish_request.schema.json \
   contracts/api/delegated_action_metadata_v1.schema.json \
   contracts/compatibility/action-submission-v1.json \
   contracts/compatibility/action-submission-v2.json \

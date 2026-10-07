@@ -12,5 +12,5 @@ export function SidebarProjects({channels,selectedChannelId,onSelectChannel}:{ch
   if(!host)return <p role="alert">{t("platform.loadFailed")}</p>;
   return <SidebarProjectsSection host={host} membership={membership} channels={channels} selectedProjectId={inProjects?search.projectId??null:null}
     selectedChannelId={selectedChannelId} onSelectChannel={onSelectChannel}
-    onSelectProject={id=>{void navigate({to:"/platform/$section",params:{section:"projects"},search:{projectId:id??undefined}});}}/>;
+    onSelectProject={id=>navigate({to:"/platform/$section",params:{section:"projects"},search:{projectId:id??undefined}})}/>;
 }

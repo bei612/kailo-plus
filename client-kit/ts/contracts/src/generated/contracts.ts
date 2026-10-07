@@ -3441,16 +3441,28 @@ export interface ProjectPreferenceRequest {
 
 /**
  * Typed original Community announcement mutation. Actor is the authenticated SERVER or
- * CLIENT signer, never supplied by this request. DELETE selects a real signed current
- * announcement; it does not delete its channel or repositories.
+ * CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
+ * admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
+ * signed current announcement; it does not delete its channel or repositories.
  */
 export interface ProjectsPublishRequest {
-    operation:     ProjectPublicationOperation;
-    targetEventId: string;
+    description?:   string;
+    name?:          string;
+    operation:      ProjectPublicationOperation;
+    targetEventId?: string;
+    visibility?:    ProjectListingVisibility;
+    workspaceId?:   string;
 }
 
 export enum ProjectPublicationOperation {
+    CreateProject = "CREATE_PROJECT",
+    CreateRepository = "CREATE_REPOSITORY",
     Delete = "DELETE",
+}
+
+export enum ProjectListingVisibility {
+    Listed = "listed",
+    Unlisted = "unlisted",
 }
 
 /**

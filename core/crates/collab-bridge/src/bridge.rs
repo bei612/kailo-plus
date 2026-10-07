@@ -696,8 +696,9 @@ impl IdentityClient {
         &self,
         request: &contracts::ProjectsPublishRequest,
         target: Option<&Event>,
+        channel_id: Option<&str>,
     ) -> Result<Event, OperatorError> {
-        crate::projects::publication_builder(request, target)?
+        crate::projects::publication_builder(request, target, channel_id, &self.pubkey_hex())?
             .sign_with_keys(&self.keys)
             .map_err(|error| OperatorError::Sign(error.to_string()))
     }

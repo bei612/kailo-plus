@@ -2,12 +2,21 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api/projects_publish_request.schema.json",
   "title": "ProjectsPublishRequest",
-  "description": "Typed original Community announcement mutation. Actor is the authenticated SERVER or CLIENT signer, never supplied by this request. DELETE selects a real signed current announcement; it does not delete its channel or repositories.",
+  "description": "Typed original Community announcement mutation. Actor is the authenticated SERVER or CLIENT signer, never supplied by this request. Creation resolves the home Channel from an admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real signed current announcement; it does not delete its channel or repositories.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["operation", "targetEventId"],
+  "required": ["operation"],
   "properties": {
-    "operation": {"title": "ProjectPublicationOperation", "type": "string", "enum": ["DELETE"]},
-    "targetEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
-  }
+    "operation": {"title": "ProjectPublicationOperation", "type": "string", "enum": ["DELETE", "CREATE_PROJECT", "CREATE_REPOSITORY"]},
+    "targetEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "name": {"type": "string", "minLength": 1, "maxLength": 256},
+    "description": {"type": "string", "maxLength": 2048},
+    "visibility": {"title": "ProjectListingVisibility", "type": "string", "enum": ["listed", "unlisted"]}
+  },
+  "oneOf": [
+    {"properties": {"operation": {"const": "DELETE"}}, "required": ["targetEventId"], "not": {"anyOf": [{"required": ["workspaceId"]}, {"required": ["name"]}, {"required": ["description"]}, {"required": ["visibility"]}]}},
+    {"properties": {"operation": {"const": "CREATE_PROJECT"}}, "required": ["workspaceId", "name", "visibility"], "not": {"required": ["targetEventId"]}},
+    {"properties": {"operation": {"const": "CREATE_REPOSITORY"}}, "required": ["workspaceId", "name"], "not": {"anyOf": [{"required": ["targetEventId"]}, {"required": ["visibility"]}]}}
+  ]
 }

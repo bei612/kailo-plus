@@ -3,7 +3,7 @@ import {useProjectsHost} from "./ProjectsPane";
 
 export function SidebarProjects({scopeKey,channels,selectedProjectId,selectedChannelId,onSelectProject,onSelectChannel}:{
   scopeKey:string;channels:readonly SidebarProjectChannel[];selectedProjectId:string|null;selectedChannelId:string|null;
-  onSelectProject:(id:string|null)=>void;onSelectChannel:(id:string)=>void;
+  onSelectProject:(id:string|null)=>void|Promise<void>;onSelectChannel:(id:string)=>void;
 }) {
   const host=useProjectsHost(scopeKey);
   const membership=useProjectSidebarMembership(scopeKey);

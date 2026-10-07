@@ -653,8 +653,8 @@ export class RelayClient {
     if (previous || observeOnly) {
       const originalId = previous?.id ?? observation?.eventId;
       if (!originalId || !/^[0-9a-f]{64}$/.test(originalId)) throw unknown();
-      const observed = await this.fetchEvents({ids:[originalId],kinds:[5],limit:1}).catch(() => {throw unknown();});
-      const original = observed.find(event => event.id === originalId && event.kind === 5 && (!previous || event.pubkey === previous.pubkey));
+      const observed = await this.fetchEvents({ids:[originalId],kinds:[5,30621,30617],limit:1}).catch(() => {throw unknown();});
+      const original = observed.find(event => event.id === originalId && [5,30621,30617].includes(event.kind) && (!previous || event.pubkey === previous.pubkey && event.kind === previous.kind));
       if (!current() || !original) throw unknown();
       return original;
     }

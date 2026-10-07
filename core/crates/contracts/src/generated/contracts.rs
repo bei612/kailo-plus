@@ -5089,20 +5089,48 @@ pub struct ProjectPreferenceRequest {
 }
 
 /// Typed original Community announcement mutation. Actor is the authenticated SERVER or
-/// CLIENT signer, never supplied by this request. DELETE selects a real signed current
-/// announcement; it does not delete its channel or repositories.
+/// CLIENT signer, never supplied by this request. Creation resolves the home Channel from an
+/// admitted Workspace; metadata is transient and remains Relay-owned. DELETE selects a real
+/// signed current announcement; it does not delete its channel or repositories.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectsPublishRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
     pub operation: ProjectPublicationOperation,
 
-    pub target_event_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_event_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<ProjectListingVisibility>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ProjectPublicationOperation {
-    #[serde(rename = "DELETE")]
+    #[serde(rename = "CREATE_PROJECT")]
+    CreateProject,
+
+    #[serde(rename = "CREATE_REPOSITORY")]
+    CreateRepository,
+
     Delete,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectListingVisibility {
+    Listed,
+
+    Unlisted,
 }
 
 /// Original Buzz Community project/repository announcements and coordinate-scoped tombstones

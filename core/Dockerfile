@@ -19,6 +19,7 @@ COPY collaboration/crates/buzz-sdk /build/apps/collaboration/crates/buzz-sdk
 COPY contracts/domain/automation_step.schema.json /build/apps/contracts/domain/automation_step.schema.json
 COPY tools/registry/capabilities.yaml /build/apps/tools/registry/capabilities.yaml
 COPY contracts/api/action_submission.schema.json /build/apps/contracts/api/action_submission.schema.json
+COPY contracts/api/projects_publish_request.schema.json /build/apps/contracts/api/projects_publish_request.schema.json
 COPY contracts/api/delegated_action_metadata_v1.schema.json /build/apps/contracts/api/delegated_action_metadata_v1.schema.json
 COPY contracts/compatibility/action-submission-v1.json contracts/compatibility/action-submission-v2.json /build/apps/contracts/compatibility/
 COPY contracts/api/conversation_open_request.schema.json /build/apps/contracts/api/conversation_open_request.schema.json

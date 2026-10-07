@@ -4,7 +4,9 @@
 import * as React from "react";
 import {useQuery,useQueryClient} from "@tanstack/react-query";
 import {ArrowUpDown,ChevronDown,ChevronRight,EllipsisVertical,Folder,Folders,Hash,ListMinus,Lock,Plus,Trash2} from "lucide-react";
-import {useUiT} from "../context";
+import {useBffClient,useUiT} from "../context";
+import {CreateActionKey} from "@client-kit/contracts";
+import {useCreateProject} from "../projects/useCreateProject";
 import {cn} from "../profile/buzz/shared/lib/cn";
 import {loadProjectDirectory,type ProjectsHost} from "../projects/projectEnumeration";
 import {ProjectBrowserDialog} from "../projects/ProjectBrowserDialog";
@@ -27,7 +29,7 @@ export type SidebarProjectChannel = {id:string;name:string;visibility?:string};
 export type SidebarProjectsSectionProps = {
   host:ProjectsHost; membership:SidebarProjectMembership;
   channels:readonly SidebarProjectChannel[]; selectedProjectId?:string|null; selectedChannelId?:string|null;
-  onSelectProject:(id:string|null)=>void; onSelectChannel:(id:string)=>void;
+  onSelectProject:(id:string|null)=>void|Promise<void>; onSelectChannel:(id:string)=>void;
 };
 const SECTION_LABEL_BUTTON_CLASS="group/section-label flex w-fit max-w-[calc(100%-3rem)] cursor-pointer appearance-none items-center gap-1 text-left transition-colors hover:text-sidebar-foreground focus-visible:text-sidebar-foreground";
 const SECTION_LABEL_CHEVRON_CLASS="relative size-2.5 shrink-0 text-current opacity-0 transition-[color,opacity] group-hover/sidebar-section:opacity-100 group-hover/section-label:opacity-100 group-focus-within/sidebar-section:opacity-100 group-focus-visible/section-label:opacity-100 group-data-[section-actions-open=true]/sidebar-section:opacity-100";
@@ -41,8 +43,17 @@ function SidebarProjectsContent({host,membership,channels,selectedProjectId,sele
   const [collapsed,setCollapsed]=React.useState(false);
   const [actionsOpen,setActionsOpen]=React.useState(false);
   const [browserOpen,setBrowserOpen]=React.useState(false);
+  const [navigationFailed,setNavigationFailed]=React.useState<"created"|"open"|null>(null);
+  const client=useBffClient();
+  const creation=useCreateProject(host);
+  const createCapability=useQuery({queryKey:["project-create-capability",host.scopeKey],queryFn:()=>client.roleWorkspaces(),enabled:browserOpen,retry:false});
   const lifetime=React.useMemo(()=>({active:true}),[host]);
   React.useEffect(()=>{lifetime.active=true;return()=>{lifetime.active=false;};},[lifetime]);
+  const selectProject=async(id:string|null,created=false)=>{
+    if(!lifetime.active)return;
+    try { await onSelectProject(id); if(lifetime.active)setNavigationFailed(null); }
+    catch { if(lifetime.active)setNavigationFailed(created?"created":"open"); }
+  };
   // Only local layout preferences use localStorage. Added membership is always
   // the existing platform user-state projection, never NIP-78 or local storage.
   const [filter,setFilter]=React.useState(()=>readSidebarProjectsFilter(host.scopeKey));
@@ -77,11 +88,12 @@ function SidebarProjectsContent({host,membership,channels,selectedProjectId,sele
               <DropdownMenuSubContent><DropdownMenuRadioGroup value={sort} onValueChange={value=>{if(value==="name"||value==="created")sortChange(value);}}>
                 <DropdownMenuRadioItem value="name">{t("sidebar.projects.alphabetical")}</DropdownMenuRadioItem><DropdownMenuRadioItem value="created">{t("sidebar.projects.newest")}</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup></DropdownMenuSubContent></DropdownMenuSub><DropdownMenuSeparator/>
-            <DropdownMenuItem onSelect={()=>deferMenuAction(()=>{if(lifetime.active)onSelectProject(null);})}><Folder className="h-4 w-4"/><span>{t("sidebar.projects.browseAll")}</span></DropdownMenuItem>
+            <DropdownMenuItem onSelect={()=>deferMenuAction(()=>{void selectProject(null);})}><Folder className="h-4 w-4"/><span>{t("sidebar.projects.browseAll")}</span></DropdownMenuItem>
           </DropdownMenuContent></DropdownMenu>
       </div>
     </div>
     {!collapsed?<SidebarGroupContent id="sidebar-projects">
+      {navigationFailed?<p role="alert" className="px-2 py-1 text-xs text-sidebar-foreground/50">{t(navigationFailed==="created"?"projects.create.navigationFailed":"platform.loadFailed")}</p>:null}
       {query.isError||membership.problem?<p role="alert" className="px-2 py-1 text-xs text-sidebar-foreground/50">{membership.problem||t("platform.loadFailed")}
         <button type="button" onClick={()=>{void query.refetch();void membership.refresh().catch(()=>undefined);}}>{t("platform.retry")}</button></p>:null}
       {projects.length>0?<SidebarMenu data-testid="sidebar-projects">{projects.map(project=>{
@@ -90,7 +102,7 @@ function SidebarProjectsContent({host,membership,channels,selectedProjectId,sele
         const expanded=childChannels.length>0&&(expansion[project.projectAddress]??false);
         const row=({onOpen:onDelete,pending=false}:{onOpen?:()=>void;pending?:boolean})=><><ContextMenu><ContextMenuTrigger asChild><SidebarMenuItem>
           <SidebarMenuButton className={cn("data-[active=true]:!bg-transparent data-[active=true]:font-normal data-[active=true]:text-sidebar-foreground data-[active=true]:shadow-none data-[active=true]:hover:!bg-transparent data-[active=true]:hover:text-sidebar-foreground data-[active=true]:active:!bg-transparent",childChannels.length>0&&"pr-8")}
-            data-testid={`sidebar-project-${project.dtag}`} isActive={active} onClick={()=>onSelectProject(project.id)} tooltip={project.name} type="button">
+            data-testid={`sidebar-project-${project.dtag}`} isActive={active} onClick={()=>{void selectProject(project.id);}} tooltip={project.name} type="button">
             <ProjectChannelIcon className={cn(!active&&"opacity-80")}/><SidebarMenuLabel className={cn(!active&&"opacity-80")}>{project.name}</SidebarMenuLabel>
           </SidebarMenuButton>
           {childChannels.length>0?<SidebarMenuAction aria-expanded={expanded} aria-label={t(expanded?"sidebar.projects.hideChannels":"sidebar.projects.showChannels",{name:project.name})}
@@ -112,14 +124,24 @@ function SidebarProjectsContent({host,membership,channels,selectedProjectId,sele
         return host.publish&&project.owner===query.data?.viewerPubkey&&headId?<ProjectDeleteAction key={project.id} project={project} headId={headId}
           viewerPubkey={query.data.viewerPubkey} host={host} onDeleted={()=>{
             if(!lifetime.active)return;
-            if(selectedProjectId===project.id)onSelectProject(null);
+            if(selectedProjectId===project.id)void selectProject(null);
             void cache.invalidateQueries({queryKey:["projects",host.scopeKey]});void query.refetch();
           }} renderTrigger={row}/>:<React.Fragment key={project.id}>{row({})}</React.Fragment>;
       })}</SidebarMenu>:query.isPending||query.isFetching||membership.pending||query.isError||membership.problem?null:<p className="px-2 py-1 text-xs text-sidebar-foreground/50">{t("projects.empty")}</p>}
     </SidebarGroupContent>:null}
     <ProjectBrowserDialog open={browserOpen} onOpenChange={setBrowserOpen} projects={allProjects.filter(project=>!project.legacy)}
+      creation={host.publish&&(createCapability.data?.createActionKey===CreateActionKey.WorkspaceCreate||creation.intent)?{
+        busy:creation.busy,frozen:creation.intent?.input,create:async input=>{
+          const project=await creation.create(input);
+          if(!lifetime.active)return;
+          void cache.invalidateQueries({queryKey:["projects",host.scopeKey]});void query.refetch();
+          // Creation is already confirmed. A subsequent navigation failure must
+          // not report creation failure and let the form publish a new project.
+          await selectProject(project.id,true);
+        },
+      }:undefined}
       selectedProjectAddresses={addresses} pending={membership.pending||query.isFetching} onSelectProject={project=>{
-        void membership.addProject(project.projectAddress).then(()=>{if(lifetime.active)onSelectProject(project.id);}).catch(()=>undefined);
+        void membership.addProject(project.projectAddress).then(()=>selectProject(project.id)).catch(()=>undefined);
       }}/>
   </SidebarGroup>;
 }
