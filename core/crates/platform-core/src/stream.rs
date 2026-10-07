@@ -1,8 +1,8 @@
 //! BFF stream（`apps/02` Stage 1「完整 snapshot + generation 的 BFF stream 恢复」）。
 //!
 //! Browser 不直连 Relay、不持 signer（`DD-39`）。它从这里拿两样东西：一份
-//! snapshot 与一个 generation，随后是增量事件。断线重连时带上 generation——
-//! **对不上就重新取 snapshot**，而不是从某个猜测的位置接着读。
+//! snapshot 与一个 generation，随后是增量事件。断线重连先重建实时订阅再读
+//! 原生窗口；generation 不是 Relay 游标，不能用它猜测已读完的历史。
 //!
 //! generation 绑定真实的成员、Tenant/Workspace 生命周期版本与 Channel；暂停后
 //! 恢复也不能复用暂停前的 snapshot。Workspace 管理可见性不是频道参与资格；
@@ -34,8 +34,8 @@ use uuid::Uuid;
 
 use crate::bff::{resolve_execution_context, BffState, ExecutionContext};
 use crate::web_transport::{
-    actor_keys, admit_collaboration_workspace_scope, community_client, community_limits,
-    page_limit, AdmissionFailure, WorkspaceAdmissionEpoch, WorkspaceScope,
+    actor_keys, admit_collaboration_workspace_scope, channel_window_filter, community_client,
+    community_limits, page_limit, AdmissionFailure, WorkspaceAdmissionEpoch, WorkspaceScope,
 };
 
 #[derive(Clone, Copy)]
@@ -84,7 +84,15 @@ impl StreamScope {
             .iter()
             .map(collab_bridge::bridge::message_kind)
             .collect();
-        kinds.push(collab_bridge::bridge::KIND_STREAM_MESSAGE_EDIT as u16);
+        kinds.extend(collab_bridge::bridge::CHANNEL_TIMELINE_KINDS.map(|kind| kind as u16));
+        kinds.extend([
+            collab_bridge::bridge::KIND_STREAM_MESSAGE_EDIT as u16,
+            collab_bridge::bridge::KIND_DELETION as u16,
+            collab_bridge::bridge::KIND_NIP29_DELETE_EVENT as u16,
+            collab_bridge::bridge::KIND_THREAD_SUMMARY as u16,
+        ]);
+        kinds.sort_unstable();
+        kinds.dedup();
         kinds
     }
 
@@ -100,18 +108,6 @@ impl StreamScope {
             Self::Workspace(scope) => &scope.community_host,
             Self::Conversation(scope) => &scope.community_host,
         }
-    }
-
-    fn can_resume(&self) -> bool {
-        // Private admission includes a fresh permission check without an
-        // authorization epoch. Always refresh its snapshot.
-        matches!(
-            self,
-            Self::Workspace(WorkspaceScope {
-                admission_epoch: WorkspaceAdmissionEpoch::Membership { .. },
-                ..
-            })
-        )
     }
 
     fn same_admission(&self, other: &Self) -> bool {
@@ -201,11 +197,9 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
             .collect::<Vec<_>>()
             .join(",")
     );
-    // 上次拿到的 generation 由 EventSource 放在 Last-Event-ID 里带回。
-    // 缺失或对不上都意味着要重新取 snapshot。管理者的准入只有 fresh Check，
-    // 不能从生命周期版本推断管理授权未曾撤销再授予，不跳过完整 snapshot。
-    let resume = scope.can_resume()
-        && headers.get("last-event-id").and_then(|v| v.to_str().ok()) == Some(generation.as_str());
+    // A membership generation is not a Relay replay cursor. Every reconnect
+    // refreshes the native window, as the original client does; Last-Event-ID
+    // cannot prove that a disconnect did not miss rows or summary changes.
 
     // 运行期 NIP-11 与 binding 快照一致才开新流，且订阅与 snapshot 都按其上界预检
     // （`.design/09`「BFF Relay 连接模型」：对不上即关闭新 stream）
@@ -220,42 +214,81 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
         Ok(c) => c,
         Err(r) => return r,
     };
-    let snapshot = if resume {
-        // 续流不重发 snapshot：客户端手里那份仍然有效，重发会让它把已经渲染过
-        // 的消息再渲染一遍。
-        None
-    } else {
-        let author =
-            match crate::web_transport::window_author(&state, &ctx, scope.community_host()).await {
-                Ok(author) => author,
-                Err(_) => return closed_in_band(retry, "upstream-unavailable"),
-            };
+    let author =
+        match crate::web_transport::window_author(&state, &ctx, scope.community_host()).await {
+            Ok(author) => author,
+            Err(_) => return closed_in_band(retry, "upstream-unavailable"),
+        };
+    // Start live capture before reading the native window. The same-second
+    // overlap is intentional (event-id dedupe); no snapshot/subscription gap
+    // and no unbounded historical reply replay into the channel window.
+    let signer = keys.public_key().to_hex();
+    let session = SessionKey {
+        session: ctx.session_id.to_string(),
+        community_host: scope.community_host().to_owned(),
+        pubkey: signer.clone(),
+    };
+    let sub = match state
+        .relay_sessions
+        .subscribe(
+            session,
+            &keys,
+            vec![serde_json::json!({
+                "kinds": message_kinds, "#h": [scope.channel_id()],
+                "since": nostr::Timestamp::now().as_secs(),
+                "limit": page_limit(&state, &limits),
+            })],
+            &limits,
+        )
+        .await
+    {
+        Ok(sub) => sub,
+        Err(error) if error.limit() == Some(LimitKind::Capacity) => {
+            return closed_in_band(retry, "subscription-limit");
+        }
+        Err(error) => {
+            tracing::warn!(error = %error, "建立订阅失败");
+            return closed_in_band(retry, "upstream-unavailable");
+        }
+    };
+    let snapshot = {
         let cap = page_limit(&state, &limits)
             .min(i64::from(collab_bridge::bridge::BRIDGE_WINDOW_MAX_LIMIT));
         match client
             .query(
                 &state.http,
-                &[serde_json::json!({
-                    "kinds": [collab_bridge::bridge::message_kind(&contracts::WebMessageType::Stream)],
-                    "#h": [scope.channel_id()],
-                    "limit": cap,
-                    "top_level": true,
-                    "include_aux": true,
-                })],
+                &[channel_window_filter(
+                    scope.channel_id(),
+                    &contracts::WebMessageType::Stream,
+                    cap,
+                    None,
+                )],
             )
             .await
         {
             Ok(v) => {
                 let verified = serde_json::from_value(v).ok().and_then(|events| {
-                    crate::web_transport::verify_message_page(events, scope.channel_id(),
-                        &contracts::WebMessageType::Stream, None, None, Some(&author.1), cap).ok()
+                    crate::web_transport::verify_message_page(
+                        events,
+                        scope.channel_id(),
+                        &contracts::WebMessageType::Stream,
+                        None,
+                        None,
+                        Some(&author.1),
+                        cap,
+                    )
+                    .ok()
                 });
-                let Some((events, _)) = verified else { return closed_in_band(retry, "upstream-unavailable"); };
-                match crate::web_transport::window_author(&state, &ctx, scope.community_host()).await {
+                let Some((events, _)) = verified else {
+                    return closed_in_band(retry, "upstream-unavailable");
+                };
+                match crate::web_transport::window_author(&state, &ctx, scope.community_host())
+                    .await
+                {
                     Ok(current) if current == author => Some(serde_json::json!(events)),
                     _ => return closed_in_band(retry, "binding-not-active"),
                 }
-            },
+            }
             // 限流是 LIMIT，不是上游不可用：原因如实下发，重连间隔不短于预算
             // 给出的重置时刻，免得每次重连的 snapshot 继续消耗同一份额度
             Err(e) if e.limit() == Some(LimitKind::RateLimited) => {
@@ -273,37 +306,6 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
         }
     };
 
-    // 订阅以这把钥匙的 NIP-42 会话进行：它被撤销（key revoke/rotate）后流必须关闭。
-    // 会话按 (PlatformSession, Community host, pubkey) 复用：同一会话的多条流共用
-    // 一条已认证连接，各开一个 REQ（`apps/02` Stage 1）。
-    let signer = keys.public_key().to_hex();
-    let session = SessionKey {
-        session: ctx.session_id.to_string(),
-        community_host: scope.community_host().to_owned(),
-        pubkey: signer.clone(),
-    };
-    let sub = match state
-        .relay_sessions
-        .subscribe(
-            session,
-            &keys,
-            vec![serde_json::json!({ "kinds": message_kinds, "#h": [scope.channel_id()] })],
-            &limits,
-        )
-        .await
-    {
-        Ok(s) => s,
-        // 该会话的订阅数已到 NIP-11 声明的上界：确定的 LIMIT，不把第 N+1 个 REQ 发给 Relay
-        Err(e) if e.limit() == Some(LimitKind::Capacity) => {
-            tracing::info!(error = %e, "订阅数达到上界");
-            return closed_in_band(retry, "subscription-limit");
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "建立订阅失败");
-            return closed_in_band(retry, "upstream-unavailable");
-        }
-    };
-
     let every = std::time::Duration::from_secs(state.stream_readmit_seconds);
     let readmit = Readmission {
         state,
@@ -311,6 +313,7 @@ async fn open_target_stream(state: BffState, target: StreamTarget, headers: Head
         target,
         scope,
         signer,
+        relay_author: author,
         every,
     };
     // Snapshot and subscription establishment await external I/O. Recheck before
@@ -357,6 +360,7 @@ struct Readmission {
     /// 订阅所用 NIP-42 会话的 pubkey。它不再是 ACTIVE 即关流：key revoke 的
     /// 「关已知连接」一步（`.design/09`），与会话撤销是两件事。
     signer: String,
+    relay_author: (i32, String),
     every: std::time::Duration,
 }
 
@@ -381,6 +385,16 @@ impl Readmission {
         };
         if !self.scope.same_admission(&current) {
             return Ok(Some("scope-changed"));
+        }
+        match crate::web_transport::window_author(
+            &self.state,
+            &self.ctx,
+            self.scope.community_host(),
+        )
+        .await
+        {
+            Ok(author) if author == self.relay_author => {}
+            _ => return Ok(Some("binding-not-active")),
         }
         let signer_active = sqlx::query_scalar!(
             r#"select exists (select 1 from identity.buzz_identity_binding
@@ -458,6 +472,10 @@ fn frames(
             };
             match frame {
                 Frame::Event(ev) => {
+                    if !valid_live_event(&ev, readmit.scope.channel_id(), &readmit.relay_author.1, &readmit.scope.message_kinds()) {
+                        yield Ok(Event::default().event("closed").data("upstream-unavailable"));
+                        break;
+                    }
                     yield Ok(Event::default().event("event").data(ev.to_string()));
                 }
                 // 历史与增量的分界。客户端据此知道"追平了"，在此之前不必
@@ -478,6 +496,33 @@ fn frames(
             }
         }
     }
+}
+
+fn valid_live_event(
+    value: &serde_json::Value,
+    channel: &str,
+    relay_author: &str,
+    kinds: &[u16],
+) -> bool {
+    let Ok(event) = serde_json::from_value::<nostr::Event>(value.clone()) else {
+        return false;
+    };
+    let channels: Vec<_> = event
+        .tags
+        .iter()
+        .map(nostr::Tag::as_slice)
+        .filter(|tag| tag.first().is_some_and(|name| name == "h"))
+        .collect();
+    event.verify().is_ok()
+        && kinds.contains(&event.kind.as_u16())
+        && channels.len() == 1
+        && channels[0].get(1).map(String::as_str) == Some(channel)
+        && (![
+            collab_bridge::bridge::KIND_THREAD_SUMMARY,
+            collab_bridge::bridge::KIND_SYSTEM_MESSAGE,
+        ]
+        .contains(&u32::from(event.kind.as_u16()))
+            || event.pubkey.to_hex() == relay_author)
 }
 
 /// generation 的构成：principal + channel + 真实准入依据及其 Core 版本。
@@ -536,6 +581,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn channel_live_preserves_replies_but_requires_real_scope_and_relay_overlays() {
+        let relay = nostr::Keys::generate();
+        let human = nostr::Keys::generate();
+        let channel = Uuid::from_u128(1).to_string();
+        let parent = "a".repeat(64);
+        let sign = |kind, target: &str, keys| {
+            nostr::EventBuilder::new(nostr::Kind::Custom(kind), "{}")
+                .tags([
+                    nostr::Tag::parse(["h", target]).unwrap(),
+                    nostr::Tag::parse(["e", parent.as_str(), "", "reply"]).unwrap(),
+                ])
+                .sign_with_keys(keys)
+                .unwrap()
+        };
+        let kinds = vec![9, 39005, 40099];
+        let check = |event: nostr::Event| {
+            valid_live_event(
+                &serde_json::json!(event),
+                &channel,
+                &relay.public_key().to_hex(),
+                &kinds,
+            )
+        };
+        assert!(check(sign(9, &channel, &human)));
+        assert!(check(sign(39005, &channel, &relay)));
+        assert!(check(sign(40099, &channel, &relay)));
+        assert!(!check(sign(39005, &channel, &human)));
+        assert!(!check(sign(40099, &channel, &human)));
+        assert!(!check(sign(9, "different-channel", &human)));
+        assert!(!check(sign(1, &channel, &human)));
+        let mut invalid = sign(9, &channel, &human);
+        invalid.content = "tampered".into();
+        assert!(!check(invalid));
+    }
+
+    #[test]
     fn forum_kinds_are_native_workspace_events_not_private_conversation_events() {
         let workspace = StreamScope::Workspace(WorkspaceScope {
             channel_id: Uuid::from_u128(1).to_string(),
@@ -553,10 +634,14 @@ mod tests {
             binding_version: 1,
             tenant_binding_version: 1,
         });
-        assert_eq!(workspace.message_kinds(), vec![9, 45001, 45003, 40003]);
-        assert_eq!(conversation.message_kinds(), vec![9, 40003]);
-        assert!(workspace.can_resume());
-        assert!(!conversation.can_resume());
+        assert_eq!(
+            workspace.message_kinds(),
+            vec![5, 9, 9005, 39005, 40002, 40003, 40099, 45001, 45003]
+        );
+        assert_eq!(
+            conversation.message_kinds(),
+            vec![5, 9, 9005, 39005, 40002, 40003, 40099]
+        );
         assert!(!workspace.same_admission(&conversation));
     }
 
@@ -570,7 +655,6 @@ mod tests {
             tenant_binding_version: 1,
         };
         let original = StreamScope::Conversation(scope.clone());
-        assert!(!original.can_resume());
         assert!(original.same_admission(&StreamScope::Conversation(scope.clone())));
         assert_ne!(
             original.generation(&principal),

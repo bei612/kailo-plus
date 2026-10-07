@@ -23,9 +23,9 @@ use axum::{
     Json,
 };
 use collab_bridge::bridge::{
-    message_kind, parse_thread_markers, Custody, Delivery, IdentityClient, KIND_DELETION,
-    KIND_NIP29_DELETE_EVENT, KIND_REACTION, KIND_STREAM_MESSAGE_EDIT, KIND_THREAD_SUMMARY,
-    KIND_WINDOW_BOUNDS,
+    message_kind, parse_thread_markers, Custody, Delivery, IdentityClient, CHANNEL_TIMELINE_KINDS,
+    KIND_DELETION, KIND_NIP29_DELETE_EVENT, KIND_REACTION, KIND_STREAM_MESSAGE_EDIT,
+    KIND_SYSTEM_MESSAGE, KIND_THREAD_SUMMARY, KIND_WINDOW_BOUNDS,
 };
 use collab_bridge::limits::RelayLimits;
 use collab_bridge::operator::{LimitKind, OperatorError};
@@ -889,7 +889,20 @@ pub(crate) fn verify_message_page(
             }
             auxiliary.push(event);
         } else {
-            channel_message_event(serde_json::json!(event), channel)?;
+            // The native window is the row authority, including orphan replies
+            // whose thread metadata is absent. Do not filter rows by NIP-10 tags.
+            let native_row = window
+                && *message_type == contracts::WebMessageType::Stream
+                && CHANNEL_TIMELINE_KINDS.contains(&kind);
+            if native_row {
+                if kind == KIND_SYSTEM_MESSAGE
+                    && relay_author != Some(event.pubkey.to_hex().as_str())
+                {
+                    return Err(invalid_message_evidence());
+                }
+            } else {
+                channel_message_event(serde_json::json!(event), channel)?;
+            }
             let matches = match root {
                 Some(root) => {
                     [
@@ -902,7 +915,7 @@ pub(crate) fn verify_message_page(
                             .resolve()
                             .is_some_and(|(id, _)| id == root)
                 }
-                None => event.kind.as_u16() == message_kind(message_type),
+                None => native_row || event.kind.as_u16() == message_kind(message_type),
             };
             let after_cursor = cursor.is_none_or(|cursor| {
                 let time = event.created_at.as_secs();
@@ -959,6 +972,7 @@ pub(crate) fn verify_message_page(
         }
     }
     let mut bounds_seen = false;
+    let mut window_cursor = None;
     let mut summaries = std::collections::HashSet::new();
     for overlay in overlays {
         let content: serde_json::Value =
@@ -986,6 +1000,10 @@ pub(crate) fn verify_message_page(
                     {
                         return Err(invalid_message_evidence());
                     }
+                    window_cursor = Some(contracts::WebMessageCursor {
+                        created_at: last.created_at.as_secs() as i64,
+                        event_id: last.id.to_hex(),
+                    });
                 }
                 _ => return Err(invalid_message_evidence()),
             }
@@ -1011,7 +1029,7 @@ pub(crate) fn verify_message_page(
             event_id: event.id.to_hex(),
         })
     } else {
-        None
+        window_cursor
     };
     Ok((events, next_cursor))
 }
@@ -1989,6 +2007,28 @@ async fn message_author_profile_for(
 }
 
 /// History filters are constructed by Core, never arbitrary browser filters (DD-39).
+pub(crate) fn channel_window_filter(
+    channel: &str,
+    message_type: &contracts::WebMessageType,
+    cap: i64,
+    cursor: Option<&contracts::WebMessageCursor>,
+) -> serde_json::Value {
+    let kinds = if *message_type == contracts::WebMessageType::Stream {
+        serde_json::json!(CHANNEL_TIMELINE_KINDS)
+    } else {
+        serde_json::json!([message_kind(message_type)])
+    };
+    let mut filter = serde_json::json!({
+        "#h": [channel], "kinds": kinds, "limit": cap,
+        "top_level": true, "include_summaries": true, "include_aux": true,
+    });
+    if let Some(cursor) = cursor {
+        filter["until"] = cursor.created_at.into();
+        filter["before_id"] = cursor.event_id.clone().into();
+    }
+    filter
+}
+
 pub async fn query_messages(
     State(state): State<BffState>,
     Path(workspace_id): Path<Uuid>,
@@ -2025,6 +2065,11 @@ async fn query_messages_for(
     headers: HeaderMap,
     query: contracts::WebMessageQuery,
 ) -> Response {
+    let read_target = match target {
+        MessageTarget::Workspace(id) => crate::user_state::ReadTarget::Workspace(id),
+        MessageTarget::Conversation(id) => crate::user_state::ReadTarget::Conversation(id),
+        MessageTarget::Pulse(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
     let cursor = match message_query_cursor(&query) {
         Ok(cursor) => cursor,
         Err(response) => return response,
@@ -2042,10 +2087,12 @@ async fn query_messages_for(
         Ok(c) => c,
         Err(r) => return r,
     };
-    let (channel_id, community_host) = match target.admit(&state, &ctx).await {
+    let admitted = match read_target.admit(&state, &ctx).await {
         Ok(s) => s,
         Err(r) => return r,
     };
+    let channel_id = admitted.channel_id().to_owned();
+    let community_host = admitted.community_host().to_owned();
     let keys = match actor_keys(&state, &ctx).await {
         Ok(k) => k,
         Err(r) => return r,
@@ -2073,9 +2120,7 @@ async fn query_messages_for(
             Err(response) => return response,
         };
         cap = cap.min(i64::from(collab_bridge::bridge::BRIDGE_WINDOW_MAX_LIMIT));
-        filter["top_level"] = true.into();
-        filter["include_summaries"] = true.into();
-        filter["include_aux"] = true.into();
+        filter = channel_window_filter(&channel_id, &message_type, cap, cursor.as_ref());
         Some(author)
     } else {
         None
@@ -2143,7 +2188,7 @@ async fn query_messages_for(
             if let Some(root) = root_event {
                 verified.insert(0, root);
             }
-            let current = match target.admit(&state, &ctx).await {
+            let current = match read_target.admit(&state, &ctx).await {
                 Ok(scope) => scope,
                 Err(response) => return response,
             };
@@ -2151,13 +2196,12 @@ async fn query_messages_for(
                 Ok(keys) => keys,
                 Err(response) => return response,
             };
-            if current != (channel_id, community_host)
-                || current_keys.public_key() != keys.public_key()
+            if !admitted.same_admission(&current) || current_keys.public_key() != keys.public_key()
             {
                 return AdmissionFailure::BindingNotActive.into_response();
             }
             if let Some(author) = author {
-                match window_author(&state, &ctx, &current.1).await {
+                match window_author(&state, &ctx, current.community_host()).await {
                     Ok(observed) if observed == author => {}
                     _ => return AdmissionFailure::BindingNotActive.into_response(),
                 }
@@ -3100,6 +3144,91 @@ mod tests {
         let mut forged = event;
         forged.content = "tampered".into();
         assert!(web_channel_view(&forged, &channel, &keys.public_key().to_hex()).is_err());
+    }
+
+    #[test]
+    fn channel_window_preserves_native_rows_summaries_aux_and_exact_cursor() {
+        let channel = Uuid::from_u128(1).to_string();
+        let relay = nostr::Keys::generate();
+        let author = nostr::Keys::generate();
+        let parent = "a".repeat(64);
+        let sign = |kind, timestamp, content: String, mut tags: Vec<nostr::Tag>, keys| {
+            tags.push(nostr::Tag::parse(["h", channel.as_str()]).unwrap());
+            nostr::EventBuilder::new(nostr::Kind::Custom(kind), content)
+                .tags(tags)
+                .custom_created_at(nostr::Timestamp::from_secs(timestamp))
+                .sign_with_keys(keys)
+                .unwrap()
+        };
+        let system = sign(KIND_SYSTEM_MESSAGE as u16, 3, "{}".into(), vec![], &relay);
+        let orphan = sign(
+            message_kind(&contracts::WebMessageType::Stream),
+            2,
+            "orphan".into(),
+            vec![nostr::Tag::parse(["e", parent.as_str(), "", "reply"]).unwrap()],
+            &author,
+        );
+        let legacy = sign(
+            collab_bridge::bridge::KIND_STREAM_MESSAGE_V2 as u16,
+            1,
+            "legacy".into(),
+            vec![],
+            &author,
+        );
+        let last_id = legacy.id.to_hex();
+        let summary = sign(KIND_THREAD_SUMMARY as u16, 4,
+            serde_json::json!({"reply_count":1,"descendant_count":1,"last_reply_at":2,"participants":[author.public_key().to_hex()]}).to_string(),
+            vec![nostr::Tag::parse(["e", last_id.as_str()]).unwrap(), nostr::Tag::parse(["d", last_id.as_str()]).unwrap()], &relay);
+        let edit = sign(
+            KIND_STREAM_MESSAGE_EDIT as u16,
+            4,
+            "edited".into(),
+            vec![nostr::Tag::parse(["e", last_id.as_str()]).unwrap()],
+            &author,
+        );
+        let bounds = sign(
+            KIND_WINDOW_BOUNDS as u16,
+            4,
+            serde_json::json!({"has_more":true,"next_cursor":{"created_at":1,"id":last_id}})
+                .to_string(),
+            vec![nostr::Tag::parse(["d", &format!("{channel}:head")]).unwrap()],
+            &relay,
+        );
+        let check = |events| {
+            verify_message_page(
+                events,
+                &channel,
+                &contracts::WebMessageType::Stream,
+                None,
+                None,
+                Some(&relay.public_key().to_hex()),
+                3,
+            )
+        };
+        let events = vec![system, orphan.clone(), legacy, summary, edit, bounds];
+        let (verified, cursor) = check(events.clone()).unwrap();
+        assert_eq!(verified, events);
+        assert!(verified.iter().any(|event| event.id == orphan.id));
+        let cursor = cursor.unwrap();
+        assert_eq!(cursor.event_id, last_id);
+        let filter = channel_window_filter(
+            &channel,
+            &contracts::WebMessageType::Stream,
+            3,
+            Some(&cursor),
+        );
+        assert_eq!(filter["kinds"], serde_json::json!([9, 40002, 40099]));
+        for flag in ["top_level", "include_summaries", "include_aux"] {
+            assert_eq!(filter[flag], true);
+        }
+        assert_eq!(filter["until"], 1);
+        assert_eq!(filter["before_id"], last_id);
+        let mut forged = events.clone();
+        forged[0] = sign(KIND_SYSTEM_MESSAGE as u16, 3, "{}".into(), vec![], &author);
+        assert!(check(forged).is_err());
+        let mut missing = events;
+        missing.pop();
+        assert!(check(missing).is_err());
     }
 
     #[test]

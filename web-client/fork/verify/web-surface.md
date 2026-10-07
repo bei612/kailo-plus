@@ -5378,3 +5378,42 @@ TypeScript、Native TypeScript，均退出 0；共享十个测试文件 99 项�
 补入同一提交的实际输入并使用原 `/cache/npm` 后通过，没有修改检查规则。
 整批 full 未重跑：当前 Data 余量约 2.2 GiB，前次 full 的退出 1/137 不作废；
 本次是已集中窄验的源码阶段提交，不是通过全部发布门禁的 release。
+
+### 2026-10-07 Web 原生频道窗口读取补齐
+
+四步影响结论：
+
+1. 权威为 REQ-24、DD-39/75/80 与 `.design/09` 的协作数据面：Relay 保有正文、
+   原窗口行与线程摘要；Core 只做本人身份、scope 与原生响应查证。固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src-tauri/src/commands/channel_window.rs::build_channel_window_filter`、
+   `desktop/src/features/messages/hooks.ts::useChannelSubscription`、
+   `desktop/src/shared/api/relayClientSession.ts::subscribeToChannelLive` 与
+   `crates/buzz-relay/src/api/bridge.rs::handle_channel_window_filter` 为原行为依据。
+2. 原 REST 已请求顶层、摘要及 aux，SSE 首屏遗漏摘要；Web 只读 kind:9，
+   与当前 Native 已准入的 9/40002/40099 不一致。本次两条真实消费者共用同一
+   window filter，保留 39005/39006 与两跳 aux，返回原 bounds 查证后的游标。
+   不增加 schema、数据库或写入 kind，不开启 Huddle 或 Buzz 自带工作流执行器。
+3. REST 前后复用 ReadScope/本人 key fence；SSE 校验签名、精确 Channel、kind，
+   系统行和摘要另核 binding 的 Relay self。先订阅再读窗口，重连重新取窗口；
+   membership generation 不是 Relay 消息游标，不用历史 WS 回复替代窗口事实。
+   不依赖 NIP-10 parent 是否存在来删除行，因此保留 Relay 认定的孤儿回复。
+4. 成员撤销/身份切换沿原拒绝与关流；binding 变化、签名或窗口证据缺失沿原
+   PRECONDITION/DEPENDENCY_UNAVAILABLE，不返回空成功。限流/背压继续原 LIMIT
+   和 slow-consumer 关流；同秒重叠保留事件 ID 去重，复合游标不退化成时间戳。
+   Web 仍经 BFF 本人 SERVER signer；本次不改 Desktop/Mobile 的直接读取路径。
+
+本批固定输入基于 `8d3fcd04`，仅三个读取源文件及其事后用例；明确排除并行
+CustomEmoji 发布增量。没有改 ChannelPane 或共用时间线，也没有改契约生成物。
+原受限 SDK `kailo-installation-scope-sdk-e4agxd` 实际 4 CPU/8 GiB，复用
+`/cache/rust-target`、Cargo `-j16`，不占用队友的 xvkujx 执行容器。
+现有 web_transport 范围 28 项通过、1 项显式 ignored；stream 3 项通过；
+原 `cargo clippy --offline --locked -j16 -p platform-core --bin platform-core
+-- -D warnings` 退出 0。SDK-only 将摘要请求改 false，窗口用例实际失败 101；
+另将 Relay 作者校验放开，实时摘要伪造用例实际失败 101。两文件原字节还原
+`cmp` 均为 0，再次实际编译后 web_transport 28 通过/1 ignored、stream 3 通过、
+原 user_state 双 binding fence 1 项通过，恢复命令退出 0。
+原输出在 `/volumes/data/kailo/tmp/channel-window-read.w5jTdm/` 的
+`core-window.log`、`core-range.log`、`core-mutation.log`、`core-restored.log`。
+未运行 full、真实浏览器/Relay 联调、
+镜像构建或部署；不得把服务端专项通过当作前端已消费或上线验收。

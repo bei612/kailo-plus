@@ -20,7 +20,7 @@ use crate::limits::ApiBudget;
 use crate::operator::{LimitKind, OperatorError};
 pub use buzz_core::kind::{
     KIND_DELETION, KIND_NIP29_DELETE_EVENT, KIND_REACTION, KIND_STREAM_MESSAGE_EDIT,
-    KIND_THREAD_SUMMARY, KIND_WINDOW_BOUNDS,
+    KIND_STREAM_MESSAGE_V2, KIND_SYSTEM_MESSAGE, KIND_THREAD_SUMMARY, KIND_WINDOW_BOUNDS,
 };
 pub use buzz_core::nip10::parse_thread_markers;
 pub use buzz_core::relay::{
@@ -80,6 +80,14 @@ pub fn message_kind(message_type: &contracts::WebMessageType) -> u16 {
         contracts::WebMessageType::ForumComment => buzz_core::kind::KIND_FORUM_COMMENT as u16,
     }
 }
+
+/// The already-admitted native channel rows. Reading these does not enable
+/// Buzz's separate workflow/huddle executors or any new write kind.
+pub const CHANNEL_TIMELINE_KINDS: [u32; 3] = [
+    buzz_core::kind::KIND_STREAM_MESSAGE,
+    KIND_STREAM_MESSAGE_V2,
+    KIND_SYSTEM_MESSAGE,
+];
 
 /// roster 的两个层级。Tenant 成员投影到 relay roster，Workspace 成员投影到
 /// 所属 Channel 的 roster（`DD-45`）。
