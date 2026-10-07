@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SettingsPane, WorkspaceNotifications } from "./SettingsPane";
+import { SettingsPane } from "./SettingsPane";
 import { setLocale } from "@client-kit/platform/i18n";
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import { createBffClient } from "@client-kit/platform/client";
 import { SidebarProvider } from "@client-kit/platform/react/sidebar/sidebar";
 import { npubEncode } from "nostr-tools/nip19";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserNotificationsProvider } from "./BrowserNotifications";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -30,58 +31,39 @@ vi.mock("@client-kit/platform/react/context", async (original) => ({
   useBffClient: () => ({ invitations: async () => [], profile: async () => ({ pubkey: "a".repeat(64), eventId: null, displayName: null, about: null, avatarUrl: null, nip05Handle: null, avatarMediaPaths: {} }) }),
 }));
 
-const state = vi.hoisted(() => ({
-  workspaces: {
-    isSuccess: true,
-    isError: false,
-    isFetching: false,
-    data: [{ id: "workspace-a", name: "A" }],
-  },
-  preferences: {
-    isSuccess: true,
-    isError: false,
-    isFetching: false,
-    data: {
-      version: 7,
-      workspacePreferences: { "workspace-a": { starred: true, muted: false } },
-    },
-  },
-  write: vi.fn(),
-  invalidate: vi.fn(),
-  mutate: null as
-    null | ((input: { id: string; muted: boolean }) => Promise<void>),
-}));
-vi.mock("@tanstack/react-query", () => ({
-  useQuery: (options: { queryKey: string[] }) =>
-    options.queryKey[1] === "workspaces" ? state.workspaces : state.preferences,
-  useQueryClient: () => ({ invalidateQueries: state.invalidate }),
-  useMutation: (options: { mutationFn: typeof state.mutate }) => {
-    state.mutate = options.mutationFn;
-    return { isError: false, isPending: false, mutate: (input: { id: string; muted: boolean }) => { void options.mutationFn?.(input); } };
-  },
-}));
-vi.mock("@/platform/bff-client", () => ({
-  bff: { workspaces: vi.fn() },
-  fetchUserState: vi.fn(),
-  setWorkspacePreference: state.write,
-}));
+vi.mock("@/platform/bff-client", () => ({ bff: { workspaces: vi.fn(), profile: vi.fn(async () => ({ pubkey: "a".repeat(64) })) }, fetchUserState: vi.fn() }));
 vi.mock("@/shared/i18n", () => ({ getLocale: () => "en" }));
 vi.mock("@/shared/theme/ThemeProvider", () => ({
   useTheme: () => ({ themeName: "buzz", selectedThemeName: "buzz", isDark: false, isLoading: false, followSystem: true, accentColor: "neutral", hasPair: true, setTheme: vi.fn(), setAccentColor: vi.fn(), setFollowSystem: vi.fn(), applyAppearance: vi.fn(), prominentActiveTab: false, setProminentActiveTab: vi.fn() }),
 }));
 
-beforeEach(() => {
-  setLocale("en");
-  state.write.mockReset().mockResolvedValue({ version: 8 });
-  state.invalidate.mockReset().mockResolvedValue(undefined);
-  state.workspaces.isSuccess = true;
-  state.workspaces.isError = false;
-  state.workspaces.isFetching = false;
-  state.preferences.isSuccess = true;
-  state.preferences.isError = false;
-  state.preferences.isFetching = false;
-});
-describe("Web settings existing user-state CAS consumer", () => {
+beforeEach(() => { setLocale("en"); });
+describe("Web original settings host", () => {
+  it("renders one original notification page without the invented workspace settings block", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));
+    vi.stubGlobal("Notification", class { static permission = "granted"; static requestPermission = vi.fn(); });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = createBffClient({ send: async () => ({ status: 200, body: [] }) });
+    try {
+      await act(async () => root.render(<QueryClientProvider client={queryClient}><PlatformProvider client={client} locale="en"><BrowserNotificationsProvider principalId="current"><SidebarProvider><SettingsPane /></SidebarProvider></BrowserNotificationsProvider></PlatformProvider></QueryClientProvider>));
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-notifications"]')!.click());
+      expect(host.querySelectorAll('[data-testid="settings-notifications"]')).toHaveLength(1);
+      expect(host.querySelector('[data-testid="workspace-notifications"]')).toBeNull();
+      expect(host.querySelector('[data-testid="notifications-desktop-toggle"]')).not.toBeNull();
+      expect(host.querySelector('[data-testid="notifications-home-badge-toggle"]')).not.toBeNull();
+      expect(host.textContent).not.toContain("Workspace notifications");
+      expect(Notification.requestPermission).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+      queryClient.clear();
+      host.remove();
+      vi.unstubAllGlobals();
+    }
+  });
   it("keeps a visited emoji controller through category switches but not authenticated scope replacement", async () => {
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));
@@ -223,59 +205,6 @@ describe("Web settings existing user-state CAS consumer", () => {
       await act(async () => root.unmount());
       host.remove();
       vi.unstubAllGlobals();
-    }
-  });
-  it("writes exact workspace/current version while preserving the existing star", async () => {
-    renderToStaticMarkup(<WorkspaceNotifications />);
-    await state.mutate!({ id: "workspace-a", muted: true });
-    expect(state.write).toHaveBeenCalledExactlyOnceWith("workspace-a", {
-      starred: true,
-      muted: true,
-      version: 7,
-    });
-    expect(state.invalidate).toHaveBeenCalledOnce();
-  });
-  it("never writes an unlisted workspace or unverified preference snapshot", async () => {
-    renderToStaticMarkup(<WorkspaceNotifications />);
-    await state.mutate!({ id: "workspace-b", muted: true });
-    state.preferences.isSuccess = false;
-    await state.mutate!({ id: "workspace-a", muted: true });
-    expect(state.write).not.toHaveBeenCalled();
-  });
-  it("refetches after a lost response without replaying the write", async () => {
-    state.write.mockRejectedValue(new Error("private native detail"));
-    renderToStaticMarkup(<WorkspaceNotifications />);
-    await expect(
-      state.mutate!({ id: "workspace-a", muted: true }),
-    ).rejects.toThrow();
-    expect(state.write).toHaveBeenCalledTimes(1);
-    expect(state.invalidate).toHaveBeenCalledOnce();
-  });
-  it("does not turn failed reads into unmuted defaults", () => {
-    state.preferences.isSuccess = false;
-    state.preferences.isError = true;
-    const markup = renderToStaticMarkup(<WorkspaceNotifications />);
-    expect(markup).not.toContain('role="switch"');
-    expect(markup).not.toContain("private native detail");
-    expect(markup).toContain('role="status"');
-  });
-  it("uses the original settings switch without changing the authoritative mute state", async () => {
-    const host = document.createElement("div");
-    document.body.append(host);
-    const root = createRoot(host);
-    try {
-      await act(async () => root.render(<WorkspaceNotifications />));
-      expect(host.querySelector('[data-slot="settings-section-card"]')).not.toBeNull();
-      const toggle = host.querySelector<HTMLButtonElement>('[role="switch"]')!;
-      expect(toggle.getAttribute("aria-checked")).toBe("false");
-      expect(host.querySelector('label[for="workspace-mute-workspace-a"]')).not.toBeNull();
-      await act(async () => toggle.click());
-      expect(state.write).toHaveBeenCalledExactlyOnceWith("workspace-a", { muted: true, starred: true, version: 7 });
-      expect(state.invalidate).toHaveBeenCalledOnce();
-      expect(toggle.getAttribute("aria-checked")).toBe("false");
-    } finally {
-      await act(async () => root.unmount());
-      host.remove();
     }
   });
 });

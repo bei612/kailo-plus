@@ -1,30 +1,24 @@
 import { AppearanceSettings } from "@client-kit/platform/react/appearance-settings";
 import { isMacPlatform } from "@client-kit/platform/keyboard-platform";
 import { useEffect, useId, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { translate } from "@client-kit/platform/i18n";
 import {
   SettingsPage,
   ShortcutSettings,
-  SettingsSectionHeader,
   shortcutText,
   type SettingsShortcut,
   type SettingsSection,
   CommunityInvitationSettings,
   useInvitationSettingsState,
 } from "@client-kit/platform/react/settings";
-import { setWorkspacePreference, uploadProfileAvatar } from "@/platform/bff-client";
+import { uploadProfileAvatar } from "@/platform/bff-client";
 import { getLocale } from "@/shared/i18n";
 import { useTheme } from "@/shared/theme/ThemeProvider";
-import { Button } from "@/shared/ui/button";
-import { platformQueries } from "./queries";
 import { ProfileSettingsCard, ProfileAvatarControls, ProfileAvatarPreview } from "@client-kit/platform/react/profile-settings";
 import { useBffClient } from "@client-kit/platform/react/context";
 import { useLoad } from "@client-kit/platform/react/use-load";
 import { ReadFailure } from "@client-kit/platform/react/ui";
 import { TransportError } from "@client-kit/platform/transport";
-import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from "@client-kit/platform/react/settings-option-group";
-import { Switch } from "@client-kit/platform/react/switch";
 import { useUiLocale } from "@client-kit/platform/react/context";
 import { BrowserNotificationSettings } from "./BrowserNotifications";
 import { CustomEmojiSettingsCard, pickEmojiImage } from "@client-kit/platform/react/custom-emoji";
@@ -64,7 +58,7 @@ export function SettingsPane({ active = true, onClose }: { active?: boolean; onC
       {section === "profile" ? <WebProfileSettings /> : section === "appearance" ? (
         <AppearanceSettings name={translate(locale, "platform.title")} appearance={appearance} />
       ) : section === "notifications" ? (
-        <><BrowserNotificationSettings /><WorkspaceNotifications /></>
+        <BrowserNotificationSettings />
       ) : section==="shortcuts" ? (
         <ShortcutSettings
           locale={locale}
@@ -202,88 +196,4 @@ function WebProfileSettings() {
     Object.assign(uploadedPaths.current, actual.avatarMediaPaths);
     return actual;
   }} />;
-}
-
-export function WorkspaceNotifications() {
-  const locale = useUiLocale();
-  const queryClient = useQueryClient();
-  const workspaces = useQuery(platformQueries.workspaces);
-  const userState = useQuery(platformQueries.userState);
-  const writing = useRef(false);
-  const mutation = useMutation({
-    mutationFn: async ({ id, muted }: { id: string; muted: boolean }) => {
-      if (
-        writing.current ||
-        !workspaces.isSuccess ||
-        !userState.isSuccess ||
-        workspaces.isFetching ||
-        userState.isFetching ||
-        !workspaces.data.some((workspace) => workspace.id === id)
-      )
-        return;
-      writing.current = true;
-      try {
-        await setWorkspacePreference(id, {
-          starred: userState.data.workspacePreferences[id]?.starred ?? false,
-          muted,
-          version: userState.data.version,
-        });
-      } finally {
-        // Read the original CAS authority after either success or a lost response.
-        // Do not optimistically invert, replay the write, or assume default state.
-        await queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey });
-        writing.current = false;
-      }
-    },
-  });
-  const ready =
-    workspaces.isSuccess && userState.isSuccess && !workspaces.isFetching && !userState.isFetching;
-  const failed = workspaces.isError || userState.isError || mutation.isError;
-  async function refresh() {
-    const [ws, prefs] = await Promise.all([workspaces.refetch(), userState.refetch()]);
-    if (ws.isSuccess && prefs.isSuccess) mutation.reset();
-  }
-  return (
-    <section className="min-w-0" data-testid="workspace-notifications">
-      <SettingsSectionHeader title={translate(locale, "platform.settings.notifications")}
-        description={translate(locale, "platform.settings.workspaceNotificationsDescription")} />
-      {failed ? (
-        <div role="status">
-          <p>{translate(locale, "platform.loadFailed")}</p>
-          <Button
-            type="button"
-            disabled={mutation.isPending || workspaces.isFetching || userState.isFetching}
-            onClick={() => void refresh()}
-          >
-            {translate(locale, "platform.retry")}
-          </Button>
-        </div>
-      ) : !ready ? (
-        <p role="status">{translate(locale, "platform.loadingWorkspaces")}</p>
-      ) : null}
-      {ready && workspaces.data.length === 0 ? (
-        <p>{translate(locale, "platform.noWorkspace")}</p>
-      ) : null}
-      {ready ? (
-        <SettingsOptionGroupList><SettingsOptionGroup title={translate(locale, "platform.settings.workspaceNotifications")}>
-          {workspaces.data.map((workspace) => (
-            <SettingsOptionRow
-              key={workspace.id}
-            >
-              <div className="min-w-0 flex-1"><label htmlFor={`workspace-mute-${workspace.id}`} className="text-sm font-medium break-words">{workspace.name}</label>
-                <p className="text-sm font-normal text-muted-foreground/70" data-settings-subcopy>{translate(locale, "platform.settings.muted")}</p></div>
-                <Switch
-                  id={`workspace-mute-${workspace.id}`}
-                  checked={userState.data.workspacePreferences[workspace.id]?.muted ?? false}
-                  disabled={failed || mutation.isPending}
-                  onCheckedChange={(muted) =>
-                    mutation.mutate({ id: workspace.id, muted })
-                  }
-                />
-            </SettingsOptionRow>
-          ))}
-        </SettingsOptionGroup></SettingsOptionGroupList>
-      ) : null}
-    </section>
-  );
 }

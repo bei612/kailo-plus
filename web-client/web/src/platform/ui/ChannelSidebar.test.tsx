@@ -4,7 +4,7 @@ import { expect, it, vi } from "vitest";
 import type { ComponentProps, ReactNode } from "react";
 import { ChannelSidebar } from "./ChannelSidebar";
 
-const snapshot = vi.hoisted(() => ({ failed: false, query: undefined as undefined | ((context: { signal: AbortSignal }) => Promise<Map<string, { id: string }[]>>), messages: vi.fn() }));
+const snapshot = vi.hoisted(() => ({ failed: false, query: undefined as undefined | ((context: { signal: AbortSignal }) => Promise<Map<string, { id: string }[]>>), messages: vi.fn(), menus: new Map<string, { mute?: (id: string) => void; unmute?: (id: string) => void }>() }));
 vi.mock("@client-kit/platform/react/context", () => ({ useT: () => (key: string) => key }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryFn: typeof snapshot.query }) => { snapshot.query = options.queryFn; return ({ isSuccess: !snapshot.failed, isError: snapshot.failed, data: new Map([
@@ -23,9 +23,10 @@ vi.mock("@client-kit/platform/react/sidebar/channel-row", () => ({
     <button data-id={channel.id} data-active={isActive} data-unread={hasUnread} />,
 }));
 vi.mock("@client-kit/platform/react/sidebar/channel-context-menu", () => ({
-  ChannelContextMenuItems: ({ channel, onMarkChannelRead, onStarChannel }: {
+  ChannelContextMenuItems: ({ channel, onMarkChannelRead, onStarChannel, onMuteChannel, onUnmuteChannel }: {
     channel: { id: string }; onMarkChannelRead?: unknown; onStarChannel?: unknown;
-  }) => <span data-menu={channel.id} data-read-enabled={Boolean(onMarkChannelRead)} data-star-enabled={Boolean(onStarChannel)} />,
+    onMuteChannel?: (id: string) => void; onUnmuteChannel?: (id: string) => void;
+  }) => { snapshot.menus.set(channel.id, { mute: onMuteChannel, unmute: onUnmuteChannel }); return <span data-menu={channel.id} data-read-enabled={Boolean(onMarkChannelRead)} data-star-enabled={Boolean(onStarChannel)} />; },
 }));
 vi.mock("@client-kit/platform/react/sidebar/useChannelSortPreference", () => ({ useChannelSortPreference: () => ({ sortModeFor: () => "alpha", setSortModeFor: vi.fn() }) }));
 vi.mock("@client-kit/platform/react/sidebar/tooltip", () => ({ TooltipProvider: ({ children }: { children: ReactNode }) => children }));
@@ -80,4 +81,20 @@ it("loads the real sidebar activity query when Core returns original window meta
   const result = await snapshot.query!({ signal: new AbortController().signal });
   expect(result.get("one")?.map((event) => event.id)).toEqual(["a".repeat(64)]);
   expect(result.get("two")?.map((event) => event.id)).toEqual(["a".repeat(64)]);
+});
+it("retains original channel mute and unmute consumers with the authoritative star and UNKNOWN guard", () => {
+  snapshot.failed = false;
+  const write = vi.fn();
+  const page = (unknown: boolean) => <ChannelSidebar principalId="me" workspaces={[{ id: "one", name: "One", slug: "one", isMember: true }]}
+    selectedId="one" active reads={{ ...reads, unknown }} preferencePending={false}
+    onSelect={vi.fn()} onCreate={vi.fn()} onSetPreference={write} />;
+  renderToStaticMarkup(page(false));
+  snapshot.menus.get("one")!.mute!("one");
+  expect(write).toHaveBeenLastCalledWith("one", { starred: true, muted: true });
+  snapshot.menus.get("one")!.unmute!("one");
+  expect(write).toHaveBeenLastCalledWith("one", { starred: true, muted: false });
+  renderToStaticMarkup(page(true));
+  expect(snapshot.menus.get("one")!.mute).toBeUndefined();
+  expect(snapshot.menus.get("one")!.unmute).toBeUndefined();
+  expect(write).toHaveBeenCalledTimes(2);
 });
