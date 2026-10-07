@@ -352,7 +352,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
           </header>}
           <main className="min-h-0 flex-1 overflow-auto p-4">
             {settingsVisited.current?<div hidden={tab!=="settings"} style={tab==="settings"?undefined:{display:"none"}}>
-              <SettingsPane key={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`}/>
+              <SettingsPane key={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`} onClose={() => settingsReturn.current()}/>
             </div>:null}
             {body}
           </main>

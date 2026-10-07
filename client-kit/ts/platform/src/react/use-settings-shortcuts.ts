@@ -1,5 +1,6 @@
 import * as React from "react";
 import { hasPrimaryShortcutModifier } from "../keyboard-platform";
+import { useEscapeKey } from "./messages/thread/useEscapeKey";
 
 type UseSettingsShortcutsOptions = {
   onClose: () => void;
@@ -13,6 +14,9 @@ export function useSettingsShortcuts({
   onOpenSettings,
   open,
 }: UseSettingsShortcutsOptions) {
+  // SettingsView owns Escape only while visible. Keep the original nested
+  // surface priority and let background mark-as-read handlers yield.
+  useEscapeKey(onClose, open === true);
   React.useLayoutEffect(() => {
     if (open === undefined) return;
     function handleKeyDown(event: KeyboardEvent) {

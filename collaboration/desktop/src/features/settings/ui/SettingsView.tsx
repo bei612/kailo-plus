@@ -1,9 +1,7 @@
 import * as React from "react";
-import { resolveLocale, translate } from "@client-kit/platform/i18n";
 import { useDeviceLocale } from "@client-kit/platform/react/context";
-import { SettingsNavigation, SettingsContentSurface, CommunityInvitationSettings, useInvitationSettingsState } from "@client-kit/platform/react/settings";
+import { SettingsNavigation, SettingsBackButton, SettingsContentSurface, CommunityInvitationSettings, useInvitationSettingsState } from "@client-kit/platform/react/settings";
 import { getVersion } from "@tauri-apps/api/app";
-import { ArrowLeft } from "lucide-react";
 
 import { topChromeBackdrop } from "@/shared/layout/chromeLayout";
 import { cn } from "@/shared/lib/cn";
@@ -13,9 +11,6 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
   useSidebar,
 } from "@/shared/ui/sidebar";
 import {
@@ -68,19 +63,6 @@ export function SettingsView({
     }
   }, [active, isMobile, setSidebarOpen, sidebarOpen]);
 
-  React.useEffect(() => {
-    if(!active)return;
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !event.defaultPrevented) {
-        event.preventDefault();
-        event.stopPropagation();
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [active,onClose]);
-
   return (
     <>
       {active?<Sidebar
@@ -102,21 +84,7 @@ export function SettingsView({
           className="cursor-default select-none pb-0 pt-3"
           data-tauri-drag-region
         >
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                data-testid="settings-back-to-app"
-                onClick={onClose}
-                tooltip={translate(resolveLocale(), "platform.settings.back")}
-                type="button"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                <span>
-                  {translate(resolveLocale(), "platform.settings.back")}
-                </span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
+          <SettingsBackButton locale={locale} onClose={onClose} sidebarState={sidebarOpen ? "expanded" : "collapsed"} isMobile={isMobile} />
         </SidebarHeader>
 
         <SidebarContent>

@@ -2,7 +2,7 @@
 // desktop/src/features/settings/ui/{SettingsView,SettingsSectionHeader}.tsx
 // desktop/src/shared/ui/{PageHeader,sidebar-menu-label}.tsx
 import type { ReactNode } from "react";
-import { BellRing, Keyboard, MonitorCog, UserRound, Ticket, LoaderCircle } from "lucide-react";
+import { ArrowLeft, BellRing, Keyboard, MonitorCog, UserRound, Ticket, LoaderCircle } from "lucide-react";
 import { translate, type PlatformLocale } from "../i18n";
 import { BffError } from "../transport";
 import type { Loaded } from "./use-load";
@@ -17,6 +17,19 @@ export const settingsSectionKeys = {
   "community-members": "invitations.title",
 } as const;
 const icons = { profile: UserRound, appearance: MonitorCog, notifications: BellRing, shortcuts: Keyboard, "community-members": Ticket };
+
+export function SettingsBackButton({ locale, onClose, sidebarState = "expanded", isMobile = false }: {
+  locale: PlatformLocale; onClose: () => void;
+  sidebarState?: "expanded" | "collapsed"; isMobile?: boolean;
+}) {
+  const label = translate(locale, "platform.settings.back");
+  return <SidebarMenu><SidebarMenuItem>
+    <SidebarMenuButton data-testid="settings-back-to-app" onClick={onClose}
+      tooltip={label} sidebarState={sidebarState} isMobile={isMobile} type="button">
+      <ArrowLeft className="h-4 w-4" /><span>{label}</span>
+    </SidebarMenuButton>
+  </SidebarMenuItem></SidebarMenu>;
+}
 
 export function SettingsNavigation({ locale, section, onSelect, icons: suppliedIcons, sidebarState = "expanded", isMobile = false, invitationAccess, onRetryInvitations }: {
   locale: PlatformLocale; section: SettingsSection; onSelect: (section: SettingsSection) => void;

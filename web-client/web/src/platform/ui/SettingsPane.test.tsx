@@ -75,7 +75,12 @@ describe("Web settings existing user-state CAS consumer", () => {
     const root = createRoot(host);
     try {
       const client=createBffClient({send:async()=>({status:200,body:[]})});
-      await act(async () => root.render(<PlatformProvider client={client} locale="en"><SettingsPane /></PlatformProvider>));
+      const close = vi.fn();
+      await act(async () => root.render(<PlatformProvider client={client} locale="en"><SettingsPane onClose={close} /></PlatformProvider>));
+      const back = host.querySelector<HTMLButtonElement>('[data-testid="settings-back-to-app"]')!;
+      expect(back.textContent).toBe("Back to app");
+      await act(async () => back.click());
+      expect(close).toHaveBeenCalledOnce();
       expect(host.querySelector('[data-testid="settings-profile"]')).not.toBeNull();
       const appearance = host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-appearance"]');
       expect(appearance).not.toBeNull();
@@ -91,7 +96,8 @@ describe("Web settings existing user-state CAS consumer", () => {
       expect(host.querySelector('[data-sidebar="group"]')).not.toBeNull();
       expect(host.querySelector('[data-testid="settings-content-surface"]')).not.toBeNull();
       await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-shortcuts"]')!.click());
-      expect(host.querySelectorAll('[data-shortcut]')).toHaveLength(8);
+      expect(host.querySelectorAll('[data-shortcut]')).toHaveLength(9);
+      expect(host.querySelector('[data-shortcut="close-dialog"]')).not.toBeNull();
       expect(host.querySelector('[data-shortcut="format-link"]')).not.toBeNull();
       expect(host.textContent).toContain("Formatting");
     } finally {

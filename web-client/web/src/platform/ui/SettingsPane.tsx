@@ -39,6 +39,7 @@ function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] 
   const entries: Array<[string, string, SettingsShortcut["category"]]> = [
     ["open-settings", `${mod},`, "Navigation"],
     ["send-message", "Enter", "Messages"], ["new-line", "Shift+Enter", "Messages"],
+    ["close-dialog", "Escape", "Messages"],
     ["format-bold", `${mod}B`, "Formatting"], ["format-italic", `${mod}I`, "Formatting"],
     ["format-strikethrough", `${mod}${isMacPlatform() ? "⇧" : "Shift+"}X`, "Formatting"],
     ["format-code", `${mod}E`, "Formatting"],
@@ -51,13 +52,13 @@ function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] 
 }
 // The table describes the real shared Tiptap handlers, not new key bindings.
 
-export function SettingsPane() {
+export function SettingsPane({ onClose }: { onClose?: () => void }) {
   const locale = useUiLocale();
   const appearance = useTheme();
   const [section, setSection] = useState<SettingsSection>("profile");
   const invitations=useInvitationSettingsState();
   return (
-    <SettingsPage locale={locale} section={section} onSelect={setSection} invitationAccess={invitations.access} onRetryInvitations={invitations.reload}>
+    <SettingsPage locale={locale} section={section} onSelect={setSection} onClose={onClose} invitationAccess={invitations.access} onRetryInvitations={invitations.reload}>
       <CommunityInvitationSettings active={section==="community-members"} onAccessChange={invitations.onAccessChange}/>
       {section === "profile" ? <WebProfileSettings /> : section === "appearance" ? (
         <section className="flex min-h-0 flex-1 flex-col" data-testid="settings-theme">

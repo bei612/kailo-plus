@@ -2,12 +2,12 @@
 // preference stores, native notification permissions and keyboard handlers.
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { useDeviceLocale, useUiLocale } from "./context";
-import { SettingsNavigation, SettingsContentSurface, SettingsSectionHeader, type SettingsSection } from "./settings-surface";
+import { SettingsNavigation, SettingsBackButton, SettingsContentSurface, SettingsSectionHeader, type SettingsSection } from "./settings-surface";
 import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from "./settings-option-group";
 import { TooltipProvider } from "./sidebar/tooltip";
 import { TenantInvitations } from "./invitations";
 import type { Loaded } from "./use-load";
-export { SettingsNavigation, SettingsContentSurface, SettingsSectionHeader, settingsSectionKeys, type SettingsSection } from "./settings-surface";
+export { SettingsNavigation, SettingsBackButton, SettingsContentSurface, SettingsSectionHeader, settingsSectionKeys, type SettingsSection } from "./settings-surface";
 import {
   platformThemeModeKeys,
   setLocale,
@@ -195,6 +195,7 @@ export function SettingsPage({
   children,
   invitationAccess,
   onRetryInvitations,
+  onClose,
 }: {
   locale: PlatformLocale;
   section: SettingsSection;
@@ -202,11 +203,15 @@ export function SettingsPage({
   children: ReactNode;
   invitationAccess?:Loaded<boolean>;
   onRetryInvitations?:()=>void;
+  onClose?:()=>void;
 }) {
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col bg-sidebar sm:flex-row" data-testid="settings-page">
       <nav aria-label={translate(locale, "platform.settings.title")} className="shrink-0 text-sidebar-foreground sm:w-(--sidebar-width)">
-        <TooltipProvider><SettingsNavigation locale={locale} section={section} onSelect={onSelect} invitationAccess={invitationAccess} onRetryInvitations={onRetryInvitations} /></TooltipProvider>
+        <TooltipProvider>
+          {onClose ? <div className="flex flex-col gap-2 p-2 pb-0 pt-3" data-sidebar="header"><SettingsBackButton locale={locale} onClose={onClose} /></div> : null}
+          <SettingsNavigation locale={locale} section={section} onSelect={onSelect} invitationAccess={invitationAccess} onRetryInvitations={onRetryInvitations} />
+        </TooltipProvider>
       </nav>
       <SettingsContentSurface section={section}>{children}</SettingsContentSurface>
     </div>

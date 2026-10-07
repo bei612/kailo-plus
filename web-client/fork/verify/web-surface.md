@@ -4576,3 +4576,53 @@ playwright-cli 正常登录线上 b911 后，打开 Agent 详情和创建版本�
 `/dev/shm/workflow-agent-restored.log`；此前类型及工作流交互日志为 Data 原目录
 `message-edit.AGX058/workflow-agent-ui-final.log`，其旧 pages 三项失败不计通过。
 本批未安装依赖、未执行 full/Cargo/镜像构建或部署，未拿组件检查冒充线上截图验收。
+
+### 原设置返回控件与 Escape 宿主联动
+
+权威是 REQ-24、DD-75 与 `V-REQ-24`，不是增加新的快捷键设计。已核对固定
+Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/settings/ui/SettingsView.tsx::SettingsView`：原设置包含
+返回应用按钮和 Escape 关闭；`desktop/src/app/useSettingsShortcuts.ts::useSettingsShortcuts`
+保留 Cmd/Ctrl+, 切换；`desktop/src/shared/hooks/useEscapeKey.ts::useEscapeKey`
+通过 `escapeSurfaces` 让背景快捷键让步并尊重内层 defaultPrevented。
+
+当前真实缺口是 Web 只有 Cmd/Ctrl+, 能返回，缺少原返回按钮和 Escape；Desktop
+则保留另一份按钮与 Escape 监听。现从原控件提取 SettingsBackButton，两端使用
+同一主体；共享 useSettingsShortcuts 调用已提取的原 useEscapeKey，仅设置可见时
+注册。Web 将按钮绑定已有 settingsReturn，不另造路由历史；Desktop 删除重复
+实现。Web 快捷键表仅补已真实接通的 Escape，不把仍无消费者的搜索等写成可用。
+
+影响仅共享设置呈现/按键处理、Desktop SettingsView、Web SettingsPane 及它在
+PlatformApp 中的一个回调连接。无新依赖、配置、存储键、契约、状态权威或网络
+写入；复用原中英文词条，无新 catalog/Dart 生成增量。设置隐藏而不卸载的既有
+宿主行为不变，故返回不能清除待确认邀请或另造重试请求。权限/身份仍由原宿主
+与 BFF 决定；LifecycleRestricted/文档专用宿主不安装应用设置快捷键。
+
+边界：关闭状态不占用 Escape，原 Radix 前景弹窗先关闭，内层拒绝 Escape 时
+设置仍保留；背景 mark-as-read 通过原 escapeSurfaces 让步。StrictMode 及切换
+可见状态释放监听，重新打开保留同一 DOM 输入/未确认意图。当前只改变导航呈现，
+不把 UNKNOWN 转成成功，不触发副作用或另外的错误分类。
+
+2026-10-07 定向验收：基线 `48f65ef2a52b271cfe0ef884d0fb8c6423802142` 加本批
+8文件，固定候选树 `8cfef4ab167004d6e48be4e4e086f15fb4d627bb`，既有 SDK
+`kailo-agent-receipt-xvkujx` 实际4 CPU/8 GiB，私有小型 tmpfs 源输入
+`/dev/shm/settings-return.nexyAQ`。执行前无其他该容器任务，宿主可用内存约28 GiB，
+不新建镜像、不下载依赖、不占用生产数据库。
+
+- shared `tsc --noEmit -p tsconfig.json`、`-p tsconfig.test.json` 均退出0；
+  `vitest run test/settings-shortcuts.test.tsx --pool=threads --maxWorkers=1`
+  13/13通过，包含真实Radix嵌套弹窗、拒绝Escape、原返回按钮中英及同一输入保持。
+- Web `tsc --noEmit` 退出0；原 `SettingsPane.test.tsx` 6/6通过，核对真实返回
+  回调、快捷键表9项和已有Workspace通知CAS边界。
+- Desktop `tsc --noEmit` 退出0。
+- SDK单次破坏：将 `useEscapeKey(onClose, open === true)` 改为永久启用，旧隐藏
+  设置错误占用Escape，用例真实1失败/12通过、退出1；按正式源原字节恢复、SHA一致，
+  原13项再次全部通过、退出0。
+
+原日志在宿主 `/volumes/data/kailo/tmp/settings-return-20261007.obe2T8/`：`shared.log`、
+`web-restored.log`、`native-restored.log`、`mutation.log`、`restored.log`。
+首轮工具输入错误也保留：`web.log` 是私有快照用源码symlink造成开发与Web宿主
+React Ref类型不一致（两项TS2322）；改为真实file依赖布局的同源文件后恢复。
+`native.log` 是私有快照缺原collaboration依赖根链接导致tsc未启动，补既有链接
+后通过。未改产品源码迁就检查、未安装新依赖。本批没有full、镜像、部署或实机
+截图验收，尚未恢复的其余设置仍是交付缺口。
