@@ -1,4 +1,5 @@
 import * as React from "react";
+import { customEmojiFromTags, InlineEmojiPopover } from "@client-kit/platform/react/custom-emoji";
 import {
   MESSAGE_BODY_CLASS_NAME,
   MESSAGE_BODY_COMPONENTS,
@@ -1435,6 +1436,11 @@ export function createMarkdownComponents(
     },
     table: ({ children }) => <MarkdownTable>{children}</MarkdownTable>,
     mention: createMarkdownMention(interactive),
+    emoji: ({ src, alt }: { src?: string; alt?: string }) => {
+      const resolvedSrc = src ? rewriteRelayUrl(src) : undefined;
+      if (!resolvedSrc || !interactive) return <span>{alt}</span>;
+      return <InlineEmojiPopover alt={alt} resolvedSrc={resolvedSrc} />;
+    },
     "channel-deep-link": ({ children }: { children?: React.ReactNode }) => (
       <MarkdownChannelDeepLink interactive={interactive}>
         {children}
@@ -1595,6 +1601,7 @@ function MarkdownInner({
   );
   const markdownNode = renderCachedMarkdown({
     channelNames,
+    customEmoji: customEmojiFromTags(linkPreviewTags ?? []),
     components: componentSet.components,
     content: processedContent,
     hardLineBreaks,

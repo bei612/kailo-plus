@@ -94,7 +94,7 @@ artifacts:
     kind: image
     build_context: .
     build_dockerfile: web-client/web/Dockerfile
-    inputs: [web-client/web/, client-kit/ts/contracts/, client-kit/ts/platform/]
+    inputs: [web-client/web/, client-kit/ts/contracts/, client-kit/ts/platform/, collaboration/patches/virtua@0.49.3.patch]
     source_digest: sha256:1dc555e6a948404d419c0260ae410e050ee30711cc5954c7481f5914d676f0bf
     artifact_digest: sha256:af7abcabde957479831f56c067002ed1c1da77d7e3f86f6555405864da92ab5f
 

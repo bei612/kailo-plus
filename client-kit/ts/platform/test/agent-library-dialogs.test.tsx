@@ -6,12 +6,31 @@ import { PlatformProvider } from "../src/react/context";
 import { PersonaDropdownField } from "../src/react/agent-library/PersonaDropdownField";
 import { AgentCreationPreview } from "../src/react/agent-library/AgentCreationPreview";
 import { AgentIdentityFields } from "../src/react/agent-library/AgentDescriptionField";
+import { AgentDefinitionAdvanced, AgentParallelismField } from "../src/react/agent-library/AgentDefinitionAdvanced";
 import { AvatarHostProvider, type AvatarHost } from "../src/react/profile/avatar-host";
 import type { BffReply, BffRequest } from "../src/transport";
 import { button, click, render, settle, type } from "./render";
 
 const definition = { resourceId: "definition", displayName: "Library Agent", stableSlug: "library-agent",
   ownerPrincipalId: "owner", resourceVersion: 1, resourceState: "ACTIVE", status: "ACTIVE" };
+
+describe("original Agent advanced disclosure", () => {
+  it.each(["en", "zh-CN"] as const)("keeps advanced closed initially and opens the actual version field in %s", async (locale) => {
+    const client = createBffClient({ send: async () => ({ status: 503, body: undefined }) });
+    const host = await render(<PlatformProvider client={client} locale={locale}>
+      <AgentDefinitionAdvanced required><AgentParallelismField id="parallelism" value="2" max={3} onChange={vi.fn()} /></AgentDefinitionAdvanced>
+    </PlatformProvider>);
+    const toggle = host.querySelector<HTMLButtonElement>("button")!;
+    expect(toggle.textContent).toBe(locale === "en" ? "AdvancedRequired" : "高级必填");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(host.querySelector("input")).toBeNull();
+    await click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(host.querySelector("label")!.textContent).toBe(locale === "en" ? "Requested parallelism" : "声明的并行度");
+    expect(host.querySelector("input")!.value).toBe("2");
+    expect(host.querySelector("input")!.max).toBe("3");
+  });
+});
 
 describe("original Agent identity and avatar module", () => {
   beforeEach(() => {

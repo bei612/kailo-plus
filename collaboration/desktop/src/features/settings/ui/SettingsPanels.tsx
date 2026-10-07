@@ -17,6 +17,7 @@ import { performDefaultHaptic } from "@/shared/lib/haptics";
 import { KeyboardShortcutsCard } from "./KeyboardShortcutsCard";
 import { NotificationSettingsCard } from "./NotificationSettingsCard";
 import { ProfileSettingsCard } from "./ProfileSettingsCard";
+import { CustomEmojiSettingsCard } from "./CustomEmojiSettingsCard";
 
 export type { SettingsSection } from "@client-kit/platform/react/settings";
 
@@ -28,6 +29,7 @@ const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
   "notifications",
   "shortcuts",
   "community-members",
+  "custom-emoji",
 ];
 
 export function isSettingsSection(value: unknown): value is SettingsSection {
@@ -67,6 +69,8 @@ export function renderSettingsSection(
       return null; // The shared invitation controller stays mounted in SettingsView.
     case "profile":
       return <ProfileSettingsCard />;
+    case "custom-emoji":
+      return <CustomEmojiSettingsCard />;
     case "notifications":
       return (
         <NotificationSettingsCard

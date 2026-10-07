@@ -184,6 +184,11 @@ export interface Project {
 
 export interface IProjectRepository extends IBasicRepository<Project> {
   getCurrentProject: () => Promise<Project>;
+  updateRecommendationQuestions: (
+    projectId: number,
+    queryId: string,
+    data: Pick<Project, 'questionsStatus' | 'questions' | 'questionsError'>,
+  ) => Promise<Project | null>;
 }
 
 export class ProjectRepository
@@ -194,6 +199,23 @@ export class ProjectRepository
 
   constructor(knexPg: Knex) {
     super({ knexPg, tableName: 'project' });
+  }
+
+  public async updateRecommendationQuestions(
+    projectId: number,
+    queryId: string,
+    data: Pick<Project, 'questionsStatus' | 'questions' | 'questionsError'>,
+  ): Promise<Project | null> {
+    const [row] = await this.knex(this.tableName)
+      .where({ id: projectId, query_id: queryId })
+      .where((pending) =>
+        pending
+          .whereNull('questions_status')
+          .orWhere('questions_status', 'GENERATING'),
+      )
+      .update(this.transformToDBData(data as Project))
+      .returning('*');
+    return row ? this.transformFromDBData(row) : null;
   }
 
   public async getCurrentProject() {

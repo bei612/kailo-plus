@@ -16,6 +16,16 @@ const WORKSPACE = "00000000-0000-4000-8000-000000000001";
 const SHA = "ab".repeat(32);
 
 describe("MessageContent", () => {
+  it("renders original NIP-30 emoji through the scoped BFF blob route, never its remote origin", () => {
+    const url = `https://relay.example.com/media/${SHA}.png`;
+    const html = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE} content=":party:" mediaTags={[["emoji", "party", url]]} />);
+    expect(html).toContain('data-custom-emoji=""');
+    expect(html).toContain(`src="/api/v1/workspaces/${WORKSPACE}/media/${SHA}"`);
+    expect(html).not.toContain(`src="${url}"`);
+    const outside = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE} content=":party:" mediaTags={[["emoji", "party", "https://external.example/tracking.png"]]} />);
+    expect(outside).not.toContain("<img");
+    expect(outside).toContain(":party:");
+  });
   it("renders admitted snapshot text through the original preview without remote images", () => {
     const href = "https://example.com/product";
     const snapshot = ["link-preview", "snapshot", "1", href, "Signed title", "Example", "Signed description", IMAGE_URL, SHA, IMAGE_URL, SHA];

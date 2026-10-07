@@ -1,0 +1,18 @@
+{
+  "add": {
+    "idempotencyKey": "018f0000-0000-4000-8000-000000000001",
+    "expectedPubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "shortcode": "party",
+    "imageUrl": "https://community.example/media/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"
+  },
+  "remove": {
+    "idempotencyKey": "018f0000-0000-4000-8000-000000000002",
+    "expectedPubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "shortcode": "party"
+  },
+  "view": {
+    "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "events": [],
+    "mediaPaths": {}
+  }
+}

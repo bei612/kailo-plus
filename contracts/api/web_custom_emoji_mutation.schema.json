@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_custom_emoji_mutation.schema.json",
+  "title": "WebCustomEmojiMutation",
+  "description": "Own NIP-30 set mutation. The admitted host derives the signer and community; omitted imageUrl removes only the caller's entry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["idempotencyKey", "expectedPubkey", "shortcode"],
+  "properties": {
+    "idempotencyKey": { "type": "string", "format": "uuid" },
+    "expectedPubkey": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "shortcode": { "type": "string", "pattern": "^[a-z0-9_-]{1,64}$" },
+    "imageUrl": { "type": "string", "format": "uri" }
+  }
+}

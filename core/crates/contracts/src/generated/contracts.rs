@@ -5583,6 +5583,33 @@ pub struct WebChannelView {
     pub ttl_seconds: Option<i64>,
 }
 
+/// Own NIP-30 set mutation. The admitted host derives the signer and community; omitted
+/// imageUrl removes only the caller's entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebCustomEmojiMutation {
+    pub expected_pubkey: String,
+
+    pub idempotency_key: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
+
+    pub shortcode: String,
+}
+
+/// Verified original per-author kind:30030 snapshots, not a Core-owned emoji directory.
+/// Clients apply the original deterministic community union.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebCustomEmojiView {
+    pub events: Vec<HashMap<String, Option<serde_json::Value>>>,
+
+    pub media_paths: HashMap<String, String>,
+
+    pub pubkey: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebMessageAttachment {

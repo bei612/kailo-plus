@@ -222,6 +222,8 @@ pub fn run() {
             get_media_proxy_port,
             get_profile,
             update_profile,
+            get_custom_emoji,
+            update_custom_emoji,
             upload_profile_avatar,
             get_relay_http_url,
             get_relay_self,

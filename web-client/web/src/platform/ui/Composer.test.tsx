@@ -125,6 +125,11 @@ function installation(resourceId: string): AgentInstallationView {
   };
 }
 beforeEach(() => {
+  // jsdom has no layout engine; ProseMirror's deferred focus reads Range geometry.
+  Object.defineProperties(Range.prototype, {
+    getClientRects: { configurable: true, value: () => [] },
+    getBoundingClientRect: { configurable: true, value: () => new DOMRect() },
+  });
   localStorage.clear();
   setLocale("en");
   state.pages = [
@@ -140,6 +145,42 @@ beforeEach(() => {
     configurable: true,
     value: vi.fn(),
   });
+});
+
+it("restores Pulse compact focus/blur and below-editor autocomplete while retaining an uncertain draft", async () => {
+  const publish=vi.fn().mockRejectedValue(new TransportError("Unknown"));
+  const host=await render(<Composer surface="forum" compact autocompleteBelow composerHeader={<span>Current author</span>}
+    draftIdentity="pulse-compact" mentionPeople={[{pubkey:"a".repeat(64),displayName:"Alex"}]} onPublish={publish}/>);
+  const form=host.querySelector<HTMLFormElement>('[data-testid="forum-composer"]')!;
+  expect(form.dataset.compactCollapsed).toBe("true");
+  expect(host.querySelector('[data-testid="message-composer-toolbar"]')).toBeNull();
+  expect(form.textContent).toContain("Current author");
+  await act(async()=>host.querySelector<HTMLElement>('[data-testid="message-input"]')!.focus());
+  expect(form.dataset.compactCollapsed).toBe("false");
+  expect(host.querySelector('[data-testid="message-composer-toolbar"]')).not.toBeNull();
+  await act(async()=>form.dispatchEvent(new FocusEvent("focusout",{bubbles:true,relatedTarget:null})));
+  expect(form.dataset.compactCollapsed).toBe("true");
+  await act(async()=>host.querySelector<HTMLElement>('[data-testid="message-input"]')!.focus());
+  await click(host.querySelector('[aria-label="Mention someone"]') as HTMLButtonElement);
+  const option=host.querySelector('[aria-label="Mention someone Alex"]')!;
+  expect(option.closest('[data-testid="mention-autocomplete-layer"]')?.className).toContain("top-full");
+  expect(form.className).toContain("overflow-visible");
+  await act(async()=>option.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})));
+  await click(button(host,"platform.send"));await settle();
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(form.dataset.compactCollapsed).toBe("false");
+  expect(host.querySelector('[data-testid="message-input"]')?.textContent).toContain("Alex");
+  expect(host.querySelector('[role="status"]')).not.toBeNull();
+});
+
+it("collapses the original compact form only after confirmed publication clears the draft",async()=>{
+  const publish=vi.fn().mockResolvedValue({eventId:"confirmed"});
+  const host=await render(<Composer surface="forum" compact draftIdentity="pulse-confirmed" onPublish={publish}/>);
+  await act(async()=>host.querySelector<HTMLElement>('[data-testid="message-input"]')!.focus());
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!,"Original note");
+  await click(button(host,"platform.send"));await settle();
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(host.querySelector<HTMLElement>('[data-testid="forum-composer"]')!.dataset.compactCollapsed).toBe("true");
 });
 
 it("publishes the explicit human picker identity and retains it with the same UNKNOWN intent", async () => {

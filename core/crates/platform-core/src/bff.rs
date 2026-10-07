@@ -332,6 +332,10 @@ pub fn router(state: BffState) -> Router {
             get(crate::web_profile::get).put(crate::web_profile::update),
         )
         .exposed_route(
+            "/api/v1/custom-emoji",
+            get(crate::custom_emoji::get).put(crate::custom_emoji::update),
+        )
+        .exposed_route(
             "/api/v1/profile/media",
             axum::routing::post(crate::web_profile::upload_avatar).layer(
                 axum::extract::DefaultBodyLimit::max(

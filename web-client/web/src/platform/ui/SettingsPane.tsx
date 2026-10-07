@@ -27,6 +27,7 @@ import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from 
 import { Switch } from "@client-kit/platform/react/switch";
 import { useUiLocale } from "@client-kit/platform/react/context";
 import { BrowserNotificationSettings } from "./BrowserNotifications";
+import { CustomEmojiSettingsCard, pickEmojiImage } from "@client-kit/platform/react/custom-emoji";
 
 function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] {
   const mod = isMacPlatform() ? "⌘" : "Ctrl+";
@@ -56,7 +57,7 @@ export function SettingsPane({ active = true, onClose }: { active?: boolean; onC
       <CommunityInvitationSettings active={section==="community-members"} onAccessChange={invitations.onAccessChange}/>
       {section === "profile" ? <WebProfileSettings /> : section === "appearance" ? (
         <AppearanceSettings name={translate(locale, "platform.title")} appearance={appearance} />
-      ) : section === "notifications" ? (
+      ) : section === "custom-emoji" ? <WebCustomEmojiSettings /> : section === "notifications" ? (
         <><BrowserNotificationSettings /><WorkspaceNotifications /></>
       ) : section==="shortcuts" ? (
         <ShortcutSettings
@@ -66,6 +67,31 @@ export function SettingsPane({ active = true, onClose }: { active?: boolean; onC
       ) : null}
     </SettingsPage>
   );
+}
+
+function WebCustomEmojiSettings() {
+  const client = useBffClient();
+  const [profile, reload] = useLoad("custom-emoji-identity", () => client.profile());
+  const paths = useRef<Record<string, string>>({});
+  const t = useUiLocale();
+  if (profile.status === "pending") return <p role="status">{translate(t, "platform.loading")}</p>;
+  if (profile.status === "error") return <ReadFailure error={profile.error} onRetry={reload} />;
+  const pubkey = profile.data.pubkey;
+  return <CustomEmojiSettingsCard key={pubkey} host={{ scope: pubkey,
+    read: async () => {
+      const view = await client.customEmoji();
+      if (view.pubkey !== pubkey) throw new TransportError("Emoji identity changed");
+      paths.current = { ...paths.current, ...view.mediaPaths };
+      return view;
+    },
+    publish: (request) => client.updateCustomEmoji(request),
+    pickAndUploadMedia: () => pickEmojiImage(async (bytes) => {
+      const descriptor = await uploadProfileAvatar(bytes, pubkey);
+      paths.current[descriptor.url] = `/api/v1/profile/media/${descriptor.sha256}`;
+      return { url: descriptor.url, type: descriptor.type };
+    }),
+    rewriteRelayUrl: (url) => paths.current[url] ?? url,
+  }} />;
 }
 
 function WebProfileSettings() {

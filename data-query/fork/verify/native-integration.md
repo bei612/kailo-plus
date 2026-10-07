@@ -1103,3 +1103,94 @@ input. Logs under
 `/volumes/data/kailo/tmp/gateway-locale-repair-20261007.iwRGvX/`:
 `wren-preview-scope-initial.log`, `wren-preview-scope-format.log`,
 `wren-preview-scope-mutation.log`, `wren-preview-scope-restored.log`.
+
+## Persisted native recommendation observation, 2026-10-07
+
+The delayed Deploy-to-recommendation dispatch gap is not declared closed. The
+original recommendation POST allocates a new native UUID on every call; only
+after receiving that response does ProjectService persist `project.query_id`.
+The AI side holds its task in TTLCache, without a durable dispatch intent or an
+idempotent POST protocol. Calling it from `modelSync` would therefore risk a
+second model invocation after a lost response/crash. The existing LLM provider
+also reads an environment API key/base URL; the binding SERVICE model-admission
+and durable Gateway usage delivery seam is not established by this batch.
+No substitute grant, fabricated model invocation or new dispatcher is added.
+
+Pinned evidence is commit `c5f02a0391c87420dba78632dcd86073710deb72`:
+
+- `WrenAI-ui-0.32.2/wren-ui/src/apollo/server/services/projectService.ts::ProjectService.generateProjectRecommendationQuestions`
+- `WrenAI-ui-0.32.2/wren-ui/src/apollo/server/backgrounds/recommend-question.ts::ProjectRecommendQuestionBackgroundTracker.initialize`
+- `WrenAI-ui-0.32.2/wren-ai-service/src/web/v1/routers/question_recommendation.py::recommend`
+- `WrenAI-ui-0.32.2/wren-ai-service/src/web/v1/services/question_recommendation.py::QuestionRecommendation.__getitem__`
+- `WrenAI-ui-0.32.2/wren-ai-service/src/providers/llm/litellm.py::LitellmLLMProvider`
+
+Four-step impact review and implemented consumer:
+
+- Authority: SS-WRN-GOVERNANCE retains the original native project/query and
+  recommendation task; `.design/07` distinguishes native internal operations
+  from calls to platform public services. This change only GETs an already
+  persisted native query. It does not admit or POST any model operation, change
+  Deploy success evidence, or introduce a Core task/permission authority.
+- Callers: the existing ProjectService owns the original project tracker.
+  Its constructor now actually calls the already-present `initialize`, which
+  previously had no consumer. The original recommendation page read also
+  reattaches a persisted pending query after startup storage failure. The
+  existing timer observes it; no second timer/worker is created. An explicit
+  native regeneration attaches its new query rather than leaving the old
+  in-memory task behind. Thread tracker execution is not rewritten.
+- Side effects: repository writes compare the exact project ID, native query ID
+  and original nonterminal state in one database update. A late old result cannot
+  replace a new query or regress a terminal result. Each observation first checks
+  that its original project/query is still present. A late completion also cannot
+  remove the newly attached in-memory task. Equal-length changed partial results
+  are persisted rather than silently discarded.
+- Boundaries: original native response ID must match, status must be one of the
+  three original values, and the response must be coherent. Cache-miss
+  `RESOURCE_NOT_FOUND`, foreign IDs, unknown enums and contradictory success
+  remain unresolved instead of becoming FAILED. GET/database failures release
+  only the in-memory running marker, retaining the original persisted query for
+  its next observation. Deleted/replaced/already-terminal queries leave the
+  tracker without new side effects. Proven FINISHED/FAILED persists and removes
+  the matching observation; process restart reattaches pending native records.
+
+There is no automatic deadline that can turn missing native terminal evidence
+into a business outcome. The original observation interval is retained, failures
+use its existing logger without raw error/credential payloads, and cache-expired
+queries remain for native operator evidence/reconciliation. They are not replayed
+by this consumer. Restoring the pre-query-ID dispatch gap and binding-governed
+model calls remains required; this is not a complete recommendation/Asking
+delivery claim. No schema migration or platform four-language contract changed.
+
+Implementation-first verification reused `kailo-wren-query-sdk-itgs2n`, 4 CPU /
+4 GiB, UID 1000, existing dependencies. Data had 2.8 GiB free, memory PSI avg10
+was zero and that container had no competing process. Commands:
+
+```sh
+./node_modules/.bin/jest --runInBand \
+  src/apollo/server/services/tests/projectRecommendation.test.ts \
+  src/apollo/server/adaptors/tests/wrenAIAdaptor.test.ts \
+  -t 'persisted project|recommendation receipt|getRecommendationQuestionsResult'
+./node_modules/.bin/tsc --noEmit
+```
+
+Final restored result: **12 passed, 7 out-of-scope skipped**, TypeScript exit 0,
+combined exit 0 (session 1316). The SQL case uses a fresh random schema in the
+existing isolated PostgreSQL fixture, with original project/recommendation
+migrations; it removes only that schema. It proves project/query isolation and
+terminal monotonicity against real SQL. Timer/service cases execute the actual
+tracker callback and ProjectService read with native HTTP/repository boundaries
+isolated; no live model or production business state is used.
+
+Three private SDK mutations removed the query-ID SQL predicate, kept the running
+marker after failure, and accepted native cache-miss failure. All three actual
+assertions failed, exit 1. Original bytes were restored (`cmp` exit 0 for all
+three files), then the final 12 checks and TypeScript passed again. The first
+overbroad test filter also selected the previously documented unrelated original
+generation-body `project_id` expectation and failed that one assertion; it was
+not changed or counted as passed. The existing observation response fixture was
+corrected to the original native `id`, lowercase status and actual GET path.
+
+Logs in `/volumes/data/kailo/tmp/gateway-locale-repair-20261007.iwRGvX/`:
+`wren-recommendation-initial.log`, `wren-recommendation-narrow.log`,
+`wren-recommendation-mutation.log`, `wren-recommendation-restored.log`.
+No full check, image build, deployment or live recommendation acceptance ran.

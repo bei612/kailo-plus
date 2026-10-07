@@ -316,6 +316,12 @@
 //    webChannelView, err := UnmarshalWebChannelView(bytes)
 //    bytes, err = webChannelView.Marshal()
 //
+//    webCustomEmojiMutation, err := UnmarshalWebCustomEmojiMutation(bytes)
+//    bytes, err = webCustomEmojiMutation.Marshal()
+//
+//    webCustomEmojiView, err := UnmarshalWebCustomEmojiView(bytes)
+//    bytes, err = webCustomEmojiView.Marshal()
+//
 //    webMessageAttachment, err := UnmarshalWebMessageAttachment(bytes)
 //    bytes, err = webMessageAttachment.Marshal()
 //
@@ -1645,6 +1651,26 @@ func UnmarshalWebChannelView(data []byte) (WebChannelView, error) {
 }
 
 func (r *WebChannelView) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebCustomEmojiMutation(data []byte) (WebCustomEmojiMutation, error) {
+	var r WebCustomEmojiMutation
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebCustomEmojiMutation) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebCustomEmojiView(data []byte) (WebCustomEmojiView, error) {
+	var r WebCustomEmojiView
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebCustomEmojiView) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4844,6 +4870,23 @@ type WebChannelView struct {
 	Name        string      `json:"name"`
 	TTLDeadline *time.Time  `json:"ttlDeadline,omitempty"`
 	TTLSeconds  *int64      `json:"ttlSeconds,omitempty"`
+}
+
+// Own NIP-30 set mutation. The admitted host derives the signer and community; omitted
+// imageUrl removes only the caller's entry.
+type WebCustomEmojiMutation struct {
+	ExpectedPubkey string  `json:"expectedPubkey"`
+	IdempotencyKey string  `json:"idempotencyKey"`
+	ImageURL       *string `json:"imageUrl,omitempty"`
+	Shortcode      string  `json:"shortcode"`
+}
+
+// Verified original per-author kind:30030 snapshots, not a Core-owned emoji directory.
+// Clients apply the original deterministic community union.
+type WebCustomEmojiView struct {
+	Events     []map[string]interface{} `json:"events"`
+	MediaPaths map[string]string        `json:"mediaPaths"`
+	Pubkey     string                   `json:"pubkey"`
 }
 
 type WebMessageAttachment struct {

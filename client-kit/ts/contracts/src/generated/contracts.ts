@@ -3778,6 +3778,27 @@ export interface WebChannelView {
     ttlSeconds?:  number;
 }
 
+/**
+ * Own NIP-30 set mutation. The admitted host derives the signer and community; omitted
+ * imageUrl removes only the caller's entry.
+ */
+export interface WebCustomEmojiMutation {
+    expectedPubkey: string;
+    idempotencyKey: string;
+    imageUrl?:      string;
+    shortcode:      string;
+}
+
+/**
+ * Verified original per-author kind:30030 snapshots, not a Core-owned emoji directory.
+ * Clients apply the original deterministic community union.
+ */
+export interface WebCustomEmojiView {
+    events:     { [key: string]: any }[];
+    mediaPaths: { [key: string]: string };
+    pubkey:     string;
+}
+
 export interface WebMessageAttachment {
     /**
      * 原 Buzz imeta 模糊预览编码。

@@ -72,10 +72,15 @@ export function useUserProfileQuery(key?:string){const query=useUsersBatchQuery(
 
 /** The original publication-intent semantics: unresolved writes retain their key. */
 export function usePulsePublisher(){
-  const host=usePulseHost();const pending=React.useRef(new Map<string,string>());
+  const host=usePulseHost();const pending=React.useRef(new Map<string,{key:string;unresolved:unknown}>());
   return React.useCallback(async(request:PulsePublishRequest)=>{
-    const signature=JSON.stringify(request);const key=pending.current.get(signature)??newIdempotencyKey();pending.current.set(signature,key);
-    try{const result=await host.publish(request,key);pending.current.delete(signature);return result;}
-    catch(error){if(!isOutcomeUnknown(error))pending.current.delete(signature);throw error;}
+    const signature=JSON.stringify(request);const intent=pending.current.get(signature)??{key:newIdempotencyKey(),unresolved:null};pending.current.set(signature,intent);
+    try{const result=await host.publish(request,intent.key);if(pending.current.get(signature)===intent)pending.current.delete(signature);return result;}
+    catch(error){
+      if(isOutcomeUnknown(error))intent.unresolved=error;
+      // Refusal of a later observation does not prove the original write failed.
+      if(intent.unresolved===null&&pending.current.get(signature)===intent)pending.current.delete(signature);
+      throw intent.unresolved??error;
+    }
   },[host]);
 }

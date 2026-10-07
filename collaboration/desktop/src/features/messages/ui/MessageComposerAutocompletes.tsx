@@ -15,6 +15,7 @@ import {
 } from "./MentionAutocomplete";
 
 type MessageComposerAutocompletesProps = {
+  position?: "above" | "below";
   channelLinks: UseChannelLinksResult;
   composerOwnsFocus: boolean;
   emojiAutocomplete: UseEmojiAutocompleteResult;
@@ -32,6 +33,7 @@ type MessageComposerAutocompletesProps = {
  * overlay mounted.
  */
 export function MessageComposerAutocompletes({
+  position = "above",
   channelLinks,
   composerOwnsFocus,
   emojiAutocomplete,
@@ -43,6 +45,7 @@ export function MessageComposerAutocompletes({
   return (
     <>
       <EmojiAutocomplete
+        position={position}
         composerOwnsFocus={composerOwnsFocus}
         onSelect={onEmojiSelect}
         selectedIndex={emojiAutocomplete.emojiSelectedIndex}
@@ -53,6 +56,7 @@ export function MessageComposerAutocompletes({
         }
       />
       <ChannelAutocomplete
+        position={position}
         composerOwnsFocus={composerOwnsFocus}
         onSelect={onChannelSelect}
         selectedIndex={channelLinks.channelSelectedIndex}
@@ -61,6 +65,7 @@ export function MessageComposerAutocompletes({
         }
       />
       <MentionAutocomplete
+        position={position}
         composerOwnsFocus={composerOwnsFocus}
         onDismiss={mentions.cancelMentionAutocomplete}
         onSelect={onMentionSelect}

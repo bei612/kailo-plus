@@ -1613,6 +1613,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     const host = await open(t);
     await click(button(section(host, "agent-version-directory"), "Edit draft"));
     const action = section(host, "agent-version-action");
+    await click(button(action, "Advanced"));
     const tools = [...action.querySelectorAll("fieldset")].find((node) => node.querySelector("legend")?.textContent === "Requested tools")!;
     const choose = async (name: string) => {
       const label = [...tools.querySelectorAll("label")].find((node) => node.textContent?.includes(name))!;
@@ -1638,6 +1639,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     const host = await open(t);
     await click(button(section(host, "agent-version-directory"), "Edit draft"));
     const action = section(host, "agent-version-action");
+    await click(button(action, "AdvancedRequired"));
     expect(action.textContent).toContain("unavailable-tool");
     expect(button(action, "Review request").disabled).toBe(true);
     expect(posts(t)).toHaveLength(0);
@@ -1654,6 +1656,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     const host = await open(t);
     await click(button(section(host, "agent-version-directory"), "Edit draft"));
     const action = section(host, "agent-version-action");
+    await click(button(action, "Advanced"));
     const label = [...action.querySelectorAll("label")].find((node) => node.textContent?.includes("pending-tool"))!;
     expect(label.querySelector("input")!.disabled).toBe(true);
     expect(posts(t)).toHaveLength(0);
@@ -1693,6 +1696,9 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(editorForm.contains(reviewButton)).toBe(false);
     expect(action.querySelector(".overflow-y-auto")!.contains(reviewButton)).toBe(false);
     expect(action.querySelectorAll("h2")).toHaveLength(1);
+    expect(button(action, "AdvancedRequired").getAttribute("aria-expanded")).toBe("false");
+    expect(action.querySelector('input[type="number"]')).toBeNull();
+    await click(button(action, "AdvancedRequired"));
     const configurationPickers = action.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="menu"]');
     expect(configurationPickers).toHaveLength(5);
     expect([...configurationPickers].every((field) => field.textContent === "Choose a verified record")).toBe(true);
@@ -1736,6 +1742,29 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
       assetVersion: version.assetVersion, agentVersionContent: { ...content, instructions: "Edited exact draft" } });
     expect(section(host, "agent-installations").textContent).toContain(installation.pinnedVersionAssetId);
     expect(posts(t)).toHaveLength(1);
+  });
+
+  it("retains advanced values through collapse and enforces the selected runtime limit before review", async () => {
+    const t = routes((r) => r.path === "/api/v1/actions" ? { status: 200, body: submission("agent.version.update") } : undefined);
+    const host = await open(t);
+    await click(button(section(host, "agent-version-directory"), "Edit draft"));
+    const action = section(host, "agent-version-action");
+    expect(button(action, "Advanced").getAttribute("aria-expanded")).toBe("false");
+    await click(button(action, "Advanced"));
+    const field = action.querySelector<HTMLInputElement>('input[inputmode="numeric"]')!;
+    expect(field.max).toBe(String(profile.capabilityContract.maxParallelism));
+    await change(action, "Requested parallelism", String(profile.capabilityContract.maxParallelism + 1));
+    expect(button(action, "Review request").disabled).toBe(true);
+    expect(action.querySelector('[data-testid="persona-advanced-required-badge"]')).not.toBeNull();
+    await change(action, "Requested parallelism", "1");
+    await click(button(action, "Advanced"));
+    expect(button(action, "Advanced").getAttribute("aria-expanded")).toBe("false");
+    await click(button(action, "Advanced"));
+    expect(action.querySelector<HTMLInputElement>('input[inputmode="numeric"]')!.value).toBe("1");
+    await click(button(action, "Review request"));
+    expect(posts(t)).toHaveLength(0);
+    await click(button(action, "Submit governed request"));
+    expect(posts(t)[0]?.body).toMatchObject({ agentVersionContent: { ...content, parallelism: 1 } });
   });
 
   it("preserves a historical description byte-for-byte when only instructions change", async () => {
@@ -1809,6 +1838,9 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await click(button(section(host, "agent-version-directory"), "Publish exact draft"));
     const action = section(host, "agent-version-action");
     expect(action.querySelector("fieldset")?.disabled).toBe(true);
+    await click(button(action, "Advanced"));
+    expect(button(action, "Advanced").getAttribute("aria-expanded")).toBe("true");
+    expect(action.querySelector<HTMLInputElement>('input[inputmode="numeric"]')!.matches(":disabled")).toBe(true);
     await click(button(action, "Review request"));
     expect(posts(t)).toHaveLength(0);
     expect(action.textContent).toContain(version.configHash);

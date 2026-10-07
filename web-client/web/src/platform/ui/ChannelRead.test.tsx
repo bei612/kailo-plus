@@ -132,6 +132,36 @@ it("keeps snapshot and delayed history chronological, deduplicated and stable wi
     .toEqual([early.id, "late-arrival", sameSecond.id, latest.id]);
 });
 beforeEach(() => {
+  // Virtua ignores ResizeObserver samples from display:none/detached rows.
+  // jsdom has no layout and reports offsetParent=null even for our mounted
+  // 800px viewport, so supply the same visible-parent fact as the browser.
+  vi.spyOn(HTMLElement.prototype, "offsetParent", "get").mockImplementation(function (this: HTMLElement) {
+    return this.isConnected && getComputedStyle(this).display !== "none" ? this.parentElement : null;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.style.position === "absolute" ? 40 : 800; });
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1440);
+  vi.stubGlobal("ResizeObserver", class {
+    private targets = new Set<Element>();
+    constructor(private callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      this.targets.add(target);
+      queueMicrotask(() => {
+        if (!this.targets.has(target)) return;
+        const height = target instanceof HTMLElement && target.style.position === "absolute" ? 40 : 800;
+        this.callback([{ target, contentRect: new DOMRect(0, 0, 1440, height),
+          borderBoxSize: [{ inlineSize: 1440, blockSize: height }],
+          contentBoxSize: [{ inlineSize: 1440, blockSize: height }], devicePixelContentBoxSize: [] }], this);
+      });
+    }
+    unobserve(target: Element) { this.targets.delete(target); }
+    disconnect() { this.targets.clear(); }
+  });
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
+  Object.defineProperties(Range.prototype, {
+    getClientRects: { configurable: true, value: () => [] },
+    getBoundingClientRect: { configurable: true, value: () => new DOMRect() },
+  });
   vi.useFakeTimers();
   vi.clearAllMocks();
   localStorage.clear();
@@ -157,6 +187,8 @@ afterEach(async () => {
   client.clear();
   host.remove();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 it("notifies only a new admitted live mention, never a snapshot, duplicate, disconnected replay or revoked stream", async () => {
@@ -317,7 +349,7 @@ it("a reply without confirmed evidence stays UNKNOWN and keeps its original inte
   const key = state.publish.mock.calls[0]?.[3];
   const originalInput=host.querySelector('[data-testid="message-thread-panel"] [data-testid="message-input"]');
   const originalPanel=host.querySelector<HTMLElement>('[data-testid="message-thread-panel"]')!;
-  const beforeResize=originalPanel.style.width;
+  const beforeResize=sessionStorage.getItem("buzz.desktop.thread-panel-width");
   const resizeHandle=originalPanel.querySelector<HTMLButtonElement>('[aria-label="Resize panel"]')!;
   expect(resizeHandle).not.toBeNull();
   await act(async()=>{
@@ -325,9 +357,10 @@ it("a reply without confirmed evidence stays UNKNOWN and keeps its original inte
     window.dispatchEvent(new MouseEvent("pointermove",{clientX:450}));
     window.dispatchEvent(new MouseEvent("pointerup"));
   });
-  expect(originalPanel.style.width).not.toBe(beforeResize);
+  expect(sessionStorage.getItem("buzz.desktop.thread-panel-width")).not.toBe(beforeResize);
   expect(document.body.style.cursor).not.toBe("col-resize");
-  const originalWidth=originalPanel.style.width;
+  const originalWidth=sessionStorage.getItem("buzz.desktop.thread-panel-width");
+  expect(Number(originalWidth)).toBeGreaterThan(0);
   const panelParent=originalPanel.parentElement!;
   expect(panelParent.className).toBe("contents");
   await act(async()=>setThreadViewMode("focus")); await flush();
@@ -338,7 +371,9 @@ it("a reply without confirmed evidence stays UNKNOWN and keeps its original inte
   expect(host.textContent).toContain("platform.sendUnknown");
   await act(async()=>setThreadViewMode("split")); await flush();
   expect(host.querySelector('[data-testid="focus-thread-drawer"]')).toBeNull();
-  expect(originalPanel.style.width).toBe(originalWidth);
+  // jsdom does not parse CSS min(px, calc(...)); the authoritative preference
+  // must survive focus/split transitions rather than comparing its CSSOM.
+  expect(sessionStorage.getItem("buzz.desktop.thread-panel-width")).toBe(originalWidth);
   expect(panelParent.className).toBe("contents");
   expect(host.querySelector('[data-testid="message-thread-panel"] [data-testid="message-input"]')).toBe(originalInput);
   expect(state.publish).toHaveBeenCalledTimes(1);
@@ -363,8 +398,13 @@ it("renders real stream events through the original shared message row and group
   expect(host.querySelectorAll('[data-testid="message-avatar"]')).toHaveLength(1);
   expect(host.querySelectorAll('[data-testid="message-author"]')).toHaveLength(1);
   expect(host.querySelectorAll('[data-testid="message-timestamp"]')).toHaveLength(2);
-  expect(host.querySelectorAll('[data-testid="message-timeline-day-divider"]')).toHaveLength(1);
+  // A bounded snapshot does not prove the beginning of its oldest day.
+  expect(host.querySelectorAll('[data-testid="message-timeline-day-divider"]')).toHaveLength(0);
   expect(host.querySelector('[data-testid="copy-link-message-event-20"]')).not.toBeNull();
+  await act(async () => state.receive!({ type: "event", event: event(90_000) }));
+  await flush();
+  expect(host.querySelectorAll('[data-testid="message-row"]')).toHaveLength(3);
+  expect(host.querySelectorAll('[data-testid="message-timeline-day-divider"]')).toHaveLength(1);
   await act(async () => state.receive!({ type: "closed", reason: "scope-revoked" }));
   await flush();
   expect(host.querySelectorAll('[data-testid="message-row"]')).toHaveLength(0);

@@ -323,7 +323,12 @@ remove_paths:
   - desktop/src/features/chat
   - desktop/src/features/communities
   - desktop/src/features/community-members
-  - desktop/src/features/custom-emoji
+  - desktop/src/features/custom-emoji/emojiMartCategory.ts
+  - desktop/src/features/custom-emoji/focusRefetchPolicy.test.mjs
+  - desktop/src/features/custom-emoji/hooks.ts
+  - desktop/src/features/custom-emoji/ui/EmojiPicker.tsx
+  - desktop/src/features/custom-emoji/ui/emojiMartPrewarm.test.mjs
+  - desktop/src/features/custom-emoji/ui/emojiMartPrewarm.ts
   - desktop/src/features/forum/focusRefetchPolicy.test.mjs
   - desktop/src/features/forum/hooks.ts
   - desktop/src/features/forum/lib

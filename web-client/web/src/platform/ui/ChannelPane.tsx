@@ -33,12 +33,14 @@ import { platformQueries } from "@/platform/ui/queries";
 import { t } from "@/shared/i18n";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { toast } from "sonner";
-import { MessageRowSurface, MessageActionBarSurface, DayDivider, UnreadDivider, formatDayGroupLabel, isSameDay, hasSameMessageAuthor, isWithinGroupingWindow, startsNewMessageGroup, getThreadReference, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { MessageRowSurface, MessageActionBarSurface, getThreadReference, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { buildMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { Button } from "@/shared/ui/button";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
 import { ChannelThreadPane } from "./ChannelThreadPane";
+import { ChannelTimelineRows } from "./ChannelTimelineRows";
+import { MessageTimelineSurface, type MessageTimelineHandle } from "@client-kit/platform/react/messages/timeline/MessageTimelineSurface";
 import { FocusThreadDrawer } from "@client-kit/platform/react/thread/FocusThreadDrawer";
 import { useThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
 import { useIsThreadPanelOverlay } from "@client-kit/platform/react/thread";
@@ -200,17 +202,15 @@ export function ChannelPane({
   const [editTarget, setEditTarget] = useState<TimelineMessage | null>(null);
   const [composerBusy, setComposerBusy] = useState(false);
   const restoredEdit = useRef(false);
-  const messageList = useRef<HTMLUListElement>(null);
-  const anchoredTarget = useRef<string | null>(null);
+  const timelineRef = useRef<MessageTimelineHandle>(null);
+  const onMessageSendingChange = useCallback((sending: boolean) => {
+    setComposerBusy(sending);
+    if (sending) timelineRef.current?.scrollToBottomOnNextUpdate();
+  }, []);
   const [replyTarget, setReplyTarget] = useState<TimelineMessage | null>(null);
   const [profileTarget, setProfileTarget] = useState<TimelineMessage | null>(null);
   const closeProfile = useCallback(() => setProfileTarget(null), []);
   useEffect(() => { setProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied, live]);
-  useEffect(() => {
-    if (!targetMessageId || anchoredTarget.current === targetMessageId) return;
-    const target = [...(messageList.current?.children ?? [])].find((item) => item.getAttribute("data-event-id") === targetMessageId);
-    if (target instanceof HTMLElement) { target.scrollIntoView({ block: "center" }); target.focus({ preventScroll: true }); anchoredTarget.current = targetMessageId; }
-  }, [targetMessageId, events]);
   const visible = useVisible();
   const members = useQuery({
     queryKey: ["platform", conversation ? "conversation-members" : "members", workspaceId],
@@ -393,7 +393,7 @@ export function ChannelPane({
 
   return (
     <div className="relative flex h-full min-h-0 min-w-0 overflow-hidden">
-    <div className="flex min-w-0 flex-1 flex-col gap-2">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 [--channel-top-chrome-height:0px] [--composer-overlay-height:0px] [--buzz-channel-content-top-padding:0px]">
       <div className="text-xs text-muted-foreground" role="status">
         {status}
       </div>
@@ -403,24 +403,24 @@ export function ChannelPane({
           onClick={() => { void retryRead(); }}>{t("platform.retry")}</Button>
       </div> : null}
       {targetMessageId && live && !events.some((event) => event.id === targetMessageId) ? <p role="status">{t("platform.linkMessageOutsideHistory")}</p> : null}
-      <ul ref={messageList} className="min-h-0 flex-1 overflow-auto" aria-label={t("platform.tab.channel")}>
-        {timelineMessages.map((message, i) => {
-          const previous = timelineMessages[i - 1];
-          const next = timelineMessages[i + 1];
-          const firstUnread =
-            anchor !== null &&
-            message.createdAt > anchor &&
-            !mine.has(message.pubkey ?? "") &&
-            !events.slice(0, i).some((p) => p.created_at > anchor && !mine.has(p.pubkey));
-          const newDay = !previous || !isSameDay(previous.createdAt, message.createdAt);
-          const isContinuation = !newDay && !firstUnread && !startsNewMessageGroup(message) && hasSameMessageAuthor(previous, message) && isWithinGroupingWindow(previous?.createdAt, message.createdAt);
-          const followedByContinuation = next && isSameDay(message.createdAt, next.createdAt) && !startsNewMessageGroup(next) && hasSameMessageAuthor(message, next) && isWithinGroupingWindow(message.createdAt, next.createdAt);
-          return (
-            <li key={message.id} data-event-id={message.id} tabIndex={targetMessageId === message.id ? -1 : undefined}>
-              {newDay ? <DayDivider label={formatDayGroupLabel(message.createdAt)} sticky={false} /> : null}
-              {firstUnread ? <UnreadDivider /> : null}
-              <div className={`flex flex-col gap-1 ${followedByContinuation ? "pb-0" : "pb-2.5"}`}>
-              <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={targetMessageId === message.id}
+      {!denied ? <MessageTimelineSurface
+        ref={timelineRef}
+        channelId={`${myPrincipalId}:${conversation?.id ?? workspaceId}`}
+        channelName={channelName}
+        messages={timelineMessages}
+        isLoading={!live && timelineMessages.length === 0}
+        targetMessageId={targetMessageId}
+        hasComposerOverlay={false}
+        firstUnreadMessageId={anchor === null ? null : timelineMessages.find(message => message.createdAt > anchor && !mine.has(message.pubkey ?? ""))?.id ?? null}
+        unreadCount={unreadFromOthers}
+        renderList={props => <ChannelTimelineRows {...props} renderItem={(item, highlightedMessageId) => {
+          const entries = item.kind === "system-group" ? item.entries : [item.entry];
+          return entries.map(entry => {
+            const message = entry.message;
+            const isContinuation = item.kind === "message" && item.isContinuation;
+            const followedByContinuation = item.kind === "message" && item.isFollowedByContinuation;
+            return <div key={message.id} data-event-id={message.id} className={`flex flex-col gap-1 ${followedByContinuation ? "pb-0" : "pb-2.5"}`}>
+              <MessageRowSurface message={message} isContinuation={isContinuation} showDepthGuides={false} highlighted={highlightedMessageId === message.id}
                 renderIdentity={message.pubkey && live && !denied ? (node) => <MessageAuthorIdentity
                   target={{principalId:myPrincipalId,workspaceId,conversationId:conversation?.id,eventId:message.id,pubkey:message.pubkey!}}
                   onOpen={() => setProfileTarget(message)}>{node}</MessageAuthorIdentity> : undefined}
@@ -436,11 +436,10 @@ export function ChannelPane({
                 conversationId={conversation?.id}
                 onOpenMessageLink={onOpenMessageLink}
               /></div>} />
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+            </div>;
+          });
+        }} />}
+      /> : null}
       {restoreEditEventId && live && !editTarget && !events.some((event) => event.id === restoreEditEventId) ? <p role="status">{t("platform.linkMessageOutsideHistory")}</p> : null}
       {!denied && editTarget ? <Composer key={`edit:${editTarget.id}`} workspaceId={conversation ? undefined : workspaceId}
         editTarget={editTarget} onCancelEdit={() => setEditTarget(null)} onConfirmed={() => setEditTarget(null)} draftIdentity={myPrincipalId}
@@ -458,14 +457,14 @@ export function ChannelPane({
         }} /> : null}
       <div hidden={editTarget !== null}>
       {denied ? null : conversation
-        ? <Composer disabled={conversation.state !== "ACTIVE"} onSendingChange={setComposerBusy}
+        ? <Composer disabled={conversation.state !== "ACTIVE"} onSendingChange={onMessageSendingChange}
             draftIdentity={myPrincipalId} draftKey={conversation.id} autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink}
             onPublish={(content, attachments, key) => publishConversationMessage(conversation.id, content, attachments, key)}
             onMediaUrl={(sha256) => mediaUrl(conversation.id, sha256, conversation.id)}
             onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
         : <>{archived ? <p role="status">{t("channel.archived")}</p> : null}<Composer
             disabled={archived || metadataPending}
-            onSendingChange={setComposerBusy}
+            onSendingChange={onMessageSendingChange}
             workspaceId={workspaceId} draftIdentity={myPrincipalId} draftKey={workspaceId}
             autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink} /></>}
       </div>
@@ -498,13 +497,16 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", onCancel, autoSendDraftKey, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onConfirmed, draftChannelId }: {
+export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, autoSendDraftKey, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onConfirmed, draftChannelId }: {
   mentionPeople?: readonly MentionSuggestion[];
   editTarget?: TimelineMessage;
   onCancelEdit?: () => void;
   onConfirmed?: () => void;
   draftChannelId?: string;
   surface?: "stream" | "forum";
+  compact?: boolean;
+  autocompleteBelow?: boolean;
+  composerHeader?: React.ReactNode;
   workspaceId?: string;
   onPublish?: (content: string, attachments: readonly MediaDescriptor[], idempotencyKey: string, mentionInstallationIds: string[], humanMentionPubkeys?: string[]) => Promise<unknown>;
   onCancel?: () => void;
@@ -855,9 +857,13 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
 
   const ComposerSurface = surface === "forum" ? ForumComposerSurface : MessageComposerSurface;
   return <ComposerSurface
+    {...(surface === "forum" ? { compact,
+      hasComposerContent: Boolean(draft.trim() || pending.length || problem || dragging),
+      autocompleteOpen: humanSuggestions.length > 0 || mentionPickerOpen,
+    } : {})}
     containerClassName={containerClassName}
-    header={<ComposerReplyBanner replyTarget={replyTarget} onCancelReply={sending ? undefined : onCancelReply}
-      isEditing={editTarget !== undefined} isEditCancelDisabled={sending} onCancelEdit={onCancelEdit} />}
+    header={<>{composerHeader}<ComposerReplyBanner replyTarget={replyTarget} onCancelReply={sending ? undefined : onCancelReply}
+      isEditing={editTarget !== undefined} isEditCancelDisabled={sending} onCancelEdit={onCancelEdit} /></>}
     overlays={<>{linkEditor.card}{linkEditor.dialog}</>}
     formProps={{
       onSubmit: (event) => { event.preventDefault(); send(); },
@@ -890,7 +896,8 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
       sendDisabled: disabled || sending || uploading > 0 || !mentionVerified || (!draft.trim() && pending.length === 0),
     }}>
       {dragging ? <DropZoneOverlay /> : null}
-      {mentionPeople?<div className="relative"><PeopleMentionAutocomplete suggestions={humanSuggestions} selectedIndex={humanIndex}
+      {mentionPeople?<div className={surface === "forum" ? undefined : "relative"}><PeopleMentionAutocomplete suggestions={humanSuggestions} selectedIndex={humanIndex}
+        position={autocompleteBelow ? "below" : "above"}
         composerOwnsFocus={!disabled&&!sending&&humanQuery!==null}
         onSelect={selectHuman} onDismiss={()=>setHumanQuery(null)}/></div>:null}
       {workspaceId !== undefined ? <div className="relative flex flex-wrap items-center gap-2 text-xs">

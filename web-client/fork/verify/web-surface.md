@@ -5092,3 +5092,289 @@ jsdom 的 scrollTo 未实现及 reduced-motion 提示保留，不当作浏览器
 只同步实际独立宿主包，没有改产品解析配置。原已迁入共享实现的两份Native控件仅在
 SDK中恢复性移到 `/evidence/combined-ui-old-controls.*`，正式候选按原迁移记录删除。
 未运行本批 `tools/check.sh --full`，没有发布镜像、安装包或新版页面截图。
+
+## 原 Agent Definition Advanced 交互恢复（2026-10-07）
+
+比较基准 `8d3fcd04e91ed856e30a616a01754aa75b4574c9`。
+本批只恢复已有 AgentVersion 表单消费者，不修改 Host、头像上传、合同或运行权限。
+四步实施结论：
+
+1. 权威是 REQ-24、DD-53 与 `03` §7 的 immutable AgentVersion / RuntimeProfile。
+   固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/agents/ui/AgentDefinitionDialog.tsx::AgentDefinitionDialog`
+   提供默认收起、Required 标记、ChevronDown、AnimatePresence 与 reduced-motion 行为；
+   `desktop/src/features/agents/ui/PersonaAdvancedFields.tsx::PersonaAdvancedFields`
+   提供原 Parallelism 输入壳、数字输入行为。
+   `desktop/src/features/agents/ui/agentConfigOptions.tsx::ADVANCED_FIELDS_MOTION_TRANSITION`
+   的动画数值原样复用。
+2. 影响面只有共享 `VersionAction` 的现有字段呈现及其两宿主调用。
+   并行度写入仍是 `ActionCommand.agentVersionContent.parallelism`，
+   Core `agent_version.rs::runtime_profile`
+   与 `agent_installation.rs::supports_effective_field` 所在既有链不改。
+   字段与摘要格式不变，没有迁移；原 version、Installation pin 和 UNKNOWN 不改。
+3. 收起不重置父表单字段；再次展开保留真实值。发布只读状态仍能展开查阅，
+   内部 fieldset 保持禁写。Required 标记与原提交校验共用 `advancedValid`，
+   含目录上限、回复策略、timeout、memory、Tool 引用，收起不能绕过准入。
+   原 Parallelism 的可选值和固定上限改为既有合同的必填及运行时上限，
+   不显示原宿主无法兑现的 inherited default 或静默 clamp。
+4. 最小闭环是默认收起→展开真实字段→修改→收起/展开值保留→原 review→同一 AE。
+   reply、timeout、memory、triggers、capabilities、Tool 选择和分页均保留在原内容接缝。
+   本批没有为 envVars、sessionPolicy、namePool、effort 伪造字段：当前
+   `runtime_profile_directory.schema.json` 的真实消费者不支持它们。
+   原 Definition/Installation 详情和其余高级功能仍未完整恢复，不声称全模块等效。
+
+验证使用既有 `kailo-agent-receipt-xvkujx`，实际 CPU4/8GiB，Data 2.8GiB；
+检查前无在途工具链。只同步既有 message-edit 私有输入，无安装、Cargo 或 build。
+首次 `tsc` 因新模块 Input 引用到不存在的 profile 路径退出2；修正为既有
+`composer/shared/ui/input` 后，共享源码与测试类型均退出0。
+`vitest run test/pages.test.tsx test/agent-library-dialogs.test.tsx -t Agent --maxWorkers=1`
+实际117项通过、160项按范围跳过，退出0。包括原 Tool 分页/不可用引用、
+immutable 发布/UNKNOWN，以及新增英中展开、收起保留值、上限与只读展开检查。
+SDK 内故意把默认收起改为展开：英中2项真实失败，退出1；正式字节复制还原、
+`cmp` 退出0后对应4项恢复通过，退出0。
+日志位于 Data 的 `codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`：
+`agent-advanced.log`（首次失败）、`agent-advanced-final.log`、
+`agent-advanced-mutation.log`、`agent-advanced-restored.log`。
+jsdom 的 scrollTo 提示保留，不当作真实浏览器截图。两条新中英文词条由主线程
+与并行 CustomEmoji 合批生成 Dart；本专项不重跑四侧合同或全量检查。
+本批未构建、部署、更新 Windows/Mobile，未增加实际生产就绪完成度。
+## Pulse 原版紧凑输入与实际宿主接线（2026-10-07）
+
+本节相对 `8d3fcd04`，只包含 Pulse 输入的共享布局、现有两端 Composer
+最小参数消费和原 Note 操作反馈；不包含 Wren 推荐观察、主线频道列表或设置改动。
+
+动手前四步结论：
+
+1. 权威为 REQ-24、DD-74/DD-75 与设计09原版 Pulse Community 边界。
+   固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/pulse/ui/PulseView.tsx::PulseView` 实际传入
+   `compact/autocompleteBelow`，`desktop/src/features/pulse/ui/NoteCard.tsx::NoteCard`
+   的原回复也使用 compact。当前共享页已保留这些参数，但两端宿主未消费，
+   并非上游没有该交互。原
+   `desktop/src/features/forum/ui/ForumComposer.tsx::ForumComposerVisit` 与
+   `desktop/src/features/forum/ui/ForumComposerCompactLayout.tsx::ForumComposerCompactLayout`
+   是本次直接复用的布局、焦点和收起行为来源。
+2. 影响面为共享 ForumComposerSurface、Web ChannelPane 中的 Composer、
+   Native MessageComposer、原三类 autocomplete 位置透传及两端 Pulse 宿主。
+   Pulse 页面不在 pages.tsx；没有更改该大文件或另建页面。只有 forum 形态读取
+   新可选参数；原 stream 默认和频道/私聊发送路径不变。不修改契约、数据库、
+   API、目录、Agent 工具身份或额度权威。
+3. 外部副作用仍由原 host 执行：Web BFF 以本人 SERVER 身份签名，Native
+   CLIENT 直连原 Relay。紧凑表单不复制 editor/send/草稿链；上传、补全、
+   格式栏、未决发送均阻止错误收起。分享只在原 clipboard promise 成功后用
+   既有中英词条显示确认；失败不显示已复制。UNKNOWN 后查询被拒绝不证明旧写入
+   失败，保留原 publish key，只有对应成功回执才释放。
+4. 异常/边界：空编辑器初始只显示原头像与 Plus 行；focus/drag 展开、空 blur
+   收起，工具栏/附件选择不因瞬时 blur 丢失操作。消息、附件、上传和错误保持
+   展开；结果不明不清除草稿或生成新键；跨 scope 沿现有 PulseScope key 卸载。
+   自动补全仍用真实目录和原键盘操作，不改变同名用户校验。顶层 Pulse 补全位于
+   表单下方，回复保持原上方位置；Native 回取消直接消费原 onCancel。
+
+实现后的范围用例已写入既有 `pulse.test.tsx` 和 Web `Composer.test.tsx`：
+真实 Tiptap focus/blur、紧凑发送、下方提及、UNKNOWN 草稿、确认后收起，以及
+UNKNOWN→观察拒绝→真实确认的同键保护和中文分享回执。源码候选检查
+`git diff --cached --check 8d3fcd04` 退出0。此处记录的是实现和用例写入，
+尚不作为用例已运行、打包、部署或浏览器验收的证据；统一 SDK 窄验由主线接续。
+本批没有启动全量检查、安装依赖、Cargo 或发布构建。
+
+## 原 CustomEmoji 设置及本人签名发布（2026-10-07，源码候选）
+
+基准 `8d3fcd04e91ed856e30a616a01754aa75b4574c9`。本批恢复原设置中的完整
+CustomEmoji 管理分区，不把新增一个入口等同全部设置或所有表情交互完成。
+Web/Desktop 使用同一原 `CustomEmojiSettingsCard`：上传、文件名建议、名称规范化、
+替换本人条目、删除本人条目、他人成员只读列表；原布局、样式、文案语义保留，中英同源。
+
+动手前四步与实际影响：
+
+1. 权威：`REQ-24`、`DD-75`、`SS-BUZ-GOVERNANCE`。上游
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/custom-emoji/ui/CustomEmojiSettingsCard.tsx::CustomEmojiSettingsCard`、
+   `desktop/src/shared/api/customEmoji.ts::unionCustomEmoji`、
+   `desktop/src/shared/lib/remarkCustomEmoji.ts::remarkCustomEmoji`、
+   `desktop/src/shared/ui/markdown/InlineEmojiPopover.tsx::InlineEmojiPopover` 与
+   `crates/buzz-sdk/src/builders.rs::build_custom_emoji_set` 是复用来源。
+   `crates/buzz-relay/src/handlers/ingest.rs::required_scope` 保留原 UsersWrite 与作者签名检查；
+   运行期 `BUZZ_MEMBER_EVENT_KINDS` 仍须匹配交付的 kind，详见 07 §1。本批没有改 live 配置。
+2. 影响：新增两个 BFF JSON Schema，四侧由原 `tools/gen.sh` 生成；旧 schema 不变。
+   Core 新 GET/PUT `/api/v1/custom-emoji` 消费本人 SERVER signer；Native 命令捕获
+   CLIENT signer/Relay，旧自己拥有的签名集读改写，未把全社区 union 写成本人集合。
+   Core 复用原 `web_profile` 的 publish_attempt、审计及对账，不存表情正文或第二注册表。
+   原消息 Markdown 复用签名 NIP-30 标签，Web 图像只经当前作用域 BFF hash 路由。
+3. 副作用：发布前持久化原意图、重新检查 session/tenant/principal；读回必须是本人且
+   eventId 完全匹配。ACK 后读回失败仍 UNKNOWN，保留同一个幂等键、名称及上传草稿。
+   Native 用既有 unconfirmed holder，重入只观察已签事件；社区表情变更不能令 UNKNOWN
+   消息变成另一条签名消息。原所有非 emoji 路由、媒体、提及与线程标签仍参加意图比较。
+4. 边界：空集、规范化碰撞、同时间 URL 决胜、本人/他人分离、非法签名、错作者、
+   ACK 无终态、读回被撤权均按原组件事实处理。旧客户端不调用新端点，旧请求不变；
+   历史 `contracts-v*` 结构兼容检查结果见下方收口回执；不把新增样例往返冒称全部版本兼容。
+   现有 SQL 集成用例仍显式 ignored，未拿无数据库的单测代替实际发布/对账演练。
+
+实际验证日志位于 `/volumes/data/kailo/tmp/custom-emoji-20261007.16Wu6U/`：
+
+- 原 `tools/gen.sh` 四语言及 Dart 文案生成退出 0：`generation.log`。输入仅基准完整
+  schema 加两个新增 schema；未混入其他队友随后追加的 timeline/AgentAdvanced 词条。
+- Shared 源码与测试 tsc 退出 0；CustomEmoji 8 + 原 Profile 10 = 18 通过：
+  `shared-final.log`。首轮两个导入/严格类型问题和三项错误的测试按钮名称已修正，
+  失败原日志仍保留。没有修改原按钮文字来迁就测试。
+- Web/Desktop tsc 均 0：`web-first.log`、`native-ts-first.log`。
+  Web 原设置 6 + Markdown 8 = 14 通过：`web-tests.log`，包含表情图只走 BFF、外部地址不加载。
+- SDK 私有副本移除 ACK 后 UNKNOWN 保护：1 fail/7 pass；原字节恢复后 18 pass，见
+  `shared-ack-mutation.log`、`shared-final.log`。
+- Core 签名/本人集回读 1 pass；原 profile 4 pass/1 ignored（需要隔离 SQL）；Rust
+  新合同 1 pass；clippy `-D warnings` 退出 0：`core-first.log`、`core-final.log`。
+- Core 私有副本移除签名检查：1 fail/退出 101；恢复字节后首次因 tar 旧 mtime 命中
+  变异缓存仍失败，随后 touch 同一已恢复源强制重编，1 pass。原 SDK 表情相关 6 pass
+  （含本批 2 项），见 `core-signature-mutation.log`、`core-signature-restored.log`、
+  `core-signature-recompiled.log`。SDK 首次缺固定上游 NIP-MP fixture，补入同基准原文件后通过。
+- TS/Dart/Go 新合同各 1 通过：`contracts-restored.log`。首次误用不存在的 tsx loader
+  失败，改回项目原 Node strip-types 入口；未安装依赖。Rust/Go/Dart 格式化退出 0：`format.log`。
+- Native Rust **未验收**：旧容器祖先 rust-toolchain 触发 rustup 下载探测，立即停止该
+  单一进程；显式已有 Rust 1.90/离线热缓存后实际编译停在缺 `glib-2.0 >= 2.70`，
+  退出 101：`native-rust-first.log`、`native-rust-explicit.log`、`native-rust-cached.log`。
+  没有安装 GTK/WebKit、打包或借类型检查声称 Native Rust/Win11 验收。
+
+未完成范围明确保留：原 emoji-mart 自定义分类、自动补全图片节点及反应选择器消费
+尚未恢复；本批完成的是管理分区和已接通的文本 shortcode 消息呈现/签名消费，不能
+宣称 CustomEmoji 在原版全部使用场景 100% 等效。Native Rust 系统依赖阻断、真实
+双身份 Relay 操作/撤权/崩溃恢复与浏览器视觉验收仍未运行；无 full、无部署、无安装包。
+
+实现后完整候选复核与兼容收口：47 个选定文件的全部差异已读取，未改其他队友的
+时间线、Pulse 或 Agent Advanced 输入。复核修复 `useEmojiSettings` 的 StrictMode
+effect 清理重放：setup 必须重新标记当前 scope，否则已缓存列表的首次保存会误判
+已卸载而成为 UNKNOWN。SDK 原样回退这处修正后，新回归 1 failed/8 skipped，退出 1；
+没有改变 UNKNOWN 的旧意图、签名回读或撤权边界。
+原字节还原后共享源码/测试 tsc 均退出 0，CustomEmoji 9 + Profile 10 = 19 全通过。
+媒体边界按实际消费者区分：Web 消息内表情不请求外部 origin；原管理分区仍可展示
+Relay 已签名旧集合中的外部公开图片，不把消息路径的限制泛称所有原生设置图片。
+
+原受限 SDK 内以真实 `contracts-v0.1.0` 对象（剥离 commit
+`9d168919af69dd9b22596f08dda6caf4ededcc74`，历史根 `apps/contracts`）执行
+`tools/check.sh` 原 `step_contract`，不运行依赖安装及 full：
+`source <(head -n -1 tools/check.sh); step_contract; exit "$FAIL"`，bash 的 `$0`
+明确传原入口绝对路径，以保持原工作目录解析。实际输出为四侧生成同步 PASS，
+相对历史 tag 无破坏性变更 PASS（279 个 schema，匹配 3 个历史 schema），退出 0。
+这是原检查提供的历史结构比较，不是所有已发布客户端反向解析新类型的运行演练；
+两个新类型在该历史 tag 不存在，旧协议字段未改变。
+
+日志同上述目录：`contract-compatibility-restored.log`、`shared-strict-nine.log`、
+`shared-strict-mutation-applied.log`、`shared-strict-restored-final.log`。
+最初 source 命令转义错误、过时 Vitest 参数及第一次投递未覆盖实际副本均保留失败日志；
+未将那些运行计入修正后的验证。没有再启动 Native Rust 或安装系统依赖。
+## 原 virtua 补丁的三处依赖锁与发布输入（2026-10-07）
+
+相对 `8d3fcd04`，本次只收口主线抽取原 Timeline 所需的依赖、导出和打包输入，
+不改变虚拟列表估高、锚定、消息数据或原补丁内容。权威为 REQ-24/DD-74；原版
+`779af8886caae1317b4de962082429867ab61503` 的 `patches/virtua@0.49.3.patch`
+与实现目录 `collaboration/patches/virtua@0.49.3.patch` SHA-256 均为
+`30a7a92b94800ec37be8d36546ea98c04a05dcd0637f9fac27a06f016ba2eff4`。
+
+四步影响结论：
+
+1. 原 Native `pnpm-workspace.yaml::patchedDependencies` 已锁定这个补丁；
+   Web/共享消费同一原模块必须消费同一补丁，不能删去估高 API 来迁就类型检查。
+2. 实际消费者为 root client-kit pnpm 工作区、Web npm 安装、collaboration
+   pnpm 工作区。共享包 peer/dev 均锁 virtua0.49.3，保留 CustomEmoji 出口，
+   补齐原 UnreadPill 显式出口。Web 原 Dockerfile 的 COPY、同名 dockerignore
+   与 upstream.yaml artifact inputs 引用同一补丁，无第二份 patch。
+3. 此变更没有外部业务副作用、身份或内容权威变更。npm postinstall 先反向
+   dry-run 判断已应用，再正向 dry-run 和应用；任一步不匹配拒绝继续。
+   未知字节检查覆盖本次实际破坏的补丁目标行，不宣称它校验整个依赖包任意字节。
+4. 既有锁的 integrity、peer 和 patch hash 保留。离线缓存缺 virtua registry
+   metadata 时没有联网或改版本：以原 collaboration 已锁解析记录和已安装包
+   manifest 合并同包事实，再交原包管理器离线生成/核验。collaboration 首轮
+   解析曾连带裁剪其他平台 optional 解析；最终只合并重新生成的 file:平台 peer
+   与 snapshot，保留原其他解析，再通过原 frozen-lockfile 检查。
+
+原 SDK `kailo-agent-receipt-xvkujx` 实际限额 CPU4/8GiB，执行前 Data2.5GiB、
+memory PSI avg10=0，未占用根线程 message-edit 源码或共享 node_modules。
+独立输入 `/evidence/virtua-locks.ZUIcED/apps` 只复制 manifest、locks 与 patch；
+补丁用例只复制一个已安装 virtua 包，不新增镜像、工具安装或完整项目副本。
+
+真实命令与结果：
+
+- root pnpm10.33.4：`install --lockfile-only --frozen-lockfile --offline --ignore-scripts`
+  实际退出0，`Scope: all 3 workspace projects`、`Done in 890ms`，锁仅增加33行。
+- collaboration 原 pnpm11.4.0：同一 offline frozen 命令退出0，
+  `Lockfile passes supply-chain policies (622 entries in 10.2s)`；最终仅+7/-3。
+- Web npm：`install --package-lock-only --offline --ignore-scripts --no-audit --no-fund`
+  退出0，`up to date in 519ms`；同步原 file:平台真实 peer，锁+69/-1。
+- 已安装原 virtua 的私有副本先反向还原补丁，再运行真实 `npm run postinstall`，
+  首次0、第二次0且文件 SHA 不变；故意把 `lib/index.cjs` 原补丁首个新增表达式
+  改成未知字节后，命令实际退出1，`Hunk #1 FAILED at 35`、`7 out of 7 hunks FAILED`。
+  原字节恢复 `cmp` 退出0，最后同一 postinstall 再次退出0。
+
+日志均在宿主
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/virtua-locks.ZUIcED/`：
+root-lock-frozen.log、collaboration-lock-final.log、web-lock-restored-final.log、
+patch-idempotent.log、patch-mutation.log、patch-restored.log。
+初次 `ERR_PNPM_NO_OFFLINE_META`、npm `ENOTCACHED` 和主动刷新 file:依赖时的
+`ERESOLVE` 也保留于同目录，不作为已通过。最终没有使用 force/legacy-peer-deps。
+
+以上 patch 执行证据来自原受限 SDK 的 GNU patch；固定 Node24 Alpine 镜像只在
+既有 BuildKit 缓存中，本机没有可直接执行的准确 image，不以本机 Node22 替代。
+Node24 Alpine 的实际 postinstall、完整 npm ci、镜像构建/部署没有运行，仍未验。
+仅构建输入声明已对齐，未刷新或伪造 source/artifact digest。此批未运行 full。
+
+## 原消息时间线的 Web/Desktop 共源迁移（2026-10-07）
+
+本批相对 `8d3fcd04e91ed856e30a616a01754aa75b4574c9`，复用固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的原时间线模块，不以另一套
+Web 列表代替原版滚动、缓冲与日期布局。执行和内容读取仍保留两端宿主边界。
+
+四步影响结论：
+
+1. 权威为 DD-74/DD-75、SS-WEB-01/SS-WEB-RELAY 与用户原版一致性要求。
+   原源码定位为 `desktop/src/features/messages/ui/MessageTimeline.tsx::MessageTimeline`、
+   `desktop/src/features/messages/ui/TimelineMessageList.tsx::VirtualizedTimelineRows`；
+   实现位于共享 `react/messages/timeline`。Native 只保留图片预加载、剪贴板、
+   消息行和原生调用适配，Web 保留 BFF 媒体读取、治理动作和消息正文消费者。
+2. 影响两端真实 ChannelPane、共享虚拟列表、分页/缓冲/日期辅助模块、virtua
+   原补丁及中英文词条。旧 Native 路径重导出同一实现，不保留第二份函数体。
+   宿主列表插槽保留原 scope key，外层滚动容器也保留原频道 key。仅移除内层
+   key 的检查仍通过，因此不把内层 key 单独缺失声称为已证实的跨频道缺陷。
+   没有新增数据库模型、权限权威或工作流，也没有修改事件合同。
+3. Web 不获得 Relay 私钥或平台凭据；消息与附件仍经原 BFF。发送结果不明的
+   原意图不清空、不重放，不把列表刷新当作发送完成。Native 图片预加载不搬到
+   浏览器，避免共享呈现抽取扩大浏览器网络访问边界。
+4. 保留原空态提交、历史前插、向上滚动锚定、底部新消息缓冲及跳至最新行为。
+   没有 `historyExhausted` 证据时不伪造“已到频道起点”，不显示假的首日边界。
+   Web 仍有原生窗口/线程摘要消费缺口；不能简单补 parentId 后过滤掉孤儿回复。
+   本批没有把此缺口标记完成，也没有删除该交付要求。
+
+验证边界：共享原辅助算法与 scope 生命周期共 62 项实际通过；Web Composer
+23 项、Pulse 7 项通过。Pulse compact 状态被主动破坏时 2 项失败，UNKNOWN
+403 保留意图被破坏时 1 项失败；恢复原字节后上述 30 项重新通过。共享、Web
+和 Native TypeScript 曾分别通过，但不替代最终合并输入复验。相关原始输出在
+`/volumes/data/kailo/tmp/timeline-shared.SEF8hh/`，失败日志保留，不能把复合命令
+最后一个退出 0 当成日志内前面失败步骤通过。
+
+浏览器候选预览实际失败：临时 Vite 对链接的 CommonJS
+`use-sync-external-store/shim` 没有提供浏览器模块导出，页面进入错误边界。
+两张失败截图已打开检查；静态拦截、临时配置与唯一 Vite 进程均已恢复/停止。
+这不是视觉验收通过，也不是线上部署。Windows 安装、Mobile 设备以及整批
+`tools/check.sh --full` 尚未通过，不宣称原版全功能、三端等效或生产就绪。
+
+主线归并：此前 main `73ca493b716eddb6f672155b4a606d62f12adfbe` 至上述
+`8d3fcd04` 的 67 个既有提交已快进并普通 push 到远端 main；工作文件未覆盖，
+未提交增量未混入。该 Git 收口没有触发部署，不改变历史失败与未验收状态。
+
+集中合并输入复验：候选 `50813e16b5f7ceb40e2407f0de249e212344b624`
+的选定源码导入既有 4 CPU/8 GiB SDK，运行共享源码及测试 TypeScript、Web
+TypeScript、Native TypeScript，均退出 0；共享十个测试文件 99 项与 Web 四个
+测试文件 48 项均通过，整条 `set -e`/`pipefail` 命令退出 0，日志为
+`combined-ui-final.log`。原 Profile/Pulse 检查仍输出 act/scrollTo 环境警告，
+未隐去警告或把这些检查当成真实浏览器操作。
+
+此前 ChannelRead 的新消息缺行来自 jsdom 的 `offsetParent=null`：原 virtua
+明确忽略这种元素的 ResizeObserver 测量，使可视区尺寸保持 0。补齐真实可见
+父节点测量后，迟到消息与连续消息的原断言均通过；没有修改生产缓冲逻辑。
+线程宽度检查改核原 sessionStorage 持久值，日期边界按无起点证明/跨日事实检查。
+两层频道 key 同时移除后，scope 用例真实退出 1；还原字节 cmp 退出 0，62 项
+共享时间线检查再次通过。Mobile 词条沿原生成器从共享目录生成，原 --check
+实际输出 `PASS: Mobile platform and reason catalogs match the shared TypeScript source`。
+
+文档原入口最终退出 0：`docs-final-restored.log`。首次 SDK 快照缺主文档和链接
+目标、npm cache 未沿原入口投递，第二次缺原 markdownlint 配置，均明确失败；
+补入同一提交的实际输入并使用原 `/cache/npm` 后通过，没有修改检查规则。
+整批 full 未重跑：当前 Data 余量约 2.2 GiB，前次 full 的退出 1/137 不作废；
+本次是已集中窄验的源码阶段提交，不是通过全部发布门禁的 release。

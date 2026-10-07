@@ -1295,6 +1295,13 @@ async fn publish(
         }
     }
 
+    if message.is_some() && delete_event_id.is_none() {
+        match crate::custom_emoji::message_tags(&state, &client, &content).await {
+            Ok(tags) => media_tags.extend(tags),
+            Err(response) => return response,
+        }
+    }
+
     // 大小上界在发往 Relay 之前预检（`.design/09`：单 event content 不超过 256 KiB；
     // `apps/07` §5：BFF 侧先行设界）。超限是确定的 LIMIT：不签名、不落 DISPATCH、
     // 不占 Relay 的额度。按字节计，与 Relay 的 `content.len()` 同一口径。

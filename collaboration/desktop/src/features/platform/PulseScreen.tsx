@@ -9,6 +9,7 @@ import { Markdown } from "@/shared/ui/markdown";
 import { parseImetaTags } from "@/shared/ui/markdown/parseImeta";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
+import { Button } from "@/shared/ui/button";
 
 export function PulseScreen() {
   const session=useNativeSession();const navigate=useNavigate();const t=useT();
@@ -23,9 +24,11 @@ export function PulseScreen() {
       mediaUrl:rewriteRelayUrl,copy:writeTextToClipboard,
       startDm:async(pubkey)=>{if(!scope.active)throw new Error("Relay identity changed");await navigate({to:"/messages/new",search:{pubkey}});},
       renderContent:(content,tags)=><Markdown content={content} imetaByUrl={parseImetaTags(tags??[])} linkPreviewTags={tags}/>,
-      renderComposer:(props)=><div className={props.className}>{props.header}<MessageComposer surface="forum"
+      renderComposer:(props)=><div><MessageComposer surface="forum" compact={props.compact} autocompleteBelow={props.autocompleteBelow}
+        containerClassName={props.className} composerHeader={props.header}
         channelName={t("platform.tab.pulse")} disabled={props.disabled} isSending={props.isSending}
         profiles={props.profiles} placeholder={props.placeholder} onCancelReply={props.onCancel}
+        toolbarExtraActions={props.onCancel ? <Button type="button" variant="ghost" disabled={props.isSending} onClick={props.onCancel}>{t("platform.cancel")}</Button> : undefined}
         mentionPeople={directory.query.isSuccess?directory.people:[]}
         onSend={async(content,mentions,mediaTags)=>{
           const attachments=[...parseImetaTags(mediaTags??[]).values()].map(media=>({

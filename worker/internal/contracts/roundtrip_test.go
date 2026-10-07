@@ -14,6 +14,35 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestCustomEmojiRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "web-custom-emoji.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sample struct {
+		Add    generated.WebCustomEmojiMutation `json:"add"`
+		Remove generated.WebCustomEmojiMutation `json:"remove"`
+		View   generated.WebCustomEmojiView     `json:"view"`
+	}
+	if err := json.Unmarshal(raw, &sample); err != nil {
+		t.Fatal(err)
+	}
+	back, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual, expected any
+	if err := json.Unmarshal(raw, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(back, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatalf("roundtrip mismatch: %s", back)
+	}
+}
+
 func TestAgentVersionAvatarProjectionRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "agent-version-view.sample.json"))
 	if err != nil {

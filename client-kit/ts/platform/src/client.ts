@@ -63,6 +63,8 @@ import type {
   UserStateVersion,
   WebProfileView,
   WebProfileUpdateRequest,
+  WebCustomEmojiMutation,
+  WebCustomEmojiView,
 } from "@client-kit/contracts";
 import type { CollaborationUserState } from "./inbox";
 import { PlatformSessionAccessMode } from "@client-kit/contracts";
@@ -78,6 +80,8 @@ export function createBffClient(transport: BffTransport) {
   return {
     transport,
     profile: () => get<WebProfileView>("/api/v1/profile"),
+    customEmoji: () => get<WebCustomEmojiView>("/api/v1/custom-emoji"),
+    updateCustomEmoji: (body: WebCustomEmojiMutation) => call<{ eventId: string; operationId: string }>({ method: "PUT", path: "/api/v1/custom-emoji", body }),
     messageAuthorProfile: (workspaceId: string, eventId: string) => get<WebProfileView>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/messages/${encodeURIComponent(eventId)}/author-profile`),
     memberProfile: (workspaceId: string, principalId: string, pubkey: string) => get<WebProfileView>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(principalId)}/profiles/${encodeURIComponent(pubkey)}`),
     conversationMessageAuthorProfile: (conversationId: string, eventId: string) => get<WebProfileView>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(eventId)}/author-profile`),

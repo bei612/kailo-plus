@@ -7,7 +7,10 @@ import { canonicalNpub } from "../src/react/conversations/pubkey";
 import { PulseView } from "../src/react/pulse/ui/PulseView";
 import { NoteCard } from "../src/react/pulse/ui/NoteCard";
 import { Operation } from "@client-kit/contracts";
-import { TransportError } from "../src/transport";
+import { BffError, isOutcomeUnknown, TransportError } from "../src/transport";
+import { usePulseNoteActions } from "../src/react/pulse/lib/useNoteActions";
+import { pulseQueryKeys } from "../src/react/pulse/hooks";
+import { toast } from "sonner";
 import { button, click, render } from "./render";
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 
@@ -91,5 +94,34 @@ describe("original Pulse governed consumers",()=>{
     await click(button(ui,"Retry intent"));await click(button(ui,"Retry intent"));
     expect(publish).toHaveBeenCalledTimes(2);
     expect(publish.mock.calls[0]?.[1]).toEqual(publish.mock.calls[1]?.[1]);
+  });
+
+  it("does not unlock an unknown write after a refused observation, and releases only after confirmation",async()=>{
+    const failures:unknown[]=[];
+    const publish=vi.fn<PulseHost["publish"]>()
+      .mockRejectedValueOnce(new TransportError("Unknown"))
+      .mockRejectedValueOnce(new BffError(403,"refused observation"))
+      .mockResolvedValue({eventId});
+    function Retry(){const post=usePulsePublisher();return <button onClick={()=>void post({operation:Operation.Note,content:"one intent"}).catch(error=>{failures.push(error);})}>Retry intent</button>;}
+    const ui=await render(wrap(host({publish}),<Retry/>));
+    for(let attempt=0;attempt<4;attempt++)await click(button(ui,"Retry intent"));
+    expect(publish.mock.calls[1]?.[1]).toEqual(publish.mock.calls[0]?.[1]);
+    expect(publish.mock.calls[2]?.[1]).toEqual(publish.mock.calls[0]?.[1]);
+    expect(publish.mock.calls[3]?.[1]).not.toEqual(publish.mock.calls[0]?.[1]);
+    expect(failures).toHaveLength(2);
+    expect(failures.every(isOutcomeUnknown)).toBe(true);
+  });
+
+  it("restores the original confirmed-copy feedback without treating rejected clipboard writes as success",async()=>{
+    setLocale("zh-CN");
+    const success=vi.spyOn(toast,"success"),failure=vi.spyOn(toast,"error");
+    const copy=vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("clipboard private detail"));
+    function Share(){const actions=usePulseNoteActions({currentPubkey:viewer,reactionQueryKey:pulseQueryKeys.reactions([]),reactions:new Map()});return <button onClick={()=>void actions.share({id:eventId,pubkey:author,createdAt:1,content:"note",tags:[]})}>Share note</button>;}
+    const ui=await render(wrap(host({copy}),<Share/>));
+    await click(button(ui,"Share note"));expect(success).toHaveBeenCalledTimes(1);
+    expect(success).toHaveBeenLastCalledWith("链接已复制");
+    await click(button(ui,"Share note"));expect(success).toHaveBeenCalledTimes(1);
+    expect(failure).toHaveBeenLastCalledWith("复制失败");
+    success.mockRestore();failure.mockRestore();
   });
 });

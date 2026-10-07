@@ -10,6 +10,7 @@ import rehypeLeadingInlineContent from "@/shared/lib/rehypeLeadingInlineContent"
 import rehypeSearchHighlight from "@/shared/lib/rehypeSearchHighlight";
 import remarkChannelLinks from "@/shared/lib/remarkChannelLinks";
 import remarkMentions from "@/shared/lib/remarkMentions";
+import { remarkCustomEmoji } from "@client-kit/platform/react/custom-emoji";
 import remarkSpoilers from "@/shared/lib/remarkSpoilers";
 
 import { buzzDeepLinkUrlTransform } from "./utils";
@@ -68,6 +69,7 @@ export type MarkdownParseInputs = {
   /** Inserts the runtime-provided leading content marker during parsing. */
   leadingInlineContent?: boolean;
   mentionNames?: string[];
+  customEmoji?: Array<{shortcode:string;url:string}>;
   searchQuery?: string;
   variant: string;
 };
@@ -106,6 +108,7 @@ function buildMarkdownElement(input: MarkdownParseInputs): React.ReactElement {
       remarkChannelDeepLinks,
       remarkMessageLinks,
       [remarkMentions, { mentionNames: input.mentionNames }],
+      [remarkCustomEmoji, { customEmoji: input.customEmoji }],
       [remarkChannelLinks, { channelNames: input.channelNames }],
       // biome-ignore lint/suspicious/noExplicitAny: PluggableList type not directly importable
     ] as any[],
@@ -140,6 +143,7 @@ export function renderCachedMarkdown(
     segment(input.leadingInlineContent ? "leading" : "") +
     listSegment(input.mentionNames) +
     listSegment(input.channelNames) +
+    listSegment(input.customEmoji?.flatMap((emoji) => [emoji.shortcode, emoji.url])) +
     input.content;
 
   const hit = markdownNodeCache.get(key);

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_custom_emoji_view.schema.json",
+  "title": "WebCustomEmojiView",
+  "description": "Verified original per-author kind:30030 snapshots, not a Core-owned emoji directory. Clients apply the original deterministic community union.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pubkey", "events", "mediaPaths"],
+  "properties": {
+    "pubkey": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "events": { "type": "array", "items": { "type": "object" } },
+    "mediaPaths": { "type": "object", "additionalProperties": { "type": "string" } }
+  }
+}

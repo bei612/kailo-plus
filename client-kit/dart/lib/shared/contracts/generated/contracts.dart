@@ -105,6 +105,8 @@
 //     final tenantInvitationView = tenantInvitationViewFromJson(jsonString);
 //     final userStateVersion = userStateVersionFromJson(jsonString);
 //     final webChannelView = webChannelViewFromJson(jsonString);
+//     final webCustomEmojiMutation = webCustomEmojiMutationFromJson(jsonString);
+//     final webCustomEmojiView = webCustomEmojiViewFromJson(jsonString);
 //     final webMessageAttachment = webMessageAttachmentFromJson(jsonString);
 //     final webMessageCursor = webMessageCursorFromJson(jsonString);
 //     final webMessageQuery = webMessageQueryFromJson(jsonString);
@@ -840,6 +842,18 @@ WebChannelView webChannelViewFromJson(String str) =>
     WebChannelView.fromJson(json.decode(str));
 
 String webChannelViewToJson(WebChannelView data) => json.encode(data.toJson());
+
+WebCustomEmojiMutation webCustomEmojiMutationFromJson(String str) =>
+    WebCustomEmojiMutation.fromJson(json.decode(str));
+
+String webCustomEmojiMutationToJson(WebCustomEmojiMutation data) =>
+    json.encode(data.toJson());
+
+WebCustomEmojiView webCustomEmojiViewFromJson(String str) =>
+    WebCustomEmojiView.fromJson(json.decode(str));
+
+String webCustomEmojiViewToJson(WebCustomEmojiView data) =>
+    json.encode(data.toJson());
 
 WebMessageAttachment webMessageAttachmentFromJson(String str) =>
     WebMessageAttachment.fromJson(json.decode(str));
@@ -11037,6 +11051,76 @@ class WebChannelView {
     "name": name,
     "ttlDeadline": ttlDeadline?.toIso8601String(),
     "ttlSeconds": ttlSeconds,
+  });
+}
+
+///Own NIP-30 set mutation. The admitted host derives the signer and community; omitted
+///imageUrl removes only the caller's entry.
+class WebCustomEmojiMutation {
+  final String expectedPubkey;
+  final String idempotencyKey;
+  final String? imageUrl;
+  final String shortcode;
+
+  WebCustomEmojiMutation({
+    required this.expectedPubkey,
+    required this.idempotencyKey,
+    this.imageUrl,
+    required this.shortcode,
+  });
+
+  factory WebCustomEmojiMutation.fromJson(Map<String, dynamic> json) =>
+      WebCustomEmojiMutation(
+        expectedPubkey: json["expectedPubkey"],
+        idempotencyKey: json["idempotencyKey"],
+        imageUrl: json["imageUrl"],
+        shortcode: json["shortcode"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "expectedPubkey": expectedPubkey,
+    "idempotencyKey": idempotencyKey,
+    "imageUrl": imageUrl,
+    "shortcode": shortcode,
+  });
+}
+
+///Verified original per-author kind:30030 snapshots, not a Core-owned emoji directory.
+///Clients apply the original deterministic community union.
+class WebCustomEmojiView {
+  final List<Map<String, dynamic>> events;
+  final Map<String, String> mediaPaths;
+  final String pubkey;
+
+  WebCustomEmojiView({
+    required this.events,
+    required this.mediaPaths,
+    required this.pubkey,
+  });
+
+  factory WebCustomEmojiView.fromJson(Map<String, dynamic> json) =>
+      WebCustomEmojiView(
+        events: List<Map<String, dynamic>>.from(
+          json["events"].map(
+            (x) => Map.from(x).map((k, v) => MapEntry<String, dynamic>(k, v)),
+          ),
+        ),
+        mediaPaths: Map.from(
+          json["mediaPaths"],
+        ).map((k, v) => MapEntry<String, String>(k, v)),
+        pubkey: json["pubkey"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "events": List<dynamic>.from(
+      events.map(
+        (x) => Map.from(x).map((k, v) => MapEntry<String, dynamic>(k, v)),
+      ),
+    ),
+    "mediaPaths": Map.from(
+      mediaPaths,
+    ).map((k, v) => MapEntry<String, dynamic>(k, v)),
+    "pubkey": pubkey,
   });
 }
 

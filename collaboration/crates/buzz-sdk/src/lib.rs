@@ -74,6 +74,8 @@ pub struct CustomEmoji {
     /// Image URL for this custom emoji.
     pub url: String,
 }
+mod custom_emoji;
+pub use custom_emoji::{custom_emoji_palette, custom_emoji_tags};
 
 /// Return a channel name without client-rendered leading hash prefixes.
 pub use buzz_core::channel::canonical_channel_name;

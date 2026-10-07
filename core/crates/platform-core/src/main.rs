@@ -39,6 +39,7 @@ mod component_conformance_identity;
 mod component_release;
 mod component_task;
 mod conversations;
+mod custom_emoji;
 mod delegation_query;
 mod external_human;
 mod gateway_usage;

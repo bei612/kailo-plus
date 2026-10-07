@@ -276,7 +276,7 @@ pub async fn send_channel_message(
     let mentions = mention_pubkeys.unwrap_or_default();
     let mention_refs: Vec<&str> = mentions.iter().map(|s| s.as_str()).collect();
     let media = media_tags.unwrap_or_default();
-    let emoji = emoji_tags.unwrap_or_default();
+    let mut emoji = emoji_tags.unwrap_or_default();
     let mention_refs_only = mention_tags.unwrap_or_default();
     let link_previews = link_preview_tags.unwrap_or_default();
     // Resolve the relay AND the signing identity once and use them for every
@@ -296,6 +296,10 @@ pub async fn send_channel_message(
         expected_signer_pubkey.as_deref(),
         &signing_keys.public_key().to_hex(),
     )?;
+    let palette_tags =
+        super::custom_emoji::message_tags(&state, &relay_base, &signing_keys, &content).await?;
+    emoji.retain(|tag| !palette_tags.iter().any(|known| known.get(1) == tag.get(1)));
+    emoji.extend(palette_tags);
     if root_event_id.is_some() && parent_event_id.is_none() {
         return Err("root_event_id requires parent_event_id".into());
     }
@@ -427,13 +431,14 @@ pub async fn edit_message(
         .map(String::as_str)
         .filter(|pubkey| !original_mentions.contains(pubkey))
         .collect();
+    let emoji = super::custom_emoji::message_tags(&state, &relay_base, &keys, &content).await?;
     let builder = events::build_message_edit(
         channel,
         target_id,
         content.trim(),
         events::MessageEditTags {
             media: &media_tags,
-            custom_emoji: &[],
+            custom_emoji: &emoji,
             mentions: &new_mentions,
             mention_refs: None,
         },

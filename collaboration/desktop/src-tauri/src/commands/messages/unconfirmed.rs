@@ -16,7 +16,7 @@ static UNCONFIRMED: LazyLock<Mutex<HashMap<String, nostr::Event>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// A deletion can remove its original target before its ACK arrives.
-pub(super) fn existing_mutation(key: &str) -> Result<Option<nostr::Event>, String> {
+pub(crate) fn existing_mutation(key: &str) -> Result<Option<nostr::Event>, String> {
     Ok(UNCONFIRMED
         .lock()
         .map_err(|_| "relay publish outcome unknown")?
@@ -35,7 +35,7 @@ pub(super) fn claim_mutation(
         .lock()
         .map_err(|_| "relay publish outcome unknown")?;
     if let Some(event) = map.get(key) {
-        if event.content != fresh.content || event.tags != fresh.tags {
+        if event.content != fresh.content || intent_tags(event) != intent_tags(&fresh) {
             return Err("relay publish outcome unknown".into());
         }
         return Ok((event.clone(), false));
@@ -77,16 +77,26 @@ pub(crate) fn claim_profile(
     Ok((fresh, true))
 }
 
-/// 同一 Relay、同一作者、同一 kind、正文与标签完全相同即视为同一条消息。
+/// The retry intent excludes only derived NIP-30 palette tags: another user's
+/// palette update must not turn our UNKNOWN message into a second publication.
+/// All caller-controlled routing, ancestry, media and mention tags stay bound.
 pub(super) fn fingerprint(relay_base: &str, event: &nostr::Event) -> String {
     serde_json::json!([
         relay_base,
         event.pubkey.to_hex(),
         event.kind.as_u16(),
         event.content,
-        event.tags,
+        intent_tags(event),
     ])
     .to_string()
+}
+
+fn intent_tags(event: &nostr::Event) -> Vec<&nostr::Tag> {
+    event
+        .tags
+        .iter()
+        .filter(|tag| tag.as_slice().first().map(String::as_str) != Some("emoji"))
+        .collect()
 }
 
 /// 先前结果不明的同一条消息；没有就用刚签好的这一条。
@@ -173,6 +183,33 @@ pub(crate) fn outcome_unknown(error: &str) -> bool {
 mod tests {
     use super::*;
     use nostr::{EventBuilder, Keys, Kind, Tag};
+
+    #[test]
+    fn palette_changes_keep_unknown_messages_and_edits_bound_to_original_event() {
+        let keys = Keys::generate();
+        let make = |url| {
+            EventBuilder::new(Kind::Custom(9), ":joy:")
+                .tags([
+                    Tag::parse(["h", "channel"]).unwrap(),
+                    Tag::parse(["emoji", "joy", url]).unwrap(),
+                ])
+                .sign_with_keys(&keys)
+                .unwrap()
+        };
+        let original = make("https://a.example/emoji");
+        let changed = make("https://b.example/emoji");
+        assert_ne!(original.id, changed.id);
+        assert_eq!(
+            fingerprint("community", &original),
+            fingerprint("community", &changed)
+        );
+        let key = format!("emoji-edit:{}", keys.public_key());
+        assert!(claim_mutation(&key, original.clone()).unwrap().1);
+        let (reused, first) = claim_mutation(&key, changed).unwrap();
+        assert!(!first);
+        assert_eq!(reused.id, original.id);
+        resolve_mutation(&key, original.id).unwrap();
+    }
 
     #[test]
     fn deletion_can_be_observed_after_its_original_target_disappears() {

@@ -80,6 +80,14 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 beforeEach(async () => {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
+  Object.defineProperties(Range.prototype, {
+    getClientRects: { configurable: true, value: () => [] },
+    getBoundingClientRect: { configurable: true, value: () => new DOMRect() },
+  });
   setLocale("en");
   state.stop.mockClear();
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
@@ -153,9 +161,9 @@ it("keeps the existing reply mounted while an author profile opens and closes", 
   await act(async () => [...thread.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === "thread author")!.click());
   expect(host.querySelector('[data-testid="thread-lifetime"]')).toBe(thread);
   expect(thread.textContent).toContain("reply pending");
-  expect(thread.parentElement?.className).toBe("hidden");
+  expect(thread.closest(".hidden")).not.toBeNull();
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="close-author"]')!.click());
-  expect(thread.parentElement?.className).toBe("contents");
+  expect(thread.closest(".hidden")).toBeNull();
   expect(thread.textContent).toContain("reply pending");
   const author = host.querySelector<HTMLElement>('[data-event-id="event-a"] [role="button"][aria-label="Profile"]')!;
   await act(async () => author.click());

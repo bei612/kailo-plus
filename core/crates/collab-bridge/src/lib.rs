@@ -9,3 +9,7 @@ pub use memory::write as memory_write;
 pub mod operator;
 pub mod stream;
 pub use buzz_core::{kind, nip10, workflow_template};
+pub use buzz_sdk::custom_emoji_tags;
+pub use buzz_sdk::{
+    build_custom_emoji_set, normalize_custom_emoji_shortcode, CustomEmoji, CUSTOM_EMOJI_SET_D_TAG,
+};

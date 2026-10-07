@@ -6,6 +6,22 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn custom_emoji_preserves_explicit_removal_and_empty_signed_set_view() {
+    let sample: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("web-custom-emoji.sample.json")).unwrap(),
+    )
+    .unwrap();
+    for key in ["add", "remove"] {
+        let typed: contracts::WebCustomEmojiMutation =
+            serde_json::from_value(sample[key].clone()).unwrap();
+        assert_eq!(serde_json::to_value(typed).unwrap(), sample[key]);
+    }
+    let view: contracts::WebCustomEmojiView =
+        serde_json::from_value(sample["view"].clone()).unwrap();
+    assert_eq!(serde_json::to_value(view).unwrap(), sample["view"]);
+}
+
+#[test]
 fn agent_version_avatar_projection_preserves_exact_map_and_legacy_absence() {
     let mut sample: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("agent-version-view.sample.json"))

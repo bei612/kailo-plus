@@ -400,6 +400,19 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
       const res = await axios.get(
         `${this.wrenAIBaseEndpoint}/v1/question-recommendations/${queryId}`,
       );
+      const result = res.data;
+      // The native cache's RESOURCE_NOT_FOUND is absence of evidence, not a
+      // failed model execution. Never finalize another/expired native task.
+      if (
+        result?.id !== queryId ||
+        !['generating', 'finished', 'failed'].includes(result?.status) ||
+        result?.error?.code === 'RESOURCE_NOT_FOUND' ||
+        (result.status === 'failed'
+          ? typeof result?.error?.code !== 'string'
+          : result.error != null || !Array.isArray(result?.response?.questions))
+      ) {
+        throw new Error('Recommendation result evidence unavailable');
+      }
       return this.transformRecommendationQuestionsResult(res.data);
     } catch (err: any) {
       logger.debug(

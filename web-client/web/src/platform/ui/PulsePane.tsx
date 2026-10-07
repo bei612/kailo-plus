@@ -25,7 +25,8 @@ export function PulsePane({scopeKey,onStartDm}:{scopeKey:string;onStartDm:(pubke
       startDm:async(pubkey)=>{check();onStartDm(pubkey);},
       mediaUrl:(url)=>scope.media.get(url)??url,
       renderContent:(content,tags)=><MessageContent content={content} mediaTags={tags} onMediaUrl={pulseMediaUrl}/>,
-      renderComposer:(props)=><div className={props.className}>{props.header}<Composer surface="forum"
+      renderComposer:(props)=><div><Composer surface="forum" compact={props.compact} autocompleteBelow={props.autocompleteBelow}
+        containerClassName={props.className} composerHeader={props.header}
         disabled={props.disabled||props.isSending} placeholder={props.placeholder} onCancel={props.onCancel}
         mentionPeople={directory.query.isSuccess?directory.people:[]}
         draftIdentity={scopeKey} onUpload={uploadPulseMedia} onMediaUrl={pulseMediaUrl}

@@ -9,6 +9,23 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('custom emoji preserves removal and empty signed set view', () {
+    final sample = jsonDecode(
+      File(
+        '../../contracts/samples/web-custom-emoji.sample.json',
+      ).readAsStringSync(),
+    );
+    for (final key in ['add', 'remove']) {
+      expect(
+        WebCustomEmojiMutation.fromJson(sample[key]).toJson(),
+        sample[key],
+      );
+    }
+    expect(
+      WebCustomEmojiView.fromJson(sample['view']).toJson(),
+      sample['view'],
+    );
+  });
   test('AgentVersionView preserves exact avatar map and legacy absence', () {
     final sample =
         jsonDecode(

@@ -49,6 +49,9 @@ import { scheduleSettleGatedAutoSubmit } from "./messageComposerAutoSubmit";
 import type { MessageComposerProps } from "./MessageComposer.types";
 function MessageComposerImpl({
   surface = "stream",
+  compact = false,
+  autocompleteBelow = false,
+  composerHeader,
   channelId = null,
   channelName,
   containerClassName,
@@ -266,7 +269,7 @@ function MessageComposerImpl({
     if (!replyTarget || composerDisabled) return;
     richText.focusPreserve();
   }, [composerDisabled, replyTarget, richText.focusPreserve]);
-  useComposerAutofocus(richText.focus, effectiveDraftKey, composerDisabled);
+  useComposerAutofocus(richText.focus, effectiveDraftKey, composerDisabled || compact);
   const applyAutocompleteEdit = React.useCallback(
     (edit: AutocompleteEdit) => {
       richText.replacePlainTextRange(
@@ -481,10 +484,16 @@ function MessageComposerImpl({
   const acceptsDrop = ownsDropZone && voiceNote.acceptsAttachment;
   const ComposerSurface = surface === "forum" ? ForumComposerSurface : MessageComposerSurface;
   return <ComposerSurface
+    {...(surface === "forum" ? { compact,
+      hasComposerContent: !isContentEmpty || media.pendingImeta.length > 0 || media.queuedAttachments.length > 0 ||
+        media.uploadState.status === "error" || Boolean(mentionSendFlow.sendOutcome) || media.isDragOver,
+      autocompleteOpen: mentions.isMentionOpen || channelLinks.isChannelOpen || emojiAutocomplete.isEmojiAutocompleteOpen,
+    } : {})}
     submitLocked={isSubmitLocked}
     containerClassName={containerClassName} showTopBorder={showTopBorder}
     formRef={formRef} scrollRef={composerScrollRef} onEditorKeyDown={handleEditorKeyDown}
     header={<>
+          {composerHeader}
           <ComposerReplyBanner
             isEditing={editTarget !== undefined}
             isEditCancelDisabled={isSubmitLocked || isSending}
@@ -522,6 +531,7 @@ function MessageComposerImpl({
     }}>
             {acceptsDrop && media.isDragOver && <DropZoneOverlay />}
             <MessageComposerAutocompletes
+              position={autocompleteBelow ? "below" : "above"}
               channelLinks={channelLinks}
               composerOwnsFocus={composerOwnsFocus}
               emojiAutocomplete={emojiAutocomplete}

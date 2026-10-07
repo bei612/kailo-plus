@@ -8,6 +8,11 @@ export const PERSONA_FIELD_CONTROL_CLASS =
 export const PERSONA_LABEL_OPTIONAL_CLASS =
   "ml-1 text-xs font-normal text-muted-foreground/50";
 
+export const ADVANCED_FIELDS_MOTION_TRANSITION = {
+  duration: 0.18,
+  ease: [0.23, 1, 0.32, 1],
+} as const;
+
 export type PersonaDropdownOption = {
   disabled?: boolean;
   label: string;

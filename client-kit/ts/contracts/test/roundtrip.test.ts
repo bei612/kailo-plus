@@ -8,6 +8,18 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
+test("custom emoji preserves explicit removal and signed set view", () => {
+  const sample = JSON.parse(readFileSync(new URL("../../../../contracts/samples/web-custom-emoji.sample.json", import.meta.url), "utf8"));
+  for (const key of ["add", "remove"]) {
+    const value: import("../src/generated/contracts.js").WebCustomEmojiMutation = sample[key];
+    const typed: typeof value = { idempotencyKey: value.idempotencyKey, expectedPubkey: value.expectedPubkey, shortcode: value.shortcode, imageUrl: value.imageUrl };
+    deepStrictEqual(JSON.parse(JSON.stringify(typed)), value);
+  }
+  const value: import("../src/generated/contracts.js").WebCustomEmojiView = sample.view;
+  const typed: typeof value = { pubkey: value.pubkey, events: value.events, mediaPaths: value.mediaPaths };
+  deepStrictEqual(JSON.parse(JSON.stringify(typed)), value);
+});
+
 test("AgentVersionView preserves exact avatar map and legacy absence", () => {
   const sample: import("../src/generated/contracts.js").AgentVersionView = JSON.parse(readFileSync(
     new URL("../../../../contracts/samples/agent-version-view.sample.json", import.meta.url), "utf8"));

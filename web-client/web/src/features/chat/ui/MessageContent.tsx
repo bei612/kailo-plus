@@ -30,6 +30,7 @@ import { t } from "@/shared/i18n";
 import { useTheme } from "@/shared/theme/ThemeProvider";
 import { LinkPreviewAttachmentPresentation, parseLinkPreviewTextSnapshots, useLinkPreviewStyle } from "@client-kit/platform/react/link-preview";
 import { AttachmentGroup } from "@client-kit/platform/react/composer/shared/ui/attachment";
+import { customEmojiFromTags, remarkCustomEmoji, InlineEmojiPopover } from "@client-kit/platform/react/custom-emoji";
 
 const IMAGE_MAX_WIDTH = 384;
 const IMAGE_MAX_HEIGHT = 256;
@@ -152,6 +153,21 @@ const MarkdownImage: NonNullable<Components["img"]> = ({ src, alt }) => {
   }
   return <BffMedia media={media} alt={alt} resolveMediaUrl={resolveMediaUrl} />;
 };
+
+function MarkdownEmoji({ src, alt }: { src?: string; alt?: string }) {
+  const { resolveMediaUrl } = useMarkdownRenderContext();
+  // A signed NIP-30 URL can identify a content-addressed community blob; it
+  // never grants browser access to its origin. The existing BFF media route
+  // rechecks this conversation/workspace and signs only /media/<hash>.
+  let hash: string | undefined;
+  try {
+    const url = new URL(src ?? "");
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      hash = /^\/media\/([a-f0-9]{64})(?:\.[a-z0-9]+)?$/i.exec(url.pathname)?.[1];
+    }
+  } catch { /* Non-media emoji stays text; no external image fetch. */ }
+  return hash ? <InlineEmojiPopover alt={alt} resolvedSrc={resolveMediaUrl(hash.toLowerCase())} /> : <span>{alt}</span>;
+}
 
 const MarkdownLink: NonNullable<Components["a"]> = ({ href, children }) => {
   const { mediaByUrl, resolveMediaUrl, onOpenMessageLink } = useMarkdownRenderContext();
@@ -282,8 +298,8 @@ export function MessageContent({
       <MessageBody className={`${MESSAGE_BODY_CLASS_NAME} buzz-message-markdown`}>
         <ReactMarkdown
           urlTransform={(url) => parseMessageLink(url).ok ? url : defaultUrlTransform(url)}
-          remarkPlugins={[remarkGfm, remarkBreaks, remarkSpoilers, [remarkMentions, { mentionNames }]]}
-          components={{ ...MARKDOWN_COMPONENTS, spoiler: ({ children, ...props }: { children?: import("react").ReactNode; "data-block-spoiler"?: string }) =>
+          remarkPlugins={[remarkGfm, remarkBreaks, remarkSpoilers, [remarkMentions, { mentionNames }], [remarkCustomEmoji, {customEmoji: customEmojiFromTags(mediaTags ?? [])}]]}
+          components={{ ...MARKDOWN_COMPONENTS, emoji: MarkdownEmoji, spoiler: ({ children, ...props }: { children?: import("react").ReactNode; "data-block-spoiler"?: string }) =>
             <SpoilerInline block={props["data-block-spoiler"] != null}>{children}</SpoilerInline> } as Components}
         >
           {displayContent(content)}

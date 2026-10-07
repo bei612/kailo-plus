@@ -181,7 +181,8 @@ describe('WrenAIAdaptor', () => {
 
     it('should successfully get recommendation questions result', async () => {
       const mockResponse = {
-        status: 'FINISHED',
+        id: queryId,
+        status: 'finished',
         response: {
           questions: [
             {
@@ -198,13 +199,56 @@ describe('WrenAIAdaptor', () => {
       const result = await adaptor.getRecommendationQuestionsResult(queryId);
 
       expect(result).toEqual({
+        ...mockResponse,
         status: RecommendationQuestionStatus.FINISHED,
         error: null,
-        ...mockResponse,
       });
       expect(mockedAxios.get).toHaveBeenCalledWith(
-        `${baseEndpoint}/v1/question-recommendations/${queryId}/result`,
+        `${baseEndpoint}/v1/question-recommendations/${queryId}`,
       );
+    });
+
+    it('does not finalize absent, foreign, expired, unknown or contradictory evidence', async () => {
+      for (const data of [
+        { status: 'finished', response: { questions: [] } },
+        {
+          id: 'another-query',
+          status: 'finished',
+          response: { questions: [] },
+        },
+        { id: queryId, status: 'future', response: { questions: [] } },
+        {
+          id: queryId,
+          status: 'failed',
+          error: { code: 'RESOURCE_NOT_FOUND' },
+        },
+        { id: queryId, status: 'failed' },
+        {
+          id: queryId,
+          status: 'finished',
+          response: { questions: [] },
+          error: { code: 'OTHERS' },
+        },
+      ]) {
+        mockedAxios.get.mockResolvedValueOnce({ data });
+        await expect(
+          adaptor.getRecommendationQuestionsResult(queryId),
+        ).rejects.toThrow('Recommendation result evidence unavailable');
+      }
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('retains a verified native failure rather than claiming cache absence is failure', async () => {
+      mockedAxios.get.mockResolvedValueOnce({
+        data: {
+          id: queryId,
+          status: 'failed',
+          error: { code: 'OTHERS', message: 'native pipeline failed' },
+        },
+      });
+      expect(
+        (await adaptor.getRecommendationQuestionsResult(queryId)).status,
+      ).toBe(RecommendationQuestionStatus.FAILED);
     });
 
     it('should handle errors when getting recommendation questions result', async () => {

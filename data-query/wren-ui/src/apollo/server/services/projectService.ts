@@ -150,15 +150,7 @@ export class ProjectService implements IProjectService {
       questionsError: null,
     });
 
-    if (
-      !this.projectRecommendQuestionBackgroundTracker.isExist(updatedProject)
-    ) {
-      this.projectRecommendQuestionBackgroundTracker.addTask(updatedProject);
-    } else {
-      logger.debug(
-        `Generate Project Recommendation Questions Task ${updatedProject.id} already exists, skip adding`,
-      );
-    }
+    this.projectRecommendQuestionBackgroundTracker.addTask(updatedProject);
   }
 
   public async getProjectRecommendationQuestions() {
@@ -166,6 +158,9 @@ export class ProjectService implements IProjectService {
     if (!project) {
       throw new Error(`Project not found`);
     }
+    // Resume only the persisted native query. This read never POSTs a model
+    // request, including after a process restart or temporary observation error.
+    this.projectRecommendQuestionBackgroundTracker.addTask(project);
     const result: ProjectRecommendationQuestionsResult = {
       status: RecommendQuestionResultStatus.NOT_STARTED,
       questions: [],

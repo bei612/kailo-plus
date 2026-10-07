@@ -32,7 +32,7 @@ fn unavailable() -> Response {
     )
 }
 
-async fn client(
+pub(crate) async fn client(
     state: &BffState,
     ctx: &ExecutionContext,
 ) -> Result<(IdentityClient, String), Response> {
@@ -308,7 +308,7 @@ fn merged_content(
 }
 
 #[derive(sqlx::FromRow)]
-struct Attempt {
+pub(crate) struct Attempt {
     operation_id: Uuid,
     event_id: String,
     action_key: String,
@@ -317,7 +317,7 @@ struct Attempt {
     result: Option<String>,
 }
 
-async fn previous(
+pub(crate) async fn previous(
     state: &BffState,
     ctx: &ExecutionContext,
     key: Uuid,
@@ -331,7 +331,16 @@ async fn previous(
 }
 
 fn attempt_response(attempt: &Attempt, tenant: Uuid, parameter_hash: &str) -> Response {
-    if attempt.action_key != PROFILE_ACTION
+    own_event_response(attempt, tenant, parameter_hash, PROFILE_ACTION)
+}
+
+pub(crate) fn own_event_response(
+    attempt: &Attempt,
+    tenant: Uuid,
+    parameter_hash: &str,
+    action: &str,
+) -> Response {
+    if attempt.action_key != action
         || attempt.tenant_id != Some(tenant)
         || attempt.parameter_hash != parameter_hash
     {
@@ -451,9 +460,37 @@ pub(crate) async fn update(
         Ok(v) => v,
         Err(_) => return unavailable(),
     };
+    publish_prepared(
+        &state,
+        &headers,
+        &ctx,
+        &host,
+        key,
+        &parameter_hash,
+        PROFILE_ACTION,
+        event,
+        json!({"kinds":[0], "authors":[client.pubkey_hex()], "limit":1}),
+    )
+    .await
+}
+
+/// Shared by the two original author-owned replaceable sets. The event body
+/// stays in Relay; the existing publish intent and reconciler retain only IDs.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn publish_prepared(
+    state: &BffState,
+    headers: &HeaderMap,
+    ctx: &ExecutionContext,
+    host: &str,
+    key: Uuid,
+    parameter_hash: &str,
+    action: &'static str,
+    event: nostr::Event,
+    read_filter: Value,
+) -> Response {
     // Fresh after the external read, before DISPATCH; never retarget a captured
     // profile to a replacement membership, session, Tenant or Buzz identity.
-    let fresh = match resolve_execution_context(&state, &headers).await {
+    let fresh = match resolve_execution_context(state, headers).await {
         Ok(v) => v,
         Err(r) => return r,
     };
@@ -463,7 +500,7 @@ pub(crate) async fn update(
     {
         return StatusCode::CONFLICT.into_response();
     }
-    let (fresh_client, fresh_host) = match self::client(&state, &fresh).await {
+    let (fresh_client, fresh_host) = match self::client(state, &fresh).await {
         Ok(v) => v,
         Err(r) => return r,
     };
@@ -476,8 +513,13 @@ pub(crate) async fn update(
     };
     let operation = Uuid::new_v4();
     let event_id = event.id.to_hex();
+    let event_key_prefix = if action == PROFILE_ACTION {
+        "profile.publish"
+    } else {
+        action
+    };
     let entry = |event_type, result_code| AuditEntry {
-        event_key: format!("profile.publish:{event_id}:{event_type}"),
+        event_key: format!("{event_key_prefix}:{event_id}:{event_type}"),
         tenant_id: Some(ctx.tenant_id),
         workspace_id: None,
         operation_id: operation,
@@ -485,12 +527,12 @@ pub(crate) async fn update(
         human_identity_id: Some(ctx.human_identity_id),
         initiator_principal_id: Some(ctx.tenant_principal_id),
         actor_principal_id: Some(ctx.tenant_principal_id),
-        action_key: PROFILE_ACTION,
+        action_key: action,
         action_version: 1,
         component_type_key: "buzz",
         target_type: Some("PRINCIPAL"),
         target_id: Some(ctx.tenant_principal_id),
-        parameter_hash: &parameter_hash,
+        parameter_hash,
         decision: "ALLOW",
         result_code,
         result_exposure: "NONE",
@@ -521,22 +563,32 @@ pub(crate) async fn update(
         Ok(true) => {}
         Err(_) => return unavailable(),
         Ok(false) => {
-            return match previous(&state, &ctx, key).await {
-                Ok(Some(attempt)) => attempt_response(&attempt, ctx.tenant_id, &parameter_hash),
+            return match previous(state, ctx, key).await {
+                Ok(Some(attempt)) => {
+                    own_event_response(&attempt, ctx.tenant_id, parameter_hash, action)
+                }
                 _ => unavailable(),
             };
         }
     }
     let (result, response) = match fresh_client.deliver(&state.http, &event, admitted).await {
-        Delivery::Accepted => match read(&state, &fresh_client).await {
-            Ok(Some(actual)) if actual.id == event.id => (
-                Some("ACCEPTED"),
-                Json(PublishResponse {
-                    event_id: event_id.clone(),
-                    operation_id: operation,
-                })
-                .into_response(),
-            ),
+        Delivery::Accepted => match fresh_client.query(&state.http, &[read_filter]).await {
+            Ok(actual)
+                if actual.as_array().is_some_and(|rows| {
+                    rows.len() == 1
+                        && serde_json::from_value::<nostr::Event>(rows[0].clone())
+                            .is_ok_and(|actual| actual.id == event.id && actual.verify().is_ok())
+                }) =>
+            {
+                (
+                    Some("ACCEPTED"),
+                    Json(PublishResponse {
+                        event_id: event_id.clone(),
+                        operation_id: operation,
+                    })
+                    .into_response(),
+                )
+            }
             // An ACK is not the canonical profile readback. Another version or
             // a failed read remains unconfirmed; never send the event again.
             _ => (
@@ -573,7 +625,7 @@ pub(crate) async fn update(
         ),
     };
     if let Some(result) = result {
-        if let Err(error) = record(&state, entry("OUTCOME", result)).await {
+        if let Err(error) = record(state, entry("OUTCOME", result)).await {
             tracing::warn!(%error, %operation, "Profile publication receipt pending reconciliation");
             return error_body(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -591,6 +643,7 @@ pub(crate) async fn update(
 /// may have replaced it. Only the exact original event is a positive receipt.
 #[derive(sqlx::FromRow)]
 struct Pending {
+    action_key: String,
     operation_id: Uuid,
     occurred_at: chrono::DateTime<chrono::Utc>,
     tenant_id: Uuid,
@@ -606,14 +659,14 @@ async fn pending<'e>(
     batch: i64,
     cursor: Option<(chrono::DateTime<chrono::Utc>, Uuid)>,
 ) -> Result<Vec<Pending>, sqlx::Error> {
-    sqlx::query_as("select d.operation_id,d.occurred_at,d.tenant_id,d.human_identity_id,d.actor_principal_id,d.evidence_refs,a.event_id,d.parameter_hash
+    sqlx::query_as("select d.action_key,d.operation_id,d.occurred_at,d.tenant_id,d.human_identity_id,d.actor_principal_id,d.evidence_refs,a.event_id,d.parameter_hash
         from admission.publish_attempt a join audit.audit_event d on d.operation_id=a.operation_id
         join identity.tenant t on t.id=d.tenant_id
-        where d.event_type='DISPATCH' and d.action_key=$1
+        where d.event_type='DISPATCH' and d.action_key=any($1)
         and not exists(select 1 from audit.audit_event r where r.operation_id=d.operation_id and r.event_type in ('OUTCOME','RECONCILIATION'))
         and ($3::timestamptz is null or (d.occurred_at,d.operation_id)>($3,$4))
         order by d.occurred_at,d.operation_id limit $2")
-        .bind(PROFILE_ACTION).bind(batch).bind(cursor.map(|v| v.0)).bind(cursor.map(|v| v.1)).fetch_all(executor).await
+        .bind([PROFILE_ACTION, crate::custom_emoji::EMOJI_ACTION].as_slice()).bind(batch).bind(cursor.map(|v| v.0)).bind(cursor.map(|v| v.1)).fetch_all(executor).await
 }
 
 pub(crate) async fn reconcile(
@@ -656,7 +709,7 @@ pub(crate) async fn reconcile(
                 human_identity_id: row.human_identity_id,
                 initiator_principal_id: row.actor_principal_id,
                 actor_principal_id: row.actor_principal_id,
-                action_key: PROFILE_ACTION,
+                action_key: &row.action_key,
                 action_version: 1,
                 component_type_key: "buzz",
                 target_type: Some("PRINCIPAL"),

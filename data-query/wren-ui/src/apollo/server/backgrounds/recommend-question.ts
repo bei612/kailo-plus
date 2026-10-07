@@ -46,6 +46,10 @@ export class ProjectRecommendQuestionBackgroundTracker {
     this.projectRepository = projectRepository;
     this.intervalTime = 1000;
     this.start();
+    void this.initialize().catch(() => {
+      // The original page read can reattach a persisted task after DB recovery.
+      this.logger.error('Persisted recommendation observations unavailable');
+    });
   }
 
   public start() {
@@ -57,84 +61,81 @@ export class ProjectRecommendQuestionBackgroundTracker {
           return;
         }
 
-        // mark the job as running
         this.runningJobs.add(this.taskKey(project));
-
-        // get the latest result from AI service
-
-        const result =
-          await this.wrenAIAdaptor.getRecommendationQuestionsResult(
-            project.queryId,
-          );
-
-        // check if status change
-        if (
-          project.questionsStatus === result.status &&
-          result.response?.questions.length === (project.questions || []).length
-        ) {
-          // mark the job as finished
-          this.logger.debug(
-            `${loggerPrefix}job ${this.taskKey(project)} status not changed, returning question count: ${result.response?.questions.length || 0}`,
-          );
-          this.runningJobs.delete(this.taskKey(project));
-          return;
-        }
-
-        // update database
-        if (
-          result.status !== project.questionsStatus ||
-          result.response?.questions.length !== (project.questions || []).length
-        ) {
-          this.logger.debug(
-            `${loggerPrefix}job ${this.taskKey(project)} have changes, returning question count: ${result.response?.questions.length || 0}, updating`,
-          );
-          await this.projectRepository.updateOne(project.id, {
-            questionsStatus: result.status.toUpperCase(),
-            questions: result.response?.questions,
-            questionsError: result.error,
+        try {
+          const current = await this.projectRepository.findOneBy({
+            id: project.id,
+            queryId: project.queryId,
           });
-          project.questionsStatus = result.status;
-          project.questions = result.response?.questions;
-        }
-
-        // remove the task from tracker if it is finalized
-        if (isFinalized(result.status)) {
-          const eventProperties = {
-            projectId: project.id,
-            projectType: project.type,
-            status: result.status,
-            questions: project.questions,
-            error: result.error,
-          };
-          if (result.status === RecommendationQuestionStatus.FINISHED) {
-            this.telemetry.sendEvent(
-              TelemetryEvent.HOME_GENERATE_PROJECT_RECOMMENDATION_QUESTIONS,
-              eventProperties,
+          if (
+            !current ||
+            isFinalized(current.questionsStatus as RecommendationQuestionStatus)
+          ) {
+            if (this.tasks[this.taskKey(project)] === project)
+              delete this.tasks[this.taskKey(project)];
+            return;
+          }
+          const result =
+            await this.wrenAIAdaptor.getRecommendationQuestionsResult(
+              project.queryId,
             );
-          } else {
+          if (
+            !Object.values(RecommendationQuestionStatus).includes(result.status)
+          ) {
+            throw new Error('Recommendation status unavailable');
+          }
+          // Same-length partial results can change their contents. Persist the
+          // actual native result, but never overwrite a newer query or terminal.
+          const updated =
+            await this.projectRepository.updateRecommendationQuestions(
+              project.id,
+              project.queryId,
+              {
+                questionsStatus: result.status,
+                questions: result.response?.questions || [],
+                questionsError: result.error,
+              },
+            );
+          if (!updated || isFinalized(result.status)) {
+            // A concurrent explicit regeneration may already have attached its
+            // new query to this project; an old receipt must not remove it.
+            if (this.tasks[this.taskKey(project)] === project) {
+              delete this.tasks[this.taskKey(project)];
+            }
+            if (!updated) return;
+          }
+          Object.assign(project, updated);
+          if (isFinalized(result.status)) {
             this.telemetry.sendEvent(
               TelemetryEvent.HOME_GENERATE_PROJECT_RECOMMENDATION_QUESTIONS,
-              eventProperties,
-              WrenService.AI,
-              false,
+              {
+                projectId: project.id,
+                projectType: project.type,
+                status: result.status,
+                questions: project.questions,
+                error: result.error,
+              },
+              result.status === RecommendationQuestionStatus.FAILED
+                ? WrenService.AI
+                : undefined,
+              result.status !== RecommendationQuestionStatus.FAILED,
             );
           }
-          this.logger.debug(
-            `${loggerPrefix}job ${this.taskKey(project)} is finalized, removing`,
-          );
-          delete this.tasks[this.taskKey(project)];
+        } finally {
+          // A rejected GET/database write is UNKNOWN, not a permanent in-memory
+          // lease. Retain the same task and allow its next original observation.
+          this.runningJobs.delete(this.taskKey(project));
         }
-
-        // mark the job as finished
-        this.runningJobs.delete(this.taskKey(project));
       });
 
       // run the jobs
-      Promise.allSettled(jobs.map((job) => job())).then((results) => {
+      return Promise.allSettled(jobs.map((job) => job())).then((results) => {
         // show reason of rejection
         results.forEach((result, index) => {
           if (result.status === 'rejected') {
-            this.logger.error(`Job ${index} failed: ${result.reason}`);
+            this.logger.error(
+              `Recommendation observation ${index} unavailable`,
+            );
           }
         });
       });
@@ -142,6 +143,12 @@ export class ProjectRecommendQuestionBackgroundTracker {
   }
 
   public addTask(project: Project) {
+    if (
+      !project.queryId ||
+      isFinalized(project.questionsStatus as RecommendationQuestionStatus)
+    )
+      return;
+    if (this.tasks[this.taskKey(project)]?.queryId === project.queryId) return;
     this.tasks[this.taskKey(project)] = project;
   }
 
@@ -152,12 +159,7 @@ export class ProjectRecommendQuestionBackgroundTracker {
   public async initialize() {
     const projects = await this.projectRepository.findAll();
     for (const project of projects) {
-      if (
-        this.taskKey(project) &&
-        !isFinalized(project.questionsStatus as RecommendationQuestionStatus)
-      ) {
-        this.addTask(project);
-      }
+      if (!this.tasks[this.taskKey(project)]) this.addTask(project);
     }
   }
 

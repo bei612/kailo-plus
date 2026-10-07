@@ -61,6 +61,7 @@ import { PERSONA_FIELD_CONTROL_CLASS, PERSONA_FIELD_SHELL_CLASS } from "./agent-
 import { Textarea as AgentTextarea } from "./profile/buzz/shared/ui/textarea";
 import { AgentCreationPreview } from "./agent-library/AgentCreationPreview";
 import { AgentIdentityFields } from "./agent-library/AgentDescriptionField";
+import { AgentDefinitionAdvanced, AgentParallelismField } from "./agent-library/AgentDefinitionAdvanced";
 import { AvatarHostProvider, type AvatarHost } from "./profile/avatar-host";
 import { CronExpressionInput } from "./cron-expression-input";
 import { cronExpressionError, cronYamlError } from "./cron-expression";
@@ -2064,12 +2065,13 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
   const supported = (!sourceContent || sourceContent.skillVersionAssetIds.length === 0)
     && (toolIds.length === 0 || (!!toolPages && toolIds.every((id) => availableTools.some((tool) => tool.resourceId === id))));
   const integer = (value: string) => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
-  const valid = retiring ? permitted : !avatarUploading && permitted && supported && !!profile && !!route && !!contract && !!name.trim() && !!instructions.trim()
+  const advancedValid = supported && !!contract
     && contract.replyPolicies.includes(reply) && capabilities.every((key) => contract.capabilityRequirements.includes(key))
     && integer(parallelism) && Number(parallelism) <= contract.maxParallelism
     && integer(idle) && Number(idle) <= contract.maxIdleTimeoutSeconds
     && integer(duration) && Number(duration) <= contract.maxTurnDurationSeconds && Number(idle) <= Number(duration)
     && corePolicy !== undefined && coldPolicy !== undefined;
+  const valid = retiring ? permitted : !avatarUploading && permitted && !!profile && !!route && !!name.trim() && !!instructions.trim() && advancedValid;
   const unknown = failure?.kind === "unknown" || submission?.dispatchState === ActionDispatchState.Unknown
     || submission?.gateState === ActionGateState.Evaluating
     || (submission?.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.NotDispatched);
@@ -2183,12 +2185,16 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
               <PersonaDropdownField id={`${formId}-route`} value={routeId} onValueChange={setRouteId} placeholder={t("agents.automation.select")}
                 options={source.routes.map((value) => ({ value: value.resourceId, label: `${value.resourceId} · ${value.resourceVersion} · ${value.nativeRevision}` }))} />
             </div>
+          </fieldset>
+            <AgentDefinitionAdvanced key={`${edit.definition.resourceId}:${edit.version?.assetId ?? "new"}:${edit.mode}`}
+              required={!advancedValid}>
+            <fieldset disabled={publishing || !permitted || (sourceContent?.skillVersionAssetIds.length ?? 0) > 0} className="space-y-5">
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-reply`}>{t("agents.version.replyPolicy")}</label>
               <PersonaDropdownField id={`${formId}-reply`} value={reply} onValueChange={setReply} placeholder={t("agents.automation.select")}
                 options={(contract?.replyPolicies ?? []).map((value) => ({ value, label: value }))} />
             </div>
-            <label className="flex flex-col gap-1 text-sm">{t("agents.version.parallelism")}<input required type="number" min={1} step={1} max={contract?.maxParallelism} value={parallelism} onChange={(event) => setParallelism(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
+            <AgentParallelismField id={`${formId}-parallelism`} value={parallelism} max={contract?.maxParallelism} onChange={setParallelism} />
             <label className="flex flex-col gap-1 text-sm">{t("agents.version.idleTimeout")}<input required type="number" min={1} step={1} max={contract?.maxIdleTimeoutSeconds} value={idle} onChange={(event) => setIdle(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
             <label className="flex flex-col gap-1 text-sm">{t("agents.version.maxDuration")}<input required type="number" min={1} step={1} max={contract?.maxTurnDurationSeconds} value={duration} onChange={(event) => setDuration(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
             <div className="space-y-1.5">
@@ -2228,7 +2234,8 @@ function VersionAction({ edit, avatarHost, onReset, onLocked, onRecorded }: {
                   </div>
                 </>}
             </fieldset>
-          </fieldset>
+            </fieldset>
+            </AgentDefinitionAdvanced>
           <div className="flex gap-2">{index > 0 ? <Button onClick={() => setIndex(index - 1)}>{t("roles.previous")}</Button> : null}
             {source.nextOffset != null ? <Button onClick={() => { setOffsets((values) => [...values.slice(0, index + 1), source.nextOffset!]); setIndex(index + 1); }}>{t("roles.next")}</Button> : null}</div>
           </div>
