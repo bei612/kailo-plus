@@ -9,8 +9,20 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('automation topic step preserves explicit empty topic', () {
+    final sample = jsonDecode(
+      File(
+        '../../contracts/samples/automation-topic-step.sample.json',
+      ).readAsStringSync(),
+    );
+    expect(AutomationStep.fromJson(sample).toJson(), sample);
+  });
   test('automation reaction step preserves original emoji', () {
-    final sample = jsonDecode(File('../../contracts/samples/automation-reaction-step.sample.json').readAsStringSync());
+    final sample = jsonDecode(
+      File(
+        '../../contracts/samples/automation-reaction-step.sample.json',
+      ).readAsStringSync(),
+    );
     expect(AutomationStep.fromJson(sample).toJson(), sample);
   });
   test(

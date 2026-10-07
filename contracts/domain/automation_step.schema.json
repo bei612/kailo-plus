@@ -9,7 +9,8 @@
   "properties": {
     "id": {"type": "string", "minLength": 1},
     "name": {"type": "string", "minLength": 1},
-    "action": {"type": "string", "enum": ["delay", "request_approval", "send_message", "add_reaction"]},
+    "action": {"type": "string", "enum": ["delay", "request_approval", "send_message", "add_reaction", "set_channel_topic"]},
+    "topic": {"type": "string", "description": "原频道主题；空字符串清空主题，不改变频道名称、描述或成员。"},
     "emoji": {"type": "string", "minLength": 1, "maxLength": 64, "description": "原 buzz-sdk build_reaction 的字符上限；目标仅为该次真实触发消息。"},
     "duration": {"type": "string", "minLength": 1},
     "approvalPolicy": {"$ref": "automation_approval_policy_ref.schema.json", "description": "request_approval 的精确既有策略引用；审批人和时限仍由该策略决定，不以自由文本 from 推断权限。"},

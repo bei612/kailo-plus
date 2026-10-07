@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"mime/multipart"
 	"strings"
 	"testing"
 	"time"
@@ -725,14 +726,14 @@ func TestProcessSync_SyncDeletionsPartialWhenMixedResults(t *testing.T) {
 	})
 	require.NoError(t, err)
 	err = svc.ProcessSync(context.Background(), asynq.NewTask(types.TypeDataSourceSync, payload))
-	require.NoError(t, err, "partial failure must not fail the whole sync")
+	require.Error(t, err, "unconfirmed work must retain its cursor for retry")
 
 	updated := syncLogRepo.logs[syncLog.ID]
 	require.NotNil(t, updated)
 	assert.Equal(t, types.SyncLogStatusPartial, updated.Status)
 	assert.Equal(t, 1, updated.ItemsFailed)
 	assert.Equal(t, 1, updated.ItemsCreated)
-	assert.Contains(t, updated.ErrorMessage, "deletion failure(s) will only retry on the next full sync")
+	assert.Contains(t, updated.ErrorMessage, "deletion failure(s) retained at the previous cursor")
 }
 
 func TestIngestItem_URLCreationMetadataAttachFailure(t *testing.T) {
@@ -747,4 +748,182 @@ func TestIngestItem_URLCreationMetadataAttachFailure(t *testing.T) {
 	}, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "attach datasource metadata")
+}
+
+type replacementKnowledgeRepo struct {
+	deletionLookupKnowledgeRepo
+	writes int
+}
+
+func (r *replacementKnowledgeRepo) UpdateKnowledgeForTransfer(_ context.Context, before, after *types.Knowledge) error {
+	if r.metadataUpdateErr != nil {
+		return r.metadataUpdateErr
+	}
+	r.writes++
+	return nil
+}
+
+type replacementKnowledgeService struct {
+	sweepFakeKS
+	current              *types.Knowledge
+	starts, observations int
+	startErr             error
+	state                string
+}
+
+func (s *replacementKnowledgeService) CreateKnowledgeFromFile(_ context.Context, kbID string, _ *multipart.FileHeader,
+	metadata map[string]string, _ *bool, _ string, _ []string, _ string, _ *types.KnowledgeProcessOverrides,
+) (*types.Knowledge, error) {
+	if s.current != nil {
+		return nil, types.NewDuplicateFileError(s.current)
+	}
+	raw, _ := json.Marshal(metadata)
+	s.current = &types.Knowledge{ID: "replacement", TenantID: 1, KnowledgeBaseID: kbID,
+		ParseStatus: types.ParseStatusPending, Metadata: types.JSON(raw), UpdatedAt: time.Now().UTC()}
+	return s.current, nil
+}
+
+func (s *replacementKnowledgeService) StartKnowledgeDeleteTask(_ context.Context, kbID, id, revision, taskID string) (map[string]any, error) {
+	s.starts++
+	var intent datasourceReplacement
+	if json.Unmarshal([]byte(s.current.GetMetadata()[datasourceReplacementMetadataKey]), &intent) != nil || !intent.DispatchStarted {
+		return nil, errors.New("missing persisted dispatch fence")
+	}
+	if s.startErr != nil {
+		return nil, s.startErr
+	}
+	return s.deleteResult(kbID, id, revision, taskID), nil
+}
+
+func (s *replacementKnowledgeService) ObserveKnowledgeDeleteTask(_ context.Context, kbID, id, revision, taskID string) (map[string]any, error) {
+	s.observations++
+	return s.deleteResult(kbID, id, revision, taskID), nil
+}
+
+func (s *replacementKnowledgeService) deleteResult(kbID, id, revision, taskID string) map[string]any {
+	return map[string]any{"state": s.state, "knowledge_base_id": kbID, "knowledge_id": id,
+		"native_revision": revision, "task_id": taskID, "completed_at": time.Now().UTC().Format(time.RFC3339Nano)}
+}
+
+func newReplacementFixture() (*DataSourceService, *replacementKnowledgeService, *replacementKnowledgeRepo, *types.DataSource, *types.FetchedItem) {
+	r := &replacementKnowledgeRepo{deletionLookupKnowledgeRepo: deletionLookupKnowledgeRepo{
+		knowledge: &types.Knowledge{ID: "original", UpdatedAt: time.Now().UTC()},
+	}}
+	ks := &replacementKnowledgeService{sweepFakeKS: sweepFakeKS{repo: r}, state: "RUNNING"}
+	return &DataSourceService{knowledgeService: ks}, ks, r,
+		&types.DataSource{ID: "ds", TenantID: 1, KnowledgeBaseID: "kb"},
+		&types.FetchedItem{ExternalID: "node", FileName: "file.txt", Content: []byte("new bytes")}
+}
+
+func TestDataSourceReplacementWaitsForReadyAndRetainsOriginalDeleteReceipt(t *testing.T) {
+	s, ks, repo, ds, item := newReplacementFixture()
+	_, err := s.ingestItem(context.Background(), ds, item, nil)
+	require.Error(t, err)
+	assert.Zero(t, ks.starts)
+	assert.Empty(t, ks.deleted)
+	assert.Empty(t, repo.hardDeleted)
+	for _, state := range []string{types.ParseStatusFailed, types.ParseStatusFinalizing, "future-state"} {
+		ks.current.ParseStatus = state
+		_, err = s.ingestItem(context.Background(), ds, item, nil)
+		require.Error(t, err)
+		assert.Zero(t, ks.starts)
+	}
+	ks.current.ParseStatus = types.ParseStatusCompleted
+	_, err = s.ingestItem(context.Background(), ds, item, nil)
+	require.Error(t, err)
+	assert.Equal(t, 1, ks.starts)
+	assert.Equal(t, 1, repo.writes)
+	_, err = s.ingestItem(context.Background(), ds, item, nil)
+	require.Error(t, err)
+	assert.Equal(t, 1, ks.starts)
+	assert.Equal(t, 1, ks.observations)
+	ks.state = "SUCCEEDED"
+	_, err = s.ingestItem(context.Background(), ds, item, nil)
+	var duplicate *types.DuplicateKnowledgeError
+	require.ErrorAs(t, err, &duplicate)
+	assert.Equal(t, 2, repo.writes)
+	// A retained native receipt makes subsequent cursor replay a no-op even
+	// after the native task's retention window has elapsed.
+	_, err = s.ingestItem(context.Background(), ds, item, nil)
+	require.ErrorAs(t, err, &duplicate)
+	assert.Equal(t, 1, ks.starts)
+	assert.Equal(t, 2, ks.observations)
+	assert.Empty(t, ks.deleted)
+	assert.Empty(t, repo.hardDeleted)
+}
+
+func TestDataSourceReplacementLostAckAndCASFailureNeverRepeatDelete(t *testing.T) {
+	s, ks, repo, ds, item := newReplacementFixture()
+	_, _ = s.ingestItem(context.Background(), ds, item, nil)
+	ks.current.ParseStatus = types.ParseStatusCompleted
+	repo.metadataUpdateErr = errors.New("CAS conflict")
+	_, err := s.ingestItem(context.Background(), ds, item, nil)
+	require.Error(t, err)
+	assert.Zero(t, ks.starts)
+	repo.metadataUpdateErr = nil
+	ks.startErr = errors.New("queue acknowledgement lost")
+	_, err = s.ingestItem(context.Background(), ds, item, nil)
+	require.Error(t, err)
+	assert.Equal(t, 1, ks.starts)
+	ks.state = "UNKNOWN"
+	_, err = s.ingestItem(context.Background(), ds, item, nil)
+	require.Error(t, err)
+	assert.Equal(t, 1, ks.starts)
+	assert.Equal(t, 1, ks.observations)
+	assert.Empty(t, repo.hardDeleted)
+}
+
+func TestDataSourceEmbeddedImageUnconfirmedReplacementRetainsCursor(t *testing.T) {
+	s, ks, _, ds, item := newReplacementFixture()
+	item.Metadata = map[string]string{"embedded_image": "true"}
+	ds.LastSyncCursor = types.JSON(`{"connector_cursor":{"page":"prior"}}`)
+	baseline := append(types.JSON(nil), ds.LastSyncCursor...)
+	dsRepo := &recordingDSRepo{}
+	s.dsRepo = dsRepo
+	for _, state := range []string{types.ParseStatusPending, types.ParseStatusCompleted, "UNKNOWN"} {
+		if ks.current != nil {
+			ks.current.ParseStatus = types.ParseStatusCompleted
+		}
+		if state == "UNKNOWN" {
+			ks.state = "UNKNOWN"
+		}
+		result := &types.SyncResult{}
+		handler := &streamSyncHandler{svc: s, ds: ds, result: result}
+		require.Error(t, handler.Emit(context.Background(), *item), state)
+		assert.Equal(t, 1, result.Failed, state)
+		assert.Zero(t, result.Skipped, state)
+		require.Error(t, handler.Checkpoint(context.Background(),
+			&types.SyncCursor{ConnectorCursor: map[string]interface{}{"page": "next"}}), state)
+		assert.Equal(t, baseline, ds.LastSyncCursor, state)
+		assert.Empty(t, dsRepo.updated, state)
+	}
+	assert.Equal(t, 1, ks.starts)
+	assert.Equal(t, 1, ks.observations)
+}
+
+type incompleteCursorConnector struct {
+	deletedItemConnector
+	err error
+}
+
+func (c incompleteCursorConnector) FetchIncremental(context.Context, *types.DataSourceConfig, *types.SyncCursor) ([]types.FetchedItem, *types.SyncCursor, error) {
+	return []types.FetchedItem{{ExternalID: "file:gone", IsDeleted: true}},
+		&types.SyncCursor{ConnectorCursor: map[string]interface{}{"page": "next"}}, c.err
+}
+
+func TestDataSourceFetchFailureDoesNotCommitCursorOrDeletion(t *testing.T) {
+	for _, fetchErr := range []error{errors.New("source unavailable"), &datasource.PartialFetchError{Details: []string{"one page unavailable"}}} {
+		h := newSyncDeletionHarness(t, true, "ds-incomplete", "sync-incomplete", nil, nil)
+		h.ds.SyncMode = types.SyncModeIncremental
+		baseline := makeConnectorCursor(t, map[string]map[string]string{"space": {"old": "1"}})
+		h.ds.LastSyncCursor = baseline
+		require.NoError(t, h.svc.connectorRegistry.Register(incompleteCursorConnector{err: fetchErr}))
+		raw, err := json.Marshal(types.DataSourceSyncPayload{DataSourceID: h.ds.ID, TenantID: h.ds.TenantID, SyncLogID: h.syncLogID})
+		require.NoError(t, err)
+		err = h.svc.ProcessSync(context.Background(), asynq.NewTask(types.TypeDataSourceSync, raw))
+		require.Error(t, err)
+		assert.Equal(t, baseline, h.ds.LastSyncCursor)
+		assert.Empty(t, h.knowledgeSvc.deleted)
+		assert.Empty(t, h.knowledgeRepo.hardDeleted)
+	}
 }

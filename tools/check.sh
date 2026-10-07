@@ -755,6 +755,82 @@ else:
     print("  \033[33mSKIP\033[0m 实际部署配置预检无适用对象（未提供 deploy/local/.env）；不代表运行验收")
 print("  \033[32mPASS\033[0m 初始化先预检、后清理；IdP 就绪后同步客户端与管理员，业务 Tenant 后引导 Catalog")
 
+# IdP 原生语言：执行生产同步分支，只隔离文件/HTTP，不接触实际用户或凭据。
+import copy
+import io
+import contextlib
+import urllib.error
+from unittest.mock import patch
+
+locale_calls = list(re.finditer(r"^\./bootstrap\.sh --sync-realm-locales$", initializer, re.M))
+if len(locale_calls) != 1 or not idp_ready.end() < locale_calls[0].start() < core_start.start():
+    raise SystemExit("FAIL realm 语言同步必须在 IdP 就绪后、Core 启动前执行")
+bootstrap_source = pathlib.Path("deploy/local/bootstrap.sh").read_text(encoding="utf-8")
+locale_source = bootstrap_source.split("<<'PYLOCALE'\n", 1)[1].split("\nPYLOCALE", 1)[0]
+locale_template = json.loads(pathlib.Path("deploy/local/identity-provider/realm.json").read_text())
+locale_desired = {"internationalizationEnabled": True, "supportedLocales": ["zh-CN", "en"],
+                  "defaultLocale": "zh-CN"}
+assert all(locale_template.get(k) == v for k, v in locale_desired.items())
+
+
+def locale_sync_probe(current, fault=None, expected_error=False):
+    writes = []
+    realm_before = copy.deepcopy(current)
+    output = io.StringIO()
+
+    def read_file(path, *args, **kwargs):
+        if str(path) == "identity-provider/realm.json":
+            return json.dumps(locale_template)
+        assert str(path) == "secrets/keycloak_admin_password"
+        return "fixture-password"
+
+    def http(request, data=None, **kwargs):
+        assert kwargs["timeout"] == 1
+        if isinstance(request, str):
+            assert request == "https://idp.invalid/realms/master/protocol/openid-connect/token"
+            return io.BytesIO(b'{"access_token":"fixture-token"}')
+        assert request.full_url == "https://idp.invalid/admin/realms/fixture"
+        assert request.get_header("Authorization") == "Bearer fixture-token"
+        if request.method == "PUT":
+            body = json.loads(request.data)
+            assert body == locale_desired  # 不允许投递用户/client/角色/认证配置。
+            writes.append(body)
+            if fault != "lost-update":
+                current.update(body)
+            if fault == "unknown-after-write":
+                raise urllib.error.URLError("fixture-password fixture-token")
+            return io.BytesIO()
+        assert request.method == "GET"
+        return io.BytesIO(json.dumps(current).encode())
+
+    error = None
+    with patch.object(pathlib.Path, "read_text", read_file), \
+         patch("urllib.request.urlopen", http), \
+         patch.object(sys, "argv", ["bootstrap", "https://idp.invalid/realms/fixture", "fixture", "admin", "1"]), \
+         contextlib.redirect_stdout(output):
+        try:
+            exec(compile(locale_source, "bootstrap:PYLOCALE", "exec"), {})
+        except SystemExit as caught:
+            error = str(caught)
+    assert (error is not None) == expected_error
+    assert "fixture-password" not in output.getvalue() + (error or "")
+    assert "fixture-token" not in output.getvalue() + (error or "")
+    assert {k: v for k, v in current.items() if k not in locale_desired} == \
+           {k: v for k, v in realm_before.items() if k not in locale_desired}
+    return len(writes)
+
+
+locale_current = {"realm": "fixture", "id": "unchanged", "enabled": True, "registrationAllowed": False}
+assert locale_sync_probe(locale_current) == 1
+locale_current["supportedLocales"].reverse()
+assert locale_sync_probe(locale_current) == 0
+assert locale_sync_probe({"realm": "fixture"}, "lost-update", True) == 1
+locale_unknown = {"realm": "fixture"}
+assert locale_sync_probe(locale_unknown, "unknown-after-write", True) == 1
+assert locale_sync_probe(locale_unknown) == 0
+assert locale_sync_probe({"realm": "other"}, expected_error=True) == 0
+print("  \033[32mPASS\033[0m IdP 原生中英：同步/重入/读回拒绝/结果不明后只读确认/身份不变 6 项")
+
 class UniqueKeysLoader(yaml.SafeLoader):
     pass
 

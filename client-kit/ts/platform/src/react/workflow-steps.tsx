@@ -36,6 +36,8 @@ export function supportedSteps(value: unknown): value is AutomationStep[] {
     if (index === value.length - 1) return row.action === "add_reaction"
       ? Object.keys(row).every((key) => ["id", "name", "action", "emoji"].includes(key))
         && typeof row.emoji === "string" && !!row.emoji.trim()
+      : row.action === "set_channel_topic"
+        ? Object.keys(row).every((key) => ["id", "name", "action", "topic"].includes(key)) && typeof row.topic === "string"
       : Object.keys(row).every((key) => ["id", "name", "action", "text"].includes(key))
         && row.action === "send_message" && typeof row.text === "string" && !!row.text.trim();
     if (row.action === "request_approval") {
@@ -50,11 +52,13 @@ export function supportedSteps(value: unknown): value is AutomationStep[] {
   });
 }
 
-export type WorkflowActionKind = ActionKind | ActionEnum.AddReaction;
+export type WorkflowActionKind = ActionKind | ActionEnum.AddReaction | ActionEnum.SetChannelTopic;
 export function workflowAction(content: AutomationVersionContent): {kind: WorkflowActionKind; template: string} | undefined {
   return content.formatVersion === 2
     ? content.steps?.at(-1)?.action === ActionEnum.AddReaction
       ? {kind: ActionEnum.AddReaction, template: content.steps.at(-1)?.emoji ?? ""}
+      : content.steps?.at(-1)?.action === ActionEnum.SetChannelTopic
+        ? {kind: ActionEnum.SetChannelTopic, template: content.steps.at(-1)?.topic ?? ""}
       : { kind: ActionKind.PostMessage, template: content.steps?.at(-1)?.text ?? "" }
     : content.action;
 }
@@ -101,6 +105,11 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies }: 
           {t("workflows.steps.emoji")}<Input autoCapitalize="off" id={`${prefix}-emoji`} value={step.emoji ?? ""}
             onChange={(event) => onUpdate({ ...step, emoji: event.target.value })} />
           <span className="block font-normal">{t("workflows.steps.reactionTarget")}</span>
+        </label>
+        : step.action === "set_channel_topic" ? <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-topic`}>
+          {t("workflows.steps.topic")}<Input autoCapitalize="off" id={`${prefix}-topic`} value={step.topic ?? ""}
+            onChange={(event) => onUpdate({ ...step, topic: event.target.value })} />
+          <span className="block font-normal">{t("workflows.steps.topicTarget")}</span>
         </label>
         : <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-text`}>
           {t("workflows.steps.message")}<textarea id={`${prefix}-text`} value={step.text ?? ""}

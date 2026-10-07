@@ -9,11 +9,11 @@ import (
 	"mime/multipart"
 	"reflect"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/datasource"
+	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -678,13 +678,16 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 	}
 
 	// Fetch items based on sync mode
+	cursor, cursorErr := ds.ParseSyncCursor()
+	if cursorErr != nil {
+		return fmt.Errorf("invalid retained sync cursor: %w", cursorErr)
+	}
 	var items []types.FetchedItem
 	var nextCursor *types.SyncCursor
 	var fetchErr error
 
 	if payload.ForceFull || ds.SyncMode == types.SyncModeFull {
 		if full, ok := connector.(datasource.FullSyncWithCursor); ok {
-			cursor, _ := ds.ParseSyncCursor()
 			items, nextCursor, fetchErr = full.FetchAllFromCursor(ctx, config, config.ResourceIDs, cursor)
 		} else {
 			items, fetchErr = connector.FetchAll(ctx, config, config.ResourceIDs)
@@ -692,29 +695,14 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 		logger.Infof(ctx, "full sync fetched %d items", len(items))
 	} else {
 		// Incremental sync
-		cursor, _ := ds.ParseSyncCursor()
 		items, nextCursor, fetchErr = connector.FetchIncremental(ctx, config, cursor)
 		logger.Infof(ctx, "incremental sync fetched %d items", len(items))
 	}
 
-	var fetchWarnings []string
-	var partialFetch *datasource.PartialFetchError
-	if errors.As(fetchErr, &partialFetch) {
-		fetchWarnings = partialFetch.Details
-		fetchErr = nil
-	}
-
 	if fetchErr != nil {
-		// Persist connector cursor even when fetch failed so transient outages
-		// (e.g. RSS feed downtime) do not force a full re-ingest on recovery.
-		if nextCursor != nil {
-			if cursorJSON, cerr := nextCursor.ToJSON(); cerr == nil {
-				ds.LastSyncCursor = cursorJSON
-				if uerr := s.dsRepo.UpdateSyncState(ctx, ds); uerr != nil {
-					logger.Warnf(ctx, "failed to persist sync cursor after fetch error: %v", uerr)
-				}
-			}
-		}
+		// A cursor describes consumed work, not merely fetched pages. Neither
+		// partial discovery nor an unread result may commit a desired deletion
+		// set or advance beyond the last durable ingestion checkpoint.
 		logger.Errorf(ctx, "fetch operation failed: %v", fetchErr)
 		syncLog.Status = types.SyncLogStatusFailed
 		syncLog.FinishedAt = timePtr(time.Now().UTC())
@@ -768,26 +756,20 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 	}
 
 	// Update cursor for next incremental sync
-	if nextCursor != nil {
-		cursorJSON, _ := nextCursor.ToJSON()
+	if nextCursor != nil && result.Failed == 0 {
+		cursorJSON, err := nextCursor.ToJSON()
+		if err != nil {
+			return fmt.Errorf("encode confirmed sync cursor: %w", err)
+		}
 		ds.LastSyncCursor = cursorJSON
 	}
 
 	ds.LastSyncAt = timePtr(time.Now().UTC())
 	syncStatus := types.SyncLogStatusSuccess
 	syncErrorMessage := ""
-	if len(fetchWarnings) > 0 {
-		syncStatus = types.SyncLogStatusPartial
-		syncErrorMessage = fmt.Sprintf("Some feeds failed: %s", strings.Join(fetchWarnings, "; "))
-		for _, w := range fetchWarnings {
-			result.Errors = append(result.Errors, types.SyncItemError{Message: w})
-		}
-		resultJSON, _ = result.ToJSON()
-	}
 	if result.Failed > 0 {
-		// Per-document failures flip the sync to partial so the drawer shows
-		// which docs didn't make it (mirrors the streaming path). Deletion
-		// failures additionally only retry on a later full sync.
+		// Keep the original cursor so the existing retry/scheduler can observe
+		// the same native items again instead of silently losing failed work.
 		syncStatus = types.SyncLogStatusPartial
 		if syncErrorMessage != "" {
 			syncErrorMessage += "; "
@@ -795,14 +777,19 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 		syncErrorMessage += fmt.Sprintf("%d document(s) failed to sync", result.Failed)
 		if result.DeletionFailed > 0 {
 			syncErrorMessage += fmt.Sprintf(
-				"; %d deletion failure(s) will only retry on the next full sync", result.DeletionFailed)
+				"; %d deletion failure(s) retained at the previous cursor", result.DeletionFailed)
 		}
 	}
-	s.updateSyncRunResult(ctx, ds, syncLog, result, resultJSON, syncStatus, syncErrorMessage, wasPaused)
+	if err := s.updateSyncRunResult(ctx, ds, syncLog, result, resultJSON, syncStatus, syncErrorMessage, wasPaused); err != nil {
+		return err
+	}
 
 	logger.Infof(ctx, "data source sync completed: ds=%s created=%d updated=%d deleted=%d",
 		payload.DataSourceID, syncLog.ItemsCreated, syncLog.ItemsUpdated, syncLog.ItemsDeleted)
 
+	if result.Failed > 0 {
+		return fmt.Errorf("%d document(s) remain unconfirmed at the previous cursor", result.Failed)
+	}
 	return nil
 }
 
@@ -945,18 +932,17 @@ func (s *DataSourceService) applyFetchedItem(
 	isUpdate, err := s.ingestItem(ctx, ds, item, tagIDs)
 	if err != nil {
 		var dupErr *types.DuplicateKnowledgeError
+		var nativeErr *werrors.AppError
 		switch {
 		case errors.As(err, &dupErr):
 			// Duplicate file/URL is not a failure — count as skipped.
 			logger.Infof(ctx, "item %q (external_id=%s) already exists, skipping", item.Title, item.ExternalID)
 			result.Skipped++
-		case item.Metadata["embedded_image"] == "true":
-			// An image extracted from a document for OCR is a best-effort
-			// enrichment, not the document itself. If the KB cannot ingest it
-			// (VLM/object-storage not configured for images, or a transient error),
-			// skip it rather than failing the whole sync: the doc body already
-			// synced, and the image stays in SubtreeKeep for a later retry once the
-			// KB is configured.
+		case item.Metadata["embedded_image"] == "true" && errors.As(err, &nativeErr) &&
+			nativeErr.Code == werrors.ErrImageModelRequired:
+			// Only the native pre-write VLM capability rejection is optional.
+			// Storage/network failures, pending parse and unknown retirement
+			// cannot acknowledge this item or move the source cursor.
 			logger.Infof(ctx, "skipping embedded image %q (external_id=%s), not ingested: %v",
 				item.Title, item.ExternalID, err)
 			result.Skipped++
@@ -999,16 +985,17 @@ type streamSyncHandler struct {
 	syncLog *types.SyncLog
 }
 
-// Emit ingests one streamed item. A canceled context aborts the stream so the
-// connector stops fetching; per-item ingest failures are recorded in result and
-// do NOT abort (matching the batch loop, which never fails the whole sync for
-// one bad document).
+// Emit acknowledges only an applied item. Returning an error prevents the
+// original streaming connector from checkpointing past a failed ingestion.
 func (h *streamSyncHandler) Emit(ctx context.Context, item types.FetchedItem) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	h.result.Total++
 	h.svc.applyFetchedItem(withKBActivitySuppressed(ctx), h.ds, &item, h.tagIDs, h.result)
+	if h.result.Failed > 0 {
+		return fmt.Errorf("stream ingestion is unconfirmed; retain the previous cursor")
+	}
 	return nil
 }
 
@@ -1016,6 +1003,9 @@ func (h *streamSyncHandler) Emit(ctx context.Context, item types.FetchedItem) er
 // running counts into the sync log so progress survives a crash and the UI can
 // reflect a long sync mid-flight instead of jumping from 0 to done.
 func (h *streamSyncHandler) Checkpoint(ctx context.Context, cursor *types.SyncCursor) error {
+	if h.result.Failed > 0 {
+		return fmt.Errorf("cannot checkpoint unconfirmed ingestion")
+	}
 	if cursor == nil {
 		return nil
 	}
@@ -1023,8 +1013,10 @@ func (h *streamSyncHandler) Checkpoint(ctx context.Context, cursor *types.SyncCu
 	if err != nil {
 		return err
 	}
+	previous := h.ds.LastSyncCursor
 	h.ds.LastSyncCursor = cursorJSON
 	if err := h.svc.dsRepo.UpdateSyncState(ctx, h.ds); err != nil {
+		h.ds.LastSyncCursor = previous
 		return err
 	}
 
@@ -1128,31 +1120,25 @@ func (s *DataSourceService) processSyncStreaming(
 		return err
 	}
 
+	// A connector must not swallow Emit's error and acknowledge the page.
+	if result.Failed > 0 {
+		err := fmt.Errorf("%d streamed item(s) remain unconfirmed", result.Failed)
+		s.updateSyncRunResult(ctx, ds, syncLog, result, resultJSON, types.SyncLogStatusPartial, err.Error(), wasPaused)
+		return err
+	}
 	// Persist the final cursor for the next incremental sync.
 	if nextCursor != nil {
-		if cursorJSON, cerr := nextCursor.ToJSON(); cerr == nil {
-			ds.LastSyncCursor = cursorJSON
+		cursorJSON, err := nextCursor.ToJSON()
+		if err != nil {
+			return fmt.Errorf("encode confirmed sync cursor: %w", err)
 		}
+		ds.LastSyncCursor = cursorJSON
 	}
 	ds.LastSyncAt = timePtr(time.Now().UTC())
 
-	// Surface per-document failures as a partial sync (not silent success), so
-	// the sync-log drawer's failure detail explains which docs didn't make it —
-	// the visibility gap behind "status normal but not everything syncs"
-	// (Tencent/WeKnora#2136). Fetch failures abort the stream before the failed
-	// page is checkpointed, so the next run retries them; deletion failures are
-	// past the cursor and only retry on a full sync in the normal case (see
-	// applyFetchedItem).
-	status := types.SyncLogStatusSuccess
-	errMsg := ""
-	if result.Failed > 0 {
-		status = types.SyncLogStatusPartial
-		errMsg = fmt.Sprintf("%d document(s) failed to sync", result.Failed)
-		if result.DeletionFailed > 0 {
-			errMsg += fmt.Sprintf("; %d deletion failure(s) will only retry on the next full sync", result.DeletionFailed)
-		}
+	if err := s.updateSyncRunResult(ctx, ds, syncLog, result, resultJSON, types.SyncLogStatusSuccess, "", wasPaused); err != nil {
+		return err
 	}
-	s.updateSyncRunResult(ctx, ds, syncLog, result, resultJSON, status, errMsg, wasPaused)
 	logger.Infof(ctx, "streaming sync completed: ds=%s created=%d updated=%d deleted=%d skipped=%d failed=%d",
 		payload.DataSourceID, result.Created, result.Updated, result.Deleted, result.Skipped, result.Failed)
 	return nil
@@ -1167,7 +1153,7 @@ func (s *DataSourceService) updateSyncRunResult(
 	status string,
 	errorMessage string,
 	wasPaused bool,
-) {
+) error {
 	syncLog.ItemsTotal = result.Total
 	syncLog.ItemsCreated = result.Created
 	syncLog.ItemsUpdated = result.Updated
@@ -1178,9 +1164,6 @@ func (s *DataSourceService) updateSyncRunResult(
 	syncLog.FinishedAt = timePtr(time.Now().UTC())
 	syncLog.ErrorMessage = errorMessage
 	syncLog.Result = resultJSON
-	if err := s.syncLogRepo.UpdateResult(ctx, syncLog); err != nil {
-		logger.Errorf(ctx, "failed to update sync log: %v", err)
-	}
 
 	if status == types.SyncLogStatusFailed {
 		if !wasPaused {
@@ -1195,6 +1178,12 @@ func (s *DataSourceService) updateSyncRunResult(
 	ds.LastSyncResult = resultJSON
 	if err := s.dsRepo.UpdateSyncState(ctx, ds); err != nil {
 		logger.Errorf(ctx, "failed to update data source: %v", err)
+		return err
+	}
+	// The success log must not precede persistence of its acknowledged cursor.
+	if err := s.syncLogRepo.UpdateResult(ctx, syncLog); err != nil {
+		logger.Errorf(ctx, "failed to update sync log: %v", err)
+		return err
 	}
 	action := types.AuditActionDataSourceSyncCompleted
 	outcome := types.AuditOutcomeSuccess
@@ -1211,6 +1200,7 @@ func (s *DataSourceService) updateSyncRunResult(
 			"total": result.Total, "created": result.Created, "updated": result.Updated,
 			"deleted": result.Deleted, "skipped": result.Skipped, "failed": result.Failed,
 		})
+	return nil
 }
 
 func allFetchedItemsFailedError(result *types.SyncResult) error {
@@ -1270,7 +1260,9 @@ func (s *DataSourceService) validateDataSourceConfig(ctx context.Context, ds *ty
 }
 
 // ingestItem writes a single FetchedItem into the knowledge base.
-// If a knowledge item with the same external_id already exists, it is deleted first (update = delete + re-create).
+// Reuse the native content dedupe before retiring an earlier source revision.
+// The replacement must be ready and its original conditional delete task must
+// have a retained terminal receipt before the connector can checkpoint it.
 //
 // Routing logic:
 //   - Has Content bytes → CreateKnowledgeFromFile (走完整的文档解析 pipeline)
@@ -1307,30 +1299,36 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 	for k, v := range item.Metadata {
 		metadata[k] = v
 	}
+	// Connector metadata cannot impersonate another data source or inject a
+	// native replacement receipt. These fields belong to this consumer.
+	metadata["external_id"] = item.ExternalID
+	metadata["datasource_id"] = ds.ID
+	delete(metadata, datasourceReplacementMetadataKey)
 
-	// Check if a knowledge item with this external_id already exists → delete it first (update)
-	isUpdate := false
+	var existing *types.Knowledge
 	if item.ExternalID != "" {
 		repo := s.knowledgeService.GetRepository()
 		// Scope the lookup to items owned by this data source so identical
 		// external IDs from two data sources cannot collide or overwrite each
 		// other during updates.
-		existing, err := repo.FindByDataSourceExternalID(ctx, ds.TenantID, ds.KnowledgeBaseID, ds.ID, item.ExternalID)
+		var err error
+		existing, err = repo.FindByDataSourceExternalID(ctx, ds.TenantID, ds.KnowledgeBaseID, ds.ID, item.ExternalID)
 		if err != nil {
-			logger.Warnf(ctx, "failed to check existing knowledge for external_id=%s: %v", item.ExternalID, err)
-			// Non-fatal: proceed with creation (may produce duplicate)
-		} else if existing != nil {
-			logger.Infof(ctx, "found existing knowledge %s for external_id=%s, deleting for update", existing.ID, item.ExternalID)
-			if err := s.knowledgeService.DeleteKnowledge(ctx, existing.ID); err != nil {
-				logger.Warnf(ctx, "failed to delete existing knowledge %s: %v", existing.ID, err)
-			} else {
-				if herr := repo.HardDeleteKnowledge(ctx, ds.TenantID, existing.ID); herr != nil {
-					logger.Warnf(ctx, "failed to hard-delete replaced knowledge %s: %v", existing.ID, herr)
-				}
-				isUpdate = true
+			return false, fmt.Errorf("look up source revision before ingestion: %w", err)
+		}
+		if existing != nil {
+			if existing.ID == "" || existing.UpdatedAt.IsZero() {
+				return false, fmt.Errorf("previous source revision is unavailable")
 			}
+			previous, err := json.Marshal(datasourceReplacement{KnowledgeID: existing.ID,
+				Revision: existing.UpdatedAt.UTC().Format(time.RFC3339Nano)})
+			if err != nil {
+				return false, err
+			}
+			metadata[datasourceReplacementMetadataKey] = string(previous)
 		}
 	}
+	isUpdate := existing != nil
 
 	// Case 1: content already fetched → build a FileHeader from bytes and call CreateKnowledgeFromFile
 	if len(item.Content) > 0 {
@@ -1338,7 +1336,7 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 		if err != nil {
 			return isUpdate, fmt.Errorf("build file header: %w", err)
 		}
-		if _, err := s.knowledgeService.CreateKnowledgeFromFile(
+		created, err := s.knowledgeService.CreateKnowledgeFromFile(
 			ctx,
 			ds.KnowledgeBaseID,
 			fh,
@@ -1348,18 +1346,20 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 			tagIDs,        // auto-tag from data source
 			channel,
 			nil,
-		); err != nil {
+		)
+		if err != nil {
 			var dupErr *types.DuplicateKnowledgeError
-			if errors.As(err, &dupErr) && dupIsSameNode(dupErr, item) {
-				// Identical content is already present in the KB under THIS node's
-				// own external_id, so the parent effectively exists — reconcile the
-				// subtree so children removed from the doc do not linger.
-				s.sweepStaleSubtree(ctx, ds, item)
+			if errors.As(err, &dupErr) {
+				if !dupIsSameNode(dupErr, ds, item) {
+					return isUpdate, fmt.Errorf("duplicate content belongs to another source item")
+				}
+				if finishErr := s.finishDataSourceIngest(ctx, ds, item, dupErr.Knowledge); finishErr != nil {
+					return isUpdate, finishErr
+				}
 			}
 			return isUpdate, err
 		}
-		s.sweepStaleSubtree(ctx, ds, item)
-		return isUpdate, nil
+		return isUpdate, s.finishDataSourceIngest(ctx, ds, item, created)
 	}
 
 	// Case 2: only a remote URL — let WeKnora handle downloading and parsing
@@ -1378,11 +1378,13 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 		)
 		if err != nil {
 			var dupErr *types.DuplicateKnowledgeError
-			if errors.As(err, &dupErr) && dupIsSameNode(dupErr, item) {
-				// Identical content is already present in the KB under THIS node's
-				// own external_id, so the parent effectively exists — reconcile the
-				// subtree so children removed from the doc do not linger.
-				s.sweepStaleSubtree(ctx, ds, item)
+			if errors.As(err, &dupErr) {
+				if !dupIsSameNode(dupErr, ds, item) {
+					return isUpdate, fmt.Errorf("duplicate content belongs to another source item")
+				}
+				if finishErr := s.finishDataSourceIngest(ctx, ds, item, dupErr.Knowledge); finishErr != nil {
+					return isUpdate, finishErr
+				}
 			}
 			return isUpdate, err
 		}
@@ -1399,26 +1401,19 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 				return isUpdate, fmt.Errorf("attach datasource metadata: %w", uErr)
 			}
 		}
-		s.sweepStaleSubtree(ctx, ds, item)
-		return isUpdate, nil
+		return isUpdate, s.finishDataSourceIngest(ctx, ds, item, created)
 	}
 
 	return isUpdate, fmt.Errorf("item has neither content nor URL")
 }
 
-// dupIsSameNode reports whether a duplicate-content error means the parent still
-// exists in the KB *under this item's own external_id* — i.e. a content-dedup hit
-// against this same node, so reconciling its subtree is safe. File deduplication
-// keys on file_hash plus file_type (CheckKnowledgeExists), so an updated node whose rebuilt body
-// happens to hash-collide with a DIFFERENT knowledge item (another node, or a
-// manually-uploaded file with no external_id) would otherwise sweep this node's
-// children even though its own parent row was just deleted for the update and
-// never recreated — deleting those children with no parent to replace them. In
-// that case the matched row's external_id differs (or is absent), so we skip the
-// sweep and leave the children intact.
-func dupIsSameNode(dupErr *types.DuplicateKnowledgeError, item *types.FetchedItem) bool {
+// A native dedupe hit can be acknowledged only for this data source's own
+// external item. Shared-content ownership/grouping is not inferred from a hash
+// collision; readiness and any retained replacement task are checked next.
+func dupIsSameNode(dupErr *types.DuplicateKnowledgeError, ds *types.DataSource, item *types.FetchedItem) bool {
 	return dupErr != nil && dupErr.Knowledge != nil &&
-		dupErr.Knowledge.GetMetadata()["external_id"] == item.ExternalID
+		dupErr.Knowledge.GetMetadata()["external_id"] == item.ExternalID &&
+		dupErr.Knowledge.GetMetadata()["datasource_id"] == ds.ID
 }
 
 // sweepStaleSubtree deletes STALE sub-items of item — knowledge whose external_id

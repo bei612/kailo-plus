@@ -445,7 +445,7 @@ function AutomationCard({ row, workspaceName, locked, onView, onEdit }: {
       {state.status === "pending" ? <p role="status" className="mt-4 text-sm text-muted-foreground">{t("platform.loading")}</p>
         : !detail ? <div className="pointer-events-auto mt-4"><AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} /></div>
         : content ? <>
-          <p className="mt-4 text-xs font-medium text-muted-foreground">{triggerLabel} · {t(workflowAction(content)?.kind === ActionEnum.AddReaction ? "workflows.steps.addReaction" : workflowAction(content)?.kind === ActionKind.PostMessage ? "agents.automation.postMessage" : "agents.automation.agentTurn")}</p>
+          <p className="mt-4 text-xs font-medium text-muted-foreground">{triggerLabel} · {t(workflowAction(content)?.kind === ActionEnum.SetChannelTopic ? "workflows.steps.setTopic" : workflowAction(content)?.kind === ActionEnum.AddReaction ? "workflows.steps.addReaction" : workflowAction(content)?.kind === ActionKind.PostMessage ? "agents.automation.postMessage" : "agents.automation.agentTurn")}</p>
           <h3 className="mt-2 line-clamp-4 break-words text-xl font-bold leading-tight tracking-tight" data-testid="workflow-card-semantic-label">{content.name ?? t("workflows.unnamed")}</h3>
           <p className="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-xs text-muted-foreground">{workflowAction(content)?.template}</p>
           <label className="pointer-events-auto mt-2 flex min-w-0 flex-col gap-1 text-2xs text-muted-foreground">{t("agents.version.assetVersion")}
@@ -549,14 +549,14 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
               <p>{t("agents.automation.offsetSeconds")}: {version.content.trigger.scheduleSpec.offsetSeconds}</p>
               <p>{t("agents.automation.catchupWindowSeconds")}: {version.content.trigger.scheduleSpec.catchupWindowSeconds}</p>
             </> : null}
-            <p>{t("agents.automation.resultTarget")}: {t(version.content.resultTarget === ResultTarget.Channel ? "agents.automation.channel" : "agents.automation.thread")}</p>
+            <p>{t("agents.automation.resultTarget")}: {t(workflowAction(version.content)?.kind === ActionEnum.SetChannelTopic || version.content.resultTarget === ResultTarget.Channel ? "agents.automation.channel" : "agents.automation.thread")}</p>
             <p>{t("agents.automation.approvalPolicy")}: {workflowApprovalPolicy(version.content)
               ? `${workflowApprovalPolicy(version.content)?.id} · ${workflowApprovalPolicy(version.content)?.version}`
               : t("agents.automation.noApproval")}</p>
           </Cell>
           <Cell><span className="whitespace-pre-wrap">{workflowAction(version.content)?.template}</span>
             {version.content.steps ? <ol className="mt-2 space-y-1 text-xs text-muted-foreground">{version.content.steps.map((step) =>
-              <li key={step.id}>{step.name ?? step.id} · {step.action === "delay" ? `${t("workflows.steps.duration")}: ${step.duration}` : step.action === "request_approval" ? t("agents.automation.approvalPolicy") : step.action === "add_reaction" ? `${t("workflows.steps.addReaction")}: ${step.emoji}` : t("workflows.steps.message")}</li>)}</ol> : null}
+              <li key={step.id}>{step.name ?? step.id} · {step.action === "delay" ? `${t("workflows.steps.duration")}: ${step.duration}` : step.action === "request_approval" ? t("agents.automation.approvalPolicy") : step.action === "set_channel_topic" ? `${t("workflows.steps.setTopic")}: ${step.topic}` : step.action === "add_reaction" ? `${t("workflows.steps.addReaction")}: ${step.emoji}` : t("workflows.steps.message")}</li>)}</ol> : null}
           </Cell>
           <Cell><Button disabled={locked || copying} onClick={() => { void copy(version.assetId); }}>{t("agents.automation.copy")}</Button></Cell>
         </tr>)}
@@ -707,7 +707,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     ...(name !== "" ? { name } : {}),
     trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : prefix ? { textPrefix: prefix } : {}),
       ...(trigger === TriggerKind.Mention && executor ? { mentionPrincipalId: executor.agentPrincipalId } : {}) },
-    ...(steps.length ? {formatVersion: 2, steps} : actionKind === ActionEnum.AddReaction
+    ...(steps.length ? {formatVersion: 2, steps} : actionKind === ActionEnum.AddReaction || actionKind === ActionEnum.SetChannelTopic
       ? {formatVersion: 2, steps: []} : {action: { kind: actionKind, template }}),
     ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}),
     resultTarget: trigger === TriggerKind.Schedule ? ResultTarget.Channel : ResultTarget.TriggerThread,
@@ -916,14 +916,19 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
               setActionKind(ActionEnum.AddReaction);
               setSteps([{id: crypto.randomUUID(), action: ActionEnum.AddReaction, emoji: ""}]);
             }
+            if (event.target.value === ActionEnum.SetChannelTopic) {
+              setActionKind(ActionEnum.SetChannelTopic);
+              setSteps([{id: crypto.randomUUID(), action: ActionEnum.SetChannelTopic, topic: ""}]);
+            }
           }} className="h-8 rounded-md border border-input bg-background px-2">
             <option value={ActionKind.AgentTurn}>{t("agents.automation.agentTurn")}</option>
             <option value={ActionKind.PostMessage}>{t("agents.automation.postMessage")}</option>
             <option value={ActionEnum.AddReaction} disabled={trigger === TriggerKind.Schedule}>{t("workflows.steps.addReaction")}</option>
+            <option value={ActionEnum.SetChannelTopic}>{t("workflows.steps.setTopic")}</option>
           </select>
         </label>
         {steps.length ? <div className="space-y-3">{steps.map((step, index) => <WorkflowStepCard key={index} index={index} step={step} policies={policies}
-          onUpdate={(next) => { setSteps((old) => old.map((value, position) => position === index ? next : value)); if (index === steps.length - 1) setTemplate(next.text ?? next.emoji ?? ""); }}
+          onUpdate={(next) => { setSteps((old) => old.map((value, position) => position === index ? next : value)); if (index === steps.length - 1) setTemplate(next.text ?? next.emoji ?? next.topic ?? ""); }}
           onRemove={index < steps.length - 1 ? () => setSteps((old) => old.filter((_, position) => position !== index)) : undefined} />)}</div>
         : <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
           <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />
@@ -952,7 +957,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
         </label> : null}
         {!policyAvailable ? <Notice role="status">{t("agents.automation.approvalUnavailable")}
           <Button onClick={reloadAdmission}>{t("platform.retry")}</Button></Notice> : null}
-        <p className="text-sm">{t("agents.automation.resultTarget")}: {t(trigger === TriggerKind.Schedule ? "agents.automation.channel" : "agents.automation.thread")}</p>
+        <p className="text-sm">{t("agents.automation.resultTarget")}: {t(actionKind === ActionEnum.SetChannelTopic || trigger === TriggerKind.Schedule ? "agents.automation.channel" : "agents.automation.thread")}</p>
         </>}
       </> : null}
       {edit?.action === "enable" ? <>
@@ -998,7 +1003,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
         <p>{t("agents.automation.approvalPolicy")}: {workflowApprovalPolicy(intent.automationVersionContent)
           ? `${workflowApprovalPolicy(intent.automationVersionContent)?.id} · ${workflowApprovalPolicy(intent.automationVersionContent)?.version}`
           : t("agents.automation.noApproval")}</p>
-        <p>{t("agents.automation.resultTarget")}: {t(intent.automationVersionContent.resultTarget === ResultTarget.Channel ? "agents.automation.channel" : "agents.automation.thread")}</p>
+        <p>{t("agents.automation.resultTarget")}: {t(workflowAction(intent.automationVersionContent)?.kind === ActionEnum.SetChannelTopic || intent.automationVersionContent.resultTarget === ResultTarget.Channel ? "agents.automation.channel" : "agents.automation.thread")}</p>
       </> : null}
       {intent.assetId ? <p className="break-words">{intent.assetId} · {intent.assetVersion} · {intent.delegationId} · {intent.delegationVersion}</p> : null}
       <p className="text-muted-foreground">{t("agents.admission")}</p>
@@ -1088,7 +1093,6 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
   const [locked, setLocked] = useState(false);
   const [revision, setRevision] = useState(0);
   const [delegationTarget, setDelegationTarget] = useState<AgentInstallationView | null>(null);
-  const [delegationOpen, setDelegationOpen] = useState(false);
   const [permissionTarget, setPermissionTarget] = useState<AgentInstallationView | null>(null);
   const [upgradeTarget, setUpgradeTarget] = useState<AgentInstallationView | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -1105,7 +1109,7 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
       : <>
         <label className="flex flex-wrap items-center gap-2 text-sm">{t("platform.workspace")}
           <select disabled={locked} className="h-8 min-w-0 max-w-full rounded-md border border-input bg-background px-2" value={workspace.id}
-            onChange={(event) => { setSelected(event.target.value); setDelegationTarget(null); setDelegationOpen(false); setPermissionTarget(null); setUpgradeTarget(null); }}>
+            onChange={(event) => { setSelected(event.target.value); setDelegationTarget(null); setPermissionTarget(null); setUpgradeTarget(null); }}>
             {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
         </label>
@@ -1117,7 +1121,7 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
     {upgradeTarget ? <InstallationCreate key={`upgrade:${upgradeTarget.resourceId}`} upgrade={upgradeTarget} open onClose={() => setUpgradeTarget(null)}
       workspaceId={upgradeTarget.workspaceId} workspaceName={workspace?.name} sourceRevision={`${versionRevision}:${revision}:${refreshRevision}`}
       locked={locked} onLocked={setLocked} onRecorded={() => setRevision((old) => old + 1)} /> : null}
-    <AgentManagementDialog open={delegationOpen} title={t("agents.delegation.title")} locked={locked} onClose={() => { setDelegationOpen(false); setDelegationTarget(null); }}>
+    <AgentManagementDialog open={delegationTarget !== null} title={t("agents.delegation.title")} locked={locked} onClose={() => setDelegationTarget(null)}>
       <InstallationDelegation installation={delegationTarget} locked={locked} onLocked={setLocked} onReset={() => setDelegationTarget(null)}
         onRecorded={() => setRevision((old) => old + 1)} />
     </AgentManagementDialog>
@@ -1130,7 +1134,7 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
     </> : null}
     </AgentManagementDialog>
     {workspace ? <InstallationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} locked={locked} onLocked={setLocked}
-      onPermission={setPermissionTarget} onManage={(row) => { setDelegationTarget(row); setDelegationOpen(true); }} onUpgrade={setUpgradeTarget} /> : null}
+      onPermission={setPermissionTarget} onManage={setDelegationTarget} onUpgrade={setUpgradeTarget} /> : null}
   </section>;
 }
 

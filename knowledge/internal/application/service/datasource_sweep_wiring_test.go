@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"testing"
 
+	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -56,9 +57,14 @@ type sweepFakeKS struct {
 func (k *sweepFakeKS) GetRepository() interfaces.KnowledgeRepository { return k.repo }
 
 func (k *sweepFakeKS) CreateKnowledgeFromURL(
-	_ context.Context, _ string, _ string, _ string, _ string, _ *bool,
+	_ context.Context, kbID string, _ string, _ string, _ string, _ *bool,
 	_ string, _ []string, _ string, _ *types.KnowledgeProcessOverrides,
 ) (*types.Knowledge, error) {
+	if k.createURLKnowledge != nil {
+		k.createURLKnowledge.TenantID = 1
+		k.createURLKnowledge.KnowledgeBaseID = kbID
+		k.createURLKnowledge.ParseStatus = types.ParseStatusCompleted
+	}
 	return k.createURLKnowledge, nil
 }
 
@@ -87,7 +93,13 @@ func (k *sweepFakeKS) CreateKnowledgeFromFile(
 	if k.createErr != nil {
 		return nil, k.createErr
 	}
-	return &types.Knowledge{ID: "new-knowledge"}, nil
+	tenantID, ok := ctx.Value(types.TenantIDContextKey).(uint64)
+	if !ok {
+		tenantID = 7 // the direct native subtree fixtures below
+	}
+	raw, _ := json.Marshal(metadata)
+	return &types.Knowledge{ID: "new-knowledge", TenantID: tenantID, KnowledgeBaseID: kbID,
+		ParseStatus: types.ParseStatusCompleted, Metadata: types.JSON(raw)}, nil
 }
 
 // TestIngestItem_ReplacesSubtreeSweepsStaleChildrenAfterCreate verifies the
@@ -209,8 +221,8 @@ func TestIngestItem_NoSweepWhenDuplicateIsDifferentNode(t *testing.T) {
 
 	_, err := s.ingestItem(context.Background(), ds, item, nil)
 	var dupErr *types.DuplicateKnowledgeError
-	if !errors.As(err, &dupErr) {
-		t.Fatalf("want DuplicateKnowledgeError, got %v", err)
+	if err == nil || errors.As(err, &dupErr) {
+		t.Fatalf("foreign duplicate must remain unconfirmed, got %v", err)
 	}
 	if len(ks.deleted) != 0 {
 		t.Fatalf("dup against a different node must NOT sweep this node's children, deleted = %+v", ks.deleted)
@@ -224,7 +236,8 @@ func childWithExternalID(id, externalID, dataSourceID string) *types.Knowledge {
 		"external_id":   externalID,
 		"datasource_id": dataSourceID,
 	})
-	return &types.Knowledge{ID: id, Metadata: types.JSON(b)}
+	return &types.Knowledge{ID: id, TenantID: 7, KnowledgeBaseID: "kb-1",
+		ParseStatus: types.ParseStatusCompleted, Metadata: types.JSON(b)}
 }
 
 // TestIngestItem_SubtreeKeepPreservesPresentChild verifies the per-child sweep
@@ -311,12 +324,15 @@ func TestIngestItem_NoSweepWhenFlagUnset(t *testing.T) {
 }
 
 // TestApplyFetchedItem_EmbeddedImageIngestFailureCountsAsSkip verifies that an
-// embedded image extracted for OCR is best-effort: if the KB cannot ingest it
-// (e.g. VLM/object-storage not configured for images), the failure is counted as
-// Skipped, not Failed, so it never marks the whole document sync as failed. A
-// non-image item with the same error must still count as Failed.
+// embedded image may skip the typed pre-write VLM rejection only. A normal
+// document, storage failure or uncertain write remains failed.
 func TestApplyFetchedItem_EmbeddedImageIngestFailureCountsAsSkip(t *testing.T) {
-	ingestErr := errors.New("上传图片文件需要设置VLM模型")
+	ingestErr := validateDefaultFileImportRequirements(context.Background(),
+		&types.KnowledgeBase{}, types.EffectiveProcessConfig{}, "png")
+	var nativeErr *werrors.AppError
+	if !errors.As(ingestErr, &nativeErr) || nativeErr.Code != werrors.ErrImageModelRequired || nativeErr.HTTPCode != 400 {
+		t.Fatalf("expected original pre-write HTTP400 with native VLM classification, got %v", ingestErr)
+	}
 	ds := &types.DataSource{ID: "ds-1", Type: "feishu", TenantID: 7, KnowledgeBaseID: "kb-1"}
 	newItem := func(extID string, meta map[string]string) *types.FetchedItem {
 		return &types.FetchedItem{
@@ -348,5 +364,14 @@ func TestApplyFetchedItem_EmbeddedImageIngestFailureCountsAsSkip(t *testing.T) {
 	if resDoc.Failed != 1 || resDoc.Skipped != 0 {
 		t.Fatalf("non-image failure: Failed=%d Skipped=%d, want Failed=1 Skipped=0",
 			resDoc.Failed, resDoc.Skipped)
+	}
+	for _, err := range []error{errors.New("上传图片文件需要设置VLM模型"),
+		errors.New("queue acknowledgement lost"), werrors.NewBadRequestError("image storage unavailable")} {
+		s := &DataSourceService{knowledgeService: &sweepFakeKS{repo: &sweepFakeRepo{}, createErr: err}}
+		result := &types.SyncResult{}
+		s.applyFetchedItem(context.Background(), ds, newItem("image", map[string]string{"embedded_image": "true"}), nil, result)
+		if result.Failed != 1 || result.Skipped != 0 {
+			t.Fatalf("unconfirmed image must fail: %+v", result)
+		}
 	}
 }

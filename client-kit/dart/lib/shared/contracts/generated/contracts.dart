@@ -3635,6 +3635,9 @@ class StepElement {
   final String? name;
   final String? text;
 
+  ///原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
+  final String? topic;
+
   StepElement({
     required this.action,
     this.approvalPolicy,
@@ -3644,6 +3647,7 @@ class StepElement {
     this.message,
     this.name,
     this.text,
+    this.topic,
   });
 
   factory StepElement.fromJson(Map<String, dynamic> json) => StepElement(
@@ -3657,6 +3661,7 @@ class StepElement {
     message: json["message"],
     name: json["name"],
     text: json["text"],
+    topic: json["topic"],
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -3668,16 +3673,24 @@ class StepElement {
     "message": message,
     "name": name,
     "text": text,
+    "topic": topic,
   });
 }
 
-enum ActionEnum { ADD_REACTION, DELAY, REQUEST_APPROVAL, SEND_MESSAGE }
+enum ActionEnum {
+  ADD_REACTION,
+  DELAY,
+  REQUEST_APPROVAL,
+  SEND_MESSAGE,
+  SET_CHANNEL_TOPIC,
+}
 
 final actionEnumValues = EnumValues({
   "add_reaction": ActionEnum.ADD_REACTION,
   "delay": ActionEnum.DELAY,
   "request_approval": ActionEnum.REQUEST_APPROVAL,
   "send_message": ActionEnum.SEND_MESSAGE,
+  "set_channel_topic": ActionEnum.SET_CHANNEL_TOPIC,
 });
 
 class ContentTrigger {
@@ -11674,6 +11687,9 @@ class AutomationStep {
   final String? name;
   final String? text;
 
+  ///原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
+  final String? topic;
+
   AutomationStep({
     required this.action,
     this.approvalPolicy,
@@ -11683,6 +11699,7 @@ class AutomationStep {
     this.message,
     this.name,
     this.text,
+    this.topic,
   });
 
   factory AutomationStep.fromJson(Map<String, dynamic> json) => AutomationStep(
@@ -11696,6 +11713,7 @@ class AutomationStep {
     message: json["message"],
     name: json["name"],
     text: json["text"],
+    topic: json["topic"],
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
@@ -11707,6 +11725,7 @@ class AutomationStep {
     "message": message,
     "name": name,
     "text": text,
+    "topic": topic,
   });
 }
 

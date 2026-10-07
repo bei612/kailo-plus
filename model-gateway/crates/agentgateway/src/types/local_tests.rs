@@ -111,6 +111,7 @@ fn test_oidc_policy() -> super::FilterOrPolicy {
 			client_secret: SecretString::new("client-secret".into()),
 			redirect_uri: "http://localhost:3000/oauth/callback".into(),
 			scopes: vec![],
+			ui_locales: None,
 			login: None,
 			logout: None,
 		}),

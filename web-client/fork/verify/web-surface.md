@@ -4190,3 +4190,133 @@ SDK-only 删除父按钮 installationLocked 守卫后，UNKNOWN 升级用例真�
 原 4 CPU/8 GiB SDK 的独立 message-edit 快照执行 Web tsc 退出 0；原 TanStack 路由实际挂载、返回 URL 重载、back/forward、未知页面拒绝、引用白名单 4 项，PlatformApp 7 项与 BFF 11 项，共 22 项退出 0。首次类型检查包含 search 可选字段声明错误，以及 node_modules 中旧 file-package 副本；分别修正宿主类型和同步冻结共享源，未改产品迁就旧依赖。第一轮导航检查发现公共宿主需要在父 route 拒绝未知 section，已修复；另一个失败是断言误把 router 内部去 basepath 的 location 当浏览器 URL，改查实际 history 后通过。
 
 SDK-only 将导航 tab 的 URL section 消费改回 channel，两个原导航用例真实失败，退出 1；原字节还原 cmp 0 后 tsc 与上述 22 项全部通过。日志位于 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/` 的 `web-navigation.log`、`web-navigation-restored.log`、`web-navigation-final.log`、`web-navigation-mutation.log`、`web-navigation-restored-final.log`。本批没有 Cargo/full/build/deploy，没有冒充已在实际浏览器完成新版本 OIDC 返回验收；该项仍须集中发布后按原正常登录路径复验。
+
+## 原版 Workflows 修改频道主题（2026-10-07）
+
+本批以 `b91120ab9da6d84ae4df2434254ab0f7014683c4` 为实现基线，关联
+REQ-24、DD-80/81/106 与 V-SCN-83。设计先独立提交
+`7e3514843ac6a2687e54c14c37fc9bc63da79ad5`，没有以现状代码反改设计。
+固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/workflows/ui/WorkflowStepCard.tsx::WorkflowStepCard` 保留原 Topic
+输入；`crates/buzz-sdk/src/builders.rs::build_set_topic` 构造空 content、h/topic
+两标签的 9002 事件；`crates/buzz-relay/src/handlers/side_effects.rs::validate_admin_event`
+明确 topic 允许当前频道成员。原 `buzz-workflow/src/executor.rs` 的该 sink 未实现，
+没有把它恢复为第二执行器；Kailo 接原 SDK 和既有 AgentTaskWorkflow。
+
+四步影响结论：
+
+1. 权威仍为不可变 AutomationVersion、原 ActionExecution/Invocation、Temporal
+   history、COUNT 用量及 Relay 的 channels/events。Core 不存频道主题正文副本；
+   Workflows 的 topic 参数与原 message 参数一样属于已冻结定义，不成为频道当前值。
+2. Web/Desktop 使用同一 StepCard、表单/YAML、评审和未知结果重查；主题可以明确清空。
+   Delay/版本化 ApprovalPolicy 前缀照旧，最终动作使用当前频道和 AGENT 实际身份。
+   原 frozen publication intent、同一 event ID、审计和计量结算不变，不创建模型 turn、
+   Agent runtime slot 或伪造线程回复。Mobile 同源契约/词条更新，不增加组件宿主。
+3. 原 Relay 将事件先存入再执行 side effect，会留下“接受事件但主题修改失败”。现在
+   严格纯 topic 的事件与 channels.topic 在原 DB 事务中提交，沿原 membership fence
+   再核实际成员及未删除/归档频道；重复旧事件不重新覆盖后来的主题。额外、重复、
+   未知或混合管理标签不会进入成员例外；不把整个 9002 加入成员白名单，也不让
+   CONTROL 代替业务 actor。已知成员拒绝映射 restricted，数据库不确定仍为错误。
+4. Core 收敛只接受原签名、event ID、实际 AGENT 公钥、频道和精确 topic 的回执。
+   空 topic 有确定语义；缺字段、未知动作和伪造范围拒绝。撤权、租户暂停、审批与
+   额度变化仍经过原 fresh 路径；UNKNOWN 不重签、不换幂等键、不向下个动作推进。
+   新迁移只扩原封闭动作与三处原有约束函数；down 在已有冻结 topic 版本时明确停止。
+
+兼容与发布边界：`automation_step` 增加闭集动作及可选 topic 字段，四侧统一生成；
+旧动作结构不改。旧 Core/旧数据库不能执行此新动作，不能将其解释为 send_message。
+先交付含原子接缝的 Relay，再应用 `20261007090000_automation_topic` 与 Core，最后
+发布共享前端；07 §1 已登记编译期保护，运行期开关无法纠正旧 binary。
+原生系统提示及 39000 广播仍在原 postcommit 路径，现有启动修复只补缺失发现事件，
+并不修复旧 topic 投影。本批证明实际频道值/接受事件一致，不声称广播失败后的
+发现投影自动收敛，也不将源码窄验当作线上 Workflows 成功。
+
+实际验证（既有 SDK 4 CPU/8 GiB，Cargo -j16，Data 持久缓存）：
+
+- 原 `tools/gen.sh` 退出 0；shared source/test tsc、Web/Desktop tsc 均退出 0。
+  最终 b911 原主题检查保留的页面输入运行 4 项通过、254 skipped。
+  SDK-only 禁止空 topic 后原新增用例真实失败 1 项；原字节还原后通过。
+- Core steps 6 项、bridge 精确回执 1 项、Rust topic 往返 1 项通过；
+  platform-core/collab-bridge all-targets Clippy `-D warnings` 退出 0。
+  首轮因 bridge 缺少 Uuid 导入退出 101，补齐真实导入后通过，未绕开类型检查。
+  SDK-only 去掉作者相等校验，回执用例真实失败、退出 101；cmp 0 还原后 1 项通过。
+- TS 契约 41 项、Dart 36 项、Go 新 topic 往返通过；Mobile 同源词条检查退出 0。
+  首次 Dart 因未指定原 `/cache/pub` 缓存退出 1，未运行断言；纠正投递后通过。
+  最后四侧仅 topic 用例再次按精确候选复核，未重复全量。
+- Core 独立 `workflow_topic_20261007` 库实际全迁移及本次 up/down/up 退出 0。
+  原约束实际接受清空/非空主题及旧消息/反应，拒绝缺失/空值/空步骤。回退本迁移后
+  同一 SQL 在 topic 行真实 check_violation、退出 3；重新 up 后通过。
+- 本机原 Rust 1.95 镜像摘要
+  `6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1`
+  以 4 CPU/8 GiB 复用原 relay-rust-target。Relay cargo check 退出 0，纯标签解析
+  1 项通过。独立 `relay_topic_20261007` 库运行原 Relay 迁移及事件/主题事务用例
+  1 项通过。移除实际 UPDATE 后用例真实失败、退出 101；原字节 cmp 0 还原、重新
+  编译后 1 项通过。首轮验证副本缺原 schema.sql 导致 lib-test 编译失败；补齐真实
+  b911 输入后通过。原 1.95 基镜像没有 rustfmt，格式化复用既有 SDK，未安装工具。
+
+日志在 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/profile-settings-ortsoo.DRR20F/`：
+`topic-generate.log`、`topic-ui-mutation.log`、`topic-ui-restored.log`、
+`topic-final-pages.log`、`topic-hosts.log`、`topic-core.log`、`topic-core-restored.log`、
+`topic-core-clippy.log`、`topic-bridge-mutation.log`、`topic-bridge-restored.log`、
+`topic-contracts.log`、`topic-dart-restored.log`、`topic-roundtrip-final.log`、
+`topic-db-mutation.log`、`topic-db-restored.log`、`topic-relay.log`、
+  `topic-relay-db-restored.log`、`topic-relay-db-mutation.log`、`topic-relay-db-final.log`。
+未运行 full、镜像构建或部署，未修改业务数据库或原 UNKNOWN 任务。
+
+七动作仍未全部交付：公共 HTTP webhook 尚缺现有 Gateway OpenAPI target 的
+端点/凭据治理与原 DNS 重绑定防护接缝，未开假入口；复杂多副作用编排、其余动作
+与完整模板/条件仍不是本批完成范围。上述缺口保留原交付要求，不删原功能目标。
+
+### 2026-10-07 委托窗口实测修复与并行批次收口
+
+基准为已发布源码 `b91120ab9da6d84ae4df2434254ab0f7014683c4`、
+发布记录 `dc6234637870fed2bdaa74c3e7d1c231fb9ae67f`。
+本批未替换在线镜像或 Windows/Mobile 包。
+
+- 权威：REQ-24 原版功能与 DD-75 共用管理面；不减少页面或授权操作。
+  实际浏览器进入安装详情、委托列表，再点“返回”，留下只有标题的空弹窗。
+  根因是选中安装与独立 open 状态不同步，不是服务端授权失败。
+- 影响：Web/Desktop 共用 `InstallationManagement` 只从选中安装推导弹窗开闭。
+  返回、关闭和切换 Workspace 清除同一选择；没有第二套 Web 实现。
+  不改契约、数据库、原 ActionCommand、幂等键或服务端权限。
+- 副作用与边界：已有 locked/UNKNOWN 保护保留，不把读失败当作写失败，
+  不触发额外 POST；返回后同一安装可重新打开。其他原 Agent/授权状态沿原实现。
+- 证据：在线截图
+  `/volumes/data/kailo/tmp/kailo-visual-release-20261006.vlPvnU/185-b911-delegation-back-empty.png`
+  已实际打开查看；它证明修复前问题，不冒充修复后已部署截图。
+  原受限 SDK 为 4 CPU/8 GiB，缓存和快照均在 Data。
+  实现后原 Agent 页面范围 100 项通过；仅 SDK 恢复原双状态错误，新增回归真实失败。
+  恢复后与产品文件 cmp 相同，tsc 与整个 pages 文件 259 项通过，退出 0。
+  首次新增检查错误地选中了夹具预先打开的定义窗口，1 失败/99 通过；
+  修正检查为先关闭该窗口，没有为此改变产品行为。
+
+原始输出位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/restoration-batch.sfayiY/`：
+`delegation-baseline.log`（夹具选择失败）、
+`delegation-baseline-corrected.log`（100 通过）、
+`delegation-mutation.log`（原错误真实失败）、
+`delegation-restored-pages.log`（259 通过）。
+jsdom 的两条 `scrollTo` 未实现提示原样保留，不当作真实浏览器滚动验收。
+
+并行收口包含主题动作、原生同步游标/替换安全和原生登录中英投递；
+各自正反证据见本文件主题节、`knowledge/adapter/verify/native-read.md`
+与 `core/verify/identity-chain.md`。这不是整个 Workflows、跨组件自动同步、
+三人双 Agent 稳定协作或官方双端全量等效的完成声明。
+
+集中检查固定源码树为
+`00a53cc2d484954bc5764639f8023eb1b451ef46`，执行原
+`./tools/check.sh --full`，8 CPU/16 GiB，Cargo 16，使用原 Data 缓存。
+静态检查（Rust/Go/TypeScript/Dart）、四侧生成、242 份契约与三份历史兼容
+检查、迁移脚本配对和 Cargo 测试通过。该次实际数据库迁移因未提供
+DATABASE_URL 跳过，不能冒充迁移演练；主题动作独立库演练另有记录。
+Data 剩余不足 700 MiB 时主动停止本次检查容器，命令最终退出 137；
+这是主动停止，不是 OOM 诊断。后续阶段未完成，全量门禁没有通过。
+日志为上述批次目录的 `full.log`。停止容器后原入口自动回收自己的快照；
+没有删除共享缓存或服务数据。本记录追加不改变已检查的产品源码。
+
+同次 playwright-cli 已截取并实际打开查看线上 b911 的截图 185–194：
+委托返回空窗口、Projects、Pulse、Inbox、成员、任务、审批、设备、
+审计、私聊；目录同上述 185 截图。Projects、Inbox 和审批为空状态，
+不算创建、消息处理或审批闭环通过；私聊展示既有双人消息，
+本次未发送新消息；任务列表仍含在途记录。此前频道、Workflows、Agent
+及设置的 181–184 截图已有记录。这里只证明已查看这些页面，不证明全部
+弹窗/错误状态、中英语言、Windows 和 Mobile 已逐项验收。

@@ -14,6 +14,31 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestAutomationTopicStepRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "automation-topic-step.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var typed generated.AutomationStep
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected, actual any
+	if err := json.Unmarshal(raw, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatalf("roundtrip: %s", encoded)
+	}
+}
+
 func TestAutomationReactionStepRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "automation-reaction-step.sample.json"))
 	if err != nil {

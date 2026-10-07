@@ -39,6 +39,15 @@ struct PreparedOidcPolicy {
 	scopes: Vec<String>,
 	login: Option<OidcLogin>,
 	logout: Option<OidcLogout>,
+	ui_locales: Option<OidcUiLocales>,
+}
+
+/// Presentation-only locale projection. Never used as an authentication claim.
+#[apply(schema!)]
+pub struct OidcUiLocales {
+	pub default: String,
+	pub supported: Vec<String>,
+	pub cookie: String,
 }
 
 /// Optional browser login entry point and unauthenticated redirect destination.
@@ -132,6 +141,10 @@ pub struct LocalOidcConfig {
 	#[serde(default)]
 	pub scopes: Vec<String>,
 
+	/// Pass the supported browser preference, or the configured default, to the IdP.
+	#[serde(default)]
+	pub ui_locales: Option<OidcUiLocales>,
+
 	/// Optional explicit login endpoint and pre-login redirect. Omit for automatic OAuth login.
 	#[serde(default)]
 	pub login: Option<OidcLogin>,
@@ -178,7 +191,24 @@ impl LocalOidcConfig {
 			scopes,
 			login,
 			logout,
+			ui_locales,
 		} = self;
+		if let Some(locales) = &ui_locales {
+			if !locales.supported.contains(&locales.default)
+				|| locales.supported.iter().any(|locale| {
+					locale.is_empty()
+						|| !locale
+							.bytes()
+							.all(|c| c.is_ascii_alphanumeric() || c == b'-')
+				}) || locales.cookie.is_empty()
+				|| !locales
+					.cookie
+					.bytes()
+					.all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+			{
+				return Err(Error::Config("invalid OIDC UI locales".into()));
+			}
+		}
 		let redirect_uri = RedirectUri::parse(redirect_uri)?;
 		let mut endpoints = vec![redirect_uri.callback_path.as_str()];
 		let mut login_destination = None;
@@ -288,6 +318,7 @@ impl LocalOidcConfig {
 			scopes,
 			login,
 			logout,
+			ui_locales,
 		})
 	}
 }
@@ -425,6 +456,7 @@ impl PreparedOidcPolicy {
 			scopes,
 			login,
 			logout,
+			ui_locales,
 		} = self;
 		let scopes = dedupe_scopes(scopes);
 		let token_endpoint_auth = provider.token_endpoint_auth;
@@ -451,6 +483,7 @@ impl PreparedOidcPolicy {
 			scopes,
 			login,
 			logout,
+			ui_locales,
 		})
 	}
 }

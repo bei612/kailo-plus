@@ -23,7 +23,7 @@ mod session;
 #[cfg(test)]
 mod tests;
 
-pub use local::{LocalOidcConfig, OidcLogin, OidcLogout};
+pub use local::{LocalOidcConfig, OidcLogin, OidcLogout, OidcUiLocales};
 pub use redirect::RedirectUri;
 pub use session::{
 	BrowserSession, CookieSecureMode, RESERVED_COOKIE_PREFIX, SameSiteMode, SessionConfig,
@@ -140,6 +140,7 @@ pub struct OidcPolicy {
 	pub redirect_uri: RedirectUri,
 	pub session: SessionConfig,
 	pub scopes: Vec<String>,
+	pub ui_locales: Option<OidcUiLocales>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

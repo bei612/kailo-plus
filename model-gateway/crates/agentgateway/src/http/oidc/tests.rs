@@ -122,6 +122,7 @@ fn test_policy() -> OidcPolicy {
 		redirect_uri: test_redirect_uri(),
 		session,
 		scopes: vec!["openid".into(), "profile".into()],
+		ui_locales: None,
 	}
 }
 
@@ -233,6 +234,7 @@ fn explicit_local_oidc_config() -> LocalOidcConfig {
 		client_secret: SecretString::new("client-secret".into()),
 		redirect_uri: test_redirect_uri().redirect_uri,
 		scopes: vec!["profile".into(), "email".into()],
+		ui_locales: None,
 		login: None,
 		logout: None,
 	}
@@ -425,6 +427,59 @@ async fn apply_redirects_unauthenticated_requests_to_login() {
 			.to_str()
 			.expect("set-cookie utf8");
 		assert_eq!(cookie.contains("Secure"), expect_secure_cookie, "{name}");
+	}
+}
+
+#[tokio::test]
+async fn login_uses_only_configured_locale_projection_and_keeps_return_target() {
+	for (cookie, expected) in [
+		(None, "zh-CN"),
+		(Some("buzz-locale=en"), "en"),
+		(Some("buzz-locale=zh-CN"), "zh-CN"),
+		(Some("buzz-locale=fr"), "zh-CN"),
+		(Some("buzz-locale=en; buzz-locale=zh-CN"), "zh-CN"),
+	] {
+		let mut policy = test_policy();
+		policy.ui_locales = Some(OidcUiLocales {
+			default: "zh-CN".into(),
+			supported: vec!["zh-CN".into(), "en".into()],
+			cookie: "buzz-locale".into(),
+		});
+		let mut req = request(
+			Method::GET,
+			"https://app.example.com/app/audit?workspaceId=scope",
+			Some("text/html"),
+		);
+		req
+			.headers_mut()
+			.insert(header::ACCEPT_LANGUAGE, "en-US".parse().unwrap());
+		if let Some(cookie) = cookie {
+			req
+				.headers_mut()
+				.insert(header::COOKIE, cookie.parse().unwrap());
+		}
+		let response = callback::start_login(&policy, &req)
+			.unwrap()
+			.direct_response
+			.unwrap();
+		let url = url::Url::parse(response.headers()[header::LOCATION].to_str().unwrap()).unwrap();
+		assert_eq!(
+			url.origin().ascii_serialization(),
+			"https://issuer.example.com"
+		);
+		assert_eq!(
+			url
+				.query_pairs()
+				.filter(|(key, _)| key == "ui_locales")
+				.map(|(_, value)| value.into_owned())
+				.collect::<Vec<_>>(),
+			[expected]
+		);
+		let cookie =
+			cookie::Cookie::parse(response.headers()[header::SET_COOKIE].to_str().unwrap()).unwrap();
+		let transaction = policy.session.decode_transaction(cookie.value()).unwrap();
+		assert_eq!(transaction.original_uri, "/app/audit?workspaceId=scope");
+		assert!(!transaction.csrf_state.is_empty());
 	}
 }
 
@@ -1007,6 +1062,7 @@ async fn local_oidc_config_compiles_supported_provider_sources() {
 				client_secret: SecretString::new("client-secret".into()),
 				redirect_uri: "http://localhost:3000/oauth/callback".into(),
 				scopes: vec![],
+				ui_locales: None,
 				login: None,
 				logout: None,
 			},
@@ -1086,6 +1142,7 @@ async fn discovery_rejects_relative_provider_endpoints() {
 		client_secret: SecretString::new("client-secret".into()),
 		redirect_uri: "http://localhost:3000/oauth/callback".into(),
 		scopes: vec![],
+		ui_locales: None,
 		login: None,
 		logout: None,
 	};
@@ -1153,6 +1210,7 @@ async fn local_oidc_config_rejects_invalid_configuration() {
 				client_secret: SecretString::new("client-secret".into()),
 				redirect_uri: "http://localhost:3000/oauth/callback".into(),
 				scopes: vec![],
+				ui_locales: None,
 				login: None,
 				logout: None,
 			},
@@ -1183,6 +1241,7 @@ async fn local_oidc_config_rejects_invalid_configuration() {
 				client_secret: SecretString::new("client-secret".into()),
 				redirect_uri: "http://localhost:3000/oauth/callback".into(),
 				scopes: vec![],
+				ui_locales: None,
 				login: None,
 				logout: None,
 			},

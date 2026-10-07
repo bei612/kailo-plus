@@ -2555,7 +2555,7 @@ const REPLY_INTENT: &str = "select d.id as dispatch_audit_id,d.operation_id,d.hu
     and ((i.native_status='completed' and $3::text is not null)
       or ($3::text is null and i.native_status is null and i.post_message_intent is not null
         and exists(select 1 from catalog.automation_version v where v.asset_id=i.automation_version_asset_id
-          and v.automation_resource_id=i.automation_resource_id and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS','ADD_REACTION_STEPS'))))
+          and v.automation_resource_id=i.automation_resource_id and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS','ADD_REACTION_STEPS','SET_CHANNEL_TOPIC_STEPS'))))
     and i.status in ('DISPATCHING','RUNNING','UNKNOWN')";
 
 /// Consume only an existing stable Reply intent. There is no publisher or
@@ -2628,6 +2628,30 @@ async fn reconcile_reply(
                 &intent.agent_pubkey,
                 &invocation.source_event_id,
                 emoji,
+            )
+            .await
+    } else if intent
+        .frozen_action
+        .as_ref()
+        .is_some_and(|action| action["kind"] == "SET_CHANNEL_TOPIC_STEPS")
+    {
+        let Some(action) = intent
+            .frozen_action
+            .as_ref()
+            .filter(|action| crate::automation::steps::supported(action))
+        else {
+            return Ok(None);
+        };
+        let Some(topic) = action["topic"].as_str() else {
+            return Ok(None);
+        };
+        control
+            .channel_topic_exists(
+                &state.http,
+                event_id,
+                &intent.agent_pubkey,
+                intent.channel_id,
+                topic,
             )
             .await
     } else {

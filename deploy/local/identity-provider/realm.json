@@ -1,6 +1,9 @@
 {
   "realm": "__OIDC_REALM__",
   "enabled": true,
+  "internationalizationEnabled": true,
+  "supportedLocales": ["zh-CN", "en"],
+  "defaultLocale": "zh-CN",
   "sslRequired": "none",
   "registrationAllowed": false,
   "accessTokenLifespan": 900,

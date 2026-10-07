@@ -109,7 +109,7 @@ func validateDefaultFileImportRequirements(
 	fileType = normalizeFileExtension(fileType)
 	if IsImageType(fileType) && !eff.VLMConfig.IsEnabled() {
 		logger.Error(ctx, "VLM model is not configured")
-		return werrors.NewBadRequestError("上传图片文件需要设置VLM模型")
+		return werrors.NewImageModelRequiredError()
 	}
 	if IsAudioType(fileType) && !kb.ASRConfig.IsASREnabled() {
 		logger.Error(ctx, "ASR model is not configured")
@@ -176,7 +176,7 @@ func ValidateProcessOverrides(
 
 	if hasImage {
 		if !eff.VLMConfig.IsEnabled() {
-			return werrors.NewBadRequestError("上传图片文件需要设置VLM模型")
+			return werrors.NewImageModelRequiredError()
 		}
 	}
 

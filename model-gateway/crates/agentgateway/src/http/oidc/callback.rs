@@ -88,19 +88,29 @@ pub(super) fn start_login(
 		policy.redirect_uri.https,
 		policy.session.transaction_ttl,
 	);
-	let location = with_query(
-		&policy.provider.authorization_endpoint,
-		&[
-			("response_type", "code".into()),
-			("client_id", policy.client.client_id.clone()),
-			("redirect_uri", policy.redirect_uri.redirect_uri.clone()),
-			("scope", policy.scopes.join(" ")),
-			("state", state),
-			("nonce", nonce),
-			("code_challenge", code_challenge),
-			("code_challenge_method", "S256".into()),
-		],
-	);
+	let mut params = vec![
+		("response_type", "code".into()),
+		("client_id", policy.client.client_id.clone()),
+		("redirect_uri", policy.redirect_uri.redirect_uri.clone()),
+		("scope", policy.scopes.join(" ")),
+		("state", state),
+		("nonce", nonce),
+		("code_challenge", code_challenge),
+		("code_challenge_method", "S256".into()),
+	];
+	if let Some(locales) = &policy.ui_locales {
+		let preferred = crate::http::iter_request_cookies(req)
+			.filter(|cookie| cookie.name() == locales.cookie)
+			.map(|cookie| cookie.value().to_owned())
+			.collect::<Vec<_>>();
+		// Ambiguous, unsupported or missing projections cannot change the default.
+		let locale = match preferred.as_slice() {
+			[value] if locales.supported.contains(value) => value,
+			_ => &locales.default,
+		};
+		params.push(("ui_locales", locale.clone()));
+	}
+	let location = with_query(&policy.provider.authorization_endpoint, &params);
 	let response = build_redirect_response(&location, &[cookie])?;
 	Ok(crate::http::PolicyResponse::default().with_response(response))
 }

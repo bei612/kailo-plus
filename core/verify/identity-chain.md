@@ -249,3 +249,108 @@ Gateway → IdP → Web 登录，然后由同一浏览器并发读取 32 次 `/a
 此 Core 镜像来自当前完整开发工作树，不是选定源码提交的生产发布证明；
 运行核对证明新 Core 的真实登录与并发会话复用，不证明撤权竞态、原生端签名包、
 Tenant 删除或 Stage 1/2 的全部退出条件。本批未关闭这些门禁。
+
+## 原生 IdP 中英语言收敛（2026-10-07，源码候选）
+
+本批关联 REQ-08、DD-53 和用户“中文默认、可选英文”的要求。沿原 Keycloak
+realm 配置，不新增登录页面、主题、身份偏好权威或认证模式；未运行完整
+bootstrap、初始化、IdP 部署或真实管理 API。以下检查不代替浏览器投递验收。
+
+### 实现后的四步影响结论
+
+1. 权威：Keycloak 是可替换 IdP，登录页仍由其原生主题及 locale selector 渲染。
+   原模板缺少语言配置，已有 realm 又不会随 JSON 重新导入，所以仅改模板不足。
+   模板补 `internationalizationEnabled=true`、`supportedLocales=[zh-CN,en]`、
+   `defaultLocale=zh-CN`；既有 bootstrap 增加语言专用分支，initializer 在 IdP
+   ready 后调用。已确定能力为上游支持且需配置接线，不是 Kailo 自建 i18n。
+2. 影响面：首次导入继续由原 renderer 读取同一模板；已持久化 realm 使用
+   `bootstrap.sh --sync-realm-locales`。Admin API 的目标 origin 取实际已校验
+   `OIDC_ISSUER`，不假定 IdP 仍绑定回环地址。只读取目标 realm 并发送三字段
+   PUT；原 users、clients、subject、credential、role、flow 和 secret 文件不改。
+   Desktop/Mobile 的独立本机 OIDC 链本批不改；Web 首次与重新登录沿原网关
+   `start_login` 传 `ui_locales`，应用只向同源 cookie 投递原 `buzz-locale` 语言枚举。
+   localStorage 仍是应用偏好权威，cookie 不读取为身份、权限或应用偏好。
+3. 副作用：缺配置、认证/连接失败、目标 realm 不匹配、回读不符都拒绝成功。
+   密码仅从原受控文件读入内存，不进 argv、错误或日志。PUT 结果不明不盲重试；
+   下一次调用先 GET，已一致则不再 PUT。不请求 logout、不清 session、不创建身份。
+4. 异常：语言集合比较不受服务器返回顺序影响；模板缺项或超出既定中英集合拒绝。
+   并发相同期望值可收敛，外部管理员并发改动导致读回不符即失败。网络结果不明
+   保持未完成，不以 HTTP 受理替代终态；错误仍为原 bootstrap 失败退出及安全摘要。
+   这不是业务 Action，不新增审批/Quota 或错误码权威。
+
+### 固定上游证据与默认值边界
+
+入库镜像 `quay.io/keycloak/keycloak@sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007`
+实际 label 为 26.4.7。官方 tag 26.4.7 经 `git ls-remote` 解析为
+`38c38721ad4c1303fa2a1bc24ccece4799a8a242`，核读：
+
+- `services/src/main/java/org/keycloak/services/resources/admin/RealmAdminResource.java::updateRealm`：
+  原生 realm 管理更新入口。
+- `model/storage-private/src/main/java/org/keycloak/storage/datastore/DefaultExportImportManager.java::updateRealm`：
+  三个语言字段仅在非空时写入相应 realm 属性。
+- `themes/src/main/resources/theme/base/login/template.ftl::registrationLayout`：
+  i18n 启用且支持语言多于一种时呈现原语言菜单。
+- `services/src/main/java/org/keycloak/locale/DefaultLocaleSelectorProvider.java::resolveLocale/getUserLocale`：
+  原生明确选择、用户语言、客户端语言、cookie、Accept-Language 优先于 realm 默认值。
+
+只改 realm 默认值不能压过英文浏览器的 Accept-Language，因此 Web 在原网关
+OIDC 配置追加 `uiLocales`：默认 `zh-CN`、支持 `[zh-CN,en]`、cookie 名复用
+`buzz-locale`。首次请求在 JS 加载之前也传默认中文；应用选择英文后，原
+`subscribeLocale` 同步仅语言投影，下一次 OIDC 请求传 `en`。非法或重复 cookie
+回到配置默认值，不影响 scope、JWT、state、PKCE、回调或原页面回跳。
+Keycloak 原菜单明确选择及用户 profile 的优先级仍按上游，不新建 SPI。
+官方说明见
+[Keycloak 原生 locale selector](https://www.keycloak.org/ui-customization/themes)。
+
+网关来源固定 `1f7ebbf87cbdbe9517f6f181221879d04dc50692`，已重核
+`crates/agentgateway/src/http/oidc/callback.rs::start_login` 与
+`crates/agentgateway/src/http/oidc/local.rs::LocalOidcConfig::resolve`；直接在原
+配置解析和授权 URL builder 接线。新增配置缺省时原通用网关行为不变。
+
+投递必须先有本批 Gateway 二进制，再加载新 `uiLocales` 配置；不允许给旧
+Gateway 先投不认识的字段。Web 与 realm 设置分别需要原构建/配置同步后验收。
+cookie 是同源 `Path=/; SameSite=Lax`，HTTPS 时加 Secure，不携带 secret；它是
+session 生命周期投影，不硬编码长期保存阈值。关闭浏览器导致该 cookie 消失后，
+受保护首请求无法读取仍在 localStorage 的设备选择，会先走中文，加载应用后
+再恢复原偏好投影；此跨浏览器重启边界未闭合。Native 两端传 `ui_locales` 也未
+纳入本刀，不能声称三端首次登录语言全覆盖。
+
+### 事后窄验证与破坏还原
+
+沿原 `tools/check.sh` security Python 段补检查，不新增脚本；执行真实
+`PYLOCALE` 生产分支，仅 mock 文件与 HTTP。6 项实际通过：首次三字段写入、
+语言集合换序重入无写入、写入未生效回读拒绝、写后网络不明拒绝、重入读到一致
+不重写、realm 不匹配零写入。每次断言只有目标 realm GET/PUT、payload 恰为
+三字段、身份属性不变且错误不含夹具凭据。
+
+原 4 CPU/8 GiB、uid 1000 SDK 中，Bash 语法与 6 项退出 0。仅在独立快照把
+最终回读条件改为 `False`，实际断言失败、退出 1；还原原字节后同 6 项再次退出 0。
+证据目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/idp-locales.zfOM3E/`，
+日志 `locale-positive.log`、`locale-mutation.log`、`locale-restored.log`。
+未执行完整 full，不把 HTTP mock 当成真实 Keycloak 登录页或三端验收。
+
+Web 原快照单次 `tsc --noEmit` 退出 0，原 `src/shared/i18n/index.test.ts`
+5/5 通过。SDK-only 把投影固定为中文，英文选择断言真实失败（1 failed），
+原字节 `cmp` 相同还原后 5/5 再通过；日志同上目录的 `web-positive.log`、
+`web-mutation.log`、`web-restored.log`。
+
+网关沿既有 `kailo-oidc-stream-36llvb`，Rust1.98、4 CPU/8 GiB、原 `/target`
+缓存，固定 b911 源加本刀五个 Rust 文件，运行：
+
+```sh
+CARGO_TARGET_DIR=/target cargo test --offline --locked --profile ci -j16 \
+  -p agentgateway --lib http::oidc::tests -- --test-threads=1
+```
+
+实际 19 passed / 0 failed / 0 ignored、退出 0。新增一个用例内核五组：无偏好、
+英文、中文、非法值、重复 cookie，并核原回跳路径和 transaction state 保持。
+SDK-only 将 `ui_locales` 固定成配置默认值，实际 `["zh-CN"] != ["en"]`，
+单例 1 failed、退出 101；原字节还原后同 19 项再次退出 0。日志目录：
+`/volumes/data/kailo/tmp/oidc-stream-sdk-20261006.36llvb/idp-locales/`，
+`oidc-positive.log`、`oidc-mutation.log`、`oidc-restored.log`。原 native SDK 缺
+rustfmt 的命令退出 1；未安装工具，复用已有检查 SDK Rust1.90 格式器及原
+`rustfmt.toml` 对五文件格式化退出 0，恢复后编译检查包含这些格式化输入。
+
+以上不等于已构建发布 Gateway/Web 或真实 IdP 投递；本刀没有触碰运行中 realm、
+用户、secret、账号 UUID、会话或 compose 的镜像 pin。

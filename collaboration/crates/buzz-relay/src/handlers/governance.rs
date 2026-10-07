@@ -2,7 +2,8 @@
 //!
 //! In a platform community the owner is the tenant's control identity, and
 //! channels, rosters and every other piece of shared structure change only
-//! through it. Members hold their own keys and reach the relay directly, so
+//! through it, except the original member's pure topic command. Members hold
+//! their own keys and reach the relay directly, so
 //! the relay itself must refuse what the community's governance does not
 //! grant: a member may publish only the kinds in `member_event_kinds`.
 //! Membership-changing, channel-creating and every other kind is accepted
@@ -208,12 +209,19 @@ pub(crate) async fn check_event_kind(
     tenant: &TenantContext,
     state: &AppState,
     author: &PublicKey,
-    kind: u32,
+    event: &Event,
 ) -> Result<(), IngestError> {
     let Some(allowed) = state.config.member_event_kinds.as_ref() else {
         return Ok(());
     };
-    if allowed.contains(&kind) {
+    let kind = buzz_core::kind::event_kind_u32(event);
+    // Metadata management cannot be enabled for members by adding the whole
+    // kind to a deployment allowlist. Only the exact native topic envelope is
+    // a member action; ingest still checks its signer and current roster.
+    if (kind == buzz_core::kind::KIND_NIP29_EDIT_METADATA
+        && buzz_core::channel::topic_change(event).is_some())
+        || (kind != buzz_core::kind::KIND_NIP29_EDIT_METADATA && allowed.contains(&kind))
+    {
         return Ok(());
     }
     match state

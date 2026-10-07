@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/datasource"
@@ -15,10 +16,14 @@ import (
 // be asserted without a database.
 type recordingDSRepo struct {
 	kbDeleteDSRepo
-	updated []*types.DataSource
+	updated   []*types.DataSource
+	updateErr error
 }
 
 func (r *recordingDSRepo) UpdateSyncState(_ context.Context, ds *types.DataSource) error {
+	if r.updateErr != nil {
+		return r.updateErr
+	}
 	// Snapshot the fields a checkpoint is expected to persist.
 	cp := *ds
 	r.updated = append(r.updated, &cp)
@@ -82,7 +87,7 @@ func TestStreamHandler_EmitClassifiesDeletedAndFailed(t *testing.T) {
 	h := newStreamHandler(&DataSourceService{knowledgeService: knowledgeSvc}, ds, result, &types.SyncLog{})
 
 	require.NoError(t, h.Emit(context.Background(), types.FetchedItem{ExternalID: "gone", IsDeleted: true}))
-	require.NoError(t, h.Emit(context.Background(), types.FetchedItem{
+	require.Error(t, h.Emit(context.Background(), types.FetchedItem{
 		ExternalID: "bad", Title: "Broken Doc",
 		Metadata: map[string]string{"error": "export failed"},
 	}))
@@ -92,6 +97,28 @@ func TestStreamHandler_EmitClassifiesDeletedAndFailed(t *testing.T) {
 	require.Len(t, result.Errors, 1)
 	assert.Equal(t, "Broken Doc", result.Errors[0].Title)
 	assert.Contains(t, result.Errors[0].Message, "export failed")
+}
+
+func TestStreamHandlerDoesNotCheckpointUnconfirmedItemsOrFailedWrites(t *testing.T) {
+	baseline := makeConnectorCursor(t, map[string]map[string]string{"space": {"old": "1"}})
+	for _, fail := range []string{"ingestion", "write"} {
+		t.Run(fail, func(t *testing.T) {
+			repo := &recordingDSRepo{}
+			result := &types.SyncResult{}
+			if fail == "ingestion" {
+				result.Failed = 1
+			} else {
+				repo.updateErr = errors.New("storage unavailable")
+			}
+			ds := &types.DataSource{ID: "ds-1", LastSyncCursor: baseline}
+			h := newStreamHandler(&DataSourceService{dsRepo: repo,
+				syncLogRepo: &processSyncSyncLogRepo{logs: map[string]*types.SyncLog{}}}, ds, result, &types.SyncLog{})
+			err := h.Checkpoint(context.Background(), &types.SyncCursor{ConnectorCursor: map[string]interface{}{"next": "2"}})
+			require.Error(t, err)
+			assert.Equal(t, baseline, ds.LastSyncCursor)
+			assert.Empty(t, repo.updated)
+		})
+	}
 }
 
 // A canceled context aborts the stream: Emit returns the context error so the

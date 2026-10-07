@@ -47,7 +47,8 @@ const (
 	// Model lifecycle errors (2300-2399).
 	// The dedicated code lets clients render structured usage details without
 	// parsing the backwards-compatible English error message.
-	ErrModelInUse ErrorCode = 2300
+	ErrModelInUse         ErrorCode = 2300
+	ErrImageModelRequired ErrorCode = 2301
 
 	// Add more error codes here
 )
@@ -87,6 +88,17 @@ func NewModelInUseError(message string, details any) *AppError {
 		Code:     ErrModelInUse,
 		Message:  message,
 		Details:  details,
+		HTTPCode: http.StatusBadRequest,
+	}
+}
+
+// NewImageModelRequiredError is a pre-write capability rejection, not a failed
+// or unknown ingestion. Optional embedded-image consumers may skip only this
+// native result; they must retain all unconfirmed write/retirement failures.
+func NewImageModelRequiredError() *AppError {
+	return &AppError{
+		Code:     ErrImageModelRequired,
+		Message:  "上传图片文件需要设置VLM模型",
 		HTTPCode: http.StatusBadRequest,
 	}
 }

@@ -1298,6 +1298,10 @@ pub struct StepElement {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+
+    /// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1313,6 +1317,9 @@ pub enum ActionEnum {
 
     #[serde(rename = "send_message")]
     SendMessage,
+
+    #[serde(rename = "set_channel_topic")]
+    SetChannelTopic,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5853,6 +5860,10 @@ pub struct AutomationStep {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+
+    /// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
 }
 
 /// REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider

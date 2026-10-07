@@ -196,6 +196,7 @@ done
 compose up -d --wait keycloak temporal spicedb buzz-relay
 compose up -d --wait --no-build openmeter openmeter-sink-worker
 ./bootstrap.sh --sync-client-redirects
+./bootstrap.sh --sync-realm-locales
 ./bootstrap.sh --ensure-platform-admin
 ./bootstrap.sh --ensure-service-audience
 export VERIFY_KEYCLOAK_ADMIN_PASSWORD_FILE="$PWD/secrets/keycloak_admin_password"

@@ -1474,10 +1474,15 @@ async fn handle_edit_metadata(
                         .await?;
                 }
                 "topic" => {
-                    state
-                        .db
-                        .set_topic(tenant.community(), channel_id, val, &actor_bytes)
-                        .await?;
+                    // Pure topic commands already committed the topic and
+                    // event atomically. Reapplying here could overwrite a
+                    // newer accepted command after this transaction completed.
+                    if buzz_core::channel::topic_change(event).is_none() {
+                        state
+                            .db
+                            .set_topic(tenant.community(), channel_id, val, &actor_bytes)
+                            .await?;
+                    }
                     emit_system_message(
                         tenant,
                         state,

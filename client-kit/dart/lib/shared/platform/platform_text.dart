@@ -837,6 +837,9 @@ enum PlatformMessageKey {
   workflowsStepsAddDelay,
   workflowsStepsAddApproval,
   workflowsStepsAddReaction,
+  workflowsStepsSetTopic,
+  workflowsStepsTopic,
+  workflowsStepsTopicTarget,
   workflowsStepsEmoji,
   workflowsStepsReactionTarget,
   workflowsStepsApprovalPolicyHint,
@@ -3349,6 +3352,12 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '添加审批请求',
   ),
   PlatformMessageKey.workflowsStepsAddReaction: ('Add reaction', '添加表情回应'),
+  PlatformMessageKey.workflowsStepsSetTopic: ('Set channel topic', '修改频道主题'),
+  PlatformMessageKey.workflowsStepsTopic: ('Topic', '主题'),
+  PlatformMessageKey.workflowsStepsTopicTarget: (
+    'Update this channel\'s topic. Leave empty to clear it.',
+    '修改当前频道的主题，留空则清空主题。',
+  ),
   PlatformMessageKey.workflowsStepsEmoji: ('Emoji', '表情'),
   PlatformMessageKey.workflowsStepsReactionTarget: (
     'React to the actual message that triggered this workflow.',

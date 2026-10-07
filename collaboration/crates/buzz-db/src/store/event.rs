@@ -1525,9 +1525,61 @@ pub async fn insert_event_with_thread_metadata(
     )
     .await?;
     let mut tx = sqlx::Transaction::begin(connection, None).await?;
+    let topic_change = buzz_core::channel::topic_change(event);
+    if let Some((topic_channel, _)) = topic_change {
+        if channel_id != Some(topic_channel) || thread_meta.is_some() {
+            return Err(DbError::AccessDenied(
+                "topic channel does not match event scope".into(),
+            ));
+        }
+        crate::channel_members::acquire_channel_membership_lock(
+            &mut tx,
+            community_id,
+            topic_channel,
+        )
+        .await?;
+        // Serialize with metadata/DM mutations, then check the actual roster
+        // behind the same fence as membership removal, not its cached result.
+        let active: Option<bool> = sqlx::query_scalar(
+            "SELECT archived_at IS NULL FROM channels \
+             WHERE community_id=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE",
+        )
+        .bind(community_id.as_uuid())
+        .bind(topic_channel)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let member: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM channel_members \
+             WHERE community_id=$1 AND channel_id=$2 AND pubkey=$3 AND removed_at IS NULL)",
+        )
+        .bind(community_id.as_uuid())
+        .bind(topic_channel)
+        .bind(event.pubkey.to_bytes().as_slice())
+        .fetch_one(&mut *tx)
+        .await?;
+        if active != Some(true) || !member {
+            return Err(DbError::AccessDenied(
+                "topic requires active channel membership".into(),
+            ));
+        }
+    }
     let result =
         insert_event_with_thread_metadata_tx(&mut tx, community_id, event, channel_id, thread_meta)
             .await?;
+    if result.1 {
+        if let Some((topic_channel, topic)) = topic_change {
+            sqlx::query(
+                "UPDATE channels SET topic=$1,topic_set_by=$2,topic_set_at=NOW() \
+                 WHERE community_id=$3 AND id=$4",
+            )
+            .bind(topic)
+            .bind(event.pubkey.to_bytes().as_slice())
+            .bind(community_id.as_uuid())
+            .bind(topic_channel)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
     tx.commit().await?;
     Ok(result)
 }
@@ -2146,6 +2198,86 @@ mod postgres_tests {
             .await
             .expect("insert test community");
         id
+    }
+
+    #[tokio::test]
+    #[ignore = "requires isolated migrated BUZZ_TEST_DATABASE_URL"]
+    async fn topic_event_and_value_commit_together_and_duplicate_cannot_reapply() {
+        std::env::var("BUZZ_TEST_DATABASE_URL").expect("explicit isolated topic test database");
+        let pool = setup_pool().await;
+        crate::migration::run_migrations(&pool).await.unwrap();
+        let community_id = make_test_community(&pool).await;
+        let community = CommunityId::from_uuid(community_id);
+        let channel = make_test_channel(&pool, community_id, None).await;
+        let keys = Keys::generate();
+        sqlx::query("INSERT INTO channel_members(community_id,channel_id,pubkey,role) VALUES($1,$2,$3,'member')")
+            .bind(community_id).bind(channel).bind(keys.public_key().to_bytes().as_slice())
+            .execute(&pool).await.unwrap();
+        let command = |value: &str| {
+            EventBuilder::new(Kind::Custom(9002), "")
+                .tags([
+                    Tag::parse(["h", &channel.to_string()]).unwrap(),
+                    Tag::parse(["topic", value]).unwrap(),
+                ])
+                .sign_with_keys(&keys)
+                .unwrap()
+        };
+        let first = command("First");
+        assert!(
+            insert_event_with_thread_metadata(&pool, community, &first, Some(channel), None)
+                .await
+                .unwrap()
+                .1
+        );
+        let current: String =
+            sqlx::query_scalar("SELECT topic FROM channels WHERE community_id=$1 AND id=$2")
+                .bind(community_id)
+                .bind(channel)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(current, "First");
+        let clear = command("");
+        assert!(
+            insert_event_with_thread_metadata(&pool, community, &clear, Some(channel), None)
+                .await
+                .unwrap()
+                .1
+        );
+        assert!(
+            !insert_event_with_thread_metadata(&pool, community, &first, Some(channel), None)
+                .await
+                .unwrap()
+                .1
+        );
+        let current: String =
+            sqlx::query_scalar("SELECT topic FROM channels WHERE community_id=$1 AND id=$2")
+                .bind(community_id)
+                .bind(channel)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            current, "",
+            "re-observing the older event must not overwrite a later topic"
+        );
+        sqlx::query("UPDATE channel_members SET removed_at=now() WHERE community_id=$1 AND channel_id=$2 AND pubkey=$3")
+            .bind(community_id).bind(channel).bind(keys.public_key().to_bytes().as_slice()).execute(&pool).await.unwrap();
+        let refused = command("Removed member");
+        assert!(
+            insert_event_with_thread_metadata(&pool, community, &refused, Some(channel), None)
+                .await
+                .is_err()
+        );
+        let stored: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM events WHERE community_id=$1 AND id=$2)",
+        )
+        .bind(community_id)
+        .bind(refused.id.as_bytes().as_slice())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(!stored, "a rejected topic has no misleading accepted event");
     }
 
     async fn make_test_channel(

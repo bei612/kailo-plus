@@ -290,6 +290,73 @@ fi
 if [ "${1:-}" = '--validate-config' ] && [ "$#" -eq 1 ]; then
   exit 0
 fi
+# 原生登录页语言只由同一 realm 模板投递。已有 realm 不会重新导入，故仅 PUT
+# 这三个展示字段；不读写用户、角色、凭据或认证流程。结果不明时退出，重入先读回。
+if [ "${1:-}" = '--sync-realm-locales' ] && [ "$#" -eq 1 ]; then
+  python3 - "$OIDC_ISSUER" "$OIDC_REALM" "${KEYCLOAK_ADMIN_USER:?}" \
+    "${VERIFY_BOOTSTRAP_WAIT_SECONDS:?}" <<'PYLOCALE'
+import json
+import pathlib
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+issuer, realm, admin, timeout = sys.argv[1:]
+timeout = int(timeout)
+if timeout <= 0:
+    raise SystemExit("VERIFY_BOOTSTRAP_WAIT_SECONDS 必须为正整数")
+origin = urllib.parse.urlsplit(issuer)
+base = urllib.parse.urlunsplit((origin.scheme, origin.netloc, "", "", ""))
+KEYS = ("internationalizationEnabled", "supportedLocales", "defaultLocale")
+
+
+def same(current, desired):
+    return (current.get("internationalizationEnabled") is desired["internationalizationEnabled"]
+            and sorted(current.get("supportedLocales") or []) == sorted(desired["supportedLocales"])
+            and current.get("defaultLocale") == desired["defaultLocale"])
+
+
+try:
+    template = json.loads(pathlib.Path("identity-provider/realm.json").read_text(encoding="utf-8"))
+    desired = {key: template[key] for key in KEYS}
+    if (desired["internationalizationEnabled"] is not True
+            or desired["defaultLocale"] != "zh-CN"
+            or not isinstance(desired["supportedLocales"], list)
+            or sorted(desired["supportedLocales"]) != ["en", "zh-CN"]):
+        raise SystemExit("realm 语言模板必须启用中文默认与中英选择")
+    password = pathlib.Path("secrets/keycloak_admin_password").read_text().strip()
+    login = urllib.parse.urlencode({"grant_type": "password", "client_id": "admin-cli",
+                                   "username": admin, "password": password}).encode()
+    with urllib.request.urlopen(base + "/realms/master/protocol/openid-connect/token",
+                                login, timeout=timeout) as response:
+        token = json.load(response)["access_token"]
+
+    path = "/admin/realms/" + urllib.parse.quote(realm, safe="")
+
+    def request(body=None):
+        req = urllib.request.Request(base + path,
+            data=json.dumps(body).encode() if body is not None else None,
+            method="PUT" if body is not None else "GET",
+            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return json.load(response) if body is None else None
+
+    current = request()
+    if current.get("realm") != realm:
+        raise SystemExit("realm 语言读取对象不匹配，拒绝更新")
+    changed = not same(current, desired)
+    if changed:
+        request(desired)
+    confirmed = request()
+    if confirmed.get("realm") != realm or not same(confirmed, desired):
+        raise SystemExit("realm 语言回读不一致，同步未完成")
+    print("realm 原生中英语言已同步并查证" if changed else "realm 原生中英语言已一致，无需更新")
+except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
+    raise SystemExit("realm 语言同步未完成；修复 IdP 连接或配置后重跑查证，不重建 realm") from None
+PYLOCALE
+  exit 0
+fi
 # 持久化 realm 不会再次导入 JSON。只收敛已有浏览器与原生客户端的回调：期望值取自本次渲染的导入文件
 # （与首次导入同源），不重建用户、client 或 credential；HTTP 结果不明时退出失败，重跑先读当前值再收敛。
 if [ "${1:-}" = '--sync-client-redirects' ] && [ "$#" -eq 1 ]; then

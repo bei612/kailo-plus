@@ -17,6 +17,30 @@ pub fn canonical_channel_name(name: &str) -> &str {
         .trim_end()
 }
 
+/// The SDK's pure topic command, not a general metadata-management envelope.
+/// An empty topic clears it. Extra, duplicate or malformed tags never qualify.
+pub fn topic_change(event: &nostr::Event) -> Option<(uuid::Uuid, &str)> {
+    if crate::kind::event_kind_u32(event) != crate::kind::KIND_NIP29_EDIT_METADATA
+        || !event.content.is_empty()
+        || event.tags.len() != 2
+    {
+        return None;
+    }
+    let mut channel = None;
+    let mut topic = None;
+    for tag in event.tags.iter() {
+        let fields = tag.as_slice();
+        match fields {
+            [key, value] if key == "h" && channel.is_none() => {
+                channel = Some(uuid::Uuid::parse_str(value).ok()?);
+            }
+            [key, value] if key == "topic" && topic.is_none() => topic = Some(value.as_str()),
+            _ => return None,
+        }
+    }
+    Some((channel?, topic?))
+}
+
 /// Whether a channel is publicly visible or invite-only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChannelVisibility {
@@ -181,6 +205,50 @@ impl FromStr for MemberRole {
 #[cfg(test)]
 mod tests {
     use super::canonical_channel_name;
+
+    #[test]
+    fn pure_topic_shape_rejects_management_unknown_duplicate_and_malformed_tags() {
+        use nostr::{EventBuilder, Keys, Kind, Tag};
+        let keys = Keys::generate();
+        let channel = uuid::Uuid::new_v4();
+        let h = Tag::parse(["h", &channel.to_string()]).unwrap();
+        let topic = Tag::parse(["topic", ""]).unwrap();
+        let event = EventBuilder::new(Kind::Custom(9002), "")
+            .tags([h.clone(), topic.clone()])
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert_eq!(super::topic_change(&event), Some((channel, "")));
+        for tags in [
+            vec![
+                h.clone(),
+                topic.clone(),
+                Tag::parse(["name", "override"]).unwrap(),
+            ],
+            vec![
+                h.clone(),
+                topic.clone(),
+                Tag::parse(["unknown", "value"]).unwrap(),
+            ],
+            vec![h.clone(), h.clone()],
+            vec![topic.clone(), topic.clone()],
+            vec![h.clone(), Tag::parse(["topic", "value", "extra"]).unwrap()],
+            vec![Tag::parse(["h", "not-a-channel"]).unwrap(), topic.clone()],
+            vec![h.clone(), Tag::parse(["purpose", "value"]).unwrap()],
+        ] {
+            let event = EventBuilder::new(Kind::Custom(9002), "")
+                .tags(tags)
+                .sign_with_keys(&keys)
+                .unwrap();
+            assert!(super::topic_change(&event).is_none());
+        }
+        for (kind, content) in [(9, ""), (9002, "not empty")] {
+            let event = EventBuilder::new(Kind::Custom(kind), content)
+                .tags([h.clone(), topic.clone()])
+                .sign_with_keys(&keys)
+                .unwrap();
+            assert!(super::topic_change(&event).is_none());
+        }
+    }
 
     #[test]
     fn channel_names_trim_whitespace_and_drop_all_leading_hashes() {

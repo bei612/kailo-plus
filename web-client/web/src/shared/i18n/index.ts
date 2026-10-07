@@ -1,4 +1,4 @@
-import { platformMessages, getLocale } from "@client-kit/platform/i18n";
+import { platformMessages, getLocale, platformLocaleStorageKey, subscribeLocale } from "@client-kit/platform/i18n";
 export { getLocale, resolveLocale } from "@client-kit/platform/i18n";
 
 export type AppLocale = "en" | "zh-CN";
@@ -80,4 +80,13 @@ export function t(key: MessageKey, variables: Record<string, string | number> = 
 export function initializeDocumentLanguage(): void {
   document.documentElement.lang = getLocale();
   document.title = t("app.title");
+  // Presentation-only projection for the gateway, which authenticates the first
+  // document request before JavaScript can read the existing device preference.
+  // Never read this cookie as identity or as the platform preference authority.
+  const projectLocale = () => {
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${platformLocaleStorageKey}=${getLocale()}; Path=/; SameSite=Lax${secure}`;
+  };
+  projectLocale();
+  subscribeLocale(projectLocale);
 }

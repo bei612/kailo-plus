@@ -14,6 +14,7 @@ use nostr::{Event, EventBuilder, Keys, Kind, Tag};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use url::Url;
+use uuid::Uuid;
 
 use crate::limits::ApiBudget;
 use crate::operator::{LimitKind, OperatorError};
@@ -63,6 +64,13 @@ fn reaction_matches(event: &Event, id: &str, author: &str, source: &str, emoji: 
             .iter()
             .next()
             .is_some_and(|tag| tag.as_slice() == ["e", source])
+}
+
+fn topic_matches(event: &Event, id: &str, author: &str, channel: Uuid, topic: &str) -> bool {
+    event.id.to_hex() == id
+        && event.pubkey.to_hex() == author
+        && event.verify().is_ok()
+        && buzz_core::channel::topic_change(event) == Some((channel, topic))
 }
 
 pub fn message_kind(message_type: &contracts::WebMessageType) -> u16 {
@@ -538,6 +546,41 @@ impl IdentityClient {
             return Ok(false);
         };
         Ok(reaction_matches(event, event_id, author, source, emoji))
+    }
+
+    /// Original SDK pure-topic command, signed by the acting installation.
+    pub fn sign_channel_topic_at(
+        &self,
+        channel: Uuid,
+        topic: &str,
+        created_at: u64,
+    ) -> Result<Event, OperatorError> {
+        buzz_sdk::build_set_topic(channel, topic)
+            .map_err(|_| OperatorError::Sign("Topic builder refused".into()))?
+            .custom_created_at(nostr::Timestamp::from(created_at))
+            .sign_with_keys(&self.keys)
+            .map_err(|_| OperatorError::Sign("Topic signing failed".into()))
+    }
+
+    /// The governed Relay stores pure topic updates in the event transaction.
+    /// A later topic change does not erase this operation's positive evidence.
+    pub async fn channel_topic_exists(
+        &self,
+        http: &reqwest::Client,
+        event_id: &str,
+        author: &str,
+        channel: Uuid,
+        topic: &str,
+    ) -> Result<bool, OperatorError> {
+        let page = self
+            .query(http, &[serde_json::json!({"ids":[event_id]})])
+            .await?;
+        let events: Vec<Event> = serde_json::from_value(page)
+            .map_err(|_| OperatorError::NotConverged("Topic query is invalid".into()))?;
+        let [event] = events.as_slice() else {
+            return Ok(false);
+        };
+        Ok(topic_matches(event, event_id, author, channel, topic))
     }
 
     /// 以该身份签名并发布一条事件，返回 Relay 的原始回应。
@@ -1215,6 +1258,37 @@ const BLOSSOM_AUTH_TTL_SECS: u64 = 600;
 #[cfg(test)]
 mod mention_tests {
     use super::*;
+
+    #[test]
+    fn topic_receipt_requires_exact_scope_actor_value_and_original_signature() {
+        let keys = Keys::generate();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            "http://unused.invalid",
+            "topic.invalid",
+        )
+        .unwrap();
+        let channel = Uuid::new_v4();
+        for topic in ["Release discussion", ""] {
+            let event = client.sign_channel_topic_at(channel, topic, 105).unwrap();
+            let id = event.id.to_hex();
+            let author = keys.public_key().to_hex();
+            assert!(topic_matches(&event, &id, &author, channel, topic));
+            assert!(!topic_matches(&event, &id, &author, Uuid::new_v4(), topic));
+            assert!(!topic_matches(
+                &event,
+                &id,
+                &Keys::generate().public_key().to_hex(),
+                channel,
+                topic
+            ));
+            assert!(!topic_matches(&event, &id, &author, channel, "other"));
+            let mut forged = event.clone();
+            forged.content = "forged".into();
+            assert!(!topic_matches(&forged, &id, &author, channel, topic));
+        }
+    }
 
     #[test]
     fn reaction_receipt_requires_exact_source_emoji_author_and_signature() {

@@ -686,7 +686,7 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
     // reach ingest, so the kind gate runs here for them as well. The author
     // is the authenticated key (gift wraps are not a member kind).
     if let Err(e) =
-        super::governance::check_event_kind(&conn.tenant, &state, &auth_pubkey, kind_u32).await
+        super::governance::check_event_kind(&conn.tenant, &state, &auth_pubkey, &event).await
     {
         let (message, reason) = match e {
             IngestError::Rejected(message) => (message, "restricted"),

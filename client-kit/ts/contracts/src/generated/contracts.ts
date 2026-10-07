@@ -900,6 +900,10 @@ export interface StepElement {
     message?: string;
     name?:    string;
     text?:    string;
+    /**
+     * 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
+     */
+    topic?: string;
 }
 
 export enum ActionEnum {
@@ -907,6 +911,7 @@ export enum ActionEnum {
     Delay = "delay",
     RequestApproval = "request_approval",
     SendMessage = "send_message",
+    SetChannelTopic = "set_channel_topic",
 }
 
 export interface AutomationVersionContentTrigger {
@@ -3952,6 +3957,10 @@ export interface AutomationStep {
     message?: string;
     name?:    string;
     text?:    string;
+    /**
+     * 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
+     */
+    topic?: string;
 }
 
 /**

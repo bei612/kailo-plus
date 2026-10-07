@@ -111,6 +111,10 @@ binds:
         scopes:
         - profile
         - email
+        uiLocales:
+          default: zh-CN
+          supported: [zh-CN, en]
+          cookie: buzz-locale
         # 本地 logout 是可选的：省略它，POST /logout 会被当作普通请求转给
         # BFF（404），网关 cookie 原样留着——点了「退出」而会话仍在，下一个
         # 请求就在 Core 里建起一条新会话（SF-AGW-23）。

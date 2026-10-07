@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveLocale, t } from "@/shared/i18n";
+import { resolveLocale, t, initializeDocumentLanguage } from "@/shared/i18n";
 import { setLocale, platformLocaleStorageKey } from "@client-kit/platform/i18n";
 
 afterEach(() => { vi.unstubAllGlobals(); localStorage.removeItem(platformLocaleStorageKey); });
@@ -24,5 +24,20 @@ describe("resolveLocale", () => {
     localStorage.removeItem(platformLocaleStorageKey);
     vi.stubGlobal("navigator", { language: "en-US", languages: ["en-US"] });
     expect(resolveLocale()).toBe("zh-CN");
+  });
+  it("projects the existing device choice to OIDC without reading a cookie as authority", () => {
+    document.head.innerHTML = '<meta name="platform-display-name" content="Kailo">';
+    localStorage.removeItem(platformLocaleStorageKey);
+    document.cookie = `${platformLocaleStorageKey}=en; Path=/`;
+    initializeDocumentLanguage();
+    expect(document.cookie).toContain(`${platformLocaleStorageKey}=zh-CN`);
+    setLocale("en");
+    expect(document.cookie).toContain(`${platformLocaleStorageKey}=en`);
+    setLocale("zh-CN");
+    expect(document.cookie).toContain(`${platformLocaleStorageKey}=zh-CN`);
+    localStorage.removeItem(platformLocaleStorageKey);
+    window.dispatchEvent(new StorageEvent("storage", { key: platformLocaleStorageKey }));
+    expect(document.cookie).toContain(`${platformLocaleStorageKey}=zh-CN`);
+    expect(document.cookie).not.toContain("token");
   });
 });

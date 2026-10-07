@@ -639,6 +639,28 @@ describe("shared Automation schedule consumer", () => {
       {action:"delay",duration:"1s"},{action:"add_reaction",emoji:"👍"}]}});
   });
 
+  it("preserves original channel topic clearing through form YAML and UNKNOWN", async () => {
+    const {section, t, choose} = await setup(["TRIGGER_THREAD"]);
+    await choose("Action", "set_channel_topic");
+    const input = section.querySelector<HTMLInputElement>("#wf-step-0-topic")!;
+    await type(input, "Release discussion");
+    await click(button(section, "Workflow YAML"));
+    const yaml = section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!.value;
+    expect(yaml).toContain("action: set_channel_topic");
+    expect(yaml).toContain("topic: Release discussion");
+    expect(yaml).not.toContain("action: send_message");
+    await click(button(section, "Form"));
+    await type(section.querySelector<HTMLInputElement>("#wf-step-0-topic")!, "");
+    await click(button(section, "Review request"));
+    await click(button(section, "Submit governed request"));
+    await click(button(section, "Re-check same request"));
+    const writes = t.send.mock.calls.filter(([r]) => r.path === "/api/v1/actions").map(([r]) => r.body);
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).toEqual(writes[0]);
+    expect(writes[0]).toMatchObject({automationVersionContent:{formatVersion:2,steps:[
+      {action:"set_channel_topic",topic:""}]}});
+  });
+
   it("preserves an explicit approval step through YAML and UNKNOWN without inventing an approver", async () => {
     const policy = {id: "00000000-0000-4000-8000-000000000001", version: 2};
     const {section, t, choose, fill} = await setup(["TRIGGER_THREAD"], undefined, undefined, undefined, [policy]);
@@ -1435,6 +1457,21 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await settle();
   }
   const posts = (t: ReturnType<typeof routes>) => t.send.mock.calls.map(([r]) => r).filter((r) => r.path === "/api/v1/actions");
+
+  it("closes the delegation dialog on Back and can reopen the same installation", async () => {
+    const t = routes();
+    const host = await open(t);
+    await click(button(host.querySelector<HTMLElement>('[role="dialog"]')!, "Close"));
+    await click(button(section(host, "agent-installations"), "View installation"));
+    await click(button(host, "View delegation grants"));
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain(grant.delegationId);
+    await click(button(section(host, "agent-delegation-management"), "Back"));
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    await click(button(section(host, "agent-installations"), "View installation"));
+    await click(button(host, "View delegation grants"));
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain(grant.delegationId);
+    expect(posts(t)).toHaveLength(0);
+  });
 
   it("upgrades the actual Installation with its freshly read version and preserves an UNKNOWN command", async () => {
     const current = { ...installation, canUpgrade: true, resourceVersion: 12 };

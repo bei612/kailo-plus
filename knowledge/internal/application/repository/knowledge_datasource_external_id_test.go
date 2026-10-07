@@ -62,6 +62,29 @@ func TestFindByDataSourceExternalID_DeletedRowsExcluded(t *testing.T) {
 	assert.Nil(t, found)
 }
 
+func TestFindByDataSourceExternalIDKeepsOldRevisionUntilNativeRetirement(t *testing.T) {
+	db := setupKnowledgeTestDB(t)
+	repo := NewKnowledgeRepository(db).(*knowledgeRepository)
+	oldID := "ffffffff-ffff-4fff-8fff-ffffffffffff"
+	newID := "00000000-0000-4000-8000-000000000001"
+	for i, id := range []string{oldID, newID} {
+		require.NoError(t, db.Exec(`INSERT INTO knowledges
+		(id, tenant_id, knowledge_base_id, type, title, source, parse_status, metadata, created_at)
+		VALUES (?, 51, 'kb', 'file', 'source', 'feishu', 'completed',
+		'{"datasource_id":"ds","external_id":"node"}', ?)`, id,
+			fmt.Sprintf("2026-01-0%d 00:00:00", i+1)).Error)
+	}
+	row, err := repo.FindByDataSourceExternalID(context.Background(), 51, "kb", "ds", "node")
+	require.NoError(t, err)
+	require.NotNil(t, row)
+	assert.Equal(t, oldID, row.ID, "UUID sort must not forget the still-owned old revision")
+	require.NoError(t, db.Exec("UPDATE knowledges SET deleted_at = ? WHERE id = ?", "2026-01-03 00:00:00", oldID).Error)
+	row, err = repo.FindByDataSourceExternalID(context.Background(), 51, "kb", "ds", "node")
+	require.NoError(t, err)
+	require.NotNil(t, row)
+	assert.Equal(t, newID, row.ID)
+}
+
 func TestHardDeleteKnowledge(t *testing.T) {
 	db := setupKnowledgeTestDB(t)
 	repo := NewKnowledgeRepository(db).(*knowledgeRepository)

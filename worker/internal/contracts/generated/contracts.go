@@ -3067,6 +3067,8 @@ type StepElement struct {
 	Message *string `json:"message,omitempty"`
 	Name    *string `json:"name,omitempty"`
 	Text    *string `json:"text,omitempty"`
+	// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
+	Topic *string `json:"topic,omitempty"`
 }
 
 type AutomationVersionContentTrigger struct {
@@ -4943,6 +4945,8 @@ type AutomationStep struct {
 	Message *string `json:"message,omitempty"`
 	Name    *string `json:"name,omitempty"`
 	Text    *string `json:"text,omitempty"`
+	// 原频道主题；空字符串清空主题，不改变频道名称、描述或成员。
+	Topic *string `json:"topic,omitempty"`
 }
 
 // REQ-23、DD-107、03 §7 的不可变自动化版本。Schedule 使用 Temporal 原生 interval/calendar，不含触发消息正文、provider
@@ -6152,6 +6156,7 @@ const (
 	Delay           ActionEnum = "delay"
 	RequestApproval ActionEnum = "request_approval"
 	SendMessage     ActionEnum = "send_message"
+	SetChannelTopic ActionEnum = "set_channel_topic"
 )
 
 type AutomationTriggerKind string

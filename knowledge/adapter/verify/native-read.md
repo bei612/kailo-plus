@@ -505,3 +505,103 @@ was not linked while Data remained below 2 GiB. Its existing native file-creatio
 check was extended after implementation, but no pass is inferred from the prior
 batch. No image, deployment, live binding or automatic Connector is delivered by
 these source and narrow-check results.
+
+## Native Connector cursor and replacement consumer — 2026-10-07
+
+This increment is based on apps `b91120ab9da6d84ae4df2434254ab0f7014683c4`.
+The preceding native compilation gap was subsequently checked on that complete
+fixed native tree: the five targeted `internal/mcpserver` checks passed in
+`native-mcp-fixed-b911.log`. This is native evidence, not positive cross-service
+authorization, usage settlement or a deployed automatic Connector.
+
+Authority and impact: DD-89 and design 13 §§4.2/4.4 keep Connector, cursor,
+Knowledge readiness and deletion jobs inside the receiving service. The pinned
+upstream is WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/application/service/datasource_service.go::DataSourceService.ProcessSync`,
+`streamSyncHandler.Checkpoint` and `DataSourceService.ingestItem`, together with
+`internal/datasource/connector.go::StreamHandler`. The original consumer deleted
+the old document before creating its replacement and could checkpoint failed
+ingestion. This batch changes that existing native consumer and its repository
+lookup; no Core body, platform workflow, schema, registry or new table is added.
+
+Both batch and streaming consumers now retain their previous cursor on partial
+discovery, failed ingestion or unconfirmed replacement. A malformed retained
+cursor is not silently replaced by an empty one. Streaming Emit returns its
+failure, Checkpoint independently refuses failed work, and a failed cursor write
+restores the in-memory cursor before the original failure handling can persist
+it. Final success is returned only after the original data-source and sync-log
+writes succeed. The native scheduler/Asynq retry remains the retry mechanism;
+an item failure is not evidence that an already dispatched native effect failed.
+
+Replacement first uses the original content dedupe/create and requires the
+resulting Knowledge to be completed and owned by the same tenant, KB, source and
+external item. The new Knowledge's existing metadata retains the previous ID
+and revision. Original `UpdateKnowledgeForTransfer` CAS freezes dispatch intent
+before `StartKnowledgeDeleteTask`; subsequent attempts only use
+`ObserveKnowledgeDeleteTask`. A queue acknowledgement is not terminal evidence.
+Only the matching original task's SUCCEEDED receipt with completion time can
+finish replacement; that receipt is retained with the Knowledge before advancing
+the cursor. The old row is not hard-deleted by replacement. Repository selection
+keeps the oldest live source revision first until native retirement, so UUID
+ordering cannot bypass the unfinished replacement. Connector-provided metadata
+cannot override source identity or inject this retained receipt.
+
+Boundaries: pending, failed, finalizing and unknown parsing states preserve the
+old revision. CAS conflicts do not dispatch. Lost acknowledgements, unavailable
+or expired task evidence remain unconfirmed, not successful or safe to resubmit.
+A crash between intent persistence and enqueue therefore requires native
+operator reconciliation, not a second delete attempt; this batch does not claim
+automatic recovery from that gap. Original task retention/retry bounds are
+unchanged. Explicit source-disappearance and stale-subtree deletion consumers
+are not replaced by this increment and are not claimed terminal-safe here.
+Hash/file-type reference grouping, controlled Cells discovery and receiving
+write admission still need their real consumers before a Cells automatic
+Connector can be registered. No partial entry, image, live binding or deployment
+is delivered by this batch.
+
+Implementation preceded verification. The existing native SDK enforced 4 CPUs
+and 8 GiB memory, reused its Go/module caches, and ran with `GOPROXY=off` and
+`GOSUMDB=off`. The complete b911 native input was checked before applying the
+seven changed Go files; this was not a two-file overlay on unknown old code.
+The first compilation stopped on a now-unused `strings` import, recorded in
+`connector-native.log`; removal of that import gave 38 service checks and three
+repository checks, all passing, in `connector-native-corrected.log`.
+The service selection was:
+
+```sh
+go test ./internal/application/service -run 'Test(DataSource|ProcessSync|StreamHandler|StreamingFetch|StreamStartCursor|IngestItem|ApplyFetchedItem|AllFetched)' -count=1 -v
+go test ./internal/application/repository -run TestFindByDataSourceExternalID -count=1 -v
+```
+
+Private SDK-only mutations removed the actual readiness check and failed-item
+checkpoint guard. Both targeted checks failed (exit 1), including an assertion
+against an advanced cursor rather than a fixture panic. Both files were restored
+byte-for-byte from formal source. The final same two-package run passed all
+41 top-level checks (exit 0), recorded in `connector-native-restored.log`;
+`connector-fence-baseline.log` and `connector-fence-mutation.log` retain the
+baseline and negative outputs. All these logs are in the same
+`read-receipts-20261007` directory cited above. The SDK source mount is read-only;
+its attempted in-place formatting was refused, and formatting output was applied
+to the host-owned source without changing mount permissions. Full checks and
+live cross-service tests were not run for this increment.
+
+Cross-review found one real caller omission after that first candidate: the
+original `embedded_image` branch treated every ingestion error as optional and
+could swallow pending parsing or unconfirmed retirement. It now skips only the
+native pre-write VLM-not-configured rejection. Both original VLM validation gates
+return `AppError` code 2301 (`ErrImageModelRequired`), preserving HTTP 400 and the
+existing message; other bad requests, storage errors, lost acknowledgements and
+pending replacement remain failed. This is a native model error classification,
+not a new Core error contract. Existing generic HTTP400 handling remains valid;
+consumers pinning the old generic numeric 1000 for this exact rejection must
+accept 2301. No wrapped error changes the original native middleware type.
+
+Actual post-implementation checks exercise the original VLM gate and the full
+embedded-image Emit→ingest→ready/retirement→Checkpoint path. Pending parsing,
+RUNNING deletion and UNKNOWN observation all retain the previous cursor. A
+private mutation restored the broad embedded-image skip and both targeted cases
+failed, exit 1. Original-byte restoration then passed 57 service and three
+repository checks, exit 0, including original processing-override validation.
+See `connector-image-baseline.log`, `connector-image-mutation.log` and
+`connector-image-restored.log` in the same log directory. This supersedes the
+41-case result for the corrected ten-file candidate, not for a new deployment.

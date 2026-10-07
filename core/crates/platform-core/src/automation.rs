@@ -1796,7 +1796,7 @@ const FROZEN_INVOCATION_SQL: &str = "select i.automation_resource_id,i.automatio
            and (($6 and not $5 and $3::text is null and i.status in ('CREATED','DISPATCHING','UNKNOWN')
                  and i.runtime_turn_id is null and i.native_status is null and i.reply_event_id is not distinct from $4::text
                  and exists(select 1 from catalog.automation_version v where v.asset_id=i.automation_version_asset_id
-                   and v.automation_resource_id=i.automation_resource_id and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS','ADD_REACTION_STEPS')))
+                   and v.automation_resource_id=i.automation_resource_id and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS','ADD_REACTION_STEPS','SET_CHANNEL_TOPIC_STEPS')))
              or (not $6 and not $5 and $3::text is null and $4::text is null and i.status in ('CREATED','DISPATCHING') and i.runtime_turn_id is null)
              or (not $5 and $3::text is not null and i.status in ('RUNNING','UNKNOWN')
                and i.native_status='completed' and i.runtime_turn_id=$3 and i.reply_event_id is not distinct from $4::text)
@@ -2022,9 +2022,12 @@ async fn fresh_executor(
 ) -> Result<(), Refusal> {
     match row.action.get("kind").and_then(Value::as_str) {
         Some("AGENT_TURN") => fresh_runtime(state, tx, &runtime_scope(row)).await,
-        Some("POST_MESSAGE" | "POST_MESSAGE_STEPS" | "ADD_REACTION_STEPS") => {
-            post_message::fresh(state, tx, &runtime_scope(row)).await
-        }
+        Some(
+            "POST_MESSAGE"
+            | "POST_MESSAGE_STEPS"
+            | "ADD_REACTION_STEPS"
+            | "SET_CHANNEL_TOPIC_STEPS",
+        ) => post_message::fresh(state, tx, &runtime_scope(row)).await,
         _ => Err(Refusal::Blocked(ReasonCode::CapabilityBlocked)),
     }
 }
@@ -2352,7 +2355,13 @@ struct Cursor {
 fn relay_trigger_supported(action: &Value, trigger: &Value) -> bool {
     matches!(
         action.get("kind").and_then(Value::as_str),
-        Some("AGENT_TURN" | "POST_MESSAGE" | "POST_MESSAGE_STEPS" | "ADD_REACTION_STEPS")
+        Some(
+            "AGENT_TURN"
+                | "POST_MESSAGE"
+                | "POST_MESSAGE_STEPS"
+                | "ADD_REACTION_STEPS"
+                | "SET_CHANNEL_TOPIC_STEPS"
+        )
     ) && matches!(
         trigger.get("kind").and_then(Value::as_str),
         Some("CHANNEL_MESSAGE" | "MENTION")

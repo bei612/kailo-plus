@@ -2239,7 +2239,7 @@ async fn ingest_event_inner(
     // events first: they are refused from the owner too (DD-106), and a kind:5
     // addressing a workflow must not reach handle_a_tag_deletion.
     super::governance::check_workflow_event(state, kind_u32, &event)?;
-    super::governance::check_event_kind(tenant, state, auth.pubkey(), kind_u32).await?;
+    super::governance::check_event_kind(tenant, state, auth.pubkey(), &event).await?;
     super::governance::check_channel_visibility(state, kind_u32, &event)?;
 
     const MAX_TIMESTAMP_DRIFT_SECS: i64 = 900; // ±15 minutes
@@ -3207,6 +3207,9 @@ async fn ingest_event_inner(
                 return Err(match e {
                     buzz_db::DbError::AuthEventRejected => {
                         IngestError::Rejected("invalid: AUTH events cannot be stored".into())
+                    }
+                    buzz_db::DbError::AccessDenied(reason) => {
+                        IngestError::Rejected(format!("restricted: {reason}"))
                     }
                     other => IngestError::Internal(format!("error: database error: {other}")),
                 });

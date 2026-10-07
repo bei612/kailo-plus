@@ -274,6 +274,12 @@ async fn publish(
             action["emoji"].as_str().ok_or_else(unknown)?,
             timestamp,
         )
+    } else if action["kind"] == "SET_CHANNEL_TOPIC_STEPS" {
+        client.sign_channel_topic_at(
+            binding.channel_id,
+            action["topic"].as_str().ok_or_else(unknown)?,
+            timestamp,
+        )
     } else {
         client.sign_channel_result_at(
             &binding.channel_id.to_string(),

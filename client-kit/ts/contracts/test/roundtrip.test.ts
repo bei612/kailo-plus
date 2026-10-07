@@ -8,6 +8,13 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
+test("automation topic step preserves explicit empty topic", () => {
+  const sample: import("../src/generated/contracts.js").AutomationStep = JSON.parse(readFileSync(new URL(
+    "../../../../contracts/samples/automation-topic-step.sample.json", import.meta.url), "utf8"));
+  const actual: import("../src/generated/contracts.js").AutomationStep = {id:sample.id,action:sample.action,topic:sample.topic};
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)), sample);
+});
+
 test("automation reaction step preserves original emoji", () => {
   const sample: import("../src/generated/contracts.js").AutomationStep = JSON.parse(readFileSync(new URL(
     "../../../../contracts/samples/automation-reaction-step.sample.json", import.meta.url), "utf8"));

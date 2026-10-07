@@ -86,6 +86,9 @@ pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
                             .as_str()
                             .is_some_and(collab_bridge::bridge::valid_reaction)
                 }
+                Some("set_channel_topic") => {
+                    fields(step, &["id", "name", "action", "topic"]) && step["topic"].is_string()
+                }
                 _ => false,
             };
             if !valid {
@@ -119,6 +122,8 @@ pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
     let last = steps.last().ok_or_else(invalid_management)?;
     Ok(if last["action"] == "add_reaction" {
         json!({"kind":"ADD_REACTION_STEPS","emoji":last["emoji"],"stepsVersion":2,"steps":steps})
+    } else if last["action"] == "set_channel_topic" {
+        json!({"kind":"SET_CHANNEL_TOPIC_STEPS","topic":last["topic"],"stepsVersion":2,"steps":steps})
     } else {
         json!({"kind":"POST_MESSAGE_STEPS","template":last["text"],"stepsVersion":2,"steps":steps})
     })
@@ -127,7 +132,7 @@ pub(crate) fn action(steps: &Value) -> Result<Value, Refusal> {
 pub(crate) fn is_native_kind(kind: &str) -> bool {
     matches!(
         kind,
-        "POST_MESSAGE" | "POST_MESSAGE_STEPS" | "ADD_REACTION_STEPS"
+        "POST_MESSAGE" | "POST_MESSAGE_STEPS" | "ADD_REACTION_STEPS" | "SET_CHANNEL_TOPIC_STEPS"
     )
 }
 
@@ -212,6 +217,29 @@ pub(crate) fn delays(native_action: &Value) -> Result<Vec<(String, i64)>, Refusa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn topic_preserves_clearing_without_becoming_a_message_or_management_command() {
+        for topic in ["Release discussion", ""] {
+            let steps = json!([{"id":"wait","action":"delay","duration":"1s"},
+                {"id":"topic","action":"set_channel_topic","topic":topic}]);
+            let projected = action(&steps).unwrap();
+            assert_eq!(projected["kind"], "SET_CHANNEL_TOPIC_STEPS");
+            assert_eq!(projected["topic"], topic);
+            assert!(projected.get("template").is_none());
+            assert!(is_native_kind("SET_CHANNEL_TOPIC_STEPS"));
+            assert!(supported(&projected));
+            let mut content = json!({});
+            expose(&mut content, &projected).unwrap();
+            assert_eq!(content, json!({"formatVersion":2,"steps":steps}));
+            for field in ["nameOverride", "visibility", "channelId", "text"] {
+                let mut invalid = steps.clone();
+                invalid[1][field] = json!("not a topic");
+                assert!(action(&invalid).is_err());
+            }
+        }
+        assert!(action(&json!([{"id":"topic","action":"set_channel_topic"}])).is_err());
+    }
 
     #[test]
     fn reaction_preserves_native_action_without_fabricating_message_text() {
