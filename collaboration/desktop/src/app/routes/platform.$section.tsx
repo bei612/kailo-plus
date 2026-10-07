@@ -23,6 +23,10 @@ import { PulseScreen } from "@/features/platform/PulseScreen";
 import { ProjectsScreen } from "@/features/platform/ProjectsScreen";
 
 export const Route = createFileRoute("/platform/$section")({
+  validateSearch: (search: Record<string, unknown>): { workspaceId?: string } => ({
+    workspaceId: typeof search.workspaceId === "string" && search.workspaceId.trim()
+      ? search.workspaceId : undefined,
+  }),
   params: {
     parse: ({ section }) => {
       if (!isPlatformSection(section)) throw notFound();
@@ -39,10 +43,15 @@ export const Route = createFileRoute("/platform/$section")({
  */
 function PlatformRouteComponent() {
   const { section } = Route.useParams();
-  return <PlatformScreen section={section} />;
+  const { workspaceId } = Route.useSearch();
+  const navigate = Route.useNavigate();
+  return <PlatformScreen section={section} workspaceId={workspaceId}
+    onWorkspaceChange={(selected) => { void navigate({ search: { workspaceId: selected } }); }} />;
 }
 
-function PlatformScreen({ section }: { section: PlatformSection }) {
+function PlatformScreen({ section, workspaceId, onWorkspaceChange }: {
+  section: PlatformSection; workspaceId?: string; onWorkspaceChange: (workspaceId: string) => void;
+}) {
   const session = useNativeSession();
   if (section === "pulse") return <PulseScreen />;
   if (section === "projects") return <ProjectsScreen />;
@@ -58,9 +67,9 @@ function PlatformScreen({ section }: { section: PlatformSection }) {
         <WorkspaceMembersPage renderIdentity={(pubkey,children,label)=><UserProfilePopover pubkey={pubkey}
           triggerElement="span" triggerAriaLabel={label}>{children}</UserProfilePopover>}/>
       ) : section === "agents" ? (
-        <AgentDefinitionsPage />
+        <AgentDefinitionsPage workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} />
       ) : section === "workflows" ? (
-        <WorkflowsPage />
+        <WorkflowsPage workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} />
       ) : section === "tasks" ? (
         <TasksPage />
       ) : section === "approvals" ? (

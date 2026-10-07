@@ -103,9 +103,12 @@ vi.mock("@client-kit/platform/react/pages", () => ({
   MembersPane: ({ workspaceId }: { workspaceId: string }) => (
     <div data-testid="workspace-members" data-workspace={workspaceId} />
   ),
-  AgentDefinitionsPage: () => null,
+  AgentDefinitionsPage: ({ workspaceId }: { workspaceId?: string }) => <div data-testid="agents-scope" data-workspace={workspaceId} />,
   AuditPage: () => null,
   DevicesPage: () => null,
+}));
+vi.mock("@client-kit/platform/react/workflows", () => ({
+  WorkflowsPage: ({ workspaceId }: { workspaceId?: string }) => <div data-testid="workflows-scope" data-workspace={workspaceId} />,
 }));
 vi.mock("@client-kit/platform/react/invitations", () => ({
   TenantInvitations: () => <div data-testid="tenant-invitations" />,
@@ -201,4 +204,12 @@ it("does not substitute a default channel for a route outside the fresh workspac
   expect(markup).toContain("platform.noWorkspace");
   expect(state.channelEnabled).toBe(false);
   expect(markup).not.toContain('data-selected="workspace-b"');
+});
+
+it.each(["agents", "workflows"])("passes the exact %s URL workspace to the shared page, even when unavailable", (section) => {
+  state.tab = section;
+  state.workspaceId = "revoked-workspace";
+  const markup = renderToStaticMarkup(<PlatformApp />);
+  expect(markup).toContain(`data-testid="${section}-scope" data-workspace="revoked-workspace"`);
+  expect(markup).not.toContain('data-workspace="workspace-b"');
 });

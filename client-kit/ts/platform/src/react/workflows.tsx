@@ -12,17 +12,18 @@ import {
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { relativeTime } from "../format";
-import { AutomationManagement } from "./agents";
+import { AutomationManagement, type WorkspaceNavigation } from "./agents";
 import { useBffClient, useLocale, useT } from "./context";
 import { TaskDetail, TaskStatusBadge, WaitingReason } from "./governance";
 import { WorkflowRunTrace } from "./workflow-run-trace";
 import { Button, Notice, ReadFailure } from "./ui";
 import { useLoad } from "./use-load";
 
-export function WorkflowsPage() {
+export function WorkflowsPage(navigation: WorkspaceNavigation = {}) {
 	return (
 		<div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-7 sm:px-6 sm:py-8" data-testid="workflows-page" data-scroll-restoration-id="workflows-list">
 			<AutomationManagement
+				{...navigation}
 				renderRunHistory={(resourceId, workspaceId) => (
 					<AutomationRunHistory
 						key={`${workspaceId}:${resourceId}`}

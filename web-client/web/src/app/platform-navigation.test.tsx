@@ -17,6 +17,8 @@ vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
     data-conversation={navigation.conversationId}>
     <button onClick={() => { void navigation.openTab("audit", navigation.workspaceId); }}>audit</button>
     <button onClick={() => { void navigation.openTab("settings", navigation.workspaceId); }}>settings</button>
+    <button onClick={() => { void navigation.openTab("agents", "workspace-b"); }}>agents</button>
+    <button onClick={() => { void navigation.openTab("workflows", "workspace-b"); }}>workflows</button>
   </div>;
 } }));
 
@@ -73,4 +75,19 @@ it("never stores identity, credentials or commands in navigation search", () => 
   expect(search).not.toHaveProperty("tenantId");
   expect(search).not.toHaveProperty("token");
   expect(search).not.toHaveProperty("command");
+});
+
+it.each(["agents", "workflows"])("keeps the %s workspace selection in the original URL across reload and history", async (section) => {
+  const router = await mount(`/app/${section}?workspaceId=workspace-a`);
+  const mountId = node!.querySelector("[data-tab]")?.getAttribute("data-mount");
+  await act(async () => { [...node!.querySelectorAll("button")].find((button) => button.textContent === section)!.click(); });
+  expect(router.history.location.search).toBe("?workspaceId=workspace-b");
+  expect(node!.querySelector("[data-tab]")?.getAttribute("data-mount")).toBe(mountId);
+  await act(async () => { router.history.back(); await router.load(); });
+  expect(node!.querySelector("[data-tab]")?.getAttribute("data-workspace")).toBe("workspace-a");
+  await act(async () => { router.history.forward(); await router.load(); });
+  const url = router.history.location.href;
+  await act(async () => root!.unmount()); root = undefined; node!.remove();
+  await mount(url);
+  expect(node!.querySelector("[data-tab]")?.getAttribute("data-workspace")).toBe("workspace-b");
 });

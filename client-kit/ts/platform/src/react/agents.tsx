@@ -84,7 +84,12 @@ function validDefinitionTask(task: TaskView): boolean {
     && (task.workflowId === undefined || (typeof task.workflowId === "string" && !!task.workflowId));
 }
 
-export function AgentDefinitionsPage() {
+export type WorkspaceNavigation = {
+  workspaceId?: string;
+  onWorkspaceChange?: (workspaceId: string) => void;
+};
+
+export function AgentDefinitionsPage(navigation: WorkspaceNavigation = {}) {
   const client = useBffClient();
   const t = useT();
   const [offsets, setOffsets] = useState<number[]>([0]);
@@ -160,7 +165,7 @@ export function AgentDefinitionsPage() {
       <AgentManagementDialog open={toolsOpen} title={t("agents.tools.title")} onClose={() => setToolsOpen(false)}>
         <ToolManagement />
       </AgentManagementDialog>
-      <InstallationManagement versionRevision={versionRevision} refreshRevision={refreshRevision} onLockedChange={setInstallationLocked} />
+      <InstallationManagement {...navigation} versionRevision={versionRevision} refreshRevision={refreshRevision} onLockedChange={setInstallationLocked} />
     </div>
   );
 }
@@ -274,7 +279,7 @@ type AutomationEdit = { detail: AutomationDetailView; action: "enable" | "pause"
   | { detail: AutomationDetailView; action: "publish_version"; content?: AutomationVersionView["content"] }
   | { detail: AutomationDetailView; action: "copy"; content: AutomationVersionView["content"] };
 
-export function AutomationManagement({ renderRunHistory }: {
+export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspaceChange }: WorkspaceNavigation & {
   renderRunHistory?: (resourceId: string, workspaceId: string) => ReactNode;
 }) {
   const client = useBffClient();
@@ -288,7 +293,8 @@ export function AutomationManagement({ renderRunHistory }: {
   const data = state.status === "ok" ? state.data : null;
   const workspaces = data && Array.isArray(data) && data.every((w) => w && typeof w.id === "string" && !!w.id
     && typeof w.name === "string" && typeof w.slug === "string") && new Set(data.map((w) => w.id)).size === data.length ? data : null;
-  const workspace = workspaces?.find((w) => w.id === selected) ?? workspaces?.[0];
+  const selection = onWorkspaceChange ? workspaceId : selected ?? workspaceId;
+  const workspace = selection ? workspaces?.find((w) => w.id === selection) : workspaces?.[0];
   return <section className="mx-auto w-full max-w-6xl space-y-8 [container-type:inline-size]" data-testid="agent-automations">
     {/* Buzz WorkflowsView has one trailing refresh. The host supplies the page title. */}
     <div className="flex min-w-0 items-start justify-between gap-4">
@@ -296,7 +302,7 @@ export function AutomationManagement({ renderRunHistory }: {
         <p className="text-base font-normal text-muted-foreground">{t("agents.automation.scope")}</p>
         {workspace ? <label className="flex flex-wrap items-center gap-2 text-sm">{t("platform.workspace")}
           <select className="h-8 min-w-0 max-w-full rounded-md border border-input bg-background px-2" disabled={locked} value={workspace.id}
-            onChange={(event) => { setSelected(event.target.value); setEdit(null); setEditorOpen(false); }}>
+            onChange={(event) => { if (onWorkspaceChange) onWorkspaceChange(event.target.value); else setSelected(event.target.value); setEdit(null); setEditorOpen(false); }}>
             {workspaces?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
         </label> : null}
@@ -1083,7 +1089,7 @@ function validInstallation(row: AgentInstallationView): boolean {
     && row.activeProjectionGeneration !== undefined && projection?.state === AgentRuntimeProjectionState.Active);
 }
 
-function InstallationManagement({ versionRevision, refreshRevision, onLockedChange }: {
+function InstallationManagement({ versionRevision, refreshRevision, onLockedChange, workspaceId, onWorkspaceChange }: WorkspaceNavigation & {
   versionRevision: number; refreshRevision: number; onLockedChange: (locked: boolean) => void;
 }) {
   const client = useBffClient();
@@ -1100,7 +1106,8 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
   const value = state.status === "ok" ? state.data : null;
   const workspaces = value && Array.isArray(value) && value.every((w) => w && typeof w.id === "string" && !!w.id
     && typeof w.name === "string" && typeof w.slug === "string") && new Set(value.map((w) => w.id)).size === value.length ? value : null;
-  const workspace = workspaces?.find((w) => w.id === selected) ?? workspaces?.[0];
+  const selection = onWorkspaceChange ? workspaceId : selected ?? workspaceId;
+  const workspace = selection ? workspaces?.find((w) => w.id === selection) : workspaces?.[0];
   return <section className="flex flex-col gap-3" data-testid="agent-installations">
     <h2 className="font-medium">{t("agents.installation.title")}</h2>
     {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
@@ -1109,7 +1116,7 @@ function InstallationManagement({ versionRevision, refreshRevision, onLockedChan
       : <>
         <label className="flex flex-wrap items-center gap-2 text-sm">{t("platform.workspace")}
           <select disabled={locked} className="h-8 min-w-0 max-w-full rounded-md border border-input bg-background px-2" value={workspace.id}
-            onChange={(event) => { setSelected(event.target.value); setDelegationTarget(null); setPermissionTarget(null); setUpgradeTarget(null); }}>
+            onChange={(event) => { if (onWorkspaceChange) onWorkspaceChange(event.target.value); else setSelected(event.target.value); setDelegationTarget(null); setPermissionTarget(null); setUpgradeTarget(null); }}>
             {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
         </label>

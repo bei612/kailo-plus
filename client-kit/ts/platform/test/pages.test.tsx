@@ -350,8 +350,37 @@ describe("independent shared Workflows page", () => {
     for (const path of ["web-client/web/src/platform/ui/PlatformApp.tsx", "collaboration/desktop/src/app/routes/platform.$section.tsx"]) {
       const source = readFileSync(join(root, path), "utf8");
       expect(source).toContain('import { WorkflowsPage } from "@client-kit/platform/react/workflows"');
-      expect(source).toContain("<WorkflowsPage />");
+      expect(source).toContain("<WorkflowsPage workspaceId=");
+      expect(source).toContain("onWorkspaceChange=");
     }
+  });
+  it.each(["agents", "workflows"] as const)("restores the exact %s workspace and reports selection through host navigation", async (section) => {
+    const t = routes();
+    const navigate = vi.fn();
+    function Host() {
+      const [workspaceId, setWorkspaceId] = useState("workspace-two");
+      const onWorkspaceChange = (id: string) => { navigate(id); setWorkspaceId(id); };
+      return <><button onClick={() => setWorkspaceId("workspace-two")}>History back</button>
+        {section === "agents" ? <AgentDefinitionsPage workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} />
+          : <WorkflowsPage workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} />}</>;
+    }
+    const host = await mount(t, <Host />);
+    const select = host.querySelector<HTMLSelectElement>("select")!;
+    expect(select.value).toBe("workspace-two");
+    await act(async () => { select.value = "workspace-one"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await settle();
+    expect(navigate).toHaveBeenCalledWith("workspace-one");
+    expect(select.value).toBe("workspace-one");
+    await click(button(host, "History back"));
+    expect(select.value).toBe("workspace-two");
+    expect(t.send.mock.calls.every(([request]) => request.method === "GET")).toBe(true);
+  });
+  it.each(["agents", "workflows"] as const)("does not substitute another workspace for an unavailable %s URL target", async (section) => {
+    const t = routes();
+    await mount(t, section === "agents" ? <AgentDefinitionsPage workspaceId="revoked-workspace" onWorkspaceChange={vi.fn()} />
+      : <WorkflowsPage workspaceId="revoked-workspace" onWorkspaceChange={vi.fn()} />);
+    expect(t.send.mock.calls.some(([request]) => request.path.startsWith("/api/v1/agent-installations?")
+      || request.path.startsWith("/api/v1/automations?"))).toBe(false);
   });
   it.each(["en", "zh-CN"] as const)("keeps the original create-card empty state and one refresh under the host title (%s)", async (locale) => {
     const title = locale === "en" ? "Workflows" : "工作流";

@@ -280,9 +280,11 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ) : tab === "projects" ? (
       <ProjectsPane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}`}/>
     ) : tab === "agents" ? (
-      <AgentDefinitionsPage />
+      <AgentDefinitionsPage workspaceId={chosen ?? active ?? undefined}
+        onWorkspaceChange={(workspaceId) => { void navigation.openTab("agents", workspaceId); }} />
     ) : tab === "workflows" ? (
-      <WorkflowsPage />
+      <WorkflowsPage workspaceId={chosen ?? active ?? undefined}
+        onWorkspaceChange={(workspaceId) => { void navigation.openTab("workflows", workspaceId); }} />
     ) : tab === "tasks" ? (
       <TasksPage />
     ) : tab === "approvals" ? (

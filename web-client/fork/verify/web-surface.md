@@ -4320,3 +4320,45 @@ Data 剩余不足 700 MiB 时主动停止本次检查容器，命令最终退出
 本次未发送新消息；任务列表仍含在途记录。此前频道、Workflows、Agent
 及设置的 181–184 截图已有记录。这里只证明已查看这些页面，不证明全部
 弹窗/错误状态、中英语言、Windows 和 Mobile 已逐项验收。
+
+### 2026-10-07 Agent / Workflows 工作区路由恢复
+
+线上 b911 的 playwright-cli 实测：Agent 页选中 Kailo 后，URL 仍保留另一
+Workspace；刷新后选择回到另一 Workspace。截图 195、196 均已实际打开查看，
+位于 `/volumes/data/kailo/tmp/kailo-visual-release-20261006.vlPvnU/`，
+文件分别为 `195-b911-agent-workspace-url-mismatch.png` 和
+`196-b911-agent-workspace-after-reload.png`。它们是修复前证据，不是新版已发布。
+
+四步结论：
+
+- 权威：REQ-24、DD-75 的原版双端交互与共用管理面；已有导航引用不赋予权限。
+  原 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+  `desktop/src/app/routes/workflows.tsx::WorkflowsRouteComponent` 和
+  `desktop/src/app/routes/WorkflowsRouteScreen.tsx::WorkflowsRouteScreen`
+  已使用 TanStack 路由携带频道与编辑定位；本批继续原路由，不新造页面。
+- 影响：共用 AgentDefinitionsPage/InstallationManagement、
+  WorkflowsPage/AutomationManagement 消费宿主 workspaceId 与选择回调；
+  Web 原 openTab、Desktop 原 Route.useSearch/useNavigate 保存导航引用。
+  刷新及前进后退读取同一选择；不改 API、契约、数据库或迁移。
+- 副作用：指定引用必须匹配当前授权目录，不匹配不回退首个 Workspace；
+  URL 不存 token、身份、写命令或幂等键。选择控件原 locked 守卫保留，
+  原未决 Action 意图仍独立保存，未以导航代替 fresh authorization。
+- 边界：无目录、读取失败和无权引用继续原无 Workspace/ReadFailure 表现；
+  未指定时才沿原目录选择；目录刷新、失效引用及历史导航不生成 POST。
+  本批不改变既有六类服务错误、UNKNOWN 及动作重入处理，不添加额度/审批限制。
+  Web 与 Desktop 共用组件，Mobile 无此 TypeScript 路由变更。
+
+固定产品树 `e3cd2dd5e4d7de75f710074597b4080941e301a4`，
+相对 `a6f62135a9ed9909a6a7fcd96732d92cd433b33e` 为 7 文件、
+94 行新增/18 行删除。原受限 SDK（4 CPU/8 GiB，Data 缓存）中，共享类型检查与
+pages 263 项通过；SDK-only 恢复旧选择逻辑后，4 项全部真实失败（退出 1），
+按固定树恢复并 cmp 一致后 4 项再通过。Web 类型检查、原路由和宿主页
+15 项检查、Desktop 类型检查最终全部退出 0。初次 Web 类型检查退出 2，
+原因是 SDK 中 file dependency 仍是旧包副本；同步本批实际共享源码后重验，
+没有为通过检查修改产品接口。没有下载依赖、构建镜像、部署或 Windows 实机验收。
+
+日志目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workspace-navigation.Gw5t7G/`，
+文件 `shared.log`、`mutation.log`、`restored.log`、`hosts.log`、
+`hosts-restored-input.log`。本批不重复磁盘不足的 full；此前 full 主动停止
+退出 137 的结果保留，不计为通过，也不据本批宣布官方全功能或双端等效。
