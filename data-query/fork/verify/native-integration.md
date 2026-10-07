@@ -1472,6 +1472,23 @@ old writers before migration and deploy the corresponding native code as one
 release. Down refuses to discard the ownership column while any task evidence
 exists; rollback with records is not an approved compatibility window.
 
+Deletion review: pinned `wren-ui/src/components/settings/ProjectSettings.tsx::ProjectSettings`
+confirms native reset and warns that settings and records are deleted.
+`wren-ui/src/apollo/server/resolvers/projectResolver.ts::resetCurrentProject`
+first calls `AskingService.deleteAllByProjectId` to delete native threads;
+the original `20250509000000_create_asking_task.js::up` already cascades their
+bound tasks. It then calls `ProjectService.deleteProject`. The new project FK
+extends that native cleanup to acknowledged tasks not yet bound to a thread;
+it is an additional deletion effect, not an identical old database constraint.
+The existing `ProjectResolver.saveDataSource` failure cleanup also directly
+deletes its newly created project; any concurrently created tasks would now
+cascade too. No upstream-task cancellation is added by either deletion.
+Native destructive reset is distinct from component offboarding, which must
+not delete external business data, and from platform audit retention. This
+batch does not demonstrate governed reset admission or retention acceptance
+and remains undeployed. The rollback guard above prevents dropping the
+ownership column with records; it does not claim native records are immortal.
+
 This is still not complete fine-grained user authorization or model-execution
 governance. Pre-ACK disconnection, a failure between upstream acknowledgement
 and native persistence, and competing rerun dispatches have no original
