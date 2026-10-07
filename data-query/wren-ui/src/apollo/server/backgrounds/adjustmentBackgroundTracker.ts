@@ -19,6 +19,7 @@ const logger = getLogger('AdjustmentTaskTracker');
 logger.level = 'debug';
 
 interface TrackedTask {
+  projectId: number;
   queryId: string;
   taskId?: number;
   lastPolled: number;
@@ -112,44 +113,65 @@ export class AdjustmentBackgroundTaskTracker
       const response = await this.wrenAIAdaptor.createAskFeedback(input);
       const queryId = response.queryId;
 
-      // create a new asking task
-      const createdAskingTask = await this.askingTaskRepository.createOne({
-        queryId,
-        question: input.question,
-        threadId: input.threadId,
-        detail: {
-          adjustment: true,
-          status: AskFeedbackStatus.UNDERSTANDING,
-          response: [],
-          error: null,
-        },
-      });
-
-      // create a new thread response with adjustment payload
-      const createdThreadResponse =
-        await this.threadResponseRepository.createOne({
-          question: input.question,
-          threadId: input.threadId,
-          askingTaskId: createdAskingTask.id,
-          adjustment: {
-            type: ThreadResponseAdjustmentType.REASONING,
-            payload: {
-              originalThreadResponseId: input.originalThreadResponseId,
-              retrievedTables: input.tables,
-              sqlGenerationReasoning: input.sqlGenerationReasoning,
+      const tx = await this.askingTaskRepository.transaction();
+      let createdAskingTask: AskingTask;
+      let createdThreadResponse: ThreadResponse;
+      try {
+        // Native task and its response either become visible together or not at all.
+        createdAskingTask = await this.askingTaskRepository.createOne(
+          {
+            projectId: input.projectId,
+            queryId,
+            question: input.question,
+            threadId: input.threadId,
+            detail: {
+              adjustment: true,
+              status: AskFeedbackStatus.UNDERSTANDING,
+              response: [],
+              error: null,
             },
           },
-        });
+          { tx },
+        );
 
-      // bind the thread response to the asking task
-      // todo: it's weird that we need to update the asking task again
-      // find a better way to do this
-      await this.askingTaskRepository.updateOne(createdAskingTask.id, {
-        threadResponseId: createdThreadResponse.id,
-      });
+        // create a new thread response with adjustment payload
+        createdThreadResponse = await this.threadResponseRepository.createOne(
+          {
+            question: input.question,
+            threadId: input.threadId,
+            askingTaskId: createdAskingTask.id,
+            adjustment: {
+              type: ThreadResponseAdjustmentType.REASONING,
+              payload: {
+                originalThreadResponseId: input.originalThreadResponseId,
+                retrievedTables: input.tables,
+                sqlGenerationReasoning: input.sqlGenerationReasoning,
+              },
+            },
+          },
+          { tx },
+        );
+
+        const bound = await this.askingTaskRepository.updateQuery(
+          createdAskingTask.id,
+          queryId,
+          input.projectId,
+          {
+            threadResponseId: createdThreadResponse.id,
+          },
+          tx,
+        );
+        if (!bound) throw new Error('Adjustment task unavailable');
+        await this.askingTaskRepository.commit(tx);
+      } catch (error) {
+        await this.askingTaskRepository.rollback(tx);
+        throw error;
+      }
 
       // Start tracking this task
       const task = {
+        projectId: input.projectId,
+        taskId: createdAskingTask.id,
         queryId,
         lastPolled: Date.now(),
         isFinalized: false,
@@ -163,7 +185,7 @@ export class AdjustmentBackgroundTaskTracker
         },
       } as TrackedTask;
       this.trackedTasks.set(queryId, task);
-      this.trackedTasksById.set(createdThreadResponse.id, task);
+      this.trackedTasksById.set(createdAskingTask.id, task);
 
       logger.info(`Created adjustment task with queryId: ${queryId}`);
       return { queryId, createdThreadResponse };
@@ -184,6 +206,14 @@ export class AdjustmentBackgroundTaskTracker
     if (!currentThreadResponse) {
       throw new Error(`Thread response ${input.threadResponseId} not found`);
     }
+    const previous = await this.askingTaskRepository.findOneBy({
+      id: currentThreadResponse.askingTaskId,
+      projectId: input.projectId,
+      threadId: input.threadId,
+      threadResponseId: input.threadResponseId,
+    });
+    if (!previous || currentThreadResponse.threadId !== input.threadId)
+      throw new Error('Adjustment task not found');
 
     const adjustment = currentThreadResponse.adjustment;
     if (!adjustment) {
@@ -195,6 +225,7 @@ export class AdjustmentBackgroundTaskTracker
     const originalThreadResponse =
       await this.threadResponseRepository.findOneBy({
         id: adjustment.payload?.originalThreadResponseId,
+        threadId: input.threadId,
       });
     if (!originalThreadResponse) {
       throw new Error(
@@ -213,8 +244,10 @@ export class AdjustmentBackgroundTaskTracker
     const queryId = response.queryId;
 
     // update asking task with new queryId
-    await this.askingTaskRepository.updateOne(
-      currentThreadResponse.askingTaskId,
+    const updated = await this.askingTaskRepository.updateQuery(
+      previous.id,
+      previous.queryId,
+      input.projectId,
       {
         queryId,
 
@@ -227,9 +260,13 @@ export class AdjustmentBackgroundTaskTracker
         },
       },
     );
+    if (!updated) throw new Error('Adjustment task changed during dispatch');
+    this.trackedTasks.delete(previous.queryId);
 
     // schedule task
     const task = {
+      projectId: input.projectId,
+      taskId: previous.id,
       queryId,
       lastPolled: Date.now(),
       isFinalized: false,
@@ -244,7 +281,7 @@ export class AdjustmentBackgroundTaskTracker
       },
     } as TrackedTask;
     this.trackedTasks.set(queryId, task);
-    this.trackedTasksById.set(currentThreadResponse.id, task);
+    this.trackedTasksById.set(previous.id, task);
 
     logger.info(`Rerun adjustment task with queryId: ${queryId}`);
     return { queryId };
@@ -346,14 +383,8 @@ export class AdjustmentBackgroundTaskTracker
 
             // Check if task is now finalized
             if (this.isTaskFinalized(result.status)) {
-              task.isFinalized = true;
               // update thread response if threadResponseId is provided
-              if (task.threadResponseId) {
-                await this.updateThreadResponseWhenTaskFinalized(
-                  task.threadResponseId,
-                  result,
-                );
-              }
+              await this.updateThreadResponseWhenTaskFinalized(task, result);
 
               // telemetry
               const eventName = task.rerun
@@ -383,11 +414,12 @@ export class AdjustmentBackgroundTaskTracker
             }
 
             // update task in memory if any change
-            task.result = result;
-
             // update the database
             logger.info(`Updating task ${queryId} in database`);
-            await this.updateTaskInDatabase({ queryId }, result);
+            if (!this.isTaskFinalized(result.status))
+              await this.updateTaskInDatabase(task, result);
+            task.result = result;
+            task.isFinalized = this.isTaskFinalized(result.status);
 
             // Mark the job as finished
             this.runningJobs.delete(queryId);
@@ -400,7 +432,7 @@ export class AdjustmentBackgroundTaskTracker
     );
 
     // Run all jobs in parallel
-    Promise.allSettled(jobs.map((job) => job())).then((results) => {
+    await Promise.allSettled(jobs.map((job) => job())).then((results) => {
       // Log any rejected promises
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
@@ -423,16 +455,51 @@ export class AdjustmentBackgroundTaskTracker
   }
 
   private async updateThreadResponseWhenTaskFinalized(
-    threadResponseId: number,
+    task: TrackedTask,
     result: AskFeedbackResult,
   ): Promise<void> {
     const response = result?.response?.[0];
-    if (!response) {
-      return;
+    const tx = await this.askingTaskRepository.transaction();
+    try {
+      const record = await this.askingTaskRepository.lockQuery(
+        task.taskId,
+        task.queryId,
+        task.projectId,
+        tx,
+      );
+      if (!record || record.threadResponseId !== task.threadResponseId)
+        throw new Error('Adjustment task changed during observation');
+      if (response) {
+        const target = await this.threadResponseRepository.findOneBy(
+          {
+            id: task.threadResponseId,
+            threadId: record.threadId,
+            askingTaskId: record.id,
+          },
+          { tx },
+        );
+        if (!target) throw new Error('Thread response not found');
+        await this.threadResponseRepository.updateOne(
+          task.threadResponseId,
+          { sql: response.sql },
+          { tx },
+        );
+      }
+      if (
+        !(await this.askingTaskRepository.updateQuery(
+          record.id,
+          task.queryId,
+          task.projectId,
+          { detail: { ...result, adjustment: true } },
+          tx,
+        ))
+      )
+        throw new Error('Adjustment task changed during observation');
+      await this.askingTaskRepository.commit(tx);
+    } catch (error) {
+      await this.askingTaskRepository.rollback(tx);
+      throw error;
     }
-    await this.threadResponseRepository.updateOne(threadResponseId, {
-      sql: response?.sql,
-    });
   }
 
   private async getAdjustmentResultFromDB({
@@ -453,6 +520,24 @@ export class AdjustmentBackgroundTaskTracker
       return null;
     }
 
+    if (
+      !this.trackedTasks.has(taskRecord.queryId) &&
+      !this.isTaskFinalized((taskRecord.detail as AskFeedbackResult)?.status)
+    ) {
+      const task: TrackedTask = {
+        projectId: taskRecord.projectId,
+        taskId: taskRecord.id,
+        queryId: taskRecord.queryId,
+        question: taskRecord.question,
+        threadResponseId: taskRecord.threadResponseId,
+        originalThreadResponseId: undefined,
+        lastPolled: Date.now(),
+        isFinalized: false,
+      };
+      this.trackedTasks.set(task.queryId, task);
+      this.trackedTasksById.set(taskRecord.id, task);
+    }
+
     return {
       ...(taskRecord?.detail as AskFeedbackResult),
       queryId: queryId || taskRecord?.queryId,
@@ -461,28 +546,21 @@ export class AdjustmentBackgroundTaskTracker
   }
 
   private async updateTaskInDatabase(
-    filter: { queryId?: string; taskId?: number },
+    task: TrackedTask,
     result: AskFeedbackResult,
   ): Promise<void> {
-    const { queryId, taskId } = filter;
-    let taskRecord: AskingTask | null = null;
-    if (queryId) {
-      taskRecord = await this.askingTaskRepository.findByQueryId(queryId);
-    } else if (taskId) {
-      taskRecord = await this.askingTaskRepository.findOneBy({ id: taskId });
-    }
-
-    if (!taskRecord) {
-      throw new Error('Asking task not found');
-    }
-
-    // update the task
-    await this.askingTaskRepository.updateOne(taskRecord.id, {
-      detail: {
-        adjustment: true,
-        ...result,
+    const updated = await this.askingTaskRepository.updateQuery(
+      task.taskId,
+      task.queryId,
+      task.projectId,
+      {
+        detail: {
+          adjustment: true,
+          ...result,
+        },
       },
-    });
+    );
+    if (!updated) throw new Error('Adjustment task changed during observation');
   }
 
   private isTaskFinalized(status: AskFeedbackStatus): boolean {

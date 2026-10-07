@@ -19,6 +19,9 @@ describe('native bound-project business consumers', () => {
     updateOne: jest.fn(),
     deleteOne: jest.fn(),
     findAllBy: jest.fn(async () => []),
+    transaction: jest.fn(async () => ({})),
+    commit: jest.fn(),
+    rollback: jest.fn(),
   });
   beforeEach(() => {
     ctx = {
@@ -354,12 +357,15 @@ describe('native bound-project business consumers', () => {
       { question: 'follow-up', sql: 'SELECT 3' },
       81,
     );
-    expect(service.threadResponseRepository.createOne).toHaveBeenCalledWith({
-      threadId: 81,
-      question: 'follow-up',
-      sql: 'SELECT 3',
-      askingTaskId: undefined,
-    });
+    expect(service.threadResponseRepository.createOne).toHaveBeenCalledWith(
+      {
+        threadId: 81,
+        question: 'follow-up',
+        sql: 'SELECT 3',
+        askingTaskId: undefined,
+      },
+      { tx: expect.anything() },
+    );
     await service.adjustThreadResponseWithSQL(71, { sql: 'SELECT 3' });
     expect(service.threadResponseRepository.createOne).toHaveBeenLastCalledWith(
       expect.objectContaining({

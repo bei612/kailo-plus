@@ -13,11 +13,13 @@ import {
 } from '@server/repositories';
 import { IWrenAIAdaptor } from '../adaptors';
 import * as Errors from '@server/utils/error';
+import { Knex } from 'knex';
 
 const logger = getLogger('AskingTaskTracker');
 logger.level = 'debug';
 
 interface TrackedTask {
+  projectId: number;
   queryId: string;
   taskId?: number;
   lastPolled: number;
@@ -29,12 +31,14 @@ interface TrackedTask {
 }
 
 export type TrackedAskingResult = AskResult & {
+  projectId: number;
   taskId?: number;
   queryId: string;
   question: string;
 };
 
 export type CreateAskingTaskInput = AskInput & {
+  projectId: number;
   rerunFromCancelled?: boolean;
   previousTaskId?: number;
   threadResponseId?: number;
@@ -50,6 +54,8 @@ export interface IAskingTaskTracker {
     queryId: string,
     threadId: number,
     threadResponseId: number,
+    projectId: number,
+    tx?: Knex.Transaction,
   ): Promise<void>;
 }
 
@@ -93,10 +99,6 @@ export class AskingTaskTracker implements IAskingTaskTracker {
     input: CreateAskingTaskInput,
   ): Promise<{ queryId: string }> {
     try {
-      // Call the AI service to create a task
-      const response = await this.wrenAIAdaptor.ask(input);
-      const queryId = response.queryId;
-
       // validate the input
       if (
         input.rerunFromCancelled &&
@@ -107,8 +109,39 @@ export class AskingTaskTracker implements IAskingTaskTracker {
         );
       }
 
+      const previous = input.rerunFromCancelled
+        ? await this.askingTaskRepository.findOneBy({
+            id: input.previousTaskId,
+            projectId: input.projectId,
+            threadResponseId: input.threadResponseId,
+          })
+        : null;
+      if (input.rerunFromCancelled && !previous)
+        throw new Error('Asking task not found');
+
+      const response = await this.wrenAIAdaptor.ask(input);
+      const queryId = response.queryId;
+      const detail = { status: AskResultStatus.UNDERSTANDING } as AskResult;
+      const record = previous
+        ? await this.askingTaskRepository.updateQuery(
+            previous.id,
+            previous.queryId,
+            input.projectId,
+            { queryId, detail },
+          )
+        : await this.askingTaskRepository.createOne({
+            queryId,
+            projectId: input.projectId,
+            question: input.query,
+            detail,
+          });
+      if (!record) throw new Error('Asking task changed during dispatch');
+      if (previous) this.trackedTasks.delete(previous.queryId);
+
       // Start tracking this task
       const task = {
+        projectId: input.projectId,
+        taskId: record.id,
         queryId,
         lastPolled: Date.now(),
         question: input.query,
@@ -116,6 +149,7 @@ export class AskingTaskTracker implements IAskingTaskTracker {
         rerunFromCancelled: input.rerunFromCancelled,
       } as TrackedTask;
       this.trackedTasks.set(queryId, task);
+      this.trackedTasksById.set(record.id, task);
 
       // if rerun from cancelled, we update the query id to the previous task
       if (
@@ -129,18 +163,6 @@ export class AskingTaskTracker implements IAskingTaskTracker {
 
         // update the task id in memory
         this.trackedTasksById.set(input.previousTaskId, task);
-
-        // get the latest result from the AI service
-        // we get the latest result first to make it more responsive to client-side
-        const result = await this.wrenAIAdaptor.getAskResult(queryId);
-
-        // update the result in memory
-        task.result = result;
-
-        // update the query id in database
-        await this.askingTaskRepository.updateOne(input.previousTaskId, {
-          queryId,
-        });
       }
 
       logger.info(`Created asking task with queryId: ${queryId}`);
@@ -160,6 +182,7 @@ export class AskingTaskTracker implements IAskingTaskTracker {
     if (trackedTask && trackedTask.result) {
       return {
         ...trackedTask.result,
+        projectId: trackedTask.projectId,
         queryId,
         question: trackedTask.question,
         taskId: trackedTask.taskId,
@@ -196,22 +219,41 @@ export class AskingTaskTracker implements IAskingTaskTracker {
     queryId: string,
     threadId: number,
     threadResponseId: number,
+    projectId: number,
+    tx?: Knex.Transaction,
   ): Promise<void> {
-    const task = this.trackedTasks.get(queryId);
-    if (!task) {
-      throw new Error(`Task ${queryId} not found`);
-    }
-
-    task.threadResponseId = threadResponseId;
-    this.trackedTasksById.set(id, task);
-    await this.askingTaskRepository.updateOne(id, {
+    const record = await this.askingTaskRepository.bindResponse(
+      id,
+      queryId,
+      projectId,
       threadId,
       threadResponseId,
-    });
-
-    // check if the task is finalized and has a sql
-    if (task.isFinalized) {
-      await this.updateThreadResponseWhenTaskFinalized(task);
+      tx,
+    );
+    if (!record) throw new Error('Asking task already bound or unavailable');
+    const target = await this.threadResponseRepository.findOneBy(
+      { id: threadResponseId, threadId, askingTaskId: id },
+      { tx },
+    );
+    if (!target) throw new Error('Thread response not found');
+    const result = record.detail as AskResult;
+    const response = result?.response?.[0];
+    if (response && this.isTaskFinalized(result.status)) {
+      const view = response.viewId
+        ? await this.viewRepository.findOneBy(
+            { id: response.viewId, projectId },
+            { tx },
+          )
+        : null;
+      if (response.viewId && !view) throw new Error('View not found');
+      await this.threadResponseRepository.updateOne(
+        threadResponseId,
+        {
+          sql: view ? view.statement : response.sql,
+          ...(view ? { viewId: view.id } : {}),
+        },
+        { tx },
+      );
     }
   }
 
@@ -263,22 +305,19 @@ export class AskingTaskTracker implements IAskingTaskTracker {
               return;
             }
 
-            // update task in memory if any change
-            task.result = result;
-
             // if result is still understanding, we don't need to update the database
             if (result.status === AskResultStatus.UNDERSTANDING) {
+              task.result = result;
               this.runningJobs.delete(queryId);
               return;
             }
 
             // if it's identified as GENERAL or MISLEADING_QUER
-            // we don't need to update the database and finalize the task
+            // retain the native non-SQL result in its already-owned task row
             if (
               result.type === AskResultType.GENERAL ||
               result.type === AskResultType.MISLEADING_QUERY
             ) {
-              task.isFinalized = true;
               // if it's rerun from cancelled, we need to update the task result to failed in db
               if (task.rerunFromCancelled) {
                 const errorCode =
@@ -297,13 +336,20 @@ export class AskingTaskTracker implements IAskingTaskTracker {
                     // update the status to failed
                     // and the error message should be "IDENTIED_AS_GENERAL" or "IDENTIED_AS_MISLEADING_QUERY"
                     result: {
-                      ...task.result,
+                      ...result,
                       status: AskResultStatus.FAILED,
                       error,
                     },
                   },
                 );
+              } else {
+                await this.updateTaskInDatabase(
+                  { queryId },
+                  { ...task, result },
+                );
               }
+              task.result = result;
+              task.isFinalized = true;
               this.runningJobs.delete(queryId);
               return;
             }
@@ -313,20 +359,23 @@ export class AskingTaskTracker implements IAskingTaskTracker {
             // we already filtered out the understanding status above
             // so we update to database if it's stopped as well here.
             logger.info(`Updating task ${queryId} in database`);
-            await this.updateTaskInDatabase({ queryId }, task);
-
             // Check if task is now finalized
             if (this.isTaskFinalized(result.status)) {
-              task.isFinalized = true;
               // update thread response if threadResponseId is provided
-              if (task.threadResponseId) {
-                await this.updateThreadResponseWhenTaskFinalized(task);
-              }
+              await this.updateThreadResponseWhenTaskFinalized({
+                ...task,
+                result,
+              });
+              task.isFinalized = true;
 
               logger.info(
                 `Task ${queryId} is finalized with status: ${result.status}`,
               );
+            } else {
+              await this.updateTaskInDatabase({ queryId }, { ...task, result });
             }
+
+            task.result = result;
 
             // Mark the job as finished
             this.runningJobs.delete(queryId);
@@ -339,7 +388,7 @@ export class AskingTaskTracker implements IAskingTaskTracker {
     );
 
     // Run all jobs in parallel
-    Promise.allSettled(jobs.map((job) => job())).then((results) => {
+    await Promise.allSettled(jobs.map((job) => job())).then((results) => {
       // Log any rejected promises
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
@@ -365,23 +414,55 @@ export class AskingTaskTracker implements IAskingTaskTracker {
     task: TrackedTask,
   ): Promise<void> {
     const response = task?.result?.response?.[0];
-    if (!response) {
-      return;
-    }
-    // if the generated response of asking task is not null, update the thread response
-    if (response.viewId) {
-      // get sql from the view
-      const view = await this.viewRepository.findOneBy({
-        id: response.viewId,
-      });
-      await this.threadResponseRepository.updateOne(task.threadResponseId, {
-        sql: view.statement,
-        viewId: response.viewId,
-      });
-    } else {
-      await this.threadResponseRepository.updateOne(task.threadResponseId, {
-        sql: response?.sql,
-      });
+    const tx = await this.askingTaskRepository.transaction();
+    try {
+      const record = await this.askingTaskRepository.lockQuery(
+        task.taskId,
+        task.queryId,
+        task.projectId,
+        tx,
+      );
+      if (!record) throw new Error('Asking task changed during observation');
+      if (response && record.threadResponseId) {
+        const target = await this.threadResponseRepository.findOneBy(
+          {
+            id: record.threadResponseId,
+            threadId: record.threadId,
+            askingTaskId: record.id,
+          },
+          { tx },
+        );
+        if (!target) throw new Error('Thread response not found');
+        const view = response.viewId
+          ? await this.viewRepository.findOneBy(
+              { id: response.viewId, projectId: task.projectId },
+              { tx },
+            )
+          : null;
+        if (response.viewId && !view) throw new Error('View not found');
+        await this.threadResponseRepository.updateOne(
+          record.threadResponseId,
+          {
+            sql: view ? view.statement : response.sql,
+            ...(view ? { viewId: view.id } : {}),
+          },
+          { tx },
+        );
+      }
+      if (
+        !(await this.askingTaskRepository.updateQuery(
+          record.id,
+          task.queryId,
+          task.projectId,
+          { detail: task.result },
+          tx,
+        ))
+      )
+        throw new Error('Asking task changed during observation');
+      await this.askingTaskRepository.commit(tx);
+    } catch (error) {
+      await this.askingTaskRepository.rollback(tx);
+      throw error;
     }
   }
 
@@ -403,8 +484,28 @@ export class AskingTaskTracker implements IAskingTaskTracker {
       return null;
     }
 
+    // Reattach only the acknowledged native query. Reads never redispatch work.
+    const detail = taskRecord.detail as AskResult;
+    if (
+      !this.trackedTasks.has(taskRecord.queryId) &&
+      !this.isTaskFinalized(detail?.status)
+    ) {
+      const task: TrackedTask = {
+        projectId: taskRecord.projectId,
+        taskId: taskRecord.id,
+        queryId: taskRecord.queryId,
+        question: taskRecord.question,
+        threadResponseId: taskRecord.threadResponseId,
+        lastPolled: Date.now(),
+        isFinalized: false,
+      };
+      this.trackedTasks.set(task.queryId, task);
+      this.trackedTasksById.set(taskRecord.id, task);
+    }
+
     return {
       ...(taskRecord?.detail as AskResult),
+      projectId: taskRecord.projectId,
       queryId: queryId || taskRecord?.queryId,
       question: taskRecord?.question,
       taskId: taskRecord?.id,
@@ -418,35 +519,27 @@ export class AskingTaskTracker implements IAskingTaskTracker {
     const { queryId, taskId } = filter;
     let taskRecord: AskingTask | null = null;
     if (queryId) {
-      taskRecord = await this.askingTaskRepository.findByQueryId(queryId);
-    } else if (taskId) {
-      taskRecord = await this.askingTaskRepository.findOneBy({ id: taskId });
-    }
-
-    if (!taskRecord) {
-      // if record not found, create one
-      const task = await this.askingTaskRepository.createOne({
+      taskRecord = await this.askingTaskRepository.findOneBy({
         queryId,
-        question: trackedTask.question,
-        detail: trackedTask.result,
+        projectId: trackedTask.projectId,
       });
-      // update the task id in memory
-      let existingTask: TrackedTask;
-      if (queryId) {
-        existingTask = this.trackedTasks.get(queryId);
-      } else if (taskId) {
-        existingTask = this.trackedTasksById.get(taskId);
-      }
-      if (existingTask) {
-        existingTask.taskId = task.id;
-      }
-      return;
+    } else if (taskId) {
+      taskRecord = await this.askingTaskRepository.findOneBy({
+        id: taskId,
+        projectId: trackedTask.projectId,
+      });
     }
-
-    // update the task
-    await this.askingTaskRepository.updateOne(taskRecord.id, {
-      detail: trackedTask.result,
-    });
+    if (
+      !taskRecord ||
+      !(await this.askingTaskRepository.updateQuery(
+        taskRecord.id,
+        trackedTask.queryId,
+        trackedTask.projectId,
+        { detail: trackedTask.result },
+      ))
+    ) {
+      throw new Error('Asking task changed during observation');
+    }
   }
 
   private isTaskFinalized(status: AskResultStatus): boolean {

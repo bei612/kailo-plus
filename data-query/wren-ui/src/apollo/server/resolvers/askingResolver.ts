@@ -685,7 +685,15 @@ export class AskingResolver {
     view: async (parent: ThreadResponse, _args: any, ctx: IContext) => {
       const viewId = parent.viewId;
       if (!viewId) return null;
-      const view = await ctx.viewRepository.findOneBy({ id: viewId });
+      const project = await ctx.projectService.getCurrentProject();
+      const response = await ctx.askingService.getResponse(parent.id, project);
+      if (!response || response.viewId !== viewId)
+        throw new Error('Thread response not found');
+      const view = await ctx.viewRepository.findOneBy({
+        id: viewId,
+        projectId: project.id,
+      });
+      if (!view) throw new Error('View not found');
       const displayName = view.properties
         ? JSON.parse(view.properties)?.displayName
         : view.name;
@@ -786,11 +794,19 @@ export class AskingResolver {
     const candidates = await Promise.all(
       (askingTask.response || []).map(async (response) => {
         const view = response.viewId
-          ? await ctx.viewRepository.findOneBy({ id: response.viewId })
+          ? await ctx.viewRepository.findOneBy({
+              id: response.viewId,
+              projectId: askingTask.projectId,
+            })
           : null;
         const sqlPair = response.sqlpairId
-          ? await ctx.sqlPairRepository.findOneBy({ id: response.sqlpairId })
+          ? await ctx.sqlPairRepository.findOneBy({
+              id: response.sqlpairId,
+              projectId: askingTask.projectId,
+            })
           : null;
+        if ((response.viewId && !view) || (response.sqlpairId && !sqlPair))
+          throw new Error('Task resource not found');
         return {
           type: response.type,
           sql: response.sql,

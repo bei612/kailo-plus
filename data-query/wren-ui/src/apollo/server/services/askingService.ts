@@ -28,6 +28,7 @@ import {
 } from '../telemetry/telemetry';
 import {
   IAskingTaskRepository,
+  AskingTask,
   IViewRepository,
   Project,
 } from '../repositories';
@@ -503,6 +504,29 @@ export class AskingService implements IAskingService {
     return thread;
   }
 
+  private async currentTask(
+    filter: Partial<Pick<AskingTask, 'id' | 'queryId'>>,
+    project?: Project,
+    adjustment = false,
+  ) {
+    if (!filter.id && !filter.queryId) return null;
+    const currentProject =
+      project ?? (await this.projectService.getCurrentProject());
+    const task = await this.askingTaskRepository.findOneBy({
+      ...filter,
+      projectId: currentProject.id,
+    });
+    if (
+      !task ||
+      Boolean((task.detail as { adjustment?: boolean })?.adjustment) !==
+        adjustment
+    )
+      return null;
+    if (task.threadId != null)
+      await this.currentThread(task.threadId, currentProject);
+    return task;
+  }
+
   public async getThreadRecommendationQuestions(
     threadId: number,
   ): Promise<ThreadRecommendQuestionResult> {
@@ -607,6 +631,7 @@ export class AskingService implements IAskingService {
       ? await this.getAskingHistory(threadId, threadResponseId, project)
       : null;
     const response = await this.askingTaskTracker.createAskingTask({
+      projectId: project.id,
       query: input.question,
       histories,
       deployId,
@@ -652,6 +677,8 @@ export class AskingService implements IAskingService {
   }
 
   public async cancelAskingTask(taskId: string): Promise<void> {
+    if (!(await this.currentTask({ queryId: taskId })))
+      throw new Error('Asking task not found');
     const eventName = TelemetryEvent.HOME_CANCEL_ASK;
     try {
       await this.askingTaskTracker.cancelAskingTask(taskId);
@@ -665,13 +692,15 @@ export class AskingService implements IAskingService {
   public async getAskingTask(
     taskId: string,
   ): Promise<TrackedAskingResult | null> {
+    if (!(await this.currentTask({ queryId: taskId }))) return null;
     return this.askingTaskTracker.getAskingResult(taskId);
   }
 
   public async getAskingTaskById(
     id: number,
   ): Promise<TrackedAskingResult | null> {
-    return this.askingTaskTracker.getAskingResultById(id);
+    const task = await this.currentTask({ id });
+    return task ? this.askingTaskTracker.getAskingResult(task.queryId) : null;
   }
 
   /**
@@ -682,32 +711,56 @@ export class AskingService implements IAskingService {
    * 3. update the thread response with the task id
    */
   public async createThread(input: AskingDetailTaskInput): Promise<Thread> {
-    // 1. create a thread and the first thread response
-    const { id } = await this.projectService.getCurrentProject();
-    const thread = await this.threadRepository.createOne({
-      projectId: id,
-      summary: input.question,
-    });
-
-    const threadResponse = await this.threadResponseRepository.createOne({
-      threadId: thread.id,
-      question: input.question,
-      sql: input.sql,
-      askingTaskId: input.trackedAskingResult?.taskId,
-    });
-
-    // if queryId is provided, update asking task
-    if (input.trackedAskingResult?.taskId) {
-      await this.askingTaskTracker.bindThreadResponse(
-        input.trackedAskingResult.taskId,
-        input.trackedAskingResult.queryId,
-        thread.id,
-        threadResponse.id,
-      );
+    const project = await this.projectService.getCurrentProject();
+    const tracked = input.trackedAskingResult;
+    if (tracked && (!tracked.taskId || !tracked.queryId))
+      throw new Error('Asking task not found');
+    const task = tracked
+      ? await this.currentTask(
+          { id: tracked.taskId, queryId: tracked.queryId },
+          project,
+        )
+      : null;
+    if (tracked && !task) throw new Error('Asking task not found');
+    if (task?.threadResponseId) {
+      const response = await this.threadResponseRepository.findOneBy({
+        id: task.threadResponseId,
+        threadId: task.threadId,
+        askingTaskId: task.id,
+      });
+      if (!response) throw new Error('Thread response not found');
+      return this.currentThread(task.threadId, project);
     }
-
-    // return the task id
-    return thread;
+    const tx = await this.threadRepository.transaction();
+    try {
+      const thread = await this.threadRepository.createOne(
+        { projectId: project.id, summary: input.question },
+        { tx },
+      );
+      const response = await this.threadResponseRepository.createOne(
+        {
+          threadId: thread.id,
+          question: input.question,
+          sql: input.sql,
+          askingTaskId: task?.id,
+        },
+        { tx },
+      );
+      if (task)
+        await this.askingTaskTracker.bindThreadResponse(
+          task.id,
+          task.queryId,
+          thread.id,
+          response.id,
+          project.id,
+          tx,
+        );
+      await this.threadRepository.commit(tx);
+      return thread;
+    } catch (error) {
+      await this.threadRepository.rollback(tx);
+      throw error;
+    }
   }
 
   public async listThreads(): Promise<Thread[]> {
@@ -740,26 +793,55 @@ export class AskingService implements IAskingService {
     input: AskingDetailTaskInput,
     threadId: number,
   ): Promise<ThreadResponse> {
-    const thread = await this.currentThread(threadId);
-
-    const threadResponse = await this.threadResponseRepository.createOne({
-      threadId: thread.id,
-      question: input.question,
-      sql: input.sql,
-      askingTaskId: input.trackedAskingResult?.taskId,
-    });
-
-    // if queryId is provided, update asking task
-    if (input.trackedAskingResult?.taskId) {
-      await this.askingTaskTracker.bindThreadResponse(
-        input.trackedAskingResult.taskId,
-        input.trackedAskingResult.queryId,
-        thread.id,
-        threadResponse.id,
-      );
+    const project = await this.projectService.getCurrentProject();
+    const thread = await this.currentThread(threadId, project);
+    const tracked = input.trackedAskingResult;
+    if (tracked && (!tracked.taskId || !tracked.queryId))
+      throw new Error('Asking task not found');
+    const task = tracked
+      ? await this.currentTask(
+          { id: tracked.taskId, queryId: tracked.queryId },
+          project,
+        )
+      : null;
+    if (tracked && !task) throw new Error('Asking task not found');
+    if (task?.threadResponseId) {
+      if (task.threadId !== thread.id)
+        throw new Error('Asking task already bound');
+      const response = await this.threadResponseRepository.findOneBy({
+        id: task.threadResponseId,
+        threadId: thread.id,
+        askingTaskId: task.id,
+      });
+      if (!response) throw new Error('Thread response not found');
+      return response;
     }
-
-    return threadResponse;
+    const tx = await this.threadRepository.transaction();
+    try {
+      const response = await this.threadResponseRepository.createOne(
+        {
+          threadId: thread.id,
+          question: input.question,
+          sql: input.sql,
+          askingTaskId: task?.id,
+        },
+        { tx },
+      );
+      if (task)
+        await this.askingTaskTracker.bindThreadResponse(
+          task.id,
+          task.queryId,
+          thread.id,
+          response.id,
+          project.id,
+          tx,
+        );
+      await this.threadRepository.commit(tx);
+      return response;
+    } catch (error) {
+      await this.threadRepository.rollback(tx);
+      throw error;
+    }
   }
 
   public async updateThreadResponse(
@@ -1111,6 +1193,8 @@ export class AskingService implements IAskingService {
   }
 
   public async cancelAdjustThreadResponseAnswer(taskId: string): Promise<void> {
+    if (!(await this.currentTask({ queryId: taskId }, undefined, true)))
+      throw new Error('Adjustment task not found');
     // call cancelAskFeedback on AI service
     await this.adjustmentBackgroundTracker.cancelAdjustmentTask(taskId);
   }
@@ -1140,13 +1224,18 @@ export class AskingService implements IAskingService {
   public async getAdjustmentTask(
     taskId: string,
   ): Promise<TrackedAdjustmentResult | null> {
+    if (!(await this.currentTask({ queryId: taskId }, undefined, true)))
+      return null;
     return this.adjustmentBackgroundTracker.getAdjustmentResult(taskId);
   }
 
   public async getAdjustmentTaskById(
     id: number,
   ): Promise<TrackedAdjustmentResult | null> {
-    return this.adjustmentBackgroundTracker.getAdjustmentResultById(id);
+    const task = await this.currentTask({ id }, undefined, true);
+    return task
+      ? this.adjustmentBackgroundTracker.getAdjustmentResult(task.queryId)
+      : null;
   }
 
   /**

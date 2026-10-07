@@ -1413,3 +1413,123 @@ Logs in the same private SDK directory as the preceding section:
 No full check, live model call, browser screenshot, deployment, image build or
 new schema generation ran in this batch. Native service tests do not prove the
 remaining task attribution, user authorization or release boundary complete.
+
+## Native asking/adjustment task ownership (2026-10-07)
+
+This closes the preceding unbound asking/adjustment task-ID reference gap in
+Wren's own persistence, under `SS-WRN-IDENTITY` and `SS-WRN-GOVERNANCE`. The
+fixed upstream is still `c5f02a0391c87420dba78632dcd86073710deb72`. Source
+consumers rechecked at that commit include
+`wren-ui/src/apollo/server/repositories/askingTaskRepository.ts::AskingTask`,
+`wren-ui/src/apollo/server/services/askingTaskTracker.ts::AskingTaskTracker`,
+`wren-ui/src/apollo/server/backgrounds/adjustmentBackgroundTracker.ts::AdjustmentBackgroundTaskTracker`,
+`wren-ui/src/apollo/server/services/askingService.ts::AskingService`,
+`wren-ui/src/apollo/server/resolvers/askingResolver.ts::AskingResolver`, and
+`wren-ai-service/src/web/v1/routers/ask.py::ask` (the native server assigns
+the query UUID). No platform registry, workflow authority, public GraphQL
+field, shared contract or replacement screen is introduced.
+
+Authority, impact, side effects and exception review led to these actual
+changes after checking the original callers:
+
+- The original `asking_task` gains required native `project_id`, not copied
+  platform identity or content. Asking persists it immediately after an
+  actual upstream query-ID acknowledgement; adjustment uses one native
+  transaction for its task and response. `query_id` remains non-null and
+  unique. No pre-dispatch placeholder, invented query ID or new task status
+  is introduced.
+- `AskingService` checks current project and original task type before both
+  query-ID and record-ID reads, cancellation or attaching a result. A record-ID
+  read follows its current persisted query rather than a stale memory index.
+  Actual nested result view/SQL-pair reads also check native project; the
+  existing response-view resolver validates the owned response and view.
+- First thread/response creation and result binding use the original Knex
+  transaction. Conditional binding on task ID, query ID, project and current
+  binding prevents concurrent duplicate attachment; a losing transaction
+  rolls back its speculative native thread/response. A repeat after a
+  committed binding returns the existing entity, and a different target is
+  refused. No speculative UI success or second task authority is added.
+- Both original trackers persist updates against the same task/query/project.
+  Final result and native answer SQL are committed in the same transaction
+  after locking the current query; an old rerun result cannot overwrite the
+  new query or resurrect a deleted task. Adjustment memory indexing now uses
+  the actual task ID, not the response ID. Native reads after restart reattach
+  the acknowledged query to the original polling loop; they never re-POST.
+  Persistence failure retains observation eligibility instead of silently
+  finalizing only the memory record. Unknown native statuses are not mapped
+  to success or failure.
+
+Migration `wren-ui/migrations/20261007000000_asking_task_project.js` executes
+an expand/backfill/contract sequence in the normal Knex migration transaction.
+Database joins find the first unprovable or contradictory thread/response
+reference and report its task ID before schema writes. An operator must
+reconcile that reference from evidence and rerun; there is no guessed default
+project or deletion of old tasks. Backfill is set-based inside the database,
+not an unbounded JavaScript array or per-task update loop. The same transaction
+then enforces non-null ownership and its project foreign key. Old binaries
+that omit project ownership cannot keep writing after this migration: stop
+old writers before migration and deploy the corresponding native code as one
+release. Down refuses to discard the ownership column while any task evidence
+exists; rollback with records is not an approved compatibility window.
+
+This is still not complete fine-grained user authorization or model-execution
+governance. Pre-ACK disconnection, a failure between upstream acknowledgement
+and native persistence, and competing rerun dispatches have no original
+client intent lookup/UNKNOWN reconciliation contract. This batch does not
+pretend to recover their native side effect or automatically replay it. Those
+remain `SS-WRN-GOVERNANCE` release gaps, alongside generation-aware revocation
+and other unbound recommendation tasks. Existing native polling timing and
+retention are reused; this is not a new platform expiry/reconciliation policy
+or evidence that those remaining lifecycle gaps are production-ready.
+
+Existing full-tree upstream status/diff commands exited 0 with the pinned
+HEAD unchanged (`native-task-ownership-upstream.log`: 978 files, 132598
+additions, 619 deletions at that point, including the already expanded engine
+source). This batch's differences are authorized project-binding adaptations
+and implementation evidence, not original page replacements. The full-tree
+stat is not a claim that every other upstream difference has been restored.
+
+Verification reused `kailo-wren-query-sdk-itgs2n`, 4 CPU / 4 GiB, UID 1000,
+the existing immutable SDK image and cached dependencies. Before execution
+there was no competing compiler in that SDK, host available memory was about
+31 GiB, and its OOM flag was false. After implementation:
+
+```sh
+./node_modules/.bin/jest --runInBand --runTestsByPath \
+  src/nativeTaskOwnership.test.ts src/nativeProjectScope.test.ts \
+  src/apollo/server/services/tests/askingService.test.ts \
+  src/apollo/server/services/tests/dashboardService.test.ts
+./node_modules/.bin/tsc --noEmit
+```
+
+The first targeted run had **2 failed / 63 passed** because the new test
+fixture used the wrong cancellation method name; it was corrected to the
+existing `cancelAdjustThreadResponseAnswer`, not a new production API.
+The PostgreSQL cases use the existing isolated test database and fresh random
+schemas, run original table migrations plus this real migration, and exercise
+legacy-refusal/retention, backfill, non-null/FK enforcement, concurrent
+conditional binding, rollback of speculative entities and empty down/up.
+They do not use a production database.
+
+An additional actual SQLite attempt failed **5 cases** because this cached SDK
+has the JavaScript `better-sqlite3` package but lacks its Node v137 native
+`better_sqlite3.node` binary. The same run's **24 non-SQLite cases passed**.
+That failure is retained in `native-task-ownership-databases.log`; SQLite
+migration compatibility is not accepted by this batch, and no dependency or
+image rebuild was performed to disguise that gap. Final checked-in database
+cases target the deployed PostgreSQL path.
+
+Removing the project predicate and conditional first-binding predicate only
+in the private SDK copy produced **6 failed / 18 passed**, exit 1, including
+actual double-binding and transaction rollback failures in PostgreSQL.
+All eight production/test/migration inputs were restored and byte-compared
+with formal source (`cmp` exit 0). Final restored outcome: **121 passed,
+0 failed, 0 skipped**, four suites; whole-Wren `tsc --noEmit` exit 0 (combined
+session 6419 exit 0). Logs in the same private SDK directory as above:
+`native-task-ownership-tests.log`, `native-task-ownership-corrected.log`,
+`native-task-ownership-regression.log`, `native-task-ownership-types.log`,
+`native-task-ownership-databases.log`, `native-task-ownership-mutation.log`,
+`native-task-ownership-restored.log`, `native-task-ownership-types-final.log`
+and `native-task-ownership-upstream.log`. `git diff --check` passed.
+No full check, production migration, live model call, browser/desktop/mobile
+acceptance, image build or deployment ran in this batch.
