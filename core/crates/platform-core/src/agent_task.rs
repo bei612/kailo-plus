@@ -270,16 +270,7 @@ async fn advance_accepted(
         .await
     {
         Ok(holder) => holder,
-        Err(crate::capacity::CapacityError::Rejected) => {
-            return StatusCode::CONFLICT.into_response()
-        }
-        Err(crate::capacity::CapacityError::Exhausted) => {
-            return result(id, TaskStatus::Running, "CAPACITY_UNAVAILABLE")
-        }
-        Err(error) => {
-            tracing::warn!(invocation_id=%id, error=%error, "Capacity holder 不可查证");
-            return result(id, TaskStatus::Running, "CAPACITY_UNAVAILABLE");
-        }
+        Err(error) => return capacity_wait_response(id, error),
     };
     tracing::debug!(invocation_id=%id, lease_id=%holder.lease_id, "原生 Activity holder 已查证");
     match invocation.status.as_str() {
@@ -2907,6 +2898,37 @@ async fn refuse_step_before_dispatch(
     .await?;
     tx.commit().await?;
     Ok(true)
+}
+
+fn capacity_wait_response(id: Uuid, error: crate::capacity::CapacityError) -> Response {
+    match error {
+        crate::capacity::CapacityError::Rejected => StatusCode::CONFLICT.into_response(),
+        crate::capacity::CapacityError::Exhausted => {
+            // acquire_or_renew returns Exhausted only before creating a lease;
+            // an existing holder takes its separate renewal/recovery branch.
+            // End this observation, not the Invocation: the original Workflow
+            // projects capacity waiting and schedules its durable next round.
+            // Keeping this unleased Activity alive instead would hit its
+            // StartToClose timeout and overwrite known backpressure with UNKNOWN.
+            (
+                StatusCode::OK,
+                Json(AgentTaskAdvanceResult {
+                    invocation_id: id.to_string(),
+                    status: TaskStatus::Running,
+                    waiting_reason: "CAPACITY_UNAVAILABLE".to_owned(),
+                    finish_activity: true,
+                    approval_workflow_id: None,
+                    approval_input: None,
+                    delay_step: None,
+                }),
+            )
+                .into_response()
+        }
+        error => {
+            tracing::warn!(invocation_id=%id, error=%error, "Capacity holder 不可查证");
+            result(id, TaskStatus::Running, "CAPACITY_UNAVAILABLE")
+        }
+    }
 }
 
 async fn release_holder(state: &ServiceState, id: Uuid, released: bool, waiting: &str) -> Response {

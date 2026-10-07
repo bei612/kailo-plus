@@ -1194,3 +1194,54 @@ OpenBao wrapping 启动 Core；随后仅替换 Worker/Web，两步均退出 0。
 Agent 与 Workflows 仍有重复刷新、技术性提示及布局差距，工作流范围也未完整。
 本次不将容器健康、截图或已发布 Cron 当作原版全功能、中英全覆盖、多人双 Agent
 稳定协作或三组件完整集成的验收。Windows/Mobile 包未更新，完整检查仍无新 0。
+
+### 双 Agent 实际回读与容量等待修正（2026-10-07 02:05 UTC）
+
+正常登录 Web 后，在原 Kailo 频道仅发送一次新消息，明确选中两项已准入
+Installation，没有重发旧任务、释放旧 lease 或修改商业额度。源事件为
+`535a813b6d91817ccf7f8a6a7e61a5dffd7c3c567caa306e805ac21a0fc3a939`。
+
+- Invocation `f9707351-5517-4eab-ad78-329fcdde60ce` 已为 `COMPLETED`，原生
+  turn `01a11412-9e57-7df3-b352-b4014cd0f565` 为 `completed`，回复事件
+  `ceda643f9a5a892d4bd29869e8bbf35eb68b9f090775aa31a55fe9f5f78a9a75` 已在
+  原频道实际显示；容量已释放，用量数量 8957、状态 `COMMITTED`。
+- Invocation `894f4ee2-39eb-4567-8693-88cb11ce76ec` 仍为 `CREATED`，没有
+  runtime turn、lease 或 usage。该 Installation 冻结 parallelism 为 1；旧
+  Invocation `db6dfccb-f0db-409a-8ed6-d81e64e277d9` 的一个 unit 仍为
+  `UNKNOWN`，旧 thread 无法恢复。不能用第一条成功证明双 Agent 稳定通过。
+- Worker 的实际 `AdvanceAgentTask` 日志反复显示 `CAPACITY_UNAVAILABLE`
+  回包后 `context deadline exceeded`；页面投影保留 `UNKNOWN_EXTERNAL_RESULT`。
+  根因是明确无 lease 的容量等待也返回 `finishActivity=false`，使观察 Activity
+  持续占用至 StartToClose 超时，未将已经查证的背压原因投影给用户。
+
+截图 `165-live-46-agent-unknown.png`、`167-live-46-latest-agent-reply.png`
+位于上述 Playwright 目录，均已打开查看。频道真实回包存在，但任务页面仍有
+技术标识过多与布局差距。第一次任务页探针误用 heading 定位，而页面标题为
+generic；后续实际 DOM 可进入任务，不为该探针错误修改导航。
+
+本次实现影响四步结论：
+
+1. 权威为 `.design/11` §2 的 CapacityLease、`.design/06` §3–5 的原生
+   Activity 与 TaskProjection；既定容量背压与结果不明不得混为业务失败。
+2. 影响只在 Core `agent_task::advance` 的 CapacityError 消费：
+   `acquire_or_renew` 的两处 Exhausted 都在确认没有现存 lease 且未分配之后；
+   已有 holder 走其原续租/恢复路径。Worker 原 `finishActivity` 消费、原生
+   timer 和 Web/Desktop/Mobile 原任务投影读法不变，无 schema/API 变更。
+3. Exhausted 现在只结束本次观察 Activity，仍返回 RUNNING 和原容量等待码；
+   不释放其他或当前 lease，不重放 invocation，不改审批、额度、模型或身份。
+   Unknown/数据库错误仍不能证明没有占用，保留原观察；Rejected 仍为 409。
+4. 并发与重入仍由原 pool/Installation 锁处理；超限由已投递 observation
+   interval 的 Temporal timer 等待，继续沿同一 Invocation 查证。旧任务会话
+   丢失、用量缺失、撤权与取消路径不被假终态覆盖。该修改不解决旧 UNKNOWN
+   会话本身，亦不把后续源码修正冒充已部署验证。
+
+源码修正后在既有 4 CPU/8 GiB SDK 与审批步骤合批验证。真实响应映射用例
+`agent_task::receipt_tests::only_proven_unleased_capacity_wait_finishes_observation`
+通过，覆盖 Exhausted、Unknown、数据库错误和 Rejected。随后只在 SDK 副本
+把该响应的 `finish_activity` 改回 false，用例真实失败，退出 101；按原字节
+还原后再次 1 项通过。主线程已比较该函数和用例文件与正式源码，`cmp` 均为 0。
+原日志在 `/volumes/data/kailo/tmp/workflow-approval-20261007.fZc73u/` 的
+`core-mutation.log` 与 `core-mutation-restored.log`，不是线上修复成功证据。
+该检查覆盖已调用的错误响应映射，不替代 PostgreSQL 并发分配、真实 Temporal
+history 或新部署的端到端验收。未新建镜像、未修改线上旧 UNKNOWN，没有新的
+`check.sh --full` 退出 0。

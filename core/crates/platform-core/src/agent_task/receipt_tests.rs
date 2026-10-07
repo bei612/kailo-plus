@@ -3,6 +3,35 @@
 use super::*;
 use crate::agent_runtime::RuntimeError;
 
+#[tokio::test]
+async fn only_proven_unleased_capacity_wait_finishes_observation() {
+    use crate::capacity::CapacityError;
+    let id = Uuid::new_v4();
+    for (error, finish) in [
+        (CapacityError::Exhausted, true),
+        (CapacityError::Unknown, false),
+        (CapacityError::Database(sqlx::Error::PoolClosed), false),
+    ] {
+        let response = capacity_wait_response(id, error);
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let result: AgentTaskAdvanceResult = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result.invocation_id, id.to_string());
+        assert!(matches!(result.status, TaskStatus::Running));
+        assert_eq!(result.waiting_reason, "CAPACITY_UNAVAILABLE");
+        assert_eq!(result.finish_activity, finish);
+        assert!(result.approval_workflow_id.is_none());
+        assert!(result.approval_input.is_none());
+        assert!(result.delay_step.is_none());
+    }
+    assert_eq!(
+        capacity_wait_response(id, CapacityError::Rejected).status(),
+        StatusCode::CONFLICT
+    );
+}
+
 pub(crate) async fn fixture(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Uuid {
     let tenant = Uuid::new_v4();
     sqlx::raw_sql(
