@@ -219,7 +219,7 @@ Workflows（工作流）是 Web/Desktop 左侧导航的独立平台核心页面�
 - 配置以 DD-107 的 AutomationVersion 为权威。表单与 YAML 必须覆盖同一组合同字段并可相互切换；编辑已发布内容形成新版本。解析失败、未知字段或未知枚举保留编辑内容并拒绝提交，不把无法表示的字段静默丢弃，不执行任意 YAML 指令或恢复 Buzz 原生 workflow 引擎。
 - 复制从有权读取的定义配置进入原创建过程，默认新 DRAFT、新 HUMAN owner；不复制 pin、启用状态、Schedule、webhook 密钥、委托授权、审批或运行历史。目标 Workspace、Installation 与 Delegation 均沿原准入重新查证；没有来源读取权或目标创建权则拒绝。
 - 复制与 YAML 编辑不要求新增执行引擎或 Workflow kind。删除使用 `05` §2.9 的 `automation.delete`，完整读回 `DELETED` 才从活动定义列表移除；结果不明保留原动作和等待状态，不把停用或 HTTP 成功当成删除完成。删除定义不会删除运行历史或取消在途运行。
-- 手动触发由当前 owner 在 Workflows 页显式确认后，经 BFF 提交同一 `automation.run`；仅已启用且 pin 有效的定义提供入口，服务端重新核验 owner、权限、Delegation、额度与版本审批。一次请求对应一个稳定运行，进入同一 Run History；不伪造 Relay 事件或 webhook，不启动第二工作流引擎，不在浏览器直接调用 Temporal。四类自动触发配置不变，手动执行没有触发消息，结果回到 Workspace Channel。
-- 多步骤执行不能通过页面绕过领域动作、审批、幂等与持久执行语义；单动作加审批关卡不等同于原版任意多步骤配置，不能用恢复页面宣称原版全部行为已经等价。
+- 手动触发由当前 owner 在 Workflows 页显式确认后，经 BFF 提交同一 `automation.run`；仅已启用且 pin 有效的定义提供入口，服务端重新核验 owner、权限、Delegation、额度与版本审批。一次请求对应一个稳定运行，进入同一 Run History；不伪造 Relay 事件或 webhook，不启动第二工作流引擎，不在浏览器直接调用 Temporal。手动执行不另立自动触发配置，手动执行没有触发消息，结果回到 Workspace Channel。
+- 原版有序多步骤、条件、模板变量、逐步骤超时、延时与审批属于 REQ-24 的必交付范围，不再以 DD-107 的旧单动作限制裁剪。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `crates/buzz-workflow/src/schema.rs::WorkflowDef/Step/ActionDef` 定义发送频道消息、私聊、修改频道主题、表情、调用 webhook、请求审批、延时七类动作。复用原版编辑与轨迹呈现，持久执行仍由 Temporal 承担；步骤副作用逐次经过现有动作准入、权限、审批和用量规则，外呼经 AgentGateway，不允许恢复 `WorkflowEngine` 或 `RelayActionSink`。单动作加一个审批关卡只是当前实现子集，不构成完整验收。
 - Run History（运行历史）是该自动化关联的 ActionExecution、WorkflowRef 与 TaskProjection 的授权视图，展示运行状态、等待原因、进度与用量引用，并进入同一 Tasks/Approvals 详情查看执行与审批轨迹；不另建运行、审批或审计权威，不向浏览器暴露原始 Temporal history、密钥或模型提示正文。
 - UNKNOWN、投影落后与部分结果沿用本章终态纪律；控制动作仅按 §8 已登记范围开放，不因历史列表存在而增加重放、取消或重跑权限。Mobile 仅提供 REQ-21 允许的只读视图，不提供定义编辑、发布、启停或运行控制。
