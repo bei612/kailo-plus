@@ -12,14 +12,14 @@ import type { StreamFrame } from "../bff-client";
 import { InboxThreadPane } from "./InboxThreadPane";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({ query: vi.fn(), dmQuery:vi.fn(), dmPublish:vi.fn(), stream:vi.fn(), publish: vi.fn(), reaction:vi.fn(), openAuthor:vi.fn(), unavailable:vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: "", error: null as unknown }));
+const state = vi.hoisted(() => ({ query: vi.fn(), dmQuery:vi.fn(), dmPublish:vi.fn(), stream:vi.fn(), publish: vi.fn(), reaction:vi.fn(), openAuthor:vi.fn(), unavailable:vi.fn(), mentionPubkeys: [] as string[], receive: null as null | ((frame: StreamFrame) => void), outcome: "", error: null as unknown }));
 vi.mock("@client-kit/platform/react/context", async (original) => ({ ...await original<typeof import("@client-kit/platform/react/context")>(), useBffClient: () => ({ workspaceMessages: state.query,conversationMessages:state.dmQuery }), useLocale: () => "en", useT: () => (key: string) => key }));
 vi.mock("@client-kit/platform/react/inbox-surface", () => ({ InboxDetailHeader: ({ title }: {title: string}) => <header>{title}</header> }));
 vi.mock("@/features/chat/ui/MessageContent", () => ({ MessageContent: ({content}: {content:string}) => <p>{content}</p> }));
-vi.mock("@/platform/bff-client", () => ({ bff:{profile:async()=>({pubkey:"c".repeat(64)}),customEmoji:async()=>({events:[],mediaPaths:{}})},publishConversationMessage:(...args:unknown[])=>state.dmPublish(...args),uploadConversationMedia:vi.fn(),mediaUrl:vi.fn(),publishMessageReaction:(...args:unknown[])=>state.reaction(...args),publishMessage: (...args: unknown[]) => state.publish(...args), openStream: (scope: string, receive: (frame: StreamFrame) => void,conversationId?:string) => { state.stream(scope,conversationId);state.receive = receive; return () => {}; } }));
-vi.mock("./ChannelPane", () => ({ Composer: ({ disabled, onPublish, replyTarget, onCancelReply, draftKey }: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: []) => Promise<unknown>; replyTarget?: {id:string;body:string}; onCancelReply?:()=>void; draftKey?:string}) => <div data-testid="inbox-composer" data-draft-key={draftKey}>
+vi.mock("@/platform/bff-client", () => ({ fetchUserState:vi.fn(), bff:{profile:async()=>({pubkey:"c".repeat(64)}),customEmoji:async()=>({events:[],mediaPaths:{}})},publishConversationMessage:(...args:unknown[])=>state.dmPublish(...args),uploadConversationMedia:vi.fn(),mediaUrl:vi.fn(),publishMessageReaction:(...args:unknown[])=>state.reaction(...args),publishMessage: (...args: unknown[]) => state.publish(...args), openStream: (scope: string, receive: (frame: StreamFrame) => void,conversationId?:string) => { state.stream(scope,conversationId);state.receive = receive; return () => {}; } }));
+vi.mock("./ChannelPane", async (original) => ({ ...await original<typeof import("./ChannelPane")>(), Composer: ({ disabled, onPublish, replyTarget, onCancelReply, draftKey, mentionPeople }: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: [], people: string[]) => Promise<unknown>; replyTarget?: {id:string;body:string}; onCancelReply?:()=>void; draftKey?:string; mentionPeople?:{displayName:string;pubkey:string}[]}) => <div data-testid="inbox-composer" data-draft-key={draftKey} data-people={JSON.stringify(mentionPeople)}>
   {replyTarget ? <div data-testid="reply-preview">{replyTarget.body}{onCancelReply ? <button data-testid="cancel-reply" onClick={onCancelReply}>cancel reply</button> : null}</div> : null}
-  <button data-testid="inbox-send" disabled={disabled} onClick={async () => { try { await onPublish("actual reply", [], "same-intent", []); state.outcome = "confirmed"; } catch (error) { state.error = error; state.outcome = "unknown"; } }}>send</button>
+  <button data-testid="inbox-send" disabled={disabled} onClick={async () => { try { await onPublish("actual reply", [], "same-intent", [], state.mentionPubkeys); state.outcome = "confirmed"; } catch (error) { state.error = error; state.outcome = "unknown"; } }}>send</button>
 </div> }));
 
 const rootId = "a".repeat(64); const replyId = "b".repeat(64); const pubkey = "c".repeat(64);
@@ -35,12 +35,13 @@ async function mount(replyTargetEventId?: string) {
     replyTargetEventId={replyTargetEventId} channelName="Admitted channel" members={[{ principalId: "human", displayName: "Member", pubkeys: [pubkey], state: WorkspaceMembershipState.Active }]} onOpen={vi.fn()} onOpenAuthor={state.openAuthor} onAuthorScopeUnavailable={state.unavailable} /></TooltipProvider></QueryClientProvider>));
   await settle();
 }
-async function mountDm(selected = replyId, rootEventId = rootId) {
-  await act(async()=>root.render(<QueryClientProvider client={query}><TooltipProvider><InboxThreadPane principalId="human" workspaceId="workspace" conversation={conversation} rootId={rootEventId} selectedEventId={selected} channelName="Peer" members={[]} onOpen={vi.fn()}/></TooltipProvider></QueryClientProvider>));
+async function mountDm(selected = replyId, rootEventId = rootId, members: {principalId:string;displayName:string;pubkeys:string[]}[] = []) {
+  await act(async()=>root.render(<QueryClientProvider client={query}><TooltipProvider><InboxThreadPane principalId="human" workspaceId="workspace" conversation={conversation} rootId={rootEventId} selectedEventId={selected} channelName="Peer" members={members} onOpen={vi.fn()}/></TooltipProvider></QueryClientProvider>));
   await settle();
 }
 beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks(); state.outcome = ""; state.error = null;
+  state.mentionPubkeys = [];
   localStorage.clear(); setLocale("en");
   Object.defineProperty(window, "matchMedia", {configurable:true,value:()=>({matches:false,addEventListener(){},removeEventListener(){}})});
   state.query.mockResolvedValue({ events: [rootEvent, reply] });
@@ -57,7 +58,7 @@ it("reads the true thread and preserves the original selected-reply parent when 
   expect(state.query).toHaveBeenCalledWith("workspace", { messageType: "STREAM", parentEventId: rootId });
   expect(host.textContent).toContain("selected reply");
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
-  expect(state.publish).toHaveBeenCalledWith("workspace", "actual reply", [], "same-intent", [], { messageType: "STREAM", parentEventId: rootId });
+  expect(state.publish).toHaveBeenCalledWith("workspace", "actual reply", [], "same-intent", [], { messageType: "STREAM", parentEventId: rootId, mentionPubkeys: [] });
   expect(state.outcome).toBe("confirmed");
 });
 
@@ -73,8 +74,26 @@ it("keeps hidden DM thread read, live subscription and confirmed reply on the ex
   expect(state.query).not.toHaveBeenCalled();
   expect(state.stream).toHaveBeenCalledWith("workspace","private-binding");
   await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
-  expect(state.dmPublish).toHaveBeenCalledWith("private-binding","actual reply",[],"same-intent",undefined,rootId);
+  expect(state.dmPublish).toHaveBeenCalledWith("private-binding","actual reply",[],"same-intent",undefined,rootId,[]);
   expect(state.publish).not.toHaveBeenCalled();expect(state.outcome).toBe("confirmed");
+});
+
+it("passes admitted channel people through the real helper and preserves human recipients on an Inbox reply",async()=>{
+  state.mentionPubkeys=[pubkey];
+  await mount();
+  expect(JSON.parse(host.querySelector('[data-testid="inbox-composer"]')!.getAttribute("data-people")!)).toEqual([{displayName:"Member",pubkey}]);
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
+  expect(state.publish).toHaveBeenCalledWith("workspace","actual reply",[],"same-intent",[],{messageType:"STREAM",parentEventId:rootId,mentionPubkeys:[pubkey]});
+});
+
+it("passes admitted DM people and exact human recipients into the existing conversation reply route",async()=>{
+  state.mentionPubkeys=[pubkey];
+  state.dmQuery.mockImplementation(async (_id,options)=>({events:options.parentEventId?[rootEvent,reply]:[rootEvent,bounds()]}));
+  state.dmPublish.mockResolvedValue({eventId:"f".repeat(64),operationId:"dm-publication"});
+  await mountDm(replyId,rootId,[{principalId:"peer",displayName:"Peer",pubkeys:[pubkey]}]);
+  expect(JSON.parse(host.querySelector('[data-testid="inbox-composer"]')!.getAttribute("data-people")!)).toEqual([{displayName:"Peer",pubkey}]);
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
+  expect(state.dmPublish).toHaveBeenCalledWith("private-binding","actual reply",[],"same-intent",undefined,rootId,[pubkey]);
 });
 
 it("reads older DM windows with the signed descending cursor without moving the selected reply or draft",async()=>{
@@ -135,7 +154,7 @@ it("restores an explicit nested reply draft without retargeting it to its parent
   await mount(replyId);
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
   expect(state.query).toHaveBeenCalledWith("workspace", { messageType: "STREAM", parentEventId: rootId });
-  expect(state.publish).toHaveBeenCalledWith("workspace", "actual reply", [], "same-intent", [], { messageType: "STREAM", parentEventId: replyId });
+  expect(state.publish).toHaveBeenCalledWith("workspace", "actual reply", [], "same-intent", [], { messageType: "STREAM", parentEventId: replyId, mentionPubkeys: [] });
 });
 
 it("does not report an unconfirmed receipt as success and removes detail on revoked admission", async () => {
@@ -157,12 +176,12 @@ it("restores the original row reply toggle and banner while cancelling returns t
   expect(host.querySelector('[data-testid="reply-preview"]')?.textContent).toContain("selected reply");
   expect(host.querySelector('[data-testid="inbox-composer"]')?.getAttribute("data-draft-key")).toBe(`thread:workspace:${rootId}:${replyId}`);
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
-  expect(state.publish.mock.lastCall?.[5]).toEqual({messageType:"STREAM",parentEventId:replyId});
+  expect(state.publish.mock.lastCall?.[5]).toEqual({messageType:"STREAM",parentEventId:replyId,mentionPubkeys:[]});
   await settle();
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="cancel-reply"]')!.click());
   expect(host.querySelector('[data-testid="reply-preview"]')).toBeNull();
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
-  expect(state.publish.mock.lastCall?.[5]).toEqual({messageType:"STREAM",parentEventId:rootId});
+  expect(state.publish.mock.lastCall?.[5]).toEqual({messageType:"STREAM",parentEventId:rootId,mentionPubkeys:[]});
   await settle();
   await act(async () => select().click());
   await act(async () => select().click());

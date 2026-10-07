@@ -11,6 +11,7 @@ import { ChannelPane } from "./ChannelPane";
 import { platformQueries } from "./queries";
 import { setLocale } from "@client-kit/platform/i18n";
 import { setThreadViewMode } from "@client-kit/platform/react/thread/threadViewModePreference";
+import { clearAllDrafts, loadDraftEntry, saveDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({
@@ -232,6 +233,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
   localStorage.clear();
+  clearAllDrafts();
   setThreadViewMode("split");
   setLocale("en");
   Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
@@ -381,6 +383,94 @@ it("retains an UNKNOWN send key while native metadata is unavailable or archived
   expect(state.publish.mock.calls[1]).toEqual(state.publish.mock.calls[0]);
 });
 
+async function sendChannel() {
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send-message"]')!.click());
+  await flush();
+}
+async function remountChannel() {
+  await act(async () => root.render(null));
+  client.removeQueries({ queryKey: platformQueries.members("workspace-a").queryKey });
+  await open();
+}
+const humanMember = (pubkey: string, displayName: string) => ({ principalId: pubkey, displayName, pubkeys: [pubkey], state: "ACTIVE" });
+
+it("sends the real human picker identity and reconciles the same UNKNOWN request after remount and a same-name rename", async () => {
+  const selected="a".repeat(64), other="b".repeat(64);
+  state.members.mockResolvedValue([humanMember(selected,"Alex"),humanMember(other,"Alex")]);
+  state.publish.mockRejectedValue(new TransportError("lost acknowledgement"));
+  await open();
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Mention someone"]')!.click());
+  const options=host.querySelectorAll('[aria-label="Mention someone Alex"]');
+  expect(options).toHaveLength(2);
+  await act(async () => options[0]!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})));
+  await sendChannel();
+  expect(state.publish).toHaveBeenCalledTimes(1);
+  const original=state.publish.mock.calls[0]!;
+  expect(original[1]).toBe("@Alex");
+  expect(original[5]).toEqual({mentionPubkeys:[selected]});
+  expect(host.textContent).toContain("platform.sendUnknown");
+  state.members.mockResolvedValue([humanMember(other,"Alex"),humanMember(selected,"Renamed")]);
+  await remountChannel();
+  expect(state.publish).toHaveBeenCalledTimes(1);
+  await sendChannel();
+  expect(state.publish).toHaveBeenCalledTimes(2);
+  expect(state.publish.mock.calls[1]).toEqual(original);
+});
+
+it("preserves typed human recipients and their original order across UNKNOWN remount and changed directory names", async () => {
+  const first="c".repeat(64), second="d".repeat(64);
+  state.members.mockResolvedValue([humanMember(second,"Blair"),humanMember(first,"Alex")]);
+  state.publish.mockRejectedValue(new TransportError("lost acknowledgement"));
+  await open();
+  await act(async () => {
+    const input=host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+    const paragraph=document.createElement("p");paragraph.textContent="@Alex @Blair";
+    input.replaceChildren(paragraph);
+    input.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:"@Alex @Blair"}));
+  });
+  await flush();await sendChannel();
+  const original=state.publish.mock.calls[0]!;
+  expect(original[5]).toEqual({mentionPubkeys:[second,first]});
+  state.members.mockResolvedValue([humanMember(first,"Blair"),humanMember(second,"Alex")]);
+  await remountChannel();await sendChannel();
+  expect(state.publish).toHaveBeenCalledTimes(2);
+  expect(state.publish.mock.calls[1]).toEqual(original);
+});
+
+it("does not silently drop a revoked human recipient or replay its UNKNOWN request after remount", async () => {
+  const selected="e".repeat(64);
+  state.members.mockResolvedValue([humanMember(selected,"Alex")]);
+  state.publish.mockRejectedValue(new TransportError("lost acknowledgement"));
+  await open();
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Mention someone"]')!.click());
+  await act(async () => host.querySelector('[aria-label="Mention someone Alex"]')!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})));
+  await sendChannel();
+  state.members.mockResolvedValue([]);
+  await remountChannel();await sendChannel();
+  expect(state.publish).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("platform.loadFailed");
+});
+
+it("does not mint a different request for a legacy UNKNOWN draft whose human refs were not persisted", async () => {
+  const selected="a".repeat(64), other="b".repeat(64);
+  state.members.mockResolvedValue([humanMember(selected,"Alex")]);
+  state.publish.mockRejectedValue(new TransportError("lost acknowledgement"));
+  await open();
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Mention someone"]')!.click());
+  await act(async () => host.querySelector('[aria-label="Mention someone Alex"]')!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})));
+  await sendChannel();
+  const saved=loadDraftEntry("workspace-a")!;
+  expect(saved.sendIntent).toBeDefined();
+  await act(async () => root.render(null));
+  saveDraftEntry("workspace-a",{...saved,mentionRefs:[]});
+  state.members.mockResolvedValue([humanMember(selected,"Renamed"),humanMember(other,"Alex")]);
+  client.removeQueries({queryKey:platformQueries.members("workspace-a").queryKey});
+  await open();await sendChannel();
+  expect(state.publish).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("platform.sendUnknown");
+  expect(loadDraftEntry("workspace-a")?.sendIntent?.key).toBe(saved.sendIntent!.key);
+});
+
 it("the original Reply action sends to the exact event and cancellation restores the channel draft", async () => {
   state.mark.mockRejectedValue(new BffError(403, "denied"));
   state.members.mockResolvedValue([{principalId: "human-a", displayName: "Alice", pubkeys: ["mine"], state: "ACTIVE"}]);
@@ -409,7 +499,7 @@ it("the original Reply action sends to the exact event and cancellation restores
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="message-thread-panel"] [data-testid="send-message"]')!.click());
   await flush();
   expect(state.publish).toHaveBeenCalledTimes(1);
-  expect(state.publish.mock.calls[0]).toEqual(["workspace-a", "actual reply", [], expect.any(String), [], { messageType: "STREAM", parentEventId: "event-10" }]);
+  expect(state.publish.mock.calls[0]).toEqual(["workspace-a", "actual reply", [], expect.any(String), [], { messageType: "STREAM", parentEventId: "event-10", mentionPubkeys: [] }]);
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Close panel"]')!.click());
   await flush();
   expect(host.querySelector('[data-testid="message-thread-panel"]')).toBeNull();
@@ -473,7 +563,7 @@ it("a reply without confirmed evidence stays UNKNOWN and keeps its original inte
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="message-thread-panel"] [data-testid="send-message"]')!.click());
   await flush();
   expect(state.publish.mock.calls[1]?.[3]).toBe(key);
-  expect(state.publish.mock.calls[1]?.[5]).toEqual({ messageType: "STREAM", parentEventId: "event-10" });
+  expect(state.publish.mock.calls[1]?.[5]).toEqual({ messageType: "STREAM", parentEventId: "event-10", mentionPubkeys: [] });
 });
 
 it("renders real stream events through the original shared message row and groups adjacent authors", async () => {

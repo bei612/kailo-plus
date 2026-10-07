@@ -59,6 +59,8 @@ remove_paths:
   - desktop/src/features/messages/lib/useMentionSelection.ts
   # Original copy resolver now shared; both hosts consume useMessageMentionClipboard.
   - desktop/src/features/messages/lib/useMessageMentionIdentities.ts
+  # Original code-block clipboard is shared; Native UI injects its host fallback.
+  - desktop/src/shared/lib/codeBlockClipboard.ts
   - desktop/src/shared/ui/popoverSurface.ts
   - .github/workflows/desktop-release-cache-proof.yml
   - .github/workflows/desktop-release-candidate.yml

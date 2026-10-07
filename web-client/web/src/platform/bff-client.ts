@@ -101,11 +101,11 @@ export const conversationVisibility: ConversationVisibilityHost = {
 };
 
 export async function publishConversationMessage(conversationId: string, content: string,
-  attachments: readonly MediaDescriptor[], idempotencyKey: string, editEventId?: string, parentEventId?: string): Promise<{ eventId: string; operationId: string }> {
+  attachments: readonly MediaDescriptor[], idempotencyKey: string, editEventId?: string, parentEventId?: string, mentionPubkeys?: string[]): Promise<{ eventId: string; operationId: string }> {
   const path = `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`;
   return unwrap({ method: "POST", path }, await transport.exchange(path, {
     method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
-    body: JSON.stringify({ content, attachments: [...attachments], mentionInstallationIds: [], editEventId, parentEventId } satisfies WebPublishMessageRequest),
+    body: JSON.stringify({ content, attachments: [...attachments], mentionInstallationIds: [], editEventId, parentEventId, mentionPubkeys } satisfies WebPublishMessageRequest),
   }));
 }
 export async function uploadConversationMedia(conversationId: string, file: File): Promise<MediaDescriptor> {
@@ -167,7 +167,7 @@ export async function publishMessage(
   attachments: readonly MediaDescriptor[],
   idempotencyKey: string,
   mentionInstallationIds: string[] = [],
-  intent?: Pick<WebPublishMessageRequest, "messageType" | "parentEventId" | "editEventId">,
+  intent?: Pick<WebPublishMessageRequest, "messageType" | "parentEventId" | "editEventId" | "mentionPubkeys">,
 ): Promise<{ eventId: string; operationId: string }> {
   const path = `/api/v1/workspaces/${workspaceId}/messages`;
   return unwrap(

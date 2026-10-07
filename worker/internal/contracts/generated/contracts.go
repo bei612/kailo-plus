@@ -5026,8 +5026,11 @@ type WebPublishMessageRequest struct {
 	// 编辑原 Buzz 消息；BFF 回读同 Channel 原事件并核对本人签名身份，发原 kind 40003。与 parentEventId 互斥，缺省保持原新消息语义。
 	EditEventID *string `json:"editEventId,omitempty"`
 	// 用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
-	MentionInstallationIDS []string        `json:"mentionInstallationIds,omitempty"`
-	MessageType            *WebMessageType `json:"messageType,omitempty"`
+	MentionInstallationIDS []string `json:"mentionInstallationIds,omitempty"`
+	// 原 Buzz HUMAN 提及的精确公钥；缺省为空。BFF 核对当前 Tenant、消息目的地成员及 ACTIVE 身份，排序去重冻结在原发布幂等记录；不接受 Agent
+	// 公钥绕过 Installation 准入。
+	MentionPubkeys []string        `json:"mentionPubkeys,omitempty"`
+	MessageType    *WebMessageType `json:"messageType,omitempty"`
 	// 原 Relay 消息引用；BFF 在当前 Channel 回读验签并解析 NIP-10 祖先。
 	ParentEventID *string `json:"parentEventId,omitempty"`
 }

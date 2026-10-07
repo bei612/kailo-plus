@@ -3979,7 +3979,12 @@ export interface WebPublishMessageRequest {
      * 用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
      */
     mentionInstallationIds?: string[];
-    messageType?:            WebMessageType;
+    /**
+     * 原 Buzz HUMAN 提及的精确公钥；缺省为空。BFF 核对当前 Tenant、消息目的地成员及 ACTIVE 身份，排序去重冻结在原发布幂等记录；不接受 Agent
+     * 公钥绕过 Installation 准入。
+     */
+    mentionPubkeys?: string[];
+    messageType?:    WebMessageType;
     /**
      * 原 Relay 消息引用；BFF 在当前 Channel 回读验签并解析 NIP-10 祖先。
      */

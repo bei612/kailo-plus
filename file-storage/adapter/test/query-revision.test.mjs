@@ -155,7 +155,7 @@ async function setup(t, changes = {}) {
     state.nativeReads.push(request.url);
     if (changes.serviceList && request.url === `/v2/n/node/${ids[2]}?Flags=WithMetaDefaults`) {
       state.rootReads=(state.rootReads??0)+1;
-      if (changes.rootAfter && state.rootReads>1) return reply(response,200,changes.rootAfter);
+      if (changes.rootAfter && state.rootReads >= (changes.rootAfterRead ?? 2)) return reply(response,200,changes.rootAfter);
       return reply(response,200,changes.root ?? {...root,FolderMeta:[{Namespace:'ChildrenCount',Value:1}]});
     }
     if (changes.serviceList && request.url === `/v2/n/node/${ids[3]}?Flags=WithMetaDefaults`) {
@@ -373,6 +373,24 @@ test('SERVICE discovery consumes the native omitted empty collection without inv
       const fixture=await setup(nested,{operation:'execute',arguments:argumentsValue,serviceList:true,root,listResponse:{},...change});
       const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request)});
       assert.notEqual(response.status,200);
+      assert.equal(fixture.state.receipts.length,0);
+    });
+  }
+});
+
+test('SERVICE empty discovery refuses native root changes at the final traversal read', async (t) => {
+  const argumentsValue={targetType:'RESOURCE',targetId:ids[10],authorizationTargetNativeRef:ids[2],input:{resourceId:ids[10]}};
+  const request={actionKey:'file_storage.list@v1',idempotencyKey:ids[7],arguments:argumentsValue};
+  const root={Uuid:ids[2],Type:'COLLECTION',Path:'documents/root',ContextWorkspace:{Uuid:ids[1]},FolderMeta:[{Namespace:'ChildrenCount'}]};
+  for (const change of [{IsDraft:true},{IsRecycled:true},{IsRecycleBin:true},{Type:'LEAF'},{ContextWorkspace:undefined}]) {
+    await t.test(JSON.stringify(change),async nested=>{
+      const fixture=await setup(nested,{operation:'execute',arguments:argumentsValue,serviceList:true,
+        root,listResponse:{},rootAfterRead:4,rootAfter:{...root,...change}});
+      const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request)});
+      assert.equal(fixture.state.rootReads,4);
+      assert.equal(fixture.state.listings,2);
+      assert.equal(response.status,503);
+      assert.deepEqual(await response.json(),{error:'adapter request refused'});
       assert.equal(fixture.state.receipts.length,0);
     });
   }

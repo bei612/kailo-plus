@@ -1,5 +1,12 @@
 import type { ComponentPropsWithoutRef, ReactNode, Ref } from "react";
 import * as React from "react";
+import { Copy } from "lucide-react";
+import { toast } from "sonner";
+import { useUiT } from "./context";
+import { Button } from "./profile/buzz/shared/ui/button";
+import { useSmoothCorners } from "./profile/buzz/shared/ui/smoothCorners";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./sidebar/tooltip";
+import { copyCodeBlockToClipboard } from "./composer/shared/lib/codeBlockClipboard";
 import {
   getSingletonHighlighter,
   type HighlighterGeneric,
@@ -151,6 +158,7 @@ export function MessageCodeBlock({
       <pre
         ref={ref}
         className="max-h-[400px] overflow-x-auto overflow-y-auto rounded-2xl border border-border/70 bg-muted/60 px-3 py-1.5 pr-12 shadow-xs"
+        style={{ borderRadius: "1rem" }}
       >
         {language && (
           <div className="mb-1 text-xs text-muted-foreground/70">
@@ -162,6 +170,58 @@ export function MessageCodeBlock({
       {copyControl}
     </div>
   );
+}
+
+// Buzz 779af8886caae1317b4de962082429867ab61503:
+// desktop/src/shared/ui/markdown/utils.ts::getReactNodeText.
+export function getReactNodeText(node: React.ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(getReactNodeText).join("");
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) return getReactNodeText(node.props.children);
+  return "";
+}
+
+function copyTextToBrowserClipboard(code: string) {
+  return navigator.clipboard.writeText(code);
+}
+
+// Original MarkdownCodeBlock UI; only the plain clipboard fallback is host-specific.
+export function MarkdownCodeBlock({ children, language, copyText = copyTextToBrowserClipboard }: BlockChildren & {
+  language?: string;
+  copyText?: (code: string) => Promise<void>;
+}) {
+  const t = useUiT();
+  const [isCopying, setIsCopying] = React.useState(false);
+  const codeBlockRef = React.useRef<HTMLPreElement | null>(null);
+  const code = React.useMemo(() => getReactNodeText(children).replace(/\n$/, ""), [children]);
+  useSmoothCorners(codeBlockRef);
+  const handleCopy = React.useCallback(async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsCopying(true);
+    try {
+      await copyCodeBlockToClipboard(code, copyText);
+      toast.success(t("buzz.copiedCode"));
+    } catch (error) {
+      console.error("Failed to copy code block", error);
+      toast.error(t("buzz.copyCodeFailed"));
+    } finally {
+      setIsCopying(false);
+    }
+  }, [code, copyText, t]);
+  return <MessageCodeBlock language={language} ref={codeBlockRef} copyControl={
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button aria-label={t("buzz.copyCodeBlock")}
+          className="absolute right-2 top-2 h-7 w-7 bg-background/80 text-muted-foreground opacity-0 shadow-xs ring-1 ring-border/60 backdrop-blur-sm transition-opacity hover:bg-background hover:text-foreground hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 disabled:opacity-60"
+          disabled={isCopying} onClick={handleCopy} size="icon" type="button" variant="ghost">
+          <Copy className="h-4 w-4" />
+          <span className="sr-only">{t("buzz.copyCodeBlock")}</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{t("buzz.copyCode")}</TooltipContent>
+    </Tooltip>
+  }>{children}</MessageCodeBlock>;
 }
 
 export function PlainCodeBlock({
@@ -359,9 +419,9 @@ export const MESSAGE_BODY_COMPONENTS = {
     </ol>
   ),
   pre: ({ children }: BlockChildren) => (
-    <MessageCodeBlock language={getCodeBlockLanguage(children)}>
+    <MarkdownCodeBlock language={getCodeBlockLanguage(children)}>
       {children}
-    </MessageCodeBlock>
+    </MarkdownCodeBlock>
   ),
   strong: ({ children }: BlockChildren) => (
     <strong className="font-semibold">{children}</strong>

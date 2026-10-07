@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { bff, deleteMessage, openStream, publishMessageReaction, type StreamFrame } from "./bff-client";
+import { bff, deleteMessage, openStream, publishMessage, publishConversationMessage, publishMessageReaction, type StreamFrame } from "./bff-client";
 import { PlatformSessionAccessMode, WebMessageType, type PulsePublishRequest } from "@client-kit/contracts";
 import { BffError, SessionEndedError, TransportError } from "@client-kit/platform/transport";
 
@@ -33,6 +33,20 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+it("preserves exact human identities in channel, reply, edit and DM publication", async () => {
+  const fetcher=vi.fn().mockImplementation(async()=>new Response(JSON.stringify({eventId:"event",operationId:"operation"}),{status:200,headers:{"Content-Type":"application/json"}}));
+  vi.stubGlobal("fetch",fetcher);
+  const mentionPubkeys=["b".repeat(64)], parentEventId="a".repeat(64);
+  for (const intent of [{mentionPubkeys},{mentionPubkeys,parentEventId},{mentionPubkeys,editEventId:parentEventId}]) {
+    await publishMessage("workspace","@Sam",[],"intent",[],intent);
+    expect(JSON.parse(fetcher.mock.lastCall![1].body)).toMatchObject(intent);
+    expect(new Headers(fetcher.mock.lastCall![1].headers).get("Idempotency-Key")).toBe("intent");
+  }
+  await publishConversationMessage("conversation","@Sam",[],"intent",undefined,parentEventId,mentionPubkeys);
+  expect(String(fetcher.mock.lastCall![0])).toContain("/conversations/conversation/messages");
+  expect(JSON.parse(fetcher.mock.lastCall![1].body)).toMatchObject({mentionPubkeys,parentEventId,mentionInstallationIds:[]});
 });
 
 it("freezes the deletion intent across calls without storing body or inventing a new event", async () => {

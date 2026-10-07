@@ -12,7 +12,7 @@ import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageC
 import { MemberHover, MemberProfilePanel } from "@client-kit/platform/react/members";
 import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
 import { bff, deleteMessage, openStream, publishMessage, type BuzzEvent } from "@/platform/bff-client";
-import { Composer } from "./ChannelPane";
+import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { t } from "@/shared/i18n";
@@ -146,10 +146,11 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
     renderContent={(message, preview) => <MessageContent workspaceId={workspaceId} content={preview && message.content.length > 200 ? `${message.content.slice(0, 200)}...` : message.content}
       mediaTags={message.tags} mentions={preview ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} onOpenMessageLink={onOpenMessageLink} />}
     renderComposer={(parentId, close) => <Composer key={parentId ?? "post"} workspaceId={workspaceId} surface="forum" disabled={!isMember || archived || metadataPending || Boolean(error)}
+      mentionPeople={mentionPeopleFromMembers(members.isSuccess && !members.isError ? members.data ?? [] : [])}
       draftIdentity={myPrincipalId} draftKey={`forum:${workspaceId}:${parentId ?? "post"}`} autoSendDraftKey={autoSendDraftKey} placeholder={parentId ? labels.replyPlaceholder : labels.postPlaceholder} onCancel={parentId ? undefined : close}
-      onOpenMessageLink={onOpenMessageLink} onPublish={async (content, attachments, idempotencyKey, installationIds) => {
+      onOpenMessageLink={onOpenMessageLink} onPublish={async (content, attachments, idempotencyKey, installationIds, mentionPubkeys) => {
         const receipt = await publishMessage(workspaceId, content, attachments, idempotencyKey, installationIds,
-          { messageType: parentId ? WebMessageType.ForumComment : WebMessageType.ForumPost, ...(parentId ? { parentEventId: parentId } : {}) });
+          { messageType: parentId ? WebMessageType.ForumComment : WebMessageType.ForumPost, mentionPubkeys, ...(parentId ? { parentEventId: parentId } : {}) });
         if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Forum publication has no confirmed receipt.");
         void queryClient.invalidateQueries({ queryKey: key });
         if (mounted.current && !parentId) close();

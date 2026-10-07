@@ -1,4 +1,4 @@
-import { PeopleMentionAutocomplete, detectPrefixQuery, selectedMentionLabel, extractMentionPubkeys, AmbiguousMentionError, type MentionSuggestion } from "@client-kit/platform/react/pulse";
+import { PeopleMentionAutocomplete, detectPrefixQuery, selectedMentionLabel, extractMentionPubkeys, mentionMatchCandidates, mentionOccurrences, AmbiguousMentionError, type MentionSuggestion } from "@client-kit/platform/react/pulse";
 // 频道（SS-WEB-RELAY、SS-WEB-01）：消息、附件、已读位置。
 //
 // 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
@@ -68,6 +68,11 @@ import { useComposerAttachmentSpoilers } from "@client-kit/platform/react/compos
 import type { ImetaMedia } from "@client-kit/platform/react/composer/features/messages/lib/imetaMediaMarkdown";
 
 const toIso = (unix: number) => new Date(unix * 1_000).toISOString();
+
+export function mentionPeopleFromMembers(members: readonly (WorkspaceMemberView | ConversationParticipant)[]): MentionSuggestion[] {
+  return members.filter(member => !("state" in member) || member.state === "ACTIVE")
+    .flatMap(member => member.pubkeys.map(pubkey => ({pubkey, displayName: member.displayName})));
+}
 
 
 /** 页面是否在前台。已读只在用户真的看得见时推进。 */
@@ -159,6 +164,8 @@ export function ChannelPane({
     },
   });
   const userState = useQuery(platformQueries.userState);
+  const mentionPeople = useMemo(() => mentionPeopleFromMembers(members.isSuccess && !members.isError ? members.data ?? [] : []),
+    [members.data, members.isSuccess, members.isError]);
   const conversationInvalidation = useConversationInvalidation();
   useEffect(() => {
     if (conversation) void queryClient.invalidateQueries({ queryKey: platformQueries.userState.queryKey });
@@ -411,6 +418,7 @@ export function ChannelPane({
       /> : null}
       {restoreEditEventId && live && !editTarget && !events.some((event) => event.id === restoreEditEventId) ? <p role="status">{t("platform.linkMessageOutsideHistory")}</p> : null}
       {!denied && editTarget ? <Composer key={`edit:${editTarget.id}`} workspaceId={conversation ? undefined : workspaceId}
+        mentionPeople={mentionPeople}
         editTarget={editTarget} onCancelEdit={() => setEditTarget(null)} onConfirmed={() => setEditTarget(null)} draftIdentity={myPrincipalId}
         draftKey={`edit:${workspaceId}:${editTarget.id}`} draftChannelId={workspaceId}
         autoSendDraftKey={autoSendDraftKey}
@@ -418,20 +426,21 @@ export function ChannelPane({
         onSendingChange={setComposerBusy} onOpenMessageLink={onOpenMessageLink}
         onUpload={conversation ? (file) => uploadConversationMedia(conversation.id, file) : undefined}
         onMediaUrl={conversation ? (sha) => mediaUrl(conversation.id, sha, conversation.id) : undefined}
-        onPublish={async (content, attachments, key, mentions) => {
-          const receipt = await (conversation ? publishConversationMessage(conversation.id, content, attachments, key, editTarget.id)
-            : publishMessage(workspaceId, content, attachments, key, mentions, {editEventId: editTarget.id}));
+        onPublish={async (content, attachments, key, mentions, mentionPubkeys) => {
+          const receipt = await (conversation ? publishConversationMessage(conversation.id, content, attachments, key, editTarget.id, undefined, mentionPubkeys)
+            : publishMessage(workspaceId, content, attachments, key, mentions, {editEventId: editTarget.id, mentionPubkeys}));
           if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Message edit has no confirmed receipt.");
           return receipt;
         }} /> : null}
       <div hidden={editTarget !== null}>
       {denied ? null : conversation
-        ? <Composer disabled={conversation.state !== "ACTIVE"} onSendingChange={onMessageSendingChange}
+        ? <Composer disabled={conversation.state !== "ACTIVE"} onSendingChange={onMessageSendingChange} mentionPeople={mentionPeople}
             draftIdentity={myPrincipalId} draftKey={conversation.id} autoSendDraftKey={autoSendDraftKey} onOpenMessageLink={onOpenMessageLink}
-            onPublish={(content, attachments, key) => publishConversationMessage(conversation.id, content, attachments, key)}
+            onPublish={(content, attachments, key, _installations, mentionPubkeys) => publishConversationMessage(conversation.id, content, attachments, key, undefined, undefined, mentionPubkeys)}
             onMediaUrl={(sha256) => mediaUrl(conversation.id, sha256, conversation.id)}
             onUpload={(file) => uploadConversationMedia(conversation.id, file)} />
         : <>{archived ? <p role="status">{t("channel.archived")}</p> : null}<Composer
+            mentionPeople={mentionPeople}
             disabled={archived || metadataPending}
             onSendingChange={onMessageSendingChange}
             workspaceId={workspaceId} draftIdentity={myPrincipalId} draftKey={workspaceId}
@@ -726,7 +735,8 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
     setMentionPickerOpen(false);
     setMentionSelectedIndex(0);
     pasteBinding.clearMentionIntents();
-    humanBindings.current.clear();setHumanNames([]);setHumanQuery(null);
+    humanBindings.current = new Map((saved?.mentionRefs ?? []).map(ref => [ref.displayName, ref.pubkey]));
+    setHumanNames([...humanBindings.current.keys()]);setHumanQuery(null);
     setSending(false);
     setUploading(0);
     setProblem(null);
@@ -749,6 +759,7 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
       pendingImeta: attachments.map(asBlob),
       spoileredAttachmentUrls: [...attachmentActions.spoileredAttachmentUrls], ...(intent.current ? { sendIntent: intent.current } : {}),
       mentionInstallationIds,
+      mentionRefs: [...humanBindings.current].map(([displayName, pubkey]) => ({displayName, pubkey})),
     });
   }, [draftKey, workspaceId, draftChannelId, owner, loadedDraftOwner, mentionInstallationIds, attachmentActions.spoileredAttachmentUrls]);
   useEffect(() => { persistDraft(richText.getMarkdown(), pending); }, [draftRevision, pending, persistDraft, richText.getMarkdown]);
@@ -770,11 +781,19 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
     // 确认后才清空——发送失败时它们都还在。
     let humanMentionPubkeys:string[]=[];
     try {
+      const memberCandidates=mentionPeopleRef.current?.map(person=>({...person,isMember:true}))??[];
       humanMentionPubkeys=extractMentionPubkeys({text:content,selectedMentions:humanBindings.current,
-        memberCandidates:mentionPeopleRef.current?.map(person=>({...person,isMember:true}))??[]});
+        memberCandidates});
       if(humanMentionPubkeys.some(pubkey=>!mentionPeopleRef.current?.some(person=>person.pubkey.toLowerCase()===pubkey)))throw new Error(t("platform.loadFailed"));
+      // Freeze typed labels as well as picker selections into the original draft
+      // references before publication. Renaming a member must not retarget an
+      // UNKNOWN retry; keep the original recipient order in its signature.
+      const occurrences=mentionOccurrences(content,mentionMatchCandidates({selectedMentions:humanBindings.current,memberCandidates}));
+      for(const pubkey of humanMentionPubkeys) for(const {candidates} of occurrences) {
+        for(const candidate of candidates) if(candidate.pubkey===pubkey) humanBindings.current.set(candidate.displayName,pubkey);
+      }
     } catch(error) {setProblem(error instanceof AmbiguousMentionError?t("pulse.mentionAmbiguous",{name:error.displayName}):t("platform.loadFailed"));return;}
-    const signature = JSON.stringify([
+    const messagePayload = [
       content,
       attachments.map((a) => {
         const metadata = { displayLabel: a.displayLabel, dim: a.dim, blurhash: a.blurhash, thumb: a.thumb, duration: a.duration, image: a.image };
@@ -783,14 +802,24 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
         return [a.sha256, a.filename, a.spoiler, ...(Object.values(metadata).some((value) => value !== undefined) ? [metadata] : [])];
       }),
       mentionInstallationIds,
+    ];
+    const signature = JSON.stringify([
+      ...messagePayload,
       ...(humanMentionPubkeys.length?[humanMentionPubkeys]:[]),
     ]);
-    if (editTarget && intent.current && intent.current.signature !== signature) {
-      // An earlier edit may already exist on the Relay. Changing its payload
-      // cannot silently replace that unresolved intent with a fresh command.
-      setProblemNeutral(true);
-      setProblem(t("platform.sendUnknown", {operation: ""}));
-      return;
+    if (intent.current && intent.current.signature !== signature) {
+      let unchangedMessage = true;
+      try {
+        const previous: unknown = JSON.parse(intent.current.signature);
+        unchangedMessage = !Array.isArray(previous) || JSON.stringify(previous.slice(0, messagePayload.length)) === JSON.stringify(messagePayload);
+      } catch { /* An unreadable unresolved intent is not permission to repeat it. */ }
+      if (editTarget || unchangedMessage) {
+        // A legacy UNKNOWN draft may lack mentionRefs. Directory refresh alone
+        // cannot create a new command or silently change its human recipients.
+        setProblemNeutral(true);
+        setProblem(t("platform.sendUnknown", {operation: ""}));
+        return;
+      }
     }
     if (intent.current?.signature !== signature) {
       intent.current = { key: newIntentKey(), signature };
@@ -800,7 +829,7 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
     const publish = onPublish
       ? onPublish(content, attachments, key, mentionInstallationIds, humanMentionPubkeys)
       : workspaceId
-        ? publishMessage(workspaceId, content, attachments, key, mentionInstallationIds).then((receipt) => {
+        ? publishMessage(workspaceId, content, attachments, key, mentionInstallationIds, {mentionPubkeys: humanMentionPubkeys}).then((receipt) => {
             if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Message has no confirmed receipt.");
             return receipt;
           })

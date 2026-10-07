@@ -149,3 +149,48 @@ discovery/PAT 路径。该轻量候选没有 `xml2js`，独立动态导入确认
 `git diff --check` 退出 0。Cells/Core/OIDC 仍为隔离 HTTP fixture，不是线上空目录删除
 验收；没有 full、浏览器截图、生产绑定投递、部署、安装包或真实跨服务同步验收。
 本批未修改已有未提交的 `file-storage/deploy/compose.yaml`。
+
+## 空集合最后一次来源状态复核（2026-10-07）
+
+权威与影响面：沿 `.design/13` §4.4/§7 查到既有
+`knowledge/internal/application/service/datasource_file_storage.go::fileStorageConnector.retire`
+已消费完整来源列表、退休 checkpoint、原生删除及其精确终态，不能把已有执行链说成缺失。
+本批确认的遗漏在 `service-list.mjs::nativeListing` 的每目录末尾复核：旧实现只比较
+path 和 ChildrenCount；最后第二轮遍历末尾，即使原生目录已报告为草稿、回收对象、
+LEAF 或丢失原有工作区证据，只要 path/count 不变仍产生成功的空集合。
+该集合会进入原来源 SOURCE 回执，成为接收方退休判断的错误前提。
+
+固定 Cells 上游 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`common/proto/rest/cellsapi-rest-v2.pb.go::Node`、`Node.GetIsRecycled`、
+`Node.GetIsDraft`、`Node.GetContextWorkspace` 本轮经 `git grep <commit>` 核验；
+这些是原生节点生命周期与工作区字段，不另造删除或撤权状态。
+直接补齐原末尾复核的 Type、ContextWorkspace UUID 和三项生命周期条件；原先正常
+省略 false 标志的空目录不受影响。未添加平台实体、回执类型、配置、数据库迁移或
+客户端页面；成功路径、前后 PEP、两次遍历和原生索引删除权威均保持。
+
+副作用与异常：已经观察到来源状态变化时拒绝并且不提交 SOURCE 完成回执，不把
+“不再是合格来源目录”解释为“成功读取零文件”，也不返回成功/失败的删除终态。
+未知结果仍进入既有读取/导入失败与对账路径，不在这里重发删除或清空接收方状态。
+这不是原子快照、不能证明读取后永不发生变化；原生并发变化及跨组件事务限制不变。
+Web/Desktop/Mobile 及原生 UI 均未修改。未增加新的持久状态或收敛机制。
+
+实现后在原 `kailo-agent-receipt-xvkujx`（4 CPU / 8 GiB，OOM false）复用上述轻量
+候选，只同步两个变更输入，无安装、全树复制或 Go/Rust 编译。执行前查过构建进程、
+CPU/内存压力，未发现活动构建、宿主约 22 GiB 可用。实际运行同一来源读取命令：
+
+```sh
+node --test --test-name-pattern='SERVICE|source bytes' \
+  file-storage/adapter/test/query-revision.test.mjs
+```
+
+**43 passed / 0 failed，退出 0**。新增五个真实 HTTP 消费者反例在两次列举完成后、
+第 4 次 root 读取才改变状态，全部 503、零来源完成回执；正常空目录仍通过。
+只在私有候选撤掉本批末尾状态检查，五个反例均错误返回 200，实际
+**37 passed / 6 failed，退出 1**（含父用例失败）。还原正式字节并对源码/测试分别
+`cmp`，均退出 0；重跑 **43/43，退出 0**。
+原日志位于同一 `read-receipts-20261007` 目录：`cells-final-root-state.log`、
+`cells-final-root-state-mutation.log`、`cells-final-root-state-restored.log`。
+
+这修复的是来源列表的可核验性遗漏，不声称已经验收“真实 Cells 删除后线上索引不可检索”。
+原 Connector 的退休/删除链仅做源码追踪，本轮未编译 Go，未运行真实跨服务删除、
+Wiki 撤回终态、浏览器、full 或部署；上一节完整 HTTP 套件缺 xml2js 的失败记录保留。

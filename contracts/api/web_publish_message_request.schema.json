@@ -16,6 +16,11 @@
       "type": "array",
       "items": {"$ref": "web_message_attachment.schema.json"}
     },
+    "mentionPubkeys": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "原 Buzz HUMAN 提及的精确公钥；缺省为空。BFF 核对当前 Tenant、消息目的地成员及 ACTIVE 身份，排序去重冻结在原发布幂等记录；不接受 Agent 公钥绕过 Installation 准入。"
+    },
     "mentionInstallationIds": {
       "type": "array",
       "items": {"type": "string", "format": "uuid"},

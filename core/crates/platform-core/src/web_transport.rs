@@ -282,6 +282,7 @@ fn valid_deletion_request(request: &PublishRequest) -> bool {
             && request.edit_event_id.is_none()
             && request.content.is_empty()
             && request.attachments.as_ref().is_none_or(Vec::is_empty)
+            && request.mention_pubkeys.as_ref().is_none_or(Vec::is_empty)
             && request
                 .mention_installation_ids
                 .as_ref()
@@ -481,6 +482,62 @@ fn mention_targets(ids: Option<&[String]>) -> Option<Vec<Uuid>> {
 
 fn mention_intent_matches(frozen: &[Uuid], requested: &[Uuid]) -> bool {
     frozen == requested
+}
+
+fn human_mention_targets(keys: Option<&[String]>) -> Option<Vec<String>> {
+    let mut keys = keys
+        .unwrap_or_default()
+        .iter()
+        .map(|key| {
+            nostr::PublicKey::from_hex(key)
+                .ok()
+                .filter(|parsed| parsed.to_hex() == *key)
+                .map(|parsed| parsed.to_hex())
+        })
+        .collect::<Option<Vec<_>>>()?;
+    keys.sort_unstable();
+    keys.dedup();
+    Some(keys)
+}
+
+/// HUMAN identity references must still belong to the admitted destination.
+/// Agent keys use resolve_mentions and cannot enter through this field.
+async fn resolve_human_mentions<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+    tenant: Uuid,
+    target: MessageTarget,
+    keys: &[String],
+) -> Result<(), Response> {
+    if keys.is_empty() {
+        return Ok(());
+    }
+    let (workspace, conversation) = match target {
+        MessageTarget::Workspace(id) => (Some(id), None),
+        MessageTarget::Conversation(id) => (None, Some(id)),
+        MessageTarget::Pulse(_) => return Err(StatusCode::BAD_REQUEST.into_response()),
+    };
+    let found: Vec<String> = sqlx::query_scalar(
+        "select b.pubkey from identity.buzz_identity_binding b
+         join identity.principal p on p.id=b.principal_id and p.tenant_id=b.tenant_id
+           and p.kind='HUMAN' and p.status='ACTIVE'
+         join identity.tenant_membership tm on tm.tenant_principal_id=p.id and tm.tenant_id=p.tenant_id
+           and tm.state='ACTIVE'
+         join identity.human_identity h on h.id=tm.human_identity_id and h.status='ACTIVE'
+         where b.tenant_id=$1 and b.kind='HUMAN' and b.state='ACTIVE' and b.pubkey=any($2)
+           and (($3::uuid is not null and exists(select 1 from identity.workspace_membership wm
+             join identity.workspace w on w.id=wm.workspace_id and w.tenant_id=b.tenant_id and w.state='ACTIVE'
+             where wm.workspace_id=$3 and wm.tenant_principal_id=p.id and wm.state='ACTIVE'))
+           or ($4::uuid is not null and exists(select 1 from projection.conversation_buzz_binding c
+             where c.id=$4 and c.tenant_id=b.tenant_id and c.state='ACTIVE'
+               and p.id=any(c.participant_principal_ids)
+               and c.projected_keys @> jsonb_build_array(jsonb_build_array(p.id::text,b.pubkey)))))
+         order by b.pubkey",
+    ).bind(tenant).bind(keys).bind(workspace).bind(conversation)
+        .fetch_all(executor).await.map_err(crate::service_api::unavailable)?;
+    if found != keys {
+        return Err(AdmissionFailure::Denied.into_response());
+    }
+    Ok(())
 }
 
 fn publish_scope_matches(frozen: &[Option<Uuid>], requested: Uuid) -> bool {
@@ -1392,12 +1449,20 @@ async fn publish(
     };
 
     // 同一个键已经发过：不再发，回答那次的结论。只有确定未送达才允许重新发送。
+    let human_mentions = match human_mention_targets(match &publication {
+        Publication::Message(request) => request.mention_pubkeys.as_deref(),
+        _ => None,
+    }) {
+        Some(keys) => keys,
+        None => return StatusCode::BAD_REQUEST.into_response(),
+    };
     #[derive(sqlx::FromRow)]
     struct PreviousPublish {
         operation_id: Uuid,
         event_id: String,
         result: Option<String>,
         mention_installation_ids: Vec<Uuid>,
+        mention_pubkeys: Vec<String>,
         target_ids: Vec<Option<Uuid>>,
         message_kind: i32,
         parent_event_id: Option<String>,
@@ -1405,7 +1470,7 @@ async fn publish(
         delete_event_id: Option<String>,
     }
     let previous = match sqlx::query_as::<_, PreviousPublish>(
-        r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id,
+        r#"select a.operation_id, a.event_id, a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id,
                   array(select r.target_id from audit.audit_event r
                     where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                       and r.action_key=$3 and r.target_type=$4
@@ -1439,6 +1504,7 @@ async fn publish(
     if let Some(p) = &previous {
         if !publish_scope_matches(&p.target_ids, target.id())
             || !mention_intent_matches(&p.mention_installation_ids, &mention_ids)
+            || p.mention_pubkeys != human_mentions
             || p.message_kind != requested_kind
             || p.parent_event_id != parent_event_id
             || p.edit_event_id != edit_event_id
@@ -1489,10 +1555,13 @@ async fn publish(
             Err(StatusCode::BAD_REQUEST.into_response())
         }
     };
-    let mentions = match mentions_result {
+    let mut mentions = match mentions_result {
         Ok(keys) => keys,
         Err(response) => return response,
     };
+    mentions.extend(human_mentions.iter().cloned());
+    mentions.sort_unstable();
+    mentions.dedup();
 
     let keys = match actor_keys(&state, &ctx).await {
         Ok(k) => k,
@@ -1639,6 +1708,11 @@ async fn publish(
     }
 
     // 预算在落 DISPATCH 之前取：取不到就既不落账也不发送，请求不打到 Relay
+    if let Err(response) =
+        resolve_human_mentions(&state.pool, ctx.tenant_id, target, &human_mentions).await
+    {
+        return response;
+    }
     let admitted = match client.admit() {
         Ok(a) => a,
         Err(e) => return relay_error_response(&e, None),
@@ -1766,8 +1840,8 @@ async fn publish(
             .rows_affected(),
             None => sqlx::query(
                 "insert into admission.publish_attempt
-                     (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id, edit_event_id, delete_event_id)
-                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9) on conflict do nothing"
+                     (tenant_principal_id, idempotency_key, operation_id, event_id, mention_installation_ids, message_kind, parent_event_id, edit_event_id, delete_event_id, mention_pubkeys)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) on conflict do nothing"
             )
             .bind(ctx.tenant_principal_id)
             .bind(idempotency_key)
@@ -1778,6 +1852,7 @@ async fn publish(
             .bind(&parent_event_id)
             .bind(&edit_event_id)
             .bind(&delete_event_id)
+            .bind(&human_mentions)
             .execute(&mut *tx)
             .await?
             .rows_affected(),
@@ -1787,6 +1862,7 @@ async fn publish(
             #[derive(sqlx::FromRow)]
             struct ConcurrentPublish {
                 mention_installation_ids: Vec<Uuid>,
+                mention_pubkeys: Vec<String>,
                 message_kind: i32,
                 parent_event_id: Option<String>,
                 edit_event_id: Option<String>,
@@ -1794,7 +1870,7 @@ async fn publish(
                 target_ids: Vec<Option<Uuid>>,
             }
             let frozen: ConcurrentPublish = sqlx::query_as(
-                "select a.mention_installation_ids, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id,
+                "select a.mention_installation_ids, a.mention_pubkeys, a.message_kind, a.parent_event_id, a.edit_event_id, a.delete_event_id,
                     array(select r.target_id from audit.audit_event r
                       where r.operation_id=a.operation_id and r.event_type='DISPATCH'
                         and r.action_key=$3 and r.target_type=$4
@@ -1806,6 +1882,7 @@ async fn publish(
                 .fetch_one(&mut *tx).await?;
             return Ok(if publish_scope_matches(&frozen.target_ids, target.id())
                 && mention_intent_matches(&frozen.mention_installation_ids, &mention_ids)
+                && frozen.mention_pubkeys == human_mentions
                 && frozen.message_kind == requested_kind && frozen.parent_event_id == parent_event_id
                 && frozen.edit_event_id == edit_event_id
                 && frozen.delete_event_id == delete_event_id
@@ -3174,6 +3251,71 @@ mod tests {
         let before = member_profile_identity(&mut *tx, workspace, principal, &pubkey)
             .await
             .unwrap();
+        resolve_human_mentions(
+            &mut *tx,
+            tenant,
+            MessageTarget::Workspace(workspace),
+            std::slice::from_ref(&pubkey),
+        )
+        .await
+        .unwrap();
+        for (scope_tenant, target, keys) in [
+            (
+                Uuid::new_v4(),
+                MessageTarget::Workspace(workspace),
+                vec![pubkey.clone()],
+            ),
+            (
+                tenant,
+                MessageTarget::Workspace(Uuid::new_v4()),
+                vec![pubkey.clone()],
+            ),
+            (
+                tenant,
+                MessageTarget::Workspace(workspace),
+                vec![nostr::Keys::generate().public_key().to_hex()],
+            ),
+        ] {
+            assert_eq!(
+                resolve_human_mentions(&mut *tx, scope_tenant, target, &keys)
+                    .await
+                    .unwrap_err()
+                    .status(),
+                StatusCode::FORBIDDEN
+            );
+        }
+        let conversation = Uuid::new_v4();
+        sqlx::query("insert into projection.conversation_buzz_binding(id,tenant_id,channel_id,participant_principal_ids,creator_principal_id,creator_pubkey,operation_id,state,projected_keys) values($1,$2,$3,$4,$5,$6,$7,'ACTIVE',$8)")
+            .bind(conversation).bind(tenant).bind(Uuid::new_v4()).bind(vec![principal,Uuid::new_v4()])
+            .bind(principal).bind(&pubkey).bind(Uuid::new_v4()).bind(serde_json::json!([[principal.to_string(),pubkey]]))
+            .execute(&mut *tx).await.unwrap();
+        resolve_human_mentions(
+            &mut *tx,
+            tenant,
+            MessageTarget::Conversation(conversation),
+            std::slice::from_ref(&pubkey),
+        )
+        .await
+        .unwrap();
+        sqlx::query(
+            "update projection.conversation_buzz_binding set projected_keys='[]' where id=$1",
+        )
+        .bind(conversation)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(
+            resolve_human_mentions(
+                &mut *tx,
+                tenant,
+                MessageTarget::Conversation(conversation),
+                std::slice::from_ref(&pubkey)
+            )
+            .await
+            .unwrap_err()
+            .status(),
+            StatusCode::FORBIDDEN
+        );
         for (scope, person, key) in [
             (Uuid::new_v4(), principal, pubkey.clone()),
             (workspace, Uuid::new_v4(), pubkey.clone()),
@@ -3220,6 +3362,10 @@ mod tests {
                 "update identity.principal set status='DISABLED' where id=$1",
                 "update identity.principal set status='ACTIVE' where id=$1",
             ),
+            (
+                "update identity.principal set kind='AGENT' where id=$1",
+                "update identity.principal set kind='HUMAN' where id=$1",
+            ),
         ] {
             sqlx::query(revoke)
                 .bind(principal)
@@ -3233,6 +3379,7 @@ mod tests {
                     .status(),
                 StatusCode::FORBIDDEN
             );
+            assert_eq!(resolve_human_mentions(&mut *tx, tenant, MessageTarget::Workspace(workspace), std::slice::from_ref(&pubkey)).await.unwrap_err().status(), StatusCode::FORBIDDEN);
             sqlx::query(restore)
                 .bind(principal)
                 .execute(&mut *tx)
@@ -3249,6 +3396,18 @@ mod tests {
                 .await
                 .unwrap_err()
                 .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            resolve_human_mentions(
+                &mut *tx,
+                tenant,
+                MessageTarget::Workspace(workspace),
+                std::slice::from_ref(&pubkey)
+            )
+            .await
+            .unwrap_err()
+            .status(),
             StatusCode::FORBIDDEN
         );
         tx.rollback().await.unwrap();
@@ -3894,6 +4053,26 @@ mod tests {
         assert!(!mention_intent_matches(&[first], &[second]));
         assert!(!mention_intent_matches(&[first], &[]));
         assert!(!mention_intent_matches(&[], &[first]));
+    }
+
+    #[test]
+    fn human_mentions_are_canonical_exact_keys_not_arbitrary_tags() {
+        let first = nostr::Keys::generate().public_key().to_hex();
+        let second = nostr::Keys::generate().public_key().to_hex();
+        let mut expected = vec![first.clone(), second.clone()];
+        expected.sort();
+        assert_eq!(
+            human_mention_targets(Some(&[second, first.clone(), first.clone()])),
+            Some(expected)
+        );
+        assert_eq!(human_mention_targets(None), Some(vec![]));
+        assert!(human_mention_targets(Some(&["not-a-key".into()])).is_none());
+        assert!(human_mention_targets(Some(&[first.to_uppercase()])).is_none());
+        let request: PublishRequest = serde_json::from_value(serde_json::json!({
+            "content":"", "deleteEventId":"a".repeat(64), "mentionPubkeys":[first]
+        }))
+        .unwrap();
+        assert!(!valid_deletion_request(&request));
     }
 
     #[test]

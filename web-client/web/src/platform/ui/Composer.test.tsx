@@ -461,7 +461,7 @@ it.each(["identity", "channel"])("does not transfer an old draft, attachments, m
   expect(button(host, "platform.send").disabled).toBe(true);
   await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!, "new private draft");
   await click(button(host, "platform.send"));
-  expect(state.publish.mock.calls[1]).toEqual([nextWorkspace, "new private draft", [], expect.any(String), []]);
+  expect(state.publish.mock.calls[1]).toEqual([nextWorkspace, "new private draft", [], expect.any(String), [], {mentionPubkeys: []}]);
   expect(state.publish.mock.calls[1][3]).not.toBe(oldKey);
   await rerender(<Composer workspaceId="workspace-a" draftIdentity={originalIdentity} draftKey="workspace-a" onUpload={upload} />);
   expect(host.querySelector('[data-testid="message-input"]')?.textContent).toBe("old private draft");
@@ -575,6 +575,7 @@ it("reuses the Buzz picker to send all selected Agents once in canonical order a
     [],
     expect.any(String),
     ["agent-a", "agent-b"],
+    {mentionPubkeys: []},
   );
   expect(host.querySelectorAll('[aria-pressed="true"]')).toHaveLength(0);
 });

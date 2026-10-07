@@ -5848,6 +5848,11 @@ pub struct WebPublishMessageRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mention_installation_ids: Option<Vec<String>>,
 
+    /// 原 Buzz HUMAN 提及的精确公钥；缺省为空。BFF 核对当前 Tenant、消息目的地成员及 ACTIVE 身份，排序去重冻结在原发布幂等记录；不接受 Agent
+    /// 公钥绕过 Installation 准入。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mention_pubkeys: Option<Vec<String>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message_type: Option<WebMessageType>,
 

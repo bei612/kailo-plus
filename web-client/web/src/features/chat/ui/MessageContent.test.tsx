@@ -1,11 +1,14 @@
+// @vitest-environment jsdom
 import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
-import type { ReactNode } from "react";
+import { act, type ReactNode } from "react";
+import { createRoot } from "react-dom/client";
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import { createBffClient } from "@client-kit/platform/client";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 const client = createBffClient({ send: async () => { throw new Error("Rendering performs no BFF writes"); } });
-const renderToStaticMarkup = (ui: ReactNode) => renderMarkup(<PlatformProvider client={client} locale="en">{ui}</PlatformProvider>);
+const renderToStaticMarkup = (ui: ReactNode) => renderMarkup(<PlatformProvider client={client} locale="en"><TooltipProvider>{ui}</TooltipProvider></PlatformProvider>);
 
 const PERSON = "11".repeat(32);
 const AGENT = "22".repeat(32);
@@ -16,6 +19,23 @@ const WORKSPACE = "00000000-0000-4000-8000-000000000001";
 const SHA = "ab".repeat(32);
 
 describe("MessageContent", () => {
+  it("copies the fenced message's actual code through the shared original control", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const host = document.createElement("div"); document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<PlatformProvider client={client} locale="en"><TooltipProvider><MessageContent content={"```\nfirst\nsecond\n```"} /></TooltipProvider></PlatformProvider>));
+      const button = host.querySelector<HTMLButtonElement>('button[aria-label="Copy code block"]');
+      expect(button).not.toBeNull();
+      await act(async () => button!.click());
+      expect(writeText).toHaveBeenCalledExactlyOnceWith("first\nsecond");
+      expect(host.querySelector('[data-code-block] pre')).not.toBeNull();
+    } finally {
+      await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals();
+    }
+  });
   it("renders original NIP-30 emoji through the scoped BFF blob route, never its remote origin", () => {
     const url = `https://relay.example.com/media/${SHA}.png`;
     const html = renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE} content=":party:" mediaTags={[["emoji", "party", url]]} />);

@@ -137,3 +137,23 @@
 最终 `definition-restored-final.log` 运行 `tsc --noEmit -p tsconfig.test.json` 与 `vitest run test/workflow-definition.test.tsx test/workflow-run-history.test.tsx test/workflow-actions.test.tsx test/workflow-template.test.tsx`，全部退出 0，62 passed（9 Definition + 8 历史 + 38 动作 + 7 模板）。新增场景实走原共享详情、表单/YAML、现有分页和 fresh 读取，覆盖中英原 JSON 完整样式/内容、HTML 不执行、pin 非列表首项、缺 pin、不固定草稿、分页找到 pin、撤权/版本变化/丢失拒绝。`workflows.definition` 同源词条由主线集中生成 Dart；没有手写第二语言源。
 
 本批没有浏览器截图、Windows/Mobile、实际 Temporal 发布或完整门禁验收；源码/局部消费者验证不等于所有页面已恢复或已部署。主线统一提交、词条生成及两宿主集中验证另记。
+
+## 原表单节点画布与检查器恢复（2026-10-07）
+
+1. 权威：REQ-24、DD-74/75、`.design/06-Temporal任务工作台.md` §9.1。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/workflows/ui/WorkflowFormBuilder.tsx::WorkflowNode/WorkflowFormBuilder/InspectorTypeMenu` 及 `desktop/src/features/workflows/ui/WorkflowStepCard.tsx::WorkflowStepCard` 是本批节点、箭头、原位添加菜单、右侧检查器、窄屏 FocusScope、动画、bare/showHeader/disabled 的复用来源。上游完整 workflows 目录 67 文件仍作为差异范围，不以本批局部变更替代全量完成判断。
+2. 影响：共享 `workflow-form-canvas.tsx::WorkflowFormCanvas` 只持有节点选择；真实 steps 仍由 `agents.tsx::AutomationAction` 持有，经同一 formContent、YAML、合同校验及冻结 ActionCommand 发布。恢复选择/修改、指定位置插入、删除后相邻节点选择、动作切换清除无关字段、ID 改名继续编辑的实际消费链。Web/Desktop 共源，不改契约、Core、Worker、Temporal 或 Mobile。已确认 UNKNOWN 仍沿原锁定/幂等流程，不可关闭冒充终态。实际检查另发现 footer Close 绕过已有 requestClose，现与顶部 X 使用同一个原弃稿确认。
+3. 副作用：查看旧 POST_MESSAGE 虚拟节点不写入步骤、不改变原格式；只有真实编辑/添加后才按既有格式提交，新消息序列使用 formatVersion 3。审批仍只能在首个效果前且消费授权可用策略；反应/主题保持当前运行时终端约束。未闭合 send_dm、call_webhook、步骤条件/timeout 不出现伪执行入口；没有恢复 Buzz 执行引擎或第二工作流权威。
+4. 边界：空步骤和末尾 delay 可以继续编辑，但原发布校验拒绝不完整序列；删除选中节点依次选前项、后项、trigger。切换动作只保留 id/name 与目标动作字段；重命名不丢失检查器，窄屏 Escape 关闭检查器而不提交。草稿 footer Close 必须 Keep editing 保留或明确 Discard 后清理；执行不确定期间不提供该丢弃路径。AgentTurn 保持既有 Kailo 授权扩展编辑器。节点富摘要/emoji、原 URL pane 深链及任意七动作和完整轨迹仍未全量恢复，不声明 100%。
+
+分类：原节点/箭头/菜单/检查器 class、布局与动画为共享迁移；既有 AutomationVersion/policy/resultTarget 与可执行动作边界为已授权治理改造；节点详情字段复用原 StepCard 结构，不再沿旧平铺步骤增加替代按钮。上述尚未恢复项不从交付目标删除。
+
+FocusScope 是原检查器实际调用依赖。上游 `desktop/package.json` 为 `^1.1.8`，当前锁及原 Dialog 已固定 `1.2.0`；共享包显式 peer/dev 声明 `1.2.0`，pnpm 只补 importer，复用已有完整 integrity/snapshot。Web lock 只更新 `node_modules/@client-kit/platform.peerDependencies`，不增加 Web 根包未声明的 direct dependency。
+
+验证复用原 `message-edit.AGX058/apps`，容器 `kailo-agent-receipt-xvkujx` 实查 4 CPU/8 GiB；末轮开始无其他编译、宿主 available 32 GiB、Data 3.3 GiB。不新建源码快照、不下载、不编 Rust/镜像。日志均位于 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`：
+
+- `canvas-lock.log` 的离线 metadata 路径未命中；`canvas-lock-cached.log`/`canvas-lock-current.log` 又因无关 virtua metadata 失败。没有联网绕过。按已有锁中的实际 FocusScope snapshot 补 importer 后，`canvas-lock-frozen.log` 的 `pnpm install --offline --frozen-lockfile --ignore-scripts --filter @client-kit/platform --store-dir /cache/pnpm-memory-read` 退出 0，3 reused/0 downloaded。SDK node_modules 实为指向既有 profile-settings 目录的符号链接，安装过程中发现后通知主线协调，未改源码目录。`canvas-web-lock-dry-run.log` 的 `npm ci --dry-run --offline --ignore-scripts --no-audit --no-fund` 退出 0，只校验不实际重装。
+- `canvas-initial.log`/`canvas-consumers.log` 保留缺依赖、下拉菜单旧导入、测试 Element.disabled 类型错误；修正实际依赖/既有导入和检查类型后 `canvas-consumers-fixed.log` 为 71 passed。新增旧格式和改名场景后，`canvas-final-positive.log`/`canvas-id-positive.log` 记录测试错误匹配菜单及等待 200ms 短于原动画 240ms 的失败；仅改精确选择器及等待，没有改产品动画迁就检查。
+- `canvas-mutation.log` 只在私有 SDK 将插入改为末尾 push、删除后选择改为 null，真实 3 failed/7 passed、退出 1。正式源码未被破坏；恢复字节后 cmp 为 0。`canvas-restored-final.log` 的共享 `tsc --noEmit -p tsconfig.test.json` 及五文件 Vitest 为 73 passed、退出 0。
+- `canvas-pages-consumers.log` 为 59 passed/1 failed，暴露上述 footer 直接关闭；修正后 `canvas-joint-final.log` 共享 tsc 与五文件 73 项通过，旧 pages fixture 仍直接关闭已选择 executor 的草稿，59 passed/1 failed。将该 fixture 改为实际弃稿确认，不绕过 guard；`canvas-pages-final.log` 的 `vitest run test/pages.test.tsx -t "shared Automation schedule consumer"` 退出 0，60 passed/206 skipped（其他 describe 本轮明确未跑）。该测试文件原有非 Workflows 主题场景脏差异不归本批，交付独立 `canvas-pages-owned.patch`，不整文件暂存。
+
+本批没有实际浏览器截图、Windows/Mobile 设备验收、部署/安装包或全量门禁执行。源码写入及 jsdom 消费者证据不等于画布已发布或全模块原版一致。中英源词条及 Dart 同源生成由主线集中收口。

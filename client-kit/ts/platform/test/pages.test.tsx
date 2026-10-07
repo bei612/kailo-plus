@@ -523,6 +523,22 @@ describe("independent shared Workflows page", () => {
 });
 
 describe("shared Automation schedule consumer", () => {
+  beforeEach(() => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+  const selectCanvasNode = async (section: HTMLElement, index: number) => {
+    await click(section.querySelectorAll<HTMLElement>('ol[aria-label="Workflow sequence"] > li > div > button[aria-pressed]')[index]!);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+  };
+  const insertCanvasStep = async (section: HTMLElement, index: number, action: string) => {
+    const trigger = section.querySelectorAll<HTMLElement>('[data-testid="workflow-node-ingress"] button')[index]!;
+    await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", {key:"Enter", bubbles:true})));
+    await settle();
+    await click([...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(item => item.textContent === action)!);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+  };
   const installation = {
     resourceId: "schedule-installation", workspaceId: "schedule-workspace", agentResourceId: "schedule-definition",
     pinnedVersionAssetId: "schedule-agent-version", agentPrincipalId: "schedule-agent", agentPrincipalState: "ACTIVE",
@@ -569,13 +585,19 @@ describe("shared Automation schedule consumer", () => {
     await click(host.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
     // Original Dialog portals its content; exercise the same user-visible tree.
     const section = document.body;
-    const field = (label: string) => [...section.querySelectorAll("label")].find((node) => node.textContent?.startsWith(label))!;
+    const field = (label: string) => [...section.querySelectorAll("label")].find((node) => node.textContent?.startsWith(label))
+      ?? (label === "Instruction template" ? [...section.querySelectorAll("label")].find(node => node.htmlFor.endsWith("-text"))! : undefined!);
     const choose = async (label: string, value: string) => {
       const select = field(label).querySelector("select")!;
       await act(async () => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); });
       await settle();
+      if (label === "Action" && (value === "add_reaction" || value === "set_channel_topic")) await selectCanvasNode(section, 1);
     };
     const fill = async (label: string, value: string) => {
+      if (!field(label) && label === "Instruction template" && section.querySelector('ol[aria-label="Workflow sequence"]')) {
+        if (section.querySelectorAll('ol[aria-label="Workflow sequence"] > li').length === 1) await insertCanvasStep(section, 0, "Send message");
+        else await selectCanvasNode(section, 1);
+      }
       const input = field(label).querySelector("input,textarea")!;
       if (input instanceof HTMLInputElement) await type(input, value);
       else await act(async () => {
@@ -585,7 +607,10 @@ describe("shared Automation schedule consumer", () => {
       await settle();
     };
     await choose("Executor installation", installation.resourceId);
-    if (content) await click(button(section, "Close"));
+    if (content) {
+      await click(button(section, "Close"));
+      await click(button(document.querySelector<HTMLElement>('[role="alertdialog"]')!, "Discard changes"));
+    }
     return { section, t, field, choose, fill };
   };
 
@@ -624,14 +649,15 @@ describe("shared Automation schedule consumer", () => {
     const { section, t, choose, fill } = await setup(["TRIGGER_THREAD"]);
     await choose("Action", "POST_MESSAGE");
     await fill("Instruction template", "After the delay");
-    await click(button(section, "Add delay"));
+    await insertCanvasStep(section, 0, "Delay");
     await type(section.querySelector<HTMLInputElement>('#wf-step-0-duration')!, "1m 2s");
     await click(button(section, "Workflow YAML"));
     const yaml = section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!;
-    expect(yaml.value).toContain("formatVersion: 2");
+    expect(yaml.value).toContain("formatVersion: 3");
     expect(yaml.value).toContain("action: delay");
     expect(yaml.value).toContain("action: send_message");
     await click(button(section, "Form"));
+    await selectCanvasNode(section, 1);
     expect(section.querySelector<HTMLInputElement>('input[id="wf-step-0-duration"]')!.value).toBe("1m 2s");
     await click(button(section, "Review request"));
     await click(button(section, "Submit governed request"));
@@ -639,7 +665,7 @@ describe("shared Automation schedule consumer", () => {
     const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions").map(([request]) => request.body);
     expect(writes).toHaveLength(2);
     expect(writes[1]).toEqual(writes[0]);
-    expect(writes[0]).toMatchObject({automationVersionContent: {formatVersion: 2, steps: [
+    expect(writes[0]).toMatchObject({automationVersionContent: {formatVersion: 3, steps: [
       {id:expect.any(String),action:"delay",duration:"1m 2s"},
       {id:expect.any(String),action:"send_message",text:"After the delay"},
     ]}});
@@ -650,13 +676,14 @@ describe("shared Automation schedule consumer", () => {
     const {section, t, choose} = await setup(["TRIGGER_THREAD"]);
     await choose("Action", "add_reaction");
     await type(section.querySelector<HTMLInputElement>("#wf-step-0-emoji")!, "👍");
-    await click(button(section, "Add delay"));
+    await insertCanvasStep(section, 0, "Delay");
     await type(section.querySelector<HTMLInputElement>("#wf-step-0-duration")!, "1s");
     await click(button(section, "Workflow YAML"));
     const yaml = section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!.value;
     expect(yaml).toContain("action: add_reaction");
     expect(yaml).not.toContain("action: send_message");
     await click(button(section, "Form"));
+    await selectCanvasNode(section, 2);
     expect(section.querySelector<HTMLInputElement>("#wf-step-1-emoji")!.value).toBe("👍");
     await click(button(section, "Review request"));
     await click(button(section, "Submit governed request"));
@@ -679,6 +706,7 @@ describe("shared Automation schedule consumer", () => {
     expect(yaml).toContain("topic: Release discussion");
     expect(yaml).not.toContain("action: send_message");
     await click(button(section, "Form"));
+    await selectCanvasNode(section, 1);
     await type(section.querySelector<HTMLInputElement>("#wf-step-0-topic")!, "");
     await click(button(section, "Review request"));
     await click(button(section, "Submit governed request"));
@@ -695,7 +723,7 @@ describe("shared Automation schedule consumer", () => {
     const {section, t, choose, fill} = await setup(["TRIGGER_THREAD"], undefined, undefined, undefined, [policy]);
     await choose("Action", "POST_MESSAGE");
     await fill("Instruction template", "Only after approval");
-    await click(button(section, "Add approval request"));
+    await insertCanvasStep(section, 0, "Request approval");
     expect(button(section, "Review request").disabled).toBe(true);
     const selector = section.querySelector<HTMLSelectElement>("#wf-step-0-policy")!;
     expect(selector.value).toBe("");
@@ -707,6 +735,7 @@ describe("shared Automation schedule consumer", () => {
     expect(yaml).toContain("message: Please review the reply");
     expect(yaml).not.toContain("from:");
     await click(button(section, "Form"));
+    await selectCanvasNode(section, 1);
     expect(section.querySelector<HTMLSelectElement>("#wf-step-0-policy")!.value).toBe(`${policy.id}:${policy.version}`);
     await click(button(section, "Review request"));
     expect(section.textContent).toContain(`${policy.id} · ${policy.version}`);
@@ -715,7 +744,7 @@ describe("shared Automation schedule consumer", () => {
     const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions").map(([request]) => request.body);
     expect(writes).toHaveLength(2);
     expect(writes[1]).toEqual(writes[0]);
-    expect(writes[0]).toMatchObject({automationVersionContent:{formatVersion:2,steps:[
+    expect(writes[0]).toMatchObject({automationVersionContent:{formatVersion:3,steps:[
       {action:"request_approval",approvalPolicy:policy,message:"Please review the reply"},
       {action:"send_message",text:"Only after approval"},
     ]}});
@@ -749,7 +778,7 @@ describe("shared Automation schedule consumer", () => {
     const { section, choose, fill } = await setup(["TRIGGER_THREAD"]);
     await choose("Action", "POST_MESSAGE");
     await fill("Instruction template", "Retained");
-    await click(button(section, "Add delay"));
+    await insertCanvasStep(section, 0, "Delay");
     await type(section.querySelector<HTMLInputElement>('#wf-step-0-duration')!, "1s");
     await click(button(section, "Workflow YAML"));
     const first = section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!.value;
@@ -757,7 +786,7 @@ describe("shared Automation schedule consumer", () => {
     await click(section.querySelector<HTMLButtonElement>('button[aria-label="Remove step"]')!);
     await click(button(section, "Workflow YAML"));
     const after = section.querySelector<HTMLTextAreaElement>('textarea[aria-label="Workflow YAML"]')!.value;
-    expect(after).toContain("formatVersion: 2");
+    expect(after).toContain("formatVersion: 3");
     expect(after).not.toContain("action: delay");
     expect(first).toContain(after.slice(after.indexOf("steps:" ) + "steps:".length).trim());
     await writeYaml(section, after.replace("action: send_message", "action: send_message\n    if: true"));
@@ -834,14 +863,19 @@ describe("shared Automation schedule consumer", () => {
     expect(button(section, "Review request").disabled).toBe(true);
   });
 
-  it("restores the create card and original dialog while preserving an unsubmitted draft on close", async () => {
+  it("protects a canvas draft on footer close until the original discard confirmation", async () => {
     const { section, t, field, fill } = await setup(["TRIGGER_THREAD"]);
     expect(section.querySelector('[role="dialog"][data-testid="workflow-editor-dialog"]')).not.toBeNull();
     await fill("Instruction template", "Keep this draft");
     await click(button(section, "Close"));
+    expect(section.querySelector('[data-testid="workflow-editor-dialog"]')).not.toBeNull();
+    await click(button(document.querySelector<HTMLElement>('[role="alertdialog"]')!, "Keep editing"));
+    expect(field("Instruction template").querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Keep this draft");
+    await click(button(section, "Close"));
+    await click(button(document.querySelector<HTMLElement>('[role="alertdialog"]')!, "Discard changes"));
     expect(section.querySelector('[data-testid="workflow-editor-dialog"]')).toBeNull();
     await click(section.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
-    expect(field("Instruction template").querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Keep this draft");
+    expect(field("Instruction template").querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
     expect(t.send.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(0);
   });
 
@@ -969,6 +1003,7 @@ describe("shared Automation schedule consumer", () => {
     const text = 'trigger:\n  kind: CHANNEL_MESSAGE\n  textPrefix: report\naction:\n  kind: POST_MESSAGE\n  template: "Result ${source}"\nresultTarget: TRIGGER_THREAD\n';
     await writeYaml(section, text);
     await click(button(section, "Form"));
+    await selectCanvasNode(section, 1);
     expect(field("Instruction template").querySelector("textarea")!.value).toBe("Result ${source}");
     expect(field("Action").querySelector("select")!.value).toBe("POST_MESSAGE");
     await click(button(section, "Workflow YAML"));
@@ -1061,7 +1096,7 @@ describe("shared Automation schedule consumer", () => {
     const writes = t.send.mock.calls.filter(([request]) => request.path === "/api/v1/actions");
     expect(writes).toHaveLength(1);
     expect(writes[0]?.[0].body).toMatchObject({ actionKey: "automation.create",
-      automationVersionContent: { action: { kind: "POST_MESSAGE", template: "Literal ${source} template" },
+      automationVersionContent: { formatVersion:3, steps: [{action:"send_message", text:"Literal ${source} template"}],
         resultTarget: "TRIGGER_THREAD" } });
   });
 

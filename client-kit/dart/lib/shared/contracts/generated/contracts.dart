@@ -11489,6 +11489,10 @@ class WebPublishMessageRequest {
 
   ///用户明确选中的本 Workspace Installation；缺省为空，BFF 排序去重并冻结于原发布幂等记录。
   final List<String>? mentionInstallationIds;
+
+  ///原 Buzz HUMAN 提及的精确公钥；缺省为空。BFF 核对当前 Tenant、消息目的地成员及 ACTIVE 身份，排序去重冻结在原发布幂等记录；不接受 Agent
+  ///公钥绕过 Installation 准入。
+  final List<String>? mentionPubkeys;
   final WebMessageType? messageType;
 
   ///原 Relay 消息引用；BFF 在当前 Channel 回读验签并解析 NIP-10 祖先。
@@ -11500,6 +11504,7 @@ class WebPublishMessageRequest {
     this.deleteEventId,
     this.editEventId,
     this.mentionInstallationIds,
+    this.mentionPubkeys,
     this.messageType,
     this.parentEventId,
   });
@@ -11517,6 +11522,9 @@ class WebPublishMessageRequest {
         mentionInstallationIds: json["mentionInstallationIds"] == null
             ? null
             : List<String>.from(json["mentionInstallationIds"]!.map((x) => x)),
+        mentionPubkeys: json["mentionPubkeys"] == null
+            ? null
+            : List<String>.from(json["mentionPubkeys"]!.map((x) => x)),
         messageType: json["messageType"] == null
             ? null
             : webMessageTypeValues.map[json["messageType"]]!,
@@ -11533,6 +11541,9 @@ class WebPublishMessageRequest {
     "mentionInstallationIds": mentionInstallationIds == null
         ? null
         : List<dynamic>.from(mentionInstallationIds!.map((x) => x)),
+    "mentionPubkeys": mentionPubkeys == null
+        ? null
+        : List<dynamic>.from(mentionPubkeys!.map((x) => x)),
     "messageType": webMessageTypeValues.reverse[messageType],
     "parentEventId": parentEventId,
   });

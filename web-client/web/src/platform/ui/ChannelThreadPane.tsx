@@ -7,7 +7,7 @@ import { TransportError } from "@client-kit/platform/transport";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
 import { publishMessage } from "@/platform/bff-client";
-import { Composer } from "./ChannelPane";
+import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { MessageAuthorIdentity } from "./MessageAuthorProfile";
 import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPanelLayout";
@@ -96,14 +96,15 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, members,
         onCopyLink={onCopyLink}
         onReply={canReply ? (message) => setReplyId(message.id) : undefined} />} />}
     renderComposer={(composer) => <Composer key={replyId} workspaceId={workspaceId} draftIdentity={principalId}
+      mentionPeople={mentionPeopleFromMembers(members)}
       draftKey={`thread:${workspaceId}:${rootId}:${replyId}`} disabled={composer.disabled} onSendingChange={setIsSending}
       containerClassName={composer.containerClassName} layoutMode="dock"
       replyTarget={composer.replyTarget} onCancelReply={composer.onCancelReply}
       placeholder={t("thread.replyTo", {author: data.threadHead!.author})}
-      onPublish={async (content, attachments, idempotencyKey, installations) => {
+      onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys) => {
         if (!canReply) throw new Error("Thread admission is unavailable");
         const receipt = await publishMessage(workspaceId, content, attachments, idempotencyKey, installations,
-          {messageType: WebMessageType.Stream, parentEventId: replyId});
+          {messageType: WebMessageType.Stream, parentEventId: replyId, mentionPubkeys});
         if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Reply has no confirmed receipt.");
         void refresh(); return receipt;
       }} />}

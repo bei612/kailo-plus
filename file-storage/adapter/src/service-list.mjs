@@ -109,7 +109,9 @@ async function nativeListing(config, deadline, args) {
         displayName:childPath.slice(path.length+1),mediaType:node.ContentType});
     }
     const after = await getNode(folder.Uuid);
-    if (nodePath(after,config) !== path || childrenCount(after) !== expected) throw new Refused(503);
+    if (nodePath(after,config) !== path || childrenCount(after) !== expected
+      || after.Type !== folder.Type || after.ContextWorkspace?.Uuid !== folder.ContextWorkspace?.Uuid
+      || after.IsRecycleBin || after.IsRecycled || after.IsDraft) throw new Refused(503);
   }
   items.sort((a,b) => a.nativeObjectRef.localeCompare(b.nativeObjectRef));
   return items;

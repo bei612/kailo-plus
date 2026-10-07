@@ -49,9 +49,9 @@ import { useLoad } from "./use-load";
 import { InstallationMemory } from "./memory";
 import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
+import { WorkflowFormCanvas } from "./workflow-form-canvas";
 import { WorkflowTriggerConditions } from "./workflow-trigger-conditions";
 import type { ParsedConditionExpression } from "./workflow-condition-expression";
-import { WorkflowTemplateTextarea } from "./workflow-template-textarea";
 import { WorkflowActionsMenu } from "./workflow-actions-menu";
 import { WorkflowDiscardDialog, type WorkflowNavigation } from "./workflow-discard-dialog";
 import { WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions";
@@ -72,7 +72,7 @@ import { defaultScheduleTrigger } from "./workflow-schedule";
 import { formatDurationSeconds, parseDurationSeconds } from "./workflow-duration";
 import { cronExpressionError, cronYamlError } from "./cron-expression";
 import type { AutomationStep } from "@client-kit/contracts";
-import { supportedSteps, validApprovalPolicy, workflowApprovalPolicy, workflowAction, WorkflowStepCard, nextStepId, type WorkflowActionKind } from "./workflow-steps";
+import { supportedSteps, validApprovalPolicy, workflowApprovalPolicy, workflowAction, nextStepId, type WorkflowActionKind } from "./workflow-steps";
 
 // Original UnifiedAgentsSection grid at Buzz 779af8886caae1317b4de962082429867ab61503.
 const IDENTITY_CARD_GRID_CLASS = "w-full grid-cols-1 [@container(min-width:21rem)]:grid-cols-2 [@container(min-width:32rem)]:grid-cols-3 [@container(min-width:43rem)]:grid-cols-4 [@container(min-width:54rem)]:grid-cols-5 grid gap-3";
@@ -942,6 +942,48 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
       if (failed.kind !== "unknown" && !wasUnknown) { setIntent(null); onLocked(false); }
     } finally { inFlight.current = false; setBusy(false); reloadTasks(); }
   };
+  const triggerFields = <>
+        <label className="flex flex-col gap-1 text-sm">{t("agents.automation.trigger")}
+          <select value={trigger} onChange={(event) => {
+            const value = [TriggerKind.ChannelMessage, TriggerKind.Mention, ...(scheduleSupported ? [TriggerKind.Schedule] : [])]
+              .find((candidate) => candidate === event.target.value);
+            if (value) {
+              setTrigger(value);
+              if (value === TriggerKind.Schedule && !interval && !cron) {
+                setScheduleMode("cron"); setCron(defaultScheduleTrigger().cron ?? "");
+              }
+            }
+          }} className="h-8 rounded-md border border-input bg-background px-2">
+            <option value={TriggerKind.ChannelMessage}>{t("agents.automation.channelMessage")}</option><option value={TriggerKind.Mention}>{t("agents.installation.trigger.mention")}</option>
+            {scheduleSupported || trigger === TriggerKind.Schedule ? <option value={TriggerKind.Schedule} disabled={!scheduleSupported}>{t("agents.automation.schedule")}</option> : null}
+          </select>
+        </label>
+        {trigger === TriggerKind.Schedule ? <>
+          <WorkflowScheduleFields disabled={busy || !!intent || unknown}
+            trigger={{ on: "schedule", ...(scheduleMode === "cron" ? { cron } : { interval }) }}
+            onUpdate={(next) => {
+              setScheduleMode(next.cron === undefined ? "interval" : "cron");
+              setCron(next.cron ?? ""); setInterval(next.interval ?? "");
+              if (offsetSeconds === "") setOffsetSeconds("0");
+            }} />
+          {scheduleMode === "interval" ? <>
+          <label className="flex flex-col gap-1 text-sm">{t("agents.automation.offsetSeconds")}
+            <input required inputMode="numeric" value={offsetSeconds} onChange={(event) => setOffsetSeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
+          </label>
+          </> : null}
+          <label className="flex flex-col gap-1 text-sm">{t("agents.automation.catchupWindowSeconds")}
+            <input required inputMode="numeric" value={catchupWindowSeconds} onChange={(event) => setCatchupWindowSeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
+          </label>
+          <p className="text-sm text-muted-foreground">{t(scheduleMode === "cron" ? "workflows.cron.rules" : "agents.automation.scheduleRules")}</p>
+        </> : <>
+        {prefix && <label className="flex flex-col gap-1 text-sm">{t("agents.automation.prefix")}
+          <input value={prefix} onChange={(event) => setPrefix(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
+        </label>}
+        <WorkflowTriggerConditions key={workspaceId} value={filter} onChange={setFilter}
+          conditionDrafts={conditionDrafts} onConditionDraftsChange={setConditionDrafts}
+          workflowChannelId={workspaceId} disabled={busy || !!intent || unknown} />
+        </>}
+  </>;
   const title = creating ? "agents.automation.create" : edit.action === "publish_version" ? "agents.automation.publish"
     : edit.action === "enable" ? "agents.automation.enable" : edit.action === "pause" ? "agents.automation.pause"
     : edit.action === "run" ? "agents.automation.run" : edit.action === "delete" ? "agents.automation.delete" : "agents.automation.disable";
@@ -990,46 +1032,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
         {!creating && selectedInstallation.status === "error" ? <AgentReadFailure error={selectedInstallation.error} onRetry={reloadSelectedInstallation} /> : null}
         {editorError ? <Notice role="alert">{t("agents.automation.yamlInvalid")}</Notice> : null}
         {editorMode === "yaml" ? <WorkflowYamlEditor value={yamlText} onChange={(value) => { setYamlText(value); setEditorError(false); }} /> : <>
-        <label className="flex flex-col gap-1 text-sm">{t("agents.automation.trigger")}
-          <select value={trigger} onChange={(event) => {
-            const value = [TriggerKind.ChannelMessage, TriggerKind.Mention, ...(scheduleSupported ? [TriggerKind.Schedule] : [])]
-              .find((candidate) => candidate === event.target.value);
-            if (value) {
-              setTrigger(value);
-              if (value === TriggerKind.Schedule && !interval && !cron) {
-                setScheduleMode("cron"); setCron(defaultScheduleTrigger().cron ?? "");
-              }
-            }
-          }} className="h-8 rounded-md border border-input bg-background px-2">
-            <option value={TriggerKind.ChannelMessage}>{t("agents.automation.channelMessage")}</option><option value={TriggerKind.Mention}>{t("agents.installation.trigger.mention")}</option>
-            {scheduleSupported || trigger === TriggerKind.Schedule ? <option value={TriggerKind.Schedule} disabled={!scheduleSupported}>{t("agents.automation.schedule")}</option> : null}
-          </select>
-        </label>
-        {trigger === TriggerKind.Schedule ? <>
-          <WorkflowScheduleFields disabled={busy || !!intent || unknown}
-            trigger={{ on: "schedule", ...(scheduleMode === "cron" ? { cron } : { interval }) }}
-            onUpdate={(next) => {
-              setScheduleMode(next.cron === undefined ? "interval" : "cron");
-              setCron(next.cron ?? ""); setInterval(next.interval ?? "");
-              if (offsetSeconds === "") setOffsetSeconds("0");
-            }} />
-          {scheduleMode === "interval" ? <>
-          <label className="flex flex-col gap-1 text-sm">{t("agents.automation.offsetSeconds")}
-            <input required inputMode="numeric" value={offsetSeconds} onChange={(event) => setOffsetSeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
-          </label>
-          </> : null}
-          <label className="flex flex-col gap-1 text-sm">{t("agents.automation.catchupWindowSeconds")}
-            <input required inputMode="numeric" value={catchupWindowSeconds} onChange={(event) => setCatchupWindowSeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
-          </label>
-          <p className="text-sm text-muted-foreground">{t(scheduleMode === "cron" ? "workflows.cron.rules" : "agents.automation.scheduleRules")}</p>
-        </> : <>
-        {prefix && <label className="flex flex-col gap-1 text-sm">{t("agents.automation.prefix")}
-          <input value={prefix} onChange={(event) => setPrefix(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
-        </label>}
-        <WorkflowTriggerConditions key={workspaceId} value={filter} onChange={setFilter}
-          conditionDrafts={conditionDrafts} onConditionDraftsChange={setConditionDrafts}
-          workflowChannelId={workspaceId} disabled={busy || !!intent || unknown} />
-        </>}
+        {actionKind === ActionKind.AgentTurn ? triggerFields : null}
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.action")}
           <select value={actionKind} disabled={steps.length > 0} onChange={(event) => {
             if (event.target.value === ActionKind.AgentTurn || event.target.value === ActionKind.PostMessage) setActionKind(event.target.value);
@@ -1048,46 +1051,23 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
             <option value={ActionEnum.SetChannelTopic}>{t("workflows.steps.setTopic")}</option>
           </select>
         </label>
-        {steps.length ? <div className="space-y-3">{steps.map((step, index) => <WorkflowStepCard key={index} index={index} step={step} policies={policies} trigger={trigger} previousSteps={steps.slice(0, index)}
-          onUpdate={(next) => { setSteps((old) => old.map((value, position) => position === index ? next : value)); if (index === steps.length - 1) setTemplate(next.text ?? next.emoji ?? next.topic ?? ""); }}
-          onRemove={() => {
-            // Buzz 779af8886caae1317b4de962082429867ab61503:
-            // desktop/src/features/workflows/ui/WorkflowFormBuilder.tsx::removeStep
-            // also removes the final/only step.
-            // Clear the legacy action draft too: removing all steps must not resurrect
-            // the deleted terminal effect when formContent uses its legacy representation.
-            const remaining = steps.filter((_, position) => position !== index);
-            setSteps(remaining);
-            const terminal = remaining.at(-1);
+        {actionKind === ActionKind.AgentTurn ? <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
+          <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />
+        </label> : <WorkflowFormCanvas key={draftEpoch} trigger={trigger} triggerFields={triggerFields}
+          disabled={busy || !!intent || unknown} policies={policies}
+          steps={steps.length ? steps : template && actionKind === ActionKind.PostMessage
+            ? [{id: nextStepId([]), action: ActionEnum.SendMessage, text: template}] : []}
+          onStepsChange={(next) => {
+            setSteps(next);
+            const terminal = next.at(-1);
             setTemplate(terminal?.text ?? terminal?.emoji ?? terminal?.topic ?? "");
-          }} />)}</div>
-        : <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
-          {actionKind === ActionKind.PostMessage
-            ? <WorkflowTemplateTextarea required value={template} onValueChange={setTemplate} triggerType={trigger} className="min-h-24 rounded-md border border-input bg-transparent p-2" />
-            : <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />}
-        </label>}
-        {actionKind !== ActionKind.AgentTurn ? <Button onClick={() => setSteps((old) => {
-          const delay: AutomationStep = { id: nextStepId(old), action: ActionEnum.Delay, duration: "" };
-          return old.length ? [...old.slice(0, -1), delay, old[old.length - 1]!] : [delay,
-            { id: nextStepId([delay]), action: ActionEnum.SendMessage, text: template }];
-        })}>{t("workflows.steps.addDelay")}</Button> : null}
-        {actionKind === ActionKind.PostMessage ? <Button onClick={() => {
-          setStepsFormat(3);
-          setSteps((old) => {
-            const previous = old.length ? old : [{id: nextStepId([]), action: ActionEnum.SendMessage, text: template}];
-            return [...previous, {id: nextStepId(previous), action: ActionEnum.SendMessage, text: ""}];
-          });
-        }}>{t("workflows.steps.addMessage")}</Button> : null}
-        {actionKind !== ActionKind.AgentTurn && !!policies?.length && !steps.some((step) => step.action === ActionEnum.RequestApproval) ? <Button onClick={() => {
-          const approval: AutomationStep = { id: nextStepId(steps), action: ActionEnum.RequestApproval, message: "",
-            ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}) };
-          setSteps((old) => {
-            if (!old.length) return [approval, { id: nextStepId([approval]), action: ActionEnum.SendMessage, text: template }];
-            const firstEffect = old.findIndex((step) => step.action !== ActionEnum.Delay);
-            return [...old.slice(0, firstEffect), approval, ...old.slice(firstEffect)];
-          });
-          setPolicyKey("");
-        }}>{t("workflows.steps.addApproval")}</Button> : null}
+            if (terminal) {
+              setActionKind(terminal.action === ActionEnum.AddReaction ? ActionEnum.AddReaction
+                : terminal.action === ActionEnum.SetChannelTopic ? ActionEnum.SetChannelTopic : ActionKind.PostMessage);
+              setStepsFormat(terminal.action === ActionEnum.SendMessage ? 3 : 2);
+            }
+            if (next.some(step => step.action === ActionEnum.RequestApproval)) setPolicyKey("");
+          }} />}
         {!steps.some((step) => step.action === ActionEnum.RequestApproval) && (policies?.length || policyKey) ? <label className="flex flex-col gap-1 text-sm">{t("agents.automation.approvalPolicy")}
           <select value={policyKey} disabled={!policies} onChange={(event) => {
             if (event.target.value === "" || policies?.some((row) => `${row.id}:${row.version}` === event.target.value))
@@ -1125,7 +1105,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
         <div className="flex items-center gap-2">
         {!creating || (canCreate && executor) ? <Button type="submit" disabled={requestBlocked || (edit?.action === "enable" && !enableAvailable)
           || (contentAction && !contentAvailable)}>{t("agents.review")}</Button> : null}
-        <Button onClick={onClose}>{t("buzz.close")}</Button>
+        <Button onClick={requestClose}>{t("buzz.close")}</Button>
         </div>
       </div>
       {creating && admission.status === "error" ? <AgentReadFailure error={admission.error} onRetry={reloadAdmission} /> : null}

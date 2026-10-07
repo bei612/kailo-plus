@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { publishMessage, publishConversationMessage, uploadConversationMedia, mediaUrl } from "@/platform/bff-client";
 import { Button } from "@/shared/ui/button";
-import { Composer } from "./ChannelPane";
+import { Composer, mentionPeopleFromMembers } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
 import { MessageAuthorIdentity, type MessageAuthor } from "./MessageAuthorProfile";
 import { useMessageReactions } from "./useMessageReactions";
@@ -101,21 +101,21 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
       {!unavailable && thread.hasNextPage ? <Button disabled={thread.isFetchingNextPage} onClick={() => { void thread.fetchNextPage(); }}>{t("forum.more")}</Button> : null}
     </div>
     <div className="shrink-0" ref={composerContainer}><Composer key={replyId ?? "default"} workspaceId={conversation ? undefined : workspaceId} draftChannelId={workspaceId} draftIdentity={principalId} draftKey={`thread:${workspaceId}:${anchorRoot}${replyId ? `:${replyId}` : ""}`} autoSendDraftKey={autoSendDraftKey} disabled={!canReply}
-      mentionPeople={conversation ? members.map(member => ({pubkey:member.pubkeys[0]!,displayName:member.displayName})).filter(member => Boolean(member.pubkey)) : undefined}
+      mentionPeople={mentionPeopleFromMembers(members)}
       onUpload={conversation ? file => uploadConversationMedia(conversation.id, file) : undefined}
       onMediaUrl={conversation ? hash => mediaUrl(workspaceId, hash, conversation.id) : undefined}
       onSendingChange={setSending}
       replyTarget={replyTarget ? {id:replyTarget.id, body:replyTarget.content, author:members.find((member) => member.pubkeys.includes(replyTarget.pubkey))?.displayName || truncatePubkey(replyTarget.pubkey)} : null}
       onCancelReply={replyId && !unresolved && !sending ? () => selectReply(null) : undefined}
-      placeholder={t("inbox.reply")} onPublish={async (content, attachments, idempotencyKey, installations) => {
+      placeholder={t("inbox.reply")} onPublish={async (content, attachments, idempotencyKey, installations, mentionPubkeys) => {
         if (!canReply || !parentId) throw new Error("Inbox reply parent is unavailable.");
         const prior = publication.current;
         if (prior && (prior.key !== idempotencyKey || prior.parent !== parentId)) throw new TransportError("Inbox reply still has an unresolved intent.");
         publication.current = {key:idempotencyKey, parent:parentId, unknown:prior?.unknown ?? false};
         try {
-          const receipt = await (conversation ? publishConversationMessage(conversation.id, content, attachments, idempotencyKey, undefined, parentId)
+          const receipt = await (conversation ? publishConversationMessage(conversation.id, content, attachments, idempotencyKey, undefined, parentId, mentionPubkeys)
             : publishMessage(workspaceId, content, attachments, idempotencyKey, installations,
-            { messageType: WebMessageType.Stream, parentEventId: parentId }));
+            { messageType: WebMessageType.Stream, parentEventId: parentId, mentionPubkeys }));
           if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Inbox reply has no confirmed receipt.");
           publication.current = null; setUnresolved(false);
           void refresh();

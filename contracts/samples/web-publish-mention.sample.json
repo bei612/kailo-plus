@@ -13,5 +13,6 @@
     "filename": "diagram.png",
     "spoiler": true
   }],
-  "mentionInstallationIds": ["00000000-0000-4000-8000-000000000001"]
+  "mentionInstallationIds": ["00000000-0000-4000-8000-000000000001"],
+  "mentionPubkeys": ["79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"]
 }

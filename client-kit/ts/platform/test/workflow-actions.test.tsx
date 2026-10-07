@@ -90,6 +90,19 @@ async function select(select: HTMLSelectElement, value: string) {
   await act(async () => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); });
   await settle();
 }
+async function canvasNode(host: HTMLElement, index: number) {
+  await click(host.querySelectorAll<HTMLOListElement>('ol[aria-label="Workflow sequence"] > li > div > button[aria-pressed]')[index]!);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+}
+async function canvasInsert(host: HTMLElement, index: number, action: string) {
+  const trigger = host.querySelectorAll<HTMLButtonElement>('[data-testid="workflow-node-ingress"] button')[index]!;
+  await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  await settle();
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(node => node.textContent === action)!;
+  expect(item).toBeDefined();
+  await click(item);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+}
 const writes = (send: ReturnType<typeof vi.fn>) => send.mock.calls.map(([request]) => request as BffRequest)
   .filter((request) => request.method === "POST").map((request) => request.body);
 
@@ -299,7 +312,7 @@ describe("original workflow action menu with governed consumers", () => {
         const control = [...dialog.querySelectorAll("select")].find((field) => [...field.options].some((option) => option.value === action))!;
         await select(control, action);
       } else {
-        await click(button(dialog, action === "delay" ? "Add delay" : "Add approval request"));
+        await canvasInsert(dialog, 0, action === "delay" ? "Delay" : "Request approval");
       }
       await click(button(dialog, "Workflow YAML"));
       const yaml = dialog.querySelector<HTMLTextAreaElement>("textarea")!.value;
@@ -319,17 +332,17 @@ describe("original workflow action menu with governed consumers", () => {
       })) } } : undefined);
     await chooseAction(host, "Edit");
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
-    await click(button(dialog, "Add message"));
+    await canvasInsert(dialog, 1, "Send message");
     const messages = dialog.querySelectorAll<HTMLTextAreaElement>("textarea");
-    expect(messages).toHaveLength(2);
-    await type(messages[1]!, "{{steps.");
+    expect(messages).toHaveLength(1);
+    await type(messages[0]!, "{{steps.");
     const priorOutputs = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
     expect(priorOutputs).toHaveLength(2);
     expect(priorOutputs.every((option) => option.textContent?.includes("steps.step_1.output."))).toBe(true);
     await click(priorOutputs.find((option) => option.textContent?.includes("event_id"))!);
-    expect(messages[1]!.value).toBe("{{steps.step_1.output.event_id}}");
-    await type(messages[1]!, "Second {{trigger.text}}");
-    await click(button(dialog, "Add delay"));
+    expect(messages[0]!.value).toBe("{{steps.step_1.output.event_id}}");
+    await type(messages[0]!, "Second {{trigger.text}}");
+    await canvasInsert(dialog, 1, "Delay");
     await type(dialog.querySelector<HTMLInputElement>("#wf-step-1-duration")!, "1m");
     await click(button(dialog, "Workflow YAML"));
     const yaml = dialog.querySelector<HTMLTextAreaElement>("textarea")!.value;
@@ -337,8 +350,10 @@ describe("original workflow action menu with governed consumers", () => {
     expect(yaml.indexOf("First {{trigger.text}}")).toBeLessThan(yaml.indexOf("duration: 1m"));
     expect(yaml.indexOf("duration: 1m")).toBeLessThan(yaml.indexOf("Second {{trigger.text}}"));
     await click(button(dialog, "Form"));
-    expect([...dialog.querySelectorAll<HTMLTextAreaElement>("textarea")].map((field) => field.value))
-      .toEqual(["First {{trigger.text}}", "Second {{trigger.text}}"]);
+    await canvasNode(dialog, 1);
+    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("First {{trigger.text}}");
+    await canvasNode(dialog, 3);
+    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Second {{trigger.text}}");
     await click(button(dialog, "Review request"));
     await click(button(dialog, "Submit governed request"));
     const commands = writes(send);
@@ -352,6 +367,25 @@ describe("original workflow action menu with governed consumers", () => {
     } });
   });
 
+  it("keeps an untouched legacy message in its original format when selecting and closing canvas nodes", async () => {
+    const { host, send } = await setup((request) => request.path.startsWith("/api/v1/automations/workflow?")
+      ? { status: 200, body: { ...detail, versions: detail.versions.map(row => ({ ...row,
+        content: { ...row.content, action: {kind:"POST_MESSAGE", template:"Unchanged legacy"} },
+      })) } } : undefined);
+    await chooseAction(host, "Edit");
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await canvasNode(dialog, 1);
+    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Unchanged legacy");
+    await click(dialog.querySelector<HTMLElement>('button[aria-label="Close inspector"]')!);
+    await click(button(dialog, "Workflow YAML"));
+    const yaml = dialog.querySelector<HTMLTextAreaElement>("textarea")!.value;
+    expect(yaml).toContain("kind: POST_MESSAGE");
+    expect(yaml).toContain("template: Unchanged legacy");
+    expect(yaml).not.toContain("formatVersion");
+    expect(yaml).not.toContain("steps:");
+    expect(writes(send)).toEqual([]);
+  });
+
   it("carries the original template picker through form/YAML into the same governed version request", async () => {
     const { host, send } = await setup((request) => request.path.startsWith("/api/v1/automations/workflow?")
       ? { status: 200, body: { ...detail, versions: detail.versions.map((row) => ({ ...row,
@@ -359,6 +393,7 @@ describe("original workflow action menu with governed consumers", () => {
       })) } } : undefined);
     await chooseAction(host, "Edit");
     const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await canvasNode(dialog, 1);
     const field = dialog.querySelector<HTMLTextAreaElement>("textarea")!;
     await type(field, "Message: {{trigger.te");
     await act(async () => field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
@@ -371,7 +406,7 @@ describe("original workflow action menu with governed consumers", () => {
     const commands = writes(send);
     expect(commands).toHaveLength(1);
     expect(commands[0]).toMatchObject({ actionKey: "automation.publish_version", resourceId: "workflow",
-      automationVersionContent: { action: { kind: "POST_MESSAGE", template: "Message: {{trigger.text}}" } } });
+      automationVersionContent: { formatVersion: 3, steps: [{action: "send_message", text: "Message: {{trigger.text}}"}] } });
   });
 
   it("removes terminal and sole message steps without resurrecting the old effect across form/YAML", async () => {
@@ -400,16 +435,17 @@ describe("original workflow action menu with governed consumers", () => {
     await click(removals()[0]!);
     expect(removals()).toHaveLength(0);
     expect(button(dialog, "Review request").disabled).toBe(true);
-    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
+    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")).toBeNull();
     await click(button(dialog, "Workflow YAML"));
     expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).not.toContain("Keep until explicitly removed");
     await click(button(dialog, "Form"));
+    await canvasInsert(dialog, 0, "Send message");
     await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "Replacement message");
     await click(button(dialog, "Review request"));
     await click(button(dialog, "Submit governed request"));
     expect(writes(send)).toHaveLength(1);
     expect(writes(send)[0]).toMatchObject({ actionKey: "automation.publish_version", resourceVersion: 2,
-      automationVersionContent: { action: { kind: "POST_MESSAGE", template: "Replacement message" } } });
+      automationVersionContent: { formatVersion: 3, steps: [{action: "send_message", text: "Replacement message"}] } });
     expect(JSON.stringify(writes(send)[0])).not.toContain("Deleted terminal effect");
   });
 
@@ -428,10 +464,11 @@ describe("original workflow action menu with governed consumers", () => {
     const action = [...dialog.querySelectorAll("label")].find((label) => label.textContent?.startsWith("Action"))!.querySelector("select")!;
     expect(action.disabled).toBe(false);
     await select(action, "POST_MESSAGE");
+    await canvasInsert(dialog, 0, "Send message");
     expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
     await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "New effect");
-    await click(button(dialog, "Add message"));
-    await type(dialog.querySelectorAll<HTMLTextAreaElement>("textarea")[1]!, "Next effect");
+    await canvasInsert(dialog, 1, "Send message");
+    await type(dialog.querySelector<HTMLTextAreaElement>("textarea")!, "Next effect");
     await click(button(dialog, "Workflow YAML"));
     expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).not.toContain(effect.action);
     await click(button(dialog, "Form"));
