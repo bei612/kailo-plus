@@ -144,6 +144,8 @@ Browser 不直连 Relay 也不持有 signer。这一边界同时覆盖消息、p
 
 该用户状态同时覆盖 Workspace 和参与者私聊：收藏/静音分别按 Workspace 与 ConversationBuzzBinding 引用保存，已读仍使用原 Channel/Message/Thread 键，绝不把私聊引用当作 Workspace。私聊隐藏/恢复继续消费 Relay 原生 channel_members.hidden_at 和 NIP-DV 快照；Web 经 BFF 本人 SERVER 身份签发，原生端本人 CLIENT 签发，均须 Relay 当前参与者准入。隐藏不撤销成员、不删除正文，也不改变其他参与者的视图；结果不明只查证同一命令，不盲目重发。
 
+原 Projects「Added／移除」也是 DD-40 用户状态：固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `.references/buzz/desktop/src/features/projects/lib/projectSidebarMembershipSync.ts::ProjectSidebarMembershipSyncManager` 用 D-tag `project-sidebar-membership` 同步 kind:30078；`.references/buzz/desktop/src/features/projects/lib/projectSidebarMembership.ts::{addProjectToSidebar,removeProjectFromSidebar,selectedProjectAddressesFromStore}` 保存原坐标的 selected/updatedAt。Kailo 保留原页面交互，投递到同一 CollaborationUserState.project_preferences 与 version CAS，而非原本地/NIP-44权威；Added 不赋予任何公告写入、频道或 Git 权限。Core 只留原生引用，原公告及正文仍在 Relay，目录读取继续按本节 Projects 的本人有效 Community 准入。
+
 ### 宿主用户资料与头像
 
 用户资料是 Buzz 协作能力，不是外部业务组件。Web 与 Desktop 复用原头像编辑器的图片、emoji 与动态头像能力；Web 的资料签名及媒体传输仍遵守本节 BFF 边界，Desktop 仍本机持钥。不得用另写一个裁剪功能的设置页代替原控件。
