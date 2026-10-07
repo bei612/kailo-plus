@@ -1402,6 +1402,11 @@ describe("InstallationMemory BFF read boundaries", () => {
 // After-implementation evidence of the shared Version/Installation/Grant page.
 // These are transport responses to the real page, not persisted business rows.
 describe("AgentDefinitionsPage governed Version Installation Grant", () => {
+  beforeEach(() => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+  afterEach(() => vi.unstubAllGlobals());
   const definition = { resourceId: "agent-1", resourceVersion: 3, displayName: "Governed Agent",
     stableSlug: "governed-agent", ownerPrincipalId: "human-1", resourceState: "ACTIVE", status: "ACTIVE" };
   const content = { personaIdentity: { displayName: "Draft persona" }, instructions: "Exact draft instructions",
@@ -1476,8 +1481,20 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
   }
   async function change(host: HTMLElement, label: string, value: string) {
     const row = [...host.querySelectorAll("label")].find((row) => row.firstChild?.textContent === label);
-    const field = row?.querySelector("input,textarea,select");
+    const field = row?.control ?? row?.querySelector("input,textarea,select");
     if (!field) throw new Error(`Missing real control ${label}`);
+    if (field instanceof HTMLButtonElement) {
+      await act(async () => field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+      await settle();
+      const optionLabel = value === route.resourceId ? `${route.resourceId} · ${route.resourceVersion} · ${route.nativeRevision}`
+        : value === "HUMAN_ONLY" ? "Human only" : value === "DISABLED" ? "Agent writes disabled" : value;
+      const option = [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')]
+        .find((item) => item.textContent === optionLabel);
+      if (!option) throw new Error(`Missing authorized option ${optionLabel}`);
+      await click(option);
+      expect(document.querySelector('[role="menu"]')).toBeNull();
+      return;
+    }
     const prototype = field instanceof HTMLSelectElement ? HTMLSelectElement.prototype
       : field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
@@ -1676,7 +1693,10 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     expect(editorForm.contains(reviewButton)).toBe(false);
     expect(action.querySelector(".overflow-y-auto")!.contains(reviewButton)).toBe(false);
     expect(action.querySelectorAll("h2")).toHaveLength(1);
-    expect([...action.querySelectorAll("select")].every((field) => field.value === "")).toBe(true);
+    const configurationPickers = action.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="menu"]');
+    expect(configurationPickers).toHaveLength(5);
+    expect([...configurationPickers].every((field) => field.textContent === "Choose a verified record")).toBe(true);
+    expect(action.querySelectorAll("select")).toHaveLength(0);
     await change(action, "Display name", "New governed draft");
     await change(action, "Instructions", "New exact instructions");
     await change(action, "Requested runtime profile", profile.key);

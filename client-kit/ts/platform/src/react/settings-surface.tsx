@@ -1,7 +1,7 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503:
 // desktop/src/features/settings/ui/{SettingsView,SettingsSectionHeader}.tsx
 // desktop/src/shared/ui/{PageHeader,sidebar-menu-label}.tsx
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ArrowLeft, BellRing, Keyboard, MonitorCog, UserRound, Ticket, LoaderCircle } from "lucide-react";
 import { translate, type PlatformLocale } from "../i18n";
 import { BffError } from "../transport";
@@ -9,6 +9,9 @@ import type { Loaded } from "./use-load";
 import { ReadFailure } from "./ui";
 import { SidebarGroup, SidebarGroupLabel, SidebarGroupContent, SidebarMenu,
   SidebarMenuButton, SidebarMenuItem } from "./sidebar/primitives";
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, useSidebar } from "./sidebar/sidebar";
+import { topChromeBackdrop } from "./messages/chromeLayout";
+import { cn } from "./profile/buzz/shared/lib/cn";
 
 export type SettingsSection = "profile" | "appearance" | "notifications" | "shortcuts" | "community-members";
 export const settingsSectionKeys = {
@@ -71,6 +74,49 @@ export function SettingsContentSurface({ section, children }: { section: Setting
       <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col gap-4" data-testid={`settings-panel-${section}`}>{children}</div>
     </section>
   </div>;
+}
+
+// Original SettingsView shell, shared by both hosts. Access facts and section
+// bodies still come from the existing governed consumers, not a second query.
+export function SettingsViewSurface({ locale, section, onSelect, onClose, children, active = true,
+  appVersion, invitationAccess, onRetryInvitations }: {
+  locale: PlatformLocale; section: SettingsSection; onSelect: (section: SettingsSection) => void;
+  onClose?: () => void; children: ReactNode; active?: boolean; appVersion?: string | null;
+  invitationAccess?: Loaded<boolean>; onRetryInvitations?: () => void;
+}) {
+  const { isMobile, open: sidebarOpen, setOpen: setSidebarOpen } = useSidebar();
+  const [isLoaded, setIsLoaded] = useState(false);
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => setIsLoaded(true));
+    return () => window.cancelAnimationFrame(frameId);
+  }, []);
+  useEffect(() => {
+    if (active && !isMobile && !sidebarOpen) setSidebarOpen(true);
+  }, [active, isMobile, setSidebarOpen, sidebarOpen]);
+
+  return <>
+    {active ? <Sidebar className="!border-r-0" collapsible="offcanvas" data-testid="settings-sidebar" variant="sidebar">
+      <div aria-hidden="true" className={cn("shrink-0 cursor-default select-none", topChromeBackdrop.height)}
+        data-tauri-drag-region data-testid="settings-sidebar-top-chrome" />
+      <SidebarHeader className="cursor-default select-none pb-0 pt-3" data-tauri-drag-region>
+        {onClose ? <SettingsBackButton locale={locale} onClose={onClose} sidebarState={sidebarOpen ? "expanded" : "collapsed"} isMobile={isMobile} /> : null}
+      </SidebarHeader>
+      <SidebarContent>
+        <SettingsNavigation locale={locale} section={section} onSelect={onSelect}
+          sidebarState={sidebarOpen ? "expanded" : "collapsed"} isMobile={isMobile}
+          invitationAccess={invitationAccess} onRetryInvitations={onRetryInvitations} />
+      </SidebarContent>
+      <SidebarFooter>
+        {appVersion ? <p className="px-2 pb-1 text-xs text-sidebar-foreground/45" data-buzz-sidebar-secondary data-testid="settings-version">v{appVersion}</p> : null}
+      </SidebarFooter>
+    </Sidebar> : null}
+    <SidebarInset className={cn("isolate relative min-h-0 min-w-0 overflow-hidden bg-sidebar motion-safe:transition-opacity motion-safe:duration-200", isLoaded ? "opacity-100" : "opacity-0")}
+      data-buzz-shadow-viewport data-testid="settings-view">
+      <div aria-hidden="true" className={cn("relative z-10 shrink-0 cursor-default select-none", topChromeBackdrop.height)}
+        data-tauri-drag-region data-testid="settings-top-chrome" />
+      <SettingsContentSurface section={section}>{children}</SettingsContentSurface>
+    </SidebarInset>
+  </>;
 }
 
 export function SettingsSectionHeader({ action, description, title }: {

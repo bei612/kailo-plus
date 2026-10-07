@@ -4822,3 +4822,119 @@ SDK 镜像，以 4 CPU/4 GiB、无网络、只读挂载 apps/设计/GOAL 运行�
 `./tools/check-docs.sh`：七段全部 PASS、退出 0；GOAL markdownlint 退出 0。
 没有修改检查器、构建镜像、修改线上服务或清除依赖缓存。此为文档检查，不是 full。
 本批未部署，真实头像 PUT、多消息 Relay/Temporal 业务及 Windows/Mobile 包仍未验收。
+
+## 原 SettingsView 双宿主整页结构复用（2026-10-07）
+
+本批基准 `edac76e72bc8c1283ea85640d1c00112b44a1c1e`。依据 REQ-24 与用户
+“原版页面、功能不得精简或自创”要求，对照固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的完整路径
+`desktop/src/features/settings/ui/SettingsView.tsx`，符号 `SettingsView`、
+`SettingsSectionButton`、`settingsNavGroups`；以及同目录
+`SettingsPanels.tsx::renderSettingsSection`。只读原源码，没有执行上游。
+
+实现前四步与实际变更：
+
+1. 权威与状态：原版已有 Sidebar/Header/Content/Footer、SidebarInset、顶部拖动留白、
+   首帧显示、设置进入时展开侧栏及单一滚动卡片；Native 已移植其结构，Web 仍使用
+   自写 nav，且嵌在普通内容卡片内。本批把现有 Native 原结构搬到共享
+   `settings-surface.tsx::SettingsViewSurface`，两端 `SettingsPage` 同一实现，
+   没有新增用户文案、菜单或业务分区。
+2. 影响面：检索全部 `SettingsPage` 调用；Web `SettingsPane`、`PlatformApp` 与
+   Native `SettingsView` 接到原共享 SidebarProvider。Web 设置改为普通内容区的
+   同层页面，原宿主顶栏在设置页占原留白而非再增加一条高度。Native 仅保留原
+   `getVersion` 薄适配。现有主题、通知、资料和邀请码调用不改，契约及数据迁移不变。
+3. 副作用：设置关闭只隐藏内容，Native 不再用 `active ? render : null` 丢弃
+   当前分区；既有 UNKNOWN/邀请码 intent 不因回到会话被重建。隐藏的普通侧栏在
+   窄屏仍会通过 Radix Portal 弹出，故只在原 Sidebar 增默认 true 的 `active` 宿主
+   参数约束原 Sheet open，复用同一 openMobile，不建立第二导航状态。
+4. 边界：保留原 Escape 前景弹层优先、会话隔离 key、未确认权限不显示邀请码入口。
+   窄屏只允许当前页面一个 Sheet；关闭再打开设置保持同一 draft 节点；已有失败和
+   UNKNOWN 分类不变，不把准入或未确认保存呈现为成功。
+
+实际验证在既有 `kailo-agent-receipt-xvkujx`（CPU 4、memory.max 8589934592）内，
+沿用 `/dev/shm/settings-return.nexyAQ` 与现有依赖，无安装、打包、Cargo 或 full。
+命令使用 `/usr/local/bin/node node_modules/typescript/bin/tsc --noEmit`；共享测试另加
+`-p tsconfig.test.json`。共享源码/测试、Web、Desktop 全部退出0。原 Vitest 命令为
+`node node_modules/vitest/vitest.mjs run <下列文件> --pool=threads --maxWorkers=1`：
+
+- 共享 `test/settings.test.tsx` 23 项、`test/settings-shortcuts.test.tsx` 13 项，
+  最终 36/36 通过。
+- Web `src/platform/ui/SettingsPane.test.tsx` 6 项、`PlatformApp.test.tsx` 10 项，
+  16/16 通过，包含 settings 不再位于普通 main/内容卡片内的结构断言。
+- 私有 SDK 变异：移除 Sheet 的 active 约束，实际得到两个 dialog，1 fail/22 skipped、
+  退出1；隐藏时改成卸载 children，真实 draft.isConnected=false，1 fail/22 skipped、
+  退出1。正式原字节还原后 36/36、退出0，10 个源码/测试路径逐文件 cmp 均0。
+
+日志完整保留在
+`/volumes/data/kailo/tmp/settings-view-original-20261007.rGEoo0/`：
+`settings-page-baseline.log`、`settings-page-web.log`、`settings-page-native.log`、
+`settings-page-mobile-mutation.log`、`settings-page-draft-mutation.log`、
+`settings-page-restored.log`。Native tsc 成功无 stdout，记录为空日志，实际进程退出0。
+
+交付边界：本批是原页面结构与实际既有分区的共享恢复，不是原版全部设置完成。
+原 SettingsPanels 定义16分区，当前接通5分区；Voice、Custom Emoji、Local Archive、
+Channel Templates、Hosted Communities、Agents、Compute、Experimental、Mobile、
+Updates、Moderation 仍需原真实消费者恢复，不能以裸菜单充数或永久排除。
+原 SignOutSection 包含密钥备份、确认擦除与重启，普通平台 logout 不等效，本批没有
+用普通退出替代它。未改变冻结头像修复，未部署、未构建 Win11 包、未做新页面实机截图。
+
+### 2026-10-07 Agent 原版配置选择器
+
+- 权威及原差异：REQ-24、设计03 §7、17 §8。固定 Buzz
+  `779af8886caae1317b4de962082429867ab61503` 的
+  `desktop/src/features/agents/ui/PersonaDropdownField.tsx::PersonaDropdownField`
+  已完整迁入共享 agent-library；逐字比对除来源注释、导入路径外相同。
+  原 `agentConfigOptions.tsx::PERSONA_FIELD_SHELL_CLASS/PERSONA_FIELD_CONTROL_CLASS`
+  与 `AgentDefinitionDialog.tsx` 指令字段结构复用既有原 Textarea。没有重写一个
+  近似下拉框：滚动边界、键盘选择、禁用项、选后关闭和焦点处理仍为原实现。
+- 影响：Web/Desktop 同一个 VersionAction 实际消费五个选择器。runtime/model
+  选项仍来自当前授权目录；reply 来自选中 RuntimeProfile；memory 来自合同枚举。
+  全部治理字段、工具目录、分页、数值上界和固定 footer 保留。没有改契约、数据库、
+  Workflows 段、设置、导航或 Mobile；没有增加第二套配置/默认值权威。
+- 副作用：选择仅改原本地表单，Review 不写，提交仍为冻结 ActionCommand。
+  runtime 切换仍清除旧 reply/capabilities，UNKNOWN 锁定和原请求重查不变。
+  未引入原尚未接通的本地 Harness/provider 密钥配置，不冒充已支持。
+- 边界：空目录或失效引用不自动选择；无权/发布审阅仍由原 fieldset 和 prepare
+  有效性检查拒绝。下拉触发是 type=button，不隐式提交。原六类错误映射不变。
+  这不是整个 AgentDefinitionDialog 百分之百恢复：头像预览、identity 描述计数、
+  Advanced 等仍有接缝缺口，不能为复刻原280字符限制而截断当前合同的已有内容。
+
+实现后在原受限 SDK 以同一候选输入执行 shared source/test TypeScript，均退出0；
+Agent 治理原用例67项、原卡片/弹窗及新下拉交互6项，共73项通过。
+其余 pages196项未运行，不冒称全文件通过。SDK-only 将真实选项回调值破坏为空串，
+组件选择用例与实际创建版本用例均失败，退出1；原字节还原并 cmp0 后73项复跑通过。
+未改正式代码迁就检查，未安装依赖、full、构建、部署或宣称线上原版等效。
+
+原日志在 `kailo-agent-receipt-xvkujx:/dev/shm/agent-native-controls-baseline.log`、
+`agent-native-controls-mutation.log`、`agent-native-controls-restored.log`；
+私有候选和日志副本位于 `/tmp/kailo-agent-native-controls.7PQBJg/`。
+pages 只取 Agent describe 的交互差异，保留基准原主题检查，不夹带正式工作树
+此前已存在的主题规则删除。变更未触及其他队友的 Agent/头像或工作流增量。
+
+### 两批原版控件合并复核
+
+相对已推送 `2359f76da62c7fe53b6bd3b01b2d85bca5dc81ab`，合入上述设置
+结构和 Agent 原控件，保留同一提交的多消息工作流、HTTP 头像与按钮修复。
+根线程核对全部产品 diff 与固定上游 SettingsView，再把选定树
+`925005b5a9dde3cfe7c1b39cc4c03fa26997c4a7` 的共享源码、契约与受影响文件
+投递既有 CPU 4/8 GiB SDK。没有改正式工作树里的其他在途改动。
+
+首次复用旧设置快照时缺上一批 workflow-steps/i18n，tsc 实际退出2；同步选定
+树的完整共享源码后源/测试类型检查均退出0。设置、快捷键、头像和工作流按钮
+四文件62项通过。Agent 检查首次缺宿主 tailwind.config.js，收集阶段退出1；
+投递选定树两宿主原配置后，原定向命令73项通过、196项明确跳过，退出0。
+两次投递失败均保留日志，没有删除断言或修改产品代码掩盖失败。
+
+本批仍是源码检查点：不证明原全部设置/Agent 页面完成，不证明视觉一致，
+没有新的镜像、安装包、部署、截图或 full 通过声明。日志为
+`/volumes/data/kailo/tmp/buzz-shared-ui-integration.g9RXK1/combined-check.log`、
+`combined-restored-check.log`、`combined-agent-check.log`。
+
+追加两宿主合并验证：Web 的 SDK 私有 node_modules 仍是旧包副本，首次类型检查
+缺新控件；复制投递又遇该容器 `/dev/shm` 64 MiB 满。仅将这次私有副本恢复性移至
+`/evidence/buzz-ui-sdk-recovery.QJaNvp/`，未清理共享缓存或产品源码。尝试目录符号
+链接后触发两份 React 类型身份冲突，故改为同一冻结源文件的私有硬链接副本，
+保留各宿主原包解析位置；未改产品 TypeScript 配置绕过。最终 Web tsc、Web 两文件
+16/16 与 Desktop tsc 均退出0（原句柄82181）；日志为
+`combined-web-check.log`、`combined-hosts-restored.log`、`combined-hosts-final.log`、
+`combined-hosts-package-check.log`，前三个失败不作为通过证据。

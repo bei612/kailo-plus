@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useState, type ComponentProps } from "react";
 import { act } from "react";
 import { ConversationDisplaySettings } from "../src/react/conversation-display-settings";
 import { ProminentActiveTabSetting } from "../src/react/prominent-active-tab-setting";
@@ -19,9 +19,9 @@ import {
   initializeConversationDensityPreference,
   setConversationDensity,
 } from "../src/conversationDensityPreference";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  SettingsPage,
+  SettingsPage as SettingsPageView,
   LanguageSettings,
   ShortcutSettings,
   ThemeModeControl,
@@ -39,8 +39,68 @@ import { ThreadLayoutSetting } from "../src/react/thread-layout-settings";
 import { FocusThreadDrawer } from "../src/react/messages/thread/FocusThreadDrawer";
 import { getThreadViewMode, setThreadViewMode, useThreadViewMode } from "../src/react/messages/thread/threadViewModePreference";
 import { parseLinkPreviewSnapshots, parseLinkPreviewTextSnapshots, LinkPreviewAttachmentPresentation, LinkPreviewStyleSetting, setLinkPreviewStyle, useLinkPreviewStyle } from "../src/react/link-preview";
+import { Sidebar, SidebarProvider, SidebarTrigger } from "../src/react/sidebar/sidebar";
+
+function SettingsPage(props: ComponentProps<typeof SettingsPageView>) {
+  return <SidebarProvider><SettingsPageView {...props} /></SidebarProvider>;
+}
+
+beforeEach(() => {
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));
+});
+afterEach(() => vi.unstubAllGlobals());
 
 describe("shared Buzz settings presentation", () => {
+  it("uses the original SettingsView shell and keeps the mounted draft when inactive", async () => {
+    const close = vi.fn();
+    function Host() {
+      const [active, setActive] = useState(true);
+      return <SidebarProvider defaultOpen={false}>
+        <button onClick={() => setActive(value => !value)}>Toggle settings</button>
+        <SettingsPageView active={active} locale="en" section="profile" onSelect={() => {}} onClose={close} appVersion="1.2.3">
+          <input aria-label="Unconfirmed draft" defaultValue="unknown save" />
+        </SettingsPageView>
+      </SidebarProvider>;
+    }
+    const host = await render(<Host />);
+    const sidebar = host.querySelector('[data-testid="settings-sidebar"]')!;
+    expect(sidebar.closest('[data-state="expanded"]')).not.toBeNull();
+    expect(sidebar.querySelector('[data-testid="settings-sidebar-top-chrome"]')).not.toBeNull();
+    expect(sidebar.querySelector('[data-sidebar="header"] [data-testid="settings-back-to-app"]')).not.toBeNull();
+    expect(sidebar.querySelector('[data-sidebar="footer"]')?.textContent).toBe("v1.2.3");
+    const viewport = host.querySelector('[data-testid="settings-view"]')!;
+    expect(viewport.querySelector('[data-testid="settings-top-chrome"]')).not.toBeNull();
+    expect(viewport.querySelector('[data-testid="settings-content-scroll"]')?.className).toContain("overflow-y-auto");
+    expect(host.querySelectorAll('[data-buzz-content-surface]')).toHaveLength(1);
+    await click(host.querySelector<HTMLElement>('[data-testid="settings-back-to-app"]')!);
+    expect(close).toHaveBeenCalledOnce();
+    const draft = host.querySelector<HTMLInputElement>('input[aria-label="Unconfirmed draft"]')!;
+    await click(button(host, "Toggle settings"));
+    expect(host.querySelector('[data-testid="settings-sidebar"]')).toBeNull();
+    expect(draft.isConnected).toBe(true);
+    await click(button(host, "Toggle settings"));
+    expect(host.querySelector('input[aria-label="Unconfirmed draft"]')).toBe(draft);
+    expect(draft.value).toBe("unknown save");
+  });
+  it("opens only the active original sidebar sheet on a narrow host", async () => {
+    vi.stubGlobal("innerWidth", 600);
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: true, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));
+    const host = await render(<SidebarProvider>
+      <SidebarTrigger />
+      <div hidden><Sidebar active={false}><span>Inactive application menu</span></Sidebar></div>
+      <SettingsPageView locale="en" section="profile" onSelect={() => {}} onClose={() => {}}>
+        <input aria-label="Mobile draft" defaultValue="preserve" />
+      </SettingsPageView>
+    </SidebarProvider>);
+    const draft = host.querySelector<HTMLInputElement>('input[aria-label="Mobile draft"]')!;
+    await click(host.querySelector<HTMLButtonElement>('[data-sidebar="trigger"]')!);
+    const sheets = document.querySelectorAll('[data-mobile="true"]');
+    expect(sheets).toHaveLength(1);
+    expect(sheets[0]?.querySelector('[data-testid="settings-back-to-app"]')).not.toBeNull();
+    expect(document.body.textContent).not.toContain("Inactive application menu");
+    expect(draft.isConnected).toBe(true);
+    expect(draft.value).toBe("preserve");
+  });
   it("applies the original thread layout to a mounted consumer without losing its reply intent", async () => {
     setLocale("en"); setThreadViewMode("split");
     const close=vi.fn();
@@ -393,7 +453,7 @@ describe("shared Buzz settings presentation", () => {
     ).not.toBeNull();
     await click(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-profile"]')!);
     expect(host.querySelector('[data-testid="settings-panel-profile"]')?.textContent).toBe("profile");
-    expect(host.querySelectorAll("nav button")).toHaveLength(4);
+    expect(host.querySelectorAll('[data-testid^="settings-nav-"]')).toHaveLength(4);
     expect(host.querySelector('[data-sidebar="menu-label"] [aria-hidden="true"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="settings-content-scroll"]')).not.toBeNull();
     expect(host.textContent).not.toMatch(/provider|私钥|配对|语言/);

@@ -7,6 +7,7 @@ import { SettingsPane, WorkspaceNotifications } from "./SettingsPane";
 import { setLocale } from "@client-kit/platform/i18n";
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import { createBffClient } from "@client-kit/platform/client";
+import { SidebarProvider } from "@client-kit/platform/react/sidebar/sidebar";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -76,7 +77,7 @@ describe("Web settings existing user-state CAS consumer", () => {
     try {
       const client=createBffClient({send:async()=>({status:200,body:[]})});
       const close = vi.fn();
-      await act(async () => root.render(<PlatformProvider client={client} locale="en"><SettingsPane onClose={close} /></PlatformProvider>));
+      await act(async () => root.render(<PlatformProvider client={client} locale="en"><SidebarProvider><SettingsPane onClose={close} /></SidebarProvider></PlatformProvider>));
       const back = host.querySelector<HTMLButtonElement>('[data-testid="settings-back-to-app"]')!;
       expect(back.textContent).toBe("Back to app");
       await act(async () => back.click());

@@ -1,13 +1,54 @@
 import { act } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { AgentDefinitionsPage } from "../src/react/agents";
 import { PlatformProvider } from "../src/react/context";
+import { PersonaDropdownField } from "../src/react/agent-library/PersonaDropdownField";
 import type { BffReply, BffRequest } from "../src/transport";
 import { button, click, render, settle, type } from "./render";
 
 const definition = { resourceId: "definition", displayName: "Library Agent", stableSlug: "library-agent",
   ownerPrincipalId: "owner", resourceVersion: 1, resourceState: "ACTIVE", status: "ACTIVE" };
+
+describe("original Agent configuration picker", () => {
+  beforeEach(() => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("retains the native scroll boundary and selects only a real enabled directory option", async () => {
+    const select = vi.fn();
+    const host = await render(<PersonaDropdownField id="profile" value="" placeholder="选择已查证的记录"
+      onValueChange={select} options={[{ value: "unavailable", label: "不可用", disabled: true },
+        { value: "available", label: "已授权配置" }]} />);
+    const trigger = host.querySelector<HTMLButtonElement>("button")!;
+    expect(trigger.className).toContain("h-11");
+    await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    await settle();
+    const menu = document.querySelector<HTMLElement>('[role="menu"]')!;
+    expect(menu.querySelector(".overscroll-contain")).not.toBeNull();
+    const items = menu.querySelectorAll<HTMLElement>('[role="menuitemradio"]');
+    expect(items[0]?.getAttribute("aria-disabled")).toBe("true");
+    await click(items[0]!);
+    expect(select).not.toHaveBeenCalled();
+    await click(items[1]!);
+    expect(select).toHaveBeenCalledExactlyOnceWith("available");
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it("does not substitute a default for a missing record or unlock a disabled editor", async () => {
+    const select = vi.fn();
+    const host = await render(<PersonaDropdownField id="profile" value="stale-profile" placeholder="Choose a verified record"
+      disabled onValueChange={select} options={[{ value: "different-profile", label: "Different profile" }]} />);
+    const trigger = host.querySelector<HTMLButtonElement>("button")!;
+    expect(trigger.disabled).toBe(true);
+    expect(trigger.textContent).toBe("Choose a verified record");
+    await click(trigger);
+    expect(select).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+});
 async function setup(reply?: (request: BffRequest) => BffReply | undefined, locale: "en" | "zh-CN" = "en") {
   const send = vi.fn(async (request: BffRequest): Promise<BffReply> => {
     const result = reply?.(request);

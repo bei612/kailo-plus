@@ -2,13 +2,14 @@ import { StrictMode, act, useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { useSettingsShortcuts } from "../src/react/use-settings-shortcuts";
 import { SettingsPage } from "../src/react/settings";
+import { SidebarProvider } from "../src/react/sidebar/sidebar";
 import { useUiLocale } from "../src/react/context";
 import { setLocale } from "../src/i18n";
 import { hasActiveEscapeSurface } from "../src/react/messages/thread/escapeSurfaces";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "../src/react/composer/shared/ui/dialog";
 import { click, render } from "./render";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 async function press(init: KeyboardEventInit) {
   const event = new KeyboardEvent("keydown", { key: ",", cancelable: true, ...init });
@@ -68,15 +69,16 @@ it("removes its listener when the host is disabled or unmounted", async () => {
 
 it("returns through the original shared button or Escape without remounting a pending settings intent", async () => {
   setLocale("zh-CN");
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));
   vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   function Host() {
     const locale = useUiLocale();
     const [open, setOpen] = useState(true);
     useSettingsShortcuts({ open, onOpenSettings: () => setOpen(true), onClose: () => setOpen(false) });
-    return <><span data-testid="current-page">{open ? "settings" : "original-conversation"}</span>
-      <div hidden={!open}><SettingsPage locale={locale} section="profile" onSelect={() => {}} onClose={() => setOpen(false)}>
+    return <SidebarProvider><span data-testid="current-page">{open ? "settings" : "original-conversation"}</span>
+      <div hidden={!open}><SettingsPage active={open} locale={locale} section="profile" onSelect={() => {}} onClose={() => setOpen(false)}>
         <input aria-label="Pending intent" defaultValue="same-idempotency-key" disabled />
-      </SettingsPage></div></>;
+      </SettingsPage></div></SidebarProvider>;
   }
   const host = await render(<StrictMode><Host /></StrictMode>);
   const pending = host.querySelector<HTMLInputElement>("input")!;

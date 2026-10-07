@@ -116,7 +116,7 @@ vi.mock("@client-kit/platform/react/invitations", () => ({
 }));
 vi.mock("@/platform/ui/ChannelPane", () => ({ ChannelPane: () => null }));
 vi.mock("@/platform/ui/InboxPane", () => ({ InboxPane: () => null }));
-vi.mock("@/platform/ui/SettingsPane", () => ({ SettingsPane: () => null }));
+vi.mock("@/platform/ui/SettingsPane", () => ({ SettingsPane: ({ active }: { active: boolean }) => <div data-testid="settings-host" data-active={active} /> }));
 vi.mock("./BrowserNotifications", () => ({
   BrowserNotificationsProvider: ({ children }: { children: React.ReactNode }) => children,
   useBrowserNotifications: () => null,
@@ -150,6 +150,18 @@ it("uses the native shared restricted view without mounting ordinary workspace m
   expect(markup).not.toContain('data-testid="shared-management-panels"');
   expect(markup).not.toContain('data-testid="sidebar-settings"');
   expect(markup).not.toContain('data-testid="workspace-members"');
+});
+it("mounts the original settings page beside rather than inside the ordinary content card", () => {
+  state.tab = "settings";
+  const host = document.createElement("div");
+  host.innerHTML = renderToStaticMarkup(<PlatformApp />);
+  const settings = host.querySelector('[data-testid="settings-host"]')!;
+  expect(settings.getAttribute("data-active")).toBe("true");
+  expect(settings.closest('[data-testid="app-content-surface"]')).toBeNull();
+  expect(settings.closest("main")).toBeNull();
+  expect(settings.closest('[data-testid="app-sidebar-layer"]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="app-top-chrome"]')?.className).toContain("absolute inset-x-0 top-0");
+  expect(host.querySelector('[data-testid="app-sidebar"]')?.closest("[hidden]")).not.toBeNull();
 });
 it("retains the host-selected Workspace and mounts shared member management", () => {
   const markup = renderToStaticMarkup(<PlatformApp />);

@@ -52,13 +52,13 @@ function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] 
 }
 // The table describes the real shared Tiptap handlers, not new key bindings.
 
-export function SettingsPane({ onClose }: { onClose?: () => void }) {
+export function SettingsPane({ active = true, onClose }: { active?: boolean; onClose?: () => void }) {
   const locale = useUiLocale();
   const appearance = useTheme();
   const [section, setSection] = useState<SettingsSection>("profile");
   const invitations=useInvitationSettingsState();
   return (
-    <SettingsPage locale={locale} section={section} onSelect={setSection} onClose={onClose} invitationAccess={invitations.access} onRetryInvitations={invitations.reload}>
+    <SettingsPage active={active} locale={locale} section={section} onSelect={setSection} onClose={onClose} invitationAccess={invitations.access} onRetryInvitations={invitations.reload}>
       <CommunityInvitationSettings active={section==="community-members"} onAccessChange={invitations.onAccessChange}/>
       {section === "profile" ? <WebProfileSettings /> : section === "appearance" ? (
         <section className="flex min-h-0 flex-1 flex-col" data-testid="settings-theme">

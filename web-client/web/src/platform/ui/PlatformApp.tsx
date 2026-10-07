@@ -309,12 +309,13 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       <div className="absolute inset-0 z-10 flex min-h-0 flex-row overflow-hidden bg-background">
         <GradientLayer />
         <SidebarProvider className="relative z-10 min-h-0 min-w-0 flex-1 flex-col overflow-visible" data-testid="app-sidebar-layer">
-          <div className="relative z-45 flex h-(--buzz-top-chrome-height,40px) shrink-0 cursor-default select-none items-center bg-sidebar pl-3 pr-3 text-sidebar-foreground" data-testid="app-top-chrome">
+          <div className={`${tab === "settings" ? "absolute inset-x-0 top-0" : "relative"} z-45 flex h-(--buzz-top-chrome-height,40px) shrink-0 cursor-default select-none items-center bg-sidebar pl-3 pr-3 text-sidebar-foreground`} data-testid="app-top-chrome">
             <SidebarTrigger className="h-[28px] w-[28px] rounded-[4px] text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
             <div className="flex min-w-0 flex-1 items-center" id="app-top-chrome-content" />
           </div>
           <div className="flex min-h-0 flex-1 overflow-hidden">
-            <AppSidebarFrame aria-label={t("platform.title")}
+            <div className="contents" hidden={tab === "settings"} style={tab === "settings" ? { display: "none" } : undefined}>
+            <AppSidebarFrame active={tab !== "settings"} aria-label={t("platform.title")}
               footer={<SidebarMenu><SidebarMenuItem><WebSidebarProfileCard session={session} settingsOpen={tab === "settings"}
                 onOpenSettings={() => setTab("settings")} onSignOut={onSignOut} /></SidebarMenuItem></SidebarMenu>}
               dialogs={<ChannelBrowser key={session.tenantPrincipalId} open={createChannelOpen} onOpenChange={setCreateChannelOpen}
@@ -358,12 +359,13 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             {tabLabel(tab)}
           </header>}
           <main className={tab === "application" ? "flex min-h-0 flex-1 flex-col overflow-hidden p-4" : "min-h-0 flex-1 overflow-auto p-4"}>
-            {settingsVisited.current?<div hidden={tab!=="settings"} style={tab==="settings"?undefined:{display:"none"}}>
-              <SettingsPane key={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`} onClose={() => settingsReturn.current()}/>
-            </div>:null}
             {body}
           </main>
         </ContentSurface>
+            </div>
+            {settingsVisited.current ? <div className="flex min-h-0 min-w-0 flex-1" hidden={tab !== "settings"} style={tab === "settings" ? undefined : { display: "none" }}>
+              <SettingsPane key={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`} active={tab === "settings"} onClose={() => settingsReturn.current()} />
+            </div> : null}
           </div>
         </SidebarProvider>
       </div>

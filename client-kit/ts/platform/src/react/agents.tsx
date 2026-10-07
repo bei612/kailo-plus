@@ -56,6 +56,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AgentIdentityCard } from "./agent-library/AgentIdentityCard";
 import { CreateIdentityCard } from "./agent-library/CreateIdentityCard";
 import { AgentManagementDialog } from "./agent-library/AgentManagementDialog";
+import { PersonaDropdownField } from "./agent-library/PersonaDropdownField";
+import { PERSONA_FIELD_CONTROL_CLASS, PERSONA_FIELD_SHELL_CLASS } from "./agent-library/agentConfigOptions";
+import { Textarea as AgentTextarea } from "./profile/buzz/shared/ui/textarea";
 import { CronExpressionInput } from "./cron-expression-input";
 import { cronExpressionError, cronYamlError } from "./cron-expression";
 import type { AutomationStep } from "@client-kit/contracts";
@@ -2144,20 +2147,40 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
             <label className="flex flex-col gap-1 text-sm">{t("agents.name")}<input required value={name} onChange={(event) => setName(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
             <label className="flex flex-col gap-1 text-sm">{t("agents.version.avatar")}<input value={avatar} onChange={(event) => setAvatar(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
             <label className="flex flex-col gap-1 text-sm">{t("agents.version.description")}<textarea value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-16 rounded-md border border-input bg-background p-2" /></label>
-            <label className="flex flex-col gap-1 text-sm">{t("agents.version.instructions")}<textarea required value={instructions} onChange={(event) => setInstructions(event.target.value)} className="min-h-32 rounded-md border border-input bg-background p-2" /></label>
-            <label className="flex flex-col gap-1 text-sm">{t("agents.version.runtimeProfile")}<select required value={profileKey} onChange={(event) => { setProfileKey(event.target.value); setReply(""); setCapabilities([]); }} className="h-8 rounded-md border border-input bg-background px-2">
-              <option value="">{t("agents.automation.select")}</option>{source.profiles.map((value) => <option key={value.key} value={value.key}>{value.key}</option>)}</select></label>
-            <label className="flex flex-col gap-1 text-sm">{t("agents.version.modelRoute")}<select required value={routeId} onChange={(event) => setRouteId(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
-              <option value="">{t("agents.automation.select")}</option>{source.routes.map((value) => <option key={value.resourceId} value={value.resourceId}>{value.resourceId} · {value.resourceVersion} · {value.nativeRevision}</option>)}</select></label>
-            <label className="flex flex-col gap-1 text-sm">{t("agents.version.replyPolicy")}<select required value={reply} onChange={(event) => setReply(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
-              <option value="">{t("agents.automation.select")}</option>{contract?.replyPolicies.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-instructions`}>{t("agents.version.instructions")}</label>
+              <div className={PERSONA_FIELD_SHELL_CLASS}>
+                <AgentTextarea required id={`${formId}-instructions`} value={instructions} onChange={(event) => setInstructions(event.target.value)} className={`min-h-40 resize-y px-3 py-3 leading-5 ${PERSONA_FIELD_CONTROL_CLASS}`} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-runtime`}>{t("agents.version.runtimeProfile")}</label>
+              <PersonaDropdownField id={`${formId}-runtime`} value={profileKey} onValueChange={(value) => { setProfileKey(value); setReply(""); setCapabilities([]); }} placeholder={t("agents.automation.select")}
+                options={source.profiles.map((value) => ({ value: value.key, label: value.key }))} />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-route`}>{t("agents.version.modelRoute")}</label>
+              <PersonaDropdownField id={`${formId}-route`} value={routeId} onValueChange={setRouteId} placeholder={t("agents.automation.select")}
+                options={source.routes.map((value) => ({ value: value.resourceId, label: `${value.resourceId} · ${value.resourceVersion} · ${value.nativeRevision}` }))} />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-reply`}>{t("agents.version.replyPolicy")}</label>
+              <PersonaDropdownField id={`${formId}-reply`} value={reply} onValueChange={setReply} placeholder={t("agents.automation.select")}
+                options={(contract?.replyPolicies ?? []).map((value) => ({ value, label: value }))} />
+            </div>
             <label className="flex flex-col gap-1 text-sm">{t("agents.version.parallelism")}<input required type="number" min={1} step={1} max={contract?.maxParallelism} value={parallelism} onChange={(event) => setParallelism(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
             <label className="flex flex-col gap-1 text-sm">{t("agents.version.idleTimeout")}<input required type="number" min={1} step={1} max={contract?.maxIdleTimeoutSeconds} value={idle} onChange={(event) => setIdle(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
             <label className="flex flex-col gap-1 text-sm">{t("agents.version.maxDuration")}<input required type="number" min={1} step={1} max={contract?.maxTurnDurationSeconds} value={duration} onChange={(event) => setDuration(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
-            <label className="flex flex-col gap-1 text-sm">{t("agents.version.coreWrite")}<select required value={coreWrite} onChange={(event) => setCoreWrite(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
-              <option value="">{t("agents.automation.select")}</option><option value={AgentMemoryCoreWrite.HumanOnly}>{t("agents.version.coreHumanOnly")}</option><option value={AgentMemoryCoreWrite.AgentWithApproval}>{t("agents.version.coreApproval")}</option></select></label>
-            <label className="flex flex-col gap-1 text-sm">{t("agents.version.coldWrite")}<select required value={coldWrite} onChange={(event) => setColdWrite(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
-              <option value="">{t("agents.automation.select")}</option><option value={AgentMemoryColdWrite.Disabled}>{t("agents.version.coldDisabled")}</option><option value={AgentMemoryColdWrite.InvocationScoped}>{t("agents.version.coldInvocation")}</option></select></label>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-core-memory`}>{t("agents.version.coreWrite")}</label>
+              <PersonaDropdownField id={`${formId}-core-memory`} value={coreWrite} onValueChange={setCoreWrite} placeholder={t("agents.automation.select")}
+                options={[{ value: AgentMemoryCoreWrite.HumanOnly, label: t("agents.version.coreHumanOnly") }, { value: AgentMemoryCoreWrite.AgentWithApproval, label: t("agents.version.coreApproval") }]} />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground" htmlFor={`${formId}-cold-memory`}>{t("agents.version.coldWrite")}</label>
+              <PersonaDropdownField id={`${formId}-cold-memory`} value={coldWrite} onValueChange={setColdWrite} placeholder={t("agents.automation.select")}
+                options={[{ value: AgentMemoryColdWrite.Disabled, label: t("agents.version.coldDisabled") }, { value: AgentMemoryColdWrite.InvocationScoped, label: t("agents.version.coldInvocation") }]} />
+            </div>
             <fieldset className="flex flex-col gap-1 text-sm"><legend>{t("agents.version.triggers")}</legend>{Object.values(AgentTrigger).map((trigger) => <label className="flex gap-2" key={trigger}><input type="checkbox" checked={triggers.includes(trigger)} onChange={(event) => setTriggers((values) => event.target.checked ? [...values, trigger] : values.filter((value) => value !== trigger))} />{t(trigger === AgentTrigger.Mention ? "agents.installation.trigger.mention" : "agents.version.manualAssignment")}</label>)}</fieldset>
             <fieldset className="flex flex-col gap-1 text-sm"><legend>{t("agents.version.capabilities")}</legend>{contract?.capabilityRequirements.map((key) => <label className="flex gap-2" key={key}><input type="checkbox" checked={capabilities.includes(key)} onChange={(event) => setCapabilities((values) => event.target.checked ? [...values, key] : values.filter((value) => value !== key))} />{key}</label>)}</fieldset>
             <p className="text-sm text-muted-foreground">{t("agents.version.toolsUnavailable")}</p>

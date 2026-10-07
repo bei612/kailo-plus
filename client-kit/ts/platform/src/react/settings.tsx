@@ -2,9 +2,8 @@
 // preference stores, native notification permissions and keyboard handlers.
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { useDeviceLocale, useUiLocale } from "./context";
-import { SettingsNavigation, SettingsBackButton, SettingsContentSurface, SettingsSectionHeader, type SettingsSection } from "./settings-surface";
+import { SettingsViewSurface, SettingsSectionHeader, type SettingsSection } from "./settings-surface";
 import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from "./settings-option-group";
-import { TooltipProvider } from "./sidebar/tooltip";
 import { TenantInvitations } from "./invitations";
 import type { Loaded } from "./use-load";
 export { SettingsNavigation, SettingsBackButton, SettingsContentSurface, SettingsSectionHeader, settingsSectionKeys, type SettingsSection } from "./settings-surface";
@@ -196,6 +195,8 @@ export function SettingsPage({
   invitationAccess,
   onRetryInvitations,
   onClose,
+  active,
+  appVersion,
 }: {
   locale: PlatformLocale;
   section: SettingsSection;
@@ -204,17 +205,14 @@ export function SettingsPage({
   invitationAccess?:Loaded<boolean>;
   onRetryInvitations?:()=>void;
   onClose?:()=>void;
+  active?: boolean;
+  appVersion?: string | null;
 }) {
   return (
-    <div className="flex min-h-0 w-full flex-1 flex-col bg-sidebar sm:flex-row" data-testid="settings-page">
-      <nav aria-label={translate(locale, "platform.settings.title")} className="shrink-0 text-sidebar-foreground sm:w-(--sidebar-width)">
-        <TooltipProvider>
-          {onClose ? <div className="flex flex-col gap-2 p-2 pb-0 pt-3" data-sidebar="header"><SettingsBackButton locale={locale} onClose={onClose} /></div> : null}
-          <SettingsNavigation locale={locale} section={section} onSelect={onSelect} invitationAccess={invitationAccess} onRetryInvitations={onRetryInvitations} />
-        </TooltipProvider>
-      </nav>
-      <SettingsContentSurface section={section}>{children}</SettingsContentSurface>
-    </div>
+    <SettingsViewSurface locale={locale} section={section} onSelect={onSelect} onClose={onClose}
+      active={active} appVersion={appVersion} invitationAccess={invitationAccess} onRetryInvitations={onRetryInvitations}>
+      {children}
+    </SettingsViewSurface>
   );
 }
 
