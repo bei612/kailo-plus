@@ -7,13 +7,14 @@ import { getThreadReference } from "@/features/messages/lib/threading";
 import { relayClient } from "@/shared/api/relayClient";
 import { getEventById } from "@/shared/api/tauri";
 import type { FeedItem, RelayEvent } from "@/shared/api/types";
-import { HOME_MENTION_EVENT_KINDS } from "@/shared/constants/kinds";
-import { AUX_BACKFILL_CHUNK_SIZE, buildChannelReactionAuxFilter, buildChannelAuxDeletionFilter } from "@/shared/api/relayChannelFilters";
+import { HOME_MENTION_EVENT_KINDS, CHANNEL_TIMELINE_CONTENT_KINDS } from "@/shared/constants/kinds";
+import { AUX_BACKFILL_CHUNK_SIZE, buildChannelReactionAuxFilter, buildChannelAuxDeletionFilter, buildChannelStructuralAuxFilter } from "@/shared/api/relayChannelFilters";
 
 type InboxThreadContextResult = {
   events: RelayEvent[];
   hasLoadError: boolean;
   isLoading: boolean;
+  refreshReactions: () => Promise<void>;
 };
 
 const THREAD_CONTEXT_LIMIT = 100;
@@ -35,7 +36,9 @@ function getThreadRootId(event: RelayEvent): string {
 export function useInboxThreadContext(
   item: FeedItem | null,
   channelMessages: RelayEvent[] | undefined,
+  options: { fullChannel?: boolean; hasChannelLoadError?: boolean; isChannelLoading?: boolean } = {},
 ): InboxThreadContextResult {
+  const { fullChannel = false, hasChannelLoadError = false, isChannelLoading = false } = options;
   const [fetchedEvents, setFetchedEvents] = React.useState<RelayEvent[]>([]);
   const [hasLoadError, setHasLoadError] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -56,7 +59,7 @@ export function useInboxThreadContext(
   React.useEffect(() => {
     let isCancelled = false;
 
-    if (!selectedEvent || !selectedThreadRootId) {
+    if (!selectedEvent || !selectedThreadRootId || fullChannel) {
       setFetchedEvents([]);
       setHasLoadError(false);
       setIsLoading(false);
@@ -181,6 +184,7 @@ export function useInboxThreadContext(
       isCancelled = true;
     };
   }, [
+    fullChannel,
     selectedChannelId,
     selectedEvent,
     selectedParentId,
@@ -190,6 +194,11 @@ export function useInboxThreadContext(
   const events = React.useMemo(() => {
     if (!selectedEvent) {
       return [];
+    }
+
+    if (fullChannel) {
+      return dedupeEvents([selectedEvent, ...(channelMessages ?? []).filter(event =>
+        (CHANNEL_TIMELINE_CONTENT_KINDS as readonly number[]).includes(event.kind))]);
     }
 
     const localContext = (channelMessages ?? []).filter((event) => {
@@ -216,6 +225,7 @@ export function useInboxThreadContext(
       ...localContext,
     ]);
   }, [
+    fullChannel,
     channelMessages,
     fetchedEvents,
     selectedChannelId,
@@ -242,15 +252,22 @@ export function useInboxThreadContext(
         signal.throwIfAborted();
         return result;
       };
-      const reactionEvents = await fetchAux(contextEventIdsKey.split(","), buildChannelReactionAuxFilter);
-      const deletions = await fetchAux(reactionEvents.map(event => event.id), buildChannelAuxDeletionFilter);
-      return [...reactionEvents, ...deletions];
+      const ids = contextEventIdsKey.split(",");
+      const structuralEvents = await fetchAux(ids, buildChannelStructuralAuxFilter);
+      const reactionEvents = await fetchAux(ids, buildChannelReactionAuxFilter);
+      const deletions = await fetchAux([...structuralEvents, ...reactionEvents].map(event => event.id), buildChannelAuxDeletionFilter);
+      return [...structuralEvents, ...reactionEvents, ...deletions];
     },
   });
   const projectedEvents = React.useMemo(() => dedupeEvents([...events, ...(!reactions.isError ? reactions.data ?? [] : [])]), [events, reactions.data, reactions.isError]);
+  const refreshReactions = React.useCallback(async () => {
+    const refreshed = await reactions.refetch();
+    if (refreshed.error) throw refreshed.error;
+  }, [reactions.refetch]);
   return {
     events: projectedEvents,
-    hasLoadError: hasLoadError || reactions.isError,
-    isLoading: isLoading || reactions.isFetching,
+    hasLoadError: (fullChannel ? hasChannelLoadError : hasLoadError) || reactions.isError,
+    isLoading: (fullChannel ? isChannelLoading : isLoading) || reactions.isFetching,
+    refreshReactions,
   };
 }

@@ -29,13 +29,14 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
 }) {
   const t = useT(); const locale = useLocale();
   const [anchor] = useState(selectedEventId);
+  const [anchorRoot] = useState(rootId);
   const replyParent = useRef<string | null>(null);
   const [replyId, setReplyId] = useState<string | null>(replyTargetEventId ?? null);
   const [sending, setSending] = useState(false);
   const [unresolved, setUnresolved] = useState(false);
   const publication = useRef<{ key: string; parent: string; unknown: boolean } | null>(null);
   const composerContainer = useRef<HTMLDivElement>(null);
-  const { thread, messages, reactionEvents, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, rootId, conversation?.id);
+  const { thread, messages, contextIds, reactionEvents, denied, interrupted, refresh } = useWorkspaceThread(principalId, workspaceId, anchorRoot, conversation?.id, conversation ? anchor : undefined);
   const messageReactions = useMessageReactions({principalId,workspaceId,conversationId:conversation?.id,events:reactionEvents ?? messages,
     available:canInteract && !denied && !interrupted && thread.isSuccess && !thread.isError,refresh});
   const scroller = useRef<HTMLDivElement>(null);
@@ -50,13 +51,13 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
     if (target) { target.scrollIntoView({ block: "center" }); reached.current = true; }
     else if (thread.hasNextPage && !thread.isFetchingNextPage && !thread.isError) void thread.fetchNextPage();
   }, [anchor, messages.length, thread.hasNextPage, thread.isFetchingNextPage, thread.isError, thread.fetchNextPage]);
-  const unavailable = denied || thread.isError || (thread.isSuccess && !messages.some((event) => event.id === rootId));
+  const unavailable = denied || thread.isError || (thread.isSuccess && !messages.some((event) => event.id === (conversation ? anchor : anchorRoot)));
   useEffect(() => {
     if (unavailable || interrupted) onAuthorScopeUnavailable?.(workspaceId);
   }, [unavailable, interrupted, workspaceId, onAuthorScopeUnavailable]);
   const parentId = replyId ?? replyParent.current;
   const replyTarget = replyId ? messages.find((message) => message.id === replyId) : undefined;
-  const canReply = canInteract && !unavailable && !interrupted && thread.isSuccess && parentId !== null && messages.some((message) => message.id === parentId) && (conversation
+  const canReply = canInteract && !unavailable && !interrupted && thread.isSuccess && parentId !== null && (messages.some((message) => message.id === parentId) || contextIds.has(parentId)) && (conversation
     ? conversation.state === "ACTIVE" && conversation.channelId === workspaceId && conversation.participantPrincipalIds.includes(principalId)
     : members.some((member) => member.principalId === principalId && "state" in member && member.state === WorkspaceMembershipState.Active));
   const selectReply = (id: string | null) => {
@@ -99,7 +100,7 @@ export function InboxThreadPane({ principalId, workspaceId, conversation, canInt
         })}
       {!unavailable && thread.hasNextPage ? <Button disabled={thread.isFetchingNextPage} onClick={() => { void thread.fetchNextPage(); }}>{t("forum.more")}</Button> : null}
     </div>
-    <div className="shrink-0" ref={composerContainer}><Composer key={replyId ?? "default"} workspaceId={conversation ? undefined : workspaceId} draftChannelId={workspaceId} draftIdentity={principalId} draftKey={`thread:${workspaceId}:${rootId}${replyId ? `:${replyId}` : ""}`} autoSendDraftKey={autoSendDraftKey} disabled={!canReply}
+    <div className="shrink-0" ref={composerContainer}><Composer key={replyId ?? "default"} workspaceId={conversation ? undefined : workspaceId} draftChannelId={workspaceId} draftIdentity={principalId} draftKey={`thread:${workspaceId}:${anchorRoot}${replyId ? `:${replyId}` : ""}`} autoSendDraftKey={autoSendDraftKey} disabled={!canReply}
       mentionPeople={conversation ? members.map(member => ({pubkey:member.pubkeys[0]!,displayName:member.displayName})).filter(member => Boolean(member.pubkey)) : undefined}
       onUpload={conversation ? file => uploadConversationMedia(conversation.id, file) : undefined}
       onMediaUrl={conversation ? hash => mediaUrl(workspaceId, hash, conversation.id) : undefined}

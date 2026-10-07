@@ -71,3 +71,50 @@ CHECK_NETWORK=host CHECK_CACHE_ROOT=/volumes/data/kailo/check-cache ./tools/chec
 清理仅删除本次临时导出，空间恢复约 3.4 GiB；未删除用户数据或共享缓存。
 日志为 `/volumes/data/kailo/tmp/settings-scale-20261007.VXUSoG/restoration-batch-full.log`。
 本次全量不是通过；发布继续受阻，阶段源码提交不作为发布验收。
+
+## 2026-10-07 Web 完整私聊详情增量
+
+基准 main `9cc4aede9291658906720261308842ac49c284cc`；官方 Buzz 仍固定
+`779af8886caae1317b4de962082429867ab61503`，重新用 `git show` 核验
+`desktop/src/features/home/ui/HomeView.tsx::HomeView` 的 `fullChannel` 与
+`latchedDefaultParentId`，以及
+`desktop/src/features/home/useInboxThreadContext.ts::useInboxThreadContext`。
+原版 DM 详情是整个会话窗口加已选消息，不是仅列该消息所在的线程。
+
+动手前四步与实际差异：
+
+1. 原版已有 fullChannel 分支；此前 Web 宿主只发 parentEventId 查询，漏掉同一
+   私聊的其他顶层消息。本批恢复数据消费，不增加页面、菜单或新公共权威。
+2. 写方仍为 Relay；Web `useWorkspaceThread` 调用原 conversationMessages，
+   `InboxThreadPane` 消费同一共享消息行/Composer。频道线程的原查询不变。
+   会话窗口复用原签名 bounds parser 和倒序 cursor；选中消息落在窗口外时，
+   用已准入线程分页重新读取，只合入选中消息及其辅助事件，不带入无关回复。
+   不改 API、schema、数据库或消息格式，旧客户端仍可读取同一格式。
+3. `contextIds` 仅证明本次已读取的回复父事件，不是新权限或已读权威；发送、
+   上传、回应仍由既有 BFF 重做准入。Core 不保存正文。原版默认回复仍使用
+   latched parent，不能把 DM 完整窗口误改成默认顶层发送；实时代表消息变动
+   不再改变已经选中的 root 和草稿 key，UNKNOWN 意图保持既有行为。
+4. 空/删除的锚点不假装已加载；窗口 bounds 缺失、游标不前进、上游失败均显示
+   原失败状态。选中线程正序与会话历史倒序分别核验；撤 scope、身份、会话、
+   binding 时取消在途查询并清缓存，取消后的应答不回填正文。无新错误枚举，
+   沿原 loadFailed/interrupted/UNKNOWN 呈现，不把未知结果当终态。
+
+实际执行仍为既有 Data SDK，4 CPU、8 GiB memory/swap、1000:1000，未安装
+依赖或构建镜像。Web `tsc --noEmit` 退出 0；现有 InboxPane + InboxThreadPane
+检查为 `25 passed`、退出 0。私有副本把 fullChannel 改为 false，结果
+`4 failed | 7 passed`、退出 1：整段会话查询、历史窗口、已选回复合并和缺失
+bounds 均能抓到。恢复后 `cmp` 退出 0，再跑类型和详情检查，`11 passed`、退出 0。
+日志位于 Data 的 `profile-settings-ortsoo.DRR20F/inbox-dm-window-{mutation,restored}.log`。
+原异步组件的 act 提示未屏蔽。
+
+本增量没有新浏览器截图或实际多人操作、Windows/Mobile 包、部署或 full 通过
+证据。上节 full 退出 143 的空间问题仍存在，不重复同一全树导出；不将源码
+增量称为用户已经可用、全部 Inbox 恢复或生产就绪。
+
+同批重新执行原 `python3 tools/upstream_manifest.py diff collaboration`，非只看
+本批 Git diff；退出 0，全树结果为 3290 条 numstat、35239 行增加、740988 行
+删除。生成件为 `/volumes/data/kailo/tmp/buzz-full-diff-20261007.rGSw38/collaboration.patch`，
+SHA-256 `1ffc94a279e5725b9503fc1189cec92c371b923d0340531f28c6428837dd854f`。
+这是执行时整个 collaboration 工作树快照，含 Native 队友当时未提交内容；
+不是固定发布树，也不包含树外的 client-kit 共享实现。全量差异已经生成，
+但全量逐路径四类归属和全部页面实际验收尚未完成，不能把行数当缺失功能数。

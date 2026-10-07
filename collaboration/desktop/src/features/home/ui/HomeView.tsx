@@ -1,5 +1,6 @@
 import { InboxLayout } from "@client-kit/platform/react/inbox-surface";
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { RefreshCcw } from "lucide-react";
 
 import { inboxReadContext } from "@client-kit/platform/inbox";
@@ -29,6 +30,8 @@ import { useNativeSession } from "@/features/platform/activeCommunity";
 import { useHomeInboxAutoSelection } from "@/features/home/useHomeInboxAutoSelection";
 import { useHomeInboxContextMessages } from "@/features/home/useHomeInboxContextMessages";
 import { useInboxThreadContext } from "@/features/home/useInboxThreadContext";
+import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
+import type { RelayEvent } from "@/shared/api/types";
 import { UserProfilePanel } from "@/features/profile/ui/UserProfilePanel";
 import {
   INBOX_SINGLE_COLUMN_BREAKPOINT_PX,
@@ -207,6 +210,7 @@ export function HomeView({
   // Native's same-anchor latch is useful for paging, but it is not an access
   // grant. Revalidate it synchronously before deriving context/detail queries.
   const activeLatchedItem =
+    admittedFeed && !coreReads.failed && !coreReads.unknown &&
     latchedItem?.channelId && admittedChannelIds.has(latchedItem.channelId)
       ? latchedItem
       : null;
@@ -240,14 +244,24 @@ export function HomeView({
 
   const channelMessagesQuery = useChannelMessagesQuery(selectedChannel);
   const toggleReaction = useToggleReactionMutation(selectedChannel, currentPubkey);
-  const onToggleReaction = React.useCallback(async (message: { id: string }, emoji: string, remove: boolean) => {
-    await toggleReaction.mutateAsync({ eventId: message.id, emoji, remove });
-  }, [toggleReaction.mutateAsync]);
-  const channelMessages = channelMessagesQuery.data;
+  const directChannel = coreReads.conversations.find(item => item.channelId === selectedChannelIdCandidate);
+  // Hidden DMs may be absent from the sidebar. The feed has already hydrated
+  // the same admitted channel cache; no fabricated Channel or second fetch.
+  const dmWindow = useQuery<RelayEvent[]>({ queryKey: channelMessagesKey(directChannel?.channelId ?? "none"), enabled: false });
+  const channelMessages = directChannel ? dmWindow.data : channelMessagesQuery.data;
   const threadContext = useInboxThreadContext(
     threadContextFeedItem,
     channelMessages,
+    {
+      fullChannel: Boolean(directChannel),
+      hasChannelLoadError: directChannel ? dmWindow.isError : channelMessagesQuery.isError,
+      isChannelLoading: directChannel ? dmWindow.isPending : channelMessagesQuery.isPending,
+    },
   );
+  const onToggleReaction = React.useCallback(async (message: { id: string }, emoji: string, remove: boolean) => {
+    await toggleReaction.mutateAsync({ eventId: message.id, emoji, remove });
+    await threadContext.refreshReactions();
+  }, [toggleReaction.mutateAsync, threadContext.refreshReactions]);
 
   const feedProfilePubkeys = React.useMemo(
     () => [

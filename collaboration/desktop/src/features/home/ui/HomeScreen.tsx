@@ -28,12 +28,12 @@ export function HomeScreen({
   const { threadActivityFeedItems } = useAppShell();
 
   const inboxFeed = React.useMemo((): InboxFeed | undefined => {
-    if (!homeFeedQuery.data) return undefined;
+    if (!homeFeedQuery.data || homeFeedQuery.isError) return undefined;
     return {
       mentions: homeFeedQuery.data.feed.mentions,
-      activity: threadActivityFeedItems,
+      activity: [...homeFeedQuery.data.feed.activity, ...threadActivityFeedItems],
     };
-  }, [homeFeedQuery.data, threadActivityFeedItems]);
+  }, [homeFeedQuery.data, homeFeedQuery.isError, threadActivityFeedItems]);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

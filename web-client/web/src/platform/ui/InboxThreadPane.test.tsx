@@ -26,11 +26,17 @@ const rootId = "a".repeat(64); const replyId = "b".repeat(64); const pubkey = "c
 const event = (id: string, content: string, tags: string[][]) => ({ id, content, tags, pubkey, kind: 9, created_at: id === rootId ? 1 : 2 });
 const rootEvent = event(rootId, "thread root", [["h", "workspace"]]);
 const reply = event(replyId, "selected reply", [["h", "workspace"], ["e", rootId, "", "root"], ["e", rootId, "", "reply"]]);
+const bounds = (next: { createdAt:number; eventId:string } | null = null, start = "head") => ({...rootEvent,id:"0".repeat(64),kind:39006,tags:[["h","workspace"],["d",`workspace:${start}`]],content:JSON.stringify({has_more:next!==null,next_cursor:next ? {created_at:next.createdAt,id:next.eventId} : null})});
+const conversation={id:"private-binding",channelId:"workspace",participantPrincipalIds:["human","peer"],state:ItemState.Active,version:1,operationId:"op"};
 let host: HTMLDivElement; let root: Root; let query: QueryClient;
 async function settle() { for (let index = 0; index < 8; index++) await act(async () => { await vi.advanceTimersByTimeAsync(10); }); }
 async function mount(replyTargetEventId?: string) {
   await act(async () => root.render(<QueryClientProvider client={query}><TooltipProvider><InboxThreadPane principalId="human" workspaceId="workspace" rootId={rootId} selectedEventId={replyId}
     replyTargetEventId={replyTargetEventId} channelName="Admitted channel" members={[{ principalId: "human", displayName: "Member", pubkeys: [pubkey], state: WorkspaceMembershipState.Active }]} onOpen={vi.fn()} onOpenAuthor={state.openAuthor} onAuthorScopeUnavailable={state.unavailable} /></TooltipProvider></QueryClientProvider>));
+  await settle();
+}
+async function mountDm(selected = replyId, rootEventId = rootId) {
+  await act(async()=>root.render(<QueryClientProvider client={query}><TooltipProvider><InboxThreadPane principalId="human" workspaceId="workspace" conversation={conversation} rootId={rootEventId} selectedEventId={selected} channelName="Peer" members={[]} onOpen={vi.fn()}/></TooltipProvider></QueryClientProvider>));
   await settle();
 }
 beforeEach(() => {
@@ -56,17 +62,63 @@ it("reads the true thread and preserves the original selected-reply parent when 
 });
 
 it("keeps hidden DM thread read, live subscription and confirmed reply on the existing conversation routes",async()=>{
-  state.dmQuery.mockResolvedValue({events:[rootEvent,reply]});
+  const unrelated=event("e".repeat(64),"same DM unrelated message",[["h","workspace"]]);
+  state.dmQuery.mockImplementation(async (_id, query) => ({events:query.parentEventId ? [rootEvent,reply] : [unrelated,rootEvent,bounds()]}));
   state.dmPublish.mockResolvedValue({eventId:"f".repeat(64),operationId:"dm-publication"});
-  const conversation={id:"private-binding",channelId:"workspace",participantPrincipalIds:["human","peer"],state:ItemState.Active,version:1,operationId:"op"};
-  await act(async()=>root.render(<QueryClientProvider client={query}><TooltipProvider><InboxThreadPane principalId="human" workspaceId="workspace" conversation={conversation} rootId={rootId} selectedEventId={replyId} channelName="Peer" members={[]} onOpen={vi.fn()}/></TooltipProvider></QueryClientProvider>));
-  await settle();
+  await mountDm();
+  expect(state.dmQuery).toHaveBeenCalledWith("private-binding",{messageType:"STREAM"});
   expect(state.dmQuery).toHaveBeenCalledWith("private-binding",{messageType:"STREAM",parentEventId:rootId});
+  expect(host.textContent).toContain("same DM unrelated message");
+  expect(host.textContent).toContain("selected reply");
   expect(state.query).not.toHaveBeenCalled();
   expect(state.stream).toHaveBeenCalledWith("workspace","private-binding");
   await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
   expect(state.dmPublish).toHaveBeenCalledWith("private-binding","actual reply",[],"same-intent",undefined,rootId);
   expect(state.publish).not.toHaveBeenCalled();expect(state.outcome).toBe("confirmed");
+});
+
+it("reads older DM windows with the signed descending cursor without moving the selected reply or draft",async()=>{
+  const cursor={createdAt:1,eventId:rootId};
+  const older={...event("1".repeat(64),"older conversation message",[["h","workspace"]]),created_at:0};
+  state.dmQuery.mockImplementation(async (_id,query) => query.parentEventId ? {events:[rootEvent,reply]} : query.beforeId
+    ? {events:[older,bounds(null,`1:${rootId}`)]} : {events:[rootEvent,bounds(cursor)],nextCursor:cursor});
+  await mountDm();
+  await act(async()=>[...host.querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent==="forum.more")!.click());
+  await settle();
+  expect(state.dmQuery).toHaveBeenCalledWith("private-binding",{messageType:"STREAM",before:1,beforeId:rootId});
+  expect(host.textContent).toContain("older conversation message");
+  await mountDm("9".repeat(64),"9".repeat(64));
+  expect(host.querySelector('[data-testid="inbox-composer"]')?.getAttribute("data-draft-key")).toBe(`thread:workspace:${rootId}`);
+  expect(state.dmQuery.mock.calls.every(call=>call[1].parentEventId!=="9".repeat(64))).toBe(true);
+});
+
+it("restores an off-window DM selection with its edits but not unrelated thread replies",async()=>{
+  const intermediate=event("2".repeat(64),"unselected nested reply",reply.tags);
+  const cursor={createdAt:2,eventId:intermediate.id};
+  const edited={...reply,id:"3".repeat(64),kind:40003,content:"edited selected reply",created_at:4,tags:[["h","workspace"],["e",replyId]]};
+  state.dmQuery.mockImplementation(async (_id,query) => !query.parentEventId ? {events:[rootEvent,bounds()]} : query.beforeId
+    ? {events:[rootEvent,reply,edited]} : {events:[rootEvent,intermediate],nextCursor:cursor});
+  await mountDm();
+  expect(state.dmQuery).toHaveBeenCalledWith("private-binding",{messageType:"STREAM",parentEventId:rootId,before:2,beforeId:intermediate.id});
+  expect(host.textContent).toContain("edited selected reply");
+  expect(host.textContent).not.toContain("unselected nested reply");
+});
+
+it("withdraws DM history when its bounds are missing, cursor repeats, or binding is revoked",async()=>{
+  state.dmQuery.mockResolvedValue({events:[rootEvent,reply]});
+  await mountDm();
+  expect(host.textContent).toContain("platform.loadFailed");
+  expect(host.textContent).not.toContain("selected reply");
+  const cursor={createdAt:1,eventId:rootId};
+  state.dmQuery.mockImplementation(async (_id,query) => query.parentEventId ? {events:[rootEvent,reply]} : {events:[rootEvent,bounds(cursor,query.beforeId ? `1:${rootId}` : "head")]});
+  await act(async()=>[...host.querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent==="platform.refresh")!.click());
+  await settle();
+  await act(async()=>[...host.querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent==="forum.more")!.click());
+  await settle();
+  expect(host.textContent).toContain("platform.loadFailed");
+  await act(async()=>state.receive!({type:"closed",reason:"binding-not-active"}));
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')?.disabled).toBe(true);
+  expect(host.textContent).not.toContain("selected reply");
 });
 
 it("renders the original Inbox reaction pill and removes only the own signed reaction",async()=>{
