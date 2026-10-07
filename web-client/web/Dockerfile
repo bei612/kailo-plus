@@ -1,5 +1,8 @@
 FROM node:24-alpine@sha256:f70403e87646dc51b45295f4b8b70cdad0b63d2297c4c9899119b03f7af7a6b3 AS build
 
+# The original virtua postinstall patch is part of the shared UI input.
+RUN --mount=type=cache,target=/var/cache/apk,sharing=locked apk add patch
+
 # 构建上下文是 apps/（ADR-16）：client-kit/ts 以本地路径依赖（file:）接入，保持与仓库里相同的
 # 相对位置；上下文的取舍见同名 Dockerfile.dockerignore。
 COPY client-kit/ts/contracts /src/client-kit/ts/contracts

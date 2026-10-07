@@ -6,6 +6,16 @@
 
 ## 当前使用与恢复范围（2026-10-06）
 
+- 2026-10-07 16:07 UTC：已部署固定 `ac309291c64827197d0bbbe4802aafcefff15651`
+  的 Core/Worker，以及同批共享页面加原 virtua 打包修正的 Web；四条正式迁移
+  成功，业务库 107 条成功迁移，其他 21 个平台容器未替换。入口仍为
+  `http://192.168.0.193:58090/app/`。真实 SSO 后 build-info 与镜像来源一致，
+  Projects 的 user-state 已含 projectPreferences，频道真实消息可见。
+  自定义表情仍有 404，已定位到能力目录漏登记，随后修复不在本批镜像；
+  不能称原版全功能恢复。Windows/Mobile 包未更新，三组件完整业务、稳定
+  多人多 Agent 与本批 full 退出 0 均未验收。详见
+  [本批真实发布回执](web-client/fork/verify/release-20261007-ac309.md)。
+
 - 2026-10-07 Projects／Inbox 增量：两端共享原 Projects 侧栏分区、Added/Owned、
   排序、浏览选择、移除及子频道展开；删除接回原行菜单，继续经过本人身份、
   既有发布准入和 Relay 坐标所有权校验。Added 使用原 CollaborationUserState，

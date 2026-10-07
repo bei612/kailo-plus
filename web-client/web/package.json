@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "postinstall": "patch -R -p1 --dry-run -d node_modules/virtua < ../../collaboration/patches/virtua@0.49.3.patch >/dev/null 2>&1 || (patch -p1 --dry-run -d node_modules/virtua < ../../collaboration/patches/virtua@0.49.3.patch && patch -p1 -d node_modules/virtua < ../../collaboration/patches/virtua@0.49.3.patch)",
+    "postinstall": "patch -l -R -p1 --dry-run -d node_modules/virtua < ../../collaboration/patches/virtua@0.49.3.patch >/dev/null 2>&1 || (patch -l -p1 --dry-run -d node_modules/virtua < ../../collaboration/patches/virtua@0.49.3.patch && patch -l -p1 -d node_modules/virtua < ../../collaboration/patches/virtua@0.49.3.patch)",
     "dev": "vite",
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit",
