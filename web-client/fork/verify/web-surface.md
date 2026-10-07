@@ -4751,3 +4751,74 @@ Cookie验收。前述HTTP Desktop Cookie阻断和真实binding/业务场景未�
 合并后的原 check-docs.sh 与外层 GOAL.md markdownlint 实际退出0：七段 PASS、
 GOAL 0 issues。该增量没有运行 full；在 Data 剩余约349MiB时没有再启动打包或
 冷构建。完整 full、真实部署与每页浏览器截图仍需后续批次实际通过，不记为本批完成。
+
+## HTTP 资料头像保存修复（2026-10-07，REQ-24）
+
+本次权威仍为 REQ-24 的原版资料编辑和双宿主共享要求；原证据为 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/settings/ui/ProfileSettingsCard.tsx`，符号
+`ProfileSettingsCard`、`saveProfile`、`handleAvatarEditorDone`，已重新读取固定 Git 对象。
+主线程线上发现 HTTP 非安全上下文中 `crypto.randomUUID` 不存在，点头像 Done
+未调用保存宿主，且既有 try 之外的异常只触发重新展开编辑器。
+
+影响面只有共享 `profile-settings.tsx` 的请求构造和既有 profile 回归：Web
+`SettingsPane` 的 `client.updateProfile` 与同 Event 回读、Desktop 原 mutation
+均继续消费同一组件。复用既有 `governance.newIdempotencyKey` 的安全随机 UUIDv4，
+将请求构造纳入原 try/catch/finally；不新增随机算法、不降级到 Math.random，
+不改变 BFF、签名、权限、契约或原服务端副作用。构造失败在宿主调用前明确显示原
+failed 文案并保留草稿；已发送后的 UNKNOWN 仍冻结原请求与幂等键，不释放编辑锁。
+确认回读之前不关闭头像编辑器，不把其它 pubkey 或过期宿主回执当成功。
+
+以 `edac76e72bc8c1283ea85640d1c00112b44a1c1e` 为比较基准，先改实现再追加两项
+事后验证：禁用 randomUUID、设置非安全上下文后，😀 原 emoji URL 可提交合法
+UUIDv4 并等待宿主回读再关闭；getRandomValues 抛错时零保存调用、可见错误、
+草稿保留，随机源恢复后同一编辑器可正常保存。原八项 UNKNOWN、身份、迟到回执
+及复制交互检查一并保留。
+
+既有 `kailo-agent-receipt-xvkujx` 实际 4 CPU / 8 GiB，检查时内存约 5.4 GiB、
+宿主可用约 26 GiB、无 OOM，单 worker JS 与既有 Cargo 错开重资源操作，未安装
+依赖。私有输入 `/dev/shm/settings-return.nexyAQ/client-kit/ts/platform` 中实际运行：
+`node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json` 与
+`node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json` 均退出 0；
+`node node_modules/vitest/vitest.mjs run test/profile-settings.test.tsx --pool=threads --maxWorkers=1`
+10/10 通过。私有副本恢复 randomUUID 后新 HTTP 用例实际 1 failed（保存调用 0
+而非 1）；把 failed 状态改回 idle 后错误提示用例实际 1 failed。两次均退出 1，
+随后正式源码原字节还原、cmp 退出 0，最终 10/10、退出 0。
+
+日志在 `/volumes/data/kailo/tmp/profile-http-save-20261007.3TUM3M/` 的
+`profile-http-baseline.log`、`profile-http-uuid-mutation.log`、
+`profile-http-error-mutation.log`、`profile-http-restored.log`。首轮命令尚未运行测试：
+Docker cp 不能投递该 tmpfs 路径且 Vitest 4 不接受 minWorkers，已改为原 tar 输入
+与 maxWorkers=1；不将首轮当作通过。此记录是共享组件 DOM/宿主回调验证，未执行
+真实 PUT、部署或 Win11 验收；没有重跑 full、构建镜像或另起检查脚本。
+
+### 2026-10-07 HTTP 工作流交互与恢复批收口边界
+
+原工作流新增步骤的八处 ID 创建也直接使用既有
+`client-kit/ts/platform/src/governance.ts::newIdempotencyKey`，不增加随机实现或
+更改页面内容。影响范围为共享 AutomationAction 的 reaction、topic、delay、
+message、approval 本地步骤 ID；仍由原表单/YAML和版本保存消费者处理。
+没有修改审批、授权、结果不明或持久状态语义。安全随机不可用时不伪造有效 ID。
+
+原 4 CPU/8 GiB SDK 中，共享 source/test 类型检查退出 0；不提供 randomUUID、
+只提供 getRandomValues 的 HTTP 条件下，原 workflow-actions 16/16 通过。
+将八处生产调用恢复为 randomUUID 后真实 5 failed/11 passed，退出 1；按原字节
+还原且 cmp 0 后再次 16/16、退出 0。首轮新用例错误使用按钮名 Add approval，
+实际原标签为 Add approval request；修正用例后通过，没有修改产品文案迁就检查。
+原件为 Data 的 `codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`
+下 `workflow-http.log`、`workflow-http-baseline.log`、`workflow-http-mutation.log`、
+`workflow-http-restored.log`。四步影响及命令另见同批交接
+`/tmp/kailo-workflow-http.slDqAv/HANDOFF.md`。
+
+本批从 `edac76e72bc8c1283ea85640d1c00112b44a1c1e` 集中合入有序多消息执行、
+头像 HTTP 保存和步骤 ID 修复。保留已提交 iframe、设置返回和其他治理接缝，
+没有重新引入已删除的 Desktop native_page 业务窗口。多消息的四侧生成、迁移、
+幂等、逐次回执和实际反例见 `core/verify/agent-definition.md` 的对应小节。
+源码合并不等于原工作流全部动作或原版全页面已恢复，不以新增按钮作为最终体验。
+
+本轮原文档宿主入口首次因未提供 TMPDIR 退出 2；补齐配置后在全树导出期间因
+Data 空间压力主动终止，退出 143，原入口已清理本次临时输入。随后复用本地既有
+SDK 镜像，以 4 CPU/4 GiB、无网络、只读挂载 apps/设计/GOAL 运行原
+`./tools/check-docs.sh`：七段全部 PASS、退出 0；GOAL markdownlint 退出 0。
+没有修改检查器、构建镜像、修改线上服务或清除依赖缓存。此为文档检查，不是 full。
+本批未部署，真实头像 PUT、多消息 Relay/Temporal 业务及 Windows/Mobile 包仍未验收。

@@ -17,7 +17,7 @@ func (c *CoreAPI) AdvanceResourceProvision(ctx context.Context, in generated.Res
 		return out, temporal.NewNonRetryableApplicationError("Resource reference observation invalid", ErrTypeUnknownExternalResult, nil)
 	}
 	switch out.Status {
-	case generated.TaskStatusRUNNING, generated.Completed, generated.TaskStatusFAILED:
+	case generated.TaskStatusRUNNING, generated.TaskStatusCOMPLETED, generated.TaskStatusFAILED:
 		return out, nil
 	}
 	return out, temporal.NewNonRetryableApplicationError("Resource reference state unknown", ErrTypeUnknownExternalResult, nil)

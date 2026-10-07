@@ -104,7 +104,7 @@ func (c *CoreAPI) advanceAgentTaskOnce(ctx context.Context, in generated.AgentTa
 		return out, temporal.NewNonRetryableApplicationError("AgentTask Delay reference is incomplete", ErrTypeUnknownExternalResult, nil)
 	}
 	switch out.Status {
-	case generated.TaskStatusRUNNING, generated.Completed, generated.TaskStatusFAILED, generated.Canceled:
+	case generated.TaskStatusRUNNING, generated.TaskStatusCOMPLETED, generated.TaskStatusFAILED, generated.Canceled:
 		return out, nil
 	default:
 		return out, temporal.NewNonRetryableApplicationError("AgentTask 回应状态未知", ErrTypeUnknownExternalResult, nil)

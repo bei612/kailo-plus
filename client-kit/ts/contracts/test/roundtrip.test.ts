@@ -439,12 +439,14 @@ test("automation POST_MESSAGE round-trip preserves action and native schedule", 
 });
 
 test("ordered automation steps retain IDs, duration, names and version discriminator", () => {
-  const original = JSON.parse(readFileSync(new URL("../../../../contracts/samples/automation-steps.sample.json", import.meta.url), "utf8"));
+  for (const name of ["automation-steps.sample.json", "automation-message-sequence.sample.json"]) {
+  const original = JSON.parse(readFileSync(new URL(`../../../../contracts/samples/${name}`, import.meta.url), "utf8"));
   const typed: AutomationVersionContent = original;
-  ok(typed.formatVersion === 2 && typed.steps && typed.action === undefined);
+  ok((typed.formatVersion === 2 || typed.formatVersion === 3) && typed.steps && typed.action === undefined);
   const reconstructed: AutomationVersionContent = {name:typed.name,formatVersion:typed.formatVersion,trigger:typed.trigger,
     steps:typed.steps.map((step) => ({id:step.id,name:step.name,action:step.action,duration:step.duration,text:step.text})),resultTarget:typed.resultTarget};
   deepStrictEqual(JSON.parse(JSON.stringify(reconstructed)),original);
+  }
 });
 
 test("component release approval preserves deployment subject and NONE host API", () => {

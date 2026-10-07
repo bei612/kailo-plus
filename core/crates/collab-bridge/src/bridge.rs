@@ -467,12 +467,36 @@ impl IdentityClient {
         invocation: Option<uuid::Uuid>,
         created_at: u64,
     ) -> Result<Event, OperatorError> {
-        let mut tags = vec![vec!["h".to_owned(), channel_id.to_owned()]];
         if ancestry.is_some() == invocation.is_some() {
             return Err(OperatorError::Sign(
                 "Result source reference is invalid".into(),
             ));
         }
+        self.sign_channel_result_reference_at(channel_id, content, ancestry, invocation, created_at)
+    }
+
+    /// Same kind:9/NIP-10 builder, with the existing external reference tag
+    /// identifying one immutable workflow step even for equal same-second text.
+    pub fn sign_workflow_step_result_at(
+        &self,
+        channel_id: &str,
+        content: &str,
+        ancestry: Option<(&str, &str)>,
+        step: uuid::Uuid,
+        created_at: u64,
+    ) -> Result<Event, OperatorError> {
+        self.sign_channel_result_reference_at(channel_id, content, ancestry, Some(step), created_at)
+    }
+
+    fn sign_channel_result_reference_at(
+        &self,
+        channel_id: &str,
+        content: &str,
+        ancestry: Option<(&str, &str)>,
+        invocation: Option<uuid::Uuid>,
+        created_at: u64,
+    ) -> Result<Event, OperatorError> {
+        let mut tags = vec![vec!["h".to_owned(), channel_id.to_owned()]];
         if let Some(invocation) = invocation {
             // 原生外部 reference tag，不是 Buzz Event/Thread ID。
             tags.push(vec!["r".to_owned(), format!("urn:uuid:{invocation}")]);
@@ -713,6 +737,46 @@ impl IdentityClient {
         ancestry: Option<(&str, &str)>,
         invocation: Option<uuid::Uuid>,
     ) -> Result<bool, OperatorError> {
+        if ancestry.is_some() == invocation.is_some() {
+            return Err(OperatorError::NotConverged(
+                "Result source reference is invalid".into(),
+            ));
+        }
+        self.channel_result_reference_exists(
+            http, event_id, author, channel_id, ancestry, invocation,
+        )
+        .await
+    }
+
+    pub async fn workflow_step_result_exists(
+        &self,
+        http: &reqwest::Client,
+        event_id: &str,
+        author: &str,
+        channel_id: &str,
+        ancestry: Option<(&str, &str)>,
+        step: uuid::Uuid,
+    ) -> Result<bool, OperatorError> {
+        self.channel_result_reference_exists(
+            http,
+            event_id,
+            author,
+            channel_id,
+            ancestry,
+            Some(step),
+        )
+        .await
+    }
+
+    async fn channel_result_reference_exists(
+        &self,
+        http: &reqwest::Client,
+        event_id: &str,
+        author: &str,
+        channel_id: &str,
+        ancestry: Option<(&str, &str)>,
+        invocation: Option<uuid::Uuid>,
+    ) -> Result<bool, OperatorError> {
         let page = self
             .query(http, &[serde_json::json!({ "ids": [event_id] })])
             .await?;
@@ -766,7 +830,6 @@ impl IdentityClient {
                 .map(|(root, parent)| (root.as_str(), parent.as_str()))
                 != ancestry
             || !reference_matches
-            || ancestry.is_some() == invocation.is_some()
             || (ancestry.is_none()
                 && event
                     .tags
@@ -1555,6 +1618,56 @@ mod mention_tests {
         assert_eq!(ordinary.tags.len(), 1);
         assert!(client
             .sign_channel_message_mentions("channel", "hello", &[], &["invalid".into()])
+            .is_err());
+    }
+
+    #[test]
+    fn ordered_messages_use_distinct_frozen_references_without_changing_thread_scope() {
+        let keys = Keys::generate();
+        let client = IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            "http://relay.example",
+            "relay.example",
+        )
+        .unwrap();
+        let first = uuid::Uuid::new_v4();
+        let second = uuid::Uuid::new_v4();
+        let root = "ab".repeat(32);
+        let parent = "cd".repeat(32);
+        for ancestry in [None, Some((root.as_str(), parent.as_str()))] {
+            let a = client
+                .sign_workflow_step_result_at("channel", "same text", ancestry, first, 17)
+                .unwrap();
+            let b = client
+                .sign_workflow_step_result_at("channel", "same text", ancestry, second, 17)
+                .unwrap();
+            a.verify().unwrap();
+            b.verify().unwrap();
+            assert_ne!(a.id, b.id);
+            assert_eq!(
+                a.id,
+                client
+                    .sign_workflow_step_result_at("channel", "same text", ancestry, first, 17)
+                    .unwrap()
+                    .id
+            );
+            assert_eq!(a.content, "same text");
+            assert_eq!(a.kind.as_u16(), KIND_CHANNEL_MESSAGE);
+            assert!(a
+                .tags
+                .iter()
+                .any(|tag| tag.as_slice() == ["r", &format!("urn:uuid:{first}")]));
+            let observed = buzz_core::nip10::parse_thread_markers(&a.tags).resolve();
+            assert_eq!(
+                observed
+                    .as_ref()
+                    .map(|(root, parent)| (root.as_str(), parent.as_str())),
+                ancestry
+            );
+        }
+        assert!(client
+            .sign_channel_result_at("channel", "legacy", Some((&root, &parent)), Some(first), 17)
             .is_err());
     }
 }

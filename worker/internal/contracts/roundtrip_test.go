@@ -739,31 +739,33 @@ func TestAutomationCronRoundtrip(t *testing.T) {
 }
 
 func TestAutomationStepsRoundtrip(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "automation-steps.sample.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var original any
-	if err := json.Unmarshal(raw, &original); err != nil {
-		t.Fatal(err)
-	}
-	var typed generated.AutomationVersionContent
-	if err := json.Unmarshal(raw, &typed); err != nil {
-		t.Fatal(err)
-	}
-	if typed.Action != nil {
-		t.Fatal("ordered version cannot silently become a legacy action")
-	}
-	encoded, err := json.Marshal(typed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var back any
-	if err := json.Unmarshal(encoded, &back); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(original, back) {
-		t.Fatal("ordered steps changed during serialization")
+	for _, name := range []string{"automation-steps.sample.json", "automation-message-sequence.sample.json"} {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var original any
+		if err := json.Unmarshal(raw, &original); err != nil {
+			t.Fatal(err)
+		}
+		var typed generated.AutomationVersionContent
+		if err := json.Unmarshal(raw, &typed); err != nil {
+			t.Fatal(err)
+		}
+		if typed.Action != nil {
+			t.Fatal("ordered version cannot silently become a legacy action")
+		}
+		encoded, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var back any
+		if err := json.Unmarshal(encoded, &back); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(original, back) {
+			t.Fatal("ordered steps changed during serialization")
+		}
 	}
 }
 

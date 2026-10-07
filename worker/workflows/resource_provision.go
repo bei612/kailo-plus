@@ -32,7 +32,7 @@ func resourceProvision(ctx workflow.Context, in ComponentTaskInput) error {
 		status, reason := generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT"
 		if err == nil && result.ResourceID == target.ResourceID {
 			switch result.Status {
-			case generated.TaskStatusRUNNING, generated.Completed, generated.TaskStatusFAILED:
+			case generated.TaskStatusRUNNING, generated.TaskStatusCOMPLETED, generated.TaskStatusFAILED:
 				status, reason = result.Status, result.WaitingReason
 			}
 		}
@@ -43,7 +43,7 @@ func resourceProvision(ctx workflow.Context, in ComponentTaskInput) error {
 		projected := workflow.ExecuteActivity(workflow.WithActivityOptions(loop, activityOptions()), (*activities.CoreAPI).ProjectAgentTaskState,
 			generated.TaskStateReport{WorkflowID: info.WorkflowExecution.ID, RunID: info.WorkflowExecution.RunID, EventID: eventID(loop, in), Status: status, WaitingReason: waiting}).Get(loop, nil)
 		if projected == nil && status != generated.TaskStatusRUNNING {
-			if status == generated.Completed {
+			if status == generated.TaskStatusCOMPLETED {
 				return nil
 			}
 			return temporal.NewNonRetryableApplicationError("Resource reference authoritative refusal", activities.ErrTypeRejected, nil)

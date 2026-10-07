@@ -49,9 +49,9 @@ func TestResourceProvisionUnknownKeepsOriginalReferenceUntilReceipt(t *testing.T
 				return generated.ResourceProvisionAdvanceResult{}, errors.New("committed receipt ACK lost")
 			}
 			if calls == 2 {
-				return generated.ResourceProvisionAdvanceResult{ResourceID: "different-resource", Status: generated.Completed, WaitingReason: "NONE"}, nil
+				return generated.ResourceProvisionAdvanceResult{ResourceID: "different-resource", Status: generated.TaskStatusCOMPLETED, WaitingReason: "NONE"}, nil
 			}
-			return generated.ResourceProvisionAdvanceResult{ResourceID: request.Target.ResourceID, Status: generated.Completed, WaitingReason: "NONE"}, nil
+			return generated.ResourceProvisionAdvanceResult{ResourceID: request.Target.ResourceID, Status: generated.TaskStatusCOMPLETED, WaitingReason: "NONE"}, nil
 		})
 	env.OnActivity("ProjectAgentTaskState", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, report generated.TaskStateReport) error {

@@ -95,7 +95,7 @@ func protocolSession(ctx workflow.Context, in ComponentTaskInput) error {
 			}).Get(loop, nil)
 		if projected == nil && status != generated.TaskStatusRUNNING {
 			switch status {
-			case generated.Completed:
+			case generated.TaskStatusCOMPLETED:
 				return nil
 			case generated.Canceled:
 				return temporal.NewCanceledError()

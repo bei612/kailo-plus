@@ -288,7 +288,7 @@ func TestApproveThenConsume(t *testing.T) {
 	if rec.last().ConsumeDeadline == nil || rec.last().ConsumedAt == nil {
 		t.Fatalf("终态投影缺 consumeDeadline/consumedAt: %+v", rec.last())
 	}
-	if rec.tasks[len(rec.tasks)-1] != generated.Completed {
+	if rec.tasks[len(rec.tasks)-1] != generated.TaskStatusCOMPLETED {
 		t.Fatalf("终态之后没有写 COMPLETED 的任务投影")
 	}
 }

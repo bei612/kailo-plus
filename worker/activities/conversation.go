@@ -15,7 +15,7 @@ func (c *CoreAPI) ProjectConversation(ctx context.Context, in generated.Conversa
 		return result, err
 	}
 	if decodeConformanceJSON(raw, &result) != nil || result.ConversationID != in.Target.ConversationID ||
-		!((result.Status == generated.Completed && result.WaitingReason == "NONE") ||
+		!((result.Status == generated.TaskStatusCOMPLETED && result.WaitingReason == "NONE") ||
 			(result.Status == generated.TaskStatusRUNNING && result.WaitingReason == "UNKNOWN_EXTERNAL_RESULT")) {
 		return result, temporal.NewNonRetryableApplicationError("DM projection observation invalid", ErrTypeUnknownExternalResult, nil)
 	}

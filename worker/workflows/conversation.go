@@ -26,14 +26,14 @@ func conversationProjection(ctx workflow.Context, in ComponentTaskInput) error {
 		err := workflow.ExecuteActivity(workflow.WithActivityOptions(loop, activityOptions()), (*activities.CoreAPI).ProjectConversation,
 			generated.ConversationProjectionRequest{Target: generated.ConversationProjectionRequestTarget(*target), RunID: workflow.GetInfo(loop).WorkflowExecution.RunID}).Get(loop, &result)
 		status, reason := generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT"
-		if err == nil && result.ConversationID == target.ConversationID && result.Status == generated.Completed && result.WaitingReason == "NONE" {
-			status, reason = generated.Completed, "NONE"
+		if err == nil && result.ConversationID == target.ConversationID && result.Status == generated.TaskStatusCOMPLETED && result.WaitingReason == "NONE" {
+			status, reason = generated.TaskStatusCOMPLETED, "NONE"
 		}
 		var waiting *string
 		if reason != "NONE" {
 			waiting = &reason
 		}
-		if projector(in)(loop, status, waiting).Get(loop, nil) == nil && status == generated.Completed {
+		if projector(in)(loop, status, waiting).Get(loop, nil) == nil && status == generated.TaskStatusCOMPLETED {
 			return nil
 		}
 		// Cancel never substitutes for an acknowledgment of the same native DM.

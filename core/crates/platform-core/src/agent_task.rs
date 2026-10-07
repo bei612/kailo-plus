@@ -177,15 +177,39 @@ async fn advance_accepted(
         } else {
             false
         };
+    // Format 3 re-enters this same Activity only after the preceding immutable
+    // native event has been reconciled. No timer or later write may overtake it.
+    let sequence_ordinal = if invocation.reply_event_id.is_none()
+        && invocation.automation_action_kind.as_deref() == Some("POST_MESSAGE_STEPS")
+        && matches!(
+            invocation.status.as_str(),
+            "CREATED" | "DISPATCHING" | "UNKNOWN"
+        ) {
+        match post_message::sequence_progress(&state, &invocation, &input).await {
+            Ok(post_message::SequenceProgress::Ready(ordinal)) => Some(ordinal),
+            Ok(post_message::SequenceProgress::Legacy) => None,
+            Ok(post_message::SequenceProgress::Waiting) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+            Ok(post_message::SequenceProgress::Advanced) => return (StatusCode::OK, Json(serde_json::json!({
+                "invocationId":id,"status":"RUNNING","waitingReason":"NONE","finishActivity":true
+            }))).into_response(),
+            Ok(post_message::SequenceProgress::Terminal(status)) => return result(id, status, "NONE"),
+            Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
+        }
+    } else {
+        None
+    };
     let pending_delay = if invocation
         .automation_action_kind
         .as_deref()
         .is_some_and(crate::automation::steps::is_native_kind)
-        && invocation.status == "CREATED"
+        && (invocation.status == "CREATED" || sequence_ordinal.is_some())
     {
         let action: Value = match sqlx::query_scalar("select v.action from catalog.agent_invocation i join catalog.automation_version v on v.asset_id=i.automation_version_asset_id and v.automation_resource_id=i.automation_resource_id where i.id=$1")
             .bind(id).fetch_one(&state.pool).await { Ok(action) => action, Err(error) => return unavailable(error) };
-        let delays = match crate::automation::steps::delays(&action) {
+        let delays = match sequence_ordinal.map_or_else(
+            || crate::automation::steps::delays(&action),
+            |ordinal| crate::automation::steps::delays_through_message(&action, ordinal),
+        ) {
             Ok(delays) => delays,
             Err(_) => return result(id, TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"),
         };
@@ -224,7 +248,9 @@ async fn advance_accepted(
     } else {
         None
     };
-    if invocation.automation_action_kind.is_some() && invocation.status == "CREATED" {
+    if invocation.automation_action_kind.is_some()
+        && (invocation.status == "CREATED" || sequence_ordinal.is_some())
+    {
         let cancel = automation_cancel;
         match crate::automation::step_approval::gate(&state, id, cancel).await {
             Ok(crate::automation::step_approval::Gate::Ready) => (),
@@ -283,7 +309,7 @@ async fn advance_accepted(
             return (StatusCode::OK, Json(serde_json::json!({"invocationId":id,"status":"RUNNING",
                 "waitingReason":"WAITING_TIMER","finishActivity":true,"delayStep":{"id":step,"seconds":seconds}}))).into_response();
         }
-        return post_message::advance(&state, &invocation, &input).await;
+        return post_message::advance(&state, &invocation, &input, sequence_ordinal).await;
     }
     let holder = match state
         .capacity
@@ -2506,6 +2532,7 @@ struct ReplyIntent {
     channel_id: Uuid,
     delivery_outcome: Option<String>,
     frozen_action: Option<Value>,
+    sequence_ordinal: Option<i32>,
 }
 
 // Readback only: revoked identities/projections may still have an in-flight
@@ -2515,7 +2542,8 @@ const REPLY_INTENT: &str = "select d.id as dispatch_audit_id,d.operation_id,d.hu
     d.initiator_principal_id,d.actor_principal_id,d.action_key,d.action_version,
     d.component_type_key,d.target_type,d.target_id,d.parameter_hash,d.result_exposure,
     d.correlation_id,d.evidence_refs,b.pubkey as agent_pubkey,wb.channel_id,o.result_code as delivery_outcome,
-    version.action as frozen_action
+    version.action as frozen_action,
+    case when version.action->'stepsVersion'='3'::jsonb then array_position(i.automation_step_event_ids,$2)-1 end as sequence_ordinal
   from catalog.agent_invocation i
   left join catalog.automation_version version on version.asset_id=i.automation_version_asset_id
     and version.automation_resource_id=i.automation_resource_id
@@ -2541,19 +2569,20 @@ const REPLY_INTENT: &str = "select d.id as dispatch_audit_id,d.operation_id,d.hu
     and d.parameter_hash=ae.parameter_hash and d.actor_principal_id=agent.id
     and d.event_type='DISPATCH' and d.decision='ALLOW'
     and d.evidence_refs @> jsonb_build_array(
-      jsonb_build_object('kind','BUZZ_EVENT_ID','value',i.reply_event_id),
+      jsonb_build_object('kind','BUZZ_EVENT_ID','value',$2::text),
       jsonb_build_object('kind','BUZZ_PUBKEY','value',b.pubkey),
       jsonb_build_object('kind','ACTION_EXECUTION_ID','value',ae.id::text))
-  left join audit.audit_event o on o.event_key=ae.operation_id::text||':agent-turn:'||i.id::text||':reply:'||i.reply_event_id||':outcome'
+  left join audit.audit_event o on o.event_key=ae.operation_id::text||':agent-turn:'||i.id::text||':reply:'||$2::text||':outcome'
     and o.operation_id=d.operation_id and o.tenant_id=d.tenant_id and o.workspace_id=d.workspace_id
     and o.actor_principal_id=d.actor_principal_id and o.action_key=d.action_key
     and o.action_version=d.action_version and o.parameter_hash=d.parameter_hash and o.event_type='OUTCOME'
     and o.evidence_refs @> jsonb_build_array(
-      jsonb_build_object('kind','BUZZ_EVENT_ID','value',i.reply_event_id),
+      jsonb_build_object('kind','BUZZ_EVENT_ID','value',$2::text),
       jsonb_build_object('kind','ACTION_EXECUTION_ID','value',ae.id::text))
-  where i.id=$1 and i.reply_event_id=$2 and i.runtime_turn_id is not distinct from $3::text
+  where i.id=$1 and (i.reply_event_id=$2 or (version.action->'stepsVersion'='3'::jsonb and $2=any(i.automation_step_event_ids)))
+    and i.runtime_turn_id is not distinct from $3::text
     and ((i.native_status='completed' and $3::text is not null)
-      or ($3::text is null and i.native_status is null and i.post_message_intent is not null
+      or ($3::text is null and i.native_status is null and (i.post_message_intent is not null or (version.action->'stepsVersion'='3'::jsonb and $2=any(i.automation_step_event_ids)))
         and exists(select 1 from catalog.automation_version v where v.asset_id=i.automation_version_asset_id
           and v.automation_resource_id=i.automation_resource_id and v.action->>'kind' IN ('POST_MESSAGE','POST_MESSAGE_STEPS','ADD_REACTION_STEPS','SET_CHANNEL_TOPIC_STEPS'))))
     and i.status in ('DISPATCHING','RUNNING','UNKNOWN')";
@@ -2603,7 +2632,28 @@ async fn reconcile_reply(
     else {
         return Ok(None);
     };
-    let observed = if intent
+    let observed = if let Some(ordinal) = intent.sequence_ordinal {
+        let Some(step) = intent.frozen_action.as_ref().and_then(|action| {
+            usize::try_from(ordinal)
+                .ok()
+                .and_then(|ordinal| crate::automation::steps::message_step(action, ordinal).ok())
+        }) else {
+            return Ok(None);
+        };
+        let Some(step_id) = step["id"].as_str() else {
+            return Ok(None);
+        };
+        control
+            .workflow_step_result_exists(
+                &state.http,
+                event_id,
+                &intent.agent_pubkey,
+                &intent.channel_id.to_string(),
+                reply_ancestry(invocation),
+                Uuid::new_v5(&invocation.id, step_id.as_bytes()),
+            )
+            .await
+    } else if intent
         .frozen_action
         .as_ref()
         .is_some_and(|action| action["kind"] == "ADD_REACTION_STEPS")
@@ -2674,7 +2724,7 @@ async fn reconcile_reply(
     let mut tx = state.pool.begin().await?;
     let locked: Option<Uuid> = sqlx::query_scalar(
         "select id from catalog.agent_invocation where id=$1 and status in ('DISPATCHING','RUNNING','UNKNOWN')
-         and runtime_turn_id is not distinct from $2::text and reply_event_id=$3 for update",
+         and runtime_turn_id is not distinct from $2::text and (reply_event_id=$3 or $3=any(automation_step_event_ids)) for update",
     )
     .bind(invocation.id)
     .bind(turn_id)
@@ -2949,8 +2999,9 @@ async fn refuse_step_before_dispatch(
     let mut tx = state.pool.begin().await?;
     let ae = crate::governance::lock_execution(&mut tx, invocation.action_execution_id).await?;
     let changed=sqlx::query("update catalog.agent_invocation i set status=$3,updated_at=now()
-        where i.id=$1 and i.action_execution_id=$2 and i.status='CREATED'
+        where i.id=$1 and i.action_execution_id=$2 and i.status in ('CREATED','DISPATCHING')
           and i.runtime_turn_id is null and i.native_status is null and i.reply_event_id is null and i.post_message_intent is null
+          and not exists(select 1 from unnest(i.automation_step_event_ids) e where not catalog.automation_step_accepted(i.id,e))
           and not exists(select 1 from admission.capacity_lease l where l.invocation_id=i.id)
           and not exists(select 1 from projection.agent_model_trace t where t.invocation_id=i.id)
           and not exists(select 1 from outbox.usage_event u where u.invocation_id=i.id)")

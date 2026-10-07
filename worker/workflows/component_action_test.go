@@ -36,9 +36,9 @@ func TestComponentActionKeepsOriginalExecutionOnLostAcknowledgment(t *testing.T)
 				return generated.ComponentActionAdvanceResult{}, errors.New("native dispatch receipt lost")
 			}
 			if calls == 2 {
-				return generated.ComponentActionAdvanceResult{ActionExecutionID: "other-ae", Status: generated.Completed, WaitingReason: "NONE"}, nil
+				return generated.ComponentActionAdvanceResult{ActionExecutionID: "other-ae", Status: generated.TaskStatusCOMPLETED, WaitingReason: "NONE"}, nil
 			}
-			return generated.ComponentActionAdvanceResult{ActionExecutionID: target.ActionExecutionID, Status: generated.Completed, WaitingReason: "NONE"}, nil
+			return generated.ComponentActionAdvanceResult{ActionExecutionID: target.ActionExecutionID, Status: generated.TaskStatusCOMPLETED, WaitingReason: "NONE"}, nil
 		})
 	env.OnActivity("ProjectAgentTaskState", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, report generated.TaskStateReport) error {

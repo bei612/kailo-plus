@@ -115,7 +115,7 @@ func TestTenantSuspendArchivesThenTransitions(t *testing.T) {
 	if run.kinds[0] != "TENANT" {
 		t.Fatalf("跃迁的 kind 应为 TENANT，得到 %v", run.kinds)
 	}
-	if last := run.statuses[len(run.statuses)-1]; last != generated.Completed {
+	if last := run.statuses[len(run.statuses)-1]; last != generated.TaskStatusCOMPLETED {
 		t.Fatalf("终态投影应为 COMPLETED，得到 %v", run.statuses)
 	}
 }

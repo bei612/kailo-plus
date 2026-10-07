@@ -94,7 +94,7 @@ func TestProtocolSessionSavedKeepsOneWorkflowForLaterSave(t *testing.T) {
 				if request.Round != nil {
 					t.Fatal("second SAVED left a stale query")
 				}
-				return protocolResult(in, 13, "EXPIRED", generated.Completed, "second-write"), nil
+				return protocolResult(in, 13, "EXPIRED", generated.TaskStatusCOMPLETED, "second-write"), nil
 			default:
 				t.Fatal("unexpected round")
 				return generated.ProtocolSessionReconcileResult{}, nil
@@ -127,7 +127,7 @@ func TestProtocolSessionLostQueryAcknowledgmentRetainsExactRound(t *testing.T) {
 				}
 				return protocolResult(in, 9, "SAVED", generated.TaskStatusRUNNING, "first-write"), nil
 			}
-			return protocolResult(in, 10, "CLOSED", generated.Completed, "first-write"), nil
+			return protocolResult(in, 10, "CLOSED", generated.TaskStatusCOMPLETED, "first-write"), nil
 		})
 	env.ExecuteWorkflow(ComponentTaskKind, in)
 	if err := env.GetWorkflowError(); err != nil || calls != 4 {

@@ -3739,15 +3739,15 @@ class AutomationVersionContentClass {
   final ContentAction? action;
   final ApprovalPolicyElement? approvalPolicy;
 
-  ///有序 steps 形态为 2，旧单 action 格式缺省保持原摘要。
+  ///2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
   final int? formatVersion;
 
   ///原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
   final String? name;
   final AutomationResultTarget resultTarget;
 
-  ///不可与旧 action 混用；支持有序 Delay、一个引用既有策略的 request_approval，最后发送一条消息。步骤审批不可同时声明版本级
-  ///approvalPolicy；此切片不是原多副作用的产品上限。
+  ///
+  ///不可与旧action混用。格式3逐条发送消息并查证原生回执，支持消息间Delay及首副作用前一个原策略审批；UNKNOWN不推进。步骤审批不可同时声明版本级approvalPolicy。其余原动作仍在恢复范围。
   final List<StepElement>? steps;
   final ContentTrigger trigger;
 
@@ -11953,15 +11953,15 @@ class AutomationVersionContent {
   final AutomationVersionContentAction? action;
   final ApprovalPolicyElement? approvalPolicy;
 
-  ///有序 steps 形态为 2，旧单 action 格式缺省保持原摘要。
+  ///2保留历史单副作用步骤；3为有序多消息。旧单 action 格式缺省保持原摘要。
   final int? formatVersion;
 
   ///原工作流名称；随不可变版本冻结。旧版本缺省不补写、不重算历史摘要。
   final String? name;
   final AutomationResultTarget resultTarget;
 
-  ///不可与旧 action 混用；支持有序 Delay、一个引用既有策略的 request_approval，最后发送一条消息。步骤审批不可同时声明版本级
-  ///approvalPolicy；此切片不是原多副作用的产品上限。
+  ///
+  ///不可与旧action混用。格式3逐条发送消息并查证原生回执，支持消息间Delay及首副作用前一个原策略审批；UNKNOWN不推进。步骤审批不可同时声明版本级approvalPolicy。其余原动作仍在恢复范围。
   final List<StepElement>? steps;
   final AutomationVersionContentTrigger trigger;
 

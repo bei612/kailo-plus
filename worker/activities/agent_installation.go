@@ -30,7 +30,7 @@ func (c *CoreAPI) AdvanceAgentInstallation(ctx context.Context, in generated.Age
 		return out, temporal.NewNonRetryableApplicationError("Installation 回应与冻结目标不符", ErrTypeUnknownExternalResult, nil)
 	}
 	switch out.Status {
-	case generated.TaskStatusRUNNING, generated.Completed, generated.TaskStatusFAILED, generated.Canceled:
+	case generated.TaskStatusRUNNING, generated.TaskStatusCOMPLETED, generated.TaskStatusFAILED, generated.Canceled:
 		return out, nil
 	default:
 		return out, temporal.NewNonRetryableApplicationError("Installation 回应状态未知", ErrTypeUnknownExternalResult, nil)

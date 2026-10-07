@@ -63,7 +63,7 @@ func TestAgentTaskConfirmedHandoffUsesFrozenObservation(t *testing.T) {
 					if elapsed := env.Now().Sub(start); elapsed != tc.want {
 						t.Errorf("handoff waited %s, want %s", elapsed, tc.want)
 					}
-					return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.Completed, WaitingReason: "NONE", FinishActivity: true}, nil
+					return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusCOMPLETED, WaitingReason: "NONE", FinishActivity: true}, nil
 				})
 			env.ExecuteWorkflow(AgentTaskKind, in)
 			if err := env.GetWorkflowError(); err != nil || advances != 2 || projects != 3 {

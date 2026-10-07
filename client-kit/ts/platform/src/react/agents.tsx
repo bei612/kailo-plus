@@ -223,7 +223,7 @@ function objectFields(value: unknown, keys: string[]): value is Record<string, u
 function validAutomationContent(value: unknown): value is AutomationVersionContent {
   if (!objectFields(value, ["name", "trigger", "action", "resultTarget", "approvalPolicy", "formatVersion", "steps"])
     || !objectFields(value.trigger, ["kind", "textPrefix", "mentionPrincipalId", "scheduleSpec"])) return false;
-  if (value.formatVersion === 2 ? value.action !== undefined || !supportedSteps(value.steps)
+  if (value.formatVersion === 2 || value.formatVersion === 3 ? value.action !== undefined || !supportedSteps(value.steps, value.formatVersion)
     : value.formatVersion !== undefined || value.steps !== undefined || !objectFields(value.action, ["kind", "template"])
       || (value.action.kind !== ActionKind.AgentTurn && value.action.kind !== ActionKind.PostMessage)
       || typeof value.action.template !== "string" || !value.action.template.trim()) return false;
@@ -648,6 +648,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   const [catchupWindowSeconds, setCatchupWindowSeconds] = useState("");
   const [template, setTemplate] = useState("");
   const [steps, setSteps] = useState<AutomationStep[]>([]);
+  const [stepsFormat, setStepsFormat] = useState<2 | 3>(2);
   const [actionKind, setActionKind] = useState<WorkflowActionKind>(ActionKind.AgentTurn);
   const [policyKey, setPolicyKey] = useState("");
   const [editorMode, setEditorMode] = useState<"form" | "yaml">("form");
@@ -714,7 +715,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     ...(name !== "" ? { name } : {}),
     trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : prefix ? { textPrefix: prefix } : {}),
       ...(trigger === TriggerKind.Mention && executor ? { mentionPrincipalId: executor.agentPrincipalId } : {}) },
-    ...(steps.length ? {formatVersion: 2, steps} : actionKind === ActionEnum.AddReaction || actionKind === ActionEnum.SetChannelTopic
+    ...(steps.length ? {formatVersion: stepsFormat, steps} : actionKind === ActionEnum.AddReaction || actionKind === ActionEnum.SetChannelTopic
       ? {formatVersion: 2, steps: []} : {action: { kind: actionKind, template }}),
     ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}),
     resultTarget: trigger === TriggerKind.Schedule ? ResultTarget.Channel : ResultTarget.TriggerThread,
@@ -749,6 +750,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     setOffsetSeconds(content?.trigger.scheduleSpec?.offsetSeconds?.toString() ?? "");
     setCatchupWindowSeconds(content?.trigger.scheduleSpec?.catchupWindowSeconds.toString() ?? "");
     setSteps(content?.steps ?? []);
+    setStepsFormat(content?.formatVersion === 3 ? 3 : 2);
     setTemplate(content ? workflowAction(content)?.template ?? "" : "");
     setActionKind(content ? workflowAction(content)?.kind ?? ActionKind.AgentTurn : ActionKind.AgentTurn);
     setPolicyKey(content?.approvalPolicy ? `${content.approvalPolicy.id}:${content.approvalPolicy.version}` : "");
@@ -785,6 +787,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     setOffsetSeconds(yamlContent.trigger.scheduleSpec?.offsetSeconds?.toString() ?? "");
     setCatchupWindowSeconds(yamlContent.trigger.scheduleSpec?.catchupWindowSeconds.toString() ?? "");
     setSteps(yamlContent.steps ?? []);
+    setStepsFormat(yamlContent.formatVersion === 3 ? 3 : 2);
     setTemplate(workflowAction(yamlContent)?.template ?? ""); setActionKind(workflowAction(yamlContent)?.kind ?? ActionKind.AgentTurn);
     setPolicyKey(yamlContent.approvalPolicy ? `${yamlContent.approvalPolicy.id}:${yamlContent.approvalPolicy.version}` : "");
     setEditorMode(mode); setEditorError(false);
@@ -921,11 +924,11 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
             if (event.target.value === ActionKind.AgentTurn || event.target.value === ActionKind.PostMessage) setActionKind(event.target.value);
             if (event.target.value === ActionEnum.AddReaction) {
               setActionKind(ActionEnum.AddReaction);
-              setSteps([{id: crypto.randomUUID(), action: ActionEnum.AddReaction, emoji: ""}]);
+              setSteps([{id: newIdempotencyKey(), action: ActionEnum.AddReaction, emoji: ""}]);
             }
             if (event.target.value === ActionEnum.SetChannelTopic) {
               setActionKind(ActionEnum.SetChannelTopic);
-              setSteps([{id: crypto.randomUUID(), action: ActionEnum.SetChannelTopic, topic: ""}]);
+              setSteps([{id: newIdempotencyKey(), action: ActionEnum.SetChannelTopic, topic: ""}]);
             }
           }} className="h-8 rounded-md border border-input bg-background px-2">
             <option value={ActionKind.AgentTurn}>{t("agents.automation.agentTurn")}</option>
@@ -943,15 +946,23 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
             : <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />}
         </label>}
         {actionKind !== ActionKind.AgentTurn ? <Button onClick={() => setSteps((old) => {
-          const delay: AutomationStep = { id: crypto.randomUUID(), action: ActionEnum.Delay, duration: "" };
+          const delay: AutomationStep = { id: newIdempotencyKey(), action: ActionEnum.Delay, duration: "" };
           return old.length ? [...old.slice(0, -1), delay, old[old.length - 1]!] : [delay,
-            { id: crypto.randomUUID(), action: ActionEnum.SendMessage, text: template }];
+            { id: newIdempotencyKey(), action: ActionEnum.SendMessage, text: template }];
         })}>{t("workflows.steps.addDelay")}</Button> : null}
+        {actionKind === ActionKind.PostMessage ? <Button onClick={() => {
+          setStepsFormat(3);
+          setSteps((old) => [...(old.length ? old : [{id: newIdempotencyKey(), action: ActionEnum.SendMessage, text: template}]),
+            {id: newIdempotencyKey(), action: ActionEnum.SendMessage, text: ""}]);
+        }}>{t("workflows.steps.addMessage")}</Button> : null}
         {actionKind !== ActionKind.AgentTurn && !!policies?.length && !steps.some((step) => step.action === ActionEnum.RequestApproval) ? <Button onClick={() => {
-          const approval: AutomationStep = { id: crypto.randomUUID(), action: ActionEnum.RequestApproval, message: "",
+          const approval: AutomationStep = { id: newIdempotencyKey(), action: ActionEnum.RequestApproval, message: "",
             ...(selectedPolicy ? { approvalPolicy: { id: selectedPolicy.id, version: selectedPolicy.version } } : {}) };
-          setSteps((old) => old.length ? [...old.slice(0, -1), approval, old[old.length - 1]!] : [approval,
-            { id: crypto.randomUUID(), action: ActionEnum.SendMessage, text: template }]);
+          setSteps((old) => {
+            if (!old.length) return [approval, { id: newIdempotencyKey(), action: ActionEnum.SendMessage, text: template }];
+            const firstEffect = old.findIndex((step) => step.action !== ActionEnum.Delay);
+            return [...old.slice(0, firstEffect), approval, ...old.slice(firstEffect)];
+          });
           setPolicyKey("");
         }}>{t("workflows.steps.addApproval")}</Button> : null}
         {!steps.some((step) => step.action === ActionEnum.RequestApproval) && (policies?.length || policyKey) ? <label className="flex flex-col gap-1 text-sm">{t("agents.automation.approvalPolicy")}

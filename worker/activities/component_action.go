@@ -18,7 +18,7 @@ func (c *CoreAPI) AdvanceComponentAction(ctx context.Context, in generated.Compo
 		return out, temporal.NewNonRetryableApplicationError("Component action response identity invalid", ErrTypeUnknownExternalResult, nil)
 	}
 	switch out.Status {
-	case generated.TaskStatusRUNNING, generated.Completed, generated.Canceled, generated.TaskStatusFAILED:
+	case generated.TaskStatusRUNNING, generated.TaskStatusCOMPLETED, generated.Canceled, generated.TaskStatusFAILED:
 		return out, nil
 	default:
 		return out, temporal.NewNonRetryableApplicationError("Component action outcome unknown", ErrTypeUnknownExternalResult, nil)

@@ -570,7 +570,7 @@ func Approval(ctx workflow.Context, in generated.ApprovalWorkflowInput) error {
 			return done(err)
 		}
 	}
-	return done(task(generated.Completed, nil))
+	return done(task(generated.TaskStatusCOMPLETED, nil))
 }
 
 // restore 把续跑带入的状态装回。首个 run 没有 resume，什么也不做。

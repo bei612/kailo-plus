@@ -270,7 +270,7 @@ func (t *task) begin() error {
 
 func (t *task) complete() error {
 	return t.step(func(ctx workflow.Context) workflow.Future {
-		return t.project(ctx, generated.Completed, nil)
+		return t.project(ctx, generated.TaskStatusCOMPLETED, nil)
 	}, nil)
 }
 
@@ -683,7 +683,7 @@ func tenantDelete(ctx workflow.Context, in ComponentTaskInput) error {
 					*out.NativeRequestID != "" && out.NativeInventoryDigest != nil &&
 					*out.NativeInventoryDigest != ""
 				if canceled || completed {
-					status := generated.Completed
+					status := generated.TaskStatusCOMPLETED
 					if canceled {
 						status = generated.Canceled
 					}

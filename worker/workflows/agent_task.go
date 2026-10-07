@@ -203,7 +203,7 @@ func agentTask(ctx workflow.Context, in generated.AgentTaskWorkflowInput) error 
 				}
 				if status != generated.TaskStatusRUNNING {
 					switch status {
-					case generated.Completed:
+					case generated.TaskStatusCOMPLETED:
 						return nil
 					case generated.Canceled:
 						return temporal.NewCanceledError()

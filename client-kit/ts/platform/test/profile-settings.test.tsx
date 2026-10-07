@@ -4,6 +4,7 @@ import { npubEncode } from "nostr-tools/nip19";
 import type { WebProfileUpdateRequest } from "@client-kit/contracts";
 import { ProfileSettingsCard, type ProfilePresentation, type ProfileAvatarEditorBinding } from "../src/react/profile-settings";
 import { TransportError } from "../src/transport";
+import { emojiAvatarDataUrl, DEFAULT_EMOJI_AVATAR_COLOR } from "../src/react/profile/buzz/features/profile/ui/ProfileAvatarEditor.utils";
 import { button, click, render, settle, type } from "./render";
 
 const profile: ProfilePresentation = { pubkey: "a".repeat(64), displayName: "Original", about: "Before", avatarUrl: null, nip05Handle: "me@community.example" };
@@ -15,6 +16,62 @@ async function edit(host: HTMLElement, name: string) {
 }
 
 describe("original profile settings through canonical host callbacks", () => {
+  it("saves the emoji avatar on HTTP without randomUUID and closes only after canonical readback", async () => {
+    const getRandomValues = crypto.getRandomValues.bind(crypto);
+    vi.stubGlobal("isSecureContext", false);
+    vi.stubGlobal("crypto", { getRandomValues, randomUUID: undefined });
+    try {
+      let editor!: ProfileAvatarEditorBinding;
+      let finish!: (value: ProfilePresentation) => void;
+      const avatarUrl = emojiAvatarDataUrl("😀", DEFAULT_EMOJI_AVATAR_COLOR);
+      const onSave = vi.fn((_request: WebProfileUpdateRequest) => new Promise<ProfilePresentation>((resolve) => { finish = resolve; }));
+      const host = await render(<ProfileSettingsCard locale="en" profile={profile} onCopy={clipboard} onSave={onSave}
+        avatarEditor={(binding) => { editor = binding; return <button type="button" disabled={binding.disabled} onClick={binding.onDone}>Finish avatar</button>; }} />);
+      await click(host.querySelector<HTMLButtonElement>('[data-testid="profile-avatar-edit"]')!);
+      await act(async () => { await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())); });
+      await act(async () => editor.onChange(avatarUrl));
+      await click(button(host, "Finish avatar"));
+      expect(onSave).toHaveBeenCalledTimes(1);
+      expect(onSave.mock.calls[0]![0]).toMatchObject({ expectedPubkey: profile.pubkey, avatarUrl,
+        idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/) });
+      expect(editor.disabled).toBe(true);
+      expect(host.querySelector('[data-testid="profile-readonly-content"]')!.hasAttribute("inert")).toBe(true);
+      expect(host.textContent).not.toContain("Saved and read back");
+      await act(async () => finish({ ...profile, avatarUrl }));
+      expect(host.textContent).toContain("Saved and read back");
+      expect(host.querySelector('[data-testid="profile-readonly-content"]')!.hasAttribute("inert")).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("shows a local key-generation failure without publishing or losing the avatar draft", async () => {
+    const getRandomValues = crypto.getRandomValues.bind(crypto);
+    vi.stubGlobal("crypto", { getRandomValues: () => { throw new Error("entropy unavailable"); }, randomUUID: undefined });
+    try {
+      let editor!: ProfileAvatarEditorBinding;
+      const avatarUrl = emojiAvatarDataUrl("😀", DEFAULT_EMOJI_AVATAR_COLOR);
+      const onSave = vi.fn(async (_request: WebProfileUpdateRequest) => ({ ...profile, avatarUrl }));
+      const host = await render(<ProfileSettingsCard locale="en" profile={profile} onCopy={clipboard} onSave={onSave}
+        avatarEditor={(binding) => { editor = binding; return <button type="button" disabled={binding.disabled} onClick={binding.onDone}>Finish avatar</button>; }} />);
+      await click(host.querySelector<HTMLButtonElement>('[data-testid="profile-avatar-edit"]')!);
+      await act(async () => { await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())); });
+      await act(async () => editor.onChange(avatarUrl));
+      await click(button(host, "Finish avatar"));
+      expect(onSave).not.toHaveBeenCalled();
+      expect(host.querySelector('[role="alert"]')!.textContent).toContain("Profile could not be saved. Your edits have been kept.");
+      expect(editor.avatarUrl).toBe(avatarUrl);
+      expect(editor.disabled).toBe(false);
+      expect(host.querySelector('[data-testid="profile-readonly-content"]')!.hasAttribute("inert")).toBe(true);
+      vi.stubGlobal("crypto", { getRandomValues, randomUUID: undefined });
+      await click(button(host, "Finish avatar"));
+      expect(onSave).toHaveBeenCalledTimes(1);
+      expect(host.textContent).toContain("Saved and read back");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("opens the original independent avatar editor without opening metadata and passes both original portal targets", async () => {
     let editor!: ProfileAvatarEditorBinding;
     const onSave = vi.fn(async () => profile);

@@ -20,7 +20,7 @@ func (c *CoreAPI) AdvanceApplicationBinding(ctx context.Context, in generated.Ap
 		return out, temporal.NewNonRetryableApplicationError("Binding response is not verifiable", ErrTypeUnknownExternalResult, nil)
 	}
 	switch out.Status {
-	case generated.TaskStatusRUNNING, generated.Completed, generated.Canceled, generated.TaskStatusFAILED:
+	case generated.TaskStatusRUNNING, generated.TaskStatusCOMPLETED, generated.Canceled, generated.TaskStatusFAILED:
 		return out, nil
 	default:
 		return out, temporal.NewNonRetryableApplicationError("Binding response state unknown", ErrTypeUnknownExternalResult, nil)

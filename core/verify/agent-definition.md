@@ -4653,3 +4653,62 @@ Core 新增断言没有执行，不将其计为通过。不重复本批 full/cli
 `/tmp/kailo-restoration-commit.TIH3SG/docs.log` 与
 `/tmp/kailo-restoration-commit.TIH3SG/docs-working-tree.log`。
 本记录是文档检查，不是 Core 编译或全量门禁通过。
+
+### 2026-10-07 原有序多消息执行增量
+
+1. 权威：REQ-23/24、DD-107、`.design/06` §9.1 要求原有序步骤，不能以单终端
+   动作作为产品上限。固定 Buzz `779af8886caae1317b4de962082429867ab61503`
+   的 `crates/buzz-workflow/src/schema.rs::WorkflowDef/Step/ActionDef` 与
+   `desktop/src/features/workflows/ui/WorkflowStepCard.tsx::WorkflowStepCard`
+   是步骤及原表单依据；不启动该上游的第二 WorkflowEngine。
+2. 影响面：新增版本格式 3，旧格式缺省和格式 2 的内容/摘要不变。共享原卡片、
+   模板控件和 YAML 保存同一 `AutomationVersionContent`，Web/Desktop 同源。
+   Core 沿同一 AgentTask、Invocation、ActionExecution，存追加式原 Relay event
+   引用，不存展开后的消息正文。原 Worker Activity/Timer/continue-as-new 命令链
+   未改；中间回执只结束一次观察，不终结 Workflow，也不生成子 Invocation。
+3. 副作用：每条消息都重新走现有 fresh 授权、租户状态、准入和额度检查。
+   同 invocation/step 派生稳定外部引用，解决相同秒、相同正文的事件碰撞。
+   前一条签名事件经同 operation 的原对账确认后才允许追加下一条；UNKNOWN
+   不重发、不越过，也不按“查询未找到”判失败。最后消息仍走原一次 COUNT、
+   计量确认和不可变终态指针。取消只停止后续写入，不声称回滚已接受消息。
+4. 边界：空/重复 step ID、空消息、末尾仅 Delay、未知动作/字段拒绝；重复活动
+   使用 event 数组 CAS，迟到终态观察必须匹配完整原数组。中间 Delay 只扫描
+   当前消息之前的原 Temporal history，撤权或暂停不能借 Timer 完成绕过 fresh。
+   迁移 `20261007110000` 扩展原表，旧行空数组；部署先迁移再新 Core，格式 3
+   不能交旧 Core 执行。收缩拒绝存在格式 3 或已记录副作用的库，保留历史。
+
+原 4 CPU/8 GiB SDK、Cargo 16、同一缓存中，Core steps 8/8、原桥签名 1/1、
+Rust 新旧格式往返 1/1、Core 与桥 clippy `-D warnings` 退出 0。既有 Worker
+消费旧生成枚举标识 `generated.Completed` 导致编译失败，已检索所有调用方，
+仅改为当前生成的 `generated.TaskStatusCOMPLETED`；序列化值仍为 COMPLETED，
+没有别名、生成器或 Workflow 命令变化。原 AgentTask 组与 Go 新旧格式往返均
+退出 0。初次 clippy 报新增 Delay 分支多余 unit，已直接删除后复验通过。
+
+四侧原生成及 `--check` 均退出 0；共享源码/测试 tsc 退出 0，动作 12/12 与
+模板 5/5 通过，TS 契约 42/42、Dart 契约 37/37。SDK 将 Add message 的格式
+3 改为 2 后新增用例真实失败，原字节 cmp 0 恢复后动作 12/12 通过。
+原 `check.sh` 兼容比对段对同一私有输入退出 0：275 个 schema、3 个历史
+schema，相对 `contracts-v0.1.0` 无破坏性变更；未为此运行安装或 full。
+
+只在已核验的本任务隔离 PostgreSQL 新建 `workflow_sequence_j7rboi`，原
+SQLx 前向至 110000、该迁移 down/up 均退出 0；未迁移原共享隔离库或生产。
+真实表检查首次错误 filter 运行 0 项，不计通过；修正 filter 后夹具被原
+runtime profile 约束拒绝，修正夹具为原版本真实 profile 后 1/1 通过。故意
+把 `automation_step_accepted` 改为恒真后真实失败退出 101；恢复迁移原函数
+后 1/1 通过，夹具事务回滚，没有保留变异。签名去掉步骤引用和 Worker 跳过
+Timer 的两项私有变异也分别退出 101/1，捕获事件碰撞和下一副作用越过 Delay。
+两文件原字节 cmp 0 还原后，桥 1/1 与 Worker 同一用例的完成/失败两分支均
+退出 0，日志 `effects-restored.log`。该次恢复首命令因登录 shell 找不到
+cargo 退出 127、未开始编译；改用 SDK 原绝对可执行路径后才取得上述通过。
+
+日志在
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`，
+前缀 `workflow-sequence-`；其中 `core.log`、`worker-final.log`、
+`contracts.log`、`ui-restored.log`、`backend-restored.log` 为对应真实结果，
+`sql-restored.log` 保留首次夹具失败，不以名称当作通过。没有运行 full、镜像
+构建或发布，未完成真实 Relay 与 Temporal 的多消息端到端运行验收。
+
+该切片为多消息加消息间 Delay、首副作用前原策略审批，不是七动作全完成；
+私聊 HUMAN 身份边界、webhook、任意条件、逐步骤 timeout/输出引用及后置审批
+仍未闭合，不生成假入口。需迁移、新 Core/Worker 与共享客户端集中投递，不让
+旧 Core 接受格式 3；本记录不声明生产可用。

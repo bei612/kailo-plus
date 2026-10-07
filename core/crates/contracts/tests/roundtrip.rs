@@ -452,12 +452,16 @@ fn automation_cron_roundtrip_preserves_exact_spec_and_legacy_interval() {
 
 #[test]
 fn automation_steps_roundtrip_preserves_order_and_version_discriminator() {
-    let raw =
-        fs::read_to_string(sample_path().with_file_name("automation-steps.sample.json")).unwrap();
-    let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    let typed: contracts::AutomationVersionContent = serde_json::from_str(&raw).unwrap();
-    assert!(typed.action.is_none());
-    assert_eq!(original, serde_json::to_value(typed).unwrap());
+    for name in [
+        "automation-steps.sample.json",
+        "automation-message-sequence.sample.json",
+    ] {
+        let raw = fs::read_to_string(sample_path().with_file_name(name)).unwrap();
+        let original: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let typed: contracts::AutomationVersionContent = serde_json::from_str(&raw).unwrap();
+        assert!(typed.action.is_none());
+        assert_eq!(original, serde_json::to_value(typed).unwrap());
+    }
 }
 
 #[test]

@@ -1,15 +1,19 @@
 import { act } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { AutomationManagement } from "../src/react/agents";
 import type { BffReply, BffRequest } from "../src/transport";
 import { button, click, render, settle, type } from "./render";
 
+const platformCrypto = globalThis.crypto;
 beforeEach(() => {
+  // HTTP LAN browsers expose secure randomness but not randomUUID.
+  vi.stubGlobal("crypto", { getRandomValues: platformCrypto.getRandomValues.bind(platformCrypto) });
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   HTMLElement.prototype.scrollIntoView = vi.fn();
 });
+afterEach(() => vi.unstubAllGlobals());
 
 const installation = {
   resourceId: "executor", workspaceId: "workspace", agentResourceId: "agent",
@@ -82,6 +86,68 @@ const writes = (send: ReturnType<typeof vi.fn>) => send.mock.calls.map(([request
   .filter((request) => request.method === "POST").map((request) => request.body);
 
 describe("original workflow action menu with governed consumers", () => {
+  it.each(["add_reaction", "set_channel_topic", "delay", "request_approval"])(
+    "creates %s steps without secure-context randomUUID", async (action) => {
+      expect(crypto.randomUUID).toBeUndefined();
+      const { host, send } = await setup((request) => request.path.startsWith("/api/v1/automations/workflow?")
+        ? { status: 200, body: { ...detail, versions: detail.versions.map((row) => ({ ...row,
+          content: { ...row.content, action: { kind: "POST_MESSAGE", template: "Original" } },
+        })) } }
+        : request.path.startsWith("/api/v1/automations?") ? { status: 200, body: { automations: [automation], canCreate: true,
+          availableApprovalPolicies: [{ id: "5d302c74-7f3f-49d5-9583-616e6c9a32a7", version: 1 }] } } : undefined);
+      await chooseAction(host, "Edit");
+      const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+      if (action === "add_reaction" || action === "set_channel_topic") {
+        const control = [...dialog.querySelectorAll("select")].find((field) => [...field.options].some((option) => option.value === action))!;
+        await select(control, action);
+      } else {
+        await click(button(dialog, action === "delay" ? "Add delay" : "Add approval request"));
+      }
+      await click(button(dialog, "Workflow YAML"));
+      const yaml = dialog.querySelector<HTMLTextAreaElement>("textarea")!.value;
+      expect(yaml).toContain(`action: ${action}`);
+      const ids = [...yaml.matchAll(/\bid: ([0-9a-f-]{36})/g)].map((match) => match[1]!);
+      expect(ids).toHaveLength(action === "delay" || action === "request_approval" ? 2 : 1);
+      expect(new Set(ids).size).toBe(ids.length);
+      for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      expect(writes(send)).toHaveLength(0);
+    },
+  );
+
+  it("preserves ordered message effects and intervening delay across the original form and YAML", async () => {
+    const { host, send } = await setup((request) => request.path.startsWith("/api/v1/automations/workflow?")
+      ? { status: 200, body: { ...detail, versions: detail.versions.map((row) => ({ ...row,
+        content: { ...row.content, action: { kind: "POST_MESSAGE", template: "First {{trigger.text}}" } },
+      })) } } : undefined);
+    await chooseAction(host, "Edit");
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    await click(button(dialog, "Add message"));
+    const messages = dialog.querySelectorAll<HTMLTextAreaElement>("textarea");
+    expect(messages).toHaveLength(2);
+    await type(messages[1]!, "Second {{trigger.text}}");
+    await click(button(dialog, "Add delay"));
+    await type(dialog.querySelector<HTMLInputElement>("#wf-step-1-duration")!, "1m");
+    await click(button(dialog, "Workflow YAML"));
+    const yaml = dialog.querySelector<HTMLTextAreaElement>("textarea")!.value;
+    expect(yaml).toContain("formatVersion: 3");
+    expect(yaml.indexOf("First {{trigger.text}}")).toBeLessThan(yaml.indexOf("duration: 1m"));
+    expect(yaml.indexOf("duration: 1m")).toBeLessThan(yaml.indexOf("Second {{trigger.text}}"));
+    await click(button(dialog, "Form"));
+    expect([...dialog.querySelectorAll<HTMLTextAreaElement>("textarea")].map((field) => field.value))
+      .toEqual(["First {{trigger.text}}", "Second {{trigger.text}}"]);
+    await click(button(dialog, "Review request"));
+    await click(button(dialog, "Submit governed request"));
+    const commands = writes(send);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toMatchObject({ actionKey: "automation.publish_version", automationVersionContent: {
+      formatVersion: 3, steps: [
+        { action: "send_message", text: "First {{trigger.text}}" },
+        { action: "delay", duration: "1m" },
+        { action: "send_message", text: "Second {{trigger.text}}" },
+      ],
+    } });
+  });
+
   it("carries the original template picker through form/YAML into the same governed version request", async () => {
     const { host, send } = await setup((request) => request.path.startsWith("/api/v1/automations/workflow?")
       ? { status: 200, body: { ...detail, versions: detail.versions.map((row) => ({ ...row,

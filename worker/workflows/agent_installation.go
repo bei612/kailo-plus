@@ -56,7 +56,7 @@ func agentInstallation(ctx workflow.Context, in ComponentTaskInput) error {
 		}
 		if err := project(loop, status, reason); err == nil && status != generated.TaskStatusRUNNING {
 			switch status {
-			case generated.Completed:
+			case generated.TaskStatusCOMPLETED:
 				return nil
 			case generated.Canceled:
 				return temporal.NewCanceledError()

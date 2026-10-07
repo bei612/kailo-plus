@@ -36,7 +36,7 @@ func applicationBinding(ctx workflow.Context, in ComponentTaskInput) error {
 		status, reason := generated.TaskStatusRUNNING, "UNKNOWN_EXTERNAL_RESULT"
 		if err == nil && result.BindingID == target.BindingID {
 			switch result.Status {
-			case generated.TaskStatusRUNNING, generated.Completed, generated.Canceled, generated.TaskStatusFAILED:
+			case generated.TaskStatusRUNNING, generated.TaskStatusCOMPLETED, generated.Canceled, generated.TaskStatusFAILED:
 				status, reason = result.Status, result.WaitingReason
 			}
 		}
@@ -51,7 +51,7 @@ func applicationBinding(ctx workflow.Context, in ComponentTaskInput) error {
 			}).Get(loop, nil)
 		if projected == nil && status != generated.TaskStatusRUNNING {
 			switch status {
-			case generated.Completed:
+			case generated.TaskStatusCOMPLETED:
 				return nil
 			case generated.Canceled:
 				return temporal.NewCanceledError()

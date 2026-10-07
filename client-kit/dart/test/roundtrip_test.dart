@@ -496,9 +496,10 @@ void main() {
     },
   );
   test('ordered automation steps preserve IDs and duration', () {
+    for (final name in ['automation-steps.sample.json', 'automation-message-sequence.sample.json']) {
     final original = jsonDecode(
       File(
-        '../../contracts/samples/automation-steps.sample.json',
+        '../../contracts/samples/$name',
       ).readAsStringSync(),
     );
     final typed = AutomationVersionContent.fromJson(
@@ -506,6 +507,7 @@ void main() {
     );
     expect(typed.action, isNull);
     expect(jsonDecode(jsonEncode(typed.toJson())), equals(original));
+    }
   });
   test(
     'component release approval preserves deployment subject and NONE host API',

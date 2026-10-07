@@ -1002,6 +1002,7 @@ export const platformMessages = {
   "workflows.steps.id": { en: "ID", "zh-CN": "标识" },
   "workflows.steps.reference": { en: "The step ID identifies this step in the workflow history.", "zh-CN": "步骤标识用于在工作流历史中定位此步骤。" },
   "workflows.steps.addDelay": { en: "Add delay", "zh-CN": "添加延时" },
+  "workflows.steps.addMessage": { en: "Add message", "zh-CN": "添加消息" },
   "workflows.steps.addApproval": { en: "Add approval request", "zh-CN": "添加审批请求" },
   "workflows.steps.addReaction": { en: "Add reaction", "zh-CN": "添加表情回应" },
   "workflows.steps.setTopic": { en: "Set channel topic", "zh-CN": "修改频道主题" },

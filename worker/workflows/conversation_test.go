@@ -32,9 +32,9 @@ func TestConversationProjectionKeepsUnknownUntilSameNativeReceipt(t *testing.T) 
 			return generated.ConversationProjectionResult{}, errors.New("native reply lost")
 		}
 		if calls == 2 {
-			return generated.ConversationProjectionResult{ConversationID: "different-dm", Status: generated.Completed, WaitingReason: "NONE"}, nil
+			return generated.ConversationProjectionResult{ConversationID: "different-dm", Status: generated.TaskStatusCOMPLETED, WaitingReason: "NONE"}, nil
 		}
-		return generated.ConversationProjectionResult{ConversationID: target.ConversationID, Status: generated.Completed, WaitingReason: "NONE"}, nil
+		return generated.ConversationProjectionResult{ConversationID: target.ConversationID, Status: generated.TaskStatusCOMPLETED, WaitingReason: "NONE"}, nil
 	})
 	env.OnActivity("ProjectTaskState", mock.Anything, mock.Anything).Return(func(_ context.Context, report generated.TaskStateReport) error {
 		if report.Status == generated.TaskStatusRUNNING {
@@ -42,7 +42,7 @@ func TestConversationProjectionKeepsUnknownUntilSameNativeReceipt(t *testing.T) 
 			if report.WaitingReason == nil || *report.WaitingReason != "UNKNOWN_EXTERNAL_RESULT" {
 				t.Fatal("uncertainty hidden")
 			}
-		} else if report.Status != generated.Completed {
+		} else if report.Status != generated.TaskStatusCOMPLETED {
 			t.Fatal("uncertain native projection rendered failed/canceled")
 		}
 		return nil

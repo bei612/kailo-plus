@@ -278,6 +278,9 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
         Some(version) if version == 2 && value.get("action").is_none() => {
             steps::action(&value["steps"])?
         }
+        Some(version) if version == 3 && value.get("action").is_none() => {
+            steps::message_sequence(&value["steps"])?
+        }
         _ => return Err(invalid_management()),
     };
     if trigger.keys().any(|key| {

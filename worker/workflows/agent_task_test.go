@@ -43,7 +43,7 @@ func finishTaskMock(env *testsuite.TestWorkflowEnvironment, check func(generated
 	env.OnActivity("AdvanceAgentTask", mock.Anything, mock.Anything).Return(
 		func(_ context.Context, in generated.AgentTaskWorkflowInput) (generated.AgentTaskAdvanceResult, error) {
 			check(in)
-			status := generated.Completed
+			status := generated.TaskStatusCOMPLETED
 			if in.CancelPending {
 				status = generated.Canceled
 			}
@@ -70,12 +70,56 @@ func TestAgentTaskOrderedDelayUsesDurableTimerBeforeNextAdvance(t *testing.T) {
 			if env.Now().Sub(started) < 62*time.Second {
 				t.Fatal("message step advanced before native Delay")
 			}
-			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.Completed, WaitingReason: "NONE", FinishActivity: true}, nil
+			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusCOMPLETED, WaitingReason: "NONE", FinishActivity: true}, nil
 		})
 	raw, _ := json.Marshal(in)
 	env.ExecuteWorkflow(AgentTaskKind, json.RawMessage(raw))
 	if err := env.GetWorkflowError(); err != nil || advances != 2 {
 		t.Fatalf("Delay did not finish through original workflow: advances=%d error=%v", advances, err)
+	}
+}
+
+// Core owns the per-effect durable receipts; the existing Workflow must carry
+// those observations through its normal Activity/Timer loop without a new run.
+func TestAgentTaskOrderedMessageObservationsKeepOneInvocationAndStopOnFailure(t *testing.T) {
+	for _, terminal := range []generated.TaskStatus{generated.TaskStatusCOMPLETED, generated.TaskStatusFAILED} {
+		t.Run(string(terminal), func(t *testing.T) {
+			env, in, _ := scheduleTaskTest(t)
+			env.OnActivity("ProjectAgentTaskState", mock.Anything, mock.Anything).Return(nil)
+			advances := 0
+			var delayStarted time.Time
+			env.OnActivity("AdvanceAgentTask", mock.Anything, mock.Anything).Return(
+				func(_ context.Context, actual generated.AgentTaskWorkflowInput) (generated.AgentTaskAdvanceResult, error) {
+					advances++
+					if actual != in {
+						t.Fatal("sequence changed frozen Invocation")
+					}
+					out := generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID,
+						Status: generated.TaskStatusRUNNING, WaitingReason: "NONE", FinishActivity: true}
+					switch advances {
+					case 1: // first publication positively reconciled; yield the old Activity
+					case 2:
+						delayStarted = env.Now()
+						out.WaitingReason = "WAITING_TIMER"
+						out.DelayStep = &generated.DelayStep{ID: "between-messages", Seconds: 62}
+					case 3:
+						if env.Now().Sub(delayStarted) < 62*time.Second {
+							t.Fatal("next effect overtook Delay")
+						}
+						out.WaitingReason = "UNKNOWN_EXTERNAL_RESULT"
+					case 4:
+						out.Status = terminal
+					default:
+						t.Fatal("terminal sequence advanced another effect")
+					}
+					return out, nil
+				})
+			raw, _ := json.Marshal(in)
+			env.ExecuteWorkflow(AgentTaskKind, json.RawMessage(raw))
+			if advances != 4 || (terminal == generated.TaskStatusCOMPLETED) != (env.GetWorkflowError() == nil) {
+				t.Fatalf("sequence observations escaped original loop: advances=%d err=%v", advances, env.GetWorkflowError())
+			}
+		})
 	}
 }
 
@@ -266,7 +310,7 @@ func TestAgentTaskOrdinaryInputKeepsOriginalFirstCommand(t *testing.T) {
 			if actual != in {
 				t.Fatal("ordinary frozen input changed")
 			}
-			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.Completed, WaitingReason: "NONE", FinishActivity: true}, nil
+			return generated.AgentTaskAdvanceResult{InvocationID: in.InvocationID, Status: generated.TaskStatusCOMPLETED, WaitingReason: "NONE", FinishActivity: true}, nil
 		})
 	env.ExecuteWorkflow(AgentTaskKind, in)
 	if err := env.GetWorkflowError(); err != nil || !reflect.DeepEqual(sequence, []string{"project", "advance", "project"}) {
@@ -320,7 +364,7 @@ func TestAgentTaskStepApprovalStartsOriginalChildOnceWithoutWaitingForItsComplet
 				ApprovalWorkflowID: &childID, ApprovalInput: &child}
 			if advances == 3 {
 				terminalAt = env.Now()
-				out.Status, out.WaitingReason, out.ApprovalWorkflowID, out.ApprovalInput = generated.Completed, "NONE", nil, nil
+				out.Status, out.WaitingReason, out.ApprovalWorkflowID, out.ApprovalInput = generated.TaskStatusCOMPLETED, "NONE", nil, nil
 			}
 			return out, nil
 		})

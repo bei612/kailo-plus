@@ -141,7 +141,7 @@ func TestWorkspaceSuspendClearsRosterThenArchives(t *testing.T) {
 	if r := run.rosters[0]; r.WorkspaceVersion != 4 || r.WorkspaceID != suspensionWorkspace {
 		t.Fatalf("roster 载荷不符：%+v", r)
 	}
-	if last := run.statuses[len(run.statuses)-1]; last != generated.Completed {
+	if last := run.statuses[len(run.statuses)-1]; last != generated.TaskStatusCOMPLETED {
 		t.Fatalf("终态投影应为 COMPLETED，得到 %v", run.statuses)
 	}
 }

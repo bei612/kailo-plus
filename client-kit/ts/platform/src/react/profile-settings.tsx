@@ -8,6 +8,7 @@ import { useState } from "react";
 import { npubEncode } from "nostr-tools/nip19";
 import type { WebProfileUpdateRequest, WebProfileView } from "@client-kit/contracts";
 import { translate, type PlatformLocale } from "../i18n";
+import { newIdempotencyKey } from "../governance";
 import { isOutcomeUnknown, TransportError } from "../transport";
 import { SettingsOptionGroup, SettingsOptionGroupList } from "./settings-option-group";
 import { SettingsSectionHeader } from "./settings-surface";
@@ -362,15 +363,15 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, onSave, o
 
   const saveProfile = async (): Promise<boolean> => {
     if (writing.current || isUploadingAvatar || (!intent.current && !canSave)) return false;
-    const request = intent.current ?? Object.freeze({
-      idempotencyKey: crypto.randomUUID(), expectedPubkey: initialProfile.pubkey,
-      displayName: nextDisplayName, about: nextAbout,
-      ...(nextAvatarUrl !== currentAvatarUrl ? {avatarUrl: nextAvatarUrl} : {}),
-    });
-    intent.current = request;
     writing.current = true;
     setBusy(true);
     try {
+      const request = intent.current ?? Object.freeze({
+        idempotencyKey: newIdempotencyKey(), expectedPubkey: initialProfile.pubkey,
+        displayName: nextDisplayName, about: nextAbout,
+        ...(nextAvatarUrl !== currentAvatarUrl ? {avatarUrl: nextAvatarUrl} : {}),
+      });
+      intent.current = request;
       const actual = await onSave(request);
       if (!mounted.current) return false;
       if (actual.pubkey !== initialProfile.pubkey) throw new TransportError("Profile identity changed before readback");

@@ -64,7 +64,7 @@ func validProtocolSessionResult(in generated.ProtocolSessionReconcileRequest, ou
 	switch out.Status {
 	case generated.TaskStatusRUNNING:
 		return true
-	case generated.Completed, generated.Canceled, generated.TaskStatusFAILED:
+	case generated.TaskStatusCOMPLETED, generated.Canceled, generated.TaskStatusFAILED:
 		terminal := state == "REVOKED" || state == "CLOSED" || state == "EXPIRED" || state == "FAILED"
 		pending := state == "DIRTY" || (out.Round.WriteObservation != nil &&
 			(string(out.Round.WriteObservation.Phase) == "STARTED" || string(out.Round.WriteObservation.Phase) == "UNKNOWN"))

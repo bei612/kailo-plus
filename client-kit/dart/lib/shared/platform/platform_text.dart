@@ -861,6 +861,7 @@ enum PlatformMessageKey {
   workflowsStepsId,
   workflowsStepsReference,
   workflowsStepsAddDelay,
+  workflowsStepsAddMessage,
   workflowsStepsAddApproval,
   workflowsStepsAddReaction,
   workflowsStepsSetTopic,
@@ -3408,6 +3409,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
     '步骤标识用于在工作流历史中定位此步骤。',
   ),
   PlatformMessageKey.workflowsStepsAddDelay: ('Add delay', '添加延时'),
+  PlatformMessageKey.workflowsStepsAddMessage: ('Add message', '添加消息'),
   PlatformMessageKey.workflowsStepsAddApproval: (
     'Add approval request',
     '添加审批请求',

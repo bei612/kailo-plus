@@ -1,0 +1,11 @@
+{
+  "name": "Ordered native messages",
+  "formatVersion": 3,
+  "trigger": {"kind": "CHANNEL_MESSAGE", "textPrefix": "release"},
+  "steps": [
+    {"id": "announce", "name": "Announce", "action": "send_message", "text": "Started: {{trigger.text}}"},
+    {"id": "pause", "name": "Wait", "action": "delay", "duration": "1m"},
+    {"id": "finish", "name": "Follow up", "action": "send_message", "text": "Finished: {{trigger.text}}"}
+  ],
+  "resultTarget": "TRIGGER_THREAD"
+}

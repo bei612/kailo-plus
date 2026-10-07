@@ -24,16 +24,23 @@ export function workflowApprovalPolicy(content: AutomationVersionContent) {
   return content.steps?.find((step) => step.action === "request_approval")?.approvalPolicy ?? content.approvalPolicy;
 }
 
-export function supportedSteps(value: unknown): value is AutomationStep[] {
+export function supportedSteps(value: unknown, formatVersion: 2 | 3 = 2): value is AutomationStep[] {
   if (!Array.isArray(value) || value.length < 1) return false;
   const ids = new Set<string>();
   let approval = false;
+  let messages = 0;
   return value.every((step: unknown, index) => {
     if (!step || typeof step !== "object" || Array.isArray(step)) return false;
     const row = step as Record<string, unknown>;
     if (typeof row.id !== "string" || !row.id.trim() || ids.has(row.id)
       || (row.name !== undefined && (typeof row.name !== "string" || !row.name.trim()))) return false;
     ids.add(row.id);
+    if (formatVersion === 3 && row.action === "send_message") {
+      messages += 1;
+      return Object.keys(row).every((key) => ["id", "name", "action", "text"].includes(key))
+        && typeof row.text === "string" && !!row.text.trim();
+    }
+    if (formatVersion === 3 && index === value.length - 1) return false;
     if (index === value.length - 1) return row.action === "add_reaction"
       ? Object.keys(row).every((key) => ["id", "name", "action", "emoji"].includes(key))
         && typeof row.emoji === "string" && !!row.emoji.trim()
@@ -42,7 +49,7 @@ export function supportedSteps(value: unknown): value is AutomationStep[] {
       : Object.keys(row).every((key) => ["id", "name", "action", "text"].includes(key))
         && row.action === "send_message" && typeof row.text === "string" && !!row.text.trim();
     if (row.action === "request_approval") {
-      if (approval) return false;
+      if (approval || messages > 0) return false;
       approval = true;
       return Object.keys(row).every((key) => ["id", "name", "action", "approvalPolicy", "message"].includes(key))
         && validApprovalPolicy(row.approvalPolicy) && typeof row.message === "string" && !!row.message.trim();
@@ -55,7 +62,7 @@ export function supportedSteps(value: unknown): value is AutomationStep[] {
 
 export type WorkflowActionKind = ActionKind | ActionEnum.AddReaction | ActionEnum.SetChannelTopic;
 export function workflowAction(content: AutomationVersionContent): {kind: WorkflowActionKind; template: string} | undefined {
-  return content.formatVersion === 2
+  return content.formatVersion === 2 || content.formatVersion === 3
     ? content.steps?.at(-1)?.action === ActionEnum.AddReaction
       ? {kind: ActionEnum.AddReaction, template: content.steps.at(-1)?.emoji ?? ""}
       : content.steps?.at(-1)?.action === ActionEnum.SetChannelTopic

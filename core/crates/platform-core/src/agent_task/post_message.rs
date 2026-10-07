@@ -23,6 +23,102 @@ fn unknown() -> Refusal {
     Refusal::Unavailable("Template publication evidence unavailable".into())
 }
 
+pub(super) enum SequenceProgress {
+    Legacy,
+    Ready(usize),
+    Waiting,
+    Advanced,
+    Terminal(TaskStatus),
+}
+
+pub(super) async fn sequence_progress(
+    state: &ServiceState,
+    invocation: &Invocation,
+    input: &AgentTaskAdvanceRequest,
+) -> Result<SequenceProgress, Refusal> {
+    let (action, events): (Value, Vec<String>) = sqlx::query_as(
+        "select v.action,i.automation_step_event_ids from catalog.agent_invocation i
+         join catalog.automation_version v on v.asset_id=i.automation_version_asset_id
+         and v.automation_resource_id=i.automation_resource_id where i.id=$1",
+    )
+    .bind(invocation.id)
+    .fetch_one(&state.pool)
+    .await?;
+    if !crate::automation::steps::is_sequence(&action) {
+        return Ok(SequenceProgress::Legacy);
+    }
+    crate::automation::steps::message_step(&action, events.len())?;
+    let cancel = activity_fence(state, invocation, input, true).await?
+        || input.cancel_requested
+        || invocation.cancel_pending;
+    if let Some(event) = events.last() {
+        let accepted: bool = sqlx::query_scalar("select catalog.automation_step_accepted($1,$2)")
+            .bind(invocation.id)
+            .bind(event)
+            .fetch_one(&state.pool)
+            .await?;
+        if !accepted {
+            match reconcile_reply(state, invocation, None, event).await? {
+                Some(true) if !cancel => return Ok(SequenceProgress::Advanced),
+                Some(true) => (),
+                Some(false) => {
+                    finish_partial(state, invocation, &events, TaskStatus::Failed).await?;
+                    return Ok(SequenceProgress::Terminal(TaskStatus::Failed));
+                }
+                None => return Ok(SequenceProgress::Waiting),
+            }
+        }
+    }
+    if cancel && !events.is_empty() {
+        finish_partial(state, invocation, &events, TaskStatus::Canceled).await?;
+        return Ok(SequenceProgress::Terminal(TaskStatus::Canceled));
+    }
+    Ok(SequenceProgress::Ready(events.len()))
+}
+
+/// Earlier accepted effects remain visible and referenced. Cancellation/refusal
+/// stops only later writes; it never describes a partial run as rolled back.
+async fn finish_partial(
+    state: &ServiceState,
+    invocation: &Invocation,
+    expected_events: &[String],
+    status: TaskStatus,
+) -> Result<(), Refusal> {
+    let mut tx = state.pool.begin().await?;
+    let ae = crate::governance::lock_execution(&mut tx, invocation.action_execution_id).await?;
+    let events: Vec<String> = sqlx::query_scalar(
+        "select automation_step_event_ids from catalog.agent_invocation
+        where id=$1 and automation_step_event_ids=$2 and reply_event_id is null
+        and status in ('DISPATCHING','UNKNOWN') for update",
+    )
+    .bind(invocation.id)
+    .bind(expected_events)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(unknown)?;
+    if events.is_empty() {
+        return Err(unknown());
+    }
+    let terminal = crate::governance::wire(&status);
+    let evidence = events
+        .iter()
+        .map(|event| Evidence::new(EvidenceKind::BuzzEventId, event))
+        .collect();
+    turn_audit(
+        state,
+        &mut tx,
+        &ae,
+        invocation.id,
+        ("message-sequence:terminal", "OUTCOME", &terminal),
+        evidence,
+    )
+    .await?;
+    sqlx::query("update catalog.agent_invocation set status=$2,cancel_pending=cancel_pending or $3,updated_at=now() where id=$1")
+        .bind(invocation.id).bind(terminal).bind(status == TaskStatus::Canceled).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 /// Read template input only after the ordinary automation/source admission.
 /// The signed output event ID freezes the expanded bytes before dispatch;
 /// recovery observes that event and never expands or sends it a second time.
@@ -128,8 +224,9 @@ pub(super) async fn advance(
     state: &ServiceState,
     invocation: &Invocation,
     input: &AgentTaskAdvanceRequest,
+    sequence_ordinal: Option<usize>,
 ) -> Response {
-    match execute(state, invocation, input).await {
+    match execute(state, invocation, input, sequence_ordinal).await {
         Ok((status, reason)) => result(invocation.id, status, reason),
         Err(error) => {
             // Definite pre-publish refusal can close only the still CREATED
@@ -159,6 +256,7 @@ async fn execute(
     state: &ServiceState,
     invocation: &Invocation,
     input: &AgentTaskAdvanceRequest,
+    sequence_ordinal: Option<usize>,
 ) -> Result<(TaskStatus, &'static str), Refusal> {
     let cancel = activity_fence(state, invocation, input, true).await?
         || input.cancel_requested
@@ -187,8 +285,14 @@ async fn execute(
     }
     let event = match invocation.reply_event_id.as_deref() {
         Some(event) => event.to_owned(),
-        None if !cancel && invocation.status == "CREATED" => {
-            publish(state, invocation, input).await?
+        None if !cancel && (invocation.status == "CREATED" || sequence_ordinal.is_some()) => {
+            let (event, final_effect) = publish(state, invocation, input, sequence_ordinal).await?;
+            if !final_effect {
+                // The next original Activity reconciles this event before timers
+                // or the following effect. Never publish a second step here.
+                return Ok((TaskStatus::Running, "UNKNOWN_EXTERNAL_RESULT"));
+            }
+            event
         }
         None => return Err(unknown()),
     };
@@ -221,8 +325,9 @@ async fn fail_before_dispatch(
         .await?;
     let changed = sqlx::query(
         "update catalog.agent_invocation set status='FAILED',updated_at=now()
-        where id=$1 and status='CREATED' and action_execution_id=$2 and reply_event_id is null
-        and post_message_intent is null and runtime_turn_id is null and native_status is null",
+        where id=$1 and status in ('CREATED','DISPATCHING') and action_execution_id=$2 and reply_event_id is null
+        and post_message_intent is null and runtime_turn_id is null and native_status is null
+        and not exists(select 1 from unnest(automation_step_event_ids) e where not catalog.automation_step_accepted(id,e))",
     )
     .bind(invocation.id)
     .bind(ae.id)
@@ -287,7 +392,8 @@ async fn publish(
     state: &ServiceState,
     invocation: &Invocation,
     input: &AgentTaskAdvanceRequest,
-) -> Result<String, Refusal> {
+    sequence_ordinal: Option<usize>,
+) -> Result<(String, bool), Refusal> {
     activity_fence(state, invocation, input, false).await?;
     crate::service_api::audit_gate(state)
         .await
@@ -300,6 +406,26 @@ async fn publish(
         .await?;
     let (action, binding, revision) =
         crate::automation::fresh_channel_action(state, &mut tx, invocation.id, None).await?;
+    let sequence = crate::automation::steps::is_sequence(&action);
+    let sequence_events: Vec<String> = sqlx::query_scalar(
+        "select automation_step_event_ids from catalog.agent_invocation where id=$1",
+    )
+    .bind(invocation.id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if sequence && sequence_ordinal != Some(sequence_events.len()) {
+        return Err(unknown());
+    }
+    let sequence_step = if sequence {
+        Some(crate::automation::steps::message_step(
+            &action,
+            sequence_events.len(),
+        )?)
+    } else {
+        None
+    };
+    let final_effect = !sequence
+        || crate::automation::steps::message_step(&action, sequence_events.len() + 1).is_err();
     if binding.agent_locator
         != state.secrets.tenant_locator(
             invocation.tenant_id,
@@ -361,29 +487,54 @@ async fn publish(
             state,
             invocation,
             binding.channel_id,
-            action["template"].as_str().ok_or_else(unknown)?,
+            sequence_step
+                .map_or(&action["template"], |step| &step["text"])
+                .as_str()
+                .ok_or_else(unknown)?,
             ae.parameters
                 .as_ref()
                 .and_then(|parameters| parameters["sourcePubkey"].as_str()),
         )
         .await?;
-        client.sign_channel_result_at(
-            &binding.channel_id.to_string(),
-            &content,
-            reply_ancestry(invocation),
-            matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
-                .then_some(invocation.id),
-            timestamp,
-        )
+        if let Some(step) = sequence_step {
+            client.sign_workflow_step_result_at(
+                &binding.channel_id.to_string(),
+                &content,
+                reply_ancestry(invocation),
+                Uuid::new_v5(
+                    &invocation.id,
+                    step["id"].as_str().ok_or_else(unknown)?.as_bytes(),
+                ),
+                timestamp,
+            )
+        } else {
+            client.sign_channel_result_at(
+                &binding.channel_id.to_string(),
+                &content,
+                reply_ancestry(invocation),
+                matches!(invocation.source_kind.as_str(), "SCHEDULE" | "MANUAL")
+                    .then_some(invocation.id),
+                timestamp,
+            )
+        }
     }
     .map_err(|_| unknown())?;
     let event_id = event.id.to_hex();
     let admitted = client.admit().map_err(|_| unknown())?;
     let metadata = serde_json::to_value(&intent).map_err(|_| unknown())?;
-    let changed=sqlx::query("update catalog.agent_invocation set reply_event_id=$2,post_message_intent=$3,
+    let changed = if sequence {
+        sqlx::query("update catalog.agent_invocation set automation_step_event_ids=array_append(automation_step_event_ids,$2),
+         reply_event_id=case when $5 then $2 else null end,post_message_intent=case when $5 then $3::jsonb else null end,
+         status='DISPATCHING',updated_at=now() where id=$1 and status in ('CREATED','DISPATCHING','UNKNOWN') and not cancel_pending
+         and reply_event_id is null and post_message_intent is null and runtime_turn_id is null and native_status is null
+         and automation_step_event_ids=$4 and not exists(select 1 from unnest(automation_step_event_ids) e where not catalog.automation_step_accepted(id,e))")
+         .bind(invocation.id).bind(&event_id).bind(&metadata).bind(&sequence_events).bind(final_effect).execute(&mut *tx).await?
+    } else {
+        sqlx::query("update catalog.agent_invocation set reply_event_id=$2,post_message_intent=$3,
         status='DISPATCHING',updated_at=now() where id=$1 and status='CREATED' and not cancel_pending
         and reply_event_id is null and post_message_intent is null and runtime_turn_id is null and native_status is null")
-        .bind(invocation.id).bind(&event_id).bind(&metadata).execute(&mut *tx).await?;
+        .bind(invocation.id).bind(&event_id).bind(&metadata).execute(&mut *tx).await?
+    };
     if changed.rows_affected() != 1 {
         return Err(unknown());
     }
@@ -426,11 +577,24 @@ async fn publish(
             state,
             &mut guard,
             invocation.id,
-            Some(&event_id),
+            final_effect.then_some(event_id.as_str()),
         )
         .await?;
         if current_binding != binding || current_action != action {
             return Err(unknown());
+        }
+        if sequence {
+            let current: Vec<String> = sqlx::query_scalar(
+                "select automation_step_event_ids from catalog.agent_invocation where id=$1",
+            )
+            .bind(invocation.id)
+            .fetch_one(&mut *guard)
+            .await?;
+            let mut expected = sequence_events.clone();
+            expected.push(event_id.clone());
+            if current != expected {
+                return Err(unknown());
+            }
         }
         Ok::<_, Refusal>(guard)
     }
@@ -478,7 +642,7 @@ async fn publish(
         .await?;
     }
     guard.commit().await?;
-    Ok(event_id)
+    Ok((event_id, final_effect))
 }
 
 async fn record_count(
@@ -683,5 +847,141 @@ mod post_message_tests {
             bad[field] = json!("not an intent field");
             assert!(serde_json::from_value::<Intent>(bad).is_err());
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires disposable migrated AGENT_INVOKE_TEST_DATABASE_URL; all fixture facts roll back"]
+    async fn ordered_message_guard_requires_same_operation_receipts_before_advancing() {
+        let pool = sqlx::PgPool::connect(&std::env::var("AGENT_INVOKE_TEST_DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let tenant = crate::agent_task::receipt_tests::fixture(&mut tx).await;
+        // Reuse the existing real Catalog fixture, not replacement tables or a
+        // disabled trigger. Only original receipt evidence is injected here;
+        // this is not a live Relay/SpiceDB/Temporal end-to-end verification.
+        sqlx::raw_sql(&r#"DO $$
+        DECLARE tenant uuid:='__TENANT__'; workspace uuid; installation uuid; agent uuid; owner uuid;
+          version uuid; route uuid; resource uuid:=gen_random_uuid(); asset uuid:=gen_random_uuid();
+          grant_id uuid:=gen_random_uuid(); grant_action uuid:=gen_random_uuid(); run_action uuid:=gen_random_uuid();
+          invocation uuid:=gen_random_uuid();
+        BEGIN
+          SELECT i.workspace_id,i.resource_id,i.agent_principal_id,r.owner_principal_id,i.pinned_version_asset_id,p.model_route_resource_id
+            INTO workspace,installation,agent,owner,version,route
+            FROM catalog.agent_installation i JOIN catalog.resource r ON r.id=i.resource_id
+            JOIN catalog.agent_runtime_projection p ON p.installation_resource_id=i.resource_id AND p.generation=1
+            WHERE r.tenant_id=tenant ORDER BY i.resource_id LIMIT 1;
+          INSERT INTO catalog.agent_runtime_projection(installation_resource_id,generation,agent_version_asset_id,runtime_profile_key,model_route_resource_id,gateway_resource_ids,effective_fields,config_hash,state)
+            VALUES(installation,2,version,'session-dispatch-fixture',route,ARRAY[route],jsonb_build_array(jsonb_build_object('fieldKey','runtimeProfileKey','requestedValueHash',repeat('a',64),'effectiveValueHash',repeat('a',64),'reasonCode',NULL)),repeat('a',64),'ACTIVE');
+          UPDATE catalog.agent_installation SET state='ACTIVE',active_projection_generation=2 WHERE resource_id=installation;
+          UPDATE catalog.resource SET state='ACTIVE' WHERE id=installation;
+          INSERT INTO catalog.agent_session(tenant_id,workspace_id,root_event_id,installation_resource_id,agent_version_asset_id,projection_generation,core_memory_state,status)
+            VALUES(tenant,workspace,repeat('d',64),installation,version,2,'ABSENT','PENDING');
+          INSERT INTO admission.action_execution(id,operation_id,tenant_id,workspace_id,action_key,action_version,initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id)
+            VALUES(grant_action,gen_random_uuid(),tenant,workspace,'agent.delegation.grant',1,owner,owner,installation,repeat('a',64),'ALLOWED','DISPATCHED',gen_random_uuid());
+          INSERT INTO admission.delegation_grant(id,tenant_id,workspace_id,grantor_principal_id,installation_resource_id,agent_principal_id,valid_from,expires_at,state,version,action_execution_id)
+            VALUES(grant_id,tenant,workspace,owner,installation,agent,now(),now()+interval '1 day','ACTIVE',1,grant_action);
+          INSERT INTO catalog.resource(id,tenant_id,type_key,home_workspace_id,owner_principal_id,component_type_key,native_type,native_id,state,version)
+            VALUES(resource,tenant,'automation',workspace,owner,'core','automation',resource::text,'ACTIVE',1);
+          INSERT INTO catalog.automation_definition(resource_id,workspace_id,executor_installation_resource_id,delegation_id,state,version)
+            VALUES(resource,workspace,installation,grant_id,'DRAFT',1);
+          INSERT INTO catalog.asset(id,tenant_id,resource_id,type_key,owner_principal_id,native_ref,state,version)
+            VALUES(asset,tenant,resource,'automation.version',owner,asset::text,'DRAFT',1);
+          INSERT INTO catalog.automation_version(asset_id,automation_resource_id,ordinal,trigger,action,result_target,config_hash,state)
+            VALUES(asset,resource,1,'{"kind":"CHANNEL_MESSAGE"}',
+              '{"kind":"POST_MESSAGE_STEPS","template":"third","stepsVersion":3,"steps":[{"id":"one","action":"send_message","text":"first"},{"id":"two","action":"send_message","text":"second"},{"id":"three","action":"send_message","text":"third"}]}',
+              'TRIGGER_THREAD',repeat('a',64),'DRAFT');
+          INSERT INTO admission.action_execution(id,operation_id,tenant_id,workspace_id,action_key,action_version,initiator_principal_id,actor_principal_id,target_id,parameter_hash,gate_state,dispatch_state,correlation_id)
+            VALUES(run_action,gen_random_uuid(),tenant,workspace,'automation.run',1,owner,agent,resource,repeat('a',64),'ALLOWED','DISPATCHED',gen_random_uuid());
+          INSERT INTO catalog.agent_invocation(id,tenant_id,workspace_id,root_event_id,source_event_id,installation_resource_id,agent_version_asset_id,projection_generation,action_execution_id,workflow_id,status,delegation_id,automation_resource_id,automation_version_asset_id)
+            VALUES(invocation,tenant,workspace,repeat('d',64),repeat('e',64),installation,version,2,run_action,'sequence-fixture:'||invocation,'CREATED',grant_id,resource,asset);
+        END $$;"#.replace("__TENANT__", &tenant.to_string())).execute(&mut *tx).await.unwrap();
+        let (invocation, action): (Uuid, Uuid) = sqlx::query_as("select id,action_execution_id from catalog.agent_invocation where tenant_id=$1 and automation_resource_id is not null")
+            .bind(tenant).fetch_one(&mut *tx).await.unwrap();
+        let first = "a".repeat(64);
+        let second = "b".repeat(64);
+        let append = "update catalog.agent_invocation set status='DISPATCHING',automation_step_event_ids=array_append(automation_step_event_ids,$2) where id=$1";
+        sqlx::query(append)
+            .bind(invocation)
+            .bind(&first)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        for sql in [
+            "update catalog.agent_invocation set automation_step_event_ids=array_append(automation_step_event_ids,$2) where id=$1",
+            "update catalog.agent_invocation set automation_step_event_ids=ARRAY[$2] where id=$1",
+            "update catalog.agent_invocation set status='CANCELED',cancel_pending=true where id=$1 and $2<>''",
+            "update catalog.agent_invocation set status='COMPLETED' where id=$1 and $2<>''",
+        ] {
+            sqlx::query("savepoint sequence_guard").execute(&mut *tx).await.unwrap();
+            let error = sqlx::query(sql).bind(invocation).bind(&second).execute(&mut *tx).await.unwrap_err();
+            assert_eq!(error.as_database_error().and_then(|error| error.code()).as_deref(), Some("23514"));
+            sqlx::query("rollback to savepoint sequence_guard").execute(&mut *tx).await.unwrap();
+            sqlx::query("release savepoint sequence_guard").execute(&mut *tx).await.unwrap();
+        }
+        let ae = crate::governance::lock_execution(&mut tx, action)
+            .await
+            .unwrap();
+        for (event, ordinal) in [(&first, 0), (&second, 1)] {
+            crate::audit::append(
+                &mut tx,
+                crate::audit::AuditEntry {
+                    event_key: format!("sequence-fixture:{invocation}:{ordinal}"),
+                    tenant_id: Some(tenant),
+                    workspace_id: ae.workspace_id,
+                    operation_id: ae.operation_id,
+                    event_type: "RECONCILIATION",
+                    human_identity_id: None,
+                    initiator_principal_id: Some(ae.initiator_principal_id),
+                    actor_principal_id: Some(ae.actor_principal_id),
+                    action_key: &ae.action_key,
+                    action_version: ae.action_version,
+                    component_type_key: "core",
+                    target_type: Some("RESOURCE"),
+                    target_id: Some(ae.target_id),
+                    parameter_hash: &ae.parameter_hash,
+                    decision: "ALLOW",
+                    result_code: "ACCEPTED",
+                    result_exposure: "NONE",
+                    evidence_refs: vec![
+                        Evidence::new(EvidenceKind::ActionExecutionId, ae.id),
+                        Evidence::new(EvidenceKind::BuzzEventId, event),
+                    ],
+                    correlation_id: ae.correlation_id,
+                },
+            )
+            .await
+            .unwrap();
+            if ordinal == 0 {
+                sqlx::query(append)
+                    .bind(invocation)
+                    .bind(&second)
+                    .execute(&mut *tx)
+                    .await
+                    .unwrap();
+                let stale: bool = sqlx::query_scalar("select exists(select 1 from catalog.agent_invocation where id=$1 and automation_step_event_ids=$2)")
+                    .bind(invocation).bind(vec![first.clone()]).fetch_one(&mut *tx).await.unwrap();
+                assert!(
+                    !stale,
+                    "a late terminal observer must not match a newer effect"
+                );
+            }
+        }
+        sqlx::query(
+            "update catalog.agent_invocation set status='CANCELED',cancel_pending=true where id=$1",
+        )
+        .bind(invocation)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let retained: Vec<String> = sqlx::query_scalar(
+            "select automation_step_event_ids from catalog.agent_invocation where id=$1",
+        )
+        .bind(invocation)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(retained, [first, second]);
+        tx.rollback().await.unwrap();
     }
 }
