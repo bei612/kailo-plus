@@ -9,6 +9,26 @@ import { MODAL_BACKDROP_BLUR_CLASS } from "./composer/shared/ui/modalBackdrop";
 import { MODAL_CONTENT_MOTION_CLASS, MODAL_OVERLAY_MOTION_CLASS } from "./composer/shared/ui/modalMotion";
 import { useT } from "./context";
 
+// The router belongs to each host. Only its original resolver crosses this seam;
+// drafts and frozen action intent remain in the shared workflow editor.
+export type WorkflowNavigationState = { dirty: boolean; locked: boolean };
+export type WorkflowNavigation = {
+  blocker: { status: "blocked" | "idle"; proceed?: () => void; reset?: () => void };
+  onStateChange: (state: WorkflowNavigationState) => void;
+};
+
+export function workflowBlocksNavigation(state: WorkflowNavigationState,
+  current: { pathname: string; search: Record<string, unknown> },
+  next: { pathname: string; search: Record<string, unknown> }): boolean {
+  // Original WorkflowDialog permits only a pane-only transition. Scope and
+  // protocol host changes must never be mistaken for that in the Kailo routes.
+  const paneOnly = current.pathname === next.pathname
+    && current.search.pane !== next.search.pane
+    && Object.keys({ ...current.search, ...next.search }).every((key) => key === "pane"
+      || current.search[key] === next.search[key]);
+  return (state.dirty || state.locked) && !paneOnly;
+}
+
 export function WorkflowDiscardDialog({ open, onOpenChange, onDiscard }: {
   open: boolean; onOpenChange: (open: boolean) => void; onDiscard: () => void;
 }) {

@@ -11,6 +11,35 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./sidebar/tooltip";
 import { Switch } from "./switch";
 
 export type InboxFilter = "all" | "mention" | "thread" | "agent_activity" | "drafts";
+
+/** Original useHomeDrafts selection; local draft selection is not a read cursor. */
+export function useInboxDraftSelection({ items, selectedKey, setSelectedKey, autoSelect, selectionEnabled, viewportWidthPx, isNarrowHomeViewport }: {
+  items: readonly { entry: { key: string } }[];
+  selectedKey: string | null; setSelectedKey: React.Dispatch<React.SetStateAction<string | null>>;
+  autoSelect: boolean; selectionEnabled: boolean; viewportWidthPx: number; isNarrowHomeViewport: boolean;
+}) {
+  React.useEffect(() => {
+    if (!selectionEnabled) { setSelectedKey(null); return; }
+    if (selectedKey !== null && !items.some((item) => item.entry.key === selectedKey)) { setSelectedKey(null); return; }
+    if (!autoSelect || viewportWidthPx === 0) return;
+    if (selectedKey !== null && items.some((item) => item.entry.key === selectedKey)) return;
+    setSelectedKey(isNarrowHomeViewport ? null : (items[0]?.entry.key ?? null));
+  }, [autoSelect, isNarrowHomeViewport, items, selectedKey, selectionEnabled, viewportWidthPx, setSelectedKey]);
+}
+
+export function InboxEmptyList({ filter, unreadOnly }: { filter: Exclude<InboxFilter, "drafts">; unreadOnly: boolean }) {
+  const t = useUiT();
+  const titles = {
+    all: ["inbox.noActivity", "inbox.noUnread"],
+    mention: ["inbox.mentionEmpty", "inbox.mentionUnreadEmpty"],
+    thread: ["inbox.threadEmpty", "inbox.threadUnreadEmpty"],
+    agent_activity: ["inbox.agentEmpty", "inbox.agentUnreadEmpty"],
+  } as const;
+  return <div className="flex h-full min-h-64 items-center justify-center px-6 text-center"><div>
+    <p className="text-sm font-medium text-foreground">{t(titles[filter][unreadOnly ? 1 : 0])}</p>
+    <p className="mt-1 text-sm text-muted-foreground">{t(unreadOnly ? "inbox.unreadEmptyHint" : filter === "all" ? "inbox.emptyHint" : "inbox.filteredEmptyHint")}</p>
+  </div></div>;
+}
 /** Original InboxListPane reopen status/retry; UNKNOWN is not a failed effect. */
 export function InboxReopenStatus({id,pending,error,unknown,onRetry}: {id:string;pending:boolean;error:boolean;unknown?:boolean;onRetry:()=>void}) {
   const t=useUiT();
@@ -26,9 +55,11 @@ export function InboxFilterMenu({ filter, onFilterChange, activeDraftCount }: {
 }) {
   const t = useUiT();
   const filterLabel = (value: InboxFilter) => t(value === "agent_activity" ? "inbox.agentActivity" : `inbox.${value}`);
+  const statusLabel = (activeDraftCount ?? 0) > 0
+    ? t(activeDraftCount === 1 ? "inbox.activeDraftStatus" : "inbox.activeDraftStatusPlural", { count: activeDraftCount! }) : null;
   const options: InboxFilter[] = activeDraftCount === undefined ? ["all", "mention", "thread", "agent_activity"] : ["all", "mention", "thread", "agent_activity", "drafts"];
   return <DropdownMenu><DropdownMenuTrigger asChild>
-    <button aria-label={t("inbox.filterLabel", { filter: filterLabel(filter) })} className={cn(iconButton, "relative -ml-2 w-auto gap-1 px-2 text-sm font-medium text-foreground")} data-testid="inbox-filter-trigger" type="button">
+    <button aria-label={`${t("inbox.filterLabel", { filter: filterLabel(filter) })}${statusLabel ? `. ${statusLabel}` : ""}`} className={cn(iconButton, "relative -ml-2 w-auto gap-1 px-2 text-sm font-medium text-foreground")} data-testid="inbox-filter-trigger" type="button">
       <span>{filterLabel(filter)}</span><ChevronDown className="text-muted-foreground" />
     </button>
   </DropdownMenuTrigger><DropdownMenuContent align="start" className="w-52">

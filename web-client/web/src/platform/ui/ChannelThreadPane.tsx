@@ -5,7 +5,7 @@ import { MessageRowSurface, MessageActionBarSurface, getThreadReference, type Ti
 import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
 import { TransportError } from "@client-kit/platform/transport";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MessageContent } from "@/features/chat/ui/MessageContent";
+import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
 import { publishMessage } from "@/platform/bff-client";
 import { Composer } from "./ChannelPane";
 import { useWorkspaceThread } from "./useWorkspaceThread";
@@ -13,7 +13,7 @@ import { MessageAuthorIdentity } from "./MessageAuthorProfile";
 import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPanelLayout";
 import { useMessageReactions } from "./useMessageReactions";
 
-export function ChannelThreadPane({ workspaceId, principalId, selected, members, disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "" }: {
+export function ChannelThreadPane({ workspaceId, principalId, selected, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "" }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: WorkspaceMemberView[];
   disabled: boolean; onClose: () => void; onCopyMessage: (message: TimelineMessage) => void;
   onCopyLink?: (message: TimelineMessage) => void;
@@ -21,6 +21,7 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, members,
   onAuthorScopeUnavailable?: () => void;
   isFocusMode?: boolean;
   channelName?: string;
+  mentions?: readonly MessageMention[];
 }) {
   const t = useT(); const locale = useLocale();
   const rootId = getThreadReference(selected.tags ?? []).rootId ?? selected.id;
@@ -89,7 +90,8 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, members,
       renderIdentity={row.message.pubkey && onOpenAuthor && !unavailable && !interrupted ? (node) => <MessageAuthorIdentity
         target={{principalId,workspaceId,eventId:row.message.id,pubkey:row.message.pubkey!}}
         onOpen={() => onOpenAuthor(row.message)}>{node}</MessageAuthorIdentity> : undefined}
-      renderBody={(className) => <div className={className}><MessageContent workspaceId={workspaceId} content={row.message.body} mediaTags={row.message.tags} /></div>}
+      renderBody={(className) => <div className={className}><MessageContent workspaceId={workspaceId} content={row.message.body} mediaTags={row.message.tags}
+        mentions={unavailable || interrupted || disabled ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} /></div>}
       renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={row.message} onCopyMessage={onCopyMessage}
         onCopyLink={onCopyLink}
         onReply={canReply ? (message) => setReplyId(message.id) : undefined} />} />}

@@ -5,6 +5,8 @@ import { PlatformApp } from "./PlatformApp";
 // This SSR shell fixture isolates data-owning hosts. The actual original
 // project region and governed membership are mounted in shared Projects tests.
 vi.mock("./SidebarProjects",()=>({SidebarProjects:()=>null}));
+vi.mock("@tanstack/react-router", () => ({ useBlocker: () => ({ status: "idle" }) }));
+vi.mock("@client-kit/platform/react/create-channel-dialog", () => ({ CreateChannelDialog: () => null }));
 
 const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: "", memberA: true, memberB: true, tab: "members", workspaceId: null as string | null, channelEnabled: false }));
 vi.mock("@/app/platform-navigation", () => ({

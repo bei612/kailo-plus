@@ -85,3 +85,22 @@
 `discard-final.log` 的生成 check 通过，type 退出 2，原文 `Module '"./settings"' has no exported member 'ThemeModeControl'`（旧 theme-settings-controls/settings.test 两处，另一个旧回调隐式 any）。经 settings 负责人确认，仅同步其正式 theme-settings-controls.tsx、settings.test.tsx、appearance-settings.tsx 对应输入，不更改产品或另建快照。最终 `discard-restored-final.log` 的 `python3 tools/gen-platform-i18n.py --check`、`tsc --noEmit -p tsconfig.test.json`、`vitest run test/workflow-actions.test.tsx test/workflow-template.test.tsx` 均退出 0，45 passed（38 actions + 7 template）。本批产品与测试输入恢复到正式字节，本批路径 `git diff --check` 退出 0；全工作区检查另报告 4 个非本批 emoji/messages 文件的 EOF 空行，不混入此批修复。Dart 包含本批 4 个确认词条和同批 settings 6 个快捷操作词条，统一生成而非手写第二翻译源。
 
 未运行真实浏览器页面截图、Windows/Mobile 或发布验收，不据此宣称全量 Workflows 或全部导航保护已恢复。
+
+## 原工作流路由离开保护恢复（2026-10-07）
+
+1. 权威：REQ-24、DD-74/75、`.design/06-Temporal任务工作台.md` §9.1；固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/workflows/ui/WorkflowDialog.tsx::WorkflowDialog` 使用原 TanStack `useBlocker` 的 resolver，保留编辑时 reset、明确丢弃时 proceed。本批补齐上一节已明确的真实宿主路由接缝，不改原确认布局、不建立第二路由或工作流引擎。
+2. 影响：共享 `AutomationAction` 草稿/冻结意图 → 宿主 `useBlocker` → 同一 `WorkflowDiscardDialog`。Web `web-client/web/src/platform/ui/PlatformApp.tsx::SignedIn` 的导航沿 `web-client/web/src/app/platform-navigation.ts::usePlatformNavigation`，Desktop `collaboration/desktop/src/app/routes/platform.$section.tsx::PlatformRouteComponent` 的导航沿原 `collaboration/desktop/src/app/navigation/useAppNavigation.ts::useAppNavigation`；两侧复用原 Router/History，只持共享编辑状态与 resolver，产品 UI 和判断不分别复制。原 workspace 下拉立即清 edit/open 会在路由被拒后丢草稿，已改为仅在已接受 selection 改变时收尾，不把目录加载期间短暂无 row 当作离开。
+3. 副作用：Keep editing 取消原导航并保留 workspace、原始表单/YAML；Discard changes 继续原被阻导航，不创建另一跳转。已 Review 的 intent、busy 和 UNKNOWN 均不提供可丢弃确认，阻止导航但保留当前原动作与同一 idempotencyKey 的查询；拒绝导航不是动作失败。守卫卸载时清理宿主状态，干净页面可正常切换，没有新增持久正文、Core/Worker 写入、schema 或权限。
+4. 边界：原 pane-only 例外保留，但只有其他 search 字段完全不变才成立，不能同时更换 workspace/protocol scope 来避开保护。内部链接、菜单/快捷键所调用的同一 Router、workspace search 和历史前进后退均消费 blocker；外部整页离开仍沿上一节 beforeunload，窗口关闭提示服从宿主策略。Mobile 不承载定义编辑；无新增 Mobile 入口。native 设备退出、浏览器进程崩溃、SSO 强制失效并非可被此路由守卫阻止的正常导航，不宣称已有设备验收。
+
+验证沿既有 `message-edit.AGX058/apps` 的 4 CPU/8 GiB SDK，开始前无编译，available 30 GiB、Data 3.3 GiB，无新快照、依赖下载、Rust 或镜像构建。日志沿本文件前述 `workflow-native-template.s3JDP1` 目录：
+
+- `route-initial.log` type 退出 2：两 host 的 npm file 依赖为旧拷贝，报 `has no exported member 'workflowBlocksNavigation'` 与两个已提交快捷键模块缺失；仅同步当前共享包输入至原验证副本。另一个测试的 literal `/audit` 不匹配已注册路由类型，改用注册路由参数。`route-consumer.log`、`route-final-types.log` 则分别是旧 SettingsPane/SettingsPane.test 消费已删除词条和 WorkspaceNotifications，精确同步已提交对应文件，不改正式产品迁就 SDK。
+- `route-runtime.log` 13 passed/14 failed、`route-consumer-fixed.log` 20 passed/7 failed：新场景误用 Create workflow 文本查找原只有图标的 Create automation 卡片，改为真实原卡片定位；既有 SSR 隔离壳增加 create-channel-dialog 和 router mock，真实路由场景不 mock router 或 Workflows。
+- `route-observed.log` 3 passed/5 failed：取消导航后错误等待未完成 navigate promise、遗漏 Tasks 读取夹具，以及 MemoryHistory 后退未进入 blocker。按已锁定 TanStack 源码，MemoryHistory 的 POP 不调用 blocker；改用 Web 实际 `createBrowserHistory`、Desktop 实际 `createHashHistory` 验证前进后退，不改产品或模拟出假的 POP 拦截。`route-browser-consumer.log` 8 passed；补齐 HashHistory 场景后 `route-joint-final.log` Web 类型通过、28 passed（9 路由 + 9 原导航 + 10 SSR 壳）、共享类型通过且 45 passed；随后 Desktop 启动器因私有旧 pnpm compiler 路径不存在退出 1。
+- `route-desktop-type.log` 用同 SDK 既有 profile 编译器读取此快照，type 退出 2：本批用默认参数组件的 ComponentProps 推导属性时漏掉 undefined，已改为明确共享 WorkflowNavigation 类型；另一个旧 ProjectsScreen 四参调用按正式五参源码同步，未修改 Projects 产品代码。
+- 实现后仅在私有 Web file 依赖把 `workflowBlocksNavigation` 改为恒 false，`route-mutation.log` 9 failed、退出 1；scope、UNKNOWN、实际 Browser/HashHistory 后退等真实消费者均捕获旁路。正式源码没有被破坏，还原私有文件后与正式 cmp 退出 0。
+
+最终 `route-restored-final.log` 串行执行下列命令，全部退出 0：Web `./node_modules/.bin/tsc --noEmit`；`vitest run src/app/workflow-navigation.test.tsx src/platform/ui/PlatformApp.test.tsx src/app/platform-navigation.test.tsx` 为 28 passed；共享 `tsc --noEmit -p tsconfig.test.json` 与 `vitest run test/workflow-actions.test.tsx test/workflow-template.test.tsx` 为 45 passed；Desktop 在该快照工作目录复用 `/evidence/profile-settings-ortsoo.DRR20F/apps/collaboration/desktop/node_modules/.bin/tsc --noEmit`。7 个源码/检查输入与正式文件 cmp 全部退出 0，本批路径 `git diff --check` 退出 0。没有修改 package exports、i18n、依赖锁或生成契约。
+
+上述 Router/History + 共享页面场景在 jsdom 实际运行，不等于 Windows 安装包、真实浏览器截图或全页面视觉验收；浏览器 popstate 异步回调产生的 React act 提示保留于日志，没有屏蔽。全量检查、部署与安装包不属于本批验证，不宣称 Workflows 全量原版恢复。

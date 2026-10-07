@@ -1,7 +1,7 @@
 import { ExternalLink, MailOpen } from "lucide-react";
 import * as React from "react";
 import { InboxRow } from "@client-kit/platform/react/inbox-row";
-import { InboxListHeader, InboxRowActionButton, InboxReopenStatus } from "@client-kit/platform/react/inbox-surface";
+import { InboxListHeader, InboxEmptyList, InboxRowActionButton, InboxReopenStatus } from "@client-kit/platform/react/inbox-surface";
 import { useT } from "@client-kit/platform/react/context";
 
 import {
@@ -27,20 +27,6 @@ import {
 import { VideoReviewCommentMarkdown } from "@/shared/ui/VideoReviewCommentMarkdown";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { VirtualizedList } from "@/shared/ui/VirtualizedList";
-
-const INBOX_EMPTY_STATE_TITLES: Record<Exclude<InboxFilter, "agent_activity">, string> = {
-  all: "No activity yet",
-  mention: "No mentions found",
-  thread: "No threads found",
-  drafts: "No drafts",
-};
-
-const INBOX_UNREAD_EMPTY_STATE_TITLES: Record<Exclude<InboxFilter, "agent_activity">, string> = {
-  all: "No unread activity",
-  mention: "No unread mentions",
-  thread: "No unread threads",
-  drafts: "No unread drafts",
-};
 
 const INBOX_PANE_RIGHT_DIVIDER_CLASS =
   "after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:z-40 after:w-px after:bg-border/35 after:content-['']";
@@ -293,22 +279,7 @@ export function InboxListPane({
               scrollRef={scrollRef}
             />
           ) : (
-            <div className="flex h-full min-h-64 items-center justify-center px-6 text-center">
-              <div>
-                <p className="text-sm font-medium text-foreground">
-                  {filter === "agent_activity" ? t(unreadOnly ? "inbox.agentUnreadEmpty" : "inbox.agentEmpty") : unreadOnly
-                    ? INBOX_UNREAD_EMPTY_STATE_TITLES[filter]
-                    : INBOX_EMPTY_STATE_TITLES[filter]}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {unreadOnly
-                    ? "Turn off Show unread only to see read activity."
-                    : filter === "all"
-                      ? "New activity will appear here."
-                      : "Switch back to All to see other activity."}
-                </p>
-              </div>
-            </div>
+            <InboxEmptyList filter={filter} unreadOnly={unreadOnly} />
           )}
         </div>
       )}

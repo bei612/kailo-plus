@@ -11,12 +11,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { StreamFrame } from "../bff-client";
 import { ForumPane } from "./ForumPane";
 
-const api = vi.hoisted(() => ({members:vi.fn(), workspaceMessages:vi.fn(), messageAuthorProfile:vi.fn(), profile:vi.fn(), delete:vi.fn(),
+const api = vi.hoisted(() => ({members:vi.fn(), workspaceMessages:vi.fn(), messageAuthorProfile:vi.fn(), memberProfile:vi.fn(), profile:vi.fn(), delete:vi.fn(),
   publish:vi.fn(), receive:null as null | ((frame: StreamFrame) => void)}));
 vi.mock("@/platform/bff-client", () => ({bff:api, publishMessage:api.publish, deleteMessage:api.delete,
   openStream: (_scope: string, receive: (frame: StreamFrame) => void) => {api.receive=receive;return () => {};}}));
 vi.mock("./ChannelPane", () => ({Composer: () => <textarea aria-label="Reply draft" />}));
-vi.mock("@/features/chat/ui/MessageContent", () => ({MessageContent: ({content}: {content:string}) => <p>{content}</p>}));
 // jsdom has no layout/virtual scroll; keep the original ForumView and its card,
 // keyboard, profile and panel behavior, rendering the supplied list items.
 vi.mock("@tanstack/react-virtual", () => ({useVirtualizer: ({count, getItemKey}: {count:number; getItemKey:(index:number)=>string}) => ({
@@ -45,6 +44,7 @@ beforeEach(() => {
   api.profile.mockResolvedValue({pubkey:self});
   api.workspaceMessages.mockImplementation((_scope, query) => Promise.resolve({events:query.messageType===WebMessageType.ForumComment?[reply]:[post,bounds]}));
   api.messageAuthorProfile.mockResolvedValue({pubkey:author,eventId:"profile",displayName:"Verified author",about:"Forum author biography",avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}});
+  api.memberProfile.mockResolvedValue({pubkey:author,eventId:"profile",displayName:"Verified member",about:"Mention member biography",avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}});
   cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   host=document.createElement("div");document.body.append(host);root=createRoot(host);
 });
@@ -76,6 +76,26 @@ it("keeps the selected reply composer mounted while reading its author's profile
   expect(composer.value).toBe("Unsent forum reply");
   await mount("different-human");
   expect(host.textContent).not.toContain("Forum author biography");
+});
+
+it("opens a mention using the admitted member profile and removes the panel on revocation",async()=>{
+  api.workspaceMessages.mockImplementation((_scope, query) => Promise.resolve({events:query.messageType===WebMessageType.ForumComment
+    ? [{...reply,content:"Forum reply @Author",tags:[...reply.tags,["p",author]]}] : [post,bounds]}));
+  await mount();
+  await act(async()=>host.querySelector<HTMLElement>('[role="button"][tabindex="0"]')!.click());
+  const chip = await vi.waitFor(()=>{
+    const node=host.querySelector<HTMLElement>(`[data-forum-event-id="${replyId}"] [data-mention-pubkey="${author}"]`);
+    expect(node).not.toBeNull(); return node!;
+  });
+  expect(api.memberProfile).not.toHaveBeenCalled();
+  const trigger=chip.closest('[role="button"]')!;
+  await act(async()=>trigger.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})));
+  await vi.waitFor(()=>expect(host.textContent).toContain("Mention member biography"));
+  expect(api.memberProfile).toHaveBeenCalledWith("workspace","author",author);
+  expect(api.messageAuthorProfile).not.toHaveBeenCalled();
+  expect(host.querySelector('[aria-label="Reply draft"]')).not.toBeNull();
+  await act(async()=>api.receive!({type:"closed",reason:"scope-revoked"}));
+  expect(host.textContent).not.toContain("Mention member biography");
 });
 
 it("offers deletion only for the actual SERVER signer and invokes the existing publish seam", async () => {

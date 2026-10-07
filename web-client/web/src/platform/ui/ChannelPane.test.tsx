@@ -8,6 +8,7 @@ import { ChannelPane } from "./ChannelPane";
 import { setLocale } from "@client-kit/platform/i18n";
 import type { TimelineMessage } from "@client-kit/platform/react/messages";
 import { ItemState } from "@client-kit/contracts";
+import type { MessageAuthor } from "./MessageAuthorProfile";
 
 // Isolate the stream lifecycle from the rich editor. Original Tiptap is mounted
 // by Composer/ChannelRead tests; the channel and original message rows mount here.
@@ -22,6 +23,7 @@ const state = vi.hoisted(() => ({
   members: { isSuccess: true, data: [] as { principalId: string; pubkeys: string[]; displayName: string }[] },
   userState: { isSuccess: true, data: { version: 0, readContexts: {}, workspacePreferences: {}, conversationPreferences: {} as Record<string, {muted: boolean}> } },
   notify: vi.fn(),
+  richContent: false,
   emoji: { isSuccess: true, data: { events: [] } },
   infinite: { data: { pages: [] }, isSuccess: true },
   queryClient: { invalidateQueries: vi.fn() },
@@ -50,9 +52,11 @@ vi.mock("@/platform/bff-client", () => ({
     return state.stop;
   },
 }));
-vi.mock("@/features/chat/ui/MessageContent", () => ({
-  MessageContent: ({ content }: { content: string }) => <span>{content}</span>,
-}));
+vi.mock("@/features/chat/ui/MessageContent", async (original) => {
+  const actual = await original<typeof import("@/features/chat/ui/MessageContent")>();
+  return { MessageContent: (props: import("react").ComponentProps<typeof actual.MessageContent>) =>
+    state.richContent ? <actual.MessageContent {...props} /> : <span>{props.content}</span> };
+});
 vi.mock("@/shared/i18n", () => ({ t: (key: string) => key }));
 vi.mock("@/shared/lib/relative-time", () => ({ relativeTime: () => "now" }));
 vi.mock("./ChannelThreadPane", async () => {
@@ -71,7 +75,7 @@ vi.mock("./ChannelThreadPane", async () => {
 });
 vi.mock("./MessageAuthorProfile", async (original) => ({
   ...await original<typeof import("./MessageAuthorProfile")>(),
-  MessageAuthorProfile: ({onClose}: {onClose: () => void}) => <button data-testid="close-author" onClick={onClose}>close author</button>,
+  MessageAuthorProfile: ({onClose, target}: {onClose: () => void; target: MessageAuthor}) => <button data-testid="close-author" data-author-target={JSON.stringify(target)} onClick={onClose}>close author</button>,
 }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -95,6 +99,7 @@ beforeEach(async () => {
   setLocale("en");
   state.stop.mockClear();
   state.notify.mockClear();
+  state.richContent = false;
   state.members.data = [];
   state.userState.data.conversationPreferences = {};
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
@@ -142,6 +147,45 @@ it("routes ordinary live DM messages through the DM slot while honoring self, mu
   await act(async () => { state.receive!({type: "closed", reason: "scope-revoked"}); });
   await send("revoked");
   expect(state.notify).toHaveBeenCalledTimes(1);
+});
+
+it("opens a DM mention against the admitted second-device author event and drops it on revocation", async () => {
+  const firstKey = "11".repeat(32);
+  const secondKey = "22".repeat(32);
+  const ownKey = "33".repeat(32);
+  const authorEventId = "44".repeat(32);
+  const mentionEventId = "55".repeat(32);
+  const conversation = { id: "dm-multiple-keys", channelId: "dm-channel", state: ItemState.Active, participantPrincipalIds: ["human-a", "human-b"], operationId: "op", version: 1 };
+  state.members.data = [
+    { principalId: "human-a", pubkeys: [ownKey], displayName: "Me" },
+    { principalId: "human-b", pubkeys: [firstKey, secondKey], displayName: "Alice" },
+  ];
+  state.richContent = true;
+  await act(async () => { root.render(<TooltipProvider><ChannelPane workspaceId={conversation.id} myPrincipalId="human-a" conversation={conversation} /></TooltipProvider>); });
+  const authorEvent = { id: authorEventId, pubkey: secondKey, kind: 9, created_at: 1, tags: [["h", conversation.channelId]], content: "admitted second-device message" };
+  const mentionEvent = { id: mentionEventId, pubkey: ownKey, kind: 9, created_at: 2, tags: [["h", conversation.channelId], ["p", secondKey]], content: "Hello @Alice" };
+  const snapshot = [mentionEvent, authorEvent,
+    { id: "dm-second-key-bounds", pubkey: "relay", kind: 39006, created_at: 1, tags: [["d", `${conversation.channelId}:head`]], content: JSON.stringify({ has_more: false, next_cursor: null }) }];
+  await act(async () => {
+    state.receive!({ type: "snapshot", events: snapshot });
+    state.receive!({ type: "live" });
+  });
+  const chip = host.querySelector<HTMLElement>(`[data-event-id="${mentionEventId}"] [data-mention-pubkey="${secondKey}"]`);
+  expect(chip).not.toBeNull();
+  expect(host.querySelector(`[data-event-id="${mentionEventId}"] [data-mention-pubkey="${firstKey}"]`)).toBeNull();
+  expect(chip!.closest('[role="button"]')).not.toBeNull();
+  await act(async () => chip!.click());
+  const profile = host.querySelector<HTMLElement>('[data-testid="close-author"]');
+  expect(profile).not.toBeNull();
+  expect(JSON.parse(profile!.dataset.authorTarget!)).toEqual({ principalId: "human-a", workspaceId: conversation.id, conversationId: conversation.id, eventId: authorEventId, pubkey: secondKey });
+  await act(async () => {
+    state.receive!({ type: "closed", reason: "scope-revoked" });
+    state.receive!({ type: "snapshot", events: snapshot });
+    state.receive!({ type: "live" });
+  });
+  expect(host.querySelector('[data-testid="close-author"]')).toBeNull();
+  expect(host.querySelector('[data-mention]')).toBeNull();
+  expect(render()).not.toContain("admitted second-device message");
 });
 
 it.each(["session-revoked", "scope-revoked", "identity-revoked"])(

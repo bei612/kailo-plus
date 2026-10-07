@@ -1,10 +1,11 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute, notFound, useBlocker } from "@tanstack/react-router";
+import { useState } from "react";
 import { translate, resolveLocale } from "@client-kit/platform/i18n";
 import {
   ApprovalsPage,
   TasksPage,
 } from "@client-kit/platform/react/governance";
-import { WorkflowsPage } from "@client-kit/platform/react/workflows";
+import { WorkflowsPage, workflowBlocksNavigation, type WorkflowNavigation, type WorkflowNavigationState } from "@client-kit/platform/react/workflows";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import {
   AuditPage,
@@ -46,14 +47,22 @@ function PlatformRouteComponent() {
   const { section } = Route.useParams();
   const { workspaceId, projectId } = Route.useSearch();
   const navigate = Route.useNavigate();
+  const [workflowNavigationState, setWorkflowNavigationState] = useState<WorkflowNavigationState>({ dirty: false, locked: false });
+  const workflowBlocker = useBlocker({
+    shouldBlockFn: ({ current, next }) => workflowBlocksNavigation(workflowNavigationState, current, next),
+    withResolver: true,
+    enableBeforeUnload: false,
+  });
   return <PlatformScreen section={section} workspaceId={workspaceId} projectId={projectId}
+    workflowNavigation={{ blocker: workflowBlocker, onStateChange: setWorkflowNavigationState }}
     onProjectChange={(id)=>{void navigate({search:{projectId:id??undefined}});}}
     onWorkspaceChange={(selected) => { void navigate({ search: { workspaceId: selected } }); }} />;
 }
 
-function PlatformScreen({ section, workspaceId, onWorkspaceChange, projectId, onProjectChange }: {
+function PlatformScreen({ section, workspaceId, onWorkspaceChange, projectId, onProjectChange, workflowNavigation }: {
   section: PlatformSection; workspaceId?: string; onWorkspaceChange: (workspaceId: string) => void;
   projectId?:string;onProjectChange:(id:string|null)=>void;
+  workflowNavigation: WorkflowNavigation;
 }) {
   const session = useNativeSession();
   if (section === "pulse") return <PulseScreen />;
@@ -72,7 +81,7 @@ function PlatformScreen({ section, workspaceId, onWorkspaceChange, projectId, on
       ) : section === "agents" ? (
         <AgentDefinitionsPane workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} />
       ) : section === "workflows" ? (
-        <WorkflowsPage workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} />
+        <WorkflowsPage workspaceId={workspaceId} onWorkspaceChange={onWorkspaceChange} workflowNavigation={workflowNavigation} />
       ) : section === "tasks" ? (
         <TasksPage />
       ) : section === "approvals" ? (

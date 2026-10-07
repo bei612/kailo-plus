@@ -53,7 +53,7 @@ import { WorkflowTriggerConditions } from "./workflow-trigger-conditions";
 import type { ParsedConditionExpression } from "./workflow-condition-expression";
 import { WorkflowTemplateTextarea } from "./workflow-template-textarea";
 import { WorkflowActionsMenu } from "./workflow-actions-menu";
-import { WorkflowDiscardDialog } from "./workflow-discard-dialog";
+import { WorkflowDiscardDialog, type WorkflowNavigation } from "./workflow-discard-dialog";
 import { WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions";
 import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
@@ -297,8 +297,9 @@ type AutomationEdit = { detail: AutomationDetailView; action: "enable" | "pause"
   | { detail: AutomationDetailView; action: "publish_version"; content?: AutomationVersionView["content"] }
   | { detail: AutomationDetailView; action: "copy"; content: AutomationVersionView["content"] };
 
-export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspaceChange }: WorkspaceNavigation & {
+export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspaceChange, workflowNavigation }: WorkspaceNavigation & {
   renderRunHistory?: (resourceId: string, workspaceId: string) => ReactNode;
+  workflowNavigation?: WorkflowNavigation;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -313,6 +314,11 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
     && typeof w.name === "string" && typeof w.slug === "string") && new Set(data.map((w) => w.id)).size === data.length ? data : null;
   const selection = onWorkspaceChange ? workspaceId : selected ?? workspaceId;
   const workspace = selection ? workspaces?.find((w) => w.id === selection) : workspaces?.[0];
+  useEffect(() => {
+    // Host search changes only after its router resolver accepts navigation.
+    // Do not erase the current draft when a requested scope change is blocked.
+    if (!locked) { setEdit(null); setEditorOpen(false); }
+  }, [selection]);
   return <section className="mx-auto w-full max-w-6xl space-y-8 [container-type:inline-size]" data-testid="agent-automations">
     {/* Buzz WorkflowsView has one trailing refresh. The host supplies the page title. */}
     <div className="flex min-w-0 items-start justify-between gap-4">
@@ -320,7 +326,7 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
         <p className="text-base font-normal text-muted-foreground">{t("agents.automation.scope")}</p>
         {workspace ? <label className="flex flex-wrap items-center gap-2 text-sm">{t("platform.workspace")}
           <select className="h-8 min-w-0 max-w-full rounded-md border border-input bg-background px-2" disabled={locked} value={workspace.id}
-            onChange={(event) => { if (onWorkspaceChange) onWorkspaceChange(event.target.value); else setSelected(event.target.value); setEdit(null); setEditorOpen(false); }}>
+            onChange={(event) => { if (onWorkspaceChange) onWorkspaceChange(event.target.value); else setSelected(event.target.value); }}>
             {workspaces?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
         </label> : null}
@@ -334,7 +340,7 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
       : !workspaces ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
       : !workspace ? <Notice>{t("platform.noWorkspace")}</Notice> : null}
     {/* 未知写意图不随 Workspace、列表或详情重载卸载。 */}
-    <AutomationAction workspaceId={workspace?.id} edit={edit} open={editorOpen} onClose={() => setEditorOpen(false)}
+    <AutomationAction workspaceId={workspace?.id} edit={edit} open={editorOpen} workflowNavigation={workflowNavigation} onClose={() => setEditorOpen(false)}
       onReset={() => { setEdit(null); setEditorOpen(false); }} onLocked={setLocked}
       onRecorded={() => { setEdit(null); setEditorOpen(false); setRevision((old) => old + 1); }} />
     {workspace ? <AutomationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} workspaceName={workspace.name} locked={locked}
@@ -648,10 +654,11 @@ function WorkflowNameEditor({ disabled, name, onCommit }: {
   </div>;
 }
 
-function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked, onRecorded }: {
+function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked, onRecorded, workflowNavigation }: {
   workspaceId?: string; edit: AutomationEdit | null; onReset: () => void;
   open: boolean; onClose: () => void;
   onLocked: (locked: boolean) => void; onRecorded: () => void;
+  workflowNavigation?: WorkflowNavigation;
 }) {
   const client = useBffClient();
   const t = useT();
@@ -802,6 +809,15 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   }, [draftEpoch]);
   const dirty = open && contentAction && initialDraft !== null && (formSnapshot !== initialDraft.form
     || (editorMode === "yaml" && yamlText !== (formDraftYaml.current || initialDraft.yaml)));
+  const navigationBlocked = workflowNavigation?.blocker.status === "blocked";
+  const navigationStateChange = workflowNavigation?.onStateChange;
+  const proceedingNavigation = useRef(false);
+  useEffect(() => { navigationStateChange?.({ dirty, locked: !!intent || busy }); }, [dirty, !!intent, busy, navigationStateChange]);
+  useEffect(() => () => { navigationStateChange?.({ dirty: false, locked: false }); }, [navigationStateChange]);
+  useEffect(() => {
+    if (!navigationBlocked) proceedingNavigation.current = false;
+    else if (intent || busy || !dirty) workflowNavigation?.blocker.reset?.();
+  }, [navigationBlocked, !!intent, busy, dirty, workflowNavigation?.blocker.reset]);
   useEffect(() => {
     if (!dirty && !intent && !busy) return;
     const preventUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
@@ -1117,8 +1133,17 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     </div>
     </DialogContent>
     </Dialog>
-    <WorkflowDiscardDialog open={discardOpen && open && !intent && !busy} onOpenChange={setDiscardOpen}
-      onDiscard={() => { if (!intent && !busy) { setDiscardOpen(false); onClose(); } }} />
+    <WorkflowDiscardDialog open={(discardOpen || navigationBlocked) && open && !intent && !busy}
+      onOpenChange={(next) => {
+        setDiscardOpen(next);
+        if (!next && navigationBlocked && !proceedingNavigation.current) workflowNavigation?.blocker.reset?.();
+      }}
+      onDiscard={() => {
+        if (intent || busy) return;
+        setDiscardOpen(false);
+        if (navigationBlocked) { proceedingNavigation.current = true; workflowNavigation?.blocker.proceed?.(); }
+        onClose();
+      }} />
     {!open && !intent && submission ? <p role="status" className="break-words text-sm">{t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}</p> : null}
   </>;
 }

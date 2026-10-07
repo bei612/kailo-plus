@@ -18,8 +18,10 @@ import { TaskDetail, TaskStatusBadge, WaitingReason } from "./governance";
 import { WorkflowRunTrace } from "./workflow-run-trace";
 import { Button, Notice, ReadFailure } from "./ui";
 import { useLoad } from "./use-load";
+import type { WorkflowNavigation } from "./workflow-discard-dialog";
+export { workflowBlocksNavigation, type WorkflowNavigation, type WorkflowNavigationState } from "./workflow-discard-dialog";
 
-export function WorkflowsPage(navigation: WorkspaceNavigation = {}) {
+export function WorkflowsPage(navigation: WorkspaceNavigation & { workflowNavigation?: WorkflowNavigation } = {}) {
 	return (
 		<div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-7 sm:px-6 sm:py-8" data-testid="workflows-page" data-scroll-restoration-id="workflows-list">
 			<AutomationManagement

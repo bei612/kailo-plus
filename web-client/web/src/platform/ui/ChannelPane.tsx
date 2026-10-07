@@ -132,7 +132,7 @@ export function ChannelPane({
   const [replyTarget, setReplyTarget] = useState<TimelineMessage | null>(null);
   const [profileTarget, setProfileTarget] = useState<TimelineMessage | null>(null);
   const [systemProfileTarget, setSystemProfileTarget] = useState<{workspaceId:string;principalId:string;pubkey:string} | null>(null);
-  const closeProfile = useCallback(() => setProfileTarget(null), []);
+  const closeProfile = useCallback(() => { setProfileTarget(null); setSystemProfileTarget(null); }, []);
   useEffect(() => { setProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied, live]);
   useEffect(() => { setSystemProfileTarget(null); }, [workspaceId, conversation?.id, myPrincipalId, denied, live]);
   const visible = useVisible();
@@ -165,15 +165,6 @@ export function ChannelPane({
     () => new Map((members.data ?? []).flatMap((m) => m.pubkeys.map((k) => [k, m] as const))),
     [members.data],
   );
-  const mentions: MessageMention[] = useMemo(
-    () =>
-      (members.data ?? []).flatMap((m) =>
-        m.pubkeys.length > 0
-          ? [{ pubkey: m.pubkeys[0] as string, name: m.displayName, isAgent: false }]
-          : [],
-      ),
-    [members.data],
-  );
   const mine = useMemo(
     () => new Set((members.data ?? []).find((m) => m.principalId === myPrincipalId)?.pubkeys),
     [members.data, myPrincipalId],
@@ -194,6 +185,26 @@ export function ChannelPane({
       renderBody={props=><MemberHover {...props} target={target}/>}>{children}</UserProfilePopoverSurface>;
   }, [byPubkey, conversation, live, denied, workspaceId]);
   const selectedSystemMember = systemProfileTarget ? byPubkey.get(systemProfileTarget.pubkey) : undefined;
+  const mentions: MessageMention[] = useMemo(() => (members.data ?? []).flatMap(member => member.pubkeys.map(pubkey => {
+    let renderProfile: MessageMention["renderProfile"];
+    if (members.isSuccess && !members.isError && live && !denied) {
+      if (!conversation && "state" in member && member.state === "ACTIVE") {
+        const target = {workspaceId, principalId:member.principalId, pubkey};
+        renderProfile = children => <UserProfilePopoverSurface pubkey={pubkey} triggerElement="span" triggerClassName="inline"
+          onOpenProfile={() => { setProfileTarget(null); setSystemProfileTarget(target); }}
+          renderBody={props => <MemberHover {...props} target={target}/>}>{children}</UserProfilePopoverSurface>;
+      } else if (conversation) {
+        // A private-conversation directory entry is not profile-read authority.
+        // Reuse an actual admitted author event, including its exact signer key.
+        const author = timelineMessages.find(message => message.pubkey === pubkey);
+        if (author) renderProfile = children => <MessageAuthorIdentity
+          target={{principalId:myPrincipalId, workspaceId, conversationId:conversation.id, eventId:author.id, pubkey}}
+          triggerElement="span" triggerClassName="inline"
+          onOpen={() => { setSystemProfileTarget(null); setProfileTarget(author); }}>{children}</MessageAuthorIdentity>;
+      }
+    }
+    return {pubkey, name:member.displayName, isAgent:false, renderProfile};
+  })), [members.data, members.isSuccess, members.isError, live, denied, conversation, workspaceId, myPrincipalId, timelineMessages]);
   useEffect(() => {
     if (!restoreEditEventId || restoredEdit.current || !ownProfile.isSuccess) return;
     const message = timelineMessages.find((item) => item.id === restoreEditEventId && item.kind === 9 && item.signerPubkey === ownProfile.data.pubkey);
@@ -433,6 +444,7 @@ export function ChannelPane({
       channelName={channelName}
       isFocusMode={focusThread}
       workspaceId={workspaceId} principalId={myPrincipalId} selected={replyTarget}
+      mentions={mentions}
       onOpenAuthor={setProfileTarget} onAuthorScopeUnavailable={closeProfile}
       members={(members.data ?? []).filter((member): member is WorkspaceMemberView => "state" in member)} disabled={archived || metadataPending || denied || !live}
       onClose={() => setReplyTarget(null)} onCopyMessage={copyMessage} onCopyLink={copyMessageLink} /></FocusThreadDrawer></div> : null}

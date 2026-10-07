@@ -8,7 +8,9 @@ import { UserAvatar, MessageAuthorText } from "@client-kit/platform/react/messag
 import { TransportError } from "@client-kit/platform/transport";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
-import { MessageContent } from "@/features/chat/ui/MessageContent";
+import { MessageContent, type MessageMention } from "@/features/chat/ui/MessageContent";
+import { MemberHover, MemberProfilePanel } from "@client-kit/platform/react/members";
+import { UserProfilePopoverSurface } from "@client-kit/platform/react/pulse";
 import { bff, deleteMessage, openStream, publishMessage, type BuzzEvent } from "@/platform/bff-client";
 import { Composer } from "./ChannelPane";
 import { relativeTime } from "@/shared/lib/relative-time";
@@ -57,14 +59,15 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
   const [denied, setDenied] = React.useState<string | null>(null);
   const [interrupted, setInterrupted] = React.useState(false);
   const [profileTarget, setProfileTarget] = React.useState<MessageAuthor | null>(null);
-  React.useEffect(() => { setProfileTarget(null); }, [workspaceId, channelId, myPrincipalId]);
+  const [memberTarget, setMemberTarget] = React.useState<{workspaceId:string; principalId:string; pubkey:string} | null>(null);
+  React.useEffect(() => { setProfileTarget(null); setMemberTarget(null); }, [workspaceId, channelId, myPrincipalId]);
   const mounted = React.useRef(true);
   React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   React.useEffect(() => {
     if (archived) return;
     return openStream(workspaceId, (frame) => {
     if (frame.type === "live") setInterrupted(false);
-    if (frame.type === "closed" || frame.type === "interrupted") { setInterrupted(true); setProfileTarget(null); }
+    if (frame.type === "closed" || frame.type === "interrupted") { setInterrupted(true); setProfileTarget(null); setMemberTarget(null); }
     if (frame.type === "event" || frame.type === "snapshot" || frame.type === "live") void queryClient.invalidateQueries({ queryKey: key });
     if (frame.type === "closed") void queryClient.invalidateQueries({ queryKey: ["platform", "channel-descriptor", myPrincipalId, workspaceId] });
     if (frame.type === "closed" && ["session-revoked", "scope-revoked", "identity-revoked"].includes(frame.reason)) {
@@ -101,16 +104,27 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
   const replies = inChannel.filter((event) => replyIds.has(event.id) && (event.kind === 45003 || event.kind === 9))
     .sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id)).map(project);
   const authors = new Map((members.data ?? []).flatMap((member) => member.pubkeys.map((pubkey) => [pubkey, member] as const)));
-  const mentions = (members.data ?? []).flatMap((member) => member.pubkeys[0] ? [{ pubkey: member.pubkeys[0], name: member.displayName, isAgent: false }] : []);
   const selectedQuery = selectedPostId ? thread : posts;
   const error = denied || members.error || selectedQuery.error ? t("buzz.forumUnavailable")
     : selectedPostId && thread.isSuccess && !root ? t("buzz.forumRootUnavailable") : null;
   const authorTarget = !error && !interrupted && profileTarget?.principalId === myPrincipalId && profileTarget.workspaceId === workspaceId
     ? profileTarget : null;
+  const mentions: MessageMention[] = (members.data ?? []).flatMap(member => member.pubkeys.map(pubkey => {
+    const target = {workspaceId, principalId:member.principalId, pubkey};
+    const renderProfile: MessageMention["renderProfile"] = !error && !interrupted && members.isSuccess && member.state === WorkspaceMembershipState.Active
+      ? children => <UserProfilePopoverSurface pubkey={pubkey} triggerElement="span" triggerClassName="inline"
+          onOpenProfile={() => { setProfileTarget(null); setMemberTarget(target); }}
+          renderBody={props => <MemberHover {...props} target={target}/>}>{children}</UserProfilePopoverSurface>
+      : undefined;
+    return {pubkey, name:member.displayName, isAgent:false, renderProfile};
+  }));
+  const activeMemberTarget = !error && !interrupted && memberTarget?.workspaceId === workspaceId &&
+    members.isSuccess && authors.get(memberTarget.pubkey)?.principalId === memberTarget.principalId &&
+    authors.get(memberTarget.pubkey)?.state === WorkspaceMembershipState.Active ? memberTarget : null;
   return <div className="relative flex h-full min-h-0 min-w-0 overflow-hidden"><div className="min-h-0 min-w-0 flex-1"><ForumView channelId={channelId} isMember={isMember} archived={archived} selectedPostId={selectedPostId}
     initialComposerOpen={restoreDraftKey === `forum:${workspaceId}:post`}
     targetEventId={targetEventId} onTargetReached={() => setTargetEventId(null)}
-    onSelectPost={(id) => { setProfileTarget(null); setSelectedPostId(id); }} posts={inChannel.filter((event) => event.kind === 45001).map((event) => ({ ...project(event), threadSummary: summaries.get(event.id) }))}
+    onSelectPost={(id) => { setProfileTarget(null); setMemberTarget(null); setSelectedPostId(id); }} posts={inChannel.filter((event) => event.kind === 45001).map((event) => ({ ...project(event), threadSummary: summaries.get(event.id) }))}
     post={root ? project(root) : undefined} replies={replies} loading={selectedQuery.isPending} error={error ? String(error) : null}
     hasMore={selectedQuery.hasNextPage} loadingMore={selectedQuery.isFetchingNextPage} onMore={() => { void selectedQuery.fetchNextPage(); }}
     onRetry={() => { void queryClient.invalidateQueries({ queryKey: key }); void members.refetch(); }} labels={labels} formatTime={relativeTime}
@@ -128,9 +142,9 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
     renderAuthor={(message, large) => { const name = authors.get(message.pubkey)?.displayName ?? truncatePubkey(message.pubkey);
       const identity = <div className="flex items-center gap-2"><UserAvatar avatarUrl={null} displayName={name} size={large ? "md" : "sm"} /><MessageAuthorText>{name}</MessageAuthorText></div>;
       const target = {principalId:myPrincipalId,workspaceId,eventId:message.eventId,pubkey:message.pubkey};
-      return !error && !interrupted ? <MessageAuthorIdentity target={target} onOpen={() => setProfileTarget(target)}>{identity}</MessageAuthorIdentity> : identity; }}
+      return !error && !interrupted ? <MessageAuthorIdentity target={target} onOpen={() => { setMemberTarget(null); setProfileTarget(target); }}>{identity}</MessageAuthorIdentity> : identity; }}
     renderContent={(message, preview) => <MessageContent workspaceId={workspaceId} content={preview && message.content.length > 200 ? `${message.content.slice(0, 200)}...` : message.content}
-      mediaTags={message.tags} mentions={mentions} onOpenMessageLink={onOpenMessageLink} />}
+      mediaTags={message.tags} mentions={preview ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} onOpenMessageLink={onOpenMessageLink} />}
     renderComposer={(parentId, close) => <Composer key={parentId ?? "post"} workspaceId={workspaceId} surface="forum" disabled={!isMember || archived || metadataPending || Boolean(error)}
       draftIdentity={myPrincipalId} draftKey={`forum:${workspaceId}:${parentId ?? "post"}`} autoSendDraftKey={autoSendDraftKey} placeholder={parentId ? labels.replyPlaceholder : labels.postPlaceholder} onCancel={parentId ? undefined : close}
       onOpenMessageLink={onOpenMessageLink} onPublish={async (content, attachments, idempotencyKey, installationIds) => {
@@ -143,5 +157,8 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
       }} />}
   /></div>{authorTarget ? <MessageAuthorProfile key={`${myPrincipalId}:${workspaceId}:${authorTarget.eventId}`}
     target={authorTarget} onClose={() => setProfileTarget(null)}
-    onStartDm={authors.get(authorTarget.pubkey)?.principalId === myPrincipalId ? undefined : onStartDm} /> : null}</div>;
+    onStartDm={authors.get(authorTarget.pubkey)?.principalId === myPrincipalId ? undefined : onStartDm} /> : null}
+    {activeMemberTarget ? <MemberProfilePanel key={`${myPrincipalId}:${activeMemberTarget.workspaceId}:${activeMemberTarget.pubkey}`}
+      target={activeMemberTarget} onClose={() => setMemberTarget(null)}
+      onStartDm={activeMemberTarget.principalId === myPrincipalId ? undefined : onStartDm}/> : null}</div>;
 }

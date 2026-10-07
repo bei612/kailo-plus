@@ -19,7 +19,7 @@ import { useBffClient, useLocale, useT } from "@client-kit/platform/react/contex
 import { loadInboxConversations, useHiddenDmInboxNavigation, useConversationVisibilityHost, type InboxNavigationTarget } from "@client-kit/platform/react/new-message";
 import { toast } from "sonner";
 import { InboxRow } from "@client-kit/platform/react/inbox-row";
-import { InboxLayout, InboxListHeader, InboxEmptyDetail, InboxRowActionButton, InboxReopenStatus, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
+import { InboxLayout, InboxListHeader, InboxEmptyDetail, InboxEmptyList, InboxRowActionButton, InboxReopenStatus, useInboxDraftSelection, type InboxFilter } from "@client-kit/platform/react/inbox-surface";
 import { useResizableInboxListWidth, INBOX_SINGLE_COLUMN_BREAKPOINT_PX, INBOX_COLUMN_MIN_WIDTH_PX } from "@client-kit/platform/react/use-resizable-inbox-list-width";
 import { UserAvatar } from "@client-kit/platform/react/messages";
 import { AUXILIARY_PANEL_DEFAULT_WIDTH_PX, AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@client-kit/platform/react/thread";
@@ -260,6 +260,8 @@ export function InboxPane({
         ),
     );
   const narrow = width !== null && width < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
+  useInboxDraftSelection({ items: drafts.entries.map(entry => ({ entry })), selectedKey: selectedDraft, setSelectedKey: setSelectedDraft,
+    autoSelect: filter === "drafts", selectionEnabled: filter === "drafts", viewportWidthPx: width ?? 0, isNarrowHomeViewport: narrow });
   // The original selection hook receives the admitted scope key as its stable
   // identity; equal Relay root IDs in different channels must not share a pane.
   const selectionItems = useMemo(() => visibleRows.map(row => ({ id: row.scopeKey, conversationId: row.scopeKey })), [visibleRows]);
@@ -299,7 +301,7 @@ export function InboxPane({
     onMarkAllRead={() => reads.write(inboxReadContexts(visibleRows.flatMap((row) => row.items), true))} />;
   if (filter === "drafts") return <InboxLayout containerRef={container} listWidth={listWidth} showList={showList} showDetail={showDetail}
     onResize={resize.handleInboxListResizeStart} onReset={resize.canResetInboxListWidth ? resize.handleInboxListWidthReset : undefined}>
-    <InboxDrafts key={principalId} principalId={principalId} workspaces={snapshot.workspaces} members={snapshot.members} entries={drafts.entries}
+    <InboxDrafts key={principalId} principalId={principalId} workspaces={snapshot.workspaces} members={snapshot.members} participants={snapshot.people} entries={drafts.entries}
       selectedKey={selectedDraft} onSelect={setSelectedDraft} onDelete={drafts.remove} showList={showList} showDetail={showDetail} header={header}
       onStartDm={onStartDm}
       onBack={narrow ? () => setSelectedDraft(null) : undefined} />
@@ -338,10 +340,7 @@ export function InboxPane({
             <ContextMenuSeparator /><ContextMenuItem disabled={hiddenDm.isReopenPending(item.channelId)} onSelect={() => openItem(item)}><ExternalLink className="h-4 w-4" />{t("inbox.open")}</ContextMenuItem>
           </ContextMenuContent></ContextMenu>;
         })}
-        {!visibleRows.length ? <div className="flex h-full min-h-64 items-center justify-center px-6 text-center"><div>
-          <p className="text-sm font-medium text-foreground">{t(filter === "agent_activity" ? unreadOnly ? "inbox.agentUnreadEmpty" : "inbox.agentEmpty" : unreadOnly ? "inbox.noUnread" : "inbox.noActivity")}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{t(unreadOnly ? "inbox.unreadEmptyHint" : "inbox.emptyHint")}</p>
-        </div></div> : null}
+        {!visibleRows.length ? <InboxEmptyList filter={filter} unreadOnly={unreadOnly} /> : null}
       </div>
     </section> : null}
     {chosen && (showDetail || singleAuxiliary) ? <div className={singleAuxiliary ? "hidden" : "contents"}><InboxThreadPane key={`${principalId}:${chosen.scopeKey}`} principalId={principalId}

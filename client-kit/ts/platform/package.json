@@ -17,6 +17,8 @@
     "./react/messages/system/membershipGroupPayload": "./src/react/messages/system/membershipGroupPayload.ts",
     "./react/messages/system/systemEventCopy": "./src/react/messages/system/systemEventCopy.ts",
     "./react/messages/system/InlineChip": "./src/react/messages/system/InlineChip.tsx",
+    "./react/messages/MarkdownMentionChip": "./src/react/messages/MarkdownMentionChip.tsx",
+    "./react/messages/resolveMentionNames": "./src/react/messages/resolveMentionNames.ts",
     "./react/messages/timeline/*": "./src/react/messages/timeline/*.ts",
     "./react/messages/timeline/TimelineSkeleton": "./src/react/messages/timeline/TimelineSkeleton.tsx",
     "./react/messages/timeline/UnreadPill": "./src/react/messages/timeline/UnreadPill.tsx",

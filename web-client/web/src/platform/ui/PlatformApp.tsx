@@ -30,7 +30,8 @@ import {
   LifecycleRestrictedView,
   TasksPage,
 } from "@client-kit/platform/react/governance";
-import { WorkflowsPage } from "@client-kit/platform/react/workflows";
+import { WorkflowsPage, workflowBlocksNavigation, type WorkflowNavigationState } from "@client-kit/platform/react/workflows";
+import { useBlocker } from "@tanstack/react-router";
 import { RedemptionProgress } from "@client-kit/platform/react/invitations";
 import { usePlatformNavigation, type PlatformTab } from "@/app/platform-navigation";
 import {
@@ -154,6 +155,12 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const conversations = useConversations();
   const navigation = usePlatformNavigation();
   const { tab, messageTarget } = navigation;
+  const [workflowNavigationState, setWorkflowNavigationState] = useState<WorkflowNavigationState>({ dirty: false, locked: false });
+  const workflowBlocker = useBlocker({
+    shouldBlockFn: ({ current, next }) => workflowBlocksNavigation(workflowNavigationState, current, next),
+    withResolver: true,
+    enableBeforeUnload: false, // The shared editor owns the existing document guard.
+  });
   const chosen = navigation.workspaceId;
   const chosenConversation = !conversations.error && !conversations.loading
     ? conversations.items.find((conversation) => conversation.id === navigation.conversationId) : undefined;
@@ -306,6 +313,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         onWorkspaceChange={(workspaceId) => { void navigation.openTab("agents", workspaceId); }} />
     ) : tab === "workflows" ? (
       <WorkflowsPage workspaceId={chosen ?? active ?? undefined}
+        workflowNavigation={{ blocker: workflowBlocker, onStateChange: setWorkflowNavigationState }}
         onWorkspaceChange={(workspaceId) => { void navigation.openTab("workflows", workspaceId); }} />
     ) : tab === "tasks" ? (
       <TasksPage />

@@ -58,6 +58,7 @@ describe("MessageContent", () => {
     const html = renderToStaticMarkup(
       <MessageContent
         content={MULTILINE_CONTENT}
+        mediaTags={[["p", PERSON], ["p", AGENT]]}
         mentions={[
           { pubkey: PERSON, name: "Alex", isAgent: false },
           { pubkey: AGENT, name: "Codex(remote)", isAgent: true },
@@ -72,7 +73,7 @@ describe("MessageContent", () => {
     expect(html).toContain('data-mention-label="Alex"');
     expect(html).toContain('inline-chip-icon-human');
     expect(html).toContain('wrapping-inline-chip');
-    expect(html).toContain('data-mention-agent="true"');
+    expect(html).toContain('data-mention-kind="agent"');
     expect(html).toContain("inline-chip-icon-agent");
     expect(html).not.toContain("buzz-message-mention");
     expect(html).toContain("<br/>");
@@ -89,6 +90,30 @@ describe("MessageContent", () => {
 
     expect(html).not.toContain('data-mention=""');
     expect(html).toContain("@Unknown and <code>@Alex</code>");
+  });
+
+  it("only gives resolved mentions a profile affordance when a real host consumer is provided", () => {
+    const render = (interactive: boolean) => renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE} content="@Alex" mediaTags={[["p", PERSON]]}
+      mentions={[{pubkey:PERSON, name:"Alex", isAgent:false, ...(interactive ? {
+        renderProfile: (children: ReactNode) => <span data-profile-for={PERSON}>{children}</span>,
+      } : {})}]} />);
+    expect(render(false)).not.toContain('data-profile-for');
+    expect(render(false)).not.toContain('cursor-pointer');
+    expect(render(true)).toContain(`data-profile-for="${PERSON}"`);
+    expect(render(true)).toContain('cursor-pointer');
+    expect(render(true)).toContain(`data-mention-pubkey="${PERSON}"`);
+  });
+
+  it("resolves identities from event tags, never directory order or ambiguous names", () => {
+    const mentions = [PERSON, AGENT].map(pubkey => ({pubkey, name:"Alex", isAgent:false,
+      renderProfile: (children: ReactNode) => <span data-profile-for={pubkey}>{children}</span>}));
+    const render = (tags: string[][]) => renderToStaticMarkup(<MessageContent workspaceId={WORKSPACE}
+      content="@Alex" mentions={mentions} mediaTags={tags}/>);
+    expect(render([])).not.toContain("data-profile-for");
+    expect(render([["p",PERSON], ["p",AGENT]])).not.toContain("data-profile-for");
+    expect(render([["p",PERSON]])).toContain(`data-profile-for="${PERSON}"`);
+    expect(render([["p",PERSON]])).not.toContain(`data-profile-for="${AGENT}"`);
+    expect(render([["p",PERSON], ["buzz:mention-snapshot"], ["mention",AGENT]])).toContain(`data-profile-for="${AGENT}"`);
   });
 
   it("reserves the final imeta dimensions while a protected image loads", () => {

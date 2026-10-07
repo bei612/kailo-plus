@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useInboxDraftSelection } from "@client-kit/platform/react/inbox-surface";
 
 import { deleteDraftEntry } from "@/features/messages/lib/useDrafts";
 import {
@@ -28,37 +29,7 @@ export function useHomeDrafts({
   const selectedItem =
     items.find((item) => item.entry.key === selectedKey) ?? null;
 
-  React.useEffect(() => {
-    if (!selectionEnabled) {
-      setSelectedKey(null);
-      return;
-    }
-    if (
-      selectedKey !== null &&
-      !items.some((item) => item.entry.key === selectedKey)
-    ) {
-      setSelectedKey(null);
-      return;
-    }
-    if (!autoSelect) return;
-    if (viewportWidthPx === 0) {
-      return;
-    }
-    if (
-      selectedKey !== null &&
-      items.some((item) => item.entry.key === selectedKey)
-    ) {
-      return;
-    }
-    setSelectedKey(isNarrowHomeViewport ? null : (items[0]?.entry.key ?? null));
-  }, [
-    autoSelect,
-    isNarrowHomeViewport,
-    items,
-    selectedKey,
-    selectionEnabled,
-    viewportWidthPx,
-  ]);
+  useInboxDraftSelection({ autoSelect, isNarrowHomeViewport, items, selectedKey, setSelectedKey, selectionEnabled, viewportWidthPx });
 
   const deleteDraft = React.useCallback(
     (draftKey: string) => {

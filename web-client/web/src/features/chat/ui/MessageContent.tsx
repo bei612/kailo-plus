@@ -17,10 +17,9 @@ import {
   resolveShikiThemeName,
 } from "@client-kit/platform/theme/theme-loader";
 import { Download, ImageOff } from "lucide-react";
-import { InlineChip } from "@client-kit/platform/react/messages/system/InlineChip";
-import { inlineChipIconClasses, inlineChipLeadingEnd, WRAPPING_INLINE_CHIP_CLASSES } from "@client-kit/platform/react/composer/shared/ui/mentionChip";
-import { formatMentionDisplayLabel } from "@client-kit/platform/react/composer/shared/lib/mentionDisplay";
-import { type ComponentProps, createContext, useContext, useState } from "react";
+import { MarkdownMentionChip } from "@client-kit/platform/react/messages/MarkdownMentionChip";
+import { resolveMentionProps } from "@client-kit/platform/react/messages/resolveMentionNames";
+import { type ComponentProps, type ReactNode, createContext, useContext, useState } from "react";
 import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import { parseMessageLink, type ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import remarkBreaks from "remark-breaks";
@@ -45,6 +44,7 @@ export type MessageMention = {
   pubkey: string;
   name: string;
   isAgent: boolean;
+  renderProfile?: (children: ReactNode) => ReactNode;
 };
 
 /** 一份由 imeta 背书的媒体：只有它能被当成媒体渲染。 */
@@ -201,27 +201,9 @@ function MarkdownMention({ children }: { children?: React.ReactNode }) {
   const label = text.replace(/^@/, "");
   const mention = mentionsByName.get(label.trim().toLocaleLowerCase());
   if (!mention) return <>{children}</>;
-  const icon = mention.isAgent ? "agent" : "human";
-  const displayLabel = formatMentionDisplayLabel(label, mention.pubkey);
-  const leadingEnd = inlineChipLeadingEnd(displayLabel);
-  return (
-    <InlineChip
-      className={`${WRAPPING_INLINE_CHIP_CLASSES}${mention.isAgent ? " agent-mention-highlight" : ""}`}
-      icon={icon}
-      data-mention=""
-      data-mention-agent={mention.isAgent || undefined}
-      data-mention-kind={icon}
-      data-mention-label={label}
-      data-mention-pubkey={mention.pubkey}
-      title={label}
-      aria-label={label}
-    >
-      <span className={`inline-chip-leading-fragment ${inlineChipIconClasses(icon)}`}>
-        {displayLabel.slice(0, leadingEnd)}
-      </span>
-      {displayLabel.slice(leadingEnd)}
-    </InlineChip>
-  );
+  const node = <MarkdownMentionChip label={label} pubkey={mention.pubkey} isAgent={mention.isAgent}
+    interactive={Boolean(mention.renderProfile)} />;
+  return mention.renderProfile ? mention.renderProfile(node) : node;
 }
 
 function ThemedCodeBlock({ code, language, ...props }: {
@@ -289,10 +271,18 @@ export function MessageContent({
   mediaTags?: readonly (readonly string[])[];
   onOpenMessageLink?: (link: ParsedMessageLink) => void;
 }) {
-  const mentionsByName = new Map(
-    mentions.map((mention) => [mention.name.trim().toLocaleLowerCase(), mention]),
+  const mentionsByPubkey = new Map(mentions.map(mention => [mention.pubkey.toLowerCase(), mention]));
+  const { mentionNames, mentionPubkeysByName } = resolveMentionProps(
+    mediaTags?.map(tag => [...tag]),
+    Object.fromEntries(mentions.map(mention => [mention.pubkey.toLowerCase(), {
+      displayName: mention.name, avatarUrl: null, nip05Handle: null, ownerPubkey: null,
+    }])),
+    content,
   );
-  const mentionNames = [...mentionsByName.values()].map((mention) => mention.name);
+  const mentionsByName = new Map(Object.entries(mentionPubkeysByName ?? {}).flatMap(([name, pubkey]) => {
+    const mention = mentionsByPubkey.get(pubkey);
+    return mention ? [[name, mention] as const] : [];
+  }));
   const mediaByUrl = imetaMedia(mediaTags);
   const previewStyle = useLinkPreviewStyle();
   const previews = mediaTags?.some((tag) => tag.length === 2 && tag[0] === "link-preview" && tag[1] === "none")
