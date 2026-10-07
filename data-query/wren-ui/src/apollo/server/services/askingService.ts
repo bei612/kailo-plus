@@ -492,13 +492,21 @@ export class AskingService implements IAskingService {
     this.askingTaskTracker = askingTaskTracker;
   }
 
+  private async currentThread(threadId: number, project?: Project) {
+    const currentProject =
+      project ?? (await this.projectService.getCurrentProject());
+    const thread = await this.threadRepository.findOneBy({
+      id: threadId,
+      projectId: currentProject.id,
+    });
+    if (!thread) throw new Error(`Thread ${threadId} not found`);
+    return thread;
+  }
+
   public async getThreadRecommendationQuestions(
     threadId: number,
   ): Promise<ThreadRecommendQuestionResult> {
-    const thread = await this.threadRepository.findOneBy({ id: threadId });
-    if (!thread) {
-      throw new Error(`Thread ${threadId} not found`);
-    }
+    const thread = await this.currentThread(threadId);
 
     // handle not started
     const res: ThreadRecommendQuestionResult = {
@@ -519,10 +527,8 @@ export class AskingService implements IAskingService {
   public async generateThreadRecommendationQuestions(
     threadId: number,
   ): Promise<void> {
-    const thread = await this.threadRepository.findOneBy({ id: threadId });
-    if (!thread) {
-      throw new Error(`Thread ${threadId} not found`);
-    }
+    const project = await this.projectService.getCurrentProject();
+    const thread = await this.currentThread(threadId, project);
 
     if (this.threadRecommendQuestionBackgroundTracker.isExist(thread)) {
       logger.debug(
@@ -531,8 +537,7 @@ export class AskingService implements IAskingService {
       return;
     }
 
-    const project = await this.projectService.getCurrentProject();
-    const { manifest } = await this.mdlService.makeCurrentModelMDL();
+    const { manifest } = await this.mdlService.makeCurrentModelMDL(project);
 
     const threadResponses = await this.threadResponseRepository.findAllBy({
       threadId,
@@ -592,13 +597,14 @@ export class AskingService implements IAskingService {
     threadResponseId?: number,
   ): Promise<Task> {
     const { threadId, language } = payload;
-    const deployId = await this.getDeployId();
+    const project = await this.projectService.getCurrentProject();
+    const deployId = await this.getDeployId(project);
 
     // if it's a follow-up question, then the input will have a threadId
     // then use the threadId to get the sql and get the steps of last thread response
     // construct it into AskHistory and pass to ask
     const histories = threadId
-      ? await this.getAskingHistory(threadId, threadResponseId)
+      ? await this.getAskingHistory(threadId, threadResponseId, project)
       : null;
     const response = await this.askingTaskTracker.createAskingTask({
       query: input.question,
@@ -618,9 +624,7 @@ export class AskingService implements IAskingService {
     threadResponseId: number,
     payload: AskingPayload,
   ): Promise<Task> {
-    const threadResponse = await this.threadResponseRepository.findOneBy({
-      id: threadResponseId,
-    });
+    const threadResponse = await this.getResponse(threadResponseId);
 
     if (!threadResponse) {
       throw new Error(`Thread response ${threadResponseId} not found`);
@@ -720,12 +724,15 @@ export class AskingService implements IAskingService {
       throw new Error('Update thread input is empty');
     }
 
+    await this.currentThread(threadId);
+
     return this.threadRepository.updateOne(threadId, {
       summary: input.summary,
     });
   }
 
   public async deleteThread(threadId: number): Promise<void> {
+    await this.currentThread(threadId);
     await this.threadRepository.deleteOne(threadId);
   }
 
@@ -733,13 +740,7 @@ export class AskingService implements IAskingService {
     input: AskingDetailTaskInput,
     threadId: number,
   ): Promise<ThreadResponse> {
-    const thread = await this.threadRepository.findOneBy({
-      id: threadId,
-    });
-
-    if (!thread) {
-      throw new Error(`Thread ${threadId} not found`);
-    }
+    const thread = await this.currentThread(threadId);
 
     const threadResponse = await this.threadResponseRepository.createOne({
       threadId: thread.id,
@@ -765,9 +766,7 @@ export class AskingService implements IAskingService {
     responseId: number,
     data: { sql: string },
   ): Promise<ThreadResponse> {
-    const threadResponse = await this.threadResponseRepository.findOneBy({
-      id: responseId,
-    });
+    const threadResponse = await this.getResponse(responseId);
     if (!threadResponse) {
       throw new Error(`Thread response ${responseId} not found`);
     }
@@ -782,9 +781,7 @@ export class AskingService implements IAskingService {
     configurations: { language: string },
   ): Promise<ThreadResponse> {
     const { language } = configurations;
-    const threadResponse = await this.threadResponseRepository.findOneBy({
-      id: threadResponseId,
-    });
+    const threadResponse = await this.getResponse(threadResponseId);
 
     if (!threadResponse) {
       throw new Error(`Thread response ${threadResponseId} not found`);
@@ -818,9 +815,7 @@ export class AskingService implements IAskingService {
   public async generateThreadResponseAnswer(
     threadResponseId: number,
   ): Promise<ThreadResponse> {
-    const threadResponse = await this.threadResponseRepository.findOneBy({
-      id: threadResponseId,
-    });
+    const threadResponse = await this.getResponse(threadResponseId);
 
     if (!threadResponse) {
       throw new Error(`Thread response ${threadResponseId} not found`);
@@ -846,9 +841,7 @@ export class AskingService implements IAskingService {
     threadResponseId: number,
     configurations: { language: string },
   ): Promise<ThreadResponse> {
-    const threadResponse = await this.threadResponseRepository.findOneBy({
-      id: threadResponseId,
-    });
+    const threadResponse = await this.getResponse(threadResponseId);
 
     if (!threadResponse) {
       throw new Error(`Thread response ${threadResponseId} not found`);
@@ -883,9 +876,7 @@ export class AskingService implements IAskingService {
     input: ChartAdjustmentOption,
     configurations: { language: string },
   ): Promise<ThreadResponse> {
-    const threadResponse = await this.threadResponseRepository.findOneBy({
-      id: threadResponseId,
-    });
+    const threadResponse = await this.getResponse(threadResponseId);
 
     if (!threadResponse) {
       throw new Error(`Thread response ${threadResponseId} not found`);
@@ -919,6 +910,7 @@ export class AskingService implements IAskingService {
   }
 
   public async getResponsesWithThread(threadId: number) {
+    await this.currentThread(threadId);
     return this.threadResponseRepository.getResponsesWithThread(threadId);
   }
 
@@ -1038,9 +1030,7 @@ export class AskingService implements IAskingService {
     status: ThreadResponseAnswerStatus,
     content?: string,
   ): Promise<ThreadResponse> {
-    const response = await this.threadResponseRepository.findOneBy({
-      id: responseId,
-    });
+    const response = await this.getResponse(responseId);
     if (!response) {
       throw new Error(`Thread response ${responseId} not found`);
     }
@@ -1063,9 +1053,8 @@ export class AskingService implements IAskingService {
     return updatedResponse;
   }
 
-  private async getDeployId() {
-    const { id } = await this.projectService.getCurrentProject();
-    const lastDeploy = await this.deployService.getLastDeployment(id);
+  private async getDeployId(project: Project) {
+    const lastDeploy = await this.deployService.getLastDeployment(project.id);
     return lastDeploy.hash;
   }
 
@@ -1073,9 +1062,7 @@ export class AskingService implements IAskingService {
     threadResponseId: number,
     input: AdjustmentSqlInput,
   ): Promise<ThreadResponse> {
-    const response = await this.threadResponseRepository.findOneBy({
-      id: threadResponseId,
-    });
+    const response = await this.getResponse(threadResponseId);
     if (!response) {
       throw new Error(`Thread response ${threadResponseId} not found`);
     }
@@ -1099,10 +1086,12 @@ export class AskingService implements IAskingService {
     input: AdjustmentReasoningInput,
     configurations: { language: string },
   ): Promise<ThreadResponse> {
-    const originalThreadResponse =
-      await this.threadResponseRepository.findOneBy({
-        id: threadResponseId,
-      });
+    const project = await this.projectService.getCurrentProject();
+    if (input.projectId !== project.id) throw new Error('Project not found');
+    const originalThreadResponse = await this.getResponse(
+      threadResponseId,
+      project,
+    );
     if (!originalThreadResponse) {
       throw new Error(`Thread response ${threadResponseId} not found`);
     }
@@ -1131,9 +1120,9 @@ export class AskingService implements IAskingService {
     projectId: number,
     configurations: { language: string },
   ): Promise<{ queryId: string }> {
-    const threadResponse = await this.threadResponseRepository.findOneBy({
-      id: threadResponseId,
-    });
+    const project = await this.projectService.getCurrentProject();
+    if (projectId !== project.id) throw new Error('Project not found');
+    const threadResponse = await this.getResponse(threadResponseId, project);
     if (!threadResponse) {
       throw new Error(`Thread response ${threadResponseId} not found`);
     }
@@ -1168,10 +1157,12 @@ export class AskingService implements IAskingService {
   private async getAskingHistory(
     threadId: number,
     excludeThreadResponseId?: number,
+    project?: Project,
   ): Promise<ThreadResponse[]> {
     if (!threadId) {
       return [];
     }
+    await this.currentThread(threadId, project);
     let responses = await this.threadResponseRepository.getResponsesWithThread(
       threadId,
       10,

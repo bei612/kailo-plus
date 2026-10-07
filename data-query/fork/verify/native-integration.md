@@ -1315,3 +1315,101 @@ the complete Wren `tsc --noEmit` then exited 0, combined session 82068 exit 0.
 This batch runs no full check, live browser/screenshot acceptance, image
 publication, deployment or desktop/mobile acceptance; none is inferred from
 these native backend checks.
+
+## Native thread and dashboard reference consumers (2026-10-07)
+
+This continues the preceding binding-project change under the same
+`SS-WRN-IDENTITY` / `SS-WRN-GOVERNANCE` authority. The pinned upstream remains
+`c5f02a0391c87420dba78632dcd86073710deb72`; the original
+`wren-ui/src/apollo/server/services/askingService.ts` (`AskingService`),
+`wren-ui/src/apollo/server/services/dashboardService.ts` (`DashboardService`),
+`wren-ui/src/apollo/server/resolvers/dashboardResolver.ts`
+(`DashboardResolver.previewItemSQL`), and
+`wren-ui/src/apollo/server/services/mdlService.ts`
+(`MDLService.makeCurrentModelMDL`) are extended in place. The native UI,
+GraphQL fields, original background trackers, SQL/MDL implementations and
+business repositories remain the original implementations.
+
+Authority/impact review before implementation identified the following actual
+consumers, not only GraphQL entrypoint names:
+
+- Thread list already filters by native project. Thread read, update, delete,
+  recommendation read/generation, follow-up history and response creation now
+  resolve the thread and current project together. A foreign thread cannot
+  supply history to `askingTaskTracker.createAskingTask`. Its existing last
+  deployment and history use the same selected project.
+- Every bare response-ID consumer in `AskingService` now calls the existing
+  project-aware `getResponse`: rerun, SQL edits, breakdown, text answer, chart,
+  chart adjustment, streamed-answer status, SQL clone and reasoning adjustment.
+  The adjustment's existing supplied project ID must match the project used
+  for the response. No second task table or registration authority is added.
+- Dashboard item read/edit/delete, item listing and creation, layout changes
+  and scheduling follow the item's actual dashboard-to-project ownership.
+  All IDs in a layout batch are checked before the first write. Native SQL
+  preview carries one selected project through the item, dashboard/cache
+  setting and original query service. The original native scheduling behavior
+  and its tests remain intact.
+- Thread recommendation carries the same selected project into the real MDL
+  service, so that service does not silently reload another current project
+  while constructing the request. Its optional internal parameter preserves
+  all original callers; it is not a new public API or binding field.
+
+Foreign/missing native references are refused before external generation or
+local mutation, using original not-found failure paths. Empty allowed threads
+retain their original empty history, while a foreign thread is not disguised
+as an empty allowed one. Invalid layouts still fail original validation; a
+mixed-project batch cannot partially write its allowed prefix. Original
+database failures and external UNKNOWN/retry semantics are unchanged: no
+automatic replay or success receipt is introduced. Concurrent deletion,
+native mutation atomicity and binding-generation revocation are not upgraded
+to transactional platform authorization by these reads. Storage stays in Wren;
+no schema migration or platform contract changes in this batch.
+
+The previous section's thread/dashboard-by-ID gap is narrowed by these real
+consumers, not declared universally resolved. Initial `asking_task` records
+before thread binding have no durable native project field in the pinned
+`wren-ui/src/apollo/server/repositories/askingTaskRepository.ts::AskingTask`.
+Task-ID-only reads/cancel and attaching a first result therefore still need
+proper native project attribution; this batch neither guesses that ownership
+nor invents a platform task authority. Per-user resource authorization, model
+dispatch admission, unbound recommendation/task IDs, and generation-aware
+revocation remain release gaps. Retaining native screens does not prove those
+missing governance consumers complete.
+
+The existing upstream status and full-tree stat commands both exited 0 in the
+read-only 1 CPU / 1 GiB SDK invocation; the pinned HEAD is unchanged. The
+in-batch full-tree stat is recorded in `native-thread-dashboard-upstream.log`
+(972 files, 131238 additions, 413 deletions at that point). As above, expanded
+engine source accounts for most of the tree; this is not a page restoration
+count. This batch only contains authorized project-binding adaptations and
+post-implementation evidence, not invented replacement pages.
+
+Verification reused the existing Wren SDK, 4 CPU / 4 GiB, UID 1000 and cached
+dependencies. There was no competing SDK compiler, 23 GiB host memory was
+available and the container's OOM flag was false. Commands after implementation:
+
+```sh
+./node_modules/.bin/jest --runInBand src/nativeProjectScope.test.ts \
+  src/apollo/server/services/tests/askingService.test.ts \
+  src/apollo/server/services/tests/dashboardService.test.ts
+./node_modules/.bin/tsc --noEmit
+```
+
+The first 95 cases passed. The final input adds two real recommendation/MDL
+consumer checks. Removing the thread and dashboard project predicates and
+making the real MDL service ignore its selected project produced **12 failed /
+85 passed**, exit 1. This included a wrong catalog from the real MDL builder,
+not only a mocked entrypoint. All six source/test inputs were restored and
+byte-compared with formal source (`cmp` exit 0). Final restored result:
+**97 passed, 0 failed, 0 skipped**, three suites; full Wren TypeScript exit 0,
+combined session 84262 exit 0. Original schedule/CTE cases passed unchanged
+except that their existing project fixture now returns its actual project ID.
+Original negative scheduling cases intentionally log their simulated errors.
+
+Logs in the same private SDK directory as the preceding section:
+`native-thread-dashboard-upstream.log`, `native-thread-dashboard-tests.log`,
+`native-thread-dashboard-mutation.log`,
+`native-thread-dashboard-restored.log`, `native-thread-dashboard-types.log`.
+No full check, live model call, browser screenshot, deployment, image build or
+new schema generation ran in this batch. Native service tests do not prove the
+remaining task attribution, user authorization or release boundary complete.

@@ -63,7 +63,7 @@ describe('DashboardService', () => {
 
   beforeEach(() => {
     mockProjectService = {
-      getCurrentProject: jest.fn(),
+      getCurrentProject: jest.fn(async () => ({ id: 1 })),
     };
     mockDashboardItemRepository = {
       findOneBy: jest.fn(),

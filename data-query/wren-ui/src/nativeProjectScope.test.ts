@@ -1,6 +1,8 @@
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
 import { AskingService } from './apollo/server/services/askingService';
 import { DashboardResolver } from './apollo/server/resolvers/dashboardResolver';
+import { DashboardService } from './apollo/server/services/dashboardService';
+import { MDLService } from './apollo/server/services/mdlService';
 
 describe('native bound-project business consumers', () => {
   const resolver = new ModelResolver();
@@ -13,6 +15,7 @@ describe('native bound-project business consumers', () => {
           Object.entries(where).every(([key, value]) => row[key] === value),
         ) ?? null,
     ),
+    createOne: jest.fn(async (data) => ({ id: 99, ...data })),
     updateOne: jest.fn(),
     deleteOne: jest.fn(),
     findAllBy: jest.fn(async () => []),
@@ -251,5 +254,262 @@ describe('native bound-project business consumers', () => {
     expect(ctx.askingService.getResponse).not.toHaveBeenCalled();
     expect(ctx.queryService.preview).not.toHaveBeenCalled();
     expect(ctx.dashboardService.createDashboardItem).not.toHaveBeenCalled();
+  });
+
+  const asking = () => {
+    const threadRepository = repository([
+      { id: 81, projectId },
+      { id: 82, projectId: 8 },
+    ]);
+    Object.assign(threadRepository, {
+      listAllTimeDescOrder: jest.fn(async (id) =>
+        id === projectId ? [{ id: 81, projectId }] : [],
+      ),
+    });
+    const threadResponseRepository = repository([
+      { id: 71, threadId: 81, question: 'original', sql: 'SELECT 1' },
+      { id: 72, threadId: 82, sql: 'SELECT 2' },
+    ]);
+    Object.assign(threadResponseRepository, {
+      getResponsesWithThread: jest.fn(async () => [{ id: 71, threadId: 81 }]),
+    });
+    return Object.assign(Object.create(AskingService.prototype), {
+      projectService: ctx.projectService,
+      threadRepository,
+      threadResponseRepository,
+      deployService: {
+        getLastDeployment: jest.fn(async () => ({ hash: 'bound' })),
+      },
+      askingTaskTracker: { createAskingTask: jest.fn() },
+    });
+  };
+
+  it.each([
+    'getThreadRecommendationQuestions',
+    'generateThreadRecommendationQuestions',
+    'getResponsesWithThread',
+    'deleteThread',
+  ])(
+    '%s refuses foreign threads before reading answers or modifying state',
+    async (method) => {
+      const service = asking();
+      await expect(service[method](82)).rejects.toThrow('Thread 82 not found');
+      expect(
+        service.threadResponseRepository.getResponsesWithThread,
+      ).not.toHaveBeenCalled();
+      expect(service.threadRepository.deleteOne).not.toHaveBeenCalled();
+    },
+  );
+  it('foreign thread updates, response creation and follow-up history cannot enter native writes or dispatch', async () => {
+    const service = asking();
+    await expect(
+      service.updateThread(82, { summary: 'foreign' }),
+    ).rejects.toThrow('Thread 82 not found');
+    await expect(
+      service.createThreadResponse({ question: 'foreign' }, 82),
+    ).rejects.toThrow('Thread 82 not found');
+    await expect(
+      service.createAskingTask(
+        { question: 'foreign' },
+        { threadId: 82, language: 'en' },
+      ),
+    ).rejects.toThrow('Thread 82 not found');
+    expect(service.threadRepository.updateOne).not.toHaveBeenCalled();
+    expect(service.threadResponseRepository.createOne).not.toHaveBeenCalled();
+    expect(service.askingTaskTracker.createAskingTask).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['rerunAskingTask', {}],
+    ['updateThreadResponse', { sql: 'SELECT 3' }],
+    ['generateThreadResponseBreakdown', { language: 'en' }],
+    ['generateThreadResponseAnswer', undefined],
+    ['generateThreadResponseChart', { language: 'en' }],
+    ['adjustThreadResponseChart', {}],
+    ['changeThreadResponseAnswerDetailStatus', 'FINISHED'],
+    ['adjustThreadResponseWithSQL', { sql: 'SELECT 3' }],
+    ['adjustThreadResponseAnswer', { projectId }],
+    ['rerunAdjustThreadResponseAnswer', projectId],
+  ])(
+    '%s resolves answer ownership before native execution',
+    async (method, payload) => {
+      const service = asking();
+      await expect(service[method as string](72, payload)).rejects.toThrow(
+        'Thread response 72 not found',
+      );
+      expect(service.threadResponseRepository.updateOne).not.toHaveBeenCalled();
+      expect(service.threadResponseRepository.createOne).not.toHaveBeenCalled();
+    },
+  );
+  it('preserves the original in-project thread list/read/edit and answer SQL clone', async () => {
+    const service = asking();
+    expect(await service.listThreads()).toEqual([{ id: 81, projectId }]);
+    expect(await service.getResponsesWithThread(81)).toEqual([
+      { id: 71, threadId: 81 },
+    ]);
+    await service.updateThread(81, { summary: 'original edit' });
+    expect(service.threadRepository.updateOne).toHaveBeenCalledWith(81, {
+      summary: 'original edit',
+    });
+    await service.createThreadResponse(
+      { question: 'follow-up', sql: 'SELECT 3' },
+      81,
+    );
+    expect(service.threadResponseRepository.createOne).toHaveBeenCalledWith({
+      threadId: 81,
+      question: 'follow-up',
+      sql: 'SELECT 3',
+      askingTaskId: undefined,
+    });
+    await service.adjustThreadResponseWithSQL(71, { sql: 'SELECT 3' });
+    expect(service.threadResponseRepository.createOne).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        threadId: 81,
+        question: 'original',
+        sql: 'SELECT 3',
+      }),
+    );
+  });
+  it('thread recommendation builds its MDL from the same selected project before original dispatch', async () => {
+    const service = asking();
+    service.threadRecommendQuestionBackgroundTracker = {
+      isExist: jest.fn(() => false),
+      addTask: jest.fn(),
+    };
+    service.mdlService = {
+      makeCurrentModelMDL: jest.fn(async () => ({ manifest: {} })),
+    };
+    service.wrenAIAdaptor = {
+      generateRecommendationQuestions: jest.fn(async () => ({
+        queryId: 'native-query',
+      })),
+    };
+    await service.generateThreadRecommendationQuestions(81);
+    expect(service.mdlService.makeCurrentModelMDL).toHaveBeenCalledWith({
+      id: projectId,
+    });
+    expect(service.threadRepository.updateOne).toHaveBeenCalledWith(
+      81,
+      expect.objectContaining({ queryId: 'native-query' }),
+    );
+    expect(
+      service.threadRecommendQuestionBackgroundTracker.addTask,
+    ).toHaveBeenCalledTimes(1);
+    expect(ctx.projectService.getCurrentProject).toHaveBeenCalledTimes(1);
+  });
+  it('the original MDL builder consumes the selected project instead of re-reading another current project', async () => {
+    const projectRepository = {
+      getCurrentProject: jest.fn(async () => ({
+        id: 8,
+        catalog: 'foreign',
+        schema: 'foreign',
+      })),
+    };
+    const modelRepository = repository([]);
+    const service = new MDLService({
+      projectRepository,
+      modelRepository,
+      modelColumnRepository: { findColumnsByModelIds: jest.fn(async () => []) },
+      modelNestedColumnRepository: {
+        findNestedColumnsByModelIds: jest.fn(async () => []),
+      },
+      relationRepository: { findRelationInfoBy: jest.fn(async () => []) },
+      viewRepository: repository([]),
+    } as any);
+    const { manifest } = await service.makeCurrentModelMDL({
+      id: projectId,
+      type: 'DUCKDB',
+      catalog: 'bound',
+      schema: 'bound',
+    } as any);
+    expect(manifest.catalog).toBe('bound');
+    expect(modelRepository.findAllBy).toHaveBeenCalledWith({ projectId });
+    expect(projectRepository.getCurrentProject).not.toHaveBeenCalled();
+  });
+
+  const dashboard = () => {
+    const dashboardRepository = repository([
+      { id: 81, projectId },
+      { id: 82, projectId: 8 },
+    ]);
+    const dashboardItemRepository = repository([
+      { id: 91, dashboardId: 81, layout: { y: 0, h: 1 } },
+      { id: 92, dashboardId: 82, detail: { sql: 'SELECT 2' } },
+    ]);
+    const service = new DashboardService({
+      projectService: ctx.projectService,
+      dashboardRepository,
+      dashboardItemRepository,
+    } as any);
+    return { service, dashboardRepository, dashboardItemRepository };
+  };
+  it.each(['getDashboardItem', 'deleteDashboardItem', 'updateDashboardItem'])(
+    '%s refuses an item from a foreign dashboard',
+    async (method) => {
+      const { service, dashboardItemRepository } = dashboard();
+      await expect(
+        service[method](92, { displayName: 'foreign' }),
+      ).rejects.toThrow('Dashboard with id 82 not found');
+      expect(dashboardItemRepository.updateOne).not.toHaveBeenCalled();
+      expect(dashboardItemRepository.deleteOne).not.toHaveBeenCalled();
+    },
+  );
+  it('dashboard list, creation and schedule consume project ownership', async () => {
+    const { service, dashboardRepository, dashboardItemRepository } =
+      dashboard();
+    await expect(service.getDashboardItems(82)).rejects.toThrow(
+      'Dashboard with id 82 not found',
+    );
+    await expect(
+      service.createDashboardItem({ dashboardId: 82 } as any),
+    ).rejects.toThrow('Dashboard with id 82 not found');
+    await expect(
+      service.setDashboardSchedule(82, { cacheEnabled: false } as any),
+    ).rejects.toThrow('Dashboard with id 82 not found');
+    expect(dashboardItemRepository.findAllBy).not.toHaveBeenCalled();
+    expect(dashboardItemRepository.createOne).not.toHaveBeenCalled();
+    expect(dashboardRepository.updateOne).not.toHaveBeenCalled();
+  });
+  it('a mixed dashboard layout batch refuses every write before its foreign item', async () => {
+    const { service, dashboardItemRepository } = dashboard();
+    await expect(
+      service.updateDashboardItemLayouts([
+        { itemId: 91, x: 0, y: 0, w: 1, h: 1 },
+        { itemId: 92, x: 1, y: 0, w: 1, h: 1 },
+      ]),
+    ).rejects.toThrow('Dashboard with id 82 not found');
+    expect(dashboardItemRepository.updateOne).not.toHaveBeenCalled();
+    expect(ctx.projectService.getCurrentProject).toHaveBeenCalledTimes(1);
+  });
+  it('dashboard preview cannot execute SQL from a foreign item', async () => {
+    ctx.dashboardService = dashboard().service;
+    await expect(
+      new DashboardResolver().previewItemSQL(
+        null,
+        { data: { itemId: 92 } },
+        ctx,
+      ),
+    ).rejects.toThrow('Dashboard with id 82 not found');
+    expect(ctx.queryService.preview).not.toHaveBeenCalled();
+  });
+  it('preserves original in-project dashboard item edits, layouts, schedule and deletion', async () => {
+    const { service, dashboardRepository, dashboardItemRepository } =
+      dashboard();
+    expect(await service.getDashboardItem(91)).toMatchObject({
+      dashboardId: 81,
+    });
+    await service.updateDashboardItem(91, { displayName: 'original edit' });
+    expect(dashboardItemRepository.updateOne).toHaveBeenCalledWith(91, {
+      displayName: 'original edit',
+    });
+    await service.updateDashboardItemLayouts([
+      { itemId: 91, x: 0, y: 0, w: 1, h: 1 },
+    ]);
+    await service.setDashboardSchedule(81, { cacheEnabled: false } as any);
+    expect(dashboardRepository.updateOne).toHaveBeenCalledWith(
+      81,
+      expect.objectContaining({ cacheEnabled: false }),
+    );
+    expect(await service.deleteDashboardItem(91)).toBe(true);
+    expect(dashboardItemRepository.deleteOne).toHaveBeenCalledWith(91);
   });
 });

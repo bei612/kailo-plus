@@ -6,6 +6,7 @@ import {
   IProjectRepository,
   IRelationRepository,
   IViewRepository,
+  Project,
 } from '../repositories';
 import { Manifest } from '../mdl/type';
 
@@ -14,7 +15,7 @@ export interface MakeCurrentModelMDLResult {
   mdlBuilder: MDLBuilder;
 }
 export interface IMDLService {
-  makeCurrentModelMDL(): Promise<MakeCurrentModelMDLResult>;
+  makeCurrentModelMDL(project?: Project): Promise<MakeCurrentModelMDLResult>;
 }
 
 export class MDLService implements IMDLService {
@@ -48,8 +49,9 @@ export class MDLService implements IMDLService {
     this.viewRepository = viewRepository;
   }
 
-  public async makeCurrentModelMDL() {
-    const project = await this.projectRepository.getCurrentProject();
+  public async makeCurrentModelMDL(selectedProject?: Project) {
+    const project =
+      selectedProject ?? (await this.projectRepository.getCurrentProject());
     const projectId = project.id;
     const models = await this.modelRepository.findAllBy({ projectId });
     const modelIds = models.map((m) => m.id);

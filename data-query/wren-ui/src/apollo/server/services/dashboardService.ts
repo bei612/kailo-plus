@@ -6,6 +6,7 @@ import {
   DashboardItemType,
   DashboardItemDetail,
   DashboardItemLayout,
+  Project,
 } from '@server/repositories';
 import { getLogger } from '@server/utils';
 import { getUTCOffsetMinutes } from '@server/utils/timezone';
@@ -38,10 +39,16 @@ export type UpdateDashboardItemLayouts = (DashboardItemLayout & {
 
 export interface IDashboardService {
   initDashboard(): Promise<Dashboard>;
-  getCurrentDashboard(): Promise<Dashboard>;
-  getDashboardItem(dashboardItemId: number): Promise<DashboardItem>;
+  getCurrentDashboard(project?: Project): Promise<Dashboard>;
+  getDashboardItem(
+    dashboardItemId: number,
+    project?: Project,
+  ): Promise<DashboardItem>;
   getDashboardItems(dashboardId: number): Promise<DashboardItem[]>;
-  createDashboardItem(input: CreateDashboardItemInput): Promise<DashboardItem>;
+  createDashboardItem(
+    input: CreateDashboardItemInput,
+    project?: Project,
+  ): Promise<DashboardItem>;
   updateDashboardItem(
     dashboardItemId: number,
     input: UpdateDashboardItemInput,
@@ -76,6 +83,18 @@ export class DashboardService implements IDashboardService {
     this.dashboardRepository = dashboardRepository;
   }
 
+  private async currentDashboard(dashboardId: number, project?: Project) {
+    const currentProject =
+      project ?? (await this.projectService.getCurrentProject());
+    const dashboard = await this.dashboardRepository.findOneBy({
+      id: dashboardId,
+      projectId: currentProject.id,
+    });
+    if (!dashboard)
+      throw new Error(`Dashboard with id ${dashboardId} not found`);
+    return dashboard;
+  }
+
   public async setDashboardSchedule(
     dashboardId: number,
     data: SetDashboardCacheData,
@@ -86,12 +105,7 @@ export class DashboardService implements IDashboardService {
       this.validateScheduleInput(data);
 
       // Check if dashboard exists
-      const dashboard = await this.dashboardRepository.findOneBy({
-        id: dashboardId,
-      });
-      if (!dashboard) {
-        throw new Error(`Dashboard with id ${dashboardId} not found`);
-      }
+      await this.currentDashboard(dashboardId);
       if (!cacheEnabled) {
         return await this.dashboardRepository.updateOne(dashboardId, {
           cacheEnabled: false,
@@ -138,16 +152,18 @@ export class DashboardService implements IDashboardService {
     });
   }
 
-  public async getCurrentDashboard(): Promise<Dashboard> {
-    const project = await this.projectService.getCurrentProject();
+  public async getCurrentDashboard(project?: Project): Promise<Dashboard> {
+    const currentProject =
+      project ?? (await this.projectService.getCurrentProject());
     const dashboard = await this.dashboardRepository.findOneBy({
-      projectId: project.id,
+      projectId: currentProject.id,
     });
     return { ...dashboard };
   }
 
   public async getDashboardItem(
     dashboardItemId: number,
+    project?: Project,
   ): Promise<DashboardItem> {
     const item = await this.dashboardItemRepository.findOneBy({
       id: dashboardItemId,
@@ -155,12 +171,14 @@ export class DashboardService implements IDashboardService {
     if (!item) {
       throw new Error('Dashboard item not found.');
     }
+    await this.currentDashboard(item.dashboardId, project);
     return item;
   }
 
   public async getDashboardItems(
     dashboardId: number,
   ): Promise<DashboardItem[]> {
+    await this.currentDashboard(dashboardId);
     return await this.dashboardItemRepository.findAllBy({
       dashboardId,
     });
@@ -168,7 +186,9 @@ export class DashboardService implements IDashboardService {
 
   public async createDashboardItem(
     input: CreateDashboardItemInput,
+    project?: Project,
   ): Promise<DashboardItem> {
+    await this.currentDashboard(input.dashboardId, project);
     const layout = await this.calculateNewLayout(input.dashboardId);
     return await this.dashboardItemRepository.createOne({
       dashboardId: input.dashboardId,
@@ -185,6 +205,7 @@ export class DashboardService implements IDashboardService {
     dashboardItemId: number,
     input: UpdateDashboardItemInput,
   ): Promise<DashboardItem> {
+    await this.getDashboardItem(dashboardItemId);
     return await this.dashboardItemRepository.updateOne(dashboardItemId, {
       displayName: input.displayName,
     });
@@ -205,6 +226,11 @@ export class DashboardService implements IDashboardService {
     if (!isValidLayouts) {
       throw new Error('Invalid layouts boundaries.');
     }
+    const project = await this.projectService.getCurrentProject();
+    // Resolve the entire batch before writing any layout. An allowed first item
+    // must not let a later foreign ID produce a partial unauthorized update.
+    for (const layout of layouts)
+      await this.getDashboardItem(layout.itemId, project);
     await Promise.all(
       layouts.map(async (layout) => {
         const updatedItem = await this.dashboardItemRepository.updateOne(
@@ -225,6 +251,7 @@ export class DashboardService implements IDashboardService {
   }
 
   public async deleteDashboardItem(dashboardItemId: number): Promise<boolean> {
+    await this.getDashboardItem(dashboardItemId);
     await this.dashboardItemRepository.deleteOne(dashboardItemId);
     return true;
   }
