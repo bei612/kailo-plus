@@ -1,10 +1,11 @@
 // Extracted from Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/notifications/hooks.ts.
 import * as React from "react";
-import { getLocale, translate } from "../../i18n";
+import { translate } from "../../i18n";
+import { useUiLocale } from "../context";
 import { scheduleAfterForegroundReady } from "./foregroundReady";
 import { DEFAULT_SLOT_ALERTS_ENABLED, DEFAULT_SLOT_SOUNDS, SOUND_NAMES, SOUND_SLOTS, type SlotSounds, type SoundName, type SoundSlot } from "./sound";
 export type DesktopNotificationPermissionState = NotificationPermission | "unsupported";
-export type NotificationHost = { getPermission: () => Promise<DesktopNotificationPermissionState>; requestPermission: () => Promise<DesktopNotificationPermissionState> };
+export type NotificationHost = { kind?: "browser" | "native"; getPermission: () => Promise<DesktopNotificationPermissionState>; requestPermission: () => Promise<DesktopNotificationPermissionState> };
 // v2: settings model reworked around per-event rows (flutter default sound,
 // slotAlertsEnabled, no singleSound/soundEnabled) — v1 values are abandoned.
 const NOTIFICATION_SETTINGS_STORAGE_KEY = "buzz-notification-settings.v2";
@@ -127,6 +128,7 @@ function writeStoredNotificationSettings(
 }
 
 export function useNotificationSettings(pubkey: string | undefined, host: NotificationHost) {
+  const locale = useUiLocale();
   const normalizedPubkey = pubkey?.trim().toLowerCase() ?? "";
   const owner = React.useRef(normalizedPubkey);
   owner.current = normalizedPubkey;
@@ -143,13 +145,15 @@ export function useNotificationSettings(pubkey: string | undefined, host: Notifi
   }, [normalizedPubkey]);
   const [permission, setPermission] =
     React.useState<DesktopNotificationPermissionState>("default");
-  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [failure, setFailure] = React.useState<"denied" | "unsupported" | "unavailable" | "notGranted" | null>(null);
+  const errorMessage = failure === null ? null : translate(locale,
+    failure === "denied" && host.kind === "browser" ? "platform.notifications.browserDenied" : `platform.notifications.${failure}`);
   const [isUpdatingDesktopEnabled, setIsUpdatingDesktopEnabled] =
     React.useState(false);
 
   React.useEffect(() => {
     setSettings(readStoredNotificationSettings(normalizedPubkey));
-    setErrorMessage(null);
+    setFailure(null);
     setIsUpdatingDesktopEnabled(false);
   }, [normalizedPubkey]);
 
@@ -159,14 +163,22 @@ export function useNotificationSettings(pubkey: string | undefined, host: Notifi
 
   const refreshPermission = React.useEffectEvent(async () => {
     const requestedOwner = normalizedPubkey;
-    const nextPermission = await host.getPermission();
-    if (owner.current === requestedOwner) setPermission(nextPermission);
-    return nextPermission;
+    try {
+      const nextPermission = await host.getPermission();
+      if (owner.current === requestedOwner) {
+        setPermission(nextPermission);
+        if (nextPermission === "granted") setFailure(null);
+      }
+      return nextPermission;
+    } catch (error) {
+      if (owner.current === requestedOwner) setFailure("unavailable");
+      throw error;
+    }
   });
 
   React.useEffect(() => {
     void normalizedPubkey;
-    void refreshPermission();
+    void refreshPermission().catch(() => {}); // Failure is rendered by the controller.
   }, [normalizedPubkey]);
 
   React.useEffect(() => {
@@ -180,7 +192,7 @@ export function useNotificationSettings(pubkey: string | undefined, host: Notifi
       if (cancelPendingRefresh) return;
       cancelPendingRefresh = scheduleAfterForegroundReady(() => {
         cancelPendingRefresh = null;
-        if (document.visibilityState === "visible") void refreshPermission();
+        if (document.visibilityState === "visible") void refreshPermission().catch(() => {});
       });
     };
     document.addEventListener("visibilitychange", refreshWhenVisible);
@@ -205,17 +217,17 @@ export function useNotificationSettings(pubkey: string | undefined, host: Notifi
     if (!normalizedPubkey) return false;
     const requestedOwner = normalizedPubkey;
     if (!enabled) {
-      setErrorMessage(null);
+      setFailure(null);
       setSettings((current) => ({
         ...current,
         desktopEnabled: false,
       }));
-      void refreshPermission();
+      void refreshPermission().catch(() => {});
       return true;
     }
 
     setIsUpdatingDesktopEnabled(true);
-    setErrorMessage(null);
+    setFailure(null);
 
     try {
       let nextPermission = await refreshPermission();
@@ -230,11 +242,7 @@ export function useNotificationSettings(pubkey: string | undefined, host: Notifi
           ...current,
           desktopEnabled: false,
         }));
-        setErrorMessage(
-          nextPermission === "denied"
-            ? translate(getLocale(), "platform.notifications.denied")
-            : translate(getLocale(), "platform.notifications.unsupported"),
-        );
+        setFailure(nextPermission === "denied" ? "denied" : nextPermission === "unsupported" ? "unsupported" : "notGranted");
         return false;
       }
 
@@ -243,17 +251,13 @@ export function useNotificationSettings(pubkey: string | undefined, host: Notifi
         desktopEnabled: true,
       }));
       return true;
-    } catch (error) {
+    } catch {
       if (owner.current !== requestedOwner) return false;
       setSettings((current) => ({
         ...current,
         desktopEnabled: false,
       }));
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : translate(getLocale(), "platform.notifications.unavailable"),
-      );
+      setFailure("unavailable");
       return false;
     } finally {
       if (owner.current === requestedOwner) setIsUpdatingDesktopEnabled(false);

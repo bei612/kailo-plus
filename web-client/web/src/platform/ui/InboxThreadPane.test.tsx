@@ -5,17 +5,22 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WorkspaceMembershipState } from "@client-kit/contracts";
 import { TooltipProvider } from "@client-kit/platform/react/sidebar/tooltip";
 import { setLocale } from "@client-kit/platform/i18n";
+import { BffError, TransportError } from "@client-kit/platform/transport";
+import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { StreamFrame } from "../bff-client";
 import { InboxThreadPane } from "./InboxThreadPane";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({ query: vi.fn(), publish: vi.fn(), openAuthor:vi.fn(), unavailable:vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: "" }));
+const state = vi.hoisted(() => ({ query: vi.fn(), publish: vi.fn(), openAuthor:vi.fn(), unavailable:vi.fn(), receive: null as null | ((frame: StreamFrame) => void), outcome: "", error: null as unknown }));
 vi.mock("@client-kit/platform/react/context", async (original) => ({ ...await original<typeof import("@client-kit/platform/react/context")>(), useBffClient: () => ({ workspaceMessages: state.query }), useLocale: () => "en", useT: () => (key: string) => key }));
 vi.mock("@client-kit/platform/react/inbox-surface", () => ({ InboxDetailHeader: ({ title }: {title: string}) => <header>{title}</header> }));
 vi.mock("@/features/chat/ui/MessageContent", () => ({ MessageContent: ({content}: {content:string}) => <p>{content}</p> }));
 vi.mock("@/platform/bff-client", () => ({ publishMessage: (...args: unknown[]) => state.publish(...args), openStream: (_scope: string, receive: (frame: StreamFrame) => void) => { state.receive = receive; return () => {}; } }));
-vi.mock("./ChannelPane", () => ({ Composer: ({ disabled, onPublish }: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: []) => Promise<unknown>}) => <button disabled={disabled} onClick={async () => { try { await onPublish("actual reply", [], "same-intent", []); state.outcome = "confirmed"; } catch { state.outcome = "unknown"; } }}>send</button> }));
+vi.mock("./ChannelPane", () => ({ Composer: ({ disabled, onPublish, replyTarget, onCancelReply, draftKey }: {disabled: boolean; onPublish: (content: string, attachments: [], key: string, installations: []) => Promise<unknown>; replyTarget?: {id:string;body:string}; onCancelReply?:()=>void; draftKey?:string}) => <div data-testid="inbox-composer" data-draft-key={draftKey}>
+  {replyTarget ? <div data-testid="reply-preview">{replyTarget.body}{onCancelReply ? <button data-testid="cancel-reply" onClick={onCancelReply}>cancel reply</button> : null}</div> : null}
+  <button data-testid="inbox-send" disabled={disabled} onClick={async () => { try { await onPublish("actual reply", [], "same-intent", []); state.outcome = "confirmed"; } catch (error) { state.error = error; state.outcome = "unknown"; } }}>send</button>
+</div> }));
 
 const rootId = "a".repeat(64); const replyId = "b".repeat(64); const pubkey = "c".repeat(64);
 const event = (id: string, content: string, tags: string[][]) => ({ id, content, tags, pubkey, kind: 9, created_at: id === rootId ? 1 : 2 });
@@ -29,7 +34,7 @@ async function mount(replyTargetEventId?: string) {
   await settle();
 }
 beforeEach(() => {
-  vi.useFakeTimers(); vi.clearAllMocks(); state.outcome = "";
+  vi.useFakeTimers(); vi.clearAllMocks(); state.outcome = ""; state.error = null;
   setLocale("en");
   Object.defineProperty(window, "matchMedia", {configurable:true,value:()=>({matches:false,addEventListener(){},removeEventListener(){}})});
   state.query.mockResolvedValue({ events: [rootEvent, reply] });
@@ -44,14 +49,14 @@ it("reads the true thread and preserves the original selected-reply parent when 
   await mount();
   expect(state.query).toHaveBeenCalledWith("workspace", { messageType: "STREAM", parentEventId: rootId });
   expect(host.textContent).toContain("selected reply");
-  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
   expect(state.publish).toHaveBeenCalledWith("workspace", "actual reply", [], "same-intent", [], { messageType: "STREAM", parentEventId: rootId });
   expect(state.outcome).toBe("confirmed");
 });
 
 it("restores an explicit nested reply draft without retargeting it to its parent", async () => {
   await mount(replyId);
-  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
   expect(state.query).toHaveBeenCalledWith("workspace", { messageType: "STREAM", parentEventId: rootId });
   expect(state.publish).toHaveBeenCalledWith("workspace", "actual reply", [], "same-intent", [], { messageType: "STREAM", parentEventId: replyId });
 });
@@ -59,12 +64,50 @@ it("restores an explicit nested reply draft without retargeting it to its parent
 it("does not report an unconfirmed receipt as success and removes detail on revoked admission", async () => {
   state.publish.mockResolvedValue({ operationId: "operation" });
   await mount();
-  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
   expect(state.outcome).toBe("unknown");
   await act(async () => state.receive!({ type: "closed", reason: "scope-revoked" }));
   await settle();
   expect(host.textContent).not.toContain("selected reply");
-  expect(host.querySelector<HTMLButtonElement>("button")?.disabled).toBe(true);
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')?.disabled).toBe(true);
+});
+
+it("restores the original row reply toggle and banner while cancelling returns to the captured parent", async () => {
+  await mount();
+  const select = () => host.querySelector<HTMLButtonElement>(`[data-testid="reply-message-${replyId}"]`)!;
+  expect(select().getAttribute("aria-label")).toBe("Reply");
+  await act(async () => select().click());
+  expect(host.querySelector('[data-testid="reply-preview"]')?.textContent).toContain("selected reply");
+  expect(host.querySelector('[data-testid="inbox-composer"]')?.getAttribute("data-draft-key")).toBe(`thread:workspace:${rootId}:${replyId}`);
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
+  expect(state.publish.mock.lastCall?.[5]).toEqual({messageType:"STREAM",parentEventId:replyId});
+  await settle();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="cancel-reply"]')!.click());
+  expect(host.querySelector('[data-testid="reply-preview"]')).toBeNull();
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
+  expect(state.publish.mock.lastCall?.[5]).toEqual({messageType:"STREAM",parentEventId:rootId});
+  await settle();
+  await act(async () => select().click());
+  await act(async () => select().click());
+  expect(host.querySelector('[data-testid="reply-preview"]')).toBeNull();
+});
+
+it("keeps the same target and draft after UNKNOWN and a later forbidden observation", async () => {
+  state.publish.mockRejectedValueOnce(new TransportError("receipt missing"));
+  await mount();
+  await act(async () => host.querySelector<HTMLButtonElement>(`[data-testid="reply-message-${replyId}"]`)!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
+  expect(host.querySelector(`[data-testid="reply-message-${rootId}"]`)).toBeNull();
+  expect(host.querySelector('[data-testid="cancel-reply"]')).toBeNull();
+  expect(host.querySelector('[data-testid="reply-preview"]')?.textContent).toContain("selected reply");
+  state.publish.mockRejectedValueOnce(new BffError(403,"forbidden",{class:ErrorClass.Denied,reason:ReasonCode.PermissionDenied}));
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
+  expect(host.querySelector('[data-testid="cancel-reply"]')).toBeNull();
+  expect(state.error).toBeInstanceOf(TransportError);
+  expect(state.publish.mock.calls.every((call) => call[3] === "same-intent" && call[5].parentEventId === replyId)).toBe(true);
+  state.publish.mockResolvedValueOnce({eventId:"d".repeat(64),operationId:"operation"});
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="inbox-send"]')!.click());
+  expect(host.querySelector('[data-testid="cancel-reply"]')).not.toBeNull();
 });
 it("opens the selected Inbox message author and withdraws that scope on revoked admission", async () => {
   await mount();

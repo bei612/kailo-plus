@@ -4411,3 +4411,168 @@ Relay signer、稳定 ID、同秒不同命令、关联错配及篡改签名拒�
 专项当作全部验收通过。未部署；原生 UI 40099 JSON 解析保留额外标签兼容，不重写页面。
 Core 窗口结束后 Data 仅余约 317 MiB，未启动下一编译；源码复核另将新增 Relay
 测试里的 kind 常量改为完整模块路径，避免依赖不存在的导入。该测试声明仍需编译核验。
+
+### 2026-10-07 Inbox 原消息行回复目标接线（源码窄验，未部署）
+
+比较基准 `15041483cef67661527ef53f62be95cba3d4ae47`。本批仅修改 Web
+`InboxThreadPane.tsx`、对应既有测试与本证据段，复用两端已有共享
+`MessageActionBarSurface`、`MessageRowSurface`、`ComposerReplyBanner`，不复制菜单、
+编辑器或另建 Inbox 状态权威。
+
+1. 权威与上游：REQ-24、DD-74/75/81 的原功能保留、共用呈现、Web 本人 BFF
+   发布及结果不明规则。Buzz 固定
+   `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/home/ui/InboxMessageRow.tsx::InboxMessageRow` 调用原
+   MessageActionBar 的 `onSelectReplyTarget`；
+   `desktop/src/features/home/ui/InboxDetailPane.tsx::InboxDetailPane` 的
+   `handleSelectReplyTarget` 保留选中/取消、聚焦与回复提示条。Kailo Desktop
+   已保留此消费者，Web 既有线程读写后端已支持 parentEventId，但此前没有行内入口。
+2. 影响面：只补现有 Inbox 详情的真实行操作、提示条、按实际目标隔离的原草稿键，
+   从草稿恢复时保留明确的目标。未选择行时仍使用原选中事件的已锁定 parent；
+   选择行时发送其实际 event ID，不把线程根或 Workspace ID 冒充目标。既有
+   `InboxPane` 的 Principal + scopeKey、`InboxDrafts` 的 Principal + draft key
+   继续控制挂载；资料面板隐藏详情时保留未决编辑器。无 schema、Core、权限、
+   Mobile、i18n catalog 或生成物改动；菜单与复制结果使用已有中英词条。
+3. 副作用：只调用原 `publishMessage`，仍要求实际 operationId/eventId 回执后清理。
+   发送中或 UNKNOWN 不能改目标；UNKNOWN 后遇到 403 等重新准入拒绝不证明原
+   发布失败，保留同键/同目标并维持中性状态。只有对应确认或原明确
+   PUBLISH_REJECTED 才可解除未决意图；不自行重放、改账本或插入假消息。
+4. 边界：空线程、目标未载入、撤权、断流、非 ACTIVE 成员沿既有读取/发布守卫
+   禁止发送；明确恢复的目标不会退回线程根。已准入消息复制复用原 mention
+   clipboard HTML 与实际成员公钥；剪贴板拒绝用原失败提示，不改消息正文。
+
+实际输入先逐文件核对：SDK 的 Web/src、shared/src 以及 Web 真正解析的
+node_modules/@client-kit 源码与基准一致；联合 contracts.ts 单独恢复为该基准，
+再同步本批两个文件。复用 `kailo-agent-receipt-xvkujx` 原 4 CPU / 8 GiB SDK，
+目录 `/evidence/profile-settings-ortsoo.DRR20F/apps/web-client/web`，无安装或下载。
+启动时无其他 Node 验证，memory PSI 为 0、IO full avg10 约 4.72%；Data 约
+102 MiB，因此仅同步小文件，原始日志先写 tmpfs 后保留至下列目录。
+
+- `./node_modules/.bin/tsc --noEmit` 退出 0。
+- `./node_modules/.bin/vitest run src/platform/ui/InboxThreadPane.test.tsx --pool=threads --maxWorkers=1`
+  退出 0：6 passed，含原线程读取/显式草稿/撤权/作者入口与新增行回复、UNKNOWN。
+- 仅 SDK 将 parentEventId 改回线程根，新行回复用例实际失败：预期 `bbbb…`，
+  实际 `aaaa…`，退出 1；另删除 UNKNOWN 的既有意图记忆，403 后取消按钮错误出现，
+  对应用例实际失败、退出 1。正式源码未被破坏；两次恢复后 cmp 退出 0，最终
+  同文件 6 passed、退出 0。
+
+原始日志目录：`/volumes/data/kailo/tmp/inbox-reply-20261007.zEGjgQ/`，文件
+`positive.log`、`mutation.log`、`unknown-mutation.log`、`restored.log`。
+这是宿主行为与类型窄验，不是浏览器端到端发送验收；未运行全量、Cargo、Go、镜像
+构建或部署，不将本批声明为完整 Inbox 功能已交付。
+
+## 原通知设置试听与双语消费
+
+本增量依据设计01 REQ-24：保留原设置完整交互，Web/Desktop共用主体，中文默认且
+英文完整。核对固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/settings/ui/SoundPicker.tsx`（`SoundPicker`）、
+`desktop/src/features/settings/ui/NotificationSettingsCard.tsx`（同名组件）与
+`desktop/src/features/notifications/hooks.ts`（`useNotificationSettings`）。原菜单、
+波形、推荐顺序、12个音源和按钮保留；没有重新制作精简设置页。
+
+影响面为共享 `notifications/SoundPicker.tsx`、原通知偏好 controller/card、
+Web `BrowserNotifications` 宿主及原 TS→Dart 文案链。Desktop沿原薄转发组件
+消费同一改动；声音持久化仍用原12个英文资源ID，不迁移偏好键、不改变收到消息
+时的声音缓存与默认设置。Mobile仅接同源文案，不据此宣称已实现其通知交付。
+
+实际缺陷是试听调用后台通知的 best-effort 播放函数，play拒绝被吞后仍显示
+Pause；切换音源、禁用或离开设置未释放试听，且中文界面直接显示音源英文ID。
+现在试听独立持有本次音频，真实play兑现后才显示暂停；拒播显示双语可重试结果。
+切换、禁用、卸载移除监听并停止本人试听，不停止缓存中的真实消息提醒。
+异步结果必须仍属于当前音频实例，旧promise不能把新选项画成正在播放。
+
+通知权限调用沿原宿主API，首次页面读取不发起权限申请。Web拒绝提示指向网站
+权限，Native保留系统权限说明；关闭授权提示返回default时不再误报“不支持”。
+失败保存封闭状态而不是已翻译正文，所以改语言无需重挂载即可更新提示。
+主体切换仍保留原owner护栏，读取权限异常呈现为不可用，不能生成成功通知。
+本增量不改变平台scope/权限/审批/quota，也不提供新的通知投递权威。
+
+实现后在原 `test/notifications.test.tsx` 追加检查。2026-10-07 于既有
+`kailo-agent-receipt-xvkujx`（4 CPU / 8 GiB），独立小型 tmpfs 输入
+`/dev/shm/settings-sound.ZcBvXy`，基线 `15041483cef67661527ef53f62be95cba3d4ae47`
+加本批精确设置增量，实际执行：
+
+- shared `tsc --noEmit -p tsconfig.json` 和 `-p tsconfig.test.json` 均退出0。
+- `vitest run test/notifications.test.tsx --pool=threads --maxWorkers=1`：
+  基线5/5通过；删试听promise的当前音频校验后1失败/4通过；恢复后再删浏览器
+  网站权限提示分支，同样1失败/4通过；两文件原字节恢复、SHA一致，最终5/5通过。
+- 仅选本批15词条及原生成Dart对应产物，原
+  `python3 -B tools/gen-platform-i18n.py --check` 退出0，输出
+  `PASS: Mobile platform and reason catalogs match the shared TypeScript source`。
+
+原始日志位于 `/volumes/data/kailo/tmp/settings-sound-20261007.d03db27h/`：
+`notifications-types.log`、`notifications-tests.log`、
+`notifications-late-play-mutation.log`、`notifications-browser-hint-mutation.log`、
+`notifications-restored.log`。最初两次未运行用例的工具启动失败也保留：
+`notifications-baseline.log` 是私有快照缺共享依赖链接，
+`notifications-baseline-restored.log` 是当前Vitest不接受旧 `--minWorkers` 参数；
+补原依赖链接、使用实际支持参数后才得到上述结果，没有下载安装。
+
+本批未重跑Web/Desktop整包类型检查、full、构建、部署或真实系统通知截图验收；
+共享检查不冒充这些验收。此前组件Connector修正后的Go未验边界不受本批设置工作影响。
+
+### 2026-10-07 Agent 长表单原版固定操作栏
+
+playwright-cli 正常登录线上 b911 后，打开 Agent 详情和创建版本弹窗，截图
+`198-b911-agent-definition-details.png`、`199-b911-agent-version-editor.png`
+均已实际打开查看；位于前述 `kailo-visual-release-20261006.vlPvnU` 目录。
+长表单把预览/确认/取消按钮放进正文滚动区，且重复展示标题。这是修复前证据，
+不是已发布新版截图。
+
+- 权威：REQ-24、DD-75 与设计17 §8 要求原版交互和共用管理面。固定 Buzz
+  `779af8886caae1317b4de962082429867ab61503` 的
+  `desktop/src/shared/ui/chooser-dialog-content.tsx::ChooserDialogContent` 及
+  `desktop/src/features/agents/ui/AgentDefinitionDialogShell.tsx::AgentDefinitionDialogShell`
+  将 footer 放在正文滚动区之外。本次直接复用该布局，不另造 Web 弹窗。
+- 影响：共享 ChooserDialogContent、AgentManagementDialog 与 VersionAction；
+  Web/Desktop 消费同一组件，其他 Agent 弹窗沿同一 shell。表单原字段、校验、
+  配置目录、分页和提交逻辑保留；用 React useId 与原生 form 属性关联外部提交
+  按钮。不修改契约、数据库、Workflow、偏好格式或 Mobile 页面。
+- 副作用：预览仍不发 POST；提交仍消费冻结意图及原幂等键。busy/UNKNOWN 禁止
+  关闭、结果不明只查询原请求的规则不变，不把关闭弹窗当成取消执行。
+  标题保留一处；全部文案继续使用原中英词条。
+- 边界：目录空/失败/无权时不生成可提交配置；retire 保留原审阅动作；表单使用
+  原 HTML required 校验。长正文滚动不带走操作栏；没有加入新的限额或权限条件。
+  服务错误仍沿原六类映射，UNKNOWN 不变成成功/失败。本次不解除后端发布缺口。
+
+实现后在原 pages 检查追加表单关联、固定操作栏和单标题断言；最终原文件
+263/263 通过。仅 SDK 把 footer 移入正文滚动区，对应用例真实失败，退出 1；
+原字节还原并 cmp 一致后，原提交用例再次通过。初次断言误把原 Dialog 全屏
+外层滚动区也视为正文，已改为检查弹窗内实际正文；未修改原 Dialog 来迁就断言。
+精确已验 pages 文件 SHA-256 为
+`bfbc636e348f8cb59a6efe74aaafba0fec1b78fef36e7291657042759f0b1b38`，
+共享 agents、TS 词条与 Dart 生成物也与候选 index 摘要一致。
+原始日志随下节 Workflows 的三处故障注入合批保留。本批尚未发布，
+也未完成全部页面、中英状态或 Windows 视觉等效验收。
+
+### 2026-10-07 Workflows 原版模板变量交互
+
+- 权威与来源：设计06 §9.1、REQ-23/24、DD-107；固定 Buzz
+  `779af8886caae1317b4de962082429867ab61503` 的
+  `desktop/src/features/workflows/ui/WorkflowTemplateTextarea.tsx::WorkflowTemplateTextarea`
+  和 `desktop/src/features/workflows/ui/workflowTemplateVariables.ts` 中
+  `activeTemplateToken`、`insertTemplateVariable`、`workflowTemplateVariables`。
+  直接复用原 Popover、文本框、键盘与光标操作，不新建模板执行器。
+- 影响与消费者：共享 AutomationAction 的 POST_MESSAGE、WorkflowStepCard 的
+  send_message 使用同一变量编辑器，两端继续共用共享 Workflows；表单/YAML互转、
+  审阅和提交仍沿原消费者。AGENT_TURN 不接入未支持的模板展开。新增七项中英文
+  词条由原同源脚本生成 Dart；没有契约、数据库或权限变更。
+- 副作用：插入只改变待审阅原文本，不发网络请求、不读取消息正文、不在客户端展开。
+  实际 ActionCommand 保留模板字节；审批、额度、UNKNOWN 幂等及 Temporal 原链不变。
+  消息触发只建议后端真实支持的五项字段，Schedule 只建议频道与时间，不伪造步骤输出。
+- 边界：空匹配显示同源中英文；完整 token 替换保留前后原文，选择后恢复焦点和光标；
+  中文输入法不吞候选确认，Escape 只关闭变量选择器，禁用时不打开或插入。
+  本次不声称完整七动作、全部条件、步骤输出变量或全部原版页面均已恢复。
+
+实现后原共享 source/test TypeScript 检查均退出0，模板5项、工作流交互11项通过。
+首次 fixture 缺 PlatformProvider、光标恢复等待不足已修；旧 SDK 页面依赖和对原 Dialog
+外层滚动区的错误断言均纠正后，原 pages 全文件实际263/263通过。
+主题检查仅精确核验原 Popover 的单个 `w-[var(--radix-popover-trigger-width)]`，
+不放宽任意颜色表达式。SDK单次破坏 token 尾部、原宽度、固定 footer 位置，三项均
+真实失败退出1；三文件原字节恢复并cmp通过，模板5项和对应页面2项恢复通过。
+
+最终日志在受限容器 `kailo-agent-receipt-xvkujx` 的
+`/dev/shm/workflow-agent-pages-final.log`、`/dev/shm/workflow-agent-mutation.log`、
+`/dev/shm/workflow-agent-restored.log`；此前类型及工作流交互日志为 Data 原目录
+`message-edit.AGX058/workflow-agent-ui-final.log`，其旧 pages 三项失败不计通过。
+本批未安装依赖、未执行 full/Cargo/镜像构建或部署，未拿组件检查冒充线上截图验收。

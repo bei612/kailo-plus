@@ -4,7 +4,7 @@ import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { AutomationManagement } from "../src/react/agents";
 import type { BffReply, BffRequest } from "../src/transport";
-import { button, click, render, settle } from "./render";
+import { button, click, render, settle, type } from "./render";
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
@@ -82,6 +82,28 @@ const writes = (send: ReturnType<typeof vi.fn>) => send.mock.calls.map(([request
   .filter((request) => request.method === "POST").map((request) => request.body);
 
 describe("original workflow action menu with governed consumers", () => {
+  it("carries the original template picker through form/YAML into the same governed version request", async () => {
+    const { host, send } = await setup((request) => request.path.startsWith("/api/v1/automations/workflow?")
+      ? { status: 200, body: { ...detail, versions: detail.versions.map((row) => ({ ...row,
+        content: { ...row.content, action: { kind: "POST_MESSAGE", template: "Original" } },
+      })) } } : undefined);
+    await chooseAction(host, "Edit");
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    const field = dialog.querySelector<HTMLTextAreaElement>("textarea")!;
+    await type(field, "Message: {{trigger.te");
+    await act(async () => field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
+    expect(field.value).toBe("Message: {{trigger.text}}");
+    await click(button(dialog, "Workflow YAML"));
+    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")?.value).toContain("Message: {{trigger.text}}");
+    await click(button(dialog, "Form"));
+    await click(button(dialog, "Review request"));
+    await click(button(dialog, "Submit governed request"));
+    const commands = writes(send);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toMatchObject({ actionKey: "automation.publish_version", resourceId: "workflow",
+      automationVersionContent: { action: { kind: "POST_MESSAGE", template: "Message: {{trigger.text}}" } } });
+  });
+
   it("retains original menu and switch visual with Chinese labels", async () => {
     const { host, send } = await setup(undefined, "zh-CN");
     const menu = await openMenu(host, "工作流操作");

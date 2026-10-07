@@ -3,13 +3,14 @@
 // The original card/detail affordances; only the actually executed actions enter its model.
 import { ChevronRight, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { ActionEnum, ActionKind, type AutomationStep, type AutomationVersionContent } from "@client-kit/contracts";
+import { ActionEnum, ActionKind, type AutomationStep, type AutomationVersionContent, type AutomationTriggerKind as TriggerKind } from "@client-kit/contracts";
 import { Button } from "./profile/buzz/shared/ui/button";
 import { Input } from "./composer/shared/ui/input";
 import { useT } from "./context";
 import { cn } from "./profile/buzz/shared/lib/cn";
 import { WorkflowDurationField } from "./workflow-duration-field";
 import { parseDurationSeconds } from "./workflow-duration";
+import { WorkflowTemplateTextarea } from "./workflow-template-textarea";
 
 export function validApprovalPolicy(value: unknown): value is NonNullable<AutomationVersionContent["approvalPolicy"]> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -63,9 +64,10 @@ export function workflowAction(content: AutomationVersionContent): {kind: Workfl
     : content.action;
 }
 
-export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies }: {
+export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies, trigger }: {
   step: AutomationStep; index: number; onUpdate: (step: AutomationStep) => void; onRemove?: () => void;
   policies?: NonNullable<AutomationVersionContent["approvalPolicy"]>[] | null;
+  trigger: TriggerKind;
 }) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
@@ -112,8 +114,8 @@ export function WorkflowStepCard({ step, index, onUpdate, onRemove, policies }: 
           <span className="block font-normal">{t("workflows.steps.topicTarget")}</span>
         </label>
         : <label className="block space-y-1.5 text-xs font-medium text-muted-foreground" htmlFor={`${prefix}-text`}>
-          {t("workflows.steps.message")}<textarea id={`${prefix}-text`} value={step.text ?? ""}
-            onChange={(event) => onUpdate({ ...step, text: event.target.value })}
+          {t("workflows.steps.message")}<WorkflowTemplateTextarea id={`${prefix}-text`} value={step.text ?? ""}
+            triggerType={trigger} onValueChange={(text) => onUpdate({ ...step, text })}
             className="min-h-[60px] w-full resize-y rounded-md border border-input bg-transparent p-2 text-xs" />
         </label>}
     </section>

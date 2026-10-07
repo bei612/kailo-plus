@@ -6,6 +6,7 @@ import { bff } from "../bff-client";
 // Browser permission is an OS capability, never a replacement for BFF scope
 // authorization. No notification request runs until a user clicks the control.
 const browserHost: NotificationHost = {
+  kind: "browser",
   getPermission: async () => typeof Notification === "undefined" ? "unsupported" : Notification.permission,
   requestPermission: async () => typeof Notification === "undefined" ? "unsupported" : Notification.requestPermission(),
 };
@@ -48,7 +49,7 @@ export function BrowserNotificationsProvider({ principalId, children }: { princi
 export function BrowserNotificationSettings() {
   const state = useBrowserNotifications();
   if (!state) return null;
-  return <NotificationSettingsCard isUpdatingDesktopNotifications={state.isUpdatingDesktopEnabled}
+  return <NotificationSettingsCard notificationEnvironment="browser" isUpdatingDesktopNotifications={state.isUpdatingDesktopEnabled}
     notificationErrorMessage={state.errorMessage} notificationPermission={state.permission} notificationSettings={state.settings}
     onSetDesktopNotificationsEnabled={state.setDesktopEnabled} onSetAllSlotAlertsEnabled={state.setAllSlotAlertsEnabled}
     onSetHomeBadgeEnabled={state.setHomeBadgeEnabled} onSetSlotAlertsEnabled={state.setSlotAlertsEnabled}

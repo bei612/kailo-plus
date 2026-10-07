@@ -3,18 +3,20 @@
 // desktop/src/shared/ui/chooser-dialog-content.tsx::ChooserDialogContent.
 // Existing governed consumers own form state and the frozen request, not this shell.
 import type { ReactNode } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../composer/shared/ui/dialog";
+import { Dialog } from "../composer/shared/ui/dialog";
+import { ChooserDialogContent } from "../composer/shared/ui/chooser-dialog-content";
 
-export function AgentManagementDialog({ open, title, locked = false, onClose, children }: {
+export function AgentManagementDialog({ open, title, locked = false, onClose, children, footer, dataTestId }: {
   open: boolean; title: string; locked?: boolean; onClose: () => void; children: ReactNode;
+  footer?: ReactNode; dataTestId?: string;
 }) {
   return <Dialog open={open} onOpenChange={(next) => { if (!next && !locked) onClose(); }}>
-    <DialogContent aria-describedby={undefined} showCloseButton={!locked}
-      className="flex max-h-[85vh] max-w-3xl flex-col gap-0 overflow-hidden border-0 p-0"
+    <ChooserDialogContent aria-describedby={undefined} showCloseButton={!locked}
+      title={title} footer={footer} data-testid={dataTestId}
+      className="max-w-3xl border-0" contentClassName="pt-3" headerClassName="pb-2" footerClassName="border-t-0 pt-0"
       onEscapeKeyDown={(event) => { if (locked) event.preventDefault(); }}
       onInteractOutside={(event) => { if (locked) event.preventDefault(); }}>
-      <DialogHeader className="shrink-0 px-6 py-5 pb-2 pr-14"><DialogTitle>{title}</DialogTitle></DialogHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto px-6"><div className="py-5 pt-3">{children}</div></div>
-    </DialogContent>
+      {children}
+    </ChooserDialogContent>
   </Dialog>;
 }

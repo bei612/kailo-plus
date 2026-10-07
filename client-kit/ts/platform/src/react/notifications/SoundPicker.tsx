@@ -1,10 +1,9 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { translate } from "../../i18n";
 import { useUiLocale } from "../context";
 import { ChevronDown, Pause, Play } from "lucide-react";
 
 import {
-  playNotificationSound,
   soundAssetUrl,
   SOUND_NAMES,
   type SoundName,
@@ -68,21 +67,67 @@ export function SoundPicker({
   const items = sortedSounds(recommended);
   const locale = useUiLocale();
   const [isPlaying, setIsPlaying] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isStarting, setIsStarting] = useState(false);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const playback = useRef<{ audio: HTMLAudioElement; dispose: () => void } | null>(null);
+  const label = (name: SoundName) => translate(locale, `platform.notifications.sound.${name}`);
+  const stopPreview = useCallback(() => {
+    const active = playback.current;
+    playback.current = null;
+    active?.dispose();
+  }, []);
+
+  useEffect(() => {
+    stopPreview();
+    setIsPlaying(false);
+    setIsStarting(false);
+    setPreviewFailed(false);
+    return stopPreview;
+  }, [value, disabled, stopPreview]);
 
   function togglePreview() {
+    if (disabled || isStarting) return;
     if (isPlaying) {
-      audioRef.current?.pause();
+      stopPreview();
       setIsPlaying(false);
       return;
     }
-    const audio = playNotificationSound(value);
-    if (!audio) return;
-    audioRef.current = audio;
-    setIsPlaying(true);
-    const stop = () => setIsPlaying(false);
-    audio.addEventListener("ended", stop, { once: true });
-    audio.addEventListener("pause", stop, { once: true });
+    stopPreview();
+    setPreviewFailed(false);
+    try {
+      // A settings preview owns its audio. It must not pause or reuse the
+      // cached audio currently delivering an actual incoming notification.
+      const audio = new Audio(soundAssetUrl(value, "mp3"));
+      const finish = (failed: boolean) => {
+        if (playback.current?.audio !== audio) return;
+        stopPreview();
+        setIsStarting(false);
+        setIsPlaying(false);
+        setPreviewFailed(failed);
+      };
+      const ended = () => finish(false);
+      const failed = () => finish(true);
+      audio.addEventListener("ended", ended);
+      audio.addEventListener("pause", ended);
+      audio.addEventListener("error", failed);
+      playback.current = { audio, dispose: () => {
+        audio.removeEventListener("ended", ended);
+        audio.removeEventListener("pause", ended);
+        audio.removeEventListener("error", failed);
+        audio.pause();
+      } };
+      setIsStarting(true);
+      void audio.play().then(() => {
+        if (playback.current?.audio !== audio) return;
+        setIsStarting(false);
+        setIsPlaying(true);
+      }, failed);
+    } catch {
+      stopPreview();
+      setIsStarting(false);
+      setIsPlaying(false);
+      setPreviewFailed(true);
+    }
   }
 
   return (
@@ -96,7 +141,7 @@ export function SoundPicker({
             type="button"
             variant="ghost"
           >
-            <span className="truncate">{value}</span>
+            <span className="truncate">{label(value)}</span>
             <span className="flex items-center gap-1.5">
               <Waveform className="h-6 w-15 opacity-70" name={value} />
               <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -114,7 +159,7 @@ export function SoundPicker({
             {items.map((name) => (
               <DropdownMenuRadioItem key={name} value={name}>
                 <span className="flex w-full items-center justify-between gap-3">
-                  <span>{name}</span>
+                  <span>{label(name)}</span>
                   <span className="flex items-center gap-2">
                     {name === recommended ? (
                       <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -130,9 +175,10 @@ export function SoundPicker({
         </DropdownMenuContent>
       </DropdownMenu>
       <Button
-        aria-label={translate(locale, isPlaying ? "platform.notifications.pause" : "platform.notifications.preview", { sound: value })}
+        aria-label={translate(locale, isPlaying ? "platform.notifications.pause" : "platform.notifications.preview", { sound: label(value) })}
+        aria-busy={isStarting}
         className="h-7 w-7 rounded-full border border-border/50 bg-muted/45 p-0 text-foreground shadow-none hover:bg-muted/70"
-        disabled={disabled}
+        disabled={disabled || isStarting}
         onClick={togglePreview}
         size="sm"
         type="button"
@@ -144,6 +190,7 @@ export function SoundPicker({
           <Play className="h-4 w-4" />
         )}
       </Button>
+      {previewFailed ? <span role="status" className="text-xs text-destructive">{translate(locale, "platform.notifications.previewFailed")}</span> : null}
     </span>
   );
 }

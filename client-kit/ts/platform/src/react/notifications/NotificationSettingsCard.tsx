@@ -31,7 +31,9 @@ export function NotificationSettingsCard({
   onSetSlotAlertsEnabled,
   onSetNotifyWhileViewing,
   onSetSoundForSlot,
+  notificationEnvironment = "native",
 }: {
+  notificationEnvironment?: "browser" | "native";
   isUpdatingDesktopNotifications: boolean;
   notificationErrorMessage: string | null;
   notificationPermission: DesktopNotificationPermissionState;
@@ -241,7 +243,7 @@ export function NotificationSettingsCard({
         <p className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {notificationPermission === "unsupported"
             ? translate(locale, "platform.notifications.unsupported")
-            : translate(locale, "platform.notifications.denied")}
+            : translate(locale, notificationEnvironment === "browser" ? "platform.notifications.browserDenied" : "platform.notifications.denied")}
         </p>
       )}
 

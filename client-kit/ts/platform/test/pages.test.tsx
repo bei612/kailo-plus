@@ -1670,6 +1670,12 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await click(button(section(host, "agent-version-directory"), "Create version draft"));
     const action = section(host, "agent-version-action");
     expect(button(action, "Review request").disabled).toBe(true);
+    const editorForm = action.querySelector("form")!;
+    const reviewButton = button(action, "Review request");
+    expect(reviewButton.form).toBe(editorForm);
+    expect(editorForm.contains(reviewButton)).toBe(false);
+    expect(action.querySelector(".overflow-y-auto")!.contains(reviewButton)).toBe(false);
+    expect(action.querySelectorAll("h2")).toHaveLength(1);
     expect([...action.querySelectorAll("select")].every((field) => field.value === "")).toBe(true);
     await change(action, "Display name", "New governed draft");
     await change(action, "Instructions", "New exact instructions");
@@ -1685,6 +1691,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     await click(button(action, "Review request"));
     expect(posts(t)).toHaveLength(0);
     expect(action.textContent).toContain("New exact instructions");
+    expect(action.querySelector(".overflow-y-auto")!.contains(button(action, "Submit governed request"))).toBe(false);
     await click(button(action, "Submit governed request"));
     expect(posts(t)).toHaveLength(1);
     expect(posts(t)[0]?.body).toEqual({ actionKey: "agent.version.create", idempotencyKey: expect.any(String),
@@ -3165,6 +3172,14 @@ describe("platform pages render only through the host theme", () => {
           expect(inspected.split(expression)).toHaveLength(2);
           inspected = inspected.replace(expression, '""');
         }
+      }
+      if (name === "workflow-template-textarea.tsx") {
+        // Buzz 779af8886caae1317b4de962082429867ab61503:
+        // desktop/src/features/workflows/ui/WorkflowTemplateTextarea.tsx.
+        // The original Popover width follows its anchor; this is not a colour.
+        const nativeWidth = "w-[var(--radix-popover-trigger-width)]";
+        expect(inspected.split(nativeWidth)).toHaveLength(2);
+        inspected = inspected.replace(nativeWidth, "");
       }
       if (name === "workflow-duration-field.tsx") {
         // Native delay slider width is layout, not a colour or theme override.

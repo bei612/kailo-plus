@@ -36,7 +36,7 @@ import {
   type TaskView,
   type PlatformToolPage,
 } from "@client-kit/contracts";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { parseDocument, stringify } from "yaml";
 import { ArrowRight, CalendarClock, Check, Code, MessageSquare, Pencil, Plus, RefreshCw, X, Zap } from "lucide-react";
 import { newIdempotencyKey, taskPhase } from "../governance";
@@ -49,6 +49,7 @@ import { useLoad } from "./use-load";
 import { InstallationMemory } from "./memory";
 import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
+import { WorkflowTemplateTextarea } from "./workflow-template-textarea";
 import { WorkflowActionsMenu } from "./workflow-actions-menu";
 import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./composer/shared/ui/dialog";
@@ -933,11 +934,13 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
             <option value={ActionEnum.SetChannelTopic}>{t("workflows.steps.setTopic")}</option>
           </select>
         </label>
-        {steps.length ? <div className="space-y-3">{steps.map((step, index) => <WorkflowStepCard key={index} index={index} step={step} policies={policies}
+        {steps.length ? <div className="space-y-3">{steps.map((step, index) => <WorkflowStepCard key={index} index={index} step={step} policies={policies} trigger={trigger}
           onUpdate={(next) => { setSteps((old) => old.map((value, position) => position === index ? next : value)); if (index === steps.length - 1) setTemplate(next.text ?? next.emoji ?? next.topic ?? ""); }}
           onRemove={index < steps.length - 1 ? () => setSteps((old) => old.filter((_, position) => position !== index)) : undefined} />)}</div>
         : <label className="flex flex-col gap-1 text-sm">{t("agents.automation.template")}
-          <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />
+          {actionKind === ActionKind.PostMessage
+            ? <WorkflowTemplateTextarea required value={template} onValueChange={setTemplate} triggerType={trigger} className="min-h-24 rounded-md border border-input bg-transparent p-2" />
+            : <textarea required value={template} onChange={(event) => setTemplate(event.target.value)} className="min-h-24 rounded-md border border-input bg-transparent p-2" />}
         </label>}
         {actionKind !== ActionKind.AgentTurn ? <Button onClick={() => setSteps((old) => {
           const delay: AutomationStep = { id: crypto.randomUUID(), action: ActionEnum.Delay, duration: "" };
@@ -1956,6 +1959,7 @@ function VersionDirectory({ definition, locked, onEdit }: {
 function VersionAction({ edit, onReset, onLocked, onRecorded }: {
   edit: VersionEdit | null; onReset: () => void; onLocked: (locked: boolean) => void; onRecorded: () => void;
 }) {
+  const formId = useId();
   const client = useBffClient();
   const t = useT();
   const reasonText = useReasonText();
@@ -2085,9 +2089,17 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
   };
   if (!edit && !intent && !submission && !failure) return null;
   return <AgentManagementDialog open title={t(edit || intent ? title : "agents.version.history")}
-    locked={busy || intent !== null} onClose={() => { setSubmission(null); setFailure(null); onReset(); }}>
-  <section className="flex flex-col gap-3" data-testid="agent-version-action">
-    <h2 className="font-medium">{t(edit || intent ? title : "agents.version.history")}</h2>
+    dataTestId="agent-version-action" locked={busy || intent !== null}
+    onClose={() => { setSubmission(null); setFailure(null); onReset(); }}
+    footer={intent ? <div className="flex w-full flex-wrap justify-end gap-2">
+      {!busy && !unknown ? <Button onClick={() => { setIntent(null); onLocked(false); }}>{t("agents.cancel")}</Button> : null}
+      <Button disabled={busy} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry") : t("agents.confirm")}</Button>
+    </div> : edit && (retiring || source) ? <div className="flex w-full flex-wrap justify-end gap-2">
+      <Button onClick={onReset}>{t("agents.cancel")}</Button>
+      {retiring ? <Button disabled={requestBlocked || !valid} onClick={prepare}>{t("agents.review")}</Button>
+        : <Button type="submit" form={formId} disabled={requestBlocked || !valid}>{t("agents.review")}</Button>}
+    </div> : undefined}>
+  <section className="flex flex-col gap-3">
     {edit ? <p className="break-words text-sm">{edit.definition.displayName} · {edit.definition.resourceId} · {t("agents.resourceVersion")}: {edit.definition.resourceVersion}</p> : null}
     <p className="text-sm text-muted-foreground">{t("agents.version.boundary")}</p>
     {intent ? <div className="flex flex-col gap-2 text-sm" role="group">
@@ -2107,18 +2119,15 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
       <p>{t("agents.version.triggers")}: {triggers.map((trigger) => t(trigger === AgentTrigger.Mention ? "agents.installation.trigger.mention" : "agents.version.manualAssignment")).join(", ") || "—"}</p>
       <pre className="whitespace-pre-wrap break-words">{instructions}</pre>
       <p>{t(retiring ? "agents.version.retireReview" : publishing ? "agents.version.publishReview" : "agents.version.saveReview")}</p><p>{t("agents.admission")}</p>
-      <div className="flex gap-2"><Button disabled={busy} onClick={() => void submit()}>{busy ? t("platform.loading") : unknown ? t("agents.retry") : t("agents.confirm")}</Button>
-        {!busy && !unknown ? <Button onClick={() => { setIntent(null); onLocked(false); }}>{t("agents.cancel")}</Button> : null}</div>
     </div> : retiring ? <>
       <p className="break-words text-sm">{edit?.version?.assetId} · {t("agents.version.assetVersion")}: {edit?.version?.assetVersion}</p>
       <p className="break-words text-sm">{t("agents.owner")}: {edit?.version?.ownerPrincipalId}</p>
       <p className="break-all font-mono text-xs">{t("agents.version.hash")}: {edit?.version?.configHash}</p>
       <p className="text-sm">{t("agents.version.retireReview")}</p>
-      <div className="flex gap-2"><Button disabled={requestBlocked || !valid} onClick={prepare}>{t("agents.review")}</Button><Button onClick={onReset}>{t("agents.cancel")}</Button></div>
     </> : edit ? <>
       {configuration.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
         : !source ? <AgentReadFailure error={configuration.status === "error" ? configuration.error : undefined} onRetry={reloadConfiguration} />
-        : <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
+        : <form id={formId} className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); prepare(); }}>
           {!permitted || !supported ? <Notice>{t("agents.version.createUnavailable")}</Notice> : null}
           <fieldset disabled={publishing || !permitted || (sourceContent?.skillVersionAssetIds.length ?? 0) > 0} className="flex flex-col gap-3">
             <label className="flex flex-col gap-1 text-sm">{t("agents.name")}<input required value={name} onChange={(event) => setName(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2" /></label>
@@ -2168,7 +2177,6 @@ function VersionAction({ edit, onReset, onLocked, onRecorded }: {
           </fieldset>
           <div className="flex gap-2">{index > 0 ? <Button onClick={() => setIndex(index - 1)}>{t("roles.previous")}</Button> : null}
             {source.nextOffset != null ? <Button onClick={() => { setOffsets((values) => [...values.slice(0, index + 1), source.nextOffset!]); setIndex(index + 1); }}>{t("roles.next")}</Button> : null}</div>
-          <div className="flex gap-2"><Button type="submit" disabled={requestBlocked || !valid}>{t("agents.review")}</Button><Button onClick={onReset}>{t("agents.cancel")}</Button></div>
         </form>}
     </> : null}
     {submission ? <p role="status" className="break-words text-sm">{unknown ? t("agents.unknown", { operation: submission.operationId }) : t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}{submission.reason ? ` ${reasonText(submission.reason)}` : ""}</p> : null}

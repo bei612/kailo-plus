@@ -1,7 +1,10 @@
 import { act, useState } from "react";
-import { describe, expect, it, vi } from "vitest";
-import { useNotificationSettings, NotificationSettingsCard, type NotificationHost } from "../src/react/notifications";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "../src/i18n";
+import { useNotificationSettings, NotificationSettingsCard, SoundPicker, type SoundName, type NotificationHost } from "../src/react/notifications";
 import { render, click } from "./render";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("shared original notification settings", () => {
   it("requests permission only from the control and restores granular sound slots", async () => {
@@ -46,5 +49,83 @@ describe("shared original notification settings", () => {
     expect(actual.errorMessage).toBeNull();
     expect(JSON.parse(localStorage.getItem("buzz-notification-settings.v2:second")!).homeBadgeEnabled).toBe(true);
     expect(JSON.parse(localStorage.getItem("buzz-notification-settings.v2:first")!).homeBadgeEnabled).toBe(false);
+  });
+
+  it("uses real preview outcomes and switches failed preview copy with the interface language", async () => {
+    localStorage.clear();
+    setLocale("zh-CN");
+    class RefusedAudio extends EventTarget {
+      pause = vi.fn();
+      play = vi.fn(() => Promise.reject(new Error("browser playback refused")));
+    }
+    vi.stubGlobal("Audio", RefusedAudio);
+    const view = await render(<SoundPicker recommended="ping" value="flutter" onChange={vi.fn()} />);
+    expect(view.textContent).toContain("轻颤");
+    await click(view.querySelector<HTMLButtonElement>('[aria-label="试听轻颤"]')!);
+    expect(view.querySelector('[aria-label^="暂停"]')).toBeNull();
+    expect(view.querySelector('[role="status"]')?.textContent).toContain("未能播放");
+    await act(async () => setLocale("en"));
+    expect(view.querySelector('[role="status"]')?.textContent).toContain("could not play");
+    expect(view.querySelector('[aria-label="Preview flutter"]')).not.toBeNull();
+  });
+
+  it("stops only its preview on value, disabled and unmount changes and ignores late play completion", async () => {
+    localStorage.clear();
+    setLocale("en");
+    const audio: PendingAudio[] = [];
+    class PendingAudio extends EventTarget {
+      complete!: () => void;
+      pause = vi.fn();
+      play = vi.fn(() => new Promise<void>((resolve) => { this.complete = resolve; }));
+      constructor() { super(); audio.push(this); }
+    }
+    vi.stubGlobal("Audio", PendingAudio);
+    let setSound!: (value: SoundName) => void;
+    let setDisabled!: (value: boolean) => void;
+    let show!: (value: boolean) => void;
+    function Harness() {
+      const [value, change] = useState<SoundName>("flutter");
+      const [disabled, disable] = useState(false);
+      const [visible, toggle] = useState(true);
+      setSound = change; setDisabled = disable; show = toggle;
+      return visible ? <SoundPicker recommended="ping" value={value} disabled={disabled} onChange={change} /> : null;
+    }
+    const view = await render(<Harness />);
+    await click(view.querySelector<HTMLButtonElement>('[aria-label="Preview flutter"]')!);
+    expect(view.querySelector('[aria-busy="true"]')).not.toBeNull();
+    await act(async () => setSound("ping"));
+    expect(audio[0]!.pause).toHaveBeenCalledTimes(1);
+    await act(async () => audio[0]!.complete());
+    expect(view.querySelector('[aria-label="Pause ping"]')).toBeNull();
+    await click(view.querySelector<HTMLButtonElement>('[aria-label="Preview ping"]')!);
+    await act(async () => audio[1]!.complete());
+    expect(view.querySelector('[aria-label="Pause ping"]')).not.toBeNull();
+    await act(async () => setDisabled(true));
+    expect(audio[1]!.pause).toHaveBeenCalledTimes(1);
+    await act(async () => setDisabled(false));
+    await click(view.querySelector<HTMLButtonElement>('[aria-label="Preview ping"]')!);
+    await act(async () => show(false));
+    expect(audio[2]!.pause).toHaveBeenCalledTimes(1);
+    await act(async () => audio[2]!.complete());
+    expect(view.textContent).toBe("");
+  });
+
+  it("keeps browser permission outcomes bilingual without treating a dismissed request as unsupported", async () => {
+    localStorage.clear();
+    setLocale("zh-CN");
+    let permission: NotificationPermission = "denied";
+    const host: NotificationHost = { kind: "browser", getPermission: async () => permission, requestPermission: async () => permission };
+    let actual!: ReturnType<typeof useNotificationSettings>;
+    function Harness() { actual = useNotificationSettings("actor", host); return <p role="status">{actual.errorMessage}</p>; }
+    const view = await render(<Harness />);
+    await act(async () => { expect(await actual.setDesktopEnabled(true)).toBe(false); });
+    expect(view.textContent).toContain("网站权限");
+    await act(async () => setLocale("en"));
+    expect(view.textContent).toContain("site's browser permissions");
+    permission = "default";
+    await act(async () => { expect(await actual.setDesktopEnabled(true)).toBe(false); });
+    expect(view.textContent).toContain("not enabled");
+    expect(view.textContent).not.toContain("not supported");
+    expect(actual.settings.desktopEnabled).toBe(false);
   });
 });
