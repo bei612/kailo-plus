@@ -1001,6 +1001,11 @@ export enum ActionEnum {
 }
 
 export interface AutomationVersionContentTrigger {
+    /**
+     * 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION，原 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN
+     * 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
+     */
+    filter?:             string;
     kind:                AutomationTriggerKind;
     mentionPrincipalId?: string;
     scheduleSpec?:       ScheduleSpecClass;
@@ -4348,6 +4353,11 @@ export interface AutomationVersionContentActionClass {
 }
 
 export interface AutomationVersionContentTriggerClass {
+    /**
+     * 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION，原 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN
+     * 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
+     */
+    filter?:             string;
     kind:                AutomationTriggerKind;
     mentionPrincipalId?: string;
     scheduleSpec?:       ScheduleSpecClass;

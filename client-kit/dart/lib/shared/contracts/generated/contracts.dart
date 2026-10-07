@@ -3955,12 +3955,16 @@ final actionEnumValues = EnumValues({
 });
 
 class ContentTrigger {
+  ///固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION，原 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN
+  ///事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
+  final String? filter;
   final AutomationTriggerKind kind;
   final String? mentionPrincipalId;
   final ScheduleSpecClass? scheduleSpec;
   final String? textPrefix;
 
   ContentTrigger({
+    this.filter,
     required this.kind,
     this.mentionPrincipalId,
     this.scheduleSpec,
@@ -3968,6 +3972,7 @@ class ContentTrigger {
   });
 
   factory ContentTrigger.fromJson(Map<String, dynamic> json) => ContentTrigger(
+    filter: json["filter"],
     kind: automationTriggerKindValues.map[json["kind"]]!,
     mentionPrincipalId: json["mentionPrincipalId"],
     scheduleSpec: json["scheduleSpec"] == null
@@ -3977,6 +3982,7 @@ class ContentTrigger {
   );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "filter": filter,
     "kind": automationTriggerKindValues.reverse[kind],
     "mentionPrincipalId": mentionPrincipalId,
     "scheduleSpec": scheduleSpec?.toJson(),
@@ -12716,12 +12722,16 @@ class AutomationVersionContentAction {
 }
 
 class AutomationVersionContentTrigger {
+  ///固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION，原 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN
+  ///事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
+  final String? filter;
   final AutomationTriggerKind kind;
   final String? mentionPrincipalId;
   final ScheduleSpecClass? scheduleSpec;
   final String? textPrefix;
 
   AutomationVersionContentTrigger({
+    this.filter,
     required this.kind,
     this.mentionPrincipalId,
     this.scheduleSpec,
@@ -12730,6 +12740,7 @@ class AutomationVersionContentTrigger {
 
   factory AutomationVersionContentTrigger.fromJson(Map<String, dynamic> json) =>
       AutomationVersionContentTrigger(
+        filter: json["filter"],
         kind: automationTriggerKindValues.map[json["kind"]]!,
         mentionPrincipalId: json["mentionPrincipalId"],
         scheduleSpec: json["scheduleSpec"] == null
@@ -12739,6 +12750,7 @@ class AutomationVersionContentTrigger {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "filter": filter,
     "kind": automationTriggerKindValues.reverse[kind],
     "mentionPrincipalId": mentionPrincipalId,
     "scheduleSpec": scheduleSpec?.toJson(),

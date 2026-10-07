@@ -1,8 +1,12 @@
-import { act } from "react";
+import { act, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
 import { AutomationManagement } from "../src/react/agents";
+import { WorkflowTriggerConditions } from "../src/react/workflow-trigger-conditions";
+import { useWorkflowAuthorDirectory } from "../src/react/workflow-author-directory";
+import { npubEncode } from "nostr-tools/nip19";
+import { buildConditionExpressions, parseConditionExpressions, CONDITION_OPERATORS, type ParsedConditionExpression } from "../src/react/workflow-condition-expression";
 import type { BffReply, BffRequest } from "../src/transport";
 import { button, click, render, settle, type } from "./render";
 
@@ -86,6 +90,128 @@ const writes = (send: ReturnType<typeof vi.fn>) => send.mock.calls.map(([request
   .filter((request) => request.method === "POST").map((request) => request.body);
 
 describe("original workflow action menu with governed consumers", () => {
+  it("selects original author filters from the authorized directory, paginates and accepts npub", async () => {
+    const alice = "a".repeat(64), bob = "b".repeat(64), carol = "c".repeat(64);
+    const send = vi.fn(async (request: BffRequest): Promise<BffReply> => {
+      if (request.path === "/api/v1/workspaces/workspace/members") return {status:200,body:[
+        {principalId:"alice",displayName:"Alice",pubkeys:[alice],state:"ACTIVE"},
+      ]};
+      if (request.path === "/api/v1/conversation-participants") return {status:200,body:{items:[],nextCursor:"next"}};
+      if (request.path === "/api/v1/conversation-participants?cursor=next") return {status:200,body:{items:[
+        {principalId:"bob",displayName:"Bob",pubkeys:[bob]},
+      ]}};
+      return {status:503,body:undefined};
+    });
+    function Editor() {
+      const [value, setValue] = useState("");
+      const [drafts, setDrafts] = useState<ParsedConditionExpression[] | null>(null);
+      return <><WorkflowTriggerConditions workflowChannelId="workspace" value={value} onChange={setValue}
+        conditionDrafts={drafts} onConditionDraftsChange={setDrafts} /><output>{value}</output></>;
+    }
+    const host = await render(<PlatformProvider client={createBffClient({send})} locale="en"><Editor /></PlatformProvider>);
+    await settle();
+    await click([...host.querySelectorAll<HTMLButtonElement>('button[aria-expanded]')].find((node) => node.textContent?.startsWith("Author"))!);
+    expect(host.querySelector('[role="listbox"]')!.textContent).toContain("Alice");
+    await click(button(host, "Load more authors"));
+    const bobOption = [...host.querySelectorAll<HTMLElement>('[role="option"]')].find((node) => node.textContent?.includes("Bob"))!;
+    await click(bobOption);
+    expect(host.querySelector("output")!.textContent).toBe(`trigger_author == "${bob}"`);
+    await click(button(host, "is not"));
+    expect(host.querySelector("output")!.textContent).toBe(`trigger_author != "${bob}"`);
+    const search = host.querySelector<HTMLInputElement>('[role="combobox"]')!;
+    await type(search, npubEncode(carol));
+    await settle();
+    await act(async () => search.dispatchEvent(new KeyboardEvent("keydown", {key:"Enter",bubbles:true,cancelable:true})));
+    expect(host.querySelector("output")!.textContent).toBe(`trigger_author != "${carol}"`);
+    expect(send.mock.calls.filter(([request]) => request.method !== "GET")).toHaveLength(0);
+  });
+
+  it("ignores late author pages on workspace change and closes the directory on revalidation failure", async () => {
+    let finish!: (reply:BffReply) => void;
+    let failed = false;
+    const send = vi.fn(async (request:BffRequest):Promise<BffReply> => {
+      if (request.path === "/api/v1/workspaces/old/members") return new Promise((resolve) => { finish = resolve; });
+      if (request.path === "/api/v1/workspaces/new/members") return failed ? {status:403,body:undefined} : {status:200,body:[
+        {principalId:"new-person",displayName:"New scope",pubkeys:["b".repeat(64)],state:"ACTIVE"},
+      ]};
+      return {status:200,body:{items:[]}};
+    });
+    function Directory({workspace}:{workspace:string}) {
+      const directory = useWorkflowAuthorDirectory(workspace);
+      return <output>{directory.isError ? "directory failed" : directory.rows.map((person) => person.displayName).join(",")}</output>;
+    }
+    function Host() {
+      const [workspace, setWorkspace] = useState("old");
+      return <><button onClick={() => setWorkspace("new")}>Switch</button><Directory key={workspace} workspace={workspace}/></>;
+    }
+    const host = await render(<PlatformProvider client={createBffClient({send})} locale="en"><Host /></PlatformProvider>);
+    await click(button(host,"Switch"));
+    expect(host.querySelector("output")!.textContent).toBe("New scope");
+    await act(async () => finish({status:200,body:[{principalId:"old-person",displayName:"Old scope",pubkeys:["a".repeat(64)],state:"ACTIVE"}]}));
+    await settle();
+    expect(host.querySelector("output")!.textContent).toBe("New scope");
+    failed = true;
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await settle();
+    expect(host.querySelector("output")!.textContent).toBe("directory failed");
+  });
+
+  it.each([
+    ["en", "Edit", "Workflow YAML", "Form", "Review request", "Submit governed request", "Re-check same request"],
+    ["zh-CN", "编辑", "工作流 YAML", "表单", "核对请求", "提交受治理请求", "重查原请求"],
+  ] as const)("preserves original conditions through form/YAML and UNKNOWN in %s", async (locale, editLabel, yamlLabel, formLabel, reviewLabel, submitLabel, retryLabel) => {
+    const { host, send } = await setup(undefined, locale);
+    const menu = await openMenu(host, locale === "en" ? "Workflow actions" : "工作流操作");
+    const edit = [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((item) => item.textContent === editLabel)!;
+    await click(edit);
+    const dialog = document.querySelector<HTMLElement>('[data-testid="workflow-editor-dialog"]')!;
+    const input = dialog.querySelector<HTMLInputElement>("#wf-trigger-trigger_text-value")!;
+    await type(input, 'deploy "中文"');
+    const expression = 'str_contains(trigger_text, "deploy \\"中文\\"")';
+    await click(button(dialog, yamlLabel));
+    expect(dialog.querySelector<HTMLTextAreaElement>("textarea")!.value).toContain("filter:");
+    await click(button(dialog, formLabel));
+    expect(dialog.querySelector<HTMLInputElement>("#wf-trigger-trigger_text-value")!.value).toBe('deploy "中文"');
+    await click(button(dialog, reviewLabel));
+    expect(dialog.textContent).toContain(expression);
+    await click(button(dialog, submitLabel));
+    await click(button(dialog, retryLabel));
+    const commands = writes(send);
+    expect(commands).toHaveLength(2);
+    expect(commands[1]).toEqual(commands[0]);
+    expect(commands[0]).toMatchObject({automationVersionContent: {
+      trigger: {kind: "CHANNEL_MESSAGE", textPrefix: "release", filter: expression},
+    }});
+  });
+
+  it("keeps advanced author/reply conditions until explicitly replacing original trigger filters", async () => {
+    const original = 'trigger_author == "' + "a".repeat(64) + '" && !trigger_is_reply';
+    function Editor() {
+      const [value, setValue] = useState(original);
+      const [drafts, setDrafts] = useState<ParsedConditionExpression[] | null>(null);
+      return <><WorkflowTriggerConditions value={value} onChange={setValue}
+        conditionDrafts={drafts} onConditionDraftsChange={setDrafts} /><output>{value}</output></>;
+    }
+    const host = await render(<PlatformProvider client={createBffClient({send: async () => ({status:503,body:undefined})})} locale="en"><Editor /></PlatformProvider>);
+    expect(host.querySelector<HTMLInputElement>('input[aria-label="Advanced expression"]')!.value).toBe(original);
+    const basic = button(host, "Basic");
+    await act(async () => basic.dispatchEvent(new MouseEvent("mousedown", {bubbles:true,button:0})));
+    await click(basic);
+    expect(host.querySelector("output")!.textContent).toBe(original);
+    expect(host.textContent).toContain("cannot be undone");
+    await click(button(host, "Replace with basic filters"));
+    expect(host.querySelector("output")!.textContent).toBe("");
+  });
+
+  it("retains all eight original basic expressions and escaped values", () => {
+    for (const operator of CONDITION_OPERATORS) {
+      const condition = {field: "trigger_text", webhookField: "", operator, value: operator === "is_empty" || operator === "is_not_empty" ? "" : '中文 \\ "quoted"'};
+      const expression = buildConditionExpressions([condition]);
+      expect(parseConditionExpressions(expression, "message_posted")).toEqual([condition]);
+    }
+    expect(parseConditionExpressions('trigger_author == "a" && !trigger_is_reply', "message_posted")).toBeNull();
+  });
+
   it.each(["add_reaction", "set_channel_topic", "delay", "request_approval"])(
     "creates %s steps without secure-context randomUUID", async (action) => {
       expect(crypto.randomUUID).toBeUndefined();

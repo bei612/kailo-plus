@@ -9,6 +9,42 @@ use serde_json::json;
 use uuid::Uuid;
 
 #[test]
+fn trigger_filter_is_frozen_without_rewriting_legacy_prefix_or_version() {
+    let legacy = json!({"trigger":{"kind":"CHANNEL_MESSAGE","textPrefix":" release "},
+        "action":{"kind":"POST_MESSAGE","template":"literal"},"resultTarget":"TRIGGER_THREAD"});
+    let old = management_content(&legacy).unwrap();
+    assert_eq!(
+        old["trigger"],
+        json!({"kind":"CHANNEL_MESSAGE","text_prefix":" release "})
+    );
+    assert!(old["trigger"].get("filter").is_none());
+    let mut filtered = legacy.clone();
+    filtered["trigger"]["filter"] =
+        json!("!trigger_is_reply && str_contains(trigger_text, \"部署\")");
+    let frozen = management_content(&filtered).unwrap();
+    assert_eq!(frozen["trigger"]["filter"], filtered["trigger"]["filter"]);
+    assert_eq!(
+        frozen["trigger"]["text_prefix"],
+        old["trigger"]["text_prefix"]
+    );
+    assert_ne!(
+        collab_bridge::limits::canonical_digest(&frozen),
+        collab_bridge::limits::canonical_digest(&old)
+    );
+    assert_eq!(management_content(&legacy).unwrap(), old);
+    filtered["trigger"]["kind"] = json!("MENTION");
+    filtered["trigger"]["mentionPrincipalId"] = json!(Uuid::new_v4());
+    assert!(management_content(&filtered).is_ok());
+    filtered["trigger"] = json!({"kind":"SCHEDULE","filter":"true","scheduleSpec":{
+        "everySeconds":60,"offsetSeconds":0,"catchupWindowSeconds":10}});
+    filtered["resultTarget"] = json!("CHANNEL");
+    assert!(
+        management_content(&filtered).is_err(),
+        "timer has no message condition context"
+    );
+}
+
+#[test]
 fn reaction_requires_real_message_trigger_and_keeps_emoji_in_immutable_version() {
     let mut value = json!({"formatVersion":2,"trigger":{"kind":"CHANNEL_MESSAGE"},
         "resultTarget":"TRIGGER_THREAD","steps":[{"id":"reaction","action":"add_reaction","emoji":"👍"}]});

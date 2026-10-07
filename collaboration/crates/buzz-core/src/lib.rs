@@ -44,6 +44,8 @@ pub mod relay;
 pub mod tenant;
 /// Schnorr signature and event ID verification.
 pub mod verification;
+/// Original side-effect-free workflow condition evaluation.
+pub mod workflow_condition;
 /// Original pure workflow template expansion, without an execution engine.
 pub mod workflow_template;
 

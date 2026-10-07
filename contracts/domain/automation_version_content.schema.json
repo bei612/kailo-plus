@@ -18,6 +18,7 @@
       "properties": {
         "kind": {"$ref": "../enums/automation_trigger_kind.schema.json"},
         "textPrefix": {"type": "string"},
+        "filter": {"type": "string", "minLength": 1, "description": "固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION，原 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。"},
         "mentionPrincipalId": {"type": "string", "format": "uuid"},
         "scheduleSpec": {"$ref": "automation_schedule_spec.schema.json"}
       }

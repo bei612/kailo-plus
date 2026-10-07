@@ -1,0 +1,13 @@
+{
+  "name": "部署文本与真实作者条件",
+  "formatVersion": 3,
+  "trigger": {
+    "kind": "CHANNEL_MESSAGE",
+    "textPrefix": "deploy ",
+    "filter": "str_contains(trigger_text, \"部署\") && trigger_author == \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" && !trigger_is_reply"
+  },
+  "steps": [
+    {"id": "notify", "action": "send_message", "text": "{{trigger.text}}"}
+  ],
+  "resultTarget": "TRIGGER_THREAD"
+}

@@ -560,6 +560,7 @@ fn automation_steps_roundtrip_preserves_order_and_version_discriminator() {
     for name in [
         "automation-steps.sample.json",
         "automation-message-sequence.sample.json",
+        "automation-trigger-filter.sample.json",
     ] {
         let raw = fs::read_to_string(sample_path().with_file_name(name)).unwrap();
         let original: serde_json::Value = serde_json::from_str(&raw).unwrap();

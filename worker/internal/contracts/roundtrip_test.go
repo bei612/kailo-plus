@@ -924,7 +924,7 @@ func TestAutomationCronRoundtrip(t *testing.T) {
 }
 
 func TestAutomationStepsRoundtrip(t *testing.T) {
-	for _, name := range []string{"automation-steps.sample.json", "automation-message-sequence.sample.json"} {
+	for _, name := range []string{"automation-steps.sample.json", "automation-message-sequence.sample.json", "automation-trigger-filter.sample.json"} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", name))
 		if err != nil {
 			t.Fatal(err)

@@ -608,6 +608,7 @@ void main() {
     for (final name in [
       'automation-steps.sample.json',
       'automation-message-sequence.sample.json',
+      'automation-trigger-filter.sample.json',
     ]) {
       final original = jsonDecode(
         File('../../contracts/samples/$name').readAsStringSync(),

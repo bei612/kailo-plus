@@ -3249,6 +3249,9 @@ type StepElement struct {
 }
 
 type AutomationVersionContentTrigger struct {
+	// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION，原 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN
+	// 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
+	Filter             *string               `json:"filter,omitempty"`
 	Kind               AutomationTriggerKind `json:"kind"`
 	MentionPrincipalID *string               `json:"mentionPrincipalId,omitempty"`
 	ScheduleSpec       *ScheduleSpecClass    `json:"scheduleSpec,omitempty"`
@@ -5327,6 +5330,9 @@ type AutomationVersionContentActionClass struct {
 }
 
 type AutomationVersionContentTriggerClass struct {
+	// 固定 Buzz evalexpr 消息触发条件；CHANNEL_MESSAGE/MENTION，原 4096 UTF-8 字节上限。只匹配已验签且当前准入 HUMAN
+	// 事件；错误不匹配，不持久化触发正文。旧 textPrefix 若同时存在则均须满足。
+	Filter             *string               `json:"filter,omitempty"`
 	Kind               AutomationTriggerKind `json:"kind"`
 	MentionPrincipalID *string               `json:"mentionPrincipalId,omitempty"`
 	ScheduleSpec       *ScheduleSpecClass    `json:"scheduleSpec,omitempty"`

@@ -824,7 +824,7 @@ async fn versions(
             || trigger.keys().any(|key| {
                 !matches!(
                     key.as_str(),
-                    "kind" | "text_prefix" | "mention_principal_id" | "schedule_spec"
+                    "kind" | "text_prefix" | "filter" | "mention_principal_id" | "schedule_spec"
                 )
             })
             || !version_action_supported(&version.action)
@@ -833,6 +833,9 @@ async fn versions(
                 .is_some_and(|value| value.as_str().is_none_or(str::is_empty))
         {
             return Err(unavailable());
+        }
+        if let Some(filter) = trigger.get("filter") {
+            crate::automation::trigger_condition::validate(filter).map_err(|_| unavailable())?;
         }
         match trigger.get("kind").and_then(Value::as_str) {
             Some("CHANNEL_MESSAGE")
@@ -849,6 +852,7 @@ async fn versions(
                     && version.result_target == "TRIGGER_THREAD" => {}
             Some("SCHEDULE")
                 if !trigger.contains_key("text_prefix")
+                    && !trigger.contains_key("filter")
                     && !trigger.contains_key("mention_principal_id")
                     && version.result_target == "CHANNEL" =>
             {
@@ -902,6 +906,9 @@ async fn versions(
         let mut trigger = json!({"kind":content["trigger"]["kind"]});
         if let Some(value) = content["trigger"].get("text_prefix") {
             trigger["textPrefix"] = value.clone();
+        }
+        if let Some(value) = content["trigger"].get("filter") {
+            trigger["filter"] = value.clone();
         }
         if let Some(value) = content["trigger"].get("mention_principal_id") {
             trigger["mentionPrincipalId"] = value.clone();

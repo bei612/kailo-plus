@@ -22,6 +22,7 @@ pub(crate) mod post_message;
 mod schedule;
 pub(crate) mod step_approval;
 pub(crate) mod steps;
+pub(crate) mod trigger_condition;
 mod webhook_secret;
 pub(crate) use manual::submit_manual;
 pub(crate) use schedule::admit_schedule;
@@ -286,7 +287,7 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
     if trigger.keys().any(|key| {
         !matches!(
             key.as_str(),
-            "kind" | "textPrefix" | "mentionPrincipalId" | "scheduleSpec"
+            "kind" | "textPrefix" | "filter" | "mentionPrincipalId" | "scheduleSpec"
         )
     }) || !steps::supported(&native_action)
     {
@@ -298,6 +299,10 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
             return Err(invalid_management());
         }
         native_trigger["text_prefix"] = prefix.clone();
+    }
+    if let Some(filter) = trigger.get("filter") {
+        trigger_condition::validate(filter)?;
+        native_trigger["filter"] = filter.clone();
     }
     match trigger.get("kind").and_then(Value::as_str) {
         Some("CHANNEL_MESSAGE")
@@ -314,6 +319,7 @@ fn management_content(value: &Value) -> Result<Value, Refusal> {
         }
         Some("SCHEDULE")
             if !trigger.contains_key("textPrefix")
+                && !trigger.contains_key("filter")
                 && !trigger.contains_key("mentionPrincipalId")
                 && native_action["kind"] != "ADD_REACTION_STEPS" =>
         {
@@ -2525,7 +2531,7 @@ async fn inspect(state: &ServiceState, resource: Uuid, batch: i64) -> Result<(),
         let Some(author) = author else {
             continue;
         };
-        if !matches_event(&mut conn, &row, &event).await? {
+        if !matches_event(&mut conn, &row, channel, &event).await? {
             continue;
         }
         admit(state, &row, &def, &event, author).await?;
@@ -2576,8 +2582,12 @@ pub(crate) async fn turn_template(
 async fn matches_event(
     tx: &mut Transaction<'_, Postgres>,
     row: &Run,
+    channel: Uuid,
     event: &Event,
 ) -> Result<bool, Refusal> {
+    if !trigger_condition::matches(&row.trigger, channel, event).await? {
+        return Ok(false);
+    }
     if let Some(prefix) = row.trigger.get("text_prefix") {
         let prefix = prefix
             .as_str()

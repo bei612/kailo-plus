@@ -49,6 +49,8 @@ import { useLoad } from "./use-load";
 import { InstallationMemory } from "./memory";
 import { ToolManagement, selectableTool, validPlatformToolPage } from "./tools";
 import { WorkflowYamlEditor } from "./workflow-yaml-editor";
+import { WorkflowTriggerConditions } from "./workflow-trigger-conditions";
+import type { ParsedConditionExpression } from "./workflow-condition-expression";
 import { WorkflowTemplateTextarea } from "./workflow-template-textarea";
 import { WorkflowActionsMenu } from "./workflow-actions-menu";
 import { Button as WorkflowButton } from "./profile/buzz/shared/ui/button";
@@ -231,7 +233,7 @@ function objectFields(value: unknown, keys: string[]): value is Record<string, u
 
 function validAutomationContent(value: unknown): value is AutomationVersionContent {
   if (!objectFields(value, ["name", "trigger", "action", "resultTarget", "approvalPolicy", "formatVersion", "steps"])
-    || !objectFields(value.trigger, ["kind", "textPrefix", "mentionPrincipalId", "scheduleSpec"])) return false;
+    || !objectFields(value.trigger, ["kind", "textPrefix", "filter", "mentionPrincipalId", "scheduleSpec"])) return false;
   if (value.formatVersion === 2 || value.formatVersion === 3 ? value.action !== undefined || !supportedSteps(value.steps, value.formatVersion)
     : value.formatVersion !== undefined || value.steps !== undefined || !objectFields(value.action, ["kind", "template"])
       || (value.action.kind !== ActionKind.AgentTurn && value.action.kind !== ActionKind.PostMessage)
@@ -244,6 +246,8 @@ function validAutomationContent(value: unknown): value is AutomationVersionConte
   const trigger = value.trigger;
   return (value.name === undefined || (typeof value.name === "string" && !!value.name.trim()))
     && (trigger.textPrefix === undefined || (typeof trigger.textPrefix === "string" && !!trigger.textPrefix))
+    && (trigger.filter === undefined || (typeof trigger.filter === "string" && !!trigger.filter.trim()
+      && new TextEncoder().encode(trigger.filter).length <= 4096))
     && (trigger.kind === TriggerKind.Mention
       ? typeof trigger.mentionPrincipalId === "string" && !!trigger.mentionPrincipalId
       : trigger.mentionPrincipalId === undefined)
@@ -251,7 +255,7 @@ function validAutomationContent(value: unknown): value is AutomationVersionConte
       && typeof content.approvalPolicy.id === "string" && typeof content.approvalPolicy.version === "number"
       && validApprovalPolicy({ id: content.approvalPolicy.id, version: content.approvalPolicy.version })))
     && (trigger.kind === TriggerKind.Schedule
-      ? content.resultTarget === ResultTarget.Channel && trigger.textPrefix === undefined
+      ? content.resultTarget === ResultTarget.Channel && trigger.textPrefix === undefined && trigger.filter === undefined
         && validSchedule(trigger.scheduleSpec)
       : (trigger.kind === TriggerKind.ChannelMessage || trigger.kind === TriggerKind.Mention)
         && content.resultTarget === ResultTarget.TriggerThread && trigger.scheduleSpec === undefined);
@@ -649,6 +653,8 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   const [executorId, setExecutorId] = useState("");
   const [trigger, setTrigger] = useState(TriggerKind.ChannelMessage);
   const [prefix, setPrefix] = useState("");
+  const [filter, setFilter] = useState("");
+  const [conditionDrafts, setConditionDrafts] = useState<ParsedConditionExpression[] | null>(null);
   const [everySeconds, setEverySeconds] = useState("");
   const [offsetSeconds, setOffsetSeconds] = useState("");
   const [scheduleMode, setScheduleMode] = useState<"interval" | "cron">("interval");
@@ -722,7 +728,8 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
     && validSchedule(scheduleSpec) && (scheduleMode !== "cron" || !cronExpressionError(cron));
   const formContent: AutomationVersionContent = {
     ...(name !== "" ? { name } : {}),
-    trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : prefix ? { textPrefix: prefix } : {}),
+    trigger: { kind: trigger, ...(trigger === TriggerKind.Schedule ? { scheduleSpec } : {
+      ...(prefix ? { textPrefix: prefix } : {}), ...(filter ? { filter } : {}) }),
       ...(trigger === TriggerKind.Mention && executor ? { mentionPrincipalId: executor.agentPrincipalId } : {}) },
     ...(steps.length ? {formatVersion: stepsFormat, steps} : actionKind === ActionEnum.AddReaction || actionKind === ActionEnum.SetChannelTopic
       ? {formatVersion: 2, steps: []} : {action: { kind: actionKind, template }}),
@@ -752,6 +759,8 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
       ? edit.content ?? edit.detail.versions[0]?.content : edit?.detail.versions[0]?.content;
     setName(content?.name ?? "");
     setTrigger(content?.trigger.kind ?? TriggerKind.ChannelMessage); setPrefix(content?.trigger.textPrefix ?? "");
+    setFilter(content?.trigger.filter ?? "");
+    setConditionDrafts(null);
     setScheduleMode(content?.trigger.scheduleSpec?.cron === undefined ? "interval" : "cron");
     setIntervalTagged(content?.trigger.scheduleSpec?.kind === ScheduleSpecKind.Interval);
     setCron(content?.trigger.scheduleSpec?.cron ?? "");
@@ -789,6 +798,8 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
       && cronExpressionError(yamlContent.trigger.scheduleSpec.cron))) { setEditorError(true); return; }
     setName(yamlContent.name ?? "");
     setTrigger(yamlContent.trigger.kind); setPrefix(yamlContent.trigger.textPrefix ?? "");
+    setFilter(yamlContent.trigger.filter ?? "");
+    setConditionDrafts(null);
     setScheduleMode(yamlContent.trigger.scheduleSpec?.cron === undefined ? "interval" : "cron");
     setIntervalTagged(yamlContent.trigger.scheduleSpec?.kind === ScheduleSpecKind.Interval);
     setCron(yamlContent.trigger.scheduleSpec?.cron ?? "");
@@ -925,9 +936,14 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
             <input required inputMode="numeric" value={catchupWindowSeconds} onChange={(event) => setCatchupWindowSeconds(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
           </label>
           <p className="text-sm text-muted-foreground">{t(scheduleMode === "cron" ? "workflows.cron.rules" : "agents.automation.scheduleRules")}</p>
-        </> : <label className="flex flex-col gap-1 text-sm">{t("agents.automation.prefix")}
+        </> : <>
+        {prefix && <label className="flex flex-col gap-1 text-sm">{t("agents.automation.prefix")}
           <input value={prefix} onChange={(event) => setPrefix(event.target.value)} className="h-8 rounded-md border border-input bg-transparent px-2" />
         </label>}
+        <WorkflowTriggerConditions key={workspaceId} value={filter} onChange={setFilter}
+          conditionDrafts={conditionDrafts} onConditionDraftsChange={setConditionDrafts}
+          workflowChannelId={workspaceId} disabled={busy || !!intent || unknown} />
+        </>}
         <label className="flex flex-col gap-1 text-sm">{t("agents.automation.action")}
           <select value={actionKind} disabled={steps.length > 0} onChange={(event) => {
             if (event.target.value === ActionKind.AgentTurn || event.target.value === ActionKind.PostMessage) setActionKind(event.target.value);
@@ -1028,6 +1044,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
           <p>{t("agents.automation.catchupWindowSeconds")}: {intent.automationVersionContent.trigger.scheduleSpec.catchupWindowSeconds}</p>
         </> : null}
         {intent.automationVersionContent.trigger.textPrefix ? <p className="break-words">{t("agents.automation.prefix")}: {intent.automationVersionContent.trigger.textPrefix}</p> : null}
+        {intent.automationVersionContent.trigger.filter ? <p className="break-words">{t("workflows.condition.expression")}: {intent.automationVersionContent.trigger.filter}</p> : null}
         <p className="whitespace-pre-wrap">{workflowAction(intent.automationVersionContent)?.template}</p>
         <p>{t("agents.automation.approvalPolicy")}: {workflowApprovalPolicy(intent.automationVersionContent)
           ? `${workflowApprovalPolicy(intent.automationVersionContent)?.id} · ${workflowApprovalPolicy(intent.automationVersionContent)?.version}`
