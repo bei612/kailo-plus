@@ -12,6 +12,8 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { ProjectRepository } from './apollo/server/repositories/projectRepository';
 import { DeployLogRepository } from './apollo/server/repositories/deployLogRepository';
 import { ViewRepository } from './apollo/server/repositories/viewRepository';
+import { ModelRepository } from './apollo/server/repositories/modelRepository';
+import { ModelColumnRepository } from './apollo/server/repositories/modelColumnRepository';
 import { ApiHistoryRepository } from './apollo/server/repositories/apiHistoryRepository';
 import { QueryService } from './apollo/server/services/queryService';
 import { NativeQueryService } from './apollo/server/services/nativeQueryService';
@@ -53,6 +55,8 @@ integration('original Wren query handler, SDK and native history', () => {
   let denyAt = 0;
   let engineFails = false;
   let observedManifest: unknown;
+  let authorizedTarget: Record<string, unknown> | undefined;
+  let changeTargetAt = 0;
   const serviceSecret = randomUUID();
   const serviceToken = randomUUID();
   const resource = randomUUID();
@@ -144,6 +148,8 @@ integration('original Wren query handler, SDK and native history', () => {
         );
       } else if (request.url === '/service/v1/adapter/pep_check') {
         peps++;
+        if (changeTargetAt && peps >= changeTargetAt && authorizedTarget)
+          authorizedTarget = { ...authorizedTarget, nativeRef: 'different-model' };
         const body = JSON.parse(text);
         expect(request.headers.authorization).toBe(`Bearer ${serviceToken}`);
         expect(body.bindingId).toBe(delivery.bindingId);
@@ -165,6 +171,7 @@ integration('original Wren query handler, SDK and native history', () => {
               actionExecutionId: claims.action_execution_id,
               operationId: claims.operation_id,
               authorizationMinZedToken: 'actual-fixture-pep-revision',
+              ...(body.operation === 'execute' && authorizedTarget ? { targetResource: authorizedTarget } : {}),
             }),
           );
       } else if (request.url === '/v1/mdl/preview') {
@@ -188,6 +195,8 @@ integration('original Wren query handler, SDK and native history', () => {
       projectRepository: new ProjectRepository(database),
       deployLogRepository: new DeployLogRepository(database),
       viewRepository: new ViewRepository(database),
+      modelRepository: new ModelRepository(database),
+      modelColumnRepository: new ModelColumnRepository(database),
       apiHistoryRepository: new ApiHistoryRepository(database),
       queryService: new QueryService({
         wrenEngineAdaptor: new WrenEngineAdaptor({
@@ -257,6 +266,8 @@ integration('original Wren query handler, SDK and native history', () => {
     peps = 0;
     denyAt = 0;
     engineFails = false;
+    authorizedTarget = undefined;
+    changeTargetAt = 0;
   });
 
   afterAll(async () => {
@@ -783,13 +794,19 @@ integration('original Wren query handler, SDK and native history', () => {
     expect(peps).toBe(0);
   });
 
-  const humanReference = async () => {
-    const view = await mockComponents.viewRepository.createOne({ projectId: 1, name: `reference_${randomUUID()}`,
-      statement: 'SELECT 1', cached: false });
+  const humanReference = async (kind: 'view' | 'model' = 'view') => {
+    const view = kind === 'view'
+      ? await mockComponents.viewRepository.createOne({ projectId: 1, name: `reference_${randomUUID()}`,
+        statement: 'SELECT 1', cached: false })
+      : await mockComponents.modelRepository.createOne({ projectId: 1, displayName: 'governed model',
+        referenceName: `model_${randomUUID().replaceAll('-', '')}`, sourceTableName: 'source', refSql: 'SELECT 1', cached: false });
     const service = new NativeQueryService(delivery, mockComponents.projectRepository,
       mockComponents.deployLogRepository, mockComponents.apiHistoryRepository, mockComponents.queryService,
-      mockComponents.viewRepository);
-    const reference = await service.reference(resource, view.id, 5);
+      mockComponents.viewRepository, mockComponents.modelRepository, mockComponents.modelColumnRepository);
+    const reference = kind === 'view' ? await service.reference(resource, view.id, 5)
+      : await service.modelReference(resource, view.id, 5);
+    authorizedTarget = { resourceId: resource, nativeType: kind, nativeRef: String(view.id),
+      nativeInstanceRef: delivery.nativeInstanceRef, nativeScopeRef: delivery.nativeScopeRef };
     expect(JSON.stringify(reference)).not.toContain('SELECT');
     const ae = randomUUID(), operation = randomUUID(), key = randomUUID();
     const humanClaims = {
@@ -809,8 +826,66 @@ integration('original Wren query handler, SDK and native history', () => {
       body: JSON.stringify({ actionKey: 'data_query.query', idempotencyKey: requestKey,
         arguments: { target: { resourceId: resource }, input: reference } }),
     });
-    return { view, service, ae, operation, key, signHuman, execute };
+    return { view, service, reference, ae, operation, key, signHuman, execute };
   };
+
+  it('executes the HUMAN model selection once through the actual adapter and rejects changed columns before SQL', async () => {
+    const { view: model, service, reference, key, execute } = await humanReference('model');
+    try {
+      expect(JSON.parse(reference.nativeObjectRef)).toMatchObject({ modelId: model.id, deploymentHash: input.deploymentHash });
+      expect((await execute(key)).status).toBe(200);
+      expect(queries).toBe(1);
+      expect((await execute(key)).status).toBe(200);
+      expect(queries).toBe(1);
+      const record = await mockComponents.apiHistoryRepository.findOneBy({ governanceBindingId: delivery.bindingId, governanceKey: key });
+      expect(record.requestPayload.sql).toBe(`select * from "${model.referenceName}"`);
+      await mockComponents.modelColumnRepository.createOne({ modelId: model.id, displayName: 'Changed',
+        referenceName: 'changed', sourceColumnName: 'changed', type: 'INTEGER', isCalculated: false, notNull: false, isPk: false });
+      expect((await execute(key)).status).toBe(412);
+      expect(queries).toBe(1);
+      await database('model_column').where({ model_id: model.id }).delete();
+      await database('model').where({ id: model.id }).delete();
+      await expect(service.modelReference(resource, model.id, 5)).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+    } finally {
+      await database('model_column').where({ model_id: model.id }).delete();
+      await database('model').where({ id: model.id }).delete();
+    }
+  });
+
+  it.each(['missing', 'resourceId', 'nativeType', 'nativeRef', 'nativeInstanceRef', 'nativeScopeRef'])(
+    'refuses HUMAN model execution with %s exact-target evidence and records a proven unsent outcome', async (field) => {
+      const { view: model, key, signHuman, execute } = await humanReference('model');
+      const forgedFacts = authorizedTarget;
+      if (field === 'missing') authorizedTarget = undefined;
+      else authorizedTarget = { ...authorizedTarget, [field]: 'another-native-target' };
+      try {
+        expect((await execute(key, await signHuman({ targetResource: forgedFacts }))).status).toBe(403);
+        expect(queries).toBe(0);
+        const record = await mockComponents.apiHistoryRepository.findOneBy({ governanceBindingId: delivery.bindingId, governanceKey: key });
+        expect(record.governanceState).toBe('FAILED');
+      } finally {
+        await database('model').where({ id: model.id }).delete();
+      }
+    },
+  );
+
+  it.each([2, 3])('rechecks exact target facts at PEP %s before SQL or result disclosure', async (at) => {
+    const { view: model, key, execute } = await humanReference('model');
+    changeTargetAt = at;
+    try {
+      const response = await execute(key);
+      if (at === 2) {
+        expect(response.status).toBe(200);
+        expect((await response.json()).execution.platformStatus).toBe('FAILED');
+        expect(queries).toBe(0);
+      } else {
+        expect(response.status).toBe(403);
+        expect(queries).toBe(1);
+        const record = await mockComponents.apiHistoryRepository.findOneBy({ governanceBindingId: delivery.bindingId, governanceKey: key });
+        expect(record.governanceState).toBe('SUCCEEDED');
+      }
+    } finally { await database('model').where({ id: model.id }).delete(); }
+  });
 
   it('executes a HUMAN view reference through the real handler once, binds its key and refuses changed native content', async () => {
     const { view, ae, operation, key, execute } = await humanReference();

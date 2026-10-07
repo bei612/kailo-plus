@@ -817,3 +817,152 @@ acceptance, image, registration, approval or deployment was run for this batch.
 Mandatory `knowledge.search` adapter execution and full native-sync release
 conformance remain separate unaccepted gaps; fixing ingest does not make v2
 eligible for partial release or prove complete integration.
+
+## 2026-10-07 Native retrieval failures and complete ingestion provenance
+
+This batch repairs native consumers, not the still-unaccepted
+`knowledge.search` adapter execution. Authority remains `.design/08` consume
+and result-exposure rules, `.design/13` §5 and the existing internal
+`Knowledge.Metadata` provenance used by the FILE_STORAGE datasource importer.
+The fixed upstream remains WeKnora
+`2be7bd40631dda1dd485306038f07a62e9ee287e`, verified with `git show`/`git grep`:
+`internal/agent/tools/search_knowledge.go::SearchKnowledgeTool.Execute` and
+`SearchKnowledgeTool.concurrentSearchByTargets`,
+`internal/mcpserver/tools_ingest.go::Server.handleAddDocument`, and
+`internal/mcpserver/tools_retrieve.go::Server.handleReadDocument`.
+
+Implementation impact and boundaries:
+
+- Native metadata lookup and full-KB/per-document retrieval errors previously
+  logged and continued, allowing an empty or partial result to report success.
+  The existing search tool now propagates either failure and discards partial
+  rows. A completed search with zero matches still succeeds. Existing ranking,
+  index selection and native authorization remain unchanged; no new retrieval
+  implementation or task authority was added.
+- The existing MCP file-ingest path now stores the full validated
+  `source_reference_json` as the same internal `source_references` array already
+  used by datasource sync, retaining display name, media type and optional
+  asset ID as well as all existing flat metadata. Unknown fields, noncanonical
+  or nil resource/asset IDs and padded/missing required values are refused
+  before native creation. Existing external-execution ID/read-operation and
+  observe-without-recreation behavior remain in place.
+- The existing guarded metadata-only read returns the complete internal
+  source set, not the search result's user-authored `CustomMetadata`. It keeps
+  the precise native revision, tenant/KB/read checks and no-chunk behavior.
+  Malformed or empty stored arrays fail instead of producing unverifiable
+  provenance. Multiple legitimate sources are preserved, not collapsed to the
+  first source. Missing legacy arrays remain absent; this batch does not guess
+  provenance from a filename or rewrite old data. The ingest metadata addition
+  participates in existing native creation-id/digest checks: mismatched old
+  retries remain refused, not silently recreated.
+- No database, public JSON Schema, platform contract, generation, registration
+  or release state changed. The native metadata response is an additive field;
+  existing adapter revision readers ignore it. It is not proof that a future
+  platform citation consumer has checked reference ownership or disclosure.
+
+Implementation preceded verification. The existing SDK
+`kailo-knowledge-native-check-wkkigg`, image
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`,
+was reused under 4 CPU / 8 GiB cgroup limits and existing Go caches, after
+checking active processes and resource pressure. Data free space remained
+3.2 GiB. Only six changed files plus the already-committed native service
+interface were synchronized into the existing bounded candidate; no install,
+new snapshot, image or service deployment was performed.
+
+```sh
+GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off \
+  go test ./internal/agent/tools ./internal/mcpserver \
+  -run 'Test(SearchKnowledgeDoesNotTurnBackend|ReadDocumentMetadata|AddDocumentFileObservation)' \
+  -count=1 -v
+```
+
+The first invocation exited **1**: agent/tools passed its five new scenarios,
+but MCP did not compile because the candidate's pre-existing interface still
+declared the old six-argument `CreateKnowledgeFromFileAtID`. Synchronizing the
+already-committed eight-argument interface corrected candidate drift; no
+formal interface edit was made. The complete second invocation and final
+restored invocation exited **0**: four top-level tests passed, including five
+search subcases (empty, metadata failure, full-KB failure, document failure,
+partial failure), trusted multi-source metadata and original single-creation
+observation. This is two-package narrow execution, not a full Go suite.
+
+Private fault injection disabled retrieval failure propagation and changed the
+ingest/read provenance keys. It exited **1**, failing the full-KB, document and
+partial-search subcases plus both provenance producer/consumer tests. The
+mutation exposed exactly the previously false empty/partial successes and
+lost source references. All three mutated production files were restored from
+formal sources before final rerun; all six source/test files compare byte for
+byte with the passing candidate. Go formatting and `git diff --check` passed.
+
+Logs:
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/knowledge-adapter.N8sx1m/knowledge-search-native{,-final,-mutation,-restored}.log`.
+
+Remaining disclosure boundary is explicit: native `search_knowledge` returns
+raw chunks. Merely mapping that content to a consume result would violate
+`.design/08`; consume permits answer/citation, not raw chunks without read or
+export. Native `ask` also creates sessions/messages and invokes a model/Agent,
+so it was not substituted for search without platform idempotency and usage
+association. Citation opening requires current FILE_STORAGE read access;
+lack of source read does not itself deny an otherwise permitted KB answer or
+citation. This batch does not implement that platform result consumer, run
+full capability conformance, enable a partial release, or demonstrate a
+deployed Cells→WeKnora search workflow. Full gate, browser and deployment
+acceptance were not run.
+
+### Shared PEP response consumer follow-up
+
+Cross-review of the Core `targetResource` addition found an actual shared
+consumer regression: `client-kit/adapter/protocol.mjs::freshPep` accepted
+exactly the previous three response keys. Returning the new optional field on
+RESOURCE execution therefore refused otherwise authorized Cells/WeKnora
+requests with 503. The shared consumer now accepts either the original shape
+or the optional complete five-field target, validates UUID/string structure,
+and still rejects unknown keys, null, arrays, omissions and empty/padded native
+references. It does not invent facts when the optional field is absent or use
+these facts as a new permission ticket. New Core responses must ship with this
+consumer update; the old closed response schema/consumer is not forward
+compatible with the added field.
+
+The existing Cells HTTP consumer test now exercises both original and extended
+PEP responses through real shared request processing, plus nine malformed
+target variants which must fail before native reads. After implementation:
+
+```sh
+node --test --test-name-pattern='shared PEP consumer|PEP response must refer|first fresh PEP' \
+  file-storage/adapter/test/query-revision.test.mjs
+```
+
+This command ran in the existing 4 CPU / 8 GiB SDK candidate
+`/evidence/knowledge-adapter.N8sx1m`, without changing the concurrently-used
+Rust candidate. Final output: **14 passed, 0 failed**, exit **0**. Private
+restoration of the old closed shape caused **12 passed, 2 failed** (extended
+response plus enclosing test). Removing the precise malformed-target refusal
+caused **4 passed, 10 failed** (nine invalid variants plus enclosing test).
+Both production/test files were restored and compared byte-identically before
+the final passing rerun. An earlier mutation mistakenly removed an unrelated
+refusal and passed; its log is retained but is not counted as negative evidence.
+No new test framework or adapter transport was introduced.
+
+Logs share the directory above:
+`pep-target-resource.log`, `pep-target-resource-mutation.log`,
+`pep-target-resource-shape-mutation.log` (incorrect mutation),
+`pep-target-resource-shape-guard-mutation.log` and
+`pep-target-resource-restored.log`. This check is not an end-to-end proof of the
+new Core database query or Wren's native target consumer; those changes have
+separate implementation and verification ownership.
+
+Final tightening restricts the optional facts to `execute` with signed
+`target_type=RESOURCE` and `targetResource.resourceId == claims.target_id`.
+The success fixtures now use the actual execute/source-read consumer, assert
+the download and original read receipt, and add a wrong-resource counterexample.
+Its first run failed because this old bounded candidate still had the earlier
+source reader without read-receipt delivery; only the three existing
+`file-storage/adapter/src/{query-revision,service-read,service-list}.mjs` inputs
+were refreshed, with no formal edits to them. The passing and restored runs
+then reported **15 passed, 0 failed**. Removing only the signed-target identity
+comparison caused **13 passed, 2 failed** (wrong resource plus enclosing test).
+The earlier 14-case result remains historical, not the final execute evidence.
+Logs: `pep-target-resource-execute.log` (candidate drift failure),
+`pep-target-resource-execute-final.log`,
+`pep-target-resource-object-mutation.log`, and
+`pep-target-resource-object-restored.log`, under the same evidence directory.

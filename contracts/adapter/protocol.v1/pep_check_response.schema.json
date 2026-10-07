@@ -9,6 +9,20 @@
   "properties": {
     "actionExecutionId": {"type": "string", "format": "uuid"},
     "operationId": {"type": "string", "format": "uuid"},
-    "authorizationMinZedToken": {"type": "string"}
+    "authorizationMinZedToken": {"type": "string"},
+    "targetResource": {
+      "title": "AdapterAuthorizedResource",
+      "description": "本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resourceId", "nativeType", "nativeRef", "nativeInstanceRef", "nativeScopeRef"],
+      "properties": {
+        "resourceId": {"type": "string", "format": "uuid"},
+        "nativeType": {"type": "string", "minLength": 1},
+        "nativeRef": {"type": "string", "minLength": 1},
+        "nativeInstanceRef": {"type": "string", "minLength": 1},
+        "nativeScopeRef": {"type": "string", "minLength": 1}
+      }
+    }
   }
 }

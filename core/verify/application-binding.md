@@ -773,3 +773,55 @@ OIDC discovery，以及旧运行环境缺新增 BFF 两非密字段，均保留�
 本批未注册/批准新 release、未更新在线 seed、未部署、未调用真实同步批次；
 Native Go 新 Connector 尚未编译，通用 conformance 对新增原生动作尚未闭合。
 未运行 full；共享 clippy 留给主线程同批模板消费者合并验证，不冒称已通过。
+
+### 2026-10-07：原生模型预览消费精确 Resource 事实
+
+本批按 `.design/07` §5.2、`.design/08` §6 与 DD-98 的既有身份/原生引用边界实现，
+不是以某个实例登录许可替代对象权限。Wren 模型预览接入既有 HUMAN 动作后，
+原 `pep_check` 回应只有 execution/operation/revision，组件无法据此核对模型或视图
+是否正是该 Resource 指向的对象。Core 现在在已 fresh 授权的 RESOURCE execute
+回应中返回 `targetResource`，来源为同一个 AE、Resource、ApplicationBinding 与
+当前 release/generation/runtime 的真实联结，不采信调用参数中的原生对象身份。
+
+实施后四步核对：
+
+1. 权威：SpiceDB 决定许可，Resource 持有原生引用，binding 持有实例/scope；
+   Wren 在自身原模型/视图表中重建 SQL，原 QueryService 与 api_history 保留业务权威。
+2. 影响面：原 PEP schema、四语言生成物、Core PEP、共享 adapter `freshPep`、
+   Wren 的查询准入与引用执行消费者。没有新表、路由、权限或执行权威；没有数据迁移。
+   管理、observe、ProtocolSession 与服务读取回应不新增该字段。
+3. 副作用：缺失/错误 Resource、原生 type/ref、实例或 scope 均不能执行引用查询。
+   Wren 在原 SQL 之前和结果披露之前重检；已证明未发 SQL 的拒绝沿原生历史终结，
+   结果不明保留原幂等键，不重新执行。Core 不存 SQL 或结果正文。
+4. 边界：字段缺省保留旧 wire 形状；需要精确对象事实的新 Wren 消费者拒绝旧回应。
+   原共享 adapter 的 exactKeys 曾拒绝新增字段，交叉复核已发现并修复；它现在核对
+   完整五字段，并要求 execute、RESOURCE 和签名 target ID 一致。先升级兼容新旧回应
+   的共享消费者，再升级 Core，最后启用新 Wren 消费者。不能声称旧 adapter 可直接配
+   新 Core；未知字段仍拒绝，不放开任意扩展字段。HTTP 403/503 与原 error 分类保持。
+
+实际验证使用原有 4 CPU/8 GiB SDK、既有缓存，没有镜像构建或依赖安装：
+
+- `tools/gen.sh` 与 `tools/gen.sh --check`：四侧生成/同步退出 0；共享词条生成检查通过。
+- 四侧新增 PEP 往返各 1 项通过，覆盖旧字段缺省及完整原生事实。只在私有副本给
+  原生事实注入额外字段，Rust/Go/TypeScript/Dart 分别退出 101/1/1/1；还原后四侧通过。
+- Core 原 PEP 分类检查 1 项通过；`cargo clippy --offline -p platform-core --bin platform-core -- -D warnings`
+  退出 0。新 SQL 在已有隔离库执行 PREPARE/DEALLOCATE 通过；这不等于真实 PEP HTTP、
+  SpiceDB、撤权竞争端到端验收。
+- Wren 4 suites / 82 tests 与 TypeScript 检查通过；重试域与原生对象校验私有变异分别
+  抓到 1 项、3 项失败，还原后通过。详见 `data-query/fork/verify/native-integration.md`。
+- Cells 真实 execute 的共享 PEP 消费检查 15/15，通过后仍核 native read receipt；
+  错字段、错目标与旧 exactKeys 的私有变异均实际失败，详见知识服务原回执。
+- 原 `tools/check.sh` 的兼容逻辑对 `contracts-v0.1.0` 比较通过（281 schema、匹配 3 个
+  历史 schema）；该 tag 的覆盖不能替代上述实际旧 adapter 兼容检查。
+
+验证过程中的失败没有改产品逻辑掩盖：首次 Core 命令误用 `--lib` 退出 101，改用
+该工程真实 bin 后通过；新只读容器中的生成检查退出 255、没有完整输出，不计通过，
+随后在原 SDK 完整生成检查通过。首次抽取检查函数因脚本改变 cwd 得到“无 schema”
+跳过，不计有效证据；回到真实工程路径后的兼容比对才计入上述结果。
+
+日志位于既有
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/read-receipts-20261007/pep-resource-*`。
+正式根目录实际执行 `./tools/check.sh --full` 退出 **2**，输出为
+`容器执行拒绝：必须由执行配置提供 TMPDIR`。未完成 full 门禁；没有部署新服务或
+生成安装包，不把窄验当作生产就绪。任意 SQL/describe、Asking/dashboard、全部原生
+对象登记与逐用户元数据授权仍有差距，Wren 单个引用预览的完成不等于整体 Wren 完成。

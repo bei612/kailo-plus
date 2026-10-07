@@ -3,12 +3,67 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/types"
 )
+
+type searchFailureKBService struct {
+	stubKnowledgeBaseService
+	kbs           []*types.KnowledgeBase
+	metadataError bool
+	failID        string
+}
+
+func (s *searchFailureKBService) GetKnowledgeBasesByIDsOnly(context.Context, []string) ([]*types.KnowledgeBase, error) {
+	if s.metadataError {
+		return nil, fmt.Errorf("metadata unavailable")
+	}
+	return s.kbs, nil
+}
+
+func (s *searchFailureKBService) HybridSearch(_ context.Context, id string, _ types.SearchParams) ([]*types.SearchResult, error) {
+	if id == s.failID {
+		return nil, fmt.Errorf("retrieval unavailable")
+	}
+	return s.results, nil
+}
+
+func TestSearchKnowledgeDoesNotTurnBackendFailureIntoEmptyOrPartialSuccess(t *testing.T) {
+	for _, scenario := range []string{"empty", "metadata", "full-kb", "document", "partial"} {
+		t.Run(scenario, func(t *testing.T) {
+			service := &searchFailureKBService{kbs: []*types.KnowledgeBase{kbWithIndexes("kb-a", false, true, "")}}
+			targets := types.SearchTargets{{Type: types.SearchTargetTypeKnowledgeBase, KnowledgeBaseID: "kb-a"}}
+			if scenario == "metadata" {
+				service.metadataError = true
+			}
+			if scenario != "empty" && scenario != "metadata" {
+				service.failID = "kb-a"
+			}
+			if scenario == "document" || scenario == "partial" {
+				targets[0].Type = types.SearchTargetTypeKnowledge
+				targets[0].KnowledgeIDs = []string{"doc-a"}
+			}
+			if scenario == "partial" {
+				service.kbs = append(service.kbs, kbWithIndexes("kb-b", false, true, ""))
+				targets = append(targets, &types.SearchTarget{Type: types.SearchTargetTypeKnowledge, KnowledgeBaseID: "kb-b", KnowledgeIDs: []string{"doc-b"}})
+				service.results = []*types.SearchResult{{ID: "chunk-b", KnowledgeID: "doc-b", KnowledgeBaseID: "kb-b", Content: "must not leak a partial result"}}
+			}
+			tool := NewSearchKnowledgeTool(service, nil, nil, targets, nil, nil)
+			result, err := tool.Execute(context.Background(), json.RawMessage(`{"query":"marker","mode":"keyword"}`))
+			if scenario == "empty" {
+				if err != nil || result == nil || !result.Success || result.Data["count"] != 0 {
+					t.Fatalf("complete empty search was rejected: %v %+v", err, result)
+				}
+			} else if err == nil || result == nil || result.Success || result.Data != nil {
+				t.Fatalf("backend failure became a result: %v %+v", err, result)
+			}
+		})
+	}
+}
 
 func TestNormalizeSearchMode(t *testing.T) {
 	for in, want := range map[string]string{

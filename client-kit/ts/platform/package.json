@@ -8,6 +8,9 @@
     "profile-assets.ts"
   ],
   "exports": {
+    "./react/sidebar/useUnreadOverflow": "./src/react/sidebar/useUnreadOverflow.ts",
+    "./react/sidebar/useSidebarUnreadOverflow": "./src/react/sidebar/useSidebarUnreadOverflow.ts",
+    "./react/sidebar/MoreUnreadButton": "./src/react/sidebar/MoreUnreadButton.tsx",
     "./tailwind.config": "./src/tailwind.config.js",
     "./styles.css": "./src/styles.css",
     "./react/messages/markdown.css": "./src/react/messages/markdown.css",

@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ViewMetadata from './components/pages/modeling/metadata/ViewMetadata';
+import ModelMetadata from './components/pages/modeling/metadata/ModelMetadata';
 
 let mockLocale: string | undefined;
 let mockScope: string;
@@ -12,6 +13,9 @@ jest.mock('./utils/env', () => ({ getUserConfig: () => mockConfig() }));
 jest.mock('./apollo/client/graphql/view.generated', () => ({
   usePreviewViewDataMutation: () => [mockPreview, {}],
 }));
+jest.mock('./apollo/client/graphql/model.generated', () => ({
+  usePreviewModelDataMutation: () => [mockPreview, {}],
+}));
 jest.mock('antd', () => {
   const React = require('react');
   const field = ({ children }: any) =>
@@ -20,6 +24,8 @@ jest.mock('antd', () => {
   Input.TextArea = () => null;
   return {
     Alert: field,
+    Row: field,
+    Col: field,
     Input,
     InputNumber: field,
     Typography: { Text: field, Paragraph: field },
@@ -32,6 +38,8 @@ jest.mock('antd', () => {
 jest.mock('./components/code/SQLCodeBlock', () => () => null);
 jest.mock('./components/dataPreview/PreviewData', () => () => null);
 jest.mock('./components/table/FieldTable', () => () => null);
+jest.mock('./components/table/CalculatedFieldTable', () => () => null);
+jest.mock('./components/table/RelationTable', () => () => null);
 jest.mock('./components/table/BaseTable', () => ({ COLUMN: {} }));
 
 describe('original saved-view preview controls', () => {
@@ -130,5 +138,31 @@ describe('original saved-view preview controls', () => {
     });
     await mockButtons[0].onClick();
     expect(mockPreview).not.toHaveBeenCalled();
+  });
+
+  it('original model preview isolates its intent from views and observes UNKNOWN across remount', async () => {
+    const renderModel = () => renderToStaticMarkup(createElement(ModelMetadata, {
+      modelId: 7, referenceName: 'orders', displayName: 'Orders', fields: [],
+      calculatedFields: [], relationFields: [],
+    } as any));
+    expect(renderModel()).toContain('metadata__preview-data');
+    await mockButtons[0].onClick();
+    const first = mockPreview.mock.calls[0][0].variables.where;
+    expect(first).toMatchObject({ id: 7, idempotencyScope: mockScope, idempotencyKey: expect.any(String) });
+    mockButtons = [];
+    renderModel();
+    mockPreview.mockRejectedValueOnce(new Error('UNKNOWN'));
+    await mockButtons[0].onClick();
+    expect(mockPreview.mock.calls[1][0].variables.where).toEqual(first);
+    mockButtons = [];
+    render();
+    await mockButtons[0].onClick();
+    expect(mockPreview.mock.calls[2][0].variables.where.idempotencyKey).not.toBe(first.idempotencyKey);
+    mockButtons = [];
+    renderModel();
+    mockScope = 'b'.repeat(64);
+    await mockButtons[0].onClick();
+    expect(mockPreview.mock.calls[3][0].variables.where.idempotencyKey).not.toBe(first.idempotencyKey);
+    expect(storage.removeItem).not.toHaveBeenCalled();
   });
 });

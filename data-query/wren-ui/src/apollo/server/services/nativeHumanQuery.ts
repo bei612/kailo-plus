@@ -38,6 +38,7 @@ export class NativeHumanQuery {
     viewId: number,
     limit: number,
     key: string,
+    kind: 'view' | 'model' = 'view',
   ) {
     const selection = this.config.humanAction;
     if (!token || !selection)
@@ -68,7 +69,9 @@ export class NativeHumanQuery {
     // an existing key, or repeats the native SQL in this request handler.
     let receipt = await observe();
     if (!receipt) {
-      const reference = await this.queries.reference(
+      const reference = await (kind === 'model'
+        ? this.queries.modelReference.bind(this.queries)
+        : this.queries.reference.bind(this.queries))(
         selection.resourceId,
         viewId,
         limit,
@@ -112,7 +115,8 @@ export class NativeHumanQuery {
       } catch {
         throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
       }
-      if (frozen.viewId !== viewId || frozen.limit !== limit)
+      if (frozen[kind === 'model' ? 'modelId' : 'viewId'] !== viewId ||
+        (kind === 'model' ? 'viewId' : 'modelId') in frozen || frozen.limit !== limit)
         throw new NativeQueryRefusal(409, 'QUERY_INTENT_CONFLICT');
     };
     check(receipt);

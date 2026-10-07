@@ -22,7 +22,7 @@ import { inboxWindowEvents } from "./inbox-events";
 type Group = "starred" | "channels";
 
 export function ChannelSidebar({ principalId, workspaces, selectedId, active, reads, preferencePending,
-  onSelect, onCreate, onSetPreference, onActivity,
+  onSelect, onCreate, onSetPreference, onActivity, onUnreadChange,
 }: {
   principalId: string;
   workspaces: WorkspaceView[];
@@ -34,6 +34,7 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
   onCreate: () => void;
   onSetPreference: (id: string, next: { starred: boolean; muted: boolean }) => void;
   onActivity?: (activity: ReadonlyMap<string, string | null>) => void;
+  onUnreadChange?: (unread: ReadonlySet<string>) => void;
 }) {
   const t = useT();
   const queryClient = useQueryClient();
@@ -69,9 +70,10 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
   const knownActivity = messages.isSuccess && reads.state !== null;
   const canWriteRead = knownActivity && !reads.pending && !reads.unknown && !preferencePending;
   const canWritePreference = reads.state !== null && !reads.pending && !reads.unknown && !preferencePending;
-  const unread = new Set(knownActivity ? rows.filter((row) =>
+  const unread = useMemo(() => new Set(knownActivity ? workspaces.filter((row) =>
     row.isMember === true && messages.data?.get(row.id)?.some((event) => event.createdAt > (reads.readAt(inboxReply(event.tags) ? `msg:${event.id}` : row.id) ?? -Infinity)),
-  ).map((row) => row.id) : []);
+  ).map((row) => row.id) : []), [knownActivity, workspaces, messages.data, reads.readAt]);
+  useEffect(() => { onUnreadChange?.(unread); }, [unread, onUnreadChange]);
   const mark = (ids: string[], read: boolean) => {
     if (!canWriteRead) return;
     void reads.write(inboxReadContexts(ids.flatMap((id) => messages.data?.get(id) ?? []), read))

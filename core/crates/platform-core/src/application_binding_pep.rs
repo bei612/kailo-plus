@@ -24,6 +24,44 @@ fn business_operation(operation: &str, status: &str) -> Result<(bool, bool), Ref
     }
 }
 
+/// Native object identity comes from the authorized Resource and its current
+/// binding, never from the adapter's submitted arguments or UI configuration.
+async fn authorized_resource(
+    state: &ServiceState,
+    ae: &crate::governance::Execution,
+    binding: Uuid,
+) -> Result<Value, Refusal> {
+    let row: Option<(Uuid, String, String, String, String)> = sqlx::query_as(
+        "select r.id,r.native_type,r.native_id,b.native_instance_ref,b.native_scope_ref
+         from catalog.resource r
+         join catalog.application_binding b on b.id=r.application_binding_id and b.tenant_id=r.tenant_id
+         join projection.application_runtime p on p.binding_id=b.id and p.generation=b.active_projection_generation
+           and p.component_release_id=b.component_release_id and p.state='ACTIVE'
+         join admission.action_execution a on a.id=$4 and a.target_id=r.id and a.tenant_id=r.tenant_id
+           and a.component_binding_id=b.id and a.component_release_id=b.component_release_id
+           and a.component_projection_generation=b.active_projection_generation
+         where r.id=$1 and r.tenant_id=$2 and r.application_binding_id=$3 and r.state='ACTIVE'
+           and r.projection_action_execution_id is null and b.state='ACTIVE'",
+    )
+    .bind(ae.target_id)
+    .bind(ae.tenant_id)
+    .bind(binding)
+    .bind(ae.id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let (resource, kind, reference, instance, scope) = row.ok_or_else(blocked)?;
+    if [&kind, &reference, &instance, &scope]
+        .iter()
+        .any(|value| value.is_empty() || value.trim() != value.as_str())
+    {
+        return Err(blocked());
+    }
+    Ok(
+        json!({"resourceId":resource,"nativeType":kind,"nativeRef":reference,
+        "nativeInstanceRef":instance,"nativeScopeRef":scope}),
+    )
+}
+
 pub(crate) async fn check(
     State(state): State<ServiceState>,
     headers: HeaderMap,
@@ -205,8 +243,12 @@ pub(crate) async fn check(
                 if !decision.allowed {return Err(Refusal::Denied(ReasonCode::PermissionDenied));}
                 decision.zed_token.filter(|v|!v.is_empty()).ok_or_else(blocked)?
             };
-            let response:contracts::AdapterPepCheckResponse=serde_json::from_value(json!({"actionExecutionId":ae.id,
-                "operationId":ae.operation_id,"authorizationMinZedToken":revision}))
+            let mut response=json!({"actionExecutionId":ae.id,
+                "operationId":ae.operation_id,"authorizationMinZedToken":revision});
+            if operation=="execute" && def.target_type=="RESOURCE" {
+                response["targetResource"]=authorized_resource(&state,&ae,binding).await?;
+            }
+            let response:contracts::AdapterPepCheckResponse=serde_json::from_value(response)
                 .map_err(|_|invalid())?;
             return Ok(response);
         }

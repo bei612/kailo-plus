@@ -163,7 +163,19 @@ export async function freshPep(config, deadline, token, args, claims, operation 
     body: JSON.stringify({ bindingId: config.bindingId, actionToken: token,
       operation, argumentsJson: canonical(args) }),
   });
-  if (!exactKeys(answer, ['actionExecutionId', 'operationId', 'authorizationMinZedToken'])
+  const keys = ['actionExecutionId', 'operationId', 'authorizationMinZedToken'];
+  if (object(answer) && Object.hasOwn(answer, 'targetResource')) {
+    keys.push('targetResource');
+    const resource = answer.targetResource;
+    if (!exactKeys(resource, ['resourceId', 'nativeType', 'nativeRef', 'nativeInstanceRef', 'nativeScopeRef'])
+      || operation !== 'execute' || claims.target_type !== 'RESOURCE' || resource.resourceId !== claims.target_id
+      || typeof resource.resourceId !== 'string'
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(resource.resourceId)
+      || ['nativeType', 'nativeRef', 'nativeInstanceRef', 'nativeScopeRef'].some(key => !nonempty(resource[key]))) {
+      throw new Refused(503);
+    }
+  }
+  if (!exactKeys(answer, keys)
     || answer.actionExecutionId !== claims.action_execution_id || answer.operationId !== claims.operation_id
     || !nonempty(answer.authorizationMinZedToken)) throw new Refused(503);
 }

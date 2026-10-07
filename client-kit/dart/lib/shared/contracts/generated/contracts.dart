@@ -2228,10 +2228,14 @@ class AdapterPepCheckResponse {
   final String authorizationMinZedToken;
   final String operationId;
 
+  ///本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。
+  final AdapterAuthorizedResource? targetResource;
+
   AdapterPepCheckResponse({
     required this.actionExecutionId,
     required this.authorizationMinZedToken,
     required this.operationId,
+    this.targetResource,
   });
 
   factory AdapterPepCheckResponse.fromJson(Map<String, dynamic> json) =>
@@ -2239,12 +2243,50 @@ class AdapterPepCheckResponse {
         actionExecutionId: json["actionExecutionId"],
         authorizationMinZedToken: json["authorizationMinZedToken"],
         operationId: json["operationId"],
+        targetResource: json["targetResource"] == null
+            ? null
+            : AdapterAuthorizedResource.fromJson(json["targetResource"]),
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "actionExecutionId": actionExecutionId,
     "authorizationMinZedToken": authorizationMinZedToken,
     "operationId": operationId,
+    "targetResource": targetResource?.toJson(),
+  });
+}
+
+///本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。
+class AdapterAuthorizedResource {
+  final String nativeInstanceRef;
+  final String nativeRef;
+  final String nativeScopeRef;
+  final String nativeType;
+  final String resourceId;
+
+  AdapterAuthorizedResource({
+    required this.nativeInstanceRef,
+    required this.nativeRef,
+    required this.nativeScopeRef,
+    required this.nativeType,
+    required this.resourceId,
+  });
+
+  factory AdapterAuthorizedResource.fromJson(Map<String, dynamic> json) =>
+      AdapterAuthorizedResource(
+        nativeInstanceRef: json["nativeInstanceRef"],
+        nativeRef: json["nativeRef"],
+        nativeScopeRef: json["nativeScopeRef"],
+        nativeType: json["nativeType"],
+        resourceId: json["resourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nativeInstanceRef": nativeInstanceRef,
+    "nativeRef": nativeRef,
+    "nativeScopeRef": nativeScopeRef,
+    "nativeType": nativeType,
+    "resourceId": resourceId,
   });
 }
 

@@ -1510,3 +1510,91 @@ SystemMessageAvatars.tsx、UserProfilePanelFields.tsx、UserProfilePanelSections
 `python3 tools/upstream_manifest.py diff collaboration --check` 复跑退出 0，
 输出为同目录 `remove-check-restored.log`。只表示删除登记现已一致，不表示
 ProfileFields/Sections 等原功能已恢复；未修改产物摘要，未构建或部署。
+
+### 2026-10-07：固定全树清单续核与原侧栏未读滚动共源恢复
+
+本节在既有全量 `collaboration-full-2646.patch`（3307 个变动路径）及固定上游树清单上续核，
+不是仅检查本批 Git diff，也不把生成完整 patch 等同于 3307 项均已分类关闭。
+此前清点是其记录版本的快照；后来已经恢复的 Projects 区域、工作流条件/作者/原画布等，
+不能继续被旧清单算作当前仍缺失。此次定位侧栏的实际缺项后直接恢复，未新建检查脚本。
+
+#### 权威、影响、副作用与边界（实施后的四步回执）
+
+1. 权威：用户固定原版一致性要求；`.design/07` §4.6 / DD-87 规定共享侧栏与右侧完整组件页面。
+   Buzz 固定版本为 `779af8886caae1317b4de962082429867ab61503`；
+   `desktop/src/features/sidebar/lib/useUnreadOverflow.ts::deriveUnreadOverflow/useUnreadOverflow`
+   提供实际 DOM 可见性、重复频道去重及最近未读滚动；
+   `desktop/src/features/sidebar/ui/MoreUnreadButton.tsx::MoreUnreadButton` 提供原 pill 位置与样式。
+   不是重写未读系统，也不恢复任何原工作流执行器。
+2. 影响：原 Native 三个模块成为共享 reexport，Web 的
+   `web-client/web/src/platform/ui/ChannelSidebar.tsx::ChannelSidebar` 从现有 BFF 消息与
+   `useInboxState.readAt` 推导未读集合，交给
+   `web-client/web/src/platform/ui/PlatformApp.tsx::SignedIn` 的同一共享 observer、
+   `AppSidebarFrame` 原 `above/below/scrollRef` 槽；没有新存储、契约、数据库或权限入口。
+   空/error workspace 数组保持稳定引用，避免投影通知反复触发宿主渲染。
+3. 副作用：按钮仅对实际未读 DOM 行 `scrollIntoView`，不会发消息、修改 read position、写权限或重试 UNKNOWN。
+   沿原数据先过滤当前成员；BFF 消息读取失败、已读状态尚不存在或成员撤销均输出空集合。
+   Native 原有 high-priority/preview 输入保持不变，Web 不推断没有证据的 directed unread。
+4. 异常：零未读不呈现按钮；上下两边分别取最近一项；重复行按频道去重且可见副本抑制 offscreen 计数；
+   observer 在卸载和集合变化时断开/重绑；已读变化清除按钮；滚动不到行则无操作，不伪造成功。
+   三端共源词条中文默认/英文可切换；Mobile 只获得原同源生成的词条，不新增组件宿主或声称完成 Mobile UI。
+
+#### 全量差异中的已核实分类与尚缺项
+
+| 固定来源或当前消费链 | 分类与实际边界 |
+| --- | --- |
+| `desktop/src/features/sidebar/lib/useUnreadOverflow.ts` | 原逻辑原样保留并共享迁移：新共享文件除首行来源注释外与固定版本 SHA-256 同为 `b7644e271207a2602e7f6bb55c0fe0f163172e3c9a8a253ba93fa95cfcc2eb98`；Native 原路径只 reexport。 |
+| `desktop/src/features/sidebar/lib/useSidebarUnreadOverflow.ts::useSidebarUnreadOverflow`、`desktop/src/features/sidebar/ui/MoreUnreadButton.tsx::MoreUnreadButton` | 当前已治理的频道消费迁为 Web/Desktop 共源；原 pill 布局/类名保留，文案接已授权中英词条。原 DM 头像预览与 DM 优先跳转未随此批宣称恢复。 |
+| `web-client/web/src/platform/ui/ChannelSidebar.tsx::ChannelSidebar` → `PlatformApp.tsx::SignedIn` | 缺失恢复：Web 原先无 sidebar overflow 消费；现在真实频道未读数据驱动原共享滚动控件。BFF 与用户状态 CAS 是已授权治理差异，未建立第二已读权威。 |
+| `client-kit/ts/platform/src/react/native-application-entries.tsx::NativeApplicationEntries`、`client-kit/ts/platform/src/react/native-application-page.tsx::NativeApplicationPage` | 已授权组件入口/iframe 承载已共源；实际账号 binding 列表为空，不能把入口隐藏解释为删掉原组件 UI，也不能伪造 ACTIVE binding 或宣称完整业务已验收。 |
+| `client-kit/ts/platform/src/react/conversations/conversation-list.tsx::ConversationList` | 缺失需恢复：当前 DM 行仍固定 `hasUnread/hasThreadUnread=false`，本轮未找到已接入的真实 DM 未读消费数据；不得以频道溢出恢复代替 DM 恢复。 |
+| `desktop/src/features/sidebar/ui/AppSidebarPinnedHeader.tsx::AppSidebarPinnedHeader` 与原 TopbarSearch、ChannelSectionDialogs/SidebarDnd/CommunityRail | 原固定源码及 remove_paths 均已检查；搜索、分组拖拽/社区轨仍需真实共享/治理消费者，不按删除清单自动认可功能裁减。本批不造空按钮。 |
+
+其余完整清单尚未逐项关闭，不能声称原版 100% 一致、全页面验收或一期生产就绪。
+
+#### 已运行验证与故意破坏
+
+沿现有 `kailo-agent-receipt-xvkujx`（4 CPU / 8 GiB）SDK、`message-edit.AGX058` 与
+已授权的 `profile-settings-ortsoo.DRR20F` 候选窄验，未新建全树快照/镜像或下载依赖。
+开跑前 Data 可用 3.2 GiB、主机内存可用 19 GiB；无既存 tsc/vitest/cargo 进程。
+
+- `python3 tools/gen-platform-i18n.py` 与 `--check` 均退出 0，输出
+  `PASS: Mobile platform and reason catalogs match the shared TypeScript source`；正式 Dart 仅新增三个枚举及三个映射。
+- shared `tsc --noEmit -p tsconfig.test.json` 退出 0；
+  `vitest run test/sidebar-unread-overflow.test.tsx`：4 passed。
+- Web `tsc --noEmit` 退出 0；
+  `vitest run src/platform/ui/ChannelSidebar.test.tsx src/platform/ui/PlatformApp.test.tsx`：18 passed。
+- Desktop 原 `node --import ./test-loader.mjs --test`，目标
+  `src/features/sidebar/lib/useUnreadOverflow.test.mjs`、`useSidebarUnreadOverflow.test.mjs` 与
+  `src/features/sidebar/ui/MoreUnreadButton.test.mjs`：8 passed、0 failed。
+- 私有候选只把 `scrollToNextBelow` 的方向从 `below` 改成 `above`，真实结果
+  `1 failed | 3 passed`；失败为下方目标 `scrollIntoView` 调用数 0。
+  还原后与正式文件 `cmp` 退出 0，重新运行 4 passed；没有修改正式产品迁就变异。
+- 本批精确路径 `git diff --check` 退出 0。未运行全仓构建/全量检查、未提交/部署。
+
+日志位于 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`：
+`sidebar-shared-type.log`、`sidebar-shared.log`、`sidebar-web-type-final.log`、`sidebar-web-final.log`、
+`sidebar-native-final.log`、`sidebar-mutation.log`、`sidebar-restored.log`。
+失败如实保留：初轮 shell login 重置 PATH 导致 `FAIL: Dart formatter unavailable`，沿原非 login SDK 环境修正；
+初轮新测试 fixture 缺完整 IntersectionObserverEntry 字段产生 TS2352，补真实必需字段后通过；
+Native Node 旧检查不具备 window，去掉错误的浏览器 locale setter 调用，验证产品中文默认；
+旧 message-edit Web installed 副本缺 `use-navigation-shortcuts` 使 PlatformApp 模块解析失败，
+未改产品降级，使用已具备正式输入的 profile 候选通过。`sidebar-web-initial.log`、`sidebar-native.log` 保留这些失败。
+
+#### 实际浏览器截图与交付边界
+
+实际接管 `playwright-cli -s=kailo-ui-status`，为当前独立 `seam-verifier` 会话，未输出/复制凭据。
+`/app/platform-build-info.json` 返回旧线上
+`sha256:a484ceeba47f06e572461060c2b12353cd4646654d02fd45c04308558ebd7642`，
+不是本批源码。租户及当前 workspace 的 `/api/v1/application-bindings` 均返回 HTTP 200、
+`{"bindings":[],"canCreate":true}`；缺少真实已上架 binding 时不伪造组件入口或 iframe 业务验收。
+
+本轮实际截图并经 `view_image` 打开复核：
+
+- `.playwright-cli/current-component-entry-empty-20261007.png`：1440×1000，共享侧栏真实无组件入口。
+- `.playwright-cli/sidebar-overflow-before-20261007.png`：1440×640，频道列表在滚动区域下方；旧 Web 没有本批恢复的未读导航。
+- `.playwright-cli/channel-sidebar-loaded-20261007.png`：点击真实 Kailo 频道后等待已同步，消息头像/作者/线程/原 Composer 均可见；不是以首次加载骨架截图充当完成态。
+
+截图左下资料显示名为空、状态展示 principal UUID 的实际现象已交主线核对，未越界改 Core。
+本批源码/窄验完成不等于部署完成；新未读控件的实际浏览器验收、三个二开业务 iframe、
+Windows 安装包与 Mobile 仍未由本轮证明。未复拍/打开的其余页面不计本轮视觉覆盖。

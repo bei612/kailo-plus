@@ -97,6 +97,8 @@ export default async function handler(
           components.apiHistoryRepository,
           components.queryService,
           components.viewRepository,
+          components.modelRepository,
+          components.modelColumnRepository,
         );
       }
       return service;

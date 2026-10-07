@@ -297,6 +297,21 @@ export interface AdapterPepCheckResponse {
     actionExecutionId:        string;
     authorizationMinZedToken: string;
     operationId:              string;
+    /**
+     * 本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。
+     */
+    targetResource?: AdapterAuthorizedResource;
+}
+
+/**
+ * 本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。
+ */
+export interface AdapterAuthorizedResource {
+    nativeInstanceRef: string;
+    nativeRef:         string;
+    nativeScopeRef:    string;
+    nativeType:        string;
+    resourceId:        string;
 }
 
 /**

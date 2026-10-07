@@ -2810,6 +2810,17 @@ type AdapterPepCheckResponse struct {
 	ActionExecutionID        string `json:"actionExecutionId"`
 	AuthorizationMinZedToken string `json:"authorizationMinZedToken"`
 	OperationID              string `json:"operationId"`
+	// 本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。
+	TargetResource *AdapterAuthorizedResource `json:"targetResource,omitempty"`
+}
+
+// 本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。
+type AdapterAuthorizedResource struct {
+	NativeInstanceRef string `json:"nativeInstanceRef"`
+	NativeRef         string `json:"nativeRef"`
+	NativeScopeRef    string `json:"nativeScopeRef"`
+	NativeType        string `json:"nativeType"`
+	ResourceID        string `json:"resourceId"`
 }
 
 // DD-90/18§5.4：原保存结果不明会话的确切写入证据查证；只核已有 ACCEPTED writer observation 对应的原生

@@ -174,12 +174,30 @@ func TestAddDocumentFileObservationNeverRepeatsNativeCreation(t *testing.T) {
 	require.True(t, result.IsError)
 	require.Empty(t, service.createdIDs)
 	args["read_operation_id"] = readOperation
+	for field, value := range map[string]string{"secret": "must-not-be-persisted", "assetId": "not-a-uuid", "resourceId": "00000000-0000-0000-0000-000000000000", "displayName": " padded "} {
+		invalid := map[string]string{}
+		for key, original := range reference {
+			invalid[key] = original
+		}
+		invalid[field] = value
+		bad, encodeErr := json.Marshal(invalid)
+		require.NoError(t, encodeErr)
+		args["source_reference_json"] = string(bad)
+		result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
+		require.NoError(t, err)
+		require.True(t, result.IsError, field)
+		require.Empty(t, service.createdIDs)
+	}
+	args["source_reference_json"] = string(encoded)
 	result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
 	require.NoError(t, err)
 	require.False(t, result.IsError)
 	require.Len(t, service.createdIDs, 1)
 	document := service.docs[service.createdIDs[0]]
 	require.Equal(t, int64(4), document.FileSize)
+	var references []map[string]string
+	require.NoError(t, json.Unmarshal([]byte(document.GetMetadata()["source_references"]), &references))
+	require.Equal(t, []map[string]string{reference}, references)
 	for _, state := range []string{types.ParseStatusPending, types.ParseStatusFailed, types.ParseStatusCompleted} {
 		document.ParseStatus = state
 		result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, map[string]any{

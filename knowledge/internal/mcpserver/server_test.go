@@ -49,6 +49,45 @@ func TestReadDocumentMetadataRetainsPreciseNativeRevisionWithoutChunks(t *testin
 	}
 }
 
+func TestReadDocumentMetadataReturnsOnlyInternalCompleteSourceSet(t *testing.T) {
+	stamp := time.Date(2026, 10, 6, 23, 0, 0, 123456789, time.UTC)
+	srv := newScopeTestServer(&types.KnowledgeBase{ID: "kb", TenantID: 1})
+	document := &types.Knowledge{ID: "doc", TenantID: 1, KnowledgeBaseID: "kb", UpdatedAt: stamp,
+		CustomMetadata: types.JSON(`{"source_references":"[{\"resourceId\":\"spoofed\"}]"}`)}
+	srv.knowledgeService = &stubKnowledgeService{docs: map[string]*types.Knowledge{"doc": document}}
+	ep := &types.MCPEndpoint{ID: "ep", TenantID: 1, Tools: types.StringArray{types.MCPEndpointToolReadDocument}}
+	read := func() map[string]any {
+		t.Helper()
+		result, err := srv.handleReadDocument(mcpCallContext(1, ep), nativeToolRequest(t, map[string]any{"knowledge_id": "doc", "metadata_only": true}))
+		if err != nil || result.IsError {
+			t.Fatalf("metadata read: %v %+v", err, result)
+		}
+		return result.StructuredContent.(map[string]any)
+	}
+	if _, exists := read()["source_references"]; exists {
+		t.Fatal("user CustomMetadata became trusted provenance")
+	}
+	references := []map[string]string{
+		{"resourceId": "source-a", "nativeObjectRef": "file-a", "nativeRevision": "v-a", "displayName": "a.md", "mediaType": "text/markdown"},
+		{"resourceId": "source-b", "nativeObjectRef": "file-b", "nativeRevision": "v-b", "displayName": "b.md", "mediaType": "text/markdown"},
+	}
+	encoded, _ := json.Marshal(references)
+	metadata, _ := json.Marshal(map[string]string{"source_references": string(encoded)})
+	document.Metadata = types.JSON(metadata)
+	got, _ := json.Marshal(read()["source_references"])
+	if !bytes.Equal(got, encoded) {
+		t.Fatal("shared content lost one of its original source references")
+	}
+	for _, malformed := range []string{"null", "[]", "{}", "invalid"} {
+		metadata, _ = json.Marshal(map[string]string{"source_references": malformed})
+		document.Metadata = types.JSON(metadata)
+		result, err := srv.handleReadDocument(mcpCallContext(1, ep), nativeToolRequest(t, map[string]any{"knowledge_id": "doc", "metadata_only": true}))
+		if err != nil || !result.IsError || result.StructuredContent != nil {
+			t.Fatalf("invalid provenance was disclosed: %s", malformed)
+		}
+	}
+}
+
 // recordingEndpointRepo captures last_used touches so the guard's background
 // write can be asserted (and never dereferences a nil repository).
 type recordingEndpointRepo struct {

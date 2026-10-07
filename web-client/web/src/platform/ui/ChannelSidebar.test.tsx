@@ -2,6 +2,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 import type { ComponentProps, ReactNode } from "react";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { ChannelSidebar } from "./ChannelSidebar";
 
 const snapshot = vi.hoisted(() => ({ failed: false, query: undefined as undefined | ((context: { signal: AbortSignal }) => Promise<Map<string, { id: string }[]>>), messages: vi.fn(), menus: new Map<string, { mute?: (id: string) => void; unmute?: (id: string) => void }>() }));
@@ -97,4 +99,31 @@ it("retains original channel mute and unmute consumers with the authoritative st
   expect(snapshot.menus.get("one")!.mute).toBeUndefined();
   expect(snapshot.menus.get("one")!.unmute).toBeUndefined();
   expect(write).toHaveBeenCalledTimes(2);
+});
+
+it("feeds actual admitted unread destinations to the sidebar observer and clears failed or revoked observations", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const observed = vi.fn();
+  const page = (member: boolean, state: typeof reads.state = reads.state) => <ChannelSidebar principalId="me"
+    workspaces={[{id:"one", name:"One", slug:"one", isMember:member}, {id:"two", name:"Two", slug:"two", isMember:member}]}
+    selectedId="one" active reads={{...reads,state}} preferencePending={false}
+    onSelect={vi.fn()} onCreate={vi.fn()} onSetPreference={vi.fn()} onUnreadChange={observed} />;
+  try {
+    snapshot.failed = false;
+    await act(async () => root.render(page(true)));
+    expect(observed).toHaveBeenLastCalledWith(new Set(["one"]));
+    snapshot.failed = true;
+    await act(async () => root.render(page(true)));
+    expect(observed).toHaveBeenLastCalledWith(new Set());
+    snapshot.failed = false;
+    await act(async () => root.render(page(false)));
+    expect(observed).toHaveBeenLastCalledWith(new Set());
+    await act(async () => root.render(page(true, null)));
+    expect(observed).toHaveBeenLastCalledWith(new Set());
+  } finally {
+    snapshot.failed = false;
+    await act(async () => root.unmount());
+  }
 });

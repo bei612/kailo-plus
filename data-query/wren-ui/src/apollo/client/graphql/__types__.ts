@@ -912,7 +912,7 @@ export type MutationPreviewItemSqlArgs = {
 
 
 export type MutationPreviewModelDataArgs = {
-  where: WhereIdInput;
+  where: PreviewViewDataInput;
 };
 
 

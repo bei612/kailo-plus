@@ -22,7 +22,6 @@ import { replaceAllowableSyntax, validateDisplayName } from '../utils/regex';
 import { Model, ModelColumn } from '../repositories';
 import {
   findColumnsToUpdate,
-  getPreviewColumnsStr,
   handleNestedColumns,
   replaceInvalidReferenceName,
   updateModelPrimaryKey,
@@ -1017,22 +1016,14 @@ export class ModelResolver {
     if (!model) {
       throw new Error('Model not found');
     }
-    const { manifest } = await ctx.mdlService.makeCurrentModelMDL();
-    const modelColumns = await ctx.modelColumnRepository.findColumnsByModelIds([
-      model.id,
-    ]);
-    const sql = `select ${getPreviewColumnsStr(modelColumns)} from "${model.referenceName}"`;
-
-    const data = (await ctx.queryService.preview(sql, {
-      project,
-      modelingOnly: false,
-      manifest,
-    })) as PreviewDataResponse;
-
-    return data;
+    return this.previewNativeData(args, ctx, 'model');
   }
 
   public async previewViewData(_root: any, args: any, ctx: IContext) {
+    return this.previewNativeData(args, ctx, 'view');
+  }
+
+  private async previewNativeData(args: any, ctx: IContext, kind: 'view' | 'model') {
     const { id: viewId, limit, idempotencyKey, idempotencyScope } = args.where;
     const config = await loadQueryDelivery();
     const previewScope = nativePreviewScope(config, ctx.nativeIdentityScope);
@@ -1047,6 +1038,8 @@ export class ModelResolver {
       components.apiHistoryRepository,
       ctx.queryService,
       ctx.viewRepository,
+      ctx.modelRepository,
+      ctx.modelColumnRepository,
     );
     const receipt = await new NativeHumanQuery(
       config,
@@ -1057,6 +1050,7 @@ export class ModelResolver {
       viewId,
       limit ?? DEFAULT_PREVIEW_LIMIT,
       idempotencyKey,
+      kind,
     );
     return { ...receipt, previewScope };
   }

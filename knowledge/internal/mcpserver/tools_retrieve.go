@@ -349,8 +349,19 @@ func (s *Server) handleReadDocument(ctx context.Context, req mcp.CallToolRequest
 		if k.UpdatedAt.IsZero() {
 			return mcp.NewToolResultError("native revision is unavailable"), nil
 		}
-		return jsonResult(map[string]any{"document": summarizeKnowledge(k),
-			"knowledge_base": map[string]any{"id": kb.ID, "name": kb.Name}})
+		result := map[string]any{"document": summarizeKnowledge(k),
+			"knowledge_base": map[string]any{"id": kb.ID, "name": kb.Name}}
+		// Internal ingestion provenance is separate from user-authored
+		// CustomMetadata. Preserve its complete source set; the adapter validates
+		// typed references; opening a citation requires current source read access.
+		if raw := k.GetMetadata()["source_references"]; raw != "" {
+			var references []map[string]string
+			if json.Unmarshal([]byte(raw), &references) != nil || len(references) == 0 {
+				return mcp.NewToolResultError("source provenance is unavailable"), nil
+			}
+			result["source_references"] = references
+		}
+		return jsonResult(result)
 	}
 	limit := req.GetInt("limit", defaultChunkLimit)
 	if limit < 1 {

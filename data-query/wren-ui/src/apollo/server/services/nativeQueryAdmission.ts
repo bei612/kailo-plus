@@ -270,7 +270,9 @@ export async function authorizeQuery(
     throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
   }
   await jwtVerify(token, keys, options);
-  return payload;
+  // Native target facts come from the current Core PEP, never a caller JWT
+  // extension. Missing facts remain missing and native consumers fail closed.
+  return { ...payload, targetResource: admitted.targetResource };
 }
 
 export async function bindingServiceCall(

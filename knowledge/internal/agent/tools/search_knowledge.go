@@ -207,6 +207,7 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 	kbList, err := t.knowledgeBaseService.GetKnowledgeBasesByIDsOnly(ctx, kbIDs)
 	if err != nil {
 		logger.Warnf(ctx, "[Tool][SearchKnowledge] Failed to load knowledge bases %v: %v", kbIDs, err)
+		return &types.ToolResult{Success: false, Error: "knowledge base metadata is unavailable"}, err
 	}
 	kbModes, msg := resolveKBSearchModes(mode, kbList)
 	if msg != "" {
@@ -228,8 +229,11 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 		"[Tool][SearchKnowledge] query=%q mode=%s limit=%d top_k=%d targets=%d kbs=%d",
 		query, mode, limit, topK, len(searchTargets), len(kbIDs))
 
-	allResults := t.concurrentSearchByTargets(ctx, query, mode, kbModes, searchTargets, kbList,
+	allResults, err := t.concurrentSearchByTargets(ctx, query, mode, kbModes, searchTargets, kbList,
 		topK, vectorThreshold, keywordThreshold, kbTypeMap)
+	if err != nil {
+		return &types.ToolResult{Success: false, Error: err.Error()}, err
+	}
 
 	deduplicated := t.deduplicateResults(allResults)
 
@@ -446,7 +450,7 @@ func (t *SearchKnowledgeTool) concurrentSearchByTargets(
 	topK int,
 	vectorThreshold, keywordThreshold float64,
 	kbTypeMap map[string]string,
-) []*searchResultWithMeta {
+) ([]*searchResultWithMeta, error) {
 	// Filter out non-searchable KBs (wiki-only / graph-only). Feeding a
 	// wiki-only KB into HybridSearch causes spurious "model ID cannot be
 	// empty" errors because such KBs have no EmbeddingModelID configured.
@@ -478,7 +482,7 @@ func (t *SearchKnowledgeTool) concurrentSearchByTargets(
 			st.KnowledgeBaseID)
 	}
 	if len(filteredTargets) == 0 {
-		return nil
+		return nil, fmt.Errorf("no searchable target remains")
 	}
 	searchTargets = filteredTargets
 
@@ -493,6 +497,12 @@ func (t *SearchKnowledgeTool) concurrentSearchByTargets(
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
+	failedGroups := 0
+	retrievalFailed := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		failedGroups++
+	}
 	allResults := make([]*searchResultWithMeta, 0)
 	collect := func(rows []*types.SearchResult, usedMode string) {
 		mu.Lock()
@@ -563,6 +573,7 @@ func (t *SearchKnowledgeTool) concurrentSearchByTargets(
 					if err != nil {
 						logger.Warnf(ctx, "[Tool][SearchKnowledge] Combined search failed for KBs %v: %v",
 							fullKBIDs, err)
+						retrievalFailed()
 						return
 					}
 					collect(kbResults, usedMode)
@@ -590,6 +601,7 @@ func (t *SearchKnowledgeTool) concurrentSearchByTargets(
 					})
 					if err != nil {
 						logger.Warnf(ctx, "[Tool][SearchKnowledge] Failed to search KB %s: %v", st.KnowledgeBaseID, err)
+						retrievalFailed()
 						return
 					}
 					collect(kbResults, usedMode)
@@ -599,7 +611,10 @@ func (t *SearchKnowledgeTool) concurrentSearchByTargets(
 		}(modelKey, targets)
 	}
 	wg.Wait()
-	return allResults
+	if failedGroups != 0 {
+		return nil, fmt.Errorf("knowledge retrieval failed for %d target group(s)", failedGroups)
+	}
+	return allResults, nil
 }
 
 // rerankResults applies reranking to all search results (including FAQ entries)

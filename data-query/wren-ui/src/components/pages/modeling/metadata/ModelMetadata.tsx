@@ -1,16 +1,20 @@
 import { useMemo } from 'react';
 import { keyBy } from 'lodash';
-import { Col, Row, Typography, Button } from 'antd';
+import { Alert, Col, Row, Typography, Button } from 'antd';
 import FieldTable from '@/components/table/FieldTable';
 import CalculatedFieldTable from '@/components/table/CalculatedFieldTable';
 import RelationTable from '@/components/table/RelationTable';
 import PreviewData from '@/components/dataPreview/PreviewData';
 import { DiagramModel } from '@/utils/data';
 import { usePreviewModelDataMutation } from '@/apollo/client/graphql/model.generated';
+import useGovernedPreview from '@/hooks/useGovernedPreview';
+import { useRouter } from 'next/router';
+import { getQueryPreviewText } from '@/utils/language';
 
 export type Props = DiagramModel;
 
 export default function ModelMetadata(props: Props) {
+  const text = getQueryPreviewText(useRouter().locale);
   const {
     modelId,
     displayName,
@@ -25,21 +29,21 @@ export default function ModelMetadata(props: Props) {
     usePreviewModelDataMutation({
       onError: (error) => console.error(error),
     });
+  const query = useGovernedPreview('model', modelId, async (where) => {
+    const result = await previewModelData({ variables: { where } });
+    return result.data?.previewModelData;
+  }, previewModelDataResult.data?.previewModelData, previewModelDataResult.error);
 
   // Model preview data should show alias as column name.
   const fieldsMap = useMemo(() => keyBy(fields, 'referenceName'), [fields]);
   const previewData = useMemo(() => {
-    const previewModelData = previewModelDataResult.data?.previewModelData;
+    const previewModelData = query.receipt?.data;
     const columns = (previewModelData?.columns || []).map((column) => {
       const alias = fieldsMap[column.name]?.displayName;
       return { ...column, name: alias || column.name };
     });
     return { ...previewModelData, columns };
-  }, [fieldsMap, previewModelDataResult.data]);
-
-  const onPreviewData = () => {
-    previewModelData({ variables: { where: { id: modelId } } });
-  };
+  }, [fieldsMap, query.receipt]);
 
   return (
     <>
@@ -94,14 +98,21 @@ export default function ModelMetadata(props: Props) {
           Data preview (100 rows)
         </Typography.Text>
         <Button
-          onClick={onPreviewData}
-          loading={previewModelDataResult.loading}
+          onClick={query.preview}
+          loading={previewModelDataResult.loading || query.preparing}
         >
-          Preview data
+          {query.pending || query.error ? text.check : text.preview}
         </Button>
+        {query.storageError ? <Alert type="error" message={text.storageError} /> : null}
+        {query.scopeError ? <Alert type="error" message={text.scopeError} /> : null}
+        {query.pending ? <Alert type="info" message={text.pending} /> : null}
+        {query.receipt?.terminalStatus && query.receipt.terminalStatus !== 'COMPLETED'
+          ? <Alert type="error" message={text.ended} /> : null}
+        {query.receipt?.submission?.gateState === 'DENIED'
+          ? <Alert type="warning" message={text.denied} /> : null}
         <div className="my-3">
           <PreviewData
-            error={previewModelDataResult.error}
+            error={query.error}
             loading={previewModelDataResult.loading}
             previewData={previewData}
           />

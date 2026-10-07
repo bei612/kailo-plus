@@ -44,7 +44,7 @@ export type DeleteModelMutationVariables = Types.Exact<{
 export type DeleteModelMutation = { __typename?: 'Mutation', deleteModel: boolean };
 
 export type PreviewModelDataMutationVariables = Types.Exact<{
-  where: Types.WhereIdInput;
+  where: Types.PreviewViewDataInput;
 }>;
 
 
@@ -280,7 +280,7 @@ export type DeleteModelMutationHookResult = ReturnType<typeof useDeleteModelMuta
 export type DeleteModelMutationResult = Apollo.MutationResult<DeleteModelMutation>;
 export type DeleteModelMutationOptions = Apollo.BaseMutationOptions<DeleteModelMutation, DeleteModelMutationVariables>;
 export const PreviewModelDataDocument = gql`
-    mutation PreviewModelData($where: WhereIdInput!) {
+    mutation PreviewModelData($where: PreviewViewDataInput!) {
   previewModelData(where: $where)
 }
     `;

@@ -1645,3 +1645,125 @@ failed with file-not-found, so no new full-tree manifest result is claimed.
 The fixed source reads and complete in-batch diff were reviewed instead.
 No full check, production migration, live model dispatch, screenshot,
 installation package, deployment or production-ready acceptance ran here.
+
+## Original model preview through exact-resource HUMAN admission (2026-10-07)
+
+This slice connects the existing model preview, not a replacement Wren UI and
+not complete Wren authorization. Fixed source
+`c5f02a0391c87420dba78632dcd86073710deb72` was reread at these full paths/symbols:
+
+- `WrenAI-ui-0.32.2/wren-ui/src/components/pages/modeling/metadata/ModelMetadata.tsx::ModelMetadata`;
+- `WrenAI-ui-0.32.2/wren-ui/src/components/pages/modeling/metadata/ViewMetadata.tsx::ViewMetadata`;
+- `WrenAI-ui-0.32.2/wren-ui/src/apollo/server/resolvers/modelResolver.ts::ModelResolver.previewModelData`;
+- `WrenAI-ui-0.32.2/wren-ui/src/apollo/server/services/queryService.ts::QueryService.preview`;
+- `WrenAI-ui-0.32.2/wren-ui/src/apollo/server/utils/model.ts::getPreviewColumnsStr`.
+
+Before this slice, the tracked ModelMetadata and QueryService blobs exactly
+matched upstream (`bee2f1dd9991e7e453717abe01a8390e0857bef1` and
+`08c78d61329690ebdaafe3b80560a5e037c07088` respectively). The proven missing
+consumer was the model resolver's direct engine preview: unlike saved views,
+it did not use HUMAN admission at all. The complete related UI/resolver/query
+chain was compared; this is not a claim of a complete Wren repository diff.
+
+### Authority, impact, side effects and boundaries
+
+1. Authority: `.design/08` section 6 and DD-98 require model Resource `execute`,
+   exact native references and one frozen native deployment. Wren owns model,
+   columns, SQL, query engine and result history. No Core SQL/result table,
+   native account registry, engine or parallel quota authority is introduced.
+2. Impact: original ModelMetadata preview → generated GraphQL operation →
+   ModelResolver → existing NativeHumanQuery → existing HUMAN action → existing
+   adapter/NativeQueryService → original QueryService and api_history.
+   The model operation now accepts the already-existing PreviewViewDataInput
+   (id, optional limit, identity scope and retry key). Original local GraphQL
+   codegen regenerated model.generated.ts and __types__.ts; other generated
+   files did not change. Old model clients without admission fields fail closed;
+   there is no old direct-query compatibility fallback. No database migration
+   is needed. No platform contract is owned by this slice: the parent change
+   supplies `AdapterPepCheckResponse.targetResource` through the existing PEP.
+3. Side effects: the existing controlled humanAction Resource selection is not
+   treated as proof that every native model belongs to it. For reference-based
+   execution, the current PEP facts must exactly match resourceId, nativeType
+   (`model`/`view`), nativeRef (canonical original integer id), nativeInstanceRef
+   and nativeScopeRef (original project id). JWT extension fields cannot
+   substitute these Core-returned facts. Missing/mismatched facts refuse before
+   SQL. The same checks run immediately before SQL and before result disclosure,
+   including replay of an already-completed request. A proven pre-SQL refusal
+   uses the original history FAILED transition; result-time refusal preserves
+   the true SUCCEEDED history without disclosing rows.
+4. Boundaries: foreign-project ids, unknown identity, failed local retry-key
+   persistence, missing delivery, absent target evidence and changed native
+   content are refused. The original projection/generation/SpiceDB check stays
+   in Core. Model columns and SQL are rebuilt with the original helper, hashed
+   together with binding/project/connection/selection, and checked at execution;
+   selection freezes the existing deployment id/hash, never silently latest.
+   Changed/removed models refuse instead of running another query. UNKNOWN keeps
+   one opaque sessionStorage key across remount; model/view with the same id and
+   different people have distinct slots. SQL/results/credentials are not stored
+   in browser retry state. A failed observation cannot mint a replacement key.
+
+Difference classification for this chain:
+
+- Original unchanged: model names, aliases, field/calculated/relation tables,
+  preview placement, original result table/alias transformation and QueryService.
+- Shared migration: saved-view identity/retry/result selection logic now lives
+  in useGovernedPreview and is consumed by both original metadata components;
+  the old inline implementation is removed.
+- Authorized governance changes: preview dispatch and exact target verification,
+  required original admission scope/key, existing Chinese/English query status
+  messages, and frozen admitted deployment instead of unadmitted mutable MDL.
+- Remaining gaps: arbitrary SQL/describe, Asking/dashboard/other native actions
+  and per-user metadata reads are not closed by this slice. The single controlled
+  humanAction Resource does not automatically register every model/view; only
+  an actually matching registered object can execute. General resource discovery
+  and native creation-to-registration must use the existing platform mechanism.
+  Old saved-view records created before exact-target checks are not evidence of
+  exact-object authorization. Full native UI release and production acceptance
+  remain open; these limitations must not be reported as integrated completion.
+
+### Actual verification and deliberate failure
+
+Used the existing `kailo-wren-query-sdk-itgs2n`, 4 CPU / 4 GiB, its existing
+dependencies/cache and isolated PostgreSQL fixture; no installation, new tree,
+image build or deployment. Resource/process checks showed no competing command
+inside this SDK and no cgroup OOM events. Initial cold dependency reading made
+the first 74-case run take 226 seconds; it passed. The intermediate exact-target
+run passed 80 cases. Final restored commands were:
+
+```text
+./node_modules/.bin/jest --runInBand src/nativeHumanQuery.test.ts src/nativeQuery.test.ts src/nativeProjectScope.test.ts src/viewMetadata.test.ts
+Test Suites: 4 passed, 4 total
+Tests:       82 passed, 82 total
+Time:        18.026 s
+exit 0
+
+./node_modules/.bin/tsc --noEmit
+no diagnostics; exit 0
+```
+
+The native query suite exercises the actual API handler, signed token, original
+repositories/history and QueryService with a local HTTP engine/PEP fixture. The
+engine fixture does not establish production database privileges or a live Core
+SSO/approval/usage E2E. Original component-consumer tests exercise real preview
+handlers with controlled GraphQL/config/storage boundaries, not a new screenshot
+or deployed visual acceptance.
+
+Two private mutations were actually rejected, then restored byte-for-byte:
+
+- Collapsing the model/view retry slot caused 1 failed / 3 passed, exit 1; the
+  model remount consumer observed a view stealing its original retry key.
+- Removing nativeRef comparison caused 3 failed / 5 passed (14 intentionally
+  filtered-out cases), exit 1: wrong-object execution, changed target before SQL
+  and changed target before disclosure all became detectable failures.
+- Both candidate files were restored; `cmp` against formal sources returned 0,
+  then the final 82-case run and typecheck above passed.
+
+Logs under the existing
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+`model-preview-tests.log`, `model-preview-target-tests.log`,
+`model-preview-mutation.log`, `model-preview-target-mutation.log`,
+`model-preview-final-tests.log`, and `model-preview-final-types.log`.
+The original GraphQL generator read the actual local schema via its existing
+codegen configuration and exited 0. `git diff --check -- data-query` also exited
+0. Full platform check, browser screenshot, published image and deployment are
+not performed or claimed by this component slice.

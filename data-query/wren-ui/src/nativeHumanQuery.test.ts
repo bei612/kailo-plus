@@ -58,7 +58,7 @@ describe('native saved-view HUMAN query consumer', () => {
     history = jest.fn();
     service = new NativeHumanQuery(
       config,
-      { reference: freeze } as unknown as NativeQueryService,
+      { reference: freeze, modelReference: freeze } as unknown as NativeQueryService,
       { findOneBy: history } as unknown as ApiHistoryRepository,
     );
   });
@@ -147,6 +147,45 @@ describe('native saved-view HUMAN query consumer', () => {
       disabled.preview('verified-native-token', 7, 10, key),
     ).rejects.toThrow('NATIVE_HUMAN_ADMISSION_UNAVAILABLE');
     expect(calls).not.toHaveBeenCalled();
+  });
+
+  it('admits the original model preview and reconciles its frozen model reference without issuing SQL', async () => {
+    const modelReference = { ...reference, nativeObjectRef: JSON.stringify({ modelId: 7, limit: 10 }) };
+    const modelReceipt = { ...receipt, inputReference: modelReference };
+    freeze.mockResolvedValue(modelReference);
+    calls.mockResolvedValueOnce(null).mockResolvedValue(modelReceipt);
+    expect(await service.preview('verified-native-token', 7, 10, key, 'model')).toEqual(modelReceipt);
+    expect(freeze).toHaveBeenCalledTimes(1);
+    expect((calls.mock.calls[1][2].command as any).componentAction.inputReference).toEqual(modelReference);
+    expect(await service.preview('verified-native-token', 7, 10, key, 'model')).toEqual(modelReceipt);
+    expect(freeze).toHaveBeenCalledTimes(1);
+    await expect(service.preview('verified-native-token', 7, 10, key)).rejects.toThrow('QUERY_INTENT_CONFLICT');
+    await expect(service.preview('verified-native-token', 8, 10, key, 'model')).rejects.toThrow('QUERY_INTENT_CONFLICT');
+    expect(history).not.toHaveBeenCalled();
+  });
+
+  it('routes the actual model resolver through HUMAN admission rather than direct engine preview', async () => {
+    jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+    const ctx: any = {
+      nativeIdentityScope: 'a'.repeat(64), nativeHumanToken: 'verified-native-token',
+      projectService: { getCurrentProject: jest.fn().mockResolvedValue({ id: 3 }) },
+      modelRepository: { findOneBy: jest.fn().mockResolvedValue({ id: 7, projectId: 3 }) },
+      queryService: { preview: jest.fn() },
+    };
+    const modelReceipt = { ...receipt, inputReference: { ...reference,
+      nativeObjectRef: JSON.stringify({ modelId: 7, limit: 10 }) } };
+    calls.mockResolvedValue(modelReceipt);
+    const scope = nativePreviewScope(config, ctx.nativeIdentityScope);
+    expect(await new ModelResolver().previewModelData(null, {
+      where: { id: 7, limit: 10, idempotencyKey: key, idempotencyScope: scope },
+    }, ctx)).toEqual({ ...modelReceipt, previewScope: scope });
+    expect(ctx.modelRepository.findOneBy).toHaveBeenCalledWith({ id: 7, projectId: 3 });
+    expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    expect(calls).toHaveBeenCalledTimes(1);
+    await expect(new ModelResolver().previewModelData(null, {
+      where: { id: 7, limit: 10, idempotencyKey: key, idempotencyScope: 'forged' },
+    }, ctx)).rejects.toThrow('QUERY_IDENTITY_CHANGED');
+    expect(calls).toHaveBeenCalledTimes(1);
   });
 
   it('retains one person across credential rotation and separates another person or native binding', () => {

@@ -499,6 +499,39 @@ test('PEP response must refer to exact signed original action and operation', as
   assert.equal(state.nativeReads.length, 0);
 });
 
+test('shared PEP consumer accepts optional complete native target facts and rejects malformed additions', async (t) => {
+  const targetResource = { resourceId: ids[10], nativeType: 'folder', nativeRef: ids[2],
+    nativeInstanceRef: 'fixture-instance', nativeScopeRef: ids[1] };
+  const argumentsValue = { targetType: 'RESOURCE', targetId: ids[10], authorizationTargetNativeRef: ids[2],
+    input: { resourceId: ids[10], nativeObjectRef: ids[3], nativeRevision: 'frozen-version', displayName: 'file.bin', mediaType: 'application/octet-stream' } };
+  const invokeOptions = { path: '/platform-adapter/v1/execute', key: ids[7],
+    raw: canonical({ actionKey: 'file_storage.read@v1', idempotencyKey: ids[7], arguments: argumentsValue }) };
+  for (const supplied of [undefined, targetResource]) {
+    await t.test(supplied === undefined ? 'original response' : 'extended response', async (nested) => {
+      const { state, invoke } = await setup(nested, { operation: 'execute', arguments: argumentsValue, serviceRead: true,
+        pep: (_current, response) => reply(response, 200,
+        { actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: 'fresh',
+          ...(supplied === undefined ? {} : { targetResource: supplied }) }) });
+      assert.equal((await invoke(invokeOptions)).status, 200);
+      assert.equal(state.peps, 2);
+      assert.equal(state.downloads, 1);
+      assert.equal(state.receipts.length, 1);
+    });
+  }
+  for (const supplied of [null, [], {}, { ...targetResource, resourceId: 'invalid' }, { ...targetResource, resourceId: ids[0] },
+    { ...targetResource, nativeType: '' }, { ...targetResource, nativeRef: ' padded ' },
+    { ...targetResource, nativeInstanceRef: null }, { ...targetResource, nativeScopeRef: undefined },
+    { ...targetResource, credential: 'must-not-be-accepted' }]) {
+    await t.test(JSON.stringify(supplied), async (nested) => {
+      const { state, invoke } = await setup(nested, { operation: 'execute', arguments: argumentsValue, serviceRead: true,
+        pep: (_current, response) => reply(response, 200,
+        { actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: 'fresh', targetResource: supplied }) });
+      assert.equal((await invoke(invokeOptions)).status, 503);
+      assert.equal(state.nativeReads.length, 0);
+    });
+  }
+});
+
 test('native UUID, Workspace, root segment and recycle scope are checked, never defaulted', async (t) => {
   const base = { Uuid: ids[3], Type: 'LEAF', Path: 'documents/root/file.txt', ContextWorkspace: { Uuid: ids[1] } };
   for (const target of [{ ...base, Uuid: ids[0] }, { ...base, ContextWorkspace: { Uuid: ids[0] } },

@@ -443,6 +443,25 @@ pub struct AdapterPepCheckResponse {
     pub authorization_min_zed_token: String,
 
     pub operation_id: String,
+
+    /// 本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_resource: Option<AdapterAuthorizedResource>,
+}
+
+/// 本次已授权 execute 的 Resource 与其 binding 原生引用事实；不是新授权票据。缺省时消费者不得推断对象身份。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterAuthorizedResource {
+    pub native_instance_ref: String,
+
+    pub native_ref: String,
+
+    pub native_scope_ref: String,
+
+    pub native_type: String,
+
+    pub resource_id: String,
 }
 
 /// DD-90/18§5.4：原保存结果不明会话的确切写入证据查证；只核已有 ACCEPTED writer observation 对应的原生

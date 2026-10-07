@@ -106,7 +106,7 @@ export const DELETE_MODEL = gql`
 `;
 
 export const PREVIEW_MODEL_DATA = gql`
-  mutation PreviewModelData($where: WhereIdInput!) {
+  mutation PreviewModelData($where: PreviewViewDataInput!) {
     previewModelData(where: $where)
   }
 `;

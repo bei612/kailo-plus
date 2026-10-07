@@ -48,11 +48,13 @@ import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport
 import { ChannelSidebar } from "./ChannelSidebar";
 import { SidebarProvider, SidebarTrigger, SidebarMenu, SidebarMenuItem } from "@client-kit/platform/react/sidebar/sidebar";
 import { AppSidebarFrame } from "@client-kit/platform/react/sidebar/app-sidebar-frame";
+import { MoreUnreadButton } from "@client-kit/platform/react/sidebar/MoreUnreadButton";
+import { useUnreadOverflow } from "@client-kit/platform/react/sidebar/useUnreadOverflow";
 import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
 import { NativeApplicationPage } from "@client-kit/platform/react/native-application-page";
 import { AppSidebarPrimaryMenu } from "@client-kit/platform/react/sidebar/app-sidebar-primary-menu";
 import { WebSidebarProfileCard } from "./SidebarProfileCard";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BffError, bff, setWorkspacePreference, signOut } from "@/platform/bff-client";
 import { ChannelPane } from "@/platform/ui/ChannelPane";
 import { ForumPane } from "@/platform/ui/ForumPane";
@@ -172,7 +174,10 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
   const [newChannelOpen, setNewChannelOpen] = useState(false);
   const [channelActivity, setChannelActivity] = useState<ReadonlyMap<string, string | null>>(() => new Map());
-  const rows = workspaces.isError ? [] : workspaces.data ?? [];
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
+  const [sidebarUnread, setSidebarUnread] = useState<ReadonlySet<string>>(() => new Set());
+  const sidebarOverflow = useUnreadOverflow({ scrollRef: sidebarScrollRef, unreadChannelIds: sidebarUnread });
+  const rows = useMemo(() => workspaces.isError ? [] : workspaces.data ?? [], [workspaces.isError, workspaces.data]);
   // Only use fresh admitted directory rows; a revoked previous selection cannot remain active.
   // An explicit URL target is not permission and must never fall back to another channel.
   const activeRow = chosen ? rows.find((workspace) => workspace.id === chosen)
@@ -344,6 +349,11 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
           <div className="flex min-h-0 flex-1 overflow-hidden">
             <div className="contents" hidden={tab === "settings"} style={tab === "settings" ? { display: "none" } : undefined}>
             <AppSidebarFrame active={tab !== "settings"} aria-label={t("platform.title")}
+              scrollRef={sidebarScrollRef}
+              above={sidebarOverflow.unreadAboveCount > 0 ? <MoreUnreadButton count={sidebarOverflow.unreadAboveCount}
+                emphasis="default" onClick={sidebarOverflow.scrollToNextAbove} position="top" testId="sidebar-unread-above" /> : null}
+              below={sidebarOverflow.unreadBelowCount > 0 ? <MoreUnreadButton count={sidebarOverflow.unreadBelowCount}
+                bottomClassName="bottom-full" emphasis="default" onClick={sidebarOverflow.scrollToNextBelow} position="bottom" testId="sidebar-unread-below" /> : null}
               footer={<SidebarMenu><SidebarMenuItem><WebSidebarProfileCard session={session} settingsOpen={tab === "settings"}
                 onOpenSettings={() => setTab("settings")} onSignOut={onSignOut} /></SidebarMenuItem></SidebarMenu>}
               dialogs={<><CreateChannelDialog key={`create:${session.tenantPrincipalId}`} open={newChannelOpen} onOpenChange={setNewChannelOpen} />
@@ -371,6 +381,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               onSelect={(conversation) => { void navigation.openConversation(conversation.id); }} />
             <ChannelSidebar principalId={session.tenantPrincipalId} workspaces={rows} selectedId={active} active={tab === "channel"}
               onActivity={setChannelActivity}
+              onUnreadChange={setSidebarUnread}
               reads={userState} preferencePending={preference.isPending || preferenceUnknown}
               onSelect={(id) => { void navigation.openChannel(id); }}
               onCreate={() => setCreateChannelOpen(true)}

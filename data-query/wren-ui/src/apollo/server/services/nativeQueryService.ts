@@ -7,6 +7,9 @@ import {
 import { IDeployLogRepository } from '../repositories/deployLogRepository';
 import { IProjectRepository } from '../repositories/projectRepository';
 import { IViewRepository } from '../repositories/viewRepository';
+import { IModelRepository } from '../repositories/modelRepository';
+import { IModelColumnRepository } from '../repositories/modelColumnRepository';
+import { getPreviewColumnsStr } from '../utils/model';
 import { Manifest } from '../mdl/type';
 import { IQueryService, PreviewDataResponse } from './queryService';
 import { verifyPostgresReader } from './nativeBindingService';
@@ -88,7 +91,32 @@ export class NativeQueryService {
     private readonly history: ApiHistoryRepository,
     private readonly queries: IQueryService,
     private readonly views?: IViewRepository,
+    private readonly models?: IModelRepository,
+    private readonly modelColumns?: IModelColumnRepository,
   ) {}
+
+  private async modelQuery(modelId: number) {
+    if (!this.models || !this.modelColumns) throw unavailable();
+    const model = await this.models.findOneBy({ id: modelId, projectId: this.config.projectId });
+    if (!model) throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    const columns = await this.modelColumns.findColumnsByModelIds([model.id]);
+    return { name: model.referenceName,
+      sql: `select ${getPreviewColumnsStr(columns)} from "${model.referenceName}"` };
+  }
+
+  async modelReference(resourceId: string, modelId: number, limit: number) {
+    if (!uuid.test(resourceId) || !Number.isSafeInteger(modelId) || modelId <= 0 ||
+      !Number.isSafeInteger(limit) || limit <= 0) throw invalid();
+    const model = await this.modelQuery(modelId);
+    const deployment = await this.deployments.findLastProjectDeployLog(this.config.projectId);
+    if (!deployment || deployment.status !== 'SUCCESS' || deployment.projectId !== this.config.projectId ||
+      !/^[a-f0-9]{40}$/.test(deployment.hash)) throw unavailable();
+    const selection = { modelId, deploymentId: deployment.id, deploymentHash: deployment.hash, limit };
+    return { resourceId, nativeObjectRef: JSON.stringify(selection),
+      nativeRevision: digest({ bindingId: this.config.bindingId, projectId: this.config.projectId,
+        connection: this.config.projectConnectionDigest, selection, sql: model.sql }),
+      displayName: model.name, mediaType: 'application/json' };
+  }
 
   // A browser may export an existing native view's immutable query selection.
   // This is a reference, not platform admission. Core independently verifies
@@ -111,23 +139,34 @@ export class NativeQueryService {
     };
   }
 
-  private async referencedInput(raw: Record<string, unknown>): Promise<GovernedQueryInput> {
-    if (!this.views || Object.keys(raw).sort().join(',') !==
+  private async referencedInput(raw: Record<string, unknown>, target: unknown): Promise<GovernedQueryInput> {
+    if (Object.keys(raw).sort().join(',') !==
       'displayName,mediaType,nativeObjectRef,nativeRevision,resourceId' ||
       typeof raw.resourceId !== 'string' || !uuid.test(raw.resourceId) ||
       typeof raw.nativeObjectRef !== 'string' || typeof raw.nativeRevision !== 'string' ||
       !/^[a-f0-9]{64}$/.test(raw.nativeRevision) || typeof raw.displayName !== 'string' ||
       raw.mediaType !== 'application/json') throw invalid();
-    let selection: { viewId: number; deploymentId: number; deploymentHash: string; limit: number };
+    let selection: { viewId?: number; modelId?: number; deploymentId: number; deploymentHash: string; limit: number };
     try { selection = JSON.parse(raw.nativeObjectRef); } catch { throw invalid(); }
-    if (!selection || Object.keys(selection).sort().join(',') !== 'deploymentHash,deploymentId,limit,viewId' ||
-      !Number.isSafeInteger(selection.viewId) || selection.viewId <= 0) throw invalid();
-    const view = await this.views.findOneBy({ id: selection.viewId, projectId: this.config.projectId });
-    if (!view || raw.nativeRevision !== digest({ bindingId: this.config.bindingId, projectId: this.config.projectId,
-      connection: this.config.projectConnectionDigest, selection, sql: view.statement })) {
+    if (!selection || typeof selection !== 'object' || Array.isArray(selection)) throw invalid();
+    const model = 'modelId' in selection;
+    const id = model ? selection.modelId : selection.viewId;
+    if (Object.keys(selection).sort().join(',') !== (model
+      ? 'deploymentHash,deploymentId,limit,modelId' : 'deploymentHash,deploymentId,limit,viewId') ||
+      !Number.isSafeInteger(id) || id <= 0) throw invalid();
+    const authorized = target as Record<string, unknown> | undefined;
+    if (!authorized || authorized.resourceId !== raw.resourceId ||
+      authorized.nativeType !== (model ? 'model' : 'view') ||
+      authorized.nativeRef !== String(id) ||
+      authorized.nativeInstanceRef !== this.config.nativeInstanceRef ||
+      authorized.nativeScopeRef !== this.config.nativeScopeRef) throw scopeDenied();
+    const sql = model ? (await this.modelQuery(id)).sql
+      : (await this.views?.findOneBy({ id, projectId: this.config.projectId }))?.statement;
+    if (!sql || raw.nativeRevision !== digest({ bindingId: this.config.bindingId, projectId: this.config.projectId,
+      connection: this.config.projectConnectionDigest, selection, sql })) {
       throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
     }
-    return queryInput({ sql: view.statement, deploymentId: selection.deploymentId,
+    return queryInput({ sql, deploymentId: selection.deploymentId,
       deploymentHash: selection.deploymentHash, limit: selection.limit });
   }
 
@@ -198,6 +237,10 @@ export class NativeQueryService {
       throw scopeDenied();
     }
     if (referenced && (raw as Record<string, unknown>).resourceId !== claims.target_id) throw scopeDenied();
+    const reauthorize = async () => {
+      const current = await authorizeQuery(this.config, token, 'execute', envelope);
+      if (referenced) await this.referencedInput(raw as Record<string, unknown>, current.targetResource);
+    };
     const rejectUnsentReference = async () => {
       if (referenced) {
         // Core already owns a dispatched EE. Preserve this authenticated
@@ -220,9 +263,9 @@ export class NativeQueryService {
     let input: GovernedQueryInput | undefined;
     try {
       input = describing ? undefined : referenced
-        ? await this.referencedInput(raw as Record<string, unknown>) : queryInput(raw);
+        ? await this.referencedInput(raw as Record<string, unknown>, claims.targetResource) : queryInput(raw);
     } catch (error) {
-      if (error instanceof NativeQueryRefusal && [400, 412].includes(error.status)) {
+      if (error instanceof NativeQueryRefusal && [400, 403, 412].includes(error.status)) {
         await rejectUnsentReference();
       }
       throw error;
@@ -301,7 +344,7 @@ export class NativeQueryService {
       // Same intent may be observed, never executed again, even if the first
       // writer died between reservation and the database call.
       if (prior.governanceState === 'SUCCEEDED') {
-        await authorizeQuery(this.config, token, 'execute', envelope);
+        await reauthorize();
         if (!prior.responsePayload || typeof prior.responsePayload !== 'object')
           throw unavailable();
         return {
@@ -324,7 +367,7 @@ export class NativeQueryService {
           this.config.requestTimeoutMs,
         );
       }
-      await authorizeQuery(this.config, token, 'execute', envelope);
+      await reauthorize();
     } catch {
       if (!(await this.history.rejectUnsentGovernedQuery(id, hash)))
         throw unavailable();
@@ -419,7 +462,7 @@ export class NativeQueryService {
       throw unavailable();
     // Observation may converge after revocation, but result disclosure must
     // still pass the original fresh business authorization.
-    await authorizeQuery(this.config, token, 'execute', envelope);
+    await reauthorize();
     return {
       execution: this.observation(completed),
       resultJson: JSON.stringify(value),

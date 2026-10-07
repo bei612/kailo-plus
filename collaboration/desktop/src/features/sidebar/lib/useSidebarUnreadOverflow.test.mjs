@@ -7,7 +7,7 @@ import {
 } from "./useSidebarUnreadOverflow.ts";
 
 test("labels the destination total as unread", () => {
-  assert.equal(sidebarOverflowUnreadLabel(3), "3 unread");
+  assert.equal(sidebarOverflowUnreadLabel(3), "3 项未读");
 });
 
 test("promotes offscreen actionable unread", () => {

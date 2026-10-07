@@ -145,11 +145,28 @@ func (s *Server) handleAddDocument(ctx context.Context, req mcp.CallToolRequest)
 				return mcp.NewToolResultError("invalid source reference"), nil
 			}
 			for _, required := range []string{"resourceId", "nativeObjectRef", "nativeRevision", "displayName", "mediaType"} {
-				if fields[required] == "" {
+				if fields[required] == "" || strings.TrimSpace(fields[required]) != fields[required] {
 					return mcp.NewToolResultError("incomplete source reference"), nil
 				}
 			}
+			for field, value := range fields {
+				switch field {
+				case "resourceId", "assetId":
+					id, parseErr := uuid.Parse(value)
+					if parseErr != nil || id == uuid.Nil || id.String() != value {
+						return mcp.NewToolResultError("invalid source reference"), nil
+					}
+				case "nativeObjectRef", "nativeRevision", "displayName", "mediaType":
+				default:
+					return mcp.NewToolResultError("invalid source reference"), nil
+				}
+			}
 			metadata["source_resource_id"] = fields["resourceId"]
+			references, marshalErr := json.Marshal([]map[string]string{fields})
+			if marshalErr != nil {
+				return mcp.NewToolResultError("invalid source reference"), nil
+			}
+			metadata["source_references"] = string(references)
 			metadata["source_read_operation_id"] = operation
 			metadata["source_native_object_ref"] = fields["nativeObjectRef"]
 			metadata["source_native_revision"] = fields["nativeRevision"]
