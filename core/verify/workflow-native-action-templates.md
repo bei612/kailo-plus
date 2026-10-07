@@ -122,3 +122,18 @@
 - `run-history-restored-final.log`：`tsc --noEmit -p tsconfig.test.json`、`vitest run test/workflow-run-history.test.tsx test/workflow-actions.test.tsx test/workflow-template.test.tsx` 全部退出 0，53 passed（8 新历史 + 38 原动作 + 7 原模板）；生产两文件与新检查文件的 SDK 输入 cmp 均退出 0，本批 `git diff --check` 退出 0。`workflows.runRecorded` 中英源词条由主线合入，同源 Dart 生成由主线集中完成，不手写另一个翻译源。
 
 源码与 jsdom 交互检查不等于实际浏览器截图、Windows/Mobile 或 Temporal 线上业务验收。本批未部署、未打包、未运行 full；两宿主集中候选类型及词条生成结果以主线记录为准，不将历史已有通过冒充本批执行。
+
+## 原 Definition 完整展示与固定版本编辑恢复（2026-10-07）
+
+1. 权威：REQ-24、DD-74/75、`.design/06-Temporal任务工作台.md` §9.1。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/workflows/ui/WorkflowDetailPanel.tsx::WorkflowDetailPanel` 在详情中以原 h4/pre 和 `JSON.stringify(workflow.definition, null, 2)` 展示完整定义。本批直接保留该标题/JSON 结构及全部原 class，而不是再造摘要表单或执行引擎。
+2. 影响：`client-kit/ts/platform/src/react/agents.tsx::AutomationDetail` 已有授权 AutomationDetailView → 精确 pinnedVersionAssetId 对应的 AutomationVersion → 同一标题、完整 Definition 和原编辑入口。此前标题取 pin、编辑隐式取 versions[0]，在新发布版本尚未启用时会编辑错配置。现编辑与既有复制沿同一 fresh reader，明确传回同一个 Asset 的完整 content；副作用仍由原 AutomationAction 发布新版本完成。Web/Desktop 共源，合同、Core/Worker、持久正文及权限权威未改变。
+3. 副作用：查看只消费已授权的完整配置，没有新写请求、复制账号、浏览器直接执行或 HTML 注入（React 文本显示）。已有管理权只控制入口，打开编辑前仍查 fresh canManage 与 resourceVersion；权限撤销、版本前进、Asset 消失均不打开旧配置。原复制保持读取来源后进入独立创建语义，不复制 pin 或授权。
+4. 边界：有 pin 时绝不替换为最新版本；当前授权分页缺 pin，原标题显示不可用、完整 Definition 不渲染、编辑禁用，沿既有版本分页找到 pin 后恢复，不增加上游没有的选择器。无 pin 的 DRAFT 沿原最新可读版本显示与编辑，不编造执行 pin。JSON 保留已合同化全部字段，包括 filter、多步、模板及空值，不限于摘要中原本可见的少量字段；未知合同字段仍由既有有效性校验拒绝。Mobile 不增加编辑入口。
+
+官方 workflow 模块目录核验为 67 个文件；本批只闭合此前明确的 Definition 缺失和详情编辑错位。原 JSON 样式与字段呈现归为原样复用/共享迁移；不可变 pin、Asset 分页和 fresh 权限复核归为授权治理差异；其余表单画布、任意步骤执行与完整轨迹仍不能据此宣称 100% 恢复。没有新菜单、版本选择控件、复制按钮或附加卡片布局。
+
+原 SDK `message-edit.AGX058/apps` 实查 4 CPU/8 GiB，执行前无其他编译，宿主 available 30 GiB、Data 3.3 GiB；不创建快照、不下载依赖、不编 Rust/镜像。日志位于本文件前述 `workflow-native-template.s3JDP1`：`definition-initial.log` 的共享 type 与 62 项首次全部退出 0；`definition-mutation.log` 只在私有输入把 pin 改为 versions[0] 并移除编辑 fresh 管理权/资源版本核对，8 failed/1 passed、退出 1。正式文件未被破坏，恢复后 cmp 退出 0。
+
+最终 `definition-restored-final.log` 运行 `tsc --noEmit -p tsconfig.test.json` 与 `vitest run test/workflow-definition.test.tsx test/workflow-run-history.test.tsx test/workflow-actions.test.tsx test/workflow-template.test.tsx`，全部退出 0，62 passed（9 Definition + 8 历史 + 38 动作 + 7 模板）。新增场景实走原共享详情、表单/YAML、现有分页和 fresh 读取，覆盖中英原 JSON 完整样式/内容、HTML 不执行、pin 非列表首项、缺 pin、不固定草稿、分页找到 pin、撤权/版本变化/丢失拒绝。`workflows.definition` 同源词条由主线集中生成 Dart；没有手写第二语言源。
+
+本批没有浏览器截图、Windows/Mobile、实际 Temporal 发布或完整门禁验收；源码/局部消费者验证不等于所有页面已恢复或已部署。主线统一提交、词条生成及两宿主集中验证另记。

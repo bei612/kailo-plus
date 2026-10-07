@@ -22,8 +22,9 @@ function nodePath(node, config) {
 function childrenCount(node) {
   if (!Array.isArray(node.FolderMeta)) throw new Refused(503);
   const counts = node.FolderMeta.filter(item => item?.Namespace === 'ChildrenCount');
-  if (counts.length !== 1 || !Number.isSafeInteger(counts[0].Value ?? 0) || (counts[0].Value ?? 0) < 0) throw new Refused(503);
-  return counts[0].Value ?? 0;
+  const count = counts[0]?.Value === undefined ? 0 : counts[0].Value;
+  if (counts.length !== 1 || !Number.isSafeInteger(count) || count < 0) throw new Refused(503);
+  return count;
 }
 
 async function nativeListing(config, deadline, args) {
@@ -62,10 +63,19 @@ async function nativeListing(config, deadline, args) {
       method:'POST',headers,body:JSON.stringify({Scope:{Root:{Uuid:folder.Uuid},Recursive:false},
         Offset:0,Limit:0,Flags:['WithMetaDefaults']}),
     });
-    if (!Array.isArray(response?.Nodes) || response.Nodes.length !== expected
-      || (response.Pagination !== undefined && ((response.Pagination?.Total ?? 0) !== expected
-        || (response.Pagination.NextOffset ?? 0) !== 0 || (response.Pagination.CurrentOffset ?? 0) !== 0))) throw new Refused(503);
-    for (const node of response.Nodes) {
+    // Cells' default protojson writer omits an empty repeated Nodes field.
+    // That is a complete empty set only when its independent native count is
+    // zero; never reinterpret a missing non-empty or malformed response as empty.
+    const nodes = object(response) && response.Nodes === undefined && expected === 0
+      && Object.keys(response).every(key => ['Facets','Pagination'].includes(key))
+      && (response.Facets === undefined || (Array.isArray(response.Facets) && response.Facets.length === 0))
+      ? [] : response?.Nodes;
+    if (!Array.isArray(nodes) || nodes.length !== expected
+      || (response.Pagination !== undefined && (!object(response.Pagination)
+        || (response.Pagination.Total === undefined ? 0 : response.Pagination.Total) !== expected
+        || (response.Pagination.NextOffset === undefined ? 0 : response.Pagination.NextOffset) !== 0
+        || (response.Pagination.CurrentOffset === undefined ? 0 : response.Pagination.CurrentOffset) !== 0))) throw new Refused(503);
+    for (const node of nodes) {
       const childPath = nodePath(node,config);
       if (!childPath.startsWith(`${path}/`) || childPath.slice(path.length+1).includes('/') || seen.has(node.Uuid)) throw new Refused(503);
       seen.add(node.Uuid);

@@ -61,8 +61,9 @@ export function SettingsPane({ active = true, onClose }: { active?: boolean; onC
   return (
     <SettingsPage active={active} locale={locale} section={section} onSelect={setSection} onClose={onClose} invitationAccess={invitations.access} onRetryInvitations={invitations.reload}>
       <CommunityInvitationSettings active={section==="community-members"} onAccessChange={invitations.onAccessChange}/>
+      <div hidden={section !== "profile"}><WebProfileSettings /></div>
       {(emojiVisited || section === "custom-emoji") && <div hidden={section !== "custom-emoji"}><WebCustomEmojiSettings /></div>}
-      {section === "profile" ? <WebProfileSettings /> : section === "appearance" ? (
+      {section === "appearance" ? (
         <AppearanceSettings name={translate(locale, "platform.title")} appearance={appearance} />
       ) : section === "notifications" ? (
         <BrowserNotificationSettings />

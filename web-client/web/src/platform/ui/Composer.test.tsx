@@ -16,6 +16,7 @@ import {
 } from "@client-kit/contracts";
 import { Composer } from "./ChannelPane";
 import { loadDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
+import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -62,6 +63,30 @@ async function type(input: HTMLElement, value: string) {
     input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
+}
+
+function paste(host: HTMLElement, text: string, html: string) {
+  // jsdom has no system pasteboard; only the browser event payload is supplied.
+  class PasteData {
+    values = new Map<string, string>();
+    files: File[] = [];
+    items: DataTransferItem[] = [];
+    getData(type: string) { return this.values.get(type) ?? ""; }
+    setData(type: string, value: string) { this.values.set(type, value); }
+    get types() { return [...this.values.keys()]; }
+  }
+  class PasteEvent extends Event {
+    clipboardData: PasteData | undefined;
+    constructor(type: string, options: EventInit & { clipboardData?: PasteData } = {}) {
+      super(type, options); this.clipboardData = options.clipboardData;
+    }
+  }
+  vi.stubGlobal("DataTransfer", PasteData);
+  vi.stubGlobal("ClipboardEvent", PasteEvent);
+  const data = new PasteData();
+  data.setData("text/plain", text); data.setData("text/html", html);
+  const input = host.querySelector<HTMLElement>('[data-testid="message-input"]')!;
+  input.dispatchEvent(new PasteEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
 }
 
 const state = vi.hoisted(() => ({
@@ -219,6 +244,70 @@ it("publishes the explicit human picker identity and retains it with the same UN
   await settle();
   expect(publish.mock.calls[1]?.[2]).toEqual(publish.mock.calls[0]?.[2]);
   expect(publish.mock.calls[1]?.[4]).toEqual([pubkey]);
+});
+
+it("pastes original Markdown with the exact copied same-name identity and settles before immediate send", async () => {
+  const first = "a".repeat(64), second = "b".repeat(64), publish = vi.fn().mockResolvedValue({});
+  const host = await render(<Composer draftIdentity="paste-same-name" mentionPeople={[
+    {pubkey:first,displayName:"Sam Lee"},{pubkey:second,displayName:"Sam Lee"},
+  ]} onPublish={publish}/>);
+  const text = "**Hello** @Sam Lee", html = buildMentionClipboardHtml({text,identities:[{label:"Sam Lee",pubkey:second}]})!;
+  await act(async () => {
+    paste(host,text,html);
+    host.querySelector("form")!.dispatchEvent(new Event("submit", {bubbles:true,cancelable:true}));
+    host.querySelector("form")!.dispatchEvent(new Event("submit", {bubbles:true,cancelable:true}));
+  });
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publish.mock.calls[0]?.[0]).toBe(text);
+  expect(publish.mock.calls[0]?.[4]).toEqual([second]);
+});
+
+it("normalizes original rich mention chips without losing surrounding formatting or trusting forged keys", async () => {
+  const trusted = "c".repeat(64), forged = "d".repeat(64), publish = vi.fn().mockResolvedValue({});
+  const host = await render(<Composer draftIdentity="paste-rich" mentionPeople={[{pubkey:trusted,displayName:"Casey Jones"}]} onPublish={publish}/>);
+  await act(async () => paste(host,"not the HTML content",`<p><strong>Hi</strong> <span data-mention="" data-mention-label="Casey Jones" data-mention-pubkey="${trusted}">Casey Jones</span> and <span data-mention="" data-mention-label="Someone Else" data-mention-pubkey="${forged}">Someone Else</span></p>`));
+  expect(host.querySelector('[data-testid="message-input"] strong')?.textContent).toBe("Hi");
+  await click(button(host,"platform.send"));
+  expect(publish.mock.calls[0]?.[0]).toBe("**Hi** @Casey Jones and @Someone Else");
+  expect(publish.mock.calls[0]?.[4]).toEqual([trusted]);
+});
+
+it("does not attach a late copied identity to replacement text or a different draft", async () => {
+  const first = "a".repeat(64), second = "b".repeat(64), publish = vi.fn();
+  const people = [{pubkey:first,displayName:"Sam Lee"},{pubkey:second,displayName:"Sam Lee"}];
+  const host = await render(<Composer draftIdentity="paste-replace" draftKey="first" mentionPeople={people} onPublish={publish}/>);
+  const text = "@Sam Lee", html = buildMentionClipboardHtml({text,identities:[{label:"Sam Lee",pubkey:second}]})!;
+  await act(async () => {
+    paste(host,text,html);
+    const editor = (host.querySelector('[data-testid="message-input"]') as HTMLElement & {editor:Editor}).editor;
+    editor.commands.selectAll(); editor.commands.insertContent(text);
+  });
+  await click(button(host,"platform.send"));
+  expect(publish).not.toHaveBeenCalled();
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe("pulse.mentionAmbiguous");
+  await rerender(<Composer draftIdentity="paste-replace" draftKey="second" mentionPeople={people} onPublish={publish}/>);
+  await type(host.querySelector<HTMLElement>('[data-testid="message-input"]')!,text);
+  await click(button(host,"platform.send"));
+  expect(publish).not.toHaveBeenCalled();
+});
+
+it("rechecks the current mention directory before publishing a copied identity", async () => {
+  const pubkey="e".repeat(64), publish=vi.fn();
+  const host=await render(<Composer draftIdentity="paste-revoked" mentionPeople={[{pubkey,displayName:"Chris Kim"}]} onPublish={publish}/>);
+  const text="@Chris Kim";
+  await act(async()=>paste(host,text,buildMentionClipboardHtml({text,identities:[{label:"Chris Kim",pubkey}]})!));
+  await rerender(<Composer draftIdentity="paste-revoked" mentionPeople={[]} onPublish={publish}/>);
+  await click(button(host,"platform.send"));
+  expect(publish).not.toHaveBeenCalled();
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe("platform.loadFailed");
+});
+
+it("pastes an original copied code block as code rather than flattening its source", async () => {
+  const publish=vi.fn().mockResolvedValue({}),host=await render(<Composer draftIdentity="paste-code" onPublish={publish}/>);
+  await act(async()=>paste(host,"a < b\nreturn a",'<pre data-buzz-code-block="true"><code>a &lt; b\nreturn a</code></pre>'));
+  expect(host.querySelector('[data-testid="message-input"] pre code')?.textContent).toBe("a < b\nreturn a");
+  await click(button(host,"platform.send"));
+  expect(publish.mock.calls[0]?.[0]).toBe("```\na < b\nreturn a\n```");
 });
 
 it("resolves a typed human mention only from the current projected directory",async()=>{

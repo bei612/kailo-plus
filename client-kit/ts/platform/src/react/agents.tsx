@@ -545,27 +545,33 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
   if (state.status === "pending") return <Notice role="status">{t("platform.loading")}</Notice>;
   if (!detail) return <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />;
   const row = detail.automation;
+  // A pinned definition is not interchangeable with the newest readable draft.
+  // If its Asset is absent from this authorized page, do not substitute a version.
+  const definition = row.pinnedVersionAssetId
+    ? detail.versions.find((version) => version.assetId === row.pinnedVersionAssetId)
+    : detail.versions[0];
   const published = detail.versions.filter((v) => v.state === AgentVersionState.Published);
   const grants = detail.delegations.filter((g) => new Date(g.expiresAt).getTime() > Date.now());
-  const copy = async (assetId: string) => {
+  const openVersion = async (assetId: string, action: "copy" | "publish_version") => {
     if (locked || copying) return;
     const request = ++copyRequest.current;
     setCopying(true); setCopyError(undefined);
     try {
       // Re-read the selected page through the existing authorized reader; a stale
-      // local definition is not permission to copy after access was revoked.
+      // local definition is not permission to copy/edit after access was revoked.
       const fresh = await client.automation(resourceId, versionOffset, grantOffset);
       if (request !== copyRequest.current) return;
       const version = validAutomationDetail(fresh, resourceId, workspaceId)
         ? fresh.versions.find((candidate) => candidate.assetId === assetId) : undefined;
-      if (!version) throw new TransportError(t("platform.loadFailed"));
-      onEdit({ detail: fresh, action: "copy", content: version.content });
+      if (!version || (action === "publish_version" && (!fresh.canManage
+        || fresh.automation.resourceVersion !== row.resourceVersion))) throw new TransportError(t("platform.loadFailed"));
+      onEdit({ detail: fresh, action, content: version.content });
     } catch (error) { if (request === copyRequest.current) setCopyError(error); }
     finally { if (request === copyRequest.current) setCopying(false); }
   };
   return <section className="flex flex-col overflow-hidden rounded-2xl border bg-background" data-testid="workflow-detail-panel">
     <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
-      <div className="min-w-0"><h3 className="break-words text-sm font-semibold">{(detail.versions.find((version) => version.assetId === row.pinnedVersionAssetId) ?? detail.versions[0])?.content.name ?? t("workflows.unnamed")}</h3>
+      <div className="min-w-0"><h3 className="break-words text-sm font-semibold">{definition ? definition.content.name ?? t("workflows.unnamed") : t("native.unavailable.title")}</h3>
         <p className="mt-1 break-all font-mono text-2xs text-muted-foreground">{row.resourceId}</p>
         <p className="mt-1 text-xs text-muted-foreground">{t("agents.resourceVersion")}: {row.resourceVersion}</p></div>
       <Button disabled={locked} aria-label={t("buzz.close")} onClick={onClose}><X aria-hidden className="h-4 w-4" /></Button>
@@ -573,7 +579,7 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
     <div className="space-y-4 p-4" data-scroll-restoration-id={`workflow-detail:${resourceId}`}>
     <p className="break-words text-sm">{t("agents.automation.pinned")}: {row.pinnedVersionAssetId ?? "—"} · {t("agents.automation.grant")}: {row.delegationId ?? "—"}</p>
     {detail.canManage ? <div className="flex flex-wrap gap-2">
-      <Button disabled={locked} onClick={() => onEdit({ detail, action: "publish_version" })}>{t("agents.automation.publish")}</Button>
+      <Button disabled={locked || copying || !definition} onClick={() => { if (definition) void openVersion(definition.assetId, "publish_version"); }}>{t("agents.automation.publish")}</Button>
       {row.state !== AutomationState.Enabled && published.length > 0 && grants.length > 0
         ? <Button disabled={locked} onClick={() => onEdit({ detail, action: "enable" })}>{t("agents.automation.enable")}</Button> : null}
       {row.state === AutomationState.Enabled ? <Button disabled={locked} onClick={() => onEdit({ detail, action: "pause" })}>{t("agents.automation.pause")}</Button> : null}
@@ -582,6 +588,15 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
     </div> : null}
     {detail.canRun === true && row.state === AutomationState.Enabled ? <Button className="w-fit" disabled={locked}
       onClick={() => onEdit({ detail, action: "run" })}>{t("agents.automation.run")}</Button> : null}
+    {/* Buzz 779af8886caae1317b4de962082429867ab61503:
+        desktop/src/features/workflows/ui/WorkflowDetailPanel.tsx::WorkflowDetailPanel.
+        Render the authorized immutable version in the original complete JSON view. */}
+    {definition ? <div>
+      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("workflows.definition")}</h4>
+      <pre className="max-h-64 overflow-auto rounded-md bg-muted/50 p-3 font-mono text-xs leading-relaxed" data-testid="workflow-definition">
+        {JSON.stringify(definition.content, null, 2)}
+      </pre>
+    </div> : null}
     {detail.versions.length === 0 ? <Notice>{t("agents.automation.noVersion")}</Notice>
       : <Table head={[t("agents.version.assetVersion"), t("workflows.name"), t("agents.resourceVersion"), t("platform.state"), t("agents.automation.trigger"), t("agents.automation.template"), ""]}>
         {detail.versions.map((version) => <tr key={version.assetId}>
@@ -604,7 +619,7 @@ function AutomationDetail({ resourceId, workspaceId, locked, onEdit, onClose, re
             {version.content.steps ? <ol className="mt-2 space-y-1 text-xs text-muted-foreground">{version.content.steps.map((step) =>
               <li key={step.id}>{step.name ?? step.id} · {step.action === "delay" ? `${t("workflows.steps.duration")}: ${step.duration}` : step.action === "request_approval" ? t("agents.automation.approvalPolicy") : step.action === "set_channel_topic" ? `${t("workflows.steps.setTopic")}: ${step.topic}` : step.action === "add_reaction" ? `${t("workflows.steps.addReaction")}: ${step.emoji}` : t("workflows.steps.message")}</li>)}</ol> : null}
           </Cell>
-          <Cell><Button disabled={locked || copying} onClick={() => { void copy(version.assetId); }}>{t("agents.automation.copy")}</Button></Cell>
+          <Cell><Button disabled={locked || copying} onClick={() => { void openVersion(version.assetId, "copy"); }}>{t("agents.automation.copy")}</Button></Cell>
         </tr>)}
       </Table>}
     {copyError ? <AgentReadFailure error={copyError} onRetry={() => setCopyError(undefined)} /> : null}

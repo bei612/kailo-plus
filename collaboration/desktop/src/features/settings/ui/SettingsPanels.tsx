@@ -16,7 +16,6 @@ import { isLinuxPlatform } from "@/shared/lib/platform";
 import { performDefaultHaptic } from "@/shared/lib/haptics";
 import { KeyboardShortcutsCard } from "./KeyboardShortcutsCard";
 import { NotificationSettingsCard } from "./NotificationSettingsCard";
-import { ProfileSettingsCard } from "./ProfileSettingsCard";
 
 export type { SettingsSection } from "@client-kit/platform/react/settings";
 
@@ -67,7 +66,7 @@ export function renderSettingsSection(
     case "community-members":
       return null; // The shared invitation controller stays mounted in SettingsView.
     case "profile":
-      return <ProfileSettingsCard />;
+      return null; // SettingsView retains the scoped in-flight/UNKNOWN profile intent.
     case "custom-emoji":
       return null; // SettingsView keeps the scoped UNKNOWN publication intent mounted.
     case "notifications":

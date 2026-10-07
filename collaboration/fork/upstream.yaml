@@ -57,6 +57,8 @@ remove_paths:
   - desktop/src/features/settings/ui/AppearanceSettingsControls.tsx
   # Original picker selection and popover surface are shared by Web and Desktop.
   - desktop/src/features/messages/lib/useMentionSelection.ts
+  # Original copy resolver now shared; both hosts consume useMessageMentionClipboard.
+  - desktop/src/features/messages/lib/useMessageMentionIdentities.ts
   - desktop/src/shared/ui/popoverSurface.ts
   - .github/workflows/desktop-release-cache-proof.yml
   - .github/workflows/desktop-release-candidate.yml

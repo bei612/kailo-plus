@@ -56,6 +56,10 @@ import { ComposerReplyBanner } from "@client-kit/platform/react/messages";
 import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "@client-kit/platform/react/messages";
 import { ForumComposerSurface } from "@client-kit/platform/react/forum/ForumComposerSurface";
 import { useRichTextEditor, type LinkSelectionInfo } from "@client-kit/platform/react/composer/features/messages/lib/useRichTextEditor";
+import { useComposerPasteHandler } from "@client-kit/platform/react/composer/features/messages/ui/useComposerPasteHandler";
+import { MAX_TRACKED_INTENTS, useMentionPasteBinding } from "@client-kit/platform/react/composer/features/messages/lib/mentionPasteBinding";
+import { trimMapToSize } from "@client-kit/platform/react/composer/shared/lib/trimMapToSize";
+import { partitionMentionIdentitiesByLocalTrust } from "@client-kit/platform/react/composer/features/messages/lib/mentionIdentityTrust";
 import { useLinkEditor } from "@client-kit/platform/react/composer/features/messages/lib/useLinkEditor";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { initDraftStore, loadDraftEntry, saveDraftEntry, clearDraftEntry } from "@client-kit/platform/react/composer/features/messages/lib/useDrafts";
@@ -497,6 +501,8 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
   const [confirmedSendRevision, setConfirmedSendRevision] = useState(0);
   const [humanQuery, setHumanQuery] = useState<{query:string;startIndex:number;cursor:number}|null>(null);
   const humanBindings = useRef(new Map<string,string>());
+  const mentionPeopleRef = useRef(mentionPeople);
+  mentionPeopleRef.current = mentionPeople;
   const [humanNames,setHumanNames] = useState<string[]>([]);
   const humanSuggestions = useMemo(()=>mentionPeople?.filter(person=>humanQuery!==null && person.displayName.toLowerCase().includes(humanQuery.query.toLowerCase()))??[],[mentionPeople,humanQuery]);
   const {mentionSelectedIndex:humanIndex,setMentionSelectedIndex:setHumanIndex}=useMentionSelection(humanSuggestions);
@@ -555,7 +561,7 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
   // 当前发送意图：内容与附件不变时重发沿用同一个键——结果不明之后再点发送，
   // BFF 回答原操作的结论而不是再发一条（DD-81）。确定的结论之后换新键。
   const intent = useRef<{ key: string; signature: string } | null>(null);
-  const owner = useMemo(() => ({ active: true }), [workspaceId, draftIdentity, draftKey]);
+  const owner = useMemo(() => ({ active: true, sending: false }), [workspaceId, draftIdentity, draftKey]);
   useEffect(() => { owner.active = true; return () => { owner.active = false; }; }, [owner]);
   const asBlob = (entry: Pending): ImetaMedia => ({ ...entry.descriptor, uploaded: entry.receivedAt });
   const removeAttachment = useCallback((url: string) => {
@@ -640,6 +646,18 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
   const linkShortcutRef = useRef<() => boolean>(() => false);
   const autocompleteOpenRef = useRef(mentionPickerOpen);
   autocompleteOpenRef.current = mentionPickerOpen || humanSuggestions.length > 0;
+  const pasteBinding = useMentionPasteBinding({
+    registerVerifiedMentionPubkey: (label, pubkey) => {
+      if (!owner.active) return;
+      humanBindings.current.set(label, pubkey);
+      trimMapToSize(humanBindings.current, MAX_TRACKED_INTENTS);
+      setHumanNames([...humanBindings.current.keys()]);
+    },
+    verifyMentionIdentities: async (records) => partitionMentionIdentitiesByLocalTrust(records,
+      (pubkey) => mentionPeopleRef.current?.filter(person => person.pubkey.toLowerCase() === pubkey)
+        .map(person => person.displayName) ?? []).trusted,
+  });
+  useEffect(() => () => pasteBinding.clearMentionIntents(), [owner, pasteBinding.clearMentionIntents]);
   const richText = useRichTextEditor({
     placeholder: placeholder ?? t("platform.message"), editable: !disabled && !sending,
     restoreFocusOnEnable: () => !compact || Boolean(draft.trim() || pending.length || problem),
@@ -661,7 +679,10 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
     if(disabled||sending||!mentionPeople?.some(candidate=>candidate.pubkey===person.pubkey))return;
     const position=richText.getPlainTextAndCursor();
     const label=selectedMentionLabel(person.displayName,person.pubkey,humanBindings.current);
-    humanBindings.current.set(label,person.pubkey);setHumanNames([...humanBindings.current.keys()]);
+    pasteBinding.claimMentionIntent(label);
+    humanBindings.current.set(label,person.pubkey);
+    trimMapToSize(humanBindings.current, MAX_TRACKED_INTENTS);
+    setHumanNames([...humanBindings.current.keys()]);
     richText.replacePlainTextRange(humanQuery?.startIndex??position.cursor,humanQuery?.cursor??position.cursor,"@"+label+" ");
     setHumanQuery(null);setHumanIndex(0);
   };
@@ -670,6 +691,14 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
     setHumanQuery({query:"",startIndex:position.cursor,cursor:position.cursor});
     richText.editor?.commands.focus();
   };
+  const scrollAfterPaste = useCallback(() => {
+    const view = richText.editor?.view;
+    if (view) view.dispatch(view.state.tr.scrollIntoView());
+  }, [richText.editor]);
+  useComposerPasteHandler({ editor: richText.editor,
+    bindMentionIdentities: pasteBinding.bindPastedMentionIdentities,
+    scrollToBottom: scrollAfterPaste, uploadFile: (file) => attach([file]),
+  });
   const linkEditor = useLinkEditor(richText, {
     openExternal: (url) => { window.open(url, "_blank", "noopener,noreferrer"); },
     openMessageLink: (link) => { if (onOpenMessageLink) onOpenMessageLink(link); else setProblem(t("platform.linkOpenFromChannel")); },
@@ -696,6 +725,7 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
     setMentionInstallationIds(saved?.mentionInstallationIds ?? []);
     setMentionPickerOpen(false);
     setMentionSelectedIndex(0);
+    pasteBinding.clearMentionIntents();
     humanBindings.current.clear();setHumanNames([]);setHumanQuery(null);
     setSending(false);
     setUploading(0);
@@ -723,8 +753,13 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
   }, [draftKey, workspaceId, draftChannelId, owner, loadedDraftOwner, mentionInstallationIds, attachmentActions.spoileredAttachmentUrls]);
   useEffect(() => { persistDraft(richText.getMarkdown(), pending); }, [draftRevision, pending, persistDraft, richText.getMarkdown]);
 
-  const send = useCallback(() => {
-    if (sending || disabled || uploading > 0 || !mentionVerified) return;
+  const send = useCallback(async () => {
+    if (sending || owner.sending || disabled || uploading > 0 || !mentionVerified) return;
+    owner.sending = true;
+    setSending(true);
+    try {
+    await pasteBinding.settlePendingMentionBindings();
+    if (!owner.active) return;
     const content = richText.getMarkdown().trim();
     if (!content && pending.length === 0) return;
     setProblem(null);
@@ -736,8 +771,8 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
     let humanMentionPubkeys:string[]=[];
     try {
       humanMentionPubkeys=extractMentionPubkeys({text:content,selectedMentions:humanBindings.current,
-        memberCandidates:mentionPeople?.map(person=>({...person,isMember:true}))??[]});
-      if(humanMentionPubkeys.some(pubkey=>!mentionPeople?.some(person=>person.pubkey===pubkey)))throw new Error(t("platform.loadFailed"));
+        memberCandidates:mentionPeopleRef.current?.map(person=>({...person,isMember:true}))??[]});
+      if(humanMentionPubkeys.some(pubkey=>!mentionPeopleRef.current?.some(person=>person.pubkey.toLowerCase()===pubkey)))throw new Error(t("platform.loadFailed"));
     } catch(error) {setProblem(error instanceof AmbiguousMentionError?t("pulse.mentionAmbiguous",{name:error.displayName}):t("platform.loadFailed"));return;}
     const signature = JSON.stringify([
       content,
@@ -762,7 +797,6 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
     }
     const key = intent.current.key;
     persistDraft(content, pending);
-    setSending(true);
     const publish = onPublish
       ? onPublish(content, attachments, key, mentionInstallationIds, humanMentionPubkeys)
       : workspaceId
@@ -771,13 +805,14 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
             return receipt;
           })
         : Promise.reject(new Error("Message destination is unavailable."));
-    void publish
+    await publish
       .then(() => {
         if (!owner.active) return;
         if (intent.current?.key === key) intent.current = null;
         if (richText.getMarkdown().trim() === content) {
           richText.setContent("");
           setDraft("");
+          pasteBinding.clearMentionIntents();
           humanBindings.current.clear();setHumanNames([]);setHumanQuery(null);
         }
         setPending((current) => current.filter((p) => !pending.includes(p)));
@@ -807,9 +842,12 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
         } else {
           setProblem(t("platform.sendFailed"));
         }
-      })
-      .finally(() => { if (owner.active) setSending(false); });
-  }, [pending, workspaceId, mentionPeople, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed]);
+      });
+    } finally {
+      owner.sending = false;
+      if (owner.active) setSending(false);
+    }
+  }, [pending, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed, pasteBinding]);
   sendRef.current = send;
 
   const autoSent = useRef<typeof owner | null>(null);

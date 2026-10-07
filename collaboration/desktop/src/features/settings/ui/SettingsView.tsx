@@ -5,6 +5,7 @@ import { SettingsPage, CommunityInvitationSettings, useInvitationSettingsState }
 import { getVersion } from "@tauri-apps/api/app";
 import { renderSettingsSection, type SettingsPanelProps, type SettingsSection } from "./SettingsPanels";
 import { CustomEmojiSettingsCard } from "./CustomEmojiSettingsCard";
+import { ProfileSettingsCard } from "./ProfileSettingsCard";
 
 type SettingsViewProps = SettingsPanelProps & {
   active: boolean;
@@ -17,7 +18,9 @@ export function SettingsView({ active, onClose, onSectionChange, section, ...pan
   const locale = useDeviceLocale();
   const invitations = useInvitationSettingsState();
   const [emojiVisited, setEmojiVisited] = React.useState(false);
+  const [profileVisited, setProfileVisited] = React.useState(false);
   React.useEffect(() => { if (section === "custom-emoji") setEmojiVisited(true); }, [section]);
+  React.useEffect(() => { if (section === "profile") setProfileVisited(true); }, [section]);
   const [appVersion, setAppVersion] = React.useState<string | null>(null);
   React.useEffect(() => {
     let disposed = false;
@@ -27,6 +30,7 @@ export function SettingsView({ active, onClose, onSectionChange, section, ...pan
   return <SettingsPage active={active} locale={locale} section={section} onSelect={onSectionChange}
     onClose={onClose} appVersion={appVersion} invitationAccess={invitations.access} onRetryInvitations={invitations.reload}>
     <CommunityInvitationSettings active={section === "community-members"} onAccessChange={invitations.onAccessChange} />
+    {(profileVisited || section === "profile") && <div hidden={section !== "profile"}><ProfileSettingsCard /></div>}
     {(emojiVisited || section === "custom-emoji") && <div hidden={section !== "custom-emoji"}><CustomEmojiSettingsCard /></div>}
     {renderSettingsSection(section, panelProps)}
   </SettingsPage>;

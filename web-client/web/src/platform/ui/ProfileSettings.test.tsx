@@ -10,6 +10,7 @@ import { setLocale } from "@client-kit/platform/i18n";
 import { PlatformProvider } from "@client-kit/platform/react/context";
 import { createBffClient } from "@client-kit/platform/client";
 import { SidebarProvider } from "@client-kit/platform/react/sidebar/sidebar";
+import { TransportError } from "@client-kit/platform/transport";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), upload: vi.fn() }));
@@ -102,6 +103,82 @@ it("does not start old save readback with the next session cookie after the prof
   expect(state.read).toHaveBeenCalledTimes(reads);
   expect(host.textContent).toContain("Next session");
   expect(host.textContent).not.toContain("Saved and read back");
+});
+
+it("retains the actual pending profile request through section switches, then observes the same UNKNOWN intent", async () => {
+  let reject!: (error: Error) => void;
+  state.write.mockReturnValueOnce(new Promise((_resolve, rejectSave) => { reject = rejectSave; }));
+  await startSave();
+  const request = state.write.mock.calls[0]![0];
+  const editor = host.querySelector<HTMLInputElement>("#profile-display-name")!;
+  expect(editor.disabled).toBe(true);
+  await click('[data-testid="settings-nav-appearance"]');
+  expect(editor.closest("[hidden]")).not.toBeNull();
+  await act(async () => reject(new TransportError("publication response lost")));
+  await click('[data-testid="settings-nav-profile"]');
+  expect(host.querySelector("#profile-display-name")).toBe(editor);
+  expect(editor.value).toBe("After");
+  expect(editor.disabled).toBe(true);
+  expect(host.textContent).toContain("The save result is unknown");
+  expect(state.write).toHaveBeenCalledTimes(1);
+  state.read.mockResolvedValue({ ...profile, eventId: "2".repeat(64), displayName: "Canonical After" });
+  const observe = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Check save result")!;
+  await act(async () => observe.click());
+  expect(state.write).toHaveBeenCalledTimes(2);
+  expect(state.write.mock.calls[1]![0]).toBe(request);
+  expect(host.textContent).toContain("Saved and read back");
+  expect(host.textContent).toContain("Canonical After");
+});
+
+it("preserves the real uploaded-avatar UNKNOWN request across navigation without a second upload", async () => {
+  const avatarUrl = "https://community.example/media/avatar.png";
+  state.upload.mockResolvedValue({ url: avatarUrl, sha256: "c".repeat(64), type: "image/png" });
+  state.write.mockRejectedValueOnce(new TransportError("publication response lost"));
+  const create = Object.getOwnPropertyDescriptor(URL, "createObjectURL");
+  const revoke = Object.getOwnPropertyDescriptor(URL, "revokeObjectURL");
+  Object.defineProperty(URL, "createObjectURL", { configurable: true, value: () => "blob:local-avatar" });
+  Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+  try {
+    await openProfile();
+    await click('[data-testid="profile-avatar-edit"]');
+    await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+    const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const file = new File([new Uint8Array([137, 80, 78, 71])], "avatar.png", { type: "image/png" });
+    Object.defineProperty(file, "arrayBuffer", { value: async () => new Uint8Array([137, 80, 78, 71]).buffer });
+    Object.defineProperty(input, "files", { value: [file] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    await click('[data-testid="profile-avatar-done"]');
+    expect(state.write).toHaveBeenCalledTimes(1);
+    const request = state.write.mock.calls[0]![0];
+    expect(request).toMatchObject({ expectedPubkey: profile.pubkey, avatarUrl });
+    expect(host.textContent).toContain("The save result is unknown");
+    await click('[data-testid="settings-nav-shortcuts"]');
+    await click('[data-testid="settings-nav-profile"]');
+    expect(host.textContent).toContain("The save result is unknown");
+    expect(state.write).toHaveBeenCalledTimes(1);
+    state.read.mockResolvedValue({ ...profile, avatarUrl, eventId: "2".repeat(64) });
+    const observe = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Check save result")!;
+    await act(async () => observe.click());
+    expect(state.write.mock.calls[1]![0]).toBe(request);
+    expect(state.upload).toHaveBeenCalledTimes(1);
+    expect(host.textContent).toContain("Saved and read back");
+  } finally {
+    if (create) Object.defineProperty(URL, "createObjectURL", create); else Reflect.deleteProperty(URL, "createObjectURL");
+    if (revoke) Object.defineProperty(URL, "revokeObjectURL", revoke); else Reflect.deleteProperty(URL, "revokeObjectURL");
+  }
+});
+
+it("does not transfer or automatically repeat an UNKNOWN request after the authenticated profile scope changes", async () => {
+  state.write.mockRejectedValueOnce(new TransportError("publication response lost"));
+  await startSave();
+  expect(host.textContent).toContain("The save result is unknown");
+  await click('[data-testid="settings-nav-appearance"]');
+  state.read.mockResolvedValue({ ...profile, pubkey: "b".repeat(64), displayName: "Next session" });
+  await openProfile("next-session");
+  expect(host.textContent).toContain("Next session");
+  expect(host.textContent).not.toContain("The save result is unknown");
+  expect(host.textContent).not.toContain("Saved and read back");
+  expect(state.write).toHaveBeenCalledTimes(1);
 });
 
 it("the real Web settings branch requires the exact signed event readback after its PUT", async () => {

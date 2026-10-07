@@ -81,3 +81,71 @@ CREATE 的 writer 成功。把 LOOKUP 的 404/Exists=false 写成 ABSENT_FENCED 
 失败终态；HTTP 超时或取消连接也不能证明原生 writer 未成功。本次未新增临时台账、
 进程内 mutex 或拒绝一切的 stub 来伪装原子 fence，RESOURCE_PROVISION 入口没有开放。
 该证据仅说明现成被核验的调用链不足，不宣称整个 Cells 没有其他可扩展的原生接缝。
+
+## Cells 空目录的真实完整列举（2026-10-07）
+
+本批关联 DD-89、SS-CEL-MATERIALIZATION 与 `.design/13` §4.4：仅完整、成功且
+受权的来源列举可以成为 WeKnora 的缺失项集合，空目录也必须能够表示成功的空集合。
+固定上游仍为 `c57f02f4962835447df694c63bd0fd8c22bd7baf`，以下符号重新只读核验：
+
+- `gateway/restv2/api-lookup.go::Handler.Lookup` 在零节点时仍返回原 NodeCollection。
+- `common/proto/rest/cellsapi-rest-v2.pb.go::NodeCollection` 的 Nodes 为 repeated 字段。
+- `common/middleware/rest-entity-rw.go::ProtoEntityReaderWriter.Write` 使用默认
+  `protojson.Marshal`，不启用 EmitUnpopulated；空 Nodes 不输出为 JSON 字段。
+- `common/service/web.go::init` 的原服务注册路径使用该 JSON
+  EntityAccessor；不是测试随意指定的另一种编码。
+
+原适配器强制 `Array.isArray(response.Nodes)`，因此合法空目录被拒绝；来源最后一个
+文件删除后的同步也无法向接收方给出完整空集合。本批直接纠正原 `service-list.mjs`
+解析，不新建列表或同步权威、不修改原 Cells 页面/数据，不放宽 Resource 或 binding。
+
+只有独立原生 ChildrenCount 明确为零、响应为原 NodeCollection 对象且 Nodes 省略时，
+才按 proto3 语义解读为空数组；非零计数缺 Nodes、显式 null/对象、未知响应字段、
+缺失计数、异常分页、读取中计数变化或撤权均拒绝且不产生来源完成回执。
+计数字段的 proto3 省略零值不等于显式 null：后者及字符串计数仍拒绝；省略 Nodes
+时也拒绝 malformed 或非空 Facets，不能把过滤结果伪装成完整空集合。
+保留原前后节点核验、两次完整遍历、fresh PEP、来源摘要与用量回执。分页存在时还须为对象；
+不能把错误字符串的缺失属性默认为零。没有新状态、schema、迁移、配置或 secret。
+成功空集合为原 `items=[]` 合同，由现有 WeKnora 消费；不在 Cells Adapter 删除知识。
+Web/Desktop/Mobile 的页面与宿主边界均不变。
+
+实现后复用 `kailo-agent-receipt-xvkujx` 原 4 CPU / 8 GiB cgroup；执行前只有 sleep、
+OOM false，宿主约 30 GiB 可用。仅向原 read-receipts 候选补齐七个轻量源码/测试输入，
+没有新全树快照、镜像、依赖安装或 Go 编译。实际命令：
+
+```sh
+node --test --test-name-pattern='SERVICE|source bytes' \
+  file-storage/adapter/test/query-revision.test.mjs
+```
+
+原 HTTP 消费者专项 **29 passed / 0 failed**，退出 0，覆盖 `{}`、省略零值分页、
+显式空数组、错误缺失/类型、非零计数、变化计数以及披露前撤权；真实适配器仍经过
+两次 PEP、两次列举并提交 `[]` 的 SHA-256 与两字节回执。删除 SDK 中的空集合适配、
+恢复旧 Nodes 强制存在行为后，实际 **3 failed / 26 passed**，退出 1（含父用例失败）；
+正式源码不破坏。还原后两个变更输入 cmp 退出 0，同一专项再次 **29/29** 通过。
+随后补入原生 Facets 空数组、null/字符串计数、异常 Facets 的边界检查，最终
+**34 passed / 0 failed**，退出 0。私有候选恢复旧 `Value ?? 0` 后，null 计数
+错误地产生 200，被实际检查抓到 **2 failed / 32 passed**（含父用例失败）；
+再次还原并 cmp 两输入退出 0，最终 **34/34** 通过。
+交叉复核后同批进一步纠正三个分页字段的旧 `?? 0`：Total、NextOffset 与
+CurrentOffset 都仅省略时采用 proto3 默认零，显式 null 不再获得完整列举回执。
+三个真实 HTTP 反例补入后 **37/37** 通过；私有候选恢复旧分页逻辑后
+**4 failed / 33 passed**（含父用例失败），三个 null 均真实错误返回 200。
+原字节恢复、两个输入 cmp 退出 0，最终 **37/37**、退出 0。
+
+完整原 HTTP 文件也实际运行：**72 passed / 5 failed**，退出 1；失败位于原 ONLYOFFICE
+discovery/PAT 路径。该轻量候选没有 `xml2js`，独立动态导入确认 `ERR_MODULE_NOT_FOUND`；
+没有绕过 XML 解析或把此结果记成完整通过。它不影响上述来源读取专项，但仍是完整
+套件未通过的明确边界。
+
+日志位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/read-receipts-20261007/`：
+`cells-empty-discovery.log`、`cells-empty-discovery-targeted.log`、
+`cells-empty-discovery-mutation.log`、`cells-empty-discovery-restored.log`、
+`cells-empty-discovery-final.log`、`cells-empty-count-mutation.log`、
+`cells-empty-count-restored.log`。
+分页纠正的原件为 `cells-empty-pagination.log`、
+`cells-empty-pagination-mutation.log`、`cells-empty-pagination-restored.log`。
+`git diff --check` 退出 0。Cells/Core/OIDC 仍为隔离 HTTP fixture，不是线上空目录删除
+验收；没有 full、浏览器截图、生产绑定投递、部署、安装包或真实跨服务同步验收。
+本批未修改已有未提交的 `file-storage/deploy/compose.yaml`。

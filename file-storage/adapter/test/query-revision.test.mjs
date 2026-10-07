@@ -154,6 +154,8 @@ async function setup(t, changes = {}) {
     assert.equal(request.headers.authorization, `Bearer ${nativeSecret}`);
     state.nativeReads.push(request.url);
     if (changes.serviceList && request.url === `/v2/n/node/${ids[2]}?Flags=WithMetaDefaults`) {
+      state.rootReads=(state.rootReads??0)+1;
+      if (changes.rootAfter && state.rootReads>1) return reply(response,200,changes.rootAfter);
       return reply(response,200,changes.root ?? {...root,FolderMeta:[{Namespace:'ChildrenCount',Value:1}]});
     }
     if (changes.serviceList && request.url === `/v2/n/node/${ids[3]}?Flags=WithMetaDefaults`) {
@@ -327,6 +329,50 @@ test('SERVICE directory discovery cannot report partial, hidden, changed or unau
       const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request)});
       assert.notEqual(response.status,200);
       assert.deepEqual(await response.json(),{error:'adapter request refused'});
+      assert.equal(fixture.state.receipts.length,0);
+    });
+  }
+});
+
+test('SERVICE discovery consumes the native omitted empty collection without inventing a missing-item set', async (t) => {
+  const argumentsValue={targetType:'RESOURCE',targetId:ids[10],authorizationTargetNativeRef:ids[2],input:{resourceId:ids[10]}};
+  const request={actionKey:'file_storage.list@v1',idempotencyKey:ids[7],arguments:argumentsValue};
+  const root={Uuid:ids[2],Type:'COLLECTION',Path:'documents/root',ContextWorkspace:{Uuid:ids[1]},FolderMeta:[{Namespace:'ChildrenCount'}]};
+  for (const listResponse of [{},{Pagination:{}},{Nodes:[]},{Facets:[]}]) {
+    await t.test(JSON.stringify(listResponse),async nested=>{
+      const fixture=await setup(nested,{operation:'execute',arguments:argumentsValue,serviceList:true,root,listResponse});
+      const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request)});
+      assert.equal(response.status,200);
+      const result=await response.json();
+      assert.deepEqual(result.items,[]);
+      assert.equal(result.listingDigest,createHash('sha256').update('[]').digest('hex'));
+      assert.equal(fixture.state.listings,2);
+      assert.equal(fixture.state.peps,2);
+      assert.equal(fixture.state.receipts.length,1);
+      assert.equal(fixture.state.receipts[0].contentBytes,2);
+      assert.equal(fixture.state.receipts[0].nativeRevision,result.listingDigest);
+      assert.equal(fixture.state.nativeReads.some(path=>path.endsWith('/versions')),false);
+    });
+  }
+  for (const change of [
+    {root:{...root,FolderMeta:[{Namespace:'ChildrenCount',Value:1}]}},
+    {rootAfter:{...root,FolderMeta:[{Namespace:'ChildrenCount',Value:1}]}},
+    {root:{...root,FolderMeta:[]}},
+    {root:{...root,FolderMeta:[{Namespace:'ChildrenCount',Value:null}]}},
+    {root:{...root,FolderMeta:[{Namespace:'ChildrenCount',Value:'0'}]}},
+    {listResponse:{Nodes:null}}, {listResponse:{Nodes:{}}},
+    {listResponse:{Facets:null}}, {listResponse:{Facets:['unexpected filtered result']}},
+    {listResponse:{error:'not a native collection'}},
+    {listResponse:{Pagination:null}}, {listResponse:{Pagination:'invalid'}},
+    {listResponse:{Pagination:{Total:null}}}, {listResponse:{Pagination:{NextOffset:null}}},
+    {listResponse:{Pagination:{CurrentOffset:null}}},
+    {listResponse:{Pagination:{Total:1}}}, {listResponse:{Pagination:{NextOffset:1}}},
+    {pep:(state,response)=>state.peps===1 ? reply(response,200,{actionExecutionId:ids[7],operationId:ids[6],authorizationMinZedToken:'fresh'}) : reply(response,403,{})},
+  ]) {
+    await t.test(`refuse ${Object.keys(change)[0]} ${JSON.stringify(change)}`,async nested=>{
+      const fixture=await setup(nested,{operation:'execute',arguments:argumentsValue,serviceList:true,root,listResponse:{},...change});
+      const response=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request)});
+      assert.notEqual(response.status,200);
       assert.equal(fixture.state.receipts.length,0);
     });
   }

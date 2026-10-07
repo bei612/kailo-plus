@@ -123,3 +123,69 @@ memory+swap，执行前可用内存约 30 GiB。只同步选定源码及两宿�
 
 本批全量 diff 尚未闭合；未运行新的 full、浏览器全页面截图、Windows/Mobile 安装包
 验收或部署。原 full 空间阻断仍在，窄验与类型通过不代表生产就绪或 100% 原版一致。
+
+## 原版粘贴链的双宿主共享迁移（2026-10-07）
+
+比较基准为 main `43179589eebc9668ba1bab8ff2aa3ebc9705686c`，官方基准仍为 Buzz
+`779af8886caae1317b4de962082429867ab61503`。本批直接移动既有实现而非重写粘贴器：
+`desktop/src/features/messages/lib/mentionClipboardPaste.ts::handleMentionClipboardPaste`、
+`desktop/src/features/messages/lib/normalizeMentionClipboard.ts::normalizeMentionClipboardContent`、
+`desktop/src/features/messages/lib/mentionIdentityTrust.ts::partitionMentionIdentitiesByLocalTrust`、
+`desktop/src/features/messages/lib/mentionTokenSpans.ts::findMentionTokenSpans`、
+`desktop/src/shared/lib/trimMapToSize.ts::trimMapToSize`、
+`desktop/src/shared/lib/codeBlockClipboard.ts::getBuzzCodeBlockClipboardText` 在迁移前逐文件
+`git show` 对照该固定版本，内容一致；当前 binder 和 paste hook 已有 Agent 元数据及
+AgentSnapshot 缺口，本批保留差距记录，不以迁移冒充恢复了该分支。
+
+1. 权威与分类：REQ-24、DD-74/75/77/81，原编辑器 clipboard/token occurrence/generation
+   语义共享迁移至 `client-kit/ts/platform/src/react/composer`，八个 Native 文件改为消费
+   同一实现；仅 Native code-block 复制保留 Tauri fallback 注入。Web 沿原 rich editor
+   使用原 hook，不增加菜单、样式或另一个解析器。严格索引三处有界非空断言适配共享
+   TS 编译；原有 200 条上限通过既有常量导出复用，不另定业务限额。
+2. 影响面：原 Copy HTML → 原 normalize/mention paste → 可信目录核对 → 原 occurrence
+   fence → 原 Composer 提交。立即发送先等待原 binder 结算，同一个 owner 防止并发
+   提交；作用域更换、清稿和成功提交撤销旧 claims。无数据库、持久格式、合同、权限、
+   Core/Relay 或 Worker 改动；原 fallback 仅宿主剪贴板不同，不绕过 BFF。
+3. 副作用：剪贴板 HTML 不可信，身份必须与当前已授权目录中的公钥和名字相符；发送
+   再读当前目录，撤权/消失拒绝，不将剪贴板带来的公钥当成授权。目录是已有读投影，
+   不是新身份权威。UNKNOWN 仍保留原草稿、附件及幂等键，不盲目重发，不复制正文到 Core。
+   交叉复核发现 Web 绑定映射遗漏原上限，已在两个写入点复用原 `trimMapToSize`。
+4. 边界：同名标签携带精确身份，伪造键不注册；替换 token 或切换 draft 后旧异步结算
+   不认领新文字。超时沿原有有界等待语义；多次立即提交不重复发布，富文本和代码块
+   保留原格式。Pulse 的实际 onPublish 消费 humanMentionPubkeys；频道/DM 现有写合同
+   尚无该字段，本批不声称它们的人类提及已端到端恢复。Mobile 不改此编辑器消费者。
+
+复用上述已有 4 CPU/8 GiB SDK 与候选，不新建整树、安装依赖或构建镜像。实现后新增
+五项 Web 实际编辑器检查；第一次 28 passed/2 failed、exit 1，原因是新 jsdom
+ClipboardEvent shim 未接受省略 options，修正夹具后 30 passed、exit 0，没有改产品迁就
+环境。首次 Docker 无权限退出 1 后改用已有 sudo Docker 入口；Native type 命令首次
+误用父目录不存在的 tsc 退出 127，改用既有 desktop/node_modules 后退出 0。
+
+- 主动仅在私有 Web installed 共享 hook 返回 false，实际 3 failed/27 passed、exit 1，
+  捕获原身份粘贴/格式与代码块链被移除；日志保留另一个无返回 mock 引发的异常。
+  用 apply_patch 还原、正式/候选 cmp 退出 0。最终 Composer、ChannelPane、ProfileSettings、
+  SettingsPane 四文件 56 passed、exit 0（`paste-web-restored.log`）。
+- 本批 shared、Web、Desktop 产品 `tsc --noEmit` 均实际退出 0。原生成入口
+  `tools/gen-platform-i18n.py` 生成及 `--check` 退出 0，唯一新增工作流 Definition 中英
+  词条投影到 Dart，不维护第二翻译源。
+- 原 Native 使用 `node --import ./test-loader.mjs --experimental-strip-types --test`
+  执行 mentionClipboard、mentionIdentityTrust、mentionPasteBinding、mentionTokenSpans、
+  normalizeMentionClipboard、composerLinkPastePipeline 六个既有测试文件，100 passed、
+  exit 0；`native-paste-consumers.log` 保存在同一 SDK 的 workflow-native-template.s3JDP1。
+  原 Native codeBlockClipboard 独立测试无适用对象，不将 Web 代码块检查冒称该端覆盖。
+- `tools/upstream_manifest.py diff collaboration --check` 实际退出 0，984 项 remove_paths
+  与当前树一致；补登的是上批已共享迁移并更名的 useMessageMentionIdentities 路径。
+  此检查只证明删除登记一致，不证明所有删除已恢复或全量差异已分类闭合。
+- 集中候选复验工作流四文件最终 62 passed、exit 0（`workflow-batch-restored.log`）；
+  首轮候选两个旧检查文件未同步，31 passed/7 failed，同步已提交的现行检查后通过，
+  没有改业务代码绕过失败。共享测试类型检查退出 0。
+- 同一候选 `./tools/check-docs.sh` 实际 exit 0，277 个设计引用闭合、markdownlint
+  0 issues、21 篇设计语料通过，使用既有 `/cache/npm` 离线缓存。
+- 本轮重新执行固定源码整树 `upstream_manifest.py diff collaboration --stat`，exit 0，
+  输出 3306 files changed / 35394 insertions / 743941 deletions。此为上游项目目录对比，
+  包含跨目录共享迁移、授权治理及仍缺失部分，不是“删掉了多少功能”或完成率；八个
+  本批迁移文件逐项追溯如上。全部 3306 处差异尚未逐项验收闭合，不能称全量检验完成。
+
+本批尚无新的全页面浏览器截图、Windows/Mobile 设备或部署验收；完整 full 未重跑，
+已有磁盘空间阻断没有解除。原 AgentSnapshot、频道/DM 人类提及和其他全量差异继续属于
+未恢复项，不能据本批源码迁移或消费者通过声称生产就绪、100% 原版一致。
