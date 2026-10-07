@@ -39,6 +39,7 @@ export function matchesInboxFilter(
     item?: FeedItem;
   },
   filter: InboxFilter,
+  ownedAgentPubkeys?: ReadonlySet<string>,
 ) {
   return matchesInbox(
     {
@@ -49,6 +50,7 @@ export function matchesInboxFilter(
       ],
     },
     filter,
+    ownedAgentPubkeys,
   );
 }
 

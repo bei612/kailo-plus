@@ -9,6 +9,7 @@ import {
   inboxConversation,
   inboxReply,
   matchesInbox,
+  loadOwnedAgentIdentities,
 } from "@client-kit/platform/inbox";
 import { relativeTime, truncatePubkey } from "@client-kit/platform/format";
 import { useBffClient, useLocale, useT } from "@client-kit/platform/react/context";
@@ -23,7 +24,7 @@ import { InboxThreadPane } from "./InboxThreadPane";
 import { InboxDrafts, useInboxDrafts } from "./InboxDrafts";
 import { inboxReadContexts, useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { hex, inboxWindowEvents, type Event } from "./inbox-events";
+import { hex, inboxEvents, inboxWindowEvents, type Event } from "./inbox-events";
 export { inboxEvents } from "./inbox-events";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { Button } from "@/shared/ui/button";
@@ -34,6 +35,7 @@ type Snapshot = {
   activity: Event[];
   workspaces: WorkspaceView[];
   members: Map<string, WorkspaceMemberView[]>;
+  agentPubkeys: Set<string>;
 };
 
 export function InboxPane({
@@ -87,7 +89,7 @@ export function InboxPane({
       )
         throw new Error("Invalid Workspace directory");
       const joined = workspaces.filter((workspace) => workspace.isMember === true);
-      const next: Snapshot = { mentions: [], activity: [], workspaces: joined, members: new Map() };
+      const next: Snapshot = { mentions: [], activity: [], workspaces: joined, members: new Map(), agentPubkeys: new Set() };
       // One HTTP read at a time. No browser Relay filter, signer or unbounded SSE fan-out.
       for (const workspace of joined) {
         if (epoch !== generation.current) return;
@@ -142,6 +144,14 @@ export function InboxPane({
               roots.has(inboxConversation(event)),
           ),
         );
+        const agents = await loadOwnedAgentIdentities(client, workspace.id, principalId);
+        for (const [installationId, pubkey] of agents) {
+          if (epoch !== generation.current) return;
+          const activity = inboxEvents((await client.workspaceMessages(workspace.id, { agentInstallationId: installationId })).events, workspace.id);
+          if (activity.some((event) => event.pubkey !== pubkey)) throw new Error("Unverifiable Agent author");
+          next.activity.push(...activity);
+          next.agentPubkeys.add(pubkey);
+        }
         next.members.set(workspace.id, members);
       }
       // A scope removed during aggregation cannot survive as a cached row.
@@ -201,7 +211,7 @@ export function InboxPane({
     );
   if (!snapshot || !reads.state) return <p role="status">{t("platform.loading")}</p>;
   const visibleRows = rows
-    .filter((row) => matchesInbox({ categories: row.categories, groupItems: row.items }, filter))
+    .filter((row) => matchesInbox({ categories: row.categories, groupItems: row.items, item: row.item }, filter, snapshot.agentPubkeys))
     .filter(
       (row) =>
         !unreadOnly ||
@@ -265,7 +275,7 @@ export function InboxPane({
           </ContextMenuContent></ContextMenu>;
         })}
         {!visibleRows.length ? <div className="flex h-full min-h-64 items-center justify-center px-6 text-center"><div>
-          <p className="text-sm font-medium text-foreground">{t(unreadOnly ? "inbox.noUnread" : "inbox.noActivity")}</p>
+          <p className="text-sm font-medium text-foreground">{t(filter === "agent_activity" ? unreadOnly ? "inbox.agentUnreadEmpty" : "inbox.agentEmpty" : unreadOnly ? "inbox.noUnread" : "inbox.noActivity")}</p>
           <p className="mt-1 text-sm text-muted-foreground">{t(unreadOnly ? "inbox.unreadEmptyHint" : "inbox.emptyHint")}</p>
         </div></div> : null}
       </div>

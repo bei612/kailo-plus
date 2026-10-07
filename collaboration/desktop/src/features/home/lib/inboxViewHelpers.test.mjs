@@ -72,6 +72,15 @@ test("hasInboxThreadContext keeps standalone and broadcast activity unthreaded",
 
 // --- matchesInboxFilter ---
 
+test("Inbox Agents keeps original representative-author semantics and includes owned standalone results in All", () => {
+  const keys = new Set(["agent"]);
+  const row = { categories: ["activity"], item: {pubkey:"agent",tags:[]}, groupItems:[{pubkey:"human",tags:[]}] };
+  assert.equal(matchesInboxFilter(row,"agent_activity",keys),true);
+  assert.equal(matchesInboxFilter(row,"all",keys),true);
+  assert.equal(matchesInboxFilter({...row,item:{pubkey:"human",tags:[]}},"agent_activity",keys),false);
+  assert.equal(matchesInboxFilter(row,"agent_activity",new Set()),false);
+});
+
 test("Inbox All shows mentions and thread replies, not generic channel traffic", () => {
   assert.equal(
     matchesInboxAllView({

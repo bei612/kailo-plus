@@ -558,6 +558,9 @@ export const platformMessages = {
   "inbox.all": { en: "All", "zh-CN": "全部" },
   "inbox.mention": { en: "Mentions", "zh-CN": "提及" },
   "inbox.thread": { en: "Threads", "zh-CN": "线程" },
+  "inbox.agentActivity": { en: "Agents", "zh-CN": "Agent" },
+  "inbox.agentEmpty": { en: "No agent updates found", "zh-CN": "暂无 Agent 动态" },
+  "inbox.agentUnreadEmpty": { en: "No unread agent updates", "zh-CN": "没有未读 Agent 动态" },
   "inbox.empty": {
     en: "No activity in the available message pages",
     "zh-CN": "可读取的消息页中暂无相关活动",

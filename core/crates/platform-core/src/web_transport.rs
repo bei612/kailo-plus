@@ -2279,6 +2279,28 @@ async fn query_messages_for(
         Ok(c) => c,
         Err(r) => return r,
     };
+    let inbox_agent = if let Some(id) = query.agent_installation_id.as_deref() {
+        let MessageTarget::Workspace(workspace) = target else {
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        if query.parent_event_id.is_some() || message_type != contracts::WebMessageType::Stream {
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        let id = match Uuid::parse_str(id) {
+            Ok(id) => id,
+            Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        };
+        let view =
+            match crate::agent_installation_query::owned_inbox_agent(&state, &ctx, workspace, id)
+                .await
+            {
+                Ok(view) => view,
+                Err(response) => return response,
+            };
+        Some((workspace, id, view))
+    } else {
+        None
+    };
     let admitted = match read_target.admit(&state, &ctx).await {
         Ok(s) => s,
         Err(r) => return r,
@@ -2306,6 +2328,7 @@ async fn query_messages_for(
     let mut filter = serde_json::json!({"kinds":[message_kind(&message_type)], "#h":[channel_id]});
     let author = if query.parent_event_id.is_none()
         && message_type != contracts::WebMessageType::ForumComment
+        && inbox_agent.is_none()
     {
         let author = match window_author(&state, &ctx, &community_host).await {
             Ok(author) => author,
@@ -2317,6 +2340,9 @@ async fn query_messages_for(
     } else {
         None
     };
+    if let Some((_, _, agent)) = &inbox_agent {
+        filter["authors"] = serde_json::json!([agent.agent_pubkey]);
+    }
     if let Some(root_id) = query.parent_event_id.as_deref() {
         let root = match read_message_event(&state, &client, &channel_id, root_id).await {
             Ok(root) => root,
@@ -2376,6 +2402,21 @@ async fn query_messages_for(
             };
             if let Some(root) = root_event {
                 verified.insert(0, root);
+            }
+            if let Some((workspace, id, agent)) = &inbox_agent {
+                if verified.iter().any(|event| {
+                    Some(event.pubkey.to_hex().as_str()) != agent.agent_pubkey.as_deref()
+                }) {
+                    return invalid_message_evidence();
+                }
+                match crate::agent_installation_query::owned_inbox_agent(
+                    &state, &ctx, *workspace, *id,
+                )
+                .await
+                {
+                    Ok(current) if current == *agent => {}
+                    _ => return AdmissionFailure::BindingNotActive.into_response(),
+                }
             }
             let current = match read_target.admit(&state, &ctx).await {
                 Ok(scope) => scope,

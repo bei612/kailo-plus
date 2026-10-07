@@ -5397,6 +5397,10 @@ class InstallationElement {
   final int? activeProjectionGeneration;
   final String agentPrincipalId;
   final AgentPrincipalState agentPrincipalState;
+
+  ///原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
+  ///owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
+  final String? agentPubkey;
   final String agentResourceId;
 
   ///同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
@@ -5422,6 +5426,7 @@ class InstallationElement {
     this.activeProjectionGeneration,
     required this.agentPrincipalId,
     required this.agentPrincipalState,
+    this.agentPubkey,
     required this.agentResourceId,
     this.automationResultTargets,
     this.canUpgrade,
@@ -5444,6 +5449,7 @@ class InstallationElement {
         agentPrincipalId: json["agentPrincipalId"],
         agentPrincipalState:
             agentPrincipalStateValues.map[json["agentPrincipalState"]]!,
+        agentPubkey: json["agentPubkey"],
         agentResourceId: json["agentResourceId"],
         automationResultTargets: json["automationResultTargets"] == null
             ? null
@@ -5481,6 +5487,7 @@ class InstallationElement {
     "agentPrincipalId": agentPrincipalId,
     "agentPrincipalState":
         agentPrincipalStateValues.reverse[agentPrincipalState],
+    "agentPubkey": agentPubkey,
     "agentResourceId": agentResourceId,
     "automationResultTargets": automationResultTargets == null
         ? null
@@ -5709,6 +5716,10 @@ class AgentInstallationView {
   final int? activeProjectionGeneration;
   final String agentPrincipalId;
   final AgentPrincipalState agentPrincipalState;
+
+  ///原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
+  ///owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
+  final String? agentPubkey;
   final String agentResourceId;
 
   ///同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
@@ -5734,6 +5745,7 @@ class AgentInstallationView {
     this.activeProjectionGeneration,
     required this.agentPrincipalId,
     required this.agentPrincipalState,
+    this.agentPubkey,
     required this.agentResourceId,
     this.automationResultTargets,
     this.canUpgrade,
@@ -5757,6 +5769,7 @@ class AgentInstallationView {
     agentPrincipalId: json["agentPrincipalId"],
     agentPrincipalState:
         agentPrincipalStateValues.map[json["agentPrincipalState"]]!,
+    agentPubkey: json["agentPubkey"],
     agentResourceId: json["agentResourceId"],
     automationResultTargets: json["automationResultTargets"] == null
         ? null
@@ -5794,6 +5807,7 @@ class AgentInstallationView {
     "agentPrincipalId": agentPrincipalId,
     "agentPrincipalState":
         agentPrincipalStateValues.reverse[agentPrincipalState],
+    "agentPubkey": agentPubkey,
     "agentResourceId": agentResourceId,
     "automationResultTargets": automationResultTargets == null
         ? null
@@ -11217,12 +11231,16 @@ class WebMessageCursor {
 ///同一已准入 Channel 的原生消息分页或线程读取。before/beforeId 必须成对，频道窗口向前翻历史，线程沿原 Relay
 ///协议向后读回复；上界来自运行时配置与原协议上界，不接受任意 Relay filter。
 class WebMessageQuery {
+  ///原 Inbox Agents：仅 Workspace 内读取本人拥有且 ACTIVE 的既有安装作者消息；Core fresh read 解析其公开签名身份，不接受任意
+  ///author。不得与线程读取或其他消息类型组合。
+  final String? agentInstallationId;
   final int? before;
   final String? beforeId;
   final WebMessageType? messageType;
   final String? parentEventId;
 
   WebMessageQuery({
+    this.agentInstallationId,
     this.before,
     this.beforeId,
     this.messageType,
@@ -11231,6 +11249,7 @@ class WebMessageQuery {
 
   factory WebMessageQuery.fromJson(Map<String, dynamic> json) =>
       WebMessageQuery(
+        agentInstallationId: json["agentInstallationId"],
         before: json["before"],
         beforeId: json["beforeId"],
         messageType: json["messageType"] == null
@@ -11240,6 +11259,7 @@ class WebMessageQuery {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "agentInstallationId": agentInstallationId,
     "before": before,
     "beforeId": beforeId,
     "messageType": webMessageTypeValues.reverse[messageType],

@@ -12,6 +12,7 @@
     "agentResourceId": {"type": "string", "format": "uuid"},
     "pinnedVersionAssetId": {"type": "string", "format": "uuid"},
     "agentPrincipalId": {"type": "string", "format": "uuid"},
+    "agentPubkey": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$", "description": "原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。"},
     "agentPrincipalState": {"type": "string", "enum": ["ACTIVE", "DISABLED"]},
     "ownerPrincipalId": {"type": "string", "format": "uuid"},
     "resourceVersion": {"type": "integer", "minimum": 1},

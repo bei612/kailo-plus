@@ -18,6 +18,7 @@ import { useInboxSelectionAnchor } from "@/features/home/useInboxSelectionAnchor
 import { matchesInboxFilter } from "@/features/home/lib/inboxViewHelpers";
 import { resolveInboxFilterSelection } from "@/features/home/lib/inboxSelection";
 import { useHomeDrafts } from "@/features/home/useHomeDrafts";
+import { useOwnedAgentActivity } from "@/features/home/useOwnedAgentActivity";
 import {
   inboxReadContexts,
   useInboxState,
@@ -164,6 +165,7 @@ export function HomeView({
       ),
     [availableChannelIds, coreReads.visibleChannels],
   );
+  const ownedAgents = useOwnedAgentActivity(admittedChannelIds, Boolean(coreReads.state) && !coreReads.failed && !coreReads.unknown);
   const admittedFeed = React.useMemo(
     () =>
       feed && coreReads.state
@@ -172,13 +174,13 @@ export function HomeView({
               (item) =>
                 item.channelId && coreReads.visibleChannels.has(item.channelId),
             ),
-            activity: feed.activity.filter(
+            activity: [...feed.activity, ...(ownedAgents.data?.activity ?? [])].filter(
               (item) =>
                 item.channelId && coreReads.visibleChannels.has(item.channelId),
             ),
           }
         : undefined,
-    [feed, coreReads.state, coreReads.visibleChannels],
+    [feed, coreReads.state, coreReads.visibleChannels, ownedAgents.data],
   );
   const getMessageReadAt = React.useCallback(
     (id: string) => coreReads.readAt(`msg:${id}`),
@@ -329,7 +331,7 @@ export function HomeView({
   const filteredItems = React.useMemo(() => {
     return inboxItems.filter(
       (item) =>
-        matchesInboxFilter(item, filter) &&
+        matchesInboxFilter(item, filter, ownedAgents.data?.pubkeys) &&
         (!unreadOnly ||
           !effectiveDoneSet.has(item.id) ||
           item.conversationId === selectedConversationId),
@@ -338,6 +340,7 @@ export function HomeView({
     effectiveDoneSet,
     filter,
     inboxItems,
+    ownedAgents.data,
     selectedConversationId,
     unreadOnly,
   ]);
@@ -413,7 +416,7 @@ export function HomeView({
     (nextFilter: InboxFilter) => {
       const nextItems = inboxItems.filter(
         (item) =>
-          matchesInboxFilter(item, nextFilter) &&
+          matchesInboxFilter(item, nextFilter, ownedAgents.data?.pubkeys) &&
           (!unreadOnly ||
             !effectiveDoneSet.has(item.id) ||
             item.conversationId === selectedConversationId),
@@ -443,6 +446,7 @@ export function HomeView({
       applyInboxSearchPatch,
       effectiveDoneSet,
       inboxItems,
+      ownedAgents.data,
       isNarrowHomeViewport,
       selectedConversationId,
       setSelectedDraftKey,
@@ -450,11 +454,11 @@ export function HomeView({
     ],
   );
 
-  if ((isLoading && !feed) || (!coreReads.state && !coreReads.failed)) {
+  if ((isLoading && !feed) || (!coreReads.state && !coreReads.failed) || (coreReads.state && !coreReads.failed && !coreReads.unknown && ownedAgents.isPending)) {
     return <HomeLoadingState />;
   }
 
-  if (!feed || !coreReads.state || coreReads.unknown) {
+  if (!feed || !coreReads.state || coreReads.unknown || coreReads.failed || ownedAgents.isError) {
     return (
       <div className="flex-1 overflow-hidden px-4 pb-3 pt-4 sm:px-6">
         <div className="flex w-full max-w-3xl flex-col gap-4">
@@ -463,7 +467,7 @@ export function HomeView({
               Home feed unavailable
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
-              {coreReads.failed || coreReads.unknown
+              {coreReads.failed || coreReads.unknown || ownedAgents.isError
                 ? t(
                     coreReads.unknown
                       ? "inbox.readUnknown"
@@ -476,6 +480,7 @@ export function HomeView({
               onClick={() => {
                 onRefresh();
                 void coreReads.refresh();
+                void ownedAgents.refetch();
               }}
               type="button"
             >

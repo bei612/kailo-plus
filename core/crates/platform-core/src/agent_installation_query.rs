@@ -30,6 +30,7 @@ struct InstallationRow {
     agent_resource_id: Uuid,
     pinned_version_asset_id: Uuid,
     agent_principal_id: Uuid,
+    agent_pubkey: Option<String>,
     agent_principal_state: String,
     owner_principal_id: Uuid,
     resource_version: i32,
@@ -51,7 +52,7 @@ struct InstallationRow {
 // 只选已固定的 Installation/Version/AGENT 关系。正文、SecretRef、Gateway key、
 // CODEX_HOME、Memory 正文及内部 native endpoint 均不进入查询结果。
 const ROW: &str = "select i.resource_id,i.workspace_id,i.agent_resource_id,i.pinned_version_asset_id,
-    i.agent_principal_id,a.status as agent_principal_state,r.owner_principal_id,
+    i.agent_principal_id,agent_identity.pubkey as agent_pubkey,a.status as agent_principal_state,r.owner_principal_id,
     r.version as resource_version,r.state as resource_state,r.projection_action_execution_id,i.state,i.active_projection_generation,
     cb.status as channel_status,cb.triggers as channel_triggers,wb.channel_id,
     p.generation as projection_generation,p.agent_version_asset_id as projection_version,
@@ -65,6 +66,10 @@ const ROW: &str = "select i.resource_id,i.workspace_id,i.agent_resource_id,i.pin
   join catalog.agent_version v on v.asset_id=i.pinned_version_asset_id and v.agent_resource_id=d.resource_id
   join catalog.asset av on av.id=v.asset_id and av.tenant_id=r.tenant_id
   join identity.principal a on a.id=i.agent_principal_id and a.tenant_id=r.tenant_id and a.kind='AGENT'
+  left join catalog.agent_memory_binding memory on memory.installation_resource_id=i.resource_id and memory.state='ACTIVE'
+  left join identity.buzz_identity_binding agent_identity on agent_identity.pubkey=memory.agent_buzz_identity_binding_id
+    and agent_identity.principal_id=a.id and agent_identity.tenant_id=r.tenant_id
+    and agent_identity.kind='AGENT' and agent_identity.custody='SERVER' and agent_identity.state='ACTIVE'
   left join catalog.channel_agent_binding cb on cb.installation_resource_id=i.resource_id and cb.workspace_id=w.id
   left join projection.workspace_buzz_binding wb on wb.workspace_id=w.id
   left join lateral (select p.* from catalog.agent_runtime_projection p
@@ -193,6 +198,7 @@ async fn view(
         "agentResourceId": row.agent_resource_id.to_string(),
         "pinnedVersionAssetId": row.pinned_version_asset_id.to_string(),
         "agentPrincipalId": row.agent_principal_id.to_string(),
+        "agentPubkey": row.agent_pubkey,
         "agentPrincipalState": row.agent_principal_state,
         "ownerPrincipalId": row.owner_principal_id.to_string(),
         "resourceVersion": row.resource_version, "resourceState": row.resource_state,
@@ -281,6 +287,17 @@ pub async fn get(
         Ok(ctx) => ctx,
         Err(r) => return r,
     };
+    match read_view(&state, &ctx, id).await {
+        Ok(v) => Json(v).into_response(),
+        Err(r) => r,
+    }
+}
+
+async fn read_view(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    id: Uuid,
+) -> Result<contracts::AgentInstallationView, Response> {
     let sql = format!("{ROW} and r.id=$2");
     let row: InstallationRow = match sqlx::query_as(&sql)
         .bind(ctx.tenant_id)
@@ -289,11 +306,11 @@ pub async fn get(
         .await
     {
         Ok(Some(row)) => row,
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-        Err(e) => return crate::service_api::unavailable(e),
+        Ok(None) => return Err(StatusCode::NOT_FOUND.into_response()),
+        Err(e) => return Err(crate::service_api::unavailable(e)),
     };
-    if let Err(r) = scope(&state, &ctx, row.workspace_id).await {
-        return r;
+    if let Err(r) = scope(state, ctx, row.workspace_id).await {
+        return Err(r);
     }
     match state
         .governance
@@ -308,16 +325,114 @@ pub async fn get(
         .await
     {
         Ok(c) if c.zed_token.is_empty() => {
-            return Refusal::Unavailable("Installation read 缺原生 checked revision".into())
-                .respond(None);
+            return Err(
+                Refusal::Unavailable("Installation read 缺原生 checked revision".into())
+                    .respond(None),
+            );
         }
         Ok(c) if c.allowed => {}
-        Ok(_) => return StatusCode::FORBIDDEN.into_response(),
-        Err(e) => return Refusal::Unavailable(e.to_string()).respond(None),
+        Ok(_) => return Err(StatusCode::FORBIDDEN.into_response()),
+        Err(e) => return Err(Refusal::Unavailable(e.to_string()).respond(None)),
     }
-    match view(&state, &ctx, row).await {
-        Ok(v) => Json(v).into_response(),
-        Err(r) => r,
+    view(state, ctx, row).await
+}
+
+pub(crate) async fn owned_inbox_agent(
+    state: &BffState,
+    ctx: &ExecutionContext,
+    workspace: Uuid,
+    installation: Uuid,
+) -> Result<contracts::AgentInstallationView, Response> {
+    let view = read_view(state, ctx, installation).await?;
+    validate_owned_inbox_agent(&view, workspace, ctx.tenant_principal_id)
+        .map_err(IntoResponse::into_response)?;
+    Ok(view)
+}
+
+fn validate_owned_inbox_agent(
+    view: &contracts::AgentInstallationView,
+    workspace: Uuid,
+    owner: Uuid,
+) -> Result<(), StatusCode> {
+    if view.workspace_id != workspace.to_string()
+        || view.owner_principal_id != owner.to_string()
+        || view.state != contracts::AgentInstallationState::Active
+        || view.resource_state != contracts::ResourceState::Active
+        || view.agent_principal_state != contracts::AgentPrincipalState::Active
+        || !view
+            .channel_binding
+            .as_ref()
+            .is_some_and(|b| b.status == contracts::ChannelBindingStatus::Active)
+        || !view.projection.as_ref().is_some_and(|p| {
+            p.state == contracts::AgentRuntimeProjectionState::Active
+                && Some(p.generation) == view.active_projection_generation
+        })
+    {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    if !view
+        .agent_pubkey
+        .as_deref()
+        .is_some_and(|key| nostr::PublicKey::from_hex(key).is_ok())
+    {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod inbox_tests {
+    use super::*;
+
+    #[test]
+    fn inbox_author_requires_current_owner_scope_and_complete_active_identity() {
+        let workspace = Uuid::new_v4();
+        let owner = Uuid::new_v4();
+        let keys = nostr::Keys::generate();
+        let mut raw: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../contracts/samples/agent-installation-upgrade.sample.json"
+        ))
+        .unwrap();
+        raw["workspaceId"] = json!(workspace);
+        raw["ownerPrincipalId"] = json!(owner);
+        raw["agentPubkey"] = json!(keys.public_key().to_hex());
+        raw["activeProjectionGeneration"] = json!(1);
+        raw["channelBinding"] = json!({"status":"ACTIVE","triggers":[],"channelId":workspace});
+        raw["projection"] = json!({"generation":1,"agentVersionAssetId":Uuid::new_v4(),"configHash":"a".repeat(64),"runtimeProfileKey":"CODEX","state":"ACTIVE"});
+        let view: contracts::AgentInstallationView = serde_json::from_value(raw.clone()).unwrap();
+        assert!(validate_owned_inbox_agent(&view, workspace, owner).is_ok());
+        assert_eq!(
+            validate_owned_inbox_agent(&view, Uuid::new_v4(), owner),
+            Err(StatusCode::FORBIDDEN)
+        );
+        assert_eq!(
+            validate_owned_inbox_agent(&view, workspace, Uuid::new_v4()),
+            Err(StatusCode::FORBIDDEN)
+        );
+        for (key, value) in [
+            ("agentPubkey", serde_json::Value::Null),
+            ("agentPubkey", json!("not-a-public-key")),
+        ] {
+            let mut invalid = raw.clone();
+            invalid[key] = value;
+            let invalid = serde_json::from_value(invalid).unwrap();
+            assert_eq!(
+                validate_owned_inbox_agent(&invalid, workspace, owner),
+                Err(StatusCode::SERVICE_UNAVAILABLE)
+            );
+        }
+        let mut stale = view.clone();
+        stale.active_projection_generation = Some(2);
+        assert_eq!(
+            validate_owned_inbox_agent(&stale, workspace, owner),
+            Err(StatusCode::FORBIDDEN)
+        );
+        let mut revoked = view;
+        revoked.agent_principal_state = contracts::AgentPrincipalState::Disabled;
+        assert_eq!(
+            validate_owned_inbox_agent(&revoked, workspace, owner),
+            Err(StatusCode::FORBIDDEN)
+        );
     }
 }
 

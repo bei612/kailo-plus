@@ -14,6 +14,45 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestInboxAgentRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "inbox-agent.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, present := range []bool{true, false} {
+		var value map[string]map[string]any
+		if err := json.Unmarshal(raw, &value); err != nil {
+			t.Fatal(err)
+		}
+		if !present {
+			delete(value["query"], "agentInstallationId")
+			delete(value["installation"], "agentPubkey")
+		}
+		input, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var typed struct {
+			Query        generated.WebMessageQuery       `json:"query"`
+			Installation generated.AgentInstallationView `json:"installation"`
+		}
+		if err := json.Unmarshal(input, &typed); err != nil {
+			t.Fatal(err)
+		}
+		back, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual map[string]map[string]any
+		if err := json.Unmarshal(back, &actual); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(actual, value) {
+			t.Fatal("Inbox Agent fields changed")
+		}
+	}
+}
+
 func TestCustomEmojiRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "web-custom-emoji.sample.json"))
 	if err != nil {

@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "properties": {
     "messageType": {"$ref": "web_message_type.schema.json"},
+    "agentInstallationId": {"type": "string", "format": "uuid", "description": "原 Inbox Agents：仅 Workspace 内读取本人拥有且 ACTIVE 的既有安装作者消息；Core fresh read 解析其公开签名身份，不接受任意 author。不得与线程读取或其他消息类型组合。"},
     "parentEventId": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "before": {"type": "integer", "minimum": 0},
     "beforeId": {"type": "string", "pattern": "^[0-9a-f]{64}$"}

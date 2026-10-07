@@ -468,6 +468,9 @@ enum PlatformMessageKey {
   inboxAll,
   inboxMention,
   inboxThread,
+  inboxAgentActivity,
+  inboxAgentEmpty,
+  inboxAgentUnreadEmpty,
   inboxEmpty,
   inboxScope,
   inboxUnreadOnly,
@@ -2562,6 +2565,12 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.inboxAll: ('All', '全部'),
   PlatformMessageKey.inboxMention: ('Mentions', '提及'),
   PlatformMessageKey.inboxThread: ('Threads', '线程'),
+  PlatformMessageKey.inboxAgentActivity: ('Agents', 'Agent'),
+  PlatformMessageKey.inboxAgentEmpty: ('No agent updates found', '暂无 Agent 动态'),
+  PlatformMessageKey.inboxAgentUnreadEmpty: (
+    'No unread agent updates',
+    '没有未读 Agent 动态',
+  ),
   PlatformMessageKey.inboxEmpty: (
     'No activity in the available message pages',
     '可读取的消息页中暂无相关活动',

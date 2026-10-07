@@ -9,6 +9,27 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('Inbox Agent identity and author query preserve legacy absence', () {
+    for (final present in [true, false]) {
+      final sample = jsonDecode(
+        File(
+          '../../contracts/samples/inbox-agent.sample.json',
+        ).readAsStringSync(),
+      );
+      if (!present) {
+        sample['query'].remove('agentInstallationId');
+        sample['installation'].remove('agentPubkey');
+      }
+      expect(
+        WebMessageQuery.fromJson(sample['query']).toJson(),
+        sample['query'],
+      );
+      expect(
+        AgentInstallationView.fromJson(sample['installation']).toJson(),
+        sample['installation'],
+      );
+    }
+  });
   test('custom emoji preserves removal and empty signed set view', () {
     final sample = jsonDecode(
       File(

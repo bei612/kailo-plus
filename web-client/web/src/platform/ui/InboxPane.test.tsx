@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { InboxPane, inboxEvents } from "./InboxPane";
 import { inboxWindowEvents } from "./inbox-events";
 
-const api=vi.hoisted(()=>({workspaces:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),messageAuthorProfile:vi.fn(),write:vi.fn()}));
+const api=vi.hoisted(()=>({workspaces:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),messageAuthorProfile:vi.fn(),write:vi.fn()}));
 const readAt=()=>null;
 vi.mock("@client-kit/platform/react/use-inbox-state",()=>({inboxReadContexts:()=>[],useInboxState:()=>({state:{},failed:false,unknown:false,pending:false,visibleChannels:new Set(["workspace-a"]),readAt,write:api.write,refresh:vi.fn()})}));
 vi.mock("@/platform/bff-client",()=>({bff:api,openStream:()=>()=>{}}));
@@ -109,6 +109,7 @@ it("opens the Inbox row's actual author without marking it read and clears the p
   vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
   const self="c".repeat(64);
   api.workspaces.mockResolvedValue([{id:"workspace-a",name:"Admitted channel",isMember:true}]);
+  api.agentInstallations.mockResolvedValue({ installations: [] });
   api.members.mockResolvedValue([{principalId:"human",displayName:"Me",pubkeys:[self],state:"ACTIVE"},{principalId:"author",displayName:"Author",pubkeys:[event.pubkey],state:"ACTIVE"}]);
   api.workspaceMessages.mockResolvedValue({events:[{...event,tags:[...event.tags,["p",self]]},{...event,id:"d".repeat(64),kind:39006,tags:[...event.tags,["d","workspace-a:head"]],content:JSON.stringify({has_more:false,next_cursor:null})}]});
   api.messageAuthorProfile.mockResolvedValue({pubkey:event.pubkey,eventId:"profile",displayName:"Verified author",about:"Scoped biography",avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}});
@@ -129,4 +130,31 @@ it("opens the Inbox row's actual author without marking it read and clears the p
     await render("other-human");
     expect(host.textContent).not.toContain("Scoped biography");
   }finally{await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();}
+});
+
+it("loads owned Agent activity through the admitted author query, never foreign installations or fabricated mentions",async()=>{
+  (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
+  vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
+  vi.stubGlobal("matchMedia",()=>({matches:false,addEventListener(){},removeEventListener(){}}));
+  const self="c".repeat(64), agent="d".repeat(64);
+  api.workspaces.mockResolvedValue([{id:"workspace-a",name:"Channel",isMember:true}]);
+  api.members.mockResolvedValue([{principalId:"human",displayName:"Me",pubkeys:[self],state:"ACTIVE"}]);
+  const install={resourceId:"own-agent",workspaceId:"workspace-a",ownerPrincipalId:"human",state:"ACTIVE",resourceState:"ACTIVE",agentPrincipalState:"ACTIVE",channelBinding:{status:"ACTIVE"},projection:{state:"ACTIVE",generation:1},activeProjectionGeneration:1,agentPubkey:agent};
+  api.agentInstallations.mockResolvedValue({installations:[install,{...install,resourceId:"foreign-agent",ownerPrincipalId:"other-human"}]});
+  api.workspaceMessages.mockReset();
+  api.workspaceMessages.mockImplementation(async (_id:string,query?:{agentInstallationId?:string})=>query?.agentInstallationId
+    ? {events:[{...event,pubkey:agent,content:"Real owned Agent result"}]}
+    : {events:[{...event,id:"e".repeat(64),kind:39006,tags:[...event.tags,["d","workspace-a:head"]],content:JSON.stringify({has_more:false,next_cursor:null})}]});
+  const host=document.createElement("div");document.body.append(host);const root=createRoot(host);
+  const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+  try {
+    await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={vi.fn()}/></TooltipProvider></QueryClientProvider></PlatformProvider>));
+    await vi.waitFor(()=>expect(host.textContent).toContain("Real owned Agent result"));
+    expect(api.workspaceMessages.mock.calls.map(call=>call[1])).toEqual([undefined,{agentInstallationId:"own-agent"}]);
+    expect(api.write).not.toHaveBeenCalled();
+    api.agentInstallations.mockResolvedValue({installations:[{...install,agentPubkey:undefined}]});
+    await act(async()=>window.dispatchEvent(new Event("focus")));
+    await vi.waitFor(()=>expect(host.textContent).not.toContain("Real owned Agent result"));
+    expect(host.querySelector('[role="status"]')).not.toBeNull();
+  } finally {await act(async()=>root.unmount());cache.clear();host.remove();vi.unstubAllGlobals();}
 });

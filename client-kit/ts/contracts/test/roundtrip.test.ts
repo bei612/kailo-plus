@@ -8,6 +8,19 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
+test("Inbox Agent identity and author query preserve legacy absence", () => {
+  const sample: {query: import("../src/generated/contracts.js").WebMessageQuery; installation: import("../src/generated/contracts.js").AgentInstallationView} = JSON.parse(readFileSync(new URL("../../../../contracts/samples/inbox-agent.sample.json",import.meta.url),"utf8"));
+  for (const present of [true,false]) {
+    const value=structuredClone(sample);
+    if (!present) {delete value.query.agentInstallationId;delete value.installation.agentPubkey;}
+    const query:typeof value.query={agentInstallationId:value.query.agentInstallationId};
+    const row=value.installation;
+    const installation:typeof row={resourceId:row.resourceId,workspaceId:row.workspaceId,agentResourceId:row.agentResourceId,pinnedVersionAssetId:row.pinnedVersionAssetId,agentPrincipalId:row.agentPrincipalId,ownerPrincipalId:row.ownerPrincipalId,agentPrincipalState:row.agentPrincipalState,resourceVersion:row.resourceVersion,resourceState:row.resourceState,state:row.state,agentPubkey:row.agentPubkey};
+    deepStrictEqual(JSON.parse(JSON.stringify({query,installation})),value);
+  }
+});
+
+
 test("custom emoji preserves explicit removal and signed set view", () => {
   const sample = JSON.parse(readFileSync(new URL("../../../../contracts/samples/web-custom-emoji.sample.json", import.meta.url), "utf8"));
   for (const key of ["add", "remove"]) {

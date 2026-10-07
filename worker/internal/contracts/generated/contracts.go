@@ -3546,7 +3546,10 @@ type InstallationElement struct {
 	ActiveProjectionGeneration *int64              `json:"activeProjectionGeneration,omitempty"`
 	AgentPrincipalID           string              `json:"agentPrincipalId"`
 	AgentPrincipalState        AgentPrincipalState `json:"agentPrincipalState"`
-	AgentResourceID            string              `json:"agentResourceId"`
+	// 原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
+	// owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
+	AgentPubkey     *string `json:"agentPubkey,omitempty"`
+	AgentResourceID string  `json:"agentResourceId"`
 	// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
 	// 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
 	// 准入。缺失或空集合不支持 Schedule。
@@ -3612,7 +3615,10 @@ type AgentInstallationView struct {
 	ActiveProjectionGeneration *int64              `json:"activeProjectionGeneration,omitempty"`
 	AgentPrincipalID           string              `json:"agentPrincipalId"`
 	AgentPrincipalState        AgentPrincipalState `json:"agentPrincipalState"`
-	AgentResourceID            string              `json:"agentResourceId"`
+	// 原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
+	// owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
+	AgentPubkey     *string `json:"agentPubkey,omitempty"`
+	AgentResourceID string  `json:"agentResourceId"`
 	// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
 	// 则消息到原 Thread、Schedule/manual 到同 Workspace Channel。不代表 execute、Delegation 或 quota
 	// 准入。缺失或空集合不支持 Schedule。
@@ -4921,10 +4927,13 @@ type WebMessageCursor struct {
 // 同一已准入 Channel 的原生消息分页或线程读取。before/beforeId 必须成对，频道窗口向前翻历史，线程沿原 Relay
 // 协议向后读回复；上界来自运行时配置与原协议上界，不接受任意 Relay filter。
 type WebMessageQuery struct {
-	Before        *int64          `json:"before,omitempty"`
-	BeforeID      *string         `json:"beforeId,omitempty"`
-	MessageType   *WebMessageType `json:"messageType,omitempty"`
-	ParentEventID *string         `json:"parentEventId,omitempty"`
+	// 原 Inbox Agents：仅 Workspace 内读取本人拥有且 ACTIVE 的既有安装作者消息；Core fresh read 解析其公开签名身份，不接受任意
+	// author。不得与线程读取或其他消息类型组合。
+	AgentInstallationID *string         `json:"agentInstallationId,omitempty"`
+	Before              *int64          `json:"before,omitempty"`
+	BeforeID            *string         `json:"beforeId,omitempty"`
+	MessageType         *WebMessageType `json:"messageType,omitempty"`
+	ParentEventID       *string         `json:"parentEventId,omitempty"`
 }
 
 // Own Buzz kind:0 metadata. The authenticated host chooses the signer and Tenant; no raw

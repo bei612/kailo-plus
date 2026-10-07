@@ -23,6 +23,13 @@ describe("original shared Inbox presentation", () => {
     expect(reset).toHaveBeenCalledOnce();
   });
 
+  it("keeps the original Agents filter identifier and reads its same-source bilingual label", async () => {
+    const host = await render(<InboxListHeader filter="agent_activity" onFilterChange={vi.fn()} unreadOnly={false} onUnreadOnlyChange={vi.fn()} unreadCount={0} onMarkAllRead={vi.fn()} />);
+    expect(host.querySelector('[data-testid="inbox-filter-trigger"]')?.textContent).toBe("Agents");
+    await act(async () => setLocale("zh-CN"));
+    expect(host.querySelector('[data-testid="inbox-filter-trigger"]')?.textContent).toBe("Agent");
+  });
+
   it("shows original options and invokes the existing mark-all callback, without inventing Web drafts", async () => {
     const markAll = vi.fn();
     const host = await render(<InboxListHeader filter="all" onFilterChange={vi.fn()} unreadOnly={false} onUnreadOnlyChange={vi.fn()} unreadCount={2} onMarkAllRead={markAll} />);

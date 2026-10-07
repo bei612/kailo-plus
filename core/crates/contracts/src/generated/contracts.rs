@@ -2348,6 +2348,11 @@ pub struct InstallationElement {
 
     pub agent_principal_state: AgentPrincipalState,
 
+    /// 原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
+    /// owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_pubkey: Option<String>,
+
     pub agent_resource_id: String,
 
     /// 同固定 Version、ACTIVE 投影与原生 Profile 已支持的 Automation 来源结果位置；普通 Agent 仍沿其固定回复策略，Automation
@@ -2525,6 +2530,11 @@ pub struct AgentInstallationView {
     pub agent_principal_id: String,
 
     pub agent_principal_state: AgentPrincipalState,
+
+    /// 原 Installation 的 ACTIVE AGENT BuzzIdentityBinding 公开公钥；经相同 Resource read 准入，仅供原 Inbox
+    /// owner/作者匹配，不授予执行或签名权限。旧服务缺省不证明身份映射。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_pubkey: Option<String>,
 
     pub agent_resource_id: String,
 
@@ -5669,6 +5679,11 @@ pub struct WebMessageCursor {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebMessageQuery {
+    /// 原 Inbox Agents：仅 Workspace 内读取本人拥有且 ACTIVE 的既有安装作者消息；Core fresh read 解析其公开签名身份，不接受任意
+    /// author。不得与线程读取或其他消息类型组合。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_installation_id: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<i64>,
 

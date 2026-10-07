@@ -1,0 +1,16 @@
+{
+  "query": {"agentInstallationId":"00000000-0000-4000-8000-000000000001"},
+  "installation": {
+    "resourceId":"00000000-0000-4000-8000-000000000001",
+    "workspaceId":"00000000-0000-4000-8000-000000000002",
+    "agentResourceId":"00000000-0000-4000-8000-000000000003",
+    "pinnedVersionAssetId":"00000000-0000-4000-8000-000000000004",
+    "agentPrincipalId":"00000000-0000-4000-8000-000000000005",
+    "ownerPrincipalId":"00000000-0000-4000-8000-000000000006",
+    "agentPrincipalState":"ACTIVE",
+    "resourceVersion":3,
+    "resourceState":"ACTIVE",
+    "state":"ACTIVE",
+    "agentPubkey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+}

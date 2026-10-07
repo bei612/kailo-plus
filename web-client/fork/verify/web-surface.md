@@ -5584,3 +5584,109 @@ playwright-cli 使用既有真实 SSO 用户；仅将候选静态 assets/build-i
 
 本批没有镜像发布、服务替换、Windows/Mobile 打包，也没有运行 full。
 在线服务仍是旧部署，不能把本条浏览器静态候选称为新版本已上线。
+
+### 2026-10-07 Inbox 原 Agents 筛选与真实作者读取
+
+本批基准 `221db200e749022ab5d7da49853657f517db4954`；关联 REQ-24、
+DD-39/40/75 及 AgentInstallation 所有权/身份投影合同。实现后复核四步：
+
+1. 固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+   `desktop/src/features/home/ui/InboxFilterMenu.tsx`、
+   `useOwnedAgentPubkeys.ts`、`lib/inboxViewHelpers.ts` 与 `lib/inbox.ts`
+   明确 Agents 使用当前本人管理的 Agent 公钥匹配聚合代表消息；All 也包含
+   本人 Agent 的独立动态。本批沿用原菜单/聚合/空态结构，不造活动消息。
+2. 查明 Kailo 原 `catalog.agent_memory_binding` 与 ACTIVE AGENT/SERVER
+   `identity.buzz_identity_binding`（同 `agent_task::lock_reply` 生产者）可提供
+   真实公开身份。原 Installation 查询增加 optional `agentPubkey`；原消息查询
+   增加 optional `agentInstallationId`，Core 从真实安装解析作者，不接受浏览器
+   自填 Relay authors。消息仍在 Relay，Core 不持久化正文。
+3. Core 读前/读后复核安装、本人 owner、Workspace、资源/主体/绑定/投影状态与
+   generation，保留签名、channel、分页和 actor 再准入；两宿主复用共享目录与
+   代表作者筛选。Native 从已准入 Relay 读真实事件并验签，结束前重读目录、
+   session 与可见 Workspace。Web 使用原 BFF、epoch/撤权清空，不直连 Relay。
+4. 实现后检查选定 diff 与读写方；事后用例覆盖本人/他人安装、缺失映射、原
+   All/Agents 语义及真实 Web 调用。SDK 删除本人 owner guard 后用例真实失败；
+   原字节还原后全过。另删除生成 Dart 的 agentPubkey 序列化，往返用例真实失败，
+   原字节还原后通过。没有以测试框架或编译成功替代运行证据。
+
+原 SDK `kailo-agent-receipt-xvkujx`（4 CPU/8 GiB，沿用热缓存，无安装）：
+
+- shared source/test `tsc --noEmit` 通过；原 `vitest run --pool=threads
+  --maxWorkers=1 test/inbox.test.tsx test/inbox-surface.test.tsx` 18/18；
+  Web `tsc --noEmit` 与 `InboxPane.test.tsx` 11/11；Native `tsc --noEmit`
+  与原 `inboxViewHelpers.test.mjs` 14/14。
+- `cargo check -p platform-core --bin platform-core -j16` 和 `--tests -j16`
+  均退出 0。新增 Core guard 用例仅编译，因 Data 余量不足未链接执行；
+  不声称 Core 用例或 Native 新 hook 跨 session 竞态已运行。
+- `cargo test -p contracts --test roundtrip -j16` 41/41；
+  `GOCACHE=/cache/go GOMODCACHE=/cache/go-mod GOPROXY=off go test
+  ./internal/contracts` 退出 0；TS 合同 46/46；Dart 往返 41/41。
+- 精确选定小快照运行原 `tools/gen.sh --check` 及 `tools/check.sh` 中原
+  `step_contract`，生成同步通过，历史比较对 `contracts-v0.1.0` 为
+  280 schemas / 3 historical matches。该比较范围不证明旧客户端的
+  `additionalProperties:false` 接受新字段，也不替代实际四侧往返。
+- 首次联合生成因 Projects 泛名枚举影响旧 Operation 导出，已改为明确
+  ProjectPublicationOperation/Visibility 并原样保留旧消费者；首次 Vitest4
+  不接受 minWorkers、首次 Go 未投递 GOCACHE、首次 source 检查 cwd 错误
+  SKIP 均保留输出，不算通过；修正执行参数/路径后的结果如上。
+
+原输出目录：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`。
+对应文件为 `inbox-agents-ui-final.log`、`inbox-agents-native-final.log`、
+`inbox-agents-mutation.log`（1 failed）、`inbox-agents-restored.log`（18 passed）、
+`inbox-agents-core-check.log`、`inbox-agents-contracts.log`、
+`inbox-agents-contracts-restored.log`、`inbox-agents-compatibility-final.log`、
+`inbox-agents-contract-mutation.log`（1 failed）与
+`inbox-agents-contract-restored.log`（1 passed）。
+
+上述四侧往返执行时包含队友冻结的 ProjectsPublishRequest schema，但没有
+运行其新增 Projects 发布样例或 Core 写入实现，不构成 Projects 验收。最终
+为 Inbox 独立交付，在原私有小合同快照移除 Projects schema 后重新运行原
+生成器；正式联合 generated 与队友工作树未改，也未手工拆生成代码。最终
+原 gen --check 与历史比较再验通过（279 schemas / 3 historical matches），
+日志为 `inbox-agents-isolated-contracts.log`
+和 `inbox-agents-isolated-compatibility-final.log`；未重新编译 Core 或重复四侧
+往返。最终候选没有 Projects schema/类型或实现。新旧请求可解析不等于新 UI
+可单独投递：本人 ACTIVE 安装
+缺少 agentPubkey 会使整个 Inbox 失败关闭，必须先或同期投递对应 Core。
+本批无部署/full/Windows 包或真实 Agent Inbox 浏览器验收；安装撤权实时推送、
+初批 Native hook 跨 session 运行验证尚未覆盖，后续真实挂载补验见下节。
+Project、needs_action、reminders
+仍待原项目事件、Kailo 审批及个人提醒签名消费者闭环，未制造空菜单或取消目标。
+
+### Native Inbox Agent feed: actual mounted scope switch
+
+Source base: Inbox tree `c8fab5b2e0cae4a107593e685fb640183d79ba41`.
+Only `collaboration/desktop/src/features/home/useOwnedAgentActivity.ts` and its
+adjacent `useOwnedAgentActivity.test.mjs` changed. No catalog, contracts or Core.
+
+The existing native Node loader mounts React Query and the actual
+ActiveCommunityProvider/useOwnedAgentActivity, using signed kind:9 events and
+the real owned Installation directory filter. The three scenarios are: late
+old-workspace author event, late old-session directory, and owner revocation
+during the author read. No inlined substitute hook or new checker.
+
+Initial actual result: 2 pass /1 fail (exit 1). The old directory completed
+after scope switch and dispatched `fetchEvents` for the old scope through the
+shared native Relay client. Query cancellation already prevented exposing its
+result in the new list, but did not prevent that stale cross-connection request.
+Original hook now checks the existing signal after async admission reads,
+before the next read/Relay request. No new authority or alternate query layer.
+
+Fixed result: 3/3 exit 0. SDK-only removing the post-directory signal check
+reproduced 2 pass /1 fail (exit 1), with actual queries `['new','old']` instead
+of `['new']`. Restored formal bytes cmp 0; actual rerun 3/3 exit 0.
+
+Exact command from existing SDK Native directory:
+
+```sh
+node --import ./test-loader.mjs --experimental-strip-types --test src/features/home/useOwnedAgentActivity.test.mjs
+```
+
+Logs in `/volumes/data/kailo/tmp/profile-avatar-lifetime.Tmzdu2/`:
+`inbox-mounted-initial.log`, `inbox-mounted-fixed.log`,
+`inbox-mounted-mutation.log`, `inbox-mounted-restored.log`.
+SDK: existing kailo-agent-receipt-xvkujx, 4 CPU/8 GiB, no concurrent Node at
+preflight; Data150MiB. No install, Cargo, image/full build or real Relay access.
+This verifies mounted consumer cancellation and signed-event handling, not
+live authorization/desktop device or Core linked runtime tests.

@@ -6,6 +6,7 @@ import {
   checkedUserState,
   inboxReply,
   matchesInbox,
+  loadOwnedAgentIdentities,
   type InboxEvent,
 } from "../src/inbox";
 import { InboxRow } from "../src/react/inbox-row";
@@ -32,6 +33,31 @@ const state = (version = 0) => ({
 const workspace = { id: "scope-a", name: "A", slug: "a", isMember: true };
 
 describe("shared upstream Inbox aggregation", () => {
+  it("uses the representative's actual owned Agent identity, not labels or arbitrary traffic", () => {
+    const pubkey = "a".repeat(64);
+    const row = { categories: ["activity"], groupItems: [{ ...event("old"), pubkey }], item: { pubkey: "b".repeat(64) } };
+    expect(matchesInbox(row, "agent_activity", new Set([pubkey]))).toBe(false);
+    expect(matchesInbox({ ...row, item: { pubkey } }, "agent_activity", new Set([pubkey]))).toBe(true);
+    expect(matchesInbox({ ...row, item: { pubkey } }, "all", new Set([pubkey]))).toBe(true);
+    expect(matchesInbox(row, "agent_activity")).toBe(false);
+  });
+  it("follows the real Installation directory cursor and excludes foreign owners and inactive identities", async () => {
+    const active = { resourceId: "install", workspaceId: "workspace", ownerPrincipalId: "owner", state: "ACTIVE", resourceState: "ACTIVE", agentPrincipalState: "ACTIVE", channelBinding: { status: "ACTIVE" }, projection: { state: "ACTIVE", generation: 1 }, activeProjectionGeneration: 1, agentPubkey: "a".repeat(64) };
+    const send = vi.fn(async (request: BffRequest): Promise<BffReply> => ({ status: 200, body: request.path.includes("offset=1")
+      ? { installations: [{ ...active, resourceId: "other", ownerPrincipalId: "other" }, { ...active, resourceId: "disabled", state: "DISABLED" }] }
+      : { installations: [active], nextOffset: 1 } }));
+    const result = await loadOwnedAgentIdentities(createBffClient({ send }), "workspace", "owner");
+    expect([...result]).toEqual([["install", active.agentPubkey]]);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[1]?.[0].path).toContain("offset=1");
+  });
+  it("does not invent an Agent author when the old service omits its binding or pagination is invalid", async () => {
+    const active = { resourceId: "install", workspaceId: "workspace", ownerPrincipalId: "owner", state: "ACTIVE", resourceState: "ACTIVE", agentPrincipalState: "ACTIVE", channelBinding: { status: "ACTIVE" }, projection: { state: "ACTIVE", generation: 1 }, activeProjectionGeneration: 1 };
+    const client = (body: unknown) => createBffClient({ send: async () => ({status: 200, body}) });
+    await expect(loadOwnedAgentIdentities(client({installations:[active]}), "workspace", "owner")).rejects.toThrow("Unverifiable Agent identity");
+    await expect(loadOwnedAgentIdentities(client({installations:[],nextOffset:0}), "workspace", "owner")).rejects.toThrow("cursor");
+    await expect(loadOwnedAgentIdentities(client({installations:[{...active,workspaceId:"foreign"}]}), "workspace", "owner")).rejects.toThrow("scope");
+  });
   it("uses the oldest unread reply without changing the stable thread root", () => {
     const root = event("root");
     const one = event("one", "scope-a", 2, [["e", "root", "", "reply"]]);

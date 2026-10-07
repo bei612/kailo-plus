@@ -18,7 +18,7 @@ import { resolveMentionProps } from "@/shared/lib/resolveMentionNames";
 import { aggregateInbox, inboxConversation } from "@client-kit/platform/inbox";
 import type { TimelineMessage } from "@/features/messages/types";
 
-export type InboxFilter = "all" | "mention" | "thread" | "drafts";
+export type { InboxFilter } from "@client-kit/platform/react/inbox-surface";
 
 export type InboxItem = {
   avatarUrl: string | null;

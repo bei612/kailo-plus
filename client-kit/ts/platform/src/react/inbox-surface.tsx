@@ -10,23 +10,24 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenu
 import { Tooltip, TooltipContent, TooltipTrigger } from "./sidebar/tooltip";
 import { Switch } from "./switch";
 
-export type InboxFilter = "all" | "mention" | "thread" | "drafts";
+export type InboxFilter = "all" | "mention" | "thread" | "agent_activity" | "drafts";
 const iconButton = "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring data-[state=open]:bg-muted/70 data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0";
 
 export function InboxFilterMenu({ filter, onFilterChange, activeDraftCount }: {
   filter: InboxFilter; onFilterChange: (filter: InboxFilter) => void; activeDraftCount?: number;
 }) {
   const t = useUiT();
-  const options: InboxFilter[] = activeDraftCount === undefined ? ["all", "mention", "thread"] : ["all", "mention", "thread", "drafts"];
+  const filterLabel = (value: InboxFilter) => t(value === "agent_activity" ? "inbox.agentActivity" : `inbox.${value}`);
+  const options: InboxFilter[] = activeDraftCount === undefined ? ["all", "mention", "thread", "agent_activity"] : ["all", "mention", "thread", "agent_activity", "drafts"];
   return <DropdownMenu><DropdownMenuTrigger asChild>
-    <button aria-label={t("inbox.filterLabel", { filter: t(`inbox.${filter}`) })} className={cn(iconButton, "relative -ml-2 w-auto gap-1 px-2 text-sm font-medium text-foreground")} data-testid="inbox-filter-trigger" type="button">
-      <span>{t(`inbox.${filter}`)}</span><ChevronDown className="text-muted-foreground" />
+    <button aria-label={t("inbox.filterLabel", { filter: filterLabel(filter) })} className={cn(iconButton, "relative -ml-2 w-auto gap-1 px-2 text-sm font-medium text-foreground")} data-testid="inbox-filter-trigger" type="button">
+      <span>{filterLabel(filter)}</span><ChevronDown className="text-muted-foreground" />
     </button>
   </DropdownMenuTrigger><DropdownMenuContent align="start" className="w-52">
     <DropdownMenuRadioGroup value={filter} onValueChange={(value) => { if (options.includes(value as InboxFilter)) onFilterChange(value as InboxFilter); }}>
       {options.map((option) => <div key={option}>
         {option === "drafts" ? <DropdownMenuSeparator className="my-2 bg-border/60" /> : null}
-        <DropdownMenuRadioItem value={option}><span className="flex flex-1 items-center gap-2"><span>{t(`inbox.${option}`)}</span>
+        <DropdownMenuRadioItem value={option}><span className="flex flex-1 items-center gap-2"><span>{filterLabel(option)}</span>
           {option === "drafts" && (activeDraftCount ?? 0) > 0 ? <span className="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-2xs font-semibold leading-none text-primary-foreground" data-testid="inbox-draft-badge-option">{activeDraftCount}</span> : null}
         </span></DropdownMenuRadioItem>
       </div>)}

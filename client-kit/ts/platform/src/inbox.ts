@@ -1,6 +1,36 @@
 // Inbox aggregation extracted from Buzz Home (779af8886caae1317b4de962082429867ab61503).
 // Hosts supply already admitted events. This module grants no access and holds no user state.
 import type { ConversationView } from "@client-kit/contracts";
+import type { BffClient } from "./client";
+
+/** Original useOwnedAgentPubkeys, resolved from Kailo's existing governed installation directory. */
+export async function loadOwnedAgentIdentities(client: Pick<BffClient, "agentInstallations">, workspaceId: string, ownerPrincipalId: string): Promise<ReadonlyMap<string, string>> {
+  const keys = new Map<string, string>();
+  const rejected = new Set<string>();
+  let offset = 0;
+  for (;;) {
+    const page = await client.agentInstallations(workspaceId, offset);
+    if (!page || !Array.isArray(page.installations)) throw new Error("Invalid Installation directory");
+    for (const installation of page.installations) {
+      if (installation.workspaceId !== workspaceId) throw new Error("Installation scope mismatch");
+      if (installation.ownerPrincipalId !== ownerPrincipalId || installation.state !== "ACTIVE" ||
+          installation.resourceState !== "ACTIVE" || installation.agentPrincipalState !== "ACTIVE" ||
+          installation.channelBinding?.status !== "ACTIVE" || installation.projection?.state !== "ACTIVE" ||
+          installation.projection.generation !== installation.activeProjectionGeneration) {
+        rejected.add(installation.resourceId);
+        continue;
+      }
+      if (!installation.agentPubkey || !/^[0-9a-f]{64}$/.test(installation.agentPubkey)) throw new Error("Unverifiable Agent identity");
+      const previous = keys.get(installation.resourceId);
+      if (previous && previous !== installation.agentPubkey) throw new Error("Agent identity changed during directory read");
+      keys.set(installation.resourceId, installation.agentPubkey);
+    }
+    if (page.nextOffset === undefined || page.nextOffset === null) break;
+    if (!Number.isSafeInteger(page.nextOffset) || page.nextOffset <= offset) throw new Error("Invalid Installation cursor");
+    offset = page.nextOffset;
+  }
+  return new Map([...keys].filter(([id]) => !rejected.has(id)));
+}
 
 /** Map Core preference bindings to original Relay channels for notification consumers. */
 export function conversationNotificationMutes(
@@ -113,12 +143,17 @@ export function aggregateInbox<T extends InboxEvent>(
 export function matchesInbox(
   item: {
     categories: readonly string[];
-    groupItems: readonly Pick<InboxEvent, "tags">[];
+    groupItems: readonly (Pick<InboxEvent, "tags"> & { pubkey?: string })[];
+    item?: { pubkey?: string };
   },
   filter: string,
+  ownedAgentPubkeys?: ReadonlySet<string>,
 ) {
   const thread = item.groupItems.some((event) => inboxReply(event.tags));
-  if (filter === "all") return item.categories.includes("mention") || thread;
+  const representative = item.item ?? item.groupItems.at(-1);
+  const ownedAgent = representative?.pubkey && ownedAgentPubkeys?.has(representative.pubkey.toLowerCase()) === true;
+  if (filter === "agent_activity") return Boolean(ownedAgent);
+  if (filter === "all") return item.categories.includes("mention") || thread || Boolean(ownedAgent);
   if (filter === "thread") return thread;
   return item.categories.includes(filter);
 }

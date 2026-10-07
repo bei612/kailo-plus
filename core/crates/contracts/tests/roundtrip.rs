@@ -6,6 +6,36 @@
 use std::{fs, path::PathBuf};
 
 #[test]
+fn inbox_agent_identity_and_author_query_preserve_legacy_absence() {
+    let sample: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("inbox-agent.sample.json")).unwrap(),
+    )
+    .unwrap();
+    for present in [true, false] {
+        let mut value = sample.clone();
+        if !present {
+            value["query"]
+                .as_object_mut()
+                .unwrap()
+                .remove("agentInstallationId");
+            value["installation"]
+                .as_object_mut()
+                .unwrap()
+                .remove("agentPubkey");
+        }
+        let query: contracts::WebMessageQuery =
+            serde_json::from_value(value["query"].clone()).unwrap();
+        let installation: contracts::AgentInstallationView =
+            serde_json::from_value(value["installation"].clone()).unwrap();
+        assert_eq!(serde_json::to_value(query).unwrap(), value["query"]);
+        assert_eq!(
+            serde_json::to_value(installation).unwrap(),
+            value["installation"]
+        );
+    }
+}
+
+#[test]
 fn custom_emoji_preserves_explicit_removal_and_empty_signed_set_view() {
     let sample: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(sample_path().with_file_name("web-custom-emoji.sample.json")).unwrap(),

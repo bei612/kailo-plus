@@ -2,6 +2,7 @@ import { ExternalLink, MailOpen } from "lucide-react";
 import * as React from "react";
 import { InboxRow } from "@client-kit/platform/react/inbox-row";
 import { InboxListHeader, InboxRowActionButton } from "@client-kit/platform/react/inbox-surface";
+import { useT } from "@client-kit/platform/react/context";
 
 import {
   getInboxTypeLabel,
@@ -27,14 +28,14 @@ import { VideoReviewCommentMarkdown } from "@/shared/ui/VideoReviewCommentMarkdo
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { VirtualizedList } from "@/shared/ui/VirtualizedList";
 
-const INBOX_EMPTY_STATE_TITLES: Record<InboxFilter, string> = {
+const INBOX_EMPTY_STATE_TITLES: Record<Exclude<InboxFilter, "agent_activity">, string> = {
   all: "No activity yet",
   mention: "No mentions found",
   thread: "No threads found",
   drafts: "No drafts",
 };
 
-const INBOX_UNREAD_EMPTY_STATE_TITLES: Record<InboxFilter, string> = {
+const INBOX_UNREAD_EMPTY_STATE_TITLES: Record<Exclude<InboxFilter, "agent_activity">, string> = {
   all: "No unread activity",
   mention: "No unread mentions",
   thread: "No unread threads",
@@ -111,6 +112,7 @@ export function InboxListPane({
   showRightDivider = false,
   unreadOnly,
 }: InboxListPaneProps) {
+  const t = useT();
   const isDrafts = filter === "drafts";
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const unreadVisibleItemCount = React.useMemo(
@@ -287,7 +289,7 @@ export function InboxListPane({
             <div className="flex h-full min-h-64 items-center justify-center px-6 text-center">
               <div>
                 <p className="text-sm font-medium text-foreground">
-                  {unreadOnly
+                  {filter === "agent_activity" ? t(unreadOnly ? "inbox.agentUnreadEmpty" : "inbox.agentEmpty") : unreadOnly
                     ? INBOX_UNREAD_EMPTY_STATE_TITLES[filter]
                     : INBOX_EMPTY_STATE_TITLES[filter]}
                 </p>
