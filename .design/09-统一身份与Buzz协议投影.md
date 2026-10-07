@@ -88,6 +88,11 @@ Web 采用服务端托管的唯一理由是浏览器没有安全的持钥方式�
 由此固定三条边界：
 
 - **协作数据平面的准入执行点是 Relay，不是 Core。** Relay 依自身源码顺序校验 signer、scope、membership 和 kind（`SF-BUZ-03/07`），`require_relay_membership=true` 是它成立的前提（`SF-BUZ-26`）。上游的 NIP-29 权限比 Kailo 宽（`SF-BUZ-37`）：非成员可读写非 private Channel，成员可自建 Channel、自加入与加人。因此还需 `SS-BUZ-GOVERNANCE` 让 Relay 只接受 CONTROL 签发的管理类事件，并以 private 建立 Workspace Channel（`DD-80`）——否则原生端可以绕开 Workspace 成员关系。原生端本地签名后直接发布，Core 不在这条路径上，因此不得声称对原生端消息做过发布前 admission。Web 的「发布前 fresh admission」来自 Core 代签，是 Web 的附加能力，不是三端共同承诺。
+
+原版频道主题修改是上述管理事件规则的精确例外，不改变 Workspace 或成员权威。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `buzz/crates/buzz-sdk/src/builders.rs::build_set_topic` 生成空 content、kind:9002 与 `h/topic` 两个标签；`buzz/crates/buzz-relay/src/handlers/side_effects.rs::validate_admin_event` 对纯 topic 要求 Channel 成员，而名称、描述、归档、可见性与 TTL 要求管理权限。Kailo 只保留一个有效 Channel UUID 的二元素 `h` 标签和一个二元素 `topic` 标签，空 topic 表示清空；重复标签、额外或未知标签、混合管理标签不得进入成员通路，也不将整个 9002 kind 开放给成员。Web 以本人 SERVER 身份经 BFF，原生端以本人 CLIENT 身份经 Relay；自动化由原 AgentTaskWorkflow 以执行 Installation 的 AGENT 身份签名，owner、Delegation、Workspace、身份/roster、用量与审计仍走原准入，不借 CONTROL 执行业务动作。
+
+纯主题动作的终态不能仅凭原上游“事件已存储”判断：固定提交的 `buzz/crates/buzz-relay/src/handlers/ingest.rs::ingest_event_inner` 在存储之后调用 `handle_side_effects`，失败不撤销已存事件。SS-BUZ-GOVERNANCE 必须在原 Relay 事务内将纯主题事件与现有 Channel topic 更新共同提交，保持 Relay 为唯一主题正文权威；系统通知与发现投影沿原通路收敛。对账核验同一签名事件、actor、Channel 与 topic 的接受事实，不以随后被别人修改的当前主题否定已发生的动作；超时、缺失或无法证明时保持 UNKNOWN，不重新签名或重复写入。此处是 REQ-24、DD-75/80/107 的适配边界，不是已实现声明。
+
 - **管理平面三端一律经 BFF。** 审批、Agent、工具、额度、计费、审计、业务能力服务的管理面（存在 active binding 时）与全部 Governed Action 都走 BFF over HTTPS，身份来自 OIDC 投影，与持钥方式无关。原生端不得以持有 Nostr 私钥为由绕过任一管理平面准入。
 - **撤权收敛不依赖持钥方。** 按 `10-授权审批与撤权一致性.md` §4，执行点是 SpiceDB relationship 与 Buzz relay/Channel roster；roster 移除后 Relay 拒绝该 pubkey，与私钥在谁手里无关。`secret_ref` 为空的 binding 不适用密钥轮换流程中依赖 Core 停止签名的步骤，其等价收敛手段是 roster 移除加已知连接关闭。
 
