@@ -3,7 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 import { PlatformApp } from "./PlatformApp";
 
-const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: "", memberA: true, memberB: true, tab: "members", channelEnabled: false }));
+const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: "", memberA: true, memberB: true, tab: "members", workspaceId: null as string | null, channelEnabled: false }));
+vi.mock("@/app/platform-navigation", () => ({
+  usePlatformNavigation: () => ({ tab: state.tab, workspaceId: state.workspaceId,
+    conversationId: null, messageTarget: null, openTab: vi.fn(), openChannel: vi.fn(), openConversation: vi.fn() }),
+}));
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
   return {
@@ -132,6 +136,7 @@ beforeEach(() => {
   state.memberA = true;
   state.memberB = true;
   state.tab = "members";
+  state.workspaceId = null;
   state.channelEnabled = false;
   window.history.replaceState({}, "", "/app/");
 });
@@ -187,4 +192,13 @@ it("does not expose the document bridge to a lifecycle-restricted platform sessi
   const markup = renderToStaticMarkup(<PlatformApp />);
   expect(markup).toContain('data-testid="shared-lifecycle-restricted"');
   expect(markup).not.toContain("data-document-binding");
+});
+
+it("does not substitute a default channel for a route outside the fresh workspace directory", () => {
+  state.tab = "channel";
+  state.workspaceId = "revoked-workspace";
+  const markup = renderToStaticMarkup(<PlatformApp />);
+  expect(markup).toContain("platform.noWorkspace");
+  expect(state.channelEnabled).toBe(false);
+  expect(markup).not.toContain('data-selected="workspace-b"');
 });

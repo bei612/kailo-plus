@@ -1,6 +1,6 @@
 // Shared wire machinery from the existing Cells adapter. Component-specific
 // actions, targets and native scope policy remain in each actual consumer.
-import { createPublicKey, verify } from 'node:crypto';
+import { createHash, createPublicKey, verify } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 export class Refused extends Error {
@@ -127,6 +127,32 @@ export async function serviceBearer(config, deadline) {
   if (!object(oidc) || !nonempty(oidc.access_token) || /[\r\n]/.test(oidc.access_token)
     || oidc.token_type?.toLowerCase() !== 'bearer') throw new Refused(503);
   return oidc.access_token;
+}
+
+// Registered meter keys are deployment inputs; the two native consumers supply
+// only their actually observed count/byte facts, never a balance or price.
+export function readMeasurements(mapping, bytes) {
+  if (mapping === undefined) return [];
+  if (!Array.isArray(mapping) || !Number.isSafeInteger(bytes) || bytes < 0) throw new Refused(503);
+  const keys = new Set();
+  return mapping.map(item => {
+    if (!exactKeys(item, ['meterKey', 'quantitySource']) || !nonempty(item.meterKey)
+      || keys.has(item.meterKey) || !['COUNT', 'CONTENT_BYTES'].includes(item.quantitySource)) throw new Refused(503);
+    keys.add(item.meterKey);
+    return {meterKey:item.meterKey,quantity:item.quantitySource==='COUNT' ? 1 : bytes};
+  });
+}
+
+export async function recordReadReceipt(config, deadline, receipt) {
+  const bearer = await serviceBearer(config, deadline);
+  const digest = createHash('sha256').update(canonical(receipt)).digest('hex');
+  const result = await jsonFetch(config, deadline,
+    new URL('/service/v1/adapter/read_receipt', config.corePepUrl), {
+      method:'POST',headers:{authorization:`Bearer ${bearer}`,'content-type':'application/json'},
+      body:canonical(receipt),
+    });
+  if (!exactKeys(result, ['operationId','receiptDigest']) || result.operationId!==receipt.operationId
+    || result.receiptDigest!==digest) throw new Refused(503);
 }
 
 export async function freshPep(config, deadline, token, args, claims, operation = 'query_revision') {

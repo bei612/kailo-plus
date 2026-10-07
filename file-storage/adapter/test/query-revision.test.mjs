@@ -101,7 +101,7 @@ async function setup(t, changes = {}) {
   await writeFile(jwksFile, JSON.stringify({ keys: [{ ...publicKey.export({ format: 'jwk' }), kid: 'test-current', alg: 'ES256', use: 'sig' }] }), { mode: 0o600 });
   await writeFile(join(directory, 'native-credential'), nativeSecret, { mode: 0o600 });
   await writeFile(join(directory, 'oidc-credential'), oidcSecret, { mode: 0o600 });
-  const state = { peps: 0, nativeReads: [], queries: [], redirectReads: 0 };
+  const state = { peps: 0, nativeReads: [], queries: [], redirectReads: 0, receipts: [] };
   const root = { Uuid: ids[2], Type: 'COLLECTION', Path: 'documents/root', ContextWorkspace: { Uuid: ids[1] } };
   const target = { Uuid: ids[3], Type: 'LEAF', Path: 'documents/root/file.txt', ContextWorkspace: { Uuid: ids[1] } };
   const versions = { Versions: [{ VersionId: 'older', MTime: '999999', IsHead: false },
@@ -130,6 +130,15 @@ async function setup(t, changes = {}) {
       assert.deepEqual(JSON.parse(parsed.argumentsJson), requestArguments);
       if (changes.pep) return changes.pep(state, response, parsed);
       return reply(response, 200, { actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: `fresh-${state.peps}` });
+    }
+    if (request.url === '/service/v1/adapter/read_receipt') {
+      assert.equal(request.headers.authorization,'Bearer ephemeral-fixture-oidc');
+      let body=''; for await (const chunk of request) body+=chunk;
+      const receipt=JSON.parse(body); state.receipts.push(receipt);
+      assert.equal(state.peps,2);
+      if (changes.receiptStatus) return reply(response,changes.receiptStatus,{});
+      return reply(response,200,{operationId:receipt.operationId,
+        receiptDigest:changes.wrongReceipt?'wrong':createHash('sha256').update(canonical(receipt)).digest('hex')});
     }
     if (request.url === '/redirect-target') {
       state.redirectReads += 1;
@@ -182,7 +191,8 @@ async function setup(t, changes = {}) {
     corePepUrl: `${origin}/service/v1/adapter/pep_check`, oidcTokenUrl: `${origin}/oidc/token`, oidcClientId: 'binding-client',
     oidcClientSecretFile: join(directory, 'oidc-credential'), timeoutMs: 3000, maxBodyBytes: 65536, listenHost: '127.0.0.1', listenPort: 1,
     ...(changes.documentLaunch ? { documentLaunch: { cellsPublicOrigin: origin, documentServerOrigin: origin } } : {}),
-    ...(changes.serviceRead ? {readEdge:{downloadOrigin:origin}} : {}) };
+    ...(changes.serviceRead ? {readEdge:{downloadOrigin:origin,
+      ...(changes.usageMeasurements ? {usageMeasurements:changes.usageMeasurements}:{})}} : {}) };
   const adapter = createAdapter(config);
   const adapterOrigin = await listen(adapter);
   t.after(async () => {
@@ -233,15 +243,37 @@ test('SERVICE source read returns exact binary version only after both fresh per
   assert.equal(fixture.state.peps,2);
   assert.equal(fixture.state.downloads,1);
   assert.equal(result.headers.get('location'),null);
+  assert.equal(fixture.state.receipts.length,1);
+  assert.equal(fixture.state.receipts[0].role,'SOURCE');
+  assert.equal(fixture.state.receipts[0].contentBytes,4);
+  assert.equal(fixture.state.receipts[0].nativeObjectRef,ids[3]);
+  assert.deepEqual(fixture.state.receipts[0].measurements,[]);
   const denied=await setup(t,{operation:'execute',arguments:argumentsValue,serviceRead:true,
     pep:(state,response)=>reply(response,state.peps===2?403:200,{actionExecutionId:ids[7],operationId:ids[6],authorizationMinZedToken:'fresh'})});
   const revoked=await denied.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request)});
   assert.equal(revoked.status,503);
   assert.deepEqual(await revoked.json(),{error:'adapter request refused'});
   assert.equal(denied.state.downloads,1);
+  assert.equal(denied.state.receipts.length,0);
   for (const change of [{initiating_human_principal_id:ids[9]},{idempotency_key:ids[8]},{tenant_id:ids[8]}]) {
     const refused=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request),token:fixture.token(change)});
     assert.equal(refused.status,401);
+  }
+});
+
+test('source bytes require the exact persisted receipt acknowledgment and actual native measurements',async t=>{
+  const argumentsValue={targetType:'RESOURCE',targetId:ids[10],authorizationTargetNativeRef:ids[2],
+    input:{resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version',displayName:'file.bin',mediaType:'application/octet-stream'}};
+  const request={actionKey:'file_storage.read@v1',idempotencyKey:ids[7],arguments:argumentsValue};
+  for (const change of [{},{wrongReceipt:true},{receiptStatus:503}]) {
+    await t.test(JSON.stringify(change),async nested=>{
+      const item=await setup(nested,{operation:'execute',arguments:argumentsValue,serviceRead:true,...change,
+        usageMeasurements:[{meterKey:'native_read_count',quantitySource:'COUNT'},{meterKey:'native_read_bytes',quantitySource:'CONTENT_BYTES'}]});
+      const result=await item.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical(request)});
+      assert.equal(result.status,Object.keys(change).length?503:200);
+      assert.deepEqual(item.state.receipts[0].measurements,[{meterKey:'native_read_count',quantity:1},{meterKey:'native_read_bytes',quantity:4}]);
+      if (result.status!==200) assert.deepEqual(await result.json(),{error:'adapter request refused'});
+    });
   }
 });
 

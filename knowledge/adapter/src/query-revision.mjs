@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
-  verifiedClaims, secret, freshPep } from '../../../client-kit/adapter/protocol.mjs';
+  verifiedClaims, secret, freshPep, readMeasurements, recordReadReceipt } from '../../../client-kit/adapter/protocol.mjs';
 import { sourceReference, sourceFile } from './service-read.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -16,8 +16,10 @@ export function configuration(value) {
     'timeoutMs', 'maxBodyBytes', 'listenHost', 'listenPort'];
   if (!object(value) || required.some(key => !Object.hasOwn(value, key))
     || Object.keys(value).some(key => ![...required, 'workspaceId', 'readEdge'].includes(key))) throw new Refused(503);
-  if (value.readEdge!==undefined && (!exactKeys(value.readEdge,['sourceActionVersion'])
+  if (value.readEdge!==undefined && (!exactKeys(value.readEdge,value.readEdge?.usageMeasurements===undefined
+      ? ['sourceActionVersion'] : ['sourceActionVersion','usageMeasurements'])
     || !Number.isSafeInteger(value.readEdge.sourceActionVersion) || value.readEdge.sourceActionVersion<=0)) throw new Refused(503);
+  readMeasurements(value.readEdge?.usageMeasurements,0);
   for (const key of ['bindingId', 'tenantId', 'nativeKnowledgeBaseId']) {
     if (!UUID.test(value[key])) throw new Refused(503);
   }
@@ -211,6 +213,17 @@ function creationObservation(value, config, key, target, readOperation) {
     nativeRevision:document.native_revision,displayName:document.file_name,mediaType:value.media_type}};
 }
 
+async function recordCreationReceipt(value, observation, config, deadline, key) {
+  if (observation.execution.platformStatus!=='SUCCEEDED') return;
+  if (!/^[0-9a-f]{64}$/.test(value.source_content_sha256)
+    || !Number.isSafeInteger(value.source_content_bytes) || value.source_content_bytes<0) throw new Refused(503);
+  await recordReadReceipt(config,deadline,{bindingId:config.bindingId,operationId:value.read_operation_id,
+    role:'RECEIVER',idempotencyKey:key,nativeObjectRef:observation.execution.nativeId,
+    nativeRevision:observation.execution.terminalAt,completedAt:observation.execution.terminalAt,
+    contentSha256:value.source_content_sha256,contentBytes:value.source_content_bytes,
+    measurements:readMeasurements(config.readEdge?.usageMeasurements,value.source_content_bytes)});
+}
+
 async function executeOperation(config, deadline, request, claims, token) {
   if (claims.action_key==='knowledge.ingest@v1') {
     const reference=sourceReference(request.arguments,claims);
@@ -223,7 +236,9 @@ async function executeOperation(config, deadline, request, claims, token) {
       file_base64:source.bytes.toString('base64'),source_reference_json:canonical(reference),idempotency_key:request.idempotencyKey,
       read_operation_id:source.operationId,
     });
-    return creationObservation(value,config,request.idempotencyKey,claims.target_id,source.operationId);
+    const observed=creationObservation(value,config,request.idempotencyKey,claims.target_id,source.operationId);
+    await recordCreationReceipt(value,observed,config,deadline,request.idempotencyKey);
+    return observed;
   }
   if (claims.action_key === 'knowledge.delete@v1') {
     const reference = referenceInput(request.arguments,claims);
@@ -271,7 +286,8 @@ export function createAdapter(rawConfig) {
     try {
       const operation = request.url === QUERY_PATH ? 'query_revision'
         : request.url === '/platform-adapter/v1/execute' ? 'execute'
-          : request.url === '/platform-adapter/v1/observe' ? 'observe' : undefined;
+          : request.url === '/platform-adapter/v1/observe' ? 'observe'
+            : request.url === '/platform-adapter/v1/extract_usage' ? 'extract_usage' : undefined;
       if (request.method !== 'POST' || operation === undefined) throw new Refused(404);
       if (request.headers['content-type'] !== 'application/json'
         || typeof request.headers.authorization !== 'string'
@@ -286,7 +302,7 @@ export function createAdapter(rawConfig) {
         || raw !== canonical(args))) throw new Refused(400);
       if (operation === 'execute' && (!exactKeys(args, ['idempotencyKey', 'actionKey', 'arguments'])
         || !UUID.test(args.idempotencyKey) || args.idempotencyKey !== request.headers['idempotency-key'])) throw new Refused(400);
-      if (operation === 'observe' && (!exactKeys(args,Object.hasOwn(args,'nativeId')
+      if (['observe','extract_usage'].includes(operation) && (!exactKeys(args,Object.hasOwn(args,'nativeId')
         ? ['externalExecutionId','idempotencyKey','nativeType','nativeId'] : ['externalExecutionId','idempotencyKey','nativeType'])
         || !UUID.test(args.externalExecutionId) || !UUID.test(args.idempotencyKey)
         || args.idempotencyKey !== request.headers['idempotency-key'] || !['delete_document','add_document'].includes(args.nativeType)
@@ -299,13 +315,21 @@ export function createAdapter(rawConfig) {
           || !UUID.test(claims.external_execution_id))))) throw new Refused(401);
       await freshPep(config, deadline, token, intent, claims, operation);
       let value;
-      if (operation === 'observe') {
+      if (['observe','extract_usage'].includes(operation)) {
         if (claims.action_key==='knowledge.ingest@v1' && args.nativeType==='add_document') {
-          const observed=creationObservation(await nativeTool(config,deadline,'add_document',{
+          const native=await nativeTool(config,deadline,'add_document',{
             knowledge_base_id:config.nativeKnowledgeBaseId,idempotency_key:args.idempotencyKey,observe_only:true,
-          }),config,args.idempotencyKey,claims.target_id);
-          value=observed.execution;
-        } else if (claims.action_key==='knowledge.delete@v1' && args.nativeType==='delete_document') {
+          });
+          const observed=creationObservation(native,config,args.idempotencyKey,claims.target_id);
+          await recordCreationReceipt(native,observed,config,deadline,args.idempotencyKey);
+          value=operation==='observe' ? observed.execution : {
+            externalExecutionId:args.externalExecutionId,idempotencyKey:args.idempotencyKey,
+            nativeType:observed.execution.nativeType,nativeId:observed.execution.nativeId,
+            measurements:readMeasurements(config.readEdge?.usageMeasurements,native.source_content_bytes)
+              .map(entry=>({...entry,occurredAt:observed.execution.terminalAt})),
+          };
+          if (operation==='extract_usage' && observed.execution.platformStatus!=='SUCCEEDED') throw new Refused(503);
+        } else if (operation==='observe' && claims.action_key==='knowledge.delete@v1' && args.nativeType==='delete_document') {
           value = deletionObservation(await nativeTool(config,deadline,'delete_document',{
             knowledge_base_id:config.nativeKnowledgeBaseId,idempotency_key:args.idempotencyKey,observe_only:true,
           }),config,args.idempotencyKey);

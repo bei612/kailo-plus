@@ -17,6 +17,39 @@ fn automation_reaction_step_preserves_original_emoji() {
 }
 
 #[test]
+fn application_read_resources_preserve_metadata_and_legacy_entry_absence() {
+    let raw =
+        fs::read_to_string(sample_path().with_file_name("application-read-resources.sample.json"))
+            .unwrap();
+    let sample: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let page: contracts::ApplicationReadResourcePage =
+        serde_json::from_value(sample["page"].clone()).unwrap();
+    assert_eq!(serde_json::to_value(page).unwrap(), sample["page"]);
+    for available in [Some(true), Some(false), None] {
+        let mut value = sample["binding"].clone();
+        if let Some(available) = available {
+            value["hasReadReceiver"] = available.into();
+        } else {
+            value.as_object_mut().unwrap().remove("hasReadReceiver");
+        }
+        let binding: contracts::ApplicationBindingView =
+            serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(binding).unwrap(), value);
+    }
+}
+
+#[test]
+fn read_receipts_preserve_native_precision_roles_and_quantities() {
+    let raw = fs::read_to_string(sample_path().with_file_name("adapter-read-receipts.sample.json"))
+        .unwrap();
+    let typed: Vec<contracts::AdapterReadReceipt> = serde_json::from_str(&raw).unwrap();
+    assert_eq!(
+        serde_json::to_value(typed).unwrap(),
+        serde_json::from_str::<serde_json::Value>(&raw).unwrap()
+    );
+}
+
+#[test]
 fn service_read_permission_preserves_receiver_and_legacy_absence() {
     let raw = fs::read_to_string(
         sample_path().with_file_name("resource-service-read-permission.sample.json"),

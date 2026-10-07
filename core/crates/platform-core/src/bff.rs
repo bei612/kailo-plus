@@ -402,6 +402,10 @@ pub fn router(state: BffState) -> Router {
             get(crate::application_binding::read::list),
         )
         .exposed_route(
+            "/api/v1/application-bindings/{id}/read-resources",
+            get(crate::application_binding::read::read_resources),
+        )
+        .exposed_route(
             "/api/v1/application-bindings/{id}/native-page",
             get(crate::application_page::get),
         )

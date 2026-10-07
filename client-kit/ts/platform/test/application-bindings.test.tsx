@@ -31,6 +31,127 @@ async function mount(route: (request: BffRequest) => BffReply | Promise<BffReply
   return { host, send };
 }
 
+const readSource = { resourceId: "source-resource", version: 7, bindingId: "source-binding", typeKey: "files", nativeRef: "native-source" };
+const readReceiver = { resourceId: "receiver-resource", version: 9, bindingId: connection.bindingId, typeKey: "knowledge", nativeRef: "native-receiver" };
+function readPage(direction: string) {
+  return { bindingId: connection.bindingId, bindingVersion: connection.version, tenantId: connection.tenantId,
+    servicePrincipalId: "receiver-service", direction, resources: [direction === "SOURCE" ? readSource : readReceiver] };
+}
+async function selectResource(host: HTMLElement, label: string, id: string) {
+  const select = [...host.querySelectorAll("label")].find(row => row.textContent?.startsWith(label))?.querySelector("select");
+  if (!select) throw new Error(`missing resource picker: ${label}`);
+  await act(async () => { select.value = id; select.dispatchEvent(new Event("change", { bubbles: true })); });
+}
+async function selectReadPair(host: HTMLElement) {
+  await click(button(host, "Resource read permissions"));
+  await selectResource(host, "Receiving resource", readReceiver.resourceId);
+  await selectResource(host, "Source resource", readSource.resourceId);
+}
+
+describe("shared SERVICE read permissions on existing connection management", () => {
+  it("renders the same receiver workflow in Chinese without a raw SERVICE ID input",async()=>{
+    const client=createBffClient({send:async request=>({status:200,body:request.path==="/api/v1/workspaces"?[]:
+      request.path.includes("/read-resources")?readPage(new URL(request.path,"https://test.invalid").searchParams.get("direction")!):
+      {bindings:[{...connection,hasReadReceiver:true}],canCreate:false}})});
+    const host=await render(<PlatformProvider client={client} locale="zh-CN"><ApplicationBindingsPanel/></PlatformProvider>);
+    await click(button(host,"资源读取权限"));
+    expect(host.textContent).toContain("接收资源"); expect(host.textContent).toContain("源资源");
+    expect(host.querySelector("input")).toBeNull();
+    expect(button(host,"申请读取权限").disabled).toBe(true);
+  });
+
+  it("uses directory references and the binding SERVICE, then follows original owner approval", async () => {
+    const {host,send} = await mount(request => request.method === "POST"
+      ? {status:200,body:{actionKey:"resource.grant_read",actionExecutionId:"read-action",operationId:"read-operation",
+        gateState:"WAITING",dispatchState:"NOT_DISPATCHED",approvalWorkflowId:"owner-approval"}}
+      : {status:200,body:request.path.includes("/read-resources")
+        ? readPage(new URL(request.path,"https://test.invalid").searchParams.get("direction")!)
+        : {bindings:[{...connection,hasReadReceiver:true}],canCreate:false}});
+    await selectReadPair(host);
+    await click(button(host,"Request read access"));
+    expect(send.mock.calls.filter(([request])=>request.method==="POST")).toHaveLength(0);
+    expect(host.textContent).toContain("source owner approves");
+    await click(button(host,"Confirm"));
+    const command=send.mock.calls.find(([request])=>request.method==="POST")?.[0].body;
+    expect(command).toMatchObject({actionKey:"resource.grant_read",resourceId:readSource.resourceId,resourceVersion:7,
+      principalId:"receiver-service",receiverResource:{id:readReceiver.resourceId,version:9}});
+    expect(command).not.toHaveProperty("applicationBindingId");
+    expect(command).not.toHaveProperty("nativeRef");
+    expect(host.textContent).toContain("Check its task for the outcome");
+    expect(button(host,"Back").disabled).toBe(false);
+  });
+
+  it("retains UNKNOWN grant intent and scope and accepts the actual synchronous receipt without a workflow ID",async()=>{
+    let writes=0;
+    const {host,send}=await mount(request=>{
+      if(request.method==="POST") {
+        if(++writes===1) throw new TransportError("unconfirmed response");
+        return {status:200,body:{actionKey:"resource.revoke_read",actionExecutionId:"read-action",operationId:"read-operation",
+          gateState:"ALLOWED",dispatchState:"DISPATCHED"}};
+      }
+      return {status:200,body:request.path.includes("/read-resources")
+        ? readPage(new URL(request.path,"https://test.invalid").searchParams.get("direction")!)
+        : {bindings:[{...connection,hasReadReceiver:true}],canCreate:false}};
+    });
+    await selectReadPair(host); await click(button(host,"Revoke read access")); await click(button(host,"Confirm"));
+    expect(button(host,"Back").disabled).toBe(true);
+    expect(host.querySelector("select")?.disabled).toBe(true);
+    expect([...host.querySelectorAll("button")].some(item=>item.textContent==="Cancel")).toBe(false);
+    await click(button(host,"Re-check same request"));
+    const requests=send.mock.calls.filter(([request])=>request.method==="POST").map(([request])=>request);
+    expect(requests).toHaveLength(2); expect(requests[1]).toEqual(requests[0]);
+    expect(requests[0]?.body).toMatchObject({actionKey:"resource.revoke_read",explicitConfirmation:true});
+    expect(button(host,"Back").disabled).toBe(false);
+  });
+
+  it("does not expose an unsupported receiver or accept a foreign binding/resource directory",async()=>{
+    const unsupported=await mount(()=>({status:200,body:{bindings:[connection],canCreate:false}}));
+    expect(unsupported.host.textContent).not.toContain("Resource read permissions");
+    const {host,send}=await mount(request=>({status:200,body:request.path.includes("/read-resources")
+      ? {...readPage("SOURCE"),bindingId:"another-binding"}
+      : {bindings:[{...connection,hasReadReceiver:true}],canCreate:false}}));
+    await click(button(host,"Resource read permissions"));
+    expect(button(host,"Request read access").disabled).toBe(true);
+    expect(host.textContent).not.toContain("native-source");
+    expect(send.mock.calls.every(([request])=>request.method==="GET")).toBe(true);
+  });
+
+  it("does not combine source and receiver pages resolved to different SERVICE identities",async()=>{
+    const {host,send}=await mount(request=>{
+      const direction=new URL(request.path,"https://test.invalid").searchParams.get("direction")!;
+      return {status:200,body:request.path.includes("/read-resources")
+        ? {...readPage(direction),servicePrincipalId:direction==="SOURCE"?"stale-service":"receiver-service"}
+        : {bindings:[{...connection,hasReadReceiver:true}],canCreate:false}};
+    });
+    await selectReadPair(host);
+    expect(button(host,"Request read access").disabled).toBe(true);
+    expect(send.mock.calls.every(([request])=>request.method==="GET")).toBe(true);
+  });
+
+  it("withdraws old selections and late receipts when the authenticated BFF client changes",async()=>{
+    let finish:((reply:BffReply)=>void)|undefined;
+    const first=createBffClient({send:async request=>{
+      if(request.method==="POST") return new Promise<BffReply>(resolve=>{finish=resolve;});
+      return {status:200,body:request.path==="/api/v1/workspaces"?[]:request.path.includes("/read-resources")
+        ?readPage(new URL(request.path,"https://test.invalid").searchParams.get("direction")!)
+        :{bindings:[{...connection,hasReadReceiver:true}],canCreate:false}};
+    }});
+    const secondSend=vi.fn(async():Promise<BffReply>=>({status:403,body:{}}));
+    const second=createBffClient({send:secondSend});
+    function SwitchActor(){const [client,setClient]=useState(first);return <PlatformProvider client={client} locale="en">
+      <button onClick={()=>setClient(second)}>Switch actor</button><ApplicationBindingsPanel/></PlatformProvider>;}
+    const host=await render(<SwitchActor/>); await selectReadPair(host);
+    await click(button(host,"Request read access")); await click(button(host,"Confirm"));
+    await click(button(host,"Switch actor"));
+    await act(async()=>finish?.({status:200,body:{actionKey:"resource.grant_read",actionExecutionId:"old-read-action",
+      operationId:"old-read-operation",gateState:"ALLOWED",dispatchState:"DISPATCHED"}}));
+    expect(host.textContent).not.toContain("old-read-operation");
+    expect(host.textContent).not.toContain("native-source");
+    expect(host.querySelector('[data-testid="service-read-permissions"]')).toBeNull();
+    expect(host.textContent).toContain("Not allowed");
+  });
+});
+
 describe("shared external service connection management", () => {
   beforeEach(() => vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} })));
   afterEach(() => vi.unstubAllGlobals());

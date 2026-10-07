@@ -14,6 +14,32 @@ test("automation reaction step preserves original emoji", () => {
   const actual: import("../src/generated/contracts.js").AutomationStep = {id:sample.id,action:sample.action,emoji:sample.emoji};
   deepStrictEqual(JSON.parse(JSON.stringify(actual)), sample);
 });
+import type { ApplicationReadResourcePage, ApplicationBindingView } from "../src/generated/contracts.js";
+
+test("application read resources preserve metadata and legacy entry absence", () => {
+  const sample: {page:ApplicationReadResourcePage; binding:ApplicationBindingView} = JSON.parse(readFileSync(new URL(
+    "../../../../contracts/samples/application-read-resources.sample.json",import.meta.url),"utf8"));
+  const p=sample.page;
+  const page:ApplicationReadResourcePage={bindingId:p.bindingId,bindingVersion:p.bindingVersion,tenantId:p.tenantId,
+    servicePrincipalId:p.servicePrincipalId,workspaceId:p.workspaceId,direction:p.direction,nextOffset:p.nextOffset,
+    resources:p.resources.map(r=>({resourceId:r.resourceId,version:r.version,bindingId:r.bindingId,typeKey:r.typeKey,
+      nativeRef:r.nativeRef,workspaceId:r.workspaceId}))};
+  deepStrictEqual(JSON.parse(JSON.stringify(page)),sample.page);
+  for(const available of [true,false,undefined]) {
+    const binding:ApplicationBindingView={...sample.binding,hasReadReceiver:available};
+    deepStrictEqual(JSON.parse(JSON.stringify(binding)).hasReadReceiver,available);
+  }
+});
+test("read receipts preserve native precision roles and quantities", () => {
+  const sample: import("../src/generated/contracts.js").AdapterReadReceipt[] = JSON.parse(readFileSync(new URL(
+    "../../../../contracts/samples/adapter-read-receipts.sample.json", import.meta.url), "utf8"));
+  const actual: import("../src/generated/contracts.js").AdapterReadReceipt[] = sample.map(value => ({
+    bindingId:value.bindingId,operationId:value.operationId,role:value.role,idempotencyKey:value.idempotencyKey,
+    nativeObjectRef:value.nativeObjectRef,nativeRevision:value.nativeRevision,contentSha256:value.contentSha256,
+    contentBytes:value.contentBytes,completedAt:value.completedAt,measurements:value.measurements.map(item=>({meterKey:item.meterKey,quantity:item.quantity})),
+  }));
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)),sample);
+});
 import type { ActionCommand as ServiceReadPermissionCommand } from "../src/generated/contracts.js";
 
 test("service read permission preserves receiver and legacy absence", () => {

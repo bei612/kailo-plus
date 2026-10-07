@@ -347,6 +347,24 @@ pub(crate) async fn record_usage(
     {
         return Err(conflict());
     }
+    if let Some(committed) = crate::application_binding::read_grant::receipt::receiver_usage(
+        &mut tx,
+        ee.action_execution_id,
+        ee.idempotency_key,
+        raw,
+    )
+    .await?
+    {
+        if !committed {
+            return Ok(false);
+        }
+        sqlx::query("update admission.external_execution set usage_digest=$2,usage_observed_at=clock_timestamp()
+            where id=$1 and usage_digest is null")
+            .bind(id).bind(&digest).execute(&mut *tx).await?;
+        audit_observation(&mut tx, &ee, "USAGE_OBSERVED", &digest).await?;
+        tx.commit().await?;
+        return Ok(true);
+    }
     let billing = ee.usage_projection.as_ref().ok_or_else(unavailable)?;
     let target: Uuid =
         sqlx::query_scalar("select target_id from admission.action_execution where id=$1")
@@ -470,6 +488,16 @@ pub(crate) async fn observe(
     // The frozen definition explicitly declares NONE + no meters. This is
     // not a zero-usage report and must not require an unsupported native API.
     if no_meter_obligation(ee.usage_projection.as_ref())? {
+        if let Some(committed) = crate::application_binding::read_grant::receipt::receiver_settled(
+            &state.pool,
+            ee.action_execution_id,
+            ee.idempotency_key,
+            args["nativeId"].as_str(),
+        )
+        .await?
+        {
+            return Ok(committed);
+        }
         return Ok(true);
     }
     let report = adapter
@@ -485,6 +513,16 @@ async fn settle_recorded(state: &ServiceState, ee: &External) -> Result<bool, Re
         ee.usage_projection.as_ref().ok_or_else(unavailable)?["meters"].clone(),
     )
     .map_err(|_| unavailable())?;
+    if let Some(committed) = crate::application_binding::read_grant::receipt::receiver_settled(
+        &state.pool,
+        ee.action_execution_id,
+        ee.idempotency_key,
+        ee.native_id.as_deref(),
+    )
+    .await?
+    {
+        return Ok(committed);
+    }
     if meters.is_empty() {
         return Ok(true);
     }
@@ -619,13 +657,21 @@ pub(crate) async fn committed_children(
             projection.ok_or("Application meters missing")?["meters"].clone(),
         )
         .map_err(|_| "Application meter projection invalid")?;
-        let events:Vec<(Uuid,String)>=sqlx::query_as("select u.id,u.meter_key from outbox.usage_event u
+        let events = if let Some(events) =
+            crate::application_binding::read_grant::receipt::receiver_events(pool, id)
+                .await
+                .map_err(|_| "Read batch usage unresolved")?
+        {
+            events
+        } else {
+            sqlx::query_as::<_,(Uuid,String)>("select u.id,u.meter_key from outbox.usage_event u
             join admission.external_execution e on e.id=u.source_id
             where e.id=$1 and u.source_type='APPLICATION_ADAPTER_USAGE' and u.operation_id=e.operation_id
               and u.tenant_id=e.tenant_id and u.workspace_id is not distinct from e.workspace_id
               and u.component_binding_id=e.component_binding_id and u.component_release_id=e.component_release_id
               and u.component_projection_generation=e.component_projection_generation")
-            .bind(id).fetch_all(pool).await.map_err(|_|"Application usage set unavailable")?;
+            .bind(id).fetch_all(pool).await.map_err(|_|"Application usage set unavailable")?
+        };
         let expected: std::collections::BTreeSet<_> =
             meters.iter().map(|m| m.key.as_str()).collect();
         let actual: std::collections::BTreeSet<_> =

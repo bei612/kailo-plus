@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -153,6 +154,7 @@ func (s *Server) handleAddDocument(ctx context.Context, req mcp.CallToolRequest)
 			metadata["source_native_object_ref"] = fields["nativeObjectRef"]
 			metadata["source_native_revision"] = fields["nativeRevision"]
 			metadata["source_media_type"] = fields["mediaType"]
+			metadata["source_content_sha256"] = fmt.Sprintf("%x", sha256.Sum256(data))
 			if fields["assetId"] != "" {
 				metadata["source_asset_id"] = fields["assetId"]
 			}
@@ -186,6 +188,10 @@ func (s *Server) handleAddDocument(ctx context.Context, req mcp.CallToolRequest)
 		}
 		if mediaType, ok := metadata["source_media_type"].(string); ok && mediaType != "" {
 			result["media_type"] = mediaType
+		}
+		if digest, ok := metadata["source_content_sha256"].(string); ok && digest != "" {
+			result["source_content_sha256"] = digest
+			result["source_content_bytes"] = created.FileSize
 		}
 	}
 	return jsonResult(result)

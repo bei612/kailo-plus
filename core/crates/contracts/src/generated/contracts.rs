@@ -359,7 +359,7 @@ pub struct AdapterExecutionUsage {
 
     pub idempotency_key: String,
 
-    pub measurements: Vec<Measurement>,
+    pub measurements: Vec<AdapterExecutionUsageMeasurement>,
 
     pub native_id: String,
 
@@ -368,7 +368,7 @@ pub struct AdapterExecutionUsage {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Measurement {
+pub struct AdapterExecutionUsageMeasurement {
     pub meter_key: String,
 
     pub occurred_at: String,
@@ -817,6 +817,51 @@ pub struct AdapterReadGrantResponse {
     pub operation_id: String,
 
     pub source_binding_id: String,
+}
+
+/// DD-89: authenticated native source-read or completed receiver-import metadata for one
+/// original SERVICE Operation; never file bodies or credentials.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterReadReceipt {
+    pub binding_id: String,
+
+    /// Original native RFC3339 timestamp; Core validates it without rewriting the native
+    /// representation.
+    pub completed_at: String,
+
+    pub content_bytes: i64,
+
+    pub content_sha256: String,
+
+    pub idempotency_key: String,
+
+    pub measurements: Vec<AdapterReadReceiptMeasurement>,
+
+    pub native_object_ref: String,
+
+    pub native_revision: String,
+
+    pub operation_id: String,
+
+    pub role: ApplicationReadResourceDirection,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterReadReceiptMeasurement {
+    pub meter_key: String,
+
+    pub quantity: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ApplicationReadResourceDirection {
+    #[serde(rename = "RECEIVER")]
+    Receiver,
+
+    #[serde(rename = "SOURCE")]
+    Source,
 }
 
 /// DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
@@ -2785,6 +2830,11 @@ pub struct ApplicationBindingView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub has_native_page: Option<bool>,
 
+    /// Active approved binding declares a SERVICE read receiver. Resource discovery and writes
+    /// still freshly check the original source share and receiver update permissions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_read_receiver: Option<bool>,
+
     pub state: ApplicationBindingState,
 
     pub tenant_id: String,
@@ -2837,6 +2887,47 @@ pub struct ApplicationNativePage {
     pub projection_generation: i64,
 
     pub url: String,
+}
+
+/// Existing Resource references authorized for a HUMAN configuring a receiver binding's
+/// service read permission. No business body, credential or independent directory authority.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationReadResourcePage {
+    pub binding_id: String,
+
+    pub binding_version: i64,
+
+    pub direction: ApplicationReadResourceDirection,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<i64>,
+
+    pub resources: Vec<ApplicationReadResource>,
+
+    pub service_principal_id: String,
+
+    pub tenant_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationReadResource {
+    pub binding_id: String,
+
+    pub native_ref: String,
+
+    pub resource_id: String,
+
+    pub type_key: String,
+
+    pub version: i64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
 }
 
 /// POST /api/v1/approvals/{workflowId}/decision 的请求体；approver 由 PlatformSession 决定。回应为

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/application_read_resource_page.schema.json",
+  "title": "ApplicationReadResourcePage",
+  "description": "Existing Resource references authorized for a HUMAN configuring a receiver binding's service read permission. No business body, credential or independent directory authority.",
+  "type": "object", "additionalProperties": false,
+  "required": ["bindingId", "bindingVersion", "servicePrincipalId", "tenantId", "direction", "resources"],
+  "properties": {
+    "bindingId": {"type": "string", "format": "uuid"},
+    "bindingVersion": {"type": "integer", "minimum": 1},
+    "servicePrincipalId": {"type": "string", "format": "uuid"},
+    "tenantId": {"type": "string", "format": "uuid"},
+    "workspaceId": {"type": "string", "format": "uuid"},
+    "direction": {"title": "ApplicationReadResourceDirection", "type": "string", "enum": ["SOURCE", "RECEIVER"]},
+    "nextOffset": {"type": "integer", "minimum": 1},
+    "resources": {"type": "array", "items": {
+      "title": "ApplicationReadResource", "type": "object", "additionalProperties": false,
+      "required": ["resourceId", "version", "bindingId", "typeKey", "nativeRef"],
+      "properties": {
+        "resourceId": {"type": "string", "format": "uuid"},
+        "version": {"type": "integer", "minimum": 1},
+        "bindingId": {"type": "string", "format": "uuid"},
+        "workspaceId": {"type": "string", "format": "uuid"},
+        "typeKey": {"type": "string"},
+        "nativeRef": {"type": "string"}
+      }
+    }}
+  }
+}

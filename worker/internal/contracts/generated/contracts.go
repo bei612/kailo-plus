@@ -70,6 +70,9 @@
 //    adapterReadGrantResponse, err := UnmarshalAdapterReadGrantResponse(bytes)
 //    bytes, err = adapterReadGrantResponse.Marshal()
 //
+//    adapterReadReceipt, err := UnmarshalAdapterReadReceipt(bytes)
+//    bytes, err = adapterReadReceipt.Marshal()
+//
 //    adapterScopeObservation, err := UnmarshalAdapterScopeObservation(bytes)
 //    bytes, err = adapterScopeObservation.Marshal()
 //
@@ -135,6 +138,9 @@
 //
 //    applicationNativePage, err := UnmarshalApplicationNativePage(bytes)
 //    bytes, err = applicationNativePage.Marshal()
+//
+//    applicationReadResourcePage, err := UnmarshalApplicationReadResourcePage(bytes)
+//    bytes, err = applicationReadResourcePage.Marshal()
 //
 //    approvalDecisionRequest, err := UnmarshalApprovalDecisionRequest(bytes)
 //    bytes, err = approvalDecisionRequest.Marshal()
@@ -807,6 +813,16 @@ func (r *AdapterReadGrantResponse) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalAdapterReadReceipt(data []byte) (AdapterReadReceipt, error) {
+	var r AdapterReadReceipt
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *AdapterReadReceipt) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalAdapterScopeObservation(data []byte) (AdapterScopeObservation, error) {
 	var r AdapterScopeObservation
 	err := json.Unmarshal(data, &r)
@@ -1024,6 +1040,16 @@ func UnmarshalApplicationNativePage(data []byte) (ApplicationNativePage, error) 
 }
 
 func (r *ApplicationNativePage) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalApplicationReadResourcePage(data []byte) (ApplicationReadResourcePage, error) {
+	var r ApplicationReadResourcePage
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *ApplicationReadResourcePage) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2612,14 +2638,14 @@ type ExecutionClass struct {
 // DD-48/51/94 extract_usage 的原生终态用量元数据；scope/customer/dimensions 只由 Core 原
 // ExternalExecution 决定。完整集合与冻结 action meters 精确相等，缺失不是零。
 type AdapterExecutionUsage struct {
-	ExternalExecutionID string        `json:"externalExecutionId"`
-	IdempotencyKey      string        `json:"idempotencyKey"`
-	Measurements        []Measurement `json:"measurements"`
-	NativeID            string        `json:"nativeId"`
-	NativeType          string        `json:"nativeType"`
+	ExternalExecutionID string                             `json:"externalExecutionId"`
+	IdempotencyKey      string                             `json:"idempotencyKey"`
+	Measurements        []AdapterExecutionUsageMeasurement `json:"measurements"`
+	NativeID            string                             `json:"nativeId"`
+	NativeType          string                             `json:"nativeType"`
 }
 
-type Measurement struct {
+type AdapterExecutionUsageMeasurement struct {
 	MeterKey   string `json:"meterKey"`
 	OccurredAt string `json:"occurredAt"`
 	Quantity   int64  `json:"quantity"`
@@ -2825,6 +2851,28 @@ type AdapterReadGrantResponse struct {
 	ExpiresAt         int64  `json:"expiresAt"`
 	OperationID       string `json:"operationId"`
 	SourceBindingID   string `json:"sourceBindingId"`
+}
+
+// DD-89: authenticated native source-read or completed receiver-import metadata for one
+// original SERVICE Operation; never file bodies or credentials.
+type AdapterReadReceipt struct {
+	BindingID string `json:"bindingId"`
+	// Original native RFC3339 timestamp; Core validates it without rewriting the native
+	// representation.
+	CompletedAt     string                           `json:"completedAt"`
+	ContentBytes    int64                            `json:"contentBytes"`
+	ContentSha256   string                           `json:"contentSha256"`
+	IdempotencyKey  string                           `json:"idempotencyKey"`
+	Measurements    []AdapterReadReceiptMeasurement  `json:"measurements"`
+	NativeObjectRef string                           `json:"nativeObjectRef"`
+	NativeRevision  string                           `json:"nativeRevision"`
+	OperationID     string                           `json:"operationId"`
+	Role            ApplicationReadResourceDirection `json:"role"`
+}
+
+type AdapterReadReceiptMeasurement struct {
+	MeterKey string `json:"meterKey"`
+	Quantity int64  `json:"quantity"`
 }
 
 // DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
@@ -3620,11 +3668,14 @@ type ApplicationBindingView struct {
 	ComponentTypeKey           string                         `json:"componentTypeKey"`
 	// Approved release declares an independent native page. Launch still freshly checks
 	// binding, scope and deployment origins.
-	HasNativePage *bool                   `json:"hasNativePage,omitempty"`
-	State         ApplicationBindingState `json:"state"`
-	TenantID      string                  `json:"tenantId"`
-	Version       int64                   `json:"version"`
-	WorkspaceID   *string                 `json:"workspaceId,omitempty"`
+	HasNativePage *bool `json:"hasNativePage,omitempty"`
+	// Active approved binding declares a SERVICE read receiver. Resource discovery and writes
+	// still freshly check the original source share and receiver update permissions.
+	HasReadReceiver *bool                   `json:"hasReadReceiver,omitempty"`
+	State           ApplicationBindingState `json:"state"`
+	TenantID        string                  `json:"tenantId"`
+	Version         int64                   `json:"version"`
+	WorkspaceID     *string                 `json:"workspaceId,omitempty"`
 }
 
 type ApplicationBindingCapability struct {
@@ -3640,6 +3691,28 @@ type ApplicationNativePage struct {
 	Origin               string   `json:"origin"`
 	ProjectionGeneration int64    `json:"projectionGeneration"`
 	URL                  string   `json:"url"`
+}
+
+// Existing Resource references authorized for a HUMAN configuring a receiver binding's
+// service read permission. No business body, credential or independent directory authority.
+type ApplicationReadResourcePage struct {
+	BindingID          string                           `json:"bindingId"`
+	BindingVersion     int64                            `json:"bindingVersion"`
+	Direction          ApplicationReadResourceDirection `json:"direction"`
+	NextOffset         *int64                           `json:"nextOffset,omitempty"`
+	Resources          []ApplicationReadResource        `json:"resources"`
+	ServicePrincipalID string                           `json:"servicePrincipalId"`
+	TenantID           string                           `json:"tenantId"`
+	WorkspaceID        *string                          `json:"workspaceId,omitempty"`
+}
+
+type ApplicationReadResource struct {
+	BindingID   string  `json:"bindingId"`
+	NativeRef   string  `json:"nativeRef"`
+	ResourceID  string  `json:"resourceId"`
+	TypeKey     string  `json:"typeKey"`
+	Version     int64   `json:"version"`
+	WorkspaceID *string `json:"workspaceId,omitempty"`
 }
 
 // POST /api/v1/approvals/{workflowId}/decision 的请求体；approver 由 PlatformSession 决定。回应为
@@ -4297,7 +4370,7 @@ type ToolElement struct {
 	ResourceID       string        `json:"resourceId"`
 	ResourceState    ResourceState `json:"resourceState"`
 	ResourceVersion  int64         `json:"resourceVersion"`
-	Source           Source        `json:"source"`
+	Source           SourceEnum    `json:"source"`
 	Status           ToolStatus    `json:"status"`
 }
 
@@ -4311,7 +4384,7 @@ type PlatformToolView struct {
 	ResourceID       string        `json:"resourceId"`
 	ResourceState    ResourceState `json:"resourceState"`
 	ResourceVersion  int64         `json:"resourceVersion"`
-	Source           Source        `json:"source"`
+	Source           SourceEnum    `json:"source"`
 	Status           ToolStatus    `json:"status"`
 }
 
@@ -6006,6 +6079,13 @@ const (
 	PurpleUNKNOWN  ProtocolWriteReceiptState = "UNKNOWN"
 )
 
+type ApplicationReadResourceDirection string
+
+const (
+	Receiver ApplicationReadResourceDirection = "RECEIVER"
+	Source   ApplicationReadResourceDirection = "SOURCE"
+)
+
 type NativeScopeResult string
 
 const (
@@ -6683,10 +6763,10 @@ const (
 	AgentMemoryEntryRead ActionKey = "agent.memory.entry.read"
 )
 
-type Source string
+type SourceEnum string
 
 const (
-	PlatformNative Source = "PLATFORM_NATIVE"
+	PlatformNative SourceEnum = "PLATFORM_NATIVE"
 )
 
 type ToolStatus string

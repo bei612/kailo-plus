@@ -13,6 +13,9 @@ use axum::{
 
 const KIND: &str = "SERVICE_READ";
 
+#[path = "application_read_receipt.rs"]
+pub(crate) mod receipt;
+
 #[derive(sqlx::FromRow)]
 struct Receiver {
     tenant: Uuid,
@@ -245,6 +248,57 @@ pub(crate) fn is_service(ae: &Execution) -> bool {
             .is_some_and(|parameters| parameters["componentActionKind"] == KIND)
 }
 
+/// The original governance reconciler owns the deadline. An expired bearer
+/// cannot prove whether the receiver obtained bytes; quarantine the existing
+/// execution as UNKNOWN, never retry the read or assert a terminal outcome.
+pub(crate) async fn reconcile_expired(state: &ServiceState, batch: i64) -> Result<(), Refusal> {
+    let mut tx = state.pool.begin().await?;
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "select a.id from admission.action_execution a
+         where a.parameters->>'componentActionKind'='SERVICE_READ'
+           and a.gate_state='ALLOWED' and a.dispatch_state='DISPATCHED'
+           and not exists(select 1 from audit.audit_event e
+               where e.event_key=a.operation_id::text||':service_read:terminal')
+           and case when jsonb_typeof(a.parameters->'readToken'->'exp')='number'
+             then (a.parameters->'readToken'->>'exp')::numeric<=extract(epoch from now())
+             else true end
+         order by a.updated_at,a.id limit $1 for update of a skip locked",
+    )
+    .bind(batch)
+    .fetch_all(&mut *tx)
+    .await?;
+    for id in ids {
+        let ae = crate::governance::lock_execution(&mut tx, id).await?;
+        // The immutable definition is historical evidence. A Tenant receiver
+        // legitimately reads a Workspace source; neither source withdrawal nor
+        // the user/Agent scope rule can erase this read batch's expiry audit.
+        let def = receipt::frozen_definition(&mut tx, id).await?;
+        sqlx::query(
+            "update admission.action_execution set dispatch_state='UNKNOWN',
+             reason_code=$2,updated_at=now(),reconcile_last_attempt_at=now() where id=$1",
+        )
+        .bind(id)
+        .bind(crate::governance::wire(&ReasonCode::ExternalResultUnknown))
+        .execute(&mut *tx)
+        .await?;
+        crate::governance::audit(
+            &mut tx,
+            &ae,
+            &def,
+            "service_read:expired",
+            "RECONCILIATION",
+            "NONE",
+            "EXTERNAL_RESULT_UNKNOWN",
+            None,
+            vec![],
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    // Metering unavailability must not prevent deadline quarantine.
+    receipt::reconcile(state, batch).await
+}
+
 pub(crate) async fn request(
     State(state): State<ServiceState>,
     headers: HeaderMap,
@@ -315,10 +369,15 @@ pub(crate) async fn request(
         } else {
             let id=Uuid::new_v4();
             let operation=Uuid::new_v4();
+            let source_billing=receipt::billing(&state,&mut tx,receiver.tenant,source.binding,
+                source.generation,target,&source.application).await?;
+            let receiver_billing=receipt::receiver_billing(&mut tx,receiver_execution,key,binding,
+                receiver.generation,parent_target).await?;
             let parameters=json!({"componentActionKind":KIND,"commandDigest":command,"toolParameterHash":digest,
                 "receiverBindingId":binding,"receiverActionExecutionId":receiver_execution,
                 "receiverOperationId":receiver_operation,
-                "receiverGeneration":receiver.generation,"targetVersion":source.version,"idempotencyKey":key});
+                "receiverGeneration":receiver.generation,"targetVersion":source.version,"idempotencyKey":key,
+                "readReference":input,"readBilling":{"SOURCE":source_billing,"RECEIVER":receiver_billing}});
             let inserted=sqlx::query("insert into admission.action_execution
                 (id,operation_id,tenant_id,workspace_id,action_key,action_version,initiator_principal_id,actor_principal_id,
                  target_id,parameter_hash,parameters,idempotency_key,gate_state,dispatch_state,correlation_id,
@@ -347,7 +406,12 @@ pub(crate) async fn request(
             principal_id:ae.actor_principal_id,action_key:action,action_version:version,target_id:target,parameter_hash:&ae.parameter_hash,
         },"ADMISSION",fresh.scope,fresh.authorization,"NOT_APPLICABLE",fresh.quota,fresh.zed_token.as_deref(),fresh.reason.as_ref()).await?;
         if !fresh.allowed {
-            sqlx::query("update admission.action_execution set gate_state='DENIED',updated_at=now() where id=$1")
+            // A fresh denial prevents another disclosure, but cannot erase an
+            // already issued read's usage/evidence obligations.
+            sqlx::query("update admission.action_execution set
+                gate_state=case when gate_state='ALLOWED' then gate_state else 'DENIED' end,
+                dispatch_state=case when gate_state='ALLOWED' then 'UNKNOWN' else dispatch_state end,
+                updated_at=now() where id=$1")
                 .bind(id).execute(&mut *tx).await?;
             crate::governance::audit(&mut tx,&ae,&source.application.definition,"denied","DECISION","DENY","PERMISSION_DENIED",None,vec![]).await?;
             tx.commit().await?;

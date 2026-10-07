@@ -234,12 +234,12 @@ export interface ExecutionClass {
 export interface AdapterExecutionUsage {
     externalExecutionId: string;
     idempotencyKey:      string;
-    measurements:        Measurement[];
+    measurements:        AdapterExecutionUsageMeasurement[];
     nativeId:            string;
     nativeType:          string;
 }
 
-export interface Measurement {
+export interface AdapterExecutionUsageMeasurement {
     meterKey:   string;
     occurredAt: string;
     quantity:   number;
@@ -548,6 +548,37 @@ export interface AdapterReadGrantResponse {
     expiresAt:         number;
     operationId:       string;
     sourceBindingId:   string;
+}
+
+/**
+ * DD-89: authenticated native source-read or completed receiver-import metadata for one
+ * original SERVICE Operation; never file bodies or credentials.
+ */
+export interface AdapterReadReceipt {
+    bindingId: string;
+    /**
+     * Original native RFC3339 timestamp; Core validates it without rewriting the native
+     * representation.
+     */
+    completedAt:     string;
+    contentBytes:    number;
+    contentSha256:   string;
+    idempotencyKey:  string;
+    measurements:    AdapterReadReceiptMeasurement[];
+    nativeObjectRef: string;
+    nativeRevision:  string;
+    operationId:     string;
+    role:            ApplicationReadResourceDirection;
+}
+
+export interface AdapterReadReceiptMeasurement {
+    meterKey: string;
+    quantity: number;
+}
+
+export enum ApplicationReadResourceDirection {
+    Receiver = "RECEIVER",
+    Source = "SOURCE",
 }
 
 /**
@@ -1852,10 +1883,15 @@ export interface ApplicationBindingView {
      * binding, scope and deployment origins.
      */
     hasNativePage?: boolean;
-    state:          ApplicationBindingState;
-    tenantId:       string;
-    version:        number;
-    workspaceId?:   string;
+    /**
+     * Active approved binding declares a SERVICE read receiver. Resource discovery and writes
+     * still freshly check the original source share and receiver update permissions.
+     */
+    hasReadReceiver?: boolean;
+    state:            ApplicationBindingState;
+    tenantId:         string;
+    version:          number;
+    workspaceId?:     string;
 }
 
 export interface ApplicationBindingCapability {
@@ -1882,6 +1918,30 @@ export interface ApplicationNativePage {
     origin:               string;
     projectionGeneration: number;
     url:                  string;
+}
+
+/**
+ * Existing Resource references authorized for a HUMAN configuring a receiver binding's
+ * service read permission. No business body, credential or independent directory authority.
+ */
+export interface ApplicationReadResourcePage {
+    bindingId:          string;
+    bindingVersion:     number;
+    direction:          ApplicationReadResourceDirection;
+    nextOffset?:        number;
+    resources:          ApplicationReadResource[];
+    servicePrincipalId: string;
+    tenantId:           string;
+    workspaceId?:       string;
+}
+
+export interface ApplicationReadResource {
+    bindingId:    string;
+    nativeRef:    string;
+    resourceId:   string;
+    typeKey:      string;
+    version:      number;
+    workspaceId?: string;
 }
 
 /**

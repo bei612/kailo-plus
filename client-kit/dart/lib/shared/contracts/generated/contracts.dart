@@ -23,6 +23,7 @@
 //     final adapterQueryRevisionResponse = adapterQueryRevisionResponseFromJson(jsonString);
 //     final adapterReadGrantRequest = adapterReadGrantRequestFromJson(jsonString);
 //     final adapterReadGrantResponse = adapterReadGrantResponseFromJson(jsonString);
+//     final adapterReadReceipt = adapterReadReceiptFromJson(jsonString);
 //     final adapterScopeObservation = adapterScopeObservationFromJson(jsonString);
 //     final actionCommand = actionCommandFromJson(jsonString);
 //     final actionSubmission = actionSubmissionFromJson(jsonString);
@@ -45,6 +46,7 @@
 //     final agentVersionView = agentVersionViewFromJson(jsonString);
 //     final applicationBindingPage = applicationBindingPageFromJson(jsonString);
 //     final applicationNativePage = applicationNativePageFromJson(jsonString);
+//     final applicationReadResourcePage = applicationReadResourcePageFromJson(jsonString);
 //     final approvalDecisionRequest = approvalDecisionRequestFromJson(jsonString);
 //     final approvalView = approvalViewFromJson(jsonString);
 //     final auditEventPage = auditEventPageFromJson(jsonString);
@@ -339,6 +341,12 @@ AdapterReadGrantResponse adapterReadGrantResponseFromJson(String str) =>
 String adapterReadGrantResponseToJson(AdapterReadGrantResponse data) =>
     json.encode(data.toJson());
 
+AdapterReadReceipt adapterReadReceiptFromJson(String str) =>
+    AdapterReadReceipt.fromJson(json.decode(str));
+
+String adapterReadReceiptToJson(AdapterReadReceipt data) =>
+    json.encode(data.toJson());
+
 AdapterScopeObservation adapterScopeObservationFromJson(String str) =>
     AdapterScopeObservation.fromJson(json.decode(str));
 
@@ -474,6 +482,12 @@ ApplicationNativePage applicationNativePageFromJson(String str) =>
     ApplicationNativePage.fromJson(json.decode(str));
 
 String applicationNativePageToJson(ApplicationNativePage data) =>
+    json.encode(data.toJson());
+
+ApplicationReadResourcePage applicationReadResourcePageFromJson(String str) =>
+    ApplicationReadResourcePage.fromJson(json.decode(str));
+
+String applicationReadResourcePageToJson(ApplicationReadResourcePage data) =>
     json.encode(data.toJson());
 
 ApprovalDecisionRequest approvalDecisionRequestFromJson(String str) =>
@@ -1961,7 +1975,7 @@ class ExecutionClass {
 class AdapterExecutionUsage {
   final String externalExecutionId;
   final String idempotencyKey;
-  final List<Measurement> measurements;
+  final List<AdapterExecutionUsageMeasurement> measurements;
   final String nativeId;
   final String nativeType;
 
@@ -1977,8 +1991,10 @@ class AdapterExecutionUsage {
       AdapterExecutionUsage(
         externalExecutionId: json["externalExecutionId"],
         idempotencyKey: json["idempotencyKey"],
-        measurements: List<Measurement>.from(
-          json["measurements"].map((x) => Measurement.fromJson(x)),
+        measurements: List<AdapterExecutionUsageMeasurement>.from(
+          json["measurements"].map(
+            (x) => AdapterExecutionUsageMeasurement.fromJson(x),
+          ),
         ),
         nativeId: json["nativeId"],
         nativeType: json["nativeType"],
@@ -1993,18 +2009,20 @@ class AdapterExecutionUsage {
   });
 }
 
-class Measurement {
+class AdapterExecutionUsageMeasurement {
   final String meterKey;
   final String occurredAt;
   final int quantity;
 
-  Measurement({
+  AdapterExecutionUsageMeasurement({
     required this.meterKey,
     required this.occurredAt,
     required this.quantity,
   });
 
-  factory Measurement.fromJson(Map<String, dynamic> json) => Measurement(
+  factory AdapterExecutionUsageMeasurement.fromJson(
+    Map<String, dynamic> json,
+  ) => AdapterExecutionUsageMeasurement(
     meterKey: json["meterKey"],
     occurredAt: json["occurredAt"],
     quantity: json["quantity"],
@@ -2785,6 +2803,94 @@ class AdapterReadGrantResponse {
     "sourceBindingId": sourceBindingId,
   });
 }
+
+///DD-89: authenticated native source-read or completed receiver-import metadata for one
+///original SERVICE Operation; never file bodies or credentials.
+class AdapterReadReceipt {
+  final String bindingId;
+
+  ///Original native RFC3339 timestamp; Core validates it without rewriting the native
+  ///representation.
+  final String completedAt;
+  final int contentBytes;
+  final String contentSha256;
+  final String idempotencyKey;
+  final List<AdapterReadReceiptMeasurement> measurements;
+  final String nativeObjectRef;
+  final String nativeRevision;
+  final String operationId;
+  final ApplicationReadResourceDirection role;
+
+  AdapterReadReceipt({
+    required this.bindingId,
+    required this.completedAt,
+    required this.contentBytes,
+    required this.contentSha256,
+    required this.idempotencyKey,
+    required this.measurements,
+    required this.nativeObjectRef,
+    required this.nativeRevision,
+    required this.operationId,
+    required this.role,
+  });
+
+  factory AdapterReadReceipt.fromJson(Map<String, dynamic> json) =>
+      AdapterReadReceipt(
+        bindingId: json["bindingId"],
+        completedAt: json["completedAt"],
+        contentBytes: json["contentBytes"],
+        contentSha256: json["contentSha256"],
+        idempotencyKey: json["idempotencyKey"],
+        measurements: List<AdapterReadReceiptMeasurement>.from(
+          json["measurements"].map(
+            (x) => AdapterReadReceiptMeasurement.fromJson(x),
+          ),
+        ),
+        nativeObjectRef: json["nativeObjectRef"],
+        nativeRevision: json["nativeRevision"],
+        operationId: json["operationId"],
+        role: applicationReadResourceDirectionValues.map[json["role"]]!,
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "completedAt": completedAt,
+    "contentBytes": contentBytes,
+    "contentSha256": contentSha256,
+    "idempotencyKey": idempotencyKey,
+    "measurements": List<dynamic>.from(measurements.map((x) => x.toJson())),
+    "nativeObjectRef": nativeObjectRef,
+    "nativeRevision": nativeRevision,
+    "operationId": operationId,
+    "role": applicationReadResourceDirectionValues.reverse[role],
+  });
+}
+
+class AdapterReadReceiptMeasurement {
+  final String meterKey;
+  final int quantity;
+
+  AdapterReadReceiptMeasurement({
+    required this.meterKey,
+    required this.quantity,
+  });
+
+  factory AdapterReadReceiptMeasurement.fromJson(Map<String, dynamic> json) =>
+      AdapterReadReceiptMeasurement(
+        meterKey: json["meterKey"],
+        quantity: json["quantity"],
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"meterKey": meterKey, "quantity": quantity});
+}
+
+enum ApplicationReadResourceDirection { RECEIVER, SOURCE }
+
+final applicationReadResourceDirectionValues = EnumValues({
+  "RECEIVER": ApplicationReadResourceDirection.RECEIVER,
+  "SOURCE": ApplicationReadResourceDirection.SOURCE,
+});
 
 ///DD-98：按同一 platform Resource ref CREATE/LOOKUP；FOUND 保留上游实际引用，不由套件预测或生成 native ID。
 class AdapterScopeObservation {
@@ -6181,6 +6287,10 @@ class ApplicationBindingView {
   ///Approved release declares an independent native page. Launch still freshly checks
   ///binding, scope and deployment origins.
   final bool? hasNativePage;
+
+  ///Active approved binding declares a SERVICE read receiver. Resource discovery and writes
+  ///still freshly check the original source share and receiver update permissions.
+  final bool? hasReadReceiver;
   final ApplicationBindingState state;
   final String tenantId;
   final int version;
@@ -6194,6 +6304,7 @@ class ApplicationBindingView {
     required this.componentReleaseId,
     required this.componentTypeKey,
     this.hasNativePage,
+    this.hasReadReceiver,
     required this.state,
     required this.tenantId,
     required this.version,
@@ -6213,6 +6324,7 @@ class ApplicationBindingView {
         componentReleaseId: json["componentReleaseId"],
         componentTypeKey: json["componentTypeKey"],
         hasNativePage: json["hasNativePage"],
+        hasReadReceiver: json["hasReadReceiver"],
         state: applicationBindingStateValues.map[json["state"]]!,
         tenantId: json["tenantId"],
         version: json["version"],
@@ -6229,6 +6341,7 @@ class ApplicationBindingView {
     "componentReleaseId": componentReleaseId,
     "componentTypeKey": componentTypeKey,
     "hasNativePage": hasNativePage,
+    "hasReadReceiver": hasReadReceiver,
     "state": applicationBindingStateValues.reverse[state],
     "tenantId": tenantId,
     "version": version,
@@ -6302,6 +6415,93 @@ class ApplicationNativePage {
     "origin": origin,
     "projectionGeneration": projectionGeneration,
     "url": url,
+  });
+}
+
+///Existing Resource references authorized for a HUMAN configuring a receiver binding's
+///service read permission. No business body, credential or independent directory authority.
+class ApplicationReadResourcePage {
+  final String bindingId;
+  final int bindingVersion;
+  final ApplicationReadResourceDirection direction;
+  final int? nextOffset;
+  final List<ApplicationReadResource> resources;
+  final String servicePrincipalId;
+  final String tenantId;
+  final String? workspaceId;
+
+  ApplicationReadResourcePage({
+    required this.bindingId,
+    required this.bindingVersion,
+    required this.direction,
+    this.nextOffset,
+    required this.resources,
+    required this.servicePrincipalId,
+    required this.tenantId,
+    this.workspaceId,
+  });
+
+  factory ApplicationReadResourcePage.fromJson(Map<String, dynamic> json) =>
+      ApplicationReadResourcePage(
+        bindingId: json["bindingId"],
+        bindingVersion: json["bindingVersion"],
+        direction:
+            applicationReadResourceDirectionValues.map[json["direction"]]!,
+        nextOffset: json["nextOffset"],
+        resources: List<ApplicationReadResource>.from(
+          json["resources"].map((x) => ApplicationReadResource.fromJson(x)),
+        ),
+        servicePrincipalId: json["servicePrincipalId"],
+        tenantId: json["tenantId"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "bindingVersion": bindingVersion,
+    "direction": applicationReadResourceDirectionValues.reverse[direction],
+    "nextOffset": nextOffset,
+    "resources": List<dynamic>.from(resources.map((x) => x.toJson())),
+    "servicePrincipalId": servicePrincipalId,
+    "tenantId": tenantId,
+    "workspaceId": workspaceId,
+  });
+}
+
+class ApplicationReadResource {
+  final String bindingId;
+  final String nativeRef;
+  final String resourceId;
+  final String typeKey;
+  final int version;
+  final String? workspaceId;
+
+  ApplicationReadResource({
+    required this.bindingId,
+    required this.nativeRef,
+    required this.resourceId,
+    required this.typeKey,
+    required this.version,
+    this.workspaceId,
+  });
+
+  factory ApplicationReadResource.fromJson(Map<String, dynamic> json) =>
+      ApplicationReadResource(
+        bindingId: json["bindingId"],
+        nativeRef: json["nativeRef"],
+        resourceId: json["resourceId"],
+        typeKey: json["typeKey"],
+        version: json["version"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "nativeRef": nativeRef,
+    "resourceId": resourceId,
+    "typeKey": typeKey,
+    "version": version,
+    "workspaceId": workspaceId,
   });
 }
 

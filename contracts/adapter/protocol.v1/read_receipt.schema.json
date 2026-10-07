@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:kailo:adapter:read-receipt:v1",
+  "title": "AdapterReadReceipt",
+  "description": "DD-89: authenticated native source-read or completed receiver-import metadata for one original SERVICE Operation; never file bodies or credentials.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["bindingId", "operationId", "role", "idempotencyKey", "nativeObjectRef", "nativeRevision", "contentSha256", "contentBytes", "completedAt", "measurements"],
+  "properties": {
+    "bindingId": {"type": "string", "format": "uuid"},
+    "operationId": {"type": "string", "format": "uuid"},
+    "role": {"type": "string", "enum": ["SOURCE", "RECEIVER"]},
+    "idempotencyKey": {"type": "string", "format": "uuid"},
+    "nativeObjectRef": {"type": "string", "minLength": 1},
+    "nativeRevision": {"type": "string", "minLength": 1},
+    "contentSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "contentBytes": {"type": "integer", "minimum": 0},
+    "completedAt": {"type": "string", "minLength": 1, "description": "Original native RFC3339 timestamp; Core validates it without rewriting the native representation."},
+    "measurements": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["meterKey", "quantity"],
+        "properties": {
+          "meterKey": {"type": "string", "minLength": 1},
+          "quantity": {"type": "integer", "minimum": 0}
+        }
+      }
+    }
+  }
+}

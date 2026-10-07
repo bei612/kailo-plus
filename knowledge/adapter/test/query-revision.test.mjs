@@ -34,20 +34,28 @@ async function fixture(t, mode = 'ok', action, protocolOperation) {
   await writeFile(nativeSecretFile, nativeSecret, { mode: 0o600 });
   await writeFile(oidcSecretFile, randomUUID(), { mode: 0o600 });
   const args = { nativeObjectRef: ids[2], idempotencyKey: ids[3], authorizationTargetNativeRef: ids[1] };
-  const state = { peps: 0, native: 0, methods: [], grants: 0, downloads: 0 };
+  const state = { peps: 0, native: 0, methods: [], grants: 0, downloads: 0, receipts: [] };
   const revision = '2026-10-06T23:00:00.123456789Z';
   const reference = { resourceId: action==='knowledge.ingest@v1'?ids[9]:ids[8], nativeObjectRef: ids[2], nativeRevision: revision,
     displayName: 'native document', mediaType: 'text/markdown' };
   const operation = protocolOperation ?? (action ? 'execute' : 'query_revision');
-  const intent = operation === 'observe' ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:action==='knowledge.ingest@v1'?'add_document':'delete_document'}
+  const intent = ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:action==='knowledge.ingest@v1'?'add_document':'delete_document'}
     : action ? { target: { resourceId: ids[8] }, input: reference } : args;
-  const bodyValue = operation === 'observe' ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
+  const bodyValue = ['observe','extract_usage'].includes(operation) ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
   const upstream = createServer(async (request, response) => {
     let raw = '';
     for await (const chunk of request) raw += chunk;
     if (request.method === 'GET') return reply(response, 405, {});
     if (request.url === '/token') return reply(response, 200, { access_token: randomUUID(), token_type: 'bearer' });
     const body = JSON.parse(raw);
+    if (request.url==='/service/v1/adapter/read_receipt') {
+      assert.notEqual(request.headers.authorization,`Bearer ${nativeSecret}`);
+      state.receipts.push(body);
+      assert.equal(body.role,'RECEIVER'); assert.equal(body.operationId,readOperation);
+      if (mode==='receipt-unavailable') return reply(response,503,{});
+      return reply(response,200,{operationId:readOperation,
+        receiptDigest:mode==='receipt-mismatch'?'wrong':createHash('sha256').update(canonical(body)).digest('hex')});
+    }
     if (request.url==='/service/v1/adapter/request_read_grant') {
       state.grants++;
       assert.notEqual(request.headers.authorization,`Bearer ${nativeSecret}`);
@@ -84,12 +92,14 @@ async function fixture(t, mode = 'ok', action, protocolOperation) {
     assert.equal(body.method, 'tools/call');
     state.methods.push(body.params.name);
     if (body.params.name==='add_document') {
-      if (operation==='observe') assert.deepEqual(body.params.arguments,{
+      if (['observe','extract_usage'].includes(operation)) assert.deepEqual(body.params.arguments,{
         knowledge_base_id:ids[1],idempotency_key:args.idempotencyKey,observe_only:true});
       else assert.deepEqual(body.params.arguments,{knowledge_base_id:ids[1],idempotency_key:args.idempotencyKey,
         title:reference.displayName,filename:reference.displayName,file_base64:Buffer.from([0,255,1,254]).toString('base64'),
         source_reference_json:canonical(reference),read_operation_id:readOperation});
       return reply(response,200,{jsonrpc:'2.0',id:body.id,result:{content:[],structuredContent:{knowledge_base_id:ids[1],
+        source_content_sha256:mode==='no-source-evidence'?undefined:createHash('sha256').update(Buffer.from([0,255,1,254])).digest('hex'),
+        source_content_bytes:4,
         media_type:reference.mediaType,read_operation_id:mode==='native-operation'?ids[6]:readOperation,document:{id:ids[2],file_name:reference.displayName,native_revision:revision,
           parse_status:mode==='queued'?'pending':mode==='unknown'?'failed':'completed'}}}});
     }
@@ -134,7 +144,8 @@ async function fixture(t, mode = 'ok', action, protocolOperation) {
     corePepUrl: `${origin}/service/v1/adapter/pep_check`, oidcTokenUrl: `${origin}/token`,
     oidcClientId: 'binding-client', oidcClientSecretFile: oidcSecretFile,
     timeoutMs: 3000, maxBodyBytes: 16384, listenHost: '127.0.0.1', listenPort: 1 };
-  if (action==='knowledge.ingest@v1') config.readEdge={sourceActionVersion:1};
+  if (action==='knowledge.ingest@v1') config.readEdge={sourceActionVersion:1,
+    usageMeasurements:[{meterKey:'native_import_count',quantitySource:'COUNT'},{meterKey:'native_import_bytes',quantitySource:'CONTENT_BYTES'}]};
   const adapter = createAdapter(config);
   const endpoint = await listen(adapter);
   t.after(async () => {
@@ -185,11 +196,30 @@ test('service file import preserves its distinct read batch operation, binary by
         const observed=operation==='execute'?result.execution:result;
         assert.equal(observed.platformStatus,mode==='ok'?'SUCCEEDED':mode==='queued'?'RUNNING':'UNKNOWN');
         assert.equal(observed.terminalAt!==undefined,mode==='ok');
+        assert.equal(state.receipts.length,mode==='ok'?1:0);
         if (operation==='execute' && mode==='ok') assert.notEqual(result.contentReference.resourceId,reference.resourceId);
       }
       assert.equal(state.grants,operation==='execute'?1:0);
       assert.equal(state.downloads,operation==='execute'?1:0);
       assert.deepEqual(state.methods,operation==='execute' && ['corrupt','revoke','foreign-operation'].includes(mode)?[]:['add_document']);
+    });
+  }
+});
+
+test('receiver bills only original completed parsing and exact persisted read-batch evidence',async t=>{
+  for (const mode of ['ok','queued','unknown','no-source-evidence','receipt-unavailable','receipt-mismatch']) {
+    await t.test(mode,async nested=>{
+      const {state,invoke}=await fixture(nested,mode,'knowledge.ingest@v1','extract_usage');
+      const response=await invoke();
+      assert.equal(response.status,mode==='ok'?200:503);
+      assert.equal(state.grants,0); assert.equal(state.downloads,0);
+      assert.deepEqual(state.methods,['add_document']);
+      if (mode==='ok') {
+        const value=await response.json();
+        assert.deepEqual(value.measurements.map(({meterKey,quantity})=>({meterKey,quantity})),[
+          {meterKey:'native_import_count',quantity:1},{meterKey:'native_import_bytes',quantity:4}]);
+        assert.equal(value.measurements[0].occurredAt,state.receipts[0].completedAt);
+      } else if (['queued','unknown','no-source-evidence'].includes(mode)) assert.equal(state.receipts.length,0);
     });
   }
 });

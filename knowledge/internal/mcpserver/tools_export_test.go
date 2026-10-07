@@ -2,8 +2,10 @@ package mcpserver
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -188,6 +190,8 @@ func TestAddDocumentFileObservationNeverRepeatsNativeCreation(t *testing.T) {
 		value := result.StructuredContent.(map[string]any)
 		require.Equal(t, "text/plain", value["media_type"])
 		require.Equal(t, readOperation, value["read_operation_id"])
+		require.Equal(t, fmt.Sprintf("%x", sha256.Sum256([]byte{0, 255, 1, 254})), value["source_content_sha256"])
+		require.Equal(t, int64(4), value["source_content_bytes"])
 		require.Equal(t, state, value["document"].(documentSummary).ParseStatus)
 	}
 	ep.ID = "other-endpoint"

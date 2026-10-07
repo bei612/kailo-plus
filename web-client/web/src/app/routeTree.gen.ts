@@ -5,12 +5,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/root";
-import { Route as indexRouteImport } from "./routes/index";
+import { Route as platformRouteImport } from "./routes/platform";
 import { Route as inviteRouteImport } from "./routes/invite";
+import { Route as indexRouteImport } from "./routes/index";
+import { Route as sectionRouteImport } from "./routes/section";
+import { Route as channelsDotchannelIdRouteImport } from "./routes/channels.$channelId";
+import { Route as conversationsDotconversationIdRouteImport } from "./routes/conversations.$conversationId";
+import { Route as messagesDotnewRouteImport } from "./routes/messages.new";
 
-const indexRoute = indexRouteImport.update({
-  id: "/",
-  path: "/",
+const platformRoute = platformRouteImport.update({
+  id: "/_platform",
   getParentRoute: () => rootRouteImport,
 } as any);
 const inviteRoute = inviteRouteImport.update({
@@ -18,40 +22,99 @@ const inviteRoute = inviteRouteImport.update({
   path: "/invite",
   getParentRoute: () => rootRouteImport,
 } as any);
+const indexRoute = indexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => platformRoute,
+} as any);
+const sectionRoute = sectionRouteImport.update({
+  id: "/$section",
+  path: "/$section",
+  getParentRoute: () => platformRoute,
+} as any);
+const channelsDotchannelIdRoute = channelsDotchannelIdRouteImport.update({
+  id: "/channels/$channelId",
+  path: "/channels/$channelId",
+  getParentRoute: () => platformRoute,
+} as any);
+const conversationsDotconversationIdRoute =
+  conversationsDotconversationIdRouteImport.update({
+    id: "/conversations/$conversationId",
+    path: "/conversations/$conversationId",
+    getParentRoute: () => platformRoute,
+  } as any);
+const messagesDotnewRoute = messagesDotnewRouteImport.update({
+  id: "/messages/new",
+  path: "/messages/new",
+  getParentRoute: () => platformRoute,
+} as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
   "/invite": typeof inviteRoute;
+  "/$section": typeof sectionRoute;
+  "/channels/$channelId": typeof channelsDotchannelIdRoute;
+  "/conversations/$conversationId": typeof conversationsDotconversationIdRoute;
+  "/messages/new": typeof messagesDotnewRoute;
 }
 export interface FileRoutesByTo {
-  "/": typeof indexRoute;
   "/invite": typeof inviteRoute;
+  "/": typeof indexRoute;
+  "/$section": typeof sectionRoute;
+  "/channels/$channelId": typeof channelsDotchannelIdRoute;
+  "/conversations/$conversationId": typeof conversationsDotconversationIdRoute;
+  "/messages/new": typeof messagesDotnewRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
-  "/": typeof indexRoute;
+  "/_platform": typeof platformRouteWithChildren;
   "/invite": typeof inviteRoute;
+  "/_platform/": typeof indexRoute;
+  "/_platform/$section": typeof sectionRoute;
+  "/_platform/channels/$channelId": typeof channelsDotchannelIdRoute;
+  "/_platform/conversations/$conversationId": typeof conversationsDotconversationIdRoute;
+  "/_platform/messages/new": typeof messagesDotnewRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: "/" | "/invite";
+  fullPaths:
+    | "/"
+    | "/invite"
+    | "/$section"
+    | "/channels/$channelId"
+    | "/conversations/$conversationId"
+    | "/messages/new";
   fileRoutesByTo: FileRoutesByTo;
-  to: "/" | "/invite";
-  id: "__root__" | "/" | "/invite";
+  to:
+    | "/invite"
+    | "/"
+    | "/$section"
+    | "/channels/$channelId"
+    | "/conversations/$conversationId"
+    | "/messages/new";
+  id:
+    | "__root__"
+    | "/_platform"
+    | "/invite"
+    | "/_platform/"
+    | "/_platform/$section"
+    | "/_platform/channels/$channelId"
+    | "/_platform/conversations/$conversationId"
+    | "/_platform/messages/new";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
-  indexRoute: typeof indexRoute;
+  platformRoute: typeof platformRouteWithChildren;
   inviteRoute: typeof inviteRoute;
 }
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    "/": {
-      id: "/";
-      path: "/";
+    "/_platform": {
+      id: "/_platform";
+      path: "";
       fullPath: "/";
-      preLoaderRoute: typeof indexRouteImport;
+      preLoaderRoute: typeof platformRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/invite": {
@@ -61,11 +124,66 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof inviteRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/_platform/": {
+      id: "/_platform/";
+      path: "/";
+      fullPath: "/";
+      preLoaderRoute: typeof indexRouteImport;
+      parentRoute: typeof platformRoute;
+    };
+    "/_platform/$section": {
+      id: "/_platform/$section";
+      path: "/$section";
+      fullPath: "/$section";
+      preLoaderRoute: typeof sectionRouteImport;
+      parentRoute: typeof platformRoute;
+    };
+    "/_platform/channels/$channelId": {
+      id: "/_platform/channels/$channelId";
+      path: "/channels/$channelId";
+      fullPath: "/channels/$channelId";
+      preLoaderRoute: typeof channelsDotchannelIdRouteImport;
+      parentRoute: typeof platformRoute;
+    };
+    "/_platform/conversations/$conversationId": {
+      id: "/_platform/conversations/$conversationId";
+      path: "/conversations/$conversationId";
+      fullPath: "/conversations/$conversationId";
+      preLoaderRoute: typeof conversationsDotconversationIdRouteImport;
+      parentRoute: typeof platformRoute;
+    };
+    "/_platform/messages/new": {
+      id: "/_platform/messages/new";
+      path: "/messages/new";
+      fullPath: "/messages/new";
+      preLoaderRoute: typeof messagesDotnewRouteImport;
+      parentRoute: typeof platformRoute;
+    };
   }
 }
 
-const rootRouteChildren: RootRouteChildren = {
+interface platformRouteChildren {
+  indexRoute: typeof indexRoute;
+  sectionRoute: typeof sectionRoute;
+  channelsDotchannelIdRoute: typeof channelsDotchannelIdRoute;
+  conversationsDotconversationIdRoute: typeof conversationsDotconversationIdRoute;
+  messagesDotnewRoute: typeof messagesDotnewRoute;
+}
+
+const platformRouteChildren: platformRouteChildren = {
   indexRoute: indexRoute,
+  sectionRoute: sectionRoute,
+  channelsDotchannelIdRoute: channelsDotchannelIdRoute,
+  conversationsDotconversationIdRoute: conversationsDotconversationIdRoute,
+  messagesDotnewRoute: messagesDotnewRoute,
+};
+
+const platformRouteWithChildren = platformRoute._addFileChildren(
+  platformRouteChildren,
+);
+
+const rootRouteChildren: RootRouteChildren = {
+  platformRoute: platformRouteWithChildren,
   inviteRoute: inviteRoute,
 };
 export const routeTree = rootRouteImport

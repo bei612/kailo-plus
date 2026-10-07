@@ -2,16 +2,17 @@
 // The presigned native URL never leaves this authenticated source Adapter.
 import { createHash } from 'node:crypto';
 import { Refused, object, exactKeys, nonempty, canonical, fixedUrl, boundedBytes,
-  verifiedClaims, jsonFetch, freshPep } from '../../../client-kit/adapter/protocol.mjs';
+  verifiedClaims, jsonFetch, freshPep, readMeasurements, recordReadReceipt } from '../../../client-kit/adapter/protocol.mjs';
 import { nativeDocumentNode } from './query-revision.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export function readConfiguration(value) {
-  if (!exactKeys(value, ['downloadOrigin'])) throw new Refused(503);
+  if (!exactKeys(value, value?.usageMeasurements===undefined ? ['downloadOrigin'] : ['downloadOrigin','usageMeasurements'])) throw new Refused(503);
+  readMeasurements(value.usageMeasurements, 0);
   const url = fixedUrl(value.downloadOrigin);
   if (url.origin !== value.downloadOrigin || url.pathname !== '/') throw new Refused(503);
-  return Object.freeze({ downloadOrigin: url.origin });
+  return Object.freeze({ ...value, downloadOrigin: url.origin });
 }
 
 async function claimsForRead(config, token, args) {
@@ -77,6 +78,11 @@ export async function readFile(config, deadline, raw, key, token) {
   // Do not disclose buffered bytes if read permission disappeared during I/O.
   const current=await claimsForRead(config,token,args);
   await freshPep(config,deadline,token,args,current,'execute');
+  const sha256=createHash('sha256').update(bytes).digest('hex');
+  await recordReadReceipt(config,deadline,{bindingId:config.bindingId,operationId:claims.operation_id,
+    role:'SOURCE',idempotencyKey:key,nativeObjectRef:args.input.nativeObjectRef,nativeRevision:version.VersionId,
+    contentSha256:sha256,contentBytes:bytes.length,completedAt:new Date().toISOString(),
+    measurements:readMeasurements(config.readEdge.usageMeasurements,bytes.length)});
   return {bytes,nativeObjectRef:args.input.nativeObjectRef,nativeRevision:version.VersionId,
-    sha256:createHash('sha256').update(bytes).digest('hex'),operationId:claims.operation_id};
+    sha256,operationId:claims.operation_id};
 }

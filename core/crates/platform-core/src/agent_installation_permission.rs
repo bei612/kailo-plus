@@ -356,10 +356,33 @@ async fn human(
     principal: Uuid,
     action: &str,
 ) -> Result<(), Refusal> {
-    if !crate::agent_definition::active_owner(conn, row.tenant_id, principal).await? {
+    human_scope(g, conn, row.tenant_id, row.workspace_id, principal).await?;
+    checked(g, "resource", row.id, "share", principal).await?;
+    if let Some(edge) = &row.read_edge {
+        let receiver = edge["receiverResourceId"]
+            .as_str()
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .ok_or_else(unavailable)?;
+        checked(g, "resource", receiver, "update", principal).await?;
+    }
+    if !is_read(action) {
+        checked(g, "resource", row.id, "execute", principal).await?;
+    }
+    Ok(())
+}
+
+/// The management directory uses exactly the write path's HUMAN scope rule.
+pub(crate) async fn human_scope(
+    g: &Governance,
+    conn: &mut PgConnection,
+    tenant: Uuid,
+    workspace: Option<Uuid>,
+    principal: Uuid,
+) -> Result<(), Refusal> {
+    if !crate::agent_definition::active_owner(conn, tenant, principal).await? {
         return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
     }
-    if let Some(workspace_id) = row.workspace_id {
+    if let Some(workspace_id) = workspace {
         let _: Option<Uuid> = sqlx::query_scalar(
             "select id from identity.workspace_membership
         where workspace_id=$1 and tenant_principal_id=$2 for update",
@@ -390,23 +413,12 @@ async fn human(
             checked(
                 g,
                 if existed { "tenant" } else { "workspace" },
-                if existed { row.tenant_id } else { workspace_id },
+                if existed { tenant } else { workspace_id },
                 "manage",
                 principal,
             )
             .await?;
         }
-    }
-    checked(g, "resource", row.id, "share", principal).await?;
-    if let Some(edge) = &row.read_edge {
-        let receiver = edge["receiverResourceId"]
-            .as_str()
-            .and_then(|id| Uuid::parse_str(id).ok())
-            .ok_or_else(unavailable)?;
-        checked(g, "resource", receiver, "update", principal).await?;
-    }
-    if !is_read(action) {
-        checked(g, "resource", row.id, "execute", principal).await?;
     }
     Ok(())
 }

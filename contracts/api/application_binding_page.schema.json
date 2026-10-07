@@ -15,6 +15,7 @@
       "properties": {
         "canDisable": {"type": "boolean"},
         "hasNativePage": {"type": "boolean", "description": "Approved release declares an independent native page. Launch still freshly checks binding, scope and deployment origins."},
+        "hasReadReceiver": {"type": "boolean", "description": "Active approved binding declares a SERVICE read receiver. Resource discovery and writes still freshly check the original source share and receiver update permissions."},
         "bindingId": {"type": "string", "format": "uuid"},
         "tenantId": {"type": "string", "format": "uuid"},
         "workspaceId": {"type": "string", "format": "uuid"},

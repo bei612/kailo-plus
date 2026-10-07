@@ -405,3 +405,103 @@ UI, live source/receiver conformance and binding, completed cross-service
 usage reconciliation, images or deployment. The original automatic
 data-source delete-before-create behavior is not silently claimed fixed by
 the single-file consumer. No entry for those unfinished paths is added.
+
+### Read-batch native receipts and original usage convergence (2026-10-07)
+
+This subsequent source increment is based on `e3a5b5b6eda9c13485c1bcf41fb9969f3fd8a4d1`,
+not covered by the preceding receipt. DD-89's synchronous read batch remains
+the original SERVICE ActionExecution/Operation: no new Workflow, external
+execution type, ledger, resource registry or stored file body is introduced.
+
+The actual Cells source records its frozen native version, SHA-256 and byte
+count after the second permission check, before disclosing bytes. WeKnora's
+original `add_document` stores the actual binary SHA-256 in native Knowledge
+metadata; completed native parsing reports the corresponding receiver receipt.
+Observe/extract-usage calls only observe the original creation identity. They
+do not download again, recreate the document or enqueue another parsing job.
+Source and receiver authenticate as their distinct existing binding clients;
+the receiver cannot supply a source receipt. Exact request-digest acknowledgment
+is required, not merely HTTP 200.
+
+The existing AE pins source meters and the receiver EE's already frozen usage
+projection. Each component's controlled `readEdge.usageMeasurements` maps
+registered `meterKey` to actual `COUNT` or `CONTENT_BYTES`; it contains no price,
+balance or credential. Omission is accepted only when the frozen registered
+definition has genuinely no meters. Core rejects missing/extra measurements;
+it never turns an unconfigured meter into zero usage. Both roles feed the
+original deterministic `APPLICATION_ADAPTER_USAGE` outbox under the read batch
+operation. Existing EE and Agent-child consumers recognize those events instead
+of charging the receiver again under its initiating operation.
+
+The original governance reconciliation loop first quarantines expired reads as
+UNKNOWN, even if metering is unavailable. It observes and settles original
+events only; it does not renew tokens or replay native work. A COMPLETED outcome
+requires both immutable native receipts and all required original OpenMeter
+`stored_at` evidence. No-meter receiver actions still await their source batch.
+The original binding-disable barrier also consumes these obligations. Missing
+native completion, source/hash mismatch, callback ambiguity and pending usage
+remain unresolved, with original audit/age metrics and operator reconciliation;
+expiry is not evidence of failed native work. In-flight permission withdrawal
+cannot erase an already admitted read's evidence or usage obligation.
+
+Migration `20261007080000_service_read_receipts` extends the existing AE metadata
+freeze and original outbox/drain guards. It introduces no table. Rollback refuses
+retained native receipts rather than discarding evidence. New receipt timestamps
+remain original RFC3339 strings (including sub-millisecond precision), not a
+Dart-normalized date-time representation. The new route/schema is additive;
+the older deployed adapters do not emit these receipts and are not claimed
+compatible with a completed new read-batch settlement.
+
+Actual checks use the existing 4-CPU/8-GiB SDK. Data briefly had only 69 MiB free;
+Node inputs and temporary files therefore used its bounded existing tmpfs, with
+existing dependencies and no installation/build. The first run was 97/102 because
+that private snapshot lacked the existing Cells `xml2js` dependency link. Restoring
+that link, without product changes, gave 102/102. Removing the actual receipt
+digest check produced two failing child assertions (four failures including parent
+cases, exit 1); exact source restoration gave 102/102 again. Log files are under
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/read-receipts-20261007/`:
+`baseline.log`, `restored.log`, `mutation.log`, `mutation-restored.log`.
+
+The isolated empty verification database ran migration up/down/up and the actual
+SQL guard fixture inside BEGIN/ROLLBACK, exit 0. The fixture uses temporary typed
+rows, not business records: accepted source/receiver metadata, rejected mutation
+and source impersonation, rejected usage without native fact, and parsed the
+original disable guard. Removing its role/binding predicate caused the real
+source-impersonation assertion to fail (psql exit 3); restoring original SQL gave
+exit 0. See `sql-guards.log`, `sql-role-mutation.log`, `sql-role-restored.log`.
+This does not prove positive registered-binding/OpenMeter settlement.
+
+Private original four-language generation completed, preserving only the frozen
+base plus this new schema; formal union generation belongs to the root integrator.
+TypeScript typecheck and 38 round-trip checks passed; the new native-precision Dart
+round-trip passed. Earlier partial-snapshot missing i18n/TypeScript dependency
+inputs and their corrected results are retained in `generated*.log` and
+`contracts-ts*.log`; final generation is `generated-final.log`.
+Core then ran after the shared Cargo slot was released, using the same cgroup
+and original `/usr/local/cargo` cache. The first private input omitted the fixed
+capability-registry YAML and shared target reuse selected an earlier contracts
+artifact: `core.log` retains exit 101. Restoring the exact frozen file and touching
+the actual generated source corrected the verification input, not product code.
+`core-input-restored.log` records four Core checks passed, two explicitly ignored
+SQL checks, the new Rust contract check passed and all-target clippy with
+`-D warnings` passed. The new SQL guard's raw fixture was separately run as recorded
+above; the pre-existing absent-scope SQL check was not rerun in this increment.
+
+Removing the actual Core binding comparison produced one failed receipt check,
+one passed and one ignored, exit 101. Restoring formal bytes (`cmp` exit 0) gave
+four Core checks passed/two ignored and the full frozen Rust contract suite
+33/33, in `core-binding-mutation.log` and `core-binding-restored.log`. Removing
+`completedAt` from the private generated TypeScript interface caused TS2339,
+exit 2; original-byte restoration gave typecheck and 38/38 again, in
+`contracts-ts-mutation.log` and `contracts-ts-mutation-restored.log`.
+The new Go contract check passed (`contracts-go-restored.log`); its first run
+could not execute a test binary on tmpfs's no-exec mount, retained in
+`contracts-go.log`, and was rerun in the original SDK temporary directory.
+No shared cache, security permission or business data was changed for these checks.
+
+Native WeKnora Go verification for the new hash metadata and full positive
+cross-service settlement have not run for this increment; the native package
+was not linked while Data remained below 2 GiB. Its existing native file-creation
+check was extended after implementation, but no pass is inferred from the prior
+batch. No image, deployment, live binding or automatic Connector is delivered by
+these source and narrow-check results.

@@ -39,6 +39,71 @@ func TestAutomationReactionStepRoundtrip(t *testing.T) {
 	}
 }
 
+func TestApplicationReadResourcesRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "application-read-resources.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value struct {
+		Page    generated.ApplicationReadResourcePage `json:"page"`
+		Binding generated.ApplicationBindingView      `json:"binding"`
+	}
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before, after any
+	if err := json.Unmarshal(raw, &before); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, &after); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("resource metadata or receiver availability changed")
+	}
+	value.Binding.HasReadReceiver = nil
+	legacy, err := json.Marshal(value.Binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var old map[string]any
+	if err := json.Unmarshal(legacy, &old); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := old["hasReadReceiver"]; ok {
+		t.Fatal("legacy response gained availability")
+	}
+}
+
+func TestReadReceiptsPreserveNativePrecision(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "adapter-read-receipts.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var typed []generated.AdapterReadReceipt
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before, after any
+	if err := json.Unmarshal(raw, &before); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, &after); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("native receipt metadata changed")
+	}
+}
+
 func TestServiceReadPermissionRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "resource-service-read-permission.sample.json"))
 	if err != nil {

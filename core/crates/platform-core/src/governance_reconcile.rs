@@ -213,6 +213,9 @@ async fn pass(
     g.reconcile_delegations(state.agent_runtime.as_deref(), batch)
         .await
         .map_err(|error| crate::governance::wire(&error.reason()))?;
+    crate::application_binding::read_grant::reconcile_expired(state, batch)
+        .await
+        .map_err(|error| crate::governance::wire(&error.reason()))?;
     // 只取此刻确有一步可做的行：正常等待审批中的 WAITING 不进批次，否则它们
     // 会永远排在最前，把真正要处理的挤出去。
     let ids: Vec<Uuid> = sqlx::query_scalar(
@@ -221,6 +224,7 @@ async fn pass(
          left join projection.approval_projection ap on ap.workflow_id = ae.approval_workflow_id
          left join projection.workflow_ref aw on aw.workflow_id = ae.approval_workflow_id
          where ae.action_key <> $4
+           and coalesce(ae.parameters->>'componentActionKind','')<>'SERVICE_READ'
            and (ae.action_key not in ('agent.memory.core.replace','agent.memory.entry.set',
                                      'agent.memory.entry.patch','agent.memory.entry.remove')
                 or (ae.gate_state='EVALUATING' and ae.dispatch_state='NOT_DISPATCHED'

@@ -4152,3 +4152,41 @@ SDK-only 删除父按钮 installationLocked 守卫后，UNKNOWN 升级用例真�
 `shared.log`、`shared-restored.log`、`mutation.log`、
 `restored-hosts.log`。未运行 Cargo、full、镜像构建或部署；
 线上截图仍是旧版本，不用本批源码检查替代浏览器和安装包验收。
+
+### SERVICE 读取授权的 HUMAN 管理消费者
+
+本批已直接实现原组件连接管理面中的资源读取授权入口，不增加页面权威或原生数据同步器。尚未执行的检查不计通过。
+
+1. 权威：`.design/07` §8.2、DD-89 要求来源 Resource 的 share 与接收 Resource 的 update，并由接收绑定唯一 SERVICE 读取。现有 SERVICE grant/revoke 后端已提供原 Approval、ActionExecution 与 SpiceDB 消费者；本批补 HUMAN 管理面的真实调用方。读入口只查询原 catalog.resource/绑定/发布/runtime 的引用元数据。
+2. 影响：原 ApplicationBindingsPanel 被 Web/Desktop 共用。本批相对导入 ServiceReadPermissions，不新建独立权限页。原 ApplicationBindingView 增可选 hasReadReceiver，新 metadata page 合同随四侧生成；旧回应缺省时不渲染入口。BFF 读口从实际绑定解析 SERVICE，逐资源 fresh scope 与 share/update 检查，交给原 submitAction 的 source/receiver id+version。Core 不接收客户端提交的绑定 SERVICE 权威、native 凭据或业务正文。
+3. 副作用：hasReadReceiver 只是已批准 manifest 和活动 runtime 的入口提示，不是权限授予。读口与写口各自重核身份、绑定、scope、projection 和权限；没有申请/撤销的旁路。UNKNOWN 保存同一个 command/idempotencyKey，锁选择与返回，并只重查原请求；同步 DISPATCHED 不伪造 workflowId。等待审批仅显示请求回执，结果进入原 TaskDetail。
+4. 边界：空授权页保持真空并可按原 offset 继续；读失败不当空集合；错 scope/错绑定版本/错 SERVICE 页面组合拒绝提交。异步回执受 BFF client 身份代次隔离。源/接收资源并发变化由原资源版本与绑定冻结检查收敛，撤权后的读写 fresh 拒绝。无迁移，无新终态、第二额度或审批权威。结果不明不清意图、不当成功/失败。发布顺序 Core 合同/目录能力先于 Web；旧 Core 没有 hasReadReceiver 时没有假入口。
+
+复用来源：原工程的 ApplicationBindingsPanel、TaskDetail、submitAction、useLoad、scope guard 与 installation_permission::human_scope；不改独立组件管理页面、不删原连接创建/停用/原生页面入口。Mobile 仍不是组件宿主，本批不新增 Mobile 页面。
+
+范围限制：这批界面不证明 Cells→WeKnora 导入端到端已运行，也不替代原生接收服务的连接器、增量、删除及调度。只读隔离库 SQL 验证如执行，只能证明查询类型和缺失对象行为，不能冒充已有业务授权正向结果。
+
+本批基于 root 联合树 `216e3793ef2e26c17ea40b43fdffdb98709b567c`，只添加目录两合同；未夹带同期 Workflows reaction 的半成合同或测试。原受限 SDK 的独立 message-edit 输入执行：四侧 `tools/gen.sh` 与 `--check` 全 0，Dart 文案同源 0，registry 原入口 24 能力/20 kind 0；共享源/test tsc 0；绑定页 19 项（含本批 6 项）通过；新合同 TS、Go、Dart 各 1 项通过。首次身份切换用例误期待旧面板按钮仍在，原 PlatformProvider 实际已卸载旧身份页面，修正断言后通过；第一次跨语言输入误混队友下一批 reaction 用例，已从冻结基准只提取本批 case，未扩大 schema。SDK-only 将 SERVICE 一致性比较改 true，真实 1 项失败，随后原字节还原 cmp 0，再跑原绑定页。
+
+初次 registry 入口缺少旁置设计快照而失败；随后按联合树的设计 pin `86df37823219b4a1cdf094178379cbe929d8e412` 投递只读快照并运行成功。Go 首次未投递既有缓存环境变量而失败，补已存在 GOCACHE/GOMODCACHE/PUB_CACHE 后原用例通过，没有安装依赖或创建第二缓存。
+
+后端未验收：Cargo 串行轮到本批时资源预检发现 Data 只剩 7.4 MiB；同次已启动的命令尚无编译输出，没有 rustc 子进程，立即只向本次 Cargo PID 166358 发送 SIGINT。原 handle 93860 终态 exit 130，父 shell 与 Cargo 均已退出，未重开、未清缓存。Core 定向、Rust 往返、clippy、隔离 SQL 用例均不能计为通过。原隔离 PG 的受控目录与网络已复核；只读预检 `workflow_steps_hhwev1|100|0|0`（迁移/Resource/Binding），未插入对象或改变任何权限。共享 UI 负向还原后最终 19/19 exit 0；原合同兼容检查 271 schema / 3 历史匹配 exit 0；原 rustfmt --edition 2021 --check 0。原始日志在本次独立 service-read-management-20261007.6BOkRl 目录。不得引用父批 full 为本目录代码通过。
+
+2026-10-07 后续后端窄验：Data 恢复 3.9 GiB 后，确认无其他 Cargo/buildx，复用原 1000:1000、4 CPU/8 GiB、等额 memory+swap SDK 与 Cargo `-j16`。候选重基 `e3a5b5b6eda9c13485c1bcf41fb9969f3fd8a4d1`，保留该基准 read-grant、capacity 与主题修正；23 个候选路径与执行副本逐字节相同。Core 目录参数拒绝检查 1 项、既有隔离空库目录 SQL 1 项、Rust 新合同往返 1 项及 clippy `-D warnings` 全部退出 0。SQL 只验证缺失绑定与空资源集的真实查询，不创建业务对象、不授予权限；真实 HUMAN 授权、审批和组件读取端到端仍未验收。
+
+此次环境失败保留：首次 CARGO_HOME 指向非实际挂载缓存，离线检查因缺 `aho-corasick v1.1.5` 退出 101；改回已有 `/usr/local/cargo` 挂载，未下载或清缓存。下一轮共享 target 使用了旧契约编译产物，报告新目录类型缺失；私有生成文件与候选摘要一致且实际包含类型，仅更新该副本文件时间触发重编后通过。首个模块过滤器匹配 0 项，不计通过，随后对刚编译的准确模块运行 1 项并通过。SDK-only 移除 ReadResourceQuery 的 deny_unknown_fields 后，原检查真实失败 1 项、退出 101；恢复原字节 cmp 0，再次编译后同一检查 1/1、退出 0。最终 Data 3.8 GiB，无本批残留编译进程。
+
+后端日志均在 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/`：`service-read-management-core-e3.log`、`service-read-management-core-e3-restored.log` 保留首次两项失败；`service-read-management-core-e3-final.log` 保存 SQL、Rust 往返与 clippy；`service-read-management-query-positive.log`、`service-read-management-query-mutation.log`、`service-read-management-query-restored.log` 保存准确目录参数检查及破坏/恢复结果。没有 full、镜像构建、发布或部署，不把本次局部通过写成全量验收。
+
+### Web 原导航位置在重新认证后保留
+
+线上 46 版本截图 176 点击审计后回到频道、177 重点后才进入审计，作为现有缺陷线索而非本次发布证据。实际源码中 Web 已有 TanStack createBrowserHistory，却只注册根页与邀请页；PlatformApp 的 tab、chosen 和 chosenConversation 仅在组件状态，正常 onSessionEnded 重新载入同一 URL 必然丢掉这些定位。本批直接让已有页面消费原路由，不缓存认证状态。
+
+1. 权威：REQ-24/DD-53/DD-75 与原 Buzz 页面导航。原版来源为 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/app/routes.ts::routes`、`desktop/src/app/routes/root.tsx::RootRoute` 和 `desktop/src/app/navigation/useAppNavigation.ts::useAppNavigation`；继续同一 TanStack 路由、公开页面路径和 history，不另建路由或监听器。
+2. 影响：只改 Web 宿主 routes、PlatformApp 与对应检查；已有平台、频道、私聊、新消息页面写入 URL，pathless 平台宿主在页面切换时保持挂载。未知 section 在挂载前拒绝，入口只来自既有共享导航闭集。routeTree 用现有 TanStack Generator 生成，没有手改。Web 原 Caddy `/app/*` 的 try_files 已回退 `/app/index.html`，无需新增服务端规则；根页与邀请兑换仍保留。
+3. 副作用：URL 仅保存合法页名、Workspace/Conversation 与消息定位引用，不保存 cookie、身份、secret、ACL 或 command。认证仍是原 BFF session/OIDC；频道参数必须匹配当前授权目录及 isMember，显式失效对象不回退另一个频道。私聊恢复也只从当前目录取得完整对象，不信任 URL 中的业务数据。新会话发送后的目录/导航仍在原确认后路径，不因页面恢复重发 conversation.open 或消息。
+4. 边界：浏览器后退/前进由原 history 处理；完整文档重载恢复相同审计页与 Workspace 引用。目录读取中/失败、不存在目标、受限会话都维持原拒绝路径。Settings 原持续挂载与返回行为保留；页面定位不等于恢复未决写操作，既有草稿/UNKNOWN 权威不搬进 URL。没有改变 Desktop 导航或新增可执行动作。
+
+原 4 CPU/8 GiB SDK 的独立 message-edit 快照执行 Web tsc 退出 0；原 TanStack 路由实际挂载、返回 URL 重载、back/forward、未知页面拒绝、引用白名单 4 项，PlatformApp 7 项与 BFF 11 项，共 22 项退出 0。首次类型检查包含 search 可选字段声明错误，以及 node_modules 中旧 file-package 副本；分别修正宿主类型和同步冻结共享源，未改产品迁就旧依赖。第一轮导航检查发现公共宿主需要在父 route 拒绝未知 section，已修复；另一个失败是断言误把 router 内部去 basepath 的 location 当浏览器 URL，改查实际 history 后通过。
+
+SDK-only 将导航 tab 的 URL section 消费改回 channel，两个原导航用例真实失败，退出 1；原字节还原 cmp 0 后 tsc 与上述 22 项全部通过。日志位于 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/message-edit.AGX058/` 的 `web-navigation.log`、`web-navigation-restored.log`、`web-navigation-final.log`、`web-navigation-mutation.log`、`web-navigation-restored-final.log`。本批没有 Cargo/full/build/deploy，没有冒充已在实际浏览器完成新版本 OIDC 返回验收；该项仍须集中发布后按原正常登录路径复验。

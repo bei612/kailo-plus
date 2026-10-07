@@ -48,10 +48,12 @@ implementation:
     - worker/activities/component_action.go
     - worker/workflows/resource_provision.go
     - client-kit/ts/platform/src/react/application-bindings.tsx
+    - client-kit/ts/platform/src/react/service-read-permissions.tsx
     - client-kit/ts/platform/src/react/component-actions.tsx
   surfaces: [web, desktop]
   schemas:
     - contracts/api/application_binding_page.schema.json
+    - contracts/api/application_read_resource_page.schema.json
     - contracts/api/application_native_page.schema.json
     - contracts/domain/application_binding_create.schema.json
     - contracts/domain/component_action_input.schema.json
@@ -87,7 +89,7 @@ implementation:
     - core/migrations/20261005020000_component_action.down.sql
 
 runtime:
-  routes: ["/api/v1/application-bindings", "/api/v1/application-bindings/{id}/native-page"]
+  routes: ["/api/v1/application-bindings", "/api/v1/application-bindings/{id}/native-page", "/api/v1/application-bindings/{id}/read-resources"]
   actions: [application_binding.create, application_binding.disable, resource.create]
   tools: []
   workflow_kinds: [COMPONENT_BINDING, COMPONENT_DISABLE, RESOURCE_PROVISION, COMPONENT_ACTION]

@@ -13,6 +13,8 @@ import type {
   ConversationParticipantPage,
   ConversationPreferenceRequest,
   ApplicationBindingPage,
+  ApplicationReadResourcePage,
+  ApplicationReadResourceDirection,
   ApplicationNativePage,
   AgentDefinitionPage,
   AgentDefinitionView,
@@ -117,6 +119,10 @@ export function createBffClient(transport: BffTransport) {
       const query = new URLSearchParams({ offset: String(offset) });
       if (workspaceId !== undefined) query.set("workspaceId", workspaceId);
       return get<ApplicationBindingPage>(`/api/v1/application-bindings?${query}`);
+    },
+    applicationReadResources: (bindingId: string, direction: ApplicationReadResourceDirection, offset = 0) => {
+      const query = new URLSearchParams({ direction, offset: String(offset) });
+      return get<ApplicationReadResourcePage>(`/api/v1/application-bindings/${encodeURIComponent(bindingId)}/read-resources?${query}`);
     },
 
     collaborationUserState: () => get<CollaborationUserState>("/api/v1/user-state"),

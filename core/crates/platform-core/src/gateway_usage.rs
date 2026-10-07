@@ -872,6 +872,9 @@ async fn usage_audit(
         d.target_type,a.target_id,a.parameter_hash,d.result_exposure,a.correlation_id
         from admission.action_execution a join catalog.action_definition d
           on d.action_key=a.action_key and d.version=a.action_version
+          and ((d.id=a.action_definition_id and d.component_release_id is not distinct from a.component_release_id)
+            or (a.action_definition_id is null
+            and a.component_release_id is null and d.component_release_id is null))
         left join identity.tenant_membership m on m.tenant_id=a.tenant_id and m.tenant_principal_id=a.initiator_principal_id
         where a.operation_id=$1 and a.parent_action_execution_id is null")
         .bind(operation).fetch_one(&mut **tx).await.map_err(|_| "Usage 审计 scope 不可读")?;

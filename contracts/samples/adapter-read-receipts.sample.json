@@ -1,0 +1,26 @@
+[
+  {
+    "bindingId": "6d3a63de-3ceb-4b39-8fdc-b52d51c9f5e8",
+    "operationId": "2c0c393a-a383-48b5-8d51-78132d2575bc",
+    "role": "SOURCE",
+    "idempotencyKey": "ceac929c-d346-4aee-9b61-271c83519070",
+    "nativeObjectRef": "native-file",
+    "nativeRevision": "frozen-version",
+    "contentSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "contentBytes": 7,
+    "completedAt": "2026-10-07T01:02:03.123456789Z",
+    "measurements": [{"meterKey": "source_byte_count", "quantity": 7}]
+  },
+  {
+    "bindingId": "69e65e88-20fc-46cf-ab70-cec5f8d864c4",
+    "operationId": "2c0c393a-a383-48b5-8d51-78132d2575bc",
+    "role": "RECEIVER",
+    "idempotencyKey": "ceac929c-d346-4aee-9b61-271c83519070",
+    "nativeObjectRef": "native-import",
+    "nativeRevision": "2026-10-07T01:02:04.123456789Z",
+    "contentSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "contentBytes": 7,
+    "completedAt": "2026-10-07T01:02:04.123456789Z",
+    "measurements": [{"meterKey": "native_import_count", "quantity": 1}]
+  }
+]

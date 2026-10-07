@@ -6,7 +6,7 @@ import {
   type ActionCommand, type ActionSubmission, type ApplicationBindingCreate,
   type ApplicationBindingPage, type ApplicationBindingView,
 } from "@client-kit/contracts";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { newIdempotencyKey } from "../governance";
 import { TransportError, type WriteFailure, writeFailure } from "../transport";
 import { useBffClient, useFailureText, useReasonText, useT } from "./context";
@@ -14,6 +14,7 @@ import { TaskDetail } from "./governance";
 import { Badge, Button, Cell, Notice, ReadFailure, Table } from "./ui";
 import { useLoad } from "./use-load";
 import { NativeApplicationPage } from "./native-application-page";
+import { ServiceReadPermissions } from "./service-read-permissions";
 
 const states = {
   [ApplicationBindingState.Provisioning]: "bindings.provisioning",
@@ -35,6 +36,7 @@ export function validBindingPage(page: ApplicationBindingPage, workspaceId: stri
       && [row.bindingId, row.tenantId, row.componentReleaseId, row.componentTypeKey].every(nonempty)
       && Object.values(ApplicationBindingState).includes(row.state) && positive(row.version)
       && typeof row.canDisable === "boolean"
+      && (row.hasReadReceiver === undefined || typeof row.hasReadReceiver === "boolean")
       && (row.activeProjectionGeneration === undefined || positive(row.activeProjectionGeneration))
       && (row.state !== ApplicationBindingState.Active || positive(row.activeProjectionGeneration))
       && Array.isArray(row.capabilityCategories) && row.capabilityCategories.length > 0
@@ -109,6 +111,9 @@ function BindingScope({ workspaceId, lockScope }: { workspaceId?: string; lockSc
   const [busy, setBusy] = useState(false);
   const [task, setTask] = useState<string | null>(null);
   const [nativePage, setNativePage] = useState<string | null>(null);
+  const [readBinding, setReadBinding] = useState<ApplicationBindingView | null>(null);
+  const [readLocked, setReadLocked] = useState(false);
+  useEffect(() => { lockScope(!!intent || busy || readLocked); }, [intent, busy, readLocked, lockScope]);
   const sending = useRef(false);
   const unknown = failure?.kind === "unknown" || submission?.dispatchState === ActionDispatchState.Unknown
     || submission?.gateState === ActionGateState.Evaluating
@@ -159,6 +164,8 @@ function BindingScope({ workspaceId, lockScope }: { workspaceId?: string; lockSc
   };
   if (task) return <TaskDetail actionExecutionId={task} onBack={() => { setTask(null); reload(); }} onOpen={setTask} />;
   if (nativePage) return <NativeApplicationPage bindingId={nativePage} onBack={() => { setNativePage(null); reload(); }} />;
+  if (readBinding) return <ServiceReadPermissions binding={readBinding} onLocked={setReadLocked}
+    onBack={() => { if (!readLocked) { setReadBinding(null); reload(); } }} />;
   return <div className="flex flex-col gap-3">
     {intent ? <div className="flex flex-col gap-2" role="group" aria-label={t("bindings.review")}>
       <p className="text-sm">{t(intent.applicationBindingCreate ? "bindings.createWarning" : "bindings.disableWarning")}</p>
@@ -196,6 +203,8 @@ function BindingScope({ workspaceId, lockScope }: { workspaceId?: string; lockSc
               <Cell>{binding.capabilityCategories.map((item) => `${item.category}@${item.version}`).join(" · ")}</Cell>
               <Cell>{binding.hasNativePage === true && binding.state === ApplicationBindingState.Active
                 ? <Button disabled={!!intent || busy} onClick={() => setNativePage(binding.bindingId)}>{t("bindings.openNative")}</Button> : null}
+                {binding.hasReadReceiver === true && binding.state === ApplicationBindingState.Active
+                  ? <Button disabled={!!intent || busy} onClick={() => setReadBinding(binding)}>{t("bindings.read.title")}</Button> : null}
                 {binding.canDisable ? <Button disabled={!!intent || busy} onClick={() => disable(binding)}>{t("bindings.disable")}</Button> : null}</Cell>
             </tr>)}
           </Table>

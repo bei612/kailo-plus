@@ -13,6 +13,46 @@ void main() {
     final sample = jsonDecode(File('../../contracts/samples/automation-reaction-step.sample.json').readAsStringSync());
     expect(AutomationStep.fromJson(sample).toJson(), sample);
   });
+  test(
+    'application read resources preserve metadata and legacy entry absence',
+    () {
+      final sample =
+          jsonDecode(
+                File(
+                  '../../contracts/samples/application-read-resources.sample.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      expect(
+        ApplicationReadResourcePage.fromJson(sample['page']).toJson(),
+        sample['page'],
+      );
+      for (final available in [true, false, null]) {
+        final value = Map<String, dynamic>.from(sample['binding']);
+        if (available == null) {
+          value.remove('hasReadReceiver');
+        } else {
+          value['hasReadReceiver'] = available;
+        }
+        expect(ApplicationBindingView.fromJson(value).toJson(), value);
+      }
+    },
+  );
+  test('read receipts preserve native precision roles and quantities', () {
+    final sample =
+        jsonDecode(
+              File(
+                '../../contracts/samples/adapter-read-receipts.sample.json',
+              ).readAsStringSync(),
+            )
+            as List<dynamic>;
+    expect(
+      sample
+          .map((value) => AdapterReadReceipt.fromJson(value).toJson())
+          .toList(),
+      sample,
+    );
+  });
   test('service read permission preserves receiver and legacy absence', () {
     final sample =
         jsonDecode(

@@ -13,7 +13,6 @@
 import {
   PlatformSessionAccessMode,
   type PlatformSessionView,
-  type ConversationView,
   ReasonCode,
 } from "@client-kit/contracts";
 import { PlatformProvider, useDeviceLocale } from "@client-kit/platform/react/context";
@@ -30,9 +29,7 @@ import {
 } from "@client-kit/platform/react/governance";
 import { WorkflowsPage } from "@client-kit/platform/react/workflows";
 import { RedemptionProgress } from "@client-kit/platform/react/invitations";
-import {
-  type PlatformNavigationSection,
-} from "@client-kit/platform/react/navigation";
+import { usePlatformNavigation, type PlatformTab } from "@/app/platform-navigation";
 import {
   AgentDefinitionsPage,
   AuditPage,
@@ -68,8 +65,6 @@ import { ChatHeader } from "@client-kit/platform/react/messages/chat-header";
 import { FileText, Hash } from "lucide-react";
 import { toast } from "sonner";
 import { BrowserNotificationsProvider, useBrowserNotifications } from "./BrowserNotifications";
-
-type Tab = "channel" | "inbox" | "settings" | "new-message" | "conversation" | PlatformNavigationSection;
 
 /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
 export function PlatformApp() {
@@ -152,33 +147,38 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   const workspaces = useQuery(platformQueries.workspaces);
   const userState = useInboxState(bff);
   const conversations = useConversations();
-  const [chosenConversation, setChosenConversation] = useState<ConversationView | null>(null);
-  const [messageTarget, setMessageTarget] = useState<ParsedMessageLink | null>(null);
+  const navigation = usePlatformNavigation();
+  const { tab, messageTarget } = navigation;
+  const chosen = navigation.workspaceId;
+  const chosenConversation = !conversations.error && !conversations.loading
+    ? conversations.items.find((conversation) => conversation.id === navigation.conversationId) : undefined;
   const [messageLinkProblem, setMessageLinkProblem] = useState<string | null>(null);
-  const [chosen, setChosen] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("channel");
   const settingsVisited=useRef(false);
   if(tab==="settings")settingsVisited.current=true;
   const [initialRecipientPubkey, setInitialRecipientPubkey] = useState<string>();
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
   const [channelActivity, setChannelActivity] = useState<ReadonlyMap<string, string | null>>(() => new Map());
-  const settingsReturnTab = useRef<Tab>("channel");
-  useEffect(() => {
-    if (tab !== "settings") settingsReturnTab.current = tab;
-  }, [tab]);
-  useSettingsShortcuts({
-    open: tab === "settings",
-    onOpenSettings: useCallback(() => setTab("settings"), []),
-    onClose: useCallback(() => setTab(settingsReturnTab.current), []),
-  });
-
   const rows = workspaces.isError ? [] : workspaces.data ?? [];
   // Only use fresh admitted directory rows; a revoked previous selection cannot remain active.
-  const activeRow = rows.find((workspace) => workspace.id === chosen)
-    ?? rows.find((workspace) => workspace.id === session.currentWorkspaceId && workspace.isMember === true)
+  // An explicit URL target is not permission and must never fall back to another channel.
+  const activeRow = chosen ? rows.find((workspace) => workspace.id === chosen)
+    : rows.find((workspace) => workspace.id === session.currentWorkspaceId && workspace.isMember === true)
     ?? rows.find((workspace) => workspace.isMember === true)
     ?? rows[0];
   const active = activeRow?.id ?? null;
+  const setTab = (next: Exclude<PlatformTab, "conversation">) => { void navigation.openTab(next, active); };
+  const settingsReturn = useRef<() => void>(() => { void navigation.openTab("channel"); });
+  useEffect(() => {
+    if (tab !== "settings") settingsReturn.current = () => {
+      if (tab === "conversation" && navigation.conversationId) void navigation.openConversation(navigation.conversationId);
+      else if (tab !== "conversation") void navigation.openTab(tab, active);
+    };
+  }, [tab, active, navigation]);
+  useSettingsShortcuts({
+    open: tab === "settings",
+    onOpenSettings: () => setTab("settings"),
+    onClose: () => settingsReturn.current(),
+  });
   const channel = useQuery({
     queryKey: ["platform", "channel-descriptor", session.tenantPrincipalId, active],
     enabled: Boolean(active) && activeRow?.isMember === true && tab === "channel",
@@ -190,9 +190,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       return;
     }
     setMessageLinkProblem(null);
-    setMessageTarget(link);
-    setChosen(link.channelId);
-    setTab("channel");
+    void navigation.openChannel(link.channelId, link);
   };
   const preference = useMutation({
     mutationFn: async (next: { id: string; starred: boolean; muted: boolean; version: number }) => {
@@ -209,7 +207,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
 
   const onSignOut = useCallback(() => void signOut(), []);
 
-  const tabLabel = (name: Tab) =>
+  const tabLabel = (name: PlatformTab) =>
     ({
       channel: t("platform.tab.channel"),
       "new-message": translate(getLocale(), "sidebar.newMessage"),
@@ -255,16 +253,15 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   );
   const body =
     tab === "new-message" ? (
-      <NewMessagePage currentPrincipalId={session.tenantPrincipalId} initialRecipientPubkey={initialRecipientPubkey} onConversationOpened={(conversation) => {
-        setChosenConversation(conversation);
-        setTab("conversation");
-        void conversations.reload().catch(() => undefined);
+      <NewMessagePage currentPrincipalId={session.tenantPrincipalId} initialRecipientPubkey={initialRecipientPubkey} onConversationOpened={async (conversation) => {
+        await conversations.reload();
+        await navigation.openConversation(conversation.id);
       }} />
     ) : tab === "conversation" ? (
       chosenConversation ? <ChannelPane key={chosenConversation.id} workspaceId={chosenConversation.id} conversation={chosenConversation}
         onStartDm={(pubkey)=>{setInitialRecipientPubkey(pubkey);setTab("new-message");}}
         onOpenMessageLink={openMessageLink}
-        myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh} /> : <Notice text={t("platform.loadFailed")} />
+        myPrincipalId={session.tenantPrincipalId} onReadStateChanged={userState.refresh} /> : <Notice text={t(conversations.loading ? "platform.loadingWorkspaces" : "platform.loadFailed")} />
     ) : tab === "settings" ? (
       null
     ) : tab === "inbox" ? (
@@ -273,8 +270,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
         onStartDm={(pubkey)=>{setInitialRecipientPubkey(pubkey);setTab("new-message");}}
         onUnreadCount={setInboxUnreadCount}
         onOpen={(workspaceId) => {
-          setChosen(workspaceId);
-          setTab("channel");
+          void navigation.openChannel(workspaceId);
         }}
       />
     ) : tab === "pulse" ? (
@@ -316,7 +312,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 onOpenSettings={() => setTab("settings")} onSignOut={onSignOut} /></SidebarMenuItem></SidebarMenu>}
               dialogs={<ChannelBrowser key={session.tenantPrincipalId} open={createChannelOpen} onOpenChange={setCreateChannelOpen}
                 lastMessageAtByChannelId={channelActivity}
-                onSelect={async (workspace) => { await workspaces.refetch(); setChosen(workspace.id); setTab("channel"); }} />}>
+                onSelect={async (workspace) => { await workspaces.refetch(); await navigation.openChannel(workspace.id); }} />}>
               <AppSidebarPrimaryMenu onNewMessage={() => {setInitialRecipientPubkey(undefined);setTab("new-message");}} onSelectHome={() => setTab("inbox")}
                 homeBadgeCount={notificationSettings?.settings.homeBadgeEnabled && inboxUnreadCount !== null ? inboxUnreadCount : undefined}
                 onSelectPlatformSection={setTab}
@@ -327,12 +323,12 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             <ConversationList currentPrincipalId={session.tenantPrincipalId} items={conversations.items} loading={conversations.loading}
               error={conversations.error} selectedId={tab === "conversation" ? chosenConversation?.id ?? null : null}
               onNewMessage={() => {setInitialRecipientPubkey(undefined);setTab("new-message");}} onReload={() => { void conversations.reload().catch(() => undefined); }}
-              onCloseSelected={() => { setChosenConversation(null); setTab("inbox"); }}
-              onSelect={(conversation) => { setChosenConversation(conversation); setTab("conversation"); }} />
+              onCloseSelected={() => setTab("inbox")}
+              onSelect={(conversation) => { void navigation.openConversation(conversation.id); }} />
             <ChannelSidebar principalId={session.tenantPrincipalId} workspaces={rows} selectedId={active} active={tab === "channel"}
               onActivity={setChannelActivity}
               reads={userState} preferencePending={preference.isPending || preferenceUnknown}
-              onSelect={(id) => { setChosen(id); setTab("channel"); }}
+              onSelect={(id) => { void navigation.openChannel(id); }}
               onCreate={() => setCreateChannelOpen(true)}
               onSetPreference={(id, value) => {
                 if (userState.state) preference.mutate({ id, ...value, version: userState.state.version });

@@ -1,0 +1,30 @@
+{
+  "page": {
+    "bindingId": "40000000-0000-4000-8000-000000000001",
+    "bindingVersion": 3,
+    "servicePrincipalId": "40000000-0000-4000-8000-000000000002",
+    "tenantId": "40000000-0000-4000-8000-000000000003",
+    "direction": "SOURCE",
+    "resources": [{
+      "resourceId": "40000000-0000-4000-8000-000000000004",
+      "version": 7,
+      "bindingId": "40000000-0000-4000-8000-000000000005",
+      "workspaceId": "40000000-0000-4000-8000-000000000006",
+      "typeKey": "sample.files",
+      "nativeRef": "native-source-reference"
+    }],
+    "nextOffset": 25
+  },
+  "binding": {
+    "bindingId": "40000000-0000-4000-8000-000000000001",
+    "tenantId": "40000000-0000-4000-8000-000000000003",
+    "componentReleaseId": "40000000-0000-4000-8000-000000000007",
+    "componentTypeKey": "sample.receiver",
+    "state": "ACTIVE",
+    "version": 3,
+    "activeProjectionGeneration": 1,
+    "capabilityCategories": [{"category": "knowledge", "version": 1}],
+    "canDisable": false,
+    "hasReadReceiver": true
+  }
+}

@@ -1375,3 +1375,52 @@ Playwright 真实会话已补拍并实际查看 `176-live-46-audit-action-label.
 `177-live-46-audit-loaded.png`：首次导航主体仍为频道，再点审计后显示审计；
 可见旧版“发布动态”动作仍显示未识别。不能把本批源码验收记作线上视觉通过。
 完整检查最近一次仍退出 1，发布摘要与真实验收缺口保持原记录；不是生产收口。
+
+## 2026-10-07 组件读取管理、原生回执与 Web 导航合批
+
+相对 `c9d8370ee51b47629e27eb011f60cc0e4c9d5732`，固定联合源码树为
+`74084d6d385f83155efc143ede1f5f1e49df16a9`，53 文件 `+3119/-137`。
+SERVICE 资源授权管理、SOURCE/RECEIVER 原生读取回执及 Web URL 导航三批
+集中合并，保留上一批 reaction、原版页面与双语修正，不覆盖共享脏工作树。
+四侧往返检查的并行追加冲突保留两方用例，生成物由原 `tools/gen.sh` 对
+联合 schema 实际生成，不手写合成类型。
+
+四步影响结论：
+
+1. 权威为 DD-89 及既有 SERVICE ActionExecution、ApplicationBinding、
+   Resource、ExternalExecution 和 UsageEvent。业务内容留在两个独立服务；
+   Core 只保存来源、摘要、字节数、版本、回执与用量关联，没有第二数据库或账本。
+2. 原连接管理面列出实际来源/接收资源元数据，写入仍用既有 grant/revoke。
+   接收身份从 binding 推导，浏览器不指定 SERVICE 权威。Web/Desktop 共用页面；
+   Mobile 未增加组件宿主。新增回执 schema 与迁移是加法，旧 adapter 不会提交新
+   回执，不能把其行为称作新读取批次完成；回退拒绝删除已保留的原生证据。
+3. 源服务与接收服务各以自身 binding 客户端提交，Core 重核角色、scope 与冻结
+   binding。双方回执齐全且所需原 OpenMeter 事件已存储才记完成；接收 EE 引用
+   同一用量，不重复计费。UNKNOWN、过期、缺失和重复回调沿原对账，不重放导入。
+4. Web 原 TanStack 路由保存页面定位，不保存身份、权限或写意图。新鲜目录验证
+   URL 中的频道/私聊对象；明确失效对象不改跳默认租户或工作区。共享宿主在导航
+   时保持挂载；路由不存储或重放写意图，原 UNKNOWN 保护不改动。源码追溯和具体
+   反向验证见 [Web 面记录](../../../web-client/fork/verify/web-surface.md) 与
+   [原生读取记录](../../../knowledge/adapter/verify/native-read.md)。
+
+联合树原生成及 `--check` 退出 0，TS 往返 40 项、Dart 35 项通过；原 contract
+步骤退出 0，272 份 schema 与生成物同步，相对旧 tag 匹配 3 份历史 schema
+无破坏性变化。不扩大旧 tag 的兼容覆盖范围。
+原始日志位于 `/volumes/data/kailo/tmp/service-read-integrated-20261007.OnZQt8/`：
+`generate.log`、`contracts.log`、`compatibility.log`。
+
+同一固定联合树 Web 类型检查、导航/宿主/BFF 22 项和组件连接管理 19 项实际
+通过，退出 0，日志为原 SDK `message-edit.AGX058/union-74084-web-bindings.log`。
+Core 读取相关 14 项通过/3 ignored、安装权限 5 项通过/1 ignored、工作流 27 项
+通过/5 ignored、Rust 合同 35 项通过、平台 all-targets clippy 零警告、Go 原契约
+包退出 0。联合轮未重跑 ignored 数据库场景，不冒用先前独立 SQL 结果。
+原件为 `read-receipts-20261007/union-core-fixed-input.log` 与
+`union-permission-go.log`。首次投递误写协议文件路径后运行的旧输入检查、
+以及首次匹配零用例的权限过滤器，均不计入这些通过数字；纠正固定树输入并
+逐字核对、使用真实模块名后才取得以上结果。
+
+本批未构建或部署，线上仍是 `46fcd1a68b92962c37b7ac8eb37fb3411f223d7b`。
+没有把旧截图当作新路由上线验收。原生 WeKnora 新增 Go 消费者未在本批编译；
+Data 剩余空间不足时没有强行启动该大包链接，也没有清理共享缓存或其他任务。
+真实注册 binding、完整跨组件终态/计量、自动同步、三人双 Agent 稳定协作与
+Win11/Mobile、全页面中英文仍未验收，最近一次完整检查退出 1 的记录不变。
