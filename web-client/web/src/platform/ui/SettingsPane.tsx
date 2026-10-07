@@ -39,6 +39,9 @@ function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] 
     ["format-strikethrough", `${mod}${isMacPlatform() ? "⇧" : "Shift+"}X`, "Formatting"],
     ["format-code", `${mod}E`, "Formatting"],
     ["format-link", `${mod}K`, "Formatting"],
+    ["zoom-in", isMacPlatform() ? "⌘+" : "Ctrl+=", "Zoom"],
+    ["zoom-out", `${mod}-`, "Zoom"],
+    ["zoom-reset", `${mod}0`, "Zoom"],
   ];
   return entries.flatMap(([id, keys, category]) => {
     const text = shortcutText(locale, id);

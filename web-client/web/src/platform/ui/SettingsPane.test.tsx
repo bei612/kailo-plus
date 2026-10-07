@@ -211,10 +211,14 @@ describe("Web settings existing user-state CAS consumer", () => {
       expect(host.querySelector('[data-sidebar="group"]')).not.toBeNull();
       expect(host.querySelector('[data-testid="settings-content-surface"]')).not.toBeNull();
       await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-shortcuts"]')!.click());
-      expect(host.querySelectorAll('[data-shortcut]')).toHaveLength(9);
+      expect(host.querySelectorAll('[data-shortcut]')).toHaveLength(12);
       expect(host.querySelector('[data-shortcut="close-dialog"]')).not.toBeNull();
       expect(host.querySelector('[data-shortcut="format-link"]')).not.toBeNull();
       expect(host.textContent).toContain("Formatting");
+      expect(host.textContent).toContain("Zoom");
+      for (const id of ["zoom-in", "zoom-out", "zoom-reset"]) {
+        expect(host.querySelector(`[data-shortcut="${id}"]`)).not.toBeNull();
+      }
     } finally {
       await act(async () => root.unmount());
       host.remove();

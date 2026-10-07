@@ -21,6 +21,7 @@ import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
 import { ConversationList, ConversationVisibilityProvider, useConversations } from "@client-kit/platform/react/new-message";
 import { conversationVisibility } from "../bff-client";
 import { useSettingsShortcuts } from "@client-kit/platform/react/use-settings-shortcuts";
+import { useTextScaleShortcuts } from "@client-kit/platform/react/use-text-scale-shortcuts";
 import { ProtocolDocumentBridge } from "@client-kit/platform/react/protocol-document-bridge";
 import {
   ApprovalsPage,
@@ -177,6 +178,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       else if (tab !== "conversation" && tab !== "application") void navigation.openTab(tab, active);
     };
   }, [tab, active, navigation]);
+  useTextScaleShortcuts();
   useSettingsShortcuts({
     open: tab === "settings",
     onOpenSettings: () => setTab("settings"),

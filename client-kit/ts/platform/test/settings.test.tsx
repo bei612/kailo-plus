@@ -525,8 +525,8 @@ describe("shared Buzz settings presentation", () => {
     ]} />);
     expect([...host.querySelectorAll("h2")].map((el) => el.textContent)).toEqual(["导航", "格式"]);
     expect([...host.querySelectorAll('[data-shortcut="format-strikethrough"] kbd')].map((el) => el.textContent)).toEqual(["Ctrl", "Shift", "X"]);
-    expect([...host.querySelectorAll('[data-shortcut="format-bold"] kbd')].map((el) => el.textContent)).toEqual(["⌘", "B"]);
-    expect([...host.querySelectorAll('[data-shortcut="zoom-in"] kbd')].map((el) => el.textContent)).toEqual(["⌘", "+"]);
+    expect([...host.querySelectorAll('[data-shortcut="format-bold"] kbd')].map((el) => el.textContent)).toEqual(["⌘B"]);
+    expect([...host.querySelectorAll('[data-shortcut="zoom-in"] kbd')].map((el) => el.textContent)).toEqual(["⌘+"]);
     expect(host.querySelectorAll('[data-slot="settings-section-card"]')).toHaveLength(2);
   });
 });
