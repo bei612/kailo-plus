@@ -7,6 +7,7 @@ import { AskingTaskRepository } from './apollo/server/repositories/askingTaskRep
 import { AskResultStatus } from './apollo/server/models/adaptor';
 import { AskingResolver } from './apollo/server/resolvers/askingResolver';
 import { AdjustmentBackgroundTaskTracker } from './apollo/server/backgrounds/adjustmentBackgroundTracker';
+import { ProjectResolver } from './apollo/server/resolvers/projectResolver';
 
 describe('native task ownership consumers', () => {
   const owned = { id: 1, projectId: 7, queryId: 'owned', detail: {} };
@@ -97,6 +98,36 @@ describe('native task ownership consumers', () => {
     await service.cancelAskingTask('owned');
     await service.cancelAdjustThreadResponseAnswer('adjustment');
   });
+  it.each([false, true])(
+    'resumes original observation before refusing reset (adjustment=%s)',
+    async (isAdjustment) => {
+      service.askingTaskRepository.findUnsettled = jest.fn(async () => ({
+        id: 9,
+        projectId: 7,
+        queryId: 'pending',
+        detail: { adjustment: isAdjustment },
+      }));
+      await expect(service.assertProjectTasksSettled(7)).rejects.toThrow(
+        'task 9',
+      );
+      expect(service.askingTaskRepository.findUnsettled).toHaveBeenCalledWith(
+        7,
+      );
+      expect(
+        isAdjustment
+          ? service.adjustmentBackgroundTracker.getAdjustmentResult
+          : service.askingTaskTracker.getAskingResult,
+      ).toHaveBeenCalledWith('pending');
+      expect(service.askingTaskTracker.cancelAskingTask).not.toHaveBeenCalled();
+      expect(
+        service.adjustmentBackgroundTracker.cancelAdjustmentTask,
+      ).not.toHaveBeenCalled();
+    },
+  );
+  it('allows reset only after native observation has settled', async () => {
+    service.askingTaskRepository.findUnsettled = jest.fn(async () => null);
+    await expect(service.assertProjectTasksSettled(7)).resolves.toBeUndefined();
+  });
   it('rejects forged tracked results before creating a thread or a follow-up', async () => {
     const input = {
       question: 'native',
@@ -167,6 +198,75 @@ describe('native task ownership consumers', () => {
       projectId: 7,
     });
   });
+});
+
+describe('native reset transaction consumer', () => {
+  it.each([false, true])(
+    'preserves original cleanup with one transaction, rollback=%s',
+    async (refuseDelete) => {
+      const tx = {};
+      const ctx: any = {
+        projectService: {
+          getCurrentProject: jest.fn(async () => ({ id: 7, type: 'DUCKDB' })),
+          deleteProject: jest.fn(async () => {
+            if (refuseDelete) throw new Error('task unsettled');
+          }),
+        },
+        projectRepository: {
+          transaction: jest.fn(async () => tx),
+          commit: jest.fn(),
+          rollback: jest.fn(),
+        },
+        askingService: {
+          assertProjectTasksSettled: jest.fn(),
+          deleteAllByProjectId: jest.fn(),
+        },
+        schemaChangeRepository: { deleteAllBy: jest.fn() },
+        deployService: { deleteAllByProjectId: jest.fn() },
+        modelService: {
+          deleteAllViewsByProjectId: jest.fn(),
+          deleteAllModelsByProjectId: jest.fn(),
+        },
+        wrenAIAdaptor: { delete: jest.fn() },
+        telemetry: { sendEvent: jest.fn() },
+      };
+      const resolver = Object.create(ProjectResolver.prototype);
+      if (refuseDelete)
+        await expect(
+          resolver.resetCurrentProject(null, null, ctx),
+        ).rejects.toThrow('task unsettled');
+      else
+        expect(await resolver.resetCurrentProject(null, null, ctx)).toBe(true);
+      expect(ctx.schemaChangeRepository.deleteAllBy).toHaveBeenCalledWith(
+        { projectId: 7 },
+        { tx },
+      );
+      for (const action of [
+        ctx.deployService.deleteAllByProjectId,
+        ctx.askingService.deleteAllByProjectId,
+        ctx.modelService.deleteAllViewsByProjectId,
+        ctx.modelService.deleteAllModelsByProjectId,
+        ctx.projectService.deleteProject,
+      ])
+        expect(action).toHaveBeenCalledWith(7, tx);
+      expect(
+        refuseDelete
+          ? ctx.projectRepository.rollback
+          : ctx.projectRepository.commit,
+      ).toHaveBeenCalledWith(tx);
+      expect(ctx.wrenAIAdaptor.delete).toHaveBeenCalledTimes(
+        refuseDelete ? 0 : 1,
+      );
+      ctx.askingService.assertProjectTasksSettled.mockRejectedValue(
+        new Error('task unsettled'),
+      );
+      ctx.projectRepository.transaction.mockClear();
+      await expect(
+        resolver.resetCurrentProject(null, null, ctx),
+      ).rejects.toThrow('task unsettled');
+      expect(ctx.projectRepository.transaction).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('acknowledged native asking task persistence and observation', () => {
@@ -536,6 +636,99 @@ databaseTests(
       expect(await database.schema.hasColumn('asking_task', 'project_id')).toBe(
         true,
       );
+    });
+    it('retains running/unknown task evidence across every native cascade and permits observed terminal cleanup', async () => {
+      const guard = require(
+        join(
+          process.cwd(),
+          'migrations/20261007010000_preserve_running_asking_tasks.js',
+        ),
+      );
+      await database.transaction((tx) => guard.up(tx));
+      await repository.createOne({
+        id: 3,
+        projectId: 7,
+        queryId: 'running',
+        threadId: 11,
+        threadResponseId: 21,
+        detail: {
+          status: AskResultStatus.GENERATING,
+          type: null,
+          response: [],
+          error: null,
+        },
+      });
+      expect((await repository.findUnsettled(7)).id).toBe(3);
+      expect(await repository.findUnsettled(8)).toBeNull();
+      for (const [table, id] of [
+        ['asking_task', 3],
+        ['thread_response', 21],
+        ['thread', 11],
+        ['project', 7],
+      ] as const) {
+        await expect(database(table).where({ id }).delete()).rejects.toThrow(
+          'no observed terminal result',
+        );
+        expect(await database(table).where({ id }).first()).toBeDefined();
+        expect(await repository.findByQueryId('running')).not.toBeNull();
+      }
+      for (const detail of [null, {}, { status: 'UNRECOGNIZED' }]) {
+        await database('asking_task')
+          .where({ id: 3 })
+          .update({ detail: JSON.stringify(detail) });
+        expect((await repository.findUnsettled(7)).id).toBe(3);
+        await expect(
+          database('project').where({ id: 7 }).delete(),
+        ).rejects.toThrow('no observed terminal result');
+      }
+      await expect(guard.down(database)).rejects.toThrow('Stop rollback');
+      await database('asking_task')
+        .where({ id: 3 })
+        .update({ detail: JSON.stringify({ status: 'FINISHED' }) });
+      expect(await repository.findUnsettled(7)).toBeNull();
+      // The row becomes active again before a competing project deletion.
+      const observation = await database.transaction();
+      await observation('asking_task')
+        .where({ id: 3 })
+        .update({ detail: JSON.stringify({ status: 'GENERATING' }) });
+      const removal = database('project').where({ id: 7 }).delete();
+      const refused = expect(removal).rejects.toThrow(
+        'no observed terminal result',
+      );
+      await observation.commit();
+      await refused;
+      expect(await database('project').where({ id: 7 }).first()).toBeDefined();
+      // Terminal tasks in the same cascading statement must also survive failure.
+      await repository.createOne({
+        id: 4,
+        projectId: 7,
+        queryId: 'settled',
+        detail: {
+          status: AskResultStatus.FINISHED,
+          type: null,
+          response: [],
+          error: null,
+        },
+      });
+      await expect(
+        database.transaction(async (tx) => {
+          await tx('thread').where({ id: 14 }).delete();
+          await tx('project').where({ id: 7 }).delete();
+        }),
+      ).rejects.toThrow('no observed terminal result');
+      expect(await database('thread').where({ id: 14 }).first()).toBeDefined();
+      expect(await repository.findByQueryId('settled')).not.toBeNull();
+      for (const status of ['FINISHED', 'FAILED', 'STOPPED']) {
+        await database('asking_task')
+          .where({ id: 3 })
+          .update({ detail: JSON.stringify({ status }) });
+        expect(await repository.findUnsettled(7)).toBeNull();
+      }
+      await database('project').where({ id: 7 }).delete();
+      expect(await repository.findByQueryId('running')).toBeNull();
+      expect(await repository.findByQueryId('settled')).toBeNull();
+      await guard.down(database);
+      await database.transaction((tx) => guard.up(tx));
     });
   },
 );

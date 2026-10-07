@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { platformLocationSearch, usePlatformNavigation } from "./platform-navigation";
+import { useHistoryShortcuts, useHomeShortcut } from "@client-kit/platform/react/use-navigation-shortcuts";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 Object.defineProperty(window, "scrollTo", { value: vi.fn(), configurable: true });
@@ -12,6 +13,8 @@ Object.defineProperty(window, "scrollTo", { value: vi.fn(), configurable: true }
 const state = vi.hoisted(() => ({ mounts: 0 }));
 vi.mock("@/platform/ui/PlatformApp", () => ({ PlatformApp: function Host() {
   const navigation = usePlatformNavigation();
+  useHomeShortcut({ disabled: navigation.tab === "settings", onGoHome: () => navigation.openTab("inbox", navigation.workspaceId) });
+  useHistoryShortcuts({ goBack: navigation.goBack, goForward: navigation.goForward });
   const [mount] = useState(() => ++state.mounts);
   return <div data-tab={navigation.tab} data-mount={mount} data-workspace={navigation.workspaceId}
     data-conversation={navigation.conversationId} data-application={navigation.applicationBindingId} data-project={navigation.projectId} data-message={navigation.messageTarget?.messageId}>
@@ -58,6 +61,36 @@ it("uses the same browser history for back and forward without changing the host
   expect(node!.querySelector("[data-tab]")?.getAttribute("data-tab")).toBe("inbox");
   await act(async () => { router.history.forward(); await router.load(); });
   expect(node!.querySelector("[data-tab]")?.getAttribute("data-tab")).toBe("settings");
+});
+
+it.each(["MacIntel", "Win32"])("drives real URL history and Home from original %s shortcuts", async (platform) => {
+  const platformSpy = vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+  try {
+    const router = await mount("/app/channels/workspace-a");
+    const mountId = node!.querySelector("[data-tab]")?.getAttribute("data-mount");
+    const press = async (init: KeyboardEventInit) => {
+      const event = new KeyboardEvent("keydown", { cancelable: true, ...init });
+      await act(async () => { window.dispatchEvent(event); await router.load(); });
+      return event;
+    };
+    const mac = platform === "MacIntel";
+    const home = { key: "A", shiftKey: true, metaKey: mac, ctrlKey: !mac };
+    const back = mac ? { key: "[", metaKey: true } : { key: "ArrowLeft", altKey: true };
+    const forward = mac ? { key: "]", metaKey: true } : { key: "ArrowRight", altKey: true };
+    await press(back); // No prior admitted app history: remain in this channel.
+    expect(router.history.location.pathname).toBe("/app/channels/workspace-a");
+    expect((await press(home)).defaultPrevented).toBe(true);
+    expect(router.history.location.pathname).toBe("/app/inbox");
+    expect(node!.querySelector("[data-tab]")?.getAttribute("data-workspace")).toBe("workspace-a");
+    await press(back);
+    expect(router.history.location.pathname).toBe("/app/channels/workspace-a");
+    await press(forward);
+    expect(router.history.location.pathname).toBe("/app/inbox");
+    expect(node!.querySelector("[data-tab]")?.getAttribute("data-mount")).toBe(mountId);
+    await act(async () => { (node!.querySelectorAll("button")[1] as HTMLButtonElement).click(); });
+    expect((await press(home)).defaultPrevented).toBe(false);
+    expect(router.history.location.pathname).toBe("/app/settings");
+  } finally { platformSpy.mockRestore(); }
 });
 
 it("restores only a conversation reference and rejects unregistered page names", async () => {

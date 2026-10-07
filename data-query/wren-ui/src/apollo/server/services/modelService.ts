@@ -1,3 +1,4 @@
+import type { Knex } from 'knex';
 import { SampleDatasetTable } from '@server/data';
 import {
   IModelColumnRepository,
@@ -59,8 +60,14 @@ export interface IModelService {
     modelId: number,
     columnId?: number,
   ): Promise<ValidateCalculatedFieldResponse>;
-  deleteAllViewsByProjectId(projectId: number): Promise<void>;
-  deleteAllModelsByProjectId(projectId: number): Promise<void>;
+  deleteAllViewsByProjectId(
+    projectId: number,
+    tx?: Knex.Transaction,
+  ): Promise<void>;
+  deleteAllModelsByProjectId(
+    projectId: number,
+    tx?: Knex.Transaction,
+  ): Promise<void>;
 }
 
 export interface GenerateReferenceNameData {
@@ -490,17 +497,23 @@ export class ModelService implements IModelService {
     return { valid: true };
   }
 
-  public async deleteAllViewsByProjectId(projectId: number): Promise<void> {
+  public async deleteAllViewsByProjectId(
+    projectId: number,
+    tx?: Knex.Transaction,
+  ): Promise<void> {
     // delete all views
-    await this.viewRepository.deleteAllBy({ projectId });
+    await this.viewRepository.deleteAllBy({ projectId }, { tx });
   }
 
-  public async deleteAllModelsByProjectId(projectId: number): Promise<void> {
+  public async deleteAllModelsByProjectId(
+    projectId: number,
+    tx?: Knex.Transaction,
+  ): Promise<void> {
     // delete all relations
-    await this.relationRepository.deleteAllBy({ projectId });
+    await this.relationRepository.deleteAllBy({ projectId }, { tx });
 
     // delete all models
-    await this.modelRepository.deleteAllBy({ projectId });
+    await this.modelRepository.deleteAllBy({ projectId }, { tx });
   }
 
   private generateReferenceNameFromDisplayName(displayName: string) {

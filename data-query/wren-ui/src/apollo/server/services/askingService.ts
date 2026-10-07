@@ -1,4 +1,5 @@
 import { IWrenAIAdaptor } from '@server/adaptors/wrenAIAdaptor';
+import type { Knex } from 'knex';
 import {
   AskResultStatus,
   RecommendationQuestionsResult,
@@ -217,7 +218,8 @@ export interface IAskingService {
     threadId: number,
   ): Promise<ThreadRecommendQuestionResult>;
 
-  deleteAllByProjectId(projectId: number): Promise<void>;
+  deleteAllByProjectId(projectId: number, tx?: Knex.Transaction): Promise<void>;
+  assertProjectTasksSettled(projectId: number): Promise<void>;
 }
 
 /**
@@ -1102,9 +1104,27 @@ export class AskingService implements IAskingService {
     return response;
   }
 
-  public async deleteAllByProjectId(projectId: number): Promise<void> {
+  public async deleteAllByProjectId(
+    projectId: number,
+    tx?: Knex.Transaction,
+  ): Promise<void> {
     // delete all threads
-    await this.threadRepository.deleteAllBy({ projectId });
+    await this.threadRepository.deleteAllBy({ projectId }, { tx });
+  }
+
+  public async assertProjectTasksSettled(projectId: number): Promise<void> {
+    const task = await this.askingTaskRepository.findUnsettled(projectId);
+    if (!task) return;
+    // Reattach the acknowledged query to the original polling loop after restart.
+    // A cancellation acknowledgement is not an observed native terminal result.
+    if (task.detail && 'adjustment' in task.detail && task.detail.adjustment) {
+      await this.adjustmentBackgroundTracker.getAdjustmentResult(task.queryId);
+    } else {
+      await this.askingTaskTracker.getAskingResult(task.queryId);
+    }
+    throw new Error(
+      `Native asking task ${task.id} has no observed terminal result; retry deletion after observation`,
+    );
   }
 
   public async changeThreadResponseAnswerDetailStatus(

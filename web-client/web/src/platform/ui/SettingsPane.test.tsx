@@ -193,13 +193,16 @@ describe("Web original settings host", () => {
       expect(host.querySelector('[data-sidebar="group"]')).not.toBeNull();
       expect(host.querySelector('[data-testid="settings-content-surface"]')).not.toBeNull();
       await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-shortcuts"]')!.click());
-      expect(host.querySelectorAll('[data-shortcut]')).toHaveLength(12);
+      expect(host.querySelectorAll('[data-shortcut]')).toHaveLength(19);
       expect(host.querySelector('[data-shortcut="close-dialog"]')).not.toBeNull();
       expect(host.querySelector('[data-shortcut="format-link"]')).not.toBeNull();
       expect(host.textContent).toContain("Formatting");
       expect(host.textContent).toContain("Zoom");
       for (const id of ["zoom-in", "zoom-out", "zoom-reset"]) {
         expect(host.querySelector(`[data-shortcut="${id}"]`)).not.toBeNull();
+      }
+      for (const [id, keys] of [["go-home", "ShiftCtrlA"], ["go-back", "Alt←"], ["go-forward", "Alt→"], ["toggle-sidebar", "CtrlS"]]) {
+        expect([...host.querySelectorAll(`[data-shortcut="${id}"] kbd`)].map(key => key.textContent).join("")).toBe(keys);
       }
     } finally {
       await act(async () => root.unmount());

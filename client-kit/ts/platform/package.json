@@ -31,6 +31,8 @@
     "./react/messages/timeline/types": "./src/react/messages/timeline/types.ts",
     "./react/appearance-settings": "./src/react/appearance-settings.tsx",
     "./react/use-text-scale-shortcuts": "./src/react/use-text-scale-shortcuts.ts",
+    "./react/use-navigation-shortcuts": "./src/react/use-navigation-shortcuts.ts",
+    "./backForwardChords": "./src/backForwardChords.ts",
     "./react/custom-emoji": "./src/react/custom-emoji/index.ts",
     "./theme/glass-preference": "./src/theme/glass-preference.ts",
     "./react/projects": "./src/react/projects/index.ts",

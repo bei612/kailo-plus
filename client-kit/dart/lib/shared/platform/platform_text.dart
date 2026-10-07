@@ -757,6 +757,7 @@ enum PlatformMessageKey {
   platformTabAgents,
   platformTabWorkflows,
   workflowsHistory,
+  workflowsRunRecorded,
   workflowsName,
   workflowsActions,
   workflowsEnableWorkflow,
@@ -3336,6 +3337,10 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.platformTabAgents: ('Agents', 'Agent'),
   PlatformMessageKey.platformTabWorkflows: ('Workflows', '工作流'),
   PlatformMessageKey.workflowsHistory: ('My run history', '我的运行历史'),
+  PlatformMessageKey.workflowsRunRecorded: (
+    'Run request recorded. Execution: {execution}; operation: {operation}.',
+    '运行请求已记录。执行：{execution}；操作：{operation}。',
+  ),
   PlatformMessageKey.workflowsName: ('Workflow name', '工作流名称'),
   PlatformMessageKey.workflowsActions: ('Workflow actions', '工作流操作'),
   PlatformMessageKey.workflowsEnableWorkflow: ('Enable workflow', '启用工作流'),

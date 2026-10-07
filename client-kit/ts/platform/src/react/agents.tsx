@@ -298,7 +298,7 @@ type AutomationEdit = { detail: AutomationDetailView; action: "enable" | "pause"
   | { detail: AutomationDetailView; action: "copy"; content: AutomationVersionView["content"] };
 
 export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspaceChange, workflowNavigation }: WorkspaceNavigation & {
-  renderRunHistory?: (resourceId: string, workspaceId: string) => ReactNode;
+  renderRunHistory?: (resourceId: string, workspaceId: string, receipt?: ActionSubmission) => ReactNode;
   workflowNavigation?: WorkflowNavigation;
 }) {
   const client = useBffClient();
@@ -309,6 +309,8 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
   const [editorOpen, setEditorOpen] = useState(false);
   const [locked, setLocked] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [selectedAutomation, setSelectedAutomation] = useState<string | null>(null);
+  const [runReceipt, setRunReceipt] = useState<{ resourceId: string; workspaceId: string; submission: ActionSubmission } | null>(null);
   const data = state.status === "ok" ? state.data : null;
   const workspaces = data && Array.isArray(data) && data.every((w) => w && typeof w.id === "string" && !!w.id
     && typeof w.name === "string" && typeof w.slug === "string") && new Set(data.map((w) => w.id)).size === data.length ? data : null;
@@ -317,7 +319,7 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
   useEffect(() => {
     // Host search changes only after its router resolver accepts navigation.
     // Do not erase the current draft when a requested scope change is blocked.
-    if (!locked) { setEdit(null); setEditorOpen(false); }
+    if (!locked) { setEdit(null); setEditorOpen(false); setSelectedAutomation(null); setRunReceipt(null); }
   }, [selection]);
   return <section className="mx-auto w-full max-w-6xl space-y-8 [container-type:inline-size]" data-testid="agent-automations">
     {/* Buzz WorkflowsView has one trailing refresh. The host supplies the page title. */}
@@ -342,23 +344,32 @@ export function AutomationManagement({ renderRunHistory, workspaceId, onWorkspac
     {/* 未知写意图不随 Workspace、列表或详情重载卸载。 */}
     <AutomationAction workspaceId={workspace?.id} edit={edit} open={editorOpen} workflowNavigation={workflowNavigation} onClose={() => setEditorOpen(false)}
       onReset={() => { setEdit(null); setEditorOpen(false); }} onLocked={setLocked}
-      onRecorded={() => { setEdit(null); setEditorOpen(false); setRevision((old) => old + 1); }} />
+      onRecorded={(command, submission) => {
+        if (command.actionKey === "automation.run" && command.resourceId && command.workspaceId
+          && submission.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.Dispatched) {
+          setSelectedAutomation(command.resourceId);
+          setRunReceipt({ resourceId: command.resourceId, workspaceId: command.workspaceId, submission });
+        } else { setSelectedAutomation(null); setRunReceipt(null); }
+        setEdit(null); setEditorOpen(false); setRevision((old) => old + 1);
+      }} />
     {workspace ? <AutomationList key={`${workspace.id}:${revision}`} workspaceId={workspace.id} workspaceName={workspace.name} locked={locked}
+      selected={selectedAutomation} onSelect={setSelectedAutomation}
       onCreate={() => { setEdit(null); setEditorOpen(true); }}
       onEdit={(value) => { setEdit(value); setEditorOpen(true); }}
-      renderRunHistory={renderRunHistory} /> : null}
+      renderRunHistory={renderRunHistory ? (resourceId, workspaceId) => renderRunHistory(resourceId, workspaceId,
+        runReceipt?.resourceId === resourceId && runReceipt.workspaceId === workspaceId ? runReceipt.submission : undefined) : undefined} /> : null}
   </section>;
 }
 
-function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, renderRunHistory }: {
+function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, renderRunHistory, selected, onSelect }: {
   workspaceId: string; workspaceName: string; locked: boolean; onCreate: () => void; onEdit: (edit: AutomationEdit) => void;
+  selected: string | null; onSelect: (resourceId: string | null) => void;
   renderRunHistory?: (resourceId: string, workspaceId: string) => ReactNode;
 }) {
   const client = useBffClient();
   const t = useT();
   const [offsets, setOffsets] = useState([0]);
   const [index, setIndex] = useState(0);
-  const [selected, setSelected] = useState<string | null>(null);
   const offset = offsets[index] ?? 0;
   const [state, reload] = useLoad(`automations:${workspaceId}:${offset}`, () => client.automations(workspaceId, offset));
   const data = state.status === "ok" ? state.data : null;
@@ -377,17 +388,17 @@ function AutomationList({ workspaceId, workspaceName, locked, onCreate, onEdit, 
             className="group relative flex min-h-60 w-full min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border/80 bg-transparent text-muted-foreground shadow-xs transition-colors hover:border-border hover:bg-muted/70 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             data-testid="new-workflow-card" onClick={onCreate}><Plus aria-hidden className="h-7 w-7 transition-colors" /></button> : null}
           {page.automations.map((row) => <AutomationCard key={row.resourceId} row={row} workspaceName={workspaceName}
-            locked={locked} onView={() => setSelected(row.resourceId)} onEdit={onEdit} />)}
+            locked={locked} onView={() => onSelect(row.resourceId)} onEdit={onEdit} />)}
         </div>
         {page.automations.length === 0 && !page.canCreate ? <Notice>{t("agents.automation.none")}</Notice> : null}
         <div className="flex gap-2">
-          {index > 0 ? <Button disabled={locked} onClick={() => { setSelected(null); setIndex(index - 1); }}>{t("roles.previous")}</Button> : null}
+          {index > 0 ? <Button disabled={locked} onClick={() => { onSelect(null); setIndex(index - 1); }}>{t("roles.previous")}</Button> : null}
           {next !== undefined ? <Button disabled={locked} onClick={() => {
-            setSelected(null); setOffsets((old) => [...old.slice(0, index + 1), next]); setIndex(index + 1);
+            onSelect(null); setOffsets((old) => [...old.slice(0, index + 1), next]); setIndex(index + 1);
           }}>{t("roles.next")}</Button> : null}
         </div>
       </>}
-    {selected ? <AutomationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked} onEdit={onEdit} onClose={() => setSelected(null)}
+    {selected ? <AutomationDetail key={selected} resourceId={selected} workspaceId={workspaceId} locked={locked} onEdit={onEdit} onClose={() => onSelect(null)}
       renderRunHistory={renderRunHistory} /> : null}
   </div>;
 }
@@ -657,7 +668,7 @@ function WorkflowNameEditor({ disabled, name, onCommit }: {
 function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked, onRecorded, workflowNavigation }: {
   workspaceId?: string; edit: AutomationEdit | null; onReset: () => void;
   open: boolean; onClose: () => void;
-  onLocked: (locked: boolean) => void; onRecorded: () => void;
+  onLocked: (locked: boolean) => void; onRecorded: (command: ActionCommand, submission: ActionSubmission) => void;
   workflowNavigation?: WorkflowNavigation;
 }) {
   const client = useBffClient();
@@ -773,6 +784,11 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
   const unknown = failure?.kind === "unknown" || submission?.dispatchState === ActionDispatchState.Unknown
     || submission?.gateState === ActionGateState.Evaluating
     || (submission?.gateState === ActionGateState.Allowed && submission.dispatchState === ActionDispatchState.NotDispatched);
+  useEffect(() => {
+    // A settled receipt belongs to the scope in which it was submitted. An
+    // uncertain frozen intention still owns its receipt and must survive.
+    if (!intent) { setSubmission(null); setFailure(null); }
+  }, [workspaceId]);
   useEffect(() => {
     if (!open || intent) return;
     const content = edit && (edit.action === "copy" || edit.action === "publish_version")
@@ -901,7 +917,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
       frozenResponse.current = { operationId: result.operationId, actionExecutionId: result.actionExecutionId };
       if (result.dispatchState !== ActionDispatchState.Unknown && result.gateState !== ActionGateState.Evaluating
         && !(result.gateState === ActionGateState.Allowed && result.dispatchState === ActionDispatchState.NotDispatched)) {
-        setIntent(null); onLocked(false); onReset(); onRecorded(); reloadAdmission(); reloadInstallations();
+        setIntent(null); onLocked(false); onReset(); onRecorded(intent, result); reloadAdmission(); reloadInstallations();
         frozenResponse.current = null;
       }
     } catch (error) {
@@ -1144,7 +1160,7 @@ function AutomationAction({ workspaceId, edit, open, onClose, onReset, onLocked,
         if (navigationBlocked) { proceedingNavigation.current = true; workflowNavigation?.blocker.proceed?.(); }
         onClose();
       }} />
-    {!open && !intent && submission ? <p role="status" className="break-words text-sm">{t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}</p> : null}
+    {!open && !intent && submission ? <p role="status" className="break-words text-sm">{t("agents.recorded", { execution: submission.actionExecutionId, operation: submission.operationId })}{submission.reason ? ` ${reasonText(submission.reason)}` : ""}</p> : null}
   </>;
 }
 

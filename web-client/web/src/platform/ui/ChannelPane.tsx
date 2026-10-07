@@ -35,6 +35,7 @@ import { toast } from "sonner";
 import { MessageRowSurface, MessageActionBarSurface, getThreadReference, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { buildMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
+import { resolveMessageMentionClipboard } from "@client-kit/platform/react/messages/resolveMentionNames";
 import { Button } from "@/shared/ui/button";
 import { MessageComposerSurface } from "@client-kit/platform/react/composer/MessageComposerSurface";
 import { ChannelThreadPane } from "./ChannelThreadPane";
@@ -211,9 +212,7 @@ export function ChannelPane({
     if (message) { restoredEdit.current = true; setEditTarget(message); }
   }, [restoreEditEventId, timelineMessages, ownProfile.isSuccess, ownProfile.data]);
   const copyMessage = async (message: TimelineMessage) => {
-    const taggedKeys = new Set(message.tags?.filter((tag) => tag[0] === "p").map((tag) => tag[1]));
-    const identities = (members.data ?? []).flatMap((member) => member.pubkeys.filter((key) => taggedKeys.has(key)).map((pubkey) => ({ pubkey, label: member.displayName })));
-    const html = buildMentionClipboardHtml({ identities, text: message.body });
+    const html = buildMentionClipboardHtml(resolveMessageMentionClipboard(message.tags, profiles, message.body));
     try {
     await (html && typeof ClipboardItem !== "undefined"
       ? navigator.clipboard.write([new ClipboardItem({ "text/plain": new Blob([message.body], { type: "text/plain" }), "text/html": new Blob([html], { type: "text/html" }) })])

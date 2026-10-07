@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useHomeShortcut } from "@client-kit/platform/react/use-navigation-shortcuts";
 
 import { hasPrimaryShortcutModifier } from "@/shared/lib/platform";
 
@@ -17,6 +18,7 @@ export function useAppShellKeyboardShortcuts({
   onSearchCurrentChannel,
   onSearchEverything,
 }: AppShellKeyboardShortcutsOptions) {
+  useHomeShortcut({ disabled, onGoHome });
   React.useLayoutEffect(() => {
     if (disabled) return;
 
@@ -43,10 +45,6 @@ export function useAppShellKeyboardShortcuts({
         return;
       }
 
-      if (key === "a" && event.shiftKey) {
-        event.preventDefault();
-        void onGoHome();
-      }
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -56,7 +54,6 @@ export function useAppShellKeyboardShortcuts({
   }, [
     canSearchCurrentChannel,
     disabled,
-    onGoHome,
     onSearchCurrentChannel,
     onSearchEverything,
   ]);

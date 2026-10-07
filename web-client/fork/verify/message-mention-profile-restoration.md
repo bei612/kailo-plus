@@ -70,3 +70,56 @@ memory+swap，执行前可用内存约 30 GiB。只同步选定源码及两宿�
 `/volumes/data/kailo/tmp/buzz-visible-pages-20261007.KFQi8t/20-live-channel-before-batch.png`。
 这是仍运行旧 JS 的线上基线，侧栏名称仍为空、组件菜单未出现；不是本批源码的浏览器
 验收。不得把它、DOM 检查或消费者通过说成全页面截图完成、Windows 验收或 100% 原版还原。
+
+## 消息复制身份共享恢复（2026-10-07）
+
+本批基于 main `367f1f311b07d0cf3b4212c8d56976ce2c4ab6a4`。固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的完整源码路径及符号为
+`desktop/src/features/messages/lib/useMessageMentionIdentities.ts::useMessageMentionIdentities`、
+`desktop/src/features/messages/ui/MessageActionBar.tsx::MessageActionBar`、
+`desktop/src/features/messages/lib/mentionClipboard.ts::buildMentionClipboardHtml`、
+`desktop/src/shared/lib/resolveMentionNames.ts::resolveMentionProps`。
+
+1. 权威与分类：复用原消息 Copy 菜单、原双格式剪贴板构造和既有标签消歧，属于共享迁移；
+   Web 原仅取 p 标签的自行实现删除。双宿主消费同一 `resolveMessageMentionClipboard`，
+   Desktop 原重复 hook 删除、替换为共享消费者的薄 memo。DD-77 的精确身份与 DD-81
+   发布边界保持；没有改菜单、布局或新增业务能力。
+2. 影响面：共享 resolver/clipboard → Desktop MessageActionBar 与 Web ChannelPane
+   的真实复制回调，话题沿同一回调。读取现有正文、profile、p/mention 和编辑 snapshot，
+   无 schema、持久格式、数据库迁移、BFF/Relay 接口或权限变化；旧剪贴板构造调用不传
+   mentionNames 时行为保持。Mobile 未修改此消费者，仅同步原路径生成的工作流词条。
+3. 副作用：交叉复核捕获同名长标签的前缀误绑：两个 Sam Lee 不可消歧时，不能把
+   `@Sam Lee` 复制成另一位 Sam。构造器复用现有 mentionOccurrences 的完整文字范围，
+   不另写解析器；仍允许同一消息中独立、无歧义的 `@Sam` 带准确身份。无新权威、动作
+   或副作用重试；使用的只是已授权读取的当前消息，不把正文持久存到 Core。
+4. 边界：引用标签、大小写公钥、NIP-05/别名、同名限定标签和编辑快照沿原解析；缺身份
+   或歧义保持纯文本，不从历史通知标签猜身份。剪贴板失败保留已有错误提示；没有新的
+   执行状态或错误码，不把 UNKNOWN 渲染成成功。原 Agent 元数据和 Web 粘贴身份消费
+   仍有差距，本批不声称原复制→粘贴与全部 Agent 身份语义已恢复。
+
+验证继续使用上文已有 4 CPU/8 GiB SDK；执行前无其他编译，宿主 available 约 30 GiB、
+磁盘余量 3.3 GiB。仅将 main 共享源码和本批明确输入同步到已有候选及两宿主 file 依赖，
+不新导出工程、不下载依赖、不构建镜像。
+
+- 共享 `vitest run test/message-row.test.tsx`：最终 11 passed、退出 0；Web
+  `vitest run src/platform/ui/ChannelPane.test.tsx`：8 passed、退出 0，真实点开原菜单
+  并核对 ClipboardItem 中第二设备钥而非首个历史 p 标签。保留 Radix 异步 act 警告。
+- 原 Desktop `node --import ./test-loader.mjs --experimental-strip-types --test src/shared/lib/resolveMentionNames.test.mjs`：
+  8 passed、退出 0。集中候选共享包、Web、Desktop 的 `tsc --noEmit` 均退出 0。
+- 首轮共享 10 passed；Web 四次夹具失败因同实例替换消息后的 jsdom 零高度虚拟列表未
+  渲染消息，仅剩日期头。改为真实新频道 key 挂载夹具后 8 passed；没有修改产品虚拟列表。
+  集中类型首轮退出 2 因候选缺已提交 workflow 依赖；同步 main 对应模块后全部通过，
+  没有为候选旧文件改正式业务逻辑。
+- 实现后私有候选退回仅 p 标签：共享 2 failed/8 passed、Web 1 failed/7 passed，均退出 1，
+  明确捕获错误首钥。还原后 cmp 退出 0。交叉复核修正前缀误绑后，再仅在私有候选删除
+  文字范围核对：1 failed/10 passed、退出 1，输出错误的 Sam 身份 span；还原且 cmp 0 后
+  同命令 11 passed、退出 0。正式工作树从未保留故障注入。
+- 原 `tools/gen-platform-i18n.py` 生成及 `--check` 均退出 0，新增唯一工作流
+  `workflows.runRecorded` 中英词条同步至 Dart，不手写第二份翻译。
+- 同一 SDK 执行 `./tools/check-docs.sh` 退出 0：277 个设计引用闭合，markdownlint
+  0 issues，21 篇设计语料自检通过。全树 `git diff --check` 退出 2，报告既有未纳入本批的
+  InlineEmojiPopover、emoji、editAttachments、parseImeta 四文件 EOF 空行；不改写这些
+  他人修改，不把全树检查报告为通过。
+
+本批全量 diff 尚未闭合；未运行新的 full、浏览器全页面截图、Windows/Mobile 安装包
+验收或部署。原 full 空间阻断仍在，窄验与类型通过不代表生产就绪或 100% 原版一致。

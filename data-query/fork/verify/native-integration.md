@@ -1472,7 +1472,8 @@ old writers before migration and deploy the corresponding native code as one
 release. Down refuses to discard the ownership column while any task evidence
 exists; rollback with records is not an approved compatibility window.
 
-Deletion review: pinned `wren-ui/src/components/settings/ProjectSettings.tsx::ProjectSettings`
+Deletion review at the task-ownership batch (the follow-up below changes this
+nonterminal deletion behavior): pinned `wren-ui/src/components/settings/ProjectSettings.tsx::ProjectSettings`
 confirms native reset and warns that settings and records are deleted.
 `wren-ui/src/apollo/server/resolvers/projectResolver.ts::resetCurrentProject`
 first calls `AskingService.deleteAllByProjectId` to delete native threads;
@@ -1550,3 +1551,97 @@ session 6419 exit 0). Logs in the same private SDK directory as above:
 and `native-task-ownership-upstream.log`. `git diff --check` passed.
 No full check, production migration, live model call, browser/desktop/mobile
 acceptance, image build or deployment ran in this batch.
+
+## Preserve native task observation during destructive reset (2026-10-07)
+
+Under SS-WRN-GOVERNANCE, this follow-up prevents deletion from erasing the
+previous batch's acknowledged, nonterminal asking/adjustment evidence. The
+fixed upstream remains `c5f02a0391c87420dba78632dcd86073710deb72`, rechecked
+with read-only Git. At that commit,
+`wren-ui/src/apollo/server/resolvers/projectResolver.ts::resetCurrentProject`
+performs separate native deletes before calling the AI service;
+`wren-ui/src/apollo/server/services/askingTaskTracker.ts::isTaskFinalized`
+recognizes FINISHED, FAILED and STOPPED. These are asking-task states, not
+proof that a database query has been cancelled (GAP-WRN-01).
+
+The actual implementation and impact are:
+
+- New original-Knex migration
+  `wren-ui/migrations/20261007010000_preserve_running_asking_tasks.js::up`
+  protects every direct or cascading `asking_task` delete. Only a persisted
+  native terminal state permits deletion; missing, null and unknown states
+  retain the record. This includes original thread/response cascades and
+  `saveDataSource`'s direct project cleanup, not merely the reset button.
+  PostgreSQL and SQLite use their native row triggers. No task table, status,
+  platform authority or cancellation promise is added. Down refuses while
+  any native task evidence remains; it does not silently remove protection.
+- `AskingTaskRepository.findUnsettled` selects the first unresolved task of
+  the exact project in the database. It does not load an unbounded task list.
+  Before reset touches business data, `AskingService.assertProjectTasksSettled`
+  reattaches that acknowledged query to its existing asking/adjustment polling
+  loop and reports the task ID. It never re-POSTs or treats cancel acceptance
+  as termination. Retry uses fresh persisted observation; original polling
+  interval and retention remain unchanged. If upstream observation cannot
+  establish a terminal state, reset remains refused and the reported query
+  must be reconciled through the existing native result/operations path.
+- All original reset database deletes now share one existing Knex transaction:
+  schema changes, deployments, threads, views, relations/models and project.
+  The four original service methods accept that transaction and pass it to
+  the existing repositories. If a concurrent task makes a later cascading
+  delete fail, earlier native deletions roll back. The final external AI
+  cleanup is still outside the local database transaction; this change does
+  not claim distributed atomicity or external cleanup reconciliation.
+- Original screens and terminal-task reset remain available. This is an
+  authorized execution-safety adaptation, not a removed reset feature or
+  new workflow. Acknowledgement-before-persistence and pre-ACK concurrent
+  project deletion still lack a native intent/lookup contract and remain
+  release gaps. Other recommendation/native jobs, complete user authorization,
+  component offboarding and audit-retention acceptance are not covered.
+
+Implementation preceded verification in the existing cached Wren SDK
+`kailo-wren-query-sdk-itgs2n`, 4 CPU / 4 GiB, no competing SDK compiler,
+OOM false, about 30 GiB host memory available. No new snapshot or image was
+created. The first run reported a new union-narrowing error and two incomplete
+test fixtures; these were corrected without weakening types, and original
+failure logs remain `native-task-deletion-tests.log` and
+`native-task-deletion-types.log`.
+
+Final commands used original Prettier, Jest and TypeScript:
+
+```sh
+./node_modules/.bin/jest --runInBand src/nativeTaskOwnership.test.ts \
+  src/nativeProjectScope.test.ts \
+  src/apollo/server/services/tests/askingService.test.ts \
+  src/apollo/server/services/tests/dashboardService.test.ts
+./node_modules/.bin/tsc --noEmit
+```
+
+Results: **127 passed, 0 failed, 0 skipped**, four suites; formatting check
+and whole-Wren TypeScript both exit 0 (combined session 74245 exit 0).
+Actual PostgreSQL checks cover direct task deletion, response/thread/project
+cascades, null/unknown statuses, terminal-state deletion, competing state
+updates, rollback of earlier native deletes, evidence-preserving down and
+empty down/up. The resolver consumer checks the same transaction at each
+original service and ensures external cleanup is not called after refusal.
+Changing only the private PostgreSQL trigger to `IF FALSE` produced
+**1 failed / 29 passed**, exit 1: the actual delete incorrectly succeeded.
+All eight implementation/test/migration inputs were restored with bytewise
+`cmp` exit 0 before the final run.
+
+The SQLite migration SQL was also executed against the SDK's real in-memory
+`node:sqlite` database: five nonterminal/null/malformed JSON cases rejected
+both direct and project-cascade deletes; all three observed terminal states
+permitted cascade (exit 0). This validates the new trigger SQL, not the missing
+`better-sqlite3` ABI or a complete SQLite release migration run.
+
+Logs are under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+`native-task-deletion-corrected.log`, `native-task-deletion-mutation.log`,
+`native-task-deletion-restored.log`, `native-task-deletion-format.log`,
+`native-task-deletion-types-corrected.log`, and
+`native-task-deletion-types-final.log`. This SDK lacks the repository tools
+and reference mounts: invoking `/workspace/apps/tools/upstream_manifest.py`
+failed with file-not-found, so no new full-tree manifest result is claimed.
+The fixed source reads and complete in-batch diff were reviewed instead.
+No full check, production migration, live model dispatch, screenshot,
+installation package, deployment or production-ready acceptance ran here.

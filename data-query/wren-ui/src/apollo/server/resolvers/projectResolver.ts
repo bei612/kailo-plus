@@ -125,12 +125,20 @@ export class ProjectResolver {
     const eventName = TelemetryEvent.SETTING_RESET_PROJECT;
     try {
       const id = project.id;
-      await ctx.schemaChangeRepository.deleteAllBy({ projectId: id });
-      await ctx.deployService.deleteAllByProjectId(id);
-      await ctx.askingService.deleteAllByProjectId(id);
-      await ctx.modelService.deleteAllViewsByProjectId(id);
-      await ctx.modelService.deleteAllModelsByProjectId(id);
-      await ctx.projectService.deleteProject(id);
+      await ctx.askingService.assertProjectTasksSettled(id);
+      const tx = await ctx.projectRepository.transaction();
+      try {
+        await ctx.schemaChangeRepository.deleteAllBy({ projectId: id }, { tx });
+        await ctx.deployService.deleteAllByProjectId(id, tx);
+        await ctx.askingService.deleteAllByProjectId(id, tx);
+        await ctx.modelService.deleteAllViewsByProjectId(id, tx);
+        await ctx.modelService.deleteAllModelsByProjectId(id, tx);
+        await ctx.projectService.deleteProject(id, tx);
+        await ctx.projectRepository.commit(tx);
+      } catch (error) {
+        await ctx.projectRepository.rollback(tx);
+        throw error;
+      }
       await ctx.wrenAIAdaptor.delete(id);
 
       // telemetry

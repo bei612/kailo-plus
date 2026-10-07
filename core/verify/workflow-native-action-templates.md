@@ -104,3 +104,21 @@
 最终 `route-restored-final.log` 串行执行下列命令，全部退出 0：Web `./node_modules/.bin/tsc --noEmit`；`vitest run src/app/workflow-navigation.test.tsx src/platform/ui/PlatformApp.test.tsx src/app/platform-navigation.test.tsx` 为 28 passed；共享 `tsc --noEmit -p tsconfig.test.json` 与 `vitest run test/workflow-actions.test.tsx test/workflow-template.test.tsx` 为 45 passed；Desktop 在该快照工作目录复用 `/evidence/profile-settings-ortsoo.DRR20F/apps/collaboration/desktop/node_modules/.bin/tsc --noEmit`。7 个源码/检查输入与正式文件 cmp 全部退出 0，本批路径 `git diff --check` 退出 0。没有修改 package exports、i18n、依赖锁或生成契约。
 
 上述 Router/History + 共享页面场景在 jsdom 实际运行，不等于 Windows 安装包、真实浏览器截图或全页面视觉验收；浏览器 popstate 异步回调产生的 React act 提示保留于日志，没有屏蔽。全量检查、部署与安装包不属于本批验证，不宣称 Workflows 全量原版恢复。
+
+## 原手动触发到运行历史定位恢复（2026-10-07）
+
+1. 权威：REQ-24、DD-74/75、`.design/06-Temporal任务工作台.md` §9.1。固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的 `desktop/src/features/workflows/ui/WorkflowDetailPanel.tsx::WorkflowDetailPanel/handleTrigger` 消费返回的 runId，自动选择真实历史，未读到时保留原待持久轨迹提示。本批恢复这条已缺失的交互，不恢复原执行引擎；原提示布局保留，文案授权改为“请求已记录”而非“运行已创建”，防止准入回执冒充业务完成。
+2. 影响：`client-kit/ts/platform/src/react/agents.tsx::AutomationAction/AutomationManagement/AutomationList` → `client-kit/ts/platform/src/react/workflows.tsx::WorkflowsPage/AutomationRunHistory` → 既有 `WorkflowRunTrace/TaskDetail`。提交仍是同一 `automation.run`；仅已校验 ALLOWED/DISPATCHED 的 ActionSubmission 携带冻结 resource/workspace 和执行引用定位原历史。Core `core/crates/platform-core/src/automation_query.rs::run_query` 仍为当前本人、scope、原根 ActionExecution 的授权读模型；没有修改 schema、Core、Worker 或存储正文。两端共用相同生产组件，Mobile 不新增运行控制。
+3. 副作用：UNKNOWN/EVALUATING/尚未派发保留原意图与幂等键，不关闭编辑器或虚构运行。确定拒绝不显示 run-created 等待提示，原因仍可见；原查询包含拒绝的根动作，但这不表示 Temporal 已运行。空历史暂保留已有回执和对账提示，只刷新原读路径，不重发。相同 execution ID 却不同 operation 的投影拒绝展示，不以 ID 单字段匹配接入另一动作。投影自己的 UNKNOWN 优先于矛盾 COMPLETED，沿既有 taskPhase 显示真实不确定状态。
+4. 边界：切换已接受的 workspace 清除旧详情/运行定位；事后交互检查发现原已确认回执在关闭 dialog 后仍跨 scope 遗留，现随 scope 清理，但冻结不确定意图不清除。关闭再打开详情仍查授权数据，读拒绝/不可用不视为空历史。前端新增状态只为当前页面的定位引用，不是新运行权威；撤权后由现有 BFF 拒绝读取。没有新增重跑、取消、权限或任意步骤轨迹能力。
+
+本批对照固定原 workflow 模块目录及上述详情、运行轨迹、触发消费者，差异归类：已有列表/运行卡片/轨迹样式继续共享迁移；原 runId 自动定位与等待区由本批恢复；原 Relay run/approvals 查询替换为既有 ActionSubmission/AutomationRunPage/Tasks 属已授权治理改造。原完整 Definition 展示、表单画布及任意步骤 trace 等其余差异仍未全量闭合，本批不宣称整个模块 100% 还原。
+
+验证复用已有 `message-edit.AGX058/apps`，Docker `kailo-agent-receipt-xvkujx` 实查 4 CPU/8 GiB；运行前无编译，宿主 available 30 GiB、Data 3.3 GiB。没有新快照、安装依赖、Rust/镜像构建。以下日志均在 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`：
+
+- `run-history-initial.log`：shared tsc 退出 0，48 passed/3 failed；两个断言误用旧英文和 alert（未知读取的原组件实际为 status），一个捕获上述旧回执跨 scope 问题。修实现及断言后 `run-history-fixed.log` 为 50 passed/1 failed，余下一项是 `Could not load` 与实际 `Couldn't load this` 文案不匹配；没有修改产品文案迁就检查。
+- `run-history-consumer.log`：新增 8 项实际共享页面消费者全部通过。覆盖触发→对应运行→原任务读取、缺投影→刷新、同意图 UNKNOWN 重试、错 operation 拒绝、矛盾终态、scope 清理、明确拒绝、中英等待提示。
+- `run-history-mutation.log`：只在私有 SDK 输入删除自动选择和 operation 核对，真实 5 failed/3 passed、退出 1；恢复正式字节后 cmp 退出 0。正式产品未被破坏。
+- `run-history-restored-final.log`：`tsc --noEmit -p tsconfig.test.json`、`vitest run test/workflow-run-history.test.tsx test/workflow-actions.test.tsx test/workflow-template.test.tsx` 全部退出 0，53 passed（8 新历史 + 38 原动作 + 7 原模板）；生产两文件与新检查文件的 SDK 输入 cmp 均退出 0，本批 `git diff --check` 退出 0。`workflows.runRecorded` 中英源词条由主线合入，同源 Dart 生成由主线集中完成，不手写另一个翻译源。
+
+源码与 jsdom 交互检查不等于实际浏览器截图、Windows/Mobile 或 Temporal 线上业务验收。本批未部署、未打包、未运行 full；两宿主集中候选类型及词条生成结果以主线记录为准，不将历史已有通过冒充本批执行。

@@ -1,3 +1,4 @@
+import type { Knex } from 'knex';
 import { WrenAIDeployStatusEnum } from '@server/models/adaptor';
 import { IWrenAIAdaptor } from '../adaptors/wrenAIAdaptor';
 import {
@@ -36,7 +37,7 @@ export interface IDeployService {
   getInProgressDeployment(projectId: number): Promise<Deploy>;
   createMDLHash(manifest: Manifest, projectId: number): string;
   getMDLByHash(hash: string): Promise<string>;
-  deleteAllByProjectId(projectId: number): Promise<void>;
+  deleteAllByProjectId(projectId: number, tx?: Knex.Transaction): Promise<void>;
 }
 
 export class DeployService implements IDeployService {
@@ -181,8 +182,11 @@ export class DeployService implements IDeployService {
     return Buffer.from(JSON.stringify(deploy.manifest)).toString('base64');
   }
 
-  public async deleteAllByProjectId(projectId: number): Promise<void> {
+  public async deleteAllByProjectId(
+    projectId: number,
+    tx?: Knex.Transaction,
+  ): Promise<void> {
     // delete all deploy logs
-    await this.deployLogRepository.deleteAllBy({ projectId });
+    await this.deployLogRepository.deleteAllBy({ projectId }, { tx });
   }
 }

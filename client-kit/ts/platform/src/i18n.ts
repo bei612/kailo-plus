@@ -898,6 +898,7 @@ export const platformMessages = {
   "platform.tab.agents": { en: "Agents", "zh-CN": "Agent" },
   "platform.tab.workflows": { en: "Workflows", "zh-CN": "工作流" },
   "workflows.history": { en: "My run history", "zh-CN": "我的运行历史" },
+  "workflows.runRecorded": { en: "Run request recorded. Execution: {execution}; operation: {operation}.", "zh-CN": "运行请求已记录。执行：{execution}；操作：{operation}。" },
   "workflows.name": { en: "Workflow name", "zh-CN": "工作流名称" },
   "workflows.actions": { en: "Workflow actions", "zh-CN": "工作流操作" },
   "workflows.enableWorkflow": { en: "Enable workflow", "zh-CN": "启用工作流" },

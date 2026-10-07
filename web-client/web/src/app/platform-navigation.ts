@@ -1,4 +1,4 @@
-import { useNavigate, useParams, useRouterState, useSearch } from "@tanstack/react-router";
+import { useCanGoBack, useNavigate, useParams, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
 import { platformNavigationSections, type PlatformNavigationSection } from "@client-kit/platform/react/navigation";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 
@@ -25,6 +25,8 @@ export function platformLocationSearch(search: Record<string, unknown>): {
 }
 
 export function usePlatformNavigation() {
+  const router = useRouter();
+  const canGoBack = useCanGoBack();
   const navigate = useNavigate();
   const params = useParams({ strict: false });
   const search = useSearch({ from: "/_platform" });
@@ -32,6 +34,8 @@ export function usePlatformNavigation() {
   const tab: PlatformTab = params.channelId ? "channel" : params.conversationId ? "conversation"
     : params.bindingId ? "application" : newMessage ? "new-message" : params.section ?? "channel";
   return {
+    goBack: () => { if (canGoBack) router.history.back(); },
+    goForward: () => router.history.forward(),
     tab,
     workspaceId: params.channelId ?? search.workspaceId ?? null,
     conversationId: params.conversationId ?? null,

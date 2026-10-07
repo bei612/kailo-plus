@@ -5,8 +5,55 @@ import { ComposerReplyBanner, MessageRowSurface, MessageActionBarSurface, type T
 import { TooltipProvider } from "../src/react/sidebar/tooltip";
 import { render, click } from "./render";
 import { applyMessageEdits, imetaMediaFromTags, restoreImetaMediaDisplayLabels, stripImetaMediaLines, findSpoileredImetaMediaUrls } from "../src/react/messages";
+import { resolveMessageMentionClipboard } from "../src/react/messages/resolveMentionNames";
+import { buildMentionClipboardHtml, parseMentionClipboardRecords } from "../src/react/composer/features/messages/lib/mentionClipboard";
 
 const message: TimelineMessage = { id: "message", pubkey: "author", author: "Alice", body: "Hello", createdAt: 1770000000, depth: 0, time: "", tags: [] };
+
+it("copies only the original resolved identity, including reference tags, aliases and qualified duplicate names", () => {
+  const first = "ab".repeat(32), second = "cd".repeat(32);
+  const profiles = {
+    [first]: {displayName:"Alex",name:"first",nip05Handle:"first-handle@buzz.example",avatarUrl:null,ownerPubkey:null},
+    [second]: {displayName:"Alex",avatarUrl:null,nip05Handle:null,ownerPubkey:null},
+  };
+  const copy = (body: string, tags: string[][]) => {
+    const html = buildMentionClipboardHtml(resolveMessageMentionClipboard(tags, profiles, body));
+    return html ? parseMentionClipboardRecords(html) : [];
+  };
+  expect(copy("@first @first-handle", [["mention",first.toUpperCase()]])).toEqual([
+    {label:"first",pubkey:first}, {label:"first-handle",pubkey:first},
+  ]);
+  expect(copy("@Alex", [["p",first],["p",second]])).toEqual([]);
+  expect(copy(`@Alex @Alex (${second})`, [["p",first],["p",second]])).toEqual([
+    {label:"Alex",pubkey:first}, {label:`Alex (${second})`,pubkey:second},
+  ]);
+  expect(copy(`@Alex (${second})`, [["p",first]])).not.toContainEqual({label:`Alex (${second})`,pubkey:second});
+});
+
+it("copying an edited message honors its latest body identity snapshot rather than historical recipients", () => {
+  const old = "ab".repeat(32), current = "cd".repeat(32);
+  const profiles = {
+    [old]: {displayName:"Old",avatarUrl:null,nip05Handle:null,ownerPubkey:null},
+    [current]: {displayName:"Current",avatarUrl:null,nip05Handle:null,ownerPubkey:null},
+  };
+  expect(resolveMessageMentionClipboard([["p",old],["buzz:mention-snapshot"],["mention",current]], profiles, "@Old @Current").identities)
+    .toEqual([{label:"Current",pubkey:current}]);
+  expect(resolveMessageMentionClipboard([["p",old],["buzz:mention-snapshot"]], profiles, "@Old").identities).toEqual([]);
+  expect(resolveMessageMentionClipboard(undefined, profiles, "@Current").identities).toEqual([]);
+  expect(resolveMessageMentionClipboard([["mention",current]], undefined, `@Current (${current})`).identities)
+    .toEqual([{label:`Current (${current})`,pubkey:current}]);
+});
+
+it("keeps an ambiguous long mention plain without losing a separate unambiguous short mention", () => {
+  const first = "ab".repeat(32), second = "cd".repeat(32), third = "ef".repeat(32);
+  const profiles = Object.fromEntries([[first,"Sam"],[second,"Sam Lee"],[third,"Sam Lee"]].map(([pubkey, displayName]) =>
+    [pubkey!, {displayName:displayName!,avatarUrl:null,nip05Handle:null,ownerPubkey:null}]));
+  const tags = [["p",first],["p",second],["p",third]];
+  expect(buildMentionClipboardHtml(resolveMessageMentionClipboard(tags, profiles, "@Sam Lee"))).toBeNull();
+  const html = buildMentionClipboardHtml(resolveMessageMentionClipboard(tags, profiles, "@Sam Lee and @Sam"))!;
+  expect(html).toContain("@Sam Lee and <span");
+  expect(parseMentionClipboardRecords(html)).toEqual([{label:"Sam",pubkey:first}]);
+});
 
 it("overlays only the original author's same-channel latest edit while retaining row identity and ancestry", () => {
   const original = {id:"original",kind:9,pubkey:"alice",created_at:1,content:"before",tags:[["h","channel"],["e","root","","reply"],["p","bob"],["imeta","url old"]]};

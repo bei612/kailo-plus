@@ -6,6 +6,7 @@ import {
 import { truncateInlineChipLabel } from "../../../shared/ui/mentionChip";
 
 import { getMentionOffsets } from "./hasMention";
+import { mentionOccurrences } from "../../../../pulse/mentionOccurrences";
 
 /**
  * Dual-flavor clipboard support for mentions.
@@ -201,8 +202,11 @@ type MentionMatch = {
 function findMentionMatches(
   text: string,
   identities: readonly MentionIdentity[],
+  mentionNames?: readonly string[],
 ): MentionMatch[] {
   const byOffset = new Map<number, MentionMatch>();
+  const literalRanges = mentionNames ? new Map(mentionOccurrences(text,
+    mentionNames.map(displayName => ({ displayName }))).map(({ start, end }) => [start, end])) : null;
 
   for (const identity of identities) {
     const label = identity.label.trim();
@@ -213,6 +217,7 @@ function findMentionMatches(
     // `@` + label; `getMentionOffsets` returns the offset of the sigil.
     const length = label.length + 1;
     for (const offset of getMentionOffsets(text, label)) {
+      if (literalRanges && literalRanges.get(offset) !== offset + length) continue;
       const existing = byOffset.get(offset);
       if (!existing || existing.length < length) {
         byOffset.set(offset, {
@@ -248,13 +253,16 @@ function findMentionMatches(
 export function buildMentionClipboardHtml({
   text,
   identities,
+  mentionNames,
   kind = "markdown",
 }: {
   text: string;
   identities: readonly MentionIdentity[];
+  /** All rendered aliases, including unresolved competitors that stay plain. */
+  mentionNames?: readonly string[];
   kind?: BuzzCopyKind;
 }): string | null {
-  const matches = findMentionMatches(text, identities);
+  const matches = findMentionMatches(text, identities, mentionNames);
   if (matches.length === 0) return null;
 
   const parts: string[] = [];

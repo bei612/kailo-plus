@@ -1,5 +1,6 @@
 import { mentionOccurrences } from "../pulse/mentions";
 import type { UserProfileSummary } from "../pulse/host";
+import type { MentionIdentity } from "../composer/features/messages/lib/mentionClipboard";
 
 export const MENTION_REFERENCE_TAG = "mention";
 
@@ -171,6 +172,22 @@ export function resolveMentionNames(
   profiles: Record<string, UserProfileSummary> | undefined,
 ): string[] | undefined {
   return resolveMentionProps(tags, profiles).mentionNames;
+}
+
+/** Shared body of the pinned Buzz useMessageMentionIdentities copy consumer. */
+export function resolveMessageMentionClipboard(
+  tags: string[][] | undefined,
+  profiles: Record<string, UserProfileSummary> | undefined,
+  content = "",
+) {
+  const { mentionNames, mentionPubkeysByName } = resolveMentionProps(tags, profiles, content);
+  const identities: MentionIdentity[] = (mentionNames ?? []).flatMap((label) => {
+    const pubkey = mentionPubkeysByName?.[label.toLowerCase()];
+    return pubkey ? [{ label, pubkey: pubkey.trim().toLowerCase() }] : [];
+  });
+  // Unbound aliases still own their literal ranges: @Sam Lee must not copy
+  // a Sam binding merely because two different Sam Lees made it ambiguous.
+  return { text: content, identities, mentionNames };
 }
 
 export function resolveMentionPubkeysByName(

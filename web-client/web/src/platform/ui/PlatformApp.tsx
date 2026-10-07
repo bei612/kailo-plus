@@ -23,6 +23,7 @@ import { useChannelNavigationShortcuts } from "@client-kit/platform/react/use-ch
 import { ConversationList, ConversationVisibilityProvider, useConversations } from "@client-kit/platform/react/new-message";
 import { conversationVisibility } from "../bff-client";
 import { useSettingsShortcuts } from "@client-kit/platform/react/use-settings-shortcuts";
+import { useHomeShortcut, useHistoryShortcuts } from "@client-kit/platform/react/use-navigation-shortcuts";
 import { useTextScaleShortcuts } from "@client-kit/platform/react/use-text-scale-shortcuts";
 import { ProtocolDocumentBridge } from "@client-kit/platform/react/protocol-document-bridge";
 import {
@@ -189,6 +190,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     };
   }, [tab, active, navigation]);
   useTextScaleShortcuts();
+  useHomeShortcut({ disabled: tab === "settings", onGoHome: () => navigation.openTab("inbox", active) });
+  useHistoryShortcuts({ goBack: navigation.goBack, goForward: navigation.goForward });
   useChannelNavigationShortcuts({
     disabled: tab === "settings",
     onBrowseChannels: () => setCreateChannelOpen(true),

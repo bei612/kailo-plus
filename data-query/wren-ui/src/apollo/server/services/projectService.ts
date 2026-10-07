@@ -1,3 +1,4 @@
+import type { Knex } from 'knex';
 import crypto from 'crypto';
 import * as fs from 'fs';
 import path from 'path';
@@ -75,7 +76,7 @@ export interface IProjectService {
     credentials: JSON,
     persistCredentialDir: string,
   ) => string;
-  deleteProject: (projectId: number) => Promise<void>;
+  deleteProject: (projectId: number, tx?: Knex.Transaction) => Promise<void>;
   getProjectRecommendationQuestions: () => Promise<ProjectRecommendationQuestionsResult>;
 
   // recommend questions
@@ -248,8 +249,11 @@ export class ProjectService implements IProjectService {
     return filePath;
   }
 
-  public async deleteProject(projectId: number): Promise<void> {
-    await this.projectRepository.deleteOne(projectId);
+  public async deleteProject(
+    projectId: number,
+    tx?: Knex.Transaction,
+  ): Promise<void> {
+    await this.projectRepository.deleteOne(projectId, { tx });
   }
 
   public getGeneralConnectionInfo(project) {

@@ -8,6 +8,7 @@ import {
 	ReasonCode,
 	TaskStatus,
 	type AutomationRunPage,
+	type ActionSubmission,
 } from "@client-kit/contracts";
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
@@ -26,11 +27,12 @@ export function WorkflowsPage(navigation: WorkspaceNavigation & { workflowNaviga
 		<div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-7 sm:px-6 sm:py-8" data-testid="workflows-page" data-scroll-restoration-id="workflows-list">
 			<AutomationManagement
 				{...navigation}
-				renderRunHistory={(resourceId, workspaceId) => (
+				renderRunHistory={(resourceId, workspaceId, receipt) => (
 					<AutomationRunHistory
 						key={`${workspaceId}:${resourceId}`}
 						resourceId={resourceId}
 						workspaceId={workspaceId}
+						receipt={receipt}
 					/>
 				)}
 			/>
@@ -111,9 +113,11 @@ export function validAutomationRuns(
 function AutomationRunHistory({
 	resourceId,
 	workspaceId,
+	receipt,
 }: {
 	resourceId: string;
 	workspaceId: string;
+	receipt?: ActionSubmission;
 }) {
 	const client = useBffClient();
 	const t = useT();
@@ -121,7 +125,7 @@ function AutomationRunHistory({
 	const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
 	const [index, setIndex] = useState(0);
 	const [open, setOpen] = useState<string | null>(null);
-	const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+	const [selectedRunId, setSelectedRunId] = useState<string | null>(receipt?.actionExecutionId ?? null);
 	const cursor = cursors[index];
 	const [state, reload] = useLoad(
 		`automation-runs:${workspaceId}:${resourceId}:${cursor ?? ""}`,
@@ -135,7 +139,8 @@ function AutomationRunHistory({
 			resourceId,
 			workspaceId,
 			cursors.slice(0, index + 1),
-		)
+		) && (!receipt || value.runs.every((run) => run.task.actionExecutionId !== receipt.actionExecutionId
+			|| run.task.operationId === receipt.operationId))
 			? value
 			: null;
 
@@ -166,7 +171,18 @@ function AutomationRunHistory({
 						/>
 					) : (
 						<>
-							{page.runs.length === 0 ? (
+							{/* Buzz 779af8886caae1317b4de962082429867ab61503:
+							    desktop/src/features/workflows/ui/WorkflowDetailPanel.tsx::WorkflowDetailPanel
+							    retains the returned run reference until its authorized history arrives.
+							    Admission is not execution completion; never invent a TaskView. */}
+							{index === 0 && receipt && !page.runs.some((run) => run.task.actionExecutionId === receipt.actionExecutionId) ? (
+								<div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs"
+									data-testid="workflow-run-created" role="status">
+									<p>{t("workflows.runRecorded", { execution: receipt.actionExecutionId, operation: receipt.operationId })}</p>
+									<p className="mt-1 text-muted-foreground">{t("tasks.status.delayed")}</p>
+								</div>
+							) : null}
+							{page.runs.length === 0 && !(index === 0 && receipt) ? (
 								<Notice>{t("workflows.noRuns")}</Notice>
 							) : (
 								<div className="space-y-2">

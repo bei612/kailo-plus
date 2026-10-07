@@ -28,6 +28,7 @@ export interface AskingTask {
 }
 
 export interface IAskingTaskRepository extends IBasicRepository<AskingTask> {
+  findUnsettled(projectId: number): Promise<AskingTask | null>;
   findByQueryId(queryId: string): Promise<AskingTask | null>;
   bindResponse(
     id: number,
@@ -66,6 +67,19 @@ export class AskingTaskRepository
     return this.findOneBy({ queryId });
   }
 
+  public async findUnsettled(projectId: number): Promise<AskingTask | null> {
+    const status =
+      this.knex.client.config.client === 'pg'
+        ? "COALESCE(detail->>'status', '')"
+        : "COALESCE(CASE WHEN json_valid(detail) THEN json_extract(detail, '$.status') END, '')";
+    const row = await this.knex(this.tableName)
+      .where({ project_id: projectId })
+      .whereRaw(`${status} NOT IN (?, ?, ?)`, ['FINISHED', 'FAILED', 'STOPPED'])
+      .orderBy('id')
+      .first();
+    return row ? this.transformFromDBData(row) : null;
+  }
+
   public async bindResponse(
     id: number,
     queryId: string,
@@ -77,12 +91,10 @@ export class AskingTaskRepository
     const [row] = await (tx ?? this.knex)(this.tableName)
       .where({ id, query_id: queryId, project_id: projectId })
       .andWhere((builder) =>
-        builder
-          .where({ thread_id: null, thread_response_id: null })
-          .orWhere({
-            thread_id: threadId,
-            thread_response_id: threadResponseId,
-          }),
+        builder.where({ thread_id: null, thread_response_id: null }).orWhere({
+          thread_id: threadId,
+          thread_response_id: threadResponseId,
+        }),
       )
       .update({ thread_id: threadId, thread_response_id: threadResponseId })
       .returning('*');

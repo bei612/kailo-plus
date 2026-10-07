@@ -9,6 +9,7 @@ import { setLocale } from "@client-kit/platform/i18n";
 import type { TimelineMessage } from "@client-kit/platform/react/messages";
 import { ItemState } from "@client-kit/contracts";
 import type { MessageAuthor } from "./MessageAuthorProfile";
+import { parseMentionClipboardRecords } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 
 // Isolate the stream lifecycle from the rich editor. Original Tiptap is mounted
 // by Composer/ChannelRead tests; the channel and original message rows mount here.
@@ -186,6 +187,36 @@ it("opens a DM mention against the admitted second-device author event and drops
   expect(host.querySelector('[data-testid="close-author"]')).toBeNull();
   expect(host.querySelector('[data-mention]')).toBeNull();
   expect(render()).not.toContain("admitted second-device message");
+});
+
+it("copies the actual row's edited reference mention with its exact second-device identity", async () => {
+  const firstKey = "11".repeat(32), secondKey = "22".repeat(32), ownKey = "33".repeat(32);
+  state.members.data = [{principalId:"human-b",pubkeys:[firstKey,secondKey],displayName:"Alice"},
+    {principalId:"human-a",pubkeys:[ownKey],displayName:"Me"}];
+  const write = vi.fn();
+  vi.stubGlobal("navigator", Object.create(navigator, {clipboard:{value:{write,writeText:vi.fn()}}}));
+  vi.stubGlobal("ClipboardItem", class { constructor(public readonly data: Record<string, Blob>) {} });
+  await act(async () => { root.render(<TooltipProvider><ChannelPane key="copy-channel" workspaceId="workspace-a" channelId="channel-a" myPrincipalId="human-a" /></TooltipProvider>); });
+  await act(async () => {
+    state.receive!({type:"snapshot",events:[{id:"copy-mention",pubkey:ownKey,kind:9,created_at:2,
+      content:"Hello @Alice",tags:[["h","channel-a"],["p",firstKey],["buzz:mention-snapshot"],["mention",secondKey]]},
+      {id:"copy-bounds",pubkey:"relay",kind:39006,created_at:2,tags:[["d","channel-a:head"]],content:JSON.stringify({has_more:false,next_cursor:null})}]});
+    state.receive!({type:"live"});
+  });
+  const trigger = host.querySelector<HTMLElement>('[data-testid="more-actions-copy-mention"]');
+  expect(host.textContent).toContain("Hello @Alice");
+  expect(trigger).not.toBeNull();
+  await act(async () => { trigger!.focus(); trigger!.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowDown",bubbles:true})); });
+  const copy = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(item => item.textContent === "Copy message");
+  expect(copy).toBeDefined();
+  await act(async () => copy!.click());
+  expect(write).toHaveBeenCalledTimes(1);
+  const data = write.mock.calls[0]![0][0].data as Record<string,Blob>;
+  const read = (blob: Blob) => new Promise<string>((resolve,reject) => {
+    const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsText(blob);
+  });
+  expect(await read(data["text/plain"]!)).toBe("Hello @Alice");
+  expect(parseMentionClipboardRecords(await read(data["text/html"]!))).toEqual([{label:"Alice",pubkey:secondKey}]);
 });
 
 it.each(["session-revoked", "scope-revoked", "identity-revoked"])(
