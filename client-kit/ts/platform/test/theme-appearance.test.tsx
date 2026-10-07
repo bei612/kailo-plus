@@ -33,6 +33,32 @@ beforeEach(() => {
 });
 
 describe("original Buzz appearance in both hosts", () => {
+  it.each(["en", "zh-CN"] as const)("restores the original color-mode row and segmented control with real preference writes (%s)", async locale => {
+    let appearance!: Appearance;
+    function Host() { appearance = useAppearance(); return <ThemeSettingsControls locale={locale} name="Kailo" appearance={appearance} />; }
+    const host = await render(<Host />);
+    await vi.waitFor(() => expect(appearance.isLoading).toBe(false));
+    const row = host.querySelector<HTMLElement>('[data-testid="appearance-color-mode-row"]')!;
+    expect(row.children).toHaveLength(2);
+    expect(row.children[0]?.textContent).toBe(locale === "en"
+      ? "Color modeFollow your system or choose a light or dark appearance."
+      : "配色模式跟随系统，或选择浅色或深色外观。");
+    const control = row.querySelector<HTMLElement>('[data-testid="appearance-color-mode-control"]')!;
+    expect(control.tagName).toBe("FIELDSET");
+    expect([...control.querySelectorAll("button")].map(button => button.textContent)).toEqual(locale === "en" ? ["System", "Light", "Dark"] : ["跟随系统", "浅色", "深色"]);
+    expect(control.querySelectorAll("button svg")).toHaveLength(3);
+    expect(row.querySelector('input[type="radio"]')).toBeNull();
+    const indicator = control.querySelector<HTMLElement>('[data-testid="appearance-color-mode-indicator"]')!;
+    expect(indicator.style.transform).toBe("translateX(0%)");
+    for (const [mode, offset] of [["dark", 200], ["light", 100], ["system", 0]] as const) {
+      await click(control.querySelector<HTMLButtonElement>(`[data-testid="appearance-mode-${mode}"]`)!);
+      await vi.waitFor(() => expect(appearance.isLoading).toBe(false));
+      expect(control.querySelector(`[data-testid="appearance-mode-${mode}"]`)?.getAttribute("aria-pressed")).toBe("true");
+      expect(indicator.style.transform).toBe(`translateX(${offset}%)`);
+      expect(localStorage.getItem("buzz-follow-system")).toBe(String(mode === "system"));
+      expect(document.documentElement.classList.contains("dark")).toBe(mode === "dark");
+    }
+  });
   it("renders the complete original Appearance composition and its unsupported native control in Web", async () => {
     setLocale("en");
     function Host() {
@@ -127,7 +153,7 @@ describe("original Buzz appearance in both hosts", () => {
     await click(host.querySelector<HTMLButtonElement>('[data-testid="accent-color-red"]')!);
     expect(localStorage.getItem("buzz-accent-color")).toBe("#ef4444");
     expect(document.documentElement.style.getPropertyValue("--primary")).not.toBe(document.documentElement.style.getPropertyValue("--foreground"));
-    await click(host.querySelector<HTMLInputElement>('[data-testid="appearance-mode-dark"]')!);
+    await click(host.querySelector<HTMLButtonElement>('[data-testid="appearance-mode-dark"]')!);
     await vi.waitFor(() => expect(appearance.isLoading).toBe(false));
     expect(appearance.themeName).toBe("github-dark");
     expect(localStorage.getItem("buzz-follow-system")).toBe("false");

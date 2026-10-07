@@ -1420,7 +1420,6 @@ enum PlatformMessageKey {
   platformSettingsNotifications,
   platformSettingsShortcuts,
   platformSettingsShortcutsDescription,
-  platformSettingsDeviceAppearance,
   platformSettingsSendShortcut,
   platformSettingsAppearance,
   platformSettingsCommunities,
@@ -1448,6 +1447,8 @@ enum PlatformMessageKey {
   platformThemeModeLight,
   platformThemeModeDark,
   platformThemeModeSystem,
+  platformThemeColorMode,
+  platformThemeColorModeDescription,
   platformSettingsPreferences,
   platformThemeStyle,
   platformThemeStyleSelected,
@@ -5034,10 +5035,6 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Shortcuts available in this app. Read-only.',
     '当前应用支持的快捷键，仅供查看。',
   ),
-  PlatformMessageKey.platformSettingsDeviceAppearance: (
-    'Appearance is saved on this device. System follows your operating system.',
-    '外观保存在此设备。选择跟随系统时使用操作系统的配色。',
-  ),
   PlatformMessageKey.platformSettingsSendShortcut: (
     'Send the current message',
     '发送当前消息',
@@ -5098,6 +5095,11 @@ const _messages = <PlatformMessageKey, (String, String)>{
   PlatformMessageKey.platformThemeModeLight: ('Light', '浅色'),
   PlatformMessageKey.platformThemeModeDark: ('Dark', '深色'),
   PlatformMessageKey.platformThemeModeSystem: ('System', '跟随系统'),
+  PlatformMessageKey.platformThemeColorMode: ('Color mode', '配色模式'),
+  PlatformMessageKey.platformThemeColorModeDescription: (
+    'Follow your system or choose a light or dark appearance.',
+    '跟随系统，或选择浅色或深色外观。',
+  ),
   PlatformMessageKey.platformSettingsPreferences: ('Preferences', '偏好'),
   PlatformMessageKey.platformThemeStyle: ('Theme style', '主题样式'),
   PlatformMessageKey.platformThemeStyleSelected: (

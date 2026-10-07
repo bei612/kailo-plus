@@ -1,9 +1,9 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Moon, Sun, SunMoon } from "lucide-react";
 import { twJoin, twMerge } from "tailwind-merge";
-import { translate, type PlatformThemeMode, type PlatformLocale, type PlatformMessageKey } from "../i18n";
-import { ThemeModeControl } from "./settings";
+import { translate, platformThemeModeKeys, type PlatformThemeMode, type PlatformLocale, type PlatformMessageKey } from "../i18n";
+import { SegmentedControl } from "./segmented-control";
 import { SettingsOptionGroup, SettingsOptionRow } from "./settings-option-group";
 import { isBuzzTheme, ACCENT_COLORS, NEUTRAL_ACCENT, type Appearance } from "../theme/use-appearance";
 import { LIGHT_THEMES, SYNTAX_THEMES, type SyntaxThemeName, getThemePair } from "../theme/theme-loader";
@@ -11,6 +11,11 @@ import { BUZZ_GRADIENT_STOPS, SystemPreferencePreviewFrame, ThemePreviewFrame, t
 import { getThemeFallbackPreviewVars, useThemePreviewVars, withAccentPreviewVars } from "../theme/use-theme-preview-vars";
 import { contrastColorForBackground } from "../theme/color-contrast";
 const cn = (...values: Parameters<typeof twJoin>) => twMerge(twJoin(...values));
+const APPEARANCE_MODE_OPTIONS = [
+  { mode: "system" as const, Icon: SunMoon },
+  { mode: "light" as const, Icon: Sun },
+  { mode: "dark" as const, Icon: Moon },
+] as const;
 const accentKeys: Record<(typeof ACCENT_COLORS)[number]["name"], PlatformMessageKey> = {
   Neutral: "platform.theme.accentNeutral",
   Blue: "platform.theme.accentBlue",
@@ -412,10 +417,24 @@ export function ThemeSettingsControls({ locale, name, appearance, children }: {
           title={translate(locale, "platform.settings.theme")}
         >
           <SettingsOptionRow data-testid="appearance-color-mode-row">
-            <ThemeModeControl
-              locale={locale}
-              value={activeMode}
-              onChange={handleModeSelect}
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{translate(locale, "platform.theme.colorMode")}</p>
+              <p className="text-sm font-normal text-muted-foreground/70" data-settings-subcopy>
+                {translate(locale, "platform.theme.colorModeDescription")}
+              </p>
+            </div>
+            <SegmentedControl
+              indicatorTestId="appearance-color-mode-indicator"
+              legend={translate(locale, "platform.theme.colorMode")}
+              onValueChange={handleModeSelect}
+              optionTestIdPrefix="appearance-mode"
+              options={APPEARANCE_MODE_OPTIONS.map(({ mode, Icon }) => ({
+                value: mode,
+                label: translate(locale, platformThemeModeKeys[mode]),
+                Icon,
+              }))}
+              testId="appearance-color-mode-control"
+              value={selectedMode}
             />
           </SettingsOptionRow>
 

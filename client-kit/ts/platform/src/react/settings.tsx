@@ -8,11 +8,9 @@ import { TenantInvitations } from "./invitations";
 import type { Loaded } from "./use-load";
 export { SettingsNavigation, SettingsBackButton, SettingsContentSurface, SettingsSectionHeader, settingsSectionKeys, type SettingsSection } from "./settings-surface";
 import {
-  platformThemeModeKeys,
   setLocale,
   translate,
   type PlatformLocale,
-  type PlatformThemeMode,
 } from "../i18n";
 
 export function LanguageSettings() {
@@ -32,45 +30,6 @@ export function LanguageSettings() {
     {failed ? <p role="alert">{translate(locale, "platform.settings.languageSaveFailed")}</p> : null}
   </fieldset>;
 }
-export function ThemeModeControl({
-  locale,
-  value,
-  onChange,
-}: {
-  locale: PlatformLocale;
-  value: PlatformThemeMode;
-  onChange: (value: PlatformThemeMode) => void;
-}) {
-  return (
-    <fieldset className="flex min-w-0 flex-col gap-2">
-      <legend className="mb-2 text-sm font-medium">
-        {translate(locale, "platform.settings.theme")}
-      </legend>
-      <div className="flex flex-wrap gap-2">
-        {(["system", "light", "dark"] as const).map((mode) => (
-          <label
-            key={mode}
-            className="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-md border border-input px-3 py-2 text-sm"
-          >
-            <input
-              type="radio"
-              name="appearance-mode"
-              value={mode}
-              checked={value === mode}
-              onChange={() => onChange(mode)}
-              data-testid={`appearance-mode-${mode}`}
-            />
-            {translate(locale, platformThemeModeKeys[mode])}
-          </label>
-        ))}
-      </div>
-      <p className="text-sm text-muted-foreground">
-        {translate(locale, "platform.settings.deviceAppearance")}
-      </p>
-    </fieldset>
-  );
-}
-
 export type SettingsShortcut = { id: string; label: string; description?: string; keys: string; category?: "Navigation" | "Messages" | "Formatting" | "Zoom" };
 
 const shortcutMessages = {

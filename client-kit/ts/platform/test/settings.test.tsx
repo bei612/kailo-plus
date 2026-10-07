@@ -24,13 +24,12 @@ import {
   SettingsPage as SettingsPageView,
   LanguageSettings,
   ShortcutSettings,
-  ThemeModeControl,
   shortcutText,
   type SettingsSection,
   CommunityInvitationSettings,
   useInvitationSettingsState,
 } from "../src/react/settings";
-import { getLocale, setLocale, platformLocaleStorageKey, type PlatformThemeMode } from "../src/i18n";
+import { getLocale, setLocale, platformLocaleStorageKey } from "../src/i18n";
 import { createBffClient } from "../src/client";
 import { PlatformProvider, useT, useUiT } from "../src/react/context";
 import { button, click, render, settle, type } from "./render";
@@ -471,31 +470,6 @@ describe("shared Buzz settings presentation", () => {
     expect(host.querySelector('[data-sidebar="menu-label"] [aria-hidden="true"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="settings-content-scroll"]')).not.toBeNull();
     expect(host.textContent).not.toMatch(/provider|私钥|配对|语言/);
-  });
-  it("uses the host's live theme state and only changes its existing preference consumer", async () => {
-    const changed = vi.fn();
-    function Host() {
-      const [mode, setMode] = useState<PlatformThemeMode>("system");
-      return (
-        <ThemeModeControl
-          locale="zh-CN"
-          value={mode}
-          onChange={(value) => {
-            changed(value);
-            setMode(value);
-          }}
-        />
-      );
-    }
-    const host = await render(<Host />);
-    const dark = host.querySelector<HTMLInputElement>('input[value="dark"]')!;
-    await click(dark);
-    expect(changed).toHaveBeenCalledExactlyOnceWith("dark");
-    expect(dark.checked).toBe(true);
-    expect(
-      host.querySelector<HTMLInputElement>('input[value="system"]')?.checked,
-    ).toBe(false);
-    expect(host.textContent).toContain("此设备");
   });
   it("does not advertise Desktop commands when the host only supplies Web Enter", async () => {
     const host = await render(
