@@ -95,8 +95,8 @@ artifacts:
     build_context: .
     build_dockerfile: web-client/web/Dockerfile
     inputs: [web-client/web/, client-kit/ts/contracts/, client-kit/ts/platform/]
-    source_digest: sha256:d923beaf529b24163c3945e3e72a6f66932fba3d61f28d74623bfc3aaf6a27f4
-    artifact_digest: sha256:8ef88085fb05f7e208c54a51e23b4b2804438ec8bd962e3446ad9c7db64676ab
+    source_digest: sha256:1dc555e6a948404d419c0260ae410e050ee30711cc5954c7481f5914d676f0bf
+    artifact_digest: sha256:af7abcabde957479831f56c067002ed1c1da77d7e3f86f6555405864da92ab5f
 
 source_facts: [SF-WEB-01, SF-WEB-04, SF-WEB-05, SF-WEB-06, SF-WEB-07]
 source_seams: [SS-WEB-RELAY, SS-WEB-01, SS-WEB-PRESENTATION]
