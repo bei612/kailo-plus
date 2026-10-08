@@ -95,6 +95,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   const reference = searchReference ?? (contractStep && !search ? JSON.parse(contractStep.inputJson)
     : { resourceId: ingest || search ? ids[9]:ids[8], nativeObjectRef: ids[2], nativeRevision: revision,
       displayName: 'native document', mediaType: 'text/markdown' });
+  const sourceBytes = mode === 'empty-source' ? Buffer.alloc(0) : Buffer.from([0,255,1,254]);
   if (contractStep?.referenceResourceId) ids[8] = contractStep.referenceResourceId;
   const operation = protocolOperation ?? (action ? 'execute' : 'query_revision');
   const intent = managing || mapping ? args : ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
@@ -132,7 +133,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     if (['/platform-adapter/v1/execute','/registered-prefix/platform-adapter/v1/execute'].includes(request.url)) {
       state.downloads++;
       assert.equal(request.headers.authorization,'Bearer source-only');
-      const bytes=Buffer.from([0,255,1,254]);
+      const bytes=sourceBytes;
       response.writeHead(200,{'content-type':'application/octet-stream','content-length':String(bytes.length),
         'x-kailo-native-object-ref':reference.nativeObjectRef,'x-kailo-native-revision':reference.nativeRevision,
         'x-kailo-content-sha256':mode==='corrupt'?'bad':createHash('sha256').update(bytes).digest('hex'),
@@ -186,13 +187,14 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
       if (['observe','extract_usage'].includes(operation)) assert.deepEqual(body.params.arguments,{
         knowledge_base_id:ids[1],idempotency_key:args.idempotencyKey,observe_only:true});
       else assert.deepEqual(body.params.arguments,{knowledge_base_id:ids[1],idempotency_key:args.idempotencyKey,
-        title:reference.displayName,filename:reference.displayName,file_base64:Buffer.from([0,255,1,254]).toString('base64'),
+        title:reference.displayName,filename:reference.displayName,file_base64:sourceBytes.toString('base64'),
         source_reference_json:canonical(reference),read_operation_id:readOperation});
       return reply(response,200,{jsonrpc:'2.0',id:body.id,result:{content:[],structuredContent:{knowledge_base_id:ids[1],
-        source_content_sha256:mode==='no-source-evidence'?undefined:createHash('sha256').update(Buffer.from([0,255,1,254])).digest('hex'),
-        source_content_bytes:4,
+        source_content_sha256:mode.startsWith('no-source-evidence')?undefined:createHash('sha256')
+          .update(mode.startsWith('source-digest-mismatch')?Buffer.from([4,3,2,1]):sourceBytes).digest('hex'),
+        source_content_bytes:mode.startsWith('source-size-mismatch')?sourceBytes.length+1:sourceBytes.length,
         media_type:reference.mediaType,read_operation_id:mode==='native-operation'?ids[6]:readOperation,document:{id:ids[2],file_name:reference.displayName,native_revision:revision,
-          parse_status:mode==='queued'?'pending':mode==='unknown'?'failed':'completed'}}}});
+          parse_status:mode==='queued'||mode.endsWith('-queued')?'pending':mode==='unknown'||mode.endsWith('-unknown')?'failed':'completed'}}}});
     }
     if (body.params.name === 'delete_document') {
       assert.deepEqual(body.params.arguments, operation === 'observe'
@@ -530,6 +532,37 @@ test('service file import preserves its distinct read batch operation, binary by
       assert.deepEqual(state.methods,operation==='execute' && ['corrupt','revoke','foreign-operation'].includes(mode)?[]:['add_document']);
     });
   }
+});
+
+test('single-file import correlates the native persisted payload before accepting a parse observation',async t=>{
+  for (const version of ['v1','v2']) for (const state of ['completed','queued','unknown']) {
+    for (const evidence of ['source-digest-mismatch','source-size-mismatch','no-source-evidence']) {
+      await t.test(`${version}/${state}/${evidence}`,async nested=>{
+        const mode=state==='completed'?evidence:`${evidence}-${state}`;
+        const {invoke,state:observed}=await fixture(nested,mode,`knowledge.ingest@${version}`,'execute');
+        const response=await invoke();
+        assert.equal(response.status,503);
+        const body=await response.json();
+        assert.equal(body.execution,undefined);
+        assert.equal(body.contentReference,undefined);
+        assert.equal(observed.grants,1);
+        assert.equal(observed.downloads,1);
+        assert.deepEqual(observed.methods,['add_document']);
+        assert.equal(observed.receipts.length,0);
+      });
+    }
+  }
+  await t.test('empty source retains the digest of its actual empty upload',async nested=>{
+    const {invoke,state}=await fixture(nested,'empty-source','knowledge.ingest@v2','execute');
+    const response=await invoke();
+    assert.equal(response.status,200);
+    assert.equal((await response.json()).execution.platformStatus,'SUCCEEDED');
+    assert.equal(state.receipts.length,1);
+    assert.equal(state.receipts[0].contentBytes,0);
+    assert.equal(state.receipts[0].contentSha256,createHash('sha256').update(Buffer.alloc(0)).digest('hex'));
+    assert.deepEqual(state.receipts[0].measurements.map(({meterKey,quantity})=>({meterKey,quantity})),[
+      {meterKey:'native_import_count',quantity:1},{meterKey:'native_import_bytes',quantity:0}]);
+  });
 });
 
 test('receiver bills only original completed parsing and exact persisted read-batch evidence',async t=>{

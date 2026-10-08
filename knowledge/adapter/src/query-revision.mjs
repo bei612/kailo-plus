@@ -330,6 +330,11 @@ async function executeOperation(config, deadline, request, claims, token) {
       file_base64:source.bytes.toString('base64'),source_reference_json:canonical(reference),idempotency_key:request.idempotencyKey,
       read_operation_id:source.operationId,
     });
+    // The original producer retains the uploaded file digest and size before
+    // parsing. A matching read Operation alone cannot prove that its native
+    // creation consumed these bytes, even while the parse is still pending.
+    if (value.source_content_sha256!==createHash('sha256').update(source.bytes).digest('hex')
+      || value.source_content_bytes!==source.bytes.length) throw new Refused(503);
     const observed=creationObservation(value,config,request.idempotencyKey,claims.target_id,source.operationId);
     await recordCreationReceipt(value,observed,config,deadline,request.idempotencyKey);
     return observed;

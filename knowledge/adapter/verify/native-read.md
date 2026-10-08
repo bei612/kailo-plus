@@ -3436,3 +3436,81 @@ failure output is retained rather than only the displayed truncated tail:
   production readiness. No new dependency, image, database or build snapshot
   was introduced by this batch, and no commit/push was performed by this
   implementation agent.
+
+## 2026-10-08: single-file native creation consumes the authorized source bytes
+
+Four-step implementation impact:
+
+1. Authority: `.design/07` §8.2 and `.design/13` §4.4–5 keep file bytes,
+   parsing and provenance in their native services; the existing SERVICE read
+   Operation correlates SOURCE and RECEIVER evidence. Fixed WeKnora
+   `2be7bd40631dda1dd485306038f07a62e9ee287e`,
+   `internal/mcpserver/tools_ingest.go::Server.handleAddDocument`, owns the
+   native KB write/creation consumer. Its existing Kailo file extension in
+   `knowledge/internal/mcpserver/tools_ingest.go::Server.handleAddDocument`
+   persists `source_content_sha256` before native parsing and returns that
+   metadata with the native `Knowledge.FileSize`; this batch consumes those
+   real fields rather than introducing another receipt or source API.
+2. Impact: only `src/query-revision.mjs::executeOperation`'s v1/v2 ingest
+   consumer and the existing `test/query-revision.test.mjs` HTTP/SDK fixture
+   change. After the original `add_document` call, its persisted digest/size
+   must equal the actual authorized SOURCE download bytes before accepting
+   any native RUNNING, UNKNOWN or SUCCEEDED observation. The existing read
+   Operation match, native identity, fresh PEP, terminal RECEIVER receipt and
+   Core bilateral receipt/usage checks remain mandatory. No schema, stored
+   format, native task, credential, menu or page changes.
+3. Side effects: a mismatched or absent payload proof returns the existing
+   redacted UNAVAILABLE refusal, with no execution/content output or RECEIVER
+   receipt. It does not claim that the already-dispatched native creation
+   failed or automatically upload again. Observation continues to read the
+   same original creation key without a SOURCE grant/download or file payload;
+   no body/digest authority is copied into Core.
+4. Boundaries: completed/pending/failed native parse responses are checked in
+   both versions. Empty files use the actual empty downloaded/uploaded byte
+   digest and zero size, not a static directory evidence hash. Existing
+   revocation, corrupt SOURCE transfer, wrong native Operation, duplicate
+   observation identity, unknown parse and receipt-refusal cases run unchanged.
+   Missing evidence creates no new state or retry: the original native key,
+   observation and existing reconciliation ownership are retained.
+
+The existing `kailo-wren-query-sdk-itgs2n` was reused, UID 1000:1000,
+4 CPU/4 GiB with no extra swap, Node v24.21.0 and the existing locked
+`@modelcontextprotocol/sdk` 1.26.0 dependency. It was idle before the run;
+MemAvailable was 16268 MiB, Data had 284 GiB available, cgroup memory
+pressure/OOM counters were zero. No download, image, database or new build
+snapshot was created. The original suite uses real SDK initialization and
+tool calls over HTTP against controlled fixtures, not handwritten MCP wire
+success responses consumed without the SDK. Exact command:
+
+```sh
+sudo -n docker exec \
+  -w /work/knowledge-observation-guard.8QFEVq/knowledge/adapter \
+  kailo-wren-query-sdk-itgs2n node --test test/query-revision.test.mjs
+```
+
+Results: positive exit 0 (23 top-level + 149 subtests, 172/172 passed);
+private production mutation exit 1 (155 passed, 17 failed, including 16
+payload-mismatch cases plus their parent); byte-restored same target exit 0
+(172/172 passed). The mutation removed the actual digest/size guard only in
+the private candidate; affected cases returned HTTP 200 instead of 503.
+The pre-existing completed/missing-digest guard independently still refused
+its two cases. Formal production was never mutated. Final `cmp` proved all
+six input/dependency files identical, scoped `git diff --check` was empty,
+and final cgroup OOM counters remained zero. All three handles terminated.
+
+Logs under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-observation-guard.8QFEVq/`:
+
+- `knowledge-single-file-payload-positive.log`, SHA-256
+  `68860e3f5234e78760c63da4322e64a2db9765ac5cf4b4c9ab041555b7925322`
+- `knowledge-single-file-payload-mutation.log`, SHA-256
+  `5b06804919a876621fd7cc15aeb50baf9eed8972c13754f5fe69aa48d3e02d06`
+- `knowledge-single-file-payload-restored.log`, SHA-256
+  `27f42f357394eb56987555ba889a4c22560b2169a12b687fb5511ba46593658e`
+
+No live SOURCE→WeKnora parser/revoke/duplicate-request E2E, approved release
+or binding activation, browser/installed-client screenshot, deployment or
+`tools/check.sh --full` was run. The existing historical-version/complete
+FILE_STORAGE catalog and native identity/config delivery prerequisites are
+not solved by this byte-correlation change. Independent complete service
+pages/data remain unchanged; this is not a production-readiness claim.
