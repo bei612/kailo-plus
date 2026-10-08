@@ -203,6 +203,27 @@ export interface FileStorageReadOutput {
 }
 
 /**
+ * Apply a write from the exact persisted native input revision in the admitted Resource.
+ * File bytes remain at the source; the native consumer must verify the input, current
+ * actor, scope and revision before execution.
+ */
+export interface FileStorageWriteInput {
+    displayName:     string;
+    mediaType:       string;
+    nativeObjectRef: string;
+    nativeRevision:  string;
+    resourceId:      string;
+}
+
+/**
+ * Metadata-only write result. The exact confirmed result revision belongs in the adapter's
+ * typed ContentReference slot; an empty result, accepted write, or current head alone is
+ * not terminal evidence.
+ */
+export interface FileStorageWriteOutput {
+}
+
+/**
  * Metadata-only input of the receiver native synchronization admission. Core injects the
  * read execution reference and native receiver root.
  */

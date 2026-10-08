@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/file_storage.v1/write_input.schema.json",
+  "title": "FileStorageWriteInput",
+  "description": "Apply a write from the exact persisted native input revision in the admitted Resource. File bytes remain at the source; the native consumer must verify the input, current actor, scope and revision before execution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "nativeObjectRef", "nativeRevision", "displayName", "mediaType"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "nativeObjectRef": {"type": "string"},
+    "nativeRevision": {"type": "string"},
+    "displayName": {"type": "string"},
+    "mediaType": {"type": "string"}
+  }
+}

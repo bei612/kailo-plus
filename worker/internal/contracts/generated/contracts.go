@@ -31,6 +31,12 @@
 //    fileStorageReadOutput, err := UnmarshalFileStorageReadOutput(bytes)
 //    bytes, err = fileStorageReadOutput.Marshal()
 //
+//    fileStorageWriteInput, err := UnmarshalFileStorageWriteInput(bytes)
+//    bytes, err = fileStorageWriteInput.Marshal()
+//
+//    fileStorageWriteOutput, err := UnmarshalFileStorageWriteOutput(bytes)
+//    bytes, err = fileStorageWriteOutput.Marshal()
+//
 //    knowledgeSyncInput, err := UnmarshalKnowledgeSyncInput(bytes)
 //    bytes, err = knowledgeSyncInput.Marshal()
 //
@@ -737,6 +743,26 @@ func UnmarshalFileStorageReadOutput(data []byte) (FileStorageReadOutput, error) 
 }
 
 func (r *FileStorageReadOutput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFileStorageWriteInput(data []byte) (FileStorageWriteInput, error) {
+	var r FileStorageWriteInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FileStorageWriteInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFileStorageWriteOutput(data []byte) (FileStorageWriteOutput, error) {
+	var r FileStorageWriteOutput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FileStorageWriteOutput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2874,6 +2900,23 @@ type FileStorageReadInput struct {
 // files use export.
 type FileStorageReadOutput struct {
 	Text string `json:"text"`
+}
+
+// Apply a write from the exact persisted native input revision in the admitted Resource.
+// File bytes remain at the source; the native consumer must verify the input, current
+// actor, scope and revision before execution.
+type FileStorageWriteInput struct {
+	DisplayName     string `json:"displayName"`
+	MediaType       string `json:"mediaType"`
+	NativeObjectRef string `json:"nativeObjectRef"`
+	NativeRevision  string `json:"nativeRevision"`
+	ResourceID      string `json:"resourceId"`
+}
+
+// Metadata-only write result. The exact confirmed result revision belongs in the adapter's
+// typed ContentReference slot; an empty result, accepted write, or current head alone is
+// not terminal evidence.
+type FileStorageWriteOutput struct {
 }
 
 // Metadata-only input of the receiver native synchronization admission. Core injects the

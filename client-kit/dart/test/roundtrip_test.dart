@@ -13,6 +13,8 @@ void main() {
     final rows = jsonDecode(File('../../contracts/samples/file-storage-revision-io.sample.json').readAsStringSync()) as List;
     for (final row in rows) {
       expect(FileStorageReadInput.fromJson(row['readInput']).toJson(), row['readInput']);
+      expect(FileStorageWriteInput.fromJson(row['readInput']).toJson(), row['readInput']);
+      expect(FileStorageWriteOutput.fromJson({}).toJson(), {});
       expect(FileStorageReadOutput.fromJson(row['readOutput']).toJson(), row['readOutput']);
       expect(FileStorageListRevisionsInput.fromJson(row['listRevisionsInput']).toJson(), row['listRevisionsInput']);
       expect(FileStorageListRevisionsOutput.fromJson(row['listRevisionsOutput']).toJson(), row['listRevisionsOutput']);

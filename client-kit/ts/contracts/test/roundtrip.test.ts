@@ -720,6 +720,12 @@ test("file storage revision IO preserves exact versions, empty text and binary",
   }[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/file-storage-revision-io.sample.json", import.meta.url), "utf8"));
   for (const row of rows) {
     const r = row.readInput, l = row.listRevisionsInput, e = row.exportInput;
+    const writeInput: import("../src/generated/contracts.js").FileStorageWriteInput = {
+      resourceId:r.resourceId,nativeObjectRef:r.nativeObjectRef,nativeRevision:r.nativeRevision,displayName:r.displayName,mediaType:r.mediaType,
+    };
+    const writeOutput: import("../src/generated/contracts.js").FileStorageWriteOutput = {};
+    deepStrictEqual(JSON.parse(JSON.stringify(writeInput)),r);
+    deepStrictEqual(JSON.parse(JSON.stringify(writeOutput)),{});
     const actual: typeof row = {
       readInput: {resourceId:r.resourceId,nativeObjectRef:r.nativeObjectRef,nativeRevision:r.nativeRevision,displayName:r.displayName,mediaType:r.mediaType},
       readOutput: {text:row.readOutput.text},

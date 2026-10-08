@@ -1146,3 +1146,45 @@ func TestFileStorageRevisionIORoundtrip(t *testing.T) {
 		t.Fatalf("fixed file revision, empty or binary result changed: %s", encoded)
 	}
 }
+
+func TestFileStorageWriteUsesExactNativeReferenceWithoutBody(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "file-storage-revision-io.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		var input generated.FileStorageWriteInput
+		if err := json.Unmarshal(row["readInput"], &input); err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var original, actual any
+		if err := json.Unmarshal(row["readInput"], &original); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(encoded, &actual); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(original, actual) {
+			t.Fatalf("write input changed the frozen reference: %s", encoded)
+		}
+		var output generated.FileStorageWriteOutput
+		if err := json.Unmarshal([]byte(`{}`), &output); err != nil {
+			t.Fatal(err)
+		}
+		encoded, err = json.Marshal(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(encoded) != "{}" {
+			t.Fatalf("metadata-only write result changed: %s", encoded)
+		}
+	}
+}

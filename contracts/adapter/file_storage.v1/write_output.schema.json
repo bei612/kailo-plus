@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/file_storage.v1/write_output.schema.json",
+  "title": "FileStorageWriteOutput",
+  "description": "Metadata-only write result. The exact confirmed result revision belongs in the adapter's typed ContentReference slot; an empty result, accepted write, or current head alone is not terminal evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {}
+}

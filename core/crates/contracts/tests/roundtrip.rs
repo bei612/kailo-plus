@@ -728,6 +728,12 @@ fn file_storage_revision_io_preserves_exact_versions_empty_text_and_binary() {
         let value: contracts::FileStorageReadInput =
             serde_json::from_value(row["readInput"].clone()).unwrap();
         assert_eq!(serde_json::to_value(value).unwrap(), row["readInput"]);
+        let value: contracts::FileStorageWriteInput =
+            serde_json::from_value(row["readInput"].clone()).unwrap();
+        assert_eq!(serde_json::to_value(value).unwrap(), row["readInput"]);
+        let value: contracts::FileStorageWriteOutput =
+            serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(serde_json::to_value(value).unwrap(), serde_json::json!({}));
         let value: contracts::FileStorageReadOutput =
             serde_json::from_value(row["readOutput"].clone()).unwrap();
         assert_eq!(serde_json::to_value(value).unwrap(), row["readOutput"]);

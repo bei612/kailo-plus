@@ -58,3 +58,44 @@ ADR-03 要求四门语言由同一 schema 生成。四个生成器支持的构�
 新增枚举值对读取端是破坏性的，除非读取端已实现未知值降级；当前四侧生成与解析行为见 ADR-03，不能把静态类型或常量集合当作统一的未知值运行时保护。
 
 能力契约 schema 与其他目录遵守同一子集与生成规则；契约键、`type_key` 与枚举值不得含实现产品名，实现来源只记在 `component_type_key`（`DD-88`）。
+
+## 4. 文件原生写入引用的四侧交付记录（2026-10-08）
+
+本批对应 `DD-88`／`DD-94`、design 07 §2.4 已定的
+`file_storage.write@v1`，不是新建文件存储能力或执行权威。原 Cells
+`gateway/restv2/api-versions.go::Handler.PromoteVersion` 已接入
+`gateway/restv2/native-human-upload.go::Handler.platformPromoteVersion`：原 draft
+版本、原 owner 和注册 Resource 经既有 HUMAN ActionCommand 提交。
+本批 schema 固定该真实输入的 resourceId、nativeObjectRef、nativeRevision、
+displayName、mediaType 五字段；正文仍留原存储。输出仅元数据，结果版本必须
+沿 Adapter Protocol 原 typed ContentReference 与终态证据交付，不能以空结果、
+当前 head、202 或入队 ACK 代替成功。原 nativeObjectRef 为 opaque 引用，
+非空、原 actor、scope 与版本合法性由实际消费者校验，不假称 schema 已校验值域。
+
+影响面是两份新 schema、Rust／Go／TypeScript／Dart 四份原生成物和四处原往返
+检查。生成入口仍是 `tools/gen.sh`；复用原 file-storage-revision-io 样例中的
+同形引用，不增加第二合同或手写类型。无数据库、旧字段、Workflow history、
+迁移或客户端呈现改动；新 schema 不改变既有已发布合同。Web 仍经 BFF，
+Desktop／Mobile 的管理面仍经 BFF，Mobile 不成为组件宿主。
+
+既有受限 SDK `kailo-client-core-full-fxcd9l`，不可变镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+实际 4 CPU／8 GiB、UID 1000，Data 缓存、Cargo 并行度 16。
+原生成、格式、四语言定向往返及 TypeScript 类型检查均退出 0。私有 Go 生成物
+故意将 NativeRevision 的 JSON tag 改为 `-`，原往返真实退出 1 并报告冻结版本
+丢失；原字节还原、cmp 0 后两项 Go 往返退出 0。四侧 `gen.sh --check`
+再次退出 0。日志位于 `/volumes/data/kailo/check-cache/file-write-*-20261008.log`。
+
+原 `tools/check.sh contract` launcher 复用 294 份 pnpm 缓存、下载 0，但
+`dart pub get` 在禁网环境仍尝试 pub.dev 并报 socket error，未执行合同步骤；
+不把此轮算通过。复用上述 SDK 和实际原 `step_contract`，显式回到
+`/workspace/apps`，用本批暂存 index 的只读快照核对当前 schema 集；句柄
+62239 终态 0：四侧同步，相对 `contracts-v0.1.0` 的 293 份 schema
+匹配 3 份历史 schema、无破坏性变更。此前旧 index 的 193 份检查和一次错误
+工作目录的「尚无 schema」跳过均不作为本批兼容证据。
+
+本批不登记半份 FILE_STORAGE category，不激活 release／binding，不声称原
+uploader、native task 执行、审批／额度、外部副作用及原页面端到端均已贯通。
+缺 Resource、当前身份、权限、输入版本或真实终态继续 fail closed；不退回默认
+root／tenant、不重发结果不明的写入、不伪造上传成功或零字节计量。
+原生写入消费和部署须继续提供各自证据；四语言往返不代表组件或生产验收。

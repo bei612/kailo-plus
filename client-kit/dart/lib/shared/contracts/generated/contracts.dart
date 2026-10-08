@@ -10,6 +10,8 @@
 //     final fileStorageListRevisionsOutput = fileStorageListRevisionsOutputFromJson(jsonString);
 //     final fileStorageReadInput = fileStorageReadInputFromJson(jsonString);
 //     final fileStorageReadOutput = fileStorageReadOutputFromJson(jsonString);
+//     final fileStorageWriteInput = fileStorageWriteInputFromJson(jsonString);
+//     final fileStorageWriteOutput = fileStorageWriteOutputFromJson(jsonString);
 //     final knowledgeSyncInput = knowledgeSyncInputFromJson(jsonString);
 //     final adapterBindingObservation = adapterBindingObservationFromJson(jsonString);
 //     final adapterExecutionObservation = adapterExecutionObservationFromJson(jsonString);
@@ -274,6 +276,18 @@ FileStorageReadOutput fileStorageReadOutputFromJson(String str) =>
     FileStorageReadOutput.fromJson(json.decode(str));
 
 String fileStorageReadOutputToJson(FileStorageReadOutput data) =>
+    json.encode(data.toJson());
+
+FileStorageWriteInput fileStorageWriteInputFromJson(String str) =>
+    FileStorageWriteInput.fromJson(json.decode(str));
+
+String fileStorageWriteInputToJson(FileStorageWriteInput data) =>
+    json.encode(data.toJson());
+
+FileStorageWriteOutput fileStorageWriteOutputFromJson(String str) =>
+    FileStorageWriteOutput.fromJson(json.decode(str));
+
+String fileStorageWriteOutputToJson(FileStorageWriteOutput data) =>
     json.encode(data.toJson());
 
 KnowledgeSyncInput knowledgeSyncInputFromJson(String str) =>
@@ -1991,6 +2005,54 @@ class FileStorageReadOutput {
       FileStorageReadOutput(text: json["text"]);
 
   Map<String, dynamic> toJson() => _stripNulls({"text": text});
+}
+
+///Apply a write from the exact persisted native input revision in the admitted Resource.
+///File bytes remain at the source; the native consumer must verify the input, current
+///actor, scope and revision before execution.
+class FileStorageWriteInput {
+  final String displayName;
+  final String mediaType;
+  final String nativeObjectRef;
+  final String nativeRevision;
+  final String resourceId;
+
+  FileStorageWriteInput({
+    required this.displayName,
+    required this.mediaType,
+    required this.nativeObjectRef,
+    required this.nativeRevision,
+    required this.resourceId,
+  });
+
+  factory FileStorageWriteInput.fromJson(Map<String, dynamic> json) =>
+      FileStorageWriteInput(
+        displayName: json["displayName"],
+        mediaType: json["mediaType"],
+        nativeObjectRef: json["nativeObjectRef"],
+        nativeRevision: json["nativeRevision"],
+        resourceId: json["resourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "displayName": displayName,
+    "mediaType": mediaType,
+    "nativeObjectRef": nativeObjectRef,
+    "nativeRevision": nativeRevision,
+    "resourceId": resourceId,
+  });
+}
+
+///Metadata-only write result. The exact confirmed result revision belongs in the adapter's
+///typed ContentReference slot; an empty result, accepted write, or current head alone is
+///not terminal evidence.
+class FileStorageWriteOutput {
+  FileStorageWriteOutput();
+
+  factory FileStorageWriteOutput.fromJson(Map<String, dynamic> json) =>
+      FileStorageWriteOutput();
+
+  Map<String, dynamic> toJson() => _stripNulls({});
 }
 
 ///Metadata-only input of the receiver native synchronization admission. Core injects the
