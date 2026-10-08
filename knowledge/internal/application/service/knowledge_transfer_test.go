@@ -7,12 +7,14 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
+	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func transferFixture(t *testing.T, operation access.KBTransferOperation) *documentWriteFixture {
@@ -353,6 +355,87 @@ func TestProcessingTasksRejectOldKnowledgeBaseAfterMove(t *testing.T) {
 			require.Zero(t, f.repo.writes)
 			require.Zero(t, f.graph.calls)
 		})
+	}
+}
+
+func TestProcessingTasksRetainOriginalWorkOnPreparationFailure(t *testing.T) {
+	for _, taskType := range []string{types.TypeDocumentProcess, types.TypeManualProcess} {
+		for _, stage := range []string{"tenant-read", "knowledge-read", "processing-write"} {
+			t.Run(taskType+"/"+stage, func(t *testing.T) {
+				f := transferFixture(t, access.KBTransferMove)
+				f.svc.tenantRepo = repository.NewTenantRepository(f.db)
+				require.NoError(t, f.db.Model(&types.Knowledge{}).Where("id = ?", "doc").Updates(map[string]any{
+					"parse_status": types.ParseStatusPending,
+					"file_path":    "native-original-source",
+				}).Error)
+				failure := errors.New("native preparation temporarily unavailable")
+				callback := func(tx *gorm.DB) {
+					if tx.Statement.Table == "tenants" && stage == "tenant-read" ||
+						tx.Statement.Table == "knowledges" && stage != "tenant-read" {
+						tx.AddError(failure)
+					}
+				}
+				if stage == "processing-write" {
+					require.NoError(t, f.db.Callback().Update().Before("gorm:update").Register("native-processing-preparation", callback))
+				} else {
+					require.NoError(t, f.db.Callback().Query().Before("gorm:query").Register("native-processing-preparation", callback))
+				}
+				payload, err := json.Marshal(types.DocumentProcessPayload{TenantID: 7, KnowledgeID: "doc", KnowledgeBaseID: "kb"})
+				require.NoError(t, err)
+				task := asynq.NewTask(taskType, payload)
+				process := f.svc.ProcessDocument
+				if taskType == types.TypeManualProcess {
+					process = f.svc.ProcessManualUpdate
+				}
+				err = process(context.Background(), task)
+				require.ErrorIs(t, err, failure, "the native queue must retry this same task, not acknowledge an unread or unpersisted parse")
+				require.NotErrorIs(t, err, asynq.SkipRetry)
+				require.NoError(t, f.db.Callback().Query().Remove("native-processing-preparation"))
+				require.NoError(t, f.db.Callback().Update().Remove("native-processing-preparation"))
+				row, err := f.repo.GetKnowledgeByID(f.ctx, 7, "doc")
+				require.NoError(t, err)
+				require.Equal(t, types.ParseStatusPending, row.ParseStatus)
+				require.Equal(t, "native-original-source", row.FilePath)
+				require.Zero(t, f.chunkRepo.writes)
+				require.Zero(t, f.graph.calls)
+				require.Empty(t, f.files.deleted)
+				require.Empty(t, f.tenants.adjustments)
+				// A late ready observation is an idempotent completion of the same
+				// native task; it does not create another file or re-index it.
+				require.NoError(t, f.db.Model(&types.Knowledge{}).Where("id = ?", "doc").Update("parse_status", types.ParseStatusCompleted).Error)
+				require.NoError(t, process(context.Background(), task))
+				require.Zero(t, f.chunkRepo.writes)
+				require.Zero(t, f.graph.calls)
+			})
+		}
+	}
+}
+
+func TestProcessingTasksKeepConfirmedNativeTerminalNoOps(t *testing.T) {
+	for _, taskType := range []string{types.TypeDocumentProcess, types.TypeManualProcess} {
+		for _, status := range []string{types.ParseStatusCompleted, types.ParseStatusCancelled, types.ParseStatusDeleting, "absent"} {
+			t.Run(taskType+"/"+status, func(t *testing.T) {
+				f := transferFixture(t, access.KBTransferMove)
+				if status == "absent" {
+					require.NoError(t, f.db.Where("id = ?", "doc").Delete(&types.Knowledge{}).Error)
+				} else {
+					require.NoError(t, f.db.Model(&types.Knowledge{}).Where("id = ?", "doc").Update("parse_status", status).Error)
+				}
+				payload, err := json.Marshal(types.DocumentProcessPayload{TenantID: 7, KnowledgeID: "doc", KnowledgeBaseID: "kb"})
+				require.NoError(t, err)
+				task := asynq.NewTask(taskType, payload)
+				if taskType == types.TypeDocumentProcess {
+					err = f.svc.ProcessDocument(context.Background(), task)
+				} else {
+					err = f.svc.ProcessManualUpdate(context.Background(), task)
+				}
+				require.NoError(t, err)
+				require.Zero(t, f.repo.writes)
+				require.Zero(t, f.chunkRepo.writes)
+				require.Zero(t, f.graph.calls)
+				require.Empty(t, f.files.deleted)
+			})
+		}
 	}
 }
 

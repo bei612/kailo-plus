@@ -3240,14 +3240,17 @@ func (s *knowledgeService) ProcessManualUpdate(ctx context.Context, t *asynq.Tas
 	tenantInfo, err := s.tenantRepo.GetTenantByID(ctx, payload.TenantID)
 	if err != nil {
 		logger.Errorf(ctx, "ProcessManualUpdate: failed to get tenant: %v", err)
-		return nil
+		return fmt.Errorf("load native manual processing tenant: %w", err)
 	}
 	ctx = context.WithValue(ctx, types.TenantInfoContextKey, tenantInfo)
 
 	knowledge, err := s.repo.GetKnowledgeByID(ctx, payload.TenantID, payload.KnowledgeID)
 	if err != nil {
 		logger.Errorf(ctx, "ProcessManualUpdate: failed to get knowledge: %v", err)
-		return nil
+		if errors.Is(err, repository.ErrKnowledgeNotFound) {
+			return nil
+		}
+		return fmt.Errorf("load native manual processing knowledge: %w", err)
 	}
 	if knowledge == nil {
 		logger.Warnf(ctx, "ProcessManualUpdate: knowledge not found: %s", payload.KnowledgeID)
@@ -3302,7 +3305,7 @@ func (s *knowledgeService) ProcessManualUpdate(ctx context.Context, t *asynq.Tas
 	markKnowledgeProcessing(knowledge, time.Now())
 	if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
 		logger.Errorf(ctx, "ProcessManualUpdate: failed to update status to processing: %v", err)
-		return nil
+		return fmt.Errorf("persist native manual processing state: %w", err)
 	}
 
 	// Allocate a fresh span-tracking attempt for this manual (re)index.
@@ -3359,7 +3362,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 	tenantInfo, err := s.tenantRepo.GetTenantByID(ctx, payload.TenantID)
 	if err != nil {
 		logger.Errorf(ctx, "failed to get tenant: %v", err)
-		return nil
+		return fmt.Errorf("load native document processing tenant: %w", err)
 	}
 	ctx = context.WithValue(ctx, types.TenantInfoContextKey, tenantInfo)
 
@@ -3370,7 +3373,10 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 	knowledge, err := s.repo.GetKnowledgeByID(ctx, payload.TenantID, payload.KnowledgeID)
 	if err != nil {
 		logger.Errorf(ctx, "failed to get knowledge: %v", err)
-		return nil
+		if errors.Is(err, repository.ErrKnowledgeNotFound) {
+			return nil
+		}
+		return fmt.Errorf("load native document processing knowledge: %w", err)
 	}
 
 	if knowledge == nil {
@@ -3459,7 +3465,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 	markKnowledgeProcessing(knowledge, time.Now())
 	if err := s.updateKnowledgeUnlessSourceReplaced(ctx, knowledge); err != nil {
 		logger.Errorf(ctx, "failed to update knowledge status to processing: %v", err)
-		return nil
+		return fmt.Errorf("persist native document processing state: %w", err)
 	}
 	if s.isKnowledgeSourceReplaced(ctx, knowledge) {
 		logger.Infof(ctx, "Document source replaced, aborting after status update: %s", payload.KnowledgeID)

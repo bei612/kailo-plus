@@ -2658,3 +2658,84 @@ execution, actual data-source screenshots, activated release/binding, live
 Cells→WeKnora create/import/parse/revoke, image build, deployment, Windows/Mobile
 acceptance, and full project checks were not run for this UI batch. The eight
 source paths remain frozen for the main agent's later validated handoff.
+
+## Native parse preparation retains the original task on failure (2026-10-08)
+
+Source baseline for this batch is main
+`f8523a8a7d6e1177d68891061c115964e45d69ca`. Only the original native
+`knowledge_process.go::ProcessDocument` / `ProcessManualUpdate` consumers and
+their existing SQL-backed `knowledge_transfer_test.go` checks change. This is
+not deployment or complete Cells→WeKnora acceptance.
+
+Four-step impact record:
+
+1. Authority: `DD-89`, `SS-WEK-MATERIALIZATION`, design13 §4.4 require native
+   upload followed by confirmed parse readiness, not queue acceptance. Fixed
+   WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`,
+   `internal/application/service/knowledge_process.go::ProcessDocument` and
+   `ProcessManualUpdate` contain the original consumers;
+   `internal/router/task.go::RunAsynqServer` registers both with the native
+   Asynq mux. The existing dead-letter middleware propagates the original
+   error and marks failed Knowledge when its native retry budget is exhausted.
+2. Impact: six preparation branches previously returned nil after tenant read,
+   Knowledge read, or processing-state persistence failed. They now return the
+   actual wrapped error to the same native task. No upload, new task identity,
+   Core state, binding, permission, protocol, schema, cursor, or workflow is
+   added. Existing SOURCE/RECEIVER receipt and Applying references stay intact.
+3. Side effects: preparation failure cannot acknowledge unstarted or
+   unpersisted parsing. A lost state-write acknowledgement retries the same
+   Knowledge/task rather than uploading another file. Native tenant/KB/transfer
+   checks and source-replacement guards remain; no new grant or credential is
+   issued. `ErrKnowledgeNotFound` still means a confirmed no-op, not an
+   infrastructure-read success.
+4. Boundaries: the existing real SQL fixture injects read/write failures for
+   both original consumers, checks the same row/path remains pending and no
+   chunk/graph/file-delete effects occur, then confirms late ready is an
+   idempotent no-op. Completed, cancelled, deleting, confirmed-absent and
+   moved/moving Knowledge retain the original refusal/no-op boundaries. This
+   does not prove the complete parse/enrichment pipeline or live integration.
+
+Before execution, no compiler was active; Data had 643 MiB available, host
+available memory was approximately 30 GiB, and memory pressure was zero.
+Existing SDK `kailo-knowledge-native-check-wkkigg` was idle and read back as
+4 CPU / 8 GiB memory / no extra swap / UID 1000:1000. Its existing Go image is
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`,
+toolchain `go1.26.8 linux/amd64`. Only the two changed Go files were copied to
+the existing candidate; no dependency download, new image/database, full-tree
+copy or cache deletion occurred.
+
+The same original target ran three times in that SDK, working directory
+`/workspace/knowledge`, with `GOCACHE=/cache/build`, `GOMODCACHE=/cache/mod`,
+`GOPROXY=off`, `TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2`:
+
+```text
+go test ./internal/application/service -run 'TestFileStorage|TestProcessingTasks|TestProcessingCannotEnterClaimedMove' -count=1 -v
+positive: exit 0; 16 top-level + 110 subchecks passed
+private production mutation: exit 1; 1 top-level + 6 subchecks failed
+byte-restored: exit 0; 16 top-level + 110 subchecks passed
+```
+
+The private mutation replaced only the six real production error returns with
+the old nil acknowledgements; test inputs/assertions stayed unchanged. Each
+failure reported `Expected error with "native preparation temporarily
+unavailable" in chain but got nil.` The mutation's first summary grep rejected
+its leading-dash pattern; the retained Go log independently contains all six
+failures and the package FAIL (83.958s), subsequently read with `rg --`.
+Both candidate source files compared byte-identical with the formal tree
+before the restored run. `gofmt -l` was empty and scoped `git diff --check`
+exited 0. SDK OOM/max counters remained zero; final Data availability was
+505 MiB. No command remains running for this batch.
+
+Logs are in the existing host cache directory
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/native-go-cache/file-storage-sync-20261008.maEMf2/`:
+
+| Log | SHA-256 |
+|---|---|
+| `parse-preparation-positive.log` | `772cffe907cc2d9722f5faeee5dd22df51fee383125d5d2718d7de01a55bc1a1` |
+| `parse-preparation-mutation.log` | `91fb1ba099e7bc5b7a97c128741f25ecd7c5097f8ad53b7c3c54660b65af8f32` |
+| `parse-preparation-restored.log` | `193c502f5b4761ecb8549783768e7f9f5fefb8231fee221a849db131080a4de0` |
+
+No live release/binding, SOURCE import/parse/revoke, image build, deployment,
+frontend SFC/type/nineteen-case execution, authenticated data-source screenshot,
+Windows/Mobile or full-project acceptance ran in this batch. The preceding
+UI8 batch remains unaccepted; these Go checks do not validate its new bytes.
