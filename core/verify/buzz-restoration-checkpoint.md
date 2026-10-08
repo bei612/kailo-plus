@@ -3912,3 +3912,122 @@ deleted_lines；**原样1、共享43、授权9、缺失33、未分类3227，共3
 Mobile实机0。22图不是全部页面功能/双语/设备验收；头像完整保存、Agent资料/
 直聊、完整Workflows、forum最新活动及四项原快捷键仍有实际缺项。此节与13路径
 冻结交主代理精确复核提交，本批源码尚未提交/push/部署。
+
+### 2026-10-08 原生媒体净化共源及真实头像上传回执
+
+本批从实际页面失败回到原模块，不改原头像布局或创建替代上传路径。权威为
+固定 Buzz `779af8886caae1317b4de962082429867ab61503`、
+DD-75 本机持钥/Web BFF 代签边界及既定 UNKNOWN 语义。影响面已核原
+Desktop `commands/media.rs` 三个生产调用方、Core 的个人头像与
+Workspace/Conversation/Pulse 共用媒体上传、Relay descriptor、原资料 hook。
+身份/scope/准入不改变；正文仍归 Relay/媒体服务，不存入 Core 第二权威。
+非法/超限图片在发出前拒绝，已发出后缺终态证据不渲染成功或确定失败；
+动画、EXIF、普通文件、净化后增大、重复重定向副作用与未知描述符均有实际验证。
+
+固定上游路径与符号：
+
+- `desktop/src-tauri/src/commands/media.rs::is_animated_image`、
+  `sanitize_image_for_upload`；
+- `desktop/src-tauri/src/commands/media_animated.rs::strip_animated_png_metadata`、
+  `strip_animated_webp_metadata`；
+- `desktop/src-tauri/src/commands/media_gif.rs::strip_gif_metadata`；
+- `desktop/src-tauri/src/commands/media_snapshot_png.rs` 的原 snapshot
+  PNG tEXt 保留生产实现。
+
+上述生产逻辑迁入
+`collaboration/crates/buzz-sdk/src/media.rs` 及其 `media/` 三原模块，
+只有模块引用、可见性、出处与 rustfmt 差异，没有重写 PNG/EXIF/动画解析。
+原 detector 与 sanitizer 对照成立；动画/GIF/snapshot 生产段与固定原模块
+一致。snapshot 的两个纯检查迁入；依赖 Desktop managed_agents 的完整
+share-pipeline 集成检查未迁入 SDK，也未声称该 Desktop 链通过。
+
+Native 原 `commands/media.rs` 转导出共享 sanitizer，三个真实消费者
+`process_picked_path`、`upload_profile_avatar`、
+`upload_media_bytes_inner` 继续使用它；删除已迁移 animated/GIF 重复模块和
+原 mod 声明，来源记录登记共享去向。Core
+`IdentityClient::upload_media` 在真实共用上传链消费原 sanitizer：
+字节识别为图片才净化，普通文件/视频不改；decode 沿 Tokio spawn_blocking，
+原始及净化后 bytes 都检查已有运行时上限。签名 x tag、X-SHA256 与实际
+净化 bytes 一致，Relay 成功 descriptor 必须匹配净化 SHA/size/图片 MIME，
+不再用原始浏览器 hash 验净化结果，也没有删除回执验证来报成功。
+
+`web_profile::upload_avatar` 与
+`web_transport::upload_media_for` 都消费该共用链和媒体专用错误映射。
+未发送的非法媒体为 PRECONDITION/INVALID_PARAMETERS；发送后的 3xx/5xx、
+网络/回包缺失、无效 descriptor 为 UNKNOWN/EXTERNAL_RESULT_UNKNOWN；
+可证拒绝的 Relay 4xx 保留原分类，不改变只读 Relay 错误映射。主代理另有
+BffState HTTP client 的无重定向构造与 07 编译期策略行；这是主代理自有
+hunk，不混入本批22源码路径。真实302 Location检查证明目标零请求、
+零凭据转发。原共享 `useAvatarUpload` catch 消费既有
+`isOutcomeUnknown` 与中英 unknownResult 词条，实际 UNKNOWN 不再显示
+确定依赖失败，普通 PRECONDITION 503 不被一概改为 UNKNOWN。
+
+本批22源码/锁/来源路径，包含4新增共享文件及2删除旧副本，总计
+**+1914/-1097**（不含本节回执）。Core lock 正常解析新增17个媒体依赖包，
+native-tls/whoami 的 windows-sys 选择引用有变化，没有原 package 版本升级；
+collaboration 与 Native lock 仅增加 SDK 的 image/png 两依赖引用。
+Native resolver 一度因离线 js-sys 元数据缺失失败，随后沿原配置解析，
+剔除无关引用 churn 后以最终 Native lock 实际 --offline --locked 通过；
+未编整个 Tauri，也未以 SDK 类型检查冒称 Windows IPC 验收。
+
+实际日志根：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/avatar-media.7vwZX6`。
+既有受限 SDK `kailo-agent-receipt-xvkujx` 为4CPU/8GiB，原
+`/cache/rust-target`，Cargo -j16，测试 --test-threads=1；
+未新建 SDK/镜像或安装工具。最终原始命令与结果：
+
+- `cargo test --offline --locked -j16 -p collab-bridge -p buzz-sdk --lib media -- --test-threads=1`：
+  `shared-media-restored.log`，SDK 21 passed、bridge 7 passed（其中6个
+  新实际媒体 HTTP 检查、1个既有 mention 检查），exit0。
+- `cargo check --offline --locked -j16 -p platform-core --tests`：
+  `core-media-check.log`，exit0。
+- `cargo test --offline --locked -j16 -p platform-core --bin platform-core media_upload_errors_keep_unsent_invalid_and_unknown_receipts_distinct -- --test-threads=1`：
+  `core-media-mapping-restored.log`，1 passed，exit0。
+- Native 原 manifest 的 `cargo check --offline --locked -j16 -p buzz-sdk`：
+  `native-sdk-locked.log`，exit0；`native-sdk-features.log` 实际证明
+  buzz-desktop 依赖 buzz-sdk 的 media feature。
+- shared 的 `node node_modules/vitest/vitest.mjs run test/profile-upload.test.tsx --maxWorkers=1`：
+  `profile-upload-restored.log`，13 passed，exit0。
+- shared/shared-test/Web 的
+  `node node_modules/typescript/bin/tsc --noEmit -p <原 tsconfig>`：
+  `shared-tsc.log`、`shared-test-tsc.log`、`web-tsc.log`，全部 exit0。
+- 19个编译/类型输入的正式/候选 cmp 全0，22路径 git diff --check exit0；
+  来源 YAML 与两删除路径另核实际 diff。最终 SDK 仅 sleep infinity，无本批作业。
+
+不是只令检查通过：在私有候选上分别实际破坏生产 sanitizer 调用、
+descriptor 守卫、pre/post size 守卫、无重定向 client、5xx UNKNOWN 分支、
+普通文件 bytes 保持、Core UNKNOWN 映射、原 Profile UNKNOWN 消费分支。
+`negative-sanitizer.log`、`negative-descriptor.log`、
+`negative-size.log`、`negative-redirect.log`、
+`negative-server-unknown.log`、`negative-non-image.log`、
+`negative-core-unknown.log` 均 exit101；
+`negative-profile-unknown.log` exit1（实际中英两检查失败）。每处均还原
+同一生产对象，以上正向在还原后再通过。旧 cgroup oom=2/oom_kill=2
+未增加，不把资源失败当负向命中。初轮迁移注释/import/命令选择编译失败
+已纠正，原失败日志保留，不当作通过。全仓 check.sh --full 本批未运行，
+由主代理聚合收口；本批未发布或制作安装包。
+
+实际页面边界补充：Web 固定148798/source/buildId仍同上一节，不是本批
+源码。原页面正常文件选择器提交上游 app-icon.png 后真实 avatar POST
+返回503/PRECONDITION/DEPENDENCY_UNAVAILABLE，未继续“完成”、保存，
+不算头像修改成功。输入PNG有 eXIf，当前 BFF 缺原 sanitizer 是实证缺项；
+尚无新部署上传→保存→刷新结果，不能只凭源码修复宣布线上根因闭环。
+失败截图
+`.playwright-cli/kailo-ui-20261008-main148798-avatar-upload-failed503.png`
+已打开；不盲目重复上传。另实际执行原“复制公钥”后在资料简介编辑器粘贴并
+比对本用户公钥，清空草稿未保存；外观切英文后刷新仍为 en，再切回中文。
+`appearance-english.png`、`profile-english.png` 同前缀已打开。
+此前22选定状态加这3张共**25个实际截图状态已打开**，包含失败图，
+不是25项功能通过；搜索404仍是旧 Core，三组件业务页0，Windows/Mobile
+实机0，全页面双语、完整 Workflows、Agent profile/DM 等仍未全验。
+
+同一3313历史全树差异快照的本批派生文件：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/avatar-media.7vwZX6/collaboration-current-20261008.avatar-media-classification.tsv`，
+SHA256
+`cba189a0088aa23792eac1844a77f8f1a4fe144ee825c62889047883f165ea32`。
+实际计数：**原样1、共享44、授权9、缺失33、未分类3226，共3313，
+87条已归档**。本批仅把可核 snapshot 模块的既有行落实共享去向；
+新迁移的 animated/GIF 原来不在该历史变更快照，不虚加行。原 media.rs
+整条 IPC/治理差异尚未逐处归档，不能因 sanitizer 迁移把整文件标一致。
+该历史 snapshot 不是当前源码重新导出的完整 diff；全量分类、缺项恢复、
+新部署实际头像功能与三端体验均未完成，不能声明100%原版还原。

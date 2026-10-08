@@ -705,7 +705,9 @@ name = "buzz-sdk"
 version = "0.1.0"
 dependencies = [
  "buzz-core",
+ "image",
  "nostr",
+ "png 0.18.1",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

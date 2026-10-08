@@ -1,4 +1,6 @@
 //! Structural metadata stripping for animated PNG and WebP uploads.
+//! Shared from 779af8886caae1317b4de962082429867ab61503,
+//! desktop/src-tauri/src/commands/media_animated.rs.
 //!
 //! Re-encoding an animated image through `image::DynamicImage` keeps only its
 //! first frame. These helpers instead copy rendering chunks byte-for-byte while
@@ -418,7 +420,7 @@ pub(crate) fn strip_animated_webp_metadata(body: &[u8]) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::media::sanitize_image_for_upload;
+    use crate::media::sanitize_image_for_upload;
 
     fn png_chunk(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
         let mut chunk = Vec::new();

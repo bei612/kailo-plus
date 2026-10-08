@@ -7,7 +7,8 @@ publish.workspace = true
 [dependencies]
 contracts = { path = "../contracts" }
 buzz-core = { path = "../../../collaboration/crates/buzz-core" }
-buzz-sdk = { path = "../../../collaboration/crates/buzz-sdk" }
+buzz-sdk = { path = "../../../collaboration/crates/buzz-sdk", features = ["media"] }
+infer = "0.19"
 nostr = { version = "0.44", default-features = false, features = ["std"] }
 base64 = "0.22"
 sha2 = "0.10"
@@ -24,4 +25,5 @@ url = "2"
 
 [dev-dependencies]
 nostr = { version = "0.44", default-features = false, features = ["std"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util"] }
+png = "0.18"

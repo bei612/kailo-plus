@@ -228,7 +228,10 @@ pub(crate) async fn upload_avatar(
     {
         return StatusCode::CONFLICT.into_response();
     }
-    match client.upload_media(&state.http, body.to_vec(), mime).await {
+    match client
+        .upload_media(&state.http, body.to_vec(), mime, state.media_max_bytes)
+        .await
+    {
         Ok(descriptor)
             if descriptor
                 .mime_type
@@ -238,7 +241,7 @@ pub(crate) async fn upload_avatar(
             Json(descriptor).into_response()
         }
         Ok(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response(),
-        Err(error) => relay_error_response(&error, None),
+        Err(error) => super::web_transport::media_upload_error_response(&error),
     }
 }
 

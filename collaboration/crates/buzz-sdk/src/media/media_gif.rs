@@ -1,4 +1,6 @@
 //! Structural GIF metadata stripping for the upload sanitizer.
+//! Shared from 779af8886caae1317b4de962082429867ab61503,
+//! desktop/src-tauri/src/commands/media_gif.rs.
 //!
 //! Split out of `media.rs` to keep that file under the desktop line-size
 //! limit. The relay rejects media carrying metadata (`MetadataForbidden` in
@@ -127,7 +129,7 @@ pub(crate) fn strip_gif_metadata(body: &[u8]) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::media::sanitize_image_for_upload;
+    use crate::media::sanitize_image_for_upload;
 
     /// Minimal single-frame GIF89a: header, 2×2 logical screen, 2-entry global
     /// colour table, NETSCAPE looping extension, graphic control extension,

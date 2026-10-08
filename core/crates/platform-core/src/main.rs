@@ -321,7 +321,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .parse()
                 .map_err(|_| "PLATFORM_SESSION_TTL_SECONDS 必须是秒数")?,
             secrets: std::sync::Arc::clone(&secrets),
-            http: reqwest::Client::new(),
+            // Relay requests are signed for their bound origin; redirects
+            // cannot establish that origin's upload or publication result.
+            http: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()?,
             relay_transport: std::env::var("BUZZ_RELAY_TRANSPORT")
                 .map_err(|_| "缺少 BUZZ_RELAY_TRANSPORT")?,
             message_page_limit: std::env::var("BFF_MESSAGE_PAGE_LIMIT")

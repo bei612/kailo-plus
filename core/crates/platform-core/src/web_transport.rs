@@ -2062,6 +2062,26 @@ pub(crate) fn relay_error_response(e: &OperatorError, operation_id: Option<Uuid>
     }
 }
 
+/// Upload failures distinguish unsent invalid content from an unverifiable
+/// external result; the read-only Relay error mapping must not erase that.
+pub(crate) fn media_upload_error_response(error: &OperatorError) -> Response {
+    match error {
+        OperatorError::InvalidMedia(_) => error_body(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ErrorClass::Precondition,
+            ReasonCode::InvalidParameters,
+            None,
+        ),
+        OperatorError::MediaResultUnknown(_) => error_body(
+            StatusCode::SERVICE_UNAVAILABLE,
+            ErrorClass::Unknown,
+            ReasonCode::ExternalResultUnknown,
+            None,
+        ),
+        _ => relay_error_response(error, None),
+    }
+}
+
 /// 运行期 NIP-11 核对不成立的两种情形。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelayCheck {
@@ -3047,11 +3067,14 @@ async fn upload_media_for(
         return c.into_response();
     }
 
-    match client.upload_media(&state.http, body.to_vec(), &mime).await {
+    match client
+        .upload_media(&state.http, body.to_vec(), &mime, state.media_max_bytes)
+        .await
+    {
         Ok(descriptor) => (StatusCode::OK, Json(descriptor)).into_response(),
         Err(e) => {
             tracing::warn!(error = %e, "媒体上传失败");
-            StatusCode::SERVICE_UNAVAILABLE.into_response()
+            media_upload_error_response(&e)
         }
     }
 }
@@ -4177,6 +4200,31 @@ mod tests {
             assert_eq!(b["class"], "PRECONDITION", "HTTP {status}");
             assert_eq!(b["reason"], "DEPENDENCY_UNAVAILABLE", "HTTP {status}");
         }
+    }
+
+    #[tokio::test]
+    async fn media_upload_errors_keep_unsent_invalid_and_unknown_receipts_distinct() {
+        let (status, _, body) = parts(media_upload_error_response(&OperatorError::InvalidMedia(
+            "invalid image".into(),
+        )))
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body["class"], "PRECONDITION");
+        assert_eq!(body["reason"], "INVALID_PARAMETERS");
+        let (status, _, body) = parts(media_upload_error_response(
+            &OperatorError::MediaResultUnknown("receipt mismatch".into()),
+        ))
+        .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["class"], "UNKNOWN");
+        assert_eq!(body["reason"], "EXTERNAL_RESULT_UNKNOWN");
+        let (status, _, body) = parts(media_upload_error_response(&OperatorError::Rejected {
+            status: 413,
+            body: String::new(),
+        }))
+        .await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(body["class"], "LIMIT");
     }
 
     /// DD-114(2)：binding 与依赖失败带 PRECONDITION；无权与不存在共用 DENIED 回应

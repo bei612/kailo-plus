@@ -56,6 +56,12 @@ pub enum OperatorError {
     /// 「BFF Relay 连接模型」、`SF-BUZ-28`）。
     #[error("超出 Relay 声明的上界: {0}")]
     OverLimit(String),
+    /// Image preparation failed before any upload request was sent.
+    #[error("媒体内容无法安全上传: {0}")]
+    InvalidMedia(String),
+    /// An upload was sent, but no matching descriptor proves its outcome.
+    #[error("媒体上传终态无法核验: {0}")]
+    MediaResultUnknown(String),
 }
 
 /// `apps/06` §4 `LIMIT` 类下的具体成因。

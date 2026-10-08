@@ -1269,7 +1269,43 @@ impl IdentityClient {
         http: &reqwest::Client,
         bytes: Vec<u8>,
         mime_type: &str,
+        max_bytes: u64,
     ) -> Result<MediaDescriptor, OperatorError> {
+        let check_size = |size: usize| {
+            if size as u64 > max_bytes {
+                Err(OperatorError::Rejected {
+                    status: 413,
+                    body: "media exceeds configured byte limit".into(),
+                })
+            } else {
+                Ok(())
+            }
+        };
+        check_size(bytes.len())?;
+        // Browser file pickers may send application/octet-stream. Infer the
+        // actual container just as Native does; do not trust a supplied MIME
+        // to bypass image preparation. Ordinary files and videos are unchanged.
+        let detected_mime = infer::get(&bytes).map(|kind| kind.mime_type());
+        let image_mime = detected_mime
+            .filter(|mime| mime.starts_with("image/"))
+            .or_else(|| mime_type.starts_with("image/").then_some(mime_type))
+            .map(str::to_owned);
+        let (bytes, upload_mime) = if let Some(image_mime) = image_mime {
+            let prepared_mime = image_mime.clone();
+            let bytes = tokio::task::spawn_blocking(move || {
+                buzz_sdk::media::sanitize_image_for_upload(bytes, &image_mime)
+            })
+            .await
+            .map_err(|_| OperatorError::InvalidMedia("image preparation interrupted".into()))?
+            .map_err(OperatorError::InvalidMedia)?;
+            (bytes, prepared_mime)
+        } else {
+            (bytes, mime_type.to_owned())
+        };
+        // Re-encoding can grow the payload. The same runtime ceiling applies
+        // to what is actually sent, not just the original browser bytes.
+        check_size(bytes.len())?;
+        let size = bytes.len() as u64;
         let sha256 = hex::encode(Sha256::digest(&bytes));
         // `x` 标签必须与 X-SHA-256 头一致：上游按头查 `x` 标签，对不上即拒。
         // 两处各算一次会在实现漂移时给出一个不区分成因的 400。
@@ -1279,20 +1315,41 @@ impl IdentityClient {
             .put(url)
             .header(reqwest::header::HOST, &self.community_host)
             .header("Authorization", auth)
-            .header("Content-Type", mime_type)
+            .header("Content-Type", &upload_mime)
             .header("X-SHA-256", &sha256)
             .body(bytes)
             .send()
-            .await?;
+            .await
+            .map_err(|_| OperatorError::MediaResultUnknown("upload response unavailable".into()))?;
         let status = resp.status();
-        let text = resp.text().await?;
+        let text = resp.text().await.map_err(|_| {
+            OperatorError::MediaResultUnknown("upload response body unavailable".into())
+        })?;
         if !status.is_success() {
+            if !status.is_client_error() {
+                return Err(OperatorError::MediaResultUnknown(format!(
+                    "upload returned HTTP {} without a terminal descriptor",
+                    status.as_u16()
+                )));
+            }
             return Err(OperatorError::Rejected {
                 status: status.as_u16(),
                 body: text.chars().take(200).collect(),
             });
         }
-        serde_json::from_str(&text).map_err(|e| OperatorError::Sign(e.to_string()))
+        let descriptor: MediaDescriptor = serde_json::from_str(&text).map_err(|_| {
+            OperatorError::MediaResultUnknown("upload descriptor is invalid".into())
+        })?;
+        if descriptor.sha256 != sha256
+            || descriptor.size != size
+            || (upload_mime.starts_with("image/")
+                && descriptor.mime_type.as_deref() != Some(upload_mime.as_str()))
+        {
+            return Err(OperatorError::MediaResultUnknown(
+                "upload descriptor does not match transmitted media".into(),
+            ));
+        }
+        Ok(descriptor)
     }
 
     /// 以该身份取回一份媒体，返回字节与 content-type。
@@ -1382,6 +1439,296 @@ impl IdentityClient {
 const KIND_BLOSSOM_AUTH: u16 = 24242;
 /// 授权有效期。短窗口：这份授权由 Core 代签，泄漏出去也只能用很短一段时间。
 const BLOSSOM_AUTH_TTL_SECS: u64 = 600;
+
+#[cfg(test)]
+mod media_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    fn image_bytes(with_text: bool) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, 16, 16);
+            encoder.set_color(png::ColorType::Grayscale);
+            encoder.set_depth(png::BitDepth::One);
+            if with_text {
+                encoder
+                    .add_text_chunk("Comment".into(), "private metadata".into())
+                    .unwrap();
+            }
+            let mut writer = encoder.write_header().unwrap();
+            if with_text {
+                // PNG EXIF uses the TIFF payload without JPEG's Exif prefix.
+                writer
+                    .write_chunk(
+                        png::chunk::eXIf,
+                        b"II\x2a\0\x08\0\0\0\x01\0\x12\x01\x03\0\x01\0\0\0\x01\0\0\0\0\0\0\0",
+                    )
+                    .unwrap();
+            }
+            writer.write_image_data(&[0; 32]).unwrap();
+        }
+        bytes
+    }
+
+    fn client(origin: &str) -> IdentityClient {
+        let keys = Keys::generate();
+        IdentityClient::new(
+            Custody::Server,
+            &keys.secret_key().to_secret_hex(),
+            origin,
+            "media.platform.test",
+        )
+        .unwrap()
+    }
+
+    /// Exercise the actual signed HTTP upload, not a substituted image helper.
+    async fn receiver(
+        expected: Vec<u8>,
+        mime: &'static str,
+        corrupt: Option<&'static str>,
+        status: u16,
+        location: Option<String>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut received = Vec::new();
+            let mut chunk = [0; 4096];
+            let header_end = loop {
+                let n = socket.read(&mut chunk).await.unwrap();
+                assert_ne!(n, 0);
+                received.extend_from_slice(&chunk[..n]);
+                if let Some(end) = received.windows(4).position(|v| v == b"\r\n\r\n") {
+                    break end + 4;
+                }
+            };
+            let head = String::from_utf8(received[..header_end].to_vec()).unwrap();
+            assert!(head.starts_with("PUT /upload HTTP/1.1\r\n"));
+            let header = |name: &str| {
+                head.lines()
+                    .filter_map(|line| line.split_once(':'))
+                    .find(|(key, _)| key.eq_ignore_ascii_case(name))
+                    .map(|(_, value)| value.trim().to_owned())
+                    .unwrap()
+            };
+            let length: usize = header("content-length").parse().unwrap();
+            while received.len() - header_end < length {
+                let n = socket.read(&mut chunk).await.unwrap();
+                assert_ne!(n, 0);
+                received.extend_from_slice(&chunk[..n]);
+            }
+            assert_eq!(&received[header_end..], expected);
+            let sha256 = hex::encode(Sha256::digest(&expected));
+            assert_eq!(header("x-sha-256"), sha256);
+            assert_eq!(header("content-type"), mime);
+            assert_eq!(header("host"), "media.platform.test");
+            let authorization = header("authorization");
+            let event: Event = serde_json::from_slice(
+                &base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(authorization.strip_prefix("Nostr ").unwrap())
+                    .unwrap(),
+            )
+            .unwrap();
+            event.verify().unwrap();
+            assert!(event
+                .tags
+                .iter()
+                .any(|tag| tag.as_slice() == ["x", &sha256]));
+            let mut descriptor = serde_json::json!({
+                "url": format!("https://media.platform.test/media/{sha256}"),
+                "sha256": sha256,
+                "size": expected.len(),
+                "type": mime,
+            });
+            match corrupt {
+                Some("sha256") => descriptor["sha256"] = "mismatched".into(),
+                Some("size") => descriptor["size"] = (expected.len() + 1).into(),
+                Some("type") => descriptor["type"] = "image/jpeg".into(),
+                Some("json") => descriptor = serde_json::Value::Null,
+                None => {}
+                _ => unreachable!(),
+            }
+            let body = descriptor.to_string();
+            let location = location
+                .map(|url| format!("Location: {url}\r\n"))
+                .unwrap_or_default();
+            socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 {status} Result\r\n{location}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+        });
+        (origin, task)
+    }
+
+    #[tokio::test]
+    async fn media_upload_signs_and_verifies_sanitized_bytes_not_browser_bytes() {
+        let raw = image_bytes(true);
+        let expected =
+            buzz_sdk::media::sanitize_image_for_upload(raw.clone(), "image/png").unwrap();
+        assert_ne!(raw, expected);
+        assert!(!expected.windows(4).any(|chunk| chunk == b"tEXt"));
+        assert!(!expected.windows(4).any(|chunk| chunk == b"eXIf"));
+        let (origin, received) = receiver(expected.clone(), "image/png", None, 200, None).await;
+        let descriptor = client(&origin)
+            .upload_media(
+                &reqwest::Client::new(),
+                raw,
+                "application/octet-stream",
+                u64::MAX,
+            )
+            .await
+            .unwrap();
+        received.await.unwrap();
+        assert_eq!(descriptor.sha256, hex::encode(Sha256::digest(&expected)));
+        assert_eq!(descriptor.size, expected.len() as u64);
+        assert_eq!(descriptor.mime_type.as_deref(), Some("image/png"));
+    }
+
+    #[tokio::test]
+    async fn media_upload_never_accepts_unverifiable_success_receipts() {
+        let raw = image_bytes(true);
+        let expected =
+            buzz_sdk::media::sanitize_image_for_upload(raw.clone(), "image/png").unwrap();
+        for corrupt in ["sha256", "size", "type", "json"] {
+            let (origin, received) =
+                receiver(expected.clone(), "image/png", Some(corrupt), 200, None).await;
+            let result = client(&origin)
+                .upload_media(&reqwest::Client::new(), raw.clone(), "image/png", u64::MAX)
+                .await;
+            received.await.unwrap();
+            assert!(
+                matches!(result, Err(OperatorError::MediaResultUnknown(_))),
+                "{corrupt}: {result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn media_upload_keeps_non_image_bytes_and_mime_unchanged() {
+        let raw = b"ordinary attachment payload".to_vec();
+        let (origin, received) =
+            receiver(raw.clone(), "application/octet-stream", None, 200, None).await;
+        client(&origin)
+            .upload_media(
+                &reqwest::Client::new(),
+                raw,
+                "application/octet-stream",
+                u64::MAX,
+            )
+            .await
+            .unwrap();
+        received.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn media_upload_only_treats_definite_client_rejections_as_rejected() {
+        let raw = image_bytes(true);
+        let expected =
+            buzz_sdk::media::sanitize_image_for_upload(raw.clone(), "image/png").unwrap();
+        let http = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        for status in [400, 403, 413, 429, 302, 500, 503] {
+            let (origin, received) =
+                receiver(expected.clone(), "image/png", None, status, None).await;
+            let result = client(&origin)
+                .upload_media(&http, raw.clone(), "image/png", u64::MAX)
+                .await;
+            received.await.unwrap();
+            if (400..500).contains(&status) {
+                assert!(
+                    matches!(result, Err(OperatorError::Rejected {status: actual, ..}) if actual == status)
+                );
+            } else {
+                assert!(
+                    matches!(result, Err(OperatorError::MediaResultUnknown(_))),
+                    "{status}: {result:?}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn media_upload_invalid_and_expanded_images_are_rejected_before_http() {
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let client = client(&origin);
+        let http = reqwest::Client::new();
+        assert!(matches!(
+            client
+                .upload_media(&http, b"invalid image".to_vec(), "image/png", u64::MAX)
+                .await,
+            Err(OperatorError::InvalidMedia(_))
+        ));
+        let raw = image_bytes(false);
+        let prepared =
+            buzz_sdk::media::sanitize_image_for_upload(raw.clone(), "image/png").unwrap();
+        assert!(
+            prepared.len() > raw.len(),
+            "fixture must exercise re-encoding growth"
+        );
+        let limit = raw.len() as u64;
+        for max_bytes in [limit - 1, limit] {
+            assert!(matches!(
+                client
+                    .upload_media(&http, raw.clone(), "image/png", max_bytes)
+                    .await,
+                Err(OperatorError::Rejected { status: 413, .. })
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn media_upload_redirect_never_reaches_location_or_forwards_credentials() {
+        let target = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let location = format!("http://{}/redirected", target.local_addr().unwrap());
+        let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = attempts.clone();
+        let (stop, stopped) = tokio::sync::oneshot::channel();
+        let target_task = tokio::spawn(async move {
+            tokio::select! {
+                accepted = target.accept() => {
+                    count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let (mut socket, _) = accepted.unwrap();
+                    let mut request = [0; 4096];
+                    socket.read(&mut request).await.unwrap();
+                    socket.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
+                }
+                _ = stopped => {}
+            }
+        });
+        let raw = image_bytes(true);
+        let expected =
+            buzz_sdk::media::sanitize_image_for_upload(raw.clone(), "image/png").unwrap();
+        let (origin, received) = receiver(expected, "image/png", None, 302, Some(location)).await;
+        let http = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let result = client(&origin)
+            .upload_media(&http, raw, "image/png", u64::MAX)
+            .await;
+        received.await.unwrap();
+        let _ = stop.send(());
+        target_task.await.unwrap();
+        assert!(matches!(result, Err(OperatorError::MediaResultUnknown(_))));
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+}
 
 #[cfg(test)]
 mod mention_tests {

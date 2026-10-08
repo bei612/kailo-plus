@@ -17,6 +17,9 @@ pub mod builders;
 pub mod mentions;
 pub mod nip_oa;
 
+#[cfg(feature = "media")]
+pub mod media;
+
 pub use builders::*;
 
 /// Re-export kind constants so consumers don't need buzz-core directly.

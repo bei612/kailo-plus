@@ -9,6 +9,8 @@ import { ProfileAvatarEditor } from "../src/react/profile/buzz/features/profile/
 import { EmojiBurstProvider } from "../src/react/profile/buzz/shared/ui/EmojiBurstProvider";
 import { buildAnimatedAvatarUrl } from "../src/react/profile/buzz/shared/lib/animatedAvatar";
 import { render, settle } from "./render";
+import { BffError, TransportError } from "../src/transport";
+import { ErrorClass, ReasonCode } from "@client-kit/contracts";
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
@@ -34,6 +36,37 @@ async function select(host: HTMLElement) {
 }
 
 describe("original avatar upload consumes its captured host uploader", () => {
+  it.each([
+    ["zh-CN", "结果不明"],
+    ["en", "Outcome unknown"],
+  ] as const)("keeps an unverified upload pending rather than claiming failure in %s", async (locale, text) => {
+    for (const error of [
+      new BffError(503, "HTTP 503", {class: ErrorClass.Unknown, reason: ReasonCode.ExternalResultUnknown}),
+      new TransportError("response unavailable"),
+    ]) {
+      const saved = vi.fn();
+      const host = await render(<AvatarHostProvider value={{ locale, rewriteMediaUrl: (url) => url,
+        uploadMediaBytes: async () => { throw error; }, performDefaultHaptic: () => {} }}>
+        <OriginalUpload saved={saved} />
+      </AvatarHostProvider>);
+      await select(host);
+      expect(host.querySelector('[role="alert"]')?.textContent).toBe(text);
+      expect(saved).not.toHaveBeenCalled();
+      expect(host.querySelector<HTMLInputElement>("input")?.disabled).toBe(false);
+    }
+  });
+
+  it("does not reclassify a definite dependency rejection as outcome unknown", async () => {
+    const saved = vi.fn();
+    const host = await render(<AvatarHostProvider value={{ locale: "en", rewriteMediaUrl: (url) => url,
+      uploadMediaBytes: async () => { throw new BffError(503, "Dependency unavailable", {
+        class: ErrorClass.Precondition, reason: ReasonCode.DependencyUnavailable,
+      }); }, performDefaultHaptic: () => {} }}><OriginalUpload saved={saved} /></AvatarHostProvider>);
+    await select(host);
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe("Dependency unavailable");
+    expect(saved).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["en", "default", "Drop or browse", "browse", "Paste a URL (Slack profile, etc.)"],
     ["zh-CN", "default", "拖入图片或浏览文件", "浏览文件", "粘贴链接（如 Slack 头像）"],

@@ -134,6 +134,9 @@ remove_paths:
   - desktop/src-tauri/src/commands/join_policy.rs
   - desktop/src-tauri/src/commands/legacy_storage.rs
   - desktop/src-tauri/src/commands/managed_agent_definition.rs
+  # Original pure image preparation moved to buzz-sdk; Native and BFF consume it.
+  - desktop/src-tauri/src/commands/media_animated.rs
+  - desktop/src-tauri/src/commands/media_gif.rs
   - desktop/src-tauri/src/commands/media_snapshot_png.rs
   - desktop/src-tauri/src/commands/mesh_llm.rs
   - desktop/src-tauri/src/commands/mesh_llm_tests.rs

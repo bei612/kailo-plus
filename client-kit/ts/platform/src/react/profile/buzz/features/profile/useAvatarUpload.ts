@@ -3,6 +3,7 @@ import * as React from "react";
 import { flushSync } from "react-dom";
 
 import { useAvatarHost, useAvatarText } from "../../../avatar-host";
+import { isOutcomeUnknown } from "../../../../../transport";
 
 const AVATAR_IMAGE_TYPES = [
   "image/gif",
@@ -83,7 +84,8 @@ export function useAvatarUpload({
         }
       } catch (error) {
         setErrorMessage(
-          error instanceof Error ? error.message : uploadFailed,
+          isOutcomeUnknown(error) ? t("platform.audit.unknownResult")
+            : error instanceof Error ? error.message : uploadFailed,
         );
       } finally {
         setIsUploading(false);
@@ -92,6 +94,7 @@ export function useAvatarUpload({
     },
     [
       uploadFailed,
+      t,
       invalidImage,
       uploadMediaBytes,
       onUploadSettled,
