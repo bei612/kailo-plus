@@ -2,6 +2,7 @@ package datasource
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -78,8 +79,9 @@ func (r *fakeDataSourceRepo) FindActive(_ context.Context) ([]*types.DataSource,
 
 // fakeSyncLogRepo is an in-memory SyncLogRepository.
 type fakeSyncLogRepo struct {
-	mu   sync.Mutex
-	logs map[string]*types.SyncLog
+	mu         sync.Mutex
+	logs       map[string]*types.SyncLog
+	runningErr error
 }
 
 func newFakeSyncLogRepo() *fakeSyncLogRepo {
@@ -136,6 +138,9 @@ func (r *fakeSyncLogRepo) CleanupOldLogs(_ context.Context, retentionDays int) e
 func (r *fakeSyncLogRepo) HasRunningSync(_ context.Context, dsID string) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.runningErr != nil {
+		return false, r.runningErr
+	}
 	for _, log := range r.logs {
 		if log.DataSourceID == dsID && log.Status == types.SyncLogStatusRunning {
 			return true, nil
@@ -375,5 +380,48 @@ func TestScheduler_TriggerSync_NotFound(t *testing.T) {
 
 	if enqueuer.count.Load() != 0 {
 		t.Error("should not enqueue for non-existent data source")
+	}
+}
+
+func TestScheduler_TriggerSyncRequiresConfirmedOriginalState(t *testing.T) {
+	for _, scenario := range []string{"lookup-unavailable", "wrong-tenant", "missing-tenant", "wrong-source", "existing-running"} {
+		t.Run(scenario, func(t *testing.T) {
+			repo, logs := newFakeDataSourceRepo(), newFakeSyncLogRepo()
+			source := &types.DataSource{ID: "source-original", TenantID: 1, Status: types.DataSourceStatusActive}
+			if err := repo.Create(context.Background(), source); err != nil {
+				t.Fatal(err)
+			}
+			tenant := source.TenantID
+			switch scenario {
+			case "lookup-unavailable":
+				logs.runningErr = errors.New("original sync store unavailable")
+			case "wrong-tenant":
+				source.TenantID++
+			case "missing-tenant":
+				tenant = 0
+			case "wrong-source":
+				source.ID = "source-other"
+			case "existing-running":
+				logs.logs["log-original"] = &types.SyncLog{ID: "log-original", DataSourceID: source.ID, TenantID: source.TenantID, Status: types.SyncLogStatusRunning}
+			}
+			before := len(logs.logs)
+			enqueuer := &fakeTaskEnqueuer{}
+			scheduler := NewScheduler(repo, logs, enqueuer)
+			scheduler.triggerSync("source-original", tenant)
+			if enqueuer.count.Load() != 0 || len(logs.logs) != before {
+				t.Fatal("unconfirmed original state must not create a run or enqueue another task")
+			}
+			// The next original cron tick can proceed after the same source/store
+			// recovers; no alternate queue or retry authority is introduced.
+			source.ID, source.TenantID, tenant = "source-original", 1, 1
+			logs.runningErr = nil
+			if previous := logs.logs["log-original"]; previous != nil {
+				previous.Status = types.SyncLogStatusSuccess
+			}
+			scheduler.triggerSync(source.ID, tenant)
+			if enqueuer.count.Load() != 1 || len(logs.logs) != before+1 {
+				t.Fatal("a confirmed available original source must retain native scheduling")
+			}
+		})
 	}
 }

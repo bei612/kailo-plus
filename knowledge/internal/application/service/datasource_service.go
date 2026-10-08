@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
+	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/datasource"
 	werrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -634,35 +635,45 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 
 	logger.Infof(ctx, "processing data source sync: ds=%s syncLog=%s", payload.DataSourceID, payload.SyncLogID)
 
-	// Get data source
-	ds, err := s.GetDataSource(ctx, payload.DataSourceID)
-	if err != nil {
-		logger.Warnf(ctx, "data source not found (likely deleted), cancelling sync: ds=%s err=%v", payload.DataSourceID, err)
-		if syncLog, slErr := s.syncLogRepo.FindByID(ctx, payload.SyncLogID); slErr == nil && syncLog != nil {
-			syncLog.Status = types.SyncLogStatusCanceled
-			syncLog.FinishedAt = timePtr(time.Now().UTC())
-			syncLog.ErrorMessage = "data source has been deleted"
-			_ = s.syncLogRepo.Update(ctx, syncLog)
-		}
-		return nil
-	}
-
-	// Get sync log
+	// Resolve the original run before changing any terminal evidence. A store
+	// outage is not proof of deletion, and a payload cannot select another
+	// tenant's run merely by naming its log ID.
 	syncLog, err := s.syncLogRepo.FindByID(ctx, payload.SyncLogID)
 	if err != nil {
-		logger.Errorf(ctx, "failed to get sync log: %v", err)
-		return nil
+		return fmt.Errorf("read original sync log: %w", err)
+	}
+	if payload.DataSourceID == "" || payload.SyncLogID == "" || payload.TenantID == 0 || syncLog == nil ||
+		syncLog.ID != payload.SyncLogID || syncLog.DataSourceID != payload.DataSourceID || syncLog.TenantID != payload.TenantID {
+		return fmt.Errorf("%w: original sync identity is unavailable", asynq.SkipRetry)
+	}
+	ds, err := s.GetDataSource(ctx, payload.DataSourceID)
+	if err != nil {
+		if !errors.Is(err, datasource.ErrDataSourceNotFound) {
+			return fmt.Errorf("read original data source: %w", err)
+		}
+		next := *syncLog
+		next.Status = types.SyncLogStatusCanceled
+		next.FinishedAt = timePtr(time.Now().UTC())
+		next.ErrorMessage = "data source has been deleted"
+		return s.syncLogRepo.Update(ctx, &next)
+	}
+	if ds == nil || ds.ID != payload.DataSourceID || ds.TenantID != payload.TenantID {
+		return fmt.Errorf("%w: original data source identity is unavailable", asynq.SkipRetry)
 	}
 
 	kb, kbErr := s.kbService.GetKnowledgeBaseByID(ctx, ds.KnowledgeBaseID)
 	if kbErr != nil {
-		logger.Warnf(ctx, "knowledge base not found (likely deleted), cancelling sync: kb=%s ds=%s err=%v",
-			ds.KnowledgeBaseID, payload.DataSourceID, kbErr)
-		syncLog.Status = types.SyncLogStatusCanceled
-		syncLog.FinishedAt = timePtr(time.Now().UTC())
-		syncLog.ErrorMessage = "knowledge base has been deleted"
-		_ = s.syncLogRepo.Update(ctx, syncLog)
-		return nil
+		if !errors.Is(kbErr, repository.ErrKnowledgeBaseNotFound) {
+			return fmt.Errorf("read original knowledge base: %w", kbErr)
+		}
+		next := *syncLog
+		next.Status = types.SyncLogStatusCanceled
+		next.FinishedAt = timePtr(time.Now().UTC())
+		next.ErrorMessage = "knowledge base has been deleted"
+		return s.syncLogRepo.Update(ctx, &next)
+	}
+	if kb == nil || kb.ID != ds.KnowledgeBaseID {
+		return fmt.Errorf("%w: original knowledge base identity is unavailable", asynq.SkipRetry)
 	}
 
 	ctx, err = access.WithKBTaskWrite(ctx, kb, ds.TenantID)
@@ -706,9 +717,6 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 	// embedded images for OCR when the KB can actually ingest them (never persisted).
 	config.MultimodalEnabled = kb.IsMultimodalEnabled()
 	if ds.Type == fileStorageConnectorType {
-		if syncLog == nil || syncLog.ID != payload.SyncLogID || syncLog.DataSourceID != ds.ID || syncLog.TenantID != ds.TenantID {
-			return fmt.Errorf("native file-storage sync identity is unavailable")
-		}
 		ctx = context.WithValue(ctx, fileStorageRunKey{}, fileStorageRun{dataSourceID: ds.ID,
 			syncLogID: syncLog.ID, knowledgeBaseID: ds.KnowledgeBaseID, tenantID: ds.TenantID, syncDeletions: ds.SyncDeletions})
 	}

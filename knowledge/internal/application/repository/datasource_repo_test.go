@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/datasource"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,6 +19,30 @@ func setupDataSourceRepoTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&types.DataSource{}, &types.SyncLog{}))
 	return db
+}
+
+func TestDataSourceRepositoriesDistinguishMissingRowsFromUnavailableStores(t *testing.T) {
+	db := setupDataSourceRepoTestDB(t)
+	dsRepo, logRepo := NewDataSourceRepository(db), NewSyncLogRepository(db)
+	ctx := context.Background()
+	_, err := dsRepo.FindByID(ctx, "missing-source")
+	require.ErrorIs(t, err, datasource.ErrDataSourceNotFound)
+	_, err = logRepo.FindByID(ctx, "missing-log")
+	require.ErrorIs(t, err, datasource.ErrSyncLogNotFound)
+	ds := &types.DataSource{ID: "deleted-source", TenantID: 1, KnowledgeBaseID: "kb", Type: types.ConnectorTypeRSS}
+	require.NoError(t, dsRepo.Create(ctx, ds))
+	require.NoError(t, dsRepo.Delete(ctx, ds.ID))
+	_, err = dsRepo.FindByID(ctx, ds.ID)
+	require.ErrorIs(t, err, datasource.ErrDataSourceNotFound)
+	store, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+	_, err = dsRepo.FindByID(ctx, ds.ID)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, datasource.ErrDataSourceNotFound)
+	_, err = logRepo.FindByID(ctx, "missing-log")
+	require.Error(t, err)
+	require.NotErrorIs(t, err, datasource.ErrSyncLogNotFound)
 }
 
 func TestDataSourceRepositoryUpdateSyncStateClearsErrorMessage(t *testing.T) {

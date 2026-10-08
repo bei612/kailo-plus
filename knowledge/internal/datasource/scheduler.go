@@ -141,13 +141,19 @@ func (s *Scheduler) triggerSync(dataSourceID string, tenantID uint64) {
 	ctx := context.Background()
 
 	ds, err := s.dsRepo.FindByID(ctx, dataSourceID)
-	if err != nil || ds == nil || ds.Status != types.DataSourceStatusActive {
-		logger.Infof(ctx, "[Scheduler] skipping sync for ds=%s (not active or not found)", dataSourceID)
+	if err != nil || ds == nil || ds.Status != types.DataSourceStatusActive ||
+		ds.ID != dataSourceID || tenantID == 0 || ds.TenantID != tenantID {
+		logger.Infof(ctx, "[Scheduler] skipping sync for ds=%s (original active source unavailable)", dataSourceID)
 		return
 	}
 
 	// Layer 1: prevent overlap with a still-running sync
-	if running, _ := s.syncLogRepo.HasRunningSync(ctx, dataSourceID); running {
+	running, err := s.syncLogRepo.HasRunningSync(ctx, dataSourceID)
+	if err != nil {
+		logger.Errorf(ctx, "[Scheduler] cannot confirm original sync state for ds=%s: %v", dataSourceID, err)
+		return
+	}
+	if running {
 		logger.Infof(ctx, "[Scheduler] skipping sync for ds=%s (previous sync still running)", dataSourceID)
 		return
 	}

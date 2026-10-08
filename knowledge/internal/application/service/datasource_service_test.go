@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -322,7 +323,10 @@ func (s *processSyncKBService) ProcessKBDelete(context.Context, *asynq.Task) err
 var _ interfaces.KnowledgeBaseService = (*processSyncKBService)(nil)
 
 type processSyncSyncLogRepo struct {
-	logs map[string]*types.SyncLog
+	logs      map[string]*types.SyncLog
+	readErr   error
+	updateErr error
+	writes    int
 }
 
 func (r *processSyncSyncLogRepo) Create(_ context.Context, log *types.SyncLog) error {
@@ -331,6 +335,9 @@ func (r *processSyncSyncLogRepo) Create(_ context.Context, log *types.SyncLog) e
 }
 
 func (r *processSyncSyncLogRepo) FindByID(_ context.Context, id string) (*types.SyncLog, error) {
+	if r.readErr != nil {
+		return nil, r.readErr
+	}
 	log, ok := r.logs[id]
 	if !ok {
 		return nil, errors.New("sync log not found")
@@ -351,6 +358,10 @@ func (r *processSyncSyncLogRepo) HasRunningSync(context.Context, string) (bool, 
 }
 
 func (r *processSyncSyncLogRepo) Update(_ context.Context, log *types.SyncLog) error {
+	r.writes++
+	if r.updateErr != nil {
+		return r.updateErr
+	}
 	r.logs[log.ID] = log
 	return nil
 }
@@ -363,6 +374,103 @@ func (r *processSyncSyncLogRepo) CancelPendingByDataSource(context.Context, stri
 	return nil
 }
 func (r *processSyncSyncLogRepo) CleanupOldLogs(context.Context, int) error { return nil }
+
+type processSyncReadDSRepo struct {
+	interfaces.DataSourceRepository
+	ds  *types.DataSource
+	err error
+}
+
+func (r *processSyncReadDSRepo) FindByID(context.Context, string) (*types.DataSource, error) {
+	return r.ds, r.err
+}
+
+func TestProcessSyncRequiresOriginalRunAndConfirmedDeletion(t *testing.T) {
+	for _, scenario := range []string{"source-missing", "source-missing-wrapped", "source-read-unavailable", "log-read-unavailable",
+		"log-missing", "log-null", "log-other-id", "log-other-source", "log-other-tenant", "source-null", "source-other-id", "source-other-tenant",
+		"kb-read-unavailable", "kb-missing", "kb-missing-wrapped", "kb-null", "kb-other-id", "source-cancel-save-unavailable", "kb-cancel-save-unavailable"} {
+		t.Run(scenario, func(t *testing.T) {
+			ds := &types.DataSource{ID: "source-original", TenantID: 1, KnowledgeBaseID: "kb-original",
+				LastSyncCursor: types.JSON(`{"original":"retained"}`)}
+			original := &types.SyncLog{ID: "log-original", DataSourceID: ds.ID, TenantID: ds.TenantID,
+				Status: types.SyncLogStatusRunning, Result: types.JSON(`{"original":"retained"}`)}
+			dsRepo := &processSyncReadDSRepo{ds: ds}
+			logRepo := &processSyncSyncLogRepo{logs: map[string]*types.SyncLog{original.ID: original}}
+			kbSvc := &processSyncKBService{kb: &types.KnowledgeBase{ID: ds.KnowledgeBaseID, TenantID: ds.TenantID}}
+			unavailable := errors.New("store temporarily unavailable")
+			confirmed := scenario == "source-missing" || scenario == "source-missing-wrapped" || scenario == "kb-missing" || scenario == "kb-missing-wrapped"
+			switch scenario {
+			case "source-missing", "source-cancel-save-unavailable":
+				dsRepo.err = datasource.ErrDataSourceNotFound
+			case "source-missing-wrapped":
+				dsRepo.err = fmt.Errorf("native read: %w", datasource.ErrDataSourceNotFound)
+			case "source-read-unavailable":
+				dsRepo.err = unavailable
+			case "log-read-unavailable":
+				logRepo.readErr = unavailable
+			case "log-missing":
+				logRepo.readErr = datasource.ErrSyncLogNotFound
+			case "log-null":
+				logRepo.logs[original.ID] = nil
+			case "log-other-id":
+				original.ID = "log-other"
+			case "log-other-source":
+				original.DataSourceID = "source-other"
+			case "log-other-tenant":
+				original.TenantID++
+			case "source-null":
+				dsRepo.ds = nil
+			case "source-other-id":
+				ds.ID = "source-other"
+			case "source-other-tenant":
+				ds.TenantID++
+			case "kb-read-unavailable":
+				kbSvc.getErr = unavailable
+			case "kb-missing", "kb-cancel-save-unavailable":
+				kbSvc.getErr = apprepo.ErrKnowledgeBaseNotFound
+			case "kb-missing-wrapped":
+				kbSvc.getErr = fmt.Errorf("native read: %w", apprepo.ErrKnowledgeBaseNotFound)
+			case "kb-null":
+				kbSvc.kb = nil
+			case "kb-other-id":
+				kbSvc.kb.ID = "kb-other"
+			}
+			if strings.Contains(scenario, "cancel-save") {
+				logRepo.updateErr = unavailable
+			}
+			before := *original
+			cursor := string(ds.LastSyncCursor)
+			payload, err := json.Marshal(types.DataSourceSyncPayload{DataSourceID: "source-original", SyncLogID: "log-original", TenantID: 1})
+			require.NoError(t, err)
+			svc := &DataSourceService{dsRepo: dsRepo, syncLogRepo: logRepo, kbService: kbSvc}
+			err = svc.ProcessSync(context.Background(), asynq.NewTask(types.TypeDataSourceSync, payload))
+			if confirmed {
+				require.NoError(t, err)
+				require.Equal(t, 1, logRepo.writes)
+				stored := logRepo.logs["log-original"]
+				require.Equal(t, types.SyncLogStatusCanceled, stored.Status)
+				require.NotNil(t, stored.FinishedAt)
+				require.Equal(t, before.Result, stored.Result)
+			} else {
+				require.Error(t, err)
+				if strings.Contains(scenario, "unavailable") {
+					require.ErrorIs(t, err, unavailable)
+				} else if scenario == "log-missing" {
+					require.ErrorIs(t, err, datasource.ErrSyncLogNotFound)
+				} else {
+					require.ErrorIs(t, err, asynq.SkipRetry)
+				}
+				writes := 0
+				if strings.Contains(scenario, "cancel-save") {
+					writes = 1
+				}
+				require.Equal(t, writes, logRepo.writes)
+			}
+			require.Equal(t, before, *original, "unconfirmed writes cannot mutate retained run evidence in memory")
+			require.Equal(t, cursor, string(ds.LastSyncCursor))
+		})
+	}
+}
 
 func TestAllFetchedItemsFailedError(t *testing.T) {
 	err := allFetchedItemsFailedError(&types.SyncResult{

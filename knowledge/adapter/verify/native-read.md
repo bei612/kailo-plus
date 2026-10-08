@@ -3619,3 +3619,73 @@ fence gap remain outside this batch. Complete native pages and independent
 data remain intact. Source/checks are +215/-14 before this receipt; no
 commit/push or deployment was performed by this implementation agent, and
 these local fixtures do not establish production readiness.
+
+### 2026-10-08 原同步身份、存储不可用与原定时准入纠正
+
+1. 权威：`DD-89`、`SS-WEK-MATERIALIZATION` 与 design 13 §4.4 保留
+   WeKnora 自身 SyncLog、cursor 和原 Asynq 同步链；临时读取失败不是源已删除、
+   同步已失败或同步已完成的终态证据。固定上游
+   `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/application/service/datasource_service.go::DataSourceService.ProcessSync`
+   曾将任意源／知识库读取错误当作删除并吞掉取消落库错误；
+   `internal/datasource/scheduler.go::Scheduler.triggerSync` 曾忽略
+   `HasRunningSync` 的存储错误。这些不是另建平台同步工作流的理由。
+2. 影响面：既有 DataSource／SyncLog repository、ProcessSync 与 Scheduler
+   及其原检查消费本批改动。真实不存在的源和日志返回既有
+   `internal/datasource/errors.go::ErrDataSourceNotFound/ErrSyncLogNotFound`，
+   错误文案不变；底层存储错误原样保留。手动和原 cron producer 均已有
+   DataSourceID、TenantID、SyncLogID；消费端现先核对原日志与原源身份，再执行。
+   无 schema、存储格式、公开 API、Workflow 类型、配置、菜单、正文或凭据迁移。
+3. 副作用：只有明确的原生不存在证据才能取消原日志；落库失败返回真实错误，
+   不预先修改共享原记录或吞错报成功。临时源／知识库／日志读取失败保留原日志、
+   cursor 与重试链。原 cron 只有在确认无正在运行的同步且原源身份仍匹配时，
+   才能新建 SyncLog 并入原队列；读取不明不再触发另一任务。恢复后沿原 tick，
+   不创建新队列、账本或执行权威。
+4. 异常边界：空原身份、错误租户／源／日志／知识库引用拒绝消费；未确认读取
+   不改变终态，确认取消仍须保存成功。映射沿 `06` §4 的
+   `PRECONDITION`／`DENIED`／`UNKNOWN` 分类与原 native 错误及重试语义，
+   不增加成功状态。原 cron 的 HasRunningSync 不是跨实例原子锁；既有
+   Asynq 同分钟 TaskID 去重保持不变，本批不宣称其解决所有跨分钟并发。
+   原 enqueue ACK 丢失、已有取消／失败回写吞错及在途任务收敛仍需独立闭合；
+   没有用原 running 行伪造 UNKNOWN 的最终对账或激活完整组件。
+
+六个生产／原检查文件范围为 +228/-32。复用既有
+`kailo-knowledge-native-check-wkkigg` 与原 Go 1.26.8 不可变镜像、Data 缓存，
+实际 cgroup 为 4 CPU／8 GiB，未新建 SDK、下载依赖或构建镜像。
+第一轮四文件候选句柄 82104 原进程因共享磁盘 I/O 暂停后原地恢复，终态 0，
+30 个顶层／137 个子用例通过；该结果不覆盖后来新增的 Scheduler 两文件。
+随后六个最终输入同步到同一私有候选，原 gofmt 无差异，再进行生产破坏与还原。
+
+原检查命令均为 `go test -mod=readonly -p=1`，后两轮显式 `GOPROXY=off`。
+最终原包为 `./internal/application/repository ./internal/application/service
+./internal/datasource`，目标选择
+`Test(DataSourceRepositoriesDistinguish|ProcessSync|FileStorage|StreamStartCursor|StreamHandler|Scheduler)`，
+带 `-count=1 -v`。句柄 79183 终态 0：私有生产破坏退出 1，原字节还原后退出 0，
+40 个顶层／142 个子用例通过，包含原 cron 实际触发和五种原准入恢复场景。
+没有扩大超时、修改断言预期或删减原调度功能。
+
+破坏仅作用于私有候选三处真实生产分支：把原生不存在 sentinel 换成同文案的新错误、
+把源存储不可用误当删除、忽略正在运行查询的存储错误。原检查实际抓到三项顶层失败，
+其中两个子用例分别抓到错误取消与重复入队；不是用编译失败冒充命中。
+随后六个文件从正式原字节还原，六输入及 go.mod／go.sum 全部 cmp 0，gofmt 无差异，
+最终 cgroup 的 low／high／max／OOM／OOM-kill 计数均 0。
+原 `tools/check-docs.sh` 同批在 2 CPU／4 GiB、离线只读受限容器中退出 0，七段全部通过。
+
+原日志目录为
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/`：
+
+- `sync-original-run-positive-20261008.log`，SHA-256
+  `d15ce9f0b6f59af50b2853d1d973365fb0c402cf1053a284894ed964a52e20d0`。
+- `sync-original-run-negative-20261008.log`，SHA-256
+  `83d7b52b2937713f10278c7c03cb3eee78f941e2b5083730fdcebc881c65d67f`。
+- `sync-original-run-restored-20261008.log`，SHA-256
+  `d833fad5631a43103f3f2b000dabbdfa6afc6a450f30a662a05f4a4fcef2cfca`。
+- `sync-original-run-production-damage.patch`，SHA-256
+  `3858c4b6406288d6021a462d10f7ab35e84add9d1dd0064bb0dffe54110c76a4`。
+
+当前 scoped `git diff --check` 为空，未运行新镜像构建或线上发布。
+
+Web／Desktop 仍使用共同 BFF 接入与完整原生知识页面，Mobile 非组件宿主；
+本批没有改客户端呈现、开启 Mobile WebView 或补建 UI。没有实际执行
+Cells→WeKnora 上传／解析／撤权 E2E，没有解除 release／binding 激活门禁，
+也不宣称生产就绪或各组件全量原版一致。
