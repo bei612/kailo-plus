@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
-  verifiedClaims, secret, jsonFetch, freshPep } from '../../../client-kit/adapter/protocol.mjs';
+  verifiedClaims, verifyBindingHandshakeToken, secret, jsonFetch, freshPep } from '../../../client-kit/adapter/protocol.mjs';
 export { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
   secret, jsonFetch, freshPep } from '../../../client-kit/adapter/protocol.mjs';
 import { createServer } from 'node:http';
@@ -26,7 +26,12 @@ export function configuration(value) {
     'actionTokenJwksFile', 'corePepUrl', 'oidcTokenUrl', 'oidcClientId',
     'oidcClientSecretFile', 'timeoutMs', 'maxBodyBytes', 'listenHost', 'listenPort'];
   if (!object(value) || required.some((key) => !Object.hasOwn(value, key))
-    || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch', 'readEdge'].includes(key))) throw new Refused(503);
+    || Object.keys(value).some((key) => ![...required, 'workspaceId', 'documentLaunch', 'readEdge', 'management'].includes(key))) throw new Refused(503);
+  if (value.management !== undefined && (!exactKeys(value.management,
+    ['componentTypeKey', 'componentReleaseId', 'artifactDigest', 'protocolRange'])
+    || !nonempty(value.management.componentTypeKey) || !UUID.test(value.management.componentReleaseId)
+    || !/^[a-f0-9]{64}$/.test(value.management.artifactDigest)
+    || value.management.protocolRange !== '1')) throw new Refused(503);
   for (const key of ['bindingId', 'tenantId', 'nativeWorkspaceId', 'nativeRootRef']) {
     if (!UUID.test(value[key])) throw new Refused(503);
   }
@@ -216,16 +221,44 @@ async function originalWriteRevision(config, deadline, args, claims) {
     protocolSessionId: frozen.protocolSessionId, correlationRef: evidence.correlationRef };
 }
 
+async function bindingHandshake(config, deadline, raw, key, token) {
+  let args;
+  try { args = JSON.parse(raw); } catch { throw new Refused(400); }
+  if (!exactKeys(args, ['idempotencyKey', 'componentReleaseId', 'componentTypeKey', 'protocolRange'])
+    || !UUID.test(args.idempotencyKey) || args.idempotencyKey !== key || raw !== canonical(args)) throw new Refused(400);
+  const delivered = config.management;
+  if (!delivered) throw new Refused(503);
+  if (args.componentReleaseId !== delivered.componentReleaseId || args.componentTypeKey !== delivered.componentTypeKey
+    || args.protocolRange !== delivered.protocolRange) throw new Refused(403);
+  const claims = await verifyBindingHandshakeToken(token, config, args);
+  await freshPep(config, deadline, token, args, claims, 'handshake');
+  const base = fixedUrl(config.cellsRestBaseUrl);
+  base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
+  const root = await jsonFetch(config, deadline, new URL(`n/node/${config.nativeRootRef}?Flags=WithVersionsAll`, base), {
+    headers: { authorization: `Bearer ${await secret(config.cellsBearerFile)}`, 'content-type': 'application/json' },
+  });
+  nativeNode(root, config.nativeRootRef, config.nativeWorkspaceId, 'COLLECTION');
+  const current = await verifyBindingHandshakeToken(token, config, args);
+  await freshPep(config, deadline, token, args, current, 'handshake');
+  return { protocolVersion: '1', artifactDigest: delivered.artifactDigest };
+}
+
 export function createAdapter(rawConfig) {
   const config = configuration(rawConfig);
   const server = createServer(async (request, response) => {
     try {
       if (request.method !== 'POST' || ![QUERY_PATH, '/platform-adapter/v1/execute',
-        '/platform-adapter/v1/observe', '/platform-adapter/v1/cancel'].includes(request.url)) throw new Refused(404);
+        '/platform-adapter/v1/observe', '/platform-adapter/v1/cancel', '/platform-adapter/v1/handshake'].includes(request.url)) throw new Refused(404);
       if (request.headers['content-type'] !== 'application/json' || typeof request.headers.authorization !== 'string'
         || !request.headers.authorization.startsWith('Bearer ')) throw new Refused(401);
       const deadline = Date.now() + config.timeoutMs;
       const raw = await boundedBody(request, config.maxBodyBytes);
+      if (request.url === '/platform-adapter/v1/handshake') {
+        const value = await bindingHandshake(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7));
+        response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        response.end(JSON.stringify(value));
+        return;
+      }
       if (['/platform-adapter/v1/observe', '/platform-adapter/v1/cancel'].includes(request.url)) {
         const operation = request.url.slice('/platform-adapter/v1/'.length);
         const value = await documentLifecycle(config, deadline, raw, request.headers['idempotency-key'],

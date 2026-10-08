@@ -33,7 +33,12 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   await writeFile(jwks, JSON.stringify({ keys: [{ ...publicKey.export({ format: 'jwk' }), kid: 'test' }] }));
   await writeFile(nativeSecretFile, nativeSecret, { mode: 0o600 });
   await writeFile(oidcSecretFile, randomUUID(), { mode: 0o600 });
-  const args = { nativeObjectRef: ids[2], idempotencyKey: ids[3], authorizationTargetNativeRef: ids[1] };
+  const handshake = protocolOperation === 'handshake';
+  const management = { componentTypeKey: 'knowledge-native', componentReleaseId: ids[9],
+    artifactDigest: 'a'.repeat(64), protocolRange: '1' };
+  const args = handshake ? { idempotencyKey: ids[3], componentReleaseId: ids[9],
+    componentTypeKey: mode === 'wrong-release' ? 'foreign-component' : management.componentTypeKey, protocolRange: '1' }
+    : { nativeObjectRef: ids[2], idempotencyKey: ids[3], authorizationTargetNativeRef: ids[1] };
   const state = { peps: 0, native: 0, methods: [], grants: 0, downloads: 0, receipts: [] };
   const revision = '2026-10-06T23:00:00.123456789Z';
   const ingest=action==='knowledge.ingest@v1'||action==='knowledge.ingest@v2';
@@ -43,10 +48,10 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
       displayName: 'native document', mediaType: 'text/markdown' });
   if (contractStep?.referenceResourceId) ids[8] = contractStep.referenceResourceId;
   const operation = protocolOperation ?? (action ? 'execute' : 'query_revision');
-  const intent = ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
+  const intent = handshake ? args : ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
     : action ? { target: { resourceId: ids[8] }, input: search
       ? contractStep ? JSON.parse(contractStep.inputJson) : { query: 'search fixture' } : reference } : args;
-  const bodyValue = ['observe','extract_usage'].includes(operation) ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
+  const bodyValue = handshake || ['observe','extract_usage'].includes(operation) ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
   const upstream = createServer(async (request, response) => {
     let raw = '';
     for await (const chunk of request) raw += chunk;
@@ -100,6 +105,14 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     assert.ok(request.headers.authorization === `Bearer ${nativeSecret}`);
     assert.equal(body.method, 'tools/call');
     state.methods.push(body.params.name);
+    if (body.params.name === 'list_knowledge_bases') {
+      assert.equal(handshake, true);
+      assert.deepEqual(body.params.arguments, {});
+      const kb = { id: mode === 'foreign' ? ids[8] : ids[1],
+        native_revision: mode === 'no-revision' ? undefined : revision };
+      return reply(response, 200, { jsonrpc: '2.0', id: body.id, result: { content: [],
+        structuredContent: { knowledge_bases: mode === 'duplicate' ? [kb, kb] : [kb] } } });
+    }
     if (body.params.name === 'search_knowledge') {
       assert.equal(search, true);
       assert.deepEqual(body.params.arguments, { query: intent.input.query, knowledge_base_ids: [ids[1]] });
@@ -176,6 +189,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     timeoutMs: 3000, maxBodyBytes: 16384, listenHost: '127.0.0.1', listenPort: 1 };
   if (ingest) config.readEdge={sourceActionVersion:1,
     usageMeasurements:[{meterKey:'native_import_count',quantitySource:'COUNT'},{meterKey:'native_import_bytes',quantitySource:'CONTENT_BYTES'}]};
+  if (handshake && mode !== 'missing-management') config.management = management;
   const adapter = createAdapter(config);
   const endpoint = await listen(adapter);
   t.after(async () => {
@@ -191,6 +205,13 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     result_exposure_policy_id: randomUUID(), result_exposure_policy_version: 1,
     normalized_parameter_hash: createHash('sha256').update(canonical(operation === 'execute' ? intent : { operation, arguments: intent })).digest('hex') };
   if (action) { claims.idempotency_key = args.idempotencyKey; claims.external_execution_id = randomUUID(); }
+  if (handshake) {
+    claims.target_type = 'APPLICATION_BINDING'; claims.target_id = mode === 'wrong-binding' ? ids[8] : ids[0];
+    delete claims.result_exposure_policy_id; delete claims.result_exposure_policy_version;
+    delete claims.idempotency_key; delete claims.external_execution_id;
+    if (mode === 'agent') claims.agent_principal_id = claims.actor_principal_id;
+    if (mode === 'wrong-hash') claims.normalized_parameter_hash = 'f'.repeat(64);
+  }
   if (mode === 'foreign-token') claims.tenant_id = ids[9];
   const header = Buffer.from(JSON.stringify({ alg: 'ES256', kid: 'test', typ: 'JWT' })).toString('base64url');
   const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
@@ -201,6 +222,29 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     body: canonical(bodyValue),
   }) };
 }
+
+test('knowledge binding handshake uses the real management token, native KB observation and two PEP reads', async t => {
+  const run = await fixture(t, 'ok', 'application_binding.create', 'handshake');
+  const response = await run.invoke();
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { protocolVersion: '1', artifactDigest: 'a'.repeat(64) });
+  assert.equal(run.state.peps, 2);
+  assert.deepEqual(run.state.methods, ['list_knowledge_bases']);
+});
+
+test('knowledge management refuses drift, missing native facts and revoked disclosure without claiming activation', async t => {
+  for (const [mode, status, native] of [
+    ['missing-management', 503, 0], ['wrong-release', 403, 0], ['wrong-binding', 401, 0],
+    ['foreign-token', 401, 0], ['wrong-hash', 401, 0], ['agent', 401, 0], ['deny', 503, 0],
+    ['foreign', 403, 1], ['duplicate', 403, 1], ['no-revision', 503, 1], ['revoke', 503, 1],
+  ]) await t.test(mode, async t => {
+    const run = await fixture(t, mode, 'application_binding.create', 'handshake');
+    const response = await run.invoke();
+    assert.equal(response.status, status);
+    assert.equal(run.state.native, native);
+    assert.equal(Object.hasOwn(await response.json(), 'artifactDigest'), false);
+  });
+});
 
 test('knowledge v2 registered ingest vector reaches source grant, file transfer and original MCP upload', async t => {
   const registration = JSON.parse(await readFile(new URL('../../../contracts/adapter/knowledge.v2/registration.json', import.meta.url)));

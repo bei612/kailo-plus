@@ -1,5 +1,61 @@
 # Cells 原生 revision 查询接缝
 
+## 原绑定管理握手接通（2026-10-08）
+
+本批按 DD-88/94、`.design/07` §5.2 修复实际调用断点：Core 的
+`application_binding_native::validate` 已先调用 handshake，Cells Adapter 原路由却
+没有消费者。现在沿同一服务与原协议处理该请求；不新建管理页、注册表或生命周期。
+
+影响与边界如下：
+
+1. `ADAPTER_CONFIG_FILE` 的可选 `management` 只投递实际 release 的
+   `componentTypeKey/componentReleaseId/artifactDigest/protocolRange`。协议为既有 `1`，
+   缺投递不开放成功握手，格式错误拒绝启动；没有默认 release 或凭据。
+2. Cells 与知识 Adapter 共用 `client-kit/adapter/protocol.mjs::verifyBindingHandshakeToken`，
+   只接受既有 `application_binding.create` / APPLICATION_BINDING / HUMAN 形状，
+   不把业务 RESOURCE 的 ResultExposure 要求放宽。请求 release、type、range、
+   canonical body、幂等 key 与 header 必须一致；租户、工作区、binding 必须精确匹配。
+3. 沿既有 Cells REST transport 读取固定空间根目录，核 UUID、COLLECTION、
+   ContextWorkspace、路径及回收状态；只有原生事实成立且前后两次签名/PEP 均通过，
+   才返回原 Core 消费的 protocolVersion/artifactDigest。无文件正文、CREATE、
+   PAT 创建、业务数据库写入或新增状态；重复调用仍重读，不缓存准入结果。
+4. 拒绝、超时、超限、scope 漂移及读取期间撤权不返回成功观察。成功握手也不代表
+   validate_binding、SecretRef 读取回执、投影或 binding ACTIVE；剩余阶段继续关闭。
+   三端页面、传输与 Mobile 非组件宿主边界没有改变。
+
+固定上游 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+`gateway/restv2/api.go::Handler.TreeNodeToNode` 与
+`gateway/restv2/api.go::Handler.ContextWorkspace` 是沿用的节点及空间转换来源，
+本批以 `git show/git grep` 只读复核；原 `nativeNode` 实际消费者继续核该结构。
+没有编辑、构建或执行 `.references`。协议与 Core 契约不变，无四侧生成或数据库迁移。
+
+实现后复用 `kailo-agent-receipt-xvkujx`，实际 4 CPU / 8 GiB / 无额外 swap，
+启动前读回 cgroup、进程与约 26 GiB 可用内存。仅同步本批文件到既有
+`read-receipts-20261007/apps`，未做全树快照、镜像构建或发布。
+证据目录为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/read-receipts-20261007/`：
+
+- `cells-binding-handshake.log`：原 Node HTTP 检查按 handshake/SERVICE/source bytes
+  选择，48 passed，退出 0；真实 HTTP、签名和 PEP 客户端，原生服务为隔离响应器。
+- `cells-binding-handshake-mutation.log`：只在私有候选删除 binding target 校验，
+  同一检查实际报 `200 !== 401`，退出 1；随后恢复原字节并 `cmp` 退出 0。
+- `cells-binding-handshake-restored.log` 与 `cells-binding-handshake-complete.log`：
+  首次扩大检查时 ONLYOFFICE 分支失败；后者为 104 passed / 5 failed。
+  实际导入得到 `ERR_MODULE_NOT_FOUND`，该旧轻量候选没有原 package.json/xml2js。
+  首次 npm 在缺 package 的父目录结束且没有安装所需依赖，不记为修复成功。
+- 同步正式原 package.json 后，在受限 SDK 的该 package 内执行
+  `npm install --offline --ignore-scripts --no-audit --no-fund --package-lock=false --workspaces=false`，
+  从已有 `/cache/npm` 缓存补齐 3 个包，没有联网下载或修改正式依赖。
+  `node --test test/*.test.mjs` 最终为 **109 passed / 0 failed，退出 0**，日志
+  `cells-binding-handshake-final.log`，约 0.993 秒。包含原 ONLYOFFICE 分支，
+  不是实际 DocumentServer/浏览器/设备验收。
+
+本批没有启用 release/binding、部署服务或更新安装包。真实 OpenBao Agent 读取
+request_id 的回执消费仍未闭合，不能靠回填配置伪造 validate_binding 成功。
+全量 `tools/check.sh --full` 本批未运行，磁盘约 1.2 GiB；定向通过不提高生产就绪结论。
+
+## 历史原查询候选 RTq1FU
+
 这是独立候选 RTq1FU 的实际 HTTP 适配器证据，不是 Cells 已接入 Kailo 的验收。
 运行体不拥有目录、文件、版本、权限或工作流；它没有 execute、MCP 注册或编辑入口。
 

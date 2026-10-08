@@ -1125,3 +1125,81 @@ source-reader/configuration recovery evidence. Full checks, real database
 sync, live Cells/WeKnora indexing, browser acceptance and deployment were not
 run for this bounded change. No release, binding or runtime configuration was
 enabled and no production-readiness claim is made.
+
+## Existing binding-management handshake consumer (2026-10-08)
+
+Authority and impact: DD-88/94 and `.design/07` §5–6 already require the
+binding Workflow to call `handshake` before `validate_binding`. The existing
+Core `application_binding_native::validate` sends this request, while this
+adapter previously returned 404 for it. Existing management pages already
+submit release/binding Actions; adding another page would not repair this
+transport break. This change adds the real consumer in `createAdapter`, not
+another lifecycle, registry, or activation decision. Management ActionTokens
+use the existing NONE-exposure/APPLICATION_BINDING shape, shared with the
+Cells consumer through `verifyBindingHandshakeToken`; they do not pass the
+business RESOURCE token path or waive the latter's ResultExposure checks.
+
+The fixed upstream is WeKnora
+`2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/mcpserver/tools_retrieve.go::Server.handleListKnowledgeBases`,
+registered by `internal/mcpserver/server.go::Server`. Rechecked with `git show`
+and `git grep` at this full commit. The handler resolves allowed knowledge
+bases from the existing endpoint identity; Kailo's existing same-file
+`knowledgeBaseSummary.NativeRevision` preserves the current source revision.
+The adapter reuses that original MCP call and requires exactly one configured
+KB with a nonzero, parseable revision. No content, question/answer engine,
+native write, or user/permission database is added.
+
+Controlled `ADAPTER_CONFIG_FILE` may now include `management`, with exactly
+`componentTypeKey`, `componentReleaseId`, `artifactDigest`, `protocolRange`.
+These are the deployed release's real type, UUID, 64-character lower-case
+artifact digest and existing protocol `"1"`; there are no default identities
+or built-in component release values. Omission keeps management unavailable;
+malformed delivery prevents startup. This is runtime metadata, not a new
+unsafe switch or proof of conformance. The request release/type/range must
+equal that delivery, and its key/header/body must match the original Core
+wire request. The configured artifact is returned for the original Core's
+manifest comparison, not used to approve the artifact or a release.
+
+Before native access and before disclosure, the shared verifier checks the
+signature, expiry, issuer/audience, HUMAN actor, exact tenant/workspace/binding,
+Action/version and canonical operation hash, followed by fresh binding PEP.
+Agent/delegation/ResultExposure claims cannot impersonate this management
+request. Missing, duplicate or foreign KB evidence is refused; errors and
+revocation cannot produce the successful handshake envelope. The response is
+only the existing `protocolVersion/artifactDigest` observation. It does not
+advertise write permissions or full binding validation. The operation has no
+native writes, durable intermediate state or retry side effects.
+
+Actual validation used the existing 4 CPU/8 GiB SDK and bounded
+`knowledge-adapter.N8sx1m` input with installed dependencies, no new snapshot,
+installation or build. Logs under
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/knowledge-adapter.N8sx1m/`:
+
+- `knowledge-management-handshake-final.log`: existing `npm test`, 91 passed.
+- `knowledge-management-handshake-mutation.log`: private removal of the
+  post-native PEP caused 3 failures among 13 selected checks (the revoked call
+  incorrectly returned 200, and only one PEP was observed), exit 1.
+- `knowledge-management-handshake-restored.log`: original bytes restored,
+  all 91 passed, exit 0. This exercises the actual HTTP adapter, signed token,
+  MCP client and PEP consumer with controlled local protocol responders, not
+  live service activation.
+- First run `knowledge-management-handshake.log` had 88 passed/3 failed:
+  two new assertions expected 403 although the existing shared `jsonFetch`
+  maps upstream refusal to 503. The assertions were corrected to existing
+  behavior; production error mapping was not loosened. The earlier attempt
+  to copy two files into the unrelated UI candidate failed because its
+  knowledge subtree did not exist; the existing bounded adapter input was
+  used instead, without creating another tree.
+
+Remaining activation boundary is explicit: `validate_binding` still requires
+real OpenBao read request IDs, versions, reader role and per-Action freshness
+in Core. Existing adapter `secret()` consumes Agent-delivered plaintext files;
+`secretReaders` describes expected Core verification facts, not an adapter
+receipt producer. No verified Agent receipt consumer was found in this
+bounded investigation. This change does not fabricate `secretReads`, add a
+KV client or give an adapter OpenBao credentials. That validation operation
+is not opened, so no partial release/binding is enabled. Actual running Core
+release/binding counts remain zero as independently queried by the main
+agent; no live configuration, deployment, menu, database state or installation
+package was changed. Full conformance and full checks remain unrun here.

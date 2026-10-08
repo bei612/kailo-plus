@@ -202,6 +202,7 @@ async function setup(t, changes = {}) {
   });
   const origin = await listen(upstream);
   const config = { bindingId: ids[0], tenantId: ids[4], workspaceId: ids[5], nativeWorkspaceId: ids[1], nativeRootRef: ids[2],
+    ...(changes.management ? { management: changes.management } : {}),
     cellsRestBaseUrl: `${origin}/v2`, cellsBearerFile: join(directory, 'native-credential'),
     actionTokenIssuer: `${origin}/issuer`, actionTokenAudience: 'file-storage-private-adapter', actionTokenJwksFile: jwksFile,
     corePepUrl: `${origin}/service/v1/adapter/pep_check`, oidcTokenUrl: `${origin}/oidc/token`, oidcClientId: 'binding-client',
@@ -228,6 +229,10 @@ async function setup(t, changes = {}) {
       ...(changes.human ? { actor_principal_id: ids[9], agent_principal_id: undefined,
         action_key: 'file_storage.open_edit@v1', delegation_id: undefined, delegation_version: undefined,
         result_exposure_policy_id: undefined, result_exposure_policy_version: undefined } : {}),
+      ...(changes.management ? { actor_principal_id: ids[9], agent_principal_id: undefined,
+        target_type: 'APPLICATION_BINDING', target_id: ids[0], action_key: 'application_binding.create',
+        delegation_id: undefined, delegation_version: undefined,
+        result_exposure_policy_id: undefined, result_exposure_policy_version: undefined } : {}),
       ...(changes.serviceRead || changes.serviceList ? {action_key:changes.serviceList?'file_storage.list@v1':'file_storage.read@v1',agent_principal_id:undefined,
         initiating_human_principal_id:undefined,delegation_id:undefined,delegation_version:undefined,
         result_exposure_policy_id:undefined,result_exposure_policy_version:undefined,idempotency_key:ids[7],
@@ -245,6 +250,47 @@ async function setup(t, changes = {}) {
   }
   return { state, token, invoke, target };
 }
+
+test('binding handshake checks the original Cells root and both fresh management authorizations', async (t) => {
+  const management = { componentReleaseId: ids[10], componentTypeKey: 'file_storage', artifactDigest: 'a'.repeat(64), protocolRange: '1' };
+  const argumentsValue = { idempotencyKey: ids[7], componentReleaseId: management.componentReleaseId,
+    componentTypeKey: management.componentTypeKey, protocolRange: management.protocolRange };
+  const fixture = await setup(t, { management, arguments: argumentsValue, operation: 'handshake' });
+  const options = { path: '/platform-adapter/v1/handshake' };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await fixture.invoke(options);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { protocolVersion: '1', artifactDigest: management.artifactDigest });
+  }
+  assert.equal(fixture.state.peps, 4);
+  assert.deepEqual(fixture.state.nativeReads, Array(2).fill(`/v2/n/node/${ids[2]}?Flags=WithVersionsAll`));
+  assert.deepEqual(fixture.state.queries, []);
+  for (const changed of [{ target_id: ids[10] }, { target_type: 'RESOURCE' }, { tenant_id: ids[10] },
+    { workspace_id: undefined }, { action_key: 'application_binding.disable' }, { agent_principal_id: ids[9] },
+    { result_exposure_policy_id: ids[9] }, { actor_principal_id: ids[8] }]) {
+    assert.equal((await fixture.invoke({ ...options, token: fixture.token(changed) })).status, 401);
+  }
+  assert.equal(fixture.state.nativeReads.length, 2);
+  assert.equal((await fixture.invoke({ ...options, key: ids[8] })).status, 400);
+  assert.equal((await fixture.invoke({ ...options, raw: canonical({ ...argumentsValue, protocolRange: '2' }) })).status, 403);
+  for (const root of [{ Uuid: ids[2], Type: 'COLLECTION', Path: 'documents/root', ContextWorkspace: { Uuid: ids[10] } },
+    { Uuid: ids[2], Type: 'COLLECTION', Path: 'documents/root', ContextWorkspace: { Uuid: ids[1] }, IsRecycled: true }]) {
+    await t.test('foreign or retired native root', async (nested) => {
+      const denied = await setup(nested, { management, arguments: argumentsValue, operation: 'handshake', root });
+      assert.equal((await denied.invoke(options)).status, 503);
+      assert.equal(denied.state.peps, 1);
+    });
+  }
+  for (const denyAt of [1, 2]) {
+    await t.test('revoked management authorization', async (nested) => {
+      const denied = await setup(nested, { management, arguments: argumentsValue, operation: 'handshake',
+        pep: (state, response) => reply(response, state.peps === denyAt ? 403 : 200,
+          { actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: 'fresh' }) });
+      assert.equal((await denied.invoke(options)).status, 503);
+      assert.equal(denied.state.nativeReads.length, denyAt - 1);
+    });
+  }
+});
 
 test('SERVICE source read returns exact binary version only after both fresh permission checks', async (t) => {
   const argumentsValue={targetType:'RESOURCE',targetId:ids[10],authorizationTargetNativeRef:ids[2],
