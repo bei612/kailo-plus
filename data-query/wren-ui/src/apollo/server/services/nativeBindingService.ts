@@ -28,6 +28,9 @@ type BindingDelivery = {
   secretSocket: string;
   secretNamespace: string;
   connectionSecretPath: string;
+  connectionSecretKey: string;
+  serviceSecretPath: string;
+  serviceSecretKey: string;
 };
 
 async function loadBindingDelivery(
@@ -39,14 +42,18 @@ async function loadBindingDelivery(
   if (
     !value ||
     Object.keys(value).sort().join(',') !==
-      'artifactDigest,binding,componentTypeKey,connectionSecretPath,protocolRange,secretNamespace,secretSocket' ||
+      'artifactDigest,binding,componentTypeKey,connectionSecretKey,connectionSecretPath,protocolRange,secretNamespace,secretSocket,serviceSecretKey,serviceSecretPath' ||
     !value.secretSocket?.startsWith('/') ||
     !/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(value.connectionSecretPath) ||
+    !/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(value.serviceSecretPath) ||
+    !value.connectionSecretKey ||
+    !value.serviceSecretKey ||
+    value.connectionSecretKey === value.serviceSecretKey ||
     !/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\/?$/.test(value.secretNamespace) ||
     value.secretNamespace.replace(/\/$/, '') !== `tenants/${config.tenantId}` ||
     typeof value.componentTypeKey !== 'string' ||
     !value.componentTypeKey ||
-    !/^sha256:[a-f0-9]{64}$/.test(value.artifactDigest)
+    !/^[a-f0-9]{64}$/.test(value.artifactDigest)
   )
     throw unavailable();
   const binding = value.binding;
@@ -60,37 +67,47 @@ async function loadBindingDelivery(
     binding.isolationMode !== 'DEDICATED_INSTANCE' ||
     !uuid.test(binding.componentReleaseId) ||
     !Array.isArray(binding.secretRefs) ||
-    binding.secretRefs.length !== 1 ||
+    binding.secretRefs.length !== 2 ||
     binding.configDigest !== digest(binding.normalizedConfig)
   )
     throw unavailable();
-  const reference = binding.secretRefs[0];
-  if (
-    Object.keys(reference).sort().join(',') !==
-      'audience,locator,secretKey,version' ||
-    !Number.isSafeInteger(reference.version) ||
-    reference.version <= 0 ||
-    ['audience', 'locator', 'secretKey'].some(
-      (key) => typeof reference[key] !== 'string' || !reference[key],
+  for (const key of [value.connectionSecretKey, value.serviceSecretKey]) {
+    const matches = binding.secretRefs.filter(
+      (reference) => reference.secretKey === key,
+    );
+    const reference = matches[0];
+    if (
+      matches.length !== 1 ||
+      Object.keys(reference).sort().join(',') !==
+        'audience,locator,secretKey,version' ||
+      !Number.isSafeInteger(reference.version) ||
+      reference.version <= 0 ||
+      ['audience', 'locator', 'secretKey'].some(
+        (key) => typeof reference[key] !== 'string' || !reference[key],
+      )
     )
-  )
-    throw unavailable();
+      throw unavailable();
+  }
   return value;
 }
 
 // No cache or token sink: the original Agent's Unix API proxy performs a fresh,
 // version-pinned KV read under its exact AppRole. Core verifies this request_id
 // against the original OpenBao audit log and lifecycle AE time before ACTIVE.
-async function connectionSecret(
+async function bindingSecret(
   delivery: BindingDelivery,
   config: NativeQueryDelivery,
+  secretKey: string,
+  secretPath: string,
 ) {
-  const reference = delivery.binding.secretRefs[0];
+  const reference = delivery.binding.secretRefs.find(
+    (entry) => entry.secretKey === secretKey,
+  );
   const value: any = await new Promise((resolve, reject) => {
     const pending = request(
       {
         socketPath: delivery.secretSocket,
-        path: `/v1/${delivery.connectionSecretPath}?version=${reference.version}`,
+        path: `/v1/${secretPath}?version=${reference.version}`,
         method: 'GET',
         headers: { 'X-Vault-Namespace': delivery.secretNamespace },
         timeout: config.requestTimeoutMs,
@@ -123,11 +140,12 @@ async function connectionSecret(
     value.data?.metadata?.version !== reference.version ||
     value.data.metadata.destroyed !== false ||
     value.data.metadata.deletion_time !== '' ||
-    !value.data.data?.connectionInfo
+    !value.data.data ||
+    typeof value.data.data !== 'object'
   )
     throw unavailable();
   return {
-    connection: value.data.data.connectionInfo,
+    value: value.data.data,
     read: {
       secretKey: reference.secretKey,
       version: reference.version,
@@ -239,11 +257,35 @@ export class NativeBindingService {
       }) !== this.config.projectConnectionDigest
     )
       throw denied();
-    const secret = await connectionSecret(delivery, this.config);
+    const secret = await bindingSecret(
+      delivery,
+      this.config,
+      delivery.connectionSecretKey,
+      delivery.connectionSecretPath,
+    );
+    const service = await bindingSecret(
+      delivery,
+      this.config,
+      delivery.serviceSecretKey,
+      delivery.serviceSecretPath,
+    );
+    const serviceValue = await readFile(
+      this.config.serviceClientSecretFile,
+      'utf8',
+    );
+    if (
+      !secret.value.connectionInfo ||
+      typeof service.value.value !== 'string' ||
+      !serviceValue ||
+      serviceValue.trim() !== serviceValue ||
+      service.value.value !== serviceValue ||
+      service.read.requestId === secret.read.requestId
+    )
+      throw denied();
     const actual = toIbisConnectionInfo(project.type, project.connectionInfo);
     const delivered = toIbisConnectionInfo(
       project.type,
-      encryptConnectionInfo(project.type, secret.connection),
+      encryptConnectionInfo(project.type, secret.value.connectionInfo),
     );
     if (canonical(actual) !== canonical(delivered)) throw denied();
     await verifyPostgresReader(
@@ -251,6 +293,22 @@ export class NativeBindingService {
       this.config.requestTimeoutMs,
     );
     await authorizeQuery(this.config, token, operation, args);
+    const currentProject = await this.projects.getCurrentProject();
+    if (
+      !currentProject ||
+      currentProject.id !== project.id ||
+      digest({
+        type: currentProject.type,
+        connectionInfo: currentProject.connectionInfo,
+        catalog: currentProject.catalog,
+        schema: currentProject.schema,
+      }) !== this.config.projectConnectionDigest ||
+      canonical(await loadBindingDelivery(this.config)) !==
+        canonical(delivery) ||
+      (await readFile(this.config.serviceClientSecretFile, 'utf8')) !==
+        serviceValue
+    )
+      throw denied();
     return {
       bindingId: this.config.bindingId,
       tenantId: this.config.tenantId,
@@ -261,11 +319,11 @@ export class NativeBindingService {
       configDigest: delivery.binding.configDigest,
       secretRefDigest: digest(delivery.binding.secretRefs),
       artifactDigest: delivery.artifactDigest,
-      secretReads: [secret.read],
+      secretReads: [secret.read, service.read],
       executionMappings: [
-        'data_query.query',
-        'data_query.dry_run',
-        'data_query.describe',
+        'data_query.query@v1',
+        'data_query.dry_run@v1',
+        'data_query.describe@v1',
       ].map((actionKey) => ({
         actionKey,
         actionVersion: 1,

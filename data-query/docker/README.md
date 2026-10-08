@@ -308,13 +308,17 @@ binding registry. It contains `binding` (the exact frozen Core validation
 document, including binding version, tenant/workspace, release, service
 principal, adapter reference, native instance/project scope, isolation mode,
 normalized config/digest and SecretRefs), `componentTypeKey`, `artifactDigest`,
-`protocolRange`, `secretSocket`, `secretNamespace` and `connectionSecretPath`.
+`protocolRange`, `secretSocket`, `secretNamespace`, `connectionSecretPath`,
+`connectionSecretKey`, `serviceSecretPath` and `serviceSecretKey`.
+`artifactDigest` is the Core release's lowercase 64-character SHA-256 value,
+without an OCI `sha256:` prefix. The two distinct secret keys select the exact
+connection and binding SERVICE entries in the frozen binding's SecretRefs.
 The release type/digest/range must come from the actual approved source-built
 release. The namespace is exactly `tenants/<tenantId>` and the socket is the
 component's `/run/kailo-query/bao.sock`; neither comes from an incoming request.
 
 This datasource validator accepts the design's `DEDICATED_INSTANCE` binding
-with one existing PostgreSQL project and one connection SecretRef. The project
+with one existing PostgreSQL project and its connection plus SERVICE SecretRefs. The project
 must be the same project selected by the original UI's `getCurrentProject`,
 not a different project reachable only through an adapter-supplied ID. Other
 isolation modes are refused. Dedicated deployment ownership, its database and
@@ -330,11 +334,22 @@ before activation and are not performed by this overlay.
 The original Agent uses its scoped AppRole in memory through a mode-0600 Unix
 socket. It has no network listener, token sink or cache stanza. Each lifecycle
 validation performs a new version-pinned read, returning the actual OpenBao
-request ID; Core must still verify its original audit record, role, audience,
+request ID for each of the two secrets. The SERVICE KV value's `value` must
+match the credential file actually consumed by the existing PEP transport;
+it is not enough to observe some other credential in the same namespace.
+After fresh Core reauthorization, the actual project/configuration and the
+consumed SERVICE credential file are checked again before returning both read
+receipts. Core must still verify each original audit record, role, audience,
 locator/version and lifecycle time. A previously rendered template alone cannot
 satisfy that fresh audit requirement. The native UI and Agent must run with the
 explicitly configured delivery ownership; mounting the directory does not grant
 new OpenBao policy permissions.
+
+Lifecycle execution mappings and the native `/execute` wire retain the catalog's
+versioned `data_query.query@v1`, `data_query.dry_run@v1` and
+`data_query.describe@v1` keys. Original MCP tool names remain unchanged and map
+to these fixed versioned keys inside the same native consumer. ActionToken
+comparison keeps the version; it never strips a caller's unsupported version.
 
 The overlay's non-secret paths, versions and endpoint metadata are also in
 the sole `deploy/local/.env` Wren section. Use the same file for both original

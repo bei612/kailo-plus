@@ -7,7 +7,10 @@ import {
   McpError,
   ErrorCode,
 } from '@modelcontextprotocol/sdk/types.js';
-import { NativeQueryService, queryInputSchema } from '@server/services/nativeQueryService';
+import {
+  NativeQueryService,
+  queryInputSchema,
+} from '@server/services/nativeQueryService';
 import { NativeBindingService } from '@server/services/nativeBindingService';
 import {
   authenticateQueryGateway,
@@ -115,15 +118,30 @@ export default async function handler(
     if (request.query.operation === 'execute') {
       const raw = await body(request, delivered.requestMaxBytes);
       const key = request.headers['idempotency-key'];
-      if (!raw || Object.keys(raw).sort().join(',') !== 'actionKey,arguments,idempotencyKey' ||
-        typeof key !== 'string' || raw.idempotencyKey !== key ||
-        !['data_query.query', 'data_query.dry_run'].includes(raw.actionKey) ||
-        !raw.arguments || Object.keys(raw.arguments).sort().join(',') !== 'input,target' ||
-        !raw.arguments.target || Object.keys(raw.arguments.target).join(',') !== 'resourceId' ||
-        raw.arguments.target.resourceId !== raw.arguments.input?.resourceId) {
+      if (
+        !raw ||
+        Object.keys(raw).sort().join(',') !==
+          'actionKey,arguments,idempotencyKey' ||
+        typeof key !== 'string' ||
+        raw.idempotencyKey !== key ||
+        !['data_query.query@v1', 'data_query.dry_run@v1'].includes(
+          raw.actionKey,
+        ) ||
+        !raw.arguments ||
+        Object.keys(raw.arguments).sort().join(',') !== 'input,target' ||
+        !raw.arguments.target ||
+        Object.keys(raw.arguments.target).join(',') !== 'resourceId' ||
+        raw.arguments.target.resourceId !== raw.arguments.input?.resourceId
+      ) {
         throw new NativeQueryRefusal(400, 'QUERY_INVALID_REQUEST');
       }
-      response.status(200).json(await (await queries()).execute(bearer(request), key, raw.actionKey, raw.arguments.input));
+      response
+        .status(200)
+        .json(
+          await (
+            await queries()
+          ).execute(bearer(request), key, raw.actionKey, raw.arguments.input),
+        );
       return;
     }
     const machine = request.headers['x-kailo-gateway-authorization'];
@@ -178,10 +196,10 @@ export default async function handler(
         ).execute(
           bearer(request),
           key,
-          call.params.name as
-            | 'data_query.query'
-            | 'data_query.dry_run'
-            | 'data_query.describe',
+          `${call.params.name}@v1` as
+            | 'data_query.query@v1'
+            | 'data_query.dry_run@v1'
+            | 'data_query.describe@v1',
           call.params.arguments,
         );
         // Remote Adapter v1 metadata is consumed by Core's existing response PEP;

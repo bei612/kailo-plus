@@ -2231,3 +2231,81 @@ The final restored command
 `jest --runInBand src/nativeSchemaChange.test.ts src/modelTree.test.ts src/nativeProjectScope.test.ts src/modeling.test.ts`
 passed 4 suites / 83 tests in 68.151 s, exit 0. The following `tsc --noEmit`
 produced no diagnostics and exited 0. `git diff --check` also exited 0.
+
+## Binding wire versions and actually consumed SERVICE credential (2026-10-08)
+
+This batch repairs the existing `NativeBindingService.call` and original
+Next platform-adapter/MCP consumers, not a new binding service or a replacement
+Wren UI. The pinned upstream remains
+`c5f02a0391c87420dba78632dcd86073710deb72`:
+`wren-ui/src/apollo/server/repositories/projectRepository.ts::ProjectRepository.getCurrentProject`
+is the original current-project selector, and
+`wren-ui/src/apollo/server/dataSource.ts::encryptConnectionInfo` /
+`toIbisConnectionInfo` are the original credential transformations. Their actual
+consumers are retained. The adapter files are authorized Kailo lifecycle and
+query-governance seams, not upstream-provided platform behavior.
+
+Four-step implementation boundary:
+
+1. Authority: the existing ComponentRelease / ApplicationBinding documents,
+   action catalog and OpenBao audit receipts remain authoritative. Core compares
+   handshake/validation `artifactDigest` to `adapterBuildRef`; this value is the
+   existing bare lowercase SHA-256 digest, not an OCI-prefixed string. Registered
+   Wren action keys include `@v1`; the original MCP tool names do not. Native
+   project and encrypted connection data remain in Wren's own database.
+2. Impact: the controlled binding delivery now selects its two exact SecretRefs
+   with `connectionSecretKey` and `serviceSecretKey`, plus their KV paths. The
+   same immediate Agent Unix API reader consumes each fixed version and returns
+   its real request ID. The existing SERVICE credential file used by PEP must
+   equal the SERVICE KV value. Old incomplete binding delivery is refused; no
+   secret, credential body, new table or new contract is persisted in Core.
+   Machine execute now consumes the registered versioned action keys; the MCP
+   route maps its existing fixed tool names to those same keys. Signed token
+   action equality remains exact rather than stripping a version.
+3. Side effects: handshake performs no secret or database read. Validation
+   performs the original read-only native role inspection and immediate secret
+   reads; it does not create/alter native users, grants or data. After fresh Core
+   PEP, project connection fingerprint, controlled binding delivery and the
+   actually consumed SERVICE file are checked again. Audit role/path/version/
+   audience and AE-time freshness remain Core's checks, not locally fabricated
+   evidence. There is no added SecretStore client, template cache or authority.
+4. Boundaries: wrong isolation/project, missing or mismatched SERVICE value,
+   duplicate request IDs, malformed/deleted/destroyed/version-mismatched KV
+   data, native write privilege, fresh PEP denial or changed delivery are
+   refused. Existing query UNKNOWN/no-replay and result reauthorization are
+   preserved. Web/Desktop show the original component UI; Mobile is unchanged.
+   This adds no durable intermediate state or reconciliation queue.
+
+The native project-management gap above remains: Workspace.create for a new
+platform Resource is not established authorization for every native Wren
+project write, data-source read or another human's thread response. No new
+permission mapping, create endpoint or role store was invented in this batch.
+The complete native creation target remains open, separately from this binding
+validation correction.
+
+Implementation-following validation uses the existing 4 CPU / 4 GiB Wren SDK,
+installed dependencies and isolated PostgreSQL fixture; no new snapshot,
+package installation, frontend build or image build. The actual Next handler,
+MCP SDK and native QueryService suite `jest --runInBand src/nativeQuery.test.ts`
+passed 24 tests / 1 suite, exit 0, 106.678 s. It includes the Unix Agent API
+fixture and real native role checks, actual HUMAN model/view execution, exact
+target refusal, repeat/UNKNOWN behavior and result revocation. This does not
+claim a production OpenBao audit or production binding activation.
+
+Private fault injection removed the SERVICE file equality check and regressed
+signed action matching to an unversioned action. The two targeted actual
+consumers failed (2 failed / 22 intentionally skipped, exit 1, 90.869 s): the
+wrong credential returned HTTP 200 instead of 403, and the original valid MCP
+query returned QUERY_SCOPE_DENIED. Both faults were restored; all four candidate
+TS files matched formal source via `cmp` before the final regression.
+Logs: `native-binding-wire-format.log`, `native-binding-wire-tests.log`,
+`native-binding-wire-mutation.log`, `native-binding-wire-restored.log`, and
+`native-binding-wire-types.log` in the existing Wren SDK candidate directory.
+This batch is not full global validation, a browser screenshot, release,
+deployment or complete native management acceptance.
+
+The final restored `jest --runInBand src/nativeQuery.test.ts` passed 24 tests /
+1 suite in 104.214 s, exit 0; the immediately following `tsc --noEmit` produced
+no diagnostics and exited 0. `git diff --check -- data-query` exited 0. The
+parent's already completed documentation check is separate shared-batch
+evidence; this agent did not rerun the global check or claim `--full` passed.
