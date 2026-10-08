@@ -44,6 +44,8 @@ export interface PreviewOptions {
   dryRun?: boolean;
   refresh?: boolean;
   cacheEnabled?: boolean;
+  requestTimeoutMs?: number;
+  responseMaxBytes?: number;
 }
 
 export interface SqlValidateOptions {
@@ -130,6 +132,8 @@ export class QueryService implements IQueryService {
       dryRun,
       refresh,
       cacheEnabled,
+      requestTimeoutMs,
+      responseMaxBytes,
     } = options;
     const { type: dataSource, connectionInfo } = project;
     if (this.useEngine(dataSource)) {
@@ -138,18 +142,26 @@ export class QueryService implements IQueryService {
         await this.wrenEngineAdaptor.dryRun(sql, {
           manifest: mdl,
           limit,
+          requestTimeoutMs,
+          responseMaxBytes,
         });
         return true;
       } else {
         logger.debug('Using wren engine to preview');
-        const data = await this.wrenEngineAdaptor.previewData(sql, mdl, limit);
+        const data = await this.wrenEngineAdaptor.previewData(sql, mdl, limit, {
+          requestTimeoutMs,
+          responseMaxBytes,
+        });
         return data as PreviewDataResponse;
       }
     } else {
       this.checkDataSourceIsSupported(dataSource);
       logger.debug('Use ibis adaptor to preview');
       if (dryRun) {
-        return await this.ibisDryRun(sql, dataSource, connectionInfo, mdl);
+        return await this.ibisDryRun(sql, dataSource, connectionInfo, mdl, {
+          requestTimeoutMs,
+          responseMaxBytes,
+        });
       } else {
         return await this.ibisQuery(
           sql,
@@ -159,6 +171,7 @@ export class QueryService implements IQueryService {
           limit,
           refresh,
           cacheEnabled,
+          { requestTimeoutMs, responseMaxBytes },
         );
       }
     }
@@ -217,6 +230,7 @@ export class QueryService implements IQueryService {
     dataSource: DataSourceName,
     connectionInfo: any,
     mdl: Manifest,
+    transport: Pick<PreviewOptions, 'requestTimeoutMs' | 'responseMaxBytes'>,
   ): Promise<IbisResponse> {
     const event = TelemetryEvent.IBIS_DRY_RUN;
     try {
@@ -224,6 +238,7 @@ export class QueryService implements IQueryService {
         dataSource,
         connectionInfo,
         mdl,
+        ...transport,
       });
       this.sendIbisEvent(event, res, { dataSource, sql });
       return {
@@ -243,6 +258,7 @@ export class QueryService implements IQueryService {
     limit: number,
     refresh?: boolean,
     cacheEnabled?: boolean,
+    transport?: Pick<PreviewOptions, 'requestTimeoutMs' | 'responseMaxBytes'>,
   ): Promise<PreviewDataResponse> {
     const event = TelemetryEvent.IBIS_QUERY;
     try {
@@ -253,6 +269,7 @@ export class QueryService implements IQueryService {
         limit,
         refresh,
         cacheEnabled,
+        ...transport,
       });
       this.sendIbisEvent(event, res, { dataSource, sql });
       const data = this.transformDataType(res);

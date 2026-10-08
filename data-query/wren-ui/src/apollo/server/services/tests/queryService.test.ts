@@ -1,4 +1,10 @@
 import { TelemetryEvent } from '../../telemetry/telemetry';
+import { createServer, ServerResponse } from 'http';
+import { AddressInfo } from 'net';
+import { randomUUID } from 'crypto';
+import { IbisAdaptor } from '../../adaptors/ibisAdaptor';
+import { WrenEngineAdaptor } from '../../adaptors/wrenEngineAdaptor';
+import { encryptConnectionInfo } from '../../dataSource';
 import { DataSourceName } from '../../types';
 import { QueryService } from '../queryService';
 
@@ -174,3 +180,130 @@ class MockTelemetry {
     this.records.push({ event, properties, service, actionSuccess });
   }
 }
+
+describe('original QueryService governed SQL transport', () => {
+  it.each(
+    [DataSourceName.DUCKDB, DataSourceName.POSTGRES].flatMap((type) =>
+      [false, true].flatMap((dryRun) =>
+        ['deadline', 'response size'].map((boundary) => ({
+          type,
+          dryRun,
+          boundary,
+        })),
+      ),
+    ),
+  )(
+    'consumes $boundary for $type dryRun=$dryRun without retry',
+    async ({ type, dryRun, boundary }) => {
+      let requestCount = 0;
+      let pending: ServerResponse;
+      let lateReply: ReturnType<typeof setTimeout>;
+      let input: Record<string, any>;
+      let path: string;
+      let blocked = true;
+      const server = createServer(async (request, response) => {
+        requestCount++;
+        path = request.url;
+        let body = '';
+        for await (const part of request) body += part;
+        input = JSON.parse(body);
+        response.setHeader('content-type', 'application/json');
+        const oversized = blocked && boundary === 'response size';
+        const value =
+          type === DataSourceName.DUCKDB
+            ? dryRun
+              ? oversized
+                ? [{ name: randomUUID().repeat(100), type: 'TEXT' }]
+                : []
+              : {
+                  columns: [{ name: 'one', type: 'INTEGER' }],
+                  data: [[oversized ? randomUUID().repeat(100) : 1]],
+                }
+            : {
+                columns: ['one'],
+                dtypes: { one: 'int32' },
+                data: [[oversized ? randomUUID().repeat(100) : 1]],
+              };
+        const payload = JSON.stringify(value);
+        if (blocked && boundary === 'deadline') {
+          pending = response;
+          lateReply = setTimeout(
+            () => response.end(payload),
+            options.requestTimeoutMs * 4,
+          );
+          return;
+        }
+        // A chunked native response must be bounded too, not only Content-Length.
+        response.write(payload.slice(0, payload.length / 2));
+        response.end(payload.slice(payload.length / 2));
+      });
+      await new Promise<void>((resolve) =>
+        server.listen(0, '127.0.0.1', resolve),
+      );
+      const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const service = new QueryService({
+        ibisAdaptor: new IbisAdaptor({ ibisServerEndpoint: origin }),
+        wrenEngineAdaptor: new WrenEngineAdaptor({
+          wrenEngineEndpoint: origin,
+        }),
+        telemetry: new MockTelemetry() as any,
+      });
+      const manifest = { catalog: 'fixture', schema: 'public', models: [] };
+      const sql = `SELECT '${randomUUID()}' AS one`;
+      const options = {
+        project: {
+          type,
+          connectionInfo:
+            type === DataSourceName.POSTGRES
+              ? encryptConnectionInfo(type, {
+                  host: 'native-database.invalid',
+                  port: 5432,
+                  database: randomUUID(),
+                  user: randomUUID(),
+                  password: randomUUID(),
+                  ssl: false,
+                })
+              : {},
+        } as any,
+        manifest,
+        limit: 3,
+        dryRun,
+        cacheEnabled: false,
+        requestTimeoutMs: 200,
+        responseMaxBytes: 256,
+      };
+      try {
+        await expect(service.preview(sql, options)).rejects.toBeDefined();
+        expect(requestCount).toBe(1);
+        expect(input.sql).toBe(sql);
+        expect(
+          type === DataSourceName.DUCKDB
+            ? input.manifest
+            : JSON.parse(Buffer.from(input.manifestStr, 'base64').toString()),
+        ).toEqual(manifest);
+        expect(path).toContain(
+          type === DataSourceName.DUCKDB
+            ? dryRun
+              ? '/v1/mdl/dry-run'
+              : '/v1/mdl/preview'
+            : '/connector/postgres/query',
+        );
+        if (dryRun && type === DataSourceName.POSTGRES)
+          expect(path).toContain('dryRun=true');
+        pending?.end('{}');
+        clearTimeout(lateReply);
+        blocked = false;
+        const result = await service.preview(sql, options);
+        if (dryRun)
+          expect(type === DataSourceName.DUCKDB ? result : !!result).toBe(true);
+        else expect(result).toMatchObject({ data: [[1]] });
+        expect(requestCount).toBe(2);
+      } finally {
+        pending?.end('{}');
+        clearTimeout(lateReply);
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    },
+  );
+});

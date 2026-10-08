@@ -629,6 +629,8 @@ integration('original Wren query handler, SDK and native history', () => {
   let peps = 0;
   let denyAt = 0;
   let engineFails = false;
+  let queryResponse: string | undefined;
+  let holdQueryResponse = false;
   let observedManifest: unknown;
   let authorizedTarget: Record<string, unknown> | undefined;
   let changeTargetAt = 0;
@@ -856,7 +858,21 @@ integration('original Wren query handler, SDK and native history', () => {
         await onQuery?.();
         queries++;
         observedManifest = JSON.parse(text).manifest;
-        if (engineFails) response.writeHead(503).end('{}');
+        if (holdQueryResponse) {
+          setTimeout(
+            () =>
+              response.end(
+                JSON.stringify({
+                  columns: [{ name: 'one', type: 'INTEGER' }],
+                  data: [[1]],
+                }),
+              ),
+            delivery.requestTimeoutMs * 4,
+          );
+          return;
+        }
+        if (queryResponse !== undefined) response.end(queryResponse);
+        else if (engineFails) response.writeHead(503).end('{}');
         else
           response.end(
             JSON.stringify({
@@ -866,7 +882,11 @@ integration('original Wren query handler, SDK and native history', () => {
           );
       } else if (request.url === '/v1/mdl/dry-run') {
         queries++;
-        response.end('[]');
+        if (holdQueryResponse) {
+          setTimeout(() => response.end('[]'), delivery.requestTimeoutMs * 4);
+          return;
+        }
+        response.end(queryResponse ?? '[]');
       } else if (
         request.url?.startsWith('/v2/connector/postgres/query') ||
         request.url?.startsWith('/v3/connector/postgres/query')
@@ -966,6 +986,8 @@ integration('original Wren query handler, SDK and native history', () => {
     peps = 0;
     denyAt = 0;
     engineFails = false;
+    queryResponse = undefined;
+    holdQueryResponse = false;
     authorizedTarget = {
       resourceId: resource,
       nativeType: 'model',
@@ -1193,6 +1215,96 @@ integration('original Wren query handler, SDK and native history', () => {
       await client.close();
     }
   };
+
+  it.each(
+    ['data_query.query', 'data_query.dry_run'].flatMap((action) =>
+      ['deadline', 'response size'].map((boundary) => ({ action, boundary })),
+    ),
+  )(
+    'keeps $action $boundary UNKNOWN on the same native history without redispatch',
+    async ({ action, boundary }) => {
+      const requestTimeoutMs = delivery.requestTimeoutMs;
+      const responseMaxBytes = delivery.responseMaxBytes;
+      delivery.requestTimeoutMs = 250;
+      delivery.responseMaxBytes = 2048;
+      writeFileSync(
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE,
+        JSON.stringify(delivery),
+      );
+      holdQueryResponse = boundary === 'deadline';
+      queryResponse =
+        boundary === 'response size'
+          ? JSON.stringify(
+              action === 'data_query.dry_run'
+                ? [{ name: randomUUID().repeat(100), type: 'TEXT' }]
+                : {
+                    columns: [{ name: 'one', type: 'INTEGER' }],
+                    data: [[randomUUID().repeat(100)]],
+                  },
+            )
+          : undefined;
+      const key = randomUUID(),
+        ae = randomUUID(),
+        operation = randomUUID();
+      const ticket = await signed(action, input, ae, operation);
+      try {
+        const first = (await call(ticket, key, action))
+          .structuredContent as any;
+        expect(first.execution.platformStatus).toBe('UNKNOWN');
+        expect(first).not.toHaveProperty('resultJson');
+        expect(queries).toBe(1);
+        const history = await mockComponents.apiHistoryRepository.findOneBy({
+          governanceBindingId: delivery.bindingId,
+          governanceKey: key,
+        });
+        expect(history).toMatchObject({
+          id: first.execution.nativeId,
+          governanceActionExecutionId: ae,
+          governanceOperationId: operation,
+          governanceState: 'UNKNOWN',
+          governanceDeploymentId: input.deploymentId,
+          governanceDeploymentHash: input.deploymentHash,
+        });
+        expect(history.responsePayload).toBeNull();
+        holdQueryResponse = false;
+        queryResponse = undefined;
+        const replay = (await call(ticket, key, action))
+          .structuredContent as any;
+        expect(replay.execution).toMatchObject({
+          nativeId: first.execution.nativeId,
+          platformStatus: 'UNKNOWN',
+        });
+        expect(replay).not.toHaveProperty('resultJson');
+        expect(queries).toBe(1);
+        const reference = {
+          externalExecutionId: randomUUID(),
+          idempotencyKey: key,
+          nativeType: 'wren.api_history',
+          nativeId: history.id,
+        };
+        const observed = await fetch(`${endpoint}/observe`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${await signed(action, reference, ae, operation, true)}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(reference),
+        });
+        expect(observed.status).toBe(200);
+        expect(await observed.json()).toMatchObject({
+          execution: { nativeId: history.id, platformStatus: 'UNKNOWN' },
+        });
+        expect(queries).toBe(1);
+      } finally {
+        delivery.requestTimeoutMs = requestTimeoutMs;
+        delivery.responseMaxBytes = responseMaxBytes;
+        writeFileSync(
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE,
+          JSON.stringify(delivery),
+        );
+      }
+    },
+  );
 
   it('validates the actual binding route with fresh secret receipt and native role ACL, rejecting writes and mismatched credentials', async () => {
     const suffix = randomUUID().replaceAll('-', '');

@@ -635,3 +635,28 @@ cannot reattach it. The original Stop/cancel action remains separate.
 Missing native stream/cache evidence still requires
 same-task operator reconciliation; this client does not manufacture replay,
 SQL completion or AI billing evidence.
+
+## Governed native SQL transport
+
+The existing query delivery's `requestTimeoutMs` and `responseMaxBytes` now
+reach the original QueryService and both native Ibis/Engine query and dry-run
+requests, not only source analysis and the Core PEP. No endpoint, datasource,
+deployment, SQL, credentials, query limit or response shape is replaced.
+The limits come from the controlled binding delivery; callers cannot override
+them in tool input. Original standalone consumers without those options keep
+their original transport behavior.
+
+A timeout, incomplete response or response beyond the delivered byte budget
+does not prove SQL failed or was cancelled. The original admitted API History
+record remains `UNKNOWN`, with the same execution, operation, deployment and
+native ID. Re-entry with that execution key observes the existing record; it
+does not issue another SQL request even if the native endpoint later recovers.
+This is an HTTP wait/size bound, not database cancellation or durable recovery
+of a lost native result. Database cancellation remains unsupported.
+
+The adapter's binding SERVICE client credentials authenticate its call to the
+existing Core PEP. They do not admit a SERVICE SQL actor: current business
+execution still requires the original HUMAN or AGENT ActionExecution and
+scope/result policy. SERVICE source-read grants do not authorize SQL, and no
+new Workflow or task authority is introduced. This increment is not a live
+business-instance/binding or production-readiness claim.

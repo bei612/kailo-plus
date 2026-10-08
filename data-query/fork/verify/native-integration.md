@@ -4666,3 +4666,115 @@ suite passed **27/27**, exit 0 (6.409 s), and Prettier on all five inputs exited
 No broad PostgreSQL suite, image build, deployment, new checking framework or
 visual/device acceptance was added for this correction. The preceding 22-case
 results remain historical evidence, not the final consumer coverage count.
+
+## 2026-10-08 original native SQL transport delivery
+
+Implementation-first impact and source findings:
+
+1. **Authority.** `.design/08` §6 keeps native query/dry-run on the original
+   HUMAN/AGENT Admission → Gateway → ExtMcp PEP chain. `apps/06` §4 requires
+   externally uncertain effects to remain `UNKNOWN`, not become failed or
+   successful. The existing binding delivery already owns `requestTimeoutMs`
+   and `responseMaxBytes`; no new configuration, action, identity or contract
+   was introduced. Fixed upstream was reread at
+   `WrenAI-ui-0.32.2@c5f02a0391c87420dba78632dcd86073710deb72`:
+   `wren-ui/src/apollo/server/services/queryService.ts::QueryService.preview`,
+   `wren-ui/src/apollo/server/adaptors/ibisAdaptor.ts::{query,dryRun}` and
+   `wren-ui/src/apollo/server/adaptors/wrenEngineAdaptor.ts::{previewData,dryRun}`.
+   These actual methods are retained; this batch is an authorized governance
+   transport change, not a new query implementation or a full-tree parity claim.
+2. **Impact.** The real `NativeQueryService.execute` consumer now passes those
+   controlled limits through the original `QueryService.preview` and both
+   original Ibis/Engine query and dry-run transports. Existing native endpoint,
+   SQL, manifest/deployment, connection information, row limit, request and
+   response semantics remain unchanged. Internal optional options preserve
+   original standalone callers. No database schema, serialized contract,
+   migration, Core/Worker consumer or client layout changed. Web/Desktop's
+   existing governed backend consumers receive the same behavior; this is not
+   Mobile component hosting or a device acceptance claim.
+3. **Side effects.** Earlier source-analysis and PEP requests consumed these
+   limits, but actual SQL transport did not. The original Axios calls now use
+   the delivered timeout and `maxContentLength`; callers cannot supply these
+   limits in tool input. Engine dry-run also preserves a network error without
+   dereferencing a missing `err.response`. No authentication, scope, resource,
+   result-policy or native-reader check is removed. API History remains the
+   original operation/execution association and holds no second task ledger.
+4. **Boundaries.** Query and dry-run on both original providers reject late or
+   oversized responses, including a chunked response without Content-Length.
+   After native dispatch, an HTTP limit does not prove a database rollback:
+   the same original history stays `UNKNOWN` with no result body, not `LIMIT`
+   rendered as a business failure. Same-key reentry and observe reuse its
+   original AE/Operation/deployment/native ID and never redispatch SQL, even
+   after endpoint recovery. Existing auth, precondition, conflict and actual
+   completed-result checks remain in their original paths. This does not
+   implement database cancellation, recover a lost native result, or create a
+   new state/reconciliation authority; original operator reconciliation is
+   still required for missing native evidence.
+
+Checks followed implementation. Entry inspection confirmed the existing SDK
+`kailo-wren-query-sdk-itgs2n` was running under 4 CPU / 4 GiB limits, about
+17 GiB host memory was available and no Wren compile was in flight. The existing
+PostgreSQL fixture `wren_query_itgs2n` was verified read-only as
+`wren_query_itgs2n|postgres|isolated-query-fixture`. Only its four selected
+original native integration cases ran, not the broad PostgreSQL suite. The
+original SDK, dependencies and fixture were reused without new image,
+download, database, whole-tree copy, host compiler or GitNexus invocation.
+
+Actual commands in the original SDK `/work` candidate:
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand src/apollo/server/services/tests/queryService.test.ts
+node node_modules/jest/bin/jest.js --runInBand src/nativeQuery.test.ts -t "keeps data_query.*UNKNOWN on the same native history"
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/services/nativeQueryService.ts src/apollo/server/services/queryService.ts src/apollo/server/adaptors/ibisAdaptor.ts src/apollo/server/adaptors/wrenEngineAdaptor.ts src/apollo/server/services/tests/queryService.test.ts src/nativeQuery.test.ts
+```
+
+Final pre-fault checks returned **12/12 passed** for original QueryService,
+**4 passed / 94 filtered skips** for the actual SDK adapter and PostgreSQL
+history path, and whole-UI tsc exit 0. The QueryService checks use real original
+adaptors against an HTTP provider fixture, not an Axios mock: eight combinations
+cover Engine/Ibis × query/dry-run × deadline/size and successful subsequent
+requests. The four native cases use actual ES256 transport, original MCP SDK,
+Next adapter and API History; the SQL provider alone is a controlled HTTP
+fixture, not a real external datasource acceptance.
+
+Private production mutation first removed the two limits from all four real
+adaptor request paths. The original governed transport group then returned
+**8 failed / 4 filtered skips**, exit 1: valid delayed/oversized results resolved
+instead of being rejected. After restoring both adaptors, a separate production
+mutation removed only `NativeQueryService`'s delivery to `queries.preview`.
+The native four cases returned **4 failed / 94 filtered skips**, exit 1, each
+showing expected `UNKNOWN` but actual `SUCCEEDED`. These are actual behavior
+failures, not type/compiler failures or invalid provider result shapes.
+After reversing that final fault, all six production/check inputs matched
+formal source with `cmp` exit 0. Restored QueryService returned **12/12 passed**
+(6.738 s), original native checks **4 passed / 94 filtered skips** (9.223 s),
+both exit 0, and original Prettier exited 0. The tsc run used these same final
+source bytes; only private production mutations intervened and were reversed.
+
+An earlier broader invocation also ran the original Ibis adaptor suite and
+returned **41 passed / 1 failed / 42**, exit 1. The unchanged MySQL constraints
+check expected connectionInfo `ssl:false` but received `sslMode:"DISABLED"`.
+That failure was retained, not weakened or counted as passing. Initial size
+fixtures were also corrected to return valid original result shapes before the
+final positive and mutation runs, so malformed data cannot mask a missing byte
+limit. No global `check.sh --full`, build/image, browser screenshots or
+Desktop/Mobile acceptance was produced for this batch.
+
+Logs remain at
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+`query-transport-original-positive.log` (retained MySQL failure),
+`query-transport-final-positive.log`, `query-transport-native-final-positive.log`,
+`query-transport-tsc.log`, `query-transport-negative.log`,
+`query-transport-native-negative.log`, `query-transport-restored.log`,
+`query-transport-native-restored.log` and `query-transport-format.log`.
+
+**Release boundaries remain explicit.** Binding SERVICE OAuth authenticates
+the adapter's Core PEP transport; current SQL business admission still needs
+the original HUMAN/AGENT ActionExecution. SERVICE source-read grants do not
+authorize SERVICE SQL, and no `DataQueryRun` Workflow was fabricated. Trusted
+SERVICE SQL admission, ordinary-function/provider provenance and the two
+pre-existing unvalidated Java edits remain outside this accepted increment.
+No real Wren business-container deployment, ACTIVE release/binding, live
+datasource/provider or iframe visual evidence was created. This is neither
+100% restoration nor production readiness.

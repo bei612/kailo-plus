@@ -1218,6 +1218,8 @@ export class NativeQueryService {
           limit: input.limit,
           dryRun: action === 'data_query.dry_run@v1',
           cacheEnabled: false,
+          requestTimeoutMs: this.config.requestTimeoutMs,
+          responseMaxBytes: this.config.responseMaxBytes,
         });
         if (action === 'data_query.dry_run@v1') {
           // QueryService returns true (Engine) or Ibis's successful metadata.

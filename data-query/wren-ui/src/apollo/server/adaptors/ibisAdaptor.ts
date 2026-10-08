@@ -181,6 +181,8 @@ export interface IbisBaseOptions {
   dataSource: DataSourceName;
   connectionInfo: WREN_AI_CONNECTION_INFO;
   mdl: Manifest;
+  requestTimeoutMs?: number;
+  responseMaxBytes?: number;
 }
 export interface IbisQueryOptions extends IbisBaseOptions {
   limit?: number;
@@ -303,6 +305,8 @@ export class IbisAdaptor implements IIbisAdaptor {
         `${this.ibisServerEndpoint}/${this.getIbisApiVersion(IBIS_API_TYPE.QUERY)}/connector/${dataSourceUrlMap[dataSource]}/query${queryString}`,
         body,
         {
+          timeout: options.requestTimeoutMs,
+          maxContentLength: options.responseMaxBytes,
           params: {
             limit: options.limit || DEFAULT_PREVIEW_LIMIT,
           },
@@ -344,6 +348,10 @@ export class IbisAdaptor implements IIbisAdaptor {
       const response = await axios.post(
         `${this.ibisServerEndpoint}/${this.getIbisApiVersion(IBIS_API_TYPE.DRY_RUN)}/connector/${dataSourceUrlMap[dataSource]}/query?dryRun=true`,
         body,
+        {
+          timeout: options.requestTimeoutMs,
+          maxContentLength: options.responseMaxBytes,
+        },
       );
       logger.debug(`Ibis server Dry run success`);
       return {

@@ -53,6 +53,8 @@ export interface DryPlanOption {
 export interface WrenEngineDryRunOption {
   manifest?: Manifest;
   limit?: number;
+  requestTimeoutMs?: number;
+  responseMaxBytes?: number;
 }
 
 export interface DuckDBPrepareOptions {
@@ -83,6 +85,10 @@ export interface IWrenEngineAdaptor {
     sql: string,
     mdl: Manifest,
     limit?: number,
+    transport?: Pick<
+      WrenEngineDryRunOption,
+      'requestTimeoutMs' | 'responseMaxBytes'
+    >,
   ): Promise<EngineQueryResponse>;
   getNativeSQL(sql: string, options?: DryPlanOption): Promise<string>;
   getSourceObjects(
@@ -239,6 +245,10 @@ export class WrenEngineAdaptor implements IWrenEngineAdaptor {
     sql: string,
     manifest: Manifest,
     limit: number = DEFAULT_PREVIEW_LIMIT,
+    transport?: Pick<
+      WrenEngineDryRunOption,
+      'requestTimeoutMs' | 'responseMaxBytes'
+    >,
   ): Promise<EngineQueryResponse> {
     try {
       const url = new URL(this.previewUrlPath, this.wrenEngineBaseEndpoint);
@@ -250,6 +260,8 @@ export class WrenEngineAdaptor implements IWrenEngineAdaptor {
         method: 'get',
         url: url.href,
         headers,
+        timeout: transport?.requestTimeoutMs,
+        maxContentLength: transport?.responseMaxBytes,
         data: {
           sql,
           limit,
@@ -366,13 +378,15 @@ export class WrenEngineAdaptor implements IWrenEngineAdaptor {
         method: 'get',
         url: url.href,
         data: body,
+        timeout: options.requestTimeoutMs,
+        maxContentLength: options.responseMaxBytes,
       });
       logger.debug(`Wren Engine Dry run success`);
       return res.data;
     } catch (err: any) {
       logger.info(`Got error when dry running`);
       throw Errors.create(Errors.GeneralErrorCodes.DRY_RUN_ERROR, {
-        customMessage: err.response.data.message,
+        customMessage: err.response?.data?.message || err.message,
         originalError: err,
       });
     }
