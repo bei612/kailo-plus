@@ -704,3 +704,41 @@ browser permission authority, shadow ledger or a replacement management page.
 SS-WRN-IDENTITY/native management authorization and the existing release
 activation boundary remain open delivery requirements. No live Wren instance,
 ACTIVE binding, iframe or Desktop/Mobile visual acceptance is established here.
+
+## Native project permissions and management response disclosure
+
+The original GraphQL pages, menus, settings and native management operations
+remain Wren's own implementation. A configured binding now checks its existing
+tenant/workspace `discover` permission before and after original metadata
+queries, and `manage` before and after original project/model/view/dashboard,
+instruction and SQL-pair management mutations. The scope is selected by the
+authenticated binding, not a project or tenant ID supplied by the browser.
+These fresh checks consume the original platform identity and SpiceDB authority;
+they neither create a query ActionExecution nor install a local Wren ACL.
+
+Current HUMAN identity, active tenant membership and workspace state are checked
+along with the existing binding/release/generation/runtime projection fences.
+A previously joined, now inactive workspace member cannot use a residual
+workspace-admin tuple without current tenant management permission. Native
+Resource bodies retain their separate current read checks: management permission
+does not grant access to every model, saved view or returned dashboard item.
+Malformed delivery, missing identity or unavailable authorization never switches
+a configured service into independent standalone mode.
+
+Pinning retains the original button, INSERT and complete response. In binding
+mode its former unadmitted SQL cache warm is not executed; actual item viewing
+and refresh continue through the existing governed HUMAN preview/cache path.
+Current source read permission is checked before pin and before its full response
+is disclosed. Item and layout updates also check their actual project/item
+ownership and source bodies before writing and before returning the original
+full result. This is not a new platform pin Action or proof of INSERT
+idempotency, billing or recovery after an unknown write acknowledgement.
+
+Release activation remains blocked by concrete remaining native lifecycle and
+business gaps: reset/data-source replacement must reconcile the original new
+project ID with the fixed binding scope; native SQL-pair validation still needs
+its separate governed dry-run consumer; newly created models/views need genuine
+Resource registration before their bodies can be disclosed. Trusted SERVICE SQL,
+ordinary-function/provider provenance and live multi-user component acceptance
+are not established by these permission checks. No Wren business instance,
+ACTIVE binding or embedded-page visual acceptance is claimed by this increment.

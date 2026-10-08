@@ -289,6 +289,9 @@
 //    nativeHumanResourceResult, err := UnmarshalNativeHumanResourceResult(bytes)
 //    bytes, err = nativeHumanResourceResult.Marshal()
 //
+//    nativeHumanScopeResult, err := UnmarshalNativeHumanScopeResult(bytes)
+//    bytes, err = nativeHumanScopeResult.Marshal()
+//
 //    ownAuditEntry, err := UnmarshalOwnAuditEntry(bytes)
 //    bytes, err = ownAuditEntry.Marshal()
 //
@@ -1594,6 +1597,16 @@ func UnmarshalNativeHumanResourceResult(data []byte) (NativeHumanResourceResult,
 }
 
 func (r *NativeHumanResourceResult) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalNativeHumanScopeResult(data []byte) (NativeHumanScopeResult, error) {
+	var r NativeHumanScopeResult
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *NativeHumanScopeResult) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -4711,16 +4724,27 @@ type NativeCommunityFacts struct {
 }
 
 // Binding SERVICE plus independently verified native HUMAN token. Submit an existing
-// ActionCommand or observe the same user's idempotency key. Tokens stay in transport, not
-// this document.
+// ActionCommand, observe the same user's idempotency key, or freshly check the binding's
+// own native scope. Tokens stay in transport, not this document.
 type NativeHumanActionRequest struct {
-	BindingID      string        `json:"bindingId"`
-	Command        *CommandClass `json:"command,omitempty"`
-	IdempotencyKey *string       `json:"idempotencyKey,omitempty"`
+	// Native metadata access uses existing tenant/workspace permissions. Scope and identity
+	// come exclusively from the authenticated binding and HUMAN token, never from
+	// client-selected IDs. This is not Action admission or a reusable ticket.
+	AuthorizeScope *NativeHumanScopeQuery `json:"authorizeScope,omitempty"`
+	BindingID      string                 `json:"bindingId"`
+	Command        *CommandClass          `json:"command,omitempty"`
+	IdempotencyKey *string                `json:"idempotencyKey,omitempty"`
 	// Read the already-registered exact native object for the verified HUMAN and action. This
 	// never creates a Resource or native object.
 	ResolveResource *NativeHumanResourceQuery `json:"resolveResource,omitempty"`
 	SourceResources []SourceResourceElement   `json:"sourceResources,omitempty"`
+}
+
+// Native metadata access uses existing tenant/workspace permissions. Scope and identity
+// come exclusively from the authenticated binding and HUMAN token, never from
+// client-selected IDs. This is not Action admission or a reusable ticket.
+type NativeHumanScopeQuery struct {
+	Permission Permission `json:"permission"`
 }
 
 // POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
@@ -4854,6 +4878,24 @@ type NativeHumanResourceSelection struct {
 	NativeType        string `json:"nativeType"`
 	ResourceID        string `json:"resourceId"`
 	ResourceVersion   int64  `json:"resourceVersion"`
+}
+
+// Fresh permission check for native metadata in the authenticated binding's existing
+// tenant/workspace scope. Not an ActionExecution, permission cache, or execution ticket;
+// native Resource bodies still require their own current read permission.
+type NativeHumanScopeResult struct {
+	Scope NativeHumanScopeSelection `json:"scope"`
+}
+
+type NativeHumanScopeSelection struct {
+	BindingID         string     `json:"bindingId"`
+	CheckedRevision   string     `json:"checkedRevision"`
+	Generation        int64      `json:"generation"`
+	NativeInstanceRef string     `json:"nativeInstanceRef"`
+	NativeScopeRef    string     `json:"nativeScopeRef"`
+	Permission        Permission `json:"permission"`
+	TenantID          string     `json:"tenantId"`
+	WorkspaceID       *string    `json:"workspaceId,omitempty"`
 }
 
 // GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。
@@ -6823,20 +6865,20 @@ const (
 type CapabilityPermission string
 
 const (
-	Approve                     CapabilityPermission = "approve"
-	Audit                       CapabilityPermission = "audit"
-	CapabilityPermissionExecute CapabilityPermission = "execute"
-	Consume                     CapabilityPermission = "consume"
-	Create                      CapabilityPermission = "create"
-	Delegate                    CapabilityPermission = "delegate"
-	Delete                      CapabilityPermission = "delete"
-	Discover                    CapabilityPermission = "discover"
-	Export                      CapabilityPermission = "export"
-	Manage                      CapabilityPermission = "manage"
-	Read                        CapabilityPermission = "read"
-	Share                       CapabilityPermission = "share"
-	TransferOwner               CapabilityPermission = "transfer_owner"
-	Update                      CapabilityPermission = "update"
+	Approve                      CapabilityPermission = "approve"
+	Audit                        CapabilityPermission = "audit"
+	CapabilityPermissionDiscover CapabilityPermission = "discover"
+	CapabilityPermissionExecute  CapabilityPermission = "execute"
+	CapabilityPermissionManage   CapabilityPermission = "manage"
+	Consume                      CapabilityPermission = "consume"
+	Create                       CapabilityPermission = "create"
+	Delegate                     CapabilityPermission = "delegate"
+	Delete                       CapabilityPermission = "delete"
+	Export                       CapabilityPermission = "export"
+	Read                         CapabilityPermission = "read"
+	Share                        CapabilityPermission = "share"
+	TransferOwner                CapabilityPermission = "transfer_owner"
+	Update                       CapabilityPermission = "update"
 )
 
 type CapabilitySurface string
@@ -7377,6 +7419,13 @@ type BindingKind string
 const (
 	Control BindingKind = "CONTROL"
 	Human   BindingKind = "HUMAN"
+)
+
+type Permission string
+
+const (
+	PermissionDiscover Permission = "discover"
+	PermissionManage   Permission = "manage"
 )
 
 // 按该 Tenant 当前状态可发起的暂停（ACTIVE，或协作面 binding 为 ACTIVE 的 ERROR）或恢复（SUSPENDED）动作

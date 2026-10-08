@@ -1,5 +1,6 @@
 //! Native component SERVICE transport plus independently verified HUMAN identity.
-//! The original application action remains the only admission/execution authority.
+//! Platform Actions retain the original admission/execution authority. Native
+//! metadata CRUD checks the binding's existing public scope permissions.
 use super::*;
 use crate::service_api::ServiceState;
 use axum::{
@@ -13,6 +14,7 @@ use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, V
 #[derive(sqlx::FromRow, PartialEq)]
 struct Binding {
     tenant_id: Uuid,
+    workspace_id: Option<Uuid>,
     generation: i64,
     config_digest: String,
     client_id: String,
@@ -23,7 +25,7 @@ struct Binding {
 }
 
 async fn binding(state: &ServiceState, id: Uuid) -> Result<Binding, Refusal> {
-    sqlx::query_as("select b.tenant_id,b.active_projection_generation as generation,b.config_digest,
+    sqlx::query_as("select b.tenant_id,b.workspace_id,b.active_projection_generation as generation,b.config_digest,
         b.normalized_config->>'client_id' as client_id,b.adapter_service_ref,b.native_instance_ref,b.native_scope_ref,r.manifest
         from catalog.application_binding b join catalog.component_release r on r.id=b.component_release_id
         join identity.tenant t on t.id=b.tenant_id and t.state='ACTIVE'
@@ -194,6 +196,31 @@ async fn mapped_actor(
     })
 }
 
+fn request_binding(raw: &Value) -> Result<Uuid, Refusal> {
+    let typed: contracts::NativeHumanActionRequest =
+        serde_json::from_value(raw.clone()).map_err(|_| invalid())?;
+    if serde_json::to_value(typed).map_err(|_| invalid())? != *raw {
+        return Err(invalid());
+    }
+    // The generated shape preserves legacy optional fields; the existing wire
+    // contract's exclusive operations are enforced before any authority call.
+    if [
+        "command",
+        "idempotencyKey",
+        "resolveResource",
+        "authorizeScope",
+    ]
+    .iter()
+    .filter(|key| raw.get(**key).is_some())
+    .count()
+        != 1
+        || (raw.get("sourceResources").is_some() && raw.get("idempotencyKey").is_none())
+    {
+        return Err(invalid());
+    }
+    super::id(&raw["bindingId"])
+}
+
 pub(crate) async fn handle(
     State(state): State<ServiceState>,
     headers: HeaderMap,
@@ -201,9 +228,7 @@ pub(crate) async fn handle(
 ) -> Response {
     let result = async {
         let Json(raw) = body.map_err(|_| invalid())?;
-        let typed: contracts::NativeHumanActionRequest = serde_json::from_value(raw.clone()).map_err(|_| invalid())?;
-        if serde_json::to_value(typed).map_err(|_| invalid())? != raw { return Err(invalid()); }
-        let id = super::id(&raw["bindingId"])?;
+        let id = request_binding(&raw)?;
         let before = binding(&state,id).await?;
         let count: i64 = sqlx::query_scalar("select count(*) from catalog.application_binding where normalized_config->>'client_id'=$1 and state<>'DISABLED'")
             .bind(&before.client_id).fetch_one(&state.pool).await?;
@@ -213,8 +238,16 @@ pub(crate) async fn handle(
         let token = header(&headers,"x-kailo-native-human-token")?;
         let actor = human(&state,&before,id,token).await?;
         if binding(&state,id).await? != before { return Err(denied()); }
+        if let Some(query) = raw.get("authorizeScope") {
+            let mut conn = state.pool.acquire().await?;
+            let scope = authorize_scope(&mut conn,&state.governance.spicedb,actor,id,&before,query).await?;
+            drop(conn);
+            let after_actor = human(&state,&before,id,token).await?;
+            if binding(&state,id).await? != before || after_actor.principal_id != actor.principal_id
+                || after_actor.human_identity_id != actor.human_identity_id { return Err(denied()); }
+            return Ok(Some(serde_json::to_value(scope).map_err(|_| unavailable())?));
+        }
         if let Some(query) = raw.get("resolveResource") {
-            if raw.get("command").is_some() || raw.get("idempotencyKey").is_some() || raw.get("sourceResources").is_some() { return Err(invalid()); }
             let resource = resolve_resource(&state,actor,id,&before,query).await?;
             let after_actor = human(&state,&before,id,token).await?;
             if binding(&state,id).await? != before || after_actor.principal_id != actor.principal_id
@@ -223,7 +256,6 @@ pub(crate) async fn handle(
         }
         let key = match (raw.get("command"),raw.get("idempotencyKey")) {
             (Some(command),None) => {
-                if raw.get("sourceResources").is_some() { return Err(invalid()); }
                 let command: ActionCommand = serde_json::from_value(command.clone()).map_err(|_| invalid())?;
                 let parsed = normalized(&command)?;
                 // Fence the exact existing idempotency key before the original replay path can start it.
@@ -267,6 +299,115 @@ pub(crate) async fn handle(
         Ok(None) => (StatusCode::NOT_FOUND, [("cache-control", "no-store")]).into_response(),
         Err(error) => error.respond(None),
     }
+}
+
+#[derive(sqlx::FromRow, PartialEq)]
+struct ScopeFacts {
+    tenant_version: i32,
+    membership_version: i32,
+    workspace_version: Option<i32>,
+    workspace_membership_state: Option<String>,
+    workspace_membership_version: Option<i32>,
+}
+
+async fn scope_facts(
+    conn: &mut PgConnection,
+    actor: Actor,
+    current: &Binding,
+) -> Result<ScopeFacts, Refusal> {
+    // Read the original identity facts, including a revoked membership. A stale
+    // workspace#admin tuple cannot erase that revocation (DD-41/45/46/82).
+    sqlx::query_as("select t.version as tenant_version,tm.version as membership_version,
+        w.version as workspace_version,wm.state as workspace_membership_state,wm.version as workspace_membership_version
+        from identity.tenant t join identity.tenant_membership tm on tm.tenant_id=t.id and tm.state='ACTIVE'
+        join identity.principal p on p.id=tm.tenant_principal_id and p.tenant_id=t.id and p.kind='HUMAN' and p.status='ACTIVE'
+        join identity.human_identity h on h.id=tm.human_identity_id and h.status='ACTIVE'
+        left join identity.workspace w on w.id=$3 and w.tenant_id=t.id and w.state='ACTIVE'
+        left join identity.workspace_membership wm on wm.workspace_id=w.id and wm.tenant_principal_id=p.id
+        where t.id=$1 and t.state='ACTIVE' and p.id=$2 and ($3::uuid is null or w.id is not null) and h.id=$4")
+        .bind(current.tenant_id).bind(actor.principal_id).bind(current.workspace_id).bind(actor.human_identity_id)
+        .fetch_optional(conn).await?.ok_or_else(denied)
+}
+
+async fn scope_check(
+    spicedb: &crate::spicedb::SpiceDb,
+    actor: Actor,
+    object_type: &str,
+    object: Uuid,
+    permission: &str,
+) -> Result<crate::spicedb::Checked, Refusal> {
+    let checked = spicedb
+        .check(
+            object_type,
+            &object.to_string(),
+            permission,
+            &actor.principal_id.to_string(),
+            crate::spicedb::Consistency::FullyConsistent,
+        )
+        .await
+        .map_err(|_| unavailable())?;
+    if checked.zed_token.is_empty() {
+        return Err(unavailable());
+    }
+    Ok(checked)
+}
+
+async fn authorize_scope(
+    conn: &mut PgConnection,
+    spicedb: &crate::spicedb::SpiceDb,
+    actor: Actor,
+    binding_id: Uuid,
+    current: &Binding,
+    query: &Value,
+) -> Result<contracts::NativeHumanScopeResult, Refusal> {
+    let permission = query["permission"]
+        .as_str()
+        .filter(|p| matches!(*p, "discover" | "manage"))
+        .ok_or_else(invalid)?;
+    if actor.tenant_id != current.tenant_id
+        || actor.human_identity_id.is_none()
+        || [&current.native_instance_ref, &current.native_scope_ref]
+            .iter()
+            .any(|v| v.is_empty() || v.trim() != v.as_str())
+    {
+        return Err(denied());
+    }
+    let before = scope_facts(conn, actor, current).await?;
+    if let Some(workspace) = current.workspace_id {
+        if before.workspace_membership_state.as_deref() != Some("ACTIVE") {
+            let management = scope_check(spicedb, actor, "workspace", workspace, "manage").await?;
+            if !management.allowed {
+                return Err(denied());
+            }
+            // Never-joined admins are allowed by DD-82. Previously joined but
+            // no longer ACTIVE requires fresh tenant manage, not stale WS admin.
+            if before.workspace_membership_state.is_some()
+                && !scope_check(spicedb, actor, "tenant", current.tenant_id, "manage")
+                    .await?
+                    .allowed
+            {
+                return Err(denied());
+            }
+        }
+    }
+    let (kind, object) = current
+        .workspace_id
+        .map(|id| ("workspace", id))
+        .unwrap_or(("tenant", current.tenant_id));
+    let checked = scope_check(spicedb, actor, kind, object, permission).await?;
+    if !checked.allowed {
+        return Err(Refusal::Denied(ReasonCode::PermissionDenied));
+    }
+    if scope_facts(conn, actor, current).await? != before {
+        return Err(denied());
+    }
+    let mut scope = json!({"bindingId":binding_id,"generation":current.generation,"tenantId":current.tenant_id,
+        "nativeInstanceRef":current.native_instance_ref,"nativeScopeRef":current.native_scope_ref,
+        "permission":permission,"checkedRevision":checked.zed_token});
+    if let Some(workspace) = current.workspace_id {
+        scope["workspaceId"] = json!(workspace);
+    }
+    serde_json::from_value(json!({"scope":scope})).map_err(|_| unavailable())
 }
 
 async fn resource_facts(
@@ -397,6 +538,42 @@ mod tests {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
     use ring::signature::KeyPair;
 
+    #[test]
+    fn native_human_request_keeps_legacy_choices_and_rejects_scope_selection_or_combination() {
+        let sample: Value = serde_json::from_str(include_str!(
+            "../../../../contracts/samples/native-human-action.sample.json"
+        ))
+        .unwrap();
+        for key in ["request", "resourceRequest", "scopeRequest"] {
+            assert!(request_binding(&sample[key]).is_ok(), "{key}");
+        }
+        for permission in ["query", "read", "unknown"] {
+            let mut raw = sample["scopeRequest"].clone();
+            raw["authorizeScope"]["permission"] = json!(permission);
+            assert!(request_binding(&raw).is_err(), "{permission}");
+        }
+        for field in ["tenantId", "workspaceId", "nativeScopeRef"] {
+            let mut raw = sample["scopeRequest"].clone();
+            raw["authorizeScope"][field] = json!(Uuid::new_v4());
+            assert!(request_binding(&raw).is_err(), "client selected {field}");
+        }
+        for field in ["idempotencyKey", "resolveResource", "sourceResources"] {
+            let mut raw = sample["scopeRequest"].clone();
+            raw[field] = match field {
+                "idempotencyKey" => sample["request"][field].clone(),
+                "resolveResource" => sample["resourceRequest"][field].clone(),
+                _ => json!([{"nativeType":"model","nativeRef":"fixture-model"}]),
+            };
+            assert!(request_binding(&raw).is_err(), "combined {field}");
+        }
+        let mut legacy = sample["request"].clone();
+        legacy["sourceResources"] = json!([{"nativeType":"model","nativeRef":"fixture-model"}]);
+        assert!(request_binding(&legacy).is_ok());
+        assert!(
+            request_binding(&json!({"bindingId":sample["scopeRequest"]["bindingId"]})).is_err()
+        );
+    }
+
     #[tokio::test]
     #[ignore = "requires migrated isolated database"]
     async fn native_resource_selection_uses_exact_registered_scope_and_original_action_facts() {
@@ -422,7 +599,7 @@ mod tests {
                 .unwrap();
         let (tenant,principal,resource):(Uuid,Uuid,Uuid)=sqlx::query_as("select tenant_id,initiator_principal_id,target_id from admission.action_execution where id=$1")
             .bind(action).fetch_one(&mut *tx).await.unwrap();
-        let mut current:Binding=sqlx::query_as("select b.tenant_id,b.active_projection_generation as generation,b.config_digest,
+        let mut current:Binding=sqlx::query_as("select b.tenant_id,b.workspace_id,b.active_projection_generation as generation,b.config_digest,
             coalesce(b.normalized_config->>'client_id','isolated-fixture-client') as client_id,b.adapter_service_ref,b.native_instance_ref,b.native_scope_ref,r.manifest
             from catalog.application_binding b join catalog.component_release r on r.id=b.component_release_id where b.id=$1")
             .bind(binding_id).fetch_one(&mut *tx).await.unwrap();
@@ -559,6 +736,157 @@ mod tests {
                 .await
                 .is_err()
         );
+        // Native project/dashboard CRUD uses the binding's original scope and
+        // fresh public permissions, not an instance claim or a query Action.
+        let workspace = Uuid::new_v4();
+        sqlx::query("insert into identity.workspace(id,tenant_id,slug,name,state) values($1,$2,$3,'isolated native workspace','ACTIVE')")
+            .bind(workspace).bind(tenant).bind(workspace.to_string()).execute(&mut *tx).await.unwrap();
+        let current = Binding {
+            tenant_id: tenant,
+            workspace_id: Some(workspace),
+            generation: 7,
+            config_digest: "isolated-native-config".into(),
+            client_id: "isolated-native-client".into(),
+            adapter_service_ref: "isolated-native-adapter".into(),
+            native_instance_ref: "isolated-native-instance".into(),
+            native_scope_ref: "isolated-native-project".into(),
+            manifest: json!({}),
+        };
+        let actor = mapped_actor(&mut tx, tenant, provider, &issuer, &subject)
+            .await
+            .unwrap();
+        let observed = std::sync::Arc::new((
+            std::sync::atomic::AtomicUsize::new(0),
+            std::sync::Mutex::new(Vec::<Value>::new()),
+        ));
+        let checks = {
+            let observed = observed.clone();
+            move |Json(request): Json<Value>| {
+                let observed = observed.clone();
+                async move {
+                    use std::sync::atomic::Ordering;
+                    assert_eq!(request["consistency"]["fullyConsistent"], true);
+                    assert_eq!(
+                        request["subject"]["object"]["objectId"],
+                        principal.to_string()
+                    );
+                    assert!(matches!(
+                        request["permission"].as_str(),
+                        Some("discover" | "manage")
+                    ));
+                    let mode = observed.0.load(Ordering::SeqCst);
+                    let tenant_denied = mode == 3 && request["resource"]["objectType"] == "tenant";
+                    observed.1.lock().unwrap().push(request);
+                    Json(
+                        json!({"checkedAt":{"token":if mode==2 {""} else {"native-scope-fresh"}},
+                        "permissionship":if mode==1 || tenant_denied {"PERMISSIONSHIP_NO_PERMISSION"} else {"PERMISSIONSHIP_HAS_PERMISSION"}}),
+                    )
+                }
+            }
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let spicedb =
+            crate::spicedb::SpiceDb::for_test(format!("http://{}", listener.local_addr().unwrap()));
+        let router =
+            axum::Router::new().route("/v1/permissions/check", axum::routing::post(checks));
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let binding_id = Uuid::new_v4();
+        let query = json!({"permission":"discover"});
+        let scope = serde_json::to_value(
+            authorize_scope(&mut tx, &spicedb, actor, binding_id, &current, &query)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(scope["scope"]["bindingId"], json!(binding_id));
+        assert_eq!(scope["scope"]["workspaceId"], json!(workspace));
+        assert_eq!(scope["scope"]["generation"], 7);
+        assert_eq!(scope["scope"]["permission"], "discover");
+        // A never-joined workspace administrator is the existing DD-82 case.
+        assert_eq!(
+            observed
+                .1
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|request| request["permission"].as_str().unwrap().to_owned())
+                .collect::<Vec<_>>(),
+            ["manage", "discover"]
+        );
+        let workspace_membership = Uuid::new_v4();
+        sqlx::query("insert into identity.workspace_membership(id,workspace_id,tenant_principal_id,state) values($1,$2,$3,'ACTIVE')")
+            .bind(workspace_membership).bind(workspace).bind(principal).execute(&mut *tx).await.unwrap();
+        observed.1.lock().unwrap().clear();
+        authorize_scope(
+            &mut tx,
+            &spicedb,
+            actor,
+            binding_id,
+            &current,
+            &json!({"permission":"manage"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(observed.1.lock().unwrap().len(), 1);
+        use std::sync::atomic::Ordering;
+        for mode in [1, 2] {
+            observed.0.store(mode, Ordering::SeqCst);
+            assert!(
+                authorize_scope(&mut tx, &spicedb, actor, binding_id, &current, &query)
+                    .await
+                    .is_err()
+            );
+        }
+        sqlx::query("update identity.workspace_membership set state='REVOKED',version=version+1 where id=$1")
+            .bind(workspace_membership).execute(&mut *tx).await.unwrap();
+        // A residual workspace admin tuple must not bypass actual revocation.
+        observed.0.store(3, Ordering::SeqCst);
+        assert!(
+            authorize_scope(&mut tx, &spicedb, actor, binding_id, &current, &query)
+                .await
+                .is_err()
+        );
+        observed.0.store(0, Ordering::SeqCst);
+        authorize_scope(&mut tx, &spicedb, actor, binding_id, &current, &query)
+            .await
+            .unwrap();
+        assert!(authorize_scope(
+            &mut tx,
+            &spicedb,
+            actor,
+            binding_id,
+            &current,
+            &json!({"permission":"execute"})
+        )
+        .await
+        .is_err());
+        assert!(authorize_scope(
+            &mut tx,
+            &spicedb,
+            Actor {
+                human_identity_id: Some(Uuid::new_v4()),
+                ..actor
+            },
+            binding_id,
+            &current,
+            &query
+        )
+        .await
+        .is_err());
+        for (disable,restore,id) in [
+            ("update identity.human_identity set status='DISABLED' where id=$1","update identity.human_identity set status='ACTIVE' where id=$1",human),
+            ("update identity.tenant_membership set state='REVOKED' where tenant_principal_id=$1","update identity.tenant_membership set state='ACTIVE' where tenant_principal_id=$1",principal),
+            ("update identity.principal set status='DISABLED' where id=$1","update identity.principal set status='ACTIVE' where id=$1",principal),
+            ("update identity.tenant set state='SUSPENDED' where id=$1","update identity.tenant set state='ACTIVE' where id=$1",tenant),
+            ("update identity.workspace set state='SUSPENDED' where id=$1","update identity.workspace set state='ACTIVE' where id=$1",workspace),
+        ] {
+            observed.1.lock().unwrap().clear();
+            sqlx::query(disable).bind(id).execute(&mut *tx).await.unwrap();
+            assert!(authorize_scope(&mut tx,&spicedb,actor,binding_id,&current,&query).await.is_err(),"{disable}");
+            assert!(observed.1.lock().unwrap().is_empty(),"inactive identity cannot reach public permission check");
+            sqlx::query(restore).bind(id).execute(&mut *tx).await.unwrap();
+        }
+        server.abort();
         for (disable,restore,id) in [
             ("update identity.external_identity set status='DISABLED' where human_identity_id=$1","update identity.external_identity set status='ACTIVE' where human_identity_id=$1",human),
             ("update identity.human_identity set status='DISABLED' where id=$1","update identity.human_identity set status='ACTIVE' where id=$1",human),

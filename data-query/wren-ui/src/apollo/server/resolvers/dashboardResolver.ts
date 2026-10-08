@@ -34,18 +34,12 @@ const logger = getLogger('DashboardResolver');
 logger.level = 'debug';
 
 export class DashboardResolver {
-  private async readableItems(
-    ctx: IContext,
-    dashboard: Dashboard,
-    project: Project,
-    items: DashboardItem[],
-  ) {
-    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined) return items;
+  private async metadataAccess(ctx: IContext, project: Project) {
     const config = await loadQueryDelivery();
     nativePreviewScope(config, ctx.nativeIdentityScope);
     if (!ctx.nativeHumanToken)
       throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
-    if (config.projectId !== project.id || dashboard.projectId !== project.id)
+    if (config.projectId !== project.id)
       throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
     const { components } = await import('@/common');
     const native = new NativeQueryService(
@@ -73,6 +67,32 @@ export class DashboardResolver {
           return false;
       return true;
     };
+    return { native, permitted };
+  }
+
+  private async readableSql(ctx: IContext, project: Project, sql: string) {
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined) return;
+    const { native, permitted } = await this.metadataAccess(ctx, project);
+    const before = await native.metadataSources(sql);
+    if (!(await permitted(before.objects)))
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    const after = await native.metadataSources(sql);
+    if (after.revision !== before.revision)
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    if (!(await permitted(after.objects)))
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+  }
+
+  private async readableItems(
+    ctx: IContext,
+    dashboard: Dashboard,
+    project: Project,
+    items: DashboardItem[],
+  ) {
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined) return items;
+    if (dashboard.projectId !== project.id)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    const { native, permitted } = await this.metadataAccess(ctx, project);
     const visible: { item: DashboardItem; revision: string }[] = [];
     for (const item of items) {
       if (item.dashboardId !== dashboard.id)
@@ -97,6 +117,18 @@ export class DashboardResolver {
       if (await permitted(sources.objects)) disclosed.push(item);
     }
     return disclosed;
+  }
+
+  private async readableWriteResult(
+    ctx: IContext,
+    project: Project,
+    items: DashboardItem[],
+  ) {
+    const dashboard = await ctx.dashboardService.getCurrentDashboard(project);
+    const readable = await this.readableItems(ctx, dashboard, project, items);
+    if (readable.length !== items.length)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    return items;
   }
 
   private async governedPreview(
@@ -229,18 +261,22 @@ export class DashboardResolver {
       );
     }
 
-    // query with cache enabled
-    const deployment = await ctx.deployService.getLastDeployment(project.id);
-    const mdl = deployment.manifest;
-    await ctx.queryService.preview(response.sql, {
-      project,
-      manifest: mdl,
-      limit: DEFAULT_PREVIEW_LIMIT,
-      cacheEnabled: true,
-      refresh: true,
-    });
+    await this.readableSql(ctx, project, response.sql);
+    // Bound dashboards already warm/refresh this cache via the original chart
+    // hook and governed previewItemSQL. Metadata manage is not SQL execution
+    // permission, so pin must not issue a second unadmitted query here.
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined) {
+      const deployment = await ctx.deployService.getLastDeployment(project.id);
+      await ctx.queryService.preview(response.sql, {
+        project,
+        manifest: deployment.manifest,
+        limit: DEFAULT_PREVIEW_LIMIT,
+        cacheEnabled: true,
+        refresh: true,
+      });
+    }
 
-    return await ctx.dashboardService.createDashboardItem(
+    const item = await ctx.dashboardService.createDashboardItem(
       {
         dashboardId: dashboard.id,
         type: itemType,
@@ -249,6 +285,8 @@ export class DashboardResolver {
       },
       project,
     );
+    await this.readableWriteResult(ctx, project, [item]);
+    return item;
   }
 
   public async updateDashboardItem(
@@ -258,11 +296,17 @@ export class DashboardResolver {
   ): Promise<DashboardItem> {
     const { id } = args.where;
     const { displayName } = args.data;
-    const item = await ctx.dashboardService.getDashboardItem(id);
+    const project = await ctx.projectService.getCurrentProject();
+    const item = await ctx.dashboardService.getDashboardItem(id, project);
     if (!item) {
       throw new Error(`Dashboard item not found. id: ${id}`);
     }
-    return await ctx.dashboardService.updateDashboardItem(id, { displayName });
+    await this.readableWriteResult(ctx, project, [item]);
+    const updated = await ctx.dashboardService.updateDashboardItem(id, {
+      displayName,
+    });
+    await this.readableWriteResult(ctx, project, [updated]);
+    return updated;
   }
 
   public async deleteDashboardItem(
@@ -287,7 +331,17 @@ export class DashboardResolver {
     if (layouts.length === 0) {
       throw new Error('Layouts are required.');
     }
-    return await ctx.dashboardService.updateDashboardItemLayouts(layouts);
+    const project = await ctx.projectService.getCurrentProject();
+    const items = await Promise.all(
+      layouts.map(({ itemId }) =>
+        ctx.dashboardService.getDashboardItem(itemId, project),
+      ),
+    );
+    await this.readableWriteResult(ctx, project, items);
+    const updated =
+      await ctx.dashboardService.updateDashboardItemLayouts(layouts);
+    await this.readableWriteResult(ctx, project, updated);
+    return updated;
   }
 
   public async previewItemSQL(

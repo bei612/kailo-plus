@@ -1,0 +1,24 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"api/native_human_scope_result.schema.json",
+  "title":"NativeHumanScopeResult",
+  "description":"Fresh permission check for native metadata in the authenticated binding's existing tenant/workspace scope. Not an ActionExecution, permission cache, or execution ticket; native Resource bodies still require their own current read permission.",
+  "type":"object","additionalProperties":false,"required":["scope"],
+  "properties":{
+    "scope":{
+      "title":"NativeHumanScopeSelection",
+      "type":"object","additionalProperties":false,
+      "required":["bindingId","generation","tenantId","nativeInstanceRef","nativeScopeRef","permission","checkedRevision"],
+      "properties":{
+        "bindingId":{"type":"string","format":"uuid"},
+        "generation":{"type":"integer","minimum":1},
+        "tenantId":{"type":"string","format":"uuid"},
+        "workspaceId":{"type":"string","format":"uuid"},
+        "nativeInstanceRef":{"type":"string","minLength":1},
+        "nativeScopeRef":{"type":"string","minLength":1},
+        "permission":{"$ref":"native_human_action_request.schema.json#/properties/authorizeScope/properties/permission"},
+        "checkedRevision":{"type":"string","minLength":1}
+      }
+    }
+  }
+}

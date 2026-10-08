@@ -18,6 +18,41 @@ import {
   NativeQueryRefusal,
 } from './nativeQueryAdmission';
 
+export async function authorizeNativeScope(
+  config: NativeQueryDelivery,
+  token: string | undefined,
+  permission: string,
+) {
+  // The binding transport consumes contracts/api/native_human_action_request;
+  // unsupported choices are never forwarded as a native permission.
+  if (!['discover', 'manage'].includes(permission))
+    throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+  if (!token)
+    throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+  const result = await bindingServiceCall(
+    config,
+    'human-action',
+    { bindingId: config.bindingId, authorizeScope: { permission } },
+    token,
+  );
+  const scope = result?.scope;
+  if (
+    !scope ||
+    scope.bindingId !== config.bindingId ||
+    !Number.isSafeInteger(scope.generation) ||
+    scope.generation <= 0 ||
+    scope.tenantId !== config.tenantId ||
+    scope.workspaceId !== config.workspaceId ||
+    scope.nativeInstanceRef !== config.nativeInstanceRef ||
+    scope.nativeScopeRef !== config.nativeScopeRef ||
+    scope.permission !== permission ||
+    typeof scope.checkedRevision !== 'string' ||
+    !scope.checkedRevision
+  )
+    throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+  return scope;
+}
+
 export function nativePreviewScope(
   config: NativeQueryDelivery,
   identityScope: string | undefined,

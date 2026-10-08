@@ -8,8 +8,7 @@ use std::{fs, path::PathBuf};
 #[test]
 fn web_search_query_preserves_original_operators_and_optional_absence() {
     let value: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(sample_path().with_file_name("web-search-query.sample.json"))
-            .unwrap(),
+        &fs::read_to_string(sample_path().with_file_name("web-search-query.sample.json")).unwrap(),
     )
     .unwrap();
     let typed: Vec<contracts::WebSearchQuery> = serde_json::from_value(value.clone()).unwrap();
@@ -159,6 +158,18 @@ fn native_human_action_preserves_trust_and_nonterminal_reference_only_receipt() 
     assert_eq!(
         serde_json::to_value(resource_result).unwrap(),
         sample["resourceResult"]
+    );
+    let scope_request: contracts::NativeHumanActionRequest =
+        serde_json::from_value(sample["scopeRequest"].clone()).unwrap();
+    let scope_result: contracts::NativeHumanScopeResult =
+        serde_json::from_value(sample["scopeResult"].clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(scope_request).unwrap(),
+        sample["scopeRequest"]
+    );
+    assert_eq!(
+        serde_json::to_value(scope_result).unwrap(),
+        sample["scopeResult"]
     );
 }
 
@@ -722,10 +733,16 @@ fn file_storage_revision_io_preserves_exact_versions_empty_text_and_binary() {
         assert_eq!(serde_json::to_value(value).unwrap(), row["readOutput"]);
         let value: contracts::FileStorageListRevisionsInput =
             serde_json::from_value(row["listRevisionsInput"].clone()).unwrap();
-        assert_eq!(serde_json::to_value(value).unwrap(), row["listRevisionsInput"]);
+        assert_eq!(
+            serde_json::to_value(value).unwrap(),
+            row["listRevisionsInput"]
+        );
         let value: contracts::FileStorageListRevisionsOutput =
             serde_json::from_value(row["listRevisionsOutput"].clone()).unwrap();
-        assert_eq!(serde_json::to_value(value).unwrap(), row["listRevisionsOutput"]);
+        assert_eq!(
+            serde_json::to_value(value).unwrap(),
+            row["listRevisionsOutput"]
+        );
         let value: contracts::FileStorageExportInput =
             serde_json::from_value(row["exportInput"].clone()).unwrap();
         assert_eq!(serde_json::to_value(value).unwrap(), row["exportInput"]);

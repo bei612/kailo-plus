@@ -4786,11 +4786,17 @@ pub struct NativeCommunityFacts {
 }
 
 /// Binding SERVICE plus independently verified native HUMAN token. Submit an existing
-/// ActionCommand or observe the same user's idempotency key. Tokens stay in transport, not
-/// this document.
+/// ActionCommand, observe the same user's idempotency key, or freshly check the binding's
+/// own native scope. Tokens stay in transport, not this document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeHumanActionRequest {
+    /// Native metadata access uses existing tenant/workspace permissions. Scope and identity
+    /// come exclusively from the authenticated binding and HUMAN token, never from
+    /// client-selected IDs. This is not Action admission or a reusable ticket.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorize_scope: Option<NativeHumanScopeQuery>,
+
     pub binding_id: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4806,6 +4812,22 @@ pub struct NativeHumanActionRequest {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_resources: Option<Vec<SourceResourceElement>>,
+}
+
+/// Native metadata access uses existing tenant/workspace permissions. Scope and identity
+/// come exclusively from the authenticated binding and HUMAN token, never from
+/// client-selected IDs. This is not Action admission or a reusable ticket.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NativeHumanScopeQuery {
+    pub permission: Permission,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Permission {
+    Discover,
+
+    Manage,
 }
 
 /// POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
@@ -5056,6 +5078,35 @@ pub struct NativeHumanResourceSelection {
     pub resource_id: String,
 
     pub resource_version: i64,
+}
+
+/// Fresh permission check for native metadata in the authenticated binding's existing
+/// tenant/workspace scope. Not an ActionExecution, permission cache, or execution ticket;
+/// native Resource bodies still require their own current read permission.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NativeHumanScopeResult {
+    pub scope: NativeHumanScopeSelection,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeHumanScopeSelection {
+    pub binding_id: String,
+
+    pub checked_revision: String,
+
+    pub generation: i64,
+
+    pub native_instance_ref: String,
+
+    pub native_scope_ref: String,
+
+    pub permission: Permission,
+
+    pub tenant_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
 }
 
 /// GET /api/v1/audit 回应数组的元素：调用方本人在当前 Tenant 内的动作（.design/03 §14 的最小集合）。

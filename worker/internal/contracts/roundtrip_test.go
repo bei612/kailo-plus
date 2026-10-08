@@ -247,6 +247,8 @@ func TestNativeHumanActionRoundtrip(t *testing.T) {
 		Result          generated.NativeHumanActionResult        `json:"result"`
 		ResourceRequest generated.NativeHumanActionRequest       `json:"resourceRequest"`
 		ResourceResult  generated.NativeHumanResourceResult      `json:"resourceResult"`
+		ScopeRequest    generated.NativeHumanActionRequest       `json:"scopeRequest"`
+		ScopeResult     generated.NativeHumanScopeResult         `json:"scopeResult"`
 	}
 	if err := json.Unmarshal(raw, &sample); err != nil {
 		t.Fatal(err)

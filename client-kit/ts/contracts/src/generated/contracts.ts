@@ -3223,10 +3223,16 @@ export interface NativeCommunityFacts {
 
 /**
  * Binding SERVICE plus independently verified native HUMAN token. Submit an existing
- * ActionCommand or observe the same user's idempotency key. Tokens stay in transport, not
- * this document.
+ * ActionCommand, observe the same user's idempotency key, or freshly check the binding's
+ * own native scope. Tokens stay in transport, not this document.
  */
 export interface NativeHumanActionRequest {
+    /**
+     * Native metadata access uses existing tenant/workspace permissions. Scope and identity
+     * come exclusively from the authenticated binding and HUMAN token, never from
+     * client-selected IDs. This is not Action admission or a reusable ticket.
+     */
+    authorizeScope?: NativeHumanScopeQuery;
     bindingId:       string;
     command?:        CommandClass;
     idempotencyKey?: string;
@@ -3236,6 +3242,20 @@ export interface NativeHumanActionRequest {
      */
     resolveResource?: NativeHumanResourceQuery;
     sourceResources?: SourceResourceElement[];
+}
+
+/**
+ * Native metadata access uses existing tenant/workspace permissions. Scope and identity
+ * come exclusively from the authenticated binding and HUMAN token, never from
+ * client-selected IDs. This is not Action admission or a reusable ticket.
+ */
+export interface NativeHumanScopeQuery {
+    permission: Permission;
+}
+
+export enum Permission {
+    Discover = "discover",
+    Manage = "manage",
 }
 
 /**
@@ -3437,6 +3457,26 @@ export interface NativeHumanResourceSelection {
     nativeType:        string;
     resourceId:        string;
     resourceVersion:   number;
+}
+
+/**
+ * Fresh permission check for native metadata in the authenticated binding's existing
+ * tenant/workspace scope. Not an ActionExecution, permission cache, or execution ticket;
+ * native Resource bodies still require their own current read permission.
+ */
+export interface NativeHumanScopeResult {
+    scope: NativeHumanScopeSelection;
+}
+
+export interface NativeHumanScopeSelection {
+    bindingId:         string;
+    checkedRevision:   string;
+    generation:        number;
+    nativeInstanceRef: string;
+    nativeScopeRef:    string;
+    permission:        Permission;
+    tenantId:          string;
+    workspaceId?:      string;
 }
 
 /**

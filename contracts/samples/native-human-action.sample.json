@@ -33,6 +33,22 @@
       "nativeScopeRef": "3"
     }
   },
+  "scopeRequest": {
+    "bindingId": "3c0c015a-373a-4af1-8cbe-4a7e437bdbe1",
+    "authorizeScope": { "permission": "manage" }
+  },
+  "scopeResult": {
+    "scope": {
+      "bindingId": "3c0c015a-373a-4af1-8cbe-4a7e437bdbe1",
+      "generation": 2,
+      "tenantId": "94252008-9b30-4500-bb73-e9299ce80506",
+      "workspaceId": "87c27723-e475-4e0b-a0e9-50e5d755fe63",
+      "nativeInstanceRef": "fixture-dedicated-instance",
+      "nativeScopeRef": "3",
+      "permission": "manage",
+      "checkedRevision": "fixture-fresh-check-revision"
+    }
+  },
   "result": {
     "submission": {
       "operationId": "e75c0307-2614-4786-ac31-14e719f728a9",

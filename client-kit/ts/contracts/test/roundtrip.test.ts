@@ -92,6 +92,8 @@ test("native human action preserves controlled trust and nonterminal references"
     result: import("../src/generated/contracts.js").NativeHumanActionResult;
     resourceRequest: import("../src/generated/contracts.js").NativeHumanActionRequest;
     resourceResult: import("../src/generated/contracts.js").NativeHumanResourceResult;
+    scopeRequest: import("../src/generated/contracts.js").NativeHumanActionRequest;
+    scopeResult: import("../src/generated/contracts.js").NativeHumanScopeResult;
   } = JSON.parse(readFileSync(new URL("../../../../contracts/samples/native-human-action.sample.json", import.meta.url), "utf8"));
   const t=sample.trust, r=sample.request, o=sample.result;
   const trust: typeof t = {bindingId:t.bindingId,configDigest:t.configDigest,generation:t.generation,
@@ -104,7 +106,12 @@ test("native human action preserves controlled trust and nonterminal references"
   const s=sample.resourceResult.resource;
   const resourceResult:typeof sample.resourceResult={resource:{resourceId:s.resourceId,resourceVersion:s.resourceVersion,
     nativeType:s.nativeType,nativeRef:s.nativeRef,nativeInstanceRef:s.nativeInstanceRef,nativeScopeRef:s.nativeScopeRef}};
-  deepStrictEqual(JSON.parse(JSON.stringify({trust,request,result,resourceRequest,resourceResult})),sample);
+  const sq=sample.scopeRequest;
+  const scopeRequest:typeof sq={bindingId:sq.bindingId,authorizeScope:{permission:sq.authorizeScope!.permission}};
+  const sp=sample.scopeResult.scope;
+  const scopeResult:typeof sample.scopeResult={scope:{bindingId:sp.bindingId,generation:sp.generation,tenantId:sp.tenantId,
+    workspaceId:sp.workspaceId,nativeInstanceRef:sp.nativeInstanceRef,nativeScopeRef:sp.nativeScopeRef,permission:sp.permission,checkedRevision:sp.checkedRevision}};
+  deepStrictEqual(JSON.parse(JSON.stringify({trust,request,result,resourceRequest,resourceResult,scopeRequest,scopeResult})),sample);
 });
 
 test("automation topic step preserves explicit empty topic", () => {

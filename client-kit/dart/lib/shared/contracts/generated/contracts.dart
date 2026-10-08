@@ -96,6 +96,7 @@
 //     final nativeHumanActionRequest = nativeHumanActionRequestFromJson(jsonString);
 //     final nativeHumanActionResult = nativeHumanActionResultFromJson(jsonString);
 //     final nativeHumanResourceResult = nativeHumanResourceResultFromJson(jsonString);
+//     final nativeHumanScopeResult = nativeHumanScopeResultFromJson(jsonString);
 //     final ownAuditEntry = ownAuditEntryFromJson(jsonString);
 //     final platformInfo = platformInfoFromJson(jsonString);
 //     final platformTenantPage = platformTenantPageFromJson(jsonString);
@@ -808,6 +809,12 @@ NativeHumanResourceResult nativeHumanResourceResultFromJson(String str) =>
     NativeHumanResourceResult.fromJson(json.decode(str));
 
 String nativeHumanResourceResultToJson(NativeHumanResourceResult data) =>
+    json.encode(data.toJson());
+
+NativeHumanScopeResult nativeHumanScopeResultFromJson(String str) =>
+    NativeHumanScopeResult.fromJson(json.decode(str));
+
+String nativeHumanScopeResultToJson(NativeHumanScopeResult data) =>
     json.encode(data.toJson());
 
 OwnAuditEntry ownAuditEntryFromJson(String str) =>
@@ -9838,9 +9845,13 @@ class NativeCommunityFacts {
 }
 
 ///Binding SERVICE plus independently verified native HUMAN token. Submit an existing
-///ActionCommand or observe the same user's idempotency key. Tokens stay in transport, not
-///this document.
+///ActionCommand, observe the same user's idempotency key, or freshly check the binding's
+///own native scope. Tokens stay in transport, not this document.
 class NativeHumanActionRequest {
+  ///Native metadata access uses existing tenant/workspace permissions. Scope and identity
+  ///come exclusively from the authenticated binding and HUMAN token, never from
+  ///client-selected IDs. This is not Action admission or a reusable ticket.
+  final NativeHumanScopeQuery? authorizeScope;
   final String bindingId;
   final CommandClass? command;
   final String? idempotencyKey;
@@ -9851,6 +9862,7 @@ class NativeHumanActionRequest {
   final List<SourceResourceElement>? sourceResources;
 
   NativeHumanActionRequest({
+    this.authorizeScope,
     required this.bindingId,
     this.command,
     this.idempotencyKey,
@@ -9860,6 +9872,9 @@ class NativeHumanActionRequest {
 
   factory NativeHumanActionRequest.fromJson(Map<String, dynamic> json) =>
       NativeHumanActionRequest(
+        authorizeScope: json["authorizeScope"] == null
+            ? null
+            : NativeHumanScopeQuery.fromJson(json["authorizeScope"]),
         bindingId: json["bindingId"],
         command: json["command"] == null
             ? null
@@ -9878,6 +9893,7 @@ class NativeHumanActionRequest {
       );
 
   Map<String, dynamic> toJson() => _stripNulls({
+    "authorizeScope": authorizeScope?.toJson(),
     "bindingId": bindingId,
     "command": command?.toJson(),
     "idempotencyKey": idempotencyKey,
@@ -9887,6 +9903,30 @@ class NativeHumanActionRequest {
         : List<dynamic>.from(sourceResources!.map((x) => x.toJson())),
   });
 }
+
+///Native metadata access uses existing tenant/workspace permissions. Scope and identity
+///come exclusively from the authenticated binding and HUMAN token, never from
+///client-selected IDs. This is not Action admission or a reusable ticket.
+class NativeHumanScopeQuery {
+  final Permission permission;
+
+  NativeHumanScopeQuery({required this.permission});
+
+  factory NativeHumanScopeQuery.fromJson(Map<String, dynamic> json) =>
+      NativeHumanScopeQuery(
+        permission: permissionValues.map[json["permission"]]!,
+      );
+
+  Map<String, dynamic> toJson() =>
+      _stripNulls({"permission": permissionValues.reverse[permission]});
+}
+
+enum Permission { DISCOVER, MANAGE }
+
+final permissionValues = EnumValues({
+  "discover": Permission.DISCOVER,
+  "manage": Permission.MANAGE,
+});
 
 ///POST /api/v1/actions 的语义命令。actionKey 由 Core 的 ActionDefinition 目录解析，未登记即 BLOCKED；各动作所需参数按
 ///actionKey 解释，多出或缺少的参数以 INVALID_PARAMETERS 拒绝。
@@ -10353,6 +10393,67 @@ class NativeHumanResourceSelection {
     "nativeType": nativeType,
     "resourceId": resourceId,
     "resourceVersion": resourceVersion,
+  });
+}
+
+///Fresh permission check for native metadata in the authenticated binding's existing
+///tenant/workspace scope. Not an ActionExecution, permission cache, or execution ticket;
+///native Resource bodies still require their own current read permission.
+class NativeHumanScopeResult {
+  final NativeHumanScopeSelection scope;
+
+  NativeHumanScopeResult({required this.scope});
+
+  factory NativeHumanScopeResult.fromJson(Map<String, dynamic> json) =>
+      NativeHumanScopeResult(
+        scope: NativeHumanScopeSelection.fromJson(json["scope"]),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({"scope": scope.toJson()});
+}
+
+class NativeHumanScopeSelection {
+  final String bindingId;
+  final String checkedRevision;
+  final int generation;
+  final String nativeInstanceRef;
+  final String nativeScopeRef;
+  final Permission permission;
+  final String tenantId;
+  final String? workspaceId;
+
+  NativeHumanScopeSelection({
+    required this.bindingId,
+    required this.checkedRevision,
+    required this.generation,
+    required this.nativeInstanceRef,
+    required this.nativeScopeRef,
+    required this.permission,
+    required this.tenantId,
+    this.workspaceId,
+  });
+
+  factory NativeHumanScopeSelection.fromJson(Map<String, dynamic> json) =>
+      NativeHumanScopeSelection(
+        bindingId: json["bindingId"],
+        checkedRevision: json["checkedRevision"],
+        generation: json["generation"],
+        nativeInstanceRef: json["nativeInstanceRef"],
+        nativeScopeRef: json["nativeScopeRef"],
+        permission: permissionValues.map[json["permission"]]!,
+        tenantId: json["tenantId"],
+        workspaceId: json["workspaceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "checkedRevision": checkedRevision,
+    "generation": generation,
+    "nativeInstanceRef": nativeInstanceRef,
+    "nativeScopeRef": nativeScopeRef,
+    "permission": permissionValues.reverse[permission],
+    "tenantId": tenantId,
+    "workspaceId": workspaceId,
   });
 }
 

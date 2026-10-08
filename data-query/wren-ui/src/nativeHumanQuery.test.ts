@@ -1,6 +1,7 @@
 import {
   NativeHumanQuery,
   nativePreviewScope,
+  authorizeNativeScope,
 } from './apollo/server/services/nativeHumanQuery';
 import { NativeQueryService } from './apollo/server/services/nativeQueryService';
 import {
@@ -20,6 +21,7 @@ import { AskingResolver } from './apollo/server/resolvers/askingResolver';
 import { getQueryPreviewText } from './utils/language';
 import referenceHandler from './pages/api/platform-query-reference';
 import { ApiHistoryResolver } from './apollo/server/resolvers/apiHistoryResolver';
+import originalResolvers from './apollo/server/resolvers';
 import { ApolloServer } from 'apollo-server-micro';
 import GraphQLJSON from 'graphql-type-json';
 import { typeDefs } from './apollo/server/schema';
@@ -963,6 +965,19 @@ describe('native saved-view HUMAN query consumer', () => {
           parseCronExpression: jest
             .fn()
             .mockReturnValue({ frequency: 'NEVER' }),
+          createDashboardItem: jest.fn().mockResolvedValue(item),
+          updateDashboardItem: jest.fn().mockResolvedValue(item),
+          updateDashboardItemLayouts: jest.fn().mockResolvedValue([item]),
+        },
+        askingService: {
+          getResponse: jest.fn().mockResolvedValue({
+            id: 31,
+            sql: statement,
+            chartDetail: { chartSchema: item.detail.chartSchema },
+          }),
+        },
+        deployService: {
+          getLastDeployment: jest.fn().mockResolvedValue(deployment),
         },
       };
     });
@@ -1126,12 +1141,320 @@ describe('native saved-view HUMAN query consumer', () => {
         expect(ctx.queryService.preview).not.toHaveBeenCalled();
       },
     );
+    const write = (operation: string) => {
+      const resolver = new DashboardResolver();
+      if (operation === 'pin')
+        return resolver.createDashboardItem(
+          null,
+          { data: { itemType: 'BAR' as any, responseId: 31 } },
+          ctx,
+        );
+      if (operation === 'layout')
+        return resolver.updateDashboardItemLayouts(
+          null,
+          { data: { layouts: [{ itemId: item.id, x: 0, y: 0, w: 3, h: 2 }] } },
+          ctx,
+        );
+      return resolver.updateDashboardItem(
+        null,
+        { where: { id: item.id }, data: { displayName: 'Original title' } },
+        ctx,
+      );
+    };
+    it.each(['pin', 'update', 'layout'])(
+      'keeps the original %s write/full response after fresh source reads without a second naked query',
+      async (operation) => {
+        expect(await write(operation)).toEqual(
+          operation === 'layout' ? [item] : item,
+        );
+        expect(calls).toHaveBeenCalledTimes(8);
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+        expect(
+          ctx.dashboardService[
+            operation === 'pin'
+              ? 'createDashboardItem'
+              : operation === 'layout'
+                ? 'updateDashboardItemLayouts'
+                : 'updateDashboardItem'
+          ],
+        ).toHaveBeenCalledTimes(1);
+        if (operation === 'pin')
+          expect(ctx.dashboardService.createDashboardItem).toHaveBeenCalledWith(
+            {
+              dashboardId: 4,
+              type: 'BAR',
+              sql: statement,
+              chartSchema: item.detail.chartSchema,
+            },
+            { id: 3 },
+          );
+      },
+    );
+    it.each(['pin', 'update', 'layout'])(
+      'refuses an unreadable source before the original %s metadata write',
+      async (operation) => {
+        calls.mockRejectedValue(
+          new NativeQueryRefusal(403, 'QUERY_ADMISSION_UNAVAILABLE', true),
+        );
+        await expect(write(operation)).rejects.toThrow('QUERY_SCOPE_DENIED');
+        expect(ctx.dashboardService.createDashboardItem).not.toHaveBeenCalled();
+        expect(ctx.dashboardService.updateDashboardItem).not.toHaveBeenCalled();
+        expect(
+          ctx.dashboardService.updateDashboardItemLayouts,
+        ).not.toHaveBeenCalled();
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['pin', 'update', 'layout'])(
+      'does not disclose the full %s write response after a source is revoked and never repeats the write',
+      async (operation) => {
+        let checks = 0;
+        calls.mockImplementation(async (...args) => {
+          if (++checks === 8)
+            throw new NativeQueryRefusal(
+              403,
+              'QUERY_ADMISSION_UNAVAILABLE',
+              true,
+            );
+          return resolve(...args);
+        });
+        await expect(write(operation)).rejects.toThrow('QUERY_SCOPE_DENIED');
+        expect(
+          ctx.dashboardService[
+            operation === 'pin'
+              ? 'createDashboardItem'
+              : operation === 'layout'
+                ? 'updateDashboardItemLayouts'
+                : 'updateDashboardItem'
+          ],
+        ).toHaveBeenCalledTimes(1);
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it('retains original standalone pin cache warming, INSERT and full response without a manufactured platform Action', async () => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      expect(await write('pin')).toEqual(item);
+      expect(ctx.queryService.preview).toHaveBeenCalledWith(statement, {
+        project: { id: 3 },
+        manifest: deployment.manifest,
+        limit: 500,
+        cacheEnabled: true,
+        refresh: true,
+      });
+      expect(ctx.dashboardService.createDashboardItem).toHaveBeenCalledTimes(1);
+      expect(calls).not.toHaveBeenCalled();
+    });
     it('preserves the exact never-configured standalone metadata response without creating a query or permission ticket', async () => {
       delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
       expect(await read('getDashboardItems')).toEqual([item]);
       expect(calls).not.toHaveBeenCalled();
       expect(ctx.queryService.sourceObjects).not.toHaveBeenCalled();
       expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('original native project scope permission consumers', () => {
+    let previous: string | undefined;
+    let ctx: any;
+    const scopeConfig = {
+      ...config,
+      tenantId: 'a153ac6a-c04e-4d35-bb3e-15c01a9c38b7',
+    };
+    const scopeResult = (permission: string) => ({
+      scope: {
+        bindingId: binding,
+        generation: 2,
+        tenantId: scopeConfig.tenantId,
+        workspaceId: config.workspaceId,
+        nativeInstanceRef: config.nativeInstanceRef,
+        nativeScopeRef: config.nativeScopeRef,
+        permission,
+        checkedRevision: 'fresh-public-scope',
+      },
+    });
+    const update = () =>
+      originalResolvers.Mutation.updateCurrentProject(
+        null,
+        { data: { language: 'zh-TW' } },
+        ctx,
+      );
+    beforeEach(() => {
+      previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+        'fixture-controlled-delivery';
+      jest.mocked(loadQueryDelivery).mockResolvedValue(scopeConfig);
+      calls.mockImplementation(async (_config, _operation, input) =>
+        scopeResult((input.authorizeScope as any).permission),
+      );
+      ctx = {
+        nativeHumanToken: 'verified-native-token',
+        nativeIdentityScope: 'a'.repeat(64),
+        projectService: {
+          getCurrentProject: jest.fn().mockResolvedValue({
+            id: 3,
+            sampleDataset: 'fixture',
+            language: 'en',
+          }),
+          getGeneralConnectionInfo: jest.fn().mockReturnValue({}),
+          generateProjectRecommendationQuestions: jest.fn(),
+        },
+        projectRepository: { updateOne: jest.fn() },
+        config: { wrenProductVersion: 'fixture-original-version' },
+      };
+    });
+    afterEach(() => {
+      if (previous === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+    });
+    it('executes the original project mutation only between two current binding manage checks without creating a query Action', async () => {
+      expect(await update()).toBe(true);
+      expect(ctx.projectRepository.updateOne).toHaveBeenCalledWith(3, {
+        language: 'zh-TW',
+      });
+      expect(calls.mock.calls.map((entry) => entry.slice(1))).toEqual([
+        [
+          'human-action',
+          { bindingId: binding, authorizeScope: { permission: 'manage' } },
+          ctx.nativeHumanToken,
+        ],
+        [
+          'human-action',
+          { bindingId: binding, authorizeScope: { permission: 'manage' } },
+          ctx.nativeHumanToken,
+        ],
+      ]);
+      expect(calls.mock.invocationCallOrder[0]).toBeLessThan(
+        ctx.projectRepository.updateOne.mock.invocationCallOrder[0],
+      );
+      expect(calls.mock.invocationCallOrder[1]).toBeGreaterThan(
+        ctx.projectRepository.updateOne.mock.invocationCallOrder[0],
+      );
+    });
+    it.each([
+      'update',
+      'reset',
+      'pin',
+      'layout',
+      'schedule',
+      'model',
+      'instruction',
+      'sql-pair',
+    ] as const)(
+      'refuses denied manage before the original %s write is entered',
+      async (field) => {
+        calls.mockRejectedValue(
+          new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+        );
+        const methods = {
+          update: 'updateCurrentProject',
+          reset: 'resetCurrentProject',
+          pin: 'createDashboardItem',
+          layout: 'updateDashboardItemLayouts',
+          schedule: 'setDashboardSchedule',
+          model: 'createModel',
+          instruction: 'createInstruction',
+          'sql-pair': 'createSqlPair',
+        } as const;
+        await expect(
+          (originalResolvers.Mutation[methods[field]] as any)(null, {}, ctx),
+        ).rejects.toThrow('QUERY_SCOPE_DENIED');
+        expect(ctx.projectService.getCurrentProject).not.toHaveBeenCalled();
+        expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+      },
+    );
+    it('checks discovery for the full original settings response without requiring project manage or SQL', async () => {
+      expect(
+        await originalResolvers.Query.settings(null, {}, ctx),
+      ).toMatchObject({
+        productVersion: 'fixture-original-version',
+        language: 'en',
+      });
+      expect(
+        calls.mock.calls.every(
+          (entry) =>
+            (entry[2].authorizeScope as any)?.permission === 'discover',
+        ),
+      ).toBe(true);
+      expect(calls).toHaveBeenCalledTimes(2);
+      expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+    });
+    it('does not disclose even empty native metadata when current discovery is refused', async () => {
+      calls.mockRejectedValue(
+        new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+      );
+      await expect(
+        originalResolvers.Query.settings(null, {}, ctx),
+      ).rejects.toThrow('QUERY_SCOPE_DENIED');
+      expect(
+        ctx.projectService.getGeneralConnectionInfo,
+      ).not.toHaveBeenCalled();
+    });
+    it.each(['identity', 'token', 'project', 'config'])(
+      'does not fall back to standalone for a configured invalid %s',
+      async (field) => {
+        if (field === 'identity') ctx.nativeIdentityScope = undefined;
+        if (field === 'token') ctx.nativeHumanToken = undefined;
+        if (field === 'project')
+          ctx.projectService.getCurrentProject.mockResolvedValue({ id: 99 });
+        if (field === 'config') {
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+          jest
+            .mocked(loadQueryDelivery)
+            .mockRejectedValue(
+              new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE'),
+            );
+        }
+        await expect(update()).rejects.toBeInstanceOf(NativeQueryRefusal);
+        expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+      },
+    );
+    it.each([
+      'bindingId',
+      'tenantId',
+      'workspaceId',
+      'nativeInstanceRef',
+      'nativeScopeRef',
+      'permission',
+      'checkedRevision',
+      'generation',
+    ])(
+      'refuses malformed authoritative scope %s before original mutation',
+      async (field) => {
+        const response = scopeResult('manage');
+        (response.scope as any)[field] = field === 'generation' ? 0 : '';
+        calls.mockResolvedValue(response);
+        await expect(update()).rejects.toThrow('QUERY_SCOPE_DENIED');
+        expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
+      },
+    );
+    it('does not render a native write as confirmed after the current scope is revoked, and does not retry it', async () => {
+      calls
+        .mockResolvedValueOnce(scopeResult('manage'))
+        .mockRejectedValue(new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'));
+      await expect(update()).rejects.toThrow('QUERY_SCOPE_DENIED');
+      expect(ctx.projectRepository.updateOne).toHaveBeenCalledTimes(1);
+    });
+    it('refuses a changed binding generation after one original write without repeating it', async () => {
+      const changed = scopeResult('manage');
+      changed.scope.generation++;
+      calls
+        .mockResolvedValueOnce(scopeResult('manage'))
+        .mockResolvedValueOnce(changed);
+      await expect(update()).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+      expect(ctx.projectRepository.updateOne).toHaveBeenCalledTimes(1);
+    });
+    it('refuses an unknown permission instead of forwarding a reusable native permission ticket', async () => {
+      await expect(
+        authorizeNativeScope(scopeConfig, ctx.nativeHumanToken, 'query'),
+      ).rejects.toThrow('QUERY_SCOPE_DENIED');
+      expect(calls).not.toHaveBeenCalled();
+    });
+    it('retains the original never-configured standalone project mutation', async () => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      expect(await update()).toBe(true);
+      expect(ctx.projectRepository.updateOne).toHaveBeenCalledTimes(1);
+      expect(calls).not.toHaveBeenCalled();
     });
   });
 

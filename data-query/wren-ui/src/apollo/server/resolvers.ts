@@ -10,6 +10,55 @@ import { InstructionResolver } from './resolvers/instructionResolver';
 import { ApiHistoryResolver } from './resolvers/apiHistoryResolver';
 import { convertColumnType } from '@server/utils';
 import { DialectSQLScalar } from './scalars';
+import { IContext } from './types';
+import {
+  authorizeNativeScope,
+  nativePreviewScope,
+} from './services/nativeHumanQuery';
+import {
+  digest,
+  loadQueryDelivery,
+  NativeQueryRefusal,
+} from './services/nativeQueryAdmission';
+
+// Original native metadata remains native CRUD, not a fabricated query Action.
+// This request boundary consumes the existing binding's public scope permission;
+// Resource bodies and actual SQL retain their separate read/execution consumers.
+function nativeProjectResolver<T extends (...args: any[]) => any>(
+  resolver: T,
+  permission: string,
+  disclose?: (ctx: IContext, output: Awaited<ReturnType<T>>) => Promise<void>,
+): T {
+  return (async (root: any, args: any, ctx: IContext, info: any) => {
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined)
+      return resolver(root, args, ctx, info);
+    const config = await loadQueryDelivery();
+    nativePreviewScope(config, ctx.nativeIdentityScope);
+    const before = await authorizeNativeScope(
+      config,
+      ctx.nativeHumanToken,
+      permission,
+    );
+    const project = await ctx.projectService.getCurrentProject();
+    if (
+      project.id !== config.projectId ||
+      String(project.id) !== config.nativeScopeRef
+    )
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    const output = await resolver(root, args, ctx, info);
+    if (disclose) await disclose(ctx, output);
+    if (digest(await loadQueryDelivery()) !== digest(config))
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    const after = await authorizeNativeScope(
+      config,
+      ctx.nativeHumanToken,
+      permission,
+    );
+    if (after.generation !== before.generation)
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    return output;
+  }) as T;
+}
 
 const projectResolver = new ProjectResolver();
 const modelResolver = new ModelResolver();
@@ -77,29 +126,105 @@ const resolvers = {
     apiHistory: apiHistoryResolver.getApiHistory,
   },
   Mutation: {
-    deploy: modelResolver.deploy,
-    saveDataSource: projectResolver.saveDataSource,
-    startSampleDataset: projectResolver.startSampleDataset,
-    saveTables: projectResolver.saveTables,
-    saveRelations: projectResolver.saveRelations,
-    createModel: modelResolver.createModel,
-    updateModel: modelResolver.updateModel,
-    deleteModel: modelResolver.deleteModel,
+    deploy: nativeProjectResolver(modelResolver.deploy, 'manage'),
+    saveDataSource: nativeProjectResolver(
+      projectResolver.saveDataSource,
+      'manage',
+    ),
+    startSampleDataset: nativeProjectResolver(
+      projectResolver.startSampleDataset,
+      'manage',
+    ),
+    saveTables: nativeProjectResolver(projectResolver.saveTables, 'manage'),
+    saveRelations: nativeProjectResolver(
+      projectResolver.saveRelations,
+      'manage',
+    ),
+    createModel: nativeProjectResolver(
+      modelResolver.createModel,
+      'manage',
+      async (ctx, row) => {
+        await modelResolver.getModel(null, { where: { id: row.id } }, ctx);
+      },
+    ),
+    updateModel: nativeProjectResolver(
+      modelResolver.updateModel,
+      'manage',
+      async (ctx, row) => {
+        await modelResolver.getModel(null, { where: { id: row.id } }, ctx);
+      },
+    ),
+    deleteModel: nativeProjectResolver(modelResolver.deleteModel, 'manage'),
     previewModelData: modelResolver.previewModelData,
-    updateModelMetadata: modelResolver.updateModelMetadata,
-    triggerDataSourceDetection: projectResolver.triggerDataSourceDetection,
-    resolveSchemaChange: projectResolver.resolveSchemaChange,
+    updateModelMetadata: nativeProjectResolver(
+      modelResolver.updateModelMetadata,
+      'manage',
+    ),
+    triggerDataSourceDetection: nativeProjectResolver(
+      projectResolver.triggerDataSourceDetection,
+      'manage',
+    ),
+    resolveSchemaChange: nativeProjectResolver(
+      projectResolver.resolveSchemaChange,
+      'manage',
+    ),
 
     // calculated field
-    createCalculatedField: modelResolver.createCalculatedField,
+    createCalculatedField: nativeProjectResolver(
+      modelResolver.createCalculatedField,
+      'manage',
+      async (ctx, row) => {
+        await modelResolver.getModel(null, { where: { id: row.modelId } }, ctx);
+      },
+    ),
     validateCalculatedField: modelResolver.validateCalculatedField,
-    updateCalculatedField: modelResolver.updateCalculatedField,
-    deleteCalculatedField: modelResolver.deleteCalculatedField,
+    updateCalculatedField: nativeProjectResolver(
+      modelResolver.updateCalculatedField,
+      'manage',
+      async (ctx, row) => {
+        await modelResolver.getModel(null, { where: { id: row.modelId } }, ctx);
+      },
+    ),
+    deleteCalculatedField: nativeProjectResolver(
+      modelResolver.deleteCalculatedField,
+      'manage',
+    ),
 
     // relation
-    createRelation: modelResolver.createRelation,
-    updateRelation: modelResolver.updateRelation,
-    deleteRelation: modelResolver.deleteRelation,
+    createRelation: nativeProjectResolver(
+      modelResolver.createRelation,
+      'manage',
+      async (ctx, row) => {
+        for (const id of [row.fromColumnId, row.toColumnId]) {
+          const column = await ctx.modelColumnRepository.findOneBy({ id });
+          if (!column) throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+          await modelResolver.getModel(
+            null,
+            { where: { id: column.modelId } },
+            ctx,
+          );
+        }
+      },
+    ),
+    updateRelation: nativeProjectResolver(
+      modelResolver.updateRelation,
+      'manage',
+      async (ctx, row) => {
+        for (const id of [row.fromColumnId, row.toColumnId]) {
+          const column = await ctx.modelColumnRepository.findOneBy({ id });
+          if (!column) throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+          await modelResolver.getModel(
+            null,
+            { where: { id: column.modelId } },
+            ctx,
+          );
+        }
+      },
+    ),
+    deleteRelation: nativeProjectResolver(
+      modelResolver.deleteRelation,
+      'manage',
+    ),
 
     // Ask
     createAskingTask: askingResolver.createAskingTask,
@@ -136,16 +261,34 @@ const resolvers = {
     adjustThreadResponseChart: askingResolver.adjustThreadResponseChart,
 
     // Views
-    createView: modelResolver.createView,
-    deleteView: modelResolver.deleteView,
+    createView: nativeProjectResolver(
+      modelResolver.createView,
+      'manage',
+      async (ctx, row) => {
+        await modelResolver.getView(null, { where: { id: row.id } }, ctx);
+      },
+    ),
+    deleteView: nativeProjectResolver(modelResolver.deleteView, 'manage'),
     previewViewData: modelResolver.previewViewData,
     validateView: modelResolver.validateView,
-    updateViewMetadata: modelResolver.updateViewMetadata,
+    updateViewMetadata: nativeProjectResolver(
+      modelResolver.updateViewMetadata,
+      'manage',
+    ),
 
     // Settings
-    resetCurrentProject: projectResolver.resetCurrentProject,
-    updateCurrentProject: projectResolver.updateCurrentProject,
-    updateDataSource: projectResolver.updateDataSource,
+    resetCurrentProject: nativeProjectResolver(
+      projectResolver.resetCurrentProject,
+      'manage',
+    ),
+    updateCurrentProject: nativeProjectResolver(
+      projectResolver.updateCurrentProject,
+      'manage',
+    ),
+    updateDataSource: nativeProjectResolver(
+      projectResolver.updateDataSource,
+      'manage',
+    ),
 
     // preview
     previewSql: modelResolver.previewSql,
@@ -156,27 +299,62 @@ const resolvers = {
     // Recommendation questions
     generateThreadRecommendationQuestions:
       askingResolver.generateThreadRecommendationQuestions,
-    generateProjectRecommendationQuestions:
+    generateProjectRecommendationQuestions: nativeProjectResolver(
       askingResolver.generateProjectRecommendationQuestions,
+      'manage',
+    ),
 
     // Dashboard
-    updateDashboardItemLayouts: dashboardResolver.updateDashboardItemLayouts,
-    createDashboardItem: dashboardResolver.createDashboardItem,
-    updateDashboardItem: dashboardResolver.updateDashboardItem,
-    deleteDashboardItem: dashboardResolver.deleteDashboardItem,
+    updateDashboardItemLayouts: nativeProjectResolver(
+      dashboardResolver.updateDashboardItemLayouts,
+      'manage',
+    ),
+    createDashboardItem: nativeProjectResolver(
+      dashboardResolver.createDashboardItem,
+      'manage',
+    ),
+    updateDashboardItem: nativeProjectResolver(
+      dashboardResolver.updateDashboardItem,
+      'manage',
+    ),
+    deleteDashboardItem: nativeProjectResolver(
+      dashboardResolver.deleteDashboardItem,
+      'manage',
+    ),
     previewItemSQL: dashboardResolver.previewItemSQL,
-    setDashboardSchedule: dashboardResolver.setDashboardSchedule,
+    setDashboardSchedule: nativeProjectResolver(
+      dashboardResolver.setDashboardSchedule,
+      'manage',
+    ),
 
     // SQL Pairs
-    createSqlPair: sqlPairResolver.createSqlPair,
-    updateSqlPair: sqlPairResolver.updateSqlPair,
-    deleteSqlPair: sqlPairResolver.deleteSqlPair,
+    createSqlPair: nativeProjectResolver(
+      sqlPairResolver.createSqlPair,
+      'manage',
+    ),
+    updateSqlPair: nativeProjectResolver(
+      sqlPairResolver.updateSqlPair,
+      'manage',
+    ),
+    deleteSqlPair: nativeProjectResolver(
+      sqlPairResolver.deleteSqlPair,
+      'manage',
+    ),
     generateQuestion: sqlPairResolver.generateQuestion,
     modelSubstitute: sqlPairResolver.modelSubstitute,
     // Instructions
-    createInstruction: instructionResolver.createInstruction,
-    updateInstruction: instructionResolver.updateInstruction,
-    deleteInstruction: instructionResolver.deleteInstruction,
+    createInstruction: nativeProjectResolver(
+      instructionResolver.createInstruction,
+      'manage',
+    ),
+    updateInstruction: nativeProjectResolver(
+      instructionResolver.updateInstruction,
+      'manage',
+    ),
+    deleteInstruction: nativeProjectResolver(
+      instructionResolver.deleteInstruction,
+      'manage',
+    ),
   },
   ThreadResponse: askingResolver.getThreadResponseNestedResolver(),
   DetailStep: askingResolver.getDetailStepNestedResolver(),
@@ -197,5 +375,14 @@ const resolvers = {
   // Add ApiHistoryResponse nested resolvers
   ApiHistoryResponse: apiHistoryResolver.getApiHistoryNestedResolver(),
 };
+
+// Every original project query checks discovery, including empty dashboards and
+// settings which have no model Resource. This does not replace per-body read.
+for (const field of Object.keys(
+  resolvers.Query,
+) as (keyof typeof resolvers.Query)[])
+  Object.assign(resolvers.Query, {
+    [field]: nativeProjectResolver(resolvers.Query[field], 'discover'),
+  });
 
 export default resolvers;

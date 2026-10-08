@@ -177,6 +177,14 @@ void main() {
         NativeHumanResourceResult.fromJson(sample['resourceResult']).toJson(),
         sample['resourceResult'],
       );
+      expect(
+        NativeHumanActionRequest.fromJson(sample['scopeRequest']).toJson(),
+        sample['scopeRequest'],
+      );
+      expect(
+        NativeHumanScopeResult.fromJson(sample['scopeResult']).toJson(),
+        sample['scopeResult'],
+      );
     },
   );
   test(

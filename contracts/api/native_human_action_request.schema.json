@@ -2,7 +2,7 @@
   "$schema":"https://json-schema.org/draft/2020-12/schema",
   "$id":"api/native_human_action_request.schema.json",
   "title":"NativeHumanActionRequest",
-  "description":"Binding SERVICE plus independently verified native HUMAN token. Submit an existing ActionCommand or observe the same user's idempotency key. Tokens stay in transport, not this document.",
+  "description":"Binding SERVICE plus independently verified native HUMAN token. Submit an existing ActionCommand, observe the same user's idempotency key, or freshly check the binding's own native scope. Tokens stay in transport, not this document.",
   "type":"object", "additionalProperties":false,
   "required":["bindingId"],
   "properties":{
@@ -12,6 +12,13 @@
     "sourceResources":{
       "type":"array","minItems":1,"uniqueItems":true,
       "items":{"$ref":"../adapter/protocol.v1/source_resource.schema.json"}
+    },
+    "authorizeScope":{
+      "title":"NativeHumanScopeQuery",
+      "description":"Native metadata access uses existing tenant/workspace permissions. Scope and identity come exclusively from the authenticated binding and HUMAN token, never from client-selected IDs. This is not Action admission or a reusable ticket.",
+      "type":"object","additionalProperties":false,
+      "required":["permission"],
+      "properties":{"permission":{"type":"string","enum":["discover","manage"]}}
     },
     "resolveResource":{
       "title":"NativeHumanResourceQuery",
@@ -28,8 +35,9 @@
     }
   },
   "oneOf":[
-    {"required":["command"],"not":{"anyOf":[{"required":["idempotencyKey"]},{"required":["resolveResource"]},{"required":["sourceResources"]}]}},
-    {"required":["idempotencyKey"],"not":{"anyOf":[{"required":["command"]},{"required":["resolveResource"]}]}},
-    {"required":["resolveResource"],"not":{"anyOf":[{"required":["command"]},{"required":["idempotencyKey"]},{"required":["sourceResources"]}]}}
+    {"required":["command"],"not":{"anyOf":[{"required":["idempotencyKey"]},{"required":["resolveResource"]},{"required":["sourceResources"]},{"required":["authorizeScope"]}]}},
+    {"required":["idempotencyKey"],"not":{"anyOf":[{"required":["command"]},{"required":["resolveResource"]},{"required":["authorizeScope"]}]}},
+    {"required":["resolveResource"],"not":{"anyOf":[{"required":["command"]},{"required":["idempotencyKey"]},{"required":["sourceResources"]},{"required":["authorizeScope"]}]}},
+    {"required":["authorizeScope"],"not":{"anyOf":[{"required":["command"]},{"required":["idempotencyKey"]},{"required":["sourceResources"]},{"required":["resolveResource"]}]}}
   ]
 }

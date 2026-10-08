@@ -5062,3 +5062,231 @@ were not changed. No business container, ACTIVE binding, iframe screenshot or
 Desktop/Mobile acceptance is claimed; `check.sh --full` was not run by this
 module batch. Trusted SERVICE SQL and ordinary-function/provider provenance
 remain separate unsatisfied requirements.
+
+## 2026-10-08 — Original native project management and public scope permissions
+
+This is implementation evidence, not another permission authority or a change
+to the frozen design. The fixed original remains Wren UI
+`c5f02a0391c87420dba78632dcd86073710deb72`, including
+`/volumes/kailo/.references/WrenAI-ui-0.32.2/wren-ui/src/apollo/server/resolvers.ts::resolvers`,
+`wren-ui/src/apollo/server/resolvers/projectResolver.ts::ProjectResolver` and
+`wren-ui/src/apollo/server/resolvers/dashboardResolver.ts::DashboardResolver`.
+The original resolver methods, GraphQL response shape, pages, layout and pin
+button remain; the differences below are authorized identity/scope/permission
+consumers, not a simplified replacement interface.
+
+The four impact conclusions after implementation are:
+
+1. **Authority.** `.design/05` §2.7 and `.design/08` §6 keep native internal
+   management in the component while consuming public identity and permissions.
+   The existing platform native HUMAN endpoint now also checks `discover|manage`
+   on the authenticated binding's original workspace, or tenant if the binding
+   has no workspace. No project-specific Core entity, pin Action, local ACL or
+   reusable permission ticket is introduced. Actual SQL admission and Resource
+   read remain their separate original authorities.
+2. **Impact.** The existing native HUMAN request gains an optional, exclusive
+   `authorizeScope` choice and a reference-only scope result; legacy command,
+   same-key observation and Resource resolution remain unchanged. All four
+   bindings were regenerated from the actual schemas, with original sample and
+   four round-trip consumers extended. Core verifies the independent HUMAN,
+   ACTIVE tenant/member and exact binding/release/runtime generation before
+   returning the scope result. The original Wren resolver map consumes current
+   discovery for metadata queries and management for native metadata mutations.
+   Model/view mutation bodies use their original current Resource readers;
+   dashboard pin/item/layout writes read their actual source closure before
+   the write and before full result disclosure.
+3. **Side effects.** Scope authorization never executes SQL, submits an AE,
+   copies business content to Core or persists a local permission decision.
+   The original native write runs once between two fresh checks. A changed
+   binding generation, current authorization or delivery refuses the response,
+   without retrying that write. Pin retains its original INSERT/full response
+   but does not perform the former naked SQL warm in configured binding mode;
+   actual viewing/refresh retains the governed preview/cache consumer. This
+   post-write refusal is not evidence that the native write was rolled back.
+4. **Boundaries.** Missing identity, foreign native project, malformed scope
+   facts and authoritative denial fail closed; unavailable authority is not
+   successful emptiness or standalone fallback. Scope facts are checked again
+   around fully consistent SpiceDB decisions, and current HUMAN/binding facts
+   again before the endpoint response. A previously joined inactive workspace
+   membership needs fresh tenant management as well as workspace management;
+   a stale workspace-admin tuple alone is insufficient. The original DD-82
+   never-joined admin behavior is retained. No schema migration or second
+   account/permission/task store is added. New response/request choices require
+   consumers supporting this version; old consumers reject unknown choices
+   rather than silently granting them.
+
+The original Wren Jest target returned **66 passed / 213 filtered skips / 279
+total**, exit 0, then the same target after the two independent production
+guard restorations returned **66 passed / 213 filtered skips**, exit 0.
+Whole original Wren UI `tsc --noEmit --incremental false` exited 0. The first
+format check reported the original test file; the existing formatter reflowed
+it and the next original format check exited 0. All four production/check
+inputs matched the restored candidate (`cmp` exit 0).
+
+The first private production mutation changed the configured-binding guard in
+`nativeProjectResolver`; the original target returned **26 failed / 1 passed /
+252 filtered skips**, exit 1. It caught actual writes/disclosure entering
+without current scope permission and invalid standalone fallback. The second
+private production mutation bypassed `DashboardResolver.readableWriteResult`;
+its original write target returned **8 failed / 2 passed / 269 filtered skips**,
+exit 1, including revoked-source bodies incorrectly returned after a write.
+Both production guards were restored from the formal bytes. Formal production
+source was never mutated for those negative checks.
+
+Actual original Wren commands, in the existing 4 CPU/4 GiB SDK `/work`:
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand src/nativeHumanQuery.test.ts -t "original native project scope permission consumers|original dashboard HUMAN metadata readers|original dashboard HUMAN query consumers"
+node node_modules/jest/bin/jest.js --runInBand src/nativeHumanQuery.test.ts -t "original native project scope permission consumers"
+node node_modules/jest/bin/jest.js --runInBand src/nativeHumanQuery.test.ts -t "original dashboard HUMAN metadata readers.*(pin|update|layout)"
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/resolvers.ts src/apollo/server/resolvers/dashboardResolver.ts src/apollo/server/services/nativeHumanQuery.ts src/nativeHumanQuery.test.ts
+```
+
+Logs in
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N`
+are `native-scope-positive-final.log`, `native-scope-guard-mutation.log`,
+`native-scope-disclose-mutation.log`, `native-scope-restored.log`,
+`native-scope-wren-tsc.log`, `native-scope-format.log` and
+`native-scope-format-restored.log`. The earlier interrupted positive process
+ended exit 143 and is not counted as acceptance.
+
+Original four-side generation and `gen.sh --check` both exited 0. The actual
+native-HUMAN scope sample round-trip passed in original TypeScript runtime and
+typecheck, Go (1/1) and Dart (1/1), using existing local caches without downloads.
+An initial Python `jsonschema` attempt failed because that SDK does not contain
+the module; no package was installed and that attempt is not schema acceptance.
+An initial Dart unsupported `--no-pub` invocation and missing original export
+input failed; after consuming the original export and cached test runner the
+final Dart target passed. Logs are in the existing
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX`
+directory: `native-scope-generate.log`, `native-scope-generate-check.log`,
+`native-scope-ts-roundtrip.log`, `native-scope-go-roundtrip.log` and
+`native-scope-dart-roundtrip-final.log`.
+
+This batch does not prove release-level SS-WRN-IDENTITY/GOVERNANCE complete.
+Original reset/data-source replacement changes the native project ID and still
+needs binding lifecycle reconciliation; native SQL-pair `validateSql` has a
+separate dry-run admission gap; new model/view Resource registration must exist
+before their full bodies pass disclosure. Native CRUD lost-ACK recovery,
+idempotency and public audit are not demonstrated by scope checks. Trusted
+SERVICE SQL, ordinary-function/provider provenance and the separately excluded
+unvalidated Java pair remain explicit gaps. There is no live Wren business
+container, datasource/provider, ACTIVE binding, iframe screenshot or
+Desktop/Mobile acceptance. No image, new database, dependency installation or
+whole-app copy was created; module `check.sh --full` was not rerun. Wren
+fixtures do not stand in for production authorization.
+
+The first actual restricted Core `cargo clippy --workspace --all-targets --
+-D warnings` exited 101 on `platform_views.rs::list_own_audit` after a test
+module and `temporal/automation_steps.rs`'s unnecessary struct default update;
+these are not passing checks. The subsequent original workspace
+`native_human` target exited 101 because its contracts round-trip linked an old
+cached library without `NativeHumanScopeResult`. Both current formal and private
+generated source contain that type and compare equal; the diagnostic instead
+names the older `/workspace/apps` generated source. The shared target's
+library timestamp was later than the copied source, and its dep-info records
+relative crate input paths. No cache was deleted to bypass the failure. The
+following PG and bridge commands in that invocation were not run after the
+first command failed. Failure logs are `native-scope-core-clippy.log` and
+`native-scope-core-positive.log` in the same original evidence directory.
+
+The native scheduler is one concrete SERVICE-SQL consumer still outside that
+acceptance: `wren-ui/src/apollo/server/backgrounds/dashboardCacheBackgroundTracker.ts::refreshDashboardCache`
+calls the original `QueryService.preview` for scheduled refresh. Native
+`setDashboardSchedule` management permission is not authorization for that
+background SQL. The release must not be activated on the strength of this
+scope-check batch; no scheduler execution or SERVICE AE is claimed here.
+
+### Final Core and isolated SQL evidence for this increment
+
+After the mainline owner corrected the two pre-existing clippy failures, only
+those actual source bytes and the required current Rust manifests, original
+fixtures, contracts, registry and Gateway proto were synchronized into the
+existing private SDK candidate. The five mainline bridge/read/service/media
+inputs compared equal to the formal tree. No target, dependency tree, UI tree,
+whole application snapshot or database was recreated. The exact private
+contracts source inputs were byte-identical and their mtimes were refreshed;
+the next original Cargo invocation compiled the actual new scope type rather
+than reusing the old library. The earlier failed logs were retained.
+
+The actual original `cargo test --workspace native_human -- --nocapture`
+finished exit 0: the Rust native-HUMAN round-trip passed **1/1**, and Core's
+native-HUMAN header/request/JWT targets passed **3/3**, with **2 explicit
+isolated-database targets ignored** in that invocation. That filter still
+compiles the existing workspace integration targets; their zero-selected-test
+outputs are not extra passing business tests. The native Resource-selection
+SQL target was not rerun by this batch.
+
+The existing `AGENT_INVOKE_TEST_DATABASE_URL` was confirmed to select the
+already-migrated isolated `component_runtime_lcivus` database, with the actual
+tenant, HUMAN and workspace membership tables present. Running the original
+`native_human_mapping_uses_binding_tenant_and_current_identity_chain` target
+with `--ignored --nocapture` returned **1 passed / 0 ignored / 396 filtered**,
+exit 0. Its real PostgreSQL transaction exercises ACTIVE and revoked members,
+the existing DD-82 exception, paused tenant/workspace, disabled HUMAN/principal
+and the original identity mapping, then rolls back. Public permission HTTP
+responses are the existing controlled SpiceDB fixture, not a live business
+SpiceDB acceptance. This is real isolated SQL execution, not a missing-env
+`SKIP` branch.
+
+Private production mutation changed the actual revoked-membership condition
+so a non-ACTIVE member no longer needed current tenant management. The same
+original SQL target returned **1 failed / 0 ignored**, exit 101, precisely at
+the assertion refusing a revoked member with only a residual workspace-admin
+relation. The formal production file was untouched. Restoring its exact bytes
+(`cmp` exit 0) and rerunning returned **1 passed / 0 ignored**, exit 0. No SQL
+fixture/schema or expected denial was weakened to make the restored run pass.
+
+The final original `cargo clippy --workspace --all-targets -- -D warnings`
+exited 0, and `cargo test -p collab-bridge --lib bridge::media_tests --
+--nocapture` returned **6 passed / 0 failed**, exit 0. They used the existing
+4 CPU/8 GiB SDK cgroup and `/cache/rust-target`, preserving the requested
+Cargo parallelism. This window was coordinated after the UI teammate's actual
+Node/types terminal result and released afterward; no competing Cargo was
+started. Original `rustfmt` and `gofmt` formatted the owned consumers while
+retaining current mainline avatar/emoji round-trip checks. The original avatar
+sample was restored to exact HEAD bytes rather than leaving its unintended
+deletion in this batch.
+
+Actual original Core target commands in the private `core` directory:
+
+```sh
+CARGO_NET_OFFLINE=true CARGO_TARGET_DIR=/cache/rust-target CARGO_BUILD_JOBS=16 cargo test --workspace native_human -- --nocapture
+CARGO_NET_OFFLINE=true CARGO_TARGET_DIR=/cache/rust-target CARGO_BUILD_JOBS=16 cargo test -p platform-core --bin platform-core native_human_mapping_uses_binding_tenant_and_current_identity_chain -- --ignored --nocapture
+CARGO_NET_OFFLINE=true CARGO_TARGET_DIR=/cache/rust-target CARGO_BUILD_JOBS=16 cargo clippy --workspace --all-targets -- -D warnings
+CARGO_NET_OFFLINE=true CARGO_TARGET_DIR=/cache/rust-target CARGO_BUILD_JOBS=16 cargo test -p collab-bridge --lib bridge::media_tests -- --nocapture
+```
+
+Final logs in the previously recorded original Core evidence directory are
+`native-scope-core-positive-restored.log`, `native-scope-core-pg-positive.log`,
+`native-scope-core-pg-mutation.log`, `native-scope-core-pg-restored.log`,
+`native-scope-core-clippy-restored.log` and `native-scope-bridge-media.log`.
+The four generated bindings and scope consumers are implementation/specialized
+acceptance evidence, not the complete release `check.sh --full`, published-tag
+compatibility gate, live multi-user Wren deployment or visual acceptance.
+
+The mainline owner then ran the original `step_contract` against the actual
+read-only formal source and index in the existing SDK image, network disabled,
+2 CPU/4 GiB, with the original local npm cache. It exited 0: all four generated
+bindings and same-source Mobile catalogs matched; 291 schemas were checked
+against `contracts-v0.1.0`, with only 3 historical matches. That narrow historical
+baseline is not full business compatibility. Log:
+`native-scope-formal-contract-original-path.log` in the same evidence directory.
+The first invocation sourced the checker in the wrong cwd and exited 1; a second
+login-shell invocation lost the image's formatter PATH and exited 1. Both failed
+logs remain as `native-scope-formal-contract-seam-docs.log` and
+`native-scope-formal-contract-seam-docs-restored-cwd.log`. Restoring only the
+image's original PATH fixed the invocation; no generated bytes, dependencies or
+permissions were changed to obtain success. The second invocation's original
+documentation check separately exited 0.
+
+Native frontend outcome handling is still a concrete release blocker. Original
+`wren-ui/src/apollo/client/index.ts` has no RetryLink, but the installed Apollo
+3.9.6 `useMutation` resolves its error result when a caller supplies `onError`.
+Original modeling/home and pin callers do so; their drawers can then close, and
+`wren-ui/src/utils/errorHandler.tsx` labels post-write 403/412 as failed. Backend
+scope/disclosure rejection does not prove those writes were rolled back, or
+that the original frontend presents UNKNOWN or prevents a later duplicate pin.
+The 66 Jest cases do not accept that frontend behavior. The component release
+remains inactive while its actual error and readback consumers are corrected.
