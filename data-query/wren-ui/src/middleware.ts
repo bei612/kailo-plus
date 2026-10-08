@@ -202,6 +202,9 @@ export async function middleware(request: NextRequest) {
       '/api/v1/run_sql',
       '/api/v1/generate_summary',
       '/api/v1/generate_vega_chart',
+      '/api/v1/ask',
+      '/api/v1/stream/ask',
+      '/api/ask_task/streaming',
     ].includes(request.nextUrl.pathname) &&
     process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
   if (

@@ -9,11 +9,18 @@ import {
 } from 'lodash';
 import { AskFeedbackResult, AskResult } from '../models/adaptor';
 
-export type AskingTaskDetail =
+export interface NativeAskingScope {
+  bindingId: string;
+  identityScope: string;
+  metadataReference: { hash: string; digest: string };
+}
+
+export type AskingTaskDetail = (
   | AskResult
   | (AskFeedbackResult & {
       adjustment?: boolean;
-    });
+    })
+) & { nativeScope?: NativeAskingScope };
 
 export interface AskingTask {
   id: number;

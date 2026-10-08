@@ -212,6 +212,7 @@ export class NativeQueryService {
     previewScope: string,
     action: 'data_query.query@v1' | 'data_query.dry_run@v1',
     threadId?: string,
+    expectedDeploymentHash?: string,
   ) {
     if (
       !uuid.test(key) ||
@@ -220,7 +221,9 @@ export class NativeQueryService {
       !Number.isSafeInteger(limit) ||
       limit <= 0 ||
       (threadId !== undefined && (!threadId || typeof threadId !== 'string')) ||
-      !/^[a-f0-9]{64}$/.test(previewScope)
+      !/^[a-f0-9]{64}$/.test(previewScope) ||
+      (expectedDeploymentHash !== undefined &&
+        !/^[a-f0-9]{40}$/.test(expectedDeploymentHash))
     )
       throw invalid();
     const prior = await this.history.findOneBy({
@@ -249,7 +252,9 @@ export class NativeQueryService {
     if (
       !deployment ||
       deployment.status !== 'SUCCESS' ||
-      deployment.projectId !== this.config.projectId
+      deployment.projectId !== this.config.projectId ||
+      (expectedDeploymentHash !== undefined &&
+        deployment.hash !== expectedDeploymentHash)
     )
       throw new NativeQueryRefusal(412, 'QUERY_DEPLOYMENT_CHANGED');
     const input = queryInput({
@@ -333,6 +338,7 @@ export class NativeQueryService {
     previewScope: string,
     action: 'data_query.query@v1' | 'data_query.dry_run@v1',
     threadId?: string,
+    expectedDeploymentHash?: string,
   ) {
     let selection: Record<string, any>;
     try {
@@ -349,7 +355,9 @@ export class NativeQueryService {
           ? 'deploymentHash,deploymentId,historyId,limit,modelId'
           : 'deploymentHash,deploymentId,historyId,limit,viewId') ||
       !uuid.test(selection.historyId) ||
-      selection.limit !== limit
+      selection.limit !== limit ||
+      (expectedDeploymentHash !== undefined &&
+        selection.deploymentHash !== expectedDeploymentHash)
     )
       throw new NativeQueryRefusal(409, 'QUERY_INTENT_CONFLICT');
     const record = await this.history.findOneBy({

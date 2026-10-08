@@ -22,6 +22,7 @@ import {
   WrenAIError,
 } from '@/apollo/server/models/adaptor';
 import { getLogger } from '@server/utils';
+import { governedRestAsk } from '@server/services/nativeRestAsk';
 
 const logger = getLogger('API_ASK');
 logger.level = 'debug';
@@ -45,6 +46,10 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
+  if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+    await governedRestAsk(req, res, false);
+    return;
+  }
   const { question, sampleSize, language, threadId } = req.body as AskRequest;
   const startTime = Date.now();
   let project;

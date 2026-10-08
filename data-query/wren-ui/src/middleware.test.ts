@@ -95,6 +95,8 @@ describe('native instance identity boundary', () => {
     '/api/v1/run_sql',
     '/api/v1/generate_summary',
     '/api/v1/generate_vega_chart',
+    '/api/v1/ask',
+    '/api/v1/stream/ask',
     '/api/ask_task/streaming',
     '/api/ask_task/streaming_answer',
     '/_next/data/native/index.json',
@@ -108,10 +110,13 @@ describe('native instance identity boundary', () => {
   it.each([
     '/api/graphql',
     '/api/platform-query-reference',
+    '/api/ask_task/streaming',
     '/api/ask_task/streaming_answer',
     '/api/v1/run_sql',
     '/api/v1/generate_summary',
     '/api/v1/generate_vega_chart',
+    '/api/v1/ask',
+    '/api/v1/stream/ask',
   ])(
     'verifies signed entitlement through a real JWKS endpoint and strips credentials for %s',
     async (path) => {
@@ -140,6 +145,9 @@ describe('native instance identity boundary', () => {
           '/api/v1/run_sql',
           '/api/v1/generate_summary',
           '/api/v1/generate_vega_chart',
+          '/api/v1/ask',
+          '/api/v1/stream/ask',
+          '/api/ask_task/streaming',
         ].includes(path)
       ) {
         expect(
@@ -167,6 +175,8 @@ describe('native instance identity boundary', () => {
     '/api/v1/run_sql',
     '/api/v1/generate_summary',
     '/api/v1/generate_vega_chart',
+    '/api/v1/ask',
+    '/api/v1/stream/ask',
   ])(
     'does not forward private HUMAN credentials or caller-forged scope to independent %s',
     async (path) => {

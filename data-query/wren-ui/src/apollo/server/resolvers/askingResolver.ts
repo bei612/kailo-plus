@@ -40,6 +40,7 @@ import { queryReceiptState } from '@/utils/queryReceipt';
 import { ApiHistoryResolver } from './apiHistoryResolver';
 import {
   canonical,
+  digest,
   loadQueryDelivery,
   NativeQueryRefusal,
 } from '../services/nativeQueryAdmission';
@@ -98,6 +99,80 @@ export interface RecommendedQuestionsTask {
 }
 
 export class AskingResolver {
+  private async nativeAskingScope(ctx: IContext) {
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined)
+      return undefined;
+    const config = await loadQueryDelivery();
+    nativePreviewScope(config, ctx.nativeIdentityScope);
+    if (!ctx.nativeHumanToken)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    const project = await ctx.projectService.getCurrentProject();
+    if (project.id !== config.projectId)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    const deployment = await ctx.deployRepository.findLastProjectDeployLog(
+      project.id,
+    );
+    if (!deployment || deployment.status !== 'SUCCESS')
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    const mdl = await new ModelResolver().getMDL(
+      null,
+      { hash: deployment.hash },
+      ctx,
+    );
+    return {
+      bindingId: config.bindingId,
+      identityScope: ctx.nativeIdentityScope,
+      metadataReference: { hash: deployment.hash, digest: digest(mdl) },
+    };
+  }
+
+  // The native task remains its original owner. No cached result or query ID
+  // grants another HUMAN access to its prompt/reasoning stream.
+  public async authorizeNativeAskingTask(queryId: string, ctx: IContext) {
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined)
+      return undefined;
+    const config = await loadQueryDelivery();
+    nativePreviewScope(config, ctx.nativeIdentityScope);
+    if (!ctx.nativeHumanToken)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    const project = await ctx.projectService.getCurrentProject();
+    const task = await ctx.askingTaskRepository.findOneBy({
+      queryId,
+      projectId: project.id,
+    });
+    const proof = task?.detail?.nativeScope;
+    if (
+      project.id !== config.projectId ||
+      !task ||
+      task.queryId !== queryId ||
+      (task.detail as any)?.adjustment ||
+      proof?.bindingId !== config.bindingId ||
+      proof.identityScope !== ctx.nativeIdentityScope ||
+      typeof proof.metadataReference?.hash !== 'string' ||
+      typeof proof.metadataReference.digest !== 'string'
+    )
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    const mdl = await new ModelResolver().getMDL(
+      null,
+      { hash: proof.metadataReference.hash },
+      ctx,
+    );
+    if (digest(mdl) !== proof.metadataReference.digest)
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    const current = await ctx.askingTaskRepository.findOneBy({
+      id: task.id,
+      queryId,
+      projectId: project.id,
+    });
+    if (
+      !current ||
+      current.question !== task.question ||
+      canonical(current.detail?.nativeScope) !== canonical(proof)
+    )
+      throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
+    return current;
+  }
+
   private async readNativeViews(
     ctx: IContext,
     viewIds: number[],
@@ -253,9 +328,27 @@ export class AskingResolver {
 
     const askingService = ctx.askingService;
     const data = { question };
+    const nativeScope = await this.nativeAskingScope(ctx);
+    if (nativeScope && threadId) {
+      for (const response of await askingService.getResponsesWithThread(
+        threadId,
+      )) {
+        const previous = await ctx.askingTaskRepository.findOneBy({
+          id: response.askingTaskId,
+          projectId: project.id,
+        });
+        if (!previous)
+          throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+        await this.authorizeNativeAskingTask(previous.queryId, ctx);
+      }
+    }
     const task = await askingService.createAskingTask(data, {
       threadId,
       language: WrenAILanguage[project.language] || WrenAILanguage.EN,
+      nativeScope,
+      authorizeNative: nativeScope
+        ? (queryId) => this.authorizeNativeAskingTask(queryId, ctx)
+        : undefined,
     });
     ctx.telemetry.sendEvent(TelemetryEvent.HOME_ASK_CANDIDATE, {
       question,
@@ -271,6 +364,7 @@ export class AskingResolver {
   ): Promise<boolean> {
     const { taskId } = args;
     const askingService = ctx.askingService;
+    await this.authorizeNativeAskingTask(taskId, ctx);
     await askingService.cancelAskingTask(taskId);
     return true;
   }
@@ -282,6 +376,7 @@ export class AskingResolver {
   ): Promise<AskingTask> {
     const { taskId } = args;
     const askingService = ctx.askingService;
+    await this.authorizeNativeAskingTask(taskId, ctx);
     const askResult = await askingService.getAskingTask(taskId);
 
     if (!askResult) {
@@ -335,6 +430,7 @@ export class AskingResolver {
     // otherwise, use the input data
     let threadInput: AskingDetailTaskInput;
     if (data.taskId) {
+      await this.authorizeNativeAskingTask(data.taskId, ctx);
       const askingTask = await askingService.getAskingTask(data.taskId);
       if (!askingTask) {
         throw new Error(`Asking task ${data.taskId} not found`);
@@ -488,6 +584,7 @@ export class AskingResolver {
     // otherwise, use the input data
     let threadResponseInput: AskingDetailTaskInput;
     if (data.taskId) {
+      await this.authorizeNativeAskingTask(data.taskId, ctx);
       const askingTask = await askingService.getAskingTask(data.taskId);
       if (!askingTask) {
         throw new Error(`Asking task ${data.taskId} not found`);
@@ -539,9 +636,25 @@ export class AskingResolver {
     const { responseId } = args;
     const askingService = ctx.askingService;
     const project = await ctx.projectService.getCurrentProject();
-
+    const nativeScope = await this.nativeAskingScope(ctx);
+    if (nativeScope) {
+      const response = await askingService.getResponse(responseId, project);
+      const previous =
+        response &&
+        (await ctx.askingTaskRepository.findOneBy({
+          id: response.askingTaskId,
+          projectId: project.id,
+        }));
+      if (!previous)
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      await this.authorizeNativeAskingTask(previous.queryId, ctx);
+    }
     const task = await askingService.rerunAskingTask(responseId, {
       language: WrenAILanguage[project.language] || WrenAILanguage.EN,
+      nativeScope,
+      authorizeNative: nativeScope
+        ? (queryId) => this.authorizeNativeAskingTask(queryId, ctx)
+        : undefined,
     });
     ctx.telemetry.sendEvent(TelemetryEvent.HOME_RERUN_ASKING_TASK, {
       responseId,
@@ -1101,6 +1214,7 @@ export class AskingResolver {
         parent.askingTaskId,
       );
       if (!askingTask) return null;
+      await this.authorizeNativeAskingTask(askingTask.queryId, ctx);
       return this.transformAskingTask(askingTask, ctx);
     },
     adjustmentTask: async (

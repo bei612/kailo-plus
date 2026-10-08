@@ -9,6 +9,7 @@ import {
   nativePreviewScope,
 } from '../services/nativeHumanQuery';
 import { NativeQueryService } from '../services/nativeQueryService';
+import { readNativeAskHistory } from '../services/nativeRestAsk';
 
 export interface ApiHistoryFilter {
   apiType?: ApiType;
@@ -209,10 +210,16 @@ export class ApiHistoryResolver {
     ) => {
       const native = await this.nativeHistory(ctx);
       if (!native) return apiHistory.requestPayload ?? null;
-      const visible = await native.reader.readHistory(
-        ctx.nativeHumanToken,
-        apiHistory,
-      );
+      const visible = [ApiType.ASK, ApiType.STREAM_ASK].includes(
+        apiHistory.apiType,
+      )
+        ? await readNativeAskHistory(
+            ctx,
+            native.config,
+            native.reader,
+            apiHistory,
+          )
+        : await native.reader.readHistory(ctx.nativeHumanToken, apiHistory);
       return visible.requestPayload;
     },
     responsePayload: async (
@@ -222,8 +229,15 @@ export class ApiHistoryResolver {
     ) => {
       const native = await this.nativeHistory(ctx);
       const payload = native
-        ? (await native.reader.readHistory(ctx.nativeHumanToken, apiHistory))
-            .responsePayload
+        ? ([ApiType.ASK, ApiType.STREAM_ASK].includes(apiHistory.apiType)
+            ? await readNativeAskHistory(
+                ctx,
+                native.config,
+                native.reader,
+                apiHistory,
+              )
+            : await native.reader.readHistory(ctx.nativeHumanToken, apiHistory)
+          ).responsePayload
         : apiHistory.responsePayload;
       if (!payload) return null;
 

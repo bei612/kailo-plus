@@ -57,7 +57,10 @@ export enum SyncStatusEnum {
 }
 
 export class ModelResolver {
-  private async metadataConfig(ctx: IContext, projectId: number) {
+  private async metadataConfig(
+    ctx: Pick<IContext, 'nativeIdentityScope' | 'nativeHumanToken'>,
+    projectId: number,
+  ) {
     const config = await loadQueryDelivery();
     nativePreviewScope(config, ctx.nativeIdentityScope);
     if (!ctx.nativeHumanToken)
@@ -350,7 +353,17 @@ export class ModelResolver {
     return deployRes;
   }
 
-  public async getMDL(_root: any, args: { hash: string }, ctx: IContext) {
+  public async getMDL(
+    _root: any,
+    args: { hash: string },
+    ctx: Pick<
+      IContext,
+      | 'projectService'
+      | 'deployRepository'
+      | 'nativeIdentityScope'
+      | 'nativeHumanToken'
+    >,
+  ) {
     const { id: projectId } = await ctx.projectService.getCurrentProject();
     const deploy = await ctx.deployRepository.findOneBy({
       hash: args.hash,

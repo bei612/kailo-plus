@@ -28,10 +28,14 @@ import {
   ChartType,
   ChartStatus,
   TextBasedAnswerStatus,
+  AskResultStatus,
+  AskResultType,
 } from './apollo/server/models/adaptor';
 import runSqlHandler from './pages/api/v1/run_sql';
 import generateSummaryHandler from './pages/api/v1/generate_summary';
 import generateChartHandler from './pages/api/v1/generate_vega_chart';
+import askHandler from './pages/api/v1/ask';
+import streamAskHandler from './pages/api/v1/stream/ask';
 import { enhanceVegaSpec } from './utils/vegaSpecUtils';
 import { Readable } from 'node:stream';
 import { createServer, Server } from 'http';
@@ -507,6 +511,7 @@ describe('native saved-view HUMAN query consumer', () => {
         scope,
         action,
         undefined,
+        undefined,
       );
       expect(native.sqlReference).toHaveBeenCalledWith(binding, draft);
       const command = calls.mock.calls.find((call) => call[2].command)?.[2]
@@ -604,6 +609,7 @@ describe('native saved-view HUMAN query consumer', () => {
       10,
       'c'.repeat(64),
       'data_query.query@v1',
+      undefined,
       undefined,
     );
     expect(calls).toHaveBeenCalledTimes(1);
@@ -1955,6 +1961,10 @@ describe('native saved-view HUMAN query consumer', () => {
       summaryStream: jest.Mock;
     let prepareSummary: jest.Mock, advanceSummary: jest.Mock;
     let chartCreate: jest.Mock, chartGet: jest.Mock, chartResult: any;
+    let askCreate: jest.Mock,
+      askGet: jest.Mock,
+      askStream: jest.Mock,
+      askResult: any;
     const originalConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     const originalComponents = { ...components };
     const originalHistoryMethods = { ...components.apiHistoryRepository };
@@ -1989,6 +1999,13 @@ describe('native saved-view HUMAN query consumer', () => {
         headers: { ...headers, ...changes },
         body: JSON.stringify(input),
       });
+    const askBody = { question: 'Original question', sampleSize: 10 };
+    const sendAsk = (input: any = askBody, changes = {}, streaming = false) =>
+      fetch(endpoint.replace('/run_sql', streaming ? '/stream/ask' : '/ask'), {
+        method: 'POST',
+        headers: { ...headers, ...changes },
+        body: JSON.stringify(input),
+      });
 
     beforeAll(async () => {
       server = createServer((request, response) => {
@@ -1997,11 +2014,15 @@ describe('native saved-view HUMAN query consumer', () => {
           response,
           {},
           {
-            default: request.url?.endsWith('/generate_summary')
-              ? generateSummaryHandler
-              : request.url?.endsWith('/generate_vega_chart')
-                ? generateChartHandler
-                : runSqlHandler,
+            default: request.url?.endsWith('/stream/ask')
+              ? streamAskHandler
+              : request.url?.endsWith('/ask')
+                ? askHandler
+                : request.url?.endsWith('/generate_summary')
+                  ? generateSummaryHandler
+                  : request.url?.endsWith('/generate_vega_chart')
+                    ? generateChartHandler
+                    : runSqlHandler,
           },
           {
             previewModeId: '',
@@ -2026,6 +2047,19 @@ describe('native saved-view HUMAN query consumer', () => {
       observed = null;
       completed = true;
       revoked = false;
+      askResult = {
+        status: AskResultStatus.FINISHED,
+        type: AskResultType.TEXT_TO_SQL,
+        response: [{ sql: statement }],
+      };
+      askCreate = jest.fn(async (input) => ({ queryId: input.queryId }));
+      askGet = jest.fn(async () => structuredClone(askResult));
+      askStream = jest.fn(async () =>
+        Readable.from([
+          'data: {"message":"Original explanation"}\n\n',
+          `data: ${JSON.stringify({ done: true, queryId: key })}\n\n`,
+        ]),
+      );
       direct = jest.fn(async () => ({ columns: [], data: [] }));
       prepared = jest.fn(async (input) => {
         row ??= input;
@@ -2136,6 +2170,9 @@ describe('native saved-view HUMAN query consumer', () => {
           })),
         },
         wrenAIAdaptor: {
+          ask: askCreate,
+          getAskResult: askGet,
+          getAskStreamingResult: askStream,
           createTextBasedAnswer: summaryCreate,
           getTextBasedAnswerResult: summaryGet,
           streamTextBasedAnswer: summaryStream,
@@ -2148,6 +2185,15 @@ describe('native saved-view HUMAN query consumer', () => {
         prepareNativeGeneration: prepareSummary,
         advanceNativeGeneration: advanceSummary,
         createOne: appended,
+        findAllBy: jest.fn(async (where) =>
+          [row, summaryRow].filter(
+            (candidate) =>
+              candidate &&
+              Object.entries(where).every(
+                ([name, value]) => candidate[name] === value,
+              ),
+          ),
+        ),
         findOneBy: jest.fn(async (where) =>
           [row, summaryRow].find(
             (candidate) =>
@@ -2203,6 +2249,253 @@ describe('native saved-view HUMAN query consumer', () => {
         }
         return observed;
       });
+    });
+
+    it.each([false, true])(
+      'original ask SQL and SSE surfaces consume actual query disclosure and one captured native task (stream=%s)',
+      async (streaming) => {
+        const response = await sendAsk(askBody, {}, streaming);
+        expect(response.status).toBe(200);
+        const result = streaming
+          ? await response.text()
+          : await response.json();
+        if (streaming) {
+          expect(result).toContain('message_start');
+          expect(result).toContain('sql_generation_success');
+          expect(result).toContain('summary_generation');
+          expect(result).toContain('message_stop');
+        } else
+          expect(result).toEqual({
+            id: key,
+            threadId: key,
+            sql: statement,
+            summary: 'Original summary',
+          });
+        expect(askCreate).toHaveBeenCalledTimes(1);
+        expect(askCreate.mock.calls[0][0]).toMatchObject({
+          queryId: key,
+          deployId: selection.deploymentHash,
+          query: askBody.question,
+        });
+        expect(summaryCreate.mock.calls[0][0]).toMatchObject({
+          queryId: key,
+          sql: statement,
+          sqlData: row.responsePayload,
+        });
+        expect(summaryRow.statusCode).toBe(200);
+        expect(summaryRow.responsePayload.nativeAsk.doneQueryId).toBe(key);
+        expect(direct).not.toHaveBeenCalled();
+        const repeated = await sendAsk(askBody, {}, streaming);
+        expect(repeated.status).toBe(200);
+        expect(askCreate).toHaveBeenCalledTimes(1);
+        expect(summaryCreate).toHaveBeenCalledTimes(1);
+        expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+          1,
+        );
+      },
+    );
+
+    it.each([false, true])(
+      'original GENERAL answer keeps its explanation and actual native done proof (stream=%s)',
+      async (streaming) => {
+        askResult = {
+          status: AskResultStatus.UNDERSTANDING,
+          type: AskResultType.GENERAL,
+        };
+        const response = await sendAsk(askBody, {}, streaming);
+        expect(response.status).toBe(200);
+        const result = streaming
+          ? await response.text()
+          : await response.json();
+        if (streaming) {
+          expect(result).toContain('explanation');
+          expect(result).toContain('message_stop');
+        } else
+          expect(result).toEqual({
+            id: key,
+            threadId: key,
+            type: 'NON_SQL_QUERY',
+            explanation: 'Original explanation',
+          });
+        expect(summaryCreate).not.toHaveBeenCalled();
+        expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+          0,
+        );
+      },
+    );
+
+    it('lost original Ask POST acknowledgement observes the exact fixed task without creating another task or SQL', async () => {
+      askCreate.mockRejectedValue(new Error('lost ACK'));
+      const response = await sendAsk();
+      expect(response.status).toBe(200);
+      expect(askGet).toHaveBeenCalledWith(key);
+      expect((await sendAsk()).status).toBe(200);
+      expect(askCreate).toHaveBeenCalledTimes(1);
+      expect(summaryCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('original Chinese GENERAL text remains exact across split native UTF-8 chunks', async () => {
+      askResult = {
+        status: AskResultStatus.UNDERSTANDING,
+        type: AskResultType.GENERAL,
+      };
+      const frame = Buffer.from('data: {"message":"中文回答"}\n\n');
+      const offset = frame.indexOf(Buffer.from('中')) + 1;
+      askStream.mockResolvedValue(
+        Readable.from([
+          frame.subarray(0, offset),
+          frame.subarray(offset),
+          `data: ${JSON.stringify({ done: true, queryId: key })}\n\n`,
+        ]),
+      );
+      const response = await sendAsk();
+      expect(response.status).toBe(200);
+      expect((await response.json()).explanation).toBe('中文回答');
+    });
+
+    it.each(['missing', 'unknown', 'foreign-ACK'])(
+      'unverifiable original Ask %s remains pending and does not rePOST or execute SQL',
+      async (mode) => {
+        if (mode === 'missing')
+          askGet.mockRejectedValue(new Error('404 cache missing'));
+        if (mode === 'unknown') askResult.status = 'future';
+        if (mode === 'foreign-ACK')
+          askCreate.mockResolvedValue({ queryId: 'foreign' });
+        expect((await sendAsk()).status).toBe(202);
+        if (mode === 'foreign-ACK')
+          askGet.mockRejectedValue(new Error('missing actual owned ID'));
+        expect((await sendAsk()).status).toBe(202);
+        expect(askCreate).toHaveBeenCalledTimes(1);
+        expect(summaryCreate).not.toHaveBeenCalled();
+        expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+          0,
+        );
+        expect(summaryRow.statusCode).toBe(202);
+      },
+    );
+
+    it.each([AskResultStatus.FAILED, AskResultStatus.STOPPED])(
+      'confirmed original Ask %s retains native evidence and never executes SQL',
+      async (status) => {
+        askResult = { status, error: { message: 'private provider detail' } };
+        const response = await sendAsk();
+        expect(response.status).toBe(409);
+        expect(JSON.stringify(await response.json())).not.toContain(
+          'private provider',
+        );
+        expect(summaryRow.responsePayload.nativeAsk.status).toBe(status);
+        expect((await sendAsk()).status).toBe(409);
+        expect(askCreate).toHaveBeenCalledTimes(1);
+        expect(summaryCreate).not.toHaveBeenCalled();
+      },
+    );
+
+    it('pending query AE does not generate an unadmitted answer or repeat the original SQL', async () => {
+      completed = false;
+      expect((await sendAsk()).status).toBe(202);
+      expect((await sendAsk()).status).toBe(202);
+      expect(summaryCreate).not.toHaveBeenCalled();
+      expect(askCreate).toHaveBeenCalledTimes(1);
+      expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+        1,
+      );
+    });
+
+    it.each(['EOF', 'foreign-done'])(
+      'original GENERAL stream %s is not success and is never restarted blindly',
+      async (mode) => {
+        askResult = {
+          status: AskResultStatus.UNDERSTANDING,
+          type: AskResultType.GENERAL,
+        };
+        askStream.mockResolvedValue(
+          Readable.from([
+            'data: {"message":"partial"}\n\n',
+            ...(mode === 'foreign-done'
+              ? ['data: {"done":true,"queryId":"foreign"}\n\n']
+              : []),
+          ]),
+        );
+        const first = await sendAsk();
+        expect(first.status).toBe(mode === 'EOF' ? 202 : 503);
+        expect(summaryRow.statusCode).toBe(202);
+        expect(
+          summaryRow.responsePayload.nativeAsk.doneQueryId,
+        ).toBeUndefined();
+        expect((await sendAsk()).status).toBe(202);
+        expect(askStream).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('same-key changed question/user/surface is rejected without another native task', async () => {
+      expect((await sendAsk()).status).toBe(200);
+      expect(
+        (await sendAsk({ ...askBody, question: 'different' })).status,
+      ).toBe(409);
+      expect(
+        (
+          await sendAsk(askBody, {
+            'x-kailo-native-identity-scope': 'b'.repeat(64),
+          })
+        ).status,
+      ).toBe(409);
+      expect((await sendAsk(askBody, {}, true)).status).toBe(409);
+      expect(askCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('actual captured MDL read revocation prevents the native Ask POST', async () => {
+      const previous = calls.getMockImplementation();
+      calls.mockImplementation(async (...input) => {
+        if (input[2].resolveResource)
+          throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+        return previous(...input);
+      });
+      expect((await sendAsk()).status).toBe(403);
+      expect(askCreate).not.toHaveBeenCalled();
+    });
+
+    it('SQL generation stays bound to the actual authorized MDL deployment before command', async () => {
+      jest
+        .mocked(components.deployLogRepository.findLastProjectDeployLog)
+        .mockImplementation(
+          async () =>
+            ({
+              ...(await components.deployLogRepository.findOneBy({
+                hash: selection.deploymentHash,
+              })),
+              id: 99,
+              projectId: config.projectId,
+              hash: 'c'.repeat(40),
+              status: 'SUCCESS',
+            }) as any,
+        );
+      const response = await sendAsk();
+      expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+        0,
+      );
+      expect(response.status).toBe(412);
+      expect(summaryCreate).not.toHaveBeenCalled();
+    });
+
+    it('completed original Ask API History fields reauthorize the original query instead of exposing saved data directly', async () => {
+      expect((await sendAsk()).status).toBe(200);
+      const selected = structuredClone(summaryRow);
+      const ctx = {
+        ...components,
+        nativeIdentityScope: identityScope,
+        nativeHumanToken: headers['x-kailo-native-human-token'],
+        deployRepository: components.deployLogRepository,
+      };
+      const fields = new ApiHistoryResolver().getApiHistoryNestedResolver();
+      expect(
+        await fields.responsePayload(selected, {}, ctx as any),
+      ).toMatchObject({ sql: statement, summary: 'Original summary' });
+      revoked = true;
+      await expect(
+        fields.responsePayload(selected, {}, ctx as any),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(askCreate).toHaveBeenCalledTimes(1);
+      expect(summaryCreate).toHaveBeenCalledTimes(1);
     });
 
     afterAll(async () => {

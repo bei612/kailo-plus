@@ -200,9 +200,12 @@ export class ApiHistoryRepository
         .forUpdate();
       if (!row) return null;
       const current = this.transformFromDBData(row);
-      return [ApiType.GENERATE_SUMMARY, ApiType.GENERATE_VEGA_CHART].includes(
-        record.apiType,
-      ) &&
+      return [
+        ApiType.GENERATE_SUMMARY,
+        ApiType.GENERATE_VEGA_CHART,
+        ApiType.ASK,
+        ApiType.STREAM_ASK,
+      ].includes(record.apiType) &&
         current.apiType === record.apiType &&
         current.projectId === record.projectId &&
         current.governanceBindingId === record.governanceBindingId &&
@@ -227,9 +230,12 @@ export class ApiHistoryRepository
       if (!row) return null;
       const current = this.transformFromDBData(row);
       if (
-        ![ApiType.GENERATE_SUMMARY, ApiType.GENERATE_VEGA_CHART].includes(
-          expected.apiType,
-        ) ||
+        ![
+          ApiType.GENERATE_SUMMARY,
+          ApiType.GENERATE_VEGA_CHART,
+          ApiType.ASK,
+          ApiType.STREAM_ASK,
+        ].includes(expected.apiType) ||
         current.apiType !== expected.apiType ||
         current.projectId !== expected.projectId ||
         current.governanceBindingId !== expected.governanceBindingId ||

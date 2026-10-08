@@ -4370,3 +4370,156 @@ provenance, REST ask/stream and SQL-pair consumers, independent instance rollout
 and complete visual acceptance remain gaps. The two separate Java edits remain
 unvalidated and excluded; passing this first verification is not complete Wren
 integration or production readiness.
+
+## 2026-10-08 original REST Ask and UI planning stream consumers
+
+Authority and source: `.design/08` §6 (`SS-WRN-IDENTITY`,
+`SS-WRN-GOVERNANCE`), `.design/07` §4.6 and execution evidence (DD-87/98),
+not a replacement UI or a new query capability. The fixed source is
+`c5f02a0391c87420dba78632dcd86073710deb72` in the read-only
+`WrenAI-ui-0.32.2` checkout. Reverified original paths and symbols are
+`wren-ui/src/pages/api/v1/ask.ts::handler`,
+`wren-ui/src/pages/api/v1/stream/ask.ts::handler`,
+`wren-ui/src/pages/api/ask_task/streaming.ts::handler`,
+`wren-ui/src/apollo/server/resolvers/askingResolver.ts::AskingResolver.createAskingTask`,
+`wren-ui/src/apollo/server/services/askingService.ts::AskingService.createAskingTask`,
+`wren-ui/src/apollo/server/services/askingTaskTracker.ts::AskingTaskTracker.createAskingTask`,
+`wren-ui/src/apollo/server/adaptors/wrenAIAdaptor.ts::WrenAIAdaptor.ask`,
+`wren-ui/src/apollo/server/utils/apiUtils.ts::transformHistoryInput`,
+`wren-ai-service/src/web/v1/routers/ask.py::ask` and
+`wren-ai-service/src/web/v1/services/ask.py::AskService.get_ask_streaming_result`.
+The original stream unconditionally manufactured UI `done` at HTTP EOF; the
+native router allocated its UUID after POST, so a lost ACK could not be safely
+reattached by the caller. These are actual source facts, not inferred features.
+
+Impact and authorized differences: both original REST handler bodies and
+standalone response/SSE shapes are retained; only explicitly configured bound
+mode enters their shared `governedRestAsk` consumer. It uses the existing
+API History owner/CAS, original MDL reader, NativeHumanQuery, engine source
+analysis and query receipt. The request freezes current HUMAN identity,
+binding, captured MDL hash/digest, original contributing thread histories and
+one caller-owned task/key before the native POST. The generated SQL is bound
+to that captured deployment before command and on same-key re-entry; metadata
+read is not SQL execute or result exposure authorization. Actual authorized
+query data goes into the original answer generation without a SERVICE SQL
+callback. Original API History GraphQL fields consume the same fresh source
+and immutable history evidence, stripping internal proof fields from display.
+
+UI task creation/reading/cancel/response-binding/follow-up selection now consume
+the original `asking_task.detail.nativeScope` owner/MDL evidence. The actual
+GraphQL context injects the original task repository; the original tracker
+persists its owned fixed ID before POST, invokes current authorization before
+dispatch and retains that trusted owner when native polling replaces detail.
+The planning handler authorizes that original owner and captured model/view
+Resources before the native read and each emitted message. The original
+Python `data_assistance.py::DataAssistance`,
+`misleading_assistance.py::MisleadingAssistance`,
+`user_guide_assistance.py::UserGuideAssistance`,
+`sql_generation_reasoning.py::SQLGenerationReasoning` and
+`followup_sql_generation_reasoning.py::FollowUpSQLGenerationReasoning`
+continue using their original queues and provider pipelines. Their real
+`run` completion places the queue sentinel; callback finish metadata or EOF
+does not. All five full paths are under the fixed pin's
+`wren-ai-service/src/pipelines/generation/`. Reasoning `done` completes only
+that stream phase, not SQL, the whole Ask action or AI billing.
+
+State ownership/compatibility: no table, migration, shared contract or second
+task/permission/workflow authority was added. Existing native JSONB stores
+only its own context and references, not a Core SQL/body copy. Old tasks with
+no captured owner cannot acquire one from a guessed ID; they fail closed.
+Old standalone readers keep their original shapes, but mixed UI/AI-service
+deployment cannot prove fixed-ID/done semantics and is not accepted as this
+fork. Native progress remains in the original task/history. Completed history
+reauthorizes the original SQL AE and its sources without another SQL/command.
+
+Side effects and exceptions: concurrent REST entrants use the original
+INSERT/CAS winner; only that winner issues the fixed-ID POST, and duplicate
+native creation is refused. Lost/foreign ACK, GET cache loss, future status,
+pending query receipt, interrupted/claimed stream and timeout stay uncertain,
+never completed/failed by inference or blindly replayed. Native FAILED/STOPPED
+remain distinct verified outcomes, with generic errors rather than provider
+details. Missing identity/scope and revoked Resource are DENIED; missing
+delivery/binding/metadata prerequisites are PRECONDITION; configured byte
+bounds are LIMIT; changed input/owner/deployment/CAS is CONFLICT; missing
+native terminal or transport outcome is UNKNOWN. Blocked SERVICE/function
+abilities remain BLOCKED, not hidden behind a successful query. These map to
+the existing six categories in `apps/06` §4; no new public reason-code contract
+is introduced. Native queue/cache loss and a non-dispatched task after a
+fresh-check refusal still require Wren operator reconciliation of the same
+ID/history. There is no durable cache replay or automatic bounded repair;
+this remains a production blocker, not a completed convergence mechanism.
+
+Verification reused only the original 4 CPU / 4 GiB SDK, local dependencies
+and the existing isolated PostgreSQL database. Its identity was read back as
+`wren_query_itgs2n|postgres|isolated-query-fixture`; no new database, image,
+dependency download or whole-tree copy was created. Actual original commands:
+
+```sh
+WREN_QUERY_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:5432/wren_query_itgs2n node node_modules/jest/bin/jest.js --runInBand src/nativeHumanQuery.test.ts src/middleware.test.ts src/nativeQuery.test.ts
+node node_modules/jest/bin/jest.js --runInBand src/nativeHumanQuery.test.ts src/middleware.test.ts src/nativeTaskOwnership.test.ts
+python3 -B data-query/wren-ai-service/tests/pytest/providers/test_native_sql_answer_stream.py
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+```
+
+The first REST/real-PG run actually returned **371 passed / 3 failed / 374**,
+exit 1 (556.603 s): all three failures were original exact optional-argument
+assertions not yet updated for `expectedDeploymentHash`; nativeQuery and
+middleware suites passed. The real PG owner/CAS checks include ASK and
+STREAM_ASK preparation, type adoption refusal and immutable completion. The
+subsequent first UI run passed middleware **69/69** but two suites and tsc
+failed with four `TS2339` errors: the real GraphQL context lacked
+`askingTaskRepository`. The actual context type and injection were fixed,
+not suppressed. The cold PG-wide suite was not repeated.
+
+After those corrections, all three final HTTP/JWKS/tracker/ownership suites
+passed **333/333**, exit 0 (15.833 s); whole-UI tsc exited 0. The original
+Python producer/service/router suite passed **14/14**, exit 0 (0.040 s after
+restoration). It imports real production implementations with the existing
+dependency-boundary harness; it is not a live Pydantic/provider deployment or
+AI usage receipt. UTF-8 Chinese split chunks, native GENERAL/SQL answer
+content, owner/MDL drift, current source denial and real pre-POST consumers are
+covered without replacing the original page or broad suite with mock success.
+
+Actual private production faults, then reverse patches and `cmp` exit 0:
+
+- Removing the pre-command deployment comparison emitted **one actual query
+  command** for a different deployment; the original HTTP check failed before
+  its response-status assertion. An eventual 409 did not erase that dispatch.
+- Accepting a foreign native done ID completed the REST history with 200;
+  the original GENERAL-stream check failed (expected 503).
+- Removing the UI task's HUMAN-owner comparison let a foreign user read a
+  200 stream; the original HTTP ownership check failed (expected 403).
+- Adding UI `done` on EOF was caught as an extra completion event by the
+  original planning-stream check. These four isolated production branches
+  were mutated in one private candidate run: **4 failed / 260 filtered skips**,
+  exit 1 (12.239 s), not a compiler failure.
+- Premature callback sentinels in the real data-assistance and SQL-reasoning
+  producers caused **3 failures / 14** in the original Python suite, exit 1.
+  Provider callback finish metadata was observed before the real provider
+  result, so it could not be accepted as native completion.
+
+All six mutated production files were restored and matched formal source.
+The original three TS suites then passed **333/333**, exit 0 (14.840 s),
+followed by the final stable-input run above; Python restored **14/14**.
+The exact 22 TS/check and eight Python inputs are checked against the same SDK
+candidate with `cmp` exit 0, excluding the two unrelated unvalidated Java
+edits. Original Prettier `--check` on those 22 inputs exited 0; scoped
+`git diff --check -- data-query` also exited 0. Neither is a global full check.
+
+Logs remain in
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+`rest-ask-positive.log`, `rest-ask-ui-positive.log`,
+`rest-ask-ui-tsc.log`, `rest-ask-ui-checked.log`,
+`rest-ask-ui-checked-tsc.log`, `rest-ask-consumers-negative.log`,
+`rest-ask-python-negative.log`, `rest-ask-restored.log`,
+`rest-ask-python-restored.log`, `rest-ask-final.log`,
+`rest-ask-final-tsc.log`, `rest-ask-format-checked.log` and
+`rest-ask-format-stable.log`.
+No real Wren business container, ACTIVE binding, live datasource/provider,
+iframe/browser screenshot, Desktop/Mobile acceptance or global full check was
+produced. Remaining native generate-SQL/SQL-pair/recommendation and other
+mutation consumers, trusted SERVICE SQL, ordinary-function/provider provenance,
+AI billing, independent instance rollout and visual acceptance are not
+claimed complete. Mobile remains a non-component host; no native page/layout
+was deleted or redesigned by this batch. This is source-level partial
+integration, not a 100% upstream restoration or production readiness claim.

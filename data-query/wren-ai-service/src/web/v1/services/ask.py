@@ -1,8 +1,11 @@
 import asyncio
 import logging
+import json
 from typing import Dict, List, Literal, Optional
+from uuid import UUID
 
 from cachetools import TTLCache
+from fastapi import HTTPException
 from langfuse.decorators import observe
 from pydantic import AliasChoices, BaseModel, Field
 
@@ -20,6 +23,7 @@ class AskHistory(BaseModel):
 
 # POST /v1/asks
 class AskRequest(BaseRequest):
+    native_task_id: Optional[UUID] = None
     query: str
     # don't recommend to use id as a field name, but it's used in the older version of API spec
     # so we need to support as a choice, and will remove it in the future
@@ -639,14 +643,7 @@ class AskService:
             logger.exception(
                 f"ask pipeline - OTHERS: {ask_result_request.query_id} is not found"
             )
-            return AskResultResponse(
-                status="failed",
-                type="TEXT_TO_SQL",
-                error=AskError(
-                    code="OTHERS",
-                    message=f"{ask_result_request.query_id} is not found",
-                ),
-            )
+            raise HTTPException(status_code=404, detail="Native task evidence unavailable")
 
         return result
 
@@ -663,16 +660,29 @@ class AskService:
                     _pipeline_name = "data_assistance"
                 elif self._ask_results.get(query_id).general_type == "MISLEADING_QUERY":
                     _pipeline_name = "misleading_assistance"
-            elif self._ask_results.get(query_id).status == "planning":
-                if self._ask_results.get(query_id).is_followup:
-                    _pipeline_name = "followup_sql_generation_reasoning"
-                else:
-                    _pipeline_name = "sql_generation_reasoning"
+            else:
+                reasoning = (
+                    "followup_sql_generation_reasoning"
+                    if self._ask_results.get(query_id).is_followup
+                    else "sql_generation_reasoning"
+                )
+                # The task can advance to SQL generation before the browser
+                # opens its original reasoning stream. Consume its real queue,
+                # not a fabricated completion inferred from that phase change.
+                pipeline = self._pipelines.get(reasoning)
+                if pipeline and (
+                    self._ask_results.get(query_id).status == "planning"
+                    or query_id in pipeline._user_queues
+                ):
+                    _pipeline_name = reasoning
 
             if _pipeline_name:
                 async for chunk in self._pipelines[
                     _pipeline_name
                 ].get_streaming_results(query_id):
+                    if chunk is None:
+                        yield f"data: {json.dumps({'done': True, 'queryId': query_id})}\n\n"
+                        return
                     event = SSEEvent(
                         data=SSEEvent.SSEEventMessage(message=chunk),
                     )

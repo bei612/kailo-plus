@@ -554,3 +554,68 @@ a Postgres query dispatch. No grants are changed and a failed check is not a
 successful binding observation. Read-only credentials remain the database's
 enforcement boundary; these checks are not a new general SQL authorization
 engine or evidence of a live datasource's configuration.
+
+## Original REST Ask and streaming Ask
+
+When query governance is explicitly configured, the original `/api/v1/ask`
+and `/api/v1/stream/ask` consume the same verified HUMAN identity and scope as
+`run_sql`. Supply the original `question`, optional `sampleSize`, `language`
+and `threadId`, plus one caller-owned UUID `Idempotency-Key`. Retain the same
+key and unchanged input while observing an uncertain request. An explicitly
+configured but empty or invalid delivery never enters standalone execution.
+Without any query-governance configuration, the original standalone handlers
+and response shapes remain unchanged.
+
+The native API History row freezes the original task ID, current identity,
+captured deployment and original thread references before the Ask POST. The
+AI service consumes this fixed native ID and refuses duplicate creation.
+Observation of a lost POST acknowledgement reads that same native task; it
+does not POST a replacement. The original MDL consumer rechecks all captured
+model/view Resource mappings, including before exposing progress or answers.
+Generated SQL then uses the existing HUMAN query Action and original engine
+source analysis, bound to that same captured deployment. SQL UNKNOWN cannot
+start a summary. The summary receives the authorized query data, not a second
+SERVICE SQL callback. Metadata read authorization does not stand in for SQL
+execution or result disclosure authorization.
+
+The original GENERAL answer and SQL summary streaming paths retain the
+original content blocks. Only the native generator's completed provider call
+can emit the exact task completion receipt. EOF, timeout, cache loss, foreign
+IDs and unknown statuses do not complete API History or emit a successful
+`message_stop`. Once native streaming is claimed, re-entry does not blindly
+consume or restart it. An uncertain or interrupted stream requires the Wren
+operator to reconcile that same native task/history; durable replay of lost
+native caches remains unavailable. Completed history fields reauthorize the
+same metadata, frozen thread references and SQL Action before disclosure.
+
+These native REST consumers do not prove AI billing, trusted SERVICE SQL,
+ordinary-function provenance or the existence of a deployed business instance.
+They do not add a task table, public permission authority, Workflow or Core SQL
+body copy. Actual release/binding, datasource/provider configuration and full
+page/device acceptance remain separate prerequisites.
+
+The original UI planning stream `/api/ask_task/streaming` also consumes the
+current verified HUMAN and scope. GraphQL task creation captures the original
+deployment's authorized metadata reference and stores the current owner in
+the existing `asking_task.detail` JSONB before the fixed-ID native POST. The
+original tracker checks current authorization again before that POST and
+preserves the trusted owner when polling native results. Task reads,
+cancellation, response binding and follow-up/rerun task selection consume this
+same original evidence; the GraphQL context supplies the actual task
+repository, not an actor field with no reader.
+
+Planning content is freshly authorized before every native message. Only the
+matching native reasoning pipeline's actual provider completion becomes the
+original UI `done` event. This event completes the reasoning stream, not the
+whole generated query, SQL execution or AI billing. EOF, a foreign completion,
+cache loss, expiry or source revocation never manufactures `done`. The stream
+uses the original delivered response byte budget and existing wait limit.
+
+Old tasks without captured owner/deployment evidence remain in native storage
+but cannot acquire a new owner by guessing a task ID. No SQL schema or duplicate
+task table is added. This fork's UI and AI-service task-ID/completion changes
+must be released together; an old AI service cannot prove the new fixed-ID or
+completion behavior. A failed fresh check before POST keeps the original
+non-dispatched task for operator reconciliation instead of pretending the
+native provider failed. These consumers are not evidence that all remaining
+native mutation, recommendation, SQL-pair or SERVICE execution paths are ready.

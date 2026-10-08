@@ -421,6 +421,7 @@ export class NativeHumanQuery {
     previewScope: string,
     dryRun: boolean,
     threadId?: string,
+    expectedDeploymentHash?: string,
   ) {
     const action = dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1';
     const policy = dryRun ? this.config.dryRunAction : this.config.humanAction;
@@ -458,6 +459,7 @@ export class NativeHumanQuery {
         previewScope,
         action,
         threadId,
+        expectedDeploymentHash,
       );
       const resources = [];
       for (const source of draft.objects)
@@ -537,6 +539,7 @@ export class NativeHumanQuery {
       previewScope,
       action,
       threadId,
+      expectedDeploymentHash,
     );
     return this.disclose(token, key, receipt, check, action);
   }

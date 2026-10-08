@@ -21,6 +21,7 @@ import {
   AskResultType,
 } from '@/apollo/server/models/adaptor';
 import { getLogger } from '@server/utils';
+import { governedRestAsk } from '@server/services/nativeRestAsk';
 import {
   EventType,
   StateType,
@@ -96,6 +97,10 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
+  if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+    await governedRestAsk(req, res, true);
+    return;
+  }
   const { question, sampleSize, language, threadId } =
     req.body as AsyncAskRequest;
   const startTime = Date.now();

@@ -173,6 +173,82 @@ integration('original Wren native answer PostgreSQL CAS', () => {
     ).toBe('original answer');
   });
 
+  it.each([ApiType.ASK, ApiType.STREAM_ASK])(
+    'original %s task owns one JSONB snapshot and rejects cross-surface adoption',
+    async (apiType) => {
+      const history = new ApiHistoryRepository(tx);
+      const input = {
+        id: randomUUID(),
+        projectId,
+        apiType,
+        governanceBindingId: randomUUID(),
+        threadId: randomUUID(),
+        headers: {},
+        statusCode: 202,
+        durationMs: 0,
+        requestPayload: {
+          question: 'Original',
+          nativeAsk: { taskId: randomUUID(), identityScope: 'a'.repeat(64) },
+        },
+        responsePayload: { nativeAsk: {} },
+      };
+      const owner = await history.prepareNativeGeneration(input);
+      expect(owner.created).toBe(true);
+      expect((await history.prepareNativeGeneration(input)).created).toBe(
+        false,
+      );
+      const other = {
+        ...input,
+        apiType: apiType === ApiType.ASK ? ApiType.STREAM_ASK : ApiType.ASK,
+      };
+      expect(await history.prepareNativeGeneration(other)).toBeNull();
+      expect(
+        await history.advanceNativeGeneration(
+          other,
+          { summary: 'foreign' },
+          200,
+          1,
+        ),
+      ).toBeNull();
+      const claim = await history.advanceNativeGeneration(
+        owner.record,
+        { nativeAsk: { streamClaimed: true } },
+        202,
+        1,
+      );
+      expect(claim).not.toBeNull();
+      expect(
+        await history.advanceNativeGeneration(
+          owner.record,
+          { summary: 'stale' },
+          200,
+          2,
+        ),
+      ).toBeNull();
+      const terminal = await history.advanceNativeGeneration(
+        claim,
+        {
+          nativeAsk: { streamClaimed: true, doneQueryId: input.id },
+          summary: 'Original',
+        },
+        200,
+        2,
+      );
+      expect(terminal.statusCode).toBe(200);
+      expect(
+        await history.advanceNativeGeneration(
+          claim,
+          { summary: 'late' },
+          200,
+          3,
+        ),
+      ).toBeNull();
+      expect(
+        (await history.findOneBy({ id: input.id })).responsePayload,
+      ).toEqual(terminal.responsePayload);
+    },
+  );
+
   it.each([
     'requestPayload',
     'responsePayload',

@@ -240,6 +240,7 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
     try {
       const res = await axios.post(`${this.wrenAIBaseEndpoint}/v1/asks`, {
         query: input.query,
+        native_task_id: input.queryId,
         id: input.deployId,
         histories: this.transformHistoryInput(input.histories),
         configurations: input.configurations,

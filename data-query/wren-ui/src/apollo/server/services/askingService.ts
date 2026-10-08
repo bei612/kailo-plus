@@ -46,8 +46,13 @@ import {
 } from '../backgrounds';
 import { getConfig } from '@server/config';
 import { TextBasedAnswerBackgroundTracker } from '../backgrounds/textBasedAnswerBackgroundTracker';
-import { IAskingTaskTracker, TrackedAskingResult } from './askingTaskTracker';
+import {
+  IAskingTaskTracker,
+  TrackedAskingResult,
+  CreateAskingTaskInput,
+} from './askingTaskTracker';
 import { canonical, NativeQueryRefusal } from './nativeQueryAdmission';
+import type { NativeAskingScope } from '../repositories/askingTaskRepository';
 
 const config = getConfig();
 
@@ -63,6 +68,8 @@ export interface Task {
 export interface AskingPayload {
   threadId?: number;
   language: string;
+  nativeScope?: NativeAskingScope;
+  authorizeNative?: CreateAskingTaskInput['authorizeNative'];
 }
 
 export interface AskingTaskInput {
@@ -637,7 +644,14 @@ export class AskingService implements IAskingService {
   ): Promise<Task> {
     const { threadId, language } = payload;
     const project = await this.projectService.getCurrentProject();
-    const deployId = await this.getDeployId(project);
+    if (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
+      !payload.nativeScope
+    )
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    const deployId =
+      payload.nativeScope?.metadataReference.hash ??
+      (await this.getDeployId(project));
 
     // if it's a follow-up question, then the input will have a threadId
     // then use the threadId to get the sql and get the steps of last thread response
@@ -647,6 +661,8 @@ export class AskingService implements IAskingService {
       : null;
     const response = await this.askingTaskTracker.createAskingTask({
       projectId: project.id,
+      nativeScope: payload.nativeScope,
+      authorizeNative: payload.authorizeNative,
       query: input.question,
       histories,
       deployId,

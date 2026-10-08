@@ -48,7 +48,7 @@ class Event(Model):
         return f"data: {json.dumps(self.data.__dict__)}\n\n"
 
 
-def load_original(name, path):
+def load_original(name, path, dependencies=None):
     configuration = type("Configuration", (), {"show_current_time": lambda _: "fixture-time"})
     modules = {
         "hamilton": types.SimpleNamespace(base=types.SimpleNamespace(DictResult=object)),
@@ -61,13 +61,14 @@ def load_original(name, path):
         "src.utils": types.SimpleNamespace(trace_cost=decorator, trace_metadata=decorator),
         "src.web.v1.services": types.SimpleNamespace(Configuration=configuration, BaseRequest=Model, SSEEvent=Event),
         "cachetools": types.SimpleNamespace(TTLCache=lambda **kwargs: {}),
-        "pydantic": types.SimpleNamespace(BaseModel=Model),
+        "pydantic": types.SimpleNamespace(BaseModel=Model, Field=lambda *args, **kwargs: None, AliasChoices=lambda *args: args),
         "fastapi": types.SimpleNamespace(HTTPException=HTTPException, APIRouter=Router,
             BackgroundTasks=Model, Depends=lambda value: value),
         "fastapi.responses": types.SimpleNamespace(StreamingResponse=Model),
         "src.globals": types.SimpleNamespace(ServiceContainer=Model, ServiceMetadata=Metadata,
             get_service_container=lambda: None, get_service_metadata=lambda: None),
     }
+    modules.update(dependencies or {})
     with patch.dict(sys.modules, modules):
         source = importlib.util.spec_from_file_location(name, ROOT / path)
         module = importlib.util.module_from_spec(source)
@@ -91,6 +92,24 @@ chart_router = load_router("native_chart_router", "src/web/v1/routers/chart.py",
     "src.web.v1.services.chart", chart_module)
 adjustment_router = load_router("native_adjustment_router", "src/web/v1/routers/chart_adjustment.py",
     "src.web.v1.services.chart_adjustment", adjustment_module)
+ask_module = load_original("native_ask_service", "src/web/v1/services/ask.py")
+ask_router = load_router("native_ask_router", "src/web/v1/routers/ask.py",
+    "src.web.v1.services.ask", ask_module)
+general_modules = [
+    (load_original(f"native_{name}_pipeline", f"src/pipelines/generation/{name}.py", {"src.web.v1.services.ask": ask_module}), name, class_name, general_type)
+    for name, class_name, general_type in [
+        ("data_assistance", "DataAssistance", "DATA_ASSISTANCE"),
+        ("user_guide_assistance", "UserGuideAssistance", "USER_GUIDE"),
+        ("misleading_assistance", "MisleadingAssistance", "MISLEADING_QUERY"),
+    ]
+]
+reasoning_modules = [
+    (load_original(f"native_{name}_pipeline", f"src/pipelines/generation/{name}.py", {
+        "src.web.v1.services.ask": ask_module,
+        "src.pipelines.generation.utils.sql": types.SimpleNamespace(construct_instructions=lambda value: value, sql_generation_reasoning_system_prompt="original"),
+    }), name, class_name)
+    for name, class_name in [("sql_generation_reasoning", "SQLGenerationReasoning"), ("followup_sql_generation_reasoning", "FollowUpSQLGenerationReasoning")]
+]
 
 
 class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
@@ -99,6 +118,7 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
             (answer_router, service_module.SqlAnswerService({}), "sql_answer_service", "sql_answer", "get_sql_answer_result"),
             (chart_router, chart_module.ChartService({}), "chart_service", "chart", "get_chart_result"),
             (adjustment_router, adjustment_module.ChartAdjustmentService({}), "chart_adjustment_service", "chart_adjustment", "get_chart_adjustment_result"),
+            (ask_router, ask_module.AskService({}), "ask_service", "ask", "get_ask_result"),
         ]:
             with self.subTest(create=create):
                 identifier = uuid4()
@@ -112,7 +132,7 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(scheduled), 1)
                 self.assertEqual(scheduled[0][0][0], getattr(service, create))
                 observed = await getattr(router, read)(str(identifier), container)
-                self.assertIn(observed.status, ["preprocessing", "fetching"])
+                self.assertIn(observed.status, ["preprocessing", "fetching", "understanding"])
                 # Simulate loss of the HTTP create acknowledgement: only GET the
                 # already persisted ID. Observation never schedules native work.
                 self.assertIs(await getattr(router, read)(str(identifier), container), observed)
@@ -128,6 +148,7 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
             (answer_router, service_module.SqlAnswerService({}), "sql_answer_service", "sql_answer"),
             (chart_router, chart_module.ChartService({}), "chart_service", "chart"),
             (adjustment_router, adjustment_module.ChartAdjustmentService({}), "chart_adjustment_service", "chart_adjustment"),
+            (ask_router, ask_module.AskService({}), "ask_service", "ask"),
         ]:
             with self.subTest(create=create):
                 scheduled = []
@@ -199,6 +220,83 @@ class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(HTTPException) as caught:
             service.get_sql_answer_result(types.SimpleNamespace(query_id="expired-original-task"))
         self.assertEqual(caught.exception.status_code, 404)
+
+    async def test_original_general_pipelines_produce_done_only_after_provider_returns_without_cross_task_chunks(self):
+        for module, name, class_name, general_type in general_modules:
+            with self.subTest(pipeline=name):
+                pipeline = object.__new__(getattr(module, class_name))
+                pipeline._user_queues = {}
+                pipeline._components = {}
+                pipeline._configs = {}
+                pipeline._pipe = types.SimpleNamespace(execute=AsyncMock(return_value={"native": "result"}))
+                service = ask_module.AskService({name: pipeline})
+                for identifier in ["first", "second"]:
+                    pipeline._streaming_callback(types.SimpleNamespace(content=identifier, meta={"finish_reason": "stop"}), identifier)
+                    self.assertEqual(pipeline._user_queues[identifier].qsize(), 1)
+                    await pipeline.run(query="question", language="Chinese", query_id=identifier, **({"db_schemas": []} if name != "user_guide_assistance" else {}))
+                    service._ask_results[identifier] = types.SimpleNamespace(type="GENERAL", general_type=general_type)
+                async def read(identifier):
+                    return [json.loads(event.removeprefix("data: ")) async for event in service.get_ask_streaming_result(identifier)]
+                first, second = await asyncio.gather(read("first"), read("second"))
+                self.assertEqual(first, [{"message": "first"}, {"done": True, "queryId": "first"}])
+                self.assertEqual(second, [{"message": "second"}, {"done": True, "queryId": "second"}])
+
+    async def test_original_general_timeout_or_provider_failure_never_fabricates_native_done(self):
+        for module, name, class_name, general_type in general_modules:
+            with self.subTest(pipeline=name):
+                pipeline = object.__new__(getattr(module, class_name))
+                pipeline._user_queues = {}
+                pipeline._components = {}
+                pipeline._configs = {}
+                pipeline._pipe = types.SimpleNamespace(execute=AsyncMock(side_effect=RuntimeError("lost provider finish")))
+                pipeline._streaming_callback(types.SimpleNamespace(content="partial", meta={"finish_reason": "stop"}), "first")
+                with self.assertRaisesRegex(RuntimeError, "lost provider"):
+                    await pipeline.run(query="question", language="Chinese", query_id="first", **({"db_schemas": []} if name != "user_guide_assistance" else {}))
+                self.assertEqual(pipeline._user_queues["first"].qsize(), 1)
+                service = ask_module.AskService({name: pipeline})
+                service._ask_results["first"] = types.SimpleNamespace(type="GENERAL", general_type=general_type)
+                async def timeout(awaitable, **kwargs):
+                    awaitable.close()
+                    raise TimeoutError()
+                with patch.object(module.asyncio, "wait_for", timeout):
+                    events = [event async for event in service.get_ask_streaming_result("first")]
+                self.assertEqual(events, [])
+                with self.assertRaises(HTTPException) as caught:
+                    service.get_ask_result(types.SimpleNamespace(query_id="missing"))
+                self.assertEqual(caught.exception.status_code, 404)
+
+    async def test_original_planning_and_followup_generators_emit_only_real_provider_completion_for_the_owned_task(self):
+        for module, name, class_name in reasoning_modules:
+            with self.subTest(pipeline=name):
+                pipeline = object.__new__(getattr(module, class_name))
+                pipeline._user_queues = {}
+                pipeline._components = {}
+                pipeline._pipe = types.SimpleNamespace(execute=AsyncMock(return_value={"post_process": "original"}))
+                pipeline._streaming_callback(types.SimpleNamespace(content="原生思考", meta={"finish_reason": "stop"}), "owned")
+                self.assertEqual(pipeline._user_queues["owned"].qsize(), 1)
+                await pipeline.run(query="question", contexts=[], query_id="owned", **({"histories": []} if name.startswith("followup") else {}))
+                service = ask_module.AskService({name: pipeline})
+                service._ask_results["owned"] = types.SimpleNamespace(type="TEXT_TO_SQL", status="planning", is_followup=name.startswith("followup"))
+                events = [json.loads(event.removeprefix("data: ")) async for event in service.get_ask_streaming_result("owned")]
+                self.assertEqual(events, [{"message": "原生思考"}, {"done": True, "queryId": "owned"}])
+
+    async def test_original_planning_provider_failure_and_queue_timeout_have_no_done_receipt(self):
+        for module, name, class_name in reasoning_modules:
+            with self.subTest(pipeline=name):
+                pipeline = object.__new__(getattr(module, class_name))
+                pipeline._user_queues = {}
+                pipeline._components = {}
+                pipeline._pipe = types.SimpleNamespace(execute=AsyncMock(side_effect=RuntimeError("provider finish lost")))
+                with self.assertRaisesRegex(RuntimeError, "provider finish lost"):
+                    await pipeline.run(query="question", contexts=[], query_id="owned", **({"histories": []} if name.startswith("followup") else {}))
+                service = ask_module.AskService({name: pipeline})
+                service._ask_results["owned"] = types.SimpleNamespace(type="TEXT_TO_SQL", status="planning", is_followup=name.startswith("followup"))
+                async def timeout(awaitable, **kwargs):
+                    awaitable.close()
+                    raise TimeoutError()
+                with patch.object(module.asyncio, "wait_for", timeout):
+                    events = [event async for event in service.get_ask_streaming_result("owned")]
+                self.assertEqual(events, [])
 
 
 class NativeChartData(unittest.IsolatedAsyncioTestCase):

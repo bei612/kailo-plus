@@ -138,9 +138,7 @@ class FollowUpSQLGenerationReasoning(BasicPipeline):
             self._user_queues[query_id] = asyncio.Queue()
 
         # Put the chunk content into the user's queue
-        asyncio.create_task(self._user_queues[query_id].put(chunk.content))
-        if chunk.meta.get("finish_reason"):
-            asyncio.create_task(self._user_queues[query_id].put("<DONE>"))
+        self._user_queues[query_id].put_nowait(chunk.content)
 
     async def get_streaming_results(self, query_id):
         async def _get_streaming_results(query_id):
@@ -152,17 +150,15 @@ class FollowUpSQLGenerationReasoning(BasicPipeline):
         while True:
             try:
                 # Wait for an item from the user's queue
-                self._streaming_results = await asyncio.wait_for(
+                result = await asyncio.wait_for(
                     _get_streaming_results(query_id), timeout=120
                 )
-                if (
-                    self._streaming_results == "<DONE>"
-                ):  # Check for end-of-stream signal
+                if result is None:
                     del self._user_queues[query_id]
+                    yield None
                     break
-                if self._streaming_results:  # Check if there are results to yield
-                    yield self._streaming_results
-                    self._streaming_results = ""  # Clear after yielding
+                if result:
+                    yield result
             except TimeoutError:
                 break
 
@@ -178,7 +174,7 @@ class FollowUpSQLGenerationReasoning(BasicPipeline):
         query_id: Optional[str] = None,
     ):
         logger.info("Followup SQL Generation Reasoning pipeline is running...")
-        return await self._pipe.execute(
+        result = await self._pipe.execute(
             ["post_process"],
             inputs={
                 "query": query,
@@ -191,3 +187,6 @@ class FollowUpSQLGenerationReasoning(BasicPipeline):
                 **self._components,
             },
         )
+        queue = self._user_queues.setdefault(query_id, asyncio.Queue())
+        await queue.put(None)
+        return result

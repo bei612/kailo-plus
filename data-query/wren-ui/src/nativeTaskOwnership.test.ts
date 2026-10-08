@@ -11,7 +11,17 @@ import { ProjectResolver } from './apollo/server/resolvers/projectResolver';
 import {
   bindingServiceCall,
   loadQueryDelivery,
+  digest,
+  NativeQueryRefusal,
 } from './apollo/server/services/nativeQueryAdmission';
+import { components } from './common';
+import planningStreamHandler from './pages/api/ask_task/streaming';
+import { Readable } from 'stream';
+import { createServer, Server } from 'http';
+import { AddressInfo } from 'net';
+import { apiResolver } from 'next/dist/server/api-utils/node/api-resolver';
+
+jest.mock('./common', () => ({ components: {} }));
 
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
@@ -230,6 +240,259 @@ describe('native task ownership consumers', () => {
   });
 });
 
+describe('original native planning HTTP stream and HUMAN task owner', () => {
+  let server: Server, endpoint: string, task: any, ctx: any, revoked: boolean;
+  let nativeStream: jest.Mock;
+  const queryId = randomUUID();
+  const originalDelivery = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+  const originalComponents = { ...components };
+  const project = { id: 7, language: 'EN' };
+  const config = {
+    projectId: 7,
+    bindingId: randomUUID(),
+    workspaceId: randomUUID(),
+    nativeInstanceRef: 'original-fixture',
+    nativeScopeRef: '7',
+    responseMaxBytes: 4096,
+  };
+  const deployment = {
+    id: 12,
+    projectId: 7,
+    hash: 'b'.repeat(40),
+    status: 'SUCCESS',
+    manifest: {
+      catalog: 'wren',
+      schema: 'public',
+      models: [{ name: 'original_model', columns: [] }],
+    },
+    nativeObjectRefs: [
+      { nativeType: 'model', nativeId: 8, nativeName: 'original_model' },
+    ],
+  };
+  const proof = {
+    bindingId: config.bindingId,
+    identityScope: 'a'.repeat(64),
+    metadataReference: {
+      hash: deployment.hash,
+      digest: digest({
+        hash: deployment.hash,
+        mdl: Buffer.from(JSON.stringify(deployment.manifest)).toString(
+          'base64',
+        ),
+      }),
+    },
+  };
+  const headers = {
+    'x-kailo-native-human-token': 'verified-original-human',
+    'x-kailo-native-identity-scope': proof.identityScope,
+  };
+  const send = (changes = {}, method = 'GET') =>
+    fetch(endpoint, { method, headers: { ...headers, ...changes } });
+  beforeAll(async () => {
+    server = createServer(
+      (request, response) =>
+        void apiResolver(
+          request,
+          response,
+          {
+            queryId: new URL(
+              request.url,
+              'http://fixture.invalid',
+            ).searchParams.get('queryId'),
+          },
+          { default: planningStreamHandler },
+          {
+            previewModeId: '',
+            previewModeEncryptionKey: '',
+            previewModeSigningKey: '',
+          },
+          false,
+        ),
+    );
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
+    endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/ask_task/streaming?queryId=${queryId}`;
+  });
+  beforeEach(() => {
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    jest.mocked(loadQueryDelivery).mockResolvedValue(config as any);
+    revoked = false;
+    task = {
+      id: 1,
+      projectId: project.id,
+      queryId,
+      question: 'Original',
+      detail: {
+        status: AskResultStatus.PLANNING,
+        nativeScope: structuredClone(proof),
+      },
+    };
+    const projectService = { getCurrentProject: jest.fn(async () => project) };
+    const repository = {
+      findOneBy: jest.fn(async (where) =>
+        Object.entries(where).every(([name, value]) => task[name] === value)
+          ? structuredClone(task)
+          : null,
+      ),
+    };
+    const service = Object.assign(Object.create(AskingService.prototype), {
+      projectService,
+      askingTaskRepository: repository,
+      askingTaskTracker: {
+        getAskingResult: jest.fn(async () => ({
+          queryId,
+          projectId: project.id,
+          status: AskResultStatus.PLANNING,
+        })),
+      },
+    });
+    nativeStream = jest.fn(async () =>
+      Readable.from([
+        'data: {"message":"原生思考"}\n\n',
+        `data: ${JSON.stringify({ done: true, queryId })}\n\n`,
+      ]),
+    );
+    Object.assign(components, {
+      projectService,
+      askingTaskRepository: repository,
+      askingService: service,
+      deployLogRepository: {
+        findOneBy: jest.fn(async () => structuredClone(deployment)),
+        findLastProjectDeployLog: jest.fn(async () =>
+          structuredClone(deployment),
+        ),
+      },
+      wrenAIAdaptor: { getAskStreamingResult: nativeStream },
+      telemetry: { sendEvent: jest.fn() },
+    });
+    ctx = {
+      ...components,
+      deployRepository: components.deployLogRepository,
+      nativeHumanToken: headers['x-kailo-native-human-token'],
+      nativeIdentityScope: proof.identityScope,
+    };
+    // A Resource/version must remain the same across the original before/after
+    // metadata checks, not be a new fixture identity on each read.
+    const resourceId = randomUUID();
+    jest
+      .mocked(bindingServiceCall)
+      .mockImplementation(async (_config, _operation, input) => {
+        if (revoked) throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+        const source = input.resolveResource as any;
+        return {
+          resource: {
+            resourceId,
+            resourceVersion: 1,
+            nativeType: source.nativeType,
+            nativeRef: source.nativeRef,
+            nativeInstanceRef: config.nativeInstanceRef,
+            nativeScopeRef: config.nativeScopeRef,
+          },
+        };
+      });
+  });
+  afterAll(async () => {
+    if (originalDelivery === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = originalDelivery;
+    Object.keys(components).forEach((key) => delete components[key]);
+    Object.assign(components, originalComponents);
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeAllConnections();
+    });
+  });
+  it('keeps the original message/done stream after real native task ownership and fresh captured MDL authorization', async () => {
+    const response = await send();
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(
+      'data: {"message":"原生思考"}\n\ndata: {"done":true}\n\n',
+    );
+    expect(nativeStream).toHaveBeenCalledWith(queryId);
+    expect(
+      jest.mocked(bindingServiceCall).mock.calls.length,
+    ).toBeGreaterThanOrEqual(6);
+  });
+  it.each([
+    'foreign-user',
+    'foreign-binding',
+    'legacy-owner',
+    'foreign-project',
+  ])('rejects original %s before reading the native stream', async (mode) => {
+    if (mode === 'foreign-user')
+      task.detail.nativeScope.identityScope = 'b'.repeat(64);
+    if (mode === 'foreign-binding')
+      task.detail.nativeScope.bindingId = randomUUID();
+    if (mode === 'legacy-owner') delete task.detail.nativeScope;
+    if (mode === 'foreign-project') task.projectId++;
+    expect((await send()).status).toBe(403);
+    expect(nativeStream).not.toHaveBeenCalled();
+  });
+  it('current Resource revocation blocks the original planning stream before any native read', async () => {
+    revoked = true;
+    expect((await send()).status).toBe(403);
+    expect(nativeStream).not.toHaveBeenCalled();
+  });
+  it('applies the original delivered response byte budget before exposing a planning chunk', async () => {
+    nativeStream.mockResolvedValue(
+      Readable.from([
+        `data: ${JSON.stringify({ message: 'a'.repeat(config.responseMaxBytes) })}\n\n`,
+      ]),
+    );
+    const response = await send();
+    expect(await response.text()).toBe('');
+  });
+  it.each(['EOF', 'foreign-done'])(
+    'original planning %s never manufactures done',
+    async (mode) => {
+      nativeStream.mockResolvedValue(
+        Readable.from([
+          'data: {"message":"partial"}\n\n',
+          ...(mode === 'foreign-done'
+            ? ['data: {"done":true,"queryId":"foreign"}\n\n']
+            : []),
+        ]),
+      );
+      const response = await send();
+      expect(await response.text()).toBe('data: {"message":"partial"}\n\n');
+    },
+  );
+  it('rechecks current HUMAN and Resource permission at each actual chunk, not just the initial token', async () => {
+    nativeStream.mockResolvedValue(
+      Readable.from(
+        (async function* () {
+          yield 'data: {"message":"visible"}\n\n';
+          revoked = true;
+          yield 'data: {"message":"private"}\n\n';
+        })(),
+      ),
+    );
+    const response = await send();
+    expect(await response.text()).not.toContain('private');
+  });
+  it('the original GraphQL create consumer passes captured HUMAN/MDL proof and a real pre-POST reauthorization consumer', async () => {
+    ctx.askingService = {
+      createAskingTask: jest.fn(async () => ({ id: queryId })),
+    };
+    const result = await new AskingResolver().createAskingTask(
+      null,
+      { data: { question: 'Original' } },
+      ctx,
+    );
+    expect(result.id).toBe(queryId);
+    const payload = ctx.askingService.createAskingTask.mock.calls[0][1];
+    expect(payload.nativeScope).toEqual(proof);
+    await expect(payload.authorizeNative(queryId)).resolves.toMatchObject({
+      queryId,
+    });
+    task.detail.nativeScope.identityScope = 'b'.repeat(64);
+    await expect(payload.authorizeNative(queryId)).rejects.toMatchObject({
+      status: 403,
+    });
+  });
+});
+
 describe('native reset transaction consumer', () => {
   it.each([false, true])(
     'preserves original cleanup with one transaction, rollback=%s',
@@ -371,6 +634,73 @@ describe('acknowledged native asking task persistence and observation', () => {
     ]);
     expect((await tracker.getAskingResult('acknowledged')).taskId).toBe(1);
     expect(adaptor.getAskResult).not.toHaveBeenCalled();
+  });
+
+  it('bound original Asking commits the exact HUMAN owner before POST, freshly authorizes it and observes after lost ACK', async () => {
+    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    const nativeScope = {
+      bindingId: randomUUID(),
+      identityScope: 'a'.repeat(64),
+      metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+    };
+    const authorizeNative = jest.fn(async (queryId) => {
+      expect(rows).toHaveLength(1);
+      expect(rows[0].queryId).toBe(queryId);
+      expect(rows[0].detail.nativeScope).toEqual(nativeScope);
+    });
+    adaptor.ask.mockImplementation(async (input) => {
+      expect(authorizeNative).toHaveBeenCalledWith(input.queryId);
+      expect(rows[0].queryId).toBe(input.queryId);
+      throw new Error('lost create ACK');
+    });
+    try {
+      const result = await tracker.createAskingTask({
+        query: 'Original',
+        projectId: 7,
+        nativeScope,
+        authorizeNative,
+      });
+      expect(result.queryId).toBe(rows[0].queryId);
+      expect(result.queryId).toMatch(/^[a-f0-9-]{36}$/);
+      repository.lockQuery.mockResolvedValue(rows[0]);
+      await tracker.pollTasks();
+      expect(rows[0].detail.nativeScope).toEqual(nativeScope);
+      expect(rows[0].detail.status).toBe(AskResultStatus.FINISHED);
+      expect(adaptor.ask).toHaveBeenCalledTimes(1);
+    } finally {
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    }
+  });
+
+  it('a changed bound owner before POST refuses the real native call without pretending native failure', async () => {
+    const original = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    try {
+      await expect(
+        tracker.createAskingTask({
+          query: 'Original',
+          projectId: 7,
+          nativeScope: {
+            bindingId: randomUUID(),
+            identityScope: 'a'.repeat(64),
+            metadataReference: { hash: 'b'.repeat(40), digest: 'c'.repeat(64) },
+          },
+          authorizeNative: async () => {
+            throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+          },
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].detail.status).toBe(AskResultStatus.UNDERSTANDING);
+      expect(adaptor.ask).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
+    }
   });
   it('reattaches the persisted native ID after restart and observes without asking again', async () => {
     rows.push({

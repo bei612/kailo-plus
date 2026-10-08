@@ -14,6 +14,9 @@ import {
 import { IWrenAIAdaptor } from '../adaptors';
 import * as Errors from '@server/utils/error';
 import { Knex } from 'knex';
+import { randomUUID } from 'crypto';
+import type { NativeAskingScope } from '../repositories/askingTaskRepository';
+import { NativeQueryRefusal } from './nativeQueryAdmission';
 
 const logger = getLogger('AskingTaskTracker');
 logger.level = 'debug';
@@ -42,6 +45,8 @@ export type CreateAskingTaskInput = AskInput & {
   rerunFromCancelled?: boolean;
   previousTaskId?: number;
   threadResponseId?: number;
+  nativeScope?: NativeAskingScope;
+  authorizeNative?: (queryId: string) => Promise<unknown>;
 };
 
 export interface IAskingTaskTracker {
@@ -119,9 +124,24 @@ export class AskingTaskTracker implements IAskingTaskTracker {
       if (input.rerunFromCancelled && !previous)
         throw new Error('Asking task not found');
 
-      const response = await this.wrenAIAdaptor.ask(input);
-      const queryId = response.queryId;
-      const detail = { status: AskResultStatus.UNDERSTANDING } as AskResult;
+      const bound = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
+      if (bound && (!input.nativeScope || !input.authorizeNative))
+        throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+      if (
+        bound &&
+        previous &&
+        (previous.detail?.nativeScope?.identityScope !==
+          input.nativeScope.identityScope ||
+          previous.detail.nativeScope.bindingId !== input.nativeScope.bindingId)
+      )
+        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      const queryId = bound
+        ? input.queryId ?? randomUUID()
+        : (await this.wrenAIAdaptor.ask(input)).queryId;
+      const detail = {
+        status: AskResultStatus.UNDERSTANDING,
+        ...(input.nativeScope ? { nativeScope: input.nativeScope } : {}),
+      } as AskResult;
       const record = previous
         ? await this.askingTaskRepository.updateQuery(
             previous.id,
@@ -136,6 +156,18 @@ export class AskingTaskTracker implements IAskingTaskTracker {
             detail,
           });
       if (!record) throw new Error('Asking task changed during dispatch');
+      if (bound) {
+        await input.authorizeNative(queryId);
+        try {
+          const response = await this.wrenAIAdaptor.ask({ ...input, queryId });
+          if (response?.queryId !== queryId)
+            logger.warn('Original native task acknowledgement unavailable');
+        } catch {
+          // This original row owns the fixed native ID. Reattach observation;
+          // lost create ACK never authorizes a replacement POST or FAILED.
+          logger.warn('Original native task create outcome unavailable');
+        }
+      }
       if (previous) this.trackedTasks.delete(previous.queryId);
 
       // Start tracking this task
@@ -459,7 +491,14 @@ export class AskingTaskTracker implements IAskingTaskTracker {
           record.id,
           task.queryId,
           task.projectId,
-          { detail: task.result },
+          {
+            detail: {
+              ...task.result,
+              ...(record.detail?.nativeScope
+                ? { nativeScope: record.detail.nativeScope }
+                : {}),
+            },
+          },
           tx,
         ))
       )
@@ -540,7 +579,14 @@ export class AskingTaskTracker implements IAskingTaskTracker {
         taskRecord.id,
         trackedTask.queryId,
         trackedTask.projectId,
-        { detail: trackedTask.result },
+        {
+          detail: {
+            ...trackedTask.result,
+            ...(taskRecord.detail?.nativeScope
+              ? { nativeScope: taskRecord.detail.nativeScope }
+              : {}),
+          },
+        },
       ))
     ) {
       throw new Error('Asking task changed during observation');
