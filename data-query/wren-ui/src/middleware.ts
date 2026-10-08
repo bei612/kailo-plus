@@ -204,6 +204,7 @@ export async function middleware(request: NextRequest) {
       '/api/v1/generate_vega_chart',
       '/api/v1/ask',
       '/api/v1/stream/ask',
+      '/api/v1/models',
       '/api/ask_task/streaming',
       '/api/v1/knowledge/sql_pairs',
     ].includes(request.nextUrl.pathname) ||

@@ -34,6 +34,7 @@ import { CompactTable, PreviewDataResponse } from '@server/services';
 import { TelemetryEvent } from '../telemetry/telemetry';
 import {
   NativeHumanQuery,
+  authorizeNativeScope,
   canReadNativeMetadata,
   nativePreviewScope,
   resolveNativeResource,
@@ -44,8 +45,10 @@ import {
   NativeQueryRefusal,
   NativeQueryDelivery,
   canonical,
+  digest,
 } from '../services/nativeQueryAdmission';
 import { DEFAULT_PREVIEW_LIMIT } from '../services/queryService';
+import { ApiHistory, ApiType } from '../repositories/apiHistoryRepository';
 
 const logger = getLogger('ModelResolver');
 logger.level = 'debug';
@@ -355,7 +358,7 @@ export class ModelResolver {
 
   public async getMDL(
     _root: any,
-    args: { hash: string },
+    args: { hash: string; queryScope?: string; generation?: number },
     ctx: Pick<
       IContext,
       | 'projectService'
@@ -371,6 +374,24 @@ export class ModelResolver {
     });
     if (!deploy) throw new Error('Deployment not found');
     const config = await this.metadataConfig(ctx, projectId);
+    const verifyRequest = async () => {
+      if (args.queryScope === undefined && args.generation === undefined)
+        return;
+      const permission = await authorizeNativeScope(
+        config,
+        ctx.nativeHumanToken,
+        'discover',
+      );
+      if (
+        args.queryScope !==
+          nativePreviewScope(config, ctx.nativeIdentityScope) ||
+        args.generation !== permission.generation ||
+        (await ctx.projectService.getCurrentProject()).id !== projectId ||
+        canonical(await loadQueryDelivery()) !== canonical(config)
+      )
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    };
+    await verifyRequest();
     let objects: NativeDeploymentObject[];
     try {
       objects = deploymentObjects(deploy.manifest, deploy.nativeObjectRefs);
@@ -416,6 +437,7 @@ export class ModelResolver {
       canonical(await authorize()) !== canonical(before)
     )
       throw new NativeQueryRefusal(409, 'QUERY_EVIDENCE_UNAVAILABLE');
+    await verifyRequest();
     // Encode exactly the authorized, captured deployment, never a second
     // unscoped hash lookup that may select another project's native row.
     const mdl = Buffer.from(JSON.stringify(current.manifest)).toString(
@@ -425,6 +447,77 @@ export class ModelResolver {
       hash: args.hash,
       mdl,
     };
+  }
+
+  public async readModelsHistory(
+    selected: ApiHistory,
+    ctx: Pick<
+      IContext,
+      | 'projectService'
+      | 'deployRepository'
+      | 'apiHistoryRepository'
+      | 'nativeIdentityScope'
+      | 'nativeHumanToken'
+    >,
+  ) {
+    const project = await ctx.projectService.getCurrentProject();
+    const config = await this.metadataConfig(ctx, project.id);
+    const proof = selected.requestPayload?.nativeModels;
+    if (
+      selected.apiType !== ApiType.GET_MODELS ||
+      selected.statusCode !== 200 ||
+      selected.projectId !== project.id ||
+      selected.governanceBindingId !== config.bindingId ||
+      !selected.id ||
+      proof?.identityScope !== ctx.nativeIdentityScope ||
+      proof.queryScope !==
+        nativePreviewScope(config, ctx.nativeIdentityScope) ||
+      !Number.isSafeInteger(proof.generation) ||
+      proof.generation <= 0 ||
+      typeof proof.deploymentHash !== 'string' ||
+      !proof.deploymentHash ||
+      typeof proof.metadataDigest !== 'string'
+    )
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    const current = await ctx.apiHistoryRepository.findOneBy({
+      id: selected.id,
+      projectId: project.id,
+      apiType: ApiType.GET_MODELS,
+      governanceBindingId: config.bindingId,
+    });
+    if (
+      current?.statusCode !== 200 ||
+      canonical(current.requestPayload) !==
+        canonical(selected.requestPayload) ||
+      canonical(current.responsePayload) !== canonical(selected.responsePayload)
+    )
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    const reference = await this.getMDL(
+      undefined,
+      {
+        hash: proof.deploymentHash,
+        queryScope: proof.queryScope,
+        generation: proof.generation,
+      },
+      ctx,
+    );
+    const manifest = JSON.parse(
+      Buffer.from(reference.mdl, 'base64').toString(),
+    );
+    const responsePayload = {
+      hash: reference.hash,
+      models: manifest?.models || [],
+      relationships: manifest?.relationships || [],
+      views: manifest?.views || [],
+    };
+    if (
+      digest(manifest) !== proof.metadataDigest ||
+      canonical(current.responsePayload) !== canonical(responsePayload)
+    )
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    // GET_MODELS remains the original native metadata read, not a query AE.
+    // Its own history only discloses the same captured, currently readable MDL.
+    return { requestPayload: null, responsePayload };
   }
 
   public async listModels(_root: any, _args: any, ctx: IContext) {

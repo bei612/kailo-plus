@@ -4830,3 +4830,68 @@ Activity/session、Agent/Profile、项目完整体验、原其余设置和菜单
 本批35源码尚未提交/部署；新版业务截图0，待root集中共享Web候选/产物后正常SSO截图并打开复核。
 旧live0b截图不证明本批，Windows/Mobile未设备验收。
 本批未重复full或check-docs，不以窄验替代root原full的非零/pub.dev依赖失败。
+
+## 2026-10-08 已部署 9bc0 Experiments 中英与 Forum 原弹窗可视复验
+
+本节只追加上一节实现后的真实浏览器证据，不改写其当时尚未部署/截图0的历史状态。
+已推送35源码批 `9de6cf7fb` 后，实际运行的固定源码为
+`9bc0b023eb6e8dd7f4b73f2348aa88d8b06b0faf`；不使用旧0b/329截图证明本批。
+root投递的Web镜像为
+`sha256:73639ed4a0f91276dc03ca4182de143362a92bc5bd648af1df14100deadd9548`。
+正常SSO后的浏览器两次GET `/app/platform-build-info.json` 均200，读回
+`sha256:17b4b01ca7d31a7b3ef4d739b61cecbca8cafc382b5d729e9750c8d4a20aeb26`；与实际部署buildId相同。
+
+复用已安装 `/usr/local/bin/playwright-cli -s=header-restoration`，1920×1080。
+会话过期后以既有普通 `seam-verifier` 经正常IdP表单重新登录；
+口令仅从原受控输入在内存中交给原CLI Session，不打印/复制到临时明文文件，不注入Cookie、不重置账号。
+操作均为真实页面/原消费者，没有mock API、模拟业务数据或另造预览后端。
+
+实际操作结果：
+
+- 中文四开关原默认OFF；依次点击后四项aria-checked均true，原localStorage JSON准确保存。
+- 返回应用，真实Workflows/Projects/Pulse菜单、Projects分区和Forum分区均出现；
+  Projects可见目录为空，截图真实显示“暂无项目”，没有填固定项目或称非空子项通过。
+- 重新进入设置并整页刷新，四开关仍ON；通过真实Appearance语言radio切English，
+  Experiments标题、四项原英文名称/描述和设置导航同步切换。
+- 逐项关闭并逐次返回应用，Workflows/Projects/Pulse对应菜单分别变0；
+  关闭Projects时主菜单与原分区合计从2变0，关闭Forum时分区从1变0，互不误关。
+- 英文OFF再次整页刷新后四项仍false，三个菜单、Projects分区和Forum分区仍均0。
+- 中/英文“新建论坛”都打开原CreateChannelDialog；原名称/描述/类型/可见性/关闭/禁用提交完整呈现。
+  中文实际点击临时、私有后aria-pressed均true；空名称提交保持disabled，随后关闭，没有点击创建。
+- 实际Appearance radio恢复中文，并只删除本轮写入的preview偏好key恢复原null；刷新读回
+  `buzz-feature-overrides-v1=null`、`buzz-locale=zh-CN`，四项OFF/入口隐藏，与检查前完全相同。
+
+页面request观察器只记录method/path，不读请求头/正文或凭据；本轮非GET为4次
+`POST /api/v1/projects/query`（现存只读目录查询），其它业务写入请求0，创建请求0。
+不能将此写成“全部POST为0”。最后原CLI `console` 输出
+`Total messages: 0 (Errors: 0, Warnings: 0)`；所有上述CLI操作exit0。
+工具自身曾因VM无URL/Node动态import、误写settings-tab定位失败，不算产品错误或通过；
+随后沿真实settings-nav与原Session调用闭合，没有新增工具或旁路。
+
+十张实际原件均在 `/volumes/kailo/apps/.playwright-cli/`，已逐张view_image打开视觉复核：
+
+| 文件（共同前缀 `kailo-ui-20261008-main9bc0-`） | SHA256 |
+| --- | --- |
+| experiments-zh-off.png | 333ab3eee6e303e3c5fede71e08bf661f4a346fdd18c8720260546402a89cc61 |
+| experiments-zh-on.png | 4d0b912277fb2c14f4fc6ec984bd5372648e823abae28663431c6fccb1ff1c41 |
+| sidebar-zh-on.png | fd94de931e8a551b1e26274fc319721398e77d69284244b873d0d47ca66740e3 |
+| forum-dialog-zh.png | 72cb6c4acab9768085aaf8430102c2cbcc70f147e238e621351dec006cfb0421 |
+| experiments-zh-refresh.png | c576cfae1dc465cf54e0ac3eabd1b24ee2fc70624a9d1053c81d412eb653d06b |
+| experiments-en-on.png | 8b10dfbd20f1bcd32da29ba1498241d83a6e4bb54dc22854ce68eae52e0b9f8d |
+| forum-dialog-en.png | 19e95d1795141e05bcf7b87d1118433813f87688370e18f617d9dc29594a6e15 |
+| experiments-en-off.png | e753fa74d8a73218d96fdb7aac106bd505f4b3da6c4203ca08cbe6a6691c2d14 |
+| sidebar-en-off-refresh.png | c028e7e7690935291c57973648e3dba243b97d7928846369a6ba2b52109f818c |
+| experiments-restored-zh.png | 333ab3eee6e303e3c5fede71e08bf661f4a346fdd18c8720260546402a89cc61 |
+
+视觉复核见原SettingsSectionHeader/OptionGroup/Row/Switch、圆角容器、原Forum表单与模糊遮罩正常呈现，
+此1920×1080状态未见文字堆砌、重叠或裁切；中文恢复图与起始默认图SHA完全相同。
+固定官方仍为 `779af8886caae1317b4de962082429867ab61503`，已重读
+`desktop/src/features/settings/ui/ExperimentalFeaturesCard.tsx::ExperimentalFeaturesCard/FeatureRow`
+核原布局/顺序；没有运行.references可执行物，不能据这10张声称原版全页像素一致。
+
+本轮没有产品源码修改、构建/SDK作业或发布，只有本节证据追加；
+未验：非空Projects子项、实际Forum创建/帖子/未读、第五managedProfiles开关及其生产者、
+其余9个设置分区、Activity/Agent/Profile完整模块、三外部组件、Windows和Mobile设备。
+历史dfc全量索引仍1982原样/110共享/0独立授权/6已证残缺/3216未分类，只对应该历史固定提交；
+本轮不重导快照、不增加源码分类计数，不宣称100%还原或生产门禁通过。
+未重复full/check-docs；由root将本节仅追加hunk集中复核入库，继承checkpoint删除不纳入。

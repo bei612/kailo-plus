@@ -902,3 +902,26 @@ includes the real original GraphQL and Table/Drawer consumers, revocation,
 request-scope/generation mismatch and no-redispatch checks. It does not establish
 complete Wren functionality, an ACTIVE binding, iframe, screenshot or device
 acceptance.
+
+### Original models REST: captured metadata and current Resource reads
+
+`GET /api/v1/models` retains the original `{hash, models, relationships, views}`
+response and native API History. With a configured binding, its exact middleware
+route forwards the verified current HUMAN identity, and the handler reads the
+captured deployment through the existing MDL reader and current Resource read
+permission for every native model/view. Scope, binding generation, current
+project, controlled delivery and captured deployment are rechecked before and
+after those reads, including after the asynchronous native History write.
+Revocation or a changed reference withholds the response; it does not run SQL.
+
+The original GET_MODELS History fields consume that same deployment/provenance
+and current source permissions. Old bound records without trustworthy native
+provenance refuse their bodies rather than inventing it. Provenance and metadata
+remain in Wren's original database, not Core; no query Action or second history
+is created. Never-configured independent mode keeps the original response and
+history; bad or empty configured delivery never selects that mode. The original
+signed middleware-to-handler, REST, GraphQL History and deployment readers passed
+126 selected checks, with actual production-damage/restoration and original
+type/format checks, in the [models receipt](../fork/verify/native-integration.md#original-models-rest-current-captured-mdl-and-history-disclosure).
+This does not establish deployment, an ACTIVE binding, iframe, browser visual
+acceptance, trusted SERVICE SQL or dynamic native Resource registration.

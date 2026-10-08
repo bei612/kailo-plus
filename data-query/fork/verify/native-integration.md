@@ -6167,3 +6167,114 @@ operational reconciliation/time limits, unprovable pre-dispatch crashes,
 trusted SERVICE SQL, ordinary-function provenance and dynamic trusted native
 Resource evidence remain release blockers; no complete restoration or
 production-readiness claim is made.
+
+## Original models REST: current captured MDL and History disclosure
+
+Implementation increment after `9bc0b023e`, reviewed against fixed official Wren
+`c5f02a0391c87420dba78632dcd86073710deb72` in read-only
+`/volumes/kailo/.references/WrenAI-ui-0.32.2`:
+
+- `wren-ui/src/pages/api/v1/models.ts::handler` returns the current project's
+  captured manifest as `{hash, models, relationships, views}` and logs the
+  original GET_MODELS event. This native payload and the never-configured
+  independent path are retained, not replaced by a summary API.
+- `wren-ui/src/apollo/server/resolvers/modelResolver.ts::ModelResolver.getMDL`
+  originally delegates to `deployService.getMDLByHash`; Kailo's existing
+  captured-deployment/Resource reader is reused, not another metadata authority.
+- `wren-ui/src/apollo/server/resolvers/apiHistoryResolver.ts::ApiHistoryResolver.getApiHistory`
+  and `getApiHistoryNestedResolver` remain the original table/field consumers.
+  Their existing bound request fence and original list/pagination are retained.
+
+Four-step implementation conclusions:
+
+1. **Authority:** `.design/08` §6, SS-WRN-IDENTITY and SS-WRN-GOVERNANCE require
+   current user/project and actual Resource permissions, not just instance
+   entitlement. Native MDL metadata disclosure uses existing Resource `read`
+   via `data_query.describe@v1`; it does not manufacture a query AE or use
+   describe as a project-management write permission.
+2. **Impact and compatibility:** exact `/api/v1/models` private-header delivery,
+   original handler, existing MDL reader and GET_MODELS History fields are the
+   real callers. The bound handler supplies its actual trusted request scope
+   and fresh binding generation to the same reader; these optional internal
+   TypeScript arguments do not change the GraphQL schema. Both are rechecked
+   with fresh discover, current project and controlled delivery before/after
+   every captured-resource round trip. Other original hash-only callers keep
+   their existing signature. Provenance uses the original native history JSON
+   and binding column; no schema/table/Core body copy or migration is added.
+   Old bound GET_MODELS records lacking this evidence refuse their bodies.
+3. **Disclosure and side effects:** the handler reuses the same MDL reader
+   after the asynchronous original history write too, and compares the same
+   manifest digest before returning its original payload. That second read
+   consumes specific model/view Resource permission, not only discover.
+   History rereads the same native event and captured deployment, verifies its
+   initiating identity/generation/digest and current source rights, and returns
+   no opaque internal provenance in the original request field. No SQL,
+   replacement query, new command/task, second permission or history authority
+   is created. The existing repository header allowlist remains responsible
+   for excluding forwarded credentials from native history.
+4. **Boundaries:** missing private identity rejects before project/deployment
+   access; bad/empty configured delivery never falls back. Changed source,
+   scope, generation, project, delivery or deployment refuse disclosure, both
+   during source reads and during history persistence. Missing/tampered/foreign
+   History evidence refuses instead of granting old bodies. Never-configured
+   standalone keeps the exact original success response and history. Unknown
+   dependency/evidence returns unavailable, never a fabricated success; these
+   are existing DENIED/PRECONDITION/CONFLICT/dependency errors, not a new enum.
+
+Difference classification: original payload, native event, standalone response,
+History table/fields and other original UI are **原样保留**. No shared-host
+migration applies to this batch. Exact trusted-header delivery, request fences,
+captured-source authorization and native History provenance consumption are
+**已授权治理改造**. Trusted SERVICE SQL, dynamic trusted Resource registration,
+ordinary-function provenance and complete business-instance activation remain
+**缺失需恢复**; this batch does not certify full-project original parity.
+
+Only the existing `kailo-wren-query-sdk-itgs2n` was used: 4 CPU / 4 GiB, original
+single `/work` root, installed Node/Jest/TypeScript/Prettier and unchanged
+configs. There was no image build, dependency download, database, SDK creation,
+Core/contract edit or inherited Java candidate validation. All logs are in
+`/volumes/data/kailo/check-cache/wren-history-readback.ofKxdZ/`.
+
+The original focused positive/restored command was:
+
+```sh
+node /work/node_modules/jest/bin/jest.js --runInBand \
+  --runTestsByPath src/nativeHumanQuery.test.ts src/middleware.test.ts \
+  src/nativeProjectScope.test.ts \
+  --testNamePattern 'original models REST current MDL consumer|native instance identity boundary|original historical manifest|legacy deployment IDs|historical native mapping|historical metadata|same resource changes|persisted manifest changes|MDL references'
+```
+
+- `models-rest-positive-first.log`, **exit 1**: original middleware and captured
+  MDL targets passed 100, but the new REST fixture failed suite-load TS2345
+  because its original Next `apiResolver` preview-context fields were missing.
+  The fixture now supplies those actual three fields; no production refusal
+  was weakened. This first result predates the post-history recheck.
+- `models-rest-positive.log`, **exit 0**, **3 suites / 126 passed / 417 filtered**,
+  12.067 seconds. This includes the real Node REST handler, real signed JWKS
+  middleware/private-hop handler, real original History GraphQL fields, current
+  captured-source readers and six history-write interleavings.
+- Private production damage skipped only the handler's real post-history MDL
+  reauthorization. `models-rest-history-write-mutation.log`, **exit 1**:
+  **6 failed / 352 filtered**; actual scope/source/generation/project/deployment/
+  delivery interleavings wrongly returned 200. The check therefore catches the
+  real disclosure defect, not just a mocked guard call. Original bytes restored
+  using `apply_patch`, `cmp` 0 before the next step.
+- Private production damage then removed the exact models route from the real
+  middleware forwarding list. `models-rest-middleware-hop-mutation.log`,
+  **exit 1**, **1 failed / 89 filtered**: the actual signed middleware-to-handler
+  consumer returned 401 instead of its original 200. Original bytes restored
+  using `apply_patch`; all six current source/check inputs `cmp` 0.
+- `models-rest-restored.log`, **exit 0**, **3 suites / 126 passed / 417 filtered**,
+  8.048 seconds, same original command after both restorations.
+  `models-rest-types.log`: original `node /work/node_modules/typescript/bin/tsc
+  --noEmit --incremental false --pretty false`, **exit 0**.
+  `models-rest-format.log`: original Prettier check of six inputs, **exit 0**.
+  `models-rest-cgroup-final.log`: `cpu.max=400000 100000`, memory 4294967296,
+  all six memory-event counters **0**, matching the initial no-OOM check.
+
+This eight-path increment is source/targeted-SDK evidence for root's main
+integration. No Wren business container, ACTIVE binding, iframe, browser
+screenshot, Windows/Mobile acceptance or full check is established here. A
+history row retained after a later disclosure refusal is still reauthorized on
+read; its earlier native response is not proof the later client received it.
+No complete restoration or production-ready claim is made.

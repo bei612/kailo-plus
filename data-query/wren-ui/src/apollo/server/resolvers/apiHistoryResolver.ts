@@ -11,6 +11,7 @@ import {
 } from '../services/nativeHumanQuery';
 import { NativeQueryService } from '../services/nativeQueryService';
 import { readNativeAskHistory } from '../services/nativeRestAsk';
+import { ModelResolver } from './modelResolver';
 
 export interface ApiHistoryFilter {
   id?: string;
@@ -123,6 +124,8 @@ export class ApiHistoryResolver {
     native: Awaited<ReturnType<ApiHistoryResolver['nativeHistory']>>,
     apiHistory: ApiHistory,
   ) {
+    if (apiHistory.apiType === ApiType.GET_MODELS)
+      return new ModelResolver().readModelsHistory(apiHistory, ctx);
     if (isNativeSqlPairWrite(apiHistory))
       return ctx.sqlPairService.readNativeWrite(apiHistory, {
         config: native.config,

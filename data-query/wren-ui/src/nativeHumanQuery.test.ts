@@ -51,6 +51,7 @@ import { SqlPairService } from './apollo/server/services/sqlPairService';
 import { SqlPairStatus } from './apollo/server/models/adaptor';
 import sqlPairsHandler from './pages/api/v1/knowledge/sql_pairs';
 import sqlPairHandler from './pages/api/v1/knowledge/sql_pairs/[id]';
+import modelsHandler from './pages/api/v1/models';
 
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
@@ -1171,6 +1172,392 @@ describe('native saved-view HUMAN query consumer', () => {
         delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
       else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = oldConfig;
     }
+  });
+  describe('original models REST current MDL consumer', () => {
+    const identityScope = 'a'.repeat(64);
+    const delivery = { ...config, tenantId: 'native-tenant' };
+    const manifest = {
+      catalog: nativeProject.catalog,
+      schema: nativeProject.schema,
+      models: [
+        { name: 'native_model', columns: [{ name: 'original_column' }] },
+      ],
+      views: [
+        {
+          name: 'native_view',
+          statement,
+          properties: { viewId: '7' },
+        },
+      ],
+      relationships: [{ name: 'original_relation' }],
+    };
+    const result = {
+      hash: selection.deploymentHash,
+      models: manifest.models,
+      relationships: manifest.relationships,
+      views: manifest.views,
+    };
+    let originalComponents: typeof components;
+    let originalHistory: Record<string, unknown>;
+    let originalConfig: string | undefined;
+    let rows: any[];
+    let deployment: any;
+    let generation: number;
+    let revoked: boolean;
+    let sourceDenied: boolean;
+    let server: Server;
+    let endpoint: string;
+    beforeAll(async () => {
+      server = createServer((request, response) => {
+        void apiResolver(
+          request,
+          response,
+          {},
+          modelsHandler,
+          {
+            previewModeId: '',
+            previewModeEncryptionKey: '',
+            previewModeSigningKey: '',
+          },
+          false,
+        );
+      });
+      await new Promise<void>((resolve) =>
+        server.listen(0, '127.0.0.1', resolve),
+      );
+      endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    });
+    afterAll(async () => {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    });
+    beforeEach(() => {
+      originalComponents = { ...components };
+      originalHistory = { ...components.apiHistoryRepository };
+      originalConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+      jest.mocked(loadQueryDelivery).mockResolvedValue(delivery);
+      rows = [];
+      generation = 2;
+      revoked = false;
+      sourceDenied = false;
+      deployment = {
+        id: selection.deploymentId,
+        projectId: delivery.projectId,
+        hash: selection.deploymentHash,
+        manifest: structuredClone(manifest),
+        nativeObjectRefs: structuredClone(capturedSources),
+      };
+      calls.mockImplementation(async (_config, _operation, input) => {
+        if (
+          (revoked && input.authorizeScope) ||
+          (sourceDenied && input.resolveResource)
+        )
+          throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+        if (input.authorizeScope)
+          return {
+            scope: {
+              ...delivery,
+              generation,
+              permission: (input.authorizeScope as any).permission,
+              checkedRevision: 'fresh-models-scope',
+            },
+          };
+        const query = input.resolveResource as any;
+        return {
+          resource: {
+            ...resolution.resource,
+            nativeType: query.nativeType,
+            nativeRef: query.nativeRef,
+          },
+        };
+      });
+      Object.assign(components, {
+        projectService: {
+          getCurrentProject: jest.fn(async () => ({ id: delivery.projectId })),
+        },
+        deployService: { getLastDeployment: jest.fn(async () => deployment) },
+        deployLogRepository: {
+          findOneBy: jest.fn(async (filter) =>
+            Object.entries(filter).every(
+              ([key, value]) => deployment[key] === value,
+            )
+              ? structuredClone(deployment)
+              : null,
+          ),
+        },
+        queryService: { preview: jest.fn() },
+        apiHistoryRepository: Object.assign(components.apiHistoryRepository, {
+          createOne: jest.fn(async (input) => {
+            const row = {
+              ...structuredClone(input),
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            rows.push(row);
+            return row;
+          }),
+          findOneBy: jest.fn(async (filter) =>
+            rows.find((row) =>
+              Object.entries(filter).every(
+                ([key, value]) => row[key] === value,
+              ),
+            ),
+          ),
+          count: jest.fn(async () => rows.length),
+          findAllWithPagination: jest.fn(async () => rows),
+        }),
+      });
+    });
+    afterEach(() => {
+      for (const key of Object.keys(components.apiHistoryRepository))
+        delete components.apiHistoryRepository[key];
+      Object.assign(components.apiHistoryRepository, originalHistory);
+      for (const key of Object.keys(components)) delete components[key];
+      Object.assign(components, originalComponents);
+      if (originalConfig === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = originalConfig;
+    });
+    const send = (headers: Record<string, string> = {}) =>
+      fetch(endpoint, {
+        headers: {
+          'x-kailo-native-human-token': 'verified-native-token',
+          'x-kailo-native-identity-scope': identityScope,
+          ...headers,
+        },
+      });
+    const historyContext = () => ({
+      ...components,
+      nativeHumanToken: 'verified-native-token',
+      nativeIdentityScope: identityScope,
+      deployRepository: components.deployLogRepository,
+    });
+    it('returns the exact original models/views/relationships through the real REST handler and original captured Resource reader, never SQL', async () => {
+      const response = await send();
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(result);
+      expect(response.headers.get('cache-control')).toContain('no-store');
+      expect(
+        calls.mock.calls.filter((call) => call[2].authorizeScope),
+      ).toHaveLength(5);
+      expect(
+        calls.mock.calls
+          .filter((call) => call[2].resolveResource)
+          .map((call) => (call[2].resolveResource as any).nativeRef),
+      ).toEqual(['8', '7', '8', '7', '8', '7', '8', '7']);
+      expect(calls.mock.calls.every((call) => !call[2].command)).toBe(true);
+      expect(components.queryService.preview).not.toHaveBeenCalled();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        apiType: ApiType.GET_MODELS,
+        governanceBindingId: delivery.bindingId,
+        requestPayload: { nativeModels: { identityScope, generation: 2 } },
+        responsePayload: result,
+      });
+    });
+    it.each(['token', 'identity'])(
+      'refuses a missing private %s before project, deployment or metadata access',
+      async (missing) => {
+        const response = await send({
+          [missing === 'token'
+            ? 'x-kailo-native-human-token'
+            : 'x-kailo-native-identity-scope']: '',
+        });
+        expect(response.status).toBe(401);
+        expect(await response.json()).not.toHaveProperty('models');
+        expect(
+          components.projectService.getCurrentProject,
+        ).not.toHaveBeenCalled();
+        expect(calls).not.toHaveBeenCalled();
+        expect(rows).toHaveLength(0);
+      },
+    );
+    it.each([
+      'scope',
+      'source',
+      'generation',
+      'project',
+      'deployment',
+      'delivery',
+    ])(
+      'refuses changed %s at the original metadata read without returning or logging a successful manifest',
+      async (change) => {
+        const authority = calls.getMockImplementation();
+        let sourceRead = false;
+        calls.mockImplementation(async (...args) => {
+          const value = await authority(...args);
+          if (args[2].resolveResource && !sourceRead) {
+            sourceRead = true;
+            if (change === 'scope') revoked = true;
+            if (change === 'source') sourceDenied = true;
+            if (change === 'generation') generation += 1;
+            if (change === 'project')
+              jest
+                .mocked(components.projectService.getCurrentProject)
+                .mockResolvedValue({ id: delivery.projectId + 1 } as any);
+            if (change === 'deployment')
+              deployment.manifest.catalog = 'changed';
+            if (change === 'delivery')
+              jest
+                .mocked(loadQueryDelivery)
+                .mockResolvedValue({ ...delivery, bindingId: resource });
+          }
+          return value;
+        });
+        const response = await send();
+        expect([403, 409, 412]).toContain(response.status);
+        expect(await response.json()).not.toHaveProperty('models');
+        expect(rows).toHaveLength(0);
+        expect(components.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['empty', 'unavailable'])(
+      'does not fall back to the original naked manifest for %s configured delivery',
+      async (change) => {
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+          change === 'empty' ? '' : 'configured';
+        jest
+          .mocked(loadQueryDelivery)
+          .mockRejectedValue(new Error('Invalid controlled delivery'));
+        const response = await send();
+        expect(response.status).toBe(503);
+        expect(await response.json()).toEqual({
+          error: 'QUERY_EVIDENCE_UNAVAILABLE',
+        });
+        expect(rows).toHaveLength(0);
+      },
+    );
+    it.each([
+      'scope',
+      'source',
+      'generation',
+      'project',
+      'deployment',
+      'delivery',
+    ])(
+      'refuses %s changed during the original history write before returning any metadata',
+      async (change) => {
+        const persist = jest
+          .mocked(components.apiHistoryRepository.createOne)
+          .getMockImplementation();
+        jest
+          .mocked(components.apiHistoryRepository.createOne)
+          .mockImplementation(async (...args) => {
+            const row = await persist(...args);
+            if (change === 'scope') revoked = true;
+            if (change === 'source') sourceDenied = true;
+            if (change === 'generation') generation += 1;
+            if (change === 'project')
+              jest
+                .mocked(components.projectService.getCurrentProject)
+                .mockResolvedValue({ id: delivery.projectId + 1 } as any);
+            if (change === 'deployment')
+              deployment.manifest.catalog = 'changed';
+            if (change === 'delivery')
+              jest.mocked(loadQueryDelivery).mockResolvedValue({
+                ...delivery,
+                bindingId: resource,
+              });
+            return row;
+          });
+        const response = await send();
+        expect([403, 409, 412, 503]).toContain(response.status);
+        expect(await response.json()).not.toHaveProperty('models');
+        expect(rows).toHaveLength(1);
+        expect(components.queryService.preview).not.toHaveBeenCalled();
+        expect(calls.mock.calls.every((call) => !call[2].command)).toBe(true);
+      },
+    );
+    it('retains the exact never-configured independent manifest response and original API History record', async () => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      const response = await send();
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(result);
+      expect(calls).not.toHaveBeenCalled();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).not.toHaveProperty('governanceBindingId');
+    });
+    it.each([false, true])(
+      'the real original History GraphQL fields re-read the same captured models with current source rights (revoked %s)',
+      async (deny) => {
+        expect((await send()).status).toBe(200);
+        revoked = deny;
+        const resolver = new ApiHistoryResolver();
+        const graphql = new ApolloServer({
+          typeDefs,
+          resolvers: {
+            JSON: GraphQLJSON,
+            Query: { apiHistory: resolver.getApiHistory },
+            ApiHistoryResponse: resolver.getApiHistoryNestedResolver(),
+          },
+          context: historyContext,
+        });
+        try {
+          await graphql.start();
+          const response = await graphql.executeOperation({
+            query: API_HISTORY,
+            variables: {
+              filter: {
+                queryScope: nativePreviewScope(delivery, identityScope),
+                generation: 2,
+              },
+              pagination: { offset: 0, limit: 10 },
+            },
+          });
+          if (deny) {
+            expect(response.errors).toHaveLength(1);
+            expect(response.data).toBeNull();
+          } else {
+            expect(response.errors).toBeUndefined();
+            expect(response.data.apiHistory.items[0]).toMatchObject({
+              requestPayload: null,
+              responsePayload: result,
+            });
+          }
+          expect(rows).toHaveLength(1);
+          expect(components.queryService.preview).not.toHaveBeenCalled();
+          expect(calls.mock.calls.every((call) => !call[2].command)).toBe(true);
+        } finally {
+          await graphql.stop();
+        }
+      },
+    );
+    it.each([
+      'actor',
+      'generation',
+      'source',
+      'missing provenance',
+      'payload',
+      'deployment',
+    ])(
+      'the actual original metadata History reader rejects changed %s without another query or record',
+      async (change) => {
+        expect((await send()).status).toBe(200);
+        const selected = structuredClone(rows[0]);
+        const ctx = historyContext();
+        if (change === 'actor') ctx.nativeIdentityScope = 'b'.repeat(64);
+        if (change === 'generation') generation += 1;
+        if (change === 'source') sourceDenied = true;
+        if (change === 'missing provenance') {
+          selected.requestPayload = {};
+          rows[0].requestPayload = {};
+        }
+        if (change === 'payload') {
+          selected.responsePayload.models = [];
+          rows[0].responsePayload.models = [];
+        }
+        if (change === 'deployment') deployment.manifest.catalog = 'changed';
+        await expect(
+          new ModelResolver().readModelsHistory(selected, ctx),
+        ).rejects.toBeInstanceOf(NativeQueryRefusal);
+        expect(rows).toHaveLength(1);
+        expect(components.queryService.preview).not.toHaveBeenCalled();
+        expect(calls.mock.calls.every((call) => !call[2].command)).toBe(true);
+      },
+    );
   });
   it.each([false, true])(
     'submits the original SQL editor with its exact query/dry-run action and policy (%s)',

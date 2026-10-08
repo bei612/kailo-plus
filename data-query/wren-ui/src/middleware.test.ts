@@ -5,6 +5,8 @@ import { exportJWK, generateKeyPair, JWTPayload, SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
 import { middleware, nativeFrameAncestors } from './middleware';
 import configHandler from './pages/api/config';
+import modelsHandler from './pages/api/v1/models';
+import { components } from './common';
 import {
   bindingServiceCall,
   loadQueryDelivery,
@@ -17,6 +19,7 @@ jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   loadQueryDelivery: jest.fn(),
   bindingServiceCall: jest.fn(),
 }));
+jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
 
 describe('native instance identity boundary', () => {
   let server: Server;
@@ -111,6 +114,7 @@ describe('native instance identity boundary', () => {
     '/api/v1/generate_vega_chart',
     '/api/v1/ask',
     '/api/v1/stream/ask',
+    '/api/v1/models',
     '/api/v1/knowledge/sql_pairs',
     '/api/v1/knowledge/sql_pairs/42',
     '/api/ask_task/streaming',
@@ -134,6 +138,7 @@ describe('native instance identity boundary', () => {
     '/api/v1/generate_vega_chart',
     '/api/v1/ask',
     '/api/v1/stream/ask',
+    '/api/v1/models',
     '/api/v1/knowledge/sql_pairs',
     '/api/v1/knowledge/sql_pairs/42',
   ])(
@@ -166,6 +171,7 @@ describe('native instance identity boundary', () => {
           '/api/v1/generate_vega_chart',
           '/api/v1/ask',
           '/api/v1/stream/ask',
+          '/api/v1/models',
           '/api/config',
           '/api/v1/knowledge/sql_pairs',
           '/api/v1/knowledge/sql_pairs/42',
@@ -199,6 +205,7 @@ describe('native instance identity boundary', () => {
     '/api/v1/generate_vega_chart',
     '/api/v1/ask',
     '/api/v1/stream/ask',
+    '/api/v1/models',
     '/api/v1/knowledge/sql_pairs',
     '/api/v1/knowledge/sql_pairs/42',
   ])(
@@ -329,14 +336,127 @@ describe('native instance identity boundary', () => {
     expect(headers['x-kailo-native-human-token']).not.toBe('forged');
   });
 
+  it('the original models handler consumes the exact signed middleware identity for current captured MDL and Resource reads', async () => {
+    const originalComponents = { ...components };
+    const originalHistory = { ...components.apiHistoryRepository };
+    const signed = await token();
+    const admitted = await middleware(
+      request('/api/v1/models', `Bearer ${signed}`, {
+        headers: {
+          'x-kailo-native-human-token': 'forged',
+          'x-kailo-native-identity-scope': 'f'.repeat(64),
+        },
+      }),
+    );
+    const headers = Object.fromEntries(
+      ['human-token', 'identity-scope'].map((field) => [
+        `x-kailo-native-${field}`,
+        admitted.headers.get(`x-middleware-request-x-kailo-native-${field}`),
+      ]),
+    );
+    const delivery = {
+      projectId: 3,
+      bindingId: randomUUID(),
+      tenantId: randomUUID(),
+      workspaceId: randomUUID(),
+      nativeInstanceRef: settings.accessValue,
+      nativeScopeRef: 'original-project',
+    } as NativeQueryDelivery;
+    const deployment = {
+      id: 5,
+      projectId: delivery.projectId,
+      hash: 'original-captured-deployment',
+      manifest: { models: [{ name: 'original_model' }] },
+      nativeObjectRefs: [
+        { nativeType: 'model', nativeId: 7, nativeName: 'original_model' },
+      ],
+    };
+    jest.mocked(loadQueryDelivery).mockResolvedValue(delivery);
+    jest
+      .mocked(bindingServiceCall)
+      .mockReset()
+      .mockImplementation(async (_config, _operation, input, bearer) => {
+        expect(bearer).toBe(signed);
+        if (input.authorizeScope)
+          return {
+            scope: {
+              ...delivery,
+              generation: 2,
+              checkedRevision: 'fresh-native-resource-fact',
+              permission: (input.authorizeScope as any).permission,
+            },
+          };
+        const ref = input.resolveResource as any;
+        return {
+          resource: {
+            resourceId: delivery.bindingId,
+            resourceVersion: 1,
+            nativeType: ref.nativeType,
+            nativeRef: ref.nativeRef,
+            nativeInstanceRef: delivery.nativeInstanceRef,
+            nativeScopeRef: delivery.nativeScopeRef,
+          },
+        };
+      });
+    Object.assign(components, {
+      projectService: {
+        getCurrentProject: jest.fn(async () => ({ id: delivery.projectId })),
+      },
+      deployService: { getLastDeployment: jest.fn(async () => deployment) },
+      deployLogRepository: {
+        findOneBy: jest.fn(async () => structuredClone(deployment)),
+      },
+      apiHistoryRepository: Object.assign(components.apiHistoryRepository, {
+        createOne: jest.fn(),
+      }),
+    });
+    const response: any = {
+      setHeader: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    try {
+      await modelsHandler({ method: 'GET', headers } as any, response);
+      expect(response.status).toHaveBeenCalledWith(200);
+      expect(response.json).toHaveBeenCalledWith({
+        hash: deployment.hash,
+        models: deployment.manifest.models,
+        views: [],
+        relationships: [],
+      });
+      expect(headers['x-kailo-native-human-token']).toBe(signed);
+      expect(headers['x-kailo-native-identity-scope']).not.toBe('f'.repeat(64));
+      expect(components.apiHistoryRepository.createOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          governanceBindingId: delivery.bindingId,
+          requestPayload: {
+            nativeModels: expect.objectContaining({
+              identityScope: headers['x-kailo-native-identity-scope'],
+              generation: 2,
+            }),
+          },
+        }),
+      );
+      expect(bindingServiceCall).toHaveBeenCalledTimes(9);
+    } finally {
+      for (const key of Object.keys(components.apiHistoryRepository))
+        delete components.apiHistoryRepository[key];
+      Object.assign(components.apiHistoryRepository, originalHistory);
+      for (const key of Object.keys(components)) delete components[key];
+      Object.assign(components, originalComponents);
+    }
+  });
   it.each([
+    '/api/v1/models/extra',
+    '/api/v1/models_extra',
+    '/api/v1/model',
     '/api/v1/knowledge/sql_pairs/0',
     '/api/v1/knowledge/sql_pairs/-1',
     '/api/v1/knowledge/sql_pairs/42/other',
     '/api/v1/knowledge/sql_pairs/fake',
     '/api/v1/knowledge/sql_pairs_extra',
   ])(
-    'does not spread private SQL-pair dispatch credentials to unrelated route %s',
+    'does not spread private native business credentials to unrelated route %s',
     async (path) => {
       const response = await middleware(
         request(path, `Bearer ${await token()}`, {
