@@ -211,6 +211,7 @@ export class NativeQueryService {
     limit: number,
     previewScope: string,
     action: 'data_query.query@v1' | 'data_query.dry_run@v1',
+    threadId?: string,
   ) {
     if (
       !uuid.test(key) ||
@@ -218,6 +219,7 @@ export class NativeQueryService {
       !sql.trim() ||
       !Number.isSafeInteger(limit) ||
       limit <= 0 ||
+      (threadId !== undefined && (!threadId || typeof threadId !== 'string')) ||
       !/^[a-f0-9]{64}$/.test(previewScope)
     )
       throw invalid();
@@ -231,6 +233,7 @@ export class NativeQueryService {
         prior.projectId !== this.config.projectId ||
         prior.requestPayload?.previewScope !== previewScope ||
         prior.requestPayload.sql !== sql ||
+        (prior.threadId ?? undefined) !== threadId ||
         prior.requestPayload.limit !== limit ||
         prior.requestPayload.action !== action)
     )
@@ -266,6 +269,7 @@ export class NativeQueryService {
       objects,
       previewScope,
       action,
+      threadId,
     };
   }
 
@@ -279,6 +283,7 @@ export class NativeQueryService {
       id: draft.id,
       projectId: this.config.projectId,
       apiType: ApiType.RUN_SQL,
+      threadId: draft.threadId,
       headers: {},
       // Native input accepted, not an execution. The original history schema
       // requires HTTP metadata; only reserve/claim adds AE and UNKNOWN.
@@ -295,7 +300,8 @@ export class NativeQueryService {
       governanceDeploymentId: draft.input.deploymentId,
       governanceDeploymentHash: draft.input.deploymentHash,
     });
-    if (!record) throw new NativeQueryRefusal(409, 'QUERY_INTENT_CONFLICT');
+    if (!record || (record.threadId ?? undefined) !== draft.threadId)
+      throw new NativeQueryRefusal(409, 'QUERY_INTENT_CONFLICT');
     const selection = {
       historyId: record.id,
       [selected.nativeType === 'model' ? 'modelId' : 'viewId']:
@@ -326,6 +332,7 @@ export class NativeQueryService {
     limit: number,
     previewScope: string,
     action: 'data_query.query@v1' | 'data_query.dry_run@v1',
+    threadId?: string,
   ) {
     let selection: Record<string, any>;
     try {
@@ -355,6 +362,7 @@ export class NativeQueryService {
       !record ||
       record.requestPayload?.previewScope !== previewScope ||
       record.requestPayload.sql !== sql ||
+      (record.threadId ?? undefined) !== threadId ||
       record.requestPayload.limit !== limit ||
       record.requestPayload.action !== action ||
       !Array.isArray(record.requestPayload.nativeSources) ||

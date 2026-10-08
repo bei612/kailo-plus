@@ -4042,3 +4042,92 @@ browser screenshot, Desktop/Mobile or global full check was accepted.
 The two earlier Engine Java files remain separately **unvalidated** and are
 not part of this batch. Function provenance, trusted SERVICE SQL and native
 cache-loss recovery remain explicit complete-delivery gaps.
+
+### 2026-10-08 — original run_sql consumes HUMAN query admission and history
+
+Authority and upstream comparison: `DD-98`, `SS-WRN-IDENTITY` and the existing
+`.design/08` §6 query Action apply to the original REST consumer as well as
+GraphQL. The fixed official UI commit
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/pages/api/v1/run_sql.ts::handler`, directly invokes native
+`QueryService.preview`. That original behavior is retained only in independent
+Wren without configured platform binding. The authorized difference is the
+bound execution/disclosure chain, not a replacement page, SQL parser or executor.
+
+The actual bound REST handler now consumes the existing
+`NativeHumanQuery.previewSql` and `NativeQueryService.sqlSelection/sqlReference/
+sqlIntent/completedQuerySources`. Middleware forwards the independently verified
+native token and identity partition only on this exact bound REST route. Core
+still authenticates the original token, admits the same query Action and applies
+all frozen model/view source policies; a middleware entitlement is not permission
+to execute SQL. Empty/broken delivery configuration, missing identity/scope/key,
+changed project/person/SQL/thread and current source revocation cannot fall back
+to original standalone execution.
+
+Impact and storage: callers keep original `sql`, `limit`, optional `threadId`
+and the successful `id`, `records`, `columns`, `threadId`, `totalRows` response.
+A bound caller supplies one UUID `Idempotency-Key` and reuses it when observing
+an uncertain request; no server-generated replacement execution key is added.
+An omitted thread uses that existing UUID. The thread is stored in the original
+`api_history.thread_id` before the Core command, including a check against a
+competing prepare winner. Subsequent observations validate the same original
+thread. The existing optional service argument has real REST consumers; existing
+GraphQL consumers remain unchanged. No schema/migration/four-language contract
+change, second history row, workflow or registry was introduced. SQL, result rows
+and native provenance remain exclusively in the original Wren history, not Core.
+
+Side effects and boundaries: the bound handler never calls the native driver or
+ordinary `respondWith`/`handleApiError`, which would create another ungoverned
+history. It never persists request headers or raw provider error messages. The
+existing real repository already filters history headers to content-type/accept;
+this batch does not introduce a duplicate filter. Only a completed, currently
+authorized original receipt discloses records. Pending/UNKNOWN returns 202 and
+the original receipt; denied returns 403; proven unsuccessful terminal receipts
+return 409 without records. Unrecognized or inconsistent evidence returns 503,
+not a fabricated success/failure or permission to execute another key.
+TERMINATED/TIMED_OUT checks are defensive contract consumers, not evidence that
+Core currently produces additional native business terminal classes.
+
+Actual validation used the existing 4 CPU / 4 GiB
+`kailo-wren-query-sdk-itgs2n`, its existing dependencies and isolated PostgreSQL
+fixture, without a new database/image or dependency download:
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand src/nativeHumanQuery.test.ts src/middleware.test.ts src/nativeProjectScope.test.ts src/nativeQuery.test.ts
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+node node_modules/prettier/bin/prettier.cjs --check src/pages/api/v1/run_sql.ts src/middleware.ts src/middleware.test.ts src/nativeHumanQuery.test.ts src/apollo/server/services/nativeHumanQuery.ts src/apollo/server/services/nativeQueryService.ts
+```
+
+Four original suites passed **368/368**, exit 0 (31.459 s). Whole-UI TypeScript
+and original Prettier exited 0. The new REST checks use the real Next
+`apiResolver` over HTTP, real HUMAN/native query/history/provenance consumers and
+controlled repository/Core/engine fixtures; middleware separately verifies real
+signed JWTs against its ephemeral JWKS server. This is not a deployed IdP/Core/
+provider or business-instance acceptance claim.
+
+A preliminary run also selected `nativeBrowserSession.test.ts`; its four
+checks were explicitly skipped because `WREN_TEST_GATEWAY_BINARY` was absent.
+No native Gateway/browser acceptance is inferred from that selection.
+
+Private production faults were not applied to the formal worktree. Inverting
+the bound route condition caused **20 failed / 116 filtered skips**; inverting
+private forwarding caused **2 failed / 54 passed**; removing the pre-command
+thread-winner check caused **1 failed / 135 filtered skips**. The last check
+observed an unwanted real command despite the later 409, not merely an error
+message. Each production file was reverse-patched and matched the formal source
+with `cmp` exit 0. Restored HUMAN/middleware suites passed **192/192**, exit 0
+(7.891 s); all six source/check files match the verified candidate. An initial
+literal-false fault failed TypeScript narrowing before running checks; it was
+replaced by the dynamic condition inversion above and is not runtime evidence.
+
+Logs in the existing private SDK directory recorded above:
+`rest-query-final.log`, `rest-query-tsc-final.log`,
+`rest-query-bypass-negative.log`, `rest-query-forward-negative.log`,
+`rest-query-thread-negative.log`, `rest-query-restored.log`.
+No business Wren container, ACTIVE binding, iframe screenshot, actual provider/
+datasource or Desktop/Mobile acceptance was produced. Trusted SERVICE SQL,
+ordinary function/aggregation provenance and cache-loss recovery remain gaps;
+the two separate Engine Java edits remain unvalidated. Other original REST
+query consumers (`ask`, `stream/ask`, `generate_summary`, `generate_vega_chart`
+and SQL-pair validation) still require their actual governed consumers; this
+single restored route is not a claim of complete native API integration.

@@ -25,6 +25,10 @@ import { typeDefs } from './apollo/server/schema';
 import { API_HISTORY } from './apollo/client/graphql/apiManagement';
 import { components } from './common';
 import { ChartType } from './apollo/server/models/adaptor';
+import runSqlHandler from './pages/api/v1/run_sql';
+import { createServer, Server } from 'http';
+import { AddressInfo } from 'net';
+import { apiResolver } from 'next/dist/server/api-utils/node/api-resolver';
 
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
@@ -494,6 +498,7 @@ describe('native saved-view HUMAN query consumer', () => {
         10,
         scope,
         action,
+        undefined,
       );
       expect(native.sqlReference).toHaveBeenCalledWith(binding, draft);
       const command = calls.mock.calls.find((call) => call[2].command)?.[2]
@@ -591,6 +596,7 @@ describe('native saved-view HUMAN query consumer', () => {
       10,
       'c'.repeat(64),
       'data_query.query@v1',
+      undefined,
     );
     expect(calls).toHaveBeenCalledTimes(1);
   });
@@ -1926,6 +1932,397 @@ describe('native saved-view HUMAN query consumer', () => {
     } finally {
       nativeReference.mockRestore();
     }
+  });
+
+  describe('original run_sql HTTP HUMAN consumer', () => {
+    let server: Server, endpoint: string, row: any, observed: any;
+    let completed: boolean, revoked: boolean;
+    let prepared: jest.Mock, appended: jest.Mock, direct: jest.Mock;
+    const originalConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    const originalComponents = { ...components };
+    const originalHistoryMethods = { ...components.apiHistoryRepository };
+    const body = { sql: statement, limit: 10 };
+    const identityScope = 'a'.repeat(64);
+    const headers = {
+      'content-type': 'application/json',
+      'idempotency-key': key,
+      'x-kailo-native-human-token': 'verified-native-token',
+      'x-kailo-native-identity-scope': identityScope,
+    };
+    const send = (input: any = body, changes = {}, method = 'POST') =>
+      fetch(endpoint, {
+        method,
+        headers: { ...headers, ...changes },
+        ...(method !== 'GET' ? { body: JSON.stringify(input) } : {}),
+      });
+
+    beforeAll(async () => {
+      server = createServer((request, response) => {
+        void apiResolver(
+          request,
+          response,
+          {},
+          { default: runSqlHandler },
+          {
+            previewModeId: '',
+            previewModeEncryptionKey: '',
+            previewModeSigningKey: '',
+          },
+          false,
+        );
+      });
+      await new Promise<void>((resolve) =>
+        server.listen(0, '127.0.0.1', resolve),
+      );
+      endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/v1/run_sql`;
+    });
+
+    beforeEach(() => {
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+        'fixture-controlled-delivery';
+      jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+      row = undefined;
+      observed = null;
+      completed = true;
+      revoked = false;
+      direct = jest.fn(async () => ({ columns: [], data: [] }));
+      prepared = jest.fn(async (input) => {
+        row ??= input;
+        return row;
+      });
+      appended = jest.fn(async (input) => input);
+      const deployment = {
+        id: 12,
+        projectId: config.projectId,
+        hash: selection.deploymentHash,
+        status: 'SUCCESS',
+        manifest: {
+          catalog: nativeProject.catalog,
+          schema: nativeProject.schema,
+          models: [{ name: 'native_model', columns: [] }],
+        },
+        nativeObjectRefs: [capturedSources[0]],
+      };
+      Object.assign(components, {
+        projectService: {
+          getCurrentProject: jest.fn(async () => nativeProject),
+        },
+        projectRepository: { findOneBy: jest.fn(async () => nativeProject) },
+        deployService: { getLastDeployment: jest.fn(async () => deployment) },
+        deployLogRepository: {
+          findLastProjectDeployLog: jest.fn(async () => deployment),
+          findOneBy: jest.fn(async () => deployment),
+        },
+        queryService: {
+          preview: direct,
+          sourceObjects: jest.fn(async () => [
+            {
+              catalog: nativeProject.catalog,
+              schema: nativeProject.schema,
+              table: 'native_model',
+            },
+          ]),
+        },
+        modelRepository: {
+          findOneBy: jest.fn(async () => ({
+            id: 8,
+            projectId: config.projectId,
+            referenceName: 'native_model',
+          })),
+        },
+      });
+      Object.assign(components.apiHistoryRepository, {
+        prepareNativeSql: prepared,
+        createOne: appended,
+        findOneBy: jest.fn(async (where) =>
+          row &&
+          Object.entries(where).every(([name, value]) => row[name] === value)
+            ? row
+            : undefined,
+        ),
+      });
+      calls.mockImplementation(async (_config, _operation, input) => {
+        if (input.resolveResource) {
+          const source = input.resolveResource as any;
+          return {
+            resource: {
+              ...resolution.resource,
+              nativeType: source.nativeType,
+              nativeRef: source.nativeRef,
+            },
+          };
+        }
+        if (revoked && input.sourceResources)
+          throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+        if (input.command) {
+          const command = input.command as any;
+          observed = {
+            ...receipt,
+            inputReference: command.componentAction.inputReference,
+            ...(completed
+              ? {
+                  terminalStatus: 'COMPLETED',
+                  nativeType: 'wren.api_history',
+                  nativeId: row.id,
+                }
+              : { submission: { ...submission, dispatchState: 'UNKNOWN' } }),
+          };
+          if (completed)
+            Object.assign(row, {
+              governanceState: 'SUCCEEDED',
+              governanceActionExecutionId: submission.actionExecutionId,
+              governanceOperationId: submission.operationId,
+              governanceParameterHash: digest({
+                target: { resourceId: observed.inputReference.resourceId },
+                input: observed.inputReference,
+              }),
+              responsePayload: {
+                columns: [{ name: 'customer', type: 'VARCHAR' }],
+                data: [['native']],
+                deploymentId: 12,
+                deploymentHash: selection.deploymentHash,
+              },
+            });
+        }
+        return observed;
+      });
+    });
+
+    afterAll(async () => {
+      if (originalConfig === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = originalConfig;
+      Object.keys(components.apiHistoryRepository).forEach((name) => {
+        delete components.apiHistoryRepository[name];
+      });
+      Object.assign(components.apiHistoryRepository, originalHistoryMethods);
+      Object.keys(components).forEach((name) => {
+        delete components[name];
+      });
+      Object.assign(components, originalComponents);
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+        server.closeAllConnections();
+      });
+    });
+
+    it('preserves the original response through real NativeHumanQuery/history/source disclosure, not direct SQL or a second history', async () => {
+      const response = await send({ ...body, threadId: 'original-thread' });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        id: row.id,
+        records: [{ customer: 'native' }],
+        columns: [{ name: 'customer', type: 'VARCHAR' }],
+        threadId: 'original-thread',
+        totalRows: 1,
+      });
+      expect(response.headers.get('cache-control')).toContain('no-store');
+      expect(prepared).toHaveBeenCalledTimes(1);
+      expect(row.requestPayload.previewScope).toBe(
+        nativePreviewScope(config, identityScope),
+      );
+      expect(row.headers).toEqual({});
+      expect(row.threadId).toBe('original-thread');
+      expect(JSON.stringify(row)).not.toContain(
+        headers['x-kailo-native-human-token'],
+      );
+      const commands = calls.mock.calls.filter((call) => call[2].command);
+      expect(commands).toHaveLength(1);
+      expect(JSON.stringify(commands)).not.toContain(statement);
+      expect(calls.mock.calls.at(-1)[2].sourceResources).toEqual([
+        { nativeType: 'model', nativeRef: '8' },
+      ]);
+      expect(direct).not.toHaveBeenCalled();
+      expect(appended).not.toHaveBeenCalled();
+    });
+
+    it('observes UNKNOWN with the same key/history/thread and never repeats native SQL or admission', async () => {
+      completed = false;
+      const first = await send();
+      expect(first.status).toBe(202);
+      const value = await first.json();
+      expect(value.id).toBe(row.id);
+      expect(value.threadId).toBe(key);
+      expect(row.threadId).toBe(key);
+      expect(value.receipt.submission.dispatchState).toBe('UNKNOWN');
+      expect(value).not.toHaveProperty('records');
+      const second = await send();
+      expect(second.status).toBe(202);
+      expect(await second.json()).toEqual(value);
+      expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+        1,
+      );
+      expect(prepared).toHaveBeenCalledTimes(1);
+      expect(direct).not.toHaveBeenCalled();
+      expect(appended).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      'missing-token',
+      'missing-scope',
+      'missing-key',
+      'bad-key',
+      'invalid-limit',
+      'changed-project',
+      'broken-config',
+    ])(
+      'refuses %s without falling back to standalone SQL/history',
+      async (failure) => {
+        const changes: Record<string, string> = {};
+        let input = body;
+        if (failure === 'missing-token')
+          changes['x-kailo-native-human-token'] = '';
+        if (failure === 'missing-scope')
+          changes['x-kailo-native-identity-scope'] = '';
+        if (failure === 'missing-key') changes['idempotency-key'] = '';
+        if (failure === 'bad-key') changes['idempotency-key'] = 'not-an-intent';
+        if (failure === 'invalid-limit') input = { ...body, limit: 0 };
+        if (failure === 'changed-project')
+          jest
+            .spyOn(components.projectService, 'getCurrentProject')
+            .mockResolvedValue({ id: 4 } as any);
+        if (failure === 'broken-config') {
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+          jest
+            .mocked(loadQueryDelivery)
+            .mockRejectedValue(new Error('private delivery credential'));
+        }
+        const response = await send(input, changes);
+        expect(response.status).toBe(
+          failure.startsWith('missing-') && failure !== 'missing-key'
+            ? 401
+            : failure === 'changed-project'
+              ? 409
+              : failure === 'broken-config'
+                ? 503
+                : 400,
+        );
+        expect(await response.text()).not.toMatch(
+          /native-token|private delivery credential|records/,
+        );
+        expect(calls).not.toHaveBeenCalled();
+        expect(direct).not.toHaveBeenCalled();
+        expect(prepared).not.toHaveBeenCalled();
+        expect(appended).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rejects a changed person or SQL on reentry and never creates a replacement command', async () => {
+      completed = false;
+      expect((await send()).status).toBe(202);
+      expect(
+        (await send(body, { 'x-kailo-native-identity-scope': 'b'.repeat(64) }))
+          .status,
+      ).toBe(409);
+      expect(
+        (await send({ ...body, sql: `${statement} WHERE false` })).status,
+      ).toBe(409);
+      expect((await send({ ...body, threadId: 'another-thread' })).status).toBe(
+        409,
+      );
+      expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+        1,
+      );
+      expect(prepared).toHaveBeenCalledTimes(1);
+      expect(direct).not.toHaveBeenCalled();
+    });
+
+    it('rejects a competing original history thread before a Core command, without reparenting the winner', async () => {
+      prepared.mockImplementation(async (input) => {
+        row = { ...input, threadId: 'winning-original-thread' };
+        return row;
+      });
+      const response = await send({
+        ...body,
+        threadId: 'losing-original-thread',
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ error: 'QUERY_INTENT_CONFLICT' });
+      expect(row.threadId).toBe('winning-original-thread');
+      expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+        0,
+      );
+      expect(direct).not.toHaveBeenCalled();
+      expect(appended).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      'FAILED',
+      'CANCELED',
+      'TERMINATED',
+      'TIMED_OUT',
+      'DENIED',
+      'RUNNING',
+      'unrecognized',
+    ])(
+      'preserves %s receipt evidence without returning original records or re-executing',
+      async (status) => {
+        completed = false;
+        expect((await send()).status).toBe(202);
+        if (status === 'DENIED')
+          observed.submission = {
+            ...submission,
+            gateState: 'DENIED',
+            dispatchState: 'NOT_DISPATCHED',
+          };
+        else {
+          observed.submission = submission;
+          observed.terminalStatus = status;
+        }
+        const response = await send();
+        expect(response.status).toBe(
+          status === 'unrecognized'
+            ? 503
+            : status === 'RUNNING'
+              ? 202
+              : status === 'DENIED'
+                ? 403
+                : 409,
+        );
+        const value = await response.json();
+        expect(value).not.toHaveProperty('records');
+        if (status !== 'unrecognized') expect(value.receipt).toEqual(observed);
+        expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+          1,
+        );
+        expect(prepared).toHaveBeenCalledTimes(1);
+        expect(direct).not.toHaveBeenCalled();
+        expect(appended).not.toHaveBeenCalled();
+      },
+    );
+
+    it('withholds completed original records after current source policy is revoked', async () => {
+      expect((await send()).status).toBe(200);
+      revoked = true;
+      const response = await send();
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: 'QUERY_SCOPE_DENIED' });
+      expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+        1,
+      );
+      expect(direct).not.toHaveBeenCalled();
+      expect(appended).not.toHaveBeenCalled();
+    });
+
+    it('leaves the never-configured independent native API response and history intact', async () => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      const response = await send();
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        id: expect.any(String),
+        records: [],
+        columns: [],
+        threadId: expect.any(String),
+        totalRows: 0,
+      });
+      expect(direct).toHaveBeenCalledWith(
+        statement,
+        expect.objectContaining({ limit: 10, modelingOnly: false }),
+      );
+      expect(appended).toHaveBeenCalledTimes(1);
+      expect(calls).not.toHaveBeenCalled();
+      expect(prepared).not.toHaveBeenCalled();
+    });
   });
 
   it('uses Chinese by default and a single English locale for necessary preview guidance', () => {

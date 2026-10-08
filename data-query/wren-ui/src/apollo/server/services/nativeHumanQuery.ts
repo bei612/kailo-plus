@@ -349,6 +349,7 @@ export class NativeHumanQuery {
     limit: number,
     previewScope: string,
     dryRun: boolean,
+    threadId?: string,
   ) {
     const action = dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1';
     const policy = dryRun ? this.config.dryRunAction : this.config.humanAction;
@@ -385,6 +386,7 @@ export class NativeHumanQuery {
         limit,
         previewScope,
         action,
+        threadId,
       );
       const resources = [];
       for (const source of draft.objects)
@@ -463,6 +465,7 @@ export class NativeHumanQuery {
       limit,
       previewScope,
       action,
+      threadId,
     );
     return this.disclose(token, key, receipt, check, action);
   }

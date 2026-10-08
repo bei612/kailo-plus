@@ -197,7 +197,11 @@ export async function middleware(request: NextRequest) {
   headers.delete('cookie');
   headers.delete('x-kailo-native-human-token');
   headers.delete('x-kailo-native-identity-scope');
+  const boundSql =
+    request.nextUrl.pathname === '/api/v1/run_sql' &&
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
   if (
+    boundSql ||
     ['/api/graphql', '/api/config', '/api/ask_task/streaming_answer'].includes(
       request.nextUrl.pathname,
     )
@@ -207,6 +211,7 @@ export async function middleware(request: NextRequest) {
   // Private Next hop only; Core independently verifies this original signed
   // token. Never synthesize a trusted subject/issuer from browser headers.
   if (
+    boundSql ||
     [
       '/api/graphql',
       '/api/platform-query-reference',
