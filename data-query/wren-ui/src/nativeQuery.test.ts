@@ -1,6 +1,6 @@
 import { createServer, Server as HttpServer } from 'http';
 import { AddressInfo } from 'net';
-import { randomUUID } from 'crypto';
+import { randomInt, randomUUID } from 'crypto';
 import { mkdtempSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -15,6 +15,12 @@ import { ViewRepository } from './apollo/server/repositories/viewRepository';
 import { ModelRepository } from './apollo/server/repositories/modelRepository';
 import { ModelColumnRepository } from './apollo/server/repositories/modelColumnRepository';
 import { ApiHistoryRepository } from './apollo/server/repositories/apiHistoryRepository';
+import {
+  ThreadResponse,
+  ThreadResponseRepository,
+} from './apollo/server/repositories/threadResponseRepository';
+import { ThreadRepository } from './apollo/server/repositories/threadRepository';
+import { AskingService } from './apollo/server/services/askingService';
 import { QueryService } from './apollo/server/services/queryService';
 import { NativeQueryService } from './apollo/server/services/nativeQueryService';
 import { canReadNativeMetadata } from './apollo/server/services/nativeHumanQuery';
@@ -42,6 +48,224 @@ jest.mock('./common', () => ({
 const integration = process.env.WREN_QUERY_TEST_DATABASE_URL
   ? describe
   : describe.skip;
+
+integration('original Wren native answer PostgreSQL CAS', () => {
+  let database: Knex;
+  let tx: Knex.Transaction;
+  let repository: ThreadResponseRepository;
+  let expected: ThreadResponse;
+  let projectId: number;
+  const originalDelivery = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+
+  beforeAll(async () => {
+    const url = new URL(process.env.WREN_QUERY_TEST_DATABASE_URL);
+    database = knex({ client: 'pg', connection: url.toString() });
+    const identity = await database.raw('SELECT current_database() AS name');
+    expect(identity.rows[0].name).toBe(
+      decodeURIComponent(url.pathname.slice(1)),
+    );
+    // This existing database was independently verified as the original Wren
+    // test fixture. Never migrate it or run the other suite's setup here.
+    const fixture = await database('project')
+      .where({ display_name: 'isolated-query-fixture' })
+      .first();
+    expect(fixture).toBeDefined();
+    projectId = fixture.id;
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+  });
+  beforeEach(async () => {
+    tx = await database.transaction();
+    const threadId = randomInt(1, 2147483647);
+    await tx('thread').insert({ id: threadId, project_id: projectId });
+    repository = new ThreadResponseRepository(tx);
+    expected = await repository.createOne({
+      id: randomInt(1, 2147483647),
+      threadId,
+      question: randomUUID(),
+      sql: 'SELECT 1 AS original_value',
+    });
+    // The native schema defaults to JSONB {}, not SQL NULL. Exercise the
+    // original nullable snapshot explicitly; {} is a distinct changed value.
+    await tx('thread_response')
+      .where({ id: expected.id })
+      .update({ answer_detail: null });
+    expected = await repository.findOneBy({ id: expected.id });
+  });
+  afterEach(async () => {
+    if (tx) await tx.rollback();
+    if (expected) {
+      expect(
+        await database('thread_response').where({ id: expected.id }),
+      ).toEqual([]);
+      expect(await database('thread').where({ id: expected.threadId })).toEqual(
+        [],
+      );
+    }
+  });
+  afterAll(async () => {
+    if (originalDelivery === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = originalDelivery;
+    if (database) await database.destroy();
+  });
+
+  it('compares actual JSONB snapshots rather than object key ordering', async () => {
+    const historyId = randomUUID();
+    const claimed = await repository.claimNativeAnswer(expected, {
+      queryHistoryId: historyId,
+      status: 'PREPROCESSING',
+    });
+    expect(claimed.answerDetail).toEqual({
+      status: 'PREPROCESSING',
+      queryHistoryId: historyId,
+    });
+    const completed = await repository.claimNativeAnswer(
+      {
+        ...claimed,
+        answerDetail: { status: 'PREPROCESSING', queryHistoryId: historyId },
+      },
+      {
+        ...claimed.answerDetail,
+        status: 'FINISHED',
+        content: 'original answer',
+      },
+    );
+    expect(completed.answerDetail.status).toBe('FINISHED');
+    expect(
+      (await repository.findOneBy({ id: expected.id })).answerDetail,
+    ).toEqual(completed.answerDetail);
+  });
+
+  it.each(['sql', 'question', 'threadId', 'answerDetail'])(
+    'refuses an actually changed %s without overwriting native state',
+    async (field) => {
+      if (field === 'threadId') {
+        const changedThread = randomInt(1, 2147483647);
+        await tx('thread').insert({ id: changedThread, project_id: projectId });
+        await tx('thread_response')
+          .where({ id: expected.id })
+          .update({ thread_id: changedThread });
+      } else {
+        const update =
+          field === 'answerDetail'
+            ? { answer_detail: JSON.stringify({}) }
+            : { [field]: randomUUID() };
+        await tx('thread_response').where({ id: expected.id }).update(update);
+      }
+      const current = await repository.findOneBy({ id: expected.id });
+      expect(
+        await repository.claimNativeAnswer(expected, {
+          queryHistoryId: randomUUID(),
+          status: 'FINISHED',
+        }),
+      ).toBeNull();
+      expect(await repository.findOneBy({ id: expected.id })).toEqual(current);
+    },
+  );
+
+  it('admits only one concurrent repository claim from the same native snapshot', async () => {
+    const claims = [randomUUID(), randomUUID()];
+    const results = await Promise.all(
+      claims.map((historyId) =>
+        repository.claimNativeAnswer(expected, {
+          queryHistoryId: historyId,
+          status: 'PREPROCESSING',
+        }),
+      ),
+    );
+    const winners = results.filter(Boolean);
+    expect(winners).toHaveLength(1);
+    expect(
+      (await repository.findOneBy({ id: expected.id })).answerDetail,
+    ).toEqual(winners[0].answerDetail);
+  });
+
+  const asking = () =>
+    Object.assign(Object.create(AskingService.prototype), {
+      threadResponseRepository: repository,
+      threadRepository: new ThreadRepository(tx),
+      projectService: {
+        getCurrentProject: jest.fn(async () => ({ id: projectId })),
+      },
+      wrenAIAdaptor: {
+        createTextBasedAnswer: jest.fn(async () => ({ queryId: randomUUID() })),
+      },
+      textBasedAnswerBackgroundTracker: { addTask: jest.fn() },
+    });
+  const input = () => ({
+    language: 'zh-TW',
+    nativeQuery: {
+      historyId: randomUUID(),
+      expected,
+      data: { columns: [{ name: 'original_value', type: 'int' }], data: [[1]] },
+    },
+  });
+
+  it('concurrent original Asking consumers create one AI task with real CAS and then rejoin it', async () => {
+    const service = asking();
+    const request = input();
+    const read = service.getResponse.bind(service);
+    let initialReads = 0;
+    let release: () => void;
+    const bothRead = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    jest.spyOn(service, 'getResponse').mockImplementation(async (id) => {
+      const value = await read(id);
+      if (++initialReads <= 2) {
+        if (initialReads === 2) release();
+        await bothRead;
+      }
+      return value;
+    });
+    const replies = await Promise.all([
+      service.generateThreadResponseAnswer(expected.id, request),
+      service.generateThreadResponseAnswer(expected.id, request),
+    ]);
+    expect(replies).toHaveLength(2);
+    expect(service.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(service.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledWith({
+      query: expected.question,
+      sql: expected.sql,
+      sqlData: request.nativeQuery.data,
+      threadId: String(expected.threadId),
+      configurations: { language: request.language },
+    });
+    const current = await repository.findOneBy({ id: expected.id });
+    expect(current.answerDetail).toEqual({
+      queryHistoryId: request.nativeQuery.historyId,
+      queryId: expect.any(String),
+      status: 'PREPROCESSING',
+    });
+    await service.generateThreadResponseAnswer(expected.id, request);
+    expect(service.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(
+      1,
+    );
+  });
+
+  it('retains the original persisted claim after a lost AI acknowledgement and never creates again', async () => {
+    const service = asking();
+    const request = input();
+    service.wrenAIAdaptor.createTextBasedAnswer.mockRejectedValue(
+      new Error('lost native acknowledgement'),
+    );
+    await expect(
+      service.generateThreadResponseAnswer(expected.id, request),
+    ).rejects.toThrow('lost native acknowledgement');
+    expect(
+      (await repository.findOneBy({ id: expected.id })).answerDetail,
+    ).toEqual({
+      queryHistoryId: request.nativeQuery.historyId,
+      status: 'PREPROCESSING',
+    });
+    await service.generateThreadResponseAnswer(expected.id, request);
+    expect(service.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(
+      1,
+    );
+  });
+});
 
 integration('original Wren query handler, SDK and native history', () => {
   let database: Knex;

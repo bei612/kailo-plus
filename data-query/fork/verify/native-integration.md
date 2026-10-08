@@ -3732,3 +3732,68 @@ provenance, the separate two Java changes, full original-page screenshots,
 Chinese/English completeness, Desktop/Mobile and global `check.sh --full`
 were not accepted by this batch. These limits do not remove those capabilities
 from the delivery goal or claim the full Wren integration complete.
+
+### Same original answer repository: actual PostgreSQL CAS consumer evidence
+
+The preceding production increment is committed as
+`2cad2897ec5525020a9c7c88a013db6b0c08712e`. Its production repository is unchanged
+by this follow-up. The earlier SDK process-list check did not establish that
+the original isolated database was absent: the SDK shares the network namespace
+of the already running `kailo-installation-scope-pg-e4agxd`. Its actual existing
+database is `wren_query_itgs2n`, current user `postgres`, with the original
+`isolated-query-fixture` project and original thread/response JSONB schema.
+Before and after this check, thread and response row counts were 0 and the
+existing API History count was 1225. No other database was targeted.
+
+The sole source change is an implementation-following independent `describe`
+in the existing `wren-ui/src/nativeQuery.test.ts`. It reuses the original Jest,
+Knex, `ThreadResponseRepository`, `ThreadRepository` and `AskingService`. The
+original other describe is name-filtered out, so its migrations/setup do not
+run. Each case inserts only transaction-local rows with explicit IDs, rolls
+back in `afterEach` and checks the created response/thread IDs are absent.
+There is no new database, schema, framework, migration, sequence allocation,
+image or dependency installation. The same 4 CPU / 4 GiB SDK and caches are
+used; host pressure, processes and limits were checked before execution, with
+338 MiB available on Data.
+
+Eight actual database consumers verify SQL NULL and ordered/unordered JSONB
+snapshot consumption; SQL/question/thread/answer changes refuse without
+overwriting native state; two same-snapshot repository claims admit only one;
+overlapping original Asking calls read the same native intent and create one
+AI task; reentry after a lost AI acknowledgement preserves the stored claim
+and never creates again. Concurrent callers share the same outer PostgreSQL
+transaction/connection to permit complete rollback. This is actual database
+CAS and original service-consumer evidence, not cross-connection locking or
+live AI/provider acceptance. Only the external original AI adaptor boundary
+and background registration are controlled fixtures.
+
+The initial run had 7 passed / 1 failed / 69 name-filtered skips, exit 1
+(123.348 s). The native schema defaults `answer_detail` to JSONB `{}`; the
+initial changed-answer fixture wrote `{}` again and therefore did not actually
+change the snapshot. The fixture now explicitly selects SQL NULL before
+changing it to `{}`. Reading the full original repository inheritance also
+corrected an initial diagnosis: `BaseRepository.createOne` preserves SQL NULL;
+it does not JSON-stringify that field. No native JSONB-null writer was found,
+so no speculative production NULL-handling patch was made. The corrected
+eight consumers passed, 69 original checks explicitly filtered out, exit 0
+(7.255 s), and whole-UI TypeScript exited 0.
+
+Removing only the actual production repository's previous-answer predicate
+in the private SDK copy then caused 3 failed / 74 name-filtered skips, exit 1
+(7.807 s): a changed answer was overwritten, both same-snapshot claims won and
+the original concurrent Asking consumer created two AI tasks. The exact
+predicate was restored with a reverse patch and compared to the formal source
+using `cmp`, exit 0. The restored eight consumers passed, 69 filtered skips,
+exit 0 (7.919 s); original Prettier and `git diff --check` also exited 0.
+
+Actual commands reused the preceding original Jest entry with
+`--testNamePattern='original Wren native answer PostgreSQL CAS'`, the negative
+filter `original Wren native answer PostgreSQL CAS.*(answerDetail|same native snapshot|concurrent original Asking)`,
+and `./node_modules/.bin/tsc --noEmit --incremental false`. The existing
+`WREN_QUERY_TEST_DATABASE_URL` was set only to the independently verified
+isolated database. Logs in the same private SDK directory are
+`native-text-answer-pg-positive.log`, `native-text-answer-pg-final-positive.log`,
+`native-text-answer-pg-tsc.log`, `native-text-answer-pg-negative.log`,
+`native-text-answer-pg-restored.log` and `native-text-answer-pg-format.log`.
+The previously stated deployment, binding, full native functionality, browser,
+Desktop/Mobile and provider/governance runtime gaps remain unchanged.
