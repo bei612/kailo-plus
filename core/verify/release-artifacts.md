@@ -1060,3 +1060,92 @@ Gateway 固定到 `442349136506fdb51f1feb5958a63c7d2cfda65cf194fa6e3774d3189c6dd
 原最终检查。原失败不抹除，不把镜像/配置通过记作业务上线验收。
 发布原件及独立读回在
 `/volumes/data/kailo/tmp/codex-component-runtime-integration-20261005.lciVUS/final-index-20261006.89t7vX/commit-source/release-input.md`。
+
+## 2026-10-08 同源 Core、Worker、Web 实际发布
+
+本批固定源码为 `32971030d1d856b4f26b19fcff02cd4939204864`，不是当前有后续
+增量的 main 工作树。沿原 `tools/release.sh` 的 Core/Worker 与
+`tools/build-upstream.sh web-client` 发布入口，没有重建底座、重置账号、
+复制业务正文或改变三组件准入。四步影响复核如下：
+
+1. 权威为既有源码来源、发布及失败关闭要求；本批只发布已经实现的头像原生
+   sanitizer、消息/项目消费及受控执行链，不改变 `.design` 的语义或能力范围。
+2. 影响为三镜像、Compose 三个精确 digest、Web manifest 两个来源值与已有
+   Web 追溯产物引用。正式业务库只沿原迁移入口前进；Web 经 BFF，Desktop/
+   Mobile 本机持钥及管理面 BFF 不变。本批没有更新两个原生端安装包。
+3. 原启动入口重新领取三枚一次性 OpenBao 包装；不打印凭据，不增加共享身份、
+   默认租户或备用执行路径。Worker 沿原 Temporal namespace/task queue 接回
+   既有工作流；只看到 Worker 启动不能证明所有在途 AgentTask 已收敛。
+4. 迁移/镜像/健康任一失败都不冒充成功；原 full 失败原件保留。未知执行仍沿
+   原观察/对账机制，不提交新任务、不重放外部副作用，也不把 HTTP 200 当业务验收。
+
+| 实际产物 | digest |
+|---|---|
+| Core | `sha256:15c65721750447e7ab5b5df743bddd2d6a6263aabd3aaf50066994c1991391a2` |
+| Worker | `sha256:aebc614cb0afff2b74bb7d8e8329486670b2a50d9ff89a188de560ee356146a7` |
+| Web | `sha256:9ce755ef160e985e259f4ecf12fac8739e0afeeef458a731e24be7fffcac24d8` |
+
+Web source digest 为
+`sha256:73e57641ff6dc5d09bf7ef07bdb1845826b217751b1d64344cc0ac025e63aba7`，
+真实 SSO 后 build-info 与该输入一致。Core/Worker 原 SBOM/provenance 四文件
+已经逐一 `cmp` 后复制到本工程忽略的 `dist/`；它们标识这个固定提交，不证明
+后续新增源码已发布。Worker 原 registry push 及独立 RepoDigest 读回一致。
+
+实际运行命令均退出 0：原运行目录 `./start-core.sh --no-build`；Worker 使用
+原 `.env` 的 `docker compose --env-file .env -f compose.yaml up -d --no-deps
+--no-build --pull never worker`。原运行目录为
+`/volumes/data/kailo/tmp/buzz-conditions-release-20261007.rjEksd/apps/deploy/local`。
+Core/Web 17:17 UTC、Worker 17:29 UTC 替换；71 个运行容器的 ID、镜像与启动
+时间前后逐项对照，仅三者改变，其余 68 项相同，没有缺失或新增容器。
+两条正式迁移 `20261007190000_publish_project_kinds`、
+`20261007220000_publish_human_mentions` 成功；未回滚业务数据。
+实际 Worker 日志为 `Started Worker Namespace kailo TaskQueue kailo-component-task`。
+
+构建使用既有 Data BuildKit 状态及本地缓存，8 CPU/16 GiB cgroup，运行前检查
+既有构建进程和 CPU/内存。不是完全离线构建：本批仍有锁定依赖和基础层下载，
+不能声称以后不需要网络。没有通过减少 Cargo 并行数规避资源限制。
+
+发布日志位于 `/volumes/data/kailo/tmp/web-main-release-20261008.O3XRWf/`：
+
+| 原件 | SHA-256 |
+|---|---|
+| `core-worker-release-32971030d.log` | `da169ef31e07abb893c88bbcd12f136eb94e932772cf73e4c3cd24327a835b70` |
+| `release-core.iBs9CJ.log` | `58151a57e71079a719dabd2ecdfb207bd9ac171fe7ebce13d26ff3fcf288db76` |
+| `release-worker.4rxF8o.log` | `a2866fab42dbb40b88a2eb3539dfbf51a6a911609f4f85300282603e436eff4d` |
+
+原受限 SDK 的 `./tools/check.sh --full` 对同一固定树执行：四侧生成/兼容、
+迁移前进-回退-前进、SQLx、Rust/Go/Dart 检查、Workflow 回放与文档六项通过；
+格式、Clippy、TypeScript、Web 追溯引用及上游接缝有明确失败，实际退出 1。
+供应链 44 个产物的 SBOM/provenance/commit/锁摘要通过；接缝仍指出三个已恢复
+原模块的 remove_paths 登记过时，以及 Relay、Desktop、Cells、WeKnora、Gateway
+和 Web 的旧来源摘要。没有伪造新摘要压过错误；Web 的真实本次产物单独登记，
+其他改动等待源码冻结后的集中发布。原 full 完整日志 SHA-256 为
+`6dace21bbae39c9a597f6aa6c7698577af5dbf1853d41a89724d965eb48f70ad`。
+TypeScript 用原容器及原 pnpm 输入独立捕获失败：63 文件中 62 通过、1 失败，
+1000 项中 994 通过、6 失败；原件为
+`/volumes/data/kailo/check-cache/full-node-32971030d-diagnostic.log`。
+该诊断日志 SHA-256 为
+`e5b363d39b84d52af9b74c68e32bd3a13e63afb1995aaebacf8fce7c4d79c7d1`。
+初次直接调用遗漏容器内原 pnpm PATH 而退出 127，只是诊断命令失败，未当作测试结论。
+追溯产物引用在本次发布记录中纠正，不抹除固定旧树的失败；后续检查与源码修复
+各自保留证据，不通过重新命名旧日志制造成功。
+
+浏览器实际入口为 `http://192.168.0.193:58090/app/`。既有独立用户正常 SSO 后，
+上传原固定 app-icon：媒体 POST 200、原资料发布 200、整页刷新后 PNG GET 200，
+读回 5026 bytes、168×168。八张状态截图位于本工程 `.playwright-cli/` 的
+`kailo-ui-20261008-main329-*`，已逐张打开：头像前/上传/保存/刷新四图，
+搜索结果/冷目标/暖目标/线程目标四图。搜索真实 POST 200 不等于导航成功：
+冷目标位于视口之外，线程目标没有打开线程，两项明确失败；暖目标通过。
+这些是八个关键状态，不是八页全量通过，更不是 Windows/Mobile 验收。
+
+后续 main 的频道复制、搜索定位/线程消费及 Cells 原生 actor 改造不在上述镜像。
+Cells/WeKnora/Wren 完整业务、binding/Gateway/Codex 联调、全量官方原版一致性、
+三个独立人类与多个 Agent 稳定协作及生产门禁均未因此完成。
+
+发布记录与使用文档写入后，复用已有 4 CPU/8 GiB SDK、既有候选及当前根文档/
+docs/设计输入执行原 `tools/check-docs.sh ../.design`，实际退出 0：277 个引用、
+87 个实体、115 个 DD、29 个 SS、87 个场景及两侧 markdownlint 全部通过。
+首轮漏用原 HOME/npm cache 环境，markdownlint 因 `/.npm` EACCES 退出 1；
+只恢复既有 `/cache/home` 与 `/cache/npm` 环境后通过，没有 chown、安装或更换工具。
+日志保留在既有 `codex-agent-receipt-regression-20261005.XvkUjX/` 的
+`release-329-current-docs.log` 和 `release-329-current-docs-restored-env.log`。

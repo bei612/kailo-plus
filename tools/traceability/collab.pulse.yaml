@@ -32,5 +32,5 @@ release:
     - name: core
       digest: sha256:e42e3deb0faf34fc3eec1b4daecb85d542cb94865ca2875946f9f926b67ed8cf
     - name: web-client
-      digest: sha256:d313fb1326cec59bcd4f3dc3b4785033026c43a438a41594895e6f57b5157e83
+      digest: sha256:9ce755ef160e985e259f4ecf12fac8739e0afeeef458a731e24be7fffcac24d8
   gate: blocked_until_seams_closed

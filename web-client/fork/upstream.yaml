@@ -95,8 +95,8 @@ artifacts:
     build_context: .
     build_dockerfile: web-client/web/Dockerfile
     inputs: [web-client/web/, client-kit/ts/contracts/, client-kit/ts/platform/, collaboration/patches/virtua@0.49.3.patch]
-    source_digest: sha256:f6cffa26a12eb0abf79e9402aa86c362a1da0ef6e8e09717709bd10e4b15f89c
-    artifact_digest: sha256:da2ae292fb7297fd597e9db1420bd6e67135f7ae64261f66ff754d48ecb03d69
+    source_digest: sha256:73e57641ff6dc5d09bf7ef07bdb1845826b217751b1d64344cc0ac025e63aba7
+    artifact_digest: sha256:9ce755ef160e985e259f4ecf12fac8739e0afeeef458a731e24be7fffcac24d8
 
 source_facts: [SF-WEB-01, SF-WEB-04, SF-WEB-05, SF-WEB-06, SF-WEB-07]
 source_seams: [SS-WEB-RELAY, SS-WEB-01, SS-WEB-PRESENTATION]
