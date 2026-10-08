@@ -2583,3 +2583,78 @@ Cells→WeKnora import/parse/revoke receipts, browser/installed-client screensho
 full checks, manifest status, image build and deployment were not run in this
 subtask. Historical receipts above describe their own earlier snapshots; they
 do not override this batch's new producer/consumer or these remaining boundaries.
+
+## Original data-source picker scope isolation: source written, UI not accepted (2026-10-08)
+
+The backend directory batch above is committed and pushed as
+`0f45af48f7617fdf18bc02e98f1822b2879fd87b`. This subsequent frontend batch is
+separate: eight original Vue/API/locale paths, **+558/-78 against that main
+commit**, are written but not committed, built, deployed, or runtime accepted.
+Neither the earlier Go checks nor an existing deployed page verifies these new
+frontend bytes.
+
+Four-step impact conclusions:
+
+1. Authority is DD-89 and design 07 §8.2: the receiver chooses real granted
+   source references, keeps its service credential backend-only, and consumes
+   its own original paused/create/update/sync lifecycle. The fixed restoration
+   source remains WeKnora `2be7bd40631dda1dd485306038f07a62e9ee287e`,
+   `frontend/src/views/knowledge/settings/DataSourceEditorDialog.vue` symbols
+   `connectorDefs`, `loadResources`, `handleSubmit`, and the drawer lifecycle
+   watcher. The original eleven credential connectors remain present, in their
+   original order, with their original fields/layout/styles. The only template
+   addition hides credential inputs for the new credential-free `file_storage`
+   source; no original connector page or interaction was removed.
+2. Writers/readers are the original optional `getConnectorTypes(kbId)` metadata
+   API, original drawer/credential/resource-tree handlers, and the five existing
+   locale files. The drawer now invalidates work on close/reopen, KB change,
+   source ID change, and unmount; asynchronous follow-up requests retain the
+   initiating KB/source ID. Older directory responses cannot undo newer
+   discovery. No Core contract, database schema, registry, credential authority,
+   frontend framework, or shared Web/Desktop surface was added.
+3. Old metadata, listings, lazy-tree responses, connection tests, credential
+   mutations, saves, and sync responses must not update or close a different
+   editor scope. Confirmed paused drafts are released before asynchronous
+   cleanup; a late known paused creation can clean only its returned native ID.
+   Before attempting activation the draft is no longer disposable: a lost
+   activation response must not lead the close handler to delete a possibly
+   active data source. The native ID remains the original retry target, and
+   native rows remain visible through the original data-source management
+   surface. No guessed ID or repeated upload was introduced.
+4. Empty/revoked source discovery cannot create an empty paused draft; final
+   file-storage save re-reads the governed directory and refuses absent source
+   selections. Reentrant save during listing/test/credential removal is refused.
+   Close/reopen, same-KB request ordering, KB switch during paused creation,
+   stale cleanup/listing, stale test, credential/save completion, and revocation
+   have eight post-implementation deferred-response cases in the original SFC
+   test file. They are **not executed**: all nineteen current SFC cases
+   (six credential + five file-storage + eight timing cases) remain unaccepted.
+   No runtime or production-mutation success is claimed for them.
+
+Actual checks and evidence boundary:
+
+- Scoped `git diff --check` for the eight frontend paths exited 0. This is a
+  whitespace/diff check, not Vue compilation, type checking, or behavior proof.
+- A single bounded existing-SDK check used `kailo-native-page-sdk-4rbmbz`,
+  whose inspected cgroup limits were 4 CPU/4 GiB with no additional swap. Node
+  `require.resolve` from the known native frontend/workspace/cache paths reported
+  `vue UNAVAILABLE`, `@vue/compiler-sfc UNAVAILABLE`, `tsx UNAVAILABLE` (also
+  `typescript UNAVAILABLE` from those resolve roots). No package install,
+  dependency copy, new image, substitute test runner, or build was attempted.
+  Host Data was 646 MiB free and memory 29 GiB available at the initial check;
+  no Go/Node/Cargo build was started by this subtask.
+- After the main agent released its existing normal browser session,
+  `playwright-cli -s=knowledge-backend-sso tab-list` and `snapshot --depth=5`
+  showed the actual Keycloak **Sign in** page, not an authenticated native
+  knowledge/data-source page. `playwright-cli -s=knowledge-backend-sso screenshot
+  --filename=/volumes/kailo/apps/.playwright-cli/knowledge-datasource-current-session-20261008.png`
+  produced that login screenshot; it was opened and visually inspected. No
+  cookie/session reset or injection, credential entry, or authentication bypass
+  was performed. This screenshot is an authentication/access boundary record,
+  **not data-source page or new frontend acceptance**.
+
+Frontend Vue/compiler/type checks, nineteen-case positive/negative/restored
+execution, actual data-source screenshots, activated release/binding, live
+Cells→WeKnora create/import/parse/revoke, image build, deployment, Windows/Mobile
+acceptance, and full project checks were not run for this UI batch. The eight
+source paths remain frozen for the main agent's later validated handoff.

@@ -79,6 +79,14 @@ export async function readFile(config, deadline, raw, key, token) {
   // Do not disclose buffered bytes if read permission disappeared during I/O.
   const current=await claimsForRead(config,token,args);
   await freshPep(config,deadline,token,args,current,'execute');
+  // Native moves/deletes/ACL changes are not Core authorization projections.
+  // Re-resolve the same UUIDs inside the fixed root and authorized subtree
+  // after buffering; an earlier valid path cannot authorize final disclosure.
+  await nativeDocumentNode(config,deadline,{
+    nativeObjectRef:args.input.nativeObjectRef,authorizationTargetNativeRef:args.authorizationTargetNativeRef,
+  },current);
+  const disclosure=await claimsForRead(config,token,args);
+  await freshPep(config,deadline,token,args,disclosure,'execute');
   const sha256=createHash('sha256').update(bytes).digest('hex');
   await recordReadReceipt(config,deadline,{bindingId:config.bindingId,operationId:claims.operation_id,
     role:'SOURCE',idempotencyKey:key,nativeObjectRef:args.input.nativeObjectRef,nativeRevision:version.VersionId,

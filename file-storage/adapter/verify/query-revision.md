@@ -509,3 +509,68 @@ adapter 命令再次 **170/170，退出 0**。
 `cells-adapter-published-head-mutation-20261008.log`。
 这是当前四源码/检查文件 `+88/-7` 的专项证据，不是实际 Cells→WeKnora 同步、
 三组件 release/binding、浏览器/Windows/Mobile、full、镜像或部署验收。
+
+## 2026-10-08 来源下载缓冲后的原生归属与撤权复核
+
+四步影响结论（DD-89、SS-CEL-MATERIALIZATION、设计 07 §8.2 与 13 §4.4）：
+
+1. 固定官方 Cells 基准仍为 `c57f02f4962835447df694c63bd0fd8c22bd7baf`，
+   `common/proto/rest/cellsapi-rest-v2.proto::Node` 的 UUID、ContextWorkspace、
+   IsRecycled、IsRecycleBin、IsDraft 是原生归属和生命周期事实。下载初始读取
+   已复用 `src/query-revision.mjs::nativeDocumentNode` 核实这些事实；原
+   `src/service-read.mjs::readFile` 在预签名 GET 完成后仅重核签名和 Core PEP，
+   原生移动/删除/ACL 撤回不会自动改变 Core Resource，不能由先前路径证明最终
+   正文披露仍在冻结根及授权子树内。上传/移动/删除/分享未实现的 adapter 能力
+   没有在本批生成入口或声明完成；本批闭合的是已有的真实来源下载消费者。
+2. 仅改 `src/service-read.mjs` 与原 `test/query-revision.test.mjs`：正文缓冲后
+   先重验原 ActionToken/fresh PEP，再经同一 helper 重读固定 root/source/node
+   UUID 和 Workspace/subtree/lifecycle，最后再次重验 token/fresh PEP，然后
+   才提交原 SOURCE 回执并返回字节。固定 nativeRevision、operation、meter 和
+   原回执确认合同不变。无新端点/配置/平台字段/数据库/注册表/工作流或迁移。
+3. 不能把已读入的字节当作可披露成功：跨根/跨 Workspace、UUID 被替换、回收、
+   草稿、未知生命周期值、native ACL 拒绝/404、授权子树移动都沿原 Refused 路径
+   拒绝，零 SOURCE 完成回执、零正文响应；不回落路径或其他凭据，不重复下载。
+   合法同 UUID 在授权范围内改名仍返回冻结版本，不把移动误当新正文。二次原生
+   查询期间撤权由最后 PEP 拒绝。这是离散检查，不承诺 native/Core 原子快照。
+4. 空文件原读取规则、原版本大小/摘要、凭据隔离和受控 presigned origin 不变；
+   失败仍由接收方原同步失败/对账消费者处理，不能提交删除 desired set。不新增
+   持久状态或新的终态权威。Web/Desktop/Mobile 和三组件原生页面未改；正式服务
+   与 release/binding 均未替换/激活，不能据专项通过声称真实端到端可用。
+
+实现后核对了现有构建进程、CPU/内存、Data 及 SDK 限额：Data 641 MiB 可用，
+宿主内存约 26 GiB 可用；有非本项目 CUDA 编译，未操作其进程。复用空闲的
+`kailo-native-page-sdk-4rbmbz`（4 CPU/4 GiB、无额外 swap，UID 1000），仅在
+其原挂载 `/work` 下建 160 KiB 私有证据叶，复制原 adapter mjs 和两个实际
+client-kit adapter 模块；未安装依赖、复制完整工程、新建镜像或执行 Go/Rust
+编译。使用原 Node 检查，没有增加检查脚本或替代执行器。
+
+三轮实际命令相同：
+
+```sh
+sudo -n docker exec -u1000:1000 \
+  -w /work/cells-read-scope-20261008.WRMhHQ/apps \
+  -e TMPDIR=/work/cells-read-scope-20261008.WRMhHQ/tmp \
+  kailo-native-page-sdk-4rbmbz node --test \
+  --test-name-pattern='SERVICE|source bytes|shared PEP' \
+  file-storage/adapter/test/query-revision.test.mjs
+```
+
+正向 **72 passed / 0 failed / 0 skipped，exit 0**。只在私有生产候选移除真正的
+post-buffer `nativeDocumentNode` 调用（保留最后 PEP、原 fixture 和断言），同一
+检查实际 **57 passed / 15 failed，exit 1**：11 个真实原生变化反例错误得到
+200（应为 403/503），同时实际 native 查询次数从 5 降到 3；包含父项失败。
+以正式源码原字节还原，源码与检查各 `cmp` 退出 0 后，同一检查重新
+**72 passed / 0 failed / 0 skipped，exit 0**。最后 SDK memory.events 所有 OOM
+计数为 0，memory.current 为 46370816 bytes；没有在途命令。
+
+原件目录：
+`/volumes/data/kailo/tmp/codex-native-page-navigation-20261005.4rBmBZ/cells-read-scope-20261008.WRMhHQ/`。
+
+- `positive.log`：SHA-256 `293f42cc3dc09a9633838ad537d936cd36118030516d31f235e1338f4addfc7a`。
+- `mutation.log`：SHA-256 `edf6a54d1ca8dbb9f21611d3fe5d77846a68679e529d10578289223660891292`。
+- `restored.log`：SHA-256 `4a6076cb79df6f708327c0c4888e238493646bde18bb3e9af6d9d90dd414c649`。
+
+原完整 adapter 套件、上游 manifest status、真实 Cells→WeKnora 导入/解析/撤权、
+其他 native 写操作、浏览器截图、Windows/Mobile、full、镜像和部署均未在本批
+执行。这里不沿用历史 170 项的全部 adapter 验收口径；本批证据精确限于上述
+原 SERVICE/source-bytes/shared-PEP HTTP 消费者。
