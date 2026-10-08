@@ -943,15 +943,26 @@ empty/invalid delivery refuses. The original optional dialect conversion also
 preserves its empty-output fallback to the original generated SQL; the native
 history records the actual converter output separately, so a 200 response does
 not by itself certify that a dialect conversion occurred. Successful History
-bodies recheck the same frozen metadata and current sources; original 400
-non-SQL responses are retained at the REST surface, but their History bodies
-remain outside the old success-only History consumer.
+bodies recheck the same frozen metadata and current sources. Original 400
+GENERAL/MISLEADING History bodies now use that same reader when the persisted
+native task is explicitly FINISHED and the body exactly matches the original
+native classifier. The original error/code and GENERAL explanation query ID
+remain; the internal proof is not returned. Reading them does not submit a
+query, regenerate the Ask task or rewrite the terminal history. A stored 400
+without that native proof, unknown status or contradictory provider error is
+not sufficient. Current actor, project, binding generation and source reads
+must still match, including after the final same-row reread.
 
 The [generation receipt](../fork/verify/native-integration.md#original-generate-sql-rest-human-task-and-current-source-consumers)
 distinguishes the initial 128 passing checks from the latest restored 130,
 including the two actual converter-output cases. Two private production-damage
 runs caught three and five failures respectively; after restoration the original
 TypeScript/format checks and two real isolated PostgreSQL CAS cases passed.
+The later [400 History receipt](../fork/verify/native-integration.md#original-sql-generation-confirmed-400-history-consumer)
+records 47 passing original generation/History checks, five actual protection
+failures under private production damage, restored passing bytes and the
+original type/format checks. It does not broaden disclosure to arbitrary
+provider errors or UNKNOWN tasks.
 This source increment does not establish a business deployment, ACTIVE binding,
 browser/iframe acceptance, full original parity, dynamic trusted native Resource
 registration or ordinary-function provenance. A permanently lost native cache is

@@ -5,6 +5,7 @@ import { ApiHistory, ApiType } from '../repositories/apiHistoryRepository';
 import { ModelResolver } from '../resolvers/modelResolver';
 import { DataSourceName, IContext } from '../types';
 import {
+  AskResult,
   AskResultStatus,
   AskResultType,
   TextBasedAnswerStatus,
@@ -53,6 +54,31 @@ type MetadataContext = Pick<
 const unavailable = () =>
   new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
 
+// Keep the original native classifier as the error-payload authority. A stored
+// HTTP 400 alone never proves that an UNKNOWN task actually finished.
+function nonSqlGenerationResponse(result: AskResult, taskId: string) {
+  if (
+    result?.status !== AskResultStatus.FINISHED ||
+    ![AskResultType.GENERAL, AskResultType.MISLEADING_QUERY].includes(
+      result.type,
+    ) ||
+    result.error
+  )
+    throw unavailable();
+  try {
+    validateAskResult(result, taskId);
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.statusCode !== 400)
+      throw unavailable();
+    return {
+      code: error.code,
+      error: error.message,
+      ...error.additionalData,
+    };
+  }
+  throw unavailable();
+}
+
 // This is the original MDL read consumer, including its captured native IDs and
 // fresh Resource checks. A retrieved table name is never an authorization fact.
 async function metadata(
@@ -89,6 +115,7 @@ export async function readNativeAskHistory(
   const sqlOnly = [ApiType.GENERATE_SQL, ApiType.STREAM_GENERATE_SQL].includes(
     selected.apiType,
   );
+  const nonSqlError = sqlOnly && selected.statusCode === 400;
   if (
     !ctx.nativeHumanToken ||
     ![
@@ -99,7 +126,7 @@ export async function readNativeAskHistory(
     ].includes(selected.apiType) ||
     selected.projectId !== config.projectId ||
     selected.governanceBindingId !== config.bindingId ||
-    selected.statusCode !== 200 ||
+    (selected.statusCode !== 200 && !nonSqlError) ||
     !selected.id ||
     visited.has(selected.id) ||
     proof?.taskId !== selected.id ||
@@ -111,12 +138,23 @@ export async function readNativeAskHistory(
   )
     throw unavailable();
   visited.add(selected.id);
-  if (
-    sqlOnly &&
-    (proof.metadataReference.queryScope !==
-      nativePreviewScope(config, ctx.nativeIdentityScope) ||
+  if (sqlOnly) {
+    if (
+      proof.metadataReference.queryScope !==
+        nativePreviewScope(config, ctx.nativeIdentityScope) ||
       !Number.isSafeInteger(proof.metadataReference.generation) ||
-      proof.metadataReference.generation <= 0 ||
+      proof.metadataReference.generation <= 0
+    )
+      throw unavailable();
+    if (nonSqlError) {
+      const expected = {
+        threadId: selected.threadId,
+        ...nonSqlGenerationResponse(result?.askResult, selected.id),
+        nativeAsk: result,
+      };
+      if (canonical(expected) !== canonical(selected.responsePayload))
+        throw unavailable();
+    } else if (
       result?.askResult?.status !== AskResultStatus.FINISHED ||
       result.askResult.type !== AskResultType.TEXT_TO_SQL ||
       result.askResult.error ||
@@ -130,9 +168,10 @@ export async function readNativeAskHistory(
       (selected.requestPayload.returnSqlDialect
         ? (result.nativeSql || result.askResult.response[0].sql) !==
           selected.responsePayload.sql
-        : result.askResult.response[0].sql !== selected.responsePayload.sql))
-  )
-    throw unavailable();
+        : result.askResult.response[0].sql !== selected.responsePayload.sql)
+    )
+      throw unavailable();
+  }
   await metadata(ctx, proof.metadataReference);
   if (!Array.isArray(proof.histories)) throw unavailable();
   for (const source of proof.histories) {
@@ -218,7 +257,7 @@ export async function readNativeAskHistory(
   });
   if (
     !current ||
-    current.statusCode !== 200 ||
+    current.statusCode !== selected.statusCode ||
     current.threadId !== selected.threadId ||
     canonical(current.requestPayload) !== canonical(selected.requestPayload) ||
     canonical(current.responsePayload) !== canonical(selected.responsePayload)
@@ -670,38 +709,30 @@ export async function governedRestAsk(
       }
     }
     if (sqlOnly) {
-      try {
-        validateAskResult(askResult, key);
-      } catch (error) {
-        if (
-          !(error instanceof ApiError) ||
-          askResult.status !== AskResultStatus.FINISHED ||
-          ![AskResultType.GENERAL, AskResultType.MISLEADING_QUERY].includes(
-            askResult.type,
-          ) ||
-          askResult.error
+      if (
+        current.statusCode === 400 ||
+        [AskResultType.GENERAL, AskResultType.MISLEADING_QUERY].includes(
+          askResult?.type,
         )
-          throw unavailable();
+      ) {
         const payload = {
           threadId: originalThreadId,
-          code: error.code,
-          error: error.message,
-          ...error.additionalData,
+          ...nonSqlGenerationResponse(askResult, key),
           nativeAsk: current.responsePayload.nativeAsk,
         };
         if (current.statusCode === 202) {
-          if (!(await advance(payload, error.statusCode))) {
+          if (!(await advance(payload, 400))) {
             pending();
             return;
           }
         } else if (
-          current.statusCode !== error.statusCode ||
+          current.statusCode !== 400 ||
           canonical(current.responsePayload) !== canonical(payload)
         )
           throw unavailable();
         await authorize();
         const { nativeAsk: _proof, ...visible } = payload;
-        respond(error.statusCode, { id: key, ...visible });
+        respond(400, { id: key, ...visible });
         return;
       }
       let sql = askResult.response?.[0]?.sql;

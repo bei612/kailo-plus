@@ -4605,6 +4605,43 @@ describe('native saved-view HUMAN query consumer', () => {
         ).not.toHaveBeenCalled();
         expect(calls.mock.calls.every((call) => !call[2].command)).toBe(true);
       };
+      const readGenerationHistory = async (currentIdentity = identityScope) => {
+        Object.assign(components.apiHistoryRepository, {
+          count: jest.fn(async () => 1),
+          findAllWithPagination: jest.fn(async () => [
+            structuredClone(summaryRow),
+          ]),
+        });
+        const resolver = new ApiHistoryResolver();
+        const graphql = new ApolloServer({
+          typeDefs,
+          resolvers: {
+            JSON: GraphQLJSON,
+            Query: { apiHistory: resolver.getApiHistory },
+            ApiHistoryResponse: resolver.getApiHistoryNestedResolver(),
+          },
+          context: () => ({
+            ...components,
+            deployRepository: components.deployLogRepository,
+            nativeHumanToken: headers['x-kailo-native-human-token'],
+            nativeIdentityScope: currentIdentity,
+          }),
+        });
+        try {
+          return await graphql.executeOperation({
+            query: API_HISTORY,
+            variables: {
+              filter: {
+                queryScope: nativePreviewScope(config, currentIdentity),
+                generation: 2,
+              },
+              pagination: { offset: 0, limit: 10 },
+            },
+          });
+        } finally {
+          await graphql.stop();
+        }
+      };
       it.each([false, true])(
         'retains the original SQL response/SSE and finished task without executing SQL or summary (stream=%s)',
         async (streaming) => {
@@ -4861,6 +4898,152 @@ describe('native saved-view HUMAN query consumer', () => {
           noExecution();
         },
       );
+      describe('original confirmed non-SQL History consumer', () => {
+        beforeEach(() => {
+          askResult = {
+            status: AskResultStatus.FINISHED,
+            type: AskResultType.GENERAL,
+            intentReasoning: 'Original non-SQL explanation',
+          };
+        });
+        it.each([
+          [AskResultType.GENERAL, false],
+          [AskResultType.GENERAL, true],
+          [AskResultType.MISLEADING_QUERY, false],
+          [AskResultType.MISLEADING_QUERY, true],
+        ])(
+          'reads the original confirmed %s HTTP 400 body through GraphQL (stream=%s) without another native task',
+          async (type, streaming) => {
+            askResult.type = type;
+            const response = await generate(streaming as boolean);
+            await response.text();
+            expect(summaryRow.statusCode).toBe(400);
+            const nativeGets = askGet.mock.calls.length;
+            const history = await readGenerationHistory();
+            expect(history.errors).toBeUndefined();
+            const visible = history.data.apiHistory.items[0];
+            expect(visible.statusCode).toBe(400);
+            expect(visible.responsePayload).toEqual({
+              threadId: key,
+              code: 'NON_SQL_QUERY',
+              error: 'Original non-SQL explanation',
+              ...(type === AskResultType.GENERAL
+                ? { explanationQueryId: key }
+                : {}),
+            });
+            expect(visible.requestPayload).not.toHaveProperty('nativeAsk');
+            expect(components.apiHistoryRepository.count).toHaveBeenCalledWith(
+              {
+                projectId: config.projectId,
+                governanceBindingId: config.bindingId,
+              },
+              {},
+            );
+            expect(askGet).toHaveBeenCalledTimes(nativeGets);
+            expect(askCreate).toHaveBeenCalledTimes(1);
+            noExecution();
+          },
+        );
+        it.each([
+          'missing-proof',
+          'unknown-status',
+          'failed-status',
+          'unknown-type',
+          'contradictory-error',
+          'changed-error',
+          'changed-scope',
+          'changed-generation',
+          'changed-project',
+          'changed-binding',
+          'changed-actor',
+        ])(
+          'does not disclose stored HTTP 400 with %s as a verified native terminal result',
+          async (mode) => {
+            expect((await generate()).status).toBe(400);
+            const result = summaryRow.responsePayload.nativeAsk;
+            if (mode === 'missing-proof') delete result.askResult;
+            if (mode === 'unknown-status') result.askResult.status = 'future';
+            if (mode === 'failed-status')
+              result.askResult.status = AskResultStatus.FAILED;
+            if (mode === 'unknown-type') result.askResult.type = 'future';
+            if (mode === 'contradictory-error')
+              result.askResult.error = {
+                code: 'provider-error',
+                message: 'Provider error',
+              };
+            if (mode === 'changed-error')
+              summaryRow.responsePayload.error = 'Substituted error';
+            if (mode === 'changed-scope')
+              summaryRow.requestPayload.nativeAsk.metadataReference.queryScope =
+                'b'.repeat(64);
+            if (mode === 'changed-generation')
+              summaryRow.requestPayload.nativeAsk.metadataReference.generation = 3;
+            if (mode === 'changed-project') summaryRow.projectId += 1;
+            if (mode === 'changed-binding')
+              summaryRow.governanceBindingId = resource;
+            const history = await readGenerationHistory(
+              mode === 'changed-actor' ? 'b'.repeat(64) : identityScope,
+            );
+            expect(history.errors).toBeDefined();
+            expect(
+              history.data?.apiHistory?.items?.[0]?.responsePayload,
+            ).toBeFalsy();
+            expect(summaryRow.statusCode).toBe(400);
+            expect(askCreate).toHaveBeenCalledTimes(1);
+            noExecution();
+          },
+        );
+        it.each(['source', 'generation', 'history-status'])(
+          'withholds the confirmed 400 body if %s changes during the original row reread',
+          async (mode) => {
+            expect((await generate()).status).toBe(400);
+            const find = jest
+              .mocked(components.apiHistoryRepository.findOneBy)
+              .getMockImplementation();
+            jest
+              .mocked(components.apiHistoryRepository.findOneBy)
+              .mockImplementation(async (...args) => {
+                if (
+                  args[0].id === key &&
+                  args[0].apiType === ApiType.GENERATE_SQL
+                ) {
+                  if (mode === 'history-status') summaryRow.statusCode = 202;
+                  else {
+                    const authority = calls.getMockImplementation();
+                    calls.mockImplementation(async (...call) => {
+                      if (mode === 'source' && call[2].resolveResource)
+                        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+                      const value = await authority(...call);
+                      if (mode === 'generation' && value?.scope)
+                        value.scope.generation = 3;
+                      return value;
+                    });
+                  }
+                }
+                return find(...args);
+              });
+            const history = await readGenerationHistory();
+            expect(history.errors).toBeDefined();
+            expect(
+              history.data?.apiHistory?.items?.[0]?.responsePayload,
+            ).toBeFalsy();
+            expect(askCreate).toHaveBeenCalledTimes(1);
+            noExecution();
+          },
+        );
+        it('keeps a corrupted stored 400 UNKNOWN on REST replay without another POST or history rewrite', async () => {
+          expect((await generate()).status).toBe(400);
+          summaryRow.responsePayload.nativeAsk.askResult.status = 'future';
+          const advances = advanceSummary.mock.calls.length;
+          const response = await generate();
+          expect(response.status).toBe(503);
+          expect(await response.json()).not.toHaveProperty('sql');
+          expect(summaryRow.statusCode).toBe(400);
+          expect(advanceSummary).toHaveBeenCalledTimes(advances);
+          expect(askCreate).toHaveBeenCalledTimes(1);
+          noExecution();
+        });
+      });
       it.each([false, true])(
         'uses the original generation History GraphQL consumer with current source read (revoked=%s)',
         async (denied) => {

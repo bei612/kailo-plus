@@ -6438,3 +6438,99 @@ SERVICE SQL, ordinary-function provenance, permanently lost native cache or
 actual release/instance/iframe gaps listed above. The eleven owned paths are
 ready for root's main integration; this agent does not stage/commit/push, and
 no deployment or complete original restoration is claimed.
+
+## Original SQL generation confirmed 400 History consumer
+
+This small follow-up closes the previously recorded GENERAL/MISLEADING
+generation History-body gap, not every native 400 or a new query capability.
+The fixed official UI source is
+`c5f02a0391c87420dba78632dcd86073710deb72`:
+`wren-ui/src/apollo/server/resolvers/apiHistoryResolver.ts::ApiHistoryResolver.getApiHistoryNestedResolver`
+returns the original non-SQL error bodies without a success-only status filter;
+`wren-ui/src/apollo/server/utils/apiUtils.ts::validateAskResult` supplies the
+original NON_SQL_QUERY code/message and GENERAL explanationQueryId. Both
+original SQL-generation REST surfaces consume that classifier. No source is
+executed or edited under `.references`.
+
+Implementation four-step findings:
+
+1. Authority: `.design/08` §6 requires the complete original Wren frontend/native
+   behavior with current HUMAN/project and public authorization, not a renamed
+   simplified History. The original classifier is supported upstream; bound
+   History disclosure needs the existing governance adaptation. HTTP 400 is
+   not native FINISHED evidence and is not a platform business FAILED terminal.
+2. Impact: existing `ApiHistoryResolver.visibleHistory` already sends both
+   GENERATE_SQL types and both nested JSON fields to `readNativeAskHistory`.
+   Its old 200-only guard was the missing consumer. The same persisted original
+   task, API History request/result JSON, identity/deployment/source references,
+   request scope/generation fence and existing terminal CAS remain authoritative.
+   `governedRestAsk` and the reader now consume the same original classifier;
+   there is no schema/type/state/table/migration change. Older bound rows with
+   missing evidence refuse, while never-configured standalone code is unchanged.
+3. Side effects: reading this original 400 body is read-only, cannot POST another
+   native task or execute SQL/summary, and cannot mutate a terminal history.
+   Both code/message and the original explanation reference must exactly match
+   the genuine FINISHED GENERAL/MISLEADING result. Current Resource authorization
+   and metadata are rechecked, including after the final exact-row reread;
+   the private native proof is stripped from both visible JSON fields.
+4. Boundaries: missing proof, unknown/FAILED status, future type, contradictory
+   provider error, substituted error, different actor/project/binding/scope or
+   generation refuse. Concurrent final row/status mutation or source revocation
+   withholds both bodies. Existing admission DENIED and binding/evidence
+   PRECONDITION/CONFLICT semantics from `apps/06` §4 remain, with no new reason
+   code; a task whose result is UNKNOWN remains UNKNOWN and never becomes a
+   confirmed error merely because an HTTP 400 row exists. LIMIT/backpressure
+   remains the existing configured response bound. This read adds no new
+   workflow/retry/lease state, cleanup owner or public write side effect.
+
+Difference classification: original History/Table/Drawer, SQL-generation
+REST/SSE and error fields are **原样保留**; shared-host migration is **无适用对象**.
+Current HUMAN/source/frozen-row verification and withholding unprovable bodies
+are **已授权治理改造**. The precise previously missing confirmed-400 History
+consumer is restored; arbitrary provider errors, trusted SERVICE SQL, dynamic
+trusted Resource adoption, ordinary-function provenance and actual business
+release remain **缺失需恢复**. No UI layout/content or native execution authority
+was replaced.
+
+Only the existing `kailo-wren-query-sdk-itgs2n`, 4 CPU / 4 GiB, original `/work`
+root, dependencies and original checks were used. Before the run, the SDK was
+idle, host available memory was 20.9 GiB, I/O full avg10 was 22%, and root's one
+existing full check was still running Rust. No new SDK, image, dependency
+download, database, platform contract or inherited Java input was used.
+Logs are under
+`/volumes/data/kailo/check-cache/wren-history-readback.ofKxdZ/`.
+
+```sh
+node /work/node_modules/jest/bin/jest.js --runInBand \
+  --runTestsByPath src/nativeHumanQuery.test.ts \
+  --testNamePattern 'original generate_sql HUMAN-only native consumer'
+```
+
+- `generate-error-history-positive.log`: **exit 0**, **47 passed / 358 filtered**,
+  9.612 seconds. The original 28 generation consumers and 19 new real local
+  REST/GraphQL consumers cover both classification types/surfaces, full original
+  visible error bodies, no private proof, no SQL/summary/command/extra Ask POST,
+  current identity/scope/source/generation and concurrent final-read rejection.
+- `generate-error-history-types.log`: original `node
+  /work/node_modules/typescript/bin/tsc --noEmit --incremental false --pretty
+  false`, **exit 0**, with unchanged configs and no suppressed diagnostics.
+- `generate-error-history-mutation.log`: **exit 1**, **5 failed / 14 passed /
+  386 filtered**, 8.799 seconds, under the original nested
+  `original confirmed non-SQL History consumer` target. Private production
+  damage removed the FINISHED check from the actual classifier consumer and
+  skipped final metadata reauthorization only for 400. UNKNOWN/FAILED History,
+  corrupted REST replay, and source/generation revocation checks all caught the
+  real faults. Both branches were restored with `apply_patch`; both final
+  formal/SDK source inputs `cmp` **0** before revalidation.
+- `generate-error-history-restored.log`: **exit 0**, **47 passed / 358 filtered**,
+  8.837 seconds, on those restored final bytes and the same positive command.
+- `generate-error-history-format.log`: original Prettier check of the two
+  source/check files, **exit 0**. `generate-error-history-cgroup-final.log`:
+  CPU `400000 100000`, memory `4294967296`, all memory-event counters **0**.
+
+These are original targeted SDK/local-consumer checks, not live provider,
+PostgreSQL, browser screenshot, iframe, Desktop/Mobile or multi-user acceptance.
+No database path changed, so no new DB check was run. Root owns the one global
+check and this four-file batch's review/main commit/push; this agent does not
+stage/commit/push. The production Wren instance and ACTIVE binding remain
+unestablished; no deployment or complete original restoration is claimed.
