@@ -27,7 +27,7 @@ function childrenCount(node) {
   return count;
 }
 
-async function nativeListing(config, deadline, args) {
+export async function nativeListing(config, deadline, args) {
   const base = fixedUrl(config.cellsRestBaseUrl);
   base.pathname = `${base.pathname.replace(/\/$/, '')}/`;
   const headers = {authorization:`Bearer ${await secret(config.cellsBearerFile)}`, 'content-type':'application/json'};

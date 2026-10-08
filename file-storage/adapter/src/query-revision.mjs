@@ -9,6 +9,7 @@ import { documentConfiguration, launchDocument } from './document-launch.mjs';
 import { documentLifecycle } from './document-lifecycle.mjs';
 import { readConfiguration, readFile } from './service-read.mjs';
 import { listFiles } from './service-list.mjs';
+import { executeNode, observeNode } from './node-execution.mjs';
 import { bindingValidationConfiguration, bindingArguments, bindingObservation } from '../../../client-kit/adapter/binding-validation.mjs';
 
 // The fixed Cells REST v2 read seam and original DOCUMENT PAT launch share this
@@ -326,8 +327,12 @@ export function createAdapter(rawConfig) {
       }
       if (['/platform-adapter/v1/observe', '/platform-adapter/v1/cancel'].includes(request.url)) {
         const operation = request.url.slice('/platform-adapter/v1/'.length);
-        const value = await documentLifecycle(config, deadline, raw, request.headers['idempotency-key'],
-          request.headers.authorization.slice(7), operation);
+        let args;
+        try { args = JSON.parse(raw); } catch { throw new Refused(400); }
+        const value = operation === 'observe' && args?.nativeType === 'node'
+          ? await observeNode(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7))
+          : await documentLifecycle(config, deadline, raw, request.headers['idempotency-key'],
+            request.headers.authorization.slice(7), operation);
         response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
         response.end(JSON.stringify(value));
         return;
@@ -335,6 +340,13 @@ export function createAdapter(rawConfig) {
       if (request.url === '/platform-adapter/v1/execute') {
         let body;
         try { body=JSON.parse(raw); } catch { throw new Refused(400); }
+        if (['file_storage.read@v1', 'file_storage.list@v1'].includes(body?.actionKey)
+          && object(body?.arguments) && Object.hasOwn(body.arguments, 'target')) {
+          const value = await executeNode(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7));
+          response.writeHead(200, {'content-type':'application/json', 'cache-control':'no-store'});
+          response.end(canonical(value));
+          return;
+        }
         if (body?.actionKey === 'file_storage.list@v1') {
           const listing=await listFiles(config,deadline,raw,request.headers['idempotency-key'],request.headers.authorization.slice(7));
           response.writeHead(200,{'content-type':'application/json','cache-control':'no-store'});

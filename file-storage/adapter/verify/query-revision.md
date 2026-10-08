@@ -752,3 +752,74 @@ byte-restored: exit 0; 214 passed, 0 failed
 验收。SDK 仍缺 xml2js，上述两项 ONLYOFFICE 目标明确排除；full、四侧生成、
 真实 release/binding 激活、截图、Windows/Mobile、镜像及部署本批未执行。
 Knowledge 冻结 Go10/UI8 最新字节仍未验收，不借本批结果增加完成度。
+
+## HUMAN/AGENT 原生列举消费者与丢 ACK 观察（2026-10-08，未部署）
+
+同一 Cells adapter 原先只识别 SERVICE 自拉的 `targetType/targetId/input`
+envelope；Core 的真实业务调用发送的是 `{target:{resourceId},input}`。
+本批直接接原业务消费者，不把 SERVICE 身份、双边回执或完整目录传输当作
+HUMAN/AGENT 工具已经接入，也不重写原生 UI。
+
+四步影响结论：
+
+1. 权威为 `.design/07` §2.4/§5.2/§8.2、DD-89 与 `.design/13` §4 的原
+   binding、受权读取和 UNKNOWN 语义。重新以只读 Git 核验 Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `gateway/restv2/api-lookup.go::Handler.GetByUuid`、`Handler.Lookup` 和
+   `gateway/restv2/api-versions.go::Handler.NodeVersions`；它们提供当前 UUID、
+   目录和真实 VersionId，不提供按平台执行 key 查询旧读取完成的原生任务。
+2. 影响面是原 execute/observe HTTP 分发、新 `node-execution.mjs` 与原
+   `service-list.mjs::nativeListing` 的两个实际消费者。业务路径校验原
+   HUMAN/AGENT、ResultExposurePolicy、AGENT delegation；HUMAN 还核原冻结
+   EE/idempotencyKey，再经 binding 自己的 client_credentials 调 fresh PEP。
+   可信 targetResource 必须匹配原 resource、受控 validation 的 native instance
+   与固定 native Workspace，随后按原 root/UUID 完整列举两遍并检查一致性。
+   最终再验 token、PEP 与同一原生目标；没有新的契约、迁移、状态或身份目录。
+3. SERVICE canonical envelope、文件字节、完整列表合同及 SOURCE 回执保持原状。
+   HUMAN/AGENT 列举只返回确认的 execution 原引用/状态，不把组件间 raw items、
+   文件正文、临时 URL 或第二目录塞进 Core，也不补造 SOURCE/RECEIVER 回执。
+   调用方原参数顺序不决定授权，原 typed arguments 的 canonical hash 才决定。
+   原生页面、菜单、上传/分享/删除、PAT/文档编辑、三端宿主与凭据路径未改动。
+4. actor 混用、策略/委托/EE/key 缺失、租户或 Workspace 不匹配、native instance
+   或 scope 错配、未知/缺失可信资源、目录中途变化、末次 PEP 拒绝或目标变化
+   都不能外发成功观察。丢 ACK 的原 node 观察仍绑定原 EE/key/策略并经 fresh
+   PEP，但没有读取完成证据时保留既有 UNKNOWN；不再列举、不读取正文、不借
+   PAT、不以“对象仍在”推断旧执行成功。错误沿原 Refused/redacted 失败路径与
+   Core 六类分类处理，未知不会变成失败或完成；无新增待终结状态。
+
+实现后复用原 `kailo-wren-query-sdk-itgs2n` 与原独立小候选，实际 UID/GID 为
+1000:1000、4 CPU/4 GiB、swap 0、Node v24.21.0。开始前主机约 11 GiB
+available、Data 294 GiB、根盘 82 GiB；容器无在途工具进程。资源检查发现宿主
+另有 GitNexus 索引进程，已反馈主代理，本队未调用或操作它。没有安装、下载、
+新镜像、全树快照、Go/Cargo 构建或数据库操作。三个原入口语法检查 exit 0。
+
+```sh
+node --test --test-skip-pattern='HUMAN execute selects ONLYOFFICE|ONLYOFFICE disclosure rejects' \
+  file-storage/adapter/test/query-revision.test.mjs
+positive (handle 60374): exit 0; 250 passed, 0 failed
+private production mutation (handle 8470): exit 1; 239 passed, 11 failed
+byte-restored (handle 89608): exit 0; 250 passed, 0 failed
+```
+
+私有候选同时破坏四处生产保护：native instance/scope 关联、HUMAN 冻结 EE/key、
+两遍完整列举比较、无旧完成证据时 UNKNOWN。原检查与 fixture 不变，实际捕获
+7 个子项失败及其 4 个父项失败；不把父子合计 11 称为 11 个独立漏洞。正式源码
+未被破坏；恢复后九个实际 import/检查输入逐文件 cmp 一致，原目标复验通过。
+`git diff --check` exit 0；最终 cgroup memory.events 的 OOM 计数均为 0。
+
+日志保留在原候选
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-observation-guard.8QFEVq/`：
+
+| 日志 | SHA-256 |
+|---|---|
+| `cells-business-node-positive-initial.log` | `562c7dfa504512fe32c2328f51242cf6f908b49eae191901165d56287881e77f` |
+| `cells-business-node-mutation.log` | `31bea11f940beb561a451b5192603eebecd58d1f4d30853c1f7920a677d7d2c7` |
+| `cells-business-node-restored.log` | `343104d545727f89890e4885353b4c8e9cbc655e1415898e2a548911b351eb51` |
+
+交付边界：本批证明原 HTTP 业务列举/观察消费者，不证明完整 FILE_STORAGE
+工具可发布。`file_storage.read@v1` 仍只使用既有 SOURCE 字节合同，未发明给
+Core 的 base64/正文 schema；业务 list 没有把 SERVICE list_output 充当工具结果。
+原生读取丢 ACK 后仍缺按 key 查证终态，不能据此通过终态 conformance 或强制
+ACTIVE。原 SDK 缺 xml2js，上述两项 ONLYOFFICE 目标明确排除；extract_usage、
+完整契约登记/终态套件、live release/binding、实际 Cells→WeKnora E2E、页面截图、
+full、四侧生成、Windows/Mobile、镜像与部署均不在本批通过范围。
