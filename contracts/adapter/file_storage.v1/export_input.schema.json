@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/file_storage.v1/export_input.schema.json",
+  "title": "FileStorageExportInput",
+  "description": "Export exactly the authorized typed native file revision, including empty or non-UTF-8 files.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "nativeObjectRef", "nativeRevision", "displayName", "mediaType"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "nativeObjectRef": {"type": "string"},
+    "nativeRevision": {"type": "string"},
+    "displayName": {"type": "string"},
+    "mediaType": {"type": "string"}
+  }
+}

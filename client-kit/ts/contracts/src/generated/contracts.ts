@@ -109,6 +109,28 @@ export interface ApplicationModelAdmission {
 }
 
 /**
+ * Export exactly the authorized typed native file revision, including empty or non-UTF-8
+ * files.
+ */
+export interface FileStorageExportInput {
+    displayName:     string;
+    mediaType:       string;
+    nativeObjectRef: string;
+    nativeRevision:  string;
+    resourceId:      string;
+}
+
+/**
+ * Immediate authorized binary result using the existing export encoding; not a persisted
+ * Core blob, URL, or native credential.
+ */
+export interface FileStorageExportOutput {
+    contentBase64: string;
+    filename:      string;
+    mediaType:     string;
+}
+
+/**
  * DD-89: list the source Resource through its bound native root; the client cannot supply
  * another root or native credential.
  */
@@ -140,6 +162,44 @@ export interface ContentReferenceElement {
     nativeObjectRef: string;
     nativeRevision:  string;
     resourceId:      string;
+}
+
+/**
+ * List published native revisions of one UUID inside the admitted Resource's bound root; no
+ * caller-supplied path or credential.
+ */
+export interface FileStorageListRevisionsInput {
+    nativeObjectRef: string;
+    resourceId:      string;
+}
+
+/**
+ * Published version references from the original native version collection; also supplied
+ * in the adapter's typed ContentReference slot. Not SERVICE list_output or a completion
+ * receipt.
+ */
+export interface FileStorageListRevisionsOutput {
+    citations: ContentReferenceElement[];
+}
+
+/**
+ * Read the exact typed native file revision in the admitted Resource; never substitute the
+ * current head.
+ */
+export interface FileStorageReadInput {
+    displayName:     string;
+    mediaType:       string;
+    nativeObjectRef: string;
+    nativeRevision:  string;
+    resourceId:      string;
+}
+
+/**
+ * Exact valid UTF-8 native bytes, disclosed only through the original result policy. Binary
+ * files use export.
+ */
+export interface FileStorageReadOutput {
+    text: string;
 }
 
 /**

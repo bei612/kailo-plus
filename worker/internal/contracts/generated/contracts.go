@@ -7,11 +7,29 @@
 //    applicationModelAdmission, err := UnmarshalApplicationModelAdmission(bytes)
 //    bytes, err = applicationModelAdmission.Marshal()
 //
+//    fileStorageExportInput, err := UnmarshalFileStorageExportInput(bytes)
+//    bytes, err = fileStorageExportInput.Marshal()
+//
+//    fileStorageExportOutput, err := UnmarshalFileStorageExportOutput(bytes)
+//    bytes, err = fileStorageExportOutput.Marshal()
+//
 //    fileStorageListInput, err := UnmarshalFileStorageListInput(bytes)
 //    bytes, err = fileStorageListInput.Marshal()
 //
 //    fileStorageListOutput, err := UnmarshalFileStorageListOutput(bytes)
 //    bytes, err = fileStorageListOutput.Marshal()
+//
+//    fileStorageListRevisionsInput, err := UnmarshalFileStorageListRevisionsInput(bytes)
+//    bytes, err = fileStorageListRevisionsInput.Marshal()
+//
+//    fileStorageListRevisionsOutput, err := UnmarshalFileStorageListRevisionsOutput(bytes)
+//    bytes, err = fileStorageListRevisionsOutput.Marshal()
+//
+//    fileStorageReadInput, err := UnmarshalFileStorageReadInput(bytes)
+//    bytes, err = fileStorageReadInput.Marshal()
+//
+//    fileStorageReadOutput, err := UnmarshalFileStorageReadOutput(bytes)
+//    bytes, err = fileStorageReadOutput.Marshal()
 //
 //    knowledgeSyncInput, err := UnmarshalKnowledgeSyncInput(bytes)
 //    bytes, err = knowledgeSyncInput.Marshal()
@@ -639,6 +657,26 @@ func (r *ApplicationModelAdmission) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+func UnmarshalFileStorageExportInput(data []byte) (FileStorageExportInput, error) {
+	var r FileStorageExportInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FileStorageExportInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFileStorageExportOutput(data []byte) (FileStorageExportOutput, error) {
+	var r FileStorageExportOutput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FileStorageExportOutput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
 func UnmarshalFileStorageListInput(data []byte) (FileStorageListInput, error) {
 	var r FileStorageListInput
 	err := json.Unmarshal(data, &r)
@@ -656,6 +694,46 @@ func UnmarshalFileStorageListOutput(data []byte) (FileStorageListOutput, error) 
 }
 
 func (r *FileStorageListOutput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFileStorageListRevisionsInput(data []byte) (FileStorageListRevisionsInput, error) {
+	var r FileStorageListRevisionsInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FileStorageListRevisionsInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFileStorageListRevisionsOutput(data []byte) (FileStorageListRevisionsOutput, error) {
+	var r FileStorageListRevisionsOutput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FileStorageListRevisionsOutput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFileStorageReadInput(data []byte) (FileStorageReadInput, error) {
+	var r FileStorageReadInput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FileStorageReadInput) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalFileStorageReadOutput(data []byte) (FileStorageReadOutput, error) {
+	var r FileStorageReadOutput
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *FileStorageReadOutput) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -2709,6 +2787,24 @@ type ApplicationModelAdmission struct {
 	Traceparent        string `json:"traceparent"`
 }
 
+// Export exactly the authorized typed native file revision, including empty or non-UTF-8
+// files.
+type FileStorageExportInput struct {
+	DisplayName     string `json:"displayName"`
+	MediaType       string `json:"mediaType"`
+	NativeObjectRef string `json:"nativeObjectRef"`
+	NativeRevision  string `json:"nativeRevision"`
+	ResourceID      string `json:"resourceId"`
+}
+
+// Immediate authorized binary result using the existing export encoding; not a persisted
+// Core blob, URL, or native credential.
+type FileStorageExportOutput struct {
+	ContentBase64 string `json:"contentBase64"`
+	Filename      string `json:"filename"`
+	MediaType     string `json:"mediaType"`
+}
+
 // DD-89: list the source Resource through its bound native root; the client cannot supply
 // another root or native credential.
 type FileStorageListInput struct {
@@ -2735,6 +2831,36 @@ type ContentReferenceElement struct {
 	NativeObjectRef string  `json:"nativeObjectRef"`
 	NativeRevision  string  `json:"nativeRevision"`
 	ResourceID      string  `json:"resourceId"`
+}
+
+// List published native revisions of one UUID inside the admitted Resource's bound root; no
+// caller-supplied path or credential.
+type FileStorageListRevisionsInput struct {
+	NativeObjectRef string `json:"nativeObjectRef"`
+	ResourceID      string `json:"resourceId"`
+}
+
+// Published version references from the original native version collection; also supplied
+// in the adapter's typed ContentReference slot. Not SERVICE list_output or a completion
+// receipt.
+type FileStorageListRevisionsOutput struct {
+	Citations []ContentReferenceElement `json:"citations"`
+}
+
+// Read the exact typed native file revision in the admitted Resource; never substitute the
+// current head.
+type FileStorageReadInput struct {
+	DisplayName     string `json:"displayName"`
+	MediaType       string `json:"mediaType"`
+	NativeObjectRef string `json:"nativeObjectRef"`
+	NativeRevision  string `json:"nativeRevision"`
+	ResourceID      string `json:"resourceId"`
+}
+
+// Exact valid UTF-8 native bytes, disclosed only through the original result policy. Binary
+// files use export.
+type FileStorageReadOutput struct {
+	Text string `json:"text"`
 }
 
 // Metadata-only input of the receiver native synchronization admission. Core injects the

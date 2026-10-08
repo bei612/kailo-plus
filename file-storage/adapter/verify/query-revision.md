@@ -976,3 +976,120 @@ ActionToken key 关联、读后 Gateway key 复核及只用 structuredContent �
 conformance 未在本批补造。SDK 缺 xml2js，上述两项 ONLYOFFICE 目标继续明确
 排除；full、四侧生成、实际 Cells→WeKnora E2E、截图、Windows/Mobile、镜像、
 部署和安装验证未执行；继承的 compose 脏改未修改。
+
+## 原生版本列表与完整二进制导出（2026-10-08，未部署）
+
+本批沿现有 node execute/MCP 消费者补齐 `file_storage.list_revisions@v1` 与
+`file_storage.export@v1`，同时为原 read 及两项新结果建立六份能力 schema，
+不是新建文件目录、任务、执行回执或存储权威。前节“二进制结果未实现”由
+本节源码与专项证据更新；完整 FILE_STORAGE release、Core 历史引用消费及
+真实业务激活仍未完成，不能由本节通过数推导为可发布。
+
+四步影响结论：
+
+1. 权威为 `.design/07` §2.4、§5、§8A、`DD-89` 与 `.design/08` §9.2。
+   只读重新核验 Cells 固定 `c57f02f4962835447df694c63bd0fd8c22bd7baf`：
+   `gateway/restv2/api-versions.go::Handler.NodeVersions` 按真实 UUID 读取原生
+   版本流、只在完整迭代后返回 VersionCollection；
+   `gateway/restv2/api.go::Handler.TreeContentRevisionToVersion` 返回真实
+   VersionId/Draft/IsHead，并按同一 VersionID 生成固定版本预签名读取。
+   `.references` HEAD 与上述基准一致；未在证据树执行代码。
+2. 影响原 node/service-read/query-revision/MCP 与原 HTTP 检查：共享现有
+   action 集合，不复制执行链。HUMAN/AGENT 保持各自签名 actor/delegation、
+   同一 key、Resource/scope/binding/generation、ResultExposure 及前后 fresh
+   PEP；SERVICE 自拉读取的 claims、列表/双边回执合同没有混用或改名。
+   `contracts/adapter/file_storage.v1/` 的 read/list_revisions/export 六份
+   input/output schema 经原生成器投影到四侧；未建立部分能力 registration
+   或更改 Core seed，没有迁移、旧正文读路径或新增不安全开关。
+3. 原生版本消费者要求唯一非空 VersionId、确定 Draft/IsHead、唯一已发布
+   head、可信 native MIME/文件名；所有草稿从平台引用中剔除，完整列表前后
+   比对一致后才返回。原 read/export 固定所选原生 VersionId，不以当前 head
+   替换；export 沿已有即时 export 结果结构输出精确 base64，支持空文件与
+   非 UTF-8 字节，不外发预签名 URL/owner/凭据、不将正文落到 Core 持久库。
+   结果沿原 AdapterExecutionResponse typed ContentReference 与策略通道，
+   计入 base64/JSON 开销后限流；读取后再核原生 UUID/root 与 fresh PEP。
+4. 空/畸形/重复/未知原生版本、丢失冻结版本、集合变化、scope/key/policy
+   错配、撤权、原生移动和超限均确定拒绝，无正文或假终态；未知结果不回放。
+   原 read/list 没有按平台 key 持久观察完成证据时仍返回原 EE 的 UNKNOWN，
+   不重读正文、不借 DOCUMENT/PAT 观察，不伪造取消或 usage。原生独立 UI、
+   ACL、数据库与上传/分享功能均未精简。
+
+实现后原 Node/真实 SDK 专项使用前节原候选、Node v24.21.0、SDK 1.26.0、
+UID/GID 1000:1000、4 CPU/4 GiB、swap 0。原目标实际读取本批 input schema
+文件作为受控工具元数据，并通过真实 SDK Client/StreamableHTTPClientTransport
+完成两种 actor 的 initialize/list/call；没有手写 MCP wire 或测试专用路径。
+
+```sh
+node --test --test-skip-pattern='HUMAN execute selects ONLYOFFICE|ONLYOFFICE disclosure rejects' \
+  file-storage/adapter/test/query-revision.test.mjs
+final schema consumer (handle 92975): exit 0; 335 passed, 0 failed
+private production mutation (handle 23263): exit 1; 310 passed, 25 failed
+byte-restored (handle 37568): exit 0; 335 passed, 0 failed
+```
+
+私有候选同时破坏五处生产保护：剔除草稿、精确冻结版本、完整列表二次比对、
+二进制 base64 编码及 export 读后原生 root 核验；原检查/夹具不变，捕获
+17 个独立失败断言和 8 个父项失败。正式树未破坏，恢复后 18 个实际输入
+逐文件 cmp=0。早期一次检查错误地把 target/hash 漂移预期为 401，而原 fresh
+PEP 确定拒绝为 503；原失败 332/3 日志保留，修正断言后才形成上述最终证据。
+SDK 缺 xml2js，两项 ONLYOFFICE 目标继续明确排除，不以输出 skipped=0 隐去。
+
+随后复用原 `kailo-agent-receipt-xvkujx`（4 CPU/8 GiB、swap 0、同 UID/GID），
+两容器镜像均为
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`。
+原 `bash tools/gen.sh` 与 `bash tools/gen.sh --check` 均 exit 0，四侧新增
+生成类型共 454 行；没有手工编辑正式生成物。原四侧 roundtrip 仅追加本批
+六类型的同一真实载荷样例，保留已有 dirty 检查内容。
+
+```sh
+cargo test -j16 --offline --locked --manifest-path core/Cargo.toml -p contracts --test roundtrip
+(cd worker && go test ./internal/contracts -count=1 -v)
+(cd client-kit/ts/contracts && ./node_modules/.bin/tsc --noEmit -p tsconfig.test.json && \
+  node --test --experimental-strip-types 'test/**/*.test.ts')
+(cd client-kit/dart && dart test test/roundtrip_test.dart --reporter expanded)
+positive: Rust 45 / Go 37 top-level / TypeScript 53 / Dart 45 passed; all exit 0
+private generated-field mutation: Rust exit 101, Go exit 1, TypeScript exit 2, Dart exit 1
+byte-restored (handle 32024): same four full targets passed; all exit 0
+```
+
+四侧私有生成类型各破坏一次 export 的 contentBase64 字段；Rust/Go/Dart 原
+新增断言各实际失败 1 项，TypeScript 原 tsc 报 2 处确定字段错误。检查与样例
+未改，恢复后九个本批生成/检查/样例输入 cmp=0。兼容核验复用原
+`tools/check.sh::step_contract` Python 比较规则，SDK 无 Git 元数据，仅读取
+正式 Git 导出的 `contracts-v0.1.0`（`0ecbdc17984f0cfed36b7c7b8605c3f0532db3c0`）
+旧 `apps/contracts` 树替代原 Git reader；当前输入包含六份新增 schema。
+实际 290 个 schema、匹配 3 个历史 schema、无破坏性变更，exit 0。首次误以
+新目录 `contracts` 导出旧 tag 时原 Git 报 `fatal: pathspec 'contracts' did not match any files`；
+按实际 ls-tree 修正旧路径后才比较，未把读不到旧目录称作“无基线”。没有
+运行会安装依赖的 prepare_check_dependencies，也未复制/改写 Git 元数据。
+
+本轮没有安装、下载、镜像、新数据库或全树快照。执行前 available 约 19 GiB、
+Data 295 GiB、根盘 97 GiB，检查实际限额后才执行；Cargo 保留 -j16。
+Node cgroup OOM=0，Core SDK 既有 oom/oom_kill=2 本轮前后无增加，最终
+memory.current 快照分别为 257998848 / 1017483264 bytes；命令均终态。
+
+Node 日志沿前节原候选，文件名与 SHA-256：
+
+| 日志 | SHA-256 |
+|---|---|
+| `cells-file-revisions-export-contract-positive.log` | `90dce9c089e0ac466367a407538f1156f8da83549883c488c2f2ab46adc6e61f` |
+| `cells-file-revisions-export-contract-mutation.log` | `9dc2138be8c534fce38904121b90f5fff95bf3c70f4daa9496cf723918c0e8fc` |
+| `cells-file-revisions-export-contract-restored.log` | `3ec3623606882d69dc0a2290d79397ee84786198ec0d6bed84b3bcc51b2e29f2` |
+
+生成、兼容与四侧日志在
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/`，前缀为
+`cells-file-storage-`；`four-side-gen.log`、`four-side-gen-check.log`、
+`contract-compat.log` 与 `roundtrip-{rust,go,ts,dart}{,-mutation,-restored}.log`
+均保留。恢复日志 SHA-256：Rust
+`605779d52dac31ccca30813e43d422371fe4e1e62e6bffee611b4e90076822ca`，Go
+`af4f4a3c543f6423309ef5df3f1b61689f509f7e56efcab00ef8a8c40f908579`，TypeScript
+`bebb58544c9bc40979a03d1e72e4e32f949ff84c5beb4022ffe9a78fb9e64e6f`，Dart
+`4f3aed66c9bb134a4e7ef0365efa3f92091afd186be9de30115511233c00e44b`。
+
+交付边界：Core `application_tool::verify_content_reference/require_current_revision`
+目前按 query_revision 当前 head 核验每个引用，本批没有擅改该既定语义；返回
+历史版本的 adapter 专项通过不等于 Core 历史版本结果可用。FILE_STORAGE v1
+完整七项必选能力的批准 catalog/registration、平台 write/delete/share、安全
+按 key 观察/完整 usage 仍有缺口，不将四项 node 能力冒充完整 release；原条件
+删除阻断没有重开。full、真实 Gateway/Codex、live release/binding、实际
+Cells→WeKnora E2E、页面截图、Windows/Mobile、构建发布和部署均未执行。

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/file_storage.v1/list_revisions_output.schema.json",
+  "title": "FileStorageListRevisionsOutput",
+  "description": "Published version references from the original native version collection; also supplied in the adapter's typed ContentReference slot. Not SERVICE list_output or a completion receipt.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["citations"],
+  "properties": {"citations": {"type": "array", "items": {"$ref": "../../domain/content_reference.schema.json"}}}
+}

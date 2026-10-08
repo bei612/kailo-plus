@@ -2,8 +2,14 @@
 //
 //     final canary = canaryFromJson(jsonString);
 //     final applicationModelAdmission = applicationModelAdmissionFromJson(jsonString);
+//     final fileStorageExportInput = fileStorageExportInputFromJson(jsonString);
+//     final fileStorageExportOutput = fileStorageExportOutputFromJson(jsonString);
 //     final fileStorageListInput = fileStorageListInputFromJson(jsonString);
 //     final fileStorageListOutput = fileStorageListOutputFromJson(jsonString);
+//     final fileStorageListRevisionsInput = fileStorageListRevisionsInputFromJson(jsonString);
+//     final fileStorageListRevisionsOutput = fileStorageListRevisionsOutputFromJson(jsonString);
+//     final fileStorageReadInput = fileStorageReadInputFromJson(jsonString);
+//     final fileStorageReadOutput = fileStorageReadOutputFromJson(jsonString);
 //     final knowledgeSyncInput = knowledgeSyncInputFromJson(jsonString);
 //     final adapterBindingObservation = adapterBindingObservationFromJson(jsonString);
 //     final adapterExecutionObservation = adapterExecutionObservationFromJson(jsonString);
@@ -217,6 +223,18 @@ ApplicationModelAdmission applicationModelAdmissionFromJson(String str) =>
 String applicationModelAdmissionToJson(ApplicationModelAdmission data) =>
     json.encode(data.toJson());
 
+FileStorageExportInput fileStorageExportInputFromJson(String str) =>
+    FileStorageExportInput.fromJson(json.decode(str));
+
+String fileStorageExportInputToJson(FileStorageExportInput data) =>
+    json.encode(data.toJson());
+
+FileStorageExportOutput fileStorageExportOutputFromJson(String str) =>
+    FileStorageExportOutput.fromJson(json.decode(str));
+
+String fileStorageExportOutputToJson(FileStorageExportOutput data) =>
+    json.encode(data.toJson());
+
 FileStorageListInput fileStorageListInputFromJson(String str) =>
     FileStorageListInput.fromJson(json.decode(str));
 
@@ -227,6 +245,34 @@ FileStorageListOutput fileStorageListOutputFromJson(String str) =>
     FileStorageListOutput.fromJson(json.decode(str));
 
 String fileStorageListOutputToJson(FileStorageListOutput data) =>
+    json.encode(data.toJson());
+
+FileStorageListRevisionsInput fileStorageListRevisionsInputFromJson(
+  String str,
+) => FileStorageListRevisionsInput.fromJson(json.decode(str));
+
+String fileStorageListRevisionsInputToJson(
+  FileStorageListRevisionsInput data,
+) => json.encode(data.toJson());
+
+FileStorageListRevisionsOutput fileStorageListRevisionsOutputFromJson(
+  String str,
+) => FileStorageListRevisionsOutput.fromJson(json.decode(str));
+
+String fileStorageListRevisionsOutputToJson(
+  FileStorageListRevisionsOutput data,
+) => json.encode(data.toJson());
+
+FileStorageReadInput fileStorageReadInputFromJson(String str) =>
+    FileStorageReadInput.fromJson(json.decode(str));
+
+String fileStorageReadInputToJson(FileStorageReadInput data) =>
+    json.encode(data.toJson());
+
+FileStorageReadOutput fileStorageReadOutputFromJson(String str) =>
+    FileStorageReadOutput.fromJson(json.decode(str));
+
+String fileStorageReadOutputToJson(FileStorageReadOutput data) =>
     json.encode(data.toJson());
 
 KnowledgeSyncInput knowledgeSyncInputFromJson(String str) =>
@@ -1694,6 +1740,68 @@ class ApplicationModelAdmission {
   });
 }
 
+///Export exactly the authorized typed native file revision, including empty or non-UTF-8
+///files.
+class FileStorageExportInput {
+  final String displayName;
+  final String mediaType;
+  final String nativeObjectRef;
+  final String nativeRevision;
+  final String resourceId;
+
+  FileStorageExportInput({
+    required this.displayName,
+    required this.mediaType,
+    required this.nativeObjectRef,
+    required this.nativeRevision,
+    required this.resourceId,
+  });
+
+  factory FileStorageExportInput.fromJson(Map<String, dynamic> json) =>
+      FileStorageExportInput(
+        displayName: json["displayName"],
+        mediaType: json["mediaType"],
+        nativeObjectRef: json["nativeObjectRef"],
+        nativeRevision: json["nativeRevision"],
+        resourceId: json["resourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "displayName": displayName,
+    "mediaType": mediaType,
+    "nativeObjectRef": nativeObjectRef,
+    "nativeRevision": nativeRevision,
+    "resourceId": resourceId,
+  });
+}
+
+///Immediate authorized binary result using the existing export encoding; not a persisted
+///Core blob, URL, or native credential.
+class FileStorageExportOutput {
+  final String contentBase64;
+  final String filename;
+  final String mediaType;
+
+  FileStorageExportOutput({
+    required this.contentBase64,
+    required this.filename,
+    required this.mediaType,
+  });
+
+  factory FileStorageExportOutput.fromJson(Map<String, dynamic> json) =>
+      FileStorageExportOutput(
+        contentBase64: json["contentBase64"],
+        filename: json["filename"],
+        mediaType: json["mediaType"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "contentBase64": contentBase64,
+    "filename": filename,
+    "mediaType": mediaType,
+  });
+}
+
 ///DD-89: list the source Resource through its bound native root; the client cannot supply
 ///another root or native credential.
 class FileStorageListInput {
@@ -1785,6 +1893,97 @@ class ReferenceElement {
     "nativeRevision": nativeRevision,
     "resourceId": resourceId,
   });
+}
+
+///List published native revisions of one UUID inside the admitted Resource's bound root; no
+///caller-supplied path or credential.
+class FileStorageListRevisionsInput {
+  final String nativeObjectRef;
+  final String resourceId;
+
+  FileStorageListRevisionsInput({
+    required this.nativeObjectRef,
+    required this.resourceId,
+  });
+
+  factory FileStorageListRevisionsInput.fromJson(Map<String, dynamic> json) =>
+      FileStorageListRevisionsInput(
+        nativeObjectRef: json["nativeObjectRef"],
+        resourceId: json["resourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "nativeObjectRef": nativeObjectRef,
+    "resourceId": resourceId,
+  });
+}
+
+///Published version references from the original native version collection; also supplied
+///in the adapter's typed ContentReference slot. Not SERVICE list_output or a completion
+///receipt.
+class FileStorageListRevisionsOutput {
+  final List<ReferenceElement> citations;
+
+  FileStorageListRevisionsOutput({required this.citations});
+
+  factory FileStorageListRevisionsOutput.fromJson(Map<String, dynamic> json) =>
+      FileStorageListRevisionsOutput(
+        citations: List<ReferenceElement>.from(
+          json["citations"].map((x) => ReferenceElement.fromJson(x)),
+        ),
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "citations": List<dynamic>.from(citations.map((x) => x.toJson())),
+  });
+}
+
+///Read the exact typed native file revision in the admitted Resource; never substitute the
+///current head.
+class FileStorageReadInput {
+  final String displayName;
+  final String mediaType;
+  final String nativeObjectRef;
+  final String nativeRevision;
+  final String resourceId;
+
+  FileStorageReadInput({
+    required this.displayName,
+    required this.mediaType,
+    required this.nativeObjectRef,
+    required this.nativeRevision,
+    required this.resourceId,
+  });
+
+  factory FileStorageReadInput.fromJson(Map<String, dynamic> json) =>
+      FileStorageReadInput(
+        displayName: json["displayName"],
+        mediaType: json["mediaType"],
+        nativeObjectRef: json["nativeObjectRef"],
+        nativeRevision: json["nativeRevision"],
+        resourceId: json["resourceId"],
+      );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "displayName": displayName,
+    "mediaType": mediaType,
+    "nativeObjectRef": nativeObjectRef,
+    "nativeRevision": nativeRevision,
+    "resourceId": resourceId,
+  });
+}
+
+///Exact valid UTF-8 native bytes, disclosed only through the original result policy. Binary
+///files use export.
+class FileStorageReadOutput {
+  final String text;
+
+  FileStorageReadOutput({required this.text});
+
+  factory FileStorageReadOutput.fromJson(Map<String, dynamic> json) =>
+      FileStorageReadOutput(text: json["text"]);
+
+  Map<String, dynamic> toJson() => _stripNulls({"text": text});
 }
 
 ///Metadata-only input of the receiver native synchronization admission. Core injects the

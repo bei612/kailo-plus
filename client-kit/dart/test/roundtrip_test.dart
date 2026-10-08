@@ -9,6 +9,17 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('file storage revision IO preserves exact versions, empty text and binary', () {
+    final rows = jsonDecode(File('../../contracts/samples/file-storage-revision-io.sample.json').readAsStringSync()) as List;
+    for (final row in rows) {
+      expect(FileStorageReadInput.fromJson(row['readInput']).toJson(), row['readInput']);
+      expect(FileStorageReadOutput.fromJson(row['readOutput']).toJson(), row['readOutput']);
+      expect(FileStorageListRevisionsInput.fromJson(row['listRevisionsInput']).toJson(), row['listRevisionsInput']);
+      expect(FileStorageListRevisionsOutput.fromJson(row['listRevisionsOutput']).toJson(), row['listRevisionsOutput']);
+      expect(FileStorageExportInput.fromJson(row['exportInput']).toJson(), row['exportInput']);
+      expect(FileStorageExportOutput.fromJson(row['exportOutput']).toJson(), row['exportOutput']);
+    }
+  });
   test('Web search preserves original operators and optional absence', () {
     final sample =
         jsonDecode(

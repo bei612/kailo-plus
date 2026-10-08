@@ -9,7 +9,7 @@ import { documentConfiguration, launchDocument } from './document-launch.mjs';
 import { documentLifecycle } from './document-lifecycle.mjs';
 import { readConfiguration, readFile } from './service-read.mjs';
 import { listFiles } from './service-list.mjs';
-import { executeNode, observeNode } from './node-execution.mjs';
+import { executeNode, observeNode, nodeActions } from './node-execution.mjs';
 import { mcpConfiguration, handleMcp } from './mcp.mjs';
 import { bindingValidationConfiguration, bindingArguments, bindingObservation } from '../../../client-kit/adapter/binding-validation.mjs';
 
@@ -21,7 +21,7 @@ const QUERY_PATH = '/platform-adapter/v1/query_revision';
 function executionMapping(action, config) {
   if (!exactKeys(action, ['actionKey', 'actionVersion'])
     || !Number.isSafeInteger(action.actionVersion) || action.actionVersion <= 0) throw new Refused(503);
-  if (['file_storage.read@v1', 'file_storage.list@v1'].includes(action.actionKey) && config.readEdge) {
+  if (nodeActions.includes(action.actionKey) && config.readEdge) {
     return { ...action, nativeType: 'node', cancelCapability: 'UNSUPPORTED' };
   }
   if (['file_storage.open_view@v1', 'file_storage.open_edit@v1'].includes(action.actionKey) && config.documentLaunch) {
@@ -133,10 +133,10 @@ export async function verifyToken(token, config, args, operation = 'query_revisi
       if (claims.actor_principal_id !== claims.initiating_human_principal_id
         || ['delegation_id', 'delegation_version'].some(key => Object.hasOwn(claims, key))) throw new Refused(401);
       if (operation === 'map_native_status_error'
-        || (operation === 'query_revision' && ['file_storage.read@v1', 'file_storage.list@v1'].includes(claims.action_key))) {
+        || (operation === 'query_revision' && nodeActions.includes(claims.action_key))) {
         // HUMAN business contexts have the same required policy pair as
         // Agent calls. This cannot borrow a DOCUMENT/PAT NONE context.
-        if (!['file_storage.read@v1', 'file_storage.list@v1'].includes(claims.action_key)
+        if (!nodeActions.includes(claims.action_key)
           || !UUID.test(claims.result_exposure_policy_id) || !Number.isSafeInteger(claims.result_exposure_policy_version)
           || claims.result_exposure_policy_version <= 0) throw new Refused(401);
       } else if (!['file_storage.open_view@v1', 'file_storage.open_edit@v1'].includes(claims.action_key)
@@ -349,7 +349,7 @@ export function createAdapter(rawConfig) {
       if (request.url === '/platform-adapter/v1/execute') {
         let body;
         try { body=JSON.parse(raw); } catch { throw new Refused(400); }
-        if (['file_storage.read@v1', 'file_storage.list@v1'].includes(body?.actionKey)
+        if (nodeActions.includes(body?.actionKey)
           && object(body?.arguments) && Object.hasOwn(body.arguments, 'target')) {
           const value = await executeNode(config, deadline, raw, request.headers['idempotency-key'], request.headers.authorization.slice(7));
           response.writeHead(200, {'content-type':'application/json', 'cache-control':'no-store'});

@@ -705,3 +705,32 @@ fn pulse_requests_and_native_limit_roundtrip() {
         assert_eq!(serde_json::to_value(typed).unwrap(), value);
     }
 }
+
+#[test]
+fn file_storage_revision_io_preserves_exact_versions_empty_text_and_binary() {
+    let rows: Vec<serde_json::Value> = serde_json::from_str(
+        &fs::read_to_string(sample_path().with_file_name("file-storage-revision-io.sample.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    for row in rows {
+        let value: contracts::FileStorageReadInput =
+            serde_json::from_value(row["readInput"].clone()).unwrap();
+        assert_eq!(serde_json::to_value(value).unwrap(), row["readInput"]);
+        let value: contracts::FileStorageReadOutput =
+            serde_json::from_value(row["readOutput"].clone()).unwrap();
+        assert_eq!(serde_json::to_value(value).unwrap(), row["readOutput"]);
+        let value: contracts::FileStorageListRevisionsInput =
+            serde_json::from_value(row["listRevisionsInput"].clone()).unwrap();
+        assert_eq!(serde_json::to_value(value).unwrap(), row["listRevisionsInput"]);
+        let value: contracts::FileStorageListRevisionsOutput =
+            serde_json::from_value(row["listRevisionsOutput"].clone()).unwrap();
+        assert_eq!(serde_json::to_value(value).unwrap(), row["listRevisionsOutput"]);
+        let value: contracts::FileStorageExportInput =
+            serde_json::from_value(row["exportInput"].clone()).unwrap();
+        assert_eq!(serde_json::to_value(value).unwrap(), row["exportInput"]);
+        let value: contracts::FileStorageExportOutput =
+            serde_json::from_value(row["exportOutput"].clone()).unwrap();
+        assert_eq!(serde_json::to_value(value).unwrap(), row["exportOutput"]);
+    }
+}

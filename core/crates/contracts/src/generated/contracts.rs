@@ -154,6 +154,34 @@ pub struct ApplicationModelAdmission {
     pub traceparent: String,
 }
 
+/// Export exactly the authorized typed native file revision, including empty or non-UTF-8
+/// files.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStorageExportInput {
+    pub display_name: String,
+
+    pub media_type: String,
+
+    pub native_object_ref: String,
+
+    pub native_revision: String,
+
+    pub resource_id: String,
+}
+
+/// Immediate authorized binary result using the existing export encoding; not a persisted
+/// Core blob, URL, or native credential.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStorageExportOutput {
+    pub content_base64: String,
+
+    pub filename: String,
+
+    pub media_type: String,
+}
+
 /// DD-89: list the source Resource through its bound native root; the client cannot supply
 /// another root or native credential.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -197,6 +225,47 @@ pub struct ReferenceElement {
     pub native_revision: String,
 
     pub resource_id: String,
+}
+
+/// List published native revisions of one UUID inside the admitted Resource's bound root; no
+/// caller-supplied path or credential.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStorageListRevisionsInput {
+    pub native_object_ref: String,
+
+    pub resource_id: String,
+}
+
+/// Published version references from the original native version collection; also supplied
+/// in the adapter's typed ContentReference slot. Not SERVICE list_output or a completion
+/// receipt.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileStorageListRevisionsOutput {
+    pub citations: Vec<ReferenceElement>,
+}
+
+/// Read the exact typed native file revision in the admitted Resource; never substitute the
+/// current head.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStorageReadInput {
+    pub display_name: String,
+
+    pub media_type: String,
+
+    pub native_object_ref: String,
+
+    pub native_revision: String,
+
+    pub resource_id: String,
+}
+
+/// Exact valid UTF-8 native bytes, disclosed only through the original result policy. Binary
+/// files use export.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileStorageReadOutput {
+    pub text: String,
 }
 
 /// Metadata-only input of the receiver native synchronization admission. Core injects the

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/file_storage.v1/list_revisions_input.schema.json",
+  "title": "FileStorageListRevisionsInput",
+  "description": "List published native revisions of one UUID inside the admitted Resource's bound root; no caller-supplied path or credential.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resourceId", "nativeObjectRef"],
+  "properties": {
+    "resourceId": {"type": "string", "format": "uuid"},
+    "nativeObjectRef": {"type": "string"}
+  }
+}

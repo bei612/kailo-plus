@@ -34,18 +34,48 @@ export async function claimsForRead(config, token, args, actionKey = 'file_stora
   return claims;
 }
 
-// Both actual consumers use the same UUID/version/presigned download. The
-// caller retains its own signed identity, final PEP and disclosure/receipt path.
-export async function nativeFile(config, deadline, args, claims) {
+// The original published-version list and fixed-version reader share the
+// authenticated UUID/root resolution. Version metadata is not a download URL
+// or a completion receipt for a previous platform execution.
+export async function nativeVersions(config, deadline, args, claims, download = false) {
   const native=await nativeDocumentNode(config,deadline,{
     nativeObjectRef:args.input.nativeObjectRef,authorizationTargetNativeRef:args.authorizationTargetNativeRef,
   },claims);
   const history=await jsonFetch(config,deadline,new URL(`n/node/${args.input.nativeObjectRef}/versions`,native.base),{
     method:'POST',headers:native.headers,
-    body:JSON.stringify({FilterBy:'VersionsAll',Offset:0,Limit:0,Flags:['WithPreSignedURLs']}),
+    body:JSON.stringify({FilterBy:'VersionsAll',Offset:0,Limit:0,
+      Flags:[download ? 'WithPreSignedURLs' : 'WithMetaNone']}),
   });
-  if (!Array.isArray(history?.Versions)) throw new Refused(503);
-  const versions=history.Versions.filter(item => item?.VersionId === args.input.nativeRevision);
+  if (!Array.isArray(history?.Versions) || !history.Versions.length) throw new Refused(503);
+  const ids=new Set();
+  for (const version of history.Versions) {
+    if (!object(version) || !nonempty(version.VersionId) || ids.has(version.VersionId)
+      || (version.Draft !== undefined && typeof version.Draft !== 'boolean')
+      || (version.IsHead !== undefined && typeof version.IsHead !== 'boolean')) throw new Refused(503);
+    ids.add(version.VersionId);
+  }
+  return {native,versions:history.Versions};
+}
+
+export async function nativeRevisionListing(config, deadline, args, claims) {
+  const {native,versions}=await nativeVersions(config,deadline,args,claims);
+  const heads=versions.filter(version => version.IsHead === true);
+  if (heads.length !== 1 || heads[0].Draft === true || !nonempty(native.target.ContentType)) throw new Refused(503);
+  const displayName=native.path.slice(native.path.lastIndexOf('/')+1);
+  if (!nonempty(displayName)) throw new Refused(503);
+  // NodeVersions includes only this native identity's drafts. They are still
+  // not published references for the platform HUMAN/AGENT, so omit all drafts.
+  return versions.filter(version => version.Draft !== true).map(version => ({
+    resourceId:args.input.resourceId,nativeObjectRef:args.input.nativeObjectRef,
+    nativeRevision:version.VersionId,displayName,mediaType:native.target.ContentType,
+  })).sort((a,b) => a.nativeRevision < b.nativeRevision ? -1 : a.nativeRevision > b.nativeRevision ? 1 : 0);
+}
+
+// Both actual consumers use the same UUID/version/presigned download. The
+// caller retains its own signed identity, final PEP and disclosure/receipt path.
+export async function nativeFile(config, deadline, args, claims) {
+  const {versions:history}=await nativeVersions(config,deadline,args,claims,true);
+  const versions=history.filter(item => item.VersionId === args.input.nativeRevision);
   if (versions.length !== 1) throw new Refused(409);
   const version=versions[0];
   if (version.Draft === true || (version.Draft !== undefined && typeof version.Draft !== 'boolean')

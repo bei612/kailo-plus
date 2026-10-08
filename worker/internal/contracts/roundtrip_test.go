@@ -1111,3 +1111,36 @@ func TestCapabilityVectorsRoundtrip(t *testing.T) {
 		t.Fatalf("vector round-trip changed fields: %s", encoded)
 	}
 }
+
+func TestFileStorageRevisionIORoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "file-storage-revision-io.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original any
+	if err := json.Unmarshal(raw, &original); err != nil {
+		t.Fatal(err)
+	}
+	var typed []struct {
+		ReadInput           generated.FileStorageReadInput           `json:"readInput"`
+		ReadOutput          generated.FileStorageReadOutput          `json:"readOutput"`
+		ListRevisionsInput  generated.FileStorageListRevisionsInput  `json:"listRevisionsInput"`
+		ListRevisionsOutput generated.FileStorageListRevisionsOutput `json:"listRevisionsOutput"`
+		ExportInput         generated.FileStorageExportInput         `json:"exportInput"`
+		ExportOutput        generated.FileStorageExportOutput        `json:"exportOutput"`
+	}
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back any
+	if err := json.Unmarshal(encoded, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(original, back) {
+		t.Fatalf("fixed file revision, empty or binary result changed: %s", encoded)
+	}
+}

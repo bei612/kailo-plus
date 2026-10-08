@@ -1,0 +1,21 @@
+[
+  {
+    "readInput": {"resourceId":"00000000-0000-4000-8000-000000000001","nativeObjectRef":"00000000-0000-4000-8000-000000000002","nativeRevision":"version-1","displayName":"资料.bin","mediaType":"application/octet-stream"},
+    "readOutput": {"text":"中文\n\uFEFF原始文本"},
+    "listRevisionsInput": {"resourceId":"00000000-0000-4000-8000-000000000001","nativeObjectRef":"00000000-0000-4000-8000-000000000002"},
+    "listRevisionsOutput": {"citations":[
+      {"resourceId":"00000000-0000-4000-8000-000000000001","nativeObjectRef":"00000000-0000-4000-8000-000000000002","nativeRevision":"version-1","displayName":"资料.bin","mediaType":"application/octet-stream"},
+      {"resourceId":"00000000-0000-4000-8000-000000000001","nativeObjectRef":"00000000-0000-4000-8000-000000000002","nativeRevision":"version-2","displayName":"资料.bin","mediaType":"application/octet-stream"}
+    ]},
+    "exportInput": {"resourceId":"00000000-0000-4000-8000-000000000001","nativeObjectRef":"00000000-0000-4000-8000-000000000002","nativeRevision":"version-1","displayName":"资料.bin","mediaType":"application/octet-stream"},
+    "exportOutput": {"contentBase64":"/wCAAA==","filename":"资料.bin","mediaType":"application/octet-stream"}
+  },
+  {
+    "readInput": {"resourceId":"00000000-0000-4000-8000-000000000001","nativeObjectRef":"00000000-0000-4000-8000-000000000002","nativeRevision":"empty-version","displayName":"空.txt","mediaType":"text/plain"},
+    "readOutput": {"text":""},
+    "listRevisionsInput": {"resourceId":"00000000-0000-4000-8000-000000000001","nativeObjectRef":"00000000-0000-4000-8000-000000000002"},
+    "listRevisionsOutput": {"citations":[{"resourceId":"00000000-0000-4000-8000-000000000001","nativeObjectRef":"00000000-0000-4000-8000-000000000002","nativeRevision":"empty-version","displayName":"空.txt","mediaType":"text/plain"}]},
+    "exportInput": {"resourceId":"00000000-0000-4000-8000-000000000001","nativeObjectRef":"00000000-0000-4000-8000-000000000002","nativeRevision":"empty-version","displayName":"空.txt","mediaType":"text/plain"},
+    "exportOutput": {"contentBase64":"","filename":"空.txt","mediaType":"text/plain"}
+  }
+]

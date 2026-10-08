@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -92,7 +92,8 @@ function reply(response, status, value) {
 
 async function setup(t, changes = {}) {
   let requestArguments = changes.arguments ?? args;
-  const business = changes.businessList || changes.businessRead;
+  const business = changes.businessList || changes.businessRead || changes.businessAction !== undefined;
+  const businessAction = changes.businessAction ?? (changes.businessRead ? 'file_storage.read@v1' : 'file_storage.list@v1');
   const operation = changes.operation ?? 'query_revision';
   const directory = await mkdtemp(join(tmpdir(), 'file-storage-adapter-'));
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
@@ -108,7 +109,7 @@ async function setup(t, changes = {}) {
   await writeFile(join(directory, 'oidc-credential'), oidcSecret, { mode: 0o600 });
   const state = { peps: 0, nativeReads: [], queries: [], redirectReads: 0, receipts: [] };
   const root = { Uuid: ids[2], Type: 'COLLECTION', Path: 'documents/root', ContextWorkspace: { Uuid: ids[1] } };
-  const target = { Uuid: ids[3], Type: 'LEAF', Path: 'documents/root/file.txt', ContextWorkspace: { Uuid: ids[1] } };
+  const target = { Uuid: ids[3], Type: 'LEAF', Path: 'documents/root/file.txt', ContentType: 'text/plain', ContextWorkspace: { Uuid: ids[1] } };
   const versions = { Versions: [{ VersionId: 'older', MTime: '999999', IsHead: false },
     { VersionId: 'head-native-version', IsHead: true, PreSignedGET: { Url: 'must-not-disclose' }, ContentHash: 'not-a-revision' }] };
   const upstream = createServer(async (request, response) => {
@@ -154,7 +155,7 @@ async function setup(t, changes = {}) {
       state.redirectReads += 1;
       return reply(response, 200, versions);
     }
-    if (request.url === '/native-bytes?versionId=frozen-version' && changes.serviceRead) {
+    if (request.url === `/native-bytes?versionId=${changes.downloadRevision ?? 'frozen-version'}` && changes.serviceRead) {
       assert.equal(request.headers.authorization, undefined);
       state.downloads = (state.downloads ?? 0) + 1;
       await state.onDownload?.();
@@ -206,7 +207,7 @@ async function setup(t, changes = {}) {
       for await (const chunk of request) body += chunk;
       state.queries.push(JSON.parse(body));
       if (changes.redirect) { response.writeHead(302, { location: '/redirect-target' }); return response.end(); }
-      return reply(response, changes.nativeStatus ?? 200, changes.versions ?? (changes.serviceList
+      return reply(response, changes.nativeStatus ?? 200, (typeof changes.versions === 'function' ? changes.versions(state) : changes.versions) ?? (changes.serviceList
         ? {Versions:[{VersionId:changes.changeDuringList && state.listings>1?'changed-version':'frozen-version',IsHead:true}]}
         : changes.serviceRead
         ? {Versions:[{VersionId:'frozen-version',
@@ -259,7 +260,8 @@ async function setup(t, changes = {}) {
         nativeInstanceRef: 'delivered-instance', nativeScopeRef: ids[1], isolationMode: 'DEDICATED_INSTANCE',
         normalizedConfig: { nativeWorkspaceId: ids[1], nativeRootRef: ids[2] }, secretDeliveries,
         actionVersions: [{ actionKey: 'file_storage.read@v1', actionVersion: 1 },
-          { actionKey: 'file_storage.list@v1', actionVersion: 1 }],
+          { actionKey: 'file_storage.list@v1', actionVersion: 1 },
+          ...(changes.businessAction === undefined ? [] : [{actionKey:changes.businessAction,actionVersion:1}])],
       } };
     const fixed = config.management.validation;
     if (!business) requestArguments = { bindingId: config.bindingId, bindingVersion: fixed.bindingVersion,
@@ -272,12 +274,15 @@ async function setup(t, changes = {}) {
       idempotencyKey: ids[7], ...changes.validationArguments };
   }
   if (changes.mcp) {
-    const inputSchema = {type:'object',additionalProperties:false,required:Object.keys(requestArguments.input),
-      properties:Object.fromEntries(Object.keys(requestArguments.input).map(key => [key,{type:'string'}]))};
+    const inputSchema = changes.businessAction === undefined
+      ? {type:'object',additionalProperties:false,required:Object.keys(requestArguments.input),
+      properties:Object.fromEntries(Object.keys(requestArguments.input).map(key => [key,{type:'string'}]))}
+      : JSON.parse(await readFile(new URL(`../../../contracts/adapter/file_storage.v1/${businessAction.slice('file_storage.'.length,-3)}_input.schema.json`,
+        import.meta.url),'utf8'));
     config.mcp = {path:'/mcp',gatewayIssuer:`${origin}/gateway-issuer`,gatewayAudience:config.actionTokenAudience,
       gatewayJwksFile:join(directory,'gateway-jwks.json'),gatewayCaller:'fixture-gateway',gatewayMaxTokenSeconds:61,
-      tools:[{name:changes.businessRead ? 'approved-file-read' : 'approved-file-list',
-        actionKey:changes.businessRead ? 'file_storage.read@v1' : 'file_storage.list@v1',actionVersion:1,
+      tools:[{name:changes.businessAction === undefined ? (changes.businessRead ? 'approved-file-read' : 'approved-file-list') : 'approved-file-operation',
+        actionKey:businessAction,actionVersion:1,
         inputSchema,inputSchemaDigest:createHash('sha256').update(canonical(inputSchema)).digest('hex')}]};
   }
   const adapter = createAdapter(config);
@@ -313,7 +318,7 @@ async function setup(t, changes = {}) {
         normalized_parameter_hash:createHash('sha256').update(canonical(requestArguments)).digest('hex')} : {}),
       ...(business ? {actor_principal_id:changes.businessHuman ? ids[9] : ids[8],
         agent_principal_id:changes.businessHuman ? undefined : ids[8], initiating_human_principal_id:ids[9],
-        target_type:'RESOURCE',target_id:ids[10],action_key:changes.businessRead ? 'file_storage.read@v1' : 'file_storage.list@v1',
+        target_type:'RESOURCE',target_id:ids[10],action_key:businessAction,
         delegation_id:changes.businessHuman ? undefined : ids[11], delegation_version:changes.businessHuman ? undefined : 1,
         result_exposure_policy_id:ids[9],result_exposure_policy_version:1,idempotency_key:ids[7],
         ...(changes.businessHuman ? {external_execution_id:ids[8]} : {}),
@@ -1217,6 +1222,162 @@ test('HUMAN business ContentReference verification retains its policy and exact 
   assert.equal((await fixture.invoke({token:fixture.token({result_exposure_policy_id:undefined})})).status,401);
 });
 
+test('published file revision lists consume complete native version IDs and typed references for both business actors',async t=>{
+  const input={resourceId:ids[10],nativeObjectRef:ids[3]};
+  const actionKey='file_storage.list_revisions@v1';
+  for (const businessHuman of [false,true]) await t.test(businessHuman ? 'HUMAN' : 'AGENT',async nested=>{
+    const fixture=await setup(nested,{operation:'execute',validation:true,businessAction:actionKey,businessHuman,
+      arguments:{target:{resourceId:ids[10]},input},versions:{Versions:[
+        {VersionId:'current-version',IsHead:true},{VersionId:'older-version'},
+        {VersionId:'private-draft',Draft:true,PreSignedGET:{Url:'must-not-disclose'},OwnerName:'native-service-identity'},
+      ]}});
+    const answer=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({
+      actionKey,idempotencyKey:ids[7],arguments:fixture.requestArguments,
+    })});
+    assert.equal(answer.status,200);
+    const result=await answer.json();
+    const references=['current-version','older-version'].map(nativeRevision=>({...input,nativeRevision,
+      displayName:'file.txt',mediaType:'text/plain'}));
+    assert.deepEqual(JSON.parse(result.resultJson),{citations:references});
+    assert.deepEqual(result.contentReferences,references);
+    assert.equal(result.execution.nativeId,ids[3]);
+    assert.equal(result.execution.platformStatus,'SUCCEEDED');
+    assert.equal(result.execution.cancelCapability,'UNSUPPORTED');
+    assert.deepEqual(fixture.state.queries,Array.from({length:2},()=>({FilterBy:'VersionsAll',Offset:0,Limit:0,Flags:['WithMetaNone']})));
+    assert.equal(fixture.state.downloads,undefined);
+    assert.equal(fixture.state.peps,3);
+    assert.equal(fixture.state.receipts.length,0);
+    assert(!JSON.stringify(result).includes('private-draft'));
+    assert(!JSON.stringify(result).includes('PreSignedGET'));
+    assert(!JSON.stringify(result).includes('native-service-identity'));
+  });
+});
+
+test('native revision lists reject malformed, incomplete, changed or unauthorized collections without download or terminal claims',async t=>{
+  const actionKey='file_storage.list_revisions@v1';
+  const argumentsValue={target:{resourceId:ids[10]},input:{resourceId:ids[10],nativeObjectRef:ids[3]}};
+  for (const [label,changes] of [
+    ['missing collection',{versions:{}}],['empty collection',{versions:{Versions:[]}}],
+    ['duplicate version',{versions:{Versions:[{VersionId:'head',IsHead:true},{VersionId:'head'}]}}],
+    ['unknown draft',{versions:{Versions:[{VersionId:'head',IsHead:true,Draft:'false'}]}}],
+    ['unknown head',{versions:{Versions:[{VersionId:'head',IsHead:'true'}]}}],
+    ['absent head',{versions:{Versions:[{VersionId:'older'}]}}],
+    ['multiple heads',{versions:{Versions:[{VersionId:'head',IsHead:true},{VersionId:'other',IsHead:true}]}}],
+    ['draft head',{versions:{Versions:[{VersionId:'head',IsHead:true,Draft:true}]}}],
+    ['missing MIME',{target:{Uuid:ids[3],Type:'LEAF',Path:'documents/root/file.txt',ContextWorkspace:{Uuid:ids[1]}},
+      versions:{Versions:[{VersionId:'head',IsHead:true}]}}],
+    ['changed second complete read',{versions:state=>({Versions:[{VersionId:state.queries.length===1?'head':'changed',IsHead:true}]})}],
+    ['foreign native UUID',{target:{Uuid:ids[3],Type:'LEAF',Path:'documents/foreign/file.txt',ContentType:'text/plain',ContextWorkspace:{Uuid:ids[1]}}}],
+    ['final permission withdrawn',{pep:(state,response)=>reply(response,state.peps>1?403:200,{
+      actionExecutionId:ids[7],operationId:ids[6],authorizationMinZedToken:'fresh',
+      targetResource:{resourceId:ids[10],nativeRef:ids[2],nativeInstanceRef:'delivered-instance',nativeScopeRef:ids[1]},
+    })}],
+  ]) await t.test(label,async nested=>{
+    const fixture=await setup(nested,{operation:'execute',validation:true,businessAction:actionKey,
+      arguments:argumentsValue,versions:{Versions:[{VersionId:'head',IsHead:true}]},...changes});
+    const answer=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({
+      actionKey,idempotencyKey:ids[7],arguments:argumentsValue,
+    })});
+    assert.notEqual(answer.status,200);
+    assert.deepEqual(await answer.json(),{error:'adapter request refused'});
+    assert.equal(fixture.state.downloads,undefined);
+    assert.equal(fixture.state.receipts.length,0);
+  });
+});
+
+test('file export preserves every byte including empty/non-UTF8 historical files through the original policy result',async t=>{
+  const actionKey='file_storage.export@v1';
+  for (const businessHuman of [false,true]) for (const bytes of [Buffer.from([]),Buffer.from([0,255,1,254]),Buffer.from('中文\n')]) {
+    await t.test(`${businessHuman ? 'HUMAN' : 'AGENT'} ${bytes.length} bytes`,async nested=>{
+      const input={resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'older-binary',
+        displayName:'archive.bin',mediaType:'application/octet-stream'};
+      const argumentsValue={target:{resourceId:ids[10]},input};
+      const fixture=await setup(nested,{operation:'execute',validation:true,businessAction:actionKey,businessHuman,
+        arguments:argumentsValue,serviceRead:true,nativeBytes:bytes,downloadRevision:'older-binary',
+        versions:()=>({Versions:[{VersionId:'latest-head',IsHead:true},
+          {VersionId:'older-binary',Size:String(bytes.length),PreSignedGET:{
+            Url:`${new URL(fixture.config.cellsRestBaseUrl).origin}/native-bytes?versionId=older-binary`,
+          }}]})});
+      const answer=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({
+        actionKey,idempotencyKey:ids[7],arguments:argumentsValue,
+      })});
+      assert.equal(answer.status,200);
+      const result=await answer.json();
+      const exported=JSON.parse(result.resultJson);
+      assert.deepEqual(exported,{contentBase64:bytes.toString('base64'),mediaType:input.mediaType,filename:input.displayName});
+      assert.deepEqual(Buffer.from(exported.contentBase64,'base64'),bytes);
+      assert.deepEqual(result.contentReference,input);
+      assert.equal(result.execution.nativeId,ids[3]);
+      assert.equal(result.execution.platformStatus,'SUCCEEDED');
+      assert.equal(fixture.state.downloads,1);
+      assert.equal(fixture.state.peps,3);
+      assert.equal(fixture.state.receipts.length,0);
+      assert(!JSON.stringify(result).includes('PreSignedGET'));
+    });
+  }
+});
+
+test('binary export rejects absent versions, unknown native fields, overflow and post-download withdrawal',async t=>{
+  const actionKey='file_storage.export@v1';
+  const input={resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version',displayName:'file.bin',mediaType:'application/octet-stream'};
+  const argumentsValue={target:{resourceId:ids[10]},input};
+  for (const [label,changes] of [
+    ['missing frozen version',{downloadRevision:'other',versions:{Versions:[{
+      VersionId:'other',Size:'4',PreSignedGET:{Url:'filled-after-fixture-listen'},
+    }]}}],
+    ['duplicate frozen version',{versions:{Versions:[{VersionId:'frozen-version'},{VersionId:'frozen-version'}]}}],
+    ['unknown draft encoding',{versions:{Versions:[{VersionId:'frozen-version',Draft:'false'}]}}],
+    ['base64 plus response exceeds budget',{nativeBytes:Buffer.alloc(50000,255),versionSize:'50000'}],
+    ['permission withdrawn after download',{pep:(state,response)=>reply(response,state.downloads?403:200,{
+      actionExecutionId:ids[7],operationId:ids[6],authorizationMinZedToken:'fresh',
+      targetResource:{resourceId:ids[10],nativeRef:ids[2],nativeInstanceRef:'delivered-instance',nativeScopeRef:ids[1]},
+    })}],
+    ['native moved after download',{}],
+  ]) await t.test(label,async nested=>{
+    const fixture=await setup(nested,{operation:'execute',validation:true,businessAction:actionKey,
+      arguments:argumentsValue,serviceRead:true,...changes});
+    if (label==='missing frozen version') changes.versions.Versions[0].PreSignedGET.Url=
+      `${new URL(fixture.config.cellsRestBaseUrl).origin}/native-bytes?versionId=other`;
+    if (label==='native moved after download') fixture.state.onDownload=()=>{fixture.target.Path='documents/foreign/file.bin';};
+    const answer=await fixture.invoke({path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({
+      actionKey,idempotencyKey:ids[7],arguments:argumentsValue,
+    })});
+    assert.notEqual(answer.status,200);
+    assert.deepEqual(await answer.json(),{error:'adapter request refused'});
+    assert.equal(fixture.state.receipts.length,0);
+  });
+});
+
+test('new native read actions retain exact actor/key/policy and UNKNOWN observation without reread',async t=>{
+  for (const actionKey of ['file_storage.list_revisions@v1','file_storage.export@v1']) {
+    await t.test(actionKey,async nested=>{
+      const input=actionKey==='file_storage.export@v1'
+        ? {resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version',displayName:'file.bin',mediaType:'application/octet-stream'}
+        : {resourceId:ids[10],nativeObjectRef:ids[3]};
+      const fixture=await setup(nested,{operation:'execute',validation:true,businessAction:actionKey,
+        arguments:{target:{resourceId:ids[10]},input},serviceRead:true});
+      const request={path:'/platform-adapter/v1/execute',key:ids[7],raw:canonical({
+        actionKey,idempotencyKey:ids[7],arguments:fixture.requestArguments,
+      })};
+      for (const [change,status] of [[{idempotency_key:ids[0]},401],[{result_exposure_policy_id:undefined},401],
+        [{delegation_id:undefined},401],[{tenant_id:ids[0]},401],[{target_id:ids[0]},503]]) {
+        assert.equal((await fixture.invoke({...request,token:fixture.token(change)})).status,status,JSON.stringify(change));
+        assert.equal(fixture.state.nativeReads.length,0);
+      }
+      const observed=await setup(nested,{operation:'observe',businessAction:actionKey,
+        arguments:{externalExecutionId:ids[8],idempotencyKey:ids[7],nativeType:'node',nativeId:ids[3]}});
+      const answer=await observed.invoke({path:'/platform-adapter/v1/observe',key:ids[7]});
+      assert.equal(answer.status,200);
+      const value=await answer.json();
+      assert.equal(value.execution.platformStatus,'UNKNOWN');
+      assert.equal(value.execution.nativeId,ids[3]);
+      assert.equal(Object.hasOwn(value.execution,'terminalAt'),false);
+      assert.equal(Object.hasOwn(value,'resultJson'),false);
+      assert.equal(observed.state.nativeReads.length,0);
+    });
+  }
+});
+
 async function mcpWireClient(t, fixture, headers = {}) {
   const [{Client},{StreamableHTTPClientTransport}] = await Promise.all([
     import('@modelcontextprotocol/sdk/client/index.js'),
@@ -1240,6 +1401,44 @@ async function mcpWireClient(t, fixture, headers = {}) {
   await client.connect(transport);
   return {client,outgoing,wire,transport};
 }
+
+test('actual SDK MCP carries published revision and binary export results in the governed typed response',async t=>{
+  for (const actionKey of ['file_storage.list_revisions@v1','file_storage.export@v1']) for (const businessHuman of [false,true]) {
+    await t.test(`${actionKey} ${businessHuman ? 'HUMAN' : 'AGENT'}`,async nested=>{
+      const exporting=actionKey==='file_storage.export@v1';
+      const input=exporting ? {resourceId:ids[10],nativeObjectRef:ids[3],nativeRevision:'frozen-version',
+        displayName:'file.bin',mediaType:'application/octet-stream'} : {resourceId:ids[10],nativeObjectRef:ids[3]};
+      const bytes=Buffer.from([0,255,1,254]);
+      const fixture=await setup(nested,{mcp:true,operation:'execute',validation:true,businessHuman,
+        businessAction:actionKey,serviceRead:true,nativeBytes:bytes,
+        arguments:{target:{resourceId:ids[10]},input},
+        ...(exporting?{}:{versions:{Versions:[{VersionId:'frozen-version',IsHead:true},{VersionId:'older-version'}]}})});
+      const {client,outgoing,wire}=await mcpWireClient(nested,fixture);
+      const {tools}=await client.listTools();
+      assert.equal(tools.length,1);
+      assert.deepEqual(tools[0].inputSchema,fixture.config.mcp.tools[0].inputSchema);
+      outgoing.authorization=`Bearer ${fixture.token()}`;
+      outgoing['idempotency-key']=ids[7];
+      const result=await client.callTool({name:tools[0].name,arguments:input});
+      assert.equal(result.isError,false);
+      assert.deepEqual(result.content,[]);
+      const typed=result.structuredContent;
+      assert.equal(typed.execution.platformStatus,'SUCCEEDED');
+      assert.equal(typed.execution.nativeId,ids[3]);
+      if (exporting) {
+        assert.deepEqual(JSON.parse(typed.resultJson),{contentBase64:bytes.toString('base64'),
+          filename:input.displayName,mediaType:input.mediaType});
+        assert.deepEqual(typed.contentReference,input);
+      } else {
+        assert.deepEqual(JSON.parse(typed.resultJson),{citations:typed.contentReferences});
+        assert.deepEqual(typed.contentReferences.map(value=>value.nativeRevision),['frozen-version','older-version']);
+        assert.equal(fixture.state.downloads,undefined);
+      }
+      assert.deepEqual(wire.find(value=>value.method==='tools/call').params,{name:tools[0].name,arguments:input});
+      assert.equal(fixture.state.receipts.length,0);
+    });
+  }
+});
 
 test('pinned SDK MCP init/list/call consumes delivered names and original HUMAN/AGENT file results', async t => {
   for (const businessRead of [false,true]) for (const businessHuman of [false,true]) {

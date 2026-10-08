@@ -3,10 +3,9 @@
 import { createHash } from 'node:crypto';
 import { Refused, exactKeys, object, nonempty, canonical, boundedBody,
   fixedUrl, verifiedClaims } from '../../../client-kit/adapter/protocol.mjs';
-import { executeNode } from './node-execution.mjs';
+import { executeNode, nodeActions } from './node-execution.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const actions = ['file_storage.read@v1', 'file_storage.list@v1'];
 const transportHeader = 'x-kailo-gateway-authorization';
 
 export function mcpConfiguration(value, config) {
@@ -27,7 +26,7 @@ export function mcpConfiguration(value, config) {
   for (const tool of value.tools) {
     if (!exactKeys(tool, ['name', 'actionKey', 'actionVersion', 'inputSchemaDigest', 'inputSchema',
       ...(Object.hasOwn(tool ?? {}, 'description') ? ['description'] : [])])
-      || !nonempty(tool.name) || names.has(tool.name) || !actions.includes(tool.actionKey)
+      || !nonempty(tool.name) || names.has(tool.name) || !nodeActions.includes(tool.actionKey)
       || !Number.isSafeInteger(tool.actionVersion) || tool.actionVersion <= 0
       || !object(tool.inputSchema) || tool.inputSchema.type !== 'object'
       || (tool.description !== undefined && !nonempty(tool.description))

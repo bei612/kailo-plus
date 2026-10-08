@@ -701,3 +701,26 @@ test("forum query, cursor and native channel preserve each generated field and l
   const query: WebMessageQuery = load("web-forum-query.sample.json");
   deepStrictEqual([query.before, query.beforeId], [cursor.createdAt, cursor.eventId]);
 });
+
+test("file storage revision IO preserves exact versions, empty text and binary", () => {
+  const rows: {
+    readInput: import("../src/generated/contracts.js").FileStorageReadInput;
+    readOutput: import("../src/generated/contracts.js").FileStorageReadOutput;
+    listRevisionsInput: import("../src/generated/contracts.js").FileStorageListRevisionsInput;
+    listRevisionsOutput: import("../src/generated/contracts.js").FileStorageListRevisionsOutput;
+    exportInput: import("../src/generated/contracts.js").FileStorageExportInput;
+    exportOutput: import("../src/generated/contracts.js").FileStorageExportOutput;
+  }[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/file-storage-revision-io.sample.json", import.meta.url), "utf8"));
+  for (const row of rows) {
+    const r = row.readInput, l = row.listRevisionsInput, e = row.exportInput;
+    const actual: typeof row = {
+      readInput: {resourceId:r.resourceId,nativeObjectRef:r.nativeObjectRef,nativeRevision:r.nativeRevision,displayName:r.displayName,mediaType:r.mediaType},
+      readOutput: {text:row.readOutput.text},
+      listRevisionsInput: {resourceId:l.resourceId,nativeObjectRef:l.nativeObjectRef},
+      listRevisionsOutput: {citations:row.listRevisionsOutput.citations.map(c=>({resourceId:c.resourceId,nativeObjectRef:c.nativeObjectRef,nativeRevision:c.nativeRevision,displayName:c.displayName,mediaType:c.mediaType}))},
+      exportInput: {resourceId:e.resourceId,nativeObjectRef:e.nativeObjectRef,nativeRevision:e.nativeRevision,displayName:e.displayName,mediaType:e.mediaType},
+      exportOutput: {contentBase64:row.exportOutput.contentBase64,filename:row.exportOutput.filename,mediaType:row.exportOutput.mediaType},
+    };
+    deepStrictEqual(JSON.parse(JSON.stringify(actual)),row);
+  }
+});

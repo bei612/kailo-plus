@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/file_storage.v1/export_output.schema.json",
+  "title": "FileStorageExportOutput",
+  "description": "Immediate authorized binary result using the existing export encoding; not a persisted Core blob, URL, or native credential.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contentBase64", "mediaType", "filename"],
+  "properties": {
+    "contentBase64": {"type": "string"},
+    "mediaType": {"type": "string"},
+    "filename": {"type": "string"}
+  }
+}

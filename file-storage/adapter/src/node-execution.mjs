@@ -3,11 +3,12 @@
 import { createHash } from 'node:crypto';
 import { Refused, exactKeys, nonempty, canonical, verifiedClaims, freshPep } from '../../../client-kit/adapter/protocol.mjs';
 import { nativeListing } from './service-list.mjs';
-import { nativeFile } from './service-read.mjs';
+import { nativeFile, nativeRevisionListing } from './service-read.mjs';
 import { nativeDocumentNode } from './query-revision.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const actions = ['file_storage.read@v1', 'file_storage.list@v1'];
+export const nodeActions = Object.freeze(['file_storage.read@v1', 'file_storage.list@v1',
+  'file_storage.list_revisions@v1', 'file_storage.export@v1']);
 
 async function claimsForNode(config, token, args, operation) {
   const claims = await verifiedClaims(token, config);
@@ -16,7 +17,7 @@ async function claimsForNode(config, token, args, operation) {
     if (!UUID.test(claims[key])) throw new Refused(401);
   }
   if (claims.tenant_id !== config.tenantId || claims.target_type !== 'RESOURCE'
-    || !actions.includes(claims.action_key)
+    || !nodeActions.includes(claims.action_key)
     || (config.workspaceId !== undefined && claims.workspace_id !== config.workspaceId)
     || (claims.workspace_id !== undefined && !UUID.test(claims.workspace_id))
     || !Number.isSafeInteger(claims.action_definition_version) || claims.action_definition_version <= 0
@@ -47,7 +48,7 @@ function requestValue(raw, key) {
   let request;
   try { request = JSON.parse(raw); } catch { throw new Refused(400); }
   if (!exactKeys(request, ['actionKey', 'idempotencyKey', 'arguments'])
-    || !UUID.test(key) || request.idempotencyKey !== key || !actions.includes(request.actionKey)
+    || !UUID.test(key) || request.idempotencyKey !== key || !nodeActions.includes(request.actionKey)
     || !exactKeys(request.arguments, ['target', 'input'])
     || !exactKeys(request.arguments.target, ['resourceId']) || !UUID.test(request.arguments.target.resourceId)) throw new Refused(400);
   // Core hashes the typed arguments, not HTTP property order. SERVICE calls
@@ -60,21 +61,25 @@ export async function executeNode(config, deadline, raw, key, token) {
   const request = requestValue(raw, key);
   const args = request.arguments;
   const listing = request.actionKey === 'file_storage.list@v1';
-  if (!exactKeys(args.input, listing ? ['resourceId']
+  const revisions = request.actionKey === 'file_storage.list_revisions@v1';
+  const exporting = request.actionKey === 'file_storage.export@v1';
+  if (!exactKeys(args.input, listing ? ['resourceId'] : revisions ? ['resourceId', 'nativeObjectRef']
     : ['resourceId', 'nativeObjectRef', 'nativeRevision', 'displayName', 'mediaType'])
     || !UUID.test(args.input.resourceId) || (!listing && (!UUID.test(args.input.nativeObjectRef)
-      || !['nativeRevision', 'displayName', 'mediaType'].every(field => nonempty(args.input[field]))))) throw new Refused(400);
+      || (!revisions && !['nativeRevision', 'displayName', 'mediaType'].every(field => nonempty(args.input[field])))))) throw new Refused(400);
   const claims = await claimsForNode(config, token, args, 'execute');
-  if (claims.action_key !== request.actionKey || (!Object.hasOwn(claims, 'agent_principal_id')
-    && (claims.idempotency_key !== key || !UUID.test(claims.external_execution_id)))) throw new Refused(401);
+  if (claims.action_key !== request.actionKey || claims.idempotency_key !== key
+    || (!Object.hasOwn(claims, 'agent_principal_id') && !UUID.test(claims.external_execution_id))) throw new Refused(401);
   const admitted = await freshPep(config, deadline, token, args, claims, 'execute');
   const resource = resourceForNode(config, admitted, claims, args);
   const nativeArgs = {input: args.input, authorizationTargetNativeRef: resource.nativeRef};
   let result;
   let references;
-  if (listing) {
-    const items = await nativeListing(config, deadline, nativeArgs);
-    if (canonical(await nativeListing(config, deadline, nativeArgs)) !== canonical(items)) throw new Refused(409);
+  if (listing || revisions) {
+    const list = () => revisions ? nativeRevisionListing(config, deadline, nativeArgs, claims)
+      : nativeListing(config, deadline, nativeArgs);
+    const items = await list();
+    if (canonical(await list()) !== canonical(items)) throw new Refused(409);
     // Reuse the already-consumed typed citation result, not SERVICE's complete
     // desired-set/receipt format. Core verifies these references before its
     // original result policy discloses them; it creates no file directory.
@@ -82,13 +87,18 @@ export async function executeNode(config, deadline, raw, key, token) {
     references = items.length === 0 ? {} : {contentReferences: items};
   } else {
     const file = await nativeFile(config, deadline, nativeArgs, claims);
-    // Reuse the already-consumed text result shape, not an invented binary
-    // schema. Preserve UTF-8 byte content including BOM; never replace invalid
-    // sequences or parse/convert a native binary document into guessed text.
-    let text;
-    try { text = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(file.bytes); }
-    catch { throw new Refused(503); }
-    result = {text};
+    if (exporting) {
+      // The existing knowledge export result encodes an immediate authorized
+      // response, not another native blob or a Core-persisted body. No lossy
+      // decoding, presigned URL or source credential crosses this boundary.
+      result = {contentBase64:file.bytes.toString('base64'),mediaType:args.input.mediaType,filename:args.input.displayName};
+    } else {
+      // Preserve UTF-8 including BOM; never guess text from a binary file.
+      let text;
+      try { text = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(file.bytes); }
+      catch { throw new Refused(503); }
+      result = {text};
+    }
     references = {contentReference: {...args.input}};
   }
   const current = await claimsForNode(config, token, args, 'execute');

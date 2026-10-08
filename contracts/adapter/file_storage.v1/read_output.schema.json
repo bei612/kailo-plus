@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter/file_storage.v1/read_output.schema.json",
+  "title": "FileStorageReadOutput",
+  "description": "Exact valid UTF-8 native bytes, disclosed only through the original result policy. Binary files use export.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["text"],
+  "properties": {"text": {"type": "string"}}
+}
