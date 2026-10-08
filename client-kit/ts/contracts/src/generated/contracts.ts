@@ -4069,6 +4069,19 @@ export interface WebPublishMessageRequest {
 }
 
 /**
+ * DD-39 / REQ-24：原 Buzz TopbarSearch 的语义查询。Core 以本人 SERVER 身份向原 Relay FTS 查询，只在当前已准入
+ * Channel/DM 范围内读取；不接受任意 Relay filter、租户或身份。页与 frame 上界来自已核验 NIP-11 和既有 BFF 配置。
+ */
+export interface WebSearchQuery {
+    authors?:   string[];
+    channelId?: string;
+    limit?:     number;
+    q:          string;
+    since?:     number;
+    until?:     number;
+}
+
+/**
  * GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 或 fresh manage 管理资格，且两侧
  * binding 都 ACTIVE 的 Workspace。管理可见不代表可读取协作消息；isMember 投影真实成员事实。Workspace id 同时是其 Channel
  * id（DD-80）。

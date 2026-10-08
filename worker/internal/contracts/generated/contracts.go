@@ -355,6 +355,9 @@
 //    webPublishMessageRequest, err := UnmarshalWebPublishMessageRequest(bytes)
 //    bytes, err = webPublishMessageRequest.Marshal()
 //
+//    webSearchQuery, err := UnmarshalWebSearchQuery(bytes)
+//    bytes, err = webSearchQuery.Marshal()
+//
 //    workspaceView, err := UnmarshalWorkspaceView(bytes)
 //    bytes, err = workspaceView.Marshal()
 //
@@ -1793,6 +1796,16 @@ func UnmarshalWebPublishMessageRequest(data []byte) (WebPublishMessageRequest, e
 }
 
 func (r *WebPublishMessageRequest) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalWebSearchQuery(data []byte) (WebSearchQuery, error) {
+	var r WebSearchQuery
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *WebSearchQuery) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -5120,6 +5133,17 @@ type WebPublishMessageRequest struct {
 	MessageType    *WebMessageType `json:"messageType,omitempty"`
 	// 原 Relay 消息引用；BFF 在当前 Channel 回读验签并解析 NIP-10 祖先。
 	ParentEventID *string `json:"parentEventId,omitempty"`
+}
+
+// DD-39 / REQ-24：原 Buzz TopbarSearch 的语义查询。Core 以本人 SERVER 身份向原 Relay FTS 查询，只在当前已准入
+// Channel/DM 范围内读取；不接受任意 Relay filter、租户或身份。页与 frame 上界来自已核验 NIP-11 和既有 BFF 配置。
+type WebSearchQuery struct {
+	Authors   []string `json:"authors,omitempty"`
+	ChannelID *string  `json:"channelId,omitempty"`
+	Limit     *int64   `json:"limit,omitempty"`
+	Q         string   `json:"q"`
+	Since     *int64   `json:"since,omitempty"`
+	Until     *int64   `json:"until,omitempty"`
 }
 
 // GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 或 fresh manage 管理资格，且两侧

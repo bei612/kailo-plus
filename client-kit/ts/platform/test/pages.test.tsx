@@ -1674,7 +1674,7 @@ describe("AgentDefinitionsPage governed Version Installation Grant", () => {
     const card = host.querySelector<HTMLElement>("[data-testid=agent-definition-agent-1]")!;
     expect(card.className).toContain("aspect-[4/5]");
     expect(card.textContent).toContain("Governed Agent");
-    expect(card.textContent).toContain("Definition ready");
+    expect(card.textContent).not.toContain("Definition ready");
     expect(host.querySelector("[data-testid=agent-definition-editor]")).toBeNull();
     await click(host.querySelector<HTMLElement>("[data-testid=new-agent-card]")!);
     expect(host.querySelector("[role=dialog] [data-testid=agent-definition-editor]")).not.toBeNull();

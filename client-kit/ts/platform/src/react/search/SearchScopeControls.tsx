@@ -5,7 +5,7 @@ import type * as React from "react";
 
 import { buildDirectMessageIntro } from "../conversations/dm-participant-display";
 import { SearchPromptPlaceholder } from "./SearchPromptPlaceholder";
-import type { Channel } from "./types";
+import type { SearchChannel as Channel } from "./types";
 
 export function getChannelScopeLabel(
   channel: Channel,

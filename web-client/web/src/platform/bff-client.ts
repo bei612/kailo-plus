@@ -19,7 +19,10 @@ import type {
   PulsePublishRequest,
   ProjectsQueryRequest,
   ProjectsPublishRequest,
+  WebSearchQuery,
 } from "@client-kit/contracts";
+import type { SearchMessagesResponse } from "@client-kit/platform/react/search/types";
+import { getThreadReference } from "@client-kit/platform/react/messages/threading";
 import { createBffClient } from "@client-kit/platform/client";
 import { hiddenConversationChannels, type ConversationVisibilityHost } from "@client-kit/platform/react/new-message";
 import { newIdempotencyKey } from "@client-kit/platform/governance";
@@ -42,6 +45,27 @@ const transport = createFetchTransport({
 });
 
 export const bff = createBffClient(transport);
+
+/** Original Relay FTS relevance order; the browser never constructs a Relay filter. */
+export async function searchMessages(request: WebSearchQuery): Promise<SearchMessagesResponse> {
+  const page = await call<{events: BuzzEvent[]}>({method:"POST",path:"/api/v1/search/messages",body:request});
+  if (!Array.isArray(page.events)) throw new TransportError("Invalid search response");
+  const total = page.events.length;
+  const hits = page.events.map((event,index) => {
+    if (!event || !/^[0-9a-f]{64}$/.test(event.id) || !/^[0-9a-f]{64}$/.test(event.pubkey)
+      || ![9,40002,45001,45003].includes(event.kind) || typeof event.content !== "string"
+      || !Number.isSafeInteger(event.created_at) || event.created_at < 0 || !Array.isArray(event.tags)
+      || event.tags.some(tag => !Array.isArray(tag) || tag.some(value => typeof value !== "string")))
+      throw new TransportError("Invalid search event");
+    const channels = event.tags.filter(tag => tag[0] === "h");
+    if (channels.length !== 1 || !channels[0]?.[1]) throw new TransportError("Invalid search channel");
+    return {eventId:event.id,content:event.content,kind:event.kind,pubkey:event.pubkey,
+      channelId:channels[0][1],channelName:null,createdAt:event.created_at,
+      score:total <= 1 ? 1 : 1 - index / total,threadRootId:getThreadReference(event.tags).rootId};
+  });
+  if (new Set(hits.map(hit => hit.eventId)).size !== hits.length) throw new TransportError("Duplicate search event");
+  return {hits,found:hits.length};
+}
 
 export async function queryProjects(request:ProjectsQueryRequest):Promise<import("@client-kit/platform/react/projects").ProjectsPage>{
   return call({method:"POST",path:"/api/v1/projects/query",body:request});

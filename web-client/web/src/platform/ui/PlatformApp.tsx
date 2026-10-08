@@ -20,6 +20,7 @@ import type { ParsedMessageLink } from "@client-kit/platform/react/composer/feat
 import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
 import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
 import { useChannelNavigationShortcuts } from "@client-kit/platform/react/use-channel-navigation-shortcuts";
+import { useSearchShortcuts } from "@client-kit/platform/react/use-search-shortcuts";
 import { ConversationVisibilityProvider, useConversations, useDirectMessageOpen } from "@client-kit/platform/react/new-message";
 import { ConversationSidebar } from "./ConversationSidebar";
 import { conversationVisibility } from "../bff-client";
@@ -48,7 +49,7 @@ import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { isOutcomeUnknown, TransportError } from "@client-kit/platform/transport";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { SidebarProvider, SidebarTrigger, SidebarMenu, SidebarMenuItem } from "@client-kit/platform/react/sidebar/sidebar";
-import { AppSidebarFrame } from "@client-kit/platform/react/sidebar/app-sidebar-frame";
+import { AppSidebarFrame, AppSidebarPinnedHeaderFrame } from "@client-kit/platform/react/sidebar/app-sidebar-frame";
 import { MoreUnreadButton } from "@client-kit/platform/react/sidebar/MoreUnreadButton";
 import { useUnreadOverflow } from "@client-kit/platform/react/sidebar/useUnreadOverflow";
 import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
@@ -75,6 +76,9 @@ import { ChatHeader } from "@client-kit/platform/react/messages/chat-header";
 import { FileText, Hash } from "lucide-react";
 import { toast } from "sonner";
 import { BrowserNotificationsProvider, useBrowserNotifications } from "./BrowserNotifications";
+import { TopbarSearch } from "./TopbarSearch";
+import { useWebSearchDirectory } from "./search";
+import type { SearchHit } from "@client-kit/platform/react/search/types";
 
 /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
 export function PlatformApp() {
@@ -182,6 +186,11 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   if(tab==="settings")settingsVisited.current=true;
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
   const [newChannelOpen, setNewChannelOpen] = useState(false);
+  const [searchFocusRequest, setSearchFocusRequest] = useState(0);
+  const [scopeSearchFocusRequest, setScopeSearchFocusRequest] = useState(0);
+  const searchScopeKey = `${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`;
+  const searchDirectory = useWebSearchDirectory(searchScopeKey, conversations.items, session.tenantPrincipalId,
+    !conversations.loading && !conversations.error && tab !== "settings");
   const [channelActivity, setChannelActivity] = useState<ReadonlyMap<string, string | null>>(() => new Map());
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const [sidebarUnread, setSidebarUnread] = useState<ReadonlySet<string>>(() => new Set());
@@ -194,6 +203,27 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     ?? rows.find((workspace) => workspace.isMember === true)
     ?? rows[0];
   const active = activeRow?.id ?? null;
+  const nativeCurrentChannelId = tab === "conversation" ? chosenConversation?.channelId
+    : tab === "channel" && !searchDirectory.isError ? searchDirectory.data?.workspaces.find(row=>row.id===active)?.channel.channelId : undefined;
+  const openSearchChannel = async (channelId:string, hit?:SearchHit) => {
+    if (!directMessageOwner.active || currentDirectMessageOwner.current !== directMessageOwner)
+      throw new TransportError(translate(getLocale(), "dm.viewInactive"));
+    const fresh = await searchDirectory.refetch();
+    if (!directMessageOwner.active || currentDirectMessageOwner.current !== directMessageOwner || fresh.isError || !fresh.data)
+      throw new TransportError(t("platform.loadFailed"));
+    const workspace = fresh.data.workspaces.find(row=>row.channel.channelId===channelId);
+    if (workspace) {
+      if (hit && !workspace.isMember) throw new TransportError(t("platform.linkChannelUnavailable"));
+      await navigation.openChannel(workspace.id, hit ? {channelId:workspace.id,messageId:hit.eventId,threadRootId:hit.threadRootId??null} : undefined);
+      return;
+    }
+    const actual = await conversations.reload();
+    if (!directMessageOwner.active || currentDirectMessageOwner.current !== directMessageOwner)
+      throw new TransportError(translate(getLocale(), "dm.viewInactive"));
+    const conversation = actual.find(row=>row.channelId===channelId&&row.state==="ACTIVE"&&row.participantPrincipalIds.includes(session.tenantPrincipalId));
+    if (!conversation) throw new TransportError(t("platform.linkChannelUnavailable"));
+    await navigation.openConversation(conversation.id, hit ? {messageId:hit.eventId,threadRootId:hit.threadRootId??null} : undefined);
+  };
   async function openDirectMessage(pubkey: string) {
     const checkCurrent = () => {
       if (!directMessageOwner.active || currentDirectMessageOwner.current !== directMessageOwner)
@@ -224,6 +254,9 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
     onCreateChannel: () => setNewChannelOpen(true),
     onNewMessage: () => setTab("new-message"),
   });
+  useSearchShortcuts({disabled:tab==="settings",canSearchCurrentChannel:Boolean(nativeCurrentChannelId),
+    onSearchEverything:()=>{setSearchFocusRequest(value=>value+1);void searchDirectory.refetch();},
+    onSearchCurrentChannel:()=>{setScopeSearchFocusRequest(value=>value+1);void searchDirectory.refetch();}});
   useSettingsShortcuts({
     open: tab === "settings",
     onOpenSettings: () => setTab("settings"),
@@ -370,6 +403,16 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
             <div className="contents" hidden={tab === "settings"} style={tab === "settings" ? { display: "none" } : undefined}>
             <AppSidebarFrame active={tab !== "settings"} aria-label={t("platform.title")}
               scrollRef={sidebarScrollRef}
+              pinnedHeader={<AppSidebarPinnedHeaderFrame><TopbarSearch scopeKey={searchScopeKey}
+                channels={searchDirectory.isError ? [] : (searchDirectory.data?.channels??[]).map(channel=>({...channel,lastMessageAt:channelActivity.get(channel.id)??channel.lastMessageAt}))}
+                channelLabels={searchDirectory.isError ? undefined : searchDirectory.data?.labels}
+                directoryError={conversations.error??searchDirectory.error}
+                currentChannelId={nativeCurrentChannelId} focusRequest={searchFocusRequest} scopeFocusRequest={scopeSearchFocusRequest}
+                onOpenChannel={channelId=>{void openSearchChannel(channelId).catch(()=>toast.error(t("platform.loadFailed")));}}
+                onOpenResult={hit=>{if(hit.channelId)void openSearchChannel(hit.channelId,hit).catch(()=>toast.error(t("platform.loadFailed")));}}
+                onOpenUser={user=>openDirectMessage(user.pubkey)}
+                onBrowseChannels={()=>setCreateChannelOpen(true)} onCreateChannel={()=>setNewChannelOpen(true)} />
+              </AppSidebarPinnedHeaderFrame>}
               above={sidebarOverflow.unreadAboveCount > 0 ? <MoreUnreadButton count={sidebarOverflow.unreadAboveCount}
                 emphasis="default" onClick={sidebarOverflow.scrollToNextAbove} position="top" testId="sidebar-unread-above" /> : null}
               below={sidebarOverflow.unreadBelowCount > 0 ? <MoreUnreadButton count={sidebarOverflow.unreadBelowCount}

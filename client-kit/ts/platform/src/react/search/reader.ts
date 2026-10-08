@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { UserProfileLookup } from "../messages/system/identity";
-import type { Channel } from "./types";
+import type { SearchChannel as Channel } from "./types";
 import type { SearchResult } from "./SearchResultItem";
 
 // Only the existing host read hook crosses this seam: no search/index authority in the UI.

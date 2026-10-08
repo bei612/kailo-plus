@@ -118,6 +118,7 @@
 //     final webProfileUpdateRequest = webProfileUpdateRequestFromJson(jsonString);
 //     final webProfileView = webProfileViewFromJson(jsonString);
 //     final webPublishMessageRequest = webPublishMessageRequestFromJson(jsonString);
+//     final webSearchQuery = webSearchQueryFromJson(jsonString);
 //     final workspaceView = workspaceViewFromJson(jsonString);
 //     final workspaceMemberView = workspaceMemberViewFromJson(jsonString);
 //     final workspacePreferenceRequest = workspacePreferenceRequestFromJson(jsonString);
@@ -923,6 +924,11 @@ WebPublishMessageRequest webPublishMessageRequestFromJson(String str) =>
 
 String webPublishMessageRequestToJson(WebPublishMessageRequest data) =>
     json.encode(data.toJson());
+
+WebSearchQuery webSearchQueryFromJson(String str) =>
+    WebSearchQuery.fromJson(json.decode(str));
+
+String webSearchQueryToJson(WebSearchQuery data) => json.encode(data.toJson());
 
 WorkspaceView workspaceViewFromJson(String str) =>
     WorkspaceView.fromJson(json.decode(str));
@@ -11787,6 +11793,48 @@ class WebPublishMessageRequest {
         : List<dynamic>.from(mentionPubkeys!.map((x) => x)),
     "messageType": webMessageTypeValues.reverse[messageType],
     "parentEventId": parentEventId,
+  });
+}
+
+///DD-39 / REQ-24：原 Buzz TopbarSearch 的语义查询。Core 以本人 SERVER 身份向原 Relay FTS 查询，只在当前已准入
+///Channel/DM 范围内读取；不接受任意 Relay filter、租户或身份。页与 frame 上界来自已核验 NIP-11 和既有 BFF 配置。
+class WebSearchQuery {
+  final List<String>? authors;
+  final String? channelId;
+  final int? limit;
+  final String q;
+  final int? since;
+  final int? until;
+
+  WebSearchQuery({
+    this.authors,
+    this.channelId,
+    this.limit,
+    required this.q,
+    this.since,
+    this.until,
+  });
+
+  factory WebSearchQuery.fromJson(Map<String, dynamic> json) => WebSearchQuery(
+    authors: json["authors"] == null
+        ? null
+        : List<String>.from(json["authors"]!.map((x) => x)),
+    channelId: json["channelId"],
+    limit: json["limit"],
+    q: json["q"],
+    since: json["since"],
+    until: json["until"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "authors": authors == null
+        ? null
+        : List<dynamic>.from(authors!.map((x) => x)),
+    "channelId": channelId,
+    "limit": limit,
+    "q": q,
+    "since": since,
+    "until": until,
   });
 }
 

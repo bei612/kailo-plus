@@ -3310,3 +3310,173 @@ Web全局搜索真实BFF、完整Profile/Agent与其他原版缺项仍保留，�
 本批未登录/新截图/打包/部署：新业务截图、Windows、Mobile实际验收均0，旧13张
 live d313fb截图与正常IdP过期登录图不证明新源码；全仓full、全量视觉及设备验收未跑。
 十路径及仅本节回执冻结交主线统一review/提交/push，交接时未提交、未部署。
+
+### 2026-10-08：原全局搜索的共享 Web 消费者与 BFF 接线（未完成后端验收）
+
+本批写入34路径：20个无继承重叠的已跟踪路径 +299/-430、九个新路径1182行；
+main.rs 只新增 mod search 一行，四侧既有 roundtrip 文件仅各追加本查询检查
+（Rust11、Go25、TypeScript6、Dart13行）。格式整理后净归属 **+1537/-430**，不含本节；
+main.rs 的 custom_emoji 移位及四侧 roundtrip 的其他修改属于继承工作树，未覆盖。
+上述数字以主线选定的入库差异为准，不把继承的删改混入本批。
+
+1. 权威为 REQ-24、DD-39、DD-75/78 与既有 V-REQ-24/collab.channel.message。
+   官方基准固定 `779af8886caae1317b4de962082429867ab61503`，直接复用
+   `desktop/src/features/search/useSearchResults.ts::useSearchResults` 的 operators、
+   debounce、排名及选中逻辑到共享 createSearchResultsReader，Native保留真实本机
+   hook适配，Web注入原BFF读链。原TopbarSearch及其结果/分区/样式没有另建第二份。
+   原 `desktop/src/app/useAppShellKeyboardShortcuts.ts::handleKeyDown` 的F/K语义
+   移到共享 useSearchShortcuts，Home/create/browse/DM继续已有共享消费者。
+2. 影响面覆盖 Web PlatformApp、原共享Topbar/reader/types及Native wrapper，新增
+   WebSearchQuery schema、sample与四侧生成。Web只发送q/channelId/authors/time/limit，
+   不持钥、不构造raw Relay filter。Core search.rs复用既有IdentityClient::query与
+   Relay FTS，不新增搜索索引、目录、权限或消息权威；正文仅授权读过境、不落Core。
+   原 `desktop/src-tauri/src/commands/messages.rs::build_search_messages_filter` 的
+   search_mode=prefix及四种kind9/40002/45001/45003保持；原
+   `desktop/src-tauri/src/nostr_convert.rs::search_response_from_events` 的顺序/score
+   与found仍由同一结果推导。新查询为新增API，没有数据库/持久状态迁移。
+3. 准入不以目录命中或admin代替读取：Core从同Tenant ACTIVE binding解析真实频道，
+   Workspace必须本人ACTIVE成员、DM必须本人参与，并逐资源调用现有ReadTarget。
+   搜索前后复读session、tenant、actor、SERVER身份、binding及实际返回资源准入；
+   验签/重复/未知kind/跨频道/过滤漂移拒绝。浏览器结果点击先刷新真实目录，将原生
+   channelId映射到实际workspace.id或ACTIVE conversation.id，保持原消息/线程focus。
+   不假定ID相等、不造DM参与者pubkey/归档时间/Agent owner。无新增写动作或副作用。
+4. 空合法范围只返回真实空结果，未知/不完整/歧义目录不伪装成功空列表；scope切换
+   或卸载后的迟到结果拒绝使用，fresh撤权与binding漂移失败关闭。限额与frame大小
+   取现有运行期NIP11/BFF配置，不新增硬编码阈值。读超时/错误沿既有六类错误与原
+   搜索错误UI，不触发写入或重放；客户端聚合people/profile/目录读取错误而不降级。
+   原Agent搜索/身份归档、Native公开频道目录消费者及资料名FTS完全等效仍有缺口；
+   huddle无实际治理消费者，不生成空快捷动作。Mobile边界未变，未新增组件宿主。
+
+实际执行复用原SDK `kailo-agent-receipt-xvkujx` 与缓存，uid1000:1000、4CPU、8GiB，
+memorySwap同上限。前置无在途工具链，memory.current558104576、oom/oom_kill0，
+Data261MiB。只投递本批文件及两宿主已有@client-kit物理依赖副本，没有新镜像、
+安装依赖、整树复制或全仓构建。日志仍位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/`
+下 `workflow-native-template.s3JDP1/`，终态如实记录：
+
+- `web-search-four-gen.log`：原 tools/gen.sh退出0，四侧生成共108行；原i18n生成
+  副作用与正式生成词条cmp0。`web-search-registry-gen.log`：原registry生成退出0，
+  新搜索路由登记到现有collab.channel.message。同步--check及兼容比对本批尚未运行。
+- `web-search-shared-tsc-final.log`、`web-search-web-tsc-final.log`、
+  `web-search-native-tsc.log`及TS contracts tsconfig.test检查均退出0。第一次shared
+  tsc存在可空participants闭包错误，改为实际局部引用后通过；第一次Web检查缺少
+  候选物理包新出口及一个Pulse view枚举，准确投递/使用既有枚举后通过，没有装包。
+- `web-search-web-restored.log`：Web BFF20、实际Web Topbar6、PlatformApp29，
+  **55 passed，退出0**。首次web-search-web-first.log为54通过/1失败：检查只有
+  root没有reply tag，不符合原getThreadReference；补原真实tag形状后通过，未改
+  原解析器迎合检查。Reduced Motion警告保留，不冒充图像/浏览器验收。
+- `web-search-shared-final.log`：原search12/new-message25，**37 passed，退出0**。
+  `web-search-native-consumers.log`：实际Native原结果/People ACTIVE/UNKNOWN消费者，
+  **5 passed，退出0**。没有把JSDOM或Node挂载说成Windows设备验收。
+- `web-search-ts-roundtrip.log`、`web-search-go-roundtrip.log`、
+  `web-search-dart-roundtrip.log`：原四侧roundtrip文件新增查询样例，TS/Go/Dart各1
+  项通过/退出0，包含可选字段缺省与since=0；Rust尚未通过，不能称四侧已全部验收。
+- 私有候选实际生产破坏：移除BFF重复event护栏、把PlatformApp workspace导航改成
+  错误nativeID，原检查在 `web-search-production-fault.log` 实际 **3 failed/退出1**。
+  两文件恢复后与正式源码cmp0，再跑 `web-search-web-restored.log` 55通过/退出0。
+  没有破坏检查制造假失败，正式生产文件未被破坏。
+- 随后对固定官方源码复核发现本批原kind遗漏：先前只包含9/40002，会丢论坛搜索。
+  已将Core和Web消费者修正为原四种kind，并在既有BFF检查追加两个论坛结果用例；
+  最终 `web-search-web-forum-final.log` 已实际重跑原三个目标，BFF22/Topbar6/
+  PlatformApp29，**57 passed/退出0**；不再用修正前55充作最终字节验收。
+  `web-search-shared-tsc-forum-final.log`、`web-search-web-tsc-forum-final.log`、
+  `web-search-native-tsc-forum-final.log` 三个最终宿主类型均退出0。此次仅低写入Node，
+  无Cargo/Go/Dart/生成/镜像；实际前后Data均153MiB、oom/oom_kill0，终态没有在途
+  工具链，SDK再次释放。34个正式输入与候选逐文件cmp均0；Core仅同步未编译。
+- `web-search-rust-roundtrip.log`：cargo test -p contracts --test roundtrip
+  web_search_query_preserves_original_operators_and_optional_absence -j16 --offline
+  只到Compiling contracts。主线通知同盘空间骤降后立即中止，exec71268终态130；
+  cargo304918/rustc304925与shell304912复查均不存在，Data当时169→155MiB。
+  不将停止写成通过，未启动Core check/链接、SQL/HTTP或full，不清理/移动缓存。
+
+沿原3313快照只派生 `collaboration-current-20261008.web-search-classification.tsv`，
+SHA-256 `b62f042cbaa7778a0b9cf97511e6f7e16cb1e44f6dfed762526dad7e58db2027`，
+在同一日志目录；列为upstream_commit/path/change_kind/category/destination/evidence/
+added_lines/deleted_lines。仅新核对快捷键一条及更新搜索hook证据，两者因明确缺项
+仍标缺失：**共享28、授权1、缺失21、未分类3263，共3313，50条实际归档**。
+1980同路径字节相同另计；这不是当前全量语义验收或100%恢复。
+
+本批34路径尚未提交/push/部署、安装包未更新；源码是真实接线但后端尚未验收，
+不开放为完成声明。没有新业务截图，Windows/Mobile验收均0；旧13张live d313fb
+和最近Keycloak登录页不证明本批源码，全部页面/关键状态截图仍未完成。
+
+#### 主线收口的格式与生成同步补核
+
+主线在同一受限SDK及原候选执行 `rustfmt --edition 2021`，只格式化本批
+search.rs；四侧roundtrip只整理本批新增查询用例的格式，不吸收继承删除和旧格式
+变化。无Cargo编译、依赖安装或镜像构建。原 `tools/gen.sh --check` 使用已存在的
+离线npm缓存与Data临时目录，实际退出0；`web-search-four-sync-root.log` 记录
+rs/Go/TypeScript/Dart均同步，Mobile同源词条同步。该候选只含本搜索schema，
+不混入队友后续新增的file_storage.delete契约。
+
+以上补核替代前文“同步--check尚未运行”，不替代Rust roundtrip、Core类型/SQL/
+HTTP、相对发布tag的兼容检查或全仓full。根复核完整选定diff，阶段入库只包含
+本批34路径、下一节Agent五路径及两批新增回执；继承main.rs移位、roundtrip旧
+删除、pages旧删除及本文件旧段落删除均不纳入。部署与安装包仍未更新。
+
+### 2026-10-08 原 Agent identity-card 实际消费者与全量九路径核对
+
+本节只记录实施后证据，不新增规格或把整个 Agent 页面标为完成。权威为
+DD-24/25/26、DD-45、REQ-24 与用户固定官方原样恢复要求；版本正文仍归既有
+Asset 读授权，安装仍固定原 Version，不恢复本机另一套 Agent registry/runtime。
+固定源码为 Buzz `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/agents/ui/UnifiedAgentsSection.tsx::{AgentPersonaCard,LoadingSkeleton}`、
+`desktop/src/features/agents/ui/AgentIdentityCard.tsx::AgentIdentityCard`、
+`desktop/src/shared/ui/identity-card-skeleton.tsx::IdentityCardSkeleton`、
+`desktop/src/features/agents/lib/agentDescription.ts::effectiveAgentDescription`。
+全部原文件已逐文件读及对照目的地，不把目录或此批几个改动当全树恢复。
+
+影响面为既有 shared `AgentDefinitionsPage` 两宿主实际消费及原 Agent 验证；
+不改 schema/数据库/Workflow/API/运行开关/凭据，不产生新持久状态或外部写入。
+源码五路径 owned **+230/-10**：agents.tsx +38/-9、agentDescription.ts +8/-0、
+原 identity-card-skeleton.tsx 新增46行、agent-library.test.tsx 新增137行，
+pages.test.tsx 仅“Definition ready”断言 +1/-1。pages.test.tsx 的继承 +1/-45
+不属于本批，不能整文件取其工作树差异冒充本批交付。
+
+- 定义卡片真实读取 currentPublishedVersionAssetId，经原 `client.agentVersion`，
+  校验 exact assetId/agentResourceId/PUBLISHED 与既有 Version 内容后展示原
+  Persona 名称、作者描述、头像；删除无上游依据的 slug 副标题及固定 ready badge。
+  未发布时只用已授权 Definition 名称/原 initials，不编造描述、模型或运行状态。
+- 安装卡片仍消费 exact pinned Version；未知/越权/不匹配不借最新版本补身份。
+  原作者描述 trim/空值行为恢复，不再用 resourceId 填原描述栏；原头像 host 只
+  消费当前授权 Version 的既有 media projection。目录及版本 pending 直接复用
+  原 identity skeleton、原三卡及 w-14/w-24、w-20/w-32、w-16/w-28 footer 宽度。
+- 刷新重读原目录及 exact Version；原 useLoad key/round 抛弃旧回应，替换 client
+  由原 PlatformProvider 重挂载；拒绝/不明读取仍由原 ReadFailure 区分，不当作空。
+  原治理动作与 UNKNOWN 冻结意图未改变，检查证明身份展示不发 POST。
+- 查到底层后纠正一处候选错误：`core/crates/platform-core/src/web_transport.rs`
+  `member_profile_identity` 明确只准 HUMAN，不能给 AGENT 资料消费。曾写入的
+  AGENT memberProfile 调用及临时 helper 已删除，不放宽 SQL、不造新端点、不用
+  mocked profile 宣称生产者存在。实际 AGENT kind:0 profile 优先仍登记缺失；
+  此前 agent-library-consumers-final/restored-final 等候选日志不算最终字节验收。
+
+沿既有4CPU/8GiB、uid1000:1000 SDK/cache，仅小文件投递，正式五输入及两宿主
+物理包消费者逐文件 cmp 均0，无整树复制/安装/镜像/Cargo/Go/Dart或生成。前置查
+无编译进程，memory.current约1.16GiB、oom/oom_kill0，Data156MiB；终态无工具链
+进程，memory.current约1.17GiB、oom/oom_kill0，Data154MiB，SDK已释放。
+日志均在既有 `workflow-native-template.s3JDP1` 目录：
+
+- 最终 `agent-library-final-consumers.log`：原真实共享页面+BFF读请求 **81 passed**；
+  private实际生产破坏：去掉 published/pinned 两处 exact Asset/Definition 护栏，
+  `agent-library-final-production-fault.log` **4 failed、退出1**，实抓身份/头像泄露。
+  恢复生产文件且 cmp0后，`agent-library-final-restored.log` 再 **81 passed、退出0**。
+  200项按本次 -t 明确未运行，不称全包/full；保留 JSDOM scrollTo 未实现提示。
+- `agent-library-final-shared-tsc.log`、`agent-library-final-test-tsc.log`、
+  `agent-library-final-web-tsc.log`、`agent-library-final-native-tsc.log` 均退出0。
+  这是类型与挂载消费者证据，不替代真实后端 HTTP、浏览器或 Windows 验收。
+  本批未跑 `tools/check.sh --full`、Rust/SQL、发布和安装包。
+
+同一3313快照派生 `collaboration-current-20261008.agent-library-classification.tsv`，
+SHA-256 `c0a3eba2c01cdf90b6f5c060fcd038a76ad8af409bcf9d2f7bfda1e648174d8e`，
+列仍为upstream_commit/path/change_kind/category/destination/evidence/added_lines/
+deleted_lines。九条原 Agent 路径逐项归档后：**共享33、授权1、缺失25、未分类3254，
+共3313，59条已归档**。1980同路径字节相同另计；归档不等于逐页面业务验收。
+原 UnifiedAgentsSection、agentCardAvatar 和其原检查保留缺失分类：实际 Agent
+profile、runtime grouping/model label/运行控制/persona动作/完整profile尚未闭合，
+不把卡片身份恢复宣称整个模块完整或“100%还原”。
+
+Playwright实际复查 header-restoration/kailo-visual-release 均正常转到 IdP 登录页，
+`.playwright-cli/kailo-ui-20261008-agent-library-session-expired.png` 已截图并打开
+确认；没有注入会话、重置账户或输出凭据。新业务截图仍0，旧live d313fb的13图
+不能证明本批；Web业务视觉/Windows/Mobile均未验收。本批尚未提交/push/部署，
+五源码路径与本节冻结交主代理，原搜索34及其89行回执未改。

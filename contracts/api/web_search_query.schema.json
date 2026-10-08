@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api/web_search_query.schema.json",
+  "title": "WebSearchQuery",
+  "description": "DD-39 / REQ-24：原 Buzz TopbarSearch 的语义查询。Core 以本人 SERVER 身份向原 Relay FTS 查询，只在当前已准入 Channel/DM 范围内读取；不接受任意 Relay filter、租户或身份。页与 frame 上界来自已核验 NIP-11 和既有 BFF 配置。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["q"],
+  "properties": {
+    "q": {"type": "string", "minLength": 1},
+    "limit": {"type": "integer", "minimum": 1},
+    "channelId": {"type": "string", "format": "uuid"},
+    "authors": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+    "since": {"type": "integer", "minimum": 0},
+    "until": {"type": "integer", "minimum": 0}
+  }
+}

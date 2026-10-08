@@ -4,7 +4,7 @@ import { translateCurrent } from "../../i18n";
 import type { Translate } from "../context";
 import { resolveUserLabel, type UserProfileLookup } from "../messages/system/identity";
 import { normalizePubkey } from "./pubkey";
-import type { Channel } from "../search/types";
+import type { SearchChannel as Channel } from "../search/types";
 
 export const DM_PARTICIPANT_PREVIEW_LIMIT = 3;
 
@@ -52,12 +52,13 @@ export function buildDirectMessageIntro({
   currentPubkey?: string;
   profiles?: UserProfileLookup;
 }): DirectMessageIntro | null {
-  if (channel?.channelType !== "dm") {
+  if (channel?.channelType !== "dm" || !channel.participantPubkeys || !channel.participants) {
     return null;
   }
 
+  const participantNames = channel.participants;
   const participants = channel.participantPubkeys.map((pubkey, index) => ({
-    fallbackName: channel.participants[index] ?? null,
+    fallbackName: participantNames[index] ?? null,
     pubkey,
   }));
   const normalizedCurrentPubkey = currentPubkey

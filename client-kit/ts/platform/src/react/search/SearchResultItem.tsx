@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 
 import { HashSearch } from "./icons";
-import type { Channel, SearchHit, UserSearchResult } from "./types";
+import type { SearchChannel as Channel, SearchHit, UserSearchResult } from "./types";
 
 export type SearchResult =
   | {

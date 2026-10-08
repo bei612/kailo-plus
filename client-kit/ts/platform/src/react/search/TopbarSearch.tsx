@@ -22,7 +22,7 @@ import {
 } from "./SearchScopeControls";
 import { HighlightedSearchText } from "./HighlightedSearchText";
 import { useSearchMenuKeyboardNavigation } from "./useSearchMenuKeyboardNavigation";
-import type { Channel, SearchHit, UserSearchResult } from "./types";
+import type { SearchChannel as Channel, SearchHit, UserSearchResult } from "./types";
 import { cn } from "../profile/buzz/shared/lib/cn";
 import { normalizePubkey, truncateNpub } from "../conversations/pubkey";
 import { Dialog, DialogContent, DialogTitle } from "../composer/shared/ui/dialog";
@@ -273,7 +273,7 @@ function getSuggestedSearchResults(channels: Channel[]) {
   return channels
     .filter(
       (channel) =>
-        !channel.archivedAt &&
+        !channel.archivedAt && channel.archived !== true &&
         (channel.isMember || channel.channelType === "dm"),
     )
     .sort((a, b) => {

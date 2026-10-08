@@ -308,6 +308,10 @@ pub fn router(state: BffState) -> Router {
         .route("/healthz", get(healthz))
         .exposed_route("/api/v1/session", get(current_session))
         .exposed_route(
+            "/api/v1/search/messages",
+            axum::routing::post(crate::search::query),
+        )
+        .exposed_route(
             "/api/v1/pulse/query",
             axum::routing::post(crate::pulse::query),
         )

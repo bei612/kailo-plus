@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { bff, deleteMessage, openStream, publishMessage, publishConversationMessage, publishMessageReaction, type StreamFrame } from "./bff-client";
+import { bff, deleteMessage, openStream, publishMessage, publishConversationMessage, publishMessageReaction, searchMessages, type StreamFrame } from "./bff-client";
 import { PlatformSessionAccessMode, WebMessageType, type PulsePublishRequest } from "@client-kit/contracts";
 import { BffError, SessionEndedError, TransportError } from "@client-kit/platform/transport";
 
@@ -33,6 +33,39 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+it("sends only original semantic search operators to BFF and keeps original FTS order and thread context", async () => {
+  const channelId="7a533c07-3817-4c91-81f7-25f31534359a", author="b".repeat(64), root="c".repeat(64);
+  const event={id:"a".repeat(64),pubkey:author,kind:9,created_at:12,content:"original result",tags:[["h",channelId],["e",root,"","root"],["e",root,"","reply"]]};
+  const fetcher=vi.fn().mockResolvedValue(new Response(JSON.stringify({events:[event,{...event,id:"d".repeat(64),kind:40002}]}),{status:200,headers:{"Content-Type":"application/json"}}));
+  vi.stubGlobal("fetch",fetcher);
+  const request={q:"original",channelId,authors:[author],since:0,until:15,limit:12};
+  const page=await searchMessages(request);
+  expect(String(fetcher.mock.lastCall![0])).toContain("/api/v1/search/messages");
+  expect(JSON.parse(fetcher.mock.lastCall![1].body)).toEqual(request);
+  expect(page.found).toBe(2);
+  expect(page.hits.map(hit=>[hit.eventId,hit.score,hit.channelId,hit.threadRootId])).toEqual([[event.id,1,channelId,root],["d".repeat(64),0.5,channelId,root]]);
+});
+
+it.each([45001,45003])("preserves the original forum kind %i in admitted search results",async(kind)=>{
+  const event={id:"a".repeat(64),pubkey:"b".repeat(64),kind,created_at:12,content:"forum result",tags:[["h","7a533c07-3817-4c91-81f7-25f31534359a"]]};
+  vi.stubGlobal("fetch",vi.fn().mockResolvedValue(new Response(JSON.stringify({events:[event]}),{status:200,headers:{"Content-Type":"application/json"}})));
+  expect((await searchMessages({q:"forum"})).hits[0]?.kind).toBe(kind);
+});
+
+it.each(["duplicate","missing-channel","ambiguous-channel","unknown-kind","malformed-time"])("rejects %s search results instead of rendering unverifiable success", async (invalid) => {
+  const event={id:"a".repeat(64),pubkey:"b".repeat(64),kind:9,created_at:12,content:"result",tags:[["h","7a533c07-3817-4c91-81f7-25f31534359a"]]};
+  const rows=invalid==="duplicate"?[event,event]:[{...event,
+    tags:invalid==="missing-channel"?[]:invalid==="ambiguous-channel"?[...event.tags,...event.tags]:event.tags,
+    kind:invalid==="unknown-kind"?0:event.kind,created_at:invalid==="malformed-time"?-1:event.created_at}];
+  vi.stubGlobal("fetch",vi.fn().mockResolvedValue(new Response(JSON.stringify({events:rows}),{status:200,headers:{"Content-Type":"application/json"}})));
+  await expect(searchMessages({q:"result"})).rejects.toBeInstanceOf(TransportError);
+});
+
+it("propagates real search authorization failure rather than returning an empty successful result", async () => {
+  vi.stubGlobal("fetch",vi.fn().mockResolvedValue(new Response(JSON.stringify({error:"scope-revoked"}),{status:403,headers:{"Content-Type":"application/json"}})));
+  await expect(searchMessages({q:"result"})).rejects.toBeInstanceOf(BffError);
 });
 
 it("preserves exact human identities in channel, reply, edit and DM publication", async () => {

@@ -65,6 +65,8 @@ import { PERSONA_FIELD_CONTROL_CLASS, PERSONA_FIELD_SHELL_CLASS } from "./agent-
 import { Textarea as AgentTextarea } from "./profile/buzz/shared/ui/textarea";
 import { AgentCreationPreview } from "./agent-library/AgentCreationPreview";
 import { AgentIdentityFields } from "./agent-library/AgentDescriptionField";
+import { effectiveAgentDescription } from "./agent-library/agentDescription";
+import { IdentityCardSkeleton } from "./agent-library/identity-card-skeleton";
 import { AgentDefinitionAdvanced, AgentParallelismField } from "./agent-library/AgentDefinitionAdvanced";
 import { AvatarHostProvider, type AvatarHost } from "./profile/avatar-host";
 import { WorkflowScheduleFields } from "./workflow-schedule-fields";
@@ -143,7 +145,11 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
       <VersionAction edit={versionEdit} avatarHost={navigation.avatarHost} onReset={() => setVersionEdit(null)} onLocked={setVersionLocked}
         onRecorded={() => { setVersionRevision((value) => value + 1); reload(); }} />
       <section className="flex flex-col gap-3">
-        {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
+        {state.status === "pending" ? <div className={IDENTITY_CARD_GRID_CLASS} role="status" aria-label={t("platform.loading")}>
+          <IdentityCardSkeleton footerSubtitleWidthClass="w-14" footerTitleWidthClass="w-24" />
+          <IdentityCardSkeleton footerSubtitleWidthClass="w-20" footerTitleWidthClass="w-32" />
+          <IdentityCardSkeleton footerSubtitleWidthClass="w-16" footerTitleWidthClass="w-28" />
+        </div>
           : !page ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} />
           : <>
               <div className={IDENTITY_CARD_GRID_CLASS} data-testid="agents-library-personas">
@@ -151,9 +157,7 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
                   dataTestId="new-agent-card" disabled={blocked || edit !== null || versionEdit !== null}
                   onClick={() => setCreateOpen(true)} />
                 {page.definitions.map((row) => (
-                  <AgentIdentityCard key={row.resourceId} dataTestId={`agent-definition-${row.resourceId}`}
-                    label={row.displayName} subtitle={row.stableSlug} ariaLabel={t("agents.open")}
-                    statusBadge={<Badge tone="neutral">{t("agents.definitionReady")}</Badge>}
+                  <DefinitionIdentityCard key={`${row.resourceId}:${row.resourceVersion}:${refreshRevision}:${versionRevision}`} row={row} avatarHost={navigation.avatarHost}
                     disabled={blocked || versionEdit !== null} onClick={() => setSelected(row.resourceId)} />
                 ))}
               </div>
@@ -184,6 +188,31 @@ export function AgentDefinitionsPage(navigation: WorkspaceNavigation & { avatarH
       <InstallationManagement {...navigation} versionRevision={versionRevision} refreshRevision={refreshRevision} onLockedChange={setInstallationLocked} />
     </div>
   );
+}
+
+/** Original AgentPersonaCard identity face, backed by the authorized exact published Asset. */
+function DefinitionIdentityCard({ row, disabled, onClick, avatarHost }: {
+  row: AgentDefinitionView; disabled: boolean; onClick: () => void; avatarHost?: AgentAvatarHost;
+}) {
+  const client = useBffClient();
+  const t = useT();
+  const assetId = row.currentPublishedVersionAssetId;
+  const [state, reload] = useLoad(`definition-card:${row.resourceId}:${row.resourceVersion}:${assetId ?? ""}`,
+    () => assetId ? client.agentVersion(assetId) : Promise.resolve(null));
+  const value = state.status === "ok" ? state.data : null;
+  const version = value && validVersion(value, row.resourceId) && value.assetId === assetId
+    && value.state === AgentVersionState.Published ? value : null;
+  const card = <AgentIdentityCard dataTestId={`agent-definition-${row.resourceId}`}
+    label={version?.content.personaIdentity.displayName ?? row.displayName}
+    subtitle={version ? effectiveAgentDescription(version.content.personaIdentity) : null}
+    avatarUrl={avatarHost ? version?.content.personaIdentity.avatarUrl : undefined}
+    ariaLabel={t("agents.open")} disabled={disabled} onClick={onClick} />;
+  return <div className="flex min-w-0 flex-col gap-2">
+    {assetId && state.status === "pending" ? <IdentityCardSkeleton />
+      : avatarHost && version ? <AvatarHostProvider value={avatarHost(version)}>{card}</AvatarHostProvider> : card}
+    {assetId && state.status !== "pending" && !version ? <AgentReadFailure error={state.status === "error" ? state.error : undefined}
+      onRetry={reload} /> : null}
+  </div>;
 }
 
 const automationLabels = {
@@ -1746,18 +1775,18 @@ function InstallationIdentityCard({ row, locked, onOpen, avatarHost }: {
   const candidate = state.status === "ok" ? state.data : null;
   const version = candidate && validVersion(candidate, row.agentResourceId)
     && candidate.assetId === row.pinnedVersionAssetId ? candidate : null;
+  const host = avatarHost && version ? avatarHost(version) : null;
   const card = <AgentIdentityCard dataTestId={`agent-installation-${row.resourceId}`}
       label={version?.content.personaIdentity.displayName ?? t("agents.installation.id")}
-      subtitle={version?.content.personaIdentity.description ?? row.resourceId}
-      avatarUrl={avatarHost ? version?.content.personaIdentity.avatarUrl : undefined}
+      subtitle={version ? effectiveAgentDescription(version.content.personaIdentity) : null}
+      avatarUrl={host ? version?.content.personaIdentity.avatarUrl : undefined}
       ariaLabel={t("agents.installation.open")} disabled={locked} onClick={onOpen}
       statusBadge={<Badge tone="neutral">{t(installationLabels[row.state])}</Badge>} />;
   return <div className="flex min-w-0 flex-col gap-2">
-    {avatarHost && version ? <AvatarHostProvider value={avatarHost(version)}>{card}</AvatarHostProvider> : card}
+    {state.status === "pending" ? <IdentityCardSkeleton /> : host ? <AvatarHostProvider value={host}>{card}</AvatarHostProvider> : card}
     <p className="break-all text-xs text-muted-foreground">{t("agents.installation.version")}: {row.pinnedVersionAssetId}</p>
     <p className="break-all text-xs text-muted-foreground">{t("agents.installation.principal")}: {row.agentPrincipalId}</p>
-    {state.status === "pending" ? <Notice role="status">{t("platform.loading")}</Notice>
-      : !version ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} /> : null}
+    {state.status !== "pending" && !version ? <AgentReadFailure error={state.status === "error" ? state.error : undefined} onRetry={reload} /> : null}
   </div>;
 }
 

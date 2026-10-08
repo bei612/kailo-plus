@@ -66,6 +66,7 @@ capabilities:
 - id: collab.channel.message
   exposure: end_user
   routes:
+  - /api/v1/search/messages
   - /api/v1/workspaces/{workspace_id}/messages
   - /api/v1/workspaces/{workspace_id}/messages/delete
   - /api/v1/workspaces/{workspace_id}/reactions

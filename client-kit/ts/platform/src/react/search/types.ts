@@ -22,6 +22,11 @@ export type Channel = {
   ttlDeadline: string | null;
 };
 
+// Search consumes the original presentation fields, not a fabricated full Relay
+// channel. A BFF host may know archived state without the original timestamp.
+export type SearchChannel = Pick<Channel, "id" | "name" | "channelType" | "visibility" | "description" | "lastMessageAt" | "isMember"> &
+  Partial<Pick<Channel, "archivedAt" | "participants" | "participantPubkeys">> & { archived?: boolean };
+
 export type UserSearchResult = {
   pubkey: string;
   displayName: string | null;

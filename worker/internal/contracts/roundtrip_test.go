@@ -14,6 +14,31 @@ import (
 	"apps/worker/internal/contracts/generated"
 )
 
+func TestWebSearchQueryRoundtrip(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "web-search-query.sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var typed []generated.WebSearchQuery
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		t.Fatal(err)
+	}
+	back, err := json.Marshal(typed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected, actual any
+	if err := json.Unmarshal(raw, &expected); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(back, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatal("Web search operators or optional absence changed")
+	}
+}
+
 func TestNativeSourceResourcesRoundtrip(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "samples", "adapter-source-resources.sample.json"))
 	if err != nil {

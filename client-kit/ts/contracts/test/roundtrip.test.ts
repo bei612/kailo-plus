@@ -8,6 +8,12 @@ import { fileURLToPath } from "node:url";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import test from "node:test";
 
+test("Web search preserves original operators and optional absence", () => {
+  const sample: import("../src/generated/contracts.js").WebSearchQuery[] = JSON.parse(readFileSync(new URL("../../../../contracts/samples/web-search-query.sample.json",import.meta.url),"utf8"));
+  const actual: typeof sample = sample.map(row=>({q:row.q,channelId:row.channelId,authors:row.authors,since:row.since,until:row.until,limit:row.limit}));
+  deepStrictEqual(JSON.parse(JSON.stringify(actual)),sample);
+});
+
 test("native source resources preserve complete metadata and legacy absence", () => {
   const sample: {
     pep: import("../src/generated/contracts.js").AdapterPepCheckRequest;

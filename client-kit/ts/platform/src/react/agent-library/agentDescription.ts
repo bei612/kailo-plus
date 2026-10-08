@@ -11,3 +11,11 @@ export function agentDescriptionCharacterCount(value: string): number {
 export function clampAgentDescription(value: string): string {
   return Array.from(value).slice(0, MAX_AGENT_DESCRIPTION_CHARS).join("");
 }
+
+/** Original card description; no slug, runtime key or resource-id substitute. */
+export function effectiveAgentDescription(
+  persona: { description?: string | null },
+): string | null {
+  const authored = persona.description?.trim() ?? "";
+  return authored.length > 0 ? authored : null;
+}

@@ -13,10 +13,18 @@ const state = vi.hoisted(() => ({ hook: 0, accessMode: "FULL", documentTheme: ""
   channelType: "stream", conversationId: null as string | null,
   startDm: {} as Record<string, (pubkey: string) => void | Promise<void>>,
   openDm: vi.fn(), reloadConversations: vi.fn(), openConversation: vi.fn(), openTab: vi.fn(),
+  search: null as import("react").ComponentProps<typeof import("./TopbarSearch").TopbarSearch> | null,
+  openChannel: vi.fn(), searchRefetch: vi.fn(),
 }));
+const searchWorkspaces=[{id:"workspace-a",isMember:true,channel:{channelId:"native-a"}}, {id:"workspace-b",isMember:true,channel:{channelId:"native-b"}}];
+function searchHit(channelId:string,threadRootId:string|null=null):import("@client-kit/platform/react/search/types").SearchHit {
+  return {channelId,eventId:"actual-message",threadRootId,content:"actual result",pubkey:"b".repeat(64),kind:9,channelName:null,createdAt:12,score:1};
+}
+vi.mock("./search",()=>({useWebSearchDirectory:()=>({data:{channels:[],labels:{},workspaces:searchWorkspaces},error:null,isError:false,refetch:state.searchRefetch})}));
+vi.mock("./TopbarSearch",()=>({TopbarSearch:(props:import("react").ComponentProps<typeof import("./TopbarSearch").TopbarSearch>)=>{state.search=props;return <button data-testid="actual-web-search-host"/>;}}));
 vi.mock("@/app/platform-navigation", () => ({
   usePlatformNavigation: () => ({ tab: state.tab, workspaceId: state.workspaceId,
-    conversationId: state.conversationId, messageTarget: null, openTab: state.openTab, openChannel: vi.fn(), openConversation: state.openConversation }),
+    conversationId: state.conversationId, messageTarget: null, openTab: state.openTab, openChannel: state.openChannel, openConversation: state.openConversation }),
 }));
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
@@ -179,11 +187,57 @@ beforeEach(() => {
   state.channelType = "stream";
   state.conversationId = null;
   state.startDm = {};
+  state.search = null;
+  state.openChannel.mockReset().mockResolvedValue(undefined);
+  state.searchRefetch.mockReset().mockResolvedValue({isError:false,data:{channels:[],labels:{},workspaces:searchWorkspaces}});
   state.openDm.mockReset().mockResolvedValue({id: "actual-dm", channelId: "actual-native-dm", state: "ACTIVE"});
   state.reloadConversations.mockReset().mockResolvedValue(undefined);
   state.openConversation.mockReset().mockResolvedValue(undefined);
   state.openTab.mockReset();
   window.history.replaceState({}, "", "/app/");
+});
+
+it("mounts the same original search in the fixed pinned sidebar header, with real browse/create and People consumers",async()=>{
+  const host=document.createElement("div");host.innerHTML=renderToStaticMarkup(<PlatformApp/>);
+  expect(host.querySelector('[data-testid="actual-web-search-host"]')?.closest('[data-testid="sidebar-pinned-header"]')).not.toBeNull();
+  expect(state.search?.onBrowseChannels).toBeTypeOf("function");
+  expect(state.search?.onCreateChannel).toBeTypeOf("function");
+  expect(state.search?.onCreateAgent).toBeUndefined();
+  await state.search!.onOpenUser!({pubkey:"b".repeat(64),displayName:null,avatarUrl:null,nip05Handle:null,ownerPubkey:null,isAgent:false});
+  expect(state.openDm).toHaveBeenCalledWith("b".repeat(64));
+  expect(state.openConversation).toHaveBeenCalledWith("actual-dm");
+});
+
+it("maps native search Channel IDs to the actual Workspace reference after fresh directory read",async()=>{
+  state.tab="channel";renderToStaticMarkup(<PlatformApp/>);
+  expect(state.search?.currentChannelId).toBe("native-b");
+  state.search!.onOpenChannel("native-a");
+  await vi.waitFor(()=>expect(state.openChannel).toHaveBeenCalledWith("workspace-a",undefined));
+  expect(state.searchRefetch).toHaveBeenCalledOnce();
+});
+
+it("keeps actual original search hit and thread focus when mapping native channel to Workspace navigation",async()=>{
+  renderToStaticMarkup(<PlatformApp/>);
+  state.search!.onOpenResult(searchHit("native-a","actual-root"),"actual");
+  await vi.waitFor(()=>expect(state.openChannel).toHaveBeenCalledWith("workspace-a",{channelId:"workspace-a",messageId:"actual-message",threadRootId:"actual-root"}));
+});
+
+it("resolves a fresh participant DM by native channel without treating that ID as a Workspace",async()=>{
+  state.reloadConversations.mockResolvedValue([{id:"actual-private",channelId:"native-private",state:"ACTIVE",participantPrincipalIds:["human-a","human-b"]}]);
+  renderToStaticMarkup(<PlatformApp/>);
+  state.search!.onOpenResult(searchHit("native-private"),"actual");
+  await vi.waitFor(()=>expect(state.openConversation).toHaveBeenCalledWith("actual-private",{messageId:"actual-message",threadRootId:null}));
+  expect(state.openChannel).not.toHaveBeenCalled();
+});
+
+it.each(["directory-unavailable","membership-revoked"])("does not navigate a %s search hit",async(failure)=>{
+  state.searchRefetch.mockResolvedValue(failure==="directory-unavailable"?{isError:true}: {isError:false,data:{workspaces:searchWorkspaces.map(row=>({...row,isMember:false}))}});
+  renderToStaticMarkup(<PlatformApp/>);
+  state.search!.onOpenResult(searchHit("native-a"),"actual");
+  await vi.waitFor(()=>expect(state.searchRefetch).toHaveBeenCalledOnce());
+  await Promise.resolve();
+  expect(state.openChannel).not.toHaveBeenCalled();
+  expect(state.openConversation).not.toHaveBeenCalled();
 });
 it("uses the native shared restricted view without mounting ordinary workspace menus", () => {
   state.accessMode = "LIFECYCLE_RESTRICTED";

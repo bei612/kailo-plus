@@ -9,6 +9,19 @@ import 'package:client_kit/shared/contracts/contracts.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('Web search preserves original operators and optional absence', () {
+    final sample =
+        jsonDecode(
+              File(
+                '../../contracts/samples/web-search-query.sample.json',
+              ).readAsStringSync(),
+            )
+            as List;
+    expect(
+      sample.map((row) => WebSearchQuery.fromJson(row).toJson()).toList(),
+      sample,
+    );
+  });
   test(
     'native source resources preserve complete metadata and legacy absence',
     () {

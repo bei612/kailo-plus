@@ -5961,6 +5961,29 @@ pub struct WebPublishMessageRequest {
     pub parent_event_id: Option<String>,
 }
 
+/// DD-39 / REQ-24：原 Buzz TopbarSearch 的语义查询。Core 以本人 SERVER 身份向原 Relay FTS 查询，只在当前已准入
+/// Channel/DM 范围内读取；不接受任意 Relay filter、租户或身份。页与 frame 上界来自已核验 NIP-11 和既有 BFF 配置。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebSearchQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authors: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<i64>,
+
+    pub q: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub since: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub until: Option<i64>,
+}
+
 /// GET /api/v1/workspaces 回应数组的元素：调用方有 ACTIVE WorkspaceMembership 或 fresh manage 管理资格，且两侧
 /// binding 都 ACTIVE 的 Workspace。管理可见不代表可读取协作消息；isMember 投影真实成员事实。Workspace id 同时是其 Channel
 /// id（DD-80）。
