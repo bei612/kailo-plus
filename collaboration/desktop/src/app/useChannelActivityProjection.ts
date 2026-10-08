@@ -9,12 +9,12 @@ import type { ThreadActivityItem } from "@/features/channels/useUnreadChannels";
 import { isThreadReply } from "@/features/messages/lib/threading";
 import type { Channel, FeedItem, HomeFeed } from "@/shared/api/types";
 
-type ReadTimestamp = (contextKey: string) => number | null;
+type ReadTimestamp = (contextKey: string, channelId?: string | null) => number | null;
 type MarkChannelRead = (
   contextKey: string,
   readAt: string | null | undefined,
   options?: { topLevelOnly?: boolean },
-) => void;
+) => void | Promise<boolean>;
 
 type UseChannelActivityProjectionOptions = {
   channels: Channel[];
@@ -33,7 +33,7 @@ export function resolveChannelActivityFeedItemReadAt(
   getOwnReadAt: ReadTimestamp,
 ): number | null {
   return maxReadAt(
-    getOwnReadAt(msgContextKey(item.id)),
+    getOwnReadAt(msgContextKey(item.id), item.channelId),
     item.channelId ? getOwnReadAt(item.channelId) : null,
   );
 }
@@ -51,7 +51,7 @@ export function useChannelActivityProjection({
 }: UseChannelActivityProjectionOptions) {
   const getThreadReadAt = React.useCallback(
     (rootId: string, channelId?: string | null) => {
-      const threadReadAt = getOwnReadAt(`thread:${rootId}`);
+      const threadReadAt = getOwnReadAt(`thread:${rootId}`, channelId);
       if (!channelId) return threadReadAt;
 
       const channelReadAt = getChannelReadAt(channelId);

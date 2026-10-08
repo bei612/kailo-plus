@@ -37,6 +37,14 @@ import DataSourceSchemaDetector, {
 import { encryptConnectionInfo } from '../dataSource';
 import { TelemetryEvent } from '../telemetry/telemetry';
 import { DeployStatusEnum } from '../repositories/deployLogRepository';
+import {
+  canReadNativeMetadata,
+  nativePreviewScope,
+} from '../services/nativeHumanQuery';
+import {
+  loadQueryDelivery,
+  NativeQueryRefusal,
+} from '../services/nativeQueryAdmission';
 
 const logger = getLogger('DataSourceResolver');
 logger.level = 'debug';
@@ -536,6 +544,12 @@ export class ProjectResolver {
 
   public async getSchemaChange(_root: any, _arg: any, ctx: IContext) {
     const project = await ctx.projectService.getCurrentProject();
+    const config = await loadQueryDelivery();
+    nativePreviewScope(config, ctx.nativeIdentityScope);
+    if (!ctx.nativeHumanToken)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    if (project.id !== config.projectId)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
     const lastSchemaChange =
       await ctx.schemaChangeRepository.findLastSchemaChange(project.id);
 
@@ -551,13 +565,53 @@ export class ProjectResolver {
     const models = await ctx.modelRepository.findAllBy({
       projectId: project.id,
     });
+    if (lastSchemaChange.projectId !== project.id)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    const authorizeModels = async () => {
+      for (const model of models) {
+        if (
+          model.projectId !== project.id ||
+          !(await canReadNativeMetadata(
+            config,
+            ctx.nativeHumanToken,
+            'model',
+            model.id,
+          ))
+        )
+          throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      }
+    };
+    await authorizeModels();
     const modelIds = models.map((model) => model.id);
-    const modelColumns =
-      await ctx.modelColumnRepository.findColumnsByModelIds(modelIds);
+    // The original repositories treat empty filters as all rows.
+    const modelColumns = modelIds.length
+      ? await ctx.modelColumnRepository.findColumnsByModelIds(modelIds)
+      : [];
 
-    const modelRelationships = await ctx.relationRepository.findRelationInfoBy({
-      modelIds,
-    });
+    const modelRelationships = modelIds.length
+      ? await ctx.relationRepository.findRelationInfoBy({
+          modelIds,
+        })
+      : [];
+    if (
+      modelColumns.some((column) => !modelIds.includes(column.modelId)) ||
+      modelRelationships.some(
+        (relation) =>
+          relation.projectId !== project.id ||
+          !modelColumns.some(
+            (column) =>
+              column.id === relation.fromColumnId &&
+              column.modelId === relation.fromModelId,
+          ) ||
+          !modelColumns.some(
+            (column) =>
+              column.id === relation.toColumnId &&
+              column.modelId === relation.toModelId,
+          ),
+      )
+    )
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    await authorizeModels();
 
     const schemaDetector = new DataSourceSchemaDetector({
       ctx,

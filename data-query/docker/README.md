@@ -283,6 +283,15 @@ failure, without retaining a previously cached graph or displaying a failed
 request as an empty successful graph. No AI/engine call or SQL execution is
 added by the diagram reader.
 
+The modeling sidebar's existing schema-change review also uses the same
+`data_query.describe@v1` read checks for its captured native models, before
+loading columns/relationships and again before returning the original impact
+calculation. Inaccessible or unregistered models refuse the complete review;
+they are not silently omitted. A failed read hides the old review dialog and
+shows the existing error component while retaining the native sidebar hosts.
+This covers reading an already-recorded schema change, not detecting a live
+data-source change, resolving one, or authorizing native model creation.
+
 Historical `getMDL(hash)` authorization remains a distinct unresolved chain:
 the original deployment manifest preserves view IDs but model names rather
 than model IDs. Current same-name models do not establish historical ownership.

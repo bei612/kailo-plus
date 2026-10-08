@@ -240,6 +240,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useObservedUnreadPersistence } from "./useObservedUnreadPersistence.ts";
 import { useUnreadChannels } from "./useUnreadChannels.ts";
 import { writeObservedUnreadToStorage } from "./observedUnreadStorage.ts";
+import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
+import { AppShellProvider } from "@/app/AppShellContext";
+import { useChannelOpenReadState } from "./ui/useChannelOpenReadState.ts";
 
 /**
  * Mount useObservedUnreadPersistence in a harness component.
@@ -313,6 +316,11 @@ export async function mountUnreadChannels({
   pubkey,
   relay = "wss://relay.example.com",
   channels = [],
+  activeChannel = null,
+  coreClient,
+  dmEvents,
+  openReadAt,
+  undoUnread = () => {},
 }) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -321,38 +329,59 @@ export async function mountUnreadChannels({
   let capturedMarkChannelRead = null;
   let capturedMarkAllChannelsRead = null;
   let capturedResult = null;
+  let capturedCore = null;
+  const locallyUnreadFeedItems = [{id: "message", channelId: activeChannel?.id, tags: []}];
+  function OpenRead({active, coreReads}) {
+    useChannelOpenReadState(active?.id ?? null, true, openReadAt, true,
+      Boolean(coreReads?.state && !coreReads.failed && !coreReads.unknown));
+    return null;
+  }
 
-  function Inner({ pubkey: pk }) {
-    const result = useUnreadChannels(channels, null, {
+  function Inner({ pubkey: pk, active, coreReads }) {
+    const result = useUnreadChannels(channels, active, {
       pubkey: pk,
       relayUrl: relay,
+      coreReads,
+      dmEvents,
     });
     capturedResult = result;
     capturedMarkChannelRead = result.markChannelRead;
     capturedMarkAllChannelsRead = result.markAllChannelsRead;
-    return null;
+    return openReadAt ? React.createElement(AppShellProvider, {value: {
+      markChannelRead: result.markChannelRead,
+      feedItemState: {undoUnread},
+      locallyUnreadFeedItems,
+    }}, React.createElement(OpenRead, {active, coreReads})) : null;
   }
 
-  function Harness({ pubkey: pk }) {
+  function CoreInner(props) {
+    const coreReads = useInboxState(coreClient);
+    capturedCore = coreReads;
+    return React.createElement(Inner, {...props, coreReads});
+  }
+  function Harness({ pubkey: pk, active }) {
     return React.createElement(
       QueryClientProvider,
       { client: qc },
-      React.createElement(Inner, { pubkey: pk }),
+      React.createElement(coreClient ? CoreInner : Inner, { pubkey: pk, active }),
     );
   }
 
   const container = document.createElement("div");
   const root = createRoot(container);
 
-  const render = async (pk) => {
+  const render = async (pk, active = activeChannel) => {
     await act(async () => {
-      root.render(React.createElement(Harness, { pubkey: pk }));
+      root.render(React.createElement(Harness, { pubkey: pk, active }));
     });
   };
 
   await render(pubkey);
 
   return {
+    get coreReads() {
+      return capturedCore;
+    },
     get result() {
       return capturedResult;
     },

@@ -37,7 +37,7 @@ vi.mock("@/platform/bff-client", () => ({ bff: { workspaceMessages: snapshot.mes
 const reads: ComponentProps<typeof ChannelSidebar>["reads"] = {
   state: { version: 3, readContexts: {}, workspacePreferences: { one: { starred: true, muted: false } } },
   failed: false, unknown: false, pending: false, refresh: vi.fn(), write: vi.fn(), readAt: () => 20, visibleChannels: new Set(["one", "two"]),
-  workspaceChannels: new Set(["one", "two"]), conversations: [],
+  workspaceChannels: new Set(["one", "two"]), conversations: [], eventReadAt: () => 20,
 };
 function markup(overrides: Partial<typeof reads> = {}, isMember = true) {
   return renderToStaticMarkup(<ChannelSidebar principalId="me" workspaces={[{ id: "one", name: "One", slug: "one", isMember }, { id: "two", name: "Two", slug: "two", isMember }]}

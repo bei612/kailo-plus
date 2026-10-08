@@ -65,6 +65,8 @@ export function ChannelScreen({
     getChannelReadAt,
     getMessageReadAt,
     markMessageRead,
+    markMessagesUnread,
+    coreReads,
     setContextParentResolver,
     followThread,
     unfollowThread,
@@ -156,6 +158,8 @@ export function ChannelScreen({
     activeChannelId,
     activeChannel?.isMember,
     activeReadAt,
+    activeChannel?.channelType === "dm",
+    activeChannel?.channelType !== "dm" || Boolean(coreReads?.state && !coreReads.failed && !coreReads.unknown),
   );
   React.useEffect(() => {
     if (!activeChannelId) {
@@ -263,6 +267,8 @@ export function ChannelScreen({
     getMessageReadAt,
     markChannelUnread,
     markMessageRead,
+    markMessagesUnread,
+    isReadStateReady: activeChannel?.channelType !== "dm" || Boolean(coreReads?.state && !coreReads.failed && !coreReads.unknown),
     isThreadMuted,
     readStateVersion,
   });

@@ -2120,3 +2120,114 @@ Final correction verification: `jest --runInBand src/modeling.test.ts` reported
 1 suite / 4 tests passed, 6.543 s, exit 0; `tsc --noEmit` produced no diagnostics
 and exited 0. The four changed TS/TSX files again matched their restored
 candidate copies (`cmp`, exit 0), and `git diff --check` exited 0.
+
+## 2026-10-08 Original modeling schema-change read integration
+
+### Authority, complete same-page impact and unchanged ownership
+
+The fixed official baseline remains Wren
+`c5f02a0391c87420dba78632dcd86073710deb72`, full paths
+`wren-ui/src/apollo/server/resolvers/projectResolver.ts::ProjectResolver.getSchemaChange`,
+`wren-ui/src/apollo/server/managers/dataSourceSchemaDetector.ts::DataSourceSchemaDetector.getAffectedResources`
+and `wren-ui/src/components/sidebar/modeling/ModelTree.tsx::ModelTree`.
+The original detector and complete returned impact structure are retained;
+only the original reader's admission and its real sidebar failure consumer
+change. This is an authorized SS-WRN-IDENTITY / SS-WRN-GOVERNANCE seam under
+`.design/07` §4.6 and `.design/08` §6 (`data_query.describe@v1` / `read`), not
+a replacement modeling page or an additional ActionDefinition.
+
+The full two-module diff against that commit was reviewed, not only the current
+working diff: ProjectResolver is +79/-13, ModelTree +23/-6. Unchanged original
+functions, detector computation and UI nodes are original-preserved. This
+batch's exact read checks and failed-read UI handling are authorized governance
+adaptation; there is no shared migration in these native Wren files. The two
+earlier ProjectResolver differences remain: original project reset now checks
+settled tasks and shares a native transaction, and recommendation generation
+requires confirmed deployment SUCCESS. They are existing side-effect/terminal
+evidence protections, not omitted functions or new UI. Missing native write
+authorization and historical MDL provenance remain explicitly unrestored below.
+
+The whole same-page call inventory was checked before this edit: diagram,
+model/view list and detail readers already consume exact native Resource read
+facts. `ModelTree` additionally consumes `getSchemaChange`, which reads an
+existing native schema-change record and uses the synchronous original impact
+detector. By contrast `ModelResolver.checkModelSync` reaches
+`DeployService.getInProgressDeployment` / `observe`, which contacts the
+original external deployment adaptor and may update native deployment logs;
+`ModelForm`'s `listDataSourceTables` reaches the data source. Neither is relabeled
+as a pure metadata read or claimed covered by this batch. Historical
+`getMDL(hash)` retains the distinct provenance gap described above; no
+current-only restriction was introduced.
+
+Four-step change boundary:
+
+1. Authority: original Wren repositories own schema changes, models, columns
+   and relationships. Existing Core Resource selection and SpiceDB decide
+   per-user read permission. Login/instance entitlement is not this permission.
+2. Impact: only the existing GraphQL schema-change reader and its original
+   sidebar consumer change. No schema, table, generated contract, platform
+   permission, write path, workflow or second resource directory is introduced.
+   Web/Desktop component hosts render this same native page; Mobile remains
+   non-host. The GraphQL result and original detector inputs keep their shape.
+3. Side effects: no new SQL execution, AI request or mutation. The complete
+   captured model set must pass describe read before dependent rows are loaded
+   and again before the original synchronous result computation. Permission
+   denial is not converted to a partial apparently complete impact report.
+4. Boundaries: missing identity/token, foreign configured project or snapshot
+   rows, unavailable/unknown authorization and revocation fail closed. Empty
+   model sets do not call the original unbounded empty-filter repositories.
+   Cross-model columns and relations with foreign endpoints are refused.
+   No-change keeps the original null fields. On client read error the original
+   ErrorCollapse replaces stale review data; the native tree, create/detection
+   callbacks and modal host remain mounted. No new persistent intermediate
+   state or reconciliation obligation is introduced.
+
+### Native management permission gap (not a new restriction)
+
+`.design/03` §5 already defines `create/update/delete/manage`; a nonexistent
+top-level Resource is created under Workspace.create (or Tenant.create), not
+by checking the nonexistent Resource. `.design/04` §7 and `.design/08` §6
+also explicitly preserve native management and do not turn every internal
+modeling API into a platform Action. Therefore the missing implementation is
+not an absent permission vocabulary: `middleware.ts` only verifies instance
+entitlement, and `pages/api/graphql.ts` passes the verified human token plus a
+non-authorizing identity-storage partition. Original `ModelResolver.createModel`
+and `createView` still lack a complete native user/project management permission
+consumer. Query execute or model describe cannot stand in for that grant.
+The separate platform `resource.create` path registers a verified existing
+native reference and is not authorization to create the native model itself.
+This batch neither adds a role database nor claims those write chains complete.
+
+### Implementation-following verification
+
+Validation used only the existing Wren SDK and installed cache, checked at
+4 CPU / 4 GiB before execution; no new snapshot, dependency installation or
+image build. The first combined invocation was stopped with exit 143 after
+XFS reads stalled while loading unrelated icon packages. The consumer test
+now isolates only the unused node-type icon renderer, retaining the real
+ModelTree/query/error/modal/button consumers. This is a test-harness change,
+not a production behavior change or a successful first run.
+
+`jest --runInBand src/nativeSchemaChange.test.ts src/modelTree.test.ts` then
+passed 2 suites / 16 tests, 75.86 s, exit 0. The original detector is executed
+for column, relationship and calculated-field impacts. Cases also include
+resource denial, read-time revocation, foreign model/column/relation/change
+rows, empty directories, missing token/scope, wrong project, original no-change
+shape, and the actual sidebar's stale-data rejection with creation/detection
+callbacks still usable.
+
+Private fault injection deleted the final model-read recheck and restored
+unconditional stale query data forwarding. The same consumers failed: 4 failed
+/ 12 passed, exit 1, 100.513 s. In particular, revocation incorrectly resolved
+with the old impact result and the modal received private old data. Both faults
+were restored, and all four TS/TSX files matched formal source with `cmp` before
+the combined restored regression/type check. Logs are in the same existing
+candidate directory: `native-schema-format.log`, `native-schema-tests.log`,
+`native-schema-mutation.log`, `native-schema-restored.log`, and
+`native-schema-types.log`. This evidence is not a browser screenshot, native
+management-write acceptance, full global check, release or deployment.
+
+The final restored command
+`jest --runInBand src/nativeSchemaChange.test.ts src/modelTree.test.ts src/nativeProjectScope.test.ts src/modeling.test.ts`
+passed 4 suites / 83 tests in 68.151 s, exit 0. The following `tsc --noEmit`
+produced no diagnostics and exited 0. `git diff --check` also exited 0.

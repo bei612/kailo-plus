@@ -54,6 +54,7 @@ import { AppProfilePanelProvider } from "@/app/AppProfilePanelProvider";
 import { LazySettingsScreen } from "@/app/LazySettingsScreen";
 import { useT } from "@client-kit/platform/react/context";
 import { ReadFailure } from "@client-kit/platform/react/ui";
+import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
 
 export function AppShell() {
   const t=useT();
@@ -62,6 +63,7 @@ export function AppShell() {
   useWebviewScrollBoundaryLock();
   const activeCommunity = useActiveCommunity();
   const nativeSession = useNativeSession();
+  const coreReads = useInboxState(nativeSession.client);
   const platformSession = useQuery({ queryKey: ["platform", "session"], queryFn: () => nativeSession.client.session() });
   const [searchFocusRequest, setSearchFocusRequest] = React.useState(0);
   const [scopeSearchFocusRequest, setScopeSearchFocusRequest] =
@@ -182,6 +184,7 @@ export function AppShell() {
     markAllChannelsRead: markAllChannelReadMarkers,
     markChannelRead,
     markChannelUnread,
+    markMessagesUnread,
     clearChannelUnreadSource,
     unreadChannelIds,
     topLevelUnreadChannelIds,
@@ -200,6 +203,8 @@ export function AppShell() {
     muteThread,
     unmuteThread,
   } = useUnreadChannels(sidebarChannels, activeChannel, {
+    coreReads,
+    dmEvents: homeFeedQuery.isSuccess ? homeFeedQuery.data.feed.activity : undefined,
     pubkey: identityQuery.data?.pubkey,
     relayUrl: activeCommunity.relayUrl,
     currentPubkey: identityQuery.data?.pubkey,
@@ -234,17 +239,26 @@ export function AppShell() {
     mutedRootIds,
   });
   const markAllChannelsRead = React.useCallback(() => {
+    const dmIds = new Set(coreReads.conversations.map(item => item.channelId));
+    const dmItemIds = new Set([
+      ...(homeFeedQuery.data?.feed.activity ?? []),
+      ...(homeFeedQuery.data?.feed.mentions ?? []),
+      ...unreadThreadFeedItems,
+    ].filter(item => item.channelType === "dm" || (item.channelId && dmIds.has(item.channelId))).map(item => item.id));
     markAllReadSources({
-      activeChannelId: activeChannel?.id ?? null,
+      activeChannelId: activeChannel?.channelType === "dm" ? null : activeChannel?.id ?? null,
       channelActivityItems: unreadThreadFeedItems,
       markAllChannelReadMarkers,
       markActiveChannelRead: (channelId, createdAt) =>
         markChannelRead(channelId, new Date(createdAt * 1_000).toISOString()),
       undoUnreadFeedItem: feedItemState.undoUnread,
-      unreadFeedItemIds: feedItemState.unreadSet,
+      unreadFeedItemIds: new Set([...feedItemState.unreadSet].filter(id => !dmItemIds.has(id))),
     });
   }, [
+    coreReads.conversations,
+    homeFeedQuery.data,
     activeChannel?.id,
+    activeChannel?.channelType,
     feedItemState.undoUnread,
     feedItemState.unreadSet,
     markAllChannelReadMarkers,
@@ -367,6 +381,8 @@ export function AppShell() {
     <ChannelNavigationProvider channels={channels}>
       <AppShellProvider
         value={{
+          coreReads,
+          markMessagesUnread,
           markAllChannelsRead,
           markChannelRead,
           markChannelUnread,

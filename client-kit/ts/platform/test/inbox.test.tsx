@@ -46,7 +46,10 @@ describe("shared upstream Inbox aggregation", () => {
     expect(row.unreadCount).toBe(2);
     expect(matchesInbox({ ...row, groupItems: row.items }, "all")).toBe(true);
     expect(inboxReadContexts(row.items, true)).toEqual([{ key: "private", seconds: 30 }]);
-    expect(inboxReadContexts(row.items, false)).toEqual([{ key: "private", seconds: 9 }]);
+    expect(inboxReadContexts(row.items, false)).toEqual([
+      { key: "private", seconds: 9 }, {key: "msg:first", seconds: 9},
+      {key: "msg:second", seconds: 19}, {key: "msg:reply", seconds: 29}, {key: "thread:first", seconds: 29},
+    ]);
   });
   it("uses the representative's actual owned Agent identity, not labels or arbitrary traffic", () => {
     const pubkey = "a".repeat(64);
@@ -142,15 +145,17 @@ describe("shared upstream Inbox aggregation", () => {
 
 function Reader() {
   const reads = useInboxState(useBffClient());
+  const [confirmed, setConfirmed] = useState<boolean>();
   return (
     <>
       <span>{reads.state ? `v${reads.state.version}` : "no-state"}</span>
       <span>{reads.unknown ? "UNKNOWN" : "known"}</span>
       <span>{reads.pending ? "pending" : "idle"}</span>
+      <span>{confirmed === undefined ? "not-written" : confirmed ? "write-confirmed" : "write-unconfirmed"}</span>
       <output>{JSON.stringify({visible:[...reads.visibleChannels],workspaces:[...reads.workspaceChannels]})}</output>
       <button
         type="button"
-        onClick={() => reads.write([{ key: "scope-a", seconds: 20 }])}
+        onClick={async () => setConfirmed(await reads.write([{ key: "scope-a", seconds: 20 }]))}
       >
         Mark
       </button>
@@ -198,6 +203,7 @@ describe("actual shared Core state consumer", () => {
       },
     });
     expect(host.textContent).toContain("v1");
+    expect(host.textContent).toContain("write-confirmed");
   });
   it("keeps a lost write result unresolved and never issues a new-version write on recheck", async () => {
     const send = vi.fn(async (request: BffRequest): Promise<BffReply> => {
@@ -213,9 +219,11 @@ describe("actual shared Core state consumer", () => {
       </PlatformProvider>,
     );
     await click(button(host, "Mark"));
+    expect(host.textContent).toContain("write-unconfirmed");
     await click(button(host, "Recheck"));
     await click(button(host, "Mark"));
     expect(host.textContent).toContain("UNKNOWN");
+    expect(host.textContent).toContain("write-unconfirmed");
     expect(
       send.mock.calls.filter(([request]) => request.method === "PUT"),
     ).toHaveLength(1);

@@ -8,6 +8,8 @@ import {
   type InboxEvent,
   inboxReadAt,
   inboxReadContext,
+  inboxThread,
+  inboxReply,
 } from "../inbox";
 import { isOutcomeUnknown, TransportError } from "../transport";
 
@@ -78,9 +80,9 @@ export function useInboxState(client: BffClient) {
   const write = useCallback(
     (contexts: readonly { key: string; seconds: number }[]) => {
       const generation = epoch.current;
-      queue.current = queue.current.then(async () => {
+      const result = queue.current.then(async () => {
         if (generation !== epoch.current || intent.current || !current.current)
-          return;
+          return false;
         writing.current = true;
         setPending(true);
         for (const context of contexts) {
@@ -122,8 +124,10 @@ export function useInboxState(client: BffClient) {
         if (generation === epoch.current) {
           if (current.current) setState(current.current);
         }
+        return generation === epoch.current && current.current !== null && intent.current === null;
       });
-      return queue.current;
+      queue.current = result.then(() => undefined);
+      return result;
     },
     [client],
   );
@@ -134,6 +138,15 @@ export function useInboxState(client: BffClient) {
     (key: string) => (state ? inboxReadAt(state, key) : null),
     [state],
   );
+  // Original sidebar observedUnreadEventReadAt folds channel/msg/thread,
+  // unlike the Inbox DM row whose read position is the whole channel.
+  const eventReadAt = useCallback((event: InboxEvent) => {
+    const root = inboxReply(event.tags) ? inboxThread(event.tags).rootId : null;
+    const markers = [event.channelId ? readAt(event.channelId) : null,
+      readAt(`msg:${event.id}`), root ? readAt(`thread:${root}`) : null]
+      .filter((value): value is number => value !== null);
+    return markers.length ? Math.max(...markers) : null;
+  }, [readAt]);
   return {
     state,
     failed,
@@ -142,6 +155,7 @@ export function useInboxState(client: BffClient) {
     refresh,
     write,
     readAt,
+    eventReadAt,
     visibleChannels,
     workspaceChannels,
     conversations,
@@ -162,6 +176,11 @@ export function inboxReadContexts(items: readonly InboxEvent[], read: boolean) {
         ? Math.max(contexts.get(key) ?? seconds, seconds)
         : Math.min(contexts.get(key) ?? seconds, seconds),
     );
+    if (!read && item.channelType === "dm") {
+      contexts.set(`msg:${item.id}`, seconds);
+      const root = inboxReply(item.tags) ? inboxThread(item.tags).rootId : null;
+      if (root) contexts.set(`thread:${root}`, Math.min(contexts.get(`thread:${root}`) ?? seconds, seconds));
+    }
   }
   return [...contexts].map(([key, seconds]) => ({ key, seconds }));
 }

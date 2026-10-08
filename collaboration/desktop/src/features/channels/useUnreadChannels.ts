@@ -54,11 +54,15 @@ import {
 } from "@/features/channels/unreadMembership";
 import { useThreadActivityPersistence } from "@/features/channels/useThreadActivityPersistence";
 import { unreadCatchUp } from "@/shared/api/tauriUnreadCatchUp";
+import { inboxReadContexts, type useInboxState } from "@client-kit/platform/react/use-inbox-state";
+import type { InboxEvent } from "@client-kit/platform/inbox";
 
 type UseUnreadChannelsOptions = UseLiveChannelUpdatesOptions & {
   pubkey?: string;
   relayUrl?: string;
   mutedChannelIds?: ReadonlySet<string>;
+  coreReads?: ReturnType<typeof useInboxState>;
+  dmEvents?: readonly InboxEvent[];
 };
 
 // Per-channel cap on the catch-up REQ. We only consume the *max matching*
@@ -120,6 +124,8 @@ export function useUnreadChannels(
     pubkey,
     relayUrl: relayUrlOption,
     mutedChannelIds: mutedChannelIdsOption,
+    coreReads,
+    dmEvents,
     ...liveUpdateOptions
   } = options;
   const activeChannelId = activeChannel?.id ?? null;
@@ -131,13 +137,55 @@ export function useUnreadChannels(
     : "";
 
   const {
-    getEffectiveTimestamp,
+    getEffectiveTimestamp: getLocalEffectiveTimestamp,
     isReady: isReadStateReady,
     markContextRead,
     setContextParentResolver,
-    readStateVersion,
-    getOwnTimestamp,
+    readStateVersion: localReadStateVersion,
+    getOwnTimestamp: getLocalOwnTimestamp,
   } = useReadState(pubkey);
+
+  // DM markers have exactly one owner: the shell's Core CAS instance. The
+  // original manager remains only for non-DM channels during their migration.
+  const dmScope = React.useRef({ channels, activeChannel, coreReads, dmEvents, normalizedPubkey, normalizedRelayUrl });
+  dmScope.current = { channels, activeChannel, coreReads, dmEvents, normalizedPubkey, normalizedRelayUrl };
+  const dmChannelFor = React.useCallback((key: string) => {
+    const scope = dmScope.current;
+    if (scope.channels.some(channel => channel.id === key && channel.channelType === "dm") ||
+      scope.coreReads?.conversations.some(item => item.channelId === key)) return key;
+    if ((key.startsWith("msg:") || key.startsWith("thread:")) && scope.activeChannel?.channelType === "dm")
+      return scope.activeChannel.id;
+    return null;
+  }, []);
+  const getOwnTimestamp = React.useCallback((key: string, channelId?: string | null) => {
+    if (!dmChannelFor(channelId ?? key)) return getLocalOwnTimestamp(key);
+    const reads = dmScope.current.coreReads;
+    return reads?.state && !reads.failed && !reads.unknown ? reads.readAt(key) : null;
+  }, [dmChannelFor, getLocalOwnTimestamp]);
+  const getEffectiveTimestamp = React.useCallback((key: string) => {
+    const channelId = dmChannelFor(key);
+    if (!channelId) return getLocalEffectiveTimestamp(key);
+    const own = getOwnTimestamp(key), parent = getOwnTimestamp(channelId);
+    return own === null ? parent : parent === null ? own : Math.max(own, parent);
+  }, [dmChannelFor, getLocalEffectiveTimestamp, getOwnTimestamp]);
+  const readStateVersion = localReadStateVersion + (coreReads?.state?.version ?? 0);
+  const writeDm = React.useCallback((channelId: string, contexts: readonly {key: string; seconds: number}[]) => {
+    if (normalizedPubkey !== dmScope.current.normalizedPubkey || normalizedRelayUrl !== dmScope.current.normalizedRelayUrl)
+      return Promise.resolve(false);
+    const reads = dmScope.current.coreReads;
+    if (!reads?.state || reads.failed || reads.unknown ||
+      !reads.conversations.some(item => item.channelId === channelId) || !reads.visibleChannels.has(channelId))
+      return Promise.resolve(false);
+    return reads.write(contexts);
+  }, [normalizedPubkey, normalizedRelayUrl]);
+  const markMessagesUnread = activeChannel?.channelType === "dm" ? async (messages: readonly {id: string; createdAt: number; tags: string[][]}[]) => {
+    const channelId = activeChannel.id;
+    if (channelId !== dmScope.current.activeChannel?.id) return false;
+    if (messages.length === 0 || messages.some(message => !Number.isSafeInteger(message.createdAt) || message.createdAt <= 0)) return false;
+    const seconds = Math.min(...messages.map(message => message.createdAt - 1), getOwnTimestamp(channelId) ?? Infinity);
+    const contexts = inboxReadContexts(messages.map(message => ({...message, channelId, channelType: "dm", category: "activity" as const})), false);
+    return writeDm(channelId, contexts.map(context => context.key === channelId ? {...context, seconds} : context));
+  } : undefined;
 
   // Per-channel latest observed external trigger timestamp (unix seconds) and
   // per-event metadata. Derived relay evidence, not source-of-truth; the unread
@@ -290,6 +338,25 @@ export function useUnreadChannels(
         topLevelOnly?: boolean;
       } = {},
     ) => {
+      if ((channelId.startsWith("msg:") || channelId.startsWith("thread:")) &&
+        activeChannelId !== dmScope.current.activeChannel?.id) return Promise.resolve(false);
+      const dmChannelId = dmChannelFor(channelId);
+      if (dmChannelId) {
+        const reads = dmScope.current.coreReads;
+        if (normalizedPubkey !== dmScope.current.normalizedPubkey || !reads?.state || reads.failed || reads.unknown ||
+          !reads.conversations.some(item => item.channelId === dmChannelId) || !reads.visibleChannels.has(dmChannelId))
+          return Promise.resolve(false);
+        const readSeconds = toUnixSeconds(readAt);
+        const latest = topLevelOnly || dmChannelId !== channelId ? null :
+          (dmScope.current.dmEvents ?? []).filter(event => event.channelType === "dm" && event.channelId === dmChannelId)
+            .reduce<number | null>((at, event) => Math.max(at ?? event.createdAt, event.createdAt), null);
+        const seconds = Math.max(readSeconds ?? 0, latest ?? 0);
+        if (!Number.isSafeInteger(seconds) || seconds <= 0) return Promise.resolve(false);
+        if (seconds <= (getOwnTimestamp(channelId) ?? -Infinity)) return Promise.resolve(true);
+        return writeDm(dmChannelId, [{key: channelId, seconds}]);
+      }
+      if (dmScope.current.coreReads && !channelId.startsWith("msg:") && !channelId.startsWith("thread:") &&
+        !dmScope.current.channels.some(channel => channel.id === channelId && channel.channelType !== "dm")) return;
       if (
         !preserveForcedUnread &&
         Object.hasOwn(forcedUnreadRef.current, channelId)
@@ -321,16 +388,29 @@ export function useUnreadChannels(
         bumpLatestVersion();
       }
     },
-    [markContextRead, observedPersistence, pubkey],
+    [activeChannelId, dmChannelFor, getOwnTimestamp, markContextRead, normalizedPubkey, observedPersistence, pubkey, writeDm],
   );
 
-  const { clearChannelUnreadSource, markChannelUnread } =
+  const { clearChannelUnreadSource: clearLocalUnreadSource, markChannelUnread: markLocalUnread } =
     useForcedUnreadActions(
       forcedUnreadRef,
       getOwnTimestamp,
       pubkey,
       bumpLatestVersion,
     );
+  const clearChannelUnreadSource = React.useCallback((...args: Parameters<typeof clearLocalUnreadSource>) => {
+    if (!dmChannelFor(args[0])) clearLocalUnreadSource(...args);
+  }, [clearLocalUnreadSource, dmChannelFor]);
+  const markChannelUnread = React.useCallback((...args: Parameters<typeof markLocalUnread>) => {
+    const channelId = dmChannelFor(args[0]);
+    if (!channelId) {
+      if (dmScope.current.coreReads && !dmScope.current.channels.some(channel => channel.id === args[0] && channel.channelType !== "dm"))
+        return Promise.resolve(false);
+      return markLocalUnread(...args);
+    }
+    const events = dmScope.current.dmEvents?.filter(event => event.channelType === "dm" && event.channelId === channelId);
+    return events?.length ? writeDm(channelId, inboxReadContexts(events, false)) : Promise.resolve(false);
+  }, [dmChannelFor, markLocalUnread, writeDm]);
 
   // Record the thread root of an EXTERNAL message that @-mentioned the user.
   // Keyed on the thread root so the badge gate trips for a mention recipient
@@ -761,6 +841,13 @@ export function useUnreadChannels(
       let unreadChannelNotificationCount = 0;
 
       for (const channel of channels) {
+        if (channel.channelType === "dm") {
+          if (!coreReads?.state || coreReads.failed || coreReads.unknown || !coreReads.visibleChannels.has(channel.id)) continue;
+          const count = (dmEvents ?? []).filter(event => event.channelType === "dm" && event.channelId === channel.id &&
+            event.createdAt > (coreReads.eventReadAt(event) ?? -Infinity)).length;
+          if (count > 0) { unread.add(channel.id); topLevelUnread.add(channel.id); unreadChannelNotificationCount += count; }
+          continue;
+        }
         const isForcedUnread = Object.hasOwn(
           forcedUnreadRef.current,
           channel.id,
@@ -775,8 +862,8 @@ export function useUnreadChannels(
           observedUnreadEventReadAt(
             event,
             channelReadAt,
-            (rootId) => getOwnTimestamp(`thread:${rootId}`),
-            (messageId) => getOwnTimestamp(`msg:${messageId}`),
+            (rootId) => getOwnTimestamp(`thread:${rootId}`, channel.id),
+            (messageId) => getOwnTimestamp(`msg:${messageId}`, channel.id),
           );
 
         const nativeProjection = observedPersistence.isNative()
@@ -836,6 +923,11 @@ export function useUnreadChannels(
     }, [
       activeChannelId,
       channels,
+      coreReads?.state,
+      coreReads?.failed,
+      coreReads?.unknown,
+      coreReads?.visibleChannels,
+      dmEvents,
       getEffectiveTimestamp,
       getOwnTimestamp,
       isReadStateReady,
@@ -857,8 +949,13 @@ export function useUnreadChannels(
   unreadChannelIdsRef.current = unreadChannelIds;
 
   const markAllChannelsRead = React.useCallback(() => {
+    const dm = dmScope.current;
+    if (normalizedPubkey === dm.normalizedPubkey && normalizedRelayUrl === dm.normalizedRelayUrl &&
+      dm.coreReads?.state && !dm.coreReads.failed && !dm.coreReads.unknown && !dm.coreReads.pending && dm.dmEvents)
+      void dm.coreReads.write(inboxReadContexts(dm.dmEvents.filter(event => event.channelType === "dm" && !!event.channelId && dm.coreReads!.visibleChannels.has(event.channelId)), true));
     const marked = new Map<string, number>();
     for (const channelId of unreadChannelIdsRef.current) {
+      if (dmChannelFor(channelId)) continue;
       delete forcedUnreadRef.current[channelId];
       const unixSeconds =
         observedPersistence.latestForChannel(channelId) ??
@@ -878,7 +975,7 @@ export function useUnreadChannels(
     // (Fenced record writes in handleChannelMessage and catch-up remain in the parent.)
     observedPersistence.clearAll();
     bumpLatestVersion();
-  }, [getEffectiveTimestamp, markContextRead, observedPersistence, pubkey]);
+  }, [dmChannelFor, getEffectiveTimestamp, markContextRead, normalizedPubkey, normalizedRelayUrl, observedPersistence, pubkey]);
 
   // Identity-stable snapshots of the membership sets for the notify gate.
   // Re-derived only when membershipVersion bumps (a set actually changed), so
@@ -908,11 +1005,10 @@ export function useUnreadChannels(
     markAllChannelsRead,
     markChannelRead,
     markChannelUnread,
+    markMessagesUnread,
     clearChannelUnreadSource,
-    // Exposed so other surfaces (e.g. Home) can project per-item read state
-    // off the same NIP-RS read marker without instantiating a second
-    // ReadStateManager. readStateVersion is the invalidation signal callers
-    // should include in memo deps.
+    // The same shell accessors select Core for DM and the original manager
+    // only for ordinary channels. No surface creates another DM read owner.
     getEffectiveTimestamp,
     getOwnTimestamp,
     readStateVersion,

@@ -24,9 +24,9 @@ import { useHomeDrafts } from "@/features/home/useHomeDrafts";
 import { useOwnedAgentActivity } from "@/features/home/useOwnedAgentActivity";
 import {
   inboxReadContexts,
-  useInboxState,
 } from "@client-kit/platform/react/use-inbox-state";
 import { useNativeSession } from "@/features/platform/activeCommunity";
+import { useAppShell } from "@/app/AppShellContext";
 import { useHomeInboxAutoSelection } from "@/features/home/useHomeInboxAutoSelection";
 import { useHomeInboxContextMessages } from "@/features/home/useHomeInboxContextMessages";
 import { useInboxThreadContext } from "@/features/home/useInboxThreadContext";
@@ -161,7 +161,8 @@ export function HomeView({
     inboxListWidthPx,
   } = useResizableInboxListWidth();
   const nativeSession = useNativeSession();
-  const coreReads = useInboxState(nativeSession.client);
+  const coreReads = useAppShell().coreReads;
+  if (!coreReads) throw new Error("Missing Core read-state context");
   const hiddenDm = useHiddenDmInboxNavigation({ scopeKey: `${nativeSession.facts.relayUrl}:${nativeSession.devicePubkey}`,
     conversations: coreReads.conversations,
     onOpenContext: ({ channelId, messageId, threadRootId }) => onOpenContext(channelId, messageId, threadRootId), onError: message => toast.error(message) });

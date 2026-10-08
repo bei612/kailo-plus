@@ -39,8 +39,10 @@ type UseChannelUnreadStateOptions = {
     channelId: string,
     source: ForcedUnreadSource,
   ) => void;
-  markChannelUnread: (channelId: string) => void;
-  markMessageRead: (messageId: string, timestamp: number) => void;
+  markChannelUnread: (channelId: string) => void | Promise<boolean>;
+  markMessageRead: (messageId: string, timestamp: number) => void | Promise<boolean>;
+  markMessagesUnread?: (messages: readonly {id: string; createdAt: number; tags: string[][]}[]) => Promise<boolean>;
+  isReadStateReady?: boolean;
   isThreadMuted: (rootId: string) => boolean;
   readStateVersion: number;
 };
@@ -70,6 +72,8 @@ export function useChannelUnreadState({
   clearChannelUnreadSource,
   markChannelUnread,
   markMessageRead,
+  markMessagesUnread,
+  isReadStateReady = true,
   isThreadMuted,
   readStateVersion,
 }: UseChannelUnreadStateOptions) {
@@ -81,7 +85,7 @@ export function useChannelUnreadState({
   // when the channel id changes, never when the frontier advances, or the
   // divider would vanish the moment the open marks the channel read.
   const openFrontierRef = React.useRef(new Map<string, number | null>());
-  if (activeChannelId && !openFrontierRef.current.has(activeChannelId)) {
+  if (isReadStateReady && activeChannelId && !openFrontierRef.current.has(activeChannelId)) {
     openFrontierRef.current.set(
       activeChannelId,
       getChannelReadAt(activeChannelId),
@@ -194,15 +198,16 @@ export function useChannelUnreadState({
   // out first so they don't inflate the pill; see isConversationalUnreadKind.
   const { firstUnreadMessageId, unreadCount } = React.useMemo(
     () =>
-      computeChannelUnreadMarker(
+      isReadStateReady ? computeChannelUnreadMarker(
         timelineMessages.filter((message) =>
           isConversationalUnreadKind(message.kind),
         ),
         openFrontierSeconds,
         isActiveChannelForcedUnread,
         currentPubkey,
-      ),
+      ) : { firstUnreadMessageId: null, unreadCount: 0 },
     [
+      isReadStateReady,
       currentPubkey,
       isActiveChannelForcedUnread,
       openFrontierSeconds,
@@ -231,7 +236,7 @@ export function useChannelUnreadState({
   // (the snapshot is dropped on close by the effect below).
   const captureDividerReadState = React.useCallback(
     (replyId: string) => {
-      if (!openThreadHeadId) return;
+      if (!openThreadHeadId || !isReadStateReady) return;
       let snapshot = threadOpenReadSnapshotRef.current.get(openThreadHeadId);
       if (!snapshot) {
         snapshot = new Map<string, number | null>();
@@ -241,7 +246,7 @@ export function useChannelUnreadState({
         snapshot.set(replyId, getMessageReadAt(replyId));
       }
     },
-    [getMessageReadAt, openThreadHeadId],
+    [getMessageReadAt, isReadStateReady, openThreadHeadId],
   );
   if (openThreadHeadId) {
     // Capture each visible reply's read state the first render it appears —
@@ -269,17 +274,19 @@ export function useChannelUnreadState({
   // re-raises the badge because the predicate is strictly createdAt > read.
   React.useEffect(() => {
     if (!openThreadHeadId) return;
+    if (!isReadStateReady || (markMessagesUnread && isActiveChannelForcedUnread)) return;
     if (isThreadMuted(openThreadHeadId)) return;
     for (const entry of threadMessages) {
+      if (markMessagesUnread && forcedUnreadMsgRef.current.has(entry.message.id)) continue;
       markMessageRead(entry.message.id, entry.message.createdAt);
     }
-  }, [openThreadHeadId, threadMessages, markMessageRead, isThreadMuted]);
+  }, [openThreadHeadId, threadMessages, markMessageRead, isThreadMuted, isReadStateReady, Boolean(markMessagesUnread), isActiveChannelForcedUnread]);
   // In-thread "New" divider position. Reads the open-time snapshot (frozen
   // before the mark-read effect above), so the divider does not collapse the
   // instant open marks the revealed replies read. A reply absent from the
   // snapshot (loaded after open) falls back to its live marker.
   const { firstUnreadReplyId: threadFirstUnreadReplyId } = React.useMemo(() => {
-    if (!openThreadHeadId || threadMessages.length === 0) {
+    if (!isReadStateReady || !openThreadHeadId || threadMessages.length === 0) {
       return { firstUnreadReplyId: null, unreadCount: 0 };
     }
     const snapshot = threadOpenReadSnapshotRef.current.get(openThreadHeadId);
@@ -298,7 +305,7 @@ export function useChannelUnreadState({
           : getMessageReadAt(replyId),
       currentPubkey,
     );
-  }, [currentPubkey, getMessageReadAt, openThreadHeadId, threadMessages]);
+  }, [currentPubkey, getMessageReadAt, isReadStateReady, openThreadHeadId, threadMessages]);
   // Per-row subtree unread counts for the in-panel thread summary rows. Scoped
   // to the open thread's subtree and decided per-reply against the live
   // per-message read state (getMessageReadAt): each collapsed row's badge
@@ -311,7 +318,7 @@ export function useChannelUnreadState({
   // biome-ignore lint/correctness/useExhaustiveDependencies: readStateVersion and forcedUnreadVersion are intentional recompute triggers
   const threadReplyUnreadCounts = React.useMemo(
     () =>
-      openThreadHeadId
+      isReadStateReady && openThreadHeadId
         ? computeThreadReplyUnreadCounts({
             timelineMessages,
             subtreeReplyIds: getReplyDescendantIdsForMessage(openThreadHeadId),
@@ -323,6 +330,7 @@ export function useChannelUnreadState({
           })
         : new Map<string, number>(),
     [
+      isReadStateReady,
       openThreadHeadId,
       threadMessages,
       timelineMessages,
@@ -344,15 +352,16 @@ export function useChannelUnreadState({
   // biome-ignore lint/correctness/useExhaustiveDependencies: readStateVersion and forcedUnreadVersion are intentional recompute triggers
   const threadUnreadCountsRaw = React.useMemo(
     () =>
-      computeThreadBadgeCounts(
+      isReadStateReady ? computeThreadBadgeCounts(
         timelineMessages,
         repliesByRootId,
         getMessageReadAt,
         (rootId) => !isThreadMuted(rootId),
         currentPubkey,
         isMsgForcedUnread,
-      ),
+      ) : new Map<string, number>(),
     [
+      isReadStateReady,
       currentPubkey,
       timelineMessages,
       repliesByRootId,
@@ -383,6 +392,7 @@ export function useChannelUnreadState({
   // biome-ignore lint/correctness/useExhaustiveDependencies: readStateVersion and forcedUnreadVersion are intentional recompute triggers
   const isMessageUnread = React.useCallback(
     (messageId: string): boolean => {
+      if (!isReadStateReady) return false;
       const message = messageById.get(messageId);
       if (!message) return false;
       const { firstUnreadReplyId } = computeThreadUnreadMarker(
@@ -394,6 +404,7 @@ export function useChannelUnreadState({
       return firstUnreadReplyId !== null;
     },
     [
+      isReadStateReady,
       messageById,
       getMessageReadAt,
       currentPubkey,
@@ -403,14 +414,15 @@ export function useChannelUnreadState({
     ],
   );
 
-  const handleMarkUnread = React.useCallback(() => {
+  const handleMarkUnread = React.useCallback(async () => {
     if (!activeChannelId) return;
+    if (markMessagesUnread && await markChannelUnread(activeChannelId) !== true) return;
     // Mirror the deliberate mark-unread locally so the timeline marker is
     // suppressed (see forcedUnreadRef above). Re-render so the memo re-runs.
     forcedUnreadRef.current.add(activeChannelId);
     forceUnreadRender();
-    markChannelUnread(activeChannelId);
-  }, [activeChannelId, markChannelUnread]);
+    if (!markMessagesUnread) markChannelUnread(activeChannelId);
+  }, [activeChannelId, markChannelUnread, markMessagesUnread]);
 
   // Mark a message's directly-revealed children read (LP4 v3 open-at-level):
   // expanding a branch reveals only its direct replies, so only those get a
@@ -446,12 +458,16 @@ export function useChannelUnreadState({
   // and clears those same ids from the forced-unread overlay, so mark-read is
   // the exact inverse of mark-unread over the same id set.
   const handleMarkMessageRead = React.useCallback(
-    (messageId: string) => {
+    async (messageId: string) => {
       const ids = [messageId, ...getReplyDescendantIdsForMessage(messageId)];
       for (const id of ids) {
-        forcedUnreadMsgRef.current.delete(id);
         const createdAt = createdAtByMessageId.get(id);
-        if (createdAt !== undefined) markMessageRead(id, createdAt);
+        if (createdAt !== undefined) {
+          if (markMessagesUnread) {
+            if (await markMessageRead(id, createdAt) !== true) return;
+          } else markMessageRead(id, createdAt);
+        }
+        forcedUnreadMsgRef.current.delete(id);
       }
       if (activeChannelId && forcedUnreadMsgRef.current.size === 0) {
         clearChannelUnreadSource(activeChannelId, "manual");
@@ -464,29 +480,36 @@ export function useChannelUnreadState({
       createdAtByMessageId,
       getReplyDescendantIdsForMessage,
       markMessageRead,
+      markMessagesUnread,
     ],
   );
 
-  // Mark a message and its whole subtree UNREAD (LP4 v3 menu action). Markers
-  // are monotonic and cannot move backward, so this writes NO marker: it adds
-  // the ids to the session-local forced-unread overlay the badge predicates OR
-  // in. It also forces the channel-level unread projection so leaving the
-  // channel restores its bold sidebar emphasis. The per-message overlay is
-  // cleared on channel-leave; the channel-level force survives until reopen.
+  // Original LP4 v3 subtree action. Ordinary channels retain their original
+  // local override; DM first lowers the same channel/msg/thread keys in Core.
+  // Its view-only overlay is set after ACK and ends when this channel is left.
   const handleMarkMessageUnread = React.useCallback(
-    (messageId: string) => {
-      for (const id of [
+    async (messageId: string) => {
+      const ids = [
         messageId,
         ...getReplyDescendantIdsForMessage(messageId),
-      ]) {
+      ];
+      if (markMessagesUnread) {
+        const messages = ids.flatMap(id => {
+          const createdAt = createdAtByMessageId.get(id);
+          const message = messageById.get(id);
+          return createdAt === undefined || !message ? [] : [{id, createdAt, tags: message.tags ?? []}];
+        });
+        if (messages.length !== ids.length || !await markMessagesUnread(messages)) return;
+      }
+      for (const id of ids) {
         forcedUnreadMsgRef.current.add(id);
       }
-      if (activeChannelId) {
+      if (activeChannelId && !markMessagesUnread) {
         markChannelUnread(activeChannelId);
       }
       forceUnreadRender();
     },
-    [activeChannelId, getReplyDescendantIdsForMessage, markChannelUnread],
+    [activeChannelId, createdAtByMessageId, getReplyDescendantIdsForMessage, markChannelUnread, markMessagesUnread, messageById],
   );
 
   return {

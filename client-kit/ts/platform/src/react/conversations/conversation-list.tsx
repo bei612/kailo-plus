@@ -45,7 +45,7 @@ export function ConversationList({ currentPrincipalId, items, loading, error, se
     if (!group.some(item => item.id === event.id)) group.push(event);
     byChannel.set(event.channelId, group);
   }
-  const unreadCounts = new Map([...byChannel].map(([channel, messages]) => [channel, messages.filter(event => event.createdAt > (reads!.readAt(channel) ?? -Infinity)).length]));
+  const unreadCounts = new Map([...byChannel].map(([channel, messages]) => [channel, messages.filter(event => event.createdAt > (reads!.eventReadAt(event) ?? -Infinity)).length]));
   const canMark = knownActivity && !reads.pending && userState.canWrite;
   const mark = (channelId: string, read: boolean) => {
     if (canMark) void reads.write(inboxReadContexts(byChannel.get(channelId) ?? [], read));

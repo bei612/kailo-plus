@@ -21,8 +21,8 @@ const incoming: InboxEvent[] = [
   {id:"three",tags:[],createdAt:30,channelId:"dm-zara",channelType:"dm",category:"activity"},
 ];
 beforeEach(() => {setLocale("en");localStorage.clear();});
-async function mount(unknown = false) {
-  let version = 0; const contexts: Record<string,string> = {};
+async function mount(unknown = false, initial: Record<string,string> = {}) {
+  let version = 0; const contexts: Record<string,string> = {...initial};
   const writes: BffRequest[] = []; let opened = 0;
   const client = createBffClient({send:async request => {
     if(request.path === "/api/v1/workspaces") return {status:200,body:[]};
@@ -61,6 +61,18 @@ async function openContext(host:HTMLElement){
 function menu(text:string){return [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(item=>item.textContent===text)!;}
 
 describe("original governed DM sidebar consumers",()=>{
+  it("folds confirmed message markers and explicit unread resets those same Core keys",async()=>{
+    const {host,writes}=await mount(false,{"msg:one":new Date(10_000).toISOString(),"msg:two":new Date(20_000).toISOString()});
+    expect(host.querySelector('[data-testid="channel-unread-Bob"]')).toBeNull();
+    await openContext(host);await click(menu("Mark unread"));await settle();
+    expect(writes.some(write=>(write.body as ReadMarkRequest).contextKey==="msg:two")).toBe(true);
+    expect(host.querySelector('[data-testid="channel-unread-Bob"]')?.textContent).toMatch(/^2/);
+  });
+  it("folds the real thread marker without treating an unrelated channel as read",async()=>{
+    const {host}=await mount(false,{"thread:one":new Date(20_000).toISOString()});
+    expect(host.querySelector('[data-testid="channel-unread-Bob"]')?.textContent).toMatch(/^1/);
+    expect(host.querySelector('[data-testid="channel-unread-Zara"]')?.textContent).toMatch(/^1/);
+  });
   it("renders real deduplicated incoming unread counts and suppresses the active row badge without marking it read",async()=>{
     const {host,writes}=await mount();
     expect(host.querySelector('[data-testid="channel-unread-Bob"]')?.textContent).toMatch(/^2/);

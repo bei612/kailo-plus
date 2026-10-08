@@ -10,8 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { channelsQueryKey, workspaceVisibilityQueryKey } from "@/features/channels/hooks";
 import { ConversationList, useConversations } from "@client-kit/platform/react/new-message";
 import { translate, resolveLocale } from "@client-kit/platform/i18n";
-import { useInboxState } from "@client-kit/platform/react/use-inbox-state";
-import { useNativeSession } from "@/features/platform/activeCommunity";
+import { useAppShell } from "@/app/AppShellContext";
 import { useHomeFeedQuery } from "@/features/home/hooks";
 import type { Channel } from "@/shared/api/types";
 
@@ -336,8 +335,7 @@ function DesktopConversations({ currentPrincipalId, selectedChannelId, onSelectC
   onCloseSelected: () => void;
 }) {
   const conversations = useConversations();
-  const session = useNativeSession();
-  const reads = useInboxState(session.client);
+  const { coreReads: reads } = useAppShell();
   const feed = useHomeFeedQuery();
   const activity = React.useMemo(() => feed.isSuccess ? feed.data.feed.activity.filter(item => item.channelType === "dm") : undefined, [feed.isSuccess, feed.data]);
   const lastMessageAt = React.useMemo(() => new Map(channels.filter(channel => channel.channelType === "dm").map(channel => [channel.id, channel.lastMessageAt ?? null])), [channels]);

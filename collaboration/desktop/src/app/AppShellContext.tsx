@@ -5,10 +5,13 @@ import type { ThreadActivityItem } from "@/features/channels/useUnreadChannels";
 import type { FeedItemState } from "@/features/home/useFeedItemState";
 import type { FeedItem } from "@/shared/api/types";
 import type { SettingsSection } from "@/features/settings/ui/SettingsPanels";
+import type { useInboxState } from "@client-kit/platform/react/use-inbox-state";
 
 const EMPTY_SET = new Set<string>();
 
 type AppShellContextValue = {
+  coreReads?: ReturnType<typeof useInboxState>;
+  markMessagesUnread?: (messages: readonly { id: string; createdAt: number; tags: string[][] }[]) => Promise<boolean>;
   markAllChannelsRead: () => void;
   markChannelRead: (
     channelId: string,
@@ -17,18 +20,17 @@ type AppShellContextValue = {
       preserveForcedUnread?: boolean;
       topLevelOnly?: boolean;
     },
-  ) => void;
-  markChannelUnread: (channelId: string, source?: ForcedUnreadSource) => void;
+  ) => void | Promise<boolean>;
+  markChannelUnread: (channelId: string, source?: ForcedUnreadSource) => void | Promise<boolean>;
   clearChannelUnreadSource: (
     channelId: string,
     source: ForcedUnreadSource,
   ) => void;
-  // NIP-RS read marker for a channel as a unix-seconds timestamp, or null
-  // when unknown. Backed by the single AppShell-mounted ReadStateManager so
-  // every surface (sidebar, home, badges) projects from the same source.
+  // Unix-seconds read position. DM uses the shell's single Core CAS instance;
+  // ordinary channels retain their original manager until that migration.
   getChannelReadAt: (channelId: string) => number | null;
   // Thread read frontier as unix-seconds timestamp, or null when never read.
-  // Uses `thread:<rootId>` context keys in the same ReadStateManager.
+  // Uses the same `thread:<rootId>` context key in the selected authority.
   getThreadReadAt: (rootId: string, channelId?: string | null) => number | null;
   // Advance the thread read frontier to the given unix-seconds timestamp.
   markThreadRead: (rootId: string, timestamp: number) => void;
@@ -42,7 +44,7 @@ type AppShellContextValue = {
     item: Pick<FeedItem, "channelId" | "id">,
   ) => number | null;
   // Advance a single message's read marker to the given unix-seconds timestamp.
-  markMessageRead: (messageId: string, timestamp: number) => void;
+  markMessageRead: (messageId: string, timestamp: number) => void | Promise<boolean>;
   // Bump-counter that invalidates whenever the read marker changes. Include
   // in memo deps that consume getChannelReadAt.
   readStateVersion: number;

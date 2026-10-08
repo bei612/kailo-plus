@@ -1723,3 +1723,74 @@ Web `node_modules/.bin/tsc --noEmit` 0；
 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`
 的 `dm-sidebar-*.log`；其中 `*-complete.log` 为集中正式输入验证，`*-mutation.log` 为负例。
 本批无打包、发布及新安装包；全局 `check.sh --full` 本轮未运行，交主线按批次收口。
+
+## 2026-10-08 Native DM 打开、线程和快捷键统一 Core CAS
+
+本批实现后四步结论：
+
+1. 权威为 `.design/09` §3、DD-40：三端 CollaborationUserState 是唯一用户状态权威，
+   DM 使用原 Channel/Message/Thread 键，不冒充 Workspace。原版行为基准固定为
+   `.references/buzz` commit `779af8886caae1317b4de962082429867ab61503`：
+   `desktop/src/features/channels/ui/useChannelOpenReadState.ts::useChannelOpenReadState`、
+   `desktop/src/features/channels/ui/useChannelUnreadState.ts::handleMarkMessageUnread`、
+   `desktop/src/features/channels/useUnreadChannels.ts::useUnreadChannels`、
+   `desktop/src/features/channels/unreadChannelCounts.ts::observedUnreadEventReadAt`。
+   恢复的是已有打开/线程/子树/快捷键调用链，不增加页面、控件或执行权威。
+2. 影响面：AppShell 创建单一 `useInboxState`，HomeView、AppSidebar、ChannelScreen 消费
+   同一 Core 快照及串行 CAS；原 `useChannelActivityProjection` 转发实际 ACK。
+   `useChannelOpenReadState` 等待 Core 水合，DM 不再清除旧 Inbox 本地覆盖项；
+   `useChannelUnreadState` 只在真实确认后改变当前视图的手动未读展示。
+   原侧栏折叠 channel/msg/thread 最大读点，经共享 `eventReadAt` 同时给两端
+   ConversationList 和 Native 计数使用。原
+   `desktop/src/features/home/lib/inbox.ts::buildInboxItems` 的 DM Inbox 分组按 channel
+   判断（固定版本 554–574 行），与原侧栏规则不同，本批不擅改该原行为。
+3. 副作用：不写第二份 DM 本地 read marker/forced-unread 权威；显式 DM 标未读用原
+   CAS 降低已存在语义的 channel/msg/thread 键，避免只降低 channel 后旧线程标记压住徽标。
+   旧普通频道仍消费原 manager，此剩余迁移不冒称关闭。本批无新 schema、端点、迁移、
+   权限或工作流；正文留在 Relay。切换会话后的旧 thread 回调、切换 principal/Relay
+   后的旧写回调与已撤销 DM 准入拒绝写入，不能回落到本地读状态。
+4. 异常：空窗口不伪造最新消息；同一队列逐笔使用确认的新 version，只有精确 ACK
+   才返回 true；丢 ACK、部分批次未确认或失去读代次返回 false，保留 UNKNOWN，
+   不自动重发。未就绪/失败的徽标不造数字，保留已有侧栏失败或 UNKNOWN 重查提示，
+   不能把未显示数字当已读。本机有限 Relay 窗口不宣称覆盖完整历史。
+
+本人过滤沿真实 `collaboration/desktop/src/features/home/nativeDmFeed.ts::loadNativeDmFeed`：
+从当前 principal 的所有 participant-directory 页收集本人全部 pubkey，验证当前 device，
+对每条已验签 DM event 排除 own.has(pubkey) 后才交给 `useHomeFeedQuery` 的 activity；
+最终再次核验成员和身份。时间仍为 Relay Unix seconds，Core ISO 由 seconds × 1000 写入。
+
+实现后原入口验证（既有 `kailo-agent-receipt-xvkujx` 4 CPU/8 GiB，
+`profile-settings-ortsoo.DRR20F/apps`，启动时主机 available 29206 MiB）：
+
+- shared `tsc --noEmit -p tsconfig.test.json` 0；`vitest run test/inbox.test.tsx
+  test/conversation-sidebar.test.tsx` **24 passed**。
+- Desktop `node --import ./test-loader.mjs --test
+  src/features/channels/nativeDmReadState.test.mjs src/features/channels/useUnreadChannels.test.mjs
+  src/features/home/nativeDmFeed.test.mjs` **13 passed**；Desktop `tsc --noEmit` 0。
+- Web `tsc --noEmit` 0；`vitest run src/platform/ui/ChannelSidebar.test.tsx` **7 passed**。
+
+失败原文保留：首轮测试引用了不存在的包根出口，报 `ERR_PACKAGE_PATH_NOT_EXPORTED`，
+改用已有 `/client` 导出；菜单负例初始只读过一条消息，因此实际菜单只有 Mark as read，
+报 `Cannot read properties of undefined (reading 'click')`，改为真实全已读初态后检查 Mark unread。
+新增 hook 方法后 Web 旧测试 fixture 报 `TS2741: Property 'eventReadAt' is missing`，
+仅补该既有 fixture 的方法。Node 环境的 Tauri `transformCallback` 订阅警告也完整保留，
+这不是原生 Relay/Windows 实机验收。
+
+私有候选真实破坏：把丢失 ACK 返回值改为 true，shared **1 failed / 23 passed**、
+Native **1 failed / 5 passed**，都退出 1；把 sidebar 恢复成忽略 msg/thread 的单 channel
+读点，**2 failed / 6 passed**，退出 1。首次 shared 检查曾因重查后的 false 覆盖首次错误
+而放过变异；已把断言移到首次 ACK 丢失后，并实际证明能抓错。首次 Native 失败后
+缺少清理导致定时器保留，结束该精确测试子进程，补 afterEach 释放，负例重跑正常退出 1。
+全部还原与正式文件逐字 cmp 0；原始输出位于同一既有证据目录
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`
+的 `native-dm-*.log`，`reviewed-complete`/`web-restored` 是正向，
+`*-mutation-ack`/`sidebar-mutation` 是负例；不删除第一轮失败记录。
+还原后 `native-dm-restored-final.log` 再次 **shared 24 passed / Native 13 passed**，
+命令退出 0，才冻结本批结果。
+
+浏览器以 playwright-cli 在当前线上真实点击收件箱并截图、打开图片复核：
+`/volumes/kailo/.playwright-cli/inbox-current-read-boundary-20261008.png`，显示现有 Inbox
+分栏空态、中文菜单和侧栏；当前账号没有可见 DM，未造消息/私聊来替代验收。
+线上仍是前述旧部署，本批无发布/Windows 安装包/实机检查；该截图不证明新 Native 已读链。
+全树 3307 变动路径尚未全部分类；本批按原模块复用及授权 Core 改造补 DM 接缝，
+普通频道读权威迁移、三端实际协作、全页面原版一致性仍是明确剩余项。

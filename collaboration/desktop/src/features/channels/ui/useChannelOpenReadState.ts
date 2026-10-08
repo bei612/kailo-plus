@@ -21,12 +21,19 @@ export function useChannelOpenReadState(
   activeChannelId: string | null,
   isChannelMember: boolean | undefined,
   activeReadAt: string | null,
+  isDm = false,
+  isReadStateReady = true,
 ) {
   const { feedItemState, locallyUnreadFeedItems, markChannelRead } =
     useAppShell();
 
   React.useEffect(() => {
     if (!activeChannelId || isChannelMember === false) return;
+    if (isDm) {
+      if (!isReadStateReady) return;
+      void markChannelRead(activeChannelId, activeReadAt, { topLevelOnly: true });
+      return;
+    }
     for (const itemId of getTopLevelInboxUnreadOverrideIds(
       locallyUnreadFeedItems,
       activeChannelId,
@@ -39,6 +46,8 @@ export function useChannelOpenReadState(
     activeReadAt,
     feedItemState.undoUnread,
     isChannelMember,
+    isDm,
+    isReadStateReady,
     locallyUnreadFeedItems,
     markChannelRead,
   ]);

@@ -27,6 +27,7 @@ import {
 import { DIAGRAM } from '@/apollo/client/graphql/diagram';
 import { LIST_MODELS } from '@/apollo/client/graphql/model';
 import { getRelativeTime } from '@/utils/time';
+import ErrorCollapse from '@/components/ErrorCollapse';
 
 interface Props {
   [key: string]: any;
@@ -69,18 +70,26 @@ export default function ModelTree(props: Props) {
           message.success('Source column deleted resolved successfully.');
         }
 
-        const { data } = await refetchSchemaChange();
+        const { data, error } = await refetchSchemaChange();
         // if all schema changes are resolved, close the modal
-        if (!getHasSchemaChange(data.schemaChange)) {
+        if (
+          !error &&
+          data?.schemaChange &&
+          !getHasSchemaChange(data.schemaChange)
+        ) {
           schemaChangeModal.closeModal();
         }
       },
       refetchQueries: [{ query: DIAGRAM }, { query: LIST_MODELS }],
     });
-  const { data: schemaChangeData, refetch: refetchSchemaChange } =
-    useSchemaChangeQuery({
-      fetchPolicy: 'cache-and-network',
-    });
+  const {
+    data,
+    error: schemaChangeError,
+    refetch: refetchSchemaChange,
+  } = useSchemaChangeQuery({
+    fetchPolicy: 'no-cache',
+  });
+  const schemaChangeData = schemaChangeError ? undefined : data;
   const hasSchemaChange = useMemo(
     () => getHasSchemaChange(schemaChangeData?.schemaChange),
     [schemaChangeData],
@@ -170,8 +179,16 @@ export default function ModelTree(props: Props) {
   return (
     <>
       <StyledSidebarTree {...props} treeData={tree} />
+      {schemaChangeError && (
+        <ErrorCollapse message={schemaChangeError.message} defaultActive />
+      )}
       <SchemaChangeModal
         {...schemaChangeModal.state}
+        visible={
+          !schemaChangeError &&
+          !!schemaChangeData &&
+          schemaChangeModal.state.visible
+        }
         defaultValue={schemaChangeData?.schemaChange}
         payload={{ onResolveSchemaChange, isResolving }}
         onClose={schemaChangeModal.closeModal}
