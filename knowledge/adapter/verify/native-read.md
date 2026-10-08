@@ -1775,3 +1775,90 @@ release/binding activation, live source revision replacement and parser/delete
 completion with both receipts/usage remain separate delivery evidence.
 Whole-project/full/docs checks, commit/push, deployment, screenshots and
 device acceptance were not run by this subtask.
+
+## Original MCP import accepts an authorized empty file (2026-10-08)
+
+Authority and cause: `.design/13` §4.4 leaves file creation, original native
+identity, parsing and its outcome in WeKnora. The read-only fixed source
+`2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/mcpserver/tools_ingest.go::Server.handleAddDocument` and
+`internal/application/service/knowledge_create.go::knowledgeService.CreateKnowledgeFromFile`
+were rechecked. Upstream handles text/URL import and original native file
+creation; Kailo's previously added MCP file consumer reused the latter but
+mistook empty base64 for an absent file. The existing adapter
+`src/query-revision.mjs::executeOperation` forwards authorized original bytes
+as base64, which is an empty string for a zero-byte source. The Cells reader,
+receiver byte/digest validation and native file creation already accept it.
+
+Impact: `internal/mcpserver/tools_ingest.go::Server.handleAddDocument` now
+distinguishes field presence from string contents, rejects non-string file
+values rather than falling back to text creation, and routes an explicitly
+empty file through the existing `CreateKnowledgeFromFileAtID`. The original
+filename/key requirements, file-versus-content/URL exclusion, canonical
+base64 check and source/read-operation provenance remain in force. An
+observation cannot carry a file payload, including an empty one. No schema,
+state, migration, platform content copy, API path, configuration switch,
+credentials, native ID scheme or new authority was introduced.
+
+Side effects and boundaries: the existing authenticated endpoint, KB editor
+guard, source metadata, native parse observation and receipt consumers are
+unchanged. Missing payload remains refused; a supplied null, boolean, number
+or object cannot start a different native write. Zero bytes are not proof of
+successful parsing. Pending/failed parsing stays observable on the same
+original native identity, without another upload or parse enqueue. Existing
+native parse/sync deadlines and failure isolation apply; this increment adds
+no long-lived state or new error category.
+
+Implementation preceded verification. The existing
+`TestAddDocumentFileObservationNeverRepeatsNativeCreation` now exercises both
+four-byte and zero-byte native file inputs, verifies their original digest,
+size and source metadata, and refuses absent/unknown-type/conflicting or
+observation payloads. Original endpoint isolation and pending/failed/completed
+native observations remain covered. Native service boundaries are controlled
+in this check; it is not live Cells, native parser, database or deployed E2E
+acceptance.
+
+The existing Go 1.26.8 SDK image and UID/GID 1000/1000 above were reused.
+Preflight readback confirmed 4 CPU, 8 GiB memory, zero additional swap and
+OOM counters, 2.3 GiB Data free, 31–32 GiB host memory available and no active
+Go/Cargo build. A frontend TypeScript check was visible at the initial
+preflight and ended before the mutation run. Only the two changed inputs
+were copied into the existing candidate; all original MCP Go inputs and
+module locks were byte-compared. TMPDIR and GOTMPDIR used the existing Data
+cache directory; no dependency fetch, SDK/image/database/tree creation or
+cache purge was performed.
+
+```sh
+TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+GOTMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off \
+go test ./internal/mcpserver -count=1 -v
+```
+
+Positive and byte-restored runs both exited 0: **20 top-level checks and 27
+subchecks passed, none failed or skipped**, package runtimes `0.529s` and
+`0.465s`. In the private candidate only, the actual production import
+consumer was reverted to its exact `61046ec4f358a097e63ca06510fc917c503bb8bd`
+bytes and confirmed with `cmp`. The same original target exited 1: **19
+top-level checks passed, 1 failed; 9 subchecks passed, 10 failed**. Empty
+file creation was refused, invalid types/conflicting empty payloads entered
+manual creation, and empty observation payloads were accepted. Some later
+count failures also expose those earlier extra writes; they are not ten
+independent defects. The original failure output is retained. All MCP Go
+inputs were byte-compared after restoration. SDK `gofmt -d` produced no
+output, `git diff --check` exited 0, OOM counters stayed zero and the Data
+temporary directory was empty when the run ended.
+
+Logs in the same existing native SDK receipt directory:
+
+- `native-mcp-empty-file-positive-20261008.log`, SHA-256
+  `107e8f83985a8e375b08dc1c21a3c380373d6f35b1b502238c9694865f59c578`.
+- `native-mcp-empty-file-mutation-20261008.log`, SHA-256
+  `30a60ac30bc77f3fe23a916e90934988d64da394d327700c41375e825e066bc2`.
+- `native-mcp-empty-file-restored-20261008.log`, SHA-256
+  `ae7f7f4ddf64d9f66aeb4aa3bbea32ba0d0d28541c5af7c963bae7e4b0102d70`.
+
+Image publication, actual component release/binding activation, live
+Cells-to-WeKnora parsing/deletion and both receipt/usage terminals remain
+separate evidence. Whole-project/full/docs checks, commit/push, deployment,
+screenshots and device acceptance were not run by this subtask.

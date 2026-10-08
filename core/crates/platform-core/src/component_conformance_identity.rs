@@ -67,7 +67,7 @@ fn validate(value: &Value, artifact: &str, production_audience: &str) -> Result<
         if !unique.insert(key) {
             return Err(refused());
         }
-        for field in ["tenantId", "actorPrincipalId", "resultExposurePolicyId"] {
+        for field in ["tenantId", "actorPrincipalId"] {
             if Uuid::parse_str(nonempty(context, field)?)
                 .map_err(|_| refused())?
                 .is_nil()
@@ -84,11 +84,13 @@ fn validate(value: &Value, artifact: &str, production_audience: &str) -> Result<
                 return Err(refused());
             }
         }
-        for field in ["actionDefinitionVersion", "resultExposurePolicyVersion"] {
-            if context[field].as_u64().is_none_or(|v| v == 0) {
-                return Err(refused());
-            }
+        if context["actionDefinitionVersion"]
+            .as_u64()
+            .is_none_or(|v| v == 0)
+        {
+            return Err(refused());
         }
+        result_policy_id(context)?;
         nonempty(context, "actionKey")?;
         nonempty(context, "authorizationMinZedToken")?;
         if context["operation"] == "execute" {
@@ -96,12 +98,44 @@ fn validate(value: &Value, artifact: &str, production_audience: &str) -> Result<
         }
         if !matches!(
             nonempty(context, "targetType")?,
-            "TENANT" | "WORKSPACE" | "RESOURCE" | "ASSET"
+            "TENANT" | "WORKSPACE" | "RESOURCE" | "ASSET" | "APPLICATION_BINDING"
         ) {
             return Err(refused());
         }
     }
     Ok(())
+}
+
+// Match the existing production binding-create token, not merely an operation
+// called handshake. Every business context retains its required policy pair.
+pub(crate) fn result_policy_id(context: &Value) -> Result<Option<Uuid>, Refusal> {
+    if context["targetType"] == "APPLICATION_BINDING" {
+        if context["actionKey"] != crate::application_binding::CREATE
+            || !matches!(
+                context["operation"].as_str(),
+                Some("handshake" | "validate_binding")
+            )
+            || context.get("resultExposurePolicyId").is_some()
+            || context.get("resultExposurePolicyVersion").is_some()
+            || context.get("externalExecutionId").is_some()
+            || Uuid::parse_str(nonempty(context, "targetId")?)
+                .map_err(|_| refused())?
+                .is_nil()
+        {
+            return Err(refused());
+        }
+        return Ok(None);
+    }
+    let policy =
+        Uuid::parse_str(nonempty(context, "resultExposurePolicyId")?).map_err(|_| refused())?;
+    if policy.is_nil()
+        || context["resultExposurePolicyVersion"]
+            .as_u64()
+            .is_none_or(|v| v == 0)
+    {
+        return Err(refused());
+    }
+    Ok(Some(policy))
 }
 
 pub(crate) fn context<'a>(
@@ -208,15 +242,20 @@ fn contextual_claims(
     protocol_operation: &str,
     parameters: &Value,
 ) -> Result<Value, Refusal> {
+    if context["operation"] != protocol_operation {
+        return Err(refused());
+    }
     let mut claims = json!({"tenant_id":context["tenantId"],"actor_principal_id":context["actorPrincipalId"],
         "initiating_human_principal_id":context["actorPrincipalId"],
         "operation_id":operation,"action_execution_id":action,
         "action_key":context["actionKey"],"action_definition_version":context["actionDefinitionVersion"],
         "target_type":context["targetType"],
         "normalized_parameter_hash":parameter_hash(context,protocol_operation,parameters)?,
-        "authorization_min_zed_token":nonempty(context,"authorizationMinZedToken")?,
-        "result_exposure_policy_id":context["resultExposurePolicyId"],
-        "result_exposure_policy_version":context["resultExposurePolicyVersion"]});
+        "authorization_min_zed_token":nonempty(context,"authorizationMinZedToken")?});
+    if let Some(policy) = result_policy_id(context)? {
+        claims["result_exposure_policy_id"] = json!(policy);
+        claims["result_exposure_policy_version"] = context["resultExposurePolicyVersion"].clone();
+    }
     for (source, destination) in [("workspaceId", "workspace_id"), ("targetId", "target_id")] {
         if let Some(value) = context.get(source) {
             claims[destination] = value.clone();
@@ -337,6 +376,116 @@ mod tests {
                 "authorizationMinZedToken":"isolated-pep-revision","externalExecutionId":Uuid::new_v4(),
                 "actionDefinitionVersion":1,"targetType":"RESOURCE","targetId":Uuid::new_v4(),
                 "resultExposurePolicyId":Uuid::new_v4(),"resultExposurePolicyVersion":1}]})
+    }
+
+    fn binding_identity(operation: &str) -> Value {
+        let mut value = identity();
+        let context = &mut value["contexts"][0];
+        context["operation"] = json!(operation);
+        context["actionKey"] = json!(crate::application_binding::CREATE);
+        context["targetType"] = json!("APPLICATION_BINDING");
+        for field in [
+            "resultExposurePolicyId",
+            "resultExposurePolicyVersion",
+            "externalExecutionId",
+        ] {
+            context.as_object_mut().unwrap().remove(field);
+        }
+        value
+    }
+
+    #[test]
+    fn binding_management_preserves_production_none_without_business_authority() {
+        for operation in ["handshake", "validate_binding"] {
+            let value = binding_identity(operation);
+            assert!(validate(&value, "candidate-artifact", "production-adapter").is_ok());
+            let context = &value["contexts"][0];
+            assert_eq!(result_policy_id(context).unwrap(), None);
+            let parameters = json!({"idempotencyKey":Uuid::new_v4()});
+            let claims = contextual_claims(
+                context,
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                operation,
+                &parameters,
+            )
+            .unwrap();
+            assert_eq!(claims["target_type"], "APPLICATION_BINDING");
+            assert_eq!(claims["target_id"], context["targetId"]);
+            assert_eq!(claims["action_key"], crate::application_binding::CREATE);
+            assert_eq!(
+                claims["actor_principal_id"],
+                claims["initiating_human_principal_id"]
+            );
+            assert_eq!(
+                claims["normalized_parameter_hash"],
+                collab_bridge::limits::canonical_digest(
+                    &json!({"operation":operation,"arguments":parameters})
+                )
+            );
+            for field in [
+                "result_exposure_policy_id",
+                "result_exposure_policy_version",
+                "external_execution_id",
+                "idempotency_key",
+                "agent_principal_id",
+                "delegation_id",
+            ] {
+                assert!(claims.get(field).is_none(), "{field}");
+            }
+            assert!(contextual_claims(
+                context,
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                "query_revision",
+                &parameters
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn none_is_only_the_exact_binding_create_management_context() {
+        let original = binding_identity("handshake");
+        for (field, replacement) in [
+            ("actionKey", json!(crate::application_binding::DISABLE)),
+            ("operation", json!("execute")),
+            ("operation", json!("query_revision")),
+            ("operation", json!("resolve_native_scope")),
+            ("targetType", json!("RESOURCE")),
+            ("targetId", json!(Uuid::nil())),
+            ("targetId", Value::Null),
+            ("resultExposurePolicyId", json!(Uuid::new_v4())),
+            ("resultExposurePolicyId", Value::Null),
+            ("resultExposurePolicyVersion", json!(1)),
+            ("resultExposurePolicyVersion", Value::Null),
+            ("externalExecutionId", json!(Uuid::new_v4())),
+            ("externalExecutionId", Value::Null),
+        ] {
+            let mut changed = original.clone();
+            changed["contexts"][0][field] = replacement;
+            assert!(
+                validate(&changed, "candidate-artifact", "production-adapter").is_err(),
+                "{field}"
+            );
+        }
+        let mut business = identity();
+        assert!(result_policy_id(&business["contexts"][0])
+            .unwrap()
+            .is_some());
+        business["contexts"][0]["operation"] = json!("handshake");
+        assert!(validate(&business, "candidate-artifact", "production-adapter").is_ok());
+        for field in ["resultExposurePolicyId", "resultExposurePolicyVersion"] {
+            let mut missing = business.clone();
+            missing["contexts"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+            assert!(
+                validate(&missing, "candidate-artifact", "production-adapter").is_err(),
+                "{field}"
+            );
+        }
     }
 
     #[test]

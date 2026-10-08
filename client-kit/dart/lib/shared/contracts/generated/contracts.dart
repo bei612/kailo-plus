@@ -13557,8 +13557,13 @@ class ComponentConformanceIdentityContext {
   ///execute场景必填的隔离native执行引用；不在生产库创建ExternalExecution。
   final String? externalExecutionId;
   final AdapterProtocolOperation operation;
-  final String resultExposurePolicyId;
-  final int resultExposurePolicyVersion;
+
+  ///业务上下文必填并与版本成对；确切 application_binding.create 的 handshake/validate_binding
+  ///管理上下文必须省略两字段，不授业务内容访问。
+  final String? resultExposurePolicyId;
+
+  ///业务上下文必填；结果为 NONE 的确切绑定管理上下文必须与策略 ID 一起省略。
+  final int? resultExposurePolicyVersion;
   final String stepKey;
   final String? targetId;
   final String targetType;
@@ -13573,8 +13578,8 @@ class ComponentConformanceIdentityContext {
     required this.caseKey,
     this.externalExecutionId,
     required this.operation,
-    required this.resultExposurePolicyId,
-    required this.resultExposurePolicyVersion,
+    this.resultExposurePolicyId,
+    this.resultExposurePolicyVersion,
     required this.stepKey,
     this.targetId,
     required this.targetType,

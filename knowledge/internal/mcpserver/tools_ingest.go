@@ -90,9 +90,17 @@ func (s *Server) handleAddDocument(ctx context.Context, req mcp.CallToolRequest)
 	}
 	content := req.GetString("content", "")
 	url := strings.TrimSpace(req.GetString("url", ""))
-	fileBase64 := req.GetString("file_base64", "")
+	fileValue, filePresent := req.GetArguments()["file_base64"]
+	fileBase64 := ""
+	if filePresent {
+		var ok bool
+		fileBase64, ok = fileValue.(string)
+		if !ok {
+			return mcp.NewToolResultError("file_base64 must be a string"), nil
+		}
+	}
 	filename := req.GetString("filename", "")
-	if fileBase64 != "" && (content != "" || url != "" || filename == "" || req.GetString("idempotency_key", "") == "") {
+	if filePresent && (content != "" || url != "" || filename == "" || req.GetString("idempotency_key", "") == "") {
 		return mcp.NewToolResultError("file import requires filename and idempotency_key and cannot include content or url"), nil
 	}
 	creationID := ""
@@ -103,10 +111,10 @@ func (s *Server) handleAddDocument(ctx context.Context, req mcp.CallToolRequest)
 		}
 		creationID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("mcp-document:%d:%s:%s", ep.TenantID, ep.ID, key))).String()
 	}
-	if observe && (creationID == "" || content != "" || url != "" || fileBase64 != "") {
+	if observe && (creationID == "" || content != "" || url != "" || filePresent) {
 		return mcp.NewToolResultError("observation requires the original idempotency_key and cannot contain content"), nil
 	}
-	if !observe && strings.TrimSpace(content) == "" && url == "" && fileBase64 == "" {
+	if !observe && strings.TrimSpace(content) == "" && url == "" && !filePresent {
 		return mcp.NewToolResultError("content, url, or file_base64 is required"), nil
 	}
 	kbs, err := s.selectKnowledgeBases(ctx, ep, []string{selector})
@@ -128,7 +136,7 @@ func (s *Server) handleAddDocument(ctx context.Context, req mcp.CallToolRequest)
 		if err != nil || created == nil || created.TenantID != kb.TenantID || created.KnowledgeBaseID != kb.ID {
 			return mcp.NewToolResultError("native creation evidence unavailable"), nil
 		}
-	} else if fileBase64 != "" {
+	} else if filePresent {
 		data, decodeErr := base64.StdEncoding.DecodeString(fileBase64)
 		if decodeErr != nil || base64.StdEncoding.EncodeToString(data) != fileBase64 {
 			return mcp.NewToolResultError("file_base64 must be canonical base64"), nil

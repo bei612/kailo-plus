@@ -5548,15 +5548,18 @@ type ComponentConformanceIdentityContext struct {
 	AuthorizationMinZedToken string `json:"authorizationMinZedToken"`
 	CaseKey                  string `json:"caseKey"`
 	// execute场景必填的隔离native执行引用；不在生产库创建ExternalExecution。
-	ExternalExecutionID         *string                  `json:"externalExecutionId,omitempty"`
-	Operation                   AdapterProtocolOperation `json:"operation"`
-	ResultExposurePolicyID      string                   `json:"resultExposurePolicyId"`
-	ResultExposurePolicyVersion int64                    `json:"resultExposurePolicyVersion"`
-	StepKey                     string                   `json:"stepKey"`
-	TargetID                    *string                  `json:"targetId,omitempty"`
-	TargetType                  string                   `json:"targetType"`
-	TenantID                    string                   `json:"tenantId"`
-	WorkspaceID                 *string                  `json:"workspaceId,omitempty"`
+	ExternalExecutionID *string                  `json:"externalExecutionId,omitempty"`
+	Operation           AdapterProtocolOperation `json:"operation"`
+	// 业务上下文必填并与版本成对；确切 application_binding.create 的 handshake/validate_binding
+	// 管理上下文必须省略两字段，不授业务内容访问。
+	ResultExposurePolicyID *string `json:"resultExposurePolicyId,omitempty"`
+	// 业务上下文必填；结果为 NONE 的确切绑定管理上下文必须与策略 ID 一起省略。
+	ResultExposurePolicyVersion *int64  `json:"resultExposurePolicyVersion,omitempty"`
+	StepKey                     string  `json:"stepKey"`
+	TargetID                    *string `json:"targetId,omitempty"`
+	TargetType                  string  `json:"targetType"`
+	TenantID                    string  `json:"tenantId"`
+	WorkspaceID                 *string `json:"workspaceId,omitempty"`
 }
 
 // 原 COMPONENT_CONFORMANCE_ENVIRONMENT_FILE 的 PROTOCOL_PEER 分支，仅隔离套件运行事实；readOnlyTools

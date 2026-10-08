@@ -155,69 +155,98 @@ func (s *exportKnowledgeService) GetKnowledgeByID(ctx context.Context, id string
 }
 
 func TestAddDocumentFileObservationNeverRepeatsNativeCreation(t *testing.T) {
-	srv := newScopeTestServer(&types.KnowledgeBase{ID: "kb", TenantID: 1})
-	service := &exportKnowledgeService{}
-	srv.knowledgeService = service
-	ep := &types.MCPEndpoint{ID: "ep", TenantID: 1, Tools: types.StringArray{types.MCPEndpointToolAddDocument}}
-	key := "366b0c6f-c070-40a1-ad6e-66b1a21aaf3c"
-	readOperation := "6570487f-c171-45f4-9163-fd6b794d1984"
-	reference := map[string]string{"resourceId": "e6653c7a-e555-423a-af39-c60a4848f955",
-		"nativeObjectRef": "ac80e0be-3cfc-4abd-baf0-88920506a44d", "nativeRevision": "version-1",
-		"displayName": "source.txt", "mediaType": "text/plain"}
-	encoded, err := json.Marshal(reference)
-	require.NoError(t, err)
-	args := map[string]any{
-		"knowledge_base_id": "kb", "title": "source.txt", "filename": "source.txt", "file_base64": "AP8B/g==",
-		"source_reference_json": string(encoded), "idempotency_key": key}
-	result, err := srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
-	require.NoError(t, err)
-	require.True(t, result.IsError)
-	require.Empty(t, service.createdIDs)
-	args["read_operation_id"] = readOperation
-	for field, value := range map[string]string{"secret": "must-not-be-persisted", "assetId": "not-a-uuid", "resourceId": "00000000-0000-0000-0000-000000000000", "displayName": " padded "} {
-		invalid := map[string]string{}
-		for key, original := range reference {
-			invalid[key] = original
-		}
-		invalid[field] = value
-		bad, encodeErr := json.Marshal(invalid)
-		require.NoError(t, encodeErr)
-		args["source_reference_json"] = string(bad)
-		result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
-		require.NoError(t, err)
-		require.True(t, result.IsError, field)
-		require.Empty(t, service.createdIDs)
+	for _, body := range [][]byte{{0, 255, 1, 254}, {}} {
+		t.Run(fmt.Sprintf("bytes-%d", len(body)), func(t *testing.T) {
+			srv := newScopeTestServer(&types.KnowledgeBase{ID: "kb", TenantID: 1})
+			service := &exportKnowledgeService{}
+			srv.knowledgeService = service
+			ep := &types.MCPEndpoint{ID: "ep", TenantID: 1, Tools: types.StringArray{types.MCPEndpointToolAddDocument}}
+			key := "366b0c6f-c070-40a1-ad6e-66b1a21aaf3c"
+			readOperation := "6570487f-c171-45f4-9163-fd6b794d1984"
+			reference := map[string]string{"resourceId": "e6653c7a-e555-423a-af39-c60a4848f955",
+				"nativeObjectRef": "ac80e0be-3cfc-4abd-baf0-88920506a44d", "nativeRevision": "version-1",
+				"displayName": "source.txt", "mediaType": "text/plain"}
+			encoded, err := json.Marshal(reference)
+			require.NoError(t, err)
+			args := map[string]any{
+				"knowledge_base_id": "kb", "title": "source.txt", "filename": "source.txt", "file_base64": base64.StdEncoding.EncodeToString(body),
+				"source_reference_json": string(encoded), "idempotency_key": key}
+			result, err := srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
+			require.NoError(t, err)
+			require.True(t, result.IsError)
+			require.Empty(t, service.createdIDs)
+			args["read_operation_id"] = readOperation
+			for field, value := range map[string]string{"secret": "must-not-be-persisted", "assetId": "not-a-uuid", "resourceId": "00000000-0000-0000-0000-000000000000", "displayName": " padded "} {
+				invalid := map[string]string{}
+				for key, original := range reference {
+					invalid[key] = original
+				}
+				invalid[field] = value
+				bad, encodeErr := json.Marshal(invalid)
+				require.NoError(t, encodeErr)
+				args["source_reference_json"] = string(bad)
+				result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
+				require.NoError(t, err)
+				require.True(t, result.IsError, field)
+				require.Empty(t, service.createdIDs)
+			}
+			args["source_reference_json"] = string(encoded)
+			result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
+			require.NoError(t, err)
+			require.False(t, result.IsError)
+			require.Len(t, service.createdIDs, 1)
+			document := service.docs[service.createdIDs[0]]
+			require.EqualValues(t, len(body), document.FileSize)
+			var references []map[string]string
+			require.NoError(t, json.Unmarshal([]byte(document.GetMetadata()["source_references"]), &references))
+			require.Equal(t, []map[string]string{reference}, references)
+			for name, fields := range map[string]map[string]any{
+				"absent":        {},
+				"null":          {"file_base64": nil, "content": "not a file"},
+				"boolean":       {"file_base64": true, "content": "not a file"},
+				"number":        {"file_base64": 0, "content": "not a file"},
+				"object":        {"file_base64": map[string]any{}, "content": "not a file"},
+				"empty-content": {"file_base64": "", "content": "not a file"},
+				"empty-url":     {"file_base64": "", "url": "https://example.invalid/file"},
+				"observe-empty": {"file_base64": "", "observe_only": true},
+			} {
+				t.Run(name, func(t *testing.T) {
+					invalid := map[string]any{}
+					for key, value := range args {
+						invalid[key] = value
+					}
+					delete(invalid, "file_base64")
+					for key, value := range fields {
+						invalid[key] = value
+					}
+					result, err := srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, invalid))
+					require.NoError(t, err)
+					require.True(t, result.IsError)
+					require.Len(t, service.createdIDs, 1)
+				})
+			}
+			for _, state := range []string{types.ParseStatusPending, types.ParseStatusFailed, types.ParseStatusCompleted} {
+				document.ParseStatus = state
+				result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, map[string]any{
+					"knowledge_base_id": "kb", "idempotency_key": key, "observe_only": true}))
+				require.NoError(t, err)
+				require.False(t, result.IsError)
+				require.Len(t, service.createdIDs, 1)
+				value := result.StructuredContent.(map[string]any)
+				require.Equal(t, "text/plain", value["media_type"])
+				require.Equal(t, readOperation, value["read_operation_id"])
+				require.Equal(t, fmt.Sprintf("%x", sha256.Sum256(body)), value["source_content_sha256"])
+				require.EqualValues(t, len(body), value["source_content_bytes"])
+				require.Equal(t, state, value["document"].(documentSummary).ParseStatus)
+			}
+			ep.ID = "other-endpoint"
+			result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, map[string]any{
+				"knowledge_base_id": "kb", "idempotency_key": key, "observe_only": true}))
+			require.NoError(t, err)
+			require.True(t, result.IsError)
+			require.Len(t, service.createdIDs, 1)
+		})
 	}
-	args["source_reference_json"] = string(encoded)
-	result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, args))
-	require.NoError(t, err)
-	require.False(t, result.IsError)
-	require.Len(t, service.createdIDs, 1)
-	document := service.docs[service.createdIDs[0]]
-	require.Equal(t, int64(4), document.FileSize)
-	var references []map[string]string
-	require.NoError(t, json.Unmarshal([]byte(document.GetMetadata()["source_references"]), &references))
-	require.Equal(t, []map[string]string{reference}, references)
-	for _, state := range []string{types.ParseStatusPending, types.ParseStatusFailed, types.ParseStatusCompleted} {
-		document.ParseStatus = state
-		result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, map[string]any{
-			"knowledge_base_id": "kb", "idempotency_key": key, "observe_only": true}))
-		require.NoError(t, err)
-		require.False(t, result.IsError)
-		require.Len(t, service.createdIDs, 1)
-		value := result.StructuredContent.(map[string]any)
-		require.Equal(t, "text/plain", value["media_type"])
-		require.Equal(t, readOperation, value["read_operation_id"])
-		require.Equal(t, fmt.Sprintf("%x", sha256.Sum256([]byte{0, 255, 1, 254})), value["source_content_sha256"])
-		require.Equal(t, int64(4), value["source_content_bytes"])
-		require.Equal(t, state, value["document"].(documentSummary).ParseStatus)
-	}
-	ep.ID = "other-endpoint"
-	result, err = srv.handleAddDocument(mcpCallContext(1, ep), nativeToolRequest(t, map[string]any{
-		"knowledge_base_id": "kb", "idempotency_key": key, "observe_only": true}))
-	require.NoError(t, err)
-	require.True(t, result.IsError)
-	require.Len(t, service.createdIDs, 1)
 }
 
 func nativeToolRequest(t *testing.T, args map[string]any) mcp.CallToolRequest {

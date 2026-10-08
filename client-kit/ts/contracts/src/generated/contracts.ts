@@ -4613,15 +4613,22 @@ export interface ComponentConformanceIdentityContext {
     /**
      * execute场景必填的隔离native执行引用；不在生产库创建ExternalExecution。
      */
-    externalExecutionId?:        string;
-    operation:                   AdapterProtocolOperation;
-    resultExposurePolicyId:      string;
-    resultExposurePolicyVersion: number;
-    stepKey:                     string;
-    targetId?:                   string;
-    targetType:                  string;
-    tenantId:                    string;
-    workspaceId?:                string;
+    externalExecutionId?: string;
+    operation:            AdapterProtocolOperation;
+    /**
+     * 业务上下文必填并与版本成对；确切 application_binding.create 的 handshake/validate_binding
+     * 管理上下文必须省略两字段，不授业务内容访问。
+     */
+    resultExposurePolicyId?: string;
+    /**
+     * 业务上下文必填；结果为 NONE 的确切绑定管理上下文必须与策略 ID 一起省略。
+     */
+    resultExposurePolicyVersion?: number;
+    stepKey:                      string;
+    targetId?:                    string;
+    targetType:                   string;
+    tenantId:                     string;
+    workspaceId?:                 string;
 }
 
 /**

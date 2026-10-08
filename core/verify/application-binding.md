@@ -997,3 +997,62 @@ llm_route 类型；隔离夹具不改变这个事实。前端目前没有 resour
 事实登记既有对象，不代表三组件已注册、自动登记或全业务可用；没有部署、强开入口、
 业务 SQL 插入或三端安装包。本批未跑 full：Data 剩余约 1.2 GiB，不能将专项检查
 记录为全量门禁通过。
+
+## 原生组件准入、NONE 管理上下文与回执消费（2026-10-08）
+
+本批四步影响结论：
+
+1. 权威沿 DD-98/101 与既有 Adapter Protocol：业务组件登记现有原生引用，
+   不要求其伪造平台 CREATE/fencing；无能力声明的协议示例仍必须证明真实创建。
+   绑定创建 handshake/validate_binding 的结果本来就是 NONE，不因此获得业务
+   内容访问权。仅确切 APPLICATION_BINDING/application_binding.create 上下文省略
+   结果策略字段，所有业务上下文仍要求有效策略 ID/version 对。
+2. 实际影响是原 component_release 协议适用项、conformance 身份签名、原 PEP
+   操作分类与 application_execution 原生 observe 消费者；两合同输入和四侧
+   生成物同步。没有新服务、路由、权限、状态、数据库表或迁移。Web/Desktop/
+   Mobile 继续使用原 BFF 管理链，客户端页面和本机 Relay 凭据边界不变。
+3. 原生 observe 先严格解析既有 AdapterExecutionResponse，再把其 execution
+   交给原 record_observation；不能把根级 nativeId 或未知字段当作终态证据。
+   map_native_status_error 使用已有封闭枚举、绑定自己的 operation/arguments
+   摘要并重新鉴权；不能借用 observe 的停用中例外执行业务读取或映射。
+4. 空/畸形回执、未知状态、错绑定/代次/参数/策略与错误管理上下文仍拒绝或
+   保留 UNKNOWN，不重放副作用。只有 observe/extract_usage 可在 DISABLING
+   核对既有结果，execute/query_revision/map_native_status_error 必须 ACTIVE。
+   cancel 仅在能力声明 SUPPORTED 时要求真实证据；声明不支持不能伪造成功。
+   applicable 握手、binding、幂等执行/观察、六类错误与脱敏项仍全部强制，
+   删除任何适用步骤均被原校验拒绝，未引入新待收敛状态。
+
+本批选定十个代码/合同/生成路径合计 `+504/-59`，不包含工作树继承的其他
+roundtrip/数据库检查改动。原 HEAD 四语言 roundtrip 已遍历整个同一 sample，
+所以新增管理 sample 沿原实际消费者验证，没有为通过检查另造验证框架。
+schema 只是把两个字段改为结构可选；业务必填和管理必须省略仍由真实 Core
+上下文校验。旧 Core 的严格解析不能消费新的 NONE 管理夹具，投递顺序必须
+先 Core、后新夹具；历史结构兼容检查通过不代表旧二进制能处理新上下文。
+
+复用既有 SDK `sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`，
+UID 1000、4 CPU/8 GiB、无额外 swap，Cargo 保持 `-j16`；源码私有候选和缓存
+均在 Data。执行前核对在途进程、内存与磁盘，没有新镜像、依赖安装或整树复制。
+原始日志根：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/`。
+
+- `core-conformance-four-sides-restored-20261008.log`：原 gen.sh --check 的
+  Rust/Go/TypeScript/Dart 与词条均通过；原 Rust conformance roundtrip 1 项、
+  Go 同 sample、TS 包 50 项、Dart 同 sample 1 项通过，整链退出 0。
+- 同一原 check.sh 历史兼容段实际通过：282 schemas，匹配历史 tag 的 3 项；
+  此范围不冒称本次新上下文的旧 Core 运行兼容。
+- `core-conformance-management-mutation-20261008.log`：只在私有候选实际移除
+  NONE 管理 action/operation 限定、回执 envelope 拒绝、既有引用适用分类，
+  并让 query_revision 借用 DISABLING。同一原命令
+  `cargo test --offline --locked -j16 -p platform-core --bin platform-core`
+  真实退出 101：334 passed、5 failed、44 ignored。
+- 四处私有破坏还原，正式十个输入与最终候选逐字节一致。
+  `core-conformance-management-final-byte-restored-20261008.log` 的同一原
+  命令退出 0：339 passed、0 failed、44 ignored；ignored 未计为运行验收。
+- `core-conformance-management-clippy-20261008.log`：原
+  `cargo clippy --locked --offline -j16 -p platform-core --bin platform-core --
+  -D warnings` 实际退出 0。四生产路径 rustfmt --edition 2021 --check 退出 0。
+
+本批没有部署或更新安装包、真实组件登录/工具/多来源问数业务验收，也未跑 full。
+2026-10-08 主线只读查证实际运行库 component_release/application_binding 均为
+0；修好原准入消费者不等于已激活组件。最近完整门禁仍有失败，不能用本批窄验
+宣称三组件完成、原版全量一致或生产就绪。

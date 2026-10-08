@@ -20,7 +20,7 @@
       "items": {
         "title": "ComponentConformanceIdentityContext",
         "type": "object", "additionalProperties": false,
-        "required": ["caseKey", "stepKey", "operation", "tenantId", "actorPrincipalId", "actionKey", "actionDefinitionVersion", "targetType", "resultExposurePolicyId", "resultExposurePolicyVersion", "authorizationMinZedToken"],
+        "required": ["caseKey", "stepKey", "operation", "tenantId", "actorPrincipalId", "actionKey", "actionDefinitionVersion", "targetType", "authorizationMinZedToken"],
         "properties": {
           "caseKey": {"type": "string"}, "stepKey": {"type": "string"},
           "operation": {"$ref": "../enums/adapter_protocol_operation.schema.json"},
@@ -33,8 +33,8 @@
           "actionDefinitionVersion": {"type": "integer", "minimum": 1},
           "targetType": {"type": "string"},
           "targetId": {"type": "string", "format": "uuid"},
-          "resultExposurePolicyId": {"type": "string", "format": "uuid"},
-          "resultExposurePolicyVersion": {"type": "integer", "minimum": 1}
+          "resultExposurePolicyId": {"type": "string", "format": "uuid", "description": "业务上下文必填并与版本成对；确切 application_binding.create 的 handshake/validate_binding 管理上下文必须省略两字段，不授业务内容访问。"},
+          "resultExposurePolicyVersion": {"type": "integer", "minimum": 1, "description": "业务上下文必填；结果为 NONE 的确切绑定管理上下文必须与策略 ID 一起省略。"}
         }
       }
     }

@@ -869,6 +869,13 @@ fn protocol_fixture(registration: &Registration) -> Result<Value, Refusal> {
     let bytes = std::fs::read(path)
         .map_err(|_| Refusal::Unavailable("isolated conformance fixture unavailable".into()))?;
     let fixture: Value = serde_json::from_slice(&bytes).map_err(|_| bad())?;
+    validate_protocol_fixture(registration, fixture)
+}
+
+fn validate_protocol_fixture(
+    registration: &Registration,
+    fixture: Value,
+) -> Result<Value, Refusal> {
     exact_fields(&fixture, &["artifactDigest", "steps"], &[])?;
     let typed: contracts::ComponentConformanceFixture =
         serde_json::from_value(fixture.clone()).map_err(|_| bad())?;
@@ -878,6 +885,18 @@ fn protocol_fixture(registration: &Registration) -> Result<Value, Refusal> {
         return Err(Refusal::Blocked(ReasonCode::CapabilityBlocked));
     }
     let steps = fixture["steps"].as_array().ok_or_else(bad)?;
+    let existing_reference = !registration.manifest["implements"]
+        .as_array()
+        .ok_or_else(bad)?
+        .is_empty();
+    let cancel_supported = !existing_reference
+        || registration.manifest["capabilityDeclarations"]
+            .as_array()
+            .ok_or_else(bad)?
+            .iter()
+            .any(|declaration| declaration["cancel"] == "SUPPORTED");
+    // DD-98: capability services register existing native references. The
+    // DD-101 example with implements=[] still proves real CREATE and fencing.
     let cases: &[(&str, &[&str])] = &[
         ("protocol_handshake", &["handshake"]),
         ("protocol_binding", &["validate_binding"]),
@@ -911,6 +930,12 @@ fn protocol_fixture(registration: &Registration) -> Result<Value, Refusal> {
     let mut offset = 0;
     let mut error_classes = BTreeSet::new();
     for (case, operations) in cases {
+        if existing_reference && case.starts_with("protocol_scope_") {
+            continue;
+        }
+        if *case == "protocol_cancel" && !cancel_supported {
+            continue;
+        }
         let mut preceding: Option<(Value, Value)> = None;
         for operation in *operations {
             let step = steps.get(offset).ok_or_else(bad)?;
@@ -997,6 +1022,9 @@ fn protocol_fixture(registration: &Registration) -> Result<Value, Refusal> {
                     }
                     let cancellable = expected["cancelCapability"] == "SUPPORTED";
                     if !cancellable && expected["cancelCapability"] != "UNSUPPORTED" {
+                        return Err(bad());
+                    }
+                    if *case == "protocol_cancel" && !cancellable {
                         return Err(bad());
                     }
                     if *operation == "observe"
@@ -1857,7 +1885,7 @@ pub(crate) async fn authorize_probe(
             or exists(select 1 from catalog.result_exposure_policy where id=$3)")
             .bind(Uuid::parse_str(text(context,"tenantId")?).map_err(|_|bad())?)
             .bind(Uuid::parse_str(text(context,"actorPrincipalId")?).map_err(|_|bad())?)
-            .bind(Uuid::parse_str(text(context,"resultExposurePolicyId")?).map_err(|_|bad())?)
+            .bind(crate::component_conformance_identity::result_policy_id(context)?)
             .fetch_one(&mut *tx).await?;
         if collides { return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)); }
         let token=crate::component_conformance_identity::sign(&state,&identity,context,ae.id,ae.operation_id,&operation,&request).await?;
@@ -2322,6 +2350,169 @@ async fn read_releases(
 #[cfg(test)]
 mod report_tests {
     use super::*;
+
+    fn existing_reference_fixture(cancel: bool) -> (Registration, Value) {
+        let artifact = collab_bridge::limits::canonical_digest(&json!({}));
+        let registration = Registration {
+            id: Uuid::new_v4(),
+            component_type_key: "fixture".into(),
+            version: "1.0.0".into(),
+            manifest: json!({"implements":[{"categoryKey":"knowledge","version":"1"}],"capabilityDeclarations":[{"cancel":if cancel {"SUPPORTED"} else {"UNSUPPORTED"}}]}),
+            package: json!({}),
+            binding_config_schema: json!({}),
+            manifest_digest: artifact.clone(),
+            package_digest: artifact.clone(),
+            adapter_digest: artifact.clone(),
+            contracts: vec![],
+        };
+        let key = Uuid::new_v4();
+        let request = json!({"idempotencyKey":key});
+        let native = json!({"idempotencyKey":key,"nativeType":"fixture_task",
+            "cancelCapability":"UNSUPPORTED","platformStatus":"SUCCEEDED"});
+        let mut steps = Vec::new();
+        let mut push = |case: &str, operation: &str, expected: Value| {
+            steps.push(json!({"caseKey":case,"stepKey":steps.len().to_string(),
+                "operation":operation,"idempotencyKey":key,
+                "requestJson":request.to_string(),"expectedResponseJson":expected.to_string(),
+                "expectedHttpStatus":200}));
+        };
+        push(
+            "protocol_handshake",
+            "handshake",
+            json!({"protocolVersion":"1","artifactDigest":artifact}),
+        );
+        push("protocol_binding", "validate_binding", json!({}));
+        for operation in ["execute", "execute", "observe"] {
+            push("protocol_execution_idempotency", operation, native.clone());
+        }
+        if cancel {
+            for operation in ["execute", "cancel", "observe"] {
+                let mut observation = native.clone();
+                observation["cancelCapability"] = json!("SUPPORTED");
+                observation["platformStatus"] = json!(if operation == "observe" {
+                    "CANCELLED"
+                } else {
+                    "RUNNING"
+                });
+                push("protocol_cancel", operation, observation);
+            }
+        }
+        for class in [
+            "DENIED",
+            "BLOCKED",
+            "PRECONDITION",
+            "LIMIT",
+            "CONFLICT",
+            "UNKNOWN",
+        ] {
+            push(
+                "protocol_error_mapping",
+                "map_native_status_error",
+                json!({"class":class}),
+            );
+        }
+        push(
+            "protocol_redaction",
+            "map_native_status_error",
+            json!({"class":"UNKNOWN"}),
+        );
+        (
+            registration,
+            json!({"artifactDigest":artifact,"steps":steps}),
+        )
+    }
+
+    #[test]
+    fn existing_reference_protocol_requires_all_applicable_wire_cases() {
+        let (registration, fixture) = existing_reference_fixture(false);
+        validate_protocol_fixture(&registration, fixture.clone()).unwrap();
+        for index in 0..fixture["steps"].as_array().unwrap().len() {
+            let mut incomplete = fixture.clone();
+            incomplete["steps"].as_array_mut().unwrap().remove(index);
+            assert!(
+                validate_protocol_fixture(&registration, incomplete).is_err(),
+                "missing step {index}"
+            );
+        }
+        let mut wrong_artifact = fixture.clone();
+        wrong_artifact["artifactDigest"] = json!(collab_bridge::limits::canonical_digest(
+            &json!({"different":true})
+        ));
+        assert!(validate_protocol_fixture(&registration, wrong_artifact).is_err());
+        let mut creation = fixture.clone();
+        let mut step = creation["steps"][0].clone();
+        step["caseKey"] = json!("protocol_scope_idempotency");
+        step["operation"] = json!("resolve_native_scope");
+        creation["steps"].as_array_mut().unwrap().insert(2, step);
+        assert!(validate_protocol_fixture(&registration, creation).is_err());
+        let mut unexpected_cancel = fixture.clone();
+        let (_, cancellable) = existing_reference_fixture(true);
+        unexpected_cancel["steps"]
+            .as_array_mut()
+            .unwrap()
+            .insert(5, cancellable["steps"][5].clone());
+        assert!(validate_protocol_fixture(&registration, unexpected_cancel).is_err());
+    }
+
+    #[test]
+    fn existing_reference_protocol_cancel_requires_declared_supported_evidence() {
+        let (registration, fixture) = existing_reference_fixture(true);
+        validate_protocol_fixture(&registration, fixture.clone()).unwrap();
+        for index in 5..8 {
+            let mut incomplete = fixture.clone();
+            incomplete["steps"].as_array_mut().unwrap().remove(index);
+            assert!(validate_protocol_fixture(&registration, incomplete).is_err());
+        }
+        let (_, uncancellable) = existing_reference_fixture(false);
+        assert!(validate_protocol_fixture(&registration, uncancellable).is_err());
+        let mut unsupported = fixture;
+        let mut observation: Value = serde_json::from_str(
+            unsupported["steps"][5]["expectedResponseJson"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+        observation["cancelCapability"] = json!("UNSUPPORTED");
+        unsupported["steps"][5]["expectedResponseJson"] = json!(observation.to_string());
+        assert!(validate_protocol_fixture(&registration, unsupported).is_err());
+    }
+
+    #[test]
+    fn example_protocol_retains_creation_fencing_and_cancellation_evidence() {
+        let (mut registration, mut fixture) = existing_reference_fixture(true);
+        registration.manifest["implements"] = json!([]);
+        assert!(validate_protocol_fixture(&registration, fixture.clone()).is_err());
+        let key = Uuid::new_v4();
+        let reference = Uuid::new_v4();
+        let create = json!({"idempotencyKey":key,"mode":"CREATE","platformResourceRef":reference});
+        let lookup = json!({"idempotencyKey":key,"mode":"LOOKUP","platformResourceRef":reference});
+        let cases = [
+            ("protocol_scope_idempotency", create.clone(), "FOUND"),
+            ("protocol_scope_idempotency", create.clone(), "FOUND"),
+            ("protocol_scope_refused", create.clone(), "REFUSED"),
+            ("protocol_scope_fenced", lookup, "ABSENT_FENCED"),
+            ("protocol_scope_fenced", create, "REFUSED"),
+        ];
+        for (index, (case, request, result)) in cases.into_iter().enumerate() {
+            fixture["steps"].as_array_mut().unwrap().insert(index + 2, json!({
+                "caseKey":case,"stepKey":format!("scope-{index}"),"operation":"resolve_native_scope",
+                "idempotencyKey":key,"requestJson":request.to_string(),
+                "expectedResponseJson":json!({"result":result,"platformResourceRef":reference}).to_string(),
+                "expectedHttpStatus":200
+            }));
+        }
+        validate_protocol_fixture(&registration, fixture.clone()).unwrap();
+        for index in 2..7 {
+            let mut missing = fixture.clone();
+            missing["steps"].as_array_mut().unwrap().remove(index);
+            assert!(validate_protocol_fixture(&registration, missing).is_err());
+        }
+        for index in 10..13 {
+            let mut missing = fixture.clone();
+            missing["steps"].as_array_mut().unwrap().remove(index);
+            assert!(validate_protocol_fixture(&registration, missing).is_err());
+        }
+    }
 
     #[test]
     fn source_bound_protocol_registration_keeps_closed_frontend_contract() {

@@ -124,6 +124,15 @@ struct Observed {
     terminal_at: Option<DateTime<Utc>>,
 }
 
+fn response_execution(raw: &Value) -> Result<&Value, Refusal> {
+    let parsed: contracts::AdapterExecutionResponse =
+        serde_json::from_value(raw.clone()).map_err(|_| unavailable())?;
+    if serde_json::to_value(parsed).map_err(|_| unavailable())? != *raw {
+        return Err(unavailable());
+    }
+    raw.get("execution").ok_or_else(unavailable)
+}
+
 fn observation(ee: &External, raw: &Value, now: DateTime<Utc>) -> Result<Observed, Refusal> {
     let parsed: contracts::AdapterExecutionObservation =
         serde_json::from_value(raw.clone()).map_err(|_| unavailable())?;
@@ -480,10 +489,11 @@ pub(crate) async fn observe(
         let raw = adapter
             .call(state, lifecycle, "observe", ee.idempotency_key, &args)
             .await?;
-        if !terminal(&record_observation(state, id, &raw).await?) {
+        let observed = response_execution(&raw)?;
+        if !terminal(&record_observation(state, id, observed).await?) {
             return Ok(false);
         }
-        args["nativeId"] = raw["nativeId"].clone();
+        args["nativeId"] = observed["nativeId"].clone();
     }
     // The frozen definition explicitly declares NONE + no meters. This is
     // not a zero-usage report and must not require an unsupported native API.
@@ -731,6 +741,39 @@ mod execution_tests {
         json!({"externalExecutionId":ee.id,"idempotencyKey":ee.idempotency_key,"nativeType":ee.native_type,
             "nativeId":"read-1","measurements":[{"meterKey":"read_count","quantity":1,
                 "occurredAt":"2026-01-01T00:00:00Z"}]})
+    }
+
+    #[test]
+    fn response_requires_adapter_envelope_before_original_observation() {
+        let ee = source();
+        let original = observed(&ee);
+        let response = json!({"execution":original});
+        let execution = response_execution(&response).unwrap();
+        assert_eq!(execution, &original);
+        assert_eq!(execution["nativeId"], original["nativeId"]);
+        assert_eq!(
+            observation(&ee, execution, Utc::now()).unwrap().status,
+            "SUCCEEDED"
+        );
+        for invalid in [
+            original.clone(),
+            json!({}),
+            json!({"execution":null}),
+            json!({"execution":original,"body":"unexpected payload"}),
+            json!({"execution":original,"resultJson":{}}),
+            json!({"execution":original,"nativeId":"other-read"}),
+        ] {
+            assert!(response_execution(&invalid).is_err(), "{invalid}");
+        }
+        let mut unknown = original;
+        unknown["platformStatus"] = json!("UNKNOWN");
+        unknown["nativeStatus"] = json!("unconfirmed");
+        unknown.as_object_mut().unwrap().remove("terminalAt");
+        let response = json!({"execution":unknown});
+        let observation =
+            observation(&ee, response_execution(&response).unwrap(), Utc::now()).unwrap();
+        assert_eq!(observation.status, "UNKNOWN");
+        assert!(observation.terminal_at.is_none());
     }
 
     #[test]

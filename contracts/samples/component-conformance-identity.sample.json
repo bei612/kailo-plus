@@ -22,5 +22,16 @@
     "targetId": "ef850458-a919-4d74-af23-b3e1bcb61238",
     "resultExposurePolicyId": "109d3c36-50fd-4bb7-b51a-b97b0361b19f",
     "resultExposurePolicyVersion": 1
+  }, {
+    "caseKey": "protocol_handshake",
+    "stepKey": "handshake",
+    "operation": "handshake",
+    "tenantId": "aee490d7-c4d3-4b1e-b080-332279be47dd",
+    "actorPrincipalId": "e32bed07-f7e2-4a9c-81eb-707253647921",
+    "authorizationMinZedToken": "isolated-permission-revision",
+    "actionKey": "application_binding.create",
+    "actionDefinitionVersion": 1,
+    "targetType": "APPLICATION_BINDING",
+    "targetId": "e78af042-66c5-42c9-af28-1c9d8f3d7b1a"
   }]
 }

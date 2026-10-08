@@ -6734,9 +6734,14 @@ pub struct ComponentConformanceIdentityContext {
 
     pub operation: AdapterProtocolOperation,
 
-    pub result_exposure_policy_id: String,
+    /// 业务上下文必填并与版本成对；确切 application_binding.create 的 handshake/validate_binding
+    /// 管理上下文必须省略两字段，不授业务内容访问。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_exposure_policy_id: Option<String>,
 
-    pub result_exposure_policy_version: i64,
+    /// 业务上下文必填；结果为 NONE 的确切绑定管理上下文必须与策略 ID 一起省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_exposure_policy_version: Option<i64>,
 
     pub step_key: String,
 

@@ -15,11 +15,17 @@ type BindingIdentity = (Uuid, Option<Uuid>, String, String, String, Option<Uuid>
 
 // Transport classification only; the ActionExecution remains the authority.
 // Business reads cannot borrow the DISABLING/system-observation exception.
-fn business_operation(operation: &str, status: &str) -> Result<(bool, bool), Refusal> {
+fn business_operation(
+    operation: &str,
+    status: &str,
+) -> Result<contracts::AdapterProtocolOperation, Refusal> {
+    use contracts::AdapterProtocolOperation::*;
     match (operation, status) {
-        ("observe" | "extract_usage", "ACTIVE" | "DISABLING") => Ok((true, false)),
-        ("execute", "ACTIVE") => Ok((false, false)),
-        ("query_revision", "ACTIVE") => Ok((false, true)),
+        ("observe", "ACTIVE" | "DISABLING") => Ok(Observe),
+        ("extract_usage", "ACTIVE" | "DISABLING") => Ok(ExtractUsage),
+        ("execute", "ACTIVE") => Ok(Execute),
+        ("query_revision", "ACTIVE") => Ok(QueryRevision),
+        ("map_native_status_error", "ACTIVE") => Ok(MapNativeStatusError),
         _ => Err(Refusal::Denied(ReasonCode::ScopeGuardFailed)),
     }
 }
@@ -191,9 +197,13 @@ pub(crate) async fn check(
                   and b.state in ('ACTIVE','DISABLING') and b.active_projection_generation=a.component_projection_generation)")
                 .bind(ae.id).bind(binding).fetch_one(&mut *tx).await?;
             let expected_workspace=ae.workspace_id.map(|id|json!(id));
-            let (observing,querying)=business_operation(operation,&status)?;
-            let hash=if observing || querying {collab_bridge::limits::canonical_digest(&json!({"operation":operation,"arguments":arguments}))}
-                else {collab_bridge::limits::canonical_digest(&arguments)};
+            let operation_kind=business_operation(operation,&status)?;
+            let executing=operation_kind==contracts::AdapterProtocolOperation::Execute;
+            // Pure status/error mapping is not execution or native revision
+            // lookup. Bind its own operation+arguments and retain the exact
+            // business AE, policy and fresh authorization below.
+            let hash=if executing {collab_bridge::limits::canonical_digest(&arguments)}
+                else {collab_bridge::limits::canonical_digest(&json!({"operation":operation,"arguments":arguments}))};
             if !attached || raw.get("contentReference").is_some()
                 || ae.gate_state!="ALLOWED" || ae.dispatch_state!="DISPATCHED"
                 || claims["tenant_id"]!=json!(ae.tenant_id) || claims.get("workspace_id")!=expected_workspace.as_ref()
@@ -205,16 +215,16 @@ pub(crate) async fn check(
                 || claims["operation_id"]!=json!(ae.operation_id) || claims["action_key"]!=ae.action_key
                 || claims["action_definition_version"]!=ae.action_version || claims["target_type"]!=def.target_type
                 || claims["target_id"]!=json!(ae.target_id)
-                || (!observing && !querying && claims["normalized_parameter_hash"]!=parameters["toolParameterHash"])
+                || (executing && claims["normalized_parameter_hash"]!=parameters["toolParameterHash"])
                 || claims["normalized_parameter_hash"]!=hash
                 || claims["result_exposure_policy_id"]!=parameters["resultExposurePolicyId"]
                 || claims["result_exposure_policy_version"]!=parameters["resultExposurePolicyVersion"]
                 || claims["delegation_id"]!=parameters["delegationId"] || claims["delegation_version"]!=parameters["delegationVersion"]
                 || claims["authorization_min_zed_token"].as_str().is_none_or(str::is_empty)
-                || (!observing && !querying && crate::application_tool::target(&arguments)?!=(def.target_type.as_str(),ae.target_id)) {
+                || (executing && crate::application_tool::target(&arguments)?!=(def.target_type.as_str(),ae.target_id)) {
                 return Err(Refusal::Denied(ReasonCode::ScopeGuardFailed));
             }
-            if crate::application_action::is_human(&ae) && !observing && !querying {
+            if crate::application_action::is_human(&ae) && executing {
                 // A signed preflight ticket is unusable until the original
                 // transaction has frozen this exact EE/key/hash. It cannot be
                 // presented with another key to start a second native request.
@@ -233,9 +243,9 @@ pub(crate) async fn check(
                 ).await?;
             }
             tx.commit().await?;
-            let revision=if observing {
+            let revision=if matches!(operation_kind,contracts::AdapterProtocolOperation::Observe|contracts::AdapterProtocolOperation::ExtractUsage) {
                 crate::action_token::observation_revision(&state,&ae,binding,operation,&arguments).await?
-            } else if querying {
+            } else if operation_kind==contracts::AdapterProtocolOperation::QueryRevision {
                 let (_,revision)=crate::application_tool::fresh_revision_read(&state,&ae,&arguments).await?;
                 revision
             } else {
@@ -245,7 +255,7 @@ pub(crate) async fn check(
             };
             let mut response=json!({"actionExecutionId":ae.id,
                 "operationId":ae.operation_id,"authorizationMinZedToken":revision});
-            if operation=="execute" && def.target_type=="RESOURCE" {
+            if executing && def.target_type=="RESOURCE" {
                 response["targetResource"]=authorized_resource(&state,&ae,binding).await?;
             }
             let response:contracts::AdapterPepCheckResponse=serde_json::from_value(response)
@@ -301,21 +311,42 @@ mod revision_pep_tests {
     fn revision_read_requires_active_business_binding_not_observation_exception() {
         assert_eq!(
             business_operation("query_revision", "ACTIVE").unwrap(),
-            (false, true)
+            contracts::AdapterProtocolOperation::QueryRevision
         );
         assert_eq!(
             business_operation("execute", "ACTIVE").unwrap(),
-            (false, false)
+            contracts::AdapterProtocolOperation::Execute
         );
-        for operation in ["observe", "extract_usage"] {
-            assert_eq!(
-                business_operation(operation, "DISABLING").unwrap(),
-                (true, false)
-            );
+        for (operation, kind) in [
+            ("observe", contracts::AdapterProtocolOperation::Observe),
+            (
+                "extract_usage",
+                contracts::AdapterProtocolOperation::ExtractUsage,
+            ),
+        ] {
+            assert_eq!(business_operation(operation, "DISABLING").unwrap(), kind);
         }
         for status in ["PROVISIONING", "DISABLING", "DISABLED", "UNKNOWN"] {
             assert!(business_operation("query_revision", status).is_err());
         }
         assert!(business_operation("query_revision_other", "ACTIVE").is_err());
+    }
+
+    #[test]
+    fn pure_native_error_mapping_retains_active_business_scope() {
+        assert_eq!(
+            business_operation("map_native_status_error", "ACTIVE").unwrap(),
+            contracts::AdapterProtocolOperation::MapNativeStatusError
+        );
+        for status in ["PROVISIONING", "DISABLING", "DISABLED", "UNKNOWN"] {
+            assert!(business_operation("map_native_status_error", status).is_err());
+        }
+        for operation in [
+            "map_native_status_error_other",
+            "handshake",
+            "validate_binding",
+        ] {
+            assert!(business_operation(operation, "ACTIVE").is_err());
+        }
     }
 }
