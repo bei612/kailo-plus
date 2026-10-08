@@ -1,4 +1,5 @@
 import { IWrenAIAdaptor } from '@server/adaptors/wrenAIAdaptor';
+import { randomUUID } from 'crypto';
 import type { Knex } from 'knex';
 import {
   AskResultStatus,
@@ -9,6 +10,7 @@ import {
   RecommendationQuestionStatus,
   ChartStatus,
   ChartAdjustmentOption,
+  TextBasedAnswerStatus,
   WrenAILanguage,
 } from '@server/models/adaptor';
 import { IDeployService } from './deployService';
@@ -936,15 +938,7 @@ export class AskingService implements IAskingService {
       )
         throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
       if (threadResponse.answerDetail?.queryHistoryId === native.historyId) {
-        // A missing AI id is an indeterminate original create, not authority
-        // to invoke the original non-idempotent AI endpoint again.
-        if (
-          threadResponse.answerDetail.queryId &&
-          threadResponse.answerDetail.status ===
-            ThreadResponseAnswerStatus.PREPROCESSING
-        )
-          this.textBasedAnswerBackgroundTracker.addTask(threadResponse);
-        return threadResponse;
+        return this.resumeNativeAnswer(threadResponse);
       }
       if (
         threadResponse.answerDetail &&
@@ -961,33 +955,32 @@ export class AskingService implements IAskingService {
         threadResponse,
         {
           queryHistoryId: native.historyId,
+          queryId: randomUUID(),
           status: ThreadResponseAnswerStatus.PREPROCESSING,
         },
       );
       if (!claimed) {
         const current = await this.getResponse(threadResponseId);
         if (current?.answerDetail?.queryHistoryId === native.historyId)
-          return current;
+          return this.resumeNativeAnswer(current);
         throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
       }
       // Only the current HUMAN's disclosed, frozen result enters the original
       // AI service. No credential is retained and no background SQL is run.
+      // Persist and observe the original task ID before its single create call;
+      // a lost acknowledgement never requires another non-idempotent POST.
+      this.textBasedAnswerBackgroundTracker.addTask(claimed);
       const response = await this.wrenAIAdaptor.createTextBasedAnswer({
+        queryId: claimed.answerDetail.queryId,
         query: claimed.question,
         sql: claimed.sql,
         sqlData: native.data,
         threadId: claimed.threadId.toString(),
         configurations: { language: configurations.language },
       });
-      if (typeof response?.queryId !== 'string' || !response.queryId.trim())
+      if (response?.queryId !== claimed.answerDetail.queryId)
         throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
-      const accepted = await this.threadResponseRepository.claimNativeAnswer(
-        claimed,
-        { ...claimed.answerDetail, queryId: response.queryId },
-      );
-      if (!accepted) throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
-      this.textBasedAnswerBackgroundTracker.addTask(accepted);
-      return accepted;
+      return claimed;
     }
 
     // update with initial status
@@ -1082,6 +1075,61 @@ export class AskingService implements IAskingService {
     return updatedThreadResponse;
   }
 
+  private async resumeNativeAnswer(response: ThreadResponse) {
+    const detail = response.answerDetail;
+    if (!detail?.queryId)
+      throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
+    if (detail.status === ThreadResponseAnswerStatus.PREPROCESSING) {
+      this.textBasedAnswerBackgroundTracker.addTask(response);
+      // The ID was frozen before POST, so it alone is not an acknowledgement.
+      // Reentry verifies the same original task by GET and never resubmits it.
+      const observed = await this.wrenAIAdaptor.getTextBasedAnswerResult(
+        detail.queryId,
+      );
+      if (!Object.values(TextBasedAnswerStatus).includes(observed?.status))
+        throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
+    } else if (
+      ![
+        ThreadResponseAnswerStatus.STREAMING,
+        ThreadResponseAnswerStatus.FINISHED,
+        ThreadResponseAnswerStatus.FAILED,
+        ThreadResponseAnswerStatus.INTERRUPTED,
+      ].includes(detail.status as ThreadResponseAnswerStatus)
+    )
+      throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
+    return response;
+  }
+
+  private async resumeNativeChart(
+    response: ThreadResponse,
+    adjustment: boolean,
+  ) {
+    const detail = response.chartDetail;
+    if (!detail?.queryId)
+      throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
+    if (
+      [ChartStatus.FETCHING, ChartStatus.GENERATING].includes(
+        detail.status as ChartStatus,
+      )
+    ) {
+      const tracker = adjustment
+        ? this.chartAdjustmentBackgroundTracker
+        : this.chartBackgroundTracker;
+      tracker.addTask(response);
+      const observed = await (adjustment
+        ? this.wrenAIAdaptor.getChartAdjustmentResult(detail.queryId)
+        : this.wrenAIAdaptor.getChartResult(detail.queryId));
+      if (!Object.values(ChartStatus).includes(observed?.status))
+        throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
+    } else if (
+      ![ChartStatus.FINISHED, ChartStatus.FAILED, ChartStatus.STOPPED].includes(
+        detail.status as ChartStatus,
+      )
+    )
+      throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
+    return response;
+  }
+
   private async createNativeChart(
     responseId: number,
     configurations: NativeChartConfigurations,
@@ -1112,14 +1160,7 @@ export class AskingService implements IAskingService {
         canonical(adjustmentOption || null)
       )
         throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
-      if (
-        detail.queryId &&
-        [ChartStatus.FETCHING, ChartStatus.GENERATING].includes(
-          detail.status as ChartStatus,
-        )
-      )
-        tracker.addTask(current);
-      return current;
+      return this.resumeNativeChart(current, !!adjustmentOption);
     }
     if (
       detail &&
@@ -1144,6 +1185,7 @@ export class AskingService implements IAskingService {
       current,
       {
         queryHistoryId: native.historyId,
+        queryId: randomUUID(),
         status: ChartStatus.GENERATING,
         ...(adjustmentOption ? { adjustment: true, adjustmentOption } : {}),
       },
@@ -1155,15 +1197,17 @@ export class AskingService implements IAskingService {
         canonical(latest.chartDetail.adjustmentOption || null) ===
           canonical(adjustmentOption || null)
       )
-        return latest;
+        return this.resumeNativeChart(latest, !!adjustmentOption);
       throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
     }
     const input = {
+      queryId: claimed.chartDetail.queryId,
       query: claimed.question,
       sql: claimed.sql,
       data: native.data,
       configurations: { language: configurations.language },
     };
+    tracker.addTask(claimed);
     const created = adjustmentOption
       ? await this.wrenAIAdaptor.adjustChart({
           ...input,
@@ -1171,18 +1215,9 @@ export class AskingService implements IAskingService {
           chartSchema: detail.chartSchema,
         })
       : await this.wrenAIAdaptor.generateChart(input);
-    if (typeof created?.queryId !== 'string' || !created.queryId.trim())
+    if (created?.queryId !== claimed.chartDetail.queryId)
       throw new NativeQueryRefusal(503, 'NATIVE_EXECUTION_UNKNOWN');
-    const accepted = await this.threadResponseRepository.claimNativeChart(
-      claimed,
-      {
-        ...claimed.chartDetail,
-        queryId: created.queryId,
-      },
-    );
-    if (!accepted) throw new NativeQueryRefusal(409, 'NATIVE_OBJECT_CHANGED');
-    tracker.addTask(accepted);
-    return accepted;
+    return claimed;
   }
 
   public async getResponsesWithThread(threadId: number) {
@@ -1413,6 +1448,7 @@ export class AskingService implements IAskingService {
 
   private getThreadRecommendationQuestionsConfig(project: Project) {
     return {
+      projectId: String(project.id),
       maxCategories: config.threadRecommendationQuestionMaxCategories,
       maxQuestions: config.threadRecommendationQuestionsMaxQuestions,
       configuration: {

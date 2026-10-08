@@ -1,6 +1,12 @@
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
 import { DiagramResolver } from './apollo/server/resolvers/diagramResolver';
 import { AskingService } from './apollo/server/services/askingService';
+import { ProjectService } from './apollo/server/services/projectService';
+import { TextBasedAnswerBackgroundTracker } from './apollo/server/backgrounds/textBasedAnswerBackgroundTracker';
+import {
+  ChartBackgroundTracker,
+  ChartAdjustmentBackgroundTracker,
+} from './apollo/server/backgrounds/chart';
 import { DashboardResolver } from './apollo/server/resolvers/dashboardResolver';
 import { DashboardService } from './apollo/server/services/dashboardService';
 import { MDLService } from './apollo/server/services/mdlService';
@@ -973,8 +979,11 @@ describe('native bound-project business consumers', () => {
         },
       );
       service.wrenAIAdaptor = {
-        createTextBasedAnswer: jest.fn(async () => ({
-          queryId: 'original-ai-task',
+        createTextBasedAnswer: jest.fn(async (input) => ({
+          queryId: input.queryId,
+        })),
+        getTextBasedAnswerResult: jest.fn(async () => ({
+          status: 'PREPROCESSING',
         })),
       };
       service.textBasedAnswerBackgroundTracker = { addTask: jest.fn() };
@@ -995,10 +1004,11 @@ describe('native bound-project business consumers', () => {
       const first = await service.generateThreadResponseAnswer(71, input);
       expect(first.answerDetail).toEqual({
         queryHistoryId: 'original-query-history',
-        queryId: 'original-ai-task',
+        queryId: expect.any(String),
         status: 'PREPROCESSING',
       });
       expect(service.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledWith({
+        queryId: first.answerDetail.queryId,
         query: 'original',
         sql: 'SELECT 1',
         sqlData: input.nativeQuery.data,
@@ -1022,6 +1032,7 @@ describe('native bound-project business consumers', () => {
         (await service.generateThreadResponseAnswer(71, input)).answerDetail,
       ).toEqual({
         queryHistoryId: 'original-query-history',
+        queryId: expect.any(String),
         status: 'PREPROCESSING',
       });
       expect(service.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(
@@ -1029,7 +1040,96 @@ describe('native bound-project business consumers', () => {
       );
       expect(
         service.textBasedAnswerBackgroundTracker.addTask,
-      ).not.toHaveBeenCalled();
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          answerDetail: expect.objectContaining({
+            queryId: expect.any(String),
+          }),
+        }),
+      );
+    });
+    it('persists the exact native ID before dispatch and never adopts a foreign acknowledgement', async () => {
+      const { service, input } = await fixture();
+      service.wrenAIAdaptor.createTextBasedAnswer.mockImplementation(
+        async (request) => {
+          const stored = await service.getResponse(71);
+          expect(stored.answerDetail.queryId).toBe(request.queryId);
+          expect(
+            service.textBasedAnswerBackgroundTracker.addTask,
+          ).toHaveBeenCalledWith(stored);
+          return { queryId: 'foreign-native-id' };
+        },
+      );
+      await expect(
+        service.generateThreadResponseAnswer(71, input),
+      ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      const stored = await service.getResponse(71);
+      expect(stored.answerDetail.queryId).not.toBe('foreign-native-id');
+      expect(await service.generateThreadResponseAnswer(71, input)).toEqual(
+        stored,
+      );
+      expect(service.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+    it('converges a lost create acknowledgement through the original text tracker without rerunning SQL or POST', async () => {
+      const { service, input } = await fixture();
+      let tick: () => Promise<void>;
+      const interval = jest.spyOn(global, 'setInterval').mockImplementation(((
+        callback,
+      ) => {
+        tick = callback;
+        return 1;
+      }) as any);
+      const queryService: any = { preview: jest.fn() };
+      const tracker = new TextBasedAnswerBackgroundTracker({
+        wrenAIAdaptor: service.wrenAIAdaptor,
+        threadResponseRepository: service.threadResponseRepository,
+        projectService: {} as any,
+        deployService: {} as any,
+        queryService,
+      });
+      interval.mockRestore();
+      service.textBasedAnswerBackgroundTracker = tracker;
+      service.wrenAIAdaptor.createTextBasedAnswer.mockRejectedValue(
+        new Error('lost acknowledgement'),
+      );
+      await expect(
+        service.generateThreadResponseAnswer(71, input),
+      ).rejects.toThrow('lost acknowledgement');
+      const stored = await service.getResponse(71);
+      service.wrenAIAdaptor.getTextBasedAnswerResult.mockRejectedValueOnce(
+        new Error('native ID not observable'),
+      );
+      await expect(
+        service.generateThreadResponseAnswer(71, input),
+      ).rejects.toThrow('native ID not observable');
+      service.wrenAIAdaptor.getTextBasedAnswerResult.mockResolvedValue({
+        status: 'SUCCEEDED',
+      });
+      expect(await service.generateThreadResponseAnswer(71, input)).toEqual(
+        stored,
+      );
+      await tick();
+      await new Promise((resolve) => setImmediate(resolve));
+      const updated = await service.getResponse(71);
+      expect(updated.answerDetail).toEqual(
+        expect.objectContaining({
+          queryId: stored.answerDetail.queryId,
+          queryHistoryId: input.nativeQuery.historyId,
+          status: 'STREAMING',
+        }),
+      );
+      expect(
+        service.wrenAIAdaptor.getTextBasedAnswerResult.mock.calls.every(
+          ([id]) => id === stored.answerDetail.queryId,
+        ),
+      ).toBe(true);
+      expect(service.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(queryService.preview).not.toHaveBeenCalled();
+      expect(tracker.getTasks()[71]).toBeUndefined();
     });
     it.each(['missing', 'changed-sql', 'concurrent-replacement'])(
       'refuses %s before sending original AI data',
@@ -1093,10 +1193,14 @@ describe('native bound-project business consumers', () => {
         },
       );
       service.wrenAIAdaptor = {
-        generateChart: jest.fn(async () => ({
-          queryId: 'original-chart-task',
+        generateChart: jest.fn(async (input) => ({
+          queryId: input.queryId,
         })),
-        adjustChart: jest.fn(async () => ({ queryId: 'original-adjust-task' })),
+        adjustChart: jest.fn(async (input) => ({ queryId: input.queryId })),
+        getChartResult: jest.fn(async () => ({ status: 'GENERATING' })),
+        getChartAdjustmentResult: jest.fn(async () => ({
+          status: 'GENERATING',
+        })),
       };
       service.chartBackgroundTracker = { addTask: jest.fn() };
       service.chartAdjustmentBackgroundTracker = { addTask: jest.fn() };
@@ -1124,6 +1228,7 @@ describe('native bound-project business consumers', () => {
           ? service.wrenAIAdaptor.adjustChart
           : service.wrenAIAdaptor.generateChart;
         expect(create).toHaveBeenCalledWith({
+          queryId: first.chartDetail.queryId,
           query: 'original',
           sql: 'SELECT 1',
           data: input.nativeQuery.data,
@@ -1135,8 +1240,8 @@ describe('native bound-project business consumers', () => {
         expect(first.chartDetail.queryHistoryId).toBe(
           input.nativeQuery.historyId,
         );
-        expect(first.chartDetail.queryId).toBe(
-          adjustment ? 'original-adjust-task' : 'original-chart-task',
+        expect(first.chartDetail.queryId).toMatch(
+          /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/,
         );
         await run();
         expect(create).toHaveBeenCalledTimes(1);
@@ -1161,14 +1266,21 @@ describe('native bound-project business consumers', () => {
         expect((await run()).chartDetail).toEqual(
           expect.objectContaining({
             queryHistoryId: 'original-chart-history',
+            queryId: expect.any(String),
             status: 'GENERATING',
           }),
         );
         expect(create).toHaveBeenCalledTimes(1);
-        expect(service.chartBackgroundTracker.addTask).not.toHaveBeenCalled();
-        expect(
-          service.chartAdjustmentBackgroundTracker.addTask,
-        ).not.toHaveBeenCalled();
+        const tracker = adjustment
+          ? service.chartAdjustmentBackgroundTracker
+          : service.chartBackgroundTracker;
+        expect(tracker.addTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            chartDetail: expect.objectContaining({
+              queryId: expect.any(String),
+            }),
+          }),
+        );
       },
     );
     it.each([
@@ -1200,6 +1312,90 @@ describe('native bound-project business consumers', () => {
       ).rejects.toThrow();
       expect(service.wrenAIAdaptor.generateChart).not.toHaveBeenCalled();
     });
+    it.each([false, true])(
+      'persists the native ID before dispatch and refuses a foreign chart acknowledgement, adjustment=%s',
+      async (adjustment) => {
+        const { service, run } = await fixture(adjustment);
+        const create = adjustment
+          ? service.wrenAIAdaptor.adjustChart
+          : service.wrenAIAdaptor.generateChart;
+        const tracker = adjustment
+          ? service.chartAdjustmentBackgroundTracker
+          : service.chartBackgroundTracker;
+        create.mockImplementation(async (request) => {
+          const stored = await service.getResponse(71);
+          expect(stored.chartDetail.queryId).toBe(request.queryId);
+          expect(tracker.addTask).toHaveBeenCalledWith(stored);
+          return { queryId: 'foreign-native-id' };
+        });
+        await expect(run()).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+        const stored = await service.getResponse(71);
+        expect(stored.chartDetail.queryId).not.toBe('foreign-native-id');
+        expect(await run()).toEqual(stored);
+        expect(create).toHaveBeenCalledTimes(1);
+      },
+    );
+    it.each([false, true])(
+      'converges the lost native chart acknowledgement via the original tracker, adjustment=%s',
+      async (adjustment) => {
+        const { service, run } = await fixture(adjustment);
+        let tick: () => Promise<void>;
+        const interval = jest.spyOn(global, 'setInterval').mockImplementation(((
+          callback,
+        ) => {
+          tick = callback;
+          return 1;
+        }) as any);
+        const Constructor = adjustment
+          ? ChartAdjustmentBackgroundTracker
+          : ChartBackgroundTracker;
+        const tracker = new Constructor({
+          wrenAIAdaptor: service.wrenAIAdaptor,
+          threadResponseRepository: service.threadResponseRepository,
+          telemetry: { sendEvent: jest.fn() } as any,
+        });
+        interval.mockRestore();
+        if (adjustment) service.chartAdjustmentBackgroundTracker = tracker;
+        else service.chartBackgroundTracker = tracker;
+        const create = adjustment
+          ? service.wrenAIAdaptor.adjustChart
+          : service.wrenAIAdaptor.generateChart;
+        const observe = adjustment
+          ? service.wrenAIAdaptor.getChartAdjustmentResult
+          : service.wrenAIAdaptor.getChartResult;
+        create.mockRejectedValue(new Error('lost acknowledgement'));
+        await expect(run()).rejects.toThrow('lost acknowledgement');
+        const stored = await service.getResponse(71);
+        observe.mockResolvedValueOnce({ status: 'UNKNOWN' });
+        await expect(run()).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+        observe.mockResolvedValue({
+          status: 'FINISHED',
+          response: {
+            reasoning: 'original chart',
+            chartType: 'line',
+            chartSchema: { mark: 'line' },
+          },
+        });
+        expect(await run()).toEqual(stored);
+        await tick();
+        expect((await service.getResponse(71)).chartDetail).toEqual(
+          expect.objectContaining({
+            queryId: stored.chartDetail.queryId,
+            queryHistoryId: 'original-chart-history',
+            status: 'FINISHED',
+            chartSchema: { mark: 'line' },
+          }),
+        );
+        expect(
+          observe.mock.calls.every(([id]) => id === stored.chartDetail.queryId),
+        ).toBe(true);
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(tracker.getTasks()[71]).toBeUndefined();
+        expect(
+          service.threadResponseRepository.updateOne,
+        ).not.toHaveBeenCalled();
+      },
+    );
     it('does not reuse an existing history for a different adjustment or generation', async () => {
       const { service, input, run } = await fixture(true);
       await run();
@@ -1231,6 +1427,11 @@ describe('native bound-project business consumers', () => {
     expect(service.mdlService.makeCurrentModelMDL).toHaveBeenCalledWith({
       id: projectId,
     });
+    expect(
+      service.wrenAIAdaptor.generateRecommendationQuestions,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: String(projectId) }),
+    );
     expect(service.threadRepository.updateOne).toHaveBeenCalledWith(
       81,
       expect.objectContaining({ queryId: 'native-query' }),
@@ -1239,6 +1440,66 @@ describe('native bound-project business consumers', () => {
       service.threadRecommendQuestionBackgroundTracker.addTask,
     ).toHaveBeenCalledTimes(1);
     expect(ctx.projectService.getCurrentProject).toHaveBeenCalledTimes(1);
+  });
+  it('instant recommendations retain the native current-project retrieval scope', async () => {
+    const service = asking();
+    service.deployService.getLastDeployment.mockResolvedValue({
+      manifest: { models: [] },
+    });
+    service.wrenAIAdaptor = {
+      generateRecommendationQuestions: jest.fn(async () => ({
+        queryId: 'native-recommendation',
+      })),
+    };
+    await service.createInstantRecommendedQuestions({
+      previousQuestions: ['original question'],
+    });
+    expect(service.deployService.getLastDeployment).toHaveBeenCalledWith(
+      projectId,
+    );
+    expect(
+      service.wrenAIAdaptor.generateRecommendationQuestions,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: String(projectId),
+        previousQuestions: ['original question'],
+      }),
+    );
+  });
+  it('project recommendations retain the exact selected MDL/project and native regeneration input', async () => {
+    const service = Object.assign(Object.create(ProjectService.prototype), {
+      getCurrentProject: ctx.projectService.getCurrentProject,
+      mdlService: {
+        makeCurrentModelMDL: jest.fn(async () => ({
+          manifest: { models: [] },
+        })),
+      },
+      wrenAIAdaptor: {
+        generateRecommendationQuestions: jest.fn(async () => ({
+          queryId: 'native-recommendation',
+        })),
+      },
+      projectRepository: {
+        updateOne: jest.fn(async () => ({ id: projectId })),
+      },
+      projectRecommendQuestionBackgroundTracker: { addTask: jest.fn() },
+    });
+    await service.generateProjectRecommendationQuestions();
+    expect(service.mdlService.makeCurrentModelMDL).toHaveBeenCalledWith({
+      id: projectId,
+    });
+    expect(
+      service.wrenAIAdaptor.generateRecommendationQuestions,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: String(projectId),
+        regenerate: true,
+      }),
+    );
+    expect(service.projectRepository.updateOne).toHaveBeenCalledWith(
+      projectId,
+      expect.objectContaining({ queryId: 'native-recommendation' }),
+    );
   });
   it('the original MDL builder consumes the selected project instead of re-reading another current project', async () => {
     const projectRepository = {

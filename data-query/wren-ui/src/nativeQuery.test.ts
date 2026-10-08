@@ -237,7 +237,12 @@ integration('original Wren native answer PostgreSQL CAS', () => {
         getCurrentProject: jest.fn(async () => ({ id: projectId })),
       },
       wrenAIAdaptor: {
-        createTextBasedAnswer: jest.fn(async () => ({ queryId: randomUUID() })),
+        createTextBasedAnswer: jest.fn(async (input) => ({
+          queryId: input.queryId,
+        })),
+        getTextBasedAnswerResult: jest.fn(async () => ({
+          status: 'PREPROCESSING',
+        })),
       },
       textBasedAnswerBackgroundTracker: { addTask: jest.fn() },
     });
@@ -276,6 +281,7 @@ integration('original Wren native answer PostgreSQL CAS', () => {
       1,
     );
     expect(service.wrenAIAdaptor.createTextBasedAnswer).toHaveBeenCalledWith({
+      queryId: replies[0].answerDetail.queryId,
       query: expected.question,
       sql: expected.sql,
       sqlData: request.nativeQuery.data,
@@ -307,6 +313,7 @@ integration('original Wren native answer PostgreSQL CAS', () => {
       (await repository.findOneBy({ id: expected.id })).answerDetail,
     ).toEqual({
       queryHistoryId: request.nativeQuery.historyId,
+      queryId: expect.any(String),
       status: 'PREPROCESSING',
     });
     await service.generateThreadResponseAnswer(expected.id, request);

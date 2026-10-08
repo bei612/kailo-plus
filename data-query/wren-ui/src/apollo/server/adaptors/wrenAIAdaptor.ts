@@ -371,9 +371,13 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
     const body = {
       mdl: JSON.stringify(input.manifest),
       previous_questions: input.previousQuestions,
+      project_id: input.projectId,
       max_questions: input.maxQuestions,
       max_categories: input.maxCategories,
       configuration: input.configuration,
+      ...(input.regenerate === undefined
+        ? {}
+        : { regenerate: input.regenerate }),
     };
     logger.info(`Wren AI: Generating recommendation questions`);
     try {
@@ -426,6 +430,7 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
     input: TextBasedAnswerInput,
   ): Promise<AsyncQueryResponse> {
     const body = {
+      native_task_id: input.queryId,
       query: input.query,
       sql: input.sql,
       sql_data: input.sqlData,
@@ -482,11 +487,12 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
   }
 
   public async generateChart(input: ChartInput): Promise<AsyncQueryResponse> {
+    const { queryId, ...payload } = input;
     try {
-      const res = await axios.post(
-        `${this.wrenAIBaseEndpoint}/v1/charts`,
-        input,
-      );
+      const res = await axios.post(`${this.wrenAIBaseEndpoint}/v1/charts`, {
+        ...payload,
+        native_task_id: queryId,
+      });
       return { queryId: res.data.query_id };
     } catch (err: any) {
       logger.debug(`Got error when creating chart: ${getAIServiceError(err)}`);
@@ -747,6 +753,7 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
       query,
       sql,
       data,
+      native_task_id: input.queryId,
       adjustment_option: {
         chart_type: adjustmentOption.chartType.toLowerCase(),
         x_axis: adjustmentOption.xAxis,

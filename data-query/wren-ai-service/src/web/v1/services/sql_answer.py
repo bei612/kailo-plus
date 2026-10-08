@@ -2,6 +2,7 @@ import asyncio
 import logging
 import json
 from typing import Dict, Literal, Optional
+from uuid import UUID
 
 from cachetools import TTLCache
 from langfuse.decorators import observe
@@ -17,6 +18,7 @@ logger = logging.getLogger("wren-ai-service")
 
 # POST /v1/sql-answers
 class SqlAnswerRequest(BaseRequest):
+    native_task_id: Optional[UUID] = None
     query: str
     sql: str
     sql_data: Dict

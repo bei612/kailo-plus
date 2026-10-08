@@ -1,5 +1,6 @@
 import logging
 from typing import Any, Dict, Literal, Optional
+from uuid import UUID
 
 from cachetools import TTLCache
 from fastapi import HTTPException
@@ -15,6 +16,7 @@ logger = logging.getLogger("wren-ai-service")
 
 # POST /v1/charts
 class ChartRequest(BaseRequest):
+    native_task_id: Optional[UUID] = None
     query: str
     sql: str
     data: Optional[Dict[str, Any]] = None

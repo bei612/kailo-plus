@@ -3918,3 +3918,127 @@ existing SDK has no `java`, `javac` or `mvn`; no dependency/tool installation
 was attempted. Ordinary aggregate/function provenance, trusted SERVICE SQL
 admission and lost-native-create reconciliation remain actual delivery gaps,
 not removed original features or claimed completed production behavior.
+
+### 2026-10-08 — observe original AI tasks after a lost create acknowledgement
+
+Authority and fixed-source facts were checked before the implementation:
+DD-98 and `apps/06` §4 require unknown external outcomes to remain unknown,
+without another side effect. At official Wren pin
+`c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ai-service/src/web/v1/services/__init__.py::BaseRequest.query_id`
+is a private property, not a caller-supplied request field.
+`wren-ai-service/src/web/v1/routers/sql_answers.py::sql_answer`,
+`wren-ai-service/src/web/v1/routers/chart.py::chart` and
+`wren-ai-service/src/web/v1/routers/chart_adjustment.py::chart_adjustment`
+always allocate a new UUID, populate their original service cache, then
+schedule their original method through FastAPI `BackgroundTasks`. Their
+existing GET handlers observe the same native ID. The original services
+use process-local `TTLCache`, configured through
+`wren-ai-service/src/globals.py::create_service_container`; there is no
+durable native intent lookup. The original
+`wren-ai-service/src/__main__.py` module entrypoint uses one worker. These
+facts do not prove cross-process registration or durable exactly-once.
+
+Impact and actual consumers: the same original three request models now
+accept optional UUID `native_task_id`; the existing three POST routers use
+it, refuse duplicate cached registration before scheduling, and otherwise
+retain their original implementation. Without that field they still
+allocate the original native UUID. Original `WrenAIAdaptor` create calls
+send the frozen ID. Original `AskingService` first CASes that ID and the
+existing query-history reference into original response JSONB, registers
+the original tracker, then makes one POST. The returned ID must equal the
+frozen ID. Answer/chart/adjust reentry and a CAS loser use their existing
+GET for that exact ID before acknowledging a still-pending create; the
+pre-POST ID alone is not an acknowledgement. The original Home caller can
+therefore retain its exact opaque key on an unobservable create without
+new page, state enum or identity field. Original trackers still own native
+status persistence, exact snapshot CAS, chart terminal evidence and answer
+preprocessing-to-stream transition; preprocessing success is not answer
+completion. No Core SQL/body, new table, task registry or workflow was added.
+
+Compatibility uses the original JSONB fields and optional native request
+field; no database migration or four-language contract change is needed.
+Legacy indeterminate rows without an AI ID remain unknown, not silently
+replayed or assigned a new ID. A new UI against an old AI server cannot
+mistake its different generated ID for acceptance: it refuses the foreign
+acknowledgement. A compatible UI/AI release is still required for this
+controlled fixed-ID path. Native standalone requests without an ID retain
+their original behavior.
+
+Side effects and boundaries: simultaneous claims admit one original POST;
+lost HTTP acknowledgement observes the persisted ID, never another POST or
+SQL call. Native 404, unknown status, transport failure, cache expiry,
+process loss or a crash between JSONB claim and POST do not prove unsent,
+failed or completed work. They retain UNKNOWN and the original reference;
+there is no blind resend or invented terminal receipt. A surviving native
+task can converge through the original tracker. Cache/process loss remains
+a concrete reconciliation blocker, not durable recovery or production
+readiness. Current HUMAN/source authorization and exact response/history
+checks still precede execution/disclosure. Existing DENIED/PRECONDITION/
+LIMIT/CONFLICT/BLOCKED classifications stay unchanged; unobservable native
+outcomes consume UNKNOWN. No default identity, shared credential or new
+SERVICE-to-HUMAN callback is introduced.
+
+The previous original adaptor recommendation failure was also a real
+consumer defect, not merely an assertion mismatch. At the same official
+pin, `wren-ai-service/src/web/v1/services/question_recommendation.py::`
+`QuestionRecommendation.recommend` and `_validate_question` consume
+`input.project_id` for original schema, SQL-pair, instruction and function
+retrieval. Original UI `generateRecommendationQuestions` omitted that field,
+and its thread/instant/project callers did not supply it. Those original
+consumers now pass the selected native project ID end to end; the project
+caller builds MDL from that same selected project and preserves its original
+`regenerate` input. Original tests were not weakened. This restores native
+retrieval scoping; it does not establish trusted SERVICE SQL admission or
+function authorization provenance.
+
+Checks reused only `kailo-wren-query-sdk-itgs2n`, its existing dependencies,
+cache and verified 4 CPU / 4 GiB / no-extra-swap limits. Process and pressure
+checks preceded execution. There was no new image, database, dependency
+download, full-tree copy or global build. Actual commands were:
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand src/nativeProjectScope.test.ts src/nativeHumanQuery.test.ts src/nativeTextAnswer.test.ts src/nativeAskingView.test.ts src/nativeTaskOwnership.test.ts src/middleware.test.ts src/apollo/server/adaptors/tests/wrenAIAdaptor.test.ts
+WREN_QUERY_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:5432/wren_query_itgs2n node node_modules/jest/bin/jest.js --runInBand src/nativeQuery.test.ts --testNamePattern='original Wren native answer PostgreSQL CAS'
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+PYTHONDONTWRITEBYTECODE=1 python3 data-query/wren-ai-service/tests/pytest/providers/test_native_sql_answer_stream.py
+```
+
+First six-suite ACK check: **346/346**, exit 0 (106.735 s). After the actual
+recommendation repair, seven suites passed **364/364**, exit 0 (13.581 s).
+After private production faults and exact restoration, the same seven
+suites passed **364/364**, exit 0 (13.949 s). Whole-UI TypeScript exited 0;
+original Prettier exited 0. The existing database identity was independently
+verified as `wren_query_itgs2n`/`postgres`, project `isolated-query-fixture`.
+Twelve original real repository/service CAS checks passed, 69 unrelated
+checks explicitly filtered out, exit 0 (7.924 s); the same original outer
+transaction/connection rolls back, not a cross-connection locking proof.
+Final thread/response counts remained 0 and API History remained 1225.
+Original Python router/service checks passed **10/10**, exit 0 (0.015 s).
+Their external dependency substitutions do not validate live Pydantic/ASGI,
+TTL scheduling, an LLM provider or production service deployment.
+
+Private production faults, never applied to the formal worktree:
+
+- Forcing the original answer router to allocate another UUID caused 1/10
+  failure; removing its duplicate-registration guard caused 1/10 failure.
+  Each was reverse-patched; `cmp` exited 0 and Python restored to 10/10.
+- Removing exact answer/chart ACK checks and replacing the pending answer
+  GET with a fabricated observation caused 4 failed / 91 filtered skips,
+  exit 1. The actual foreign ACK and unobservable-ID consumers caught this;
+  reverse patch and `cmp` exited 0 before the restored seven-suite run.
+- Dropping original recommendation project/regeneration fields caused
+  2 failed / 1 passed / 13 filtered skips, exit 1. Reverse patch and `cmp`
+  exited 0 before the restored seven-suite run.
+
+Logs are in the same existing private SDK directory recorded above:
+`native-create-positive.log`, `native-create-recommendation-positive.log`,
+`native-create-python-positive.log`, `native-create-python-id-negative.log`,
+`native-create-python-duplicate-negative.log`, `native-create-python-restored.log`,
+`native-create-ack-negative.log`, `native-create-recommendation-negative.log`,
+`native-create-restored.log`, `native-create-pg.log` and `native-create-tsc.log`.
+No live business runtime, ACTIVE binding, iframe, provider/datasource call,
+browser screenshot, Desktop/Mobile or global full check was accepted.
+The two earlier Engine Java files remain separately **unvalidated** and are
+not part of this batch. Function provenance, trusted SERVICE SQL and native
+cache-loss recovery remain explicit complete-delivery gaps.

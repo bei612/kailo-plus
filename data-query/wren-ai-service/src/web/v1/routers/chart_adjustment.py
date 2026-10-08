@@ -1,7 +1,7 @@
 import uuid
 from dataclasses import asdict
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from src.globals import (
     ServiceContainer,
@@ -28,7 +28,9 @@ async def chart_adjustment(
     service_container: ServiceContainer = Depends(get_service_container),
     service_metadata: ServiceMetadata = Depends(get_service_metadata),
 ) -> ChartAdjustmentResponse:
-    query_id = str(uuid.uuid4())
+    query_id = str(chart_adjustment_request.native_task_id or uuid.uuid4())
+    if query_id in service_container.chart_adjustment_service._chart_adjustment_results:
+        raise HTTPException(status_code=409, detail="Native task ID already registered")
     chart_adjustment_request.query_id = query_id
     service_container.chart_adjustment_service._chart_adjustment_results[
         query_id

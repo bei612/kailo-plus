@@ -1,12 +1,14 @@
 """Run the original SQL-answer producer/consumer with only dependency boundaries substituted."""
 
 import asyncio
+from dataclasses import dataclass
 import importlib.util
 import json
 from pathlib import Path
 import sys
 import types
 import unittest
+from uuid import UUID, uuid4
 from unittest.mock import AsyncMock, patch
 
 
@@ -30,6 +32,15 @@ class HTTPException(Exception):
         super().__init__(detail)
 
 
+class Router:
+    post = get = patch = staticmethod(lambda *args, **kwargs: decorator)
+
+
+@dataclass
+class Metadata:
+    source: str = "isolated-native-fixture"
+
+
 class Event(Model):
     SSEEventMessage = Model
 
@@ -51,7 +62,11 @@ def load_original(name, path):
         "src.web.v1.services": types.SimpleNamespace(Configuration=configuration, BaseRequest=Model, SSEEvent=Event),
         "cachetools": types.SimpleNamespace(TTLCache=lambda **kwargs: {}),
         "pydantic": types.SimpleNamespace(BaseModel=Model),
-        "fastapi": types.SimpleNamespace(HTTPException=HTTPException),
+        "fastapi": types.SimpleNamespace(HTTPException=HTTPException, APIRouter=Router,
+            BackgroundTasks=Model, Depends=lambda value: value),
+        "fastapi.responses": types.SimpleNamespace(StreamingResponse=Model),
+        "src.globals": types.SimpleNamespace(ServiceContainer=Model, ServiceMetadata=Metadata,
+            get_service_container=lambda: None, get_service_metadata=lambda: None),
     }
     with patch.dict(sys.modules, modules):
         source = importlib.util.spec_from_file_location(name, ROOT / path)
@@ -61,13 +76,69 @@ def load_original(name, path):
         return module
 
 
+def load_router(name, path, dependency, service):
+    with patch.dict(sys.modules, {dependency: service}):
+        return load_original(name, path)
+
+
 pipeline_module = load_original("native_sql_answer_pipeline", "src/pipelines/generation/sql_answer.py")
 service_module = load_original("native_sql_answer_service", "src/web/v1/services/sql_answer.py")
 chart_module = load_original("native_chart_service", "src/web/v1/services/chart.py")
 adjustment_module = load_original("native_chart_adjustment_service", "src/web/v1/services/chart_adjustment.py")
+answer_router = load_router("native_answer_router", "src/web/v1/routers/sql_answers.py",
+    "src.web.v1.services.sql_answer", service_module)
+chart_router = load_router("native_chart_router", "src/web/v1/routers/chart.py",
+    "src.web.v1.services.chart", chart_module)
+adjustment_router = load_router("native_adjustment_router", "src/web/v1/routers/chart_adjustment.py",
+    "src.web.v1.services.chart_adjustment", adjustment_module)
 
 
 class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
+    async def test_original_create_routers_keep_the_persisted_id_and_offer_read_only_observation(self):
+        for router, service, member, create, read in [
+            (answer_router, service_module.SqlAnswerService({}), "sql_answer_service", "sql_answer", "get_sql_answer_result"),
+            (chart_router, chart_module.ChartService({}), "chart_service", "chart", "get_chart_result"),
+            (adjustment_router, adjustment_module.ChartAdjustmentService({}), "chart_adjustment_service", "chart_adjustment", "get_chart_adjustment_result"),
+        ]:
+            with self.subTest(create=create):
+                identifier = uuid4()
+                request = types.SimpleNamespace(native_task_id=identifier)
+                container = types.SimpleNamespace(**{member: service})
+                scheduled = []
+                background = types.SimpleNamespace(add_task=lambda *args, **kwargs: scheduled.append((args, kwargs)))
+                response = await getattr(router, create)(request, background, container, Metadata())
+                self.assertEqual(response.query_id, str(identifier))
+                self.assertEqual(request.query_id, str(identifier))
+                self.assertEqual(len(scheduled), 1)
+                self.assertEqual(scheduled[0][0][0], getattr(service, create))
+                observed = await getattr(router, read)(str(identifier), container)
+                self.assertIn(observed.status, ["preprocessing", "fetching"])
+                # Simulate loss of the HTTP create acknowledgement: only GET the
+                # already persisted ID. Observation never schedules native work.
+                self.assertIs(await getattr(router, read)(str(identifier), container), observed)
+                self.assertEqual(len(scheduled), 1)
+                with self.assertRaises(HTTPException) as caught:
+                    await getattr(router, create)(request, background, container, Metadata())
+                self.assertEqual(caught.exception.status_code, 409)
+                self.assertIs(await getattr(router, read)(str(identifier), container), observed)
+                self.assertEqual(len(scheduled), 1)
+
+    async def test_original_standalone_create_routers_still_allocate_native_ids(self):
+        for router, service, member, create in [
+            (answer_router, service_module.SqlAnswerService({}), "sql_answer_service", "sql_answer"),
+            (chart_router, chart_module.ChartService({}), "chart_service", "chart"),
+            (adjustment_router, adjustment_module.ChartAdjustmentService({}), "chart_adjustment_service", "chart_adjustment"),
+        ]:
+            with self.subTest(create=create):
+                scheduled = []
+                background = types.SimpleNamespace(add_task=lambda *args, **kwargs: scheduled.append(args))
+                container = types.SimpleNamespace(**{member: service})
+                first = await getattr(router, create)(types.SimpleNamespace(native_task_id=None), background, container, Metadata())
+                second = await getattr(router, create)(types.SimpleNamespace(native_task_id=None), background, container, Metadata())
+                self.assertNotEqual(first.query_id, second.query_id)
+                self.assertEqual(str(UUID(first.query_id)), first.query_id)
+                self.assertEqual(len(scheduled), 2)
+
     def pipeline(self):
         pipeline = object.__new__(pipeline_module.SQLAnswer)
         pipeline._user_queues = {}

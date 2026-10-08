@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { randomUUID } from 'crypto';
 import { WrenAIAdaptor } from '../wrenAIAdaptor';
 import {
   RecommendationQuestionsInput,
@@ -52,6 +53,7 @@ describe('WrenAIAdaptor', () => {
         query: 'original',
         sql: 'original SQL',
         data,
+        native_task_id: undefined,
       },
     );
     await adaptor.adjustChart({
@@ -75,6 +77,37 @@ describe('WrenAIAdaptor', () => {
       }),
     );
   });
+
+  it.each(['answer', 'chart', 'adjustment'])(
+    'sends the already persisted native task ID to the original %s create',
+    async (kind) => {
+      const queryId = randomUUID();
+      mockedAxios.post.mockResolvedValueOnce({ data: { query_id: queryId } });
+      const input = { queryId, query: 'original', sql: 'original SQL' };
+      const response =
+        kind === 'answer'
+          ? await adaptor.createTextBasedAnswer({
+              ...input,
+              sqlData: { columns: [], data: [] },
+            })
+          : kind === 'chart'
+            ? await adaptor.generateChart({
+                ...input,
+                data: { columns: [], data: [] },
+              })
+            : await adaptor.adjustChart({
+                ...input,
+                chartSchema: { mark: 'line' },
+                adjustmentOption: { chartType: ChartType.LINE },
+              });
+      expect(response).toEqual({ queryId });
+      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+      expect(mockedAxios.post.mock.calls[0][1]).toMatchObject({
+        native_task_id: queryId,
+      });
+      expect(mockedAxios.post.mock.calls[0][1]).not.toHaveProperty('queryId');
+    },
+  );
 
   describe('deployment terminal evidence', () => {
     const hash = 'manifest-fixture';
@@ -216,6 +249,22 @@ describe('WrenAIAdaptor', () => {
       await expect(
         adaptor.generateRecommendationQuestions(mockInput),
       ).rejects.toThrow(errorMessage);
+    });
+    it('preserves the native project recommendation regeneration option', async () => {
+      mockedAxios.post.mockResolvedValueOnce({
+        data: { id: 'original-recommendation' },
+      });
+      await adaptor.generateRecommendationQuestions({
+        ...mockInput,
+        regenerate: true,
+      });
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        `${baseEndpoint}/v1/question-recommendations`,
+        expect.objectContaining({
+          project_id: mockInput.projectId,
+          regenerate: true,
+        }),
+      );
     });
   });
 

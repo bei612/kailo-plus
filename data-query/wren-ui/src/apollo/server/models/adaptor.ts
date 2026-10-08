@@ -185,6 +185,7 @@ export type RecommendationQuestionsResult = AskResponse<
 
 // text-based answer
 export interface TextBasedAnswerInput {
+  queryId?: string;
   query: string;
   sql: string;
   sqlData: any;
@@ -224,6 +225,7 @@ export enum ChartType {
 }
 
 export interface ChartInput {
+  queryId?: string;
   query: string;
   sql: string;
   data?: PreviewDataResponse;
@@ -241,6 +243,7 @@ export interface ChartAdjustmentOption {
 }
 
 export interface ChartAdjustmentInput {
+  queryId?: string;
   query: string;
   sql: string;
   data?: PreviewDataResponse;
