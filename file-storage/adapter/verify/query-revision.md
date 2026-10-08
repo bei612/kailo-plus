@@ -1974,3 +1974,115 @@ byte/op 用量消费尚未闭合。已保留原生 claim，但安全 dedup 退�
 queued claim 对账期限及责任入口未成立，不能把永久保留记录当作生产收敛。
 Mongo 跨 collection Job 存活性、条件删除原子性和分享多 RPC UNKNOWN 也仍
 是对应发布阻断。本批不宣称 generic write/share、完整 FILE_STORAGE 或生产就绪。
+
+## 2026-10-08 原生历史版本实际读取与完整历史错误传播
+
+本批只闭合已有原生版本读取消费者，不宣称 uploader→Task→Version 已接通。
+固定官方基准仍为 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf`，只读核验
+`common/nodes/version/handler-version.go::Handler.ListNodes/ReadNode/GetObject/CopyObject`
+与 `gateway/restv2/api-versions.go::Handler.NodeVersions/promoteDraftVersion`。
+原 NodeVersions 已明确只显示当前 native user 的草稿，原 promoteDraftVersion
+也拒绝提升他人的草稿；本批让原版本包装器的历史 stat、列表、下载与复制消费
+同一条规则，不新增权限权威或改动原页面。
+
+### 四步影响与实施事实
+
+1. 权威为 `.design/07` §5.2/§8A、`.design/08` §4 SS-CEL 及 `.design/13` §4.4：
+   指定版本不能读成其他版本，不完整历史不能冒充完整列表；现有 native actor、
+   当前 scope、binding generation、fresh PEP 与原 ACL 接缝保持不变。差异归为
+   已授权治理接入下的原读取消费者修复，不是原版布局、菜单或功能的删减。
+2. 实际影响是原 `common/nodes/compose/{compose-path.go,compose-uuid.go,reverse.go}`
+   的 `version.WithVersions` 包装器。原数据 gateway 的 GetObject/CopyObject
+   和原版本提升沿它读取指定版本；原 StatFlags/WithVersions 沿它读取历史。
+   `ContentRevision.VersionId/Draft/OwnerUuid/Location/Size/ETag/MTime` 仍由原生
+   版本服务生产，本批只消费；没有新格式、契约、数据库字段、旧数据迁移或第二正文。
+3. 原 WithVersions 忽略流错误、StatFlags 的列表路径仅写日志，均已改为用原
+   WrappingStreamer.SendError 传给真实调用者；收到部分历史后中断也不报完整。
+   三个指定版本入口均核验原 HeadVersion 的确切 ID；草稿只接受当前原生 owner。
+   下载与复制必须有原生 Location 的 path/datasource，使用克隆位置及同一版本的
+   Size/ETag/MTime；历史 stat 克隆原 node，不把当前调用者节点改成历史 metadata。
+   原字节读取、复制目的地、存储、Task 与 Version 权威未替换，没有重放未知副作用。
+4. 空/错误版本、缺少原生位置/数据源、他人及无 owner 草稿均确定拒绝，已发布
+   历史和本人草稿保留；历史流中断沿原错误路径暴露，不当成功或完整空列表。
+   原检查还验证拒绝时不进入 bytes/copy、原当前 node 不变。并发撤权仍依赖既有
+   native actor/fresh PEP/native ACL，本批没有部署后的撤权、浏览器或跨服务证据。
+
+### 原受限 SDK 正向、真实生产破坏与字节还原
+
+复用既有 `kailo-cells-native-check-lftow7`，镜像
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+UID1000:1000、`cpu.max=400000 100000`、8 GiB、swap0；原 `/cache/mod` 和
+`/cache/build`，没有新 SDK、镜像、数据库、依赖安装或整树复制。开始前
+MemAvailable 约18.1 GiB，最终字节窗口前约23.9 GiB、memory PSI avg10=0，
+CPU PSI avg10=0.58、I/O avg10 some=6.74/full=6.00。首轮实际经历文件页 I/O
+等待，始终续同一句柄，没有重复启动在途编译。最终 SDK 无 Go/compile/link
+在途，OOM/oom_kill=0；`memory.peak=2538696704` 是容器历史峰值，不算本批峰值。
+
+同一个原包命令，仅日志目的文件不同：
+
+```sh
+sudo -n docker exec \
+  -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e CELLS_WORKING_DIR=/tmp/cells-version-task-key-check \
+  -e CELLS_DATA_DIR=/tmp/cells-version-task-key-check \
+  -w /workspace/file-storage kailo-cells-native-check-lftow7 \
+  go test -p=1 -mod=readonly ./common/nodes/version -count=1 -v
+```
+
+- 首轮 handle9839 实际 exit1：3 顶层通过、1 顶层失败；58 子检查通过、3 子检查
+  失败（子数含分组）。历史 copy 的 published/own-draft 两个叶子实际抓到缺少
+  ContentRevision metadata，已修真实生产者，不放宽检查。原生成的 in-process
+  NodeVersionerStub 不能确定保留 Send 后的流错误，因此原检查追加确定的 grpc
+  ClientStream 夹具，经原生成 client 的 Recv 送出部分历史后再失败；不是新协议。
+- 最终两文件一次同步/gofmt、cmp=0 后，handle38082 实际 exit0：4 顶层、61 子检查
+  通过，包含原上传持久 ACK 目标与新增原生历史三个读取、三个列表消费者。
+- 仅私有候选禁用真实草稿 owner 比较、三处确切版本 ID 比较和两处流错误传播，
+  正式源码与检查文件未破坏。handle61978 实际 exit1：2 顶层、20 子检查失败，
+  其余2 顶层、41 子检查通过；实际抓到他人/无 owner 草稿与错误版本获准、历史
+  漏掉流错误和列表泄漏他人草稿，非编译失败。
+- 从正式源码恢复原生产文件，两个输入逐字节 cmp=0，再跑同一原包。
+  handle33480 实际 exit0：4 顶层、61 子检查再次通过。最终两输入及 go.mod/go.sum
+  正式/候选 cmp=0，原 SDK gofmt-l 空输出/exit0。
+
+负向原输出摘录：
+
+```text
+revision access allowed=true, wanted false: <nil>
+native draft visibility lost: [published own-draft other-draft]
+partial native history was reported as complete: <nil>
+```
+
+日志及私有生产差异保留于
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/`：
+
+| 文件 | SHA-256 |
+|---|---|
+| cells-native-revision-read-positive.log | `413d96878847ebbeaed2d941324169c0a09b984fbb910fd1bd285245439579d5` |
+| cells-native-revision-read-final-positive.log | `158a2a29fe4647fb492ddd127bb06c83dccad71e14cd73385762b5e50104e102` |
+| cells-native-revision-read-negative.log | `cf5e28a2afb7260300b9dbf7dd885ccba29b3cbdc7bfa691d05fe374e1425f40` |
+| cells-native-revision-read-restored.log | `104fe44c20d3b4309aa02b894519a2824773e0172857f67df5ad058d728c5328` |
+| cells-native-revision-read-production-mutation.diff | `c3c1ac6bf48919cfd62e3359ff97faa2c95937f258593771e1b52086490d09b5` |
+
+候选只保证本批两个文件及依赖锁与正式树一致，不是完整 main 快照。实际验证
+原 Handler 与原生成 grpc client，用原检查的下游夹具确认 bytes/copy 转发；没有
+启动真实对象存储读写，也没有运行 full、镜像发布、Mongo 实库、Playwright 或
+三端验收，没有改正式业务库或激活 binding。
+
+### uploader 真实接缝仍阻断
+
+对同一固定官方 commit 只读核验：
+
+- `frontend/assets/uploader.html/res/js/model/Task.js::Task` 的
+  `local-upload-task-` Job 与 `upload` Task 只送原 JobsStore 本地展示，不是持久 native Task。
+- `frontend/assets/uploader.html/res/js/model/UploadItem.js::UploadItem.uploadPresigned`
+  沿原 PydioApi/S3 上传；`gateway/data/gw/gateway-pydio.go::pydioObjects.PutObject`
+  只向原 router 传字节、size/hash 与原 UserDefined metadata。
+- `gateway/data/hooks/auth-handler.go::pydioAuthHandler.ServeHTTP` 消费原 Cells JWT/S3
+  身份；原 `data/versions/grpc/jobs.go::GetVersioningJob` 消费 NodeChangeEvent，未冻结
+  平台 operation key、binding generation 和上传不可变字节与 claimed Task 的因果。
+
+当前二开 `gateway/restv2/native-actor.go::Handler.nativeActor` 只承接已实现的四个
+授权读动作，不能借其证明开放 S3 写入，也不能拿本地展示 Task/随机 UUID 充当
+稳定操作回执。故本批不猜 key/TTL、不启用 generic write/share 或完整 FILE_STORAGE；
+原 Mongo 跨 collection Job 存活性、claim 安全退休/失联对账、条件删除原子性与
+分享多 RPC UNKNOWN 仍保留发布阻断。版本读取修复不代表 uploader 或跨服务 E2E。

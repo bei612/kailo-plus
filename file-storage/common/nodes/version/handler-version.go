@@ -91,7 +91,13 @@ func (v *Handler) ListNodes(ctx context.Context, in *tree.ListNodesRequest, opts
 		}
 		go func() {
 			defer streamer.CloseSend()
-			_ = commons.ForEach(versionStream, er, func(vResp *tree.ListVersionsResponse) error {
+			sendErr := commons.ForEach(versionStream, er, func(vResp *tree.ListVersionsResponse) error {
+				if vResp.GetVersion().GetVersionId() == "" {
+					return errors.WithStack(errors.VersionNotFound)
+				}
+				if !visibleRevision(ctx, vResp.GetVersion()) {
+					return nil
+				}
 				log.Logger(ctx).Debug("received version", zap.Any("version", vResp))
 				vNode := resp.Node.Clone()
 				vNode.Etag = vResp.Version.ETag
@@ -106,6 +112,9 @@ func (v *Handler) ListNodes(ctx context.Context, in *tree.ListNodesRequest, opts
 					Node: vNode,
 				})
 			})
+			if sendErr != nil {
+				_ = streamer.SendError(sendErr)
+			}
 		}()
 		return streamer, nil
 
@@ -129,7 +138,12 @@ func (v *Handler) ListNodes(ctx context.Context, in *tree.ListNodesRequest, opts
 				versionStream, er := v.getVersionClient(ctx).ListVersions(ctx, &tree.ListVersionsRequest{Node: vResp.GetNode(), Filters: ff})
 				var vv []*tree.ContentRevision
 				if ver := commons.ForEach(versionStream, er, func(vResp *tree.ListVersionsResponse) error {
-					vv = append(vv, vResp.GetVersion())
+					if vResp.GetVersion().GetVersionId() == "" {
+						return errors.WithStack(errors.VersionNotFound)
+					}
+					if visibleRevision(ctx, vResp.GetVersion()) {
+						vv = append(vv, vResp.GetVersion())
+					}
 					return nil
 				}); ver != nil {
 					return ver
@@ -141,6 +155,7 @@ func (v *Handler) ListNodes(ctx context.Context, in *tree.ListNodesRequest, opts
 			})
 			if sendErr != nil {
 				log.Logger(ctx).Error("handler-version failed to send node to streamer", zap.Error(sendErr))
+				_ = streamer.SendError(sendErr)
 			}
 		}()
 
@@ -170,7 +185,11 @@ func (v *Handler) ReadNode(ctx context.Context, req *tree.ReadNodeRequest, opts 
 		if err != nil {
 			return nil, err
 		}
+		if vResp.GetVersion().GetVersionId() != vId || !visibleRevision(ctx, vResp.GetVersion()) {
+			return nil, errors.WithStack(errors.VersionNotFound)
+		}
 		log.Logger(ctx).Debug("Reading Node with Version ID - Found version", zap.Any("version", vResp.Version))
+		node = node.Clone()
 		node.Etag = vResp.Version.ETag
 		node.MTime = vResp.Version.MTime
 		node.Size = vResp.Version.Size
@@ -193,7 +212,12 @@ func (v *Handler) ReadNode(ctx context.Context, req *tree.ReadNodeRequest, opts 
 		versionStream, er := v.getVersionClient(ctx).ListVersions(ctx, &tree.ListVersionsRequest{Node: resp.GetNode(), Filters: ff})
 		var vv []*tree.ContentRevision
 		if ver := commons.ForEach(versionStream, er, func(vResp *tree.ListVersionsResponse) error {
-			vv = append(vv, vResp.GetVersion())
+			if vResp.GetVersion().GetVersionId() == "" {
+				return errors.WithStack(errors.VersionNotFound)
+			}
+			if visibleRevision(ctx, vResp.GetVersion()) {
+				vv = append(vv, vResp.GetVersion())
+			}
 			return nil
 		}); ver != nil {
 			return nil, ver
@@ -227,7 +251,11 @@ func (v *Handler) GetObject(ctx context.Context, node *tree.Node, requestData *m
 		if err != nil {
 			return nil, err
 		}
-		node = vResp.Version.GetLocation()
+		if vResp.GetVersion().GetVersionId() != requestData.VersionId || !visibleRevision(ctx, vResp.GetVersion()) ||
+			vResp.GetVersion().GetLocation().GetPath() == "" || vResp.GetVersion().GetLocation().GetStringMeta(common.MetaNamespaceDatasourceName) == "" {
+			return nil, errors.WithStack(errors.VersionNotFound)
+		}
+		node = vResp.Version.GetLocation().Clone()
 		// Append Version information
 		node.Size = vResp.Version.Size
 		node.Etag = vResp.Version.ETag
@@ -267,6 +295,10 @@ func (v *Handler) CopyObject(ctx context.Context, from *tree.Node, to *tree.Node
 		if err != nil {
 			return models.ObjectInfo{}, err
 		}
+		if vResp.GetVersion().GetVersionId() != requestData.SrcVersionId || !visibleRevision(ctx, vResp.GetVersion()) ||
+			vResp.GetVersion().GetLocation().GetPath() == "" || vResp.GetVersion().GetLocation().GetStringMeta(common.MetaNamespaceDatasourceName) == "" {
+			return models.ObjectInfo{}, errors.WithStack(errors.VersionNotFound)
+		}
 		if requestData.Metadata == nil {
 			requestData.Metadata = make(map[string]string, 1)
 		}
@@ -275,7 +307,10 @@ func (v *Handler) CopyObject(ctx context.Context, from *tree.Node, to *tree.Node
 			// log.Logger(ctx).Info("Setting MetaNamespaceHash in CopyRequest meta")
 			requestData.Metadata[common.MetaNamespaceHash] = h
 		}
-		from = vResp.GetVersion().GetLocation()
+		from = vResp.GetVersion().GetLocation().Clone()
+		from.Size = vResp.Version.Size
+		from.Etag = vResp.Version.ETag
+		from.MTime = vResp.Version.MTime
 		// Refresh context from location
 		source, e := nodes.GetSourcesPool(ctx).GetDataSourceInfo(from.GetStringMeta(common.MetaNamespaceDatasourceName))
 		if e != nil {
@@ -287,6 +322,20 @@ func (v *Handler) CopyObject(ctx context.Context, from *tree.Node, to *tree.Node
 	}
 
 	return v.Next.CopyObject(ctx, from, to, requestData)
+}
+
+// Preserve the native NodeVersions rule for every original revision reader:
+// published history follows node ACLs; drafts belong to their native owner.
+// A known version ID is not an alternate grant to another user's draft.
+func visibleRevision(ctx context.Context, revision *tree.ContentRevision) bool {
+	if revision == nil {
+		return false
+	}
+	if !revision.Draft {
+		return true
+	}
+	claims, ok := claim.FromContext(ctx)
+	return ok && claims.Subject != "" && claims.Subject == revision.OwnerUuid
 }
 
 func (v *Handler) PutObject(ctx context.Context, node *tree.Node, reader io.Reader, requestData *models.PutRequestData) (models.ObjectInfo, error) {
