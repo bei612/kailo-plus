@@ -4,6 +4,7 @@ import ViewMetadata from './components/pages/modeling/metadata/ViewMetadata';
 import ModelMetadata from './components/pages/modeling/metadata/ModelMetadata';
 import useGovernedPreview from './hooks/useGovernedPreview';
 import useGovernedSqlPreview from './hooks/useGovernedSqlPreview';
+import useDashboardQuery from './hooks/useDashboardQuery';
 import { queryReceiptState } from './utils/queryReceipt';
 import { getQueryPreviewText } from './utils/language';
 
@@ -139,6 +140,310 @@ describe('original saved-view preview controls', () => {
     renderToStaticMarkup(createElement(Editor));
     return query!;
   };
+  const renderDashboard = (submit = mockPreview) => {
+    let query: ReturnType<typeof useDashboardQuery>;
+    const Consumer = () => {
+      query = useDashboardQuery(21, submit);
+      return createElement(
+        'button',
+        { onClick: () => query.preview(true) },
+        'Original dashboard refresh',
+      );
+    };
+    renderToStaticMarkup(createElement(Consumer));
+    return query!;
+  };
+  const dashboardReceipt = (
+    scope: string,
+    refresh: boolean,
+    status?: string,
+  ) => ({
+    data: [{ one: 'permitted' }],
+    cacheHit: true,
+    queryReceipt: {
+      previewScope: scope,
+      itemId: 21,
+      inputReference: {
+        nativeObjectRef: JSON.stringify({
+          historyId: 'original-history',
+          cache: { cacheEnabled: true, refresh },
+        }),
+      },
+      submission: {
+        actionKey: 'data_query.query@v1',
+        gateState: 'ALLOWED',
+        dispatchState: 'DISPATCHED',
+      },
+      ...(status ? { terminalStatus: status } : {}),
+    },
+  });
+  it('original dashboard refresh keeps the same key and original refresh choice through UNKNOWN and transport loss', async () => {
+    const query = renderDashboard();
+    mockPreview.mockResolvedValue(dashboardReceipt(mockScope, true));
+    await query.preview(true);
+    const first = mockPreview.mock.calls[0][0];
+    mockPreview.mockRejectedValueOnce(new Error('lost ACK'));
+    await query.preview(false);
+    await query.preview(false);
+    expect(mockPreview.mock.calls.map((call) => call[0])).toEqual([
+      first,
+      first,
+      first,
+    ]);
+    expect(first.refresh).toBe(true);
+    expect(storage.removeItem).not.toHaveBeenCalled();
+    expect(JSON.stringify([...entries.values()])).not.toContain('permitted');
+  });
+  it.each(['RUNNING', 'UNKNOWN', 'NEW_STATUS'])(
+    'the dashboard retains the original query key for %s evidence',
+    async (status) => {
+      const query = renderDashboard();
+      mockPreview.mockResolvedValue(dashboardReceipt(mockScope, false, status));
+      await query.preview();
+      await query.preview(true);
+      expect(mockPreview.mock.calls[1][0]).toEqual(
+        mockPreview.mock.calls[0][0],
+      );
+      expect(storage.removeItem).not.toHaveBeenCalled();
+    },
+  );
+  it('original dashboard completion retires only its exact query key so an explicit later refresh is new', async () => {
+    const query = renderDashboard();
+    mockPreview.mockResolvedValue(
+      dashboardReceipt(mockScope, true, 'COMPLETED'),
+    );
+    await query.preview(true);
+    expect(storage.removeItem).toHaveBeenCalledTimes(1);
+    await query.preview(true);
+    expect(mockPreview.mock.calls[1][0].idempotencyKey).not.toBe(
+      mockPreview.mock.calls[0][0].idempotencyKey,
+    );
+  });
+  it.each(['scope', 'item', 'refresh', 'action'])(
+    'a foreign dashboard %s receipt cannot retire the pending original intent',
+    async (changed) => {
+      const query = renderDashboard();
+      const value = dashboardReceipt(mockScope, true, 'COMPLETED');
+      if (changed === 'scope') value.queryReceipt.previewScope = 'b'.repeat(64);
+      if (changed === 'item') value.queryReceipt.itemId = 999;
+      if (changed === 'action')
+        value.queryReceipt.submission.actionKey = 'data_query.dry_run@v1';
+      if (changed === 'refresh')
+        value.queryReceipt.inputReference.nativeObjectRef = JSON.stringify({
+          historyId: 'original-history',
+          cache: { cacheEnabled: true, refresh: false },
+        });
+      mockPreview.mockResolvedValue(value);
+      await query.preview(true);
+      await query.preview(false);
+      expect(mockPreview.mock.calls[1][0]).toEqual(
+        mockPreview.mock.calls[0][0],
+      );
+      expect(storage.removeItem).not.toHaveBeenCalled();
+    },
+  );
+  it('a current user change during dashboard completion keeps the original user key instead of adopting the result', async () => {
+    const query = renderDashboard();
+    mockPreview.mockImplementation(async () => {
+      const result = dashboardReceipt(mockScope, true, 'COMPLETED');
+      mockScope = 'b'.repeat(64);
+      return result;
+    });
+    await query.preview(true);
+    expect(storage.removeItem).not.toHaveBeenCalled();
+  });
+  it('dashboard storage failure refuses submission rather than issuing an unretained refresh key', async () => {
+    const query = renderDashboard();
+    storage.setItem.mockImplementationOnce(() => {
+      throw new Error('storage unavailable');
+    });
+    await query.preview(true);
+    expect(mockPreview).not.toHaveBeenCalled();
+  });
+  it.each(['focus', 'unmount'])(
+    'the original dashboard %s fence ignores a late completion without retiring its intent',
+    async (boundary) => {
+      const effects: Array<() => void | (() => void)> = [];
+      const effect = jest
+        .spyOn(require('react'), 'useEffect')
+        .mockImplementation((callback: any) => {
+          effects.push(callback);
+        });
+      const originalWindow = Object.getOwnPropertyDescriptor(global, 'window');
+      const originalDocument = Object.getOwnPropertyDescriptor(
+        global,
+        'document',
+      );
+      const listeners = new Map<string, () => void>();
+      Object.defineProperty(global, 'window', {
+        configurable: true,
+        value: {
+          addEventListener: (event: string, callback: () => void) =>
+            listeners.set(event, callback),
+          removeEventListener: (event: string) => listeners.delete(event),
+        },
+      });
+      Object.defineProperty(global, 'document', {
+        configurable: true,
+        value: {
+          visibilityState: 'visible',
+          addEventListener: jest.fn(),
+          removeEventListener: jest.fn(),
+        },
+      });
+      try {
+        const query = renderDashboard();
+        const cleanup = effects[0]() as () => void;
+        let finish: (value: any) => void;
+        let entered: () => void;
+        const started = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        mockPreview.mockImplementationOnce(() => {
+          entered();
+          return new Promise((resolve) => {
+            finish = resolve;
+          });
+        });
+        const pending = query.preview(true);
+        await started;
+        if (boundary === 'focus') listeners.get('focus')!();
+        else cleanup();
+        finish!(dashboardReceipt(mockScope, true, 'COMPLETED'));
+        await pending;
+        expect(storage.removeItem).not.toHaveBeenCalled();
+        expect(entries.size).toBe(1);
+        expect(mockPreview).toHaveBeenCalledTimes(boundary === 'focus' ? 2 : 1);
+        if (boundary === 'focus')
+          expect(mockPreview.mock.calls[1][0]).toEqual(
+            mockPreview.mock.calls[0][0],
+          );
+        if (boundary === 'focus') cleanup();
+      } finally {
+        effect.mockRestore();
+        if (originalWindow)
+          Object.defineProperty(global, 'window', originalWindow);
+        else delete global.window;
+        if (originalDocument)
+          Object.defineProperty(global, 'document', originalDocument);
+        else delete global.document;
+      }
+    },
+  );
+  it.each(['focus', 'visible', 'changed-user', 'revoked'])(
+    'dashboard %s revalidates its original settled key without a new execution or stale chart body',
+    async (boundary) => {
+      const effects: Array<() => void | (() => void)> = [];
+      const effect = jest
+        .spyOn(require('react'), 'useEffect')
+        .mockImplementation((callback: any) => {
+          effects.push(callback);
+        });
+      const originalWindow = Object.getOwnPropertyDescriptor(global, 'window');
+      const originalDocument = Object.getOwnPropertyDescriptor(
+        global,
+        'document',
+      );
+      const listeners = new Map<string, () => void>();
+      const events = {
+        addEventListener: (event: string, callback: () => void) =>
+          listeners.set(event, callback),
+        removeEventListener: (event: string) => listeners.delete(event),
+      };
+      Object.defineProperty(global, 'window', {
+        configurable: true,
+        value: events,
+      });
+      Object.defineProperty(global, 'document', {
+        configurable: true,
+        value: { ...events, visibilityState: 'visible' },
+      });
+      const values: any[] = [];
+      let arrived: () => void;
+      let signal = new Promise<void>((resolve) => {
+        arrived = resolve;
+      });
+      let stateIndex = 0;
+      const state = jest
+        .spyOn(require('react'), 'useState')
+        .mockImplementation((initial: any) => {
+          const index = stateIndex++;
+          return [
+            initial,
+            (next: any) => {
+              if (index === 0) {
+                values.push(next);
+                if (next?.result) arrived();
+              }
+              if (index === 3 && next === true) arrived();
+              if (
+                index === 1 &&
+                next?.received?.submission?.gateState === 'DENIED'
+              )
+                arrived();
+            },
+          ];
+        });
+      try {
+        const query = renderDashboard();
+        const cleanup = effects[0]() as () => void;
+        mockPreview.mockResolvedValue(
+          dashboardReceipt(mockScope, true, 'COMPLETED'),
+        );
+        await query.preview(true);
+        expect(values[values.length - 1]?.result.data).toEqual([
+          { one: 'permitted' },
+        ]);
+        expect(entries.size).toBe(0);
+        const first = mockPreview.mock.calls[0][0];
+        signal = new Promise<void>((resolve) => {
+          arrived = resolve;
+        });
+        if (boundary === 'changed-user') mockScope = 'b'.repeat(64);
+        if (boundary === 'revoked')
+          mockPreview.mockResolvedValue({
+            queryReceipt: {
+              ...dashboardReceipt(mockScope, true).queryReceipt,
+              submission: {
+                actionKey: 'data_query.query@v1',
+                gateState: 'DENIED',
+                dispatchState: 'NOT_DISPATCHED',
+              },
+            },
+          });
+        listeners.get(boundary === 'visible' ? 'visibilitychange' : 'focus')!();
+        expect(values[values.length - 1]).toBeUndefined();
+        await Promise.resolve();
+        expect(mockPreview).toHaveBeenCalledTimes(
+          boundary === 'changed-user' ? 1 : 2,
+        );
+        await signal;
+        expect(entries.size).toBe(0);
+        expect(storage.setItem).toHaveBeenCalledTimes(1);
+        expect(mockPreview).toHaveBeenCalledTimes(
+          boundary === 'changed-user' ? 1 : 2,
+        );
+        if (boundary !== 'changed-user')
+          expect(mockPreview.mock.calls[1][0]).toEqual(first);
+        if (boundary === 'changed-user' || boundary === 'revoked')
+          expect(values[values.length - 1]).toBeUndefined();
+        else
+          expect(values[values.length - 1]?.result.data).toEqual([
+            { one: 'permitted' },
+          ]);
+        cleanup();
+      } finally {
+        effect.mockRestore();
+        state.mockRestore();
+        if (originalWindow)
+          Object.defineProperty(global, 'window', originalWindow);
+        else delete global.window;
+        if (originalDocument)
+          Object.defineProperty(global, 'document', originalDocument);
+        else delete global.document;
+      }
+    },
+  );
   const sqlReceipt = (scope: string, dryRun = false, completed = false) => ({
     previewScope: scope,
     submission: {

@@ -1738,6 +1738,132 @@ integration('original Wren query handler, SDK and native history', () => {
     }
   }, 30000);
 
+  it.each([false, true])(
+    'consumes the frozen original dashboard cache intent through MCP and native history (refresh %s)',
+    async (refresh) => {
+      const service = new NativeQueryService(
+        delivery,
+        mockComponents.projectRepository,
+        mockComponents.deployLogRepository,
+        mockComponents.apiHistoryRepository,
+        mockComponents.queryService,
+        mockComponents.viewRepository,
+        mockComponents.modelRepository,
+        mockComponents.modelColumnRepository,
+      );
+      const key = randomUUID(),
+        scope = 'd'.repeat(64);
+      const cache = { cacheEnabled: true, refresh };
+      const draft = await service.sqlSelection(
+        key,
+        input.sql,
+        input.limit,
+        scope,
+        'data_query.query@v1',
+        undefined,
+        undefined,
+        cache,
+      );
+      const reference = await service.sqlReference(resource, draft);
+      const selection = JSON.parse(reference.nativeObjectRef);
+      expect(selection.cache).toEqual(cache);
+      expect(reference.nativeRevision).toBe(
+        digest({
+          bindingId: delivery.bindingId,
+          projectId: delivery.projectId,
+          connection: delivery.projectConnectionDigest,
+          selection,
+          sql: input.sql,
+        }),
+      );
+      queryResponse = JSON.stringify({
+        columns: [{ name: 'one', type: 'INTEGER' }],
+        data: [[1]],
+        cacheHit: true,
+        cacheCreatedAt: 'original-created',
+        cacheOverrodeAt: 'original-refreshed',
+        override: refresh,
+      });
+      const preview = jest.spyOn(mockComponents.queryService, 'preview');
+      let original: any;
+      try {
+        const token = await signed('data_query.query', reference);
+        const first = (await call(token, key, 'data_query.query', reference))
+          .structuredContent as any;
+        expect(first.execution.platformStatus).toBe('SUCCEEDED');
+        expect(JSON.parse(first.resultJson)).toMatchObject({
+          columns: [{ name: 'one', type: 'INTEGER' }],
+          data: [[1]],
+          cacheHit: true,
+          cacheCreatedAt: 'original-created',
+          cacheOverrodeAt: 'original-refreshed',
+          override: refresh,
+        });
+        expect(preview).toHaveBeenCalledWith(
+          input.sql,
+          expect.objectContaining(cache),
+        );
+        original = await mockComponents.apiHistoryRepository.findOneBy({
+          id: selection.historyId,
+        });
+        expect(original.requestPayload.cache).toEqual(cache);
+        expect(queries).toBe(1);
+        const replay = (await call(token, key, 'data_query.query', reference))
+          .structuredContent as any;
+        expect(JSON.parse(replay.resultJson)).toEqual(
+          JSON.parse(first.resultJson),
+        );
+        expect(queries).toBe(1);
+        await expect(
+          service.sqlSelection(
+            key,
+            input.sql,
+            input.limit,
+            scope,
+            'data_query.query@v1',
+            undefined,
+            undefined,
+            { ...cache, refresh: !refresh },
+          ),
+        ).rejects.toThrow('QUERY_INTENT_CONFLICT');
+        await expect(
+          service.sqlIntent(
+            reference,
+            key,
+            input.sql,
+            input.limit,
+            scope,
+            'data_query.query@v1',
+            undefined,
+            undefined,
+            { ...cache, refresh: !refresh },
+          ),
+        ).rejects.toThrow('QUERY_INTENT_CONFLICT');
+        await database('api_history')
+          .where({ id: original.id })
+          .update({
+            request_payload: JSON.stringify({
+              ...original.requestPayload,
+              cache: { ...cache, refresh: !refresh },
+            }),
+          });
+        await expect(
+          call(token, key, 'data_query.query', reference),
+        ).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+        expect(queries).toBe(1);
+      } finally {
+        if (original)
+          await database('api_history')
+            .where({ id: original.id })
+            .update({
+              request_payload: JSON.stringify(original.requestPayload),
+            });
+        preview.mockRestore();
+        queryResponse = undefined;
+      }
+    },
+  );
+
   it.each(['data_query.query', 'data_query.dry_run'])(
     'attaches %s to the same original SQL-editor history row and never repeats its native call',
     async (action) => {

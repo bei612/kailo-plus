@@ -660,3 +660,37 @@ execution still requires the original HUMAN or AGENT ActionExecution and
 scope/result policy. SERVICE source-read grants do not authorize SQL, and no
 new Workflow or task authority is introduced. This increment is not a live
 business-instance/binding or production-readiness claim.
+
+## Original dashboard query and cache observations
+
+The original dashboard grid, widgets, layout, menus and cache refresh controls
+remain native Wren UI. Opening an existing item and using its individual or
+all-item refresh now consume the same existing HUMAN SQL admission/history
+path as the original query editor. Only verified completed results reach the
+original chart; incomplete or unknown receipts do not become empty successful
+queries or expose stale cache times. Current-user changes, focus, visibility
+return and unmount invalidate in-memory result disclosure without cancelling
+the native operation. Returning to a visible/focused window revalidates the
+current person and observes the original key again, including a settled key,
+so the original chart is restored without starting another SQL execution.
+Changed users or revoked permission cannot restore the previous chart body.
+
+The browser retains only that person's opaque query key and original refresh
+choice. UNKNOWN and lost responses reuse the same key; an explicit refresh
+after a verified terminal gets a new key. Original cache-enabled/refresh choices
+remain fixed during automatic window-return observations; observing a settled
+key does not recreate its retired browser storage entry. Original cache choices
+and hit/creation/overwrite metadata are preserved through the native SQL
+history and its frozen opaque reference. Changing those choices or the native
+item while observing does not authorize another query or disclosure. Neither
+SQL nor result bodies are persisted in browser query-key storage or copied to
+Core. Invalid configured delivery never falls back to standalone SQL.
+
+The original pin-to-dashboard mutation remains native metadata management;
+query permission and a completed SQL execution do not prove current native
+project write authority, pin-write idempotency or recovery after a lost INSERT
+acknowledgement. This increment does not introduce a platform pin Action,
+browser permission authority, shadow ledger or a replacement management page.
+SS-WRN-IDENTITY/native management authorization and the existing release
+activation boundary remain open delivery requirements. No live Wren instance,
+ACTIVE binding, iframe or Desktop/Mobile visual acceptance is established here.

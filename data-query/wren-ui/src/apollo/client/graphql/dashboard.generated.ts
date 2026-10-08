@@ -44,7 +44,7 @@ export type PreviewItemSqlMutationVariables = Types.Exact<{
 }>;
 
 
-export type PreviewItemSqlMutation = { __typename?: 'Mutation', previewItemSQL: { __typename?: 'PreviewItemResponse', data: any, cacheHit: boolean, cacheCreatedAt?: string | null, cacheOverrodeAt?: string | null, override: boolean } };
+export type PreviewItemSqlMutation = { __typename?: 'Mutation', previewItemSQL: { __typename?: 'PreviewItemResponse', queryReceipt?: any | null, data: any, cacheHit: boolean, cacheCreatedAt?: string | null, cacheOverrodeAt?: string | null, override: boolean } };
 
 export type SetDashboardScheduleMutationVariables = Types.Exact<{
   data: Types.SetDashboardScheduleInput;
@@ -244,6 +244,7 @@ export type DeleteDashboardItemMutationOptions = Apollo.BaseMutationOptions<Dele
 export const PreviewItemSqlDocument = gql`
     mutation PreviewItemSQL($data: PreviewItemSQLInput!) {
   previewItemSQL(data: $data) {
+    queryReceipt
     data
     cacheHit
     cacheCreatedAt

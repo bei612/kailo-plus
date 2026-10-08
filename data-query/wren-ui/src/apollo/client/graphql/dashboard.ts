@@ -67,6 +67,7 @@ export const DELETE_DASHBOARD_ITEM = gql`
 export const PREVIEW_ITEM_SQL = gql`
   mutation PreviewItemSQL($data: PreviewItemSQLInput!) {
     previewItemSQL(data: $data) {
+      queryReceipt
       data
       cacheHit
       cacheCreatedAt

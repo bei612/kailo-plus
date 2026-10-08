@@ -970,9 +970,12 @@ export const typeDefs = gql`
     itemId: Int!
     limit: Int
     refresh: Boolean = false
+    idempotencyKey: String
+    idempotencyScope: String
   }
 
   type PreviewItemResponse {
+    queryReceipt: JSON
     data: JSON!
     cacheHit: Boolean!
     cacheCreatedAt: String

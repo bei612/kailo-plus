@@ -1,6 +1,7 @@
 import { DashboardItem } from '@server/repositories';
 
 export interface PreviewItemResponse {
+  queryReceipt?: any;
   data: Record<string, any>[];
   cacheHit: boolean;
   cacheCreatedAt: string | null;

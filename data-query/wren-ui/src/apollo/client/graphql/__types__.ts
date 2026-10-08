@@ -1108,9 +1108,12 @@ export type PreviewItemResponse = {
   cacheOverrodeAt?: Maybe<Scalars['String']>;
   data: Scalars['JSON'];
   override: Scalars['Boolean'];
+  queryReceipt?: Maybe<Scalars['JSON']>;
 };
 
 export type PreviewItemSqlInput = {
+  idempotencyKey?: InputMaybe<Scalars['String']>;
+  idempotencyScope?: InputMaybe<Scalars['String']>;
   itemId: Scalars['Int'];
   limit?: InputMaybe<Scalars['Int']>;
   refresh?: InputMaybe<Scalars['Boolean']>;

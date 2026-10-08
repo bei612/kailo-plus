@@ -8,7 +8,7 @@ import React, {
   forwardRef,
   useImperativeHandle,
 } from 'react';
-import { Button, Form } from 'antd';
+import { Alert, Button, Form } from 'antd';
 import styled from 'styled-components';
 import GridLayout, { Layout } from 'react-grid-layout';
 import { MoreIcon } from '@/utils/icons';
@@ -25,6 +25,9 @@ import {
   usePreviewItemSqlMutation,
   useUpdateDashboardItemMutation,
 } from '@/apollo/client/graphql/dashboard.generated';
+import useDashboardQuery from '@/hooks/useDashboardQuery';
+import { getQueryPreviewText } from '@/utils/language';
+import { useRouter } from 'next/router';
 
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -289,28 +292,33 @@ const PinnedItem = forwardRef(
     const [isHideLegend, setIsHideLegend] = useState(true);
     const [forceLoading, setForceLoading] = useState(false);
     const [forceUpdate, setForceUpdate] = useState(0);
+    const text = getQueryPreviewText(useRouter().locale);
 
     useImperativeHandle(
       ref,
       () => ({
         onRefresh: () => {
-          previewItemSQL({
-            variables: { data: { itemId: item.id, refresh: isSupportCached } },
-          });
+          void query.preview(isSupportCached);
         },
       }),
-      [item.id],
+      [item.id, isSupportCached],
     );
 
     const [previewItemSQL, previewItemSQLResult] = usePreviewItemSqlMutation({
       onError: (error) => console.error(error),
     });
-    const previewItem = previewItemSQLResult.data?.previewItemSQL;
+    const query = useDashboardQuery(item.id, async (identity) => {
+      const result = await previewItemSQL({
+        variables: { data: { itemId: item.id, ...identity } },
+      });
+      return result.data?.previewItemSQL;
+    });
+    const previewItem = query.value;
     const lastRefreshTime =
       previewItem?.cacheOverrodeAt || previewItem?.cacheCreatedAt;
 
     useEffect(() => {
-      previewItemSQL({ variables: { data: { itemId: item.id } } });
+      void query.preview();
     }, [item.id]);
 
     useEffect(() => {
@@ -334,15 +342,14 @@ const PinnedItem = forwardRef(
       if (action === MORE_ACTION.DELETE) {
         await onDelete(item.id);
       } else if (action === MORE_ACTION.REFRESH) {
-        previewItemSQL({
-          variables: { data: { itemId: item.id, refresh: isSupportCached } },
-        });
+        void query.preview(isSupportCached);
       } else if (action === MORE_ACTION.HIDE_CATEGORY) {
         onHideLegend();
       }
     };
 
-    const loading = forceLoading || previewItemSQLResult.loading;
+    const loading =
+      forceLoading || previewItemSQLResult.loading || query.preparing;
 
     return (
       <div className="adm-pinned-item">
@@ -373,20 +380,42 @@ const PinnedItem = forwardRef(
         </div>
         <div className="adm-pinned-content">
           <div className="adm-pinned-content-overflow adm-scrollbar-track">
+            {query.scopeError ? (
+              <Alert type="error" message={text.scopeError} />
+            ) : null}
+            {query.storageError ? (
+              <Alert type="error" message={text.storageError} />
+            ) : null}
+            {query.state.pending ? (
+              <Alert type="info" message={text.pending} />
+            ) : null}
+            {query.transportUnknown ? (
+              <Alert type="warning" message={text.unknown} />
+            ) : null}
+            {query.state.denied ? (
+              <Alert type="warning" message={text.denied} />
+            ) : null}
+            {query.state.ended ? (
+              <Alert type="error" message={text.ended} />
+            ) : null}
             <LoadingWrapper loading={loading} tip="Loading...">
-              <Chart
-                className="adm-pinned-item-chart"
-                width="100%"
-                height="100%"
-                spec={detail.chartSchema}
-                values={previewItem?.data}
-                forceUpdate={forceUpdate}
-                autoFilter
-                hideActions
-                hideTitle
-                hideLegend={isHideLegend}
-                isPinned
-              />
+              {previewItem ? (
+                <Chart
+                  className="adm-pinned-item-chart"
+                  width="100%"
+                  height="100%"
+                  spec={detail.chartSchema}
+                  values={previewItem?.data}
+                  forceUpdate={forceUpdate}
+                  autoFilter
+                  hideActions
+                  hideTitle
+                  hideLegend={isHideLegend}
+                  isPinned
+                />
+              ) : (
+                <></>
+              )}
             </LoadingWrapper>
           </div>
           {lastRefreshTime && (

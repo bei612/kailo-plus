@@ -4778,3 +4778,184 @@ pre-existing unvalidated Java edits remain outside this accepted increment.
 No real Wren business-container deployment, ACTIVE release/binding, live
 datasource/provider or iframe visual evidence was created. This is neither
 100% restoration nor production readiness.
+
+## Original dashboard HUMAN cache consumer (2026-10-08)
+
+This implementation was compared against the fixed official
+`WrenAI-ui-0.32.2@c5f02a0391c87420dba78632dcd86073710deb72`:
+`wren-ui/src/apollo/server/resolvers/dashboardResolver.ts`
+(`DashboardResolver.previewItemSQL`),
+`wren-ui/src/components/pages/home/dashboardGrid/index.tsx` (`PinnedItem`),
+`wren-ui/src/apollo/client/graphql/dashboard.ts` (`PREVIEW_ITEM_SQL`) and
+`wren-ui/src/apollo/server/services/queryService.ts` (`QueryService.preview`).
+`tools/upstream_manifest.py status data-query` confirmed the reference HEAD
+still equals that baseline; no reference source was edited or executed.
+
+Four implementation conclusions:
+
+1. **Authority.** DD-87 and `.design/08` §6 require the full native page and
+   original QueryService to consume current HUMAN/resource query admission,
+   not bypass it through dashboard refresh. The original dashboard metadata
+   management is not automatically a new platform Action. Existing
+   `NativeHumanQuery`, `NativeQueryService`, Core Resource/action/result-policy
+   checks and native API History remain the only execution association.
+2. **Impact and compatibility.** Original item opening, item refresh and
+   Refresh All call `DashboardResolver.previewItemSQL` with the current opaque
+   scope/key. The original GraphQL input adds optional identity fields and the
+   original response adds optional receipt metadata; original codegen produces
+   the shared client types and operation. Native opaque SQL-editor selections
+   optionally freeze the original two cache booleans in the same existing
+   history/revision; selectors, command re-entry, execution and HUMAN completed
+   disclosure validate that same snapshot. Old references without cache remain
+   accepted. Raw Agent tool inputs, Core contracts and database schema are
+   unchanged. No four-language contract regeneration or data migration is
+   needed. Backend and its actual UI consumers must ship together before any
+   binding is activated; an old bare dashboard client is not a governed client.
+3. **Side effects.** The real QueryService receives original cache options and
+   returns original cache times/hit/overwrite metadata, in addition to the
+   already delivered HTTP bounds. The native SQL history owns those facts;
+   there is no duplicate cache, result, authorization or operation ledger.
+   The browser stores only the key and refresh choice, never SQL/results.
+   Original grid/styles/menus/chart rendering remain unchanged except the
+   necessary governance notices and excluding charts without verified data.
+   The original pin UI/schema/mutation were restored to their pre-batch bytes:
+   a temporary browser pin latch was removed because it cannot authorize or
+   make the native metadata INSERT idempotent. This is not a pin-governance
+   completion claim.
+4. **Boundaries.** Zero-row completed data still uses the original empty chart
+   presentation. RUNNING, missing/unknown terminal evidence or transport loss
+   retains the original query key, no rows and no stale cache times. Invalid
+   delivery, missing identity, current project mismatch, changed native item
+   or cache intent refuse without a standalone fallback/new query. Scope
+   changes and focus/unmount fences prevent late responses from disclosing or
+   retiring another person's intent; they do not cancel SQL. Existing auth,
+   precondition and conflict refusals retain the apps/06 §4 classification;
+   inconclusive side effects remain UNKNOWN rather than business success or
+   failure. Missing native results still require the existing operator
+   reconciliation path, not automatic replay.
+
+The original SDK `kailo-wren-query-sdk-itgs2n` was reused with its verified
+4 CPU / 4 GiB cgroup; the existing isolated PostgreSQL
+`wren_query_itgs2n|postgres` and its original `api_history`/`project` tables were
+checked read-only before the two selected native cases. No new database,
+image, dependencies, whole-tree copy, host compiler or GitNexus was used.
+
+The first candidate's original NativeHuman/UI suites returned **267/267
+passed** and whole-UI tsc exited 0. Removing the real private resolver's
+completed-result gate and the hook's current-user fence then produced
+**4 failed / 3 passed / 260 filtered skips**, exit 1: RUNNING/missing/unknown
+terminal states disclosed original rows/cache times and a changed user retired
+the previous user's key. Both production faults were reversed and their
+files matched formal source with `cmp` exit 0. Pin candidate removal and the
+chart-without-verified-data exclusion are later source changes; that earlier
+267 result is not presented as final acceptance of the later bytes.
+
+Two earlier MCP/PG target runs returned **2 failed / 98 filtered skips** each.
+The first fixture compared JSONB reserialization as a raw string, although
+all values were identical; it now compares full parsed values. The second
+expected an `isError` return, while the actual MCP SDK rejects changed
+references with `QUERY_REFERENCE_CHANGED`; it now checks that actual rejection.
+Neither correction weakened result or source validation or changed production
+behavior to accommodate the fixture. The isolated history mutation is
+restored in `finally` even if an assertion fails.
+
+After those source corrections, final original checks returned **265/265
+passed** (223 NativeHuman + 42 original UI controls, 316.703 s), **2 passed /
+98 filtered skips** for the real original MCP/PG cache consumers (316.589 s),
+whole-UI tsc exit 0 and original GraphQL codegen exit 0. The long elapsed runs
+are retained rather than replaced by earlier passing byte snapshots. The
+native cases use real original MCP SDK/Next transport, actual QueryService,
+signed execution context and native PostgreSQL History; only the SQL provider
+is a controlled HTTP fixture, not a production datasource/cache acceptance.
+The UI cases exercise actual hook callbacks, identity/storage and
+focus/unmount boundaries, not a browser or visual screenshot.
+
+A second private production mutation removed only the frozen cache snapshot
+comparison in `NativeQueryService.referencedInput`. Both real MCP cases then
+returned **2 failed / 98 filtered skips**, exit 1 (8.949 s): changed original
+history cache intent wrongly returned its old `SUCCEEDED` result instead of
+the SDK rejecting `QUERY_REFERENCE_CHANGED`. Reversing that fault restored
+all 13 production/generated/check inputs to formal bytes (`cmp` exit 0).
+Restored MCP/PG then returned **2 passed / 98 filtered skips**, exit 0
+(9.363 s), and the original Prettier check exited 0. The final tsc used these
+same bytes; only the private, fully reversed production mutation intervened.
+
+Actual original check commands in `/work`:
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand src/nativeHumanQuery.test.ts src/viewMetadata.test.ts
+node node_modules/jest/bin/jest.js --runInBand src/nativeQuery.test.ts -t "frozen original dashboard cache intent"
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/resolvers/dashboardResolver.ts src/apollo/server/models/dashboard.ts src/apollo/server/schema.ts src/apollo/client/graphql/dashboard.ts src/apollo/server/services/nativeQueryService.ts src/apollo/server/services/nativeHumanQuery.ts src/components/pages/home/dashboardGrid/index.tsx src/hooks/useDashboardQuery.ts src/nativeHumanQuery.test.ts src/nativeQuery.test.ts src/viewMetadata.test.ts
+```
+
+Original GraphQL generation used `@graphql-codegen/cli`'s existing
+`codegen.yaml` with the actual local server `typeDefs`; only its original
+`__types__.ts` and `dashboard.generated.ts` outputs are included. It did not
+fetch a live server schema or handwrite generated types.
+
+Logs are in
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+`dashboard-codegen-final.log`, `dashboard-consumers-positive.log`,
+`dashboard-consumers-negative.log`, `dashboard-mcp-positive.log`,
+`dashboard-mcp-final-positive.log`, `dashboard-consumers-restored.log`,
+`dashboard-mcp-accepted-positive.log`, `dashboard-mcp-negative.log`,
+`dashboard-mcp-restored.log` and `dashboard-tsc-accepted.log`.
+
+No Wren business-container deployment, ACTIVE release/binding, real external
+datasource/provider or iframe visual evidence was created. Browser screenshots,
+Desktop/Mobile acceptance and global `check.sh --full` are not claimed.
+Native user/project write authorization, original pin/writes, trusted SERVICE
+SQL admission, ordinary-function/provider provenance and the pre-existing
+unvalidated Java pair remain explicit delivery gaps. The whole release stays
+unactivated; this increment is neither 100% restoration nor production ready.
+
+### Implementation-review correction: returning to the dashboard window
+
+Review found a real regression in the above UI candidate: its focus/visibility
+listener cleared the original chart result but never resumed observation.
+The fixed official `PinnedItem` and `DashboardResolver.previewItemSQL` cited
+above do not clear the original Apollo result on window return. The existing
+governed editor hooks were also checked; editor-only invalidation is not a
+replacement for the continuously displayed native dashboard.
+
+The dashboard's `useDashboardQuery` governance consumer now invalidates stale disclosure,
+rechecks the current person and observes the same original key/cache intent
+on focus or visibility return. Its in-memory reference retains only
+item, scope and opaque intent, not SQL, results or another execution authority.
+Even after a verified terminal retired browser storage, automatic observation
+uses that settled key without recreating the storage entry or dispatching a
+new query. A changed person refuses automatic reuse; a denied current receipt
+cannot restore the old chart body. Late replies still obey the original
+generation/item/scope fences, and unmount still stops observation rather than
+cancelling SQL. This changes no backend, schema, source/permission authority,
+cache contract or pin-management semantics.
+
+After the implementation, the original actual hook/event consumers in
+`src/viewMetadata.test.ts` returned **46/46 passed**, exit 0 (7.887 s), including
+focus, visibility, changed-user and revoked-permission cases. Whole-UI
+`tsc --noEmit --incremental false` exited 0. Removing only the real private
+production `preview(false, true)` resume call reproduced the regression:
+**2 failed / 44 filtered skips**, exit 1 (6.185 s); the focus and visibility
+consumers expected a second same-key observation but saw only the initial call.
+The production line was restored, all 13 production/generated/check inputs
+matched the formal tree with `cmp` exit 0, and the original UI suite returned
+**46/46 passed**, exit 0 (6.236 s). Prettier and `git diff --check` exited 0.
+
+The added UI validation used the same restricted SDK and original Jest entry:
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand src/viewMetadata.test.ts
+node node_modules/jest/bin/jest.js --runInBand src/viewMetadata.test.ts -t "dashboard (focus|visible) revalidates"
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+node node_modules/prettier/bin/prettier.cjs --check src/hooks/useDashboardQuery.ts src/viewMetadata.test.ts
+```
+
+Logs in the same directory are `dashboard-focus-positive.log`,
+`dashboard-focus-negative.log`, `dashboard-focus-restored.log`,
+`dashboard-focus-tsc.log` and `dashboard-focus-format.log`. The earlier 265
+and MCP results remain evidence of their stated byte snapshots; the unchanged
+backend/PG suite was not rerun for this two-source-file UI correction. These
+are real hook/event checks, not browser screenshots or live deployment.
+The native write/identity, SERVICE/function, instance/binding and visual
+acceptance gaps above remain unchanged.

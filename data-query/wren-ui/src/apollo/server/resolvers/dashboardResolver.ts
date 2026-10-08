@@ -16,11 +16,64 @@ import {
   DashboardSchedule,
   PreviewItemResponse,
 } from '@server/models/dashboard';
+import { NativeQueryService } from '../services/nativeQueryService';
+import {
+  NativeHumanQuery,
+  nativePreviewScope,
+} from '../services/nativeHumanQuery';
+import {
+  loadQueryDelivery,
+  NativeQueryRefusal,
+  digest,
+} from '../services/nativeQueryAdmission';
+import { queryReceiptState } from '@/utils/queryReceipt';
 
 const logger = getLogger('DashboardResolver');
 logger.level = 'debug';
 
 export class DashboardResolver {
+  private async governedPreview(
+    ctx: IContext,
+    sql: string,
+    limit: number,
+    cacheEnabled: boolean,
+    refresh: boolean,
+    identity: { idempotencyKey?: string; idempotencyScope?: string },
+  ) {
+    const config = await loadQueryDelivery();
+    const scope = nativePreviewScope(config, ctx.nativeIdentityScope);
+    const project = await ctx.projectService.getCurrentProject();
+    if (config.projectId !== project.id || identity.idempotencyScope !== scope)
+      throw new NativeQueryRefusal(409, 'QUERY_IDENTITY_CHANGED');
+    const { components } = await import('@/common');
+    const native = new NativeQueryService(
+      config,
+      ctx.projectRepository,
+      ctx.deployRepository,
+      components.apiHistoryRepository,
+      ctx.queryService,
+      ctx.viewRepository,
+      ctx.modelRepository,
+      ctx.modelColumnRepository,
+    );
+    const receipt = await new NativeHumanQuery(
+      config,
+      native,
+      components.apiHistoryRepository,
+    ).previewSql(
+      ctx.nativeHumanToken,
+      identity.idempotencyKey,
+      sql,
+      limit,
+      scope,
+      false,
+      undefined,
+      undefined,
+      { cacheEnabled, refresh },
+    );
+    return { ...receipt, previewScope: scope };
+  }
+
   constructor() {
     this.getDashboard = this.getDashboard.bind(this);
     this.getDashboardItems = this.getDashboardItems.bind(this);
@@ -160,7 +213,15 @@ export class DashboardResolver {
 
   public async previewItemSQL(
     _root: any,
-    args: { data: { itemId: number; limit?: number; refresh?: boolean } },
+    args: {
+      data: {
+        itemId: number;
+        limit?: number;
+        refresh?: boolean;
+        idempotencyKey?: string;
+        idempotencyScope?: string;
+      };
+    },
     ctx: IContext,
   ): Promise<PreviewItemResponse> {
     const { itemId, limit, refresh } = args.data;
@@ -169,15 +230,45 @@ export class DashboardResolver {
       const item = await ctx.dashboardService.getDashboardItem(itemId, project);
       const { cacheEnabled } =
         await ctx.dashboardService.getCurrentDashboard(project);
-      const deployment = await ctx.deployService.getLastDeployment(project.id);
-      const mdl = deployment.manifest;
-      const data = (await ctx.queryService.preview(item.detail.sql, {
-        project,
-        manifest: mdl,
-        limit: limit || DEFAULT_PREVIEW_LIMIT,
-        cacheEnabled,
-        refresh: refresh || false,
-      })) as PreviewDataResponse;
+      let receipt: any;
+      let data: PreviewDataResponse;
+      if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+        receipt = await this.governedPreview(
+          ctx,
+          item.detail.sql,
+          limit ?? DEFAULT_PREVIEW_LIMIT,
+          !!cacheEnabled,
+          !!refresh,
+          args.data,
+        );
+        const after = await ctx.dashboardService.getDashboardItem(
+          itemId,
+          project,
+        );
+        if (digest(after) !== digest(item))
+          throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+        if (!queryReceiptState(receipt).completed)
+          return {
+            queryReceipt: { ...receipt, data: undefined, itemId },
+            data: [],
+            cacheHit: false,
+            cacheCreatedAt: null,
+            cacheOverrodeAt: null,
+            override: false,
+          };
+        data = receipt.data;
+      } else {
+        const deployment = await ctx.deployService.getLastDeployment(
+          project.id,
+        );
+        data = (await ctx.queryService.preview(item.detail.sql, {
+          project,
+          manifest: deployment.manifest,
+          limit: limit || DEFAULT_PREVIEW_LIMIT,
+          cacheEnabled,
+          refresh: refresh || false,
+        })) as PreviewDataResponse;
+      }
 
       // handle data to [{ column1: value1, column2: value2, ... }]
       const values = data.data.map((val) => {
@@ -192,6 +283,9 @@ export class DashboardResolver {
         cacheOverrodeAt: data.cacheOverrodeAt || null,
         override: data.override || false,
         data: values,
+        ...(receipt
+          ? { queryReceipt: { ...receipt, data: undefined, itemId } }
+          : {}),
       } as PreviewItemResponse;
     } catch (error) {
       logger.error(`Error previewing SQL item ${itemId}: ${error}`);

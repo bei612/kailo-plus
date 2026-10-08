@@ -16,7 +16,11 @@ import { IModelRepository } from '../repositories/modelRepository';
 import { IModelColumnRepository } from '../repositories/modelColumnRepository';
 import { getPreviewColumnsStr } from '../utils/model';
 import { Manifest, TableReference } from '../mdl/type';
-import { IQueryService, PreviewDataResponse } from './queryService';
+import {
+  IQueryService,
+  PreviewDataResponse,
+  PreviewOptions,
+} from './queryService';
 import { verifyPostgresReader } from './nativeBindingService';
 import { toIbisConnectionInfo } from '../dataSource';
 import { DataSourceName } from '../types';
@@ -32,6 +36,7 @@ export type GovernedQueryInput = {
   deploymentId: number;
   deploymentHash: string;
   limit: number;
+  cache?: Pick<PreviewOptions, 'cacheEnabled' | 'refresh'>;
 };
 
 // One native schema for the real MCP list and the approved capability input.
@@ -79,6 +84,37 @@ const unavailable = () =>
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const nativeType = 'wren.api_history';
+
+// Native cache options belong to the original frozen SQL intent, never to
+// untrusted tool input or a separate cache/permission authority.
+function nativeQueryCacheShape(
+  cache: unknown,
+): cache is GovernedQueryInput['cache'] {
+  return (
+    !!cache &&
+    typeof cache === 'object' &&
+    !Array.isArray(cache) &&
+    Object.keys(cache).sort().join(',') === 'cacheEnabled,refresh' &&
+    typeof (cache as Record<string, unknown>).cacheEnabled === 'boolean' &&
+    typeof (cache as Record<string, unknown>).refresh === 'boolean'
+  );
+}
+export function nativeQuerySelectionShape(selection: Record<string, any>) {
+  const history = Object.hasOwn(selection, 'historyId');
+  const cache = Object.hasOwn(selection, 'cache');
+  const fields = [
+    'deploymentHash',
+    'deploymentId',
+    'limit',
+    Object.hasOwn(selection, 'modelId') ? 'modelId' : 'viewId',
+    ...(history ? ['historyId'] : []),
+    ...(cache ? ['cache'] : []),
+  ];
+  return (
+    Object.keys(selection).sort().join(',') === fields.sort().join(',') &&
+    (!cache || (history && nativeQueryCacheShape(selection.cache)))
+  );
+}
 
 // These are native planner facts from the frozen deployment/history. Core
 // resolves and authorizes them within the same original execution binding.
@@ -213,6 +249,7 @@ export class NativeQueryService {
     action: 'data_query.query@v1' | 'data_query.dry_run@v1',
     threadId?: string,
     expectedDeploymentHash?: string,
+    cache?: GovernedQueryInput['cache'],
   ) {
     if (
       !uuid.test(key) ||
@@ -223,7 +260,8 @@ export class NativeQueryService {
       (threadId !== undefined && (!threadId || typeof threadId !== 'string')) ||
       !/^[a-f0-9]{64}$/.test(previewScope) ||
       (expectedDeploymentHash !== undefined &&
-        !/^[a-f0-9]{40}$/.test(expectedDeploymentHash))
+        !/^[a-f0-9]{40}$/.test(expectedDeploymentHash)) ||
+      (cache !== undefined && !nativeQueryCacheShape(cache))
     )
       throw invalid();
     const prior = await this.history.findOneBy({
@@ -238,7 +276,8 @@ export class NativeQueryService {
         prior.requestPayload.sql !== sql ||
         (prior.threadId ?? undefined) !== threadId ||
         prior.requestPayload.limit !== limit ||
-        prior.requestPayload.action !== action)
+        prior.requestPayload.action !== action ||
+        digest(prior.requestPayload.cache ?? null) !== digest(cache ?? null))
     )
       throw new NativeQueryRefusal(409, 'QUERY_INTENT_CONFLICT');
     const deployment = prior
@@ -275,6 +314,7 @@ export class NativeQueryService {
       previewScope,
       action,
       threadId,
+      cache,
     };
   }
 
@@ -299,6 +339,7 @@ export class NativeQueryService {
         ...draft.input,
         previewScope: draft.previewScope,
         nativeSources: draft.objects,
+        ...(draft.cache ? { cache: draft.cache } : {}),
       },
       governanceBindingId: this.config.bindingId,
       governanceKey: draft.key,
@@ -314,6 +355,7 @@ export class NativeQueryService {
       deploymentId: draft.input.deploymentId,
       deploymentHash: draft.input.deploymentHash,
       limit: draft.input.limit,
+      ...(draft.cache ? { cache: draft.cache } : {}),
     };
     return {
       resourceId,
@@ -339,6 +381,7 @@ export class NativeQueryService {
     action: 'data_query.query@v1' | 'data_query.dry_run@v1',
     threadId?: string,
     expectedDeploymentHash?: string,
+    cache?: GovernedQueryInput['cache'],
   ) {
     let selection: Record<string, any>;
     try {
@@ -350,10 +393,8 @@ export class NativeQueryService {
       throw unavailable();
     const model = Object.hasOwn(selection, 'modelId');
     if (
-      Object.keys(selection).sort().join(',') !==
-        (model
-          ? 'deploymentHash,deploymentId,historyId,limit,modelId'
-          : 'deploymentHash,deploymentId,historyId,limit,viewId') ||
+      !nativeQuerySelectionShape(selection) ||
+      digest(selection.cache ?? null) !== digest(cache ?? null) ||
       !uuid.test(selection.historyId) ||
       selection.limit !== limit ||
       (expectedDeploymentHash !== undefined &&
@@ -373,6 +414,7 @@ export class NativeQueryService {
       (record.threadId ?? undefined) !== threadId ||
       record.requestPayload.limit !== limit ||
       record.requestPayload.action !== action ||
+      digest(record.requestPayload.cache ?? null) !== digest(cache ?? null) ||
       !Array.isArray(record.requestPayload.nativeSources) ||
       record.requestPayload.nativeSources[0]?.nativeType !==
         (model ? 'model' : 'view') ||
@@ -480,6 +522,7 @@ export class NativeQueryService {
       deploymentId: number;
       deploymentHash: string;
       limit: number;
+      cache?: GovernedQueryInput['cache'];
     };
     try {
       selection = JSON.parse(raw.nativeObjectRef);
@@ -492,14 +535,7 @@ export class NativeQueryService {
     const id = model ? selection.modelId : selection.viewId;
     const history = Object.hasOwn(selection, 'historyId');
     if (
-      Object.keys(selection).sort().join(',') !==
-        (history
-          ? model
-            ? 'deploymentHash,deploymentId,historyId,limit,modelId'
-            : 'deploymentHash,deploymentId,historyId,limit,viewId'
-          : model
-            ? 'deploymentHash,deploymentId,limit,modelId'
-            : 'deploymentHash,deploymentId,limit,viewId') ||
+      !nativeQuerySelectionShape(selection) ||
       !Number.isSafeInteger(id) ||
       id <= 0 ||
       (history && !uuid.test(selection.historyId))
@@ -530,6 +566,8 @@ export class NativeQueryService {
         record.governanceDeploymentId !== selection.deploymentId ||
         record.governanceDeploymentHash !== selection.deploymentHash ||
         record.requestPayload?.limit !== selection.limit ||
+        digest(record.requestPayload.cache ?? null) !==
+          digest(selection.cache ?? null) ||
         !['data_query.query@v1', 'data_query.dry_run@v1'].includes(
           record.requestPayload?.action,
         ) ||
@@ -562,12 +600,15 @@ export class NativeQueryService {
     ) {
       throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
     }
-    return queryInput({
-      sql,
-      deploymentId: selection.deploymentId,
-      deploymentHash: selection.deploymentHash,
-      limit: selection.limit,
-    });
+    return {
+      ...queryInput({
+        sql,
+        deploymentId: selection.deploymentId,
+        deploymentHash: selection.deploymentHash,
+        limit: selection.limit,
+      }),
+      ...(selection.cache ? { cache: selection.cache } : {}),
+    };
   }
 
   private observation(record: ApiHistory) {
@@ -1217,7 +1258,8 @@ export class NativeQueryService {
           manifest: deployment.manifest as Manifest,
           limit: input.limit,
           dryRun: action === 'data_query.dry_run@v1',
-          cacheEnabled: false,
+          cacheEnabled: input.cache?.cacheEnabled ?? false,
+          refresh: input.cache?.refresh,
           requestTimeoutMs: this.config.requestTimeoutMs,
           responseMaxBytes: this.config.responseMaxBytes,
         });
@@ -1250,6 +1292,14 @@ export class NativeQueryService {
           value = {
             columns: preview.columns,
             data: preview.data,
+            ...(input.cache
+              ? {
+                  cacheHit: preview.cacheHit || false,
+                  cacheCreatedAt: preview.cacheCreatedAt || null,
+                  cacheOverrodeAt: preview.cacheOverrodeAt || null,
+                  override: preview.override || false,
+                }
+              : {}),
             deploymentId: deployment.id,
             deploymentHash: deployment.hash,
           };

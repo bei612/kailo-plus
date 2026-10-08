@@ -6,6 +6,8 @@ import {
 import {
   NativeQueryService,
   nativeSourceResources,
+  nativeQuerySelectionShape,
+  GovernedQueryInput,
 } from './nativeQueryService';
 import { queryReceiptState } from '@/utils/queryReceipt';
 import {
@@ -422,6 +424,7 @@ export class NativeHumanQuery {
     dryRun: boolean,
     threadId?: string,
     expectedDeploymentHash?: string,
+    cache?: GovernedQueryInput['cache'],
   ) {
     const action = dryRun ? 'data_query.dry_run@v1' : 'data_query.query@v1';
     const policy = dryRun ? this.config.dryRunAction : this.config.humanAction;
@@ -460,6 +463,7 @@ export class NativeHumanQuery {
         action,
         threadId,
         expectedDeploymentHash,
+        cache,
       );
       const resources = [];
       for (const source of draft.objects)
@@ -540,6 +544,7 @@ export class NativeHumanQuery {
       action,
       threadId,
       expectedDeploymentHash,
+      cache,
     );
     return this.disclose(token, key, receipt, check, action);
   }
@@ -571,14 +576,7 @@ export class NativeHumanQuery {
     const model = Object.hasOwn(frozen, 'modelId');
     const editor = Object.hasOwn(frozen, 'historyId');
     if (
-      Object.keys(frozen).sort().join(',') !==
-        (editor
-          ? model
-            ? 'deploymentHash,deploymentId,historyId,limit,modelId'
-            : 'deploymentHash,deploymentId,historyId,limit,viewId'
-          : model
-            ? 'deploymentHash,deploymentId,limit,modelId'
-            : 'deploymentHash,deploymentId,limit,viewId') ||
+      !nativeQuerySelectionShape(frozen) ||
       !Number.isSafeInteger(frozen.deploymentId) ||
       frozen.deploymentId <= 0 ||
       typeof frozen.deploymentHash !== 'string' ||
@@ -599,6 +597,8 @@ export class NativeHumanQuery {
       record.requestPayload.deploymentId !== frozen.deploymentId ||
       record.requestPayload.deploymentHash !== frozen.deploymentHash ||
       record.requestPayload.limit !== frozen.limit ||
+      digest(record.requestPayload.cache ?? null) !==
+        digest(frozen.cache ?? null) ||
       receipt.inputReference.nativeRevision !==
         digest({
           bindingId: this.config.bindingId,

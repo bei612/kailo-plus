@@ -15,6 +15,7 @@ import {
   NativeQueryRefusal,
 } from './apollo/server/services/nativeQueryAdmission';
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
+import { DashboardResolver } from './apollo/server/resolvers/dashboardResolver';
 import { AskingResolver } from './apollo/server/resolvers/askingResolver';
 import { getQueryPreviewText } from './utils/language';
 import referenceHandler from './pages/api/platform-query-reference';
@@ -512,6 +513,7 @@ describe('native saved-view HUMAN query consumer', () => {
         action,
         undefined,
         undefined,
+        undefined,
       );
       expect(native.sqlReference).toHaveBeenCalledWith(binding, draft);
       const command = calls.mock.calls.find((call) => call[2].command)?.[2]
@@ -611,6 +613,7 @@ describe('native saved-view HUMAN query consumer', () => {
       'data_query.query@v1',
       undefined,
       undefined,
+      undefined,
     );
     expect(calls).toHaveBeenCalledTimes(1);
   });
@@ -678,6 +681,192 @@ describe('native saved-view HUMAN query consumer', () => {
         delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
       else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = original;
     }
+  });
+
+  describe('original dashboard HUMAN query consumers', () => {
+    let previous: string | undefined;
+    let delegated: jest.SpyInstance;
+    let ctx: any;
+    const item = {
+      id: 21,
+      dashboardId: 4,
+      detail: { sql: statement, chartSchema: { mark: 'bar' } },
+    };
+    const scope = nativePreviewScope(config, 'a'.repeat(64));
+    const cache = { cacheEnabled: true, refresh: true };
+    const completed = {
+      ...receipt,
+      terminalStatus: 'COMPLETED',
+      data: {
+        columns: [{ name: 'customer', type: 'VARCHAR' }],
+        data: [['permitted']],
+        cacheHit: true,
+        cacheCreatedAt: 'original-created',
+        cacheOverrodeAt: 'original-refresh',
+        override: true,
+      },
+    };
+    beforeEach(() => {
+      previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+        'fixture-controlled-delivery';
+      jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+      delegated = jest
+        .spyOn(NativeHumanQuery.prototype, 'previewSql')
+        .mockResolvedValue(completed);
+      ctx = {
+        nativeIdentityScope: 'a'.repeat(64),
+        nativeHumanToken: 'verified-native-token',
+        projectService: {
+          getCurrentProject: jest.fn().mockResolvedValue({ id: 3 }),
+        },
+        dashboardService: {
+          getCurrentDashboard: jest
+            .fn()
+            .mockResolvedValue({ id: 4, projectId: 3, cacheEnabled: true }),
+          getDashboardItem: jest.fn().mockResolvedValue(item),
+          createDashboardItem: jest.fn().mockResolvedValue(item),
+        },
+        askingService: {
+          getResponse: jest.fn().mockResolvedValue({
+            id: 31,
+            sql: statement,
+            chartDetail: { chartSchema: item.detail.chartSchema },
+          }),
+        },
+        queryService: { preview: jest.fn() },
+        deployService: { getLastDeployment: jest.fn() },
+      };
+    });
+    afterEach(() => {
+      delegated.mockRestore();
+      if (previous === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+    });
+    const args = () => ({
+      data: {
+        itemId: item.id,
+        refresh: true,
+        limit: 10,
+        idempotencyKey: key,
+        idempotencyScope: scope,
+      },
+    });
+    it('preserves original chart rows/cache metadata only after the current HUMAN query and no direct SQL', async () => {
+      const result = await new DashboardResolver().previewItemSQL(
+        null,
+        args(),
+        ctx,
+      );
+      expect(result).toMatchObject({
+        data: [{ customer: 'permitted' }],
+        cacheHit: true,
+        cacheCreatedAt: 'original-created',
+        cacheOverrodeAt: 'original-refresh',
+        override: true,
+        queryReceipt: {
+          previewScope: scope,
+          itemId: item.id,
+          terminalStatus: 'COMPLETED',
+        },
+      });
+      expect(result.queryReceipt.data).toBeUndefined();
+      expect(delegated).toHaveBeenCalledWith(
+        'verified-native-token',
+        key,
+        statement,
+        10,
+        scope,
+        false,
+        undefined,
+        undefined,
+        cache,
+      );
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      expect(ctx.dashboardService.getDashboardItem).toHaveBeenCalledTimes(2);
+    });
+    it.each(['RUNNING', undefined, 'NEW_STATUS'])(
+      'does not expose rows or old cache times for %s evidence',
+      async (terminalStatus) => {
+        delegated.mockResolvedValue({ ...completed, terminalStatus });
+        const result = await new DashboardResolver().previewItemSQL(
+          null,
+          args(),
+          ctx,
+        );
+        expect(result).toMatchObject({
+          data: [],
+          cacheHit: false,
+          cacheCreatedAt: null,
+          cacheOverrodeAt: null,
+          override: false,
+        });
+        expect(result.queryReceipt.data).toBeUndefined();
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['', 'configured-but-unreadable'])(
+      'never falls back to original SQL for an invalid configured delivery %j',
+      async (configured) => {
+        process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = configured;
+        jest
+          .mocked(loadQueryDelivery)
+          .mockRejectedValue(
+            new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE'),
+          );
+        await expect(
+          new DashboardResolver().previewItemSQL(null, args(), ctx),
+        ).rejects.toThrow('QUERY_ADMISSION_UNAVAILABLE');
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+        expect(delegated).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['identity', 'project'])(
+      'denies a changed current %s before admission or SQL',
+      async (changed) => {
+        if (changed === 'identity') ctx.nativeIdentityScope = 'b'.repeat(64);
+        else ctx.projectService.getCurrentProject.mockResolvedValue({ id: 99 });
+        await expect(
+          new DashboardResolver().previewItemSQL(null, args(), ctx),
+        ).rejects.toThrow('QUERY_IDENTITY_CHANGED');
+        expect(delegated).not.toHaveBeenCalled();
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it('refuses a native dashboard item changed while its query was observed', async () => {
+      ctx.dashboardService.getDashboardItem
+        .mockResolvedValueOnce(item)
+        .mockResolvedValueOnce({ ...item, detail: { sql: 'changed' } });
+      await expect(
+        new DashboardResolver().previewItemSQL(null, args(), ctx),
+      ).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    });
+    it('retains the exact never-configured standalone cache preview without HUMAN admission', async () => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      ctx.deployService.getLastDeployment.mockResolvedValue({
+        manifest: { original: true },
+      });
+      ctx.queryService.preview.mockResolvedValue(completed.data);
+      expect(
+        await new DashboardResolver().previewItemSQL(null, args(), ctx),
+      ).toEqual({
+        data: [{ customer: 'permitted' }],
+        cacheHit: true,
+        cacheCreatedAt: 'original-created',
+        cacheOverrodeAt: 'original-refresh',
+        override: true,
+      });
+      expect(ctx.queryService.preview).toHaveBeenCalledWith(statement, {
+        project: { id: 3 },
+        manifest: { original: true },
+        limit: 10,
+        cacheEnabled: true,
+        refresh: true,
+      });
+      expect(delegated).not.toHaveBeenCalled();
+    });
   });
 
   it.each(
