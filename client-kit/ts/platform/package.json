@@ -109,6 +109,7 @@
     "./react/conversations/dm-participant-display": "./src/react/conversations/dm-participant-display.ts",
     "./react/create-channel-dialog": "./src/react/create-channel-dialog.tsx",
     "./react/channel-browser": "./src/react/channel-browser.tsx",
+    "./react/channel-browser/loadChannelDirectory": "./src/react/channel-browser/loadChannelDirectory.ts",
     "./react/channel-glyph": "./src/react/channel-glyph.tsx",
     "./react/profile-settings": "./src/react/profile-settings.tsx",
     "./keyboard-platform": "./src/keyboard-platform.ts",

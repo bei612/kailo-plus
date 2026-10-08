@@ -556,7 +556,7 @@ export function TopbarSearch({
           />
         ) : (
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground">
-            {React.createElement(resultIcon(result), {
+            {React.createElement(resultIcon(result, channelLookup), {
               className: "h-4 w-4",
             })}
           </span>

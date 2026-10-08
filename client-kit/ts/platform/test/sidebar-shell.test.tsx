@@ -72,7 +72,7 @@ describe("shared original sidebar shell", () => {
   it("keeps the Chinese Inbox label connected to the same host action", async () => {
     setLocale("zh-CN");
     const home = vi.fn();
-    const host = await render(<SidebarProvider><AppSidebarPrimaryMenu onNewMessage={vi.fn()}
+    const host = await render(<SidebarProvider><AppSidebarPrimaryMenu
       onSelectHome={home} onSelectPlatformSection={vi.fn()} homeBadgeCount={0}
       selectedView="platform" selectedPlatformSection="workflows" /></SidebarProvider>);
     await click([...host.querySelectorAll("button")].find((item) => item.textContent === "收件箱收件箱")!);
@@ -94,14 +94,17 @@ describe("shared original sidebar shell", () => {
     expect(host.querySelector("[data-sidebar=footer]")?.textContent).toContain("profile host");
   });
 
-  it("connects original new-message, inbox and governed navigation callbacks", async () => {
-    const newMessage = vi.fn(); const home = vi.fn(); const select = vi.fn();
-    const host = await render(<SidebarProvider><AppSidebarPrimaryMenu onNewMessage={newMessage}
+  it("restores original Inbox-first primary menu and Zap without an invented new-message row", async () => {
+    const home = vi.fn(); const select = vi.fn();
+    const host = await render(<SidebarProvider><AppSidebarPrimaryMenu
       onSelectHome={home} onSelectPlatformSection={select} homeBadgeCount={3}
       selectedPlatformSection="workflows" selectedView="platform" /></SidebarProvider>);
-    await click(host.querySelector<HTMLButtonElement>("[data-testid=sidebar-new-message]")!);
+    const primary = host.querySelector("[data-testid=sidebar-primary-menu]")!;
+    expect(primary.querySelector("[data-testid=sidebar-new-message]")).toBeNull();
+    expect(primary.querySelector("[data-sidebar=menu-button]")?.textContent).toBe("InboxInbox");
+    expect(primary.querySelector("[data-testid=sidebar-platform-workflows] svg")?.classList.contains("lucide-zap")).toBe(true);
+    expect(primary.querySelector("[data-testid=sidebar-platform-workflows] svg")?.classList.contains("lucide-workflow")).toBe(false);
     await click([...host.querySelectorAll("button")].find((item) => item.textContent === "InboxInbox")!);
-    expect(newMessage).toHaveBeenCalledOnce();
     expect(home).toHaveBeenCalledOnce();
     expect(host.querySelector("[data-testid=sidebar-home-count]")?.textContent).toBe("3");
     expect(host.querySelector("[data-testid=sidebar-platform-workflows]")?.getAttribute("data-active")).toBe("true");

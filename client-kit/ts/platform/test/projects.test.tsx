@@ -50,7 +50,10 @@ async function creationFixture(){
   return {h,intent,client,publish,rows,task,send,revoke:()=>{member=false;}};
 }
 const deleteTrigger=({onOpen,pending}:{onOpen:()=>void;pending:boolean})=><button aria-label="Delete project" disabled={pending} onClick={onOpen}>Open deletion</button>;
-beforeEach(()=>{localStorage.clear();setLocale("en");sessionStorage.clear();});
+beforeEach(()=>{localStorage.clear();setLocale("en");sessionStorage.clear();
+  vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
+  HTMLElement.prototype.scrollIntoView=vi.fn();
+});
 
 describe("governed original project creation",()=>{
   const selectedAgent={agentResourceId:"42345678-1234-4234-8234-123456789012",agentVersionAssetId:"52345678-1234-4234-8234-123456789012",displayName:"Original persona",ordinal:3,resourceVersion:2,assetVersion:4};
@@ -300,7 +303,9 @@ describe("original Projects directory management consumers",()=>{
   });
   it("renders the original filtered-empty state rather than the unfiltered directory hint",async()=>{
     const ui=await directory(host());await vi.waitFor(()=>expect(ui.textContent).toContain("Real project"));
-    await type(ui.querySelector<HTMLInputElement>('[aria-label="Search projects"]')!,"absent-project");
+    await click(ui.querySelector<HTMLButtonElement>('[data-testid="projects-activity-search"]')!);
+    await vi.waitFor(()=>expect(ui.querySelector('[data-testid="projects-section-search-input"]')).not.toBeNull());
+    await type(ui.querySelector<HTMLInputElement>('[data-testid="projects-section-search-input"]')!,"absent-project");
     expect(ui.textContent).toContain("No matching projects");expect(ui.textContent).toContain("Try another owner filter or sort mode.");
     expect(ui.textContent).not.toContain("Projects published to this relay");
   });
@@ -312,7 +317,7 @@ describe("original SidebarProjectsSection governed hosts",()=>{
   const membership=():SidebarProjectMembership=>({projectAddresses:[`30621:${owner}:p`],pending:false,addProject:vi.fn().mockResolvedValue(undefined),removeProject:vi.fn().mockResolvedValue(undefined),refresh:vi.fn().mockResolvedValue(undefined)});
   it("places the original project region after the primary header and does not select overview for a project",async()=>{
     const ui=await render(<SidebarProvider><AppSidebarPrimaryMenu selectedView="platform" selectedPlatformSection="projects" projectsOverviewActive={false}
-      onNewMessage={vi.fn()} onSelectHome={vi.fn()} onSelectPlatformSection={vi.fn()} projectsSection={<div data-testid="project-region"/>}/></SidebarProvider>);
+      onSelectHome={vi.fn()} onSelectPlatformSection={vi.fn()} projectsSection={<div data-testid="project-region"/>}/></SidebarProvider>);
     expect(ui.querySelector('[data-testid="sidebar-platform-projects"]')?.getAttribute("data-active")).toBe("false");
     expect(ui.querySelector('[data-testid="sidebar-primary-menu"]')?.contains(ui.querySelector('[data-testid="project-region"]'))).toBe(false);
     expect(ui.querySelector('[data-testid="project-region"]')).not.toBeNull();
@@ -440,7 +445,7 @@ describe("original Projects announcements",()=>{
     expect(ui.querySelector("aside")?.textContent).toContain(`30617:${other}:missing`);
     expect(ui.querySelector("aside")?.textContent).toContain("does not grant access");
     await click(ui.querySelector<HTMLButtonElement>('button[aria-label="List layout"]')!);expect(ui.querySelectorAll("[data-projects-grid-card]")).toHaveLength(0);
-    h.query=async()=>{throw new Error("revoked");};await click(ui.querySelector<HTMLButtonElement>('button[aria-label="Try again"]')!);
+    h.query=async()=>{throw new Error("revoked");};await act(async()=>{await cache.invalidateQueries({queryKey:["projects",h.scopeKey]});});
     await vi.waitFor(()=>expect(ui.querySelector('[role="alert"]')).not.toBeNull());
     expect(ui.querySelector("aside")).toBeNull();expect(ui.textContent).not.toContain("Real project");
   });

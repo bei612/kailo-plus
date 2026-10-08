@@ -7,7 +7,7 @@ import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
 import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
 import { useChannelNavigationShortcuts } from "@client-kit/platform/react/use-channel-navigation-shortcuts";
 import { useQueryClient } from "@tanstack/react-query";
-import { channelsQueryKey, workspaceVisibilityQueryKey } from "@/features/channels/hooks";
+import { channelsQueryKey, nativeApplicationWorkspace, useWorkspaceChannelDirectory, workspaceVisibilityQueryKey } from "@/features/channels/hooks";
 import { ConversationList, useConversations } from "@client-kit/platform/react/new-message";
 import { translate, resolveLocale } from "@client-kit/platform/i18n";
 import { useAppShell } from "@/app/AppShellContext";
@@ -95,6 +95,10 @@ export function AppSidebar({
     onNewMessage,
   });
   const queryClient = useQueryClient();
+  const workspaceDirectory = useWorkspaceChannelDirectory();
+  const applicationWorkspace = nativeApplicationWorkspace(workspaceDirectory.data,
+    selectedApplicationBindingId ? { workspaceId: applicationWorkspaceId } :
+      { channelId: selectedView === "channel" ? selectedChannelId : null });
   const { open: sidebarOpen, openMobile } = useSidebar();
   const isMobile = useIsMobile();
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -234,7 +238,6 @@ export function AppSidebar({
         lastMessageAtByChannelId={new Map(channels.map((channel) => [channel.id, channel.lastMessageAt]))}
         onSelect={async (workspace) => { await Promise.all([queryClient.invalidateQueries({ queryKey: channelsQueryKey }), queryClient.invalidateQueries({ queryKey: workspaceVisibilityQueryKey })]); onSelectChannel(workspace.channel.channelId); }} /></>}>
               <AppSidebarPrimaryMenu
-                onNewMessage={onNewMessage}
                 homeBadgeCount={homeBadgeCount}
                 onSelectHome={onSelectHome}
                 onSelectPlatformSection={onSelectPlatformSection}
@@ -246,7 +249,7 @@ export function AppSidebar({
 
               {currentPrincipalId ? <NativeApplicationEntries scopeKey={`${activeCommunity.id}:${currentPrincipalId}`}
                 selectedId={selectedApplicationBindingId} onSelect={onSelectApplication}
-                workspace={channels.find((channel) => channel.channelType !== "dm" && channel.id === (selectedApplicationBindingId ? applicationWorkspaceId : selectedView === "channel" ? selectedChannelId : undefined))} /> : null}
+                workspace={applicationWorkspace} /> : null}
               {currentPrincipalId ? <DesktopConversations currentPrincipalId={currentPrincipalId} channels={channels}
                 selectedChannelId={selectedView === "channel" ? selectedChannelId : null}
                 onSelectChannel={onSelectChannel} onNewMessage={onNewMessage} onCloseSelected={onSelectHome} /> : null}

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActionDispatchState, ActionGateState, ChannelType, WorkspaceMembershipState, WorkspaceVisibility, type ActionCommand, type DiscoverableWorkspace } from "@client-kit/contracts";
+import { ActionDispatchState, ActionGateState, ChannelType, WorkspaceMembershipState, type ActionCommand, type DiscoverableWorkspace } from "@client-kit/contracts";
 import { newIdempotencyKey } from "../governance";
 import { TransportError, writeFailure, type WriteFailure } from "../transport";
 import { useBffClient, useFailureText, useT } from "./context";
 import { ChannelBrowserDialog, type BrowserChannel } from "./channel-browser/ChannelBrowserDialog";
+import { loadChannelDirectory } from "./channel-browser/loadChannelDirectory";
 import { Button, ReadFailure } from "./ui";
 
 /** Core controls discovery/admission; hosts only contribute already-observed
@@ -36,28 +37,7 @@ export function ChannelBrowser({ open, onOpenChange, onSelect, lastMessageAtByCh
     const generation = ++epoch.current;
     setLoading(true); setError(null);
     try {
-      const items: DiscoverableWorkspace[] = [];
-      const cursors = new Set<string>();
-      const ids = new Set<string>();
-      let cursor: string | undefined;
-      do {
-        const page = await client.discoverableWorkspaces(cursor);
-        if (!page || !Array.isArray(page.items)) throw new TransportError("Invalid workspace directory");
-        for (const item of page.items) {
-          if (!item || typeof item.id !== "string" || ids.has(item.id)
-            || !Object.values(WorkspaceVisibility).includes(item.visibility)
-            || !item.channel || !Object.values(ChannelType).includes(item.channel.channelType)
-            || typeof item.channel.name !== "string" || typeof item.channel.archived !== "boolean"
-            || typeof item.isMember !== "boolean" || !Number.isSafeInteger(item.memberCount) || item.memberCount < 0
-            || (item.membershipState !== undefined && !Object.values(WorkspaceMembershipState).includes(item.membershipState))
-            || (item.joinActionKey !== undefined && item.joinActionKey !== "workspace.join"))
-            throw new TransportError("Invalid workspace directory");
-          ids.add(item.id); items.push(item);
-        }
-        cursor = page.nextCursor;
-        if (cursor !== undefined && (typeof cursor !== "string" || !cursor || cursors.has(cursor))) throw new TransportError("Invalid workspace cursor");
-        if (cursor) cursors.add(cursor);
-      } while (cursor && mounted.current && generation === epoch.current);
+      const items = await loadChannelDirectory(client, () => mounted.current && generation === epoch.current);
       if (!mounted.current || generation !== epoch.current) return [];
       setRows(items);
       latestRows.current = items;

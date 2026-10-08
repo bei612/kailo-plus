@@ -316,7 +316,8 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
       }}/>
     ) : tab === "projects" ? (
       <ProjectsPane scopeKey={`${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`}
-        selectedProjectId={navigation.projectId} onSelectedProjectChange={id=>{void navigation.openProject(id);}}/>
+        selectedProjectId={navigation.projectId} onSelectedProjectChange={id=>{void navigation.openProject(id);}}
+        lastMessageAtByChannelId={channelActivity} onOpenChannel={async workspace=>{await workspaces.refetch();await navigation.openChannel(workspace.id);}}/>
     ) : tab === "agents" ? (
       <AgentDefinitionsPane key={`${session.tenantId}:${session.tenantPrincipalId}`} workspaceId={chosen ?? active ?? undefined}
         onWorkspaceChange={(workspaceId) => { void navigation.openTab("agents", workspaceId); }} />
@@ -361,7 +362,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
                 <ChannelBrowser key={session.tenantPrincipalId} open={createChannelOpen} onOpenChange={setCreateChannelOpen}
                 lastMessageAtByChannelId={channelActivity}
                 onSelect={async (workspace) => { await workspaces.refetch(); await navigation.openChannel(workspace.id); }} /></>}>
-              <AppSidebarPrimaryMenu onNewMessage={() => {setInitialRecipientPubkey(undefined);setTab("new-message");}} onSelectHome={() => setTab("inbox")}
+              <AppSidebarPrimaryMenu onSelectHome={() => setTab("inbox")}
                 homeBadgeCount={notificationSettings?.settings.homeBadgeEnabled && inboxUnreadCount !== null ? inboxUnreadCount : undefined}
                 onSelectPlatformSection={setTab}
                 projectsOverviewActive={!navigation.projectId}

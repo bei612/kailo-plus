@@ -1,6 +1,7 @@
 // Called presentation helpers from Buzz 779af8886caae1317b4de962082429867ab61503
 // desktop/src/features/projects/lib/projectsViewHelpers.ts. No access decision
 // or missing Git activity producer is migrated into this presentation module.
+import { getLocale, platformTimeSeconds, translate, type PlatformLocale } from "../../../i18n";
 export type ProjectsViewMode = "grid" | "list";
 const PROJECTS_VIEW_MODE_STORAGE_KEY = "buzz.projects.viewMode";
 
@@ -44,4 +45,29 @@ export function listRowDescription(
     return undefined;
   }
   return text;
+}
+
+// Original relativeTime: floor/clamp elapsed time and switch to a calendar date
+// after seven days. The existing catalog supplies Chinese/English wording.
+export function relativeTime(createdAt:number,nowSeconds=Math.floor(Date.now()/1_000),locale:PlatformLocale=getLocale()) {
+  const elapsedSeconds=Math.max(1,Math.floor(nowSeconds-createdAt));
+  const units=[
+    {label:"day",seconds:platformTimeSeconds.day},
+    {label:"hour",seconds:platformTimeSeconds.hour},
+    {label:"minute",seconds:platformTimeSeconds.minute},
+    {label:"second",seconds:1},
+  ] as const;
+  if(elapsedSeconds>=7*platformTimeSeconds.day){
+    const createdDate=new Date(createdAt*1_000),nowDate=new Date(nowSeconds*1_000);
+    return createdDate.toLocaleDateString(locale,{month:"short",day:"numeric",
+      ...(createdDate.getFullYear()===nowDate.getFullYear()?{}:{year:"numeric"})});
+  }
+  for(const unit of units){
+    const value=Math.floor(elapsedSeconds/unit.seconds);
+    if(value>=1){
+      if(unit.label==="day"&&value===1)return translate(locale,"projects.time.oneDay",{count:value});
+      return translate(locale,`platform.time.past.${unit.label}.${value===1?"one":"other"}`,{count:value});
+    }
+  }
+  return translate(locale,"platform.time.now");
 }

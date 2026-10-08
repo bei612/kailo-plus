@@ -4,6 +4,24 @@ import {useUiT} from "@client-kit/platform/react/context";
 import {relayClient} from "@/shared/api/relayClient";
 import {useNativeSession} from "./activeCommunity";
 import {createProjectsPublisher} from "./projectsTransport";
+import {useChannelsQuery} from "@/features/channels/hooks";
+import {useAppNavigation} from "@/app/navigation/useAppNavigation";
+import type {WorkspaceMemberView} from "@client-kit/contracts";
+import {UserAvatar} from "@client-kit/platform/react/messages";
+import {useUserProfileQuery} from "@/features/profile/hooks";
+import {UserProfilePopover} from "@/features/profile/ui/UserProfilePopover";
+import {rewriteRelayUrl} from "@/shared/lib/mediaUrl";
+
+function ProjectMemberIdentity({member,trigger}:{member:WorkspaceMemberView;trigger:{className:string;label:string}}){
+  const session=useNativeSession();const t=useUiT();const pubkey=member.pubkeys[0]!;
+  const profile=useUserProfileQuery(pubkey,`${session.facts.communityHost}:${session.devicePubkey}`);
+  const data=profile.isSuccess&&!profile.isFetching&&profile.data.pubkey===pubkey?profile.data:undefined;
+  return <UserProfilePopover pubkey={pubkey} triggerClassName={trigger.className} triggerElement="span"
+    triggerAriaLabel={t("members.openProfile",{name:trigger.label})}>
+    <span className="relative z-10" title={trigger.label}><UserAvatar avatarUrl={data?.avatarUrl??null}
+      displayName={data?.displayName??trigger.label} resolveMediaUrl={rewriteRelayUrl} shape="circle" size="xs"/></span>
+  </UserProfilePopover>;
+}
 
 /** Native CLIENT still queries the original Relay, never the Web SERVER signer. */
 export function useProjectsHost(){
@@ -28,5 +46,10 @@ export function useProjectsHost(){
 }
 export function ProjectsScreen({selectedProjectId,onSelectedProjectChange}:{selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null)=>void}={}){
   const host=useProjectsHost();const t=useUiT();
-  return host?<ProjectsView host={host} selectedProjectId={selectedProjectId} onSelectedProjectChange={onSelectedProjectChange}/>:<p role="alert">{t("platform.loadFailed")}</p>;
+  const channels=useChannelsQuery();const {goChannel}=useAppNavigation();
+  const lastMessageAtByChannelId=useMemo(()=>new Map((channels.isSuccess&&!channels.isFetching&&channels.data?channels.data:[])
+    .map(channel=>[channel.id,channel.lastMessageAt])),[channels.data,channels.isSuccess,channels.isFetching]);
+  return host?<ProjectsView host={host} selectedProjectId={selectedProjectId} onSelectedProjectChange={onSelectedProjectChange}
+    lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={async workspace=>{if(!await goChannel(workspace.channel.channelId))throw new Error("Project channel navigation failed");}}
+    renderMember={(member,trigger)=><ProjectMemberIdentity member={member} trigger={trigger}/>}/>:<p role="alert">{t("platform.loadFailed")}</p>;
 }

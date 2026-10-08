@@ -2722,3 +2722,292 @@ OCI revision 为空；是旧部署，不证明本批源码、最新 main 或 Win
 本批无新增截图，前节十一张只证明旧线上 d313fb 镜像；新源码 Inbox 高亮/
 shortcode 的实际浏览器视觉、Windows/Mobile 仍未验收。3307 全树差异尚未
 全部语义分类，准确未分类数与全部页面截图覆盖总数未统计，不称 100% 还原。
+
+### 2026-10-08：原 Projects Channels、搜索工具栏与两宿主真实消费者恢复
+
+固定官方 Buzz `779af8886caae1317b4de962082429867ab61503`；本批二十个代码／生成／
+检查路径 +1300/-50 行。实现先完成，再增加消费者检查；未新增契约、Core API、
+数据库、执行权威或组件接口，没有新建检查框架、镜像、依赖安装或全树源码副本。
+
+#### 权威、影响、副作用与边界
+
+1. `REQ-24`、`DD-74`、`DD-75`、`DD-77` 与用户原版一致性要求决定本批：直接从
+   固定官方 `desktop/src/features/projects/ui/` 迁入原行／分组／搜索／工具栏模块。
+   原 `ProjectsChannelsList::ProjectsChannelsList` 的项目／仓库关联收集、去重、分组、
+   token 搜索、活动排序、描述列、成员数、日期、不可用行和展开收起是显示依据；
+   原 `ProjectEntityListRow::ProjectEntityListRow` 的 overlay 按钮与 peopleSlot 保持
+   独立交互，未把资料按钮嵌入行按钮。原 selection→Agent 上下文消费者仍缺，不能
+   将本批称完整 Projects 或 100% 原版还原。
+2. 共享 `ProjectsView::ProjectDirectory` 实际调用原搜索／工具栏及 Channels 页面；
+   Web `ProjectsPane`、`PlatformApp` 接入现有 BFF 频道目录与 channelActivity，
+   Native `ProjectsScreen` 接原 `useChannelsQuery`、`goChannel`、`useUserProfileQuery`
+   和 `UserProfilePopover`。Web 导航使用真实 workspace.id，Native 使用其真实
+   channel.channelId，不能混用。共用 `loadChannelDirectory` 从原已治理 ChannelBrowser
+   提取，旧浏览器亦真实消费；除检查非空 ID／频道映射唯一性外原分页校验保持。
+3. 签名项目引用不是权限；Channels 只采纳当前 ACTIVE 成员目录，刷新／失败不保留
+   旧目录事实，点击前再读完整目录确认 workspace/channel 对及成员资格。重复映射、
+   游标循环、未知枚举、无效成员数、scope 离开全部关闭；导航重入不重复执行。
+   成员头像按当前 HumanPrincipal 聚合而不是每个设备 key 算一个人，校验 Principal／
+   pubkey 唯一性，只沿授权 memberProfile 和 avatarMediaPaths 读取。Native 继续
+   本机身份／Relay 媒体读取，不退回 Web signer。没有构造 owner、presence、Agent
+   roster 或默认租户；非本批支持的原功能仍登记缺项，不造空筛选或固定 0。
+4. 空项目／空筛选沿原空态；不可访问引用不导航、不显示假日期或成员 0；网络／投影
+   不明沿原 loadFailed 未知文案，不声称操作成功。读取错误分类沿 `06` §4 原六类：
+   认证／撤权为 DENIED，缺实际能力为 BLOCKED，目录／投影事实不成立为 PRECONDITION，
+   原限额拒绝为 LIMIT，映射冲突为 CONFLICT，读取／导航结果不明保持 UNKNOWN；
+   不增加前端权威错误码。原动作审批／Quota／Temporal／外部副作用链未变，无本批
+   新预留或待终结业务状态。时间显示直接迁入原 floor/clamp／七天转日期规则；十四个
+   中文／英文词条沿既有 TypeScript catalog 生成 Dart，不另维护翻译。
+
+#### 原路径逐项归档与仍缺功能
+
+以下全部完整路径相对于上述固定官方树，目标位于
+`client-kit/ts/platform/src/react/projects/`；每条都有本批真实页面消费者。
+
+| 固定官方路径／符号 | 本批分类与边界 |
+| --- | --- |
+| `desktop/src/features/projects/ui/ProjectPanelState.tsx::ProjectPanelState` | 共享迁移；去来源注释及 cn import 位置后与原函数字节 cmp 退出 0。 |
+| `desktop/src/features/projects/lib/projectsSearch.ts::matchesProjectsSearch` | 共享迁移；去来源注释后与原函数字节 cmp 退出 0，Channels 实际 token 搜索消费。 |
+| `desktop/src/features/projects/ui/ProjectsSectionSearch.tsx::ProjectsSectionSearch` | 缺失需恢复（部分已补）；原开关／动画／焦点／Escape／清空／排序位置恢复，完整原筛选范围仍缺。 |
+| `desktop/src/features/projects/ui/ProjectsToolbar.tsx::ProjectsToolbar` | 缺失需恢复（部分已补）；原样式／溢出遮罩／活动项滚入恢复；仅真实 Projects/Channels 消费，Activity/Repositories/Tasks/Reviews 未冒充已实现。 |
+| `desktop/src/features/projects/ui/ProjectsListHeaderBar.tsx::ProjectsListHeaderBar/ProjectsSortSelect` | 缺失需恢复（部分已补）；原 grid/list 及创建时间／名字排序恢复，Git/activity 的 updated 排序仍缺生产链。 |
+| `desktop/src/features/projects/ui/ProjectEntityListRow.tsx::ProjectEntityListRow` | 缺失需恢复（部分已补）；原显示分支／类名／响应式列与实际 peopleSlot 恢复，selection→Agent 控件未完成。 |
+| `desktop/src/features/projects/ui/ProjectSelectableGroup.tsx::ProjectSelectableGroup` | 缺失需恢复（部分已补）；原标题／count／展开收起恢复，selection→Agent 组选择未完成。 |
+| `desktop/src/features/projects/ui/ProjectsChannelsList.tsx::ProjectsChannelsList` | 缺失需恢复（部分已补）；完整真实频道读取／搜索／分组／导航闭合，原 Agent 参与者与 selection 上下文仍缺；HumanPrincipal 不能冒充 Agent。 |
+
+未改原不可变差异快照；从同一 3313 路径表派生
+`collaboration-current-20261008.projects-channels-classification.tsv`，只更新上述八行。
+该派生表 SHA-256 `aaab73d6492c7ee49c40c91ad4b0995f9a193dc69a5d6d20d2acbdc9e6eec4c7`，
+当前为共享迁移 **23**、已授权治理改造 **1**、缺失需恢复 **11**、未分类 **3278**；
+合计 3313。这是原快照逐路径语义分类进展，不是新快照、全树逐处验收或功能完成率。
+全仓尚未恢复总数仍未知，完整 Project 详情、Git/work-items/Terminal 等仍不能称已交付。
+
+#### 实施后集中窄验／私有破坏恢复
+
+仍在既有 `kailo-agent-receipt-xvkujx` 4 CPU／8 GiB SDK，镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`；
+开始前无编译进程、可用内存约 28 GiB／swap 0／Data 1755 MiB，已通知主线独占
+开始和释放。没有以降低编译并发代替 cgroup。日志仍在上节同一受限 Data 证据目录。
+
+- `projects-channels-first.log`：shared production/test tsc 通过；80 项初次 73 过／7 失败，
+  新夹具错误使用 64hex 频道 ID，被原 UUID parser 正确拒绝。只修正夹具为 UUID。
+  `projects-channels-positive.log` 后为 79 过／1 失败：资料面板刚挂载仍 Loading，
+  改为等待真实返回资料文案，而非仅检查面板存在。
+- `projects-channels-final.log`：shared production/test 两次 tsc 退出 0；原 Projects／
+  Channels／快捷键集中 **80 passed**。旧 ChannelBrowser 专项 **3 passed／265 skipped**，
+  无关页面未全跑。`projects-channels-hosts-final.log` Web tsc 通过，Native 实际发现
+  data 可空与 goChannel 的 Promise<boolean> 类型；修正真实宿主空态及导航 false
+  不报成功后 `projects-channels-native-final.log` Native tsc 退出 0。早期
+  `projects-channels-hosts.log` 中 ../node_modules/.bin/tsc 路径不存在，已用真实 desktop
+  安装目录执行，不将退出 127 当通过。
+- 只在私有 SDK 副本破坏八处：搜索、排序、成员复读、Principal 头像 key、折叠、
+  响应式描述列、floor 时间与频道映射唯一性；`projects-channels-private-negative.log`
+  退出 1，**7 failed／5 passed**。这是联合故障检查结果，不声称每处独立故障已穷尽。
+  全部六个被破坏文件重新从正式源码投递，`projects-channels-restored.log` 再次
+  **80 passed**。正式源码未注入故障，检查日志保留原 React act 警告。
+- 现有 Dart 生成及 `--check` 输出
+  `PASS: Mobile platform and reason catalogs match the shared TypeScript source`；
+  仅投递生成 platform_text.dart 的 52 行变化，reason_text cmp 未变；本批相关
+  已跟踪路径 diff --check 退出 0。
+
+本批二十路径及此回执尚未提交／部署／更新安装包，交主线阶段复核提交。全仓
+`tools/check.sh --full` 本批未运行，由主线集中收口。无新增业务截图：十三张已开图
+旧 live d313fb 仍只覆盖十一类页面及两状态；本批 Projects Channels 页面浏览器／
+Windows／Mobile 验收为零。不能以类型通过、DOM 检查或旧截图代替新版视觉验收。
+
+### 2026-10-08：侧栏原模块逐路径核对与正常会话边界
+
+本节仅为已执行的源码与浏览器核对证据，没有修改上节冻结二十路径，也没有使用
+主 SDK、编译、发布、安装依赖或重新导出百万行差异。固定官方仍为 Buzz
+`779af8886caae1317b4de962082429867ab61503`。
+
+| 固定官方完整路径／符号 | 实际核对结论 |
+| --- | --- |
+| `desktop/src/features/sidebar/ui/sidebarMenuHelpers.tsx::deferMenuAction/ContextMenuIconSlot` | 共享迁移；完整官方文件与 `client-kit/ts/platform/src/react/sidebar/sidebarMenuHelpers.tsx` 字节 cmp 退出 0；真实调用方为共享 channel-context-menu、channel-group、SidebarProjectsSection。 |
+| `desktop/src/features/sidebar/ui/sidebarSectionStyles.ts::SECTION_ICON_BUTTON_CLASS/SECTION_ACTION_VISIBILITY_CLASS` | 共享迁移；完整官方文件与共享同名文件字节 cmp 退出 0；channel-group 和 SidebarProjectsSection 实际使用，不把一致文件计作已运行视觉验收。 |
+| `desktop/src/features/sidebar/ui/AppSidebarPinnedHeader.tsx::AppSidebarPinnedHeader/AppSidebarPrimaryMenu` | 缺失需恢复；框架与菜单已共享，但原 TopbarSearch 的 browse/create-channel/create-agent/open-DM 生产／消费链不完整；原 Zap 工作流图标被更换，主菜单新增原文件没有的顶层 NewMessage。原完整菜单／快捷动作不能按“共享迁移”一票通过。 |
+| `desktop/src/features/sidebar/ui/ChannelContextMenu.tsx::MoveToSectionSubmenu/ChannelContextMenuItems` | 缺失需恢复；当前共享 Copy、读状态、静音、收藏有两宿主真实消费者，原 Move-to-section、Leave、Archive/Delete及其能力加载／错误状态缺失；未复制上游无效回调或空权限来冒充完成。 |
+
+基于上节同一不可变快照的派生表继续仅更新上述四行：
+`collaboration-current-20261008.sidebar-classification.tsv` 位于原 Data 证据目录，SHA-256
+`3ffbecb6f0bb76387163cdb14a68e9b66ee544f5ca31c3b3084cc7a3d9b6c66a`。
+3313 路径当前为共享迁移 **25**、已授权治理改造 **1**、缺失需恢复 **13**、未分类
+**3274**；差异表外原样保留 1980 文件保持原快照口径，不将分类当功能恢复率。
+
+组件入口另外实查：Web `PlatformApp` 与 Native `AppSidebar` 真实消费共享
+`NativeApplicationEntries`，按当前 ACTIVE／hasNativePage binding 返回的 capability
+category 渲染；右侧实际消费共享 `NativeApplicationPage` iframe、批准 origin／generation
+与正常独立服务认证。它不是固定 Buzz 本身已有的组件页面，因此不把这两个新治理
+模块归为“官方原样页面”。本轮尚未业务登录三个服务或证明上传下载／撤权／跨组件
+同步；Native Relay channel.id 与 Core workspace.id 的映射消费另已反馈主线，不能
+因常见环境恰巧同 ID 就推定通用绑定成立。
+
+`playwright-cli -s=kailo-ui-status snapshot` 实际仍在正常 IdP Sign in，未进行密码
+投递、会话注入、重置或业务写入。截图
+`.playwright-cli/kailo-ui-20261008-post-channels-session-expired.png` 为 1920×1080，
+已打开逐图复核：只有用户名／密码登录表单。它不是新的业务页面验收；业务截图仍
+为先前十三张旧 live d313fb，十一类页面与两状态。本节新的业务截图、Windows／Mobile
+和三组件完整页面验收均为零，未用过期登录页补足逐页检查数量。
+
+### 2026-10-08：Native 频道与组件入口消费真实 Workspace／Relay 映射
+
+本批四个代码／检查路径 +234/-17 行：`client-kit/ts/platform/package.json`，以及
+`collaboration/desktop/src/features/channels/hooks.ts`、同目录 `hooks.test.mjs`、
+`collaboration/desktop/src/features/sidebar/ui/AppSidebar.tsx`。未修改上批冻结二十路径，
+未新增契约、Core 路由、数据库、i18n 或另一份组件注册表。原页面布局与组件样式未动。
+
+#### 权威、影响、副作用与确定边界
+
+1. `DD-75`、`DD-80` 与既有通用 ApplicationBinding 接缝决定本批：原 Native 保持本机
+   持钥直连 Relay，管理／目录与组件发现仍走 BFF。原固定官方 Buzz
+   `779af8886caae1317b4de962082429867ab61503:desktop/src/features/channels/hooks.ts`
+   的 `useChannelsQuery`／`refreshChannelsQuery` 签名列表、hash、快照与 recency 合并
+   继续原样消费；原固定 `desktop/src/features/sidebar/ui/AppSidebar.tsx::AppSidebar`
+   的共用侧栏内接已有治理组件入口，不以新菜单或替代页面补齐功能。
+2. 实查 `core/crates/platform-core/src/platform_views.rs::discoverable_workspaces` 已返回
+   Core `id` 与原 Relay `channel.channelId`；原 `list_workspaces` 的 `id` 不能当频道 ID。
+   本次替换错误联接：`useWorkspaceChannelDirectory` 复用现有 `loadChannelDirectory`
+   全分页／映射唯一性／scope 校验；`useChannelsQuery` 按 channelId 联接显示 visibility，
+   `AppSidebar` 用 channel 路由的 Relay ID 或 application 路由的 Core ID 解析一次，
+   向真实 `NativeApplicationEntries` 传 Core workspace.id。共享 query key 保留原
+   workspaceVisibilityQueryKey 前缀，使现有 join 后失效继续成立，不复制业务权威。
+3. 两消费者共用当前 community／relay／device／identity 范围的目录缓存，未知身份或
+   device 不匹配关闭，pending／error／paused 不重用旧准入；迟到请求按原 AbortSignal
+   与当前 scope 检查拒绝。只有 isMember 且 ACTIVE 且频道类型一致可显示公共频道。
+   原生 DM 独立读取保持，不要求假 Workspace、不把 Relay 私密协议标志当产品 visibility。
+   Core 与 Relay ID 偶然相同也不作为映射依据；不存在路由匹配时不回退另一命名空间。
+4. 零目录／多页／读取失败／重复映射／未知枚举沿既有目录处理，撤权返回 REVOKING 即
+   移除该 workspace 组件发现，旧 scope 不覆盖新 scope。目录只读无副作用，不新增审批、
+   预留或在途业务状态；上传、工具、Temporal、额度与审计执行链未变。错误沿 `06` §4：
+   认证／撤权 DENIED，缺能力 BLOCKED，缺映射 PRECONDITION，超限 LIMIT，重复映射
+   CONFLICT，读取结果不明 UNKNOWN；不新增权威错误枚举或把未知显示为执行成功。
+   字段／存储格式未变，没有旧数据迁移或旧格式双读。Web 已使用真实 Core workspace.id，
+   本批未复制 Web 页面；Mobile 仍非组件宿主，未增加 WebView／组件菜单。
+
+#### 实施后窄验与私有故障恢复
+
+开始前检查无 Cargo／rustc／Dart／Vite／tsc 构建进程；host 可用约31 GiB、Data 1.4 GiB。
+复用原 `kailo-agent-receipt-xvkujx`，cgroup cpu.max=`400000 100000`、
+memory.max=`8589934592`，镜像仍为前节固定值，SDK开始／释放均已通知主线。
+没有镜像构建、依赖安装、全树复制或全仓重复检查。日志位于前节同一 Data 证据目录。
+
+- `native-workspace-ids-first.log`：原 hooks 专项 **14 passed／0 failed**。
+- `native-workspace-ids-tsc.log`：Native `node_modules/.bin/tsc --noEmit` 退出 **0**。
+- `native-workspace-ids-negative.log`：只在私有 SDK 副本同时破坏映射、准入、组件 ID 和
+  新鲜度，**3 failed／11 passed**，退出1；未声称联合失败证明每处独立有效。
+- `native-workspace-ids-membership-negative.log`：单独移除实际显示成员护栏，**1 failed**；
+  `native-workspace-ids-fresh-negative.log` 单独移除 query 新鲜度，实际 Hook＋组件读取
+  集成检查在 pending 复用旧目录处 **1 failed**。随后正式源码重新投递，cmp 退出0。
+- `native-workspace-ids-restored.log`：原 hooks／channelSnapshot／focusRefetchPolicy 三个
+  检查文件共 **33 passed／0 failed**。实际挂载 useChannelsQuery、目录 Hook 与原共享
+  NativeApplicationEntries，证明多页仅一次查询、Core／Relay ID 碰撞正确分流、真实
+  applicationBindings 读取 Core scope、pending／失败／撤权／scope 迟到关闭，签名缓存
+  对象未被 visibility 覆写。没有把测试挂载当完整 AppSidebar 或 Windows 设备验收。
+
+同一3313差异快照仅追加两条“缺失需恢复”归档，不把本次接缝修复当整个原文件一致。
+固定原 `hooks.ts` 的 `useChannelDetailsQuery/useUpdateChannelMutation/useLeaveChannelMutation`
+仍缺；固定原 `AppSidebar.tsx` 的 useChannelSections／CustomChannelSection／SidebarDndContext、
+SidebarUpdateCard／HuddleProfileControl 及完整资料操作仍缺。派生表
+`collaboration-current-20261008.native-workspace-classification.tsv` SHA-256
+`1b0a6f7825cd56bad391d5499cb66633d8943df02d9f398828ba773378a5197d`；
+当前共享迁移25、已授权治理1、已知缺失15、未分类3272，共3313，不是全量语义验收。
+
+本批源码与回执交主线阶段提交，尚未部署／更新安装包；全仓 `tools/check.sh --full`
+本批未跑，由主线集中收口。原正常会话过期，未新增业务截图；13张旧live d313fb
+仅11类页面＋2状态，当前新源码业务截图／Windows／Mobile 验收仍为零。
+
+### 2026-10-08：原 Primary Menu 与搜索真实图标消费者恢复边界
+
+本批五个代码／检查路径 +151/-23：共享 `react/sidebar/app-sidebar-primary-menu.tsx`
+与 `test/sidebar-shell.test.tsx`，Native `features/search/ui/SearchResultItem.tsx`、
+`TopbarSearch.tsx` 与新 `SearchResultItem.test.mjs`。未修改主线冻结的二十个
+ProjectsChannels 路径及四个 Native Workspace 映射路径。当前尚有三个冻结调用方的
+`onNewMessage` prop 需在主线释放后最小删除，因此不是本批完整接线／可发布声明。
+
+1. 权威为用户原版一致性红线与固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503:desktop/src/features/sidebar/ui/AppSidebarPinnedHeader.tsx::AppSidebarPrimaryMenu`：
+   原版 Inbox 是首行，Workflows 用 Zap，不含顶层 NewMessage。本次共享菜单恢复这两处
+   原实现；保留已有治理菜单与既有 DM 分区创建／快捷键，不改原页面、私聊路由或执行链。
+   原固定 `desktop/src/features/search/ui/SearchResultItem.tsx::resultIcon` 的非 action 分支
+   原样恢复；`TopbarSearch::renderSearchResultRow` 真实传入已有 channelLookup，读取实际
+   forum／DM／human／agent 类型，不自行编造身份、owner、presence 或频道事实。
+2. 检索五个 PrimaryMenu 调用方：两处 sidebar-shell 检查已同步，Web PlatformApp、
+   Native AppSidebar 与 projects.test 的三处 prop 暂保持冻结。原 ConversationSidebar、
+   DesktopConversations 与导航快捷键的 NewMessage 调用仍保留。Native 搜索唯一实际图标
+   消费者已接回；它没有被声称为 Web/Desktop 全量共源搜索，Web 原搜索仍有缺项。
+3. 修改只影响当前已读取数据的呈现与原导航，没有新路由、数据库字段、契约、权限权威、
+   审批、额度、工作流或副作用。管理 BFF／Native 持钥 Relay 边界不变；空数据、缺频道
+   映射的图标沿原 Hash，不能据此准入业务。未知／拒绝／结果不明的真实执行状态与
+   `06` §4 六类错误链未改；没有新状态、旧格式兼容窗口或数据迁移。
+4. 窄验覆盖真实建议列表 forum／DM 图标、点击导航、空频道映射、agent／human、身份
+   selector，且回归共享 DM 创建与快捷键。没有给尚无生产者的原 action 添空回调或菜单。
+   Mobile 不受本批影响，仍非组件宿主；没有 WebView、组件菜单或单独前端实现。
+
+原 SDK 前置核对无活动 cargo／rustc／vitest／dart／tsc，host可用内存约31 GiB，Data
+约1.3 GiB，memory PSI avg10=0；复用 `kailo-agent-receipt-xvkujx` 原4CPU／8GiB镜像
+与缓存，cgroup cpu.max=`400000 100000`、memory.max=`8589934592`。仅机械投递五路径；
+SDK占用／释放已通知主线，无新镜像、依赖安装或全树复制。日志仍在前节 Data 证据目录。
+
+- `sidebar-primary-first.log`／`sidebar-primary-restored.log`：原 sidebar-shell、
+  conversation-sidebar、navigation-shortcuts、channel-navigation-shortcuts 共
+  **35 passed／0 failed**，实际 DM 分区创建与键盘入口仍通过。
+- `sidebar-search-first.log`／`sidebar-search-restored.log`：原 Node loader 实际挂载
+  TopbarSearch 建议行、核对原图标并点击 forum／DM 导航，共 **3 passed／0 failed**。
+- 私有 SDK 单独把 Zap 换回 Workflow，`sidebar-primary-zap-negative.log` **1 failed／7 passed**；
+  单独重新插顶层 NewMessage，`sidebar-primary-new-message-negative.log` **1 failed／7 passed**。
+- 私有 SDK 单独把 forum 图标变 Hash，`sidebar-search-forum-negative.log` **2 failed／1 passed**；
+  还原后单独把 DM 图标变 Hash，`sidebar-search-dm-negative.log` **2 failed／1 passed**。
+  两次都包含真实 TopbarSearch 建议行失败，不只是 helper 断言。正式源码重新投递、两文件
+  cmp均退出0，最终恢复后的35＋3项均通过。没有修改正式源码来制造故障。
+
+当前未跑本批四侧 tsc／全仓 full：三个冻结 prop 尚未闭合，不以局部运行断言代替类型或
+发布验收。固定 SearchResultItem 的原 action 类型／图标与完整 Shell／Body，TopbarSearch
+的 channelLabels、DM／agent 分区、真实 browse/create动作、DM上下文及 icon variant 仍缺。
+同一3313快照仅把上述两条从未分类记为缺失，派生表
+`collaboration-current-20261008.search-classification.tsv` SHA-256
+`442ea34cb60224a09853286fb0a93b7e65fe7619acdc80b815fc9e22ac21ee79`；
+当前共享迁移25、已授权治理1、已知缺失17、未分类3270，共3313，不是全量语义验收。
+
+本批未提交／部署／更新安装包。`playwright-cli -s=kailo-ui-status snapshot` 仍为正常
+Keycloak Sign in，未投递口令、注入会话、重置账户或业务写入；新业务截图0，旧13张
+live d313fb只覆盖11类页面＋2状态，不证明本批源码；Windows／Mobile本批验收0。
+
+### 2026-10-08：Projects Channels／Native 映射／原菜单整批消费者闭合
+
+主线释放上节冻结后，实际最小删除 Web `PlatformApp`、Native `AppSidebar`、共享
+`projects.test.tsx` 三处 PrimaryMenu `onNewMessage` prop。原 ConversationSidebar、
+DesktopConversations 与 useNavigationShortcuts 的 DM 创建调用均保留，没有删除私聊能力。
+此前二十个 ProjectsChannels 路径、四个 Native 目录映射路径与五个原菜单／搜索路径
+合为本次 **29代码／检查／生成路径 +1687/-93**；其中17跟踪路径+428/-93，十二新
+文件1259行。只修改已归属路径，无新分支／worktree／契约／镜像或另一个 UI 主体。
+
+权威与四步影响沿前三节，新增最小调用调整不改 scope、鉴权、额度、业务状态或副作用；
+将先前等待冻结释放的类型接缝实际闭合，不表示 Projects／搜索所有原版缺项已恢复。
+原4CPU／8GiB、uid1000 SDK开始／释放均通知主线，启动前 host可用内存31GiB、Data
+约1.2GiB、memory PSI avg10=0，无活动cargo/rustc/vitest/dart/tsc，仅驻留BuildKit。
+实际cgroup与镜像同上节，只投递29路径及两宿主已安装共享包的变更文件，未复制全树。
+
+原Data证据目录下 `ui-consumers-batch-*` 为本次联合源码实际结果：
+
+- `shared-tsc.log`、`shared-test-tsc.log`、`web-tsc.log`、`native-tsc.log`：共享
+  production／test、Web、Native 四次 `tsc --noEmit` 均退出0，三处prop已无类型残留。
+- `shared-restored.log`：Projects、Channels、侧栏、DM、导航快捷键和项目偏好七文件
+  **106 passed／0 failed**；`browser.log` 原 ChannelBrowser **3 passed／265 skipped**。
+  265为本轮无关页面明确未跑，不算全页面通过。原 React act 警告保留未隐藏。
+- `native-restored.log`：真实频道 hooks、channelSnapshot、focusRefetchPolicy与搜索
+  四文件 **36 passed／0 failed**，包括管理目录／组件发现消费者，而非 helper-only。
+  首次 `native.log` 的两条路径误含不存在的lib目录，Node仅执行17项；沿rg找到实际
+  文件后 `native-final.log` 与恢复日志均实际36项，不将早期17项冒称全组。
+- `i18n.log`：原 `python3 tools/gen-platform-i18n.py --check` 退出0，实际输出
+  `PASS: Mobile platform and reason catalogs match the shared TypeScript source`。
+- `project-admission-negative.log`：仅在私有SDK移除 Projects 打开频道前的fresh成员
+  校验，原真实撤权／详情消费者 **1 failed／11 passed**、退出1。
+- `native-fresh-negative.log`：私有SDK独立移除目录pending／失败的新鲜度拒绝，真实
+  Hook＋NativeApplicationEntries 在pending复用旧目录处 **1 failed／13 passed**、退出1。
+  两文件从正式源码复投、cmp均0，恢复后106＋36全过；先前菜单／搜索四次独立故障
+  与Projects／映射的原负向日志继续保留。正式工作树未注入故障。
+
+整批29路径及本次回执冻结交主线完整diff复核、提交／push；截至交接尚未提交、未部署、
+未更新安装包。全仓full留主线集中收口，本轮未跑。固定3313快照分类仍25共享／1授权／
+17已知缺失／3270未分类，不作覆盖率。新业务截图、Windows及Mobile验收仍0；旧13张
+live截图不是这批源码的视觉验收。既有完整原版缺项仍按前节明确保留，不声明100%。

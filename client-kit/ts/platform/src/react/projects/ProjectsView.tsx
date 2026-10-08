@@ -4,8 +4,8 @@
 // Git work-item/terminal consumers still require their separate production chain.
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CreateActionKey } from "@client-kit/contracts";
-import { Folders, LayoutGrid, List, Search, X, RefreshCw, Trash2 } from "lucide-react";
+import { CreateActionKey, type DiscoverableWorkspace } from "@client-kit/contracts";
+import { Folders, Hash, X, Trash2 } from "lucide-react";
 import { useBffClient, useUiT } from "../context";
 import { Button } from "../profile/buzz/shared/ui/button";
 import { DropdownMenuItem } from "../sidebar/dropdown-menu";
@@ -19,15 +19,22 @@ import { ProjectDetailMetaList, ProjectDetailMetaRow } from "./ProjectDetailMeta
 import { ProjectSectionHeader } from "./ProjectSectionHeader";
 import { loadProjectDirectory, type ProjectsHost } from "./projectEnumeration";
 import type { Project } from "./projectModels";
+import { ProjectsChannelsList } from "./ProjectsChannelsList";
+import type { ProjectsFilter } from "./ProjectsToolbar";
+import { ProjectsSectionSearch } from "./ProjectsSectionSearch";
+import { ProjectsListHeaderBar } from "./ProjectsListHeaderBar";
+import type { ProjectMemberRenderer } from "./ProjectChannelMembers";
 
-type ProjectsViewProps={host:ProjectsHost;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null)=>void|Promise<void>};
+type ProjectsViewProps={host:ProjectsHost;selectedProjectId?:string|null;onSelectedProjectChange?:(id:string|null)=>void|Promise<void>;
+  onOpenChannel?:(workspace:DiscoverableWorkspace)=>void|Promise<void>;lastMessageAtByChannelId?:ReadonlyMap<string,string|null>;renderMember?:ProjectMemberRenderer};
 export function ProjectsView(props:ProjectsViewProps) {
   return <ProjectDirectory key={props.host.scopeKey} {...props}/>;
 }
 
-function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange}:ProjectsViewProps) {
+function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange,onOpenChannel,lastMessageAtByChannelId,renderMember}:ProjectsViewProps) {
   const t=useUiT(); const cache=useQueryClient();const client=useBffClient();
   const [search,setSearch]=useState("");
+  const [filter,setFilter]=useState<ProjectsFilter>("projects");
   const [view,setView]=useState<ProjectsViewMode>(()=>readStoredViewMode()??"grid");
   const [sort,setSort]=useState<"created"|"name">("created");
   const [createOpen,setCreateOpen]=useState(false);
@@ -78,29 +85,22 @@ function ProjectDirectory({host,selectedProjectId,onSelectedProjectChange}:Proje
   return <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-testid="projects-screen">
     <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pb-4">
       <div className="sticky top-0 z-30 -mx-4 flex h-13 min-w-0 items-center gap-1.5 bg-background/90 px-4">
-        <Search className="h-4 w-4 shrink-0 text-muted-foreground"/>
-        <input aria-label={t("projects.search")} placeholder={t("projects.search")} value={search} onChange={e=>setSearch(e.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-hidden"/>
-        <label className="flex items-center gap-2 text-xs text-muted-foreground"><span className="sr-only">{t("projects.sort")}</span>
-          <select className="h-8 rounded-md bg-transparent px-2 text-xs text-foreground outline-hidden hover:bg-muted/50 focus:ring-1 focus:ring-ring"
-            value={sort} onChange={e=>setSort(e.target.value==="name"?"name":"created")}>
-            <option value="created">{t("projects.created")}</option><option value="name">{t("projects.name")}</option>
-          </select></label>
-        <Button variant="ghost" size="icon" aria-label={t("platform.retry")} onClick={()=>void query.refetch()} disabled={query.isFetching}><RefreshCw className="h-4 w-4"/></Button>
+        <ProjectsSectionSearch filter={filter} onFilterChange={setFilter} onQueryChange={setSearch} onSortChange={setSort}
+          sort={sort} channelsAvailable={Boolean(onOpenChannel)}/>
       </div>
-      <ProjectSectionHeader className="mb-2 rounded-md bg-muted/40" icon={Folders} title={t("platform.tab.projects")} trailing={
-        <fieldset className="flex items-center rounded-lg bg-muted/30 p-0.5"><legend className="sr-only">{t("projects.layout")}</legend>
-          <Button aria-label={t("projects.grid")} aria-pressed={view==="grid"} className="h-7 w-7 px-0" size="xs" variant={view==="grid"?"secondary":"ghost"} onClick={()=>changeView("grid")}><LayoutGrid className="h-3.5 w-3.5"/></Button>
-          <Button aria-label={t("projects.list")} aria-pressed={view==="list"} className="h-7 w-7 px-0" size="xs" variant={view==="list"?"secondary":"ghost"} onClick={()=>changeView("list")}><List className="h-3.5 w-3.5"/></Button>
-        </fieldset>
-      } />
+      <ProjectSectionHeader className="mb-2 rounded-md bg-muted/40" icon={filter==="channels"?Hash:Folders} testId="projects-page-header"
+        title={t(filter==="channels"?"sidebar.channels":"platform.tab.projects")}
+        trailing={filter==="channels"?undefined:<ProjectsListHeaderBar viewMode={view} onViewModeChange={changeView}/>}/>
       {navigationFailed?<p role="alert">{t(navigationFailed==="created"?"projects.create.navigationFailed":"platform.loadFailed")}</p>:null}
-      {query.isError?<p role="alert">{t("platform.loadFailed")}</p>:query.isFetching||query.isPending?<p role="status">{t("platform.loading")}</p>:visible.length===0?
+      {query.isError?<p role="alert">{t("platform.loadFailed")}</p>:query.isFetching||query.isPending?<p role="status">{t("platform.loading")}</p>:filter==="channels"&&onOpenChannel?
+        <ProjectsChannelsList key={host.scopeKey} projects={projects} scopeKey={host.scopeKey} searchQuery={search}
+          lastMessageAtByChannelId={lastMessageAtByChannelId} onOpenChannel={onOpenChannel} renderMember={renderMember}/>:visible.length===0?
         searchText?<EmptyFilteredState/>:<EmptyState onCreateProject={canCreate?()=>setCreateOpen(true):undefined}/>:
         <section className={view==="grid"?"grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3":"flex flex-col"}>
           {visible.map(projectRow)}
         </section>}
     </div>
-    {active?<aside className="flex w-96 max-w-full shrink-0 flex-col overflow-auto border-l border-border bg-background" aria-label={t("projects.announcement")}>
+    {active&&filter==="projects"?<aside className="flex w-96 max-w-full shrink-0 flex-col overflow-auto border-l border-border bg-background" aria-label={t("projects.announcement")}>
       <header className="flex items-center gap-2 px-6 py-4"><h2 className="min-w-0 flex-1 break-words text-lg font-semibold">{active.name}</h2>
         <Button variant="ghost" size="icon" aria-label={t("projects.close")} onClick={()=>{void setSelected(null).catch(()=>{if(lifetime.active)setNavigationFailed("open");});}}><X className="h-4 w-4"/></Button></header>
       <p className="whitespace-pre-wrap break-words px-6 text-sm text-muted-foreground">{active.description}</p>

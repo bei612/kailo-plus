@@ -2,7 +2,7 @@
 import { translate } from "../../i18n";
 import { useUiLocale } from "../context";
 import { PlatformNavigation, type PlatformNavigationSection as PlatformSection } from "../navigation";
-import { Activity, Folders, Bot, ClipboardCheck, History, Inbox, ListChecks, MonitorSmartphone, Users, Workflow, SquarePen } from "lucide-react";
+import { Activity, Folders, Bot, ClipboardCheck, History, Inbox, ListChecks, MonitorSmartphone, Users, Zap } from "lucide-react";
 import { SidebarHeader, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem } from "./sidebar";
 import { SidebarMenuLabel } from "./sidebar-menu-label";
 import type { ReactNode } from "react";
@@ -13,7 +13,7 @@ const PLATFORM_SECTION_ICON = {
   projects: <Folders className="h-4 w-4" />,
   members: <Users className="h-4 w-4" />,
   agents: <Bot className="h-4 w-4" />,
-  workflows: <Workflow className="h-4 w-4" />,
+  workflows: <Zap className="h-4 w-4" />,
   tasks: <ListChecks className="h-4 w-4" />,
   approvals: <ClipboardCheck className="h-4 w-4" />,
   audit: <History className="h-4 w-4" />,
@@ -22,7 +22,6 @@ const PLATFORM_SECTION_ICON = {
 
 
 type AppSidebarPrimaryMenuProps = {
-  onNewMessage: () => void;
   homeBadgeCount?: number;
   onSelectHome: () => void;
   onSelectPlatformSection: (section: PlatformSection) => void;
@@ -34,7 +33,6 @@ type AppSidebarPrimaryMenuProps = {
 
 
 export function AppSidebarPrimaryMenu({
-  onNewMessage,
   homeBadgeCount,
   onSelectHome,
   onSelectPlatformSection,
@@ -59,14 +57,6 @@ export function AppSidebarPrimaryMenu({
           selectedView === "platform" && (selectedPlatformSection !== "projects" || projectsOverviewActive) ? selectedPlatformSection : null
         }
         firstRow={
-          <>
-          <SidebarMenuItem>
-            <SidebarMenuButton isActive={selectedView === "new-message"} onClick={onNewMessage}
-              tooltip={translate(locale, "sidebar.newMessage")} type="button" data-testid="sidebar-new-message">
-              <SquarePen className="h-4 w-4" />
-              <SidebarMenuLabel>{translate(locale, "sidebar.newMessage")}</SidebarMenuLabel>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               className="data-[active=true]:font-normal"
@@ -87,7 +77,6 @@ export function AppSidebarPrimaryMenu({
               </SidebarMenuBadge>
             ) : null}
           </SidebarMenuItem>
-          </>
         }
       />
     </SidebarHeader>{projectsSection}</>

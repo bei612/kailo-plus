@@ -11,7 +11,7 @@ import type { GetChannelsPayload } from "@/shared/api/tauriChannels";
 import { mergeConcurrentChannelRecency } from "@/features/channels/lib/channelRecencyMerge";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { useFocusedRefetchInterval } from "@/shared/lib/useDocumentVisible";
-import { useActiveCommunity } from "@/features/platform/activeCommunity";
+import { useActiveCommunity, useNativeSession } from "@/features/platform/activeCommunity";
 import {
   inspectChannelSnapshot,
   type ChannelSnapshot,
@@ -19,7 +19,8 @@ import {
 } from "@/features/channels/channelSnapshot";
 import { CHANNEL_MEMBERS_STALE_TIME_MS } from "@/features/channels/rosterFreshness";
 import { useBffClient } from "@client-kit/platform/react/context";
-import { WorkspaceVisibility } from "@client-kit/contracts";
+import { loadChannelDirectory } from "@client-kit/platform/react/channel-browser/loadChannelDirectory";
+import { WorkspaceMembershipState, type DiscoverableWorkspace } from "@client-kit/contracts";
 
 export const channelsQueryKey = ["channels"] as const;
 export const workspaceVisibilityQueryKey = ["platform", "workspace-visibility"] as const;
@@ -275,8 +276,57 @@ export async function refreshChannelsQuery({
   return sorted;
 }
 
-export function useChannelsQuery(options?: { enabled?: boolean }) {
+/** One scoped BFF projection serves native channel display and component discovery. */
+export function useWorkspaceChannelDirectory(options?: { enabled?: boolean }) {
   const bff = useBffClient();
+  const community = useActiveCommunity();
+  const session = useNativeSession();
+  const identity = useIdentityQuery();
+  const ownerPubkey = identity.data?.pubkey ?? null;
+  const enabled = (options?.enabled ?? true) && !identity.isError &&
+    ownerPubkey !== null && ownerPubkey === session.devicePubkey;
+  const current = React.useRef({ bff, community, ownerPubkey, devicePubkey: session.devicePubkey, enabled });
+  current.current = { bff, community, ownerPubkey, devicePubkey: session.devicePubkey, enabled };
+  const refetchInterval = useFocusedRefetchInterval(CHANNELS_REFETCH_INTERVAL_MS);
+  const query = useQuery({
+    queryKey: [...workspaceVisibilityQueryKey, community.id, community.relayUrl, session.devicePubkey, ownerPubkey],
+    enabled,
+    queryFn: ({ signal }) => loadChannelDirectory(bff, () => !signal.aborted &&
+      current.current.enabled && current.current.bff === bff &&
+      current.current.community.id === community.id && current.current.community.relayUrl === community.relayUrl &&
+      current.current.ownerPubkey === ownerPubkey && current.current.devicePubkey === session.devicePubkey),
+    refetchInterval,
+  });
+  // A pending, failed, disabled or changed scope cannot reuse cached admission.
+  return { ...query, data: enabled && query.isSuccess && query.fetchStatus === "idle" ? query.data : undefined };
+}
+
+/** Core workspace IDs and signed Relay channel IDs are separate identities. */
+export function joinAdmittedNativeChannels(
+  channels: Channel[] | undefined,
+  directory: readonly DiscoverableWorkspace[] | undefined,
+): Channel[] | undefined {
+  const workspaces = new Map(directory?.filter((workspace) => workspace.isMember &&
+    workspace.membershipState === WorkspaceMembershipState.Active).map((workspace) => [workspace.channel.channelId, workspace]));
+  return channels?.flatMap((channel) => {
+    if (channel.channelType === "dm") return [channel];
+    const workspace = workspaces.get(channel.id);
+    return workspace?.channel.channelType === channel.channelType ? [{ ...channel, visibility: workspace.visibility }] : [];
+  });
+}
+
+/** Resolve a route in its own ID namespace before discovering workspace bindings. */
+export function nativeApplicationWorkspace(
+  directory: readonly DiscoverableWorkspace[] | undefined,
+  route: { workspaceId?: string; channelId?: string | null },
+): { id: string; name: string } | undefined {
+  const workspace = directory?.find((item) => item.isMember &&
+    item.membershipState === WorkspaceMembershipState.Active &&
+    (route.workspaceId !== undefined ? item.id === route.workspaceId : item.channel.channelId === route.channelId));
+  return workspace ? { id: workspace.id, name: workspace.channel.name } : undefined;
+}
+
+export function useChannelsQuery(options?: { enabled?: boolean }) {
   const relayUrl = useActiveCommunity().relayUrl;
   // CommunityQueryProvider remounts its QueryClient for every community. Only
   // the active identity may authorize a persisted snapshot: Community.pubkey
@@ -332,18 +382,11 @@ export function useChannelsQuery(options?: { enabled?: boolean }) {
   // Relay private is a protocol projection, not product visibility (DD-80).
   // Keep the signed/native snapshot untouched; only the displayed channels are
   // joined with Core's admitted metadata. Unknown facts never imply public.
-  const workspaces = useQuery({
-    queryKey: [...workspaceVisibilityQueryKey, ownerPubkey],
-    enabled: (options?.enabled ?? true) && ownerPubkey !== null,
-    queryFn: () => bff.workspaces(),
-    refetchInterval,
-  });
-  const visibleChannels = React.useMemo(() => {
-    const visibility = new Map(workspaces.data?.filter((workspace) => workspace.isMember === true && workspace.visibility !== undefined
-      && Object.values(WorkspaceVisibility).includes(workspace.visibility)).map((workspace) => [workspace.id, workspace.visibility!]));
-    return query.data?.flatMap((channel) => channel.channelType === "dm" ? [channel]
-      : !workspaces.isError && visibility.has(channel.id) ? [{ ...channel, visibility: visibility.get(channel.id)! }] : []);
-  }, [query.data, workspaces.data, workspaces.isError]);
+  const workspaces = useWorkspaceChannelDirectory(options);
+  const visibleChannels = React.useMemo(
+    () => joinAdmittedNativeChannels(query.data, workspaces.data),
+    [query.data, workspaces.data],
+  );
 
   React.useEffect(() => {
     if (

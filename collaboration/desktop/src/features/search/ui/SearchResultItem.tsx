@@ -1,4 +1,4 @@
-import { Hash, User } from "lucide-react";
+import { Bot, FileText, Hash, MessageCircle, User } from "lucide-react";
 
 import type { SearchHit, UserSearchResult, Channel } from "@/shared/api/types";
 
@@ -31,6 +31,29 @@ export function resultTestId(result: SearchResult) {
   return `search-result-${result.hit.eventId}`;
 }
 
-export function resultIcon(result: SearchResult) {
-  return result.kind === "user" ? User : Hash;
+// Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/search/ui/SearchResultItem.tsx::resultIcon.
+export function resultIcon(
+  result: SearchResult,
+  channelLookup: ReadonlyMap<string, Channel>,
+) {
+  if (result.kind === "user") {
+    return result.user.isAgent ? Bot : User;
+  }
+
+  const channelType =
+    result.kind === "channel"
+      ? result.channel.channelType
+      : result.hit.channelId
+        ? channelLookup.get(result.hit.channelId)?.channelType
+        : undefined;
+
+  if (channelType === "forum") {
+    return FileText;
+  }
+
+  if (channelType === "dm") {
+    return MessageCircle;
+  }
+
+  return Hash;
 }
