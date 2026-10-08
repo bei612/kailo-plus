@@ -93,11 +93,11 @@ func fileStorageNumber(value map[string]json.RawMessage, key string) int64 {
 	return number
 }
 
-func (t *fileStorageTransport) call(ctx context.Context, endpoint string, body []byte, token, key string) ([]byte, http.Header, error) {
+func (t *fileStorageTransport) call(ctx context.Context, method, endpoint string, body []byte, token, key string) ([]byte, http.Header, error) {
 	if _, err := fileStorageURL(endpoint); err != nil {
 		return nil, nil, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct controlled file-storage request")
 	}
@@ -122,6 +122,14 @@ func (t *fileStorageTransport) call(ctx context.Context, endpoint string, body [
 }
 
 func (t *fileStorageTransport) coreCall(ctx context.Context, route string, value any) (map[string]json.RawMessage, error) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid controlled request metadata")
+	}
+	return t.coreRequest(ctx, http.MethodPost, &url.URL{Path: route}, body)
+}
+
+func (t *fileStorageTransport) coreRequest(ctx context.Context, method string, route *url.URL, body []byte) (map[string]json.RawMessage, error) {
 	secret, err := os.ReadFile(t.config.OIDCClientSecretFile)
 	if err != nil {
 		return nil, fmt.Errorf("binding service credential is unavailable")
@@ -139,12 +147,8 @@ func (t *fileStorageTransport) coreCall(ctx context.Context, route string, value
 	if err != nil || token == nil || !token.Valid() {
 		return nil, fmt.Errorf("binding service authentication is unavailable")
 	}
-	body, err := json.Marshal(value)
-	if err != nil {
-		return nil, fmt.Errorf("invalid controlled request metadata")
-	}
-	u := t.core.ResolveReference(&url.URL{Path: route})
-	raw, headers, err := t.call(ctx, u.String(), body, token.AccessToken, "")
+	u := t.core.ResolveReference(route)
+	raw, headers, err := t.call(ctx, method, u.String(), body, token.AccessToken, "")
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +266,7 @@ func (t *fileStorageTransport) source(ctx context.Context, grant *fileStorageGra
 	}
 	ctx, cancel := context.WithTimeout(ctx, remaining)
 	defer cancel()
-	return t.call(ctx, fileStorageText(grant.value, "endpoint"), []byte(fileStorageText(grant.value, "argumentsJson")),
+	return t.call(ctx, http.MethodPost, fileStorageText(grant.value, "endpoint"), []byte(fileStorageText(grant.value, "argumentsJson")),
 		fileStorageText(grant.value, "actionToken"), grant.key)
 }
 

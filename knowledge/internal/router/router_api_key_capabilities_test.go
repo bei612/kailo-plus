@@ -1,15 +1,68 @@
 package router
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/handler"
 	sessionhandler "github.com/Tencent/WeKnora/internal/handler/session"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
 )
+
+type fileStoragePickerService struct {
+	interfaces.DataSourceService
+}
+
+func (fileStoragePickerService) ListFileStorageSources(context.Context, string) ([]types.Resource, error) {
+	return []types.Resource{{ExternalID: "governed-source", Name: "Governed source"}}, nil
+}
+
+type fileStoragePickerKnowledgeBase struct {
+	interfaces.KnowledgeBaseService
+}
+
+func (fileStoragePickerKnowledgeBase) GetKnowledgeBaseByID(context.Context, string) (*types.KnowledgeBase, error) {
+	return &types.KnowledgeBase{ID: "owned-kb", TenantID: 1}, nil
+}
+
+func TestFileStorageConnectorPickerRetainsOriginalAdminGate(t *testing.T) {
+	for _, scenario := range []struct {
+		name   string
+		role   types.TenantRole
+		query  string
+		status int
+	}{
+		{"static-viewer", types.TenantRoleViewer, "", http.StatusOK},
+		{"picker-viewer", types.TenantRoleViewer, "?kb_id=owned-kb", http.StatusForbidden},
+		{"picker-admin", types.TenantRoleAdmin, "?kb_id=owned-kb", http.StatusOK},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			enabled := true
+			guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}}
+			router := gin.New()
+			router.Use(func(c *gin.Context) {
+				ctx := context.WithValue(c.Request.Context(), types.TenantIDContextKey, uint64(1))
+				ctx = types.WithCaller(ctx, types.Caller{TenantID: 1, UserID: "native-user", Role: scenario.role})
+				c.Request = c.Request.WithContext(ctx)
+				c.Set(types.TenantIDContextKey.String(), uint64(1))
+				c.Next()
+			})
+			RegisterDataSourceRoutes(router.Group("/api/v1"), handler.NewDataSourceHandler(fileStoragePickerService{}, fileStoragePickerKnowledgeBase{}), &handler.DataSourceCredentialsHandler{}, guards)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/datasource/types"+scenario.query, nil))
+			if response.Code != scenario.status {
+				t.Fatalf("status=%d want=%d body=%s", response.Code, scenario.status, response.Body.String())
+			}
+		})
+	}
+}
 
 func TestConversationRoutesDeclareChatCapability(t *testing.T) {
 	gin.SetMode(gin.TestMode)

@@ -119,21 +119,16 @@ func (c *fileStorageConnector) Validate(_ context.Context, cfg *types.DataSource
 	return nil
 }
 
-// Resource selection remains the existing governed Resource binding surface;
-// the native picker can display those references but cannot discover a second
-// ungoverned native directory using a tenant credential.
+// Resource selection reads Core's current authorized metadata, not the saved
+// selection or an ungoverned native directory using a tenant credential.
 func (c *fileStorageConnector) ListResources(ctx context.Context, cfg *types.DataSourceConfig, parent string) ([]types.Resource, error) {
 	if err := c.Validate(ctx, cfg); err != nil {
 		return nil, err
 	}
-	items := []types.Resource{}
 	if parent != "" {
-		return items, nil
+		return []types.Resource{}, nil
 	}
-	for _, id := range cfg.ResourceIDs {
-		items = append(items, types.Resource{ExternalID: id, Name: id})
-	}
-	return items, nil
+	return c.transport.sourceResources(ctx)
 }
 
 func (c *fileStorageConnector) ResolveResourceAncestors(ctx context.Context, cfg *types.DataSourceConfig, ids []string) ([]string, error) {

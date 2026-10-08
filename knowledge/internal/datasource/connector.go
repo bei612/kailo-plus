@@ -162,13 +162,14 @@ func (r *ConnectorRegistry) List() []string {
 
 // ConnectorMetadata provides metadata about available connectors
 type ConnectorMetadata struct {
-	Type         string   `json:"type"`
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	Icon         string   `json:"icon,omitempty"`
-	Priority     int      `json:"priority"`     // Priority order for UI display (lower = higher priority)
-	AuthType     string   `json:"auth_type"`    // "oauth2", "api_key", "token", etc.
-	Capabilities []string `json:"capabilities"` // "incremental", "webhook", "deletion_sync", etc.
+	Type         string           `json:"type"`
+	Name         string           `json:"name"`
+	Description  string           `json:"description"`
+	Icon         string           `json:"icon,omitempty"`
+	Priority     int              `json:"priority"`     // Priority order for UI display (lower = higher priority)
+	AuthType     string           `json:"auth_type"`    // "oauth2", "api_key", "token", etc.
+	Capabilities []string         `json:"capabilities"` // "incremental", "webhook", "deletion_sync", etc.
+	Resources    []types.Resource `json:"resources,omitempty"`
 }
 
 // GetConnectorMetadata returns metadata for all available connectors

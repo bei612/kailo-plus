@@ -2474,3 +2474,112 @@ checks, browser screenshots and end-to-end import were not run. This backend
 batch likewise did not run live services, global checks, release/binding
 activation or deployment. The fixed-source manifest status command was not
 rerun; read-only source evidence does not replace that command.
+
+## Original native picker consumes the receiver's governed directory (2026-10-08)
+
+Authority and cause: DD-89, design `07` §8.2 and `13` §4.1/§4.4 retain
+receiver-owned imports and per-batch source authorization. Fixed WeKnora
+`2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/handler/datasource.go::DataSourceHandler.GetAvailableConnectors` and
+`frontend/src/views/knowledge/settings/DataSourceEditorDialog.vue::loadResources`,
+provide the original metadata and paused-draft/tree/submit flow. The existing
+native file-storage connector previously echoed configured Resource UUIDs;
+that was not discovery, and the original empty draft could not pass its
+nonempty-reference validation. The new Core SERVICE producer now exists in
+`application_read_grant::{read_resources,service_resource_page}`; this batch
+directly consumes it rather than copying the platform directory or credentials.
+
+Impact: the existing OAuth transport retains its original grant/source POST
+consumers and adds authenticated GET to
+`/service/v1/adapter/bindings/{receiverBindingId}/read-resources`, with
+`direction=SOURCE`, `categoryKey=FILE_STORAGE` and the original offset. The
+controlled native tenant/KB and existing connector registry select the receiver;
+another native KB receives no file-storage option. The original `/datasource/types`
+accepts optional `kb_id`, checks native KB ownership/API-key scope and uses the
+original Admin resource-picker gate. Calls without `kb_id` preserve the original
+static Viewer metadata. `ConnectorMetadata.resources` reuses native `Resource`;
+no platform contract, database, cursor, scheduler or migration is added.
+
+Side effects: only the receiver's own configured OIDC client and secret file
+authenticate the private Core call. SERVICE credentials, platform Cookie,
+ActionToken and file body do not reach the native frontend. `ListResources`
+now reads currently granted metadata rather than using saved selections as an
+authority; its service consumer also checks the controlled native scope.
+Discovery is not a read grant: actual import still uses the original
+`request_read_grant`, fresh source PEP, receiver execution and native parse/
+receipt/checkpoint chain. Directory errors produce a redacted native refusal,
+not partial resources or another source read. No asynchronous state or new
+external side effect is introduced.
+
+Boundaries: identity/direction/required fields, canonical UUIDs, positive
+versions, resource workspace, duplicate IDs and monotonically increasing offsets
+are checked. Receiver tenant/principal/workspace/binding version must remain
+stable across pages. A tenant-scoped receiver may see the workspace sources
+which Core already authorized; workspace-scoped receivers reject a different
+workspace. Empty/filtered pages may continue via the original offset. Existing
+delivered timeout and maximum-body bound cap the whole discovery; HTTP refusal,
+malformed metadata, unavailable credentials and incomplete pagination return no
+partial directory. These failures are native precondition/authorization/limit/
+conflict refusals, not an UNKNOWN business execution; existing UNKNOWN receipts
+remain unchanged and cannot authorize replay.
+
+The original Vue consumer has also been written: retain all original connector
+definitions, add this option only for actual authorized sources, seed the original
+paused draft with those references, then use the existing tree/selection/save/sync.
+Empty or revoked selections cannot leave the source step; failed fresh listing
+clears this connector's previous resources. The SERVICE connector alone omits
+native credential editing; original credential connectors, template layout and
+styles are otherwise unchanged. New labels cover all five native locale bundles,
+including Chinese and English, and directory errors use the existing localized
+load-failure message. These eight frontend files have **not** been executed in
+Vue/type/browser checks: the inspected existing native UI image is Nginx-only
+and available Node SDK/cache lacks Vue/compiler-sfc/tsx. No dependency was
+installed and no screenshot or complete UI acceptance is claimed.
+
+Implementation preceded the original Go checks. All commands reused the existing
+4 CPU/8 GiB/no-extra-swap UID-1000 SDK/cache after checking build concurrency,
+memory pressure and Data space. The concentrated target was:
+
+```sh
+sudo -n docker exec -u 1000:1000 -w /workspace/knowledge \
+  -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+  kailo-knowledge-native-check-wkkigg \
+  go test ./internal/application/service ./internal/handler ./internal/router \
+  -run 'TestFileStorage|TestDataSource_GetSyncLogs|TestTenantInfrastructureRoutesDeclareSpecificCapabilities' \
+  -count=1 -v
+```
+
+Initial positive handle `32927` exited 0: 21 top-level +116 subchecks passed.
+In the private candidate only, removing the actual duplicate-Resource refusal
+and reversing the actual Admin picker gate made the same target exit 1
+(handle `57597`): 19 top-level/113 subchecks passed, 2 top-level/3 subchecks
+failed. Actual errors were `An error is expected but got nil` for duplicate
+resources, static Viewer receiving 403 instead of 200, and picker Viewer
+receiving 200 instead of 403. Fixtures/assertions were not mutated. The production
+guards were restored byte-for-byte; the subsequent review also aligned the
+tenant-scoped receiver boundary with Core's original SQL and added its positive
+subcheck. Final restored handle `38917` exited 0: **21 top-level +117 subchecks
+passed**, no failures/skips; service `0.643s`, handler `0.544s`, router `0.590s`.
+The pre-existing infrastructure-policy fixture logs its nil-config warning;
+the new actual role-gate check uses explicit enabled RBAC, not that fixture's
+disabled configuration. Entire native `internal/` formal/candidate `diff -qr`,
+SDK `gofmt -d` and scoped `git diff --check` were clean. Final cgroup OOM counters
+were zero and the task TMPDIR empty; no command remains running.
+
+Logs in the same existing SDK evidence root above:
+
+- `file-storage-directory-positive-20261008.log`, exit 0, SHA-256
+  `02be423424b29da828ad2240a721cbc0001671c6f756c4a69f8221f0e7857b6a`.
+- `file-storage-directory-mutation-20261008.log`, intentional exit 1, SHA-256
+  `facf2343d996e4e3c156f4e957f69ce9cab2b4f468304fbc662e36e8807a86cb`.
+- `file-storage-directory-restored-20261008.log`, exit 0, SHA-256
+  `7d2661c56ec7b837fabfe8da01ee1cb46f04c5a2bb90fe11cfe96e8ba9aacc2e`.
+
+This is real native directory/consumer evidence, not activated component or
+end-to-end file-import acceptance. Core producer checks are owned by the main
+thread; no live release/binding/SecretRef was created or activated here. Live
+Cells→WeKnora import/parse/revoke receipts, browser/installed-client screenshots,
+full checks, manifest status, image build and deployment were not run in this
+subtask. Historical receipts above describe their own earlier snapshots; they
+do not override this batch's new producer/consumer or these remaining boundaries.

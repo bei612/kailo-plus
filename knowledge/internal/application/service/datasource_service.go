@@ -423,6 +423,11 @@ func (s *DataSourceService) ListAvailableResources(
 	if err != nil {
 		return nil, err
 	}
+	if native, ok := connector.(*fileStorageConnector); ok {
+		if err := native.bindingScope(ds.TenantID, ds.KnowledgeBaseID); err != nil {
+			return nil, err
+		}
+	}
 
 	// Parse configuration
 	config, err := ds.ParseConfig()

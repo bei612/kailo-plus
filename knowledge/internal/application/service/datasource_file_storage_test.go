@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/datasource"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/google/uuid"
@@ -85,6 +86,167 @@ func TestFileStorageTransportUsesOwnIdentityAndExactNativeReceiver(t *testing.T)
 	_, err = transport.grant(context.Background(), run, ids[3], "file_storage.list@v1", 1, ids[7], cfg.ApplyActionKey, 1, map[string]string{"resourceId": ids[3]})
 	require.ErrorContains(t, err, "receiver grant does not match")
 	require.Equal(t, 2, granted)
+}
+
+func TestFileStorageDirectoryUsesCurrentReceiverIdentityAndBoundedPages(t *testing.T) {
+	for _, scenario := range []string{"current", "tenant-receiver", "empty-page", "empty-directory", "wrong-binding", "wrong-direction", "invalid-tenant",
+		"invalid-principal", "invalid-generation", "null-workspace", "invalid-resource", "invalid-resource-binding", "invalid-version",
+		"empty-native-ref", "empty-type", "wrong-resource-workspace", "null-resources", "duplicate-resource", "changed-generation",
+		"changed-tenant", "changed-principal", "changed-workspace", "backwards-offset", "null-offset", "oversized", "refused", "non-json"} {
+		t.Run(scenario, func(t *testing.T) {
+			binding, receiver, kb, tenant, principal, workspace := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+			sources := []string{uuid.NewString(), uuid.NewString()}
+			secret := filepath.Join(t.TempDir(), "receiver-secret")
+			require.NoError(t, os.WriteFile(secret, []byte("test-only-directory-secret"), 0600))
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/oidc" {
+					user, password, ok := r.BasicAuth()
+					require.True(t, ok)
+					require.Equal(t, "receiver-directory-client", user)
+					require.Equal(t, "test-only-directory-secret", password)
+					_, _ = w.Write([]byte(`{"access_token":"directory-service-token","token_type":"Bearer","expires_in":3600}`))
+					return
+				}
+				requests++
+				require.Equal(t, http.MethodGet, r.Method)
+				require.Equal(t, "/service/v1/adapter/bindings/"+binding+"/read-resources", r.URL.Path)
+				require.Equal(t, "SOURCE", r.URL.Query().Get("direction"))
+				require.Equal(t, "FILE_STORAGE", r.URL.Query().Get("categoryKey"))
+				require.Equal(t, "Bearer directory-service-token", r.Header.Get("Authorization"))
+				require.Empty(t, r.Header.Get("Cookie"))
+				require.Zero(t, r.ContentLength)
+				first := r.URL.Query().Get("offset") == "0"
+				if !first {
+					require.Equal(t, "2", r.URL.Query().Get("offset"))
+				}
+				resource := map[string]any{"resourceId": sources[0], "version": 1, "bindingId": uuid.NewString(), "nativeRef": "approved-node", "typeKey": "test-source"}
+				if !first {
+					resource["resourceId"] = sources[1]
+				}
+				page := map[string]any{"bindingId": binding, "bindingVersion": 1, "servicePrincipalId": principal, "tenantId": tenant,
+					"workspaceId": workspace, "direction": "SOURCE", "resources": []any{resource}}
+				if first {
+					page["nextOffset"] = 2
+				}
+				switch scenario {
+				case "tenant-receiver":
+					delete(page, "workspaceId")
+					resource["workspaceId"] = workspace
+				case "empty-page":
+					if first {
+						page["resources"] = []any{}
+					}
+				case "empty-directory":
+					page["resources"] = []any{}
+					delete(page, "nextOffset")
+				case "wrong-binding":
+					page["bindingId"] = uuid.NewString()
+				case "wrong-direction":
+					page["direction"] = "RECEIVER"
+				case "invalid-tenant":
+					page["tenantId"] = ""
+				case "invalid-principal":
+					page["servicePrincipalId"] = ""
+				case "invalid-generation":
+					page["bindingVersion"] = 0
+				case "null-workspace":
+					page["workspaceId"] = nil
+				case "invalid-resource":
+					resource["resourceId"] = "untrusted"
+				case "invalid-resource-binding":
+					resource["bindingId"] = ""
+				case "invalid-version":
+					resource["version"] = 0
+				case "empty-native-ref":
+					resource["nativeRef"] = " "
+				case "empty-type":
+					resource["typeKey"] = ""
+				case "wrong-resource-workspace":
+					resource["workspaceId"] = uuid.NewString()
+				case "null-resources":
+					page["resources"] = nil
+				case "duplicate-resource":
+					resource["resourceId"] = sources[0]
+				case "changed-generation":
+					if !first {
+						page["bindingVersion"] = 2
+					}
+				case "changed-tenant":
+					if !first {
+						page["tenantId"] = uuid.NewString()
+					}
+				case "changed-principal":
+					if !first {
+						page["servicePrincipalId"] = uuid.NewString()
+					}
+				case "changed-workspace":
+					if !first {
+						page["workspaceId"] = uuid.NewString()
+					}
+				case "backwards-offset":
+					if !first {
+						page["nextOffset"] = 2
+					}
+				case "null-offset":
+					page["nextOffset"] = nil
+				case "refused":
+					w.WriteHeader(http.StatusForbidden)
+					return
+				case "non-json":
+					w.Header().Set("Content-Type", "text/plain")
+				}
+				require.NoError(t, json.NewEncoder(w).Encode(page))
+			}))
+			defer server.Close()
+			cfg := &config.FileStorageSyncConfig{BindingID: binding, ReceiverResourceID: receiver, NativeKnowledgeBaseID: kb, NativeTenantID: 1,
+				CorePepURL: server.URL + "/service/v1/adapter/pep_check", OIDCTokenURL: server.URL + "/oidc", OIDCClientID: "receiver-directory-client", OIDCClientSecretFile: secret,
+				TimeoutMS: 1000, MaxBodyBytes: 10240, ListActionVersion: 1, ReadActionVersion: 1, ApplyActionKey: "knowledge.sync_apply@v2", ApplyActionVersion: 1,
+				RetireActionKey: "knowledge.sync_retire@v2", RetireActionVersion: 1}
+			if scenario == "oversized" {
+				cfg.MaxBodyBytes = 1
+			}
+			transport, err := newFileStorageTransport(cfg)
+			require.NoError(t, err)
+			connector := &fileStorageConnector{transport: transport}
+			registry := datasource.NewConnectorRegistry()
+			require.NoError(t, registry.Register(connector))
+			service := &DataSourceService{connectorRegistry: registry}
+			ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+			items, err := service.ListFileStorageSources(ctx, kb)
+			if scenario != "current" && scenario != "tenant-receiver" && scenario != "empty-page" && scenario != "empty-directory" {
+				require.Error(t, err)
+				require.Nil(t, items, "a partial or untrusted directory must not reach the native picker")
+				return
+			}
+			require.NoError(t, err)
+			if scenario == "empty-directory" {
+				require.Empty(t, items)
+				return
+			}
+			if scenario == "empty-page" {
+				require.Len(t, items, 1)
+				require.Equal(t, sources[1], items[0].ExternalID)
+				return
+			}
+			require.Len(t, items, 2)
+			require.Equal(t, sources[0], items[0].ExternalID)
+			require.Equal(t, "approved-node", items[0].Name)
+			// The saved selection is not a directory authority. The original tree
+			// refresh must expose both currently granted references, not echo it.
+			items, err = connector.ListResources(ctx, &types.DataSourceConfig{ResourceIDs: sources[:1]}, "")
+			require.NoError(t, err)
+			require.Len(t, items, 2)
+			before := requests
+			items, err = service.ListFileStorageSources(ctx, uuid.NewString())
+			require.NoError(t, err)
+			require.Empty(t, items)
+			_, err = service.ListFileStorageSources(context.Background(), kb)
+			require.Error(t, err)
+			require.Equal(t, before, requests, "another native KB or missing tenant must not use the receiver service identity")
+		})
+	}
 }
 
 func TestFileStorageCompletedReceiptCannotAuthorizeAnotherWrite(t *testing.T) {

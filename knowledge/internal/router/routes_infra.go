@@ -298,8 +298,14 @@ func RegisterDataSourceRoutes(
 	// Data source routes
 	ds := g.apiKeyGroup(r.Group("/datasource"), apiKeyManageDataSources(apiKeyFullAccess()))
 	{
-		// Get available connector types — Viewer+
-		ds.GET("/types", g.Viewer(), handler.GetAvailableConnectors)
+		// Static connector types remain Viewer+. A KB-scoped request also
+		// reads the receiver's granted sources, like the existing resource picker.
+		resourcePicker := g.Admin()
+		ds.GET("/types", g.Viewer(), func(c *gin.Context) {
+			if c.Query("kb_id") != "" {
+				resourcePicker(c)
+			}
+		}, handler.GetAvailableConnectors)
 
 		// Validate credentials without persistence (for "Test Connection" button) — Admin+
 		ds.POST("/validate-credentials", g.Admin(), handler.ValidateCredentials)

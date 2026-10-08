@@ -608,5 +608,28 @@ func (h *DataSourceHandler) GetSyncLog(c *gin.Context) {
 // @Router /datasource/types [get]
 func (h *DataSourceHandler) GetAvailableConnectors(c *gin.Context) {
 	connectors := datasource.ListAvailableConnectors()
+	if kbID := c.Query("kb_id"); kbID != "" {
+		tenantID := h.getTenantID(c)
+		if tenantID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+		ctx := c.Request.Context()
+		if _, status, msg := h.getOwnedKnowledgeBase(ctx, tenantID, kbID); status != http.StatusOK {
+			c.JSON(status, gin.H{"error": msg})
+			return
+		}
+		resources, err := h.service.ListFileStorageSources(ctx, kbID)
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "authorized source discovery is unavailable"})
+			return
+		}
+		if len(resources) != 0 {
+			connectors = append(connectors, datasource.ConnectorMetadata{
+				Type: "file_storage", Name: "File storage", AuthType: "service",
+				Capabilities: []string{"incremental", "deletion_sync"}, Resources: resources,
+			})
+		}
+	}
 	c.JSON(http.StatusOK, connectors)
 }

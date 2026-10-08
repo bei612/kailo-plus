@@ -47,6 +47,10 @@ type DataSourceService interface {
 	// parentID enables lazy loading: "" lists the top level, a resource ExternalID lists its children.
 	ListAvailableResources(ctx context.Context, dsID string, parentID string) ([]types.Resource, error)
 
+	// ListFileStorageSources lists current governed source metadata for the
+	// controlled native KB, without exposing receiver service credentials.
+	ListFileStorageSources(ctx context.Context, kbID string) ([]types.Resource, error)
+
 	// ResolveResourceAncestors returns the deduplicated ExternalIDs of every
 	// ancestor that must be expanded to reveal the given (possibly deeply nested)
 	// resources in a lazily-loaded picker. Used to restore an existing selection
