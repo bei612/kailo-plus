@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { ChannelType, ErrorClass, ReasonCode, type ActionCommand } from "@client-kit/contracts";
 import { AgentMemoryEntryPageState, AgentMemoryReadViewState, type AgentMemoryEntryPage, type AgentMemoryReadView } from "@client-kit/contracts";
 import { act, isValidElement, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { AgentDefinitionsPage, AuditPage, DevicesPage, WorkspaceMembersPage } from "../src/react/pages";
@@ -412,13 +413,32 @@ describe("independent shared Workflows page", () => {
     expect(host.querySelector("[data-testid=workflows-page]")).not.toBeNull();
     expect(host.textContent).toContain("workflow-one");
   });
-  it("both host routes import and render the same page export", () => {
+  it("both host routes import and render the same page export", async () => {
+    const ts = await import("typescript");
     const root = resolve(import.meta.dirname, "../../../..");
     for (const path of ["web-client/web/src/platform/ui/PlatformApp.tsx", "collaboration/desktop/src/app/routes/platform.$section.tsx"]) {
       const source = readFileSync(join(root, path), "utf8");
-      expect(source).toContain('import { WorkflowsPage } from "@client-kit/platform/react/workflows"');
-      expect(source).toContain("<WorkflowsPage workspaceId=");
-      expect(source).toContain("onWorkspaceChange=");
+      const parsed = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const imports = parsed.statements.flatMap((node) => {
+        if (!ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)
+          || node.moduleSpecifier.text !== "@client-kit/platform/react/workflows"
+          || node.importClause?.isTypeOnly || !node.importClause?.namedBindings
+          || !ts.isNamedImports(node.importClause.namedBindings)) return [];
+        return node.importClause.namedBindings.elements.filter((item) => !item.isTypeOnly
+          && (item.propertyName?.text ?? item.name.text) === "WorkflowsPage");
+      });
+      expect(imports).toHaveLength(1);
+      const consumers: import("typescript").JsxAttributes[] = [];
+      const visit = (node: import("typescript").Node) => {
+        if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node))
+          && node.tagName.getText(parsed) === imports[0]!.name.text) consumers.push(node.attributes);
+        ts.forEachChild(node, visit);
+      };
+      visit(parsed);
+      expect(consumers).toHaveLength(1);
+      const props = consumers[0]!.properties.filter(ts.isJsxAttribute).map((prop) => prop.name.getText(parsed));
+      expect(props).toContain("workspaceId");
+      expect(props).toContain("onWorkspaceChange");
     }
   });
   it.each(["agents", "workflows"] as const)("restores the exact %s workspace and reports selection through host navigation", async (section) => {
@@ -647,7 +667,11 @@ describe("shared Automation schedule consumer", () => {
       } };
       return { status: 503, body: undefined };
     });
-    const host = await mount(t, <WorkflowsPage />);
+    // Both real hosts provide this QueryClient. Original action emoji tiles
+    // consume the admitted palette query, including its read failure state.
+    const host = await mount(t, <QueryClientProvider client={new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    })}><WorkflowsPage /></QueryClientProvider>);
     await settle();
     await click(host.querySelector<HTMLButtonElement>('[data-testid="new-workflow-card"]')!);
     // Original Dialog portals its content; exercise the same user-visible tree.
@@ -3185,14 +3209,24 @@ describe("platform pages render only through the host theme", () => {
   const sources = readdirSync(join(root, "src/react"))
     .filter((name) => /\.tsx?$/.test(name))
     .map((name) => ({ name, text: readFileSync(join(root, "src/react", name), "utf8") }));
-  const hosts = ["../../../web-client/web", "../../../collaboration/desktop"].map((dir) =>
-    readFileSync(join(root, dir, "tailwind.config.js"), "utf8"),
-  );
+  const hosts = ["../../../web-client/web", "../../../collaboration/desktop"].map((dir) => {
+    // Both real hosts consume the one shared Tailwind config, not local copies.
+    const source = readFileSync(join(root, dir, "tailwind.config.js"), "utf8");
+    if (source.trim() !== 'export { default } from "@client-kit/platform/tailwind.config";') {
+      throw new Error(`Host does not consume the shared Tailwind config: ${dir}`);
+    }
+    const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    if (manifest.exports?.["./tailwind.config"] !== "./src/tailwind.config.js") {
+      throw new Error("The shared Tailwind config export is missing");
+    }
+    return readFileSync(join(root, "src/tailwind.config.js"), "utf8");
+  });
   const semanticColors = [
     "accent", "accent-foreground", "background", "border", "card", "destructive", "destructive-foreground",
     "foreground", "input", "muted", "muted-foreground", "primary", "primary-foreground", "ring", "secondary", "secondary-foreground", "popover-foreground",
     "sidebar-foreground", "sidebar-border",
     "sidebar-ring", "sidebar-accent", "sidebar-accent-foreground", "sidebar-active", "sidebar-active-foreground",
+    "warning", "warning-bg",
   ];
   const neutral = new Set(["transparent", "current", "inherit"]);
   const notColor =
@@ -3241,6 +3275,21 @@ describe("platform pages render only through the host theme", () => {
     expect(loader).toContain("if (name === BUZZ_THEME_NAME) return BUZZ_BASE_THEME");
     expect(loader).toContain("if (name === BUZZ_DARK_THEME_NAME) return BUZZ_DARK_BASE_THEME");
     const nativeStyle = styles[0]!;
+    // Same fixed CodeBlock.tsx::MarkdownCodeBlock, L104. Pin only this original
+    // corner geometry; the whole renderer remains in the colour/style scan.
+    const block = parsed.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "MessageCodeBlock");
+    if (!block) throw new Error("Native code block symbol is missing");
+    const blockStyles: import("typescript").JsxAttribute[] = [];
+    const visitBlock = (node: import("typescript").Node) => {
+      if (ts.isJsxAttribute(node) && node.name.getText(parsed) === "style") blockStyles.push(node);
+      ts.forEachChild(node, visitBlock);
+    };
+    visitBlock(block);
+    expect(blockStyles.map((node) => node.getText(parsed))).toEqual(['style={{ borderRadius: "1rem" }}']);
+    let inspectedNative = native.text;
+    for (const node of [nativeStyle, ...blockStyles].sort((a, b) => b.getStart(parsed) - a.getStart(parsed))) {
+      inspectedNative = inspectedNative.slice(0, node.getStart(parsed)) + inspectedNative.slice(node.end);
+    }
     let tokenLoop: import("typescript").Node = nativeStyle;
     while (tokenLoop.parent && !ts.isArrowFunction(tokenLoop)) tokenLoop = tokenLoop.parent;
     if (!ts.isArrowFunction(tokenLoop)) throw new Error("Native token style has no token source");
@@ -3275,6 +3324,11 @@ describe("platform pages render only through the host theme", () => {
     for (const node of inboxRanges) inspectedInbox = inspectedInbox.slice(0, node.getStart(inboxParsed)) + inspectedInbox.slice(node.end);
     expect(inspectedInbox.match(/bg-\[var\(--inbox-row-highlight-bg\)\]/g)).toHaveLength(4);
     inspectedInbox = inspectedInbox.replaceAll("bg-[var(--inbox-row-highlight-bg)]", "");
+    // Same fixed InboxListPane.tsx::InboxLabel, L95: this exact
+    // minimum-height is host-controlled geometry, not a colour expression.
+    const previewHeight = "min-h-[var(--inline-chip-min-height)]";
+    expect(inspectedInbox.split(previewHeight)).toHaveLength(2);
+    inspectedInbox = inspectedInbox.replace(previewHeight, "");
     // The fixed Buzz SegmentedControl uses inline geometry, not inline colour.
     // Validate precisely those two original expressions; do not exempt the file.
     const segmented = sources.find(({ name }) => name === "segmented-control.tsx");
@@ -3361,7 +3415,7 @@ describe("platform pages render only through the host theme", () => {
     for (const { name, text } of sources) {
       // Remove just the verified JSX attribute, not its function or file.
       let inspected = name === native.name
-        ? text.slice(0, nativeStyle.getStart(parsed)) + text.slice(nativeStyle.end)
+        ? inspectedNative
         : name === inbox.name ? inspectedInbox
         : name === segmented.name ? inspectedSegmented
         : name === surface.name ? inspectedSurface
@@ -3500,17 +3554,33 @@ describe("platform pages render only through the host theme", () => {
     const used = new Set<string>();
     const ts = await import("typescript");
     for (const source of sources) {
-      // React keys and test selectors are not CSS utilities. Strip only their
-      // AST attributes; className and all executable colour expressions remain.
+      // Comments, React keys and test selectors are not CSS utilities. Remove
+      // their exact AST ranges, retaining className and executable expressions.
       const parsed = ts.createSourceFile(source.name, source.text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
       const metadata: import("typescript").JsxAttribute[] = [];
+      const comments = new Map<string, import("typescript").CommentRange>();
       const visit = (node: import("typescript").Node) => {
         if (ts.isJsxAttribute(node) && ["key", "data-testid"].includes(node.name.getText(parsed))) metadata.push(node);
+        for (const range of [...(ts.getLeadingCommentRanges(source.text, node.pos) ?? []),
+          ...(ts.getTrailingCommentRanges(source.text, node.end) ?? [])]) comments.set(`${range.pos}:${range.end}`, range);
         ts.forEachChild(node, visit);
       };
       visit(parsed);
+      const ranges = [...metadata.map((node) => ({ pos: node.getStart(parsed), end: node.end })), ...comments.values()];
+      if (source.name === "use-text-scale-shortcuts.ts") {
+        // Fixed Buzz desktop/src/app/useWebviewZoomShortcuts.ts: this local
+        // preference key is not the Tailwind utility "text-scale".
+        const key = parsed.statements.filter(ts.isVariableStatement).flatMap((node) => node.declarationList.declarations)
+          .find((node) => node.name.getText(parsed) === "TEXT_SCALE_STORAGE_KEY")?.initializer;
+        if (!key || !ts.isStringLiteral(key)) throw new Error("Original zoom storage key is missing");
+        expect(key.text).toBe("buzz:text-scale");
+        ranges.push({ pos: key.getStart(parsed), end: key.end });
+      }
       let text = source.text;
-      for (const node of metadata.sort((a, b) => b.getStart(parsed) - a.getStart(parsed))) text = text.slice(0, node.getStart(parsed)) + text.slice(node.end);
+      for (const range of ranges.filter((range) => !ranges.some((outer) => outer !== range
+        && outer.pos <= range.pos && outer.end >= range.end)).sort((a, b) => b.pos - a.pos)) {
+        text = text.slice(0, range.pos) + text.slice(range.end);
+      }
       if (source.name === "agents.tsx") {
         // REQ-24: preserve these exact WorkflowCard accents from Buzz
         // 779af8886caae1317b4de962082429867ab61503,
@@ -3521,12 +3591,40 @@ describe("platform pages render only through the host theme", () => {
         for (const accent of [
           "border-emerald-400/30 bg-emerald-600 text-white",
           "border-blue-400/30 bg-blue-600 text-white",
-          "border-blue-300/30 bg-blue-600 text-white",
         ]) {
           expect(card!.getText(parsed).split(accent)).toHaveLength(2);
           expect(text.split(accent)).toHaveLength(2);
           text = text.replace(accent, "");
         }
+        expect(source.text).toContain('import { WorkflowActionTileStack, WorkflowStatusToggle } from "./workflow-card-actions"');
+        expect(card!.getText(parsed)).toContain("<WorkflowActionTileStack content={content}");
+      }
+      if (source.name === "workflow-card-actions.tsx") {
+        // The original WorkflowCard action tiles now have one shared module.
+        // Pin each admitted original ACTION_ACCENTS entry and its real consumer;
+        // do not exempt the file or any other literal colour expression.
+        const declaration = parsed.statements.filter(ts.isVariableStatement)
+          .flatMap((node) => node.declarationList.declarations)
+          .find((node) => node.name.getText(parsed) === "ACTION_ACCENTS");
+        const accents = declaration?.initializer;
+        if (!accents || !ts.isObjectLiteralExpression(accents)) throw new Error("Original workflow action accents are missing");
+        const entries = accents.properties.map((node) => {
+          if (!ts.isPropertyAssignment(node) || !ts.isIdentifier(node.name)
+            || !ts.isStringLiteral(node.initializer)) throw new Error("Unverified workflow action accent");
+          return [node.name.text, node.initializer.text];
+        });
+        expect(entries).toEqual([
+          ["add_reaction", "border-pink-400/30 bg-pink-600 text-white"],
+          ["delay", "border-sky-300/30 bg-sky-500 text-white"],
+          ["request_approval", "border-emerald-300/30 bg-emerald-600 text-white"],
+          ["send_message", "border-blue-300/30 bg-blue-600 text-white"],
+          ["set_channel_topic", "border-violet-300/30 bg-violet-600 text-white"],
+        ]);
+        const tile = parsed.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "ActionTile");
+        expect(tile?.getText(parsed)).toContain('ACTION_ACCENTS[action] ?? "border-border/65 bg-background/80 text-muted-foreground"');
+        const expression = accents.getText(parsed);
+        expect(text.split(expression)).toHaveLength(2);
+        text = text.replace(expression, "{}");
       }
       if (source.name === "members.tsx") {
         // Buzz 779af8886caae1317b4de962082429867ab61503,
@@ -3545,7 +3643,7 @@ describe("platform pages render only through the host theme", () => {
         expect(text.split(originalTint)).toHaveLength(2);
         text = text.replace(originalTint, "active");
       }
-      if (source.name === "draft-surfaces.tsx") {
+      if (source.name === "draft-surfaces.tsx" || source.name === "workflow-discard-dialog.tsx") {
         // Buzz 779af8886caae1317b4de962082429867ab61503,
         // desktop/src/shared/ui/alert-dialog.tsx::AlertDialogOverlay.
         // This exact modal backdrop is original; other literal colours remain
@@ -3561,7 +3659,7 @@ describe("platform pages render only through the host theme", () => {
         }
         // Native Switch ring-offset utilities are width or a host colour,
         // not colours named "offset-2" / "offset-background".
-        if (utility === "ring" && /^offset-\d+$/.test(token!)) continue;
+        if ((utility === "ring" || utility === "outline") && /^offset-\d+$/.test(token!)) continue;
         if (utility === "ring" && token === "inset") continue;
         if (utility === "ring" && token!.startsWith("offset-")) {
           used.add(token!.slice("offset-".length));
@@ -3595,9 +3693,17 @@ describe("platform pages render only through the host theme", () => {
     }
     expect([...used].filter((token) => !semanticColors.includes(token))).toEqual([]);
     for (const token of semanticColors) {
-      for (const config of hosts) expect(config).toContain(`var(--${token})`);
+      const variable = token === "warning" ? "ui-warning" : token === "warning-bg" ? "ui-warning-bg" : token;
+      for (const config of hosts) expect(config).toContain(`var(--${variable})`);
     }
+    // The original monthly schedule hint uses the same adaptive host warning
+    // variables. Pin the real mapping rather than allowing a literal colour.
+    const theme = readFileSync(join(root, "src/theme/adaptive-theme.ts"), "utf8");
+    expect(theme).toContain('"--ui-warning": accentOrange');
+    expect(theme).toContain('"--ui-warning-bg": overlay(accentOrange, isDark ? 0.1 : 0.08)');
     for (const config of hosts) {
+      expect(config).toContain('DEFAULT: "var(--ui-warning)"');
+      expect(config).toContain('bg: "var(--ui-warning-bg)"');
       expect(config).toContain('border: "hsl(var(--sidebar-border))"');
       expect(config).toContain('"conversation-body": "var(--conversation-body-gap)"');
       expect(config).toContain('"conversation-row": "var(--conversation-row-padding-block)"');
@@ -3667,11 +3773,19 @@ describe("AgentDefinitionsPage read outcomes", () => {
       : { status, body: undefined });
     const host = await mount(t, <AgentDefinitionsPage />, locale);
     await settle();
+    // The original identity card independently reads its published Asset before
+    // opening details. A visible Definition never grants that Asset permission.
+    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-versions/asset-1" });
+    const beforeOpen = t.send.mock.calls.length;
     await click(button(host, open));
-    expect(host.querySelector("[role=alert]")?.textContent).toContain(label);
-    expect(host.textContent).not.toMatch(/result is unknown|结果不明/);
-    expect(t.send).toHaveBeenCalledWith({ method: "GET", path: "/api/v1/agent-definitions/agent-1" });
-    expect(t.send.mock.calls.some(([r]) => r.path.startsWith("/api/v1/agent-versions/"))).toBe(false);
+    const dialog = host.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog!.querySelector("[role=alert]")?.textContent).toContain(label);
+    expect(dialog!.textContent).not.toMatch(/result is unknown|结果不明/);
+    expect(dialog!.querySelector('[data-testid="agent-definition-detail"]')).toBeNull();
+    expect(t.send.mock.calls.slice(beforeOpen).map(([r]) => r)).toEqual([
+      { method: "GET", path: "/api/v1/agent-definitions/agent-1" },
+    ]);
     expect(t.send.mock.calls.every(([r]) => r.method === "GET")).toBe(true);
   });
 

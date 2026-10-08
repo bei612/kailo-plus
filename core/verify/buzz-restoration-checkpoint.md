@@ -4211,3 +4211,76 @@ ACTIVE 业务 binding，本轮组件业务页面截图为0，不生成假入口�
 本批12路径与本节交主代理冻结复核/提交，未自行 stage/push/部署。
 全量官方分类、冷目标/线程的新版本浏览器验收与所有原功能仍未完成；
 全局检查另有已报告真实失败，不以本批窄验冒称生产就绪。
+
+### 2026-10-08 原共享页面迁移检查闭合（不增加产品功能）
+
+本批只有 `client-kit/ts/platform/test/pages.test.tsx`，相对本批 HEAD
+新增134/删除20行；268个既有检查数量不变，不新建检查框架，不修改生产
+页面、契约或执行链。主代理固定329全局Node日志原有6个页面检查失败：
+`/volumes/data/kailo/check-cache/full-node-32971030d-diagnostic.log`。
+
+动手前边界与归属：
+
+- 权威仍为 DD-24/25 的独立Asset读取、DD-36/53 的宿主主题和原版恢复
+  要求；修正的是共享迁移后检查对真实生产消费者的识别，不增产品能力。
+- 影响面查全 Workflows 两宿主导入/JSX、真实 QueryClientProvider、
+  原 WorkflowActionTileStack、DefinitionIdentityCard/DefinitionDetail、
+  两宿主Tailwind出口及共享配置。无API、数据迁移或四语言合同变更。
+- 现有 +1/-45 继承改动在主代理逐hunk批准后恢复到 HEAD 原严格守卫；
+  未把原侧栏边框、SVG、textarea、slider和头像精确判据删除来换通过。
+  操作前原字节保存在下述证据目录 `pages-inherited-baseline.tsx`。
+- 无生产副作用或新状态。读取拒绝只检查真实详情Dialog，保持既有
+  UNKNOWN分类；列表卡片已授权独立Asset预读与点击后额外读取分开核对，
+  403/404详情后不得新增Asset/Version目录读取，不把父资源可见当子资源权。
+
+固定上游事实均为 Buzz `779af8886caae1317b4de962082429867ab61503`：
+
+- `desktop/src/features/home/ui/InboxListPane.tsx::InboxLabel` 的唯一
+  `min-h-[var(--inline-chip-min-height)]` 是原几何，不是任意色彩豁免。
+- `desktop/src/shared/ui/markdown/CodeBlock.tsx::MarkdownCodeBlock` 原
+  `borderRadius: "1rem"` 与 `SyntaxHighlightedCode` token色分别逐AST核实。
+- `desktop/src/features/workflows/ui/WorkflowCard.tsx::ACTION_ACCENTS/ActionTile`
+  已迁共享 workflow-card-actions；逐条核现有5个准入action原配色和真实
+  消费者，其他任意裸色仍拒绝，不为了检查搬回或删除原卡片。
+- `desktop/src/shared/ui/alert-dialog.tsx::AlertDialogOverlay` 的原black/60
+  在草稿与工作流丢弃Dialog分别逐字核对；原
+  `desktop/src/features/workflows/ui/WorkflowScheduleFields.tsx` 警告提示
+  使用既有 --ui-warning/--ui-warning-bg，核实际shared config及adaptive主题。
+- `desktop/src/app/useWebviewZoomShortcuts.ts::TEXT_SCALE_STORAGE_KEY` 是
+  原本地偏好键。检查只排除其精确initializer、AST注释及既有React元信息，
+  不把注释text-only或storage key当色彩；className和可执行表达式继续扫描。
+
+实际执行在既有 `kailo-agent-receipt-xvkujx`，4 CPU/8 GiB，Node堆3 GiB，
+Vitest threads/maxWorkers=1；无Cargo、镜像、下载、全局Node重跑或部署。
+证据目录为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS`：
+
+- 首次原pnpm shim调用不存在，exit127，保留
+  `pages-migration-invocation-error.log`；改用已有node_modules/.bin入口，未安装。
+- 原命令 `./node_modules/.bin/vitest run test/pages.test.tsx --pool=threads --maxWorkers=1`：
+  `pages-migration-positive.log` 266通过/2失败；
+  `pages-migration-final.log` 267通过/1失败。两次均保留原失败，后显现的
+  主题误判按固定原几何/实际共享配置继续修正，未删断言。
+- 最终 `pages-migration-final-2.log` 268/268、exit0；
+  `./node_modules/.bin/tsc --noEmit -p tsconfig.test.json` exit0，
+  `pages-migration-types.log`。jsdom原scrollTo警告不作为浏览器验收。
+- 8次私有生产输入破坏，每次沿上述Vitest命令用原 `-t` 精确目标：
+  `pages-import-negative.log` 删除真实共源导入，1失败；
+  `pages-reaction-negative.log` 写错表情值，1失败；
+  `pages-inbox-negative.log` 改错原几何变量，1失败；
+  `pages-action-accent-negative.log` 改错原action配色，1失败；
+  `pages-definition-read-negative.log` 在拒绝详情前额外读Asset，403/404共2失败；
+  `pages-codeblock-negative.log` 改错原圆角，1失败；
+  `pages-sidebar-map-negative.log` 改错sidebar-border映射，1失败；
+  `pages-literal-color-negative.log` 额外添加非原红色class，1失败。
+  每次真实Vitest exit1，包装调用只确认预期失败；未改检查伪造失败。
+- 7个生产输入及pages输入共8次cmp全0；所有破坏还原后
+  `pages-migration-restored.log` 268/268、exit0。scoped diff --check exit0；
+  cgroup max16751/oom2/oom_kill2均零增量，终态docker top只剩原sleep。
+
+两宿主Tailwind必须精确re-export同一shared config，包出口也被核实，
+不拿旧候选空壳配置冒充变量映射。SDK未挂正式apps/references，故本批没有
+用旧候选执行正式 upstream_manifest diff --check，交主代理原正式入口执行。
+本批源码检查和本节冻结交主代理提交；不自行stage/push。
+未新增业务截图，仍只有此前329线上8状态；新定位修复、全量原版一致性、
+Windows/Mobile和三组件业务页面未由本批验收，不声明100%或生产就绪。
