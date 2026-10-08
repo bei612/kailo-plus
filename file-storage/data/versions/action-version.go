@@ -128,9 +128,13 @@ func (c *VersionAction) Run(ctx context.Context, channels *actions.RunnableChann
 	if err != nil {
 		return input.WithError(err), err
 	}
-	if resp.Ignored {
+	if resp.GetIgnored() {
 		// No version returned, means content did not change, do not update
 		return input.WithIgnore(), nil
+	}
+	if resp.GetVersion().GetVersionId() == "" || resp.GetVersion().GetOwnerUuid() != userId {
+		err = errors.WithMessage(errors.VersionNotFound, "created revision does not identify the native owner and version")
+		return input.WithError(err), err
 	}
 
 	// Prepare ctx with info about the target branch
@@ -159,35 +163,41 @@ func (c *VersionAction) Run(ctx context.Context, channels *actions.RunnableChann
 
 	output := input
 	log.TasksLogger(ctx).Info(T("Job.Version.StatusFile", resp.Version))
-	output.AppendOutput(&jobs.ActionOutput{Success: true})
 
-	if objectInfo.Size > 0 {
-		storedVersion := resp.Version
-		storedVersion.Location = targetNode.Clone()
-		if h := node.GetStringMeta(common.MetaNamespaceHash); h != "" {
-			storedVersion.ContentHash = h
-			storedVersion.Location.MustSetMeta(common.MetaNamespaceHash, h)
+	if objectInfo.Size < 0 {
+		err = errors.WithMessage(errors.StatusConflict, "native copied version has an unknown size")
+		return input.WithError(err), err
+	}
+	storedVersion := resp.Version
+	storedVersion.Size = objectInfo.Size
+	storedVersion.Location = targetNode.Clone()
+	if h := node.GetStringMeta(common.MetaNamespaceHash); h != "" {
+		storedVersion.ContentHash = h
+		storedVersion.Location.MustSetMeta(common.MetaNamespaceHash, h)
+	}
+	response, err2 := versionClient.StoreVersion(ctx, &tree.StoreVersionRequest{
+		Node:    node,
+		Version: storedVersion,
+	})
+	if err2 != nil {
+		return input.WithError(err2), err2
+	}
+	if !response.GetSuccess() || !proto.Equal(response.GetVersion(), storedVersion) {
+		err2 = errors.WithMessage(errors.VersionNotFound, "native copied revision persistence was not acknowledged")
+		return input.WithError(err2), err2
+	}
+	log.TasksLogger(ctx).Info(T("Job.Version.StatusMeta", resp.Version))
+	output.AppendOutput(&jobs.ActionOutput{Success: true})
+	ctx = nodes.WithBranchInfo(ctx, "in", branchInfo)
+	for _, version := range response.PruneVersions {
+		_, errDel := handler.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: version.GetLocation()})
+		if errDel != nil {
+			return input.WithError(errDel), errDel
 		}
-		response, err2 := versionClient.StoreVersion(ctx, &tree.StoreVersionRequest{
-			Node:    node,
-			Version: storedVersion,
-		})
-		if err2 != nil {
-			return input.WithError(err2), err2
-		}
-		log.TasksLogger(ctx).Info(T("Job.Version.StatusMeta", resp.Version))
+	}
+	if len(response.PruneVersions) > 0 {
+		log.TasksLogger(ctx).Info(T("Job.Version.StatusPrune", struct{ Count int }{Count: len(response.PruneVersions)}))
 		output.AppendOutput(&jobs.ActionOutput{Success: true})
-		ctx = nodes.WithBranchInfo(ctx, "in", branchInfo)
-		for _, version := range response.PruneVersions {
-			_, errDel := handler.DeleteNode(ctx, &tree.DeleteNodeRequest{Node: version.GetLocation()})
-			if errDel != nil {
-				return input.WithError(errDel), errDel
-			}
-		}
-		if len(response.PruneVersions) > 0 {
-			log.TasksLogger(ctx).Info(T("Job.Version.StatusPrune", struct{ Count int }{Count: len(response.PruneVersions)}))
-			output.AppendOutput(&jobs.ActionOutput{Success: true})
-		}
 	}
 
 	log.Logger(ctx).Debug("[VERSIONING] End", zap.Error(err), zap.Int64("written", objectInfo.Size))

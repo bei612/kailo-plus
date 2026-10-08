@@ -1245,3 +1245,75 @@ actor/generation 与按 key 终态/usage、原子条件删除。版本 DAO 同�
 等于 StoreVersion 发布后的 pruning 或整个对象上传副作用已经幂等；原生
 Task 状态持久化不等于 Job 派发已去重。full、真实 Gateway/Codex、live binding、
 Cells→WeKnora E2E、浏览器/安装包验收、镜像构建与部署均未运行。
+
+## 原生后台版本保存的真实持久确认（2026-10-08）
+
+本批直接修复原后台版本写入消费者，不声明平台 `file_storage.write/share`
+已经接通。四步影响复核：
+
+1. 权威仍为 `.design/07` §5.2/§8A 的真实终态及原生任务边界。只读核验固定
+   commit `c57f02f4962835447df694c63bd0fd8c22bd7baf`、完整上游路径
+   `data/versions/action-version.go::VersionAction.Run`：原 `CopyObject` 成功后
+   提前追加 Success，只有 `objectInfo.Size > 0` 才调用原 StoreVersion，且不核
+   原 RPC 的 Success/Version。因此空文件复制没有版本元数据，未确认存储也
+   可有成功输出。本批在 `apps/file-storage` 原模块修正，没有重写页面或执行器。
+2. 影响为原 native scheduler version action→CreateVersion→CopyObject→
+   StoreVersion→原 pruning。保留当前原生 claims→SearchUniqueUser 与原 ACL/
+   router；创建结果必须带原当前用户 owner 和非空 VersionId，才进入对象写入。
+   复制结果 size=0 正常保存，负 size 拒绝，持久 size 使用实际复制结果而非
+   旧输入。原 StoreVersion 必须 Success 且完整 ContentRevision 相同后才追加
+   Success、进入 pruning。没有契约、平台 actor、binding、配置或迁移变更。
+3. 不接受缺失/错误版本、owner、size 或 false ACK，不在原存储错误时提前输出
+   成功。没有创建新 Task/账本/回执权威；原 copy 与 StoreVersion 仍不是一个
+   原子事务，也未由本批证明源内容 ETag、复制失败/未知结果及残留对象的全链
+   收敛。不能拿本批当作 operation-key 去重、generation 或 usage 终态的证据。
+4. 实施后新增检查直接调用原 VersionAction.Run 和原生成 RPC stubs，覆盖空
+   文件、实际复制大小、存储错误、缺失/false/错版本/错 owner/错 size ACK、
+   负大小、复制错误与创建 owner/ref 缺失。复制、身份查询和持久 RPC 在原
+   接口边界受控注入；本批未使用真实对象存储/数据库，不冒充实库或跨服务 E2E。
+
+沿用 `kailo-cells-native-check-lftow7` 原 Go 1.26.8/UID1000 SDK、镜像
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`，
+CPU=4、memory=8 GiB、无额外 swap，原缓存/候选不变。批前及恢复整包前核对
+现有进程/资源，宿主 available 约 15–17 GiB、Data 约 292–294 GiB；没有新建
+镜像、数据库、工具链或全树副本。正式生产和检查未被破坏，两个候选输入恢复
+后逐文件 cmp=0；最终 oom/oom_kill=0、memory.current=933646336 bytes，命令
+全部终态。
+
+```sh
+CELLS_WORKING_DIR=/tmp/cells-version-action-check \
+CELLS_DATA_DIR=/tmp/cells-version-action-check \
+go test -mod=readonly ./data/versions \
+  -run TestVersionActionRequiresExactNativePersistence -count=1 -v
+final positive (handle 26146): exit 0; 1 top-level + 12 subtests passed
+private production mutation (handle 71589): exit 1; 1 top-level + 11 subtests failed
+byte-restored same target (handle 1222): exit 0; 1 top-level + 12 subtests passed
+go test -mod=readonly ./data/versions -count=1 -v
+restored original package (same handle 1222): exit 0; 5 top-level + 12 subtests passed
+original pruning/duration/change-log checks: 56 assertions passed
+```
+
+私有候选实际关闭 owner/ref、负大小、精确持久 ACK，恢复提前 Success、空文件
+跳过与旧输入 size；原检查 11 个子项立即报错，原 copy-error 子项仍通过。没有
+修改检查让它故意失败。首四轮原件保留：18983 为夹具 RPC 缺 CallOption 的编译
+失败；17823 为原 mem driver 未注册；56031 为 config 注入没有使用原 Pool 的
+panic；10086 为空 Path 被原 IgnoreNodeForOutput 当隐藏节点。只修复这些夹具
+消费者后才取得最终正向，不能用失败轮次表示完成。
+
+日志位于 `/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/`：
+
+| 日志 | SHA-256 |
+|---|---|
+| `cells-native-version-action-positive.log` | `59c51b400d27c2f9475855d437a5dcbe3573dbd32b0220daebc3ada9a2ae2404` |
+| `cells-native-version-action-positive-final.log` | `a9fffd83dc2af035aa40f219cc41c50c99ec5b0064bd7b3816d2b0ae6acb05b1` |
+| `cells-native-version-action-positive-registered.log` | `ba27088d178d3d940f08b4b22bdf683ecf2dc91d89d4cb5e6d875c73a513c04d` |
+| `cells-native-version-action-positive-pooled.log` | `b470e67d85953d69ffa33757370384b7f3eb5896c0ae3e7b77fc3e05031a8934` |
+| `cells-native-version-action-positive-actual.log` | `6d6e662a6402bafce6ac17a40f1d62f8114587e5e55aeafb94e0e595f8290d2a` |
+| `cells-native-version-action-mutation.log` | `bab14a4d9ae5ec0153d22796ae7a8b8475f3d58b7d3183ddf89625fd9dfe598e` |
+| `cells-native-version-action-restored.log` | `6d6e662a6402bafce6ac17a40f1d62f8114587e5e55aeafb94e0e595f8290d2a` |
+| `cells-native-version-action-package.log` | `4ffbd7b346dc7f8c131596545d852ee8a32590403f53b55285b52f4195424b69` |
+
+平台 generic PEP 尚无可信当前 native actor 事实，DOCUMENT 的 OIDC 会话事实
+不能借用于 generic write；没有把固定实例 SERVICE bearer 冒充 HUMAN/AGENT。
+write/share、条件删除仍未开放，没有新增或激活完整 FILE_STORAGE release。
+full、Gateway/Codex、live binding、Cells→WeKnora E2E、截图、镜像和部署均未运行。
