@@ -6131,3 +6131,52 @@ Mobile、三个业务组件、全量原版一致性或生产门禁，也没有�
 相同字节后1项再次通过（8.72秒）。日志位于同一 Data 目录：
 `registry-check.log`、`registry-negative.log`、`registry-restored.log`。
 这项修复尚未构建部署，线上404尚未解除；不把源码单元通过写成线上表情可用。
+
+### 2026-10-08 已提交共享频道头与设置批次 Web 实际发布
+
+1. 权威与范围：REQ-24、DD-74/75、SS-WEB-PRESENTATION；复用固定 Buzz
+   `779af8886caae1317b4de962082429867ab61503` 的原频道/私聊头和设置实现，
+   不改变原布局或创建缩水替代页。本次产物来自干净提交
+   `148798bc95ac47bc46319270462ab1fb064eef2a`，不是当前含后续未提交改动的工作树。
+   后续快捷键、Cells/Wren 改动不包含在此 Web 发布中。
+2. 影响面：只更新 `web-client/fork/upstream.yaml` 的产物事实和本地 Compose
+   的 Web image；实际运行复用原部署的 env、网络、CSP、SSO/BFF 配置。
+   不变更数据库、契约、身份、权限、审批、额度、Relay、Temporal 或工具接缝。
+3. 副作用：只滚动静态 Web 容器，未重建/重启其依赖。更新前后逐一比对
+   70 个运行容器的 ID、image 和 StartedAt，仅 `platform-local-buzz-web-1`
+   改变，其余 69 个一致。旧 image 保留可回退；不放宽认证、CSP 或跨源访问。
+4. 边界：未登录 `/app/` 实测302仍走原认证入口；容器 healthy 只证明静态服务
+   就绪，不证明页面、头像上传或业务执行已验收。UNKNOWN 和业务终态链未改。
+   本次没有 Windows/Mobile 安装包或设备验收，也不声明全量原版一致。
+
+实际构建沿原 `./tools/build-upstream.sh web-client`，固定提交的私有 worktree
+为 `/volumes/data/kailo/tmp/web-main-release-20261008.O3XRWf/apps`。
+实际 `kailo-core-data` BuildKit 为 8 CPU / 16 GiB，缓存复用
+`/volumes/data/kailo/buildkit-core-state`；构建上下文、日志和缓存均在 Data 盘。
+原 npm 下载缓存及 apk 安装层复用，Vite 构建退出0；保留原大 chunk 警告，
+没有为本批新建工具链或降低 Cargo 并行度。基础镜像按固定 digest 解析，
+本记录不声称构建过程完全没有互联网元数据请求。
+
+- source/buildId：`sha256:f6cffa26a12eb0abf79e9402aa86c362a1da0ef6e8e09717709bd10e4b15f89c`。
+- artifact：`sha256:da2ae292fb7297fd597e9db1420bd6e67135f7ae64261f66ff754d48ecb03d69`。
+- 原始日志：同一目录 `build-launch.log`、`build-web-client.NJ3s2H.log`。
+
+实际部署复用已运行的
+`/volumes/data/kailo/tmp/buzz-conditions-release-20261007.rjEksd/apps/deploy/local/`
+下 Compose 与 env，只增加本批临时 image override，原命令：
+
+```sh
+docker compose --project-name platform-local \
+  --env-file /volumes/data/kailo/tmp/buzz-conditions-release-20261007.rjEksd/apps/deploy/local/.env \
+  -f /volumes/data/kailo/tmp/buzz-conditions-release-20261007.rjEksd/apps/deploy/local/compose.yaml \
+  -f /volumes/data/kailo/tmp/web-main-release-20261008.O3XRWf/web-image.override.yaml \
+  up -d --no-deps --pull never --wait buzz-web
+```
+
+退出0并回读 Healthy，StartedAt 为 `2026-10-08T15:48:41.033958568Z`，
+实际 image digest 与以上 artifact 一致。实际入口为
+`http://192.168.0.193:58090/app/`，未登录302不计入功能通过。
+官方还原队友随后通过正常 SSO 读取新 buildId 并实拍频道及十个菜单页面；
+逐图视觉复核和关键交互结果仍在进行，不把已截图数量当作全量页面验收。
+本次未运行 `tools/check.sh --full`；当前主树还含后续未发布输入，不能把
+本产物的固定提交源码摘要冒称当前 dirty 工作树已全部匹配。
