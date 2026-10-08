@@ -180,6 +180,10 @@ it("opens the Inbox row's actual author without marking it read and clears the p
     await render("human");
     await vi.waitFor(()=>expect(host.querySelector(`[data-testid="home-inbox-item-${event.id}"]`)).not.toBeNull());
     await vi.waitFor(()=>expect(host.querySelector(`[data-testid="home-inbox-item-${event.id}"]`)?.getAttribute("aria-current")).toBe("true"));
+    const avatar = host.querySelector<HTMLElement>(`[data-testid="home-inbox-item-${event.id}"] [data-avatar-shape]`)!;
+    expect(avatar.getAttribute("data-avatar-shape")).toBe("circle");
+    expect(avatar.classList.contains("h-9")).toBe(true);
+    expect(avatar.classList.contains("w-9")).toBe(true);
     expect(host.querySelector('[data-testid="home-inbox-detail"]')).not.toBeNull();
     await vi.waitFor(()=>expect(scrollIntoView).toHaveBeenCalledWith({block:"center"}));
     expect(api.messageAuthorProfile).not.toHaveBeenCalled();
@@ -218,6 +222,10 @@ it("loads owned Agent activity through the admitted author query, never foreign 
   try {
     await act(async()=>root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={vi.fn()}/></TooltipProvider></QueryClientProvider></PlatformProvider>));
     await vi.waitFor(()=>expect(host.textContent).toContain("Real owned Agent result"));
+    const avatar = host.querySelector<HTMLElement>(`[data-testid="home-inbox-item-${event.id}"] [data-avatar-shape]`)!;
+    expect(avatar.getAttribute("data-avatar-shape")).toBe("squircle");
+    expect(avatar.classList.contains("h-9")).toBe(true);
+    expect(avatar.classList.contains("w-9")).toBe(true);
     expect(api.workspaceMessages.mock.calls.map(call=>call[1])).toEqual([undefined,{agentInstallationId:"own-agent"}]);
     expect(api.write).not.toHaveBeenCalled();
     api.agentInstallations.mockResolvedValue({installations:[{...install,agentPubkey:undefined}]});

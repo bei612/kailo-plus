@@ -546,6 +546,7 @@ export function HomeView({
           onResize={handleInboxListResizeStart} onReset={canResetInboxListWidth ? handleInboxListWidthReset : undefined}>
           {showListPane ? (
             <InboxListPane
+              agentPubkeys={ownedAgents.data?.pubkeys}
               activeDraftCount={activeDraftCount}
               draftItems={draftItems}
               doneSet={effectiveDoneSet}

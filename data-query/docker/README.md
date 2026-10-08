@@ -279,9 +279,9 @@ revocation or changed Resource/version return an error, not an exported
 reference. Export itself runs no SQL and submits no ActionExecution; subsequent
 query execution retains its existing admission, approval and quota checks.
 
-Deployment/MDL, Asking, dashboard and native write authorization are not covered
-by these four metadata readers; see the component verification receipt for the
-current acceptance boundary before publishing the component.
+Asking, dashboard and native write authorization are not covered by these
+metadata readers; see the component verification receipt for the current
+acceptance boundary before publishing the component.
 
 The original modeling diagram additionally checks `data_query.describe@v1`
 read permission for every captured model and saved view before loading its
@@ -303,12 +303,23 @@ shows the existing error component while retaining the native sidebar hosts.
 This covers reading an already-recorded schema change, not detecting a live
 data-source change, resolving one, or authorizing native model creation.
 
-Historical `getMDL(hash)` authorization remains a distinct unresolved chain:
-the original deployment manifest preserves view IDs but model names rather
-than model IDs. Current same-name models do not establish historical ownership.
-This change neither grants such access by name nor invents a current-only
-restriction for the original history API; it does not claim that history API
-has completed its per-object authorization integration.
+Historical `getMDL(hash)` consumes the native object IDs captured from the
+same model/view rows used by the original MDL builder. The original deployment
+transaction stores that mapping in its own `deploy_log.native_object_refs`,
+alongside the unchanged manifest/hash. The original manifest, GraphQL response
+and pages do not acquire additional fields. Historical reads resolve every
+captured object through `data_query.describe@v1`, check the persisted deployment
+again, then reauthorize the same Resource/version before returning its original
+encoded manifest. Missing mappings, incomplete or conflicting references,
+unregistered objects, denial, revocation and changed evidence refuse disclosure.
+
+The native migration leaves old deployment records unchanged with a null
+mapping: model names alone cannot prove historical native IDs. Do not backfill
+from current same-name objects or mark such records successful. Reused
+same-hash deployments retain their original mapping; the read path does not
+silently replace it with current IDs. Rollback refuses to discard any existing
+native-object evidence. This closes historical metadata read authorization,
+not native deployment/write admission or production component acceptance.
 
 ## Binding lifecycle validation
 

@@ -5,6 +5,8 @@ import {
   Deploy,
   DeployStatusEnum,
   IDeployLogRepository,
+  NativeDeploymentObject,
+  deploymentObjects,
 } from '../repositories/deployLogRepository';
 import { Manifest } from '../mdl/type';
 import { createHash } from 'node:crypto';
@@ -31,12 +33,12 @@ export interface IDeployService {
   deploy(
     manifest: Manifest,
     projectId: number,
+    nativeObjectRefs: NativeDeploymentObject[],
     force?: boolean,
   ): Promise<DeployResponse>;
   getLastDeployment(projectId: number): Promise<Deploy>;
   getInProgressDeployment(projectId: number): Promise<Deploy>;
   createMDLHash(manifest: Manifest, projectId: number): string;
-  getMDLByHash(hash: string): Promise<string>;
   deleteAllByProjectId(projectId: number, tx?: Knex.Transaction): Promise<void>;
 }
 
@@ -76,7 +78,13 @@ export class DeployService implements IDeployService {
     return result.status === DeployStatusEnum.IN_PROGRESS ? deploy : null;
   }
 
-  public async deploy(manifest, projectId, force = false) {
+  public async deploy(
+    manifest,
+    projectId,
+    nativeObjectRefs: NativeDeploymentObject[],
+    force = false,
+  ) {
+    const captured = deploymentObjects(manifest, nativeObjectRefs);
     const eventName = TelemetryEvent.MODELING_DEPLOY_MDL;
     const hash = this.createMDLHash(manifest, projectId);
     const { deploy, created } = await this.deployLogRepository.beginDeployment(
@@ -84,6 +92,7 @@ export class DeployService implements IDeployService {
         manifest,
         hash,
         projectId,
+        nativeObjectRefs: captured,
         status: DeployStatusEnum.IN_PROGRESS,
       },
       force,
@@ -171,15 +180,6 @@ export class DeployService implements IDeployService {
     const content = `${projectId} ${manifestStr}`;
     const hash = createHash('sha1').update(content).digest('hex');
     return hash;
-  }
-
-  public async getMDLByHash(hash: string) {
-    const deploy = await this.deployLogRepository.findOneBy({ hash });
-    if (!deploy) {
-      return null;
-    }
-    // return base64 encoded manifest
-    return Buffer.from(JSON.stringify(deploy.manifest)).toString('base64');
   }
 
   public async deleteAllByProjectId(

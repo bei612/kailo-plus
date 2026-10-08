@@ -1,5 +1,95 @@
 # Cells 原生 revision 查询接缝
 
+## 实际原生 UUID 读取的空间投影修复（2026-10-08）
+
+本批从正在运行的二开 Cells 发起原生 REST 只读诊断，不以隔离响应器证明线上结构。
+沿既有受控部署文件取得原生地址和安装凭据，在 2 CPU / 2 GiB、只读根文件系统的
+Node 容器中建立原生 session；没有输出令牌、创建账号、上传文件或修改业务数据。
+`/a/workspace` 返回 200，原生 bootconf 给出的 REST v2 前缀为 `/v2`。
+工作区路径读取、UUID 目录列举均返回 200，但真实 `GetByUuid` 的节点没有
+`ContextWorkspace.Uuid`；个别子目录仍返回原生 403，未绕过这些拒绝。
+
+实现后的四步结论：
+
+1. 权威：DD-89、SS-CEL-MATERIALIZATION 与 `.design/07` §5.2 要求使用已授权的
+   原生 scope 事实。Cells ACL/Workspace 仍为原生业务权威，Core 仍为平台准入权威。
+   本批属于既有原生对象读取的接缝适配，不开放 RESOURCE_PROVISION。
+2. 影响：固定上游 `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `common/nodes/uuid/handler-uuid-workspace.go::WorkspaceHandler.updateOutputBranch`
+   已通过原 AccessList 把可访问工作区 UUID/slug 写入 `Node.AppearsIn`；
+   `common/nodes/uuid/handler-uuid-path.go::externalPathHandler.updateOutputBranch`
+   原来只投影第一项的路径，遗漏身份。现在同一第一项同时投影原有 `ws_uuid/ws_slug`，
+   由 `gateway/restv2/api.go::Handler.ContextWorkspace` 消费为已有响应字段。
+   同一 UUID router 的原生 REST 读取受影响；前端布局、管理面、三端传输和 Mobile
+   非组件宿主边界不变。没有新增协议字段或持久状态，无数据迁移或四侧生成。
+3. 副作用：不改变工作区选择、不选择另一工作区作为降级、不改 ACL、Bearer 或 PEP。
+   先清除输出克隆的旧空间投影（包括 REST 消费的 repository_id 旧别名），
+   再只使用原生授权链的当前结果；原节点不修改。
+   无可访问工作区或所选 UUID 缺失时不推导身份，严格适配器继续关闭。
+   返回字段对旧消费者为加法兼容；没有复制文件正文或另造 scope 权威。
+4. 异常：空工作区集合清空外部路径及旧 UUID/slug；多个工作区保持原第一项，
+   其身份缺失不跳到下一项。原生拒绝、超时、漂移、撤权和完整统计缺失继续失败。
+   当前真实虚拟根为 `DATASOURCE:` 引用，不符合适配器既有 UUID 根约束，未放宽；
+   该空间投影不处理目录统计；同轮后续原快路径修复见下一节。
+
+实现后复用 `kailo-cells-native-check-lftow7`，实际 4 CPU / 8 GiB、无额外 swap；
+先读取现有进程与约 23 GiB 可用内存，只同步两个文件，不构建镜像或复制全树。
+首次窄验实际失败：`Could not create local data dir ... -/.config/pydio/cells`。
+随后按原 `common/runtime/dirs.go::ApplicationWorkingDir` 的运行配置接口，把
+`CELLS_WORKING_DIR/CELLS_DATA_DIR` 投递到同一 SDK 已有可写 `/tmp`，未改业务实现。
+实际命令为容器内
+`gofmt -d common/nodes/uuid/handler-uuid-path.go common/nodes/uuid/handler-uuid-path_test.go`
+及 `go test -mod=readonly ./common/nodes/uuid -run TestExternalPath -count=1 -v`。
+格式差异为空，三项通过，退出 0。实现后检查覆盖当前工作区选择、禁止替换缺失身份、
+清空不可访问节点的旧投影及输入不变。
+
+只在私有 SDK 候选删掉 UUID 投影，检查实际报
+`external path and native Workspace identity diverged`，两项通过、一项失败，退出 1。
+恢复后与正式生产文件 `cmp` 退出 0；同一检查三项通过，退出 0。
+原件目录 `/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/` 的
+`cells-workspace-projection-mutation.log`、`cells-workspace-projection-restored.log`
+保留负向与恢复结果；证据目录只用于验证，不作为正式源码位置。
+
+该修复尚未发布到原生镜像，没有启用 release/binding、运行生产 adapter 或更新安装包。
+原受控目录尚无 adapter config/JWKS/SecretRef 与 Agent socket 的完整投递。
+Go 窄验不等于真实平台文件读取、跨服务同步、浏览器或全量 `check.sh --full` 验收。
+
+## 显式原生统计不再被祖先 metadata 快路径短路（2026-10-08）
+
+继续沿相同 DD-89/SS-CEL-MATERIALIZATION 定位真实目录列举。严格适配器的
+`service-list.mjs::nativeListing` 原本正确请求 `GetByUuid?Flags=WithMetaDefaults`；
+缺统计时必须失败，不能删除独立 ChildrenCount 或拿列举条数冒充完整性。
+
+同一固定上游完整 commit 的
+`gateway/restv2/api-options.go::Handler.parseFlags` 将该默认 flag 转为未指定
+统计列表，`gateway/restv2/api-lookup.go::Handler.GetByUuid` 随即要求原生
+FolderCounts、FolderSize、VersionsAll。真正断点为
+`common/nodes/core/handler-exec.go::Executor.ReadNode`：原快路径只看到
+`common/nodes/meta/meta-providers.go::enrichNodesMetaFromProviders` 的 metadata
+加载标记便返回输入克隆，忽略显式统计及可能发生的原生失败。
+这个 metadata 标记不证明统计完整，线上响应确实缺少 FolderMeta。
+
+四步结论延续同一读取边界：权威及源服务不变；影响原 Executor 的显式 StatFlags
+和旧 WithExtendedStats 消费者。无统计要求时保留原克隆快路径；需要统计时将
+完整原请求交给原 native tree client，由原
+`data/tree/grpc/handler.go::TreeServer.ReadNode` 读取统计。不添加另一统计层或
+合成 FolderMeta，不更改 ACL、数据库、契约或三端 UI。原生失败原样传播，
+无缓存成功降级；空目录、叶节点、重复读取沿原服务处理，不引入持久状态。
+
+实现后新增 `common/nodes/core/handler-exec_test.go`，复用上节受限 SDK/caches。
+实际执行 `go test -mod=readonly ./common/nodes/core ./common/nodes/uuid -count=1 -v`，
+覆盖原无统计快路径、8 类原 flag、旧扩展统计、原生错误，以及 3 项空间投影。
+只在私有候选恢复旧快路径条件后，9 个子检查真实失败，退出 1；其中原生拒绝
+确实错误变成 `err=<nil>` 的缓存成功。还原正式字节 `cmp` 退出 0，两包最终通过，
+退出 0，格式检查无差异。没有发布编译或镜像构建。
+
+空间投影另在最终私有候选删除 UUID 投影及旧别名清理后，两项检查真实失败；
+恢复后两个原生包一并通过。上节同一原件目录的最终证据为
+`cells-native-stats-legacy-mutation.log`、`cells-workspace-projection-alias-mutation.log`
+及 `cells-native-read-final.log`；早期日志保留，不替代最终候选结果。
+这些检查使用原 Executor/UUID handler 和隔离 tree client，不是线上新镜像结果。
+两个修复均尚未部署，真实 adapter 读取、Cells→WeKnora 业务同步和全量验收未闭合。
+
 ## 原绑定管理握手接通（2026-10-08）
 
 本批按 DD-88/94、`.design/07` §5.2 修复实际调用断点：Core 的

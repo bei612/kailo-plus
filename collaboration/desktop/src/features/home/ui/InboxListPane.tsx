@@ -17,6 +17,7 @@ import {
 } from "@/features/messages/ui/DraftsPanel";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import { cn } from "@/shared/lib/cn";
+import { normalizePubkey } from "@/shared/lib/pubkey";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -60,6 +61,7 @@ function getInboxVideoReviewCommentRootId(item: InboxItem) {
 }
 
 type InboxListPaneProps = {
+  agentPubkeys?: ReadonlySet<string>;
   activeDraftCount: number;
   draftItems: DraftViewItem[];
   doneSet: ReadonlySet<string>;
@@ -83,6 +85,7 @@ type InboxListPaneProps = {
 };
 
 export function InboxListPane({
+  agentPubkeys,
   activeDraftCount,
   draftItems,
   doneSet,
@@ -125,21 +128,22 @@ export function InboxListPane({
     const isDone = doneSet.has(item.id);
     const isReopening = Boolean(item.item.channelId && isReopenPending?.(item.item.channelId));
     const canOpen = Boolean(item.item.channelId) && !isReopening;
-    const openLabel = isReopening ? t("inbox.reopening") : canOpen ? "Open in channel" : "No channel link";
+    const openLabel = isReopening ? t("inbox.reopening") : canOpen ? t("inbox.open") : "No channel link";
     const typeLabel = getInboxTypeLabel(item);
+    const isSenderAgent = agentPubkeys?.has(normalizePubkey(item.item.pubkey)) === true;
     const videoReviewCommentRootId = getInboxVideoReviewCommentRootId(item);
     const row = (
       <InboxRow
         id={item.id}
         selected={isSelected}
         read={isDone}
-        openLabel={`Open inbox item from ${item.senderLabel}`}
+        openLabel={t("inbox.openItem", { sender: item.senderLabel })}
         onSelect={() => onSelect(item.id)}
         timestamp={item.timestampLabel}
         unread={
           item.unreadCount > 1 ? (
             <span data-testid="home-inbox-unread-count">
-              {item.unreadCount} unread
+              {t("inbox.unreadCount", { count: item.unreadCount })}
             </span>
           ) : null
         }
@@ -148,7 +152,7 @@ export function InboxListPane({
         avatar={
           <UserProfilePopover
             pubkey={item.item.pubkey}
-            triggerClassName="shrink-0 rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            triggerClassName={cn("shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring", isSenderAgent ? "rounded-[30%]" : "rounded-full")}
             triggerElement="span"
             triggerTestId={`home-inbox-avatar-${item.id}`}
           >
@@ -158,6 +162,7 @@ export function InboxListPane({
                 className="h-9 w-9"
                 displayName={item.senderLabel}
                 size="md"
+                shape={isSenderAgent ? "squircle" : "circle"}
               />
             </span>
           </UserProfilePopover>
@@ -182,14 +187,14 @@ export function InboxListPane({
           <>
             {isDone ? (
               <InboxRowActionButton
-                label="Mark unread"
+                label={t("inbox.markUnread")}
                 onClick={() => onMarkUnread(item.id)}
               >
                 <MailOpen className="!h-4 !w-4" />
               </InboxRowActionButton>
             ) : (
               <InboxRowActionButton
-                label="Mark as read"
+                label={t("inbox.markRead")}
                 onClick={() => onMarkRead(item.id)}
               >
                 <MailOpen className="!h-4 !w-4" />
@@ -214,12 +219,12 @@ export function InboxListPane({
           {isDone ? (
             <ContextMenuItem onClick={() => onMarkUnread(item.id)}>
               <MailOpen className="h-4 w-4" />
-              Mark unread
+              {t("inbox.markUnread")}
             </ContextMenuItem>
           ) : (
             <ContextMenuItem onClick={() => onMarkRead(item.id)}>
               <MailOpen className="h-4 w-4" />
-              Mark as read
+              {t("inbox.markRead")}
             </ContextMenuItem>
           )}
           <ContextMenuSeparator />

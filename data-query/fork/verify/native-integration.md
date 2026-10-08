@@ -2382,3 +2382,121 @@ Logs are `native-reference-access-tests.log`, `native-reference-access-types.log
 `native-reference-access-mutation.log` and `native-reference-access-restored.log`
 in the existing Wren SDK candidate directory. No new release was built or
 deployed; this does not claim full-global-check or browser acceptance.
+
+## Historical MDL captured-object authorization (2026-10-08)
+
+This slice closes the actual historical `getMDL(hash)` consumer rather than
+adding another login check or replacing a native page. The fixed official
+source was rechecked read-only at
+`c5f02a0391c87420dba78632dcd86073710deb72`:
+`wren-ui/src/apollo/server/services/mdlService.ts::MDLService.makeCurrentModelMDL`,
+`wren-ui/src/apollo/server/repositories/deployLogRepository.ts::DeployLogRepository`,
+`wren-ui/src/apollo/server/services/deployService.ts::DeployService.getMDLByHash`
+and `wren-ui/src/apollo/server/resolvers/modelResolver.ts::ModelResolver.getMDL`.
+The original manifest has model names, not model IDs; a historical name cannot
+prove which present-day native model a person is allowed to read. The original
+second unscoped hash lookup could also select a deployment other than the
+project-scoped row already checked by the resolver.
+
+Four-step implementation boundary:
+
+1. Authority: DD-12 and SS-WRN-IDENTITY/SS-WRN-GOVERNANCE retain native project,
+   model, deployment and business-content authority in Wren. Object read
+   permission reuses Core's existing HUMAN `resolveResource` consumer for
+   `data_query.describe@v1`, its exact binding/native-instance/project reference
+   and the verified current human. There is no second resource registry,
+   permission engine, identity store or copy of manifest content in Core.
+2. Impact: the original MDL builder returns native model/view IDs and names
+   from the same rows used to build its unchanged manifest. Both existing
+   explicit and onboarding deployment callers pass that capture into the
+   original deployment transaction. The native-only migration adds nullable
+   `deploy_log.native_object_refs`; the original repository serializes that
+   JSON array explicitly for PostgreSQL and decodes it alongside the original
+   manifest. The MDL/hash, GraphQL schema, generated client types, pages and
+   model/AI/Engine interfaces keep their original shape. No platform contract
+   or four-language generation changes are required. The unscoped
+   `getMDLByHash` implementation and its only old call path are removed.
+3. Side effects: deployment validates the capture before durable intent or
+   native dispatch and stores it in the same original transaction. Historical
+   reads validate exact names/IDs, object counts and native view ID evidence,
+   authorize every captured object, reread the exact project/hash/deployment,
+   then reauthorize every Resource/version before encoding that same manifest.
+   No SQL, new ActionExecution, Temporal workflow or external write is invoked
+   by the history read. Existing deployment UNKNOWN observation, idempotency
+   and successful-hash reuse remain; a reused hash keeps its original capture.
+4. Boundaries: absent verified human/binding, unregistered objects, denied or
+   unavailable authorization remain errors. Missing/legacy/malformed captures
+   return `QUERY_EVIDENCE_UNAVAILABLE`, never same-name inference; revocation
+   and changed Resource/version or persisted evidence refuse disclosure.
+   Empty native model sets do not read unfiltered column tables. The migration
+   deliberately leaves historical rows unmapped and does not erase their
+   original native status/content. It cannot manufacture missing historical
+   identity evidence. Down migration refuses to discard any recorded capture;
+   empty rollback remains possible. No new persistent execution state or
+   retry/expiry policy is introduced. Native write/deploy admission, Asking,
+   dashboard authorization and real production instance activation remain
+   separate acceptance gaps.
+
+Difference classification for these affected original modules: the native
+MDL builder, hash, manifest encoding, GraphQL schema and complete page source
+are retained; captured native identity, scoped lookup and fresh authorization
+are the authorized governance adaptation. There is no shared-page migration
+or newly invented UI in this slice. This module comparison does not claim the
+entire Wren/source tree or every browser state has reached original parity.
+
+Implementation preceded the checks. Validation reused the existing
+`kailo-wren-query-sdk-itgs2n`, UID 1000, 4 CPU / 4 GiB, its cached dependencies
+and already configured isolated PostgreSQL database/network namespace. Each
+database case uses its own random schema, original project/deploy migrations,
+this native migration and real `DeployLogRepository`; cleanup affects only
+that case-owned schema, not production business data.
+
+The first attempt accidentally used the older `/work/apps` snapshot in the
+existing native SDK: Jest exited 1 with no tests and tsc exited 2 because that
+snapshot lacked previously integrated native consumers. It was not a result
+for the current source. The correct existing `governance-Itgs2N` snapshot then
+passed all native consumers and tsc, but an additional SQLite attempt failed
+two cases because the cached Node 24 SDK lacks `better_sqlite3.node` (82 passed,
+1 PostgreSQL skip, exit 1). That failure is retained; no dependency/image
+rebuild or SQLite-compatibility acceptance is claimed. Final database cases
+use the existing isolated PostgreSQL path, as the earlier native receipts do.
+
+From the original `wren-ui` working directory:
+
+```sh
+./node_modules/.bin/jest --runInBand src/nativeProjectScope.test.ts \
+  src/apollo/server/services/tests/deployService.test.ts
+./node_modules/.bin/tsc --noEmit
+```
+
+The restored PostgreSQL run passed 85 tests / 2 suites, 0 skipped, exit 0,
+14.123 s. Whole-Wren `tsc --noEmit` produced no diagnostics and exited 0.
+Checks cover unchanged builder output and actual capture, legacy refusal,
+incomplete/conflicting mappings, foreign project, denial, return-time
+revocation, Resource/version change, native record mutation, real JSONB
+persistence, original concurrent deployment behavior and lossless rollback.
+
+Private fault injection removed the final history authorization comparison:
+the two targeted consumers failed, exit 1 (2 failed / 71 targeted skips,
+9.372 s), because revoked and changed-version resources still returned the
+encoded manifest. Removing the migration's retained-evidence guard separately
+failed the actual PostgreSQL rollback consumer, exit 1 (1 failed / 11 targeted
+skips, 6.209 s), because recorded capture could be discarded. Both faults
+were restored and all eight code/test/migration inputs byte-compared against
+formal source with `cmp`, exit 0.
+
+After both faults were restored, the same two-suite PostgreSQL command passed
+85/85 again with no skips in 8.110 s, exit 0. `git diff --check -- data-query`
+also exited 0. The remaining global release checks belong to the shared batch;
+these scoped results do not substitute for them.
+
+Logs are `native-mdl-object-tests.log`, `native-mdl-object-types.log`,
+`native-mdl-object-mutation.log`, `native-mdl-object-restored.log`,
+`native-mdl-object-types-final.log`,
+`native-mdl-object-migration-mutation.log` and
+`native-mdl-object-restored-final.log` in the existing Wren candidate directory.
+The initial stale-snapshot failures remain in its parent directory's
+`native-mdl-object-tests.log` / `native-mdl-object-types.log`.
+This batch is not full-global-check, SQLite migration acceptance, complete
+native write governance, live datasource/model/identity/binding acceptance,
+browser screenshot, Windows/Mobile verification, image build or deployment.

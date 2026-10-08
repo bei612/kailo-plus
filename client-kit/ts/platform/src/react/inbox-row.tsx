@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import { MESSAGE_MARKDOWN_CLASS, MENTION_CHIP_BASE_CLASSES } from "./composer/shared/ui/mentionChip";
 
 /** The Buzz Home row, with host-owned profile/Markdown/actions supplied as slots. */
 export function InboxRow({
@@ -51,7 +52,7 @@ export function InboxRow({
           className={`pointer-events-none absolute inset-y-0 left-0 right-0 transition-colors ${
             selected
               ? "bg-[var(--inbox-row-highlight-bg)]"
-              : "group-hover/inbox-item:bg-[var(--inbox-row-highlight-bg)] group-focus-within/inbox-item:bg-[var(--inbox-row-highlight-bg)]"
+              : "group-hover/inbox-item:bg-[var(--inbox-row-highlight-bg)] group-focus-within/inbox-item:bg-[var(--inbox-row-highlight-bg)] group-active/inbox-item:bg-muted/40"
           }`}
         />
       </button>
@@ -79,7 +80,7 @@ export function InboxRow({
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-start gap-2">
               <span
-                className="flex min-w-0 flex-1 items-start text-sm font-semibold leading-4"
+                className="flex min-w-0 flex-1 items-start leading-4"
                 data-inbox-profile-trigger="true"
               >
                 {sender}
@@ -98,16 +99,16 @@ export function InboxRow({
               </span>
             </div>
             <div
-              className={`mt-0 flex min-w-0 items-center gap-1.5 text-xs ${read ? "text-muted-foreground/70" : "font-medium text-muted-foreground/80"}`}
+              className={`${MESSAGE_MARKDOWN_CLASS} mt-0 flex min-h-[var(--inline-chip-min-height)] min-w-0 items-center gap-1.5 text-2xs leading-3 group-hover/inbox-item:pr-[6.75rem] group-focus-within/inbox-item:pr-[6.75rem] ${read ? "font-normal text-muted-foreground/70" : "font-medium text-muted-foreground/80"}`}
               data-inbox-type-label=""
             >
               <span className="shrink-0">{label}</span>
               {channel ? (
                 <span
-                  className="inbox-channel-chip min-w-0 max-w-full truncate"
+                  className={`${MENTION_CHIP_BASE_CLASSES} inbox-channel-chip min-w-0 max-w-full overflow-hidden`}
                   data-channel-link=""
                 >
-                  #{channel}
+                  <span className="truncate">#{channel}</span>
                 </span>
               ) : null}
             </div>

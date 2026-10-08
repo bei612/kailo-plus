@@ -352,5 +352,15 @@ describe("actual shared Core state consumer", () => {
     await click(host.querySelector("button")!);
     expect(select).toHaveBeenCalledOnce();
     expect(host.textContent).toContain("#A");
+    const label = host.querySelector<HTMLElement>("[data-inbox-type-label]")!;
+    expect(label.classList.contains("message-markdown")).toBe(true);
+    expect(label.classList.contains("text-2xs")).toBe(true);
+    expect(label.classList.contains("min-h-[var(--inline-chip-min-height)]")).toBe(true);
+    expect(label.classList.contains("group-hover/inbox-item:pr-[6.75rem]")).toBe(true);
+    const chip = label.querySelector<HTMLElement>("[data-channel-link]")!;
+    expect(chip.classList.contains("mention-chip")).toBe(true);
+    expect(chip.classList.contains("overflow-hidden")).toBe(true);
+    expect(chip.querySelector(".truncate")?.textContent).toBe("#A");
+    expect(host.querySelector("button > span")?.classList.contains("group-active/inbox-item:bg-muted/40")).toBe(true);
   });
 });

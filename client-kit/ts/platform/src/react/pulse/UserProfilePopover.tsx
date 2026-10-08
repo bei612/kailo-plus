@@ -80,6 +80,7 @@ export function UserProfilePopover(props: UserProfilePopoverProps) {
 export function UserProfilePopoverSurface({
   children,
   pubkey,
+  role,
   triggerElement = "div",
   triggerAriaLabel,
   triggerClassName,
@@ -134,7 +135,7 @@ export function UserProfilePopoverSurface({
         event.stopPropagation();
         setOpen(false);
         openProfilePanel(pubkey);
-      } else { setOpen(value => !value); }
+      }
     },
     [canOpenProfilePanel, clearHoverTimer, openProfilePanel, pubkey],
   );
@@ -179,7 +180,7 @@ export function UserProfilePopoverSurface({
       </PopoverAnchor>
       {open ? (
         renderBody({canOpenProfilePanel,onContentMouseEnter:handleContentMouseEnter,
-          onMouseLeave:handleMouseLeave,onTriggerClick:handleTriggerClick,pubkey})
+          onMouseLeave:handleMouseLeave,onTriggerClick:handleTriggerClick,pubkey,role})
       ) : null}
     </Popover>
   );
@@ -196,6 +197,7 @@ export type ProfilePopoverBodyProps = {
   onMouseLeave: () => void;
   onTriggerClick: (event: React.MouseEvent) => void;
   pubkey: string;
+  role?: string;
 };
 
 function PulseProfilePopoverBody(props: ProfilePopoverBodyProps) {
@@ -210,6 +212,7 @@ export function UserProfilePopoverBody({
   onMouseLeave,
   onTriggerClick,
   pubkey,
+  role,
   profile,
   mediaUrl,
   status,
@@ -230,6 +233,7 @@ export function UserProfilePopoverBody({
         className="h-10 w-10 text-xs"
         iconClassName="h-5 w-5"
         label={displayName}
+        shape={role === "bot" ? "squircle" : "circle"}
         testId="user-profile-popover-avatar"
       /></AvatarHostProvider>
 

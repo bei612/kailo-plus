@@ -6,6 +6,8 @@ const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http:
 Object.assign(globalThis, {
   window: dom.window, self: dom.window, document: dom.window.document, localStorage: dom.window.localStorage,
   HTMLElement: dom.window.HTMLElement, Element: dom.window.Element,
+  Node: dom.window.Node, NodeFilter: dom.window.NodeFilter, SVGElement: dom.window.SVGElement,
+  HTMLInputElement: dom.window.HTMLInputElement,
   HTMLIFrameElement: dom.window.HTMLIFrameElement, getComputedStyle: dom.window.getComputedStyle,
   Event: dom.window.Event, CustomEvent: dom.window.CustomEvent,
   MutationObserver: dom.window.MutationObserver, IS_REACT_ACT_ENVIRONMENT: true,
@@ -29,6 +31,8 @@ const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query
 const { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } = await import("@tanstack/react-router");
 const { ActiveCommunityProvider } = await import("@/features/platform/activeCommunity");
 const { UserProfilePanel } = await import("./UserProfilePanel.tsx");
+const { UserProfilePopover } = await import("./UserProfilePopover.tsx");
+const { ProfilePanelProvider } = await import("@/shared/context/ProfilePanelContext");
 const { setLocale } = await import("@client-kit/platform/i18n");
 const own = "a".repeat(64), peer = "b".repeat(64);
 const session = (host = "one.test") => ({ facts: { communityHost: host, relayUrl: `wss://${host}` }, devicePubkey: own, displayName: null });
@@ -104,5 +108,68 @@ test("scope switch hides cached data and rejects a late old-community result", a
     await act(async () => finishOld(profile(peer, "Old community peer")));
     assert.equal(view.host.textContent.includes("Old community peer"), false);
     assert.ok(view.host.textContent.includes("New community peer"));
+  } finally { await view.close(); }
+});
+
+async function mountPopover(role) {
+  setLocale("en");
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); const opened = [];
+  async function render(current) {
+    await act(async () => root.render(React.createElement(QueryClientProvider, { client: cache },
+      React.createElement(ActiveCommunityProvider, { session: current },
+        React.createElement(ProfilePanelProvider, { onOpenProfilePanel: (key) => opened.push(key) },
+          React.createElement(UserProfilePopover, { pubkey: peer, role, triggerElement: "span", triggerTestId: "original-profile-trigger" },
+            React.createElement("span", null, "Agent-looking label")))))));
+  }
+  await render(session());
+  async function hover() {
+    await act(async () => host.querySelector('[data-testid="original-profile-trigger"]')
+      .dispatchEvent(new dom.window.MouseEvent("mouseover", { bubbles: true })));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 550)));
+  }
+  return { host, opened, render, hover, async close() { await act(async () => root.unmount()); cache.clear(); host.remove(); } };
+}
+
+test("native hover uses the same original lazy surface and supplied Agent role, never its display name", async () => {
+  for (const role of ["bot", undefined]) {
+    let reads = 0;
+    readProfile = async (pubkey) => { reads++; return profile(pubkey); };
+    const view = await mountPopover(role);
+    try {
+      assert.equal(reads, 0);
+      await view.hover();
+      await until(() => document.querySelector('[data-testid="user-profile-description"]'));
+      const avatar = document.querySelector('[data-testid="user-profile-popover-avatar"]');
+      assert.equal(avatar.classList.contains("rounded-squircle"), role === "bot");
+      assert.equal(reads, 1);
+      await act(async () => view.host.querySelector('[data-testid="original-profile-trigger"]').click());
+      assert.deepEqual(view.opened, [peer]);
+      assert.equal(document.querySelector('[data-testid="user-profile-popover"]'), null);
+    } finally { await view.close(); }
+  }
+});
+
+test("native hover clears a cached or late old-scope profile and rejects mismatched identity", async () => {
+  let finishOld;
+  readProfile = () => new Promise((resolve) => { finishOld = resolve; });
+  const view = await mountPopover("bot");
+  try {
+    await view.hover();
+    await until(() => finishOld);
+    let finishNew;
+    readProfile = () => new Promise((resolve) => { finishNew = resolve; });
+    await view.render(session("two.test"));
+    await until(() => finishNew);
+    await act(async () => finishNew(profile(peer, "New community author")));
+    await until(() => document.body.textContent.includes("New community author"));
+    await act(async () => finishOld(profile(peer, "Old community author")));
+    assert.equal(document.body.textContent.includes("Old community author"), false);
+    readProfile = async () => profile(own, "Wrong identity");
+    await view.render(session("three.test"));
+    await until(() => document.querySelector('[data-testid="user-profile-popover"] [role="alert"]'));
+    assert.equal(document.body.textContent.includes("New community author"), false);
+    assert.equal(document.body.textContent.includes("Wrong identity"), false);
   } finally { await view.close(); }
 });

@@ -91,7 +91,6 @@ describe('native bound-project business consumers', () => {
         updateCalculatedField: jest.fn(),
         validateCalculatedFieldNaming: jest.fn(async () => ({ valid: true })),
       },
-      deployService: { getMDLByHash: jest.fn() },
     };
     ctx.modelColumnRepository.findColumnsByModelIds = jest.fn(async () => [
       {
@@ -646,7 +645,140 @@ describe('native bound-project business consumers', () => {
     ).rejects.toThrow('Deployment not found');
     expect(ctx.modelService.updateRelation).not.toHaveBeenCalled();
     expect(ctx.modelService.deleteRelation).not.toHaveBeenCalled();
-    expect(ctx.deployService.getMDLByHash).not.toHaveBeenCalled();
+    expect(ctx.deployRepository.findOneBy).toHaveBeenCalledWith({
+      hash: 'foreign-hash',
+      projectId,
+    });
+  });
+  const historicalDeployment = () => {
+    const nativeObjectRefs = [
+      { nativeType: 'model', nativeId: 111, nativeName: 'oldModel' },
+      { nativeType: 'view', nativeId: 121, nativeName: 'oldView' },
+    ];
+    const manifest = {
+      catalog: 'original',
+      schema: 'original',
+      models: [{ name: 'oldModel' }],
+      views: [{ name: 'oldView', properties: { viewId: '121' } }],
+    };
+    const row = {
+      id: 71,
+      projectId,
+      hash: 'old-hash',
+      manifest,
+      nativeObjectRefs,
+    };
+    ctx.deployRepository = repository([row]);
+    return row;
+  };
+  it('reads the original historical manifest with its captured native IDs, not same-name current models', async () => {
+    const row = historicalDeployment();
+    expect(await resolver.getMDL(null, { hash: row.hash }, ctx)).toEqual({
+      hash: row.hash,
+      mdl: Buffer.from(JSON.stringify(row.manifest)).toString('base64'),
+    });
+    expect(authorize.mock.calls.map((call) => call[2].resolveResource)).toEqual(
+      ['111', '121', '111', '121'].map((nativeRef) => ({
+        workspaceId: config.workspaceId,
+        actionKey: 'data_query.describe@v1',
+        actionVersion: 1,
+        nativeType: nativeRef === '111' ? 'model' : 'view',
+        nativeRef,
+      })),
+    );
+    expect(ctx.modelRepository.findAllBy).not.toHaveBeenCalled();
+    expect(ctx.deployRepository.findOneBy).toHaveBeenLastCalledWith({
+      id: row.id,
+      hash: row.hash,
+      projectId,
+    });
+  });
+  it('does not infer legacy deployment IDs from current same-name rows', async () => {
+    const row = historicalDeployment();
+    row.nativeObjectRefs = null;
+    await expect(
+      resolver.getMDL(null, { hash: row.hash }, ctx),
+    ).rejects.toMatchObject({
+      status: 503,
+      code: 'QUERY_EVIDENCE_UNAVAILABLE',
+    });
+    expect(authorize).not.toHaveBeenCalled();
+  });
+  it.each([
+    (row) => row.nativeObjectRefs.pop(),
+    (row) => {
+      row.nativeObjectRefs[1].nativeId = 122;
+    },
+    (row) => {
+      row.nativeObjectRefs[0].nativeName = 'currentSameName';
+    },
+    (row) => row.nativeObjectRefs.push({ ...row.nativeObjectRefs[0] }),
+  ])(
+    'refuses an incomplete or conflicting historical native mapping',
+    async (alter) => {
+      const row = historicalDeployment();
+      alter(row);
+      await expect(
+        resolver.getMDL(null, { hash: row.hash }, ctx),
+      ).rejects.toMatchObject({
+        status: 503,
+        code: 'QUERY_EVIDENCE_UNAVAILABLE',
+      });
+      expect(authorize).not.toHaveBeenCalled();
+    },
+  );
+  it('refuses historical metadata when one captured resource is denied or later revoked', async () => {
+    const row = historicalDeployment();
+    authorize.mockImplementationOnce(async (_config, _operation, request) =>
+      selected(request),
+    );
+    authorize.mockRejectedValueOnce(
+      new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+    );
+    await expect(
+      resolver.getMDL(null, { hash: row.hash }, ctx),
+    ).rejects.toMatchObject({ status: 403 });
+    authorize.mockReset();
+    authorize.mockImplementation(async (_config, _operation, request) =>
+      selected(request),
+    );
+    authorize.mockImplementationOnce(async (_config, _operation, request) =>
+      selected(request),
+    );
+    authorize.mockImplementationOnce(async (_config, _operation, request) =>
+      selected(request),
+    );
+    authorize.mockRejectedValueOnce(
+      new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
+    );
+    await expect(
+      resolver.getMDL(null, { hash: row.hash }, ctx),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+  it('does not disclose history after the same resource changes its authorized version', async () => {
+    const row = historicalDeployment();
+    authorize.mockImplementationOnce(async (_config, _operation, request) =>
+      selected(request),
+    );
+    authorize.mockImplementationOnce(async (_config, _operation, request) =>
+      selected(request),
+    );
+    authorize.mockImplementationOnce(async (_config, _operation, request) => ({
+      resource: { ...selected(request).resource, resourceVersion: 2 },
+    }));
+    await expect(
+      resolver.getMDL(null, { hash: row.hash }, ctx),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+  it('does not disclose history after the persisted manifest changes during authorization', async () => {
+    const row = historicalDeployment();
+    authorize.mockImplementationOnce(async (_config, _operation, request) => {
+      row.manifest.catalog = 'changed-after-capture';
+      return selected(request);
+    });
+    await expect(
+      resolver.getMDL(null, { hash: row.hash }, ctx),
+    ).rejects.toMatchObject({ status: 409 });
   });
   it('saved-view response consumers cannot follow a response into a foreign project thread', async () => {
     const service = Object.assign(Object.create(AskingService.prototype), {
@@ -870,6 +1002,33 @@ describe('native bound-project business consumers', () => {
     expect(manifest.catalog).toBe('bound');
     expect(modelRepository.findAllBy).toHaveBeenCalledWith({ projectId });
     expect(projectRepository.getCurrentProject).not.toHaveBeenCalled();
+  });
+  it('captures the same native rows used by the original MDL builder without changing its manifest', async () => {
+    diagramContext();
+    const service = new MDLService(ctx as any);
+    const { manifest, nativeObjectRefs } = await service.makeCurrentModelMDL({
+      id: projectId,
+      type: 'DUCKDB',
+      catalog: 'bound',
+      schema: 'bound',
+    } as any);
+    expect(nativeObjectRefs).toEqual([
+      { nativeType: 'model', nativeId: 11, nativeName: 'model11' },
+      { nativeType: 'model', nativeId: 13, nativeName: 'model13' },
+      { nativeType: 'view', nativeId: 21, nativeName: 'originalView' },
+    ]);
+    expect(manifest.models.map((model) => model.name)).toEqual([
+      'model11',
+      'model13',
+    ]);
+    expect(manifest.views).toEqual([
+      expect.objectContaining({
+        name: 'originalView',
+        properties: expect.objectContaining({ viewId: '21' }),
+      }),
+    ]);
+    expect(manifest).not.toHaveProperty('nativeObjectRefs');
+    expect(ctx.projectRepository.getCurrentProject).not.toHaveBeenCalled();
   });
 
   const dashboard = () => {

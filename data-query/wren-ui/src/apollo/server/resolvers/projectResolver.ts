@@ -697,8 +697,13 @@ export class ProjectResolver {
 
   private async deploy(ctx: IContext) {
     const project = await ctx.projectService.getCurrentProject();
-    const { manifest } = await ctx.mdlService.makeCurrentModelMDL();
-    const deployRes = await ctx.deployService.deploy(manifest, project.id);
+    const { manifest, nativeObjectRefs } =
+      await ctx.mdlService.makeCurrentModelMDL(project);
+    const deployRes = await ctx.deployService.deploy(
+      manifest,
+      project.id,
+      nativeObjectRefs,
+    );
 
     // only generating for user's data source
     if (

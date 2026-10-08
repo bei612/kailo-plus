@@ -24,6 +24,7 @@ import (
 	"context"
 	"path"
 
+	"github.com/pydio/cells/v5/common"
 	"github.com/pydio/cells/v5/common/nodes"
 	"github.com/pydio/cells/v5/common/nodes/abstract"
 	"github.com/pydio/cells/v5/common/proto/tree"
@@ -61,8 +62,17 @@ func (h *externalPathHandler) updateOutputBranch(ctx context.Context, node *tree
 	out := node.Clone()
 	aa := node.GetAppearsIn()
 	out.Path = ""
+	delete(out.MetaStore, common.MetaFlagWorkspaceUuid)
+	delete(out.MetaStore, common.MetaFlagWorkspaceRepoId)
+	delete(out.MetaStore, common.MetaFlagWorkspaceSlug)
 	if len(aa) > 0 {
-		out.Path = path.Join(aa[0].GetWsSlug(), aa[0].GetPath())
+		workspace := aa[0]
+		out.Path = path.Join(workspace.GetWsSlug(), workspace.GetPath())
+		// The UUID router already selected this authorized native Workspace.
+		// Publish its identity together with the corresponding external path;
+		// REST v2 consumers cannot infer a Workspace UUID from a path alone.
+		out.MustSetMeta(common.MetaFlagWorkspaceUuid, workspace.GetWsUuid())
+		out.MustSetMeta(common.MetaFlagWorkspaceSlug, workspace.GetWsSlug())
 	}
 	return ctx, out, nil
 

@@ -9,10 +9,12 @@ import {
   Project,
 } from '../repositories';
 import { Manifest } from '../mdl/type';
+import { NativeDeploymentObject } from '../repositories/deployLogRepository';
 
 export interface MakeCurrentModelMDLResult {
   manifest: Manifest;
   mdlBuilder: MDLBuilder;
+  nativeObjectRefs: NativeDeploymentObject[];
 }
 export interface IMDLService {
   makeCurrentModelMDL(project?: Project): Promise<MakeCurrentModelMDLResult>;
@@ -55,12 +57,14 @@ export class MDLService implements IMDLService {
     const projectId = project.id;
     const models = await this.modelRepository.findAllBy({ projectId });
     const modelIds = models.map((m) => m.id);
-    const columns =
-      await this.modelColumnRepository.findColumnsByModelIds(modelIds);
-    const modelNestedColumns =
-      await this.modelNestedColumnRepository.findNestedColumnsByModelIds(
-        modelIds,
-      );
+    const columns = modelIds.length
+      ? await this.modelColumnRepository.findColumnsByModelIds(modelIds)
+      : [];
+    const modelNestedColumns = modelIds.length
+      ? await this.modelNestedColumnRepository.findNestedColumnsByModelIds(
+          modelIds,
+        )
+      : [];
     const relations = await this.relationRepository.findRelationInfoBy({
       projectId,
     });
@@ -79,6 +83,21 @@ export class MDLService implements IMDLService {
       relatedColumns,
       relatedRelations,
     });
-    return { manifest: mdlBuilder.build(), mdlBuilder };
+    return {
+      manifest: mdlBuilder.build(),
+      mdlBuilder,
+      nativeObjectRefs: [
+        ...models.map((model) => ({
+          nativeType: 'model' as const,
+          nativeId: model.id,
+          nativeName: model.referenceName,
+        })),
+        ...views.map((view) => ({
+          nativeType: 'view' as const,
+          nativeId: view.id,
+          nativeName: view.name,
+        })),
+      ],
+    };
   }
 }

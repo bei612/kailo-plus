@@ -20,12 +20,10 @@ describe('DeployService', () => {
     mockTelemetry = { sendEvent: jest.fn() };
     mockWrenAIAdaptor = { deploy: jest.fn(), observeDeploy: jest.fn() };
     mockDeployLogRepository = {
-      beginDeployment: jest
-        .fn()
-        .mockImplementation(async (data) => ({
-          deploy: { ...data, id: 123 },
-          created: true,
-        })),
+      beginDeployment: jest.fn().mockImplementation(async (data) => ({
+        deploy: { ...data, id: 123 },
+        created: true,
+      })),
       findInProgressProjectDeployLog: jest.fn(),
       findLastProjectDeployLog: jest.fn(),
       createOne: jest.fn(),
@@ -47,7 +45,7 @@ describe('DeployService', () => {
     mockWrenAIAdaptor.deploy.mockResolvedValue({ status: 'SUCCESS' });
     mockDeployLogRepository.createOne.mockResolvedValue({ id: 123 });
 
-    const response = await deployService.deploy(manifest, projectId);
+    const response = await deployService.deploy(manifest, projectId, []);
 
     expect(response.status).toEqual(DeployStatusEnum.SUCCESS);
     expect(mockDeployLogRepository.updateOne).toHaveBeenCalledWith(123, {
@@ -67,7 +65,7 @@ describe('DeployService', () => {
     });
     mockDeployLogRepository.createOne.mockResolvedValue({ id: 123 });
 
-    const response = await deployService.deploy(manifest, projectId);
+    const response = await deployService.deploy(manifest, projectId, []);
 
     expect(response.status).toEqual(DeployStatusEnum.FAILED);
     expect(response.error).toEqual('AI error');
@@ -85,7 +83,7 @@ describe('DeployService', () => {
       created: false,
     });
 
-    const response = await deployService.deploy(manifest, projectId);
+    const response = await deployService.deploy(manifest, projectId, []);
 
     expect(response.status).toEqual(DeployStatusEnum.SUCCESS);
     expect(mockWrenAIAdaptor.deploy).not.toHaveBeenCalled();
@@ -93,13 +91,13 @@ describe('DeployService', () => {
 
   it('retains a persisted intent after dispatch or terminal persistence is uncertain', async () => {
     mockWrenAIAdaptor.deploy.mockRejectedValueOnce(new Error('socket closed'));
-    expect((await deployService.deploy({}, 1)).status).toBe('IN_PROGRESS');
+    expect((await deployService.deploy({}, 1, [])).status).toBe('IN_PROGRESS');
     expect(mockDeployLogRepository.updateOne).not.toHaveBeenCalled();
     mockWrenAIAdaptor.deploy.mockResolvedValueOnce({ status: 'SUCCESS' });
     mockDeployLogRepository.updateOne.mockRejectedValueOnce(
       new Error('database unavailable'),
     );
-    expect((await deployService.deploy({}, 1)).status).toBe('IN_PROGRESS');
+    expect((await deployService.deploy({}, 1, [])).status).toBe('IN_PROGRESS');
   });
 
   it('does not repeat a pending dispatch even when forced or the manifest changes', async () => {
@@ -110,7 +108,7 @@ describe('DeployService', () => {
     mockWrenAIAdaptor.observeDeploy.mockResolvedValue({
       status: 'IN_PROGRESS',
     });
-    expect((await deployService.deploy({}, 1, true)).status).toBe(
+    expect((await deployService.deploy({}, 1, [], true)).status).toBe(
       'IN_PROGRESS',
     );
     expect(mockWrenAIAdaptor.deploy).not.toHaveBeenCalled();
@@ -119,7 +117,7 @@ describe('DeployService', () => {
       '123',
     );
     mockWrenAIAdaptor.observeDeploy.mockResolvedValue({ status: 'SUCCESS' });
-    expect((await deployService.deploy({}, 1, true)).status).toBe(
+    expect((await deployService.deploy({}, 1, [], true)).status).toBe(
       'IN_PROGRESS',
     );
     expect(mockWrenAIAdaptor.deploy).not.toHaveBeenCalled();
@@ -150,10 +148,12 @@ describe('DeployService', () => {
     mockDeployLogRepository.beginDeployment.mockRejectedValueOnce(
       new Error('commit unknown'),
     );
-    await expect(deployService.deploy({}, 1)).rejects.toThrow('commit unknown');
+    await expect(deployService.deploy({}, 1, [])).rejects.toThrow(
+      'commit unknown',
+    );
     expect(mockWrenAIAdaptor.deploy).not.toHaveBeenCalled();
     mockWrenAIAdaptor.deploy.mockResolvedValueOnce({ status: 'FUTURE_STATUS' });
-    expect((await deployService.deploy({}, 1)).status).toBe('IN_PROGRESS');
+    expect((await deployService.deploy({}, 1, [])).status).toBe('IN_PROGRESS');
     expect(mockDeployLogRepository.updateOne).not.toHaveBeenCalled();
   });
 
@@ -161,7 +161,12 @@ describe('DeployService', () => {
     let reconciled = false;
     const ctx: any = {
       projectService: { getCurrentProject: async () => ({ id: 1 }) },
-      mdlService: { makeCurrentModelMDL: async () => ({ manifest: {} }) },
+      mdlService: {
+        makeCurrentModelMDL: async () => ({
+          manifest: {},
+          nativeObjectRefs: [],
+        }),
+      },
       deployService: {
         createMDLHash: () => 'current',
         getInProgressDeployment: async () => {
@@ -188,7 +193,12 @@ describe('DeployService', () => {
         }),
         generateProjectRecommendationQuestions: jest.fn(),
       },
-      mdlService: { makeCurrentModelMDL: async () => ({ manifest: {} }) },
+      mdlService: {
+        makeCurrentModelMDL: async () => ({
+          manifest: {},
+          nativeObjectRefs: [],
+        }),
+      },
       deployService: { deploy: jest.fn() },
     };
     for (const status of ['IN_PROGRESS', 'FAILED', 'SUCCESS']) {
@@ -224,6 +234,12 @@ databaseTests('original deployment transaction in isolated PostgreSQL', () => {
     await require(
       join(process.cwd(), 'migrations/20240319083758_create_deploy_table.js'),
     ).up(database);
+    await require(
+      join(
+        process.cwd(),
+        'migrations/20261008000000_deployment_native_objects.js',
+      ),
+    ).up(database);
     repository = new DeployLogRepository(database);
     projectId = randomInt(1, 2147483647);
     await database('project').insert({
@@ -244,6 +260,7 @@ databaseTests('original deployment transaction in isolated PostgreSQL', () => {
       projectId,
       hash: randomUUID(),
       manifest: {},
+      nativeObjectRefs: [],
       status: DeployStatusEnum.IN_PROGRESS,
     };
     const [first, second] = await Promise.all([
@@ -268,3 +285,94 @@ databaseTests('original deployment transaction in isolated PostgreSQL', () => {
     expect((await repository.beginDeployment(data, true)).created).toBe(true);
   });
 });
+
+databaseTests(
+  'native deployment identity persistence in the original PostgreSQL repository',
+  () => {
+    let database: Knex;
+    let repository: DeployLogRepository;
+    let schema: string;
+    const migrate = require(
+      join(
+        process.cwd(),
+        'migrations/20261008000000_deployment_native_objects.js',
+      ),
+    );
+    beforeEach(async () => {
+      schema = `deploy_objects_${randomUUID().replaceAll('-', '')}`;
+      database = knex({
+        client: 'pg',
+        connection: process.env.WREN_QUERY_TEST_DATABASE_URL,
+        searchPath: [schema],
+      });
+      await database.schema.createSchema(schema);
+      await require(
+        join(
+          process.cwd(),
+          'migrations/20240125070643_create_project_table.js',
+        ),
+      ).up(database);
+      await require(
+        join(process.cwd(), 'migrations/20240319083758_create_deploy_table.js'),
+      ).up(database);
+      repository = new DeployLogRepository(database);
+      await database('project').insert({
+        id: 1,
+        type: 'DUCKDB',
+        display_name: 'isolated native project',
+        catalog: 'original',
+        schema: 'original',
+      });
+    });
+    afterEach(async () => {
+      await database.schema.dropSchemaIfExists(schema, true);
+      await database.destroy();
+    });
+
+    it('leaves old history unmapped, commits actual IDs with the original intent, and refuses lossy rollback', async () => {
+      await database('deploy_log').insert({
+        project_id: 1,
+        hash: 'legacy',
+        manifest: '{}',
+        status: 'SUCCESS',
+      });
+      await migrate.up(database);
+      expect(
+        (await repository.findOneBy({ hash: 'legacy', projectId: 1 }))
+          .nativeObjectRefs,
+      ).toBeNull();
+      const nativeObjectRefs = [
+        { nativeType: 'model' as const, nativeId: 17, nativeName: 'original' },
+      ];
+      const result = await repository.beginDeployment(
+        {
+          projectId: 1,
+          hash: 'captured',
+          manifest: { models: [{ name: 'original' }] },
+          status: 'IN_PROGRESS',
+          nativeObjectRefs,
+        },
+        false,
+      );
+      expect(result.deploy.nativeObjectRefs).toEqual(nativeObjectRefs);
+      expect(
+        (await repository.findOneBy({ id: result.deploy.id, projectId: 1 }))
+          .nativeObjectRefs,
+      ).toEqual(nativeObjectRefs);
+      await expect(migrate.down(database)).rejects.toThrow(
+        'Native deployment object evidence must be retained',
+      );
+      expect(
+        await database.schema.hasColumn('deploy_log', 'native_object_refs'),
+      ).toBe(true);
+    });
+
+    it('permits stopping the unpublished migration when no historical mapping would be lost', async () => {
+      await migrate.up(database);
+      await migrate.down(database);
+      expect(
+        await database.schema.hasColumn('deploy_log', 'native_object_refs'),
+      ).toBe(false);
+    });
+  },
+);

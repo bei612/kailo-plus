@@ -15,7 +15,11 @@ import {
 } from '../types';
 import { getLogger, transformInvalidColumnName } from '@server/utils';
 import { DeployResponse } from '../services/deployService';
-import { DeployStatusEnum } from '../repositories/deployLogRepository';
+import {
+  DeployStatusEnum,
+  deploymentObjects,
+  NativeDeploymentObject,
+} from '../repositories/deployLogRepository';
 import { safeFormatSQL } from '@server/utils/sqlFormat';
 import { isEmpty, isNil } from 'lodash';
 import { replaceAllowableSyntax, validateDisplayName } from '../utils/regex';
@@ -32,12 +36,14 @@ import {
   NativeHumanQuery,
   canReadNativeMetadata,
   nativePreviewScope,
+  resolveNativeResource,
 } from '../services/nativeHumanQuery';
 import { NativeQueryService } from '../services/nativeQueryService';
 import {
   loadQueryDelivery,
   NativeQueryRefusal,
   NativeQueryDelivery,
+  canonical,
 } from '../services/nativeQueryAdmission';
 import { DEFAULT_PREVIEW_LIMIT } from '../services/queryService';
 
@@ -325,10 +331,12 @@ export class ModelResolver {
         version,
       });
     }
-    const { manifest } = await ctx.mdlService.makeCurrentModelMDL();
+    const { manifest, nativeObjectRefs } =
+      await ctx.mdlService.makeCurrentModelMDL(project);
     const deployRes = await ctx.deployService.deploy(
       manifest,
       project.id,
+      nativeObjectRefs,
       args.force,
     );
 
@@ -344,9 +352,62 @@ export class ModelResolver {
 
   public async getMDL(_root: any, args: { hash: string }, ctx: IContext) {
     const { id: projectId } = await ctx.projectService.getCurrentProject();
-    if (!(await ctx.deployRepository.findOneBy({ hash: args.hash, projectId })))
-      throw new Error('Deployment not found');
-    const mdl = await ctx.deployService.getMDLByHash(args.hash);
+    const deploy = await ctx.deployRepository.findOneBy({
+      hash: args.hash,
+      projectId,
+    });
+    if (!deploy) throw new Error('Deployment not found');
+    const config = await this.metadataConfig(ctx, projectId);
+    let objects: NativeDeploymentObject[];
+    try {
+      objects = deploymentObjects(deploy.manifest, deploy.nativeObjectRefs);
+    } catch {
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    }
+    const evidence = canonical({
+      id: deploy.id,
+      projectId: deploy.projectId,
+      hash: deploy.hash,
+      manifest: deploy.manifest,
+      nativeObjectRefs: deploy.nativeObjectRefs,
+    });
+    const authorize = async () => {
+      const resolved = [];
+      for (const ref of objects)
+        resolved.push(
+          await resolveNativeResource(
+            config,
+            ctx.nativeHumanToken,
+            ref.nativeType,
+            ref.nativeId,
+            'data_query.describe@v1',
+          ),
+        );
+      return resolved;
+    };
+    const before = await authorize();
+    const current = await ctx.deployRepository.findOneBy({
+      id: deploy.id,
+      projectId,
+      hash: args.hash,
+    });
+    if (
+      !current ||
+      canonical({
+        id: current.id,
+        projectId: current.projectId,
+        hash: current.hash,
+        manifest: current.manifest,
+        nativeObjectRefs: current.nativeObjectRefs,
+      }) !== evidence ||
+      canonical(await authorize()) !== canonical(before)
+    )
+      throw new NativeQueryRefusal(409, 'QUERY_EVIDENCE_UNAVAILABLE');
+    // Encode exactly the authorized, captured deployment, never a second
+    // unscoped hash lookup that may select another project's native row.
+    const mdl = Buffer.from(JSON.stringify(current.manifest)).toString(
+      'base64',
+    );
     return {
       hash: args.hash,
       mdl,

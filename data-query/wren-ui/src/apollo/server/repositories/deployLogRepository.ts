@@ -1,14 +1,81 @@
 import { Knex } from 'knex';
 import { BaseRepository, IBasicRepository } from './baseRepository';
-import { camelCase, isPlainObject, mapKeys, mapValues } from 'lodash';
+import {
+  camelCase,
+  isPlainObject,
+  mapKeys,
+  mapValues,
+  snakeCase,
+} from 'lodash';
+import { Manifest, ViewMDL } from '../mdl/type';
+
+export type NativeDeploymentObject = {
+  nativeType: 'model' | 'view';
+  nativeId: number;
+  nativeName: string;
+};
+
+// The original manifest preserves model names, not IDs. Only the builder's
+// captured rows establish the historical native objects; same-name current
+// models cannot supply missing deployment evidence.
+export function deploymentObjects(
+  manifest: Manifest,
+  references: unknown,
+): NativeDeploymentObject[] {
+  if (!isPlainObject(manifest) || !Array.isArray(references))
+    throw new Error('Native deployment object evidence unavailable');
+  const objects: NativeDeploymentObject[] = [];
+  const names = new Set<string>();
+  const ids = new Set<string>();
+  for (const ref of references) {
+    if (
+      !ref ||
+      Object.keys(ref).sort().join(',') !== 'nativeId,nativeName,nativeType' ||
+      !['model', 'view'].includes(ref.nativeType) ||
+      !Number.isSafeInteger(ref.nativeId) ||
+      ref.nativeId <= 0 ||
+      typeof ref.nativeName !== 'string' ||
+      !ref.nativeName ||
+      names.has(`${ref.nativeType}:${ref.nativeName}`) ||
+      ids.has(`${ref.nativeType}:${ref.nativeId}`)
+    )
+      throw new Error('Native deployment object evidence unavailable');
+    names.add(`${ref.nativeType}:${ref.nativeName}`);
+    ids.add(`${ref.nativeType}:${ref.nativeId}`);
+    objects.push({ ...ref });
+  }
+  for (const [nativeType, rows] of [
+    ['model', manifest.models ?? []],
+    ['view', manifest.views ?? []],
+  ] as const) {
+    if (!Array.isArray(rows))
+      throw new Error('Native deployment object evidence unavailable');
+    const captured = objects.filter((ref) => ref.nativeType === nativeType);
+    if (
+      captured.length !== rows.length ||
+      new Set(rows.map((row) => row.name)).size !== rows.length ||
+      rows.some((row) => {
+        const ref = captured.find((item) => item.nativeName === row.name);
+        return (
+          !ref ||
+          (nativeType === 'view' &&
+            (row as ViewMDL).properties?.viewId !== String(ref.nativeId))
+        );
+      })
+    )
+      throw new Error('Native deployment object evidence unavailable');
+  }
+  return objects;
+}
 
 export interface Deploy {
   id: number; // ID
   projectId: number; // Reference to project.id
-  manifest: object; // Model manifest
+  manifest: Manifest; // Model manifest
   hash: string;
   status: string; // Deploy status
   error: string; // Error message
+  nativeObjectRefs: NativeDeploymentObject[] | null;
 }
 
 export enum DeployStatusEnum {
@@ -103,12 +170,25 @@ export class DeployLogRepository
     }
     const camelCaseData = mapKeys(data, (_value, key) => camelCase(key));
     const formattedData = mapValues(camelCaseData, (value, key) => {
-      if (['manifest'].includes(key)) {
+      if (['manifest', 'nativeObjectRefs'].includes(key)) {
         // sqlite return a string for json field, but postgres return an object
         return typeof value === 'string' ? JSON.parse(value) : value;
       }
       return value;
     });
     return formattedData as Deploy;
+  };
+
+  protected override transformToDBData = (data: Partial<Deploy>) => {
+    if (!isPlainObject(data)) throw new Error('Unexpected dbdata');
+    return mapKeys(
+      {
+        ...data,
+        ...(data.nativeObjectRefs === undefined
+          ? {}
+          : { nativeObjectRefs: JSON.stringify(data.nativeObjectRefs) }),
+      },
+      (_value, key) => snakeCase(key),
+    );
   };
 }

@@ -83,8 +83,10 @@ func (e *Executor) ReadNode(ctx context.Context, in *tree.ReadNodeRequest, opts 
 		}
 	} else {
 
-		if in.GetNode().HasMetaKey("pydio:meta-loaded-"+common.ServiceMetaGRPC) && tree.StatFlags(in.StatFlags).Metas() {
-			// it has already been loaded during the incoming flow, return it now
+		unqualifiedRead := len(in.StatFlags) == 0 && !in.WithExtendedStats
+		if in.GetNode().HasMetaKey("pydio:meta-loaded-"+common.ServiceMetaGRPC) && unqualifiedRead {
+			// Ancestor metadata can satisfy an unqualified read, but does not
+			// prove that any explicitly requested statistics were loaded.
 			log.Logger(ctx).Debug("Returning node directly as it was loaded during the incoming flow")
 			return &tree.ReadNodeResponse{Node: in.GetNode().Clone()}, nil
 		}

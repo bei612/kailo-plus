@@ -1862,3 +1862,70 @@ Native **1 failed / 5 passed**，都退出 1；把 sidebar 恢复成忽略 msg/t
 
 本批未执行全仓 `check.sh --full`、新部署、Windows 包或实机验收；主线集中收口。
 本页创建模块仍有模板及物化后导航缺项，不能宣称全模块或三端 100% 一致。
+
+### 2026-10-08：固定全树续核与原 Inbox 行样式/Agent 头像消费恢复
+
+本批从已有 `collaboration-full-2646.patch` 的 3307 个变动路径续核 Inbox 原模块；
+这个全树数量不是逐项分类完成数。本批仅关闭下面有真实消费者的局部缺项，
+不宣称全树已分类、Inbox 全功能关闭或原版 100% 一致。
+
+固定证据均实际用 `git show`/`git grep` 核验，未运行或改写 `.references`：
+
+| 固定官方源码/符号（Buzz `779af8886caae1317b4de962082429867ab61503`） | 本批分类与落点 |
+| --- | --- |
+| `desktop/src/features/home/ui/InboxListPane.tsx::InboxLabel` | 缺失需恢复→共享迁移：`client-kit/ts/platform/src/react/inbox-row.tsx::InboxRow` 恢复原 `message-markdown`、`text-2xs`/最小 chip 高度、hover/focus 右侧动作避让、`mention-chip` 及内层 truncate；不重新设计 chip |
+| `desktop/src/shared/styles/globals/markdown.css` 的 `.message-markdown .mention-chip.inbox-channel-chip` | 原样保留：已有 `client-kit/ts/platform/src/react/messages/markdown.css` 同一选择器与背景/文字规则。本批补回真实 DOM 所需的类，使已有样式成为真实消费者 |
+| `desktop/src/features/home/ui/InboxListPane.tsx::InboxListPane/renderItem` | 缺失需恢复→共享迁移：补回原 pressed 行高亮、sender 包装层及两端 36px 头像；补回原 Agent squircle、人类 circle 与对应 profile trigger 圆角 |
+| `desktop/src/features/home/ui/InboxListPane.tsx::InboxListPane/renderItem` 的 `agentPubkeys` | 已授权治理改造：Native `HomeView` 将已有 owned Agent 查询公钥传给 `InboxListPane`；Web `InboxPane` 消费已有 `snapshot.agentPubkeys`，不按显示名称或任意 event 流猜身份，不另造 Agent 目录 |
+| `desktop/src/features/home/ui/InboxListPane.tsx::InboxListPane/renderItem` 的 read/unread/open/unread count 文案 | 已授权中英适配：Native 消费已有同源 `inbox.markRead`/`markUnread`/`open`/`openItem`/`unreadCount`，没有新词条或独立 Dart 翻译权威 |
+
+四步结论（REQ-24、DD-74/75、V-REQ-24、SS-WEB-PRESENTATION）：
+
+1. 权威是固定原版呈现与现有 AgentInstallation/身份目录；上述 UI 能力上游支持、设计已定，使用已有调用，不新增准入入口。
+2. 影响面是共享 `InboxRow`、Native `HomeView`/`InboxListPane`、Web `InboxPane`、已导入的原 Markdown CSS 与已有 i18n。两端读共享布局，身份来自已有查询；不改 schema/API/Workflow/旧数据格式，不需迁移。
+3. 纯呈现与可信身份消费，不改变读写准入、Core CAS、scope guard、签名或外部执行链。点击作者仍使用原 profile 行为，不写已读；没有正文复制、第二目录或第二状态权威。
+4. 空列表、未知/缺失身份目录、撤权、late read、重复事件、版本冲突与结果不明继续走现有 Inbox 聚合与 Core state 路径。本批不新增状态；没有身份事实不显示 Agent 形状，不靠名字补身份。DENIED/BLOCKED/PRECONDITION/LIMIT/CONFLICT/UNKNOWN 六类错误语义均不改变；UNKNOWN 仍不显示成功/失败。Web 管理/状态走 BFF，Desktop 本机协作直连边界保留；Mobile 无适用 TS 呈现对象，不新增入口或翻译。
+
+实现后窄验复用已安装依赖的 `profile-settings-ortsoo.DRR20F` 候选，不下载依赖、
+不创建新全树/镜像。实际 runner `kailo-agent-receipt-xvkujx` 的 inspect 为
+`NanoCpus=4000000000`、`Memory=8589934592`、running；执行前检查进程与可用内存
+29584 MiB。命令在镜像内执行，未启动 Vite release build 或 Windows 打包。
+
+- shared `node node_modules/typescript/bin/tsc --noEmit` 与 `vitest run test/inbox.test.tsx test/inbox-surface.test.tsx` 退出 0，`25 passed`（session 69155）。
+- shared 候选故意删除原 `mention-chip` 类，同一实际 `InboxRow` 检查在 `test/inbox.test.tsx:361` 报 `expected false to be true`，退出 1（96319）；还原后 test tsc 与全部 25 项再次退出 0（71640）。
+- Web `tsc --noEmit` 与 `vitest run src/platform/ui/InboxPane.test.tsx` 退出 0，`19 passed`（27766）；Desktop `tsc --noEmit` 退出 0（32597）。
+- Web 候选故意把可信 Agent 判定改为 `false`，原 owned Agent 实际消费用例在 `InboxPane.test.tsx:226` 报 `expected 'circle' to be 'squircle'`，退出 1（9054）；还原后全部 19 项与 Desktop 最终 tsc 整条命令退出 0（41680）。
+- 两个变异仅发生在验证候选，shared/Web/Native 恢复输入均与当前实现 `cmp` 退出 0。Web 测试仍有既有 `MessageAuthorProfile` 更新未包 `act(...)` 的 stderr warning；没有把 warning 隐瞒成无诊断。
+
+playwright-cli 实际从 `kailo-ui-status` 与 `kailo-release-management` 点击 Inbox，
+旧登录会话失效后均跳回 OIDC。已截取并用图像查看工具打开
+`/volumes/kailo/.playwright-cli/inbox-session-expired-20261008.png`，内容是登录诊断，
+不是 Inbox/新代码/Windows 截图验收。**本批新代码未部署，Inbox 本批视觉验收未完成。**
+
+剩余缺项明确保留：原项目/needs_action/reminders filter 与其实际业务消费者、
+提醒混合行及提醒动作、原 Agent bot profile 语义、Web Inbox 行真实头像加载；
+Native 类型标签及 No channel link 等遗留文案也仍须按全量 i18n 恢复。
+本批不生成无消费者 filter 或假 reminder 入口，不把这些原功能从交付目标删去。
+全仓 `check.sh --full`、部署、Windows 包及三端实机验收本批未执行，由主线集中收口。
+
+### 2026-10-08：原资料 hover 弹层的实际两端共享消费
+
+沿同一固定 Buzz `779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/features/profile/ui/UserProfilePopover.tsx::UserProfilePopover` 复用原
+trigger、hover 时序与 profile body；Native 删除重复呈现体，直接消费现有共享主体。
+这属于共享迁移，不是删除原弹层；已有可信 `role` 消费原 Agent squircle，
+姓名不提供 Agent 身份。查询仍由 Native 原 `useUserProfileQuery` 完成，
+按当前 community/device scope 分键并核对返回 pubkey；面板导航和媒体映射留在宿主。
+这遵循 REQ-24、DD-74/75、SS-WEB-PRESENTATION；不改治理准入、契约、数据库、
+正文权威或 Workflow，也不增加持久状态。迟到旧 scope、错误作者及读取失败不展示旧资料；
+Mobile 无适用 TS 对象，六类治理错误和 UNKNOWN 表达不变。
+
+实现后原受限 SDK 内 Native 原检查 5 项、Web 原检查 24 项、共享与 Desktop 类型
+检查通过；角色判定在私有候选故意破坏后实际退出 1，恢复并 cmp 退出 0。
+初次 JSDOM 缺 Node 全局的检查失败保留，未修改业务代码迎合环境。
+通过和破坏日志分别为既有
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/`
+下 `profile-popover-native-fixed.log`、`profile-popover-role-mutation.log`。
+完整 bot owner/presence/运行/活动资料仍缺真实消费，不把角色形状当完整 bot profile。
+本批未部署；新增页面截图验收为零，现有登录页截图不证明弹层呈现。
+全量检查、Windows/Mobile 包与实机验收不在上述窄验证结果中。
