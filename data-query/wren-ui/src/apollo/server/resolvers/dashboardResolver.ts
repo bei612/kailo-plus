@@ -29,6 +29,7 @@ import {
   digest,
 } from '../services/nativeQueryAdmission';
 import { queryReceiptState } from '@/utils/queryReceipt';
+import { nativeWriteUnknown } from '../utils/error';
 
 const logger = getLogger('DashboardResolver');
 logger.level = 'debug';
@@ -285,7 +286,14 @@ export class DashboardResolver {
       },
       project,
     );
-    await this.readableWriteResult(ctx, project, [item]);
+    try {
+      await this.readableWriteResult(ctx, project, [item]);
+    } catch (error) {
+      throw nativeWriteUnknown(error, undefined, undefined, {
+        nativeType: 'dashboardItem',
+        nativeId: item.id,
+      });
+    }
     return item;
   }
 

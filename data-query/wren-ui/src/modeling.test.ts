@@ -2,6 +2,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import Modeling from './pages/modeling';
 import { FORM_MODE } from './utils/enum';
+import { webcrypto } from 'node:crypto';
+import { message } from 'antd';
 
 let mockResult: any;
 let mockQueryOptions: any;
@@ -10,7 +12,22 @@ let mockDrawers: any[];
 let mockSidebar: any;
 let mockModelDrawer: any;
 const mockCreateModel = jest.fn();
+const mockConfig = jest.fn();
+const mockNativeRead = jest.fn();
+const mockNativeRefetch = jest.fn();
+const mockDeployRefetch = jest.fn();
 const mockMutation = () => [jest.fn(), {}];
+jest.mock('./utils/env', () => ({ getUserConfig: () => mockConfig() }));
+jest.mock('./apollo/client', () => ({
+  __esModule: true,
+  default: {
+    query: (...args: any[]) => mockNativeRead(...args),
+    refetchQueries: (...args: any[]) => mockNativeRefetch(...args),
+  },
+}));
+jest.mock('antd', () => ({
+  message: { success: jest.fn(), warning: jest.fn(), error: jest.fn() },
+}));
 jest.mock('next/router', () => ({ useRouter: () => ({ replace: jest.fn() }) }));
 jest.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
@@ -27,7 +44,7 @@ jest.mock('./apollo/client/graphql/diagram.generated', () => ({
   },
 }));
 jest.mock('./apollo/client/graphql/deploy.generated', () => ({
-  useDeployStatusQuery: () => ({}),
+  useDeployStatusQuery: () => ({ refetch: mockDeployRefetch }),
 }));
 jest.mock('./apollo/client/graphql/model.generated', () => ({
   useCreateModelMutation: () => [mockCreateModel, {}],
@@ -103,12 +120,40 @@ jest.mock('./components/modals/CalculatedFieldModal', () => () => null);
 jest.mock('./components/modals/RelationModal', () => () => null);
 
 describe('original modeling page authorization result consumer', () => {
+  const originalStorage = Object.getOwnPropertyDescriptor(
+    global,
+    'sessionStorage',
+  );
+  const originalCrypto = Object.getOwnPropertyDescriptor(global, 'crypto');
+  const entries = new Map<string, string>();
   beforeEach(() => {
     mockQueryOptions = undefined;
     mockDrawerIndex = 0;
     mockModelDrawer = undefined;
     mockSidebar = undefined;
-    mockCreateModel.mockReset().mockResolvedValue({});
+    mockCreateModel
+      .mockReset()
+      .mockResolvedValue({ data: { createModel: { id: 7 } } });
+    mockConfig
+      .mockReset()
+      .mockResolvedValue({ nativeBindingConfigured: false });
+    mockNativeRead.mockReset();
+    mockNativeRefetch.mockReset().mockResolvedValue({});
+    mockDeployRefetch.mockReset().mockResolvedValue({});
+    jest.mocked(message.success).mockClear();
+    entries.clear();
+    Object.defineProperty(global, 'crypto', {
+      configurable: true,
+      value: webcrypto,
+    });
+    Object.defineProperty(global, 'sessionStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => entries.get(key) ?? null,
+        setItem: (key: string, value: string) => entries.set(key, value),
+        removeItem: (key: string) => entries.delete(key),
+      },
+    });
     mockDrawers = [true, false].map((visible) => {
       const state = { visible, defaultValue: null, formMode: FORM_MODE.CREATE };
       return {
@@ -119,6 +164,53 @@ describe('original modeling page authorization result consumer', () => {
         closeDrawer: jest.fn(),
       };
     });
+  });
+  afterAll(() => {
+    if (originalStorage)
+      Object.defineProperty(global, 'sessionStorage', originalStorage);
+    else delete global.sessionStorage;
+    if (originalCrypto) Object.defineProperty(global, 'crypto', originalCrypto);
+    else delete global.crypto;
+  });
+  it('the real modeling create callback keeps UNKNOWN out of success and on re-entry reads its original model without another mutation', async () => {
+    const scope = 'a'.repeat(64);
+    mockResult = { error: new Error('QUERY_SCOPE_DENIED') };
+    mockConfig.mockResolvedValue({
+      nativeBindingConfigured: true,
+      nativeBindingGeneration: 2,
+      queryScope: scope,
+    });
+    mockCreateModel.mockRejectedValue({
+      graphQLErrors: [
+        {
+          extensions: {
+            other: {
+              nativeWrite: {
+                outcome: 'UNKNOWN',
+                scope,
+                generation: 2,
+                reference: { nativeType: 'model', nativeId: 7 },
+              },
+            },
+          },
+        },
+      ],
+    });
+    mockNativeRead.mockResolvedValue({ data: { listModels: [{ id: 7 }] } });
+    renderToStaticMarkup(createElement(Modeling));
+    const data = { sourceTableName: 'original', fields: ['customer'] };
+    await expect(mockModelDrawer.onSubmit({ data })).rejects.toThrow(
+      'NATIVE_EXECUTION_UNKNOWN',
+    );
+    expect(message.success).not.toHaveBeenCalled();
+    await mockModelDrawer.onSubmit({ data });
+    expect(mockCreateModel).toHaveBeenCalledTimes(1);
+    expect(mockNativeRead).toHaveBeenCalledWith(
+      expect.objectContaining({ fetchPolicy: 'no-cache' }),
+    );
+    expect(mockNativeRefetch).toHaveBeenCalledTimes(1);
+    expect(mockDeployRefetch).toHaveBeenCalledTimes(1);
+    expect(message.success).toHaveBeenCalledWith('Successfully created model.');
   });
   it('keeps the original sidebar create callback connected to its model drawer and submit consumer while diagram reads fail', async () => {
     mockResult = { error: new Error('QUERY_SCOPE_DENIED') };
@@ -133,6 +225,30 @@ describe('original modeling page authorization result consumer', () => {
     await mockModelDrawer.onSubmit({ data });
     expect(mockCreateModel).toHaveBeenCalledWith({ variables: { data } });
   });
+  it.each(['diagram', 'deployment'])(
+    'a secondary %s refresh refusal cannot reopen an already verified original model creation',
+    async (refresh) => {
+      mockResult = { error: new Error('QUERY_SCOPE_DENIED') };
+      if (refresh === 'diagram')
+        mockNativeRefetch.mockRejectedValue(new Error('403'));
+      else mockDeployRefetch.mockRejectedValue(new Error('403'));
+      const logged = jest
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined);
+      try {
+        renderToStaticMarkup(createElement(Modeling));
+        await expect(
+          mockModelDrawer.onSubmit({ data: { sourceTableName: 'original' } }),
+        ).resolves.toBeUndefined();
+        expect(mockCreateModel).toHaveBeenCalledTimes(1);
+        expect(message.success).toHaveBeenCalledWith(
+          'Successfully created model.',
+        );
+      } finally {
+        logged.mockRestore();
+      }
+    },
+  );
   it('preserves the original diagram and sidebar when the authorized response succeeds', () => {
     mockResult = {
       data: {

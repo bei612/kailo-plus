@@ -7,6 +7,13 @@ import useGovernedSqlPreview from './hooks/useGovernedSqlPreview';
 import useDashboardQuery from './hooks/useDashboardQuery';
 import { queryReceiptState } from './utils/queryReceipt';
 import { getQueryPreviewText } from './utils/language';
+import { getNativeWriteText } from './utils/language';
+import errorHandler, { runNativeMetadataWrite } from './utils/errorHandler';
+import { message } from 'antd';
+import { webcrypto } from 'node:crypto';
+import SaveAsViewModal from './components/modals/SaveAsViewModal';
+import ModelDrawer from './components/pages/modeling/ModelDrawer';
+import { FORM_MODE } from './utils/enum';
 
 let mockLocale: string | undefined;
 let mockScope: string;
@@ -18,6 +25,7 @@ jest.mock('next/router', () => ({ useRouter: () => ({ locale: mockLocale }) }));
 jest.mock('./utils/env', () => ({ getUserConfig: () => mockConfig() }));
 jest.mock('./apollo/client/graphql/view.generated', () => ({
   usePreviewViewDataMutation: () => [mockPreview, mockPreviewResult],
+  useValidateViewMutation: () => [jest.fn()],
 }));
 jest.mock('./apollo/client/graphql/model.generated', () => ({
   usePreviewModelDataMutation: () => [mockPreview, mockPreviewResult],
@@ -29,10 +37,25 @@ jest.mock('antd', () => {
   const React = require('react');
   const field = ({ children }: any) =>
     React.createElement('div', null, children);
+  const overlay = ({ children, footer }: any) =>
+    React.createElement('section', null, children, footer);
   const Input: any = (props: any) =>
     React.createElement('input', { 'aria-label': props['aria-label'] });
   Input.TextArea = () => null;
+  const Form: any = field;
+  Form.Item = field;
+  Form.useForm = () => [
+    {
+      validateFields: async () => ({ name: 'OriginalView' }),
+      resetFields: jest.fn(),
+    },
+  ];
   return {
+    Form,
+    Modal: overlay,
+    Drawer: overlay,
+    Space: field,
+    message: { warning: jest.fn(), error: jest.fn(), success: jest.fn() },
     Alert: (props: any) =>
       React.createElement(
         'div',
@@ -64,6 +87,7 @@ jest.mock('./components/table/FieldTable', () => () => null);
 jest.mock('./components/table/CalculatedFieldTable', () => () => null);
 jest.mock('./components/table/RelationTable', () => () => null);
 jest.mock('./components/table/BaseTable', () => ({ COLUMN: {} }));
+jest.mock('./components/pages/modeling/form/ModelForm', () => () => null);
 
 describe('original saved-view preview controls', () => {
   const entries = new Map<string, string>();
@@ -908,4 +932,351 @@ describe('original saved-view preview controls', () => {
       });
     }
   });
+});
+
+describe('original native metadata create UNKNOWN and authorized read-back consumers', () => {
+  const scope = 'a'.repeat(64);
+  const entries = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => entries.get(key) ?? null,
+    setItem: (key: string, value: string) => entries.set(key, value),
+    removeItem: (key: string) => entries.delete(key),
+  };
+  const originalStorage = Object.getOwnPropertyDescriptor(
+    global,
+    'sessionStorage',
+  );
+  const originalCrypto = Object.getOwnPropertyDescriptor(global, 'crypto');
+  const evidence = (nativeType = 'view', nativeId?: number) => ({
+    graphQLErrors: [
+      {
+        extensions: {
+          other: {
+            nativeWrite: {
+              outcome: 'UNKNOWN',
+              scope,
+              generation: 2,
+              ...(nativeId ? { reference: { nativeType, nativeId } } : {}),
+            },
+          },
+        },
+      },
+    ],
+  });
+  beforeEach(() => {
+    entries.clear();
+    mockButtons = [];
+    mockConfig.mockReset().mockResolvedValue({
+      nativeBindingConfigured: true,
+      nativeBindingGeneration: 2,
+      queryScope: scope,
+    });
+    jest.mocked(message.error).mockClear();
+    jest.mocked(message.warning).mockClear();
+    Object.defineProperty(global, 'sessionStorage', {
+      configurable: true,
+      value: storage,
+    });
+    Object.defineProperty(global, 'crypto', {
+      configurable: true,
+      value: webcrypto,
+    });
+  });
+  afterAll(() => {
+    if (originalStorage)
+      Object.defineProperty(global, 'sessionStorage', originalStorage);
+    else delete global.sessionStorage;
+    if (originalCrypto) Object.defineProperty(global, 'crypto', originalCrypto);
+    else delete global.crypto;
+  });
+  it.each(['model', 'view', 'dashboardItem'] as const)(
+    'the original %s create re-entry reads its actual native ID and never resubmits the write',
+    async (nativeType) => {
+      const submit = jest.fn().mockRejectedValue(evidence(nativeType, 7));
+      const observe = jest.fn().mockResolvedValue({ id: 7, name: 'original' });
+      const run = () =>
+        runNativeMetadataWrite({
+          nativeType,
+          variables: { data: { name: 'private input' } },
+          submit,
+          observe,
+        });
+      await expect(run()).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      expect(observe).not.toHaveBeenCalled();
+      expect(JSON.stringify([...entries])).not.toContain('private input');
+      expect(await run()).toEqual({ id: 7, name: 'original' });
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(observe).toHaveBeenCalledWith(7);
+      expect(entries.size).toBe(0);
+    },
+  );
+  it.each(['model', 'view', 'dashboardItem'] as const)(
+    'a lost %s ACK without a native reference stays UNKNOWN across re-entry, not not-found or a new write',
+    async (nativeType) => {
+      const submit = jest
+        .fn()
+        .mockRejectedValue(new Error('connection closed'));
+      const observe = jest.fn();
+      const run = () =>
+        runNativeMetadataWrite({
+          nativeType,
+          variables: { data: { responseId: 21 } },
+          submit,
+          observe,
+        });
+      await expect(run()).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      await expect(run()).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(observe).not.toHaveBeenCalled();
+      expect(entries.size).toBe(1);
+      expect(message.error).not.toHaveBeenCalled();
+    },
+  );
+  it('an absent or denied original row remains UNKNOWN until a real authorized read returns the exact row', async () => {
+    const submit = jest.fn().mockRejectedValue(evidence('view', 7));
+    const observe = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('403'))
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ id: 7 });
+    const run = () =>
+      runNativeMetadataWrite({
+        nativeType: 'view',
+        variables: { data: { name: 'native' } },
+        submit,
+        observe,
+      });
+    for (let attempt = 0; attempt < 3; attempt++)
+      await expect(run()).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+    expect(await run()).toEqual({ id: 7 });
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+  it('retains the old identity intent and refuses to disclose its native result after identity changes', async () => {
+    const submit = jest
+      .fn()
+      .mockResolvedValue({ data: { createView: { id: 7 } } });
+    const observe = jest.fn().mockResolvedValue({ id: 7 });
+    mockConfig
+      .mockResolvedValueOnce({
+        nativeBindingConfigured: true,
+        nativeBindingGeneration: 2,
+        queryScope: scope,
+      })
+      .mockResolvedValueOnce({
+        nativeBindingConfigured: true,
+        nativeBindingGeneration: 2,
+        queryScope: scope,
+      })
+      .mockResolvedValueOnce({
+        nativeBindingConfigured: true,
+        nativeBindingGeneration: 2,
+        queryScope: 'b'.repeat(64),
+      });
+    const run = () =>
+      runNativeMetadataWrite({
+        nativeType: 'view',
+        variables: { data: { name: 'native' } },
+        submit,
+        observe,
+      });
+    await expect(run()).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+    expect(await run()).toEqual({ id: 7 });
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(observe).toHaveBeenCalledWith(7);
+  });
+  it('a changed trusted binding generation cannot reuse an old native write or authorize a new one', async () => {
+    const submit = jest.fn().mockRejectedValue(evidence('view', 7));
+    const observe = jest.fn().mockResolvedValue({ id: 7 });
+    const run = () =>
+      runNativeMetadataWrite({
+        nativeType: 'view',
+        variables: { data: { name: 'native' } },
+        submit,
+        observe,
+      });
+    await expect(run()).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+    mockConfig.mockResolvedValue({
+      nativeBindingConfigured: true,
+      nativeBindingGeneration: 3,
+      queryScope: scope,
+    });
+    await expect(run()).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(observe).not.toHaveBeenCalled();
+    expect(entries.size).toBe(1);
+  });
+  it.each([
+    {},
+    { nativeBindingConfigured: true },
+    { nativeBindingConfigured: true, queryScope: '' },
+    { nativeBindingConfigured: true, queryScope: scope },
+  ])(
+    'missing or invalid configured identity %p refuses before a native call, never standalone fallback',
+    async (config) => {
+      mockConfig.mockResolvedValue(config);
+      const submit = jest.fn();
+      await expect(
+        runNativeMetadataWrite({
+          nativeType: 'view',
+          variables: {},
+          submit,
+          observe: jest.fn(),
+        }),
+      ).rejects.toThrow(getNativeWriteText().scopeError);
+      expect(submit).not.toHaveBeenCalled();
+    },
+  );
+  it('unavailable original intent storage refuses before a native write', async () => {
+    Object.defineProperty(global, 'sessionStorage', {
+      configurable: true,
+      get: () => {
+        throw new Error();
+      },
+    });
+    const submit = jest.fn();
+    await expect(
+      runNativeMetadataWrite({
+        nativeType: 'view',
+        variables: {},
+        submit,
+        observe: jest.fn(),
+      }),
+    ).rejects.toThrow(getNativeWriteText().storageError);
+    expect(submit).not.toHaveBeenCalled();
+  });
+  it('an HTTP insecure-context browser without Web Crypto refuses before any native call or input persistence', async () => {
+    Object.defineProperty(global, 'crypto', { configurable: true, value: {} });
+    const submit = jest.fn();
+    await expect(
+      runNativeMetadataWrite({
+        nativeType: 'view',
+        variables: { data: { sql: 'private SQL' } },
+        submit,
+        observe: jest.fn(),
+      }),
+    ).rejects.toThrow(getNativeWriteText().storageError);
+    expect(submit).not.toHaveBeenCalled();
+    expect(entries.size).toBe(0);
+  });
+  it('only an explicit server refusal before entering native CRUD permits a later original submission', async () => {
+    const denied = {
+      graphQLErrors: [
+        {
+          message: 'QUERY_SCOPE_DENIED',
+          extensions: { other: { nativeWrite: { outcome: 'NOT_STARTED' } } },
+        },
+      ],
+    };
+    const submit = jest
+      .fn()
+      .mockRejectedValueOnce(denied)
+      .mockResolvedValueOnce({ data: { createView: { id: 7 } } });
+    const run = () =>
+      runNativeMetadataWrite({
+        nativeType: 'view',
+        variables: { data: { name: 'native' } },
+        submit,
+        observe: jest.fn(),
+      });
+    await expect(run()).rejects.toBe(denied);
+    expect(entries.size).toBe(0);
+    expect(await run()).toEqual({ id: 7 });
+    expect(submit).toHaveBeenCalledTimes(2);
+  });
+  it('a GraphQL error without pre-dispatch evidence cannot prove that native creation never started', async () => {
+    const submit = jest.fn().mockRejectedValue({
+      graphQLErrors: [{ message: 'Serialization error after native write' }],
+    });
+    const observe = jest.fn();
+    const run = () =>
+      runNativeMetadataWrite({
+        nativeType: 'view',
+        variables: { data: { name: 'native' } },
+        submit,
+        observe,
+      });
+    await expect(run()).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+    await expect(run()).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(observe).not.toHaveBeenCalled();
+  });
+  it('the original global Apollo consumer renders UNKNOWN as a warning, never its generic failed or retry-network message', () => {
+    for (const error of [
+      evidence(),
+      { networkError: new Error('closed') },
+      {
+        graphQLErrors: [{ message: 'Serialization error after native write' }],
+      },
+    ])
+      errorHandler({
+        ...error,
+        operation: {
+          operationName: 'CreateView',
+          getContext: () => ({ nativeWriteGuarded: true }),
+        },
+      } as any);
+    expect(message.warning).toHaveBeenCalledWith(getNativeWriteText().unknown);
+    expect(message.error).not.toHaveBeenCalled();
+    expect(getNativeWriteText('en').unknown).toContain('unconfirmed');
+    expect(getNativeWriteText().unknown).toContain('结果尚未核验');
+  });
+  it('an original never-configured standalone create retains the original failure presentation', () => {
+    errorHandler({
+      graphQLErrors: [{ message: 'native validation error' }],
+      operation: { operationName: 'CreateView', getContext: () => ({}) },
+    } as any);
+    expect(message.error).toHaveBeenCalledWith('Failed to create view.');
+    expect(message.warning).not.toHaveBeenCalled();
+  });
+  it.each(['view', 'model'] as const)(
+    'the original %s modal cannot close on swallowed UNKNOWN and only closes after its original read-back succeeds',
+    async (nativeType) => {
+      const submit = jest.fn().mockRejectedValue(evidence(nativeType, 7));
+      const observe = jest.fn().mockResolvedValue({ id: 7 });
+      const close = jest.fn();
+      let pending: Promise<any>;
+      const props: any = {
+        visible: true,
+        formMode: FORM_MODE.CREATE,
+        defaultValue: { sql: 'SELECT 1', responseId: 21 },
+        payload: {},
+        onClose: close,
+        onSubmit: (variables: any) =>
+          (pending = runNativeMetadataWrite({
+            nativeType,
+            variables,
+            submit,
+            observe,
+          })),
+      };
+      const logged = jest
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined);
+      try {
+        renderToStaticMarkup(
+          nativeType === 'view'
+            ? createElement(SaveAsViewModal, props)
+            : createElement(ModelDrawer, props),
+        );
+        const save = mockButtons.find(
+          (button) =>
+            button.children === (nativeType === 'view' ? 'Save' : 'Submit'),
+        );
+        save.onClick();
+        await Promise.resolve();
+        await expect(pending!).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+        await Promise.resolve();
+        expect(close).not.toHaveBeenCalled();
+        save.onClick();
+        await Promise.resolve();
+        await pending!;
+        await Promise.resolve();
+        expect(close).toHaveBeenCalledTimes(1);
+        expect(submit).toHaveBeenCalledTimes(1);
+        expect(observe).toHaveBeenCalledWith(7);
+      } finally {
+        logged.mockRestore();
+      }
+    },
+  );
 });

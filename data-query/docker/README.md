@@ -742,3 +742,42 @@ Resource registration before their bodies can be disclosed. Trusted SERVICE SQL,
 ordinary-function/provider provenance and live multi-user component acceptance
 are not established by these permission checks. No Wren business instance,
 ACTIVE binding or embedded-page visual acceptance is claimed by this increment.
+
+## Native creation with an unknown acknowledgement
+
+The original model drawer, save-as-view modal and chart pin confirmation keep
+their original layout and native mutations. In a configured binding, entering a
+native write does not prove its transaction failed when a later scope check or
+body read refuses. Those responses now carry UNKNOWN in the original GraphQL
+error's `other` field, with only the actual returned native row reference when
+one exists. The original formatter does not return the nested error, SQL,
+credentials or response body. Only an explicit refusal before entering native
+CRUD carries NOT_STARTED; an arbitrary GraphQL error is not that proof.
+
+These three original create consumers no longer let Apollo's `onError` resolve
+an unsuccessful mutation and close their original control. Their localised
+warning keeps an uncertain write out of the success/failed presentation. On
+re-entry with the same input they only read the recorded original model, view
+or dashboard item through its existing current-user-authorised query. An absent,
+denied or unreadable object stays UNKNOWN and does not cause another mutation.
+The browser checks its current trusted identity and binding generation before
+dispatch and before accepting a result; changing them cannot disclose an old
+object or turn its uncertain write into a new one. A secondary diagram or deploy
+refresh failure does not reverse an already verified model creation.
+
+Browser intent storage contains an input SHA-256 digest and an original native
+type/ID, not SQL, input bodies, results or credentials. This uses the browser's
+standard Web Crypto and session storage. A secure HTTPS context with those
+facilities available is a prerequisite; an ordinary non-localhost HTTP/LAN page
+without `crypto.subtle` refuses before sending a native mutation, without an
+insecure hash fallback or plaintext input storage. The current HTTP environment
+is not acceptance of these create controls.
+
+This browser marker is neither native idempotency nor a server execution ledger.
+A fully lost acknowledgement without a native ID remains UNKNOWN; repeating
+the original submission cannot safely recover that reference. Session loss,
+another browser/client and the other native update/delete/reset consumers do
+not gain durable idempotency or a complete recovery path from this increment.
+Those remaining lifecycle/outcome gaps still prevent release activation. This
+increment does not establish a live Wren instance, ACTIVE binding, iframe,
+Playwright/installed Desktop/Mobile or production multi-user acceptance.

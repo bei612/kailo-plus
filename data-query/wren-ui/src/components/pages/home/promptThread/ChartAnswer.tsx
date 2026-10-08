@@ -25,6 +25,9 @@ import useGovernedPreview from '@/hooks/useGovernedPreview';
 import { getQueryPreviewText } from '@/utils/language';
 import { useRouter } from 'next/router';
 import { queryReceiptState } from '@/utils/queryReceipt';
+import client from '@/apollo/client';
+import { DASHBOARD_ITEMS } from '@/apollo/client/graphql/dashboard';
+import { runNativeMetadataWrite } from '@/utils/errorHandler';
 
 const Chart = dynamic(() => import('@/components/chart'), {
   ssr: false,
@@ -84,7 +87,8 @@ const getDynamicProperties = (chartType: ChartType) => {
 export default function ChartAnswer(props: AnswerResultProps) {
   const { onGenerateChartAnswer, onAdjustChartAnswer } = usePromptThreadStore();
   const { threadResponse } = props;
-  const text = getQueryPreviewText(useRouter().locale);
+  const router = useRouter();
+  const text = getQueryPreviewText(router.locale);
   const [regenerating, setRegenerating] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [newValues, setNewValues] = useState(null);
@@ -113,12 +117,7 @@ export default function ChartAnswer(props: AnswerResultProps) {
     previewDataResult.error,
   );
 
-  const [createDashboardItem] = useCreateDashboardItemMutation({
-    onError: (error) => console.error(error),
-    onCompleted: () => {
-      message.success('Successfully pinned chart to dashboard.');
-    },
-  });
+  const [createDashboardItem] = useCreateDashboardItemMutation();
 
   // initial trigger when render
   useEffect(() => {
@@ -203,8 +202,10 @@ export default function ChartAnswer(props: AnswerResultProps) {
     Modal.confirm({
       title: 'Are you sure you want to pin this chart to the dashboard?',
       okText: 'Save',
-      onOk: async () =>
-        await createDashboardItem({
+      onOk: async () => {
+        await runNativeMetadataWrite({
+          nativeType: 'dashboardItem',
+          locale: router.locale,
           variables: {
             data: {
               // DashboardItemType is compatible with ChartType
@@ -212,7 +213,23 @@ export default function ChartAnswer(props: AnswerResultProps) {
               responseId: threadResponse.id,
             },
           },
-        }),
+          submit: (variables, guarded) =>
+            createDashboardItem({
+              variables,
+              ...(guarded ? { context: { nativeWriteGuarded: true } } : {}),
+            }),
+          observe: async (nativeId) => {
+            const response = await client.query({
+              query: DASHBOARD_ITEMS,
+              fetchPolicy: 'no-cache',
+            });
+            return response.data?.dashboardItems?.find(
+              (row) => row.id === nativeId,
+            );
+          },
+        });
+        message.success('Successfully pinned chart to dashboard.');
+      },
     });
   };
 

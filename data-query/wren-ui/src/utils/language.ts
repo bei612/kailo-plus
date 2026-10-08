@@ -1,5 +1,22 @@
 import { ProjectLanguage } from '@/apollo/client/graphql/__types__';
 
+export const getNativeWriteText = (locale?: string) =>
+  locale === 'en'
+    ? {
+        unknown:
+          'The original write outcome is unconfirmed. Submit again only to check the recorded object; the write will not be repeated. Without its reference, keep this outcome unresolved.',
+        scopeError:
+          'The current identity or binding could not be verified. No new write was submitted.',
+        storageError:
+          'The original write identifier could not be retained. No new write was submitted.',
+      }
+    : {
+        unknown:
+          '原写入结果尚未核验。再次提交只检查已记录的原生对象，不重复写入；没有原引用时保留结果不明。',
+        scopeError: '无法核验当前身份或绑定，未发起新的写入。',
+        storageError: '无法保存原写入标识，未发起新的写入。',
+      };
+
 // Native UI locale is separate from ProjectLanguage (the AI's answer language).
 // Only the existing governed preview controls consume these messages.
 export const getQueryPreviewText = (locale?: string) =>

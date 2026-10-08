@@ -19,7 +19,13 @@ import {
   digest,
   loadQueryDelivery,
   NativeQueryRefusal,
+  NativeQueryDelivery,
 } from './services/nativeQueryAdmission';
+import {
+  nativeWriteUnknown,
+  nativeWriteNotStarted,
+  NativeWriteReference,
+} from './utils/error';
 
 // Original native metadata remains native CRUD, not a fabricated query Action.
 // This request boundary consumes the existing binding's public scope permission;
@@ -28,35 +34,58 @@ function nativeProjectResolver<T extends (...args: any[]) => any>(
   resolver: T,
   permission: string,
   disclose?: (ctx: IContext, output: Awaited<ReturnType<T>>) => Promise<void>,
+  nativeType?: NativeWriteReference['nativeType'],
 ): T {
   return (async (root: any, args: any, ctx: IContext, info: any) => {
     if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined)
       return resolver(root, args, ctx, info);
-    const config = await loadQueryDelivery();
-    nativePreviewScope(config, ctx.nativeIdentityScope);
-    const before = await authorizeNativeScope(
-      config,
-      ctx.nativeHumanToken,
-      permission,
-    );
-    const project = await ctx.projectService.getCurrentProject();
-    if (
-      project.id !== config.projectId ||
-      String(project.id) !== config.nativeScopeRef
-    )
-      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
-    const output = await resolver(root, args, ctx, info);
-    if (disclose) await disclose(ctx, output);
-    if (digest(await loadQueryDelivery()) !== digest(config))
-      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
-    const after = await authorizeNativeScope(
-      config,
-      ctx.nativeHumanToken,
-      permission,
-    );
-    if (after.generation !== before.generation)
-      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
-    return output;
+    let config: NativeQueryDelivery;
+    let scope: string;
+    let generation: number;
+    try {
+      config = await loadQueryDelivery();
+      scope = nativePreviewScope(config, ctx.nativeIdentityScope);
+      const before = await authorizeNativeScope(
+        config,
+        ctx.nativeHumanToken,
+        permission,
+      );
+      generation = before.generation;
+      const project = await ctx.projectService.getCurrentProject();
+      if (
+        project.id !== config.projectId ||
+        String(project.id) !== config.nativeScopeRef
+      )
+        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    } catch (error) {
+      throw permission === 'manage' ? nativeWriteNotStarted(error) : error;
+    }
+    let output: Awaited<ReturnType<T>> | undefined;
+    try {
+      output = await resolver(root, args, ctx, info);
+      if (disclose) await disclose(ctx, output);
+      if (digest(await loadQueryDelivery()) !== digest(config))
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      const after = await authorizeNativeScope(
+        config,
+        ctx.nativeHumanToken,
+        permission,
+      );
+      if (after.generation !== generation)
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      return output;
+    } catch (error) {
+      if (permission !== 'manage') throw error;
+      const id = (output as any)?.id;
+      throw nativeWriteUnknown(
+        error,
+        scope,
+        generation,
+        nativeType && Number.isSafeInteger(id) && id > 0
+          ? { nativeType, nativeId: id }
+          : undefined,
+      );
+    }
   }) as T;
 }
 
@@ -146,6 +175,7 @@ const resolvers = {
       async (ctx, row) => {
         await modelResolver.getModel(null, { where: { id: row.id } }, ctx);
       },
+      'model',
     ),
     updateModel: nativeProjectResolver(
       modelResolver.updateModel,
@@ -267,6 +297,7 @@ const resolvers = {
       async (ctx, row) => {
         await modelResolver.getView(null, { where: { id: row.id } }, ctx);
       },
+      'view',
     ),
     deleteView: nativeProjectResolver(modelResolver.deleteView, 'manage'),
     previewViewData: modelResolver.previewViewData,
@@ -312,6 +343,8 @@ const resolvers = {
     createDashboardItem: nativeProjectResolver(
       dashboardResolver.createDashboardItem,
       'manage',
+      undefined,
+      'dashboardItem',
     ),
     updateDashboardItem: nativeProjectResolver(
       dashboardResolver.updateDashboardItem,

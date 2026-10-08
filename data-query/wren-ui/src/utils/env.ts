@@ -6,6 +6,8 @@ const env = {
 export default env;
 
 export type UserConfig = {
+  nativeBindingConfigured: boolean;
+  nativeBindingGeneration?: number;
   queryScope?: string;
   isTelemetryEnabled: boolean;
   telemetryKey: string;

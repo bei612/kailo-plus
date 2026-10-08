@@ -200,6 +200,49 @@ export const create = (
   return err;
 };
 
+export type NativeWriteReference = {
+  nativeType: 'model' | 'view' | 'dashboardItem';
+  nativeId: number;
+};
+
+// This describes the original native call, not a new execution or permission
+// record. A refusal after entering native CRUD cannot prove it was not written.
+export const nativeWriteUnknown = (
+  error: unknown,
+  scope?: string,
+  generation?: number,
+  reference?: NativeWriteReference,
+) => {
+  const previous = (error as GraphQLError)?.extensions?.other as any;
+  return create(GeneralErrorCodes.INTERNAL_SERVER_ERROR, {
+    customMessage: 'NATIVE_EXECUTION_UNKNOWN',
+    originalError: error instanceof Error ? error : undefined,
+    other: {
+      nativeWrite: {
+        outcome: 'UNKNOWN',
+        scope,
+        generation,
+        reference: reference || previous?.nativeWrite?.reference,
+      },
+    },
+  });
+};
+
+export const nativeWriteNotStarted = (error: unknown) => {
+  if (!(error instanceof Error))
+    return create(GeneralErrorCodes.INTERNAL_SERVER_ERROR, {
+      other: { nativeWrite: { outcome: 'NOT_STARTED' } },
+    });
+  const extensions = (error as GraphQLError).extensions;
+  Object.assign(error, {
+    extensions: {
+      ...extensions,
+      other: { nativeWrite: { outcome: 'NOT_STARTED' } },
+    },
+  });
+  return error;
+};
+
 /**
  * Default error handler for Apollo Server
  * For error like this:

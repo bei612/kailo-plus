@@ -2,6 +2,196 @@ import { GraphQLError } from 'graphql';
 import { ErrorResponse } from '@apollo/client/link/error';
 import { ApolloError } from '@apollo/client';
 import { message } from 'antd';
+import { getUserConfig } from './env';
+import { getNativeWriteText } from './language';
+import type { NativeWriteReference } from '@/apollo/server/utils/error';
+
+const nativeWriteEvidence = (error: any) => {
+  const errors =
+    error?.graphQLErrors ||
+    (Array.isArray(error?.errors)
+      ? error.errors
+      : error?.errors?.graphQLErrors) ||
+    [];
+  return errors.find((entry: any) =>
+    ['UNKNOWN', 'NOT_STARTED'].includes(
+      entry?.extensions?.other?.nativeWrite?.outcome,
+    ),
+  )?.extensions?.other?.nativeWrite;
+};
+
+// The original create controls retain only an input digest and, when returned,
+// the original native row reference. This is replay protection in this browser,
+// not a native idempotency key or another execution/permission authority.
+export const runNativeMetadataWrite = async ({
+  nativeType,
+  variables,
+  submit,
+  observe,
+  locale,
+}: {
+  nativeType: NativeWriteReference['nativeType'];
+  variables: any;
+  submit: (variables: any, guarded?: boolean) => Promise<any>;
+  observe: (nativeId: number) => Promise<any>;
+  locale?: string;
+}) => {
+  const text = getNativeWriteText(locale);
+  const field = {
+    model: 'createModel',
+    view: 'createView',
+    dashboardItem: 'createDashboardItem',
+  }[nativeType];
+  const readScope = async () => {
+    const config = await getUserConfig();
+    if (config.nativeBindingConfigured === false) return undefined;
+    if (
+      config.nativeBindingConfigured !== true ||
+      !Number.isSafeInteger(config.nativeBindingGeneration) ||
+      config.nativeBindingGeneration! < 1 ||
+      typeof config.queryScope !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(config.queryScope)
+    )
+      throw new Error(text.scopeError);
+    return {
+      scope: config.queryScope,
+      generation: config.nativeBindingGeneration!,
+    };
+  };
+  const identity = await readScope().catch((error) => {
+    message.error(text.scopeError);
+    throw error;
+  });
+  if (identity === undefined) return (await submit(variables))?.data?.[field];
+  const { scope, generation } = identity;
+  const sameIdentity = async () => {
+    const current = await readScope();
+    return current?.scope === scope && current.generation === generation;
+  };
+  let slot: string;
+  let previous: any;
+  let input: any;
+  try {
+    const encoded = JSON.stringify(variables, (_key, value) =>
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? Object.fromEntries(
+            Object.keys(value)
+              .sort()
+              .map((key) => [key, value[key]]),
+          )
+        : value,
+    );
+    input = JSON.parse(encoded);
+    const bytes = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(encoded),
+    );
+    const digest = Array.from(new Uint8Array(bytes), (byte) =>
+      byte.toString(16).padStart(2, '0'),
+    ).join('');
+    slot = `kailo.native-write.${scope}.${nativeType}.${digest}`;
+    const retained = sessionStorage.getItem(slot);
+    if (retained !== null) {
+      previous = JSON.parse(retained);
+      if (previous?.outcome !== 'UNKNOWN') throw new Error();
+    } else {
+      sessionStorage.setItem(
+        slot,
+        JSON.stringify({ outcome: 'UNKNOWN', generation }),
+      );
+    }
+  } catch {
+    message.error(text.storageError);
+    throw new Error(text.storageError);
+  }
+  const unknown = () => {
+    message.warning(text.unknown);
+    return new Error('NATIVE_EXECUTION_UNKNOWN');
+  };
+  const referenceMatches = (reference: any) =>
+    reference?.nativeType === nativeType &&
+    Number.isSafeInteger(reference?.nativeId) &&
+    reference.nativeId > 0;
+  if (previous) {
+    // Absence is not a writer fence. Without an actual returned reference there
+    // is no safe read-back target and, in particular, no permission to resubmit.
+    if (
+      previous.generation !== generation ||
+      !referenceMatches(previous.reference)
+    )
+      throw unknown();
+    try {
+      if (!(await sameIdentity())) throw unknown();
+      const current = await observe(previous.reference.nativeId);
+      if (
+        current?.id !== previous.reference.nativeId ||
+        !(await sameIdentity())
+      )
+        throw unknown();
+      sessionStorage.removeItem(slot);
+      return current;
+    } catch {
+      throw unknown();
+    }
+  }
+  // No native call has started yet. A failed second identity check is a proven
+  // pre-dispatch refusal, not evidence of an uncertain write.
+  try {
+    if (!(await sameIdentity())) throw new Error(text.scopeError);
+  } catch (error) {
+    sessionStorage.removeItem(slot);
+    message.error(text.scopeError);
+    throw error;
+  }
+  try {
+    const response = await submit(input, true);
+    const current = response?.data?.[field];
+    if (
+      response?.errors ||
+      !Number.isSafeInteger(current?.id) ||
+      current.id <= 0
+    )
+      throw response;
+    sessionStorage.setItem(
+      slot,
+      JSON.stringify({
+        outcome: 'UNKNOWN',
+        generation,
+        reference: { nativeType, nativeId: current.id },
+      }),
+    );
+    if (!(await sameIdentity())) throw unknown();
+    sessionStorage.removeItem(slot);
+    return current;
+  } catch (error: any) {
+    const evidence = nativeWriteEvidence(error);
+    if (
+      evidence?.outcome === 'UNKNOWN' &&
+      evidence.scope === scope &&
+      evidence.generation === generation &&
+      referenceMatches(evidence.reference)
+    ) {
+      try {
+        sessionStorage.setItem(
+          slot,
+          JSON.stringify({
+            outcome: 'UNKNOWN',
+            generation,
+            reference: evidence.reference,
+          }),
+        );
+      } catch {
+        // The pre-dispatch UNKNOWN marker still prevents a blind retry.
+      }
+    } else if (evidence?.outcome === 'NOT_STARTED' && !error.networkError) {
+      // The server refused this request before entering its native write. Only
+      // that explicit error is evidence that this browser may discard the mark.
+      sessionStorage.removeItem(slot);
+      throw error;
+    }
+    throw unknown();
+  }
+};
 
 // Refer to backend GeneralErrorCodes for mapping
 export const ERROR_CODES = {
@@ -454,6 +644,27 @@ errorHandlers.set('UpdateInstruction', new UpdateInstructionErrorHandler());
 errorHandlers.set('DeleteInstruction', new DeleteInstructionErrorHandler());
 
 const errorHandler = (error: ErrorResponse) => {
+  const operationName = error?.operation?.operationName || '';
+  const nativeUnknown = nativeWriteEvidence(error);
+  // This original Apollo context flag changes only error presentation. It is
+  // not sent as permission/scope authority; standalone keeps its native errors.
+  const guarded = error?.operation?.getContext?.()?.nativeWriteGuarded === true;
+  const nativeCreateUnknown =
+    guarded &&
+    ['CreateModel', 'CreateView', 'CreateDashboardItem'].includes(
+      operationName,
+    ) &&
+    (nativeUnknown?.outcome !== 'NOT_STARTED' || !!error.networkError);
+  if (nativeUnknown?.outcome === 'UNKNOWN' || nativeCreateUnknown) {
+    message.warning(
+      getNativeWriteText(
+        typeof document === 'undefined'
+          ? undefined
+          : document.documentElement.lang,
+      ).unknown,
+    );
+    return;
+  }
   // networkError
   if (error.networkError) {
     message.error(
@@ -461,7 +672,6 @@ const errorHandler = (error: ErrorResponse) => {
     );
   }
 
-  const operationName = error?.operation?.operationName || '';
   if (error.graphQLErrors) {
     for (const err of error.graphQLErrors) {
       errorHandlers.get(operationName)?.handle(err);

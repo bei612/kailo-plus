@@ -3,6 +3,8 @@ import { useRouter } from 'next/router';
 import { useSearchParams } from 'next/navigation';
 import { forwardRef, useEffect, useMemo, useRef } from 'react';
 import { message } from 'antd';
+import client from '@/apollo/client';
+import { runNativeMetadataWrite } from '@/utils/errorHandler';
 import styled from 'styled-components';
 import { FORM_MODE, MORE_ACTION, NODE_TYPE } from '@/utils/enum';
 import { editCalculatedField } from '@/utils/modelingHelper';
@@ -121,14 +123,7 @@ export default function Modeling() {
   );
 
   const [createModelMutation, { loading: modelCreating }] =
-    useCreateModelMutation(
-      getBaseOptions({
-        onCompleted: () => {
-          message.success('Successfully created model.');
-        },
-        refetchQueries: refetchQueriesForModel,
-      }),
-    );
+    useCreateModelMutation();
 
   const [deleteModelMutation] = useDeleteModelMutation(
     getBaseOptions({
@@ -454,7 +449,36 @@ export default function Modeling() {
             if (id) {
               await updateModelMutation({ variables: { where: { id }, data } });
             } else {
-              await createModelMutation({ variables: { data } });
+              await runNativeMetadataWrite({
+                nativeType: 'model',
+                variables: { data },
+                locale: router.locale,
+                submit: (variables, guarded) =>
+                  createModelMutation({
+                    variables,
+                    ...(guarded
+                      ? { context: { nativeWriteGuarded: true } }
+                      : {}),
+                  }),
+                observe: async (nativeId) => {
+                  const response = await client.query({
+                    query: LIST_MODELS,
+                    fetchPolicy: 'no-cache',
+                  });
+                  return response.data?.listModels?.find(
+                    (row) => row.id === nativeId,
+                  );
+                },
+              });
+              // The native creation is already verified. A secondary diagram
+              // or deploy-status refresh cannot turn it into an unsent write.
+              void client
+                .refetchQueries({ include: [DIAGRAM, LIST_MODELS] })
+                .catch((error) => console.error(error));
+              void deployStatusQueryResult
+                .refetch()
+                .catch((error) => console.error(error));
+              message.success('Successfully created model.');
             }
           }}
         />

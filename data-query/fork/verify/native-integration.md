@@ -5290,3 +5290,195 @@ scope/disclosure rejection does not prove those writes were rolled back, or
 that the original frontend presents UNKNOWN or prevents a later duplicate pin.
 The 66 Jest cases do not accept that frontend behavior. The component release
 remains inactive while its actual error and readback consumers are corrected.
+
+## Native metadata UNKNOWN and original creation consumers (2026-10-08)
+
+### Authority, actual impact and boundaries
+
+The authority remains `.design/05` §2.7 and `.design/08` §6: original native
+project metadata uses the existing current HUMAN/public scope and Resource-read
+authority, not a fabricated query Action or a local ACL. `apps/06` §4 requires an
+uncertain native side effect to remain UNKNOWN and prohibits blind replay.
+This increment does not turn query admission into native metadata admission or
+activate the component release.
+
+The fixed official source was rechecked read-only at
+`WrenAI-ui-0.32.2@c5f02a0391c87420dba78632dcd86073710deb72`:
+
+- `wren-ui/src/apollo/client/index.ts::client` uses the original error link and
+  HttpLink, with no RetryLink. No automatic HTTP resend is inferred here.
+- `wren-ui/src/components/pages/modeling/ModelDrawer.tsx::submit` and
+  `wren-ui/src/components/modals/SaveAsViewModal.tsx::submit` await their original
+  `onSubmit` before closing. Their actual layout and control implementation are
+  retained rather than replaced with a new form or status page.
+- `wren-ui/src/pages/modeling.tsx::Modeling`,
+  `wren-ui/src/pages/home/[id].tsx::HomeThread` and
+  `wren-ui/src/components/pages/home/promptThread/ChartAnswer.tsx::ChartAnswer`
+  supplied `onError` to their original create hooks. The actual installed Apollo
+  3.9.6 `react/hooks/useMutation.js` resolves an error response after calling that
+  callback, so a rejected backend write acknowledgement can otherwise close the
+  original dialog and later permit another creation.
+- `wren-ui/src/apollo/server/utils/error.ts::defaultApolloErrorHandler` already
+  retains `extensions.other` but does not return its nested `originalError`.
+  This existing formatter is reused, not a new wire error transport.
+
+The changed execution boundary is the existing
+`wren-ui/src/apollo/server/resolvers.ts::nativeProjectResolver`: a proven
+pre-native permission/configuration refusal is marked NOT_STARTED, whereas a
+failure after entering original native CRUD is UNKNOWN. The existing before/
+after fresh scope, binding generation, delivery and body-read checks are not
+removed or weakened. Where the actual created row is available, only its native
+type/ID is attached; the original pin resolver also retains its actual INSERT
+row reference when its following Resource-read check refuses. No row is
+fabricated, no SQL is re-executed, and neither Core nor a new registry stores
+the model/view/chart body.
+
+The three actual original create controls call the same component utility and
+their original GraphQL mutations. Its readback consumers are the existing
+`LIST_MODELS`, `LIST_VIEWS` and `DASHBOARD_ITEMS`, with `no-cache` and exact
+returned native-ID matching. The original model/view dialogs remain open on
+UNKNOWN rather than completing their awaited submit; pin keeps its original
+confirmation. Creation success is shown only after a verified original response
+or an authorised readback. A subsequent diagram/deployment refresh error does
+not reinterpret a known completed creation as an unsent write.
+
+The existing `/api/config` consumer obtains current HUMAN `discover` and the
+actual generation from the existing binding scope response. Browser-supplied
+tenant/project/generation fields are not authority. The retained browser marker
+is scoped by the current opaque identity/binding scope and captured authoritative
+generation; it contains only an input digest and an optional native reference.
+Known absence or refusal of a referenced row remains UNKNOWN, never permission
+to repeat the write. A generation/identity change cannot disclose the old result
+or discard its uncertain write to submit a replacement.
+
+There is no database migration, second task/execution table, durable server
+idempotency, account/permission authority or new Core contract in this increment.
+The original GraphQL error code remains INTERNAL_SERVER_ERROR, with component
+outcome information in its existing `other` field. Older clients do not gain the
+new UNKNOWN/readback consumer; client/server coordinated release remains
+required. Existing browser markers without the captured generation are refused
+rather than silently upgraded or replayed.
+
+The relevant six-class mapping is unchanged: current identity/permission refusal
+before dispatch is DENIED; missing binding/projection or unavailable storage/
+Web Crypto is PRECONDITION; changed generation is CONFLICT before dispatch and
+UNKNOWN once native execution may have occurred. Unsupported recovery is
+BLOCKED at release activation. LIMIT remains the original request/quota surface;
+this native metadata increment neither reserves SQL quota nor bypasses it.
+An arbitrary GraphQL/serialization error is not evidence of NOT_STARTED.
+
+The browser uses standard Web Crypto SHA-256, not a handwritten hash or a
+downloaded fallback. HTTPS/secure-context Web Crypto and session storage are
+required before native mutation dispatch. A non-localhost HTTP/LAN browser
+without `crypto.subtle` fails closed before storing input or sending the write.
+No plaintext SQL, input, result or credentials are persisted in the browser
+marker. This HTTP environment is not a create-function acceptance claim.
+
+This is explicitly the three creation consumers, not closure of all native
+update/delete/reset/lifecycle operations. Full acknowledgement loss without a
+native reference stays UNKNOWN with no safe readback target; it never treats
+not-found as failure or sends another native write. The browser marker ends
+after a verified result, or on a proven pre-native refusal; otherwise its
+session retains the unresolved reference/digest. Session loss and other clients
+still lack durable recovery and remain release blockers, not a claimed
+production reconciliation mechanism. Newly created model/view Resource
+registration, native project replacement, SQL-pair dry run, trusted SERVICE
+SQL/scheduler and ordinary-function/provider provenance remain separate concrete
+gaps. No live business container, ACTIVE binding, iframe, browser screenshots,
+installed Desktop/Mobile or full production/multi-user acceptance is claimed.
+
+### Original targeted check: first actual failure
+
+The existing Wren SDK `kailo-wren-query-sdk-itgs2n` was confirmed running with
+4 CPU/4 GiB cgroup limits and existing dependencies. The first original serial
+Jest invocation selected the original native project/dashboard consumers and
+the new original-create consumers from `nativeHumanQuery.test.ts`,
+`viewMetadata.test.ts` and `modeling.test.ts`. It exited 1: **73 passed / 213
+filtered skip**, with two suites passing and one suite unable to compile because
+a `createElement` call selected two original components with incompatible Props.
+The actual component calls were corrected individually; no production
+expectation was weakened. Log: `native-write-positive.log` in the existing Wren
+SDK `/work` evidence directory recorded earlier in this receipt.
+
+The first formatting invocation also exited 1 because it used the absent
+Prettier 2-style `bin-prettier.js`. The installed original Prettier is 3.2.5;
+using its actual `bin/prettier.cjs` then formatted the exact owned inputs, exit
+0. The failed `native-write-format.log` and actual
+`native-write-format-final.log` are retained. No dependency was installed or
+changed to correct either invocation.
+
+The next actual combined invocation exited 1 with **96 passed / 2 failed / 259
+filtered skip**. Both failures were the original modal checks: the existing SSR
+fixture rendered `children` but omitted the original Modal/Drawer `footer`, so
+it could not find their real Save/Submit buttons. The fixture was corrected to
+render that original footer, not to replace a production control or weaken the
+close assertion. The subsequent original UI-only invocation exited 0 with
+**27 passed / 46 filtered skip**; it exercises the original model callback and
+the original two modal submit/close consumers. Logs are
+`native-write-positive-final.log` and `native-write-ui-positive.log` in the same
+original Wren evidence directory. The first combined run spent 664.768 seconds
+loading the native suite; the UI invocation spent 529.136 seconds loading its
+first suite. Read-only process checks showed `folio_wait_bit_common` disk I/O
+wait, not an OOM, and no competing Wren check was started to bypass it.
+
+The same three original Apollo mutation calls now set a local operation-context
+presentation flag only when their existing bound-mode UNKNOWN guard dispatches.
+The original error link consumes it so an output-serialization error without a
+server outcome cannot first show a definite create failure. This flag is not a
+wire identity/scope, permission, execution key or new ticket; it cannot authorize
+server work. The never-configured standalone calls do not set it and retain
+their original failure handling. Original `ModelDrawer::submit` and
+`SaveAsViewModal::submit` only `catch(console.error)` after their awaited callback;
+they do not turn its UNKNOWN rejection into a failure toast or run `onClose`.
+The installed original antd 4.20.4
+`lib/modal/ConfirmDialog.js::ConfirmDialog` forwards pin's `onOk` to
+`lib/_util/ActionButton.js::handlePromiseOnOk`: resolve calls `close`, rejection
+only logs and clears loading/clicked state. This is actual dependency source
+evidence, not a browser screenshot or installed Desktop acceptance.
+
+Private production mutation replaced the real native wrapper's post-entry
+UNKNOWN handling with the original error throw. Its original three selected
+checks returned **3 failed / 283 filtered skip**, exit 1, including the real
+Apollo formatter result becoming `private-native-error-body` instead of
+UNKNOWN. Restoring `resolvers.ts` from the formal implementation compared equal,
+exit 0. The private browser mutation then bypassed the existing-marker branch
+in `runNativeMetadataWrite`. Its original target returned **12 failed / 9 passed /
+46 filtered skip**, exit 1: real consumers sent a second mutation or failed to
+read back the recorded object, including the original modal callbacks. Both
+mutations changed only the private SDK's production inputs, not the formal
+source or the assertions. After restoring the browser production input, all
+**13 owned source/check inputs compared equal**, exit 0. Logs:
+`native-write-backend-mutation.log` and `native-write-ui-mutation.log`.
+
+### Final restored implementation evidence
+
+With both private production mutations restored, the original three selected
+suites finished **101 passed / 0 failed / 259 filtered skip**, exit 0. This final
+run includes the final three real mutation operation-context consumers, normal
+standalone error presentation, post-write serialization UNKNOWN, authoritative
+generation changes and the model's non-blocking secondary refresh error path.
+The expected dashboard refusal logs are the original negative fixtures, not
+failed suites. Whole Wren `tsc --noEmit --incremental false` then exited 0 with no
+diagnostics, and the original Prettier check of the same 13 owned inputs exited
+0: `All matched files use Prettier code style!`. Original cgroup events were zero
+before the batch and at this final terminal result: `oom 0`, `oom_kill 0`,
+`oom_group_kill 0` (increments all zero), within the existing 4 CPU/4 GiB SDK.
+
+Actual final commands in the existing SDK `/work` directory:
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand --verbose=false src/nativeHumanQuery.test.ts src/viewMetadata.test.ts src/modeling.test.ts -t 'original native project scope permission consumers|original dashboard HUMAN metadata readers|original dashboard HUMAN query consumers|original native metadata create UNKNOWN|original modeling page authorization result consumer'
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/resolvers.ts src/apollo/server/resolvers/dashboardResolver.ts src/apollo/server/utils/error.ts src/utils/errorHandler.tsx src/utils/language.ts src/utils/env.ts src/pages/api/config.ts src/pages/modeling.tsx 'src/pages/home/[id].tsx' src/components/pages/home/promptThread/ChartAnswer.tsx src/nativeHumanQuery.test.ts src/viewMetadata.test.ts src/modeling.test.ts
+```
+
+Final logs are `native-write-restored.log`, `native-write-types.log` (no emitted
+diagnostics), `native-write-format-check.log` and `native-write-cgroup.log` in
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N`.
+The selected-target skips are not passed tests or additional feature acceptance.
+The current batch did not run a second database, image, dependency install,
+global build, `check.sh --full`, compatibility matrix or Java verification.
+It changes no Core schema/generated contract. The two earlier unverified Java
+provenance candidates remain outside this increment. Mainline submission/push
+and release are owned by the mainline agent; no deployment or activation is
+inferred from these source, SSR/handler and narrow implementation checks.

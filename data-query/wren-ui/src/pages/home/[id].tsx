@@ -10,6 +10,9 @@ import {
 } from 'react';
 import { isEmpty } from 'lodash';
 import { message } from 'antd';
+import client from '@/apollo/client';
+import { LIST_VIEWS } from '@/apollo/client/graphql/view';
+import { runNativeMetadataWrite } from '@/utils/errorHandler';
 import { Path } from '@/utils/enum';
 import useHomeSidebar from '@/hooks/useHomeSidebar';
 import SiderLayout from '@/components/layouts/SiderLayout';
@@ -96,10 +99,7 @@ export default function HomeThread() {
   const [showRecommendedQuestions, setShowRecommendedQuestions] =
     useState<boolean>(false);
 
-  const [createViewMutation, { loading: creating }] = useCreateViewMutation({
-    onError: (error) => console.error(error),
-    onCompleted: () => message.success('Successfully created view.'),
-  });
+  const [createViewMutation, { loading: creating }] = useCreateViewMutation();
 
   const { data, updateQuery: updateThreadQuery } = useThreadQuery({
     variables: { threadId },
@@ -467,9 +467,26 @@ export default function HomeThread() {
         loading={creating}
         onClose={saveAsViewModal.closeModal}
         onSubmit={async (values) => {
-          await createViewMutation({
+          await runNativeMetadataWrite({
+            nativeType: 'view',
             variables: { data: values },
+            locale: router.locale,
+            submit: (variables, guarded) =>
+              createViewMutation({
+                variables,
+                ...(guarded ? { context: { nativeWriteGuarded: true } } : {}),
+              }),
+            observe: async (nativeId) => {
+              const response = await client.query({
+                query: LIST_VIEWS,
+                fetchPolicy: 'no-cache',
+              });
+              return response.data?.listViews?.find(
+                (row) => row.id === nativeId,
+              );
+            },
           });
+          message.success('Successfully created view.');
         }}
       />
       <QuestionSQLPairModal

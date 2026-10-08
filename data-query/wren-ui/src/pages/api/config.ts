@@ -1,7 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getConfig } from '@/apollo/server/config';
 import { loadQueryDelivery } from '@server/services/nativeQueryAdmission';
-import { nativePreviewScope } from '@server/services/nativeHumanQuery';
+import {
+  nativePreviewScope,
+  authorizeNativeScope,
+} from '@server/services/nativeHumanQuery';
 
 export default async function handler(
   request: NextApiRequest,
@@ -13,12 +16,20 @@ export default async function handler(
     ? Buffer.from(config.posthogApiKey).toString('base64')
     : '';
   let queryScope: string | undefined;
-  if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE) {
+  let nativeBindingGeneration: number | undefined;
+  if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
     try {
       const delivery = await loadQueryDelivery();
       const identity = request.headers['x-kailo-native-identity-scope'];
-      if (delivery.humanAction && typeof identity === 'string') {
+      const token = request.headers['x-kailo-native-human-token'];
+      if (
+        delivery.humanAction &&
+        typeof identity === 'string' &&
+        typeof token === 'string'
+      ) {
+        const scope = await authorizeNativeScope(delivery, token, 'discover');
         queryScope = nativePreviewScope(delivery, identity);
+        nativeBindingGeneration = scope.generation;
       }
     } catch {
       /* No preview intent can be created without the exact scope. */
@@ -30,6 +41,9 @@ export default async function handler(
     telemetryKey: encodedTelemetryKey,
     telemetryHost: config.posthogHost || '',
     userUUID: config.userUUID || '',
+    nativeBindingConfigured:
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined,
+    nativeBindingGeneration,
     queryScope,
   });
 }

@@ -44,6 +44,8 @@ import { Readable } from 'node:stream';
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
 import { apiResolver } from 'next/dist/server/api-utils/node/api-resolver';
+import { defaultApolloErrorHandler } from './apollo/server/utils/error';
+import configHandler from './pages/api/config';
 
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
@@ -1218,7 +1220,11 @@ describe('native saved-view HUMAN query consumer', () => {
             );
           return resolve(...args);
         });
-        await expect(write(operation)).rejects.toThrow('QUERY_SCOPE_DENIED');
+        await expect(write(operation)).rejects.toThrow(
+          operation === 'pin'
+            ? 'NATIVE_EXECUTION_UNKNOWN'
+            : 'QUERY_SCOPE_DENIED',
+        );
         expect(
           ctx.dashboardService[
             operation === 'pin'
@@ -1379,6 +1385,81 @@ describe('native saved-view HUMAN query consumer', () => {
       expect(calls).toHaveBeenCalledTimes(2);
       expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
     });
+    it('the original browser config consumes current HUMAN discovery and only returns its authoritative binding generation', async () => {
+      const response = {
+        setHeader: jest.fn(),
+        status: jest.fn(),
+        json: jest.fn(),
+      };
+      response.status.mockReturnValue(response);
+      await configHandler(
+        {
+          headers: {
+            'x-kailo-native-identity-scope': ctx.nativeIdentityScope,
+            'x-kailo-native-human-token': ctx.nativeHumanToken,
+          },
+          body: { generation: 99, tenantId: 'not-authority' },
+        } as any,
+        response as any,
+      );
+      expect(response.setHeader).toHaveBeenCalledWith(
+        'Cache-Control',
+        'private, no-store',
+      );
+      expect(response.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nativeBindingConfigured: true,
+          nativeBindingGeneration: 2,
+          queryScope: nativePreviewScope(scopeConfig, ctx.nativeIdentityScope),
+        }),
+      );
+      expect(calls).toHaveBeenCalledWith(
+        scopeConfig,
+        'human-action',
+        {
+          bindingId: binding,
+          authorizeScope: { permission: 'discover' },
+        },
+        ctx.nativeHumanToken,
+      );
+    });
+    it.each(['scope', 'token', 'generation', 'empty-config'])(
+      'browser config keeps configured %s refusal closed without standalone or a reusable identity',
+      async (failure) => {
+        const headers: any = {
+          'x-kailo-native-identity-scope': ctx.nativeIdentityScope,
+          'x-kailo-native-human-token': ctx.nativeHumanToken,
+        };
+        if (failure === 'scope')
+          delete headers['x-kailo-native-identity-scope'];
+        if (failure === 'token') delete headers['x-kailo-native-human-token'];
+        if (failure === 'generation') {
+          const denied = scopeResult('discover');
+          denied.scope.generation = 0;
+          calls.mockResolvedValue(denied);
+        }
+        if (failure === 'empty-config') {
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+          jest
+            .mocked(loadQueryDelivery)
+            .mockRejectedValue(new Error('unreadable delivery'));
+        }
+        const response = {
+          setHeader: jest.fn(),
+          status: jest.fn(),
+          json: jest.fn(),
+        };
+        response.status.mockReturnValue(response);
+        await configHandler({ headers } as any, response as any);
+        expect(response.json).toHaveBeenCalledWith(
+          expect.objectContaining({
+            nativeBindingConfigured: true,
+            nativeBindingGeneration: undefined,
+            queryScope: undefined,
+          }),
+        );
+      },
+    );
     it('does not disclose even empty native metadata when current discovery is refused', async () => {
       calls.mockRejectedValue(
         new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'),
@@ -1428,11 +1509,21 @@ describe('native saved-view HUMAN query consumer', () => {
         expect(ctx.projectRepository.updateOne).not.toHaveBeenCalled();
       },
     );
-    it('does not render a native write as confirmed after the current scope is revoked, and does not retry it', async () => {
+    it('marks a native write UNKNOWN after the current scope is revoked, without retry or false rollback evidence', async () => {
       calls
         .mockResolvedValueOnce(scopeResult('manage'))
         .mockRejectedValue(new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED'));
-      await expect(update()).rejects.toThrow('QUERY_SCOPE_DENIED');
+      await expect(update()).rejects.toMatchObject({
+        message: 'NATIVE_EXECUTION_UNKNOWN',
+        extensions: {
+          other: {
+            nativeWrite: {
+              outcome: 'UNKNOWN',
+              scope: nativePreviewScope(scopeConfig, ctx.nativeIdentityScope),
+            },
+          },
+        },
+      });
       expect(ctx.projectRepository.updateOne).toHaveBeenCalledTimes(1);
     });
     it('refuses a changed binding generation after one original write without repeating it', async () => {
@@ -1441,8 +1532,92 @@ describe('native saved-view HUMAN query consumer', () => {
       calls
         .mockResolvedValueOnce(scopeResult('manage'))
         .mockResolvedValueOnce(changed);
-      await expect(update()).rejects.toThrow('QUERY_REFERENCE_CHANGED');
+      await expect(update()).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
       expect(ctx.projectRepository.updateOne).toHaveBeenCalledTimes(1);
+    });
+    it('carries only the original created view reference when current Resource read refuses its body', async () => {
+      const row = { id: 7, projectId: 3, name: 'OriginalView', statement };
+      ctx.viewRepository = {
+        findAllBy: jest.fn().mockResolvedValue([]),
+        createOne: jest.fn().mockResolvedValue(row),
+        findOneBy: jest.fn().mockResolvedValue(row),
+      };
+      ctx.deployService = {
+        getLastDeployment: jest.fn().mockResolvedValue({ manifest: {} }),
+      };
+      ctx.askingService = {
+        getResponse: jest.fn().mockResolvedValue({ sql: statement }),
+      };
+      ctx.queryService = {
+        describeStatement: jest
+          .fn()
+          .mockResolvedValue({ columns: [{ name: 'customer' }] }),
+      };
+      ctx.telemetry = { sendEvent: jest.fn() };
+      calls.mockImplementation(async (_config, _operation, input) => {
+        if (input.authorizeScope) return scopeResult('manage');
+        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED', true);
+      });
+      let refused: any;
+      try {
+        await originalResolvers.Mutation.createView(
+          null,
+          { data: { name: 'OriginalView', responseId: 21 } },
+          ctx,
+        );
+      } catch (error) {
+        refused = error;
+      }
+      expect(refused).toMatchObject({
+        message: 'NATIVE_EXECUTION_UNKNOWN',
+        extensions: {
+          other: {
+            nativeWrite: {
+              outcome: 'UNKNOWN',
+              scope: nativePreviewScope(scopeConfig, ctx.nativeIdentityScope),
+              reference: { nativeType: 'view', nativeId: 7 },
+            },
+          },
+        },
+      });
+      expect(ctx.viewRepository.createOne).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(defaultApolloErrorHandler(refused))).not.toContain(
+        statement,
+      );
+    });
+    it('preserves the original UNKNOWN evidence through the actual Apollo GraphQL error formatter', async () => {
+      calls.mockResolvedValueOnce(scopeResult('manage')).mockRejectedValue(
+        Object.assign(new Error('private-native-error-body'), {
+          credential: 'private-secret-value',
+          request: { Authorization: 'Bearer private-native-token' },
+        }),
+      );
+      const server = new ApolloServer({
+        typeDefs:
+          'type Query { ready: Boolean } type Mutation { updateCurrentProject: Boolean }',
+        resolvers: { Mutation: { updateCurrentProject: update } },
+        formatError: defaultApolloErrorHandler,
+      });
+      try {
+        const result = await server.executeOperation({
+          query: 'mutation UpdateCurrentProject { updateCurrentProject }',
+        });
+        expect(result.errors?.[0]).toMatchObject({
+          message: 'NATIVE_EXECUTION_UNKNOWN',
+          extensions: { other: { nativeWrite: { outcome: 'UNKNOWN' } } },
+        });
+        expect(result.data?.updateCurrentProject).toBeNull();
+        expect(ctx.projectRepository.updateOne).toHaveBeenCalledTimes(1);
+        for (const sensitive of [
+          'private-native-error-body',
+          'private-secret-value',
+          'private-native-token',
+          'originalError',
+        ])
+          expect(JSON.stringify(result.errors)).not.toContain(sensitive);
+      } finally {
+        await server.stop();
+      }
     });
     it('refuses an unknown permission instead of forwarding a reusable native permission ticket', async () => {
       await expect(
