@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -145,6 +146,26 @@ func TestFileStorageCursorDoesNotInventMissingTargetEvidence(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, state.Groups)
 	require.Empty(t, state.Retiring)
+	for _, observation := range []struct {
+		revision string
+		at       time.Time
+	}{
+		{revision: "retained-revision"},
+		{at: time.Now().Add(-time.Second)},
+		{revision: "retained-revision", at: time.Now().Add(time.Hour)},
+	} {
+		state.Applying["hash:txt"] = fileStorageApplication{KnowledgeID: uuid.NewString(), BatchID: uuid.NewString(),
+			Digest: fileStorageDigest([]byte("body")), Bytes: 4, Revision: observation.revision, ObservedAt: observation.at,
+			References: []map[string]json.RawMessage{fileStorageTestWire(t, map[string]string{"resourceId": uuid.NewString(),
+				"nativeObjectRef": uuid.NewString(), "nativeRevision": "source-revision", "displayName": "doc.txt", "mediaType": "text/plain"})}}
+		raw := fileStorageTestWire(t, state)
+		cursor := &types.SyncCursor{ConnectorCursor: map[string]interface{}{}}
+		for name, value := range raw {
+			cursor.ConnectorCursor[name] = value
+		}
+		_, err := fileStorageState(cursor)
+		require.ErrorContains(t, err, "completion observation is invalid")
+	}
 }
 
 func TestFileStorageDiscoveryResumesOriginalBatchBeforeNewAdmission(t *testing.T) {
@@ -518,7 +539,7 @@ func (s *fileStorageApplicationService) CreateKnowledgeFromFileAtID(ctx context.
 }
 
 func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T) {
-	for _, stage := range []string{"parse-pending", "empty-file", "empty-file-parse-failed", "creation-ack-lost", "checkpoint-failed", "receipt-ack-lost", "receipt-refused", "usage-pending", "parse-failed", "provenance-drift", "creation-missing"} {
+	for _, stage := range []string{"parse-pending", "empty-file", "empty-file-parse-failed", "creation-ack-lost", "checkpoint-failed", "receipt-ack-lost", "receipt-refused", "usage-pending", "parse-failed", "provenance-drift", "creation-missing", "existing-ready", "existing-ready-ack-lost"} {
 		t.Run(stage, func(t *testing.T) {
 			source, node, root := uuid.NewString(), uuid.NewString(), uuid.NewString()
 			receiverResource := uuid.NewString()
@@ -533,6 +554,8 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 			listKey := fileStorageKey(run.syncLogID, source, "discover")
 			readKey := fileStorageKey(run.syncLogID, source, node, ref["nativeRevision"])
 			receipts := map[string]map[string]any{}
+			sourceCompletions := map[string]time.Time{}
+			var ds *types.DataSource
 			var sourceCalls, pepCalls, readReceipts int
 			observing, rejectReceipt := false, false
 			var server *httptest.Server
@@ -582,6 +605,7 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 					require.False(t, observing, "old invocation recovery must never repeat a source call")
 					require.Equal(t, "Bearer source-only-token", r.Header.Get("Authorization"))
 					key := request["idempotencyKey"].(string)
+					sourceCompletions[key] = time.Now().UTC()
 					if key == listKey {
 						require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"resourceId": source, "nativeObjectRef": root, "operationId": key,
 							"listingDigest": fileStorageDigest(items), "nativeRevision": fileStorageDigest(items), "items": json.RawMessage(items)}))
@@ -599,6 +623,16 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 					key := request["idempotencyKey"].(string)
 					if key == readKey {
 						readReceipts++
+						completed, err := time.Parse(time.RFC3339Nano, request["completedAt"].(string))
+						require.NoError(t, err)
+						require.False(t, completed.Before(sourceCompletions[key]), "receiver completion must follow this batch's actual source read")
+						retained, err := ds.ParseSyncCursor()
+						require.NoError(t, err)
+						state, err := fileStorageState(retained)
+						require.NoError(t, err)
+						intent := state.Applying[fmt.Sprintf("%x:txt", md5.Sum(body))]
+						require.Equal(t, intent.ObservedAt.Format(time.RFC3339Nano), request["completedAt"], "completion evidence must be durable before receipt submission")
+						require.Equal(t, intent.Revision, request["nativeRevision"])
 					}
 					if prior := receipts[key]; prior != nil {
 						require.Equal(t, prior, request, "lost acknowledgement must retain the same native completion clock")
@@ -608,7 +642,7 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 						return
 					}
 					receipts[key] = request
-					if stage == "receipt-ack-lost" && key == readKey && readReceipts == 1 {
+					if (stage == "receipt-ack-lost" || stage == "existing-ready-ack-lost") && key == readKey && readReceipts == 1 {
 						w.WriteHeader(http.StatusServiceUnavailable)
 						return
 					}
@@ -630,13 +664,23 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 			repo, storage, queue := &fileStorageApplicationRepo{}, &createKnowledgeFileServiceStub{}, &createKnowledgeTaskEnqueuerStub{}
 			native := &fileStorageApplicationService{repo: repo, creator: &knowledgeService{repo: repo, fileSvc: storage, task: queue,
 				kbService: &createKnowledgeFileKBServiceStub{kb: &types.KnowledgeBase{ID: run.knowledgeBaseID}}}, lostACK: stage == "creation-ack-lost"}
+			if stage == "existing-ready" || stage == "existing-ready-ack-lost" {
+				metadata, err := json.Marshal(map[string]string{"datasource_id": run.dataSourceID, "external_id": fmt.Sprintf("%x:txt", md5.Sum(body)),
+					"import_config_ref": run.dataSourceID, "source_references": string(items),
+					"source_resource_id": source, "source_native_object_ref": node, "source_native_revision": ref["nativeRevision"],
+					"source_content_sha256": fileStorageDigest(body), "source_content_bytes": fmt.Sprint(len(body))})
+				require.NoError(t, err)
+				repo.createdKnowledge = &types.Knowledge{ID: uuid.NewString(), TenantID: run.tenantID, KnowledgeBaseID: run.knowledgeBaseID,
+					FileHash: fmt.Sprintf("%x", md5.Sum(body)), FileType: "txt", FileSize: int64(len(body)), ParseStatus: types.ParseStatusCompleted,
+					UpdatedAt: time.Now().Add(-time.Hour).UTC(), Metadata: types.JSON(metadata)}
+			}
 			connector := &fileStorageConnector{transport: transport, knowledge: native}
 			baseline := fileStorageGroup{KnowledgeID: uuid.NewString(), Revision: "old-revision", References: []map[string]json.RawMessage{fileStorageTestWire(t, ref)}}
 			at := time.Now().Add(-time.Hour).UTC()
 			previous := &types.SyncCursor{LastSyncTime: at, ConnectorCursor: map[string]any{"groups": map[string]fileStorageGroup{"old:txt": baseline}, "retiring": map[string]fileStorageRetirement{}}}
 			initial, err := previous.ToJSON()
 			require.NoError(t, err)
-			ds := &types.DataSource{ID: run.dataSourceID, TenantID: run.tenantID, KnowledgeBaseID: run.knowledgeBaseID, Type: fileStorageConnectorType, LastSyncCursor: initial}
+			ds = &types.DataSource{ID: run.dataSourceID, TenantID: run.tenantID, KnowledgeBaseID: run.knowledgeBaseID, Type: fileStorageConnectorType, LastSyncCursor: initial}
 			dsRepo := &recordingDSRepo{}
 			if stage == "checkpoint-failed" {
 				dsRepo.updateErr = fmt.Errorf("native cursor persistence unavailable")
@@ -657,7 +701,32 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 			}
 			ctx := context.WithValue(newCreateKnowledgeFileContext(), fileStorageRunKey{}, run)
 			input := &types.DataSourceConfig{ResourceIDs: []string{source}}
-			_, err = connector.FetchStream(ctx, input, previous, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
+			next, err := connector.FetchStream(ctx, input, previous, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
+			if stage == "existing-ready" || stage == "existing-ready-ack-lost" {
+				if stage == "existing-ready-ack-lost" {
+					require.Error(t, err)
+					retained, err := ds.ParseSyncCursor()
+					require.NoError(t, err)
+					calls, peps := sourceCalls, pepCalls
+					observing = true
+					next, err = connector.FetchStream(ctx, input, retained, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
+					require.NoError(t, err)
+					require.Equal(t, calls, sourceCalls)
+					require.Equal(t, peps, pepCalls)
+				} else {
+					require.NoError(t, err)
+				}
+				require.NotNil(t, next)
+				final, err := fileStorageState(next)
+				require.NoError(t, err)
+				require.Empty(t, final.Applying)
+				require.Equal(t, repo.createdKnowledge.ID, final.Groups[fmt.Sprintf("%x:txt", md5.Sum(body))].KnowledgeID)
+				require.Zero(t, repo.createCalls, "unchanged hash content must reuse the original native file")
+				require.Zero(t, storage.saveCalls)
+				require.Zero(t, queue.calls)
+				require.Equal(t, repo.createdKnowledge.UpdatedAt.Format(time.RFC3339Nano), receipts[readKey]["nativeRevision"])
+				return
+			}
 			require.Error(t, err, "native pending parsing is not a successful import")
 			if stage == "checkpoint-failed" {
 				require.Zero(t, repo.createCalls)
@@ -699,11 +768,25 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 			rejectReceipt = stage == "receipt-refused"
 			calls, peps := sourceCalls, pepCalls
 			before := ds.LastSyncCursor
-			next, err := connector.FetchStream(ctx, input, retained, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
+			next, err = connector.FetchStream(ctx, input, retained, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
 			if stage == "receipt-ack-lost" || stage == "receipt-refused" || stage == "usage-pending" || stage == "parse-failed" || stage == "empty-file-parse-failed" || stage == "provenance-drift" || stage == "creation-missing" {
 				require.Error(t, err)
 				require.Nil(t, next)
-				require.Equal(t, before, ds.LastSyncCursor)
+				if stage == "receipt-ack-lost" || stage == "receipt-refused" || stage == "usage-pending" {
+					retained, err = ds.ParseSyncCursor()
+					require.NoError(t, err)
+					pending, err := fileStorageState(retained)
+					require.NoError(t, err)
+					require.Len(t, pending.Applying, 1)
+					for _, intent := range pending.Applying {
+						require.False(t, intent.ObservedAt.IsZero())
+						require.Equal(t, repo.createdKnowledge.UpdatedAt.Format(time.RFC3339Nano), intent.Revision)
+					}
+					require.Equal(t, at, retained.LastSyncTime)
+					require.Equal(t, baseline, pending.Groups["old:txt"])
+				} else {
+					require.Equal(t, before, ds.LastSyncCursor)
+				}
 				if stage == "receipt-ack-lost" {
 					next, err = connector.FetchStream(ctx, input, retained, newStreamHandler(svc, ds, &types.SyncResult{}, &types.SyncLog{}))
 					require.NoError(t, err)
@@ -718,7 +801,9 @@ func TestFileStoragePendingApplicationResumesOriginalNativeCreation(t *testing.T
 				require.Empty(t, final.Applying)
 				require.True(t, next.LastSyncTime.After(at))
 				require.NotNil(t, receipts[readKey])
-				require.Equal(t, repo.createdKnowledge.UpdatedAt.Format(time.RFC3339Nano), receipts[readKey]["completedAt"])
+				completed, err := time.Parse(time.RFC3339Nano, receipts[readKey]["completedAt"].(string))
+				require.NoError(t, err)
+				require.False(t, completed.Before(repo.createdKnowledge.UpdatedAt))
 			}
 			require.Equal(t, calls, sourceCalls)
 			require.Equal(t, peps, pepCalls)

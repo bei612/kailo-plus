@@ -2179,3 +2179,119 @@ release/binding activation and live authorized Cells-to-WeKnora parsing,
 replacement/deletion plus both receipt/usage terminals remain separate.
 Whole-project/full/docs checks, commit/push, deployment, screenshots and
 Desktop/Mobile acceptance were not run by this subtask.
+
+## Native file application completion follows its actual batch read (2026-10-08)
+
+The original Cells-to-WeKnora connector used `Knowledge.UpdatedAt` both as the
+native revision and as the receiver receipt completion clock. An unchanged
+hash/type can correctly reuse a ready Knowledge without changing its row;
+that row timestamp then predates this batch's source read. The actual Core
+consumer `core/crates/platform-core/src/application_read_receipt.rs::validate`
+rejects a RECEIVER completion before SOURCE completion. This was a real
+repeat-sync refusal, not a missing upload feature or permission to relax Core.
+
+Four-step implementation impact:
+
+1. Authority is `.design/07` §8.2 and `.design/13` §4.4: receiver-owned native
+   synchronization, original hash/type dedupe, ready-before-retire and both
+   read/usage receipts. Fixed upstream
+   `2be7bd40631dda1dd485306038f07a62e9ee287e`, full path
+   `internal/application/service/datasource_service.go`, symbols
+   `DataSourceService.ingestItem`, `FindByDataSourceExternalID` and
+   `CreateKnowledgeFromFile`, were rechecked using read-only Git objects.
+   The native creation/parse pipeline is reused, not reimplemented. Parent
+   also checked that this pin and Cells
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` still equal their reference HEADs.
+   The original manifest `status` command was **not run** in this batch because
+   the existing SDK does not mount the formal references; this is not recorded
+   as a successful manifest check and no tool/image was created to replace it.
+2. The private `fileStorageApplication` cursor now freezes native revision and
+   the real ready/provenance observation time before submitting any receiver
+   receipt. Immediate ready reuse and late parse recovery share the existing
+   `observeApplication` consumer and original `StreamHandler.Checkpoint` CAS.
+   A partially acknowledged content group observes its existing target and
+   never replays `Emit`. JSON cursor fields are native receiver-owned metadata;
+   Core contracts, database schemas, UI and source adapters are unchanged.
+   Old pending cursors without the two optional fields remain readable and
+   obtain their first observation only after actual native readiness checks.
+   Older binaries ignore the extra fields but lack this fix: Core still fails
+   closed on their stale receipt clock; rolling back is not repeat-sync
+   acceptance. No second execution or synchronization authority is introduced.
+3. Original source/receiver identities, exact tenant/KB, content hash/size,
+   source-reference set, current write PEP and original read keys remain in
+   force. The completion clock is not an invented native modification time:
+   `nativeRevision` still identifies the exact Knowledge row revision, while
+   `completedAt` identifies this application's verified ready observation.
+   Lost ACK/retry retains that same clock and revision. Observation reads
+   native metadata and original Operation evidence only; it does not upload,
+   parse, delete or reread source bytes. No credentials or body enter Core.
+4. One-sided/missing or future completion fields refuse the cursor; native
+   revision drift refuses settlement. A checkpoint failure submits no receipt.
+   Parse pending/failed, provenance conflict, absent target, receipt refusal or
+   unsettled usage leaves the original application for native sync recovery;
+   it does not advance the applied Groups/LastSyncTime or retire old content.
+   Both receipts and usage must settle before the original Applying reference
+   is removed. Existing native SyncLog retry/failure handling and Core receipt
+   reconciliation remain the convergence paths, without a new queue/deadline.
+   Empty files, new native batch IDs, source withdrawal and late delete
+   observation retain their original behavior. Adapter error classification
+   and UNKNOWN handling are not changed by this native metadata correction.
+
+Implementation was written before extending the original checks. Only the
+three native connector/check paths and this existing receipt were changed.
+The first run retained its failure output: 7 top-level passed/2 failed and
+39 subchecks passed/5 failed. Those five existing assertions demanded bytewise
+unchanged cursors on receipt refusal/usage pending, conflating a retained
+completion observation with advancing the applied baseline. The assertions
+now prove the original pending identity/clock is persisted while Groups and
+LastSyncTime do not advance. Both new ready-existing-file cases already
+passed on that first run, with zero native create/save/parse enqueue calls.
+
+All runs reused `kailo-knowledge-native-check-wkkigg`, Go `1.26.8`, immutable
+image `golang@sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`,
+UID/GID `1000:1000`, actual cgroup `cpu.max=400000 100000`,
+`memory.max=8589934592`, `memory.swap.max=0`. Existing process/pressure checks
+found no competing build at invocation; host available memory was 25–26 GiB
+and Data free space 1.6–1.8 GiB. The three inputs alone were copied into the
+existing candidate, SDK-formatted, and the entire native `internal/` input
+tree compared byte-for-byte before execution. Existing caches and temporary
+directory were reused; no dependency install, image, database or full snapshot.
+
+```sh
+sudo -n docker exec \
+  -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+  kailo-knowledge-native-check-wkkigg sh -c \
+  'cd /workspace/knowledge && go test ./internal/application/service -run '\''TestFileStorage'\'' -count=1 -v'
+```
+
+Final positive exited 0: **9 top-level +44 subchecks passed**, none skipped,
+native service runtime `0.585s`. In the private candidate only, restoring the
+old `native.UpdatedAt` completion clock and removing the actual pre-receipt
+checkpoint made the same command exit 1: **7 top-level passed/2 failed;
+34 subchecks passed/10 failed**. It caught
+`receiver completion must follow this batch's actual source read` and missing
+durable native revision. Production inputs were restored byte-for-byte; the
+same command again exited 0, **9 top-level +44 subchecks passed**, runtime
+`0.557s`. SDK `gofmt -d` was empty, native whole-input `diff -qr` and scoped
+`git diff --check` exited 0; SDK OOM counters remained zero and TMP was empty.
+
+Logs remain under the existing SDK root
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/`:
+
+- `file-storage-completion-positive-20261008.log`, initial exit 1, SHA-256
+  `c02f13fd6a85c787a46b592decc1b139c8599df87c98c49037f7d1ffa7904c2f`.
+- `file-storage-completion-final-positive-20261008.log`, exit 0, SHA-256
+  `b7962e7a867e5329094067d96f9954429887e2fd17d49825099f7ae3c658f51e`.
+- `file-storage-completion-mutation-20261008.log`, intentional exit 1, SHA-256
+  `4e1f8e4ecba9757766fd56afcc217bbfe0e0682b5371775681ed027176d6ab57`.
+- `file-storage-completion-restored-20261008.log`, exit 0, SHA-256
+  `d10fda9efdcab656b9048536fbe611b3857b631a2073980f40d40cfc26366d76`.
+
+This is original native-consumer evidence with isolated HTTP boundaries, not
+live PostgreSQL/Cells/LLM or full component lifecycle acceptance. No deployment,
+release/binding activation, screenshots, full/docs check or commit/push was
+performed by this subtask. Live authorized listing/read, native parsing,
+replacement/deletion and bilateral receipt/usage settlement still require the
+approved actual release/binding and deployed source versions; no activation
+was simulated and no business database was edited.

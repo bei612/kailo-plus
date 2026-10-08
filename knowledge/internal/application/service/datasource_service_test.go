@@ -1064,8 +1064,22 @@ func TestFileStorageRecoveredApplicationSurvivesNextBatchAndSourceRevocation(t *
 					require.Zero(t, receiverPEPs)
 				}
 			} else {
-				require.Equal(t, initial, ds.LastSyncCursor)
-				require.Empty(t, dsRepo.updated)
+				if outcome == "receipt-failed" || outcome == "usage-pending" {
+					retained, err := ds.ParseSyncCursor()
+					require.NoError(t, err)
+					tracked, err := fileStorageState(retained)
+					require.NoError(t, err)
+					require.Len(t, tracked.Applying, 1)
+					require.Equal(t, pending.KnowledgeID, tracked.Applying[key].KnowledgeID)
+					require.Equal(t, native.UpdatedAt.Format(time.RFC3339Nano), tracked.Applying[key].Revision)
+					require.False(t, tracked.Applying[key].ObservedAt.IsZero())
+					require.Empty(t, tracked.Groups)
+					require.Equal(t, at, retained.LastSyncTime)
+					require.Len(t, dsRepo.updated, 1, "persist completion evidence without advancing the applied baseline")
+				} else {
+					require.Equal(t, initial, ds.LastSyncCursor)
+					require.Empty(t, dsRepo.updated)
+				}
 				require.Zero(t, discoveries)
 				require.Zero(t, sourceCalls)
 				require.Zero(t, receiverPEPs)

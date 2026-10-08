@@ -65,6 +65,8 @@ type fileStorageApplication struct {
 	Digest      string                       `json:"digest"`
 	Bytes       int64                        `json:"bytes"`
 	References  []map[string]json.RawMessage `json:"references"`
+	Revision    string                       `json:"revision,omitempty"`
+	ObservedAt  time.Time                    `json:"observedAt,omitempty"`
 }
 
 type fileStorageSavedListing struct {
@@ -183,6 +185,9 @@ func fileStorageState(cursor *types.SyncCursor) (fileStorageCursor, error) {
 		if key == "" || !fileStorageUUID(item.KnowledgeID) || !fileStorageUUID(item.BatchID) ||
 			digestErr != nil || len(digest) != sha256.Size || item.Bytes < 0 || len(item.References) == 0 {
 			return state, fmt.Errorf("native file-storage application intent is invalid")
+		}
+		if (item.Revision == "") != item.ObservedAt.IsZero() || item.ObservedAt.After(time.Now()) {
+			return state, fmt.Errorf("native file-storage completion observation is invalid")
 		}
 		seen := map[string]bool{}
 		for _, ref := range item.References {
@@ -324,7 +329,8 @@ func (c *fileStorageConnector) completedNative(ctx context.Context, run fileStor
 	return native, receipt, nil
 }
 
-func (c *fileStorageConnector) observeApplication(ctx context.Context, run fileStorageRun, key string, item fileStorageApplication) (fileStorageGroup, error) {
+func (c *fileStorageConnector) observeApplication(ctx context.Context, run fileStorageRun, key string, state *fileStorageCursor, h datasource.StreamHandler, at time.Time) (fileStorageGroup, error) {
+	item := state.Applying[key]
 	native, err := c.knowledge.GetKnowledgeByID(ctx, item.KnowledgeID)
 	refs, marshalErr := json.Marshal(item.References)
 	if err != nil || marshalErr != nil || native == nil || native.ID != item.KnowledgeID ||
@@ -334,6 +340,20 @@ func (c *fileStorageConnector) observeApplication(ctx context.Context, run fileS
 		native.GetMetadata()["datasource_id"] != run.dataSourceID || native.GetMetadata()["external_id"] != key ||
 		native.GetMetadata()["source_content_sha256"] != item.Digest || native.GetMetadata()["source_references"] != string(refs) {
 		return fileStorageGroup{}, fmt.Errorf("original native file application is not ready or its provenance requires reconciliation")
+	}
+	revision := native.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	if item.ObservedAt.IsZero() {
+		// A ready dedupe target can predate this batch's source read. Its row
+		// revision is not the completion clock of this application. Freeze the
+		// actual ready/provenance observation before acknowledging any receiver
+		// receipt; retries must retain that same revision and completion clock.
+		item.Revision, item.ObservedAt = revision, time.Now().UTC()
+		state.Applying[key] = item
+		if _, err := fileStorageCheckpoint(ctx, h, *state, at); err != nil {
+			return fileStorageGroup{}, err
+		}
+	} else if item.Revision != revision || item.ObservedAt.Before(native.UpdatedAt) {
+		return fileStorageGroup{}, fmt.Errorf("original native completion revision requires reconciliation")
 	}
 	priorRun := run
 	priorRun.syncLogID = item.BatchID
@@ -345,11 +365,11 @@ func (c *fileStorageConnector) observeApplication(ctx context.Context, run fileS
 		if err != nil {
 			return fileStorageGroup{}, err
 		}
-		if err := c.transport.receipt(ctx, grant, native.ID, native.UpdatedAt.UTC().Format(time.RFC3339Nano), item.Digest, item.Bytes, native.UpdatedAt.UTC()); err != nil {
+		if err := c.transport.receipt(ctx, grant, native.ID, item.Revision, item.Digest, item.Bytes, item.ObservedAt); err != nil {
 			return fileStorageGroup{}, err
 		}
 	}
-	return fileStorageGroup{KnowledgeID: native.ID, Revision: native.UpdatedAt.UTC().Format(time.RFC3339Nano), References: item.References}, nil
+	return fileStorageGroup{KnowledgeID: native.ID, Revision: item.Revision, References: item.References}, nil
 }
 
 func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataSourceConfig, previous *types.SyncCursor, h datasource.StreamHandler) (*types.SyncCursor, error) {
@@ -373,7 +393,7 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 		if prior, exists := state.Groups[key]; exists && prior.KnowledgeID != item.KnowledgeID {
 			return nil, fmt.Errorf("native application conflicts with its retained source group")
 		}
-		group, err := c.observeApplication(ctx, run, key, item)
+		group, err := c.observeApplication(ctx, run, key, &state, h, oldTime)
 		if err != nil {
 			return nil, err
 		}
@@ -583,21 +603,22 @@ func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataS
 				return nil, err
 			}
 		}
-		// Read the native service's own dedupe result, including an existing ID.
-		native, err := c.knowledge.GetRepository().FindByDataSourceExternalID(ctx, run.tenantID, run.knowledgeBaseID, run.dataSourceID, key)
-		if err != nil || native == nil || native.ParseStatus != types.ParseStatusCompleted || native.UpdatedAt.IsZero() || native.DeletedAt.Valid {
-			return nil, fmt.Errorf("native file group is not ready")
-		}
-		if completedGroup && native.GetMetadata()["source_references"] != string(refBytes) {
-			return nil, fmt.Errorf("completed native group reference set requires reconciliation")
-		}
-		revision := native.UpdatedAt.UTC().Format(time.RFC3339Nano)
-		desired[key] = fileStorageGroup{KnowledgeID: native.ID, Revision: revision, References: refs}
-		for _, file := range files {
-			if err := c.transport.receipt(ctx, file.grant, native.ID, revision, file.digest, file.size, native.UpdatedAt.UTC()); err != nil {
-				return nil, err
+		if completedGroup {
+			// A partially acknowledged group may combine completed and pending
+			// reads. Observe the same native target without replaying Emit, but
+			// retain its own completion evidence before settling remaining reads.
+			native, err := c.knowledge.GetRepository().FindByDataSourceExternalID(ctx, run.tenantID, run.knowledgeBaseID, run.dataSourceID, key)
+			if err != nil || native == nil {
+				return nil, fmt.Errorf("completed native group is unavailable")
 			}
+			state.Applying[key] = fileStorageApplication{KnowledgeID: native.ID, BatchID: run.syncLogID,
+				Digest: first.digest, Bytes: first.size, References: refs}
 		}
+		group, err := c.observeApplication(ctx, run, key, &state, h, oldTime)
+		if err != nil {
+			return nil, err
+		}
+		desired[key] = group
 	}
 	// Only ready new groups reach retirement. The original cursor also retains
 	// the native task intent before enqueue, so lost ACK never issues a new task.
