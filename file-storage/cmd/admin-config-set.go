@@ -33,6 +33,8 @@ import (
 	"github.com/pydio/cells/v5/common/config"
 )
 
+var configValueFile string
+
 // updateConfigCmd updates a configuration parameter both in the pydio.json file and in the database.
 var updateConfigCmd = &cobra.Command{
 	Use:   "set",
@@ -48,6 +50,9 @@ SYNTAX
   - serviceName: name of the corresponding service
   - configName: name of the parameter
   - configValue: json-encoded value of the parameter you want to set/change
+
+  With --value-file, pass only serviceName and configName. The JSON value is
+  read from that local file and is never included in the command arguments.
 
   Strings must include JSON double quotes (protected from the shell with single
   quotes). Booleans, numbers, arrays and objects retain their JSON types.
@@ -67,8 +72,12 @@ EXAMPLES
 
 `,
 	Args: func(cmd *cobra.Command, args []string) error {
-		if len(args) < 3 {
-			return errors.New("Requires at least three arguments, please see 'pydio config set --help'")
+		expected := 3
+		if configValueFile != "" {
+			expected = 2
+		}
+		if len(args) != expected {
+			return errors.New("invalid configuration arguments, please see 'pydio config set --help'")
 		}
 
 		// IsValidService ?
@@ -77,16 +86,32 @@ EXAMPLES
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 		path := args[1]
+		var value []byte
+		if configValueFile != "" {
+			var err error
+			value, err = os.ReadFile(configValueFile)
+			if err != nil {
+				return errors.New("configuration file is unavailable")
+			}
+		} else {
+			value = []byte(args[2])
+		}
 		var data any
-		if err := json.Unmarshal([]byte(args[2]), &data); err != nil {
+		if err := json.Unmarshal(value, &data); err != nil {
 			return errors.New("configuration value must be valid JSON")
 		}
 
 		if err := config.Set(cmd.Context(), data, "services", id, path); err != nil {
+			if configValueFile != "" {
+				return errors.New("configuration write failed")
+			}
 			return err
 		}
 
 		if err := config.Save(cmd.Context(), "cli", fmt.Sprintf("Set by path %s/%s", id, path)); err != nil {
+			if configValueFile != "" {
+				return errors.New("configuration persistence failed")
+			}
 			return err
 		}
 		cmd.Println(promptui.IconGood + " Config set")
@@ -99,5 +124,6 @@ EXAMPLES
 }
 
 func init() {
+	updateConfigCmd.Flags().StringVar(&configValueFile, "value-file", "", "Read the JSON value from a local file instead of command arguments")
 	ConfigCmd.AddCommand(updateConfigCmd)
 }

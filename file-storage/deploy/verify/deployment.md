@@ -303,3 +303,97 @@ undefined symbol（`native-callback-tests.log`）；从同一固定 3309938 源�
 其余拒绝分支保持通过（`native-callback-mutation.log`，退出 1）。按正式源原字节
 还原且 `cmp` 退出 0 后，原全部目标恢复通过（`native-callback-restored.log`，
 退出 0，`ok github.com/pydio/cells/v5/frontend/web 1.041s`）。未运行 full。
+
+## 2026-10-08 原生当前 actor 配置的真实投递消费者
+
+本批补的是已有 `gateway/restv2/native-actor.go::Handler.nativeActor` 的启动配置生产者，
+不是创建账号或批准 binding。此前 adapter 可携带经过验签和 fresh PEP 的当前
+HUMAN/AGENT 证明，但原 launcher/entrypoint 没有向其实际读取的
+`services/pydio.rest.n/platform` 投递配置、callback SecretRef 文件和私网连接。
+无投递时仍保留独立原生页面与原 ACL，不借用 SERVICE 或 initiating HUMAN。
+
+四步影响说明：
+
+1. 权威为 DD-89、`.design/07` §5.2/8A 及既有 native actor/ACL 接缝。重新核验固定
+   Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `cmd/admin-config-set.go::updateConfigCmd`、
+   `gateway/restv2/api.go::NewHandler`、
+   `gateway/restv2/api-lookup.go::Handler.GetByUuid`、
+   `gateway/restv2/api-versions.go::Handler.NodeVersions` 和
+   `tools/docker/images/cells/docker-entrypoint.sh`，复用原命令、config store、原生读取
+   与监听顺序；`tools/upstream_manifest.py status file-storage` 退出 0，固定版本与证据
+   HEAD 一致。没有运行上游证据目录的代码。
+2. 写入范围为原 config-set 命令/原检查、原镜像 entrypoint、独立 launcher/.env 示例及
+   一份 opt-in Compose overlay。新增 `--value-file` 在原 RunE 内读取 JSON，继续走原
+   `config.Set`/`config.Save`；值不经 argv，文件读取/JSON/Set/Save 失败均不打印值。
+   file 模式错误固定脱敏，原 inline JSON 类型与错误关联保留。没有 schema、数据库、
+   Core、工作流或权限模型迁移，没有修改页面。既有 dirty `deploy/compose.yaml` 不属于
+   本批写入，不能随本批提交。
+3. launcher 只接受成对的 `CELLS_NATIVE_ACTION_DELIVERY_DIR` 与
+   `CELLS_NATIVE_ACTION_CONFIG_FILE`。真实绝对目录须 owner-only、与数据/adapter
+   投递目录分离；配置及 callback 凭据须同 owner、0400/0600、无 symlink/目录逃逸。
+   配置字段精确匹配现有 native actor 消费者，绑定/租户/native UUID、非空受控边界、
+   唯一 HUMAN/AGENT→已有 native User UUID 映射逐项检查，不能映射 SERVICE UUID。
+   overlay 只挂只读目录并复用现有 `CELLS_ADAPTER_PLATFORM_NETWORK`，数据库不接该网。
+   原 OAuth secret 同步改走本地文件参数，不再将其内容展开到 argv。没有 JSON 执行、
+   shell eval、远端启动脚本或第二份身份/授权目录。
+4. 原 entrypoint 在原 `cells start` 监听前调用原配置命令。缺文件/不可读/畸形内容、
+   写入或持久化失败停止启动；Save 失败可能已有部分原配置变更，不宣称回滚或成功。
+   重复启动仅设定同一原配置，不执行文件业务动作。首次安装仍沿原 configure，无配置
+   仍沿原独立启动。运行期仍由原 nativeActor 每次读取配置、原 Core PEP 校验当前
+   actor/scope/AE/binding/generation/资源及原 User 锁定/ACL；静态目录不证明这些运行事实。
+
+实现后使用现存 `kailo-cells-native-check-lftow7`，UID 1000:1000，4 CPU / 8 GiB，
+MemorySwap 同为 8 GiB，无额外 swap。复用 `/cache/mod`、`/cache/build`，没有新镜像、
+依赖下载或数据库。检查前确认 SDK 无在途编译；终态 cgroup lifetime memory.peak 为
+2,538,696,704 bytes，全部 memory.events/OOM 为 0；这不是本批独立采样峰值。
+实际原四包命令为：
+
+```sh
+sudo -n docker exec -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e CELLS_WORKING_DIR=/tmp/cells-native-actor-check \
+  -e CELLS_DATA_DIR=/tmp/cells-native-actor-check \
+  -w /workspace/file-storage kailo-cells-native-check-lftow7 \
+  /usr/local/go/bin/go test -mod=readonly \
+  ./cmd ./common/auth ./common/auth/protocol ./gateway/restv2 \
+  -run 'TestConfigSet|TestNativeEntrypoint|TestAuthorizeActionUsesOriginalBindingPEP|TestNativeActorUsesExactControlledUser|TestNativeIndependentReadDoesNotImpersonate|TestNativeActorPolicyDoesNotBorrowTransportProfile|TestResolveNativeActorUserRejectsMissingChangedAndLockedUsers' \
+  -count=1 -v
+```
+
+首轮正向 handle 56240 退出 0：10 顶层 +38 子项通过。随后补入 file 模式 Set/Save
+错误脱敏及 Save 失败检查，首轮 48 项不能作为最终字节的验收。最终私有候选实际移除
+JSON 拒绝、移除 Set/Save 脱敏并跳过原 entrypoint 配置命令，handle 35824 退出 1：
+3 顶层 +5 子项失败，另 7 顶层 +34 子项通过。正式源没有破坏。按正式源原字节还原
+后 handle 26331 退出 0：10 顶层 +39 子项全部通过，0 skip；原 CLI/config-store 检查与
+原 native actor/PEP/锁定用户检查均实跑。entrypoint 进程 fixture 只证明原脚本的
+命令/argv/监听顺序，不冒充真实数据库持久化或 native 服务启动。
+
+Go 原件目录为
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/apps/file-storage/`：
+
+- `cells-native-action-delivery-positive.log` SHA-256
+  `b070e7b530a1ac9344bbead704df9ec1c690399a11b22eb7aeb336148b443d4a`；
+- `cells-native-action-delivery-mutation.log` SHA-256
+  `8402c320b27f59d015934c306aef3fce4fb6e8f0563cd17c0161f7159d29ef9e`；
+- `cells-native-action-delivery-restored.log` SHA-256
+  `60bcd3d6426c5ffb3babfbd2ab4543bd4c5fdb825482fe3a20a02e12b55bdb73`。
+
+原 `deploy/start.sh --check` 的独立无投递 fixture 退出 0；新增私有完整投递 fixture
+退出 0。缺字段、重复 principal、凭据权限 0644、配置 symlink 四次实际退出 2，恢复
+0400/0600 与原字节后同命令退出 0。fixture 的凭据为明确非真实值，没有启动容器或
+创建平台事实。真实 `docker compose ... config --format json` 回读确认目录只读挂载、
+不自动建宿主目录、现有 callback 私网以及数据库网络不变，退出 0。私有 overlay 将
+`read_only` 改为 false 后同一实际 JSON 断言退出 1，恢复原 overlay 后退出 0。
+这些 launcher/Compose 原件为
+`/volumes/data/kailo/tmp/cells-native-action-delivery.gJxSPm/` 中
+`check-{positive,missing,ambiguous,permissions,symlink,restored}.log` 与
+`render-{positive,mutation,restored}.log`。最终六个自有源码/配置输入及六个直接依赖
+与 SDK 候选逐字节 `cmp` 为 0，`bash -n`、`sh -n`、范围 `git diff --check` 退出 0。
+
+本批未构建镜像、未部署、未跑 full、未交付真实 actor 配置/SecretRef，也没有真实
+Core PEP→原 User→PolicyEngine/tree ACL→文件读取或 Cells→WeKnora E2E/浏览器验收。
+必须将新原命令与 entrypoint 一起构建投递；旧运行镜像不证明这些新字节。正常 native
+启动才应用配置，`--platform-adapter` 单独启动不会重建 Cells/数据库。移除投递环境项
+不自动擦除已持久原配置，撤权仍走原 binding 生命周期/fresh PEP，不能据此声称停用。
+原生独立完整 UI 保留；generic write/share、原子条件删除、按 key 终态/usage、完整
+FILE_STORAGE 七项及其批准 catalog 仍有缺口，不能以这次配置窄验启用不完整 release。

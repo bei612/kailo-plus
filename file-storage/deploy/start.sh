@@ -21,7 +21,7 @@ set -a
 source "$config"
 set +a
 python3 - <<'PY'
-import ipaddress, json, os, pathlib, re, stat, sys
+import ipaddress, json, os, pathlib, re, stat, sys, uuid
 from urllib.parse import unquote, urlsplit
 
 def require(condition, reason):
@@ -67,6 +67,50 @@ try:
         require(str(real).startswith('/volumes/data/'), key + ': dedicated Data directory required')
         directories.append(real)
     require(not any(a == b or a in b.parents or b in a.parents for a, b in [directories]), 'Cells and database state directories must be disjoint')
+    native_delivery = env.get('CELLS_NATIVE_ACTION_DELIVERY_DIR', '')
+    native_config = env.get('CELLS_NATIVE_ACTION_CONFIG_FILE', '')
+    require(bool(native_delivery) == bool(native_config), 'native actor directory and config must be delivered together')
+    if native_config:
+        directory = pathlib.Path(native_delivery)
+        require(directory.is_absolute() and directory.is_dir() and directory == directory.resolve(), 'native action delivery must use a real absolute directory')
+        owner = directory.stat().st_uid
+        require(stat.S_IMODE(directory.stat().st_mode) == 0o700 and all(directory != p and directory not in p.parents and p not in directory.parents for p in directories), 'native action delivery must be owner-only and separate from data')
+        if env.get('CELLS_ADAPTER_DELIVERY_DIR'):
+            adapter_directory = pathlib.Path(env['CELLS_ADAPTER_DELIVERY_DIR']).resolve()
+            require(directory != adapter_directory and directory not in adapter_directory.parents and adapter_directory not in directory.parents, 'native and adapter delivery mounts must be separate')
+        def native_file(value):
+            path = pathlib.Path(value)
+            require(path.is_absolute() and path == path.resolve() and directory in path.parents and path.is_file(), 'native action file is outside its delivery')
+            entry = path.stat()
+            require(entry.st_uid == owner and stat.S_IMODE(entry.st_mode) in (0o400, 0o600), 'native action file must be owner-readable only')
+            return path
+        delivery = json.loads(native_file(native_config).read_text())
+        required = {'bindingId', 'tenantId', 'nativeInstanceRef', 'nativeScopeRef', 'nativeRootRef', 'actors',
+                    'corePepUrl', 'oidcTokenUrl', 'clientId', 'clientSecretFile', 'instanceServiceUuid',
+                    'requestTimeout', 'maxResponseBytes', 'clientSecretMaxBytes'}
+        require(isinstance(delivery, dict) and set(delivery) == required, 'native actor delivery fields must match the existing consumer')
+        def canonical_uuid(value):
+            require(isinstance(value, str) and str(uuid.UUID(value)) == value and uuid.UUID(value).int != 0, 'native actor UUID is invalid')
+        for key in ('bindingId', 'tenantId', 'nativeScopeRef', 'nativeRootRef', 'instanceServiceUuid'):
+            canonical_uuid(delivery[key])
+        for key in ('nativeInstanceRef', 'clientId', 'requestTimeout'):
+            require(isinstance(delivery[key], str) and delivery[key].strip() == delivery[key] != '', 'native actor delivery is incomplete')
+        for key in ('maxResponseBytes', 'clientSecretMaxBytes'):
+            require(type(delivery[key]) is int and delivery[key] > 0, 'native action bounds must be delivered')
+        for key in ('corePepUrl', 'oidcTokenUrl'):
+            endpoint = urlsplit(delivery[key])
+            require(endpoint.scheme in ('http', 'https') and endpoint.hostname and not endpoint.username and not endpoint.password and not endpoint.query and not endpoint.fragment and (key != 'corePepUrl' or endpoint.path == '/service/v1/adapter/pep_check'), 'native action authority endpoint is invalid')
+        secret = native_file(delivery['clientSecretFile']).read_bytes()
+        require(0 < len(secret) <= delivery['clientSecretMaxBytes'] and secret.strip(), 'native action callback credential is unavailable')
+        require(isinstance(delivery['actors'], list) and delivery['actors'], 'native current actors must be explicitly linked')
+        principals, users = set(), set()
+        for actor in delivery['actors']:
+            require(isinstance(actor, dict) and set(actor) == {'principalId', 'kind', 'userUuid'}, 'native actor link fields are invalid')
+            canonical_uuid(actor['principalId'])
+            canonical_uuid(actor['userUuid'])
+            require(actor['kind'] in ('HUMAN', 'AGENT') and actor['principalId'] not in principals and actor['userUuid'] not in users and actor['userUuid'] != delivery['instanceServiceUuid'], 'native actor links must be unique and cannot borrow SERVICE')
+            principals.add(actor['principalId'])
+            users.add(actor['userUuid'])
     data_subnet = ipaddress.ip_network(env['CELLS_DATA_SUBNET'])
     ui_subnet = ipaddress.ip_network(env['CELLS_UI_SUBNET'])
     require(data_subnet.version == ui_subnet.version == 4 and not data_subnet.overlaps(ui_subnet), 'independent, disjoint IPv4 data/UI subnets required')
@@ -92,6 +136,9 @@ PY
 source "$root/tools/container-safety.sh"
 container_safety_init
 compose=("${CONTAINER_DOCKER[@]}" compose --project-name "$CELLS_COMPOSE_PROJECT" --env-file "$config" -f "$here/compose.yaml")
+if [[ -n ${CELLS_NATIVE_ACTION_CONFIG_FILE:-} ]]; then
+  compose+=(-f "$here/compose.native-actions.yaml")
+fi
 if "$platform_adapter"; then
   # Validate actual mounted paths/ownership, not a second binding schema. The
   # existing Node configuration parser and Core validation remain authoritative.

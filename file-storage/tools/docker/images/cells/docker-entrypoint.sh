@@ -51,8 +51,16 @@ fi
 if [ "$1" = "cells" ] && [ "${2:-}" = "start" ] && [ -n "${CELLS_OAUTH_CONNECTORS:-}" ]; then
 	: "${CELLS_OAUTH_SECRET_FILE:?native OAuth secret JSON file required}"
 	[ -s "$CELLS_OAUTH_SECRET_FILE" ] || exit 1
-	cells admin config set pydio.web.oauth secret "$(cat "$CELLS_OAUTH_SECRET_FILE")"
+	cells admin config set --value-file "$CELLS_OAUTH_SECRET_FILE" pydio.web.oauth secret
 	cells admin config set pydio.web.oauth connectors "$CELLS_OAUTH_CONNECTORS"
+fi
+
+# The existing native actor consumer reads this same Cells config-store item.
+# Apply only an explicitly delivered local file, before opening any listener.
+# Values and credentials are not expanded into argv or printed by this script.
+if [ "$1" = "cells" ] && [ "${2:-}" = "start" ] && [ -n "${CELLS_NATIVE_ACTION_CONFIG_FILE:-}" ]; then
+	[ -r "$CELLS_NATIVE_ACTION_CONFIG_FILE" ] && [ -s "$CELLS_NATIVE_ACTION_CONFIG_FILE" ] || exit 1
+	cells admin config set --value-file "$CELLS_NATIVE_ACTION_CONFIG_FILE" pydio.rest.n platform
 fi
 
 echo "[DEBUG] About to run command: [$@]"

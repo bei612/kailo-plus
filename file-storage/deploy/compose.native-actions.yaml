@@ -1,0 +1,18 @@
+# Optional native current-actor delivery. The original Cells service and config
+# store remain authoritative; the directory is component-specific and read-only.
+services:
+  cells:
+    networks: [cells-data, cells-ui, cells-platform]
+    environment:
+      CELLS_NATIVE_ACTION_CONFIG_FILE: ${CELLS_NATIVE_ACTION_CONFIG_FILE:?controlled native actor configuration required}
+    volumes:
+      - type: bind
+        source: ${CELLS_NATIVE_ACTION_DELIVERY_DIR:?component-specific native action delivery required}
+        target: ${CELLS_NATIVE_ACTION_DELIVERY_DIR}
+        read_only: true
+        bind: {create_host_path: false}
+
+networks:
+  cells-platform:
+    external: true
+    name: ${CELLS_ADAPTER_PLATFORM_NETWORK:?existing private platform protocol network required}
