@@ -3006,3 +3006,115 @@ equivalence. Authenticated picker screenshots, activated release/binding,
 live Cells→WeKnora import/parse/revoke, image build/deployment, Windows/Mobile
 and `tools/check.sh --full` were not run for this frontend checkpoint. It
 does not establish full original restoration or production readiness.
+
+## Native parse observation and retry-safe storage checkpoint (2026-10-08)
+
+This closes the previously unaccepted ten-Go-path batch on its final bytes;
+older partial or ENOSPC runs are retained, not reused as passing evidence.
+The source baseline for this batch is main
+`dfd78b97d5b3319cfb5588f43591ea0641a78184`; the ten Go paths are +636/-226.
+Authority is DD-89, `SS-WEK-MATERIALIZATION` and design 13 §4.4: native upload
+acceptance is not proof of parsing readiness. Readonly official WeKnora
+`2be7bd40631dda1dd485306038f07a62e9ee287e` provides the original consumers
+`internal/application/service/knowledge_process.go::{knowledgeService.processChunks,knowledgeService.ProcessDocument,knowledgeService.ProcessManualUpdate}`,
+`internal/application/service/knowledge_housekeeping.go::HousekeepingService.filterByLastSpanActivity`
+and `internal/router/task.go::newDeadLetterKnowledgeFailer`. Implementation
+stays in that native task/Knowledge/chunk/tenant-storage chain; it does not
+create a platform workflow, receipt table or alternative index authority.
+
+Four-step review after implementation:
+
+1. Only the repository's confirmed missing-row sentinel means deletion.
+   Failed or nil observations, foreign tenant/KB identity and source changes
+   cannot authorize cleanup or a stale worker's write. Clearing a source path
+   is also a source replacement. The original document/manual queue consumers
+   now return preparation, state observation, processing checkpoint, chunk
+   write, model and partial index-write errors instead of acknowledging work
+   whose outcome is unreadable. Confirmed native terminal no-ops remain no-ops.
+2. The existing `UpdateKnowledgeForTransfer` CAS now commits processing state
+   and the native tenant storage delta together, using the worker's original
+   Knowledge revision. Positive delta also checks the current native quota in
+   that same transaction. Replacement charges only its delta; cleanup releases
+   accounted storage through the same CAS after native cleanup succeeds.
+   Separate additive/release calls are removed from these paths. Existing
+   native source/transfer metadata is preserved. No schema, migration, public
+   contract, generated type, component binding or frontend layout changes.
+3. A partial index write or failed completion observation retains the same
+   native task/Knowledge reference. Retry must first prove old index/chunk
+   cleanup; a cleanup error stops before another index write. A committed
+   storage checkpoint with a lost acknowledgement is reobserved rather than
+   charged/released twice. The SpanTracker no longer writes Knowledge.updated_at
+   merely for tracing; original Span rows and the existing housekeeping span
+   query remain progress evidence without invalidating the worker's CAS.
+4. Original checks exercise failed/nil/missing observations, moved/cleared
+   sources, deleting/cancelled rows, original queue error propagation, partial
+   index persistence, cleanup failure, checkpoint acknowledgement loss, a
+   concurrent native edit, same-size replacement and quota reduction between
+   indexing and checkpoint. Error-class/reason-code contracts are unchanged:
+   native retry errors do not assert a platform terminal; unknown effects stay
+   unknown, revision conflict does not authorize overwrite, and exhausted
+   native quota does not authorize settlement. The existing six-class boundary
+   in apps 06 §4 is not replaced with a second native error authority.
+
+Execution reused `kailo-knowledge-native-check-wkkigg`, image
+`sha256:a688600ca24f8a4d3ca77f95b0dd40704a9fc787c826660eb7ba0b641b8b175d`,
+Go `go1.26.8 linux/amd64`, UID/GID 1000:1000. Actual cgroup readback was
+`cpu.max=400000 100000`, `memory.max=8589934592`, `memory.swap.max=0`;
+`memory.events` max/oom/oom_kill remained zero. Process/CPU/memory checks ran
+before each execution; final restoration started with no other compiler and
+about 20 GiB available host memory. The existing read-only source candidate
+and `/cache/mod`, `/cache/build` were reused; GOPROXY was off. Only four new
+small source deltas refreshed the already-present ten-path candidate. No
+image, database, dependency install/download or full-tree copy was created.
+
+All three runs used the same original target in `/workspace/knowledge`:
+
+```sh
+sudo -n docker exec \
+  -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+  -w /workspace/knowledge kailo-knowledge-native-check-wkkigg \
+  go test ./internal/application/service ./internal/application/repository \
+  -run 'Test(FileStorage|Processing|ProcessChunks|ManualCleanup|Move|Clone|TransferCheckpoint|SpanTracker|PostprocessSubspan|IsKnowledgeSourceReplaced|UpdateKnowledgeUnlessSourceReplaced|ReplaceKnowledgeFile|CopyService|AdmissionProgress|TableSummaryCleanup)' \
+  -count=1 -v
+```
+
+Positive handle 15266 exited 0: **87 top-level plus 155 subchecks passed,
+0 failed, 0 skipped**; service 306.416s, repository 1.753s. The private
+production mutation changed four real consumers only, not assertions:
+observation errors became deleting no-ops; the transaction quota predicate
+was removed; cleanup retained its old accounted storage size; and partial
+index-write errors became nil acknowledgements. Handle 59845 exited 1:
+**82 top-level/149 subchecks passed; 5 top-level/6 subchecks failed**.
+Failures included `expected: 0, actual: 5` for cleanup, `An error is expected
+but got nil` for quota reduction and unreadable observation, and original
+document/manual queue checks reporting that the original task was wrongly
+acknowledged. Complete failures remain in the log, not only these excerpts.
+
+The four private production files were byte-restored before rerunning.
+Restored handle 42521 exited 0: **87 top-level plus 155 subchecks passed,
+0 failed, 0 skipped**; service 271.067s, repository 0.589s. Formal production
+files were never mutated. The entire formal `knowledge/internal` and restored
+SDK candidate compared equal with `diff -qr`, exit 0; `gofmt -d` on the ten
+paths was empty and scoped `git diff --check` exited 0. No task from this
+verification remains running.
+
+Logs are retained in the existing directory
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/native-go-cache/file-storage-sync-20261008.maEMf2/`:
+
+| Log | SHA-256 |
+|---|---|
+| `native-observation-cas-positive.log` | `592c93f9874f8f0a01c9127ce3c149f776cd81e7d8947dd7c54009df244a1ae3` |
+| `native-observation-cas-mutation.log` | `05c97f4bc68461d5ab12feb91860b9e4705f4bd2f3dc61f3bf7a1c81a2f80e2c` |
+| `native-observation-cas-restored.log` | `b4f387f8c65f1da01651b958e85f7ee8155e683d2d4907a023ea60b4e66bd34c` |
+
+These are original native consumers with existing SQLite/retriever-interface
+fixtures, not live vector/provider/Postgres acceptance. Non-Cells asynchronous
+passage/manual goroutines and complete multimodal/postprocess acknowledgement
+recovery are outside this checkpoint; returning an error in the synchronous
+chain does not prove those separate consumers retry safely. Original Asynq
+retry budgets, dead-letter handling and housekeeping remain responsible for
+task termination. No live Cells→WeKnora import/parse/revoke E2E, release/binding
+activation, image deployment, authenticated screenshot, Windows/Mobile or
+`tools/check.sh --full` ran. This batch alone does not establish production
+readiness or full original restoration.

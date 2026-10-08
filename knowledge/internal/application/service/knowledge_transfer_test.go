@@ -111,8 +111,9 @@ func TestMoveRejectsInvalidPairAndModeBeforeWrites(t *testing.T) {
 
 type transferFaultRepo struct {
 	interfaces.KnowledgeRepository
-	failID string
-	claims int
+	failID                string
+	claims                int
+	checkpointCommitError error
 }
 
 func (r *transferFaultRepo) DeleteKnowledgeTagRelations(ctx context.Context, id string) error {
@@ -124,7 +125,15 @@ func (r *transferFaultRepo) DeleteKnowledgeTagRelations(ctx context.Context, id 
 
 func (r *transferFaultRepo) UpdateKnowledgeForTransfer(ctx context.Context, before, after *types.Knowledge) error {
 	r.claims++
-	return r.KnowledgeRepository.UpdateKnowledgeForTransfer(ctx, before, after)
+	if err := r.KnowledgeRepository.UpdateKnowledgeForTransfer(ctx, before, after); err != nil {
+		return err
+	}
+	if r.checkpointCommitError != nil {
+		err := r.checkpointCommitError
+		r.checkpointCommitError = nil
+		return err
+	}
+	return nil
 }
 
 func TestMovePartialFailureResumesAndSkipsCompletedDocuments(t *testing.T) {
@@ -360,7 +369,11 @@ func TestProcessingTasksRejectOldKnowledgeBaseAfterMove(t *testing.T) {
 
 func TestProcessingTasksRetainOriginalWorkOnPreparationFailure(t *testing.T) {
 	for _, taskType := range []string{types.TypeDocumentProcess, types.TypeManualProcess} {
-		for _, stage := range []string{"tenant-read", "knowledge-read", "processing-write"} {
+		stages := []string{"tenant-read", "knowledge-read", "kb-read", "state-observation", "processing-write", "chunk-observation"}
+		if taskType == types.TypeDocumentProcess {
+			stages = append(stages, "source-observation")
+		}
+		for _, stage := range stages {
 			t.Run(taskType+"/"+stage, func(t *testing.T) {
 				f := transferFixture(t, access.KBTransferMove)
 				f.svc.tenantRepo = repository.NewTenantRepository(f.db)
@@ -369,9 +382,25 @@ func TestProcessingTasksRetainOriginalWorkOnPreparationFailure(t *testing.T) {
 					"file_path":    "native-original-source",
 				}).Error)
 				failure := errors.New("native preparation temporarily unavailable")
+				if stage == "kb-read" {
+					f.kbs.err = failure
+				}
+				knowledgeReads := 0
+				chunkRead := 7
+				if taskType == types.TypeManualProcess {
+					chunkRead = 5
+				}
 				callback := func(tx *gorm.DB) {
+					if tx.Statement.Table == "knowledges" {
+						knowledgeReads++
+						if stage == "state-observation" && knowledgeReads != 2 ||
+							stage == "source-observation" && knowledgeReads != 3 ||
+							stage == "chunk-observation" && knowledgeReads != chunkRead {
+							return
+						}
+					}
 					if tx.Statement.Table == "tenants" && stage == "tenant-read" ||
-						tx.Statement.Table == "knowledges" && stage != "tenant-read" {
+						tx.Statement.Table == "knowledges" && stage != "tenant-read" && stage != "kb-read" {
 						tx.AddError(failure)
 					}
 				}
@@ -380,7 +409,14 @@ func TestProcessingTasksRetainOriginalWorkOnPreparationFailure(t *testing.T) {
 				} else {
 					require.NoError(t, f.db.Callback().Query().Before("gorm:query").Register("native-processing-preparation", callback))
 				}
-				payload, err := json.Marshal(types.DocumentProcessPayload{TenantID: 7, KnowledgeID: "doc", KnowledgeBaseID: "kb"})
+				payload, err := json.Marshal(types.DocumentProcessPayload{
+					TenantID: 7, KnowledgeID: "doc", KnowledgeBaseID: "kb", Passages: []string{"native retained passage"},
+				})
+				if taskType == types.TypeManualProcess {
+					payload, err = json.Marshal(types.ManualProcessPayload{
+						TenantID: 7, KnowledgeID: "doc", KnowledgeBaseID: "kb", Content: "native retained passage",
+					})
+				}
 				require.NoError(t, err)
 				task := asynq.NewTask(taskType, payload)
 				process := f.svc.ProcessDocument
@@ -394,7 +430,11 @@ func TestProcessingTasksRetainOriginalWorkOnPreparationFailure(t *testing.T) {
 				require.NoError(t, f.db.Callback().Update().Remove("native-processing-preparation"))
 				row, err := f.repo.GetKnowledgeByID(f.ctx, 7, "doc")
 				require.NoError(t, err)
-				require.Equal(t, types.ParseStatusPending, row.ParseStatus)
+				if stage == "chunk-observation" {
+					require.Equal(t, types.ParseStatusProcessing, row.ParseStatus)
+				} else {
+					require.Equal(t, types.ParseStatusPending, row.ParseStatus)
+				}
 				require.Equal(t, "native-original-source", row.FilePath)
 				require.Zero(t, f.chunkRepo.writes)
 				require.Zero(t, f.graph.calls)
@@ -436,6 +476,26 @@ func TestProcessingTasksKeepConfirmedNativeTerminalNoOps(t *testing.T) {
 				require.Empty(t, f.files.deleted)
 			})
 		}
+	}
+}
+
+func TestProcessingTasksRejectEmptyKnowledgeObservation(t *testing.T) {
+	for _, taskType := range []string{types.TypeDocumentProcess, types.TypeManualProcess} {
+		t.Run(taskType, func(t *testing.T) {
+			f := transferFixture(t, access.KBTransferMove)
+			f.svc.repo = &replaceFileRepo{readNil: true}
+			payload, err := json.Marshal(types.DocumentProcessPayload{
+				TenantID: 7, KnowledgeID: "doc", KnowledgeBaseID: "kb",
+			})
+			require.NoError(t, err)
+			task := asynq.NewTask(taskType, payload)
+			process := f.svc.ProcessDocument
+			if taskType == types.TypeManualProcess {
+				process = f.svc.ProcessManualUpdate
+			}
+			require.ErrorContains(t, process(context.Background(), task), "knowledge observation is empty")
+			f.requireNoWrites(t)
+		})
 	}
 }
 

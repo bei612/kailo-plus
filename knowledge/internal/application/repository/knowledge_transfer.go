@@ -35,9 +35,10 @@ func (r *knowledgeRepository) UpdateKnowledgeForTransfer(ctx context.Context, be
 				"knowledge_base_id": after.KnowledgeBaseID, "parse_status": after.ParseStatus,
 				"metadata": after.Metadata, "storage_size": after.StorageSize, "updated_at": after.UpdatedAt,
 				"enable_status": after.EnableStatus, "embedding_model_id": after.EmbeddingModelID,
-				"description":   after.Description,
-				"processed_at":  after.ProcessedAt,
-				"error_message": after.ErrorMessage,
+				"description":    after.Description,
+				"processed_at":   after.ProcessedAt,
+				"error_message":  after.ErrorMessage,
+				"summary_status": after.SummaryStatus,
 			})
 		if result.Error != nil {
 			return result.Error
@@ -47,7 +48,11 @@ func (r *knowledgeRepository) UpdateKnowledgeForTransfer(ctx context.Context, be
 		}
 		delta := after.StorageSize - before.StorageSize
 		if delta != 0 {
-			result := tx.Model(&types.Tenant{}).Where("id = ?", before.TenantID).
+			tenant := tx.Model(&types.Tenant{}).Where("id = ?", before.TenantID)
+			if delta > 0 {
+				tenant = tenant.Where("storage_quota <= 0 OR storage_used + ? <= storage_quota", delta)
+			}
+			result := tenant.
 				UpdateColumn("storage_used",
 					gorm.Expr("CASE WHEN storage_used + ? < 0 THEN 0 ELSE storage_used + ? END",
 						delta,
@@ -56,7 +61,7 @@ func (r *knowledgeRepository) UpdateKnowledgeForTransfer(ctx context.Context, be
 				return result.Error
 			}
 			if result.RowsAffected != 1 {
-				return fmt.Errorf("transfer tenant not found")
+				return fmt.Errorf("native tenant storage checkpoint rejected")
 			}
 		}
 		var stored struct{ UpdatedAt time.Time }

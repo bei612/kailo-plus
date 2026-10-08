@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
+	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/hibiken/asynq"
@@ -26,16 +27,30 @@ type replaceFileRepo struct {
 	columnsCalls    int
 	failColumnsCall int
 	commitThenFail  bool
+	readErr         error
+	readNil         bool
+	updates         int
 }
 
 func (r *replaceFileRepo) GetKnowledgeByID(context.Context, uint64, string) (*types.Knowledge, error) {
+	if r.readErr != nil || r.readNil {
+		return nil, r.readErr
+	}
 	row := r.row
 	return &row, nil
 }
 
 func (r *replaceFileRepo) UpdateKnowledge(_ context.Context, knowledge *types.Knowledge) error {
+	r.updates++
 	r.row = *knowledge
 	return nil
+}
+
+func (r *replaceFileRepo) UpdateKnowledgeForTransfer(ctx context.Context, before, after *types.Knowledge) error {
+	if before.ID != r.row.ID || before.KnowledgeBaseID != r.row.KnowledgeBaseID {
+		return errors.New("native row changed")
+	}
+	return r.UpdateKnowledge(ctx, after)
 }
 
 func (r *replaceFileRepo) UpdateKnowledgeColumn(_ context.Context, _ string, column string, value interface{}) error {
@@ -428,10 +443,96 @@ func TestReplaceKnowledgeFileRejectsFAQKnowledgeBase(t *testing.T) {
 func TestIsKnowledgeSourceReplaced(t *testing.T) {
 	h := newReplaceFileHarness(t)
 	loaded := h.original
-	assert.False(t, h.svc.isKnowledgeSourceReplaced(h.ctx, &loaded))
+	replaced, _, err := h.svc.isKnowledgeSourceReplaced(h.ctx, &loaded)
+	require.NoError(t, err)
+	assert.False(t, replaced)
 
 	h.repo.row.FilePath = "new/file.md"
-	assert.True(t, h.svc.isKnowledgeSourceReplaced(h.ctx, &loaded))
+	replaced, _, err = h.svc.isKnowledgeSourceReplaced(h.ctx, &loaded)
+	require.NoError(t, err)
+	assert.True(t, replaced)
+}
+
+func TestProcessingObservationDoesNotInventDeletion(t *testing.T) {
+	for _, state := range []string{"unreadable", "nil-row", "missing", "deleting", "cancelled", "moved"} {
+		t.Run(state, func(t *testing.T) {
+			h := newReplaceFileHarness(t)
+			failure := errors.New("native observation unavailable")
+			switch state {
+			case "unreadable":
+				h.repo.readErr = failure
+			case "nil-row":
+				h.repo.readNil = true
+			case "missing":
+				h.repo.readErr = repository.ErrKnowledgeNotFound
+			case "deleting":
+				h.repo.row.ParseStatus = types.ParseStatusDeleting
+			case "cancelled":
+				h.repo.row.ParseStatus = types.ParseStatusCancelled
+			case "moved":
+				h.repo.row.KnowledgeBaseID = "other"
+			}
+			aborted, status, err := h.svc.isKnowledgeAborted(h.ctx, &h.original)
+			if state == "unreadable" || state == "nil-row" || state == "moved" {
+				require.Error(t, err)
+				require.False(t, aborted, "an unknown or different-scope row cannot authorize deletion cleanup")
+				require.Empty(t, status)
+				if state == "unreadable" {
+					require.ErrorIs(t, err, failure)
+				}
+				return
+			}
+			require.NoError(t, err)
+			require.True(t, aborted)
+			if state == "cancelled" {
+				require.Equal(t, types.ParseStatusCancelled, status)
+			} else {
+				require.Equal(t, types.ParseStatusDeleting, status)
+			}
+		})
+	}
+}
+
+func TestUpdateKnowledgeUnlessSourceReplacedRejectsUnobservedOwnership(t *testing.T) {
+	for _, state := range []string{"unreadable", "nil-row", "missing", "cleared", "moved", "deleting", "cancelled"} {
+		t.Run(state, func(t *testing.T) {
+			h := newReplaceFileHarness(t)
+			stale := h.original
+			stale.ParseStatus = types.ParseStatusFailed
+			failure := errors.New("native source unavailable")
+			switch state {
+			case "unreadable":
+				h.repo.readErr = failure
+			case "nil-row":
+				h.repo.readNil = true
+			case "missing":
+				h.repo.readErr = repository.ErrKnowledgeNotFound
+			case "cleared":
+				h.repo.row.FilePath = ""
+			case "moved":
+				h.repo.row.KnowledgeBaseID = "other"
+			case "deleting":
+				h.repo.row.ParseStatus = types.ParseStatusDeleting
+			case "cancelled":
+				h.repo.row.ParseStatus = types.ParseStatusCancelled
+			}
+			updated, err := h.svc.updateKnowledgeUnlessSourceReplaced(h.ctx, &h.original, &stale)
+			require.False(t, updated)
+			if state == "unreadable" || state == "nil-row" || state == "moved" {
+				require.Error(t, err)
+				if state == "unreadable" {
+					require.ErrorIs(t, err, failure)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+			require.Zero(t, h.repo.updates)
+			require.NotEqual(t, types.ParseStatusFailed, h.repo.row.ParseStatus)
+			if state == "cleared" {
+				require.Empty(t, h.repo.row.FilePath)
+			}
+		})
+	}
 }
 
 func TestUpdateKnowledgeUnlessSourceReplacedSkipsStaleSave(t *testing.T) {
@@ -440,7 +541,9 @@ func TestUpdateKnowledgeUnlessSourceReplacedSkipsStaleSave(t *testing.T) {
 	stale.ParseStatus = types.ParseStatusFailed
 	h.repo.row.FilePath = "new/file.md"
 
-	require.NoError(t, h.svc.updateKnowledgeUnlessSourceReplaced(h.ctx, &stale))
+	updated, err := h.svc.updateKnowledgeUnlessSourceReplaced(h.ctx, &h.original, &stale)
+	require.NoError(t, err)
+	require.False(t, updated)
 	assert.Equal(t, "new/file.md", h.repo.row.FilePath)
 	assert.NotEqual(t, types.ParseStatusFailed, h.repo.row.ParseStatus)
 }

@@ -768,16 +768,16 @@ func (s *knowledgeService) cleanupKnowledgeResources(ctx context.Context, knowle
 		cleanupErr = errors.Join(cleanupErr, err)
 	}
 
+	if cleanupErr != nil {
+		return cleanupErr
+	}
 	if knowledge.StorageSize > 0 {
-		tenantInfo.StorageUsed -= knowledge.StorageSize
-		if tenantInfo.StorageUsed < 0 {
-			tenantInfo.StorageUsed = 0
+		after := *knowledge
+		after.StorageSize = 0
+		if err := s.repo.UpdateKnowledgeForTransfer(ctx, knowledge, &after); err != nil {
+			return fmt.Errorf("persist native cleanup storage checkpoint: %w", err)
 		}
-		if err := s.tenantRepo.AdjustStorageUsed(ctx, tenantInfo.ID, -knowledge.StorageSize); err != nil {
-			logger.GetLogger(ctx).WithField("error", err).Error("Failed to adjust storage usage during manual cleanup")
-			cleanupErr = errors.Join(cleanupErr, err)
-		}
-		knowledge.StorageSize = 0
+		*knowledge = after
 	}
 
 	return cleanupErr

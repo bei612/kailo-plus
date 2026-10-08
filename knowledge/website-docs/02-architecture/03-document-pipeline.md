@@ -435,7 +435,7 @@ stateDiagram-v2
 - 五个规范阶段：`StageDocReader / StageChunking / StageEmbedding / StageMultimodal / StagePostProcess`（`types.AllStages`）。
 - Span 状态：`pending / running / done / failed / skipped / cancelled`。`skipped` 用于主动跳过（如未开启多模态），`cancelled` 用于上游失败连带取消。
 - 每轮处理有独立 `Attempt`（`repo.NextAttempt`），根 Span `name="knowledge_processing"`、`Kind=SpanKindRoot`；阶段以 `beginStage / endStage / failStage / skipStage` 打点，输入输出记录在 `JSONMap`（如 `chunks_planned` / `chunks_written` / `total_text_chars`）。
-- 每次记录进度时，`touchKnowledgeHeartbeat` 同步刷新心跳，供 Housekeeping 区分仍在处理与已停止更新的任务。
+- 每次记录进度时，阶段 Span 的 `updated_at` 作为心跳；Housekeeping 通过 `filterByLastSpanActivity` 读取最近活动，区分仍在处理与已停止更新的任务。进度记录不再改写 Knowledge 的 `updated_at`，避免破坏原生处理状态与存储用量的 CAS 检查点。
 
 ## Housekeeping 自愈（knowledge_housekeeping.go） {#_8-housekeeping-自愈-knowledge-housekeeping-go}
 

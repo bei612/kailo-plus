@@ -36,7 +36,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 // maxSpanNameLen matches knowledge_processing_spans.name (varchar(255)).
@@ -151,11 +150,6 @@ type SpanTracker interface {
 
 type spanTracker struct {
 	repo repository.KnowledgeSpanRepository
-	// db is held purely for the heartbeat side-channel: every span
-	// state transition pokes knowledge.updated_at so the housekeeping
-	// sweep can tell "actively running long stage" from "abandoned".
-	// nil-safe — when missing (test harness) the heartbeat is skipped.
-	db *gorm.DB
 
 	// startsMu guards the in-process duration cache. Cross-process
 	// workers won't find their parent's start here — that's fine,
@@ -166,60 +160,16 @@ type spanTracker struct {
 }
 
 // NewSpanTracker constructs the GORM-backed tracker. A nil repo collapses
-// to a no-op so test harnesses don't need to spin up a database. The db
-// is optional too: it's used only for the housekeeping heartbeat (see
-// touchKnowledgeHeartbeat) and a nil db just disables that side-channel.
-func NewSpanTracker(repo repository.KnowledgeSpanRepository, db *gorm.DB) SpanTracker {
+// to a no-op so test harnesses don't need to spin up a database. Progress
+// lives in the span rows, whose updated_at housekeeping already observes;
+// tracing must not change the Knowledge version owned by processing CAS.
+func NewSpanTracker(repo repository.KnowledgeSpanRepository) SpanTracker {
 	if repo == nil {
 		return noopSpanTracker{}
 	}
 	return &spanTracker{
 		repo:   repo,
-		db:     db,
 		starts: make(map[string]time.Time),
-	}
-}
-
-// touchKnowledgeHeartbeat advances knowledge.updated_at to the current
-// wall-clock so the housekeeping sweep treats this row as actively
-// progressing. Called on every span Begin/End/Fail/Skip — the cost is
-// one indexed UPDATE per transition (≤ a few dozen per knowledge), which
-// is dwarfed by the work the stages themselves do.
-//
-// touchKnowledgeHeartbeat advances knowledge.updated_at to the current
-// wall-clock so the housekeeping sweep treats this row as actively
-// progressing. Called on root / stage span transitions only — subspan and
-// generation transitions skip this side-channel because:
-//
-//   - The spans table itself is updated on every transition, and the
-//     housekeeping sweep already reads MAX(spans.updated_at) per
-//     knowledge, so subspan progress is observable without poking the
-//     parent row.
-//   - A multimodal stage with N images would produce 2*N+ extra UPDATEs
-//     on the same hot row (Begin+End per image plus retries), which we
-//     observed contributing to row-level contention under bursty
-//     uploads.
-//
-// Best-effort. We deliberately do NOT bump status here: the parse_status
-// column remains under the pipeline's control. Only the timestamp gets
-// nudged, which is exactly what housekeeping reads as the fallback.
-func (t *spanTracker) touchKnowledgeHeartbeat(ctx context.Context, knowledgeID, kind string) {
-	if t.db == nil || knowledgeID == "" {
-		return
-	}
-	// Subspan / generation transitions are observable through the spans
-	// table directly; skip the parent-row UPDATE to avoid write
-	// amplification on fan-out workloads.
-	if kind != types.SpanKindRoot && kind != types.SpanKindStage {
-		return
-	}
-	if err := t.db.WithContext(ctx).Model(&types.Knowledge{}).
-		Where("id = ?", knowledgeID).
-		Update("updated_at", time.Now()).Error; err != nil {
-		// Don't log every failure — heartbeat is best-effort and
-		// noisy logs would drown out real errors. Single line at
-		// warn level is enough for ops to spot a chronic outage.
-		logger.Warnf(ctx, "[SpanTracker] heartbeat update failed kid=%s: %v", knowledgeID, err)
 	}
 }
 
@@ -273,7 +223,6 @@ func (t *spanTracker) OpenAttempt(ctx context.Context, knowledgeID, langfuseTrac
 		return nil, attempt, err
 	}
 	t.recordStart(rootID, now)
-	t.touchKnowledgeHeartbeat(ctx, knowledgeID, types.SpanKindRoot)
 	return &Span{
 		KnowledgeID: knowledgeID,
 		Attempt:     attempt,
@@ -359,7 +308,6 @@ func (t *spanTracker) BeginStage(ctx context.Context, knowledgeID string, attemp
 			return nil
 		}
 		t.recordStart(existing.SpanID, now)
-		t.touchKnowledgeHeartbeat(ctx, knowledgeID, types.SpanKindStage)
 		return &Span{
 			KnowledgeID:  existing.KnowledgeID,
 			Attempt:      existing.Attempt,
@@ -389,7 +337,6 @@ func (t *spanTracker) BeginStage(ctx context.Context, knowledgeID string, attemp
 		return nil
 	}
 	t.recordStart(id, now)
-	t.touchKnowledgeHeartbeat(ctx, knowledgeID, types.SpanKindStage)
 	return &Span{
 		KnowledgeID:  knowledgeID,
 		Attempt:      attempt,
@@ -437,7 +384,6 @@ func (t *spanTracker) BeginSubSpan(ctx context.Context, parent *Span, name, kind
 		return nil
 	}
 	t.recordStart(id, now)
-	t.touchKnowledgeHeartbeat(ctx, parent.KnowledgeID, kind)
 	return &Span{
 		KnowledgeID:  parent.KnowledgeID,
 		Attempt:      parent.Attempt,
@@ -472,7 +418,6 @@ func (t *spanTracker) EndSpan(ctx context.Context, span *Span, output types.JSON
 	if err := t.repo.Upsert(ctx, row); err != nil {
 		logger.Warnf(ctx, "[SpanTracker] EndSpan failed span=%s: %v", span.SpanID, err)
 	}
-	t.touchKnowledgeHeartbeat(ctx, span.KnowledgeID, span.Kind)
 }
 
 func (t *spanTracker) FailSpan(ctx context.Context, span *Span, errorCode, errorMessage string, errorDetail error) {
@@ -534,7 +479,6 @@ func (t *spanTracker) FailSpan(ctx context.Context, span *Span, errorCode, error
 				types.SpanStatusFailed, nil, errorCode, errorMessage)
 		}
 	}
-	t.touchKnowledgeHeartbeat(ctx, span.KnowledgeID, span.Kind)
 }
 
 func (t *spanTracker) SkipSpan(ctx context.Context, span *Span, reason string) {
@@ -557,7 +501,6 @@ func (t *spanTracker) SkipSpan(ctx context.Context, span *Span, reason string) {
 	if err := t.repo.Upsert(ctx, row); err != nil {
 		logger.Warnf(ctx, "[SpanTracker] SkipSpan failed span=%s: %v", span.SpanID, err)
 	}
-	t.touchKnowledgeHeartbeat(ctx, span.KnowledgeID, span.Kind)
 }
 
 func (t *spanTracker) LookupStage(ctx context.Context, knowledgeID string, attempt int, stage string) *Span {
@@ -814,7 +757,6 @@ func (t *spanTracker) FinalizeAttempt(ctx context.Context, knowledgeID string, a
 			knowledgeID, attempt, err)
 		return
 	}
-	t.touchKnowledgeHeartbeat(ctx, knowledgeID, types.SpanKindRoot)
 }
 
 // AbortAttempt is the user-cancel counterpart to FinalizeAttempt. It

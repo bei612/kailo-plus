@@ -56,12 +56,8 @@ func setupSpanTrackerTest(t *testing.T) (SpanTracker, *gorm.DB) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.Exec(spanTrackerTestDDL).Error)
-	// Pass nil for the heartbeat db: these tests don't exercise
-	// heartbeat side-effects (those are covered in the housekeeping
-	// suite). Keeping it nil also avoids needing the knowledges
-	// table just to validate span behaviour.
 	repo := repository.NewKnowledgeSpanRepository(db)
-	return NewSpanTracker(repo, nil), db
+	return NewSpanTracker(repo), db
 }
 
 // TestSpanTracker_OpenAttempt_AllocatesFreshNumbers covers the contract

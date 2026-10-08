@@ -397,57 +397,86 @@ func (s *knowledgeService) isKnowledgeDeleting(ctx context.Context, tenantID uin
 	return knowledge.ParseStatus == types.ParseStatusDeleting
 }
 
-// isKnowledgeAborted returns (true, status) when the knowledge has been
+// isKnowledgeAborted returns (true, status, nil) when the knowledge has been
 // marked as deleting OR cancelled so async pipeline workers should bail
 // out. Status is returned so callers can branch on cleanup behavior:
 // deleting → existing cleanup of partial chunks/index applies;
 // cancelled → keep partially written data per user expectation.
 //
-// When the row is missing or unreadable we conservatively return
-// (true, ParseStatusDeleting): the existing deleting branch already
-// handles cleanup-or-no-op semantics safely.
+// Only a confirmed missing row is treated as deleted. An unreadable row is
+// not deletion evidence: callers must stop without deleting chunks or indexes.
 func (s *knowledgeService) isKnowledgeAborted(
-	ctx context.Context, tenantID uint64, knowledgeID string,
-) (bool, string) {
-	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledgeID)
+	ctx context.Context, expected *types.Knowledge,
+) (bool, string, error) {
+	if expected == nil || expected.ID == "" || expected.TenantID == 0 || expected.KnowledgeBaseID == "" {
+		return false, "", fmt.Errorf("native processing observation has no knowledge identity")
+	}
+	knowledge, err := s.repo.GetKnowledgeByID(ctx, expected.TenantID, expected.ID)
+	if errors.Is(err, repository.ErrKnowledgeNotFound) {
+		return true, types.ParseStatusDeleting, nil
+	}
 	if err != nil {
-		logger.Warnf(ctx, "Failed to check knowledge abort status (assuming deleted): %v", err)
-		return true, types.ParseStatusDeleting
+		return false, "", fmt.Errorf("observe native processing state: %w", err)
 	}
 	if knowledge == nil {
-		return true, types.ParseStatusDeleting
+		return false, "", fmt.Errorf("native processing observation is unavailable")
+	}
+	if err := validateProcessingKnowledge(knowledge, expected.TenantID, expected.KnowledgeBaseID, expected.ID); err != nil {
+		return false, "", err
 	}
 	switch knowledge.ParseStatus {
 	case types.ParseStatusDeleting, types.ParseStatusCancelled:
-		return true, knowledge.ParseStatus
+		return true, knowledge.ParseStatus, nil
 	}
-	return false, knowledge.ParseStatus
+	return false, knowledge.ParseStatus, nil
 }
 
 // isKnowledgeSourceReplaced reports whether the stored source file no longer
 // matches the in-memory knowledge this worker loaded. ReplaceKnowledgeFile
 // changes file_path under a still-running ProcessDocument; the stale worker
 // must not Save() the old path back or write chunks from the replaced file.
-func (s *knowledgeService) isKnowledgeSourceReplaced(ctx context.Context, knowledge *types.Knowledge) bool {
-	if knowledge == nil || knowledge.ID == "" || knowledge.FilePath == "" {
-		return false
+func (s *knowledgeService) isKnowledgeSourceReplaced(ctx context.Context, knowledge *types.Knowledge) (bool, *types.Knowledge, error) {
+	if knowledge == nil || knowledge.ID == "" || knowledge.TenantID == 0 || knowledge.KnowledgeBaseID == "" {
+		return false, nil, fmt.Errorf("native source observation has no knowledge identity")
 	}
 	current, err := s.repo.GetKnowledgeByID(ctx, knowledge.TenantID, knowledge.ID)
-	if err != nil || current == nil {
-		return false
+	if errors.Is(err, repository.ErrKnowledgeNotFound) {
+		return true, nil, nil
 	}
-	return current.FilePath != "" && current.FilePath != knowledge.FilePath
+	if err != nil {
+		return false, nil, fmt.Errorf("observe native processing source: %w", err)
+	}
+	if current == nil {
+		return false, nil, fmt.Errorf("native source observation is unavailable")
+	}
+	if err := validateProcessingKnowledge(current, knowledge.TenantID, knowledge.KnowledgeBaseID, knowledge.ID); err != nil {
+		return false, nil, err
+	}
+	return current.FilePath != knowledge.FilePath, current, nil
 }
 
 // updateKnowledgeUnlessSourceReplaced persists processing state only when this
 // worker still owns the source file. A no-op skip is preferred over rolling
 // file_path back to a blob ReplaceKnowledgeFile may already have deleted.
-func (s *knowledgeService) updateKnowledgeUnlessSourceReplaced(ctx context.Context, knowledge *types.Knowledge) error {
-	if s.isKnowledgeSourceReplaced(ctx, knowledge) {
-		logger.Infof(ctx, "Skip knowledge update for %s: source file was replaced", knowledge.ID)
-		return nil
+func (s *knowledgeService) updateKnowledgeUnlessSourceReplaced(ctx context.Context, before, knowledge *types.Knowledge) (bool, error) {
+	replaced, current, err := s.isKnowledgeSourceReplaced(ctx, knowledge)
+	if err != nil {
+		return false, err
 	}
-	return s.repo.UpdateKnowledge(ctx, knowledge)
+	if replaced {
+		logger.Infof(ctx, "Skip knowledge update for %s: source file was replaced", knowledge.ID)
+		return false, nil
+	}
+	if current.ParseStatus == types.ParseStatusDeleting || current.ParseStatus == types.ParseStatusCancelled {
+		return false, nil
+	}
+	// Parsing does not own server source/transfer metadata. Keep the current
+	// native value while the original CAS fences a subsequent row change.
+	knowledge.Metadata = current.Metadata
+	if err := s.repo.UpdateKnowledgeForTransfer(ctx, before, knowledge); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // checkStorageEngineConfigured verifies that the knowledge base has a storage engine configured
