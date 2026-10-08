@@ -1,5 +1,5 @@
 # Full native source fork; identity/correlation changes retain the native UI.
-# Prior native image facts remain in fork/verify; the current source has no matching artifact yet.
+# Artifact/source matches and remaining activation gates are recorded per artifact below.
 project: knowledge
 reference_tree: WeKnora
 upstream_url: https://github.com/Tencent/WeKnora
@@ -13,9 +13,9 @@ artifacts:
     build_context: .
     build_dockerfile: knowledge/adapter/Dockerfile
     inputs: [knowledge/adapter/Dockerfile, knowledge/adapter/Dockerfile.dockerignore, knowledge/adapter/package.json, knowledge/adapter/package-lock.json, knowledge/adapter/src/, client-kit/adapter/]
-    source_digest: none
-    artifact_digest: none
-    blocked: Adapter packaging and deployment consumer are source-only; no source-matched adapter artifact, live Agent activation audit or full component conformance has been accepted.
+    source_digest: sha256:4e399f3a95cd99ce83b3059bf29c6425f542f684c4482e226ccd20b15eb7e350
+    artifact_digest: sha256:588c713c15b96b5adcab70c53b1cd106961d18cb484614d5e288755cd216fcf1
+    blocked: Source-matched adapter artifact is recorded; live Agent activation audit, approved release/binding and full component conformance remain unverified.
   - name: knowledge-service
     kind: image
     build_context: knowledge
@@ -25,15 +25,15 @@ artifacts:
     build_args: [GOPROXY_ARG, VERSION_ARG, COMMIT_ID_ARG, BUILD_TIME_ARG, GO_VERSION_ARG]
     source_digest: sha256:2dbd78795c9ff1135e6e8d33e1d02a2d15ce7eb444dd2baf6bcaf8866b3cdc4e
     artifact_digest: sha256:5771d363eba6eb9b12c474ee40ecbdb8398137aa55a8be357ce832e496558d6c
-    blocked: Matching backend is deployed healthy and native OIDC identity readback passed; frozen model credential delivery, approved component release, binding and governed tools/resources acceptance remain unverified.
+    blocked: Previously recorded backend is deployed healthy; changed current backend inputs are rebuilding, and frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified.
   - name: knowledge-native-ui
     kind: image
     build_context: knowledge/frontend
     build_dockerfile: knowledge/frontend/Dockerfile
     inputs: [knowledge/frontend/]
-    source_digest: none
-    artifact_digest: none
-    blocked: Current declared knowledge source inputs have no matching UI artifact; historical UI build and its unresolved vulnerability/browser acceptance remain in evidence.
+    source_digest: sha256:f6cf1238013fa17ffecaa1b1396a1b3ff71c512196d1c891f42604e6ab913438
+    artifact_digest: sha256:dd0d8c706573854c6d07aecb8f2295aa3385071013e577eebe1fd446910cf31b
+    blocked: Source-matched full native UI is deployed with digest readback and selected native page screenshots; complete business/browser acceptance, unresolved dependency vulnerabilities and full component activation remain unverified.
   - name: knowledge-document-reader
     kind: image
     build_context: knowledge

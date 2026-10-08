@@ -6589,5 +6589,5 @@ onUnmounted(() => {
     margin: 0 !important;
   }
 }
+@import '@/components/css/wiki-graph-drawer.less';
 </style>
-<style lang="less" src="@/components/css/wiki-graph-drawer.less"></style>

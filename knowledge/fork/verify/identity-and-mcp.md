@@ -1222,3 +1222,129 @@ the real provisioning consumer's isolated HTTP/filesystem checks, not live
 OpenBao auto-auth, native MCP access, component release registration, binding
 activation, full check, screenshots or deployment acceptance. Those gates remain
 separate; an adapter process or configuration alone is not an active component.
+
+## Full native UI artifact and independent frontend update (2026-10-08)
+
+This increment retains the fixed WeKnora source
+`2be7bd40631dda1dd485306038f07a62e9ee287e`. Its native
+`frontend/src/views/knowledge/wiki/WikiBrowser.vue` and
+`frontend/src/components/css/wiki-graph-drawer.less` were inspected read-only.
+The original shared LESS file is still consumed by the original Wiki browser;
+the native page's template, script, layout, controls and stylesheet declarations
+are not replaced with a Kailo-specific page.
+
+Four-step impact and boundaries:
+
+1. Authority is the existing native UI preservation requirement, DD-87's
+   component host boundary and the original source/artifact manifest. A frontend
+   artifact or standalone service entrance does not authorize a component
+   release, binding, native resource or tool. No platform configuration records
+   or user/model credentials were invented to make the entrance appear active.
+2. The only native UI source change moves the original graph drawer LESS
+   reference from a separate external style block to an import inside the
+   existing unscoped LESS block. Both native graph consumers retain the same
+   stylesheet. The original build failed in Vue's external-style processing;
+   this is a packaging compatibility correction, not a redesign or reduction.
+   The original backend Dockerfile also gains cache mounts at its existing
+   AnyDoc target and Go build cache. AnyDoc, BrowserSkill, original build tags,
+   upstream version and Cargo parallelism remain enabled and unchanged.
+3. Web/Desktop still use the existing component host; Mobile remains a
+   non-host. No database, resource model, workflow type, schema, generated
+   contract, permission authority, menu, CSP origin, CSRF policy or shared
+   cookie is added or relaxed. The deployed backend, database, Redis and
+   document reader are not restarted by this frontend-only operation.
+4. Failed or unfinished builds are not matching artifacts. The old backend
+   digest remains explicitly historical while current backend inputs build.
+   Missing model credentials, embedding models and approved release/binding
+   remain blocking gates; a styled page or HTTP 200 is not business acceptance.
+
+The frozen release inputs are under
+`/volumes/data/kailo/tmp/knowledge-main-release-20261008.wtyNzc/apps`, based on
+`b7e2c621739edbc12ae1a1d7e042cff7bc7594f1` plus the exact source corrections
+above. The original `tools/build-upstream.sh` and
+`tools/upstream_manifest.py record` produced and recorded:
+
+| Artifact | Declared source SHA-256 | Image manifest SHA-256 |
+|---|---|---|
+| `knowledge-adapter` | `4e399f3a95cd99ce83b3059bf29c6425f542f684c4482e226ccd20b15eb7e350` | `588c713c15b96b5adcab70c53b1cd106961d18cb484614d5e288755cd216fcf1` |
+| `knowledge-native-ui` | `f6cf1238013fa17ffecaa1b1396a1b3ff71c512196d1c891f42604e6ab913438` | `dd0d8c706573854c6d07aecb8f2295aa3385071013e577eebe1fd446910cf31b` |
+
+Both builds exited 0; the UI transformed 6,626 modules and Vite reported
+`built in 51.13s`. Docker image readback independently matched both image
+digests. An isolated read-only, network-disabled artifact inspection confirmed
+both original `index.html` and `embed.html`, and the graph drawer selectors in
+both emitted native consumer stylesheets. It did not execute a new backend or
+claim a component tool call. Actual build logs in the release directory:
+
+| Log | SHA-256 |
+|---|---|
+| `adapter-build.log` | `c880af55264c9fc444bdffaef3dd6f18f3a4d3ddd18ecbf91c55163ad45c67dc` |
+| `ui-build-retry.log` | `cc2064e7c8427ed0fb3106871aed5827d78dd0e94ec009ea6f65bef1c352be84` |
+| `ui-build-style-fixed.log` | `1c4b1c6cfedeec8245d5ab213c7dfa1f442a0ec69e70c33631957c3a2adf3ba0` |
+
+Failures remain evidence. The preceding UI attempt exited 1 with
+`[vite:vue] Cannot read properties of undefined (reading 'scoped')` for the
+shared external LESS style; it is not counted as a pass. A preceding cancelled
+attempt is likewise not a completed build. The original dependency install
+reported 14 vulnerabilities (2 low, 3 moderate, 8 high, 1 critical), and three
+unapproved dependency build scripts; this increment does not resolve those
+release gates. The backend build is unfinished at this checkpoint. Although
+existing local images and Data-backed caches were reused, it fetched uncached
+base layers and Debian packages: it was not an internet-free build.
+
+The existing deployed UI Compose environment received only the new
+`KNOWLEDGE_UI_DIGEST`. Its existing entrypoint/proxy inputs compared unchanged
+with the formal source. The original Compose command, with the existing private
+environment file, ran
+`up -d --no-build --pull never --wait --no-deps frontend` and exited 0.
+Only the frontend was replaced. Before/after running-container records each
+contain 68 containers; comparison of container IDs and images found one changed
+entry, `kailo-knowledge-frontend-1`, while the other 67 IDs/images were unchanged.
+Those records have SHA-256
+`76f1a4cbf3f23c266e9cdae3f7c62c13cbe6753a02cecc5ca3b92633aa88a299`
+(`containers-before-ui.log`) and
+`71b0e08ad33bc2e6641abee26728c8a9ab869033592b9c9fa762bc110b32c112`
+(`containers-after-ui.log`).
+
+The new frontend container is
+`f46e2a37f41bbb4c339bbb26afedaf1039bf86d662eb463fd325bcfd5992a328`,
+started at `2026-10-08T20:10:30.187082568Z`. Both its actual image and requested
+pinned image match the UI manifest digest above. The native entrance
+`http://192.168.0.193:58094/` returned HTTP 200. This container has no Docker
+health-check field; successful Compose wait and HTTP readback are reported
+instead of inventing a health-check result.
+
+The named `playwright-cli` session `knowledge-main-delivery` used the existing
+normal SSO login, without injecting identity, cookies or storage state. After
+the update it reloaded the actual service and preserved the logged-in native
+user. The following screenshots were saved and individually opened for visual
+review in `apps/.playwright-cli/` (filename prefix
+`kailo-knowledge-updated-`, suffix `-20261008.png`):
+
+| Screenshot middle | Actual state | SHA-256 |
+|---|---|---|
+| `models` | Original model management | `a31f4b4b3b017f7f430591c4e4abdc352b84cf7a46d42ea524ec2928486ab63d` |
+| `list` | Original knowledge-base empty state and sidebar | `c17f4d31af33df531bd2a7fa19c68d94014241258a8d18f750edf2da1e951499` |
+| `create` | Original knowledge-base creation dialog, cancelled | `1eb741807b8294c0d8316b6a6fe64e4f22bc51426e51cac5f699822be9cd87dd` |
+| `agents` | Original built-in Agent presets | `5bb1d88ec0fe0f89655da1376e1b6278dd5b437fd3cd5881c48c30f1cccaf8ce` |
+| `artifacts` | Original filters, search and empty state | `a4f2ddbf3481b3ad3f1a3e89bfb2fa853492682fd20da277223d8087d1b47347` |
+| `shared` | Original shared-space entrance and controls | `630213907fcc033aff29bb4a2a8262eeee8ad79431e01cc69ba1391d0f04babf` |
+| `chat-clean` | Original new-chat composer after normal guide dismissal | `d9ece9080b45369cef40c296a6f0fd53c48b2f68c8d287dd96e2bae839439b8e` |
+| `general` | Original Chinese general settings | `83f94a58b53c13b7da34b5beb7ca1911769cc109be3ca2e7938db28ced5f127c` |
+| `general-en` | English chosen through the original language control | `aabe4f90073c496ddbf8d986cbe372d5729dc6a14d499b931b71c5e9f35239ef` |
+| `general-zh-restored` | Chinese restored through that same control | `54abf3e5fd138769e81f75e8be2848d38a761340d854b9da92dda347a8316fea` |
+
+The browser console reported one informational autofocus message, zero errors
+and zero warnings. Two initial automation actions failed (a duplicate Settings
+close locator and a guide overlay intercepting the menu); normal visible
+controls were used to dismiss the top dialog/guide before continuing. They are
+not counted as successful actions or hidden by modifying the application.
+
+These selected original page states retain actual layout, styles and controls;
+they do not establish all-page or all-state equality, complete localization,
+Windows/Mobile acceptance, iframe cookie/CSP/revocation acceptance, platform
+Agent integration or a real knowledge-base ingestion/chat result. Native model
+readback still lacks the required model API credential and any embedding model.
+No chat was sent and no knowledge base, model, secret or component binding was
+created. The adapter artifact is not deployed or activated. Full check and
+production acceptance remain separate and are not declared passing here.
