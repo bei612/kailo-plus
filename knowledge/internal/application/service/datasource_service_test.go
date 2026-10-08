@@ -80,6 +80,11 @@ func (r *fileStorageConfigRepository) Update(context.Context, *types.DataSource)
 	return nil
 }
 
+func (r *fileStorageConfigRepository) Create(context.Context, *types.DataSource) error {
+	r.writes++
+	return nil
+}
+
 func TestFileStorageEditValidatesResourceConfigurationWithoutNativeCredentials(t *testing.T) {
 	resource := uuid.NewString()
 	for _, name := range []string{"valid-selection", "unchanged-selection", "omitted-config", "empty-selection", "duplicate-selection", "invalid-reference", "native-url-setting", "malformed-config"} {
@@ -90,7 +95,9 @@ func TestFileStorageEditValidatesResourceConfigurationWithoutNativeCredentials(t
 				Type: fileStorageConnectorType, Status: types.DataSourceStatusPaused, Config: original}
 			repo := &fileStorageConfigRepository{kbDeleteDSRepo: newKBDeleteDSRepo(existing.KnowledgeBaseID, existing)}
 			registry := datasource.NewConnectorRegistry()
-			registry.Register(&fileStorageConnector{})
+			registry.Register(&fileStorageConnector{transport: &fileStorageTransport{config: &config.FileStorageSyncConfig{
+				NativeTenantID: existing.TenantID, NativeKnowledgeBaseID: existing.KnowledgeBaseID,
+			}}})
 			svc := &DataSourceService{dsRepo: repo, connectorRegistry: registry, scheduler: datasource.NewScheduler(repo, nil, nil)}
 			defer svc.scheduler.Stop()
 			cfg := &types.DataSourceConfig{ResourceIDs: []string{uuid.NewString()}}
@@ -134,6 +141,59 @@ func TestFileStorageEditValidatesResourceConfigurationWithoutNativeCredentials(t
 			}
 			require.Equal(t, original, existing.Config, "editing must not mutate the previous native row before validation")
 		})
+	}
+}
+
+func TestFileStorageDataSourceRejectsDifferentControlledScope(t *testing.T) {
+	for _, operation := range []string{"create", "edit", "edit-omitted-type-and-config"} {
+		for _, state := range []string{"matching", "different-knowledge-base", "different-tenant", "missing-configuration", "missing-transport"} {
+			t.Run(operation+"/"+state, func(t *testing.T) {
+				blob, err := (&types.DataSourceConfig{ResourceIDs: []string{uuid.NewString()}}).ToJSON()
+				require.NoError(t, err)
+				ds := &types.DataSource{ID: uuid.NewString(), TenantID: 1, KnowledgeBaseID: uuid.NewString(),
+					Type: fileStorageConnectorType, Status: types.DataSourceStatusPaused, Config: blob}
+				cfg := &config.FileStorageSyncConfig{NativeTenantID: ds.TenantID, NativeKnowledgeBaseID: ds.KnowledgeBaseID}
+				switch state {
+				case "different-knowledge-base":
+					cfg.NativeKnowledgeBaseID = uuid.NewString()
+				case "different-tenant":
+					cfg.NativeTenantID++
+				case "missing-configuration":
+					cfg = nil
+				}
+				connector := &fileStorageConnector{transport: &fileStorageTransport{config: cfg}}
+				if state == "missing-transport" {
+					connector.transport = nil
+				}
+				registry := datasource.NewConnectorRegistry()
+				require.NoError(t, registry.Register(connector))
+				repo := &fileStorageConfigRepository{kbDeleteDSRepo: newKBDeleteDSRepo(ds.KnowledgeBaseID, ds)}
+				svc := &DataSourceService{dsRepo: repo, connectorRegistry: registry,
+					kbService: &processSyncKBService{kb: &types.KnowledgeBase{ID: ds.KnowledgeBaseID, TenantID: ds.TenantID}},
+					scheduler: datasource.NewScheduler(repo, nil, nil)}
+				defer svc.scheduler.Stop()
+				next := *ds
+				var result *types.DataSource
+				if operation == "create" {
+					result, err = svc.CreateDataSource(context.Background(), &next)
+				} else {
+					if operation == "edit-omitted-type-and-config" {
+						next.Type, next.Config = "", nil
+					}
+					result, err = svc.UpdateDataSource(context.Background(), &next)
+				}
+				if state == "matching" {
+					require.NoError(t, err)
+					require.Same(t, &next, result)
+					require.Equal(t, 1, repo.writes)
+				} else {
+					require.Error(t, err)
+					require.Nil(t, result)
+					require.Zero(t, repo.writes, "wrong binding must not be saved or scheduled")
+				}
+				require.Equal(t, blob, ds.Config)
+			})
+		}
 	}
 }
 

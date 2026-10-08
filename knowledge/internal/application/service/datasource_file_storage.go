@@ -96,6 +96,15 @@ func NewFileStorageConnector(cfg *config.FileStorageSyncConfig, knowledge interf
 
 func (*fileStorageConnector) Type() string { return fileStorageConnectorType }
 
+func (c *fileStorageConnector) bindingScope(tenantID uint64, knowledgeBaseID string) error {
+	if c == nil || c.transport == nil || c.transport.config == nil || tenantID == 0 ||
+		!fileStorageUUID(knowledgeBaseID) || tenantID != c.transport.config.NativeTenantID ||
+		knowledgeBaseID != c.transport.config.NativeKnowledgeBaseID {
+		return fmt.Errorf("native import does not match its controlled binding")
+	}
+	return nil
+}
+
 func (c *fileStorageConnector) Validate(_ context.Context, cfg *types.DataSourceConfig) error {
 	if cfg == nil || len(cfg.Credentials) != 0 || len(cfg.Settings) != 0 || len(cfg.ResourceIDs) == 0 {
 		return fmt.Errorf("file-storage imports require source Resource references, not native credentials or URLs")
@@ -375,7 +384,7 @@ func (c *fileStorageConnector) observeApplication(ctx context.Context, run fileS
 func (c *fileStorageConnector) FetchStream(ctx context.Context, cfg *types.DataSourceConfig, previous *types.SyncCursor, h datasource.StreamHandler) (*types.SyncCursor, error) {
 	run, ok := ctx.Value(fileStorageRunKey{}).(fileStorageRun)
 	if !ok || !fileStorageUUID(run.dataSourceID) || !fileStorageUUID(run.syncLogID) ||
-		run.tenantID != c.transport.config.NativeTenantID || run.knowledgeBaseID != c.transport.config.NativeKnowledgeBaseID {
+		c.bindingScope(run.tenantID, run.knowledgeBaseID) != nil {
 		return nil, fmt.Errorf("native import execution does not match its controlled binding")
 	}
 	state, err := fileStorageState(previous)

@@ -79,9 +79,14 @@ func (s *DataSourceService) CreateDataSource(ctx context.Context, ds *types.Data
 	}
 
 	// Validate connector type
-	_, err = s.connectorRegistry.Get(ds.Type)
+	connector, err := s.connectorRegistry.Get(ds.Type)
 	if err != nil {
 		return nil, err
+	}
+	if native, ok := connector.(*fileStorageConnector); ok {
+		if err := native.bindingScope(ds.TenantID, ds.KnowledgeBaseID); err != nil {
+			return nil, err
+		}
 	}
 
 	// Validate configuration
@@ -167,6 +172,23 @@ func (s *DataSourceService) UpdateDataSource(ctx context.Context, ds *types.Data
 	}
 	if ds.TenantID != existing.TenantID {
 		return nil, datasource.ErrDataSourceInvalid
+	}
+	connectorType := ds.Type
+	if connectorType == "" {
+		connectorType = existing.Type
+	}
+	if connectorType == fileStorageConnectorType {
+		connector, err := s.connectorRegistry.Get(connectorType)
+		if err != nil {
+			return nil, err
+		}
+		native, ok := connector.(*fileStorageConnector)
+		if !ok {
+			return nil, datasource.ErrInvalidConfig
+		}
+		if err := native.bindingScope(ds.TenantID, ds.KnowledgeBaseID); err != nil {
+			return nil, err
+		}
 	}
 
 	// Credentials NEVER flow through this endpoint — they live behind the

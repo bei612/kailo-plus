@@ -2389,3 +2389,88 @@ missing user-flow consumers are not claimed complete. UI/screenshots, live
 Cells/WeKnora/LLM, release/binding activation, global checks and deployment were
 not run by this subtask. The manifest `status` command was not rerun for this
 batch; the read-only fixed-source evidence does not replace that command.
+
+## Native import creation and edits retain the controlled receiver scope (2026-10-08)
+
+Authority and cause: DD-89 and design `13` §4.1/§4.4 bind native imports to the
+delivered receiver binding and KnowledgeBase, not merely to any same-tenant
+knowledge base. The fixed official WeKnora source
+`2be7bd40631dda1dd485306038f07a62e9ee287e`,
+`internal/application/service/datasource_service.go::DataSourceService.CreateDataSource`
+and `DataSourceService.UpdateDataSource`, checks native KB ownership and connector
+configuration. Those checks do not know the added receiver binding's controlled
+`NativeTenantID`/`NativeKnowledgeBaseID`. Previously, a file-storage data source
+could be saved for another same-tenant KB, but the actual original `FetchStream`
+consumer would later reject it. Source/configuration acceptance was therefore
+not evidence that that native import could ever execute.
+
+Impact: the existing concrete `fileStorageConnector.bindingScope` now serves
+both the original stream entry and native Create/Update persistence consumers.
+Create validates the actual registered connector before saving. Update checks
+the effective connector type and original receiver scope even for unchanged or
+omitted configuration; omitted type uses the stored type for this check, without
+rewriting the request or introducing a replacement read path. Other original
+connectors retain their previous behavior. No public schema/API, Workflow,
+database, cursor, task identity, synchronization authority or runtime endpoint
+is added; native repositories, scheduling and parsing remain original.
+
+Side effects: a missing connector runtime/configuration or wrong native tenant/KB
+refuses before repository write or scheduling, rather than accepting a data
+source which cannot run. This reuses the existing controlled binding, not a new
+permission authority. It is not fresh source permission, a read grant, a receiver
+write grant or proof of ACTIVE platform binding. Actual business reads/writes
+still require the existing Core/adapter checks. No credential, file body or
+cross-service account mapping is returned or persisted by this change.
+
+Boundaries: wrong KB, wrong tenant, missing configuration and missing transport
+have deterministic refusals for create, ordinary edits and edits omitting type
+and configuration. Valid paused sources still save. Previous source records are
+not modified on refusal. The shared stream guard retains its previous execution
+scope restriction and now safely refuses missing runtime inputs instead of
+dereferencing them. Existing pending-intent observations, deletion convergence,
+receipts and their deadlines are unchanged; no new asynchronous state exists.
+
+Implementation preceded the original service checks. Using the same independent
+Go SDK/cache, the complete original `TestFileStorage` target exited 0:
+**11 top-level +67 subchecks passed**, no failures/skips, service runtime
+`0.550s`. In the private candidate, deleting the actual production
+`bindingScope` refusal and returning nil made that same target exit 1:
+10 top-level passed/1 failed and 55 subchecks passed/12 failed, runtime `0.545s`.
+The 12 actual Create/Update consumers reported `An error is expected but got nil`;
+the mutation did not change their fixtures or assertions. Restoring the exact
+formal production file and rerunning the same target exited 0: **11 +67 passed**,
+no failures/skips, runtime `0.577s`.
+
+```sh
+sudo -n docker exec -u 1000:1000 -w /workspace/knowledge \
+  -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+  kailo-knowledge-native-check-wkkigg \
+  go test ./internal/application/service -run TestFileStorage -count=1 -v
+```
+
+Before each run, build processes, CPU/memory pressure, Data space and actual SDK
+limits were read. No competing compile was running; host available memory was
+about 31 GiB and Data space 1.1–1.3 GiB. The existing SDK stayed 4 CPU/8 GiB with
+no additional swap, UID 1000; the initial cgroup OOM counters were zero.
+SDK `gofmt -d` was empty. After restoration, the entire native `internal/`
+formal/candidate `diff -qr` and scoped `git diff --check` exited 0. No dependency
+install, database, image or whole-tree snapshot was created.
+
+Logs under the existing SDK evidence root above:
+
+- `file-storage-scope-positive-20261008.log`, exit 0, SHA-256
+  `197c0629fb943fa949bdabd24ac1be0adce5b75e514d3da7ecada74e67be90be`.
+- `file-storage-scope-mutation-20261008.log`, intentional exit 1, SHA-256
+  `8de04949bae077d51f530dbebdc2c0f81f1eca9eff83a66ef76fa14399c56b43`.
+- `file-storage-scope-restored-20261008.log`, exit 0, SHA-256
+  `7060451d886d9ef73e6b3fe1382e5a11bf6e11a56610e68da6c112b123395345`.
+
+This is a standalone native backend correction, not complete file import
+acceptance. The native editor consumer has separately been written but not
+verified: a trusted SERVICE source directory producer and its native backend
+handoff are still absent, so there is no usable new import option. Its Vue
+checks, browser screenshots and end-to-end import were not run. This backend
+batch likewise did not run live services, global checks, release/binding
+activation or deployment. The fixed-source manifest status command was not
+rerun; read-only source evidence does not replace that command.
