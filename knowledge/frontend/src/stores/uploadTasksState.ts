@@ -224,13 +224,24 @@ export type UploadOutcome =
  * responses with the JSON body spread over `{ status, message }`, so a 409
  * duplicate arrives as a rejection carrying `code` and the existing row in `data`.
  */
-export function classifyUploadResult(result: any): UploadOutcome {
+export function classifyUploadResult(result: any, kbId?: string): UploadOutcome {
   const code = result?.code ?? result?.error?.code
   if (code === 'duplicate_file') {
     return { kind: 'duplicate', knowledgeId: result?.data?.id, message: result?.message }
   }
   if (result?.success === true) {
     return { kind: 'uploaded', knowledgeId: result?.data?.id, parseStatus: result?.data?.parse_status }
+  }
+  // The native service confirmed the file and row were persisted before the
+  // queue reply was lost. `uploaded` means transfer only, not task acceptance
+  // or parse success. Keep observing that exact KB's row; never re-upload it.
+  const persisted = result?.error?.details?.persisted_knowledge
+  if (result?.status === 500 && result?.success === false && result?.error?.code === 1007
+    && typeof kbId === 'string' && kbId.length > 0
+    && persisted?.knowledge_base_id === kbId
+    && typeof persisted?.id === 'string' && persisted.id.trim() === persisted.id && persisted.id.length > 0
+    && persisted?.parse_status === 'pending') {
+    return { kind: 'uploaded', knowledgeId: persisted.id, parseStatus: persisted.parse_status }
   }
   return { kind: 'failed', message: result?.error?.message || result?.message }
 }

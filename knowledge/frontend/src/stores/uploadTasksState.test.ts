@@ -140,6 +140,36 @@ test('classifyUploadResult reads success, duplicate rejections and failures', ()
   assert.deepEqual(classifyUploadResult(undefined), { kind: 'failed', message: undefined })
 })
 
+test('queue uncertainty consumes only the server-confirmed reference for the current knowledge base', () => {
+  const result = {
+    status: 500,
+    success: false,
+    error: {
+      code: 1007,
+      message: 'Processing task submission could not be confirmed',
+      details: { persisted_knowledge: { id: 'k1', knowledge_base_id: 'kb1', parse_status: 'pending' } },
+    },
+  }
+  assert.deepEqual(classifyUploadResult(result, 'kb1'), { kind: 'uploaded', knowledgeId: 'k1', parseStatus: 'pending' })
+  for (const kb of [undefined, '', 'other-kb']) {
+    assert.equal(classifyUploadResult(result, kb).kind, 'failed')
+  }
+  for (const value of ['', ' ', ' k1', 7, null]) {
+    assert.equal(classifyUploadResult({
+      ...result,
+      error: { ...result.error, details: { persisted_knowledge: { ...result.error.details.persisted_knowledge, id: value } } },
+    }, 'kb1').kind, 'failed')
+  }
+  for (const status of ['completed', 'failed', 'unknown', null]) {
+    assert.equal(classifyUploadResult({
+      ...result,
+      error: { ...result.error, details: { persisted_knowledge: { ...result.error.details.persisted_knowledge, parse_status: status } } },
+    }, 'kb1').kind, 'failed')
+  }
+  assert.equal(classifyUploadResult({ ...result, status: 400 }, 'kb1').kind, 'failed')
+  assert.equal(classifyUploadResult({ ...result, error: { ...result.error, code: 1000 } }, 'kb1').kind, 'failed')
+})
+
 test('estimateRate waits for a one second window and ignores stale samples', () => {
   assert.equal(estimateRate([{ at: 0, bytes: 0 }, { at: 500, bytes: 1000 }]), 0)
   assert.equal(estimateRate([{ at: 0, bytes: 0 }, { at: 2000, bytes: 4000 }]), 2000)

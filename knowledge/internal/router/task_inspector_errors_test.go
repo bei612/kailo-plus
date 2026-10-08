@@ -1,12 +1,15 @@
 package router
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,6 +39,126 @@ func TestIsAsynqQueueNotFound(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestQueueStateHasMatchPreservesUnknown(t *testing.T) {
+	probeErr := errors.New("queue probe unavailable")
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{name: "backend error", err: probeErr},
+		{name: "public missing queue", err: asynq.ErrQueueNotFound},
+		{name: "native missing queue", err: errors.New(`NOT_FOUND: queue "default" does not exist`)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			matched, err := (&asynqTaskInspector{}).queueStateHasMatch(
+				context.Background(), types.QueueDefault, "pending",
+				func(string, ...asynq.ListOption) ([]*asynq.TaskInfo, error) { return nil, tc.err },
+				func(string, []byte) bool { return true },
+			)
+			require.False(t, matched)
+			if tc.err == probeErr {
+				require.ErrorIs(t, err, probeErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+
+	t.Run("later page error", func(t *testing.T) {
+		calls := 0
+		matched, err := (&asynqTaskInspector{}).queueStateHasMatch(
+			context.Background(), types.QueueDefault, "pending",
+			func(string, ...asynq.ListOption) ([]*asynq.TaskInfo, error) {
+				calls++
+				if calls == 1 {
+					tasks := make([]*asynq.TaskInfo, listPageSize)
+					for i := range tasks {
+						tasks[i] = &asynq.TaskInfo{}
+					}
+					return tasks, nil
+				}
+				return nil, probeErr
+			}, func(string, []byte) bool { return false },
+		)
+		require.False(t, matched)
+		require.ErrorIs(t, err, probeErr)
+		require.Equal(t, 2, calls)
+	})
+
+	t.Run("cancelled context", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		matched, err := (&asynqTaskInspector{}).queueStateHasMatch(
+			ctx, types.QueueDefault, "pending",
+			func(string, ...asynq.ListOption) ([]*asynq.TaskInfo, error) {
+				t.Fatal("cancelled probe must not read the backend")
+				return nil, nil
+			}, func(string, []byte) bool { return false },
+		)
+		require.False(t, matched)
+		require.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+func TestTaskLivenessProbeDoesNotInventAbsence(t *testing.T) {
+	server := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	inspector := NewAsynqTaskInspector(asynq.NewInspectorFromRedisClient(redisClient), redisClient)
+	queued, err := inspector.HasQueuedTasksForKnowledge(context.Background(), "knowledge")
+	require.False(t, queued)
+	require.NoError(t, err, "a confirmed missing queue remains absent")
+	queued, err = inspector.HasQueuedDeleteTasksForKnowledge(context.Background(), "knowledge")
+	require.False(t, queued)
+	require.NoError(t, err)
+
+	client := asynq.NewClientFromRedisClient(redisClient)
+	t.Cleanup(func() { _ = client.Close() })
+	enqueueTask(t, client, types.TypeDocumentProcess, `{"knowledge_id":"knowledge"}`, "parse-liveness")
+	enqueueTask(t, client, types.TypeKnowledgeListDelete, `{"knowledge_ids":["knowledge"]}`, "delete-liveness")
+	queued, err = inspector.HasQueuedTasksForKnowledge(context.Background(), "knowledge")
+	require.True(t, queued)
+	require.NoError(t, err)
+	queued, err = inspector.HasQueuedDeleteTasksForKnowledge(context.Background(), "knowledge")
+	require.True(t, queued)
+	require.NoError(t, err)
+	require.NoError(t, redisClient.Close())
+
+	for _, probe := range []struct {
+		name string
+		call func(context.Context, string) (bool, error)
+	}{
+		{name: "parse", call: inspector.HasQueuedTasksForKnowledge},
+		{name: "delete", call: inspector.HasQueuedDeleteTasksForKnowledge},
+	} {
+		t.Run(probe.name, func(t *testing.T) {
+			queued, err := probe.call(context.Background(), "knowledge")
+			require.False(t, queued)
+			require.Error(t, err, "backend failure is not proof that the native task is absent")
+		})
+	}
+
+	unavailable := NewAsynqTaskInspector(nil, nil)
+	queued, err = unavailable.HasQueuedTasksForKnowledge(context.Background(), "knowledge")
+	require.False(t, queued)
+	require.Error(t, err)
+	queued, err = unavailable.HasQueuedDeleteTasksForKnowledge(context.Background(), "knowledge")
+	require.False(t, queued)
+	require.Error(t, err)
+	missingRedis := NewAsynqTaskInspector(asynq.NewInspectorFromRedisClient(redisClient), nil)
+	queued, err = missingRedis.HasQueuedTasksForKnowledge(context.Background(), "knowledge")
+	require.False(t, queued)
+	require.Error(t, err)
+
+	lite := NewNoopTaskInspector()
+	queued, err = lite.HasQueuedTasksForKnowledge(context.Background(), "knowledge")
+	require.False(t, queued)
+	require.NoError(t, err, "explicit Lite wiring is the existing no-queue fact")
+	queued, err = lite.HasQueuedDeleteTasksForKnowledge(context.Background(), "knowledge")
+	require.False(t, queued)
+	require.NoError(t, err)
 }
 
 func TestMatchesKnowledgeListDelete(t *testing.T) {

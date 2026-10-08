@@ -10,7 +10,7 @@ import {
   type UploadPayload,
   type UploadQueueDeps,
 } from './uploadQueue.ts'
-import type { UploadItem } from './uploadTasksState.ts'
+import { itemPhase, type UploadItem } from './uploadTasksState.ts'
 
 type Call = {
   batch: UploadBatch
@@ -127,6 +127,63 @@ test('classifies duplicates and failures, and retries a failed file', async () =
   assert.equal(byName('bad').transfer, 'uploaded')
   assert.equal(byName('bad').parseStatus, 'pending')
   assert.deepEqual(ends.at(-1), ['kb1', { uploaded: true, settled: true }])
+})
+
+test('a persisted upload with an unknown queue reply is observed, never re-uploaded or rendered ready', async () => {
+  const { calls, ends, queue, batch, byName, statusRows } = setup()
+  queue.add(batch(), [{ file: file('native', 1) }])
+  calls[0].reject({
+    status: 500, success: false,
+    error: {
+      code: 1007, message: 'Processing task submission could not be confirmed',
+      details: { persisted_knowledge: { id: 'native-id', knowledge_base_id: 'kb1', parse_status: 'pending' } },
+    },
+  })
+  await flush()
+  const item = byName('native')
+  assert.equal(item.transfer, 'uploaded', 'only file persistence was confirmed')
+  assert.equal(item.knowledgeId, 'native-id')
+  assert.equal(item.parseStatus, 'pending')
+  assert.equal(itemPhase(item), 'parsing')
+  assert.equal(item.error, undefined)
+  assert.deepEqual(ends, [['kb1', { uploaded: true, settled: true }]])
+  queue.retry(item.id)
+  queue.retryFailed()
+  assert.equal(calls.length, 1, 'unknown task acceptance must not re-upload or dispatch again')
+
+  statusRows.set('kb1', null)
+  await queue.pollNow()
+  assert.equal(item.parseStatus, 'pending', 'an unconfirmed read cannot invent a terminal state')
+  statusRows.set('kb1', [{ id: 'native-id', parse_status: 'processing' }])
+  await queue.pollNow()
+  assert.equal(item.parseStatus, 'processing')
+  statusRows.set('kb1', [{ id: 'native-id', parse_status: 'completed' }])
+  await queue.pollNow()
+  assert.equal(item.parseStatus, 'completed', 'only the original native observation confirms completion')
+  assert.equal(itemPhase(item), 'ready')
+  assert.equal(calls.length, 1)
+})
+
+test('unknown queue reply after clear refreshes only its original knowledge base', async () => {
+  const { calls, ends, queue, batch, items } = setup()
+  queue.add(batch(), [{ file: file('native', 1) }])
+  calls[0].progress(1)
+  queue.clear()
+  queue.add(batch('kb2'), [{ file: file('new', 2) }])
+  calls[0].reject({
+    status: 500, success: false,
+    error: {
+      code: 1007,
+      details: { persisted_knowledge: { id: 'old-id', knowledge_base_id: 'kb1', parse_status: 'pending' } },
+    },
+  })
+  await flush()
+  assert.deepEqual(ends.at(-1), ['kb1', { uploaded: true, settled: true }])
+  assert.equal(items.length, 1)
+  assert.equal(items[0].name, 'new')
+  assert.equal(items[0].transfer, 'uploading')
+  assert.equal(items[0].knowledgeId, undefined)
+  assert.equal(calls.length, 2)
 })
 
 test('cancelling aborts the request without reporting it as a failure', async () => {

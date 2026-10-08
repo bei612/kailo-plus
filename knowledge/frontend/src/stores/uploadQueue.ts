@@ -143,7 +143,7 @@ export function createUploadQueue(items: UploadItem[], batches: UploadBatch[], d
     // Outlived clear(): the row is gone from the panel, but a file that still
     // made it (clear() lets fully sent files finish) is new in the list.
     if (startedIn !== generation) {
-      if (!aborted && classifyUploadResult(result).kind === 'uploaded') {
+      if (!aborted && classifyUploadResult(result, batch.kbId).kind === 'uploaded') {
         deps.onTransferEnd(batch.kbId, { uploaded: true, settled: !isBusy(batch.kbId) })
       }
       return
@@ -154,7 +154,7 @@ export function createUploadQueue(items: UploadItem[], batches: UploadBatch[], d
       // Cancelled mid-flight; the abort rejection carries nothing worth showing.
       if (item.transfer === 'uploading') item.transfer = 'cancelled'
     } else {
-      const outcome = classifyUploadResult(result)
+      const outcome = classifyUploadResult(result, batch.kbId)
       if (outcome.kind === 'uploaded') {
         item.transfer = 'uploaded'
         item.loaded = item.size

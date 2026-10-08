@@ -94,10 +94,53 @@ func TestReparseKnowledgeManualEnqueueFailureIsVisible(t *testing.T) {
 
 	require.Error(t, err)
 	require.NotNil(t, got)
-	require.Equal(t, types.ParseStatusFailed, got.ParseStatus)
+	assertKnowledgeSubmissionUnknown(t, err, got)
 	require.Equal(t, "disabled", got.EnableStatus)
-	require.Equal(t, "Failed to enqueue processing task", got.ErrorMessage)
-	require.GreaterOrEqual(t, repo.updateCalls, 2, "pending and failed states must both be persisted")
+	require.Equal(t, 1, repo.updateCalls, "only the original pending state is persisted")
+}
+
+func TestReparseQueueUnknownDoesNotOverwriteWorker(t *testing.T) {
+	for _, source := range []string{"manual", "file", "file_url", "url"} {
+		for _, observed := range []string{types.ParseStatusPending, types.ParseStatusCompleted, types.ParseStatusFailed} {
+			t.Run(source+"/"+observed, func(t *testing.T) {
+				f := newDocumentWriteFixture(t)
+				row, err := f.repo.GetKnowledgeByID(f.ctx, 7, "doc")
+				require.NoError(t, err)
+				row.Type, row.StorageSize = source, 0
+				row.ParseStatus = types.ParseStatusCompleted
+				row.FileName, row.FileType = "doc.txt", "txt"
+				switch source {
+				case "manual":
+					require.NoError(t, row.SetManualMetadata(types.NewManualKnowledgeMetadata("body", types.ManualKnowledgeStatusPublish, 1)))
+				case "file":
+					row.FilePath = "stored/doc"
+				default:
+					row.Source = "http://127.0.0.1/doc.txt"
+				}
+				require.NoError(t, f.repo.UpdateKnowledge(f.ctx, row))
+				audit := &captureKBActivityAudit{}
+				f.svc.audit = audit
+				queue := &createKnowledgeTaskEnqueuerStub{err: errors.New("queue reply lost")}
+				writesAtSubmission := 0
+				queue.beforeEnqueue = func() {
+					persisted, err := f.repo.GetKnowledgeByID(f.ctx, 7, "doc")
+					require.NoError(t, err)
+					require.Equal(t, types.ParseStatusPending, persisted.ParseStatus)
+					writesAtSubmission = f.repo.writes
+					require.NoError(t, f.db.Model(&types.Knowledge{}).Where("id = ?", "doc").Update("parse_status", observed).Error)
+				}
+				f.svc.task = queue
+				got, err := f.svc.ReparseKnowledge(f.ctx, "doc", nil)
+				assertKnowledgeSubmissionUnknown(t, err, got)
+				require.Equal(t, writesAtSubmission, f.repo.writes)
+				persisted, err := f.repo.GetKnowledgeByID(f.ctx, 7, "doc")
+				require.NoError(t, err)
+				require.Equal(t, observed, persisted.ParseStatus)
+				require.Equal(t, 1, queue.calls)
+				require.Equal(t, types.AuditOutcomePartial, audit.entry.Outcome)
+			})
+		}
+	}
 }
 
 func TestRunKnowledgeListReparseSubmissionsReportsPartialFailure(t *testing.T) {

@@ -3210,3 +3210,229 @@ task termination. No live Cells→WeKnora import/parse/revoke E2E, release/bindi
 activation, image deployment, authenticated screenshot, Windows/Mobile or
 `tools/check.sh --full` ran. This batch alone does not establish production
 readiness or full original restoration.
+
+## 2026-10-08: native submission acknowledgement and housekeeping evidence
+
+This checkpoint changes the original native consumers, not the component
+registry, Core action protocol, workflow engine or a replacement upload UI.
+It has 14 source/original-fixture paths, plus this receipt. The final ten Go
+inputs passed the combined original narrow target before and after actual
+private production mutation; the four frontend inputs passed their original
+target and type check after their own mutation/restoration. The earlier and
+final evidence are separated below. No complete-component acceptance or
+deployment is asserted.
+
+The four impact conclusions established from the existing design and actual
+call graph are:
+
+1. **Authority.** `.design/07` §8A and the existing native parse/transfer
+   boundary in `.design/13` require an unconfirmed execution to remain
+   unconfirmed. The fixed official source remains
+   `2be7bd40631dda1dd485306038f07a62e9ee287e`, including
+   `internal/application/service/knowledge_create.go::knowledgeService.CreateKnowledgeFromManual`,
+   `internal/application/service/knowledge_create.go::knowledgeService.UpdateManualKnowledge`,
+   `internal/application/service/knowledge_process.go::knowledgeService.ReparseKnowledge`,
+   `internal/application/service/knowledge_housekeeping.go::HousekeepingService.runSweep`
+   and `internal/router/task_inspector.go::asynqTaskInspector.queueStateHasMatch`.
+   Original Knowledge rows, Asynq tasks, processing spans and durable Wiki
+   operations remain authoritative. Redis enqueue errors cannot establish
+   that no task was accepted; queue inspection errors cannot establish an
+   orphan. This is an adapter/native-consumer correction, not approval to
+   enable an incomplete component release.
+2. **Impact.** Five original creation branches (file, URL, file URL, published
+   manual and asynchronous passage), manual update, and four reparse branches
+   now preserve the already-persisted native row on enqueue error. They return
+   the existing AppError envelope with `persisted_knowledge` containing only
+   `id`, `knowledge_base_id` and the saved `parse_status`; the original audit
+   records Partial rather than Accepted or Failed. The original upload queue
+   supplies its own KB to `classifyUploadResult`, consumes only a matching
+   trusted pending reference, drops the uploaded payload and uses its existing
+   native status polling. Original handler middleware transports the error;
+   no handler route or public platform schema was added. Housekeeping consumes
+   the existing heartbeat, durable-op and `(bool, error)` queue probes. The
+   internal `queueStateHasMatch` helper has exactly two callers, the parse and
+   delete liveness methods; cancellation does not call it and retains its
+   existing best-effort semantics. No database format/migration, duplicated
+   body, client credential, Core contract or four-side generated type changed.
+3. **Side effects.** No enqueue-error branch writes a fabricated Failed over
+   a late worker's completed/failed row or dispatches a second task. HTTP
+   status 500 and native error 1007 are existing closed constants, verified
+   at the fixed commit in `internal/errors/errors.go::ErrInternalServer` and
+   `internal/errors/errors.go::NewInternalServerError`; they are not a new
+   business threshold. Only the native reference/state enters error details,
+   not content, Redis errors or credentials. `uploaded` still means transfer
+   persistence, not parse completion: the original `itemPhase` stays parsing
+   until a later native status observation. Cross-KB references, empty or
+   malformed references, unknown states and unrelated error envelopes do not
+   enter this branch. The complete-ACK-loss gap below remains open.
+4. **Boundaries and convergence.** Confirmed stale rows with no spans and no
+   queued/durable work retain original failure recovery. Heartbeat DB errors,
+   known spans with unreadable timestamps, durable-op query errors, missing
+   inspectors and failed queue scans preserve the original nonterminal row
+   for the next original sweep. Missing queue is recognized using the existing
+   exact Asynq NOT_FOUND classifier; other errors and cancelled probes are
+   propagated. Fixed-source `internal/container/container.go::BuildContainer`
+   registers the Redis inspector when `REDIS_ADDR` exists and explicitly
+   registers `internal/router/task_inspector.go::NewNoopTaskInspector` for
+   Lite mode. Only that explicit Lite implementation supplies its original
+   `(false, nil)` no-queue fact; a missing Redis dependency no longer silently
+   becomes Lite. These observations create no new state, queue, lease,
+   registration or result authority.
+
+Original threshold and recheck facts are unchanged:
+`internal/application/service/knowledge_housekeeping.go::HousekeepingService.staleThreshold`
+uses `max(1 hour, KnowledgeBase.DocumentProcessTimeout) + 10 minutes` and
+`HousekeepingService.Start` uses the existing five-minute cron. When evidence
+is unavailable the row is rechecked on that cadence, not marked Failed merely
+because the dependency is down. Knowledge-service operators must restore the
+existing DB/span schema, Redis connectivity or inspector wiring, using the
+original `[Housekeeping]` WARN logs and native runtime/operator surface.
+Persistent probe failure has **no proven bounded terminal recovery**; there
+is no new timer or claimed automatic success. Counts now say active/queued or
+unconfirmed evidence instead of calling every skipped row “backpressure”.
+
+### Actual original-consumer verification before the Housekeeping extension
+
+The existing Go SDK `kailo-knowledge-native-check-wkkigg` used Go 1.26.8,
+UID/GID 1000:1000, 4 CPU/8 GiB and no additional swap. Its existing read-only
+candidate, module cache, build cache and TMPDIR were reused. The command was:
+
+```sh
+sudo -n docker exec \
+  -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+  -w /workspace/knowledge kailo-knowledge-native-check-wkkigg \
+  go test ./internal/application/service ./internal/handler \
+  -run 'Test(KnowledgeCreateQueueUnknown|ManualUpdateQueueUnknown|CreateKnowledgeFrom|ManualCreation|Reparse|RunKnowledgeListReparse|NativeUploadUnknownQueueReply|DocumentTagBodyRoute|SingleDocumentDelete)' \
+  -count=1 -v
+```
+
+First handle 91598 exited 1: 28 top-level and 48 subchecks passed, with one
+top-level failure in the existing GitLab source-path fixture. Its old
+enqueue-success stub asserted Created=1 despite the existing connector
+requiring native parse completion. Production acceptance was not weakened:
+the fixture now checks the saved distinct source path, pending Created=0,
+then the same native completed row is observed with Skipped=1 and no second
+enqueue. Corrected handle 11252 exited 0: **29 top-level and 48 subchecks
+passed, 0 failed, 0 skipped** (service 140.784s, handler 0.486s). This proves
+the six original Go inputs at that point, **not** the subsequent four
+Housekeeping/Asynq paths. The combined run was deferred until the root Rust
+release compile ended; its final evidence follows below, rather than reusing
+these earlier counts for new bytes.
+
+The four frontend inputs ran in the original locked-dependency SDK
+`kailo-native-page-sdk-4rbmbz`, UID/GID 1000:1000, 4 CPU/4 GiB and no additional
+swap, using its existing candidate:
+
+```sh
+sudo -n docker exec \
+  -w /work/knowledge-picker-20261008.2BNiWr/frontend \
+  kailo-native-page-sdk-4rbmbz sh -c \
+  'npm test -- src/stores/uploadQueue.test.ts src/stores/uploadTasksState.test.ts && npm run type-check'
+```
+
+Positive handle 27524 exited 0: **23/23 passed**, `vue-tsc` exited 0. In the
+private production candidate only, removing the actual KB comparison and
+turning the actual queue parse-status assignment into completed produced
+handle 3827 exit 1: **18 passed, 5 failed**; its `&&`-chained type check did not
+run. Both candidate production files were restored byte-for-byte; all four
+frontend inputs matched formal source. Restored handle 37664 exited 0:
+**23/23 passed**, `vue-tsc` exited 0. No formal production source was mutated.
+The changed Go inputs have empty `gofmt -d` output and scoped
+`git diff --check` passed; neither check substitutes for the pending Go run.
+
+Go logs remain under
+`/volumes/data/kailo/tmp/codex-installation-runtime-rootcause-20261003.e4agxD/knowledge-native-identity-20261005.WkKIGG/`:
+
+| Log | SHA-256 |
+|---|---|
+| `knowledge-submit-unknown-positive.log` | `eb8d5d1e5a57870218ab842bfbebfaba3140500f2cb6949a8803e30e381154e0` |
+| `knowledge-submit-unknown-corrected.log` | `0c02f172333130d41d8ccb643cb4cf43da2d6622cb2f9322d965b2090d132b85` |
+
+Frontend logs remain under
+`/volumes/data/kailo/tmp/codex-native-page-navigation-20261005.4rBmBZ/knowledge-picker-20261008.2BNiWr/`:
+
+| Log | SHA-256 |
+|---|---|
+| `upload-submit-unknown-positive.log` | `a729da4ba0a653200022b7324abc8ce03b175a33ce55795b3ce5a18e79cf3130` |
+| `upload-submit-unknown-mutation.log` | `5e1645e597c1f215e4ab2c9359565c43aa709a7aec6e1f712f37c673f0ff73bb` |
+| `upload-submit-unknown-restored.log` | `0660175f39a81d8e89ac152d4710199932fd5047559ec4884fdcf1f306f16237` |
+
+### Final combined Go inputs: positive, real mutation and byte restoration
+
+The same original 4 CPU/8 GiB SDK, UID/GID 1000:1000, existing caches and
+read-only candidate were retained. Before the final window, actual host
+MemAvailable was 17,148 MiB and Data had 284 GiB free; before restored execution
+MemAvailable was 16,830 MiB. No second build was started by this agent. Shared
+Data I/O delayed the first cache read; the original handle was kept instead
+of restarting or clearing caches. All 14 formal/candidate inputs matched
+before the run and after restoration. The actual identical three-package
+command for all three runs was:
+
+```sh
+sudo -n docker exec \
+  -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOPROXY=off \
+  -e TMPDIR=/cache/build/file-storage-sync-20261008.maEMf2 \
+  -w /workspace/knowledge kailo-knowledge-native-check-wkkigg \
+  go test -mod=readonly ./internal/application/service ./internal/handler ./internal/router \
+  -run 'Test(KnowledgeCreateQueueUnknown|ManualUpdateQueueUnknown|CreateKnowledgeFrom|ManualCreation|Reparse|RunKnowledgeListReparse|NativeUploadUnknownQueueReply|DocumentTagBodyRoute|SingleDocumentDelete|Housekeeping_|QueueStateHasMatch|TaskLivenessProbe|IsAsynqQueueNotFound|MatchesKnowledge|CancelTasksForKnowledgeBase)' \
+  -count=1 -v
+```
+
+- Positive handle **29834 exited 0**: **57 top-level and 94 subchecks passed,
+  0 failed, 0 skipped**. Service/handler/router package runtimes were
+  159.026s/1.692s/1.812s.
+- Private production mutation handle **6398 exited 1**: **10 top-level and
+  21 subchecks failed; 47 top-level and 73 subchecks passed; 0 skipped**.
+  Only four candidate production files were changed, injecting nine actual
+  faults: file enqueue error acknowledged as success; manual update and
+  manual reparse overwrote late worker state; failed span query, unreadable
+  known heartbeat, missing inspector and failed queue probe admitted rows
+  for failure; native queue scan swallowed errors and missing Redis setup
+  impersonated Lite mode. The original checks caught the actual faults, for
+  example `Expected error with "queue probe unavailable" in chain but got nil`
+  and `backend failure is not proof that the native task is absent`.
+  Service/handler/router runtimes were 137.160s/0.663s/0.811s. Formal source and
+  the checks were never mutated.
+- The four candidate production files were restored from the unchanged
+  formal bytes and all 14 input comparisons returned 0. Restored handle
+  **45725 exited 0**: **57 top-level and 94 subchecks passed, 0 failed,
+  0 skipped**. Service/handler/router runtimes were 231.723s/0.714s/0.857s.
+  Existing cancellation tests still passed; the changed read-only helper
+  did not enter that mutation path. Final cgroup memory.current was
+  1,753,972,736 bytes, max/oom/oom_kill were all 0, and the SDK had no Go or
+  compiler process left. Final gofmt output and scoped diff check were empty.
+
+Complete combined logs are in the same Go log directory above; the full
+failure output is retained rather than only the displayed truncated tail:
+
+| Log | SHA-256 |
+|---|---|
+| `knowledge-submit-housekeeping-positive.log` | `bdffad19efb2164283d339fa97c11f80f700270d6463385001a7dbef98b87315` |
+| `knowledge-submit-housekeeping-mutation.log` | `21ed88eec7e2f9420bddbf0cb48ff59cdee3616becc6a9902d5760084f975f37` |
+| `knowledge-submit-housekeeping-restored.log` | `933ba0f0c4d583b73e44fff093083130074358975c82f83cd559cc1b48e505a2` |
+
+### Remaining release boundaries
+
+- **Completely lost HTTP acknowledgement is not closed.** Without a trusted
+  `persisted_knowledge` response the original upload classifier still reports
+  failed and retains a retryable payload. The original multipart producer
+  supplies no client creation-intent ID and the service creates its UUID;
+  matching a filename or another upload's row is not safe recovery. This
+  batch only closes the server-returned, persisted-reference case and does
+  not claim all UNKNOWN upload outcomes safe.
+- **Housekeeping still lacks an atomic writer fence.** Its final bulk UPDATE
+  guards IDs and parse states, not the observed `updated_at`/attempt. A reparse
+  or worker can advance after probing; remote queue and DB observations are
+  not an atomic CAS. This existing concurrency gap is not repaired or
+  certified by the probe-error changes, and no substitute lock/lease/state
+  machine is introduced.
+- There is no live Redis archival/ACK-loss, provider/vector/Postgres,
+  Cells→WeKnora source/read/parse/revoke E2E, approved release/binding
+  activation, image rebuild/deployment, authenticated browser screenshot,
+  Desktop/Mobile acceptance or `tools/check.sh --full` evidence for these
+  bytes. Native standalone pages and independent data remain intact; this
+  receipt does not establish complete component integration, restoration or
+  production readiness. No new dependency, image, database or build snapshot
+  was introduced by this batch, and no commit/push was performed by this
+  implementation agent.

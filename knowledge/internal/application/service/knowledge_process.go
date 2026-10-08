@@ -2623,10 +2623,14 @@ func (s *knowledgeService) ReparseKnowledge(
 	if kb != nil && kb.IsWikiEnabled() {
 		s.prepareWikiForReparse(ctx, existing)
 	}
-	recordReparseStarted := func() {
+	recordReparseSubmission := func(outcome types.AuditOutcome) {
+		details := map[string]any{"title": existing.Title, "type": existing.Type, "attempt": reparseAttempt,
+			"processing_status": existing.ParseStatus}
+		if outcome == types.AuditOutcomePartial {
+			details["failure_stage"] = "enqueue"
+		}
 		recordKBActivity(ctx, s.audit, tenantID, existing.KnowledgeBaseID, types.AuditActionKnowledgeReparseStarted,
-			"knowledge", existing.ID, types.AuditOutcomeAccepted,
-			map[string]any{"title": existing.Title, "type": existing.Type, "attempt": reparseAttempt})
+			"knowledge", existing.ID, outcome, details)
 	}
 
 	// For manual knowledge, use async manual processing (cleanup + re-indexing in worker)
@@ -2650,10 +2654,10 @@ func (s *knowledgeService) ReparseKnowledge(
 
 		if _, err := s.enqueueManualProcessing(ctx, existing, meta.Content, true); err != nil {
 			logger.Errorf(ctx, "Failed to enqueue manual reparse task: %v", err)
-			s.markKnowledgeEnqueueFailed(ctx, existing)
-			return existing, werrors.NewInternalServerError("Failed to submit processing task")
+			recordReparseSubmission(types.AuditOutcomePartial)
+			return existing, knowledgeSubmissionUnconfirmed(existing)
 		} else {
-			recordReparseStarted()
+			recordReparseSubmission(types.AuditOutcomeAccepted)
 		}
 		return existing, nil
 	}
@@ -2724,11 +2728,11 @@ func (s *knowledgeService) ReparseKnowledge(
 		info, err := s.task.Enqueue(task)
 		if err != nil {
 			logger.Errorf(ctx, "Failed to enqueue reparse task: %v", err)
-			s.markKnowledgeEnqueueFailed(ctx, existing)
-			return existing, werrors.NewInternalServerError("Failed to submit processing task")
+			recordReparseSubmission(types.AuditOutcomePartial)
+			return existing, knowledgeSubmissionUnconfirmed(existing)
 		}
 		logger.Infof(ctx, "Enqueued reparse task: id=%s queue=%s knowledge_id=%s", info.ID, info.Queue, existing.ID)
-		recordReparseStarted()
+		recordReparseSubmission(types.AuditOutcomeAccepted)
 
 		// For data tables (csv, xlsx, xls), also enqueue summary task
 		enqueueDataTableSummaryIfNeeded(ctx, s.task, tenantID, existing.ID, existing.FileName, existing.FileType, kb.SummaryModelID, kb.EmbeddingModelID)
@@ -2778,11 +2782,11 @@ func (s *knowledgeService) ReparseKnowledge(
 		info, err := s.task.Enqueue(task)
 		if err != nil {
 			logger.Errorf(ctx, "Failed to enqueue file URL reparse task: %v", err)
-			s.markKnowledgeEnqueueFailed(ctx, existing)
-			return existing, werrors.NewInternalServerError("Failed to submit processing task")
+			recordReparseSubmission(types.AuditOutcomePartial)
+			return existing, knowledgeSubmissionUnconfirmed(existing)
 		}
 		logger.Infof(ctx, "Enqueued file URL reparse task: id=%s queue=%s knowledge_id=%s", info.ID, info.Queue, existing.ID)
-		recordReparseStarted()
+		recordReparseSubmission(types.AuditOutcomeAccepted)
 
 		enqueueDataTableSummaryIfNeeded(ctx, s.task, tenantID, existing.ID, existing.FileName, existing.FileType, kb.SummaryModelID, kb.EmbeddingModelID)
 
@@ -2829,11 +2833,11 @@ func (s *knowledgeService) ReparseKnowledge(
 		info, err := s.task.Enqueue(task)
 		if err != nil {
 			logger.Errorf(ctx, "Failed to enqueue URL reparse task: %v", err)
-			s.markKnowledgeEnqueueFailed(ctx, existing)
-			return existing, werrors.NewInternalServerError("Failed to submit processing task")
+			recordReparseSubmission(types.AuditOutcomePartial)
+			return existing, knowledgeSubmissionUnconfirmed(existing)
 		}
 		logger.Infof(ctx, "Enqueued URL reparse task: id=%s queue=%s knowledge_id=%s", info.ID, info.Queue, existing.ID)
-		recordReparseStarted()
+		recordReparseSubmission(types.AuditOutcomeAccepted)
 
 		return existing, nil
 	}

@@ -360,25 +360,110 @@ func TestHousekeeping_StillRecoversWhenNoDurableOp(t *testing.T) {
 		"row with no durable op and nothing queued must still be recovered")
 }
 
-// TestHousekeeping_QueueProbeError_FailsSafe confirms the fail-safe
-// direction: when the queue probe errors we still recover the row rather
-// than leaving it stranded forever.
-func TestHousekeeping_QueueProbeError_FailsSafe(t *testing.T) {
+func TestHousekeeping_QueueProbeErrorDefersUntilProbeRecovers(t *testing.T) {
+	for _, status := range []string{types.ParseStatusPending, types.ParseStatusProcessing, types.ParseStatusFinalizing} {
+		t.Run(status, func(t *testing.T) {
+			db := setupHousekeepingDB(t)
+			svc := newHousekeepingSvcWithInspector(db, fakeTaskInspector{
+				err: errors.New("redis unavailable"),
+			})
+			insertKnowledge(t, db, "kid-probeerr", status, time.Now().Add(-3*time.Hour))
+
+			svc.runSweep(context.Background())
+			got, errMsg := readKnowledgeStatus(t, db, "kid-probeerr")
+			assert.Equal(t, status, got, "failed probe does not prove the task absent")
+			assert.Empty(t, errMsg)
+
+			svc.inspector = fakeTaskInspector{}
+			svc.runSweep(context.Background())
+			got, _ = readKnowledgeStatus(t, db, "kid-probeerr")
+			assert.Equal(t, types.ParseStatusFailed, got, "a later confirmed orphan still converges")
+		})
+	}
+}
+
+func TestHousekeeping_SpanProbeErrorDefersUntilProbeRecovers(t *testing.T) {
 	db := setupHousekeepingDB(t)
-	svc := newHousekeepingSvcWithInspector(db, fakeTaskInspector{
-		err: errors.New("redis unavailable"),
-	})
-	stale := time.Now().Add(-3 * time.Hour)
-	insertKnowledge(t, db, "kid-probeerr", types.ParseStatusProcessing, stale)
+	svc := newHousekeepingSvcForTest(db)
+	insertKnowledge(t, db, "kid-spanerr", types.ParseStatusPending, time.Now().Add(-3*time.Hour))
+	require.NoError(t, db.Exec(`DROP TABLE knowledge_processing_spans`).Error)
 
 	svc.runSweep(context.Background())
+	status, errMsg := readKnowledgeStatus(t, db, "kid-spanerr")
+	assert.Equal(t, types.ParseStatusPending, status)
+	assert.Empty(t, errMsg)
 
-	var status string
-	require.NoError(t, db.Raw(
-		`SELECT parse_status FROM knowledges WHERE id = ?`, "kid-probeerr",
-	).Row().Scan(&status))
-	assert.Equal(t, types.ParseStatusFailed, status,
-		"queue probe error must fail safe and still recover the stuck row")
+	require.NoError(t, db.Exec(housekeepingSpansDDL).Error)
+	svc.runSweep(context.Background())
+	status, _ = readKnowledgeStatus(t, db, "kid-spanerr")
+	assert.Equal(t, types.ParseStatusFailed, status)
+}
+
+func TestHousekeeping_UnconfirmedSpanHeartbeatDefers(t *testing.T) {
+	for _, heartbeat := range []string{"", "unrecognized-timestamp"} {
+		t.Run(heartbeat, func(t *testing.T) {
+			db := setupHousekeepingDB(t)
+			svc := newHousekeepingSvcForTest(db)
+			stale := time.Now().Add(-3 * time.Hour)
+			insertKnowledge(t, db, "kid-unknown-span", types.ParseStatusProcessing, stale)
+			insertKnowledge(t, db, "kid-no-span", types.ParseStatusProcessing, stale)
+			insertSpan(t, db, "kid-unknown-span", 1, "parse", types.SpanStatusRunning, stale)
+			require.NoError(t, db.Exec(`UPDATE knowledge_processing_spans SET updated_at = ? WHERE knowledge_id = ?`,
+				heartbeat, "kid-unknown-span").Error)
+
+			svc.runSweep(context.Background())
+			status, errMsg := readKnowledgeStatus(t, db, "kid-unknown-span")
+			assert.Equal(t, types.ParseStatusProcessing, status, "known unreadable span is not an absent span")
+			assert.Empty(t, errMsg)
+			status, _ = readKnowledgeStatus(t, db, "kid-no-span")
+			assert.Equal(t, types.ParseStatusFailed, status, "confirmed absence remains recoverable")
+
+			require.NoError(t, db.Exec(`UPDATE knowledge_processing_spans SET updated_at = ? WHERE knowledge_id = ?`,
+				stale, "kid-unknown-span").Error)
+			svc.runSweep(context.Background())
+			status, _ = readKnowledgeStatus(t, db, "kid-unknown-span")
+			assert.Equal(t, types.ParseStatusFailed, status)
+		})
+	}
+}
+
+func TestHousekeeping_NilInspectorDefersParsingSweep(t *testing.T) {
+	db := setupHousekeepingDB(t)
+	svc := newHousekeepingSvcWithInspector(db, nil)
+	for _, status := range []string{types.ParseStatusPending, types.ParseStatusProcessing, types.ParseStatusFinalizing} {
+		insertKnowledge(t, db, status, status, time.Now().Add(-3*time.Hour))
+	}
+
+	svc.runSweep(context.Background())
+	for _, expected := range []string{types.ParseStatusPending, types.ParseStatusProcessing, types.ParseStatusFinalizing} {
+		status, errMsg := readKnowledgeStatus(t, db, expected)
+		assert.Equal(t, expected, status)
+		assert.Empty(t, errMsg)
+	}
+
+	svc.inspector = fakeTaskInspector{}
+	svc.runSweep(context.Background())
+	for _, previous := range []string{types.ParseStatusPending, types.ParseStatusProcessing, types.ParseStatusFinalizing} {
+		status, _ := readKnowledgeStatus(t, db, previous)
+		assert.Equal(t, types.ParseStatusFailed, status)
+	}
+}
+
+func TestHousekeeping_DurableProbeErrorDefersUntilProbeRecovers(t *testing.T) {
+	db := setupHousekeepingDB(t)
+	svc := newHousekeepingSvcForTest(db)
+	insertKnowledge(t, db, "kid-durableerr", types.ParseStatusFinalizing, time.Now().Add(-3*time.Hour))
+	require.NoError(t, db.Exec(`DROP TABLE task_pending_ops`).Error)
+
+	svc.runSweep(context.Background())
+	status, errMsg := readKnowledgeStatus(t, db, "kid-durableerr")
+	assert.Equal(t, types.ParseStatusFinalizing, status)
+	assert.Empty(t, errMsg)
+
+	require.NoError(t, db.Exec(housekeepingPendingOpsDDL).Error)
+	svc.runSweep(context.Background())
+	status, _ = readKnowledgeStatus(t, db, "kid-durableerr")
+	assert.Equal(t, types.ParseStatusFailed, status)
 }
 
 // TestHousekeeping_PreservesRecentlyTouched: any knowledge whose

@@ -14,8 +14,9 @@
 //
 // Without this sweep, a single unlucky failure mode can leave a knowledge
 // row in "processing" forever — invisible to users except as a permanent
-// spinner. With this sweep the worst-case latency from stall to user-
-// visible failure is bounded to ~1 stale-threshold + 1 sweep interval.
+// spinner. When heartbeat and queue probes are available, recovery takes
+// at most ~1 stale-threshold + 1 sweep interval. Unconfirmed probes defer
+// recovery to the next sweep rather than inventing a failed terminal state.
 package service
 
 import (
@@ -42,9 +43,9 @@ type HousekeepingService struct {
 	// inspector lets the sweep distinguish a genuinely orphaned row from
 	// one whose enrichment subtasks are merely backlogged behind a busy
 	// queue (no span heartbeat yet because no worker has picked them up).
-	// nil-safe — a nil inspector disables only the transient queue check.
-	// Durable Wiki ownership in task_pending_ops is always probed through db,
-	// so the sweep never falls back to the span/updated_at heuristics alone.
+	// A nil inspector cannot establish that no transient work remains.
+	// Durable Wiki ownership in task_pending_ops is also probed before a row
+	// is admitted, never falling back to span/updated_at heuristics alone.
 	inspector interfaces.TaskInspector
 
 	mu      sync.Mutex
@@ -179,21 +180,13 @@ func (h *HousekeepingService) runSweep(ctx context.Context) {
 		}
 	}
 	if spanSkipped > 0 {
-		// Visibility into "we considered killing N rows but their
-		// span tree showed they're still progressing". Ops can grep
-		// for this if they suspect housekeeping over- or under-fires.
 		logger.Infof(ctx,
-			"[Housekeeping] %d candidate(s) skipped — span heartbeat within threshold",
+			"[Housekeeping] %d candidate(s) deferred — span heartbeat active or unconfirmed",
 			spanSkipped)
 	}
 	if queueSkipped > 0 {
-		// Visibility into "stale span heartbeat but tasks still queued"
-		// — i.e. backpressure, not a stuck row. Persistent counts here
-		// mean the queue is the bottleneck (raise the matching per-pool or
-		// shared asynq concurrency, or document_process_timeout), not that
-		// housekeeping misfires.
 		logger.Infof(ctx,
-			"[Housekeeping] %d candidate(s) skipped — tasks still queued (backpressure, not stuck)",
+			"[Housekeeping] %d candidate(s) deferred — work still queued or queue evidence unconfirmed",
 			queueSkipped)
 	}
 
@@ -269,8 +262,8 @@ func (h *HousekeepingService) runSweep(ctx context.Context) {
 // filterByLastSpanActivity returns the subset of candidates whose most
 // recent span row predates `cutoff` — i.e. genuinely stuck. Candidates
 // with no span rows at all also pass through (they're lite-mode or
-// pre-instrumentation tasks; the simple updated_at check already proved
-// them stuck and we have no heartbeat to override that).
+// pre-instrumentation tasks; the queue gate must still establish no work).
+// Query failures and known spans with unreadable timestamps defer recovery.
 func (h *HousekeepingService) filterByLastSpanActivity(ctx context.Context, candidates []types.Knowledge, cutoff time.Time) []types.Knowledge {
 	if len(candidates) == 0 {
 		return candidates
@@ -299,23 +292,23 @@ func (h *HousekeepingService) filterByLastSpanActivity(ctx context.Context, cand
 		Group("knowledge_id").
 		Find(&beats).Error
 	if err != nil {
-		// On query failure, fail safe — assume nothing has a
-		// heartbeat (so all candidates are "stuck"). This matches
-		// the previous-version behaviour and never under-recovers.
-		logger.Warnf(ctx, "[Housekeeping] span heartbeat query failed: %v (will fail safe and recover all candidates)", err)
-		return candidates
+		logger.Warnf(ctx, "[Housekeeping] span heartbeat query failed: %v (deferring %d candidate(s) to next sweep)", err, len(candidates))
+		return candidates[:0]
 	}
-	heartbeat := make(map[string]time.Time, len(beats))
+	heartbeat := make(map[string]*time.Time, len(beats))
 	for _, b := range beats {
 		if t, ok := parseHeartbeatTime(b.LastSeen); ok {
-			heartbeat[b.KnowledgeID] = t
+			heartbeat[b.KnowledgeID] = &t
+		} else {
+			heartbeat[b.KnowledgeID] = nil
+			logger.Warnf(ctx, "[Housekeeping] span heartbeat timestamp unconfirmed for %s (deferring to next sweep)", b.KnowledgeID)
 		}
 	}
 
 	out := candidates[:0]
 	for _, k := range candidates {
-		if last, ok := heartbeat[k.ID]; ok && last.After(cutoff) {
-			// Active span heartbeat — leave alone.
+		if last, ok := heartbeat[k.ID]; ok && (last == nil || last.After(cutoff)) {
+			// Active or unconfirmed span heartbeat — leave alone.
 			continue
 		}
 		out = append(out, k)
@@ -325,10 +318,8 @@ func (h *HousekeepingService) filterByLastSpanActivity(ctx context.Context, cand
 
 // filterOutQueued returns the subset of candidates that have NO work left
 // in either the durable pending-op table or the queue backend, plus a count
-// of how many were dropped because work still references them. A dropped
-// candidate is "backlogged, not orphaned" — its enrichment subtasks are
-// waiting for a worker, so the missing span heartbeat is expected and
-// recovering it would be a false positive.
+// of how many were deferred because work still references them or a probe
+// could not establish its absence. Neither case proves an orphaned task.
 //
 // The asynq inspector alone cannot answer this for Wiki. Wiki ingest work is
 // durable per document in task_pending_ops (dedup_key = knowledge ID), while
@@ -339,18 +330,18 @@ func (h *HousekeepingService) filterByLastSpanActivity(ctx context.Context, cand
 // work is a queued Wiki ingest, and the sweep force-fails a perfectly healthy
 // row. Probe the durable table directly before consulting the inspector.
 //
-// When no inspector is wired (nil) the durable gate still applies; only the
-// transient queue check is skipped. On probe error we fail safe, but in
-// opposite directions by design: an inspector error KEEPS the candidate as
-// stuck (matching the span heartbeat query), whereas a durable-table error
-// DEFERS every candidate to the next sweep — we cannot tell backlog from
-// orphan without it, and wrongly failing a live document is not recoverable
-// by the user, while waiting one more interval is.
+// A missing inspector or any probe error defers recovery to the next sweep.
+// Lite mode explicitly supplies its no-queue inspector; nil is not evidence
+// that the deployment uses inline execution.
 func (h *HousekeepingService) filterOutQueued(
 	ctx context.Context, candidates []types.Knowledge,
 ) (kept []types.Knowledge, skipped int) {
 	if len(candidates) == 0 {
 		return candidates, 0
+	}
+	if h.inspector == nil {
+		logger.Warnf(ctx, "[Housekeeping] queue inspector unavailable (deferring %d candidate(s) to next sweep)", len(candidates))
+		return candidates[:0], len(candidates)
 	}
 
 	ids := make([]string, 0, len(candidates))
@@ -380,15 +371,11 @@ func (h *HousekeepingService) filterOutQueued(
 			skipped++
 			continue
 		}
-		if h.inspector == nil {
-			out = append(out, k)
-			continue
-		}
 		queued, err := h.inspector.HasQueuedTasksForKnowledge(ctx, k.ID)
 		if err != nil {
 			logger.Warnf(ctx,
-				"[Housekeeping] queue probe failed for %s: %v (will fail safe and treat as stuck)", k.ID, err)
-			out = append(out, k)
+				"[Housekeeping] queue probe failed for %s: %v (deferring to next sweep)", k.ID, err)
+			skipped++
 			continue
 		}
 		if queued {
@@ -402,9 +389,8 @@ func (h *HousekeepingService) filterOutQueued(
 
 // parseHeartbeatTime accepts the timestamp formats Postgres and SQLite
 // emit for a TIMESTAMP column read back through MAX(). Returns false if
-// none parse — the caller treats unparseable rows as "no heartbeat",
-// which fails safe (the row gets recovered as stuck rather than
-// silently preserved).
+// none parse — the caller preserves that known span as unconfirmed and
+// retries on the next sweep, rather than treating it as an absent span.
 func parseHeartbeatTime(s string) (time.Time, bool) {
 	if s == "" {
 		return time.Time{}, false

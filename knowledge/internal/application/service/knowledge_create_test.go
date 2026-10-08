@@ -13,8 +13,10 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/require"
 )
@@ -26,6 +28,7 @@ type createKnowledgeFileRepoStub struct {
 	createErr        error
 	createdKnowledge *types.Knowledge
 	updateErr        error
+	updateCalls      int
 	assignedTags     []string
 }
 
@@ -88,6 +91,7 @@ func (r *createKnowledgeFileRepoStub) GetKnowledgeByID(_ context.Context, tenant
 }
 
 func (r *createKnowledgeFileRepoStub) UpdateKnowledge(_ context.Context, knowledge *types.Knowledge) error {
+	r.updateCalls++
 	copy := *knowledge
 	r.createdKnowledge = &copy
 	return r.updateErr
@@ -230,7 +234,9 @@ func (s *createKnowledgeFileServiceStub) CopyFile(ctx context.Context, srcPath s
 }
 
 type createKnowledgeTaskEnqueuerStub struct {
-	calls int
+	calls         int
+	err           error
+	beforeEnqueue func()
 }
 
 func (s *createKnowledgeTaskEnqueuerStub) Enqueue(
@@ -238,7 +244,130 @@ func (s *createKnowledgeTaskEnqueuerStub) Enqueue(
 	opts ...asynq.Option,
 ) (*asynq.TaskInfo, error) {
 	s.calls++
+	if s.beforeEnqueue != nil {
+		s.beforeEnqueue()
+	}
+	if s.err != nil {
+		return nil, s.err
+	}
 	return &asynq.TaskInfo{ID: "task-1", Queue: "default"}, nil
+}
+
+func TestKnowledgeCreateQueueUnknownRetainsPersistedReference(t *testing.T) {
+	secutils.SetSSRFWhitelistFromRaw("127.0.0.1")
+	t.Cleanup(secutils.ResetSSRFWhitelistForTest)
+	for _, source := range []string{"file", "file-at-id", "url", "file-url", "passage", "manual"} {
+		for _, observed := range []string{types.ParseStatusPending, types.ParseStatusCompleted, types.ParseStatusFailed} {
+			t.Run(source+"/"+observed, func(t *testing.T) {
+				repo := &createKnowledgeFileRepoStub{}
+				queue := &createKnowledgeTaskEnqueuerStub{err: errors.New("native queue reply lost with private credential")}
+				storage := &createKnowledgeFileServiceStub{}
+				audit := &captureKBActivityAudit{}
+				svc := &knowledgeService{repo: repo, fileSvc: storage, task: queue, audit: audit,
+					kbService: &createKnowledgeFileKBServiceStub{kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 1}}}
+				ctx := newCreateKnowledgeFileContext()
+				updatesAtSubmission := 0
+				queue.beforeEnqueue = func() {
+					require.NotNil(t, repo.createdKnowledge)
+					require.Equal(t, types.ParseStatusPending, repo.createdKnowledge.ParseStatus)
+					updatesAtSubmission = repo.updateCalls
+					// A real worker may commit before Redis loses the enqueue reply.
+					copy := *repo.createdKnowledge
+					copy.ParseStatus = observed
+					repo.createdKnowledge = &copy
+				}
+				id := "366b0c6f-c070-40a1-ad6e-66b1a21aaf3c"
+				var got *types.Knowledge
+				var err error
+				switch source {
+				case "file":
+					got, err = svc.CreateKnowledgeFromFile(ctx, "kb-1", newMultipartFileHeader(t, "doc.txt", "body"), nil, nil, "", nil, "", nil)
+				case "file-at-id":
+					got, err = svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("body"), nil, id, nil, "mcp")
+				case "url":
+					got, err = svc.CreateKnowledgeFromURL(ctx, "kb-1", "http://127.0.0.1/article", "", "", nil, "article", nil, "", nil)
+				case "file-url":
+					got, err = svc.CreateKnowledgeFromURL(ctx, "kb-1", "http://127.0.0.1/doc.txt", "doc.txt", "txt", nil, "doc", nil, "", nil)
+				case "passage":
+					got, err = svc.CreateKnowledgeFromPassage(ctx, "kb-1", []string{"body"}, "")
+				case "manual":
+					got, err = svc.CreateKnowledgeFromManual(ctx, "kb-1", &types.ManualKnowledgePayload{
+						CreationID: id, Title: "manual", Content: "body", Status: types.ManualKnowledgeStatusPublish,
+					}, "mcp")
+				}
+				require.NotNil(t, got)
+				assertKnowledgeSubmissionUnknown(t, err, got)
+				require.Equal(t, 1, queue.calls)
+				require.Equal(t, updatesAtSubmission, repo.updateCalls, "unknown enqueue must not persist a fabricated terminal state")
+				require.Equal(t, observed, repo.createdKnowledge.ParseStatus, "do not overwrite the original worker's result")
+				require.NotNil(t, audit.entry)
+				require.Equal(t, types.AuditOutcomePartial, audit.entry.Outcome)
+				var details map[string]any
+				require.NoError(t, json.Unmarshal(audit.entry.Details, &details))
+				require.Equal(t, types.ParseStatusPending, details["processing_status"])
+				require.Equal(t, "enqueue", details["failure_stage"])
+				if source == "file-at-id" {
+					prior, err := svc.CreateKnowledgeFromFileAtID(ctx, "kb-1", "doc.txt", []byte("body"), nil, id, nil, "mcp")
+					require.NoError(t, err)
+					require.Equal(t, observed, prior.ParseStatus)
+					require.Equal(t, 1, queue.calls)
+					require.Equal(t, 1, storage.saveCalls)
+				}
+				if source == "manual" {
+					prior, err := svc.CreateKnowledgeFromManual(ctx, "kb-1", &types.ManualKnowledgePayload{
+						CreationID: id, Title: "manual", Content: "body", Status: types.ManualKnowledgeStatusPublish,
+					}, "mcp")
+					require.NoError(t, err)
+					require.Equal(t, observed, prior.ParseStatus)
+					require.Equal(t, 1, queue.calls)
+				}
+			})
+		}
+	}
+}
+
+func assertKnowledgeSubmissionUnknown(t *testing.T, err error, knowledge *types.Knowledge) {
+	t.Helper()
+	var appErr *apperrors.AppError
+	require.ErrorAs(t, err, &appErr)
+	require.Equal(t, 500, appErr.HTTPCode)
+	require.Equal(t, apperrors.ErrInternalServer, appErr.Code)
+	require.Equal(t, "Processing task submission could not be confirmed", appErr.Message)
+	require.Equal(t, map[string]any{"persisted_knowledge": map[string]string{
+		"id": knowledge.ID, "knowledge_base_id": knowledge.KnowledgeBaseID, "parse_status": types.ParseStatusPending,
+	}}, appErr.Details)
+	require.Equal(t, types.ParseStatusPending, knowledge.ParseStatus)
+	require.Empty(t, knowledge.ErrorMessage)
+}
+
+func TestManualUpdateQueueUnknownDoesNotOverwriteWorker(t *testing.T) {
+	for _, observed := range []string{types.ParseStatusPending, types.ParseStatusCompleted, types.ParseStatusFailed} {
+		t.Run(observed, func(t *testing.T) {
+			f := newDocumentWriteFixture(t)
+			audit := &captureKBActivityAudit{}
+			f.svc.audit = audit
+			queue := &createKnowledgeTaskEnqueuerStub{err: errors.New("queue reply lost")}
+			writesAtSubmission := 0
+			queue.beforeEnqueue = func() {
+				row, err := f.repo.GetKnowledgeByID(f.ctx, 7, "doc")
+				require.NoError(t, err)
+				require.Equal(t, types.ParseStatusPending, row.ParseStatus)
+				writesAtSubmission = f.repo.writes
+				require.NoError(t, f.db.Model(&types.Knowledge{}).Where("id = ?", "doc").Update("parse_status", observed).Error)
+			}
+			f.svc.task = queue
+			got, err := f.svc.UpdateManualKnowledge(f.ctx, "doc", &types.ManualKnowledgePayload{
+				Title: "updated", Content: "updated body", Status: types.ManualKnowledgeStatusPublish,
+			})
+			assertKnowledgeSubmissionUnknown(t, err, got)
+			require.Equal(t, writesAtSubmission, f.repo.writes)
+			row, err := f.repo.GetKnowledgeByID(f.ctx, 7, "doc")
+			require.NoError(t, err)
+			require.Equal(t, observed, row.ParseStatus)
+			require.Equal(t, 1, queue.calls)
+			require.Equal(t, types.AuditOutcomePartial, audit.entry.Outcome)
+		})
+	}
 }
 
 func TestCreateKnowledgeFromFileDoesNotPersistWhenStorageSaveFails(t *testing.T) {

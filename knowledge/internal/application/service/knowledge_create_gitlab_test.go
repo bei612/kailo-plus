@@ -24,11 +24,12 @@ func TestCreateKnowledgeFromFileGitLabPreservesSourcePaths(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	repo := &gitLabKnowledgeRepo{KnowledgeRepository: repository.NewKnowledgeRepository(db)}
+	queue := &createKnowledgeTaskEnqueuerStub{}
 	svc := &knowledgeService{
 		repo:      repo,
 		kbService: &createKnowledgeFileKBServiceStub{kb: &types.KnowledgeBase{ID: "kb-1"}},
 		fileSvc:   &createKnowledgeFileServiceStub{},
-		task:      &createKnowledgeTaskEnqueuerStub{},
+		task:      queue,
 	}
 	ctx := newCreateKnowledgeFileContext()
 	create := func(channel, source, file string) (*types.Knowledge, error) {
@@ -52,14 +53,21 @@ func TestCreateKnowledgeFromFileGitLabPreservesSourcePaths(t *testing.T) {
 	}
 	result := &types.SyncResult{}
 	(&DataSourceService{knowledgeService: svc}).applyFetchedItem(ctx, ds, item, nil, result)
-	require.Equal(t, 1, result.Created, "identical content at a different repository path must still be imported")
+	require.Zero(t, result.Created, "queue acceptance is not native parse completion")
 	require.Zero(t, result.Skipped)
-	require.Zero(t, result.Failed)
+	require.Equal(t, 1, result.Failed, "retain the original cursor while its native parse is pending")
 	nested, err := repo.FindByDataSourceExternalID(ctx, ds.TenantID, ds.KnowledgeBaseID, ds.ID, item.ExternalID)
 	require.NoError(t, err)
 	require.NotNil(t, nested)
 	require.NotEqual(t, root.ID, nested.ID)
 	require.Equal(t, "docs-main/a/b/c/d/e", nested.FolderPath)
+	require.Equal(t, types.ParseStatusPending, nested.ParseStatus)
+	require.NoError(t, db.Model(&types.Knowledge{}).Where("id = ?", nested.ID).Update("parse_status", types.ParseStatusCompleted).Error)
+	recovered := &types.SyncResult{}
+	(&DataSourceService{knowledgeService: svc}).applyFetchedItem(ctx, ds, item, nil, recovered)
+	require.Zero(t, recovered.Failed)
+	require.Equal(t, 1, recovered.Skipped, "only the same completed native item may now be acknowledged")
+	require.Equal(t, 2, queue.calls, "observing the persisted source item must not dispatch it again")
 
 	otherSource, err := create(types.ConnectorTypeGitLab, "ds-2", "README.md")
 	require.NoError(t, err, "another data source must retain its own file")

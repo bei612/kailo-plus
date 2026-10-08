@@ -24,20 +24,19 @@ func NewAsynqInspector(redisClient *redis.Client) *asynq.Inspector {
 // asynqTaskInspector implements interfaces.TaskInspector backed by an
 // *asynq.Inspector. Scans the queues we actually use and matches tasks
 // whose payload carries the given
-// knowledge_id. Best-effort: any scan/delete error is logged and
-// swallowed so the cancel API still returns success even when Redis is
-// flaky.
+// knowledge_id. Cancellation remains best-effort; read-only liveness
+// probes propagate errors so absence is never inferred from a failed scan.
 type asynqTaskInspector struct {
 	inspector *asynq.Inspector
 	redis     redis.UniversalClient
 }
 
 // NewAsynqTaskInspector returns a TaskInspector wrapping the given
-// *asynq.Inspector. nil-safe: a nil inspector degrades to a no-op so
-// the cancel path remains usable when the inspector failed to init.
+// *asynq.Inspector. Missing Redis dependencies remain unavailable, not a
+// Lite-mode no-queue fact. Cancellation still handles nil dependencies.
 func NewAsynqTaskInspector(inspector *asynq.Inspector, redisClient *redis.Client) interfaces.TaskInspector {
 	if inspector == nil || redisClient == nil {
-		return noopTaskInspector{}
+		return &asynqTaskInspector{}
 	}
 	return &asynqTaskInspector{inspector: inspector, redis: redisClient}
 }
@@ -189,15 +188,19 @@ func matchesKnowledgeListDelete(taskType string, payload []byte, knowledgeID str
 func (a *asynqTaskInspector) HasQueuedTasksForKnowledge(
 	ctx context.Context, knowledgeID string,
 ) (bool, error) {
-	if a == nil || a.inspector == nil || knowledgeID == "" {
-		return false, nil
+	if a == nil || a.inspector == nil || a.redis == nil || knowledgeID == "" {
+		return false, errors.New("knowledge task queue probe unavailable")
 	}
 	matcher := func(taskType string, payload []byte) bool {
 		return matchesKnowledge(taskType, payload, knowledgeID)
 	}
 	for _, queue := range queuesScanned {
 		for _, state := range a.cancellableTaskStates() {
-			if a.queueStateHasMatch(ctx, queue, state.name, state.list, matcher) {
+			matched, err := a.queueStateHasMatch(ctx, queue, state.name, state.list, matcher)
+			if err != nil {
+				return false, err
+			}
+			if matched {
 				return true, nil
 			}
 		}
@@ -212,15 +215,19 @@ func (a *asynqTaskInspector) HasQueuedTasksForKnowledge(
 func (a *asynqTaskInspector) HasQueuedDeleteTasksForKnowledge(
 	ctx context.Context, knowledgeID string,
 ) (bool, error) {
-	if a == nil || a.inspector == nil || knowledgeID == "" {
-		return false, nil
+	if a == nil || a.inspector == nil || a.redis == nil || knowledgeID == "" {
+		return false, errors.New("knowledge delete queue probe unavailable")
 	}
 	matcher := func(taskType string, payload []byte) bool {
 		return matchesKnowledgeListDelete(taskType, payload, knowledgeID)
 	}
 	for _, queue := range queuesScanned {
 		for _, state := range a.cancellableTaskStates() {
-			if a.queueStateHasMatch(ctx, queue, state.name, state.list, matcher) {
+			matched, err := a.queueStateHasMatch(ctx, queue, state.name, state.list, matcher)
+			if err != nil {
+				return false, err
+			}
+			if matched {
 				return true, nil
 			}
 		}
@@ -1006,33 +1013,36 @@ func (a *asynqTaskInspector) processQueueStateMatches(
 
 // queueStateHasMatch pages through one (queue, state) list looking for a
 // matching task. It is strictly read-only and returns on the first hit. A
-// backend error is logged and treated as "no match" (false).
+// backend error is propagated; only confirmed queue absence means no match.
 func (a *asynqTaskInspector) queueStateHasMatch(
 	ctx context.Context,
 	queue string,
 	state string,
 	list func(string, ...asynq.ListOption) ([]*asynq.TaskInfo, error),
 	matcher taskMatcher,
-) bool {
+) (bool, error) {
 	page := 1
 	for {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
 		tasks, err := list(queue, asynq.PageSize(listPageSize), asynq.Page(page))
 		if err != nil {
-			if !errors.Is(err, asynq.ErrQueueNotFound) {
-				logger.Warnf(ctx, "[TaskInspector] probe %s queue=%s page=%d: %v", state, queue, page, err)
+			if isAsynqQueueNotFound(err) {
+				return false, nil
 			}
-			return false
+			return false, fmt.Errorf("probe %s queue=%s page=%d: %w", state, queue, page, err)
 		}
 		if len(tasks) == 0 {
-			return false
+			return false, nil
 		}
 		for _, task := range tasks {
 			if matcher(task.Type, task.Payload) {
-				return true
+				return true, nil
 			}
 		}
 		if len(tasks) < listPageSize {
-			return false
+			return false, nil
 		}
 		page++
 	}
