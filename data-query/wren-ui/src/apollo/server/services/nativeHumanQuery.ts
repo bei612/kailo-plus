@@ -129,16 +129,27 @@ export class NativeHumanQuery {
       selected.governanceBindingId !== this.config.bindingId
     )
       throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
-    if (selected.apiType === ApiType.GENERATE_SUMMARY) {
-      const native = selected.requestPayload?.nativeSummary;
+    if (
+      [ApiType.GENERATE_SUMMARY, ApiType.GENERATE_VEGA_CHART].includes(
+        selected.apiType,
+      )
+    ) {
+      const proof =
+        selected.apiType === ApiType.GENERATE_SUMMARY
+          ? 'nativeSummary'
+          : 'nativeChart';
+      const native = selected.requestPayload?.[proof];
       const source = native?.queryReference;
       if (
         !selected.id ||
         selected.statusCode !== 200 ||
         native?.taskId !== selected.id ||
-        selected.responsePayload?.nativeSummary?.doneQueryId !==
-          native.taskId ||
-        typeof selected.responsePayload?.summary !== 'string' ||
+        selected.responsePayload?.[proof]?.doneQueryId !== native.taskId ||
+        (selected.apiType === ApiType.GENERATE_SUMMARY
+          ? typeof selected.responsePayload?.summary !== 'string'
+          : !selected.responsePayload?.vegaSpec ||
+            typeof selected.responsePayload.vegaSpec !== 'object' ||
+            Array.isArray(selected.responsePayload.vegaSpec)) ||
         selected.responsePayload.threadId !== selected.threadId ||
         typeof source?.historyId !== 'string' ||
         source.key !== selected.id
@@ -170,7 +181,7 @@ export class NativeHumanQuery {
       await this.readHistory(token, query);
       const current = await this.history.findOneBy({
         id: selected.id,
-        apiType: ApiType.GENERATE_SUMMARY,
+        apiType: selected.apiType,
         projectId: this.config.projectId,
         governanceBindingId: this.config.bindingId,
       });
@@ -183,9 +194,9 @@ export class NativeHumanQuery {
           canonical(selected.responsePayload)
       )
         throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
-      const { nativeSummary: _requestProof, ...requestPayload } =
+      const { [proof]: _requestProof, ...requestPayload } =
         current.requestPayload;
-      const { nativeSummary: _responseProof, ...responsePayload } =
+      const { [proof]: _responseProof, ...responsePayload } =
         current.responsePayload;
       return { requestPayload, responsePayload };
     }

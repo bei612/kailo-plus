@@ -4244,3 +4244,129 @@ The old two Java edits remain unvalidated and excluded. Original REST ask,
 stream/ask, chart and SQL-pair consumers, native function/provider provenance,
 trusted SERVICE SQL, independent business-instance rollout and complete visual
 acceptance remain explicit gaps; this batch is not complete Wren integration.
+
+### 2026-10-08 — original REST chart uses the admitted native data and task
+
+Authority and fixed source: `DD-98`, `SS-WRN-IDENTITY` and `.design/08` §6.
+At the fixed official commit `c5f02a0391c87420dba78632dcd86073710deb72`,
+`wren-ui/src/pages/api/v1/generate_vega_chart.ts::handler` already previews SQL,
+converts its data and consumes `wren-ui/src/utils/vegaSpecUtils.ts::enhanceVegaSpec`,
+but its chart POST omits that data. The same pin's
+`wren-ai-service/src/web/v1/services/chart.py::ChartRequest/ChartService.chart`
+already accepts `data` and bypasses the SQL executor when it is supplied. This
+batch connects those existing consumers, not another chart implementation,
+SQL parser or SERVICE execution authority. The original standalone handler,
+request/success fields, full Vega enhancement and original renderer remain.
+
+Impact: only the exact bound REST chart route consumes the middleware's trusted
+HUMAN token/scope. The original `NativeHumanQuery.previewSql/readHistory` and
+`NativeQueryService` retain the same admitted SQL, native history, source
+models/views, deployment and AE. The bound chart POST supplies the actually
+disclosed native `columns/data` to the original chart adaptor; it neither sends
+the HUMAN credential nor repeats SQL through the AI SERVICE callback. Fresh
+source and native-reader checks run again immediately before that side effect,
+after observation and before final result disclosure. Other REST paths do not
+inherit identity forwarding merely by being under `/api/v1`.
+
+The existing original `api_history` row owns the caller-fixed chart task before
+POST, with its original binding/project/thread, question, language, sample size,
+SQL and immutable query-history/AE/operation/request/result references. The
+existing summary repository consumers are renamed to
+`prepareNativeGeneration/advanceNativeGeneration` and used only by these actual
+summary/chart handlers. INSERT winner and locked JSONB comparison are retained;
+the native owner type must match exactly, so summary and chart cannot adopt
+one another's task. Re-entry and a competing observer use the original task ID
+and read-only GET, never another POST or SQL. No table, migration, shared
+contract, Core SQL/result body copy or second workflow/registry was introduced.
+The original API History GraphQL fields use the same fresh query-source checks,
+strip internal native evidence and retain the original chart-data sanitization.
+
+Boundaries and exceptions: a query's `queryReceipt` proves only that SQL action,
+not chart completion or AI usage. Missing/foreign POST ACK, unavailable or
+expired native GET and FETCHING/GENERATING/future status remain HTTP 202;
+re-entry cannot adopt a foreign task. Only native FINISHED with the original
+valid schema can produce the unchanged `id/vegaSpec/threadId` success response.
+Contradictory error or missing schema is unavailable terminal evidence, not
+success or confirmed failure. Actual native FAILED and STOPPED are distinct
+409 outcomes with generic errors, without provider details or repeated POST.
+Changed identity, SQL, question, thread or sample size conflicts; source
+revocation blocks dispatch/disclosure instead of retaining a successful body.
+Empty configured delivery is an error and cannot enter standalone execution.
+Mobile remains outside this component-host surface; no Web/Desktop page or
+layout was replaced by this native REST consumer.
+
+Convergence remains bounded by the native producer: the already accepted fork
+supplies caller-fixed `native_task_id` and refuses duplicate creation; the
+official pin alone does not supply that fork behavior. Re-entry can observe a
+still-existing task after lost ACK. Process/cache loss does not have a durable
+native result replay. The Wren operator must reconcile the same native task and
+history without deleting its owner or blindly repeating the side effect;
+automatic recovery for lost cache remains a production blocker.
+
+Actual first verification reused the existing 4 CPU / 4 GiB SDK and cache and
+the independently verified `wren_query_itgs2n` fixture database. No database,
+image, dependency or full source-tree copy was created:
+
+```sh
+WREN_QUERY_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:5432/wren_query_itgs2n node node_modules/jest/bin/jest.js --runInBand src/nativeHumanQuery.test.ts src/middleware.test.ts src/nativeQuery.test.ts
+python3 -B data-query/wren-ai-service/tests/pytest/providers/test_native_sql_answer_stream.py
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+```
+
+All three original suites passed **349/349**, exit 0 (100.4 s), including actual
+Next HTTP, original History GraphQL, real signed-JWT/JWKS middleware and real
+PostgreSQL native owner/CAS consumers. The original Python producer/service
+suite passed **10/10**, exit 0 (0.017 s); its expected expired-ID fault logs are
+not production failures. Whole-UI TypeScript exited 0. All eight formatted
+formal TS/check paths matched this tested candidate. The original Vega helper
+and Python chart service/router/producer checks also matched their existing
+verified SDK copies; this batch did not replace their implementation.
+
+Logs in the existing private SDK directory recorded above:
+`rest-chart-positive.log`, `rest-chart-python.log` and `rest-chart-tsc.log`.
+After the user-requested disk cleanup, six private production faults were
+checked against the original consumers, without modifying formal production
+source:
+
+- Removing the actual chart adaptor `data` argument caused **1 failed /
+  194 filtered skips**: the HTTP consumer observed a chart POST without the
+  admitted query data. The cold-dependency run took 142.725 s; this is a real
+  assertion failure, not a timeout or claimed build failure.
+- Removing the fresh source check immediately before chart dispatch caused
+  **1 failed / 194 filtered skips**. Despite the later 403, the check observed
+  one actual unauthorized AI adaptor call; an error response alone is not
+  sufficient evidence of side-effect protection.
+- Removing the native generation owner-type guard caused **2 failed /
+  90 filtered skips** against real PostgreSQL, accepting another generation
+  type's pending row. Restoring preparation while separately leaving the
+  terminal owner-type guard removed again caused **2 failed / 90 filtered
+  skips**, now observing an actual untrusted terminal body persisted as 200.
+- Removing this exact route's private identity forwarding caused **1 failed /
+  2 passed / 59 filtered skips** through original signed-JWT/JWKS middleware.
+- Reversing the original Python chart data branch caused **1 failed**: the
+  existing native service check observed an unadmitted SERVICE SQL callback.
+
+Each production file was reverse-patched and matched its formal source with
+`cmp` exit 0. All eight TS/check paths matched before the restored run. The
+same three original suites then passed **349/349**, exit 0 (33.113 s), and the
+original Python suite again passed **10/10**, exit 0 (0.017 s). Original
+Prettier initially exited 1 with
+`[warn] src/pages/api/v1/generate_vega_chart.ts`; its only requested correction
+was the line wrapping of one unchanged 409 response. Applying that formatter
+output to both copies produced eight-path Prettier exit 0 and `cmp` exit 0;
+no semantic production change followed the restored checks. TypeScript's
+earlier exit 0 remains the actual type-check result, not a new full build.
+
+Negative/restored logs in that same SDK directory:
+`rest-chart-data-negative.log`, `rest-chart-admission-negative.log`,
+`rest-chart-type-negative.log`, `rest-chart-terminal-type-negative.log`,
+`rest-chart-forward-negative.log`, `rest-chart-python-negative.log`,
+`rest-chart-restored.log`, `rest-chart-python-restored.log`,
+`rest-chart-format.log` and `rest-chart-format-final.log`.
+No business Wren container, ACTIVE binding, live
+provider/datasource, iframe/browser screenshot, Desktop/Mobile acceptance or
+global full check was produced. Native SERVICE SQL, ordinary function/provider
+provenance, REST ask/stream and SQL-pair consumers, independent instance rollout
+and complete visual acceptance remain gaps. The two separate Java edits remain
+unvalidated and excluded; passing this first verification is not complete Wren
+integration or production readiness.

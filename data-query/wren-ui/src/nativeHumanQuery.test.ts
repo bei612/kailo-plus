@@ -26,10 +26,13 @@ import { API_HISTORY } from './apollo/client/graphql/apiManagement';
 import { components } from './common';
 import {
   ChartType,
+  ChartStatus,
   TextBasedAnswerStatus,
 } from './apollo/server/models/adaptor';
 import runSqlHandler from './pages/api/v1/run_sql';
 import generateSummaryHandler from './pages/api/v1/generate_summary';
+import generateChartHandler from './pages/api/v1/generate_vega_chart';
+import { enhanceVegaSpec } from './utils/vegaSpecUtils';
 import { Readable } from 'node:stream';
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
@@ -1951,6 +1954,7 @@ describe('native saved-view HUMAN query consumer', () => {
       summaryGet: jest.Mock,
       summaryStream: jest.Mock;
     let prepareSummary: jest.Mock, advanceSummary: jest.Mock;
+    let chartCreate: jest.Mock, chartGet: jest.Mock, chartResult: any;
     const originalConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
     const originalComponents = { ...components };
     const originalHistoryMethods = { ...components.apiHistoryRepository };
@@ -1979,6 +1983,12 @@ describe('native saved-view HUMAN query consumer', () => {
         headers: { ...headers, ...changes },
         body: JSON.stringify(input),
       });
+    const sendChart = (input: any = summaryBody, changes = {}) =>
+      fetch(endpoint.replace('/run_sql', '/generate_vega_chart'), {
+        method: 'POST',
+        headers: { ...headers, ...changes },
+        body: JSON.stringify(input),
+      });
 
     beforeAll(async () => {
       server = createServer((request, response) => {
@@ -1989,7 +1999,9 @@ describe('native saved-view HUMAN query consumer', () => {
           {
             default: request.url?.endsWith('/generate_summary')
               ? generateSummaryHandler
-              : runSqlHandler,
+              : request.url?.endsWith('/generate_vega_chart')
+                ? generateChartHandler
+                : runSqlHandler,
           },
           {
             previewModeId: '',
@@ -2024,6 +2036,23 @@ describe('native saved-view HUMAN query consumer', () => {
       summaryGet = jest.fn(async () => ({
         status: TextBasedAnswerStatus.SUCCEEDED,
       }));
+      chartResult = {
+        status: ChartStatus.FINISHED,
+        response: {
+          reasoning: 'Original',
+          chartType: ChartType.BAR,
+          chartSchema: {
+            title: 'Original chart',
+            mark: 'bar',
+            encoding: {
+              x: { field: 'customer', type: 'nominal' },
+              y: { aggregate: 'count', type: 'quantitative' },
+            },
+          },
+        },
+      };
+      chartCreate = jest.fn(async (input) => ({ queryId: input.queryId }));
+      chartGet = jest.fn(async () => structuredClone(chartResult));
       summaryStream = jest.fn(async () =>
         Readable.from([
           'data: {"message":"Original "}\n\n',
@@ -2041,6 +2070,7 @@ describe('native saved-view HUMAN query consumer', () => {
         return digest(summaryRow.requestPayload) ===
           digest(input.requestPayload) &&
           summaryRow.threadId === input.threadId &&
+          summaryRow.apiType === input.apiType &&
           summaryRow.projectId === input.projectId &&
           summaryRow.governanceBindingId === input.governanceBindingId
           ? { record: structuredClone(summaryRow), created }
@@ -2109,12 +2139,14 @@ describe('native saved-view HUMAN query consumer', () => {
           createTextBasedAnswer: summaryCreate,
           getTextBasedAnswerResult: summaryGet,
           streamTextBasedAnswer: summaryStream,
+          generateChart: chartCreate,
+          getChartResult: chartGet,
         },
       });
       Object.assign(components.apiHistoryRepository, {
         prepareNativeSql: prepared,
-        prepareNativeSummary: prepareSummary,
-        advanceNativeSummary: advanceSummary,
+        prepareNativeGeneration: prepareSummary,
+        advanceNativeGeneration: advanceSummary,
         createOne: appended,
         findOneBy: jest.fn(async (where) =>
           [row, summaryRow].find(
@@ -2771,6 +2803,287 @@ describe('native saved-view HUMAN query consumer', () => {
         const response = await sendSummary(summaryBody, changes);
         expect(response.status).toBe(missing === 'empty-config' ? 503 : 401);
         expect(summaryCreate).not.toHaveBeenCalled();
+        expect(direct).not.toHaveBeenCalled();
+      },
+    );
+
+    it('returns the complete original Vega enhancement with admitted data, never raw SQL or a SERVICE re-query', async () => {
+      const response = await sendChart({
+        ...summaryBody,
+        threadId: 'original-chart-thread',
+      });
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      expect(result).toEqual({
+        id: key,
+        threadId: 'original-chart-thread',
+        vegaSpec: enhanceVegaSpec(chartResult.response.chartSchema, [
+          { customer: 'native' },
+        ]),
+      });
+      expect(result.vegaSpec.data.values).toEqual([{ customer: 'native' }]);
+      expect(result.vegaSpec.config).toHaveProperty('font');
+      expect(result.vegaSpec.params).not.toHaveLength(0);
+      expect(chartCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryId: key,
+          query: summaryBody.question,
+          sql: statement,
+          data: row.responsePayload,
+          projectId: String(config.projectId),
+        }),
+      );
+      expect(summaryRow.apiType).toBe(ApiType.GENERATE_VEGA_CHART);
+      expect(
+        summaryRow.requestPayload.nativeChart.queryReference.historyId,
+      ).toBe(row.id);
+      expect(summaryRow.responsePayload.nativeChart.doneQueryId).toBe(key);
+      expect(summaryCreate).not.toHaveBeenCalled();
+      expect(direct).not.toHaveBeenCalled();
+      expect(appended).not.toHaveBeenCalled();
+      expect(JSON.stringify(summaryRow)).not.toContain('verified-native-token');
+    });
+
+    it('observes the same native chart after lost POST ACK and cache delay without regenerating or rerunning SQL', async () => {
+      chartCreate.mockRejectedValue(new Error('lost original ACK'));
+      chartGet.mockRejectedValueOnce(new Error('native task not yet visible'));
+      const pending = await sendChart();
+      expect(pending.status).toBe(202);
+      expect((await pending.json()).queryReceipt.submission.actionKey).toBe(
+        'data_query.query@v1',
+      );
+      expect((await sendChart()).status).toBe(200);
+      expect((await sendChart()).status).toBe(200);
+      expect(chartCreate).toHaveBeenCalledTimes(1);
+      expect(chartGet.mock.calls.every(([id]) => id === key)).toBe(true);
+      expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+        1,
+      );
+    });
+
+    it('never adopts a foreign chart create ACK and then observes only the persisted original task ID', async () => {
+      chartCreate.mockResolvedValue({ queryId: 'foreign-task' });
+      expect((await sendChart()).status).toBe(202);
+      expect(chartGet).not.toHaveBeenCalled();
+      expect((await sendChart()).status).toBe(200);
+      expect(chartGet).toHaveBeenCalledWith(key);
+      expect(chartCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ChartStatus.FETCHING,
+      ChartStatus.GENERATING,
+      'UNKNOWN_FUTURE',
+      'MISSING_CACHE',
+    ])(
+      'keeps original chart %s uncertain without replacing the native key',
+      async (status) => {
+        if (status === 'MISSING_CACHE')
+          chartGet.mockRejectedValue(new Error('404'));
+        else chartGet.mockResolvedValue({ status });
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const response = await sendChart();
+          expect(response.status).toBe(202);
+          const body = await response.json();
+          expect(body).not.toHaveProperty('vegaSpec');
+          expect(body).not.toHaveProperty('receipt');
+          expect(body.id).toBe(key);
+        }
+        expect(summaryRow.statusCode).toBe(202);
+        expect(chartCreate).toHaveBeenCalledTimes(1);
+        chartGet.mockReset().mockResolvedValue(chartResult);
+        expect((await sendChart()).status).toBe(200);
+        expect(chartCreate).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each([ChartStatus.FAILED, ChartStatus.STOPPED])(
+      'records actual native chart %s without leaking provider details or repeating POST',
+      async (status) => {
+        chartGet.mockResolvedValue({
+          status,
+          error: { message: 'private-provider-detail' },
+        });
+        const first = await sendChart();
+        expect(first.status).toBe(409);
+        expect(await first.json()).toEqual({
+          id: key,
+          threadId: key,
+          error:
+            status === ChartStatus.FAILED
+              ? 'CHART_GENERATION_FAILED'
+              : 'CHART_GENERATION_STOPPED',
+        });
+        expect(summaryRow.responsePayload.nativeChart.status).toBe(status);
+        expect(JSON.stringify(summaryRow)).not.toContain(
+          'private-provider-detail',
+        );
+        expect((await sendChart()).status).toBe(409);
+        expect(chartCreate).toHaveBeenCalledTimes(1);
+        expect(chartGet).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each(['missing-schema', 'contradictory-error'])(
+      'does not claim a chart terminal for %s',
+      async (failure) => {
+        chartGet.mockResolvedValue(
+          failure === 'missing-schema'
+            ? { status: ChartStatus.FINISHED }
+            : {
+                ...chartResult,
+                error: { message: 'unverified raw error' },
+              },
+        );
+        const response = await sendChart();
+        expect(response.status).toBe(503);
+        expect(await response.json()).not.toHaveProperty('vegaSpec');
+        expect(summaryRow.statusCode).toBe(202);
+        chartGet.mockReset().mockResolvedValue(chartResult);
+        expect((await sendChart()).status).toBe(200);
+        expect(chartCreate).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('waits for the actual original SQL receipt before admitting any chart task', async () => {
+      completed = false;
+      expect((await sendChart()).status).toBe(202);
+      expect((await sendChart()).status).toBe(202);
+      expect(chartCreate).not.toHaveBeenCalled();
+      expect(prepareSummary).not.toHaveBeenCalled();
+      expect(calls.mock.calls.filter((call) => call[2].command)).toHaveLength(
+        1,
+      );
+    });
+
+    it('rechecks source rights after native chart preparation but before sending data to AI', async () => {
+      const prepare = prepareSummary.getMockImplementation();
+      prepareSummary.mockImplementation(async (...args) => {
+        const result = await prepare(...args);
+        revoked = true;
+        return result;
+      });
+      expect((await sendChart()).status).toBe(403);
+      expect(chartCreate).not.toHaveBeenCalled();
+      expect(chartGet).not.toHaveBeenCalled();
+    });
+
+    it('does not persist or disclose the chart when rights are revoked during the native task', async () => {
+      chartGet.mockImplementation(async () => {
+        revoked = true;
+        return chartResult;
+      });
+      expect((await sendChart()).status).toBe(403);
+      expect(summaryRow.statusCode).toBe(202);
+      expect(summaryRow.responsePayload).not.toHaveProperty('vegaSpec');
+    });
+
+    it.each(['question', 'thread', 'identity', 'sql', 'sampleSize'])(
+      'does not let chart re-entry change %s and consume the previous task',
+      async (change) => {
+        expect((await sendChart()).status).toBe(200);
+        const input = {
+          ...summaryBody,
+          ...(change === 'question' ? { question: 'Different' } : {}),
+          ...(change === 'thread' ? { threadId: 'Different' } : {}),
+          ...(change === 'sql'
+            ? { sql: 'SELECT different FROM native_model' }
+            : {}),
+          ...(change === 'sampleSize' ? { sampleSize: 11 } : {}),
+        };
+        const response = await sendChart(
+          input,
+          change === 'identity'
+            ? { 'x-kailo-native-identity-scope': 'b'.repeat(64) }
+            : {},
+        );
+        expect(response.status).toBe(409);
+        expect(await response.json()).not.toHaveProperty('vegaSpec');
+        expect(chartCreate).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('does not reuse a summary native task as a chart under the same original caller key', async () => {
+      expect((await sendSummary()).status).toBe(200);
+      expect((await sendChart()).status).toBe(409);
+      expect(chartCreate).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])(
+      'consumes original chart History GraphQL including original data sanitization (revoked %s)',
+      async (deny) => {
+        expect((await sendChart()).status).toBe(200);
+        revoked = deny;
+        calls.mockClear();
+        const ctx = {
+          ...components,
+          deployRepository: components.deployLogRepository,
+          nativeHumanToken: 'verified-native-token',
+          nativeIdentityScope: identityScope,
+          apiHistoryRepository: {
+            count: jest.fn(async () => 1),
+            findAllWithPagination: jest.fn(async () => [summaryRow]),
+          },
+        };
+        const resolver = new ApiHistoryResolver();
+        const graphql = new ApolloServer({
+          typeDefs,
+          resolvers: {
+            JSON: GraphQLJSON,
+            Query: { apiHistory: resolver.getApiHistory },
+            ApiHistoryResponse: resolver.getApiHistoryNestedResolver(),
+          },
+          context: () => ctx,
+        });
+        try {
+          await graphql.start();
+          const result = await graphql.executeOperation({
+            query: API_HISTORY,
+            variables: { pagination: { offset: 0, limit: 10 } },
+          });
+          const item = result.data.apiHistory.items[0];
+          if (deny) {
+            expect(item.requestPayload).toBeNull();
+            expect(item.responsePayload).toBeNull();
+            expect(result.errors).toHaveLength(2);
+          } else {
+            expect(result.errors).toBeUndefined();
+            expect(item.requestPayload).not.toHaveProperty('nativeChart');
+            expect(item.responsePayload).not.toHaveProperty('nativeChart');
+            expect(item.responsePayload.vegaSpec.data.values).toEqual([
+              '1 data points omitted',
+            ]);
+            expect(item.responsePayload.vegaSpec.config).toHaveProperty('font');
+          }
+          expect(calls.mock.calls.every((call) => !call[2].command)).toBe(true);
+          expect(chartCreate).toHaveBeenCalledTimes(1);
+        } finally {
+          await graphql.stop();
+        }
+      },
+    );
+
+    it.each(['token', 'scope', 'empty-config'])(
+      'does not fall back to native SQL for missing chart %s',
+      async (missing) => {
+        const changes =
+          missing === 'token'
+            ? { 'x-kailo-native-human-token': '' }
+            : missing === 'scope'
+              ? { 'x-kailo-native-identity-scope': '' }
+              : {};
+        if (missing === 'empty-config') {
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+          jest
+            .mocked(loadQueryDelivery)
+            .mockRejectedValue(
+              new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE'),
+            );
+        }
+        expect((await sendChart(summaryBody, changes)).status).toBe(
+          missing === 'empty-config' ? 503 : 401,
+        );
+        expect(chartCreate).not.toHaveBeenCalled();
         expect(direct).not.toHaveBeenCalled();
       },
     );

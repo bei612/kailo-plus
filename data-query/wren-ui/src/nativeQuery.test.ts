@@ -129,12 +129,12 @@ integration('original Wren native answer PostgreSQL CAS', () => {
       },
       responsePayload: { threadId: 'original-thread' },
     };
-    const first = await history.prepareNativeSummary(input);
+    const first = await history.prepareNativeGeneration(input);
     expect(first.created).toBe(true);
-    const second = await history.prepareNativeSummary(input);
+    const second = await history.prepareNativeGeneration(input);
     expect(second.created).toBe(false);
     expect(second.record.id).toBe(first.record.id);
-    const stream = await history.advanceNativeSummary(
+    const stream = await history.advanceNativeGeneration(
       first.record,
       { summary: '', threadId: input.threadId },
       202,
@@ -142,14 +142,14 @@ integration('original Wren native answer PostgreSQL CAS', () => {
     );
     expect(stream).not.toBeNull();
     expect(
-      await history.advanceNativeSummary(
+      await history.advanceNativeGeneration(
         second.record,
         { summary: '', threadId: input.threadId },
         202,
         1,
       ),
     ).toBeNull();
-    const done = await history.advanceNativeSummary(
+    const done = await history.advanceNativeGeneration(
       stream,
       {
         summary: 'original answer',
@@ -161,7 +161,7 @@ integration('original Wren native answer PostgreSQL CAS', () => {
     );
     expect(done.statusCode).toBe(200);
     expect(
-      await history.advanceNativeSummary(
+      await history.advanceNativeGeneration(
         stream,
         { summary: 'late duplicate' },
         200,
@@ -200,7 +200,7 @@ integration('original Wren native answer PostgreSQL CAS', () => {
         },
         responsePayload: { threadId: 'original-thread' },
       };
-      const first = await history.prepareNativeSummary(input);
+      const first = await history.prepareNativeGeneration(input);
       const changed = {
         ...first.record,
         ...(field === 'requestPayload'
@@ -218,7 +218,7 @@ integration('original Wren native answer PostgreSQL CAS', () => {
         ...(field === 'statusCode' ? { statusCode: 200 } : {}),
       };
       expect(
-        await history.advanceNativeSummary(
+        await history.advanceNativeGeneration(
           changed,
           { summary: 'untrusted' },
           200,
@@ -237,7 +237,92 @@ integration('original Wren native answer PostgreSQL CAS', () => {
           'apiType',
         ].includes(field)
       )
-        expect(await history.prepareNativeSummary(changed)).toBeNull();
+        expect(await history.prepareNativeGeneration(changed)).toBeNull();
+    },
+  );
+
+  it('uses the same original generation repository for chart ownership and a single durable terminal', async () => {
+    const history = new ApiHistoryRepository(tx);
+    const id = randomUUID();
+    const input = {
+      id,
+      projectId,
+      apiType: ApiType.GENERATE_VEGA_CHART,
+      governanceBindingId: randomUUID(),
+      threadId: randomUUID(),
+      headers: {},
+      statusCode: 202,
+      durationMs: 0,
+      requestPayload: {
+        question: 'Original',
+        nativeChart: {
+          taskId: id,
+          queryReference: { historyId: randomUUID() },
+        },
+      },
+      responsePayload: { threadId: 'original-chart-thread' },
+    };
+    const owner = await history.prepareNativeGeneration(input);
+    expect(owner.created).toBe(true);
+    const replay = await history.prepareNativeGeneration(input);
+    expect(replay.created).toBe(false);
+    const result = {
+      vegaSpec: { mark: 'bar', data: { values: [{ value: 1 }] } },
+      threadId: input.threadId,
+      nativeChart: { doneQueryId: id },
+    };
+    const completed = await history.advanceNativeGeneration(
+      owner.record,
+      result,
+      200,
+      1,
+    );
+    expect(completed.responsePayload).toEqual(result);
+    expect(
+      await history.advanceNativeGeneration(
+        replay.record,
+        { vegaSpec: { unverified: true } },
+        200,
+        2,
+      ),
+    ).toBeNull();
+    expect((await history.findOneBy({ id })).responsePayload).toEqual(result);
+  });
+
+  it.each([ApiType.GENERATE_SUMMARY, ApiType.GENERATE_VEGA_CHART])(
+    'does not substitute the original %s native owner with another generation type',
+    async (apiType) => {
+      const history = new ApiHistoryRepository(tx);
+      const input = {
+        id: randomUUID(),
+        projectId,
+        apiType,
+        governanceBindingId: randomUUID(),
+        threadId: randomUUID(),
+        headers: {},
+        statusCode: 202,
+        durationMs: 0,
+        requestPayload: { question: 'Original' },
+        responsePayload: {},
+      };
+      const owner = await history.prepareNativeGeneration(input);
+      const foreign = {
+        ...owner.record,
+        apiType:
+          apiType === ApiType.GENERATE_SUMMARY
+            ? ApiType.GENERATE_VEGA_CHART
+            : ApiType.GENERATE_SUMMARY,
+      };
+      expect(await history.prepareNativeGeneration(foreign)).toBeNull();
+      expect(
+        await history.advanceNativeGeneration(
+          foreign,
+          { unverified: true },
+          200,
+          1,
+        ),
+      ).toBeNull();
+      expect((await history.findOneBy({ id: input.id })).apiType).toBe(apiType);
     },
   );
 

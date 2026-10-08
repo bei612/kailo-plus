@@ -371,9 +371,9 @@ necessary preview guidance uses Chinese by default and English when selected;
 this does not claim complete Wren localization or browser visual acceptance.
 These source changes have not been deployed as a Wren business instance.
 
-In a platform-bound instance the original REST `run_sql` and `generate_summary`
-routes also consume this HUMAN admission chain. Supply the current authenticated
-native session and one UUID `Idempotency-Key`; reuse that key, request and thread
+In a platform-bound instance the original REST `run_sql`, `generate_summary`
+and `generate_vega_chart` routes consume this HUMAN admission chain. Supply the
+current authenticated native session and one UUID `Idempotency-Key`; reuse that key, request and thread
 when observing an uncertain request. Middleware supplies the trusted private
 identity hop, not caller-provided identity headers. Empty or invalid platform
 delivery is an error, never a switch to standalone SQL. Successful REST response
@@ -390,6 +390,25 @@ uncertain. The original native queue cannot replay a lost stream: the Wren
 instance operator must reconcile its original task/history rather than delete
 the record or blindly regenerate. Automatic cache/process-loss convergence is
 not accepted, so this source batch is not production readiness for that case.
+
+Chart generation uses the original `question`, `sql`, `threadId` and
+`sampleSize` request and returns the original `id`, `vegaSpec` and `threadId`
+on verified completion. Its original chart renderer and Vega enhancement are
+unchanged. The admitted query's actual data is supplied to the existing native
+chart service; it must not execute SQL again through its SERVICE callback.
+The original `GENERATE_VEGA_CHART` history owns the caller-fixed native task
+before POST. Summary and chart cannot adopt each other's task under the same
+key. Re-entry observes that task without another POST or SQL execution.
+
+HTTP 202 and `queryReceipt` prove neither chart completion nor AI usage: the
+receipt is only the underlying SQL action. Only native FINISHED with the
+original valid chart schema can persist HTTP 200, after current source access
+is rechecked. Actual FAILED and STOPPED remain distinct native failures without
+provider details. Missing cache, unavailable GET, future status, foreign ACK or
+missing terminal fields never fabricate success or failure. History checks the
+same source references and retains its original chart-data sanitization. A
+native process/cache loss still requires operator reconciliation of the same
+task/history; this change does not provide durable AI-task recovery.
 
 This covers saved-view reads inside Asking, not complete Asking execution:
 arbitrary generated SQL, AI/native task side effects, dashboard and native write

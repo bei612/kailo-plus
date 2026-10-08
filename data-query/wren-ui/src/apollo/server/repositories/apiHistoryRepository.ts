@@ -183,9 +183,9 @@ export class ApiHistoryRepository
     });
   }
 
-  // The original summary history is its native task owner. Persist before
+  // The original answer/chart history is its native task owner. Persist before
   // POST, so an absent/lost AI acknowledgement cannot admit another task.
-  public async prepareNativeSummary(
+  public async prepareNativeGeneration(
     record: ApiHistory,
   ): Promise<{ record: ApiHistory; created: boolean } | null> {
     return this.knex.transaction(async (tx) => {
@@ -200,8 +200,10 @@ export class ApiHistoryRepository
         .forUpdate();
       if (!row) return null;
       const current = this.transformFromDBData(row);
-      return record.apiType === ApiType.GENERATE_SUMMARY &&
-        current.apiType === ApiType.GENERATE_SUMMARY &&
+      return [ApiType.GENERATE_SUMMARY, ApiType.GENERATE_VEGA_CHART].includes(
+        record.apiType,
+      ) &&
+        current.apiType === record.apiType &&
         current.projectId === record.projectId &&
         current.governanceBindingId === record.governanceBindingId &&
         current.threadId === record.threadId &&
@@ -211,7 +213,7 @@ export class ApiHistoryRepository
     });
   }
 
-  public async advanceNativeSummary(
+  public async advanceNativeGeneration(
     expected: ApiHistory,
     responsePayload: Record<string, unknown>,
     statusCode: number,
@@ -225,8 +227,10 @@ export class ApiHistoryRepository
       if (!row) return null;
       const current = this.transformFromDBData(row);
       if (
-        current.apiType !== ApiType.GENERATE_SUMMARY ||
-        expected.apiType !== ApiType.GENERATE_SUMMARY ||
+        ![ApiType.GENERATE_SUMMARY, ApiType.GENERATE_VEGA_CHART].includes(
+          expected.apiType,
+        ) ||
+        current.apiType !== expected.apiType ||
         current.projectId !== expected.projectId ||
         current.governanceBindingId !== expected.governanceBindingId ||
         current.threadId !== expected.threadId ||

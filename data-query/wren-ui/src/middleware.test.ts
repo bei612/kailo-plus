@@ -94,6 +94,7 @@ describe('native instance identity boundary', () => {
     '/api/platform-query-reference',
     '/api/v1/run_sql',
     '/api/v1/generate_summary',
+    '/api/v1/generate_vega_chart',
     '/api/ask_task/streaming',
     '/api/ask_task/streaming_answer',
     '/_next/data/native/index.json',
@@ -110,6 +111,7 @@ describe('native instance identity boundary', () => {
     '/api/ask_task/streaming_answer',
     '/api/v1/run_sql',
     '/api/v1/generate_summary',
+    '/api/v1/generate_vega_chart',
   ])(
     'verifies signed entitlement through a real JWKS endpoint and strips credentials for %s',
     async (path) => {
@@ -133,7 +135,13 @@ describe('native instance identity boundary', () => {
         response.headers.get('x-middleware-request-x-kailo-native-human-token'),
       ).toBe(signed);
       expect(response.headers.get('cache-control')).toContain('no-store');
-      if (['/api/v1/run_sql', '/api/v1/generate_summary'].includes(path)) {
+      if (
+        [
+          '/api/v1/run_sql',
+          '/api/v1/generate_summary',
+          '/api/v1/generate_vega_chart',
+        ].includes(path)
+      ) {
         expect(
           response.headers.get(
             'x-middleware-request-x-kailo-native-identity-scope',
@@ -155,7 +163,11 @@ describe('native instance identity boundary', () => {
     ).toBeNull();
   });
 
-  it.each(['/api/v1/run_sql', '/api/v1/generate_summary'])(
+  it.each([
+    '/api/v1/run_sql',
+    '/api/v1/generate_summary',
+    '/api/v1/generate_vega_chart',
+  ])(
     'does not forward private HUMAN credentials or caller-forged scope to independent %s',
     async (path) => {
       delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;

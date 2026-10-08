@@ -136,7 +136,7 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
     const visible = await native.readHistory(token, query);
     const originalLanguage =
       language || WrenAILanguage[project.language] || WrenAILanguage.EN;
-    const prepared = await history.prepareNativeSummary({
+    const prepared = await history.prepareNativeGeneration({
       id: key,
       projectId: config.projectId,
       apiType: ApiType.GENERATE_SUMMARY,
@@ -215,7 +215,7 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
     }
     await native.readHistory(token, query);
     if (result.status === TextBasedAnswerStatus.FAILED) {
-      current = await history.advanceNativeSummary(
+      current = await history.advanceNativeGeneration(
         current,
         { threadId: originalThreadId, error: 'SUMMARY_GENERATION_FAILED' },
         409,
@@ -242,7 +242,7 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
       pending();
       return;
     }
-    current = await history.advanceNativeSummary(
+    current = await history.advanceNativeGeneration(
       current,
       { threadId: originalThreadId, summary: '' },
       202,
@@ -278,7 +278,7 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
         }
         await native.readHistory(token, query);
         if (event?.done === true && event.queryId === key) {
-          const completed = await history.advanceNativeSummary(
+          const completed = await history.advanceNativeGeneration(
             current,
             {
               summary,
@@ -297,7 +297,7 @@ async function governedSummary(req: NextApiRequest, res: NextApiResponse) {
         if (typeof event?.message !== 'string' || event.done !== undefined)
           throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
         summary += event.message;
-        const updated = await history.advanceNativeSummary(
+        const updated = await history.advanceNativeGeneration(
           current,
           { summary, threadId: originalThreadId },
           202,
