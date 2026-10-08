@@ -1318,3 +1318,112 @@ for a live activation AE, all release conformance vectors, full check, deploymen
 browser/desktop/mobile screenshots and installation packages were not run by
 this increment. Core continues to refuse stale/missing/incorrect audit evidence;
 the adapter never substitutes a supplied timestamp for that existing check.
+
+## 2026-10-08 — actual optional adapter packaging and deployment entry
+
+After main `41d83cb72`, the implementation existed but the native deployment
+still had only frontend/app/PostgreSQL/Redis/docreader. Neither its Dockerfile
+nor `start.sh` consumed the shared adapter or a persistent Agent Unix proxy.
+This increment closes that delivery wiring, not component activation itself.
+Authority remains DD-70/71/93 and the same binding/SecretRef/Agent consumers
+above; the independent native five-service start path is unchanged.
+
+`knowledge/adapter/Dockerfile` packages the actual locked MCP dependency,
+adapter sources and shared `client-kit/adapter` at their original relative import
+paths. Its Dockerfile-specific allowlist excludes the outer workspace, secrets,
+native database and unrelated sources. The existing `fork/upstream.yaml`
+registers `knowledge-adapter` with those exact inputs and root build context;
+the existing `tools/build-upstream.sh knowledge-adapter` is its only build
+entry. Source/artifact digests remain `none`: no matching image was built or
+published here. The Node pin is the existing SDK's immutable `0e0ff40c…`, not
+an implicit latest image; lock installation uses the ordinary BuildKit npm
+cache with `npm ci --omit=dev --ignore-scripts --no-audit --no-fund`.
+The Dockerfile-specific allowlist explicitly includes parent directories and
+source descendants. The existing SDK's successful offline installation below
+does not imply that BuildKit's separate cache has been prewarmed; an uncached
+image build can fetch the locked dependencies. No image build is claimed.
+
+The existing operator `provision.py adapter-reader` consumes the already
+controlled `KNOWLEDGE_ADAPTER_CONFIG_FILE`, not another binding definition.
+It derives exact KV paths/versions/fields from `management.validation.secretDeliveries`,
+requires one tenant and one private Unix socket, verifies every actual MCP/PEP
+credential destination and exact JWKS mount, and uses the configured registered
+reader role. It only registers/readbacks the exact existing AppRole read policy,
+role TTL and single-use wrapped SecretID. It never fetches or creates native
+credential values, tenant namespaces, mounts, platform identities, releases,
+bindings, resources or grants. Existing policy/role drift refuses before
+bootstrap issuance. Core remains responsible for verifying this role against
+its own `secretReaders` registration and audit evidence.
+
+The same existing atomic `write_private` delivery writes bootstrap files and
+`adapter-agent.hcl` to an Agent-only private directory. A distinct private output
+directory holds version-pinned native template outputs and the Unix socket;
+overlapping/nested bootstrap/output directories, symlinks, destinations outside
+that output directory, root identity or mismatched owner UID/GID refuse. The
+operator and both runtime processes must have the same explicit non-root owner;
+there is no chown/root/world-readable fallback. The generated original Agent
+configuration uses `exit_after_auth=false`, `api_proxy.use_auto_auth_token="force"`,
+Unix `socket_mode="0600"`, no cache and no token sink. Thus the previously
+implemented validate request can perform a new Agent read after its AE, rather
+than being limited to startup receipts. Wrapped bootstrap is consumed by Agent;
+after credential loss/restart the operator must provide a fresh wrapped delivery
+through the same command. Missing proof continues to refuse, not reuse an old
+token or silently mint a new credential.
+
+`start.sh --platform-adapter` selects `compose.adapter.yaml` and starts only
+`adapter-agent` and `adapter`, with `--no-build --pull never --no-deps`. The
+existing `--platform-model` can additionally select app; it does not recreate
+the other native services. Compose consumes the immutable artifact, real adapter
+config, exact JWKS, private output/bootstrap paths and explicit runtime budgets
+from the existing native deployment env. Only Agent receives bootstrap files;
+adapter receives read-only config/JWKS/output mounts, never an operator/Bao
+credential. Both are read-only-rootfs, drop capabilities and forbid new
+privileges. There is no published adapter/Agent port or new platform/data
+network: the operator must identify an already-existing Core service/IdP/Bao
+network. The native UI/data-service network membership is unchanged. New values
+are documented as references only in the existing `.env.example`; no account,
+credential value, default tenant, source-binding or ACTIVE row was invented.
+
+Fixed original runtime semantics are still OpenBao
+`735723da5628148f232497a48a35a137b6512103`,
+`internal/command/agent.go::AgentCommand.Run`,
+`internal/command/agent/config/config.go::parseAPIProxy`, and
+`internal/helper/configutil/listener.go::Listener`; the no-cache branch wires
+`APIProxy` directly, auto-auth supplies only the in-memory token, and the native
+template server uses the same auth namespace. No `.references` files were run
+or edited. WeKnora's original app Dockerfile and native five services were not
+rewritten to host an extra execution or secret authority.
+
+Post-implementation verification used the same 4 CPU/8 GiB SDK and bounded
+existing candidate. No full-tree copy, package download or image build occurred.
+Evidence directory is the same `codex-agent-receipt-regression-20261005.XvkUjX`:
+
+- `knowledge-adapter-deployment-first.log`: first Python run failed because two
+  existing proxy-renderer inputs were absent from the narrow candidate and the
+  new test called the fixture helper on the wrong test class. Both were fixed;
+  neither failure was treated as acceptance.
+- `knowledge-adapter-deployment-final.log`: 27 existing deploy/provision tests
+  passed, including actual subprocess start selection and HTTP reader-policy
+  calls, no secret-value GETs and pre-HTTP foreign/path/JWKS rejection.
+- `knowledge-adapter-deployment-mutation.log`: private candidate changed the
+  actual generated Agent to `exit_after_auth=true`; its consumer check failed.
+  Exact source restored and compared, then `knowledge-adapter-deployment-restored.log`
+  passed 27. The final same-owner enforcement also passed 27 in
+  `knowledge-adapter-deployment-final-owner.log`.
+- `knowledge-adapter-package-offline.log`: existing lock installed offline from
+  `/cache/npm`, followed by adapter 110 passed, 0 failed, 0 skipped.
+- Actual `docker compose config --format=json` for the unchanged overlay plus
+  an isolated native-network fixture exited 0. Readback contained only the two
+  new services, no published ports, bootstrap mounted only to Agent and all
+  three adapter mounts read-only. Empty adapter image digest was rejected,
+  exit 1. This checks composition, not running services or real mount ownership.
+
+The real `knowledge/fork/deploy/.env` was absent: attempting the full original
+deployment config correctly exited 1. An initial check for the older native
+Dockerfile's Node base image also reported absent; the adapter instead uses the
+same explicit SDK pin as the other adapter. Neither image was pulled or built.
+`bash -n start.sh` and `git diff --check` passed. Full checks, generated Agent
+authentication/rendering against live Bao, runtime activation audit correlation,
+complete conformance, actual image publication/deployment and three-client
+visual acceptance remain unrun. Source delivery wiring is not a declaration
+that the zero-live-binding boundary has changed.

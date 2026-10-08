@@ -4,6 +4,7 @@ set -euo pipefail
 deployment_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 native_env="$deployment_dir/.env"
 platform_env=
+platform_adapter=false
 validate=false
 while (($#)); do
   case "$1" in
@@ -16,7 +17,8 @@ while (($#)); do
       shift 2
       ;;
     --validate) validate=true; shift ;;
-    *) echo 'usage: start.sh [--platform-model /absolute/deploy/local/.env] [--validate]' >&2; exit 64 ;;
+    --platform-adapter) platform_adapter=true; shift ;;
+    *) echo 'usage: start.sh [--platform-model /absolute/deploy/local/.env] [--platform-adapter] [--validate]' >&2; exit 64 ;;
   esac
 done
 [[ -f "$native_env" ]] || { echo 'native deployment .env is required' >&2; exit 78; }
@@ -37,9 +39,16 @@ args+=(-f "$deployment_dir/compose.yaml")
 if [[ -n "$platform_env" ]]; then
   args+=(-f "$deployment_dir/compose.model-gateway.yaml")
 fi
+if [[ "$platform_adapter" == true ]]; then
+  args+=(-f "$deployment_dir/compose.adapter.yaml")
+fi
 docker "${args[@]}" config --quiet
 if [[ "$validate" == false ]]; then
-  if [[ -n "$platform_env" ]]; then
+  if [[ "$platform_adapter" == true ]]; then
+    targets=(adapter-agent adapter)
+    if [[ -n "$platform_env" ]]; then targets+=(app); fi
+    docker "${args[@]}" up -d --no-build --pull never --wait --no-deps "${targets[@]}"
+  elif [[ -n "$platform_env" ]]; then
     # Integration is applied to an already running independent service. Do not
     # recreate its frontend, reader, databases, or the platform Gateway.
     docker "${args[@]}" up -d --no-build --pull never --wait --no-deps app

@@ -147,6 +147,97 @@ class NativeEntrypointTests(unittest.TestCase):
         missing["DB_PASSWORD_FILE"] = str(file.with_name("absent"))
         self.assert_refused(missing)
 
+    def test_adapter_start_targets_only_existing_adapter_and_agent(self):
+        root = Path(self.directory.name)
+        (root / "start.sh").write_bytes(Path(__file__).with_name("start.sh").read_bytes())
+        (root / ".env").write_text("KNOWLEDGE_NATIVE_ORIGIN=https://native.example.test\n")
+        recorder = root / "docker"
+        recorder.write_text("#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ['CALLS'], 'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\nsys.exit(int(os.environ.get('REFUSE_CONFIG','0')) if 'config' in sys.argv else 0)\n")
+        recorder.chmod(0o700)
+        calls = root / "calls"
+        env = {**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"], "CALLS": str(calls)}
+        command = ["bash", str(root / "start.sh"), "--platform-adapter"]
+        subprocess.run(command, env=env, check=True, capture_output=True)
+        operations = [json.loads(line) for line in calls.read_text().splitlines()]
+        self.assertEqual(len(operations), 2)
+        self.assertIn(str(root / "compose.adapter.yaml"), operations[1])
+        self.assertEqual(operations[1][-9:], ["up", "-d", "--no-build", "--pull", "never", "--wait", "--no-deps", "adapter-agent", "adapter"])
+        calls.unlink()
+        result = subprocess.run(command, env={**env, "REFUSE_CONFIG": "1"}, capture_output=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(len(calls.read_text().splitlines()), 1)
+
+    def test_adapter_reader_generates_actual_scoped_uncached_agent_input(self):
+        root = Path(self.directory.name)
+        outputs, bootstrap = root / "outputs", root / "bootstrap"
+        outputs.mkdir(mode=0o700)
+        bootstrap.mkdir(mode=0o700)
+        tenant = "11111111-1111-4111-8111-111111111111"
+        namespace = "tenants/" + tenant
+        deliveries = [{"secretKey": key, "locator": namespace + "/kv/" + key, "version": 2,
+                       "audience": "fixture-" + key, "secretFile": str(outputs/key),
+                       "secretSocket": str(outputs/"agent.sock"), "secretValueKey": "value"}
+                      for key in ("native", "pep")]
+        config = {"bindingId": tenant, "tenantId": tenant,
+                  "nativeMcpBearerFile": deliveries[0]["secretFile"], "oidcClientSecretFile": deliveries[1]["secretFile"],
+                  "actionTokenJwksFile": str(root/"jwks"),
+                  "management": {"validation": {"bindingVersion": 1, "secretDeliveries": deliveries}}}
+        config_file, operator = root/"adapter.json", root/"operator"
+        config_file.write_text(json.dumps(config)); config_file.chmod(0o600)
+        operator.write_text('{"root_token":"synthetic-operator"}'); operator.chmod(0o600)
+        env = {"KNOWLEDGE_ADAPTER_CONFIG_FILE": str(config_file), "KNOWLEDGE_ADAPTER_JWKS_FILE": str(root/"jwks"),
+               "KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY": str(outputs), "KNOWLEDGE_ADAPTER_BOOTSTRAP_DIRECTORY": str(bootstrap),
+               "KNOWLEDGE_ADAPTER_UID": str(os.getuid()), "KNOWLEDGE_ADAPTER_GID": str(os.getgid()),
+               "KNOWLEDGE_ADAPTER_BAO_ROLE": "adapter-reader", "KNOWLEDGE_PROVISION_TIMEOUT_SECONDS": "2",
+               "KNOWLEDGE_BAO_BOOTSTRAP_FILE": str(operator), "KNOWLEDGE_BAO_TOKEN_TTL": "60s", "KNOWLEDGE_BAO_WRAP_TTL": "60s"}
+        policy = ''.join(f'path "kv/data/{key}" {{ capabilities = ["read"] }}\n' for key in ("native", "pep"))
+
+        def response(path):
+            method, _, headers, _ = received[-1]
+            self.assertEqual(headers["X-Vault-Namespace"], namespace)
+            self.assertNotIn("/data/", path)
+            if path == "/v1/sys/mounts": data = {"kv/": {"type": "kv", "options": {"version": "2"}}}
+            elif path == "/v1/sys/auth": data = {"approle/": {"type": "approle"}}
+            elif path == "/v1/sys/policies/acl/adapter-reader": data = {"policy": policy}
+            elif path == "/v1/auth/approle/role/adapter-reader":
+                data = {"bind_secret_id": True, "secret_id_num_uses": 1, "token_policies": ["adapter-reader"], "token_ttl": 60, "token_max_ttl": 60}
+            elif path.endswith("/role-id"): data = {"role_id": "synthetic-role"}
+            elif path.endswith("/secret-id"):
+                self.assertEqual(method, "POST")
+                return 200, {}, b'{"wrap_info":{"token":"synthetic-one-use-wrap"}}'
+            else: self.fail("unexpected native management endpoint")
+            return 200, {}, json.dumps({"data": data}).encode()
+
+        with NativeProvisioningTests.native_http(self, response) as (origin, received), redirect_stdout(io.StringIO()) as output:
+            env["KNOWLEDGE_BAO_URL"] = origin
+            provision.adapter_reader(env)
+            generated = (bootstrap/"adapter-agent.hcl").read_text()
+            self.assertIn('exit_after_auth = false', generated)
+            self.assertIn('api_proxy { use_auto_auth_token = "force" }', generated)
+            self.assertIn('listener "unix"', generated)
+            self.assertIn('socket_mode = "0600"', generated)
+            self.assertNotIn('cache {', generated)
+            self.assertNotIn('sink ', generated)
+            self.assertIn('?version=2', generated)
+            self.assertEqual(generated.count('template {'), 2)
+            self.assertIn(str(outputs/"agent.sock"), generated)
+            self.assertNotIn('synthetic-operator', generated + output.getvalue())
+            self.assertNotIn('synthetic-one-use-wrap', generated + output.getvalue())
+            self.assertEqual(list(outputs.iterdir()), [])
+            self.assertEqual((bootstrap/"adapter-agent.hcl").stat().st_mode & 0o777, 0o600)
+            count = len(received)
+            for failure in ("foreign-tenant", "outside-output", "bootstrap-mounted", "jwks-drift"):
+                original = json.loads(json.dumps(config))
+                changed_env = dict(env)
+                if failure == "foreign-tenant": config["management"]["validation"]["secretDeliveries"][0]["locator"] = "tenants/22222222-2222-4222-8222-222222222222/kv/native"
+                if failure == "outside-output": config["management"]["validation"]["secretDeliveries"][0]["secretFile"] = str(root/"native")
+                if failure == "bootstrap-mounted": changed_env["KNOWLEDGE_ADAPTER_BOOTSTRAP_DIRECTORY"] = str(outputs)
+                if failure == "jwks-drift": changed_env["KNOWLEDGE_ADAPTER_JWKS_FILE"] = str(root/"other-jwks")
+                config_file.write_text(json.dumps(config))
+                with self.assertRaises(provision.ConfigurationError): provision.adapter_reader(changed_env)
+                self.assertEqual(len(received), count)
+                config = original
+
     def test_relative_path_and_symlink_refuse(self):
         relative = dict(self.env)
         relative["DB_PASSWORD_FILE"] = "relative"

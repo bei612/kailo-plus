@@ -8,6 +8,14 @@ implementation_base_commit: 2be7bd40631dda1dd485306038f07a62e9ee287e
 base_divergence: none
 
 artifacts:
+  - name: knowledge-adapter
+    kind: image
+    build_context: .
+    build_dockerfile: knowledge/adapter/Dockerfile
+    inputs: [knowledge/adapter/Dockerfile, knowledge/adapter/Dockerfile.dockerignore, knowledge/adapter/package.json, knowledge/adapter/package-lock.json, knowledge/adapter/src/, client-kit/adapter/]
+    source_digest: none
+    artifact_digest: none
+    blocked: Adapter packaging and deployment consumer are source-only; no source-matched adapter artifact, live Agent activation audit or full component conformance has been accepted.
   - name: knowledge-service
     kind: image
     build_context: knowledge

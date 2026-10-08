@@ -362,6 +362,111 @@ def delivery_directory(env):
     return directory
 
 
+def adapter_reader(env):
+    """Deliver the existing adapter's reader role; never mint its business secrets."""
+    config = json.loads(private_file(required(env, "KNOWLEDGE_ADAPTER_CONFIG_FILE")))
+    validation = config["management"]["validation"]
+    tenant = config["tenantId"]
+    if str(uuid.UUID(tenant)) != tenant or not isinstance(validation["secretDeliveries"], list):
+        raise ConfigurationError("adapter reader: invalid fixed tenant or deliveries")
+    outputs = delivery_directory({"KNOWLEDGE_DELIVERY_DIRECTORY": required(env, "KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY")})
+    bootstrap_dir = delivery_directory({"KNOWLEDGE_DELIVERY_DIRECTORY": required(env, "KNOWLEDGE_ADAPTER_BOOTSTRAP_DIRECTORY")})
+    if outputs == bootstrap_dir or outputs in bootstrap_dir.parents or bootstrap_dir in outputs.parents:
+        raise ConfigurationError("adapter reader: bootstrap must not be mounted into adapter outputs")
+    if config["actionTokenJwksFile"] != required(env, "KNOWLEDGE_ADAPTER_JWKS_FILE"):
+        raise ConfigurationError("adapter reader: JWKS mount differs from actual adapter input")
+    # Both containers run as the explicitly delivered owner. No root fallback,
+    # chown of unrelated directories, or world-readable credential workaround.
+    uid, gid = (int(required(env, key)) for key in ("KNOWLEDGE_ADAPTER_UID", "KNOWLEDGE_ADAPTER_GID"))
+    if uid <= 0 or gid <= 0 or (os.geteuid(), os.getegid()) != (uid, gid) or any(
+        (p.stat().st_uid, p.stat().st_gid) != (uid, gid) for p in (outputs, bootstrap_dir)
+    ):
+        raise ConfigurationError("adapter reader: private directories must match non-root runtime identity")
+    namespace = "tenants/" + tenant
+    paths, destinations, sockets, templates = set(), set(), set(), []
+    quote = json.dumps
+    for entry in validation["secretDeliveries"]:
+        if set(entry) != {"secretKey", "locator", "version", "audience", "secretFile", "secretSocket", "secretValueKey"}:
+            raise ConfigurationError("adapter reader: exact delivery fields required")
+        prefix = namespace + "/"
+        if not entry["locator"].startswith(prefix):
+            raise ConfigurationError("adapter reader: cross-tenant secret refused")
+        parts = entry["locator"][len(prefix):].split("/")
+        if len(parts) < 2 or any(not re.fullmatch(r"[A-Za-z0-9_-]+", part) for part in parts):
+            raise ConfigurationError("adapter reader: invalid fixed KV locator")
+        if type(entry["version"]) is not int or entry["version"] <= 0 or not re.fullmatch(r"[A-Za-z0-9_-]+", entry["secretValueKey"]):
+            raise ConfigurationError("adapter reader: fixed version and native field required")
+        destination, socket = Path(entry["secretFile"]), Path(entry["secretSocket"])
+        if any(not p.is_absolute() or p.parent != outputs or p.is_symlink() for p in (destination, socket)):
+            raise ConfigurationError("adapter reader: credential and socket must be direct private outputs")
+        if destination in destinations or destination == socket:
+            raise ConfigurationError("adapter reader: duplicate or overlapping output")
+        destinations.add(destination)
+        sockets.add(socket)
+        path = parts[0] + "/data/" + "/".join(parts[1:])
+        paths.add(path)
+        contents = ('{{ with secret ' + quote(path + "?version=" + str(entry["version"]))
+                    + ' }}{{ index .Data.data ' + quote(entry["secretValueKey"]) + ' }}{{ end }}')
+        templates.append({"contents": contents, "destination": str(destination),
+                          "perms": "0600", "error_on_missing_key": True})
+    if len(sockets) != 1 or sockets & destinations or not {Path(config["nativeMcpBearerFile"]), Path(config["oidcClientSecretFile"])} <= destinations:
+        raise ConfigurationError("adapter reader: one dedicated proxy and all consumed credentials required")
+    role = segment(env, "KNOWLEDGE_ADAPTER_BAO_ROLE")
+    timeout = int(required(env, "KNOWLEDGE_PROVISION_TIMEOUT_SECONDS"))
+    if timeout <= 0:
+        raise ConfigurationError("provision timeout must be positive")
+    bao_url = http_url(env, "KNOWLEDGE_BAO_URL", origin=True).rstrip("/")
+    operator = json.loads(private_file(required(env, "KNOWLEDGE_BAO_BOOTSTRAP_FILE")))
+    api = API(bao_url, timeout, {"X-Vault-Token": operator["root_token"], "X-Vault-Namespace": namespace})
+    # This path registers only the existing reader; it cannot create namespace,
+    # native key, ServicePrincipal, release, binding, Resource or relation.
+    mounts = api.request("GET", "/v1/sys/mounts")["data"]
+    for mount in {path.split("/")[0] for path in paths}:
+        exact(mounts[mount + "/"], {"type": "kv", "options": {"version": "2"}}, "adapter KV mount")
+    if api.request("GET", "/v1/sys/auth")["data"].get("approle/", {}).get("type") != "approle":
+        raise ConfigurationError("adapter reader: existing AppRole auth required")
+    policy = ''.join(f'path "{path}" {{ capabilities = ["read"] }}\n' for path in sorted(paths))
+    policy_path = "/v1/sys/policies/acl/" + role
+    current = api.request("GET", policy_path, missing=True)
+    if current is None:
+        api.request("PUT", policy_path, {"policy": policy})
+        current = api.request("GET", policy_path)
+    exact(current["data"], {"policy": policy}, "adapter reader policy")
+    ttl = required(env, "KNOWLEDGE_BAO_TOKEN_TTL")
+    matched = re.fullmatch(r"([1-9][0-9]*)(s|m|h)", ttl)
+    if not matched:
+        raise ConfigurationError("adapter reader: bounded token TTL required")
+    seconds = int(matched[1]) * {"s": 1, "m": 60, "h": 3600}[matched[2]]
+    role_path = "/v1/auth/approle/role/" + role
+    wanted = {"bind_secret_id": True, "secret_id_num_uses": 1, "token_policies": [role],
+              "token_ttl": ttl, "token_max_ttl": ttl}
+    current = api.request("GET", role_path, missing=True)
+    if current is None:
+        api.request("POST", role_path, wanted)
+        current = api.request("GET", role_path)
+    exact(current["data"], {"bind_secret_id": True, "secret_id_num_uses": 1,
+          "token_policies": [role], "token_ttl": seconds, "token_max_ttl": seconds}, "adapter reader role")
+    role_id = api.request("GET", role_path + "/role-id")["data"]["role_id"]
+    wrapped = api.request("POST", role_path + "/secret-id", {},
+                          headers={"X-Vault-Wrap-TTL": required(env, "KNOWLEDGE_BAO_WRAP_TTL")})
+    write_private(bootstrap_dir / "adapter-role-id", role_id)
+    write_private(bootstrap_dir / "adapter-wrapped-secret-id", wrapped["wrap_info"]["token"])
+    agent = ('exit_after_auth = false\n' + f'vault {{ address = {quote(bao_url)} }}\n'
+        + 'auto_auth {\n method "approle" {\n' + f'  namespace = {quote(namespace)}\n  config = {{\n'
+        + f'   role_id_file_path = {quote(str(bootstrap_dir / "adapter-role-id"))}\n'
+        + f'   secret_id_file_path = {quote(str(bootstrap_dir / "adapter-wrapped-secret-id"))}\n'
+        + f'   secret_id_response_wrapping_path = {quote("auth/approle/role/" + role + "/secret-id")}\n'
+        + '  }\n }\n}\n'
+        + 'api_proxy { use_auto_auth_token = "force" }\n'
+        + f'listener "unix" {{ address = {quote(str(next(iter(sockets))))}\n socket_mode = "0600"\n tls_disable = true\n }}\n'
+        + 'template_config { exit_on_retry_failure = true }\n')
+    for template in templates:
+        agent += 'template {\n' + ''.join(f' {key} = {quote(value)}\n' for key, value in template.items()) + '}\n'
+    write_private(bootstrap_dir / "adapter-agent.hcl", agent)
+    print(json.dumps({"bindingId": config["bindingId"], "bindingVersion": validation["bindingVersion"],
+                      "agentConfig": str(bootstrap_dir / "adapter-agent.hcl"), "secretReferences": len(templates)}))
+
+
 def provision(env):
     timeout = int(required(env, "KNOWLEDGE_PROVISION_TIMEOUT_SECONDS"))
     if timeout <= 0:
@@ -468,9 +573,10 @@ def provision(env):
 if __name__ == "__main__":
     try:
         operation = sys.argv[1] if len(sys.argv) == 2 else "native" if len(sys.argv) == 1 else ""
-        actions = {"native": provision, "model-reader": model_reader, "model-delivery": model_delivery}
+        actions = {"native": provision, "model-reader": model_reader, "model-delivery": model_delivery,
+                   "adapter-reader": adapter_reader}
         if operation not in actions:
-            raise ConfigurationError("expected native, model-reader, or model-delivery")
+            raise ConfigurationError("expected native, model-reader, model-delivery, or adapter-reader")
         actions[operation](os.environ)
     except (ConfigurationError, OSError, ValueError, KeyError, TypeError) as error:
         # ConfigurationError messages contain field names only. HTTP transport

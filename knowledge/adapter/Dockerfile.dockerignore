@@ -1,0 +1,12 @@
+**
+!knowledge/
+!knowledge/adapter/
+!knowledge/adapter/package.json
+!knowledge/adapter/package-lock.json
+!knowledge/adapter/src/
+!knowledge/adapter/src/**
+!knowledge/adapter/Dockerfile
+!knowledge/adapter/Dockerfile.dockerignore
+!client-kit/
+!client-kit/adapter/
+!client-kit/adapter/**

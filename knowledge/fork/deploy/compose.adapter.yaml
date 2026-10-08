@@ -1,0 +1,63 @@
+# Existing native deployment opt-in. No platform database, registry, token sink,
+# host listener or new network is created. All paths come from controlled delivery.
+services:
+  adapter:
+    image: ${KNOWLEDGE_ADAPTER_REPOSITORY:?source-built adapter repository required}@sha256:${KNOWLEDGE_ADAPTER_DIGEST:?verified immutable adapter digest required}
+    user: ${KNOWLEDGE_ADAPTER_UID:?delivery owner UID required}:${KNOWLEDGE_ADAPTER_GID:?delivery owner GID required}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: ${KNOWLEDGE_ADAPTER_CPUS:?adapter CPU budget required}
+    mem_limit: ${KNOWLEDGE_ADAPTER_MEMORY:?adapter memory budget required}
+    memswap_limit: ${KNOWLEDGE_ADAPTER_MEMORY:?adapter memory budget required}
+    environment:
+      ADAPTER_CONFIG_FILE: ${KNOWLEDGE_ADAPTER_CONFIG_FILE:?controlled adapter config required}
+    volumes:
+      - type: bind
+        source: ${KNOWLEDGE_ADAPTER_CONFIG_FILE:?controlled adapter config required}
+        target: ${KNOWLEDGE_ADAPTER_CONFIG_FILE:?controlled adapter config required}
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY:?private Agent output directory required}
+        target: ${KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY:?private Agent output directory required}
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${KNOWLEDGE_ADAPTER_JWKS_FILE:?trusted ActionToken JWKS required}
+        target: ${KNOWLEDGE_ADAPTER_JWKS_FILE:?trusted ActionToken JWKS required}
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [native_ui, adapter_platform]
+    depends_on:
+      adapter-agent:
+        condition: service_started
+
+  adapter-agent:
+    image: ${KNOWLEDGE_ADAPTER_AGENT_REPOSITORY:?fixed OpenBao repository required}@sha256:${KNOWLEDGE_ADAPTER_AGENT_DIGEST:?fixed OpenBao digest required}
+    user: ${KNOWLEDGE_ADAPTER_UID:?delivery owner UID required}:${KNOWLEDGE_ADAPTER_GID:?delivery owner GID required}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: ${KNOWLEDGE_ADAPTER_AGENT_CPUS:?Agent CPU budget required}
+    mem_limit: ${KNOWLEDGE_ADAPTER_AGENT_MEMORY:?Agent memory budget required}
+    memswap_limit: ${KNOWLEDGE_ADAPTER_AGENT_MEMORY:?Agent memory budget required}
+    entrypoint: [bao]
+    command: [agent, "-config=${KNOWLEDGE_ADAPTER_BOOTSTRAP_DIRECTORY:?private AppRole bootstrap directory required}/adapter-agent.hcl"]
+    volumes:
+      - type: bind
+        source: ${KNOWLEDGE_ADAPTER_BOOTSTRAP_DIRECTORY:?private AppRole bootstrap directory required}
+        target: ${KNOWLEDGE_ADAPTER_BOOTSTRAP_DIRECTORY:?private AppRole bootstrap directory required}
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY:?private Agent output directory required}
+        target: ${KNOWLEDGE_ADAPTER_DELIVERY_DIRECTORY:?private Agent output directory required}
+        bind: {create_host_path: false}
+    networks: [adapter_platform]
+
+networks:
+  adapter_platform:
+    external: true
+    name: ${KNOWLEDGE_ADAPTER_PLATFORM_NETWORK:?existing Core service and Bao network required}
