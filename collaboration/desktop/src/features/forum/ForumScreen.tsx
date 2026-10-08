@@ -29,6 +29,7 @@ import { useFocusedRefetchInterval } from "@/shared/lib/useDocumentVisible";
 import { MessageComposer } from "@/features/messages/ui/MessageComposer";
 import { Button } from "@/shared/ui/button";
 import { ChannelScreenHeader } from "@/features/channels/ui/ChannelScreenHeader";
+import { usePreviewFeatureWarning } from "@client-kit/platform/react/features";
 
 function project(event: RelayEvent, relaySelfPubkey: string | null | undefined): ForumMessage {
   return { eventId: event.id, pubkey: resolveEventAuthorPubkey({ event, relaySelfPubkey }),
@@ -55,6 +56,7 @@ function ForumVisit({ channel, currentPubkey, targetMessageId, targetThreadRootI
   const queryClient = useQueryClient();
   const key = ["forum", relayUrl, currentPubkey, channel.id] as const;
   const [selectedPostId, setSelectedPostId] = React.useState<string | null>(targetThreadRootId);
+  usePreviewFeatureWarning(selectedPostId ? "forum" : "");
   const [targetEventId, setTargetEventId] = React.useState<string | null>(targetMessageId);
   const mounted = React.useRef(true);
   React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);

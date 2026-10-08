@@ -6,6 +6,7 @@ import { Activity, Folders, Bot, ClipboardCheck, History, Inbox, ListChecks, Mon
 import { SidebarHeader, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem } from "./sidebar";
 import { SidebarMenuLabel } from "./sidebar-menu-label";
 import type { ReactNode } from "react";
+import { FeatureGate } from "../features";
 type SidebarSelectedView = "home" | "channel" | "platform" | "new-message";
 
 const PLATFORM_SECTION_ICON = {
@@ -79,6 +80,6 @@ export function AppSidebarPrimaryMenu({
           </SidebarMenuItem>
         }
       />
-    </SidebarHeader>{projectsSection}</>
+    </SidebarHeader><FeatureGate feature="projects">{projectsSection}</FeatureGate></>
   );
 }

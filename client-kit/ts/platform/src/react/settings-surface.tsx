@@ -2,7 +2,7 @@
 // desktop/src/features/settings/ui/{SettingsView,SettingsSectionHeader}.tsx
 // desktop/src/shared/ui/{PageHeader,sidebar-menu-label}.tsx
 import { useEffect, useState, type ReactNode } from "react";
-import { ArrowLeft, BellRing, Keyboard, MonitorCog, UserRound, Ticket, LoaderCircle, Smile } from "lucide-react";
+import { ArrowLeft, BellRing, Keyboard, MonitorCog, UserRound, Ticket, LoaderCircle, Smile, FlaskConical } from "lucide-react";
 import { translate, type PlatformLocale } from "../i18n";
 import { BffError } from "../transport";
 import type { Loaded } from "./use-load";
@@ -13,14 +13,15 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, us
 import { topChromeBackdrop } from "./messages/chromeLayout";
 import { cn } from "./profile/buzz/shared/lib/cn";
 
-export type SettingsSection = "profile" | "appearance" | "notifications" | "shortcuts" | "community-members" | "custom-emoji";
+export type SettingsSection = "profile" | "appearance" | "notifications" | "shortcuts" | "community-members" | "custom-emoji" | "experimental";
 export const settingsSectionKeys = {
   profile: "platform.settings.profile", appearance: "platform.settings.appearance",
   notifications: "platform.settings.notifications", shortcuts: "platform.settings.shortcuts",
   "community-members": "invitations.title",
   "custom-emoji": "customEmoji.title",
+  experimental: "platform.settings.experimental",
 } as const;
-const icons = { profile: UserRound, appearance: MonitorCog, notifications: BellRing, shortcuts: Keyboard, "community-members": Ticket, "custom-emoji": Smile };
+const icons = { profile: UserRound, appearance: MonitorCog, notifications: BellRing, shortcuts: Keyboard, "community-members": Ticket, "custom-emoji": Smile, experimental: FlaskConical };
 const personalSettingsSections: SettingsSection[] = ["profile", "appearance", "notifications", "shortcuts", "custom-emoji"];
 
 export function SettingsBackButton({ locale, onClose, sidebarState = "expanded", isMobile = false }: {
@@ -45,6 +46,7 @@ export function SettingsNavigation({ locale, section, onSelect, icons: suppliedI
 }) {
   const groups:Array<{label:string;sections:SettingsSection[]}>= [{label:translate(locale,"platform.settings.personal"),sections:personalSettingsSections}];
   if(invitationAccess?.status==="ok")groups.push({label:translate(locale,"platform.settings.communities"),sections:["community-members"]});
+  groups.push({label:translate(locale,"platform.settings.app"),sections:["experimental"]});
   return <>
     {invitationAccess?.status==="pending"?<div className="mx-3 flex items-center gap-2 rounded-md border border-sidebar-border px-3 py-2 text-xs text-sidebar-foreground/70" data-testid="community-access-loading"><LoaderCircle className="h-3.5 w-3.5 animate-spin"/>{translate(locale,"platform.loading")}</div>:null}
     {invitationAccess?.status==="error"&&onRetryInvitations&&!(invitationAccess.error instanceof BffError&&invitationAccess.error.status===403)?<div className="mx-3" data-testid="community-access-error"><ReadFailure error={invitationAccess.error} onRetry={onRetryInvitations}/></div>:null}

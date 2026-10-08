@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ComponentType, ReactNode } from "react";
+import { FeatureGate } from "./features";
 import {
   type PlatformLocale,
   type PlatformMessageKey,
@@ -86,7 +87,7 @@ export function PlatformNavigation({
       {platformNavigationSections.map((section) => {
         const label = translate(locale, sectionLabel[section]);
         return (
-          <li
+          <FeatureGate key={section} feature={section}><li
             className="group/menu-item relative"
             data-sidebar="menu-item"
             key={section}
@@ -115,7 +116,7 @@ export function PlatformNavigation({
                 </span>
               </span>
             </ButtonComponent>
-          </li>
+          </li></FeatureGate>
         );
       })}
     </ul>

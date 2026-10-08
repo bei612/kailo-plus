@@ -6,7 +6,7 @@ const STORAGE_KEY_PREFIX = "buzz-channel-sort.v1";
 export type ChannelSortMode = "alpha" | "recent";
 
 /** Sidebar groupings that carry their own sort preference. */
-export type ChannelSortGroupKey = "starred" | "channels" | "dms";
+export type ChannelSortGroupKey = "starred" | "channels" | "forums" | "dms";
 
 export type ChannelSortStore = {
   version: 1;

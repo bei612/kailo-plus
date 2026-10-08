@@ -4,7 +4,7 @@ import type { PlatformSection } from "@/features/platform/platformSections";
 import type { useSidebarRelayConnectionCard } from "@/features/sidebar/ui/useSidebarRelayConnectionCard";
 import type { Channel, Profile, SearchHit } from "@/shared/api/types";
 
-export type CollapsibleSidebarGroup = "starred" | "channels";
+export type CollapsibleSidebarGroup = "starred" | "channels" | "forums";
 
 export type AppSidebarProps = {
   activeCommunity: Community;

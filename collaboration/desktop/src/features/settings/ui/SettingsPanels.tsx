@@ -4,6 +4,7 @@ import {
   translate,
 } from "@client-kit/platform/i18n";
 import {
+  ExperimentalFeaturesCard,
   type SettingsSection,
 } from "@client-kit/platform/react/settings";
 import type {
@@ -28,6 +29,7 @@ const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
   "shortcuts",
   "community-members",
   "custom-emoji",
+  "experimental",
 ];
 
 export function isSettingsSection(value: unknown): value is SettingsSection {
@@ -90,6 +92,8 @@ export function renderSettingsSection(
       return <ThemeSettingsCard />;
     case "shortcuts":
       return <KeyboardShortcutsCard />;
+    case "experimental":
+      return <ExperimentalFeaturesCard />;
     default: {
       const exhaustiveCheck: never = section;
       return exhaustiveCheck;

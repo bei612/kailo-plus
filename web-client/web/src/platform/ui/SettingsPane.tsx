@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { translate } from "@client-kit/platform/i18n";
 import {
   SettingsPage,
+  ExperimentalFeaturesCard,
   ShortcutSettings,
   shortcutText,
   type SettingsShortcut,
@@ -52,7 +53,7 @@ export function SettingsPane({ active = true, onClose }: { active?: boolean; onC
           locale={locale}
           shortcuts={webShortcuts(locale)}
         />
-      ) : null}
+      ) : section === "experimental" ? <ExperimentalFeaturesCard /> : null}
     </SettingsPage>
   );
 }

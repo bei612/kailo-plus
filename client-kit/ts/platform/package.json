@@ -157,6 +157,7 @@
     "./react/pages": "./src/react/pages.tsx",
     "./react/roles": "./src/react/roles.tsx",
     "./react/settings": "./src/react/settings.tsx",
+    "./react/features": "./src/react/features/index.ts",
     "./react/conversation-display-settings": "./src/react/conversation-display-settings.tsx",
     "./react/segmented-control": "./src/react/segmented-control.tsx",
     "./react/surfaces": "./src/react/surfaces.tsx",

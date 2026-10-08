@@ -1,5 +1,6 @@
 import { createFileRoute, notFound, useBlocker } from "@tanstack/react-router";
 import { useState } from "react";
+import { usePreviewFeatureWarning } from "@client-kit/platform/react/features";
 import { translate, resolveLocale } from "@client-kit/platform/i18n";
 import {
   ApprovalsPage,
@@ -45,6 +46,7 @@ export const Route = createFileRoute("/platform/$section")({
  */
 function PlatformRouteComponent() {
   const { section } = Route.useParams();
+  usePreviewFeatureWarning(section);
   const { workspaceId, projectId } = Route.useSearch();
   const navigate = Route.useNavigate();
   const [workflowNavigationState, setWorkflowNavigationState] = useState<WorkflowNavigationState>({ dirty: false, locked: false });

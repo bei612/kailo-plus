@@ -1,15 +1,15 @@
 // Buzz 779af8886caae1317b4de962082429867ab61503 desktop/src/features/channels/ui/ChannelGlyph.tsx::ChannelGlyph.
-import { Hash, Lock } from "lucide-react";
+import { FileText, Hash, Lock } from "lucide-react";
 
-import type { WorkspaceVisibility } from "@client-kit/contracts";
+import type { Channel } from "./search/types";
 import { cn } from "./profile/buzz/shared/lib/cn";
 
-/** Stream glyph for a channel: a lock for private channels, else a hash. */
+/** Original stream/forum glyph; private channels retain the lock. */
 export function ChannelGlyph({
   channel,
   className,
 }: {
-  channel: { visibility?: `${WorkspaceVisibility}` };
+  channel: Partial<Pick<Channel, "channelType" | "visibility">>;
   className?: string;
 }) {
   if (channel.visibility === undefined) return null;
@@ -17,6 +17,9 @@ export function ChannelGlyph({
 
   if (channel.visibility === "private") {
     return <Lock className={iconClass} />;
+  }
+  if (channel.channelType === "forum") {
+    return <FileText className={iconClass} />;
   }
   return <Hash className={iconClass} />;
 }

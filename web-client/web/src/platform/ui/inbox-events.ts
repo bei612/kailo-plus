@@ -14,7 +14,7 @@ export const hex = /^[0-9a-f]{64}$/;
  * Core verifies every signature and the two-hop target closure before returning
  * this page. Target-scoped NIP-25 reactions (7) and NIP-09 deletions can omit h.
  */
-export function inboxWindowEvents(raw: unknown, workspace: string): Event[] {
+export function inboxWindowEvents(raw: unknown, workspace: string, forumPosts = false): Event[] {
   if (!Array.isArray(raw)) throw new Error("Invalid message page");
   const events = raw as BuzzEvent[];
   const metadataKinds = new Set<number>([
@@ -24,7 +24,7 @@ export function inboxWindowEvents(raw: unknown, workspace: string): Event[] {
     7, // NIP-25 reaction, returned by the governed Core window auxiliary closure.
   ]);
   for (const event of events) {
-    if (!event || (!(CHANNEL_TIMELINE_CONTENT_KINDS as readonly number[]).includes(event.kind) && !metadataKinds.has(event.kind))) {
+    if (!event || (!(CHANNEL_TIMELINE_CONTENT_KINDS as readonly number[]).includes(event.kind) && !(forumPosts && event.kind === 45001) && !metadataKinds.has(event.kind))) {
       throw new Error("Unverifiable message kind");
     }
     // Reuse the row shape/scope guard, including for non-rendered metadata.
@@ -33,12 +33,14 @@ export function inboxWindowEvents(raw: unknown, workspace: string): Event[] {
       && Array.isArray(event.tags) && !event.tags.some((tag) => tag?.[0] === "h");
     validateInboxEvent(event, workspace, targetScoped);
   }
-  const window = parseChannelWindowResponse(events, workspace, null);
-  return window.rows.flatMap(({event}) => event.kind === 9 || event.kind === 40002 ? inboxEvents([event], workspace, event.kind) : []);
+  const window = parseChannelWindowResponse(events, workspace, null, forumPosts);
+  return window.rows.flatMap(({event}) => forumPosts && event.kind === 45001
+    ? inboxEvents([event], workspace, 45001).map((item) => ({ ...item, channelType: "forum" }))
+    : event.kind === 9 || event.kind === 40002 ? inboxEvents([event], workspace, event.kind) : []);
 }
 
 /** The query is already scope-filtered by Core; mismatched/unverifiable data is never shown. */
-export function inboxEvents(raw: unknown, workspace: string, kind: 9 | 40002 | 40003 = 9): Event[] {
+export function inboxEvents(raw: unknown, workspace: string, kind: 9 | 40002 | 40003 | 45001 = 9): Event[] {
   if (!Array.isArray(raw)) throw new Error("Invalid message page");
   return raw.map((value: unknown) => {
     const event = value as BuzzEvent;

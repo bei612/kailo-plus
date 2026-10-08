@@ -12,6 +12,7 @@ import { InstallationMemory, validMemoryEntries, validMemoryRead } from "../src/
 import { ToolManagement, validPlatformToolPage } from "../src/react/tools";
 import { WorkflowsPage, validAutomationRuns } from "../src/react/workflows";
 import { PlatformNavigation, platformNavigationSections } from "../src/react/navigation";
+import { setOverride } from "../src/react/features/store";
 import { LegacySecretRefManagement, RoleManagement, RoleMembers } from "../src/react/roles";
 import { CreateChannelDialog } from "../src/react/create-channel-dialog";
 import { ChannelBrowser } from "../src/react/channel-browser";
@@ -397,6 +398,7 @@ describe("independent shared Workflows page", () => {
     return { host, history: host.querySelector("[data-testid=workflow-runs]") as HTMLElement, t };
   }
   it("uses the shared navigation for the independent page and removes the Agents mount", async () => {
+    setOverride("workflows", true);
     const t = routes();
     function Host() {
       const [section, setSection] = useState<"agents" | "workflows">("agents");

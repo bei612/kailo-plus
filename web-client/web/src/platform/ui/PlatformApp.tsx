@@ -67,6 +67,8 @@ import { NewMessagePage } from "./NewMessagePage";
 import { PulsePane } from "./PulsePane";
 import { ProjectsPane } from "./ProjectsPane";
 import { SidebarProjects } from "./SidebarProjects";
+import { ChannelType } from "@client-kit/contracts";
+import { usePreviewFeatureWarning } from "@client-kit/platform/react/features";
 import { translate } from "@client-kit/platform/i18n";
 import { platformQueries } from "@/platform/ui/queries";
 import { getLocale, t } from "@/shared/i18n";
@@ -176,6 +178,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   }, [directMessageOwner]);
   const navigation = usePlatformNavigation();
   const { tab, messageTarget } = navigation;
+  usePreviewFeatureWarning(tab);
   const [workflowNavigationState, setWorkflowNavigationState] = useState<WorkflowNavigationState>({ dirty: false, locked: false });
   const workflowBlocker = useBlocker({
     shouldBlockFn: ({ current, next }) => workflowBlocksNavigation(workflowNavigationState, current, next),
@@ -190,6 +193,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   if(tab==="settings")settingsVisited.current=true;
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
   const [newChannelOpen, setNewChannelOpen] = useState(false);
+  const [newForumOpen, setNewForumOpen] = useState(false);
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
   const [scopeSearchFocusRequest, setScopeSearchFocusRequest] = useState(0);
   const searchScopeKey = `${session.tenantId}:${session.tenantPrincipalId}:${session.platformSessionId}`;
@@ -435,6 +439,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               footer={<SidebarMenu><SidebarMenuItem><WebSidebarProfileCard session={session} settingsOpen={tab === "settings"}
                 onOpenSettings={() => setTab("settings")} onSignOut={onSignOut} /></SidebarMenuItem></SidebarMenu>}
               dialogs={<><CreateChannelDialog key={`create:${session.tenantPrincipalId}`} open={newChannelOpen} onOpenChange={setNewChannelOpen} />
+                <CreateChannelDialog key={`forum:${session.tenantPrincipalId}`} open={newForumOpen} onOpenChange={setNewForumOpen} channelKind={ChannelType.Forum} />
                 <ChannelBrowser key={session.tenantPrincipalId} open={createChannelOpen} onOpenChange={setCreateChannelOpen}
                 lastMessageAtByChannelId={channelActivity}
                 onSelect={async (workspace) => { await workspaces.refetch(); await navigation.openChannel(workspace.id); }} /></>}>
@@ -463,6 +468,7 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
               reads={userState} preferencePending={preference.isPending || preferenceUnknown}
               onSelect={(id) => { void navigation.openChannel(id); }}
               onCreate={() => setCreateChannelOpen(true)}
+              onCreateForum={() => setNewForumOpen(true)}
               onSetPreference={(id, value) => {
                 if (userState.state) preference.mutate({ id, ...value, version: userState.state.version });
               }} />

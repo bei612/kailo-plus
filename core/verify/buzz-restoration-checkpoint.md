@@ -4730,3 +4730,103 @@ Web 推导限于当前已授权窗口中有真实 reaction/目标/root 的证据
 ContextMenu 等残缺及未分类项仍保留，不称 100% 还原。
 本回执时 11 源码路径尚未提交/部署；当前旧 live 0b 不能验此批，没有此批新版业务截图，Windows/Mobile 未验收。
 本批未重复 full/check-docs；root 原 full 的 pub.dev socket 失败为非零，不以这里的窄验替代生产门禁。
+
+## 2026-10-08 原 Experiments 四页开关与 Forum 真实两宿主消费者
+
+本节只记录实现后证据，不是新增规格。固定官方基准为
+`779af8886caae1317b4de962082429867ab61503`；本批起点 main 为
+`93cc9f0a9e1ce0838baba5213ef4060ef4f09d27`。用户要求原模块直接恢复，
+Web/Desktop 共源、中文默认/英文，且无实际生产者不得生成假入口；
+本人本机身份与管理经 BFF 的边界仍为 DD-75/DD-80，不把客户端开关当授权。
+
+影响面和副作用：本批只恢复原本地 preview 偏好、原设置导航及原频道分组消费者；
+未改契约、数据库、Core、Relay、Action Admission 或公共权限/额度权威。
+四个开关实际影响既有 Workflows/Projects/Pulse/Forum 入口，项目子树同源隐藏；
+关闭不删除页面或业务数据，原直达路由继续呈现并显示原 preview 提示。
+存储损坏/未知开关沿原默认解析；原页面与治理请求保持原生产链，
+结果不明的写回执、旧身份、撤权和读取失败的既有 fence 不被本地偏好绕过。
+
+直接复用的固定官方路径/符号：
+
+- `preview-features.json`：五项完整原 JSON 与固定官方 `git show` 的 `diff -u` 为 0。
+- `desktop/src/shared/features/{types,manifest,store,resolveEnabled,useFeatureEnabled,FeatureGate}.ts[x]`：
+  原默认、版本化 localStorage key、跨窗口订阅和门禁迁入共享
+  `client-kit/ts/platform/src/react/features/`，两宿主实际消费同一主体。
+- `desktop/src/features/settings/ui/ExperimentalFeaturesCard.tsx::ExperimentalFeaturesCard`：
+  原 section、SettingsSectionHeader、SettingsOptionGroup/Row、Switch、字号和布局不重画；
+  仅文案接同源中英词条。原 App/Experiments 分类接回两宿主 SettingsPanels/SettingsPane。
+- `desktop/src/features/sidebar/ui/AppSidebar.tsx::AppSidebar`：
+  原 Forum 分组、排序、折叠、未读、创建与实际频道选择接回；没有把论坛加入原 Stream starred 分组。
+  Native 用真实本机 Channel；Web 用已获授权 workspaceChannel 的真实 channelId/channelType。
+- `desktop/src/features/channels/ui/ChannelGlyph.tsx::ChannelGlyph`：
+  原 Forum FileText 分支恢复至共享图标，private 仍 Lock；原项目首页 ProjectChannelIcon
+  的事实/消费者尚缺，没有伪造项目首页或声称整个原符号完整恢复。
+
+授权迁移差异逐项：共享静态 manifest 使用已固定的原 JSON 和既有类型，不新增运行时注册表；
+没有为了读取随包可信 JSON 新增原 Zod 依赖。英文原文不改，新增中文与本地化 preview toast。
+第五项 agentManagedProfiles 的原定义保留，但 setAgentManagedProfiles 的真实生产消费者仍缺，
+不输出假生效开关；当前是 7/16 个实际设置分区，不是 16 分区或原版 100% 恢复。
+
+Web Forum 未读不是拿 Stream 时间冒充：ChannelSidebar 的真实查询按已授权类型选择
+`WebMessageType.ForumPost`，以原 `parseChannelWindowResponse(..., true)` 读取 45001 与 bounds；
+`inbox-events.ts` 仍逐事件验证 scope，错误类型、错误 h、错误 bounds 均拒绝。
+原 reaction/root 辅助闭包保留，read context 使用真实 native ID，
+管理/导航仍 Workspace ID，未新增第二 scope 或读位置权威。
+Native 真实侧栏检查使用完整 QueryClient/Platform/身份/Router/Sidebar Provider，
+实际 New forum 打开原 CreateChannelDialog 并读取 `/api/v1/role-workspaces`；
+该 fixture 没有创建权限，确认 0 POST，不将弹窗打开说成实际创建成功。
+
+本批完整 35 路径清单、逐输入 SHA256 与 owned patch 位于：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS/`
+的 `experiments-owned-paths.txt`、`experiments-input.sha256`、
+`experiments-source-owned.patch`。source patch 为 35 files +671/-50，
+SHA256 `fab90eb3131a11753f58b279c5afae2cb0261eb2c53d4addddaec7f2608de953`；
+`git apply --reverse --check` 为 0，正式35输入及候选/两宿主物理 shared 副本逐文件 cmp 为0。
+所有选中路径从本批起点到核验时 HEAD 的已提交差异为空；本节不吸收其它 inherited dirty，
+尤其不包含 checkpoint 的历史删除、custom-emoji 等无关区段。
+
+实际检查复用原 `kailo-agent-receipt-xvkujx`，4 CPU/8 GiB，
+Node heap3072、Vitest maxWorkers1，开始核现存进程、HostConfig/cgroup、主机可用内存/PSI。
+未安装依赖、新建环境、Cargo/Go、全量编译或 bundle。原新共享9个TS/TSX文件经现存Biome格式化；
+未整份重排紧凑宿主文件。原命令在候选的对应 package 工作目录执行：
+
+```sh
+node node_modules/vitest/vitest.mjs run test/sidebar-shell.test.tsx test/projects.test.tsx test/pages.test.tsx --maxWorkers=1
+node node_modules/vitest/vitest.mjs run src/platform/ui/ChannelSidebar.test.tsx src/platform/ui/SettingsPane.test.tsx src/platform/ui/ForumPane.test.tsx --maxWorkers=1
+node --import ./test-loader.mjs --experimental-strip-types --test src/features/search/ui/SearchResultItem.test.mjs
+node node_modules/typescript/bin/tsc --noEmit
+node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json
+PATH=/usr/lib/dart/bin:$PATH python3 tools/gen-platform-i18n.py
+PATH=/usr/lib/dart/bin:$PATH python3 tools/gen-platform-i18n.py --check
+```
+
+首轮 shared 334/334（sidebar12/projects54/pages268）exit0；
+最终字节恢复后 shared12/12、Web22/22（sidebar11/settings5/forum6）、Native6/6，共40/40，均exit0。
+原始日志为 `experiments-shared-positive.log`、
+`experiments-shared-restored.log`、`experiments-web-restored.log`、`experiments-native-restored.log`。
+shared source/test、Web、Native 四项类型实际exit0，最终对应
+`experiments-shared-types-restored.log`、`experiments-shared-tests-types-final.log`、
+`experiments-web-types-restored.log`、`experiments-native-types-final-3.log`。
+15个新中英词条沿原生成器投影至 Dart，reason_text 与正式原字节 cmp0；
+生成及 --check 均exit0，日志 `experiments-i18n.log` / `experiments-i18n-restored.log`。
+
+真实失败保留而不计作生产破坏命中：Native 首轮完整 Channel 夹具缺 description，
+修正后第二轮把实际 role-workspaces 误写成 roles/workspaces；Web 新检查误写原 read key 的 channel: 前缀；
+这些检查输入已按真实消费者修正，没有 mock 掉侧栏或改生产原文。
+类型检查真实发现共享图标只有 Stream，继而发现管理契约 ChannelType 不含 Native DM；
+按原 FileText 分支及既有完整客户端 Channel 类型恢复，不扩改 Core 合同。
+还保留一次 Native tsc 路径误写 MODULE_NOT_FOUND 的调用失败；上述失败均不称通过。
+
+实现后私有故障注入：断共享 FeatureGate、断 localStorage 持久化、将 Forum 真查询改为 STREAM、
+断 Native New forum 实际回调、把 Native 实际 Forum 图标错改 Hash；
+对应 `experiments-{gate,storage,forum-window,native-create,native-glyph}-negative.log`
+分别2/2/1/1/1项真实失败，各exit1。每个对象从保存的生产原字节恢复后才运行最终40项，
+cmp与35输入hash均0。终态 cgroup oom=2/oom_kill=2 与旧基线一致，没有本批增量。
+
+历史固定 dfc7a338 的全量索引仍为1982原样/110共享/0独立授权/6已证残缺/3216未分类，
+这里只补其中原设置/Forum真实消费者，不改写历史快照或将共享迁移视为功能验收。
+Activity/session、Agent/Profile、项目完整体验、原其余设置和菜单仍有真实缺项，
+项目首页图标及第五开关也明确未闭合，不能称全量原版一致。
+本批35源码尚未提交/部署；新版业务截图0，待root集中共享Web候选/产物后正常SSO截图并打开复核。
+旧live0b截图不证明本批，Windows/Mobile未设备验收。
+本批未重复full或check-docs，不以窄验替代root原full的非零/pub.dev依赖失败。

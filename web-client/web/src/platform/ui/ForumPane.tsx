@@ -17,6 +17,7 @@ import { relativeTime } from "@/shared/lib/relative-time";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { t } from "@/shared/i18n";
 import type { ParsedMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
+import { usePreviewFeatureWarning } from "@client-kit/platform/react/features";
 import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
 
 function eventsFrom(value: unknown): BuzzEvent[] {
@@ -50,6 +51,7 @@ export function ForumPane({ workspaceId, channelId, archived, metadataPending = 
     return parent && /^[0-9a-f]{64}$/.test(parent) ? parent : null;
   });
   const [targetEventId, setTargetEventId] = React.useState<string | null>(null);
+  usePreviewFeatureWarning(selectedPostId ? "forum" : "");
   React.useEffect(() => {
     if (target?.channelId === channelId) {
       setSelectedPostId(target.threadRootId ?? target.messageId);

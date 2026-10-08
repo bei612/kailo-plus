@@ -130,7 +130,7 @@ test("actual native search suggestions render original channel icons and retain 
   }
 });
 
-async function mountOriginalPeopleSidebar({ unknown = false } = {}) {
+async function mountOriginalPeopleSidebar({ unknown = false, forum = false } = {}) {
   const { JSDOM } = await import("jsdom");
   const React = await import("react");
   const { act } = React;
@@ -162,6 +162,8 @@ async function mountOriginalPeopleSidebar({ unknown = false } = {}) {
   const { ActiveCommunityProvider } = await import("@/features/platform/activeCommunity");
   const { SidebarProvider } = await import("@/shared/ui/sidebar");
   const { AppSidebar } = await import("@/features/sidebar/ui/AppSidebar");
+  const { setOverride, OVERRIDES_KEY } = await import("../../../../../../client-kit/ts/platform/src/react/features/store.ts");
+  if (forum) setOverride("forum", true);
   const { toast } = await import("sonner");
   const { setLocale } = await import("@client-kit/platform/i18n");
   setLocale("en");
@@ -181,7 +183,7 @@ async function mountOriginalPeopleSidebar({ unknown = false } = {}) {
     }
     if (request.path.startsWith("/api/v1/conversations")) return { status: 200, body: { items: active
       ? [{ id: "dm", channelId: "actual-native-channel", state: "ACTIVE", participantPrincipalIds: ["peer", "viewer"], operationId: "operation", version: 1 }] : [] } };
-    if (request.path === "/api/v1/roles/workspaces") return { status: 200, body: { workspaces: [] } };
+    if (request.path === "/api/v1/role-workspaces") return { status: 200, body: { workspaces: [] } };
     return { status: 403, body: { code: "PermissionDenied", message: "Not admitted in this fixture" } };
   } });
   const session = { facts: { communityHost: "native.test", relayUrl: "wss://native.test" }, devicePubkey: own, client: bff };
@@ -196,7 +198,10 @@ async function mountOriginalPeopleSidebar({ unknown = false } = {}) {
   const base = createRootRoute();
   const page = createRoute({ getParentRoute: () => base, path: "/", component: () => React.createElement(AppSidebar, {
     activeCommunity: { id: "community", name: "Test community", relayUrl: session.facts.relayUrl },
-    channels: [], searchChannels: [], currentPubkey: own, currentPrincipalId: "viewer",
+    channels: forum ? [{ id:"actual-forum",name:"Original forum",channelType:"forum",visibility:"open",isMember:true,
+      description:"",archivedAt:null,lastMessageAt:null,memberCount:2,memberPubkeys:[],
+      participantPubkeys:[],participants:[],purpose:null,topic:null,ttlDeadline:null,ttlSeconds:null }] : [],
+    searchChannels: [], currentPubkey: own, currentPrincipalId: "viewer",
     homeBadgeCount: 0, isLoading: false, relayConnectionCard: { showSidebarRelayConnectionCard: false },
     selectedChannelId: null, selectedView: "home", selectedPlatformSection: null,
     unreadChannelIds: new Set(), highPriorityUnreadChannelIds: new Set(), previewActivityChannelIds: new Set(),
@@ -221,7 +226,12 @@ async function mountOriginalPeopleSidebar({ unknown = false } = {}) {
       await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
     assert.ok(check(), `expected original native People consumer state: ${dom.window.document.querySelector('[data-testid="search-results"]')?.textContent}`);
   };
-  return { selected, requests, notices, until, async choosePeer() {
+  return { selected, requests, notices, until, document: dom.window.document, async disableForum() {
+    dom.window.localStorage.setItem(OVERRIDES_KEY, JSON.stringify({ forum: false }));
+    await act(async () => dom.window.dispatchEvent(new dom.window.StorageEvent("storage", { key: OVERRIDES_KEY })));
+  }, async createForum() {
+    await act(async () => dom.window.document.querySelector('[aria-label="New forum"]').click());
+  }, async choosePeer() {
     await act(async () => dom.window.document.querySelector('[data-testid="open-search"]').click());
     await until(() => dom.window.document.querySelector('[data-testid="search-results"] input'));
     const input = dom.window.document.querySelector('[data-testid="search-results"] input');
@@ -239,6 +249,23 @@ async function mountOriginalPeopleSidebar({ unknown = false } = {}) {
     }
   } };
 }
+
+test("actual original Native Forum group consumes its flag, native channel and governed create dialog", async () => {
+  const view = await mountOriginalPeopleSidebar({ forum: true });
+  try {
+    await view.until(() => view.document.querySelector('[data-testid="forum-list"]'));
+    assert.match(view.document.querySelector('[data-testid="forum-list"]').textContent, /Original forum/);
+    assert.ok(view.document.querySelector('[data-testid="forum-list"] svg.lucide-file-text'));
+    await view.createForum();
+    await view.until(() => view.document.querySelector('[data-testid="create-channel-dialog"]'));
+    assert.match(view.document.querySelector('[data-testid="create-channel-dialog"]').textContent, /Create a new forum/);
+    await view.until(() => view.requests.some((request) => request.path === "/api/v1/role-workspaces"));
+    assert.equal(view.requests.filter((request) => request.method === "POST").length, 0);
+    await view.disableForum();
+    assert.equal(view.document.querySelector('[data-testid="forum-list"]'), null);
+    assert.equal(view.document.querySelector('[aria-label="New forum"]'), null);
+  } finally { await view.close(); }
+});
 
 test("actual original People row opens its governed ACTIVE DM through the mounted Sidebar", async () => {
   const view = await mountOriginalPeopleSidebar();

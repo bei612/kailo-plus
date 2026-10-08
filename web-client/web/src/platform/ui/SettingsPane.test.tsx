@@ -163,6 +163,7 @@ describe("Web original settings host", () => {
     }
   });
   it("opens original Profile first and retains the same Buzz appearance controls", async () => {
+    localStorage.removeItem("buzz-feature-overrides-v1");
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }));
     const host = document.createElement("div");
@@ -210,6 +211,13 @@ describe("Web original settings host", () => {
       for (const [id, keys] of [["go-home", "ShiftCtrlA"], ["go-back", "Alt←"], ["go-forward", "Alt→"], ["toggle-sidebar", "CtrlS"]]) {
         expect([...host.querySelectorAll(`[data-shortcut="${id}"] kbd`)].map(key => key.textContent).join("")).toBe(keys);
       }
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-experimental"]')!.click());
+      expect(host.querySelector('[data-testid="settings-experimental"]')).not.toBeNull();
+      expect(host.querySelectorAll('[data-testid="settings-experimental"] [role="switch"]')).toHaveLength(4);
+      expect(host.querySelector('[data-testid="feature-toggle-agentManagedProfiles"]')).toBeNull();
+      expect(host.textContent).toContain("YAML-defined automations with approval gates");
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="feature-toggle-workflows"]')!.click());
+      expect(JSON.parse(localStorage.getItem("buzz-feature-overrides-v1")!).workflows).toBe(true);
     } finally {
       await act(async () => root.unmount());
       host.remove();

@@ -5,6 +5,8 @@ import { AppSidebarFrame } from "@client-kit/platform/react/sidebar/app-sidebar-
 import { NativeApplicationEntries } from "@client-kit/platform/react/pages";
 import { ChannelBrowser } from "@client-kit/platform/react/channel-browser";
 import { CreateChannelDialog } from "@client-kit/platform/react/create-channel-dialog";
+import { FeatureGate } from "@client-kit/platform/react/features";
+import { ChannelType } from "@client-kit/contracts";
 import { useChannelNavigationShortcuts } from "@client-kit/platform/react/use-channel-navigation-shortcuts";
 import { useQueryClient } from "@tanstack/react-query";
 import { channelsQueryKey, nativeApplicationWorkspace, useWorkspaceChannelDirectory, workspaceVisibilityQueryKey } from "@/features/channels/hooks";
@@ -90,6 +92,7 @@ export function AppSidebar({
   const projectSearch=useSearch({strict:false});
   const [isCreateChannelOpen, setCreateChannelOpen] = React.useState(false);
   const [isNewChannelOpen, setNewChannelOpen] = React.useState(false);
+  const [isNewForumOpen, setNewForumOpen] = React.useState(false);
   useChannelNavigationShortcuts({
     disabled: !currentPrincipalId,
     onBrowseChannels: () => setCreateChannelOpen(true),
@@ -148,6 +151,7 @@ export function AppSidebar({
   >({
     starred: false,
     channels: false,
+    forums: false,
   });
 
   const toggleCollapsedGroup = React.useCallback(
@@ -168,6 +172,11 @@ export function AppSidebar({
   const streamChannels = React.useMemo(
     () => channels.filter((channel) => channel.channelType === "stream"),
     [channels],
+  );
+
+  const forumChannels = React.useMemo(
+    () => sortChannelsForSidebar(channels.filter((channel) => channel.channelType === "forum"), sortModeFor("forums")),
+    [channels, sortModeFor],
   );
 
   const unstarredChannels = React.useMemo(
@@ -263,6 +272,7 @@ export function AppSidebar({
               </SidebarMenuItem>
             </SidebarMenu></>}
       dialogs={<><CreateChannelDialog key={`create:${currentPrincipalId}`} open={isNewChannelOpen} onOpenChange={setNewChannelOpen} />
+        <CreateChannelDialog key={`forum:${currentPrincipalId}`} open={isNewForumOpen} onOpenChange={setNewForumOpen} channelKind={ChannelType.Forum} />
         <ChannelBrowser key={currentPrincipalId} open={isCreateChannelOpen} onOpenChange={setCreateChannelOpen}
         lastMessageAtByChannelId={new Map(channels.map((channel) => [channel.id, channel.lastMessageAt]))}
         onSelect={async (workspace) => { await Promise.all([queryClient.invalidateQueries({ queryKey: channelsQueryKey }), queryClient.invalidateQueries({ queryKey: workspaceVisibilityQueryKey })]); onSelectChannel(workspace.channel.channelId); }} /></>}>
@@ -348,6 +358,33 @@ export function AppSidebar({
                     onStarChannel={onStarChannel}
                     onUnstarChannel={onUnstarChannel}
                   />
+                  <FeatureGate feature="forum">
+                    <ChannelGroupSection
+                      hasUnread={forumChannels.some((channel) => unreadChannelIds.has(channel.id))}
+                      isCollapsed={collapsedGroups.forums}
+                      isActiveChannel={selectedView === "channel"}
+                      items={forumChannels}
+                      sortMode={sortModeFor("forums")}
+                      onSortModeChange={(mode) => setSortModeFor("forums", mode)}
+                      actionsTestId="section-actions-forums"
+                      listTestId="forum-list"
+                      onMarkAllRead={() => {
+                        for (const channel of forumChannels) onMarkChannelRead(channel.id, channel.lastMessageAt);
+                      }}
+                      onMarkChannelRead={onMarkChannelRead}
+                      onMarkChannelUnread={onMarkChannelUnread}
+                      onSelectChannel={onSelectChannel}
+                      onToggleCollapsed={() => toggleCollapsedGroup("forums")}
+                      selectedChannelId={selectedChannelId}
+                      title={translateUi("sidebar.forums")}
+                      onCreateChannel={() => setNewForumOpen(true)}
+                      createChannelLabel={translateUi("sidebar.newForum")}
+                      unreadChannelIds={unreadChannelIds}
+                      mutedChannelIds={mutedChannelIds}
+                      onMuteChannel={onMuteChannel}
+                      onUnmuteChannel={onUnmuteChannel}
+                    />
+                  </FeatureGate>
                 </>
               )}
 

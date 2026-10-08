@@ -10,6 +10,7 @@ import {BffError,TransportError,type BffTransport} from "../src/transport";
 import {SidebarProjectsSection,type SidebarProjectMembership} from "../src/react/sidebar/SidebarProjectsSection";
 import {SidebarProvider} from "../src/react/sidebar/sidebar";
 import {AppSidebarPrimaryMenu} from "../src/react/sidebar/app-sidebar-primary-menu";
+import {setOverride} from "../src/react/features/store";
 import {listSidebarProjects,writeSidebarProjectsFilter} from "../src/react/sidebar/listSidebarProjects";
 import {act,useState} from "react";
 import {PlatformProvider} from "../src/react/context";
@@ -316,6 +317,7 @@ describe("original SidebarProjectsSection governed hosts",()=>{
   const childId="12345678-1234-1234-8234-123456789012";
   const membership=():SidebarProjectMembership=>({projectAddresses:[`30621:${owner}:p`],pending:false,addProject:vi.fn().mockResolvedValue(undefined),removeProject:vi.fn().mockResolvedValue(undefined),refresh:vi.fn().mockResolvedValue(undefined)});
   it("places the original project region after the primary header and does not select overview for a project",async()=>{
+    setOverride("projects", true);
     const ui=await render(<SidebarProvider><AppSidebarPrimaryMenu selectedView="platform" selectedPlatformSection="projects" projectsOverviewActive={false}
       onSelectHome={vi.fn()} onSelectPlatformSection={vi.fn()} projectsSection={<div data-testid="project-region"/>}/></SidebarProvider>);
     expect(ui.querySelector('[data-testid="sidebar-platform-projects"]')?.getAttribute("data-active")).toBe("false");

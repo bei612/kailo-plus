@@ -7,6 +7,7 @@ import { SettingsOptionGroup, SettingsOptionGroupList, SettingsOptionRow } from 
 import { TenantInvitations } from "./invitations";
 import type { Loaded } from "./use-load";
 export { SettingsNavigation, SettingsBackButton, SettingsContentSurface, SettingsSectionHeader, settingsSectionKeys, type SettingsSection } from "./settings-surface";
+export { ExperimentalFeaturesCard } from "./experimental-features-settings";
 import {
   setLocale,
   translate,
