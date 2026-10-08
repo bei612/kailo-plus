@@ -71,7 +71,8 @@ function validateInboxEvent(event: BuzzEvent, workspace: string, targetScoped = 
 }
 
 /** Thread auxiliary events use the same admitted target closure as windows. */
-export function inboxReactionEvents(raw: unknown[], workspace: string): BuzzEvent[] {
+export function inboxReactionEvents(raw: unknown, workspace: string): BuzzEvent[] {
+  if (!Array.isArray(raw)) throw new Error("Invalid message page");
   return raw.flatMap(value => {
     if (!value || typeof value !== "object" || !("kind" in value) || ![7,5,9005].includes(Number(value.kind))) return [];
     const event = value as BuzzEvent;

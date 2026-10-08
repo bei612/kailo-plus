@@ -679,6 +679,29 @@ it("notifies only a new admitted live mention, never a snapshot, duplicate, disc
   expect(state.notify).toHaveBeenCalledTimes(1);
 });
 
+it.each(["confirmed", "removed", "only-removal", "foreign", "missing-root"])(
+  "real channel notification consumes reaction-derived thread participation (%s)", async (evidence) => {
+    state.members.mockResolvedValue([{ principalId: "human-a", displayName: "Me", pubkeys: ["mine"] }]);
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    await renderChannel();
+    const rootMessage = { ...event(10), id: "a".repeat(64) };
+    const reaction = { ...event(11), id: "b".repeat(64), kind: 7, pubkey: "mine", tags: [["e", rootMessage.id]] };
+    const removal = { ...event(12), id: "c".repeat(64), kind: 5, pubkey: "mine", tags: [["e", reaction.id]] };
+    const events = evidence === "only-removal" ? [rootMessage, removal]
+      : evidence === "missing-root" ? [reaction]
+      : [rootMessage, { ...reaction, tags: evidence === "foreign" ? [...reaction.tags, ["h", "other-channel"]] : reaction.tags }, ...(evidence === "removed" ? [removal] : [])];
+    await act(async () => { state.receive!({ type: "snapshot", events: windowEvents(events) }); state.receive!({ type: "live" }); });
+    await flush();
+    expect(state.notify).not.toHaveBeenCalled();
+    const reply = { ...event(20), id: "d".repeat(64), tags: [["h", "channel-a"], ["e", rootMessage.id, "", "root"], ["e", rootMessage.id, "", "reply"]] };
+    await act(async () => state.receive!({ type: "event", event: reply }));
+    if (evidence === "confirmed" || evidence === "removed") {
+      expect(state.notify).toHaveBeenCalledTimes(1);
+      expect(state.notify.mock.calls[0]?.[0]).toMatchObject({ eventId: reply.id, slot: "thread_reply" });
+    } else expect(state.notify).not.toHaveBeenCalled();
+  },
+);
+
 it.each([new TransportError("lost ACK"), new BffError(403, "denied")])(
   "does not turn failed read marking into a mutation/readback loop: %s",
   async (error) => {

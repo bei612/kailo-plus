@@ -30,16 +30,18 @@ import { InboxDrafts, useInboxDrafts } from "./InboxDrafts";
 import { inboxReadContexts, useInboxState } from "@client-kit/platform/react/use-inbox-state";
 import { useHomeInboxAutoSelection } from "@client-kit/platform/react/use-inbox-auto-selection";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { hex, inboxEvents, inboxWindowEvents, type Event } from "./inbox-events";
+import { hex, inboxEvents, inboxReactionEvents, inboxWindowEvents, type Event } from "./inbox-events";
 export { inboxEvents } from "./inbox-events";
 import { MessageContent } from "@/features/chat/ui/MessageContent";
 import { Button } from "@/shared/ui/button";
 import { MessageAuthorAvatar, MessageAuthorIdentity, MessageAuthorProfile, type MessageAuthor } from "./MessageAuthorProfile";
+import { reactionThreadInteractionRoots } from "@client-kit/platform/react/messages";
 
 type Snapshot = {
   mentions: Event[];
   activity: Event[];
   workspaces: WorkspaceView[];
+  channelIds: Map<string, string>;
   members: Map<string, WorkspaceMemberView[]>;
   agentPubkeys: Set<string>;
   conversations: ConversationView[];
@@ -118,7 +120,7 @@ export function InboxPane({
       }
       if (conversations.length && !visibility) throw new Error("Conversation visibility unavailable");
       const hiddenDm = conversations[0] ? await visibility!.read(conversations[0]) : new Set<string>();
-      const next: Snapshot = { mentions: [], activity: [], workspaces: joined, members: new Map(), agentPubkeys: new Set(), conversations, people, hiddenDm };
+      const next: Snapshot = { mentions: [], activity: [], workspaces: joined, channelIds: new Map(), members: new Map(), agentPubkeys: new Set(), conversations, people, hiddenDm };
       // One HTTP read at a time. No browser Relay filter, signer or unbounded SSE fan-out.
       for (const workspace of joined) {
         if (epoch !== generation.current) return;
@@ -148,10 +150,16 @@ export function InboxPane({
         )
           throw new Error("Unverifiable own identity");
         const own = new Set(self.pubkeys);
-        const events = inboxWindowEvents(
-          (await client.workspaceMessages(workspace.id)).events,
-          workspace.id,
-        );
+        const channel = await client.workspaceChannel(workspace.id);
+        if (epoch !== generation.current) return;
+        if (!channel?.channelId) throw new Error("Unverifiable Workspace channel binding");
+        const page = await client.workspaceMessages(workspace.id);
+        if (epoch !== generation.current) return;
+        // Relay h/bounds use the native Channel ID. Management/profile/navigation
+        // keep the existing Workspace key; neither identity is inferred from the other.
+        const events = inboxWindowEvents(page.events, channel.channelId)
+          .map((event) => ({ ...event, channelId: workspace.id }));
+        next.channelIds.set(workspace.id, channel.channelId);
         const mentioned = (event: Event) =>
           event.tags.some((tag) => tag[0] === "p" && own.has(tag[1]));
         // Same upstream interest rule: authored/participated/mentioned roots, not all channel traffic.
@@ -160,6 +168,8 @@ export function InboxPane({
             .filter((event) => own.has(event.pubkey) || mentioned(event))
             .map(inboxConversation),
         );
+        const reactionContext = [...events, ...inboxReactionEvents(page.events, channel.channelId)];
+        for (const rootId of reactionThreadInteractionRoots(reactionContext, own, channel.channelId)) roots.add(rootId);
         next.mentions.push(
           ...events
             .filter((event) => !own.has(event.pubkey) && mentioned(event))
@@ -176,7 +186,8 @@ export function InboxPane({
         const agents = await loadOwnedAgentIdentities(client, workspace.id, principalId);
         for (const [installationId, pubkey] of agents) {
           if (epoch !== generation.current) return;
-          const activity = inboxEvents((await client.workspaceMessages(workspace.id, { agentInstallationId: installationId })).events, workspace.id);
+          const activity = inboxEvents((await client.workspaceMessages(workspace.id, { agentInstallationId: installationId })).events, channel.channelId)
+            .map((event) => ({ ...event, channelId: workspace.id }));
           if (activity.some((event) => event.pubkey !== pubkey)) throw new Error("Unverifiable Agent author");
           next.activity.push(...activity);
           next.agentPubkeys.add(pubkey);
@@ -221,6 +232,11 @@ export function InboxPane({
       window.removeEventListener("focus", refresh);
     };
   }, [load]);
+  const readItem = useCallback((event: Event) => {
+    const channelId = event.channelType === "dm" ? event.channelId : snapshot?.channelIds.get(event.channelId);
+    if (!channelId) throw new Error("Unverifiable Inbox read context binding");
+    return { ...event, channelId };
+  }, [snapshot]);
   const rows = useMemo(
     () =>
       snapshot
@@ -246,8 +262,8 @@ export function InboxPane({
   };
   useEffect(() => {
     onUnreadCount?.(failed || reads.failed || reads.unknown || !snapshot || !reads.state ? null : rows.filter((row) =>
-      row.items.some((event) => event.createdAt > (reads.readAt(inboxReadContext(event)!) ?? 0))).length);
-  }, [onUnreadCount, failed, reads.failed, reads.unknown, snapshot, reads.state, rows, reads.readAt]);
+      row.items.some((event) => event.createdAt > (reads.readAt(inboxReadContext(readItem(event))!) ?? 0))).length);
+  }, [onUnreadCount, failed, reads.failed, reads.unknown, snapshot, reads.state, rows, reads.readAt, readItem]);
   useEffect(() => () => onUnreadCount?.(null), [onUnreadCount]);
   const visibleRows = rows
     .filter((row) => matchesInbox({ categories: row.categories, groupItems: row.items, item: row.item }, filter, snapshot?.agentPubkeys))
@@ -257,7 +273,7 @@ export function InboxPane({
         row.items.some(
           (item) =>
             item.createdAt >
-            (reads.readAt(inboxReadContext(item)!) ?? 0),
+            (reads.readAt(inboxReadContext(readItem(item))!) ?? 0),
         ),
     );
   const narrow = width !== null && width < INBOX_SINGLE_COLUMN_BREAKPOINT_PX;
@@ -296,10 +312,10 @@ export function InboxPane({
   const showList = !singleAuxiliary && (!narrow || !hasSelection);
   const showDetail = !singleAuxiliary && (!narrow || hasSelection);
   const listWidth = width === null ? resize.inboxListWidthPx : Math.min(resize.inboxListWidthPx, Math.max(INBOX_COLUMN_MIN_WIDTH_PX, width - INBOX_COLUMN_MIN_WIDTH_PX));
-  const isRead = (row: typeof rows[number]) => row.items.every((event) => event.createdAt <= (reads.readAt(inboxReadContext(event)!) ?? 0));
+  const isRead = (row: typeof rows[number]) => row.items.every((event) => event.createdAt <= (reads.readAt(inboxReadContext(readItem(event))!) ?? 0));
   const header = <InboxListHeader filter={filter} onFilterChange={(next) => {setProfileTarget(null);setFilter(next);}} activeDraftCount={drafts.entries.length} unreadOnly={unreadOnly} onUnreadOnlyChange={setUnreadOnly}
     unreadCount={visibleRows.filter((row) => !isRead(row)).length} pending={reads.pending}
-    onMarkAllRead={() => reads.write(inboxReadContexts(visibleRows.flatMap((row) => row.items), true))} />;
+    onMarkAllRead={() => reads.write(inboxReadContexts(visibleRows.flatMap((row) => row.items.map(readItem)), true))} />;
   if (filter === "drafts") return <InboxLayout containerRef={container} listWidth={listWidth} showList={showList} showDetail={showDetail}
     onResize={resize.handleInboxListResizeStart} onReset={resize.canResetInboxListWidth ? resize.handleInboxListWidthReset : undefined}>
     <InboxDrafts key={principalId} principalId={principalId} workspaces={snapshot.workspaces} members={snapshot.members} participants={snapshot.people} entries={drafts.entries}
@@ -321,7 +337,7 @@ export function InboxPane({
           const sender = member?.displayName || truncatePubkey(item.pubkey);
           const isSenderAgent = snapshot.agentPubkeys.has(item.pubkey);
           const read = isRead(row);
-          const mark = () => reads.write(inboxReadContexts(row.items, !read));
+          const mark = () => reads.write(inboxReadContexts(row.items.map(readItem), !read));
           const target = {principalId,workspaceId:item.channelId,eventId:item.id,pubkey:item.pubkey,...(conversation ? {conversationId:conversation.id} : {})};
           return <ContextMenu key={row.scopeKey}><ContextMenuTrigger asChild><div>
             <InboxRow id={item.id} selected={row.scopeKey === selected} read={read}
@@ -332,7 +348,7 @@ export function InboxPane({
               label={item.channelType === "dm" ? t("inbox.dmFrom", { sender }) : t(item.category === "mention" ? "inbox.mentionedIn" : "inbox.threadIn")}
               channel={snapshot.workspaces.find((workspace) => workspace.id === item.channelId)?.name ?? null}
               openLabel={t("inbox.openItem", { sender })}
-              onSelect={() => { setProfileTarget(null);setSelected(row.scopeKey); if (!read) reads.write(inboxReadContexts(row.items, true)); }}
+              onSelect={() => { setProfileTarget(null);setSelected(row.scopeKey); if (!read) reads.write(inboxReadContexts(row.items.map(readItem), true)); }}
               preview={<><MessageContent content={item.content} workspaceId={item.channelId} conversationId={conversation?.id} mediaTags={item.tags} /><InboxReopenStatus id={item.id} pending={hiddenDm.isReopenPending(item.channelId)} error={hiddenDm.isReopenErrored(item.channelId)} unknown={hiddenDm.isReopenUnknown(item.channelId)} onRetry={()=>openItem(item)}/></>}
               actions={<>
                 <InboxRowActionButton disabled={reads.pending} label={t(read ? "inbox.markUnread" : "inbox.markRead")} onClick={mark}><MailOpen className="h-4 w-4" /></InboxRowActionButton>

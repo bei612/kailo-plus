@@ -11,6 +11,7 @@ import { buildMessageReactions } from "../src/react/messages/reactions/buildMess
 import { MessageRowSurface } from "../src/react/messages/MessageRowSurface";
 import { MessageActionBarSurface } from "../src/react/messages/MessageActionBarSurface";
 import type { RelayEvent } from "../src/react/forum/channelWindowResponse";
+import { reactionThreadInteractionRoots, threadReactionRoot } from "../src/react/messages/reactions/threadReactionInteraction";
 
 import {
   applyOptimisticReaction,
@@ -37,6 +38,33 @@ function pill(emoji: string, count: number, reactedByCurrentUser = false) {
       : [{ pubkey: "bbb", displayName: "Alice", avatarUrl: null }],
   };
 }
+
+test("confirmed reaction interest uses the original root-or-message identity and admitted target closure", () => {
+  const me = "b".repeat(64), rootId = "a".repeat(64), replyId = "c".repeat(64);
+  const root: RelayEvent = { id: rootId, pubkey: "d".repeat(64), kind: 9, content: "root", created_at: 1, tags: [["h", "channel"]] };
+  const reply: RelayEvent = { ...root, id: replyId, created_at: 2, tags: [...root.tags, ["e", root.id, "", "root"], ["e", root.id, "", "reply"]] };
+  const reaction: RelayEvent = { ...root, id: "e".repeat(64), pubkey: me, kind: 7, created_at: 3, content: "👍", tags: [["e", rootId], ["e", replyId]] };
+  expect(threadReactionRoot({ id: replyId, rootId })).toBe(rootId);
+  expect(threadReactionRoot({ id: rootId })).toBe(rootId);
+  expect(threadReactionRoot({ id: "", rootId: "" })).toBeNull();
+  expect([...reactionThreadInteractionRoots([reaction, reply, root], new Set([me]), "channel")]).toEqual([rootId]);
+  expect([...reactionThreadInteractionRoots([root, reply, reaction], new Set([me]), "channel")]).toEqual([rootId]);
+  const deletion: RelayEvent = { ...reaction, id: "f".repeat(64), kind: 5, tags: [["e", reaction.id]] };
+  // Original removal never undoes a confirmed historical interaction.
+  expect([...reactionThreadInteractionRoots([root, reply, reaction, deletion], new Set([me]), "channel")]).toEqual([rootId]);
+  expect([...reactionThreadInteractionRoots([root, reply, deletion], new Set([me]), "channel")]).toEqual([]);
+  expect([...reactionThreadInteractionRoots([root, reply, reaction], new Set(), "channel")]).toEqual([]);
+  expect([...reactionThreadInteractionRoots([root, reply, { ...reaction, pubkey: root.pubkey, tags: [...reaction.tags, ["actor", me]] }], new Set([me]), "channel")]).toEqual([]);
+  for (const events of [
+    [root, reaction], // The actual last e-tag target is absent.
+    [reply, reaction], // Reply exists but its root is not admitted.
+    [root, reply, { ...reaction, tags: [...reaction.tags, ["h", "other"]] }],
+    [root, reply, { ...reaction, tags: [...reaction.tags, ["h", "channel"], ["h", "other"]] }],
+    [root, { ...reply, tags: [["h", "other"], ...reply.tags.slice(1)] }, reaction],
+    [root, reply, reaction, { ...deletion, tags: [["e", root.id]] }],
+    [root, reply, reaction, { ...deletion, kind: 9005, tags: [["h", "channel"], ["e", reply.id]] }],
+  ]) expect([...reactionThreadInteractionRoots(events, new Set([me]), "channel")]).toEqual([]);
+});
 
 test("original formatter groups actors, ignores deleted events and preserves chronological pills", () => {
   const target = "a".repeat(64), me = "b".repeat(64), other = "c".repeat(64);

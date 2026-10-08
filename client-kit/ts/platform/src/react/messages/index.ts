@@ -19,6 +19,7 @@ export * from "./sentFromThread";
 export * from "./threadTreeLayout";
 export * from "./types";
 export { buildMessageReactions } from "./reactions/buildMessageReactions";
+export { threadReactionRoot, reactionThreadInteractionRoots } from "./reactions/threadReactionInteraction";
 export { MessageReactions } from "./reactions/MessageReactions";
 export { useReactionHandler } from "./reactions/useReactionHandler";
 export * from "./useMeasuredCssVariable";

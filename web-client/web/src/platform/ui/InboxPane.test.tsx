@@ -10,10 +10,10 @@ import type { ConversationView } from "@client-kit/contracts";
 import { ConversationVisibilityProvider } from "@client-kit/platform/react/new-message";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InboxPane, inboxEvents } from "./InboxPane";
-import { inboxWindowEvents } from "./inbox-events";
+import { inboxReactionEvents, inboxWindowEvents } from "./inbox-events";
 
-const api=vi.hoisted(()=>({workspaces:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn(),write:vi.fn(),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
-const readAt=()=>null;
+const api=vi.hoisted(()=>({workspaces:vi.fn(),workspaceChannel:vi.fn(),members:vi.fn(),workspaceMessages:vi.fn(),agentInstallations:vi.fn(),conversations:vi.fn().mockResolvedValue({items:[]}),conversationParticipants:vi.fn(),conversationMessages:vi.fn(),messageAuthorProfile:vi.fn(),conversationMessageAuthorProfile:vi.fn(),write:vi.fn(),readAt:vi.fn(),privateChannels:[] as ConversationView[],readFailed:false,readUnknown:false}));
+const readAt=(key: string)=>api.readAt(key);
 vi.mock("@client-kit/platform/react/use-inbox-state",async(importOriginal)=>({...await importOriginal<typeof import("@client-kit/platform/react/use-inbox-state")>(),useInboxState:()=>({state:{},failed:api.readFailed,unknown:api.readUnknown,pending:false,visibleChannels:new Set(["workspace-a",...api.privateChannels.map(item=>item.channelId)]),conversations:api.privateChannels,workspaceChannels:new Set(["workspace-a"]),readAt,write:api.write,refresh:vi.fn()})}));
 vi.mock("@/platform/bff-client",async(importOriginal)=>({...await importOriginal<typeof import("@/platform/bff-client")>(),bff:api,openStream:()=>()=>{}}));
 vi.mock("./ChannelPane",async(importOriginal)=>({...await importOriginal<typeof import("./ChannelPane")>(),Composer:()=>null,ChannelPane:()=>null}));
@@ -28,6 +28,8 @@ const event = {
 };
 
 beforeEach(() => {
+  api.workspaceChannel.mockReset().mockImplementation(async (channelId: string) => ({ channelId }));
+  api.readAt.mockReset().mockReturnValue(null);
   // Keep the actual original virtualizer; jsdom supplies no layout of its own.
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
     return this.hasAttribute("data-index") ? 96 : 420;
@@ -106,6 +108,7 @@ describe("Web Inbox's actual BFF page scope consumer", () => {
     ).toThrow();
   });
   it("does not render malformed/native unknown event shapes as messages", () => {
+    expect(() => inboxReactionEvents(null, "workspace-a")).toThrow("Invalid message page");
     expect(() => inboxEvents([{ ...event, kind: 1 }], "workspace-a")).toThrow();
     expect(() => inboxEvents([{ ...event, pubkey: undefined }], "workspace-a")).toThrow();
     expect(() =>
@@ -347,4 +350,110 @@ it.each([true,false])("groups admitted hidden DMs (mention=%s), marks their chan
     await vi.waitFor(()=>expect(open).toHaveBeenCalledWith(channel,{channelId:channel,messageId:event.id,threadRootId:null,conversation}));
     expect(publish).toHaveBeenCalledOnce();
   }finally{await act(async()=>root.unmount());cache.clear();host.remove();api.privateChannels=[];api.conversations.mockResolvedValue({items:[]});vi.unstubAllGlobals();}
+});
+
+it.each(["confirmed", "only-removal", "missing-root", "binding-failed", "revoked"])(
+  "real Inbox reaction interest uses admitted native channel binding, not a shared-ID assumption (%s)", async (evidence) => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    setLocale("en"); localStorage.clear(); sessionStorage.clear();
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+    const channelId = "native-channel-a", self = "c".repeat(64);
+    const workspace = { id: "workspace-a", name: "Bound Channel", isMember: true };
+    api.privateChannels = []; api.conversations.mockResolvedValue({ items: [] });
+    api.readFailed = false; api.readUnknown = false;
+    api.workspaces.mockReset().mockResolvedValue([workspace]);
+    if (evidence === "revoked") api.workspaces.mockResolvedValueOnce([workspace]).mockResolvedValue([]);
+    api.workspaceChannel.mockReset().mockResolvedValue({ channelId });
+    if (evidence === "binding-failed") api.workspaceChannel.mockRejectedValue(new Error("Channel binding denied"));
+    api.members.mockResolvedValue([{ principalId: "human", displayName: "Me", pubkeys: [self], state: "ACTIVE" }]);
+    api.agentInstallations.mockResolvedValue({ installations: [] });
+    api.workspaceMessages.mockReset();
+    const rootMessage = { ...event, tags: [["h", channelId]] };
+    const reply = { ...event, id: "d".repeat(64), created_at: 3, content: "Reply after my confirmed reaction", tags: [["h", channelId], ["e", rootMessage.id, "", "root"], ["e", rootMessage.id, "", "reply"]] };
+    const reaction = { ...event, id: "e".repeat(64), kind: 7, pubkey: self, created_at: 2, content: "👍", tags: [["e", rootMessage.id]] };
+    const removal = { ...reaction, id: "f".repeat(64), kind: 5, tags: [["e", reaction.id]] };
+    const bounds = { ...event, id: "1".repeat(64), kind: 39006, tags: [["h", channelId], ["d", `${channelId}:head`]], content: JSON.stringify({ has_more: false, next_cursor: null }) };
+    api.workspaceMessages.mockResolvedValue({ events: [reply, ...(evidence === "only-removal" ? [removal] : [reaction]), ...(evidence === "missing-root" ? [] : [rootMessage]), bounds] });
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+    const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const open = vi.fn();
+    try {
+      await act(async () => root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={open} /></TooltipProvider></QueryClientProvider></PlatformProvider>));
+      await vi.waitFor(() => expect(host.querySelector(".t-skel-bar")).toBeNull());
+      expect(api.workspaceChannel).toHaveBeenCalledWith(workspace.id);
+      if (evidence === "confirmed") {
+        expect(host.querySelector(`[data-testid="home-inbox-item-${reply.id}"]`)).not.toBeNull();
+        expect(host.textContent).toContain("Bound Channel");
+        expect(host.textContent).toContain(reply.content);
+        await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Open in channel"]')!.click());
+        expect(open).toHaveBeenCalledWith(workspace.id, { channelId: workspace.id, messageId: reply.id, threadRootId: rootMessage.id });
+      } else {
+        expect(host.querySelector(`[data-testid="home-inbox-item-${reply.id}"]`)).toBeNull();
+        if (evidence === "binding-failed") {
+          expect(api.workspaceMessages).not.toHaveBeenCalled();
+          expect(host.querySelector('[role="status"]')).not.toBeNull();
+        }
+      }
+    } finally {
+      await act(async () => root.unmount()); cache.clear(); host.remove(); vi.unstubAllGlobals();
+    }
+  },
+);
+
+it("an old identity's late channel binding cannot continue the Inbox read or create reaction interest", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  api.privateChannels = []; api.conversations.mockResolvedValue({ items: [] });
+  api.workspaces.mockReset().mockResolvedValue([{ id: "workspace-a", name: "Channel", isMember: true }]);
+  api.members.mockResolvedValue([{ principalId: "human", displayName: "Me", pubkeys: ["c".repeat(64)], state: "ACTIVE" }]);
+  api.workspaceMessages.mockReset();
+  let finish!: (value: { channelId: string }) => void;
+  api.workspaceChannel.mockReset().mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const render = (principalId: string) => act(async () => root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId={principalId} onOpen={vi.fn()} /></TooltipProvider></QueryClientProvider></PlatformProvider>));
+  try {
+    await render("human");
+    await vi.waitFor(() => expect(api.workspaceChannel).toHaveBeenCalledOnce());
+    await render("new-human");
+    await act(async () => finish({ channelId: "native-channel-a" }));
+    expect(api.workspaceMessages).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-testid^="home-inbox-item-"]')).toBeNull();
+  } finally { await act(async () => root.unmount()); cache.clear(); host.remove(); vi.unstubAllGlobals(); }
+});
+
+it("real top-level Inbox mention reads and marks the bound native Channel, while navigation keeps the Workspace", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  setLocale("en"); localStorage.clear(); sessionStorage.clear();
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  const channelId = "native-channel-a", self = "c".repeat(64), workspace = { id: "workspace-a", name: "Bound Channel", isMember: true };
+  api.privateChannels = []; api.conversations.mockResolvedValue({ items: [] });
+  api.readFailed = false; api.readUnknown = false; api.write.mockClear();
+  api.workspaces.mockReset().mockResolvedValue([workspace]);
+  api.workspaceChannel.mockResolvedValue({ channelId });
+  api.members.mockResolvedValue([{ principalId: "human", displayName: "Me", pubkeys: [self], state: "ACTIVE" }]);
+  api.agentInstallations.mockResolvedValue({ installations: [] });
+  api.workspaceMessages.mockResolvedValue({ events: [
+    { ...event, content: "Native bound mention", tags: [["h", channelId], ["p", self]] },
+    { ...event, id: "d".repeat(64), kind: 39006, tags: [["h", channelId], ["d", `${channelId}:head`]], content: JSON.stringify({ has_more: false, next_cursor: null }) },
+  ] });
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }); const open = vi.fn();
+  const render = () => act(async () => root.render(<PlatformProvider client={api as unknown as BffClient} locale="en"><QueryClientProvider client={cache}><TooltipProvider><InboxPane principalId="human" onOpen={open} /></TooltipProvider></QueryClientProvider></PlatformProvider>));
+  try {
+    await render();
+    await vi.waitFor(() => expect(host.textContent).toContain("Native bound mention"));
+    expect(api.readAt).toHaveBeenCalledWith(channelId);
+    expect(api.readAt).not.toHaveBeenCalledWith(workspace.id);
+    await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Mark as read"]')!.click());
+    expect(api.write).toHaveBeenCalledWith([{ key: channelId, seconds: event.created_at }]);
+    api.readAt.mockImplementation((key: string) => key === channelId ? event.created_at : null);
+    await render();
+    expect(host.querySelector('button[aria-label="Mark unread"]')).not.toBeNull();
+    await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Open in channel"]')!.click());
+    expect(open).toHaveBeenCalledWith(workspace.id, { channelId: workspace.id, messageId: event.id, threadRootId: null });
+  } finally { await act(async () => root.unmount()); cache.clear(); host.remove(); vi.unstubAllGlobals(); }
 });

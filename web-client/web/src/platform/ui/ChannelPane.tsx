@@ -33,7 +33,7 @@ import { platformQueries } from "@/platform/ui/queries";
 import { t } from "@/shared/i18n";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { toast } from "sonner";
-import { MessageRowSurface, MessageActionBarSurface, getThreadReference, useMessageDeleteDialog, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { MessageRowSurface, MessageActionBarSurface, getThreadReference, useMessageDeleteDialog, reactionThreadInteractionRoots, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { buildMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { resolveMessageMentionClipboard } from "@client-kit/platform/react/messages/resolveMentionNames";
@@ -356,8 +356,9 @@ export function ChannelPane({
       mine.size === 0 || mine.has(event.pubkey)) return;
     const mentioned = event.tags.some((tag) => tag[0] === "p" && mine.has(tag[1] ?? ""));
     const thread = getThreadReference(event.tags);
-    const participated = thread.rootId !== null && events.some((prior) => mine.has(prior.pubkey) &&
-      (prior.id === thread.rootId || getThreadReference(prior.tags).rootId === thread.rootId));
+    const participated = thread.rootId !== null && (events.some((prior) => mine.has(prior.pubkey) &&
+      (prior.id === thread.rootId || getThreadReference(prior.tags).rootId === thread.rootId)) ||
+      (channelId !== undefined && reactionThreadInteractionRoots(rawEvents, mine, channelId).has(thread.rootId)));
     // Original mention precedence and thread-participation semantics. Ordinary
     // channel activity is not falsely promoted into a desktop alert.
     if (conversation ? muted : !mentioned && (muted || !participated || !thread.parentId)) return;

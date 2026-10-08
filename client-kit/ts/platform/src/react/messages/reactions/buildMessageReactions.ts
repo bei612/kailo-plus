@@ -8,7 +8,7 @@ import { truncateNpub } from "../../conversations/pubkey";
 import { KIND_REACTION, KIND_DELETION, KIND_NIP29_DELETE_EVENT } from "../thread/kinds";
 
 const HEX_RE = /^[0-9a-f]+$/i;
-function getReactionTargetId(tags: string[][]) {
+export function getReactionTargetId(tags: string[][]) {
   for (let index = tags.length - 1; index >= 0; index -= 1) {
     const tag = tags[index];
     if (

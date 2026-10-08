@@ -4589,3 +4589,144 @@ I/O full avg10 曾为 SDK77.25/宿主46.44，两个 jsdom worker 启动超时 ex
 本回执生成时尚未部署，提交/push 以后续 main 历史为准；无新版 Delete 的真实浏览器截图或端到端 Relay 删除验收；
 当前在线0b与历史截图不能验本批源码。Windows/Mobile设备仍未验收。
 本批未重跑 full/check-docs；主线集中收口执行原门禁，不把窄验证冒称全检通过。
+
+## 2026-10-08 固定 main dfc7a338 官方全树 blob 对照索引
+
+本次为无构建、无 SDK 的固定提交源码清点，不是功能/视觉验收。
+只读官方 Buzz `779af8886caae1317b4de962082429867ab61503` 与 apps main
+`dfc7a33835174bbaa9e43e0e335c2f12959edfeb` 的两个 `git ls-tree -r`
+结果，按 `collaboration/` 原路径逐一比较 mode/type/blob ID。
+没有以 worktree 脏改充作 main，也没有用历史 32971030d 快照冒充本次全量。
+
+官方原树 5195 路径：1982 原路径 blob/mode/type 完全相同，776 原路径修改，
+2437 原路径不存在；另有 119 个 Kailo-only collaboration 路径。
+并集 5314 路径，原始差异 3332 路径（776 M + 2437 D + 119 A），
+不折叠 rename。`collaboration/fork` 自有 20 路径不计官方产品差异。
+四类加未分类的准确计数为：1982 原样保留、110 共享迁移、
+0 单独归为已授权治理改造、6 已证残余缺失、3216 未分类。
+未分类修改没有笼统转成“治理授权”；原路径不在也没有直接判为功能缺失。
+1982 相同 blob 仅证明原源码原样保留，不证明页面已运行或功能验收通过。
+
+精确 TSV 与既有证明索引均位于
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS`：
+
+- `collaboration-dfc7a3383517.classification.tsv`：5314 数据行；SHA256
+  `df5d9cc72776323de5f81c379390b55afe64b346ad8cde42fe9a0c152168b3fc`。
+- `collaboration-dfc7a3383517.differences.tsv`：3332 数据行；SHA256
+  `517e2cd1162a0ca63e19cdbecdf4c0e42241e81ed1b25f9a30157234ca374ce8`。
+- `collaboration-dfc7a3383517.identical-original-paths.tsv`：1982 数据行；SHA256
+  `da2e5d83d691914351781a5433e815dc6ce6e4e18e4ab6aa61b9b9267ea806ff`。
+
+三表列定义同源为 `upstream_commit, apps_commit, path, change_kind, category,
+upstream_mode, upstream_type, upstream_blob, apps_mode, apps_type, apps_blob,
+destination, evidence, historical_category`，tab 分隔，首行表头。
+上游/本次 main 原树为 `buzz-779af8886c-tree.tsv`、`apps-dfc7a3383517-tree.tsv`；
+后者是 apps 整树只读元数据，实际产品清点只取已声明 collaboration 范围。
+迁移实证见 `dfc7a3383517-revalidated-existing-shared.tsv`、
+`dfc7a3383517-revalidated-adapted-shared.tsv` 与
+`classification-alias-audited-blob-ids.tsv`；110 包含 107 个此前已证迁移路径
+及 3 个 Native→SDK rename 的原路径行，不将 rename 两端误算两次功能交付。
+其中 40 个实际原 blob 等于迁移目的 blob、52 个既有 whole-file AST 归一化证明
+核对目的模块/纯转导出字节未变、15 个既有适配模块核对固定提交或原冻结 SHA，
+另 3 行为 rename 原路径；没有因为同目录或模块名相同就推定一致。
+
+6 个已证残余缺项是官方 `desktop/src/features/channels/ui/` 下
+`useChannelAgentSessions.ts` 的原 Activity/session 消费者、
+`useChannelProfilePanel.ts` 与 `useChannelRouteTarget.ts` 的 Activity/session 关闭链，
+以及 `desktop/src/features/channels/useChannelPaneHandlers.ts` 的 reaction 参与记录、
+`desktop/src/features/settings/ui/SettingsPanels.tsx` 的原完整设置分区、
+`desktop/src/features/sidebar/ui/ChannelContextMenu.tsx` 的原剩余操作。
+这 6 项是上述 dfc 固定字节的已证残余，不等于剩余功能只有 6 项；
+3216 未分类仍须逐模块核对，不能声称全量 diff 已验收或 100% 还原。
+历史 `collaboration-main.classification.tsv` 仍指向 apps
+`32971030d1d856b4f26b19fcff02cd4939204864` 的 3323 路径快照，
+SHA256 `f4dc5d38e265c56c3322ad3b6e8056f76a8dca823c39701c67b24ecbcbb5c7aa`，
+原件未改；其 107/7/3209 旧口径不能替代本次 5314 并集及 3332 差异统计。
+
+## 2026-10-08 原 reaction 线程兴趣消费者与 Inbox 真实 Channel ID 恢复
+
+本批只恢复既有原功能，不增加页面、菜单、样式、翻译或另一参与注册表。
+官方依据仍为 Buzz `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/channels/useChannelPaneHandlers.ts::handleToggleReaction`
+在成功新增 reaction 后调用 `recordThreadInteraction(message.rootId ?? message.id)`；
+删除 reaction 不撤销已经发生的参与事实。当前 Native 的真实生产者仍是
+`collaboration/desktop/src/features/channels/useUnreadChannels.ts::recordThreadInteraction`，
+沿 `AppShell`、实际 `AppShellProvider` 到两个原 main/thread 行消费者，没有替换成默认空回调。
+
+本批实现前四项影响核对结论：
+
+1. 权威是用户原版恢复要求、固定官方成功后回调及现有身份/Relay 准入；上游支持，宿主实际消费者缺失需适配。
+   原界面组件未重画；Native 仍本机持钥，Web 仍只经既有 BFF，不创建签名、授权或存储权威。
+2. 检索面覆盖 Native Pane 两行回调→已有 mutation→AppShell→原 unread/参与存储；
+   Web `useChannelWindow` 原授权窗口→频道通知、Inbox 窗口/辅助事件→原分组与读标记。
+   管理/profile/导航保持 Workspace ID；Relay h、bounds 与顶层读标记使用已授权 `workspaceChannel` 返回的 Channel ID。
+   新 `Snapshot.channelIds` 只是当次已授权投影，不持久化，不猜两 ID 相等；无契约/数据库格式改变或数据迁移。
+3. Native 仅 confirmed add 记录原 root，UNKNOWN、remove、切换身份/频道或 unmount 后晚到不记录。
+   Web 从实际已授权原事件推导，不把乐观 intent 当完成；消费消息前的原 kind/scope/bounds 校验保留。
+   Kind-5 目标作者/owner 准入继续由既有 Relay 负责，本批没有第二套前端权限。
+4. 空/非法、外部 scope、重复 h、冒充 actor-tag、缺失/删除目标或 root 不建立兴趣；
+   仅移除事件不能凭空建立历史；保留原 kind-7 的 remove 不撤销原历史兴趣。
+   binding 拒绝时不读消息，最终成员复核拒绝不渲染；旧身份 binding 响应不能继续旧读取。
+   发布额度、审批、执行/六类错误分类沿既有 mutation/BFF，不在本批另造状态或重新声称全路径验收。
+
+代码写入为 11 路径 `+411/-24`，含新增共享纯模块 84 行：
+
+- `client-kit/ts/platform/src/react/messages/index.ts`；
+  `reactions/buildMessageReactions.ts`、`reactions/threadReactionInteraction.ts`；
+  `client-kit/ts/platform/test/reactions.test.tsx`。
+- `collaboration/desktop/src/features/channels/ui/ChannelPane.tsx`；
+  `collaboration/desktop/src/features/messages/useToggleReactionMutation.test.mjs`。
+- `web-client/web/src/platform/ui/ChannelPane.tsx`、`ChannelRead.test.tsx`、
+  `InboxPane.tsx`、`InboxPane.test.tsx`、`inbox-events.ts`。
+
+Web 通知真实消费 `rawEvents`，不是已过滤掉 kind-7 的显示消息数组。
+Inbox 复用现有 `inboxWindowEvents` 和 `inboxReactionEvents` 的已校验 rows/aux，
+不以断言把合同的 unknown events 当可信输入。顶层 mention 的读/写采用 native Channel ID，
+同一实际行打开仍采用 Workspace ID；线程/消息全局事件 ID 与原 DM ID 规则不变。
+页面、按钮、菜单、文案和 DOM 布局本批未改；这不是全量视觉一致性的证明。
+
+本批证据目录（以下日志、精确 11 路径和 SHA 清单都在此）：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS`。
+`reaction-owned-paths.txt`、`reaction-owned.sha256` 固定最终源码；
+`reaction-final-input-cmp.log` 为正式/候选 11 路径及两宿主共享 6 别名，17 项全 cmp0。
+
+复用原 `kailo-agent-receipt-xvkujx`，4 CPU / 8 GiB，Node heap 3072、Vitest 1 worker，
+先核空闲进程及实际资源；未新建 SDK、安装依赖、镜像或执行 Cargo/Go/bundle。
+原 Node 入口（在该容器相应原工程目录执行）与实际结果：
+
+```sh
+node --import ./test-loader.mjs --experimental-strip-types --test src/features/messages/useToggleReactionMutation.test.mjs
+node node_modules/vitest/vitest.mjs run test/reactions.test.tsx --maxWorkers=1
+node node_modules/vitest/vitest.mjs run src/platform/ui/InboxPane.test.tsx src/platform/ui/ChannelRead.test.tsx --maxWorkers=1
+node node_modules/typescript/bin/tsc --noEmit
+node node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json
+```
+
+最终正向 Native 8/8、共享 19/19、Web 71/71（频道 44、Inbox 27），合计 98 项，均 exit0。
+日志为 `reaction-native-final.log`、`reaction-shared-positive.log`、`reaction-web-validated-final.log`；
+共享 source/test、Web、Native 四项 tsc 均 exit0，分别为
+`reaction-shared-types.log`、`reaction-shared-test-types.log`、`reaction-web-types-final.log`、`reaction-native-types.log`。
+共享两项类型在纯格式整理前执行；新纯模块经原缓存 Biome（`reaction-format.log`，1 file fixed），
+Native 回调仅整理新增区段格式；最终字节均在下述原运行目标复验及 cmp 中固定，未重排整份宿主。
+
+保留真实失败，不计成生产故障注入命中：首轮 Native 7 pass/1 fail 为 jsdom 缺少 rAF，
+改用真实浏览器模拟动画帧后 8/8；首轮 Web 68 pass/3 fail，2 项抓到消费过滤后 events 的真实遗漏，
+另 1 项是检查误写原 `Mark unread` 文案；原文案未改。Web 类型曾因 unknown events 拒绝，
+已用上述原校验结果闭合。原失败分别保留在 `reaction-native-positive.log`、
+`reaction-web-positive.log` 和 `reaction-web-types.log`，没有删除检查或放宽断言。
+
+实现后私有生产破坏仅改候选、从未改正式源码：Native actual callback 改错 root 并移除晚到 owner fence，
+共享移除目标 root 闭包，Web 断开 raw reaction 通知和 native-ID 读标记，并移除 unknown 数组拒绝。
+`reaction-native-negative.log` 3 failed、`reaction-shared-negative.log` 1 failed、
+`reaction-web-negative.log` 4 failed；三目标分别 exit1，串行脚本确认全部真实非零后 exit0。
+原 5 文件保存字节恢复并比对后，`reaction-native-restored.log` 8/8、
+`reaction-shared-restored.log` 19/19、`reaction-web-restored.log` 定向 13/13（58 项未重复执行），均 exit0。
+最后 cgroup `oom=2/oom_kill=2` 与旧基线相同，无本批增量；已向 Wren 释放同一 SDK，没有我方在途工具链。
+
+固定 dfc7a338 的全量索引原件没有被工作树改动追写；1982 原样/110 共享/0 独立授权/6 已证残缺/3216 未分类
+仍只对应上一节固定提交。本批修的是其中 reaction 实际消费者，不宣称整个原 handler 或其余模块完成。
+Web 推导限于当前已授权窗口中有真实 reaction/目标/root 的证据，不能把窗口外历史假造出来，
+因此未证明与 Native 本地历史存储的所有跨设备/历史场景全等；其余原设置、Activity、Agent/Profile、
+ContextMenu 等残缺及未分类项仍保留，不称 100% 还原。
+本回执时 11 源码路径尚未提交/部署；当前旧 live 0b 不能验此批，没有此批新版业务截图，Windows/Mobile 未验收。
+本批未重复 full/check-docs；root 原 full 的 pub.dev socket 失败为非零，不以这里的窄验替代生产门禁。

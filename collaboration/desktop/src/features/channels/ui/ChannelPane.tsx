@@ -1,6 +1,8 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useActiveCommunity } from "@/features/platform/activeCommunity";
+import { useAppShell } from "@/app/AppShellContext";
+import { threadReactionRoot } from "@client-kit/platform/react/messages";
 import { deleteMessage, editMessage } from "@/shared/api/tauriMessages";
 import { useMessageDeleteDialog } from "@/features/messages/ui/DeleteMessageConfirmDialog";
 import { TransportError } from "@client-kit/platform/transport";
@@ -113,9 +115,8 @@ export const ChannelPane = React.memo(function ChannelPane({
 }: ChannelPaneProps) {
   const timelineScrollRef = React.useRef<HTMLDivElement>(null);
   const community = useActiveCommunity();
+  const { recordThreadInteraction } = useAppShell();
   const toggleReaction = useToggleReactionMutation(activeChannel, currentPubkey);
-  const handleToggleReaction = React.useCallback((message: TimelineMessage, emoji: string, remove: boolean) =>
-    toggleReaction.mutateAsync({eventId: message.id, emoji, remove}), [toggleReaction.mutateAsync]);
   const queryClient = useQueryClient();
   const [editing, setEditing] = React.useState(false);
   const mainEditTarget =
@@ -125,6 +126,21 @@ export const ChannelPane = React.memo(function ChannelPane({
   const editOwner = React.useMemo(() => ({}), [activeChannel.id, community.relayUrl, currentPubkey]);
   const editOwnerRef = React.useRef(editOwner);
   editOwnerRef.current = editOwner;
+  const handleToggleReaction = React.useCallback(
+    async (message: TimelineMessage, emoji: string, remove: boolean) => {
+      const requestedOwner = editOwner;
+      await toggleReaction.mutateAsync({ eventId: message.id, emoji, remove });
+      if (
+        !remove &&
+        channelPaneMountedRef.current &&
+        editOwnerRef.current === requestedOwner
+      ) {
+        const rootId = threadReactionRoot(message);
+        if (rootId) recordThreadInteraction(rootId);
+      }
+    },
+    [editOwner, recordThreadInteraction, toggleReaction.mutateAsync],
+  );
   React.useEffect(() => {
     setEditing(false);
   }, [editOwner]);
