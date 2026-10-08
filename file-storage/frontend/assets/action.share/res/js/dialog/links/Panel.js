@@ -133,11 +133,12 @@ class PublicLinkPanel extends React.Component {
         }
         linkModel.setCreatePassword(this.state.temporaryPassword);
         try{
-            linkModel.save();
+            return linkModel.save().then(() => {
+                this.setState({showTemporaryPassword:false, temporaryPassword:null});
+            }, () => {});
         } catch(e){
             this.props.pydio.UI.displayMessage('ERROR', e.message)
         }
-        this.setState({showTemporaryPassword:false, temporaryPassword:null});
     };
 
     render() {

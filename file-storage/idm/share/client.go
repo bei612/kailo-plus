@@ -133,13 +133,16 @@ func (sc *Client) UpsertLink(ctx context.Context, link *rest.ShareLink, linkOpti
 		}
 		track("GetOrCreateWorkspace")
 		for _, node := range link.RootNodes {
-			_, _ = aclClient.CreateACL(ctx, &idm.CreateACLRequest{
+			_, err = aclClient.CreateACL(ctx, &idm.CreateACLRequest{
 				ACL: &idm.ACL{
 					NodeID:      node.Uuid,
 					WorkspaceID: workspace.UUID,
 					Action:      &idm.ACLAction{Name: "workspace-path", Value: "uuid:" + node.Uuid},
 				},
 			})
+			if err != nil {
+				return nil, err
+			}
 		}
 		track("CreateACL")
 		link.Uuid = workspace.UUID
@@ -456,12 +459,14 @@ func (sc *Client) UpsertCell(ctx context.Context, cell *rest.Cell, ownerUser *id
 		_, err := aclClient.DeleteACL(ctx, &idm.DeleteACLRequest{Query: &service2.Query{SubQueries: []*anypb.Any{removeQuery}}})
 		if err != nil {
 			log.Logger(ctx).Error("Share: Error while deleting ACLs", zap.Error(err))
+			return nil, err
 		}
 	}
 	for _, acl := range add {
 		_, err := aclClient.CreateACL(ctx, &idm.CreateACLRequest{ACL: acl})
 		if err != nil {
 			log.Logger(ctx).Error("Share: Error while creating ACLs", zap.Error(err))
+			return nil, err
 		}
 	}
 
@@ -489,6 +494,7 @@ func (sc *Client) UpsertCell(ctx context.Context, cell *rest.Cell, ownerUser *id
 				})
 				if e != nil {
 					log.Logger(ctx).Warn("Share: could not restore ACLs Expiration Date")
+					return nil, e
 				} else {
 					log.Logger(ctx).Info(fmt.Sprintf("Share: removed expiration date on %d ACLs", resp.Rows), zap.Int64("modifiedRows", resp.Rows))
 				}
@@ -499,6 +505,7 @@ func (sc *Client) UpsertCell(ctx context.Context, cell *rest.Cell, ownerUser *id
 				})
 				if e != nil {
 					log.Logger(ctx).Warn("Share: could not set ACLs Expiration Date")
+					return nil, e
 				} else {
 					log.Logger(ctx).Info(fmt.Sprintf("Share: set expiration date on %d ACLs", resp.Rows), zap.Int64("modifiedRows", resp.Rows))
 				}

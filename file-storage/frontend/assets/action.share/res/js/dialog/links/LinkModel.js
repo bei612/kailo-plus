@@ -219,6 +219,7 @@ class LinkModel extends Observable {
         }).catch((err) => {
             const msg = err.Detail || err.message || err;
             Pydio.getInstance().UI.displayMessage('ERROR', msg);
+            throw err;
         });
     }
 

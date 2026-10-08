@@ -65,7 +65,14 @@ class PublicLinkField extends React.Component {
                 return;
             }
             linkModel.setCustomLink(customLink);
-            linkModel.save();
+            try {
+                return linkModel.save().then(() => {
+                    this.setState({editLink: false, customLink: undefined});
+                }, () => {});
+            } catch(e) {
+                pydio.UI.displayMessage('ERROR', e.message);
+                return;
+            }
         }
         this.setState({editLink: !editLink, customLink: undefined});
     };

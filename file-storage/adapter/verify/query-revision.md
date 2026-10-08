@@ -1436,3 +1436,266 @@ Cells UserDB/PolicyEngine/tree ACL 的成功路径或重建原生服务。未部
 不等于完整 FILE_STORAGE 交付。write/share 的操作幂等/终态/usage 仍缺，条件
 删除保持 BLOCKED；没有因这四条读链通过而开放它们。full 与镜像发布本批跳过，
 由主线集中收口，不引用主线旧字节结果冒充本批最终验证。
+
+## 2026-10-08 原生分享权限确认与邮件发送消费者
+
+这是原生独立业务链的实现后事实，不是平台 `file_storage.share/write`
+已完成或已激活的声明。固定上游基准：
+`c57f02f4962835447df694c63bd0fd8c22bd7baf`。
+
+四步影响与差异归属：
+
+1. 权威：`.design/07-组件接入标准.md` §4.6/§5.2/§8A，以及
+   `06-工程基线规范.md` §4。保留原生独立入口、完整页面与 ACL；
+   副作用调用错误不能继续被当作权限已保存或已确认终态。本批是已授权的
+   必要失败传播，不自行增加菜单、文案、页面、布局或业务能力。
+2. 真实调用：固定上游 `idm/share/client.go::Client.UpsertCell` 原先只记录
+   DeleteACL/CreateACL/ExpireACL/RestoreACL 错误，继续写 Workspace policy
+   或 ShareExpiration；`Client.UpsertLink` 原先忽略根 CreateACL 的返回错误。
+   原 `idm/share/rest/handler.go::SharesHandler.PutCell/PutOrUpdateShareLink`
+   已消费这些错误，不需要增加 REST 路由。前端原
+   `frontend/assets/action.share/res/js/dialog/links/LinkModel.js::save`
+   吞掉 `ShareServiceApi.putShareLink` 的拒绝，导致原
+   `frontend/assets/action.share/res/js/dialog/composite/Mailer.js::mailerProcessPost`
+   在保存未确认时继续 Email.post；现在只在确认保存后沿原邮件链发送，
+   拒绝或同步校验错误沿原 `core.mailer/res/js/components.js::postEmail`
+   的 `callback(null, err)` 释放 posting，不发旧链接。原
+   `links/Field.js::toggleEditMode` 与
+   `links/Panel.js::enableLinkWithPassword` 仅确认成功后关闭/清空，
+   拒绝保留用户原输入。已检索其他调用：Panel.toggleLink 原已有 catch，
+   CompositeModel.save 原已有 Promise.all catch；没有新增第二保存路径。
+3. 副作用：复用原 RPC、Workspace、ACL、share document 和邮件消费者；
+   无第二账本/权限权威、无新身份、无自动回放或回滚。本批错误只证明未取得
+   确认，不能证明此前部分 ACL/Workspace 副作用不存在；原独立 UI 的错误提示
+   与未清空草稿不是平台 ActionExecution 的确定 FAILED。
+4. 异常边界：删除/创建 ACL 失败立即停止后续权限/Workspace 写；过期/恢复
+   不明不写确认的 ShareExpiration。原邮件保存拒绝、同步密码校验拒绝、
+   等待确认和邮件自身错误均走原消费者。没有改变任何数据库格式/契约/迁移，
+   不需要新旧读路径；原生多 RPC 并非原子事务，其操作 key/终态/usage、
+   丢 ACK 与并发重试仍未闭合，不能因此开放平台 share/write。
+
+### 原 Go 专项
+
+沿已存在 SDK `kailo-cells-native-check-lftow7`、UID1000:1000、
+4 CPU / 8 GiB、无额外 swap，复用 `/cache/build` 和 `/cache/mod`，
+未安装/下载/构建镜像或启动数据库。执行前 MemAvailable 17 GiB、memory
+pressure avg10=0、Data 可用 284 GiB；SDK OOM 计数为 0。记录到的
+memory.peak=2538696704 是该原容器累计峰值，不冒称本批独立峰值。
+
+实际原命令（容器工作目录 `/workspace/file-storage`）：
+
+```sh
+GOCACHE=/cache/build GOMODCACHE=/cache/mod GOPROXY=off \
+CELLS_WORKING_DIR=/tmp/cells-share-permission-check \
+CELLS_DATA_DIR=/tmp/cells-share-permission-check \
+go test -mod=readonly ./idm/share ./idm/share/rest \
+  -run "TestNativeShareRequiresPermissionWriteConfirmation|TestSharesHandler|TestPutCellRejectsInvalidRoots|TestGetCellRequiresReadAccess" \
+  -count=1 -v
+```
+
+正向日志为 6 顶层 + 6 子用例通过，两包 `PASS/ok`；旧 handle69138
+跨轮已不可解析，不据此补造该外层退出码。私有候选撤去 5 处新错误 return，
+handle21701 实际 exit1：4 子项及其父项失败；原 link-root-create 单根场景
+仍被原外层 err 检查保护，该负向未独立证明多根中途停止。失败输出包含
+`saves=1 calls=[delete create]` / `calls=[expire]` / `calls=[restore]`，
+确认检查能检出错误后仍写 Workspace 的真实生产路径。
+缺原 Role registry 时的原诊断堆栈保留，不把它称为真实 RPC/数据库验收。
+随后从正式源码逐字节恢复，handle37311 同目标实际 exit0：
+
+```text
+--- PASS: TestNativeShareRequiresPermissionWriteConfirmation
+    --- PASS: .../unchanged
+    --- PASS: .../delete
+    --- PASS: .../create
+    --- PASS: .../expire
+    --- PASS: .../restore
+    --- PASS: .../link-root-create
+ok github.com/pydio/cells/v5/idm/share       1.120s
+ok github.com/pydio/cells/v5/idm/share/rest  0.034s
+GO_EXIT=0
+```
+
+两个 Go 源码及 go.mod/go.sum 正式/SDK `cmp` 均 exit0。
+夹具复用原 generated ACLServiceStub/WorkspaceServiceStub；
+不是 Cells 实库、PolicyEngine 或完整分享成功的 E2E。
+
+### 原前端模块实际执行
+
+Cells 原 assets Vitest 配置存在，但既有受限 SDK 没有 Vitest/React preset。
+未安装或另建框架；复用 `kailo-wren-query-sdk-itgs2n` 原
+4 CPU / 4 GiB 的 TypeScript 5.2.2，仅在内存转译四个完整原 JS/JSX 模块，
+使用 Node 原 assert 执行真实方法。React setState、原 SDK RPC 和邮件 transport
+在检查边界内受控替代，因此不是浏览器/样式、真实邮件或完整 webpack 验收。
+完整 stdin 如下，原执行为：
+
+```sh
+sudo -n docker exec -i -w /work kailo-wren-query-sdk-itgs2n node <<'NODE'
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const ts = require('/work/node_modules/typescript');
+const base = '/work/knowledge-observation-guard.8QFEVq/file-storage/frontend/assets/action.share/res/js/dialog/';
+const messages = [];
+const auth = {};
+let put;
+class Observable { constructor(){ this.events=[]; } notify(event){ this.events.push(event); } }
+class Component { constructor(props){ this.props=props; this.state={}; } setState(update){ Object.assign(this.state, typeof update === 'function' ? update(this.state,this.props) : update); } }
+const React = { Component, createRef:()=>({current:null}), createElement:()=>null, Fragment:()=>null };
+class Pydio {}
+Pydio.getInstance=()=>({UI:{displayMessage:(kind,message)=>messages.push({kind,message})}});
+Pydio.getMessages=()=>({});
+Pydio.requireLib=()=>({});
+class ShareLink { static constructFromObject(value){return Object.assign(new ShareLink(),value);} }
+const sdk = {
+ ShareServiceApi:class {putShareLink(request){return put(request);}},
+ RestPutShareLinkRequest:class {},
+ RestShareLink:ShareLink,
+ RestShareLinkAccessType:{constructFromObject:value=>value},
+ RestShareLinkTargetUser:{constructFromObject:value=>value},
+};
+const helper={getAuthorizations:()=>auth,buildPublicUrl:()=>'/original-share'};
+const validators=new Proxy(function(){},{get:()=>validators,apply:()=>validators});
+const moduleCache=new Map();
+function load(relative){
+ if(moduleCache.has(relative)) return moduleCache.get(relative);
+ const filename=base+relative;
+ const source=fs.readFileSync(filename,'utf8');
+ const result=ts.transpileModule(source,{fileName:filename.replace(/\.js$/,'.jsx'),reportDiagnostics:true,
+   compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}});
+ const errors=(result.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error);
+ assert.equal(errors.length,0,relative+': '+errors.map(d=>ts.flattenDiagnosticMessageText(d.messageText,' ')).join('\n'));
+ const mod={exports:{}};
+ function imports(name){
+  if(name==='react')return React;
+  if(name==='pydio')return Pydio;
+  if(name==='prop-types')return validators;
+  if(name==='pydio/lang/observable')return Observable;
+  if(name==='pydio/http/api')return {getRestClient:()=>({})};
+  if(name==='cells-sdk')return sdk;
+  if(name==='material-ui/styles')return {muiThemeable:()=>value=>value};
+  if(name.endsWith('/ShareContextConsumer'))return value=>value;
+  if(name.endsWith('/ShareHelper'))return helper;
+  if(name==='pydio/util/pass')return {checkPasswordStrength:(_password,callback)=>callback(true)};
+  if(name==='pydio/http/resources-manager')return {loadClass:()=>Promise.resolve({})};
+  if(name==='./LinkModel')return load('links/LinkModel.js');
+  return {};
+ }
+ vm.runInNewContext('(function(require,module,exports){'+result.outputText+'\n})',{console,Promise,Math,Date,RegExp,React},{filename})(imports,mod,mod.exports);
+ moduleCache.set(relative,mod.exports);
+ return mod.exports;
+}
+const LinkModel=load('links/LinkModel.js').default;
+const Mailer=load('composite/Mailer.js').default;
+const Field=load('links/Field.js').default;
+const Panel=load('links/Panel.js').default;
+console.log('FULL_MODULE_TRANSPILE=4');
+const cause=new Error('native permission outcome is unknown');
+function model(){const value=new LinkModel();value.link.Uuid='existing-link';value.notifyDirty();return value;}
+function mailer(linkModel){
+ const value=new Mailer({});
+ value.state.mailerData={crippleIdentificationKeys:false,identifiedOnly:true,linkModel};
+ return value;
+}
+let posts=0,targets=0;
+class Email {
+ addTarget(){targets++;}
+ post(callback){posts++;callback({sent:true});}
+}
+const users={recipient:{getLabel:()=> 'Recipient'}};
+const ui={UI:{displayMessage:(kind,message)=>messages.push({kind,message})}};
+const checks=[];
+function check(name,fn){checks.push([name,fn]);}
+check('LinkModel preserves rejection and dirty state without save notification',async()=>{
+ put=()=>Promise.reject(cause);const m=model();
+ await assert.rejects(m.save(),error=>error===cause);
+ assert.equal(m.isDirty(),true);assert.equal(m.events.includes('save'),false);
+});
+check('LinkModel confirmed save retains original successful flow',async()=>{
+ put=async request=>({...request.ShareLink,LinkHash:'confirmed'});const m=model();
+ await m.save();assert.equal(m.isDirty(),false);assert.equal(m.events.includes('save'),true);assert.equal(m.link.LinkHash,'confirmed');
+});
+check('Mailer never sends after real LinkModel rejection and releases callback',async()=>{
+ put=()=>Promise.reject(cause);posts=0;targets=0;const callbacks=[];
+ await mailer(model()).mailerProcessPost(Email,users,'subject','/original-share','',(...args)=>callbacks.push(args));
+ assert.equal(posts,0);assert.equal(targets,0);assert.equal(callbacks.length,1);assert.equal(callbacks[0][0],null);assert.equal(callbacks[0][1],cause);
+});
+check('Mailer forwards synchronous password validation without email',async()=>{
+ posts=0;const m=model();m.ValidPassword=false;m.ValidPasswordMessage='original validation';const callbacks=[];
+ await mailer(m).mailerProcessPost(Email,users,'subject','message','',(...args)=>callbacks.push(args));
+ assert.equal(posts,0);assert.equal(callbacks.length,1);assert.equal(callbacks[0][0],null);assert.equal(callbacks[0][1].message,'original validation');
+});
+check('Mailer waits for confirmation then uses original email flow once',async()=>{
+ let resolve;put=request=>new Promise(r=>{resolve=()=>r(request.ShareLink);});posts=0;targets=0;const callbacks=[];
+ const completion=mailer(model()).mailerProcessPost(Email,users,'subject','/original-share','',(...args)=>callbacks.push(args));
+ await Promise.resolve();assert.equal(posts,0);assert.equal(callbacks.length,0);
+ resolve();await completion;assert.equal(posts,1);assert.equal(targets,1);assert.equal(callbacks.length,1);assert.equal(callbacks[0][0].sent,true);
+});
+check('Mailer preserves actual email callback error',async()=>{
+ put=async request=>request.ShareLink;const callbacks=[];
+ class FailedEmail extends Email {post(callback){callback(null,cause);}}
+ await mailer(model()).mailerProcessPost(FailedEmail,users,'subject','message','',(...args)=>callbacks.push(args));
+ assert.equal(callbacks.length,1);assert.equal(callbacks[0][0],null);assert.equal(callbacks[0][1],cause);
+});
+function field(m){const value=new Field({linkModel:m,pydio:ui,getMessage:()=>''});value.state.editLink=true;value.state.customLink='edited-link';return value;}
+check('Field keeps edited value and mode after rejected save',async()=>{
+ put=()=>Promise.reject(cause);const value=field(model());await value.toggleEditMode();
+ assert.equal(value.state.editLink,true);assert.equal(value.state.customLink,'edited-link');
+});
+check('Field exits edit mode only after confirmed save',async()=>{
+ put=async request=>request.ShareLink;const value=field(model());await value.toggleEditMode();
+ assert.equal(value.state.editLink,false);assert.equal(value.state.customLink,undefined);
+});
+check('Field consumes synchronous validation without clearing input',async()=>{
+ const m=model();m.ValidPassword=false;m.ValidPasswordMessage='original validation';const value=field(m);await value.toggleEditMode();
+ assert.equal(value.state.editLink,true);assert.equal(value.state.customLink,'edited-link');
+});
+function panel(m){const value=new Panel({linkModel:m,pydio:ui});Object.assign(value.state,{showTemporaryPassword:true,temporaryPassword:'original-password',temporaryPasswordState:true});return value;}
+check('Panel retains password form after rejected save',async()=>{
+ put=()=>Promise.reject(cause);const value=panel(model());await value.enableLinkWithPassword();
+ assert.equal(value.state.showTemporaryPassword,true);assert.equal(value.state.temporaryPassword,'original-password');
+});
+check('Panel closes password form only after confirmed save',async()=>{
+ put=async request=>request.ShareLink;const value=panel(model());await value.enableLinkWithPassword();
+ assert.equal(value.state.showTemporaryPassword,false);assert.equal(value.state.temporaryPassword,null);
+});
+check('Panel consumes synchronous validation and retains form',async()=>{
+ const m=model();m.save=()=>{throw cause;};const value=panel(m);await value.enableLinkWithPassword();
+ assert.equal(value.state.showTemporaryPassword,true);assert.equal(value.state.temporaryPassword,'original-password');
+});
+(async()=>{
+ let failed=0;
+ for(const [name,fn] of checks){try{await fn();console.log('PASS '+name);}catch(error){failed++;console.log('FAIL '+name+'\n'+error.stack);}}
+ console.log('CHECKS='+checks.length+' PASSED='+(checks.length-failed)+' FAILED='+failed);
+ process.exitCode=failed?1:0;
+})();
+NODE
+```
+
+正向 12/12 PASS、exit0；私有生产者撤去 LinkModel 的 throw 与 Mailer 的
+失败 callback 后，5 FAIL/7 PASS、exit1，真实检出误发送、验证失败不释放
+callback、错误清空原输入。原测试输入不变，四个候选生产文件恢复并逐一
+`cmp` 正式源码 exit0，恢复同 stdin 12/12 PASS、exit0。
+
+### 原件索引与尚未完成
+
+Go 日志根：
+`/volumes/data/kailo/tmp/codex-cells-native-identity-20261005.LfTow7/apps/file-storage/`。
+Node 日志根：
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-observation-guard.8QFEVq/`。
+
+| 原日志 | SHA-256 |
+|---|---|
+| cells-native-share-permission-positive.log | `fbb06c4ff96ea64a3096831c1faa046b1be7e82139a4e428e2cb625596c191e9` |
+| cells-native-share-permission-negative.log | `622cad2aaf473801bb94de0aa8ce2db78190f48e7eb6a892cac53b81981478de` |
+| cells-native-share-permission-restored.log | `ea0a642506cfc9e45a2d6f321801099eb1cc851b1534b115563b250c560a4475` |
+| cells-native-share-ui-positive.log | `e1c152f4ce76824bddf4f533fd24e30c509b63554510208d0fe30322ce469a0c` |
+| cells-native-share-ui-negative.log | `85ad22150e28ef86d9d27c0eaa131acb161c6696aff36558b883ba16154c9237` |
+| cells-native-share-ui-restored.log | `e1c152f4ce76824bddf4f533fd24e30c509b63554510208d0fe30322ce469a0c` |
+
+本批未部署、未投递 actor 配置、未激活 release/binding、未运行全仓 full、
+未做原页面截图或三端/跨服务 E2E，不声明 100% 还原或完整 FILE_STORAGE。
+当前 live native 仍是旧源码 afc462d836c770b6f402372b53cd05b3c203786a，
+未挂 nativeAction 配置；主线最近只读 release/binding 仍为 0。
+完整批准 catalog、可信现有用户/scope 投递与实库 ACL 验收、平台 write/share
+的稳定操作 key/终态/usage 以及原子条件删除仍是上线门禁；没有伪造它们。
+原生独立入口保留，继承的 deploy/compose.yaml 未改。

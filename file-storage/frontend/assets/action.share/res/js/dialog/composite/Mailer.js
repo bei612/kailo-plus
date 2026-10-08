@@ -81,7 +81,7 @@ class Mailer extends React.Component {
             shareMails[k] = u;
         });
         linkModel.updateLink(linkObject);
-        linkModel.save().then(() => {
+        return Promise.resolve().then(() => linkModel.save()).then(() => {
             const email = new Email();
             const originalLink = linkModel.getPublicUrl();
             const regexp = new RegExp(originalLink, 'g');
@@ -90,9 +90,11 @@ class Mailer extends React.Component {
                 const newMessage = message.replace(regexp, newLink);
                 email.addTarget(shareMails[u], subject, newMessage);
             });
-            email.post((res) => {
-                callback(res);
+            email.post((res, err) => {
+                callback(res, err);
             });
+        }).catch((err) => {
+            callback(null, err);
         });
     }
 
