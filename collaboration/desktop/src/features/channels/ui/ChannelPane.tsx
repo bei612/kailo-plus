@@ -1,7 +1,10 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useActiveCommunity } from "@/features/platform/activeCommunity";
-import { editMessage } from "@/shared/api/tauriMessages";
+import { deleteMessage, editMessage } from "@/shared/api/tauriMessages";
+import { useMessageDeleteDialog } from "@/features/messages/ui/DeleteMessageConfirmDialog";
+import { TransportError } from "@client-kit/platform/transport";
+import { classifyRelayPublishFailure } from "@/shared/api/relayPublishOutcome";
 import { useToggleReactionMutation } from "@/features/messages/hooks";
 import {
   channelMessagesKey,
@@ -186,6 +189,30 @@ export const ChannelPane = React.memo(function ChannelPane({
   );
   const isComposerDisabled =
     !activeChannel.isMember || activeChannel.archivedAt !== null || isSending || editing;
+  const deleteMessageDialog = useMessageDeleteDialog(
+    JSON.stringify([activeChannel.id, community.relayUrl, currentPubkey]),
+    Boolean(currentPubkey && !isComposerDisabled),
+    async (message) => {
+      if (!currentPubkey || message.kind !== 9 || message.pending || message.signerPubkey !== currentPubkey || !activeChannel.isMember || activeChannel.archivedAt !== null) {
+        throw new Error("Deletion identity or scope is unavailable.");
+      }
+      try {
+        const receipt = await deleteMessage(activeChannel.id, message.id, community.relayUrl, currentPubkey);
+        if (!receipt.id || receipt.kind !== 5 || receipt.pubkey !== currentPubkey || !receipt.tags.some(tag => tag[0] === "e" && tag[1] === message.id)) {
+          throw new TransportError("Deletion has no confirmed receipt.");
+        }
+      } catch (error) {
+        if (classifyRelayPublishFailure(error)?.kind === "outcomeUnknown") throw new TransportError("Deletion outcome unknown.");
+        throw error;
+      }
+    },
+    (message) => {
+      void queryClient.invalidateQueries({queryKey: channelMessagesKey(activeChannel.id)});
+      const rootId = getThreadReference(message.tags ?? []).rootId ?? message.id;
+      void queryClient.invalidateQueries({queryKey: threadRepliesKey(activeChannel.id, rootId)});
+      onEditConfirmed(message);
+    },
+  );
   const handleSendMessage = React.useCallback(
     async (
       content: string,
@@ -390,6 +417,7 @@ export const ChannelPane = React.memo(function ChannelPane({
               onMarkRead={onMarkRead}
               onReply={timelineReplyHandler}
               onEdit={isComposerDisabled || editing ? undefined : handleRoutedEdit}
+              onDelete={isComposerDisabled ? undefined : deleteMessageDialog.requestDelete}
               onToggleReaction={isComposerDisabled ? undefined : handleToggleReaction}
               onOpenThread={onOpenThread}
               channelName={activeChannel.name}
@@ -420,10 +448,11 @@ export const ChannelPane = React.memo(function ChannelPane({
                     channelName={activeChannel.name}
                     editTarget={mainEditTarget}
                     onCancelEdit={onCancelEdit}
+                    onRequestEmptyEditDelete={deleteMessageDialog.requestDelete}
                     containerClassName="px-5 pb-0"
                     layoutMode="dock"
                     profiles={profiles}
-                    disabled={isComposerDisabled}
+                    disabled={isComposerDisabled || deleteMessageDialog.pending}
                     isSending={editing}
                     onSend={saveEdit}
                     showBackgroundUploadProgress={false}
@@ -434,7 +463,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                   channelName={activeChannel.name}
                   containerClassName="px-5 pb-0"
                   layoutMode="dock"
-                  disabled={isComposerDisabled}
+                  disabled={isComposerDisabled || deleteMessageDialog.pending}
                   autoSubmitDraftKey={autoSendDraftKey}
                   onAutoSubmitComplete={onAutoSendComplete}
                   isSending={isSending}
@@ -469,10 +498,12 @@ export const ChannelPane = React.memo(function ChannelPane({
                 currentPubkey={currentPubkey}
                 editTarget={threadEditTarget}
                 onEdit={isComposerDisabled || editing ? undefined : handleRoutedEdit}
+                onDelete={isComposerDisabled ? undefined : deleteMessageDialog.requestDelete}
+                onRequestEmptyEditDelete={deleteMessageDialog.requestDelete}
                 onCancelEdit={onCancelEdit}
                 onEditLastOwnMessage={handleEditLastOwnThreadMessage}
                 onEditSave={saveEdit}
-                disabled={isComposerDisabled}
+                disabled={isComposerDisabled || deleteMessageDialog.pending}
                 firstUnreadReplyId={threadFirstUnreadReplyId}
                 isFollowingThread={isFollowingThread}
                 isMessageUnreadById={isMessageUnreadById}
@@ -538,6 +569,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                 )
               : null}
       </AnimatePresence>
+      {deleteMessageDialog.dialog}
     </div>
   );
 });

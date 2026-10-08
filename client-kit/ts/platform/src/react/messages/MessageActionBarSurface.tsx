@@ -10,6 +10,7 @@ import {
   MailOpen,
   Pencil,
   SmilePlus,
+  Trash2,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -28,6 +29,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../sidebar/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../sidebar/tooltip";
@@ -66,6 +68,7 @@ function MoreActionsMenu({
   isUnread,
   onCopyMessage,
   onEdit,
+  onDelete,
 }: {
   /** Channel UUID for the Copy link action. When null/undefined, the
    *  Copy link entry is hidden (e.g. inbox preview rows that don't have it). */
@@ -74,6 +77,7 @@ function MoreActionsMenu({
   /** Resolves the mention identities carried by Copy message. */
   onCopyMessage: (message: TimelineMessage) => void;
   onEdit?: (message: TimelineMessage) => void;
+  onDelete?: (message: TimelineMessage) => void;
   onFollowThread?: (message: TimelineMessage) => void;
   onMarkUnread?: (message: TimelineMessage) => void;
   onMarkRead?: (message: TimelineMessage) => void;
@@ -208,6 +212,11 @@ function MoreActionsMenu({
             {translateUi("buzz.copyLink")}
           </DropdownMenuItem>
         ) : null}
+        {!message.pending && onDelete ? <><DropdownMenuSeparator />
+          <DropdownMenuItem className="text-destructive focus:text-destructive"
+            data-testid={`delete-message-${message.id}`} onClick={() => onDelete(message)}>
+            <Trash2 className="h-4 w-4" />{translateUi("buzz.deleteMessage")}
+          </DropdownMenuItem></> : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -227,6 +236,7 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
   isUnread,
   onCopyMessage,
   onEdit,
+  onDelete,
   onReactionSelect, onReactionBadgeBurstRequest, reactionErrorMessage = null,
   reactions = [], customEmoji = [], reactionScope = null, resolveMediaUrl,
 }: {
@@ -250,6 +260,7 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
   /** Resolves the mention identities carried by Copy message. */
   onCopyMessage: (message: TimelineMessage) => void;
   onEdit?: (message: TimelineMessage) => void;
+  onDelete?: (message: TimelineMessage) => void;
   onReactionSelect?: (emoji: string) => Promise<void>;
   onReactionBadgeBurstRequest?: (emoji: string) => void;
   reactionErrorMessage?: string | null;
@@ -278,6 +289,7 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
 
   const hasMoreMenuActions =
     Boolean(onEdit) ||
+    Boolean(onDelete) ||
     Boolean(onMarkUnread) ||
     Boolean(onMarkRead) ||
     Boolean(onFollowThread) ||
@@ -365,6 +377,7 @@ export const MessageActionBarSurface = React.memo(function MessageActionBarSurfa
           {hasMoreMenuActions ? (
             <MoreActionsMenu
               onEdit={onEdit}
+              onDelete={onDelete}
               onCopyLink={onCopyLink}
               message={message}
               onFollowThread={onFollowThread}

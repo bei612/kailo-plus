@@ -21,6 +21,7 @@ export type MessageComposerProps = {
   disabled?: boolean;
   editTarget?: TimelineMessage;
   onCancelEdit?: () => void;
+  onRequestEmptyEditDelete?: (message: TimelineMessage) => void;
   onEditLastOwnMessage?: () => boolean;
   draftKey?: string;
   /**

@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
   mark: vi.fn(),
   notify: vi.fn(),
   publish: vi.fn(),
+  delete: vi.fn(),
   members: vi.fn(),
   stream: vi.fn(),
   history: vi.fn(),
@@ -54,6 +55,7 @@ vi.mock("@/platform/bff-client", async () => ({
   fetchUserState: () => state.fetch(),
   markRead: (request: ReadMarkRequest) => state.mark(request),
   publishMessage: (...args: unknown[]) => state.publish(...args),
+  deleteMessage: (...args: unknown[]) => state.delete(...args),
   publishMessageReaction:(...args:unknown[])=>state.reaction(...args),
   uploadMedia: vi.fn(),
   openStream: (_workspace: string, receive: (frame: StreamFrame) => void) => {
@@ -269,6 +271,7 @@ beforeEach(() => {
   state.members.mockResolvedValue([]);
   state.history.mockResolvedValue({events:windowEvents([event(10)])});
   state.publish.mockResolvedValue({ eventId: "published-event", operationId: "operation" });
+  state.delete.mockResolvedValue({eventId:"deletion",operationId:"operation"});
   state.reaction.mockResolvedValue({eventId:"reaction",operationId:"operation"});
   const author={pubkey:"other",eventId:"profile",displayName:"Original author",about:null,avatarUrl:null,nip05Handle:null,avatarMediaPaths:{}};
   state.authorProfile.mockResolvedValue(author);state.dmAuthorProfile.mockResolvedValue(author);
@@ -278,6 +281,63 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+});
+
+it.each(["main", "thread", "dm"])("restores the actual %s row deletion menu and retains UNKNOWN until the same target is confirmed", async(surface)=>{
+  state.members.mockResolvedValue([{principalId:"human-a",displayName:"Me",pubkeys:["mine"],state:"ACTIVE"}]);
+  const target={...event(20),pubkey:"mine",content:"Original own message",tags:surface==="thread"?[["h","channel-a"],["e","event-10","","root"],["e","event-10","","reply"]]:[["h","channel-a"]]};
+  // Relay head pages are newest-first, unlike the chronological UI rows.
+  state.history.mockResolvedValue({events:windowEvents([target,event(10)])});
+  if(surface==="thread") threadMessages.splice(0,threadMessages.length,{...event(10),createdAt:10},{...target,createdAt:20});
+  await renderChannel(surface==="dm"?{conversation:{id:"private-binding",channelId:"channel-a",participantPrincipalIds:["human-a","peer"],state:ItemState.Active,version:1,operationId:"op"}}:{});
+  await act(async()=>{state.receive!({type:"snapshot",events:windowEvents([target,event(10)])});state.receive!({type:"live"});});
+  await flush();
+  expect(host.querySelector('[data-testid="more-actions-event-10"]'),host.textContent??"").not.toBeNull();
+  if(surface==="thread") {await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-10"]')!.click());await flush();}
+  const rowHost=surface==="thread"?host.querySelector<HTMLElement>('[data-testid="message-thread-panel"]')!:host;
+  expect(rowHost.querySelector('[data-testid="more-actions-event-20"]'),rowHost.textContent??"").not.toBeNull();
+  await act(async()=>rowHost.querySelector<HTMLButtonElement>('[data-testid="more-actions-event-20"]')!.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})));
+  await flush();
+  const item=document.querySelector<HTMLElement>('[data-testid="delete-message-event-20"]')!;
+  expect(item).not.toBeNull();
+  await act(async()=>item.click());await flush();
+  expect(state.delete).not.toHaveBeenCalled();
+  expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain("Delete message?");
+  state.delete.mockRejectedValueOnce(new TransportError("lost deletion receipt"));
+  const confirm=()=>[...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(button=>button.textContent==="Delete"||button.textContent==="Check deletion")!;
+  await act(async()=>confirm().click());await flush();
+  expect(state.delete).toHaveBeenCalledExactlyOnceWith("workspace-a",target.id,"STREAM",surface==="dm"?"private-binding":undefined);
+  expect(document.querySelector('[role="alertdialog"] [role="status"]')?.textContent).toContain("Deletion outcome unknown");
+  expect(rowHost.querySelector('[data-testid="more-actions-event-20"]')).not.toBeNull();
+  await act(async()=>confirm().click());await flush();
+  expect(state.delete.mock.calls[1]).toEqual(state.delete.mock.calls[0]);
+  expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+  expect(rowHost.querySelector('[data-testid="more-actions-event-20"]')).not.toBeNull();
+});
+
+it.each(["main","thread"])("clearing the actual %s editor requests the original confirmation without publishing or losing edit state",async(surface)=>{
+  state.members.mockResolvedValue([{principalId:"human-a",displayName:"Me",pubkeys:["mine"],state:"ACTIVE"}]);
+  const target={...event(20),pubkey:"mine",content:"Original own message",tags:surface==="thread"?[["h","channel-a"],["e","event-10","","root"],["e","event-10","","reply"]]:[["h","channel-a"]]};
+  state.history.mockResolvedValue({events:windowEvents([target,event(10)])});
+  if(surface==="thread") threadMessages.splice(0,threadMessages.length,{...event(10),createdAt:10},{...target,createdAt:20});
+  await renderChannel();
+  await act(async()=>{state.receive!({type:"snapshot",events:windowEvents([target,event(10)])});state.receive!({type:"live"});});await flush();
+  if(surface==="thread"){await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="reply-message-event-10"]')!.click());await flush();}
+  const rowHost=surface==="thread"?host.querySelector<HTMLElement>('[data-testid="message-thread-panel"]')!:host;
+  await act(async()=>rowHost.querySelector<HTMLButtonElement>('[data-testid="more-actions-event-20"]')!.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})));await flush();
+  await act(async()=>document.querySelector<HTMLElement>('[data-testid="edit-message-event-20"]')!.click());await flush();
+  await act(async()=>{
+    const input=[...rowHost.querySelectorAll<HTMLElement>('[data-testid="message-input"]')].find(input=>input.textContent==="Original own message")!;
+    input.replaceChildren(document.createElement("p"));input.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"deleteContentBackward"}));
+  });await flush();
+  const submit=rowHost.querySelector<HTMLButtonElement>('[data-testid="send-message"]')!;
+  expect(submit.disabled).toBe(false);
+  await act(async()=>submit.click());await flush();
+  expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain("Delete message?");
+  expect(rowHost.textContent).toContain("Editing message");
+  expect(state.publish).not.toHaveBeenCalled();expect(state.delete).not.toHaveBeenCalled();
+  await act(async()=>[...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(button=>button.textContent==="Cancel")!.click());await flush();
+  expect(rowHost.textContent).toContain("Editing message");
 });
 
 it.each(["confirmed", "missing-receipt", "unknown", "denied"])(

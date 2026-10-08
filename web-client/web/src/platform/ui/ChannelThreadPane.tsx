@@ -13,7 +13,7 @@ import { MessageAuthorAvatar, MessageAuthorIdentity } from "./MessageAuthorProfi
 import { getThreadPanelLayout } from "@client-kit/platform/react/thread/threadPanelLayout";
 import { useMessageReactions } from "./useMessageReactions";
 
-export function ChannelThreadPane({ workspaceId, principalId, selected, routeTargetMessageId, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange }: {
+export function ChannelThreadPane({ workspaceId, principalId, selected, routeTargetMessageId, members, mentions = [], disabled, onClose, onCopyMessage, onCopyLink, onOpenAuthor, onAuthorScopeUnavailable, isFocusMode = false, channelName = "", editTarget, editAuthorPubkey, editBusy = false, onEdit, onCancelEdit, onEditConfirmed, onEditSendingChange, onDelete, onRequestEmptyEditDelete }: {
   workspaceId: string; principalId: string; selected: TimelineMessage; members: WorkspaceMemberView[];
   routeTargetMessageId?: string;
   disabled: boolean; onClose: () => void; onCopyMessage: (message: TimelineMessage) => void;
@@ -27,6 +27,8 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
   editAuthorPubkey?: string;
   editBusy?: boolean;
   onEdit?: (message: TimelineMessage) => boolean | void;
+  onDelete?: (message: TimelineMessage) => void;
+  onRequestEmptyEditDelete?: (message: TimelineMessage) => void;
   onCancelEdit?: () => void;
   onEditConfirmed?: (message: TimelineMessage) => void;
   onEditSendingChange?: (sending: boolean) => void;
@@ -152,11 +154,13 @@ export function ChannelThreadPane({ workspaceId, principalId, selected, routeTar
         mentions={unavailable || interrupted || disabled ? mentions.map(({renderProfile: _profile, ...mention}) => mention) : mentions} /></div>}
       renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={row.message} onCopyMessage={onCopyMessage}
         onCopyLink={onCopyLink}
+        onDelete={canEdit && !editBusy && row.message.kind === 9 && row.message.signerPubkey === editAuthorPubkey ? onDelete : undefined}
         onEdit={canEdit && !editBusy && onEdit && row.message.kind === 9 && row.message.signerPubkey === editAuthorPubkey
           ? (message) => {if (onEdit(message) !== false) setReplyId(rootId);} : undefined}
         onReply={canReply ? handleSelectReplyTarget : undefined} />} />}
     renderComposer={(composer) => <Composer key={editTarget ? `edit:${editTarget.id}` : replyId} workspaceId={workspaceId} draftIdentity={principalId}
       editTarget={editTarget ?? undefined} onCancelEdit={onCancelEdit}
+      onRequestEmptyEditDelete={onRequestEmptyEditDelete}
       onEditLastOwnMessage={handleEditLastOwnThreadMessage}
       onConfirmed={editTarget ? () => onEditConfirmed?.(editTarget) : undefined}
       mentionPeople={mentionPeopleFromMembers(members)}

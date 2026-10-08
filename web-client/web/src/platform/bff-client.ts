@@ -208,15 +208,17 @@ export async function publishMessage(
  * Its signed event digest supplies the UUID-sized opaque key; Core freezes the
  * full target and scope, so a collision is rejected, never applied elsewhere.
  * No browser key, content store or second mutation ledger is introduced. */
-export async function deleteMessage(workspaceId: string, eventId: string, messageType: WebPublishMessageRequest["messageType"]): Promise<{eventId:string;operationId:string}> {
+export async function deleteMessage(workspaceId: string, eventId: string, messageType: WebPublishMessageRequest["messageType"], conversationId?: string): Promise<{eventId:string;operationId:string}> {
   if (!/^[0-9a-f]{64}$/.test(eventId)) throw new Error("Invalid deletion target");
   const id = eventId.slice(0, 32);
   const key = `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`;
-  const path = `/api/v1/workspaces/${workspaceId}/messages/delete`;
-  return unwrap({ method:"POST", path }, await transport.exchange(path, {
+  const path = conversationId ? `/api/v1/conversations/${conversationId}/messages/delete` : `/api/v1/workspaces/${workspaceId}/messages/delete`;
+  const receipt = unwrap<{eventId:string;operationId:string}>({ method:"POST", path }, await transport.exchange(path, {
     method:"POST", headers:{"Content-Type":"application/json","Idempotency-Key":key},
     body:JSON.stringify({content:"",attachments:[],mentionInstallationIds:[],messageType,deleteEventId:eventId} satisfies WebPublishMessageRequest),
   }));
+  if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Deletion has no confirmed receipt.");
+  return receipt;
 }
 
 export function fetchUserState(): Promise<UserState> {

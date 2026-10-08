@@ -59,6 +59,7 @@ function MessageComposerImpl({
   layoutMode = "standalone",
   disabled = false,
   editTarget,
+  onRequestEmptyEditDelete,
   onCancelEdit,
   onEditLastOwnMessage,
   draftKey,
@@ -338,7 +339,7 @@ function MessageComposerImpl({
     const hasMedia =
       currentPendingImeta.length > 0 || currentQueuedAttachments.length > 0;
     if (
-      (!trimmed && !hasMedia) ||
+      (!trimmed && !hasMedia && !(editTarget && onRequestEmptyEditDelete)) ||
       disabledRef.current ||
       voiceNote.statusRef.current !== "idle" ||
       isSendingRef.current ||
@@ -346,6 +347,10 @@ function MessageComposerImpl({
       isUploadingRef.current ||
       mentionSendFlow.isPreparingMentionSend
     ) {
+      return;
+    }
+    if (!trimmed && !hasMedia && editTarget && onRequestEmptyEditDelete) {
+      onRequestEmptyEditDelete(editTarget);
       return;
     }
     const capturedThreadContext = onCaptureSendContext?.() ?? null;
@@ -399,6 +404,8 @@ function MessageComposerImpl({
     onPreparingMentionSendChange,
     effectiveDraftKey,
     voiceNote.statusRef,
+    editTarget,
+    onRequestEmptyEditDelete,
   ]);
 
   submitMessageRef.current = submitMessage;
@@ -489,7 +496,7 @@ function MessageComposerImpl({
     media.isUploading ||
     voiceNote.status !== "idle" ||
     mentionSendFlow.isPreparingMentionSend ||
-    (isContentEmpty &&
+    (!(editTarget && onRequestEmptyEditDelete) && isContentEmpty &&
       media.pendingImeta.length === 0 &&
       media.queuedAttachments.length === 0);
   const handlePaperclipClick = React.useCallback(() => {

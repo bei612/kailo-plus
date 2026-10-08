@@ -4500,3 +4500,92 @@ Pulse等待“全部”30秒超时是原实际词条为“所有人”，已如�
 不把超时描述成等待成功。Windows/Mobile仍无真实设备验收，组件页不由这些截图证明。
 本批编辑源码尚未提交/部署，上述0b截图不能验本批恢复的键盘与焦点操作。
 原Agent资料/直聊、Activity与其他未分类模块仍缺实证，不生成假入口或删除交付目标。
+
+## 2026-10-08 原消息 Delete 菜单与清空编辑确认共源恢复
+
+本批固定官方来源为 Buzz `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/messages/ui/DeleteMessageConfirmDialog.tsx::DeleteMessageConfirmDialog`、
+`desktop/src/features/messages/ui/MessageActionBar.tsx::MoreActionsMenu`、
+`desktop/src/shared/ui/alert-dialog.tsx::AlertDialogContent`，以及
+`desktop/src/features/channels/useChannelPaneHandlers.ts::useChannelPaneHandlers` 的
+`onRequestEmptyEditDelete` 消费分支。只读原提交，不运行其中代码。
+原标题、说明、按钮顺序、destructive 菜单/图标、默认弹窗布局和 modal classes
+直接迁入共享 `react/messages/DeleteMessageConfirmDialog.tsx`；没有另画删除页面。
+原 Native 路径恢复为共享导出且由 ChannelPane 实际导入，纠正来源 remove_paths 一条。
+
+影响面为同一共享 ActionBar/Timeline、Native ChannelPane→Timeline/Thread→MessageRow、
+两宿主真实 Composer、Web BFF 删除调用与现有中英词条生成链。
+22 个代码/检查/生成路径，含两个新增原模块路径，合计 +449/-21；
+本节回执单独追加，既有 checkpoint 历史删除/空行不属于本批。
+精确路径及逐文件 SHA256 位于下述日志目录的
+`delete-owned-paths.txt`、`delete-owned-sha256.txt`，清单 SHA256 分别为
+`1e5cedd73d310b07cd88097dbe3b425374eca7c66520ea179c5227a20da7c251`、
+`f85033dfea3ea3222a54b768d795ef89016355e82f21a7a3888346394a2678aa`。
+
+Web/Desktop 共用原确认组件；主消息、线程和私聊的真实行按钮进入该确认，
+清空主/线程编辑后实际 Send 按钮也进入同一个确认，不提前清空编辑或发布空消息。
+取消确认保留原编辑态。只向真实本人 signer、已确认 kind9 消息提供删除，
+缺身份、未确认消息、归档、未准入/中断及不活跃私聊不提供可执行删除。
+Native 沿原本机持钥 `tauriMessages.ts::deleteMessage`→原 Rust delete_message；
+Web 沿已有 Core 代签、同一 PublicationAccepted/AE/Relay 链，私聊使用原新准入路由
+`/api/v1/conversations/{id}/messages/delete`，不误走工作区删除。
+后端重新授权，UI 判断不成为权限权威；没有新注册表、删除账本或正文复制。
+
+授权差异限于中文/英文词条、在途防重、可信 owner/scope fencing 与终态回执。
+前置事实缺失停在既有 PRECONDITION/SECURITY/权限准入边界；原服务明确拒绝保留
+原分类，幂等冲突不更换目标；断链/缺失确认回执为 UNKNOWN，原内容不乐观删除，
+重查重用同一目标、请求正文及幂等键。UI selection 仅由确认、取消、scope 切换或
+卸载终结，旧身份在途回执不能清理新身份编辑态。没有新增后端状态或迁移。
+新四词条只维护 TypeScript，Mobile Dart 沿现有生成器投影；不另维护翻译权威。
+
+实际使用原 `kailo-agent-receipt-xvkujx` SDK：4 CPU/8 GiB，Node heap3072、
+Vitest maxWorkers=1，串行执行；没有 Cargo/Go、安装、镜像、bundle 或 GitNexus。
+日志目录为
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS`。
+实际结果如下，均为实现后运行：
+
+- shared `vitest run test/timeline-scope.test.tsx --maxWorkers=1`：恢复终态 9 passed/exit0，
+  `delete-shared-restored.log`。
+- Web `vitest run src/platform/ui/ChannelRead.test.tsx src/platform/ui/ChannelThreadPane.test.tsx
+  --maxWorkers=1`：39+9=48 passed/exit0，`delete-web-ui-final.log`。
+- BFF 原目标 23 passed；DM 最窄恢复目标 1 passed/22 skipped/exit0，
+  `delete-web-positive-corrected.log`、`delete-bff-restored.log`。
+- shared 生产/检查 tsconfig、Web、Native 四次 `tsc --noEmit` 各 exit0，
+  `delete-{shared-types,shared-test-types,web-types,native-types}.log`。
+- 原 `python3 tools/gen-platform-i18n.py` 与 `--check` 各 exit0，
+  `delete-i18n-{generate,check}.log`；reason_text 逐字 cmp0，platform_text 新增四词条。
+- 新共享文件沿原 Biome formatter，未整份重排已有宿主文件；
+  22 正式输入及两宿主共享副本 cmp 全0，限定 `git diff --check` exit0。
+
+主动破坏均仅在私有候选的真实生产对象，检查本身不改：
+共享移除旧 owner 回执 fence 并误把 UNKNOWN 当拒绝，2 failed/exit1，原字节恢复后
+9 passed；断开真实主/线程行 onDelete 与 empty-edit 消费分支，5 failed/exit1，
+恢复后 5 passed；把实际 DM transport 改走工作区，1 failed/exit1，恢复后 1 passed。
+日志为 `delete-{shared,web,bff}-{mutation,restored}.log`；原字节恢复 cmp0。
+SDK cgroup max16751/oom2/oom_kill2 为旧基线，本批零增量，终态仅 sleep infinity。
+
+失败如实保留：首轮新增 fixture 违反 Relay newest-first 被原分页守卫拒绝；
+修正输入，未放宽生产；随后三个检查错误使用非线程行属性/把 banner 当 form，
+改查真实行菜单及 Send 按钮。一次 Web 重叠启动主动停止 exit130；
+I/O full avg10 曾为 SDK77.25/宿主46.44，两个 jsdom worker 启动超时 exit1，
+主线暂停重型 builder 后原两目标成功，不把超时/停止计为通过。
+额外 `dart analyze client-kit/dart/lib/shared/platform/platform_text.dart` exit255：
+原 SDK 分析器创建 `/.dartServer` 被权限拒绝，`delete-dart-analyze.log`；
+没有修改 HOME、装工具或伪称分析通过。上述生成同源检查独立通过。
+
+全量分类沿已有官方上述 commit 对 apps
+`32971030d1d856b4f26b19fcff02cd4939204864` 的 3323 路径快照，不重新导出百万行。
+固定原字节与共享模块匹配、原 package 导出和 Native 纯导出 shim 经完整文件核对，
+共实证 91 个 whole-file 候选；仅归一化本地迁移 import/export 路径、注释和格式，
+保留外部依赖、函数、JSX 与字符串。189 记录见 `classification-alias-ast-results.jsonl`，
+输入见 `classification-alias-inputs.json`；原字节匹配与纯 shim 证明取并集而非重复累计。
+此前分类34共享→106，本批原 DeleteMessageConfirmDialog 完整迁移再增加1。
+当前 `collaboration-main.classification.tsv` 为107共享迁移、7缺失需恢复、3209未分类，
+合计3323；SHA256 `f4dc5d38e265c56c3322ad3b6e8056f76a8dca823c39701c67b24ecbcbb5c7aa`。
+114 个已分类路径不等于114个已完整体验验收，91个文件迁移不等于全量100%还原。
+尚未分类不统称治理授权；原 Report/Remind/moderation、Agent/profile/直聊与其他
+原模块仍分别保留恢复目标，不因本批 Delete 完成就宣布整个 ActionBar/频道已完成。
+
+本回执生成时尚未部署，提交/push 以后续 main 历史为准；无新版 Delete 的真实浏览器截图或端到端 Relay 删除验收；
+当前在线0b与历史截图不能验本批源码。Windows/Mobile设备仍未验收。
+本批未重跑 full/check-docs；主线集中收口执行原门禁，不把窄验证冒称全检通过。

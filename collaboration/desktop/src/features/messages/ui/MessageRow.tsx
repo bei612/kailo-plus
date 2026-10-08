@@ -51,6 +51,7 @@ type MessageRowProps = {
     onMarkRead?: (message: TimelineMessage) => void;
     onReply?: (message: TimelineMessage) => void;
     onEdit?: (message: TimelineMessage) => void;
+    onDelete?: (message: TimelineMessage) => void;
     onToggleReaction?: (message: TimelineMessage, emoji: string, remove: boolean) => Promise<void>;
     onSendToChannel?: (message: TimelineMessage) => Promise<void>;
     onUnfollowThread?: (message: TimelineMessage) => void;
@@ -74,7 +75,7 @@ export const MessageRow = React.memo(function MessageRow(props: MessageRowProps)
  reactionScope={currentPubkey ? JSON.stringify([community.id,currentPubkey]) : null}
  renderIdentity={message.pubkey ? (node,kind)=>kind === "author" ? <MessageAuthorIdentity pubkey={message.pubkey}>{node}</MessageAuthorIdentity> : <UserProfilePopover pubkey={message.pubkey!}><button className="flex shrink-0 items-start rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring" type="button">{node}</button></UserProfilePopover> : undefined}
  renderBody={(className)=><VideoReviewCommentMarkdown channelNames={channelNames} className={className} content={message.body} messageId={message.id} linkPreviewsSuppressed={hasLinkPreviewSuppression(message.tags)} linkPreviewTags={message.tags} imetaByUrl={imetaByUrl} mentionNames={mentionNames} mentionPubkeysByName={mentionPubkeysByName} searchQuery={searchQuery} videoReviewCommentRootId={videoReviewCommentRootId} videoReviewContext={videoReviewContext}/>}
- renderActions={(ref,reactions)=><MessageActionBar {...props} {...reactions} ref={ref} onEdit={message.kind === 9 && message.signerPubkey === currentPubkey && !message.pending ? props.onEdit : undefined} onSendToChannel={onSendToChannel && canSendMessageToChannel(message,currentPubkey) ? handleSendToChannel : undefined}/>}
+ renderActions={(ref,reactions)=><MessageActionBar {...props} {...reactions} ref={ref} onEdit={message.kind === 9 && message.signerPubkey === currentPubkey && !message.pending ? props.onEdit : undefined} onDelete={currentPubkey && message.kind === 9 && message.signerPubkey === currentPubkey && !message.pending ? props.onDelete : undefined} onSendToChannel={onSendToChannel && canSendMessageToChannel(message,currentPubkey) ? handleSendToChannel : undefined}/>}
  reference={<SentFromThreadLine channelId={channelId} tags={message.tags}/>} />;
 },
   (prev, next) =>
@@ -97,6 +98,8 @@ export const MessageRow = React.memo(function MessageRow(props: MessageRowProps)
     tagsEqual(prev.message.tags, next.message.tags) &&
     reactionsEqual(prev.message.reactions, next.message.reactions) &&
     prev.onToggleReaction === next.onToggleReaction &&
+    prev.onEdit === next.onEdit &&
+    prev.onDelete === next.onDelete &&
     prev.message.role === next.message.role &&
     prev.currentPubkey === next.currentPubkey &&
     depthGuideActionsEqual(

@@ -47,6 +47,7 @@ export type MessageTimelineProps = {
   onMarkRead?: (message: TimelineMessage) => void;
   onReply?: (message: TimelineMessage) => void;
   onEdit?: (message: TimelineMessage) => void;
+  onDelete?: (message: TimelineMessage) => void;
   onToggleReaction?: (message: TimelineMessage, emoji: string, remove: boolean) => Promise<void>;
   onOpenThread?: (message: TimelineMessage) => void;
   isSendingVideoReviewComment?: boolean;
@@ -101,6 +102,7 @@ export type TimelineMessageListProps = {
   onMarkRead?: (message: TimelineMessage) => void;
   onReply?: (message: TimelineMessage) => void;
   onEdit?: (message: TimelineMessage) => void;
+  onDelete?: (message: TimelineMessage) => void;
   onToggleReaction?: (message: TimelineMessage, emoji: string, remove: boolean) => Promise<void>;
   onOpenThread?: (message: TimelineMessage) => void;
   isSendingVideoReviewComment?: boolean;

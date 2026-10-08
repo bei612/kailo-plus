@@ -38,6 +38,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
   onMarkRead,
   onReply,
   onEdit,
+  onDelete,
   onToggleReaction,
   onOpenThread,
   isSendingVideoReviewComment = false,
@@ -144,6 +145,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
               onMarkUnread={onMarkUnread}
               onReply={onReply}
               onEdit={onEdit}
+              onDelete={onDelete}
               onOpenThread={onOpenThread}
               profiles={profiles}
               searchActiveMessageId={searchActiveMessageId}
@@ -172,7 +174,8 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
       onMarkUnread,
       onReply,
       onToggleReaction,
-  onEdit,
+      onEdit,
+      onDelete,
       onOpenThread,
       profiles,
       searchActiveMessageId,

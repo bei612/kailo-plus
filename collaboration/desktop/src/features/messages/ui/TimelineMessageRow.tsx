@@ -67,6 +67,7 @@ type MessageRowItemProps = {
   onMarkRead?: (message: TimelineMessage) => void;
   onReply?: (message: TimelineMessage) => void;
   onEdit?: (message: TimelineMessage) => void;
+  onDelete?: (message: TimelineMessage) => void;
   onOpenThread?: (message: TimelineMessage) => void;
   profiles?: UserProfileLookup;
   searchActiveMessageId?: string | null;
@@ -95,6 +96,7 @@ export function MessageRowItem({
   onMarkRead,
   onReply,
   onEdit,
+  onDelete,
   onOpenThread,
   profiles,
   searchActiveMessageId,
@@ -139,6 +141,7 @@ export function MessageRowItem({
           onMarkUnread={onMarkUnread}
           onReply={onReply}
               onEdit={onEdit}
+              onDelete={onDelete}
           onUnfollowThread={
             unfollowThreadById
               ? () => unfollowThreadById(message.id)
@@ -186,6 +189,7 @@ export function MessageRowItem({
         onMarkUnread={onMarkUnread}
         onReply={onReply}
               onEdit={onEdit}
+              onDelete={onDelete}
         profiles={profiles}
         searchQuery={isSearchMatch ? searchQuery : undefined}
         showDepthGuides={false}

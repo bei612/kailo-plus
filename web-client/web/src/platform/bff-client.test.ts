@@ -94,6 +94,21 @@ it("freezes the deletion intent across calls without storing body or inventing a
   expect(JSON.parse(first.body as string)).toEqual({content:"",attachments:[],mentionInstallationIds:[],messageType:"FORUM_POST",deleteEventId:target});
 });
 
+it("uses the dedicated DM deletion route and the same immutable target on UNKNOWN retry", async () => {
+  const fetcher=vi.fn().mockRejectedValueOnce(new TypeError("connection lost")).mockImplementation(async()=>new Response(JSON.stringify({eventId:"receipt",operationId:"operation"}),{status:200,headers:{"Content-Type":"application/json"}}));
+  vi.stubGlobal("fetch",fetcher);
+  const target="e".repeat(64);
+  await expect(deleteMessage("unused-workspace",target,WebMessageType.Stream,"conversation")).rejects.toBeInstanceOf(TransportError);
+  await deleteMessage("unused-workspace",target,WebMessageType.Stream,"conversation");
+  expect(fetcher.mock.calls.map(([url])=>String(url))).toEqual(["/api/v1/conversations/conversation/messages/delete","/api/v1/conversations/conversation/messages/delete"]);
+  const first=fetcher.mock.calls[0]![1] as RequestInit, second=fetcher.mock.calls[1]![1] as RequestInit;
+  expect(first.body).toBe(second.body);
+  expect(new Headers(first.headers).get("Idempotency-Key")).toBe(new Headers(second.headers).get("Idempotency-Key"));
+  expect(JSON.parse(first.body as string)).toMatchObject({deleteEventId:target,messageType:WebMessageType.Stream});
+  fetcher.mockResolvedValueOnce(new Response(JSON.stringify({operationId:"operation"}),{status:200,headers:{"Content-Type":"application/json"}}));
+  await expect(deleteMessage("unused",target,WebMessageType.Stream,"conversation")).rejects.toBeInstanceOf(TransportError);
+});
+
 it("routes scoped reactions with the frozen key and requires a confirmed publication receipt",async()=>{
   const fetcher=vi.fn().mockImplementation(async()=>new Response(JSON.stringify({eventId:"e".repeat(64),operationId:"operation"}),{status:200,headers:{"Content-Type":"application/json"}}));
   vi.stubGlobal("fetch",fetcher);

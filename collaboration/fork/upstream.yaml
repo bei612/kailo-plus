@@ -432,7 +432,6 @@ remove_paths:
   - desktop/src/features/messages/ui/ComposerAddressControls.tsx
   - desktop/src/features/messages/ui/ComposerEmojiPicker.tsx
   - desktop/src/features/messages/ui/ComposerReplyEditBanner.tsx
-  - desktop/src/features/messages/ui/DeleteMessageConfirmDialog.tsx
   - desktop/src/features/messages/ui/DiffMessage.tsx
   - desktop/src/features/messages/ui/DiffMessageExpanded.tsx
   - desktop/src/features/messages/ui/DiffViewer.css

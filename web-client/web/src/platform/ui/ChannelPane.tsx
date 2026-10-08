@@ -4,7 +4,7 @@ import { PeopleMentionAutocomplete, detectPrefixQuery, selectedMentionLabel, ext
 // 全部经 BFF：流、发布、媒体上传与读取、已读写入。这里没有 Relay 地址，也没有
 // signer——签名由 BFF 以本人身份代做。
 
-import { AgentTrigger, ReasonCode, type AgentInstallationView, type ReadMarkRequest, type ConversationView, type ConversationParticipant, type WorkspaceMemberView } from "@client-kit/contracts";
+import { AgentTrigger, ReasonCode, WebMessageType, type AgentInstallationView, type ReadMarkRequest, type ConversationView, type ConversationParticipant, type WorkspaceMemberView } from "@client-kit/contracts";
 import { MentionAutocomplete } from "@client-kit/platform/react/mention-autocomplete";
 import { useBffCustomEmojiPalette } from "@client-kit/platform/react/custom-emoji";
 import { ConversationPreparationPending, useConversationInvalidation } from "@client-kit/platform/react/new-message";
@@ -27,12 +27,13 @@ import {
   uploadConversationMedia,
   uploadMedia,
   mediaUrl,
+  deleteMessage,
 } from "@/platform/bff-client";
 import { platformQueries } from "@/platform/ui/queries";
 import { t } from "@/shared/i18n";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { toast } from "sonner";
-import { MessageRowSurface, MessageActionBarSurface, getThreadReference, type TimelineMessage } from "@client-kit/platform/react/messages";
+import { MessageRowSurface, MessageActionBarSurface, getThreadReference, useMessageDeleteDialog, type TimelineMessage } from "@client-kit/platform/react/messages";
 import { buildMessageLink } from "@client-kit/platform/react/composer/features/messages/lib/messageLink";
 import { buildMentionClipboardHtml } from "@client-kit/platform/react/composer/features/messages/lib/mentionClipboard";
 import { resolveMessageMentionClipboard } from "@client-kit/platform/react/messages/resolveMentionNames";
@@ -179,6 +180,20 @@ export function ChannelPane({
       setEditTarget((current) => (current?.id === message.id ? null : current));
     },
     [setEditTarget],
+  );
+  const canDelete = live && !denied && !archived && !metadataPending && !composerBusy &&
+    ownProfile.isSuccess && !ownProfile.isFetching && Boolean(ownProfile.data?.pubkey) && (!conversation || conversation.state === "ACTIVE");
+  const deleteMessageDialog = useMessageDeleteDialog(
+    JSON.stringify([myPrincipalId, ownProfile.data?.pubkey, conversation?.id ?? workspaceId]), canDelete,
+    async (message) => {
+      if (!canDelete || message.kind !== 9 || message.pending || message.signerPubkey !== ownProfile.data?.pubkey) throw new Error("Deletion identity or scope is unavailable.");
+      const receipt = await deleteMessage(workspaceId, message.id, WebMessageType.Stream, conversation?.id);
+      if (!receipt?.eventId || !receipt.operationId) throw new TransportError("Deletion has no confirmed receipt.");
+    },
+    (message) => {
+      handleEditConfirmed(message);
+      void queryClient.invalidateQueries({queryKey: ["platform", "inbox-thread", myPrincipalId, workspaceId]});
+    },
   );
   useEffect(() => {
     if (denied || !live) handleCancelEdit();
@@ -492,6 +507,7 @@ export function ChannelPane({
                     accent={message.accent} className="shrink-0" displayName={message.author} testId="message-avatar" /></div> : node}</MessageAuthorIdentity> : undefined}
                 renderActions={(ref,reactions) => <MessageActionBarSurface ref={ref} {...reactions} message={message} onCopyMessage={copyMessage}
                   onEdit={message.kind === 9 && live && !denied && !archived && !metadataPending && !composerBusy && ownProfile.isSuccess && !ownProfile.isFetching && message.signerPubkey === ownProfile.data.pubkey ? handleRoutedEdit : undefined}
+                  onDelete={canDelete && message.kind === 9 && message.signerPubkey === ownProfile.data?.pubkey ? deleteMessageDialog.requestDelete : undefined}
                   onReply={!conversation && (message.kind === 9 || message.kind === 40002) && live && !denied && !archived && !metadataPending ? handleOpenThread : undefined}
                   onCopyLink={copyMessageLink} />}
                 renderBody={(className) => <div className={className}><MessageContent
@@ -512,9 +528,10 @@ export function ChannelPane({
       {!denied && mainEditTarget ? <Composer key={`edit:${mainEditTarget.id}`} workspaceId={conversation ? undefined : workspaceId}
         mentionPeople={mentionPeople}
         editTarget={mainEditTarget} onCancelEdit={handleCancelEdit} onConfirmed={() => handleEditConfirmed(mainEditTarget)} draftIdentity={myPrincipalId}
+        onRequestEmptyEditDelete={deleteMessageDialog.requestDelete}
         draftKey={`edit:${workspaceId}:${mainEditTarget.id}`} draftChannelId={workspaceId}
         autoSendDraftKey={autoSendDraftKey}
-        disabled={denied || !live || archived || metadataPending || !ownProfile.isSuccess || ownProfile.isFetching || ownProfile.data.pubkey !== mainEditTarget.signerPubkey}
+        disabled={deleteMessageDialog.pending || denied || !live || archived || metadataPending || !ownProfile.isSuccess || ownProfile.isFetching || ownProfile.data.pubkey !== mainEditTarget.signerPubkey}
         onSendingChange={setComposerBusy} onOpenMessageLink={onOpenMessageLink}
         onUpload={conversation ? (file) => uploadConversationMedia(conversation.id, file) : undefined}
         onMediaUrl={conversation ? (sha) => mediaUrl(conversation.id, sha, conversation.id) : undefined}
@@ -555,11 +572,13 @@ export function ChannelPane({
       mentions={mentions}
       onOpenAuthor={handleOpenAuthor} onAuthorScopeUnavailable={closeProfile}
       editTarget={threadEditTarget} onEdit={handleRoutedEdit} onCancelEdit={handleCancelEdit} onEditConfirmed={handleEditConfirmed}
+      onDelete={canDelete ? deleteMessageDialog.requestDelete : undefined} onRequestEmptyEditDelete={deleteMessageDialog.requestDelete}
       editAuthorPubkey={ownProfile.isSuccess && !ownProfile.isFetching ? ownProfile.data.pubkey : undefined}
-      editBusy={composerBusy} onEditSendingChange={setComposerBusy}
+      editBusy={composerBusy || deleteMessageDialog.pending} onEditSendingChange={setComposerBusy}
       members={(members.data ?? []).filter((member): member is WorkspaceMemberView => "state" in member)} disabled={archived || metadataPending || denied || !live}
       onClose={handleCloseThread} onCopyMessage={copyMessage} onCopyLink={copyMessageLink} /></FocusThreadDrawer></div> : null}
     </AnimatePresence>
+    {deleteMessageDialog.dialog}
     </div>
   );
 }
@@ -578,10 +597,11 @@ function newIntentKey(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, autoSendDraftKey, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId }: {
+export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMediaUrl, disabled = false, placeholder, onOpenMessageLink, draftIdentity, draftKey, surface = "stream", compact = false, autocompleteBelow = false, composerHeader, onCancel, autoSendDraftKey, replyTarget, onCancelReply, containerClassName, layoutMode = "standalone", onSendingChange, editTarget, onCancelEdit, onEditLastOwnMessage, onConfirmed, draftChannelId, onRequestEmptyEditDelete }: {
   mentionPeople?: readonly MentionSuggestion[];
   editTarget?: TimelineMessage;
   onCancelEdit?: () => void;
+  onRequestEmptyEditDelete?: (message: TimelineMessage) => void;
   onEditLastOwnMessage?: () => boolean;
   onConfirmed?: () => void;
   draftChannelId?: string;
@@ -876,6 +896,11 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
 
   const send = useCallback(async () => {
     if (sending || owner.sending || disabled || uploading > 0 || !mentionVerified) return;
+    if (editTarget && onRequestEmptyEditDelete && !richText.getMarkdown().trim() && pending.length === 0) {
+      if (!intent.current) onRequestEmptyEditDelete(editTarget);
+      else {setProblemNeutral(true);setProblem(t("platform.sendUnknown", {operation: ""}));}
+      return;
+    }
     owner.sending = true;
     setSending(true);
     try {
@@ -986,7 +1011,7 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
       owner.sending = false;
       if (owner.active) setSending(false);
     }
-  }, [pending, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed, pasteBinding]);
+  }, [pending, workspaceId, mentionInstallationIds, mentionVerified, sending, uploading, disabled, onPublish, richText.getMarkdown, richText.setContent, owner, persistDraft, attachmentActions.spoileredAttachmentUrls, attachmentActions.setSpoileredAttachmentUrls, editTarget, draftKey, onConfirmed, pasteBinding, onRequestEmptyEditDelete]);
   sendRef.current = send;
 
   const autoSent = useRef<typeof owner | null>(null);
@@ -1043,7 +1068,7 @@ export function Composer({ mentionPeople, workspaceId, onPublish, onUpload, onMe
       onLinkButton: linkEditor.openFromToolbar,
       onOpenMentionPicker: mentionPeople ? openPeople : workspaceId ? () => setMentionPickerOpen((open) => !open) : undefined,
       onPaperclip: () => picker.current?.click(),
-      sendDisabled: disabled || sending || uploading > 0 || !mentionVerified || (!draft.trim() && pending.length === 0),
+      sendDisabled: disabled || sending || uploading > 0 || !mentionVerified || (!(editTarget && onRequestEmptyEditDelete) && !draft.trim() && pending.length === 0),
     }}>
       {dragging ? <DropZoneOverlay /> : null}
       {mentionPeople?<div className={surface === "forum" ? undefined : "relative"}><PeopleMentionAutocomplete suggestions={humanSuggestions} selectedIndex={humanIndex}

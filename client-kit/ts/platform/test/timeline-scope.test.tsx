@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useRef, useState } from "react";
+import { act, startTransition, useCallback, useRef, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { MessageTimelineSurface } from "../src/react/messages/timeline/MessageTimelineSurface";
 import type { TimelineMessage } from "../src/react/messages/types";
@@ -9,12 +9,64 @@ import { useChannelMessageEdit } from "../src/react/messages/thread/useChannelMe
 import { useRoutedMessageEdit } from "../src/react/messages/thread/useRoutedMessageEdit";
 import { useFocusDrawerPresence } from "../src/react/messages/thread/useFocusDrawerPresence";
 import { toast } from "sonner";
+import { MessageActionBarSurface } from "../src/react/messages/MessageActionBarSurface";
+import { useMessageDeleteDialog } from "../src/react/messages/DeleteMessageConfirmDialog";
+import { TooltipProvider } from "../src/react/sidebar/tooltip";
+import { setLocale } from "../src/i18n";
+import { TransportError } from "../src/transport";
 
 const messages: TimelineMessage[] = [{ id: "message", author: "Alice", time: "", createdAt: 1, depth: 0, body: "Body" }];
 
 beforeEach(() => {
+  setLocale("en");
   Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
   Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
+});
+
+it("restores the original destructive menu, confirmation and UNKNOWN retry without optimistic deletion", async () => {
+  const target={...messages[0]!,id:"delete-target"};
+  const remove=vi.fn().mockRejectedValueOnce(new TransportError("Lost receipt")).mockResolvedValueOnce(undefined);
+  const deleted=vi.fn();
+  function DeleteHost() {
+    const deletion=useMessageDeleteDialog("actor/channel",true,remove,deleted);
+    return <TooltipProvider><MessageActionBarSurface message={target} onCopyMessage={()=>{}} onDelete={deletion.requestDelete}/>{deletion.dialog}</TooltipProvider>;
+  }
+  const host=await render(<DeleteHost/>);
+  await act(async()=>{host.querySelector<HTMLButtonElement>('[data-testid="more-actions-delete-target"]')!.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}));});
+  const item=document.querySelector<HTMLElement>('[data-testid="delete-message-delete-target"]')!;
+  expect(item.className).toContain("text-destructive focus:text-destructive");
+  await click(item);
+  expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain("Delete message?");
+  expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain("This will permanently delete this message and cannot be undone.");
+  expect(remove).not.toHaveBeenCalled();
+  await click([...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(button=>button.textContent==="Delete")!);
+  expect(remove).toHaveBeenCalledExactlyOnceWith(target);
+  expect(deleted).not.toHaveBeenCalled();
+  expect(document.querySelector('[role="status"]')?.textContent).toContain("Deletion outcome unknown");
+  await click([...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(button=>button.textContent==="Check deletion")!);
+  expect(remove.mock.calls).toEqual([[target],[target]]);
+  expect(deleted).toHaveBeenCalledExactlyOnceWith(target);
+  expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+});
+
+it("fences an in-flight deletion from a different identity/channel and prevents double confirmation", async () => {
+  let finish!:()=>void;
+  const remove=vi.fn(()=>new Promise<void>(resolve=>{finish=resolve;})), deleted=vi.fn();
+  function DeleteHost() {
+    const [scope,setScope]=useState("first");
+    const deletion=useMessageDeleteDialog(scope,true,remove,deleted);
+    return <><button onClick={()=>deletion.requestDelete(messages[0]!)}>Delete target</button><button onClick={()=>setScope("second")}>Switch identity</button>{deletion.dialog}</>;
+  }
+  const host=await render(<DeleteHost/>);
+  await click(host.querySelectorAll("button")[0]!);
+  const confirm=[...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(button=>button.textContent==="Delete")!;
+  await click(confirm);
+  await click(confirm);
+  expect(remove).toHaveBeenCalledTimes(1);
+  await click(host.querySelectorAll("button")[1]!);
+  expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+  await act(async()=>{finish();});
+  expect(deleted).not.toHaveBeenCalled();
 });
 
 function StatefulHostList() {

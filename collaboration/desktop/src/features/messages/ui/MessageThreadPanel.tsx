@@ -17,6 +17,8 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   currentPubkey?: string;
   editTarget?: TimelineMessage | null;
   onEdit?: (message: TimelineMessage) => void;
+  onDelete?: (message: TimelineMessage) => void;
+  onRequestEmptyEditDelete?: (message: TimelineMessage) => void;
   onCancelEdit?: () => void;
   onEditLastOwnMessage?: () => boolean;
   onEditSave?: (
@@ -96,6 +98,7 @@ export function MessageThreadPanel(props: MessageThreadPanelProps) {
         onUnfollowThread={row.message.id === props.threadHead?.id && props.onUnfollowThread ? () => props.onUnfollowThread?.() : undefined}
         onMarkRead={props.onMarkRead} onMarkUnread={props.onMarkUnread}
         onEdit={props.disabled ? undefined : props.onEdit}
+        onDelete={props.disabled ? undefined : props.onDelete}
         onToggleReaction={props.disabled ? undefined : props.onToggleReaction}
         onSendToChannel={row.message.id !== props.threadHead?.id ? stableSendToChannel : undefined}
         videoReviewCommentRootId={props.videoReviewPresentation?.commentRootIdsByMessageId.get(row.message.id)}
@@ -107,6 +110,7 @@ export function MessageThreadPanel(props: MessageThreadPanelProps) {
           key={props.editTarget ? `edit:${props.editTarget.id}` : composer.draftKey}
           editTarget={props.editTarget ?? undefined}
           onCancelEdit={props.onCancelEdit}
+          onRequestEmptyEditDelete={props.onRequestEmptyEditDelete}
           onEditLastOwnMessage={props.onEditLastOwnMessage}
           onSend={
             props.editTarget && props.onEditSave ? props.onEditSave : props.onSend
