@@ -132,7 +132,14 @@ export class ApiHistoryResolver {
         identityScope: ctx.nativeIdentityScope,
         token: ctx.nativeHumanToken,
       });
-    if ([ApiType.ASK, ApiType.STREAM_ASK].includes(apiHistory.apiType))
+    if (
+      [
+        ApiType.ASK,
+        ApiType.STREAM_ASK,
+        ApiType.GENERATE_SQL,
+        ApiType.STREAM_GENERATE_SQL,
+      ].includes(apiHistory.apiType)
+    )
       return readNativeAskHistory(
         ctx,
         native.config,

@@ -6278,3 +6278,163 @@ screenshot, Windows/Mobile acceptance or full check is established here. A
 history row retained after a later disclosure refusal is still reauthorized on
 read; its earlier native response is not proof the later client received it.
 No complete restoration or production-ready claim is made.
+
+## Original generate SQL REST: HUMAN task and current source consumers
+
+Implementation follows `.design/07` §2.2/§4.6 and `.design/08` §6, not a new
+permission or task model. The fixed original is
+`/volumes/kailo/.references/WrenAI-ui-0.32.2` at
+`c5f02a0391c87420dba78632dcd86073710deb72`, specifically
+`wren-ui/src/pages/api/v1/generate_sql.ts::handler` and
+`wren-ui/src/pages/api/v1/stream/generate_sql.ts::handler`.
+
+Four-step implementation impact:
+
+1. **Authority:** these are the original HUMAN generation surfaces. A configured
+   binding must consume current trusted identity, native project/deployment,
+   scope and each actual metadata Resource read. SQL generation is not database
+   query execution, and this change does not invent an AE or enable SERVICE SQL.
+   Existing-object registration still requires the exact trusted evidence
+   consumed by `resource_provision::{verify_delivery,delivery_match}`; a newly
+   returned native ID cannot fabricate that evidence or activate a Resource.
+2. **Impact:** the two original handlers and their exact middleware routes now
+   consume `nativeRestAsk::governedRestAsk` in SQL-generation mode. The original
+   `ApiType.GENERATE_SQL`/`STREAM_GENERATE_SQL` values enter the existing
+   `ApiHistoryRepository::{prepareNativeGeneration,advanceNativeGeneration}`
+   row/CAS consumer; `ApiHistoryResolver::visibleHistory` consumes the same
+   successful history through `readNativeAskHistory`. The original table,
+   native query ID, GraphQL contract and UI remain; no migration or Core
+   contract change is introduced. Old bound records lacking actual provenance
+   refuse disclosure rather than synthesizing it.
+3. **Side effects:** the first original task POST follows durable native event
+   preparation. Reentry only observes that fixed native task. The same native
+   history freezes actor identity, current scope/generation, manifest digest,
+   original question/language/thread, requested dialect and permitted source
+   history references. Full MDL/source permission is consumed before and after
+   native processing, conversion and terminal history persistence, and again
+   on History disclosure. This does not use retrieved table names as permission
+   evidence, copy SQL/MDL into Core, invoke direct QueryService/summary or create
+   another history/permission authority.
+4. **Boundaries:** missing private identity, invalid configured delivery,
+   changed intent/person/project/binding/generation/deployment/source or source
+   revocation refuse rather than disclose. Lost create ACK, future native enum,
+   foreign ACK and missing native cache keep the same event UNKNOWN/pending,
+   without a second task POST or SSE success/message_stop. Real FINISHED
+   GENERAL/MISLEADING classification retains the original 400/code/error;
+   its original History error body is still not admitted by the old
+   success-only reader. Never-configured mode retains the original independent
+   handler without invented scope/key. These use the existing authentication,
+   denied/precondition/conflict/dependency and unknown categories, not a new
+   state authority. Permanently lost native cache remains unresolved rather
+   than being cleared as a fabricated failure.
+
+Difference classification: original success/error response fields, SSE events,
+SQL dialect adapters, native API History and standalone handlers are
+**原样保留**. Shared-host migration is not applicable. Exact verified-header
+delivery, current full-source reads, fixed native task/event reentry and pending
+outcomes instead of unverifiable timeout failure are **已授权治理改造**.
+Dynamic trusted Resource adoption, trusted SERVICE SQL, ordinary-function
+provenance, original 400 History body disclosure and complete business-instance
+activation remain **缺失需恢复**. This is not a full-project parity claim.
+
+The fixed original nonstream handler uses `sql = nativeSql || sql`; that fallback
+is preserved. The later source increment records the actual native converter
+output separately (empty/undefined normalizes to an empty/null native output),
+then the History consumer verifies the same original fallback. It does not
+claim a requested dialect was successfully converted merely because SQL was
+returned. Two additional original consumer checks cover empty/undefined output
+and same-key reentry without another conversion; their result is distinct from
+the first positive checkpoint below.
+
+Only the existing `kailo-wren-query-sdk-itgs2n`, 4 CPU / 4 GiB, original `/work`
+single root and installed dependencies/configs are used. No image, SDK,
+dependency download, database startup/migration, platform contract or inherited
+Java candidate is part of this increment. Existing isolated PG was read-only
+identified as `wren_query_itgs2n`, user `postgres`, with the exact
+`isolated-query-fixture` project before any proposed original CAS invocation.
+All logs use `/volumes/data/kailo/check-cache/wren-history-readback.ofKxdZ/`.
+
+Initial original target, before the later native converter-output increment:
+
+```sh
+node /work/node_modules/jest/bin/jest.js --runInBand \
+  --runTestsByPath src/nativeHumanQuery.test.ts src/middleware.test.ts \
+  --testNamePattern 'original generate_sql HUMAN-only native consumer|native instance identity boundary|original ask SQL and SSE|original GENERAL answer|actual captured MDL read revocation|same-key changed question/user/surface'
+```
+
+`generate-sql-positive.log`: **exit 0**, **2 suites / 128 passed / 352 filtered**,
+122.728 seconds. This covers real local HTTP handlers, exact signed middleware
+routes, standalone/no-scope operation, lost ACK and same-event observations,
+current source/history-write revocation and original dialect/non-SQL response
+consumers. It does not certify the later converter-output fields or their two
+additional cases.
+
+At this checkpoint the original production-damage target `30507` is retained
+in place while its independent SDK is paused for coordinated disk-I/O relief.
+It only runs three local HTTP/mock-authority disclosure cases, with no real
+database transaction or external write API. No result is claimed for that
+in-flight damage/restoration, the additional converter cases, final types or
+the two new original PostgreSQL CAS cases until their terminal logs are recorded.
+No business deployment, ACTIVE binding, browser/iframe, Desktop/Mobile,
+full-project check or complete restoration is certified by this checkpoint.
+
+### Final generation consumer validation after SDK restoration
+
+The original SDK resumed the same `30507` process; it was not restarted. Its
+terminal result and the later increment are separate from the old 128:
+
+- `generate-sql-disclosure-mutation.log`, **exit 1**, **3 failed / 381 filtered**,
+  1394.791 seconds including the coordinated SDK pause and host disk-I/O wait.
+  The private production branch skipped only the final `readNativeAskHistory`
+  after the terminal history write. Actual scope/source/generation revocation
+  interleavings incorrectly emitted SQL_GENERATION_SUCCESS and message_stop;
+  all three checks caught that real disclosure fault. This was the earlier
+  candidate, not evidence for the later converter-output fields. The private
+  source was restored with `apply_patch` and synchronized to the final nine
+  formal source/check inputs; original Prettier reported all nine unchanged.
+- `generate-sql-once-converter-mutation.log`, **exit 1**, **5 failed / 381 filtered**,
+  27.369 seconds, on the latest converter-output increment. Private production
+  damage allowed SQL-only reentry to POST again and recorded fallback SQL as a
+  converted native output. The three UNKNOWN cases caught exactly two original
+  task POSTs instead of one; the empty/undefined converter cases caught the
+  false native output. Both actual production branches were restored using
+  `apply_patch`; all nine formal/SDK inputs then `cmp` **0**.
+- `generate-sql-restored.log`, **exit 0**, **2 suites / 130 passed / 352 filtered**,
+  8.754 seconds. This is the original positive command above on the final
+  restored bytes, including both new converter-output cases. It verifies the
+  original REST/SSE/standalone consumers, same-key observation, exact signed
+  middleware delivery and current captured-source/History disclosure without
+  SQL/summary/command execution by these consumers.
+- `generate-sql-types.log`: original `node
+  /work/node_modules/typescript/bin/tsc --noEmit --incremental false
+  --pretty false`, **exit 0**, with no suppressed diagnostics or altered config.
+- `generate-sql-postgres-cas.log`, **exit 0**, **2 passed / 109 filtered**, 9.606
+  seconds. The existing verified `wren_query_itgs2n` database was reused through
+  the SDK's existing shared native PG network, without starting a database,
+  migrating or running the unrelated suite setup. Original target:
+
+  ```sh
+  node /work/node_modules/jest/bin/jest.js --runInBand \
+    --runTestsByPath src/nativeQuery.test.ts \
+    --testNamePattern 'uses the original .* history task for one durable create and terminal'
+  ```
+
+  `WREN_QUERY_TEST_DATABASE_URL` selected only that existing isolated fixture.
+  Both GENERATE_SQL/STREAM_GENERATE_SQL actually ran, not SKIP: the same original
+  native event has one durable create owner, terminal JSONB CAS rejects a stale
+  overwrite, and cross-surface adoption refuses. Each original transaction was
+  rolled back, including its native history/thread/response writes. This is
+  repository/DB evidence, not a live Wren AI/provider or multi-client browser
+  acceptance.
+- `generate-sql-format.log`: original Prettier check of nine source/check inputs,
+  **exit 0**. `generate-sql-cgroup-final.log`: CPU `400000 100000`, memory
+  `4294967296`, all memory-event counters **0**, unchanged from the pre-run
+  check. Only the existing limited SDK and installed cache were used.
+
+These final results close this source increment's targeted SDK/isolated-DB
+validation. The current README points to these actual terminal results. They
+do not close the native 400 History body, dynamic trusted Resource evidence,
+SERVICE SQL, ordinary-function provenance, permanently lost native cache or
+actual release/instance/iframe gaps listed above. The eleven owned paths are
+ready for root's main integration; this agent does not stage/commit/push, and
+no deployment or complete original restoration is claimed.

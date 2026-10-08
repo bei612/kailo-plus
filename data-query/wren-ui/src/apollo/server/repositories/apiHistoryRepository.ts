@@ -205,6 +205,8 @@ export class ApiHistoryRepository
         ApiType.GENERATE_VEGA_CHART,
         ApiType.ASK,
         ApiType.STREAM_ASK,
+        ApiType.GENERATE_SQL,
+        ApiType.STREAM_GENERATE_SQL,
       ].includes(record.apiType) &&
         current.apiType === record.apiType &&
         current.projectId === record.projectId &&
@@ -235,6 +237,8 @@ export class ApiHistoryRepository
           ApiType.GENERATE_VEGA_CHART,
           ApiType.ASK,
           ApiType.STREAM_ASK,
+          ApiType.GENERATE_SQL,
+          ApiType.STREAM_GENERATE_SQL,
         ].includes(expected.apiType) ||
         current.apiType !== expected.apiType ||
         current.projectId !== expected.projectId ||

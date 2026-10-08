@@ -547,6 +547,64 @@ integration('original Wren native answer PostgreSQL CAS', () => {
     expect((await history.findOneBy({ id })).responsePayload).toEqual(result);
   });
 
+  it.each([ApiType.GENERATE_SQL, ApiType.STREAM_GENERATE_SQL])(
+    'uses the original %s history task for one durable create and terminal, without another native owner',
+    async (apiType) => {
+      const history = new ApiHistoryRepository(tx);
+      const id = randomUUID();
+      const input = {
+        id,
+        projectId,
+        apiType,
+        governanceBindingId: randomUUID(),
+        threadId: randomUUID(),
+        headers: {},
+        statusCode: 202,
+        durationMs: 0,
+        requestPayload: {
+          question: 'Original SQL question',
+          nativeAsk: { taskId: id },
+        },
+        responsePayload: {},
+      };
+      const first = await history.prepareNativeGeneration(input);
+      expect(first.created).toBe(true);
+      expect((await history.prepareNativeGeneration(input)).created).toBe(
+        false,
+      );
+      const payload = {
+        sql: 'SELECT original_column FROM original_model',
+        threadId: input.threadId,
+      };
+      const done = await history.advanceNativeGeneration(
+        first.record,
+        payload,
+        200,
+        1,
+      );
+      expect(done.responsePayload).toEqual(payload);
+      expect(
+        await history.advanceNativeGeneration(
+          first.record,
+          { sql: 'changed' },
+          200,
+          2,
+        ),
+      ).toBeNull();
+      expect((await history.findOneBy({ id })).responsePayload).toEqual(
+        payload,
+      );
+      const other = {
+        ...input,
+        apiType:
+          apiType === ApiType.GENERATE_SQL
+            ? ApiType.STREAM_GENERATE_SQL
+            : ApiType.GENERATE_SQL,
+      };
+      expect(await history.prepareNativeGeneration(other)).toBeNull();
+    },
+  );
+
   it.each([ApiType.GENERATE_SUMMARY, ApiType.GENERATE_VEGA_CHART])(
     'does not substitute the original %s native owner with another generation type',
     async (apiType) => {

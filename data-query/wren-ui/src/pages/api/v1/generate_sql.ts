@@ -15,18 +15,10 @@ import {
   transformHistoryInput,
 } from '@/apollo/server/utils/apiUtils';
 import { DataSourceName } from '@server/types';
+import { governedRestAsk } from '@server/services/nativeRestAsk';
 
 const logger = getLogger('API_GENERATE_SQL');
 logger.level = 'debug';
-
-const {
-  apiHistoryRepository,
-  projectService,
-  deployService,
-  wrenAIAdaptor,
-  wrenEngineAdaptor,
-  ibisAdaptor,
-} = components;
 
 interface GenerateSqlRequest {
   question: string;
@@ -39,6 +31,18 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
+  if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+    await governedRestAsk(req, res, false, true);
+    return;
+  }
+  const {
+    apiHistoryRepository,
+    projectService,
+    deployService,
+    wrenAIAdaptor,
+    wrenEngineAdaptor,
+    ibisAdaptor,
+  } = components;
   const {
     question,
     threadId,

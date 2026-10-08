@@ -3,14 +3,19 @@ import { StringDecoder } from 'string_decoder';
 import { components } from '@/common';
 import { ApiHistory, ApiType } from '../repositories/apiHistoryRepository';
 import { ModelResolver } from '../resolvers/modelResolver';
-import { IContext } from '../types';
+import { DataSourceName, IContext } from '../types';
 import {
   AskResultStatus,
   AskResultType,
   TextBasedAnswerStatus,
   WrenAILanguage,
 } from '../models/adaptor';
-import { MAX_WAIT_TIME, transformHistoryInput } from '../utils/apiUtils';
+import {
+  ApiError,
+  MAX_WAIT_TIME,
+  transformHistoryInput,
+  validateAskResult,
+} from '../utils/apiUtils';
 import {
   ContentBlockContentType,
   EventType,
@@ -30,7 +35,11 @@ import {
   NativeQueryDelivery,
   NativeQueryRefusal,
 } from './nativeQueryAdmission';
-import { NativeHumanQuery, nativePreviewScope } from './nativeHumanQuery';
+import {
+  NativeHumanQuery,
+  authorizeNativeScope,
+  nativePreviewScope,
+} from './nativeHumanQuery';
 import { NativeQueryService } from './nativeQueryService';
 import { queryReceiptState } from '@/utils/queryReceipt';
 
@@ -48,11 +57,20 @@ const unavailable = () =>
 // fresh Resource checks. A retrieved table name is never an authorization fact.
 async function metadata(
   ctx: MetadataContext,
-  reference: { hash: string; digest: string },
+  reference: {
+    hash: string;
+    digest: string;
+    queryScope?: string;
+    generation?: number;
+  },
 ) {
   const current = await new ModelResolver().getMDL(
     undefined,
-    { hash: reference.hash },
+    {
+      hash: reference.hash,
+      queryScope: reference.queryScope,
+      generation: reference.generation,
+    },
     ctx,
   );
   if (digest(current) !== reference.digest) throw unavailable();
@@ -68,9 +86,17 @@ export async function readNativeAskHistory(
   nativePreviewScope(config, ctx.nativeIdentityScope);
   const proof = selected.requestPayload?.nativeAsk;
   const result = selected.responsePayload?.nativeAsk;
+  const sqlOnly = [ApiType.GENERATE_SQL, ApiType.STREAM_GENERATE_SQL].includes(
+    selected.apiType,
+  );
   if (
     !ctx.nativeHumanToken ||
-    ![ApiType.ASK, ApiType.STREAM_ASK].includes(selected.apiType) ||
+    ![
+      ApiType.ASK,
+      ApiType.STREAM_ASK,
+      ApiType.GENERATE_SQL,
+      ApiType.STREAM_GENERATE_SQL,
+    ].includes(selected.apiType) ||
     selected.projectId !== config.projectId ||
     selected.governanceBindingId !== config.bindingId ||
     selected.statusCode !== 200 ||
@@ -78,13 +104,35 @@ export async function readNativeAskHistory(
     visited.has(selected.id) ||
     proof?.taskId !== selected.id ||
     proof.identityScope !== ctx.nativeIdentityScope ||
-    result?.doneQueryId !== selected.id ||
+    (!sqlOnly && result?.doneQueryId !== selected.id) ||
     selected.responsePayload.threadId !== selected.threadId ||
     typeof proof?.metadataReference?.hash !== 'string' ||
     typeof proof.metadataReference.digest !== 'string'
   )
     throw unavailable();
   visited.add(selected.id);
+  if (
+    sqlOnly &&
+    (proof.metadataReference.queryScope !==
+      nativePreviewScope(config, ctx.nativeIdentityScope) ||
+      !Number.isSafeInteger(proof.metadataReference.generation) ||
+      proof.metadataReference.generation <= 0 ||
+      result?.askResult?.status !== AskResultStatus.FINISHED ||
+      result.askResult.type !== AskResultType.TEXT_TO_SQL ||
+      result.askResult.error ||
+      typeof result.askResult.response?.[0]?.sql !== 'string' ||
+      !result.askResult.response[0].sql.trim() ||
+      typeof selected.responsePayload.sql !== 'string' ||
+      (selected.requestPayload.returnSqlDialect &&
+        (!Object.prototype.hasOwnProperty.call(result, 'nativeSql') ||
+          (result.nativeSql !== null &&
+            typeof result.nativeSql !== 'string'))) ||
+      (selected.requestPayload.returnSqlDialect
+        ? (result.nativeSql || result.askResult.response[0].sql) !==
+          selected.responsePayload.sql
+        : result.askResult.response[0].sql !== selected.responsePayload.sql))
+  )
+    throw unavailable();
   await metadata(ctx, proof.metadataReference);
   if (!Array.isArray(proof.histories)) throw unavailable();
   for (const source of proof.histories) {
@@ -102,7 +150,14 @@ export async function readNativeAskHistory(
       digest(previous.responsePayload) !== source.resultHash
     )
       throw unavailable();
-    if ([ApiType.ASK, ApiType.STREAM_ASK].includes(previous.apiType))
+    if (
+      [
+        ApiType.ASK,
+        ApiType.STREAM_ASK,
+        ApiType.GENERATE_SQL,
+        ApiType.STREAM_GENERATE_SQL,
+      ].includes(previous.apiType)
+    )
       await readNativeAskHistory(
         ctx,
         config,
@@ -112,7 +167,12 @@ export async function readNativeAskHistory(
       );
     else await native.readHistory(ctx.nativeHumanToken, previous);
   }
-  if (selected.responsePayload.type === 'NON_SQL_QUERY') {
+  if (sqlOnly) {
+    // FINISHED belongs to the same persisted ask task; SQL generation does not
+    // execute a database query or manufacture a query Action/summary task.
+    if (result.queryReference || result.summaryStarted || result.streamClaimed)
+      throw unavailable();
+  } else if (selected.responsePayload.type === 'NON_SQL_QUERY') {
     if (
       typeof selected.responsePayload.explanation !== 'string' ||
       result.queryReference
@@ -164,6 +224,7 @@ export async function readNativeAskHistory(
     canonical(current.responsePayload) !== canonical(selected.responsePayload)
   )
     throw unavailable();
+  if (sqlOnly) await metadata(ctx, proof.metadataReference);
   const { nativeAsk: _requestProof, ...requestPayload } =
     current.requestPayload;
   const { nativeAsk: _resultProof, ...responsePayload } =
@@ -177,6 +238,7 @@ export async function governedRestAsk(
   req: NextApiRequest,
   res: NextApiResponse,
   streaming: boolean,
+  sqlOnly = false,
 ) {
   const started = Date.now();
   res.setHeader('Cache-Control', 'private, no-store');
@@ -226,10 +288,13 @@ export async function governedRestAsk(
       throw new NativeQueryRefusal(405, 'METHOD_NOT_ALLOWED');
     const {
       question,
-      sampleSize = DEFAULT_PREVIEW_LIMIT,
+      sampleSize: requestedSampleSize = DEFAULT_PREVIEW_LIMIT,
       language,
       threadId,
     } = req.body ?? {};
+    const sampleSize = sqlOnly ? DEFAULT_PREVIEW_LIMIT : requestedSampleSize;
+    const returnSqlDialect =
+      sqlOnly && !streaming ? req.body?.returnSqlDialect ?? false : false;
     const key = req.headers['idempotency-key'];
     const token = req.headers['x-kailo-native-human-token'];
     const identityScope = req.headers['x-kailo-native-identity-scope'];
@@ -249,7 +314,8 @@ export async function governedRestAsk(
       !Number.isSafeInteger(sampleSize) ||
       sampleSize <= 0 ||
       (language !== undefined && typeof language !== 'string') ||
-      (threadId !== undefined && typeof threadId !== 'string')
+      (threadId !== undefined && typeof threadId !== 'string') ||
+      (sqlOnly && typeof returnSqlDialect !== 'boolean')
     )
       throw new NativeQueryRefusal(400, 'INVALID_QUERY_PARAMETERS');
     const config = await loadQueryDelivery();
@@ -283,7 +349,13 @@ export async function governedRestAsk(
       components.apiHistoryRepository,
     );
     const history = components.apiHistoryRepository;
-    const apiType = streaming ? ApiType.STREAM_ASK : ApiType.ASK;
+    const apiType = sqlOnly
+      ? streaming
+        ? ApiType.STREAM_GENERATE_SQL
+        : ApiType.GENERATE_SQL
+      : streaming
+        ? ApiType.STREAM_ASK
+        : ApiType.ASK;
     const existing = await history.findOneBy({ id: key });
     const originalThreadId = threadId || key;
     const originalLanguage =
@@ -295,7 +367,9 @@ export async function governedRestAsk(
         existing.governanceBindingId !== config.bindingId ||
         existing.threadId !== originalThreadId ||
         existing.requestPayload?.question !== question ||
-        existing.requestPayload.sampleSize !== sampleSize ||
+        (sqlOnly
+          ? existing.requestPayload.returnSqlDialect !== returnSqlDialect
+          : existing.requestPayload.sampleSize !== sampleSize) ||
         existing.requestPayload.language !== originalLanguage ||
         existing.requestPayload.nativeAsk?.identityScope !== identityScope)
     )
@@ -313,7 +387,17 @@ export async function governedRestAsk(
       ctx,
     );
     const metadataReference = existing?.requestPayload.nativeAsk
-      .metadataReference ?? { hash: deploy.hash, digest: digest(mdl) };
+      .metadataReference ?? {
+      hash: deploy.hash,
+      digest: digest(mdl),
+      ...(sqlOnly
+        ? {
+            queryScope: scope,
+            generation: (await authorizeNativeScope(config, token, 'discover'))
+              .generation,
+          }
+        : {}),
+    };
     await metadata(ctx, metadataReference);
     const histories =
       existing?.requestPayload.nativeAsk.histories ??
@@ -356,9 +440,12 @@ export async function governedRestAsk(
           digest(previous.responsePayload) !== source.resultHash
         )
           throw unavailable();
-        const visible = [ApiType.ASK, ApiType.STREAM_ASK].includes(
-          previous.apiType,
-        )
+        const visible = [
+          ApiType.ASK,
+          ApiType.STREAM_ASK,
+          ApiType.GENERATE_SQL,
+          ApiType.STREAM_GENERATE_SQL,
+        ].includes(previous.apiType)
           ? await readNativeAskHistory(ctx, config, native, previous)
           : await native.readHistory(token, previous);
         visibleHistories.push({ ...previous, ...visible });
@@ -376,7 +463,7 @@ export async function governedRestAsk(
       durationMs: 0,
       requestPayload: {
         question,
-        sampleSize,
+        ...(sqlOnly ? { returnSqlDialect } : { sampleSize }),
         language: originalLanguage,
         threadId: originalThreadId,
         nativeAsk: { taskId: key, identityScope, metadataReference, histories },
@@ -398,18 +485,24 @@ export async function governedRestAsk(
         res.flushHeaders();
         streamStarted = true;
         sendMessageStart(res);
-        block(
-          EventType.CONTENT_BLOCK_START,
-          visible.responsePayload.type === 'NON_SQL_QUERY'
-            ? ContentBlockContentType.EXPLANATION
-            : ContentBlockContentType.SUMMARY_GENERATION,
-        );
-        block(
-          EventType.CONTENT_BLOCK_DELTA,
-          visible.responsePayload.explanation ??
-            visible.responsePayload.summary,
-        );
-        block(EventType.CONTENT_BLOCK_STOP);
+        if (sqlOnly)
+          state(StateType.SQL_GENERATION_SUCCESS, {
+            sql: visible.responsePayload.sql,
+          });
+        else {
+          block(
+            EventType.CONTENT_BLOCK_START,
+            visible.responsePayload.type === 'NON_SQL_QUERY'
+              ? ContentBlockContentType.EXPLANATION
+              : ContentBlockContentType.SUMMARY_GENERATION,
+          );
+          block(
+            EventType.CONTENT_BLOCK_DELTA,
+            visible.responsePayload.explanation ??
+              visible.responsePayload.summary,
+          );
+          block(EventType.CONTENT_BLOCK_STOP);
+        }
       }
       respond(200, { id: key, ...visible.responsePayload });
       return;
@@ -431,7 +524,8 @@ export async function governedRestAsk(
       });
       return;
     }
-    if (current.statusCode !== 202) throw unavailable();
+    if (current.statusCode !== 202 && !(sqlOnly && current.statusCode === 400))
+      throw unavailable();
     if (streaming) {
       res.setHeader('Content-Type', 'text/event-stream');
       res.flushHeaders();
@@ -496,7 +590,17 @@ export async function governedRestAsk(
           pending();
           return;
         }
-        if (askResult.status !== previousStatus) {
+        if (
+          askResult.status !== previousStatus &&
+          !(
+            sqlOnly &&
+            [
+              AskResultStatus.FINISHED,
+              AskResultStatus.FAILED,
+              AskResultStatus.STOPPED,
+            ].includes(askResult.status)
+          )
+        ) {
           state(getSqlGenerationState(askResult.status), {
             rephrasedQuestion: askResult.rephrasedQuestion,
             intentReasoning: askResult.intentReasoning,
@@ -537,7 +641,7 @@ export async function governedRestAsk(
         }
         if (
           askResult.status === AskResultStatus.FINISHED ||
-          askResult.type === AskResultType.GENERAL
+          (!sqlOnly && askResult.type === AskResultType.GENERAL)
         )
           break;
         if (Date.now() > deadline) {
@@ -548,9 +652,11 @@ export async function governedRestAsk(
       }
       if (
         askResult.error ||
-        ![AskResultType.GENERAL, AskResultType.TEXT_TO_SQL].includes(
-          askResult.type,
-        )
+        ![
+          AskResultType.GENERAL,
+          AskResultType.TEXT_TO_SQL,
+          ...(sqlOnly ? [AskResultType.MISLEADING_QUERY] : []),
+        ].includes(askResult.type)
       )
         throw unavailable();
       if (
@@ -562,6 +668,97 @@ export async function governedRestAsk(
         pending();
         return;
       }
+    }
+    if (sqlOnly) {
+      try {
+        validateAskResult(askResult, key);
+      } catch (error) {
+        if (
+          !(error instanceof ApiError) ||
+          askResult.status !== AskResultStatus.FINISHED ||
+          ![AskResultType.GENERAL, AskResultType.MISLEADING_QUERY].includes(
+            askResult.type,
+          ) ||
+          askResult.error
+        )
+          throw unavailable();
+        const payload = {
+          threadId: originalThreadId,
+          code: error.code,
+          error: error.message,
+          ...error.additionalData,
+          nativeAsk: current.responsePayload.nativeAsk,
+        };
+        if (current.statusCode === 202) {
+          if (!(await advance(payload, error.statusCode))) {
+            pending();
+            return;
+          }
+        } else if (
+          current.statusCode !== error.statusCode ||
+          canonical(current.responsePayload) !== canonical(payload)
+        )
+          throw unavailable();
+        await authorize();
+        const { nativeAsk: _proof, ...visible } = payload;
+        respond(error.statusCode, { id: key, ...visible });
+        return;
+      }
+      let sql = askResult.response?.[0]?.sql;
+      if (
+        askResult.status !== AskResultStatus.FINISHED ||
+        askResult.type !== AskResultType.TEXT_TO_SQL ||
+        askResult.error ||
+        typeof sql !== 'string' ||
+        !sql.trim()
+      )
+        throw unavailable();
+      await authorize();
+      let nativeSql: string | null = null;
+      if (returnSqlDialect) {
+        const converted =
+          project.type === DataSourceName.DUCKDB
+            ? await components.wrenEngineAdaptor.getNativeSQL(sql, {
+                manifest: deploy.manifest,
+                modelingOnly: false,
+              })
+            : await components.ibisAdaptor.getNativeSql({
+                dataSource: project.type,
+                sql,
+                mdl: deploy.manifest,
+              });
+        if (converted != null && typeof converted !== 'string')
+          throw unavailable();
+        nativeSql = converted ?? null;
+        // Preserve the original empty-converter fallback, recording its actual
+        // output separately instead of claiming the generated SQL was converted.
+        sql = nativeSql || sql;
+        if (typeof sql !== 'string' || !sql.trim()) throw unavailable();
+        await authorize();
+      }
+      if (
+        !(await advance(
+          {
+            sql,
+            threadId: originalThreadId,
+            nativeAsk: {
+              ...current.responsePayload.nativeAsk,
+              ...(returnSqlDialect ? { nativeSql } : {}),
+            },
+          },
+          200,
+        ))
+      ) {
+        pending();
+        return;
+      }
+      const visible = await readNativeAskHistory(ctx, config, native, current);
+      if (streaming)
+        state(StateType.SQL_GENERATION_SUCCESS, {
+          sql: visible.responsePayload.sql,
+        });
+      respond(200, { id: key, ...visible.responsePayload });
+      return;
     }
     const general = askResult.type === AskResultType.GENERAL;
     let query: ApiHistory;

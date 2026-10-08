@@ -16,6 +16,7 @@ import {
   WrenAILanguage,
 } from '@/apollo/server/models/adaptor';
 import { getLogger } from '@server/utils';
+import { governedRestAsk } from '@server/services/nativeRestAsk';
 import {
   StateType,
   AsyncAskRequest,
@@ -29,13 +30,16 @@ import {
 const logger = getLogger('API_STREAM_GENERATE_SQL');
 logger.level = 'debug';
 
-const { apiHistoryRepository, projectService, deployService, wrenAIAdaptor } =
-  components;
-
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
+  if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined) {
+    await governedRestAsk(req, res, true, true);
+    return;
+  }
+  const { apiHistoryRepository, projectService, deployService, wrenAIAdaptor } =
+    components;
   const { question, language, threadId } = req.body as AsyncAskRequest;
   const startTime = Date.now();
   let project;

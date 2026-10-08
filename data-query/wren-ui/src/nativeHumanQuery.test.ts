@@ -40,6 +40,8 @@ import generateSummaryHandler from './pages/api/v1/generate_summary';
 import generateChartHandler from './pages/api/v1/generate_vega_chart';
 import askHandler from './pages/api/v1/ask';
 import streamAskHandler from './pages/api/v1/stream/ask';
+import generateSqlHandler from './pages/api/v1/generate_sql';
+import streamGenerateSqlHandler from './pages/api/v1/stream/generate_sql';
 import { enhanceVegaSpec } from './utils/vegaSpecUtils';
 import { Readable } from 'node:stream';
 import { createServer, Server } from 'http';
@@ -4334,11 +4336,15 @@ describe('native saved-view HUMAN query consumer', () => {
               ? streamAskHandler
               : request.url?.endsWith('/ask')
                 ? askHandler
-                : request.url?.endsWith('/generate_summary')
-                  ? generateSummaryHandler
-                  : request.url?.endsWith('/generate_vega_chart')
-                    ? generateChartHandler
-                    : runSqlHandler,
+                : request.url?.endsWith('/stream/generate_sql')
+                  ? streamGenerateSqlHandler
+                  : request.url?.endsWith('/generate_sql')
+                    ? generateSqlHandler
+                    : request.url?.endsWith('/generate_summary')
+                      ? generateSummaryHandler
+                      : request.url?.endsWith('/generate_vega_chart')
+                        ? generateChartHandler
+                        : runSqlHandler,
           },
           {
             previewModeId: '',
@@ -4574,6 +4580,346 @@ describe('native saved-view HUMAN query consumer', () => {
         }
         return observed;
       });
+    });
+
+    describe('original generate_sql HUMAN-only native consumer', () => {
+      const input = { question: 'Original SQL question' };
+      const generate = (streaming = false, body = input, changes = {}) =>
+        fetch(
+          endpoint.replace(
+            '/run_sql',
+            streaming ? '/stream/generate_sql' : '/generate_sql',
+          ),
+          {
+            method: 'POST',
+            headers: { ...headers, ...changes },
+            body: JSON.stringify(body),
+          },
+        );
+      const noExecution = () => {
+        expect(direct).not.toHaveBeenCalled();
+        expect(summaryCreate).not.toHaveBeenCalled();
+        expect(askStream).not.toHaveBeenCalled();
+        expect(
+          components.apiHistoryRepository.prepareNativeSql,
+        ).not.toHaveBeenCalled();
+        expect(calls.mock.calls.every((call) => !call[2].command)).toBe(true);
+      };
+      it.each([false, true])(
+        'retains the original SQL response/SSE and finished task without executing SQL or summary (stream=%s)',
+        async (streaming) => {
+          const response = await generate(streaming);
+          expect(response.status).toBe(200);
+          if (streaming) {
+            const body = await response.text();
+            expect(body).toContain('message_start');
+            expect(body).toContain('sql_generation_success');
+            expect(body).toContain(statement);
+            expect(body).toContain('message_stop');
+            expect(body).not.toContain('summary_generation');
+          } else
+            expect(await response.json()).toEqual({
+              id: key,
+              sql: statement,
+              threadId: key,
+            });
+          expect(summaryRow.apiType).toBe(
+            streaming ? ApiType.STREAM_GENERATE_SQL : ApiType.GENERATE_SQL,
+          );
+          expect(summaryRow.statusCode).toBe(200);
+          expect(
+            summaryRow.requestPayload.nativeAsk.metadataReference,
+          ).toMatchObject({
+            queryScope: nativePreviewScope(config, identityScope),
+            generation: 2,
+          });
+          expect(askCreate).toHaveBeenCalledTimes(1);
+          expect(askCreate.mock.calls[0][0]).toMatchObject({
+            queryId: key,
+            deployId: selection.deploymentHash,
+          });
+          expect((await generate(streaming)).status).toBe(200);
+          expect(askCreate).toHaveBeenCalledTimes(1);
+          noExecution();
+        },
+      );
+      it.each([false, true])(
+        'observes the same original SQL generation after a lost create ACK (stream=%s)',
+        async (streaming) => {
+          askCreate.mockRejectedValue(new Error('lost native ACK'));
+          expect((await generate(streaming)).status).toBe(200);
+          expect((await generate(streaming)).status).toBe(200);
+          expect(askGet).toHaveBeenCalledWith(key);
+          expect(askCreate).toHaveBeenCalledTimes(1);
+          noExecution();
+        },
+      );
+      it.each([false, true])(
+        'preserves the never-configured standalone SQL generation without a fabricated scope or key (stream=%s)',
+        async (streaming) => {
+          delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+          askCreate.mockResolvedValue({ queryId: 'original-independent-task' });
+          const response = await generate(streaming, input, {
+            'idempotency-key': '',
+            'x-kailo-native-human-token': '',
+            'x-kailo-native-identity-scope': '',
+          });
+          expect(response.status).toBe(200);
+          if (streaming) {
+            const body = await response.text();
+            expect(body).toContain('sql_generation_success');
+            expect(body).toContain('message_stop');
+          } else
+            expect(await response.json()).toMatchObject({
+              sql: statement,
+              threadId: expect.any(String),
+              id: expect.any(String),
+            });
+          expect(askGet).toHaveBeenCalledWith('original-independent-task');
+          expect(askCreate).toHaveBeenCalledTimes(1);
+          expect(prepareSummary).not.toHaveBeenCalled();
+          expect(calls).not.toHaveBeenCalled();
+          expect(appended).toHaveBeenCalledTimes(1);
+          noExecution();
+        },
+      );
+      it.each(['missing-cache', 'future-status', 'foreign-ACK'])(
+        'keeps %s SQL generation UNKNOWN and never creates a replacement task',
+        async (mode) => {
+          if (mode === 'missing-cache')
+            askGet.mockRejectedValue(new Error('missing cache'));
+          if (mode === 'future-status') askResult.status = 'future';
+          if (mode === 'foreign-ACK')
+            askCreate.mockResolvedValue({ queryId: 'foreign' });
+          const first = await generate(true);
+          const body = await first.text();
+          expect(body).not.toContain('sql_generation_success');
+          expect(body).not.toContain('message_stop');
+          expect(body).toContain('202');
+          if (mode === 'foreign-ACK')
+            askGet.mockRejectedValue(new Error('missing actual task'));
+          const repeat = await generate();
+          // The original stream/nonstream identities cannot substitute each other.
+          expect(repeat.status).toBe(409);
+          expect((await generate(true)).status).toBe(200);
+          expect(askCreate).toHaveBeenCalledTimes(1);
+          expect(summaryRow.statusCode).toBe(202);
+          noExecution();
+        },
+      );
+      it.each(['token', 'identity', 'empty-config', 'denied-source'])(
+        'refuses configured %s before the original SQL generation POST',
+        async (mode) => {
+          if (mode === 'empty-config') {
+            process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+            jest
+              .mocked(loadQueryDelivery)
+              .mockRejectedValue(new Error('invalid delivery'));
+          }
+          if (mode === 'denied-source') {
+            const authority = calls.getMockImplementation();
+            calls.mockImplementation(async (...args) => {
+              if (args[2].resolveResource)
+                throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+              return authority(...args);
+            });
+          }
+          const response = await generate(
+            false,
+            input,
+            mode === 'token'
+              ? { 'x-kailo-native-human-token': '' }
+              : mode === 'identity'
+                ? { 'x-kailo-native-identity-scope': '' }
+                : {},
+          );
+          expect([401, 403, 503]).toContain(response.status);
+          expect(await response.json()).not.toHaveProperty('sql');
+          expect(askCreate).not.toHaveBeenCalled();
+          noExecution();
+        },
+      );
+      it.each(['question', 'identity', 'dialect', 'surface'])(
+        'does not substitute the original completed generation with a changed %s intent',
+        async (mode) => {
+          expect((await generate()).status).toBe(200);
+          const response = await generate(
+            mode === 'surface',
+            {
+              ...input,
+              ...(mode === 'question' ? { question: 'Changed' } : {}),
+              ...(mode === 'dialect' ? { returnSqlDialect: true } : {}),
+            },
+            mode === 'identity'
+              ? { 'x-kailo-native-identity-scope': 'b'.repeat(64) }
+              : {},
+          );
+          expect(response.status).toBe(409);
+          expect(askCreate).toHaveBeenCalledTimes(1);
+          noExecution();
+        },
+      );
+      it.each(['scope', 'source', 'generation'])(
+        'withholds SQL success if %s changes during the original terminal history write',
+        async (mode) => {
+          const advance = advanceSummary.getMockImplementation();
+          advanceSummary.mockImplementation(async (...args) => {
+            const result = await advance(...args);
+            if (args[2] === 200) {
+              const authority = calls.getMockImplementation();
+              calls.mockImplementation(async (...call) => {
+                if (
+                  (mode === 'scope' && call[2].authorizeScope) ||
+                  (mode === 'source' && call[2].resolveResource)
+                )
+                  throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+                const value = await authority(...call);
+                if (mode === 'generation' && value?.scope)
+                  value.scope.generation = 3;
+                return value;
+              });
+            }
+            return result;
+          });
+          const response = await generate(true);
+          const body = await response.text();
+          expect(body).not.toContain('sql_generation_success');
+          expect(body).not.toContain('message_stop');
+          expect(body).toContain('error');
+          expect(askCreate).toHaveBeenCalledTimes(1);
+          noExecution();
+        },
+      );
+      it.each(['DUCKDB', 'POSTGRES'])(
+        'uses the original %s native SQL dialect converter only, with the captured manifest and no execution',
+        async (type) => {
+          jest
+            .mocked(components.projectService.getCurrentProject)
+            .mockResolvedValue({ ...nativeProject, type } as any);
+          const convert = jest.fn(async () => 'original native dialect SQL');
+          Object.assign(components, {
+            wrenEngineAdaptor: { getNativeSQL: convert },
+            ibisAdaptor: { getNativeSql: convert },
+          });
+          const response = await generate(false, {
+            ...input,
+            returnSqlDialect: true,
+          } as any);
+          expect(response.status).toBe(200);
+          expect((await response.json()).sql).toBe(
+            'original native dialect SQL',
+          );
+          expect(convert).toHaveBeenCalledTimes(1);
+          expect(JSON.stringify(convert.mock.calls[0])).toContain(
+            'native_model',
+          );
+          expect(
+            (await generate(false, { ...input, returnSqlDialect: true } as any))
+              .status,
+          ).toBe(200);
+          expect(convert).toHaveBeenCalledTimes(1);
+          noExecution();
+        },
+      );
+      it.each(['', undefined])(
+        'retains the original empty native-converter fallback (%s) without claiming converted SQL',
+        async (output) => {
+          const convert = jest.fn(async () => output);
+          Object.assign(components, {
+            wrenEngineAdaptor: { getNativeSQL: convert },
+            ibisAdaptor: { getNativeSql: convert },
+          });
+          const body = { ...input, returnSqlDialect: true } as any;
+          const response = await generate(false, body);
+          expect(response.status).toBe(200);
+          expect((await response.json()).sql).toBe(askResult.response[0].sql);
+          expect(summaryRow.responsePayload.nativeAsk.nativeSql).toBe(
+            output ?? null,
+          );
+          expect((await generate(false, body)).status).toBe(200);
+          expect(convert).toHaveBeenCalledTimes(1);
+          expect(askCreate).toHaveBeenCalledTimes(1);
+          noExecution();
+        },
+      );
+      it.each([AskResultType.GENERAL, AskResultType.MISLEADING_QUERY])(
+        'preserves original confirmed %s non-SQL classification without a query or replacement task',
+        async (type) => {
+          askResult = {
+            status: AskResultStatus.FINISHED,
+            type,
+            intentReasoning: 'Original non-SQL explanation',
+          };
+          const first = await generate();
+          expect(first.status).toBe(400);
+          expect(await first.json()).toMatchObject({
+            code: 'NON_SQL_QUERY',
+            error: 'Original non-SQL explanation',
+          });
+          expect((await generate()).status).toBe(400);
+          expect(askCreate).toHaveBeenCalledTimes(1);
+          noExecution();
+        },
+      );
+      it.each([false, true])(
+        'uses the original generation History GraphQL consumer with current source read (revoked=%s)',
+        async (denied) => {
+          expect((await generate()).status).toBe(200);
+          Object.assign(components.apiHistoryRepository, {
+            count: jest.fn(async () => 1),
+            findAllWithPagination: jest.fn(async () => [summaryRow]),
+          });
+          if (denied) {
+            const authority = calls.getMockImplementation();
+            calls.mockImplementation(async (...args) => {
+              if (args[2].resolveResource)
+                throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+              return authority(...args);
+            });
+          }
+          const resolver = new ApiHistoryResolver();
+          const graphql = new ApolloServer({
+            typeDefs,
+            resolvers: {
+              JSON: GraphQLJSON,
+              Query: { apiHistory: resolver.getApiHistory },
+              ApiHistoryResponse: resolver.getApiHistoryNestedResolver(),
+            },
+            context: () => ({
+              ...components,
+              deployRepository: components.deployLogRepository,
+              nativeHumanToken: headers['x-kailo-native-human-token'],
+              nativeIdentityScope: identityScope,
+            }),
+          });
+          try {
+            const response = await graphql.executeOperation({
+              query: API_HISTORY,
+              variables: {
+                filter: {
+                  queryScope: nativePreviewScope(config, identityScope),
+                  generation: 2,
+                },
+                pagination: { offset: 0, limit: 10 },
+              },
+            });
+            if (denied) expect(response.errors).toBeDefined();
+            else {
+              expect(response.errors).toBeUndefined();
+              expect(response.data.apiHistory.items[0].responsePayload).toEqual(
+                { sql: statement, threadId: key },
+              );
+              expect(
+                response.data.apiHistory.items[0].requestPayload,
+              ).not.toHaveProperty('nativeAsk');
+            }
+            expect(askCreate).toHaveBeenCalledTimes(1);
+            noExecution();
+          } finally {
+            await graphql.stop();
+          }
+        },
+      );
     });
 
     it.each([false, true])(

@@ -925,3 +925,34 @@ signed middleware-to-handler, REST, GraphQL History and deployment readers passe
 type/format checks, in the [models receipt](../fork/verify/native-integration.md#original-models-rest-current-captured-mdl-and-history-disclosure).
 This does not establish deployment, an ACTIVE binding, iframe, browser visual
 acceptance, trusted SERVICE SQL or dynamic native Resource registration.
+
+### Original SQL generation REST: HUMAN task and source disclosure
+
+The configured `POST /api/v1/generate_sql` and
+`POST /api/v1/stream/generate_sql` consumers now reuse the original native Ask
+task and API History. They require the verified current HUMAN identity and
+fixed idempotency key, freeze the actual deployment/source-read scope and
+binding generation, and disclose the original SQL/SSE success only after the
+same native task finishes and current source permissions still hold. These
+consumers do not execute a database query, create a summary, issue a query
+Action or enable trusted SERVICE SQL. Lost ACK, missing native cache and unknown
+status retain the same event and return pending rather than dispatch again.
+
+Never-configured mode preserves the original independent handlers. Present but
+empty/invalid delivery refuses. The original optional dialect conversion also
+preserves its empty-output fallback to the original generated SQL; the native
+history records the actual converter output separately, so a 200 response does
+not by itself certify that a dialect conversion occurred. Successful History
+bodies recheck the same frozen metadata and current sources; original 400
+non-SQL responses are retained at the REST surface, but their History bodies
+remain outside the old success-only History consumer.
+
+The [generation receipt](../fork/verify/native-integration.md#original-generate-sql-rest-human-task-and-current-source-consumers)
+distinguishes the initial 128 passing checks from the latest restored 130,
+including the two actual converter-output cases. Two private production-damage
+runs caught three and five failures respectively; after restoration the original
+TypeScript/format checks and two real isolated PostgreSQL CAS cases passed.
+This source increment does not establish a business deployment, ACTIVE binding,
+browser/iframe acceptance, full original parity, dynamic trusted native Resource
+registration or ordinary-function provenance. A permanently lost native cache is
+not proof of failure and cannot authorize a replacement POST.
