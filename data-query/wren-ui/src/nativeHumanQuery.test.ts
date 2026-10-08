@@ -869,6 +869,272 @@ describe('native saved-view HUMAN query consumer', () => {
     });
   });
 
+  describe('original dashboard HUMAN metadata readers', () => {
+    let previous: string | undefined;
+    let ctx: any;
+    let deployment: any;
+    const item = {
+      id: 21,
+      dashboardId: 4,
+      type: 'BAR',
+      layout: { x: 0, y: 0, w: 3, h: 2 },
+      detail: { sql: statement, chartSchema: { mark: 'bar' } },
+    };
+    const sourceRefs = [
+      { catalog: 'wrenai', schema: 'public', table: 'native_model' },
+      { catalog: 'wrenai', schema: 'public', table: 'native_view' },
+    ];
+    const resolve = async (
+      _config: any,
+      _operation: string,
+      input: any,
+      _token?: string,
+    ) => ({
+      resource: {
+        ...resolution.resource,
+        nativeType: input.resolveResource.nativeType,
+        nativeRef: input.resolveResource.nativeRef,
+      },
+    });
+    const read = async (method: 'getDashboard' | 'getDashboardItems') =>
+      new DashboardResolver()[method](null, null, ctx);
+    beforeEach(() => {
+      previous = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE =
+        'fixture-controlled-delivery';
+      jest.mocked(loadQueryDelivery).mockResolvedValue(config);
+      calls.mockImplementation(resolve);
+      deployment = {
+        id: selection.deploymentId,
+        projectId: 3,
+        hash: selection.deploymentHash,
+        status: 'SUCCESS',
+        manifest: {
+          catalog: 'wrenai',
+          schema: 'public',
+          models: [{ name: 'native_model' }],
+          views: [
+            { name: 'native_view', statement, properties: { viewId: '7' } },
+          ],
+        },
+        nativeObjectRefs: capturedSources,
+      };
+      ctx = {
+        nativeHumanToken: 'verified-native-token',
+        nativeIdentityScope: 'a'.repeat(64),
+        projectService: {
+          getCurrentProject: jest.fn().mockResolvedValue({ id: 3 }),
+        },
+        projectRepository: { findOneBy: jest.fn() },
+        deployRepository: {
+          findLastProjectDeployLog: jest
+            .fn()
+            .mockImplementation(async () => deployment),
+        },
+        modelRepository: {
+          findOneBy: jest.fn().mockResolvedValue({
+            id: 8,
+            projectId: 3,
+            referenceName: 'native_model',
+          }),
+        },
+        viewRepository: {
+          findOneBy: jest.fn().mockResolvedValue({
+            id: 7,
+            projectId: 3,
+            name: 'native_view',
+            statement,
+          }),
+        },
+        queryService: {
+          sourceObjects: jest.fn().mockResolvedValue(sourceRefs),
+          preview: jest.fn(),
+        },
+        dashboardService: {
+          getCurrentDashboard: jest.fn().mockResolvedValue({
+            id: 4,
+            projectId: 3,
+            name: 'Dashboard',
+            cacheEnabled: true,
+            nextScheduledAt: null,
+          }),
+          getDashboardItems: jest.fn().mockResolvedValue([item]),
+          getDashboardItem: jest.fn().mockResolvedValue(item),
+          parseCronExpression: jest
+            .fn()
+            .mockReturnValue({ frequency: 'NEVER' }),
+        },
+      };
+    });
+    afterEach(() => {
+      if (previous === undefined)
+        delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = previous;
+    });
+    it.each(['getDashboard', 'getDashboardItems'] as const)(
+      '%s preserves the full original item only after every real native source is readable twice, without SQL or admission',
+      async (method) => {
+        const result = await read(method);
+        expect(
+          method === 'getDashboard' ? (result as any).items : result,
+        ).toEqual([item]);
+        expect(calls).toHaveBeenCalledTimes(4);
+        expect(calls.mock.calls.map((entry) => entry[2])).toEqual(
+          [...capturedSources, ...capturedSources].map((source) => ({
+            bindingId: binding,
+            resolveResource: {
+              workspaceId: config.workspaceId,
+              actionKey: 'data_query.describe@v1',
+              actionVersion: 1,
+              nativeType: source.nativeType,
+              nativeRef: String(source.nativeId),
+            },
+          })),
+        );
+        expect(
+          calls.mock.calls.every((entry) => entry[3] === ctx.nativeHumanToken),
+        ).toBe(true);
+        expect(ctx.queryService.sourceObjects).toHaveBeenCalledTimes(2);
+        expect(ctx.queryService.sourceObjects).toHaveBeenCalledWith(statement, {
+          manifest: deployment.manifest,
+          timeoutMs: config.requestTimeoutMs,
+          responseMaxBytes: config.responseMaxBytes,
+        });
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+        if (method === 'getDashboard')
+          expect(result).toMatchObject({
+            name: 'Dashboard',
+            schedule: { frequency: 'NEVER' },
+            nextScheduledAt: null,
+          });
+      },
+    );
+    it.each(['getDashboard', 'getDashboardItems'] as const)(
+      '%s filters only an authoritative source read denial, not a readable first source',
+      async (method) => {
+        calls.mockImplementation(async (...args) => {
+          if ((args[2].resolveResource as any).nativeType === 'view')
+            throw new NativeQueryRefusal(
+              403,
+              'QUERY_ADMISSION_UNAVAILABLE',
+              true,
+            );
+          return resolve(...args);
+        });
+        const result = await read(method);
+        expect(
+          method === 'getDashboard' ? (result as any).items : result,
+        ).toEqual([]);
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['getDashboard', 'getDashboardItems'] as const)(
+      '%s never discloses a chart whose source permission was revoked during assembly',
+      async (method) => {
+        let checks = 0;
+        calls.mockImplementation(async (...args) => {
+          if (++checks === 4)
+            throw new NativeQueryRefusal(
+              403,
+              'QUERY_ADMISSION_UNAVAILABLE',
+              true,
+            );
+          return resolve(...args);
+        });
+        const result = await read(method);
+        expect(
+          method === 'getDashboard' ? (result as any).items : result,
+        ).toEqual([]);
+      },
+    );
+    it.each(['getDashboard', 'getDashboardItems'] as const)(
+      '%s reports unavailable authorization rather than pretending all original items disappeared',
+      async (method) => {
+        calls.mockRejectedValue(
+          new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE'),
+        );
+        await expect(read(method)).rejects.toThrow(
+          'QUERY_ADMISSION_UNAVAILABLE',
+        );
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['item', 'deployment', 'sources', 'native-model'])(
+      'refuses original %s facts changed before assembled metadata disclosure',
+      async (changed) => {
+        if (changed === 'item')
+          ctx.dashboardService.getDashboardItem.mockResolvedValue({
+            ...item,
+            detail: { ...item.detail, sql: 'changed' },
+          });
+        if (changed === 'deployment')
+          ctx.deployRepository.findLastProjectDeployLog
+            .mockResolvedValueOnce(deployment)
+            .mockResolvedValue({ ...deployment, hash: 'c'.repeat(40) });
+        if (changed === 'sources')
+          ctx.queryService.sourceObjects
+            .mockResolvedValueOnce(sourceRefs)
+            .mockResolvedValue([sourceRefs[0]]);
+        if (changed === 'native-model')
+          ctx.modelRepository.findOneBy
+            .mockResolvedValueOnce({
+              id: 8,
+              projectId: 3,
+              referenceName: 'native_model',
+            })
+            .mockResolvedValue(null);
+        await expect(read('getDashboard')).rejects.toThrow(
+          'QUERY_REFERENCE_CHANGED',
+        );
+      },
+    );
+    it.each([
+      'identity',
+      'token',
+      'project',
+      'dashboard',
+      'foreign-item',
+      'invalid-delivery',
+    ])(
+      'rejects %s before any unauthorized metadata/SQL disclosure',
+      async (changed) => {
+        if (changed === 'identity') ctx.nativeIdentityScope = undefined;
+        if (changed === 'token') ctx.nativeHumanToken = undefined;
+        if (changed === 'project')
+          ctx.projectService.getCurrentProject.mockResolvedValue({ id: 99 });
+        if (changed === 'dashboard')
+          ctx.dashboardService.getCurrentDashboard.mockResolvedValue({
+            id: 4,
+            projectId: 99,
+          });
+        if (changed === 'foreign-item')
+          ctx.dashboardService.getDashboardItems.mockResolvedValue([
+            { ...item, dashboardId: 99 },
+          ]);
+        if (changed === 'invalid-delivery') {
+          process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';
+          jest
+            .mocked(loadQueryDelivery)
+            .mockRejectedValue(
+              new NativeQueryRefusal(503, 'QUERY_ADMISSION_UNAVAILABLE'),
+            );
+        }
+        await expect(read('getDashboardItems')).rejects.toBeInstanceOf(
+          NativeQueryRefusal,
+        );
+        expect(calls).not.toHaveBeenCalled();
+        expect(ctx.queryService.preview).not.toHaveBeenCalled();
+      },
+    );
+    it('preserves the exact never-configured standalone metadata response without creating a query or permission ticket', async () => {
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+      expect(await read('getDashboardItems')).toEqual([item]);
+      expect(calls).not.toHaveBeenCalled();
+      expect(ctx.queryService.sourceObjects).not.toHaveBeenCalled();
+      expect(ctx.queryService.preview).not.toHaveBeenCalled();
+    });
+  });
+
   it.each(
     ['answer', 'chart', 'adjust'].flatMap((artifact) =>
       ['completed', 'unknown', 'failed', 'malformed'].map((state) => [

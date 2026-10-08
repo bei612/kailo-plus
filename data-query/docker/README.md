@@ -265,6 +265,16 @@ authentication, unavailable authorization or mismatched native reference facts
 return an error rather than an apparently empty successful list. There is no
 cross-user authorization cache, new page or duplicate resource directory.
 
+Dashboard reads also retain their original complete item/chart definitions,
+but disclose an item only when every model/view from the original planner's
+deployment evidence is currently readable by that person. Assembled item,
+deployment and source facts are checked again, followed by fresh source read
+checks. An authoritative source denial filters the item; unavailable identity,
+binding or authorization remains an error rather than a false empty dashboard.
+This read does not execute SQL, allocate API History or submit a command.
+It does not grant native project management or pin/write permission: those
+remain the separate native identity/management release boundary.
+
 The `humanAction` configuration contains only the existing result-exposure policy
 id/version used by actual queries; do not configure a global Resource id/version
 to bypass per-object lookup. These metadata reads do not execute SQL or create

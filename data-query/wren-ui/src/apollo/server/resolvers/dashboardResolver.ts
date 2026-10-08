@@ -9,6 +9,7 @@ import {
   Dashboard,
   DashboardItem,
   DashboardItemType,
+  Project,
 } from '@server/repositories';
 import { getLogger } from '@server/utils';
 import {
@@ -20,6 +21,7 @@ import { NativeQueryService } from '../services/nativeQueryService';
 import {
   NativeHumanQuery,
   nativePreviewScope,
+  canReadNativeMetadata,
 } from '../services/nativeHumanQuery';
 import {
   loadQueryDelivery,
@@ -32,6 +34,71 @@ const logger = getLogger('DashboardResolver');
 logger.level = 'debug';
 
 export class DashboardResolver {
+  private async readableItems(
+    ctx: IContext,
+    dashboard: Dashboard,
+    project: Project,
+    items: DashboardItem[],
+  ) {
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined) return items;
+    const config = await loadQueryDelivery();
+    nativePreviewScope(config, ctx.nativeIdentityScope);
+    if (!ctx.nativeHumanToken)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    if (config.projectId !== project.id || dashboard.projectId !== project.id)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    const { components } = await import('@/common');
+    const native = new NativeQueryService(
+      config,
+      ctx.projectRepository,
+      ctx.deployRepository,
+      components.apiHistoryRepository,
+      ctx.queryService,
+      ctx.viewRepository,
+      ctx.modelRepository,
+      ctx.modelColumnRepository,
+    );
+    const permitted = async (
+      objects: { nativeType: 'model' | 'view'; nativeId: number }[],
+    ) => {
+      for (const object of objects)
+        if (
+          !(await canReadNativeMetadata(
+            config,
+            ctx.nativeHumanToken,
+            object.nativeType,
+            object.nativeId,
+          ))
+        )
+          return false;
+      return true;
+    };
+    const visible: { item: DashboardItem; revision: string }[] = [];
+    for (const item of items) {
+      if (item.dashboardId !== dashboard.id)
+        throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      const sources = await native.metadataSources(item.detail.sql);
+      if (await permitted(sources.objects))
+        visible.push({ item, revision: sources.revision });
+    }
+    const disclosed: DashboardItem[] = [];
+    // Recheck assembled native bodies and their current HUMAN read permission;
+    // a previous allowed source cannot authorize changed SQL or another model.
+    for (const { item, revision } of visible) {
+      const after = await ctx.dashboardService.getDashboardItem(
+        item.id,
+        project,
+      );
+      if (digest(after) !== digest(item))
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      const sources = await native.metadataSources(after.detail.sql);
+      if (sources.revision !== revision)
+        throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+      if (await permitted(sources.objects)) disclosed.push(item);
+    }
+    return disclosed;
+  }
+
   private async governedPreview(
     ctx: IContext,
     sql: string,
@@ -97,12 +164,18 @@ export class DashboardResolver {
       nextScheduledAt: string | null;
     }
   > {
-    const dashboard = await ctx.dashboardService.getCurrentDashboard();
+    const project = await ctx.projectService.getCurrentProject();
+    const dashboard = await ctx.dashboardService.getCurrentDashboard(project);
     if (!dashboard) {
       throw new Error('Dashboard not found.');
     }
     const schedule = ctx.dashboardService.parseCronExpression(dashboard);
-    const items = await ctx.dashboardService.getDashboardItems(dashboard.id);
+    const items = await this.readableItems(
+      ctx,
+      dashboard,
+      project,
+      await ctx.dashboardService.getDashboardItems(dashboard.id),
+    );
     return {
       ...dashboard,
       nextScheduledAt: dashboard.nextScheduledAt
@@ -118,11 +191,17 @@ export class DashboardResolver {
     _args: any,
     ctx: IContext,
   ): Promise<DashboardItem[]> {
-    const dashboard = await ctx.dashboardService.getCurrentDashboard();
+    const project = await ctx.projectService.getCurrentProject();
+    const dashboard = await ctx.dashboardService.getCurrentDashboard(project);
     if (!dashboard) {
       throw new Error('Dashboard not found.');
     }
-    return await ctx.dashboardService.getDashboardItems(dashboard.id);
+    return await this.readableItems(
+      ctx,
+      dashboard,
+      project,
+      await ctx.dashboardService.getDashboardItems(dashboard.id),
+    );
   }
 
   public async createDashboardItem(

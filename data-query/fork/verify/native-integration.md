@@ -4959,3 +4959,106 @@ backend/PG suite was not rerun for this two-source-file UI correction. These
 are real hook/event checks, not browser screenshots or live deployment.
 The native write/identity, SERVICE/function, instance/binding and visual
 acceptance gaps above remain unchanged.
+
+## Original dashboard metadata consumes current native source read rights (2026-10-08)
+
+The fixed official baseline remains
+`WrenAI-ui-0.32.2@c5f02a0391c87420dba78632dcd86073710deb72`;
+`tools/upstream_manifest.py status data-query` reported no newer reference
+commit. Original source compared includes
+`wren-ui/src/apollo/server/resolvers/dashboardResolver.ts::DashboardResolver.getDashboard/getDashboardItems`,
+`wren-ui/src/apollo/server/repositories/projectRepository.ts::ProjectRepository.getCurrentProject`
+and `wren-ui/src/apollo/server/services/queryService.ts::QueryService`.
+No reference content was modified or executed.
+
+Four implementation conclusions:
+
+1. **Authority.** `.design/08` §6, DD-98, SS-WRN-IDENTITY and
+   SS-WRN-GOVERNANCE require real current-user/resource authorization; an
+   instance access claim or query execution cannot grant model metadata read
+   or native project write. The dashboard's original item definitions contain
+   SQL and chart metadata, so its two existing readers now consume the same
+   registered `data_query.describe@v1`/Resource `read` checks as model/view
+   metadata, not a new dashboard Action or local permission registry.
+2. **Impact and compatibility.** `DashboardResolver.getDashboard` and
+   `getDashboardItems` select the real current project, then use
+   `NativeQueryService.metadataSources` to consume the existing original
+   QueryService/Engine source analysis and captured deployment object IDs.
+   All sources, including saved views and dependencies, require current read
+   permission. The existing original GraphQL response, complete item/layout,
+   SQL/chart definition and page remain unchanged. No Core contract, generated
+   type, database migration, account table or new permission model is added.
+3. **Side effects.** This metadata consumer does not call QueryService.preview,
+   allocate API History, submit an ActionExecution or copy SQL/results to Core.
+   After assembling visible items it reloads the original item, deployment and
+   source revision and repeats the current source read checks. There is no
+   cross-user decision cache or default binding/project fallback. Only an
+   authoritative resource permission denial filters an item; outages and
+   identity/binding failures are errors rather than apparent successful emptiness.
+4. **Boundaries.** Changed item, deployment, source closure or current native
+   model refuses disclosure with the existing PRECONDITION/reference error.
+   Missing identity/token and foreign project/dashboard/item scope are DENIED;
+   unavailable delivery or authorization is not success. These are metadata
+   reads, so no unknown external write is reclassified. The native dashboard
+   schedule, empty-project access and all native writes still need their real
+   project authorization; per-source read is not proof that those are closed.
+
+Actual mapping facts were traced, not inferred from instance isolation:
+`Project.id` equals the controlled `projectId`/`nativeScopeRef` selection;
+`Dashboard.projectId` and `DashboardItem.dashboardId` retain original native
+ownership. Existing captured deployment Resource mapping is only `model|view`
+with exact native IDs/names. No project/dashboard Resource-registration
+consumer or native user/role authority was found. The existing Core native
+HUMAN `resolveResource` is action-bound; describe cannot substitute for project
+update. The original pin UI/mutation and other native management functions are
+not deleted or falsely declared authorized by a query AE. Their release-level
+SS-WRN-IDENTITY gap remains explicit and the release remains unactivated.
+
+The existing restricted SDK (4 CPU/4 GiB) and local dependency cache were
+reused after checking active processes and host memory pressure. Initial
+original resolver/native-source checks returned **19 passed / 223 filtered
+skips**, exit 0 (112.648 s), and whole-UI tsc exited 0. These exercise the real
+original resolver, NativeQueryService source/fact consumer and resource-selection
+payload; Engine source analysis and Core HTTP responses are controlled fixtures,
+not live business authorization or a production datasource acceptance.
+
+Private production fault injection replaced the actual source read call with
+unconditional permission. The original checks returned **8 failed / 11 passed /
+223 filtered skips**, exit 1 (126.08 s): unreadable/revoked source definitions
+were exposed and unavailable authorization became apparent success. That
+production call was restored. Independently removing only the final source
+revision comparison returned **2 failed / 240 filtered skips**, exit 1
+(172.096 s): deployment/source changes wrongly disclosed the assembled item.
+That production comparison was also restored. No formal production source was
+mutated for these negative checks.
+
+All three production/check inputs matched the SDK candidate (`cmp` exit 0).
+The restored original dashboard query and metadata consumers together returned
+**29 passed / 213 filtered skips**, exit 0 (52.376 s). The initial format check
+exited 1 for three mock-chain layouts; running the same existing formatter
+reflowed those chains without changing arguments or assertions, and the next
+format check exited 0. `git diff --check` exited 0. No backend/PG-wide suite was
+rerun for these two existing metadata readers.
+
+Actual original target commands in `/work`:
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand src/nativeHumanQuery.test.ts -t "original dashboard HUMAN metadata readers"
+node node_modules/jest/bin/jest.js --runInBand src/nativeHumanQuery.test.ts -t "refuses original (deployment|sources) facts changed" --silent
+node node_modules/jest/bin/jest.js --runInBand src/nativeHumanQuery.test.ts -t "original dashboard HUMAN (query consumers|metadata readers)" --silent
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+node node_modules/prettier/bin/prettier.cjs --check src/apollo/server/resolvers/dashboardResolver.ts src/apollo/server/services/nativeQueryService.ts src/nativeHumanQuery.test.ts
+```
+
+Logs in the previously recorded SDK directory are
+`dashboard-metadata-positive.log`, `dashboard-metadata-permission-negative.log`,
+`dashboard-metadata-revision-negative.log`, `dashboard-metadata-restored.log`,
+`dashboard-metadata-tsc.log`, `dashboard-metadata-format.log` (first failure)
+and `dashboard-metadata-format-restored.log`.
+
+No new image, dependencies, database or full-tree copy was created. Core,
+contracts, Worker, the pre-existing unvalidated Java pair and frontend layout
+were not changed. No business container, ACTIVE binding, iframe screenshot or
+Desktop/Mobile acceptance is claimed; `check.sh --full` was not run by this
+module batch. Trusted SERVICE SQL and ordinary-function/provider provenance
+remain separate unsatisfied requirements.

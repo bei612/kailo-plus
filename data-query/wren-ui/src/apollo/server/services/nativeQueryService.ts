@@ -241,6 +241,32 @@ export class NativeQueryService {
     };
   }
 
+  // Original dashboard metadata includes SQL/chart definitions, not query
+  // results. Resolve its real planner/deployment sources without allocating
+  // another native task or issuing SQL before the HUMAN read checks.
+  async metadataSources(sql: string) {
+    if (typeof sql !== 'string' || !sql.trim()) throw invalid();
+    const deployment = await this.deployments.findLastProjectDeployLog(
+      this.config.projectId,
+    );
+    if (
+      !deployment ||
+      deployment.status !== 'SUCCESS' ||
+      deployment.projectId !== this.config.projectId ||
+      !/^[a-f0-9]{40}$/.test(deployment.hash)
+    )
+      throw new NativeQueryRefusal(412, 'QUERY_DEPLOYMENT_CHANGED');
+    const { objects } = await this.querySourceObjects(deployment, { sql });
+    return {
+      objects,
+      revision: digest({
+        deployment,
+        sql,
+        objects,
+      }),
+    };
+  }
+
   async sqlSelection(
     key: string,
     sql: string,
@@ -785,7 +811,7 @@ export class NativeQueryService {
 
   private async querySourceObjects(
     deployment: Deploy,
-    input: GovernedQueryInput,
+    input: Pick<GovernedQueryInput, 'sql'>,
     reference?: Record<string, unknown>,
   ) {
     const sources = await this.queries.sourceObjects(input.sql, {
