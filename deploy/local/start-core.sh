@@ -35,12 +35,14 @@ if [ "$runtime_present" -ne 0 ] && [ "$runtime_present" -ne "${#runtime_names[@]
 fi
 runtime_config=
 gateway_config=
+adapter_config=
 tmp=
 cleanup_start_core() {
   local status=$?
   trap - EXIT
   if [ -n "$runtime_config" ]; then rm -f -- "$runtime_config" || status=2; fi
   if [ -n "$gateway_config" ]; then rm -f -- "$gateway_config" || status=2; fi
+  if [ -n "$adapter_config" ]; then rm -f -- "$adapter_config" || status=2; fi
   if [ -n "$tmp" ]; then rm -f -- "$tmp" || status=2; fi
   exit "$status"
 }
@@ -90,6 +92,76 @@ with open(sys.argv[1], "w", encoding="utf-8") as stream:
     json.dump({"services": {"core-bff": {"environment": values, "volumes": volumes}}}, stream)
 PYRUNTIME
   runtime_compose=(-f "$runtime_config")
+fi
+# DD-94/98: the original Core consumer reads a controlled adapter directory.
+# No directory means no business-component delivery, not an empty credential or
+# a platform startup dependency. Mount only the supplied facts and public JWKS
+# files; never create missing paths or generate native identities here.
+adapter_compose=()
+if [ -n "${APPLICATION_ADAPTER_DIRECTORY_FILE:-}" ]; then
+  adapter_config=$(mktemp)
+  APPLICATION_ADAPTER_DIRECTORY_FILE="$APPLICATION_ADAPTER_DIRECTORY_FILE" \
+  python3 - "$adapter_config" <<'PYADAPTER'
+import json
+import os
+from pathlib import Path, PurePosixPath
+import sys
+
+def reject():
+    raise SystemExit("Application adapter 投递必须使用真实规范文件与 public-only JWKS；不生成绑定或原生证据")
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            reject()
+        result[key] = value
+    return result
+
+def source_file(raw):
+    if not isinstance(raw, str):
+        reject()
+    path = PurePosixPath(raw)
+    if not path.is_absolute() or path == PurePosixPath("/") or ".." in path.parts or str(path) != raw:
+        reject()
+    source = Path(raw)
+    if not source.is_file() or source.resolve(strict=True) != source or not os.access(source, os.R_OK):
+        reject()
+    return source
+
+try:
+    directory = source_file(os.environ["APPLICATION_ADAPTER_DIRECTORY_FILE"])
+    document = json.loads(directory.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    if not isinstance(document, dict) or not isinstance(document.get("adapters"), list):
+        reject()
+    files = {directory}
+    for adapter in document["adapters"]:
+        if not isinstance(adapter, dict):
+            reject()
+        identities = adapter.get("nativeHumanIdentities", [])
+        if not isinstance(identities, list):
+            reject()
+        for identity in identities:
+            public = source_file(identity["jwksFile"])
+            jwks = json.loads(public.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+            if not isinstance(jwks, dict) or set(jwks) != {"keys"} or not isinstance(jwks["keys"], list) or not jwks["keys"]:
+                reject()
+            # Reject private/symmetric material before mounting it into Core.
+            # Algorithm, identity and scope checks remain in the original Core
+            # verifier; this producer does not grant business access.
+            public_fields = {"kty", "kid", "use", "key_ops", "alg", "crv", "x", "y", "n", "e", "x5c", "x5t", "x5t#S256", "x5u"}
+            if any(not isinstance(key, dict) or set(key) - public_fields for key in jwks["keys"]):
+                reject()
+            files.add(public)
+    volumes = [{"type": "bind", "source": str(source), "target": str(source), "read_only": True,
+                "bind": {"create_host_path": False}} for source in sorted(files)]
+    with open(sys.argv[1], "w", encoding="utf-8") as stream:
+        json.dump({"services": {"core-bff": {"environment": {
+            "APPLICATION_ADAPTER_DIRECTORY_FILE": str(directory)}, "volumes": volumes}}}, stream)
+except (OSError, ValueError, KeyError, TypeError):
+    reject()
+PYADAPTER
+  adapter_compose=(-f "$adapter_config")
 fi
 # DD-105: exact public-only file mount is present only for a complete native
 # Tool deployment. No signing key is read or mounted into Core, and no key is
@@ -273,7 +345,7 @@ app_cidr=$(sudo -n docker network inspect "${project}_app" --format '{{range .IP
 [ -n "$app_cidr" ] || { echo "取不到 ${project}_app 网络子网，拒绝创建 Tenant AppRole" >&2; exit 2; }
 
 # sudo 只保留受控构建器选择，避免 Core 镜像构建落到无 cgroup 限额的默认 builder。
-compose() { sudo -n --preserve-env=BUILDX_BUILDER docker compose --env-file .env -f compose.yaml "${runtime_compose[@]}" "${gateway_compose[@]}" "$@"; }
+compose() { sudo -n --preserve-env=BUILDX_BUILDER docker compose --env-file .env -f compose.yaml "${runtime_compose[@]}" "${adapter_compose[@]}" "${gateway_compose[@]}" "$@"; }
 root_token=$(python3 -c 'import json;print(json.load(open("secrets/openbao_init.json"))["root_token"])')
 # 令牌经 stdin 进入容器，不上命令行（与 secret-store-init.sh 的 run_bao 同一做法）
 run_bao() {

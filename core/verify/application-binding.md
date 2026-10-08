@@ -1266,3 +1266,95 @@ SpiceDB 外部 HTTP 边界使用现有 for_test 及真实客户端，非真实�
 本批未跑全仓 full/Clippy、真实 Adapter OIDC 路由、三组件业务导入/解析/撤权、
 浏览器截图、Windows/Mobile 或安装包验收；未部署或创建 release/binding。
 最近 full 已知失败不因窄验改记成功。本接口不证明三个外部组件已经可用。
+
+## 原启动入口投递通用适配目录（2026-10-08）
+
+本批实现基线为 main `22f83251c1d8dc2c927e8d0948a3322c9bae9fb3`。
+原 Core 已读取 `APPLICATION_ADAPTER_DIRECTORY_FILE`，但原 Compose/启动入口
+没有投递该文件；本批只闭合这个实际运行接缝，不生成服务实例或目录事实。
+
+四步影响记录：
+
+1. 权威为 DD-94/98、设计07 §2.5 与原受控投递机制。固定本工程上述提交的
+   `core/crates/platform-core/src/application_binding_native.rs::Adapter::resolve`、
+   `::Adapter::native_human_identity` 和
+   `core/crates/platform-core/src/resource_provision.rs::snapshot/verify_delivery`
+   保留目录合同、原生身份、绑定与资源证明核验。没有重写上游能力或新增权限权威。
+2. 影响面为原 `deploy/local/start-core.sh` 的动态 Compose、EXIT 清理、现取
+   OpenBao 一次性凭据之前的配置预检，以及 `.env.example`、原 `check.sh`
+   安全维度、既有运维说明与能力追溯。未配置目录时不产生 overlay/env/mount；
+   配置时仅把目录与其实际引用公钥文件原路径去重、只读挂载，禁止自动创建路径。
+   没有 API、契约字段、四侧生成、数据库迁移、持久状态或客户端页面变化。
+3. 副作用边界：生产投递只读取指定文件，不打印内容、不创建 native identity、
+   secret、release、binding 或 nativeResources。文件不存在、相对/非规范路径、
+   链接、不可读、歧义 JSON 和私钥/对称材料在获得一次性 wrapping 前拒绝。
+   producer 的结构检查仅用于安全选取挂载，不能替代 Core 的完整目录合同、算法、
+   身份与 scope 校验；它不授予业务访问，也不把缺资源证据改成成功。
+4. 空目录仅投递其文件；多个身份复用公钥只挂载一次。错误配置不接上游、不重放
+   外部动作；失败与成功均由原 EXIT 清理移除本次临时 overlay。当前请求、binding
+   generation、撤权和 UNKNOWN 沿原消费者行为，没有新增待收敛状态。三端管理面
+   与 Mobile 非组件宿主边界不变。更新精确文件挂载须原 `start-core.sh --no-build`
+   重建 Core，不承诺原子替换宿主文件热更新；移除配置也不替代 binding 停用对账。
+
+原缓存 SDK 镜像
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`
+以 UID1000:1000、2 CPU/4 GiB、memory+swap=4 GiB、network none 运行；正式
+apps/设计/上游证据均只读，复用原 `check-cache`。只执行原安全段，不运行 Cargo、
+Go、npm 构建或安装依赖，不生成整树副本。执行前检查既有编译进程、内存和磁盘；
+资源受 cgroup 限制，没有以降低编译并行数替代限额。
+
+实际命令为原 SDK 容器中 `/workspace/apps`：
+
+```sh
+bash -n deploy/local/start-core.sh tools/check.sh
+awk '/^step_security\(\)/{section=1;next} section && /^import glob/{body=1} body && /^PY$/{exit} body{print}' tools/check.sh | python3
+```
+
+首次 shell harness 引号错误退出127，输出 `awk: line 2: missing } near end of file`
+及 `next}: command not found`，原日志保留；修正命令引号而非生产逻辑后，handle
+97497 退出0。检查实际执行原 producer 与原 EXIT 清理，不是另写 renderer：
+无投递、空目录、同一公钥去重、只读精确文件、禁自动创建、坏路径、链接、重复
+JSON 字段、无效结构和私密材料拒绝均有实际消费者；沿原安全段还核验 IdP 原生
+中英6项和30个服务配置边界。真实 `.env` 预检只读通过，没有打印配置或凭据。
+
+只复制单个生产 `start-core.sh` 到私有临时目录，以只读 bind 覆盖该容器输入；
+检查断言与正式源码均未破坏。依次真实移除只读挂载保护、规范路径链接保护、
+public-only 字段保护，三轮原安全段各退出1。链接轮明确报告
+`无效投递路径不能进入 Core mount`；其余分别在原实际挂载/私钥拒绝断言失败。
+每轮还原私有原字节后，最终 `cmp` 退出0，handle 92299 同原目标退出0。
+最终输出：
+
+```text
+PASS 实际部署配置通过生产预检；预检只读，不生成凭据或清理数据
+PASS 初始化先预检、后清理；IdP 就绪后同步客户端与管理员，业务 Tenant 后引导 Catalog
+PASS IdP 原生中英：同步/重入/读回拒绝/结果不明后只读确认/身份不变 6 项
+PASS Application 原投递：可缺席、精确只读文件、公钥去重、坏路径/歧义/私钥拒绝、同原启动消费者
+PASS 30 个服务：network 显式、边界不越层、私有数据网络按所有者隔离、镜像按 digest、无端口字面量、公共配置单源投影；SpiceDB schema 与 .design/03 §5 逐字相等
+```
+
+日志保留于
+`/volumes/data/kailo/tmp/core-web-main-release-20261008.SzH7rU/`：
+
+| 日志 | SHA-256 |
+|---|---|
+| adapter-delivery-security-final.log | `4dfad98351aea5d8f32faa1b098186499703bdea0f8870ad72460022b68cb38e` |
+| adapter-delivery-security-negative.log | `39e49c2c6f791c63c8c6cb594537ecd39f6223415d3bb46ea4c9ff41d153e5e5` |
+| adapter-delivery-path-negative.log | `8a6b8d11d60466a3db49b65ab946bded6376da7d15939179f810d1595995918f` |
+| adapter-delivery-public-negative.log | `91a0b886833d083ad3bbb229266db7ccbf8bf0d876f98d518b0f1b77f67bcae5` |
+| adapter-delivery-security-restored.log | `4dfad98351aea5d8f32faa1b098186499703bdea0f8870ad72460022b68cb38e` |
+
+本批没有更新实际运行 `.env`、重启 Core、创建/激活组件、重建镜像、进行三服务
+业务 E2E 或浏览器/安装包验收；也未把前次 full 已知失败改为通过。服务自身
+可信身份与 ActionToken 签名投递、实际 release/binding/nativeResources 证明、
+当前用户资源授权与完整业务验收仍须沿原链闭合。只补通用文件投递不证明 Cells、
+WeKnora、Wren 已集成可用；没有新增产品名分支或缩减其原版页面/功能。
+
+集中原 `tools/check-docs.sh /workspace/.design` 首次 handle 47442 退出1：调用者漏
+挂原 `npm_config_cache`，network none 下 npx 报 `EAI_AGAIN`，其余文档维度通过。
+没有联网安装或修改检查；补回原 `tools/check.sh` 使用的 `/cache/npm` 并显式
+offline 后，handle 28241 退出0：277个引用、87实体、115DD、29接缝、87场景
+（86映射/1明确排除）、实施与21篇设计 markdownlint 均通过。原失败与通过日志
+分别为上目录 `docs-adapter-delivery-22f83251c.log`、
+`docs-adapter-delivery-cached-22f83251c.log`，SHA-256 分别为
+`fad325259d76c813bd739332fe10e5ec62280c398b486cfa079c6f8c390ddd0b`、
+`fd80c99ee061f794b23f66fb4d4335b6ebb23582d56ffff0d254697d44edf617`。

@@ -43,6 +43,9 @@ implementation:
     - core/crates/platform-core/src/application_page.rs
     - core/crates/platform-core/src/resource_provision.rs
     - core/crates/platform-core/src/bff.rs
+    - deploy/local/start-core.sh
+    - deploy/local/.env.example
+    - tools/check.sh
     - worker/workflows/application_binding.go
     - worker/workflows/component_action.go
     - worker/activities/component_action.go

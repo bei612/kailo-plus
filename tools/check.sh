@@ -849,6 +849,65 @@ raw = open("deploy/local/compose.yaml", encoding="utf-8").read()
 bad = []
 # Exercise the actual existing deployment producer, not a second renderer.
 starter = pathlib.Path("deploy/local/start-core.sh").read_text(encoding="utf-8")
+adapter_start = starter.index("adapter_compose=()")
+adapter_end = starter.index("# DD-105:", adapter_start)
+cleanup_start = starter.index("runtime_config=\n")
+cleanup_end = starter.index("runtime_compose=()", cleanup_start)
+adapter_program = "set -eu\n" + starter[cleanup_start:cleanup_end] + starter[adapter_start:adapter_end] + '''
+if [ -n "${adapter_config:-}" ]; then
+  python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))))' "$adapter_config"
+fi
+'''
+with tempfile.TemporaryDirectory() as temporary:
+    location = pathlib.Path(temporary)
+    directory = location / "adapters.json"
+    public = location / "public.json"
+    public_doc = {"keys": [{"kty": "EC", "crv": "P-256", "alg": "ES256",
+        "kid": "fixture", "x": "A" * 43, "y": "A" * 43}]}
+    public.write_text(json.dumps(public_doc), encoding="utf-8")
+    delivery = {"adapters": [{"nativeHumanIdentities": [{"jwksFile": str(public)},
+        {"jwksFile": str(public)}]}]}
+    directory.write_text(json.dumps(delivery), encoding="utf-8")
+    base_env = {k: v for k, v in os.environ.items() if k != "APPLICATION_ADAPTER_DIRECTORY_FILE"}
+    base_env["TMPDIR"] = temporary
+    def adapter_produce(path=None):
+        values = {} if path is None else {"APPLICATION_ADAPTER_DIRECTORY_FILE": str(path)}
+        result = subprocess.run(["bash", "-c", adapter_program], cwd=temporary,
+                                env=base_env | values, capture_output=True, text=True)
+        assert not list(location.glob("tmp.*")), "原 EXIT cleanup 必须清掉失败/成功投递临时文件"
+        return result
+    absent = adapter_produce()
+    assert absent.returncode == 0 and absent.stdout == "", "零业务组件不能强制或生成目录投递"
+    directory.write_text('{"adapters":[]}', encoding="utf-8")
+    empty = adapter_produce(directory)
+    assert empty.returncode == 0 and len(json.loads(empty.stdout)["services"]["core-bff"]["volumes"]) == 1
+    directory.write_text(json.dumps(delivery), encoding="utf-8")
+    original = adapter_produce(directory)
+    assert original.returncode == 0, original.stderr
+    core_delivery = json.loads(original.stdout)["services"]["core-bff"]
+    assert core_delivery["environment"] == {"APPLICATION_ADAPTER_DIRECTORY_FILE": str(directory)}
+    mounts = core_delivery["volumes"]
+    assert len(mounts) == 2 and {mount["source"] for mount in mounts} == {str(directory), str(public)}
+    assert all(mount["target"] == mount["source"] and mount["read_only"] is True
+        and mount["bind"]["create_host_path"] is False for mount in mounts)
+    linked = location / "linked.json"
+    linked.symlink_to(directory)
+    for path in (location / "missing.json", location, linked, "relative.json", "/"):
+        assert adapter_produce(path).returncode != 0, "无效投递路径不能进入 Core mount"
+    for content in ('{"adapters":[],"adapters":[]}', '{', '{"adapters":null}',
+                    json.dumps({"adapters": [{"nativeHumanIdentities": [{"jwksFile": str(linked)}]}]})):
+        directory.write_text(content, encoding="utf-8")
+        assert adapter_produce(directory).returncode != 0, "不明/歧义目录不能生成投递"
+    directory.write_text(json.dumps(delivery), encoding="utf-8")
+    for secret_field in ("d", "k", "p", "q"):
+        public.write_text(json.dumps({"keys": [public_doc["keys"][0] | {secret_field: "fixture-private"}]}), encoding="utf-8")
+        refused = adapter_produce(directory)
+        assert refused.returncode != 0 and "fixture-private" not in refused.stdout + refused.stderr
+    public.write_text(json.dumps(public_doc), encoding="utf-8")
+    assert adapter_produce(directory).returncode == 0
+    assert '"${adapter_compose[@]}"' in starter[starter.index("compose() {"):]
+    assert "adapter_config" in starter[starter.index("cleanup_start_core()"):starter.index("trap cleanup_start_core EXIT")]
+print("  \033[32mPASS\033[0m Application 原投递：可缺席、精确只读文件、公钥去重、坏路径/歧义/私钥拒绝、同原启动消费者")
 gateway_start = starter.index("gateway_names=(")
 gateway_end = starter.index("\nproject=", gateway_start)
 gateway_program = "set -eu\n" + starter[gateway_start:gateway_end]
