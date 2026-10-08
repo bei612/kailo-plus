@@ -51,3 +51,34 @@
 - 最终还原复验：Web 18 passed、Native 2 passed，exit 0。日志同上目录的 `profile-lifecycle-{web,native}-{mutation,restored}.log`。Web jsdom 提示未实现 canvas getContext（原头像组件），未安装 canvas 迁就环境；上述实际头像提交与对账断言仍通过。
 
 本批仅源码写入与消费者检查；三侧产品 typecheck/docs 由主线集中执行。没有新增发布、逐页截图、真实 Windows 包或 Mobile 设备验收；不声明整个设置模块的其他未恢复分区已补齐。
+
+## 2026-10-08：头像与资料按原版仅提交修改字段
+
+沿上述整个设置目录差异清点继续核对 Profile，不以本次 Git diff 代替全量对照。基准仍为 `779af8886caae1317b4de962082429867ab61503`：`desktop/src/features/settings/ui/ProfileSettingsCard.tsx::ProfileSettingsCard` 的 `saveProfile` 将 `updatePayload` 传给原 mutation；`desktop/src/features/profile/ui/ProfileAvatarEditor.tsx::ProfileAvatarEditor` 和 `desktop/src/features/profile/ui/AvatarCustomColorPanel.tsx::AvatarCustomColorPanel` 的布局、模式切换、上传、表情与自定义色控件已共享迁移，本批不另外设计页面。原样保留是这些控件的原结构与样式；共享迁移是双宿主复用同一个编辑器；授权治理差异是身份校验、冻结请求、UNKNOWN 对账、权威读回和中英文；本批恢复的真实缺失是仅提交实际修改字段的保存语义，并补原自定义色提交按钮的中文词条。
+
+### 四步影响结论
+
+1. 权威：原 `saveProfile(updatePayload)` 与既有 `contracts/api/web_profile_update_request.schema.json` 的“省略字段保留、空串显式清空”一致。旧共享实现却在头像保存时强制带上旧 displayName/about，可能覆盖另一会话刚更新的资料。`apps/06` §4 的 UNKNOWN 纪律不变；不恢复原私钥导出、清空本机数据等未经治理的入口。
+2. 影响：只改 `client-kit/ts/platform/src/react/profile-settings.tsx::ProfileSettingsCard` 构造首次冻结请求的字段，保留原 idempotencyKey/expectedPubkey。Web `web-client/web/src/platform/ui/SettingsPane.tsx::WebProfileSettings` 原上传、updateProfile、同 eventId 与 pubkey 读回；Native `collaboration/desktop/src/features/profile/hooks.ts::useUpdateProfileMutation` → `collaboration/desktop/src/shared/api/tauriProfiles.ts::updateProfile` → `collaboration/desktop/src-tauri/src/commands/profile.rs::update_profile` 均继续使用已有消费者。Core `core/crates/platform-core/src/web_profile.rs::merged_content` 和 Native `update_profile` 已仅合并提供的字段，无新数据库/合同/迁移或第二份资料权威。Mobile 本批仅沿既有同源词条生成，无手机页面修改。
+3. 副作用：不改签名者、Relay、认证 scope 或幂等判定；UNKNOWN 的同一冻结 request 仍供人工对账，绝不重新生成 key、重复上传或把未知当保存成功。未编辑字段不再随请求写入；完整权威读回仍更新昵称、简介与头像，真实确定成功后才清 intent。自定义色按钮只将原 `Use color` 经既有 `useAvatarText` 本地化，不改原提交回调、样式和布局。
+4. 边界：无更改不提交；单独头像、单独昵称、单独简介及显式清空简介都保持各自字段语义；并发会话修改的其他字段由原后端最新可信资料合并，不用当前 UI 旧快照覆盖。晚到身份变化、保存不明、切换设置分类的原拒绝/对账分支不变。不是字段级 CAS：两个会话确实同时修改同一字段的冲突仍沿既有发布顺序，本批不另造并发协议。错误继续沿现有确定拒绝及 TransportError→UNKNOWN，不新增六类错误映射。
+
+### 实际页面观察及范围
+
+用既有 `playwright-cli -s=kailo-ui-status`、当前登录的独立 seam-verifier 打开真实 Web 设置，操作资料菜单、头像编辑、图片与表情模式并滚动到原上传区/Emoji Mart 网格；没有提交资料、上传文件或修改线上头像。以下每张截图均已用 `view_image` 打开复核，证明的是本批修改前的现有部署，不是未发布新源码的验收：
+
+- `/volumes/kailo/.playwright-cli/profile-settings-old-deployed-20261008.png`：原资料布局、头像及中文导航。
+- `/volumes/kailo/.playwright-cli/profile-avatar-editor-old-deployed-20261008.png`：原头像编辑器、三种模式与预览。
+- `/volumes/kailo/.playwright-cli/profile-avatar-upload-old-deployed-20261008.png`：原上传区、URL 输入和完成控件。
+- `/volumes/kailo/.playwright-cli/profile-avatar-emoji-old-deployed-20261008.png` 与 `profile-avatar-emoji-panel-old-deployed-20261008.png`：原表情模式、真实 Emoji Mart 搜索/网格。自定义色提交按钮的中文由实际渲染消费者检查，不把隐藏面板文本冒充可见截图验收。
+
+### 检查与负向证据
+
+复用既有 `kailo-agent-receipt-xvkujx` 的 4 CPU / 8 GiB cgroup、`/evidence/profile-settings-ortsoo.DRR20F/apps`，先核进程和内存，只同步拥有文件及两宿主 installed shared package 对应文件；不装依赖、不导出整树、不构建镜像。
+
+- 首轮实际消费者：shared `vitest run test/profile-settings.test.tsx` 15 passed；Web `vitest run src/platform/ui/ProfileSettings.test.tsx` 13 passed；Native `node --import ./test-loader.mjs --test src/shared/api/tauriProfiles.test.mjs` 1 passed，联合 exit 0。Web 包含真实头像上传→UNKNOWN→设置切换→同 request 对账，并断言 avatar 请求不携带旧昵称/简介、最终采用完整权威新资料。
+- 实现之后，在私有候选恢复强制 displayName/about 的旧错误并把自定义色提交按钮改回英文常量，运行 shared 两个真实消费者文件，得到 **5 failed / 13 passed，exit 1**。4 项抓到多余资料字段（包含显式清空），1 项抓到中文按钮消失；失败输出保留。随后从正式实现恢复两文件且 `cmp` 相等，正式源码未被破坏。
+- `python3 tools/gen-platform-i18n.py` 与 `python3 tools/gen-platform-i18n.py --check`，exit 0，输出 `PASS: Mobile platform and reason catalogs match the shared TypeScript source`。唯一新词条 `platform.profile.avatar.useColor`，Dart 由原工具生成，不另维护翻译权威。
+- 最终还原后的集中命令（session 86420）exit 0：shared `./node_modules/.bin/vitest run test/profile-settings.test.tsx test/profile-emoji.test.tsx` **18 passed**；`./node_modules/.bin/tsc --noEmit -p tsconfig.test.json` 通过；Web `./node_modules/.bin/vitest run src/platform/ui/ProfileSettings.test.tsx` **13 passed** 及 `./node_modules/.bin/tsc --noEmit` 通过；Native `../../web-client/web/node_modules/.bin/vitest run tests/settings/SettingsView.test.tsx` **2 passed** 及 `./node_modules/.bin/tsc --noEmit` 通过。Native 检查使用真实原设置宿主与共享 controller，不是 Windows 设备测试。Web 原头像检查仍输出 jsdom `HTMLCanvasElement's getContext()` 未实现提示；未安装额外 canvas 包掩饰该环境限制，实际上传/对账断言通过。
+
+日志位于 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/workflow-native-template.s3JDP1/` 的 `profile-partial-consumers.log`、`profile-partial-mutation.log`、`profile-partial-i18n.log`、`profile-partial-final.log`。`git diff --check` 本批 8 文件通过。未运行全局 `./tools/check.sh --full` 或 docs 门禁，交主线集中执行；本批没有合同改动，不冒用此前四侧合同验证。原全树 3307 差异仍未全量分类，本文件列出的其余设置缺项未因此关闭；无本批发布、Windows 安装包或手机设备验收，不声明完整还原。

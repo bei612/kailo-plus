@@ -1617,6 +1617,7 @@ export const platformMessages = {
   "platform.profile.avatar.retakeLabel": { en: "Retake the recording", "zh-CN": "重新录制" },
   "platform.profile.avatar.retake": { en: "Retake", "zh-CN": "重录" },
   "platform.profile.avatar.hue": { en: "Choose custom avatar color hue", "zh-CN": "选择自定义头像色相" },
+  "platform.profile.avatar.useColor": { en: "Use color", "zh-CN": "使用此颜色" },
   "platform.profile.avatar.startCamera": { en: "Starting camera", "zh-CN": "正在启动摄像头" },
   "platform.profile.avatar.processing": { en: "Processing recording", "zh-CN": "正在处理录像" },
   "platform.profile.avatar.uploadAnimated": { en: "Uploading animated avatar", "zh-CN": "正在上传动态头像" },

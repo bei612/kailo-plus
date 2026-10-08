@@ -130,7 +130,9 @@ describe("original profile settings through canonical host callbacks", () => {
     await act(async () => editor.onChange(avatarUrl));
     await click(button(host, "Finish avatar"));
     const first = onSave.mock.calls[0]![0];
-    expect(first).toMatchObject({ avatarUrl, expectedPubkey: profile.pubkey, displayName: profile.displayName });
+    expect(first).toMatchObject({ avatarUrl, expectedPubkey: profile.pubkey });
+    expect(first).not.toHaveProperty("displayName");
+    expect(first).not.toHaveProperty("about");
     expect(editor.disabled).toBe(true);
     expect(editor.avatarUrl).toBe(avatarUrl);
     await click(button(host, "Check save result"));
@@ -154,6 +156,26 @@ describe("original profile settings through canonical host callbacks", () => {
     await act(async () => finish({ ...profile, displayName: "Canonical After" }));
     expect(host.querySelector("#profile-display-name")).toBeNull();
     expect(host.textContent).toContain("Canonical After");
+    expect(host.textContent).toContain("Saved and read back");
+  });
+
+  it.each([
+    ["displayName", "#profile-display-name", "Renamed"],
+    ["about", "#profile-about", "Updated biography"],
+    ["about", "#profile-about", ""],
+  ] as const)("submits only the edited %s field (%j) and adopts the complete canonical receipt", async (field, selector, value) => {
+    const actual = { ...profile, displayName: "Other session name", about: "Other session biography", [field]: value };
+    const onSave = vi.fn(async (_request: WebProfileUpdateRequest) => actual);
+    const host = await render(<ProfileSettingsCard locale="en" profile={profile} onCopy={clipboard} onSave={onSave} />);
+    await click(button(host, "Edit"));
+    await type(host.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector)!, value);
+    await click(button(host, "Done"));
+    expect(onSave).toHaveBeenCalledOnce();
+    expect(onSave.mock.calls[0]![0]).toEqual({
+      idempotencyKey: expect.any(String), expectedPubkey: profile.pubkey, [field]: value,
+    });
+    expect(host.querySelector('[data-testid="profile-display-name-value"]')?.textContent).toBe(actual.displayName);
+    expect(host.querySelector('[data-testid="profile-about-value"]')?.textContent).toBe(actual.about || "Not set");
     expect(host.textContent).toContain("Saved and read back");
   });
 

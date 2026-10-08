@@ -1373,6 +1373,7 @@ enum PlatformMessageKey {
   platformProfileAvatarRetakeLabel,
   platformProfileAvatarRetake,
   platformProfileAvatarHue,
+  platformProfileAvatarUseColor,
   platformProfileAvatarStartCamera,
   platformProfileAvatarProcessing,
   platformProfileAvatarUploadAnimated,
@@ -4896,6 +4897,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
     'Choose custom avatar color hue',
     '选择自定义头像色相',
   ),
+  PlatformMessageKey.platformProfileAvatarUseColor: ('Use color', '使用此颜色'),
   PlatformMessageKey.platformProfileAvatarStartCamera: (
     'Starting camera',
     '正在启动摄像头',

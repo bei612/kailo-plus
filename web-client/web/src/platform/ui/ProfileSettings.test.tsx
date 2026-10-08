@@ -151,17 +151,21 @@ it("preserves the real uploaded-avatar UNKNOWN request across navigation without
     expect(state.write).toHaveBeenCalledTimes(1);
     const request = state.write.mock.calls[0]![0];
     expect(request).toMatchObject({ expectedPubkey: profile.pubkey, avatarUrl });
+    expect(request).not.toHaveProperty("displayName");
+    expect(request).not.toHaveProperty("about");
     expect(host.textContent).toContain("The save result is unknown");
     await click('[data-testid="settings-nav-shortcuts"]');
     await click('[data-testid="settings-nav-profile"]');
     expect(host.textContent).toContain("The save result is unknown");
     expect(state.write).toHaveBeenCalledTimes(1);
-    state.read.mockResolvedValue({ ...profile, avatarUrl, eventId: "2".repeat(64) });
+    state.read.mockResolvedValue({ ...profile, displayName: "Fresh name from another session", about: "Fresh biography", avatarUrl, eventId: "2".repeat(64) });
     const observe = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Check save result")!;
     await act(async () => observe.click());
     expect(state.write.mock.calls[1]![0]).toBe(request);
     expect(state.upload).toHaveBeenCalledTimes(1);
     expect(host.textContent).toContain("Saved and read back");
+    expect(host.querySelector('[data-testid="profile-display-name-value"]')?.textContent).toBe("Fresh name from another session");
+    expect(host.querySelector('[data-testid="profile-about-value"]')?.textContent).toBe("Fresh biography");
   } finally {
     if (create) Object.defineProperty(URL, "createObjectURL", create); else Reflect.deleteProperty(URL, "createObjectURL");
     if (revoke) Object.defineProperty(URL, "revokeObjectURL", revoke); else Reflect.deleteProperty(URL, "revokeObjectURL");
@@ -186,6 +190,8 @@ it("the real Web settings branch requires the exact signed event readback after 
   await startSave();
   expect(state.write).toHaveBeenCalledTimes(1);
   expect(state.write.mock.calls[0]![0]).toMatchObject({ expectedPubkey: profile.pubkey, displayName: "After" });
+  expect(state.write.mock.calls[0]![0]).not.toHaveProperty("about");
+  expect(state.write.mock.calls[0]![0]).not.toHaveProperty("avatarUrl");
   expect(host.textContent).toContain("Canonical");
   expect(host.textContent).toContain("Saved and read back");
 });

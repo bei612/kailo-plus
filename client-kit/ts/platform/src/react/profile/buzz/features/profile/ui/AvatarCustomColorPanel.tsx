@@ -294,7 +294,7 @@ export function AvatarCustomColorPanel({
         tabIndex={visible ? 0 : -1}
         type="button"
       >
-        Use color
+        {t("platform.profile.avatar.useColor")}
       </Button>
     </motion.div>
   );

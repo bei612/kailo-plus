@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import data from "@emoji-mart/data";
 import en from "@emoji-mart/data/i18n/en.json";
 import EmojiPicker from "../src/react/profile/buzz/shared/ui/emoji-picker";
-import { render, settle } from "./render";
+import { AvatarHostProvider } from "../src/react/profile/avatar-host";
+import { AvatarCustomColorPanel } from "../src/react/profile/buzz/features/profile/ui/AvatarCustomColorPanel";
+import { button, click, render, settle } from "./render";
 
 // jsdom has no layout observer. Only that browser boundary is replaced; the
 // real Emoji Mart element, Preact UI and unregister path execute unchanged.
@@ -20,6 +22,17 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("original Emoji Mart wrapper on the actual React 19 host", () => {
+  it.each(["en", "zh-CN"] as const)("uses the original custom-colour commit control with %s text", async (locale) => {
+    const commit = vi.fn();
+    const host = await render(<AvatarHostProvider value={{locale, rewriteMediaUrl: url => url}}>
+      <AvatarCustomColorPanel visible hue={0} saturation={0} value={0} colorDraft="#000000"
+        onHueChange={vi.fn()} onSaturationValueChange={vi.fn()} onCommit={commit} testIdPrefix="avatar" />
+    </AvatarHostProvider>);
+    const control = button(host, locale === "en" ? "Use color" : "使用此颜色");
+    expect(control.getAttribute("data-testid")).toBe("avatar-custom-color-done");
+    await click(control);
+    expect(commit).toHaveBeenCalledOnce();
+  });
   it("mounts one native picker across StrictMode and unregisters it on host unmount", async () => {
     let toggle!: (value: boolean) => void;
     function Host() {

@@ -376,8 +376,7 @@ export function ProfileSettingsCard({ locale, profile: initialProfile, onSave, o
     try {
       const request = intent.current ?? Object.freeze({
         idempotencyKey: newIdempotencyKey(), expectedPubkey: initialProfile.pubkey,
-        displayName: nextDisplayName, about: nextAbout,
-        ...(nextAvatarUrl !== currentAvatarUrl ? {avatarUrl: nextAvatarUrl} : {}),
+        ...updatePayload,
       });
       intent.current = request;
       const actual = await onSave(request);
