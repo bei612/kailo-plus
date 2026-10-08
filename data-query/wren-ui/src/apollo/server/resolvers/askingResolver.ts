@@ -1278,14 +1278,37 @@ export class AskingResolver {
     if (askingTask.projectId !== project.id)
       throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
     const responses = askingTask.response || [];
+    let nativeSqlPairs;
+    if (
+      process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined &&
+      responses.some((response) => response.sqlpairId)
+    ) {
+      const config = await loadQueryDelivery();
+      nativePreviewScope(config, ctx.nativeIdentityScope);
+      if (!ctx.nativeHumanToken)
+        throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+      nativeSqlPairs = await ctx.sqlPairService.getProjectSqlPairs(project.id, {
+        config,
+        identityScope: ctx.nativeIdentityScope,
+        token: ctx.nativeHumanToken,
+      });
+    }
     const candidates = [];
     for (const response of responses) {
       const sqlPair = response.sqlpairId
-        ? await ctx.sqlPairRepository.findOneBy({
-            id: response.sqlpairId,
-            projectId: askingTask.projectId,
-          })
+        ? nativeSqlPairs
+          ? nativeSqlPairs.find((pair) => pair.id === response.sqlpairId)
+          : await ctx.sqlPairRepository.findOneBy({
+              id: response.sqlpairId,
+              projectId: askingTask.projectId,
+            })
         : null;
+      if (
+        nativeSqlPairs &&
+        response.sqlpairId &&
+        (!sqlPair || sqlPair.nativeWritePending)
+      )
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
       if (response.sqlpairId && !sqlPair)
         throw new Error('Task resource not found');
       candidates.push({

@@ -14,11 +14,28 @@ import {
   NativeQueryRefusal,
 } from '../services/nativeQueryAdmission';
 import { queryReceiptState } from '@/utils/queryReceipt';
+import { NativeSqlPairContext } from '../services/sqlPairService';
 
 type SqlValidation = {
   idempotencyKey?: string;
   idempotencyScope?: string;
 };
+
+export type SqlPairContext = Pick<
+  IContext,
+  | 'nativeHumanToken'
+  | 'nativeIdentityScope'
+  | 'telemetry'
+  | 'projectService'
+  | 'sqlPairService'
+  | 'deployService'
+  | 'projectRepository'
+  | 'deployRepository'
+  | 'queryService'
+  | 'viewRepository'
+  | 'modelRepository'
+  | 'modelColumnRepository'
+>;
 
 export class SqlPairResolver {
   constructor() {
@@ -30,13 +47,32 @@ export class SqlPairResolver {
     this.modelSubstitute = this.modelSubstitute.bind(this);
   }
 
+  private async nativeContext(
+    ctx: SqlPairContext,
+  ): Promise<NativeSqlPairContext | undefined> {
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE === undefined)
+      return undefined;
+    const config = await loadQueryDelivery();
+    nativePreviewScope(config, ctx.nativeIdentityScope);
+    if (!ctx.nativeHumanToken)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    return {
+      config,
+      identityScope: ctx.nativeIdentityScope,
+      token: ctx.nativeHumanToken,
+    };
+  }
+
   public async getProjectSqlPairs(
     _root: unknown,
     _arg: any,
-    ctx: IContext,
+    ctx: SqlPairContext,
   ): Promise<SqlPair[]> {
     const project = await ctx.projectService.getCurrentProject();
-    return ctx.sqlPairService.getProjectSqlPairs(project.id);
+    return ctx.sqlPairService.getProjectSqlPairs(
+      project.id,
+      await this.nativeContext(ctx),
+    );
   }
 
   @TrackTelemetry(TelemetryEvent.KNOWLEDGE_CREATE_SQL_PAIR)
@@ -48,14 +84,19 @@ export class SqlPairResolver {
         question: string;
       } & SqlValidation;
     },
-    ctx: IContext,
+    ctx: SqlPairContext,
   ): Promise<SqlPair> {
     const project = await ctx.projectService.getCurrentProject();
     await this.validateSql(arg.data.sql, ctx, arg.data);
-    return await ctx.sqlPairService.createSqlPair(project.id, {
-      sql: arg.data.sql,
-      question: arg.data.question,
-    });
+    return await ctx.sqlPairService.createSqlPair(
+      project.id,
+      {
+        sql: arg.data.sql,
+        question: arg.data.question,
+      },
+      await this.nativeContext(ctx),
+      arg.data.idempotencyKey,
+    );
   }
 
   @TrackTelemetry(TelemetryEvent.KNOWLEDGE_UPDATE_SQL_PAIR)
@@ -70,15 +111,21 @@ export class SqlPairResolver {
         id: number;
       };
     },
-    ctx: IContext,
+    ctx: SqlPairContext,
   ): Promise<SqlPair> {
     const project = await ctx.projectService.getCurrentProject();
     if (arg.data.sql !== undefined)
       await this.validateSql(arg.data.sql, ctx, arg.data);
-    return ctx.sqlPairService.editSqlPair(project.id, arg.where.id, {
-      sql: arg.data.sql,
-      question: arg.data.question,
-    });
+    return ctx.sqlPairService.editSqlPair(
+      project.id,
+      arg.where.id,
+      {
+        sql: arg.data.sql,
+        question: arg.data.question,
+      },
+      await this.nativeContext(ctx),
+      arg.data.idempotencyKey,
+    );
   }
 
   @TrackTelemetry(TelemetryEvent.KNOWLEDGE_DELETE_SQL_PAIR)
@@ -87,12 +134,18 @@ export class SqlPairResolver {
     arg: {
       where: {
         id: number;
+        idempotencyKey?: string;
       };
     },
-    ctx: IContext,
+    ctx: SqlPairContext,
   ): Promise<boolean> {
     const project = await ctx.projectService.getCurrentProject();
-    return ctx.sqlPairService.deleteSqlPair(project.id, arg.where.id);
+    return ctx.sqlPairService.deleteSqlPair(
+      project.id,
+      arg.where.id,
+      await this.nativeContext(ctx),
+      arg.where.idempotencyKey,
+    );
   }
 
   public async generateQuestion(
@@ -102,7 +155,7 @@ export class SqlPairResolver {
         sql: string;
       };
     },
-    ctx: IContext,
+    ctx: SqlPairContext,
   ) {
     const project = await ctx.projectService.getCurrentProject();
     const questions = await ctx.sqlPairService.generateQuestions(project, [
@@ -118,7 +171,7 @@ export class SqlPairResolver {
         sql: DialectSQL;
       };
     },
-    ctx: IContext,
+    ctx: SqlPairContext,
   ): Promise<WrenSQL> {
     const project = await ctx.projectService.getCurrentProject();
     const lastDeployment = await ctx.deployService.getLastDeployment(
@@ -138,7 +191,7 @@ export class SqlPairResolver {
 
   private async validateSql(
     sql: string,
-    ctx: IContext,
+    ctx: SqlPairContext,
     validation: SqlValidation,
   ) {
     const project = await ctx.projectService.getCurrentProject();

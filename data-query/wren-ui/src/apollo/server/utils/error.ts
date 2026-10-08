@@ -201,7 +201,7 @@ export const create = (
 };
 
 export type NativeWriteReference = {
-  nativeType: 'model' | 'view' | 'dashboardItem';
+  nativeType: 'model' | 'view' | 'dashboardItem' | 'sqlPair';
   nativeId: number;
 };
 

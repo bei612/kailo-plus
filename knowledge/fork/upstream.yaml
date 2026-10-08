@@ -25,7 +25,7 @@ artifacts:
     build_args: [GOPROXY_ARG, VERSION_ARG, COMMIT_ID_ARG, BUILD_TIME_ARG, GO_VERSION_ARG]
     source_digest: sha256:2dbd78795c9ff1135e6e8d33e1d02a2d15ce7eb444dd2baf6bcaf8866b3cdc4e
     artifact_digest: sha256:5771d363eba6eb9b12c474ee40ecbdb8398137aa55a8be357ce832e496558d6c
-    blocked: Previously recorded backend is deployed healthy; changed current backend inputs are rebuilding, and frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified.
+    blocked: Previously recorded backend remains deployed healthy; the current backend rebuild was cancelled during disk-I/O contention and has no completed matching artifact. Frozen model credential delivery, approved release/binding and governed tools/resources acceptance remain unverified.
   - name: knowledge-native-ui
     kind: image
     build_context: knowledge/frontend

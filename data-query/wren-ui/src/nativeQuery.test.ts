@@ -10,6 +10,7 @@ import { apiResolver } from 'next/dist/server/api-utils/node/api-resolver';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ProjectRepository } from './apollo/server/repositories/projectRepository';
+import { SqlPairRepository } from './apollo/server/repositories/sqlPairRepository';
 import { DeployLogRepository } from './apollo/server/repositories/deployLogRepository';
 import { ViewRepository } from './apollo/server/repositories/viewRepository';
 import { ModelRepository } from './apollo/server/repositories/modelRepository';
@@ -51,6 +52,187 @@ jest.mock('./common', () => ({
 const integration = process.env.WREN_QUERY_TEST_DATABASE_URL
   ? describe
   : describe.skip;
+
+integration('original SQL-pair PostgreSQL write transaction', () => {
+  let database: Knex;
+  let tx: Knex.Transaction;
+  let repository: SqlPairRepository;
+  let history: ApiHistoryRepository;
+  let projectId: number;
+  let bindingId: string;
+  let prepared: any;
+  beforeAll(async () => {
+    const url = new URL(process.env.WREN_QUERY_TEST_DATABASE_URL);
+    database = knex({ client: 'pg', connection: url.toString() });
+    const identity = await database.raw('SELECT current_database() AS name');
+    expect(identity.rows[0].name).toBe(
+      decodeURIComponent(url.pathname.slice(1)),
+    );
+    const fixture = await database('project')
+      .where({ display_name: 'isolated-query-fixture' })
+      .first();
+    expect(fixture).toBeDefined();
+    projectId = fixture.id;
+  });
+  beforeEach(async () => {
+    tx = await database.transaction();
+    repository = new SqlPairRepository(tx);
+    history = new ApiHistoryRepository(tx);
+    bindingId = randomUUID();
+    prepared = undefined;
+  });
+  afterEach(async () => {
+    await tx.rollback();
+    if (prepared) {
+      expect(
+        await database('api_history').where({ id: prepared.record.id }),
+      ).toEqual([]);
+      expect(
+        await database('sql_pair').where({
+          id: prepared.record.requestPayload.nativeSqlPair.after.id,
+        }),
+      ).toEqual([]);
+    }
+  });
+  afterAll(async () => {
+    if (database) await database.destroy();
+  });
+  const intent = (
+    operation = 'create',
+    nativeId?: number,
+    key = randomUUID(),
+  ) => ({
+    id: key,
+    projectId,
+    governanceBindingId: bindingId,
+    apiType: {
+      create: ApiType.CREATE_SQL_PAIR,
+      update: ApiType.UPDATE_SQL_PAIR,
+      delete: ApiType.DELETE_SQL_PAIR,
+    }[operation],
+    statusCode: 202,
+    durationMs: 0,
+    requestPayload: {
+      nativeSqlPair: {
+        operation,
+        changes:
+          operation === 'delete'
+            ? {}
+            : {
+                sql: 'SELECT 1 AS original_value',
+                question: 'Original question',
+              },
+        ...(nativeId === undefined ? {} : { nativeId }),
+        identityScope: 'isolated-identity',
+        scope: 'isolated-scope',
+        generation: 1,
+        configDigest: 'isolated-delivery',
+      },
+    },
+  });
+  it('commits one durable native ID and original JSONB history before a native dispatch, then returns the same intent', async () => {
+    const input = intent();
+    prepared = await repository.prepareNativeWrite(history, input);
+    expect(prepared.created).toBe(true);
+    const row = prepared.record.requestPayload.nativeSqlPair.after;
+    expect(await repository.findOneBy({ id: row.id, projectId })).toMatchObject(
+      { sql: row.sql, question: row.question },
+    );
+    expect(await history.findOneBy({ id: input.id })).toMatchObject({
+      statusCode: 202,
+      responsePayload: { eventId: input.id, nativeId: row.id },
+    });
+    const repeated = await repository.prepareNativeWrite(history, input);
+    expect(repeated.created).toBe(false);
+    expect(repeated.record).toEqual(prepared.record);
+    expect(await repository.findAllBy({ id: row.id })).toHaveLength(1);
+  });
+  it.each(['input', 'identity', 'binding', 'project'])(
+    'refuses changed %s under the same native write key without another INSERT',
+    async (changed) => {
+      const input = intent();
+      prepared = await repository.prepareNativeWrite(history, input);
+      const next = JSON.parse(JSON.stringify(input));
+      if (changed === 'input')
+        next.requestPayload.nativeSqlPair.changes.sql = 'SELECT 2';
+      if (changed === 'identity')
+        next.requestPayload.nativeSqlPair.identityScope = 'another-identity';
+      if (changed === 'binding') next.governanceBindingId = randomUUID();
+      if (changed === 'project') next.projectId = randomInt(100000, 2147483647);
+      expect(
+        await repository.prepareNativeWrite(history, next),
+      ).toBeUndefined();
+      expect(await history.findOneBy({ id: input.id })).toEqual(
+        prepared.record,
+      );
+    },
+  );
+  it('refuses a new key from another client for the same unresolved create or native object', async () => {
+    prepared = await repository.prepareNativeWrite(history, intent());
+    expect(
+      await repository.prepareNativeWrite(history, intent()),
+    ).toBeUndefined();
+    expect(
+      await repository.prepareNativeWrite(
+        history,
+        intent('update', prepared.record.requestPayload.nativeSqlPair.after.id),
+      ),
+    ).toBeUndefined();
+  });
+  it.each(['update', 'delete'])(
+    'keeps the original row until native %s is explicitly finished, then updates history and row atomically',
+    async (operation) => {
+      const original = await repository.createOne({
+        projectId,
+        question: 'Original question',
+        sql: 'SELECT 0 AS original_value',
+      });
+      prepared = await repository.prepareNativeWrite(
+        history,
+        intent(operation, original.id),
+      );
+      expect(await repository.findOneBy({ id: original.id })).toMatchObject({
+        sql: original.sql,
+      });
+      const completed = await repository.completeNativeWrite(
+        history,
+        prepared.record,
+      );
+      expect(completed.statusCode).toBe(200);
+      if (operation === 'delete') {
+        expect(completed.responsePayload.result).toBe(true);
+        expect(await repository.findOneBy({ id: original.id })).toBeNull();
+      } else
+        expect(await repository.findOneBy({ id: original.id })).toMatchObject({
+          sql: 'SELECT 1 AS original_value',
+        });
+      expect(
+        await repository.completeNativeWrite(history, prepared.record),
+      ).toEqual(completed);
+    },
+  );
+  it('refuses to apply a finished event to a changed original row snapshot', async () => {
+    const original = await repository.createOne({
+      projectId,
+      question: 'Original question',
+      sql: 'SELECT 0',
+    });
+    prepared = await repository.prepareNativeWrite(
+      history,
+      intent('update', original.id),
+    );
+    await repository.updateOne(original.id, { sql: 'SELECT changed' });
+    expect(
+      await repository.completeNativeWrite(history, prepared.record),
+    ).toBeUndefined();
+    expect(
+      (await history.findOneBy({ id: prepared.record.id })).statusCode,
+    ).toBe(202);
+    expect(await repository.findOneBy({ id: original.id })).toMatchObject({
+      sql: 'SELECT changed',
+    });
+  });
+});
 
 integration('original Wren native answer PostgreSQL CAS', () => {
   let database: Knex;

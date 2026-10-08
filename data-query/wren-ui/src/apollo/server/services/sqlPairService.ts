@@ -17,6 +17,24 @@ import {
 } from '../models/adaptor';
 import { Manifest } from '@server/mdl/type';
 import { DataSourceName } from '@server/types';
+import {
+  ApiHistory,
+  ApiType,
+  IApiHistoryRepository,
+} from '../repositories/apiHistoryRepository';
+import {
+  digest,
+  loadQueryDelivery,
+  NativeQueryDelivery,
+  NativeQueryRefusal,
+} from './nativeQueryAdmission';
+import { authorizeNativeScope, nativePreviewScope } from './nativeHumanQuery';
+
+export type NativeSqlPairContext = {
+  config: NativeQueryDelivery;
+  identityScope: string;
+  token: string;
+};
 
 const logger = getLogger('SqlPairService');
 
@@ -37,8 +55,23 @@ export interface ModelSubstituteOptions {
 }
 
 export interface ISqlPairService {
-  getProjectSqlPairs(projectId: number): Promise<SqlPair[]>;
-  createSqlPair(projectId: number, sqlPair: CreateSqlPair): Promise<SqlPair>;
+  readNativeWrite(
+    record: ApiHistory,
+    native: NativeSqlPairContext,
+  ): Promise<{
+    requestPayload: Record<string, unknown>;
+    responsePayload: unknown;
+  }>;
+  getProjectSqlPairs(
+    projectId: number,
+    native?: NativeSqlPairContext,
+  ): Promise<SqlPair[]>;
+  createSqlPair(
+    projectId: number,
+    sqlPair: CreateSqlPair,
+    native?: NativeSqlPairContext,
+    key?: string,
+  ): Promise<SqlPair>;
   createSqlPairs(
     projectId: number,
     sqlPairs: CreateSqlPair[],
@@ -47,8 +80,15 @@ export interface ISqlPairService {
     projectId: number,
     sqlPairId: number,
     sqlPair: EditSqlPair,
+    native?: NativeSqlPairContext,
+    key?: string,
   ): Promise<SqlPair>;
-  deleteSqlPair(projectId: number, sqlPairId: number): Promise<boolean>;
+  deleteSqlPair(
+    projectId: number,
+    sqlPairId: number,
+    native?: NativeSqlPairContext,
+    key?: string,
+  ): Promise<boolean>;
   generateQuestions(project: Project, sqls: string[]): Promise<string[]>;
   modelSubstitute(
     sql: DialectSQL,
@@ -60,19 +100,226 @@ export class SqlPairService implements ISqlPairService {
   private sqlPairRepository: ISqlPairRepository;
   private wrenAIAdaptor: IWrenAIAdaptor;
   private ibisAdaptor: IIbisAdaptor;
+  private history?: IApiHistoryRepository;
 
   constructor({
     sqlPairRepository,
     wrenAIAdaptor,
     ibisAdaptor,
+    apiHistoryRepository,
   }: {
     sqlPairRepository: ISqlPairRepository;
     wrenAIAdaptor: IWrenAIAdaptor;
     ibisAdaptor: IIbisAdaptor;
+    apiHistoryRepository?: IApiHistoryRepository;
   }) {
     this.sqlPairRepository = sqlPairRepository;
     this.wrenAIAdaptor = wrenAIAdaptor;
     this.ibisAdaptor = ibisAdaptor;
+    this.history = apiHistoryRepository;
+  }
+
+  private async nativeIdentity(
+    native: NativeSqlPairContext,
+    permission: string,
+  ) {
+    const { config, identityScope, token } = native;
+    if (digest(await loadQueryDelivery()) !== digest(config))
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    const scope = nativePreviewScope(config, identityScope);
+    const permissionFact = await authorizeNativeScope(
+      config,
+      token,
+      permission,
+    );
+    return { scope, generation: permissionFact.generation };
+  }
+
+  public async readNativeWrite(
+    record: ApiHistory,
+    native: NativeSqlPairContext,
+  ) {
+    const result = await this.observeNativeWrite(record, native);
+    const proof = record.requestPayload.nativeSqlPair;
+    const current = await this.history.findOneBy({
+      id: record.id,
+      projectId: native.config.projectId,
+      governanceBindingId: native.config.bindingId,
+    });
+    if (
+      !current ||
+      digest(current.requestPayload) !== digest(record.requestPayload) ||
+      current.statusCode !== 200 ||
+      digest(current.responsePayload.result) !== digest(result)
+    )
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    const fresh = await this.nativeIdentity(native, 'manage');
+    if (fresh.generation !== proof.generation)
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    return {
+      requestPayload: {
+        ...proof.changes,
+        ...(proof.nativeId === undefined ? {} : { id: proof.nativeId }),
+      },
+      responsePayload: result,
+    };
+  }
+
+  private async observeNativeWrite(
+    record: ApiHistory,
+    native: NativeSqlPairContext,
+  ) {
+    const proof = record.requestPayload?.nativeSqlPair;
+    const current = await this.nativeIdentity(native, 'manage');
+    if (
+      !this.history ||
+      record.projectId !== native.config.projectId ||
+      record.governanceBindingId !== native.config.bindingId ||
+      proof?.identityScope !== native.identityScope ||
+      proof?.scope !== current.scope ||
+      proof?.generation !== current.generation ||
+      proof?.configDigest !== digest(native.config) ||
+      record.apiType !==
+        {
+          create: ApiType.CREATE_SQL_PAIR,
+          update: ApiType.UPDATE_SQL_PAIR,
+          delete: ApiType.DELETE_SQL_PAIR,
+        }[proof?.operation] ||
+      record.responsePayload?.eventId !== record.id ||
+      record.responsePayload?.nativeId !== proof?.after?.id
+    )
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    if (record.statusCode === 200) return record.responsePayload.result;
+    const event = await this.wrenAIAdaptor.getSqlPairResult(record.id, {
+      requestTimeoutMs: native.config.requestTimeoutMs,
+      responseMaxBytes: native.config.responseMaxBytes,
+      requestMaxBytes: native.config.requestMaxBytes,
+    });
+    // FAILED or a lost cache entry cannot prove absence of a partially applied
+    // index write. Only the same original event's explicit finish commits the
+    // local metadata; observation never starts a replacement native task.
+    if (event.status !== SqlPairStatus.FINISHED || event.error)
+      throw Errors.nativeWriteUnknown(
+        undefined,
+        current.scope,
+        current.generation,
+        {
+          nativeType: 'sqlPair',
+          nativeId: proof.after.id,
+        },
+      );
+    const afterEvent = await this.nativeIdentity(native, 'manage');
+    if (afterEvent.generation !== current.generation)
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    const completed = await this.sqlPairRepository.completeNativeWrite(
+      this.history,
+      record,
+    );
+    if (completed?.statusCode !== 200)
+      throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+    const afterCommit = await this.nativeIdentity(native, 'manage');
+    if (afterCommit.generation !== current.generation)
+      throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+    return completed.responsePayload.result;
+  }
+
+  private async nativeWrite(
+    projectId: number,
+    operation: 'create' | 'update' | 'delete',
+    changes: EditSqlPair,
+    native: NativeSqlPairContext,
+    key: string,
+    nativeId?: number,
+  ) {
+    if (
+      !this.history ||
+      projectId !== native.config.projectId ||
+      Buffer.byteLength(JSON.stringify(changes), 'utf8') >
+        native.config.requestMaxBytes ||
+      typeof key !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        key,
+      )
+    )
+      throw new NativeQueryRefusal(400, 'INVALID_QUERY_PARAMETERS');
+    const identity = await this.nativeIdentity(native, 'manage');
+    const apiType = {
+      create: ApiType.CREATE_SQL_PAIR,
+      update: ApiType.UPDATE_SQL_PAIR,
+      delete: ApiType.DELETE_SQL_PAIR,
+    }[operation];
+    const prepared = await this.sqlPairRepository.prepareNativeWrite(
+      this.history,
+      {
+        id: key,
+        projectId,
+        apiType,
+        governanceBindingId: native.config.bindingId,
+        statusCode: 202,
+        durationMs: 0,
+        requestPayload: {
+          nativeSqlPair: {
+            operation,
+            changes: Object.fromEntries(
+              Object.entries(changes).filter(
+                ([, value]) => value !== undefined,
+              ),
+            ),
+            ...(nativeId === undefined ? {} : { nativeId }),
+            identityScope: native.identityScope,
+            ...identity,
+            configDigest: digest(native.config),
+          },
+        },
+      },
+    );
+    if (!prepared) throw new NativeQueryRefusal(409, 'QUERY_REFERENCE_CHANGED');
+    const record = prepared.record;
+    const pair = record.requestPayload.nativeSqlPair.after;
+    try {
+      if (prepared.created) {
+        const beforeDispatch = await this.nativeIdentity(native, 'manage');
+        if (beforeDispatch.generation !== identity.generation)
+          throw new NativeQueryRefusal(412, 'QUERY_REFERENCE_CHANGED');
+        const transport = {
+          taskId: record.id,
+          requestTimeoutMs: native.config.requestTimeoutMs,
+          responseMaxBytes: native.config.responseMaxBytes,
+          requestMaxBytes: native.config.requestMaxBytes,
+        };
+        try {
+          if (operation === 'delete')
+            await this.wrenAIAdaptor.deleteSqlPairs(
+              projectId,
+              [pair.id],
+              transport,
+            );
+          else {
+            const event = await this.wrenAIAdaptor.deploySqlPair(
+              projectId,
+              pair,
+              transport,
+            );
+            if (event.queryId !== record.id)
+              throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+          }
+        } catch {
+          // The persisted event is the only possible observation target, also
+          // when the create ACK was lost. Never resubmit this history row.
+        }
+      }
+      return await this.observeNativeWrite(record, native);
+    } catch (error) {
+      throw Errors.nativeWriteUnknown(
+        error,
+        identity.scope,
+        identity.generation,
+        {
+          nativeType: 'sqlPair',
+          nativeId: pair.id,
+        },
+      );
+    }
   }
 
   public async modelSubstitute(
@@ -128,14 +375,71 @@ export class SqlPairService implements ISqlPairService {
     }
   }
 
-  public async getProjectSqlPairs(projectId: number): Promise<SqlPair[]> {
-    return this.sqlPairRepository.findAllBy({ projectId });
+  public async getProjectSqlPairs(
+    projectId: number,
+    native?: NativeSqlPairContext,
+  ): Promise<SqlPair[]> {
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined && !native)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    if (!native) return this.sqlPairRepository.findAllBy({ projectId });
+    if (!this.history || projectId !== native.config.projectId)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+    await this.nativeIdentity(native, 'discover');
+    const pending = await this.history.findAllBy({
+      projectId,
+      governanceBindingId: native.config.bindingId,
+      statusCode: 202,
+    });
+    for (const record of pending) {
+      if (
+        record.requestPayload?.nativeSqlPair?.identityScope !==
+        native.identityScope
+      )
+        continue;
+      try {
+        await this.observeNativeWrite(record, native);
+      } catch {
+        // Keep the durable unresolved reference; a cache miss or loss of write
+        // permission must not erase it or make its provisional CREATE visible.
+      }
+    }
+    const unresolved = await this.history.findAllBy({
+      projectId,
+      governanceBindingId: native.config.bindingId,
+      statusCode: 202,
+    });
+    const hidden = new Set(
+      unresolved
+        .filter(
+          (record) =>
+            record.requestPayload?.nativeSqlPair?.operation === 'create',
+        )
+        .map((record) => record.requestPayload.nativeSqlPair.after.id),
+    );
+    const pendingIds = new Set(
+      unresolved
+        .filter((record) => record.requestPayload?.nativeSqlPair)
+        .map((record) => record.requestPayload.nativeSqlPair.after.id),
+    );
+    await this.nativeIdentity(native, 'discover');
+    return (await this.sqlPairRepository.findAllBy({ projectId }))
+      .filter((pair) => !hidden.has(pair.id))
+      .map((pair) => ({
+        ...pair,
+        nativeWritePending: pendingIds.has(pair.id),
+      }));
   }
 
   public async createSqlPair(
     projectId: number,
     sqlPair: CreateSqlPair,
+    native?: NativeSqlPairContext,
+    key?: string,
   ): Promise<SqlPair> {
+    if (native)
+      return this.nativeWrite(projectId, 'create', sqlPair, native, key);
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     const tx = await this.sqlPairRepository.transaction();
     try {
       const newPair = await this.sqlPairRepository.createOne(
@@ -216,7 +520,20 @@ export class SqlPairService implements ISqlPairService {
     projectId: number,
     sqlPairId: number,
     sqlPair: EditSqlPair,
+    native?: NativeSqlPairContext,
+    key?: string,
   ): Promise<SqlPair> {
+    if (native)
+      return this.nativeWrite(
+        projectId,
+        'update',
+        sqlPair,
+        native,
+        key,
+        sqlPairId,
+      );
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     // First verify the SQL pair exists and belongs to the project
     const existingPair = await this.sqlPairRepository.findOneBy({
       id: sqlPairId,
@@ -270,7 +587,16 @@ export class SqlPairService implements ISqlPairService {
     }
   }
 
-  async deleteSqlPair(projectId: number, sqlPairId: number): Promise<boolean> {
+  async deleteSqlPair(
+    projectId: number,
+    sqlPairId: number,
+    native?: NativeSqlPairContext,
+    key?: string,
+  ): Promise<boolean> {
+    if (native)
+      return this.nativeWrite(projectId, 'delete', {}, native, key, sqlPairId);
+    if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
     // First verify the SQL pair exists and belongs to the project
     const existingPair = await this.sqlPairRepository.findOneBy({
       id: sqlPairId,

@@ -29,19 +29,26 @@ export const runNativeMetadataWrite = async ({
   submit,
   observe,
   locale,
+  mutationField,
+  beforeSubmit,
 }: {
   nativeType: NativeWriteReference['nativeType'];
   variables: any;
   submit: (variables: any, guarded?: boolean) => Promise<any>;
   observe: (nativeId: number) => Promise<any>;
   locale?: string;
+  mutationField?: 'createSqlPair' | 'updateSqlPair';
+  beforeSubmit?: () => Promise<void>;
 }) => {
   const text = getNativeWriteText(locale);
-  const field = {
-    model: 'createModel',
-    view: 'createView',
-    dashboardItem: 'createDashboardItem',
-  }[nativeType];
+  const field =
+    mutationField ||
+    {
+      model: 'createModel',
+      view: 'createView',
+      dashboardItem: 'createDashboardItem',
+      sqlPair: 'createSqlPair',
+    }[nativeType];
   const readScope = async () => {
     const config = await getUserConfig();
     if (config.nativeBindingConfigured === false) return undefined;
@@ -62,7 +69,11 @@ export const runNativeMetadataWrite = async ({
     message.error(text.scopeError);
     throw error;
   });
-  if (identity === undefined) return (await submit(variables))?.data?.[field];
+  if (identity === undefined) {
+    await beforeSubmit?.();
+    if ((await readScope()) !== undefined) throw new Error(text.scopeError);
+    return (await submit(variables))?.data?.[field];
+  }
   const { scope, generation } = identity;
   const sameIdentity = async () => {
     const current = await readScope();
@@ -137,6 +148,7 @@ export const runNativeMetadataWrite = async ({
   // No native call has started yet. A failed second identity check is a proven
   // pre-dispatch refusal, not evidence of an uncertain write.
   try {
+    await beforeSubmit?.();
     if (!(await sameIdentity())) throw new Error(text.scopeError);
   } catch (error) {
     sessionStorage.removeItem(slot);
@@ -649,7 +661,9 @@ const errorHandler = (error: ErrorResponse) => {
   // This original Apollo context flag changes only error presentation. It is
   // not sent as permission/scope authority; standalone keeps its native errors.
   const guarded = error?.operation?.getContext?.()?.nativeWriteGuarded === true;
-  const sqlPair = ['CreateSqlPair', 'UpdateSqlPair'].includes(operationName);
+  const sqlPair = ['CreateSqlPair', 'UpdateSqlPair', 'DeleteSqlPair'].includes(
+    operationName,
+  );
   const guardedNativeWriteUnknown =
     guarded &&
     (['CreateModel', 'CreateView', 'CreateDashboardItem'].includes(

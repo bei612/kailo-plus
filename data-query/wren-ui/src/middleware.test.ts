@@ -4,6 +4,19 @@ import { randomUUID } from 'crypto';
 import { exportJWK, generateKeyPair, JWTPayload, SignJWT } from 'jose';
 import { NextRequest } from 'next/server';
 import { middleware, nativeFrameAncestors } from './middleware';
+import configHandler from './pages/api/config';
+import {
+  bindingServiceCall,
+  loadQueryDelivery,
+  NativeQueryDelivery,
+} from './apollo/server/services/nativeQueryAdmission';
+import { nativePreviewScope } from './apollo/server/services/nativeHumanQuery';
+
+jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
+  ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
+  loadQueryDelivery: jest.fn(),
+  bindingServiceCall: jest.fn(),
+}));
 
 describe('native instance identity boundary', () => {
   let server: Server;
@@ -91,12 +104,15 @@ describe('native instance identity boundary', () => {
     '/',
     '/setup/connection',
     '/api/graphql',
+    '/api/config',
     '/api/platform-query-reference',
     '/api/v1/run_sql',
     '/api/v1/generate_summary',
     '/api/v1/generate_vega_chart',
     '/api/v1/ask',
     '/api/v1/stream/ask',
+    '/api/v1/knowledge/sql_pairs',
+    '/api/v1/knowledge/sql_pairs/42',
     '/api/ask_task/streaming',
     '/api/ask_task/streaming_answer',
     '/_next/data/native/index.json',
@@ -109,6 +125,7 @@ describe('native instance identity boundary', () => {
 
   it.each([
     '/api/graphql',
+    '/api/config',
     '/api/platform-query-reference',
     '/api/ask_task/streaming',
     '/api/ask_task/streaming_answer',
@@ -117,6 +134,8 @@ describe('native instance identity boundary', () => {
     '/api/v1/generate_vega_chart',
     '/api/v1/ask',
     '/api/v1/stream/ask',
+    '/api/v1/knowledge/sql_pairs',
+    '/api/v1/knowledge/sql_pairs/42',
   ])(
     'verifies signed entitlement through a real JWKS endpoint and strips credentials for %s',
     async (path) => {
@@ -147,6 +166,9 @@ describe('native instance identity boundary', () => {
           '/api/v1/generate_vega_chart',
           '/api/v1/ask',
           '/api/v1/stream/ask',
+          '/api/config',
+          '/api/v1/knowledge/sql_pairs',
+          '/api/v1/knowledge/sql_pairs/42',
           '/api/ask_task/streaming',
         ].includes(path)
       ) {
@@ -177,6 +199,8 @@ describe('native instance identity boundary', () => {
     '/api/v1/generate_vega_chart',
     '/api/v1/ask',
     '/api/v1/stream/ask',
+    '/api/v1/knowledge/sql_pairs',
+    '/api/v1/knowledge/sql_pairs/42',
   ])(
     'does not forward private HUMAN credentials or caller-forged scope to independent %s',
     async (path) => {
@@ -237,6 +261,98 @@ describe('native instance identity boundary', () => {
       ),
     ).toBeNull();
   });
+
+  it('the original config handler consumes both real signed middleware headers before current HUMAN discovery', async () => {
+    const signed = await token();
+    const admitted = await middleware(
+      request('/api/config', `Bearer ${signed}`, {
+        headers: {
+          'x-kailo-native-human-token': 'forged',
+          'x-kailo-native-identity-scope': 'f'.repeat(64),
+        },
+      }),
+    );
+    const headers = Object.fromEntries(
+      ['human-token', 'identity-scope'].map((field) => [
+        `x-kailo-native-${field}`,
+        admitted.headers.get(`x-middleware-request-x-kailo-native-${field}`),
+      ]),
+    );
+    const delivery = {
+      bindingId: randomUUID(),
+      tenantId: randomUUID(),
+      workspaceId: randomUUID(),
+      nativeInstanceRef: settings.accessValue,
+      nativeScopeRef: 'original-project',
+      humanAction: {
+        resultExposurePolicyId: randomUUID(),
+        resultExposurePolicyVersion: 1,
+      },
+    } as NativeQueryDelivery;
+    jest.mocked(loadQueryDelivery).mockResolvedValue(delivery);
+    jest
+      .mocked(bindingServiceCall)
+      .mockReset()
+      .mockResolvedValue({
+        scope: {
+          ...delivery,
+          permission: 'discover',
+          generation: 2,
+          checkedRevision: 'current-public-authority',
+        },
+      });
+    const response: any = {
+      setHeader: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    await configHandler({ headers } as any, response);
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nativeBindingConfigured: true,
+        nativeBindingGeneration: 2,
+        queryScope: nativePreviewScope(
+          delivery,
+          headers['x-kailo-native-identity-scope'],
+        ),
+      }),
+    );
+    expect(bindingServiceCall).toHaveBeenCalledWith(
+      delivery,
+      'human-action',
+      {
+        bindingId: delivery.bindingId,
+        authorizeScope: { permission: 'discover' },
+      },
+      signed,
+    );
+    expect(headers['x-kailo-native-human-token']).not.toBe('forged');
+  });
+
+  it.each([
+    '/api/v1/knowledge/sql_pairs/0',
+    '/api/v1/knowledge/sql_pairs/-1',
+    '/api/v1/knowledge/sql_pairs/42/other',
+    '/api/v1/knowledge/sql_pairs/fake',
+    '/api/v1/knowledge/sql_pairs_extra',
+  ])(
+    'does not spread private SQL-pair dispatch credentials to unrelated route %s',
+    async (path) => {
+      const response = await middleware(
+        request(path, `Bearer ${await token()}`, {
+          headers: {
+            'x-kailo-native-human-token': 'forged',
+            'x-kailo-native-identity-scope': 'f'.repeat(64),
+          },
+        }),
+      );
+      expect(response.headers.get('x-middleware-next')).toBe('1');
+      for (const field of ['human-token', 'identity-scope'])
+        expect(
+          response.headers.get(`x-middleware-request-x-kailo-native-${field}`),
+        ).toBeNull();
+    },
+  );
 
   it('keeps the native identity guard and private propagation on an English Next route', async () => {
     const signed = await token();

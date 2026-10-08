@@ -1348,3 +1348,12 @@ readback still lacks the required model API credential and any embedding model.
 No chat was sent and no knowledge base, model, secret or component binding was
 created. The adapter artifact is not deployed or activated. Full check and
 production acceptance remain separate and are not declared passing here.
+
+The later backend build did not complete. At approximately 20:29 UTC the root
+agent terminated its exact verified buildx request after disk-I/O contention
+held narrow mainline checks. The original log `service-build.log` retained
+`ERROR: failed to build: failed to receive status: rpc error: code = Canceled
+desc = context canceled`. No new backend digest was recorded or deployed, no
+running application service was stopped, and existing caches were not pruned.
+It will not be restarted in this source-integration checkpoint. This preserves
+the live previous backend; it is not a successful matching backend build.

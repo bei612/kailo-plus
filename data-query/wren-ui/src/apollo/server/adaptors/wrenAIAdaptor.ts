@@ -49,6 +49,13 @@ const getAIServiceError = (error: any) => {
     : error.message;
 };
 
+export type NativeSqlPairTransport = {
+  taskId?: string;
+  requestTimeoutMs: number;
+  responseMaxBytes: number;
+  requestMaxBytes: number;
+};
+
 export interface IWrenAIAdaptor {
   deploy(deployData: DeployData): Promise<WrenAIDeployResponse>;
   observeDeploy(
@@ -112,9 +119,17 @@ export interface IWrenAIAdaptor {
   deploySqlPair(
     projectId: number,
     sqlPair: { question: string; sql: string },
+    native?: NativeSqlPairTransport,
   ): Promise<AsyncQueryResponse>;
-  getSqlPairResult(queryId: string): Promise<SqlPairResult>;
-  deleteSqlPairs(projectId: number, sqlPairIds: number[]): Promise<void>;
+  getSqlPairResult(
+    queryId: string,
+    native?: NativeSqlPairTransport,
+  ): Promise<SqlPairResult>;
+  deleteSqlPairs(
+    projectId: number,
+    sqlPairIds: number[],
+    native?: NativeSqlPairTransport,
+  ): Promise<void>;
   generateQuestions(input: QuestionInput): Promise<AsyncQueryResponse>;
   getQuestionsResult(queryId: string): Promise<Partial<QuestionsResult>>;
 
@@ -169,6 +184,7 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
   public async deploySqlPair(
     projectId: number,
     sqlPair: Partial<SqlPair>,
+    native?: NativeSqlPairTransport,
   ): Promise<AsyncQueryResponse> {
     try {
       const body = {
@@ -180,10 +196,21 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
           },
         ],
         project_id: projectId.toString(),
+        ...(native ? { native_task_id: native.taskId } : {}),
       };
 
       return axios
-        .post(`${this.wrenAIBaseEndpoint}/v1/sql-pairs`, body)
+        .post(
+          `${this.wrenAIBaseEndpoint}/v1/sql-pairs`,
+          body,
+          native
+            ? {
+                timeout: native.requestTimeoutMs,
+                maxContentLength: native.responseMaxBytes,
+                maxBodyLength: native.requestMaxBytes,
+              }
+            : undefined,
+        )
         .then((res) => {
           return { queryId: res.data.event_id };
         });
@@ -194,12 +221,28 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
       throw err;
     }
   }
-  public async getSqlPairResult(queryId: string): Promise<SqlPairResult> {
+  public async getSqlPairResult(
+    queryId: string,
+    native?: NativeSqlPairTransport,
+  ): Promise<SqlPairResult> {
     try {
       const res = await axios.get(
         `${this.wrenAIBaseEndpoint}/v1/sql-pairs/${queryId}`,
+        native
+          ? {
+              timeout: native.requestTimeoutMs,
+              maxContentLength: native.responseMaxBytes,
+            }
+          : undefined,
       );
+      if (native && res.data.event_id !== queryId)
+        throw new Error('QUERY_REFERENCE_CHANGED');
       const { status, error } = this.transformStatusAndError(res.data);
+      if (
+        native &&
+        !Object.values(SqlPairStatus).includes(status as SqlPairStatus)
+      )
+        throw new Error('QUERY_EVIDENCE_UNAVAILABLE');
       return {
         status: status as SqlPairStatus,
         error,
@@ -214,13 +257,22 @@ export class WrenAIAdaptor implements IWrenAIAdaptor {
   public async deleteSqlPairs(
     projectId: number,
     sqlPairIds: number[],
+    native?: NativeSqlPairTransport,
   ): Promise<void> {
     try {
       await axios.delete(`${this.wrenAIBaseEndpoint}/v1/sql-pairs`, {
         data: {
           sql_pair_ids: sqlPairIds.map((id) => id.toString()),
           project_id: projectId.toString(),
+          ...(native ? { native_task_id: native.taskId } : {}),
         },
+        ...(native
+          ? {
+              timeout: native.requestTimeoutMs,
+              maxContentLength: native.responseMaxBytes,
+              maxBodyLength: native.requestMaxBytes,
+            }
+          : {}),
       });
       return;
     } catch (err: any) {

@@ -20,10 +20,11 @@ class SqlPairsService:
             message: str
 
         id: str
-        status: Literal["indexing", "deleting", "finished", "failed"] = "indexing"
+        status: Literal["indexing", "deleting", "finished", "failed", "unknown"] = "indexing"
         error: Optional[Error] = None
         trace_id: Optional[str] = None
         request_from: Literal["ui", "api"] = "ui"
+        request_digest: Optional[str] = None
 
     def __init__(
         self,
@@ -48,6 +49,7 @@ class SqlPairsService:
             error=self.Event.Error(code=code, message=error_message),
             trace_id=trace_id,
             request_from=request_from,
+            request_digest=self._cache[id].request_digest if id in self._cache else None,
         )
         logger.error(error_message)
 
@@ -82,6 +84,7 @@ class SqlPairsService:
                 status="finished",
                 trace_id=trace_id,
                 request_from=request.request_from,
+                request_digest=self._cache[request.id].request_digest if request.id in self._cache else None,
             )
 
         except Exception as e:
@@ -117,6 +120,7 @@ class SqlPairsService:
                 id=request.id,
                 status="finished",
                 request_from=request.request_from,
+                request_digest=self._cache[request.id].request_digest if request.id in self._cache else None,
             )
         except Exception as e:
             self._handle_exception(
@@ -135,7 +139,7 @@ class SqlPairsService:
             logger.exception(message)
             return self.Event(
                 id=id,
-                status="failed",
+                status="unknown",
                 error=self.Event.Error(code="OTHERS", message=message),
             )
 

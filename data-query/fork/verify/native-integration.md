@@ -5668,3 +5668,228 @@ metadata reconciliation remain concrete separate gaps. No live Wren business
 container, ACTIVE binding, iframe, production multi-user function or 100%
 original visual equivalence is claimed. Mainline submission/push and activation
 remain owned by the mainline agent, after integration evidence.
+
+## 2026-10-08 original SQL-pair persisted write and same-event recovery
+
+### Authority, impact, effects and boundaries
+
+This increment implements `SS-WRN-IDENTITY` / `SS-WRN-GOVERNANCE` under
+`.design/08` §6, `.design/05` §2.7 and DD-87. Native SQL-pair management remains
+native management, not a new platform Action or execution authority. The fixed
+original source was read again, without executing or modifying `.references`:
+
+- `c5f02a0391c87420dba78632dcd86073710deb72`,
+  `wren-ui/src/apollo/server/services/sqlPairService.ts`,
+  `SqlPairService.createSqlPair`, `editSqlPair`, `deleteSqlPair`: the original
+  local transaction surrounded external AI indexing/deletion. A lost ACK could
+  therefore rollback the local ID while the external effect had already run.
+- The same full commit,
+  `wren-ai-service/src/web/v1/routers/sql_pairs.py`, `prepare` and `delete`:
+  the original event IDs were generated inside those endpoints. The existing
+  `SqlPairsService` event cache could observe a known event, but a missing cache
+  entry was previously reported as failed rather than unprovable.
+
+The impact search included original repository/service/adaptor, GraphQL
+schema and generated hooks, REST CRUD, Home/Knowledge modal callbacks,
+ApiHistory fields and `AskingResolver.transformAskingTask`. No new database
+table, workflow, registry, permission authority, native SQL parser or platform
+contract was added. Existing `project`, `sql_pair` and `api_history` are the
+native authority. The project row lock serializes preparation/completion;
+the original intent, original row/reference and API History status are written
+in their existing database transaction. Original SQL/question bodies remain
+in Wren, never Core. Existing native scope authorization supplies current
+HUMAN management/discovery and generation; browser-supplied scope is not that
+authority.
+
+Only a newly prepared intent may dispatch its original native event. Reentry
+under its same opaque key observes that event and never sends another POST or
+DELETE. The optional original Python `native_task_id` consumer claims the
+existing cache event before scheduling, accepts the identical claim, and
+refuses changed input. Only explicit same-event `finished` evidence plus fresh
+management/generation can atomically settle native row and history. Original
+row snapshot drift refuses completion. Pending CREATE rows are withheld;
+pending UPDATE/DELETE retains the previous native row and carries a transient
+pending projection, not another persistent state authority.
+
+The original list can reconcile the initiating user's persisted event after
+reload or from another client without a native write. History bodies and Ask
+SQL-pair candidates use those actual consumers; a pending pair is not returned
+as active. The original modal retains only input digest/reference, awaits its
+real asynchronous submission, and observes a recorded native reference on
+reentry. The original delete control retains its opaque same-event key. REST
+CRUD consumes the same services and same HUMAN dry-run/observation, preserving
+its original success response shapes. Never-configured standalone remains
+independent; empty/invalid configured delivery does not select standalone.
+
+Compatibility is limited to optional internal GraphQL fields
+`SqlPair.nativeWritePending` and `SqlPairWhereUniqueInput.idempotencyKey`, and
+the optional native Python request ID. The original generator emitted the two
+TypeScript GraphQL products; no generated file was hand-maintained. Older
+bound writers without current identity/key/validation are refused rather than
+executing the old ungoverned path. No new database migration or four-language
+platform-contract change applies. Layout, controls, original success text and
+pages are retained; delayed success/UNKNOWN presentation, native context and
+same-event execution are the authorized governance differences.
+
+### Actual implementation-after checks and deliberate production damage
+
+All Node/Python checks used the existing `kailo-wren-query-sdk-itgs2n` 4 CPU /
+4 GiB cgroup, existing installed dependencies and original isolated candidate.
+The original PostgreSQL container was already running. A read-only identity
+check returned `wren_query_itgs2n|isolated-query-fixture`; the original connection
+was present without printing it. The new independent original-repository
+describe verifies that fixture, uses transactions/savepoints and rolls back
+all its rows. It does not run the other suites' migration hooks, create a
+database, touch a business database or claim cross-connection concurrency
+acceptance.
+
+```sh
+node node_modules/jest/bin/jest.js --runInBand --verbose=false src/nativeHumanQuery.test.ts src/viewMetadata.test.ts
+node node_modules/jest/bin/jest.js --runInBand --verbose=false src/nativeQuery.test.ts -t 'original SQL-pair PostgreSQL write transaction'
+node node_modules/typescript/bin/tsc --noEmit --incremental false
+python3 -B -m unittest discover -s data-query/wren-ai-service/tests/pytest/providers -p test_native_sql_answer_stream.py
+```
+
+The first two-suite run exited 1: **387 passed / 7 failed**. Six original UI
+checks were awaiting only one event-loop tick instead of the actual WebCrypto
+and submission promise; the original handler now returns its own promise and
+the checks await it. The other assertion had not yet consumed the real bound
+question-only edit context. The exact native context assertion was corrected;
+no production protection or expected refusal was weakened. Intermediate type
+invocations also exited 2 for real consumer/fixture type errors, all corrected
+before final acceptance. Those logs remain retained. The first mechanical
+format command formatted the inputs but its shell wrapper exited 2 with
+`exit: Illegal number`; the subsequent exact original formatter check exited
+0, reporting `All matched files use Prettier code style!` for all 22 handwritten
+TypeScript inputs.
+
+In the private candidate only, the actual newly-prepared dispatch guard was
+bypassed, the actual repository snapshot check was removed, and the original
+modal pending-result guard was removed. Unchanged original checks returned
+**5 failed / 498 filtered skip**, exit 1: three duplicate dispatches, a real
+PostgreSQL changed-snapshot completion and premature modal close were caught.
+The original Python claim was separately bypassed; its original endpoint
+consumer returned **1 failed / 15 passed**, exit 1, catching two background
+dispatches instead of one. These were production mutations, not deliberately
+failed checks written before implementation. All four damaged production
+inputs were restored from the formal source and compared identical, exit 0.
+
+Final restored checks completed with actual exit 0:
+
+- Original two Node suites: **394 passed / 0 failed**, including real original
+  REST handlers over HTTP, current-permission refusal, same-event ACK recovery,
+  History/Ask consumers and modal remount/read-back.
+- Original SQL-pair PostgreSQL target: **9 passed / 100 filtered skip**.
+- Whole Wren TypeScript no-emit: **exit 0**, no diagnostics.
+- Original Python producer/consumer target: **16 passed**.
+- Original Prettier check: **exit 0**; candidate/formal restored inputs match.
+- Cgroup `oom`, `oom_kill` and `oom_group_kill` remain zero, increments zero.
+
+Logs are retained under
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N`:
+`sql-pair-native-write-codegen.log`, `sql-pair-native-write-types.log`,
+`sql-pair-native-write-types-final.log`,
+`sql-pair-native-write-types-restored.log`,
+`sql-pair-native-write-jest.log`, `sql-pair-native-write-jest-restored.log`,
+`sql-pair-native-write-final-restored.log`, `sql-pair-native-write-pg.log`,
+`sql-pair-native-write-pg-restored.log`, `sql-pair-native-write-negative.log`,
+`sql-pair-native-write-python.log`,
+`sql-pair-native-write-python-negative.log`,
+`sql-pair-native-write-python-restored.log`,
+`sql-pair-native-write-format.log`, `sql-pair-native-write-format-check.log`.
+
+### Exact remaining delivery boundary
+
+This is not complete native CRUD recovery. The first durable intent can exist
+without a dispatched event after a crash; cache expiry, partial native failure
+or initiating-user revocation remains UNKNOWN without redispatch. The original
+read consumers provide an observation entrance but not yet bounded operational
+reconciliation for those cases; release activation remains blocked. Losing all
+keys/references across clients still prevents distinguishing a new create from
+an old completed one. No cross-client exactly-once guarantee is claimed.
+Other metadata CRUD, trusted SERVICE SQL, ordinary-function provenance and
+dynamic Resource evidence remain separate concrete gaps. WebCrypto needs a
+production HTTPS secure context; local HTTP LAN creation is not accepted as
+working by these fixtures.
+
+No new image, dependency, database, full-tree copy or global build was started.
+No Java verification, `check.sh --full`, four-language platform matrix,
+Playwright screenshot/device acceptance, Wren business deployment or ACTIVE
+binding was run or established in this increment. The earlier two unverified
+Java candidates remain excluded. This evidence does not certify iframe,
+multi-user production use or 100% original visual equivalence. Mainline
+integration, commit/push and publication remain the root agent's ownership.
+
+### Implementation-after cross-review corrections
+
+The earlier 394-item result did not prove the real never-configured UI or the
+middleware-to-handler private hop. Cross-review found three actual gaps: its
+standalone fixture supplied a fabricated 64-character scope and governed
+receipt; the new native SQL-pair REST routes were absent from private-header
+dispatch; and config discovery received identity scope without its trusted
+HUMAN token. Those were real implementation defects, not accepted boundaries.
+
+The original SQL editor and modal now consume an explicit
+`nativeBindingConfigured: false` with no scope, key or governed receipt, using
+the original native dry-run/data-preview/create/edit calls. Unknown/invalid
+configuration still refuses. A binding introduced while preview is in flight
+withholds that old standalone result. The real standalone create/edit checks
+also remove browser WebCrypto rather than accidentally accepting the bound
+helper's prerequisites. Bound dry-run evidence and current identity checks
+remain unchanged.
+
+The original middleware now delivers verified current HUMAN token and scope
+only to the exact SQL-pair index/positive-integer ID routes and current config
+consumer. It still removes incoming forged headers. The existing real-JWKS
+checks exercise those actual routes, independent mode and lookalikes; the
+actual config handler consumes the resulting private-hop headers before its
+fresh public-authority discovery. Only the public authorization transport is
+mocked in that composition, not the middleware identity or config consumer.
+
+The first corrective three-suite run exited 1: the native-HUMAN and middleware
+suites passed **397 items**, while the modal suite failed to compile with
+`TS2367` because an old `!== false` condition remained after the newly explicit
+false-path return. The obsolete condition was removed; the original failed log
+`sql-pair-native-hop-jest.log` is retained. That partial result is not acceptance
+of the later corrected bytes.
+
+The same final source review found one additional actual transition window:
+the original metadata helper selected standalone before awaiting its real
+`beforeSubmit` consumer, but did not re-read that configuration before dispatch.
+It now re-reads the same trusted scope facts immediately after that consumer;
+anything other than still-explicit standalone refuses before a native write.
+This does not add a state, switch, ledger or a permission authority. It prevents
+a newly bound SQL-pair dry-run from being followed by a write through the old
+standalone branch without its existing UNKNOWN guard.
+
+Actual corrective verification before that last helper line and its one new
+consumer check:
+
+- Original native-HUMAN, modal and middleware suites: **485 passed**, exit 0,
+  `sql-pair-native-hop-final-jest.log`.
+- Whole Wren TypeScript no-emit: **exit 0**,
+  `sql-pair-native-hop-types.log`.
+- Private production damage reintroduced the standalone scope requirement and
+  removed the exact SQL-pair/config private-hop consumers. The unchanged
+  original targets failed **8 items / 9 passed / 154 filtered skip**, exit 1,
+  `sql-pair-native-hop-negative.log`.
+- Separately removing the modal's explicit standalone branch failed both real
+  create/edit checks: **2 failed / 86 filtered skip**, exit 1,
+  `sql-pair-native-hop-modal-negative.log`.
+- All three damaged production inputs were restored from formal source.
+  Formal/candidate comparison then returned **30 inputs identical**, exit 0;
+  the original formatter accepted all **25 handwritten TypeScript inputs**,
+  exit 0, `sql-pair-native-hop-format-check.log`.
+
+The restored three-suite request is still in flight as handle **29881** and
+`sql-pair-native-hop-restored-jest.log`; repeated observations showed disk-I/O
+wait, no terminal result and no OOM. It is not recorded as a passing rerun.
+The final helper's one fresh `readScope` line and its one original consumer
+check were written in the formal tree afterwards, but are **not yet run or
+synced over that in-flight candidate**. Earlier 485/type/format results do not
+certify those final bytes. Root froze these 32 paths for a source-only stage
+integration rather than accumulate work indefinitely behind I/O. Its latest
+tail verification remains outstanding and no image or service deployment is
+claimed. The original PostgreSQL 9 and Python 16 passing results remain valid
+for their unchanged backend bytes; neither was repeated for these UI/private-
+hop corrections. Existing failed logs are retained in the directory above.

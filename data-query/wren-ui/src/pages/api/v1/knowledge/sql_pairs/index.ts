@@ -6,6 +6,7 @@ import {
   respondWithSimple,
   handleApiError,
   validateSql,
+  handleNativeSqlPairRequest,
 } from '@/apollo/server/utils/apiUtils';
 import { getLogger } from '@server/utils';
 
@@ -102,6 +103,8 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
+  if (process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined)
+    return handleNativeSqlPairRequest(req, res);
   const startTime = Date.now();
   let project;
 

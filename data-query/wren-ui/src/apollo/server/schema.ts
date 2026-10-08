@@ -1072,6 +1072,7 @@ export const typeDefs = gql`
     question: String!
     createdAt: String
     updatedAt: String
+    nativeWritePending: Boolean
   }
 
   input CreateSqlPairInput {
@@ -1090,6 +1091,7 @@ export const typeDefs = gql`
 
   input SqlPairWhereUniqueInput {
     id: Int!
+    idempotencyKey: String
   }
 
   input GenerateQuestionInput {

@@ -19,7 +19,11 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
   currentSql.current = sql;
   const currentVisibility = useRef(visible);
   currentVisibility.current = visible;
-  const selected = useRef<{ sql: string; scope: string }>();
+  const selected = useRef<{
+    sql: string;
+    scope?: string;
+    standalone?: boolean;
+  }>();
   const validation = useRef<{
     sql: string;
     scope: string;
@@ -33,12 +37,15 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
       setReceipt(undefined);
       setPreparing(false);
       try {
-        const scope = (await getUserConfig()).queryScope;
+        const config = await getUserConfig();
+        const scope = config.queryScope;
         if (current === revision.current)
           setScopeError(
-            !/^[a-f0-9]{64}$/.test(scope) ||
-              (selected.current !== undefined &&
-                selected.current.scope !== scope),
+            config.nativeBindingConfigured !== false &&
+              (config.nativeBindingConfigured !== true ||
+                !/^[a-f0-9]{64}$/.test(scope) ||
+                (selected.current !== undefined &&
+                  selected.current.scope !== scope)),
           );
       } catch {
         if (current === revision.current) setScopeError(true);
@@ -65,18 +72,53 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
     setReceipt(undefined);
     const input = options.variables.data;
     let scope: string;
+    let independent = false;
     try {
-      scope = (await getUserConfig()).queryScope;
+      const config = await getUserConfig();
+      scope = config.queryScope;
       if (current !== revision.current || !currentVisibility.current)
         return false;
-      if (!/^[a-f0-9]{64}$/.test(scope) || currentSql.current !== input.sql)
+      if (config.nativeBindingConfigured === false) {
+        independent = true;
+        if (currentSql.current !== input.sql) {
+          setPreparing(false);
+          return false;
+        }
+        selected.current = { sql: input.sql, standalone: true };
+        setScopeError(false);
+        setStorageError(false);
+        try {
+          const value = await mutate(options);
+          const after = await getUserConfig();
+          if (current !== revision.current || !currentVisibility.current)
+            return false;
+          if (
+            after.nativeBindingConfigured !== false ||
+            currentSql.current !== input.sql
+          ) {
+            setScopeError(true);
+            return false;
+          }
+          if (value.errors?.length) throw value;
+          setReceipt(value.data?.previewSql);
+          return true;
+        } finally {
+          if (current === revision.current) setPreparing(false);
+        }
+      }
+      if (
+        config.nativeBindingConfigured !== true ||
+        !/^[a-f0-9]{64}$/.test(scope) ||
+        currentSql.current !== input.sql
+      )
         throw new Error('Query identity unavailable');
       setScopeError(false);
-    } catch {
+    } catch (error) {
       if (current === revision.current) {
-        setScopeError(true);
+        setScopeError(!independent);
         setPreparing(false);
       }
+      if (independent) throw error;
       return false;
     }
     // UUID v5 is only a native browser slot name. The server compares the
@@ -103,10 +145,15 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
           data: { ...input, idempotencyKey: key, idempotencyScope: scope },
         },
       });
-      const afterScope = (await getUserConfig()).queryScope;
+      const after = await getUserConfig();
+      const afterScope = after.queryScope;
       if (current !== revision.current || !currentVisibility.current)
         return false;
-      if (afterScope !== scope || currentSql.current !== input.sql) {
+      if (
+        after.nativeBindingConfigured !== true ||
+        afterScope !== scope ||
+        currentSql.current !== input.sql
+      ) {
         setScopeError(true);
         return false;
       }
@@ -157,14 +204,20 @@ export default function useGovernedSqlPreview(sql: string, visible: boolean) {
     }
   };
   const current = selected.current?.sql === sql ? receipt : undefined;
-  const state = queryReceiptState(current);
+  const standalone =
+    selected.current?.sql === sql && selected.current?.standalone;
+  const state = queryReceiptState(standalone ? undefined : current);
   const result = {
     ...original,
     // A mutation/transport error cannot settle an admitted native query. The
     // verified receipt, not Apollo's last error, controls terminal rendering.
-    error: undefined,
+    error: standalone ? original.error : undefined,
     loading: original.loading || preparing,
-    data: state.completed ? { previewSql: current.data } : undefined,
+    data: standalone
+      ? { previewSql: current }
+      : state.completed
+        ? { previewSql: current.data }
+        : undefined,
     reset: () => {
       ++revision.current;
       validation.current = undefined;

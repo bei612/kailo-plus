@@ -1,4 +1,4 @@
-import { NextApiResponse } from 'next';
+import { NextApiRequest, NextApiResponse } from 'next';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiType, ApiHistory } from '@server/repositories/apiHistoryRepository';
 import * as Errors from '@server/utils/error';
@@ -13,6 +13,160 @@ import {
 } from '@/apollo/server/models/adaptor';
 
 const { apiHistoryRepository } = components;
+
+// The original REST CRUD and original GraphQL controls consume the same native
+// row/history/task, including after an ACK loss. No REST-only SQL validation or
+// second response history is allowed to bypass that binding's HUMAN chain.
+export async function handleNativeSqlPairRequest(
+  req: NextApiRequest,
+  res: NextApiResponse,
+  id?: string | string[],
+) {
+  res.setHeader('Cache-Control', 'private, no-store');
+  const { loadQueryDelivery, NativeQueryRefusal } = await import(
+    '../services/nativeQueryAdmission'
+  );
+  try {
+    const { nativePreviewScope, authorizeNativeScope } = await import(
+      '../services/nativeHumanQuery'
+    );
+    const { queryReceiptState } = await import('@/utils/queryReceipt');
+    const { SqlPairResolver } = await import('../resolvers/sqlPairResolver');
+    const { NativeHumanQuery } = await import('../services/nativeHumanQuery');
+    const { NativeQueryService } = await import(
+      '../services/nativeQueryService'
+    );
+    const resolver = new SqlPairResolver();
+    const token = req.headers['x-kailo-native-human-token'];
+    const identityScope = req.headers['x-kailo-native-identity-scope'];
+    const key = req.headers['idempotency-key'];
+    if (
+      typeof token !== 'string' ||
+      !token ||
+      typeof identityScope !== 'string'
+    )
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    const config = await loadQueryDelivery();
+    const scope = nativePreviewScope(config, identityScope);
+    if (
+      Buffer.byteLength(JSON.stringify(req.body ?? {}), 'utf8') >
+      config.requestMaxBytes
+    )
+      throw new NativeQueryRefusal(413, 'INVALID_QUERY_PARAMETERS');
+    const ctx = {
+      ...components,
+      deployRepository: components.deployLogRepository,
+      nativeHumanToken: token,
+      nativeIdentityScope: identityScope,
+    } satisfies import('../resolvers/sqlPairResolver').SqlPairContext;
+    await authorizeNativeScope(
+      config,
+      token,
+      req.method === 'GET' ? 'discover' : 'manage',
+    );
+    if (req.method === 'GET' && id === undefined) {
+      res
+        .status(200)
+        .json(await resolver.getProjectSqlPairs(undefined, {}, ctx));
+      return;
+    }
+    if (
+      typeof key !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        key,
+      )
+    )
+      throw new NativeQueryRefusal(400, 'INVALID_QUERY_PARAMETERS');
+    const nativeId = typeof id === 'string' ? Number(id) : undefined;
+    const sql = req.body?.sql;
+    const question = req.body?.question;
+    if (
+      (id !== undefined &&
+        (!Number.isSafeInteger(nativeId) || nativeId <= 0)) ||
+      (sql !== undefined && (typeof sql !== 'string' || !sql.trim())) ||
+      (question !== undefined &&
+        (typeof question !== 'string' || !question.trim()))
+    )
+      throw new NativeQueryRefusal(400, 'INVALID_QUERY_PARAMETERS');
+    if (
+      (req.method === 'POST' && id === undefined) ||
+      (req.method === 'PUT' && nativeId)
+    ) {
+      if (
+        req.method === 'POST' &&
+        (typeof sql !== 'string' || typeof question !== 'string')
+      )
+        throw new NativeQueryRefusal(400, 'INVALID_QUERY_PARAMETERS');
+      if (sql !== undefined) {
+        const receipt = await new NativeHumanQuery(
+          config,
+          new NativeQueryService(
+            config,
+            ctx.projectRepository,
+            ctx.deployRepository,
+            components.apiHistoryRepository,
+            ctx.queryService,
+            ctx.viewRepository,
+            ctx.modelRepository,
+            ctx.modelColumnRepository,
+          ),
+          components.apiHistoryRepository,
+        ).previewSql(token, key, sql, 1, scope, true);
+        if (
+          !queryReceiptState(receipt).completed ||
+          receipt.data?.valid !== true
+        ) {
+          res.status(202).json({ queryReceipt: receipt });
+          return;
+        }
+      }
+      const data = {
+        sql,
+        question,
+        idempotencyKey: key,
+        idempotencyScope: scope,
+      };
+      const pair =
+        req.method === 'POST'
+          ? await resolver.createSqlPair(undefined, { data }, ctx)
+          : await resolver.updateSqlPair(
+              undefined,
+              { where: { id: nativeId }, data },
+              ctx,
+            );
+      res.status(req.method === 'POST' ? 201 : 200).json(pair);
+      return;
+    }
+    if (req.method === 'DELETE' && nativeId) {
+      const removed = await resolver.deleteSqlPair(
+        undefined,
+        { where: { id: nativeId, idempotencyKey: key } },
+        ctx,
+      );
+      if (removed !== true)
+        throw new NativeQueryRefusal(503, 'QUERY_EVIDENCE_UNAVAILABLE');
+      res.status(204).end();
+      return;
+    }
+    throw new NativeQueryRefusal(405, 'METHOD_NOT_ALLOWED');
+  } catch (error) {
+    const evidence = error?.extensions?.other?.nativeWrite;
+    if (evidence?.outcome === 'UNKNOWN') {
+      res
+        .status(202)
+        .json({ error: 'NATIVE_EXECUTION_UNKNOWN', nativeWrite: evidence });
+    } else {
+      res
+        .status(error instanceof NativeQueryRefusal ? error.status : 503)
+        .json({
+          error:
+            error instanceof NativeQueryRefusal
+              ? error.code
+              : 'QUERY_EVIDENCE_UNAVAILABLE',
+        });
+    }
+  }
+}
 
 export const MAX_WAIT_TIME = 1000 * 60 * 3; // 3 minutes
 

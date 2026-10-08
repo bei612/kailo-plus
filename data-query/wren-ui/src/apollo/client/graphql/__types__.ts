@@ -1401,6 +1401,7 @@ export type SqlPair = {
   __typename?: 'SqlPair';
   createdAt?: Maybe<Scalars['String']>;
   id: Scalars['Int'];
+  nativeWritePending?: Maybe<Scalars['Boolean']>;
   projectId: Scalars['Int'];
   question: Scalars['String'];
   sql: Scalars['String'];
@@ -1409,6 +1410,7 @@ export type SqlPair = {
 
 export type SqlPairWhereUniqueInput = {
   id: Scalars['Int'];
+  idempotencyKey?: InputMaybe<Scalars['String']>;
 };
 
 export type SuggestedQuestion = {

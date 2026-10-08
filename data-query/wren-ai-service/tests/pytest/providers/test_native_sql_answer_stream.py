@@ -23,7 +23,15 @@ def decorator(*args, **kwargs):
 
 class Model:
     def __init__(self, **values):
+        if "sql_pairs" in values:
+            values["sql_pairs"] = [Model(**value) if isinstance(value, dict) else value for value in values["sql_pairs"]]
         self.__dict__.update(values)
+
+    def model_dump(self, **kwargs):
+        return json.loads(json.dumps(self.__dict__, default=lambda value: value.model_dump() if hasattr(value, "model_dump") else str(value)))
+
+    def with_metadata(self):
+        return self
 
 
 class HTTPException(Exception):
@@ -33,7 +41,7 @@ class HTTPException(Exception):
 
 
 class Router:
-    post = get = patch = staticmethod(lambda *args, **kwargs: decorator)
+    post = get = patch = delete = staticmethod(lambda *args, **kwargs: decorator)
 
 
 @dataclass
@@ -63,7 +71,7 @@ def load_original(name, path, dependencies=None):
         "cachetools": types.SimpleNamespace(TTLCache=lambda **kwargs: {}),
         "pydantic": types.SimpleNamespace(BaseModel=Model, Field=lambda *args, **kwargs: None, AliasChoices=lambda *args: args),
         "fastapi": types.SimpleNamespace(HTTPException=HTTPException, APIRouter=Router,
-            BackgroundTasks=Model, Depends=lambda value: value),
+            BackgroundTasks=Model, Response=Model, Depends=lambda value: value),
         "fastapi.responses": types.SimpleNamespace(StreamingResponse=Model),
         "src.globals": types.SimpleNamespace(ServiceContainer=Model, ServiceMetadata=Metadata,
             get_service_container=lambda: None, get_service_metadata=lambda: None),
@@ -95,6 +103,14 @@ adjustment_router = load_router("native_adjustment_router", "src/web/v1/routers/
 ask_module = load_original("native_ask_service", "src/web/v1/services/ask.py")
 ask_router = load_router("native_ask_router", "src/web/v1/routers/ask.py",
     "src.web.v1.services.ask", ask_module)
+sql_pairs_module = load_original("native_sql_pairs_service", "src/web/v1/services/sql_pairs.py", {
+    "src.web.v1.services": types.SimpleNamespace(BaseRequest=Model, MetadataTraceable=type("MetadataTraceable", (), {})),
+    "src.pipelines.indexing.sql_pairs": types.SimpleNamespace(SqlPair=Model),
+})
+sql_pairs_router = load_original("native_sql_pairs_router", "src/web/v1/routers/sql_pairs.py", {
+    "src.web.v1.services": types.SimpleNamespace(BaseRequest=Model, SqlPairsService=sql_pairs_module.SqlPairsService),
+    "src.pipelines.indexing.sql_pairs": types.SimpleNamespace(SqlPair=Model),
+})
 general_modules = [
     (load_original(f"native_{name}_pipeline", f"src/pipelines/generation/{name}.py", {"src.web.v1.services.ask": ask_module}), name, class_name, general_type)
     for name, class_name, general_type in [
@@ -113,6 +129,44 @@ reasoning_modules = [
 
 
 class NativeSqlAnswerStream(unittest.IsolatedAsyncioTestCase):
+    async def test_original_sql_pair_create_and_delete_keep_the_claimed_id_and_never_repeat_pending_or_finished_events(self):
+        pipeline = types.SimpleNamespace(run=AsyncMock(), clean=AsyncMock())
+        service = sql_pairs_module.SqlPairsService({"sql_pairs": pipeline})
+        container = types.SimpleNamespace(sql_pairs_service=service)
+        scheduled = []
+        background = types.SimpleNamespace(add_task=lambda *args, **kwargs: scheduled.append((args, kwargs)))
+        identifier = uuid4()
+        request = sql_pairs_router.PostRequest(native_task_id=identifier, project_id="original-project", sql_pairs=[Model(id="7", sql="SELECT 1", question="Original")], request_from="ui")
+        self.assertEqual((await sql_pairs_router.prepare(request, background, container, Metadata())).event_id, str(identifier))
+        self.assertEqual((await sql_pairs_router.prepare(request, background, container, Metadata())).event_id, str(identifier))
+        self.assertEqual(len(scheduled), 1)
+        with self.assertRaises(HTTPException) as conflict:
+            await sql_pairs_router.prepare(sql_pairs_router.PostRequest(**{**request.model_dump(), "native_task_id": identifier, "project_id": "another-project"}), background, container, Metadata())
+        self.assertEqual(conflict.exception.status_code, 409)
+        args, kwargs = scheduled[0]
+        await args[0](*args[1:], **kwargs)
+        self.assertEqual((await sql_pairs_router.get(str(identifier), container)).status, "finished")
+        await sql_pairs_router.prepare(request, background, container, Metadata())
+        self.assertEqual(len(scheduled), 1)
+        pipeline.run.assert_awaited_once()
+        delete_id = uuid4()
+        deletion = sql_pairs_router.DeleteRequest(native_task_id=delete_id, project_id="original-project", sql_pair_ids=["7"], request_from="ui")
+        response = Model(status_code=200)
+        await sql_pairs_router.delete(deletion, response, container, Metadata())
+        await sql_pairs_router.delete(deletion, response, container, Metadata())
+        pipeline.clean.assert_awaited_once()
+        self.assertEqual((await sql_pairs_router.get(str(delete_id), container)).status, "finished")
+
+    async def test_original_sql_pair_missing_cache_is_unknown_not_failed_and_observation_never_dispatches(self):
+        pipeline = types.SimpleNamespace(run=AsyncMock(), clean=AsyncMock())
+        service = sql_pairs_module.SqlPairsService({"sql_pairs": pipeline})
+        missing = str(uuid4())
+        response = await sql_pairs_router.get(missing, types.SimpleNamespace(sql_pairs_service=service))
+        self.assertEqual(response.event_id, missing)
+        self.assertEqual(response.status, "unknown")
+        pipeline.run.assert_not_awaited()
+        pipeline.clean.assert_not_awaited()
+
     async def test_original_create_routers_keep_the_persisted_id_and_offer_read_only_observation(self):
         for router, service, member, create, read in [
             (answer_router, service_module.SqlAnswerService({}), "sql_answer_service", "sql_answer", "get_sql_answer_result"),

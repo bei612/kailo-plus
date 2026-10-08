@@ -8,6 +8,7 @@ const SQL_PAIR = gql`
     question
     createdAt
     updatedAt
+    nativeWritePending
   }
 `;
 

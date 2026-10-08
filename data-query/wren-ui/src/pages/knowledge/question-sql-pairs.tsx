@@ -20,6 +20,11 @@ import {
   useUpdateSqlPairMutation,
   useDeleteSqlPairMutation,
 } from '@/apollo/client/graphql/sqlPairs.generated';
+import { v4 as uuidv4 } from 'uuid';
+import { getUserConfig } from '@/utils/env';
+import { getNativeWriteText } from '@/utils/language';
+import { nativeWriteEvidence } from '@/utils/errorHandler';
+import { useRouter } from 'next/router';
 
 const SQLCodeBlock = dynamic(() => import('@/components/code/SQLCodeBlock'), {
   ssr: false,
@@ -28,6 +33,7 @@ const SQLCodeBlock = dynamic(() => import('@/components/code/SQLCodeBlock'), {
 const { Paragraph, Text } = Typography;
 
 export default function ManageQuestionSQLPairs() {
+  const locale = useRouter().locale;
   const questionSqlPairModal = useModalAction();
   const sqlPairDrawer = useDrawerAction();
 
@@ -49,17 +55,12 @@ export default function ManageQuestionSQLPairs() {
     useCreateSqlPairMutation(
       getBaseOptions({
         onError: undefined,
-        onCompleted: () => {
-          message.success('Successfully created question-sql pair.');
-        },
       }),
     );
 
   const [deleteSqlPairMutation] = useDeleteSqlPairMutation(
     getBaseOptions({
-      onCompleted: () => {
-        message.success('Successfully deleted question-sql pair.');
-      },
+      onError: undefined,
     }),
   );
 
@@ -67,18 +68,64 @@ export default function ManageQuestionSQLPairs() {
     useUpdateSqlPairMutation(
       getBaseOptions({
         onError: undefined,
-        onCompleted: () => {
-          message.success('Successfully updated question-sql pair.');
-        },
       }),
     );
 
   const onMoreClick = async (payload) => {
     const { type, data } = payload;
     if (type === MORE_ACTION.DELETE) {
-      await deleteSqlPairMutation({
-        variables: { where: { id: data.id } },
-      });
+      const config = await getUserConfig();
+      if (config.nativeBindingConfigured === false) {
+        await deleteSqlPairMutation({ variables: { where: { id: data.id } } });
+        message.success('Successfully deleted question-sql pair.');
+        return;
+      }
+      const text = getNativeWriteText(locale);
+      if (
+        config.nativeBindingConfigured !== true ||
+        !/^[a-f0-9]{64}$/.test(config.queryScope) ||
+        !Number.isSafeInteger(config.nativeBindingGeneration)
+      )
+        throw new Error(text.scopeError);
+      const slot = `kailo.native-sql-pair.${config.queryScope}.${data.id}.delete`;
+      const retained = sessionStorage.getItem(slot);
+      const intent = retained
+        ? JSON.parse(retained)
+        : { key: uuidv4(), generation: config.nativeBindingGeneration };
+      if (intent.generation !== config.nativeBindingGeneration)
+        throw new Error(text.scopeError);
+      sessionStorage.setItem(slot, JSON.stringify(intent));
+      try {
+        const current = await getUserConfig();
+        if (
+          current.queryScope !== config.queryScope ||
+          current.nativeBindingGeneration !== intent.generation
+        )
+          throw new Error(text.scopeError);
+        const response = await deleteSqlPairMutation({
+          variables: { where: { id: data.id, idempotencyKey: intent.key } },
+          context: { nativeWriteGuarded: true },
+        });
+        if (response.errors || response.data?.deleteSqlPair !== true)
+          throw response;
+        const after = await getUserConfig();
+        if (
+          after.queryScope !== config.queryScope ||
+          after.nativeBindingGeneration !== intent.generation
+        )
+          throw new Error(text.scopeError);
+        sessionStorage.removeItem(slot);
+        message.success('Successfully deleted question-sql pair.');
+      } catch (error) {
+        if (
+          nativeWriteEvidence(error)?.outcome === 'NOT_STARTED' &&
+          !error.networkError
+        ) {
+          sessionStorage.removeItem(slot);
+          throw error;
+        }
+        message.warning(text.unknown);
+      }
     } else if (type === MORE_ACTION.EDIT) {
       questionSqlPairModal.openModal(data);
     } else if (type === MORE_ACTION.VIEW_SQL_PAIR) {
@@ -183,12 +230,12 @@ export default function ManageQuestionSQLPairs() {
           loading={createSqlPairLoading || editSqlPairLoading}
           onSubmit={async ({ id, data, nativeWriteGuarded }) => {
             if (id) {
-              await editSqlPairMutation({
+              return await editSqlPairMutation({
                 variables: { where: { id }, data },
                 context: { nativeWriteGuarded },
               });
             } else {
-              await createSqlPairMutation({
+              return await createSqlPairMutation({
                 variables: { data },
                 context: { nativeWriteGuarded },
               });

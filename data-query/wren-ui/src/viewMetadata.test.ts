@@ -24,6 +24,10 @@ let mockFormValues: any;
 let mockSqlWatch: string;
 const mockPreview = jest.fn();
 const mockConfig = jest.fn();
+const mockSqlPairRead = jest.fn();
+jest.mock('./apollo/client/graphql/sqlPairs.generated', () => ({
+  useSqlPairsLazyQuery: () => [mockSqlPairRead],
+}));
 jest.mock('next/router', () => ({ useRouter: () => ({ locale: mockLocale }) }));
 jest.mock('./utils/env', () => ({ getUserConfig: () => mockConfig() }));
 jest.mock('./apollo/client/graphql/view.generated', () => ({
@@ -120,6 +124,7 @@ describe('original saved-view preview controls', () => {
     global,
     'sessionStorage',
   );
+  const originalCrypto = Object.getOwnPropertyDescriptor(global, 'crypto');
   beforeEach(() => {
     entries.clear();
     mockButtons = [];
@@ -128,11 +133,17 @@ describe('original saved-view preview controls', () => {
     mockSqlWatch = undefined;
     mockLocale = undefined;
     mockScope = 'a'.repeat(64);
-    mockConfig
-      .mockReset()
-      .mockImplementation(async () => ({ queryScope: mockScope }));
+    mockConfig.mockReset().mockImplementation(async () => ({
+      queryScope: mockScope,
+      nativeBindingConfigured: true,
+    }));
     mockPreview.mockReset().mockResolvedValue({
       data: { previewViewData: { submission: { gateState: 'ALLOWED' } } },
+    });
+    mockSqlPairRead.mockReset();
+    Object.defineProperty(global, 'crypto', {
+      configurable: true,
+      value: webcrypto,
     });
     storage.setItem.mockClear();
     storage.getItem.mockClear();
@@ -143,6 +154,8 @@ describe('original saved-view preview controls', () => {
     });
   });
   afterAll(() => {
+    if (originalCrypto) Object.defineProperty(global, 'crypto', originalCrypto);
+    else delete global.crypto;
     if (originalStorage)
       Object.defineProperty(global, 'sessionStorage', originalStorage);
     else delete global.sessionStorage;
@@ -514,6 +527,7 @@ describe('original saved-view preview controls', () => {
     mockConfig.mockResolvedValue({
       queryScope: mockScope,
       nativeBindingConfigured: true,
+      nativeBindingGeneration: 2,
     });
     mockPreview.mockImplementation(async ({ variables }) => ({
       data: {
@@ -529,7 +543,9 @@ describe('original saved-view preview controls', () => {
         },
       },
     }));
-    const submit = jest.fn().mockResolvedValue(undefined);
+    const submit = jest
+      .fn()
+      .mockResolvedValue({ data: { createSqlPair: { id: 42 } } });
     const close = jest.fn();
     const markup = renderToStaticMarkup(
       createElement(QuestionSQLPairModal, {
@@ -541,10 +557,8 @@ describe('original saved-view preview controls', () => {
     );
     expect(markup).toContain('Submit');
     expect(markup).toContain('Preview data');
-    mockButtons.find((button) => button.children === 'Submit').onClick();
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await mockButtons.find((button) => button.children === 'Submit').onClick();
     expect(submit).toHaveBeenCalledWith({
-      id: undefined,
       nativeWriteGuarded: true,
       data: {
         ...mockFormValues,
@@ -562,27 +576,74 @@ describe('original saved-view preview controls', () => {
     expect(close).toHaveBeenCalledTimes(1);
     expect(JSON.stringify([...entries.entries()])).not.toContain(sql);
   });
+  it.each([
+    {},
+    { nativeBindingConfigured: true },
+    { queryScope: 'a'.repeat(64) },
+    { nativeBindingConfigured: true, queryScope: '' },
+  ])(
+    'the original SQL editor refuses unknown or invalid configuration %p without standalone execution',
+    async (config) => {
+      mockConfig.mockResolvedValue(config);
+      const sql = 'select original_column from original_model';
+      const query = renderSql(sql);
+      expect(
+        await query.preview({
+          variables: { data: { sql, limit: 1, dryRun: true } },
+        }),
+      ).toBe(false);
+      expect(mockPreview).not.toHaveBeenCalled();
+      expect(entries.size).toBe(0);
+    },
+  );
+  it('withholds an original standalone result if a binding is configured while native preview is in flight', async () => {
+    const sql = 'select original_column from original_model';
+    mockConfig.mockResolvedValue({ nativeBindingConfigured: false });
+    const query = renderSql(sql);
+    mockPreview.mockImplementation(async () => {
+      mockConfig.mockResolvedValue({
+        nativeBindingConfigured: true,
+        queryScope: mockScope,
+      });
+      return { data: { previewSql: { columns: [], data: [] } } };
+    });
+    expect(
+      await query.preview({ variables: { data: { sql, limit: 50 } } }),
+    ).toBe(false);
+    expect(query.validatedSql()).toBeUndefined();
+    expect(entries.size).toBe(0);
+  });
   describe('original SQL-pair mutation outcome presentation', () => {
-    const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
-    const setup = (submit = jest.fn(), bindingConfigured = true) => {
+    const setup = (
+      submit = jest.fn(),
+      bindingConfigured = true,
+      formMode = FORM_MODE.CREATE,
+    ) => {
       const sql = 'select original_column from original_model';
       mockSqlWatch = sql;
       mockFormValues = { sql, question: 'Original question' };
-      mockConfig.mockResolvedValue({
-        queryScope: mockScope,
-        nativeBindingConfigured: bindingConfigured,
-      });
+      mockConfig.mockResolvedValue(
+        bindingConfigured
+          ? {
+              queryScope: mockScope,
+              nativeBindingConfigured: bindingConfigured,
+              nativeBindingGeneration: 2,
+            }
+          : { nativeBindingConfigured: false },
+      );
       mockPreview.mockImplementation(async ({ variables }) => ({
         data: {
-          previewSql: {
-            ...sqlReceipt(mockScope, true, true),
-            inputReference: {
-              nativeObjectRef: JSON.stringify({
-                historyId: 'original-history',
-                limit: variables.data.limit,
-              }),
-            },
-          },
+          previewSql: bindingConfigured
+            ? {
+                ...sqlReceipt(mockScope, true, true),
+                inputReference: {
+                  nativeObjectRef: JSON.stringify({
+                    historyId: 'original-history',
+                    limit: variables.data.limit,
+                  }),
+                },
+              }
+            : { columns: [], data: [] },
         },
       }));
       const close = jest.fn();
@@ -604,7 +665,11 @@ describe('original saved-view preview controls', () => {
       renderToStaticMarkup(
         createElement(QuestionSQLPairModal, {
           visible: true,
-          formMode: FORM_MODE.CREATE,
+          formMode,
+          defaultValue:
+            formMode === FORM_MODE.CREATE
+              ? undefined
+              : { id: 42, ...mockFormValues },
           onSubmit: submit,
           onClose: close,
         } as any),
@@ -621,6 +686,46 @@ describe('original saved-view preview controls', () => {
     beforeEach(() => {
       jest.mocked(message.warning).mockClear();
     });
+    it.each([FORM_MODE.CREATE, FORM_MODE.EDIT])(
+      'retains original standalone %s without a fabricated scope, key or governed receipt',
+      async (formMode) => {
+        Object.defineProperty(global, 'crypto', {
+          configurable: true,
+          value: undefined,
+        });
+        const field =
+          formMode === FORM_MODE.CREATE ? 'createSqlPair' : 'updateSqlPair';
+        const actual = setup(
+          jest.fn().mockResolvedValue({ data: { [field]: { id: 42 } } }),
+          false,
+          formMode,
+        );
+        await actual.click();
+        expect(mockPreview).toHaveBeenCalledWith({
+          variables: { data: { sql: mockSqlWatch, limit: 1, dryRun: true } },
+        });
+        expect(actual.submit).toHaveBeenCalledWith({
+          data: mockFormValues,
+          ...(formMode === FORM_MODE.CREATE ? {} : { id: 42 }),
+          nativeWriteGuarded: undefined,
+        });
+        expect(actual.close).toHaveBeenCalledTimes(1);
+        expect(entries.size).toBe(0);
+        expect(storage.setItem).not.toHaveBeenCalled();
+        expect(message.warning).not.toHaveBeenCalled();
+      },
+    );
+    it('uses both original native dry-run and data preview calls in explicitly unconfigured standalone mode', async () => {
+      setup(jest.fn(), false);
+      await mockButtons
+        .find((button) => button.children === 'Preview data')
+        .onClick();
+      expect(mockPreview.mock.calls.map(([input]) => input)).toEqual([
+        { variables: { data: { sql: mockSqlWatch, limit: 1, dryRun: true } } },
+        { variables: { data: { sql: mockSqlWatch, limit: 50 } } },
+      ]);
+      expect(entries.size).toBe(0);
+    });
     it.each(['UNKNOWN', 'transport loss', 'missing native outcome'])(
       'keeps %s unresolved in the actual original modal and never resubmits or closes it',
       async (outcome) => {
@@ -633,15 +738,13 @@ describe('original saved-view preview controls', () => {
               }
             : new Error(outcome);
         const actual = setup(jest.fn().mockRejectedValue(error));
-        actual.click();
-        await flush();
-        actual.click();
-        await flush();
+        await actual.click();
+        await actual.click();
         expect(actual.submit).toHaveBeenCalledTimes(1);
         expect(mockPreview).toHaveBeenCalledTimes(1);
         expect(actual.close).not.toHaveBeenCalled();
         expect(message.warning).toHaveBeenCalledWith(
-          getNativeWriteText().unresolved,
+          getNativeWriteText().unknown,
         );
         expect(actual.changed.mock.calls.flat()).not.toContainEqual(
           expect.objectContaining({ shortMessage: 'Invalid SQL syntax' }),
@@ -664,10 +767,8 @@ describe('original saved-view preview controls', () => {
             ],
           }),
         );
-        actual.click();
-        await flush();
-        actual.click();
-        await flush();
+        await actual.click();
+        await actual.click();
         expect(actual.submit).toHaveBeenCalledTimes(2);
         expect(actual.close).not.toHaveBeenCalled();
         expect(actual.changed).toHaveBeenCalledWith(
@@ -693,8 +794,7 @@ describe('original saved-view preview controls', () => {
         }),
         false,
       );
-      actual.click();
-      await flush();
+      await actual.click();
       expect(actual.changed).toHaveBeenCalledWith(
         expect.objectContaining({
           code: 'INVALID_SQL_ERROR',
@@ -706,23 +806,73 @@ describe('original saved-view preview controls', () => {
     });
     it('does not dispatch two concurrent native SQL-pair writes while the original ACK is pending', async () => {
       let settle: (value?: any) => void;
+      let submitted: () => void;
+      const started = new Promise<void>((resolve) => {
+        submitted = resolve;
+      });
       const actual = setup(
         jest.fn().mockImplementation(
           () =>
             new Promise((resolve) => {
               settle = resolve;
+              submitted();
             }),
         ),
       );
-      actual.click();
-      await flush();
-      actual.click();
-      await flush();
+      const pending = actual.click();
+      await started;
+      await actual.click();
       expect(actual.submit).toHaveBeenCalledTimes(1);
       expect(mockPreview).toHaveBeenCalledTimes(1);
-      settle!();
-      await flush();
+      settle!({ data: { createSqlPair: { id: 42 } } });
+      await pending;
       expect(actual.close).toHaveBeenCalledTimes(1);
+    });
+    it('recovers the original SQL-pair write after modal reload through its recorded native reference without another dry-run or INSERT', async () => {
+      const error = {
+        graphQLErrors: [
+          {
+            extensions: {
+              other: {
+                nativeWrite: {
+                  outcome: 'UNKNOWN',
+                  scope: mockScope,
+                  generation: 2,
+                  reference: { nativeType: 'sqlPair', nativeId: 42 },
+                },
+              },
+            },
+          },
+        ],
+      };
+      const submit = jest.fn().mockRejectedValue(error);
+      const first = setup(submit);
+      await first.click();
+      expect(submit).toHaveBeenCalledTimes(1);
+      mockButtons = [];
+      const reloaded = setup(submit);
+      mockSqlPairRead.mockResolvedValue({
+        data: {
+          sqlPairs: [{ id: 42, ...mockFormValues, nativeWritePending: true }],
+        },
+      });
+      await reloaded.click();
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(mockPreview).toHaveBeenCalledTimes(1);
+      expect(reloaded.close).not.toHaveBeenCalled();
+      mockSqlPairRead.mockResolvedValue({
+        data: {
+          sqlPairs: [{ id: 42, ...mockFormValues, nativeWritePending: false }],
+        },
+      });
+      await reloaded.click();
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(mockPreview).toHaveBeenCalledTimes(1);
+      expect(mockSqlPairRead).toHaveBeenCalledTimes(2);
+      expect(reloaded.close).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify([...entries.entries()])).not.toContain(
+        mockFormValues.sql,
+      );
     });
     it('does not send the original native write when current identity changes after dry-run validation', async () => {
       const actual = setup(jest.fn());
@@ -730,17 +880,19 @@ describe('original saved-view preview controls', () => {
         .mockResolvedValueOnce({
           queryScope: mockScope,
           nativeBindingConfigured: true,
+          nativeBindingGeneration: 2,
         })
         .mockResolvedValueOnce({
           queryScope: mockScope,
           nativeBindingConfigured: true,
+          nativeBindingGeneration: 2,
         })
         .mockResolvedValue({
           queryScope: 'b'.repeat(64),
           nativeBindingConfigured: true,
+          nativeBindingGeneration: 2,
         });
-      actual.click();
-      await flush();
+      await actual.click();
       expect(actual.submit).not.toHaveBeenCalled();
       expect(actual.close).not.toHaveBeenCalled();
       expect(message.warning).not.toHaveBeenCalled();
@@ -1300,6 +1452,32 @@ describe('original native metadata create UNKNOWN and authorized read-back consu
     else delete global.sessionStorage;
     if (originalCrypto) Object.defineProperty(global, 'crypto', originalCrypto);
     else delete global.crypto;
+  });
+  it('refuses an original standalone write if a binding appears while its actual beforeSubmit consumer is pending', async () => {
+    mockConfig.mockResolvedValue({ nativeBindingConfigured: false });
+    const submit = jest.fn().mockResolvedValue({
+      data: { createSqlPair: { id: 42 } },
+    });
+    const observe = jest.fn();
+    await expect(
+      runNativeMetadataWrite({
+        nativeType: 'sqlPair',
+        mutationField: 'createSqlPair',
+        variables: { data: { question: 'Original question', sql: 'SELECT 1' } },
+        beforeSubmit: async () => {
+          mockConfig.mockResolvedValue({
+            nativeBindingConfigured: true,
+            nativeBindingGeneration: 2,
+            queryScope: scope,
+          });
+        },
+        submit,
+        observe,
+      }),
+    ).rejects.toThrow(getNativeWriteText().scopeError);
+    expect(submit).not.toHaveBeenCalled();
+    expect(observe).not.toHaveBeenCalled();
+    expect(entries.size).toBe(0);
   });
   it.each(['model', 'view', 'dashboardItem'] as const)(
     'the original %s create re-entry reads its actual native ID and never resubmits the write',

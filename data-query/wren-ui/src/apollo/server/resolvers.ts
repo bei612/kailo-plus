@@ -364,10 +364,14 @@ const resolvers = {
     createSqlPair: nativeProjectResolver(
       sqlPairResolver.createSqlPair,
       'manage',
+      undefined,
+      'sqlPair',
     ),
     updateSqlPair: nativeProjectResolver(
       sqlPairResolver.updateSqlPair,
       'manage',
+      undefined,
+      'sqlPair',
     ),
     deleteSqlPair: nativeProjectResolver(
       sqlPairResolver.deleteSqlPair,

@@ -47,6 +47,10 @@ import { AddressInfo } from 'net';
 import { apiResolver } from 'next/dist/server/api-utils/node/api-resolver';
 import { defaultApolloErrorHandler } from './apollo/server/utils/error';
 import configHandler from './pages/api/config';
+import { SqlPairService } from './apollo/server/services/sqlPairService';
+import { SqlPairStatus } from './apollo/server/models/adaptor';
+import sqlPairsHandler from './pages/api/v1/knowledge/sql_pairs';
+import sqlPairHandler from './pages/api/v1/knowledge/sql_pairs/[id]';
 
 jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   ...jest.requireActual('./apollo/server/services/nativeQueryAdmission'),
@@ -54,6 +58,398 @@ jest.mock('./apollo/server/services/nativeQueryAdmission', () => ({
   loadQueryDelivery: jest.fn(),
 }));
 jest.mock('./common', () => ({ components: { apiHistoryRepository: {} } }));
+
+describe('original SQL-pair durable native write consumer', () => {
+  const key = 'eb9081b2-1e2b-44e9-85c5-15b09e43c4a1';
+  const config = {
+    bindingId: '8b066261-f827-462e-95c1-1d596fce1849',
+    projectId: 3,
+    tenantId: 'tenant-fixture',
+    workspaceId: 'workspace-fixture',
+    nativeInstanceRef: 'native-fixture',
+    nativeScopeRef: '3',
+    requestTimeoutMs: 2000,
+    requestMaxBytes: 65536,
+    responseMaxBytes: 65536,
+  } as NativeQueryDelivery;
+  const native = {
+    config,
+    identityScope: 'a'.repeat(64),
+    token: 'verified-native-token',
+  };
+  const beforeConfig = process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+  let record: any;
+  let generation: number;
+  let status: SqlPairStatus;
+  let revoked: boolean;
+  let repository: any;
+  let history: any;
+  let adaptor: any;
+  const make = () =>
+    new SqlPairService({
+      sqlPairRepository: repository,
+      apiHistoryRepository: history,
+      wrenAIAdaptor: adaptor,
+      ibisAdaptor: {} as any,
+    });
+  beforeEach(() => {
+    process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = 'controlled-delivery';
+    record = undefined;
+    generation = 2;
+    status = SqlPairStatus.INDEXING;
+    revoked = false;
+    jest.mocked(loadQueryDelivery).mockReset().mockResolvedValue(config);
+    jest
+      .mocked(bindingServiceCall)
+      .mockReset()
+      .mockImplementation(async (_config, _operation, args) => {
+        if (revoked) throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+        return {
+          scope: {
+            ...config,
+            generation,
+            permission: (args.authorizeScope as { permission: string })
+              .permission,
+            checkedRevision: 'fresh-scope-fact',
+          },
+        };
+      });
+    history = {
+      findAllBy: jest.fn(async (filter) =>
+        record && record.statusCode === filter.statusCode ? [record] : [],
+      ),
+      findOneBy: jest.fn(async () => record),
+    };
+    repository = {
+      prepareNativeWrite: jest.fn(async (_history, input) => {
+        if (record) return { record, created: false };
+        record = JSON.parse(
+          JSON.stringify({
+            ...input,
+            requestPayload: {
+              nativeSqlPair: {
+                ...input.requestPayload.nativeSqlPair,
+                after: {
+                  id: 42,
+                  projectId: config.projectId,
+                  sql: 'SELECT native_column FROM native_model',
+                  question: 'Original question',
+                },
+              },
+            },
+            responsePayload: { nativeId: 42, eventId: input.id },
+          }),
+        );
+        return { record, created: true };
+      }),
+      completeNativeWrite: jest.fn(async () => {
+        record.statusCode = 200;
+        record.responsePayload.result =
+          record.requestPayload.nativeSqlPair.operation === 'delete'
+            ? true
+            : record.requestPayload.nativeSqlPair.after;
+        return record;
+      }),
+      findAllBy: jest.fn(async () =>
+        record?.requestPayload.nativeSqlPair.operation === 'delete' &&
+        record.statusCode === 200
+          ? []
+          : record
+            ? [record.requestPayload.nativeSqlPair.after]
+            : [],
+      ),
+    };
+    adaptor = {
+      deploySqlPair: jest.fn(async () => {
+        throw new Error('Lost create ACK');
+      }),
+      deleteSqlPairs: jest.fn(async () => {
+        throw new Error('Lost delete ACK');
+      }),
+      getSqlPairResult: jest.fn(async () => ({ status })),
+    };
+  });
+  afterAll(() => {
+    if (beforeConfig === undefined)
+      delete process.env.WREN_PLATFORM_QUERY_CONFIG_FILE;
+    else process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = beforeConfig;
+  });
+  const pair = {
+    sql: 'SELECT native_column FROM native_model',
+    question: 'Original question',
+  };
+  it.each(['create', 'update', 'delete'])(
+    'persists the original %s task before dispatch and only observes it after ACK loss or process restart',
+    async (operation) => {
+      const run = (service: SqlPairService) =>
+        operation === 'create'
+          ? service.createSqlPair(config.projectId, pair, native, key)
+          : operation === 'update'
+            ? service.editSqlPair(config.projectId, 42, pair, native, key)
+            : service.deleteSqlPair(config.projectId, 42, native, key);
+      await expect(run(make())).rejects.toMatchObject({
+        extensions: {
+          other: {
+            nativeWrite: {
+              outcome: 'UNKNOWN',
+              reference: { nativeType: 'sqlPair', nativeId: 42 },
+            },
+          },
+        },
+      });
+      expect(record.statusCode).toBe(202);
+      expect(
+        repository.prepareNativeWrite.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        (operation === 'delete'
+          ? adaptor.deleteSqlPairs
+          : adaptor.deploySqlPair
+        ).mock.invocationCallOrder[0],
+      );
+      expect(
+        (operation === 'delete'
+          ? adaptor.deleteSqlPairs
+          : adaptor.deploySqlPair
+        ).mock.calls[0].at(-1),
+      ).toMatchObject({
+        taskId: key,
+        requestTimeoutMs: config.requestTimeoutMs,
+      });
+      status = SqlPairStatus.FINISHED;
+      expect(await run(make())).toEqual(
+        operation === 'delete'
+          ? true
+          : record.requestPayload.nativeSqlPair.after,
+      );
+      expect(record.statusCode).toBe(200);
+      expect(repository.completeNativeWrite).toHaveBeenCalledTimes(1);
+      expect(
+        operation === 'delete' ? adaptor.deleteSqlPairs : adaptor.deploySqlPair,
+      ).toHaveBeenCalledTimes(1);
+      const gets = adaptor.getSqlPairResult.mock.calls.length;
+      await run(make());
+      expect(adaptor.getSqlPairResult).toHaveBeenCalledTimes(gets);
+      expect(
+        operation === 'delete' ? adaptor.deleteSqlPairs : adaptor.deploySqlPair,
+      ).toHaveBeenCalledTimes(1);
+    },
+  );
+  it("uses the original list consumer to reconcile the same user's persisted task from another client without issuing a write", async () => {
+    await expect(
+      make().createSqlPair(config.projectId, pair, native, key),
+    ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+    expect(await make().getProjectSqlPairs(config.projectId, native)).toEqual(
+      [],
+    );
+    status = SqlPairStatus.FINISHED;
+    expect(await make().getProjectSqlPairs(config.projectId, native)).toEqual([
+      {
+        ...record.requestPayload.nativeSqlPair.after,
+        nativeWritePending: false,
+      },
+    ]);
+    expect(adaptor.deploySqlPair).toHaveBeenCalledTimes(1);
+    expect(adaptor.deleteSqlPairs).not.toHaveBeenCalled();
+  });
+  it.each([SqlPairStatus.UNKNOWN, SqlPairStatus.FAILED, 'UNRECOGNIZED'])(
+    'keeps %s unresolved and never commits or creates a replacement task',
+    async (event) => {
+      status = event as SqlPairStatus;
+      await expect(
+        make().createSqlPair(config.projectId, pair, native, key),
+      ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      await expect(
+        make().createSqlPair(config.projectId, pair, native, key),
+      ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      expect(record.statusCode).toBe(202);
+      expect(repository.completeNativeWrite).not.toHaveBeenCalled();
+      expect(adaptor.deploySqlPair).toHaveBeenCalledTimes(1);
+    },
+  );
+  it('discloses original API History bodies only after the same persisted native event has finished and current permission still holds', async () => {
+    const service = make();
+    await expect(
+      service.createSqlPair(config.projectId, pair, native, key),
+    ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+    await expect(service.readNativeWrite(record, native)).rejects.toThrow(
+      'NATIVE_EXECUTION_UNKNOWN',
+    );
+    status = SqlPairStatus.FINISHED;
+    await expect(service.readNativeWrite(record, native)).resolves.toEqual({
+      requestPayload: pair,
+      responsePayload: record.requestPayload.nativeSqlPair.after,
+    });
+    revoked = true;
+    await expect(service.readNativeWrite(record, native)).rejects.toThrow(
+      'QUERY_SCOPE_DENIED',
+    );
+    expect(adaptor.deploySqlPair).toHaveBeenCalledTimes(1);
+  });
+  it('uses the actual Ask candidate consumer to withhold a pending native SQL-pair and observes the original event before returning it', async () => {
+    const service = make();
+    await expect(
+      service.createSqlPair(config.projectId, pair, native, key),
+    ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+    const ctx = {
+      nativeHumanToken: native.token,
+      nativeIdentityScope: native.identityScope,
+      sqlPairService: service,
+      projectService: {
+        getCurrentProject: jest.fn(async () => ({ id: config.projectId })),
+      },
+      sqlPairRepository: { findOneBy: jest.fn() },
+    };
+    const task = {
+      projectId: config.projectId,
+      status: AskResultStatus.FINISHED,
+      response: [{ sqlpairId: 42, sql: pair.sql }],
+    };
+    await expect(
+      (new AskingResolver() as any).transformAskingTask(task, ctx),
+    ).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
+    status = SqlPairStatus.FINISHED;
+    expect(
+      (await (new AskingResolver() as any).transformAskingTask(task, ctx))
+        .candidates[0].sqlPair,
+    ).toEqual({
+      ...record.requestPayload.nativeSqlPair.after,
+      nativeWritePending: false,
+    });
+    expect(ctx.sqlPairRepository.findOneBy).not.toHaveBeenCalled();
+    expect(adaptor.deploySqlPair).toHaveBeenCalledTimes(1);
+  });
+  it.each(['create', 'update', 'delete'])(
+    'keeps the original REST %s response and recovers lost ACK through the same persisted native event',
+    async (operation) => {
+      const previousComponents = { ...components };
+      Object.assign(components, {
+        apiHistoryRepository: history,
+        sqlPairService: make(),
+        projectService: {
+          getCurrentProject: jest.fn(async () => ({ id: config.projectId })),
+        },
+        telemetry: { sendEvent: jest.fn() },
+      });
+      const preview = jest
+        .spyOn(NativeHumanQuery.prototype, 'previewSql')
+        .mockResolvedValue({
+          submission: { gateState: 'ALLOWED', dispatchState: 'DISPATCHED' },
+          terminalStatus: 'COMPLETED',
+          data: { valid: true },
+        } as any);
+      const server = createServer((request, response) => {
+        void apiResolver(
+          request,
+          response,
+          operation === 'create' ? {} : { id: '42' },
+          {
+            default: operation === 'create' ? sqlPairsHandler : sqlPairHandler,
+          },
+          {
+            previewModeId: '',
+            previewModeEncryptionKey: '',
+            previewModeSigningKey: '',
+          },
+          false,
+        );
+      });
+      await new Promise<void>((resolve) =>
+        server.listen(0, '127.0.0.1', resolve),
+      );
+      const send = () =>
+        fetch(
+          `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/v1/knowledge/sql_pairs${operation === 'create' ? '' : '/42'}`,
+          {
+            method:
+              operation === 'create'
+                ? 'POST'
+                : operation === 'update'
+                  ? 'PUT'
+                  : 'DELETE',
+            headers: {
+              'content-type': 'application/json',
+              'idempotency-key': key,
+              'x-kailo-native-human-token': native.token,
+              'x-kailo-native-identity-scope': native.identityScope,
+            },
+            body: JSON.stringify(operation === 'delete' ? {} : pair),
+          },
+        );
+      try {
+        const first = await send();
+        expect(first.status).toBe(202);
+        expect(await first.json()).toMatchObject({
+          error: 'NATIVE_EXECUTION_UNKNOWN',
+          nativeWrite: { reference: { nativeType: 'sqlPair', nativeId: 42 } },
+        });
+        status = SqlPairStatus.FINISHED;
+        const recovered = await send();
+        expect(recovered.status).toBe(
+          operation === 'create' ? 201 : operation === 'update' ? 200 : 204,
+        );
+        if (operation !== 'delete')
+          expect(await recovered.json()).toEqual(
+            record.requestPayload.nativeSqlPair.after,
+          );
+        expect(
+          operation === 'delete'
+            ? adaptor.deleteSqlPairs
+            : adaptor.deploySqlPair,
+        ).toHaveBeenCalledTimes(1);
+        if (operation !== 'delete')
+          expect(
+            preview.mock.calls.every(
+              (args) =>
+                args[1] === key && args[2] === pair.sql && args[5] === true,
+            ),
+          ).toBe(true);
+        revoked = true;
+        expect((await send()).status).toBe(403);
+        expect(
+          operation === 'delete'
+            ? adaptor.deleteSqlPairs
+            : adaptor.deploySqlPair,
+        ).toHaveBeenCalledTimes(1);
+      } finally {
+        preview.mockRestore();
+        for (const field of Object.keys(components))
+          if (!(field in previousComponents)) delete components[field];
+        Object.assign(components, previousComponents);
+        await new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
+      }
+    },
+  );
+  it.each(['revoked', 'generation', 'identity', 'delivery'])(
+    'does not disclose or finalize an original write after %s changes',
+    async (change) => {
+      await expect(
+        make().createSqlPair(config.projectId, pair, native, key),
+      ).rejects.toThrow('NATIVE_EXECUTION_UNKNOWN');
+      status = SqlPairStatus.FINISHED;
+      if (change === 'revoked') revoked = true;
+      if (change === 'generation') generation++;
+      if (change === 'delivery')
+        jest
+          .mocked(loadQueryDelivery)
+          .mockResolvedValue({ ...config, nativeInstanceRef: 'changed' });
+      await expect(
+        make().createSqlPair(
+          config.projectId,
+          pair,
+          change === 'identity'
+            ? { ...native, identityScope: 'b'.repeat(64) }
+            : native,
+          key,
+        ),
+      ).rejects.toThrow();
+      expect(record.statusCode).toBe(202);
+      expect(repository.completeNativeWrite).not.toHaveBeenCalled();
+      expect(adaptor.deploySqlPair).toHaveBeenCalledTimes(1);
+    },
+  );
+});
 
 describe('native saved-view HUMAN query consumer', () => {
   const key = 'eb9081b2-1e2b-44e9-85c5-15b09e43c4a1';
@@ -839,10 +1235,20 @@ describe('native saved-view HUMAN query consumer', () => {
       await expect(write('update', { sql: undefined })).resolves.toEqual(pair);
       expect(delegated).not.toHaveBeenCalled();
       expect(ctx.queryService.preview).not.toHaveBeenCalled();
-      expect(ctx.sqlPairService.editSqlPair).toHaveBeenCalledWith(3, pair.id, {
-        sql: undefined,
-        question: pair.question,
-      });
+      expect(ctx.sqlPairService.editSqlPair).toHaveBeenCalledWith(
+        3,
+        pair.id,
+        {
+          sql: undefined,
+          question: pair.question,
+        },
+        {
+          config,
+          identityScope: ctx.nativeIdentityScope,
+          token: ctx.nativeHumanToken,
+        },
+        key,
+      );
     });
     it('does not fall back to standalone for present but empty or invalid delivery', async () => {
       process.env.WREN_PLATFORM_QUERY_CONFIG_FILE = '';

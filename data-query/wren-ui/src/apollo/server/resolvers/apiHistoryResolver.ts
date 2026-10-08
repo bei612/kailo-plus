@@ -100,6 +100,33 @@ export class ApiHistoryResolver {
     };
   }
 
+  private async visibleHistory(
+    ctx: IContext,
+    native: Awaited<ReturnType<ApiHistoryResolver['nativeHistory']>>,
+    apiHistory: ApiHistory,
+  ) {
+    if (
+      [
+        ApiType.CREATE_SQL_PAIR,
+        ApiType.UPDATE_SQL_PAIR,
+        ApiType.DELETE_SQL_PAIR,
+      ].includes(apiHistory.apiType)
+    )
+      return ctx.sqlPairService.readNativeWrite(apiHistory, {
+        config: native.config,
+        identityScope: ctx.nativeIdentityScope,
+        token: ctx.nativeHumanToken,
+      });
+    if ([ApiType.ASK, ApiType.STREAM_ASK].includes(apiHistory.apiType))
+      return readNativeAskHistory(
+        ctx,
+        native.config,
+        native.reader,
+        apiHistory,
+      );
+    return native.reader.readHistory(ctx.nativeHumanToken, apiHistory);
+  }
+
   /**
    * Get API history with filtering and pagination
    */
@@ -210,16 +237,7 @@ export class ApiHistoryResolver {
     ) => {
       const native = await this.nativeHistory(ctx);
       if (!native) return apiHistory.requestPayload ?? null;
-      const visible = [ApiType.ASK, ApiType.STREAM_ASK].includes(
-        apiHistory.apiType,
-      )
-        ? await readNativeAskHistory(
-            ctx,
-            native.config,
-            native.reader,
-            apiHistory,
-          )
-        : await native.reader.readHistory(ctx.nativeHumanToken, apiHistory);
+      const visible = await this.visibleHistory(ctx, native, apiHistory);
       return visible.requestPayload;
     },
     responsePayload: async (
@@ -229,15 +247,7 @@ export class ApiHistoryResolver {
     ) => {
       const native = await this.nativeHistory(ctx);
       const payload = native
-        ? ([ApiType.ASK, ApiType.STREAM_ASK].includes(apiHistory.apiType)
-            ? await readNativeAskHistory(
-                ctx,
-                native.config,
-                native.reader,
-                apiHistory,
-              )
-            : await native.reader.readHistory(ctx.nativeHumanToken, apiHistory)
-          ).responsePayload
+        ? (await this.visibleHistory(ctx, native, apiHistory)).responsePayload
         : apiHistory.responsePayload;
       if (!payload) return null;
 

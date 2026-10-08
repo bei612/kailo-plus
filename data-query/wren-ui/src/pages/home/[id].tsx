@@ -176,9 +176,6 @@ export default function HomeThread() {
     useCreateSqlPairMutation({
       refetchQueries: ['SqlPairs'],
       awaitRefetchQueries: true,
-      onCompleted: () => {
-        message.success('Successfully created question-sql pair.');
-      },
     });
 
   const thread = useMemo(() => data?.thread || null, [data]);
@@ -499,7 +496,7 @@ export default function HomeThread() {
           data: CreateSqlPairInput;
           nativeWriteGuarded?: boolean;
         }) => {
-          await createSqlPairMutation({
+          return await createSqlPairMutation({
             variables: { data },
             context: { nativeWriteGuarded },
           });

@@ -791,8 +791,9 @@ existing GraphQL mutation. The server only observes that original
 `data_query.dry_run@v1` execution: its original native history fixes SQL, limit,
 deployment and source references, and current HUMAN/source/result checks still
 apply. Missing, changed, unknown or incomplete evidence refuses the native
-metadata write; it does not submit another SQL command. The metadata service
-receives only its original question and SQL, not the governance fields.
+metadata write; it does not submit another SQL command. Its original question
+and SQL remain the native business fields; the existing service additionally
+consumes the trusted current context and opaque original submission key.
 
 The optional GraphQL input fields are emitted by the original generator. A
 bound older caller without the original dry-run identity fails closed; an
@@ -804,15 +805,52 @@ An admission/dependency refusal is not labelled a syntax error. Only the
 original `INVALID_SQL_ERROR` selects that original message. Entering a bound
 native metadata mutation without a verified `NOT_STARTED` refusal leaves its
 result UNKNOWN if the acknowledgement is lost or unreadable. The original
-modal stays open, warns in Chinese/English and blocks concurrent/repeated
-submission in that mounted modal instance; closing it does not cancel native
-work or erase that instance's uncertainty. No native reference is invented,
-and the completed dry-run AE is not a metadata-write idempotency key.
+modal stays open and warns in Chinese/English; closing it does not cancel work.
+The dry-run AE is still not native-write authorization or native terminal
+evidence.
 
-This local UI protection is not durable native CRUD reconciliation. Reloading
-the page, another client, fully lost metadata references and the remaining
-native lifecycle consumers still lack a complete recovery path. The original
-REST SQL-pair `validateSql`, trusted SERVICE SQL, dynamic Resource evidence,
-ordinary-function provenance and real multi-user component acceptance remain
-separate delivery gaps. No Wren business instance, ACTIVE binding, iframe or
-visual/device acceptance is established by these source changes.
+Bound SQL-pair create/update/delete now persist their original intent and event
+ID in Wren's existing API History, in the same transaction as the original
+native row/reference. The original project row serializes this transaction;
+there is no additional table, ledger, platform Action or database migration.
+Only the first prepared intent sends the original AI indexing/deletion request.
+The AI endpoint consumes that fixed native event ID; repeated requests with the
+same ID cannot schedule another pending/finished event, and changed input is
+refused. Every Wren retry only observes the original event. Only its explicit
+`finished` evidence and fresh current management permission commit the native
+metadata/history outcome together. A failed, absent or unfamiliar event is
+UNKNOWN, including after cache loss; it never authorizes a replacement POST.
+
+The original GraphQL modal, REST CRUD, list, API History and Ask SQL-pair
+candidate consumers use this same history. Pending creates are not presented
+as active pairs; pending edits/deletes retain the previous native row. The
+initiating user's original list can observe and finalize their persisted event
+from a reloaded or different client without issuing another write. A retained
+browser native reference permits read-back only, not a repeat INSERT. The
+original REST create/update validates SQL through the same HUMAN dry-run and
+then observes that frozen validation before metadata write; it no longer uses
+bare native validation in configured mode. Never-configured independent mode
+retains the original implementation; present but bad delivery fails closed.
+
+The real client configuration explicitly reports `nativeBindingConfigured:
+false` only for a never-configured server. In that mode the original SQL editor
+and modal call native dry-run, data preview and create/edit without a fabricated
+scope, governed receipt or browser write key; they do not require WebCrypto.
+Missing configuration facts, a configured server without its current scope,
+or a binding introduced while a native preview is in flight do not select or
+complete this independent path. The original trusted middleware forwards both
+current HUMAN private headers to the SQL-pair index/positive-ID REST routes and
+to the config handler. It still strips caller-forged private headers and does
+not forward them to lookalike or unrelated paths.
+
+This is not complete cross-client reconciliation. If all keys/references are
+lost, a later client cannot distinguish a new create intent from an old
+completed create; no exactly-once guarantee is inferred. A crash before native
+dispatch, cache expiry or initiating-user revocation leaves the original
+history UNKNOWN without blind redispatch; a bounded operational reconciliation
+consumer is still absent and release activation remains blocked. Other native
+CRUD, trusted SERVICE SQL, dynamic Resource evidence, ordinary-function
+provenance and real multi-user acceptance remain separate gaps. WebCrypto
+requires the production HTTPS secure context; HTTP LAN UI acceptance is not
+established. No Wren business instance, ACTIVE binding, iframe or visual/device
+acceptance is established by these source changes.

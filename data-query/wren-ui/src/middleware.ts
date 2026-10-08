@@ -198,14 +198,18 @@ export async function middleware(request: NextRequest) {
   headers.delete('x-kailo-native-human-token');
   headers.delete('x-kailo-native-identity-scope');
   const boundSql =
-    [
+    ([
       '/api/v1/run_sql',
       '/api/v1/generate_summary',
       '/api/v1/generate_vega_chart',
       '/api/v1/ask',
       '/api/v1/stream/ask',
       '/api/ask_task/streaming',
-    ].includes(request.nextUrl.pathname) &&
+      '/api/v1/knowledge/sql_pairs',
+    ].includes(request.nextUrl.pathname) ||
+      /^\/api\/v1\/knowledge\/sql_pairs\/[1-9]\d*$/.test(
+        request.nextUrl.pathname,
+      )) &&
     process.env.WREN_PLATFORM_QUERY_CONFIG_FILE !== undefined;
   if (
     boundSql ||
@@ -221,6 +225,7 @@ export async function middleware(request: NextRequest) {
     boundSql ||
     [
       '/api/graphql',
+      '/api/config',
       '/api/platform-query-reference',
       '/api/ask_task/streaming_answer',
     ].includes(request.nextUrl.pathname)

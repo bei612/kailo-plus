@@ -154,6 +154,7 @@ export const initComponents = () => {
     sqlPairRepository,
     wrenAIAdaptor,
     ibisAdaptor,
+    apiHistoryRepository,
   });
   const instructionService = new InstructionService({
     instructionRepository,

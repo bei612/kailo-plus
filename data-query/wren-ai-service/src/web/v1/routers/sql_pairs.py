@@ -1,8 +1,10 @@
 import uuid
+import hashlib
+import json
 from dataclasses import asdict
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Response, HTTPException
 from pydantic import BaseModel
 
 from src.globals import (
@@ -19,6 +21,7 @@ router = APIRouter()
 
 class PostRequest(BaseRequest):
     sql_pairs: List[SqlPair]
+    native_task_id: Optional[uuid.UUID] = None
 
 
 class PostResponse(BaseModel):
@@ -32,9 +35,15 @@ async def prepare(
     service_container: ServiceContainer = Depends(get_service_container),
     service_metadata: ServiceMetadata = Depends(get_service_metadata),
 ) -> PostResponse:
-    event_id = str(uuid.uuid4())
+    event_id = str(request.native_task_id or uuid.uuid4())
     service = service_container.sql_pairs_service
-    service[event_id] = SqlPairsService.Event(id=event_id, status="indexing")
+    request_digest = hashlib.sha256(json.dumps(request.model_dump(mode="json"), sort_keys=True).encode()).hexdigest()
+    previous = service._cache.get(event_id)
+    if previous:
+        if previous.request_digest != request_digest:
+            raise HTTPException(status_code=409, detail="SQL pair task input changed")
+        return PostResponse(event_id=event_id)
+    service[event_id] = SqlPairsService.Event(id=event_id, status="indexing", request_digest=request_digest)
 
     index_request = SqlPairsService.IndexRequest(id=event_id, **request.model_dump())
 
@@ -48,6 +57,7 @@ async def prepare(
 
 class DeleteRequest(BaseRequest):
     sql_pair_ids: List[str]
+    native_task_id: Optional[uuid.UUID] = None
 
 
 @router.delete("/sql-pairs")
@@ -57,9 +67,17 @@ async def delete(
     service_container: ServiceContainer = Depends(get_service_container),
     service_metadata: ServiceMetadata = Depends(get_service_metadata),
 ) -> None | SqlPairsService.Event.Error:
-    event_id = str(uuid.uuid4())
+    event_id = str(request.native_task_id or uuid.uuid4())
     service = service_container.sql_pairs_service
-    service[event_id] = SqlPairsService.Event(id=event_id, status="deleting")
+    request_digest = hashlib.sha256(json.dumps(request.model_dump(mode="json"), sort_keys=True).encode()).hexdigest()
+    previous = service._cache.get(event_id)
+    if previous:
+        if previous.request_digest != request_digest:
+            raise HTTPException(status_code=409, detail="SQL pair task input changed")
+        if previous.status != "finished":
+            response.status_code = 202
+        return
+    service[event_id] = SqlPairsService.Event(id=event_id, status="deleting", request_digest=request_digest)
 
     delete_request = SqlPairsService.DeleteRequest(
         id=event_id,
@@ -77,7 +95,7 @@ async def delete(
 
 class GetResponse(BaseModel):
     event_id: str
-    status: Literal["indexing", "deleting", "finished", "failed"]
+    status: Literal["indexing", "deleting", "finished", "failed", "unknown"]
     error: Optional[dict]
     trace_id: Optional[str]
 

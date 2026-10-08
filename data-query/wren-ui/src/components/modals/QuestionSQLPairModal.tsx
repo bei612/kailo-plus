@@ -9,7 +9,10 @@ import { FORM_MODE } from '@/utils/enum';
 import { getDataSourceName } from '@/utils/dataSourceType';
 import useModalAction, { ModalAction } from '@/hooks/useModalAction';
 import SQLEditor from '@/components/editor/SQLEditor';
-import { nativeWriteEvidence, parseGraphQLError } from '@/utils/errorHandler';
+import {
+  parseGraphQLError,
+  runNativeMetadataWrite,
+} from '@/utils/errorHandler';
 import { createSQLPairQuestionValidator } from '@/utils/validator';
 import ErrorCollapse from '@/components/ErrorCollapse';
 import PreviewData from '@/components/dataPreview/PreviewData';
@@ -23,8 +26,10 @@ import { getUserConfig } from '@/utils/env';
 import { useGetSettingsQuery } from '@/apollo/client/graphql/settings.generated';
 import { useGenerateQuestionMutation } from '@/apollo/client/graphql/sql.generated';
 import { SqlPair } from '@/apollo/client/graphql/__types__';
+import { useSqlPairsLazyQuery } from '@/apollo/client/graphql/sqlPairs.generated';
 
-type Props = ModalAction<SqlPair> & {
+type Props = Omit<ModalAction<SqlPair>, 'onSubmit'> & {
+  onSubmit?: (values: any) => Promise<any>;
   loading?: boolean;
   payload?: {
     isCreateMode: boolean;
@@ -86,9 +91,9 @@ export default function QuestionSQLPairModal(props: Props) {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [generatingQuestion, setGeneratingQuestion] = useState<boolean>(false);
   const [showPreview, setShowPreview] = useState<boolean>(false);
-  const unresolvedWrite = useRef(false);
   const writing = useRef(false);
   const [writeUnknown, setWriteUnknown] = useState(false);
+  const [readSqlPairs] = useSqlPairsLazyQuery({ fetchPolicy: 'network-only' });
 
   // Handle errors via try/catch blocks rather than onError callback
   const [generateQuestionMutation] = useGenerateQuestionMutation({
@@ -165,48 +170,70 @@ export default function QuestionSQLPairModal(props: Props) {
   };
 
   const onSubmitButton = () => {
-    if (unresolvedWrite.current || writing.current) return;
+    if (writing.current) return;
     writing.current = true;
     setError(null);
     setSubmitting(true);
     setShowPreview(false);
-    form
+    return form
       .validateFields()
       .then(async (values) => {
-        let enteredWrite = false;
-        let guarded = false;
+        let validation: ReturnType<typeof query.validatedSql>;
         try {
-          if (!(await onValidateSQL())) return;
-          const validation = query.validatedSql();
-          if (!validation) return;
-          const config = await getUserConfig();
-          if (config.nativeBindingConfigured !== false) {
-            if (
-              config.nativeBindingConfigured !== true ||
-              config.queryScope !== validation.idempotencyScope
-            )
-              throw new Error('QUERY_IDENTITY_CHANGED');
-            guarded = true;
-          }
-          enteredWrite = true;
-          await onSubmit({
-            data: { ...values, ...validation },
-            id: defaultValue?.id,
-            nativeWriteGuarded: guarded,
+          await runNativeMetadataWrite({
+            nativeType: 'sqlPair',
+            mutationField: isCreateMode ? 'createSqlPair' : 'updateSqlPair',
+            locale,
+            variables: {
+              data: values,
+              ...(isCreateMode ? {} : { id: defaultValue?.id }),
+            },
+            beforeSubmit: async () => {
+              if (!(await onValidateSQL()))
+                throw new Error('QUERY_EVIDENCE_UNAVAILABLE');
+              const config = await getUserConfig();
+              if (config.nativeBindingConfigured === false) return;
+              validation = query.validatedSql();
+              if (!validation) throw new Error('QUERY_EVIDENCE_UNAVAILABLE');
+              if (
+                config.nativeBindingConfigured !== true ||
+                config.queryScope !== validation.idempotencyScope
+              )
+                throw new Error('QUERY_IDENTITY_CHANGED');
+            },
+            submit: async (input, nativeWriteGuarded) =>
+              onSubmit({
+                ...input,
+                data: { ...input.data, ...validation },
+                nativeWriteGuarded,
+              }),
+            observe: async (nativeId) => {
+              const current = await readSqlPairs();
+              if (current.error) throw current.error;
+              const pair = current.data?.sqlPairs?.find(
+                (pair) => pair?.id === nativeId,
+              );
+              if (
+                !pair ||
+                pair.nativeWritePending ||
+                pair.sql !== values.sql ||
+                pair.question !== values.question
+              )
+                throw new Error('NATIVE_EXECUTION_UNKNOWN');
+              return pair;
+            },
           });
+          setWriteUnknown(false);
+          message.success(
+            isCreateMode
+              ? 'Successfully created question-sql pair.'
+              : 'Successfully updated question-sql pair.',
+          );
           onClose();
         } catch (error) {
-          if (
-            guarded &&
-            enteredWrite &&
-            nativeWriteEvidence(error)?.outcome !== 'NOT_STARTED'
-          ) {
-            // The dry-run's AE does not make the following native CRUD
-            // idempotent. Without a reliable write reference, do not replay it.
-            unresolvedWrite.current = true;
+          if (error?.message === 'NATIVE_EXECUTION_UNKNOWN') {
             setWriteUnknown(true);
             setError(null);
-            message.warning(writeText.unresolved);
           } else handleError(error);
         } finally {
           writing.current = false;
@@ -281,7 +308,7 @@ export default function QuestionSQLPairModal(props: Props) {
                 type="primary"
                 onClick={onSubmitButton}
                 loading={confirmLoading}
-                disabled={writeUnknown}
+                disabled={previewSqlResult.loading}
               >
                 Submit
               </Button>
@@ -395,9 +422,7 @@ export default function QuestionSQLPairModal(props: Props) {
             description={<ErrorCollapse message={error.message} />}
           />
         )}
-        {writeUnknown && (
-          <Alert type="warning" message={writeText.unresolved} />
-        )}
+        {writeUnknown && <Alert type="warning" message={writeText.unknown} />}
       </Modal>
       {dataSource.isSupportSubstitute && (
         <ImportDataSourceSQLModal

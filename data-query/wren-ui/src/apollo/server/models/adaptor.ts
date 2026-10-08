@@ -268,6 +268,8 @@ export interface ChartResult {
 
 export enum SqlPairStatus {
   INDEXING = 'INDEXING',
+  DELETING = 'DELETING',
+  UNKNOWN = 'UNKNOWN',
   FINISHED = 'FINISHED',
   FAILED = 'FAILED',
 }
