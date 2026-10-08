@@ -6218,3 +6218,108 @@ docker compose --project-name platform-local \
 只读源码/设计挂载中实际退出 0，全部通过。首次容器漏投递原 npm cache/HOME，
 markdownlint 请求 registry 报 EAI_AGAIN 后该精确容器被终止（137）；补投递既有
 Data cache、设置离线后复用同一原命令通过，未改检查或依赖版本。
+
+## 2026-10-08 已部署 9bc0 本批页面中英实拍与两处原样呈现纠偏
+
+本节延续同一正常SSO会话，实际Web源码仍为
+`9bc0b023eb6e8dd7f4b73f2348aa88d8b06b0faf`，镜像仍为
+`sha256:73639ed4a0f91276dc03ca4182de143362a92bc5bd648af1df14100deadd9548`。
+浏览器实际GET `/app/platform-build-info.json` 返回200，buildId读回
+`sha256:17b4b01ca7d31a7b3ef4d739b61cecbca8cafc382b5d729e9750c8d4a20aeb26`。
+本节新源码纠偏不在该已部署镜像中，不以这些图片证明修复后的视觉结果。
+
+复用原 `/usr/local/bin/playwright-cli -s=header-restoration`，1920×1080，
+普通seam-verifier正常SSO；未注入Cookie、模拟业务API、填造业务数据或执行Agent turn。
+新增52张截图均实际逐张view_image打开：外层 `/volumes/kailo/.playwright-cli/` 43张，
+工程内 `/volumes/kailo/apps/.playwright-cli/` 9张；CLI daemon原cwd在外层，因此如实保留两种实际路径。
+完整原件绝对路径与SHA256索引：
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS/surfaces-main9bc0-screenshots.sha256`，
+该索引SHA256为 `7b43985e0d00fb8ea3acca6caf1c2a7be67af42e087dde0abfb7c5fdce954bf3`。
+52张是页面、下半区、弹窗、菜单、失败及加载状态的图片数，不是52个页面全部通过。
+
+实际覆盖：Profile、Appearance、Notifications、Shortcuts、Custom emoji、Invitations、Experiments
+七个现有设置分区中英，以及Inbox、频道、成员、Agents、Workflows、Projects、Pulse中英；
+另含原资料/头像编辑器、成员菜单、Agent definition版本详情、Workflow Form/YAML、
+Project创建弹窗、Inbox选项/筛选/作者资料面板与外观/快捷键下半区。
+加载帧不作为终态：Agents/Workflows、definition版本和英文Custom emoji均另取终态图；
+`projects-channels-en.png` 实际点击了侧栏折叠入口而仍是Projects空态，不作为Channels页面证据。
+
+真实结果与边界：Inbox有历史双用户私聊及头像；频道有原系统创建/成员加入行；成员实际2条；
+Agent definition实际1张卡及2个published版本，当前工作区installation为0；
+Projects实际空目录；Workflows实际空列表，创建表单显示本页没有有效执行器；Pulse有历史主帖/回复。
+仅打开/切换原弹窗与Form/YAML，没有提交创建、保存资料、安装/执行Agent或运行Workflow。
+另一频道真实显示“有管理权但必须先成为成员才能查看和发送”，未加入，保留fail-closed实拍。
+通知权限真实Denied/Blocked，未更改浏览器权限。
+页面请求观察器仅记录method/path，不读取头或正文；30次非GET全部为只读查询：
+10次POST `/api/v1/projects/query` 与20次POST `/api/v1/pulse/query`，其它业务写入0。
+不能写成“全部POST为0”。结束时原CLI console为0消息/0错误/0警告；
+真实Appearance控件恢复中文、恢复原preview偏好后刷新读回
+`buzz-locale=zh-CN`、`buzz-feature-overrides-v1=null`，没有遗留本轮开关改动。
+
+实拍发现并保留的失败：
+
+- 外层 `kailo-ui-20261008-main9bc0-inbox-author-profile-en.png`：
+  Inbox原grid第三列400px，但作者aside实际80px，姓名/Info被裁切。
+- 工程内 `kailo-ui-20261008-main9bc0-settings-appearance-zh.png`：
+  原segmented宽度内“跟随系统”四字换行；英文System保持原样。
+- 外层 `kailo-ui-20261008-main9bc0-settings-community-members-en.png`：
+  当前邀请页仍是平台简化表单/表格与重复标题，不是完整原CommunityMembersSettingsCard，明确未恢复。
+
+两处源级纠偏均复用固定官方 `779af8886caae1317b4de962082429867ab61503`：
+`desktop/src/features/profile/ui/UserProfilePanel.tsx::UserProfilePanel` 原默认splitPaneClamp=false，
+`desktop/src/features/home/ui/HomeView.tsx::HomeView` 已分配右栏且constrainToAvailableSpace=false；
+Web `MessageAuthorProfile`先前再次沿AuxiliaryPanel默认按400px轨道减320px，形成真实重复clamp。
+现在仅该真实资料消费者显式splitPaneClamp=false，保留共享AuxiliaryPanel默认与其他未证明相同的消费者。
+`desktop/src/features/settings/ui/SettingsPanels.tsx::APPEARANCE_MODE_OPTIONS` 原文为System；
+中文同源key改为“系统”，不改原控件、顺序、布局和英文。
+
+四步影响结论：权威为用户原版一致性红线及已授权中文适配；
+资料改动仅原呈现参数，保留身份/scope/资料读授权/旧身份迟到fence及UNKNOWN语义，
+不扩权限、不写正文/新状态、不新建数据权威；single-panel仍走原100%规则。
+标签写方仅TS词条，读方为共享theme-mode controls、现有presentation向量/断言及同源Dart生成；
+无契约/数据库/迁移/旧格式兼容影响，无新增上游不安全开关。
+本批6路径源码净+9/-5：TS词条、presentation向量、原Appearance检查、生成Dart，
+以及MessageAuthorProfile与原Inbox真实作者点击检查；没有新UI或检查框架。
+
+本轮不是完整原版验收：邀请页及其余9个设置分区仍有缺项；
+非空Projects/Channels、Forum实际帖子/未读、Agent安装执行、Workflow保存/运行/历史、
+完整Agent/Profile/Activity、三外部组件与Windows/Mobile设备均未被这52图验证。
+历史dfc全量索引仍1982原样/110共享/0独立授权/6已证残缺/3216未分类，只对应该历史提交；
+没有重导当前完整diff、增加分类计数或声称100%还原。
+
+实现后集中验证复用原 `kailo-agent-receipt-xvkujx`、原候选/依赖，实际inspect与cgroup均4CPU/8GiB，
+Node heap3072、Vitest maxWorkers=1；未安装依赖/新建SDK、bundle、Cargo或Go构建。
+本批实现比较点为 `d64a0ddc1e1b8db9d8297f7673d9bfbff60097c3` 的6路径工作树改动，
+不是把历史dfc全量四分类改称当前主干全量复核。
+原完整6路径patch为同证据目录 `surfaces-owned.patch`，
+SHA256 `3006aa2c4ca9aa4187cfbf26bada8d04307a2b2cdda848410b3d86069728c964`。
+`surfaces-input.sha256` 记录正式6输入；全部与实际验证候选逐文件cmp0。
+
+实际原命令与终态（日志均在上述 `current-main-diff.nNHzVS` 目录）：
+
+- 原 `PATH=/usr/lib/dart/bin:$PATH python3 tools/gen-platform-i18n.py` 与同脚本 `--check` 均0，
+  `system-label-generate.log` / `system-label-check.log`；生成Dart仅同一中文值1行变化。
+- shared `vitest run test/format.test.ts test/theme-appearance.test.tsx --maxWorkers=1`：
+  `surfaces-shared-final.log` 19/19、exit0；首次 `system-label-positive.log` 18pass/1英文用例5000ms超时、exit1保留，
+  同最终字节重跑没有更改超时/减少断言。首次失败不算生产破坏命中。
+- Web `vitest run src/platform/ui/InboxPane.test.tsx -t "opens the Inbox row" --maxWorkers=1`：
+  `surfaces-inbox-final.log` 1/1通过、26项按-t过滤、exit0，包含实际作者点击、未标读、身份切换清理与原宽度断言。
+  断言使用既有AUXILIARY_PANEL_DEFAULT_WIDTH_PX（380px），线上已有宽度偏好/grid为400px，二者不混称。
+  首次 `surfaces-inbox-positive.log` 为fork worker启动超时、no tests/1error、exit1，保留且不计测试执行。
+- Web原 `tsc --noEmit`：`surfaces-web-types.log` 无诊断、exit0；1032串行句柄输出inbox=0/types=0。
+
+实现后只在私有候选破坏两个真实生产对象，不改正式源码或检查预期：
+把TS System中文恢复为错误四字，原Appearance中文实际消费者真实1failed，
+`surfaces-system-negative.log` 明确收到“跟随系统”而期待“系统”、exit1。
+删MessageAuthorProfile的splitPaneClamp=false，原Inbox作者点击真实1failed，
+`surfaces-profile-negative.log` 明确原重复clamp分支的style.width为空而期待380px、exit1；
+这是jsdom对旧CSS表达式的结果，不冒称测得真实浏览器80px，80px来自前述实际截图/DOM。
+两对象从保存的最终生产原字节还原，再运行原shared19/19、原Inbox1/1，分别
+`surfaces-shared-restored.log` / `surfaces-inbox-restored.log` exit0，两对象cmp0、正式6输入cmp0。
+68661最终输出system_negative=1/profile_negative=1/shared_restored=0/inbox_restored=0/i18n_cmp=0/profile_cmp=0。
+React act/ReducedMotion既有检查警告保留在日志，不与浏览器console0混为一谈。
+终态oom=2/oom_kill=2与旧基线相同，无本批增量；SDK只余原sleep，已释放。
+
+本批没有运行Native完整类型、Dart analyze、full或check-docs，不以这些窄验声称设备/生产全门禁通过；
+没有构建/部署本批6路径，新源码业务截图仍0。由root集中文档检查、精确owned追加入库与提交push，
+不吸收web-surface继承删除；当前六路径冻结交root复核。

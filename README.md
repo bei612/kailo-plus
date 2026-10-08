@@ -6,6 +6,17 @@
 
 ## 当前使用与恢复范围（2026-10-08）
 
+- 2026-10-08 22:19 UTC：仅 Web 更新为固定 main
+  `9bc0b023eb6e8dd7f4b73f2348aa88d8b06b0faf` 的共享 Experiments／Forum 批，
+  入口仍为 `http://192.168.0.193:58090/app/`。真实 build-info 与来源摘要
+  `sha256:17b4b01ca7d31a7b3ef4d739b61cecbca8cafc382b5d729e9750c8d4a20aeb26`
+  一致；其余 23 个运行中平台容器未替换。正常 SSO 后四个开关、原论坛创建
+  对话框、中英文及刷新持久化已有十张截图并逐张打开复核，未创建论坛。
+  Core／Worker 仍是下面 18:40 的版本；三组件新后端源码、Windows／Mobile 包
+  未随本批发布。原设置、非空 Projects、全量原版一致性及生产门禁仍未验收，
+  不把这些局部状态算作全功能恢复。详见
+  [本批实际发布及页面证据](web-client/fork/verify/web-surface.md)。
+
 - 2026-10-08 18:40 UTC：Core、Worker、Web 已集中发布固定 main
   `0b04bc2654e5f1b8a7942d9966ebe334927e0c86`，入口仍为
   `http://192.168.0.193:58090/app/`。原 Compose 28 个现存容器中仅三者替换，

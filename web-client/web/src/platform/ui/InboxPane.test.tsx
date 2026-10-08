@@ -8,6 +8,7 @@ import { PlatformProvider } from "@client-kit/platform/react/context";
 import type { BffClient } from "@client-kit/platform/client";
 import type { ConversationView } from "@client-kit/contracts";
 import { ConversationVisibilityProvider } from "@client-kit/platform/react/new-message";
+import { AUXILIARY_PANEL_DEFAULT_WIDTH_PX } from "@client-kit/platform/react/thread";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InboxPane, inboxEvents } from "./InboxPane";
 import { inboxReactionEvents, inboxWindowEvents } from "./inbox-events";
@@ -256,6 +257,9 @@ it("opens the Inbox row's actual author without marking it read and clears the p
     expect(api.messageAuthorProfile).toHaveBeenCalledWith("workspace-a",event.id);
     expect(api.write).not.toHaveBeenCalled();
     expect(host.querySelector('[data-testid="home-inbox"]')?.className).toContain("var(--home-auxiliary-width)");
+    const profilePanel = host.querySelector<HTMLElement>('[data-testid="user-profile-panel"]')!;
+    expect(profilePanel.style.width).toBe(`${AUXILIARY_PANEL_DEFAULT_WIDTH_PX}px`);
+    expect(host.querySelector<HTMLElement>('[data-testid="home-inbox"]')?.style.getPropertyValue("--home-auxiliary-width")).toBe(profilePanel.style.width);
     await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="inbox-filter-trigger"]')!.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})));
     const threads=[...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find(item=>item.textContent==="Threads");
     expect(threads).toBeDefined();

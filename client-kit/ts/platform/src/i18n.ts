@@ -1881,7 +1881,7 @@ export const platformMessages = {
   },
   "platform.theme.modeLight": { en: "Light", "zh-CN": "浅色" },
   "platform.theme.modeDark": { en: "Dark", "zh-CN": "深色" },
-  "platform.theme.modeSystem": { en: "System", "zh-CN": "跟随系统" },
+  "platform.theme.modeSystem": { en: "System", "zh-CN": "系统" },
   "platform.theme.colorMode": { en: "Color mode", "zh-CN": "配色模式" },
   "platform.theme.colorModeDescription": { en: "Follow your system or choose a light or dark appearance.", "zh-CN": "跟随系统，或选择浅色或深色外观。" },
   "platform.settings.preferences": { en: "Preferences", "zh-CN": "偏好" },

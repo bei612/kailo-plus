@@ -5674,7 +5674,7 @@ const _messages = <PlatformMessageKey, (String, String)>{
   ),
   PlatformMessageKey.platformThemeModeLight: ('Light', '浅色'),
   PlatformMessageKey.platformThemeModeDark: ('Dark', '深色'),
-  PlatformMessageKey.platformThemeModeSystem: ('System', '跟随系统'),
+  PlatformMessageKey.platformThemeModeSystem: ('System', '系统'),
   PlatformMessageKey.platformThemeColorMode: ('Color mode', '配色模式'),
   PlatformMessageKey.platformThemeColorModeDescription: (
     'Follow your system or choose a light or dark appearance.',

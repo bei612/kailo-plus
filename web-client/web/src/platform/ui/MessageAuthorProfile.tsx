@@ -98,7 +98,7 @@ export function MessageAuthorProfile({target,onClose,onStartDm,onWidthChange,isS
       if(owner.active&&currentOwner.current===owner)setOpening(false);
     }
   }
-  return <AuxiliaryPanel onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart} isSinglePanelView={isSinglePanelView}
+  return <AuxiliaryPanel onClose={onClose} widthPx={width.widthPx} onResizeStart={width.onResizeStart} isSinglePanelView={isSinglePanelView} splitPaneClamp={false}
     onResetWidth={width.onResetWidth} canResetWidth={width.canReset} testId="user-profile-panel"
     resizeHandleAriaLabel={t("platform.profile.resize")} resizeHandleTestId="user-profile-resize-handle"
     header={<AuxiliaryPanelHeader data-testid="user-profile-panel-header" inset="wide" resizeBorder>

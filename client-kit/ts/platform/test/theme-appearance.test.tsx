@@ -45,7 +45,7 @@ describe("original Buzz appearance in both hosts", () => {
       : "配色模式跟随系统，或选择浅色或深色外观。");
     const control = row.querySelector<HTMLElement>('[data-testid="appearance-color-mode-control"]')!;
     expect(control.tagName).toBe("FIELDSET");
-    expect([...control.querySelectorAll("button")].map(button => button.textContent)).toEqual(locale === "en" ? ["System", "Light", "Dark"] : ["跟随系统", "浅色", "深色"]);
+    expect([...control.querySelectorAll("button")].map(button => button.textContent)).toEqual(locale === "en" ? ["System", "Light", "Dark"] : ["系统", "浅色", "深色"]);
     expect(control.querySelectorAll("button svg")).toHaveLength(3);
     expect(row.querySelector('input[type="radio"]')).toBeNull();
     const indicator = control.querySelector<HTMLElement>('[data-testid="appearance-color-mode-indicator"]')!;
