@@ -2739,3 +2739,93 @@ No live release/binding, SOURCE import/parse/revoke, image build, deployment,
 frontend SFC/type/nineteen-case execution, authenticated data-source screenshot,
 Windows/Mobile or full-project acceptance ran in this batch. The preceding
 UI8 batch remains unaccepted; these Go checks do not validate its new bytes.
+
+## Frozen native observation must precede receiver settlement (2026-10-08)
+
+The real `observe`/`extract_usage` HTTP consumer checked the frozen `nativeId`
+after `recordCreationReceipt`. A different ready document therefore returned
+503 but had already submitted a RECEIVER read/usage receipt. This is not
+permission to settle a different ExternalExecution, even when its native
+parse status is completed. The implementation now obtains the original native
+observation, checks its frozen identity, and only then submits the receipt.
+
+Four-step implementation impact:
+
+1. Authority is `.design/07` §5 (frozen execution/native evidence) and §8.2
+   (both sides' receipts and usage belong to the same read Operation), plus
+   `.design/13` §4.4. Read-only Git objects rechecked WeKnora commit
+   `2be7bd40631dda1dd485306038f07a62e9ee287e`, full paths
+   `internal/mcpserver/tools_ingest.go::Server.handleAddDocument` and
+   `internal/mcpserver/tools_retrieve.go::summarizeKnowledge`. The existing
+   native producer and MCP SDK are reused; no new native endpoint or task is
+   introduced. The manifest status command was not rerun for this batch.
+2. Only `knowledge/adapter/src/query-revision.mjs`, its original
+   `test/query-revision.test.mjs` and this receipt change. Both v1/v2 ingest
+   observations and usage extraction share the same identity-first consumer;
+   deletion observations keep the same native task/envelope. No contract,
+   schema, UI, Core, cursor or persisted state changes. There is no data
+   migration or compatibility window to close.
+3. ActionToken verification, original fresh PEP checks, tenant/KB scope,
+   source provenance and read Operation association remain unchanged. A
+   mismatched native ID causes the existing 503 UNAVAILABLE response before
+   any receiver receipt; it supplies neither execution success nor usage.
+   Observation still uses `observe_only` with no file payload, SOURCE grant,
+   source byte read, upload or deletion replay. No body/secret enters Core.
+4. Known IDs still settle verified ready native objects. Missing optional IDs
+   retain the original protocol behavior; mismatches never settle. Pending,
+   failed, unknown, unavailable receipt and revocation retain the existing
+   RUNNING/UNKNOWN/refusal behavior. This change creates no new recovery
+   state, deadline, ledger or authority; existing frozen native observation
+   and Operation reconciliation remain responsible for convergence.
+
+Implementation preceded the original check changes. Process/pressure checks
+found no active compiler, about 30 GiB available host memory, zero swap and
+275 MiB free Data. `kailo-native-page-sdk-4rbmbz` lacked the MCP dependency;
+the existing idle `kailo-wren-query-sdk-itgs2n` contained the locked MCP SDK.
+It was reused as UID/GID 1000:1000 with actual `cpu.max=400000 100000`,
+`memory.max=4294967296`, memory+swap equal to memory and Node v24.21.0.
+Only seven direct source/check/contract inputs (120 KiB candidate including
+directories) were copied under its existing `/work` mount. Wren inputs and
+the root SDK were untouched; no dependency install, download or image build.
+
+The original target, with `TMPDIR` inside the private Data candidate, was:
+
+```sh
+node --test knowledge/adapter/test/query-revision.test.mjs
+positive: exit 0; 143 passed, 0 failed, 0 skipped
+private production mutation: exit 1; 138 passed, 5 failed, 0 skipped
+byte-restored: exit 0; 143 passed, 0 failed, 0 skipped
+```
+
+The mutation moved the actual identity guard back after receipt submission;
+tests were unchanged. Both v1/v2 ingest-observe and usage-extraction checks
+reported `actual: 1, expected: 0` for receiver receipts; their parent accounts
+for the fifth failure. The refusal still returned 503, proving that checking
+only the HTTP status missed the original side effect. Formal source was never
+mutated; the restored private source compared byte-identical before rerun.
+Scoped `git diff --check` exited 0. No command remains running.
+
+Logs live in
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-observation-guard.8QFEVq/`:
+
+| Log | SHA-256 |
+|---|---|
+| `positive.log` | `f8261833c267e64823c4125416866bc67d47ff97242c744adcb45f414b447950` |
+| `mutation.log` | `b3057d40813642d3d4e4c6811e23e6259acc898f7e0ebb0721e3af374caa6697` |
+| `restored.log` | `9cb29acf59b64243aac9dfd9bf25bba999f22ae0061cb4e0c96e7ae3df2d6c36` |
+
+The UI8 remains written but unaccepted: the original data-source API, Vue
+dialog/check and five existing locales (`en-US`, `zh-CN`, `ja-JP`, `ko-KR`,
+`ru-RU`) are still +558/-78. A single bounded check of the native-page,
+client-admission and wren-query SDKs found no resolvable `vue`,
+`@vue/compiler-sfc` or `tsx`; the latter two had TypeScript only. The original
+native-page candidate also lacked the SFC check file, so its nineteen-case
+runner was not started, not reported as nineteen failures. No dependency was
+installed or unpacked. The previously viewed normal-session screenshot is
+still only the login page, not a data-source picker acceptance screenshot.
+
+These are controlled native-MCP/PEP HTTP consumer checks, not live
+Cells→WeKnora import/parse/revoke acceptance. No release/binding activation,
+image deployment, authenticated UI8 screenshot, SFC/type check, Windows/Mobile
+or full-project validation ran. The separately frozen ten-Go-path CAS batch
+is also unaccepted; its older passing checks are not evidence for new bytes.

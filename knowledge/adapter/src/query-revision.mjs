@@ -421,25 +421,32 @@ export function createAdapter(rawConfig) {
       if (operation === 'map_native_status_error') {
         value = mapNativeStatusError(args);
       } else if (['observe','extract_usage'].includes(operation)) {
-        if (nativeKnowledgeAction(claims.action_key)==='ingest' && args.nativeType==='add_document') {
-          const native=await nativeTool(config,deadline,'add_document',{
+        const ingesting=nativeKnowledgeAction(claims.action_key)==='ingest' && args.nativeType==='add_document';
+        let native;
+        let observed;
+        if (ingesting) {
+          native=await nativeTool(config,deadline,'add_document',{
             knowledge_base_id:config.nativeKnowledgeBaseId,idempotency_key:args.idempotencyKey,observe_only:true,
           });
-          const observed=creationObservation(native,config,args.idempotencyKey,claims.target_id);
+          observed=creationObservation(native,config,args.idempotencyKey,claims.target_id);
+        } else if (operation==='observe' && nativeKnowledgeAction(claims.action_key)==='delete' && args.nativeType==='delete_document') {
+          observed={execution:deletionObservation(await nativeTool(config,deadline,'delete_document',{
+            knowledge_base_id:config.nativeKnowledgeBaseId,idempotency_key:args.idempotencyKey,observe_only:true,
+          }),config,args.idempotencyKey)};
+        } else throw new Refused(403);
+        // A different native object must not settle this frozen execution or
+        // its SERVICE read/usage receipts, even when that object is ready.
+        if (args.nativeId !== undefined && args.nativeId !== observed.execution.nativeId) throw new Refused(503);
+        if (ingesting) {
           await recordCreationReceipt(native,observed,config,deadline,args.idempotencyKey);
+          if (operation==='extract_usage' && observed.execution.platformStatus!=='SUCCEEDED') throw new Refused(503);
           value=operation==='observe' ? observed : {
             externalExecutionId:args.externalExecutionId,idempotencyKey:args.idempotencyKey,
             nativeType:observed.execution.nativeType,nativeId:observed.execution.nativeId,
             measurements:readMeasurements(config.readEdge?.usageMeasurements,native.source_content_bytes)
               .map(entry=>({...entry,occurredAt:observed.execution.terminalAt})),
           };
-          if (operation==='extract_usage' && observed.execution.platformStatus!=='SUCCEEDED') throw new Refused(503);
-        } else if (operation==='observe' && nativeKnowledgeAction(claims.action_key)==='delete' && args.nativeType==='delete_document') {
-          value = { execution: deletionObservation(await nativeTool(config,deadline,'delete_document',{
-            knowledge_base_id:config.nativeKnowledgeBaseId,idempotency_key:args.idempotencyKey,observe_only:true,
-          }),config,args.idempotencyKey) };
-        } else throw new Refused(403);
-        if (args.nativeId !== undefined && args.nativeId !== (operation==='observe' ? value.execution.nativeId : value.nativeId)) throw new Refused(503);
+        } else value=observed;
       } else {
         value = operation === 'execute' ? await executeOperation(config, deadline, args, claims, token)
           : await nativeRevision(config, deadline, args);

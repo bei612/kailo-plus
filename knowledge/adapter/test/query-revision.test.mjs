@@ -555,15 +555,20 @@ test('native observations retain the frozen identity across execution envelopes 
       assert.equal(state.grants,0);
       assert.equal(state.downloads,0);
       assert.deepEqual(state.methods,[action==='ingest'?'add_document':'delete_document']);
+      assert.equal(state.receipts.length,action==='ingest' && mode==='known-native-id'?1:0);
     });
   }
-  for (const mode of ['known-native-id','mismatched-native-id']) await t.test(`extract_usage/${mode}`,async nested=>{
-    const {invoke}=await fixture(nested,mode,'knowledge.ingest@v1','extract_usage');
+  for (const version of ['v1','v2']) for (const mode of ['known-native-id','mismatched-native-id']) await t.test(`${version}/extract_usage/${mode}`,async nested=>{
+    const {invoke,state}=await fixture(nested,mode,`knowledge.ingest@${version}`,'extract_usage');
     const response=await invoke();
     assert.equal(response.status,mode==='known-native-id'?200:503);
     const value=await response.json();
     assert.equal(Object.hasOwn(value,'execution'),false);
     assert.equal(value.measurements!==undefined,mode==='known-native-id');
+    assert.equal(state.receipts.length,mode==='known-native-id'?1:0);
+    assert.equal(state.grants,0);
+    assert.equal(state.downloads,0);
+    assert.deepEqual(state.methods,['add_document']);
   });
 });
 
