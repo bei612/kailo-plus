@@ -82,6 +82,7 @@ import { BrowserNotificationsProvider, useBrowserNotifications } from "./Browser
 import { TopbarSearch } from "./TopbarSearch";
 import { useWebSearchDirectory } from "./search";
 import type { SearchHit } from "@client-kit/platform/react/search/types";
+import { useWebMarkAsReadShortcuts } from "./useMarkAsReadShortcuts";
 
 /** 会话解析失败即什么都不渲染：没有身份就没有任何页面可看（fail closed）。 */
 export function PlatformApp() {
@@ -294,6 +295,12 @@ function SignedIn({ session }: { session: PlatformSessionView }) {
   // version proves that intent can no longer mutate; do not start a different write meanwhile.
   const preferenceUnknown = preference.isError && isOutcomeUnknown(preference.error)
     && (!userState.state || userState.state.version <= (preference.variables?.version ?? -1));
+  useWebMarkAsReadShortcuts({ client: bff, session, reads: userState,
+    workspaceId: tab === "channel" && activeRow?.isMember === true ? active : null,
+    conversationId: tab === "conversation" ? chosenConversation?.id ?? null : null,
+    disabled: tab === "settings" || preference.isPending || preferenceUnknown,
+    onError: () => toast.error(t("platform.loadFailed")),
+  });
 
   const onSignOut = useCallback(() => void signOut(), []);
 

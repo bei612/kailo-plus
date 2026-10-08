@@ -3799,3 +3799,116 @@ profile/DM、Presence producer与未接的原mode/overlay等没有被这批冒�
 runtime，三组件页面未验收，不生成假入口。新源码业务截图0、Windows/Mobile
 实机0；20图不等于所有页面/关键状态/双语全覆盖，也不与旧13图重复累加。
 本节源码尚未提交/push/部署或更新包；Header完整功能与全量原版一致性仍未完成。
+
+### 2026-10-08 原快捷键定义及已读操作的共源真实消费者
+
+本节为实现后回执，权威为 REQ-08/24、DD-75、设计09 §3、既有 Core
+InboxReadState CAS 及用户原版恢复要求。固定官方 Buzz
+`779af8886caae1317b4de962082429867ab61503`：
+
+- `desktop/src/shared/lib/keyboard-shortcuts.ts::KEYBOARD_SHORTCUTS` 的全部27项
+  定义和顺序，及实际消费的分组/平台键辅助，按原字节迁入共享
+  `client-kit/ts/platform/src/keyboard-shortcuts.ts`；Native原模块仅转导出。
+  未被使用的原 Huddle 事件常量/type 和 getPlatformKeysById 没有制造新消费者。
+- `desktop/src/app/useMarkAsReadShortcuts.ts::useMarkAsReadShortcuts` 函数体与
+  固定官方逐字一致，迁入共享 React 模块；原 Native AppShell 继续调用原路径的
+  转导出。前景 escape surface、defaultPrevented、modifier、StrictMode 清理等
+  原规则保留，不重新发明快捷键或关闭行为。
+- `desktop/src/features/settings/ui/KeyboardShortcutsCard.tsx::
+  KeyboardShortcutsCard` 对照后，Web删除自维护19项表，使用与Native同一完整
+  注册表、原分组顺序及既有同源中英 shortcutText。当前有真实消费者的23项展示，
+  含 quick-search、find-in-channel、mark-current-read、mark-all-read；原
+  always-address-agent、publish-note、toggle-huddle、push-to-talk 四项真实
+  消费仍缺失，完整定义保留，不能将过滤展示说成原卡完整恢复。
+
+影响面为共享原注册表/hook、Native原转导出、Web Settings/PlatformApp/Sidebar
+及已有检查；新增Web宿主读标记适配接原BFF client与同一个 useInboxState.write，
+不改 Core、契约、数据库、Workflow、服务端授权或计量权威。没有新正文/状态
+账本、注册表、服务、开关、凭据、时间来源或翻译权威。Web不持私钥；Native
+本机持钥与管理BFF边界不变。Mobile无本批实现/实机验收，不需四侧再生成。
+
+副作用仅复用原 read-position CAS，不用 Date.now 把未读内容跳过。Web
+loadReadShortcutContexts 实际读取 session、成员workspace、分页ACTIVE
+Conversation、workspaceChannel native channelId 与原消息窗口；只取真实内容
+事件 createdAt，不把窗口边界元事件时间当正文时间。空窗口不写入；未知类型或
+forum窗口不能证明全部root的最新回复时，在任何CAS前拒绝整个操作，保留明确
+缺项。完成读取后再核 session tenant/principal/platformSessionId、成员、频道
+绑定与Conversation参与者；换scope/撤权/绑定变更/未知准入拒绝消费。
+
+原Sidebar查询把workspace ID错当Relay native channel ID核验；本批直接纠正
+其真实消费者，读取workspaceChannel后用真实channelId验证事件和折叠既有
+read marks。refetch旧活动不再作为可写最新事实。并发按当前owner/in-flight
+守卫收敛；原读状态UNKNOWN/pending/failed禁止重复CAS，不转成成功或自动重放。
+异常沿工程06 §4原错误类别，失败由既有本地化反馈呈现；没有新增持久状态。
+
+本批13源码/检查路径 **+663/-331**（9已跟踪+86/-331、4新增577行），属于
+已写入范围，不代表完成率。复用 kailo-agent-receipt-xvkujx，实际4CPU/8GiB，
+Node/Vitest按maxWorkers=1集中窄验，无Cargo/Go/新镜像/安装/全量构建。
+独立小候选及日志在
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/
+shortcut-consumers.aJ6AF0`，不覆盖其他队友候选：
+
+- shared-restored.log：shared下
+  `node node_modules/vitest/vitest.mjs run test/channel-navigation-shortcuts.test.tsx
+  --maxWorkers=1`，**16 passed/退出0**。
+- web-restored.log：web下
+  `node node_modules/vitest/vitest.mjs run src/platform/ui/SettingsPane.test.tsx
+  src/platform/ui/ChannelSidebar.test.tsx src/platform/ui/useMarkAsReadShortcuts.test.tsx
+  --maxWorkers=1`，**22 passed/退出0**。最终合计38项，包含实际BffClient与
+  useInboxState写入消费者、空内容/失权/换身份/绑定变化/UNKNOWN/迟到回执。
+- shared-tsc-final.log、test-tsc-final.log、web-tsc-final.log：原
+  `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`，shared检查另用
+  tsconfig.test.json，三个最终检查**退出0**。
+- native-tsc-final.log/native-tsc-peer-final.log：Native原tsc **退出2**，实际
+  `workflow-form-canvas.tsx(5,28): error TS2307: Cannot find module
+  '@radix-ui/react-focus-scope' or its corresponding type declarations.`
+  正式shared包及锁已固定1.2.0；独立候选沿原Native缓存graph未提供该精确包。
+  较早指向shared另一React peer的候选也失败，保留native-tsc.log；修正候选
+  原peer归属后仍有此缺包失败，不改生产版本、不安装/伪造declare来报通过。
+  Native类型/完整IPC/Windows实机不能据Web通过而冒称通过。
+- 四次private真实生产破坏分别为：改quick-search registry ID（registry-fault）、
+  去除原前景Escape守卫（escape-fault）、去除真实platformSessionId比较
+  （identity-fault）、Sidebar核验退回workspace.id（channel-id-fault）。四份
+  .log均实际**1 failed/退出1**；恢复后以上38项全部再通过。13正式/候选输入
+  cmp均0，owned git diff --check退出0。SDK已释放，memory.events旧
+  oom/oom_kill=2未增加。本批full/发布/安装包及设备检查未运行。
+
+同一3313历史全树快照派生
+`collaboration-current-20261008.shortcut-classification.tsv`，SHA256
+`326224bbac227f8e20971b8c03aad8553772994525599c735c09c93d2e9fc10f`。
+列为upstream_commit/path/change_kind/category/destination/evidence/added_lines/
+deleted_lines；**原样1、共享43、授权9、缺失33、未分类3227，共3313，86条已
+归档**。历史change_kind/numstat不冒充当前重导出的完整diff；1980同路径同字节
+另计。原useMark hook在该历史快照未变，不额外虚增差异表行。全量逐处分类、
+缺项恢复与完整原版体验仍未完成，不能宣称100%。
+
+主代理已独立发布固定main
+`148798bc95ac47bc46319270462ab1fb064eef2a`，Web镜像
+`sha256:da2ae292fb7297fd597e9db1420bd6e67135f7ae64261f66ff754d48ecb03d69`。
+本轮playwright-cli沿正常SSO表单登录，不注入Cookie/session、不重置账户、
+不输出口令。实际请求platform-build-info.json返回200、BUZZ_WEB、buildId
+`sha256:f6cffa26a12eb0abf79e9402aa86c362a1da0ef6e8e09717709bd10e4b15f89c`。
+本批13路径不在该已发布版本中，不能拿这些图证明新增读快捷键已上线。
+
+当前22个页面/关键状态实际截图均已打开查看，统一前缀
+`.playwright-cli/kailo-ui-20261008-main148798-`，下列均加.png：
+
+- channel、dm-final、inbox-final、pulse-settled、projects-final、members-settled、
+  agents-ready、workflows-ready、tasks-final、approvals-final、audit-ready、
+  devices-settled、settings（13个页面状态）。
+- appearance、notifications、shortcuts、custom-emoji、invites（5个设置状态）。
+- avatar-editor、profile-edit（原内联编辑状态，不冒称上传/保存验收）。
+- search、channel-browser（2个实际弹层；浏览频道有真实3条目录/成员数）。
+
+首轮quickloop与部分名为settled/final的图片仍是加载骨架，已打开发现并用上述
+真实内容图替代作为选定证据，不计加载图为完成页面。实际主题/侧栏/消息、Inbox
+分栏、Settings原卡/头像类型/编辑呈现已看见；不再用旧d313图充当148798验收。
+搜索输入seam时CLI网络实际输出
+`180. [POST] /api/v1/search/messages => [404] Not Found`，console同一404；
+目前仅私聊目录命中，消息全局搜索不能算已上线。通知被浏览器权限阻止，有真实
+红色提示，未伪造可用权限。本轮未上传/保存头像、改变偏好、发消息或创建工作流；
+自动已读属于既有页面查看行为。中文实际查看，英文全页与所有关键状态未验。
+无当前用户可访问ACTIVE业务binding/Wren业务runtime，三组件页面0；Windows/
+Mobile实机0。22图不是全部页面功能/双语/设备验收；头像完整保存、Agent资料/
+直聊、完整Workflows、forum最新活动及四项原快捷键仍有实际缺项。此节与13路径
+冻结交主代理精确复核提交，本批源码尚未提交/push/部署。

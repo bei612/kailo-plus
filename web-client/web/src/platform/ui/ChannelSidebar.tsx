@@ -1,7 +1,6 @@
 // Web adapter for the same Buzz channel groups/rows/context menus used by Desktop.
 // Business preferences/read positions remain the existing Core user-state CAS authority.
 import type { WorkspaceView } from "@client-kit/contracts";
-import { inboxReply } from "@client-kit/platform/inbox";
 import { useT } from "@client-kit/platform/react/context";
 import { ChannelGroupSection, type SidebarChannel } from "@client-kit/platform/react/sidebar/channel-group";
 import { ChannelContextMenuItems } from "@client-kit/platform/react/sidebar/channel-context-menu";
@@ -49,9 +48,11 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
       const pages = new Map<string, ReturnType<typeof inboxWindowEvents>>();
       for (const workspace of joined) {
         signal.throwIfAborted();
+        const channel = await bff.workspaceChannel(workspace.id);
+        signal.throwIfAborted();
         const page = await bff.workspaceMessages(workspace.id);
         signal.throwIfAborted();
-        pages.set(workspace.id, inboxWindowEvents(page.events, workspace.id));
+        pages.set(workspace.id, inboxWindowEvents(page.events, channel.channelId));
       }
       return pages;
     },
@@ -67,12 +68,12 @@ export function ChannelSidebar({ principalId, workspaces, selectedId, active, re
     const latest = events.reduce<number | null>((at, event) => Math.max(at ?? event.createdAt, event.createdAt), null);
     return { ...workspace, lastMessageAt: latest === null ? null : new Date(latest * 1000).toISOString() };
   });
-  const knownActivity = messages.isSuccess && reads.state !== null;
+  const knownActivity = messages.isSuccess && !messages.isFetching && reads.state !== null;
   const canWriteRead = knownActivity && !reads.pending && !reads.unknown && !preferencePending;
   const canWritePreference = reads.state !== null && !reads.pending && !reads.unknown && !preferencePending;
   const unread = useMemo(() => new Set(knownActivity ? workspaces.filter((row) =>
-    row.isMember === true && messages.data?.get(row.id)?.some((event) => event.createdAt > (reads.readAt(inboxReply(event.tags) ? `msg:${event.id}` : row.id) ?? -Infinity)),
-  ).map((row) => row.id) : []), [knownActivity, workspaces, messages.data, reads.readAt]);
+    row.isMember === true && messages.data?.get(row.id)?.some((event) => event.createdAt > (reads.eventReadAt(event) ?? -Infinity)),
+  ).map((row) => row.id) : []), [knownActivity, workspaces, messages.data, reads.eventReadAt]);
   useEffect(() => { onUnreadChange?.(unread); }, [unread, onUnreadChange]);
   const mark = (ids: string[], read: boolean) => {
     if (!canWriteRead) return;

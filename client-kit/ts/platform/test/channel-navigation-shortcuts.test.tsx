@@ -7,6 +7,9 @@ import { CreateChannelDialog } from "../src/react/create-channel-dialog";
 import { ChannelBrowser } from "../src/react/channel-browser";
 import { useChannelNavigationShortcuts } from "../src/react/use-channel-navigation-shortcuts";
 import { shortcutText } from "../src/react/settings";
+import { KEYBOARD_SHORTCUTS, getShortcutsByCategory } from "../src/keyboard-shortcuts";
+import { useMarkAsReadShortcuts } from "../src/react/use-mark-as-read-shortcuts";
+import { acquireEscapeSurface } from "../src/react/messages/thread/escapeSurfaces";
 import { button, click, render, settle, type } from "./render";
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -129,4 +132,40 @@ it("keeps original English shortcut descriptions and complete Chinese translatio
   expect(shortcutText("en", "browse-dms")).toEqual({ label: "New direct message", description: "Open the new message composer" });
   expect(shortcutText("en", "new-channel")).toEqual({ label: "New channel", description: "Open the create channel dialog" });
   for (const key of ["browse-channels", "browse-dms", "new-channel"]) expect(shortcutText("zh-CN", key)?.label).toMatch(/[\u4e00-\u9fff]/);
+});
+
+it("retains the full fixed-official shortcut registry and original category order", () => {
+  expect(KEYBOARD_SHORTCUTS.map(row => row.id)).toEqual([
+    "quick-search", "browse-channels", "browse-dms", "new-channel", "open-settings", "go-back", "go-forward",
+    "find-in-channel", "go-home", "toggle-sidebar", "mark-current-read", "mark-all-read",
+    "zoom-in", "zoom-out", "zoom-reset", "send-message", "new-line", "always-address-agent", "publish-note",
+    "close-dialog", "toggle-huddle", "push-to-talk", "format-bold", "format-italic", "format-strikethrough", "format-code", "format-link",
+  ]);
+  expect([...getShortcutsByCategory().keys()]).toEqual(["Navigation", "Messages", "Formatting", "Zoom"]);
+  for (const id of ["quick-search", "find-in-channel", "mark-current-read", "mark-all-read"])
+    expect(shortcutText("zh-CN", id)?.description).toMatch(/[\u4e00-\u9fff]/);
+});
+
+it("shares the original read shortcuts with foreground Escape ownership and StrictMode cleanup", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const mark = vi.fn(), all = vi.fn();
+  function Host() {
+    useMarkAsReadShortcuts({ activeChannelId: "native-channel", activeChannelLastMessageAt: "2026-10-08T00:00:00Z",
+      selectedView: "channel", markChannelRead: mark, markAllChannelsRead: all });
+    return null;
+  }
+  await render(<StrictMode><Host /></StrictMode>);
+  const escape = (extra: KeyboardEventInit = {}) => press({ key: "Escape", ctrlKey: false, shiftKey: false, ...extra });
+  expect((await escape()).defaultPrevented).toBe(true);
+  expect(mark).toHaveBeenCalledExactlyOnceWith("native-channel", "2026-10-08T00:00:00Z");
+  expect((await escape({ shiftKey: true })).defaultPrevented).toBe(true);
+  expect(all).toHaveBeenCalledOnce();
+  const release = acquireEscapeSurface();
+  try {
+    expect((await escape()).defaultPrevented).toBe(false);
+    expect((await escape({ shiftKey: true })).defaultPrevented).toBe(false);
+  } finally { release(); }
+  for (const modifier of [{ ctrlKey: true }, { altKey: true }]) await escape(modifier);
+  expect(mark).toHaveBeenCalledTimes(1);
+  expect(all).toHaveBeenCalledTimes(1);
 });

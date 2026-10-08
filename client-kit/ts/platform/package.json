@@ -121,6 +121,8 @@
     "./react/profile-settings": "./src/react/profile-settings.tsx",
     "./react/profile/avatar-host": "./src/react/profile/avatar-host.tsx",
     "./keyboard-platform": "./src/keyboard-platform.ts",
+    "./keyboard-shortcuts": "./src/keyboard-shortcuts.ts",
+    "./react/use-mark-as-read-shortcuts": "./src/react/use-mark-as-read-shortcuts.ts",
     "./react/use-settings-shortcuts": "./src/react/use-settings-shortcuts.ts",
     "./react/use-channel-navigation-shortcuts": "./src/react/use-channel-navigation-shortcuts.ts",
     "./react/use-search-shortcuts": "./src/react/use-search-shortcuts.ts",

@@ -1,5 +1,5 @@
 import { AppearanceSettings } from "@client-kit/platform/react/appearance-settings";
-import { isMacPlatform } from "@client-kit/platform/keyboard-platform";
+import { getPlatformKeys, getShortcutsByCategory } from "@client-kit/platform/keyboard-shortcuts";
 import { useEffect, useId, useRef, useState } from "react";
 import { translate } from "@client-kit/platform/i18n";
 import {
@@ -24,29 +24,9 @@ import { BrowserNotificationSettings } from "./BrowserNotifications";
 import { CustomEmojiSettingsCard, pickEmojiImage } from "@client-kit/platform/react/custom-emoji";
 
 function webShortcuts(locale: ReturnType<typeof getLocale>): SettingsShortcut[] {
-  const mod = isMacPlatform() ? "⌘" : "Ctrl+";
-  const entries: Array<[string, string, SettingsShortcut["category"]]> = [
-    ["browse-channels", isMacPlatform() ? "⇧⌘O" : "Shift+Ctrl+O", "Navigation"],
-    ["browse-dms", isMacPlatform() ? "⇧⌘K" : "Shift+Ctrl+K", "Navigation"],
-    ["new-channel", isMacPlatform() ? "⇧⌘N" : "Shift+Ctrl+N", "Navigation"],
-    ["open-settings", `${mod},`, "Navigation"],
-    ["go-back", isMacPlatform() ? "⌘[" : "Alt+←", "Navigation"],
-    ["go-forward", isMacPlatform() ? "⌘]" : "Alt+→", "Navigation"],
-    ["go-home", isMacPlatform() ? "⇧⌘A" : "Shift+Ctrl+A", "Navigation"],
-    ["toggle-sidebar", `${mod}S`, "Navigation"],
-    ["send-message", "Enter", "Messages"], ["new-line", "Shift+Enter", "Messages"],
-    ["close-dialog", "Escape", "Messages"],
-    ["format-bold", `${mod}B`, "Formatting"], ["format-italic", `${mod}I`, "Formatting"],
-    ["format-strikethrough", `${mod}${isMacPlatform() ? "⇧" : "Shift+"}X`, "Formatting"],
-    ["format-code", `${mod}E`, "Formatting"],
-    ["format-link", `${mod}K`, "Formatting"],
-    ["zoom-in", isMacPlatform() ? "⌘+" : "Ctrl+=", "Zoom"],
-    ["zoom-out", `${mod}-`, "Zoom"],
-    ["zoom-reset", `${mod}0`, "Zoom"],
-  ];
-  return entries.flatMap(([id, keys, category]) => {
-    const text = shortcutText(locale, id);
-    return text ? [{ id, keys, category, ...text }] : [];
+  return [...getShortcutsByCategory().values()].flat().flatMap((shortcut) => {
+    const text = shortcutText(locale, shortcut.id);
+    return text ? [{ id: shortcut.id, keys: getPlatformKeys(shortcut), category: shortcut.category, ...text }] : [];
   });
 }
 // The table describes the real shared Tiptap handlers, not new key bindings.

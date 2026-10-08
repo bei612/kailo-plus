@@ -6,12 +6,14 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { ChannelSidebar } from "./ChannelSidebar";
 
-const snapshot = vi.hoisted(() => ({ failed: false, query: undefined as undefined | ((context: { signal: AbortSignal }) => Promise<Map<string, { id: string }[]>>), messages: vi.fn(), menus: new Map<string, { mute?: (id: string) => void; unmute?: (id: string) => void }>() }));
+const snapshot = vi.hoisted(() => ({ failed: false, fetching: false, query: undefined as undefined | ((context: { signal: AbortSignal }) => Promise<Map<string, { id: string }[]>>),
+  channel: vi.fn(async (workspace: string) => ({channelId:`native-${workspace}`})), messages: vi.fn(),
+  menus: new Map<string, { mute?: (id: string) => void; unmute?: (id: string) => void }>() }));
 vi.mock("@client-kit/platform/react/context", () => ({ useT: () => (key: string) => key }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: (options: { queryFn: typeof snapshot.query }) => { snapshot.query = options.queryFn; return ({ isSuccess: !snapshot.failed, isError: snapshot.failed, data: new Map([
-    ["one", [{ id: "one-event", channelId: "one", createdAt: 30, tags: [] }]],
-    ["two", [{ id: "two-event", channelId: "two", createdAt: 10, tags: [] }]],
+  useQuery: (options: { queryFn: typeof snapshot.query }) => { snapshot.query = options.queryFn; return ({ isSuccess: !snapshot.failed, isFetching:snapshot.fetching, isError: snapshot.failed, data: new Map([
+    ["one", [{ id: "one-event", channelId: "native-one", createdAt: 30, tags: [] }]],
+    ["two", [{ id: "two-event", channelId: "native-two", createdAt: 10, tags: [] }]],
   ]) }); },
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
@@ -32,7 +34,7 @@ vi.mock("@client-kit/platform/react/sidebar/channel-context-menu", () => ({
 }));
 vi.mock("@client-kit/platform/react/sidebar/useChannelSortPreference", () => ({ useChannelSortPreference: () => ({ sortModeFor: () => "alpha", setSortModeFor: vi.fn() }) }));
 vi.mock("@client-kit/platform/react/sidebar/tooltip", () => ({ TooltipProvider: ({ children }: { children: ReactNode }) => children }));
-vi.mock("@/platform/bff-client", () => ({ bff: { workspaceMessages: snapshot.messages }, fetchUserState: vi.fn() }));
+vi.mock("@/platform/bff-client", () => ({ bff: { workspaceChannel:snapshot.channel, workspaceMessages: snapshot.messages }, fetchUserState: vi.fn() }));
 
 const reads: ComponentProps<typeof ChannelSidebar>["reads"] = {
   state: { version: 3, readContexts: {}, workspacePreferences: { one: { starred: true, muted: false } } },
@@ -75,14 +77,24 @@ it("keeps management-visible rows without unread markers or read commands for no
 });
 it("loads the real sidebar activity query when Core returns original window metadata", async () => {
   snapshot.messages.mockImplementation(async (workspace: string) => ({ events: [
-    { id: "a".repeat(64), pubkey: "b".repeat(64), kind: 9, created_at: 30, content: "message", tags: [["h", workspace]] },
+    { id: "a".repeat(64), pubkey: "b".repeat(64), kind: 9, created_at: 30, content: "message", tags: [["h", `native-${workspace}`]] },
     { id: "c".repeat(64), pubkey: "d".repeat(64), kind: 39006, created_at: 31,
-      content: JSON.stringify({ has_more: false, next_cursor: null }), tags: [["h", workspace], ["d", `${workspace}:head`]] },
+      content: JSON.stringify({ has_more: false, next_cursor: null }), tags: [["h", `native-${workspace}`], ["d", `native-${workspace}:head`]] },
   ] }));
   markup();
   const result = await snapshot.query!({ signal: new AbortController().signal });
   expect(result.get("one")?.map((event) => event.id)).toEqual(["a".repeat(64)]);
   expect(result.get("two")?.map((event) => event.id)).toEqual(["a".repeat(64)]);
+  expect(result.get("one")).toMatchObject([{channelId:"native-one"}]);
+  expect(snapshot.channel).toHaveBeenCalledWith("one");
+});
+it("uses native channel/msg/thread markers and does not write from stale activity during refetch", () => {
+  const observed = vi.fn((event: {channelId?:string|null}) => event.channelId === "native-one" ? 30 : 10);
+  expect(markup({eventReadAt:observed})).not.toContain('data-unread="true"');
+  expect(observed.mock.calls.map(([event])=>event.channelId)).toContain("native-one");
+  snapshot.fetching = true;
+  try { expect(markup()).not.toContain('data-read-enabled="true"'); }
+  finally { snapshot.fetching = false; }
 });
 it("retains original channel mute and unmute consumers with the authoritative star and UNKNOWN guard", () => {
   snapshot.failed = false;

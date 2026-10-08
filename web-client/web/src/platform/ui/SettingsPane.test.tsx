@@ -193,7 +193,13 @@ describe("Web original settings host", () => {
       expect(host.querySelector('[data-sidebar="group"]')).not.toBeNull();
       expect(host.querySelector('[data-testid="settings-content-surface"]')).not.toBeNull();
       await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-shortcuts"]')!.click());
-      expect(host.querySelectorAll('[data-shortcut]')).toHaveLength(19);
+      expect(host.querySelectorAll('[data-shortcut]')).toHaveLength(23);
+      for (const id of ["quick-search", "find-in-channel", "mark-current-read", "mark-all-read"])
+        expect(host.querySelector(`[data-shortcut="${id}"]`)).not.toBeNull();
+      expect([...host.querySelectorAll('[data-shortcut]')].slice(0, 12).map(row => row.getAttribute("data-shortcut"))).toEqual([
+        "quick-search", "browse-channels", "browse-dms", "new-channel", "open-settings", "go-back", "go-forward", "find-in-channel",
+        "go-home", "toggle-sidebar", "mark-current-read", "mark-all-read",
+      ]);
       expect(host.querySelector('[data-shortcut="close-dialog"]')).not.toBeNull();
       expect(host.querySelector('[data-shortcut="format-link"]')).not.toBeNull();
       expect(host.textContent).toContain("Formatting");
