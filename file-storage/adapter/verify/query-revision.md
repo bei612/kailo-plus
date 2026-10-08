@@ -823,3 +823,74 @@ Core 的 base64/正文 schema；业务 list 没有把 SERVICE list_output 充当
 ACTIVE。原 SDK 缺 xml2js，上述两项 ONLYOFFICE 目标明确排除；extract_usage、
 完整契约登记/终态套件、live release/binding、实际 Cells→WeKnora E2E、页面截图、
 full、四侧生成、Windows/Mobile、镜像与部署均不在本批通过范围。
+
+## HUMAN/AGENT read/list 实际结果生产者（2026-10-08，未部署）
+
+本批接续上述 HTTP 业务消费者，修正只返回执行状态、没有工具结果的缺口。
+它不将前一批的状态观察证明冒充 MCP 工具已上线，也不将 SERVICE 的完整目录
+传输合同注册成文件工具输出。
+
+四步影响结论：
+
+1. 权威沿 `.design/07` §5.2/§8.2、`.design/18` 的源服务正文/版本权威与既有
+   ResultExposurePolicy。重新只读核验 Cells 固定
+   `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `gateway/restv2/api-lookup.go::Handler.GetByUuid`、`Handler.Lookup` 及
+   `gateway/restv2/api-versions.go::Handler.NodeVersions`；实际使用 UUID、原生
+   VersionId 与带该版本的受控预签名下载，不创造读取任务或正文存储。
+2. 影响原 `node-execution.mjs::executeNode`、`service-read.mjs::readFile` 与
+   `query-revision.mjs::verifyToken`。两个真实文件读取消费者共用 `nativeFile` 的
+   原生版本下载，身份校验、最终授权和结果/回执各留在自己的原调用方。
+   业务 list 返回既有消费结构 `{citations: ContentReference[]}` 的 resultJson；
+   非空时另带完全相同的 typed contentReferences，空列表不带该 typed slot。
+   业务 read 接收完整五字段 ContentReference，返回严格 UTF-8 `{text}` 与同一
+   typed contentReference。HUMAN 的原 query_revision 允许该业务策略对，仍需
+   原 actor/scope/hash/fresh PEP；PAT NONE 和 SERVICE 身份不因此放宽。
+3. Core `application_tool.rs::success`、`output_value` 和 `citation_output` 只沿
+   原结果策略、固定输出 schema 与逐引用 revision 复核消费结果；本批没有修改
+   它们、公共契约或能力登记。文件正文只在原受授权即时结果中流转，不复制到
+   Core 持久库。SERVICE canonical envelope、字节传输及 SOURCE 回执不变，
+   HUMAN/AGENT 不补造组件间回执。原生 UI、独立入口、ACL、页面与三端不改。
+4. 实际检查覆盖 Unicode、保留 BOM、空文件、非法 UTF-8、缺失固定版本、JSON
+   转义后的完整响应超限、下载后的原生移位、平台撤权、最终目标变更及引用
+   策略缺失。任何拒绝均不外发正文/终态成功或 SOURCE 回执；read 最后再次
+   查询原 UUID/root 与 fresh PEP，list 仍比较两遍原完整列举。原 node 丢 ACK
+   观察仍 UNKNOWN、无重读/重列举或假完成，无新增状态/重试权威。
+
+实现后复用原 `kailo-wren-query-sdk-itgs2n` 和原独立候选，UID/GID 1000:1000、
+4 CPU/4 GiB、swap 0、Node v24.21.0；与 Wren 使用不同输入目录。运行前主机
+约 17 GiB available、Data 294 GiB、根盘 82 GiB，无本队在途构建；只有原 Node
+目标，没有安装、下载、镜像、Go/Cargo 编译、新数据库或全树复制。四个本批
+源/检查输入语法检查 exit 0。
+
+```sh
+node --test --test-skip-pattern='HUMAN execute selects ONLYOFFICE|ONLYOFFICE disclosure rejects' \
+  file-storage/adapter/test/query-revision.test.mjs
+positive (handle 85031): exit 0; 267 passed, 0 failed
+private production mutation (handle 89525): exit 1; 258 passed, 9 failed
+byte-restored (handle 28745): exit 0; 267 passed, 0 failed
+```
+
+私有候选破坏五处生产保护：typed citations 关联、严格 UTF-8、完整响应预算、
+读后原生 scope 复核与 HUMAN 引用策略。原检查和 fixture 未修改，抓到 6 个
+独立失败断言及 3 个父项失败；缺失策略/移位/非法字节/超限实际错误放行为 200
+而被原断言拒绝。正式树从未破坏；恢复后九个实际 import/检查输入逐文件 cmp
+一致，同一原目标再通过，`git diff --check` exit 0。最终 cgroup memory.events
+各 OOM 计数为 0，共享容器 memory.current 快照 526565376 bytes；命令均终态。
+
+日志仍在原候选
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/knowledge-observation-guard.8QFEVq/`：
+
+| 日志 | SHA-256 |
+|---|---|
+| `cells-business-result-positive.log` | `30ce4b0aad67f9acc328d6dd545167172b8f83066d1763a7f98f3fb4e81f6fb4` |
+| `cells-business-result-mutation.log` | `46e4485fb91e7c673020df1247d62c32b55af30ec43388448d2e922128269c36` |
+| `cells-business-result-restored.log` | `cf7c54b62d0852dea504a71c57c9e4c355150ca589a95e67da79b20c27f59b56` |
+
+交付边界：本批是原 HTTP read/list 的结果生产者，不是 AgentGateway MCP
+transport/工具注册验收；现适配器尚无 MCP server 消费其 Gateway transport
+身份，未手写 MCP 协议绕过。文本格式沿已有结构，不以知识能力冒充文件能力
+登记；二进制结果合同及编码未实现。原生读取仍无按 key 查旧终态的证据，不能
+因此通过完整终态 conformance 或强制 ACTIVE。SDK 缺 xml2js，上述两项
+ONLYOFFICE 目标明确排除；full、四侧生成、extract_usage、live release/binding、
+实际 Cells→WeKnora E2E、页面截图、Windows/Mobile、镜像与部署本批未执行。

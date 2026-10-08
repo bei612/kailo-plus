@@ -130,10 +130,13 @@ export async function verifyToken(token, config, args, operation = 'query_revisi
     } else {
       if (claims.actor_principal_id !== claims.initiating_human_principal_id
         || ['delegation_id', 'delegation_version'].some(key => Object.hasOwn(claims, key))) throw new Refused(401);
-      if (operation === 'map_native_status_error') {
+      if (operation === 'map_native_status_error'
+        || (operation === 'query_revision' && ['file_storage.read@v1', 'file_storage.list@v1'].includes(claims.action_key))) {
         // HUMAN business contexts have the same required policy pair as
         // Agent calls. This cannot borrow a DOCUMENT/PAT NONE context.
-        if (!['file_storage.read@v1', 'file_storage.list@v1'].includes(claims.action_key)) throw new Refused(401);
+        if (!['file_storage.read@v1', 'file_storage.list@v1'].includes(claims.action_key)
+          || !UUID.test(claims.result_exposure_policy_id) || !Number.isSafeInteger(claims.result_exposure_policy_version)
+          || claims.result_exposure_policy_version <= 0) throw new Refused(401);
       } else if (!['file_storage.open_view@v1', 'file_storage.open_edit@v1'].includes(claims.action_key)
         || ['result_exposure_policy_id', 'result_exposure_policy_version'].some(key => Object.hasOwn(claims, key))) {
         throw new Refused(401);

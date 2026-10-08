@@ -3,6 +3,8 @@
 import { createHash } from 'node:crypto';
 import { Refused, exactKeys, nonempty, canonical, verifiedClaims, freshPep } from '../../../client-kit/adapter/protocol.mjs';
 import { nativeListing } from './service-list.mjs';
+import { nativeFile } from './service-read.mjs';
+import { nativeDocumentNode } from './query-revision.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const actions = ['file_storage.read@v1', 'file_storage.list@v1'];
@@ -57,27 +59,57 @@ export async function executeNode(config, deadline, raw, key, token) {
   if (!config.readEdge) throw new Refused(503);
   const request = requestValue(raw, key);
   const args = request.arguments;
-  if (request.actionKey !== 'file_storage.list@v1' || !exactKeys(args.input, ['resourceId'])
-    || !UUID.test(args.input.resourceId)) throw new Refused(400);
+  const listing = request.actionKey === 'file_storage.list@v1';
+  if (!exactKeys(args.input, listing ? ['resourceId']
+    : ['resourceId', 'nativeObjectRef', 'nativeRevision', 'displayName', 'mediaType'])
+    || !UUID.test(args.input.resourceId) || (!listing && (!UUID.test(args.input.nativeObjectRef)
+      || !['nativeRevision', 'displayName', 'mediaType'].every(field => nonempty(args.input[field]))))) throw new Refused(400);
   const claims = await claimsForNode(config, token, args, 'execute');
   if (claims.action_key !== request.actionKey || (!Object.hasOwn(claims, 'agent_principal_id')
     && (claims.idempotency_key !== key || !UUID.test(claims.external_execution_id)))) throw new Refused(401);
   const admitted = await freshPep(config, deadline, token, args, claims, 'execute');
   const resource = resourceForNode(config, admitted, claims, args);
   const nativeArgs = {input: args.input, authorizationTargetNativeRef: resource.nativeRef};
-  const items = await nativeListing(config, deadline, nativeArgs);
-  const encoded = canonical(items);
-  if (Buffer.byteLength(encoded, 'utf8') > config.maxBodyBytes) throw new Refused(503);
-  if (canonical(await nativeListing(config, deadline, nativeArgs)) !== encoded) throw new Refused(409);
+  let result;
+  let references;
+  if (listing) {
+    const items = await nativeListing(config, deadline, nativeArgs);
+    if (canonical(await nativeListing(config, deadline, nativeArgs)) !== canonical(items)) throw new Refused(409);
+    // Reuse the already-consumed typed citation result, not SERVICE's complete
+    // desired-set/receipt format. Core verifies these references before its
+    // original result policy discloses them; it creates no file directory.
+    result = {citations: items};
+    references = items.length === 0 ? {} : {contentReferences: items};
+  } else {
+    const file = await nativeFile(config, deadline, nativeArgs, claims);
+    // Reuse the already-consumed text result shape, not an invented binary
+    // schema. Preserve UTF-8 byte content including BOM; never replace invalid
+    // sequences or parse/convert a native binary document into guessed text.
+    let text;
+    try { text = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(file.bytes); }
+    catch { throw new Refused(503); }
+    result = {text};
+    references = {contentReference: {...args.input}};
+  }
   const current = await claimsForNode(config, token, args, 'execute');
   const disclosed = await freshPep(config, deadline, token, args, current, 'execute');
   if (canonical(resourceForNode(config, disclosed, current, args)) !== canonical(resource)) throw new Refused(403);
+  if (!listing) {
+    await nativeDocumentNode(config, deadline, {nativeObjectRef: args.input.nativeObjectRef,
+      authorizationTargetNativeRef: resource.nativeRef}, current);
+    const final = await claimsForNode(config, token, args, 'execute');
+    const admittedFinal = await freshPep(config, deadline, token, args, final, 'execute');
+    if (canonical(resourceForNode(config, admittedFinal, final, args)) !== canonical(resource)) throw new Refused(403);
+  }
   const at = new Date().toISOString();
-  // FileStorageListOutput belongs to the SERVICE transfer contract. Business
-  // observation exposes only the confirmed native reference/status, never a
-  // second directory, file body or the component-to-component SOURCE receipt.
-  return {execution: {idempotencyKey: key, nativeType: 'node', nativeId: resource.nativeRef,
-    platformStatus: 'SUCCEEDED', cancelCapability: 'UNSUPPORTED', lastObservedAt: at, terminalAt: at}};
+  const response = {execution: {idempotencyKey: key, nativeType: 'node',
+    nativeId: listing ? resource.nativeRef : args.input.nativeObjectRef,
+    platformStatus: 'SUCCEEDED', cancelCapability: 'UNSUPPORTED', lastObservedAt: at, terminalAt: at},
+    resultJson: canonical(result), ...references};
+  // JSON escaping and typed references count toward the actual response
+  // budget, not merely the native byte length measured during download.
+  if (Buffer.byteLength(canonical(response), 'utf8') > config.maxBodyBytes) throw new Refused(503);
+  return response;
 }
 
 export async function observeNode(config, deadline, raw, key, token) {

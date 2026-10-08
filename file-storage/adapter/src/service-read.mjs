@@ -34,21 +34,9 @@ export async function claimsForRead(config, token, args, actionKey = 'file_stora
   return claims;
 }
 
-export async function readFile(config, deadline, raw, key, token) {
-  if (config.readEdge === undefined) throw new Refused(503);
-  let request;
-  try { request=JSON.parse(raw); } catch { throw new Refused(400); }
-  if (!exactKeys(request,['actionKey','idempotencyKey','arguments'])
-    || request.actionKey !== 'file_storage.read@v1' || !UUID.test(request.idempotencyKey)
-    || request.idempotencyKey !== key || raw !== canonical(request)) throw new Refused(400);
-  const args=request.arguments;
-  if (!exactKeys(args,['targetType','targetId','input','authorizationTargetNativeRef'])
-    || !UUID.test(args.authorizationTargetNativeRef) || !object(args.input)
-    || !UUID.test(args.input.resourceId) || !UUID.test(args.input.nativeObjectRef)
-    || !nonempty(args.input.nativeRevision)) throw new Refused(400);
-  const claims=await claimsForRead(config,token,args);
-  if (claims.idempotency_key !== key) throw new Refused(401);
-  await freshPep(config,deadline,token,args,claims,'execute');
+// Both actual consumers use the same UUID/version/presigned download. The
+// caller retains its own signed identity, final PEP and disclosure/receipt path.
+export async function nativeFile(config, deadline, args, claims) {
   const native=await nativeDocumentNode(config,deadline,{
     nativeObjectRef:args.input.nativeObjectRef,authorizationTargetNativeRef:args.authorizationTargetNativeRef,
   },claims);
@@ -76,6 +64,26 @@ export async function readFile(config, deadline, raw, key, token) {
   }
   const bytes=await boundedBytes(response.body,config.maxBodyBytes);
   if (bytes.length !== expected) throw new Refused(503);
+  return {bytes,nativeRevision:version.VersionId};
+}
+
+export async function readFile(config, deadline, raw, key, token) {
+  if (config.readEdge === undefined) throw new Refused(503);
+  let request;
+  try { request=JSON.parse(raw); } catch { throw new Refused(400); }
+  if (!exactKeys(request,['actionKey','idempotencyKey','arguments'])
+    || request.actionKey !== 'file_storage.read@v1' || !UUID.test(request.idempotencyKey)
+    || request.idempotencyKey !== key || raw !== canonical(request)) throw new Refused(400);
+  const args=request.arguments;
+  if (!exactKeys(args,['targetType','targetId','input','authorizationTargetNativeRef'])
+    || !UUID.test(args.authorizationTargetNativeRef) || !object(args.input)
+    || !UUID.test(args.input.resourceId) || !UUID.test(args.input.nativeObjectRef)
+    || !nonempty(args.input.nativeRevision)) throw new Refused(400);
+  const claims=await claimsForRead(config,token,args);
+  if (claims.idempotency_key !== key) throw new Refused(401);
+  await freshPep(config,deadline,token,args,claims,'execute');
+  const file=await nativeFile(config,deadline,args,claims);
+  const {bytes}=file;
   // Do not disclose buffered bytes if read permission disappeared during I/O.
   const current=await claimsForRead(config,token,args);
   await freshPep(config,deadline,token,args,current,'execute');
@@ -89,7 +97,7 @@ export async function readFile(config, deadline, raw, key, token) {
   await freshPep(config,deadline,token,args,disclosure,'execute');
   const sha256=createHash('sha256').update(bytes).digest('hex');
   await recordReadReceipt(config,deadline,{bindingId:config.bindingId,operationId:claims.operation_id,
-    role:'SOURCE',idempotencyKey:key,nativeObjectRef:args.input.nativeObjectRef,nativeRevision:version.VersionId,
+    role:'SOURCE',idempotencyKey:key,nativeObjectRef:args.input.nativeObjectRef,nativeRevision:file.nativeRevision,
     contentSha256:sha256,contentBytes:bytes.length,completedAt:new Date().toISOString(),
     measurements:readMeasurements(config.readEdge.usageMeasurements,bytes.length)});
   // Receipt delivery includes authenticated network I/O. A recorded SOURCE
@@ -101,6 +109,6 @@ export async function readFile(config, deadline, raw, key, token) {
     nativeObjectRef:args.input.nativeObjectRef,authorizationTargetNativeRef:args.authorizationTargetNativeRef,
   },final);
   await freshPep(config,deadline,token,args,final,'execute');
-  return {bytes,nativeObjectRef:args.input.nativeObjectRef,nativeRevision:version.VersionId,
+  return {bytes,nativeObjectRef:args.input.nativeObjectRef,nativeRevision:file.nativeRevision,
     sha256,operationId:claims.operation_id};
 }
