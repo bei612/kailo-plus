@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act } from "react";
+import { act, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBffClient } from "../src/client";
 import { PlatformProvider } from "../src/react/context";
@@ -15,6 +15,13 @@ beforeEach(()=>{
   vi.spyOn(HTMLElement.prototype,"offsetHeight","get").mockReturnValue(420);
   vi.spyOn(HTMLElement.prototype,"offsetWidth","get").mockReturnValue(800);
   vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockReturnValue(new DOMRect(0,0,800,420));
+  vi.stubGlobal("Image",class extends EventTarget {
+    complete=false;
+    naturalWidth=0;
+    set src(_value:string){Promise.resolve().then(()=>{
+      this.complete=true;this.naturalWidth=1;this.dispatchEvent(new Event("load"));
+    });}
+  });
 });
 afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks();});
 
@@ -23,20 +30,23 @@ const member={principalId:"person",displayName:"Ada",state:"ACTIVE",pubkeys:[fir
 const profile={pubkey:second,displayName:"Relay Ada",about:"Original profile",avatarUrl:null,avatarMediaPaths:{}};
 function browse(request:BffRequest):BffReply {
   return request.path.includes("role-members")||request.path.includes("invitations")?{status:403,body:{}}:
-    {status:200,body:request.path.endsWith("/members")?[member]:profile};
+    {status:200,body:request.path.endsWith("/members")?[member]:request.path.includes("/profiles/")?
+      {...profile,pubkey:request.path.endsWith(second)?second:first}:profile};
 }
-function mount(route:(request:BffRequest)=>BffReply, ui:React.ReactNode) {
+function mount(route:(request:BffRequest)=>BffReply|Promise<BffReply>, ui:React.ReactNode) {
   const send=vi.fn(async(request:BffRequest)=>route(request));
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   return {send,render:()=>render(<QueryClientProvider client={cache}><PlatformProvider locale="en" client={createBffClient({send})}>{ui}</PlatformProvider></QueryClientProvider>)};
 }
 
 describe("original member browsing with governed identity",()=>{
-  it("keeps all real keys, searches, and lazily opens only the selected member profile",async()=>{
+  it("loads the original row avatar identity and lazily opens the selected additional profile",async()=>{
     const startDm=vi.fn();
     const m=mount(browse,<MembersPane workspaceId="workspace" onStartDm={startDm}/>);
     const host=await m.render();await settle();
-    expect(m.send.mock.calls.filter(([request])=>request.path.includes("/profiles/"))).toHaveLength(0);
+    expect(m.send.mock.calls.filter(([request])=>request.path.includes("/profiles/"))).toEqual([
+      [{method:"GET",path:`/api/v1/workspaces/workspace/members/person/profiles/${first}`}],
+    ]);
     expect(host.querySelectorAll('[data-testid="member-person"]')).toHaveLength(1);
     expect(host.textContent).toContain("eeeeeeee…eeee");expect(host.textContent).toContain("ffffffff…ffff");
     await type(host.querySelector('input')!,"missing");expect(host.textContent).toContain("No members match");
@@ -48,6 +58,68 @@ describe("original member browsing with governed identity",()=>{
     expect(m.send.mock.calls.every(([request])=>!request.path.includes("pulse")&&!request.path.includes("author-profile"))).toBe(true);
     await click(host.querySelector<HTMLButtonElement>('[data-testid="user-profile-message"]')!);
     expect(startDm).toHaveBeenCalledExactlyOnceWith(second);
+  });
+  it("renders the original row image only through its exact authorized member media path",async()=>{
+    const avatarUrl="https://community.example/media/member.png";
+    const mediaPath="/api/v1/workspaces/workspace/media/member";
+    const m=mount(request=>request.path.includes("/profiles/")?{status:200,body:{...profile,pubkey:first,
+      avatarUrl,avatarMediaPaths:{[avatarUrl]:mediaPath}}}:browse(request),<MembersPane workspaceId="workspace"/>);
+    const host=await m.render();
+    await vi.waitFor(()=>expect(host.querySelector('[data-testid="member-person"] img')?.getAttribute("src")).toBe(mediaPath));
+    const avatar=host.querySelector('[data-testid="member-person"] img')!;
+    expect(avatar.getAttribute("alt")).toBe("Ada Avatar");
+    expect(avatar.parentElement?.className).toContain("h-9 w-9 text-xs shadow-none");
+    expect(m.send.mock.calls.filter(([request])=>request.path.includes("/profiles/"))).toHaveLength(1);
+    expect(m.send.mock.calls.every(([request])=>request.method==="GET")).toBe(true);
+  });
+  it.each(["forbidden","wrong-key"])("keeps the original fallback without consuming a %s profile",async failure=>{
+    const m=mount(request=>request.path.includes("/profiles/")?failure==="forbidden"?{status:403,body:{}}:
+      {status:200,body:{...profile,avatarUrl:"https://unrelated.example/avatar.png",avatarMediaPaths:{}}}:browse(request),<MembersPane workspaceId="workspace"/>);
+    const host=await m.render();await settle();
+    expect(host.querySelector('[data-testid="member-person"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="member-person"] img')).toBeNull();
+    expect(m.send.mock.calls.filter(([request])=>request.path.includes("/profiles/"))).toHaveLength(1);
+  });
+  it.each(["REVOKED","REVOKING"])("does not read an avatar for a %s directory identity",async state=>{
+    const m=mount(request=>request.path.endsWith("/members")?{status:200,body:[{...member,state}]}:browse(request),<MembersPane workspaceId="workspace"/>);
+    const host=await m.render();await settle();
+    expect(host.querySelector('[data-testid="member-person"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="member-person"] img')).toBeNull();
+    expect(m.send.mock.calls.some(([request])=>request.path.includes("/profiles/"))).toBe(false);
+  });
+  it.each(["workspace","identity"])("drops a late previous %s avatar instead of exposing it in the current row",async change=>{
+    let finish!:(value:BffReply)=>void;
+    const old=createBffClient({send:async request=>request.path.includes("/profiles/")?
+      request.path.includes("/new-workspace/")?{status:403,body:{}}:
+      new Promise<BffReply>(resolve=>{finish=resolve;}):browse(request)});
+    const fresh=createBffClient({send:async request=>request.path.includes("/profiles/")?{status:403,body:{}}:browse(request)});
+    const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+    function Scope(){
+      const [changed,setChanged]=useState(false);
+      return <><button onClick={()=>setChanged(true)}>Switch scope</button><PlatformProvider locale="en"
+        client={changed&&change==="identity"?fresh:old}>
+        <MembersPane workspaceId={changed&&change==="workspace"?"new-workspace":"workspace"}/>
+      </PlatformProvider></>;
+    }
+    const host=await render(<QueryClientProvider client={cache}><Scope/></QueryClientProvider>);
+    await vi.waitFor(()=>expect(finish).toBeDefined());
+    await click(button(host,"Switch scope"));
+    await vi.waitFor(()=>expect(host.querySelector('[data-testid="member-person"]')).not.toBeNull());
+    await act(async()=>finish({status:200,body:{...profile,pubkey:first,avatarUrl:"https://old.example/avatar.png",avatarMediaPaths:{}}}));
+    await settle();
+    expect(host.querySelector('[data-testid="member-person"] img')).toBeNull();
+  });
+  it("drops an in-flight avatar when a fresh roster revokes the member",async()=>{
+    let revoked=false;let finish!:(value:BffReply)=>void;
+    const m=mount(request=>request.path.endsWith("/members")?{status:200,body:[{...member,state:revoked?"REVOKED":"ACTIVE"}]}:
+      request.path.includes("/profiles/")?new Promise<BffReply>(resolve=>{finish=resolve;}):browse(request),<MembersPane workspaceId="workspace"/>);
+    const host=await m.render();await vi.waitFor(()=>expect(finish).toBeDefined());
+    revoked=true;await act(async()=>window.dispatchEvent(new Event("focus")));await settle();
+    await act(async()=>finish({status:200,body:{...profile,pubkey:first,avatarUrl:"https://revoked.example/avatar.png",avatarMediaPaths:{}}}));
+    await settle();
+    expect(host.querySelector('[data-testid="member-person"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="member-person"] img')).toBeNull();
+    expect(m.send.mock.calls.filter(([request])=>request.path.includes("/profiles/"))).toHaveLength(1);
   });
   it("fresh read failure removes both member rows and an open profile",async()=>{
     let refused=false;
@@ -94,12 +166,15 @@ describe("original member browsing with governed identity",()=>{
     expect(host.querySelector('[data-testid="user-profile-message"]')).toBeNull();
     expect(startDm).not.toHaveBeenCalled();
   });
-  it("retains the native identity host instead of replacing it with SERVER profile transport",async()=>{
+  it("retains native profile clicks while sharing the authorized row-avatar read",async()=>{
     const native=vi.fn();const m=mount(browse,<MembersPane workspaceId="workspace"
       renderIdentity={(pubkey,children,label)=><button aria-label={label} onClick={()=>native(pubkey)}>{children}</button>}/>);
     const host=await m.render();await settle();
     await click(host.querySelector<HTMLButtonElement>(`span[title="${second}"] button`)!);
-    expect(native).toHaveBeenCalledWith(second);expect(m.send.mock.calls.some(([request])=>request.path.includes("/profiles/"))).toBe(false);
+    expect(native).toHaveBeenCalledWith(second);
+    expect(m.send.mock.calls.filter(([request])=>request.path.includes("/profiles/"))).toEqual([
+      [{method:"GET",path:`/api/v1/workspaces/workspace/members/person/profiles/${first}`}],
+    ]);
   });
   it("does not fetch all management forms on entry or unmount a visited context on navigation",async()=>{
     const m=mount(()=>({status:200,body:{workspaces:[]}}),<WorkspaceManagementPanels><p>Directory</p></WorkspaceManagementPanels>);

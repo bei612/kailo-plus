@@ -39,6 +39,21 @@ function useMemberProfile(target: MemberTarget) {
     },retry:false,staleTime:0});
 }
 
+function MemberAvatar({target,label}:{target:MemberTarget;label:string}) {
+  const client=useBffClient();const locale=useLocale();
+  // The original row consumes its authorized profile before opening a popover.
+  // useLoad drops responses after this transport scope or exact member key leaves.
+  const [result]=useLoad(JSON.stringify(target),async()=>{
+    const profile=await client.memberProfile(target.workspaceId,target.principalId,target.pubkey);
+    if(profile.pubkey!==target.pubkey)throw new TransportError("Member identity changed");
+    return profile;
+  });
+  const profile=result.status==="ok"?result.data:undefined;
+  return <AvatarHostProvider value={{locale,rewriteMediaUrl:url=>profile?.avatarMediaPaths[url]??url}}>
+    <ProfileAvatar avatarUrl={profile?.avatarUrl??null} className="h-9 w-9 text-xs shadow-none" label={label} shape="circle"/>
+  </AvatarHostProvider>;
+}
+
 export function MemberHover({target,...props}:ProfilePopoverBodyProps&{target:MemberTarget}) {
   const t=useT(); const query=useMemberProfile(target);
   const profile=query.isSuccess&&!query.isFetching?query.data:undefined;
@@ -158,7 +173,9 @@ export function MembersPane({workspaceId,renderIdentity,onStartDm,currentPrincip
             filtered.length===0?<p className="rounded-lg border border-dashed border-border/70 px-3 py-6 text-center text-sm text-muted-foreground">{t(rows.length?"members.noMatch":"platform.members.none")}</p>:
             <VirtualizedList className="max-h-[28rem] divide-y divide-border/60" estimateSize={60}
               items={filtered} getItemKey={member=>member.principalId} renderItem={member=><div className="group/member flex min-h-14 items-center gap-3 px-1 py-2.5" data-testid={`member-${member.principalId}`}>
-              {member.pubkeys[0]?identity(member,member.pubkeys[0],<ProfileAvatar avatarUrl={null} className="h-9 w-9 text-xs shadow-none" label={member.displayName} shape="circle"/>):<ProfileAvatar avatarUrl={null} className="h-9 w-9 text-xs shadow-none" label={member.displayName} shape="circle"/>}
+              {member.state===WorkspaceMembershipState.Active&&member.pubkeys[0]?identity(member,member.pubkeys[0],
+                <MemberAvatar target={{workspaceId,principalId:member.principalId,pubkey:member.pubkeys[0]}} label={member.displayName}/>):
+                <ProfileAvatar avatarUrl={null} className="h-9 w-9 text-xs shadow-none" label={member.displayName} shape="circle"/>}
               <div className="min-w-0 flex-1"><div className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
                 <span className="inline-grid min-w-0 max-w-full grid-cols-1">
                   <span className="col-start-1 row-start-1 max-w-40 truncate opacity-100 blur-0 transition-[max-width,opacity,filter] duration-[250ms] ease-in-out group-hover/member:max-w-0 group-hover/member:opacity-0 group-hover/member:blur-[2px] group-focus-within/member:max-w-0 group-focus-within/member:opacity-0 motion-reduce:transition-none">{member.displayName}</span>

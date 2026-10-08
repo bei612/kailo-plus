@@ -6323,3 +6323,68 @@ React act/ReducedMotion既有检查警告保留在日志，不与浏览器consol
 本批没有运行Native完整类型、Dart analyze、full或check-docs，不以这些窄验声称设备/生产全门禁通过；
 没有构建/部署本批6路径，新源码业务截图仍0。由root集中文档检查、精确owned追加入库与提交push，
 不吸收web-surface继承删除；当前六路径冻结交root复核。
+
+### 2026-10-08 原成员行真实头像消费者与双上游字节清点
+
+比较输入固定为本批起点 main `1f5572acd98f6ed29be16cafc7cc621ca77fbc5a`，
+Buzz `779af8886caae1317b4de962082429867ab61503`、buzz-web `a6766c482533d028582d0efcfd3740769f86217c`。
+本批仅改 `client-kit/ts/platform/src/react/members.tsx`（+18/-1）和 `test/members.test.tsx`（+82/-7），
+合计两源码/检查路径 +100/-8；没有 Core、API、契约、数据库或 Mobile 变更。
+
+#### 权威、影响面与差异归属
+
+- 原型依据为固定 Buzz `desktop/src/features/community-members/ui/CommunityMembersSettingsCard.tsx::RelayMemberRow`：
+  原 `ProfileAvatar` 消费 `profile.avatarUrl`，原 `h-9 w-9 text-xs shadow-none`、圆形、行结构与资料触发器保持。
+  当前共享 `MembersPane` 此前恒传 null，已有真实资料生产者却未被行头像消费；本批接回该原有视觉功能。
+- Web `PlatformApp` 与 Native `WorkspaceMembersPage` 继续消费同一个 `MembersPane`。
+  Native 原 `renderIdentity` 弹层、点击、公钥及本机 Relay 传输不变；新增行头像读沿三端既有管理面 BFF，符合 DD-75。
+  复用现成 `client.memberProfile`、`avatarMediaPaths`、`AvatarHostProvider`、`ProfileAvatar` 与 `useLoad`，不建资料/成员权威。
+- 授权改造逐项为：仅 ACTIVE 成员的真实首公钥请求既有 workspace/principal/pubkey 端点；返回公钥必须精确匹配；
+  只消费该次受权资料的媒体映射。成员仍按 Principal 一行，不把多设备公钥增加成人数，不补 owner/createdAt/presence/Agent 字段。
+  原完整 Community 管理/邀请仍有已记录后端接缝缺失，本批只归为原模块的部分共享恢复，不能把整个原文件标作完整还原。
+- 空名单/无公钥/非 ACTIVE 不产生头像读；403（DENIED）和不匹配/不可核验资料不展示头像，不伪造成功。
+  既有 `useLoad` 当前 key/轮次与卸载 fence、`PlatformProvider` 身份重挂载丢弃跨 Workspace、旧身份及撤权后的迟到回应。
+  只为原虚拟列表实际挂载的行读取，不新增阈值、写动作、重放、审批/额度状态或后台重试；原 DM UNKNOWN 保留检查仍通过。
+
+#### 全树比较口径
+
+复用现有官方 blob TSV 和两个仓库 `git ls-tree -r` 按路径、mode/type/blob 逐一比较，没有构建或执行只读上游：
+
+| 固定官方树 | 官方路径 | 同字节原样 | modified | 原路径 missing | Kailo-only | fork 剔除 | union / raw diff |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Buzz → 本批固定 main | 5195 | 1982 | 776 | 2437 | 119 | 20 | 5314 / 3332 |
+| buzz-web → 本批固定 main | 182 | 49 | 23 | 110 | 90 | 23 | 272 / 223 |
+
+同字节只证明“原样保留”，不是页面有真实消费者或功能已验收；原路径 missing 也不能自动当作功能缺失，必须查共享目的地。
+已有 `collaboration-dfc7a3383517.classification.tsv` 仍明确比较 `dfc7a33835174bbaa9e43e0e335c2f12959edfeb`：
+1982 原样、110 共享、0 独立授权、6 残缺、3216 未分类。虽然本批 Buzz 计数相同，dfc7→本批 main 有八条 collaboration 路径变更，
+不得把旧 TSV 改头冒称当前逐处验收；其未分类与完整 Settings、Activity、Agent 等缺项没有因本批头像接线被消除。
+原件目录为 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/current-main-diff.nNHzVS`。
+
+#### 实际验证与负向还原
+
+复用原 `kailo-agent-receipt-xvkujx`：HostConfig 与 cgroup 实读 4 CPU / 8 GiB，Node heap3072、原 Vitest maxWorkers1；
+启动时仅 sleep，主机 MemAvailable24.6GB、memory PSI0、IO full8.43%，无安装、依赖替换或打包。
+容器候选只投递上述两输入并 cmp0，原入口 `client-kit/ts/platform/node_modules/.bin/vitest run test/members.test.tsx --maxWorkers=1`：
+最终19/19 exit0；共享 `tsc --noEmit`、原 `tsconfig.test.json`、Web 与 Native `tsc --noEmit` 四侧均 exit0。
+初次18通过/1失败为测试 Image 模型缺 Radix 实际使用的 EventTarget，已按浏览器事件模型纠正，保留 `members-avatar-positive.log`，不算生产负向。
+
+私有生产副本依次破坏原行头像接线、公钥匹配守卫、ACTIVE 准入，原目标分别真实1/1/2 failed、Vitest exit1：
+`members-avatar-wiring-negative.log`、`members-avatar-identity-negative.log`、`members-avatar-membership-negative.log`。
+逐项还原后原19/19再次 exit0，`members-avatar-restored.log`；两输入 cmp0，`git diff --check`0，OOM/oom_kill仍旧基线2无增量，SDK释放。
+其余原始日志为同目录 `members-avatar-final.log`、`members-avatar-{shared,test,web,native}-types.log`。
+保留既有 ReducedMotion/act 警告，不将其声称为无警告日志；本批未运行 full/check-docs，由 root 集中门禁收口。
+
+#### 线上缺项取证，不是新源码验收
+
+沿原 `header-restoration` 正常 SSO，实际 build-info HTTP200仍为已部署9bc：
+`sha256:17b4b01ca7d31a7b3ef4d739b61cecbca8cafc382b5d729e9750c8d4a20aeb26`。
+以下两张1920×1080实拍均已打开视觉复核；同一个 seam-verifier 行仍是 SV 占位，现有资料面板却已显示真实黄机器人头像，
+证明本批选择的是有实际生产读源的遗漏，不是假数据；MemberProfilePanel 本次宽度正常，未套用上批 clamp 修改。
+
+- `/volumes/kailo/.playwright-cli/kailo-ui-20261008-main9bc0-members-avatar-missing-zh.png`，SHA256 `b961b3eb3768a95739a38ba2138b42ddaca4ece425a90fb138896f30b9f380fa`。
+- `/volumes/kailo/.playwright-cli/kailo-ui-20261008-main9bc0-members-avatar-profile-zh.png`，SHA256 `684115a044c652be03d73dd581876ce6a36f83780f50bed9001639edaca9b43f`。
+
+只点击既有成员页/资料，不写业务 API、不创建数据或调用 Agent；该会话 console0，语言仍中文、实验偏好保持原值。
+本批两源码尚未部署，新源码业务截图0；上述新图是旧9bc的失败/已有能力证据，不能声称头像修复已浏览器验收。
+Windows/Mobile仍无设备验收，不把 Web 或 Native 类型通过算作设备结果；冻结两路径及本节，仅由 root 精确入库提交。
