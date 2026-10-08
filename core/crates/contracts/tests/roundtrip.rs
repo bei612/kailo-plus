@@ -442,6 +442,7 @@ fn peer_credentials_roundtrip_keeps_binding_generation_and_exact_references() {
     for sample in [
         "application-peer-credentials.sample.json",
         "application-model-delivery.sample.json",
+        "application-native-resources.sample.json",
     ] {
         let raw = fs::read_to_string(sample_path().with_file_name(sample)).unwrap();
         let original: serde_json::Value = serde_json::from_str(&raw).unwrap();

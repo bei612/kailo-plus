@@ -1989,3 +1989,134 @@ Deployment/MDL, Asking/dashboard, native management writes, arbitrary SQL and
 complete live iframe/SSO acceptance are not proved by this batch. The original
 pages remain intact. This is source and consumer verification, not a production
 deployment, screenshot acceptance or a claim that Wren is fully integrated.
+
+## 2026-10-08 — original modeling diagram consumes complete Resource read grants
+
+### Authority and complete consumer impact
+
+1. DD-98, SS-WRN-IDENTITY / SS-WRN-GOVERNANCE and `.design/08` §6 keep
+   native model/view data in Wren and map metadata read to the existing
+   `data_query.describe@v1` Resource permission. Fixed official baseline:
+   `c5f02a0391c87420dba78632dcd86073710deb72`,
+   `wren-ui/src/apollo/server/resolvers/diagramResolver.ts::DiagramResolver.getDiagram`.
+   Before this batch that entire resolver file was byte-identical to the fixed
+   official file; its complete query/transform/return chain was reviewed. The
+   original graph builder and all field/relation/view transformations remain
+   unchanged. Only necessary admission, source-scope checks and empty-filter
+   protections were added; no node, field, relation or page was removed.
+2. The real original consumer is `wren-ui/src/pages/modeling.tsx::Modeling`,
+   `useDiagramQuery` from `wren-ui/src/apollo/client/graphql/diagram.generated.ts`,
+   mapped by `wren-ui/src/apollo/server/resolvers.ts::Query.diagram`. The resolver
+   captures native model/view integer IDs from the selected project once,
+   authorizes every constituent with the existing exact Resource resolver,
+   reads the original column/nested-column/relation dependencies, then repeats
+   authorization immediately before its original synchronous MDL/diagram
+   build. No name-based mapping or second model/view read substitutes for the
+   captured objects. No Core contract, table, ResourceType or ActionDefinition
+   changes are needed.
+3. This remains a complete graph, not a filtered replacement: if any constituent
+   model/view is denied, unavailable or has mismatched facts, the whole graph
+   read fails. Trimming nodes would invalidate original relationship and
+   calculated-field dependencies. Source model/view project, column ownership,
+   nested-column ownership and both relation endpoints must match the captured
+   scope. No AI service, engine call, business SQL execution, action submission
+   or extra persistence is added. All business bodies stay in the native service.
+4. Empty original model sets skip column and relation calls whose empty filters
+   otherwise read all rows. A genuinely empty authorized native dataset keeps
+   its original empty graph; refusal is never converted to that result. Missing
+   identity/token, mixed project/model/view/column/relation scope and revocation
+   during awaited dependency reads have explicit rejecting consumer evidence.
+
+The original modeling page previously consumed only Apollo `data` with
+`cache-and-network`. An error could retain a previously cached graph or leave
+an initial refusal loading forever. It now consumes `error`, uses `no-cache`
+for fresh object admission, and shows its existing `ErrorCollapse` in the
+original `SiderLayout`. Failed reads do not render the old graph/sidebar data
+or metadata drawer, and clearing diagram data closes that drawer's old state.
+Successful rendering retains the original page/graph/dialog implementation;
+there is no new summary page, custom error wording or simplified graph.
+
+### Evidence
+
+Existing SDK `kailo-wren-query-sdk-itgs2n` was inspected idle at 4 CPU / 4 GiB
+cgroup before checks; existing dependencies/cache were reused without install,
+new snapshot or build. Implementation preceded consumer tests. An initial test
+compile caught four accesses to a transport payload typed `unknown`; these
+test assertions were corrected to compare complete actual request values.
+The real original MDL builder then passed the complete 63-case project-scope
+suite; actual `Modeling` component rendering passed three success/error cases.
+
+Restored combined run before the subsequent page-host correction below, inside `/work`:
+
+```text
+./node_modules/.bin/jest --runInBand src/nativeHumanQuery.test.ts src/nativeQuery.test.ts src/nativeProjectScope.test.ts src/viewMetadata.test.ts src/modeling.test.ts
+Test Suites: 5 passed, 5 total
+Tests:       114 passed, 114 total
+Time:        13.81 s
+exit 0
+
+./node_modules/.bin/tsc --noEmit
+no diagnostics; exit 0
+```
+
+Private mutation removed the final `authorizeDiagram` call: the original
+complete-data test and revocation test both failed (2 failed / 10 passed /
+51 deliberately filtered), exit 1. After restoring it, disabling the page's
+error branch failed both refusal-rendering cases (2 failed / 1 passed), exit 1,
+showing the old metadata drawer and permanent loading instead of the existing
+error component. Both private mutations were restored before the final 114-case
+run; all four changed TS/TSX files matched the formal tree (`cmp`, exit 0).
+Prettier was applied to the new/modified tests and resolver; `git diff --check`
+also exited 0. Evidence is in the existing
+`/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/`:
+`native-diagram-format.log`, `native-diagram-tests.log`,
+`native-diagram-mutation.log`, `native-diagram-page-tests.log`,
+`native-diagram-page-mutation.log`, `native-diagram-restored.log`,
+`native-diagram-types.log`.
+
+### Precise remaining boundary
+
+`ModelResolver.getMDL` / `DeployService.getMDLByHash` historical manifest read
+is not fixed by this change. In the same fixed official source,
+`wren-ui/src/apollo/server/mdl/mdlBuilder.ts::MDLBuilder.addModel` stores model
+referenceName/display properties but no model integer ID, whereas `addView`
+stores `properties.viewId`. `Deploy` in
+`wren-ui/src/apollo/server/repositories/deployLogRepository.ts` stores the
+original manifest/hash/project, not a historical model-to-Resource map.
+Current same-name models therefore do not prove historical source ownership.
+Historical metadata reading is not equivalent to immutable-version query
+execution; no current-only restriction was invented, and no unsupported grant
+was inferred. That exact provenance/authorization gap remains recorded rather
+than being reported as solved. Original management writes, AI/Asking, live
+iframe integration and first Resource registration also remain outside this
+slice. No screenshot, full global check, release build or deployment is claimed;
+the component-rendering evidence is not browser/device acceptance.
+
+### Cross-review correction: preserve the original creation host on read failure
+
+Mainline review found that the first page error implementation returned early
+with a separate `SiderLayout`. It kept the sidebar's `onOpenModelDrawer` callback
+but unmounted the original `ModelDrawer`, producing a dead create button when
+diagram reads failed. That implementation is removed. The original single
+DeployStatus Provider / SiderLayout and all original modal/drawer hosts remain;
+only the graph content changes to the existing ErrorCollapse on read failure.
+Old graph-dependent drawers/dialogs are not visible without readable graph data,
+while the original model CREATE drawer still receives the original sidebar
+callback and submits through the original mutation. Clearing graph data closes
+the old model EDIT drawer rather than reusing its prior default value.
+
+The actual Modeling component check now follows sidebar open → mounted
+ModelDrawer visibility → original onSubmit → useCreateModelMutation, even with
+a diagram error. A private mutation unmounted only that ModelDrawer during
+error: the new consumer failed with `mockModelDrawer` undefined (1 failed /
+3 passed), exit 1. The host was restored before the final narrow rerun. Evidence:
+`native-diagram-host-tests.log`, `native-diagram-host-mutation.log`,
+`native-diagram-host-restored.log`, and `native-diagram-host-types.log` in the
+same existing candidate directory. Backend code did not change after its
+combined 114-case run; this page correction is verified separately rather than
+misreporting the earlier combined result as a later page check.
+
+Final correction verification: `jest --runInBand src/modeling.test.ts` reported
+1 suite / 4 tests passed, 6.543 s, exit 0; `tsc --noEmit` produced no diagnostics
+and exited 0. The four changed TS/TSX files again matched their restored
+candidate copies (`cmp`, exit 0), and `git diff --check` exited 0.

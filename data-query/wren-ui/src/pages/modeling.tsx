@@ -4,9 +4,10 @@ import { useSearchParams } from 'next/navigation';
 import { forwardRef, useEffect, useMemo, useRef } from 'react';
 import { message } from 'antd';
 import styled from 'styled-components';
-import { MORE_ACTION, NODE_TYPE } from '@/utils/enum';
+import { FORM_MODE, MORE_ACTION, NODE_TYPE } from '@/utils/enum';
 import { editCalculatedField } from '@/utils/modelingHelper';
 import SiderLayout from '@/components/layouts/SiderLayout';
+import ErrorCollapse from '@/components/ErrorCollapse';
 import MetadataDrawer from '@/components/pages/modeling/MetadataDrawer';
 import EditMetadataModal from '@/components/pages/modeling/EditMetadataModal';
 import CalculatedFieldModal from '@/components/modals/CalculatedFieldModal';
@@ -62,8 +63,8 @@ export default function Modeling() {
   const searchParams = useSearchParams();
   const diagramRef = useRef(null);
 
-  const { data } = useDiagramQuery({
-    fetchPolicy: 'cache-and-network',
+  const { data, error: diagramError } = useDiagramQuery({
+    fetchPolicy: 'no-cache',
     onCompleted: () => {
       diagramRef.current?.fitView();
     },
@@ -201,9 +202,9 @@ export default function Modeling() {
     );
 
   const diagramData = useMemo(() => {
-    if (!data) return null;
+    if (diagramError || !data) return null;
     return data?.diagram;
-  }, [data]);
+  }, [data, diagramError]);
 
   const metadataDrawer = useDrawerAction();
   const modelDrawer = useDrawerAction();
@@ -231,6 +232,12 @@ export default function Modeling() {
   }, [queryParams, diagramData]);
 
   useEffect(() => {
+    if (!diagramData) {
+      if (metadataDrawer.state.visible) metadataDrawer.closeDrawer();
+      if (modelDrawer.state.formMode === FORM_MODE.EDIT)
+        modelDrawer.closeDrawer();
+      return;
+    }
     if (metadataDrawer.state.visible) {
       const data = metadataDrawer.state.defaultValue;
       let currentNodeData = null;
@@ -380,29 +387,36 @@ export default function Modeling() {
   return (
     <DeployStatusContext.Provider value={{ ...deployStatusQueryResult }}>
       <SiderLayout
-        loading={diagramData === null}
+        loading={!diagramError && diagramData === null}
         sidebar={{
           data: diagramData,
           onOpenModelDrawer: modelDrawer.openDrawer,
           onSelect,
         }}
       >
-        <DiagramWrapper>
-          <ForwardDiagram
-            ref={diagramRef}
-            data={diagramData}
-            onMoreClick={onMoreClick}
-            onNodeClick={onNodeClick}
-            onAddClick={onAddClick}
-          />
-        </DiagramWrapper>
+        {diagramError ? (
+          <ErrorCollapse message={diagramError.message} defaultActive />
+        ) : (
+          <DiagramWrapper>
+            <ForwardDiagram
+              ref={diagramRef}
+              data={diagramData}
+              onMoreClick={onMoreClick}
+              onNodeClick={onNodeClick}
+              onAddClick={onAddClick}
+            />
+          </DiagramWrapper>
+        )}
         <MetadataDrawer
           {...metadataDrawer.state}
+          visible={!!diagramData && metadataDrawer.state.visible}
+          defaultValue={diagramData ? metadataDrawer.state.defaultValue : null}
           onClose={metadataDrawer.closeDrawer}
           onEditClick={editMetadataModal.openModal}
         />
         <EditMetadataModal
           {...editMetadataModal.state}
+          visible={!!diagramData && editMetadataModal.state.visible}
           onClose={editMetadataModal.closeModal}
           loading={editMetadataLoading}
           onSubmit={async ({ nodeType, data }) => {
@@ -430,6 +444,10 @@ export default function Modeling() {
         />
         <ModelDrawer
           {...modelDrawer.state}
+          visible={
+            modelDrawer.state.visible &&
+            (modelDrawer.state.formMode === FORM_MODE.CREATE || !!diagramData)
+          }
           onClose={modelDrawer.closeDrawer}
           submitting={modelLoading}
           onSubmit={async ({ id, data }) => {
@@ -442,6 +460,7 @@ export default function Modeling() {
         />
         <CalculatedFieldModal
           {...calculatedFieldModal.state}
+          visible={!!diagramData && calculatedFieldModal.state.visible}
           onClose={calculatedFieldModal.closeModal}
           loading={calculatedFieldLoading}
           onSubmit={async ({ id, data }) => {
@@ -456,6 +475,7 @@ export default function Modeling() {
         />
         <RelationModal
           {...relationshipModal.state}
+          visible={!!diagramData && relationshipModal.state.visible}
           onClose={relationshipModal.onClose}
           loading={relationshipLoading}
           onSubmit={async (

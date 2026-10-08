@@ -1,4 +1,5 @@
 import { ModelResolver } from './apollo/server/resolvers/modelResolver';
+import { DiagramResolver } from './apollo/server/resolvers/diagramResolver';
 import { AskingService } from './apollo/server/services/askingService';
 import { DashboardResolver } from './apollo/server/resolvers/dashboardResolver';
 import { DashboardService } from './apollo/server/services/dashboardService';
@@ -106,6 +107,211 @@ describe('native bound-project business consumers', () => {
     );
     ctx.relationRepository.findRelationsBy = jest.fn(async () => []);
   });
+  const diagramContext = () => {
+    ctx.projectRepository = {
+      getCurrentProject: jest.fn(async () => ({
+        id: projectId,
+        type: 'DUCKDB',
+        catalog: 'original',
+        schema: 'original',
+      })),
+    };
+    const models = [11, 13].map((id) => ({
+      id,
+      projectId,
+      referenceName: `model${id}`,
+      displayName: `Model ${id}`,
+      sourceTableName: `table${id}`,
+      properties: '{}',
+      cached: false,
+      refSql: `SELECT original${id}`,
+    }));
+    const columns = models.map((model) => ({
+      id: model.id + 20,
+      modelId: model.id,
+      referenceName: 'id',
+      sourceColumnName: 'id',
+      displayName: 'ID',
+      type: 'INTEGER',
+      isCalculated: false,
+      isPk: true,
+      properties: '{}',
+    }));
+    const views = [
+      {
+        id: 21,
+        projectId,
+        name: 'originalView',
+        statement: 'SELECT original',
+        properties: JSON.stringify({
+          description: 'Original view',
+          columns: [{ name: 'id', type: 'INTEGER' }],
+        }),
+      },
+    ];
+    const relations = [
+      {
+        id: 51,
+        projectId,
+        name: 'originalRelation',
+        joinType: 'ONE_TO_ONE',
+        condition: 'model11.id = model13.id',
+        fromColumnId: 31,
+        toColumnId: 33,
+        fromModelId: 11,
+        toModelId: 13,
+        fromModelName: 'model11',
+        toModelName: 'model13',
+        fromColumnName: 'id',
+        toColumnName: 'id',
+        properties: '{}',
+      },
+    ];
+    ctx.modelRepository.findAllBy.mockResolvedValue(models);
+    ctx.viewRepository.findAllBy.mockResolvedValue(views);
+    ctx.modelColumnRepository.findColumnsByModelIds.mockResolvedValue(columns);
+    ctx.relationRepository.findRelationInfoBy = jest.fn(async () => relations);
+    return {
+      models,
+      columns,
+      views,
+      relations,
+      resolver: new DiagramResolver(),
+    };
+  };
+
+  it('returns the original complete diagram through its real builder after read authorizing every captured model and view', async () => {
+    const { resolver: diagram } = diagramContext();
+    const result = await diagram.getDiagram(null, {}, ctx);
+    expect(result.models.map((model) => model.modelId)).toEqual([11, 13]);
+    expect(result.models[0]).toMatchObject({
+      referenceName: 'model11',
+      sourceTableName: 'table11',
+      fields: [{ columnId: 31, referenceName: 'id' }],
+      relationFields: [{ relationId: 51, fromModelId: 11, toModelId: 13 }],
+    });
+    expect(result.views).toEqual([
+      expect.objectContaining({
+        viewId: 21,
+        referenceName: 'originalView',
+        fields: [expect.objectContaining({ referenceName: 'id' })],
+      }),
+    ]);
+    expect(authorize.mock.calls.map((call) => [call[2], call[3]])).toEqual(
+      [
+        ['model', '11'],
+        ['model', '13'],
+        ['view', '21'],
+        ['model', '11'],
+        ['model', '13'],
+        ['view', '21'],
+      ].map(([nativeType, nativeRef]) => [
+        {
+          bindingId: config.bindingId,
+          resolveResource: {
+            workspaceId: config.workspaceId,
+            actionKey: 'data_query.describe@v1',
+            actionVersion: 1,
+            nativeType,
+            nativeRef,
+          },
+        },
+        ctx.nativeHumanToken,
+      ]),
+    );
+    expect(ctx.modelRepository.findAllBy).toHaveBeenCalledTimes(1);
+    expect(ctx.viewRepository.findAllBy).toHaveBeenCalledTimes(1);
+    expect(ctx.queryService.preview).not.toHaveBeenCalled();
+  });
+
+  it.each(['model', 'view'])(
+    'refuses the whole original diagram when one %s is denied instead of returning an incomplete or empty graph',
+    async (kind) => {
+      const { resolver: diagram } = diagramContext();
+      authorize.mockImplementation(
+        async (_config, _operation, request: any) => {
+          if (request.resolveResource.nativeType === kind)
+            throw new NativeQueryRefusal(
+              403,
+              'QUERY_ADMISSION_UNAVAILABLE',
+              true,
+            );
+          return selected(request);
+        },
+      );
+      await expect(diagram.getDiagram(null, {}, ctx)).rejects.toThrow(
+        'QUERY_SCOPE_DENIED',
+      );
+      expect(
+        ctx.modelColumnRepository.findColumnsByModelIds,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it('refuses diagram disclosure if read permission is revoked while its columns load', async () => {
+    const { resolver: diagram, columns } = diagramContext();
+    ctx.modelColumnRepository.findColumnsByModelIds.mockImplementation(
+      async () => {
+        authorize.mockRejectedValue(
+          new NativeQueryRefusal(403, 'QUERY_ADMISSION_UNAVAILABLE', true),
+        );
+        return columns;
+      },
+    );
+    await expect(diagram.getDiagram(null, {}, ctx)).rejects.toThrow(
+      'QUERY_SCOPE_DENIED',
+    );
+  });
+
+  it('keeps a genuinely empty diagram empty without querying unfiltered column or relation tables', async () => {
+    const { resolver: diagram } = diagramContext();
+    ctx.modelRepository.findAllBy.mockResolvedValue([]);
+    ctx.viewRepository.findAllBy.mockResolvedValue([]);
+    expect(await diagram.getDiagram(null, {}, ctx)).toEqual({
+      models: [],
+      views: [],
+    });
+    expect(
+      ctx.modelColumnRepository.findColumnsByModelIds,
+    ).not.toHaveBeenCalled();
+    expect(
+      ctx.modelNestedColumnRepository.findNestedColumnsByModelIds,
+    ).not.toHaveBeenCalled();
+    expect(ctx.relationRepository.findRelationInfoBy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'identity',
+    'token',
+    'project',
+    'model',
+    'view',
+    'column',
+    'relation',
+  ])(
+    'rejects missing or mixed diagram %s scope rather than feeding it to the original builder',
+    async (fault) => {
+      const {
+        resolver: diagram,
+        models,
+        views,
+        columns,
+        relations,
+      } = diagramContext();
+      if (fault === 'identity') ctx.nativeIdentityScope = undefined;
+      if (fault === 'token') ctx.nativeHumanToken = undefined;
+      if (fault === 'project')
+        ctx.projectRepository.getCurrentProject.mockResolvedValue({ id: 8 });
+      if (fault === 'model') models[0].projectId = 8;
+      if (fault === 'view') views[0].projectId = 8;
+      if (fault === 'column') columns[0].modelId = 12;
+      if (fault === 'relation') relations[0].projectId = 8;
+      await expect(diagram.getDiagram(null, {}, ctx)).rejects.toBeInstanceOf(
+        NativeQueryRefusal,
+      );
+    },
+  );
+
   it('filters original model and view list consumers by each HUMAN read grant without changing their shape', async () => {
     const models = [
       { id: 11, projectId, properties: '{}' },

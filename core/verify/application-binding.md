@@ -926,3 +926,74 @@ Native Go 新 Connector 尚未编译，通用 conformance 对新增原生动作�
 及完整 iframe 业务仍须各自闭合；没有部署服务或更新三端安装包。
 本批未重跑全量源码导出及 full：Data 仍约 3.1 GiB 可用，前一批同一入口已在
 导出时中止（退出 143），不能把本批专项通过记录为全量发布门禁通过。
+
+## REMOTE_ADAPTER 既有原生对象登记接回原 Resource 链（2026-10-08）
+
+本次定位与实现后的四步结论：
+
+1. 权威为 `.design/07` 的 DD-98 与 `.design/08` 的原生对象归属：首次登记仍走
+   `resource.create`，目录只给受控原生事实，不代替 Resource、HUMAN owner、
+   SpiceDB 或批准后的 ApplicationBinding。原 `snapshot` 只接受 PROTOCOL_PEER，
+   三个 REMOTE_ADAPTER 即使有真实原生对象也无法经同一生产者登记，这是本次修复点。
+2. 影响为 `ApplicationAdapterDirectory.adapters[].bindings` 复用原 peer 的同一
+   binding/nativeResources 项结构，以及 `resource_provision::{snapshot,delivery_match}`。
+   已核目录全读取方，原 `application_binding_native::Adapter::resolve` 的传输选择、
+   endpoint、artifact、audience 与全目录 serviceRef 唯一性保持不变；四侧生成同步。
+3. 登记仍只存原生引用及证据摘要，不创建原生对象、不复制正文、不自动授予资源权限。
+   精确核对租户、binding、workspace、SERVICE principal、nativeScope、config、isolation、
+   artifact 与完整原生引用；跨 transport 冒用相同服务引用、重复引用和未知 mode 拒绝。
+4. 沿原 ComponentTaskWorkflow 的 RESOURCE_PROVISION 分支终态与清理路径，不新增状态。
+   缺失证据维持 UNKNOWN/Unavailable，不推断对象不存在、不重发原生 CREATE。
+   原 peer 冻结事实逐字保持原格式；新 remote 冻结增加明确 connectorMode。
+   省略 discriminator 只解释历史 peer 格式，null/空/未知值不回退。执行期仍重新取
+   snapshot 与冻结事实整体比对，绑定版本/generation/manifest 或作用域漂移不能通过。
+
+配置入口仍为 `APPLICATION_ADAPTER_DIRECTORY_FILE`，新样例
+`contracts/samples/application-native-resources.sample.json` 只演示受控投递形状，
+不是可直接用于运行环境的真实身份或注册结果。新可选 bindings 有值时至少一项，
+没有登记证据时省略；旧目录输入与原 peer 字段未改变。旧 Core 的严格反序列化会
+拒绝新 bindings，发布顺序须先更新 Core 再投递新字段；不得把可选字段误解为旧二进制
+可以消费新格式。旧端没有新 remote 在途冻结事实的合法来源，无数据库迁移。
+
+实际业务调用入口没有新建 API 或页面：现有共享 `platformClient.submitAction`
+发送 `POST /api/v1/actions`，使用现有 `ActionCommand`：`actionKey=resource.create`、
+稳定的 `idempotencyKey`，以及 `resourceCreate` 内的 `typeKey/nativeType/nativeRef/
+evidenceRef/evidenceDigest`；按原合同可附 `workspaceId`。完整请求形状仍见
+`contracts/samples/resource-create.sample.json`，实际值必须来自当前已批准绑定与受控
+证据，不能复用样例租户。BFF 取得真实 HUMAN 身份，由同租户的现行绑定目录解析归属，
+经原准入与 Temporal 派发；提交返回不代表已完成。用既有
+`GET /api/v1/tasks/{actionExecutionId}` 或 `GET /api/v1/tasks` 观察原任务终态；
+Resource 的 ACTIVE 与原终态审计/投影证据由原生产者完成，不由客户端填写。
+
+验证复用原 4 CPU/8 GiB SDK、原缓存与空隔离 `component_runtime_lcivus`，夹具全部
+在同一事务回滚。日志均在
+`/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/knowledge-adapter.N8sx1m/`：
+
+- `remote-resource-final-generation.log`：原 `tools/gen.sh` 与 `--check` 退出 0。
+- `remote-resource-final.log`：Core 4 passed/1 ignored；随后显式运行该 ignored
+  数据库目标 1 passed，目标内分别验证 peer 与 remote 的登记、冻结、原定义读回及
+  冲突拒绝。Rust roundtrip 1 passed；TS 51 passed；Go 原 ApplicationBinding
+  roundtrip 通过；Dart native credential 1 passed。读回夹具手动闭合 ACTIVE
+  元数据仅证明约束与解析，不冒称真实 SpiceDB 或完整 Temporal E2E。
+- `remote-resource-mutation.log`：仅私有 SDK 将 snapshot 恢复为 peer-only，
+  同一真实数据库登记目标因 `Blocked(CapabilityBlocked)` 失败，退出 101。
+  正式源码未破坏，随后恢复候选继续复验。
+- `remote-resource-restored.log`：还原后 Core 4 passed/1 ignored，显式数据库目标
+  1 passed，`cargo clippy --locked --offline -p platform-core --bin platform-core --
+  -D warnings` 退出 0。正式生产文件、schema 与四侧生成物和最终候选逐字节一致。
+- `remote-resource-compat.log`：原 check.sh 的历史兼容 Python 段在只读源码挂载、
+  1 CPU/512 MiB 原 SDK 内执行，282 schema 中匹配历史 tag 的 3 项，退出 0；
+  此范围不能证明本次新字段能被旧 Core 消费。
+
+失败亦保留：初次生成因默认 npm cache 无离线 quicktype 退出 1，改用已有
+`/cache/npm` 后通过；初次 roundtrip 因 SDK 无 pnpm 退出 127，改用同 package 的
+`npm test`。`remote-resource-core.log` 首次数据库目标因未加载原 base fixture
+违反 tenant FK 退出 101；补原 fixture 到回滚事务后通过，没有业务库外 seed。
+
+运行边界：主线只读查询真实运行 Core，`catalog.application_binding` 与
+`catalog.component_release` 均为 0 行，`catalog.resource` 只有平台 Agent/automation/
+llm_route 类型；隔离夹具不改变这个事实。前端目前没有 resourceCreate 的直接表单
+消费者，三个原生服务创建对象后的自动登记仍未闭合。本批支持原有操作入口按受控
+事实登记既有对象，不代表三组件已注册、自动登记或全业务可用；没有部署、强开入口、
+业务 SQL 插入或三端安装包。本批未跑 full：Data 剩余约 1.2 GiB，不能将专项检查
+记录为全量门禁通过。

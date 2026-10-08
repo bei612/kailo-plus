@@ -399,6 +399,27 @@ test("native credential delivery preserves exact binding, generation and referen
 });
 import type { ActionCommand, ResourceProvisionAdvanceRequest } from "../src/generated/contracts.js";
 
+test("remote native resource evidence uses the original binding delivery shape", () => {
+  const raw = readFileSync(new URL("../../../../contracts/samples/application-native-resources.sample.json", import.meta.url), "utf8");
+  const typed: ApplicationAdapterDirectory = JSON.parse(raw);
+  const back: ApplicationAdapterDirectory = { adapters: typed.adapters.map(adapter => ({
+    adapterServiceRef: adapter.adapterServiceRef, baseUrl: adapter.baseUrl,
+    nativeInstanceRef: adapter.nativeInstanceRef, artifactDigest: adapter.artifactDigest,
+    actionTokenAudience: adapter.actionTokenAudience, timeoutSeconds: adapter.timeoutSeconds,
+    maxResponseBytes: adapter.maxResponseBytes, secretReaders: adapter.secretReaders,
+    bindings: adapter.bindings?.map(binding => ({
+      bindingId: binding.bindingId, tenantId: binding.tenantId, workspaceId: binding.workspaceId,
+      servicePrincipalId: binding.servicePrincipalId, nativeScopeRef: binding.nativeScopeRef,
+      configDigest: binding.configDigest, isolationMode: binding.isolationMode,
+      nativeResources: binding.nativeResources?.map(resource => ({
+        typeKey: resource.typeKey, nativeType: resource.nativeType, nativeRef: resource.nativeRef,
+        evidenceRef: resource.evidenceRef, evidenceDigest: resource.evidenceDigest,
+      })),
+    })),
+  })) };
+  deepStrictEqual(JSON.parse(JSON.stringify(back)), JSON.parse(raw));
+});
+
 test("resource reference keeps evidence and original workflow without inventing scope",()=>{
   const raw=readFileSync(new URL("../../../../contracts/samples/resource-create.sample.json",import.meta.url),"utf8");
   const typed:ActionCommand=JSON.parse(raw);

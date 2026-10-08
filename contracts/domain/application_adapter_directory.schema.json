@@ -15,6 +15,7 @@
         "actionTokenAudience": {"type": "string"}, "timeoutSeconds": {"type": "integer"},
         "maxResponseBytes": {"type": "integer"},
         "modelCredentialDeliveries": {"$ref":"#/$defs/modelCredentialDeliveries"},
+        "bindings": {"type":"array", "minItems":1, "items":{"$ref":"#/properties/protocolPeers/items/properties/bindings/items"}, "description":"可选的既有原生对象受控归属证据；复用同一绑定事实结构，仅供既有resource.create核验，不授予权限或创建原生对象。无登记证据时省略，不投递空数组。"},
         "nativeHumanIdentities": {"type":"array", "description":"受控原生浏览器信任投递；不授业务权限，不由请求提供issuer/subject/key URL。", "items":{
           "title":"ApplicationNativeHumanIdentity", "type":"object", "additionalProperties":false,
           "required":["bindingId","configDigest","generation","identityProviderId","audience","jwksFile","accessClaim","accessValue"],

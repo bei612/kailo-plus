@@ -6113,6 +6113,10 @@ pub struct ApplicationAdapterDelivery {
 
     pub base_url: String,
 
+    /// 可选的既有原生对象受控归属证据；复用同一绑定事实结构，仅供既有resource.create核验，不授予权限或创建原生对象。无登记证据时省略，不投递空数组。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bindings: Option<Vec<AdapterBinding>>,
+
     pub max_response_bytes: i64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -6130,6 +6134,66 @@ pub struct ApplicationAdapterDelivery {
     pub secret_readers: Vec<AdapterSecretReader>,
 
     pub timeout_seconds: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdapterBinding {
+    pub binding_id: String,
+
+    pub config_digest: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential_generation: Option<i64>,
+
+    pub isolation_mode: String,
+
+    /// 原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_credentials: Option<Vec<ComponentProtocolPeerEnvironmentNativeCredential>>,
+
+    /// 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_resources: Option<Vec<PurpleApplicationNativeResourceDelivery>>,
+
+    pub native_scope_ref: String,
+
+    pub service_principal_id: String,
+
+    pub tenant_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentProtocolPeerEnvironmentNativeCredential {
+    pub audience: String,
+
+    pub header: String,
+
+    pub locator: String,
+
+    pub prefix: String,
+
+    pub secret_key: String,
+
+    pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PurpleApplicationNativeResourceDelivery {
+    pub evidence_digest: String,
+
+    pub evidence_ref: String,
+
+    pub native_ref: String,
+
+    pub native_type: String,
+
+    pub type_key: String,
 }
 
 /// 受控原生模型凭据交接回执；无密钥值，不创建模型，不替代OpenBao审计或binding准入。
@@ -6205,7 +6269,7 @@ pub struct ApplicationProtocolPeerDelivery {
 
     pub artifact_digest: String,
 
-    pub bindings: Vec<ApplicationProtocolPeerBindingDelivery>,
+    pub bindings: Vec<ProtocolPeerBinding>,
 
     pub max_response_bytes: i64,
 
@@ -6224,7 +6288,7 @@ pub struct ApplicationProtocolPeerDelivery {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ApplicationProtocolPeerBindingDelivery {
+pub struct ProtocolPeerBinding {
     pub binding_id: String,
 
     pub config_digest: String,
@@ -6236,11 +6300,11 @@ pub struct ApplicationProtocolPeerBindingDelivery {
 
     /// 原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_credentials: Option<Vec<BindingNativeCredential>>,
+    pub native_credentials: Option<Vec<PurpleApplicationPeerCredentialDelivery>>,
 
     /// 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_resources: Option<Vec<ApplicationNativeResourceDelivery>>,
+    pub native_resources: Option<Vec<FluffyApplicationNativeResourceDelivery>>,
 
     pub native_scope_ref: String,
 
@@ -6254,7 +6318,7 @@ pub struct ApplicationProtocolPeerBindingDelivery {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BindingNativeCredential {
+pub struct PurpleApplicationPeerCredentialDelivery {
     pub audience: String,
 
     pub header: String,
@@ -6270,7 +6334,7 @@ pub struct BindingNativeCredential {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ApplicationNativeResourceDelivery {
+pub struct FluffyApplicationNativeResourceDelivery {
     pub evidence_digest: String,
 
     pub evidence_ref: String,
@@ -6741,22 +6805,6 @@ pub struct ComponentProtocolPeerEnvironment {
     pub read_only_tools: Vec<String>,
 
     pub timeout_seconds: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentProtocolPeerEnvironmentNativeCredential {
-    pub audience: String,
-
-    pub header: String,
-
-    pub locator: String,
-
-    pub prefix: String,
-
-    pub secret_key: String,
-
-    pub version: i64,
 }
 
 /// 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。

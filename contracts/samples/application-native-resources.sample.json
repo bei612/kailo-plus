@@ -1,0 +1,27 @@
+{
+  "adapters": [{
+    "adapterServiceRef": "fixture-resource-adapter",
+    "baseUrl": "https://native.invalid/",
+    "nativeInstanceRef": "fixture-instance",
+    "artifactDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "actionTokenAudience": "fixture-resource-adapter",
+    "timeoutSeconds": 10,
+    "maxResponseBytes": 65536,
+    "secretReaders": [],
+    "bindings": [{
+      "bindingId": "00000000-0000-0000-0000-000000000002",
+      "tenantId": "00000000-0000-0000-0000-000000000001",
+      "servicePrincipalId": "00000000-0000-0000-0000-000000000004",
+      "nativeScopeRef": "fixture-project",
+      "configDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "isolationMode": "DEDICATED_INSTANCE",
+      "nativeResources": [{
+        "typeKey": "fixture.collection",
+        "nativeType": "model",
+        "nativeRef": "42",
+        "evidenceRef": "controlled-runtime-delivery",
+        "evidenceDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }]
+    }]
+  }]
+}

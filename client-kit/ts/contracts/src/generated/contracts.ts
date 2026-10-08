@@ -4193,10 +4193,14 @@ export interface ApplicationAdapterDirectory {
 }
 
 export interface ApplicationAdapterDelivery {
-    actionTokenAudience:        string;
-    adapterServiceRef:          string;
-    artifactDigest:             string;
-    baseUrl:                    string;
+    actionTokenAudience: string;
+    adapterServiceRef:   string;
+    artifactDigest:      string;
+    baseUrl:             string;
+    /**
+     * 可选的既有原生对象受控归属证据；复用同一绑定事实结构，仅供既有resource.create核验，不授予权限或创建原生对象。无登记证据时省略，不投递空数组。
+     */
+    bindings?:                  AdapterBinding[];
     maxResponseBytes:           number;
     mcpUrl?:                    string;
     modelCredentialDeliveries?: ApplicationModelCredentialDelivery[];
@@ -4207,6 +4211,42 @@ export interface ApplicationAdapterDelivery {
     nativeInstanceRef:      string;
     secretReaders:          AdapterSecretReader[];
     timeoutSeconds:         number;
+}
+
+export interface AdapterBinding {
+    bindingId:             string;
+    configDigest:          string;
+    credentialGeneration?: number;
+    isolationMode:         string;
+    /**
+     * 原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
+     */
+    nativeCredentials?: ComponentProtocolPeerEnvironmentNativeCredential[];
+    /**
+     * 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
+     */
+    nativeResources?:   PurpleApplicationNativeResourceDelivery[];
+    nativeScopeRef:     string;
+    servicePrincipalId: string;
+    tenantId:           string;
+    workspaceId?:       string;
+}
+
+export interface ComponentProtocolPeerEnvironmentNativeCredential {
+    audience:  string;
+    header:    string;
+    locator:   string;
+    prefix:    string;
+    secretKey: string;
+    version:   number;
+}
+
+export interface PurpleApplicationNativeResourceDelivery {
+    evidenceDigest: string;
+    evidenceRef:    string;
+    nativeRef:      string;
+    nativeType:     string;
+    typeKey:        string;
 }
 
 /**
@@ -4252,7 +4292,7 @@ export interface AdapterSecretReader {
 export interface ApplicationProtocolPeerDelivery {
     adapterServiceRef:          string;
     artifactDigest:             string;
-    bindings:                   ApplicationProtocolPeerBindingDelivery[];
+    bindings:                   ProtocolPeerBinding[];
     maxResponseBytes:           number;
     mcpUrl:                     string;
     modelCredentialDeliveries?: ApplicationModelCredentialDelivery[];
@@ -4261,7 +4301,7 @@ export interface ApplicationProtocolPeerDelivery {
     timeoutSeconds:             number;
 }
 
-export interface ApplicationProtocolPeerBindingDelivery {
+export interface ProtocolPeerBinding {
     bindingId:             string;
     configDigest:          string;
     credentialGeneration?: number;
@@ -4269,18 +4309,18 @@ export interface ApplicationProtocolPeerBindingDelivery {
     /**
      * 原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
      */
-    nativeCredentials?: BindingNativeCredential[];
+    nativeCredentials?: PurpleApplicationPeerCredentialDelivery[];
     /**
      * 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
      */
-    nativeResources?:   ApplicationNativeResourceDelivery[];
+    nativeResources?:   FluffyApplicationNativeResourceDelivery[];
     nativeScopeRef:     string;
     servicePrincipalId: string;
     tenantId:           string;
     workspaceId?:       string;
 }
 
-export interface BindingNativeCredential {
+export interface PurpleApplicationPeerCredentialDelivery {
     audience:  string;
     header:    string;
     locator:   string;
@@ -4289,7 +4329,7 @@ export interface BindingNativeCredential {
     version:   number;
 }
 
-export interface ApplicationNativeResourceDelivery {
+export interface FluffyApplicationNativeResourceDelivery {
     evidenceDigest: string;
     evidenceRef:    string;
     nativeRef:      string;
@@ -4617,15 +4657,6 @@ export interface ComponentProtocolPeerEnvironment {
     nativeCredentials?: ComponentProtocolPeerEnvironmentNativeCredential[];
     readOnlyTools:      string[];
     timeoutSeconds:     number;
-}
-
-export interface ComponentProtocolPeerEnvironmentNativeCredential {
-    audience:  string;
-    header:    string;
-    locator:   string;
-    prefix:    string;
-    secretKey: string;
-    version:   number;
 }
 
 /**

@@ -12108,6 +12108,9 @@ class ApplicationAdapterDelivery {
   final String adapterServiceRef;
   final String artifactDigest;
   final String baseUrl;
+
+  ///可选的既有原生对象受控归属证据；复用同一绑定事实结构，仅供既有resource.create核验，不授予权限或创建原生对象。无登记证据时省略，不投递空数组。
+  final List<AdapterBinding>? bindings;
   final int maxResponseBytes;
   final String? mcpUrl;
   final List<ApplicationModelCredentialDelivery>? modelCredentialDeliveries;
@@ -12123,6 +12126,7 @@ class ApplicationAdapterDelivery {
     required this.adapterServiceRef,
     required this.artifactDigest,
     required this.baseUrl,
+    this.bindings,
     required this.maxResponseBytes,
     this.mcpUrl,
     this.modelCredentialDeliveries,
@@ -12138,6 +12142,11 @@ class ApplicationAdapterDelivery {
         adapterServiceRef: json["adapterServiceRef"],
         artifactDigest: json["artifactDigest"],
         baseUrl: json["baseUrl"],
+        bindings: json["bindings"] == null
+            ? null
+            : List<AdapterBinding>.from(
+                json["bindings"]!.map((x) => AdapterBinding.fromJson(x)),
+              ),
         maxResponseBytes: json["maxResponseBytes"],
         mcpUrl: json["mcpUrl"],
         modelCredentialDeliveries: json["modelCredentialDeliveries"] == null
@@ -12166,6 +12175,9 @@ class ApplicationAdapterDelivery {
     "adapterServiceRef": adapterServiceRef,
     "artifactDigest": artifactDigest,
     "baseUrl": baseUrl,
+    "bindings": bindings == null
+        ? null
+        : List<dynamic>.from(bindings!.map((x) => x.toJson())),
     "maxResponseBytes": maxResponseBytes,
     "mcpUrl": mcpUrl,
     "modelCredentialDeliveries": modelCredentialDeliveries == null
@@ -12177,6 +12189,152 @@ class ApplicationAdapterDelivery {
     "nativeInstanceRef": nativeInstanceRef,
     "secretReaders": List<dynamic>.from(secretReaders.map((x) => x.toJson())),
     "timeoutSeconds": timeoutSeconds,
+  });
+}
+
+class AdapterBinding {
+  final String bindingId;
+  final String configDigest;
+  final int? credentialGeneration;
+  final String isolationMode;
+
+  ///原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
+  final List<ComponentProtocolPeerEnvironmentNativeCredential>?
+  nativeCredentials;
+
+  ///绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
+  final List<PurpleApplicationNativeResourceDelivery>? nativeResources;
+  final String nativeScopeRef;
+  final String servicePrincipalId;
+  final String tenantId;
+  final String? workspaceId;
+
+  AdapterBinding({
+    required this.bindingId,
+    required this.configDigest,
+    this.credentialGeneration,
+    required this.isolationMode,
+    this.nativeCredentials,
+    this.nativeResources,
+    required this.nativeScopeRef,
+    required this.servicePrincipalId,
+    required this.tenantId,
+    this.workspaceId,
+  });
+
+  factory AdapterBinding.fromJson(Map<String, dynamic> json) => AdapterBinding(
+    bindingId: json["bindingId"],
+    configDigest: json["configDigest"],
+    credentialGeneration: json["credentialGeneration"],
+    isolationMode: json["isolationMode"],
+    nativeCredentials: json["nativeCredentials"] == null
+        ? null
+        : List<ComponentProtocolPeerEnvironmentNativeCredential>.from(
+            json["nativeCredentials"]!.map(
+              (x) =>
+                  ComponentProtocolPeerEnvironmentNativeCredential.fromJson(x),
+            ),
+          ),
+    nativeResources: json["nativeResources"] == null
+        ? null
+        : List<PurpleApplicationNativeResourceDelivery>.from(
+            json["nativeResources"]!.map(
+              (x) => PurpleApplicationNativeResourceDelivery.fromJson(x),
+            ),
+          ),
+    nativeScopeRef: json["nativeScopeRef"],
+    servicePrincipalId: json["servicePrincipalId"],
+    tenantId: json["tenantId"],
+    workspaceId: json["workspaceId"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "bindingId": bindingId,
+    "configDigest": configDigest,
+    "credentialGeneration": credentialGeneration,
+    "isolationMode": isolationMode,
+    "nativeCredentials": nativeCredentials == null
+        ? null
+        : List<dynamic>.from(nativeCredentials!.map((x) => x.toJson())),
+    "nativeResources": nativeResources == null
+        ? null
+        : List<dynamic>.from(nativeResources!.map((x) => x.toJson())),
+    "nativeScopeRef": nativeScopeRef,
+    "servicePrincipalId": servicePrincipalId,
+    "tenantId": tenantId,
+    "workspaceId": workspaceId,
+  });
+}
+
+class ComponentProtocolPeerEnvironmentNativeCredential {
+  final String audience;
+  final String header;
+  final String locator;
+  final String prefix;
+  final String secretKey;
+  final int version;
+
+  ComponentProtocolPeerEnvironmentNativeCredential({
+    required this.audience,
+    required this.header,
+    required this.locator,
+    required this.prefix,
+    required this.secretKey,
+    required this.version,
+  });
+
+  factory ComponentProtocolPeerEnvironmentNativeCredential.fromJson(
+    Map<String, dynamic> json,
+  ) => ComponentProtocolPeerEnvironmentNativeCredential(
+    audience: json["audience"],
+    header: json["header"],
+    locator: json["locator"],
+    prefix: json["prefix"],
+    secretKey: json["secretKey"],
+    version: json["version"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "audience": audience,
+    "header": header,
+    "locator": locator,
+    "prefix": prefix,
+    "secretKey": secretKey,
+    "version": version,
+  });
+}
+
+class PurpleApplicationNativeResourceDelivery {
+  final String evidenceDigest;
+  final String evidenceRef;
+  final String nativeRef;
+  final String nativeType;
+  final String typeKey;
+
+  PurpleApplicationNativeResourceDelivery({
+    required this.evidenceDigest,
+    required this.evidenceRef,
+    required this.nativeRef,
+    required this.nativeType,
+    required this.typeKey,
+  });
+
+  factory PurpleApplicationNativeResourceDelivery.fromJson(
+    Map<String, dynamic> json,
+  ) => PurpleApplicationNativeResourceDelivery(
+    evidenceDigest: json["evidenceDigest"],
+    evidenceRef: json["evidenceRef"],
+    nativeRef: json["nativeRef"],
+    nativeType: json["nativeType"],
+    typeKey: json["typeKey"],
+  );
+
+  Map<String, dynamic> toJson() => _stripNulls({
+    "evidenceDigest": evidenceDigest,
+    "evidenceRef": evidenceRef,
+    "nativeRef": nativeRef,
+    "nativeType": nativeType,
+    "typeKey": typeKey,
   });
 }
 
@@ -12338,7 +12496,7 @@ class AdapterSecretReader {
 class ApplicationProtocolPeerDelivery {
   final String adapterServiceRef;
   final String artifactDigest;
-  final List<ApplicationProtocolPeerBindingDelivery> bindings;
+  final List<ProtocolPeerBinding> bindings;
   final int maxResponseBytes;
   final String mcpUrl;
   final List<ApplicationModelCredentialDelivery>? modelCredentialDeliveries;
@@ -12362,10 +12520,8 @@ class ApplicationProtocolPeerDelivery {
       ApplicationProtocolPeerDelivery(
         adapterServiceRef: json["adapterServiceRef"],
         artifactDigest: json["artifactDigest"],
-        bindings: List<ApplicationProtocolPeerBindingDelivery>.from(
-          json["bindings"].map(
-            (x) => ApplicationProtocolPeerBindingDelivery.fromJson(x),
-          ),
+        bindings: List<ProtocolPeerBinding>.from(
+          json["bindings"].map((x) => ProtocolPeerBinding.fromJson(x)),
         ),
         maxResponseBytes: json["maxResponseBytes"],
         mcpUrl: json["mcpUrl"],
@@ -12404,23 +12560,23 @@ class ApplicationProtocolPeerDelivery {
   });
 }
 
-class ApplicationProtocolPeerBindingDelivery {
+class ProtocolPeerBinding {
   final String bindingId;
   final String configDigest;
   final int? credentialGeneration;
   final String isolationMode;
 
   ///原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
-  final List<BindingNativeCredential>? nativeCredentials;
+  final List<PurpleApplicationPeerCredentialDelivery>? nativeCredentials;
 
   ///绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
-  final List<ApplicationNativeResourceDelivery>? nativeResources;
+  final List<FluffyApplicationNativeResourceDelivery>? nativeResources;
   final String nativeScopeRef;
   final String servicePrincipalId;
   final String tenantId;
   final String? workspaceId;
 
-  ApplicationProtocolPeerBindingDelivery({
+  ProtocolPeerBinding({
     required this.bindingId,
     required this.configDigest,
     this.credentialGeneration,
@@ -12433,32 +12589,31 @@ class ApplicationProtocolPeerBindingDelivery {
     this.workspaceId,
   });
 
-  factory ApplicationProtocolPeerBindingDelivery.fromJson(
-    Map<String, dynamic> json,
-  ) => ApplicationProtocolPeerBindingDelivery(
-    bindingId: json["bindingId"],
-    configDigest: json["configDigest"],
-    credentialGeneration: json["credentialGeneration"],
-    isolationMode: json["isolationMode"],
-    nativeCredentials: json["nativeCredentials"] == null
-        ? null
-        : List<BindingNativeCredential>.from(
-            json["nativeCredentials"]!.map(
-              (x) => BindingNativeCredential.fromJson(x),
-            ),
-          ),
-    nativeResources: json["nativeResources"] == null
-        ? null
-        : List<ApplicationNativeResourceDelivery>.from(
-            json["nativeResources"]!.map(
-              (x) => ApplicationNativeResourceDelivery.fromJson(x),
-            ),
-          ),
-    nativeScopeRef: json["nativeScopeRef"],
-    servicePrincipalId: json["servicePrincipalId"],
-    tenantId: json["tenantId"],
-    workspaceId: json["workspaceId"],
-  );
+  factory ProtocolPeerBinding.fromJson(Map<String, dynamic> json) =>
+      ProtocolPeerBinding(
+        bindingId: json["bindingId"],
+        configDigest: json["configDigest"],
+        credentialGeneration: json["credentialGeneration"],
+        isolationMode: json["isolationMode"],
+        nativeCredentials: json["nativeCredentials"] == null
+            ? null
+            : List<PurpleApplicationPeerCredentialDelivery>.from(
+                json["nativeCredentials"]!.map(
+                  (x) => PurpleApplicationPeerCredentialDelivery.fromJson(x),
+                ),
+              ),
+        nativeResources: json["nativeResources"] == null
+            ? null
+            : List<FluffyApplicationNativeResourceDelivery>.from(
+                json["nativeResources"]!.map(
+                  (x) => FluffyApplicationNativeResourceDelivery.fromJson(x),
+                ),
+              ),
+        nativeScopeRef: json["nativeScopeRef"],
+        servicePrincipalId: json["servicePrincipalId"],
+        tenantId: json["tenantId"],
+        workspaceId: json["workspaceId"],
+      );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "bindingId": bindingId,
@@ -12478,7 +12633,7 @@ class ApplicationProtocolPeerBindingDelivery {
   });
 }
 
-class BindingNativeCredential {
+class PurpleApplicationPeerCredentialDelivery {
   final String audience;
   final String header;
   final String locator;
@@ -12486,7 +12641,7 @@ class BindingNativeCredential {
   final String secretKey;
   final int version;
 
-  BindingNativeCredential({
+  PurpleApplicationPeerCredentialDelivery({
     required this.audience,
     required this.header,
     required this.locator,
@@ -12495,15 +12650,16 @@ class BindingNativeCredential {
     required this.version,
   });
 
-  factory BindingNativeCredential.fromJson(Map<String, dynamic> json) =>
-      BindingNativeCredential(
-        audience: json["audience"],
-        header: json["header"],
-        locator: json["locator"],
-        prefix: json["prefix"],
-        secretKey: json["secretKey"],
-        version: json["version"],
-      );
+  factory PurpleApplicationPeerCredentialDelivery.fromJson(
+    Map<String, dynamic> json,
+  ) => PurpleApplicationPeerCredentialDelivery(
+    audience: json["audience"],
+    header: json["header"],
+    locator: json["locator"],
+    prefix: json["prefix"],
+    secretKey: json["secretKey"],
+    version: json["version"],
+  );
 
   Map<String, dynamic> toJson() => _stripNulls({
     "audience": audience,
@@ -12515,14 +12671,14 @@ class BindingNativeCredential {
   });
 }
 
-class ApplicationNativeResourceDelivery {
+class FluffyApplicationNativeResourceDelivery {
   final String evidenceDigest;
   final String evidenceRef;
   final String nativeRef;
   final String nativeType;
   final String typeKey;
 
-  ApplicationNativeResourceDelivery({
+  FluffyApplicationNativeResourceDelivery({
     required this.evidenceDigest,
     required this.evidenceRef,
     required this.nativeRef,
@@ -12530,9 +12686,9 @@ class ApplicationNativeResourceDelivery {
     required this.typeKey,
   });
 
-  factory ApplicationNativeResourceDelivery.fromJson(
+  factory FluffyApplicationNativeResourceDelivery.fromJson(
     Map<String, dynamic> json,
-  ) => ApplicationNativeResourceDelivery(
+  ) => FluffyApplicationNativeResourceDelivery(
     evidenceDigest: json["evidenceDigest"],
     evidenceRef: json["evidenceRef"],
     nativeRef: json["nativeRef"],
@@ -13551,44 +13707,6 @@ class ComponentProtocolPeerEnvironment {
         : List<dynamic>.from(nativeCredentials!.map((x) => x.toJson())),
     "readOnlyTools": List<dynamic>.from(readOnlyTools.map((x) => x)),
     "timeoutSeconds": timeoutSeconds,
-  });
-}
-
-class ComponentProtocolPeerEnvironmentNativeCredential {
-  final String audience;
-  final String header;
-  final String locator;
-  final String prefix;
-  final String secretKey;
-  final int version;
-
-  ComponentProtocolPeerEnvironmentNativeCredential({
-    required this.audience,
-    required this.header,
-    required this.locator,
-    required this.prefix,
-    required this.secretKey,
-    required this.version,
-  });
-
-  factory ComponentProtocolPeerEnvironmentNativeCredential.fromJson(
-    Map<String, dynamic> json,
-  ) => ComponentProtocolPeerEnvironmentNativeCredential(
-    audience: json["audience"],
-    header: json["header"],
-    locator: json["locator"],
-    prefix: json["prefix"],
-    secretKey: json["secretKey"],
-    version: json["version"],
-  );
-
-  Map<String, dynamic> toJson() => _stripNulls({
-    "audience": audience,
-    "header": header,
-    "locator": locator,
-    "prefix": prefix,
-    "secretKey": secretKey,
-    "version": version,
   });
 }
 

@@ -112,14 +112,21 @@ async fn snapshot(
         isolation,
         artifact,
     ) = row.ok_or_else(blocked)?;
-    if manifest["executionConnector"]["mode"] != "PROTOCOL_PEER" {
+    let connector = manifest["executionConnector"]["mode"].as_str();
+    if !matches!(connector, Some("PROTOCOL_PEER" | "REMOTE_ADAPTER")) {
         return Err(blocked());
     }
-    let fact = json!({"bindingId":binding,"bindingVersion":version,"releaseId":release,"generation":generation,
+    let mut fact = json!({"bindingId":binding,"bindingVersion":version,"releaseId":release,"generation":generation,
         "adapterServiceRef":service,"nativeInstanceRef":instance,"nativeScopeRef":scope,"configDigest":config,
         "bindingWorkspaceId":binding_workspace,"servicePrincipalId":principal,"isolationMode":isolation,"artifactDigest":artifact,
         "manifestDigest":collab_bridge::limits::canonical_digest(&manifest),"resourceTypeDefinitionId":type_id,
         "componentTypeKey":manifest["componentTypeKey"],"reference":request});
+    // Existing peer intents retain their exact frozen representation. Only
+    // remote-adapter intents need the new discriminator: older code could
+    // never have produced one, and evidence cannot cross connector surfaces.
+    if connector == Some("REMOTE_ADAPTER") {
+        fact["connectorMode"] = json!("REMOTE_ADAPTER");
+    }
     verify_delivery(tenant, &fact)?;
     Ok(fact)
 }
@@ -139,9 +146,29 @@ fn verify_delivery(tenant: Uuid, frozen: &Value) -> Result<(), Refusal> {
 }
 
 fn delivery_match(directory: &Value, tenant: Uuid, frozen: &Value) -> Result<(), Refusal> {
+    let collection = match frozen.get("connectorMode") {
+        None => "protocolPeers",
+        Some(mode) if mode == "REMOTE_ADAPTER" => "adapters",
+        _ => return Err(blocked()),
+    };
+    // The original adapter resolver also requires globally unique service
+    // references across both transports; registration must not accept a
+    // shadow entry that subsequent native calls would reject.
+    let mut references = std::collections::BTreeSet::new();
+    for entry in ["adapters", "protocolPeers"].into_iter().flat_map(|key| {
+        directory
+            .get(key)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+    }) {
+        if !references.insert(text(entry, "adapterServiceRef")?) {
+            return Err(conflict());
+        }
+    }
     let mut bindings = 0;
     let mut matches = 0;
-    for peer in directory["protocolPeers"]
+    for peer in directory[collection]
         .as_array()
         .ok_or_else(|| Refusal::Unavailable("resource evidence delivery missing".into()))?
     {
@@ -784,6 +811,56 @@ mod tests {
     }
 
     #[test]
+    fn remote_reference_uses_its_own_delivery_and_rejects_mode_or_scope_drift() {
+        let (tenant, mut frozen, mut directory) = delivery();
+        frozen["connectorMode"] = json!("REMOTE_ADAPTER");
+        // A matching peer is not evidence for a remote-adapter registration.
+        assert!(delivery_match(&directory, tenant, &frozen).is_err());
+        directory["adapters"] = directory["protocolPeers"].take();
+        directory.as_object_mut().unwrap().remove("protocolPeers");
+        assert!(delivery_match(&directory, tenant, &frozen).is_ok());
+        for mode in [
+            json!(null),
+            json!(""),
+            json!("OTHER"),
+            json!("PROTOCOL_PEER"),
+        ] {
+            let mut altered = frozen.clone();
+            altered["connectorMode"] = mode;
+            assert!(delivery_match(&directory, tenant, &altered).is_err());
+        }
+        let mut altered = frozen.clone();
+        altered.as_object_mut().unwrap().remove("connectorMode");
+        assert!(delivery_match(&directory, tenant, &altered).is_err());
+        for field in [
+            "tenantId",
+            "workspaceId",
+            "servicePrincipalId",
+            "nativeScopeRef",
+            "configDigest",
+            "isolationMode",
+        ] {
+            let mut altered = directory.clone();
+            altered["adapters"][0]["bindings"][0][field] = json!("foreign-fact");
+            assert!(
+                delivery_match(&altered, tenant, &frozen).is_err(),
+                "{field}"
+            );
+        }
+        let mut altered = directory.clone();
+        altered["protocolPeers"] = altered["adapters"].clone();
+        assert!(matches!(
+            delivery_match(&altered, tenant, &frozen),
+            Err(Refusal::Conflict(_))
+        ));
+        directory["adapters"][0]["bindings"][0]["nativeResources"] = json!([]);
+        assert!(matches!(
+            delivery_match(&directory, tenant, &frozen),
+            Err(Refusal::Unavailable(_))
+        ));
+    }
+
+    #[test]
     fn native_identity_is_not_a_provider_or_evidence_alias() {
         let (_, frozen, _) = delivery();
         let mut alias = frozen.clone();
@@ -795,8 +872,14 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires isolated migrated RESOURCE_PROVISION database and original base fixture"]
+    #[ignore = "requires isolated migrated empty RESOURCE_PROVISION database"]
     async fn original_producer_freezes_one_accountable_reference() {
+        for mode in ["PROTOCOL_PEER", "REMOTE_ADAPTER"] {
+            original_producer_for_connector(mode).await;
+        }
+    }
+
+    async fn original_producer_for_connector(mode: &str) {
         use sqlx::Connection;
         let mut connection = sqlx::PgConnection::connect(
             &std::env::var("RESOURCE_PROVISION_TEST_DATABASE_URL").expect("isolated database URL"),
@@ -804,10 +887,14 @@ mod tests {
         .await
         .unwrap();
         let mut tx = connection.begin().await.unwrap();
+        let base = include_str!("../../../verify/application-execution-base.sql")
+            .replace("\nBEGIN;\n", "\n")
+            .replace("\nCOMMIT;\n", "\n");
+        sqlx::raw_sql(&base).execute(&mut *tx).await.unwrap();
         let fixture = include_str!("../../../verify/application-execution-dispatch.sql");
         let needle = "'resourceTypeDefinitions',jsonb_build_array(resource_type));";
         assert_eq!(fixture.matches(needle).count(), 1);
-        let fixture=fixture.replace(needle,"'resourceTypeDefinitions',jsonb_build_array(resource_type),'executionConnector',jsonb_build_object('mode','PROTOCOL_PEER')); ");
+        let fixture=fixture.replace(needle,&format!("'resourceTypeDefinitions',jsonb_build_array(resource_type),'executionConnector',jsonb_build_object('mode','{mode}')); "));
         sqlx::raw_sql(&fixture).execute(&mut *tx).await.unwrap();
         let (tenant,binding,principal,instance,scope,config,artifact):(Uuid,Uuid,Uuid,String,String,String,String)=sqlx::query_as(
             "select b.tenant_id,b.id,b.service_principal_id,b.native_instance_ref,b.native_scope_ref,b.config_digest,r.adapter_build_ref
@@ -817,10 +904,18 @@ mod tests {
             .bind(binding).fetch_one(&mut *tx).await.unwrap();
         let request = json!({"typeKey":"retire_plain.collection","nativeType":"collection","nativeRef":"second-existing-object",
             "evidenceRef":"isolated-controlled-delivery","evidenceDigest":"d".repeat(64)});
-        let directory = json!({"adapters":[],"protocolPeers":[{"adapterServiceRef":"isolated-adapter","mcpUrl":"https://isolated.invalid/mcp",
+        let mut directory = json!({"adapters":[],"protocolPeers":[{"adapterServiceRef":"isolated-adapter","mcpUrl":"https://isolated.invalid/mcp",
             "nativeInstanceRef":instance,"artifactDigest":artifact,"timeoutSeconds":1,"maxResponseBytes":1024,
             "bindings":[{"bindingId":binding,"tenantId":tenant,"servicePrincipalId":principal,"nativeScopeRef":scope,
                 "configDigest":config,"isolationMode":"DEDICATED_INSTANCE","nativeResources":[request]}]}]});
+        if mode == "REMOTE_ADAPTER" {
+            let mut entry = directory["protocolPeers"][0].clone();
+            entry.as_object_mut().unwrap().remove("mcpUrl");
+            entry["baseUrl"] = json!("https://isolated.invalid/");
+            entry["actionTokenAudience"] = json!("isolated-adapter");
+            entry["secretReaders"] = json!([]);
+            directory = json!({"adapters":[entry]});
+        }
         let path = std::env::temp_dir().join(format!("resource-reference-{}.json", Uuid::new_v4()));
         std::fs::write(&path, serde_json::to_vec(&directory).unwrap()).unwrap();
         let previous = std::env::var_os("APPLICATION_ADAPTER_DIRECTORY_FILE");
@@ -867,6 +962,14 @@ mod tests {
         assert_eq!(stored.1, None);
         assert_eq!(stored.2["frozen"]["bindingId"], json!(binding));
         assert_eq!(stored.2["frozen"]["reference"], request);
+        assert_eq!(
+            stored.2["frozen"]["connectorMode"],
+            if mode == "REMOTE_ADAPTER" {
+                json!(mode)
+            } else {
+                Value::Null
+            }
+        );
         // Read back through the real definition resolver only after projection
         // metadata closes; this SQL portion proves constraints, not SpiceDB E2E.
         sqlx::query("update admission.action_execution set gate_state='ALLOWED',dispatch_state='DISPATCHED' where id=$1")

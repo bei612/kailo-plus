@@ -272,6 +272,24 @@ Deployment/MDL, Asking, dashboard and native write authorization are not covered
 by these four metadata readers; see the component verification receipt for the
 current acceptance boundary before publishing the component.
 
+The original modeling diagram additionally checks `data_query.describe@v1`
+read permission for every captured model and saved view before loading its
+fields and again before the original MDL builder returns the complete graph.
+This is a complete-graph read: one inaccessible object refuses the request;
+nodes, relationships and calculated-field dependencies are not silently dropped.
+Genuinely empty graphs avoid unfiltered column/relation queries. The original
+modeling page uses its existing error presentation on refusal or transport
+failure, without retaining a previously cached graph or displaying a failed
+request as an empty successful graph. No AI/engine call or SQL execution is
+added by the diagram reader.
+
+Historical `getMDL(hash)` authorization remains a distinct unresolved chain:
+the original deployment manifest preserves view IDs but model names rather
+than model IDs. Current same-name models do not establish historical ownership.
+This change neither grants such access by name nor invents a current-only
+restriction for the original history API; it does not claim that history API
+has completed its per-object authorization integration.
+
 ## Binding lifecycle validation
 
 The same optional `query-governance.yaml` overlay now supplies

@@ -478,6 +478,7 @@ void main() {
       for (final sample in [
         'application-peer-credentials.sample.json',
         'application-model-delivery.sample.json',
+        'application-native-resources.sample.json',
       ]) {
         final original =
             jsonDecode(

@@ -19,6 +19,15 @@ import {
 import { ColumnMDL, Manifest } from '@server/mdl/type';
 import { getLogger } from '@server/utils';
 import { MDLBuilder } from '../mdl/mdlBuilder';
+import {
+  canReadNativeMetadata,
+  nativePreviewScope,
+} from '../services/nativeHumanQuery';
+import {
+  loadQueryDelivery,
+  NativeQueryDelivery,
+  NativeQueryRefusal,
+} from '../services/nativeQueryAdmission';
 
 const logger = getLogger('DiagramResolver');
 logger.level = 'debug';
@@ -28,29 +37,97 @@ export class DiagramResolver {
     this.getDiagram = this.getDiagram.bind(this);
   }
 
+  private async authorizeDiagram(
+    ctx: IContext,
+    config: NativeQueryDelivery,
+    models: Model[],
+    views: View[],
+  ) {
+    for (const [kind, rows] of [
+      ['model', models],
+      ['view', views],
+    ] as const) {
+      for (const row of rows) {
+        if (
+          row.projectId !== config.projectId ||
+          !(await canReadNativeMetadata(
+            config,
+            ctx.nativeHumanToken,
+            kind,
+            row.id,
+          ))
+        )
+          throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+      }
+    }
+  }
+
   public async getDiagram(
     _root: any,
     _args: any,
     ctx: IContext,
   ): Promise<Diagram> {
     const project = await ctx.projectRepository.getCurrentProject();
+    const config = await loadQueryDelivery();
+    nativePreviewScope(config, ctx.nativeIdentityScope);
+    if (!ctx.nativeHumanToken)
+      throw new NativeQueryRefusal(401, 'NATIVE_AUTHENTICATION_REQUIRED');
+    if (project.id !== config.projectId)
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
     const models = await ctx.modelRepository.findAllBy({
       projectId: project.id,
-    });
-
-    const modelIds = models.map((model) => model.id);
-    const modelColumns =
-      await ctx.modelColumnRepository.findColumnsByModelIds(modelIds);
-    const modelNestedColumns =
-      await ctx.modelNestedColumnRepository.findNestedColumnsByModelIds(
-        modelIds,
-      );
-    const modelRelations = await ctx.relationRepository.findRelationInfoBy({
-      columnIds: modelColumns.map((column) => column.id),
     });
     const views = await ctx.viewRepository.findAllBy({
       projectId: project.id,
     });
+    await this.authorizeDiagram(ctx, config, models, views);
+
+    const modelIds = models.map((model) => model.id);
+    // Empty filters mean all rows in the original repositories.
+    const modelColumns = modelIds.length
+      ? await ctx.modelColumnRepository.findColumnsByModelIds(modelIds)
+      : [];
+    const modelNestedColumns = modelIds.length
+      ? await ctx.modelNestedColumnRepository.findNestedColumnsByModelIds(
+          modelIds,
+        )
+      : [];
+    const modelRelations = modelColumns.length
+      ? await ctx.relationRepository.findRelationInfoBy({
+          projectId: project.id,
+          columnIds: modelColumns.map((column) => column.id),
+        })
+      : [];
+    if (
+      modelColumns.some((column) => !modelIds.includes(column.modelId)) ||
+      modelNestedColumns.some(
+        (nested) =>
+          !modelColumns.some(
+            (column) =>
+              column.id === nested.columnId &&
+              column.modelId === nested.modelId,
+          ),
+      ) ||
+      modelRelations.some(
+        (relation) =>
+          relation.projectId !== project.id ||
+          !modelIds.includes(relation.fromModelId) ||
+          !modelIds.includes(relation.toModelId) ||
+          !modelColumns.some(
+            (column) =>
+              column.id === relation.fromColumnId &&
+              column.modelId === relation.fromModelId,
+          ) ||
+          !modelColumns.some(
+            (column) =>
+              column.id === relation.toColumnId &&
+              column.modelId === relation.toModelId,
+          ),
+      )
+    )
+      throw new NativeQueryRefusal(403, 'QUERY_SCOPE_DENIED');
+
+    await this.authorizeDiagram(ctx, config, models, views);
 
     const builder = new MDLBuilder({
       project,

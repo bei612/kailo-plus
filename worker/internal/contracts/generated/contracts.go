@@ -5198,10 +5198,12 @@ type ApplicationAdapterDirectory struct {
 }
 
 type ApplicationAdapterDelivery struct {
-	ActionTokenAudience       string                               `json:"actionTokenAudience"`
-	AdapterServiceRef         string                               `json:"adapterServiceRef"`
-	ArtifactDigest            string                               `json:"artifactDigest"`
-	BaseURL                   string                               `json:"baseUrl"`
+	ActionTokenAudience string `json:"actionTokenAudience"`
+	AdapterServiceRef   string `json:"adapterServiceRef"`
+	ArtifactDigest      string `json:"artifactDigest"`
+	BaseURL             string `json:"baseUrl"`
+	// 可选的既有原生对象受控归属证据；复用同一绑定事实结构，仅供既有resource.create核验，不授予权限或创建原生对象。无登记证据时省略，不投递空数组。
+	Bindings                  []AdapterBinding                     `json:"bindings,omitempty"`
 	MaxResponseBytes          int64                                `json:"maxResponseBytes"`
 	MCPURL                    *string                              `json:"mcpUrl,omitempty"`
 	ModelCredentialDeliveries []ApplicationModelCredentialDelivery `json:"modelCredentialDeliveries,omitempty"`
@@ -5210,6 +5212,38 @@ type ApplicationAdapterDelivery struct {
 	NativeInstanceRef     string                           `json:"nativeInstanceRef"`
 	SecretReaders         []AdapterSecretReader            `json:"secretReaders"`
 	TimeoutSeconds        int64                            `json:"timeoutSeconds"`
+}
+
+type AdapterBinding struct {
+	BindingID            string `json:"bindingId"`
+	ConfigDigest         string `json:"configDigest"`
+	CredentialGeneration *int64 `json:"credentialGeneration,omitempty"`
+	IsolationMode        string `json:"isolationMode"`
+	// 原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
+	NativeCredentials []ComponentProtocolPeerEnvironmentNativeCredential `json:"nativeCredentials,omitempty"`
+	// 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
+	NativeResources    []PurpleApplicationNativeResourceDelivery `json:"nativeResources,omitempty"`
+	NativeScopeRef     string                                    `json:"nativeScopeRef"`
+	ServicePrincipalID string                                    `json:"servicePrincipalId"`
+	TenantID           string                                    `json:"tenantId"`
+	WorkspaceID        *string                                   `json:"workspaceId,omitempty"`
+}
+
+type ComponentProtocolPeerEnvironmentNativeCredential struct {
+	Audience  string `json:"audience"`
+	Header    string `json:"header"`
+	Locator   string `json:"locator"`
+	Prefix    string `json:"prefix"`
+	SecretKey string `json:"secretKey"`
+	Version   int64  `json:"version"`
+}
+
+type PurpleApplicationNativeResourceDelivery struct {
+	EvidenceDigest string `json:"evidenceDigest"`
+	EvidenceRef    string `json:"evidenceRef"`
+	NativeRef      string `json:"nativeRef"`
+	NativeType     string `json:"nativeType"`
+	TypeKey        string `json:"typeKey"`
 }
 
 // 受控原生模型凭据交接回执；无密钥值，不创建模型，不替代OpenBao审计或binding准入。
@@ -5251,33 +5285,33 @@ type AdapterSecretReader struct {
 }
 
 type ApplicationProtocolPeerDelivery struct {
-	AdapterServiceRef         string                                   `json:"adapterServiceRef"`
-	ArtifactDigest            string                                   `json:"artifactDigest"`
-	Bindings                  []ApplicationProtocolPeerBindingDelivery `json:"bindings"`
-	MaxResponseBytes          int64                                    `json:"maxResponseBytes"`
-	MCPURL                    string                                   `json:"mcpUrl"`
-	ModelCredentialDeliveries []ApplicationModelCredentialDelivery     `json:"modelCredentialDeliveries,omitempty"`
-	NativeInstanceRef         string                                   `json:"nativeInstanceRef"`
-	SecretReaders             []ProtocolPeerSecretReader               `json:"secretReaders,omitempty"`
-	TimeoutSeconds            int64                                    `json:"timeoutSeconds"`
+	AdapterServiceRef         string                               `json:"adapterServiceRef"`
+	ArtifactDigest            string                               `json:"artifactDigest"`
+	Bindings                  []ProtocolPeerBinding                `json:"bindings"`
+	MaxResponseBytes          int64                                `json:"maxResponseBytes"`
+	MCPURL                    string                               `json:"mcpUrl"`
+	ModelCredentialDeliveries []ApplicationModelCredentialDelivery `json:"modelCredentialDeliveries,omitempty"`
+	NativeInstanceRef         string                               `json:"nativeInstanceRef"`
+	SecretReaders             []ProtocolPeerSecretReader           `json:"secretReaders,omitempty"`
+	TimeoutSeconds            int64                                `json:"timeoutSeconds"`
 }
 
-type ApplicationProtocolPeerBindingDelivery struct {
+type ProtocolPeerBinding struct {
 	BindingID            string `json:"bindingId"`
 	ConfigDigest         string `json:"configDigest"`
 	CredentialGeneration *int64 `json:"credentialGeneration,omitempty"`
 	IsolationMode        string `json:"isolationMode"`
 	// 原受控投递映射：无secret值；精确版本由Core以原audience读取并向Gateway独占文件投递。
-	NativeCredentials []BindingNativeCredential `json:"nativeCredentials,omitempty"`
+	NativeCredentials []PurpleApplicationPeerCredentialDelivery `json:"nativeCredentials,omitempty"`
 	// 绑定已有原生对象的受控投递事实，不创建对象或授予权限；父项唯一固定实例与作用域。
-	NativeResources    []ApplicationNativeResourceDelivery `json:"nativeResources,omitempty"`
-	NativeScopeRef     string                              `json:"nativeScopeRef"`
-	ServicePrincipalID string                              `json:"servicePrincipalId"`
-	TenantID           string                              `json:"tenantId"`
-	WorkspaceID        *string                             `json:"workspaceId,omitempty"`
+	NativeResources    []FluffyApplicationNativeResourceDelivery `json:"nativeResources,omitempty"`
+	NativeScopeRef     string                                    `json:"nativeScopeRef"`
+	ServicePrincipalID string                                    `json:"servicePrincipalId"`
+	TenantID           string                                    `json:"tenantId"`
+	WorkspaceID        *string                                   `json:"workspaceId,omitempty"`
 }
 
-type BindingNativeCredential struct {
+type PurpleApplicationPeerCredentialDelivery struct {
 	Audience  string `json:"audience"`
 	Header    string `json:"header"`
 	Locator   string `json:"locator"`
@@ -5286,7 +5320,7 @@ type BindingNativeCredential struct {
 	Version   int64  `json:"version"`
 }
 
-type ApplicationNativeResourceDelivery struct {
+type FluffyApplicationNativeResourceDelivery struct {
 	EvidenceDigest string `json:"evidenceDigest"`
 	EvidenceRef    string `json:"evidenceRef"`
 	NativeRef      string `json:"nativeRef"`
@@ -5538,15 +5572,6 @@ type ComponentProtocolPeerEnvironment struct {
 	NativeCredentials []ComponentProtocolPeerEnvironmentNativeCredential `json:"nativeCredentials,omitempty"`
 	ReadOnlyTools     []string                                           `json:"readOnlyTools"`
 	TimeoutSeconds    int64                                              `json:"timeoutSeconds"`
-}
-
-type ComponentProtocolPeerEnvironmentNativeCredential struct {
-	Audience  string `json:"audience"`
-	Header    string `json:"header"`
-	Locator   string `json:"locator"`
-	Prefix    string `json:"prefix"`
-	SecretKey string `json:"secretKey"`
-	Version   int64  `json:"version"`
 }
 
 // 原ComponentTaskWorkflow的组件批准目标，只引用原准入与不可变release，不携带用户声明的兼容结论。
