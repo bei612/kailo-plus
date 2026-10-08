@@ -30,6 +30,39 @@ export function canonical(value) {
   return JSON.stringify(value);
 }
 
+// Native errors are opaque input, never a source for response text or a
+// terminal execution observation. An unrecognized transport/status cannot
+// prove that an external effect failed, and must retain UNKNOWN semantics.
+export function nativeStatusErrorArguments(raw, key) {
+  let value;
+  try { value = JSON.parse(raw); } catch { throw new Refused(400); }
+  const keys = ['idempotencyKey', 'nativeStatus'];
+  if (object(value) && Object.hasOwn(value, 'nativeError')) keys.push('nativeError');
+  if (!exactKeys(value, keys)
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value.idempotencyKey)
+    || value.idempotencyKey !== key || raw !== canonical(value)
+    || !(Number.isSafeInteger(value.nativeStatus) || nonempty(value.nativeStatus))) throw new Refused(400);
+  return value;
+}
+
+export function mapNativeStatusError(value) {
+  switch (value.nativeStatus) {
+    case 401:
+    case 403: return { class: 'DENIED', reason: 'PERMISSION_DENIED' };
+    case 501: return { class: 'BLOCKED', reason: 'CAPABILITY_BLOCKED' };
+    case 404: return { class: 'PRECONDITION', reason: 'TARGET_NOT_FOUND' };
+    case 400:
+    case 405:
+    case 412:
+    case 422: return { class: 'PRECONDITION', reason: 'INVALID_PARAMETERS' };
+    case 413: return { class: 'LIMIT', reason: 'PAYLOAD_TOO_LARGE' };
+    case 429: return { class: 'LIMIT', reason: 'RATE_LIMITED' };
+    case 409:
+    case 423: return { class: 'CONFLICT', reason: 'TARGET_STATE_CONFLICT' };
+    default: return { class: 'UNKNOWN', reason: 'EXTERNAL_RESULT_UNKNOWN' };
+  }
+}
+
 export function fixedUrl(value) {
   let url;
   try { url = new URL(value); } catch { throw new Refused(503); }

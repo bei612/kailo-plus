@@ -29,21 +29,28 @@ export default function ModelMetadata(props: Props) {
     usePreviewModelDataMutation({
       onError: (error) => console.error(error),
     });
-  const query = useGovernedPreview('model', modelId, async (where) => {
-    const result = await previewModelData({ variables: { where } });
-    return result.data?.previewModelData;
-  }, previewModelDataResult.data?.previewModelData, previewModelDataResult.error);
+  const query = useGovernedPreview(
+    'model',
+    modelId,
+    async (where) => {
+      const result = await previewModelData({ variables: { where } });
+      return result.data?.previewModelData;
+    },
+    previewModelDataResult.data?.previewModelData,
+    previewModelDataResult.error,
+  );
 
   // Model preview data should show alias as column name.
   const fieldsMap = useMemo(() => keyBy(fields, 'referenceName'), [fields]);
   const previewData = useMemo(() => {
+    if (!query.completed) return undefined;
     const previewModelData = query.receipt?.data;
     const columns = (previewModelData?.columns || []).map((column) => {
       const alias = fieldsMap[column.name]?.displayName;
       return { ...column, name: alias || column.name };
     });
     return { ...previewModelData, columns };
-  }, [fieldsMap, query.receipt]);
+  }, [fieldsMap, query.receipt, query.completed]);
 
   return (
     <>
@@ -103,13 +110,15 @@ export default function ModelMetadata(props: Props) {
         >
           {query.pending || query.error ? text.check : text.preview}
         </Button>
-        {query.storageError ? <Alert type="error" message={text.storageError} /> : null}
-        {query.scopeError ? <Alert type="error" message={text.scopeError} /> : null}
+        {query.storageError ? (
+          <Alert type="error" message={text.storageError} />
+        ) : null}
+        {query.scopeError ? (
+          <Alert type="error" message={text.scopeError} />
+        ) : null}
         {query.pending ? <Alert type="info" message={text.pending} /> : null}
-        {query.receipt?.terminalStatus && query.receipt.terminalStatus !== 'COMPLETED'
-          ? <Alert type="error" message={text.ended} /> : null}
-        {query.receipt?.submission?.gateState === 'DENIED'
-          ? <Alert type="warning" message={text.denied} /> : null}
+        {query.ended ? <Alert type="error" message={text.ended} /> : null}
+        {query.denied ? <Alert type="warning" message={text.denied} /> : null}
         <div className="my-3">
           <PreviewData
             error={query.error}

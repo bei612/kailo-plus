@@ -3,19 +3,22 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import ViewMetadata from './components/pages/modeling/metadata/ViewMetadata';
 import ModelMetadata from './components/pages/modeling/metadata/ModelMetadata';
 import useGovernedPreview from './hooks/useGovernedPreview';
+import { queryReceiptState } from './utils/queryReceipt';
+import { getQueryPreviewText } from './utils/language';
 
 let mockLocale: string | undefined;
 let mockScope: string;
 let mockButtons: any[];
+let mockPreviewResult: any;
 const mockPreview = jest.fn();
 const mockConfig = jest.fn();
 jest.mock('next/router', () => ({ useRouter: () => ({ locale: mockLocale }) }));
 jest.mock('./utils/env', () => ({ getUserConfig: () => mockConfig() }));
 jest.mock('./apollo/client/graphql/view.generated', () => ({
-  usePreviewViewDataMutation: () => [mockPreview, {}],
+  usePreviewViewDataMutation: () => [mockPreview, mockPreviewResult],
 }));
 jest.mock('./apollo/client/graphql/model.generated', () => ({
-  usePreviewModelDataMutation: () => [mockPreview, {}],
+  usePreviewModelDataMutation: () => [mockPreview, mockPreviewResult],
 }));
 jest.mock('antd', () => {
   const React = require('react');
@@ -25,7 +28,12 @@ jest.mock('antd', () => {
     React.createElement('input', { 'aria-label': props['aria-label'] });
   Input.TextArea = () => null;
   return {
-    Alert: field,
+    Alert: (props: any) =>
+      React.createElement(
+        'div',
+        { 'data-alert-type': props.type },
+        props.message,
+      ),
     Row: field,
     Col: field,
     Input,
@@ -38,7 +46,15 @@ jest.mock('antd', () => {
   };
 });
 jest.mock('./components/code/SQLCodeBlock', () => () => null);
-jest.mock('./components/dataPreview/PreviewData', () => () => null);
+jest.mock(
+  './components/dataPreview/PreviewData',
+  () => (props: any) =>
+    require('react').createElement(
+      'div',
+      { 'data-native-preview': true },
+      props.previewData ? JSON.stringify(props.previewData) : null,
+    ),
+);
 jest.mock('./components/table/FieldTable', () => () => null);
 jest.mock('./components/table/CalculatedFieldTable', () => () => null);
 jest.mock('./components/table/RelationTable', () => () => null);
@@ -62,6 +78,7 @@ describe('original saved-view preview controls', () => {
   beforeEach(() => {
     entries.clear();
     mockButtons = [];
+    mockPreviewResult = {};
     mockLocale = undefined;
     mockScope = 'a'.repeat(64);
     mockConfig
@@ -237,6 +254,7 @@ describe('original saved-view preview controls', () => {
       const first = mockPreview.mock.calls[0][0];
       const receipt = {
         terminalStatus: 'COMPLETED',
+        submission: { gateState: 'ALLOWED', dispatchState: 'DISPATCHED' },
         previewScope: mockScope,
         responseId: 21,
         viewId: 7,
@@ -266,4 +284,179 @@ describe('original saved-view preview controls', () => {
       );
     },
   );
+
+  const observed = (terminalStatus: unknown, kind = 'view') => ({
+    terminalStatus,
+    submission: { gateState: 'ALLOWED', dispatchState: 'DISPATCHED' },
+    previewScope: mockScope,
+    responseId: 21,
+    viewId: 7,
+    inputReference: {
+      nativeObjectRef: JSON.stringify({
+        [kind === 'model' ? 'modelId' : 'viewId']: 7,
+      }),
+    },
+    data: { columns: [{ name: 'private' }], data: [['native-private-rows']] },
+  });
+
+  it.each(['FAILED', 'CANCELED', 'TERMINATED', 'TIMED_OUT'])(
+    'closes the original retry key only for the known %s task terminal',
+    async (status) => {
+      renderResponse();
+      await mockButtons[0].onClick();
+      const first = mockPreview.mock.calls[0][0];
+      mockPreview.mockResolvedValueOnce(observed(status));
+      await mockButtons[0].onClick();
+      expect(mockPreview.mock.calls[1][0]).toEqual(first);
+      expect(storage.removeItem).toHaveBeenCalledTimes(1);
+      await mockButtons[0].onClick();
+      expect(mockPreview.mock.calls[2][0].idempotencyKey).not.toBe(
+        first.idempotencyKey,
+      );
+    },
+  );
+
+  it.each(['RUNNING', 'UNKNOWN', 'NEW_TERMINAL', null, 7])(
+    'keeps the original retry key for a %j receipt without claiming a business terminal',
+    async (status) => {
+      renderResponse();
+      await mockButtons[0].onClick();
+      const first = mockPreview.mock.calls[0][0];
+      mockPreview.mockResolvedValueOnce(observed(status));
+      await mockButtons[0].onClick();
+      expect(storage.removeItem).not.toHaveBeenCalled();
+      await mockButtons[0].onClick();
+      expect(mockPreview.mock.calls[2][0]).toEqual(first);
+    },
+  );
+
+  it.each(['FAILED', 'CANCELED', 'TERMINATED', 'TIMED_OUT'])(
+    'keeps the original retry key when %s still has UNKNOWN external dispatch',
+    async (status) => {
+      renderResponse();
+      await mockButtons[0].onClick();
+      const first = mockPreview.mock.calls[0][0];
+      const receipt = observed(status);
+      receipt.submission.dispatchState = 'UNKNOWN';
+      mockPreview.mockResolvedValueOnce(receipt);
+      await mockButtons[0].onClick();
+      expect(storage.removeItem).not.toHaveBeenCalled();
+      await mockButtons[0].onClick();
+      expect(mockPreview.mock.calls[2][0]).toEqual(first);
+    },
+  );
+
+  it.each(['view', 'model'])(
+    'the original %s page renders closed task states, not truthy status strings or stale rows',
+    (kind) => {
+      const react = require('react');
+      const originalUseState = react.useState;
+      const originalUseRef = react.useRef;
+      const state = jest
+        .spyOn(react, 'useState')
+        .mockImplementation((initial: any) =>
+          initial === undefined
+            ? [mockScope, jest.fn()]
+            : originalUseState(initial),
+        );
+      const submitted = jest
+        .spyOn(react, 'useRef')
+        .mockImplementation((initial: any) =>
+          initial === undefined
+            ? { current: mockScope }
+            : originalUseRef(initial),
+        );
+      try {
+        for (const status of [
+          'RUNNING',
+          'UNKNOWN',
+          'TERMINATED',
+          'TIMED_OUT',
+          'FAILED',
+          'COMPLETED',
+          'FAILED_OBSERVATION',
+          'UNKNOWN_DISPATCH',
+        ]) {
+          const failedObservation = status === 'FAILED_OBSERVATION';
+          const receipt = observed(
+            failedObservation
+              ? 'COMPLETED'
+              : status === 'UNKNOWN_DISPATCH'
+                ? 'FAILED'
+                : status,
+            kind,
+          );
+          if (status === 'UNKNOWN_DISPATCH')
+            receipt.submission.dispatchState = 'UNKNOWN';
+          mockPreviewResult = {
+            data: {
+              [kind === 'view' ? 'previewViewData' : 'previewModelData']:
+                receipt,
+            },
+            error: failedObservation
+              ? new Error('Observation unavailable')
+              : undefined,
+          };
+          const html =
+            kind === 'view'
+              ? render()
+              : renderToStaticMarkup(
+                  createElement(ModelMetadata, {
+                    modelId: 7,
+                    fields: [],
+                    calculatedFields: [],
+                    relationFields: [],
+                  } as any),
+                );
+          const text = getQueryPreviewText(undefined);
+          if (
+            status === 'RUNNING' ||
+            status === 'UNKNOWN' ||
+            status === 'UNKNOWN_DISPATCH' ||
+            failedObservation
+          ) {
+            expect(html).toContain(text.pending);
+            expect(html).not.toContain(text.ended);
+          } else if (status !== 'COMPLETED') {
+            expect(html).toContain(text.ended);
+            expect(html).not.toContain(text.pending);
+          }
+          if (status === 'COMPLETED')
+            expect(html).toContain('native-private-rows');
+          else expect(html).not.toContain('native-private-rows');
+        }
+      } finally {
+        submitted.mockRestore();
+        state.mockRestore();
+      }
+    },
+  );
+
+  it('consumes exactly the existing task-status semantics without adding a native status authority', () => {
+    for (const status of [
+      'RUNNING',
+      'COMPLETED',
+      'FAILED',
+      'CANCELED',
+      'TERMINATED',
+      'TIMED_OUT',
+    ]) {
+      expect(queryReceiptState(observed(status))).toMatchObject({
+        valid: true,
+        terminal: status !== 'RUNNING',
+        completed: status === 'COMPLETED',
+        ended: status !== 'RUNNING' && status !== 'COMPLETED',
+        pending: status === 'RUNNING',
+      });
+    }
+    for (const status of ['UNKNOWN', null, 7]) {
+      expect(queryReceiptState(observed(status))).toMatchObject({
+        valid: false,
+        terminal: false,
+        completed: false,
+        ended: false,
+        pending: true,
+      });
+    }
+  });
 });

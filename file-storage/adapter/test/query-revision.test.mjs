@@ -303,6 +303,73 @@ async function setup(t, changes = {}) {
   return { state, token, invoke, target, proofFiles, requestArguments };
 }
 
+test('native error mapping uses the original scoped Agent policy, six classes and no native read', async t => {
+  for (const [nativeStatus, expected] of [
+    [403, { class: 'DENIED', reason: 'PERMISSION_DENIED' }],
+    [501, { class: 'BLOCKED', reason: 'CAPABILITY_BLOCKED' }],
+    [404, { class: 'PRECONDITION', reason: 'TARGET_NOT_FOUND' }],
+    [429, { class: 'LIMIT', reason: 'RATE_LIMITED' }],
+    [409, { class: 'CONFLICT', reason: 'TARGET_STATE_CONFLICT' }],
+    [503, { class: 'UNKNOWN', reason: 'EXTERNAL_RESULT_UNKNOWN' }],
+    ['unknown-native-state', { class: 'UNKNOWN', reason: 'EXTERNAL_RESULT_UNKNOWN' }],
+    [200, { class: 'UNKNOWN', reason: 'EXTERNAL_RESULT_UNKNOWN' }],
+  ]) await t.test(String(nativeStatus), async nested => {
+    const fixture = await setup(nested, { operation: 'map_native_status_error', arguments: {
+      idempotencyKey: ids[7], nativeStatus,
+      nativeError: { Code: 'E_WORKSPACE_NOT_FOUND', Title: 'must-not-disclose', Detail: 'secret:file-content',
+        Source: 'private-origin', Meta: { credential: 'opaque-native-value' } },
+    } });
+    const response = await fixture.invoke({ path: '/platform-adapter/v1/map_native_status_error' });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), expected);
+    assert.equal(fixture.state.peps, 2);
+    assert.deepEqual(fixture.state.nativeReads, []);
+    assert.deepEqual(fixture.state.receipts, []);
+  });
+});
+
+test('native error mapping refuses NONE, malformed intent, foreign scope and revoked disclosure', async t => {
+  const args = { idempotencyKey: ids[7], nativeStatus: 403, nativeError: 'must-not-disclose' };
+  for (const [label, changes, request, expectedStatus, peps] of [
+    ['NONE management', {}, { claims: { action_key: 'application_binding.create', target_type: 'APPLICATION_BINDING',
+      target_id: ids[0], actor_principal_id: ids[9], agent_principal_id: undefined, delegation_id: undefined,
+      delegation_version: undefined, result_exposure_policy_id: undefined, result_exposure_policy_version: undefined } }, 401, 0],
+    ['HUMAN PAT NONE', { human: true }, {}, 401, 0],
+    ['missing policy', {}, { claims: { result_exposure_policy_id: undefined } }, 401, 0],
+    ['missing policy version', {}, { claims: { result_exposure_policy_version: undefined } }, 401, 0],
+    ['foreign tenant', {}, { claims: { tenant_id: ids[1] } }, 401, 0],
+    ['foreign workspace', {}, { claims: { workspace_id: ids[1] } }, 401, 0],
+    ['wrong operation hash', {}, { claims: { normalized_parameter_hash: 'f'.repeat(64) } }, 401, 0],
+    ['missing signature', {}, { token: 'not-a-signed-token' }, 401, 0],
+    ['different idempotency key', {}, { key: ids[1] }, 400, 0],
+    ['duplicate JSON key', {}, { raw: '{"idempotencyKey":"' + ids[7] + '","nativeStatus":403,"nativeStatus":409}' }, 400, 0],
+    ['unknown top-level field', {}, { raw: canonical({ ...args, secret: 'must-not-disclose' }) }, 400, 0],
+    ['revoke before disclosure', { pep: (state, response) => reply(response, state.peps === 2 ? 403 : 200,
+      { actionExecutionId: ids[7], operationId: ids[6], authorizationMinZedToken: 'current' }) }, {}, 503, 2],
+  ]) await t.test(label, async nested => {
+    const fixture = await setup(nested, { operation: 'map_native_status_error', arguments: args, ...changes });
+    const { claims, ...options } = request;
+    if (claims) options.token = fixture.token(claims);
+    const response = await fixture.invoke({ path: '/platform-adapter/v1/map_native_status_error', ...options });
+    assert.equal(response.status, expectedStatus);
+    assert.deepEqual(await response.json(), { error: 'adapter request refused' });
+    assert.equal(fixture.state.peps, peps);
+    assert.deepEqual(fixture.state.nativeReads, []);
+  });
+});
+
+test('native error mapping retains the original HUMAN business policy without borrowing PAT NONE', async t => {
+  const fixture = await setup(t, { operation: 'map_native_status_error',
+    arguments: { idempotencyKey: ids[7], nativeStatus: 403 } });
+  const token = fixture.token({ action_key: 'file_storage.read@v1', actor_principal_id: ids[9],
+    agent_principal_id: undefined, delegation_id: undefined, delegation_version: undefined });
+  const response = await fixture.invoke({ path: '/platform-adapter/v1/map_native_status_error', token });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { class: 'DENIED', reason: 'PERMISSION_DENIED' });
+  assert.equal(fixture.state.peps, 2);
+  assert.deepEqual(fixture.state.nativeReads, []);
+});
+
 test('binding validation observes original Cells workspace and actual delivered credential receipts', async (t) => {
   const fixture = await setup(t, { validation: true, operation: 'validate_binding' });
   for (let repeat = 0; repeat < 2; repeat++) {

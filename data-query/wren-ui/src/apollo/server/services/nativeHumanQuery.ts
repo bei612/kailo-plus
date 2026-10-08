@@ -1,5 +1,6 @@
 import { ApiHistoryRepository } from '../repositories/apiHistoryRepository';
 import { NativeQueryService } from './nativeQueryService';
+import { queryReceiptState } from '@/utils/queryReceipt';
 import {
   bindingServiceCall,
   canonical,
@@ -199,6 +200,7 @@ export class NativeHumanQuery {
     const check = (value: any) => {
       if (
         !value ||
+        !queryReceiptState(value).valid ||
         value.submission?.actionKey !== 'data_query.query@v1' ||
         typeof value.submission.actionExecutionId !== 'string' ||
         typeof value.submission.operationId !== 'string' ||

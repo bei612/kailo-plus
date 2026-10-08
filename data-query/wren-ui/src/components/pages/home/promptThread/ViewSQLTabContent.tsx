@@ -232,14 +232,9 @@ export default function ViewSQLTabContent(props: AnswerResultProps) {
         ) : null}
         {query.pending ? <Alert type="info" message={text.pending} /> : null}
         {query.error ? <Alert type="warning" message={text.unknown} /> : null}
-        {query.receipt?.terminalStatus &&
-        query.receipt.terminalStatus !== 'COMPLETED' ? (
-          <Alert type="error" message={text.ended} />
-        ) : null}
-        {query.receipt?.submission?.gateState === 'DENIED' ? (
-          <Alert type="warning" message={text.denied} />
-        ) : null}
-        {query.receipt?.data && (
+        {query.ended ? <Alert type="error" message={text.ended} /> : null}
+        {query.denied ? <Alert type="warning" message={text.denied} /> : null}
+        {query.completed && query.receipt?.data && (
           <div className="mt-2 mb-3">
             <PreviewData
               error={query.error}

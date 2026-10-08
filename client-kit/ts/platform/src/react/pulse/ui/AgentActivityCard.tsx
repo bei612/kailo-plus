@@ -5,7 +5,7 @@ import { useUiT, useUiLocale } from "../../context";
 import { relativeTime } from "../../../format";
 
 import type { AgentNoteGroup } from "../lib/groupAgentNotes";
-import { UserProfilePopover } from "../host";
+import { UserProfilePopover, usePulseHost } from "../host";
 import type { UserProfileSummary } from "../host";
 import { Markdown } from "../host";
 import { UserAvatar } from "../../messages/UserAvatar";
@@ -40,6 +40,7 @@ export function AgentActivityCard({
   agentStatus,
 }: AgentActivityCardProps) {
   const t=useUiT();const locale=useUiLocale();
+  const host=usePulseHost();
   const [expanded, setExpanded] = React.useState(false);
   const displayName = profile?.displayName ?? truncateNpub(group.pubkey);
   const avatarUrl = profile?.avatarUrl ?? null;
@@ -65,6 +66,7 @@ export function AgentActivityCard({
           >
             <UserAvatar
               avatarUrl={avatarUrl}
+              resolveMediaUrl={host.mediaUrl}
               displayName={displayName}
               shape="squircle"
             />

@@ -267,13 +267,8 @@ export default function ChartAnswer(props: AnswerResultProps) {
         ) : null}
         {query.pending ? <Alert type="info" message={text.pending} /> : null}
         {query.error ? <Alert type="warning" message={text.unknown} /> : null}
-        {query.receipt?.terminalStatus &&
-        query.receipt.terminalStatus !== 'COMPLETED' ? (
-          <Alert type="error" message={text.ended} />
-        ) : null}
-        {query.receipt?.submission?.gateState === 'DENIED' ? (
-          <Alert type="warning" message={text.denied} />
-        ) : null}
+        {query.ended ? <Alert type="error" message={text.ended} /> : null}
+        {query.denied ? <Alert type="warning" message={text.denied} /> : null}
         {query.pending || query.error ? (
           <Button
             onClick={query.preview}
@@ -283,7 +278,8 @@ export default function ChartAnswer(props: AnswerResultProps) {
           </Button>
         ) : null}
         {chartSpec
-          ? query.receipt?.data && (
+          ? query.completed &&
+            query.receipt?.data && (
               <ChartWrapper
                 className={clsx(
                   'border border-gray-4 rounded mt-4 pb-3 overflow-hidden',

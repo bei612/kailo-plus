@@ -7,6 +7,8 @@ import { extractMentionPubkeys, selectedMentionLabel } from "../src/react/pulse/
 import { canonicalNpub } from "../src/react/conversations/pubkey";
 import { PulseView } from "../src/react/pulse/ui/PulseView";
 import { NoteCard } from "../src/react/pulse/ui/NoteCard";
+import { AgentActivityCard } from "../src/react/pulse/ui/AgentActivityCard";
+import { buildAnimatedAvatarUrl } from "../src/react/profile/buzz/shared/lib/animatedAvatar";
 import { Operation } from "@client-kit/contracts";
 import { BffError, isOutcomeUnknown, TransportError } from "../src/transport";
 import { usePulseNoteActions } from "../src/react/pulse/lib/useNoteActions";
@@ -30,6 +32,19 @@ function host(overrides:Partial<PulseHost>={}):PulseHost {
 function wrap(value:PulseHost,children:React.ReactNode) {
   const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0},mutations:{retry:false}}});
   return <QueryClientProvider client={cache}><TooltipProvider><PulseHostProvider host={value}>{children}</PulseHostProvider></TooltipProvider></QueryClientProvider>;
+}
+
+function loadedImages() {
+  vi.stubGlobal("Image", function () {
+    const image = document.createElement("img");
+    let source = "";
+    Object.defineProperties(image, {complete: {value: true}, naturalWidth: {value: 1}});
+    Object.defineProperty(image, "src", {get: () => source, set: (value: string) => {
+      source = value;
+      queueMicrotask(() => image.dispatchEvent(new Event("load")));
+    }});
+    return image;
+  });
 }
 
 describe("original Pulse governed consumers",()=>{
@@ -110,6 +125,76 @@ describe("original Pulse governed consumers",()=>{
     await click(ui.querySelector('[aria-label="Start direct message"]') as HTMLButtonElement);expect(startDm).toHaveBeenCalledWith(author);
     await click(ui.querySelector('[aria-label="Reply"]') as HTMLButtonElement);
     await click(button(ui,"Post your reply"));expect(reply).toHaveBeenCalledWith(note,"reply",[],undefined);
+  });
+
+  it("resolves original note, parent and reply-author animated avatars after parsing each media source",async()=>{
+    loadedImages();
+    const parentId="d".repeat(64),parentAuthor="e".repeat(64);
+    const poster=`https://community.example/media/${eventId}.png`;
+    const animation=`https://community.example/media/${author}.png`;
+    const avatarUrl=buildAnimatedAvatarUrl(poster,animation);
+    const posterPath=`/api/v1/profile/media/${eventId}`,animationPath=`/api/v1/profile/media/${author}`;
+    const mediaUrl=vi.fn((url:string)=>url===poster?posterPath:url===animation?animationPath:url);
+    const profile={displayName:"Actual author",avatarUrl,nip05Handle:null,ownerPubkey:null};
+    const note={id:eventId,pubkey:author,createdAt:1000,content:"Actual reply",tags:[["e",parentId,"","reply"]]};
+    const query=vi.fn<PulseHost["query"]>(async request=>request.view==="NOTES"&&request.eventIds?.includes(parentId)
+      ?[{id:parentId,pubkey:parentAuthor,created_at:900,kind:1,content:"Actual parent",tags:[]}]:[]);
+    const publish=vi.fn<PulseHost["publish"]>();
+    const ui=await render(wrap(host({query,publish,mediaUrl,renderComposer:props=><div>{props.header}</div>}),
+      <NoteCard note={note} isOwnNote={false} profile={profile} currentUserDisplayName="Current author"
+        currentUserProfile={profile} composerProfiles={{[parentAuthor]:profile}}/>));
+    await vi.waitFor(()=>expect(ui.querySelectorAll("img")).toHaveLength(2));
+    expect([...ui.querySelectorAll("img")].map(image=>image.getAttribute("src"))).toEqual([posterPath,posterPath]);
+    await click(ui.querySelector('[aria-label="Reply"]') as HTMLButtonElement);
+    await vi.waitFor(()=>expect(ui.querySelectorAll("img")).toHaveLength(3));
+    for(const image of ui.querySelectorAll("img")) {
+      expect(image.getAttribute("src")).toBe(posterPath);
+      const avatar=image.closest('[data-avatar-shape]')!;
+      await act(async()=>avatar.dispatchEvent(new MouseEvent("mouseover",{bubbles:true})));
+      await vi.waitFor(()=>expect(avatar.querySelector("img")?.getAttribute("src")).toBe(animationPath));
+      await act(async()=>avatar.dispatchEvent(new MouseEvent("mouseout",{bubbles:true})));
+      await vi.waitFor(()=>expect(avatar.querySelector("img")?.getAttribute("src")).toBe(posterPath));
+    }
+    expect(query).toHaveBeenCalledWith({view:"NOTES",eventIds:[parentId]});
+    expect(mediaUrl).toHaveBeenCalledWith(poster);expect(mediaUrl).toHaveBeenCalledWith(animation);
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("keeps the original agent activity squircle and hover playback on the real host media resolver",async()=>{
+    loadedImages();
+    const poster=`https://community.example/media/${eventId}.png`,animation=`https://community.example/media/${author}.png`;
+    const posterPath=`/api/v1/profile/media/${eventId}`,animationPath=`/api/v1/profile/media/${author}`;
+    const mediaUrl=vi.fn((url:string)=>url===poster?posterPath:url===animation?animationPath:url);
+    const publish=vi.fn<PulseHost["publish"]>();
+    const ui=await render(wrap(host({mediaUrl,publish}),<AgentActivityCard
+      group={{pubkey:author,latestAt:1000,earliestAt:1000,notes:[{id:eventId,pubkey:author,createdAt:1000,content:"Actual activity",tags:[]}]}}
+      profile={{displayName:"Actual agent",avatarUrl:buildAnimatedAvatarUrl(poster,animation),nip05Handle:null,ownerPubkey:null}}/>));
+    await vi.waitFor(()=>expect(ui.querySelector("img")?.getAttribute("src")).toBe(posterPath));
+    const avatar=ui.querySelector('[data-avatar-shape="squircle"]')!;
+    expect(avatar.className).toContain("h-9 w-9");
+    await act(async()=>avatar.dispatchEvent(new MouseEvent("mouseover",{bubbles:true})));
+    await vi.waitFor(()=>expect(avatar.querySelector("img")?.getAttribute("src")).toBe(animationPath));
+    expect(ui.querySelector('[role="img"]')).toBeNull();
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("routes the actual Pulse composer avatar through both authorized animated resources without publishing",async()=>{
+    loadedImages();
+    const poster=`https://community.example/media/${eventId}.png`,animation=`https://community.example/media/${author}.png`;
+    const posterPath=`/api/v1/profile/media/${eventId}`,animationPath=`/api/v1/profile/media/${author}`;
+    const avatarUrl=buildAnimatedAvatarUrl(poster,animation);
+    const mediaUrl=vi.fn((url:string)=>url===poster?posterPath:url===animation?animationPath:url);
+    const query=vi.fn<PulseHost["query"]>(async request=>request.view==="PROFILES"?[{id:eventId,pubkey:viewer,created_at:1,kind:0,tags:[],
+      content:JSON.stringify({display_name:"Current author",picture:avatarUrl})}]:[]);
+    const publish=vi.fn<PulseHost["publish"]>();
+    const ui=await render(wrap(host({query,publish,mediaUrl,renderComposer:props=><div>{props.header}</div>}),<PulseView currentPubkey={viewer}/>));
+    await vi.waitFor(()=>expect(ui.querySelector("img")?.getAttribute("src")).toBe(posterPath));
+    const avatar=ui.querySelector('[data-avatar-shape="circle"]')!;
+    expect(avatar.className).toContain("!h-7 !w-7");
+    await act(async()=>avatar.dispatchEvent(new MouseEvent("mouseover",{bubbles:true})));
+    await vi.waitFor(()=>expect(avatar.querySelector("img")?.getAttribute("src")).toBe(animationPath));
+    expect(query).toHaveBeenCalledWith({view:"PROFILES",authors:[viewer]});
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it("retains the same original publish key after UNKNOWN instead of replaying a fresh write",async()=>{

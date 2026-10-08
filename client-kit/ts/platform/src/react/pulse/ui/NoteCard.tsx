@@ -11,7 +11,7 @@ import type { WebMessageAttachment } from "@client-kit/contracts";
 import { useUiT, useUiLocale } from "../../context";
 import { relativeTime } from "../../../format";
 
-import { ForumComposer } from "../host";
+import { ForumComposer, usePulseHost } from "../host";
 import { useUserProfileQuery } from "../host";
 import { UserProfilePopover } from "../host";
 import { useNoteByIdQuery } from "../hooks";
@@ -60,6 +60,7 @@ function ReplyParentContext({
   profiles: Record<string, UserProfileSummary>;
 }) {
   const t = useUiT();
+  const host = usePulseHost();
   const parentNoteQuery = useNoteByIdQuery(parentId);
   const parentNote = parentNoteQuery.data ?? null;
   const cachedProfile = parentNote
@@ -94,6 +95,7 @@ function ReplyParentContext({
             >
               <UserAvatar
                 avatarUrl={parentAvatarUrl}
+                resolveMediaUrl={host.mediaUrl}
                 className="!h-4 !w-4 shrink-0"
                 displayName={parentDisplayName ?? t("pulse.parentAuthor")}
                 shape={parentIsAgent ? "squircle" : "circle"}
@@ -140,6 +142,7 @@ export function NoteCard({
   actions,
 }: NoteCardProps) {
   const t = useUiT();
+  const host = usePulseHost();
   const locale = useUiLocale();
   const displayName = profile?.displayName ?? truncateNpub(note.pubkey);
   const avatarUrl = profile?.avatarUrl ?? null;
@@ -166,6 +169,7 @@ export function NoteCard({
         >
           <UserAvatar
             avatarUrl={avatarUrl}
+            resolveMediaUrl={host.mediaUrl}
             className="!h-9 !w-9 shrink-0"
             displayName={displayName}
             shape={isAgent ? "squircle" : "circle"}
@@ -296,6 +300,7 @@ export function NoteCard({
                 <div className="flex min-w-0 items-center gap-2">
                   <UserAvatar
                     avatarUrl={currentUserAvatarUrl}
+                    resolveMediaUrl={host.mediaUrl}
                     className="!h-8 !w-8 shrink-0"
                     displayName={currentUserDisplayName ?? t("pulse.you")}
                     shape={currentUserProfile?.isAgent ? "squircle" : "circle"}

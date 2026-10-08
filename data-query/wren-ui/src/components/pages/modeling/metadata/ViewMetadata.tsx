@@ -27,13 +27,26 @@ export default function ViewMetadata(props: Props) {
   });
 
   const {
-    preview: onPreviewData, preparing: queryPreparing, scopeError: queryScopeError,
-    storageError: queryStorageError, receipt: queryReceipt, pending: queryPending,
+    preview: onPreviewData,
+    preparing: queryPreparing,
+    scopeError: queryScopeError,
+    storageError: queryStorageError,
+    receipt: queryReceipt,
+    pending: queryPending,
     error: queryError,
-  } = useGovernedPreview('view', viewId, async (where) => {
-    const result = await previewViewData({ variables: { where } });
-    return result.data?.previewViewData;
-  }, previewViewDataResult.data?.previewViewData, previewViewDataResult.error);
+    completed: queryCompleted,
+    ended: queryEnded,
+    denied: queryDenied,
+  } = useGovernedPreview(
+    'view',
+    viewId,
+    async (where) => {
+      const result = await previewViewData({ variables: { where } });
+      return result.data?.previewViewData;
+    },
+    previewViewDataResult.data?.previewViewData,
+    previewViewDataResult.error,
+  );
 
   const [limit, setLimit] = useState<number | null>(null);
   const [reference, setReference] = useState('');
@@ -67,7 +80,9 @@ export default function ViewMetadata(props: Props) {
       const value = await response.json();
       if (
         typeof value.resourceId !== 'string' ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.resourceId) ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          value.resourceId,
+        ) ||
         typeof value.nativeObjectRef !== 'string' ||
         typeof value.nativeRevision !== 'string'
       )
@@ -131,18 +146,13 @@ export default function ViewMetadata(props: Props) {
           <Alert type="error" message={text.scopeError} />
         ) : null}
         {queryPending ? <Alert type="info" message={text.pending} /> : null}
-        {queryReceipt?.terminalStatus &&
-        queryReceipt.terminalStatus !== 'COMPLETED' ? (
-          <Alert type="error" message={text.ended} />
-        ) : null}
-        {queryReceipt?.submission?.gateState === 'DENIED' ? (
-          <Alert type="warning" message={text.denied} />
-        ) : null}
+        {queryEnded ? <Alert type="error" message={text.ended} /> : null}
+        {queryDenied ? <Alert type="warning" message={text.denied} /> : null}
         <div className="my-3">
           <PreviewData
             error={queryError}
             loading={previewViewDataResult.loading}
-            previewData={queryReceipt?.data}
+            previewData={queryCompleted ? queryReceipt?.data : undefined}
           />
         </div>
       </div>
@@ -166,9 +176,7 @@ export default function ViewMetadata(props: Props) {
         />
         <Button
           loading={exporting}
-          disabled={
-            !Number.isSafeInteger(limit) || limit <= 0
-          }
+          disabled={!Number.isSafeInteger(limit) || limit <= 0}
           onClick={() => void exportReference()}
         >
           {text.exportReference}

@@ -21,7 +21,7 @@ function reply(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, searchReference) {
+async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, searchReference, mappingInput) {
   const directory = await mkdtemp(join(tmpdir(), 'knowledge-adapter-'));
   const ids = Array.from({ length: 10 }, () => randomUUID());
   const readOperation = randomUUID();
@@ -35,6 +35,7 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
   await writeFile(oidcSecretFile, randomUUID(), { mode: 0o600 });
   const handshake = protocolOperation === 'handshake';
   const validating = protocolOperation === 'validate_binding';
+  const mapping = protocolOperation === 'map_native_status_error';
   const managing = handshake || validating;
   const management = { componentTypeKey: 'knowledge-native', componentReleaseId: ids[9],
     artifactDigest: 'a'.repeat(64), protocolRange: '1' };
@@ -71,7 +72,8 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     if (mode !== 'missing-validation') management.validation = validation;
   }
   const refs = validation.secretDeliveries.map(({ secretKey, locator, version, audience }) => ({ secretKey, locator, version, audience }));
-  const args = validating ? { bindingId: ids[0], bindingVersion: mode === 'wrong-binding-version' ? 2 : 1,
+  const args = mapping ? { idempotencyKey: ids[3], ...mappingInput }
+    : validating ? { bindingId: ids[0], bindingVersion: mode === 'wrong-binding-version' ? 2 : 1,
     tenantId: ids[7], componentReleaseId: ids[9], servicePrincipalId: ids[4], adapterServiceRef: validation.adapterServiceRef,
     nativeInstanceRef: validation.nativeInstanceRef, nativeScopeRef: mode === 'wrong-scope' ? ids[9] : ids[1],
     isolationMode: validation.isolationMode, normalizedConfig: validation.normalizedConfig,
@@ -88,13 +90,13 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
       displayName: 'native document', mediaType: 'text/markdown' });
   if (contractStep?.referenceResourceId) ids[8] = contractStep.referenceResourceId;
   const operation = protocolOperation ?? (action ? 'execute' : 'query_revision');
-  const intent = managing ? args : ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
+  const intent = managing || mapping ? args : ['observe','extract_usage'].includes(operation) ? {externalExecutionId:ids[5],idempotencyKey:args.idempotencyKey,nativeType:ingest?'add_document':'delete_document'}
     : action ? { target: { resourceId: ids[8] }, input: search
       ? contractStep ? JSON.parse(contractStep.inputJson) : { query: 'search fixture' } : reference } : args;
   if (['known-native-id','mismatched-native-id'].includes(mode)) {
     intent.nativeId = mode === 'known-native-id' ? ingest ? ids[2] : ids[9] : ingest ? ids[9] : ids[2];
   }
-  const bodyValue = managing || ['observe','extract_usage'].includes(operation) ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
+  const bodyValue = managing || mapping || ['observe','extract_usage'].includes(operation) ? intent : action ? { idempotencyKey: args.idempotencyKey, actionKey: action, arguments: intent } : args;
   const upstream = createServer(async (request, response) => {
     let raw = '';
     for await (const chunk of request) raw += chunk;
@@ -257,15 +259,68 @@ async function fixture(t, mode = 'ok', action, protocolOperation, contractStep, 
     if (mode === 'wrong-hash') claims.normalized_parameter_hash = 'f'.repeat(64);
   }
   if (mode === 'foreign-token') claims.tenant_id = ids[9];
+  if (mapping) {
+    if (mode === 'missing-policy') delete claims.result_exposure_policy_id;
+    if (mode === 'missing-policy-version') delete claims.result_exposure_policy_version;
+    if (mode === 'wrong-hash') claims.normalized_parameter_hash = 'f'.repeat(64);
+    if (mode === 'NONE-management') {
+      claims.action_key = 'application_binding.create'; claims.target_type = 'APPLICATION_BINDING';
+      delete claims.result_exposure_policy_id; delete claims.result_exposure_policy_version;
+    }
+  }
   const header = Buffer.from(JSON.stringify({ alg: 'ES256', kid: 'test', typ: 'JWT' })).toString('base64url');
   const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
   const signature = sign('sha256', Buffer.from(`${header}.${payload}`), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
   const token = `${header}.${payload}.${signature}`;
-  return { state, args, reference, revision, invoke: (route = operation) => fetch(`${endpoint}/platform-adapter/v1/${route}`, {
-    method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'idempotency-key': args.idempotencyKey },
-    body: canonical(bodyValue),
+  return { state, args, reference, revision, invoke: (route = operation, options = {}) => fetch(`${endpoint}/platform-adapter/v1/${route}`, {
+    method: 'POST', headers: { authorization: `Bearer ${options.token ?? token}`, 'content-type': 'application/json',
+      'idempotency-key': options.key ?? args.idempotencyKey },
+    body: options.raw ?? canonical(bodyValue),
   }) };
 }
+
+test('native error mapping consumes existing business policy and never reads native MCP or reflects errors', async t => {
+  for (const [nativeStatus, expected] of [
+    [401, { class: 'DENIED', reason: 'PERMISSION_DENIED' }],
+    [501, { class: 'BLOCKED', reason: 'CAPABILITY_BLOCKED' }],
+    [400, { class: 'PRECONDITION', reason: 'INVALID_PARAMETERS' }],
+    [413, { class: 'LIMIT', reason: 'PAYLOAD_TOO_LARGE' }],
+    [423, { class: 'CONFLICT', reason: 'TARGET_STATE_CONFLICT' }],
+    [504, { class: 'UNKNOWN', reason: 'EXTERNAL_RESULT_UNKNOWN' }],
+    ['future-native-state', { class: 'UNKNOWN', reason: 'EXTERNAL_RESULT_UNKNOWN' }],
+    [200, { class: 'UNKNOWN', reason: 'EXTERNAL_RESULT_UNKNOWN' }],
+  ]) await t.test(String(nativeStatus), async nested => {
+    const run = await fixture(nested, 'ok', 'knowledge.read@v1', 'map_native_status_error', undefined, undefined,
+      { nativeStatus, nativeError: { code: 1001, message: 'secret must-not-disclose', details: { content: 'private document' } } });
+    const response = await run.invoke();
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), expected);
+    assert.equal(run.state.peps, 2);
+    assert.equal(run.state.native, 0);
+    assert.equal(run.state.grants, 0);
+    assert.deepEqual(run.state.receipts, []);
+  });
+});
+
+test('native error mapping fails closed on NONE, policy loss, changed intent and revocation', async t => {
+  for (const [mode, options, status, peps] of [
+    ['NONE-management', {}, 401, 0], ['missing-policy', {}, 401, 0],
+    ['missing-policy-version', {}, 401, 0], ['foreign-token', {}, 401, 0],
+    ['wrong-hash', {}, 401, 0], ['ok', { token: 'invalid-signature' }, 401, 0],
+    ['ok', { key: randomUUID() }, 400, 0],
+    ['ok', { raw: '{"nativeStatus":403,"nativeStatus":409}' }, 400, 0],
+    ['revoke', {}, 503, 2],
+  ]) await t.test(mode, async nested => {
+    const run = await fixture(nested, mode, 'knowledge.read@v1', 'map_native_status_error', undefined, undefined,
+      { nativeStatus: 403, nativeError: { isError: true, content: [{ type: 'text', text: 'must-not-disclose' }] } });
+    const response = await run.invoke('map_native_status_error', options);
+    assert.equal(response.status, status);
+    assert.deepEqual(await response.json(), { class: status === 401 ? 'DENIED' : 'UNAVAILABLE' });
+    assert.equal(run.state.peps, peps);
+    assert.equal(run.state.native, 0);
+    assert.equal(run.state.grants, 0);
+  });
+});
 
 test('knowledge binding handshake uses the real management token, native KB observation and two PEP reads', async t => {
   const run = await fixture(t, 'ok', 'application_binding.create', 'handshake');

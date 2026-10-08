@@ -6,6 +6,7 @@ import { isOutcomeUnknown } from "../../../transport";
 
 import {
   useRelayAgentsQuery,
+  usePulseHost,
 } from "../host";
 import {
   useContactListQuery,
@@ -76,6 +77,7 @@ function TimelineSkeleton() {
 
 export function PulseView({ currentPubkey }: PulseViewProps) {
   const t = useUiT();
+  const host = usePulseHost();
   const [activeTab, setActiveTab] = React.useState<PulseTab>("everyone");
   const [searchQuery, setSearchQuery] = React.useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -373,6 +375,7 @@ export function PulseView({ currentPubkey }: PulseViewProps) {
                   <div className="flex min-w-0 items-center gap-2">
                     <UserAvatar
                       avatarUrl={currentProfile?.avatarUrl ?? null}
+                      resolveMediaUrl={host.mediaUrl}
                       className="!h-7 !w-7 shrink-0"
                       displayName={currentDisplayName}
                       shape={

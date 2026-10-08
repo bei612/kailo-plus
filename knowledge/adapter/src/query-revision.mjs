@@ -3,7 +3,8 @@ import { createServer } from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
-  verifiedClaims, verifyBindingManagementToken, secret, freshPep, readMeasurements, recordReadReceipt } from '../../../client-kit/adapter/protocol.mjs';
+  verifiedClaims, verifyBindingManagementToken, secret, freshPep, readMeasurements, recordReadReceipt,
+  nativeStatusErrorArguments, mapNativeStatusError } from '../../../client-kit/adapter/protocol.mjs';
 import { sourceReference, sourceFile } from './service-read.mjs';
 import { bindingValidationConfiguration, bindingArguments, bindingObservation } from './binding-validation.mjs';
 
@@ -377,7 +378,8 @@ export function createAdapter(rawConfig) {
         : request.url === '/platform-adapter/v1/validate_binding' ? 'validate_binding'
         : request.url === '/platform-adapter/v1/execute' ? 'execute'
           : request.url === '/platform-adapter/v1/observe' ? 'observe'
-            : request.url === '/platform-adapter/v1/extract_usage' ? 'extract_usage' : undefined;
+            : request.url === '/platform-adapter/v1/extract_usage' ? 'extract_usage'
+              : request.url === '/platform-adapter/v1/map_native_status_error' ? 'map_native_status_error' : undefined;
       if (request.method !== 'POST' || operation === undefined) throw new Refused(404);
       if (request.headers['content-type'] !== 'application/json'
         || typeof request.headers.authorization !== 'string'
@@ -394,6 +396,7 @@ export function createAdapter(rawConfig) {
         response.end(JSON.stringify(value));
         return;
       }
+      if (operation === 'map_native_status_error') args = nativeStatusErrorArguments(raw, request.headers['idempotency-key']);
       if (operation === 'query_revision' && (!exactKeys(args, ['nativeObjectRef', 'idempotencyKey', 'authorizationTargetNativeRef'])
         || !UUID.test(args.nativeObjectRef) || !UUID.test(args.authorizationTargetNativeRef)
         || !UUID.test(args.idempotencyKey) || args.idempotencyKey !== request.headers['idempotency-key']
@@ -415,7 +418,9 @@ export function createAdapter(rawConfig) {
       const searching = operation === 'execute' && claims.action_key === 'knowledge.search@v2';
       if (searching && admitted.targetResource?.nativeRef !== config.nativeKnowledgeBaseId) throw new Refused(403);
       let value;
-      if (['observe','extract_usage'].includes(operation)) {
+      if (operation === 'map_native_status_error') {
+        value = mapNativeStatusError(args);
+      } else if (['observe','extract_usage'].includes(operation)) {
         if (nativeKnowledgeAction(claims.action_key)==='ingest' && args.nativeType==='add_document') {
           const native=await nativeTool(config,deadline,'add_document',{
             knowledge_base_id:config.nativeKnowledgeBaseId,idempotency_key:args.idempotencyKey,observe_only:true,

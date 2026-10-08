@@ -133,7 +133,7 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
     previewDataResult.data?.previewData,
     previewDataResult.error,
   );
-  const hasPreviewData = !!query.receipt?.data;
+  const hasPreviewData = query.completed && !!query.receipt?.data;
   const onPreviewData = query.preview;
 
   const autoTriggerPreviewDataButton = async () => {
@@ -268,11 +268,8 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
             {query.error ? (
               <Alert type="warning" message={text.unknown} />
             ) : null}
-            {query.receipt?.terminalStatus &&
-            query.receipt.terminalStatus !== 'COMPLETED' ? (
-              <Alert type="error" message={text.ended} />
-            ) : null}
-            {query.receipt?.submission?.gateState === 'DENIED' ? (
+            {query.ended ? <Alert type="error" message={text.ended} /> : null}
+            {query.denied ? (
               <Alert type="warning" message={text.denied} />
             ) : null}
 
@@ -290,7 +287,7 @@ export default function TextBasedAnswer(props: AnswerResultProps) {
                   query.preparing ||
                   Boolean(query.pending)
                 }
-                previewData={query.receipt?.data}
+                previewData={query.completed ? query.receipt?.data : undefined}
               />
             </div>
           </div>

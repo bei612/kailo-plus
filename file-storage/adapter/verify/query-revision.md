@@ -1,5 +1,72 @@
 # Cells 原生 revision 查询接缝
 
+## Cells / WeKnora 原生错误映射真实协议消费者（2026-10-08）
+
+本批在两个正在交付的原 Adapter HTTP 服务中实现
+`POST /platform-adapter/v1/map_native_status_error`，不是另起模拟服务器或固定成功回执。
+共享实现只放在已有 `client-kit/adapter/protocol.mjs`，由两个实际服务消费。
+请求沿原泛型协议 JSON 参数携带 `idempotencyKey`、`nativeStatus` 及可选
+`nativeError`；前者必须与 HTTP 原键相同，参数必须为 canonical JSON，重复键及未知顶层字段拒绝。
+输出为原 `ErrorBody` 的 `class/reason`，没有新增契约字段、平台实体或持久状态。
+
+实现后的四步结论：
+
+1. 权威：`.design/07` §5 的 `map_native_status_error(native status/error)`、§8A 的
+   错误分类/redaction，与 `06-工程基线规范.md` §4、`contracts/domain/error.schema.json`
+   及既有六类/reason 枚举决定本批语义；此处不把错误映射当成终态或接入审批。
+   固定 Cells `c57f02f4962835447df694c63bd0fd8c22bd7baf` 的
+   `common/errors/errors.go::StatusForbidden/StatusConflict/StatusNotImplemented` 与
+   `common/proto/rest/cellsapi-common.pb.go::Error` 保持原生错误权威；固定 WeKnora
+   `2be7bd40631dda1dd485306038f07a62e9ee287e` 的
+   `internal/errors/errors.go::AppError/NewUnauthorizedError/NewConflictError` 与
+   `internal/mcpserver/server.go::Server.guardTool/toolResultFromAgentTool` 决定原生 HTTP/MCP
+   错误结构。原错误正文、凭据、SQL、文件内容和 MCP text 不被复制到输出。
+2. 影响：原两个 `query-revision.mjs::createAdapter` 新增真实路由；Cells 原
+   `verifyToken` 只为该操作要求成对 ResultExposure，接受原有受权 Agent 或带有效策略的
+   HUMAN read/list 业务上下文，不借 HUMAN PAT 的 NONE；WeKnora 复用原
+   `verifyKnowledgeToken`。两者均保持固定 issuer/audience、tenant/workspace/target、
+   operation+arguments hash，以及前后两次原 `freshPep`。管理 NONE 的
+   handshake/validate_binding 合同不变，未新增匿名或凭据旁路。三端页面/传输不变。
+3. 副作用：映射不调用原生 REST/MCP，不读 native credential，不执行动作，不记第二份
+   执行结果。HTTP 401/403 映射 DENIED，501 映射 BLOCKED，400/404/405/412/422 映射
+   PRECONDITION，413/429 映射 LIMIT，409/423 映射 CONFLICT；其余及未知值均为
+   UNKNOWN/EXTERNAL_RESULT_UNKNOWN。MCP 200 中的 isError/text 不是机器可核验失败终态，
+   不按消息猜分类，仍为 UNKNOWN。固定 enum/reason 值来自既有合同，原生错误只是 opaque 参数。
+4. 边界：缺签名、scope 漂移、策略缺半、NONE 管理上下文、非 canonical 参数、重复 JSON 键、
+   原键不一致均拒绝；披露前撤权仍拒绝，不返回已经算出的分类。超时、上游新状态及不可分类
+   结果不渲染成功/失败、不盲目重放。没有新增状态，因此无额外回收器或账本。
+
+实际先核对已有进程、CPU/内存压力及约 29 GiB 可用内存、293 MiB Data 空间，复用
+`kailo-agent-receipt-xvkujx` 的 Node SDK 与已有候选依赖：UID/GID 1000:1000，
+4 CPU / 8 GiB，实际 cgroup 为 `400000 100000`、`8589934592`、额外 swap `0`。
+只投递五个变化源码/检查文件，不构建镜像、安装依赖或复制业务树。
+容器内实际命令：
+
+```sh
+node --test file-storage/adapter/test/*.test.mjs knowledge/adapter/test/*.test.mjs
+```
+
+首次运行 329 项、327 通过、2 失败，真实 HTTP 检查抓到 HUMAN PAT NONE 可误入映射
+（200 != 401）；已在原验签处收紧该操作的策略对要求。
+最终原全部 Adapter 检查 330 项通过、0 失败，退出 0（1.741 秒）。
+仅在私有 SDK 候选把真实 401/403 分类改为 UNKNOWN，再运行原 HTTP 消费检查：
+19 项中 14 通过、5 失败（含父级汇总），退出 1，Cells Agent、HUMAN 业务与 WeKnora
+路径均报实际分类不符。随后恢复候选，与正式五个源文件逐一 `cmp` 退出 0；
+原全部检查再次 330 通过、0 失败，退出 0（1.584 秒）。完整本批 diff 已复核，
+`git diff --check` 退出 0。
+
+原件目录 `/volumes/data/kailo/tmp/codex-agent-receipt-regression-20261005.XvkUjX/`：
+
+- `cells-knowledge-error-mapping-initial.log` SHA-256 `5fff083b6de27857f7396c3e8cfb6f537b7d94590e2463d9f1a2b27035f562f8`
+- `cells-knowledge-error-mapping-final.log` SHA-256 `e15f05d474181186c148c069fa7d7e04e274bfa216e2fe37614aa73df7125573`
+- `cells-knowledge-error-mapping-mutation.log` SHA-256 `42a870229f45a4f4d1c743a908fcf980cad255d11ca309d054e262df3daf8995`
+- `cells-knowledge-error-mapping-restored.log` SHA-256 `36fdf619af7d631f50a70ad534ecc97085270526f3f51f582c16c01b24fe0e74`
+
+这些是原 Adapter 的隔离 HTTP 消费验收，不等于真实 Core PEP、release 登记或绑定已启用；
+Core 原 PEP 的 map 接缝由主线独立修复和验证。本批未部署、未更新安装包，未运行全量
+`check.sh --full` 或浏览器截图。Adapter bytes 变更须随新 immutable release 固定 digest；
+不能原地改写已批准 release 或将本次窄验当成生产激活。
+
 ## 实际原生 UUID 读取的空间投影修复（2026-10-08）
 
 本批从正在运行的二开 Cells 发起原生 REST 只读诊断，不以隔离响应器证明线上结构。

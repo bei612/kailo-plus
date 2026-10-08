@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserConfig } from '@/utils/env';
+import { queryReceiptState } from '@/utils/queryReceipt';
 
 const matchesSelection = (
   kind: 'view' | 'model' | 'response',
@@ -122,13 +123,10 @@ export default function useGovernedPreview(
         idempotencyKey: key,
         idempotencyScope: scope,
       });
+      const state = queryReceiptState(result);
       if (
         matchesSelection(kind, id, scope, result) &&
-        (result?.terminalStatus === 'COMPLETED' ||
-          result?.terminalStatus === 'FAILED' ||
-          result?.terminalStatus === 'CANCELED' ||
-          (result?.submission?.gateState === 'DENIED' &&
-            result?.submission?.dispatchState === 'NOT_DISPATCHED'))
+        (state.terminal || state.denied)
       ) {
         if (sessionStorage.getItem(slot) === key)
           sessionStorage.removeItem(slot);
@@ -138,21 +136,32 @@ export default function useGovernedPreview(
     }
   };
 
-  const currentReceipt = useMemo(() => {
+  const selectedReceipt = useMemo(() => {
     return matchesSelection(kind, id, previewScope, receipt)
       ? receipt
       : undefined;
   }, [receipt, previewScope, kind, id]);
+  const state = queryReceiptState(selectedReceipt);
+  const currentError =
+    submittedScope.current === previewScope ? error : undefined;
+  const currentReceipt = useMemo(() => {
+    if (!state.valid || currentError) return undefined;
+    // Even a known RUNNING receipt cannot carry an earlier result into a new
+    // pending/unknown observation. Native rows need the verified close state.
+    if (!state.completed && selectedReceipt.data !== undefined)
+      return { ...selectedReceipt, data: undefined };
+    return selectedReceipt;
+  }, [selectedReceipt, state.valid, state.completed, currentError]);
   return {
     preview,
     preparing,
     scopeError,
     storageError,
     receipt: currentReceipt,
-    pending:
-      currentReceipt &&
-      !currentReceipt.terminalStatus &&
-      currentReceipt.submission?.gateState !== 'DENIED',
-    error: submittedScope.current === previewScope ? error : undefined,
+    pending: state.pending || !!currentError,
+    completed: state.completed && !currentError,
+    ended: state.ended && !currentError,
+    denied: state.denied && !currentError,
+    error: currentError,
   };
 }

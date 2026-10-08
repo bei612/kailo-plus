@@ -307,6 +307,15 @@ An accepted or pending query is not a result. The existing result controls
 can check the original query; UNKNOWN, transport failure or an invalid
 terminal receipt retain that user's original key rather than starting another
 query. Another user or native selection cannot consume or clear that key.
+The same controls consume the existing platform TaskStatus values: RUNNING
+remains pending, COMPLETED requires the original verified native result, and
+FAILED, CANCELED, TERMINATED and TIMED_OUT close the original intent without
+showing result rows. Unknown status values, contradictory completion evidence
+or an external dispatch still marked UNKNOWN cannot close the intent. A failed
+observation also hides a previously returned result rather than showing stale
+success. These checks do not convert a Temporal close into a native business
+terminal; the producer must still provide the original reconciled component
+audit evidence.
 Unavailable scope or browser retry-key storage refuses submission. The
 necessary preview guidance uses Chinese by default and English when selected;
 this does not claim complete Wren localization or browser visual acceptance.

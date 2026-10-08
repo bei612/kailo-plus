@@ -2030,6 +2030,67 @@ Mobile 无适用 TS 对象，六类治理错误和 UNKNOWN 表达不变。
   `inbox-author-identity-mutation.log`、`inbox-author-avatar-mutation.log`、
   `inbox-author-principal-mutation.log`。恢复后 9 项退出 0，
   `inbox-author-avatar-restored.log`；不是以 helper-only 宣称 Inbox 功能已交付。
+
+### 2026-10-08：原 Pulse 动态头像媒体接线与真实登录边界
+
+沿既有全树 3307 路径差异快照续核，固定 Buzz
+`779af8886caae1317b4de962082429867ab61503` 的
+`desktop/src/shared/ui/UserAvatar.tsx::UserAvatar` 在解析 `#buzz-anim=` 后分别
+对海报/悬停动画调用 `rewriteRelayUrl`。原实际消费者为
+`desktop/src/features/pulse/ui/NoteCard.tsx::{NoteCard,ReplyParentContext}`、
+`desktop/src/features/pulse/ui/AgentActivityCard.tsx::AgentActivityCard`、
+`desktop/src/features/pulse/ui/PulseView.tsx::PulseView`，并非另设计动态页面。
+
+现存共享 `useUsersBatchQuery` 对完整 picture 做一次 host 映射，但完整动画描述串
+不等于海报/动画资源键；三个原模块的五处 UserAvatar 漏传现成 `resolveMediaUrl`，
+因此解析出的子资源会退回 identity resolver。既有 Core
+`pulse::query`/`web_profile::avatar_media_paths` 已投递两个确切资源映射，Web
+PulsePane 和 Native `features/platform/PulseScreen` 均已有真实 PulseHost.mediaUrl。
+本批直接接回该 host consumer，不新建媒体代理、头像服务、身份事实或公共契约。
+
+- 原样保留：原动态卡片、父引用、回复作者、Agent 活动与顶部输入区头像的 JSX、
+  circle/squircle、尺寸、海报、悬停播放/移出还原及原发布操作。
+- 共享迁移：上述五处共同消费既有 UserAvatar/PulseHost，Web 走已有 BFF 资源映射，
+  Native 走原 rewriteRelayUrl，不分叉出第二份动态页面或动画实现。
+- 已授权治理改造：只是将原解析后媒体重写时机接至已准入的宿主解析；不扩大查询
+  scope、授权或动作集合，不补造 owner/presence/Agent role。
+- 缺失需恢复→已接真实消费者：完整动画描述的两资源不再漏过既有 host resolver；
+  原静态头像沿同一 resolver 保持幂等映射。
+
+四步结论（REQ-24、DD-74/75）：原能力已有上游和实际服务生产者；影响面只有共享
+NoteCard、AgentActivityCard、PulseView 与既有 pulse.test 四文件 `+97/-2`。
+无契约、数据库、状态机、词条或四侧生成。这里只读原头像，不发消息/审批/额度或
+其他副作用；空头像无请求，范围切换沿既有 PulseScope key 卸载，不复用旧 Principal
+的缓存。失败、UNKNOWN 与既有 media 路径准入不变，Mobile 未改动、不冒称实机等效。
+
+复用原 4 CPU/8 GiB SDK/cache，启动前 pgrep 无编译/检查进程，容器只有 sleep；
+可用内存 29361 MiB、load 6.80/5.59/5.57，Data 剩 292 MiB。只同步四个精确输入
+及两宿主已安装的三个实际共享模块，没有安装依赖、全树复制、镜像/产物构建或清缓存。
+正式四输入及实际两宿主六安装文件共十处 `cmp` 退出 0，四路径 diff 检查退出 0。
+日志仍在本章前述 `workflow-native-template.s3JDP1` 目录：
+
+- `pulse-avatar-first.log`（session 84086）：共享 production/test 两个类型检查与
+  Pulse 11 项整条退出 0。
+- `pulse-avatar-mutation.log`（session 57915）：仅在私有 SDK 断开五个 resolver，
+  三个新增实际 DOM 检查均收到原媒体地址而不是 BFF path，3 failed/8 skipped、
+  退出 1；随后恢复与正式源码字节相同。
+- `pulse-avatar-restored.log`（session 77847）：共享 production/test 类型、Pulse
+  11 项及 Web 类型检查均通过，但 Native 命令错用上级 node_modules，实际总退出 1：
+  `Cannot find module .../collaboration/node_modules/typescript/bin/tsc`。未改产品代码
+  或安装工具；按已存在 desktop/node_modules 修正执行路径，仅重跑 Native 类型。
+- `pulse-avatar-native-restored.log`（session 42475）：Native `tsc --noEmit` 实际退出
+  0、日志为空；原 React act warning 在 Pulse 日志保留，没有宣称无警告或全量通过。
+
+浏览器沿现有正常 OIDC 表单尝试一次真实 bootstrap 登录，IdP 返回
+`Invalid username or password.`，未重试、重置口令或注入 cookie/session。
+随后只读核对确认容器既有凭据挂载是旧 inode，当前受控 host 文件已更换；
+该拒绝只证明旧挂载输入无效，不证明当前凭据或账号失效。
+受控临时输入已删除并检验不存在，原 Secret 未改；没有运行原辅助脚本的发消息段。
+playwright-cli 截图 `.playwright-cli/kailo-ui-20261008-oidc-input-refused.png` 已实际打开
+复核：当前为英文错误登录页，不是业务页；连同此前空登录页，本轮为两个登录状态，
+业务截图仍为零。服务仍是 live `sha256:d313fb1326cec59bcd4f3dc3b4785033026c43a438a41594895e6f57b5157e83`，
+不是本批新源码；本批未部署、未更新安装包或运行完整门禁。
+全树分类、完整 bot profile 和三个原 Inbox 筛选业务链仍未全部闭合，不称 100% 还原。
 - 真实 Inbox 接线后 `tsc --noEmit` 与资料 9／Inbox 19 项整条命令退出 0，
   `inbox-author-consumer-first.log`（session 1367）。覆盖原静态头像、Conversation
   动态 poster/hover、错误作者、身份/scope 变更及迟到读取边界。

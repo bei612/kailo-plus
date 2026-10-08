@@ -2956,3 +2956,122 @@ This correction is part of the saved-view source batch, not a deployed
 business instance or complete Wren integration. The release/binding,
 datasource/LLM end-to-end, multi-resource authorization, task-status consumer
 and three-client visual acceptance gaps stated above remain open.
+
+### 2026-10-08 original query controls consume the existing closed task statuses
+
+This follow-up addresses the actual saved-view/model/Asking preview consumers,
+not arbitrary generated SQL or a second task-state authority.
+
+1. Authority: `.design/08` section 6, SS-WRN-GOVERNANCE and DD-98 preserve
+   the original native query, Resource and evidence chain. The existing
+   `contracts/enums/task_status.schema.json` has RUNNING and five close values;
+   `contracts/api/native_human_action_result.schema.json` explicitly derives
+   terminalStatus from the reconciled original component-action audit, never
+   HTTP acceptance or a Temporal close alone. ActionGateState and
+   ActionDispatchState remain the existing independent closed enums.
+2. Impact: original Core HUMAN receipt -> NativeHumanQuery ->
+   useGovernedPreview -> ModelMetadata, ViewMetadata and original Asking SQL,
+   text-answer and chart controls. The helper is consumed by the backend and
+   hook, not an unused alternate type/registry. No schema, migration, public
+   field, native task, workflow, database or result-storage change is made.
+   Existing receipts gain no new fields; their already contracted statuses
+   are now consumed completely. Original JSX, classes, styles, controls and
+   layout remain, apart from formatting and the necessary existing-result
+   conditions. This is an authorized governance difference, not a new UI.
+3. Side effects: no query is dispatched by this classifier. Native rows still
+   require the original COMPLETED audit and native history plus fresh read
+   checks. Non-completed or malformed observations cannot retain old rows.
+   A failed observation cannot show a previous success. RUNNING, unknown
+   status values, contradictory completion evidence or an external dispatch
+   still UNKNOWN preserve the original intent/key and cannot become success
+   or failure. Known reconciled close values include TERMINATED and TIMED_OUT,
+   so those intents no longer remain stranded by the former three-value key
+   clearing condition.
+4. Boundaries: absent terminalStatus remains pending; unknown enums/nulls/
+   malformed gate/dispatch evidence refuse in the backend with the existing
+   QUERY_EVIDENCE_UNAVAILABLE (`PRECONDITION`) and render an unresolved
+   observation (`UNKNOWN`), not a new execution. Existing wrong-person/scope/
+   selection, revoked permission, native revision and durable-key checks are
+   retained (`DENIED`/`CONFLICT`/`PRECONDITION`). Existing LIMIT, approvals and
+   capacity decisions remain Core's authority; this read-only consumer cannot
+   bypass them. Empty successful rows preserve the original result shape.
+   No new persistent state or convergence process is introduced; unresolved
+   observations continue the existing original action and reconciliation.
+
+Pinned original frontend evidence remains WrenAI
+`c5f02a0391c87420dba78632dcd86073710deb72`:
+
+- `wren-ui/src/components/pages/modeling/metadata/ModelMetadata.tsx::ModelMetadata`
+- `wren-ui/src/components/pages/modeling/metadata/ViewMetadata.tsx::ViewMetadata`
+- `wren-ui/src/components/pages/home/promptThread/ViewSQLTabContent.tsx::ViewSQLTabContent`
+- `wren-ui/src/components/pages/home/promptThread/TextBasedAnswer.tsx::TextBasedAnswer`
+- `wren-ui/src/components/pages/home/promptThread/ChartAnswer.tsx::ChartAnswer`
+
+All five original symbols were resolved with `git grep` at that exact commit;
+the batch diff changes their existing query conditions, not their original
+business pages. Complete upstream parity and visual acceptance are separate
+and are not asserted by these condition checks.
+
+The existing non-root 4 CPU / 4 GiB SDK, Data cache and private source snapshot
+were reused. Before each toolchain run its actual limits, keeper-only process
+list and host CPU/memory pressure were checked; available memory exceeded the
+limit, and Data had approximately 296 MiB free. No image, dependency, database
+or new verification infrastructure was provisioned. Initial 79-case and then
+83-case runs passed while the actual UNKNOWN-dispatch boundary was completed.
+The final input set passed 87/87, no skips (6.203 s), before fault injection.
+
+The private SDK copy alone was deliberately damaged after implementation:
+removed the real closed-status and UNKNOWN-dispatch validation, treated
+RUNNING as closed, and restored the hook's former three-close-value clearing.
+The actual original backend/page/hook checks then failed as required:
+
+```text
+Test Suites: 2 failed, 2 total
+Tests:       16 failed, 61 skipped, 10 passed, 87 total
+Time:        7.263 s
+```
+
+The 61 skips are explicit test-name filtering for this negative control, not
+final acceptance skips. Unknown statuses wrongly resolved, RUNNING rendered
+as ended, UNKNOWN-dispatch receipts cleared retry keys, and TERMINATED/
+TIMED_OUT failed to clear genuinely closed intents. Both source protections
+were restored with `apply_patch`; all ten modified implementation/check inputs
+compared byte-identical with formal source before the final full narrow run:
+
+```sh
+./node_modules/.bin/jest --runInBand src/nativeHumanQuery.test.ts src/viewMetadata.test.ts
+./node_modules/.bin/tsc --noEmit
+./node_modules/.bin/prettier --check src/apollo/server/services/nativeHumanQuery.ts src/hooks/useGovernedPreview.ts src/utils/queryReceipt.ts src/components/pages/home/promptThread/ChartAnswer.tsx src/components/pages/home/promptThread/TextBasedAnswer.tsx src/components/pages/home/promptThread/ViewSQLTabContent.tsx src/components/pages/modeling/metadata/ModelMetadata.tsx src/components/pages/modeling/metadata/ViewMetadata.tsx src/nativeHumanQuery.test.ts src/viewMetadata.test.ts
+```
+
+```text
+Test Suites: 2 passed, 2 total
+Tests:       87 passed, 87 total
+Snapshots:   0 total
+Time:        7.232 s
+All matched files use Prettier code style!
+```
+
+Whole UI type checking emitted no diagnostics; combined exit 0. A separate
+one-off SDK check piped the three actual authoritative JSON enum arrays to the
+real helper: all 6 TaskStatus, 6 ActionGateState, 4 ActionDispatchState and 24
+completion gate/dispatch combinations matched, unknown values refused, and
+UNKNOWN dispatch never settled an external side effect; exit 0. No duplicate
+enum type or permanent check script was generated. Formal `git diff --check`
+also returned 0. Complete stdout/stderr is in the existing Data candidate:
+
+- `/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-query-task-status-positive-final-inputs.log`
+- `/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-query-task-status-mutation-final-inputs.log`
+- `/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-query-task-status-final.log`
+- `/volumes/data/kailo/tmp/codex-wren-genbi-native-20261005.vUC6UO/governance-Itgs2N/native-query-task-status-contract-parity.log`
+
+The two original metadata pages are exercised through their actual SSR/control
+consumers; this is not a browser screenshot. The three original Asking result
+pages consume the same actual hook and pass whole-UI typing, but this run is
+not their browser/visual acceptance. No business instance, live datasource/
+LLM end-to-end, release/binding, full check, Windows/Mobile package or deployment
+is claimed. This batch also does not prove that the Core producer emits every
+close value; it must retain the original reconciled component-audit evidence.
+Arbitrary generated SQL provenance, multi-resource authorization and the
+remaining native side-effect/usage consumers still prevent claiming complete
+Wren integration.

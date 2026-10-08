@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
-  verifiedClaims, verifyBindingManagementToken, secret, jsonFetch, freshPep } from '../../../client-kit/adapter/protocol.mjs';
+  verifiedClaims, verifyBindingManagementToken, secret, jsonFetch, freshPep,
+  nativeStatusErrorArguments, mapNativeStatusError } from '../../../client-kit/adapter/protocol.mjs';
 export { Refused, object, nonempty, exactKeys, canonical, fixedUrl, boundedBody,
   secret, jsonFetch, freshPep } from '../../../client-kit/adapter/protocol.mjs';
 import { createServer } from 'node:http';
@@ -101,21 +102,30 @@ export async function verifyToken(token, config, args, operation = 'query_revisi
       || !['RESOURCE', 'ASSET'].includes(claims.target_type)
       || !nonempty(claims.action_key) || !nonempty(claims.authorization_min_zed_token)
       || !Number.isSafeInteger(claims.action_definition_version) || claims.action_definition_version <= 0
+      || (operation === 'map_native_status_error' && (!UUID.test(claims.result_exposure_policy_id)
+        || !Number.isSafeInteger(claims.result_exposure_policy_version) || claims.result_exposure_policy_version <= 0))
       || claims.normalized_parameter_hash !== createHash('sha256')
         .update(canonical({ operation, arguments: args })).digest('hex')) throw new Refused(401);
     if (Object.hasOwn(claims, 'agent_principal_id')) {
       // The original Agent path still requires its exact delegation and
       // result policy; adding a HUMAN launch query does not weaken it.
-      if (operation !== 'query_revision' || !UUID.test(claims.agent_principal_id) || !UUID.test(claims.delegation_id)
+      if (!['query_revision', 'map_native_status_error'].includes(operation)
+        || !UUID.test(claims.agent_principal_id) || !UUID.test(claims.delegation_id)
         || claims.actor_principal_id !== claims.agent_principal_id
         || !UUID.test(claims.result_exposure_policy_id)
         || !Number.isSafeInteger(claims.result_exposure_policy_version) || claims.result_exposure_policy_version <= 0
         || !Number.isSafeInteger(claims.delegation_version) || claims.delegation_version <= 0) throw new Refused(401);
-    } else if (claims.actor_principal_id !== claims.initiating_human_principal_id
-      || !['file_storage.open_view@v1', 'file_storage.open_edit@v1'].includes(claims.action_key)
-      || ['delegation_id', 'delegation_version', 'result_exposure_policy_id',
-        'result_exposure_policy_version'].some((key) => Object.hasOwn(claims, key))) {
-      throw new Refused(401);
+    } else {
+      if (claims.actor_principal_id !== claims.initiating_human_principal_id
+        || ['delegation_id', 'delegation_version'].some(key => Object.hasOwn(claims, key))) throw new Refused(401);
+      if (operation === 'map_native_status_error') {
+        // HUMAN business contexts have the same required policy pair as
+        // Agent calls. This cannot borrow a DOCUMENT/PAT NONE context.
+        if (!['file_storage.read@v1', 'file_storage.list@v1'].includes(claims.action_key)) throw new Refused(401);
+      } else if (!['file_storage.open_view@v1', 'file_storage.open_edit@v1'].includes(claims.action_key)
+        || ['result_exposure_policy_id', 'result_exposure_policy_version'].some(key => Object.hasOwn(claims, key))) {
+        throw new Refused(401);
+      }
     }
     // This is only signature/scope validation. Both actor shapes must still
     // pass the binding-authenticated Core PEP before any native lookup.
@@ -278,7 +288,7 @@ export function createAdapter(rawConfig) {
     try {
       if (request.method !== 'POST' || ![QUERY_PATH, '/platform-adapter/v1/execute',
         '/platform-adapter/v1/observe', '/platform-adapter/v1/cancel', '/platform-adapter/v1/handshake',
-        '/platform-adapter/v1/validate_binding'].includes(request.url)) throw new Refused(404);
+        '/platform-adapter/v1/validate_binding', '/platform-adapter/v1/map_native_status_error'].includes(request.url)) throw new Refused(404);
       if (request.headers['content-type'] !== 'application/json' || typeof request.headers.authorization !== 'string'
         || !request.headers.authorization.startsWith('Bearer ')) throw new Refused(401);
       const deadline = Date.now() + config.timeoutMs;
@@ -286,6 +296,19 @@ export function createAdapter(rawConfig) {
       if (['/platform-adapter/v1/handshake', '/platform-adapter/v1/validate_binding'].includes(request.url)) {
         const value = await bindingManagement(config, deadline, raw, request.headers['idempotency-key'],
           request.headers.authorization.slice(7), request.url.slice('/platform-adapter/v1/'.length));
+        response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        response.end(JSON.stringify(value));
+        return;
+      }
+      if (request.url === '/platform-adapter/v1/map_native_status_error') {
+        const operation = 'map_native_status_error';
+        const args = nativeStatusErrorArguments(raw, request.headers['idempotency-key']);
+        const token = request.headers.authorization.slice(7);
+        const claims = await verifyToken(token, config, args, operation);
+        await freshPep(config, deadline, token, args, claims, operation);
+        const value = mapNativeStatusError(args);
+        const current = await verifyToken(token, config, args, operation);
+        await freshPep(config, deadline, token, args, current, operation);
         response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
         response.end(JSON.stringify(value));
         return;

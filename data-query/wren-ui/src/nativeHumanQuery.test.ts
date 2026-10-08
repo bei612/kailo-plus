@@ -259,6 +259,55 @@ describe('native saved-view HUMAN query consumer', () => {
       service.preview('verified-native-token', 7, 10, key),
     ).rejects.toThrow('QUERY_SCOPE_DENIED');
   });
+  it.each(['RUNNING', 'FAILED', 'CANCELED', 'TERMINATED', 'TIMED_OUT'])(
+    'consumes the original %s task receipt without inventing native result rows',
+    async (terminalStatus) => {
+      const observed = { ...receipt, terminalStatus };
+      calls.mockResolvedValue(observed);
+      expect(
+        await service.preview('verified-native-token', 7, 10, key),
+      ).toEqual(observed);
+      expect(calls).toHaveBeenCalledTimes(1);
+      expect(freeze).not.toHaveBeenCalled();
+      expect(history).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    { terminalStatus: 'UNKNOWN' },
+    { terminalStatus: 'SUCCESS' },
+    { terminalStatus: '' },
+    { terminalStatus: null },
+    { terminalStatus: 7 },
+    { submission: { ...submission, gateState: 'NEW_GATE' } },
+    { submission: { ...submission, gateState: null } },
+    { submission: { ...submission, dispatchState: 'NEW_DISPATCH' } },
+    { submission: { ...submission, dispatchState: null } },
+    ...['FAILED', 'CANCELED', 'TERMINATED', 'TIMED_OUT'].map(
+      (terminalStatus) => ({
+        terminalStatus,
+        submission: { ...submission, dispatchState: 'UNKNOWN' },
+      }),
+    ),
+    {
+      terminalStatus: 'COMPLETED',
+      submission: { ...submission, dispatchState: 'UNKNOWN' },
+    },
+    {
+      terminalStatus: 'COMPLETED',
+      submission: { ...submission, gateState: 'REVOKED' },
+    },
+  ])(
+    'refuses unknown or contradictory task receipt evidence %j',
+    async (changed) => {
+      calls.mockResolvedValue({ ...receipt, ...changed });
+      await expect(
+        service.preview('verified-native-token', 7, 10, key),
+      ).rejects.toThrow('QUERY_EVIDENCE_UNAVAILABLE');
+      expect(calls).toHaveBeenCalledTimes(1);
+      expect(freeze).not.toHaveBeenCalled();
+      expect(history).not.toHaveBeenCalled();
+    },
+  );
   it('rejects another saved view or resource instead of exposing the result', async () => {
     calls.mockResolvedValue({
       ...receipt,
