@@ -723,6 +723,8 @@ export default {
         list_documents: '문서 목록',
         list_documentsDesc: '지식 베이스의 문서를 페이지 단위로 나열합니다',
         read_document: '문서 읽기',
+        export_document: 'Export document',
+        export_documentDesc: 'Export original document bytes or Markdown with file-download permissions',
         read_documentDesc: '문서의 메타데이터와 청크를 순서대로 읽습니다',
         ask: '질문하기',
         askDesc: '엔드포인트에 설정된 에이전트를 실행하여 인용이 포함된 답변을 반환합니다. 후속 질문 지원',
@@ -839,6 +841,7 @@ export default {
     noResources: '동기화 가능한 위키 공간을 찾을 수 없습니다',
     noResourcesDesc: '앱이 콘텐츠를 가져오려면 그룹 채팅을 통해 위키 접근 권한을 얻어야 합니다',
     noResourcesDesc_notion: '앱이 콘텐츠를 가져오려면 Notion 페이지 접근 권한이 필요합니다',
+    noResourcesDesc_file_storage: 'Kailo에서 이 지식베이스에 파일 소스 읽기 권한을 부여한 후 사용 가능한 소스를 선택하세요',
     retryLoadResources: '다시 시도',
     guideStep1: 'Feishu에서 그룹 채팅을 만들고 그룹 설정의 \'그룹 봇\'에 앱을 추가하세요',
     guideStep2: '위키 \'설정\' > \'멤버 설정\' > \'멤버 추가\'를 열고 해당 그룹 채팅을 검색하여 추가하세요',
@@ -977,7 +980,8 @@ export default {
       dingtalk: 'DingTalk 지식베이스의 온라인 문서 동기화',
       ima: 'Tencent IMA 지식베이스에서 문서, 노트 및 파일 동기화 (AI 세션과 동영상 분석은 지원되지 않음)',
       rss: 'RSS / Atom 피드에서 글 동기화',
-      gitlab: 'GitLab 프로젝트의 파일 동기화'
+      gitlab: 'GitLab 프로젝트의 파일 동기화',
+      file_storage: '이 지식베이스에 허용된 소스의 파일 동기화'
     },
     connector: {
       feishu: '페이슈 (Feishu)',
@@ -990,7 +994,8 @@ export default {
       dingtalk: 'DingTalk 문서',
       ima: 'Tencent IMA',
       rss: 'RSS / Atom 피드',
-      gitlab: 'GitLab'
+      gitlab: 'GitLab',
+      file_storage: '파일 저장소'
     },
     logDetail: {
       startTime: '시작 시간',

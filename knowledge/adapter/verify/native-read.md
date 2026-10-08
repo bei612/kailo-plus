@@ -2908,3 +2908,101 @@ HTTP/MCP citation-consumer evidence, not live Cells→WeKnora import/parse/revok
 acceptance. No release/binding activation, image deployment, native Go10 or
 UI8 acceptance, authenticated picker screenshot, Windows/Mobile or full-project
 validation ran. No command is left running; no formal mutation remains.
+
+## Original source picker: executed scope and authorization checks (2026-10-08)
+
+This supersedes only the earlier UI8 **unexecuted** check status, not its
+runtime/deployment boundary. Source baseline is main
+`08fe8eaf63cda3c1335cf2eb2cfee23f2d1c9c9d`. The eight original frontend paths
+have **+654/-79** against that baseline, excluding this evidence paragraph.
+They remain the fixed WeKnora
+`2be7bd40631dda1dd485306038f07a62e9ee287e` original
+`frontend/src/views/knowledge/settings/DataSourceEditorDialog.vue`
+(`selectType`, `loadResources`, `handleSubmit`) and original native API,
+SFC checks and five locale bundles; they are not a replacement knowledge UI.
+
+Four-step review after implementation:
+
+1. DD-89 and design 07 §8.2 keep the native receiver responsible for choosing
+   authorized sources. Original connector order, fields, tree, drawer, layout
+   and styles remain; the new `file_storage` descriptor consumes the existing
+   KB-scoped backend directory without exposing its receiver credential.
+2. The original drawer generation now also changes on a connector change.
+   Comparing only the connector name was insufficient: A→B→A could otherwise
+   accept A's first delayed response. Returning to A is a new editor, not
+   permission for an earlier listing, credential test or save to update it.
+   Original busy flags/resources reset when switching types, so an obsolete
+   request cannot freeze the new form. This reuses the existing lifecycle
+   mechanism; no contract, schema, stored state, registry or host layer changes.
+3. Only a confirmed paused creation is disposable. A delayed known creation
+   cleans its own ID; activation releases that ownership before PUT. Switching
+   connector during an unknown activation neither deletes it nor syncs or
+   closes the newer editor. Final source save still refreshes authorization.
+   No body copy, invented source, native credential, shared tenant or new
+   external-effect executor is introduced.
+4. The original SFC target now includes three additional deferred-response
+   cases for A→B→A paused creation, A→B→A credential testing and connector
+   switching during activation. Together with the earlier cases it checks
+   empty/revoked discovery, request ordering, close/reopen, KB/source changes,
+   reentrancy and late cleanup. This is editor consumer evidence, not a claim
+   that all native network-error outcome messages or import recovery paths
+   have been accepted.
+
+Execution reused `kailo-native-page-sdk-4rbmbz`, image
+`sha256:10ad51a279b8d0ff8dd308f5a76021b5160444d3ca23399c8555eab05a787f82`,
+UID 1000:1000, Node v24.21.0. Actual readback was 4 CPU/4 GiB, swap.max 0;
+host available memory was 19 GiB before final execution. The candidate is
+`/volumes/data/kailo/tmp/codex-native-page-navigation-20261005.4rBmBZ/knowledge-picker-20261008.2BNiWr/frontend`.
+All eight changed source/check inputs were byte-compared to the formal tree
+after mutation restoration. No production file was mutated.
+
+Dependency delivery is not described as offline: the first existing-cache
+`npm ci --offline --cache /cache/npm --no-audit --no-fund` failed
+`ENOTCACHED` for locked `xlsx-0.20.2.tgz`. One `npm ci --prefer-offline` in
+the same bounded SDK/cache then installed 388 locked packages in two minutes,
+exit 0. No new image, host SDK, dependency-lock change or install-policy
+relaxation was used. The first target returned 32/35: two locale-key failures
+and a test fixture that assumed two Vue ticks completed its async refresh.
+The fixture now observes the actual metadata refresh with the original Vue
+watcher; it does not skip or weaken the reopened-directory assertion. The
+missing optional-language export labels reuse the existing English fallback;
+Chinese and English remain complete. The new fallback is a Kailo integration
+label, not claimed to be verbatim text in the fixed official baseline.
+
+The same original targets ran after correction, mutation and restoration:
+
+```sh
+sudo docker exec kailo-native-page-sdk-4rbmbz sh -c '
+  cd /work/knowledge-picker-20261008.2BNiWr/frontend &&
+  npm test -- src/views/knowledge/settings/DataSourceEditorDialog.test.ts src/i18n/localeKeyAudit.test.ts
+'
+sudo docker exec kailo-native-page-sdk-4rbmbz sh -c '
+  cd /work/knowledge-picker-20261008.2BNiWr/frontend && npm run type-check
+'
+```
+
+Corrected positive and final restored target each returned **35 passed,
+0 failed, 0 skipped**, exit 0: 22 original SFC cases and 13 locale checks.
+Final `vue-tsc --build` exited 0. Four private production faults replaced
+fresh directory reads with cached data, removed connector-change generation,
+removed ownership release before activation, and removed the Chinese
+file-storage message. Unchanged original assertions returned **25 passed,
+10 failed**, exit 1. Restoring the two mutated files and comparing all eight
+inputs preceded the final passing run.
+
+Logs are in the candidate's parent directory above:
+
+| Log | SHA-256 |
+|---|---|
+| `picker-positive.log` (initial failure) | `82090918978533896124d3a5a735ca7e996e4cd3ee5347f943159faa0fc60df0` |
+| `picker-positive-corrected.log` | `f840b84ffb827a5b7cde09a6c15b8fb7c20b5ff8e95c3d8cab459b93ae1e0a20` |
+| `picker-production-mutation.log` | `908767bcf2736ade04e70906401acfad60022dc0a42ae79844be08fe3516eff6` |
+| `picker-restored.log` | `d3adcb8d2614710a8972ed9d1922ffbb7df0701f336a005a808a00a4488e56a8` |
+| `picker-type-check-final.log` | `a56bb276db4e129b0d23ef978a488dfc6f0845a00550a6cb828699323ac34625` |
+
+Scoped complete diff and `git diff --check` passed. These checks execute the
+original SFC script and native API consumer, not browser rendering or visual
+equivalence. Authenticated picker screenshots, activated release/binding,
+live Cells→WeKnora import/parse/revoke, image build/deployment, Windows/Mobile
+and `tools/check.sh --full` were not run for this frontend checkpoint. It
+does not establish full original restoration or production readiness.

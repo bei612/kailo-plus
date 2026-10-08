@@ -843,6 +843,7 @@ export default {
     noResources: '未找到可同步的知识库空间',
     noResourcesDesc: '应用需要通过群聊获得知识库访问权限才能拉取内容',
     noResourcesDesc_notion: '应用需要获得 Notion 页面的访问权限才能拉取内容',
+    noResourcesDesc_file_storage: '请先在 Kailo 为当前知识库授予云盘来源读取权限，再选择可用来源',
     retryLoadResources: '重新加载',
     guideStep1: '在飞书中创建一个群聊，在群设置「群机器人」中添加你的应用',
     guideStep2: '打开知识库「设置」→「成员设置」→ 添加成员，搜索该群聊名称并添加',
@@ -981,7 +982,8 @@ export default {
       dingtalk: '同步钉钉知识库中的在线文档',
       ima: '同步腾讯 IMA 知识库中的文档、笔记与文件（暂不支持 AI 会话与视频解析）',
       rss: '同步 RSS / Atom 订阅源中的文章',
-      gitlab: '同步 GitLab 项目中的文件'
+      gitlab: '同步 GitLab 项目中的文件',
+      file_storage: '同步已授予当前知识库读取权限的云盘文件'
     },
     connector: {
       feishu: '飞书',
@@ -994,7 +996,8 @@ export default {
       dingtalk: '钉钉文档',
       ima: '腾讯 IMA',
       rss: 'RSS / Atom 订阅',
-      gitlab: 'GitLab'
+      gitlab: 'GitLab',
+      file_storage: '云盘'
     },
     logDetail: {
       startTime: '开始时间',

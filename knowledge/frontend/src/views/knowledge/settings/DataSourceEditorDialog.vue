@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import {
@@ -13,6 +13,8 @@ import {
   deleteDataSource,
   putDataSourceCredentials,
   deleteDataSourceCredentials,
+  getConnectorTypes,
+  type ConnectorMeta,
   type DataSource,
   type Resource,
 } from '@/api/datasource'
@@ -32,6 +34,33 @@ const { t } = useI18n()
 const isEdit = computed(() => !!props.dataSource)
 const step = ref(0)
 const submitting = ref(false)
+let editorGeneration = 0
+// Only a confirmed paused draft is disposable. An activation request may have
+// succeeded even if its response is lost; closing must not delete that row.
+let pausedDraftId = ''
+
+function currentEditorScope(includeConnector = true) {
+  const generation = editorGeneration
+  const kbId = props.kbId
+  const sourceId = props.dataSource?.id
+  const connector = form.value.type
+  return () => visible.value && generation === editorGeneration &&
+    props.kbId === kbId && props.dataSource?.id === sourceId &&
+    (!includeConnector || form.value.type === connector)
+}
+
+function discardPausedDraft() {
+  const abandonedDraftId = pausedDraftId
+  pausedDraftId = ''
+  // Release before awaiting deletion: a reopened editor may already own a new
+  // draft when this known paused row's cleanup completes.
+  if (abandonedDraftId) void deleteDataSource(abandonedDraftId).catch(() => {})
+}
+
+onBeforeUnmount(() => {
+  editorGeneration++
+  discardPausedDraft()
+})
 
 // In edit mode the credential "configured?" flag travels on the main
 // DataSource response (DataSource.credentials.credentials.configured —
@@ -83,19 +112,22 @@ function cancelPendingRemoveCredentials() {
 }
 
 async function confirmRemoveCredentials() {
-  if (!props.dataSource?.id) return
+  if (!props.dataSource?.id || removingCredentials.value) return
+  const current = currentEditorScope()
+  const sourceId = props.dataSource.id
   removingCredentials.value = true
   try {
-    await deleteDataSourceCredentials(props.dataSource.id)
+    await deleteDataSourceCredentials(sourceId)
+    if (!current()) return
     credentialsConfigured.value = false
     replaceCredentialsMode.value = false
     pendingRemoveCredentials.value = false
     form.value.config.credentials = {}
     MessagePlugin.success(t('credential.removedToast'))
   } catch (e: any) {
-    MessagePlugin.error(e?.message || t('credential.removeFailed'))
+    if (current()) MessagePlugin.error(e?.message || t('credential.removeFailed'))
   } finally {
-    removingCredentials.value = false
+    if (current()) removingCredentials.value = false
   }
 }
 
@@ -209,6 +241,36 @@ const form = ref({
 const resources = ref<Resource[]>([])
 const loadingResources = ref(false)
 const selectedResourceIds = ref<string[]>([])
+const connectorMetadata = ref<ConnectorMeta[]>([])
+const isFileStorageConnector = (type: string) => type === 'file_storage'
+let connectorMetadataRequest = 0
+
+async function refreshConnectorMetadata(): Promise<Resource[]> {
+  const kbId = props.kbId
+  const inScope = currentEditorScope(false)
+  const request = ++connectorMetadataRequest
+  const current = () => inScope() && request === connectorMetadataRequest
+  connectorMetadata.value = []
+  let response
+  try {
+    response = await getConnectorTypes(kbId)
+  } catch {
+    if (!current()) return []
+    throw new Error(t('datasource.resourceLoadFailed'))
+  }
+  const metadata = response?.data ?? response
+  if (!current()) return []
+  if (!Array.isArray(metadata)) throw new Error(t('datasource.resourceLoadFailed'))
+  connectorMetadata.value = metadata
+  const source = metadata.find((item: ConnectorMeta) => isFileStorageConnector(item.type))
+  return Array.isArray(source?.resources) ? source.resources : []
+}
+
+async function fileStorageSources(): Promise<Resource[]> {
+  const sources = await refreshConnectorMetadata()
+  if (sources.length === 0) throw new Error(t('datasource.noResourcesDesc_file_storage'))
+  return sources
+}
 const expandedResourceIds = ref(new Set<string>())
 // Lazy loading: parents whose children have already been fetched, and parents
 // currently being fetched. Used to load hierarchical sources (e.g. Feishu wiki)
@@ -275,6 +337,10 @@ function extractDriveFolderToken(input: string): string {
 // user gets an actionable hint (e.g. share the folder with the app) instead of
 // a raw Feishu error body.
 async function loadDriveRoot() {
+  if (loadingResources.value) return
+  const current = currentEditorScope()
+  const kbId = props.kbId
+  let dataSourceId = tempDsId.value
   const token = extractDriveFolderToken(driveFolderToken.value)
   if (!token) {
     driveFolderTokenError.value = t('datasource.drive.folderTokenRequired')
@@ -287,25 +353,33 @@ async function loadDriveRoot() {
   driveRootLoaded.value = false
   loadingResources.value = true
   try {
-    if (!tempDsId.value) {
+    if (!dataSourceId) {
       const res = await createDataSource({
         ...form.value,
-        knowledge_base_id: props.kbId,
+        knowledge_base_id: kbId,
         status: 'paused',
       } as any)
       const created = res?.data || res
+      if (!current()) {
+        await deleteDataSource(created.id)
+        return
+      }
+      dataSourceId = created.id
       tempDsId.value = created.id
+      pausedDraftId = created.id
     } else {
       // Edit mode OR a previously-created temp row: persist the new folder_token
       // so listResources sees the updated config. Previously this branch skipped
       // updates in edit mode, leaving listResources reading the old folder_token.
-      await updateDataSource(tempDsId.value, {
+      await updateDataSource(dataSourceId, {
         ...form.value,
-        knowledge_base_id: props.kbId,
+        knowledge_base_id: kbId,
       } as any)
     }
 
-    const res = await listResources(tempDsId.value)
+    if (!current()) return
+    const res = await listResources(dataSourceId)
+    if (!current()) return
     resources.value = res?.data || res || []
     if (resources.value.length > 0) {
       // Mirror loadResources' tree initialization: index parents that already
@@ -333,9 +407,10 @@ async function loadDriveRoot() {
       }
     }
   } catch (e: any) {
-    MessagePlugin.error(classifyDriveLoadError(e))
+    if (current()) MessagePlugin.error(classifyDriveLoadError(e))
+  } finally {
+    if (current()) loadingResources.value = false
   }
-  loadingResources.value = false
 }
 
 // classifyDriveLoadError turns a raw Drive list error into an actionable i18n
@@ -432,6 +507,8 @@ function toggleExpand(id: string) {
 // Notion) or when this node's children have already been fetched.
 async function ensureChildrenLoaded(id: string) {
   if (!tempDsId.value) return
+  const current = currentEditorScope()
+  const dataSourceId = tempDsId.value
   if (loadedChildrenIds.value.has(id) || loadingChildrenIds.value.has(id)) return
   if (treeFullyLoaded.value) {
     loadedChildrenIds.value = new Set(loadedChildrenIds.value).add(id)
@@ -440,7 +517,8 @@ async function ensureChildrenLoaded(id: string) {
 
   loadingChildrenIds.value = new Set(loadingChildrenIds.value).add(id)
   try {
-    const res = await listResources(tempDsId.value, id)
+    const res = await listResources(dataSourceId, id)
+    if (!current() || tempDsId.value !== dataSourceId) return
     const children: Resource[] = res?.data || res || []
     if (children.length > 0) {
       const existing = new Set(resources.value.map(r => r.external_id))
@@ -452,15 +530,18 @@ async function ensureChildrenLoaded(id: string) {
     }
     loadedChildrenIds.value = new Set(loadedChildrenIds.value).add(id)
   } catch (e: any) {
+    if (!current() || tempDsId.value !== dataSourceId) return
     MessagePlugin.error(e?.message || e?.error || t('datasource.resourceLoadFailed'))
     // Collapse again so the user can retry the expand.
     const next = new Set(expandedResourceIds.value)
     next.delete(id)
     expandedResourceIds.value = next
   } finally {
-    const s = new Set(loadingChildrenIds.value)
-    s.delete(id)
-    loadingChildrenIds.value = s
+    if (current() && tempDsId.value === dataSourceId) {
+      const s = new Set(loadingChildrenIds.value)
+      s.delete(id)
+      loadingChildrenIds.value = s
+    }
   }
 }
 
@@ -688,6 +769,12 @@ const connectorDefs = computed<ConnectorDef[]>(() => [
       { key: 'access_token', labelKey: 'datasource.gitlab.accessToken', placeholder: '', secret: true },
     ],
   },
+  ...connectorMetadata.value
+    .filter(meta => isFileStorageConnector(meta.type) && (meta.resources?.length ?? 0) > 0)
+    .map(meta => ({
+      type: meta.type, available: true, docUrl: '', permissionDocUrl: '', permissionPageUrl: '',
+      requiredPermissions: [], fields: [],
+    })),
 ])
 
 
@@ -705,25 +792,22 @@ const displayedCredentialFields = computed(() => {
 })
 
 // --- Drawer lifecycle ---
-watch(visible, async (v) => {
-  if (!v) {
-    if (!isEdit.value && tempDsId.value) {
-      try {
-        await deleteDataSource(tempDsId.value)
-      } catch {
-        // Ignore cleanup errors
-      }
-      tempDsId.value = ''
-    }
-    return
-  }
+watch([visible, () => props.kbId, () => props.dataSource?.id], async ([v]) => {
+  editorGeneration++
+  discardPausedDraft()
+  tempDsId.value = ''
+  if (!v) return
   step.value = isEdit.value ? 1 : 0
+  submitting.value = false
+  testing.value = false
+  removingCredentials.value = false
+  loadingResources.value = false
   testResult.value = ''
   testErrorMsg.value = ''
-  tempDsId.value = ''
   prereqExpanded.value = false
   pendingRemoveCredentials.value = false
   resources.value = []
+  connectorMetadata.value = []
   selectedResourceIds.value = []
   expandedResourceIds.value = new Set()
   loadedChildrenIds.value = new Set()
@@ -793,7 +877,15 @@ watch(visible, async (v) => {
       sync_deletions: true,
     }
   }
-})
+  // Original credential connectors remain available if governed source
+  // discovery fails. Never display a file-storage option with invented IDs.
+  const current = currentEditorScope(false)
+  try {
+    await refreshConnectorMetadata()
+  } catch {
+    if (current()) connectorMetadata.value = []
+  }
+}, { flush: 'sync' })
 
 watch(
   () => form.value.config.credentials,
@@ -830,6 +922,19 @@ watch(
 
 function selectType(def: ConnectorDef) {
   if (!def.available) return
+  if (form.value.type !== def.type) {
+    // Returning to the same connector is a new editor, not permission for an
+    // earlier request to populate this form after a type switch.
+    editorGeneration++
+    discardPausedDraft()
+    tempDsId.value = ''
+    submitting.value = false
+    removingCredentials.value = false
+    loadingResources.value = false
+    testing.value = false
+    resources.value = []
+    selectedResourceIds.value = []
+  }
   form.value.type = def.type
   form.value.name = t(`datasource.connector.${def.type}`)
   form.value.config.credentials = def.type === "confluence" ? { edition: "server" } : {}
@@ -843,6 +948,10 @@ function selectType(def: ConnectorDef) {
 
 // --- Test connection ---
 async function testConnection() {
+  if (testing.value) return
+  const current = currentEditorScope()
+  const dataSourceId = tempDsId.value
+  const kbId = props.kbId
   syncRssAuthHeadersToCredentials()
   syncConfluencePublicFieldsToSettings()
   if (!validateRssFeedUrls()) return
@@ -864,12 +973,15 @@ async function testConnection() {
     // The main update endpoint ignores credentials. Only use the saved
     // connection when keeping its credentials; test replacements directly
     // without persisting them until the user saves the data source.
-    if (isEdit.value && tempDsId.value && !needsConnectionTest()) {
-      await updateDataSource(tempDsId.value, {
+    if (isFileStorageConnector(form.value.type)) {
+      await fileStorageSources()
+    } else if (isEdit.value && dataSourceId && !needsConnectionTest()) {
+      await updateDataSource(dataSourceId, {
         ...form.value,
-        knowledge_base_id: props.kbId,
+        knowledge_base_id: kbId,
       } as any)
-      await validateConnection(tempDsId.value)
+      if (!current()) return
+      await validateConnection(dataSourceId)
     } else {
       const creds = { ...form.value.config.credentials }
       if (form.value.type === 'rss') {
@@ -878,37 +990,61 @@ async function testConnection() {
       }
       await validateCredentials(form.value.type, creds)
     }
+    if (!current()) return
     testResult.value = 'success'
     MessagePlugin.success(t('datasource.testSuccess'))
   } catch (e: any) {
+    if (!current()) return
     testResult.value = 'error'
     testErrorMsg.value = e?.message || e?.error || ''
     MessagePlugin.error(t('datasource.testFailed'))
+  } finally {
+    if (current()) testing.value = false
   }
-  testing.value = false
 }
 
 // --- Load resources ---
 async function loadResources() {
+  if (loadingResources.value) return
+  const current = currentEditorScope()
+  const kbId = props.kbId
+  let dataSourceId = tempDsId.value
   loadingResources.value = true
+  if (isFileStorageConnector(form.value.type)) resources.value = []
   try {
     syncConfluencePublicFieldsToSettings()
-    if (!tempDsId.value) {
+    if (!dataSourceId) {
+      if (isFileStorageConnector(form.value.type)) {
+        // The original picker persists a paused draft before listing. Seed
+        // that draft only with the real service-authorized source references;
+        // the user's final selection is still saved by the original submit.
+        const sources = await fileStorageSources()
+        if (!current()) return
+        form.value.config.resource_ids = sources.map(source => source.external_id)
+      }
       const res = await createDataSource({
         ...form.value,
-        knowledge_base_id: props.kbId,
+        knowledge_base_id: kbId,
         status: 'paused',
       } as any)
       const created = res?.data || res
+      if (!current()) {
+        await deleteDataSource(created.id)
+        return
+      }
+      dataSourceId = created.id
       tempDsId.value = created.id
+      pausedDraftId = created.id
     } else if (!isEdit.value) {
-      await updateDataSource(tempDsId.value, {
+      await updateDataSource(dataSourceId, {
         ...form.value,
-        knowledge_base_id: props.kbId,
+        knowledge_base_id: kbId,
       } as any)
     }
 
-    const res = await listResources(tempDsId.value)
+    if (!current()) return
+    const res = await listResources(dataSourceId)
+    if (!current()) return
     resources.value = res?.data || res || []
     // Any parent that already arrived with children (connectors returning the
     // full tree, e.g. Notion) needs no further lazy fetch.
@@ -936,9 +1072,10 @@ async function loadResources() {
       if (hidden.length > 0) void revealExistingSelections(hidden)
     }
   } catch (e: any) {
-    MessagePlugin.error(e?.message || e?.error || t('datasource.resourceLoadFailed'))
+    if (current()) MessagePlugin.error(e?.message || e?.error || t('datasource.resourceLoadFailed'))
+  } finally {
+    if (current()) loadingResources.value = false
   }
-  loadingResources.value = false
 }
 
 // revealExistingSelections asks the backend which ancestors must be expanded to
@@ -946,8 +1083,11 @@ async function loadResources() {
 // so the saved selection becomes visible and correctly checked in the tree.
 async function revealExistingSelections(hiddenIds: string[]) {
   if (!tempDsId.value || hiddenIds.length === 0) return
+  const current = currentEditorScope()
+  const dataSourceId = tempDsId.value
   try {
-    const res = await resolveResourceAncestors(tempDsId.value, hiddenIds)
+    const res = await resolveResourceAncestors(dataSourceId, hiddenIds)
+    if (!current() || tempDsId.value !== dataSourceId) return
     const ancestors: string[] = res?.data?.ancestors || res?.ancestors || []
     if (ancestors.length === 0) return
     const expanded = new Set(expandedResourceIds.value)
@@ -957,7 +1097,9 @@ async function revealExistingSelections(hiddenIds: string[]) {
     // selection itself); calls are independent and dedup on merge.
     await Promise.all(ancestors.map(id => ensureChildrenLoaded(id)))
   } catch (e: any) {
-    MessagePlugin.error(e?.message || e?.error || t('datasource.resourceLoadFailed'))
+    if (current() && tempDsId.value === dataSourceId) {
+      MessagePlugin.error(e?.message || e?.error || t('datasource.resourceLoadFailed'))
+    }
   }
 }
 
@@ -1059,10 +1201,13 @@ function validateStep1Fields(): boolean {
 }
 
 async function nextStep() {
+  const current = currentEditorScope()
+  const previousStep = step.value
   if (step.value === 1) {
     if (!validateStep1Fields()) return
     if (needsConnectionTest() && testResult.value !== 'success') {
       await testConnection()
+      if (!current() || step.value !== previousStep) return
       if ((testResult.value as string) !== 'success') return
     }
   }
@@ -1081,6 +1226,12 @@ async function nextStep() {
       MessagePlugin.warning(t('datasource.gitlab.projectRequired'))
       return
     }
+  }
+  if (step.value === 2 && isFileStorageConnector(form.value.type) &&
+    (selectedResourceIds.value.length === 0 ||
+      selectedResourceIds.value.some(id => !resources.value.some(resource => resource.external_id === id)))) {
+    MessagePlugin.warning(t('datasource.noResourcesDesc_file_storage'))
+    return
   }
   step.value++
   if (step.value === 2) {
@@ -1127,6 +1278,7 @@ function buildConfigPayload(): Record<string, unknown> {
 // the whole submit on failure so we don't leave the row partially saved.
 async function commitCredentialsIfNeeded(dsId: string): Promise<boolean> {
   if (!isEdit.value || !replaceCredentialsMode.value) return true
+  const current = currentEditorScope()
   syncRssAuthHeadersToCredentials()
   syncConfluencePublicFieldsToSettings()
   const filled = Object.entries(form.value.config.credentials).filter(
@@ -1135,72 +1287,90 @@ async function commitCredentialsIfNeeded(dsId: string): Promise<boolean> {
   if (filled.length === 0) return true
   try {
     await putDataSourceCredentials(dsId, Object.fromEntries(filled))
+    if (!current()) return false
     credentialsConfigured.value = true
     replaceCredentialsMode.value = false
     form.value.config.credentials = {}
     rssAuthHeaders.value = []
     return true
   } catch (e: any) {
-    MessagePlugin.error(e?.message || e?.error || t('credential.saveFailed'))
+    if (current()) MessagePlugin.error(e?.message || e?.error || t('credential.saveFailed'))
     return false
   }
 }
 
 // --- Final submit ---
 async function handleSubmit() {
+  if (submitting.value || loadingResources.value || testing.value || removingCredentials.value) return
+  const current = currentEditorScope()
+  const kbId = props.kbId
+  const editing = isEdit.value
+  let dataSourceId = tempDsId.value
   form.value.config.resource_ids = selectedResourceIds.value
   submitting.value = true
   try {
-    let dataSourceId = tempDsId.value
+    if (isFileStorageConnector(form.value.type)) {
+      const sources = await fileStorageSources()
+      if (!current()) return
+      if (selectedResourceIds.value.length === 0 || selectedResourceIds.value.some(
+        id => !sources.some(source => source.external_id === id),
+      )) {
+        throw new Error(t('datasource.noResourcesDesc_file_storage'))
+      }
+    }
 
-    if (tempDsId.value) {
+    if (dataSourceId) {
       // Commit credential replacement BEFORE the main PUT so a validation
       // failure on credentials doesn't leave us with an updated row that
       // still points at the old broken token.
-      const credsOk = await commitCredentialsIfNeeded(tempDsId.value)
-      if (!credsOk) {
-        submitting.value = false
-        return
-      }
-      await updateDataSource(tempDsId.value, {
+      const credsOk = await commitCredentialsIfNeeded(dataSourceId)
+      if (!credsOk || !current()) return
+      // From this point the native activation result may be unknown. Retain
+      // its ID for retries, but never treat it as an abandoned paused draft.
+      if (pausedDraftId === dataSourceId) pausedDraftId = ''
+      await updateDataSource(dataSourceId, {
         ...form.value,
         config: buildConfigPayload(),
-        knowledge_base_id: props.kbId,
+        knowledge_base_id: kbId,
         status: 'active',
       } as any)
     } else {
       const res = await createDataSource({
         ...form.value,
         config: buildConfigPayload(),
-        knowledge_base_id: props.kbId,
+        knowledge_base_id: kbId,
         status: 'active',
       } as any)
       const created = res?.data || res
       dataSourceId = created.id
-      tempDsId.value = created.id
+      if (!current()) return
+      tempDsId.value = dataSourceId
     }
 
-    if (isEdit.value) {
+    if (!current()) return
+    if (editing) {
       MessagePlugin.warning(t('datasource.updateSuccessSyncHint'))
     } else {
       try {
         await triggerSync(dataSourceId)
+        if (!current()) return
         MessagePlugin.success(t('datasource.createAndSyncSuccess'))
       } catch (e: any) {
+        if (!current()) return
         MessagePlugin.warning(e?.message || e?.error || t('datasource.createButSyncFailed'))
       }
     }
 
     emit('saved')
-    // Clear before close — otherwise the visible watcher treats the just-saved
-    // row as an abandoned temp draft and DELETEs it (loadResources creates the
-    // row early at step 2 with tempDsId).
+    // Release the editor's reference before closing. Paused-draft ownership
+    // was already relinquished before the native activation request.
     tempDsId.value = ''
     visible.value = false
   } catch (e: any) {
-    MessagePlugin.error(e?.message || e?.error || t('datasource.saveFailed'))
+    if (current()) MessagePlugin.error(e?.message || e?.error || t('datasource.saveFailed'))
+  } finally {
+    if (current()) submitting.value = false
   }
-  submitting.value = false
 }
 
 function handleClose() {
@@ -1493,7 +1663,7 @@ const drawerConfirmText = computed(() => {
         </div>
       </section>
 
-      <section class="setting-drawer__section">
+      <section v-if="!isFileStorageConnector(form.type)" class="setting-drawer__section">
         <h4 class="setting-drawer__section-title">{{ t('datasource.credentialsLabel') }}</h4>
 
         <div v-if="isEdit && credentialsConfigured && !replaceCredentialsMode" class="form-item">

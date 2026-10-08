@@ -6517,6 +6517,7 @@ export default {
     noResources: 'Wikiスペースが見つかりません',
     noResourcesDesc: 'コンテンツを取得するには、グループチャット経由でアプリにWikiのアクセス権限を付与する必要があります',
     noResourcesDesc_notion: 'コンテンツを取得するには、アプリにNotionページのアクセス権限が必要です',
+    noResourcesDesc_file_storage: 'Kailo でこのナレッジベースにファイルソースの読み取り権限を付与し、利用可能なソースを選択してください',
     retryLoadResources: '再試行',
     guideStep1: 'Feishuでグループチャットを作成し、グループ設定でアプリをボットとして追加します',
     guideStep2: 'Wikiの「設定」>「メンバー設定」>「メンバーを追加」を開き、グループチャットを検索して追加します',
@@ -6582,7 +6583,8 @@ export default {
       dingtalk: 'DingTalkドキュメント',
       rss: 'RSS / Atomフィード',
       ima: 'Tencent IMA',
-      gitlab: 'GitLab'
+      gitlab: 'GitLab',
+      file_storage: 'ファイルストレージ'
     },
     connectorDesc: {
       feishu: 'Feishu Wikiからドキュメント、スプレッドシート、ファイルを同期します',
@@ -6595,7 +6597,8 @@ export default {
       dingtalk: 'DingTalkナレッジベースのオンラインドキュメントを同期',
       rss: 'RSS / Atomフィードから記事を同期します',
       ima: 'Tencent IMAのナレッジベースからドキュメント、ノート、ファイルを同期します（AIセッションと動画の解析は非対応）',
-      gitlab: 'GitLabプロジェクトからファイルを同期します'
+      gitlab: 'GitLabプロジェクトからファイルを同期します',
+      file_storage: 'このナレッジベースに許可されたソースのファイルを同期します'
     },
     drive: {
       folderTokenLabel: 'Driveフォルダトークン',
@@ -6791,6 +6794,8 @@ export default {
         list_documents: 'ドキュメント一覧',
         list_documentsDesc: 'ナレッジベース内のドキュメントをページ単位で一覧します',
         read_document: 'ドキュメントを読む',
+        export_document: 'Export document',
+        export_documentDesc: 'Export original document bytes or Markdown with file-download permissions',
         read_documentDesc: 'ドキュメントのメタ情報とチャンクを順に読みます',
         ask: '質問する',
         askDesc: 'エンドポイントに設定されたエージェントを実行し、引用付きの回答を返します。続きの質問にも対応',

@@ -72,6 +72,9 @@ export interface ConnectorMeta {
   priority: number
   auth_type: string
   capabilities: string[]
+  // Metadata only. The service backend resolves these with its own governed
+  // receiver identity; no source credential or platform token reaches the UI.
+  resources?: Resource[]
 }
 
 export interface Resource {
@@ -86,8 +89,9 @@ export interface Resource {
 
 // --- API calls ---
 
-export function getConnectorTypes() {
-  return get('/api/v1/datasource/types')
+export function getConnectorTypes(kbId?: string) {
+  const query = kbId ? `?kb_id=${encodeURIComponent(kbId)}` : ''
+  return get(`/api/v1/datasource/types${query}`)
 }
 
 export function listDataSources(kbId: string) {

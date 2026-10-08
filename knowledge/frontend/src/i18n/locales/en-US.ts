@@ -6517,6 +6517,7 @@ export default {
     noResources: 'No wiki spaces found',
     noResourcesDesc: 'The app needs wiki access via a group chat to fetch content',
     noResourcesDesc_notion: 'The app needs Notion page access permissions to fetch content',
+    noResourcesDesc_file_storage: 'Grant this knowledge base access to file-storage sources in Kailo, then select an available source',
     retryLoadResources: 'Retry',
     guideStep1: 'Create a group chat in Feishu, then add your app as a bot in the group settings',
     guideStep2: 'Open wiki "Settings" > "Member Settings" > "Add Member", search for the group chat and add it',
@@ -6582,7 +6583,8 @@ export default {
       dingtalk: 'DingTalk Docs',
       rss: 'RSS / Atom Feed',
       ima: 'Tencent IMA',
-      gitlab: 'GitLab'
+      gitlab: 'GitLab',
+      file_storage: 'File storage'
     },
     connectorDesc: {
       feishu: 'Sync documents, spreadsheets and files from Feishu Wiki',
@@ -6595,7 +6597,8 @@ export default {
       dingtalk: 'Sync online documents from DingTalk knowledge bases',
       rss: 'Sync articles from RSS / Atom feeds',
       ima: 'Sync documents, notes and files from Tencent IMA knowledge bases (AI sessions and video parses are not supported)',
-      gitlab: 'Sync files from GitLab projects'
+      gitlab: 'Sync files from GitLab projects',
+      file_storage: 'Sync files from sources authorized for this knowledge base'
     },
     drive: {
       folderTokenLabel: 'Drive folder token',

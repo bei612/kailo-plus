@@ -723,6 +723,8 @@ export default {
         list_documents: 'Список документов',
         list_documentsDesc: 'Постраничный список документов одной базы знаний',
         read_document: 'Прочитать документ',
+        export_document: 'Export document',
+        export_documentDesc: 'Export original document bytes or Markdown with file-download permissions',
         read_documentDesc: 'Метаданные документа и его фрагменты по порядку',
         ask: 'Задать вопрос',
         askDesc: 'Запускает агента, настроенного на конечной точке, и возвращает ответ с цитатами; поддерживает продолжение диалога',
@@ -839,6 +841,7 @@ export default {
     noResources: 'Пространства вики не найдены',
     noResourcesDesc: 'Приложению требуется доступ к вики через групповой чат для получения контента',
     noResourcesDesc_notion: 'Приложению требуются права доступа к странице Notion для получения контента',
+    noResourcesDesc_file_storage: 'Разрешите этой базе знаний чтение файловых источников в Kailo, затем выберите доступный источник',
     retryLoadResources: 'Повторить',
     guideStep1: 'Создайте групповой чат в Feishu, затем добавьте ваше приложение как бота в настройках группы',
     guideStep2: 'Откройте вики "Настройки" > "Управление участниками" > "Добавить участника", найдите групповой чат и добавьте его',
@@ -977,7 +980,8 @@ export default {
       dingtalk: 'Синхронизация онлайн-документов из баз знаний DingTalk',
       ima: 'Синхронизация документов, заметок и файлов из баз знаний Tencent IMA (ИИ-сессии и разбор видео не поддерживаются)',
       rss: 'Синхронизация статей из лент RSS / Atom',
-      gitlab: 'Синхронизация файлов из проектов GitLab'
+      gitlab: 'Синхронизация файлов из проектов GitLab',
+      file_storage: 'Синхронизация файлов из источников, разрешённых для этой базы знаний'
     },
     connector: {
       feishu: 'Feishu (Фэйшу)',
@@ -990,7 +994,8 @@ export default {
       dingtalk: 'Документы DingTalk',
       ima: 'Tencent IMA',
       rss: 'RSS / Atom лента',
-      gitlab: 'GitLab'
+      gitlab: 'GitLab',
+      file_storage: 'Файловое хранилище'
     },
     logDetail: {
       startTime: 'Время начала',
